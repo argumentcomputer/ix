@@ -125,7 +125,7 @@ theorem proj_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {D
             obtain ⟨_, -, -, rfl⟩ := hac
             simp only [List.getElem?_cons_zero, Option.some.injEq] at hv
             exact ⟨n, rfl, hv.symm⟩
-        | str _ => exact absurd hrel id
+        | str _ => simp [Own.RVal.asCtor] at hac
       | ctor0 c' =>
         simp only [Own.RVal.asCtor, Option.some.injEq, Prod.mk.injEq] at hac
         obtain ⟨-, rfl⟩ := hac
@@ -167,7 +167,7 @@ theorem proj_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {D
             simp only [Own.RVal.asCtor, Option.map_eq_some_iff, Prod.mk.injEq] at hac
             obtain ⟨_, h, rfl, -⟩ := hac
             exact absurd h hs
-        | str _ => exact absurd hrel id
+        | str _ => simp [Own.RVal.asCtor] at hac
       | ctor0 c' =>
         simp only [Own.RVal.asCtor, Option.some.injEq, Prod.mk.injEq] at hac
         obtain ⟨-, rfl⟩ := hac

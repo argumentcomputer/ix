@@ -76,7 +76,7 @@ example : erased (lam (appM (c world.myIte) [(app (c world.b.beq) [n0, lit 0], .
   decide +kernel
 
 set_option maxRecDepth 100000 in
-/-- A string is declined. -/
-example : declines (lam (.strLit "s")) = true := by decide +kernel
+/-- DR4: a string literal erases cleanly to `.lit (.str "s")`. -/
+example : (erased (lam (.strLit "s"))).isSome = true := by decide +kernel
 
 end IxCCTests.Lam.KernelEval

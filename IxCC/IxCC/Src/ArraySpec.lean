@@ -14,6 +14,16 @@ and formally proved equal to Lean 4.34.1's reference bodies on `Array.toList`,
 
 namespace IxCC.Src
 
+/-- Representation kind of a native contiguous array cell (DR3/DR4):
+* `boxed`: polymorphic `Array α` (`scan = 0xFF`, `tag = 0x7F01`, 8-byte tagged/pointer elements);
+* `bytes`: packed `ByteArray` / UTF-8 `String` (`scan = 0`, `tag = 0x7F02`, 1-byte elements);
+* `limbs`: unboxed `Array UInt64` / `BigNat` (`scan = 0`, `tag = 0x7F03`, raw 64-bit limbs). -/
+inductive ArrayRepKind where
+  | boxed
+  | bytes
+  | limbs
+  deriving DecidableEq, Repr, Inhabited, Hashable
+
 /-! ## Operation inventories -/
 
 /-- DR3 `Array` primitives pinned by the unfolding table. -/
@@ -205,6 +215,27 @@ theorem swap_eq {α : Type u} (a : Array α) (i j : Nat) (hi : i < a.size) (hj :
   simp only [Array.swap, swapList, Array.toList_set]
   rfl
 
+theorem uget_eq {α : Type u} (a : Array α) (i : USize) (h : i.toNat < a.size) :
+    a.uget i h = a.toList[i.toNat]'h := rfl
+
+theorem uset_eq {α : Type u} (a : Array α) (i : USize) (v : α) (h : i.toNat < a.size) :
+    (a.uset i v h).toList = a.toList.set i.toNat v := by
+  simp [Array.uset]
+
+theorem swapIfInBounds_eq {α : Type u} (a : Array α) (i j : Nat) :
+    (a.swapIfInBounds i j).toList =
+      if hi : i < a.toList.length then
+        if hj : j < a.toList.length then swapList a.toList i j hi hj
+        else a.toList
+      else a.toList := by
+  unfold Array.swapIfInBounds
+  by_cases hi : i < a.size
+  · by_cases hj : j < a.size
+    · simp only [hi, hj, Array.length_toList, ↓reduceDIte]
+      exact swap_eq a i j hi hj
+    · simp [hi, hj]
+  · simp [hi]
+
 /-! ### Structural & indexing laws (consumed by runtime refinement proofs) -/
 
 theorem extractList_length {α : Type u} (xs : List α) (start stop : Nat) :
@@ -314,6 +345,13 @@ theorem get_eq (b : ByteArray) (i : Nat) (h : i < b.size) :
 theorem set_eq (b : ByteArray) (i : Nat) (v : UInt8) (h : i < b.size) :
     toBytes (b.set i v h) = (toBytes b).set i v := by
   simp [toBytes, ByteArray.set]
+
+theorem uget_eq (b : ByteArray) (i : USize) (h : i.toNat < b.size) :
+    b.uget i h = (toBytes b)[i.toNat]'h := rfl
+
+theorem uset_eq (b : ByteArray) (i : USize) (v : UInt8) (h : i.toNat < b.size) :
+    toBytes (b.uset i v h) = (toBytes b).set i.toNat v := by
+  simp [ByteArray.uset, toBytes]
 
 theorem push_eq (b : ByteArray) (v : UInt8) :
     toBytes (b.push v) = toBytes b ++ [v] := by

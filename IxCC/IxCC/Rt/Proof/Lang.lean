@@ -324,7 +324,7 @@ type, is `Typed` at that type and reads back as the relabelling, at every
 fuel in the runtime and in Own. -/
 theorem tagify_value {T : Tables} {Pw : List Word} {H : Own.Heap} {ctx : Word} {m : X86.Memory}
     {v : Own.RVal} {w : Word} {sig : Sig} {ty : FoTy} {o o' : Obs}
-    (hv : ValRel T Pw v w) (hheap : HeapInv T Pw H ctx m) (ho : Own.obsV (v, H) = some o)
+    (hv : ValRelStr T Pw v w) (hheap : HeapInv T Pw H ctx m) (ho : Own.obsV (v, H) = some o)
     (ht : tagify T.ctors sig ty o = some o') :
     Typed sig H ty v ∧ (∀ fuel, readback sig fuel m ty w = some o') ∧ H.readback v = some o' := by
   simp only [Own.obsV, Own.Heap.value?, Option.bind_eq_some_iff] at ho
@@ -332,7 +332,12 @@ theorem tagify_value {T : Tables} {Pw : List Word} {H : Own.Heap} {ctx : Word} {
   cases v with
   | lit l =>
     cases l with
-    | str s => exact absurd hv id
+    | str s =>
+      simp only [Own.toFir, Option.some.injEq] at hfv
+      subst hfv
+      simp only [Fir.obsV, Option.some.injEq] at ho
+      subst ho
+      cases ty <;> simp [tagify] at ht
     | nat n =>
       simp only [Own.toFir, Option.some.injEq] at hfv
       subst hfv
@@ -487,10 +492,10 @@ theorem view_observe {C : Cfg.Program} {ctx : Word} {tys : Nat → Option (Sig �
 
 theorem treeTagifyList_fields {T : Tables} {Pw : List Word} {H : Own.Heap} {k : Nat} {sig : Sig}
     (ih : ∀ {v : Own.RVal} {w : Word} {fv : Fir.Val} {ty : FoTy} {o o' : Obs},
-      ValRel T Pw v w → Own.toFir H k v = some fv → Fir.obsV fv = some o →
+      ValRelStr T Pw v w → Own.toFir H k v = some fv → Fir.obsV fv = some o →
       treeTagify T.ctors sig ty o = some o' → Typed sig H ty v ∧ Fir.readback fv = some o') :
     ∀ {vs : List Own.RVal} {fvs : List Fir.Val} {tys : List FoTy} {os os' : List Obs},
-      (∀ (j : Nat) (v : Own.RVal), vs[j]? = some v → ∃ w, ValRel T Pw v w) →
+      (∀ (j : Nat) (v : Own.RVal), vs[j]? = some v → ∃ w, ValRelStr T Pw v w) →
       Own.toFirList H k vs = some fvs → Fir.obsList fvs = some os →
       treeTagifyList T.ctors sig tys os = some os' →
       tys.length = vs.length ∧
@@ -560,11 +565,11 @@ is relabelled by `treeTagify` is `Typed` at the readback type, and both
 theorem treeTagify_toFir {T : Tables} {Pw : List Word} {H : Own.Heap} {ctx : Word} {m : X86.Memory}
     {sig : Sig} (hheap : HeapInv T Pw H ctx m) :
     ∀ (k : Nat) {v : Own.RVal} {w : Word} {fv : Fir.Val} {ty : FoTy} {o o' : Obs},
-      ValRel T Pw v w → Own.toFir H k v = some fv → Fir.obsV fv = some o →
+      ValRelStr T Pw v w → Own.toFir H k v = some fv → Fir.obsV fv = some o →
       treeTagify T.ctors sig ty o = some o' →
       Typed sig H ty v ∧ Fir.readback fv = some o' ∧ readback sig k m ty w = some o' := by
   have hcore : ∀ (k : Nat) {v : Own.RVal} {w : Word} {fv : Fir.Val} {ty : FoTy} {o o' : Obs},
-      ValRel T Pw v w → Own.toFir H k v = some fv → Fir.obsV fv = some o →
+      ValRelStr T Pw v w → Own.toFir H k v = some fv → Fir.obsV fv = some o →
       treeTagify T.ctors sig ty o = some o' →
       Typed sig H ty v ∧ Fir.readback fv = some o' := by
     intro k
@@ -574,7 +579,12 @@ theorem treeTagify_toFir {T : Tables} {Pw : List Word} {H : Own.Heap} {ctx : Wor
       cases v with
       | lit l =>
         cases l with
-        | str s => exact absurd hv id
+        | str s =>
+          simp only [Own.toFir, Option.some.injEq] at hfv
+          subst hfv
+          simp only [Fir.obsV, Option.some.injEq] at ho
+          subst ho
+          cases ty <;> simp [treeTagify] at ht
         | nat n =>
           simp only [Own.toFir, Option.some.injEq] at hfv
           subst hfv
@@ -623,7 +633,12 @@ theorem treeTagify_toFir {T : Tables} {Pw : List Word} {H : Own.Heap} {ctx : Wor
       cases v with
       | lit l =>
         cases l with
-        | str s => exact absurd hv id
+        | str s =>
+          simp only [Own.toFir, Option.some.injEq] at hfv
+          subst hfv
+          simp only [Fir.obsV, Option.some.injEq] at ho
+          subst ho
+          cases ty <;> simp [treeTagify] at ht
         | nat n =>
           simp only [Own.toFir, Option.some.injEq] at hfv
           subst hfv
@@ -689,7 +704,7 @@ theorem treeTagify_toFir {T : Tables} {Pw : List Word} {H : Own.Heap} {ctx : Wor
               | some tys =>
                 simp only [hsig] at ht
                 obtain ⟨os', htos, rfl⟩ := Option.map_eq_some_iff.1 ht
-                have hfields : ∀ (j : Nat) (v' : Own.RVal), b.fields[j]? = some v' → ∃ w', ValRel T Pw v' w' := by
+                have hfields : ∀ (j : Nat) (v' : Own.RVal), b.fields[j]? = some v' → ∃ w', ValRelStr T Pw v' w' := by
                   intro j v' hj
                   obtain ⟨w', -, hvw'⟩ := hca.fields j v' hj
                   exact ⟨w', hvw'⟩
@@ -712,7 +727,7 @@ relabels at a readback type is `Typed` at that type and reads back as the
 relabelling in Own and at every runtime fuel at least `H.size + 1`. -/
 theorem treeTagify_value {T : Tables} {Pw : List Word} {H : Own.Heap} {ctx : Word} {m : X86.Memory}
     {v : Own.RVal} {w : Word} {sig : Sig} {ty : FoTy} {o o' : Obs}
-    (hv : ValRel T Pw v w) (hheap : HeapInv T Pw H ctx m) (ho : Own.obsV (v, H) = some o)
+    (hv : ValRelStr T Pw v w) (hheap : HeapInv T Pw H ctx m) (ho : Own.obsV (v, H) = some o)
     (ht : treeTagify T.ctors sig ty o = some o') :
     Typed sig H ty v ∧ (∀ fuel, H.size + 1 ≤ fuel → readback sig fuel m ty w = some o') ∧
       H.readback v = some o' := by

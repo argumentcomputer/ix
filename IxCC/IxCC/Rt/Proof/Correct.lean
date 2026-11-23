@@ -74,7 +74,14 @@ theorem lower_correct_sel {cfg : Config} {P : Cfg.Program} {L : IxCC.Rt.Lowered}
     Sem.Sim (Res P ctx) (· + 1) (fun k => Cfg.run .immortal P k g args H)
       (fun k => Lir.eval { L.program with main := g } k ws mem ctx) := by
   have hl := (lower_lowers h).1
-  have hruns₁ := Cfg.runs_run .immortal (lower_ordered hl) g args H
+  obtain ⟨_, _, _, hdense⟩ := lower_spec h
+  have hord : Cfg.Ordered P := by
+    have hlc := lower_ordered hl
+    unfold lowerCfg at hlc
+    split at hlc
+    · exact hlc
+    · exact hoistStrings_ordered rfl hdense hlc
+  have hruns₁ := Cfg.runs_run .immortal hord g args H
   rcases call_step_cases (P := P) (g := g) (args := args) (H := H) with hst | ⟨fd, b0, hfd, hb0, hlen, hst⟩
   · -- Cfg is stuck at the entry
     have hstuck : ∀ k, Cfg.run .immortal P k g args H = .stuck := by
@@ -83,47 +90,106 @@ theorem lower_correct_sel {cfg : Config} {P : Cfg.Program} {L : IxCC.Rt.Lowered}
     exact { forward := fun k _ => ⟨0, by rw [hstuck k]; exact .stuck⟩
             timeout := fun k hk => by rw [hstuck] at hk; cases hk }
   · -- the entry, and the run from it
-    have ht := target_raw hl g
-    obtain ⟨callee₀, he₀, s₂', hst₀, hrel⟩ := entry_rel (ctx := ctx) ht hfd hb0 hlen hargs hheap .nil
-    have hlock := (raw_pruned hl g).lockStep.comp (pruned_split h g).lockStep
-    obtain ⟨callee₁, he₁, hcr₁⟩ := (raw_pruned hl g).enter he₀
-    obtain ⟨callee₂, he₂, hcr₂⟩ := (pruned_split h g).enter he₁
-    have hinit₂ : Lir.State.initial { L.program with main := g } ws mem ctx = some { mem, ctx, stack := [callee₂] } := by
-      simp [Lir.State.initial, he₂]
-    have hruns₂ := Lir.runs_eval hinit₂
-    have hm : (∃ u, Lir.StateRel (pruneRel P) { mem, ctx, stack := [callee₀] } u ∧
-        Lir.StateRel (splitRelOf P L.roots) u { mem, ctx, stack := [callee₂] }) :=
-      ⟨{ mem, ctx, stack := [callee₁] }, ⟨rfl, rfl, .cons hcr₁ .nil⟩, ⟨rfl, rfl, .cons hcr₂ .nil⟩⟩
-    have hd := diagram_sel (ctx := ctx) ht (.call g args [] H) hsafe
+    have hlock := (raw_pruned_str hl g).lockStep.comp (pruned_split h g).lockStep
     have hreach₁ : Reach P (.call g args [] H) (.run (entryFrame g b0 args) [] H) :=
       ⟨1, by simpa using Sem.Star.single hst⟩
-    -- carry a run of the unpruned program from the entry to the final program
-    have hcarry : ∀ {k : Nat} {r : Sem.Result (List Word × X86.Memory)}, r ≠ .stuck →
-        Sem.Reaches (Lir.semStep (stageProg P (rawOf P L.roots) g)) s₂' k r →
-        Lir.eval { L.program with main := g } k ws mem ctx = r := by
-      intro k r hr h₀
-      have h₁ : Sem.Reaches (Lir.semStep _) { mem, ctx, stack := [callee₀] } (k + 0) r := h₀.star hst₀
-      exact hruns₂.eq (hlock.reaches h₁ hr hm)
-    refine { forward := fun k hk => ?_, timeout := fun k hk => ?_ }
-    · by_cases hstuck : Cfg.run .immortal P k g args H = .stuck
-      · exact ⟨0, by rw [hstuck]; exact .stuck⟩
-      · have hreach := hruns₁ k
-        cases k with
-        | zero => exact absurd (hreach.inv_charge_zero hst) hk
-        | succ k =>
-          have h₁ := hreach.inv_charge hst
-          obtain ⟨k', r₂, hr₂, href⟩ := hd.forward h₁ hk hstuck ⟨hrel, hreach₁⟩
-          have hr₂s : r₂ ≠ .stuck := fun e => hstuck (by subst e; exact Sem.Result.Refines.of_stuck href)
-          exact ⟨k', by rw [hcarry hr₂s hr₂]; exact href⟩
-    · have hreach : Sem.Reaches (Cfg.step .immortal P) (.call g args [] H) (k + 1) .timeout := by
-        have := hruns₁ (k + 1)
-        simp only at this hk
-        rw [hk] at this
-        exact this
-      have h₁ := hreach.inv_charge hst
-      rcases hd.timeout h₁ ⟨hrel, hreach₁⟩ with h₂ | ⟨failure, h₂⟩
-      · exact .inl (hcarry (by simp) h₂)
-      · exact .inr ⟨failure, hcarry (by simp) h₂⟩
+    by_cases hemp : (lowerStrs P).isEmpty = true
+    · -- No string literals: `lowerCfg P = P`
+      have hlc : lowerCfg P = P := by simp [lowerCfg, hemp]
+      have ht := (targetStr_raw hl g).base
+      have hargsS : ListRel (ValRelStr (tables (lowerCfg P)) Pw) args ws := by
+        rw [hlc]; exact hargs.mono fun _ _ hv => hv.toStr
+      have hfd' : (lowerCfg P).fun? g = some fd := by rw [hlc]; exact hfd
+      have hheap' : HeapInv (tables (lowerCfg P)) Pw H ctx mem := by rw [hlc]; exact hheap
+      obtain ⟨callee₀, he₀, s₂', hst₀, hrel⟩ := entry_rel (ctx := ctx) ht hfd' hb0 hlen hargsS hheap' .nil
+      obtain ⟨callee₁, he₁, hcr₁⟩ := (raw_pruned_str hl g).enter he₀
+      obtain ⟨callee₂, he₂, hcr₂⟩ := (pruned_split h g).enter he₁
+      have hinit₂ : Lir.State.initial { L.program with main := g } ws mem ctx = some { mem, ctx, stack := [callee₂] } := by
+        simp [Lir.State.initial, he₂]
+      have hruns₂ := Lir.runs_eval hinit₂
+      have hm : (∃ u, Lir.StateRel (pruneRel (lowerCfg P)) { mem, ctx, stack := [callee₀] } u ∧
+          Lir.StateRel (splitRelOf (lowerCfg P) L.roots) u { mem, ctx, stack := [callee₂] }) :=
+        ⟨{ mem, ctx, stack := [callee₁] }, ⟨rfl, rfl, .cons hcr₁ .nil⟩, ⟨rfl, rfl, .cons hcr₂ .nil⟩⟩
+      have hd := diagram_sel (ctx := ctx) (hlc ▸ ht) (.call g args [] H) hsafe
+      have hrel' : Rel P (stageProgStr P (rawOf P L.roots) g) ctx (.run (entryFrame g b0 args) [] H) s₂' := by
+        simpa [hlc, entryFrame] using hrel
+      have hcarry : ∀ {k : Nat} {r : Sem.Result (List Word × X86.Memory)}, r ≠ .stuck →
+          Sem.Reaches (Lir.semStep (stageProgStr P (rawOf P L.roots) g)) s₂' k r →
+          Lir.eval { L.program with main := g } k ws mem ctx = r := by
+        intro k r hr h₀
+        have h₀' : Sem.Reaches (Lir.semStep (stageProgStr P (rawOf (lowerCfg P) L.roots) g)) s₂' k r := by
+          simpa [hlc] using h₀
+        have h₁ : Sem.Reaches (Lir.semStep _) { mem, ctx, stack := [callee₀] } (k + 0) r := h₀'.star hst₀
+        exact hruns₂.eq (hlock.reaches h₁ hr hm)
+      refine { forward := fun k hk => ?_, timeout := fun k hk => ?_ }
+      · by_cases hstuck : Cfg.run .immortal P k g args H = .stuck
+        · exact ⟨0, by rw [hstuck]; exact .stuck⟩
+        · have hreach := hruns₁ k
+          cases k with
+          | zero => exact absurd (hreach.inv_charge_zero hst) hk
+          | succ k =>
+            have h₁ := hreach.inv_charge hst
+            obtain ⟨k', r₂, hr₂, href⟩ := hd.forward h₁ hk hstuck ⟨hrel', hreach₁⟩
+            have hr₂s : r₂ ≠ .stuck := fun e => hstuck (by subst e; exact Sem.Result.Refines.of_stuck href)
+            exact ⟨k', by rw [hcarry hr₂s hr₂]; exact href⟩
+      · have hreach : Sem.Reaches (Cfg.step .immortal P) (.call g args [] H) (k + 1) .timeout := by
+          have := hruns₁ (k + 1)
+          simp only at this hk
+          rw [hk] at this
+          exact this
+        have h₁ := hreach.inv_charge hst
+        rcases hd.timeout h₁ ⟨hrel', hreach₁⟩ with h₂ | ⟨failure, h₂⟩
+        · exact .inl (hcarry (by simp) h₂)
+        · exact .inr ⟨failure, hcarry (by simp) h₂⟩
+    · -- String literals hoisted: `lowerCfg P = hoistStrings P (lowerStrFns P)`
+      have hP' : lowerCfg P = LowerStr.hoistStrings P (lowerStrFns P) := by simp [lowerCfg, hemp]
+      have ht := targetStr_raw hl g
+      obtain ⟨fd', b0', hfd', hb0', hpar', hhoist₀⟩ := hoistStrings_entry hP' (hdense hfd) hfd hb0
+      have htab : tables (lowerCfg P) = tables P := by rw [hP']; rfl
+      have hargsS : ListRel (ValRelStr (tables (lowerCfg P)) Pw) args ws := by
+        rw [htab]; exact hargs.mono fun _ _ hv => hv.toStr
+      have hheap' : HeapInv (tables (lowerCfg P)) Pw H ctx mem := by rw [htab]; exact hheap
+      obtain ⟨callee₀, he₀, s₂', hst₀, hrel⟩ :=
+        entry_rel (ctx := ctx) ht.base hfd' hb0' (by rw [hpar']; exact hlen) hargsS hheap' .nil
+      obtain ⟨callee₁, he₁, hcr₁⟩ := (raw_pruned_str hl g).enter he₀
+      obtain ⟨callee₂, he₂, hcr₂⟩ := (pruned_split h g).enter he₁
+      have hinit₂ : Lir.State.initial { L.program with main := g } ws mem ctx = some { mem, ctx, stack := [callee₂] } := by
+        simp [Lir.State.initial, he₂]
+      have hruns₂ := Lir.runs_eval hinit₂
+      have hm : (∃ u, Lir.StateRel (pruneRel (lowerCfg P)) { mem, ctx, stack := [callee₀] } u ∧
+          Lir.StateRel (splitRelOf (lowerCfg P) L.roots) u { mem, ctx, stack := [callee₂] }) :=
+        ⟨{ mem, ctx, stack := [callee₁] }, ⟨rfl, rfl, .cons hcr₁ .nil⟩, ⟨rfl, rfl, .cons hcr₂ .nil⟩⟩
+      have hd := hoist_to_lir_forward (ctx := ctx) hP' hdense ht (.call g args [] H) hsafe
+      have hcarry : ∀ {k : Nat} {r : Sem.Result (List Word × X86.Memory)}, r ≠ .stuck →
+          Sem.Reaches (Lir.semStep (stageProgStr P (rawOf (lowerCfg P) L.roots) g)) s₂' k r →
+          Lir.eval { L.program with main := g } k ws mem ctx = r := by
+        intro k r hr h₀
+        have h₁ : Sem.Reaches (Lir.semStep _) { mem, ctx, stack := [callee₀] } (k + 0) r := h₀.star hst₀
+        exact hruns₂.eq (hlock.reaches h₁ hr hm)
+      have hinit_rel : ∃ s₂, HoistRel P (lowerCfg P) (.run (entryFrame g b0 args) [] H) s₂ ∧
+          Rel (lowerCfg P) (stageProgStr P (rawOf (lowerCfg P) L.roots) g) ctx s₂ s₂' ∧
+          Reach P (.call g args [] H) (.run (entryFrame g b0 args) [] H) :=
+        ⟨_, hhoist₀, hrel, hreach₁⟩
+      refine { forward := fun k hk => ?_, timeout := fun k hk => ?_ }
+      · by_cases hstuck : Cfg.run .immortal P k g args H = .stuck
+        · exact ⟨0, by rw [hstuck]; exact .stuck⟩
+        · have hreach := hruns₁ k
+          cases k with
+          | zero => exact absurd (hreach.inv_charge_zero hst) hk
+          | succ k =>
+            have h₁ := hreach.inv_charge hst
+            obtain ⟨k', r₂, hr₂, href⟩ := hd.forward h₁ hk hstuck hinit_rel
+            have hr₂s : r₂ ≠ .stuck := fun e => hstuck (by subst e; exact Sem.Result.Refines.of_stuck href)
+            exact ⟨k', by rw [hcarry hr₂s hr₂]; exact href⟩
+      · have hreach : Sem.Reaches (Cfg.step .immortal P) (.call g args [] H) (k + 1) .timeout := by
+          have := hruns₁ (k + 1)
+          simp only at this hk
+          rw [hk] at this
+          exact this
+        have h₁ := hreach.inv_charge hst
+        rcases hd.timeout h₁ hinit_rel with h₂ | ⟨failure, h₂⟩
+        · exact .inl (hcarry (by simp) h₂)
+        · exact .inr ⟨failure, hcarry (by simp) h₂⟩
 
 /-- **`Rt.lower_correct`**: the runtime lowering simulates Cfg's immortal
 semantics, with the clock map `k ↦ k + 1` at the level of `Cfg.run` and

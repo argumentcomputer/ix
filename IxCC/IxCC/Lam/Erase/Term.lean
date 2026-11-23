@@ -573,8 +573,7 @@ def term (I : Input) : Nat → Rec
       | none => decline "erase-scope" s!"variable #{i} out of scope"
     | .sort _ | .pi .. => pure .box
     | .natLit n => pure (.lit (.nat n))
-    | .strLit _ =>
-      decline "erase-string" "a string literal in a relevant position (declined before K4)"
+    | .strLit s => pure (.lit (.str s))
     | .lam b _ body => return .lam .strict b.mode.input (← rec_ cx.bind body)
     | .letE _ m r _ v b => do
       let v' ← if r.irrP cx.prof then pure .box else rec_ cx v

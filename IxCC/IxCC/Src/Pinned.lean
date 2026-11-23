@@ -121,6 +121,12 @@ def lazyRows : List (String × String × Nat) :=
 def opaqueByValueRows : List (String × String) :=
   [ ("Lean.opaqueId", "ef85cfcf05fee3d8108813b6b572dc2d4561a7b1ea5f177f245fe5c5adca5be9") ]
 
+/-- Additional DR4 safe opaque-by-value pins outside `src-tables.tsv`:
+`String.Internal.append`, whose kernel value is `fun _ _ => ""` and which every
+`panic!` / `mkPanicMessageWithDecl` closure reaches in Lean 4.34.1. -/
+def dr4OpaqueByValuePins : List Nat :=
+  [ 0xc9871db17e796f967e4d675ad2530f0beab143c8a4a277e726494c6955eabe1f ] -- String.Internal.append
+
 /-- `word-type`, `word-ctor`, `word-part` and `word` rows of `src-tables.tsv` (stage W1): kind,
 name and address. The words' constants have no kernel role, so ingress always takes these. -/
 def wordTableRows : List (String × String × String) :=

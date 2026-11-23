@@ -205,13 +205,14 @@ def build (cfg : Config) (p : Program) (hints : Array Proposal) :
       if let .ok () := checkLazy p c arity then
         lazy := lazy.insert c arity
         stats := { stats with sparseAccepted := stats.sparseAccepted.push c }
-  -- opaque-by-value allowlist.
+  -- opaque-by-value allowlist (D12 + DR4 safe opaques).
   let mut opaqueByValue : NatSet := .leaf
-  for n in p.known.pins.opaqueByValue do
+  for n in p.known.pins.opaqueByValue ++ Pinned.dr4OpaqueByValuePins do
     if let some c := lookup (Pinned.addrOfNat n) then
       if let some (.defn _ .safe _ _ _) := p.decl? c then
-        opaqueByValue := opaqueByValue.insert c
-        stats := { stats with opaqueByValue := stats.opaqueByValue.push c }
+        if !opaqueByValue.contains c then
+          opaqueByValue := opaqueByValue.insert c
+          stats := { stats with opaqueByValue := stats.opaqueByValue.push c }
   -- inline hints.
   let mut inline : NatSet := .leaf
   for prop in hints do

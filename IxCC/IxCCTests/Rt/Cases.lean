@@ -1,4 +1,5 @@
 import IxCCTests.Rt.Support
+import IxCC.Rt.Readback.Array
 
 /-! Hand-written programs for `Rt.lower` (tests 1 and
 6):
@@ -332,8 +333,7 @@ def hasDiv32 (f : Lir.Func) : Bool :=
     | _ => false
 
 def declines : List (String × CProgram × String) :=
-  [("a string literal", cfgOf (prog [([0], .bind 1 (.arg (.lit (.str "s"))) (.ret (v 1)))]), "rt.string"),
-   ("a Nat constructor cell", cfgOf (prog [([0], .bind 1 (.ctor (info natS) [v 0]) (.ret (v 1)))]), "rt.layout"),
+  [("a Nat constructor cell", cfgOf (prog [([0], .bind 1 (.ctor (info natS) [v 0]) (.ret (v 1)))]), "rt.layout"),
    ("a tag beyond 0x7EFF", cfgOf (prog [([0], .bind 1 (.ctor (info wideK) [v 0]) (.ret (v 1)))]), "rt.layout"),
    ("255 fields", cfgOf (prog [([0], .bind 1 (.ctor (info manyK) (List.replicate 255 (v 0))) (.ret (v 1)))]), "rt.layout"),
    ("a Fir constructor in Cfg", cfgProg [[{ params := ps [0], body := [.bind 1 (.fir (.ctor (info pairK) [v 0, v 0]))], term := .ret (v 1) }]], "rt.form"),
@@ -460,6 +460,18 @@ def handWritten (a : Assert) : IO (Array String) := do
     | .error err => expect a (err.render.startsWith code) s!"{label}: declined with {err.render}, expected {code}"
     | .ok _ => expect a false s!"{label}: not declined"
   out := out.push s!"{declines.length} declines with their codes"
+  -- DR4 string literal lowering, .rodata export, and UTF-8 readback
+  let strCfg := cfgOf (prog [([0], .bind 1 (.arg (.lit (.str "hello"))) (.ret (v 1)))])
+  let (ls, ms) ← lirOf strCfg
+  checkLir a ls "string literal"
+  expect a ls.rodata.isSome "string literal populates .rodata bytes"
+  expect a (!ls.rodataExports.isEmpty) "string literal exports .rodata symbol"
+  match ← runLir ls 0 1000 [0] ms with
+  | .ok ([sw], mem') =>
+    expect a (IxCC.Rt.Readback.readbackString mem' sw == some "hello")
+      s!"string literal readback: got {repr (IxCC.Rt.Readback.readbackString mem' sw)}"
+  | other => expect a false s!"string literal run failed: {lirOutcome other}"
+  out := out.push "DR4 string literal lowers to static ByteArray cell and reads back UTF-8"
   -- cx_init's checks
   expect a (initFails l 0x10004 4096) "cx_init accepts a misaligned region"
   expect a (initFails l 0x10000 4095) "cx_init accepts a region below 4 KiB"

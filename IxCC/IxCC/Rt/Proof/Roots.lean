@@ -118,10 +118,21 @@ theorem lower_root_func {cfg : Config} {P : Cfg.Program} {L : IxCC.Rt.Lowered} (
       F.params.length = fd.params.length := by
   obtain ⟨funcs, hfs, hprog, -⟩ := lower_spec h
   obtain ⟨hlen, hget⟩ := functions_spec hfs
-  obtain ⟨fd, F, hfd, hF, hfF⟩ := hget (i := fn) (f := fn) (by simp [hlt])
+  obtain ⟨fd', F, hfd', hF, hfF⟩ := hget (i := fn) (f := fn) (by simp [hlt])
   obtain ⟨hpar, hconv⟩ := function_params hF
-  refine ⟨fd, F, hfd, ?_, by rw [hconv, lower_root_conv h hr], hpar⟩
-  rw [hprog, List.getElem?_toArray, List.getElem?_append_left (by simp at hlen; omega)]
+  have hfd_orig : ∃ fd, P.fun? fn = some fd ∧ fd'.params = fd.params := by
+    rw [lowerCfg_fun? hlt] at hfd'
+    split at hfd'
+    · exact ⟨fd', hfd', rfl⟩
+    · cases hp : P.fun? fn with
+      | none => simp [hp] at hfd'
+      | some fd =>
+        simp only [hp, Option.map_some, Option.some.injEq] at hfd'
+        subst hfd'
+        exact ⟨fd, rfl, hoistFun_params _ _ fd⟩
+  obtain ⟨fd, hfd, hfdp⟩ := hfd_orig
+  refine ⟨fd, F, hfd, ?_, by rw [hconv, lower_root_conv h hr], by rw [hpar, hfdp]⟩
+  rw [hprog, List.append_assoc, List.getElem?_toArray, List.getElem?_append_left (by simp at hlen; omega)]
   exact hfF
 
 end IxCC.Rt.Proof

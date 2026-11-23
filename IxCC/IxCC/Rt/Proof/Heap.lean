@@ -47,13 +47,41 @@ structure CtorOk (T : Tables) (c : Fir.CtorInfo) : Prop where
   notNat : isNatKey T c.key = false
   tag : c.tag ≤ maxTag
 
-/-- The value relation (Phase 1). -/
-def ValRel (T : Tables) (P : List Word) : Own.RVal → Word → Prop
+/-- Generalized value relation: when `allowStr = true`, a string literal
+`.lit (.str s)` relates to any 8-byte-aligned non-zero cell address (static `.rodata`
+or materialized `strLitProc` cell). -/
+def ValRelG (allowStr : Bool) (T : Tables) (P : List Word) : Own.RVal → Word → Prop
   | .lit (.nat n), w => natWord n = some w
-  | .lit (.str _), _ => False
+  | .lit (.str _), w => if allowStr then w.toNat % 8 = 0 ∧ w ≠ 0 else False
   | .ctor0 c, w => w = ctor0Word c.tag ∧ CtorOk T c ∧ c.fieldless = true
   | .erased, w => w = erasedWord
   | .loc ℓ, w => P[ℓ]? = some w
+
+/-- The value relation (Phase 1 string-free, preserved identically for `Cfg.Rc.Proof`). -/
+abbrev ValRel := ValRelG false
+
+/-- The DR4 value relation permitting static string pointers. -/
+abbrev ValRelStr := ValRelG true
+
+theorem ValRel.toStr {T : Tables} {P : List Word} :
+    ∀ {v : Own.RVal} {w : Word}, ValRel T P v w → ValRelStr T P v w
+  | .lit (.nat _), _, h => h
+  | .lit (.str _), _, h => absurd h id
+  | .ctor0 _, _, h => h
+  | .erased, _, h => h
+  | .loc _, _, h => h
+
+theorem ValRelG.mono {allowStr : Bool} {T : Tables} {P P' : List Word} (hP : P <+: P') :
+    ∀ {v : Own.RVal} {w : Word}, ValRelG allowStr T P v w → ValRelG allowStr T P' v w
+  | .lit (.nat _), _, h => h
+  | .lit (.str _), _, h => h
+  | .ctor0 _, _, h => h
+  | .erased, _, h => h
+  | .loc ℓ, w, h => by
+    simp only [ValRelG] at h ⊢
+    obtain ⟨t, rfl⟩ := hP
+    rw [List.getElem?_append_left (List.getElem?_eq_some_iff.1 h).1]
+    exact h
 
 theorem ValRel.mono {T : Tables} {P P' : List Word} (hP : P <+: P') :
     ∀ {v : Own.RVal} {w : Word}, ValRel T P v w → ValRel T P' v w
@@ -62,7 +90,7 @@ theorem ValRel.mono {T : Tables} {P P' : List Word} (hP : P <+: P') :
   | .ctor0 _, _, h => h
   | .erased, _, h => h
   | .loc ℓ, w, h => by
-    simp only [ValRel] at h ⊢
+    simp only [ValRel, ValRelG] at h ⊢
     obtain ⟨t, rfl⟩ := hP
     rw [List.getElem?_append_left (List.lt_length_of_getElem? h)]
     exact h
@@ -114,7 +142,7 @@ structure CellAt (T : Tables) (P : List Word) (m : Memory) (a : Word) (b : Own.B
   aligned : a.toNat % 8 = 0
   header : WordAt m a (immortalHeader b.fields.length b.ctor.tag)
   fields : ∀ (i : Nat) (v : Own.RVal), b.fields[i]? = some v →
-    ∃ w, WordAt m (a + UInt64.ofNat (8 + 8 * i)) w ∧ ValRel T P v w
+    ∃ w, WordAt m (a + UInt64.ofNat (8 + 8 * i)) w ∧ ValRelStr T P v w
 
 /-- The heap invariant with the bump pointer and the limit the context
 block holds. -/
@@ -167,7 +195,7 @@ theorem cell_even {a : Word} (h : a.toNat % 8 = 0) : a &&& 1 ≠ 1 := by
 /-- A field of a cell reads as a related word. -/
 theorem proj_mem {T : Tables} {P : List Word} {m : Memory} {a : Word} {b : Own.Body} (hc : CellAt T P m a b)
     {i : Nat} {v : Own.RVal} (hi : b.fields[i]? = some v) :
-    ∃ w, m.read? .w64 (a + UInt64.ofNat (8 + 8 * i)) = .ok w ∧ ValRel T P v w := by
+    ∃ w, m.read? .w64 (a + UInt64.ofNat (8 + 8 * i)) = .ok w ∧ ValRelStr T P v w := by
   obtain ⟨w, hw, hv⟩ := hc.fields i v hi
   exact ⟨w, hw.read64, hv⟩
 

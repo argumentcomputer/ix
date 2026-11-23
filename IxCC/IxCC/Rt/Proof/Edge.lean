@@ -28,7 +28,7 @@ open IxCC.Src (NatMap)
 /-- Edge arguments bind the target's parameters on both sides. -/
 theorem bind_rel {T : Tables} {P : List Word} {D : Nat → Prop} {sup : Nat} :
     ∀ {ps : List Nat} {vs : List Own.RVal} {ws : List Word} {ρ : Own.Env} {ρl : Lir.Env},
-      EnvRel T P D sup ρ ρl → ListRel (ValRel T P) vs ws → ps.length = vs.length → (∀ y ∈ ps, y < sup) →
+      EnvRel T P D sup ρ ρl → ListRel (ValRelStr T P) vs ws → ps.length = vs.length → (∀ y ∈ ps, y < sup) →
       ∃ ρt, Lir.bindParams ρl ps ws = some ρt ∧ EnvRel T P D sup (Own.bindAll ρ ps vs) ρt
   | [], [], [], _, _, hρ, _, _, _ => ⟨_, rfl, hρ⟩
   | y :: ps, v :: vs, w :: ws, _, _, hρ, .cons hv hrel, hlen, hps => by

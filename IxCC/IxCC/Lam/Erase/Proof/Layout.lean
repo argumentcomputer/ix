@@ -176,6 +176,10 @@ theorem keptCount_prof (c : CId) (q : Profile) (n : Nat) :
 
 theorem unbox?_prof (t : CId) (q : Profile) : I.unbox? t q = I.unbox? t [] := by
   unfold unbox?
+  cases I.noUnbox.contains t with
+  | true => rfl
+  | false =>
+  simp only [Bool.false_eq_true, ↓reduceIte]
   cases I.decl? t with
   | none => rfl
   | some d =>

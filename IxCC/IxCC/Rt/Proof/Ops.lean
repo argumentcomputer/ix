@@ -482,7 +482,7 @@ theorem prim_cmp {T : Tables} (hT : BoolsOk T) {f : Fir.FunId} {lp : Lir.Program
           refine ⟨rfl, ρl.insert x (if c.holds .w64 wa wb then t else e), ?_, ?_⟩
           · rcases compareOf_cases hc with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
               simp only [lir_eval, ha, hb, ↓reduceIte]
-          · exact hρ.insert hx (bool_rel hT hte hres)
+          · exact hρ.insert hx (bool_rel hT hte hres).toStr
 
 /-! ## `natPred` -/
 

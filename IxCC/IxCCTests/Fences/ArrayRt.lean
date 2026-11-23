@@ -6,6 +6,7 @@ import IxCC.Rt.Rc.Array.Proof.BasicOps
 import IxCC.Rt.Rc.Array.Proof.MutOps
 import IxCC.Rt.Rc.Array.Proof.Release
 import IxCC.Rt.Rc.Array.Proof.Alloc
+import IxCC.Rt.Proof.ArrayWire
 
 /-! Exact axiom fences for DR3 native contiguous array runtime (`Layout`,
 `Invariant`, `Procs`, `Proof.{Classes,BasicOps,MutOps,Release,Alloc}`).
@@ -162,3 +163,38 @@ Every theorem depends strictly on subsets of
 
 /-- info: 'IxCC.Rt.Rc.Array.byteArrEmptyCap_bump_eval' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Rt.Rc.Array.byteArrEmptyCap_bump_eval
+
+/-! ### DR1 / DR3 / DR4 Array & Static String Wiring (`Rt.Proof.ArrayWire`) -/
+
+/-- info: 'IxCC.Rt.Proof.buildStringRodata_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.buildStringRodata_spec
+
+/-- info: 'IxCC.Rt.Proof.buildStringRodata_staticCell' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.buildStringRodata_staticCell
+
+/-- info: 'IxCC.Rt.Proof.buildStringRodata_readbackString' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.buildStringRodata_readbackString
+
+/-- info: 'IxCC.Rt.Proof.buildStringRodata_linkedRodata_readbackString' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.buildStringRodata_linkedRodata_readbackString
+
+/-- info: 'IxCC.Rt.Proof.rodataStrProc_eval' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.rodataStrProc_eval
+
+/-- info: 'IxCC.Rt.Proof.bytesToWords64_byte_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.bytesToWords64_byte_eq
+
+/-- info: 'IxCC.Rt.Proof.storeWords_wordAt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.storeWords_wordAt
+
+/-- info: 'IxCC.Rt.Proof.strLitProc_staticCell' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.strLitProc_staticCell
+
+/-- info: 'IxCC.Rt.Proof.strLitProc_readbackString' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.strLitProc_readbackString
+
+/-- info: 'IxCC.Rt.Proof.relocateFunc_meta' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.relocateFunc_meta
+
+/-- info: 'IxCC.Rt.Proof.extendedArrayRuntimeFuncs_len' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.extendedArrayRuntimeFuncs_len

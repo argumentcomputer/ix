@@ -170,7 +170,7 @@ def produceOnce (B : Budgets := {}) (L : Lam.Program) : Except String Trace := d
           (fun Q => match Shrink.produce B.shrink Q with
             | .ok (c, Q', _) => .ok (c, Q')
             | .error e => .error e)
-          P.size Q8
+          P.size Q8 B.inline.noInline
         (some pc, some Qout)
       | .error _ => (none, none)
   return { cert := { shrink := B.shrink.params, steps := steps.toList, post }

@@ -95,7 +95,7 @@ theorem step_term_sel {P : Cfg.Program} {lp : Lir.Program} {ctx : Word} (ht : Ta
     (hfr : fr.rest = [])
     (hdisp : ∀ fd b x alts d v key fs e Pw w ctx' m, P.fun? fr.fn = some fd → fd.blocks[fr.blk]? = some b →
       fusable (tables P) (useCounts fd) b = none → b.term = .switch x alts d → fr.env.get? x = some v →
-      ValRel (tables P) Pw v w → HeapInv (tables P) Pw H ctx' m → v.asCtor P.known H = some (key, fs) →
+      ValRelStr (tables P) Pw v w → HeapInv (tables P) Pw H ctx' m → v.asCtor P.known H = some (key, fs) →
       Cfg.selectEdge key alts d = some e → Dispatches (tables P) H v alts)
     {s₁' : Cfg.State} {bb : Bool} (hs : Cfg.step .immortal P (.run fr stk H) = .next s₁' bb) :
     (∃ c s₂', Sem.Star (Lir.semStep lp) s₂ c s₂' ∧ bb.toNat ≤ c ∧ Rel P lp ctx s₁' s₂') ∨
@@ -168,8 +168,8 @@ theorem step_term_sel {P : Cfg.Program} {lp : Lir.Program} {ctx : Word} (ht : Ta
           rw [hterm] at h₂
           simp only at h₂
           obtain ⟨ws, hws, hrelw, -⟩ := operands_rel hρ hops hlive hvs
-          obtain ⟨wa, wb, rfl, hva, hvb⟩ : ∃ wa wb, ws = [wa, wb] ∧ ValRel (tables P) Pw va wa ∧
-              ValRel (tables P) Pw vb wb := by
+          obtain ⟨wa, wb, rfl, hva, hvb⟩ : ∃ wa wb, ws = [wa, wb] ∧ ValRelStr (tables P) Pw va wa ∧
+              ValRelStr (tables P) Pw vb wb := by
             rcases hrelw with _ | ⟨hva, hrelw'⟩
             rcases hrelw' with _ | ⟨hvb, hnil⟩
             cases hnil

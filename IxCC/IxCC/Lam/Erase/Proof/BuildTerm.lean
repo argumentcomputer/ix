@@ -206,7 +206,7 @@ theorem sound_term (I : Input) : ∀ n : Nat, RecSound I (term I n)
     | sort u => exact Sound.pure fun _ => .sort
     | pi b d c => exact Sound.pure fun _ => .pi
     | natLit k => exact Sound.pure fun _ => .natLit
-    | strLit _ => exact Sound.decline
+    | strLit s => exact Sound.pure fun _ => .strLit
     | lam b d body =>
       exact Sound.bind (ih cx.bind body) fun t => Sound.pure fun _ h => .lam .strict h
     | letE nd m r ty v b =>

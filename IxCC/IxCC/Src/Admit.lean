@@ -152,10 +152,6 @@ def admit (p : Program) (names : Address → Option String := fun _ => none)
       if first then
         keys := keys.push key
         nodes := nodes + t.nodes
-      if hasRelevantString prof t then
-        diags := diags.push (Diag.of "unsupported"
-          "a string literal in a relevant position (strings are declined before K4)"
-          (some (p.addr c)) (pathOf parent c) (names (p.addr c)))
     for (d, q) in p.instRefs c prof do queue := queue.push (p.instOf d q, some c)
   if nodes > cfg.maxNodes then
     diags := diags.push (Diag.of "budget" s!"runtime terms exceed {cfg.maxNodes} nodes")

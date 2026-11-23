@@ -85,14 +85,14 @@ def Rel (P : Cfg.Program) (lp : Lir.Program) (ctx : Word) (s₁ : Cfg.State) (s�
     match s₁ with
     | .run fr stk _ => ∃ lfr lrest, s₂.stack = lfr :: lrest ∧ RunAt P lp Pw fr lfr ∧
         ListRel (SuspAt P lp Pw) stk lrest
-    | .call g vs stk _ => ∃ ws lrest, ListRel (ValRel (tables P) Pw) vs ws ∧ ListRel (SuspAt P lp Pw) stk lrest ∧
+    | .call g vs stk _ => ∃ ws lrest, ListRel (ValRelStr (tables P) Pw) vs ws ∧ ListRel (SuspAt P lp Pw) stk lrest ∧
         ∀ callee, Lir.enter lp g ws = some callee → Lir.step lp s₂ = .next { s₂ with stack := callee :: lrest } true
-    | .ret v stk _ => ∃ lfr lrest w, s₂.stack = lfr :: lrest ∧ ValRel (tables P) Pw v w ∧ RetAt lp lfr w ∧
+    | .ret v stk _ => ∃ lfr lrest w, s₂.stack = lfr :: lrest ∧ ValRelStr (tables P) Pw v w ∧ RetAt lp lfr w ∧
         ListRel (SuspAt P lp Pw) stk lrest
 
 /-- **Related final values**: one related word, under the heap invariant. -/
 def Res (P : Cfg.Program) (ctx : Word) (r₁ : Own.RVal × Own.Heap) (r₂ : List Word × X86.Memory) : Prop :=
-  ∃ Pw w, r₂.1 = [w] ∧ ValRel (tables P) Pw r₁.1 w ∧ HeapInv (tables P) Pw r₁.2 ctx r₂.2
+  ∃ Pw w, r₂.1 = [w] ∧ ValRelStr (tables P) Pw r₁.1 w ∧ HeapInv (tables P) Pw r₁.2 ctx r₂.2
 
 theorem SuspAt.mono {P : Cfg.Program} {lp : Lir.Program} {Pw Pw' : List Word} (hP : Pw <+: Pw')
     {p : Cfg.Frame × Nat} {lfr : Lir.Frame} (h : SuspAt P lp Pw p lfr) : SuspAt P lp Pw' p lfr := by

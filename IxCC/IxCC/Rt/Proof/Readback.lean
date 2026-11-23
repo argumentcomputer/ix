@@ -71,7 +71,7 @@ theorem fields_readback {H : Own.Heap} {k : Nat} {F : FoTy × Nat → Option Sem
 /-- **The two readbacks agree at every fuel.** -/
 theorem readback_toFir {T : Tables} {P : List Word} {H : Own.Heap} {ctx : Word} {m : X86.Memory} {sig : Sig}
     (hheap : HeapInv T P H ctx m) :
-    ∀ (k : Nat) {ty : FoTy} {v : Own.RVal} {w : Word}, Typed sig H ty v → ValRel T P v w →
+    ∀ (k : Nat) {ty : FoTy} {v : Own.RVal} {w : Word}, Typed sig H ty v → ValRelStr T P v w →
       readback sig k m ty w = (Own.toFir H k v).bind Fir.readback := by
   obtain ⟨bump, limit, hA⟩ := hheap
   intro k
@@ -128,7 +128,7 @@ of a word related to a value of the read type is Own's readback of the
 value. -/
 theorem readback_sound {T : Tables} {P : List Word} {H : Own.Heap} {ctx : Word} {m : X86.Memory} {sig : Sig}
     {ty : FoTy} {v : Own.RVal} {w : Word} (hheap : HeapInv T P H ctx m) (hty : Typed sig H ty v)
-    (hrel : ValRel T P v w) : readback sig (H.size + 1) m ty w = H.readback v :=
+    (hrel : ValRelStr T P v w) : readback sig (H.size + 1) m ty w = H.readback v :=
   readback_toFir hheap (H.size + 1) hty hrel
 
 end IxCC.Rt.Proof

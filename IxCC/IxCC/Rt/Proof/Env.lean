@@ -28,7 +28,7 @@ open IxCC.Rt.Lower (Tables)
 structure EnvRel (T : Tables) (P : List Word) (D : Nat → Prop) (sup : Nat) (ρ : Own.Env) (ρl : Lir.Env) :
     Prop where
   dom : ∀ {y : Nat} {v : Own.RVal}, ρ.get? y = some v → y < sup
-  val : ∀ {y : Nat} {v : Own.RVal}, ρ.get? y = some v → ¬ D y → ∃ w, ρl[y]? = some w ∧ ValRel T P v w
+  val : ∀ {y : Nat} {v : Own.RVal}, ρ.get? y = some v → ¬ D y → ∃ w, ρl[y]? = some w ∧ ValRelStr T P v w
 
 namespace EnvRel
 
@@ -38,7 +38,7 @@ theorem mono {P' : List Word} (hP : P <+: P') (h : EnvRel T P D sup ρ ρl) : En
   dom := h.dom
   val hy hD := by
     obtain ⟨w, hw, hv⟩ := h.val hy hD
-    exact ⟨w, hw, ValRel.mono hP hv⟩
+    exact ⟨w, hw, ValRelG.mono hP hv⟩
 
 /-- A temporary at or above the supply changes nothing the relation sees. -/
 theorem temp {t : Nat} (ht : sup ≤ t) (u : Word) (h : EnvRel T P D sup ρ ρl) :
@@ -52,7 +52,7 @@ theorem temp {t : Nat} (ht : sup ≤ t) (u : Word) (h : EnvRel T P D sup ρ ρl)
     rw [Lir.env_insert_ne (y := y) _ _ (Nat.ne_of_gt (by omega))]
     exact hw
 
-theorem insert {x : Nat} {v : Own.RVal} {w : Word} (hx : x < sup) (hv : ValRel T P v w)
+theorem insert {x : Nat} {v : Own.RVal} {w : Word} (hx : x < sup) (hv : ValRelStr T P v w)
     (h : EnvRel T P D sup ρ ρl) : EnvRel T P D sup (ρ.insert x v) (ρl.insert x w) where
   dom := by
     intro y v' hy
@@ -112,7 +112,7 @@ def LiveArg (D : Nat → Prop) (a : Fir.Arg) : Prop := ∀ y, a = .var y → ¬ 
 theorem operand_rel {T : Tables} {P : List Word} {D : Nat → Prop} {sup : Nat} {ρ : Own.Env} {ρl : Lir.Env}
     (hρ : EnvRel T P D sup ρ ρl) {f : Fir.FunId} {a : Fir.Arg} {la : Lir.Arg}
     (ho : Lower.operand f a = .ok (some la)) (hl : LiveArg D a) {v : Own.RVal} (hv : Own.evalArg ρ a = some v) :
-    ∃ w, la.eval ρl = some w ∧ ValRel T P v w ∧ ArgReads sup la := by
+    ∃ w, la.eval ρl = some w ∧ ValRelStr T P v w ∧ ArgReads sup la := by
   cases a with
   | var y =>
     simp only [Lower.operand, pure, Except.pure, Except.ok.injEq, Option.some.injEq] at ho
@@ -146,7 +146,7 @@ theorem operands_rel {T : Tables} {P : List Word} {D : Nat → Prop} {sup : Nat}
     (hρ : EnvRel T P D sup ρ ρl) {f : Fir.FunId} :
     ∀ {as : List Fir.Arg} {las : List Lir.Arg}, Lower.operands f as = .ok (some las) → (∀ a ∈ as, LiveArg D a) →
       ∀ {vs : List Own.RVal}, Own.evalArgs ρ as = some vs →
-      ∃ ws, Lir.evalArgs ρl las = some ws ∧ ListRel (ValRel T P) vs ws ∧ ∀ la ∈ las, ArgReads sup la
+      ∃ ws, Lir.evalArgs ρl las = some ws ∧ ListRel (ValRelStr T P) vs ws ∧ ∀ la ∈ las, ArgReads sup la
   | [], las, ho, _, vs, hv => by
     simp only [Lower.operands, pure, Except.pure, Except.ok.injEq, Option.some.injEq] at ho
     subst ho

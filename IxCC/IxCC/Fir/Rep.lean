@@ -1,6 +1,7 @@
 import IxCC.Fir.Semantics
 import IxCC.Lam.WordSem
 import IxCC.Lam.Erase.Limb
+import IxCC.Lam.Erase.Array
 
 /-! # DR2 Stage W2: Checked Word Representations, Scalar Fields, and `box` / `unbox` in Fir
 
@@ -65,11 +66,63 @@ def FunCert.varRep (fc : FunCert) (x : Var) : Fir.Rep := fc.vars.getD x .tobj
 
 def FunCert.joinReps (fc : FunCert) (j : JoinId) : List Fir.Rep := fc.joins.getD j []
 
-/-- Program-wide Stage W2 representation certificate. -/
+/-- Native contiguous array/bytearray primitive operation bound to a `Fir.FunId` (DR3). -/
+inductive ArrayPrimOp where
+  | emptyCap
+  | size
+  | get
+  | getBang
+  | set
+  | push
+  | pop
+  | extract
+  | copySlice
+  | swap
+  deriving DecidableEq, Repr, Inhabited
+
+/-- Whether an array primitive may mutate its receiver in place when unique (`rc == 0`). -/
+def ArrayPrimOp.isMutating : ArrayPrimOp → Bool
+  | .set | .push | .pop | .copySlice | .swap => true
+  | .emptyCap | .size | .get | .getBang | .extract => false
+
+/-- Binding of one `Fir.FunId` to a native DR3 array/bytearray runtime proc.
+`argIdx` gives the surviving `Fir.Fun` parameter positions (after any `DeadParam`
+stripping) corresponding to the runtime proc's value arguments:
+* `emptyCap`: `[]` (capacity 0) or `[capIdx]`
+* `size`: `[arrIdx]`
+* `get`: `[arrIdx, idxIdx]`
+* `set`: `[arrIdx, idxIdx, valIdx]`
+* `push`: `[arrIdx, valIdx]`
+* `pop`: `[arrIdx]`
+* `extract`: `[arrIdx, startIdx, stopIdx]`
+* `copySlice`: `[srcIdx, srcOffIdx, destIdx, destOffIdx, lenIdx]`
+* `swap`: `[arrIdx, iIdx, jIdx]` -/
+structure ArrayPrimSpec where
+  op : ArrayPrimOp
+  kind : Src.ArrayRepKind
+  argIdx : List Nat
+  deriving DecidableEq, Repr, Inhabited
+
+/-- Program-wide Stage W2 + DR3 representation certificate. -/
 structure Cert where
   funs : Src.NatMap FunCert := .leaf
   ctors : List CtorRep := []
+  /-- DR3 native array/bytearray primitive bindings by `Fir.FunId`. -/
+  arrayPrims : Src.NatMap ArrayPrimSpec := .leaf
+  /-- Constructor key of `Array.mk` when `Array` is lowered to native contiguous cells. -/
+  arrayMkKey : Option Key.CtorKey := none
+  /-- Representation kind for `Array.mk` / `Array.toList` (`.boxed` or `.limbs`). -/
+  arrayMkKind : Src.ArrayRepKind := .boxed
+  /-- Constructor key of `ByteArray.mk` when `ByteArray` is lowered to packed byte cells. -/
+  byteArrayMkKey : Option Key.CtorKey := none
+  /-- Tag of `List.nil` (for `arrToList*` bridges). -/
+  listNilTag : Nat := 0
+  /-- Tag of `List.cons` (for `arrToList*` bridges). -/
+  listConsTag : Nat := 1
   deriving Inhabited
+
+def Cert.hasArrays (cert : Cert) : Bool :=
+  !cert.arrayPrims.toList.isEmpty || cert.arrayMkKey.isSome || cert.byteArrayMkKey.isSome
 
 def Cert.empty : Cert := {}
 
@@ -177,7 +230,7 @@ def checkRhs (P : Program) (cert : Cert) (fc : FunCert) (x : Var) (rhs : Fir.Rhs
     if isCmpPrim op then
       match as with
       | [a, b] =>
-        (argCompat fc a .word && argCompat fc b .word) ||
+        (wordPrimArgOk fc a && wordPrimArgOk fc b) ||
         (argCompat fc a .tobj && argCompat fc b .tobj)
       | _ => false
     else
@@ -520,5 +573,380 @@ def infer (P : Program) : Cert :=
       else m.insert f { params := List.replicate fd.params.length .tobj, ret := .tobj }
     | none => m
   { funs, ctors := [] }
+
+/-! ## DR3 Array & ByteArray Certificate Validation and Inference -/
+
+/-- Validate one `ArrayPrimSpec` binding against function `fd` and its `FunCert`. -/
+def checkArrayPrimSpec (fd : Fun) (fc : FunCert) (spec : ArrayPrimSpec) : Bool :=
+  let arity := fd.params.length
+  let inBounds := spec.argIdx.all (· < arity)
+  let arityOk :=
+    match spec.op with
+    | .emptyCap => spec.argIdx.length ≤ 1
+    | .size | .pop => spec.argIdx.length == 1
+    | .get | .getBang | .push => spec.argIdx.length == 2
+    | .set | .extract | .swap => spec.argIdx.length == 3
+    | .copySlice => spec.argIdx.length == 5
+  let retOk :=
+    match spec.op, spec.kind with
+    | .get, .limbs => fc.ret == .word || fc.ret == .obj
+    | _, _ => fc.ret == .tobj || fc.ret == .obj
+  inBounds && arityOk && isValidRep fc.ret && retOk &&
+  checkParams fc (fd.params.map (·.1)) fc.params
+
+/-- **DR3 + Stage W2 certificate checker**: validates all constructor scalar-tail overrides,
+validates every pinned array/bytearray primitive binding via `checkArrayPrimSpec`, and runs
+`checkFun` on every user function outside `cert.arrayPrims`. -/
+def checkWithArrays (P : Program) (cert : Cert) : Bool :=
+  cert.ctors.all (checkCtorRep P) &&
+  (List.range P.size).all fun f =>
+    match P.fun? f with
+    | some fd =>
+      match cert.arrayPrims.get? f with
+      | some spec => checkArrayPrimSpec fd (cert.funCert f) spec
+      | none => checkFun P cert f fd
+    | none => true
+
+/-- Recover the originating `Src.CId` and surviving original parameter positions from a
+`Key.GKey`, unwrapping any `Anf.DeadParam` `.worker` masks. -/
+def originConstAndPositions (arity : Nat) : Key.GKey → Option (Src.CId × List Nat)
+  | .const c _ => some (c, List.range arity)
+  | .worker inner keep =>
+    match originConstAndPositions keep.length inner with
+    | some (c, pos) =>
+      let kept := (pos.zip keep).filterMap fun (p, b) => if b then some p else none
+      some (c, kept)
+    | none => none
+  | _ => none
+
+/-- Find the surviving parameter index in `positions` corresponding to original position `orig`. -/
+private def findPos? (positions : List Nat) (orig : Nat) : Option Nat :=
+  (positions.zipIdx.find? (·.1 == orig)).map (·.2)
+
+/-- Map a pinned Lean 4.34.1 `Array`/`ByteArray` operation and surviving parameter positions
+to its `ArrayPrimSpec`. -/
+def mkArrayPrimSpec (arrKind : Src.ArrayRepKind) (op : Lam.Erase.Array.PinnedOp)
+    (positions : List Nat) : Option ArrayPrimSpec :=
+  let get1 (o0 : Nat) := (findPos? positions o0).map fun i0 => [i0]
+  let get2 (o0 o1 : Nat) := do
+    let i0 ← findPos? positions o0
+    let i1 ← findPos? positions o1
+    pure [i0, i1]
+  let get3 (o0 o1 o2 : Nat) := do
+    let i0 ← findPos? positions o0
+    let i1 ← findPos? positions o1
+    let i2 ← findPos? positions o2
+    pure [i0, i1, i2]
+  let get5 (o0 o1 o2 o3 o4 : Nat) := do
+    let i0 ← findPos? positions o0
+    let i1 ← findPos? positions o1
+    let i2 ← findPos? positions o2
+    let i3 ← findPos? positions o3
+    let i4 ← findPos? positions o4
+    pure [i0, i1, i2, i3, i4]
+  match op with
+  -- Array ops (orig param 0 is erased type α)
+  | .arr .emptyWithCapacity =>
+    some { op := .emptyCap, kind := arrKind, argIdx := (findPos? positions 1).toList }
+  | .arr .size => (get1 1).map fun ps => { op := .size, kind := arrKind, argIdx := ps }
+  | .arr .getInternal | .arrUget =>
+    (get2 1 2).map fun ps => { op := .get, kind := arrKind, argIdx := ps }
+  | .arr .set | .arrUset | .arrSetBang | .arr .setIfInBounds =>
+    (get3 1 2 3).map fun ps => { op := .set, kind := arrKind, argIdx := ps }
+  | .arr .push => (get2 1 2).map fun ps => { op := .push, kind := arrKind, argIdx := ps }
+  | .arr .pop => (get1 1).map fun ps => { op := .pop, kind := arrKind, argIdx := ps }
+  | .arr .extract => (get3 1 2 3).map fun ps => { op := .extract, kind := arrKind, argIdx := ps }
+  | .arr .copySlice =>
+    (get5 1 2 3 4 5).map fun ps => { op := .copySlice, kind := arrKind, argIdx := ps }
+  | .arr .swap | .arrSwapIfInBounds =>
+    (get3 1 2 3).map fun ps => { op := .swap, kind := arrKind, argIdx := ps }
+  -- ByteArray ops (monomorphic, no α param)
+  | .ba .emptyWithCapacity =>
+    some { op := .emptyCap, kind := .bytes, argIdx := (findPos? positions 0).toList }
+  | .baEmpty =>
+    some { op := .emptyCap, kind := .bytes, argIdx := [] }
+  | .ba .size => (get1 0).map fun ps => { op := .size, kind := .bytes, argIdx := ps }
+  | .ba .get | .baUget => (get2 0 1).map fun ps => { op := .get, kind := .bytes, argIdx := ps }
+  | .baGetBang => (get2 0 1).map fun ps => { op := .getBang, kind := .bytes, argIdx := ps }
+  | .ba .set | .baUset | .baSetBang => (get3 0 1 2).map fun ps => { op := .set, kind := .bytes, argIdx := ps }
+  | .ba .push => (get2 0 1).map fun ps => { op := .push, kind := .bytes, argIdx := ps }
+  | .ba .extract => (get3 0 1 2).map fun ps => { op := .extract, kind := .bytes, argIdx := ps }
+  | .ba .copySlice =>
+    (get5 0 1 2 3 4).map fun ps => { op := .copySlice, kind := .bytes, argIdx := ps }
+
+/-- Lattice join on `Option Fir.Rep` (`none` = polymorphic bottom `⊥`, e.g., `< 2^63` literals):
+`.tobj < .obj` and `.word < .obj`, while `.tobj` and `.word` join to `.obj`. -/
+private def repJoinOpt : Option Fir.Rep → Option Fir.Rep → Option Fir.Rep
+  | none, r => r
+  | r, none => r
+  | some r1, some r2 =>
+    if r1 == r2 then some r1 else some .obj
+
+private def argRepOpt (vars : Src.NatMap (Option Fir.Rep)) : Arg → Option Fir.Rep
+  | .var y => vars.getD y none
+  | .lit (.nat n) => if n < 2 ^ 63 then none else some .word
+  | .lit (.str _) | .erased => some .tobj
+
+private def isSpecialKey (P : Program) (k : Key.CtorKey) : Bool :=
+  P.known.natZero == some k || P.known.natSucc == some k ||
+  P.known.boolFalse == some k || P.known.boolTrue == some k
+
+/-- Forward-propagation state for `inferWithArrays` (height-2 monotone lattice). -/
+private structure InferState where
+  vars : Src.NatMap (Src.NatMap (Option Fir.Rep)) := .leaf
+  funParams : Src.NatMap (List (Option Fir.Rep)) := .leaf
+  funRet : Src.NatMap (Option Fir.Rep) := .leaf
+  objCtors : List Key.CtorKey := []
+
+private def InferState.joinVar (st : InferState) (f : FunId) (x : Var) (r : Option Fir.Rep) : InferState :=
+  let vm := st.vars.getD f .leaf
+  let cur := vm.getD x none
+  let next := repJoinOpt cur r
+  if next == cur then st else { st with vars := st.vars.insert f (vm.insert x next) }
+
+private def InferState.joinRet (st : InferState) (f : FunId) (r : Option Fir.Rep) : InferState :=
+  let cur := st.funRet.getD f none
+  let next := repJoinOpt cur r
+  if next == cur then st else { st with funRet := st.funRet.insert f next }
+
+private def InferState.joinParams (st : InferState) (g : FunId) (rs : List (Option Fir.Rep)) : InferState :=
+  let cur := st.funParams.getD g (List.replicate rs.length none)
+  let next := (cur.zip rs).map fun (a, b) => repJoinOpt a b
+  if next == cur then st else { st with funParams := st.funParams.insert g next }
+
+private def InferState.markObjCtor (st : InferState) (P : Program) (k : Key.CtorKey) : InferState :=
+  if isSpecialKey P k || st.objCtors.contains k then st
+  else { st with objCtors := k :: st.objCtors }
+
+mutual
+
+/-- Collect join-point parameter lists in `c`. -/
+private def collectJpParams (jm : Src.NatMap (List Var)) : Code → Src.NatMap (List Var)
+  | .bind _ _ k => collectJpParams jm k
+  | .jp j ps _ b k => collectJpParams (collectJpParams (jm.insert j ps) b) k
+  | .case _ alts d => collectJpParamsOpt (collectJpParamsAlts jm alts) d
+  | .jmp .. | .ret _ | .tcall .. | .trap => jm
+
+private def collectJpParamsAlts (jm : Src.NatMap (List Var)) : List Alt → Src.NatMap (List Var)
+  | [] => jm
+  | .mk _ b :: rest => collectJpParamsAlts (collectJpParams jm b) rest
+
+private def collectJpParamsOpt (jm : Src.NatMap (List Var)) : Option Code → Src.NatMap (List Var)
+  | none => jm
+  | some c => collectJpParams jm c
+
+end
+
+mutual
+
+/-- One monotone forward-propagation step over `c` inside function `f`. -/
+private def propForwardCode (P : Program) (arrayPrims : Src.NatMap ArrayPrimSpec)
+    (f : FunId) (jpParams : Src.NatMap (List Var)) (st : InferState) : Code → InferState
+  | .bind x rhs k =>
+    let vm := st.vars.getD f .leaf
+    let st1 := match rhs with
+      | .prim op _ =>
+        if isWord64Prim op then st.joinVar f x (some .word)
+        else st.joinVar f x (some .tobj)
+      | .arg a =>
+        st.joinVar f x (argRepOpt vm a)
+      | .ctor c as =>
+        let st' := st.joinVar f x (some .tobj)
+        let needsObj := as.any fun a =>
+          match argRepOpt vm a with
+          | some .word | some .obj => true
+          | _ => false
+        if needsObj then st'.markObjCtor P c.key else st'
+      | .proj _ c _ =>
+        if P.known.natSucc == some c then st.joinVar f x (some .tobj)
+        else if st.objCtors.contains c then st.joinVar f x (some .obj)
+        else st.joinVar f x (some .tobj)
+      | .call g as =>
+        let argReps := as.map (argRepOpt vm)
+        let st' := if (arrayPrims.get? g).isSome then st else st.joinParams g argReps
+        let gr := st'.funRet.getD g none
+        st'.joinVar f x gr
+    propForwardCode P arrayPrims f jpParams st1 k
+  | .jp _ _ _ b k =>
+    let st1 := propForwardCode P arrayPrims f jpParams st b
+    propForwardCode P arrayPrims f jpParams st1 k
+  | .jmp j as =>
+    let vm := st.vars.getD f .leaf
+    let ps := jpParams.getD j []
+    (as.zip ps).foldl (init := st) fun acc (a, p) =>
+      acc.joinVar f p (argRepOpt vm a)
+  | .case _ alts d =>
+    let st1 := propForwardAlts P arrayPrims f jpParams st alts
+    propForwardOpt P arrayPrims f jpParams st1 d
+  | .ret a =>
+    let vm := st.vars.getD f .leaf
+    st.joinRet f (argRepOpt vm a)
+  | .tcall g as =>
+    let vm := st.vars.getD f .leaf
+    let argReps := as.map (argRepOpt vm)
+    let st1 := if (arrayPrims.get? g).isSome then st else st.joinParams g argReps
+    let rf := st1.funRet.getD f none
+    let rg := st1.funRet.getD g none
+    let rBoth := repJoinOpt rf rg
+    (st1.joinRet f rBoth).joinRet g rBoth
+  | .trap => st
+
+private def propForwardAlts (P : Program) (arrayPrims : Src.NatMap ArrayPrimSpec)
+    (f : FunId) (jpParams : Src.NatMap (List Var)) (st : InferState) : List Alt → InferState
+  | [] => st
+  | .mk _ b :: rest =>
+    propForwardAlts P arrayPrims f jpParams (propForwardCode P arrayPrims f jpParams st b) rest
+
+private def propForwardOpt (P : Program) (arrayPrims : Src.NatMap ArrayPrimSpec)
+    (f : FunId) (jpParams : Src.NatMap (List Var)) (st : InferState) : Option Code → InferState
+  | none => st
+  | some c => propForwardCode P arrayPrims f jpParams st c
+
+end
+
+mutual
+
+/-- Build join-point representation map from final resolved `vars` (defaulting `none` → `.tobj`). -/
+private def buildJoinsCode (vars : Src.NatMap Fir.Rep) (jm : Src.NatMap (List Fir.Rep)) :
+    Code → Src.NatMap (List Fir.Rep)
+  | .bind _ _ k => buildJoinsCode vars jm k
+  | .jp j ps _ b k =>
+    let rs := ps.map fun v => vars.getD v .tobj
+    buildJoinsCode vars (buildJoinsCode vars (jm.insert j rs) b) k
+  | .case _ alts d => buildJoinsOpt vars (buildJoinsAlts vars jm alts) d
+  | .jmp .. | .ret _ | .tcall .. | .trap => jm
+
+private def buildJoinsAlts (vars : Src.NatMap Fir.Rep) (jm : Src.NatMap (List Fir.Rep)) :
+    List Alt → Src.NatMap (List Fir.Rep)
+  | [] => jm
+  | .mk _ b :: rest => buildJoinsAlts vars (buildJoinsCode vars jm b) rest
+
+private def buildJoinsOpt (vars : Src.NatMap Fir.Rep) (jm : Src.NatMap (List Fir.Rep)) :
+    Option Code → Src.NatMap (List Fir.Rep)
+  | none => jm
+  | some c => buildJoinsCode vars jm c
+
+end
+
+/-- Infer a checked DR3 + Stage W2 `Cert` for `P` from `Lam.Erase.Array.ArrayEraseInfo`:
+* binds every surviving pinned `Array`/`ByteArray` global (including `.worker`s from
+  `Anf.DeadParam`) to its native `ArrayPrimSpec`;
+* records `arrayMkKey`, `byteArrayMkKey`, `listNilTag`, `listConsTag`;
+* for `Array UInt64` (`.limbs`), runs a forward monotone fixed-point over `{⊥ < .tobj, .word < .obj}`
+  so 64-bit limbs stay raw `.word` (unboxed in registers and `LimbArray`), containers holding limbs
+  receive `objRep := .obj`, and `Nat` arithmetic/indices stay `.tobj` without spurious boxing;
+* always produces a certificate validated by `checkWithArrays`. -/
+def inferWithArrays (P : Program) (info : Lam.Erase.Array.ArrayEraseInfo) : Cert :=
+  -- 1. Identify all pinned array/bytearray primitives in P.
+  let arrayPrims : Src.NatMap ArrayPrimSpec :=
+    (List.range P.size).foldl (init := .leaf) fun m f =>
+      match P.fun? f with
+      | some fd =>
+        match originConstAndPositions fd.params.length fd.key with
+        | some (c, positions) =>
+          match Lam.Erase.Array.pinnedOpOf info.ops c with
+          | some pinOp =>
+            match mkArrayPrimSpec info.arrayKind pinOp positions with
+            | some spec => m.insert f spec
+            | none => m
+          | none => m
+        | none => m
+      | none => m
+  -- 2. Resolve List.nil / List.cons tags for List <-> Array bridges.
+  let listNilTag := (info.listNilKey.bind (CtorInfo.ofKey P.ctors)).map (·.tag) |>.getD 0
+  let listConsTag := (info.listConsKey.bind (CtorInfo.ofKey P.ctors)).map (·.tag) |>.getD 1
+  let hasArrMk := info.arrayMkKey.any fun k => (CtorInfo.ofKey P.ctors k).isSome
+  let hasBaMk := info.byteArrayMkKey.any fun k => (CtorInfo.ofKey P.ctors k).isSome
+  let useObj := info.arrayKind == .limbs
+  if !useObj then
+    -- Fast path for boxed `Array α` / `ByteArray` closures: all `.tobj`.
+    let funs := (List.range P.size).foldl (init := Src.NatMap.leaf) fun m f =>
+      match P.fun? f with
+      | some fd =>
+        let joins := buildJoinsCode .leaf .leaf fd.body
+        m.insert f { params := List.replicate fd.params.length .tobj, ret := .tobj, joins }
+      | none => m
+    { funs
+      ctors := []
+      arrayPrims
+      arrayMkKey := if hasArrMk then info.arrayMkKey else none
+      arrayMkKind := info.arrayKind
+      byteArrayMkKey := if hasBaMk then info.byteArrayMkKey else none
+      listNilTag
+      listConsTag }
+  else
+    -- 3. Collect join-point param lists per function and seed `InferState`.
+    let jpMap : Src.NatMap (Src.NatMap (List Var)) :=
+      (List.range P.size).foldl (init := .leaf) fun m f =>
+        match P.fun? f with
+        | some fd => m.insert f (collectJpParams .leaf fd.body)
+        | none => m
+    let st0 : InferState :=
+      (List.range P.size).foldl (init := {}) fun st f =>
+        match P.fun? f with
+        | some fd =>
+          match arrayPrims.get? f with
+          | some spec =>
+            let pReps : List (Option Fir.Rep) := List.replicate fd.params.length (some .obj)
+            let rRep : Option Fir.Rep :=
+              if spec.op == .get && spec.kind == .limbs then some .word else some .tobj
+            let vm := (fd.params.zip pReps).foldl (init := Src.NatMap.leaf) fun acc ((v, _), r) =>
+              acc.insert v r
+            { st with
+              vars := st.vars.insert f vm
+              funParams := st.funParams.insert f pReps
+              funRet := st.funRet.insert f rRep }
+          | none =>
+            let pReps : List (Option Fir.Rep) := List.replicate fd.params.length none
+            { st with
+              funParams := st.funParams.insert f pReps
+              funRet := st.funRet.insert f none }
+        | none => st
+    -- 4. Run monotone forward fixed-point (16 rounds).
+    let stepOnce (st : InferState) : InferState :=
+      (List.range P.size).foldl (init := st) fun acc f =>
+        match P.fun? f with
+        | some fd =>
+          if (arrayPrims.get? f).isSome then acc
+          else
+            -- Sync function parameter vars from `funParams[f]`.
+            let ps := acc.funParams.getD f (List.replicate fd.params.length none)
+            let acc1 := (fd.params.zip ps).foldl (init := acc) fun s ((v, _), r) =>
+              s.joinVar f v r
+            propForwardCode P arrayPrims f (jpMap.getD f .leaf) acc1 fd.body
+        | none => acc
+    let stFinal := (List.range 16).foldl (fun s _ => stepOnce s) st0
+    -- 5. Materialize final `CtorRep`s and `FunCert`s (defaulting `none` → `.tobj`).
+    let ctors : List CtorRep :=
+      P.ctors.filterMap fun ci =>
+        if stFinal.objCtors.contains ci.key && !isSpecialKey P ci.key then
+          some { key := ci.key, nobj := ci.arity, nscalar := 0, objRep := .obj }
+        else none
+    let funs : Src.NatMap FunCert :=
+      (List.range P.size).foldl (init := .leaf) fun m f =>
+        match P.fun? f with
+        | some fd =>
+          let vmOpt := stFinal.vars.getD f .leaf
+          let vm : Src.NatMap Fir.Rep :=
+            vmOpt.toList.foldl (init := .leaf) fun acc (v, rOpt) =>
+              acc.insert v (rOpt.getD .tobj)
+          let pReps : List Fir.Rep :=
+            match arrayPrims.get? f with
+            | some _ => List.replicate fd.params.length .obj
+            | none => (stFinal.funParams.getD f (List.replicate fd.params.length none)).map (·.getD .tobj)
+          let vmWithParams : Src.NatMap Fir.Rep :=
+            (fd.params.zip pReps).foldl (init := vm) fun acc ((v, _), r) => acc.insert v r
+          let retRep : Fir.Rep := (stFinal.funRet.getD f none).getD .tobj
+          let joins := buildJoinsCode vmWithParams .leaf fd.body
+          m.insert f { params := pReps, ret := retRep, vars := vmWithParams, joins }
+        | none => m
+    { funs
+      ctors
+      arrayPrims
+      arrayMkKey := if hasArrMk then info.arrayMkKey else none
+      arrayMkKind := info.arrayKind
+      byteArrayMkKey := if hasBaMk then info.byteArrayMkKey else none
+      listNilTag
+      listConsTag }
 
 end IxCC.Fir.Rep

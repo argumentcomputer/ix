@@ -51,6 +51,9 @@ theorem tr_sim : ∀ {cx : Cx} {t : Src.Term} {t' : Term}, TR S.I S.G cx t t' �
   | _, _, _, .natLit, ρ, ρ', ls, _, _ =>
     (SimUpTo.ok VR.lit).congr (fun k => Src.eval_natLit S.p k ls ρ _)
       (fun k => Lam.eval_lit S.L k ρ' _)
+  | _, _, _, .strLit, ρ, ρ', ls, _, _ =>
+    (SimUpTo.ok VR.str).congr (fun k => Src.eval_strLit S.p k ls ρ _)
+      (fun k => Lam.eval_lit S.L k ρ' _)
   | _, _, _, .lam _ hb, ρ, ρ', ls, he, hag =>
     (SimUpTo.ok (VR.clo he.er he.depth he.minors he.minorsLt hag hb)).congr
       (fun k => Src.eval_lam S.p k ls ρ _ _ _) (fun k => Lam.eval_lam S.L k ρ' _ _ _)

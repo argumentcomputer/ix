@@ -34,6 +34,7 @@ import IxCC.Rt.Proof.StepEdge
 import IxCC.Rt.Proof.StepTerm
 import IxCC.Rt.Proof.Diagram
 import IxCC.Rt.Proof.Prune
+import IxCC.Rt.Proof.StrHoist
 import IxCC.Rt.Proof.Program
 import IxCC.Rt.Proof.Correct
 import IxCC.Rt.Proof.Readback
@@ -381,10 +382,10 @@ preserved verbatim. -/
 /-- info: 'IxCC.Rt.Proof.tag_mem' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Rt.Proof.tag_mem
 
-/-- info: 'IxCC.Rt.Proof.storeFields_readable' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'IxCC.Rt.Proof.storeFields_readable' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Rt.Proof.storeFields_readable
 
-/-- info: 'IxCC.Rt.Proof.storeFields_writable' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'IxCC.Rt.Proof.storeFields_writable' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Rt.Proof.storeFields_writable
 
 /-- info: 'IxCC.Rt.Proof.storeFields_keeps' depends on axioms: [propext, Quot.sound] -/
@@ -405,10 +406,10 @@ preserved verbatim. -/
 /-- info: 'IxCC.Rt.Proof.immortalHeader_halves' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Rt.Proof.immortalHeader_halves
 
-/-- info: 'IxCC.Rt.Proof.allocStores_readable' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'IxCC.Rt.Proof.allocStores_readable' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Rt.Proof.allocStores_readable
 
-/-- info: 'IxCC.Rt.Proof.allocStores_writable' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'IxCC.Rt.Proof.allocStores_writable' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Rt.Proof.allocStores_writable
 
 /-- info: 'IxCC.Rt.Proof.add4_toNat' depends on axioms: [propext, Quot.sound] -/
@@ -1377,10 +1378,10 @@ preserved verbatim. -/
 /-- info: 'IxCC.Rt.Proof.word_alignDown' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Rt.Proof.word_alignDown
 
-/-- info: 'IxCC.Rt.Proof.zeros_readable' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'IxCC.Rt.Proof.zeros_readable' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Rt.Proof.zeros_readable
 
-/-- info: 'IxCC.Rt.Proof.zeros_writable' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'IxCC.Rt.Proof.zeros_writable' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Rt.Proof.zeros_writable
 
 /-- info: 'IxCC.Rt.Proof.execList_zeros' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -1783,5 +1784,67 @@ preserved verbatim. -/
 
 /-- info: 'IxCC.Rt.Proof.LowerRep.rawCmp_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Rt.Proof.LowerRep.rawCmp_sound
+
+/-! DR4 static string hoisting (`Rt.Proof.StrHoist`) and string-hoisted program lowering (`Rt.Proof.Program`). -/
+
+/-- info: 'IxCC.Rt.Proof.strLit_heapAt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.strLit_heapAt
+
+/-- info: 'IxCC.Rt.Proof.strLitProc_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.strLitProc_sim
+
+/-- info: 'IxCC.Rt.Proof.strStep_sim_one' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.strStep_sim_one
+
+/-- info: 'IxCC.Rt.Proof.strStep_sim_final' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.strStep_sim_final
+
+/-- info: 'IxCC.Rt.Proof.collectStrings_fun_subset' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.collectStrings_fun_subset
+
+/-- info: 'IxCC.Rt.Proof.lowerStrFns_lookup_strOfProg' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.lowerStrFns_lookup_strOfProg
+
+/-- info: 'IxCC.Rt.Proof.lowerStrFns_lookup_of_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.lowerStrFns_lookup_of_mem
+
+/-- info: 'IxCC.Rt.Proof.run_strBinds_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.run_strBinds_sim
+
+/-- info: 'IxCC.Rt.Proof.hoist_to_lir_forward' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.hoist_to_lir_forward
+
+/-- info: 'IxCC.Rt.Proof.lowerCfg_size' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.lowerCfg_size
+
+/-- info: 'IxCC.Rt.Proof.lowerCfg_tables' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.lowerCfg_tables
+
+/-- info: 'IxCC.Rt.Proof.lowerCfg_fun?' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.lowerCfg_fun?
+
+/-- info: 'IxCC.Rt.Proof.hoistStrings_fun?' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.hoistStrings_fun?
+
+/-- info: 'IxCC.Rt.Proof.hoistStrings_dense' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.hoistStrings_dense
+
+/-- info: 'IxCC.Rt.Proof.hoistStrings_ordered' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.hoistStrings_ordered
+
+/-- info: 'IxCC.Rt.Proof.hoistStrings_entry' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.hoistStrings_entry
+
+/-- info: 'IxCC.Rt.Proof.stageProgWith_get' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.stageProgWith_get
+
+/-- info: 'IxCC.Rt.Proof.stageProgStr_get' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.stageProgStr_get
+
+/-- info: 'IxCC.Rt.Proof.targetStr_raw' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.targetStr_raw
+
+/-- info: 'IxCC.Rt.Proof.raw_pruned_str' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.raw_pruned_str
 
 

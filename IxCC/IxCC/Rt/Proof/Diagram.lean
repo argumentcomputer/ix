@@ -39,7 +39,7 @@ gives it at every state of a program the pipeline's check accepts. -/
 def SwitchSel (P : Cfg.Program) : Cfg.State → Prop
   | .run fr _ H => ∀ fd b x alts d v key fs e Pw w ctx m, P.fun? fr.fn = some fd → fd.blocks[fr.blk]? = some b →
       fr.rest = [] → fusable (tables P) (useCounts fd) b = none → b.term = .switch x alts d →
-      fr.env.get? x = some v → ValRel (tables P) Pw v w → HeapInv (tables P) Pw H ctx m →
+      fr.env.get? x = some v → ValRelStr (tables P) Pw v w → HeapInv (tables P) Pw H ctx m →
       v.asCtor P.known H = some (key, fs) → Cfg.selectEdge key alts d = some e → Dispatches (tables P) H v alts
   | _ => True
 

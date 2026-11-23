@@ -3,6 +3,7 @@ import IxCC.Fir.Rep
 import IxCC.Lir.SplitEdges
 import IxCC.Rt.Procs.Entry
 import IxCC.Rt.Procs.Nat
+import IxCC.Rt.Rc.Array.Wire
 
 /-! # Cfg → Lir (`Rt.lower`, the Phase 1 fragment)
 
@@ -115,20 +116,25 @@ def Error.render : Error → String
 instance : ToString Error := ⟨Error.render⟩
 
 /-- Names for the exported roots: `cx_<name>` per `Cfg.Program.exports`
-entry, `root<i>` where a name is missing. -/
+entry, `root<i>` where a name is missing, plus optional fixed `.rodata` base
+address for DR1/DR4 zero-allocation static string literals. -/
 structure Config where
   names : List String := []
+  rodataBase : Option Word := none
   deriving Inhabited
 
 /-- `Rt.lower`'s output: the Lir program (its `main` the first root), the
 runtime procedures' functions (`cx_init`, `rt_nat_pow`, `rt_nat_gcd`, right
-after the program's), and each root's function and symbol, in export order. -/
+after the program's), each root's function and symbol in export order, and
+optional DR1 `.rodata` bytes & symbols for static literals. -/
 structure Lowered where
   program : Lir.Program
   init : Lir.FunId
   natPow : Lir.FunId
   natGcd : Lir.FunId
   roots : List (Lir.FunId × String)
+  rodata : Option ByteArray := none
+  rodataExports : List X86.ELF.RodataSymbol := []
   deriving Inhabited
 
 namespace Lower
@@ -1048,18 +1054,240 @@ def functions (T : Tables) (P : Cfg.Program) (roots : List (FunId × String)) :
 
 end Lower
 
+/-! ## DR1 / DR4 Static String Collection, `.rodata` Table & Hoisting (`LowerStr`)
+
+Collects distinct string literals from a `Cfg.Program` in deterministic order, builds
+their immortal `.rodata` section (`X86.ELFRodata.RodataTable.addString`, `rc = 0x80000000`,
+`tag = 0x7F02`, `scan = 0`), and provides `hoistStrings` so `Rt.lower` lowers programs
+with string literals via position-independent `Rt.Rc.Array.strLitProc` materializers
+while keeping `Rt.Lower.*` completely untouched for `Cfg.Rc`. -/
+
+namespace LowerStr
+
+open Lower
+
+def addStr (acc : List String) (s : String) : List String :=
+  if acc.contains s then acc else acc ++ [s]
+
+def collectArg (acc : List String) : Fir.Arg → List String
+  | .lit (.str s) => addStr acc s
+  | _ => acc
+
+def collectArgs (acc : List String) (as : List Fir.Arg) : List String :=
+  as.foldl collectArg acc
+
+def collectRhs (acc : List String) : Own.Rhs → List String
+  | .fir (.arg a) => collectArg acc a
+  | .fir (.ctor _ as) | .fir (.prim _ as) | .fir (.call _ as) => collectArgs acc as
+  | .fir (.proj ..) => acc
+  | .alloc _ as _ => collectArgs acc as
+  | .proj .. => acc
+
+def collectInstr (acc : List String) : Cfg.Instr → List String
+  | .bind _ r => collectRhs acc r
+
+def collectEdge (acc : List String) (e : Cfg.Edge) : List String :=
+  collectArgs acc e.args
+
+def collectTerm (acc : List String) : Cfg.Term → List String
+  | .jump e => collectEdge acc e
+  | .switch _ alts d =>
+    let a1 := alts.foldl (fun s (_, e) => collectEdge s e) acc
+    match d with
+    | some e => collectEdge a1 e
+    | none => a1
+  | .ret a => collectArg acc a
+  | .tcall _ as => collectArgs acc as
+  | .trap => acc
+
+def collectBlock (acc : List String) (b : Cfg.Block) : List String :=
+  collectTerm (b.body.foldl collectInstr acc) b.term
+
+def collectFun (acc : List String) (fd : Cfg.Fun) : List String :=
+  fd.blocks.foldl collectBlock acc
+
+/-- All distinct string literals occurring in functions `0 ..< P.size` of `P`, in deterministic order. -/
+def collectStrings (P : Cfg.Program) : List String :=
+  (List.range P.size).foldl (init := []) fun acc f =>
+    match P.fun? f with
+    | some fd => collectFun acc fd
+    | none => acc
+
+/-- Build the `.rodata` section table and per-string byte offsets for `strs` (`cx_str_0`, ...). -/
+def buildStringRodata (strs : List String) : X86.ELFRodata.RodataTable × List (String × Nat) :=
+  strs.zipIdx.foldl (init := (X86.ELFRodata.RodataTable.empty, [])) fun (tbl, offs) (s, i) =>
+    let (tbl', off) := tbl.addString s!"cx_str_{i}" s
+    (tbl', offs ++ [(s, off)])
+
+def hoistArg (strFns : List (String × FunId)) (fresh : VReg) :
+    Fir.Arg → List Cfg.Instr × Fir.Arg × VReg
+  | .lit (.str s) =>
+    match strFns.lookup s with
+    | some fnId => ([.bind fresh (.fir (.call fnId []))], .var fresh, fresh + 1)
+    | none => ([], .lit (.str s), fresh)
+  | a => ([], a, fresh)
+
+def hoistArgs (strFns : List (String × FunId)) (fresh : VReg) :
+    List Fir.Arg → List Cfg.Instr × List Fir.Arg × VReg
+  | [] => ([], [], fresh)
+  | a :: as =>
+    let (pre1, a', f1) := hoistArg strFns fresh a
+    let (pre2, as', f2) := hoistArgs strFns f1 as
+    (pre1 ++ pre2, a' :: as', f2)
+
+def hoistRhs (strFns : List (String × FunId)) (fresh : VReg) :
+    Own.Rhs → List Cfg.Instr × Own.Rhs × VReg
+  | .fir (.arg a) =>
+    let (pre, a', f') := hoistArg strFns fresh a
+    (pre, .fir (.arg a'), f')
+  | .fir (.prim op as) =>
+    let (pre, as', f') := hoistArgs strFns fresh as
+    (pre, .fir (.prim op as'), f')
+  | .fir (.call g as) =>
+    let (pre, as', f') := hoistArgs strFns fresh as
+    (pre, .fir (.call g as'), f')
+  | .fir (.ctor c as) =>
+    let (pre, as', f') := hoistArgs strFns fresh as
+    (pre, .fir (.ctor c as'), f')
+  | .alloc c as k =>
+    let (pre, as', f') := hoistArgs strFns fresh as
+    (pre, .alloc c as' k, f')
+  | r => ([], r, fresh)
+
+def hoistInstr (strFns : List (String × FunId)) (fresh : VReg) :
+    Cfg.Instr → List Cfg.Instr × VReg
+  | .bind x r =>
+    let (pre, r', f') := hoistRhs strFns fresh r
+    (pre ++ [.bind x r'], f')
+
+def hoistInstrs (strFns : List (String × FunId)) (fresh : VReg) :
+    List Cfg.Instr → List Cfg.Instr × VReg
+  | [] => ([], fresh)
+  | i :: is =>
+    let (is1, f1) := hoistInstr strFns fresh i
+    let (is2, f2) := hoistInstrs strFns f1 is
+    (is1 ++ is2, f2)
+
+def hoistEdge (strFns : List (String × FunId)) (fresh : VReg) (e : Cfg.Edge) :
+    List Cfg.Instr × Cfg.Edge × VReg :=
+  let (pre, as', f') := hoistArgs strFns fresh e.args
+  (pre, { e with args := as' }, f')
+
+def hoistAlts (strFns : List (String × FunId)) (fresh : VReg) :
+    List (Key.CtorKey × Cfg.Edge) → List Cfg.Instr × List (Key.CtorKey × Cfg.Edge) × VReg
+  | [] => ([], [], fresh)
+  | (k, e) :: rest =>
+    let (pre1, e', f1) := hoistEdge strFns fresh e
+    let (pre2, rest', f2) := hoistAlts strFns f1 rest
+    (pre1 ++ pre2, (k, e') :: rest', f2)
+
+def hoistOptEdge (strFns : List (String × FunId)) (fresh : VReg) :
+    Option Cfg.Edge → List Cfg.Instr × Option Cfg.Edge × VReg
+  | none => ([], none, fresh)
+  | some e =>
+    let (pre, e', f') := hoistEdge strFns fresh e
+    (pre, some e', f')
+
+def hoistTerm (strFns : List (String × FunId)) (fresh : VReg) :
+    Cfg.Term → List Cfg.Instr × Cfg.Term × VReg
+  | .jump e =>
+    let (pre, e', f') := hoistEdge strFns fresh e
+    (pre, .jump e', f')
+  | .switch x alts d =>
+    let (pre1, alts', f1) := hoistAlts strFns fresh alts
+    let (pre2, d', f2) := hoistOptEdge strFns f1 d
+    (pre1 ++ pre2, .switch x alts' d', f2)
+  | .ret a =>
+    let (pre, a', f') := hoistArg strFns fresh a
+    (pre, .ret a', f')
+  | .tcall g as =>
+    let (pre, as', f') := hoistArgs strFns fresh as
+    (pre, .tcall g as', f')
+  | .trap => ([], .trap, fresh)
+
+def hoistBlock (T : Tables) (uses : Src.NatMap Nat) (strFns : List (String × FunId))
+    (fresh : VReg) (b : Cfg.Block) : Cfg.Block × VReg :=
+  match fusable T uses b, unsnoc b.body with
+  | some _, some (init, cmp) =>
+    let (init', f1) := hoistInstrs strFns fresh init
+    let (termPre, term', f2) := hoistTerm strFns f1 b.term
+    let (cmp', f3) := hoistInstr strFns f2 cmp
+    ({ b with body := init' ++ termPre ++ cmp', term := term' }, f3)
+  | _, _ =>
+    let (body', f1) := hoistInstrs strFns fresh b.body
+    let (termPre, term', f2) := hoistTerm strFns f1 b.term
+    ({ b with body := body' ++ termPre, term := term' }, f2)
+
+def hoistBlocks (T : Tables) (uses : Src.NatMap Nat) (strFns : List (String × FunId))
+    (fresh : VReg) : List Cfg.Block → List Cfg.Block × VReg
+  | [] => ([], fresh)
+  | b :: bs =>
+    let (b', f1) := hoistBlock T uses strFns fresh b
+    let (bs', f2) := hoistBlocks T uses strFns f1 bs
+    (b' :: bs', f2)
+
+def hoistFun (T : Tables) (strFns : List (String × FunId)) (fd : Cfg.Fun) : Cfg.Fun :=
+  let uses := useCounts fd
+  let supply := max fd.vars (maxVar fd + 1)
+  let (blocks', supply') := hoistBlocks T uses strFns supply fd.blocks
+  { fd with vars := supply', blocks := blocks' }
+
+def hoistStrings (P : Cfg.Program) (strFns : List (String × FunId)) : Cfg.Program :=
+  let T := tables P
+  let funs' := (List.range P.size).foldl (init := P.funs) fun m f =>
+    match P.fun? f with
+    | some fd => m.insert f (hoistFun T strFns fd)
+    | none => m
+  { P with funs := funs' }
+
+end LowerStr
+
+/-- Distinct string literals occurring in `P`. -/
+def lowerStrs (P : Cfg.Program) : List String :=
+  LowerStr.collectStrings P
+
+/-- Mapping from each distinct string literal in `P` to its `strLitProc` `FunId` (`P.size + 3 + i`). -/
+def lowerStrFns (P : Cfg.Program) : List (String × FunId) :=
+  (lowerStrs P).zipIdx.map fun (s, i) => (s, P.size + 3 + i)
+
+/-- The `strLitProc` materializer functions appended after `rt_nat_gcd` for `P`'s string literals. -/
+def lowerStrProcs (P : Cfg.Program) : List Lir.Func :=
+  (lowerStrs P).zipIdx.map fun (s, i) => Rt.Rc.Array.strLitProc i s
+
+/-- The Cfg program lowered by `Rt.lower`: identical to `P` when `P` has no string literals,
+otherwise `LowerStr.hoistStrings P (lowerStrFns P)`. -/
+def lowerCfg (P : Cfg.Program) : Cfg.Program :=
+  if (lowerStrs P).isEmpty then P
+  else LowerStr.hoistStrings P (lowerStrFns P)
+
+/-- Core lowering body of `Rt.lower`: unchanged Phase 1 lowering when `P` contains no
+string literals; hoists string literals to `Rt.Rc.Array.strLitProc` materializers and
+populates `.rodata` bytes & symbols when string literals are present. -/
+def lowerCore (P : Cfg.Program) (roots : List (FunId × String)) :
+    Except Error (List Lir.Func × Option ByteArray × List X86.ELF.RodataSymbol) := do
+  let strs := lowerStrs P
+  let P' := lowerCfg P
+  let funcs ← Lower.functions (Lower.tables P') P' roots (List.range P.size)
+  if strs.isEmpty then
+    pure (funcs ++ [Procs.cxInit, Procs.natPow, Procs.natGcd], none, [])
+  else
+    let (rtbl, _) := LowerStr.buildStringRodata strs
+    pure (funcs ++ [Procs.cxInit, Procs.natPow, Procs.natGcd] ++ lowerStrProcs P,
+          some rtbl.bytes, rtbl.symbols)
+
 open Lower in
 /-- Cfg (the immortal fragment) → Lir, with `cx_init` after the program's
-functions. -/
+functions, plus DR1/DR4 static string literal lowering when strings occur. -/
 def lower (cfg : Config) (P : Cfg.Program) : Except Error Lowered := do
   let some main := P.exports.head? | throw .noExports
   if let some (f, _) := P.funs.toList.find? (P.size ≤ ·.1) then throw (.funRange f)
   let named := P.exports.zipIdx.map fun (f, i) => (f, symbolOf ((cfg.names[i]?).getD s!"root{i}"))
   -- a function exported twice keeps its first name (one wrapper per function)
   let roots := named.map fun (f, s) => (f, (named.lookup f).getD s)
-  let funcs ← functions (tables P) P roots (List.range P.size)
-  pure { program := { funcs := (funcs ++ [Procs.cxInit, Procs.natPow, Procs.natGcd]).toArray, main }
-         init := P.size, natPow := P.size + 1, natGcd := P.size + 2, roots }
+  let res ← lowerCore P roots
+  pure { program := { funcs := res.1.toArray, main }
+         init := P.size, natPow := P.size + 1, natGcd := P.size + 2, roots
+         rodata := res.2.1, rodataExports := res.2.2 }
 
 /-! ## DR2 Stage W2: Raw 64-bit `UInt64`, `box`/`unbox`, `nscalar > 0`, and Zero-Alloc Limb Fusion
 
@@ -1213,16 +1441,91 @@ def operandRaw64 (f : FunId) (fc : Fir.Rep.FunCert) (a : Fir.Arg)
   | .lit (.str _) => throw (.string f)
   | .erased => pure (some (.imm 0))
 
-/-- Evaluate operand `a` at target representation `expected`, inserting `box64` or `unbox64`
-when crossing the `.word` ↔ `.obj` boundary. -/
-def operandAtRep (f : FunId) (fc : Fir.Rep.FunCert) (a : Fir.Arg) (expected : Fir.Rep) :
-    M (Option Lir.Arg) :=
+/-- String literal lowering context for `LowerRep` (DR1/DR4): either direct `.rodata`
+addresses when `Config.rodataBase = some base`, or position-independent `strLitProc` `FunId`s. -/
+structure StrCtx where
+  rodataAddrs : List (String × Word) := []
+  strFns : List (String × FunId) := []
+  deriving Inhabited
+
+/-- Aliasing-safe dynamic-array mini-RC context for a function in `LowerRep` (DR3). -/
+structure RcCtx where
+  enabled : Bool := false
+  arrBase : FunId := 0
+  /-- Per-function parameter mutability/escape flags (`true` = may mutate or escape via return). -/
+  paramMut : Src.NatMap (List Bool) := .leaf
+  /-- Variables in the current function that may flow to a mutating op or return. -/
+  tainted : Src.NatSet := .leaf
+  /-- Live-in variables (excluding block params) per block id. -/
+  liveIn : Src.NatMap Src.NatSet := .leaf
+  /-- Parameter lists per block id. -/
+  blockParams : Src.NatMap (List VReg) := .leaf
+  deriving Inhabited
+
+/-- Emit `rt_arr_inc_val(y)` when `rc.enabled` and `y` is not a raw `.word` register. -/
+def emitIncVal (rc : RcCtx) (fc : Fir.Rep.FunCert) (y : VReg) : M Unit := do
+  if rc.enabled && fc.varRep y != .word then
+    emit (.call [] (rc.arrBase + Rt.Rc.Array.fnIncVal) [.v y])
+
+def countVarInArgs (y : VReg) (as : List Fir.Arg) : Nat :=
+  as.foldl (fun n a => if a == .var y then n + 1 else n) 0
+
+/-- Emit `rt_arr_inc_val` for each variable argument in `as` at a mutating/escaping position
+that is still live after the operation or duplicated in `as`. -/
+def emitIncCallArgs (rc : RcCtx) (fc : Fir.Rep.FunCert) (liveAfter : Src.NatSet)
+    (as : List Fir.Arg) (mutFlags : List Bool) : M Unit := do
+  if !rc.enabled then pure ()
+  else
+    let rec go : List Fir.Arg → List Bool → List VReg → M Unit
+      | [], _, _ => pure ()
+      | a :: rest, fs, inced => do
+        let m := fs.headD true
+        let inced' ← match a with
+          | .var y =>
+            if m && fc.varRep y != .word && !inced.contains y &&
+                (liveAfter.contains y || countVarInArgs y as > 1) then do
+              emit (.call [] (rc.arrBase + Rt.Rc.Array.fnIncVal) [.v y])
+              pure (y :: inced)
+            else pure inced
+          | _ => pure inced
+        go rest fs.tail inced'
+    go as mutFlags []
+
+/-- Whether `y` has any remaining use in `rest` other than a projection of a different field `j ≠ i`
+of the same constructor `c`. -/
+def hasConflictProjUse (y : VReg) (c : Key.CtorKey) (i : Nat) : List Cfg.Instr → Bool
+  | [] => false
+  | .bind _ (.proj y' c' j) :: rest =>
+    if y' == y then
+      if c' == c && j != i then hasConflictProjUse y c i rest else true
+    else hasConflictProjUse y c i rest
+  | .bind _ r :: rest =>
+    if (Cfg.Check.rhsVars r).contains y then true
+    else hasConflictProjUse y c i rest
+
+/-- Evaluate operand `a` at target representation `expected`, inserting `box64`, `unbox64`,
+or static string materialization when needed. -/
+def operandAtRep (f : FunId) (fc : Fir.Rep.FunCert) (a : Fir.Arg) (expected : Fir.Rep)
+    (sc : StrCtx := {}) : M (Option Lir.Arg) :=
+  let lowerStr (s : String) : M (Option Lir.Arg) :=
+    match sc.rodataAddrs.lookup s with
+    | some addr => pure (some (.imm addr))
+    | none =>
+      match sc.strFns.lookup s with
+      | some fnId => do
+        let t ← freshReg
+        emit (.call [t] fnId [])
+        pure (some (.v t))
+      | none => throw (.string f)
   match expected with
   | .word => operandRaw64 f fc a false
-  | .tobj => do
-    match ← Lower.operand f a with
-    | some la => pure (some la)
-    | none => pure none
+  | .tobj =>
+    match a with
+    | .lit (.str s) => lowerStr s
+    | _ => do
+      match ← Lower.operand f a with
+      | some la => pure (some la)
+      | none => pure none
   | .obj =>
     match a with
     | .var y =>
@@ -1238,25 +1541,26 @@ def operandAtRep (f : FunId) (fc : Fir.Rep.FunCert) (a : Fir.Arg) (expected : Fi
         box64 b (.imm (UInt64.ofNat n))
         pure (some (.v b))
       else pure none
-    | .lit (.str _) => throw (.string f)
+    | .lit (.str s) => lowerStr s
     | .erased => pure (some (.imm erasedWord))
   | .erased => pure (some (.imm erasedWord))
 
-def operandsAtReps (f : FunId) (fc : Fir.Rep.FunCert) :
-    List Fir.Arg → List Fir.Rep → M (Option (List Lir.Arg))
-  | [], _ => pure (some [])
-  | a :: as, rs => do
+def operandsAtReps (f : FunId) (fc : Fir.Rep.FunCert)
+    (as : List Fir.Arg) (rs : List Fir.Rep) (sc : StrCtx := {}) : M (Option (List Lir.Arg)) :=
+  match as with
+  | [] => pure (some [])
+  | a :: as => do
     let r := rs.headD .tobj
-    match ← operandAtRep f fc a r with
+    match ← operandAtRep f fc a r sc with
     | none => pure none
     | some la =>
-      match ← operandsAtReps f fc as rs.tail with
+      match ← operandsAtReps f fc as rs.tail sc with
       | none => pure none
       | some las => pure (some (la :: las))
 
 def withOperandsAtReps (f : FunId) (fc : Fir.Rep.FunCert) (as : List Fir.Arg)
-    (rs : List Fir.Rep) (k : List Lir.Arg → M Unit) : M Bool := do
-  match ← operandsAtReps f fc as rs with
+    (rs : List Fir.Rep) (k : List Lir.Arg → M Unit) (sc : StrCtx := {}) : M Bool := do
+  match ← operandsAtReps f fc as rs sc with
   | some las => k las; pure true
   | none => close (.fail .natOverflow); pure false
 
@@ -1336,10 +1640,23 @@ def isWordArg (fc : Fir.Rep.FunCert) : Fir.Arg → Bool
   | .lit (.nat n) => decide (n < 2 ^ 64)
   | _ => false
 
-/-- Whether a comparison's two arguments should be compared as raw 64-bit unsigned words. -/
+/-- Whether a `Fir.Arg` has any numeric representation (`.word`, `.obj`, `.tobj`, or `< 2^64` literal). -/
+def isNumericRepArg (fc : Fir.Rep.FunCert) : Fir.Arg → Bool
+  | .var y => Fir.Rep.isValidRep (fc.varRep y)
+  | .lit (.nat n) => decide (n < 2 ^ 64)
+  | _ => false
+
+/-- Whether a comparison's two arguments should be compared as raw 64-bit unsigned words
+(unboxing `.obj` 1-scalar-word `UInt64` cells and untagging `.tobj` as needed). -/
 def cmpIsRaw64 (fc : Fir.Rep.FunCert) (a b : Fir.Arg) : Bool :=
-  (match a with | .var y => fc.varRep y == .word | .lit (.nat n) => decide (natLimit ≤ n ∧ n < 2 ^ 64) | _ => false) ||
-  (match b with | .var y => fc.varRep y == .word | .lit (.nat n) => decide (natLimit ≤ n ∧ n < 2 ^ 64) | _ => false)
+  (match a with
+    | .var y => fc.varRep y == .word || fc.varRep y == .obj
+    | .lit (.nat n) => decide (natLimit ≤ n ∧ n < 2 ^ 64)
+    | _ => false) ||
+  (match b with
+    | .var y => fc.varRep y == .word || fc.varRep y == .obj
+    | .lit (.nat n) => decide (natLimit ≤ n ∧ n < 2 ^ 64)
+    | _ => false)
 
 /-- Lower a primitive in Stage W2 (`Rt.lowerRep`). -/
 def primitiveRep (f : FunId) (T : Tables) (fc : Fir.Rep.FunCert) (x : VReg)
@@ -1400,7 +1717,7 @@ def primitiveRep (f : FunId) (T : Tables) (fc : Fir.Rep.FunCert) (x : VReg)
   | op =>
     match compareOf op, as with
     | some cond, [a, b] =>
-      if cmpIsRaw64 fc a b && isWordArg fc a && isWordArg fc b then
+      if cmpIsRaw64 fc a b && isNumericRepArg fc a && isNumericRepArg fc b then
         match ← operandsRaw64 f fc false [a, b] with
         | none => close (.fail .natOverflow); pure false
         | some [la, lb] =>
@@ -1413,43 +1730,75 @@ def primitiveRep (f : FunId) (T : Tables) (fc : Fir.Rep.FunCert) (x : VReg)
     | _, _ =>
       withOperands f as (Lower.primitive f T x op)
 
-/-- Stage W2 allocation supporting `CtorInfo.nscalar > 0` scalar tails (`headerLow nobj 0 tag`,
-`cellBytes (nobj + nscalar)`). -/
+/-- Stage W2 + DR3 allocation supporting `CtorInfo.nscalar > 0` scalar tails, `Array.mk`
+(`arrOfListBoxed` / `arrOfListLimbs`), `ByteArray.mk` (`byteArrOfArr`), and aliasing-safe
+mini-RC on live array fields. -/
 def allocRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert)
-    (x : VReg) (c : Fir.CtorInfo) (as : List Fir.Arg) : M Bool := do
-  if isNatKey T c.key then throw (.layout f "a Nat constructor cell (Nat values are literals)")
-  let some baseInfo := Fir.CtorInfo.ofKey T.ctors c.key
-    | throw (.form f "allocation key outside the table")
-  let (nobj, nscalar, fieldReps) : Nat × Nat × List Fir.Rep := match cert.ctorRep? c.key with
-    | some cr =>
-      (cr.nobj, cr.nscalar, List.replicate cr.nobj cr.objRep ++ List.replicate cr.nscalar Fir.Rep.word)
-    | none =>
-      (c.nobj, c.nscalar, List.replicate c.nobj Fir.Rep.tobj ++ List.replicate c.nscalar Fir.Rep.word)
-  let totalArity := nobj + nscalar
-  if as.length != totalArity || totalArity != baseInfo.arity then
-    throw (.form f s!"an allocation of {as.length} fields for {totalArity}")
-  if baseInfo.tag > maxTag then throw (.layout f s!"constructor tag {baseInfo.tag} above {maxTag}")
-  if totalArity == 0 then
-    assign x (.arg (.imm (ctor0Word baseInfo.tag)))
-    pure true
+    (x : VReg) (c : Fir.CtorInfo) (as : List Fir.Arg)
+    (sc : StrCtx := {}) (rc : RcCtx := {}) (liveAfter : Src.NatSet := .leaf) : M Bool := do
+  if rc.enabled && cert.arrayMkKey == some c.key then
+    match as with
+    | [xs] =>
+      let callee := rc.arrBase +
+        if cert.arrayMkKind == .limbs then Rt.Rc.Array.fnArrOfListLimbs
+        else Rt.Rc.Array.fnArrOfListBoxed
+      withOperandsAtReps f fc [xs] [.obj] (fun
+        | [lxs] => emit (.call [x] callee [lxs])
+        | _ => pure ()) sc
+    | _ => throw (.form f s!"Array.mk expected 1 field, got {as.length}")
+  else if rc.enabled && cert.byteArrayMkKey == some c.key then
+    match as with
+    | [arr] =>
+      withOperandsAtReps f fc [arr] [.obj] (fun
+        | [larr] => emit (.call [x] (rc.arrBase + Rt.Rc.Array.fnByteArrOfArr) [larr])
+        | _ => pure ()) sc
+    | _ => throw (.form f s!"ByteArray.mk expected 1 field, got {as.length}")
   else
-    if totalArity > maxFields then throw (.layout f s!"{totalArity} fields, above {maxFields}")
-    withOperandsAtReps f fc as fieldReps fun las => do
-      if las.any (· == .v x) then throw (.form f "an allocation reads the variable it defines")
-      assign x (.load .w64 .zero (ctxAt bumpOff))
-      let e ← freshReg
-      assign e (.addr (mem x (cellBytes totalArity)))
-      let l ← temp (.load .w64 .zero (ctxAt limitOff))
-      check .heap fun ok bad => .br .ugt (.v e) l bad ok
-      emit (.store .w64 (ctxAt bumpOff) (.v e))
-      emit (.store .w32 (mem x 0) (.imm (UInt64.ofNat (headerLow nobj 0 baseInfo.tag))))
-      emit (.store .w32 (mem x 4) (.imm (UInt64.ofNat immortalRc)))
-      las.zipIdx.forM fun (a, i) => emit (.store .w64 (mem x (fieldOffset i)) a)
+    if isNatKey T c.key then throw (.layout f "a Nat constructor cell (Nat values are literals)")
+    let some baseInfo := Fir.CtorInfo.ofKey T.ctors c.key
+      | throw (.form f "allocation key outside the table")
+    let (nobj, nscalar, fieldReps) : Nat × Nat × List Fir.Rep := match cert.ctorRep? c.key with
+      | some cr =>
+        (cr.nobj, cr.nscalar, List.replicate cr.nobj cr.objRep ++ List.replicate cr.nscalar Fir.Rep.word)
+      | none =>
+        (c.nobj, c.nscalar, List.replicate c.nobj Fir.Rep.tobj ++ List.replicate c.nscalar Fir.Rep.word)
+    let totalArity := nobj + nscalar
+    if as.length != totalArity || totalArity != baseInfo.arity then
+      throw (.form f s!"an allocation of {as.length} fields for {totalArity}")
+    if baseInfo.tag > maxTag then throw (.layout f s!"constructor tag {baseInfo.tag} above {maxTag}")
+    if totalArity == 0 then
+      assign x (.arg (.imm (ctor0Word baseInfo.tag)))
+      pure true
+    else
+      if totalArity > maxFields then throw (.layout f s!"{totalArity} fields, above {maxFields}")
+      emitIncCallArgs rc fc liveAfter as (List.replicate nobj true ++ List.replicate nscalar false)
+      withOperandsAtReps f fc as fieldReps (fun las => do
+        if las.any (· == .v x) then throw (.form f "an allocation reads the variable it defines")
+        assign x (.load .w64 .zero (ctxAt bumpOff))
+        let e ← freshReg
+        assign e (.addr (mem x (cellBytes totalArity)))
+        let l ← temp (.load .w64 .zero (ctxAt limitOff))
+        check .heap fun ok bad => .br .ugt (.v e) l bad ok
+        emit (.store .w64 (ctxAt bumpOff) (.v e))
+        emit (.store .w32 (mem x 0) (.imm (UInt64.ofNat (headerLow nobj 0 baseInfo.tag))))
+        emit (.store .w32 (mem x 4) (.imm (UInt64.ofNat immortalRc)))
+        las.zipIdx.forM fun (a, i) => emit (.store .w64 (mem x (fieldOffset i)) a)) sc
 
-/-- Stage W2 projection supporting raw 64-bit scalar-tail fields (`i ≥ nobj`). -/
+/-- Stage W2 + DR3 projection supporting raw 64-bit scalar-tail fields (`i ≥ nobj`),
+`Array.toList` (`arrToListBoxed` / `arrToListLimbs`), `ByteArray.data` (`byteArrToArr`),
+and aliasing-safe mini-RC when the container `y` has conflicting remaining uses. -/
 def projRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert)
-    (x y : VReg) (c : Key.CtorKey) (i : Nat) : M Unit := do
-  if T.known.natSucc == some c then
+    (x y : VReg) (c : Key.CtorKey) (i : Nat)
+    (rc : RcCtx := {}) (liveAfter : Src.NatSet := .leaf) (liveTerm : Src.NatSet := .leaf)
+    (rest : List Cfg.Instr := []) : M Unit := do
+  if rc.enabled && cert.arrayMkKey == some c && i == 0 then
+    let callee := rc.arrBase +
+      if cert.arrayMkKind == .limbs then Rt.Rc.Array.fnArrToListLimbs
+      else Rt.Rc.Array.fnArrToListBoxed
+    emit (.call [x] callee [.v y])
+  else if rc.enabled && cert.byteArrayMkKey == some c && i == 0 then
+    emit (.call [x] (rc.arrBase + Rt.Rc.Array.fnByteArrToArr) [.v y])
+  else if T.known.natSucc == some c then
     if i == 0 then assign x (.bin .sub .w64 (.v y) (.imm 2))
     else throw (.form f "a projection past the Nat successor's field")
   else if T.known.natZero == some c then throw (.form f "a projection of Nat.zero")
@@ -1465,20 +1814,33 @@ def projRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert
           box64 x (.v tmp)
         else
           assign x (.load .w64 .zero (mem y (fieldOffset i)))
+          if rc.enabled && rx != .word && rc.tainted.contains x && liveAfter.contains y &&
+              (liveTerm.contains y || hasConflictProjUse y c i rest) then
+            emit (.call [] (rc.arrBase + Rt.Rc.Array.fnIncVal) [.v x])
       else throw (.form f s!"field {i} of a constructor with {info.arity}")
     | none => throw (.form f "a projection key outside the table")
 
-/-- Stage W2 single instruction lowering. -/
-def instrRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert) :
-    Cfg.Instr → M Bool
-  | .bind x (.fir (.arg a)) =>
-    withOperandsAtReps f fc [a] [fc.varRep x] fun
+/-- Stage W2 + DR3 single instruction lowering. -/
+def instrRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert)
+    (ins : Cfg.Instr) (sc : StrCtx := {}) (rc : RcCtx := {})
+    (liveAfter : Src.NatSet := .leaf) (liveTerm : Src.NatSet := .leaf)
+    (rest : List Cfg.Instr := []) : M Bool :=
+  match ins with
+  | .bind x (.fir (.arg a)) => do
+    match a with
+    | .var y =>
+      if rc.enabled && fc.varRep y != .word && liveAfter.contains y && rc.tainted.contains x then
+        emit (.call [] (rc.arrBase + Rt.Rc.Array.fnIncVal) [.v y])
+    | _ => pure ()
+    withOperandsAtReps f fc [a] [fc.varRep x] (fun
       | [la] => assign x (.arg la)
-      | _ => pure ()
+      | _ => pure ()) sc
   | .bind x (.fir (.prim op as)) => primitiveRep f T fc x op as
-  | .bind x (.fir (.call g as)) =>
+  | .bind x (.fir (.call g as)) => do
     let gc := cert.funCert g
-    withOperandsAtReps f fc as gc.params fun las => do
+    let mutFlags := rc.paramMut.getD g (List.replicate as.length true)
+    emitIncCallArgs rc fc liveAfter as mutFlags
+    withOperandsAtReps f fc as gc.params (fun las => do
       let rx := fc.varRep x
       if gc.ret == .word && rx == .obj then
         let tmp ← freshReg
@@ -1489,30 +1851,45 @@ def instrRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCer
         emit (.call [tmp] g las)
         checked64 x (.v tmp)
       else
-        emit (.call [x] g las)
+        emit (.call [x] g las)) sc
   | .bind _ (.fir (.ctor ..)) => throw (.form f "a Fir constructor in Cfg")
   | .bind _ (.fir (.proj ..)) => throw (.form f "a Fir projection in Cfg")
-  | .bind x (.alloc c as _) => allocRep f T cert fc x c as
-  | .bind x (.proj y c i) => do projRep f T cert fc x y c i; pure true
+  | .bind x (.alloc c as _) => allocRep f T cert fc x c as sc rc liveAfter
+  | .bind x (.proj y c i) => do projRep f T cert fc x y c i rc liveAfter liveTerm rest; pure true
 
-/-- Lower a block's instruction list with adjacent limb-pair fusion (`matchLimbPair`). -/
-def instrsRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert) :
-    List Cfg.Instr → M Bool
+/-- Lower a block's instruction list with adjacent limb-pair fusion (`matchLimbPair`)
+and per-instruction liveness sets. -/
+def instrsRepAnn (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert)
+    (sc : StrCtx) (rc : RcCtx) (liveTerm : Src.NatSet) :
+    List (Cfg.Instr × Src.NatSet) → M Bool
   | [] => pure true
-  | [i] => instrRep f T cert fc i
-  | i1 :: i2 :: rest =>
+  | [(i, la)] => instrRep f T cert fc i sc rc la liveTerm []
+  | (i1, la1) :: (i2, la2) :: rest =>
     match matchLimbPair i1 i2 with
     | some (kind, r1, r2, as) => do
-      if ← emitLimbPair f fc kind r1 r2 as then instrsRep f T cert fc rest else pure false
+      if ← emitLimbPair f fc kind r1 r2 as then instrsRepAnn f T cert fc sc rc liveTerm rest
+      else pure false
     | none => do
-      if ← instrRep f T cert fc i1 then instrsRep f T cert fc (i2 :: rest) else pure false
+      let restInstrs := i2 :: rest.map (·.1)
+      if ← instrRep f T cert fc i1 sc rc la1 liveTerm restInstrs then
+        instrsRepAnn f T cert fc sc rc liveTerm ((i2, la2) :: rest)
+      else pure false
 
-/-! ### Stage W2 Edges, Switches, and Terminators -/
+/-- Lower a block's instruction list (compatibility entry without liveness annotations). -/
+def instrsRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert)
+    (is : List Cfg.Instr) (sc : StrCtx := {}) : M Bool :=
+  instrsRepAnn f T cert fc sc {} .leaf (is.map (·, .leaf))
 
-/-- Pure operand lowering when no `box64`/`unbox64` side effects are required. -/
-def pureOperandAtRep (f : FunId) (fc : Fir.Rep.FunCert) (a : Fir.Arg) (expected : Fir.Rep) :
-    Except Error (Option (Option Lir.Arg)) :=
-  -- `some (some la)`: pure; `some none`: natOverflow; `none`: needs side-effecting coercion
+/-! ### Stage W2 + DR3/DR4 Edges, Switches, and Terminators -/
+
+/-- Pure operand lowering when no `box64`/`unbox64`/string-materializer side effects are required. -/
+def pureOperandAtRep (f : FunId) (fc : Fir.Rep.FunCert) (a : Fir.Arg) (expected : Fir.Rep)
+    (sc : StrCtx := {}) : Except Error (Option (Option Lir.Arg)) :=
+  let pureStr (s : String) : Except Error (Option (Option Lir.Arg)) :=
+    match sc.rodataAddrs.lookup s with
+    | some addr => pure (some (some (.imm addr)))
+    | none =>
+      if (sc.strFns.lookup s).isSome then pure none else throw (.string f)
   match expected with
   | .word =>
     match a with
@@ -1520,7 +1897,10 @@ def pureOperandAtRep (f : FunId) (fc : Fir.Rep.FunCert) (a : Fir.Arg) (expected 
     | .lit (.nat n) => if n < 2 ^ 64 then pure (some (some (.imm (UInt64.ofNat n)))) else pure (some none)
     | .lit (.str _) => throw (.string f)
     | .erased => pure (some (some (.imm 0)))
-  | .tobj => do pure (some (← Lower.operand f a))
+  | .tobj =>
+    match a with
+    | .lit (.str s) => pureStr s
+    | _ => do pure (some (← Lower.operand f a))
   | .obj =>
     match a with
     | .var y => if fc.varRep y == .word then pure none else pure (some (some (.v y)))
@@ -1528,54 +1908,86 @@ def pureOperandAtRep (f : FunId) (fc : Fir.Rep.FunCert) (a : Fir.Arg) (expected 
       if n < natLimit then pure (some (some (.imm (UInt64.ofNat (2 * n + 1)))))
       else if n < 2 ^ 64 then pure none
       else pure (some none)
-    | .lit (.str _) => throw (.string f)
+    | .lit (.str s) => pureStr s
     | .erased => pure (some (some (.imm erasedWord)))
   | .erased => pure (some (some (.imm erasedWord)))
 
-def pureOperandsAtReps (f : FunId) (fc : Fir.Rep.FunCert) :
-    List Fir.Arg → List Fir.Rep → Except Error (Option (Option (List Lir.Arg)))
-  | [], _ => pure (some (some []))
-  | a :: as, rs => do
-    match ← pureOperandAtRep f fc a (rs.headD .tobj) with
+def pureOperandsAtReps (f : FunId) (fc : Fir.Rep.FunCert)
+    (as : List Fir.Arg) (rs : List Fir.Rep) (sc : StrCtx := {}) :
+    Except Error (Option (Option (List Lir.Arg))) :=
+  match as with
+  | [] => pure (some (some []))
+  | a :: as => do
+    match ← pureOperandAtRep f fc a (rs.headD .tobj) sc with
     | none => pure none
     | some none => pure (some none)
     | some (some la) =>
-      match ← pureOperandsAtReps f fc as rs.tail with
+      match ← pureOperandsAtReps f fc as rs.tail sc with
       | none => pure none
       | some none => pure (some none)
       | some (some las) => pure (some (some (la :: las)))
 
-/-- Lower a Cfg edge under Stage W2 representations, emitting a trampoline block only if an
-edge argument requires `box64` or `unbox64`. -/
+/-- Edge arguments requiring `rt_arr_inc_val` because they alias live-through variables or
+duplicate a tainted block parameter on edge `e`. -/
+def edgeIncVars (fc : Fir.Rep.FunCert) (rc : RcCtx) (e : Cfg.Edge) : List VReg :=
+  if !rc.enabled then []
+  else
+    let liveThru := rc.liveIn.getD e.target .leaf
+    let tParams := rc.blockParams.getD e.target []
+    let rec go : List Fir.Arg → List VReg → List VReg → List VReg
+      | [], _, acc => acc
+      | a :: rest, ps, acc =>
+        let pTainted := match ps with | p :: _ => rc.tainted.contains p | [] => false
+        let acc' := match a with
+          | .var y =>
+            if pTainted && fc.varRep y != .word && !acc.contains y &&
+                (liveThru.contains y || countVarInArgs y e.args > 1) then y :: acc
+            else acc
+          | _ => acc
+        go rest ps.tail acc'
+    (go e.args tParams []).reverse
+
+/-- Lower a Cfg edge under Stage W2 + DR3/DR4 representations, emitting a trampoline block only
+if an edge argument requires `box64`, `unbox64`, string materialization, or alias `fnIncVal`. -/
 def edgeRep (f : FunId) (fc : Fir.Rep.FunCert) (blockReps : Src.NatMap (List Fir.Rep))
-    (src : Nat) (e : Cfg.Edge) : M PEdge := do
+    (src : Nat) (e : Cfg.Edge) (sc : StrCtx := {}) (rc : RcCtx := {}) : M PEdge := do
   unless e.back == decide (e.target ≤ src) do throw (.edgeOrder f src)
   let targetReps := blockReps.getD e.target (List.replicate e.args.length .tobj)
-  match ← pureOperandsAtReps f fc e.args targetReps with
+  let incVars := edgeIncVars fc rc e
+  let pureRes ← if incVars.isEmpty then pureOperandsAtReps f fc e.args targetReps sc else pure none
+  match pureRes with
   | some (some las) => pure ⟨.blk e.target, las⟩
   | some none => pure (loc (← coldBlock (.fail .natOverflow)))
   | none =>
-    -- Side-effecting coercion (`box64`/`unbox64`): save open block, build trampoline, restore.
     let saved ← get
     let tramp ← newLabel
     modify fun st => { st with cur := tramp, params := [], acc := [] }
-    let ok ← withOperandsAtReps f fc e.args targetReps fun las =>
-      close (.jump ⟨.blk e.target, las⟩)
+    incVars.forM fun y => emit (.call [] (rc.arrBase + Rt.Rc.Array.fnIncVal) [.v y])
+    let ok ← withOperandsAtReps f fc e.args targetReps (fun las =>
+      close (.jump ⟨.blk e.target, las⟩)) sc
     let _ := ok
     modify fun st => { st with cur := saved.cur, params := saved.params, acc := saved.acc }
     pure (loc tramp)
 
 def switchAltRep (f : FunId) (T : Tables) (fc : Fir.Rep.FunCert)
-    (blockReps : Src.NatMap (List Fir.Rep)) (src : Nat) (ke : Key.CtorKey × Cfg.Edge) :
-    M (KeyKind × PEdge) := do
+    (blockReps : Src.NatMap (List Fir.Rep)) (src : Nat) (ke : Key.CtorKey × Cfg.Edge)
+    (sc : StrCtx := {}) (rc : RcCtx := {}) : M (KeyKind × PEdge) := do
   let some kind := keyKind T ke.1 | throw (.switch f src "a key outside the constructor table")
-  pure (kind, ← edgeRep f fc blockReps src ke.2)
+  pure (kind, ← edgeRep f fc blockReps src ke.2 sc rc)
 
-def switchRep (f : FunId) (T : Tables) (fc : Fir.Rep.FunCert)
+def switchRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert)
     (blockReps : Src.NatMap (List Fir.Rep)) (src : Nat) (x : VReg)
-    (alts : List (Key.CtorKey × Cfg.Edge)) (d : Option Cfg.Edge) : M Unit := do
-  let es ← alts.mapM (switchAltRep f T fc blockReps src)
-  let dd ← d.mapM (edgeRep f fc blockReps src)
+    (alts : List (Key.CtorKey × Cfg.Edge)) (d : Option Cfg.Edge)
+    (sc : StrCtx := {}) (rc : RcCtx := {}) : M Unit := do
+  -- Single-constructor `Array.mk` / `ByteArray.mk` switches jump directly without loading a tag.
+  match alts, d with
+  | [(k, e)], none =>
+    if rc.enabled && (cert.arrayMkKey == some k || cert.byteArrayMkKey == some k) then
+      close (.jump (← edgeRep f fc blockReps src e sc rc))
+      return
+  | _, _ => pure ()
+  let es ← alts.mapM (switchAltRep f T fc blockReps src · sc rc)
+  let dd ← d.mapM (edgeRep f fc blockReps src · sc rc)
   let nats := es.filter (·.1.isNat)
   if !nats.isEmpty then
     unless nats.length == es.length do throw (.switch f src "Nat keys mixed with other keys")
@@ -1584,68 +1996,405 @@ def switchRep (f : FunId) (T : Tables) (fc : Fir.Rep.FunCert)
 
 def fusedSwitchRep (f : FunId) (T : Tables) (fc : Fir.Rep.FunCert)
     (blockReps : Src.NatMap (List Fir.Rep)) (src : Nat) (c : Lir.Cond) (a b : Lir.Arg)
-    (alts : List (Key.CtorKey × Cfg.Edge)) (d : Option Cfg.Edge) : M Unit := do
-  let te ← (boolEdge alts d T.known.boolTrue).mapM (edgeRep f fc blockReps src)
-  let fe ← (boolEdge alts d T.known.boolFalse).mapM (edgeRep f fc blockReps src)
+    (alts : List (Key.CtorKey × Cfg.Edge)) (d : Option Cfg.Edge)
+    (sc : StrCtx := {}) (rc : RcCtx := {}) : M Unit := do
+  let te ← (boolEdge alts d T.known.boolTrue).mapM (edgeRep f fc blockReps src · sc rc)
+  let fe ← (boolEdge alts d T.known.boolFalse).mapM (edgeRep f fc blockReps src · sc rc)
   fusedClose c a b te fe
 
 def termRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert)
-    (blockReps : Src.NatMap (List Fir.Rep)) (src : Nat) : Cfg.Term → M Unit
-  | .jump e => do close (.jump (← edgeRep f fc blockReps src e))
-  | .switch x alts d => switchRep f T fc blockReps src x alts d
+    (blockReps : Src.NatMap (List Fir.Rep)) (src : Nat) (t : Cfg.Term)
+    (sc : StrCtx := {}) (rc : RcCtx := {}) : M Unit :=
+  match t with
+  | .jump e => do close (.jump (← edgeRep f fc blockReps src e sc rc))
+  | .switch x alts d => switchRep f T cert fc blockReps src x alts d sc rc
   | .ret a => do
-    let _ ← withOperandsAtReps f fc [a] [fc.ret] fun
+    let _ ← withOperandsAtReps f fc [a] [fc.ret] (fun
       | [la] => close (.ret la)
-      | _ => pure ()
+      | _ => pure ()) sc
   | .tcall g as => do
     let gc := cert.funCert g
-    let _ ← withOperandsAtReps f fc as gc.params fun las => close (.tail g las)
+    let mutFlags := rc.paramMut.getD g (List.replicate as.length true)
+    emitIncCallArgs rc fc .leaf as mutFlags
+    let _ ← withOperandsAtReps f fc as gc.params (fun las => close (.tail g las)) sc
   | .trap => close .trap
 
-def fusedEndRep (f : FunId) (T : Tables) (fc : Fir.Rep.FunCert)
+def fusedEndRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert)
     (blockReps : Src.NatMap (List Fir.Rep)) (src : Nat) (b : Cfg.Block)
-    (c : Lir.Cond) (a a' : Fir.Arg) : M Unit := do
-  let raw := cmpIsRaw64 fc a a' && isWordArg fc a && isWordArg fc a'
+    (c : Lir.Cond) (a a' : Fir.Arg) (sc : StrCtx := {}) (rc : RcCtx := {}) : M Unit := do
+  let raw := cmpIsRaw64 fc a a' && isNumericRepArg fc a && isNumericRepArg fc a'
   let args? ← if raw then operandsRaw64 f fc false [a, a'] else do pure (← Lower.operands f [a, a'])
   match args? with
   | some [la, la'] =>
     match b.term with
-    | .switch _ alts d => fusedSwitchRep f T fc blockReps src c la la' alts d
-    | t => termRep f T {} fc blockReps src t
+    | .switch _ alts d => fusedSwitchRep f T fc blockReps src c la la' alts d sc rc
+    | t => termRep f T cert fc blockReps src t sc rc
   | _ => close (.fail .natOverflow)
+
+/-! ### DR3 Backward Liveness & Per-Parameter Mutability Analysis -/
+
+private def setUnion (a b : Src.NatSet) : Src.NatSet :=
+  b.toList.foldl (fun s (k, _) => s.insert k) a
+
+private def setDiff (a : Src.NatSet) (xs : List VReg) : Src.NatSet :=
+  xs.foldl (fun s x => s.erase x) a
+
+private def setAddList (a : Src.NatSet) (xs : List VReg) : Src.NatSet :=
+  xs.foldl (fun s x => s.insert x) a
+
+private def liveAtTerm (liveIn : Src.NatMap Src.NatSet) (b : Cfg.Block) : Src.NatSet :=
+  let fromEdges := b.term.edges.foldl (init := Src.NatMap.leaf) fun s e =>
+    setUnion s (liveIn.getD e.target .leaf)
+  setAddList fromEdges (Cfg.Check.termVars b.term)
+
+/-- Compute backward dataflow `liveIn[b]` (excluding `b`'s own parameters) for every block of `fd`. -/
+def computeLiveIn (fd : Cfg.Fun) : Src.NatMap Src.NatSet :=
+  let step (m : Src.NatMap Src.NatSet) : Src.NatMap Src.NatSet :=
+    fd.blocks.zipIdx.foldl (init := m) fun acc (b, idx) =>
+      let lt := liveAtTerm m b
+      let beforeBody := b.body.reverse.foldl (init := lt) fun s => fun
+        | .bind x r => setAddList (s.erase x) (Cfg.Check.rhsVars r)
+      let li := setDiff beforeBody (b.params.map (·.1))
+      acc.insert idx li
+  let rounds := min (fd.blocks.length + 2) 32
+  (List.range rounds).foldl (fun m _ => step m) .leaf
+
+/-- Annotate each instruction of `is` with the exact set of variables live immediately after it. -/
+def annotateBody (liveTerm : Src.NatSet) (is : List Cfg.Instr) : List (Cfg.Instr × Src.NatSet) :=
+  let rec go : List Cfg.Instr → Src.NatSet → List (Cfg.Instr × Src.NatSet) → List (Cfg.Instr × Src.NatSet)
+    | [], _, acc => acc
+    | (.bind x r) :: rest, la, acc =>
+      let lb := setAddList (la.erase x) (Cfg.Check.rhsVars r)
+      go rest lb ((.bind x r, la) :: acc)
+  go is.reverse liveTerm []
+
+/-- Initial per-parameter mutability flags for a native `ArrayPrimSpec`. -/
+def arrayPrimParamMut (arity : Nat) (spec : Fir.Rep.ArrayPrimSpec) : List Bool :=
+  let mutIdx : List Nat := match spec.op with
+    | .emptyCap | .size | .get | .getBang | .extract => []
+    | .pop | .swap => spec.argIdx.take 1
+    | .set =>
+      match spec.kind, spec.argIdx with
+      | .boxed, [ai, _, vi] => [ai, vi]
+      | _, ai :: _ => [ai]
+      | _, [] => []
+    | .push =>
+      match spec.kind, spec.argIdx with
+      | .boxed, [ai, vi] => [ai, vi]
+      | _, ai :: _ => [ai]
+      | _, [] => []
+    | .copySlice =>
+      match spec.argIdx with
+      | [_, _, di, _, _] => [di]
+      | _ => []
+  (List.range arity).map fun i => mutIdx.contains i
+
+/-- Compute variables inside `fd` that may flow to a mutating/escaping parameter or return value. -/
+def computeTainted (fd : Cfg.Fun) (paramMut : Src.NatMap (List Bool)) : Src.NatSet :=
+  let bParams : Src.NatMap (List VReg) :=
+    Src.NatMap.ofDense (fd.blocks.map fun b => b.params.map (·.1))
+  let seedFromArgs (t : Src.NatSet) (as : List Fir.Arg) (fs : List Bool) : Src.NatSet :=
+    (as.zip fs).foldl (init := t) fun s (a, m) =>
+      match a, m with
+      | .var y, true => s.insert y
+      | _, _ => s
+  let step (t : Src.NatSet) : Src.NatSet :=
+    fd.blocks.foldl (init := t) fun acc b =>
+      let acc1 := match b.term with
+        | .ret (.var y) => acc.insert y
+        | .tcall g as => seedFromArgs acc as (paramMut.getD g (List.replicate as.length true))
+        | _ => acc
+      let acc2 := b.term.edges.foldl (init := acc1) fun s e =>
+        let ps := bParams.getD e.target []
+        (e.args.zip ps).foldl (init := s) fun s' (a, p) =>
+          match a with
+          | .var y => if s'.contains p then s'.insert y else s'
+          | _ => s'
+      b.body.reverse.foldl (init := acc2) fun s => fun
+        | .bind x (.fir (.arg (.var y))) => if s.contains x then s.insert y else s
+        | .bind x (.proj y _ _) => if s.contains x then s.insert y else s
+        | .bind x (.alloc _ as _) =>
+          if s.contains x then setAddList s (Cfg.Check.argVars as) else s
+        | .bind _ (.fir (.call g as)) =>
+          seedFromArgs s as (paramMut.getD g (List.replicate as.length true))
+        | _ => s
+  let rounds := min (fd.blocks.length + 3) 12
+  (List.range rounds).foldl (fun t _ => step t) .leaf
+
+/-- Interprocedural fixed-point computing `paramMut[f][k]` (`true` = param `k` of `f` may be
+mutated in place or escape via return value). Read-only helpers (`scanRight`, `scanLeft`,
+`isSorted`, `checksum`, `blockWords`, `subtree`, `compress`) infer `false` for read-only array
+params so callers incur zero `fnIncVal` and zero copies. -/
+def computeParamMutates (P : Cfg.Program) (cert : Fir.Rep.Cert) : Src.NatMap (List Bool) :=
+  let init : Src.NatMap (List Bool) :=
+    (List.range P.size).foldl (init := .leaf) fun m f =>
+      match P.fun? f with
+      | some fd =>
+        match cert.arrayPrims.get? f with
+        | some spec => m.insert f (arrayPrimParamMut fd.params.length spec)
+        | none => m.insert f (List.replicate fd.params.length false)
+      | none => m
+  let refineOnce (pm : Src.NatMap (List Bool)) : Src.NatMap (List Bool) :=
+    (List.range P.size).foldl (init := pm) fun acc f =>
+      match P.fun? f with
+      | some fd =>
+        if (cert.arrayPrims.get? f).isSome then acc
+        else
+          let tainted := computeTainted fd pm
+          let old := pm.getD f (List.replicate fd.params.length false)
+          let updated := (fd.params.zip old).map fun (v, b) => b || tainted.contains v
+          acc.insert f updated
+      | none => acc
+  let rounds := min (P.size + 1) 16
+  (List.range rounds).foldl (fun pm _ => refineOnce pm) init
+
+/-! ### DR3 Native Array Primitive Wrapper Generator (`arrayPrimFunc`) -/
+
+private def toRawWordParam (reg : VReg) (rep : Fir.Rep) : M Lir.Arg :=
+  match rep with
+  | .word => pure (.v reg)
+  | .tobj => bin .shr (.v reg) (.imm 1)
+  | .obj => do
+    let r ← freshReg
+    unbox64 r (.v reg)
+    pure (.v r)
+  | .erased => pure (.imm 0)
+
+private def paramRegRep (f : FunId) (params : List VReg) (fc : Fir.Rep.FunCert) (idx : Nat) :
+    M (VReg × Fir.Rep) := do
+  let some reg := params[idx]? | throw (.form f s!"array prim param index {idx} out of range")
+  pure (reg, fc.params.getD idx .tobj)
+
+/-- Generate a thin O(1) LIR wrapper function for a pinned `Array` / `ByteArray` / `Array UInt64`
+primitive (`spec : Fir.Rep.ArrayPrimSpec`), delegating directly to the relocated native runtime
+at `arrBase + fn*` (`Rt.Rc.Array.Procs` + `Wire`). -/
+def arrayPrimFunc (arrBase : FunId) (f : FunId) (fd : Cfg.Fun) (fc : Fir.Rep.FunCert)
+    (spec : Fir.Rep.ArrayPrimSpec) (conv : Lir.Conv) : Except Error Lir.Func := do
+  let some b0 := fd.blocks.head? | throw (.missingBlock f 0)
+  let params := b0.params.map (·.1)
+  let supply := max fd.vars (maxVar fd + 1)
+  let bodyM : M Unit := do
+    openAt 0 []
+    match spec.op, spec.argIdx with
+    | .emptyCap, [] =>
+      let callee := arrBase + match spec.kind with
+        | .boxed => Rt.Rc.Array.fnEmptyCapBoxed
+        | .limbs => Rt.Rc.Array.fnEmptyCapLimbs
+        | .bytes => Rt.Rc.Array.fnByteEmptyCap
+      let res ← freshReg
+      emit (.call [res] callee [.imm 0])
+      close (.ret (.v res))
+    | .emptyCap, [ci] =>
+      let (creg, crep) ← paramRegRep f params fc ci
+      let cap ← toRawWordParam creg crep
+      let callee := arrBase + match spec.kind with
+        | .boxed => Rt.Rc.Array.fnEmptyCapBoxed
+        | .limbs => Rt.Rc.Array.fnEmptyCapLimbs
+        | .bytes => Rt.Rc.Array.fnByteEmptyCap
+      let res ← freshReg
+      emit (.call [res] callee [cap])
+      close (.ret (.v res))
+    | .size, [ai] =>
+      let (areg, _) ← paramRegRep f params fc ai
+      let raw ← freshReg
+      emit (.call [raw] (arrBase + Rt.Rc.Array.fnSize) [.v areg])
+      if fc.ret == .word then
+        close (.ret (.v raw))
+      else
+        let out ← freshReg
+        checked64 out (.v raw)
+        close (.ret (.v out))
+    | .get, [ai, ii] =>
+      let (areg, _) ← paramRegRep f params fc ai
+      let (ireg, irep) ← paramRegRep f params fc ii
+      let idx ← toRawWordParam ireg irep
+      match spec.kind with
+      | .bytes =>
+        let raw ← freshReg
+        emit (.call [raw] (arrBase + Rt.Rc.Array.fnByteGet) [.v areg, idx])
+        if fc.ret == .word then close (.ret (.v raw))
+        else
+          let out ← temp (retag (.v raw))
+          close (.ret out)
+      | .limbs =>
+        let raw ← freshReg
+        emit (.call [raw] (arrBase + Rt.Rc.Array.fnGetWord) [.v areg, idx])
+        let out ← freshReg
+        finishRaw64 out fc.ret (.v raw)
+        close (.ret (.v out))
+      | .boxed =>
+        let res ← freshReg
+        emit (.call [res] (arrBase + Rt.Rc.Array.fnGetWord) [.v areg, idx])
+        -- Aliasing rule 3: reading a boxed element shares it with the containing array.
+        emit (.call [] (arrBase + Rt.Rc.Array.fnIncVal) [.v res])
+        if fc.ret == .word then
+          let out ← freshReg
+          unbox64 out (.v res)
+          close (.ret (.v out))
+        else
+          close (.ret (.v res))
+    | .getBang, [ai, ii] =>
+      let (areg, _) ← paramRegRep f params fc ai
+      let (ireg, irep) ← paramRegRep f params fc ii
+      let idx ← toRawWordParam ireg irep
+      let sz ← freshReg
+      emit (.call [sz] (arrBase + Rt.Rc.Array.fnSize) [.v areg])
+      let inB ← newLabel
+      let oobB ← newLabel
+      close (.br .ult idx (.v sz) (loc inB) (loc oobB))
+      openAt inB []
+      let raw ← freshReg
+      emit (.call [raw] (arrBase + Rt.Rc.Array.fnByteGet) [.v areg, idx])
+      if fc.ret == .word then close (.ret (.v raw))
+      else
+        let out ← temp (retag (.v raw))
+        close (.ret out)
+      openAt oobB []
+      if fc.ret == .word then close (.ret (.imm 0))
+      else close (.ret (.imm (UInt64.ofNat 1)))
+    | .set, [ai, ii, vi] =>
+      let (areg, _) ← paramRegRep f params fc ai
+      let (ireg, irep) ← paramRegRep f params fc ii
+      let (vreg, vrep) ← paramRegRep f params fc vi
+      let idx ← toRawWordParam ireg irep
+      let res ← freshReg
+      match spec.kind with
+      | .bytes =>
+        let b ← toRawWordParam vreg vrep
+        emit (.call [res] (arrBase + Rt.Rc.Array.fnByteSet) [.v areg, idx, b])
+      | .limbs =>
+        let w ← toRawWordParam vreg vrep
+        emit (.call [res] (arrBase + Rt.Rc.Array.fnSetLimbs) [.v areg, idx, w])
+      | .boxed =>
+        let va ← if vrep == .word then do
+            let b ← freshReg; box64 b (.v vreg); pure (.v b)
+          else pure (.v vreg)
+        emit (.call [res] (arrBase + Rt.Rc.Array.fnSetBoxed) [.v areg, idx, va])
+      close (.ret (.v res))
+    | .push, [ai, vi] =>
+      let (areg, _) ← paramRegRep f params fc ai
+      let (vreg, vrep) ← paramRegRep f params fc vi
+      let res ← freshReg
+      match spec.kind with
+      | .bytes =>
+        let b ← toRawWordParam vreg vrep
+        emit (.call [res] (arrBase + Rt.Rc.Array.fnBytePush) [.v areg, b])
+      | .limbs =>
+        let w ← toRawWordParam vreg vrep
+        emit (.call [res] (arrBase + Rt.Rc.Array.fnPushLimbs) [.v areg, w])
+      | .boxed =>
+        let va ← if vrep == .word then do
+            let b ← freshReg; box64 b (.v vreg); pure (.v b)
+          else pure (.v vreg)
+        emit (.call [res] (arrBase + Rt.Rc.Array.fnPushBoxed) [.v areg, va])
+      close (.ret (.v res))
+    | .pop, [ai] =>
+      let (areg, _) ← paramRegRep f params fc ai
+      let callee := arrBase + match spec.kind with
+        | .boxed => Rt.Rc.Array.fnPopBoxed
+        | .limbs => Rt.Rc.Array.fnPopLimbs
+        | .bytes => Rt.Rc.Array.fnBytePop
+      let res ← freshReg
+      emit (.call [res] callee [.v areg])
+      close (.ret (.v res))
+    | .extract, [ai, bi, ei] =>
+      let (areg, _) ← paramRegRep f params fc ai
+      let (breg, brep) ← paramRegRep f params fc bi
+      let (ereg, erep) ← paramRegRep f params fc ei
+      let bRaw ← toRawWordParam breg brep
+      let eRaw ← toRawWordParam ereg erep
+      let callee := arrBase + match spec.kind with
+        | .boxed => Rt.Rc.Array.fnExtractBoxed
+        | .limbs => Rt.Rc.Array.fnExtractLimbs
+        | .bytes => Rt.Rc.Array.fnByteExtract
+      let res ← freshReg
+      emit (.call [res] callee [.v areg, bRaw, eRaw])
+      close (.ret (.v res))
+    | .copySlice, [si, soi, di, doi, li] =>
+      let (sreg, _) ← paramRegRep f params fc si
+      let (soreg, sorep) ← paramRegRep f params fc soi
+      let (dreg, _) ← paramRegRep f params fc di
+      let (doreg, dorep) ← paramRegRep f params fc doi
+      let (lreg, lrep) ← paramRegRep f params fc li
+      let soRaw ← toRawWordParam soreg sorep
+      let doRaw ← toRawWordParam doreg dorep
+      let lRaw ← toRawWordParam lreg lrep
+      let callee := arrBase + match spec.kind with
+        | .boxed => Rt.Rc.Array.fnCopySliceBoxed
+        | .limbs => Rt.Rc.Array.fnCopySliceLimbs
+        | .bytes => Rt.Rc.Array.fnByteCopySlice
+      let res ← freshReg
+      emit (.call [res] callee [.v sreg, soRaw, .v dreg, doRaw, lRaw])
+      close (.ret (.v res))
+    | .swap, [ai, ii, ji] =>
+      let (areg, _) ← paramRegRep f params fc ai
+      let (ireg, irep) ← paramRegRep f params fc ii
+      let (jreg, jrep) ← paramRegRep f params fc ji
+      let iRaw ← toRawWordParam ireg irep
+      let jRaw ← toRawWordParam jreg jrep
+      let callee := arrBase + match spec.kind with
+        | .limbs => Rt.Rc.Array.fnSwapLimbs
+        | _ => Rt.Rc.Array.fnSwapBoxed
+      let res ← freshReg
+      emit (.call [res] callee [.v areg, iRaw, jRaw])
+      close (.ret (.v res))
+    | _, _ => throw (.form f "array prim spec arity mismatch")
+  let ((), st) ← bodyM.run { fresh := supply }
+  let pblocks ← chunkBlocks f st
+  let (starts, _) := chunkStarts 0 [pblocks]
+  let raw ← resolveChunks f starts [(pblocks, 0)]
+  let seen := reachable raw
+  unless reachClosed raw seen do throw (.internal f "array prim wrapper has unreached successor")
+  pure (Lir.Func.splitCriticalEdges
+    { name := s!"f{f}", params, results := 1, blocks := (pruneWith seen raw).toArray, conv })
 
 def blockCodeRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert)
     (blockReps : Src.NatMap (List Fir.Rep)) (uses : Src.NatMap Nat) (src : Nat)
-    (b : Cfg.Block) : M Unit :=
+    (b : Cfg.Block) (sc : StrCtx := {}) (rc : RcCtx := {}) : M Unit :=
+  let lt := if rc.enabled then liveAtTerm rc.liveIn b else .leaf
   match fusable T uses b with
   | some (init, c, a, a') => do
-    if ← instrsRep f T cert fc init then fusedEndRep f T fc blockReps src b c a a'
+    let ann := if rc.enabled then annotateBody (setAddList lt (Cfg.Check.argVars [a, a'])) init
+               else init.map (·, .leaf)
+    if ← instrsRepAnn f T cert fc sc rc lt ann then
+      fusedEndRep f T cert fc blockReps src b c a a' sc rc
   | none => do
-    if ← instrsRep f T cert fc b.body then termRep f T cert fc blockReps src b.term
+    let ann := if rc.enabled then annotateBody lt b.body else b.body.map (·, .leaf)
+    if ← instrsRepAnn f T cert fc sc rc lt ann then
+      termRep f T cert fc blockReps src b.term sc rc
 
 def blockRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert)
     (blockReps : Src.NatMap (List Fir.Rep)) (uses : Src.NatMap Nat) (src : Nat)
-    (entry : Bool) (b : Cfg.Block) : M Unit := do
+    (entry : Bool) (b : Cfg.Block) (sc : StrCtx := {}) (rc : RcCtx := {}) : M Unit := do
   openAt 0 (if entry then [] else b.params.map (·.1))
-  blockCodeRep f T cert fc blockReps uses src b
+  blockCodeRep f T cert fc blockReps uses src b sc rc
 
 def chunksRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert)
-    (blockReps : Src.NatMap (List Fir.Rep)) (uses : Src.NatMap Nat) (merged : Bool) :
-    List (Cfg.Block × Nat) → VReg → Except Error (List (List PBlock) × VReg)
-  | [], fresh => pure ([], fresh)
-  | (b, i) :: bs, fresh => do
-    let ((), st) ← (blockRep f T cert fc blockReps uses i (merged && i == 0) b).run { fresh }
+    (blockReps : Src.NatMap (List Fir.Rep)) (uses : Src.NatMap Nat) (merged : Bool)
+    (bs : List (Cfg.Block × Nat)) (fresh : VReg) (sc : StrCtx := {}) (rc : RcCtx := {}) :
+    Except Error (List (List PBlock) × VReg) :=
+  match bs with
+  | [] => pure ([], fresh)
+  | (b, i) :: bs => do
+    let ((), st) ← (blockRep f T cert fc blockReps uses i (merged && i == 0) b sc rc).run { fresh }
     let blocks ← chunkBlocks f st
-    let (rest, fresh) ← chunksRep f T cert fc blockReps uses merged bs st.fresh
+    let (rest, fresh) ← chunksRep f T cert fc blockReps uses merged bs st.fresh sc rc
     pure (blocks :: rest, fresh)
 
-def functionRawRep (T : Tables) (cert : Fir.Rep.Cert) (f : FunId) (fd : Cfg.Fun) :
-    Except Error (List VReg × List Lir.Block) := do
+def functionRawRep (T : Tables) (cert : Fir.Rep.Cert) (f : FunId) (fd : Cfg.Fun)
+    (sc : StrCtx := {}) (rc : RcCtx := {}) : Except Error (List VReg × List Lir.Block) := do
   let some b0 := fd.blocks.head? | throw (.missingBlock f 0)
   if let some b := misordered fd then throw (.edgeOrder f b)
   let fc := cert.funCert f
   let blockReps : Src.NatMap (List Fir.Rep) :=
     Src.NatMap.ofDense (fd.blocks.map fun b => b.params.map fun (v, _) => fc.varRep v)
+  let rcFun : RcCtx :=
+    if !rc.enabled then rc
+    else
+      { rc with
+        tainted := computeTainted fd rc.paramMut
+        liveIn := computeLiveIn fd
+        blockParams := Src.NatMap.ofDense (fd.blocks.map fun b => b.params.map (·.1)) }
   let merged := !(fd.blocks.any fun b => b.term.edges.any (·.target == 0))
   let supply := max fd.vars (maxVar fd + 1)
   let arity := b0.params.length
@@ -1653,7 +2402,7 @@ def functionRawRep (T : Tables) (cert : Fir.Rep.Cert) (f : FunId) (fd : Cfg.Fun)
     if merged then (b0.params.map (·.1), supply)
     else ((List.range arity).map (supply + ·), supply + arity)
   let uses := useCounts fd
-  let (cs, _) ← chunksRep f T cert fc blockReps uses merged fd.blocks.zipIdx supply
+  let (cs, _) ← chunksRep f T cert fc blockReps uses merged fd.blocks.zipIdx supply sc rcFun
   let (starts, _) := chunkStarts (if merged then 0 else 1) cs
   let body ← resolveChunks f starts cs.zipIdx
   let entry : List Lir.Block :=
@@ -1661,36 +2410,72 @@ def functionRawRep (T : Tables) (cert : Fir.Rep.Cert) (f : FunId) (fd : Cfg.Fun)
   pure (params, entry ++ body)
 
 def functionRep (T : Tables) (cert : Fir.Rep.Cert) (f : FunId) (fd : Cfg.Fun)
-    (conv : Lir.Conv) : Except Error Lir.Func := do
-  let (params, raw) ← functionRawRep T cert f fd
+    (conv : Lir.Conv) (sc : StrCtx := {}) (rc : RcCtx := {}) : Except Error Lir.Func := do
+  if rc.enabled then
+    match cert.arrayPrims.get? f with
+    | some spec => return ← arrayPrimFunc rc.arrBase f fd (cert.funCert f) spec conv
+    | none => pure ()
+  let (params, raw) ← functionRawRep T cert f fd sc rc
   let seen := reachable raw
   unless reachClosed raw seen do throw (.internal f "a reached block has an unreached successor")
   pure (Lir.Func.splitCriticalEdges
     { name := s!"f{f}", params, results := 1, blocks := (pruneWith seen raw).toArray, conv })
 
 def functionsRep (T : Tables) (cert : Fir.Rep.Cert) (P : Cfg.Program)
-    (roots : List (FunId × String)) : List Nat → Except Error (List Lir.Func)
+    (roots : List (FunId × String)) (fs : List Nat) (sc : StrCtx := {}) (rc : RcCtx := {}) :
+    Except Error (List Lir.Func) :=
+  match fs with
   | [] => pure []
   | f :: fs => do
     let some fd := P.fun? f | throw (.missingFun f)
     let conv := match roots.lookup f with
       | some s => .sysvExport s
       | none => .internal
-    pure ((← functionRep T cert f fd conv) :: (← functionsRep T cert P roots fs))
+    pure ((← functionRep T cert f fd conv sc rc) :: (← functionsRep T cert P roots fs sc rc))
 
 end LowerRep
 
 open Lower LowerRep in
-/-- **DR2 Stage W2 lowering**: Cfg (immortal fragment) + checked `Fir.Rep.Cert` → Lir with raw
-64-bit `UInt64` registers, `box64`/`unbox64`, `CtorInfo.nscalar > 0` scalar tails, and
-zero-alloc hardware limb-pair fusion (`Lir.Stmt.limb`, `Lir.Rhs.bsr64`). -/
+/-- **DR2 Stage W2 + DR3 Native Arrays + DR1/DR4 Static Strings lowering**:
+Cfg + checked `Fir.Rep.Cert` → Lir with:
+* raw 64-bit `UInt64` registers, `box64`/`unbox64`, `nscalar > 0` scalar tails, and
+  zero-alloc hardware limb-pair fusion (`Lir.Stmt.limb`, `Lir.Rhs.bsr64`);
+* DR3 O(1) contiguous `Array α`, `ByteArray`, and unboxed `Array UInt64` (`LimbArray`)
+  via relocated `Rt.Rc.Array.extendedArrayRuntimeFuncs` and aliasing-safe mini-RC;
+* DR1/DR4 `.rodata` static UTF-8 string literals (direct `.imm (base + off)` when
+  `cfg.rodataBase = some base`, or position-independent `strLitProc` when `none`). -/
 def lowerRep (cfg : Config) (cert : Fir.Rep.Cert) (P : Cfg.Program) : Except Error Lowered := do
   let some main := P.exports.head? | throw .noExports
   if let some (f, _) := P.funs.toList.find? (P.size ≤ ·.1) then throw (.funRange f)
   let named := P.exports.zipIdx.map fun (f, i) => (f, symbolOf ((cfg.names[i]?).getD s!"root{i}"))
   let roots := named.map fun (f, s) => (f, (named.lookup f).getD s)
-  let funcs ← functionsRep (tables P) cert P roots (List.range P.size)
-  pure { program := { funcs := (funcs ++ [Procs.cxInit, Procs.natPow, Procs.natGcd]).toArray, main }
-         init := P.size, natPow := P.size + 1, natGcd := P.size + 2, roots }
+  let hasArr := cert.hasArrays
+  let arrBase := P.size + 3
+  let arrProcs : List Lir.Func :=
+    if hasArr then Rt.Rc.Array.extendedArrayRuntimeFuncs arrBase cert.listNilTag cert.listConsTag
+    else []
+  let rc : RcCtx :=
+    if hasArr then { enabled := true, arrBase, paramMut := computeParamMutates P cert }
+    else {}
+  let strs := LowerStr.collectStrings P
+  let strBase := arrBase + arrProcs.length
+  let (sc, strProcs, rodata, rodataExports) :
+      StrCtx × List Lir.Func × Option ByteArray × List X86.ELF.RodataSymbol :=
+    if strs.isEmpty then ({}, [], none, [])
+    else
+      let (rtbl, strOffs) := LowerStr.buildStringRodata strs
+      match cfg.rodataBase with
+      | some base =>
+        ({ rodataAddrs := strOffs.map fun (s, off) => (s, base + UInt64.ofNat off) },
+         [], some rtbl.bytes, rtbl.symbols)
+      | none =>
+        ({ strFns := strOffs.zipIdx.map fun ((s, _), i) => (s, strBase + i) },
+         strOffs.zipIdx.map fun ((s, _), i) => Rt.Rc.Array.strLitProc i s,
+         some rtbl.bytes, rtbl.symbols)
+  let funcs ← functionsRep (tables P) cert P roots (List.range P.size) sc rc
+  let allFuncs := funcs ++ [Procs.cxInit, Procs.natPow, Procs.natGcd] ++ arrProcs ++ strProcs
+  pure { program := { funcs := allFuncs.toArray, main }
+         init := P.size, natPow := P.size + 1, natGcd := P.size + 2, roots
+         rodata, rodataExports }
 
 end IxCC.Rt

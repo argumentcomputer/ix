@@ -96,7 +96,7 @@ chunk with the parameters bound. -/
 theorem entry_rel {P : Cfg.Program} {lp : Lir.Program} {ctx : Word} (ht : Target P lp) {g : Nat} {fd : Cfg.Fun}
     {b0 : Cfg.Block} (hfd : P.fun? g = some fd) (hb0 : fd.blocks[0]? = some b0) {vs : List Own.RVal}
     {ws : List Word} {Pw : List Word} (hlen : vs.length = b0.params.length)
-    (hws : ListRel (ValRel (tables P) Pw) vs ws) {H : Own.Heap} {mem : X86.Memory}
+    (hws : ListRel (ValRelStr (tables P) Pw) vs ws) {H : Own.Heap} {mem : X86.Memory}
     (hheap : HeapInv (tables P) Pw H ctx mem) {stk : List (Cfg.Frame × Nat)} {lrest : List Lir.Frame}
     (hstk : ListRel (SuspAt P lp Pw) stk lrest) :
     ∃ callee, Lir.enter lp g ws = some callee ∧ ∃ s₂', Sem.Star (Lir.semStep lp) { mem, ctx, stack := callee :: lrest } 0 s₂' ∧

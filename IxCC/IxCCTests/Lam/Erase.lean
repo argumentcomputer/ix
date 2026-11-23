@@ -283,7 +283,11 @@ def run (a : Assert) : IO (Array String) := do
   t := t1
   expect a (ep.lam.ctors.any fun r => r.key == .src b.ppairMk && r.arity == 2)
     "one layout for a structure at two profiles"
-  declined a w "a string" (lam (.strLit "s")) "erase-string"
+  let (t1, es) ← accepted a w "a string literal (DR4)" (lam (.strLit "s")) natArgs t
+  t := t1
+  expect a (es.lam.globals.toList.any fun (_, g) =>
+      match g.body with | .lam .strict .many (.lit (.str "s")) => true | _ => false)
+    "a string literal erases to .lit (.str s)"
   declinedUnchecked a w "casesOn with an irrelevant major (C4)"
     (lam (appM (.const b.natCases [.zero]) [motive, (irrArg, .irr), (lit 1, .byName),
       (lam n0, .byName)])) "erase-C4"

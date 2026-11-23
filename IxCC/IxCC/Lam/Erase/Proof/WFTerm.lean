@@ -124,6 +124,7 @@ theorem tr_wf : ∀ {cx : Cx} {t : Src.Term} {t' : Term}, TR I G cx t t' → CxO
   | _, _, _, .sort, _, _ => trivial
   | _, _, _, .pi, _, _ => trivial
   | _, _, _, .natLit, _, _ => trivial
+  | _, _, _, .strLit, _, _ => trivial
   | _, _, _, .lam _ hb, hcx, hr => by
     cases hr with
     | lam hr => exact (tr_wf hb hcx.bind hr :)

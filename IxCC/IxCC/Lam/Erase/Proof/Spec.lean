@@ -84,6 +84,7 @@ inductive TR : Cx → Src.Term → Term → Prop
   | pi {cx : Cx} {b : Src.Binder} {d c : Src.Term} :
       TR cx (.pi b d c) .box
   | natLit {cx : Cx} {n : Nat} : TR cx (.natLit n) (.lit (.nat n))
+  | strLit {cx : Cx} {s : String} : TR cx (.strLit s) (.lit (.str s))
   | lam {cx : Cx} {b : Src.Binder} {d body : Src.Term} {body' : Term} (m : Mode) :
       TR cx.bind body body' → TR cx (.lam b d body) (.lam m b.mode.input body')
   | letIrr {cx : Cx} {nd : Bool} {m : Ixon.V3.LetMode} {r : Src.Rel} {ty v b : Src.Term} {b' : Term} :

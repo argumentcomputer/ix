@@ -54,21 +54,21 @@ theorem lower_correct_traced {Env E : Type} {cfg : Config} {P : Cfg.Program} {L 
 theorem readback_sound {T : Lower.Tables} {P : List Word} {H : Own.Heap} {ctx : Word} {m : X86.Memory}
     {sig : Sig} {ty : FoTy} {v : Own.RVal} {w : Word} (hheap : HeapInv T P H ctx m) (hty : Typed sig H ty v)
     (hrel : ValRel T P v w) : readback sig (H.size + 1) m ty w = H.readback v :=
-  Proof.readback_sound hheap hty hrel
+  Proof.readback_sound hheap hty hrel.toStr
 
 /-- A final result related by `Res` reads back as Cfg's. -/
 theorem result_readback {P : Cfg.Program} {ctx : Word} {v : Own.RVal} {H : Own.Heap} {vals : List Word}
     {m : X86.Memory} (hres : Res P ctx (v, H) (vals, m)) {sig : Sig} {ty : FoTy} (hty : Typed sig H ty v) :
     ∃ w, vals = [w] ∧ readback sig (H.size + 1) m ty w = H.readback v := by
   obtain ⟨Pw, w, hw, hrel, hheap⟩ := hres
-  exact ⟨w, hw, readback_sound hheap hty hrel⟩
+  exact ⟨w, hw, Proof.readback_sound hheap hty hrel⟩
 
 /-- `Rt.lower` places `cx_init` right after the program's functions. -/
 theorem lower_cxInit {cfg : Config} {P : Cfg.Program} {L : Lowered} (h : lower cfg P = .ok L) :
     L.program.funcs[P.size]? = some Procs.cxInit := by
   obtain ⟨funcs, hfs, hprog, -⟩ := Proof.lower_spec h
   obtain ⟨hlen, -⟩ := Proof.functions_spec hfs
-  rw [hprog, List.getElem?_toArray, List.getElem?_append_right (by simp [hlen])]
+  rw [hprog, List.append_assoc, List.getElem?_toArray, List.getElem?_append_right (by simp [hlen])]
   simp [hlen]
 
 /-- **`cx_init`, then `Rt.lower_correct` from the empty heap**: on a

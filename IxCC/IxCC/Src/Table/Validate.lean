@@ -59,11 +59,12 @@ def validateEach {α : Type} (check : CId → α → Except String Unit) :
 def validateRecKind (p : Program) (r : CId) (k : RecKind) : Except String Unit :=
   if deriveRecKind p r == some k then pure () else throw "recKind: not the derived kind"
 
-/-- An `opaqueByValue` entry is a safe opaque at an allowlisted address. -/
+/-- An `opaqueByValue` entry is a safe opaque at an allowlisted address (D12 or DR4). -/
 def validateOpaque (p : Program) (c : CId) (_ : Unit) : Except String Unit :=
   match p.decl? c with
   | some (.defn _ .safe ..) =>
-    if p.known.pins.opaqueByValue.contains (Pinned.addrNat (p.addr c)) then pure ()
+    let n := Pinned.addrNat (p.addr c)
+    if p.known.pins.opaqueByValue.contains n || Pinned.dr4OpaqueByValuePins.contains n then pure ()
     else throw "opaque-by-value: not an allowlisted address"
   | _ => throw "opaque-by-value: not a safe definition"
 

@@ -73,6 +73,8 @@ structure Budgets where
   size : Nat := 128
   /-- Inline rounds per invocation (each followed by a shrink). -/
   rounds : Nat := 8
+  /-- Global keys withheld from inlining (e.g. DR3 pinned native `Array`/`ByteArray` ops). -/
+  noInline : List Key.GKey := []
   deriving Repr, Inhabited
 
 /-- Globals on a cycle of the reference graph: those with a reference to
@@ -160,8 +162,18 @@ def optHasFnOrApp : Option Exp → Bool
 
 end
 
+/-- Peel `.worker` wrappers to recover the base key for `noInline` matching. -/
+def baseInlineKey : Key.GKey → Key.GKey
+  | .worker k _ => baseInlineKey k
+  | k => k
+
+/-- Whether `k` (or its unwrapped `.worker` origin) is listed in `noInline`. -/
+def isNoInlineKey (noInline : List Key.GKey) (k : Key.GKey) : Bool :=
+  noInline.contains k || noInline.contains (baseInlineKey k)
+
 /-- Whether the default oracle inlines `g`. -/
 def inlinable (B : Budgets) (recs : Std.HashSet GlobalId) (gd : GDef) (g : GlobalId) : Bool :=
+  !isNoInlineKey B.noInline gd.key &&
   !recs.contains g &&
   (gd.ps.isEmpty || gd.body.nodes ≤ B.size || hasFnOrApp gd.body ||
     (match gd.key with
@@ -271,7 +283,9 @@ def directRecursive (P : Program) : Src.NatSet :=
 /-- Whether the post-P8 oracle inlines `g`: never dispatchers, never directly
 recursive globals; inlines CAFs, wrappers, by-name variants, and small bodies
 (`≤ maxSize` nodes, including recursors and small lifted lambdas). -/
-def inlinablePostP8 (maxSize : Nat) (recs : Src.NatSet) (gd : GDef) (g : GlobalId) : Bool :=
+def inlinablePostP8 (maxSize : Nat) (recs : Src.NatSet) (gd : GDef) (g : GlobalId)
+    (noInline : List Key.GKey := []) : Bool :=
+  !isNoInlineKey noInline gd.key &&
   !Walk.isDispatchKey gd.key &&
   !recs.contains g &&
   (gd.ps.isEmpty || gd.body.nodesLe maxSize ||
@@ -281,10 +295,10 @@ def inlinablePostP8 (maxSize : Nat) (recs : Src.NatSet) (gd : GDef) (g : GlobalI
 
 /-- Pure post-P8 inline oracle (skips `.dispatch _` globals as both callers and
 callees, uses `directRecursive`, zero `HashSet`/`Quot.sound`). -/
-def producePostP8 (maxSize : Nat := 128) (P : Program) : Round :=
+def producePostP8 (maxSize : Nat := 128) (P : Program) (noInline : List Key.GKey := []) : Round :=
   let recs := directRecursive P
   let inl : Src.NatMap Bool :=
-    Src.NatMap.ofList (P.globalList.map fun (g, gd) => (g, inlinablePostP8 maxSize recs gd g))
+    Src.NatMap.ofList (P.globalList.map fun (g, gd) => (g, inlinablePostP8 maxSize recs gd g noInline))
   P.globalList.filterMap fun (f, gd) =>
     if Walk.isDispatchKey gd.key then none
     else

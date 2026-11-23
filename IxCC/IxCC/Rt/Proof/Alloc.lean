@@ -190,7 +190,7 @@ new bump pointer. -/
 theorem alloc_mem {T : Tables} {P : List Word} {H : Own.Heap} {ctx : Word} {m : Memory} {bump limit : Word}
     (h : HeapAt T P H ctx m bump limit) {c : Fir.CtorInfo} {vs : List Own.RVal} {ws : List Word}
     (hc : CtorOk T c) (hfl : c.fieldless = false) (hn : vs.length = c.arity) (hsmall : vs.length ≤ maxFields)
-    (hvw : ListRel (ValRel T P) vs ws) (hfit : bump.toNat + cellSize vs.length ≤ limit.toNat) :
+    (hvw : ListRel (ValRelStr T P) vs ws) (hfit : bump.toNat + cellSize vs.length ≤ limit.toNat) :
     HeapAt T (P ++ [bump]) { cells := H.cells.push (.live 1 .static { ctor := c, fields := vs }) } ctx
       (allocStores m ctx bump (bump + UInt64.ofNat (cellSize vs.length)) (UInt64.ofNat (headerLow vs.length 0 c.tag))
         (UInt64.ofNat immortalRc) ws)
@@ -234,7 +234,7 @@ theorem alloc_mem {T : Tables} {P : List Word} {H : Own.Heap} {ctx : Word} {m : 
         · intro i v hv
           obtain ⟨w, hw, hvw'⟩ := hcell.fields i v hv
           have hi : i < b.fields.length := (List.getElem?_eq_some_iff.1 hv).1
-          refine ⟨w, allocStores_keep hw hctx (by omega) ?_ (.inl ?_), ValRel.mono ⟨[bump], rfl⟩ hvw'⟩
+          refine ⟨w, allocStores_keep hw hctx (by omega) ?_ (.inl ?_), ValRelG.mono ⟨[bump], rfl⟩ hvw'⟩
           · rw [addr_toNat (by omega)]; omega
           · rw [addr_toNat (by omega)]; omega
     · have hℓ' : ℓ = H.cells.size := by omega
@@ -248,7 +248,7 @@ theorem alloc_mem {T : Tables} {P : List Word} {H : Own.Heap} {ctx : Word} {m : 
         · intro i v hv
           obtain ⟨w, hw, hvw'⟩ := hvw.get hv
           exact ⟨w, allocStores_field (fun k hk hk' => (h.free k (by omega) (by omega)).1) (by omega) hw,
-            ValRel.mono ⟨[bump], rfl⟩ hvw'⟩
+            ValRelG.mono ⟨[bump], rfl⟩ hvw'⟩
   · intro ℓ ℓ' a a' rc b hlt hP hP' hH
     have hlen' := (List.getElem?_eq_some_iff.1 hP').1
     simp only [List.length_append, List.length_cons, List.length_nil, h.len] at hlen'

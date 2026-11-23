@@ -91,6 +91,18 @@ theorem valWord_rel {T : Tables} {P : List Word} {v : Own.RVal} {w : Word} (h : 
   | erased => cases h; exact ⟨rfl, erasedWord_odd⟩
   | loc ℓ => exact absurd rfl (hv ℓ)
 
+/-- A non-cell, non-string value related under `ValRelStr` has its odd immediate word. -/
+theorem valWord_relStr {T : Tables} {P : List Word} {v : Own.RVal} {w : Word} (h : ValRelStr T P v w)
+    (hv : ∀ ℓ, v ≠ .loc ℓ) (hns : ∀ s, v ≠ .lit (.str s)) : valWord v = some w ∧ w.toNat % 2 = 1 := by
+  cases v with
+  | lit l =>
+    cases l with
+    | nat n => exact ⟨h, natWord_odd h⟩
+    | str s => exact absurd rfl (hns s)
+  | ctor0 c => obtain ⟨rfl, -⟩ := h; exact ⟨rfl, ctor0Word_odd _⟩
+  | erased => cases h; exact ⟨rfl, erasedWord_odd⟩
+  | loc ℓ => exact absurd rfl (hv ℓ)
+
 theorem keyKind_zero {T : Tables} {k : Key.CtorKey} : keyKind T k = some .zero ↔ T.known.natZero = some k := by
   unfold keyKind
   by_cases h0 : T.known.natZero = some k

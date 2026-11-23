@@ -125,7 +125,7 @@ alternative of a switch the check accepts (no default), is dispatched. -/
 theorem dispatches_of_ok {T : Tables} {H : Own.Heap} {Pw : List Word} {ctx : Word} {m : X86.Memory}
     {v : Own.RVal} {w : Word} {alts : List (Key.CtorKey × Cfg.Edge)} {d : Option Cfg.Edge}
     {key : Key.CtorKey} {fs : List Own.RVal} {e : Cfg.Edge}
-    (hpins : pinsApart T.known = true) (hok : switchOk T alts d = true) (hv : ValRel T Pw v w)
+    (hpins : pinsApart T.known = true) (hok : switchOk T alts d = true) (hv : ValRelStr T Pw v w)
     (hheap : HeapInv T Pw H ctx m) (hac : v.asCtor T.known H = some (key, fs))
     (hsel : Cfg.selectEdge key alts d = some e) : Dispatches T H v alts := by
   simp only [switchOk, Bool.and_eq_true, Option.isNone_iff_eq_none, Bool.or_eq_true, List.all_eq_true,
@@ -145,7 +145,7 @@ theorem dispatches_of_ok {T : Tables} {H : Own.Heap} {Pw : List Word} {ctx : Wor
     cases v with
     | lit l =>
       cases l with
-      | str _ => exact absurd hv id
+      | str _ => simp [Own.RVal.asCtor] at hac
       | nat n =>
         cases n with
         | zero =>

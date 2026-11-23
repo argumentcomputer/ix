@@ -139,6 +139,10 @@ theorem unbox?_spec {t : CId} {q : Profile} {j : Nat} (h : I.unbox? t q = some j
     ∃ k, I.ctorsOf t = [k] ∧ I.kept k q j = true ∧ ∀ i, i ≠ j → I.kept k q i = false := by
   revert h
   unfold Input.unbox?
+  cases I.noUnbox.contains t with
+  | true => intro h; cases h
+  | false =>
+  simp only [Bool.false_eq_true, ↓reduceIte]
   cases hd : I.decl? t with
   | none => intro h; cases h
   | some d =>

@@ -79,3 +79,32 @@ depends strictly on subsets of `[propext, Classical.choice, Quot.sound]`. -/
 
 /-- info: 'IxCC.Src.Table.checkStringOp_sound' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.Table.checkStringOp_sound
+
+/-! DR3/DR4 wiring extensions (`mkEmpty`, `setIfInBounds`, `uget`, `uset`, `swapIfInBounds`). -/
+
+/-- info: 'IxCC.Src.ArraySpec.mkEmpty_eq' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Src.ArraySpec.mkEmpty_eq
+
+/-- info: 'IxCC.Src.ArraySpec.setIfInBounds_eq' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.ArraySpec.setIfInBounds_eq
+
+/-- info: 'IxCC.Src.ArraySpec.uget_eq' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Src.ArraySpec.uget_eq
+
+/-- info: 'IxCC.Src.ArraySpec.uset_eq' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.ArraySpec.uset_eq
+
+/-- info: 'IxCC.Src.ArraySpec.swapIfInBounds_eq' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.ArraySpec.swapIfInBounds_eq
+
+/-- info: 'IxCC.Src.ByteArraySpec.emptyWithCapacity_eq' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Src.ByteArraySpec.emptyWithCapacity_eq
+
+/-- info: 'IxCC.Src.ByteArraySpec.empty_eq' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Src.ByteArraySpec.empty_eq
+
+/-- info: 'IxCC.Src.ByteArraySpec.uget_eq' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Src.ByteArraySpec.uget_eq
+
+/-- info: 'IxCC.Src.ByteArraySpec.uset_eq' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.ByteArraySpec.uset_eq

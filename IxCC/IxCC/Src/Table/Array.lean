@@ -41,15 +41,83 @@ structure ArrayPins where
   stringToByteArray : Option Nat := none
   listType : Option Nat := none
   listNil : Option Nat := none
+  listCons : Option Nat := none
   listLength : Option Nat := none
   listConcat : Option Nat := none
   listDropLast : Option Nat := none
   listSet : Option Nat := none
   uint8Type : Option Nat := none
+  uint64Type : Option Nat := none
   arrayOps : List (ArrayOp × Nat) := []
   byteArrayOps : List (ByteArrayOp × Nat) := []
   stringOps : List (StringOp × Nat) := []
+  /-- Additional pinned `Array`/`ByteArray` variants in Lean 4.34.1 (`uget`/`uset`/`empty`/`swapIfInBounds`/`get!`/`set!`). -/
+  arrayUget : Option Nat := none
+  arrayUset : Option Nat := none
+  arraySetBang : Option Nat := none
+  arraySwapIfInBounds : Option Nat := none
+  byteArrayEmpty : Option Nat := none
+  byteArrayUget : Option Nat := none
+  byteArrayUset : Option Nat := none
+  byteArrayGetBang : Option Nat := none
+  byteArraySetBang : Option Nat := none
   deriving Inhabited
+
+/-- Exact Lean 4.34.1 Ixon v5 content addresses for `Array`, `ByteArray`, `String`, and `List`
+(extracted via `ix addr-of` against the frozen Lean 4.34.1 prelude). -/
+def ArrayPins.fixed : ArrayPins where
+  arrayType := some 0x1a31b4f2797c86158ebf5401b11364b35cb1058ce4b0be81a29f167da2d1c06f
+  arrayMk := some 0xc356c7e900e3853cb89a8dd81e459d31d17eb9e2d75ad23a0c77892ce3df02c2
+  arrayToList := some 0x9f1ae95cb8cd9030b88c6e421e25ef6a1e2629ce9917427585aa00f829bd138c
+  byteArrayType := some 0x6b445a78e86e8fce5ebf9cfd88f6e29ad42fabb3ff7d1c330e1bb67c5cabf817
+  byteArrayMk := some 0x7b9e02fc85465ac6a3f62c910e4f4d21a95543e0b552dc3c4614e1b2a1363ec9
+  byteArrayData := some 0x5adfaf5600ad7afcadd7dbac1848ba5dd95190de3918edebfa16cd02e6bb3aca
+  stringType := some 0x9964f625c7e537f667af5c445f1c1cd4ea18d6094dd7b7083c49f59613566306
+  stringOfByteArray := some 0x7b66454521da4be88795d96d021b712db573aa0bc848a02b3e9dd0b044bdbc1f
+  stringToByteArray := some 0x6fabcaf163e83cf02d51624cade44120c65b6e5dc439578fe68eb1972870d1dc
+  listType := some 0x487a90b33c7dcd5f3434aa04338e1a5b290552cbe922eeb59b025b1dcdbf5de0
+  listNil := some 0xacc4102c8c32f222b755f3f15b5046484ca98618da9a4932143a9711786818fa
+  listCons := some 0x63cc7dc0943c85e1d79b41c5ca23cbb5e080b67aec17e5c6bfca4fd0073e01ab
+  listLength := some 0x4e86835f8ec37d0ed6edd9037f45d80d2a15034ed691eb71d8d661f6eea83b8f
+  listConcat := some 0xedfad99820172f098102f6f052e869846802415cb4945e7ade00b76ca0665c22
+  listDropLast := some 0xe8f9a98cfc2d2442c71ba70d09bb45a4079b44bf3111e74f9e96758468a688ce
+  listSet := some 0xb96681cb5af57d060aa275332caca920408e675d27fe3716b1fa1ab7a8b3cf94
+  uint8Type := some 0x93be7ce2ba5276dcfdc71099cb3d30f67a72965636ea4d24ceb7a845d2f52ca6
+  uint64Type := some 0x7a31307b020bb907fa3c972dc19cdafcf213109498e9b124fd0466a71b429934
+  arrayOps :=
+    [ (.emptyWithCapacity, 0xd27013066dc5af007427fdaa0bd0f55b01483edb54343bdbca2c37cdb457b450),
+      (.size,              0x981e548b7f36a9b6af5c5c5f257cb40b2999db0dc3ab103c242d1dc4dd877324),
+      (.getInternal,       0x82bc2b6a0b914596e5e67905c7c377bd65c0e15768a40b0a2abda21c479c1725),
+      (.set,               0xc1999b81eba0e71a0ffd0507d82d372353a7232d3e05d04eeb0b28798d6cbdbc),
+      (.setIfInBounds,     0x6c64930c7f983effe131fef9da1202cd01c287649a95b2fd334d8d0d32e1727a),
+      (.push,              0xb5dab32a8c14b54dab8d779860c45f90f4a7198980d5e1dbdd53ba8174641fe1),
+      (.pop,               0xd0a0c0846201ca3b44f228dc60964fdaecfde5553149dd72f15330779e6cddbe),
+      (.extract,           0xcae6f7dd5032e386f05d11a61292de91835e0eb7d357e66b5b29aba9eeed537a),
+      (.swap,              0x814193a95739618f8281423f7870fae2837893bbb653c4ad1aa171db68513220) ]
+  byteArrayOps :=
+    [ (.emptyWithCapacity, 0x15d22788c97d2dba8589b1b22152c5bbdd4b6e9571d684677f65e851be0a16c6),
+      (.size,              0xbbae44fa0a44e824e6dc66bb671a62d8b9f893471978e831f7a0bfe3a6c3c1bb),
+      (.get,               0x5b984a8c14903ae52470346077d73b1d72be44214273f284f6ba7f288d62216b),
+      (.set,               0xac24641561b9caedc194238770bdae323f0026f68492de75ffee6c4fb6378a80),
+      (.push,              0x1470babb7696bcd82315672578fcf74412b3e539884e0b1b0ebb5250805a8c9e),
+      (.extract,           0x780f0fb766e23024ed5e32c0f8134c1d56a914e7ee94504bde07618b4527e47a),
+      (.copySlice,         0x86238da8a725fd1772de16308f851297f575d21761b02b28b756328c614ea996) ]
+  stringOps :=
+    [ (.ofByteArray,       0x7b66454521da4be88795d96d021b712db573aa0bc848a02b3e9dd0b044bdbc1f),
+      (.toByteArray,       0x6fabcaf163e83cf02d51624cade44120c65b6e5dc439578fe68eb1972870d1dc),
+      (.utf8ByteSize,      0xe47a3627ce6d979fee7b68a3aa86abf2b2b67b8eb24d4d984f10e284c2384d7a),
+      (.getUTF8Byte,       0xb8fd36cd4088894ea229965651d3bc9098ef2e0bba20d2b8792bcb41604d190c),
+      (.push,              0xa132a2632e8df55be75be7c18504e894b054d24a78149eabd7f7d425ad88b8a6),
+      (.append,            0x606e3f9fd1b1cb9484145af8ee112dcf66fa3203f1ff11322ebd1f4f63403a3e) ]
+  arrayUget := some 0x9ed45a07fbb57ed0a01de34d89ddfda9dee57cab443a5290ff42e2d7e04d4aff
+  arrayUset := some 0x58513156fc461c6f6c98aa0251fd23fd4ce431fad5c91f7ebe41c9e7d681377e
+  arraySetBang := some 0x958a938e434878babbae469ef71d5b0f99bddae74204780065770c5226cb1b07
+  arraySwapIfInBounds := some 0xcd9a46c704443e11518248bd132fd60bf601881ca5076077016aef3a0cc8bc8a
+  byteArrayEmpty := some 0xe2872f038c01610a4f78126ca7abe6573a57f717edf7b990ce01e3d32f60b991
+  byteArrayUget := some 0xdd7dbdc6174a330b11e0579320133c309e55e4c6dfbab3cc36c5cb72319c9b49
+  byteArrayUset := some 0x93790a22e9306a11e0821302e5aa5762c856326273404fb91ed8809446bf7cd5
+  byteArrayGetBang := some 0x16c6c06a0543ca6bf9bf931fb72c5ec1b9cceafe81e83441533a05fa52f83fc6
+  byteArraySetBang := some 0x9b309d7b0333eff77b955b0bd4bc26d8a71b7cf9dca98316ae124db5359e9ed7
 
 def ArrayPins.arrayOp? (pins : ArrayPins) (op : ArrayOp) : Option Nat :=
   (pins.arrayOps.find? (·.1 == op)).map (·.2)

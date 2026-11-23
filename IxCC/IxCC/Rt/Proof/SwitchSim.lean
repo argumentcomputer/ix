@@ -334,7 +334,8 @@ theorem switch_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {fn : Nat} {F
     | erased => simp [Own.RVal.asCtor] at hac
     | _ =>
       all_goals
-        obtain ⟨hvw, hodd⟩ := valWord_rel hrel (fun ℓ h => by cases h)
+        obtain ⟨hvw, hodd⟩ := valWord_relStr hrel (fun ℓ h => by cases h)
+          (fun s h => by cases h <;> simp [Own.RVal.asCtor] at hac)
         have hodd' : wx &&& 1 ≠ 0 := odd_and hodd
         have hiff : ∀ p ∈ alts, ∀ q, AltRel C f T src p q → q ∈ es →
             ((∃ a pe, immTest q = some (a, pe) ∧ immOf a = some wx) ↔ p.1 = c) := by

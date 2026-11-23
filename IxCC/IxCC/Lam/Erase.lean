@@ -323,4 +323,26 @@ def erase (p : Src.Program) (c : Src.Relevance.Checked) : Except EraseError (Pro
     else
       .ok (L, { globals := s.next, nodes := s.nodes, ctors := ctors.length })
 
+open Erase in
+/-- Erase a checked Src program, suppressing single-field unboxing for specified
+inductives (`noUnbox`, used by DR3 native `Array` and `ByteArray` lowering so
+`Array.mk`/`Array.toList` and `ByteArray.mk`/`ByteArray.data` stay distinct from
+`List` and boxed `Array UInt8`). -/
+def eraseWithNoUnbox (noUnbox : List Src.CId) (p : Src.Program) (c : Src.Relevance.Checked) :
+    Except EraseError (Program × Stats) :=
+  let I := { Input.ofProgram p c with noUnbox }
+  if !I.progWF then
+    .error { code := "erase-progwf",
+             message := "the declarations are not structurally well formed (ProgWF)" }
+  else
+  match (run I).run {} with
+  | .error e => .error e
+  | .ok (roots, s) =>
+    let ctors := s.ctorOrder.reverse.filterMap s.ctors.get?
+    let L : Program := { globals := s.globals, size := s.next, roots, ctors, known := I.lamKnown }
+    if !modesOk L then
+      .error { code := "erase-modes", message := "the erased program is not ModesOk" }
+    else
+      .ok (L, { globals := s.next, nodes := s.nodes, ctors := ctors.length })
+
 end IxCC.Lam

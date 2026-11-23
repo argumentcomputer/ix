@@ -32,6 +32,9 @@ structure Input where
   ctors : NatMap CtorRel := .leaf
   known : Src.Known := {}
   roots : List CId := []
+  /-- Inductives whose single-field unboxing is suppressed (DR3 `Array` and
+  `ByteArray` when lowered to native contiguous cells). Empty by default. -/
+  noUnbox : List CId := []
   deriving Inhabited
 
 /-- The input of a program and its checked annotation: their maps as they
@@ -201,6 +204,7 @@ def resultContract (c : CId) : Ixon.V3.ResultMode :=
 exactly one field at `prof`, `t`'s result is not literally `sort 0`, and
 the kept field's type does not mention `t`. -/
 def unbox? (t : CId) (prof : Profile) : Option Nat := do
+  if I.noUnbox.contains t then none
   let .induct _ _ np _ ty _ ← I.decl? t | none
   let [k] := I.ctorsOf t | none
   let fields ← I.fields? k

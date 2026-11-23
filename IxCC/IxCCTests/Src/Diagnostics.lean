@@ -36,9 +36,11 @@ def run (a : Assert) : IO Unit := do
   | .ok ad =>
     expect a (ad.reached.contains w.opaqOk && ad.reached.contains root) "admit: opaque by value"
   | .error ds => expect a false s!"admit: opaque by value rejected: {ds.map toString}"
-  -- A string literal in a relevant position is declined.
-  let (p, _) := pushConst w.p (.defn .defn .safe 0 ty (.strLit "hello")) 6000 (root := true)
-  expect a (codes (admit p) == ["unsupported"]) s!"admit: string declined, got {codes (admit p)}"
+  -- DR4: a string literal in a relevant position is admitted (static `.rodata` UTF-8 cell).
+  let (p, root) := pushConst w.p (.defn .defn .safe 0 ty (.strLit "hello")) 6000 (root := true)
+  match admit p with
+  | .ok ad => expect a (ad.reached.contains root) "admit: string literal admitted"
+  | .error ds => expect a false s!"admit: string literal rejected: {ds.map toString}"
   expect a (!isRejection "unsupported" && !isRejection "budget") "admit: decline codes"
   -- An irrelevant reference to a theorem is not reached.
   let (p, _) := pushConst w.p (.defn .defn .safe 0 ty (appIrr (lam (.natLit 1)) (.const w.thm [])))

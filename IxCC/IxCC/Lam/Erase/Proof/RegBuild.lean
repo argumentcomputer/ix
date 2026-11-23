@@ -432,7 +432,7 @@ theorem reg_term (I : Input) (wf : ProgWF I) : ∀ n : Nat, RecReg I (term I n)
     | sort u => exact CSound.pure fun _ => .box
     | pi b d c => exact CSound.pure fun _ => .box
     | natLit k => exact CSound.pure fun _ => .lit _
-    | strLit _ => exact CSound.decline
+    | strLit s => exact CSound.pure fun _ => .lit _
     | lam b d body =>
       exact CSound.bind (ih cx.bind body) fun t => CSound.pure fun _ h => .lam h
     | letE nd m r ty v b =>
