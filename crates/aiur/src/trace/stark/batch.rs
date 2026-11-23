@@ -1255,7 +1255,9 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       .rom
       .widths
       .iter()
-      .map(|&width| record.memory.width_cells(width).len())
+      .map(|&width| {
+        self.rom.row_count_for_entries(width, record.memory.width_cells(width).len())
+      })
       .collect();
     for (index, (&rows, &log)) in
       unpadded_rows.iter().zip(log_heights).enumerate()

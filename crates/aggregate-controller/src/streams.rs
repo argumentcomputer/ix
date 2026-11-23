@@ -366,4 +366,151 @@ mod tests {
       assert_eq!(keys, vec![1]);
     }
   }
+
+  /// A7 axiom merging: fast path emits no extra channel-5 trees; distinct
+  /// non-empty user-axiom trees prepend `[left, right, output]` on channel 5.
+  #[test]
+  fn a7_axiom_merge_streams_match_circuit_order() {
+    use crate::statement::{CanonicalTree, ShardSet, SubjectTree};
+    let address = |label: &str| Address::hash(label.as_bytes());
+    let (a, b, ax1, ax2) =
+      (address("subj-a"), address("subj-b"), address("ax1"), address("ax2"));
+    let owners: FxHashMap<Address, usize> =
+      [(a.clone(), 0), (b.clone(), 1)].into_iter().collect();
+    let ax1_tree =
+      CanonicalTree::from_sorted(vec![ax1.clone()]).unwrap().unwrap();
+    let ax2_tree =
+      CanonicalTree::from_sorted(vec![ax2.clone()]).unwrap().unwrap();
+    let mut union_leaves = vec![ax1.clone(), ax2.clone()];
+    union_leaves.sort_unstable();
+    let union_tree = CanonicalTree::from_sorted(union_leaves).unwrap().unwrap();
+
+    let mk = |leaf: &Address,
+              shard: usize,
+              ax: Option<std::sync::Arc<CanonicalTree>>| {
+      let mut ctx = crate::tests::ctx();
+      ctx.axioms = ax.as_ref().map(|t| t.root.clone());
+      Statement::with_axioms(
+        ctx,
+        SubjectTree::canonical(
+          vec![leaf.clone()],
+          ShardSet::singleton(shard, 2),
+        )
+        .unwrap(),
+        None,
+        ax,
+      )
+      .unwrap()
+    };
+
+    let keys = Keys { allowed: b"allowed", ixvm: b"ixvm", aggr: b"aggr" };
+    let child = |statement| Child {
+      kind: ChildKind::Aggr,
+      statement,
+      proof: b"proof",
+      claims: b"claims",
+    };
+
+    // Fast path: single-sided axioms (Some, None) -> inherits left, zero channel-5 axiom trees.
+    let left_ax1 = mk(&a, 0, Some(ax1_tree.clone()));
+    let right_none = mk(&b, 1, None);
+    let out_fast =
+      Statement::join(&left_ax1, &right_none, true, &owners).unwrap();
+    assert_eq!(out_fast.ctx.axioms, Some(ax1_tree.root.clone()));
+    let s_fast = pair(
+      keys,
+      9,
+      child(&left_ax1),
+      child(&right_none),
+      &out_fast,
+      true,
+      &owners,
+    )
+    .unwrap();
+    assert!(s_fast.entries().iter().all(|(c, _, _)| *c != 5));
+
+    // Fast path: identical axioms -> zero channel-5 axiom trees.
+    let right_ax1 = mk(&b, 1, Some(ax1_tree.clone()));
+    let out_same =
+      Statement::join(&left_ax1, &right_ax1, true, &owners).unwrap();
+    assert_eq!(out_same.ctx.axioms, Some(ax1_tree.root.clone()));
+    let s_same = pair(
+      keys,
+      9,
+      child(&left_ax1),
+      child(&right_ax1),
+      &out_same,
+      true,
+      &owners,
+    )
+    .unwrap();
+    assert!(s_same.entries().iter().all(|(c, _, _)| *c != 5));
+
+    // Slow path: distinct non-empty axioms -> merges union & emits [left, right, output] on ch 5.
+    let right_ax2 = mk(&b, 1, Some(ax2_tree.clone()));
+    for structural in [false, true] {
+      let out =
+        Statement::join(&left_ax1, &right_ax2, structural, &owners).unwrap();
+      assert_eq!(out.ctx.axioms, Some(union_tree.root.clone()));
+      assert_eq!(
+        out.axioms.as_ref().map(|t| t.root.clone()),
+        Some(union_tree.root.clone())
+      );
+      let streams = pair(
+        keys,
+        if structural { 9 } else { 5 },
+        child(&left_ax1),
+        child(&right_ax2),
+        &out,
+        structural,
+        &owners,
+      )
+      .unwrap();
+      let trees: Vec<Vec<u64>> = streams
+        .entries()
+        .iter()
+        .filter(|(c, _, _)| *c == 5)
+        .map(|(_, k, _)| k.clone())
+        .collect();
+      if structural {
+        assert_eq!(
+          trees,
+          vec![
+            address_key(&ax1_tree.root),
+            address_key(&ax2_tree.root),
+            address_key(&union_tree.root),
+          ]
+        );
+      } else {
+        assert_eq!(
+          trees,
+          vec![
+            address_key(&ax1_tree.root),
+            address_key(&ax2_tree.root),
+            address_key(&union_tree.root),
+            address_key(&left_ax1.subjects.root),
+            address_key(&right_ax2.subjects.root),
+            address_key(&out.subjects.root),
+          ]
+        );
+      }
+    }
+
+    // Distinct axiom roots without canonical trees must fail closed.
+    let mut bare_ctx_l = crate::tests::ctx();
+    bare_ctx_l.axioms = Some(ax1_tree.root.clone());
+    let mut bare_ctx_r = crate::tests::ctx();
+    bare_ctx_r.axioms = Some(ax2_tree.root.clone());
+    let bare_l = Statement::new(
+      bare_ctx_l,
+      SubjectTree::canonical(vec![a], ShardSet::singleton(0, 2)).unwrap(),
+      None,
+    );
+    let bare_r = Statement::new(
+      bare_ctx_r,
+      SubjectTree::canonical(vec![b], ShardSet::singleton(1, 2)).unwrap(),
+      None,
+    );
+    assert!(Statement::join(&bare_l, &bare_r, true, &owners).is_err());
+  }
 }

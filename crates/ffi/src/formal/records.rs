@@ -46,8 +46,8 @@ lean_ffi::lean_inductive! {
   /// `manifest` … `options` (ten objects); `planOnly`, `useCache`,
   /// `writeOutputs`, `wrapRoot`, `assumeBinding`.
   LeanAggregateConfig [ { num_obj: 10, num_8: 5 } ];
-  /// `label`, `claim`, `bindingSection`, `literalClass`.
-  LeanCatalogMember [ { num_obj: 4 } ];
+  /// `label`, `claim`, `bindingSection`, `literalClass`, `axiomLeaves`.
+  LeanCatalogMember [ { num_obj: 5 } ];
   /// `members`, `proofs`, `expectedRoot`, `device`, `options`; `useCache`,
   /// `writeOutputs`.
   LeanCatalogConfig [ { num_obj: 5, num_8: 2 } ];
@@ -63,23 +63,25 @@ pub(super) fn variant<'a, T: LeanCtorLayout>(
   wrap: fn(LeanBorrowed<'a>) -> T,
   name: &str,
 ) -> Result<(usize, T), String> {
-  let (tag, objects) = if object.is_scalar() {
-    (object.unbox_usize(), None)
+  let tag = if object.is_scalar() {
+    object.unbox_usize()
   } else {
-    (usize::from(object.tag()), Some(object.as_ctor().num_objs()))
+    usize::from(object.tag())
   };
   let layout =
     T::LAYOUTS.get(tag).ok_or_else(|| format!("invalid {name} tag {tag}"))?;
-  match objects {
-    None if layout.num_obj == 0 => {},
-    None => return Err(format!("{name}: expected a constructor object")),
-    Some(found) if found == layout.num_obj => {},
-    Some(found) => {
+  if object.is_scalar() {
+    if layout.num_obj != 0 {
+      return Err(format!("{name}: expected a constructor object"));
+    }
+  } else {
+    let found = object.as_ctor().num_objs();
+    if found != layout.num_obj {
       return Err(format!(
         "{name}: expected {} object fields, found {found}",
         layout.num_obj
       ));
-    },
+    }
   }
   Ok((tag, wrap(object)))
 }
@@ -104,7 +106,7 @@ fn u64_nat(object: LeanBorrowed<'_>) -> Result<u64, String> {
   u64::try_from(nat(object)?).map_err(|e| e.to_string())
 }
 
-fn option<T>(
+pub(super) fn option<T>(
   object: LeanBorrowed<'_>,
   f: impl FnOnce(LeanBorrowed<'_>) -> Result<T, String>,
 ) -> Result<Option<T>, String> {
@@ -229,11 +231,17 @@ pub(super) fn aggregate_config(
 
 fn catalog_member(object: LeanBorrowed<'_>) -> Result<catalog::Member, String> {
   let m = record(object, LeanCatalogMember, "CatalogMember")?;
+  let mut axiom_leaves = addresses(m.get_obj(4))?;
+  axiom_leaves.sort_unstable();
+  axiom_leaves.dedup();
+  let axioms =
+    aggregate_controller::statement::CanonicalTree::from_sorted(axiom_leaves)?;
   Ok(catalog::Member {
     label: string(m.get_obj(0)),
     claim: ixon::Claim::from_bytes(m.get_obj(1).as_byte_array().as_bytes())?,
     binding_section: bytes(m.get_obj(2)),
     literal_class: option(m.get_obj(3), address)?,
+    axioms,
   })
 }
 

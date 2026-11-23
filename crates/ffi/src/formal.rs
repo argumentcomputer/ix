@@ -175,12 +175,6 @@ extern "C" fn rs_formal_executors() -> LeanIOResult<LeanOwned> {
   })
 }
 
-fn nat(n: u64) -> Result<LeanOwned, String> {
-  usize::try_from(n)
-    .map(LeanOwned::box_usize)
-    .map_err(|e| format!("natural number result: {e}"))
-}
-
 /// `Ix.FormalProver.Registry.new : IO Registry`
 #[unsafe(no_mangle)]
 extern "C" fn rs_formal_registry_new() -> LeanIOResult<LeanOwned> {
@@ -281,7 +275,7 @@ extern "C" fn rs_formal_registry_system(
 extern "C" fn rs_formal_counters() -> LeanIOResult<LeanOwned> {
   io(|| {
     let c = ix_prover::system::counters();
-    let n = |x: usize| LeanOwned::box_usize(x);
+    let n = |x: usize| records::lean_nat(x as u64);
     Ok(LeanProd::new(
       n(c.programs),
       LeanProd::new(n(c.plans), LeanProd::new(n(c.systems), n(c.provers))),
@@ -303,7 +297,7 @@ extern "C" fn rs_formal_system_verify(
     let args = args.map(|word| word.unbox_u64());
     let shards =
       tools::verify(&system.get().0, entry.as_str(), &args, proof.as_bytes())?;
-    Ok(LeanOwned::box_usize(shards))
+    Ok(records::lean_nat(shards as u64))
   })
 }
 
@@ -328,7 +322,10 @@ extern "C" fn rs_formal_system_identity(
     let identity = tools::identity(&system.get().0, kind)?;
     Ok(LeanProd::new(
       LeanByteArray::from_bytes(&identity.key),
-      LeanProd::new(nat(identity.function_index)?, nat(identity.call_channel)?),
+      LeanProd::new(
+        records::lean_nat(identity.function_index),
+        records::lean_nat(identity.call_channel),
+      ),
     ))
   })
 }
@@ -434,7 +431,7 @@ extern "C" fn rs_formal_prove_lanes(
           0,
           records::lean_array(claims.iter().map(|(id, address)| {
             LeanProd::new(
-              LeanOwned::box_usize(*id as usize),
+              records::lean_nat(u64::from(*id)),
               records::lean_address(address),
             )
           })),
@@ -463,9 +460,9 @@ extern "C" fn rs_formal_aggregate(
 ) -> LeanIOResult<LeanOwned> {
   io(|| {
     let config = records::aggregate_config(config)?;
-    let binding = binding_proof
-      .to_option()
-      .map(|bytes| bytes.as_byte_array().as_bytes().to_vec());
+    let binding = records::option(*binding_proof.inner(), |bytes| {
+      Ok(bytes.as_byte_array().as_bytes().to_vec())
+    })?;
     let output = ix_prover::aggregate::aggregate(
       &config,
       &env.get().env,

@@ -4,7 +4,9 @@
 fn main() {
   let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
 
-  for (name, executor) in [("coverage", "Coverage"), ("heights", "Heights")] {
+  for (name, executor) in
+    [("coverage", "Coverage"), ("heights", "Heights"), ("ptreq", "PtrEq")]
+  {
     let fixture = format!("tests/fixtures/{name}.json");
     println!("cargo:rerun-if-changed={fixture}");
     let bytes = std::fs::read(&fixture).expect("the fixture reads");

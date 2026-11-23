@@ -28,7 +28,7 @@ use ixon::{Claim, merkle::node_hash};
 use crate::{
   backend::{Backend, ChildProof, ExtraNode},
   protocol::{CATALOG_SHAPE, CROSS_BINDING_SHAPE, ChildKind},
-  statement::CanonicalTree,
+  statement::{CanonicalTree, merge_axiom_trees},
   store::{
     claim_wrapper_bytes, decode_wrapper, load_cached_claim,
     persist_cached_claim, persist_claim_wrapper, read_store,
@@ -46,6 +46,9 @@ pub struct Member {
   pub binding_section: Vec<u8>,
   /// The literal class of a complete binding.
   pub literal_class: Option<Address>,
+  /// Optional canonical tree of user axioms for A7 axiom-set merging across
+  /// cross-binding joins when two members carry distinct non-empty axiom sets.
+  pub axioms: Option<Arc<CanonicalTree>>,
 }
 
 /// A node of the plan: a member's root, or a join of two earlier nodes.
@@ -76,18 +79,24 @@ impl Node {
 }
 
 /// A node's statement: its claim, and for a `Catalog` claim the canonical
-/// tree over its members' claim digests.
+/// tree over its members' claim digests (or for `CheckEnv`, its optional
+/// canonical user-axiom tree for A7 merging).
 pub struct NodeStatement {
   pub claim: Claim,
   pub claim_bytes: Vec<u8>,
   pub members: Option<Arc<CanonicalTree>>,
+  pub axioms: Option<Arc<CanonicalTree>>,
 }
 
 impl NodeStatement {
-  fn new(claim: Claim, members: Option<Arc<CanonicalTree>>) -> Self {
+  fn new(
+    claim: Claim,
+    members: Option<Arc<CanonicalTree>>,
+    axioms: Option<Arc<CanonicalTree>>,
+  ) -> Self {
     let mut claim_bytes = Vec::new();
     claim.put(&mut claim_bytes);
-    Self { claim, claim_bytes, members }
+    Self { claim, claim_bytes, members, axioms }
   }
 
   /// The member statements of one side of a catalog join
@@ -115,7 +124,9 @@ pub struct NodeAdvice {
   /// Channel 4: the children's claims, then the binding section of each
   /// member child of a cross-binding join.
   pub preimages: Vec<Vec<u8>>,
-  /// Channel 5: the members trees of catalog children and of the output.
+  /// Channel 5: any A7 axiom-merge trees (for cross-binding joins with
+  /// distinct non-empty axiom sets), or the members trees of catalog children
+  /// and of the output.
   pub trees: Vec<Arc<CanonicalTree>>,
 }
 
@@ -129,13 +140,15 @@ pub fn is_member(claim: &Claim) -> bool {
   )
 }
 
-/// The cross-binding join of two unconditional `CheckEnv` claims whose
-/// bindings have the literal class `class` (`Aggr.crossBindingClaim`).
-pub fn cross_binding_claim(
+/// The A7-aware cross-binding join of two unconditional `CheckEnv` claims whose
+/// bindings have the literal class `class` (`Aggr.crossBindingClaimWithAxioms`).
+pub fn cross_binding_claim_with_axioms(
   class: &Address,
   left: &Claim,
+  left_axioms: Option<&Arc<CanonicalTree>>,
   right: &Claim,
-) -> Result<Claim, String> {
+  right_axioms: Option<&Arc<CanonicalTree>>,
+) -> Result<(Claim, Option<Arc<CanonicalTree>>), String> {
   let unconditional = |claim: &Claim| match claim {
     Claim::CheckEnv { ctx, root, assumptions: None } => {
       Ok((ctx.clone(), root.clone()))
@@ -146,23 +159,38 @@ pub fn cross_binding_claim(
   };
   let (lctx, lroot) = unconditional(left)?;
   let (rctx, rroot) = unconditional(right)?;
-  if lctx.spec != rctx.spec || lctx.axioms != rctx.axioms {
-    return Err(
-      "catalog plan: members differ in specification digest or axioms".into(),
-    );
+  if lctx.spec != rctx.spec {
+    return Err("catalog plan: members differ in specification digest".into());
   }
   if lctx.binding_assumed || rctx.binding_assumed {
     return Err("catalog plan: a member assumes its binding".into());
   }
+  let (merged_axioms_root, merged_axioms_tree) = merge_axiom_trees(
+    lctx.axioms.as_ref(),
+    left_axioms,
+    rctx.axioms.as_ref(),
+    right_axioms,
+  )?;
   let mut ctx = lctx;
   ctx.binding = class.clone();
+  ctx.axioms = merged_axioms_root;
   ctx.binding_assumed = false;
   ctx.literal_class = true;
-  Ok(Claim::CheckEnv {
-    ctx,
-    root: node_hash(&lroot, &rroot),
-    assumptions: None,
-  })
+  Ok((
+    Claim::CheckEnv { ctx, root: node_hash(&lroot, &rroot), assumptions: None },
+    merged_axioms_tree,
+  ))
+}
+
+/// The cross-binding join of two unconditional `CheckEnv` claims whose
+/// bindings have the literal class `class` (`Aggr.crossBindingClaim`).
+pub fn cross_binding_claim(
+  class: &Address,
+  left: &Claim,
+  right: &Claim,
+) -> Result<Claim, String> {
+  cross_binding_claim_with_axioms(class, left, None, right, None)
+    .map(|(claim, _)| claim)
 }
 
 /// The catalog join of two statements (`CatalogTrees.join`): the canonical
@@ -194,8 +222,21 @@ pub fn plan(members: &[Member]) -> Result<Plan, String> {
         member.label, member.claim
       ));
     }
+    if let Some(tree) = &member.axioms
+      && member.claim.context().and_then(|c| c.axioms.as_ref())
+        != Some(&tree.root)
+    {
+      return Err(format!(
+        "catalog plan: member {}'s axiom tree root does not match its claim context",
+        member.label
+      ));
+    }
     nodes.push(Node::Member(index));
-    statements.push(NodeStatement::new(member.claim.clone(), None));
+    statements.push(NodeStatement::new(
+      member.claim.clone(),
+      None,
+      member.axioms.clone(),
+    ));
     let group = member.literal_class.as_ref().and_then(|class| {
       classes.iter().position(|(c, _)| c.as_ref() == Some(class))
     });
@@ -211,17 +252,19 @@ pub fn plan(members: &[Member]) -> Result<Plan, String> {
       let class = class.as_ref().ok_or(
         "catalog plan: an incomplete binding cannot use a cross-binding join",
       )?;
-      let claim = cross_binding_claim(
+      let (claim, merged_axioms) = cross_binding_claim_with_axioms(
         class,
         &statements[acc].claim,
+        statements[acc].axioms.as_ref(),
         &statements[index].claim,
+        statements[index].axioms.as_ref(),
       )?;
       nodes.push(Node::CrossBinding {
         class: class.clone(),
         left: acc,
         right: index,
       });
-      statements.push(NodeStatement::new(claim, None));
+      statements.push(NodeStatement::new(claim, None, merged_axioms));
       acc = nodes.len() - 1;
     }
     tops.push(acc);
@@ -231,7 +274,7 @@ pub fn plan(members: &[Member]) -> Result<Plan, String> {
     let tree = catalog_join(&statements[root], &statements[top])?;
     let claim = Claim::Catalog { members: tree.root.clone() };
     nodes.push(Node::CatalogJoin { left: root, right: top });
-    statements.push(NodeStatement::new(claim, Some(tree)));
+    statements.push(NodeStatement::new(claim, Some(tree), None));
     root = nodes.len() - 1;
   }
   Ok(Plan { nodes, statements, root })
@@ -253,11 +296,17 @@ impl Plan {
         let mut preimages = vec![claim_bytes(left), claim_bytes(right)];
         preimages.extend(binding_section(left));
         preimages.extend(binding_section(right));
-        Some(NodeAdvice {
-          shape: CROSS_BINDING_SHAPE,
-          preimages,
-          trees: Vec::new(),
-        })
+        let trees = match (
+          self.statements[left].axioms.as_ref(),
+          self.statements[right].axioms.as_ref(),
+          self.statements[index].axioms.as_ref(),
+        ) {
+          (Some(lt), Some(rt), Some(ot)) if lt.root != rt.root => {
+            vec![lt.clone(), rt.clone(), ot.clone()]
+          },
+          _ => Vec::new(),
+        };
+        Some(NodeAdvice { shape: CROSS_BINDING_SHAPE, preimages, trees })
       },
       Node::CatalogJoin { left, right } => {
         let mut trees = members_tree(left);
@@ -523,6 +572,7 @@ mod tests {
       claim: Claim::CheckEnv { ctx, root: address(label), assumptions: None },
       binding_section: binding.as_bytes().to_vec(),
       literal_class: class.map(address),
+      axioms: None,
     }
   }
 
@@ -578,5 +628,44 @@ mod tests {
       ctx.binding_assumed = true;
     }
     assert!(plan(&[m]).is_err());
+  }
+
+  #[test]
+  fn cross_binding_merges_axioms_under_a7() {
+    let ax1 =
+      CanonicalTree::from_sorted(vec![address("ax1")]).unwrap().unwrap();
+    let ax2 =
+      CanonicalTree::from_sorted(vec![address("ax2")]).unwrap().unwrap();
+    let mut union_leaves = vec![address("ax1"), address("ax2")];
+    union_leaves.sort_unstable();
+    let union_tree = CanonicalTree::from_sorted(union_leaves).unwrap().unwrap();
+
+    let mut m1 = member("a", "b1", Some("k1"));
+    if let Claim::CheckEnv { ctx, .. } = &mut m1.claim {
+      ctx.axioms = Some(ax1.root.clone());
+    }
+    m1.axioms = Some(ax1.clone());
+
+    let mut m2 = member("b", "b2", Some("k1"));
+    if let Claim::CheckEnv { ctx, .. } = &mut m2.claim {
+      ctx.axioms = Some(ax2.root.clone());
+    }
+    m2.axioms = Some(ax2.clone());
+
+    let p = plan(&[m1, m2]).unwrap();
+    let Claim::CheckEnv { ctx, .. } = &p.statements[p.root].claim else {
+      panic!("expected CheckEnv root");
+    };
+    assert_eq!(ctx.axioms, Some(union_tree.root.clone()));
+    let dummy_members =
+      [member("a", "b1", Some("k1")), member("b", "b2", Some("k1"))];
+    let advice = p.advice(&dummy_members, p.root).unwrap();
+    assert_eq!(advice.shape, CROSS_BINDING_SHAPE);
+    let tree_roots: Vec<Address> =
+      advice.trees.iter().map(|t| t.root.clone()).collect();
+    assert_eq!(
+      tree_roots,
+      vec![ax1.root.clone(), ax2.root.clone(), union_tree.root.clone()]
+    );
   }
 }

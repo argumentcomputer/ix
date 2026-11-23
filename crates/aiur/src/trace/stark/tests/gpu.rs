@@ -632,9 +632,10 @@ fn depth_circuits_fill_on_the_device() {
     Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
       .unwrap();
   let entry = "Depth::run";
-  let record = program.execute(entry, vec![12]).unwrap();
+  let x = depth::at(12);
+  let record = program.execute(entry, vec![x]).unwrap();
   let expected: Vec<Vec<u64>> = backend
-    .generate_stage_1(&record, entry, &[12])
+    .generate_stage_1(&record, entry, &[x])
     .unwrap()
     .into_iter()
     .map(|m| m.values.iter().map(|v| v.as_canonical_u64()).collect())

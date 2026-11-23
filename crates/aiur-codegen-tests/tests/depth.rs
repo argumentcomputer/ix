@@ -70,16 +70,39 @@ fn same_heights(program: &CheckedProgram, a: &Execution, b: &Execution) {
   }
 }
 
+/// The argument at distance `n` (`n <= 190`, below the multiplicative order
+/// `192` of `2` in Goldilocks) from `target` under `x -> x * 2`.
+fn at_distance(target: u64, n: u32) -> u64 {
+  const P: u128 = 0xffff_ffff_0000_0001;
+  const INV2: u128 = (P + 1) / 2;
+  let mut x = u128::from(target) % P;
+  for _ in 0..n {
+    x = (x * INV2) % P;
+  }
+  u64::try_from(x).unwrap()
+}
+
+fn at(n: u32) -> u64 {
+  at_distance(4096, n)
+}
+
+fn owned_at(n: u32) -> u64 {
+  at_distance(64, n)
+}
+
 #[test]
 fn native_heights_match_the_interpreter() {
   let (program, _) = fixture();
   assert!(program.records_depth());
   let prepared = program.prepare_hints(&[]).unwrap();
   let native = prepared.bind_native::<Depth>().unwrap();
+  let run_inputs = [0, 1, 2, 3, 7, 12, 30].map(at);
+  let fib_inputs = [0, 1, 2, 10].map(at);
+  let top_inputs = [0, 1, 5, 9].map(owned_at);
   let cases: &[(&str, &[u64])] = &[
-    ("Depth::run", &[0, 1, 2, 3, 7, 12, 30]),
-    ("Depth::fib", &[0, 1, 2, 10]),
-    ("Depth::top", &[0, 1, 5, 9]),
+    ("Depth::run", &run_inputs),
+    ("Depth::fib", &fib_inputs),
+    ("Depth::top", &top_inputs),
     ("Depth::loop", &[0, 3]),
   ];
   let mut successes = 0;
@@ -96,25 +119,25 @@ fn native_heights_match_the_interpreter() {
   }
   assert_eq!(successes, 15);
 
-  let record = native.execute("Depth::run", vec![12]).unwrap();
+  let record = native.execute("Depth::run", vec![at(12)]).unwrap();
   let fib = program.callable_id("Depth::fib").unwrap();
   let even = program.callable_id("Depth::even").unwrap();
   let odd = program.callable_id("Depth::odd").unwrap();
-  // fib(n) calls fib(n - 1), then hits the cache for fib(n - 2).
-  assert_eq!(record.query_depth(fib, &[12]), Some(11));
-  assert_eq!(record.query_depth(fib, &[1]), Some(0));
-  assert_eq!(multiplicity(&record, fib, &[10]), Some(2));
+  // fib at distance n calls distance n - 1, then hits the cache for n - 2.
+  assert_eq!(record.query_depth(fib, &[at(12)]), Some(11));
+  assert_eq!(record.query_depth(fib, &[at(1)]), Some(0));
+  assert_eq!(multiplicity(&record, fib, &[at(10)]), Some(2));
   // even and odd share an SCC: every call between them adds one.
-  assert_eq!(record.query_depth(even, &[12]), Some(12));
-  assert_eq!(record.query_depth(odd, &[11]), Some(11));
+  assert_eq!(record.query_depth(even, &[at(12)]), Some(12));
+  assert_eq!(record.query_depth(odd, &[at(11)]), Some(11));
 
-  let top = native.execute("Depth::top", vec![5]).unwrap();
+  let top = native.execute("Depth::top", vec![owned_at(5)]).unwrap();
   let owned = program.callable_id("Depth::owned").unwrap();
   let link = program.callable_id("Depth::link").unwrap();
-  assert_eq!(top.query_depth(owned, &[5]), Some(10));
-  assert_eq!(top.query_depth(link, &[4]), Some(9));
+  assert_eq!(top.query_depth(owned, &[owned_at(5)]), Some(10));
+  assert_eq!(top.query_depth(link, &[owned_at(4)]), Some(9));
   let top_id = program.callable_id("Depth::top").unwrap();
-  assert_eq!(top.query_depth(top_id, &[5]), Some(0));
+  assert_eq!(top.query_depth(top_id, &[owned_at(5)]), Some(0));
 }
 
 /// Without depth circuits nothing is recorded, and the comparison sees the
@@ -126,10 +149,11 @@ fn untracked_records_differ_from_tracked_ones() {
   assert!(!untracked.records_depth());
   let prepared = untracked.prepare_hints(&[]).unwrap();
   let native = prepared.bind_native::<Depth>().unwrap();
-  let plain = native.execute("Depth::run", vec![12]).unwrap();
-  record_diff(&prepared.execute("Depth::run", vec![12]).unwrap(), &plain)
+  let x = at(12);
+  let plain = native.execute("Depth::run", vec![x]).unwrap();
+  record_diff(&prepared.execute("Depth::run", vec![x]).unwrap(), &plain)
     .unwrap();
-  let tracked = program.execute("Depth::run", vec![12]).unwrap();
+  let tracked = program.execute("Depth::run", vec![x]).unwrap();
   let error = record_diff(&tracked, &plain).unwrap_err();
   assert!(error.contains("heights"), "{error}");
 }
@@ -141,21 +165,22 @@ fn native_record_proves_like_the_interpreters() {
   let prepared = program.prepare_hints(&[]).unwrap();
   let native = prepared.bind_native::<Depth>().unwrap();
   let entry = "Depth::run";
-  let interpreted = prepared.execute(entry, vec![12]).unwrap();
-  let generated = native.execute(entry, vec![12]).unwrap();
+  let x = at(12);
+  let interpreted = prepared.execute(entry, vec![x]).unwrap();
+  let generated = native.execute(entry, vec![x]).unwrap();
   assert_eq!(generated.output, [145]);
-  let trace = plan.generate(&generated, entry, &[12], true).unwrap();
-  plan.check(&generated, &trace, entry, &[12]).unwrap();
-  assert_eq!(trace, plan.generate(&interpreted, entry, &[12], true).unwrap());
+  let trace = plan.generate(&generated, entry, &[x], true).unwrap();
+  plan.check(&generated, &trace, entry, &[x]).unwrap();
+  assert_eq!(trace, plan.generate(&interpreted, entry, &[x], true).unwrap());
 
   let backend = Backend::new(&plan, parameters()).unwrap();
-  let witness = backend.generate(&generated, entry, &[12]).unwrap();
-  let reference = backend.generate(&interpreted, entry, &[12]).unwrap();
+  let witness = backend.generate(&generated, entry, &[x]).unwrap();
+  let reference = backend.generate(&interpreted, entry, &[x]).unwrap();
   for (a, b) in witness.traces.iter().zip(&reference.traces) {
     assert_eq!(a.values, b.values);
   }
-  let proof = backend.prove(entry, &[12], &generated.output, witness).unwrap();
-  backend.verify(entry, &[12], &generated.output, &proof).unwrap();
+  let proof = backend.prove(entry, &[x], &generated.output, witness).unwrap();
+  backend.verify(entry, &[x], &generated.output, &proof).unwrap();
 }
 
 #[allow(warnings, clippy::all, clippy::pedantic)]

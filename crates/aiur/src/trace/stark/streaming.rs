@@ -314,12 +314,9 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         .map(|c| c.preprocessed_height),
     );
     rows.extend(
-      self
-        .system
-        .circuits
-        .iter()
-        .skip(rows.len())
-        .map(|c| record.memory.width_cells(c.main_width - 3).len()),
+      self.rom.widths.iter().map(|&width| {
+        self.rom.row_count_for_entries(width, record.memory.width_cells(width).len())
+      }),
     );
     Ok(rows)
   }
@@ -1134,18 +1131,14 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         }
       }
     } else if !self.fixed_circuit(ci) {
-      let cells = prepared.record.memory.width_cells(width - 3);
-      for (address, row) in
-        (slice.first..slice.first + slice.rows).zip(values.chunks_mut(width))
-      {
-        let cell = cells.get(address).ok_or("missing ROM entry")?;
-        row[0] = Val::from_u64(cell.multiplicity);
-        row[1] = Val::ONE;
-        row[2] = Val::from_usize(cell.address);
-        for (dest, &value) in row[3..].iter_mut().zip(cell.cell.value) {
-          *dest = B::into_stark(value);
-        }
-      }
+      let rom_index = ci - self.members.len() - self.tables.len();
+      self.rom.populate_rows(
+        prepared.record,
+        rom_index,
+        slice.first,
+        slice.rows,
+        &mut values,
+      );
     }
     time.fill = filling.elapsed();
     Ok(TraceSource::Host(RowMajorMatrix::new(values, width)))

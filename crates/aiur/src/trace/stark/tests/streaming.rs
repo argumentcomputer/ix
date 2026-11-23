@@ -35,12 +35,39 @@ fn prepared_records_reject_overflowing_depths() {
   let (program, artifact) = depth::depth_fixture();
   let plan = TracePlan::new(&program, artifact).unwrap();
   let backend = host_lookups(&plan);
-  let mut record = program.execute("Depth::run", vec![12]).unwrap();
+  let x = depth::at(12);
+  let mut record = program.execute("Depth::run", vec![x]).unwrap();
   let function = program.callable_id("Depth::fib").unwrap();
-  let row = record.queries.tables[function].lookup(&[12]).1.unwrap();
+  let row = record.queries.tables[function].lookup(&[x]).1.unwrap();
   record.queries.tables[function].set_depth(row, u64::from(u32::MAX));
   let error = backend.prepare_incremental(&record, None).err().unwrap();
   assert!(error.contains("depth overflows"), "{error}");
+}
+
+#[test]
+fn depth_preparation_matches_reference_across_row_batches() {
+  let (program, artifact) = depth::depth_fixture();
+  let plan = TracePlan::new(&program, artifact).unwrap();
+  let backend = host_lookups(&plan);
+  let entry = "Depth::fib";
+  let x = depth::at_distance(4096, 128);
+  let record = program.execute(entry, vec![x]).unwrap();
+  let args = plan.public_args(&record, entry, &[x]).unwrap();
+  let reference = plan.generate_reference(&record, entry, &args, true).unwrap();
+  assert_eq!(reference.ranges.table(0).iter().sum::<u64>(), 2 * 127);
+  assert_eq!(reference.ranges.table(1).iter().sum::<u64>(), 2 * 127);
+  let expected = backend.witness(&record, &reference).unwrap();
+  let layout = backend.uniform_layout(&record, 256).unwrap();
+  assert_eq!(layout.shards.len(), 1);
+  let prepared =
+    backend.prepare_incremental(&record, Some((entry, &args))).unwrap();
+  let actual =
+    backend.incremental_witness(&prepared, &layout.shards[0]).unwrap();
+  for (expected, actual) in expected.traces.iter().zip(actual.traces) {
+    let actual = actual.materialize();
+    assert_eq!(expected.width, actual.width);
+    assert_eq!(expected.values, actual.values);
+  }
 }
 
 #[test]

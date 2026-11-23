@@ -41,16 +41,57 @@ pub fn path_payload(path: Option<&MerklePath>) -> Result<Vec<u8>, String> {
   Ok(out)
 }
 
-/// The trees a join's circuit re-hashes, in the order it reads them: for a
-/// flat join every subject and assumption tree (left, right, output), for
-/// a structural join only the assumption trees.
+/// Channel-5 trees needed when `A7` axiom merging (`aggr_assert_axioms_merge`)
+/// combines two distinct non-empty user-axiom trees. Empty on the fast path
+/// (identical roots or at least one `None`).
+pub fn axiom_merge_advice_trees<'a>(
+  left_root: Option<&Address>,
+  left_tree: Option<&'a CanonicalTree>,
+  right_root: Option<&Address>,
+  right_tree: Option<&'a CanonicalTree>,
+  output_root: Option<&Address>,
+  output_tree: Option<&'a CanonicalTree>,
+) -> Result<Vec<&'a CanonicalTree>, String> {
+  match (left_root, right_root) {
+    (Some(la), Some(ra)) if la != ra => {
+      let (Some(oa), Some(lt), Some(rt), Some(ot)) =
+        (output_root, left_tree, right_tree, output_tree)
+      else {
+        return Err(
+          "distinct user-axiom merge requires canonical axiom trees for left, right, and output"
+            .into(),
+        );
+      };
+      if lt.root != *la || rt.root != *ra || ot.root != *oa {
+        return Err(
+          "user-axiom merge advice tree root does not match claim context"
+            .into(),
+        );
+      }
+      Ok(vec![lt, rt, ot])
+    },
+    _ => Ok(Vec::new()),
+  }
+}
+
+/// The trees a join's circuit re-hashes, in the order it reads them: any A7
+/// axiom-merge trees first (empty on the fast path), then for a flat join
+/// every subject and assumption tree (left, right, output), or for a
+/// structural join only the assumption trees.
 pub fn advice_trees<'a>(
   left: &'a Statement,
   right: &'a Statement,
   output: &'a Statement,
   structural: bool,
 ) -> Result<Vec<&'a CanonicalTree>, String> {
-  let mut trees = Vec::new();
+  let mut trees = axiom_merge_advice_trees(
+    left.ctx.axioms.as_ref(),
+    left.axioms.as_deref(),
+    right.ctx.axioms.as_ref(),
+    right.axioms.as_deref(),
+    output.ctx.axioms.as_ref(),
+    output.axioms.as_deref(),
+  )?;
   for (statement, side) in
     [(left, "left"), (right, "right"), (output, "output")]
   {

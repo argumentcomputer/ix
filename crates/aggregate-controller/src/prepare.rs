@@ -197,6 +197,15 @@ pub fn prepare_run(
         )
       })
       .collect();
+  let env_axioms = if let Some(expected_root) = &ctx.axioms {
+    let mut leaves = ClaimContext::user_axioms(env);
+    leaves.sort_unstable();
+    leaves.dedup();
+    CanonicalTree::from_sorted(leaves)?
+      .filter(|tree| tree.root == *expected_root)
+  } else {
+    None
+  };
   let shard_results: Vec<Result<PreparedShard, String>> = shard_inputs
     .into_par_iter()
     .map(|(retained, original_id, subjects, candidates)| {
@@ -220,7 +229,12 @@ pub fn prepare_run(
         ShardSet::singleton(retained, retained_old.len()),
       )?;
       let assumptions = CanonicalTree::from_sorted(frontier)?;
-      let statement = Statement::new(ctx.clone(), subject_tree, assumptions);
+      let statement = Statement::with_axioms(
+        ctx.clone(),
+        subject_tree,
+        assumptions,
+        env_axioms.clone(),
+      )?;
       Ok(PreparedShard { original_id, statement })
     })
     .collect();

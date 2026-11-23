@@ -879,10 +879,8 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         .take(self.tables.len())
         .map(|c| c.preprocessed_height),
     );
-    let memory_start = heights.len();
     let mut memory_intervals = Vec::new();
-    for c in &self.system.circuits[memory_start..] {
-      let width = c.main_width - 3;
+    for &width in &self.rom.widths {
       let cells = record.memory.width_cells(width);
       if let Some(first) = cells.get(0) {
         let start = first.address as u64;
@@ -891,7 +889,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
           .ok_or("ROM boundary overflow")?;
         memory_intervals.push((width as u64, start, end));
       }
-      heights.push(padded(cells.len())?);
+      heights.push(padded(self.rom.row_count_for_entries(width, cells.len()))?);
     }
     Ok(RecordShape { heights, memory_intervals })
   }

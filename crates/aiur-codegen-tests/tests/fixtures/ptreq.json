@@ -1,0 +1,45 @@
+{
+ "version": 1,
+ "modulus": 18446744069414584321,
+ "functions": [
+  {
+   "name": "ptreq_rom",
+   "params": [{"kind": "field"}, {"kind": "field"}],
+   "result": {"kind": "field"},
+   "registers": 5,
+   "code": [
+    {"op": "store", "type": {"kind": "field"}, "value": [0], "dest": 2},
+    {"op": "store", "type": {"kind": "field"}, "value": [1], "dest": 3},
+    {"op": "ptr_eq", "dest": 4, "left": 2, "right": 3},
+    {"op": "ret", "value": [4]}
+   ]
+  },
+  {
+   "name": "ptreq_direct",
+   "params": [{"kind": "field"}, {"kind": "field"}],
+   "result": {"kind": "field"},
+   "registers": 3,
+   "code": [
+    {"op": "ptr_eq", "dest": 2, "left": 0, "right": 1},
+    {"op": "ret", "value": [2]}
+   ]
+  }
+ ],
+ "enums": [],
+ "tables": [],
+ "maps": [],
+ "entries": [
+  {
+   "name": "ptreq_rom",
+   "function": 0,
+   "inputs": [{"kind": "field"}, {"kind": "field"}],
+   "output": {"kind": "field"}
+  },
+  {
+   "name": "ptreq_direct",
+   "function": 1,
+   "inputs": [{"kind": "field"}, {"kind": "field"}],
+   "output": {"kind": "field"}
+  }
+ ]
+}
