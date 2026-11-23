@@ -198,6 +198,9 @@ def produceWith (cfg : Config) (inp : Input) : Except Err Produced := do
   let fir ← (Fir.lower anf).mapError Err.ofFir
   let C := Cfg.lower (Own.immortal fir)
   checkParams cfg C (C.exports.zipIdx.map fun (f, i) => (i, f))
+  if !(Rt.lowerStrs C).isEmpty then
+    throw { stage := .rt, code := "rt.string",
+            message := "surviving string literal on the Phase 1 Rt.lower path requires DR3/DR4 Rt.lowerRep" }
   let lowered ← (Rt.lower { names := cfg.names } C).mapError Err.ofRt
   let (xv, _) ← (Xv.Select.run lowered.program).mapError Err.ofSelect
   let r ← (Xv.Alloc.runProducer cfg.env xv).mapError fun m => { stage := .alloc, code := "alloc.fallback", message := m }

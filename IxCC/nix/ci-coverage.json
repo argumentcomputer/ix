@@ -396,6 +396,7 @@
   "IxCC.Ixon.V4.Convert",
   "IxCC.Key",
   "IxCC.Lam.Erase",
+  "IxCC.Lam.Erase.Array",
   "IxCC.Lam.Erase.Input",
   "IxCC.Lam.Erase.Limb",
   "IxCC.Lam.Erase.ProgWF",
@@ -594,6 +595,7 @@
   "IxCC.Rt.Procs.Entry",
   "IxCC.Rt.Procs.Nat",
   "IxCC.Rt.Proof.Alloc",
+  "IxCC.Rt.Proof.ArrayWire",
   "IxCC.Rt.Proof.Block",
   "IxCC.Rt.Proof.Chain",
   "IxCC.Rt.Proof.Check",
@@ -631,6 +633,7 @@
   "IxCC.Rt.Proof.StepFrame",
   "IxCC.Rt.Proof.StepInstr",
   "IxCC.Rt.Proof.StepTerm",
+  "IxCC.Rt.Proof.StrHoist",
   "IxCC.Rt.Proof.Switch",
   "IxCC.Rt.Proof.SwitchLink",
   "IxCC.Rt.Proof.SwitchSim",
@@ -648,6 +651,7 @@
   "IxCC.Rt.Rc.Array.Proof.MutOps",
   "IxCC.Rt.Rc.Array.Proof.Release",
   "IxCC.Rt.Rc.Array.Proof.StepLemmas",
+  "IxCC.Rt.Rc.Array.Wire",
   "IxCC.Rt.Rc.Classes",
   "IxCC.Rt.Rc.Gen.Procs",
   "IxCC.Rt.Rc.Gen.Proof.AdvanceCursorPlacement",
@@ -1065,6 +1069,8 @@
   "IxCC.Xv.Alloc.AllSlots",
   "IxCC.Xv.Alloc.Apply",
   "IxCC.Xv.Alloc.Driver",
+  "IxCC.Xv.Alloc.GraphColor",
+  "IxCC.Xv.Alloc.Interference",
   "IxCC.Xv.Alloc.LinearScan",
   "IxCC.Xv.Alloc.Liveness",
   "IxCC.Xv.Alloc.Output",
@@ -1742,7 +1748,7 @@
  "ecb1040fcf889eb2c39b18e5bbd0e208e53aa66588b9b3780a2bbe6982de86e4",
  "grounding_axiom_count": 556,
  "baseline":
- "ixcc-w2-cp2b: Wave 2 Checkpoint 2b (rc-fbip +65, bignat-prep +93, bignat-ground +109; 7,117 + 556 = 7,673 fences)",
+ "ixcc-w3-cp3a: Wave 3 Checkpoint 3a (regalloc-e1 +0, arrays-wire +40; 7,157 + 556 = 7,713 fences)",
  "axiom_sha256":
- "1147c0103645b6d3c8a225ff1a3238de019a366e9ade2292f147a921faaa98f1",
- "axiom_count": 7117}
+ "cc870d5ae37e4f55563499832f6d6cb4fff3d7426a97efbc5eda2450c8e90d26",
+ "axiom_count": 7157}

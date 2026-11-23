@@ -1119,6 +1119,14 @@ def buildStringRodata (strs : List String) : X86.ELFRodata.RodataTable × List (
     let (tbl', off) := tbl.addString s!"cx_str_{i}" s
     (tbl', offs ++ [(s, off)])
 
+/-- Kernel-evaluable version of `buildStringRodata` (zero `ByteArray` copies on `Recheck.run`). -/
+def buildStringRodataK (strs : List String) : X86.ELFRodata.RodataTable × List (String × Nat) :=
+  let (tbl, offs) :=
+    strs.zipIdx.foldl (init := (X86.ELFRodata.RodataTableK.empty, [])) fun (tbl, offs) (s, i) =>
+      let (tbl', off) := tbl.addString s!"cx_str_{i}" s
+      (tbl', offs ++ [(s, off)])
+  (tbl.toRodataTable, offs)
+
 def hoistArg (strFns : List (String × FunId)) (fresh : VReg) :
     Fir.Arg → List Cfg.Instr × Fir.Arg × VReg
   | .lit (.str s) =>
@@ -1271,7 +1279,7 @@ def lowerCore (P : Cfg.Program) (roots : List (FunId × String)) :
   if strs.isEmpty then
     pure (funcs ++ [Procs.cxInit, Procs.natPow, Procs.natGcd], none, [])
   else
-    let (rtbl, _) := LowerStr.buildStringRodata strs
+    let (rtbl, _) := LowerStr.buildStringRodataK strs
     pure (funcs ++ [Procs.cxInit, Procs.natPow, Procs.natGcd] ++ lowerStrProcs P,
           some rtbl.bytes, rtbl.symbols)
 

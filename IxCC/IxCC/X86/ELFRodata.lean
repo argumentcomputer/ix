@@ -539,4 +539,123 @@ theorem RodataMapped.staticBoxedArray_reads {rodataBase : Word} {rodata : ByteAr
     rw [hidx] at h
     simpa [ws] using h
 
+/-! ## Kernel-evaluable `.rodata` encoders (zero `ByteArray` copies) -/
+
+/-- Kernel-evaluable little-endian concatenation of 64-bit words (zero `ByteArray` copies). -/
+def encodeWordsK : List Word → List UInt8
+  | [] => []
+  | w :: ws => word64K w ++ encodeWordsK ws
+
+/-- Kernel-evaluable static `ByteArray` / UTF-8 `String` cell encoder (zero `ByteArray` copies). -/
+def encodeStaticByteArrayK (data : ByteArray) : List UInt8 :=
+  let cap := alignUp data.size 8
+  encodeWordsK [staticHeader 0 tagByteArray, UInt64.ofNat data.size, UInt64.ofNat cap] ++
+    padToK data.data.toList cap
+
+/-- Kernel-evaluable static UTF-8 `String` literal cell encoder. -/
+def encodeStaticStringK (s : String) : List UInt8 :=
+  encodeStaticByteArrayK s.toUTF8
+
+private theorem byteArray_ext_toList {a b : ByteArray} (h : a.data.toList = b.data.toList) : a = b := by
+  cases a with | mk ad =>
+  cases b with | mk bd =>
+  cases ad with | mk al =>
+  cases bd with | mk bl =>
+  simp only at h
+  subst h
+  rfl
+
+private theorem byteArray_append_toList (a b : ByteArray) :
+    (a ++ b).data.toList = a.data.toList ++ b.data.toList := by
+  apply List.ext_getElem
+  · rw [List.length_append]
+    exact ByteArray.size_append
+  · intro i hi1 hi2
+    have hi : i < (a ++ b).size := hi1
+    by_cases hlt : i < a.size
+    · have hl : i < a.data.toList.length := hlt
+      rw [List.getElem_append_left hl]
+      exact ByteArray.getElem_append_left hlt (b := b)
+    · have hge : a.size ≤ i := Nat.le_of_not_lt hlt
+      have hgeL : a.data.toList.length ≤ i := hge
+      rw [List.getElem_append_right hgeL]
+      exact ByteArray.getElem_append_right hge (h := hi)
+
+theorem encodeWordsK_eq (ws : List Word) :
+    (⟨⟨encodeWordsK ws⟩⟩ : ByteArray) = encodeWords ws := by
+  induction ws with
+  | nil => rfl
+  | cons w ws ih =>
+    apply byteArray_ext_toList
+    simp only [encodeWordsK, encodeWords, byteArray_append_toList]
+    have hih : encodeWordsK ws = (encodeWords ws).data.toList := congrArg (fun x => x.data.toList) ih
+    rw [hih]
+    rfl
+
+theorem encodeStaticByteArrayK_eq (data : ByteArray) :
+    (⟨⟨encodeStaticByteArrayK data⟩⟩ : ByteArray) = encodeStaticByteArray data := by
+  apply byteArray_ext_toList
+  simp only [encodeStaticByteArrayK, encodeStaticByteArray, byteArray_append_toList, padTo, padToK,
+    zeros, zerosK]
+  have hw : encodeWordsK [staticHeader 0 tagByteArray, UInt64.ofNat data.size,
+      UInt64.ofNat (alignUp data.size 8)] =
+    (encodeWords [staticHeader 0 tagByteArray, UInt64.ofNat data.size,
+      UInt64.ofNat (alignUp data.size 8)]).data.toList :=
+    congrArg (fun x => x.data.toList)
+      (encodeWordsK_eq [staticHeader 0 tagByteArray, UInt64.ofNat data.size,
+        UInt64.ofNat (alignUp data.size 8)])
+  have hlen : data.data.toList.length = data.size := rfl
+  have hrep : (Array.replicate (alignUp data.size 8 - data.size) (0 : UInt8)).toList =
+      List.replicate (alignUp data.size 8 - data.size) (0 : UInt8) := Array.toList_replicate
+  rw [hw, hlen, hrep]
+
+theorem encodeStaticStringK_eq (s : String) :
+    (⟨⟨encodeStaticStringK s⟩⟩ : ByteArray) = encodeStaticString s :=
+  encodeStaticByteArrayK_eq s.toUTF8
+
+/-- Kernel-evaluable `.rodata` section table builder accumulating `List UInt8`
+without quadratic `ByteArray` copies. -/
+structure RodataTableK where
+  bytes : List UInt8 := []
+  symbols : List RodataSymbol := []
+
+namespace RodataTableK
+
+def empty : RodataTableK := {}
+
+def addCell (t : RodataTableK) (name : String) (cell : List UInt8) : RodataTableK × Nat :=
+  let off := alignUp t.bytes.length 8
+  let padded := padToK t.bytes off
+  let bytes' := padded ++ cell
+  let sym : RodataSymbol := { name, offset := off, size := cell.length }
+  ({ bytes := bytes', symbols := t.symbols ++ [sym] }, off)
+
+def addString (t : RodataTableK) (name : String) (s : String) : RodataTableK × Nat :=
+  t.addCell name (encodeStaticStringK s)
+
+def toRodataTable (t : RodataTableK) : RodataTable :=
+  { bytes := ⟨⟨t.bytes⟩⟩, symbols := t.symbols }
+
+theorem addCell_toRodataTable (t : RodataTableK) (name : String) (cell : List UInt8) :
+    let (t', off) := t.addCell name cell
+    (t'.toRodataTable, off) = t.toRodataTable.addCell name ⟨⟨cell⟩⟩ := by
+  simp only [addCell, toRodataTable, RodataTable.addCell, Prod.mk.injEq, RodataTable.mk.injEq]
+  have hsz : (⟨⟨t.bytes⟩⟩ : ByteArray).size = t.bytes.length := rfl
+  have hcsz : (⟨⟨cell⟩⟩ : ByteArray).size = cell.length := rfl
+  refine ⟨⟨?_, by simp [hsz, hcsz]⟩, by simp [hsz]⟩
+  apply byteArray_ext_toList
+  simp only [byteArray_append_toList, padTo, padToK, zeros, zerosK, hsz]
+  have hrep : (Array.replicate (alignUp t.bytes.length 8 - t.bytes.length) (0 : UInt8)).toList =
+      List.replicate (alignUp t.bytes.length 8 - t.bytes.length) (0 : UInt8) := Array.toList_replicate
+  simp only [hrep]
+
+theorem addString_toRodataTable (t : RodataTableK) (name : String) (s : String) :
+    let (t', off) := t.addString name s
+    (t'.toRodataTable, off) = t.toRodataTable.addString name s := by
+  simp only [addString, RodataTable.addString]
+  rw [← encodeStaticStringK_eq s]
+  exact addCell_toRodataTable t name (encodeStaticStringK s)
+
+end RodataTableK
+
 end IxCC.X86.ELFRodata

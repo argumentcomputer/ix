@@ -16,7 +16,7 @@ the replay) on that text before it writes anything. Two parts:
 * **the depth limit** (`fixtures/rc/deep`): `deep240`'s plain-RC certificate nests 726 deep, past
   the certificate text's 512, so `ixcc compile --rc on` declines with the limit's reason and writes
   no object and no certificate, and `--rc auto` falls back to the immortal policy naming that
-  reason and writes a certificate `check-cert` accepts; `deep168`'s nests 510 and compiles under
+  reason and writes a certificate `check-cert` accepts; `deep168`'s nests 509 and compiles under
   every mode, and `check-cert` accepts each certificate written, through the command line. -/
 
 set_option autoImplicit false
@@ -151,7 +151,7 @@ def depthLimit (r : IO.Ref Nat) (work : FilePath) : IO (Array String) := do
     if code != 0 then continue
     let text ← IO.FS.readFile cert
     let depth := (Src.Hints.scanJson text).maxDepth
-    let want := if root == "deep168" && mode != "off" then 510 else 8
+    let want := if root == "deep168" && mode != "off" then 509 else 8
     expect r (depth == want) s!"{root} --rc {mode}: the certificate nests {depth}, expected {want}"
     let code ← ixcc (["check-cert"] ++ base ++ rootArgs ++ ["--cert", cert.toString])
     expect r (code == 0) s!"{root} --rc {mode}: check-cert exit {code} on the certificate compile wrote"

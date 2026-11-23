@@ -303,13 +303,13 @@ private def computeDefers (f : Func VReg) (env : Xl.Env) (preds : Array (List La
 def buildGraph (env : Xl.Env) (f : Func VReg) : Except String Graph := do
   let n := f.blocks.size
   if n == 0 then throw "a function without blocks"
+  let (vregs, vregToNode) ← collectVRegs f
   let g := f.skeleton
   let order := g.rpo
   if order.size != n then throw "unreachable blocks"
   let preds := g.preds
   let (depth, header) := loopDepth f preds
   let (liveIn, liveOut) ← exactLiveness f order
-  let (vregs, vregToNode) ← collectVRegs f
   let numNodes := K + vregs.size
   let uses := f.blocks.map usePositions
 
@@ -382,6 +382,13 @@ def buildGraph (env : Xl.Env) (f : Func VReg) : Except String Graph := do
 
   -- Call-result deferral ranges.
   let (deferOf, parked) := computeDefers f env preds liveIn vregToNode numNodes callClobMask
+  let mut crossTermDeferred : Array Bool := Array.replicate numNodes false
+  let mut hasCrossTermDefer := false
+  for u in [K : numNodes] do
+    if let some d := deferOf[u]! then
+      if d.splitPos > f.blocks[d.block]!.body.size then
+        crossTermDeferred := crossTermDeferred.set! u true
+        hasCrossTermDefer := true
 
   -- Build interference graph and move map.
   let mut preMask : Array UInt16 := Array.replicate numNodes 0
@@ -448,27 +455,44 @@ def buildGraph (env : Xl.Env) (f : Func VReg) : Except String Graph := do
     let nb := block.body.size
     let db := depth[b]!
 
-    -- 1. Entry live-in clique (guarantees distinct locations at block entry).
+    -- 1. Entry live-in interferences: full clique only at function entry (`b == 0`);
+    -- for `b > 0`, every pass-through pair already interfered at its definition or entry,
+    -- so only newly defined `block.params` and cross-terminator deferred results need edges
+    -- against `liveIn[b]`.
     let mut inNodes : Array Nat := #[]
     for x in liveIn[b]! do
       if let some u := vregToNode[x]? then inNodes := inNodes.push u
-    (adjList, adjSet) ← addClique adjList adjSet inNodes
+    if b == 0 then
+      (adjList, adjSet) ← addClique adjList adjSet inNodes
+    else
+      for p in block.params do
+        if liveIn[b]!.contains p then
+          if let some up := vregToNode[p]? then
+            for u in inNodes do
+              (adjList, adjSet) := addVEdge adjList adjSet up u
+      if hasCrossTermDefer then
+        for du in inNodes do
+          if crossTermDeferred[du]! then
+            for u in inNodes do
+              (adjList, adjSet) := addVEdge adjList adjSet du u
+      if adjSet.size > maxEdges then
+        throw s!"graph-coloring edge budget exceeded ({adjSet.size} > {maxEdges})"
 
-    -- 2. Exit live-out clique & block-param edge moves.
+    -- 2. Deferred exit `extraFullAdj` (for spill-slot reuse) & block-param edge moves.
     let blockHasDefer := parked[b]!.any (!·.isEmpty)
-    let mut outNodes : Array Nat := #[]
-    let mut deferredOut : Array Nat := #[]
-    for x in liveOut[b]! do
-      if let some u := vregToNode[x]? then
-        if isHomeActive deferOf b nb u then outNodes := outNodes.push u
-        else deferredOut := deferredOut.push u
-    (adjList, adjSet) ← addClique adjList adjSet outNodes
-    if !deferredOut.isEmpty then
-      for du in deferredOut do
-        for ou in outNodes do
-          extraFullAdj := addExtraFull extraFullAdj adjSet du ou
-        for du2 in deferredOut do
-          extraFullAdj := addExtraFull extraFullAdj adjSet du du2
+    if blockHasDefer then
+      let mut outNodes : Array Nat := #[]
+      let mut deferredOut : Array Nat := #[]
+      for x in liveOut[b]! do
+        if let some u := vregToNode[x]? then
+          if isHomeActive deferOf b nb u then outNodes := outNodes.push u
+          else deferredOut := deferredOut.push u
+      if !deferredOut.isEmpty then
+        for du in deferredOut do
+          for ou in outNodes do
+            extraFullAdj := addExtraFull extraFullAdj adjSet du ou
+          for du2 in deferredOut do
+            extraFullAdj := addExtraFull extraFullAdj adjSet du du2
 
     for e in block.term.edges do
       let s := f.blocks[e.target]!

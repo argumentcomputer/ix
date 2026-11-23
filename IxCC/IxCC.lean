@@ -536,6 +536,12 @@ import IxCC.Rt.BigNat.Cell
 import IxCC.Rt.BigNat.Dispatch
 import IxCC.Rt.BigNat.ProofProcs
 import IxCC.Rt.BigNat.Proof
+import IxCC.Xv.Alloc.Interference
+import IxCC.Xv.Alloc.GraphColor
+import IxCC.Lam.Erase.Array
+import IxCC.Rt.Rc.Array.Wire
+import IxCC.Rt.Proof.StrHoist
+import IxCC.Rt.Proof.ArrayWire
 
 /-! Production API: Ixon v3 ingress, the shared semantic vocabulary, the Src
 front end (ingress, the checked unfolding table, SrcEval, relevance), global and

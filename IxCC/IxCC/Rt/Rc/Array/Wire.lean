@@ -27,7 +27,7 @@ namespace IxCC.Rt.Rc.Array
 open Lir
 open IxCC.Rt (bumpOff limitOff immortalHeader ctor0Word)
 open IxCC.Rt.Rc.Procs (v i to cellAddr ctx)
-open IxCC.X86.ELFRodata (encodeStaticString)
+open IxCC.X86.ELFRodata (encodeStaticString encodeStaticStringK)
 
 /-! ## Additional function indices in the extended array runtime table (`27..34`) -/
 
@@ -488,7 +488,7 @@ exact 64-bit words of `X86.ELFRodata.encodeStaticString s` (header with `rc = 0x
 Has zero critical edges by construction (separate cold `.fail .heap` blocks), and fails
 immediately with `.heap` if `cell.size ≥ 2^31` (keeping every `disp32` and `imm32` in range). -/
 def strLitProc (idx : Nat) (s : String) : Func :=
-  let cell := encodeStaticString s
+  let cell : ByteArray := ⟨⟨encodeStaticStringK s⟩⟩
   let nBytes := cell.size
   if nBytes ≥ 2 ^ 31 then
     { name := s!"rt_str_lit_{idx}"

@@ -277,6 +277,8 @@ theorem strLitProc_sim {T : Tables} {Pw : List Word} {H : Own.Heap} {ctx : Word}
        Sem.Fails (Lir.semStep lp) { mem, ctx, stack := callee :: rest }) := by
   let cell := X86.ELFRodata.encodeStaticString s
   let nBytes := cell.size
+  have hcellK : (⟨⟨X86.ELFRodata.encodeStaticStringK s⟩⟩ : ByteArray) = cell :=
+    X86.ELFRodata.encodeStaticStringK_eq s
   have hparams : (Rt.Rc.Array.strLitProc idx s).params = [] := by
     unfold Rt.Rc.Array.strLitProc; dsimp only; split <;> rfl
   have henter : Lir.enter lp g [] = some { fn := g, label := 0, pos := 0, env := {} } := by
@@ -285,7 +287,7 @@ theorem strLitProc_sim {T : Tables} {Pw : List Word} {H : Own.Heap} {ctx : Word}
   by_cases hbig : nBytes ≥ 2 ^ 31
   · right
     have hB0 : (Rt.Rc.Array.strLitProc idx s).blocks[0]? = some { term := .fail .heap, cold := true } := by
-      unfold Rt.Rc.Array.strLitProc; dsimp only
+      unfold Rt.Rc.Array.strLitProc; dsimp only; rw [hcellK]
       rw [ite_eq_left (show (X86.ELFRodata.encodeStaticString s).size ≥ 2 ^ 31 from hbig)]; rfl
     exact ⟨0, _, .heap, .refl _, Lir.semStep_fail.2 (Lir.fail_at hstr hB0 rfl rfl)⟩
   · have hlt31 : nBytes < 2 ^ 31 := by omega
@@ -305,16 +307,16 @@ theorem strLitProc_sim {T : Tables} {Pw : List Word} {H : Own.Heap} {ctx : Word}
                     .assign 1 (.load .w64 .zero (Rt.Rc.Procs.ctx Rt.limitOff))]
           term := .brOvf .addC 2 (.v 0) (.imm (UInt64.ofNat nBytes))
             (Rt.Rc.Procs.to 1) (Rt.Rc.Procs.to 3) } := by
-      unfold Rt.Rc.Array.strLitProc; dsimp only; rw [ite_eq_right hnb]; rfl
+      unfold Rt.Rc.Array.strLitProc; dsimp only; rw [hcellK, ite_eq_right hnb]; rfl
     have hB1 : (Rt.Rc.Array.strLitProc idx s).blocks[1]? = some
         { term := .br .ule .w64 (.v 2) (.v 1) (Rt.Rc.Procs.to 2) (Rt.Rc.Procs.to 4) } := by
-      unfold Rt.Rc.Array.strLitProc; dsimp only; rw [ite_eq_right hnb]; rfl
+      unfold Rt.Rc.Array.strLitProc; dsimp only; rw [hcellK, ite_eq_right hnb]; rfl
     let ws := Rt.Rc.Array.bytesToWords64 cell
     have hB2 : (Rt.Rc.Array.strLitProc idx s).blocks[2]? = some
         { body := (#[.store .w64 (Rt.Rc.Procs.ctx Rt.bumpOff) (.v 2)] ++
             (strStoreStmts 0 ws).toArray)
           term := .ret [.v 0] } := by
-      unfold Rt.Rc.Array.strLitProc; dsimp only; rw [ite_eq_right hnb]
+      unfold Rt.Rc.Array.strLitProc; dsimp only; rw [hcellK, ite_eq_right hnb]
       have hzip := zipIdx_flatMap_eq_strStoreStmts 0 (Rt.Rc.Array.bytesToWords64 cell)
       change some ({ body := #[.store .w64 (Rt.Rc.Procs.ctx Rt.bumpOff) (.v 2)] ++
           ((Rt.Rc.Array.bytesToWords64 cell).zipIdx.flatMap fun (w, j) =>
@@ -323,7 +325,7 @@ theorem strLitProc_sim {T : Tables} {Pw : List Word} {H : Own.Heap} {ctx : Word}
                      term := .ret [.v 0] } : Lir.Block) = _
       rw [hzip]
     have hB4 : (Rt.Rc.Array.strLitProc idx s).blocks[4]? = some { term := .fail .heap, cold := true } := by
-      unfold Rt.Rc.Array.strLitProc; dsimp only; rw [ite_eq_right hnb]; rfl
+      unfold Rt.Rc.Array.strLitProc; dsimp only; rw [hcellK, ite_eq_right hnb]; rfl
     -- Block 0: load bump and limit, brOvf addC (no overflow since bump < 2^63, nBytes < 2^31)
     let ρ1 : Lir.Env := (({} : Lir.Env).insert 0 bump).insert 1 limit
     have hρ1_0 : ρ1[0]? = some bump := by

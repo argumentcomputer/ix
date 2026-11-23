@@ -366,6 +366,9 @@ def produceFir (cfg : Config) (inp : Recheck.Input) : Except Err ProducedFir := 
 def finishZeroRcCert (cfg : Config) (front : ProducedFir) : Except Err Recheck.Produced := do
   let C := Cfg.lower (Own.immortal front.fir)
   Recheck.checkParams cfg C (C.exports.zipIdx.map fun (f, i) => (i, f))
+  if !(Rt.lowerStrs C).isEmpty then
+    throw { stage := .rt, code := "rt.string",
+            message := "surviving string literal on the Phase 1 Rt.lower path requires DR3/DR4 Rt.lowerRep" }
   let lowered ← (Rt.lower { names := cfg.names } C).mapError Err.ofRt
   let (xv, _) ← (Xv.Select.run lowered.program).mapError Err.ofSelect
   let r ← (Xv.Alloc.runProducer cfg.env xv).mapError fun m =>
@@ -418,6 +421,9 @@ def finishPlainRcWith (cfg : Config) (front : ProducedFir) (own : Own.Plain.Prog
   unless Cfg.Rc.checkScopedProgram front.fir admittedOwn.bodies candidate admittedOwn.borrows admittedOwn.uniqs do
     throw { stage := .rt, code := "rc.scope", message := "scoped dense-source RC gate refused" }
   Recheck.checkParams cfg candidate.base (candidate.base.exports.zipIdx.map fun (f, i) => (i, f))
+  if !(Rt.lowerStrs candidate.base).isEmpty then
+    throw { stage := .rt, code := "rt.string",
+            message := "surviving string literal on the Phase 1 RC path requires DR3/DR4 Rt.lowerRep" }
   let lowered ← (Cfg.Rc.Public.lower { names := cfg.names } front.fir admittedOwn.bodies candidate admittedOwn.borrows admittedOwn.uniqs).mapError
     fun message => { stage := .rt, code := "rc.lower", message }
   let reps : Lir.FunId → Option (List Xv.Stacking.ArgRep) :=

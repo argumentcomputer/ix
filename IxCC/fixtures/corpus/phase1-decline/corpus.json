@@ -239,10 +239,10 @@
             "lean-run"
           ],
           "decline": {
-            "stage": "admit",
-            "code": "unsupported"
+            "stage": "rt",
+            "code": "rt.string"
           },
-          "note": "`String.length` reaches the `String` library; a string literal in a relevant position is declined at admission (strings are declined before K4). Until the Ixon v4 refreeze the closure exceeded a count budget of the v3 decoder (`ingress: decode`); the v4 closure is within them.",
+          "note": "`String.length` reaches the `String` library; string literals are admitted at Src/Lam (DR4) and compiled natively via `Rt.lowerRep` (`WireTests`), while surviving string literals on the Phase 1 `Recheck`/`Rt.lower` path decline cleanly at `rt: rt.string` until `Rt.lowerRep` is wired into `Recheck`.",
           "cases": []
         }
       ]
@@ -285,12 +285,29 @@
           "oracles": [
             "lean-run"
           ],
-          "decline": {
-            "stage": "admit",
-            "code": "unsupported"
-          },
-          "note": "`panic!` carries a string",
-          "cases": []
+          "decline": null,
+          "note": "`panic!` carries a string (compiled via DR4 string literal admission)",
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                7
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                42
+              ],
+              "value": "42"
+            }
+          ]
         }
       ]
     },
