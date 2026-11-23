@@ -51,6 +51,15 @@ def ArgBlock (m : Memory) (sp : Word) (args : List (List Nat)) (apart : Word →
     (∀ i a, args[i]? = some a → ∀ j ≤ a.length,
       apart (m.read64 (sp + UInt64.ofNat (8 * (i + 2))) + UInt64.ofNat j))
 
+/-- A canonical Linux x86-64 user-space virtual address (`< 2^47`, `BE-7`). -/
+def CanonicalUser (a : Word) : Prop := a.toNat < 2 ^ 47
+
+theorem ArgBlock.mono {m : Memory} {sp : Word} {args : List (List Nat)} {p q : Word → Prop}
+    (h : ∀ a, p a → q a) (hab : ArgBlock m sp args p) : ArgBlock m sp args q := by
+  obtain ⟨argc, h1, h2, h3, h4, h5, h6, h7⟩ := hab
+  exact ⟨argc, h1, h2, h3, h4, h5, fun i hi b hb => h _ (h6 i hi b hb),
+    fun i a ha j hj => h _ (h7 i a ha j hj)⟩
+
 /-- Outside the zero-filled segments `segments` (each `(address, size)`). -/
 def OutsideSegments (segments : List (Nat × Nat)) (a : Word) : Prop :=
   ∀ seg ∈ segments, a.toNat < seg.1 ∨ seg.1 + seg.2 ≤ a.toNat
@@ -58,12 +67,14 @@ def OutsideSegments (segments : List (Nat × Nat)) (a : Word) : Prop :=
 /-- **The loader's post-state** for an executable `c` of frame `f`, run with
 arguments `args` (see the module note): `rip` the entry (the shell's first
 byte, `e_entry`), the file's bytes at `fileBase`, and the argument block at
-`rsp`, outside the frame's zero-filled segments. Nothing is assumed of
-permissions, other registers, the flags or the zero fill. -/
+`rsp`, at canonical user-space addresses (`< 2^47`) outside the frame's
+zero-filled segments (`BE-7`). Nothing is assumed of permissions, other
+registers, the flags or the zero fill. -/
 def Loaded {f : Frame} {object : ByteArray} (c : Checked f object) (args : List (List Nat))
     (s : ByteEval.State) : Prop :=
   s.rip = UInt64.ofNat (fileBase + c.plan.placement.shellOffset) ∧
   (∀ i < c.bytes.size, s.core.memory.bytes (UInt64.ofNat (fileBase + i)) = c.bytes[i]!) ∧
-  ArgBlock s.core.memory (s.core.readReg .rsp) args (OutsideSegments f.segments)
+  ArgBlock s.core.memory (s.core.readReg .rsp) args
+    (fun a => OutsideSegments f.segments a ∧ CanonicalUser a)
 
 end IxCC.X86.Exe.Process

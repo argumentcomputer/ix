@@ -144,7 +144,7 @@ theorem driver_ok_at (ce : Machine.Certified L step object) (init : Word → UIn
   omega
 
 /-- A linear instruction of the shell is inside the file. -/
-theorem shellAddr_in (ce : Machine.Certified L step object) {b j : Nat} (hb : b < 46) {i : X86.Instr}
+theorem shellAddr_in (ce : Machine.Certified L step object) {b j : Nat} (hb : b < 47) {i : X86.Instr}
     (hi : (blockAt (shellOf ce.checked) b).instructions[j]? = some (.instr i)) (hnc : ∀ t, i ≠ .call t) :
     shellAddr L step ce.checked b j < fileBase + ce.checked.bytes.size := by
   have hm := (shell_valid ce).instr b _ (shell_get ce.checked hb) j _ hi

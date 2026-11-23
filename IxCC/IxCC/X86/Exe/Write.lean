@@ -68,14 +68,14 @@ structure Frame where
   segments : List (Nat × Nat)
 
 /-- The production frame: the shell of `Code.lean` for `input`, calling
-`cx_init` and then the root, over one zero-filled segment at `dataBase`
-holding the stack and then the region. -/
+`cx_init` and then the root, over two zero-filled RW segments separated by an
+unmapped guard page (`input.layout.segments`, `BE-4`). -/
 def Input.frame (input : Input) : Frame where
   data := dataBytes input.arity
   code := fun data =>
     shell { arity := input.arity, result := input.result, root := input.root, layout := input.layout, data }
   exports := [initSymbol, input.root]
-  segments := [(dataBase, input.layout.dataSize)]
+  segments := input.layout.segments
 
 /-- Where each part of the file is. -/
 structure Placement where
@@ -101,8 +101,9 @@ def programCount (segments : Nat) : Nat := 3 + segments
 zero-filled segments. -/
 def headersSizeFor (segments : Nat) : Nat := 64 + programCount segments * 56
 
-/-- The ELF header and four program headers (the production frame's). -/
-def headersSize : Nat := 64 + 4 * 56
+/-- The ELF header and five program headers (the production frame's: file,
+stack, heap region, note, and `PT_GNU_STACK`). -/
+def headersSize : Nat := 64 + 5 * 56
 
 /-- A shell call into the object. -/
 structure Call where
@@ -124,7 +125,7 @@ def programHeadersFor (segments : List (Nat × Nat)) (p : Placement) :
 
 /-- The production frame's program headers. -/
 def programHeaders (L : Layout) (p : Placement) : List (Nat × Nat × Nat × Nat × Nat × Nat × Nat) :=
-  programHeadersFor [(dataBase, L.dataSize)] p
+  programHeadersFor L.segments p
 
 /-- The ELF header's bytes, for `count` program headers. -/
 def headerBytesFor (count : Nat) (p : Placement) : List UInt8 :=
@@ -132,8 +133,8 @@ def headerBytesFor (count : Nat) (p : Placement) : List UInt8 :=
     le16 2 ++ le16 62 ++ le32 1 ++ le64 (fileBase + p.shellOffset) ++ le64 64 ++ le64 0 ++
     le32 0 ++ le16 64 ++ le16 56 ++ le16 count ++ le16 64 ++ le16 0 ++ le16 0
 
-/-- The production frame's ELF header. -/
-def headerBytes (p : Placement) : List UInt8 := headerBytesFor 4 p
+/-- The production frame's ELF header (five program headers). -/
+def headerBytes (p : Placement) : List UInt8 := headerBytesFor 5 p
 
 def programHeaderBytes (h : Nat × Nat × Nat × Nat × Nat × Nat × Nat) : List UInt8 :=
   let (kind, flags, offset, address, fileSize, memorySize, alignment) := h
@@ -241,7 +242,9 @@ def planFor (f : Frame) (parts : ObjectParts) : Except Error Plan := do
 /-- Lay out the production executable for `input`. -/
 def plan (input : Input) (parts : ObjectParts) : Except Error Plan := do
   unless input.arity ≤ 5 do throw (.arity input.arity)
-  if input.result == .enum 0 then throw .enumeration
+  match input.result with
+  | .enum n => if n == 0 || n ≥ 2 ^ 31 then throw .enumeration
+  | .nat => pure ()
   unless input.layout.check do throw .layout
   planFor input.frame parts
 

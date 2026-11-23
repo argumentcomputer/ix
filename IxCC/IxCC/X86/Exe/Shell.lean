@@ -38,6 +38,8 @@ inductive Instr where
   /-- `syscall` (`0F 05`): the kernel reads `rax` and the argument registers
   and writes `rax`, `rcx` and `r11`. -/
   | syscall
+  /-- `ud2` (`0F 0B`): guaranteed `#UD` trap fallback after `exit` (`BE-2`). -/
+  | ud2
   /-- `call rel32` to the object's export named `symbol`. -/
   | callExport (symbol : String)
   deriving BEq, Repr, Inhabited
@@ -61,6 +63,7 @@ def Instr.valid (p : Program) : Instr → Bool
   | .instr (.call target) => p.hasBlock target
   | .instr i => i.wellFormed
   | .syscall => true
+  | .ud2 => true
   | .callExport symbol => !symbol.isEmpty
 
 def terminatorTargets (p : Program) : Terminator → Bool
@@ -107,9 +110,13 @@ def ofEncode (c : Encode.Chunk) : Chunk :=
 /-- The bytes of `syscall`. -/
 def syscallBytes : ByteArray := ⟨#[0x0f, 0x05]⟩
 
+/-- The bytes of `ud2`. -/
+def ud2Bytes : ByteArray := ⟨#[0x0f, 0x0b]⟩
+
 def encodeInstr : Instr → Chunk
   | .instr i => ofEncode (Encode.encodeInstr i)
   | .syscall => { bytes := syscallBytes, fixups := #[] }
+  | .ud2 => { bytes := ud2Bytes, fixups := #[] }
   | .callExport symbol =>
     let bytes := Encode.encodeOp Op.callRel32 [.imm 0]
     { bytes, fixups := #[{ offset := bytes.size - 4, target := .export symbol }] }

@@ -153,4 +153,174 @@ theorem Ctx.classifyType_of_runs {k : Ctx} {d : Nat} {ty ty' t : KTerm} {u : KLe
   exact Ctx.classifyAnnotated_of_sortCond (Ctx.sortCond_of_runs hi hw)
     (condOfLevel_ne_never.mpr hz)
 
+/-! ## Table-theorem and subject `corrRec` correspondence (`checkReachedTypes`) -/
+
+theorem checkEachId_mem {f : CId → Except String Unit} :
+    ∀ {xs : List CId}, checkEachId f xs = .ok () → ∀ c ∈ xs, f c = .ok ()
+  | [], _, _, h => by cases h
+  | x :: xs, h, c, hmem => by
+    simp only [checkEachId, bind, Except.bind] at h
+    cases hx : f x with
+    | error _ => rw [hx] at h; cases h
+    | ok u =>
+      cases u
+      rw [hx] at h
+      rcases List.mem_cons.1 hmem with rfl | htail
+      · exact hx
+      · exact checkEachId_mem h c htail
+
+/-- `Reading.typeCheck` establishes `corrRec` between `p`'s declaration type,
+the kernel's declaration type, and the accepted v5 record's binder data. -/
+theorem Reading.typeCheck_corrRec {rd : Reading} {p : Program} {c : CId}
+    (h : rd.typeCheck p c = .ok ()) :
+    ∃ d info rec b,
+      p.decl? c = some d ∧
+      rd.info? c = some info ∧
+      rd.typeRoot? c = some rec ∧
+      corrRec rd.keys info.cv.levelParams rec depthBudget d.type info.cv.type nodeBudget = .ok b := by
+  unfold Reading.typeCheck at h
+  cases hd : p.decl? c with
+  | none => simp [hd] at h
+  | some d =>
+    cases hi : rd.info? c with
+    | none => simp [hd, hi] at h
+    | some info =>
+      cases hr : rd.typeRoot? c with
+      | none => simp [hd, hi, hr] at h
+      | some rec =>
+        simp only [hd, hi, hr, Except.mapError, bind, Except.bind, pure, Except.pure] at h
+        cases hc : corrRec rd.keys info.cv.levelParams rec depthBudget d.type info.cv.type nodeBudget with
+        | error _ => simp [hc] at h
+        | ok b => exact ⟨d, info, rec, b, rfl, rfl, rfl, hc⟩
+
+/-- `Reading.valueCheck` establishes `corrRec` between `p`'s definition value,
+the kernel's definition value, and the accepted v5 record's binder data. -/
+theorem Reading.valueCheck_corrRec {rd : Reading} {p : Program} {c : CId} {budget : Nat}
+    (h : rd.valueCheck p c budget = .ok ()) :
+    ∃ dk ds dl ty v cv kv kk rec b,
+      p.decl? c = some (.defn dk ds dl ty v) ∧
+      rd.info? c = some (.defn cv kv kk) ∧
+      rd.valueRoot? c = some rec ∧
+      corrRec rd.keys cv.levelParams rec depthBudget v kv budget = .ok b := by
+  unfold Reading.valueCheck at h
+  cases hd : p.decl? c with
+  | none => simp [hd] at h
+  | some d =>
+    cases d with
+    | defn dk ds dl ty v =>
+      cases hi : rd.info? c with
+      | none => simp [hd, hi] at h
+      | some info =>
+        cases info with
+        | defn cv kv kk =>
+          cases hr : rd.valueRoot? c with
+          | none => simp [hd, hi, hr] at h
+          | some rec =>
+            simp only [hd, hi, hr, Except.mapError, bind, Except.bind, pure, Except.pure] at h
+            cases hc : corrRec rd.keys cv.levelParams rec depthBudget v kv budget with
+            | error _ => simp [hc] at h
+            | ok b => exact ⟨dk, ds, dl, ty, v, cv, kv, kk, rec, b, rfl, rfl, rfl, hc⟩
+        | _ => simp [hd, hi] at h
+    | _ => simp [hd] at h
+
+/-- `Reading.thmCheck` guarantees `thm` is a safe theorem in `p`, was read with
+its proof (not `byStatement`), stands in the kernel's logical environment as a
+theorem (not typing tier), and passes `Reading.typeCheck` (`corrRec`). -/
+theorem Reading.thmCheck_spec {rd : Reading} {p : Program} {thm : CId}
+    (h : rd.thmCheck p thm = .ok ()) :
+    ∃ dl ty v cv kv,
+      p.decl? thm = some (.defn .thm .safe dl ty v) ∧
+      p.byStatement.contains thm = false ∧
+      rd.info? thm = some (.defn cv kv .thm) ∧
+      rd.typeCheck p thm = .ok () := by
+  unfold Reading.thmCheck at h
+  cases hd : p.decl? thm with
+  | none => simp [hd] at h
+  | some d =>
+    cases d with
+    | defn dk ds dl ty v =>
+      cases dk with
+      | thm =>
+        cases ds with
+        | safe =>
+          cases hbs : p.byStatement.contains thm with
+          | true =>
+            simp [hd, hbs, throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at h
+          | false =>
+            cases hi : rd.info? thm with
+            | none => simp [hd, hbs, hi] at h
+            | some info =>
+              cases info with
+              | defn cv kv kk =>
+                cases kk with
+                | thm =>
+                  simp only [hd, hbs, hi, Bool.false_eq_true, ↓reduceIte] at h
+                  exact ⟨dl, ty, v, cv, kv, rfl, rfl, rfl, h⟩
+                | _ => simp [hd, hbs, hi] at h
+              | _ => simp [hd, hbs, hi] at h
+        | _ => simp [hd] at h
+      | _ => simp [hd] at h
+    | _ => simp [hd] at h
+
+/-- Decomposition of `checkReachedTypes`: every reached/table constant passes
+`typeCheck`, every table theorem passes `thmCheck`, and every table subject
+passes `checkTableSubjectValue`. -/
+theorem checkReachedTypes_spec {rd : Reading} {p : Program} {a : Relevance.Ann}
+    (h : checkReachedTypes rd p a = .ok ()) :
+    (∀ c ∈ annReached a p.size ++ tableConstants p, rd.typeCheck p c = .ok ()) ∧
+    (∀ thm ∈ tableTheorems p, rd.thmCheck p thm = .ok ()) ∧
+    (∀ c < p.size, checkTableSubjectValue rd p c = .ok ()) := by
+  unfold checkReachedTypes at h
+  simp only [bind, Except.bind] at h
+  cases h1 : checkEachId (rd.typeCheck p) (annReached a p.size ++ tableConstants p).eraseDups with
+  | error _ => rw [h1] at h; cases h
+  | ok u =>
+    cases u; rw [h1] at h
+    cases h2 : checkEachId (rd.thmCheck p) (tableTheorems p).eraseDups with
+    | error _ => rw [h2] at h; cases h
+    | ok u =>
+      cases u; rw [h2] at h
+      refine ⟨fun c hc => checkEachId_mem h1 c (List.mem_eraseDups.2 hc),
+              fun thm ht => checkEachId_mem h2 thm (List.mem_eraseDups.2 ht),
+              fun c hc => checkEachId_mem h c (List.mem_range.2 hc)⟩
+
+/-- Every theorem justifying an `.eqn`, `.csimp`, or `.word` entry in `p.table`
+is verified by `Reading.thmCheck` (and hence `corrRec`) when `checkReachedTypes`
+accepts. -/
+theorem checkReachedTypes_tableThm_checked {rd : Reading} {p : Program} {a : Relevance.Ann}
+    (h : checkReachedTypes rd p a = .ok ()) {c thm : CId} (hc : c < p.size)
+    (hres : (∃ body, p.table.resolveOf c = some (.eqn thm body)) ∨
+            (∃ g us, p.table.resolveOf c = some (.csimp g us thm)) ∨
+            (∃ w op, p.table.resolveOf c = some (.word w op thm))) :
+    rd.thmCheck p thm = .ok () ∧ rd.typeCheck p thm = .ok () := by
+  obtain ⟨_, hthms, _⟩ := checkReachedTypes_spec h
+  have hmem : thm ∈ tableTheorems p := by
+    unfold tableTheorems
+    rw [List.mem_flatMap]
+    refine ⟨c, List.mem_range.2 hc, ?_⟩
+    rcases hres with ⟨body, hr⟩ | ⟨g, us, hr⟩ | ⟨w, op, hr⟩ <;> simp [hr]
+  have hok := hthms thm hmem
+  obtain ⟨_, _, _, _, _, _, _, _, hty⟩ := Reading.thmCheck_spec hok
+  exact ⟨hok, hty⟩
+
+/-- Every `.case r` entry in `p.table` has both its subject value (`valueCheck`)
+and its subject/recursor types (`typeCheck`) verified by `corrRec` when
+`checkReachedTypes` accepts. -/
+theorem checkReachedTypes_case_checked {rd : Reading} {p : Program} {a : Relevance.Ann}
+    (h : checkReachedTypes rd p a = .ok ()) {c r : CId} (hc : c < p.size)
+    (hres : p.table.resolveOf c = some (.case r)) :
+    rd.valueCheck p c = .ok () ∧ rd.typeCheck p c = .ok () ∧ rd.typeCheck p r = .ok () := by
+  obtain ⟨htypes, _, hvals⟩ := checkReachedTypes_spec h
+  have hv := hvals c hc
+  simp only [checkTableSubjectValue, hres] at hv
+  have htc : c ∈ tableConstants p := by
+    unfold tableConstants
+    rw [List.mem_flatMap]
+    exact ⟨c, List.mem_range.2 hc, by simp [hres]⟩
+  have htr : r ∈ tableConstants p := by
+    unfold tableConstants
+    rw [List.mem_flatMap]
+    exact ⟨c, List.mem_range.2 hc, by simp [hres]⟩
+  exact ⟨hv, htypes c (List.mem_append_right _ htc), htypes r (List.mem_append_right _ htr)⟩
+
 end IxCC.Src.KernelFront

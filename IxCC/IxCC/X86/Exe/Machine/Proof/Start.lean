@@ -75,8 +75,8 @@ theorem entry_addr : UInt64.ofNat (fileBase + ce.checked.plan.placement.shellOff
   simp [blockOffset, instrOffset]
 
 /-- A `test r, r` and `jne` terminator. -/
-theorem mrun_ifNz {b j : Nat} (hb : b < 46) (hsz : (blockAt (shellOf ce.checked) b).instructions.size = j)
-    {r : GPR} {t f : Nat} (ht : t < 46) (hf : f < 46)
+theorem mrun_ifNz {b j : Nat} (hb : b < 47) (hsz : (blockAt (shellOf ce.checked) b).instructions.size = j)
+    {r : GPR} {t f : Nat} (ht : t < 47) (hf : f < 47)
     (hterm : (blockAt (shellOf ce.checked) b).terminator = ifNz r t f) (core : Core) (fl : ByteEval.Flags)
     {taken : Bool} (htk : (core.readReg r != 0) = taken) :
     ∃ fl', ByteEval.run ce.checked.bytes fetchBase (if taken then 2 else 3) ⟨core, addr ce b j, fl⟩ =
@@ -419,7 +419,7 @@ theorem start {args : List (List Nat)} (hargs : ArgsOk args) {s₀ : ByteEval.St
   · exact .inl h
   · exact .inr (.inl h)
   have hab' : ArgBlock core'.memory (core'.readReg .rsp) args (OutsideSegments L.segments) := by
-    rw [hmem, hrsp]; exact hab
+    rw [hmem, hrsp]; exact ArgBlock.mono (fun _ h => h.1) hab
   have hfile' : ∀ i < ce.checked.bytes.size, core'.memory.bytes (UInt64.ofNat (fileBase + i)) = ce.checked.bytes[i]! := by
     rw [hmem]; exact hfile
   rcases args_run ce hargs core' fl' hab' hfile' with hf | ⟨m, e, hrun, hat⟩

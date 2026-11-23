@@ -40,6 +40,7 @@ def validateResolve (cfg : Config) (p : Program) (f : CId) : Resolve → Except 
   | .eqn thm body => do
     let e ← checkEqn p f thm
     unless e == .eqn thm body do throw "eqn: not the checked body"
+    unless eqnAcyclic p p.table.resolve f do throw "eqn: cyclic unconditional unfolding"
   | .case r => do
     let e ← checkCase p f
     unless e == .case r do throw "case: not the checked recursor"
@@ -81,6 +82,43 @@ def lazyResolveOk (p : Program) (resolve : NatMap Resolve) :
         which replaces the value the row was checked on"
     else lazyResolveOk p resolve rest
 
+/-- Every `.eqn` entry in `resolve` has no unconditional unfolding cycle through
+`.eqn`/`.csimp` entries (`FE-3`). Structural on the entry list (`D17`). -/
+def eqnTargetsAcyclic (p : Program) (resolve : NatMap Resolve) :
+    List (CId × Resolve) → Except String Unit
+  | [] => pure ()
+  | (f, .eqn ..) :: rest =>
+    if !eqnAcyclic p resolve f then
+      .error s!"table entry of constant {f}: eqn: cyclic unconditional unfolding"
+    else eqnTargetsAcyclic p resolve rest
+  | _ :: rest => eqnTargetsAcyclic p resolve rest
+
+/-- Every safe definition in `p` whose address is a pinned `lazy` row
+(`Pinned.lazyPins`, including `ite`, `dite`, `Bool.and`, `Bool.or`,
+`Decidable.byCases`) and passes `checkLazy` must be present in `lazy` at its
+pinned arity (`FE-6`). Structural on the countdown (`D17`). -/
+def pinnedLazyRequiredLoop (p : Program) (lazy : NatMap Nat) : Nat → Except String Unit
+  | 0 => pure ()
+  | k + 1 =>
+    match p.decl? k with
+    | some (.defn .defn .safe _ _ _) =>
+      let a := Pinned.addrNat (p.addr k)
+      match Pinned.lazyPins.find? (·.1 == a) with
+      | some (_, arity) =>
+        if lazy.get? k == some arity then
+          pinnedLazyRequiredLoop p lazy k
+        else
+          match checkLazy p k arity with
+          | .ok () =>
+            .error s!"table entry of constant {k}: lazy: required pinned lazy row (arity {arity}) is missing"
+          | .error _ =>
+            pinnedLazyRequiredLoop p lazy k
+      | none => pinnedLazyRequiredLoop p lazy k
+    | _ => pinnedLazyRequiredLoop p lazy k
+
+def pinnedLazyRequired (p : Program) (lazy : NatMap Nat) : Except String Unit :=
+  pinnedLazyRequiredLoop p lazy p.size
+
 /-- Revalidate the whole table of `p` (and its pinned identities). -/
 def validate (cfg : Config) (p : Program) : Except String Unit := do
   unless Pinned.knownOk p do throw "known: a pinned constant is misidentified"
@@ -88,6 +126,7 @@ def validate (cfg : Config) (p : Program) : Except String Unit := do
   validateEach (validateRecKind p) p.table.recKind.toList
   validateEach (checkLazy p) p.table.lazy.toList
   lazyResolveOk p p.table.resolve p.table.lazy.toList
+  pinnedLazyRequired p p.table.lazy
   validateEach (fun c (_ : Unit) => checkInline p c cfg.inlineCap) p.table.inline.toList
   validateEach (validateOpaque p) p.table.opaqueByValue.toList
 

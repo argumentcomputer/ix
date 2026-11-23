@@ -4,18 +4,20 @@ import IxCC.X86.Exe.Machine.Proof.Start
 # The loader hypothesis can hold (non-vacuity of `Process.Loaded`)
 
 `loaded_exists`: for a machine executable and any argument list of at most
-2^24 arguments of at most 2^24 bytes each, there is a state that
+2^22 arguments of at most 2^22 bytes each, there is a state that
 `Process.Loaded` accepts: the file's bytes at `fileBase`, `rip` the entry, and
-the argument block at `rsp = 2^47`, above the zero-filled segments (the
-words from `2^47`, each argument's bytes in a slot of its own after them).
+the canonical user-space argument block at `rsp = 2^42` (`< 2^47`), above the
+zero-filled segments (the words from `2^42`, each argument's bytes in a slot of
+its own after them).
 -/
 
 set_option autoImplicit false
 
 namespace IxCC.X86.Exe.Process
 
-/-- Where the witness puts the argument block. -/
-def bootBase : Nat := 2 ^ 47
+/-- Where the witness puts the argument block: strictly below `2^47`
+(canonical x86-64 user-space, above `dataBase + maxDataBytes < 2^41`, `BE-7`). -/
+def bootBase : Nat := 2 ^ 42
 
 section
 variable (args : List (List Nat))
@@ -57,9 +59,9 @@ theorem le_bootSlot {args : List (List Nat)} {a : List Nat} (ha : a ∈ args) : 
       · exact Nat.le_trans (ih h) (Nat.le_max_right _ _)
   omega
 
-theorem bootSlot_le {args : List (List Nat)} (h : ∀ a ∈ args, a.length < 2 ^ 24) : bootSlot args ≤ 2 ^ 24 := by
+theorem bootSlot_le {args : List (List Nat)} (h : ∀ a ∈ args, a.length < 2 ^ 22) : bootSlot args ≤ 2 ^ 22 := by
   unfold bootSlot
-  have : (args.map List.length).foldr max 0 ≤ 2 ^ 24 - 1 := by
+  have : (args.map List.length).foldr max 0 ≤ 2 ^ 22 - 1 := by
     induction args with
     | nil => simp
     | cons b bs ih =>
@@ -81,18 +83,26 @@ section
 variable {L : Machine.Layout} {step : String} {object : ByteArray} (ce : Machine.Certified L step object)
 include ce
 
-theorem outside_high {a : Word} (h : 2 ^ 47 ≤ a.toNat) : OutsideSegments L.segments a := by
-  obtain ⟨h1, -, -, h4, h5, h6, -, -, -, hd⟩ := numbers ce
+theorem outside_high {a : Word} (h : 2 ^ 42 ≤ a.toNat) : OutsideSegments L.segments a := by
+  obtain ⟨-, -, -, -, -, -, -, -, -, hd⟩ := numbers ce
+  have hL := ce.layoutOk
+  simp only [Machine.Layout.check, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hL
+  obtain ⟨⟨⟨-, -⟩, -⟩, hmax⟩ := hL
+  have hmd : maxDataBytes = 2 ^ 40 := rfl
+  have hg : Machine.gap = 0x1000 := rfl
   intro seg hseg
   simp only [Machine.Layout.segments, List.mem_cons, List.mem_nil_iff, or_false] at hseg
   rcases hseg with rfl | rfl
   · right; show dataBase + L.stackArea ≤ a.toNat; omega
-  · right; show L.regionStart + alignUp L.region 0x1000 ≤ a.toNat; omega
+  · right; show L.regionStart + alignUp L.region 0x1000 ≤ a.toNat
+    show dataBase + L.stackArea + Machine.gap + alignUp L.region 0x1000 ≤ a.toNat
+    omega
 
-/-- **The loader hypothesis can hold**: for any argument list of at most 2^24
-arguments of at most 2^24 bytes each, there is a state `Process.Loaded`
+/-- **The loader hypothesis can hold** with strictly canonical user-space
+addresses (`< 2^47`, `BE-7`): for any argument list of fewer than `2^22`
+arguments of fewer than `2^22` bytes each, there is a state `Process.Loaded`
 accepts for the executable. -/
-theorem loaded_exists {args : List (List Nat)} (hsize : args.length < 2 ^ 24 ∧ ∀ a ∈ args, a.length < 2 ^ 24) :
+theorem loaded_exists {args : List (List Nat)} (hsize : args.length < 2 ^ 22 ∧ ∀ a ∈ args, a.length < 2 ^ 22) :
     ∃ s₀, Loaded ce.checked args s₀ := by
   obtain ⟨hlen, hlens⟩ := hsize
   have hM := bootSlot_le hlens
@@ -101,11 +111,11 @@ theorem loaded_exists {args : List (List Nat)} (hsize : args.length < 2 ^ 24 ∧
   have hbl := ff.below
   have hsz := ff.size
   have hd : dataBase = 268435456 := rfl
-  have hB : bootBase = 2 ^ 47 := rfl
+  have hB : bootBase = 2 ^ 42 := rfl
   have hS : bootStrings args = bootBase + 8 * (args.length + 3) := rfl
   have hM1 : 1 ≤ bootSlot args := by unfold bootSlot; omega
-  have htop : bootStrings args + args.length * bootSlot args < 2 ^ 63 := by
-    have : args.length * bootSlot args ≤ 2 ^ 24 * 2 ^ 24 := Nat.mul_le_mul (Nat.le_of_lt hlen) hM
+  have htop : bootStrings args + args.length * bootSlot args < 2 ^ 47 := by
+    have : args.length * bootSlot args ≤ 2 ^ 22 * 2 ^ 22 := Nat.mul_le_mul (Nat.le_of_lt hlen) hM
     omega
   let m : Memory := ⟨bootBytes args ce.checked.bytes, fun _ => true, fun _ => true⟩
   let sp : Word := UInt64.ofNat bootBase
@@ -117,7 +127,8 @@ theorem loaded_exists {args : List (List Nat)} (hsize : args.length < 2 ^ 24 ∧
     rw [toNat_small (by omega), ite_eq_left ⟨Nat.le_add_right _ _, by omega⟩, Nat.add_sub_cancel_left]
   · -- the argument block
     have hrsp : (fun r : GPR => if r = .rsp then sp else 0) .rsp = sp := by simp
-    show ArgBlock m ((fun r : GPR => if r = .rsp then sp else 0) .rsp) args (OutsideSegments L.segments)
+    show ArgBlock m ((fun r : GPR => if r = .rsp then sp else 0) .rsp) args
+      (fun a => OutsideSegments L.segments a ∧ CanonicalUser a)
     rw [hrsp]
     have hsp : ∀ k, k < args.length + 3 → (sp + UInt64.ofNat (8 * k)).toNat = bootBase + 8 * k := fun k hk => by
       rw [toNat_add_small _ _ (by rw [toNat_small (by omega)]; omega), toNat_small (by omega)]
@@ -179,14 +190,20 @@ theorem loaded_exists {args : List (List Nat)} (hsize : args.length < 2 ^ 24 ∧
       · rw [hstrbyte i a ha a.length (Nat.le_refl _), List.getElem?_eq_none (Nat.le_refl _)]
         rfl
     · intro i hi b hb
-      apply outside_high ce
-      rw [toNat_add_small _ _ (by rw [toNat_small (by omega)]; omega), toNat_small (by omega)]
+      have hnat : (sp + UInt64.ofNat (8 * i + b)).toNat = bootBase + (8 * i + b) := by
+        rw [toNat_add_small _ _ (by rw [toNat_small (by omega)]; omega), toNat_small (by omega)]
+      refine ⟨outside_high ce (by omega), ?_⟩
+      show (sp + UInt64.ofNat (8 * i + b)).toNat < 2 ^ 47
       omega
     · intro i a ha j hj
       have hi : i < args.length := (List.getElem?_eq_some_iff.mp ha).1
+      have hl := le_bootSlot (List.mem_of_getElem? ha)
+      have hmul : (i + 1) * bootSlot args ≤ args.length * bootSlot args := Nat.mul_le_mul_right _ (by omega)
       rw [hword (i + 2) (by omega), hstr i hi]
-      apply outside_high ce
-      rw [hbyte i a ha j hj]
+      have hnat := hbyte i a ha j hj
+      refine ⟨outside_high ce (by omega), ?_⟩
+      show (UInt64.ofNat (bootStrings args + i * bootSlot args) + UInt64.ofNat j).toNat < 2 ^ 47
+      rw [Nat.add_mul] at hmul
       omega
 
 end

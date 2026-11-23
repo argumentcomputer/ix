@@ -190,7 +190,7 @@ theorem kept_calls {s s₀ s' : ByteEval.State}
 
 /-- **A failure after a return**: from a call's return with status `k + 1` (`k < 4`), through
 the status test and the failure dispatch, every trace is a prefix of the failure's report. -/
-theorem fail_report {b j b' : Nat} (hb : b < 46) (hb' : b' < 46)
+theorem fail_report {b j b' : Nat} (hb : b < 47) (hb' : b' < 47)
     (hi : (blockAt (shellOf ce.checked) b).instructions[j]? = some (mI .r11 L.callTop))
     (hsz : (blockAt (shellOf ce.checked) b).instructions.size = j + 1)
     (ht : (blockAt (shellOf ce.checked) b).terminator = cmpR .rsp .r11 .ne 42 b')

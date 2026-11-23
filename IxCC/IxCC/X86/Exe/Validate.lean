@@ -1,5 +1,6 @@
 import IxCC.X86.Exe.Write
 import IxCC.X86.Exe.Read
+import IxCC.X86.Exe.ShellCheck
 
 /-!
 # The standalone executable's structural check
@@ -42,8 +43,8 @@ def expectedHeaderFor (count : Nat) (p : Placement) : ELFRead.Header :=
   ⟨⟨#[0x7f, 0x45, 0x4c, 0x46, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]⟩,
     2, 62, 1, fileBase + p.shellOffset, 64, 0, 0, 64, 56, count, 64, 0, 0⟩
 
-/-- The production frame's ELF header (four program headers). -/
-def expectedHeader (p : Placement) : ELFRead.Header := expectedHeaderFor 4 p
+/-- The production frame's ELF header (five program headers). -/
+def expectedHeader (p : Placement) : ELFRead.Header := expectedHeaderFor 5 p
 
 /-- The program headers of a frame with zero-filled `segments`, as the reader
 reads them. -/
@@ -53,7 +54,7 @@ def expectedProgramsFor (segments : List (Nat × Nat)) (p : Placement) : List Re
 
 /-- The production frame's program headers, as the reader reads them. -/
 def expectedPrograms (L : Layout) (p : Placement) : List Read.ProgramHeader :=
-  expectedProgramsFor [(dataBase, L.dataSize)] p
+  expectedProgramsFor L.segments p
 
 /-- The bytes `[lo, hi)` of the file are zero. -/
 def zerosBetween (bytes : ByteArray) (lo hi : Nat) : Bool :=
@@ -94,6 +95,7 @@ structure FieldsFor (f : Frame) (object : ByteArray) (pl : Plan) (bytes : ByteAr
     view.header = expectedHeaderFor (programCount f.segments.length) pl.placement ∧
     view.programs = expectedProgramsFor f.segments pl.placement
   size : bytes.size = pl.placement.fileSize
+  gaps : gapsZero bytes pl.placement = true
   text : ∃ parsed, ELFRead.parse object = some parsed ∧
     ELFRead.slice bytes pl.placement.textOffset pl.placement.textSize = some parsed.text
   data : ELFRead.slice bytes pl.placement.dataOffset pl.placement.dataSize =
@@ -109,8 +111,8 @@ theorem checkFor_sound {f : Frame} {object : ByteArray} {pl : Plan} {bytes : Byt
   split at h
   · rename_i view parsed hv ho
     simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at h
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hh, hp⟩, hs⟩, _⟩, _⟩, ht⟩, hd⟩, hsh⟩, hc⟩, hl⟩ := h
-    refine ⟨⟨view, hv, hh, hp⟩, hs, ⟨parsed, ho, ht⟩, hd, hsh, hc, ?_⟩
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hh, hp⟩, hs⟩, hg⟩, _⟩, ht⟩, hd⟩, hsh⟩, hc⟩, hl⟩ := h
+    refine ⟨⟨view, hv, hh, hp⟩, hs, hg, ⟨parsed, ho, ht⟩, hd, hsh, hc, ?_⟩
     intro c hm
     have := hl c hm
     unfold callLands at this
@@ -124,13 +126,17 @@ theorem checkFor_sound {f : Frame} {object : ByteArray} {pl : Plan} {bytes : Byt
 def checkWith (input : Input) (pl : Plan) (bytes : ByteArray) : Bool :=
   checkFor input.frame input.object pl bytes
 
-/-- The facts `checkWith` establishes. -/
+/-- The facts `checkWith` establishes (retaining `gaps` and `data`, including
+the seccomp BPF filter and messages, `BE-2`). -/
 structure Fields (input : Input) (pl : Plan) (bytes : ByteArray) : Prop where
   header : ∃ view, Read.parse bytes = some view ∧ view.header = expectedHeader pl.placement ∧
     view.programs = expectedPrograms input.layout pl.placement
   size : bytes.size = pl.placement.fileSize
+  gaps : gapsZero bytes pl.placement = true
   text : ∃ object, ELFRead.parse input.object = some object ∧
     ELFRead.slice bytes pl.placement.textOffset pl.placement.textSize = some object.text
+  data : ELFRead.slice bytes pl.placement.dataOffset pl.placement.dataSize =
+    some (dataBytes input.arity (fileBase + pl.placement.dataOffset))
   shell : ELFRead.slice bytes pl.placement.shellOffset pl.placement.shellSize = some pl.shell
   calls : pl.calls.map (·.symbol) = [initSymbol, input.root]
   lands : ∀ c ∈ pl.calls, ∃ offset, ELF.symbol? input.object c.symbol = some offset ∧
@@ -139,7 +145,19 @@ structure Fields (input : Input) (pl : Plan) (bytes : ByteArray) : Prop where
 theorem checkWith_sound {input : Input} {pl : Plan} {bytes : ByteArray}
     (h : checkWith input pl bytes = true) : Fields input pl bytes :=
   have hf := checkFor_sound h
-  ⟨hf.header, hf.size, hf.text, hf.shell, hf.calls, hf.lands⟩
+  ⟨hf.header, hf.size, hf.gaps, hf.text, hf.data, hf.shell, hf.calls, hf.lands⟩
+
+/-- Where the export `symbol` of `object` is in a file placed by `p`: its
+offset in the object's text (`ELF.symbol?`) from the text's file offset. -/
+def exportAt (object : ByteArray) (p : Placement) (symbol : String) : Option Nat :=
+  (ELF.symbol? object symbol).map (p.textOffset + ·)
+
+/-- The shell check (`Shell.check`) of a file of frame `f` written to plan
+`pl`: the frame's shell for the file's data address, at the shell's file
+offset, its export calls landing on the object's exports. -/
+def shellOk (f : Frame) (object : ByteArray) (pl : Plan) (bytes : ByteArray) : Bool :=
+  Shell.check (f.code (fileBase + pl.placement.dataOffset)) bytes pl.placement.shellOffset
+    (exportAt object pl.placement)
 
 /-- The executable check: plan `input` again and check `bytes` against the plan. -/
 def check (input : Input) (bytes : ByteArray) : Bool :=
@@ -166,7 +184,8 @@ theorem check_sound {input : Input} {bytes : ByteArray} (h : check input bytes =
       exact ⟨parts, pl, hparts, hpl, checkWith_sound h⟩
 
 /-- A checked executable: its bytes, the plan they follow, the check's facts,
-and the driver contract at each of the shell's calls into the object. -/
+the driver contract at each of the shell's calls into the object, and the
+independent decoder's verification of the shell bytes (`Shell.Valid`, `BE-1`). -/
 structure Certified (input : Input) where
   bytes : ByteArray
   plan : Plan
@@ -174,13 +193,16 @@ structure Certified (input : Input) where
     Fields input plan bytes
   contract : ∀ c ∈ plan.calls,
     (input.layout.driver plan.placement.textOffset c.ret).CanonicalOk plan.placement.textSize
+  shell : Shell.Valid (input.frame.code (fileBase + plan.placement.dataOffset)) bytes
+    plan.placement.shellOffset (exportAt input.object plan.placement)
 
 theorem Certified.valid' {input : Input} (c : Certified input) : Valid input c.bytes := by
   obtain ⟨parts, hp, hq, hf⟩ := c.valid
   exact ⟨parts, c.plan, hp, hq, hf⟩
 
-/-- Write the executable, check it, and establish the driver contract at its
-calls; refuse if either fails. -/
+/-- Write the executable, check it (structural ELF check, driver contract, and
+independent byte-decoder `Shell.check`, `BE-1`), and establish the contract at
+its calls; refuse if any fails. -/
 def writeChecked (input : Input) : Except Error (Certified input) :=
   match hp : objectParts input.object input.root with
   | .error e => .error e
@@ -193,8 +215,11 @@ def writeChecked (input : Input) : Except Error (Certified input) :=
         if hL : input.layout.check = true then
           if hc : ∀ c ∈ pl.calls, fileBase + pl.placement.textOffset + pl.placement.textSize ≤ c.ret ∧
               c.ret < dataBase then
-            .ok { bytes, plan := pl, valid := ⟨parts, hp, hq, checkWith_sound hv⟩
-                  contract := fun c hm => input.layout.driver_canonicalOk hL (hc c hm).1 (hc c hm).2 }
+            if hs : shellOk input.frame input.object pl bytes = true then
+              .ok { bytes, plan := pl, valid := ⟨parts, hp, hq, checkWith_sound hv⟩
+                    contract := fun c hm => input.layout.driver_canonicalOk hL (hc c hm).1 (hc c hm).2
+                    shell := Shell.check_sound hs }
+            else .error .invalidExecutable
           else .error .contract
         else .error .layout
       else .error .invalidExecutable

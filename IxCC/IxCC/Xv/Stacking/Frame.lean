@@ -160,12 +160,28 @@ theorem ascending_nodup : ∀ {s : List Nat}, ascending s = true → s.Nodup
     obtain ⟨hs, ha⟩ := ascending_cons h
     exact List.nodup_cons.2 ⟨fun m => Nat.lt_irrefl a (ha a m), ascending_nodup hs⟩
 
-/-- The recheck-path validator of a proposed layout. -/
+/-- Round a multiple-of-8 byte count up so `(size + 8) % 16 == 0` (keeping `rsp`
+16-byte aligned after the 8-byte return address is pushed). -/
+def align16_8 (raw : Nat) : Nat :=
+  if (raw + 8) % 16 == 0 then raw else raw + 8
+
+/-- The exact minimal frame size required by `a`: `0` when frameless (no
+outgoing arguments, slots, callee-saved registers, or calls), otherwise
+`align16_8 (8 * (a.outArgs + a.slots + (saves a).length))`. -/
+def expectedSize (a : Facts) : Nat :=
+  let raw := 8 * (a.outArgs + a.slots + (saves a).length)
+  if raw == 0 && !a.calls then 0 else align16_8 raw
+
+/-- The recheck-path validator of a proposed layout. Requires the exact minimal
+frame size (`expectedSize a`) and exact outgoing-argument count (`a.outArgs`),
+preventing a dishonest producer from inflating leaf frames to exhaust stack
+budgets on honest hashes (`FE-5`). -/
 def check (a : Facts) (l : FrameLayout) : Bool :=
   decide (l.size + slack ≤ maxFrame) &&
   l.slotOff.length == a.slots &&
   decide (l.saveOff.length ≤ (saves a).length) &&
-  decide (a.outArgs ≤ l.outArgs) &&
+  l.outArgs == a.outArgs &&
+  l.size == expectedSize a &&
   decide (8 * l.outArgs ≤ l.size) &&
   (!a.calls || l.size != 0) &&
   (l.size == 0 || (l.size + 8) % 16 == 0) &&
@@ -187,8 +203,15 @@ def produce (a : Facts) : FrameLayout :=
   let raw := saveBase + 8 * (saves a).length
   let size :=
     if raw == 0 && !a.calls then 0
-    else if (raw + 8) % 16 == 0 then raw else raw + 8
+    else align16_8 raw
   { size, slotOff, saveOff, outArgs := a.outArgs }
+
+/-- `produce` always chooses `expectedSize a`. -/
+theorem produce_size_eq (a : Facts) : (produce a).size = expectedSize a := by
+  unfold produce expectedSize
+  have hraw : 8 * a.outArgs + 8 * a.slots + 8 * (saves a).length =
+      8 * (a.outArgs + a.slots + (saves a).length) := by omega
+  simp [hraw]
 
 /-- Whether the prologue checks the stack: a frame with a call, or one too
 big for the caller's slack. Frameless functions never check. -/
@@ -215,9 +238,10 @@ structure Sound (a : Facts) (l : FrameLayout) : Prop where
 theorem check_sound {a : Facts} {l : FrameLayout} (h : l.check a = true) : l.Sound a := by
   simp only [check, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, List.all_eq_true,
     Bool.or_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨bounded, covers⟩, _⟩, outArgs⟩, fit⟩, calls⟩, aligned16⟩, sub⟩, sup⟩,
-    savesDistinct⟩, cells⟩, _⟩, distinct⟩ := h
-  refine ⟨covers, outArgs, fit, ?_, ?_, ascending_nodup distinct, savesDistinct, ?_, ?_, ?_, bounded⟩
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨bounded, covers⟩, _⟩, outArgsEq⟩, _sizeEq⟩, fit⟩, calls⟩, aligned16⟩, sub⟩,
+    sup⟩, savesDistinct⟩, cells⟩, _⟩, distinct⟩ := h
+  refine ⟨covers, Nat.le_of_eq outArgsEq.symm, fit, ?_, ?_, ascending_nodup distinct, savesDistinct,
+    ?_, ?_, ?_, bounded⟩
   · intro o member
     have ok := cells o member
     simp only [cellOk, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at ok
@@ -240,6 +264,13 @@ theorem check_sound {a : Facts} {l : FrameLayout} (h : l.check a = true) : l.Sou
     rcases aligned16 with zero | aligned
     · exact absurd zero nonzero
     · exact aligned
+
+/-- `check` pins both `l.outArgs` and `l.size` to the exact minimal values
+computed from `a` (`FE-5` anti-bloat guarantee). -/
+theorem check_exact {a : Facts} {l : FrameLayout} (h : l.check a = true) :
+    l.outArgs = a.outArgs ∧ l.size = expectedSize a := by
+  simp only [check, Bool.and_eq_true, beq_iff_eq] at h
+  exact ⟨h.1.1.1.1.1.1.1.1.1.1.2, h.1.1.1.1.1.1.1.1.1.2⟩
 
 /-- Distinct cells of a sound layout do not overlap: their offsets are
 distinct multiples of 8. -/

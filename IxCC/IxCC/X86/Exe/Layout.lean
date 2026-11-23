@@ -56,6 +56,12 @@ def stackReserve : Nat := 4096
 address below `2^47`. -/
 def maxDataBytes : Nat := 2 ^ 40
 
+/-- Unmapped guard page between the stack segment and the heap region (`BE-4`). -/
+def guardGap : Nat := 0x1000
+
+/-- Round `n` up to a multiple of the 4 KiB page size. -/
+def pageAlign (n : Nat) : Nat := (n + 0x1000 - 1) / 0x1000 * 0x1000
+
 /-- The sizes of the stack and the region, in bytes. The defaults are the C
 driver's. -/
 structure Layout where
@@ -65,10 +71,19 @@ structure Layout where
 
 namespace Layout
 
-def stackTop (L : Layout) : Nat := dataBase + L.stack
-def regionStart (L : Layout) : Nat := dataBase + L.stack
+/-- Page-aligned size of the stack `PT_LOAD` segment. -/
+def stackArea (L : Layout) : Nat := pageAlign L.stack
+/-- Page-aligned size of the heap-region `PT_LOAD` segment. -/
+def regionArea (L : Layout) : Nat := pageAlign L.region
+def stackTop (L : Layout) : Nat := dataBase + L.stackArea
+def regionStart (L : Layout) : Nat := dataBase + L.stackArea + guardGap
 def budget (L : Layout) : Nat := L.stack - stackReserve
 def dataSize (L : Layout) : Nat := L.stack + L.region
+
+/-- The two zero-filled RW segments: the stack segment, then an unmapped
+`0x1000` guard page, then the heap region segment (`BE-4`). -/
+def segments (L : Layout) : List (Nat × Nat) :=
+  [(dataBase, L.stackArea), (L.regionStart, L.regionArea)]
 
 /-- The sizes the writer accepts: a stack that is a multiple of 16 and at least
 8 KiB (as the native suites' test executables require), a region of at least
@@ -95,7 +110,7 @@ private theorem toNat_small {n : Nat} (h : n < 2 ^ 64) : (UInt64.ofNat n).toNat 
 
 /-- **The layout keeps the driver contract**: for a layout `check` accepts,
 object text below the return address and a return address below the
-zero-filled segment, the driver satisfies every clause of
+zero-filled segments, the driver satisfies every clause of
 `Driver.CanonicalOk`. -/
 theorem driver_canonicalOk (L : Layout) (hL : L.check = true) {textOffset textSize ret : Nat}
     (hText : fileBase + textOffset + textSize ≤ ret) (hRet : ret < dataBase) :
@@ -105,13 +120,25 @@ theorem driver_canonicalOk (L : Layout) (hL : L.check = true) {textOffset textSi
   simp only [maxDataBytes] at hmax
   have hd : dataBase = 268435456 := rfl
   have hf : fileBase = 4194304 := rfl
+  have hg : guardGap = 4096 := rfl
+  have hsa_lo : L.stack ≤ L.stackArea := by
+    simp only [stackArea, pageAlign]
+    omega
+  have hsa_hi : L.stackArea < L.stack + 4096 := by
+    simp only [stackArea, pageAlign]
+    omega
+  have hsa_16 : L.stackArea % 16 = 0 := by
+    simp only [stackArea, pageAlign]
+    omega
   have hbase : (UInt64.ofNat (fileBase + textOffset)).toNat = fileBase + textOffset :=
     toNat_small (by omega)
-  have hreg : (UInt64.ofNat (dataBase + L.stack)).toNat = dataBase + L.stack := toNat_small (by omega)
+  have hreg : (UInt64.ofNat L.regionStart).toNat = L.regionStart :=
+    toNat_small (by simp only [regionStart]; omega)
   have hsize : (UInt64.ofNat L.region).toNat = L.region := toNat_small (by omega)
-  have hbud : (UInt64.ofNat (L.stack - 4096)).toNat = L.stack - 4096 := toNat_small (by omega)
-  have hsp : (UInt64.ofNat (dataBase + L.stack - 8)).toNat = dataBase + L.stack - 8 :=
-    toNat_small (by omega)
+  have hbud : (UInt64.ofNat L.budget).toNat = L.budget :=
+    toNat_small (by simp only [budget, stackReserve]; omega)
+  have hsp : (UInt64.ofNat (L.stackTop - 8)).toNat = L.stackTop - 8 :=
+    toNat_small (by simp only [stackTop]; omega)
   have hret : (UInt64.ofNat ret).toNat = ret := toNat_small (by omega)
   have hsub : (UInt64.ofNat ret - UInt64.ofNat (fileBase + textOffset)).toNat =
       ret - (fileBase + textOffset) := by
@@ -119,8 +146,8 @@ theorem driver_canonicalOk (L : Layout) (hL : L.check = true) {textOffset textSi
     · rw [hret, hbase]
     · rw [UInt64.le_iff_toNat_le, hret, hbase]; omega
   refine ⟨⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩, ⟨?_, ?_⟩, ⟨?_, ?_, ?_⟩, ?_⟩ <;>
-    simp only [driver, regionStart, stackTop, budget, stackReserve, hbase, hreg, hsize, hbud, hsp,
-      hret, hsub] <;>
+    simp only [driver, hbase, hreg, hsize, hbud, hsp, hret, hsub] <;>
+    (try simp only [regionStart, stackTop, budget, stackReserve]) <;>
     omega
 
 /-- The default layout (an 8 MiB stack and a 64 MiB region) is accepted. -/

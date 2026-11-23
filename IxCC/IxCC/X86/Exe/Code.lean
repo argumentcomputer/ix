@@ -227,6 +227,8 @@ def fail4 := 36
 def report := 37
 /-- The message blocks, in `Message.all`'s order. -/
 def message (m : Message) : Nat := 38 + (Message.all.takeWhile (· != m)).length
+/-- Advance `rsi`/`rdx` after `writeAdv` verifies `rax <= rdx` (`BE-2`). -/
+def writeStep := 38 + Message.all.length
 end B
 
 /-- A message block: the message's address and length, its status, then the
@@ -298,12 +300,13 @@ def shell (s : Spec) : Shell.Program :=
           | .enum _ => #[movI .rdx 35, subI .rsi 1, st8 (addr .rsi) .rdx]) ++
         #[ins (X86.Instr.lea .rdx (addr .rbp 64)), subR .rdx .rsi, movI .rdi 1, call B.write, movI .rdi 0])
       (jump B.exit),
-    -- exit(rdi)
-    blk #[movI .rax 60, .syscall] (jump B.exit),
+    -- exit(rdi); ud2 fallback if exit ever returned
+    blk #[movI .rax 60, .syscall, .ud2] (jump B.exit),
     -- write(edi, rsi, rdx) until done
     blk #[] (cmpI .rdx 0 .eq B.writeRet B.writeSys),
     blk #[movI .rax 1, .syscall] (cmpI .rax 0 .signedLe B.writeErr B.writeAdv),
-    blk #[addR .rsi .rax, subR .rdx .rax] (jump B.write),
+    -- writeAdv: refuse short-write overrun (`rax > rdx`, `BE-2`)
+    blk #[] (cmpR .rax .rdx .unsignedGt B.writeErr B.writeStep),
     blk #[] .ret,
     blk #[movI .rdi writeFailed] (jump B.exit),
     -- parse(rsi): rax the value mod 2^64; rdx 0 a numeral, 1 one of 2^64 or more, 2 not a numeral
@@ -325,6 +328,7 @@ def shell (s : Spec) : Shell.Program :=
     blk #[] (cmpI .rax 4 .eq (B.message .trap) (B.message .abi)),
     -- report: the message to standard error, then exit with r15
     blk #[movI .rdi 2, call B.write, movR .rdi .r15] (jump B.exit)]
-  { blocks := body ++ (Message.all.map (messageBlock s)).toArray }
+  { blocks := body ++ (Message.all.map (messageBlock s)).toArray ++
+      #[blk #[addR .rsi .rax, subR .rdx .rax] (jump B.write)] }
 
 end IxCC.X86.Exe

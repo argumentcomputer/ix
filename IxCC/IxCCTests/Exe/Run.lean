@@ -321,7 +321,7 @@ def testShellPart (a : Assert) (o : Options) (work : FilePath) : IO (Array Strin
   -- the production frame is the production shell over one segment
   let base : X86.Exe.Input := { object := fib.object, root := root.symbol, arity := 1, result := .nat }
   expectEq a base.frame.exports [X86.Exe.initSymbol, root.symbol] "the production frame's exports"
-  expect a (base.frame.segments == [(X86.Exe.dataBase, base.layout.dataSize)]) "the production frame's segment"
+  expect a (base.frame.segments == base.layout.segments) "the production frame's segments"
   -- the writer and its check on the test shell's frames: one segment, and a
   -- fixed region in a segment of its own
   let after : TestShell.Mem := { stack := 65536, region := 65536 }

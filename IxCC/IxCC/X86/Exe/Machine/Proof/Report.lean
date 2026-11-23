@@ -469,7 +469,7 @@ theorem write_loop : ∀ (n : Nat) {status : Nat} {rest : List UInt8} {s : ByteE
       rcases TraceN.through hrun2 ht'' with rfl | ⟨-, ht3⟩
       · exact (List.prefix_cons_inj _).mpr List.nil_prefix
       · exact (List.prefix_cons_inj _).mpr (exit_path ce (s := ⟨k4, a 27 0, cmp2.flags s3.core⟩) rfl ht3)
-    · -- written: writeAdv, back to write
+    · -- written: writeAdv guards `rax <= rdx`, then writeStep advances `rsi`/`rdx`, back to write
       have hr0 : 0 < r.toNat := by omega
       have hr63 : r.toNat < 2 ^ 63 := by omega
       have hle : r.toNat ≤ (x :: xs).length := by
@@ -482,23 +482,34 @@ theorem write_loop : ∀ (n : Nat) {status : Nat} {rest : List UInt8} {s : ByteE
           (by rw [compare_test]
               show some (Condition.holds .signedLe .w64 (s3.core.readReg .rax) (signExtend32 (UInt32.ofNat 0))) = _
               rw [signedLe_zero, h3rax]; simp [href])
-      obtain ⟨fl4, h4⟩ := exec_alu ⟨s3.core, a 35 0, cmp2.flags s3.core⟩ .add .w64 .rsi (.reg .rax)
+      let cmp3 : Compare := { width := .w64, left := .rax, right := .reg .rdx }
+      have e3b : ByteEval.run img fetchBase 3 ⟨s3.core, a 35 0, cmp2.flags s3.core⟩ =
+          .ok ⟨s3.core, a 46 0, cmp3.flags s3.core⟩ :=
+        mrun_branch ce (b := 35) (by decide) (o := cmp3.row.1) (args := cmp3.row.2) (cond := .unsignedGt) (yes := 37)
+          (no := 46) (by rw [block_writeAdv]; rfl) (s := ⟨s3.core, a 35 0, cmp2.flags s3.core⟩) (core := s3.core)
+          (fl := cmp3.flags s3.core) (by rw [block_writeAdv]; rfl) (exec_compare _ _ _) (taken := false)
+          (by rw [compare_test]
+              show some (Condition.holds .unsignedGt .w64 (s3.core.readReg .rax) (s3.core.readReg .rdx)) = some false
+              simp only [Condition.holds, truncate64, h3rax, Option.some.injEq, decide_eq_false_iff_not]
+              show ¬ (s.core.readReg .rdx < r)
+              rw [UInt64.lt_iff_toNat_lt, hw.rdx]; omega)
+      obtain ⟨fl4, h4⟩ := exec_alu ⟨s3.core, a 46 0, cmp3.flags s3.core⟩ .add .w64 .rsi (.reg .rax)
         (Shell.Instr.size (.instr (Instr.alu .add .w64 .rsi (.reg .rax))))
       let k4 := s3.core.setReg .rsi (s3.core.readReg .rsi + s3.core.readReg .rax)
-      have e4 : ByteEval.step img fetchBase ⟨s3.core, a 35 0, cmp2.flags s3.core⟩ = .ok ⟨k4, a 35 1, fl4⟩ :=
-        mstep_ok ce (b := 35) (j := 0) (by decide) (s := ⟨s3.core, a 35 0, cmp2.flags s3.core⟩)
-          (i := Instr.alu .add .w64 .rsi (.reg .rax)) (by rw [block_writeAdv]; rfl) (ne_call_of_op ⟨_, _, rfl⟩) rfl h4
-      obtain ⟨fl5, h5⟩ := exec_alu ⟨k4, a 35 1, fl4⟩ .sub .w64 .rdx (.reg .rax)
+      have e4 : ByteEval.step img fetchBase ⟨s3.core, a 46 0, cmp3.flags s3.core⟩ = .ok ⟨k4, a 46 1, fl4⟩ :=
+        mstep_ok ce (b := 46) (j := 0) (by decide) (s := ⟨s3.core, a 46 0, cmp3.flags s3.core⟩)
+          (i := Instr.alu .add .w64 .rsi (.reg .rax)) (by rw [block_writeStep]; rfl) (ne_call_of_op ⟨_, _, rfl⟩) rfl h4
+      obtain ⟨fl5, h5⟩ := exec_alu ⟨k4, a 46 1, fl4⟩ .sub .w64 .rdx (.reg .rax)
         (Shell.Instr.size (.instr (Instr.alu .sub .w64 .rdx (.reg .rax))))
       let k5 := k4.setReg .rdx (k4.readReg .rdx - k4.readReg .rax)
-      have e5 : ByteEval.step img fetchBase ⟨k4, a 35 1, fl4⟩ = .ok ⟨k5, a 35 2, fl5⟩ :=
-        mstep_ok ce (b := 35) (j := 1) (by decide) (s := ⟨k4, a 35 1, fl4⟩)
-          (i := Instr.alu .sub .w64 .rdx (.reg .rax)) (by rw [block_writeAdv]; rfl) (ne_call_of_op ⟨_, _, rfl⟩) rfl h5
-      have e6 : ByteEval.step img fetchBase ⟨k5, a 35 2, fl5⟩ = .ok ⟨k5, a 33 0, fl5⟩ :=
-        mstep_jump ce (b := 35) (by decide) (t := 33) (by rw [block_writeAdv]; rfl) (s := ⟨k5, a 35 2, fl5⟩)
-          (by rw [block_writeAdv]; rfl)
-      have hrun2 : ByteEval.run img fetchBase 6 s3 = .ok ⟨k5, a 33 0, fl5⟩ :=
-        run_comp e3 (run_comp (run_one e4) (run_comp (run_one e5) (run_one e6)))
+      have e5 : ByteEval.step img fetchBase ⟨k4, a 46 1, fl4⟩ = .ok ⟨k5, a 46 2, fl5⟩ :=
+        mstep_ok ce (b := 46) (j := 1) (by decide) (s := ⟨k4, a 46 1, fl4⟩)
+          (i := Instr.alu .sub .w64 .rdx (.reg .rax)) (by rw [block_writeStep]; rfl) (ne_call_of_op ⟨_, _, rfl⟩) rfl h5
+      have e6 : ByteEval.step img fetchBase ⟨k5, a 46 2, fl5⟩ = .ok ⟨k5, a 33 0, fl5⟩ :=
+        mstep_jump ce (b := 46) (by decide) (t := 33) (by rw [block_writeStep]; rfl) (s := ⟨k5, a 46 2, fl5⟩)
+          (by rw [block_writeStep]; rfl)
+      have hrun2 : ByteEval.run img fetchBase 9 s3 = .ok ⟨k5, a 33 0, fl5⟩ :=
+        run_comp e3 (run_comp e3b (run_comp (run_one e4) (run_comp (run_one e5) (run_one e6))))
       -- the writer again, with the rest
       have hrsi : k5.readReg .rsi = s.core.readReg .rsi + UInt64.ofNat r.toNat := by
         show s.core.readReg .rsi + r = _
@@ -517,10 +528,10 @@ theorem write_loop : ∀ (n : Nat) {status : Nat} {rest : List UInt8} {s : ByteE
         · exact hw.r15
         · exact hw.rsp
         · exact hw.ret
-      rcases TraceN.through hrun2 ht'' with rfl | ⟨hn6, ht3⟩
+      rcases TraceN.through hrun2 ht'' with rfl | ⟨hn9, ht3⟩
       · obtain ⟨b, ρ, hρ, -⟩ := report_nil status ((x :: xs).drop r.toNat)
         exact ⟨b, _, .part hne ⟨hr0, hle⟩ hρ, (List.prefix_cons_inj _).mpr List.nil_prefix⟩
-      · obtain ⟨b, ρ, hρ, hp⟩ := ih (n - 4 - 1 - 6) (by omega) hw' ht3
+      · obtain ⟨b, ρ, hρ, hp⟩ := ih (n - 4 - 1 - 9) (by omega) hw' ht3
         exact ⟨b, _, .part hne ⟨hr0, hle⟩ hρ, (List.prefix_cons_inj _).mpr hp⟩
 
 /-- **The report**: from the message block of a failure, in a memory holding
@@ -535,7 +546,7 @@ theorem report (f : Machine.Failure) {s : ByteEval.State}
   let a : Nat → Nat → Word := fun b j => UInt64.ofNat (shellAddr L step ce.checked b j)
   let D := fileBase + ce.checked.plan.placement.dataOffset
   let mb := Machine.B.message f
-  have hb : mb < 46 := message_index f
+  have hb : mb < 47 := message_index f
   have hblk : blockAt (shellOf ce.checked) mb = msgBlock D f := block_message L step D f
   -- the message block: mov rsi, address; mov rdx, length; mov r15, status; jmp report
   let k1 := s.core.setReg .rsi (UInt64.ofNat (Machine.messageAt D f).1)

@@ -38,6 +38,7 @@ namespace IxCC.X86.Exe.Shell
 def Instr.size : Instr → Nat
   | .instr i => (Encode.encodeInstr i).bytes.size
   | .syscall => 2
+  | .ud2 => 2
   | .callExport _ => 5
 
 /-- A block's encoded size: its instructions and its terminator. -/
@@ -64,6 +65,7 @@ def instrMatches (p : Program) (image : ByteArray) (origin : Nat) (exportAt : St
   | .instr (.call t) => targets p image origin pos .call 5 t
   | .instr i => Encode.linearInstruction i && Stream.decodes image pos (Encode.instructionOperation i) (Instr.size (.instr i))
   | .syscall => Decode.decodeAt image pos == none && image[pos]? == some 0x0f && image[pos + 1]? == some 0x05
+  | .ud2 => Decode.decodeAt image pos == none && image[pos]? == some 0x0f && image[pos + 1]? == some 0x0b
   | .callExport s =>
     match exportAt s with
     | some t => Encode.fitsSigned32 ((t : Int) - (pos + 5)) && Stream.decodes image pos (.call (Stream.displacement (pos + 5) t)) 5

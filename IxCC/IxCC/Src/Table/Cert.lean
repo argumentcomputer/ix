@@ -120,15 +120,18 @@ def csimpTargetsOk (p : Program) (resolve : NatMap Resolve) :
   | _ :: rest => csimpTargetsOk p resolve rest
 
 /-- Rebuild the checked table of `p` from its certificate (the recheck
-path, style V). -/
+path, style V). Enforces `FE-3` (acyclic unconditional `.eqn` unfolding) and
+`FE-6` (mandatory deterministic `Pinned.lazyPins` lazification). -/
 def ofCert (cfg : Config) (p : Program) (c : TableCert) : Except String Table := do
   unless Pinned.knownOk p do throw "known: a pinned constant is misidentified"
   unless c.keysOk p.size do throw "a column names a constant outside the program, or one twice"
   let resolve ← resolveOfCert cfg p c.resolve .leaf
   csimpTargetsOk p resolve resolve.toList
+  eqnTargetsAcyclic p resolve resolve.toList
   let recKind ← recKindOfCert p c.recKind .leaf
   let lazy ← columnOfCert (checkLazy p) id c.lazy .leaf
   lazyResolveOk p resolve c.lazy
+  pinnedLazyRequired p lazy
   let inline ← columnOfCert (fun f (_ : Unit) => checkInline p f cfg.inlineCap) id
     (c.inline.map (·, ())) .leaf
   let opaqueByValue ← columnOfCert (validateOpaque p) id (c.opaqueByValue.map (·, ())) .leaf
@@ -427,77 +430,144 @@ theorem ofCert_ok_props {cfg : Config} {p : Program} {cert : TableCert} {t : Tab
         cases u
         rw [hcs] at h
         dsimp only at h
-        cases hrk : recKindOfCert p cert.recKind .leaf with
-        | error _ => rw [hrk] at h; cases h
-        | ok recKind =>
-          rw [hrk] at h
+        cases heqn : eqnTargetsAcyclic p resolve resolve.toList with
+        | error _ => rw [heqn] at h; cases h
+        | ok u =>
+          cases u
+          rw [heqn] at h
           dsimp only at h
-          cases hlz : columnOfCert (checkLazy p) id cert.lazy .leaf with
-          | error _ => rw [hlz] at h; cases h
-          | ok lazy =>
-            rw [hlz] at h
+          cases hrk : recKindOfCert p cert.recKind .leaf with
+          | error _ => rw [hrk] at h; cases h
+          | ok recKind =>
+            rw [hrk] at h
             dsimp only at h
-            cases hlr : lazyResolveOk p resolve cert.lazy with
-            | error _ => rw [hlr] at h; cases h
-            | ok u =>
-              cases u
-              rw [hlr] at h
+            cases hlz : columnOfCert (checkLazy p) id cert.lazy .leaf with
+            | error _ => rw [hlz] at h; cases h
+            | ok lazy =>
+              rw [hlz] at h
               dsimp only at h
-              cases hinl : columnOfCert (fun f (_ : Unit) => checkInline p f cfg.inlineCap) id
-                  (cert.inline.map (·, ())) .leaf with
-              | error _ => rw [hinl] at h; cases h
-              | ok inline =>
-                rw [hinl] at h
+              cases hlr : lazyResolveOk p resolve cert.lazy with
+              | error _ => rw [hlr] at h; cases h
+              | ok u =>
+                cases u
+                rw [hlr] at h
                 dsimp only at h
-                cases hopq : columnOfCert (validateOpaque p) id (cert.opaqueByValue.map (·, ())) .leaf with
-                | error _ => rw [hopq] at h; cases h
-                | ok opaqueByValue =>
-                  rw [hopq] at h
+                cases hpl : pinnedLazyRequired p lazy with
+                | error _ => rw [hpl] at h; cases h
+                | ok u =>
+                  cases u
+                  rw [hpl] at h
                   dsimp only at h
-                  injection h with ht
-                  subst ht
-                  refine ⟨rfl,
-                    resolveOfCert_mem_ok cert.resolve .leaf resolve hres,
-                    fun c r hget => ?_,
-                    recKindOfCert_mem_ok cert.recKind .leaf recKind hrk,
-                    fun c rk hget => ?_,
-                    fun pl hpl => columnOfCert_mem_ok cert.lazy .leaf lazy hlz pl.1 pl.2 hpl,
-                    fun c a hget => ?_,
-                    fun c hc => ?_,
-                    fun c hget => ?_,
-                    fun c hc => ?_,
-                    fun c hget => ?_⟩
-                  · rcases resolveOfCert_get?_ok cert.resolve .leaf resolve hres c r hget with hm | hex
-                    · simp [NatMap.get?] at hm
-                    · exact hex
-                  · rcases recKindOfCert_get?_ok cert.recKind .leaf recKind hrk c rk hget with hm | hex
-                    · simp [NatMap.get?] at hm
-                    · exact hex
-                  · rcases columnOfCert_get?_ok cert.lazy .leaf lazy hlz c a hget with hm | ⟨x, hmem, hchk, rfl⟩
-                    · simp [NatMap.get?] at hm
-                    · exact ⟨hmem, hchk⟩
-                  · have hmem : (c, ()) ∈ cert.inline.map (·, ()) := List.mem_map.2 ⟨c, hc, rfl⟩
-                    obtain ⟨h1, h2⟩ := columnOfCert_unit_mem_ok _ .leaf inline hinl c hmem
-                    exact ⟨h1, by simp [Table.isInline, NatMap.contains, h2]⟩
-                  · simp only [Table.isInline, NatMap.contains, Option.isSome_iff_exists] at hget
-                    obtain ⟨u, hu⟩ := hget
-                    cases u
-                    rcases columnOfCert_get?_ok _ .leaf inline hinl c () hu with hm | ⟨_, hmem, hchk, _⟩
-                    · simp [NatMap.get?] at hm
-                    · obtain ⟨c', hc', heq⟩ := List.mem_map.1 hmem
-                      cases heq
-                      exact ⟨hc', hchk⟩
-                  · have hmem : (c, ()) ∈ cert.opaqueByValue.map (·, ()) := List.mem_map.2 ⟨c, hc, rfl⟩
-                    obtain ⟨h1, h2⟩ := columnOfCert_unit_mem_ok _ .leaf opaqueByValue hopq c hmem
-                    exact ⟨h1, by simp [Table.isOpaqueByValue, NatMap.contains, h2]⟩
-                  · simp only [Table.isOpaqueByValue, NatMap.contains, Option.isSome_iff_exists] at hget
-                    obtain ⟨u, hu⟩ := hget
-                    cases u
-                    rcases columnOfCert_get?_ok _ .leaf opaqueByValue hopq c () hu with hm | ⟨_, hmem, hchk, _⟩
-                    · simp [NatMap.get?] at hm
-                    · obtain ⟨c', hc', heq⟩ := List.mem_map.1 hmem
-                      cases heq
-                      exact ⟨hc', hchk⟩
+                  cases hinl : columnOfCert (fun f (_ : Unit) => checkInline p f cfg.inlineCap) id
+                      (cert.inline.map (·, ())) .leaf with
+                  | error _ => rw [hinl] at h; cases h
+                  | ok inline =>
+                    rw [hinl] at h
+                    dsimp only at h
+                    cases hopq : columnOfCert (validateOpaque p) id (cert.opaqueByValue.map (·, ())) .leaf with
+                    | error _ => rw [hopq] at h; cases h
+                    | ok opaqueByValue =>
+                      rw [hopq] at h
+                      dsimp only at h
+                      injection h with ht
+                      subst ht
+                      refine ⟨rfl,
+                        resolveOfCert_mem_ok cert.resolve .leaf resolve hres,
+                        fun c r hget => ?_,
+                        recKindOfCert_mem_ok cert.recKind .leaf recKind hrk,
+                        fun c rk hget => ?_,
+                        fun pl hpl => columnOfCert_mem_ok cert.lazy .leaf lazy hlz pl.1 pl.2 hpl,
+                        fun c a hget => ?_,
+                        fun c hc => ?_,
+                        fun c hget => ?_,
+                        fun c hc => ?_,
+                        fun c hget => ?_⟩
+                      · rcases resolveOfCert_get?_ok cert.resolve .leaf resolve hres c r hget with hm | hex
+                        · simp [NatMap.get?] at hm
+                        · exact hex
+                      · rcases recKindOfCert_get?_ok cert.recKind .leaf recKind hrk c rk hget with hm | hex
+                        · simp [NatMap.get?] at hm
+                        · exact hex
+                      · rcases columnOfCert_get?_ok cert.lazy .leaf lazy hlz c a hget with hm | ⟨x, hmem, hchk, rfl⟩
+                        · simp [NatMap.get?] at hm
+                        · exact ⟨hmem, hchk⟩
+                      · have hmem : (c, ()) ∈ cert.inline.map (·, ()) := List.mem_map.2 ⟨c, hc, rfl⟩
+                        obtain ⟨h1, h2⟩ := columnOfCert_unit_mem_ok _ .leaf inline hinl c hmem
+                        exact ⟨h1, by simp [Table.isInline, NatMap.contains, h2]⟩
+                      · simp only [Table.isInline, NatMap.contains, Option.isSome_iff_exists] at hget
+                        obtain ⟨u, hu⟩ := hget
+                        cases u
+                        rcases columnOfCert_get?_ok _ .leaf inline hinl c () hu with hm | ⟨_, hmem, hchk, _⟩
+                        · simp [NatMap.get?] at hm
+                        · obtain ⟨c', hc', heq⟩ := List.mem_map.1 hmem
+                          cases heq
+                          exact ⟨hc', hchk⟩
+                      · have hmem : (c, ()) ∈ cert.opaqueByValue.map (·, ()) := List.mem_map.2 ⟨c, hc, rfl⟩
+                        obtain ⟨h1, h2⟩ := columnOfCert_unit_mem_ok _ .leaf opaqueByValue hopq c hmem
+                        exact ⟨h1, by simp [Table.isOpaqueByValue, NatMap.contains, h2]⟩
+                      · simp only [Table.isOpaqueByValue, NatMap.contains, Option.isSome_iff_exists] at hget
+                        obtain ⟨u, hu⟩ := hget
+                        cases u
+                        rcases columnOfCert_get?_ok _ .leaf opaqueByValue hopq c () hu with hm | ⟨_, hmem, hchk, _⟩
+                        · simp [NatMap.get?] at hm
+                        · obtain ⟨c', hc', heq⟩ := List.mem_map.1 hmem
+                          cases heq
+                          exact ⟨hc', hchk⟩
+
+/-- `ofCert` enforces `FE-3` (acyclic unconditional `.eqn` unfolding) and
+`FE-6` (mandatory deterministic `Pinned.lazyPins` lazification). -/
+theorem ofCert_hardened {cfg : Config} {p : Program} {cert : TableCert} {t : Table}
+    (h : ofCert cfg p cert = .ok t) :
+    eqnTargetsAcyclic p t.resolve t.resolve.toList = .ok () ∧
+    pinnedLazyRequired p t.lazy = .ok () := by
+  unfold ofCert at h
+  cases hkn : Pinned.knownOk p with
+  | false => rw [hkn] at h; cases h
+  | true =>
+    simp only [hkn, ↓reduceIte, pure, Except.pure, bind, Except.bind] at h
+    cases hk : cert.keysOk p.size with
+    | false => simp [hk] at h
+    | true =>
+      simp only [hk, ↓reduceIte] at h
+      cases hres : resolveOfCert cfg p cert.resolve .leaf with
+      | error _ => rw [hres] at h; cases h
+      | ok resolve =>
+        rw [hres] at h; dsimp only at h
+        cases hcs : csimpTargetsOk p resolve resolve.toList with
+        | error _ => rw [hcs] at h; cases h
+        | ok u =>
+          cases u; rw [hcs] at h; dsimp only at h
+          cases heqn : eqnTargetsAcyclic p resolve resolve.toList with
+          | error _ => rw [heqn] at h; cases h
+          | ok u =>
+            cases u; rw [heqn] at h; dsimp only at h
+            cases hrk : recKindOfCert p cert.recKind .leaf with
+            | error _ => rw [hrk] at h; cases h
+            | ok recKind =>
+              rw [hrk] at h; dsimp only at h
+              cases hlz : columnOfCert (checkLazy p) id cert.lazy .leaf with
+              | error _ => rw [hlz] at h; cases h
+              | ok lazy =>
+                rw [hlz] at h; dsimp only at h
+                cases hlr : lazyResolveOk p resolve cert.lazy with
+                | error _ => rw [hlr] at h; cases h
+                | ok u =>
+                  cases u; rw [hlr] at h; dsimp only at h
+                  cases hpl : pinnedLazyRequired p lazy with
+                  | error _ => rw [hpl] at h; cases h
+                  | ok u =>
+                    cases u; rw [hpl] at h; dsimp only at h
+                    cases hinl : columnOfCert (fun f (_ : Unit) => checkInline p f cfg.inlineCap) id
+                        (cert.inline.map (·, ())) .leaf with
+                    | error _ => rw [hinl] at h; cases h
+                    | ok inline =>
+                      rw [hinl] at h; dsimp only at h
+                      cases hopq : columnOfCert (validateOpaque p) id (cert.opaqueByValue.map (·, ())) .leaf with
+                      | error _ => rw [hopq] at h; cases h
+                      | ok opaqueByValue =>
+                        rw [hopq] at h; dsimp only at h
+                        injection h with ht; subst ht
+                        exact ⟨heqn, hpl⟩
 
 theorem buildResolve_sound {cfg : Config} {p : Program} {cert : TableCert} {t : Table}
     (h : ofCert cfg p cert = .ok t) :

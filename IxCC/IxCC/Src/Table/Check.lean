@@ -545,7 +545,371 @@ def equationBody (p : Program) (tf vf rhs : Term)
   return fBinders.foldr (fun (b, d) acc =>
     .lam { b with rel := .rel, propWhen := .never } d acc) rhs
 
-/-- Check `eqn f thm` and build the entry body `λ xs. rhs` (checks 1–5). -/
+/-! ### Unconditional call analysis & non-cyclic `.eqn` guard (`FE-3`)
+
+A dishonest producer may supply a valid reflexivity or self-loop equation
+theorem (`f x = f x`, `f x = Nat.add (f x) 0`, `f x = if b then f x else f x`,
+`f x = cast rfl (f x)`, or a mutual cycle `f x = g x`, `g x = f x`) to turn an
+honest definition into a guaranteed infinite loop / stack bomb.
+
+`uncondCalls` conservatively computes a list of constants unconditionally
+invoked on every strict CBV execution path of a term `t`:
+* lambdas, sorts, literals, variables, and Π types perform no calls;
+* `let` evaluates its non-erased value and body; `proj` evaluates its receiver;
+* β-redexes evaluate their strict arguments and body;
+* branching combinators (`ite`, `dite`, `Decidable.byCases`, `cond`,
+  `Bool.dcond`, recursors, `casesOn`) evaluate their scrutinee/major and
+  **intersect** unconditional calls across all branches (peeling branch
+  binders), so any honest recursive function with a base case has empty
+  intersection;
+* short-circuiting lazy combinators (`Bool.and`, `Bool.or`, `Option.getD`,
+  `Option.or`, `Option.orElse`, `Ordering.then`) evaluate only their first
+  (non-lazy) argument;
+* `cast` / `Eq.mp` / `Eq.mpr` evaluate their transported value argument;
+* ordinary applications evaluate all non-type, non-Prop, non-erased arguments.
+
+`checkEqn` rejects any equation whose RHS equals its LHS or unconditionally
+calls the subject `f`; `eqnTargetsAcyclic` further rejects mutual unconditional
+cycles across `.eqn` and `.csimp` entries. -/
+
+/-- Deduplicated union of two `CId` lists (kernel-evaluable). -/
+def cidUnion (xs ys : List CId) : List CId :=
+  ys.foldl (fun acc y => if acc.contains y then acc else y :: acc) xs
+
+/-- Intersection of two `CId` lists. -/
+def cidInter (xs ys : List CId) : List CId :=
+  xs.filter ys.contains
+
+/-- Intersection across a non-empty list of branch call lists; `[]` on empty. -/
+def cidInterAll : List (List CId) → List CId
+  | [] => []
+  | [xs] => xs
+  | xs :: rest => cidInter xs (cidInterAll rest)
+
+/-- Peel up to `k` leading lambdas from `t`. -/
+def peelUpToLams : Nat → Term → Term
+  | 0, t => t
+  | k + 1, .lam _ _ body => peelUpToLams k body
+  | _ + 1, t => t
+
+/-- Whether `c` is a `Prop`-valued inductive or definition (its type's codomain
+is `Sort 0`). -/
+def isPropHead (p : Program) (c : CId) : Bool :=
+  match p.decl? c with
+  | some (.induct _ _ _ _ ty _) => ty.pis.2 == .sort .zero
+  | some (.defn _ _ _ ty _) => ty.pis.2 == .sort .zero
+  | some (.axio _ _ ty) => ty.pis.2 == .sort .zero
+  | _ => false
+
+/-- Whether `dom` is an irrelevant domain (a `Sort`, a `Prop`-headed type, or
+an application of a previously bound `Prop`-valued binder at de Bruijn indices
+tracked in `propDepths`, given current binder depth `depth`). -/
+def isIrrelDom (p : Program) (depth : Nat) (propDepths : List Nat) (dom : Term) : Bool :=
+  let (_, cod) := dom.pis
+  match cod with
+  | .sort _ => true
+  | _ =>
+    match cod.spine.1 with
+    | .const c _ => isPropHead p c
+    | .var idx =>
+      let extra := dom.pis.1.length
+      if idx < extra then false
+      else
+        let outerIdx := idx - extra
+        if outerIdx < depth then propDepths.contains (depth - 1 - outerIdx)
+        else false
+    | _ => false
+
+/-- Whether `t` is a `Prop`-valued constant's result type (e.g. a proof constructor). -/
+def isPropReturning (p : Program) (c : CId) : Bool :=
+  match p.decl? c with
+  | some (.ctor _ _ ind _ _ _ _) => isPropHead p ind
+  | some d => isIrrelDom p 0 [] d.type.pis.2
+  | none => false
+
+/-- For each Π-binder of `ty`, whether the corresponding argument is relevant
+(not erased, not a `Sort`, and not a `Prop`). -/
+def relevantArgMaskGo (p : Program) (depth : Nat) (propDepths : List Nat) :
+    Term → List Bool
+  | .pi b dom cod =>
+    let irrel := b.isErased || isIrrelDom p depth propDepths dom
+    let isPropBinder := dom.pis.2 == .sort .zero
+    let propDepths' := if isPropBinder then depth :: propDepths else propDepths
+    (!irrel) :: relevantArgMaskGo p (depth + 1) propDepths' cod
+  | _ => []
+
+def relevantArgMask (p : Program) (c : CId) : List Bool :=
+  match p.decl? c with
+  | some d => relevantArgMaskGo p 0 [] d.type
+  | none => []
+
+/-- Quick check for whether `c` is a `T.casesOn` definition returning
+`(np, ni, rules)` of its single-motive recursor (without full `checkCase`). -/
+def casesOnShape (p : Program) (c : CId) : Option (Nat × Nat × List Rule) := do
+  let (_, ty, value) ← safeDefn? p c
+  unless ty.nodesLe maxTermNodes && value.nodesLe maxTermNodes do none
+  let (binders, body) := value.lams
+  let (head, args) := body.spine
+  let .const r _ := head | none
+  let .recr _ _ _ np nmot nmin ni _ rules _ ← p.decl? r | none
+  unless nmot == 1 && rules.length == nmin do none
+  let total := np + 1 + ni + 1 + nmin
+  unless binders.length == total && args.length == total do none
+  return (np, ni, rules)
+
+/-- Quick check for whether `c` is a sparse `casesOn` definition, returning
+`(majorIdx, arity)`. -/
+def sparseCasesShape (p : Program) (c : CId) : Option (Nat × Nat) := do
+  let (_, ty, value) ← safeDefn? p c
+  unless ty.nodesLe maxTermNodes && value.nodesLe maxTermNodes do none
+  let (binders, body) := value.lams
+  let (head, args) := body.spine
+  let .const r _ := head | none
+  let .recr _ _ _ np nmot nmin ni _ rules _ ← p.decl? r | none
+  unless nmot == 1 && rules.length == nmin do none
+  let B := binders.length
+  let arms := np + 1 + ni + 1
+  unless arms < B && args.length == np + 1 + nmin + ni + 1 do none
+  return (np + 1 + ni, B)
+
+/-- Classification of pinned lazy constants for unconditional-call analysis:
+`(arity, strictArgIndices, branchArgIndicesWithLamCount)`. -/
+def lazyCallSpec (addr : Nat) : Option (Nat × List Nat × List (Nat × Nat)) :=
+  if addr == 0x1c4df88ba829b7b808219c037f304dde11b0c9d8ca752713c15ed5493c5fd1cf then
+    some (5, [2], [(3, 0), (4, 0)]) -- ite
+  else if addr == 0x1d157fb39979a14262b7c96f561a83d326dd2dd707b81691b9428116021fc695 then
+    some (5, [2], [(3, 1), (4, 1)]) -- dite
+  else if addr == 0xc1e85af689a23980e3e15aa8a0783d66bf6098e69c6647c2de7f10b212bf6480 then
+    some (5, [2], [(3, 1), (4, 1)]) -- Decidable.byCases
+  else if addr == 0x559de6cf0d74533ecbc4626b11c44afca490bb8093f6d73fec4ce53e4e4834e0 then
+    some (4, [1], [(2, 0), (3, 0)]) -- cond
+  else if addr == 0xbdb78fb5445cba0cd32c073163e2639f73a799fb400a18e15d1c5d4b8a96afdd then
+    some (4, [1], [(2, 1), (3, 1)]) -- Bool.dcond
+  else if addr == 0xce948c1b65e29bed8a29906edf2c590ba1437fdeb0f05c56a440f04bdf6b7389 ||
+          addr == 0x207828ca439dbd1ba681a6a52ef9ab12fe87433b00f5ffd2b7bc6c257fe91bfe ||
+          addr == 0xa5fdd2b9dda72494da8456a3f5238df464d4c31b508f7d9f63d19b9f660a64f9 ||
+          addr == 0xeda55fc8e9ad7ffde288ff95c372dae8d3aaa70428fbe251ac59341db4406472 ||
+          addr == 0xd11d833e8aa2f04019eab97498e7836be293495c96adddee2530fdc5bce5c1ba then
+    some (2, [0], []) -- Bool.and, Bool.Internal.and, Bool.or, Bool.Internal.or, Ordering.then
+  else if addr == 0x3acceb9f17335493d53a4d0ca61358bc00fce8814b294913dfc4b16f6e2ad5f7 ||
+          addr == 0x79144189ad3fa5b35b92ce28f38cbabb61f76d730bd9efcfce139c31ecc071a2 ||
+          addr == 0xecb79859410b47e92d29163c23e4ab7f2d5ceccc2191da4d43802934c9199974 then
+    some (3, [1], []) -- Option.getD, Option.or, Option.orElse
+  else if addr == 0x448d444158d5fd51384fe60e8678b0c2f7393fba59262815b50cf958bc697a1c ||
+          addr == 0x5ff0d608be0093bb13e0ba60b412ea753a1ccfacc7d679223d71ceb1861bb0c2 then
+    some (4, [3], []) -- cast, Eq.mp, Eq.mpr
+  else
+    match Pinned.lazyPins.find? (·.1 == addr) with
+    | some (_, arity) => some (arity, [], [])
+    | none => none
+
+/-- Extract the `i`-th argument term from a spine `args`, if present. -/
+def spineArg? (args : List (Term × Mode × Rel)) (i : Nat) : Option Term :=
+  (args[i]?).map (·.1)
+
+/-- IH count of a recursor rule: its `rhs` is `λ ps motives minors fields.
+app* #minor (fields ++ ihs)`. -/
+def ruleIhs (np nmot nmin j : Nat) (rule : Rule) : Option Nat :=
+  let (binders, body) := rule.rhs.lams
+  let total := np + nmot + nmin + rule.fields
+  if binders.length != total then none else
+  let (head, args) := body.spine
+  -- The minor for rule `j` is binder `np + nmot + j`.
+  match head with
+  | .var i =>
+    if i == total - 1 - (np + nmot + j) && args.length ≥ rule.fields then
+      some (args.length - rule.fields)
+    else none
+  | _ => none
+
+/-- Peel up to `k` leading λs, returning `(peeledCount, inner)`. -/
+def peelUpToLamsD : Nat → Term → Nat × Term
+  | 0, t => (0, t)
+  | k + 1, .lam _ _ body =>
+    let (d, inner) := peelUpToLamsD k body
+    (d + 1, inner)
+  | _ + 1, t => (0, t)
+
+/-- Whether `a` is a bare LHS parameter variable (at local binder depth `depth`
+under `nParams` LHS universal binders) or a type-level term carrying no
+computational reduction. -/
+def isTrivialEqnArg (depth nParams : Nat) : Term → Bool
+  | .var i => decide (depth ≤ i && i < depth + nParams)
+  | .sort _ | .pi .. => true
+  | _ => false
+
+/-- Whether every relevant strict argument of `c` in `args` is a bare LHS
+parameter variable (or type-level), i.e., a non-reducing call (`f x = f x`,
+`f x y = f y x`, `f x = g x`, etc.), while permitting genuine changing-argument
+recursion such as `partial_fixpoint` (`spin n = spin (n + 1)`). -/
+def isTrivialCall (p : Program) (depth nParams : Nat) (c : CId)
+    (args : List (Term × Mode × Rel)) : Bool :=
+  let mask := relevantArgMask p c
+  args.zipIdx.all fun ((a, m, r), i) =>
+    let rel := (mask[i]?).getD true
+    !rel || m == .byName || r.alwaysIrr || isTrivialEqnArg depth nParams a
+
+/-- Constants unconditionally invoked on every strict CBV path of `t` with
+non-reducing (bare LHS parameter) arguments (`FE-3`). Structural on `fuel` for
+kernel-evaluable (`D17`) reduction. -/
+def uncondCalls (p : Program) (nParams : Nat) : Nat → Nat → Term → List CId
+  | 0, _, _ => []
+  | fuel + 1, depth, t =>
+    match t with
+    | .var _ | .sort _ | .natLit _ | .strLit _ | .pi .. | .lam .. => []
+    | .const c _ => [c]
+    | .proj _ _ e => uncondCalls p nParams fuel depth e
+    | .letE _ lm r _ val body =>
+      let bodyCalls := uncondCalls p nParams fuel (depth + 1) body
+      if lm.binderMode.isErased || r.alwaysIrr then bodyCalls
+      else cidUnion (uncondCalls p nParams fuel depth val) bodyCalls
+    | .app .. =>
+      let (head, args) := t.spine
+      match head with
+      | .lam .. =>
+        -- β-redex `(λ x₁ … xₖ. inner) a₁ … aₘ`
+        let (lams, inner) := head.lams
+        let nApplied := Nat.min lams.length args.length
+        let appliedCalls := (lams.take nApplied).zip (args.take nApplied) |>.foldl
+          (fun acc ((b, _), (a, m, r)) =>
+            if b.isErased || m == .byName || r.alwaysIrr then acc
+            else cidUnion acc (uncondCalls p nParams fuel depth a)) []
+        let extraCalls := (args.drop nApplied).foldl
+          (fun acc (a, m, r) =>
+            if m == .byName || r.alwaysIrr then acc
+            else cidUnion acc (uncondCalls p nParams fuel depth a)) []
+        let bodyCalls :=
+          if args.length ≥ lams.length then uncondCalls p nParams fuel (depth + lams.length) inner
+          else []
+        cidUnion (cidUnion appliedCalls bodyCalls) extraCalls
+      | .const c _ =>
+        if isPropReturning p c then []
+        else
+          let headCall := if isTrivialCall p depth nParams c args then [c] else []
+          let extraFrom := fun (k : Nat) =>
+            (args.drop k).foldl (fun acc (a, m, r) =>
+              if m == .byName || r.alwaysIrr then acc
+              else cidUnion acc (uncondCalls p nParams fuel depth a)) []
+          match lazyCallSpec (Pinned.addrNat (p.addr c)) with
+          | some (arity, strictIdxs, branches) =>
+            let strictCalls := strictIdxs.foldl (fun acc i =>
+              match spineArg? args i with
+              | some a => cidUnion acc (uncondCalls p nParams fuel depth a)
+              | none => acc) headCall
+            let branchCalls :=
+              if args.length ≥ arity && !branches.isEmpty then
+                cidInterAll (branches.map fun (i, lams) =>
+                  match spineArg? args i with
+                  | some a =>
+                    let (d, inner) := peelUpToLamsD lams a
+                    uncondCalls p nParams fuel (depth + d) inner
+                  | none => [])
+              else []
+            cidUnion (cidUnion strictCalls branchCalls) (extraFrom arity)
+          | none =>
+            match p.decl? c with
+            | some (.recr _ _ _ np nmot nmin ni _ rules _) =>
+              let arity := np + nmot + nmin + ni + 1
+              if nmot == 1 && rules.length == nmin && args.length ≥ arity then
+                let majorCalls := match spineArg? args (np + 1 + nmin + ni) with
+                  | some m => uncondCalls p nParams fuel depth m
+                  | none => []
+                let branchCalls :=
+                  if nmin == 0 then []
+                  else
+                    cidInterAll (rules.zipIdx.map fun (rule, j) =>
+                      match spineArg? args (np + 1 + j) with
+                      | some m =>
+                        let ihs := (ruleIhs np 1 nmin j rule).getD 0
+                        let (d, inner) := peelUpToLamsD (rule.fields + ihs) m
+                        uncondCalls p nParams fuel (depth + d) inner
+                      | none => [])
+                cidUnion (cidUnion (cidUnion headCall majorCalls) branchCalls) (extraFrom arity)
+              else headCall
+            | _ =>
+              match casesOnShape p c with
+              | some (np, ni, rules) =>
+                let m := rules.length
+                let arity := np + 1 + ni + 1 + m
+                if args.length ≥ arity then
+                  let majorCalls := match spineArg? args (np + 1 + ni) with
+                    | some maj => uncondCalls p nParams fuel depth maj
+                    | none => []
+                  let branchCalls :=
+                    if m == 0 then []
+                    else
+                      cidInterAll (rules.zipIdx.map fun (rule, j) =>
+                        match spineArg? args (np + 1 + ni + 1 + j) with
+                        | some arm =>
+                          let (d, inner) := peelUpToLamsD rule.fields arm
+                          uncondCalls p nParams fuel (depth + d) inner
+                        | none => [])
+                  cidUnion (cidUnion (cidUnion headCall majorCalls) branchCalls) (extraFrom arity)
+                else headCall
+              | none =>
+                match sparseCasesShape p c with
+                | some (majorIdx, arity) =>
+                  if args.length ≥ arity then
+                    let majorCalls := match spineArg? args majorIdx with
+                      | some maj => uncondCalls p nParams fuel depth maj
+                      | none => []
+                    cidUnion (cidUnion headCall majorCalls) (extraFrom arity)
+                  else headCall
+                | none =>
+                  let mask := relevantArgMask p c
+                  let argCalls := args.zipIdx.foldl (fun acc ((a, m, r), i) =>
+                    let rel := (mask[i]?).getD true
+                    if !rel || m == .byName || r.alwaysIrr then acc
+                    else cidUnion acc (uncondCalls p nParams fuel depth a)) headCall
+                  argCalls
+      | _ =>
+        let headCalls := uncondCalls p nParams fuel depth head
+        args.foldl (fun acc (a, m, r) =>
+          if m == .byName || r.alwaysIrr then acc
+          else cidUnion acc (uncondCalls p nParams fuel depth a)) headCalls
+
+/-- Unconditional non-reducing `.eqn`/`.csimp` callees of constant `cur` under `resolve`. -/
+def eqnSuccs (p : Program) (resolve : NatMap Resolve) (cur : CId) : List CId :=
+  match resolve.get? cur with
+  | some (.csimp g _ _) => [g]
+  | some (.eqn thm body) =>
+    match p.decl? thm with
+    | some (.defn .thm .safe _ tθ _) =>
+      let k := tθ.pis.1.length
+      match peelLams k body with
+      | some (_, rhs) =>
+        (uncondCalls p k maxTermNodes 0 rhs).filter fun g =>
+          match resolve.get? g with
+          | some (.eqn ..) | some (.csimp ..) => true
+          | _ => false
+      | none => []
+    | _ => []
+  | _ => []
+
+/-- DFS acyclicity check from `start` through unconditional `.eqn`/`.csimp`
+call edges in `resolve` (`false` if `start` is reachable from itself or fuel
+runs out). -/
+def eqnAcyclicDfs (p : Program) (resolve : NatMap Resolve) (start : CId) :
+    Nat → List CId → NatSet → Bool
+  | 0, _, _ => false
+  | _, [], _ => true
+  | fuel + 1, cur :: rest, seen =>
+    if seen.contains cur then
+      eqnAcyclicDfs p resolve start fuel rest seen
+    else
+      let succs := eqnSuccs p resolve cur
+      if succs.contains start then false
+      else
+        let next := succs.filter fun g => !seen.contains g && !rest.contains g
+        eqnAcyclicDfs p resolve start fuel (next ++ rest) (seen.insert cur)
+
+/-- True iff `start` has no unconditional `.eqn`/`.csimp` call cycle back to
+itself (`FE-3`). -/
+def eqnAcyclic (p : Program) (resolve : NatMap Resolve) (start : CId) : Bool :=
+  eqnAcyclicDfs p resolve start (p.size * 2 + 16) [start] .leaf
+
+/-- Check `eqn f thm` and build the entry body `λ xs. rhs` (checks 1–5 plus
+the `FE-3` non-cyclic unfolding guard). -/
 def checkEqn (p : Program) (f thm : CId) : Except String Resolve := do
   let some (n, tf, vf) := safeDefn? p f
     | throw "eqn: the subject is not a safe definition"
@@ -566,6 +930,10 @@ def checkEqn (p : Program) (f thm : CId) : Except String Resolve := do
     ((boundVars k).map (·, Mode.strict, Rel.rel))
   unless lhs.eqv expectedLhs do
     throw "eqn: the left-hand side is not f applied to the bound variables in order"
+  if rhs.eqv expectedLhs then
+    throw "eqn: trivial self-cyclic equation (right-hand side equals left-hand side)"
+  if rhs.mentions f && (uncondCalls p k maxTermNodes 0 rhs).contains f then
+    throw "eqn: non-reducing self-cyclic equation (right-hand side unconditionally calls subject)"
   let some (fBinders, fBody) := peelPis k tf
     | throw "eqn: the subject's type has fewer binders than the equation"
   unless (fBinders.zip binders).all (fun ((_, a), (_, a')) => domainEqv p a a') do
@@ -615,21 +983,6 @@ def csimpAcyclic (resolve : NatMap Resolve) (n : Nat) (start : CId) : Bool :=
   csimpChainF resolve start (n + 1) start
 
 /-! ## `case` -/
-
-/-- IH count of a recursor rule: its `rhs` is `λ ps motives minors fields.
-app* #minor (fields ++ ihs)`. -/
-def ruleIhs (np nmot nmin j : Nat) (rule : Rule) : Option Nat :=
-  let (binders, body) := rule.rhs.lams
-  let total := np + nmot + nmin + rule.fields
-  if binders.length != total then none else
-  let (head, args) := body.spine
-  -- The minor for rule `j` is binder `np + nmot + j`.
-  match head with
-  | .var i =>
-    if i == total - 1 - (np + nmot + j) && args.length ≥ rule.fields then
-      some (args.length - rule.fields)
-    else none
-  | _ => none
 
 /-- The first position in `is` whose check fails. -/
 def firstFailing (is : List Nat) (ok : Nat → Bool) : Option Nat := is.find? (!ok ·)

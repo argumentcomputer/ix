@@ -395,7 +395,7 @@ theorem head {s : ByteEval.State} (hrip : s.rip = addr ce 6 0) :
 
 /-- The rest of a call's block after its return, and the `initBack`/`stepBack` block's two moves:
 from the return address with `rsp` the call top, six instructions to the status test. -/
-theorem back {b j b' : Nat} (hb : b < 46) (hb' : b' < 46)
+theorem back {b j b' : Nat} (hb : b < 47) (hb' : b' < 47)
     (hi : (blockAt (shellOf ce.checked) b).instructions[j]? = some (mI .r11 L.callTop))
     (hsz : (blockAt (shellOf ce.checked) b).instructions.size = j + 1)
     (ht : (blockAt (shellOf ce.checked) b).terminator = cmpR .rsp .r11 .ne 42 b')
@@ -434,7 +434,7 @@ theorem back {b j b' : Nat} (hb : b < 46) (hb' : b' < 46)
   exact ⟨cmp.flags k1, run_comp (run_one e1) (run_comp e2 (run_comp (run_one e3) (run_one e4)))⟩
 
 /-- The status test after a return: nonzero to `fail1`. -/
-theorem back_nonzero {b' : Nat} (hb' : b' < 46)
+theorem back_nonzero {b' : Nat} (hb' : b' < 47)
     (hblk : blockAt (shellOf ce.checked) b' = ⟨#[mI .r11 L.shellTop, mR .rsp .r11], ifNz .rax 28 (b' + 1)⟩)
     {core : Core} {fl : ByteEval.Flags} (hax : core.readReg .rax ≠ 0) :
     ∃ fl', ByteEval.run ce.checked.bytes fetchBase 2 ⟨core, addr ce b' 2, fl⟩ = .ok ⟨core, addr ce 28 0, fl'⟩ :=
@@ -444,7 +444,7 @@ theorem back_nonzero {b' : Nat} (hb' : b' < 46)
     (taken := true) (by rw [test_ne_self]; simp [hax])⟩
 
 /-- The status test after a return: zero to the next block. -/
-theorem back_zero {b' : Nat} (hb' : b' < 46) (hb1 : b' + 1 < 46)
+theorem back_zero {b' : Nat} (hb' : b' < 47) (hb1 : b' + 1 < 47)
     (hblk : blockAt (shellOf ce.checked) b' = ⟨#[mI .r11 L.shellTop, mR .rsp .r11], ifNz .rax 28 (b' + 1)⟩)
     {core : Core} {fl : ByteEval.Flags} (hax : core.readReg .rax = 0) :
     ∃ fl', ByteEval.run ce.checked.bytes fetchBase 3 ⟨core, addr ce b' 2, fl⟩ = .ok ⟨core, addr ce (b' + 1) 0, fl'⟩ := by
@@ -459,7 +459,7 @@ theorem back_zero {b' : Nat} (hb' : b' < 46) (hb1 : b' + 1 < 46)
   exact ⟨_, h⟩
 
 /-- One of the failure dispatch's comparisons (`fail1`–`fail4`). -/
-theorem fail_step {b c t f : Nat} (hb : b < 46) (ht : t < 46) (hf : f < 46)
+theorem fail_step {b c t f : Nat} (hb : b < 47) (ht : t < 47) (hf : f < 47)
     (hblk : blockAt (shellOf ce.checked) b = ⟨#[], cmpI .rax c .eq t f⟩) {core : Core} (fl : ByteEval.Flags)
     {taken : Bool} (htk : Condition.holds .eq .w64 (core.readReg .rax) (signExtend32 (UInt32.ofNat c)) = taken) :
     ∃ fl', ByteEval.run ce.checked.bytes fetchBase (if taken then 2 else 3) ⟨core, addr ce b 0, fl⟩ =
@@ -515,21 +515,21 @@ theorem fail_dispatch {core : Core} {fl : ByteEval.Flags} (k : Nat) (hk : k < 4)
 
 /-! ## Steps, compactly -/
 
-theorem mstep_movI {b j : Nat} (hb : b < 46) {r : GPR} {v : Nat}
+theorem mstep_movI {b j : Nat} (hb : b < 47) {r : GPR} {v : Nat}
     (hi : (blockAt (shellOf ce.checked) b).instructions[j]? = some (mI r v)) (core : Core) (fl : ByteEval.Flags) :
     ByteEval.step ce.checked.bytes fetchBase ⟨core, addr ce b j, fl⟩ =
       .ok ⟨core.setReg r (UInt64.ofNat v), addr ce b (j + 1), fl⟩ :=
   mstep_ok ce hb (s := ⟨core, addr ce b j, fl⟩) (i := Instr.mov .w64 r (.imm (UInt64.ofNat v))) hi
     (ne_call_of_op ⟨_, _, rfl⟩) rfl (exec_mov _ _ _ _)
 
-theorem mstep_movR {b j : Nat} (hb : b < 46) {d r : GPR}
+theorem mstep_movR {b j : Nat} (hb : b < 47) {d r : GPR}
     (hi : (blockAt (shellOf ce.checked) b).instructions[j]? = some (mR d r)) (core : Core) (fl : ByteEval.Flags) :
     ByteEval.step ce.checked.bytes fetchBase ⟨core, addr ce b j, fl⟩ =
       .ok ⟨core.setReg d (core.readReg r), addr ce b (j + 1), fl⟩ :=
   mstep_ok ce hb (s := ⟨core, addr ce b j, fl⟩) (i := Instr.mov .w64 d (.reg r)) hi
     (ne_call_of_op ⟨_, _, rfl⟩) rfl (exec_mov _ _ _ _)
 
-theorem mstep_alu {b j : Nat} (hb : b < 46) {op : AluOp} {w : Width} {r : GPR} {src : AluSource}
+theorem mstep_alu {b j : Nat} (hb : b < 47) {op : AluOp} {w : Width} {r : GPR} {src : AluSource}
     (hi : (blockAt (shellOf ce.checked) b).instructions[j]? = some (.instr (Instr.alu op w r src)))
     (hnc : ∀ t, Instr.alu op w r src ≠ .call t) (core : Core)
     (fl : ByteEval.Flags) :
@@ -539,7 +539,7 @@ theorem mstep_alu {b j : Nat} (hb : b < 46) {op : AluOp} {w : Width} {r : GPR} {
   exact ⟨fl', mstep_ok ce hb (s := ⟨core, addr ce b j, fl⟩) (i := Instr.alu op w r src) hi
     hnc rfl h⟩
 
-theorem mstep_shr {b j : Nat} (hb : b < 46) {r : GPR} {v : Nat}
+theorem mstep_shr {b j : Nat} (hb : b < 47) {r : GPR} {v : Nat}
     (hi : (blockAt (shellOf ce.checked) b).instructions[j]? = some (shrI r v)) (core : Core) (fl : ByteEval.Flags) :
     ∃ fl', ByteEval.step ce.checked.bytes fetchBase ⟨core, addr ce b j, fl⟩ =
       .ok ⟨core.setReg r ⟨(ShiftOp.shr.apply .w64 (core.readReg r) (shiftCount .w64 (UInt64.ofNat v))).setWidth 64⟩,
@@ -549,7 +549,7 @@ theorem mstep_shr {b j : Nat} (hb : b < 46) {r : GPR} {v : Nat}
     (ne_call_of_op ⟨_, _, rfl⟩) rfl (exec_shr _ _ _ _)⟩
 
 /-- A 64-bit load: a step, or a fault. -/
-theorem mstep_load {b j : Nat} (hb : b < 46) {r : GPR} {A : MemAddr}
+theorem mstep_load {b j : Nat} (hb : b < 47) {r : GPR} {A : MemAddr}
     (hi : (blockAt (shellOf ce.checked) b).instructions[j]? = some (ld r A)) (core : Core) (fl : ByteEval.Flags)
     {a : Word} (ha : A.eval core = a) :
     (∃ f, ByteEval.step ce.checked.bytes fetchBase ⟨core, addr ce b j, fl⟩ = .error (.memory f)) ∨
@@ -566,7 +566,7 @@ theorem mstep_load {b j : Nat} (hb : b < 46) {r : GPR} {A : MemAddr}
       (ne_call_of_op ⟨_, _, rfl⟩) rfl (by rw [exec_load64]; simp only [ha, hr]; try rfl))
 
 /-- A byte load (`movzx`): a step, or a fault. -/
-theorem mstep_load8 {b j : Nat} (hb : b < 46) {r : GPR} {A : MemAddr}
+theorem mstep_load8 {b j : Nat} (hb : b < 47) {r : GPR} {A : MemAddr}
     (hi : (blockAt (shellOf ce.checked) b).instructions[j]? = some (ld8 r A)) (core : Core) (fl : ByteEval.Flags)
     {a : Word} (ha : A.eval core = a) :
     (∃ f, ByteEval.step ce.checked.bytes fetchBase ⟨core, addr ce b j, fl⟩ = .error (.memory f)) ∨
@@ -587,7 +587,7 @@ theorem mstep_load8 {b j : Nat} (hb : b < 46) {r : GPR} {A : MemAddr}
       (ne_call_of_op ⟨_, _, rfl⟩) rfl (by rw [exec_load8]; simp only [ha, hr]; try rfl))
 
 /-- A store (64 bits or a byte): a step, or a fault. -/
-theorem mstep_store {b j : Nat} (hb : b < 46) {w : Width} {A : MemAddr} {r : GPR}
+theorem mstep_store {b j : Nat} (hb : b < 47) {w : Width} {A : MemAddr} {r : GPR}
     (hi : (blockAt (shellOf ce.checked) b).instructions[j]? = some (.instr (Instr.store w A r))) (hw : w = .w64 ∨ w = .w8)
     (core : Core) (fl : ByteEval.Flags) {a : Word} (ha : A.eval core = a) :
     (∃ f, ByteEval.step ce.checked.bytes fetchBase ⟨core, addr ce b j, fl⟩ = .error (.memory f)) ∨
@@ -614,16 +614,16 @@ theorem mstep_store {b j : Nat} (hb : b < 46) {w : Width} {A : MemAddr} {r : GPR
         (ne_call_of_op ⟨_, _, rfl⟩) rfl (by rw [exec_store8]; simp only [ha, hwr]; try rfl))
 
 /-- A jump. -/
-theorem mstep_jmp {b j t : Nat} (hb : b < 46) (hsz : (blockAt (shellOf ce.checked) b).instructions.size = j)
-    (hterm : (blockAt (shellOf ce.checked) b).terminator = jmp t) (ht : t < 46) (core : Core) (fl : ByteEval.Flags) :
+theorem mstep_jmp {b j t : Nat} (hb : b < 47) (hsz : (blockAt (shellOf ce.checked) b).instructions.size = j)
+    (hterm : (blockAt (shellOf ce.checked) b).terminator = jmp t) (ht : t < 47) (core : Core) (fl : ByteEval.Flags) :
     ByteEval.step ce.checked.bytes fetchBase ⟨core, addr ce b j, fl⟩ = .ok ⟨core, addr ce t 0, fl⟩ := by
   have h := mstep_jump ce hb (t := UInt32.ofNat t) hterm (s := ⟨core, addr ce b j, fl⟩) (by rw [hsz])
   rw [UInt32.toNat_ofNat_of_lt' (by show t < 4294967296; omega)] at h
   exact h
 
 /-- A compare-and-branch terminator `cmp r, c` on its condition. -/
-theorem mrun_cmp {b j : Nat} (hb : b < 46) (hsz : (blockAt (shellOf ce.checked) b).instructions.size = j)
-    {r : GPR} {c t f : Nat} {cond : Condition} (ht : t < 46) (hf : f < 46)
+theorem mrun_cmp {b j : Nat} (hb : b < 47) (hsz : (blockAt (shellOf ce.checked) b).instructions.size = j)
+    {r : GPR} {c t f : Nat} {cond : Condition} (ht : t < 47) (hf : f < 47)
     (hterm : (blockAt (shellOf ce.checked) b).terminator = cmpI r c cond t f) {core : Core} (fl : ByteEval.Flags)
     {taken : Bool} (htk : Condition.holds cond .w64 (core.readReg r) (signExtend32 (UInt32.ofNat c)) = taken) :
     ∃ fl', ByteEval.run ce.checked.bytes fetchBase (if taken then 2 else 3) ⟨core, addr ce b j, fl⟩ =
@@ -839,7 +839,7 @@ theorem exitCode_path (core : Core) (fl : ByteEval.Flags) {n : Nat} {σ : List S
   · exact exit_path ce (s := ⟨core.setReg .rdi (core.readReg .rax), addr ce 27 0, fl⟩) rfl ht'
 
 /-- `written`/`notWritten`: the answer stored at `C + 8`, back to `loop`. -/
-theorem answer_run {b v : Nat} (hb : b < 46)
+theorem answer_run {b v : Nat} (hb : b < 47)
     (hblk : blockAt (shellOf ce.checked) b = ⟨#[mI .r10 L.callTop, mI .rax v, st (at_ .r10 8) .rax], jmp 6⟩)
     (core : Core) (fl : ByteEval.Flags) :
     FaultsWithin ce.checked.bytes ⟨core, addr ce b 0, fl⟩ 3 ∨
@@ -868,7 +868,7 @@ theorem write_path (fd : Nat) (hfd : fd = 1 ∨ fd = 2) (core : Core) (fl : Byte
       (σ' = [] ∨ ∃ s' n', n' < n ∧ TraceN ce.checked.bytes n' s' σ' ∧ s'.rip = addr ce 6 0 ∧
         s'.core.memory = (core.memory.write .w8 (cTop L + UInt64.ofNat 32) (core.readReg .rax)).write .w64
           (cTop L + UInt64.ofNat 8) (UInt64.ofNat (if r.toNat = 1 then 0 else 1))) := by
-  have hb : 20 + fd < 46 := by omega
+  have hb : 20 + fd < 47 := by omega
   have hblk : blockAt (shellOf ce.checked) (20 + fd) = ⟨#[mI .rdi fd], jmp 23⟩ := by
     rcases hfd with rfl | rfl
     · exact block_out L step _
@@ -916,7 +916,7 @@ theorem write_path (fd : Nat) (hfd : fd = 1 ∨ fd = 2) (core : Core) (fl : Byte
   have h7rip : s7.rip = addr ce 23 6 := hnext
   have h7 : ∃ m b fl₇, ByteEval.run ce.checked.bytes fetchBase m s7 = .ok ⟨s7.core, addr ce b 0, fl₇⟩ ∧
       blockAt (shellOf ce.checked) b = ⟨#[mI .r10 L.callTop, mI .rax (if r.toNat = 1 then 0 else 1),
-        st (at_ .r10 8) .rax], jmp 6⟩ ∧ b < 46 := by
+        st (at_ .r10 8) .rax], jmp 6⟩ ∧ b < 47 := by
     by_cases h1 : r.toNat = 1
     · obtain ⟨f8, e8⟩ := mrun_cmp ce (b := 23) (j := 6) (by decide) (by rw [block_write1] <;> rfl) (r := .rax) (c := 1)
         (t := 24) (f := 25) (cond := .eq) (by decide) (by decide) (by rw [block_write1] <;> rfl) (core := s7.core) s7.flags

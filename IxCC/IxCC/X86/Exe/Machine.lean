@@ -290,6 +290,8 @@ def writeRet := 36
 def writeErr := 37
 /-- The message blocks, in `Failure.all`'s order. -/
 def message (f : Failure) : Nat := 38 + (Failure.all.takeWhile (· != f)).length
+/-- Advance `rsi`/`rdx` after `writeAdv` verifies `rax <= rdx` (`BE-2`). -/
+def writeStep := 46
 end B
 
 /-- A message block: the message's address and length, its status, then the
@@ -371,8 +373,8 @@ def shell (L : Layout) (step : String) (data : Nat) : Shell.Program :=
     blk #[movI .r10 C, movI .rax 1, st (at_ .r10 8) .rax] (jump B.loop),
     -- exitCode: the program's status
     blk #[movR .rdi .rax] (jump B.exit),
-    -- exit(rdi)
-    blk #[movI .rax 60, .syscall] (jump B.exit),
+    -- exit(rdi); ud2 fallback if exit ever returned (`BE-2`)
+    blk #[movI .rax 60, .syscall, .ud2] (jump B.exit),
     -- fail: rax is the status
     blk #[] (cmpI .rax 1 .eq (B.message .heap) B.fail2),
     blk #[] (cmpI .rax 2 .eq (B.message .stack) B.fail3),
@@ -383,10 +385,12 @@ def shell (L : Layout) (step : String) (data : Nat) : Shell.Program :=
     -- write(edi, rsi, rdx) until done; a failure exits 74
     blk #[] (cmpI .rdx 0 .eq B.writeRet B.writeSys),
     blk #[movI .rax 1, .syscall] (cmpI .rax 0 .signedLe B.writeErr B.writeAdv),
-    blk #[addR .rsi .rax, subR .rdx .rax] (jump B.write),
+    -- writeAdv: refuse short-write overrun (`rax > rdx`, `BE-2`)
+    blk #[] (cmpR .rax .rdx .unsignedGt B.writeErr B.writeStep),
     blk #[] .ret,
     blk #[movI .rdi IxCC.Exe.Machine.statusWriteFailed] (jump B.exit)]
-  { blocks := body ++ (Failure.all.map (messageBlock data)).toArray }
+  { blocks := body ++ (Failure.all.map (messageBlock data)).toArray ++
+      #[blk #[addR .rsi .rax, subR .rdx .rax] (jump B.write)] }
 
 /-! ## The executable -/
 
@@ -400,23 +404,21 @@ def frame (L : Layout) (step : String) : Frame where
 
 /-- Where the export `symbol` of `object` is in a file placed by `p`: its
 offset in the object's text (`ELF.symbol?`) from the text's file offset. -/
-def exportAt (object : ByteArray) (p : Placement) (symbol : String) : Option Nat :=
-  (ELF.symbol? object symbol).map (p.textOffset + ·)
+abbrev exportAt := X86.Exe.exportAt
 
 /-- The shell check (`Shell.check`) of a file of frame `f` written to plan
 `pl`: the frame's shell for the file's data address, at the shell's file
 offset, its export calls landing on the object's exports. -/
-def shellOk (f : Frame) (object : ByteArray) (pl : Plan) (bytes : ByteArray) : Bool :=
-  Shell.check (f.code (fileBase + pl.placement.dataOffset)) bytes pl.placement.shellOffset
-    (exportAt object pl.placement)
+abbrev shellOk := X86.Exe.shellOk
 
 /-- A checked executable of frame `f` over layout `L`: the frame's check, the
-driver contract at each of the frame's calls into the object, for every bytes
-the call starts from, and the shell's text in the file as the shell check
-establishes it (`Shell.Valid`). (Stated for any frame, so that the
-structure's declaration does not unfold the shell.) -/
+layout check (`L.check = true`), the driver contract at each of the frame's
+calls into the object, for every bytes the call starts from, and the shell's
+text in the file as the shell check establishes it (`Shell.Valid`). (Stated for
+any frame, so that the structure's declaration does not unfold the shell.) -/
 structure CertifiedFor (f : Frame) (L : Layout) (object : ByteArray) where
   checked : Checked f object
+  layoutOk : L.check = true
   contract : ∀ c ∈ checked.plan.calls, ∀ init : Word → UInt8,
     (L.driverWith checked.plan.placement.textOffset c.ret init).CanonicalOk checked.plan.placement.textSize
   shell : Shell.Valid (f.code (fileBase + checked.plan.placement.dataOffset)) checked.bytes
@@ -436,7 +438,7 @@ def writeCheckedFor (f : Frame) (L : Layout) (object : ByteArray) : Except Error
       if hc : ∀ x ∈ c.plan.calls, fileBase + c.plan.placement.textOffset + c.plan.placement.textSize ≤ x.ret ∧
           x.ret < dataBase then
         if hs : shellOk f object c.plan c.bytes = true then
-          .ok (CertifiedFor.mk c (fun x hm init => L.driver_canonicalOk hL (hc x hm).1 (hc x hm).2 init)
+          .ok (CertifiedFor.mk c hL (fun x hm init => L.driver_canonicalOk hL (hc x hm).1 (hc x hm).2 init)
             (Shell.check_sound hs))
         else .error .invalidExecutable
       else .error .contract

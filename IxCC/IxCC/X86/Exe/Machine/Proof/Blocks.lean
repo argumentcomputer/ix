@@ -32,7 +32,7 @@ theorem blocks_get {p : Shell.Program} {b : Nat} (h : b < p.blocks.size) : p.blo
   simp only [blockAt, Array.getElem?_eq_getElem h, Option.getD_some]
 
 theorem shell_size (L : Machine.Layout) (step : String) (data : Nat) :
-    (Machine.shell L step data).blocks.size = 46 := rfl
+    (Machine.shell L step data).blocks.size = 47 := rfl
 
 section
 variable {L : Machine.Layout} {step : String} {object : ByteArray}
@@ -49,7 +49,7 @@ theorem shellAddr_zero (c : Checked (Machine.frame L step) object) (b : Nat) :
     shellAddr L step c b 0 = fileBase + (c.plan.placement.shellOffset + blockOffset (shellOf c) b) := by
   simp [shellAddr, instrOffset_zero]
 
-theorem shell_get (c : Checked (Machine.frame L step) object) {b : Nat} (hb : b < 46) :
+theorem shell_get (c : Checked (Machine.frame L step) object) {b : Nat} (hb : b < 47) :
     (shellOf c).blocks[b]? = some (blockAt (shellOf c) b) :=
   blocks_get (by rw [shell_size]; exact hb)
 
@@ -75,7 +75,7 @@ theorem shellAddr_lt (ce : Machine.Certified L step object) {b j : Nat}
 variable (ce : Machine.Certified L step object)
 
 /-- A linear instruction of the machine shell, as a step to the next instruction. -/
-theorem mstep_ok {b j : Nat} (hb : b < 46) {i : X86.Instr}
+theorem mstep_ok {b j : Nat} (hb : b < 47) {i : X86.Instr}
     (hi : (blockAt (shellOf ce.checked) b).instructions[j]? = some (.instr i)) (hnc : ∀ t, i ≠ .call t)
     {s : ByteEval.State} (hrip : s.rip = UInt64.ofNat (shellAddr L step ce.checked b j)) {core : Core}
     {fl : ByteEval.Flags}
@@ -85,7 +85,7 @@ theorem mstep_ok {b j : Nat} (hb : b < 46) {i : X86.Instr}
   (shell_valid ce).step_ok (file_fit ce) (shell_get ce.checked hb) hi hnc hrip hex
 
 /-- A linear instruction of the machine shell that faults on memory. -/
-theorem mstep_fault {b j : Nat} (hb : b < 46) {i : X86.Instr}
+theorem mstep_fault {b j : Nat} (hb : b < 47) {i : X86.Instr}
     (hi : (blockAt (shellOf ce.checked) b).instructions[j]? = some (.instr i)) (hnc : ∀ t, i ≠ .call t)
     {s : ByteEval.State} (hrip : s.rip = UInt64.ofNat (shellAddr L step ce.checked b j)) {f : MemoryFault}
     (hex : ByteEval.execute ⟨instructionOperation i, Shell.Instr.size (.instr i)⟩ s = .error (.memory f)) :
@@ -93,7 +93,7 @@ theorem mstep_fault {b j : Nat} (hb : b < 46) {i : X86.Instr}
   (shell_valid ce).step_fault (file_fit ce) (shell_get ce.checked hb) hi hnc hrip hex
 
 /-- A branch terminator of the machine shell. -/
-theorem mrun_branch {b : Nat} (hb : b < 46) {o : Op} {args : List Arg} {cond : Condition} {yes no : BlockId}
+theorem mrun_branch {b : Nat} (hb : b < 47) {o : Op} {args : List Arg} {cond : Condition} {yes no : BlockId}
     (hterm : (blockAt (shellOf ce.checked) b).terminator = .branch o args cond yes no .rel32) {s : ByteEval.State}
     (hrip : s.rip = UInt64.ofNat (shellAddr L step ce.checked b (blockAt (shellOf ce.checked) b).instructions.size))
     {core : Core} {fl : ByteEval.Flags} {taken : Bool}
@@ -106,7 +106,7 @@ theorem mrun_branch {b : Nat} (hb : b < 46) {o : Op} {args : List Arg} {cond : C
   exact (shell_valid ce).run_branch (file_fit ce) (shell_get ce.checked hb) hterm hrip hex htest
 
 /-- A jump terminator of the machine shell. -/
-theorem mstep_jump {b : Nat} (hb : b < 46) {t : BlockId}
+theorem mstep_jump {b : Nat} (hb : b < 47) {t : BlockId}
     (hterm : (blockAt (shellOf ce.checked) b).terminator = .jump t) {s : ByteEval.State}
     (hrip : s.rip = UInt64.ofNat (shellAddr L step ce.checked b (blockAt (shellOf ce.checked) b).instructions.size)) :
     ByteEval.step ce.checked.bytes fetchBase s = .ok { s with rip := UInt64.ofNat (shellAddr L step ce.checked t.toNat 0) } := by
@@ -114,7 +114,7 @@ theorem mstep_jump {b : Nat} (hb : b < 46) {t : BlockId}
   exact (shell_valid ce).step_jump (file_fit ce) (shell_get ce.checked hb) hterm hrip
 
 /-- The `ret` terminator of the machine shell. -/
-theorem mstep_ret {b : Nat} (hb : b < 46) (hterm : (blockAt (shellOf ce.checked) b).terminator = .ret)
+theorem mstep_ret {b : Nat} (hb : b < 47) (hterm : (blockAt (shellOf ce.checked) b).terminator = .ret)
     {s : ByteEval.State}
     (hrip : s.rip = UInt64.ofNat (shellAddr L step ce.checked b (blockAt (shellOf ce.checked) b).instructions.size)) :
     ByteEval.step ce.checked.bytes fetchBase s =
@@ -124,7 +124,7 @@ theorem mstep_ret {b : Nat} (hb : b < 46) (hterm : (blockAt (shellOf ce.checked)
   (shell_valid ce).step_ret (file_fit ce) (shell_get ce.checked hb) hterm hrip
 
 /-- An internal call of the machine shell. -/
-theorem mstep_call {b j : Nat} (hb : b < 46) {t : BlockId}
+theorem mstep_call {b j : Nat} (hb : b < 47) {t : BlockId}
     (hi : (blockAt (shellOf ce.checked) b).instructions[j]? = some (.instr (.call t))) {s : ByteEval.State}
     (hrip : s.rip = UInt64.ofNat (shellAddr L step ce.checked b j)) :
     ByteEval.step ce.checked.bytes fetchBase s =
@@ -137,20 +137,20 @@ theorem mstep_call {b j : Nat} (hb : b < 46) {t : BlockId}
   exact (shell_valid ce).step_call (file_fit ce) (shell_get ce.checked hb) hi hrip
 
 /-- An export call of the machine shell lands on the export. -/
-theorem mcallsTo {b j : Nat} (hb : b < 46) {name : String}
+theorem mcallsTo {b j : Nat} (hb : b < 47) {name : String}
     (hi : (blockAt (shellOf ce.checked) b).instructions[j]? = some (.callExport name)) {s : ByteEval.State}
     (hrip : s.rip = UInt64.ofNat (shellAddr L step ce.checked b j)) :
     ∃ offset, ELF.symbol? object name = some offset ∧
       CallsTo ce.checked.bytes s (UInt64.ofNat (fileBase + ce.checked.plan.placement.textOffset) + UInt64.ofNat offset) := by
   obtain ⟨t, ht, hc⟩ := (shell_valid ce).callsTo (file_fit ce) (shell_get ce.checked hb) hi hrip
-  simp only [Machine.exportAt, Option.map_eq_some_iff] at ht
+  simp only [Machine.exportAt, X86.Exe.exportAt, Option.map_eq_some_iff] at ht
   obtain ⟨offset, hoff, rfl⟩ := ht
   refine ⟨offset, hoff, ?_⟩
   rw [← UInt64.ofNat_add, Nat.add_assoc]
   exact hc
 
 /-- A `syscall` of the machine shell. -/
-theorem msyscall_at {b j : Nat} (hb : b < 46)
+theorem msyscall_at {b j : Nat} (hb : b < 47)
     (hi : (blockAt (shellOf ce.checked) b).instructions[j]? = some .syscall) {s : ByteEval.State}
     (hrip : s.rip = UInt64.ofNat (shellAddr L step ce.checked b j)) :
     Decode.decodeAt ce.checked.bytes (s.rip - fetchBase).toNat = none ∧ syscallAt ce.checked.bytes s.rip ∧
@@ -252,7 +252,7 @@ theorem block_written : blockAt (Machine.shell L step data) 24 =
 theorem block_notWritten : blockAt (Machine.shell L step data) 25 =
     ⟨#[mI .r10 L.callTop, mI .rax 1, st (at_ .r10 8) .rax], jmp 6⟩ := rfl
 theorem block_exitCode : blockAt (Machine.shell L step data) 26 = ⟨#[mR .rdi .rax], jmp 27⟩ := rfl
-theorem block_exit : blockAt (Machine.shell L step data) 27 = ⟨#[mI .rax 60, .syscall], jmp 27⟩ := rfl
+theorem block_exit : blockAt (Machine.shell L step data) 27 = ⟨#[mI .rax 60, .syscall, .ud2], jmp 27⟩ := rfl
 theorem block_fail1 : blockAt (Machine.shell L step data) 28 = ⟨#[], cmpI .rax 1 .eq 38 29⟩ := rfl
 theorem block_fail2 : blockAt (Machine.shell L step data) 29 = ⟨#[], cmpI .rax 2 .eq 39 30⟩ := rfl
 theorem block_fail3 : blockAt (Machine.shell L step data) 30 = ⟨#[], cmpI .rax 3 .eq 40 31⟩ := rfl
@@ -262,7 +262,7 @@ theorem block_report : blockAt (Machine.shell L step data) 32 =
 theorem block_write : blockAt (Machine.shell L step data) 33 = ⟨#[], cmpI .rdx 0 .eq 36 34⟩ := rfl
 theorem block_writeSys : blockAt (Machine.shell L step data) 34 =
     ⟨#[mI .rax 1, .syscall], cmpI .rax 0 .signedLe 37 35⟩ := rfl
-theorem block_writeAdv : blockAt (Machine.shell L step data) 35 = ⟨#[addR .rsi .rax, subR .rdx .rax], jmp 33⟩ := rfl
+theorem block_writeAdv : blockAt (Machine.shell L step data) 35 = ⟨#[], cmpR .rax .rdx .unsignedGt 37 46⟩ := rfl
 theorem block_writeRet : blockAt (Machine.shell L step data) 36 = ⟨#[], .ret⟩ := rfl
 theorem block_writeErr : blockAt (Machine.shell L step data) 37 = ⟨#[mI .rdi 74], jmp 27⟩ := rfl
 
@@ -279,8 +279,9 @@ theorem block_abi : blockAt (Machine.shell L step data) 42 = msgBlock data .abi 
 theorem block_notValue : blockAt (Machine.shell L step data) 43 = msgBlock data .notValue := rfl
 theorem block_request : blockAt (Machine.shell L step data) 44 = msgBlock data .request := rfl
 theorem block_confine : blockAt (Machine.shell L step data) 45 = msgBlock data .confine := rfl
+theorem block_writeStep : blockAt (Machine.shell L step data) 46 = ⟨#[addR .rsi .rax, subR .rdx .rax], jmp 33⟩ := rfl
 
-theorem message_index (f : Machine.Failure) : Machine.B.message f < 46 := by cases f <;> decide
+theorem message_index (f : Machine.Failure) : Machine.B.message f < 47 := by cases f <;> decide
 
 theorem block_message (f : Machine.Failure) :
     blockAt (Machine.shell L step data) (Machine.B.message f) = msgBlock data f := by

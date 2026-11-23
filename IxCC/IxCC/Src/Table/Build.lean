@@ -149,6 +149,14 @@ def build (cfg : Config) (p : Program) (hints : Array Proposal) :
       if let some f := lookup prop.subject then
         stats := { stats with eqnRefused := stats.eqnRefused.push (f, msg) }
       diags := diags.push (hintDiag prop msg)
+  -- Drop any `.eqn` entry participating in an unconditional unfolding cycle (`FE-3`).
+  for f in [0:n] do
+    if let some (.eqn ..) := resolve.get? f then
+      unless eqnAcyclic p resolve f do
+        resolve := resolve.erase f
+        let d : Diag := { code := "hint", addr := some (p.addr f)
+                          message := "eqn: cyclic unconditional unfolding" }
+        diags := diags.push d
   -- case: scanned candidates and explicit hints.
   let explicitCases := hints.filterMap fun prop =>
     if prop.kind == .case then lookup prop.subject else none

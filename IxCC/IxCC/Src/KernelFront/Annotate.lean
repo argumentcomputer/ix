@@ -591,19 +591,55 @@ every constructor with field classes. -/
 def annReached (a : Ann) (size : Nat) : List CId :=
   (List.range size).filter fun c => (a.constRel? c).isSome || (a.ctorRel? c).isSome
 
-/-- **The types the program reads correspond to the kernel's**: the type of
-every constant an annotation reaches, and of every theorem the unfolding table
-names, is the kernel's reading of it (`Reading.typeCheck`). -/
-def checkReachedTypes (rd : Reading) (p : Program) (a : Ann) : Except String Unit := do
-  let tableThms : List CId := (List.range p.size).flatMap fun c =>
+/-- Constants referenced by unfolding-table entries: subjects, target
+definitions, justifying theorems, and recursors. -/
+def tableConstants (p : Program) : List CId :=
+  (List.range p.size).flatMap fun c =>
     match p.table.resolveOf c with
-    | some (.eqn thm _) => [thm]
-    | some (.csimp g _ thm) => [g, thm]
-    | some (.word _ _ thm) => [thm]
-    | some (.case r) => [r]
+    | some (.eqn thm _) => [c, thm]
+    | some (.csimp g _ thm) => [c, g, thm]
+    | some (.word _ _ thm) => [c, thm]
+    | some (.case r) => [c, r]
+    | some (.prim _) => [c]
+    | none => []
+
+/-- Theorems justifying `.eqn`, `.csimp`, and `.word` unfolding-table entries. -/
+def tableTheorems (p : Program) : List CId :=
+  (List.range p.size).flatMap fun c =>
+    match p.table.resolveOf c with
+    | some (.eqn thm _) | some (.csimp _ _ thm) | some (.word _ _ thm) => [thm]
     | _ => []
-  for c in (annReached a p.size ++ tableThms).eraseDups do
-    rd.typeCheck p c
+
+/-- Run a check on every `CId` in a list (structural for clean soundness proofs). -/
+def checkEachId (f : CId → Except String Unit) : List CId → Except String Unit
+  | [] => pure ()
+  | c :: cs => do
+    f c
+    checkEachId f cs
+
+/-- Check the value of a `.case` or `.eqn` subject against the kernel and v5
+record (`Reading.valueCheck` / `corrRec`), since `checkCase` and `checkEqn`
+inspect the subject's body directly rather than through the runtime annotator. -/
+def checkTableSubjectValue (rd : Reading) (p : Program) (c : CId) : Except String Unit :=
+  match p.table.resolveOf c with
+  | some (.case _) => rd.valueCheck p c
+  | some (.eqn ..) => rd.valueCheck p c bodyNodeBudget
+  | _ => pure ()
+
+/-- **The types and table justifications the program reads correspond to the
+kernel's**:
+1. Every constant `a` reaches and every constant referenced by `p.table.resolve`
+   (including table subjects, `csimp` targets, `case` recursors, and `.eqn`/
+   `.csimp`/`.word` theorems) passes `Reading.typeCheck` (`corrRec`).
+2. Every theorem justifying an `.eqn`, `.csimp`, or `.word` entry passes
+   `Reading.thmCheck` (safe logical theorem, not read by statement, and
+   statement verified via `corrRec`).
+3. Every `.case` and `.eqn` subject's body passes `Reading.valueCheck`
+   (`corrRec`). -/
+def checkReachedTypes (rd : Reading) (p : Program) (a : Ann) : Except String Unit := do
+  checkEachId (rd.typeCheck p) (annReached a p.size ++ tableConstants p).eraseDups
+  checkEachId (rd.thmCheck p) (tableTheorems p).eraseDups
+  checkEachId (checkTableSubjectValue rd p) (List.range p.size)
 
 /-- **What ingress keeps of the kernel** for the producer, the loader and
 Stage A: the acceptance (`accept`), IxCC's program keyed to the kernel's

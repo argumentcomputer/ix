@@ -517,6 +517,65 @@ def Reading.typeCheck (rd : Reading) (p : Program) (c : CId) : Except String Uni
   let _ ← (corrRec rd.keys info.cv.levelParams rec depthBudget d.type info.cv.type nodeBudget).mapError
     fun e => s!"constant {c} ({p.addr c}), its type: {e}"
 
+/-- Node budget for large definition bodies (`Table.maxBodyNodes`, 5M). -/
+def bodyNodeBudget : Nat := 5000000
+
+/-- The kernel's value and v5 record of a Src definition correspond to IxCC's
+(`corrRec`). Used to verify `.case` and `.eqn` subjects whose bodies are
+inspected by table checks rather than by the runtime annotator. -/
+def Reading.valueCheck (rd : Reading) (p : Program) (c : CId) (budget : Nat := nodeBudget) :
+    Except String Unit := do
+  let some (.defn _ _ _ _ v) := p.decl? c
+    | throw s!"constant {c} is not a definition"
+  let some (.defn cv kv _) := rd.info? c
+    | throw s!"constant {c} has no kernel definition declaration"
+  let some rec := rd.valueRoot? c
+    | throw s!"constant {c} ({p.addr c}): missing v5 record for its value"
+  let _ ← (corrRec rd.keys cv.levelParams rec depthBudget v kv budget).mapError
+    fun e => s!"constant {c} ({p.addr c}), its value: {e}"
+
+/-- A theorem justifying an unfolding-table entry (`.eqn`, `.csimp`, or `.word`)
+is a safe theorem in `p` whose proof was read (not `byStatement`), stands in
+the kernel's logical environment (`.defn _ _ .thm`, never the typing tier), and
+has its statement verified against both the kernel and accepted v5 record via
+`Reading.typeCheck` (`corrRec`). -/
+def Reading.thmCheck (rd : Reading) (p : Program) (thm : CId) : Except String Unit := do
+  let some (.defn .thm .safe _ _ _) := p.decl? thm
+    | throw s!"table theorem {thm} is not a safe theorem"
+  if p.byStatement.contains thm then
+    throw s!"table theorem {thm} ({p.addr thm}) was read by its statement"
+  let some (.defn _ _ .thm) := rd.info? thm
+    | throw s!"table theorem {thm} ({p.addr thm}) is not a logical theorem in the kernel's reading"
+  rd.typeCheck p thm
+
+/-- Extract the decoded Ixon v5 `DefAsserts` (`@[no_rc]`, `@[no_alloc]`,
+`@[bounded_stack]`) for a constant reference `cref` from its accepted v5
+record `c` (`EM-0`). Non-definitions assert nothing. -/
+def defAssertsOf (c : KConstant) : CRef → _root_.Ixon.DefAsserts
+  | .member _ i =>
+    match c.info with
+    | .defn d => if i == 0 then d.asserts else {}
+    | .muts ms =>
+      match ms[i]? with
+      | some (.defn d) => d.asserts
+      | _ => {}
+    | _ => {}
+  | .ctor .. => {}
+
+/-- The decoded Ixon v5 `DefAsserts` of Src constant `c` under the accepted
+kernel reading `rd` (`EM-0`). -/
+def Reading.defAsserts (rd : Reading) (p : Program) (c : CId) : _root_.Ixon.DefAsserts :=
+  match rd.recSource? c with
+  | some s => defAssertsOf s.constant (p.cref c)
+  | none => {}
+
+/-- Map from `CId` to non-default `DefAsserts` across all constants of `p`
+(kernel-evaluable `NatMap` for `Recheck.DefAsserts`). -/
+def Reading.assertsMap (rd : Reading) (p : Program) : NatMap _root_.Ixon.DefAsserts :=
+  (List.range p.size).foldl (fun acc c =>
+    let a := rd.defAsserts p c
+    if a == ({} : _root_.Ixon.DefAsserts) then acc else acc.insert c a) .leaf
+
 /-! ## Pins from the admitted role table -/
 
 /-- An address as a 256-bit number, its bytes read big-endian
