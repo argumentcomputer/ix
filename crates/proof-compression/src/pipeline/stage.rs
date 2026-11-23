@@ -55,6 +55,10 @@ impl<F: Field> Prepared<F> {
   pub fn public_values(&self) -> &[F] {
     self.assignment.public_values()
   }
+
+  pub fn into_parts(self) -> (Circuit<F>, Assignment<F>) {
+    (self.circuit, self.assignment)
+  }
 }
 
 /// Trusted verifier for the first, FRI-compressed stage.

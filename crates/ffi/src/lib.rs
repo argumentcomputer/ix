@@ -31,6 +31,7 @@ pub mod lean_ixon;
 pub mod primitives;
 #[cfg(feature = "test-ffi")]
 pub mod refcount;
+mod shrinker;
 
 pub mod lean;
 mod sha256;

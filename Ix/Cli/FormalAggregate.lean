@@ -1,6 +1,7 @@
 module
 public import Ix.Cli.FormalAiur
 public import Ix.Cli.Compression
+public import Ix.Cli.StarkShrinker
 public import Ix.Cli.AiurCompression
 public import Ix.Cli.ClaimPolicy
 public import Ix.Aggr.Verification
@@ -349,6 +350,46 @@ def runPipeline (p : Cli.Parsed) (onRoot : Address → IO Unit := fun _ => pure 
     throw (IO.userError "choose --lanes for GPU provers or --jobs for CPU provers")
   runController p onRoot
 
+/-- Independently verify an Endpoint 1 `IXSTARK6\0` shrunk `Fp^3` STARK proof
+(`--stark-128` transparent `v6` or `--stark-128-zk` hiding `v6-zk`) against the
+pinned aggregate key and statement (v2 compact 1-circuit Plonkish `FixedRoot`
+envelope with zero `.ixa` artifact required, or v1 Aiur `.ixa` envelope for
+backwards compatibility and `Catalog` claims), then print the honest trust/ZK
+metadata banner and claim statement. -/
+def verifyShrunkProof (p : Cli.Parsed) (addr : Address) (wrapper : Ixon.Proof)
+    (statement : String) (ctx? : Option Context := none) : IO UInt32 := do
+  match wrapper.claim with
+  | .checkEnv .. | .catalog _ => pure ()
+  | _ => throw (IO.userError s!"shrunk STARK proof {addr} must bundle a CheckEnv or Catalog claim")
+  let ver ← match StarkShrinker.envelopeVersion wrapper.proof with
+    | some 2 =>
+      let .checkEnv .. := wrapper.claim
+        | throw (IO.userError s!"Plonkish v2 shrunk STARK proof {addr} requires a CheckEnv claim")
+      pure (2 : UInt16)
+    | some 1 => pure (1 : UInt16)
+    | some v =>
+      throw (IO.userError s!"unsupported IXSTARK6 envelope version {v} in shrunk STARK proof {addr} (expected 1 or 2)")
+    | none =>
+      throw (IO.userError s!"truncated or malformed IXSTARK6 envelope header in shrunk STARK proof {addr}")
+  let ctx ← match ctx? with
+    | some c => pure c
+    | none => context p
+  let stmtBytes := statementBytes ctx.toKeys wrapper.claim
+  let banner ← if ver == 2 then
+      let layout ← Compression.releaseRootLayout ctx.aggr.key
+      StarkShrinker.verifyFixedRootRaw ctx.aggr.key layout wrapper.proof stmtBytes
+    else
+      let verifierPath ← verifierArtifactPath p
+      let pinnedDigest ← StarkShrinker.pinnedVerifierDigest
+      let expectedInnerVk := (Address.blake3 ctx.aggr.key).hash
+      let expectedClaim := (Address.blake3 stmtBytes).hash
+      StarkShrinker.verifyRaw verifierPath pinnedDigest wrapper.proof
+        expectedInnerVk expectedClaim
+  IO.println s!"ok: shrunk Fp^3 STARK proof {addr} verifies claim {Address.blake3 (Ix.Claim.ser wrapper.claim)}"
+  IO.println banner
+  IO.println statement
+  return 0
+
 def verify (p : Cli.Parsed) : IO UInt32 := do
   rejectFlags p #["shard", "record", "distributed"]
   -- the expected claim, and the environment whose records the kernel's admission of
@@ -380,7 +421,16 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
     let statement ← ClaimPolicy.admit p wrapper.claim (envs := pure tableEnvs)
     if AiurCompression.selected p && !AiurCompression.isCompressed wrapper.proof then
       throw (IO.userError "expected an Aiur compression envelope for the supplied verifier")
-    if Compression.isCompressed wrapper.proof then
+    if StarkShrinker.isShrunk wrapper.proof then
+      let ctx ← match ctx? with
+        | some c => pure c
+        | none =>
+          let c ← context p
+          ctx? := some c
+          pure c
+      let rc ← verifyShrunkProof p addr wrapper statement (some ctx)
+      if rc != 0 then return rc
+    else if Compression.isCompressed wrapper.proof then
       let .checkEnv .. := wrapper.claim
         | throw (IO.userError s!"aggregate proof {addr} does not bundle a CheckEnv claim")
       if AiurCompression.isCompressed wrapper.proof then

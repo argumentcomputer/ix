@@ -1,0 +1,3030 @@
+//! Compact Plonkish Native `Fp^3` STARK Shrinker (`--stark-128` & `--stark-128-zk`).
+//!
+//! Compiles the Protocol `v6` (`Fp^3`, `FriBatching::Tensor`, domain-separated
+//! BLAKE3) Plonkish FRI verifier from `ix-proof-compression` directly into a
+//! compact `multi-stark` system (`GoldilocksBlake3V6Config` or
+//! `GoldilocksBlake3V6ZkConfig`), avoiding the 45-circuit Aiur recursive VM
+//! overhead while preserving full 128-bit finite-`m` Johnson + 80-bit provable
+//! unique-decoding + 220-bit conjectured soundness and all `v6-zk` hiding
+//! invariants.
+
+use crate::{
+  breakdown::{ProofBreakdown, analyze_v6, analyze_v6_zk},
+  circuit_merge::MergedLayout,
+  compact_codec,
+  envelope::{
+    ENVELOPE_MAGIC, EXTENSION_DEGREE, FRI_BATCHING_TENSOR, PROTOCOL_VERSION,
+    ShrinkMode,
+  },
+};
+use aiur::trace::stark::{
+  BatchProof as AiurBatchProof, VerifyingKey as AiurVerifyingKey,
+};
+use ix_proof_compression::{
+  fri::{
+    Envelope as FriEnvelope, ImplementationOptions, ProofEnvelope,
+    ProofProfile, Statement, StatementSlot, VerifierKey, VerifierLimits,
+    VerifierPlan,
+  },
+  pipeline::FixedRoot,
+};
+use multi_stark::{
+  batch::BatchProof,
+  config::ProofConfig,
+  lookup::{MAX_LOOKUP_GROUP, logup_max_degree, stage2_width},
+  p3_adapter::{
+    domain_blake3::Blake3Domain,
+    fri_batching::FriBatching,
+    zk::{ZK_RANDOMIZER_WIDTH, min_zk_log_degree},
+  },
+  p3_field::{PrimeCharacteristicRing, PrimeField64},
+  p3_matrix::{Matrix, dense::RowMajorMatrix},
+  plonkish::{Assignment, Circuit, MultiStarkCircuit},
+  prover::Proof,
+  system::{
+    CircuitInputs, ProverKey, System, compute_vk_digest,
+    compute_vk_digest_with_domain, extension_params,
+  },
+  types::{
+    CommitmentParameters, ExtVal3, FriParameters, GoldilocksBlake3V6Config,
+    GoldilocksBlake3V6ZkConfig, Val,
+  },
+};
+use std::time::Instant;
+
+/// Plonkish `IXSTARK6\0` envelope schema version (`v2` distinguishes Plonkish
+/// compact envelopes from `v1` Aiur `.ixa` envelopes).
+pub const PLONKISH_ENVELOPE_VERSION: u16 = 2;
+
+/// Domain separation context for Plonkish shrinker verifying-key pinning.
+const PLONKISH_VK_CONTEXT: &str = "ix/stark-shrinker/plonkish/v2/vk";
+
+/// Namespace byte for Plonkish-to-multi-stark lowering (matches `FRI_NAMESPACE`).
+const PLONKISH_NAMESPACE: u8 = 107;
+
+/// Fixed binary header size for `IXSTARK6\0` v2 (Plonkish) envelopes.
+pub const PLONKISH_HEADER_LEN: usize = 9 // magic
+  + 2 // envelope_version (2)
+  + 2 // protocol_version (6)
+  + 2 // extension_degree (3)
+  + 1 // mode_tag (1=v6, 2=v6-zk)
+  + 1 // fri_batching (1=Tensor)
+  + 1 // payload_codec (0=bincode, 1=compact_v1)
+  + 1 // hops (1 or 2)
+  + 2 * 9 // lb, cap, lfp, mla, q, cpow, qpow, zk_randomizer_width, min_log_degree
+  + 32 * 3 // shrinker_vk_digest, inner_vk_digest, claim_digest
+  + 8; // proof_len
+
+/// Generalized outer FRI parameters for out-of-circuit verification of shrunk
+/// Protocol `v6` and `v6-zk` STARK proofs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OuterFriParams {
+  pub log_blowup: usize,
+  pub num_queries: usize,
+  pub commit_proof_of_work_bits: usize,
+  pub query_proof_of_work_bits: usize,
+  pub cap_height: usize,
+  pub max_log_arity: usize,
+  pub log_final_poly_len: usize,
+}
+
+impl OuterFriParams {
+  /// Legacy binary-FRI compact 128-bit profile (`lb=4, q=66, qpow=20`,
+  /// `cap=0, max_log_arity=1, log_final_poly_len=8`).
+  ///
+  /// - 149.03b finite-`m` Johnson (`m=16`)
+  /// - 80.19b provable unique-decoding (`CertiFRI`)
+  /// - 284b conjectured ethSTARK
+  /// - 100% CUDA-compatible (`cap_height=0, max_log_arity=1`)
+  /// - Measured 1-circuit size: `~600 KiB` (`v6`) / `~695 KiB` (`v6-zk`)
+  pub const CUDA_COMPACT_128: Self = Self {
+    log_blowup: 4,
+    num_queries: 66,
+    commit_proof_of_work_bits: 0,
+    query_proof_of_work_bits: 20,
+    cap_height: 0,
+    max_log_arity: 1,
+    log_final_poly_len: 8,
+  };
+
+  /// Fast sub-400 KiB 128-bit profile using 8-ary FRI folding + `lfp=8`
+  /// (`lb=4, q=62, qpow=24`: 145.21b Johnson, 80.54b UD, 272b conjectured).
+  ///
+  /// - 100% CUDA-compatible (`cap_height=0, max_log_arity=3`, multi-ary CUDA FRI)
+  /// - Measured 1-circuit size: `385.3 KiB` (`v6`) / `430.7 KiB` (`v6-zk`)
+  /// - ~1s PoW grinding on CPU, ~3.5 ms verify
+  pub const COMPACT_400KB_FAST: Self = Self {
+    log_blowup: 4,
+    num_queries: 62,
+    commit_proof_of_work_bits: 0,
+    query_proof_of_work_bits: 24,
+    cap_height: 0,
+    max_log_arity: 3,
+    log_final_poly_len: 8,
+  };
+
+  /// Default balanced ~360–405 KiB 128-bit profile using 8-ary FRI folding + `lfp=8`
+  /// (`lb=4, q=58, qpow=28`: 141.39b Johnson, 80.90b UD, 260b conjectured).
+  ///
+  /// - 100% CUDA-compatible (`cap_height=0, max_log_arity=3`, multi-ary CUDA FRI)
+  /// - Default profile for `ix compress --stark-128` and `--stark-128-zk`
+  /// - Measured 1-circuit size: `361.5 KiB` (`v6`) / `404.7 KiB` (`v6-zk`)
+  pub const COMPACT_400KB_BALANCED: Self = Self {
+    log_blowup: 4,
+    num_queries: 58,
+    commit_proof_of_work_bits: 0,
+    query_proof_of_work_bits: 28,
+    cap_height: 0,
+    max_log_arity: 3,
+    log_final_poly_len: 8,
+  };
+
+  /// Ultra-compact sub-400 KiB profile for BOTH `v6` and `v6-zk`
+  /// (`lb=4, q=55, qpow=30`: 137.53b Johnson, 80.16b UD, 250b conjectured).
+  ///
+  /// - 100% CUDA-compatible (`cap_height=0, max_log_arity=3`, multi-ary CUDA FRI)
+  /// - Selected by `ix compress --stark-128 --compact` and `--stark-128-zk --compact`
+  /// - Measured 1-circuit size: `344.1 KiB` (`v6`) / `389.1 KiB` (`v6-zk`)
+  pub const ULTRA_COMPACT_400KB_ZK: Self = Self {
+    log_blowup: 4,
+    num_queries: 55,
+    commit_proof_of_work_bits: 0,
+    query_proof_of_work_bits: 30,
+    cap_height: 0,
+    max_log_arity: 3,
+    log_final_poly_len: 8,
+  };
+
+  /// In-circuit verifiable Hop-1 profile (`cap=0, mla=1, lfp=0`, `lb=4, q=66, qpow=20`),
+  /// accepted by `ix_proof_compression::fri::VerifierPlan`.
+  pub const HOP1_DEFAULT: Self = Self {
+    log_blowup: 4,
+    num_queries: 66,
+    commit_proof_of_work_bits: 0,
+    query_proof_of_work_bits: 20,
+    cap_height: 0,
+    max_log_arity: 1,
+    log_final_poly_len: 0,
+  };
+
+  pub const fn commitment(self) -> CommitmentParameters {
+    CommitmentParameters {
+      log_blowup: self.log_blowup,
+      cap_height: self.cap_height,
+    }
+  }
+
+  pub const fn fri(self) -> FriParameters {
+    FriParameters {
+      log_final_poly_len: self.log_final_poly_len,
+      max_log_arity: self.max_log_arity,
+      num_queries: self.num_queries,
+      commit_proof_of_work_bits: self.commit_proof_of_work_bits,
+      query_proof_of_work_bits: self.query_proof_of_work_bits,
+    }
+  }
+
+  pub const fn johnson_millibits(self) -> usize {
+    stark_key::security::johnson_millibits(&self.commitment(), &self.fri())
+  }
+
+  pub const fn provable_ud_millibits(self) -> Option<usize> {
+    stark_key::security::provable_ud_millibits(&self.commitment(), &self.fri())
+  }
+
+  pub const fn conjectured_bits(self) -> usize {
+    stark_key::security::conjectured_bits(&self.commitment(), &self.fri())
+  }
+
+  /// Whether these outer FRI parameters are supported by `multi-stark`'s CUDA
+  /// backend (`cap_height == 0 && (1..=4).contains(&self.max_log_arity)`).
+  pub const fn is_cuda_compatible(self) -> bool {
+    self.cap_height == 0 && self.max_log_arity >= 1 && self.max_log_arity <= 4
+  }
+
+  /// Enforce the full Protocol `v6` 128-bit production security floor:
+  /// - `log_blowup in 1..=4`
+  /// - `>= 128.000b` finite-`m` (`m=16`) Johnson soundness
+  /// - `>= 80.000b` provable unique-decoding (`CertiFRI`) soundness
+  /// - `>= 220b` conjectured ethSTARK soundness
+  /// - `commit_pow <= 32`, `query_pow <= 32`
+  /// - `max_log_arity in 1..=4`, `cap_height <= 12`, `log_final_poly_len <= 8`
+  pub fn check(self) -> Result<(), String> {
+    if !(1..=4).contains(&self.max_log_arity) {
+      return Err(format!(
+        "unsupported outer max_log_arity {}: expected 1..=4",
+        self.max_log_arity
+      ));
+    }
+    if self.cap_height > 12 {
+      return Err(format!(
+        "unsupported outer cap_height {}: expected <= 12",
+        self.cap_height
+      ));
+    }
+    if self.log_final_poly_len > 12 {
+      return Err(format!(
+        "unsupported outer log_final_poly_len {}: expected <= 12",
+        self.log_final_poly_len
+      ));
+    }
+    // Delegate all query/blowup/PoW/UD/Johnson/conjectured floor checks to
+    // `stark_key::security::check` using canonical structural placeholders.
+    let floor_cp =
+      CommitmentParameters { log_blowup: self.log_blowup, cap_height: 0 };
+    let floor_fp = FriParameters {
+      log_final_poly_len: 0,
+      max_log_arity: 1,
+      num_queries: self.num_queries,
+      commit_proof_of_work_bits: self.commit_proof_of_work_bits,
+      query_proof_of_work_bits: self.query_proof_of_work_bits,
+    };
+    stark_key::security::check(&floor_cp, &floor_fp)
+  }
+
+  /// Check mode-specific `v6` / `v6-zk` invariants plus CUDA constraints when
+  /// a GPU device is requested or the `cuda` feature is enabled.
+  pub fn check_for_mode(
+    self,
+    mode: ShrinkMode,
+    device: Option<i32>,
+  ) -> Result<(), String> {
+    self.check()?;
+    if mode.is_zk() && self.log_blowup < 3 {
+      return Err(format!(
+        "v6-zk Plonkish shrinker requires log_blowup >= 3 (got {})",
+        self.log_blowup
+      ));
+    }
+    if cfg!(feature = "cuda") && !self.is_cuda_compatible() {
+      return Err(format!(
+        "CUDA builds require cap_height=0 and max_log_arity in 1..=4 (got cap_height={}, max_log_arity={})",
+        self.cap_height, self.max_log_arity
+      ));
+    }
+    if device.is_some() && !cfg!(feature = "cuda") {
+      return Err(
+        "GPU device requested from a CPU-only build; enable feature `cuda`"
+          .into(),
+      );
+    }
+    Ok(())
+  }
+}
+
+/// Lowering and encoding options for the Plonkish STARK shrinker.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlonkishOptions {
+  pub max_trace_height: usize,
+  pub compact_blake3: bool,
+  pub merge_tables: bool,
+  pub merge_blake3_and_tables: bool,
+  /// Align auxiliary/tail trace heights to `max_log - k * max_log_arity` to
+  /// eliminate forced low-arity FRI rounds.
+  pub align_heights_to_fri_arity: bool,
+  /// When `Comp` exceeds `B3_All`'s height by <= 2x, cap `Comp` shards at
+  /// `B3_All`'s height to eliminate the tallest forced binary FRI round and
+  /// reduce `max_log` by 1.
+  pub cap_comp_to_b3_height: bool,
+  /// Horizontally pack all merged circuits (`Comp`, `B3_All`, `UnifiedTable`)
+  /// into ONE single uniform-height `multi-stark` circuit (`num_circuits == 1`),
+  /// yielding 1 quotient polynomial, 1 height group, and zero `acc_mask` in `v6-zk`.
+  pub pack_single_circuit: bool,
+  pub retune_lookup_groups: bool,
+  pub compact_encoding: bool,
+}
+
+impl Default for PlonkishOptions {
+  fn default() -> Self {
+    Self {
+      max_trace_height: 1 << 24,
+      compact_blake3: true,
+      merge_tables: true,
+      merge_blake3_and_tables: true,
+      align_heights_to_fri_arity: true,
+      cap_comp_to_b3_height: true,
+      pack_single_circuit: true,
+      retune_lookup_groups: true,
+      compact_encoding: true,
+    }
+  }
+}
+
+/// Public claim template extracted from a lowered `MultiStarkCircuit<Val>`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClaimSchema {
+  template: Vec<Vec<Val>>,
+  locations: Vec<(usize, usize)>,
+}
+
+impl ClaimSchema {
+  fn from_lowered(
+    compiled: &MultiStarkCircuit<Val>,
+    public_count: usize,
+  ) -> Result<Self, String> {
+    let claims = compiled
+      .claims(&vec![Val::ZERO; public_count])
+      .map_err(|e| format!("plonkish claim template failed: {e}"))?;
+    if claims.len() <= public_count {
+      return Err("plonkish claim template shorter than public count".into());
+    }
+    let mut template = claims;
+    let locations: Vec<(usize, usize)> =
+      (1..=public_count).map(|i| (i, 3)).collect();
+    for &(row, col) in &locations {
+      if template[row].len() <= col {
+        return Err("invalid plonkish claim row width".into());
+      }
+      template[row][col] = Val::ZERO;
+    }
+    Ok(Self { template, locations })
+  }
+
+  pub fn materialize(&self, publics: &[Val]) -> Result<Vec<Vec<Val>>, String> {
+    if publics.len() != self.locations.len() {
+      return Err(format!(
+        "public input length {} != expected {}",
+        publics.len(),
+        self.locations.len()
+      ));
+    }
+    let mut out = self.template.clone();
+    for (&(row, col), &val) in self.locations.iter().zip(publics) {
+      out[row][col] = val;
+    }
+    Ok(out)
+  }
+
+  fn hash_into(&self, hasher: &mut blake3::Hasher) {
+    hasher.update(&(self.template.len() as u64).to_le_bytes());
+    for row in &self.template {
+      hasher.update(&(row.len() as u64).to_le_bytes());
+      for &v in row {
+        hasher.update(&v.as_canonical_u64().to_le_bytes());
+      }
+    }
+    hasher.update(&(self.locations.len() as u64).to_le_bytes());
+    for &(r, c) in &self.locations {
+      hasher.update(&(r as u64).to_le_bytes());
+      hasher.update(&(c as u64).to_le_bytes());
+    }
+  }
+}
+
+/// Optimal per-circuit `lookup_group_size` minimizing query opening width
+/// `stage_2_width + q_col_mult * quotient_degree_for(is_zk)` while keeping
+/// `quotient_degree_for(is_zk) <= blowup`.
+fn tune_lookup_group_size(
+  def: &mut CircuitInputs<Val>,
+  blowup: usize,
+  is_zk: bool,
+) -> Result<(), String> {
+  let params = extension_params::<GoldilocksBlake3V6Config>();
+  let d = params.degree;
+  let graph = def
+    .compile_graph(&params)
+    .map_err(|e| format!("constraint graph compile failed: {e:?}"))?;
+  let num_lookups = def.lookups.len();
+  if num_lookups <= 1 {
+    def.lookup_group_size = 1;
+    return Ok(());
+  }
+  let max_g = num_lookups.min(MAX_LOOKUP_GROUP);
+  let q_mult = if is_zk { 2 * d } else { d };
+  let mut best_g = None;
+  let mut best_key = (usize::MAX, usize::MAX, usize::MAX);
+  for g in 1..=max_g {
+    let deg =
+      graph.max_constraint_degree.max(logup_max_degree(&graph, g)) as usize;
+    let q_deg = if is_zk {
+      deg.max(1).next_power_of_two()
+    } else {
+      (deg.max(2) - 1).next_power_of_two()
+    };
+    if q_deg > blowup {
+      continue;
+    }
+    let s2 = stage2_width(num_lookups, g, d);
+    let total_cols = s2 + q_mult * q_deg;
+    let key = (total_cols, q_deg, g);
+    if key < best_key {
+      best_key = key;
+      best_g = Some(g);
+    }
+  }
+  let g = best_g.ok_or_else(|| {
+    format!(
+      "no valid lookup_group_size fits blowup {blowup} (is_zk={is_zk}) for circuit"
+    )
+  })?;
+  def.lookup_group_size = g;
+  Ok(())
+}
+
+/// Lower a Plonkish `Circuit<Val>` into `multi-stark` circuit definitions,
+/// optionally applying vertical merging of BLAKE3 + table circuits, FRI-arity
+/// height alignment, and enforcing `v6-zk` minimum height & quotient degree.
+fn lower_circuit_for_mode(
+  circuit: Circuit<Val>,
+  options: PlonkishOptions,
+  mode: ShrinkMode,
+  params: OuterFriParams,
+) -> Result<
+  (
+    MultiStarkCircuit<Val>,
+    Vec<CircuitInputs<Val>>,
+    ClaimSchema,
+    Option<MergedLayout>,
+  ),
+  String,
+> {
+  let public_count = circuit.public_values().len();
+  let mut effective_max_height = options.max_trace_height;
+  if options.cap_comp_to_b3_height
+    && options.merge_blake3_and_tables
+    && options.merge_tables
+    && let Ok(layout_est) =
+      circuit.multi_stark_layout_with_max_height(options.max_trace_height)
+    && layout_est.custom_traces.len() == 9
+  {
+    // Estimate B3_All active height: t0..t3 have identical active rows <= h_0;
+    // total active rows of t0..t5 is tightly bounded by sum(h_0..h_5) / 2..sum.
+    let h0 = layout_est.custom_traces[0].0;
+    let b3_est =
+      (h0.saturating_mul(4)).next_power_of_two().min(options.max_trace_height);
+    if layout_est.main_height > b3_est
+      && layout_est.used_rows <= b3_est.saturating_mul(2)
+      && b3_est >= (1 << 18)
+    {
+      effective_max_height = b3_est;
+    }
+  }
+
+  let mut compiled = circuit
+    .lower_to_multi_stark_sharded(
+      Val::from_u8(PLONKISH_NAMESPACE),
+      effective_max_height,
+    )
+    .map_err(|e| format!("plonkish lowering failed: {e}"))?;
+  if options.merge_tables {
+    compiled = compiled
+      .merge_table_traces(effective_max_height)
+      .map_err(|e| format!("table merging failed: {e}"))?;
+  }
+  let schema = ClaimSchema::from_lowered(&compiled, public_count)?;
+  let raw_definitions = compiled.circuit_inputs();
+  let align_arity =
+    if options.align_heights_to_fri_arity { params.max_log_arity } else { 1 };
+  let (mut definitions, merged_layout) =
+    if options.merge_blake3_and_tables && options.merge_tables {
+      let (defs, layout) = MergedLayout::try_merge(
+        &compiled,
+        raw_definitions,
+        PLONKISH_NAMESPACE,
+        options.max_trace_height,
+        align_arity,
+        options.pack_single_circuit,
+      )?;
+      (defs, Some(layout))
+    } else {
+      (raw_definitions, None)
+    };
+  let blowup = 1usize << params.log_blowup;
+  let is_zk = mode.is_zk();
+  let min_zk_height = if is_zk {
+    1usize << min_zk_log_degree(params.num_queries, EXTENSION_DEGREE as usize)
+  } else {
+    0
+  };
+
+  for (idx, def) in definitions.iter_mut().enumerate() {
+    if options.retune_lookup_groups {
+      tune_lookup_group_size(def, blowup, is_zk)?;
+    } else {
+      def.lookup_group_size = 3;
+    }
+    if let Some(prep) = &def.preprocessed {
+      let h = prep.height();
+      if is_zk && h < min_zk_height {
+        return Err(format!(
+          "plonkish circuit {idx} height {h} is below v6-zk min height {min_zk_height} (enable merge_tables)"
+        ));
+      }
+      let log_h = h.ilog2() as usize;
+      let effective_log_h = log_h + usize::from(is_zk);
+      if params.log_final_poly_len > 0
+        && effective_log_h <= params.log_final_poly_len
+      {
+        return Err(format!(
+          "plonkish circuit {idx} effective log height {effective_log_h} must exceed log_final_poly_len {}",
+          params.log_final_poly_len
+        ));
+      }
+    }
+  }
+
+  Ok((compiled, definitions, schema, merged_layout))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn compute_plonkish_vk_digest(
+  mode: ShrinkMode,
+  params: OuterFriParams,
+  compact_encoding: bool,
+  hops: u8,
+  zk_randomizer_width: usize,
+  min_log_degree: usize,
+  system_vk_digest: &[u8; 32],
+  preprocessed_roots: Option<&[[u8; 32]]>,
+  schema: &ClaimSchema,
+) -> Result<[u8; 32], String> {
+  let mut hasher = blake3::Hasher::new_derive_key(PLONKISH_VK_CONTEXT);
+  hasher.update(&PLONKISH_ENVELOPE_VERSION.to_le_bytes());
+  hasher.update(&PROTOCOL_VERSION.to_le_bytes());
+  hasher.update(&EXTENSION_DEGREE.to_le_bytes());
+  hasher.update(&[mode.tag(), FRI_BATCHING_TENSOR]);
+  hasher.update(&[u8::from(compact_encoding), hops]);
+  for value in [
+    params.log_blowup,
+    params.cap_height,
+    params.log_final_poly_len,
+    params.max_log_arity,
+    params.num_queries,
+    params.commit_proof_of_work_bits,
+    params.query_proof_of_work_bits,
+    zk_randomizer_width,
+    min_log_degree,
+  ] {
+    let word = u16::try_from(value)
+      .map_err(|err| format!("VK parameter {value} exceeds u16: {err}"))?;
+    hasher.update(&word.to_le_bytes());
+  }
+  hasher.update(system_vk_digest);
+  match preprocessed_roots {
+    None => {
+      hasher.update(&[0u8]);
+    },
+    Some(roots) => {
+      let count = u16::try_from(roots.len())
+        .map_err(|err| format!("preprocessed cap roots exceed u16: {err}"))?;
+      hasher.update(&[1u8]);
+      hasher.update(&count.to_le_bytes());
+      for root in roots {
+        hasher.update(root);
+      }
+    },
+  }
+  schema.hash_into(&mut hasher);
+  Ok(*hasher.finalize().as_bytes())
+}
+
+/// Parsed header of a Plonkish `IXSTARK6\0` v2 envelope.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlonkishHeader {
+  pub mode: ShrinkMode,
+  pub params: OuterFriParams,
+  pub compact_encoding: bool,
+  pub hops: u8,
+  pub zk_randomizer_width: u16,
+  pub min_log_degree: u16,
+  pub shrinker_vk_digest: [u8; 32],
+  pub inner_vk_digest: [u8; 32],
+  pub claim_digest: [u8; 32],
+  pub proof_len: u64,
+}
+
+/// Verified metadata and honest trust/ZK posture for a Plonkish `IXSTARK6\0` v2
+/// shrunk proof envelope.
+#[derive(Clone, Debug)]
+pub struct PlonkishVerifyReport {
+  pub header: PlonkishHeader,
+  pub envelope_bytes: usize,
+  pub proof_bytes: usize,
+  pub verify_ms: f64,
+  pub johnson_millibits: usize,
+  pub provable_ud_millibits: usize,
+  pub conjectured_bits: usize,
+  pub outer_circuits: usize,
+}
+
+impl PlonkishVerifyReport {
+  fn build(
+    header: PlonkishHeader,
+    envelope_bytes: usize,
+    verify_ms: f64,
+    outer_circuits: usize,
+  ) -> Self {
+    Self {
+      header,
+      envelope_bytes,
+      proof_bytes: envelope_bytes.saturating_sub(PLONKISH_HEADER_LEN),
+      verify_ms,
+      johnson_millibits: header.params.johnson_millibits(),
+      provable_ud_millibits: header.params.provable_ud_millibits().unwrap_or(0),
+      conjectured_bits: header.params.conjectured_bits(),
+      outer_circuits,
+    }
+  }
+
+  /// Format a concise, honest trust and zero-knowledge banner for CLI output.
+  pub fn banner(&self) -> String {
+    let j_w = self.johnson_millibits / 1000;
+    let j_f = (self.johnson_millibits % 1000) / 10;
+    let u_w = self.provable_ud_millibits / 1000;
+    let u_f = (self.provable_ud_millibits % 1000) / 10;
+    let p = self.header.params;
+    let zk_line = match self.header.mode {
+      ShrinkMode::Stark128 => {
+        "NON-ZK (transparent witness — no hiding PCS or leaf salting)"
+          .to_owned()
+      },
+      ShrinkMode::Stark128Zk => format!(
+        "ZERO-KNOWLEDGE (128-bit statistical+ROM ZK: 2x odd-coset hiding PCS, W_R={}, 128-bit BLAKE3-CTR leaf salts, telescoping quotient blinding, {} outer circuit(s), min_log_degree={})",
+        self.header.zk_randomizer_width,
+        self.outer_circuits,
+        self.header.min_log_degree,
+      ),
+    };
+    format!(
+      "Endpoint 1 Compact Plonkish Native Fp^3 STARK Shrinker ({flag} / {proto})\n\
+       \x20 Field/PCS : Fp^3 = Fp[X]/(X^3 - X - 1) | BLAKE3 derive_key | FriBatching::Tensor | {c} outer circuit(s)\n\
+       \x20 Soundness : {j_w}.{j_f:02}b finite-m Johnson (m=16) | {u_w}.{u_f:02}b provable UD | {conj}b conjectured (lb={lb}, q={q}, mla={mla}, lfp={lfp}, cap={cap}, qpow={qpow})\n\
+       \x20 Trust     : Post-quantum ready | Transparent (zero trusted setup)\n\
+       \x20 Privacy   : {zk_line}\n\
+       \x20 Pinned VK : {svk}\n\
+       \x20 Inner VK  : {ivk}\n\
+       \x20 Claim     : {claim}\n\
+       \x20 Proof     : {env} bytes ({raw} B payload, codec={codec}) | verified in {ms:.2} ms",
+      flag = self.header.mode.cli_flag(),
+      proto = self.header.mode.protocol_name(),
+      c = self.outer_circuits,
+      conj = self.conjectured_bits,
+      lb = p.log_blowup,
+      q = p.num_queries,
+      mla = p.max_log_arity,
+      lfp = p.log_final_poly_len,
+      cap = p.cap_height,
+      qpow = p.query_proof_of_work_bits,
+      svk = blake3::Hash::from_bytes(self.header.shrinker_vk_digest).to_hex(),
+      ivk = blake3::Hash::from_bytes(self.header.inner_vk_digest).to_hex(),
+      claim = blake3::Hash::from_bytes(self.header.claim_digest).to_hex(),
+      env = self.envelope_bytes,
+      raw = self.proof_bytes,
+      codec =
+        if self.header.compact_encoding { "compact-v1" } else { "bincode" },
+      ms = self.verify_ms,
+    )
+  }
+}
+
+/// Parse and strictly validate only the header of a Plonkish `IXSTARK6\0` v2
+/// envelope without copying the proof payload.
+pub fn peek_plonkish_header(bytes: &[u8]) -> Result<PlonkishHeader, String> {
+  Ok(PlonkishEnvelope::from_bytes(bytes)?.header)
+}
+
+/// Complete Plonkish `IXSTARK6\0` v2 envelope.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlonkishEnvelope {
+  pub header: PlonkishHeader,
+  pub proof_bytes: Vec<u8>,
+}
+
+fn read_u16_le(bytes: &[u8], pos: &mut usize) -> Result<u16, String> {
+  let end = pos.checked_add(2).ok_or("header offset overflow")?;
+  let s = bytes.get(*pos..end).ok_or("truncated Plonkish envelope header")?;
+  *pos = end;
+  Ok(u16::from_le_bytes([s[0], s[1]]))
+}
+
+fn read_u64_le(bytes: &[u8], pos: &mut usize) -> Result<u64, String> {
+  let end = pos.checked_add(8).ok_or("header offset overflow")?;
+  let s = bytes.get(*pos..end).ok_or("truncated Plonkish envelope header")?;
+  *pos = end;
+  Ok(u64::from_le_bytes(s.try_into().expect("8 bytes")))
+}
+
+fn read_arr32(bytes: &[u8], pos: &mut usize) -> Result<[u8; 32], String> {
+  let end = pos.checked_add(32).ok_or("header offset overflow")?;
+  let s = bytes.get(*pos..end).ok_or("truncated Plonkish envelope header")?;
+  *pos = end;
+  Ok(s.try_into().expect("32 bytes"))
+}
+
+impl PlonkishEnvelope {
+  pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
+    let proof_len = u64::try_from(self.proof_bytes.len())
+      .map_err(|err| format!("proof length exceeds u64: {err}"))?;
+    if proof_len != self.header.proof_len {
+      return Err("header proof_len mismatch".into());
+    }
+    let mut out =
+      Vec::with_capacity(PLONKISH_HEADER_LEN + self.proof_bytes.len());
+    out.extend_from_slice(ENVELOPE_MAGIC);
+    out.extend_from_slice(&PLONKISH_ENVELOPE_VERSION.to_le_bytes());
+    out.extend_from_slice(&PROTOCOL_VERSION.to_le_bytes());
+    out.extend_from_slice(&EXTENSION_DEGREE.to_le_bytes());
+    out.push(self.header.mode.tag());
+    out.push(FRI_BATCHING_TENSOR);
+    out.push(u8::from(self.header.compact_encoding));
+    out.push(self.header.hops);
+    for value in [
+      self.header.params.log_blowup,
+      self.header.params.cap_height,
+      self.header.params.log_final_poly_len,
+      self.header.params.max_log_arity,
+      self.header.params.num_queries,
+      self.header.params.commit_proof_of_work_bits,
+      self.header.params.query_proof_of_work_bits,
+    ] {
+      let word = u16::try_from(value)
+        .map_err(|err| format!("parameter {value} exceeds u16: {err}"))?;
+      out.extend_from_slice(&word.to_le_bytes());
+    }
+    out.extend_from_slice(&self.header.zk_randomizer_width.to_le_bytes());
+    out.extend_from_slice(&self.header.min_log_degree.to_le_bytes());
+    out.extend_from_slice(&self.header.shrinker_vk_digest);
+    out.extend_from_slice(&self.header.inner_vk_digest);
+    out.extend_from_slice(&self.header.claim_digest);
+    out.extend_from_slice(&proof_len.to_le_bytes());
+    debug_assert_eq!(out.len(), PLONKISH_HEADER_LEN);
+    out.extend_from_slice(&self.proof_bytes);
+    Ok(out)
+  }
+
+  pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+    if bytes.len() < PLONKISH_HEADER_LEN {
+      return Err(format!(
+        "Plonkish IXSTARK6 envelope too short ({} bytes, minimum {PLONKISH_HEADER_LEN})",
+        bytes.len()
+      ));
+    }
+    if !bytes.starts_with(ENVELOPE_MAGIC) {
+      return Err("invalid magic: expected IXSTARK6\\0".into());
+    }
+    let mut pos = ENVELOPE_MAGIC.len();
+    let version = read_u16_le(bytes, &mut pos)?;
+    if version != PLONKISH_ENVELOPE_VERSION {
+      return Err(format!(
+        "unsupported Plonkish envelope version {version} (expected {PLONKISH_ENVELOPE_VERSION})"
+      ));
+    }
+    let protocol_version = read_u16_le(bytes, &mut pos)?;
+    if protocol_version != PROTOCOL_VERSION {
+      return Err(format!(
+        "unsupported STARK protocol version {protocol_version}: Protocol v5 is retired; only Protocol v6 ({PROTOCOL_VERSION}) is accepted"
+      ));
+    }
+    let extension_degree = read_u16_le(bytes, &mut pos)?;
+    if extension_degree != EXTENSION_DEGREE {
+      return Err(format!(
+        "unsupported extension degree {extension_degree}: Fp^2 is retired; only Fp^3 ({EXTENSION_DEGREE}) is accepted"
+      ));
+    }
+    let mode = ShrinkMode::from_tag(bytes[pos])?;
+    pos += 1;
+    let fri_batching = bytes[pos];
+    pos += 1;
+    if fri_batching != FRI_BATCHING_TENSOR {
+      return Err(format!(
+        "unsupported FRI batching {fri_batching}: only FriBatching::Tensor ({FRI_BATCHING_TENSOR}) is accepted"
+      ));
+    }
+    let compact_encoding = match bytes[pos] {
+      0 => false,
+      1 => true,
+      other => return Err(format!("unsupported payload codec tag {other}")),
+    };
+    pos += 1;
+    let hops = bytes[pos];
+    pos += 1;
+    if !(1..=2).contains(&hops) {
+      return Err(format!("unsupported Plonkish hop count {hops}"));
+    }
+    let params = OuterFriParams {
+      log_blowup: usize::from(read_u16_le(bytes, &mut pos)?),
+      cap_height: usize::from(read_u16_le(bytes, &mut pos)?),
+      log_final_poly_len: usize::from(read_u16_le(bytes, &mut pos)?),
+      max_log_arity: usize::from(read_u16_le(bytes, &mut pos)?),
+      num_queries: usize::from(read_u16_le(bytes, &mut pos)?),
+      commit_proof_of_work_bits: usize::from(read_u16_le(bytes, &mut pos)?),
+      query_proof_of_work_bits: usize::from(read_u16_le(bytes, &mut pos)?),
+    };
+    let zk_randomizer_width = read_u16_le(bytes, &mut pos)?;
+    let min_log_degree = read_u16_le(bytes, &mut pos)?;
+    let shrinker_vk_digest = read_arr32(bytes, &mut pos)?;
+    let inner_vk_digest = read_arr32(bytes, &mut pos)?;
+    let claim_digest = read_arr32(bytes, &mut pos)?;
+    let proof_len = read_u64_le(bytes, &mut pos)?;
+    debug_assert_eq!(pos, PLONKISH_HEADER_LEN);
+
+    params.check()?;
+    match mode {
+      ShrinkMode::Stark128 => {
+        if zk_randomizer_width != 0 || min_log_degree != 0 {
+          return Err(format!(
+            "transparent --stark-128 envelope must have W_R=0 and min_log_degree=0 (got {zk_randomizer_width}, {min_log_degree})"
+          ));
+        }
+      },
+      ShrinkMode::Stark128Zk => {
+        if usize::from(zk_randomizer_width) != ZK_RANDOMIZER_WIDTH {
+          return Err(format!(
+            "unsupported v6-zk randomizer width {zk_randomizer_width} (expected {ZK_RANDOMIZER_WIDTH})"
+          ));
+        }
+        let expected_mld =
+          min_zk_log_degree(params.num_queries, EXTENSION_DEGREE as usize);
+        if usize::from(min_log_degree) != expected_mld {
+          return Err(format!(
+            "v6-zk min_log_degree {min_log_degree} != required {expected_mld}"
+          ));
+        }
+        if params.log_blowup < 3 {
+          return Err(format!(
+            "v6-zk requires log_blowup >= 3 (got {})",
+            params.log_blowup
+          ));
+        }
+      },
+    }
+
+    let proof_len_usize = usize::try_from(proof_len)
+      .map_err(|err| format!("proof_len overflows usize: {err}"))?;
+    if proof_len_usize == 0 {
+      return Err("empty proof payload".into());
+    }
+    let expected_total = PLONKISH_HEADER_LEN
+      .checked_add(proof_len_usize)
+      .ok_or("envelope length overflow")?;
+    if bytes.len() != expected_total {
+      return Err(format!(
+        "envelope length mismatch: header declares {expected_total}, got {}",
+        bytes.len()
+      ));
+    }
+    Ok(Self {
+      header: PlonkishHeader {
+        mode,
+        params,
+        compact_encoding,
+        hops,
+        zk_randomizer_width,
+        min_log_degree,
+        shrinker_vk_digest,
+        inner_vk_digest,
+        claim_digest,
+        proof_len,
+      },
+      proof_bytes: bytes[PLONKISH_HEADER_LEN..].to_vec(),
+    })
+  }
+}
+
+/// Output of a Plonkish shrink operation, including self-verification report,
+/// exact byte breakdown, and prover/verifier timings.
+#[derive(Clone, Debug)]
+pub struct PlonkishShrinkOutput {
+  pub envelope_bytes: Vec<u8>,
+  pub report: PlonkishVerifyReport,
+  pub breakdown: ProofBreakdown,
+  pub prove_ms: f64,
+  pub verify_ms: f64,
+  pub trace_dimensions: Vec<(usize, usize)>,
+  pub vk_digest: [u8; 32],
+}
+
+enum OuterSystem {
+  Transparent {
+    system: System<GoldilocksBlake3V6Config>,
+    key: Option<ProverKey<GoldilocksBlake3V6Config>>,
+  },
+  Zk {
+    system: System<GoldilocksBlake3V6ZkConfig>,
+    key: Option<ProverKey<GoldilocksBlake3V6ZkConfig>>,
+  },
+}
+
+impl OuterSystem {
+  fn build(
+    definitions: Vec<CircuitInputs<Val>>,
+    mode: ShrinkMode,
+    params: OuterFriParams,
+    device: Option<i32>,
+    keep_prover_key: bool,
+  ) -> Result<(Self, [u8; 32], Option<Vec<[u8; 32]>>, u16, u16), String> {
+    params.check_for_mode(mode, device)?;
+    match mode {
+      ShrinkMode::Stark128 => {
+        let config = GoldilocksBlake3V6Config::with_device(
+          params.commitment(),
+          params.fri(),
+          FriBatching::Tensor,
+          device,
+        );
+        let (system, key) =
+          System::new_without_preprocessed(config, definitions);
+        debug_assert_eq!(
+          system.vk_digest,
+          compute_vk_digest::<Val, ExtVal3>(&system.circuits)
+        );
+        let vk_d = system.vk_digest;
+        let prep_roots =
+          system.preprocessed_commit.as_ref().map(|c| c.roots().to_vec());
+        let key = keep_prover_key.then_some(key);
+        #[cfg(feature = "cuda")]
+        if key.is_none() {
+          multi_stark::cuda::release_device_memory();
+        }
+        Ok((Self::Transparent { system, key }, vk_d, prep_roots, 0, 0))
+      },
+      ShrinkMode::Stark128Zk => {
+        let config = GoldilocksBlake3V6ZkConfig::with_options(
+          params.commitment(),
+          params.fri(),
+          FriBatching::Tensor,
+          ZK_RANDOMIZER_WIDTH,
+          device,
+        );
+        // On CUDA, `HidingCudaTwoAdicFriPcs` does not cache 1x traces on host,
+        // so streaming lookups would trigger full 32x inverse DFTs on GPU.
+        // Retain 1x host preprocessed traces during proving and drop them once
+        // the proof finishes.
+        let (system, key) = if cfg!(feature = "cuda") && keep_prover_key {
+          System::new(config, definitions)
+        } else {
+          System::new_without_preprocessed(config, definitions)
+        };
+        debug_assert_eq!(
+          system.vk_digest,
+          compute_vk_digest_with_domain::<Val, ExtVal3>(
+            &system.circuits,
+            Blake3Domain::ZkVerifyingKey,
+          )
+        );
+        let vk_d = system.vk_digest;
+        let prep_roots =
+          system.preprocessed_commit.as_ref().map(|c| c.roots().to_vec());
+        let rw = u16::try_from(system.config.zk_randomizer_width())
+          .map_err(|err| format!("W_R exceeds u16: {err}"))?;
+        let mld = u16::try_from(system.config.min_log_degree())
+          .map_err(|err| format!("min_log_degree exceeds u16: {err}"))?;
+        let key = keep_prover_key.then_some(key);
+        #[cfg(feature = "cuda")]
+        if key.is_none() {
+          multi_stark::cuda::release_device_memory();
+        }
+        Ok((Self::Zk { system, key }, vk_d, prep_roots, rw, mld))
+      },
+    }
+  }
+
+  fn prove_and_drop_key(
+    &mut self,
+    compiled: MultiStarkCircuit<Val>,
+    assignment: Assignment<Val>,
+    merged: Option<&MergedLayout>,
+    claims: &[Vec<Val>],
+    compact_encoding: bool,
+  ) -> Result<(Vec<u8>, ProofBreakdown), String> {
+    let refs: Vec<&[Val]> = claims.iter().map(Vec::as_slice).collect();
+    match self {
+      Self::Transparent { system, key } => {
+        let key = key.take().ok_or("verifier-only system cannot prove")?;
+        let stage1 = if let Some(layout) = merged
+          && layout.is_merged()
+        {
+          let traces = layout.build_traces(&compiled, &assignment)?;
+          drop(compiled);
+          drop(assignment);
+          system.prove_stage_1_streaming(traces)
+        } else {
+          let shards = compiled
+            .trace_shards(&assignment)
+            .map_err(|e| format!("trace shards failed: {e}"))?;
+          let count = system.circuits.len();
+          let mut trace_err: Option<String> = None;
+          let iter = (0..count).map(|ci| match shards.trace(ci) {
+            Ok(t) => t,
+            Err(e) => {
+              if trace_err.is_none() {
+                trace_err = Some(format!("trace {ci} failed: {e}"));
+              }
+              RowMajorMatrix::new(Vec::new(), system.circuits[ci].main_width)
+            },
+          });
+          let s1 = system.prove_stage_1_streaming(iter);
+          if let Some(err) = trace_err {
+            return Err(err);
+          }
+          drop(compiled);
+          drop(assignment);
+          s1
+        };
+        let proof = system.prove_committed(&key, &refs, stage1);
+        drop(key);
+        #[cfg(feature = "cuda")]
+        multi_stark::cuda::release_device_memory();
+        system
+          .verify_multiple_claims(&refs, &proof)
+          .map_err(|e| format!("v6 self-verify failed: {e:?}"))?;
+        let compact_bytes = compact_codec::encode_v6(system, &proof)?;
+        let breakdown = analyze_v6(&proof, compact_bytes.len())?;
+        let bytes = if compact_encoding {
+          compact_bytes
+        } else {
+          proof
+            .to_bytes()
+            .map_err(|e| format!("v6 proof encode failed: {e}"))?
+        };
+        Ok((bytes, breakdown))
+      },
+      Self::Zk { system, key } => {
+        let key = key.take().ok_or("verifier-only system cannot prove")?;
+        let proof = if cfg!(feature = "cuda") {
+          let traces: Vec<RowMajorMatrix<Val>> = if let Some(layout) = merged
+            && layout.is_merged()
+          {
+            layout.build_traces(&compiled, &assignment)?
+          } else {
+            let shards = compiled
+              .trace_shards(&assignment)
+              .map_err(|e| format!("trace shards failed: {e}"))?;
+            let count = system.circuits.len();
+            (0..count)
+              .map(|ci| {
+                shards.trace(ci).map_err(|e| format!("trace {ci} failed: {e}"))
+              })
+              .collect::<Result<Vec<_>, _>>()?
+          };
+          drop(compiled);
+          drop(assignment);
+          let witness =
+            multi_stark::system::SystemWitness::from_stage_1(traces, system);
+          system.prove_multiple_claims(&key, &refs, witness)
+        } else {
+          let stage1 = if let Some(layout) = merged
+            && layout.is_merged()
+          {
+            let traces = layout.build_traces(&compiled, &assignment)?;
+            drop(compiled);
+            drop(assignment);
+            system.prove_stage_1_streaming(traces)
+          } else {
+            let shards = compiled
+              .trace_shards(&assignment)
+              .map_err(|e| format!("trace shards failed: {e}"))?;
+            let count = system.circuits.len();
+            let mut trace_err: Option<String> = None;
+            let iter = (0..count).map(|ci| match shards.trace(ci) {
+              Ok(t) => t,
+              Err(e) => {
+                if trace_err.is_none() {
+                  trace_err = Some(format!("trace {ci} failed: {e}"));
+                }
+                RowMajorMatrix::new(Vec::new(), system.circuits[ci].main_width)
+              },
+            });
+            let s1 = system.prove_stage_1_streaming(iter);
+            if let Some(err) = trace_err {
+              return Err(err);
+            }
+            drop(compiled);
+            drop(assignment);
+            s1
+          };
+          system.prove_committed(&key, &refs, stage1)
+        };
+        drop(key);
+        for circuit in &mut system.circuits {
+          circuit.preprocessed = None;
+        }
+        #[cfg(feature = "cuda")]
+        multi_stark::cuda::release_device_memory();
+        system
+          .verify_multiple_claims(&refs, &proof)
+          .map_err(|e| format!("v6-zk self-verify failed: {e:?}"))?;
+        let compact_bytes = compact_codec::encode_v6_zk(system, &proof)?;
+        let breakdown = analyze_v6_zk(&proof, compact_bytes.len())?;
+        let bytes = if compact_encoding {
+          compact_bytes
+        } else {
+          proof
+            .to_bytes()
+            .map_err(|e| format!("v6-zk proof encode failed: {e}"))?
+        };
+        Ok((bytes, breakdown))
+      },
+    }
+  }
+
+  fn num_circuits(&self) -> usize {
+    match self {
+      Self::Transparent { system, .. } => system.circuits.len(),
+      Self::Zk { system, .. } => system.circuits.len(),
+    }
+  }
+
+  fn verify_bytes(
+    &self,
+    claims: &[Vec<Val>],
+    proof_bytes: &[u8],
+    compact_encoding: bool,
+  ) -> Result<(), String> {
+    let refs: Vec<&[Val]> = claims.iter().map(Vec::as_slice).collect();
+    match self {
+      Self::Transparent { system, .. } => {
+        let proof = if compact_encoding {
+          let p = compact_codec::decode_v6(system, proof_bytes)?;
+          let re = compact_codec::encode_v6(system, &p)?;
+          if re != proof_bytes {
+            return Err("noncanonical compact v6 proof bytes".into());
+          }
+          p
+        } else {
+          let p = Proof::<GoldilocksBlake3V6Config>::from_bytes(proof_bytes)
+            .map_err(|e| format!("v6 proof decode failed: {e}"))?;
+          let re = p
+            .to_bytes()
+            .map_err(|e| format!("v6 proof re-encode failed: {e}"))?;
+          if re != proof_bytes {
+            return Err("noncanonical or trailing v6 proof bytes".into());
+          }
+          p
+        };
+        system
+          .verify_multiple_claims(&refs, &proof)
+          .map_err(|e| format!("v6 STARK verification failed: {e:?}"))
+      },
+      Self::Zk { system, .. } => {
+        let proof = if compact_encoding {
+          let p = compact_codec::decode_v6_zk(system, proof_bytes)?;
+          let re = compact_codec::encode_v6_zk(system, &p)?;
+          if re != proof_bytes {
+            return Err("noncanonical compact v6-zk proof bytes".into());
+          }
+          p
+        } else {
+          let p = Proof::<GoldilocksBlake3V6ZkConfig>::from_bytes(proof_bytes)
+            .map_err(|e| format!("v6-zk proof decode failed: {e}"))?;
+          let re = p
+            .to_bytes()
+            .map_err(|e| format!("v6-zk proof re-encode failed: {e}"))?;
+          if re != proof_bytes {
+            return Err("noncanonical or trailing v6-zk proof bytes".into());
+          }
+          p
+        };
+        system
+          .verify_multiple_claims(&refs, &proof)
+          .map_err(|e| format!("v6-zk STARK verification failed: {e:?}"))
+      },
+    }
+  }
+}
+
+/// Prove a single Plonkish `Circuit<Val>` + `Assignment<Val>` directly into an
+/// independently self-verified `IXSTARK6\0` v2 envelope (`--stark-128` or
+/// `--stark-128-zk`), also returning the independent verifier handle.
+pub fn prove_plonkish_circuit(
+  circuit: Circuit<Val>,
+  assignment: Assignment<Val>,
+  inner_vk_digest: [u8; 32],
+  claim_digest: [u8; 32],
+  mode: ShrinkMode,
+  params: OuterFriParams,
+  options: PlonkishOptions,
+  hops: u8,
+  device: Option<i32>,
+) -> Result<(PlonkishShrinkOutput, PlonkishCircuitVerifier), String> {
+  let start = Instant::now();
+  let (compiled, definitions, schema, merged) =
+    lower_circuit_for_mode(circuit, options, mode, params)?;
+  let trace_dimensions: Vec<(usize, usize)> = definitions
+    .iter()
+    .map(|d| (d.preprocessed.as_ref().map_or(0, Matrix::height), d.main_width))
+    .collect();
+  let publics = assignment.public_values().to_vec();
+  let claims = schema.materialize(&publics)?;
+  let (mut outer, sys_vk_digest, prep_roots, rw, mld) =
+    OuterSystem::build(definitions, mode, params, device, true)?;
+  let vk_digest = compute_plonkish_vk_digest(
+    mode,
+    params,
+    options.compact_encoding,
+    hops,
+    usize::from(rw),
+    usize::from(mld),
+    &sys_vk_digest,
+    prep_roots.as_deref(),
+    &schema,
+  )?;
+
+  let (proof_bytes, breakdown) = outer.prove_and_drop_key(
+    compiled,
+    assignment,
+    merged.as_ref(),
+    &claims,
+    options.compact_encoding,
+  )?;
+  let prove_ms = start.elapsed().as_secs_f64() * 1000.0;
+
+  let proof_len = u64::try_from(proof_bytes.len())
+    .map_err(|err| format!("proof_len exceeds u64: {err}"))?;
+  let envelope = PlonkishEnvelope {
+    header: PlonkishHeader {
+      mode,
+      params,
+      compact_encoding: options.compact_encoding,
+      hops,
+      zk_randomizer_width: rw,
+      min_log_degree: mld,
+      shrinker_vk_digest: vk_digest,
+      inner_vk_digest,
+      claim_digest,
+      proof_len,
+    },
+    proof_bytes,
+  };
+  let envelope_bytes = envelope.to_bytes()?;
+
+  let verifier = PlonkishCircuitVerifier {
+    mode,
+    params,
+    compact_encoding: options.compact_encoding,
+    hops,
+    vk_digest,
+    schema,
+    outer,
+  };
+
+  let v_start = Instant::now();
+  let report = verifier.verify_report(
+    &envelope_bytes,
+    &publics,
+    Some(&inner_vk_digest),
+    Some(&claim_digest),
+  )?;
+  let verify_ms = v_start.elapsed().as_secs_f64() * 1000.0;
+
+  Ok((
+    PlonkishShrinkOutput {
+      envelope_bytes,
+      report,
+      breakdown,
+      prove_ms,
+      verify_ms,
+      trace_dimensions,
+      vk_digest,
+    },
+    verifier,
+  ))
+}
+
+/// Independent verifier for a Plonkish-shrunk `IXSTARK6\0` v2 envelope.
+pub struct PlonkishCircuitVerifier {
+  mode: ShrinkMode,
+  params: OuterFriParams,
+  compact_encoding: bool,
+  hops: u8,
+  vk_digest: [u8; 32],
+  schema: ClaimSchema,
+  outer: OuterSystem,
+}
+
+impl PlonkishCircuitVerifier {
+  /// Derive the verifier independently from the circuit description alone
+  /// (without any proof or witness).
+  pub fn derive(
+    circuit: Circuit<Val>,
+    mode: ShrinkMode,
+    params: OuterFriParams,
+    options: PlonkishOptions,
+    hops: u8,
+  ) -> Result<Self, String> {
+    let (_compiled, definitions, schema, _merged) =
+      lower_circuit_for_mode(circuit, options, mode, params)?;
+    let (outer, sys_vk_digest, prep_roots, rw, mld) =
+      OuterSystem::build(definitions, mode, params, None, false)?;
+    let vk_digest = compute_plonkish_vk_digest(
+      mode,
+      params,
+      options.compact_encoding,
+      hops,
+      usize::from(rw),
+      usize::from(mld),
+      &sys_vk_digest,
+      prep_roots.as_deref(),
+      &schema,
+    )?;
+    Ok(Self {
+      mode,
+      params,
+      compact_encoding: options.compact_encoding,
+      hops,
+      vk_digest,
+      schema,
+      outer,
+    })
+  }
+
+  /// Derive an independent Plonkish verifier for a normalized `FixedRoot`
+  /// aggregate backend without any proof or witness.
+  pub fn derive_fixed_root(
+    inner_key: &AiurVerifyingKey,
+    layout: &FixedRoot,
+    mode: ShrinkMode,
+    params: OuterFriParams,
+    options: PlonkishOptions,
+  ) -> Result<Self, String> {
+    let circuit = layout
+      .circuit(inner_key, VerifierLimits::default())
+      .map_err(|e| format!("fixed root verifier circuit failed: {e}"))?;
+    Self::derive(circuit, mode, params, options, 1)
+  }
+
+  pub const fn vk_digest(&self) -> &[u8; 32] {
+    &self.vk_digest
+  }
+
+  pub fn num_outer_circuits(&self) -> usize {
+    self.outer.num_circuits()
+  }
+
+  pub fn verify(
+    &self,
+    envelope_bytes: &[u8],
+    expected_publics: &[Val],
+    expected_inner_vk_digest: Option<&[u8; 32]>,
+    expected_claim_digest: Option<&[u8; 32]>,
+  ) -> Result<PlonkishHeader, String> {
+    Ok(
+      self
+        .verify_report(
+          envelope_bytes,
+          expected_publics,
+          expected_inner_vk_digest,
+          expected_claim_digest,
+        )?
+        .header,
+    )
+  }
+
+  pub fn verify_report(
+    &self,
+    envelope_bytes: &[u8],
+    expected_publics: &[Val],
+    expected_inner_vk_digest: Option<&[u8; 32]>,
+    expected_claim_digest: Option<&[u8; 32]>,
+  ) -> Result<PlonkishVerifyReport, String> {
+    let start = Instant::now();
+    let envelope = PlonkishEnvelope::from_bytes(envelope_bytes)?;
+    let h = envelope.header;
+    if h.mode != self.mode {
+      return Err(format!(
+        "shrink mode mismatch (cross-mode replay rejected): verifier expects {} but envelope is {}",
+        self.mode.cli_flag(),
+        h.mode.cli_flag()
+      ));
+    }
+    if h.params != self.params {
+      return Err(format!(
+        "outer FRI params mismatch: verifier expects {:?}, envelope has {:?}",
+        self.params, h.params
+      ));
+    }
+    if h.compact_encoding != self.compact_encoding || h.hops != self.hops {
+      return Err("envelope encoding/hops mismatch with verifier".into());
+    }
+    if h.shrinker_vk_digest != self.vk_digest {
+      return Err("shrinker VK digest mismatch".into());
+    }
+    if let Some(ivk) = expected_inner_vk_digest
+      && &h.inner_vk_digest != ivk
+    {
+      return Err("inner VK digest mismatch".into());
+    }
+    if let Some(cd) = expected_claim_digest
+      && &h.claim_digest != cd
+    {
+      return Err("claim digest mismatch".into());
+    }
+    let claims = self.schema.materialize(expected_publics)?;
+    self.outer.verify_bytes(
+      &claims,
+      &envelope.proof_bytes,
+      h.compact_encoding,
+    )?;
+    let verify_ms = start.elapsed().as_secs_f64() * 1000.0;
+    Ok(PlonkishVerifyReport::build(
+      h,
+      envelope_bytes.len(),
+      verify_ms,
+      self.outer.num_circuits(),
+    ))
+  }
+}
+
+/// 1-hop Plonkish shrinker for a normalized Protocol `v6` aggregate root with a
+/// trusted [`FixedRoot`] layout (`.ixl`).
+///
+/// The verifier circuit depends solely on `(inner_key, layout)` — never on any
+/// proof or witness — so [`PlonkishCircuitVerifier::derive_fixed_root`] derives
+/// the exact same pinned `shrinker_vk_digest` completely independently.
+#[allow(clippy::too_many_arguments)]
+pub fn shrink_fixed_root_1hop(
+  inner_key: &AiurVerifyingKey,
+  layout: &FixedRoot,
+  inner_proof: &AiurBatchProof,
+  expected_claim: &[Val],
+  mode: ShrinkMode,
+  params: OuterFriParams,
+  options: PlonkishOptions,
+  device: Option<i32>,
+) -> Result<(PlonkishShrinkOutput, PlonkishCircuitVerifier), String> {
+  let prepared = layout
+    .prepare(inner_key, inner_proof, expected_claim, VerifierLimits::default())
+    .map_err(|e| format!("fixed root preparation failed: {e}"))?;
+  let (circuit, assignment) = prepared.into_parts();
+  let inner_vk_digest = layout.identity(inner_key);
+  let claim_digest = hash_publics(expected_claim);
+  prove_plonkish_circuit(
+    circuit,
+    assignment,
+    inner_vk_digest,
+    claim_digest,
+    mode,
+    params,
+    options,
+    1,
+    device,
+  )
+}
+
+/// 1-hop Plonkish shrinker for a fixed-profile Protocol `v6` inner `BatchProof`.
+pub fn shrink_single_batch_1hop(
+  inner_key: &VerifierKey,
+  profile: ProofProfile,
+  schema: Statement<StatementSlot>,
+  inner_proof: &BatchProof<GoldilocksBlake3V6Config>,
+  statement: &Statement<Val>,
+  mode: ShrinkMode,
+  params: OuterFriParams,
+  options: PlonkishOptions,
+  device: Option<i32>,
+) -> Result<(PlonkishShrinkOutput, PlonkishCircuitVerifier), String> {
+  let plan =
+    VerifierPlan::validate(inner_key, profile, VerifierLimits::default())
+      .map_err(|e| format!("inner plan invalid: {e}"))?;
+  let impl_opts =
+    ImplementationOptions { compact_blake3: options.compact_blake3 };
+  let (circuit, inputs) = plan
+    .build(schema, impl_opts)
+    .map_err(|e| format!("plonkish verifier build failed: {e}"))?;
+  let expanded = plan
+    .expand_witness(ProofEnvelope::SingleBatch(inner_proof))
+    .map_err(|e| format!("inner witness expansion failed: {e}"))?;
+  let mut witness = circuit.witness();
+  inputs
+    .assign_statement(&mut witness, statement)
+    .map_err(|e| format!("statement assignment failed: {e}"))?;
+  expanded
+    .assign_proof(&mut witness, &inputs)
+    .map_err(|e| format!("proof assignment failed: {e}"))?;
+  let assignment = witness
+    .generate()
+    .map_err(|e| format!("witness generation failed: {e}"))?;
+
+  let inner_vk_digest = inner_key
+    .fingerprint()
+    .map_err(|e| format!("inner vk fingerprint failed: {e}"))?;
+  let claim_digest = hash_publics(assignment.public_values());
+  prove_plonkish_circuit(
+    circuit,
+    assignment,
+    inner_vk_digest,
+    claim_digest,
+    mode,
+    params,
+    options,
+    1,
+    device,
+  )
+}
+
+/// 2-hop Plonkish shrinker:
+/// - Hop 1: fast transparent Protocol `v6` (`cap=0, mla=1, lfp=0`) verifying the
+///   inner `BatchProof` with `compact_blake3 = true`.
+/// - Hop 2: verifies Hop 1 (`Envelope::Ordinary`) and proves with `mode`
+///   (`--stark-128` or `--stark-128-zk`) under `hop2_params` and `hop2_options`
+///   (e.g., `compact_blake3 = false` for a 2-trace ultra-compact proof!).
+#[allow(clippy::too_many_arguments)]
+pub fn shrink_single_batch_2hop(
+  inner_key: &VerifierKey,
+  profile: ProofProfile,
+  schema: Statement<StatementSlot>,
+  inner_proof: &BatchProof<GoldilocksBlake3V6Config>,
+  statement: &Statement<Val>,
+  hop1_params: OuterFriParams,
+  hop1_options: PlonkishOptions,
+  hop2_mode: ShrinkMode,
+  hop2_params: OuterFriParams,
+  hop2_options: PlonkishOptions,
+  device: Option<i32>,
+) -> Result<(PlonkishShrinkOutput, PlonkishCircuitVerifier, f64, usize), String>
+{
+  if hop1_params.cap_height != 0
+    || hop1_params.max_log_arity != 1
+    || hop1_params.log_final_poly_len != 0
+  {
+    return Err(
+      "Hop 1 must use cap_height=0, max_log_arity=1, log_final_poly_len=0 for in-circuit Hop-2 verification".into(),
+    );
+  }
+  hop1_params.check()?;
+  let hop1_start = Instant::now();
+
+  // --- Hop 1: prove inner BatchProof into transparent v6 multi-stark Proof ---
+  let plan1 =
+    VerifierPlan::validate(inner_key, profile, VerifierLimits::default())
+      .map_err(|e| format!("hop1 inner plan invalid: {e}"))?;
+  let (circuit1, inputs1) = plan1
+    .build(
+      schema,
+      ImplementationOptions { compact_blake3: hop1_options.compact_blake3 },
+    )
+    .map_err(|e| format!("hop1 verifier build failed: {e}"))?;
+  let expanded1 = plan1
+    .expand_witness(ProofEnvelope::SingleBatch(inner_proof))
+    .map_err(|e| format!("hop1 witness expansion failed: {e}"))?;
+  let mut witness1 = circuit1.witness();
+  inputs1
+    .assign_statement(&mut witness1, statement)
+    .map_err(|e| format!("hop1 statement assign failed: {e}"))?;
+  expanded1
+    .assign_proof(&mut witness1, &inputs1)
+    .map_err(|e| format!("hop1 proof assign failed: {e}"))?;
+  let assignment1 = witness1
+    .generate()
+    .map_err(|e| format!("hop1 witness generation failed: {e}"))?;
+  let publics1 = assignment1.public_values().to_vec();
+
+  let (compiled1, defs1, claim_schema1, merged1) = lower_circuit_for_mode(
+    circuit1,
+    hop1_options,
+    ShrinkMode::Stark128,
+    hop1_params,
+  )?;
+  let claims1 = claim_schema1.materialize(&publics1)?;
+  let config1 = GoldilocksBlake3V6Config::with_device(
+    hop1_params.commitment(),
+    hop1_params.fri(),
+    FriBatching::Tensor,
+    device,
+  );
+  let (sys1, key1) = System::new_without_preprocessed(config1, defs1);
+  let stage1 = if let Some(layout) = merged1.as_ref()
+    && layout.is_merged()
+  {
+    let traces = layout.build_traces(&compiled1, &assignment1)?;
+    sys1.prove_stage_1_streaming(traces)
+  } else {
+    let shards1 = compiled1
+      .trace_shards(&assignment1)
+      .map_err(|e| format!("hop1 trace shards failed: {e}"))?;
+    let count1 = sys1.circuits.len();
+    let mut trace_err1: Option<String> = None;
+    let s1 =
+      sys1.prove_stage_1_streaming((0..count1).map(
+        |ci| match shards1.trace(ci) {
+          Ok(t) => t,
+          Err(e) => {
+            if trace_err1.is_none() {
+              trace_err1 = Some(format!("hop1 trace {ci}: {e}"));
+            }
+            RowMajorMatrix::new(Vec::new(), sys1.circuits[ci].main_width)
+          },
+        },
+      ));
+    if let Some(err) = trace_err1 {
+      return Err(err);
+    }
+    s1
+  };
+  drop(compiled1);
+  drop(assignment1);
+  let refs1: Vec<&[Val]> = claims1.iter().map(Vec::as_slice).collect();
+  let hop1_proof = sys1.prove_committed(&key1, &refs1, stage1);
+  drop(key1);
+  sys1
+    .verify_multiple_claims(&refs1, &hop1_proof)
+    .map_err(|e| format!("hop1 self-verify failed: {e:?}"))?;
+  let hop1_bytes = hop1_proof
+    .to_bytes()
+    .map_err(|e| format!("hop1 serialize failed: {e}"))?
+    .len();
+  let hop1_ms = hop1_start.elapsed().as_secs_f64() * 1000.0;
+
+  // --- Hop 2: build Plonkish verifier for Hop 1 and prove in `hop2_mode` ---
+  let hop1_vk = VerifierKey::new(sys1);
+  let hop1_log_degrees: Vec<u8> = hop1_vk
+    .system()
+    .circuits
+    .iter()
+    .map(|c| {
+      u8::try_from(c.preprocessed_height.ilog2())
+        .map_err(|err| format!("hop1 log_degree overflow: {err}"))
+    })
+    .collect::<Result<_, _>>()?;
+  let hop2_profile = ProofProfile {
+    envelope: FriEnvelope::Ordinary,
+    active: vec![true; hop1_vk.system().circuits.len()],
+    log_degrees: hop1_log_degrees,
+    claim_lengths: claims1.iter().map(Vec::len).collect(),
+    message_lengths: vec![],
+    max_field_retries: ix_proof_compression::fri::DEFAULT_FIELD_RETRIES,
+  };
+  let mut hop2_stmt_schema = Statement {
+    claims: claim_schema1
+      .template
+      .iter()
+      .map(|row| row.iter().copied().map(StatementSlot::Constant).collect())
+      .collect(),
+    messages: vec![],
+  };
+  for &(r, c) in &claim_schema1.locations {
+    hop2_stmt_schema.claims[r][c] = StatementSlot::Public;
+  }
+
+  let plan2 =
+    VerifierPlan::validate(&hop1_vk, hop2_profile, VerifierLimits::default())
+      .map_err(|e| format!("hop2 plan invalid: {e}"))?;
+  let (circuit2, inputs2) = plan2
+    .build(
+      hop2_stmt_schema,
+      ImplementationOptions { compact_blake3: hop2_options.compact_blake3 },
+    )
+    .map_err(|e| format!("hop2 circuit build failed: {e}"))?;
+  let expanded2 = plan2
+    .expand_witness(ProofEnvelope::Ordinary {
+      proof: &hop1_proof,
+      claims: &claims1,
+    })
+    .map_err(|e| format!("hop2 witness expansion failed: {e}"))?;
+  let mut witness2 = circuit2.witness();
+  inputs2
+    .assign_statement(
+      &mut witness2,
+      &Statement { claims: claims1, messages: vec![] },
+    )
+    .map_err(|e| format!("hop2 statement assign failed: {e}"))?;
+  expanded2
+    .assign_proof(&mut witness2, &inputs2)
+    .map_err(|e| format!("hop2 proof assign failed: {e}"))?;
+  let assignment2 = witness2
+    .generate()
+    .map_err(|e| format!("hop2 witness generate failed: {e}"))?;
+
+  let inner_vk_digest = inner_key
+    .fingerprint()
+    .map_err(|e| format!("inner vk fingerprint failed: {e}"))?;
+  let claim_digest = hash_publics(&publics1);
+
+  let (out2, ver2) = prove_plonkish_circuit(
+    circuit2,
+    assignment2,
+    inner_vk_digest,
+    claim_digest,
+    hop2_mode,
+    hop2_params,
+    hop2_options,
+    2,
+    device,
+  )?;
+  Ok((out2, ver2, hop1_ms, hop1_bytes))
+}
+
+/// Canonical BLAKE3 digest of a Plonkish public-input vector (`len || words`, LE u64).
+pub fn hash_publics(publics: &[Val]) -> [u8; 32] {
+  let mut h = blake3::Hasher::new();
+  h.update(&(publics.len() as u64).to_le_bytes());
+  for &v in publics {
+    h.update(&v.as_canonical_u64().to_le_bytes());
+  }
+  *h.finalize().as_bytes()
+}
+
+/// Strictly decode a single serialized batch claim produced by
+/// `MultiStark.serializeClaims #[claim]` (length-prefixed list of 1 claim of
+/// little-endian canonical Goldilocks `u64` words, with zero trailing bytes).
+pub fn decode_single_claim_bytes(bytes: &[u8]) -> Result<Vec<Val>, String> {
+  let (words, remainder) = bytes.as_chunks::<8>();
+  if !remainder.is_empty() || words.len() < 2 {
+    return Err(format!(
+      "serialized statement must be a multiple of 8 bytes with at least 2 header words (got {} bytes)",
+      bytes.len()
+    ));
+  }
+  let count = u64::from_le_bytes(words[0]);
+  if count != 1 {
+    return Err(format!(
+      "FixedRoot statement must contain exactly 1 claim (got {count})"
+    ));
+  }
+  let claim_len_u64 = u64::from_le_bytes(words[1]);
+  let claim_len = usize::try_from(claim_len_u64)
+    .map_err(|err| format!("statement claim length overflows usize: {err}"))?;
+  if claim_len == 0 {
+    return Err("FixedRoot statement claim must not be empty".into());
+  }
+  let expected_words =
+    claim_len.checked_add(2).ok_or("statement word count overflow")?;
+  if words.len() != expected_words {
+    return Err(format!(
+      "serialized statement length mismatch: header declares {claim_len} words ({expected_words} total), got {} words",
+      words.len()
+    ));
+  }
+  let mut claim = Vec::with_capacity(claim_len);
+  for (idx, chunk) in words[2..].iter().enumerate() {
+    let raw = u64::from_le_bytes(*chunk);
+    if raw >= Val::ORDER_U64 {
+      return Err(format!(
+        "statement word {idx} ({raw}) is not a canonical Goldilocks field element"
+      ));
+    }
+    claim.push(Val::from_u64(raw));
+  }
+  Ok(claim)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use aiur::trace::stark::Parameters;
+  use multi_stark::{
+    batch::ShardInput, expr::Expr, lookup::Lookup, system::SystemWitness,
+  };
+
+  /// Build a production-grade Protocol `v6` (`lb=2, q=128, qpow=20`, 142.24b Johnson)
+  /// multi-circuit inner `BatchProof` with `num_circuits` circuits (including a
+  /// preprocessed lookup table so `ix_proof_compression::fri` verifies it).
+  fn build_inner_v6_batch(
+    num_extra_circuits: usize,
+    log_height: u8,
+  ) -> (
+    VerifierKey,
+    ProofProfile,
+    Statement<StatementSlot>,
+    Statement<Val>,
+    BatchProof<GoldilocksBlake3V6Config>,
+  ) {
+    let params = Parameters::DEFAULT; // lb=2, q=128, qpow=20 (142.24b Johnson)
+    let (cp, fp) = (params.commitment(), params.fri());
+    let height = 1usize << log_height;
+
+    let mut inputs = Vec::with_capacity(num_extra_circuits + 2);
+    let mut traces = Vec::with_capacity(num_extra_circuits + 2);
+
+    // Circuit 0: square-and-lookup circuit exposing 18-word claim (matching ix_aggr).
+    let x = Expr::main(0);
+    let y = Expr::main(1);
+    let sel = Expr::preprocessed(0);
+    let one = Expr::constant(Val::ONE);
+    let mut prep0 = vec![Val::ZERO; height];
+    prep0[0] = Val::ONE;
+    inputs.push(CircuitInputs {
+      main_width: 4,
+      preprocessed: Some(RowMajorMatrix::new_col(prep0)),
+      constraints: vec![x.clone() * x.clone() - y.clone()],
+      lookups: vec![
+        Lookup::pull(
+          sel.clone(),
+          vec![one.clone(), Expr::constant(Val::ZERO), x.clone(), y.clone()],
+        ),
+        Lookup::pull(one.clone(), vec![Expr::constant(Val::from_u64(99)), x]),
+      ],
+      ..Default::default()
+    });
+    let mut t0 = vec![Val::ZERO; 4 * height];
+    for r in 0..height {
+      let v = Val::from_u64((r as u64 % 16) + 1);
+      t0[4 * r] = v;
+      t0[4 * r + 1] = v * v;
+    }
+    t0[0] = Val::from_u64(3);
+    t0[1] = Val::from_u64(9);
+    traces.push(RowMajorMatrix::new(t0, 4));
+
+    // Extra circuits simulating a multi-circuit Aiur/ix_aggr system.
+    for ci in 0..num_extra_circuits {
+      let a = Expr::main(0);
+      let b = Expr::main(1);
+      let c = Expr::main(2);
+      inputs.push(CircuitInputs {
+        main_width: 8,
+        constraints: vec![a.clone() * b.clone() - c],
+        lookups: vec![Lookup::pull(
+          Expr::constant(Val::ONE),
+          vec![Expr::constant(Val::from_u64(99)), a],
+        )],
+        ..Default::default()
+      });
+      let mut tr = vec![Val::ZERO; 8 * height];
+      for r in 0..height {
+        let va = Val::from_u64(((r + ci) as u64 % 16) + 1);
+        let vb = Val::from_u64(5);
+        tr[8 * r] = va;
+        tr[8 * r + 1] = vb;
+        tr[8 * r + 2] = va * vb;
+      }
+      traces.push(RowMajorMatrix::new(tr, 8));
+    }
+
+    // Final circuit: fixed lookup table for values 1..=16 (height 256).
+    let tbl_h = 256usize;
+    let tbl_prep: Vec<Val> =
+      (0..tbl_h).map(|i| Val::from_u64((i as u64 % 16) + 1)).collect();
+    inputs.push(CircuitInputs {
+      main_width: 1,
+      preprocessed: Some(RowMajorMatrix::new_col(tbl_prep)),
+      lookups: vec![Lookup::push(
+        Expr::main(0),
+        vec![Expr::constant(Val::from_u64(99)), Expr::preprocessed(0)],
+      )],
+      ..Default::default()
+    });
+    let mut mults = vec![0u64; tbl_h];
+    // Circuit 0 pulls (r % 16) + 1 for r in 1..height, and value 3 at r=0.
+    mults[2] += 1; // value 3 is at index 2
+    for r in 1..height {
+      mults[r % 16] += 1;
+    }
+    for ci in 0..num_extra_circuits {
+      for r in 0..height {
+        mults[(r + ci) % 16] += 1;
+      }
+    }
+    let t_tbl: Vec<Val> = mults.into_iter().map(Val::from_u64).collect();
+    traces.push(RowMajorMatrix::new_col(t_tbl));
+
+    let (system, pk) =
+      System::new(GoldilocksBlake3V6Config::new(cp, fp), inputs);
+    let claims =
+      vec![vec![Val::ONE, Val::ZERO, Val::from_u64(3), Val::from_u64(9)]];
+    let witness = SystemWitness::from_stage_1(traces, &system);
+    let proof = system.prove_batch(
+      &pk,
+      vec![ShardInput { claims: claims.clone(), witness }],
+      vec![],
+    );
+    system.verify_batch(&proof).expect("inner v6 batch verifies");
+
+    let n_circuits = system.circuits.len();
+    let mut log_degrees = vec![log_height; n_circuits - 1];
+    log_degrees.push(8);
+    let profile = ProofProfile {
+      envelope: FriEnvelope::SingleBatch,
+      active: vec![true; n_circuits],
+      log_degrees,
+      claim_lengths: vec![4],
+      message_lengths: vec![],
+      max_field_retries: ix_proof_compression::fri::DEFAULT_FIELD_RETRIES,
+    };
+    let schema = Statement {
+      claims: vec![vec![StatementSlot::Public; 4]],
+      messages: vec![],
+    };
+    let statement = Statement { claims, messages: vec![] };
+    let vk = VerifierKey::from_system(&system);
+    (vk, profile, schema, statement, proof)
+  }
+
+  fn peak_rss_mib() -> f64 {
+    std::fs::read_to_string("/proc/self/status")
+      .ok()
+      .and_then(|s| {
+        s.lines()
+          .find(|l| l.starts_with("VmHWM:"))
+          .and_then(|l| l.split_whitespace().nth(1))
+          .and_then(|v| v.parse::<f64>().ok())
+          .map(|kb| kb / 1024.0)
+      })
+      .unwrap_or(0.0)
+  }
+
+  #[allow(clippy::cast_precision_loss)]
+  fn to_kib(bytes: usize) -> f64 {
+    bytes as f64 / 1024.0
+  }
+
+  /// Serialize concurrent CUDA tests onto the GPU so multi-million-row provers
+  /// do not contend for the same device's VRAM under `cargo test`.
+  #[cfg(feature = "cuda")]
+  fn gpu_test_guard() -> std::sync::MutexGuard<'static, ()> {
+    static GPU_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    GPU_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+  }
+
+  fn dummy_plonkish_envelope(
+    mode: ShrinkMode,
+    params: OuterFriParams,
+  ) -> Vec<u8> {
+    let rw = u16::try_from(mode.expected_randomizer_width()).unwrap();
+    let mld =
+      u16::try_from(mode.expected_min_log_degree(params.num_queries)).unwrap();
+    PlonkishEnvelope {
+      header: PlonkishHeader {
+        mode,
+        params,
+        compact_encoding: true,
+        hops: 1,
+        zk_randomizer_width: rw,
+        min_log_degree: mld,
+        shrinker_vk_digest: [0x11; 32],
+        inner_vk_digest: [0x22; 32],
+        claim_digest: [0x33; 32],
+        proof_len: 4,
+      },
+      proof_bytes: vec![1, 2, 3, 4],
+    }
+    .to_bytes()
+    .unwrap()
+  }
+
+  #[test]
+  fn plonkish_envelope_fail_closed_security_controls() {
+    let params = OuterFriParams::COMPACT_400KB_FAST;
+    for mode in [ShrinkMode::Stark128, ShrinkMode::Stark128Zk] {
+      let good = dummy_plonkish_envelope(mode, params);
+      let parsed = PlonkishEnvelope::from_bytes(&good).unwrap();
+      assert_eq!(parsed.header.mode, mode);
+      assert_eq!(parsed.header.params, params);
+      assert_eq!(parsed.to_bytes().unwrap(), good);
+      assert_eq!(peek_plonkish_header(&good).unwrap(), parsed.header);
+
+      // Bad magic
+      let mut bad = good.clone();
+      bad[7] = b'5';
+      assert!(peek_plonkish_header(&bad).is_err());
+
+      // Bad envelope version (v1 Aiur or v3 unknown)
+      for v in [1u16, 3u16] {
+        let mut bad = good.clone();
+        bad[9..11].copy_from_slice(&v.to_le_bytes());
+        assert!(peek_plonkish_header(&bad).is_err());
+      }
+
+      // Protocol v5 downgrade rejected fail-closed
+      let mut bad = good.clone();
+      bad[11..13].copy_from_slice(&5u16.to_le_bytes());
+      assert!(peek_plonkish_header(&bad).unwrap_err().contains("retired"));
+
+      // Fp^2 downgrade rejected fail-closed
+      let mut bad = good.clone();
+      bad[13..15].copy_from_slice(&2u16.to_le_bytes());
+      assert!(peek_plonkish_header(&bad).unwrap_err().contains("Fp^2"));
+
+      // Unknown mode tag rejected
+      let mut bad = good.clone();
+      bad[15] = 9;
+      assert!(peek_plonkish_header(&bad).is_err());
+
+      // Horner batching downgrade rejected fail-closed
+      let mut bad = good.clone();
+      bad[16] = 0;
+      assert!(peek_plonkish_header(&bad).unwrap_err().contains("Tensor"));
+
+      // Invalid payload codec tag rejected
+      let mut bad = good.clone();
+      bad[17] = 2;
+      assert!(peek_plonkish_header(&bad).is_err());
+
+      // Invalid hop count rejected
+      for hops in [0u8, 3u8] {
+        let mut bad = good.clone();
+        bad[18] = hops;
+        assert!(peek_plonkish_header(&bad).is_err());
+      }
+
+      // Sub-128-bit FRI queries rejected fail-closed (num_queries at offset 27..29)
+      let mut bad = good.clone();
+      bad[27..29].copy_from_slice(&40u16.to_le_bytes());
+      assert!(peek_plonkish_header(&bad).is_err());
+
+      // lb=4, q=58, qpow=20 (72.9b UD < 80b floor) rejected fail-closed
+      let mut bad = good.clone();
+      bad[19..21].copy_from_slice(&4u16.to_le_bytes()); // lb=4
+      bad[27..29].copy_from_slice(&58u16.to_le_bytes()); // q=58
+      bad[31..33].copy_from_slice(&20u16.to_le_bytes()); // qpow=20
+      assert!(peek_plonkish_header(&bad).is_err());
+
+      // Trailing byte rejected
+      let mut bad = good.clone();
+      bad.push(0);
+      assert!(
+        peek_plonkish_header(&bad).unwrap_err().contains("length mismatch")
+      );
+
+      // Truncated rejected
+      let mut bad = good.clone();
+      bad.pop();
+      assert!(peek_plonkish_header(&bad).is_err());
+    }
+
+    // Mode-specific ZK traps:
+    // 1. Transparent mode rejects nonzero W_R (offset 33..35)
+    let mut bad = dummy_plonkish_envelope(ShrinkMode::Stark128, params);
+    bad[33..35].copy_from_slice(&4u16.to_le_bytes());
+    assert!(peek_plonkish_header(&bad).is_err());
+
+    // 2. ZK mode rejects W_R < 4
+    let mut bad = dummy_plonkish_envelope(ShrinkMode::Stark128Zk, params);
+    bad[33..35].copy_from_slice(&3u16.to_le_bytes());
+    assert!(
+      peek_plonkish_header(&bad).unwrap_err().contains("randomizer width")
+    );
+
+    // 3. ZK mode rejects min_log_degree < 8 (offset 35..37)
+    let mut bad = dummy_plonkish_envelope(ShrinkMode::Stark128Zk, params);
+    bad[35..37].copy_from_slice(&7u16.to_le_bytes());
+    assert!(peek_plonkish_header(&bad).unwrap_err().contains("min_log_degree"));
+
+    // 4. ZK mode rejects log_blowup = 2
+    let mut bad = dummy_plonkish_envelope(ShrinkMode::Stark128Zk, params);
+    bad[19..21].copy_from_slice(&2u16.to_le_bytes()); // lb=2
+    bad[27..29].copy_from_slice(&128u16.to_le_bytes()); // q=128
+    bad[35..37].copy_from_slice(&9u16.to_le_bytes()); // min_log_degree(128, 3)=9
+    assert!(
+      peek_plonkish_header(&bad).unwrap_err().contains("log_blowup >= 3")
+    );
+  }
+
+  #[test]
+  fn plonkish_outer_fri_presets_meet_128bit_security_floor() {
+    for (name, p) in [
+      ("CUDA_COMPACT_128", OuterFriParams::CUDA_COMPACT_128),
+      ("COMPACT_400KB_FAST", OuterFriParams::COMPACT_400KB_FAST),
+      ("COMPACT_400KB_BALANCED", OuterFriParams::COMPACT_400KB_BALANCED),
+      ("ULTRA_COMPACT_400KB_ZK", OuterFriParams::ULTRA_COMPACT_400KB_ZK),
+      ("HOP1_DEFAULT", OuterFriParams::HOP1_DEFAULT),
+    ] {
+      p.check().unwrap_or_else(|e| panic!("{name} failed floor: {e}"));
+      assert!(p.johnson_millibits() >= 128_000, "{name} < 128b Johnson");
+      assert!(p.provable_ud_millibits().unwrap() >= 80_000, "{name} < 80b UD");
+      assert!(p.conjectured_bits() >= 220, "{name} < 220b conjectured");
+      assert_eq!(
+        ShrinkMode::Stark128Zk.expected_min_log_degree(p.num_queries),
+        min_zk_log_degree(p.num_queries, EXTENSION_DEGREE as usize)
+      );
+      assert!(
+        ShrinkMode::Stark128Zk.expected_min_log_degree(p.num_queries) >= 7
+      );
+    }
+    assert!(OuterFriParams::CUDA_COMPACT_128.is_cuda_compatible());
+    assert!(OuterFriParams::COMPACT_400KB_FAST.is_cuda_compatible());
+    assert!(OuterFriParams::COMPACT_400KB_BALANCED.is_cuda_compatible());
+    assert!(OuterFriParams::ULTRA_COMPACT_400KB_ZK.is_cuda_compatible());
+    assert!(OuterFriParams::HOP1_DEFAULT.is_cuda_compatible());
+    assert!(
+      !OuterFriParams {
+        cap_height: 1,
+        ..OuterFriParams::COMPACT_400KB_BALANCED
+      }
+      .is_cuda_compatible()
+    );
+    assert!(
+      !OuterFriParams {
+        max_log_arity: 0,
+        ..OuterFriParams::COMPACT_400KB_BALANCED
+      }
+      .is_cuda_compatible()
+    );
+    assert!(
+      !OuterFriParams {
+        max_log_arity: 5,
+        ..OuterFriParams::COMPACT_400KB_BALANCED
+      }
+      .is_cuda_compatible()
+    );
+  }
+
+  #[test]
+  fn decode_single_claim_bytes_fail_closed() {
+    let claim = vec![Val::from_u64(1), Val::from_u64(42), Val::from_u64(99)];
+    let bytes = stark_verifier::claims_bytes(std::slice::from_ref(&claim));
+    assert_eq!(decode_single_claim_bytes(&bytes).unwrap(), claim);
+
+    // Trailing byte rejected
+    let mut bad = bytes.clone();
+    bad.push(0);
+    assert!(decode_single_claim_bytes(&bad).is_err());
+
+    // Extra word rejected
+    let mut bad = bytes.clone();
+    bad.extend_from_slice(&0u64.to_le_bytes());
+    assert!(decode_single_claim_bytes(&bad).is_err());
+
+    // Truncated rejected
+    assert!(decode_single_claim_bytes(&bytes[..bytes.len() - 8]).is_err());
+    assert!(decode_single_claim_bytes(&bytes[..8]).is_err());
+
+    // Wrong claim count (0 or 2) rejected
+    let mut bad = bytes.clone();
+    bad[..8].copy_from_slice(&0u64.to_le_bytes());
+    assert!(decode_single_claim_bytes(&bad).is_err());
+    let two = stark_verifier::claims_bytes(&[claim.clone(), claim]);
+    assert!(decode_single_claim_bytes(&two).is_err());
+
+    // Empty claim rejected
+    let empty = stark_verifier::claims_bytes(&[vec![]]);
+    assert!(decode_single_claim_bytes(&empty).is_err());
+
+    // Noncanonical Goldilocks field element (>= p) rejected
+    let mut noncanon = bytes;
+    noncanon[16..24].copy_from_slice(&Val::ORDER_U64.to_le_bytes());
+    assert!(decode_single_claim_bytes(&noncanon).is_err());
+  }
+
+  /// Build a small Plonkish circuit exercising `ByteGadgets` + compact BLAKE3
+  /// so `MergedLayout` triggers the full `B3_All` + 1-lookup `UnifiedTable` +
+  /// 1-circuit horizontal packing path in ~1.5–3s.
+  fn build_compact_blake3_plonkish_circuit(
+    x_val: u64,
+  ) -> (Circuit<Val>, Assignment<Val>, Vec<Val>) {
+    use ix_proof_compression::fri::{ByteGadgets, blake3_domain};
+    use multi_stark::plonkish::CircuitBuilder;
+
+    let build = || {
+      let mut b = CircuitBuilder::<Val>::new();
+      b.enable_compact_blake3();
+      let x = b.public_input("x");
+      let y = b.public_input("y");
+      let d0 = b.public_input("digest_b0");
+      let sq = b.mul(x, x);
+      b.assert_equal(sq, y);
+      let bytes = ByteGadgets::new(&mut b);
+      let enc = bytes.encode_field64(&mut b, x);
+      let digest =
+        blake3_domain(&mut b, &bytes, Blake3Domain::MerkleLeaf, &enc);
+      b.assert_equal(digest[0].value(), d0);
+      (b.finish(), [x, y, d0])
+    };
+    let expected_digest =
+      Blake3Domain::MerkleLeaf.hash_bytes(&x_val.to_le_bytes());
+    let publics = vec![
+      Val::from_u64(x_val),
+      Val::from_u64(x_val * x_val),
+      Val::from_u64(u64::from(expected_digest[0])),
+    ];
+    let (circuit, wires) = build();
+    let mut witness = circuit.witness();
+    for (&w, &v) in wires.iter().zip(&publics) {
+      witness.set(w, v).unwrap();
+    }
+    let assignment = witness.generate().unwrap();
+    (circuit, assignment, publics)
+  }
+
+  #[test]
+  fn plonkish_1circuit_v6_and_v6_zk_roundtrip_tamper_and_cross_mode_replay() {
+    #[cfg(feature = "cuda")]
+    let _gpu_guard = gpu_test_guard();
+    let params = OuterFriParams::COMPACT_400KB_FAST;
+    let opts = PlonkishOptions::default();
+    let inner_vk_digest = [0xAA; 32];
+
+    let (c_v6, a_v6, publics) = build_compact_blake3_plonkish_circuit(7);
+    let claim_digest = hash_publics(&publics);
+    let (c_der_v6, _, _) = build_compact_blake3_plonkish_circuit(7);
+    let (c_der_zk, _, _) = build_compact_blake3_plonkish_circuit(7);
+
+    // 1. Independently derive verifiers WITHOUT any proof or witness.
+    let ver_v6 = PlonkishCircuitVerifier::derive(
+      c_der_v6,
+      ShrinkMode::Stark128,
+      params,
+      opts,
+      1,
+    )
+    .unwrap();
+    let ver_zk = PlonkishCircuitVerifier::derive(
+      c_der_zk,
+      ShrinkMode::Stark128Zk,
+      params,
+      opts,
+      1,
+    )
+    .unwrap();
+    assert_eq!(ver_v6.num_outer_circuits(), 1);
+    assert_eq!(ver_zk.num_outer_circuits(), 1);
+    assert_ne!(
+      ver_v6.vk_digest(),
+      ver_zk.vk_digest(),
+      "v6 and v6-zk Plonkish VK digests must be cryptographically distinct"
+    );
+
+    // 2. Roundtrip --stark-128 (transparent v6, 1-circuit, compact codec)
+    let (out_v6, _) = prove_plonkish_circuit(
+      c_v6,
+      a_v6,
+      inner_vk_digest,
+      claim_digest,
+      ShrinkMode::Stark128,
+      params,
+      opts,
+      1,
+      None,
+    )
+    .unwrap();
+    assert_eq!(out_v6.vk_digest, *ver_v6.vk_digest());
+    assert_eq!(out_v6.trace_dimensions.len(), 1);
+    assert_eq!(
+      out_v6.breakdown.raw_payload_bytes
+        + out_v6.breakdown.bincode_framing_overhead_bytes,
+      out_v6.breakdown.total_bincode_bytes
+    );
+    assert!(
+      out_v6.breakdown.total_compact_bytes
+        <= out_v6.breakdown.total_bincode_bytes
+    );
+    assert_eq!(out_v6.breakdown.total_leaf_salts_bytes(), 0);
+    let rep_v6 = ver_v6
+      .verify_report(
+        &out_v6.envelope_bytes,
+        &publics,
+        Some(&inner_vk_digest),
+        Some(&claim_digest),
+      )
+      .unwrap();
+    assert!(rep_v6.banner().contains("NON-ZK"));
+    assert!(rep_v6.banner().contains("1 outer circuit(s)"));
+
+    // 3. Roundtrip --stark-128-zk (hiding v6-zk, 1-circuit, compact codec)
+    let (c_zk1, a_zk1, _) = build_compact_blake3_plonkish_circuit(7);
+    let (out_zk1, _) = prove_plonkish_circuit(
+      c_zk1,
+      a_zk1,
+      inner_vk_digest,
+      claim_digest,
+      ShrinkMode::Stark128Zk,
+      params,
+      opts,
+      1,
+      None,
+    )
+    .unwrap();
+    assert_eq!(out_zk1.vk_digest, *ver_zk.vk_digest());
+    assert_eq!(out_zk1.trace_dimensions.len(), 1);
+    assert!(out_zk1.breakdown.total_leaf_salts_bytes() > 0);
+    let rep_zk = ver_zk
+      .verify_report(
+        &out_zk1.envelope_bytes,
+        &publics,
+        Some(&inner_vk_digest),
+        Some(&claim_digest),
+      )
+      .unwrap();
+    assert!(rep_zk.banner().contains("ZERO-KNOWLEDGE"));
+    assert!(rep_zk.banner().contains("W_R=4"));
+
+    // 4. v6-zk fresh randomization: second proof on same witness differs!
+    let (c_zk2, a_zk2, _) = build_compact_blake3_plonkish_circuit(7);
+    let (out_zk2, _) = prove_plonkish_circuit(
+      c_zk2,
+      a_zk2,
+      inner_vk_digest,
+      claim_digest,
+      ShrinkMode::Stark128Zk,
+      params,
+      opts,
+      1,
+      None,
+    )
+    .unwrap();
+    assert_ne!(
+      out_zk1.envelope_bytes, out_zk2.envelope_bytes,
+      "v6-zk proofs must be freshly randomized"
+    );
+    ver_zk
+      .verify(
+        &out_zk2.envelope_bytes,
+        &publics,
+        Some(&inner_vk_digest),
+        Some(&claim_digest),
+      )
+      .unwrap();
+
+    // 5. Negative controls across BOTH modes:
+    for (label, env_bytes, ver) in [
+      ("--stark-128", &out_v6.envelope_bytes, &ver_v6),
+      ("--stark-128-zk", &out_zk1.envelope_bytes, &ver_zk),
+    ] {
+      // Wrong public statement
+      let mut bad_pub = publics.clone();
+      bad_pub[0] += Val::ONE;
+      assert!(
+        ver
+          .verify(
+            env_bytes,
+            &bad_pub,
+            Some(&inner_vk_digest),
+            Some(&claim_digest)
+          )
+          .is_err(),
+        "{label}: accepted wrong public statement"
+      );
+
+      // Wrong expected inner_vk_digest / claim_digest
+      let mut wrong_ivk = inner_vk_digest;
+      wrong_ivk[0] ^= 1;
+      assert!(
+        ver
+          .verify(env_bytes, &publics, Some(&wrong_ivk), Some(&claim_digest))
+          .is_err(),
+        "{label}: accepted wrong inner VK digest"
+      );
+      let mut wrong_cd = claim_digest;
+      wrong_cd[0] ^= 1;
+      assert!(
+        ver
+          .verify(env_bytes, &publics, Some(&inner_vk_digest), Some(&wrong_cd))
+          .is_err(),
+        "{label}: accepted wrong claim digest"
+      );
+
+      // Tampered shrinker_vk_digest in envelope
+      let mut env = PlonkishEnvelope::from_bytes(env_bytes).unwrap();
+      env.header.shrinker_vk_digest[31] ^= 1;
+      assert!(
+        ver.verify(&env.to_bytes().unwrap(), &publics, None, None).is_err(),
+        "{label}: accepted wrong shrinker VK digest"
+      );
+
+      // Bit-flipped proof byte
+      let mut env = PlonkishEnvelope::from_bytes(env_bytes).unwrap();
+      let mid = env.proof_bytes.len() / 2;
+      env.proof_bytes[mid] ^= 0x01;
+      assert!(
+        ver
+          .verify(
+            &env.to_bytes().unwrap(),
+            &publics,
+            Some(&inner_vk_digest),
+            Some(&claim_digest)
+          )
+          .is_err(),
+        "{label}: accepted corrupted proof byte"
+      );
+
+      // Non-zero active bitmap padding bit in compact codec (byte 1 of proof_bytes)
+      let mut env = PlonkishEnvelope::from_bytes(env_bytes).unwrap();
+      env.proof_bytes[1] |= 0x80;
+      assert!(
+        ver
+          .verify(
+            &env.to_bytes().unwrap(),
+            &publics,
+            Some(&inner_vk_digest),
+            Some(&claim_digest)
+          )
+          .is_err(),
+        "{label}: accepted noncanonical active bitmap padding"
+      );
+
+      // Trailing byte
+      let mut trailing = env_bytes.clone();
+      trailing.push(0x42);
+      assert!(
+        ver
+          .verify(
+            &trailing,
+            &publics,
+            Some(&inner_vk_digest),
+            Some(&claim_digest)
+          )
+          .is_err(),
+        "{label}: accepted trailing byte"
+      );
+    }
+
+    // 6. Cross-mode replay attacks (header level AND re-headered raw proof level!)
+    assert!(
+      ver_zk
+        .verify(
+          &out_v6.envelope_bytes,
+          &publics,
+          Some(&inner_vk_digest),
+          Some(&claim_digest)
+        )
+        .unwrap_err()
+        .contains("cross-mode")
+    );
+    assert!(
+      ver_v6
+        .verify(
+          &out_zk1.envelope_bytes,
+          &publics,
+          Some(&inner_vk_digest),
+          Some(&claim_digest)
+        )
+        .unwrap_err()
+        .contains("cross-mode")
+    );
+    let raw_v6 =
+      PlonkishEnvelope::from_bytes(&out_v6.envelope_bytes).unwrap().proof_bytes;
+    let forged_as_zk = PlonkishEnvelope {
+      header: PlonkishHeader {
+        mode: ShrinkMode::Stark128Zk,
+        params,
+        compact_encoding: true,
+        hops: 1,
+        zk_randomizer_width: 4,
+        min_log_degree: 8,
+        shrinker_vk_digest: *ver_zk.vk_digest(),
+        inner_vk_digest,
+        claim_digest,
+        proof_len: raw_v6.len() as u64,
+      },
+      proof_bytes: raw_v6,
+    }
+    .to_bytes()
+    .unwrap();
+    assert!(
+      ver_zk
+        .verify(
+          &forged_as_zk,
+          &publics,
+          Some(&inner_vk_digest),
+          Some(&claim_digest)
+        )
+        .is_err(),
+      "v6-zk verifier accepted re-headered raw v6 proof"
+    );
+
+    // 7. Unmerged nibble table (16 rows < 256) rejected fail-closed in v6-zk!
+    let (c_unmerged, a_unmerged, _) = build_compact_blake3_plonkish_circuit(7);
+    let unmerged_opts = PlonkishOptions {
+      merge_tables: false,
+      merge_blake3_and_tables: false,
+      pack_single_circuit: false,
+      ..PlonkishOptions::default()
+    };
+    let err = prove_plonkish_circuit(
+      c_unmerged,
+      a_unmerged,
+      inner_vk_digest,
+      claim_digest,
+      ShrinkMode::Stark128Zk,
+      params,
+      unmerged_opts,
+      1,
+      None,
+    )
+    .err()
+    .expect("v6-zk must reject height-16 nibble table");
+    assert!(err.contains("below v6-zk min height"), "{err}");
+
+    // 8. C2 cap_height pinning: cap_height=4 verifier rejects cap_height=0 proof (CPU only).
+    #[cfg(not(feature = "cuda"))]
+    {
+      let cap4_params = OuterFriParams { cap_height: 4, ..params };
+      let (c_cap4, _, _) = build_compact_blake3_plonkish_circuit(7);
+      let ver_cap4 = PlonkishCircuitVerifier::derive(
+        c_cap4,
+        ShrinkMode::Stark128,
+        cap4_params,
+        opts,
+        1,
+      )
+      .unwrap();
+      assert_ne!(ver_cap4.vk_digest(), ver_v6.vk_digest());
+      assert!(
+        ver_cap4
+          .verify(
+            &out_v6.envelope_bytes,
+            &publics,
+            Some(&inner_vk_digest),
+            Some(&claim_digest)
+          )
+          .is_err()
+      );
+    }
+  }
+
+  fn build_fixed_root_fixture()
+  -> (AiurVerifyingKey, FixedRoot, AiurBatchProof, Vec<Val>) {
+    use aiur::trace::stark::MEMSEG;
+    use multi_stark::batch::BatchMessage;
+
+    // Build a real production-floor Protocol v6 normalized inner BatchProof
+    // (lb=4, q=66, qpow=20: 149.03b Johnson, 80.19b UD, 284b conj) matching
+    // `FixedRoot`'s segmented ROM policy.
+    let cp = CommitmentParameters { log_blowup: 4, cap_height: 0 };
+    let fp = FriParameters {
+      log_final_poly_len: 0,
+      max_log_arity: 1,
+      num_queries: 66,
+      commit_proof_of_work_bits: 0,
+      query_proof_of_work_bits: 20,
+    };
+    let channel = Val::from_u64(MEMSEG);
+    let (system, pk) = System::new(
+      GoldilocksBlake3V6Config::new(cp, fp),
+      [(8usize, 8usize), (1, 2)].into_iter().map(|(width, height)| {
+        CircuitInputs {
+          main_width: width + 3,
+          preprocessed: Some(RowMajorMatrix::new_col(vec![Val::ZERO; height])),
+          lookups: vec![
+            Lookup::pull(
+              if width == 8 { Expr::main(2) } else { Val::ZERO.into() },
+              vec![Expr::main(0), Expr::main(1)],
+            ),
+            Lookup::push(
+              Expr::main(2),
+              vec![
+                channel.into(),
+                Val::from_usize(width).into(),
+                Val::ZERO.into(),
+              ],
+            ),
+            Lookup::pull(
+              Expr::main(2),
+              vec![
+                channel.into(),
+                Val::from_usize(width).into(),
+                Expr::main(3),
+              ],
+            ),
+          ],
+          ..Default::default()
+        }
+      }),
+    );
+    let inner_vk_bytes = stark_key::to_bytes(&system, cp, fp);
+    let inner_vk = AiurVerifyingKey::from_bytes(&inner_vk_bytes).unwrap();
+    let fixed = FixedRoot::new(vec![3, 1], vec![(1, 1), (8, 0)], 2).unwrap();
+
+    let expected = vec![Val::from_u32(19), Val::from_u32(39)];
+    let messages = [(1u32, 2u32), (8, 8)]
+      .into_iter()
+      .flat_map(|(width, end)| {
+        [
+          BatchMessage::pull(vec![channel, Val::from_u32(width), Val::ZERO]),
+          BatchMessage::push(vec![
+            channel,
+            Val::from_u32(width),
+            Val::from_u32(end),
+          ]),
+        ]
+      })
+      .collect();
+    let traces = [(8usize, 8u32, 8usize), (1, 2, 2)]
+      .into_iter()
+      .map(|(width, end, height)| {
+        let row_width = width + 3;
+        let mut values = vec![Val::ZERO; row_width * height];
+        values[..4].copy_from_slice(&[
+          expected[0],
+          expected[1],
+          Val::ONE,
+          Val::from_u32(end),
+        ]);
+        RowMajorMatrix::new(values, row_width)
+      })
+      .collect();
+    let inner_proof = system.prove_batch(
+      &pk,
+      vec![ShardInput {
+        claims: vec![expected.clone()],
+        witness: SystemWitness::from_stage_1(traces, &system),
+      }],
+      messages,
+    );
+    inner_vk
+      .verify_normalized(std::slice::from_ref(&expected), &inner_proof)
+      .unwrap();
+    (inner_vk, fixed, inner_proof, expected)
+  }
+
+  #[test]
+  fn plonkish_fixed_root_roundtrip_and_independent_derivation() {
+    #[cfg(feature = "cuda")]
+    let _gpu_guard = gpu_test_guard();
+    let (inner_vk, fixed, inner_proof, expected) = build_fixed_root_fixture();
+
+    let outer_params = OuterFriParams::COMPACT_400KB_FAST;
+    let opts = PlonkishOptions::default();
+    let inner_id = fixed.identity(&inner_vk);
+    let claim_digest = hash_publics(&expected);
+
+    for mode in [ShrinkMode::Stark128, ShrinkMode::Stark128Zk] {
+      // Independent verifier derivation from (inner_vk, FixedRoot) alone!
+      let ver = PlonkishCircuitVerifier::derive_fixed_root(
+        &inner_vk,
+        &fixed,
+        mode,
+        outer_params,
+        opts,
+      )
+      .unwrap();
+      assert_eq!(ver.num_outer_circuits(), 1);
+
+      let (out, _) = shrink_fixed_root_1hop(
+        &inner_vk,
+        &fixed,
+        &inner_proof,
+        &expected,
+        mode,
+        outer_params,
+        opts,
+        None,
+      )
+      .unwrap();
+      assert_eq!(out.vk_digest, *ver.vk_digest());
+      assert_eq!(out.trace_dimensions.len(), 1);
+      assert_eq!(out.report.header.mode, mode);
+      let rep = ver
+        .verify_report(
+          &out.envelope_bytes,
+          &expected,
+          Some(&inner_id),
+          Some(&claim_digest),
+        )
+        .unwrap();
+      assert_eq!(rep.header.mode, mode);
+      // Wrong public claim rejected fail-closed!
+      assert!(
+        ver
+          .verify(
+            &out.envelope_bytes,
+            &[expected[0] + Val::ONE, expected[1]],
+            Some(&inner_id),
+            None,
+          )
+          .is_err()
+      );
+      eprintln!(
+        "[FIXED_ROOT {}] dims={:?} prove={:.1}ms verify={:.2}ms env={}B ({:.1}KB)",
+        mode.cli_flag(),
+        out.trace_dimensions,
+        out.prove_ms,
+        rep.verify_ms,
+        rep.envelope_bytes,
+        to_kib(rep.envelope_bytes),
+      );
+    }
+  }
+
+  #[cfg(feature = "cuda")]
+  #[test]
+  fn cuda_plonkish_compact_400kb_balanced_and_fixed_root_gpu_prove_cpu_verify()
+  {
+    let _gpu_guard = gpu_test_guard();
+    const MAX_COMPACT_BYTES: usize = 425 * 1024;
+    let params = OuterFriParams::COMPACT_400KB_BALANCED;
+    let opts = PlonkishOptions::default();
+    assert!(params.is_cuda_compatible());
+
+    // 1. 1-circuit merged BLAKE3 Plonkish circuit -> COMPACT_400KB_BALANCED on
+    //    GPU (`device = Some(0)`) for both --stark-128 (v6) and --stark-128-zk
+    //    (v6-zk), independently verified on CPU.
+    let inner_vk_digest = [0xCC; 32];
+    let (_, _, publics) = build_compact_blake3_plonkish_circuit(11);
+    let claim_digest = hash_publics(&publics);
+
+    for mode in [ShrinkMode::Stark128, ShrinkMode::Stark128Zk] {
+      let (circuit_der, _, _) = build_compact_blake3_plonkish_circuit(11);
+      let ver =
+        PlonkishCircuitVerifier::derive(circuit_der, mode, params, opts, 1)
+          .unwrap();
+      assert_eq!(ver.num_outer_circuits(), 1);
+
+      let (circuit, assignment, _) = build_compact_blake3_plonkish_circuit(11);
+      let (out, _) = prove_plonkish_circuit(
+        circuit,
+        assignment,
+        inner_vk_digest,
+        claim_digest,
+        mode,
+        params,
+        opts,
+        1,
+        Some(0),
+      )
+      .unwrap();
+      assert_eq!(out.trace_dimensions.len(), 1);
+      assert_eq!(out.vk_digest, *ver.vk_digest());
+      assert!(
+        out.envelope_bytes.len() <= MAX_COMPACT_BYTES,
+        "CUDA COMPACT_400KB_BALANCED {} envelope {} B ({:.1} KiB) exceeded 425 KiB cap",
+        mode.cli_flag(),
+        out.envelope_bytes.len(),
+        to_kib(out.envelope_bytes.len()),
+      );
+      let rep = ver
+        .verify_report(
+          &out.envelope_bytes,
+          &publics,
+          Some(&inner_vk_digest),
+          Some(&claim_digest),
+        )
+        .unwrap();
+      assert_eq!(rep.header.mode, mode);
+      assert_eq!(rep.header.params, params);
+      eprintln!(
+        "[CUDA COMPACT_400KB_BALANCED {}] dims={:?} gpu_prove={:.1}ms cpu_verify={:.2}ms env={}B ({:.1} KiB) | {}",
+        mode.cli_flag(),
+        out.trace_dimensions,
+        out.prove_ms,
+        rep.verify_ms,
+        rep.envelope_bytes,
+        to_kib(rep.envelope_bytes),
+        out.breakdown.summary_line(),
+      );
+    }
+
+    // 2. FixedRoot end-to-end on GPU (device=Some(0)) for both v6 and v6-zk,
+    //    independently verified on CPU via `derive_fixed_root`.
+    let (inner_vk, fixed, inner_proof, expected) = build_fixed_root_fixture();
+    let inner_id = fixed.identity(&inner_vk);
+    let fixed_claim_digest = hash_publics(&expected);
+    let mut envelopes = Vec::with_capacity(2);
+
+    for mode in [ShrinkMode::Stark128, ShrinkMode::Stark128Zk] {
+      let ver = PlonkishCircuitVerifier::derive_fixed_root(
+        &inner_vk, &fixed, mode, params, opts,
+      )
+      .unwrap();
+      assert_eq!(ver.num_outer_circuits(), 1);
+
+      let (out, _) = shrink_fixed_root_1hop(
+        &inner_vk,
+        &fixed,
+        &inner_proof,
+        &expected,
+        mode,
+        params,
+        opts,
+        Some(0),
+      )
+      .unwrap();
+      assert_eq!(out.trace_dimensions.len(), 1);
+      assert_eq!(out.vk_digest, *ver.vk_digest());
+      assert!(
+        out.envelope_bytes.len() <= MAX_COMPACT_BYTES,
+        "CUDA FixedRoot {} envelope {} B ({:.1} KiB) exceeded 425 KiB cap",
+        mode.cli_flag(),
+        out.envelope_bytes.len(),
+        to_kib(out.envelope_bytes.len()),
+      );
+      let rep = ver
+        .verify_report(
+          &out.envelope_bytes,
+          &expected,
+          Some(&inner_id),
+          Some(&fixed_claim_digest),
+        )
+        .unwrap();
+      assert_eq!(rep.header.mode, mode);
+      assert_eq!(rep.header.params, params);
+      assert!(
+        ver
+          .verify(
+            &out.envelope_bytes,
+            &[expected[0] + Val::ONE, expected[1]],
+            Some(&inner_id),
+            None,
+          )
+          .is_err(),
+        "CUDA FixedRoot {} accepted wrong public statement",
+        mode.cli_flag()
+      );
+      eprintln!(
+        "[CUDA FIXED_ROOT COMPACT_400KB_BALANCED {}] dims={:?} gpu_prove={:.1}ms cpu_verify={:.2}ms env={}B ({:.1} KiB) | {}",
+        mode.cli_flag(),
+        out.trace_dimensions,
+        out.prove_ms,
+        rep.verify_ms,
+        rep.envelope_bytes,
+        to_kib(rep.envelope_bytes),
+        out.breakdown.summary_line(),
+      );
+      envelopes.push((ver, out.envelope_bytes));
+    }
+
+    // Cross-mode replay on GPU-proved FixedRoot envelopes rejected fail-closed!
+    assert!(
+      envelopes[0]
+        .0
+        .verify(&envelopes[1].1, &expected, Some(&inner_id), None)
+        .unwrap_err()
+        .contains("cross-mode")
+    );
+    assert!(
+      envelopes[1]
+        .0
+        .verify(&envelopes[0].1, &expected, Some(&inner_id), None)
+        .unwrap_err()
+        .contains("cross-mode")
+    );
+  }
+
+  #[test]
+  #[ignore = "heavy multi-config 1-circuit cloud benchmark; run explicitly on cloud box"]
+  fn plonkish_3circuit_merged_benchmark() {
+    let (vk_sm, prof_sm, schema_sm, stmt_sm, proof_sm) =
+      build_inner_v6_batch(2, 8);
+    let inner_sm_bytes = proof_sm.to_bytes().unwrap().len();
+    eprintln!(
+      "\n================ 1-CIRCUIT UNIFIED PLONKISH SHRINKER BENCHMARK (4 circuits, inner={} B) ================",
+      inner_sm_bytes
+    );
+
+    let opts = PlonkishOptions::default(); // pack_single_circuit=true -> num_circuits == 1!
+
+    let configs: Vec<(&str, OuterFriParams)> = vec![
+      (
+        "1circ_lb4_q66_qpow20_mla1_lfp8_CUDA",
+        OuterFriParams {
+          log_blowup: 4,
+          num_queries: 66,
+          commit_proof_of_work_bits: 0,
+          query_proof_of_work_bits: 20,
+          cap_height: 0,
+          max_log_arity: 1,
+          log_final_poly_len: 8,
+        },
+      ),
+      (
+        "1circ_lb4_q66_qpow20_mla3_lfp8",
+        OuterFriParams {
+          log_blowup: 4,
+          num_queries: 66,
+          commit_proof_of_work_bits: 0,
+          query_proof_of_work_bits: 20,
+          cap_height: 0,
+          max_log_arity: 3,
+          log_final_poly_len: 8,
+        },
+      ),
+      (
+        "1circ_lb4_q62_qpow24_mla3_lfp8",
+        OuterFriParams {
+          log_blowup: 4,
+          num_queries: 62,
+          commit_proof_of_work_bits: 0,
+          query_proof_of_work_bits: 24,
+          cap_height: 0,
+          max_log_arity: 3,
+          log_final_poly_len: 8,
+        },
+      ),
+      (
+        "1circ_lb4_q60_qpow26_mla3_lfp8",
+        OuterFriParams {
+          log_blowup: 4,
+          num_queries: 60,
+          commit_proof_of_work_bits: 0,
+          query_proof_of_work_bits: 26,
+          cap_height: 0,
+          max_log_arity: 3,
+          log_final_poly_len: 8,
+        },
+      ),
+      (
+        "1circ_lb4_q58_qpow28_mla3_lfp8",
+        OuterFriParams {
+          log_blowup: 4,
+          num_queries: 58,
+          commit_proof_of_work_bits: 0,
+          query_proof_of_work_bits: 28,
+          cap_height: 0,
+          max_log_arity: 3,
+          log_final_poly_len: 8,
+        },
+      ),
+      (
+        "1circ_lb4_q55_qpow30_mla3_lfp8",
+        OuterFriParams {
+          log_blowup: 4,
+          num_queries: 55,
+          commit_proof_of_work_bits: 0,
+          query_proof_of_work_bits: 30,
+          cap_height: 0,
+          max_log_arity: 3,
+          log_final_poly_len: 8,
+        },
+      ),
+    ];
+
+    for (label, params) in configs {
+      for mode in [ShrinkMode::Stark128, ShrinkMode::Stark128Zk] {
+        let (out, _ver) = shrink_single_batch_1hop(
+          &vk_sm,
+          prof_sm.clone(),
+          schema_sm.clone(),
+          &proof_sm,
+          &stmt_sm,
+          mode,
+          params,
+          opts,
+          None,
+        )
+        .unwrap_or_else(|e| panic!("{label} {} failed: {e}", mode.cli_flag()));
+        assert_eq!(out.trace_dimensions.len(), 1, "expected 1 packed circuit");
+        eprintln!(
+          "[{label} {}] dims={:?} prove={:.1}ms verify={:.2}ms rss={:.0}MiB env={}B ({:.1}KB) | {}",
+          mode.cli_flag(),
+          out.trace_dimensions,
+          out.prove_ms,
+          out.verify_ms,
+          peak_rss_mib(),
+          out.envelope_bytes.len(),
+          to_kib(out.envelope_bytes.len()),
+          out.breakdown.summary_line(),
+        );
+      }
+    }
+  }
+
+  #[test]
+  #[ignore = "heavy 45-circuit ix_aggr-scale cloud benchmark; run explicitly on cloud box"]
+  fn plonkish_45circuit_aggr_benchmark() {
+    let (vk_big, prof_big, schema_big, stmt_big, proof_big) =
+      build_inner_v6_batch(43, 12); // 45 circuits total!
+    let inner_bytes = proof_big.to_bytes().unwrap().len();
+    eprintln!(
+      "\n================ 45-CIRCUIT ix_aggr-SCALE BENCHMARK (45 circuits, inner={} B / {:.1} KB) ================",
+      inner_bytes,
+      to_kib(inner_bytes)
+    );
+
+    let opts = PlonkishOptions::default(); // 1-circuit unified packer!
+    // Measure lb=4 (v6) and lb=3 (both v6 & v6-zk) in RAM on 45-circuit ix_aggr scale!
+    let runs: Vec<(&str, ShrinkMode, OuterFriParams)> = vec![
+      (
+        "aggr45_1circ_lb4_q62_qpow24_mla3_lfp8",
+        ShrinkMode::Stark128,
+        OuterFriParams::COMPACT_400KB_FAST,
+      ),
+      (
+        "aggr45_1circ_lb4_q58_qpow28_mla3_lfp8",
+        ShrinkMode::Stark128,
+        OuterFriParams::COMPACT_400KB_BALANCED,
+      ),
+      (
+        "aggr45_1circ_lb3_q69_qpow28_mla3_lfp8",
+        ShrinkMode::Stark128,
+        OuterFriParams {
+          log_blowup: 3,
+          num_queries: 69,
+          commit_proof_of_work_bits: 0,
+          query_proof_of_work_bits: 28,
+          cap_height: 0,
+          max_log_arity: 3,
+          log_final_poly_len: 8,
+        },
+      ),
+      (
+        "aggr45_1circ_lb3_q69_qpow28_mla3_lfp8",
+        ShrinkMode::Stark128Zk,
+        OuterFriParams {
+          log_blowup: 3,
+          num_queries: 69,
+          commit_proof_of_work_bits: 0,
+          query_proof_of_work_bits: 28,
+          cap_height: 0,
+          max_log_arity: 3,
+          log_final_poly_len: 8,
+        },
+      ),
+    ];
+
+    for (label, mode, params) in runs {
+      let (out, _ver) = shrink_single_batch_1hop(
+        &vk_big,
+        prof_big.clone(),
+        schema_big.clone(),
+        &proof_big,
+        &stmt_big,
+        mode,
+        params,
+        opts,
+        None,
+      )
+      .unwrap_or_else(|e| panic!("{label} {} failed: {e}", mode.cli_flag()));
+      eprintln!(
+        "[{label} {}] dims={:?} prove={:.1}ms verify={:.2}ms rss={:.0}MiB env={}B ({:.1}KB) | {}",
+        mode.cli_flag(),
+        out.trace_dimensions,
+        out.prove_ms,
+        out.verify_ms,
+        peak_rss_mib(),
+        out.envelope_bytes.len(),
+        to_kib(out.envelope_bytes.len()),
+        out.breakdown.summary_line(),
+      );
+    }
+  }
+}

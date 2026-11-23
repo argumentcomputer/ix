@@ -1,4 +1,5 @@
 module
+public import Ix.Cli.CompressCmd
 public import Ix.Cli.Compression
 public import Ix.Cli.FormalAggregate
 
@@ -93,8 +94,28 @@ public def runHost : IO Unit := do
   let setupError := "no BN254 Ignition SRS is installed; run `ix compress setup`"
   try
     let help ← invoke home #["compress", "--help"]
-    unless help.exitCode == 0 && (help.stdout.splitOn "--root-vk").length > 1 do
+    unless help.exitCode == 0 && (help.stdout.splitOn "--root-vk").length > 1
+        && (help.stdout.splitOn "COMPACT_400KB_BALANCED").length > 1
+        && (help.stdout.splitOn "ULTRA_COMPACT_400KB_ZK").length > 1 do
       throw <| IO.userError s!"compress help failed: {help.stdout} {help.stderr}"
+    -- Endpoint 1 Plonkish STARK preflight descriptions and envelope version decoding
+    let preV6 ← Ix.Cli.CompressCmd.preflight default { finalProof := 3 }
+    unless (preV6.splitOn "COMPACT_400KB_BALANCED").length > 1
+        && (preV6.splitOn "NON-ZK").length > 1 do
+      throw <| IO.userError s!"unexpected --stark-128 preflight: {preV6}"
+    let preZkCompact ← Ix.Cli.CompressCmd.preflight default { finalProof := 4, compact := true }
+    unless (preZkCompact.splitOn "ULTRA_COMPACT_400KB_ZK").length > 1
+        && (preZkCompact.splitOn "zero-knowledge").length > 1 do
+      throw <| IO.userError s!"unexpected --stark-128-zk --compact preflight: {preZkCompact}"
+    let v1Prefix := Ix.Cli.StarkShrinker.magic ++ ByteArray.mk #[1, 0]
+    let v2Prefix := Ix.Cli.StarkShrinker.magic ++ ByteArray.mk #[2, 0]
+    let v3Prefix := Ix.Cli.StarkShrinker.magic ++ ByteArray.mk #[3, 0]
+    unless Ix.Cli.StarkShrinker.envelopeVersion v1Prefix == some 1
+        && Ix.Cli.StarkShrinker.envelopeVersion v2Prefix == some 2
+        && Ix.Cli.StarkShrinker.envelopeVersion v3Prefix == some 3
+        && Ix.Cli.StarkShrinker.envelopeVersion Ix.Cli.StarkShrinker.magic == none
+        && Ix.Cli.StarkShrinker.envelopeVersion "IXCMP".toUTF8 == none do
+      throw <| IO.userError "StarkShrinker.envelopeVersion decoding check failed"
     let testHash := Address.blake3 "test".toUTF8
     -- claims the claim policy admits, so that each rejection below is the one tested
     let ctx ← IO.ofExcept Ix.ClaimContext.ofDefaultTable
@@ -108,6 +129,41 @@ public def runHost : IO Unit := do
     let otherAddr ← putProof home (Ixon.Proof.ser other)
     rejects home #["compress", toString old, "--groth16", "--plonk"]
       "choose at most one"
+    rejects home #["compress", toString old, "--stark-128", "--stark-128-zk"]
+      "choose at most one"
+    rejects home #["compress", toString old, "--stark-128", "--groth16"]
+      "choose at most one"
+    rejects home #["compress", toString old, "--bn254", "--bls12-381"]
+      "choose at most one"
+    rejects home #["compress", toString old, "--stark-128", "--bls12-381"]
+      "not used with --stark-128 / --stark-128-zk"
+    rejects home #["compress", toString old, "--stark-128", "--dev-kzg-srs"]
+      "not used with --stark-128 / --stark-128-zk"
+    rejects home #["compress", toString old, "--compact"]
+      "--compact requires --stark-128 or --stark-128-zk"
+    let shrunk : Ixon.Proof := { claim, proof := "IXSTARK6\x00".toUTF8 }
+    let shrunkAddr ← putProof home (Ixon.Proof.ser shrunk)
+    rejects home #["compress", toString shrunkAddr, "--stark-128"]
+      "already compressed or shrunk"
+    rejects home #["compress", toString shrunkAddr, "--stark-128-zk"]
+      "already compressed or shrunk"
+    -- Truncated and unknown-version IXSTARK6 envelopes fail closed before loading formal artifacts
+    rejects home #["verify", toString shrunkAddr]
+      "truncated or malformed IXSTARK6 envelope header"
+    let shrunkV3 : Ixon.Proof := { claim, proof := v3Prefix }
+    let shrunkV3Addr ← putProof home (Ixon.Proof.ser shrunkV3)
+    rejects home #["verify", toString shrunkV3Addr]
+      "unsupported IXSTARK6 envelope version 3"
+    -- Plonkish v2 envelope paired with a Catalog claim is rejected fail-closed
+    let v2CatalogRejected ←
+      try
+        let _ ← Ix.Cli.FormalAggregate.verifyShrunkProof default shrunkV3Addr
+          { claim := Ix.Claim.catalog testHash, proof := v2Prefix } ""
+        pure false
+      catch e =>
+        pure (decide (((toString e).splitOn "Plonkish v2 shrunk STARK proof").length > 1))
+    unless v2CatalogRejected do
+      throw <| IO.userError "verifyShrunkProof did not reject v2 Plonkish envelope for a Catalog claim"
     rejects home #["compress", toString old, "--aiur-chain", "missing-chain.json",
       "--aiur-gl", "gl.ixa", "--dev-kzg-srs"] "cannot be combined"
     rejects home #["verify", toString old, "--aiur-chain", "missing-chain.json"]

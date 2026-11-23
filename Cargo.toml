@@ -10,6 +10,7 @@ members = [
   "crates/aiur-tracegen-tests",
   "crates/formal-generated",
   "crates/stark-key",
+  "crates/stark-shrinker",
   "crates/stark-verifier",
   "crates/stark-verifier-native",
   "crates/ixvm",
@@ -30,6 +31,7 @@ default-members = [
   "crates/aiur-tracegen-tests",
   "crates/formal-generated",
   "crates/stark-key",
+  "crates/stark-shrinker",
   "crates/stark-verifier",
   "crates/ixvm",
   "crates/common",
@@ -60,6 +62,7 @@ aggregate-controller = { path = "crates/aggregate-controller" }
 record-pool = { path = "crates/record-pool" }
 aiur = { path = "crates/aiur" }
 stark-key = { path = "crates/stark-key" }
+stark-shrinker = { path = "crates/stark-shrinker" }
 ixvm = { path = "crates/ixvm" }
 stark-verifier = { path = "crates/stark-verifier" }
 ix-common = { path = "crates/common" }

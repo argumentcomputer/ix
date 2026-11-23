@@ -115,7 +115,7 @@ def runVerifyCmd (p : Cli.Parsed) : IO UInt32 := do
     if let some ixc := (p.flag? "ixc").map (·.as! String) then
       return ← CatalogAggregate.verifyCatalog p ixc
     return ← FormalAggregate.verify p
-  FormalAiur.verify p
+  FormalAiur.verify p (FormalAggregate.verifyShrunkProof p)
 
 end Ix.Cli.VerifyCmd
 
@@ -137,6 +137,8 @@ def verifyCmd : Cli.Cmd := `[Cli|
     "aiur-artifact-digest" : String; "Refuse an IxVM artifact whose BLAKE3 digest is not this one."
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
     "aggr-artifact-digest" : String; "Refuse an aggregation artifact whose BLAKE3 digest is not this one."
+    "verifier-artifact" : String; "Trusted formal recursive verifier artifact for IXSTARK6 proofs; otherwise compile/cache local sources."
+    "verifier-artifact-digest" : String; "Refuse a recursive verifier artifact whose BLAKE3 digest is not this one."
     "dev-srs"; "Allow development compressed proofs; these are not production-secure."
     "verifier-bundle" : String; "Explicitly trusted development final-verifier JSON. Requires --verifier-bundle-blake3 and --dev-srs; accepts proof-wrapper files or store addresses."
     "verifier-bundle-blake3" : String; "Independent BLAKE3 pin for --verifier-bundle; do not obtain it from an untrusted proof."

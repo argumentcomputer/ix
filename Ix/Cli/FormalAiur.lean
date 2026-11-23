@@ -6,6 +6,7 @@ public import Ix.Store
 public import Ix.Aggr.Reference
 public import Ix.Cli.ShardProofIndex
 public import Ix.Cli.Compression
+public import Ix.Cli.StarkShrinker
 public import Ix.Cli.ClaimPolicy
 public import Ix.AiurArtifact
 public import Ix.Aiur.Statistics
@@ -748,7 +749,10 @@ def run (p : Cli.Parsed) (prove : Bool) : IO UInt32 := do
         return (← one p selected options mode claim (fun _ => targetRequest env claim target) label).code)
       (p.hasFlag "assume-binding")
 
-def verify (p : Cli.Parsed) : IO UInt32 := do
+def verify (p : Cli.Parsed)
+    (verifyShrunk : Address → Ixon.Proof → String → IO UInt32 :=
+      fun _ _ _ => throw (IO.userError "shrunk IXSTARK6 verification requires aggregate context")) :
+    IO UInt32 := do
   rejectFlags p #["aggregate", "structural-above"]
   let proofs := p.variableArgsAs! String
   let ixe := (p.flag? "ixe").map (·.as! String)
@@ -823,7 +827,11 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
       let statement ← ClaimPolicy.admit p wrapper.claim (bindingDischarged := assumeBinding)
         (assumptionsDischarged := !expected.isEmpty && shard.isNone) (envs := pure tableEnvs)
       let digest := Address.blake3 (Ix.Claim.ser wrapper.claim)
-      if Compression.isCompressed wrapper.proof then
+      if StarkShrinker.isShrunk wrapper.proof then
+        let rc ← verifyShrunk addr wrapper statement
+        if rc != 0 then result := 1
+        else covered := covered.push wrapper.claim
+      else if Compression.isCompressed wrapper.proof then
         let rc ← Compression.verifyProof addr wrapper (p.hasFlag "dev-srs") statement
         if rc != 0 then result := 1
         else covered := covered.push wrapper.claim

@@ -1,0 +1,26 @@
+[package]
+name = "stark-shrinker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Endpoint 1 native Fp^3 STARK shrinker supporting --stark-128 (v6) and --stark-128-zk (v6-zk)"
+
+[dependencies]
+aiur = { workspace = true, features = ["stark"] }
+bincode = { version = "2", features = ["serde"] }
+blake3 = { workspace = true }
+ix-proof-compression = { path = "../proof-compression", default-features = false }
+multi-stark = { workspace = true }
+p3-fri = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
+p3-merkle-tree = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
+serde = { workspace = true }
+stark-key = { workspace = true }
+stark-verifier = { workspace = true }
+
+[features]
+default = []
+parallel = ["aiur/parallel", "ix-proof-compression/parallel", "multi-stark/parallel"]
+cuda = ["aiur/cuda", "ix-proof-compression/cuda", "multi-stark/cuda"]
+
+[lints]
+workspace = true

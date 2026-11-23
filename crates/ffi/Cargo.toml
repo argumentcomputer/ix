@@ -24,6 +24,7 @@ rustc-hash = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 stark-key = { workspace = true }
+stark-shrinker = { workspace = true }
 stark-verifier = { path = "../stark-verifier" }
 tiny-keccak = { workspace = true }
 tracing = { workspace = true }
@@ -40,8 +41,8 @@ serde = { version = "1.0.219", features = ["derive"] }
 
 [features]
 default = []
-parallel = ["aiur/parallel", "ix-proof-compression/parallel", "ix-prover/parallel"]
-cuda = ["aiur/cuda", "ix-proof-compression/cuda", "ix-prover/cuda"]
+parallel = ["aiur/parallel", "ix-proof-compression/parallel", "ix-prover/parallel", "stark-shrinker/parallel"]
+cuda = ["aiur/cuda", "ix-proof-compression/cuda", "ix-prover/cuda", "stark-shrinker/cuda"]
 # The native executors that `lake build ix` generates from the certified
 # formal programs into .lake/build/formal-generated. Without it the formal
 # prover runs every job on the interpreter, which produces identical records.
