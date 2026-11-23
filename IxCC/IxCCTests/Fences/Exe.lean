@@ -2,6 +2,8 @@ import IxCC.Exe
 import IxCC.Exe.Machine.Sound
 import IxCC.X86.Exe.Process
 import IxCC.X86.Exe.Machine.Proof.Call
+import IxCCTests.Fences.CompileClaimKf4
+import IxCCTests.Fences.ExeCert
 
 /-! Standalone executables: the layout's driver contract and the written
 file's structural check (for the production frame and for any frame) use only

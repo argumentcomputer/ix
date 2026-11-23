@@ -59,6 +59,12 @@ def maxDataBytes : Nat := 2 ^ 40
 /-- Unmapped guard page between the stack segment and the heap region (`BE-4`). -/
 def guardGap : Nat := 0x1000
 
+/-- Dedicated 256-byte scratch and shell-stack area above the program call stack
+(unified with `X86.Exe.Machine.scratch`), holding the 5 parsed argument words
+(`[0..40)`), the 64-byte decimal render buffer (`[40..104)`), and the shell's
+own call stack (`[104..256)`). -/
+def scratch : Nat := 256
+
 /-- Round `n` up to a multiple of the 4 KiB page size. -/
 def pageAlign (n : Nat) : Nat := (n + 0x1000 - 1) / 0x1000 * 0x1000
 
@@ -71,11 +77,15 @@ structure Layout where
 
 namespace Layout
 
-/-- Page-aligned size of the stack `PT_LOAD` segment. -/
-def stackArea (L : Layout) : Nat := pageAlign L.stack
+/-- Page-aligned size of the stack `PT_LOAD` segment (program stack + 256-byte
+dedicated shell scratch/stack area). -/
+def stackArea (L : Layout) : Nat := pageAlign (L.stack + scratch)
 /-- Page-aligned size of the heap-region `PT_LOAD` segment. -/
 def regionArea (L : Layout) : Nat := pageAlign L.region
-def stackTop (L : Layout) : Nat := dataBase + L.stackArea
+/-- Top of the program's call stack (16-aligned; base of the 256-byte shell scratch). -/
+def stackTop (L : Layout) : Nat := dataBase + L.stackArea - scratch
+/-- Top of the shell's own call stack (end of the stack `PT_LOAD` segment). -/
+def shellTop (L : Layout) : Nat := dataBase + L.stackArea
 def regionStart (L : Layout) : Nat := dataBase + L.stackArea + guardGap
 def budget (L : Layout) : Nat := L.stack - stackReserve
 def dataSize (L : Layout) : Nat := L.stack + L.region
@@ -93,38 +103,47 @@ def check (L : Layout) : Bool :=
     decide (L.stack + L.region ≤ maxDataBytes)
 
 /-- The driver the shell gives a call whose return address is `ret`, for
-object text at file offset `textOffset`. -/
-def driver (L : Layout) (textOffset ret : Nat) : Driver where
+object text at file offset `textOffset`, with arbitrary initial memory `init`,
+flags `flags`, and other registers `other`. -/
+def driverAt (L : Layout) (textOffset ret : Nat) (init : Word → UInt8)
+    (flags : ByteEval.Flags) (other : GPR → Word) : Driver where
   base := UInt64.ofNat (fileBase + textOffset)
   region := UInt64.ofNat L.regionStart
   size := UInt64.ofNat L.region
   budget := UInt64.ofNat L.budget
   sp := UInt64.ofNat (L.stackTop - 8)
   ret := UInt64.ofNat ret
-  init := fun _ => 0
-  flags := {}
-  other := fun _ => 0
+  init
+  flags
+  other
+
+/-- The driver the shell gives a call whose return address is `ret`, for
+object text at file offset `textOffset` (zero-filled initial memory). -/
+def driver (L : Layout) (textOffset ret : Nat) : Driver :=
+  L.driverAt textOffset ret (fun _ => 0) {} (fun _ => 0)
 
 private theorem toNat_small {n : Nat} (h : n < 2 ^ 64) : (UInt64.ofNat n).toNat = n :=
   UInt64.toNat_ofNat_of_lt' (by show n < 18446744073709551616; omega)
 
-/-- **The layout keeps the driver contract**: for a layout `check` accepts,
-object text below the return address and a return address below the
-zero-filled segments, the driver satisfies every clause of
-`Driver.CanonicalOk`. -/
-theorem driver_canonicalOk (L : Layout) (hL : L.check = true) {textOffset textSize ret : Nat}
-    (hText : fileBase + textOffset + textSize ≤ ret) (hRet : ret < dataBase) :
-    (L.driver textOffset ret).CanonicalOk textSize := by
+/-- **The layout keeps the driver contract** for any initial memory, flags, and
+other registers: for a layout `check` accepts, object text below the return
+address and a return address below the zero-filled segments, `driverAt`
+satisfies every clause of `Driver.CanonicalOk`. -/
+theorem driverAt_canonicalOk (L : Layout) (hL : L.check = true) {textOffset textSize ret : Nat}
+    (hText : fileBase + textOffset + textSize ≤ ret) (hRet : ret < dataBase)
+    (init : Word → UInt8) (flags : ByteEval.Flags) (other : GPR → Word) :
+    (L.driverAt textOffset ret init flags other).CanonicalOk textSize := by
   simp only [check, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hL
   obtain ⟨⟨⟨h16, hs⟩, hr⟩, hmax⟩ := hL
   simp only [maxDataBytes] at hmax
   have hd : dataBase = 268435456 := rfl
   have hf : fileBase = 4194304 := rfl
   have hg : guardGap = 4096 := rfl
-  have hsa_lo : L.stack ≤ L.stackArea := by
+  have hsc : scratch = 256 := rfl
+  have hsa_lo : L.stack + scratch ≤ L.stackArea := by
     simp only [stackArea, pageAlign]
     omega
-  have hsa_hi : L.stackArea < L.stack + 4096 := by
+  have hsa_hi : L.stackArea < L.stack + scratch + 4096 := by
     simp only [stackArea, pageAlign]
     omega
   have hsa_16 : L.stackArea % 16 = 0 := by
@@ -146,9 +165,16 @@ theorem driver_canonicalOk (L : Layout) (hL : L.check = true) {textOffset textSi
     · rw [hret, hbase]
     · rw [UInt64.le_iff_toNat_le, hret, hbase]; omega
   refine ⟨⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩, ⟨?_, ?_⟩, ⟨?_, ?_, ?_⟩, ?_⟩ <;>
-    simp only [driver, hbase, hreg, hsize, hbud, hsp, hret, hsub] <;>
+    simp only [driverAt, hbase, hreg, hsize, hbud, hsp, hret, hsub] <;>
     (try simp only [regionStart, stackTop, budget, stackReserve]) <;>
     omega
+
+/-- **The layout keeps the driver contract** (`L.driver` specialization of
+`driverAt_canonicalOk`). -/
+theorem driver_canonicalOk (L : Layout) (hL : L.check = true) {textOffset textSize ret : Nat}
+    (hText : fileBase + textOffset + textSize ≤ ret) (hRet : ret < dataBase) :
+    (L.driver textOffset ret).CanonicalOk textSize :=
+  L.driverAt_canonicalOk hL hText hRet (fun _ => 0) {} (fun _ => 0)
 
 /-- The default layout (an 8 MiB stack and a 64 MiB region) is accepted. -/
 theorem default_check : ({} : Layout).check = true := by decide

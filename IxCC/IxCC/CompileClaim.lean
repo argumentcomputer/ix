@@ -4,6 +4,7 @@ import IxCC.Recheck.Rc.Produce
 import IxCC.Recheck.Rc.Linked
 import IxCC.Recheck.Rc.Bytes
 import IxCC.Ixon.PureHash
+import IxCC.CompileClaim.Closure
 
 /-! # `CompileClaim`: End-to-End `Ixon.Address` ↔ ELF64 Hash Bridge
 
@@ -375,9 +376,11 @@ which source results that signature's view accepts. -/
 def checkPlainRcRoot (src : Src.Program) (root : Recheck.Root) : Bool :=
   rootParamsAllNat src root && root.ty.isSome
 
-/-- Verify a `CompileClaim` against a `Src.Program` (precondition: ingested, or passed
-`Recheck.checkSrc`, as for `Recheck.run`) and serialized
-certificate `certText` using pure BLAKE3 (`Ixon.Address.blake3Pure`). -/
+/-- **LEGACY / KERNEL-LESS CHECK (FE-4)**: Verify a `CompileClaim` against a
+caller-supplied `Src.Program` without checking the certified kernel acceptance
+of the program's theorems. Do NOT use on untrusted `Src.Program`s (bogus theorem
+proofs are not checked here); prefer `verifyBytes` or `verifyProgramChecked`
+(which requires a `KernelAccepted` witness backed by `Ix.Kernel.Admission.checkBytes`). -/
 def verifyProgram (cfg : Recheck.Config) (P : Src.Program) (c : CompileClaim) (certText : String) : Bool :=
   c.checkWellFormed &&
     match P.roots.head? with
@@ -480,20 +483,118 @@ def checkCertDefAsserts (cfg : Recheck.Config) (inp : Recheck.Input)
         | .error _ => false
       | .error _ => false
 
+/-- Extract the `TableCert` from a serialized certificate text according to policy. -/
+def tableCertOfText (policy : CompilePolicy) (certText : String) :
+    Except String Src.Table.TableCert :=
+  match policy with
+  | .immortal | .zeroRc =>
+    match Recheck.Cert.ofText certText with
+    | .ok cert => .ok cert.table
+    | .error e => .error e.render
+  | .plainRc =>
+    match Recheck.RcReplay.Cert.ofText certText with
+    | .ok cert => .ok cert.base.table
+    | .error e => .error e
+
+/-- Verify the seed closure `S = {target} ∪ theorems(table)` for `certText` via
+the pure logical certified kernel entry `Ix.Kernel.Admission.checkBytes` under
+committed `preludeFor` and committed `defaultBinding`, plus `N5` mode checking
+(`KF-4` + `SP-0`). -/
+def checkCertSeedClosure (inp : Recheck.Input) (target : Ixon.Address)
+    (policy : CompilePolicy) (certText : String)
+    (limits : Ix.Kernel.Admission.Limits := Src.KernelFront.defaultLimits) :
+    Except String (Σ tc : Src.Table.TableCert, ClosureAccepted inp target tc limits) := do
+  let tc ← tableCertOfText policy certText
+  let acc ← checkSeedClosure inp target tc limits
+  pure ⟨tc, acc⟩
+
+/-- **FE-4 Kernel-Acceptance Witness**: proves that `P` was produced by
+`Recheck.ingress` from authenticated `.ixe` bytes whose root and role table
+match `c`, whose seed closure `S = {c.target} ∪ theorems(table)` passed pure
+logical `Ix.Kernel.Admission.checkBytes` under committed `preludeFor` +
+committed `defaultBinding` + `N5` mode checking (`KF-4`), whose relevance
+annotation is canonical over the kernel (`Stage A`), and whose Ixon v5
+`Definition.asserts` hold (`EM-0`).
+
+Cannot be constructed for a fabricated `Src.Program` carrying bogus theorem proofs. -/
+structure KernelAccepted (cfg : Recheck.Config) (P : Src.Program) (c : CompileClaim)
+    (certText : String) where
+  envBytes : ByteArray
+  equations : Lean.Json
+  inp : Recheck.Input
+  ingressOk : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) = .ok inp
+  progEq : inp.program = P
+  envEq : inp.env.root = c.env
+  roleEq : inp.env.bindingAddress = c.roleTable
+  tableCert : Src.Table.TableCert
+  closure : ClosureAccepted inp c.target tableCert Src.KernelFront.defaultLimits
+  closureOk : checkCertSeedClosure inp c.target c.policy certText = .ok ⟨tableCert, closure⟩
+  canonRel : checkCertCanonicalRelevance cfg inp c.policy certText = true
+  defAsserts : checkCertDefAsserts cfg inp c.policy certText = true
+
+/-- Construct a `KernelAccepted` witness from raw `.ixe` environment bytes,
+sidecar equations JSON, claim, and serialized certificate (`KF-4` + `FE-4`). -/
+def kernelAcceptedOfBytes (cfg : Recheck.Config) (envBytes : ByteArray) (equations : Lean.Json)
+    (c : CompileClaim) (certText : String) :
+    Except String (Σ inp : Recheck.Input, KernelAccepted cfg inp.program c certText) :=
+  match hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) with
+  | .error e => .error e.render
+  | .ok inp =>
+    if henv : inp.env.root = c.env then
+      if hrole : inp.env.bindingAddress = c.roleTable then
+        match hcl : checkCertSeedClosure inp c.target c.policy certText with
+        | .error e => .error e
+        | .ok ⟨tc, acc⟩ =>
+          if hrel : checkCertCanonicalRelevance cfg inp c.policy certText = true then
+            if hass : checkCertDefAsserts cfg inp c.policy certText = true then
+              .ok ⟨inp, {
+                envBytes, equations, inp
+                ingressOk := hing
+                progEq := rfl
+                envEq := henv
+                roleEq := hrole
+                tableCert := tc
+                closure := acc
+                closureOk := hcl
+                canonRel := hrel
+                defAsserts := hass
+              }⟩
+            else .error "CompileClaim: Definition.asserts check failed"
+          else .error "CompileClaim: canonical relevance check failed"
+      else .error "CompileClaim: roleTable address mismatch"
+    else .error "CompileClaim: environment root mismatch"
+
+/-- Verify a `CompileClaim` against a `Src.Program` backed by a `KernelAccepted`
+witness (`FE-4`), gating program-level verification on certified logical kernel
+acceptance of `S = {target} ∪ theorems(table)`. -/
+def verifyProgramChecked (cfg : Recheck.Config) (P : Src.Program) (c : CompileClaim)
+    (certText : String) (_hk : KernelAccepted cfg P c certText) : Bool :=
+  verifyProgram cfg P c certText
+
+/-- Check a `CompileClaim` against a `Src.Program` backed by a `KernelAccepted`
+witness (`FE-4`). -/
+def checkClaimProgramChecked (cfg : Recheck.Config) (P : Src.Program) (c : CompileClaim)
+    (certText : String) (hk : KernelAccepted cfg P c certText) : Except String Unit := do
+  unless verifyProgramChecked cfg P c certText hk do
+    throw "CompileClaim.checkClaimProgramChecked: claim verification failed"
+
 /-- Verify a `CompileClaim` from raw `.ixe` environment bytes, sidecar equations
 JSON, and serialized certificate `certText`: the environment the bytes are has the
 claim's root and role table (`roleTable`, the binding hash of the role-bound
 envelope). Ingress (`Recheck.ingress`) runs the certified kernel's acceptance of
-the whole environment, so an unbound envelope, or any record the kernel does not
-accept, refuses the claim; `checkCertCanonicalRelevance` validates canonical
-relevance (`Stage A`); and `checkCertDefAsserts` enforces decoded Ixon v5
-`Definition.asserts` (`EM-0`). -/
+the whole environment; `checkCertSeedClosure` (`KF-4` + `SP-0`) independently
+checks the exact seed closure `S = {target} ∪ theorems(table)` through the pure
+logical kernel entry `Ix.Kernel.Admission.checkBytes` under committed `preludeFor`,
+committed `defaultBinding`, and `N5` `IxCK.Resource.check`;
+`checkCertCanonicalRelevance` validates canonical relevance (`Stage A`); and
+`checkCertDefAsserts` enforces decoded Ixon v5 `Definition.asserts` (`EM-0`). -/
 def verifyBytes (cfg : Recheck.Config) (envBytes : ByteArray) (equations : Lean.Json)
     (c : CompileClaim) (certText : String) : Bool :=
   let roots := selectTargetRoots cfg equations c.target
   match Recheck.ingress envBytes equations roots with
   | .ok inp =>
     (inp.env.root == c.env && inp.env.bindingAddress == c.roleTable) &&
+      (checkCertSeedClosure inp c.target c.policy certText).isOk &&
       checkCertCanonicalRelevance cfg inp c.policy certText &&
       checkCertDefAsserts cfg inp c.policy certText &&
       verifyProgram cfg inp.program c certText

@@ -229,12 +229,12 @@ theorem getN0_canonical : Ixon.GetCanonical getN0 n0Bytes :=
 
 theorem optAddrRest_zero : optAddrRest 0 = pure none := by
   unfold optAddrRest
-  rw [if_pos rfl]
+  rw [ite_eq_left rfl]
 
 theorem optAddrRest_one :
     optAddrRest 1 = ((Ixon.Serialize.get : Ixon.GetM Ixon.Address) >>= fun a => pure (some a)) := by
   unfold optAddrRest
-  rw [if_neg (by decide), if_pos rfl]
+  rw [ite_eq_right (by decide), ite_eq_left rfl]
 
 /-- `getOptAddr` consumes the role-table field of `o` and returns `o`. -/
 theorem getOptAddr_spec (o : Option Ixon.Address) :
@@ -415,7 +415,7 @@ theorem getOptAddr_canonical : Ixon.GetCanonical getOptAddr optAddrBytes := by
             simp [pre1, hrest1, hrest2, optAddrBytes, ByteArray.append_assoc, Nat.add_assoc]
       · have hthrow : optAddrRest tag = throw "CompileClaim: invalid role table tag" := by
           unfold optAddrRest
-          rw [if_neg h0, if_neg h1]
+          rw [ite_eq_right h0, ite_eq_right h1]
         rw [hthrow] at h
         change Except.error _ = Except.ok (o, st') at h
         contradiction
@@ -908,7 +908,7 @@ theorem verifyBytes_immortal_sound {cfg : Recheck.Config} {envBytes : ByteArray}
   | error e => simp [hing] at hver
   | ok inp =>
     simp only [hing, Bool.and_eq_true] at hver
-    obtain ⟨⟨⟨⟨henv_b, hrole_b⟩, hcanonRel⟩, _hdefAsserts⟩, hprog⟩ := hver
+    obtain ⟨⟨⟨⟨⟨henv_b, hrole_b⟩, _hseed⟩, hcanonRel⟩, _hdefAsserts⟩, hprog⟩ := hver
     have henv : inp.env.root = c.env := eq_of_beq henv_b
     have hrole : inp.env.bindingAddress = c.roleTable := eq_of_beq hrole_b
     obtain ⟨hdec, hacc, hfrom, htier, hrd, hfe, hingProg⟩ := Recheck.ingress_parts hing
@@ -1003,7 +1003,7 @@ theorem verifyBytes_zeroRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
   | error e => simp [hing] at hver
   | ok inp =>
     simp only [hing, Bool.and_eq_true] at hver
-    obtain ⟨⟨⟨⟨henv_b, hrole_b⟩, hcanonRel⟩, _hdefAsserts⟩, hprog⟩ := hver
+    obtain ⟨⟨⟨⟨⟨henv_b, hrole_b⟩, _hseed⟩, hcanonRel⟩, _hdefAsserts⟩, hprog⟩ := hver
     have henv : inp.env.root = c.env := eq_of_beq henv_b
     have hrole : inp.env.bindingAddress = c.roleTable := eq_of_beq hrole_b
     obtain ⟨hdec, hacc, hfrom, htier, hrd, hfe, hingProg⟩ := Recheck.ingress_parts hing
@@ -1096,7 +1096,7 @@ theorem verifyBytes_plainRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
   | error e => simp [hing] at hver
   | ok inp =>
     simp only [hing, Bool.and_eq_true] at hver
-    obtain ⟨⟨⟨⟨henv_b, hrole_b⟩, hcanonRel⟩, _hdefAsserts⟩, hprog⟩ := hver
+    obtain ⟨⟨⟨⟨⟨henv_b, hrole_b⟩, _hseed⟩, hcanonRel⟩, _hdefAsserts⟩, hprog⟩ := hver
     have henv : inp.env.root = c.env := eq_of_beq henv_b
     have hrole : inp.env.bindingAddress = c.roleTable := eq_of_beq hrole_b
     obtain ⟨hdec, hacc, hfrom, htier, hrd, hfe, hingProg⟩ := Recheck.ingress_parts hing
@@ -1339,5 +1339,239 @@ theorem verifyBytes_plainRc_rootShape {cfg : Recheck.Config} {envBytes : ByteArr
     simp only [hing, Bool.and_eq_true] at hver
     obtain ⟨cert, a, root, h⟩ := verifyProgram_plainRc_rootShape hpol hver.2
     exact ⟨inp, cert, a, root, rfl, h⟩
+
+/-! ## `KF-4` + `SP-0` Seed-Closure Logical Kernel Soundness & `FE-4` Checked Program Verification -/
+
+private theorem checkCertSeedClosure_isOk {inp : Recheck.Input} {target : Ixon.Address}
+    {policy : CompilePolicy} {certText : String}
+    {limits : Ix.Kernel.Admission.Limits}
+    (h : (checkCertSeedClosure inp target policy certText limits).isOk = true) :
+    ∃ (tc : Src.Table.TableCert) (cl : ClosureAccepted inp target tc limits),
+      tableCertOfText policy certText = .ok tc ∧
+      checkSeedClosure inp target tc limits = .ok cl := by
+  have hstep : ∀ (r1 : Except String Src.Table.TableCert)
+      (f : (tc : Src.Table.TableCert) → Except String (ClosureAccepted inp target tc limits)),
+      (do let tc ← r1
+          let acc ← f tc
+          pure (⟨tc, acc⟩ : Σ t, ClosureAccepted inp target t limits)).isOk = true →
+      ∃ (tc : Src.Table.TableCert) (cl : ClosureAccepted inp target tc limits),
+        r1 = .ok tc ∧ f tc = .ok cl := by
+    intro r1 f hr
+    cases r1 with
+    | error e => cases hr
+    | ok tc =>
+      change (Except.bind (f tc)
+        (fun acc => Except.ok (⟨tc, acc⟩ : Σ t, ClosureAccepted inp target t limits))).isOk = true at hr
+      cases hft : f tc with
+      | error e => rw [hft] at hr; cases hr
+      | ok cl => exact ⟨tc, cl, rfl, hft⟩
+  exact hstep (tableCertOfText policy certText) (fun tc => checkSeedClosure inp target tc limits) h
+
+/-- `verifyBytes` enforces `KF-4` + `SP-0`: the exact seed closure
+`S = {c.target} ∪ theorems(table)` is accepted by the pure logical certified
+kernel entry `Ix.Kernel.Admission.checkBytes` under committed `preludeFor` and
+committed `defaultBinding`, the artifact role table is an exact restriction of
+`defaultTable`, and `N5` `checkClosureModes` passes on the logical environment. -/
+theorem verifyBytes_kf4_closure {cfg : Recheck.Config} {envBytes : ByteArray}
+    {equations : Lean.Json} {c : CompileClaim} {certText : String}
+    (hver : verifyBytes cfg envBytes equations c certText = true) :
+    ∃ (inp : Recheck.Input) (tc : Src.Table.TableCert)
+      (cl : ClosureAccepted inp c.target tc Src.KernelFront.defaultLimits),
+      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) = .ok inp ∧
+      tableCertOfText c.policy certText = .ok tc ∧
+      checkSeedClosure inp c.target tc Src.KernelFront.defaultLimits = .ok cl ∧
+      Ix.Kernel.Admission.defaultBinding = .ok cl.defBinding ∧
+      Ix.Kernel.Admission.admitBinding Src.KernelFront.hash cl.defBinding = .ok cl.defTable ∧
+      tableRestrictsDefault inp.kernel.acc.table cl.defTable = true ∧
+      Ix.Kernel.Reader.preludeFor cl.defTable = .ok cl.pre ∧
+      tableTheoremAddrs inp.program tc = .ok (cl.seeds.extract 1 cl.seeds.size) ∧
+      cl.seeds[0]? = some (Src.KernelFront.kaddr c.target) ∧
+      Ix.Kernel.Admission.checkBytes Src.KernelFront.hash cl.defBinding
+        Src.KernelFront.defaultLimits cl.records cl.blobs cl.hints.lookup = .ok cl.env ∧
+      checkClosureModes cl.defTable cl.pre cl.env cl.constants cl.blobs = .ok () := by
+  unfold verifyBytes at hver
+  cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) with
+  | error e => simp [hing] at hver
+  | ok inp =>
+    simp only [hing, Bool.and_eq_true] at hver
+    obtain ⟨tc, cl, htc, hsc⟩ := checkCertSeedClosure_isOk hver.1.1.1.2
+    exact ⟨inp, tc, cl, rfl, htc, hsc, cl.defaultBind, cl.admittedDefTable,
+      cl.tableRestricted, cl.preludeOk, cl.seedsOk, cl.seedTarget, cl.accepted, cl.modesOk⟩
+
+/-- `verifyBytes` succeeds iff there is a `KernelAccepted` witness for the same
+`envBytes` and `equations` on which `verifyProgramChecked` succeeds (`FE-4`). -/
+theorem verifyBytes_iff_kernelAccepted {cfg : Recheck.Config} {envBytes : ByteArray}
+    {equations : Lean.Json} {c : CompileClaim} {certText : String} :
+    verifyBytes cfg envBytes equations c certText = true ↔
+      ∃ (inp : Recheck.Input) (hk : KernelAccepted cfg inp.program c certText),
+        hk.envBytes = envBytes ∧ hk.equations = equations ∧
+        verifyProgramChecked cfg inp.program c certText hk = true := by
+  constructor
+  · intro hver
+    unfold verifyBytes at hver
+    cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) with
+    | error e => simp [hing] at hver
+    | ok inp =>
+      simp only [hing, Bool.and_eq_true] at hver
+      obtain ⟨⟨⟨⟨⟨henv_b, hrole_b⟩, hcl_b⟩, hrel⟩, hass⟩, hprog⟩ := hver
+      cases hcl : checkCertSeedClosure inp c.target c.policy certText with
+      | error e => simp [hcl, Except.isOk, Except.toBool] at hcl_b
+      | ok pair =>
+        rcases pair with ⟨tc, cl⟩
+        exact ⟨inp, {
+          envBytes, equations, inp
+          ingressOk := hing
+          progEq := rfl
+          envEq := eq_of_beq henv_b
+          roleEq := eq_of_beq hrole_b
+          tableCert := tc
+          closure := cl
+          closureOk := hcl
+          canonRel := hrel
+          defAsserts := hass
+        }, rfl, rfl, hprog⟩
+  · rintro ⟨inp, hk, henvB, heqJ, hprog⟩
+    unfold verifyBytes
+    dsimp only
+    have hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) = .ok hk.inp := by
+      rw [← henvB, ← heqJ]
+      exact hk.ingressOk
+    rw [hing]
+    simp only [hk.envEq, hk.roleEq, hk.closureOk, Except.isOk, hk.canonRel, hk.defAsserts,
+      beq_self_eq_true, Bool.and_true, Bool.true_and]
+    rw [hk.progEq]
+    exact hprog
+
+/-- Any `KernelAccepted` witness + `verifyProgramChecked = true` directly implies
+`verifyBytes = true` on `hk.envBytes` and `hk.equations`, together with pure
+logical `KF-4` seed-closure kernel acceptance (`Ix.Kernel.Admission.checkBytes`
+under committed `preludeFor` and `defaultBinding`, `tableRestrictsDefault`, and
+`N5` `checkClosureModes`). -/
+theorem verifyProgramChecked_sound {cfg : Recheck.Config} {P : Src.Program}
+    {c : CompileClaim} {certText : String}
+    (hk : KernelAccepted cfg P c certText)
+    (hver : verifyProgramChecked cfg P c certText hk = true) :
+    Ix.Kernel.Admission.checkBytes Src.KernelFront.hash hk.closure.defBinding
+      Src.KernelFront.defaultLimits hk.closure.records hk.closure.blobs
+      hk.closure.hints.lookup = .ok hk.closure.env ∧
+    tableRestrictsDefault hk.inp.kernel.acc.table hk.closure.defTable = true ∧
+    checkClosureModes hk.closure.defTable hk.closure.pre hk.closure.env
+      hk.closure.constants hk.closure.blobs = .ok () ∧
+    verifyBytes cfg hk.envBytes hk.equations c certText = true := by
+  refine ⟨hk.closure.accepted, hk.closure.tableRestricted, hk.closure.modesOk, ?_⟩
+  unfold verifyBytes
+  dsimp only
+  rw [hk.ingressOk]
+  simp only [hk.envEq, hk.roleEq, hk.closureOk, Except.isOk, hk.canonRel, hk.defAsserts,
+    beq_self_eq_true, Bool.and_true, Bool.true_and]
+  rw [hk.progEq]
+  exact hver
+
+/-- `verifyBytes` under `.immortal` policy enforces BOTH `verifyBytes_immortal_sound`
+and pure logical `KF-4` + `SP-0` seed-closure kernel acceptance (`Ix.Kernel.Admission.checkBytes`
+under committed `preludeFor` and committed `defaultBinding`, `tableRestrictsDefault`,
+and `N5` `checkClosureModes`). -/
+theorem verifyBytes_kf4_immortal_sound {cfg : Recheck.Config} {envBytes : ByteArray}
+    {equations : Lean.Json} {c : CompileClaim} {certText : String}
+    (hpol : c.policy = .immortal)
+    (hver : verifyBytes cfg envBytes equations c certText = true) :
+    (∃ (inp : Recheck.Input) (tc : Src.Table.TableCert)
+        (cl : ClosureAccepted inp c.target tc Src.KernelFront.defaultLimits),
+      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) = .ok inp ∧
+      tableCertOfText c.policy certText = .ok tc ∧
+      Ix.Kernel.Admission.defaultBinding = .ok cl.defBinding ∧
+      Ix.Kernel.Admission.admitBinding Src.KernelFront.hash cl.defBinding = .ok cl.defTable ∧
+      tableRestrictsDefault inp.kernel.acc.table cl.defTable = true ∧
+      Ix.Kernel.Reader.preludeFor cl.defTable = .ok cl.pre ∧
+      Ix.Kernel.Admission.checkBytes Src.KernelFront.hash cl.defBinding
+        Src.KernelFront.defaultLimits cl.records cl.blobs cl.hints.lookup = .ok cl.env ∧
+      checkClosureModes cl.defTable cl.pre cl.env cl.constants cl.blobs = .ok ()) ∧
+    (∃ (inp : Recheck.Input) (cert : Recheck.Cert) (a : Recheck.Artifact) (root : Recheck.Root),
+      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) = .ok inp ∧
+      Recheck.Cert.ofText certText = .ok cert ∧
+      Recheck.run cfg inp.program cert = .ok a ∧
+      a.roots.head? = some root ∧
+      Ixon.Address.blake3Pure a.object = c.elfHash ∧
+      ∀ (D : X86.Driver), D.Ok a.backend.encoded.text.size → Recheck.ShapeClaim a cert root D) := by
+  obtain ⟨inp, tc, cl, hing, htc, _, hdb, hadm, hrest, hpre, _, _, hchk, hmod⟩ :=
+    verifyBytes_kf4_closure hver
+  obtain ⟨inp2, cert, a, rootId, root, sig, ty, _, hing2, _, _, _, _, _, _, _, _, _, _, hcert, hrun,
+    _, _, hahead, hnat, hty, hview, _, hhash, _, hsem⟩ := verifyBytes_immortal_sound hpol hver
+  have hok : checkImmortalRoot a.src root = true := by
+    simp [checkImmortalRoot, hnat, hty, hview]
+  exact ⟨⟨inp, tc, cl, hing, htc, hdb, hadm, hrest, hpre, hchk, hmod⟩,
+    ⟨inp2, cert, a, root, hing2, hcert, hrun, hahead, hhash, fun D hD =>
+      Recheck.Artifact.shapeClaim hrun hahead hok D fun ns hcv =>
+        ⟨((hsem D hD).2 (0, ns) hcv).1, ((hsem D hD).2 (0, ns) hcv).2.1⟩⟩⟩
+
+/-- `verifyBytes` under `.zeroRc` policy enforces BOTH `verifyBytes_zeroRc_sound`
+and pure logical `KF-4` + `SP-0` seed-closure kernel acceptance. -/
+theorem verifyBytes_kf4_zeroRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
+    {equations : Lean.Json} {c : CompileClaim} {certText : String}
+    (hpol : c.policy = .zeroRc)
+    (hver : verifyBytes cfg envBytes equations c certText = true) :
+    (∃ (inp : Recheck.Input) (tc : Src.Table.TableCert)
+        (cl : ClosureAccepted inp c.target tc Src.KernelFront.defaultLimits),
+      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) = .ok inp ∧
+      tableCertOfText c.policy certText = .ok tc ∧
+      Ix.Kernel.Admission.defaultBinding = .ok cl.defBinding ∧
+      Ix.Kernel.Admission.admitBinding Src.KernelFront.hash cl.defBinding = .ok cl.defTable ∧
+      tableRestrictsDefault inp.kernel.acc.table cl.defTable = true ∧
+      Ix.Kernel.Reader.preludeFor cl.defTable = .ok cl.pre ∧
+      Ix.Kernel.Admission.checkBytes Src.KernelFront.hash cl.defBinding
+        Src.KernelFront.defaultLimits cl.records cl.blobs cl.hints.lookup = .ok cl.env ∧
+      checkClosureModes cl.defTable cl.pre cl.env cl.constants cl.blobs = .ok ()) ∧
+    (∃ (inp : Recheck.Input) (cert : Recheck.Cert) (a : Recheck.Artifact) (root : Recheck.Root),
+      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) = .ok inp ∧
+      Recheck.Cert.ofText certText = .ok cert ∧
+      Recheck.runWithContracts cfg inp.program cert = .ok a ∧
+      a.roots.head? = some root ∧
+      Ixon.Address.blake3Pure a.object = c.elfHash ∧
+      ∀ (D : X86.Driver), D.Ok a.backend.encoded.text.size → Recheck.ShapeClaim a cert root D) := by
+  obtain ⟨inp, tc, cl, hing, htc, _, hdb, hadm, hrest, hpre, _, _, hchk, hmod⟩ :=
+    verifyBytes_kf4_closure hver
+  obtain ⟨inp2, cert, a, rootId, root, sig, ty, _, hing2, _, _, _, _, _, _, _, _, _, _, hcert, hrunC,
+    hrun, _, _, _, _, hahead, hnat, hty, hview, _, hhash, _, hsem⟩ := verifyBytes_zeroRc_sound hpol hver
+  have hok : checkImmortalRoot a.src root = true := by
+    simp [checkImmortalRoot, hnat, hty, hview]
+  exact ⟨⟨inp, tc, cl, hing, htc, hdb, hadm, hrest, hpre, hchk, hmod⟩,
+    ⟨inp2, cert, a, root, hing2, hcert, hrunC, hahead, hhash, fun D hD =>
+      Recheck.Artifact.shapeClaim hrun hahead hok D fun ns hcv =>
+        ⟨((hsem D hD).2.2 (0, ns) hcv).1, ((hsem D hD).2.2 (0, ns) hcv).2.1⟩⟩⟩
+
+/-- `verifyBytes` under `.plainRc` policy enforces BOTH `verifyBytes_plainRc_sound`
+and pure logical `KF-4` + `SP-0` seed-closure kernel acceptance. -/
+theorem verifyBytes_kf4_plainRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
+    {equations : Lean.Json} {c : CompileClaim} {certText : String}
+    (hpol : c.policy = .plainRc)
+    (hver : verifyBytes cfg envBytes equations c certText = true) :
+    (∃ (inp : Recheck.Input) (tc : Src.Table.TableCert)
+        (cl : ClosureAccepted inp c.target tc Src.KernelFront.defaultLimits),
+      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) = .ok inp ∧
+      tableCertOfText c.policy certText = .ok tc ∧
+      Ix.Kernel.Admission.defaultBinding = .ok cl.defBinding ∧
+      Ix.Kernel.Admission.admitBinding Src.KernelFront.hash cl.defBinding = .ok cl.defTable ∧
+      tableRestrictsDefault inp.kernel.acc.table cl.defTable = true ∧
+      Ix.Kernel.Reader.preludeFor cl.defTable = .ok cl.pre ∧
+      Ix.Kernel.Admission.checkBytes Src.KernelFront.hash cl.defBinding
+        Src.KernelFront.defaultLimits cl.records cl.blobs cl.hints.lookup = .ok cl.env ∧
+      checkClosureModes cl.defTable cl.pre cl.env cl.constants cl.blobs = .ok ()) ∧
+    (∃ (inp : Recheck.Input) (cert : Recheck.RcReplay.Cert) (a : Recheck.RcReplay.Artifact)
+        (root : Recheck.Root),
+      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) = .ok inp ∧
+      Recheck.RcReplay.Cert.ofText certText = .ok cert ∧
+      Recheck.RcReplay.run cfg inp.program cert = .ok a ∧
+      a.roots.head? = some root ∧
+      Ixon.Address.blake3Pure a.backend.object = c.elfHash ∧
+      Recheck.RcReplay.RootWrongOffPlainShape a root) := by
+  obtain ⟨inp, tc, cl, hing, htc, _, hdb, hadm, hrest, hpre, _, _, hchk, hmod⟩ :=
+    verifyBytes_kf4_closure hver
+  obtain ⟨inp2, cert, a, rootId, root, sig, ty, _, hing2, _, _, _, _, _, _, _, _, _, _, hcert, hrun,
+    _, _, hahead, hnat, hty, _, hhash, _, _⟩ := verifyBytes_plainRc_sound hpol hver
+  have hok : checkPlainRcRoot a.front.src root = true := by
+    simp [checkPlainRcRoot, hnat, hty]
+  exact ⟨⟨inp, tc, cl, hing, htc, hdb, hadm, hrest, hpre, hchk, hmod⟩,
+    ⟨inp2, cert, a, root, hing2, hcert, hrun, hahead, hhash,
+      Recheck.RcReplay.Artifact.goesWrong_plainRoot hrun hahead hok⟩⟩
 
 end IxCC.CompileClaim

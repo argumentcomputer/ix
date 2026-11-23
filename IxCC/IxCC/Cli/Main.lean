@@ -68,7 +68,8 @@ def run (args : List String) : IO UInt32 := do
       IO.eprintln s!"uncaught exception: {e}"; pure 1
     IO.Process.exit code.toUInt8
   let some o := (IxCC.Cli.parse args).toOption | IxCC.Cli.main args
-  unless o.command == "compile" || o.command == "check-cert" do return ← IxCC.Cli.main args
+  unless o.command == "compile" || o.command == "check-cert" || o.command == "verify-exe" do
+    return ← IxCC.Cli.main args
   if (← IO.getEnv "IXCC_REEXEC") == some "0" then return ← IxCC.Cli.main args
   -- a malformed setting is reported by `main`, in this process
   let .ok settings ← IxCC.Cli.settingsOf o | IxCC.Cli.main args

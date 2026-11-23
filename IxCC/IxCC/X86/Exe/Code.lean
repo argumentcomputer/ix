@@ -235,14 +235,16 @@ end B
 report. -/
 private def messageBlock (s : Spec) (m : Message) : Shell.Block :=
   let (a, n) := messageAt s.arity s.data m
-  { instructions := (if m == .abi then #[movR .rsp .rbp] else #[]) ++
-      #[movI .rsi a, movI .rdx n, movI .r15 m.status]
+  { instructions := #[movI .rsi a, movI .rdx n, movI .r15 m.status]
     terminator := jump B.report }
 
 /-- The shell (see the module note). Registers: `rbx` argc, `r12` argv, `rbp`
-the scratch area on the initial stack (the five argument words at `rbp`, the
-output line ending at `rbp + 64`), `r13` the program stack's top, `r14` the
-region, `r15` the argument index, later the exit status. -/
+the dedicated 256-byte scratch area at `L.stackTop` (the five argument words at
+`[rbp..rbp+40)`, the decimal output buffer at `[rbp+40..rbp+104)` ending at
+`rbp + 104`, and the shell's own call stack at `[rbp+104..L.shellTop)`), `r13`
+the program call stack's top (`L.stackTop`), `r14` the region (`L.regionStart`),
+`r15` the argument index, later the exit status. Never writes below Linux's
+initial `rsp`. -/
 def shell (s : Spec) : Shell.Program :=
   let L := s.layout
   let blk (is : Array Shell.Instr) (t : Terminator) : Shell.Block := { instructions := is, terminator := t }
@@ -253,8 +255,9 @@ def shell (s : Spec) : Shell.Program :=
     -- seccomp: seccomp(SECCOMP_SET_MODE_FILTER, 0, &program)
     blk #[movI .rax 317, movI .rdi 1, movI .rsi 0, movI .rdx (fprogAddr s.data), .syscall]
       (ifNonzero .rax (B.message .confine) B.args),
-    -- args
-    blk #[ld .rbx (addr .rsp), ins (X86.Instr.lea .r12 (addr .rsp 8)), subI .rsp 64, movR .rbp .rsp,
+    -- args: read argc/argv read-only from Linux's initial rsp, then switch to our dedicated shell stack
+    blk #[ld .rbx (addr .rsp), ins (X86.Instr.lea .r12 (addr .rsp 8)),
+        movI .rsp L.shellTop, movI .rbp L.stackTop,
         movI .rax 0, st (addr .rbp 0) .rax, st (addr .rbp 8) .rax, st (addr .rbp 16) .rax,
         st (addr .rbp 24) .rax, st (addr .rbp 32) .rax, movI .r14 L.regionStart, movI .r13 L.stackTop]
       (cmpI .rbx (s.arity + 1) .ne (B.message .count) B.loopInit),
@@ -268,18 +271,18 @@ def shell (s : Spec) : Shell.Program :=
     blk #[] (cmpI .rdx 1 .eq (B.message .natOverflow) (B.message .numeral)),
     -- storeArg
     blk #[st (addr .rbp 0 (some .r15) .eight) .rax, addI .r15 1] (jump B.loopHead),
-    -- callInit: the budget at region + 16, then cx_init(region, size, budget)
+    -- callInit: the budget at region + 16, then cx_init(region, size, budget, 0, 0, 0)
     blk #[movI .rax L.budget, st (addr .r14 16) .rax, movR .rdi .r14, movI .rsi L.region,
-        movI .rdx L.budget, movR .rsp .r13, .callExport initSymbol]
+        movI .rdx L.budget, movI .rcx 0, movI .r8 0, movI .r9 0, movR .rsp .r13, .callExport initSymbol]
       (cmpR .rsp .r13 .ne (B.message .abi) B.initBack),
     -- initBack
-    blk #[movR .rsp .rbp] (ifNonzero .rax B.fail B.callRoot),
+    blk #[movI .rsp L.shellTop] (ifNonzero .rax B.fail B.callRoot),
     -- callRoot: root(region, a1, ..., a5)
     blk #[movR .rdi .r14, ld .rsi (addr .rbp 0), ld .rdx (addr .rbp 8), ld .rcx (addr .rbp 16),
-        ld .r8 (addr .rbp 24), ld .r9 (addr .rbp 32), movR .rsp .r13, .callExport s.root]
+        ld .r8 (addr .rbp 24), ld .r9 (addr .rbp 32), movI .r10 0, movI .r11 0, movR .rsp .r13, .callExport s.root]
       (cmpR .rsp .r13 .ne (B.message .abi) B.rootBack),
     -- rootBack
-    blk #[movR .rsp .rbp] (ifNonzero .rax B.fail B.result),
+    blk #[movI .rsp L.shellTop] (ifNonzero .rax B.fail B.result),
     -- result: the value word must be odd
     blk #[movR .rax .rdx, movR .rcx .rdx, ins (X86.Instr.alu .and .w32 .rcx (.imm 1))]
       (cmpI .rcx 0 .eq (B.message .notValue) B.tag),
@@ -288,8 +291,8 @@ def shell (s : Spec) : Shell.Program :=
       (match s.result with
        | .nat => jump B.render
        | .enum n => cmpI .rax n .unsignedGe (B.message .notValue) B.render),
-    -- render: the newline at rbp + 63
-    blk #[ins (X86.Instr.lea .rsi (addr .rbp 63)), movI .r8 10, st8 (addr .rsi) .r8] (jump B.digit),
+    -- render: the newline at rbp + 103
+    blk #[ins (X86.Instr.lea .rsi (addr .rbp 103)), movI .r8 10, st8 (addr .rsi) .r8] (jump B.digit),
     -- digit: one decimal digit, right to left
     blk #[movI .rdx 0, movI .rcx 10, ins (.op (Op.divM .w64) [.reg .rcx]), addI .rdx 48, subI .rsi 1,
         st8 (addr .rsi) .rdx]
@@ -298,7 +301,7 @@ def shell (s : Spec) : Shell.Program :=
     blk ((match s.result with
           | .nat => #[]
           | .enum _ => #[movI .rdx 35, subI .rsi 1, st8 (addr .rsi) .rdx]) ++
-        #[ins (X86.Instr.lea .rdx (addr .rbp 64)), subR .rdx .rsi, movI .rdi 1, call B.write, movI .rdi 0])
+        #[ins (X86.Instr.lea .rdx (addr .rbp 104)), subR .rdx .rsi, movI .rdi 1, call B.write, movI .rdi 0])
       (jump B.exit),
     -- exit(rdi); ud2 fallback if exit ever returned
     blk #[movI .rax 60, .syscall, .ud2] (jump B.exit),
@@ -326,9 +329,20 @@ def shell (s : Spec) : Shell.Program :=
     blk #[] (cmpI .rax 2 .eq (B.message .stack) B.fail3),
     blk #[] (cmpI .rax 3 .eq (B.message .natOverflow) B.fail4),
     blk #[] (cmpI .rax 4 .eq (B.message .trap) (B.message .abi)),
-    -- report: the message to standard error, then exit with r15
-    blk #[movI .rdi 2, call B.write, movR .rdi .r15] (jump B.exit)]
-  { blocks := body ++ (Message.all.map (messageBlock s)).toArray ++
-      #[blk #[addR .rsi .rax, subR .rdx .rax] (jump B.write)] }
+    -- report: switch to dedicated shell stack, write message to stderr, then exit with r15
+    blk #[movI .rsp L.shellTop, movI .rdi 2, call B.write, movR .rdi .r15] (jump B.exit),
+    -- messages (in Message.all order: blocks 38..46)
+    messageBlock s .count,
+    messageBlock s .numeral,
+    messageBlock s .heap,
+    messageBlock s .stack,
+    messageBlock s .natOverflow,
+    messageBlock s .trap,
+    messageBlock s .abi,
+    messageBlock s .notValue,
+    messageBlock s .confine,
+    -- writeStep (block 47)
+    blk #[addR .rsi .rax, subR .rdx .rax] (jump B.write)]
+  { blocks := body }
 
 end IxCC.X86.Exe

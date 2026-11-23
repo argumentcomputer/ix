@@ -1,8 +1,10 @@
 import IxCCTests.Exe.Machine
 import IxCCTests.Exe.FoldGuard
+import IxCCTests.Exe.Cert
 
 /-! Thin root of the `tests-exe` executable: the suite's parts, then the
-numeric state machines' and the fold guard's (`fixtures/fold`).
+numeric state machines', the fold guard's (`fixtures/fold`), and the hardened
+`.ix.cert` v1 + `verify-exe` + `KF-4`/`FE-4` controls.
 `--session-lines` prints the oracle driver's input for the long sessions
 (`IxCCTests.Exe.MachineSessions`); `--fold-root ROOT [EXE]` is the fold guard
 part's child process (`IxCCTests.Exe.FoldGuard.child`). -/
@@ -16,4 +18,5 @@ def main (args : List String) : IO UInt32 := do
   | ["--fold-root", root, exe] => IxCCTests.Exe.FoldGuard.child root (some exe)
   | _ =>
     IxCCTests.Exe.Suite.mainWith [("numeric state machines", IxCCTests.Exe.Machine.part),
-      ("fold guard (fixtures/fold)", IxCCTests.Exe.FoldGuard.part)] args
+      ("fold guard (fixtures/fold)", IxCCTests.Exe.FoldGuard.part),
+      ("hardened .ix.cert v1 & KF-4/FE-4", IxCCTests.Exe.Cert.part)] args

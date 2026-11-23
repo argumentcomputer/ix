@@ -6,6 +6,7 @@ import IxCC.Cfg.Print
 import IxCC.Lir.Print
 import IxCC.Xv.Print
 import IxCC.Exe
+import IxCC.Exe.Cert
 import IxCK.Host.Limits
 
 /-! # The `ixcc` command line
@@ -134,6 +135,10 @@ structure Options where
   rcExplicit : Bool := false
   /-- `--exe FILE`: also write a standalone executable of the first root. -/
   exe : Option FilePath := none
+  /-- `--embed-cert`: package a hardened `.ix.cert` v1 trailer into `--exe`. -/
+  embedCert : Bool := false
+  /-- Executable path for `ixcc verify-exe FILE`. -/
+  verifyExe : Option FilePath := none
   /-- The executable's stack and region (`--stack`, `--region`, in bytes). -/
   layout : X86.Exe.Layout := {}
   layoutGiven : Bool := false
@@ -148,11 +153,12 @@ def usage : String :=
     "usage:",
     "  ixcc compile CLOSURE.ixe --equations EQ.json [--root NAME]... -o OUT.o",
     "      [--rc off|on|auto] [--cert FILE] [--emit-cert FILE] [--signatures FILE] [--dump-ir LEVEL]... [--stats]",
-    "      [--exe FILE [--machine] [--stack BYTES] [--region BYTES]]",
+    "      [--exe FILE [--embed-cert] [--machine] [--stack BYTES] [--region BYTES]]",
     "  ixcc check-cert CLOSURE.ixe --equations EQ.json [--root NAME]... --cert FILE",
     "      [-o OUT.o] [--signatures FILE] [--stats]",
+    "  ixcc verify-exe FILE [--closure CLOSURE.ixe] [--equations EQ.json] [--stats]",
     "dump levels: lam anf fir cfg lir xv xl all",
-    "kernel limits (compile, check-cert): --max-records N --max-blobs N --max-total-bytes N",
+    "kernel limits (compile, check-cert, verify-exe): --max-records N --max-blobs N --max-total-bytes N",
     "      --max-record-bytes N --max-record-univ-nodes N --max-depth N --workers N --level-budget N",
     "      (else IX_KERNEL_MAX_RECORDS, ..., IX_KERNEL_LEVEL_BUDGET); a decline by one exits 6",
     "IXCC_REEXEC=0: do not re-run on a larger stack (the caller sets LEAN_STACK_SIZE_KB)"]
@@ -161,6 +167,7 @@ def dumpLevels : List String := ["lam", "anf", "fir", "cfg", "lir", "xv", "xl"]
 
 def parseRest (o : Options) : List String → Except String Options
   | [] => pure o
+  | "--closure" :: f :: rest => parseRest { o with closure := some f } rest
   | "--equations" :: f :: rest => parseRest { o with equations := some f } rest
   | "--root" :: n :: rest => parseRest { o with roots := o.roots ++ [n] } rest
   | "-o" :: f :: rest => parseRest { o with out := some f } rest
@@ -186,6 +193,7 @@ def parseRest (o : Options) : List String → Except String Options
   | "--workers" :: v :: rest => parseRest { o with kernel := o.kernel ++ [(.workers, v)] } rest
   | "--level-budget" :: v :: rest => parseRest { o with kernel := o.kernel ++ [(.levelBudget, v)] } rest
   | "--exe" :: f :: rest => parseRest { o with exe := some f } rest
+  | "--embed-cert" :: rest => parseRest { o with embedCert := true } rest
   | "--machine" :: rest => parseRest { o with machine := true } rest
   | "--stack" :: n :: rest =>
     match n.toNat? with
@@ -197,6 +205,9 @@ def parseRest (o : Options) : List String → Except String Options
     | none => throw s!"--region takes a number of bytes, not {n}"
   | arg :: rest =>
     if arg.startsWith "-" then throw s!"unknown option {arg}"
+    else if o.command == "verify-exe" then
+      if o.verifyExe.isSome then throw s!"unexpected argument {arg}"
+      else parseRest { o with verifyExe := some arg } rest
     else if o.closure.isSome then throw s!"unexpected argument {arg}"
     else parseRest { o with closure := some arg } rest
 
@@ -209,9 +220,18 @@ def parse : List String → Except String Options
       if cmd == "compile" && o.out.isNone && o.exe.isNone then throw "no -o or --exe output given"
       if o.layoutGiven && o.exe.isNone then throw "--stack and --region apply to --exe"
       if o.machine && o.exe.isNone then throw "--machine applies to --exe"
+      if o.embedCert && o.exe.isNone then throw "--embed-cert applies to --exe"
       -- a certificate fixes the RC policy (its format), so `--rc` with one is a usage error
       if o.cert.isSome && o.rcExplicit then throw "cannot combine --rc with --cert"
       if cmd == "check-cert" && o.cert.isNone then throw "check-cert needs --cert"
+      pure o
+    else if cmd == "verify-exe" then do
+      let o ← parseRest { command := cmd } rest
+      if o.verifyExe.isNone then throw "no executable given"
+      if o.out.isSome || o.exe.isSome || o.cert.isSome || o.emitCert.isSome ||
+          o.signatures.isSome || !o.dumps.isEmpty || o.rcExplicit || o.layoutGiven ||
+          o.machine || o.embedCert || !o.roots.isEmpty then
+        throw "verify-exe accepts only FILE [--closure FILE] [--equations FILE] [--stats] and kernel limits"
       pure o
     else throw s!"unknown command {cmd}"
   | [] => throw "no command"
@@ -279,19 +299,22 @@ def envelopeLine (inp : Recheck.Input) : String :=
 
 def cliErr (code message : String) : Err := { stage := .cli, code, message }
 
-def readInputs (o : Options) : ExceptT Err IO (ByteArray × Lean.Json) := do
+def readBin (f : FilePath) : ExceptT Err IO ByteArray := do
+  (IO.FS.readBinFile f).toBaseIO >>= fun
+    | .ok b => pure b
+    | .error e => throw (cliErr "cli.read" s!"{f}: {e}")
+
+def readInputs (o : Options) : ExceptT Err IO (ByteArray × Lean.Json × ByteArray) := do
   let some closure := o.closure | throw (cliErr "cli.args" "no closure")
   let some eqs := o.equations | throw (cliErr "cli.args" "no equations")
-  let bytes ← (IO.FS.readBinFile closure).toBaseIO >>= fun
-    | .ok b => pure b
-    | .error e => throw (cliErr "cli.read" s!"{closure}: {e}")
+  let bytes ← readBin closure
   let text ← (IO.FS.readFile eqs).toBaseIO >>= fun
     | .ok t => pure t
     | .error e => throw (cliErr "cli.read" s!"{eqs}: {e}")
   let json ← match (Src.Hints.checkJsonText text >>= fun () => Lean.Json.parse text) with
     | .ok j => pure j
     | .error e => throw { stage := .ingress, code := "hints", message := s!"{eqs}: {e}" }
-  pure (bytes, json)
+  pure (bytes, json, text.toUTF8)
 
 /-- Either a zero-RC (`ixcc/cert/1`) or plain-RC (`ixcc/rc-cert/2`) certificate. -/
 inductive CliCert where
@@ -389,10 +412,29 @@ def timed {α : Type} (action : ExceptT Err IO α) : ExceptT Err IO (α × Nat) 
 /-- A pure stage, evaluated when the action runs (so `timed` measures it). -/
 def lift {α : Type} (x : Unit → Except Err α) : ExceptT Err IO α := ExceptT.mk (IO.lazyPure x)
 
-/-- `compile` and `check-cert`, the kernel under `limits`. -/
+/-- `compile`, `check-cert`, and `verify-exe`, the kernel under `limits`. -/
 def execute (o : Options) (limits : Ix.Kernel.Admission.Limits := Src.KernelFront.defaultLimits) :
     ExceptT Err IO Unit := do
-  let ((bytes, json), tRead) ← timed (readInputs o)
+  if o.command == "verify-exe" then
+    let some f := o.verifyExe | throw (cliErr "cli.args" "no executable given")
+    let (exeBytes, tRead) ← timed (readBin f)
+    let extEnv? ← match o.closure with
+      | some cf => some <$> readBin cf
+      | none => pure none
+    let extEq? ← match o.equations with
+      | some ef => some <$> readBin ef
+      | none => pure none
+    let (v, tVerify) ← timed (lift fun _ => Exe.Cert.verifyExeBytes exeBytes extEnv? extEq? limits)
+    let kindStr := match v.exeKind with | .plain => "plain" | .machine => "machine"
+    IO.println s!"executable verified: kind {kindStr}, target {v.claim.target}, policy {repr v.claim.policy}, \
+      arity {v.claim.abiArity}, core {v.coreSize} bytes, .ix.cert {v.payloadSize} bytes, \
+      object {v.objectSize} bytes (blake3 {v.claim.elfHash})"
+    if o.stats then
+      IO.println s!"environment: root {v.claim.env}, role table {v.claim.roleTable}"
+      IO.println s!"layout: stack {v.layout.stack} bytes, region {v.layout.region} bytes, roots {v.rootNames}"
+      IO.println s!"time: read {tRead} ms, verify {tVerify} ms"
+    return
+  let ((bytes, json, eqBytes), tRead) ← timed (readInputs o)
   let (inp, tIngress) ← timed (lift fun _ => ingress bytes json o.roots limits)
   let cfg := Config.forInput {} inp
   -- a root whose caller would pass a closure has no meaningful caller: refused
@@ -423,23 +465,36 @@ def execute (o : Options) (limits : Ix.Kernel.Admission.Limits := Src.KernelFron
       IO.FS.rename tmp f
   if let some f := o.exe then
     -- the bytes and the placement of the executable `--exe` or `--machine` writes
-    let (bytes, p) ← if o.machine then do
+    let (exeBytes, p, certInfo?) ← if o.embedCert then do
+        let isPlainRc := match cliCert with | .plainRc _ => true | .zeroRc _ => false
+        let claimPolicy := Exe.Cert.policyOfArtifact cfg inp a isPlainRc text
+        let exeKind : X86.Exe.Cert.ExeKind := if o.machine then .machine else .plain
+        let built ← lift fun _ =>
+          Exe.Cert.buildCertifiedExe inp o.roots claimPolicy text a exeKind o.layout bytes eqBytes
+        pure (built.bytes, built.placement, some (built.coreSize, built.payloadSize))
+      else if o.machine then do
         let L : X86.Exe.Machine.Layout := { stack := o.layout.stack, region := o.layout.region }
         let ⟨_, exe⟩ ← lift fun _ => Exe.buildMachine a L
-        pure (exe.checked.bytes, exe.checked.plan.placement)
+        pure (exe.checked.bytes, exe.checked.plan.placement, none)
       else do
         let ⟨_, exe⟩ ← lift fun _ => Exe.build a o.layout
-        pure (exe.bytes, exe.plan.placement)
+        pure (exe.bytes, exe.plan.placement, none)
     write f do
       let tmp : FilePath := s!"{f}.tmp.{← IO.monoNanosNow}"
-      IO.FS.writeBinFile tmp bytes
+      IO.FS.writeBinFile tmp exeBytes
       IO.setAccessRights tmp { user := { read := true, write := true, execution := true }
                                group := { read := true, execution := true }
                                other := { read := true, execution := true } }
       IO.FS.rename tmp f
     if o.stats then
-      IO.println s!"executable: {bytes.size} bytes (object text {p.textSize}, shell {p.shellSize}), \
-        stack {o.layout.stack} bytes, region {o.layout.region} bytes"
+      match certInfo? with
+      | some (coreSz, certSz) =>
+        IO.println s!"executable: {exeBytes.size} bytes (core {coreSz}, .ix.cert {certSz}, \
+          object text {p.textSize}, shell {p.shellSize}), \
+          stack {o.layout.stack} bytes, region {o.layout.region} bytes"
+      | none =>
+        IO.println s!"executable: {exeBytes.size} bytes (object text {p.textSize}, shell {p.shellSize}), \
+          stack {o.layout.stack} bytes, region {o.layout.region} bytes"
   -- exactly the text that was verified
   if let some f := o.emitCert then write f (IO.FS.writeFile f text)
   if let some f := o.signatures then write f (IO.FS.writeFile f ((signaturesJson a).pretty ++ "\n"))
