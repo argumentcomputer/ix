@@ -58,12 +58,12 @@ def runKernels (verbose : Bool) : IO Bool := do
       IO.eprintln s!"check-regalloc: kernel failed: {e}"
       return false
   | .ok (rows, checks) =>
-      IO.println s!"kernels: {rows.length} allocated both ways, {checks} outcome checks at exact clocks"
-      IO.println "  kernel: Xv instructions; linear scan: spills, reloads, moves, slots; all slots: the same"
+      IO.println s!"kernels: {rows.length} allocated three ways, {checks} outcome checks at exact clocks"
+      IO.println "  kernel: Xv insts; graph color (spills, reloads, moves, slots); linear scan; all slots"
       for r in rows do
-        IO.println s!"  {r.kernel}: {r.insts}; {r.scan.spills}, {r.scan.reloads}, {r.scan.moves}, {r.scanSlots}; {r.allSlots.spills}, {r.allSlots.reloads}, {r.allSlots.moves}, {r.allSlotsSlots}"
+        IO.println s!"  {r.kernel}: {r.insts}; GC {r.gc.spills}, {r.gc.reloads}, {r.gc.moves}, {r.gcSlots}; LS {r.scan.spills}, {r.scan.reloads}, {r.scan.moves}, {r.scanSlots}; AS {r.allSlots.spills}, {r.allSlots.reloads}, {r.allSlots.moves}, {r.allSlotsSlots}"
       if verbose then
-        for r in rows do IO.println s!"--- {r.kernel} (linear scan) ---\n{r.xl}"
+        for r in rows do IO.println s!"--- {r.kernel} (graph color) ---\n{r.xl}"
       return true
 
 def runGenerated (o : Options) : IO (Option Diff.Report) := do
@@ -90,8 +90,10 @@ private def percent (part whole : Nat) : String :=
 
 def printReport (r : Diff.Report) : IO Unit := do
   IO.println s!"generated: {r.programs} programs, {r.functions} functions, {r.xvInsts} Xv instructions; {r.stuck} stuck at Xv (allocation and validation only)"
-  IO.println s!"  linear scan: {r.accepted}/{r.scanned} functions accepted, {r.declined} declined, {r.rejected} rejected; {countsText r.counts}; {r.slots} slots"
-  IO.println s!"  chaos: {r.chaosAccepted}/{r.chaosScanned} accepted, {r.chaosDeclined} declined, {r.chaosRejected} rejected; {countsText r.chaosCounts}"
+  IO.println s!"  graph color: {r.gcAccepted}/{r.scanned} accepted, {r.gcDeclined} declined, {r.gcRejected} rejected; {countsText r.counts}; {r.slots} slots"
+  IO.println s!"  linear scan (A/B): {countsText r.scanCounts}; {r.scanSlots} slots"
+  IO.println s!"  driver (GC->LS->AS): {r.accepted}/{r.scanned} accepted, {r.declined} declined, {r.rejected} rejected"
+  IO.println s!"  chaos (GC): {r.gcChaosAccepted}/{r.chaosScanned} accepted, {r.gcChaosDeclined} declined, {r.gcChaosRejected} rejected; driver {r.chaosAccepted}/{r.chaosScanned}; {countsText r.chaosCounts}"
   IO.println s!"  all slots: {r.allSlots} programs accepted; {countsText r.allSlotsCounts}; {r.allSlotsSlots} slots"
   IO.println s!"  differential: {r.differential} allocations agree with Xv; steps Xv {r.xvSteps}, Xl {r.xlSteps} (deterministic allocation)"
   let m := r.mutation
@@ -112,8 +114,9 @@ def run (args : List String) : IO Bool := do
       unless ← runKernels o.verbose do return false
       let some r ← runGenerated o | return false
       printReport r
-      if o.strict && r.rejected + r.chaosRejected + r.declined + r.chaosDeclined > 0 then
-        IO.eprintln s!"check-regalloc: linear scan was rejected or declined ({r.rejected + r.chaosRejected} rejected, {r.declined + r.chaosDeclined} declined)"
+      if o.strict && r.rejected + r.chaosRejected + r.declined + r.chaosDeclined +
+          r.gcRejected + r.gcChaosRejected + r.gcDeclined + r.gcChaosDeclined > 0 then
+        IO.eprintln s!"check-regalloc: allocator was rejected or declined (driver {r.rejected + r.chaosRejected} rej/{r.declined + r.chaosDeclined} dec; GC {r.gcRejected + r.gcChaosRejected} rej/{r.gcDeclined + r.gcChaosDeclined} dec)"
         return false
       let unrejected := Mutate.classes.foldl (fun n c =>
         n + (r.mutation.planted.getD c 0 - r.mutation.rejected.getD c 0 - r.mutation.equivalent.getD c 0)) 0

@@ -54,6 +54,16 @@ structure Report where
   xvInsts : Nat := 0
   xvSteps : Nat := 0
   xlSteps : Nat := 0
+  /-- Direct graph-coloring outcomes (without LinearScan fallback masking). -/
+  gcAccepted : Nat := 0
+  gcDeclined : Nat := 0
+  gcRejected : Nat := 0
+  gcChaosAccepted : Nat := 0
+  gcChaosDeclined : Nat := 0
+  gcChaosRejected : Nat := 0
+  /-- Linear-scan comparison counts on deterministic programs. -/
+  scanCounts : EditCounts := {}
+  scanSlots : Nat := 0
   mutation : Mutate.Stats := {}
   deriving Inhabited
 
@@ -69,6 +79,12 @@ def Report.add (a b : Report) : Report :=
     allSlotsCounts := a.allSlotsCounts.add b.allSlotsCounts
     slots := a.slots + b.slots, allSlotsSlots := a.allSlotsSlots + b.allSlotsSlots
     xvInsts := a.xvInsts + b.xvInsts, xvSteps := a.xvSteps + b.xvSteps, xlSteps := a.xlSteps + b.xlSteps
+    gcAccepted := a.gcAccepted + b.gcAccepted, gcDeclined := a.gcDeclined + b.gcDeclined
+    gcRejected := a.gcRejected + b.gcRejected
+    gcChaosAccepted := a.gcChaosAccepted + b.gcChaosAccepted
+    gcChaosDeclined := a.gcChaosDeclined + b.gcChaosDeclined
+    gcChaosRejected := a.gcChaosRejected + b.gcChaosRejected
+    scanCounts := a.scanCounts.add b.scanCounts, scanSlots := a.scanSlots + b.scanSlots
     mutation := a.mutation.add b.mutation }
 
 structure Options where
@@ -87,20 +103,49 @@ def notesOf (label : String) (os : List IxCC.Xv.Alloc.Outcome) : Array String :=
     | .declined msg => some s!"{label} function {fi}: declined: {msg}"
     | .rejected e => some s!"{label} function {fi}: REJECTED: {e.text}").toArray
 
+/-- Directly check `GraphColor.run` without fallback masking. -/
+def checkGraphColorDirect (env : Xl.Env) (q : VProgram) (chaos : IxCC.Xv.Alloc.Chaos) (label : String) :
+    Nat × Nat × Nat × Array String := Id.run do
+  let mut acc := 0
+  let mut dec := 0
+  let mut rej := 0
+  let mut notes : Array String := #[]
+  for h : fi in [:q.funcs.size] do
+    let f := q.funcs[fi]
+    match IxCC.Xv.Alloc.GraphColor.run env f chaos with
+    | .error msg =>
+        dec := dec + 1
+        notes := notes.push s!"{label} function {fi}: GC declined: {msg}"
+    | .ok o =>
+        match IxCC.Xv.Validate.func env fi f o with
+        | .ok () => acc := acc + 1
+        | .error e =>
+            rej := rej + 1
+            notes := notes.push s!"{label} function {fi}: GC REJECTED: {e.text}"
+  return (acc, dec, rej, notes)
+
 /-- All checks on one selected program. -/
 def checkXv (q : VProgram) (args : List Word) (seed : UInt64) (opts : Options) : Except String Report := do
   let mem := Region.initial seed
   let stuck := digest (Xv.eval q 200 args mem Region.ctx) == .stuck
   let mut r : Report := { programs := 1, functions := q.funcs.size, stuck := if stuck then 1 else 0
                           xvInsts := IxCCTests.Xv.Diff.xvSize q }
-  -- Deterministic allocation.
+  -- Direct GraphColor verification (no fallback masking).
+  let (ga, gd, gj, gNotes) := checkGraphColorDirect {} q {} s!"seed {seed}"
+  -- LinearScan comparison.
+  let scanRes ← match IxCC.Xv.Alloc.runLinearScan {} q with
+    | .ok sr => pure sr
+    | .error e => throw s!"linear scan comparison failed: {e}"
+  -- Deterministic allocation (`Alloc.run`: GraphColor -> LinearScan -> AllSlots).
   let res ← match IxCC.Xv.Alloc.run {} q with
     | .ok res => pure res
     | .error e => throw s!"allocation failed: {e}"
   let (a, d, j) := outcomeCounts res.outcomes
   r := { r with scanned := q.funcs.size, accepted := a, declined := d, rejected := j
-                notes := notesOf s!"seed {seed}" res.outcomes
-                counts := countsOf res.outs, slots := res.outs.foldl (· + ·.numSlots) 0 }
+                gcAccepted := ga, gcDeclined := gd, gcRejected := gj
+                notes := gNotes ++ notesOf s!"seed {seed}" res.outcomes
+                counts := countsOf res.outs, slots := res.outs.foldl (· + ·.numSlots) 0
+                scanCounts := countsOf scanRes.outs, scanSlots := scanRes.outs.foldl (· + ·.numSlots) 0 }
   match differential q res.program {} args seed with
   | .ok (xs, ls) => r := { r with differential := r.differential + 1, xvSteps := xs, xlSteps := ls }
   | .error e => throw s!"deterministic allocation: {e}"
@@ -108,13 +153,17 @@ def checkXv (q : VProgram) (args : List Word) (seed : UInt64) (opts : Options) :
   for k in [:opts.chaosSeeds] do
     let chaos := IxCC.Xv.Alloc.Chaos.ofSeed (Rng.derive seed (k + 1))
     let env := if k % 2 == 1 then smallClobbers else {}
+    let (gca, gcd, gcj, gcNotes) := checkGraphColorDirect env q chaos s!"seed {seed} chaos {k}"
     let res ← match IxCC.Xv.Alloc.run env q chaos with
       | .ok res => pure res
       | .error e => throw s!"chaos {k} allocation failed: {e}"
     let (a, d, j) := outcomeCounts res.outcomes
     r := { r with chaosScanned := r.chaosScanned + q.funcs.size, chaosAccepted := r.chaosAccepted + a
                   chaosDeclined := r.chaosDeclined + d, chaosRejected := r.chaosRejected + j
-                  notes := r.notes ++ notesOf s!"seed {seed} chaos {k}" res.outcomes
+                  gcChaosAccepted := r.gcChaosAccepted + gca
+                  gcChaosDeclined := r.gcChaosDeclined + gcd
+                  gcChaosRejected := r.gcChaosRejected + gcj
+                  notes := r.notes ++ gcNotes ++ notesOf s!"seed {seed} chaos {k}" res.outcomes
                   chaosCounts := r.chaosCounts.add (countsOf res.outs) }
     match differential q res.program env args seed with
     | .ok _ => r := { r with differential := r.differential + 1 }

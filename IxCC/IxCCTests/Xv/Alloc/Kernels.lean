@@ -20,6 +20,8 @@ open IxCC IxCC.Lir IxCC.Xv IxCCTests.Lir IxCCTests.Xv
 
 structure Row where
   kernel : String
+  gc : IxCC.Xv.Alloc.EditCounts
+  gcSlots : Nat
   scan : IxCC.Xv.Alloc.EditCounts
   scanSlots : Nat
   allSlots : IxCC.Xv.Alloc.EditCounts
@@ -31,11 +33,17 @@ def kernels : List Lir.Func :=
   [Lir.Kernels.fib, Lir.Kernels.sumLoop, Lir.Kernels.sumFrom, Lir.Kernels.gcd, Lir.Kernels.natAdd,
     Lir.Kernels.natSub, Lir.Kernels.natDiv, Lir.Kernels.natMod]
 
-/-- Allocate kernel `f` both ways; each must be accepted. -/
-def allocate (f : Lir.Func) : Except String (VProgram × LProgram × LProgram × Row) := do
+/-- Allocate kernel `f` by graph coloring, linear scan, and all slots; each must be accepted. -/
+def allocate (f : Lir.Func) : Except String (VProgram × LProgram × LProgram × LProgram × Row) := do
   let q ← match Select.run (Lir.Kernels.program f) with
     | .ok (q, _) => pure q
     | .error e => throw s!"{f.name}: selection: {e.text}"
+  let gc ← match IxCC.Xv.Alloc.GraphColor.run {} q.funcs[0]! with
+    | .ok o => pure o
+    | .error e => throw s!"{f.name}: graph color: {e}"
+  if let .error e := IxCC.Xv.Validate.func {} 0 q.funcs[0]! gc then
+    throw s!"{f.name}: graph color rejected: {e.text}"
+  let gGC ← IxCC.Xv.Validate.run {} q [gc]
   let scan ← match IxCC.Xv.Alloc.LinearScan.run {} q.funcs[0]! with
     | .ok o => pure o
     | .error e => throw s!"{f.name}: linear scan: {e}"
@@ -45,10 +53,11 @@ def allocate (f : Lir.Func) : Except String (VProgram × LProgram × LProgram ×
   let all ← match IxCC.Xv.Alloc.runAllSlots {} q with
     | .ok r => pure r
     | .error e => throw s!"{f.name}: all slots: {e}"
-  let row : Row := { kernel := f.name, scan := scan.counts, scanSlots := scan.numSlots
+  let row : Row := { kernel := f.name, gc := gc.counts, gcSlots := gc.numSlots
+                     scan := scan.counts, scanSlots := scan.numSlots
                      allSlots := countsOf all.outs, allSlotsSlots := all.outs.foldl (· + ·.numSlots) 0
-                     insts := IxCCTests.Xv.Diff.xvSize q, xl := g.text }
-  return (q, g, all.program, row)
+                     insts := IxCCTests.Xv.Diff.xvSize q, xl := gGC.text }
+  return (q, gGC, g, all.program, row)
 
 /-- The kernel-evaluation probe's certificates are what linear scan emits
 today (their generator is not kept in the repository; regenerate them by
@@ -69,13 +78,13 @@ def check : Except String (List Row × Nat) := do
   let mut rows := #[]
   let mut checks := 0
   for f in kernels do
-    let (_, g, a, row) ← allocate f
+    let (_, gGC, g, a, row) ← allocate f
     rows := rows.push row
     for c in Lir.Kernels.cases.filter (·.kernel == f.name) do
       let args := c.args.map Lir.Kernels.tag
       let mem := Region.initial 0
       let want := IxCCTests.Xv.Diff.expected c.expect
-      for (label, prog) in [("linear scan", g), ("all slots", a)] do
+      for (label, prog) in [("graph color", gGC), ("linear scan", g), ("all slots", a)] do
         let run (k : Nat) := light (Xl.eval prog {} k args mem Region.ctx)
         match c.charges with
         | some k =>

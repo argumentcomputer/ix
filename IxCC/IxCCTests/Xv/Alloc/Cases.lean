@@ -370,4 +370,115 @@ def disjointBranchProg : VProgram := { funcs := #[disjointBranchSpills], main :=
       (differential disjointBranchProg r.program {} [1] 0).toBool
   | .error _ => false
 
+/-! ## Graph-coloring (IRC) unit & coalescing tests -/
+
+#guard match IxCC.Xv.Alloc.GraphColor.run {} caller with
+  | .ok o => o.numSlots == 0 && o.counts.spills == 0 && o.counts.moves ≤ 1 &&
+      (Validate.func {} 0 caller o).toBool
+  | .error _ => false
+
+#guard match IxCC.Xv.Alloc.GraphColor.run {} double with
+  | .ok o => o.numSlots == 0 && o.counts.spills == 0 && o.counts.moves ≤ 1 &&
+      (Validate.func {} 0 double o).toBool
+  | .error _ => false
+
+#guard (IxCC.Xv.Alloc.GraphColor.run {} tailEight).toBool == false
+#guard (IxCC.Xv.Alloc.GraphColor.run {} threeResults).toBool == false
+
+#guard match IxCC.Xv.Alloc.GraphColor.run {} crossCallParamLoop with
+  | .ok o => o.numSlots == 0 && o.counts.spills == 0 &&
+      (Validate.func {} 0 crossCallParamLoop o).toBool
+  | .error _ => false
+
+#guard match IxCC.Xv.Alloc.GraphColor.run {} fixedHintParamLoop with
+  | .ok o => o.numSlots == 0 && o.counts.spills == 0 &&
+      o.blocks[1]!.cert.contains (.reg .rcx, [2]) &&
+      (Validate.func {} 0 fixedHintParamLoop o).toBool
+  | .error _ => false
+
+#guard match IxCC.Xv.Alloc.GraphColor.run rcDecEnv rcSevenLive with
+  | .ok o => o.numSlots == 0 && o.counts.spills == 0 &&
+      (Validate.func rcDecEnv 0 rcSevenLive o).toBool
+  | .error _ => false
+
+#guard match IxCC.Xv.Alloc.GraphColor.run rcIncEnv incFixedHint with
+  | .ok o => o.numSlots == 0 && o.counts.spills == 0 && o.counts.moves == 0 &&
+      o.blocks[0]!.locs[0]! == [.reg .rcx] && (Validate.func rcIncEnv 0 incFixedHint o).toBool
+  | .error _ => false
+
+#guard match IxCC.Xv.Alloc.GraphColor.run {} disjointBranchSpills with
+  | .ok o => o.numSlots == 1 && (Validate.func {} 0 disjointBranchSpills o).toBool
+  | .error _ => false
+
+/-- `.move dst src` with dead `src` coalesces `dst` and `src` to the same register (`rax` for `ret`),
+while `.move dst src` with live `src` assigns distinct registers (validator rejects aliasing live `src`). -/
+def moveDeadAndLive : Func VReg := { params := [0, 1], results := 1, blocks := #[
+  { body := #[.move 2 1, .op addMR [3] [.r 0, .r 2], .op addMR [4] [.r 3, .r 1], .move 5 4]
+    term := .ret [5] }] }
+
+#guard match IxCC.Xv.Alloc.GraphColor.run {} moveDeadAndLive with
+  | .ok o =>
+      -- `v1` survives `.move 2 1`, so `v2` and `v1` MUST get distinct registers!
+      -- `v4` dies at `.move 5 4`, so `v5` and `v4` coalesce to the same register (`rax`)!
+      o.numSlots == 0 && o.counts.spills == 0 &&
+        o.blocks[0]!.locs[0]![0]! != o.blocks[0]!.locs[0]![1]! &&
+        o.blocks[0]!.locs[3]![0]! == o.blocks[0]!.locs[3]![1]! &&
+        (Validate.func {} 0 moveDeadAndLive o).toBool
+  | .error _ => false
+
+/-- 128-bit `mulM` + `adc` limb loop: fixed `rax`/`rdx` multi-results + tied `adc` + loop back-edges. -/
+def limbMulAddLoop : Func VReg :=
+  let adcMI8 := Select.row .adc .w64 .MI8
+  let subMI8 := Select.row .sub .w64 .MI8
+  { params := [0, 1, 2, 3, 4], results := 1, blocks := #[
+      -- b0(iters=0, a=1, b=2, lo=3, hi=4) -> b1(0, 3, 4)
+      { term := .jmp ⟨1, [0, 3, 4]⟩ },
+      -- b1(n=10, lo=11, hi=12): if n == 0 then b2 else b3
+      { params := [10, 11, 12]
+        term := .jcc cmpMR [.r 10, .i 0] [] .eq ⟨2, []⟩ ⟨3, []⟩ },
+      -- b2: return lo + hi
+      { body := #[.op addMR [13] [.r 11, .r 12]], term := .ret [13] },
+      -- b3: (pLo=20, pHi=21) := a * b; (lo'=23, c1=24) := addCarry lo pLo 0; hi' := hi + pHi + c1; n' := n - 1
+      { body := #[
+          .op (X86.Op.mulM .w64) [20, 21] [.r 2, .r 1],
+          .zero 22,
+          .op addMR [23] [.r 11, .r 20],
+          .fused cmpMR [.r 23, .r 11] adcMI8 [24] [.r 22, .i 0],
+          .op addMR [25] [.r 12, .r 21],
+          .fused cmpMR [.r 22, .r 24] adcMI8 [26] [.r 25, .i 0],
+          .op subMI8 [27] [.r 10, .i 1]
+        ]
+        term := .jmp ⟨1, [27, 23, 26]⟩ }] }
+
+def limbMulAddProg : VProgram := { funcs := #[limbMulAddLoop], main := 0 }
+
+#guard match IxCC.Xv.Alloc.GraphColor.run {} limbMulAddLoop with
+  | .ok o => o.numSlots == 0 && o.counts.spills == 0 &&
+      (Validate.func {} 0 limbMulAddLoop o).toBool
+  | .error _ => false
+#guard match IxCC.Xv.Alloc.run {} limbMulAddProg with
+  | .ok r => r.outcomes.all (fun | .scan => true | _ => false) &&
+      (differential limbMulAddProg r.program {} [4, 0x100000001, 0x100000001, 7, 11] 0).toBool
+  | .error _ => false
+
+/-- Early definition (`fused cmp/setcc`) under register pressure must not alias any use. -/
+def earlySetccPressure : Func VReg :=
+  let movImm := Select.row .mov .w32 .OI
+  let defs := (List.range 12).map fun k => Inst.op movImm [k + 2] [.i (UInt64.ofNat (k + 1))]
+  let testInst := Inst.fused cmpMR [.r 0, .r 1] (X86.Op.setccM .unsignedLt) [14] []
+  let sums := (List.range 12).map fun k =>
+    Inst.op addMR [15 + k] [.r (if k == 0 then 14 else 14 + k), .r (k + 2)]
+  { params := [0, 1], results := 1, blocks := #[
+      { body := (defs ++ [testInst] ++ sums).toArray, term := .ret [26] }] }
+
+def earlySetccProg : VProgram := { funcs := #[earlySetccPressure], main := 0 }
+
+#guard match IxCC.Xv.Alloc.GraphColor.run {} earlySetccPressure with
+  | .ok o => (Validate.func {} 0 earlySetccPressure o).toBool
+  | .error _ => false
+#guard match IxCC.Xv.Alloc.run {} earlySetccProg with
+  | .ok r => (differential earlySetccProg r.program {} [3, 9] 0).toBool &&
+      (differential earlySetccProg r.program {} [9, 3] 0).toBool
+  | .error _ => false
+
 end IxCCTests.Xv.Alloc.Cases
