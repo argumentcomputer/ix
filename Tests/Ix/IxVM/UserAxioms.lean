@@ -1,6 +1,7 @@
 module
 
 public import Ix.IxVM.ClaimHarness
+public import Ix.Cli.FormalAiur
 public import Tests.Ix.IxVM.Harness
 
 /-! # User axioms in a typing claim's context
@@ -118,13 +119,18 @@ The environment holds `axiom ax : Prop` and `def c : Type := Prop` under the def
 table's binding (its bytes only: the claims assume the binding, as `--assume-binding` makes
 them). Its `checkEnv` claim names the environment's user-axiom tree beside its owned tree,
 and its run checks the owned leaves on the record that runs the claim
-(`KernelClaim::walk_leaves_transitive`). The witness (`buildClaimWitness`) carries both
-trees, and IxVM accepts it. -/
+(`KernelClaim::walk_leaves_transitive`).
 
-/-- `axiom ax : Prop` and `def c : Type := Prop`, bound to the default role table. -/
-def wholeEnvironment : Except String Ixon.Env := do
+- With the user axiom: the ordinary witness (`buildClaimWitness`) carries both trees, and
+  IxVM accepts it through `walk_leaves_transitive`.
+- Without the user axiom: the ordinary witness carries only the owned tree, and IxVM accepts
+  it through `check_owned`. -/
+
+/-- `axiom ax : Prop` (with `withAxiom`) and `def c : Type := Prop`, bound to the default
+role table. -/
+def wholeEnvironment (withAxiom : Bool) : Except String Ixon.Env := do
   let (env, _) := store {} (definition (.sort 1) (.sort 0) #[] #[.zero, .succ .zero])
-  let env := (store env (axiomOf (.sort 0) #[.zero]) (hint := false)).1
+  let env := if withAxiom then (store env (axiomOf (.sort 0) #[.zero]) (hint := false)).1 else env
   let bytes ← Ix.Kernel.Reader.defaultTableBytes
   withDefaultRoleBinding { env with roleBinding := some { address := Address.blake3 bytes, bytes } }
 
@@ -134,9 +140,9 @@ private def treeKeys (io : Aiur.IOBuffer) : Array (Array Aiur.G) :=
 
 private def treeKey (a : Address) : Array Aiur.G := a.hash.data.map .ofUInt8
 
-/-- The checks without the program, and the case. -/
+/-- The checks without the program, and the cases. -/
 def wholeEnvironmentCases : Except String (Array Builder) := do
-  let env ← wholeEnvironment
+  let env ← wholeEnvironment true
   let ctx ← Ix.ClaimContext.ofEnv env true
   let some axRoot := ctx.axioms | throw "the environment has no user axiom"
   unless (Ix.ClaimContext.userAxioms env).size == 1 do
@@ -147,11 +153,25 @@ def wholeEnvironmentCases : Except String (Array Builder) := do
   let ordinary ← buildClaimWitness env claim (({} : Std.HashMap _ _).insert tree.root tree)
   unless (treeKeys ordinary.inputIOBuffer).contains (treeKey tree.root) &&
       (treeKeys ordinary.inputIOBuffer).contains (treeKey axRoot) do
-    throw "the witness lacks the owned or the axioms tree"
+    throw "the ordinary witness lacks the owned or the axioms tree"
+  -- without the axiom: only the owned tree is carried
+  let plain ← wholeEnvironment false
+  let plainCtx ← Ix.ClaimContext.ofEnv plain true
+  unless plainCtx.axioms.isNone do
+    throw "the plain environment unexpectedly carried user axioms"
+  let some plainTree := envCanonicalTree plain | throw "the plain environment has no canonical tree"
+  let plainClaim := Ix.Claim.checkEnv plainCtx plainTree.root none
+  let plainOrdinary ← buildClaimWitness plain plainClaim
+    (({} : Std.HashMap _ _).insert plainTree.root plainTree)
+  unless treeKeys plainOrdinary.inputIOBuffer == #[treeKey plainTree.root] do
+    throw "the plain witness carried unexpected channel-1 trees"
   return #[
-    fun _ => pure { label := "whole environment: the witness of one user axiom and one definition",
+    fun _ => pure { label := "whole environment: the ordinary witness of one user axiom and one definition",
                     accept := true, exercises := some "KernelClaim::walk_leaves_transitive",
-                    witness := ordinary }]
+                    witness := ordinary },
+    fun _ => pure { label := "whole environment without the axiom: ordinary witness",
+                    accept := true, exercises := some "IxVMCompat::check_owned",
+                    witness := plainOrdinary }]
 
 def run : IO UInt32 := do
   Tests.Ix.IxVM.runCases "ixvm-user-axioms"

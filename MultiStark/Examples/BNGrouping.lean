@@ -39,7 +39,7 @@ def main (args : List String) : IO Unit := do
     let inlined ← IO.ofExcept (Inlining.prepare specialized.program specialized.inlineNames prepared.entries)
     let artifact ← IO.ofExcept (Trace.compileParallel inlined.program prepared.entries {})
     let physical ← IO.ofExcept (Physical.prepare artifact)
-    let cfg ← IO.ofExcept (Trace.depthConfig MultiStark.BN.modulus physical)
+    let (cfg, _) ← IO.ofExcept (Trace.depthConfig MultiStark.BN.modulus inlined.program physical)
     let snapshot := Grouping.Snapshot.capture artifact physical cfg
       (exported.bytecode.functions.map (·.name) ++ exported.bytecode.maps.map (·.name)) []
     IO.FS.writeFile snapshotPath ((toJson snapshot).compress ++ "\n")

@@ -199,12 +199,14 @@ structure AggregateConfig where
   assumeBinding : Bool
 
 /-- A catalog member: its label, its claim (`Ix.Claim.ser`), its role
-binding section and its literal class's address. -/
+binding section, its literal class's address, and its optional sorted
+user-axiom leaves (for A7 axiom-set merging across cross-binding joins). -/
 structure CatalogMember where
   label : String
   claim : ByteArray
   bindingSection : ByteArray
   literalClass : Option ByteArray
+  axiomLeaves : Array ByteArray := #[]
 
 /-- `ix aggregate --ixc` as configured: the members in manifest order, the
 store addresses of their roots and the root claim (`Ix.Claim.ser`) the

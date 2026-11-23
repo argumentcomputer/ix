@@ -447,6 +447,23 @@ def targetRequest (env : Option FormalProver.Env) (claim : Ix.Claim) :
     FormalProver.Request.check env a.hash (Ix.Claim.ser claim)
   | .shard _ => throw (IO.userError "submit shard leaves by their manifest blocks")
   | .leanW w => bufferRequest w.input w.inputIOBuffer
+  | .rawIxi raw => do
+    let inv ← IO.ofExcept (AiurInvocation.Invocation.decode raw)
+    let mut layout := ByteArray.empty
+    let mut bytes := ByteArray.empty
+    let mut words := ByteArray.empty
+    for s in inv.streams do
+      let byteStream := s.values.all (· < 256)
+      layout := pushUInt64 layout s.channel.toUInt64
+      layout := pushUInt64 layout (if byteStream then 0 else 1)
+      layout := pushUInt64 layout s.key.size.toUInt64
+      for k in s.key do layout := pushUInt64 layout k.toUInt64
+      layout := pushUInt64 layout s.values.size.toUInt64
+      if byteStream then
+        for v in s.values do bytes := bytes.push v.toUInt8
+      else
+        for v in s.values do words := pushUInt64 words v.toUInt64
+    FormalProver.Request.buffers inv.entry (inv.args.map (·.toUInt64)) layout bytes words
 
 def rejectFlags (p : Cli.Parsed) (flags : Array String) : IO Unit := do
   for flag in flags do
@@ -585,6 +602,7 @@ private def runManifest (p : Cli.Parsed) (ixvm : Option Selected) (options : Hos
     (fun m (k, owned) => m.insert k owned) {}
   let some ixvm := ixvm | throw (IO.userError "missing the IxVM program")
   let formalEnv ← phase "formal env" fun _ => FormalProver.Env.ofHandle handle
+  let requestedJobs := jobs
   let jobs := max 1 (min jobs selected.size)
   -- `--json` writes one benchmark results row (`Ix.Benchmark.Results`) for
   -- `ix bench run --backend aiur-sharded-env`; its peak covers the prover.
@@ -592,7 +610,7 @@ private def runManifest (p : Cli.Parsed) (ixvm : Option Selected) (options : Hos
   let start ← IO.monoMsNow
   let batchStart ← IO.monoNanosNow
   let results ← boundedMap jobs selected fun members k => do
-    let options := options.forWave jobs members
+    let options := options.forWave requestedJobs members
     let mut pending := #[(view.shards[k]!, ownedOf.getD k #[])]
     let mut settled : Array PartResult := #[]
     while !pending.isEmpty do

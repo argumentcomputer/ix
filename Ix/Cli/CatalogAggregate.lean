@@ -83,7 +83,7 @@ def catalogMembers (ixc : String) (structuralAbove : Nat) :
         | .error e => return .error s!"{piece}: {e}"
     let member : CatalogMember :=
       { label := m.label, toolchain := m.toolchain, claim, bindingSection := binding.bytes,
-        literalClass }
+        literalClass, axiomTree := Ix.ClaimContext.userAxiomTree env }
     out := out.push (member, m, count)
   return .ok out
 
@@ -238,7 +238,8 @@ def aggregateCatalog (p : Cli.Parsed) (ixc : String) : IO UInt32 := do
   let config : FormalProver.CatalogConfig := {
     members := members.map fun (m, _, _) => {
       label := m.label, claim := Ix.Claim.ser m.claim, bindingSection := m.bindingSection
-      literalClass := m.literalClass.map (·.hash) }
+      literalClass := m.literalClass.map (·.hash)
+      axiomLeaves := (m.axiomTree.map (·.leaves.map (·.hash))).getD #[] }
     proofs, expectedRoot := Ix.Claim.ser expected, device := options.device
     options := options.job, useCache := !(p.hasFlag "no-cache"), writeOutputs := true }
   let address ← match ← (FormalProver.aggregateCatalog ctx.ixvmSystem ctx.aggrSystem
