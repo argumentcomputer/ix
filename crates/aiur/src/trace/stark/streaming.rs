@@ -313,11 +313,11 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         .take(self.tables.len())
         .map(|c| c.preprocessed_height),
     );
-    rows.extend(
-      self.rom.widths.iter().map(|&width| {
-        self.rom.row_count_for_entries(width, record.memory.width_cells(width).len())
-      }),
-    );
+    rows.extend(self.rom.widths.iter().map(|&width| {
+      self
+        .rom
+        .row_count_for_entries(width, record.memory.width_cells(width).len())
+    }));
     Ok(rows)
   }
 
@@ -749,7 +749,9 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     &self,
     record: &'r Execution<B>,
     host: &HostParts,
-    layout: Option<&BatchLayout>,
+    #[cfg_attr(not(feature = "cuda"), allow(unused_variables))] layout: Option<
+      &BatchLayout,
+    >,
   ) -> Result<PreparedRecord<'r, B>, String> {
     if host.plan != self.plan_identity()
       || host.members.len() != self.members.len()
@@ -825,7 +827,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
   }
 
   fn plan_identity(&self) -> usize {
-    &*self.plan as *const TracePlan<'_, B> as *const () as usize
+    (&*self.plan as *const TracePlan<'_, B>).cast::<()>() as usize
   }
 
   pub fn prepare_incremental<'r>(
@@ -851,7 +853,8 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     let Some(plans) = self.device_plans.as_ref() else {
       return Ok(serde_json::Value::Null);
     };
-    let Some((shards, whole)) = plans.shard_image_sizes(self, record, layout)?
+    let Some((shards, whole)) =
+      plans.shard_image_sizes(self, record, layout)?
     else {
       return Ok(serde_json::Value::Null);
     };
@@ -944,8 +947,14 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     let rows = None::<()>;
     let populate = |(ci, slice)| {
       let mut time = CircuitTime::default();
-      let trace =
-        self.populate_slice(prepared, shard, rows.as_ref(), ci, slice, &mut time)?;
+      let trace = self.populate_slice(
+        prepared,
+        shard,
+        rows.as_ref(),
+        ci,
+        slice,
+        &mut time,
+      )?;
       Ok::<_, String>((trace, time))
     };
     #[cfg(feature = "parallel")]
@@ -1105,7 +1114,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       // batches' own durations are attributed to this circuit.
       #[cfg(feature = "parallel")]
       {
-        let busy = std::sync::atomic::AtomicU64::new(0);
+        let busy = AtomicU64::new(0);
         real.par_chunks_mut(width * 32).enumerate().try_for_each_init(
           Scratch::default,
           |scratch, (batch, cells)| {
@@ -1115,7 +1124,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
             }
             busy.fetch_add(
               u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX),
-              std::sync::atomic::Ordering::Relaxed,
+              Ordering::Relaxed,
             );
             Ok::<_, String>(())
           },
@@ -1490,6 +1499,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
   /// [`Self::plan_forced`] of a validated layout with `terms`, when the
   /// device populates the `generated` circuits from a record of `bytes`
   /// (see [`Self::plan_terms`]), without reading the record.
+  #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
   pub(super) fn plan_forced_terms(
     &self,
     terms: &LayoutTerms,

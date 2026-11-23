@@ -284,7 +284,7 @@ impl Formal {
     lane: &Lane,
     single_shard: bool,
     workspace: usize,
-  ) -> planning::Options {
+  ) -> Options {
     let mut options = self.options.clone();
     options.device = lane.device;
     options.single_shard = single_shard;
@@ -313,7 +313,7 @@ impl Formal {
     record: Execution<Field>,
     entry: &str,
     args: &[Element],
-    options: &planning::Options,
+    options: &Options,
     reservation: Option<&RecordReservation>,
   ) -> Result<HostPrepared<Field>, PrepareFailure> {
     let prover = &lane.provers[index(kind)];

@@ -223,6 +223,7 @@ pub(crate) struct HintSite<F = u64> {
   pub(crate) registers: Option<Arc<RegisterHint<F>>>,
   pub(crate) direct: Option<DirectHintKind>,
   /// The provider's data, when a device can evaluate it.
+  #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
   pub(crate) arenas: Option<Arc<dyn DeviceArenas>>,
 }
 

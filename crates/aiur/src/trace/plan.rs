@@ -20,8 +20,12 @@ fn eval_direct_map<B: FieldBackend>(
       if args.len() != 2 {
         return Err("map argument/output width mismatch".into());
       }
-      let va = field.to_u64(args[0].get(scratch));
-      let vb = field.to_u64(args[1].get(scratch));
+      let va = field
+        .try_to_u64(args[0].get(scratch))
+        .map_err(|_err| "no table entry for map input".to_string())?;
+      let vb = field
+        .try_to_u64(args[1].get(scratch))
+        .map_err(|_err| "no table entry for map input".to_string())?;
       if (va | vb) > 255 {
         return Err("no table entry for map input".into());
       }
@@ -34,7 +38,11 @@ fn eval_direct_map<B: FieldBackend>(
         return Err("map argument/output width mismatch".into());
       }
       let val = args[0].get(scratch);
-      if field.to_u64(val) >= 256 {
+      if field
+        .try_to_u64(val)
+        .map_err(|_err| "no table entry for map input".to_string())?
+        >= 256
+      {
         return Err("no table entry for map input".into());
       }
       scratch[start] = val;
@@ -121,7 +129,9 @@ fn eval_direct_map<B: FieldBackend>(
       if args.len() != 1 || width != 1 {
         return Err("map argument/output width mismatch".into());
       }
-      let row = field.to_u64(args[0].get(scratch));
+      let row = field
+        .try_to_u64(args[0].get(scratch))
+        .map_err(|_err| "no table entry for map input".to_string())?;
       if row >= 768 {
         return Err("no table entry for map input".into());
       }
@@ -131,7 +141,9 @@ fn eval_direct_map<B: FieldBackend>(
       if args.len() != 1 || width != 8 {
         return Err("map argument/output width mismatch".into());
       }
-      let row = field.to_u64(args[0].get(scratch));
+      let row = field
+        .try_to_u64(args[0].get(scratch))
+        .map_err(|_err| "no table entry for map input".to_string())?;
       if row >= 256 {
         return Err("no table entry for map input".into());
       }
@@ -159,10 +171,10 @@ fn eval_direct_hint<B: FieldBackend>(
     scratch: &[B::Element],
     vals: &[Value<B::Element>],
   ) -> Result<u32, String> {
-    let b0 = field.to_u64(vals[0].get(scratch));
-    let b1 = field.to_u64(vals[1].get(scratch));
-    let b2 = field.to_u64(vals[2].get(scratch));
-    let b3 = field.to_u64(vals[3].get(scratch));
+    let b0 = field.try_to_u64(vals[0].get(scratch))?;
+    let b1 = field.try_to_u64(vals[1].get(scratch))?;
+    let b2 = field.try_to_u64(vals[2].get(scratch))?;
+    let b3 = field.try_to_u64(vals[3].get(scratch))?;
     if (b0 | b1 | b2 | b3) > 255 {
       return Err("non-byte u32 sum operand".into());
     }
@@ -188,15 +200,15 @@ fn eval_direct_hint<B: FieldBackend>(
       if key.len() != 1 || width != 4 {
         return Err("hint input width mismatch".into());
       }
-      let word = field.to_u64(key[0].get(scratch)) as u32;
+      let word = field.try_to_u64(key[0].get(scratch))? as u32;
       write_u32_bytes(field, scratch, start, word);
     },
     DirectHintKind::U32Sub => {
       if key.len() != 2 || width != 4 {
         return Err("hint input width mismatch".into());
       }
-      let a = field.to_u64(key[0].get(scratch)) as u32;
-      let b = field.to_u64(key[1].get(scratch)) as u32;
+      let a = field.try_to_u64(key[0].get(scratch))? as u32;
+      let b = field.try_to_u64(key[1].get(scratch))? as u32;
       write_u32_bytes(field, scratch, start, a.wrapping_sub(b));
     },
     DirectHintKind::U32Add => {
@@ -225,8 +237,8 @@ fn eval_direct_hint<B: FieldBackend>(
       if key.len() != 2 || width != 12 {
         return Err("hint input width mismatch".into());
       }
-      let a = field.to_u64(key[0].get(scratch)) as u32;
-      let b = field.to_u64(key[1].get(scratch)) as u32;
+      let a = field.try_to_u64(key[0].get(scratch))? as u32;
+      let b = field.try_to_u64(key[1].get(scratch))? as u32;
       write_u32_bytes(field, scratch, start, a);
       write_u32_bytes(field, scratch, start + 4, a.wrapping_sub(b));
       write_u32_bytes(field, scratch, start + 8, b);
@@ -235,7 +247,7 @@ fn eval_direct_hint<B: FieldBackend>(
       if key.len() != 1 || width != 8 {
         return Err("hint input width mismatch".into());
       }
-      let bytes = field.to_u64(key[0].get(scratch)).to_le_bytes();
+      let bytes = field.try_to_u64(key[0].get(scratch))?.to_le_bytes();
       for (i, &byte) in bytes.iter().enumerate() {
         scratch[start + i] = field.from_u64(u64::from(byte));
       }

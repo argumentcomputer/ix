@@ -307,7 +307,9 @@ mod tests {
 
   #[test]
   fn rows_locate_by_division() {
-    for row_bytes in [1, 8, 16, 24, 72, 88, 4096, 1 << 19, 1 << 20, (1 << 19) + 8] {
+    for row_bytes in
+      [1, 8, 16, 24, 72, 88, 4096, 1 << 19, 1 << 20, (1 << 19) + 8]
+    {
       let rows = Chunks::<u8>::new(row_bytes, 1 << 19);
       assert_eq!(rows.rows_per_chunk(), ((1 << 19) / row_bytes).max(1));
       let n = rows.rows_per_chunk();

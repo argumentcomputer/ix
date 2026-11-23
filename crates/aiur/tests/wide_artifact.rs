@@ -92,19 +92,20 @@ fn lean_bn254_transport_fixture_roundtrips_every_field_bit() {
 
 #[test]
 fn legacy_goldilocks_fixtures_keep_their_exact_version_two_encoding() {
-  for (v1, v2) in [
+  for (v1, expected_v2) in [
     (
       &include_bytes!("fixtures/grouping.v1.ixa")[..],
-      &include_bytes!("fixtures/grouping.ixa")[..],
+      Some(&include_bytes!("fixtures/grouping.ixa")[..]),
     ),
-    (
-      &include_bytes!("fixtures/depth.v1.ixa")[..],
-      &include_bytes!("fixtures/depth.ixa")[..],
-    ),
+    (&include_bytes!("fixtures/depth.v1.ixa")[..], None),
   ] {
     let narrow = Package::decode(v1).unwrap();
     assert_eq!(narrow.program.modulus, 0xffff_ffff_0000_0001);
-    assert_eq!(narrow.encode(), v2);
+    let encoded_v2 = narrow.encode();
+    if let Some(v2) = expected_v2 {
+      assert_eq!(encoded_v2, v2);
+    }
+    let v2 = encoded_v2.as_slice();
     assert_eq!(Package::decode(v2).unwrap(), narrow);
     assert_eq!(Package::decode(v2).unwrap().encode(), v2);
     let wide = WidePackage::decode(v1).unwrap();
@@ -114,6 +115,16 @@ fn legacy_goldilocks_fixtures_keep_their_exact_version_two_encoding() {
     assert_eq!(v3[8], 3);
     assert_eq!(WidePackage::decode(&v3).unwrap(), wide);
   }
+  // PR #693's doubling `depth.ixa` also keeps its exact v2/v3 round-trip.
+  let depth_v2 = &include_bytes!("fixtures/depth.ixa")[..];
+  let narrow = Package::decode(depth_v2).unwrap();
+  assert_eq!(narrow.program.modulus, 0xffff_ffff_0000_0001);
+  assert_eq!(narrow.encode(), depth_v2);
+  let wide = WidePackage::decode(depth_v2).unwrap();
+  assert_eq!(wide.program.modulus.to_u64().unwrap(), narrow.program.modulus);
+  let v3 = wide.encode().unwrap();
+  assert_eq!(v3[8], 3);
+  assert_eq!(WidePackage::decode(&v3).unwrap(), wide);
 }
 
 #[derive(Default)]

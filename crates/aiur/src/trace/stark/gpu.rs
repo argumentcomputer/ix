@@ -512,9 +512,8 @@ impl Buffer {
       let count = batch.min(rows - first);
       // SAFETY: the staging buffer holds `STAGING_WORDS >= count * stride`
       // words, and only this call uses it.
-      let words = unsafe {
-        std::slice::from_raw_parts_mut(staging.0, count * stride)
-      };
+      let words =
+        unsafe { std::slice::from_raw_parts_mut(staging.0, count * stride) };
       let threads = if parallel {
         std::thread::available_parallelism().map_or(1, usize::from)
       } else {
@@ -690,7 +689,10 @@ fn map_kind(name: &str) -> Option<u32> {
 }
 
 fn hint_kind(channel: &str) -> Option<u32> {
-  crate::trace::DEVICE_HINTS.iter().position(|&h| h == channel).map(|i| i as u32)
+  crate::trace::DEVICE_HINTS
+    .iter()
+    .position(|&h| h == channel)
+    .map(|i| i as u32)
 }
 
 /// The device kind of a hint step: a word hint, or an arena read for a
@@ -1269,8 +1271,8 @@ impl DevicePlans {
         *rows.entry(m.table).or_default() += hi - lo;
         let Some(refs) = tables[f].refs.as_ref() else { continue };
         let (lo, hi) = (lo - first, hi - first);
-        let blocks =
-          lo >> crate::refs::BLOCK_SHIFT..((hi - 1) >> crate::refs::BLOCK_SHIFT) + 1;
+        let blocks = lo >> crate::refs::BLOCK_SHIFT
+          ..((hi - 1) >> crate::refs::BLOCK_SHIFT) + 1;
         sharding.each_ref(refs, f, blocks, |site, _| {
           if let Some(Some(table)) = sharding.targets[f].get(site) {
             *rows.entry(*table).or_default() += 1;
@@ -1541,7 +1543,9 @@ impl DevicePlans {
       .map(|members| {
         members
           .iter()
-          .flat_map(|&f| arena_sites(backend, f).into_iter().map(move |i| (f, i)))
+          .flat_map(|&f| {
+            arena_sites(backend, f).into_iter().map(move |i| (f, i))
+          })
           .collect()
       })
       .collect();
@@ -1673,16 +1677,12 @@ impl RecordModel {
   /// [`DevicePlans::record_bytes`] when exactly the `admitted` device
   /// circuits are populated.
   pub(super) fn bytes(&self, admitted: &[bool]) -> u64 {
-    let arenas = if self
-      .circuits
-      .iter()
-      .zip(admitted)
-      .any(|(c, on)| *on && c.arenas)
-    {
-      self.arenas
-    } else {
-      0
-    };
+    let arenas =
+      if self.circuits.iter().zip(admitted).any(|(c, on)| *on && c.arenas) {
+        self.arenas
+      } else {
+        0
+      };
     if let Some(shards) = &self.shards {
       let workspaces: Vec<u64> = self
         .circuits
@@ -1977,7 +1977,8 @@ impl Image {
     let mut tables = vec![];
     for (i, table) in self.tables.iter().enumerate() {
       let count = counts[i];
-      let words = count.checked_mul(table.stride).ok_or("table size overflow")?;
+      let words =
+        count.checked_mul(table.stride).ok_or("table size overflow")?;
       let buffers = TableBuffers {
         rows: Buffer::new(device, words.max(1) * 8)?,
         multiplicities: Buffer::new(device, count.max(1) * 8)?,
@@ -2255,7 +2256,8 @@ impl Marks {
     while row < rows.end {
       let bit = row % 64;
       let take = (64 - bit).min(rows.end - row);
-      let mask = if take == 64 { u64::MAX } else { ((1u64 << take) - 1) << bit };
+      let mask =
+        if take == 64 { u64::MAX } else { ((1u64 << take) - 1) << bit };
       if let Some(word) = self.0.get(row / 64) {
         word.fetch_or(mask, std::sync::atomic::Ordering::Relaxed);
       }
@@ -2428,9 +2430,14 @@ fn fill_rows<B: WitnessField>(
           Stored::Mixed => table.row_words(row, out),
         }
       })?;
-      buffers.multiplicities.write_gathered(ids.len(), 1, parallel, |i, out| {
-        out[0] = table.count(ids[i] as usize);
-      })?;
+      buffers.multiplicities.write_gathered(
+        ids.len(),
+        1,
+        parallel,
+        |i, out| {
+          out[0] = table.count(ids[i] as usize);
+        },
+      )?;
       if let Some(depths) = &buffers.depths {
         if table.depths_len() < table.len() {
           return Err("query record is missing depth heights".into());
@@ -2450,9 +2457,15 @@ fn fill_rows<B: WitnessField>(
           out.copy_from_slice(&B::words(entry.cell.value));
         }
       })?;
-      buffers.multiplicities.write_gathered(ids.len(), 1, parallel, |i, out| {
-        out[0] = cells.get(ids[i] as usize).map_or(0, |entry| entry.multiplicity);
-      })?;
+      buffers.multiplicities.write_gathered(
+        ids.len(),
+        1,
+        parallel,
+        |i, out| {
+          out[0] =
+            cells.get(ids[i] as usize).map_or(0, |entry| entry.multiplicity);
+        },
+      )?;
     },
   }
   // SAFETY: the buffer holds `ids.len() * stride` words.
@@ -2692,8 +2705,8 @@ impl DeviceRecord {
             data.len()
           );
         }
-        bytes = bytes
-          .saturating_add(u64::try_from(arena_bytes).unwrap_or(u64::MAX));
+        bytes =
+          bytes.saturating_add(u64::try_from(arena_bytes).unwrap_or(u64::MAX));
         Some(ArenaBuffers::upload(device, &data)?)
       },
       None => None,
@@ -2830,7 +2843,9 @@ impl DeviceRecord {
     let state = self.state.read().map_err(poisoned)?;
     for shard in &layout.shards {
       let counted: Vec<usize> = (0..self.image.circuits.len())
-        .filter(|&ci| gapped(ci) && shard.circuits.get(ci).is_some_and(|s| s.rows > 0))
+        .filter(|&ci| {
+          gapped(ci) && shard.circuits.get(ci).is_some_and(|s| s.rows > 0)
+        })
         .collect();
       if counted.is_empty() {
         continue;
@@ -2891,12 +2906,11 @@ impl DeviceRecord {
     if !std::ptr::eq(std::ptr::from_ref(record).cast(), self.origin) {
       return Err("device record attached to another execution".into());
     }
-    *self.restore.write().map_err(poisoned)? =
-      Some(RecordOrigin {
-        record: self.origin,
-        fill: fill_from::<B>,
-        fill_rows: fill_rows_from::<B>,
-      });
+    *self.restore.write().map_err(poisoned)? = Some(RecordOrigin {
+      record: self.origin,
+      fill: fill_from::<B>,
+      fill_rows: fill_rows_from::<B>,
+    });
     Ok(Attached { record: self })
   }
 
@@ -3046,7 +3060,9 @@ impl DeviceRecord {
                 "a per-shard device record needs its execution record attached",
               )?;
               // SAFETY: the read guard keeps the attachment.
-              unsafe { self.upload_shard(origin, rows, "uploaded by its tile") }?
+              unsafe {
+                self.upload_shard(origin, rows, "uploaded by its tile")
+              }?
             },
           };
           drop(restore);
@@ -3233,7 +3249,8 @@ impl DeviceRecord {
     let Ok(restore) = self.restore.read() else { return };
     let Some(origin) = *restore else { return };
     // SAFETY: the read guard keeps the attachment.
-    let Ok(resident) = (unsafe { self.upload_shard(origin, rows, "prefetched") })
+    let Ok(resident) =
+      (unsafe { self.upload_shard(origin, rows, "prefetched") })
     else {
       return;
     };
@@ -3464,7 +3481,16 @@ impl DeviceRecord {
   ) -> Result<Vec<u64>, String> {
     let words = rows * self.width(ci);
     let tile = Buffer::upload(self.device, &vec![fill; words.max(1)])?;
-    self.populate(ci, shard, tile.as_ptr(), base, first, rows, height, real_rows)?;
+    self.populate(
+      ci,
+      shard,
+      tile.as_ptr(),
+      base,
+      first,
+      rows,
+      height,
+      real_rows,
+    )?;
     tile.read(words)
   }
 }

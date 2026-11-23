@@ -20,7 +20,7 @@ use std::{
   sync::{Arc, LazyLock},
 };
 
-pub struct StagesHandle {
+pub(crate) struct StagesHandle {
   stages: Stages,
   broker: Arc<Broker>,
 }

@@ -167,9 +167,11 @@ impl<B: FieldBackend> Execution<B> {
   /// whitespace-separated text: the `AIUR_INDEX_SIZES` file that sizes a
   /// later execution's indexes.
   pub fn index_sizes(&self) -> String {
-    let rows = self.queries.tables.iter().map(|table| {
-      if table.static_map.is_some() { 0 } else { table.len() }
-    });
+    let rows = self
+      .queries
+      .tables
+      .iter()
+      .map(|table| if table.static_map.is_some() { 0 } else { table.len() });
     rows
       .chain([self.memory.len()])
       .map(|n| n.to_string())
@@ -565,9 +567,9 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
     table.set_depth(frame.query, frame.depth);
     if let Some(refs) = &mut table.refs {
       let budget = &table.budget;
-      self
-        .pending
-        .take(frame.refs, |pending| refs.finish(frame.query, pending, budget))?;
+      self.pending.take(frame.refs, |pending| {
+        refs.finish(frame.query, pending, budget)
+      })?;
     }
     self.spare_registers.push(frame.registers);
     #[cfg(feature = "function-profile")]
@@ -1437,9 +1439,9 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
             },
             Load { pointer, dest, .. } => {
               let address = usize::try_from(
-                field.try_to_u64(frame.registers[*pointer]).map_err(|error| {
-                  self.error(format!("ROM address overflow: {error}"))
-                })?,
+                field.try_to_u64(frame.registers[*pointer]).map_err(
+                  |error| self.error(format!("ROM address overflow: {error}")),
+                )?,
               )
               .ok()
               .ok_or_else(|| self.error("ROM address overflow"))?;

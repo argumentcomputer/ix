@@ -7,6 +7,7 @@ use multi_stark::{
   graph::{ConstraintGraph, Node},
   lookup::{LookupRowMut, LookupValues},
 };
+use rustc_hash::FxHashMap;
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Value {
   Constant(Val),

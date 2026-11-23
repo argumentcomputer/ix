@@ -158,8 +158,10 @@ fn fixed_log_heights_prove_one_all_active_shard() {
   };
   assert!(header.active.iter().all(|&a| a));
   assert_eq!(header.log_degrees, logs);
-  let key =
-    VerifyingKey::from_bytes(&backend.verifying_key_bytes().unwrap()).unwrap();
+  let key = VerifyingKey::from_bytes_below_floor(
+    &backend.verifying_key_bytes().unwrap(),
+  )
+  .unwrap();
   let claims = [backend.claim(entry, &[3], &record.output).unwrap()];
   key.validate_preamble(&claims[0], &proof.preamble).unwrap();
   key.verify(&claims, &proof).unwrap();
@@ -338,13 +340,16 @@ fn packing_reduces_sparse_shards_and_checks_protocol_bounds() {
       },
     )
     .collect();
-  let last = rows.len() - 1;
-  rows[last] = 4096;
   let cost = |ci: usize, height: usize| {
     let c = &backend.system.circuits[ci];
     height as u128
       * (c.main_width + c.stage_2_width + 2 * c.quotient_degree()) as u128
   };
+  let tall = (0..rows.len())
+    .filter(|&ci| backend.system.circuits[ci].preprocessed_height == 0)
+    .min_by_key(|&ci| cost(ci, 1))
+    .unwrap();
+  rows[tall] = 4096;
   let limit = rows.iter().enumerate().map(|(ci, &n)| cost(ci, n.min(64))).sum();
   let packed = backend.packed_layout(&rows, &[], limit, None).unwrap();
   assert!(packed.shards.len() < 4096 / 64);
@@ -361,7 +366,7 @@ fn packing_reduces_sparse_shards_and_checks_protocol_bounds() {
   }
   assert_eq!(packed, backend.packed_layout(&rows, &[], limit, None).unwrap());
   assert!(backend.packed_layout(&rows, &[], 1, None).is_err());
-  backend.system.circuits[last].num_lookups = (Val::ORDER_U64 / 1024) as usize;
+  backend.system.circuits[tall].num_lookups = (Val::ORDER_U64 / 1024) as usize;
   assert!(backend.packed_layout(&rows, &[], limit, Some(64)).is_err());
 }
 
@@ -863,8 +868,7 @@ fn host_prepared_records_recount_when_the_device_populates_otherwise() {
   let output = record.output.clone();
   for host_population in [false, true] {
     let record = program.execute("Grouped::run", vec![3]).unwrap();
-    let prepared =
-      backend.prepare_host(record, "Grouped::run", &[3]).unwrap();
+    let prepared = backend.prepare_host(record, "Grouped::run", &[3]).unwrap();
     prepared.record().host_population.set(host_population);
     let actual = backend
       .prove_prepared(&prepared, &output, &layout, Retention::Regenerate, None)

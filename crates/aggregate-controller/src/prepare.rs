@@ -4,8 +4,11 @@ use crate::statement::{CanonicalTree, ShardSet, Statement, SubjectTree};
 use ix_common::address::Address;
 use ixon::shard::{AggNode, ShardManifest};
 use ixon::{
-  ClaimContext, Constant, ConstantInfo, merkle::merkle_root_canonical_sorted,
-  shard_claim::{inert_users, outside_logic_at, record_outside_logic, walk_edges},
+  ClaimContext, Constant, ConstantInfo,
+  merkle::merkle_root_canonical_sorted,
+  shard_claim::{
+    inert_users, outside_logic_at, record_outside_logic, walk_edges,
+  },
 };
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};

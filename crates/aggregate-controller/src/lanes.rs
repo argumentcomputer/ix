@@ -16,8 +16,7 @@ mod limits;
 mod memory_trace;
 mod queue;
 use admission::{
-  AdmissionStats, Basis, Prediction, aggregation_prediction,
-  claim_prediction,
+  AdmissionStats, Basis, Prediction, aggregation_prediction, claim_prediction,
 };
 use limits::HostBudget;
 use queue::WorkQueue;

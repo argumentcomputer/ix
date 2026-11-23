@@ -285,7 +285,7 @@ impl<B: FieldBackend> QueryTable<B> {
     {
       let value = field
         .try_to_u64(value)
-        .map_err(|_| StorageError::Invalid(NARROW_OVERFLOW))?;
+        .map_err(|_err| StorageError::Invalid(NARROW_OVERFLOW))?;
       words[low] = value as u32;
       if mask == 0 {
         overflow |= value >> 32;

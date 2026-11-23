@@ -9,7 +9,7 @@ use ark_serialize::CanonicalSerialize;
 use p3_maybe_rayon::prelude::*;
 
 use multi_stark::config::ProofConfig;
-use multi_stark::traits::Pcs;
+use multi_stark::traits::{Field, Pcs};
 
 #[cfg(feature = "cuda")]
 use super::cuda;
@@ -332,9 +332,8 @@ fn quotient_parts_with_block_size<SC: CoefficientConfig, T: Send>(
           reason = "shape or storage unsupported by CUDA quotient kernels",
           "KZG quotient using CPU construction"
         );
-        *part = Some(commit(host_quotient_matrix(
-          pcs, i, input, alpha, block_size,
-        )));
+        *part =
+          Some(commit(host_quotient_matrix(pcs, i, input, alpha, block_size)));
       }
     }
     parts.into_iter().map(Option::unwrap).collect()

@@ -27,10 +27,16 @@ pub(super) fn at(n: u32) -> u64 {
   1 << (12 - n)
 }
 
-/// The argument at which `owned` and `top` are at distance `n` from their
-/// target: `2^(6 - n)`.
-fn owned_at(n: u32) -> u64 {
-  1 << (6 - n)
+/// The argument at distance `n` (`n <= 190`, below the multiplicative order
+/// `192` of `2` in Goldilocks) from `target` under `x -> x * 2`.
+pub(super) fn at_distance(target: u64, n: u32) -> u64 {
+  const P: u128 = 0xffff_ffff_0000_0001;
+  const INV2: u128 = P.div_ceil(2);
+  let mut x = u128::from(target) % P;
+  for _ in 0..n {
+    x = (x * INV2) % P;
+  }
+  u64::try_from(x).unwrap()
 }
 
 fn chip<'t>(trace: &'t TraceArtifact, name: &str) -> &'t crate::trace::Chip {

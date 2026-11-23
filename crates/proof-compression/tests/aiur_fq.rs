@@ -275,7 +275,7 @@ fn canonical_prefix_checks_boundaries_with_zero_fallback_range_advice() {
   let before = fallbacks.load(Ordering::Relaxed);
   let error = executor.execute("FqTest::canonical", raw(&prime)).unwrap_err();
   assert_eq!(fallbacks.load(Ordering::Relaxed), before + 1);
-  assert_eq!(error.function, "BN254Fq::range80");
+  assert_eq!(error.function, "BN254Fq::canonical_low");
   assert!(error.message.contains("Fq 80-bit decomposition"), "{error}");
 
   for chunks in [
@@ -301,7 +301,7 @@ fn canonical_prefix_checks_boundaries_with_zero_fallback_range_advice() {
       .execute("FqTest::canonical", vec![Bn254.zero(); 4])
       .unwrap_err();
     assert!(supplied.load(Ordering::Relaxed) > 0);
-    assert_eq!(error.function, "BN254Fq::range80");
+    assert_eq!(error.function, "BN254Fq::from_limbs");
   }
 }
 
@@ -676,42 +676,54 @@ fn canonical_endpoint_forgery_has_valid_raw_limb_decompositions() {
     .execute(entry, accepted.clone())
     .unwrap();
   let mut traces = backend.generate(&record, entry, &accepted).unwrap().traces;
-  let (function, fill) = plan
-    .artifact()
-    .functions
-    .iter()
-    .enumerate()
-    .find(|(_, fill)| fill.name == "BN254Fq::range80")
-    .unwrap();
-  let chip = plan.function_chips()[function];
   let layout = plan.layout().unwrap();
-  let placement = &layout.placements[chip];
-  assert!(!placement.grouped);
-  let input_column = placement.columns[plan.artifact().chips[chip].inputs[0]];
-  let range_trace = &traces[placement.circuit];
-  let rows: Vec<_> = range_trace
-    .values
-    .chunks_exact(range_trace.width)
-    .enumerate()
-    .filter_map(|(i, row)| (row[input_column] == accepted[0]).then_some(i))
-    .collect();
-  assert_eq!(rows.len(), 1);
-  let row_offset = rows[0] * range_trace.width;
-  let destinations = fill
-    .steps
-    .iter()
-    .find_map(|step| match &step.action {
-      Action::Hint { channel, dest, .. } if channel == "bn254.fq.u16_80" => {
-        Some(dest)
-      },
-      _ => None,
-    })
-    .unwrap();
   let old_chunks = fq::advice("bn254.fq.u16_80", &[accepted[0]]).unwrap();
   let new_chunks = fq::advice("bn254.fq.u16_80", &[rejected[0]]).unwrap();
   assert!(
     new_chunks.iter().all(|&chunk| Bn254.try_to_u64(chunk).unwrap() < 1 << 16)
   );
+  // Both `BN254Fq::from_limbs` and `BN254Fq::canonical_low` inline
+  // `range80(raw[0])` as their first `bn254.fq.u16_80` hint. Locate their
+  // active rows before mutating `accepted[0] -> rejected[0]`.
+  let mut range_sites = Vec::new();
+  for name in ["BN254Fq::from_limbs", "BN254Fq::canonical_low"] {
+    let (function, fill) = plan
+      .artifact()
+      .functions
+      .iter()
+      .enumerate()
+      .find(|(_, fill)| fill.name == name)
+      .unwrap();
+    let chip = plan.function_chips()[function];
+    let placement = &layout.placements[chip];
+    assert!(!placement.grouped);
+    let input_column = placement.columns[plan.artifact().chips[chip].inputs[0]];
+    let range_trace = &traces[placement.circuit];
+    let rows: Vec<_> = range_trace
+      .values
+      .chunks_exact(range_trace.width)
+      .enumerate()
+      .filter_map(|(i, row)| (row[input_column] == accepted[0]).then_some(i))
+      .collect();
+    assert_eq!(rows.len(), 1);
+    let destinations = fill
+      .steps
+      .iter()
+      .find_map(|step| match &step.action {
+        Action::Hint { channel, dest, .. } if channel == "bn254.fq.u16_80" => {
+          Some(dest)
+        },
+        _ => None,
+      })
+      .unwrap();
+    range_sites.push((
+      fill,
+      chip,
+      placement,
+      rows[0] * range_trace.width,
+      destinations,
+    ));
+  }
   for trace in &mut traces {
     for value in &mut trace.values {
       if *value == accepted[0] {
@@ -719,29 +731,6 @@ fn canonical_endpoint_forgery_has_valid_raw_limb_decompositions() {
       }
     }
   }
-  for ((&destination, old), new) in
-    destinations.iter().zip(&old_chunks).zip(&new_chunks)
-  {
-    let Some(column) = fill
-      .writes
-      .iter()
-      .find(|write| write.source == destination)
-      .map(|write| write.column)
-    else {
-      // Linear elimination reconstructs this chunk from the input and the
-      // retained chunks; the emitted lookup values are checked below.
-      continue;
-    };
-    let cell = &mut traces[placement.circuit].values
-      [row_offset + placement.columns[column]];
-    assert_eq!(*cell, *old);
-    *cell = *new;
-  }
-  let logical_row: Vec<_> = placement
-    .columns
-    .iter()
-    .map(|&column| traces[placement.circuit].values[row_offset + column])
-    .collect();
   fn value(polynomial: &Polynomial<FieldWord>, row: &[Scalar]) -> Scalar {
     match polynomial {
       Polynomial::Const(value) => Bn254.from_word(*value),
@@ -751,13 +740,39 @@ fn canonical_endpoint_forgery_has_valid_raw_limb_decompositions() {
       Polynomial::Mul(terms) => value(&terms[0], row) * value(&terms[1], row),
     }
   }
-  let raw_range_chunks: Vec<_> = plan.artifact().chips[chip]
-    .sends
-    .iter()
-    .filter(|send| send.channel == "BN254Fq::limb16")
-    .map(|send| value(&send.args[0], &logical_row))
-    .collect();
-  assert_eq!(raw_range_chunks, new_chunks);
+  for &(fill, chip, placement, row_offset, destinations) in &range_sites {
+    for ((&destination, old), new) in
+      destinations.iter().zip(&old_chunks).zip(&new_chunks)
+    {
+      let Some(column) = fill
+        .writes
+        .iter()
+        .find(|write| write.source == destination)
+        .map(|write| write.column)
+      else {
+        // Linear elimination reconstructs this chunk from the input and the
+        // retained chunks; the emitted lookup values are checked below.
+        continue;
+      };
+      let cell = &mut traces[placement.circuit].values
+        [row_offset + placement.columns[column]];
+      assert_eq!(*cell, *old);
+      *cell = *new;
+    }
+    let logical_row: Vec<_> = placement
+      .columns
+      .iter()
+      .map(|&column| traces[placement.circuit].values[row_offset + column])
+      .collect();
+    let raw_range_chunks: Vec<_> = plan.artifact().chips[chip]
+      .sends
+      .iter()
+      .filter(|send| send.channel == "BN254Fq::limb16")
+      .take(5)
+      .map(|send| value(&send.args[0], &logical_row))
+      .collect();
+    assert_eq!(raw_range_chunks, new_chunks);
+  }
 
   let mut inputs = circuit_inputs(&plan).unwrap();
   let program = plan.program().program();
@@ -782,8 +797,10 @@ fn canonical_endpoint_forgery_has_valid_raw_limb_decompositions() {
   assert_eq!(count_column.source, Source::Main);
   assert_eq!(value_column.source, Source::Preprocessed);
   let fixed = inputs[table].preprocessed.as_ref().unwrap();
+  let sites = u64::try_from(range_sites.len()).unwrap();
+  let delta = Bn254.from_u64(sites);
   for (old, new) in old_chunks.iter().zip(&new_chunks).filter(|(a, b)| a != b) {
-    for (value, increment) in [(old, -Bn254.one()), (new, Bn254.one())] {
+    for (value, increment) in [(old, -delta), (new, delta)] {
       let row = fixed
         .values
         .chunks_exact(fixed.width)
@@ -792,8 +809,8 @@ fn canonical_endpoint_forgery_has_valid_raw_limb_decompositions() {
       let width = traces[table].width;
       let count =
         &mut traces[table].values[row * width + count_column.index as usize];
-      if increment == -Bn254.one() {
-        assert!(Bn254.try_to_u64(*count).unwrap() > 0);
+      if increment == -delta {
+        assert!(Bn254.try_to_u64(*count).unwrap() >= sites);
       }
       *count += increment;
     }

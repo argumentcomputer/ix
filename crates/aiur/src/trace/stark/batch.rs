@@ -1,7 +1,6 @@
 //! Bounded trace shards and verifier-only keys. Function rows may be partitioned
 //! freely; memory rows remain consecutive and are closed by the batch preamble.
 use super::*;
-#[cfg(test)]
 use multi_stark::system::Circuit;
 #[cfg(all(feature = "cuda", test))]
 use multi_stark::witness::TraceSource;
@@ -1255,9 +1254,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       .rom
       .widths
       .iter()
-      .map(|&width| {
-        self.rom.row_count_for_entries(width, record.memory.width_cells(width).len())
-      })
+      .map(|&width| record.memory.width_cells(width).len())
       .collect();
     for (index, (&rows, &log)) in
       unpadded_rows.iter().zip(log_heights).enumerate()

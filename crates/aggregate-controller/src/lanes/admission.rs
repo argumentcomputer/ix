@@ -59,7 +59,6 @@ impl Prediction {
 /// 25.8 GB of query and ROM storage (7.9%).
 pub(crate) const RECORD_REFS_FACTOR: f64 = 1.08;
 
-
 /// [`RECORD_REFS_FACTOR`] when executions record row references, else 1.
 fn record_refs_factor() -> f64 {
   if std::env::var("AIUR_RECORD_REFS").as_deref() == Ok("1") {

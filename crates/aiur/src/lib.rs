@@ -6,7 +6,6 @@ pub mod artifact;
 pub mod budget;
 pub mod bytecode;
 mod chunks;
-mod prefetch;
 pub mod execute;
 mod ffi;
 pub mod field;
@@ -22,6 +21,7 @@ pub mod maps;
 pub mod memory;
 #[cfg(feature = "native")]
 pub mod native;
+mod prefetch;
 pub mod query;
 pub mod refs;
 pub mod shared;

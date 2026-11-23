@@ -55,8 +55,9 @@ fn device_tiles_match_host_words_across_pooled_tiles() {
   for &ci in &circuits {
     let height = device.height(ci).unwrap();
     let width = backend.system.circuits[ci].main_width;
-    let whole =
-      device.tile_words(ci, None, 0, 0, height, height, rows[ci], GARBAGE).unwrap();
+    let whole = device
+      .tile_words(ci, None, 0, 0, height, height, rows[ci], GARBAGE)
+      .unwrap();
     assert_eq!(whole, expected[ci], "circuit {ci}");
     // A slice ending one row early zeroes the row it drops.
     let real = rows[ci] - 1;
@@ -67,8 +68,9 @@ fn device_tiles_match_host_words_across_pooled_tiles() {
     assert_eq!(short, padded);
     // One-row tiles, then a lookup halo of `height + 1` rows that wraps.
     for first in 0..height {
-      let tile =
-        device.tile_words(ci, None, 0, first, 1, height, rows[ci], GARBAGE).unwrap();
+      let tile = device
+        .tile_words(ci, None, 0, first, 1, height, rows[ci], GARBAGE)
+        .unwrap();
       assert_eq!(tile, expected[ci][first * width..(first + 1) * width]);
     }
     let halo = device
@@ -102,7 +104,9 @@ fn released_device_record_serves_identical_tiles() {
       .into_iter()
       .map(|ci| {
         let height = device.height(ci).unwrap();
-        device.tile_words(ci, None, 0, 0, height, height, rows[ci], GARBAGE).unwrap()
+        device
+          .tile_words(ci, None, 0, 0, height, height, rows[ci], GARBAGE)
+          .unwrap()
       })
       .collect()
   };
@@ -141,7 +145,9 @@ fn attached_device_record_releases_without_a_host_copy() {
       .into_iter()
       .map(|ci| {
         let height = device.height(ci).unwrap();
-        device.tile_words(ci, None, 0, 0, height, height, rows[ci], GARBAGE).unwrap()
+        device
+          .tile_words(ci, None, 0, 0, height, height, rows[ci], GARBAGE)
+          .unwrap()
       })
       .collect()
   };
@@ -182,7 +188,9 @@ fn concurrent_tiles_restore_a_released_record_once() {
   let circuits = device_circuits(&plans);
   let tile = |ci: usize| {
     let height = device.height(ci).unwrap();
-    device.tile_words(ci, None, 0, 0, height, height, rows[ci], GARBAGE).unwrap()
+    device
+      .tile_words(ci, None, 0, 0, height, height, rows[ci], GARBAGE)
+      .unwrap()
   };
   let before: Vec<_> = circuits.iter().map(|&ci| tile(ci)).collect();
   let pool = rayon::ThreadPoolBuilder::new().num_threads(2).build().unwrap();
@@ -373,8 +381,9 @@ fn rom_circuits_fill_on_the_device() {
       assert!(plans.circuits[ci], "{} stays on the host", backend.names[ci]);
       let height = device.height(ci).unwrap();
       let width = backend.system.circuits[ci].main_width;
-      let whole =
-        device.tile_words(ci, None, 0, 0, height, height, rows[ci], GARBAGE).unwrap();
+      let whole = device
+        .tile_words(ci, None, 0, 0, height, height, rows[ci], GARBAGE)
+        .unwrap();
       assert_eq!(whole, expected[ci], "{}", backend.names[ci]);
       for first in 0..height {
         let tile = device
@@ -387,8 +396,9 @@ fn rom_circuits_fill_on_the_device() {
     device.release(0);
     for &ci in &rom {
       let height = device.height(ci).unwrap();
-      let whole =
-        device.tile_words(ci, None, 0, 0, height, height, rows[ci], GARBAGE).unwrap();
+      let whole = device
+        .tile_words(ci, None, 0, 0, height, height, rows[ci], GARBAGE)
+        .unwrap();
       assert_eq!(whole, expected[ci], "{} after release", backend.names[ci]);
     }
     let layout = backend.uniform_layout(&record, 2).unwrap();
@@ -650,8 +660,9 @@ fn depth_circuits_fill_on_the_device() {
   for &ci in &depth {
     assert!(plans.circuits[ci], "{} stays on the host", backend.names[ci]);
     let height = device.height(ci).unwrap();
-    let tile =
-      device.tile_words(ci, None, 0, 0, height, height, rows[ci], GARBAGE).unwrap();
+    let tile = device
+      .tile_words(ci, None, 0, 0, height, height, rows[ci], GARBAGE)
+      .unwrap();
     assert_eq!(tile, expected[ci], "{}", backend.names[ci]);
   }
   let gaps: u64 = device.ranges().table(0).iter().sum();
@@ -660,8 +671,9 @@ fn depth_circuits_fill_on_the_device() {
   device.release(0);
   for &ci in &depth {
     let height = device.height(ci).unwrap();
-    let tile =
-      device.tile_words(ci, None, 0, 0, height, height, rows[ci], GARBAGE).unwrap();
+    let tile = device
+      .tile_words(ci, None, 0, 0, height, height, rows[ci], GARBAGE)
+      .unwrap();
     assert_eq!(tile, expected[ci], "{} after release", backend.names[ci]);
   }
 }
@@ -881,9 +893,9 @@ fn shard_images_match_host_words_and_proofs() {
               GARBAGE,
             )
             .unwrap();
-          let mut want =
-            expected[ci][slice.first * width..(slice.first + slice.rows) * width]
-              .to_vec();
+          let mut want = expected[ci]
+            [slice.first * width..(slice.first + slice.rows) * width]
+            .to_vec();
           want.resize(slice.height * width, 0);
           assert_eq!(tile, want, "{entry}: {} at {slice:?}", backend.names[ci]);
         }

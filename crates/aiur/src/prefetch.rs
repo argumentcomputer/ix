@@ -79,13 +79,13 @@ fn work(receiver: &Receiver<Job>) {
           Ok(job) => {
             drop(worker);
             job
-          }
+          },
           Err(_) => {
             *worker = None;
             return;
-          }
+          },
         }
-      }
+      },
       Err(RecvTimeoutError::Disconnected) => return,
     };
     run(&job);
@@ -112,7 +112,7 @@ fn run(job: &Job) {
         // SAFETY: allocated above with this layout and never handed out.
         unsafe { std::alloc::dealloc(ptr, job.layout) };
       }
-    }
+    },
     _ if ptr.is_null() => *state = State::Failed,
     _ => *state = State::Ready(ptr),
   }
@@ -152,7 +152,7 @@ impl<T> Pending<T> {
         // `Layout::array::<T>(self.capacity)`, as a vector of this capacity
         // would allocate, and ownership moves to the vector here.
         Ok(unsafe { Vec::from_raw_parts(ptr.cast::<T>(), 0, self.capacity) })
-      }
+      },
       State::Failed => Err(true),
       _ => Err(false),
     }

@@ -27,9 +27,7 @@ use ix_proof_compression::{
     kzg::Compiler,
     template::{
       fixed_slots, system_with_slots,
-      v2::{
-        Backend, Config, SlotDef, TableSource, lean, program_compress_stages,
-      },
+      v2::{Backend, Config, SlotDef, TableSource, lean},
     },
   },
   kzg::{KzgConfig, Scalar, Srs},

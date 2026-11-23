@@ -379,48 +379,30 @@ fn kzg_relations_reject_altered_quotient_and_carry_columns() {
         fill.writes.iter().find(|write| write.source == source).unwrap().column;
       positions.push((placement.circuit, placement.columns[column]));
     }
-    // Linear elimination removes the four quotient columns from the
-    // relation chip; their values still appear as range-function inputs.
-    let bias = BigUint::from(1u8) << (fq_relation::QUOTIENT_BITS - 1);
-    let magnitude = 3u8 * modulus() - 9u8;
-    let quotient = if entry == "FqRelationTest::max_weight" {
-      bias + magnitude
-    } else {
-      bias - magnitude
-    };
-    let mask = (BigUint::from(1u8) << fq_relation::LIMB_BITS) - 1u8;
-    for i in 0..4 {
-      let value =
-        scalar(&((&quotient >> (i * fq_relation::LIMB_BITS)) & &mask));
-      let function_name =
-        if i == 3 { "BN254FqRelation::range17" } else { "BN254Fq::range80" };
-      let (function, range_fill) = plan
-        .artifact()
-        .functions
-        .iter()
-        .enumerate()
-        .find(|(_, fill)| fill.name == function_name)
-        .unwrap();
-      let chip = plan.function_chips()[function];
-      let range_placement = &layout.placements[chip];
-      assert!(!range_placement.grouped);
-      let input_column = range_fill
-        .writes
-        .iter()
-        .find(|write| write.source == range_fill.inputs[0])
-        .unwrap()
-        .column;
-      let column = range_placement.columns[input_column];
-      let activation =
-        range_placement.columns[plan.artifact().chips[chip].activation];
-      let trace = &witness.traces[range_placement.circuit];
-      let row = trace
-        .values
-        .chunks(trace.width)
-        .position(|row| row[column] == value && row[activation] == Bn254.one())
-        .unwrap();
-      positions.push((range_placement.circuit, row * trace.width + column));
+    // Linear elimination removes the four quotient columns from the relation
+    // chip, and `range80`/`range17` are inlined into `assert_zero`; perturb a
+    // written decomposition limb column of each of the four quotient limbs.
+    let mut quotient_hints = 0usize;
+    for step in &fill.steps {
+      if let Action::Hint { channel, dest: hint_dest, .. } = &step.action
+        && (channel == "bn254.fq.u16_80"
+          || channel == "bn254.fq_relation.u16_17")
+      {
+        let column = hint_dest
+          .iter()
+          .find_map(|source| {
+            fill
+              .writes
+              .iter()
+              .find(|write| write.source == *source)
+              .map(|write| write.column)
+          })
+          .unwrap();
+        positions.push((placement.circuit, placement.columns[column]));
+        quotient_hints += 1;
+      }
     }
+    assert_eq!(quotient_hints, 4);
     for (circuit, cell) in positions {
       let mut traces = witness.traces.clone();
       traces[circuit].values[cell] += Bn254.one();

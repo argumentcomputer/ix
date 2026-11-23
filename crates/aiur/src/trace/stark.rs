@@ -356,7 +356,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   }
 
   pub fn new_with_rom_layout(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     rom_layout: RomLayout,
   ) -> Result<Self, String> {
@@ -373,7 +373,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   }
 
   pub fn for_batch_with_rom_layout(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     rom_layout: RomLayout,
   ) -> Result<Self, String> {
@@ -395,7 +395,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   }
 
   pub fn for_batch_verification_with_rom_layout(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     rom_layout: RomLayout,
   ) -> Result<Self, String> {
@@ -407,7 +407,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// Prover-only lookup settings are ignored; proving, verification, witness
   /// generation and key export fail closed on the returned backend.
   pub fn for_statistics(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
   ) -> Result<Self, String> {
     Self::assemble(
@@ -426,7 +426,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// placement policy so resource planning matches [`Self::for_batch_on_device`]
   /// without committing preprocessed fixed tables.
   pub fn for_planning(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     device: Option<i32>,
   ) -> Result<Self, String> {
@@ -458,7 +458,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// backend.
   #[doc(hidden)]
   pub fn new_below_floor(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
   ) -> Result<Self, String> {
     Self::new_below_floor_with_rom_layout(
@@ -471,7 +471,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// [`Self::new_with_rom_layout`] without the security floor, for tests.
   #[doc(hidden)]
   pub fn new_below_floor_with_rom_layout(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     rom_layout: RomLayout,
   ) -> Result<Self, String> {
@@ -495,7 +495,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
 
   #[doc(hidden)]
   pub fn for_batch_below_floor_with_rom_layout(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     rom_layout: RomLayout,
   ) -> Result<Self, String> {

@@ -679,13 +679,28 @@ mod tests {
   fn ignition_capacity_is_rejected_before_opening_the_srs() {
     let setup = SetupConfig::Ignition { srs: "/does-not-exist".into() };
     let error = export_parameters(
-      1 << 26,
+      crate::pipeline::plonk_limits::MAX_DOMAIN * 2,
       Path::new("/does-not-exist/output.bin"),
       &setup,
     )
     .unwrap_err();
-    assert!(error.to_string().contains("134217728-power prefix"));
-    assert!(error.to_string().contains("admitted maximum degree"));
+    assert!(
+      error.to_string().contains("PLONK domain must be a power of two"),
+      "unexpected error: {error}"
+    );
+    let degree_error =
+      crate::pipeline::plonk_limits::ParameterSize::for_domain(1 << 26)
+        .unwrap()
+        .check_public_degree((1 << 26) - 1)
+        .unwrap_err();
+    assert!(
+      degree_error.contains("67108867-power prefix"),
+      "unexpected error: {degree_error}"
+    );
+    assert!(
+      degree_error.contains("admitted maximum degree"),
+      "unexpected error: {degree_error}"
+    );
   }
 
   #[test]

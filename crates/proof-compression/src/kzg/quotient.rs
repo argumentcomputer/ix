@@ -42,6 +42,7 @@ pub(super) fn batch_inverse_serial_scaled(
 }
 
 /// Serial Montgomery batch inversion into `out`: `out[i] = values[i]^{-1}`.
+#[allow(dead_code)]
 pub(super) fn batch_inverse_serial(values: &[Scalar], out: &mut [Scalar]) {
   assert_eq!(values.len(), out.len());
   if values.is_empty() {

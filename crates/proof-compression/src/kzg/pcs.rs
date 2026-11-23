@@ -194,6 +194,7 @@ impl CommittedMatrix {
   /// Consume and reload spilled natural-domain evaluations once, immediately
   /// closing and releasing the unlinked temporary spill file.
   #[cfg(not(feature = "cuda"))]
+  #[allow(dead_code)]
   pub(super) fn take_spilled_evaluations(
     &self,
     domain: Radix2Coset,
@@ -903,6 +904,7 @@ impl KzgPcs {
 
   /// Commit a single constant column without allocating evaluation or
   /// coefficient buffers.
+  #[allow(dead_code)]
   pub(super) fn commit_constant_column(
     &self,
     domain: Radix2Coset,
@@ -1212,6 +1214,7 @@ impl KzgPcs {
   }
 
   #[cfg(not(feature = "cuda"))]
+  #[allow(dead_code)]
   pub(super) fn commit_matrix_spilled_with_chunk(
     &self,
     domain: Radix2Coset,
@@ -1339,6 +1342,7 @@ impl KzgPcs {
   /// Interpolate, slice, commit and spill a quotient polynomial to a temporary
   /// disk file in `spill_dir`, dropping the resident coefficients immediately.
   #[cfg(not(feature = "cuda"))]
+  #[allow(dead_code)]
   pub(super) fn commit_quotient_spilled_with_chunk(
     &self,
     quotient_domain: Radix2Coset,

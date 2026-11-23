@@ -137,27 +137,29 @@ fn host_depth_population_exposes_range_maps_and_recursive_public_depth() {
       (1, program.callable_id("Depth::range8").unwrap()),
     ]
   );
-  let record = program.execute("Depth::run", vec![12]).unwrap();
-  let generated = plan.generate(&record, "Depth::run", &[12], true).unwrap();
+  let x12 = 1u64;
+  let record = program.execute("Depth::run", vec![x12]).unwrap();
+  let generated = plan.generate(&record, "Depth::run", &[x12], true).unwrap();
   assert_eq!(
     generated,
-    plan.generate_reference(&record, "Depth::run", &[12], true).unwrap()
+    plan.generate_reference(&record, "Depth::run", &[x12], true).unwrap()
   );
-  plan.check(&record, &generated, "Depth::run", &[12]).unwrap();
+  plan.check(&record, &generated, "Depth::run", &[x12]).unwrap();
   assert_eq!(generated.ranges.table(0).iter().sum::<u64>(), 22);
   assert_eq!(generated.ranges.table(1).iter().sum::<u64>(), 22);
 
-  let record = program.execute("Depth::fib", vec![10]).unwrap();
-  let args = plan.public_args(&record, "Depth::fib", &[10]).unwrap();
-  assert_eq!(args, [10, 9]);
+  let x10 = 4u64;
+  let record = program.execute("Depth::fib", vec![x10]).unwrap();
+  let args = plan.public_args(&record, "Depth::fib", &[x10]).unwrap();
+  assert_eq!(args, [x10, 9]);
   let callable =
     u64::try_from(plan.callable_id("Depth::fib").unwrap()).unwrap();
   assert_eq!(
     plan.public_claim("Depth::fib", &args, &[55]).unwrap(),
-    [1, callable, 10, 9, 55]
+    [1, callable, x10, 9, 55]
   );
-  assert!(plan.public_claim("Depth::fib", &[10], &[55]).is_err());
-  assert!(plan.public_claim("Depth::fib", &[10, u64::MAX], &[55]).is_err());
+  assert!(plan.public_claim("Depth::fib", &[x10], &[55]).is_err());
+  assert!(plan.public_claim("Depth::fib", &[x10, u64::MAX], &[55]).is_err());
 }
 
 #[test]

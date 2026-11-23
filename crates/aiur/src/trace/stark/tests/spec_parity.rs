@@ -1001,17 +1001,19 @@ fn vectorized_rom_proves_verifies_and_rejects_tampering() {
       let mut values = Val::zero_vec(height * rom3_width);
       for row_idx in 0..active_rows {
         let base_idx = range.start + row_idx * 8;
-        let (first_addr, _, _) = cells.rom_row(base_idx);
+        let first_addr = cells.get(base_idx).unwrap().address;
         let row = &mut values[row_idx * rom3_width..(row_idx + 1) * rom3_width];
         row[0] = Val::from_usize(first_addr);
         let active_in_row = (range.end - base_idx).min(8);
         for lane in 0..active_in_row {
-          let (addr, mult, payload) = cells.rom_row(base_idx + lane);
-          debug_assert_eq!(addr, first_addr + lane);
+          let entry = cells.get(base_idx + lane).unwrap();
+          debug_assert_eq!(entry.address, first_addr + lane);
           let off = 1 + lane * stride;
-          row[off] = Val::from_u64(mult);
+          row[off] = Val::from_u64(entry.multiplicity);
           row[off + 1] = Val::ONE;
-          for (dest, &word) in row[off + 2..off + 5].iter_mut().zip(payload) {
+          for (dest, &word) in
+            row[off + 2..off + 5].iter_mut().zip(entry.cell.value)
+          {
             *dest = word;
           }
         }

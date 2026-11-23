@@ -106,7 +106,8 @@ pub fn compress_stages<W: aiur::field::Word>(
       arms.len()
     ));
   };
-  let k = k.try_to_u64().map_err(|e| format!("{}: final stage: {e}", f.name))?;
+  let k =
+    k.try_to_u64().map_err(|e| format!("{}: final stage: {e}", f.name))?;
   usize::try_from(k)
     .ok()
     .and_then(|k| k.checked_add(1))
@@ -1569,7 +1570,9 @@ impl<'c, 'p, 'a> Backend<'c, 'p, 'a> {
         .map(|&(rows, f)| {
           format!(
             "{} {rows} ({} rows x {})",
-            names[f], templates[f].rows.len(), per_shard[f]
+            names[f],
+            templates[f].rows.len(),
+            per_shard[f]
           )
         })
         .collect();

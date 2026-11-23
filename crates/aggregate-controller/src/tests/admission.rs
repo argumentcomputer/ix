@@ -543,7 +543,8 @@ fn correlated_overshoot() {
 /// stands in for an unmeasured input, and the constant for an empty run.
 #[test]
 fn aggregation_charges() {
-  let both = aggregation_prediction(Some(40 * GIB), [Some(20 * GIB), Some(25 * GIB)]);
+  let both =
+    aggregation_prediction(Some(40 * GIB), [Some(20 * GIB), Some(25 * GIB)]);
   assert_eq!(both, Prediction { bytes: 25 * GIB, basis: Basis::Inputs });
   let one = aggregation_prediction(Some(40 * GIB), [Some(20 * GIB), None]);
   assert_eq!(one, Prediction { bytes: 40 * GIB, basis: Basis::Observed });

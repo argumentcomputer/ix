@@ -74,7 +74,7 @@ fn same_heights(program: &CheckedProgram, a: &Execution, b: &Execution) {
 /// `192` of `2` in Goldilocks) from `target` under `x -> x * 2`.
 fn at_distance(target: u64, n: u32) -> u64 {
   const P: u128 = 0xffff_ffff_0000_0001;
-  const INV2: u128 = (P + 1) / 2;
+  const INV2: u128 = P.div_ceil(2);
   let mut x = u128::from(target) % P;
   for _ in 0..n {
     x = (x * INV2) % P;
@@ -283,7 +283,7 @@ fn native_records_the_interpreters_row_references() {
   let (plain, _) = fixture();
   let prepared = program.prepare_hints(&[]).unwrap();
   let native = prepared.bind_native::<Depth>().unwrap();
-  for (entry, x) in [("Depth::run", 12), ("Depth::top", 5)] {
+  for (entry, x) in [("Depth::run", at(12)), ("Depth::top", owned_at(5))] {
     let a = prepared.execute(entry, vec![x]).unwrap();
     let b = native.execute(entry, vec![x]).unwrap();
     record_diff(&a, &b).unwrap_or_else(|e| panic!("{entry}({x}): {e}"));

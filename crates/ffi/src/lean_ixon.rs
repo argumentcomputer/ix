@@ -320,7 +320,8 @@ pub extern "C" fn rs_shard_env_static(
     let n = ixon::shard::gpu_seed_shards(&profile, share);
     eprintln!(
       "[shard] trace-shard seed (cuda build): bytes={bytes:.4e}; round({:.0} record B/B x bytes / {share_gib:.1} GiB record share: {budget_gib} GiB budget, {cells} cells, {gpus} GPU(s), {records} records held) -> {n} shard(s) (heuristic; the record cap names any shard over its share)",
-      ixon::shard::RECORD_BYTES_PER_OWNED_BYTE * ixon::shard::RECORD_STORAGE_FACTOR,
+      ixon::shard::RECORD_BYTES_PER_OWNED_BYTE
+        * ixon::shard::RECORD_STORAGE_FACTOR,
     );
     n
   } else {

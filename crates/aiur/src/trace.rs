@@ -22,6 +22,7 @@ mod tests;
 
 /// The maps device population evaluates, in the order of their kinds in
 /// `cuda/population.cu`.
+#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
 pub(crate) const DEVICE_MAPS: &[&str] = &[
   "UInt8::from_field",
   "UInt8::raw_bit_decomposition",
@@ -40,6 +41,7 @@ pub(crate) const DEVICE_MAPS: &[&str] = &[
 
 /// The hint channels device population evaluates, in the order of their
 /// kinds in `cuda/population.cu`.
+#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
 pub(crate) const DEVICE_HINTS: &[&str] =
   &["u32.bytes", "u32.sub", "u32.add", "u32.add3", "u32.lt", "bytes_le"];
 
@@ -696,7 +698,7 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
     let artifact = &self.artifact;
     let mut grouped = FxHashMap::default();
     for (gi, group) in artifact.groups.iter().enumerate() {
-      if group.members.len() < 2 || group.width >= u32::MAX as usize {
+      if group.members.is_empty() || group.width >= u32::MAX as usize {
         return Err("invalid function group size".into());
       }
       for member in &group.members {
@@ -935,13 +937,7 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
           let row = &mut matrix.values
             [offset * matrix.width..(offset + 1) * matrix.width];
           self.fills[function]
-            .fill(
-              record,
-              (table, query),
-              &mut scratch,
-              &mut buffer,
-              row,
-            )
+            .fill(record, (table, query), &mut scratch, &mut buffer, row)
             .and_then(|()| {
               self.depth.fill(
                 self.members[function],
@@ -1146,13 +1142,7 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
           *count = table.count(query);
           row[self.artifact.chips[chip].activation] = field.one();
           self.fills[function]
-            .fill(
-              record,
-              (table, query),
-              &mut state.0,
-              &mut state.1,
-              row,
-            )
+            .fill(record, (table, query), &mut state.0, &mut state.1, row)
             .and_then(|()| {
               self.depth.fill(
                 chip,

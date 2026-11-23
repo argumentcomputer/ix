@@ -161,7 +161,10 @@ impl<B: FieldBackend> DeviceArenas for Values<B> {
             .iter()
             .map(|&w| {
               // Device population runs only over 64-bit fields.
-              self.field.try_to_u64(w).expect("device arena word beyond 64 bits")
+              self
+                .field
+                .try_to_u64(w)
+                .expect("device arena word beyond 64 bits")
             })
             .collect(),
         ))

@@ -149,6 +149,7 @@ fn limbs_slice_as_bytes_mut(values: &mut [[u64; 4]]) -> &mut [u8] {
 /// evaluations in raw Montgomery limb format, consumed once by lookup
 /// construction to avoid redundant forward BN254 FFTs and dropped immediately.
 #[cfg(not(feature = "cuda"))]
+#[allow(dead_code)]
 pub(super) struct SpilledEvaluations {
   file: DiskFile,
   domain: Radix2Coset,
@@ -158,6 +159,7 @@ pub(super) struct SpilledEvaluations {
 }
 
 #[cfg(not(feature = "cuda"))]
+#[allow(dead_code)]
 impl SpilledEvaluations {
   pub(super) fn spill(
     spill_dir: &Path,

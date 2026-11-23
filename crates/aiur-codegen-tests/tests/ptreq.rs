@@ -16,7 +16,7 @@ fn program() -> Program {
   serde_json::from_slice(include_bytes!("fixtures/ptreq.json")).unwrap()
 }
 
-fn check<B: FieldBackend>(
+fn check<B: FieldBackend<Word = u64>>(
   program: &aiur::bytecode::CheckedProgram<B>,
   field: B,
 ) {

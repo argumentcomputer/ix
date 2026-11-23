@@ -66,6 +66,7 @@ impl FunctionRefs {
   /// The reference to `value` of the target at `site`, or `None` when it
   /// does not fit.
   #[inline(always)]
+  #[allow(clippy::cast_possible_truncation)]
   pub(crate) fn encode(&self, site: u16, value: usize) -> Option<u32> {
     if site == NO_SITE || value >> self.row_bits != 0 {
       return None;
@@ -150,8 +151,14 @@ impl<B: FieldBackend> CheckedProgram<B> {
             Target::Rom(_) => vec![],
           })
           .collect();
-        let bits = usize::BITS - targets.len().saturating_sub(1).leading_zeros();
-        Some(FunctionRefs { targets, row_bits: 31 - bits, sites, aliases: probes })
+        let bits =
+          usize::BITS - targets.len().saturating_sub(1).leading_zeros();
+        Some(FunctionRefs {
+          targets,
+          row_bits: 31 - bits,
+          sites,
+          aliases: probes,
+        })
       })
       .collect();
     self.refs = Some(std::sync::Arc::new(RefPlan { functions: plan }));
@@ -184,10 +191,12 @@ pub(crate) struct TableRefs {
 }
 
 impl TableRefs {
+  #[allow(dead_code)]
   pub(crate) fn overflowed(&self) -> bool {
     self.overflowed
   }
 
+  #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
   pub(crate) fn is_compact(&self) -> bool {
     self.compact && !self.overflowed
   }
@@ -228,6 +237,7 @@ impl TableRefs {
   }
 
   /// The wide references of rows `rows`, as (target index, value).
+  #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
   pub(crate) fn wide_refs(
     &self,
     rows: std::ops::Range<usize>,
@@ -297,7 +307,10 @@ impl TableRefs {
       if word & HEADER != 0 {
         block = ((word & !HEADER) >> BLOCK_SHIFT) as usize;
       } else {
-        compact[cursor[block] as usize] = word;
+        #[allow(clippy::cast_possible_truncation)]
+        {
+          compact[cursor[block] as usize] = word;
+        }
         cursor[block] += 1;
       }
     }
@@ -308,6 +321,7 @@ impl TableRefs {
     let mut kept = 0usize;
     let mut start = 0usize;
     for b in 0..blocks {
+      #[allow(clippy::cast_possible_truncation)]
       let end = starts[b + 1] as usize;
       let refs = &mut compact[start..end];
       refs.sort_unstable();
@@ -337,11 +351,14 @@ impl TableRefs {
   }
 
   /// Blocks of compacted references.
+  #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
   pub(crate) fn blocks(&self) -> usize {
     self.starts.len().saturating_sub(1)
   }
 
   /// The compacted references of the rows of blocks `blocks`.
+  #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+  #[allow(clippy::cast_possible_truncation)]
   pub(crate) fn block_refs(&self, blocks: std::ops::Range<usize>) -> &[u32] {
     if !self.is_compact() || blocks.is_empty() {
       return &[];
@@ -353,7 +370,9 @@ impl TableRefs {
 
   /// Bytes held, as charged.
   pub(crate) fn bytes(&self) -> usize {
-    self.refs.capacity() * 4 + self.starts.capacity() * 8 + self.wide.capacity() * 12
+    self.refs.capacity() * 4
+      + self.starts.capacity() * 8
+      + self.wide.capacity() * 12
   }
 }
 
@@ -415,7 +434,10 @@ mod tests {
     assert_eq!(refs.block_refs(1..2), [3, 7]);
     assert_eq!(refs.block_refs(0..2), [1, 3, 9, 3, 7]);
     assert_eq!(refs.wide_refs(0..BLOCK).count(), 0);
-    assert_eq!(refs.wide_refs(BLOCK..2 * BLOCK).collect::<Vec<_>>(), [(2, 1 << 30)]);
+    assert_eq!(
+      refs.wide_refs(BLOCK..2 * BLOCK).collect::<Vec<_>>(),
+      [(2, 1 << 30)]
+    );
   }
 
   #[test]

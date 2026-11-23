@@ -823,7 +823,12 @@ impl<'a, B: FieldBackend<Word = u64>> Runtime<'a, B> {
   /// Records that the pending query of `function`, the innermost one, read
   /// row or address `value` at `pc`, when its function records references.
   #[inline(always)]
-  fn note(&mut self, function: usize, pc: usize, value: usize) -> Result<(), Failed> {
+  fn note(
+    &mut self,
+    function: usize,
+    pc: usize,
+    value: usize,
+  ) -> Result<(), Failed> {
     if let Some(&(Some(refs), row, _)) = self.frames.last() {
       let site = refs.site(pc);
       match refs.encode(site, value) {

@@ -3,8 +3,8 @@
 //! retained only for host diagnostics, never for interning or circuit lookups.
 use crate::bytecode::Type;
 use crate::chunks::Chunks;
-use crate::index::{RowIndex, tag};
 use crate::field::Word;
+use crate::index::{RowIndex, tag};
 use serde::{Serialize, Serializer};
 use std::hash::{Hash, Hasher};
 
@@ -75,6 +75,7 @@ pub(crate) struct WidthCells<'a, F> {
 }
 
 impl<'a, F: Copy + Eq + Hash + Send + Sync> WidthCells<'a, F> {
+  #[cfg_attr(not(feature = "stark"), allow(dead_code))]
   pub(crate) fn len(&self) -> usize {
     self.bucket.map_or(0, |bucket| bucket.cells.len())
   }
@@ -136,7 +137,11 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
   pub fn width_counts(
     &self,
   ) -> impl ExactSizeIterator<Item = (usize, usize)> + '_ {
-    self.widths.iter().copied().zip(self.buckets.iter().map(|bucket| bucket.cells.len()))
+    self
+      .widths
+      .iter()
+      .copied()
+      .zip(self.buckets.iter().map(|bucket| bucket.cells.len()))
   }
 
   pub(crate) fn storage_usage(&self) -> (usize, usize, usize) {
@@ -308,13 +313,15 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
     self.slots.reserve(&self.budget)?;
     let replaced =
       self.budget.index(self.index.growth(), &mut self.index_bytes)?;
-    self.index.insert(tag(hash), address as u32);
+    #[allow(clippy::cast_possible_truncation)]
+    let address_u32 = address as u32;
+    #[allow(clippy::cast_possible_truncation)]
+    let type_id_u32 = type_id as u32;
+    self.index.insert(tag(hash), address_u32);
     drop(replaced);
     bucket.words.push(words);
     bucket.cells.push(&[entry, 0]);
-    self
-      .slots
-      .push(&[Slot { address: address as u32, type_id: type_id as u32 }]);
+    self.slots.push(&[Slot { address: address_u32, type_id: type_id_u32 }]);
     Ok(CellAt { bucket: bucket_id, address })
   }
 
@@ -439,7 +446,10 @@ mod tests {
     let high_cell = memory.intern(0, &[high], modulus).unwrap();
     assert_ne!(low_cell.address, high_cell.address);
     let again = memory.intern(0, &[high], modulus).unwrap();
-    assert_eq!((again.bucket, again.address), (high_cell.bucket, high_cell.address));
+    assert_eq!(
+      (again.bucket, again.address),
+      (high_cell.bucket, high_cell.address)
+    );
     assert_eq!(memory.address_of(&[low]), Some(0));
     assert_eq!(memory.address_of(&[high]), Some(1));
     assert_eq!(memory.words(high_cell), &[high]);

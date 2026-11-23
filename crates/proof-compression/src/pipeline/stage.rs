@@ -26,6 +26,7 @@ use multi_stark::traits::Algebra;
 use multi_stark::traits::{Field, TwoAdicField};
 use multi_stark::types::{GoldilocksBlake3Config, Val};
 use p3_field::PrimeField64;
+use p3_matrix::Matrix;
 use serde::{Serialize, de::DeserializeOwned};
 use std::sync::Arc;
 
@@ -114,7 +115,6 @@ impl Prepared<Val> {
     let traces = (0..system.circuits.len())
       .map(|ci| shards.trace(ci))
       .collect::<std::result::Result<Vec<_>, _>>()?;
-    drop(shards);
     drop(trace_span);
     drop(compiled);
     drop(self.assignment);

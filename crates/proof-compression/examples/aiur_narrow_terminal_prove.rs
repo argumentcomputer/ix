@@ -192,7 +192,7 @@ mod prove {
       statement,
     } = run;
     let started = Instant::now();
-    let scs_sha256 = sha256.join().map_err(|_| "SCS digest thread")??;
+    let scs_sha256 = sha256.join().map_err(|_err| "SCS digest thread")??;
     let pairing_sha256 = format!("{:x}", Sha256::digest(&pairing));
     let prepared = out.join("prepared");
     let reused = if reuse {
@@ -230,7 +230,7 @@ mod prove {
       let started = Instant::now();
       let srs = out.join("plonk-srs.bin");
       ix_proof_compression::pipeline::plonk::export_parameters(
-        info.domain as usize,
+        usize::try_from(info.domain)?,
         &srs,
         setup,
       )?;
@@ -447,7 +447,7 @@ mod prove {
     let record_json: Value =
       serde_json::from_slice(&fs::read(narrow.join("narrow.json"))?)?;
     let narrow_stage =
-      record_json["stage"].as_u64().ok_or("narrow stage")? as u32;
+      u32::try_from(record_json["stage"].as_u64().ok_or("narrow stage")?)?;
     let configuration =
       Configuration::narrow(&policy, parameters, narrow_stage + 1)?;
     let mut hints = HintChannels::new();
