@@ -27,19 +27,20 @@ structure Shape (Γ : Ctx) (I : Var → Bool) (t : Var → Nat) (P : Var → Pro
   tokens : ∀ x, Γ.tokens x = t x
   brw : ∀ x, Γ.brw.get? x = none
   pbrw : ∀ x, Γ.isPbrw x = false
+  rset : Γ.rset = .leaf
   toks : ∃ toks, Ctx.Tokens Γ toks
   immZero : ∀ x, I x = true → t x = 0
   own : ∀ x, Γ.own.contains x = true → P x
 
 theorem Shape.congr {Γ : Ctx} {I : Var → Bool} {t t' : Var → Nat} {P : Var → Prop}
     (h : Shape Γ I t P) (he : ∀ x, t x = t' x) : Shape Γ I t' P :=
-  ⟨h.imm, fun x => (h.tokens x).trans (he x), h.brw, h.pbrw, h.toks,
+  ⟨h.imm, fun x => (h.tokens x).trans (he x), h.brw, h.pbrw, h.rset, h.toks,
     fun x hx => (he x).symm.trans (h.immZero x hx), h.own⟩
 
 theorem Shape.release {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var → Prop}
     (h : Shape Γ I t P) : Shape Γ.release I t P :=
   ⟨fun x => by simpa using h.imm x, fun x => by simpa using h.tokens x, fun x => by simpa using h.brw x,
-    fun x => by simpa using h.pbrw x,
+    fun x => by simpa using h.pbrw x, h.rset,
     by obtain ⟨toks, ht⟩ := h.toks; exact ⟨toks, ht.same rfl rfl⟩, h.immZero,
     fun x hx => h.own x (by simpa using hx)⟩
 
@@ -54,12 +55,13 @@ theorem shape_inc {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var → P
   | false =>
     have hp' : 0 < t x := by simpa [hi] using hx
     have ht : 0 < Γ.tokens x := by rw [h.tokens]; exact hp'
-    refine ⟨Γ.addOwn x 1, ?_, ?_⟩
+    refine ⟨(Γ.clearUniq x).addOwn x 1, ?_, ?_⟩
     · simp [Ctx.inc, h.imm, hi, ht]
     · obtain ⟨toks, htok⟩ := h.toks
       refine ⟨fun y => by simpa using h.imm y, fun y => ?_, fun y => by simpa using h.brw y,
-        fun y => by simpa using h.pbrw y, ⟨_, htok.addOwn x⟩, fun y hy => ?_, fun y hy => ?_⟩
-      · rw [Ctx.tokens_addOwn]
+        fun y => by simpa using h.pbrw y, h.rset, ⟨_, (htok.same (Γ' := Γ.clearUniq x) rfl rfl).addOwn x⟩,
+        fun y hy => ?_, fun y hy => ?_⟩
+      · rw [Ctx.tokens_addOwn, Ctx.tokens_clearUniq]
         by_cases he : y = x
         · subst he; simp [hi, h.tokens]
         · simp [he, h.tokens]
@@ -91,12 +93,12 @@ theorem shape_take {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var → 
         simp only [Option.getD_some] at this
         exact ⟨m - 1, by rw [show m - 1 + 1 = m by omega]⟩
     have hti : Γ.isImm x = false := by rw [h.imm]; exact hi
-    have htake : Γ.take x = .ok { Γ with own := Γ.own.insert x n, total := Γ.total - 1 } := by
+    have htake : Γ.take x = .ok { Γ with own := Γ.own.insert x n, uniq := Γ.uniq.erase x, total := Γ.total - 1 } := by
       simp [Ctx.take, hti, hn]
     refine ⟨_, htake, rfl, ?_⟩
     obtain ⟨toks, htok⟩ := h.toks
     obtain ⟨_, _, htok'⟩ := htok.take htake hti
-    refine ⟨fun y => h.imm y, fun y => ?_, h.brw, h.pbrw, ⟨_, htok'⟩, fun y hy => ?_, fun y hy => ?_⟩
+    refine ⟨fun y => h.imm y, fun y => ?_, h.brw, h.pbrw, h.rset, ⟨_, htok'⟩, fun y hy => ?_, fun y hy => ?_⟩
     · simp only [Ctx.tokens_eq, Src.NatMap.get?_insert]
       by_cases he : y = x
       · subst he
@@ -117,7 +119,7 @@ theorem shape_setImm {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var �
     Shape (Γ.setImm x) (fun y => decide (y = x) || I y) (fun y => if y = x then 0 else t y) P := by
   obtain ⟨toks, htok⟩ := h.toks
   refine ⟨fun y => by rw [Ctx.isImm_setImm, h.imm], fun y => by rw [Ctx.tokens_setImm, h.tokens],
-    fun y => by rw [Ctx.brw_setImm, h.brw]; split <;> rfl, fun y => h.pbrw y, ⟨_, htok.setImm x⟩,
+    fun y => by rw [Ctx.brw_setImm, h.brw]; split <;> rfl, fun y => h.pbrw y, h.rset, ⟨_, htok.setImm x⟩,
     fun y hy => ?_, fun y hy => ?_⟩
   · by_cases he : y = x
     · simp [he]
@@ -126,6 +128,32 @@ theorem shape_setImm {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var �
   · rw [Ctx.ownHas_setImm] at hy
     simp only [Bool.and_eq_true] at hy
     exact h.own y hy.2
+
+theorem shape_setImmUniq {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var → Prop}
+    (h : Shape Γ I t P) (x : Var) :
+    Shape (Γ.setImmUniq x) (fun y => decide (y = x) || I y) (fun y => if y = x then 0 else t y) P := by
+  obtain ⟨toks, htok⟩ := h.toks
+  refine ⟨fun y => by rw [Ctx.isImm_setImmUniq, h.imm], fun y => by rw [Ctx.tokens_setImmUniq, h.tokens],
+    fun y => by rw [Ctx.brw_setImmUniq, h.brw]; split <;> rfl, fun y => h.pbrw y, h.rset,
+    ⟨_, htok.setImmUniq x⟩, fun y hy => ?_, fun y hy => ?_⟩
+  · by_cases he : y = x
+    · simp [he]
+    · simp only [he, decide_false, Bool.false_or] at hy
+      simp [he, h.immZero y hy]
+  · rw [Ctx.ownHas_setImmUniq] at hy
+    simp only [Bool.and_eq_true] at hy
+    exact h.own y hy.2
+
+theorem Shape.setCtor {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var → Prop}
+    (h : Shape Γ I t P) (x : Var) (key : Key.CtorKey) : Shape (Γ.setCtor x key) I t P :=
+  ⟨h.imm, h.tokens, h.brw, h.pbrw, h.rset,
+    by obtain ⟨toks, ht⟩ := h.toks; exact ⟨toks, ht.same rfl rfl⟩, h.immZero, h.own⟩
+
+theorem Shape.setProj {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var → Prop}
+    (h : Shape Γ I t P) (x y : Var) (key : Key.CtorKey) (idx : Nat) :
+    Shape (Γ.setProj x y key idx) I t P :=
+  ⟨h.imm, h.tokens, h.brw, h.pbrw, h.rset,
+    by obtain ⟨toks, ht⟩ := h.toks; exact ⟨toks, ht.same rfl rfl⟩, h.immZero, h.own⟩
 
 /-! ## Action lists -/
 
@@ -136,17 +164,18 @@ theorem actionPrefix_append (as bs : List Action) (k : Code) :
   | cons a as ih => simp [actionPrefix, ih]
 
 /-- Increments of each listed variable, then `k`. -/
-theorem check_incs {Δ : JCtx} {I : Var → Bool} {P : Var → Prop} {k : Code} :
+theorem check_incs {Δ : JCtx} {I : Var → Bool} {P : Var → Prop} {k : Code}
+    {ctors : List Lam.CtorInfo} {known : Lam.Known} :
     ∀ (xs : List Var) {Γ : Ctx} {t : Var → Nat}, Shape Γ I t P →
       (∀ x, x ∈ xs → (I x = true ∨ 0 < t x) ∧ P x) →
       (∀ Γ', Shape Γ' I (fun y => t y + (if I y then 0 else xs.count y)) P →
-        checkCode Δ Γ' k = .ok ()) →
-      checkCode Δ Γ (actionPrefix (xs.map (fun x => .inc x 1)) k) = .ok ()
+        checkCode Δ Γ' k .leaf .leaf false ctors known = .ok ()) →
+      checkCode Δ Γ (actionPrefix (xs.map (fun x => .inc x 1)) k) .leaf .leaf false ctors known = .ok ()
   | [], Γ, t, h, _, hk => hk Γ (h.congr (fun y => by simp))
   | x :: xs, Γ, t, h, hpre, hk => by
     obtain ⟨hx, hp⟩ := hpre x List.mem_cons_self
     obtain ⟨Γ₁, hinc, h₁⟩ := shape_inc h hx hp
-    show (Γ.inc x 1 >>= fun Γ' => checkCode Δ Γ' _) = .ok ()
+    show (Γ.inc x 1 >>= fun Γ' => checkCode Δ Γ' _ .leaf .leaf false ctors known) = .ok ()
     rw [hinc]
     refine check_incs xs h₁ (fun y hy => ?_) (fun Γ' h' => hk Γ' (h'.congr (fun y => ?_)))
     · obtain ⟨hy', hp'⟩ := hpre y (List.mem_cons_of_mem _ hy)
@@ -161,19 +190,20 @@ theorem check_incs {Δ : JCtx} {I : Var → Bool} {P : Var → Prop} {k : Code} 
         simp [he, List.count_cons, hxy]
 
 /-- Decrements of each listed (distinct) variable, then `k`. -/
-theorem check_decs {Δ : JCtx} {I : Var → Bool} {P : Var → Prop} {k : Code} :
+theorem check_decs {Δ : JCtx} {I : Var → Bool} {P : Var → Prop} {k : Code}
+    {ctors : List Lam.CtorInfo} {known : Lam.Known} :
     ∀ (xs : List Var) {Γ : Ctx} {t : Var → Nat}, xs.Nodup → Shape Γ I t P →
       (∀ x, x ∈ xs → (I x = true ∨ 0 < t x) ∧ P x) →
       (∀ Γ', Shape Γ' I (fun y => t y - (if I y then 0 else xs.count y)) P →
-        checkCode Δ Γ' k = .ok ()) →
-      checkCode Δ Γ (actionPrefix (xs.map (fun x => .dec x)) k) = .ok ()
+        checkCode Δ Γ' k .leaf .leaf false ctors known = .ok ()) →
+      checkCode Δ Γ (actionPrefix (xs.map (fun x => .dec x)) k) .leaf .leaf false ctors known = .ok ()
   | [], Γ, t, _, h, _, hk => hk Γ (h.congr (fun y => by simp))
   | x :: xs, Γ, t, hn, h, hpre, hk => by
     rw [List.nodup_cons] at hn
     obtain ⟨hx, hp⟩ := hpre x List.mem_cons_self
     obtain ⟨Γ₁, htake, _, h₁⟩ := shape_take h hx hp
     have hdec : Γ.dec x = .ok Γ₁.release := by simp [Ctx.dec, htake]
-    show (Γ.dec x >>= fun Γ' => checkCode Δ Γ' _) = .ok ()
+    show (Γ.dec x >>= fun Γ' => checkCode Δ Γ' _ .leaf .leaf false ctors known) = .ok ()
     rw [hdec]
     refine check_decs xs hn.2 h₁.release (fun y hy => ?_) (fun Γ' h' => hk Γ' (h'.congr (fun y => ?_)))
     · obtain ⟨hy', hp'⟩ := hpre y (List.mem_cons_of_mem _ hy)
@@ -270,7 +300,7 @@ theorem shape_closed {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var �
       simp [List.count_cons] at this
   subst hnil
   have : Γ.total = 0 := by rw [htok.total]; rfl
-  simp [Ctx.closed, this]
+  simp [Ctx.closed, this, h.rset, mapIsEmpty]
 
 /-! ## The producer's action lists, counted -/
 
@@ -405,7 +435,7 @@ structure Canon (Γ : Ctx) (Δ : JCtx) (live : List Var) (joins : Joins) (imm : 
 
 theorem Shape.mono {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P Q : Var → Prop}
     (h : Shape Γ I t P) (hpq : ∀ x, P x → Q x) : Shape Γ I t Q :=
-  ⟨h.imm, h.tokens, h.brw, h.pbrw, h.toks, h.immZero, fun x hx => hpq x (h.own x hx)⟩
+  ⟨h.imm, h.tokens, h.brw, h.pbrw, h.rset, h.toks, h.immZero, fun x hx => hpq x (h.own x hx)⟩
 
 /-- Re-establish the canonical shape for a new scope. -/
 theorem Shape.canon {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var → Prop} {live : List Var}
@@ -413,20 +443,21 @@ theorem Shape.canon {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var →
     (hp : ∀ x, P x → x ∈ live) :
     Shape Γ (fun x => Γ.isImm x) (fun x => if x ∈ live ∧ Γ.isImm x = false then 1 else 0)
       (· ∈ live) := by
-  refine ⟨fun x => rfl, fun x => ?_, h.brw, h.pbrw, h.toks, fun x hx => ?_, fun x hx => hp x (h.own x hx)⟩
+  refine ⟨fun x => rfl, fun x => ?_, h.brw, h.pbrw, h.rset, h.toks, fun x hx => ?_, fun x hx => hp x (h.own x hx)⟩
   · rw [h.tokens, ht, h.imm]
   · simp [hx]
 
 /-- The terminal's transfer: afterwards every live non-immediate holds exactly the tokens its
 argument occurrences and its capture will take. -/
 theorem canonical_transfer {Γ : Ctx} {Δ : JCtx} {live : List Var} {joins : Joins}
-    {imm : List Var} {arities : JoinArities} (h : Canon Γ Δ live joins imm arities)
+    {imm : List Var} {arities : JoinArities} {ctors : List Lam.CtorInfo} {known : Lam.Known}
+    (h : Canon Γ Δ live joins imm arities)
     (C : List Var) (hC : C.Sublist live) (args : List Arg)
     (hargs : ∀ x, x ∈ argVars args → x ∈ live) (k : Code)
     (hk : ∀ Γ' t', Shape Γ' (fun x => Γ.isImm x) t' (· ∈ live) →
       (∀ y, Γ.isImm y = false → t' y = (argVars args).count y + C.count y) →
-      checkCode Δ Γ' k = .ok ()) :
-    checkCode Δ Γ (transfer live imm C args k) = .ok () := by
+      checkCode Δ Γ' k .leaf .leaf false ctors known = .ok ()) :
+    checkCode Δ Γ (transfer live imm C args k) .leaf .leaf false ctors known = .ok () := by
   have hCn : C.Nodup := hC.nodup h.nodup
   unfold transfer transferActions
   rw [actionPrefix_append, moveCopies_eq, drops_eq]
@@ -523,11 +554,27 @@ theorem shape_addOwn {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var �
     Shape (Γ.addOwn x 1) I (fun y => if y = x then t y + 1 else t y) (fun y => P y ∨ y = x) := by
   obtain ⟨toks, htok⟩ := h.toks
   refine ⟨fun y => by simpa using h.imm y, fun y => ?_, fun y => by simpa using h.brw y,
-    fun y => by simpa using h.pbrw y, ⟨_, htok.addOwn x⟩, fun y hy => ?_, fun y hy => ?_⟩
+    fun y => by simpa using h.pbrw y, h.rset, ⟨_, htok.addOwn x⟩, fun y hy => ?_, fun y hy => ?_⟩
   · rw [Ctx.tokens_addOwn]; split <;> (rename_i he; first | (subst he; rw [h.tokens]) | rw [h.tokens])
   · have hne : y ≠ x := by intro he; subst he; rw [hx] at hy; cases hy
     simp [hne, h.immZero y hy]
   · rw [Ctx.ownHas_addOwn] at hy
+    simp only [Bool.or_eq_true, decide_eq_true_eq] at hy
+    rcases hy with hy | hy
+    · exact Or.inr hy
+    · exact Or.inl (h.own y hy)
+
+theorem shape_addUniqOwn {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var → Prop}
+    (h : Shape Γ I t P) {x : Var} (hx : I x = false) :
+    Shape (Γ.addUniqOwn x) I (fun y => if y = x then t y + 1 else t y) (fun y => P y ∨ y = x) := by
+  obtain ⟨toks, htok⟩ := h.toks
+  refine ⟨fun y => by simpa using h.imm y, fun y => ?_, fun y => by simpa using h.brw y,
+    fun y => by simpa using h.pbrw y, h.rset, ⟨_, (htok.addOwn x).same rfl rfl⟩,
+    fun y hy => ?_, fun y hy => ?_⟩
+  · rw [Ctx.tokens_addUniqOwn]; split <;> (rename_i he; first | (subst he; rw [h.tokens]) | rw [h.tokens])
+  · have hne : y ≠ x := by intro he; subst he; rw [hx] at hy; cases hy
+    simp [hne, h.immZero y hy]
+  · rw [Ctx.ownHas_addUniqOwn] at hy
     simp only [Bool.or_eq_true, decide_eq_true_eq] at hy
     rcases hy with hy | hy
     · exact Or.inr hy
@@ -595,6 +642,56 @@ theorem canon_bindOwn (h : Canon Γ Δ live joins imm arities) (hx : x ∉ live)
     · subst hz; exact List.mem_append_right _ (List.mem_singleton_self _)
   · rw [hi]; exact himm z hz
   · rw [hi] at hz; exact List.mem_append_left _ (hI z hz)
+
+theorem canon_bindImmUniq (h : Canon Γ Δ live joins imm arities) (hx : x ∉ live)
+    (h₂ : Shape Γ₂ I₂ (fun z => if z ∈ live ∧ I₂ z = false then 1 else 0) (· ∈ live))
+    (hI : ∀ z, I₂ z = true → z ∈ live) (imm' : List Var)
+    (himm : ∀ z, z ∈ imm' → I₂ z = true ∨ z = x) :
+    Canon (Γ₂.setImmUniq x) Δ (live ++ [x]) joins imm' arities := by
+  have hs := shape_setImmUniq h₂ x
+  have hi : ∀ z, (Γ₂.setImmUniq x).isImm z = (decide (z = x) || I₂ z) := hs.imm
+  refine ⟨hs.canon (fun z => ?_) (fun z hz => List.mem_append_left _ hz), fun z hz => ?_,
+    fun z hz => ?_, h.jctx, fun j C hj => (h.capIn j C hj).trans (List.sublist_append_left _ _),
+    h.arity, fresh_nodup_append h.nodup (by simp [fresh, hx])⟩
+  · by_cases he : z = x
+    · subst he; simp
+    · simp [he]
+  · rw [hi]; rcases himm z hz with h' | h' <;> simp [h']
+  · rw [hi] at hz
+    by_cases he : z = x
+    · subst he; exact List.mem_append_right _ (List.mem_singleton_self _)
+    · simp only [he, decide_false, Bool.false_or] at hz
+      exact List.mem_append_left _ (hI z hz)
+
+theorem canon_bindUniqOwn (h : Canon Γ Δ live joins imm arities) (hx : x ∉ live)
+    (h₂ : Shape Γ₂ I₂ (fun z => if z ∈ live ∧ I₂ z = false then 1 else 0) (· ∈ live))
+    (hI : ∀ z, I₂ z = true → z ∈ live) (imm' : List Var) (himm : ∀ z, z ∈ imm' → I₂ z = true) :
+    Canon (Γ₂.addUniqOwn x) Δ (live ++ [x]) joins imm' arities := by
+  have hx₂ : I₂ x = false := by
+    cases hc : I₂ x
+    · rfl
+    · exact absurd (hI x hc) hx
+  have hs := shape_addUniqOwn h₂ hx₂
+  have hi : ∀ z, (Γ₂.addUniqOwn x).isImm z = I₂ z := hs.imm
+  refine ⟨hs.canon (fun z => ?_) (fun z hz => ?_), fun z hz => ?_, fun z hz => ?_, h.jctx,
+    fun j C hj => (h.capIn j C hj).trans (List.sublist_append_left _ _), h.arity,
+    fresh_nodup_append h.nodup (by simp [fresh, hx])⟩
+  · by_cases he : z = x
+    · subst he; simp [hx, hx₂]
+    · simp [he]
+  · rcases hz with hz | hz
+    · exact List.mem_append_left _ hz
+    · subst hz; exact List.mem_append_right _ (List.mem_singleton_self _)
+  · rw [hi]; exact himm z hz
+  · rw [hi] at hz; exact List.mem_append_left _ (hI z hz)
+
+theorem Canon.setCtor (h : Canon Γ Δ live joins imm arities) (x : Var) (key : Key.CtorKey) :
+    Canon (Γ.setCtor x key) Δ live joins imm arities :=
+  ⟨h.shape.setCtor x key, h.immSub, h.immIn, h.jctx, h.capIn, h.arity, h.nodup⟩
+
+theorem Canon.setProj (h : Canon Γ Δ live joins imm arities) (x y : Var) (key : Key.CtorKey) (idx : Nat) :
+    Canon (Γ.setProj x y key idx) Δ live joins imm arities :=
+  ⟨h.shape.setProj x y key idx, h.immSub, h.immIn, h.jctx, h.capIn, h.arity, h.nodup⟩
 
 end
 

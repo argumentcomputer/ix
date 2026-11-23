@@ -15,9 +15,10 @@ variable {P : Program} {k : Nat} (smaller : ∀ j, j < k → ShapeAtClock P j)
 include smaller
 
 mutual
-theorem eval_shape (H : Heap) (ρ : Own.Env) (J : List JEntry) (c : Code)
-    (hh : HeapOk H) (henv : EnvBounded H.size ρ) (hstack : StackBounded H.size J) :
-    ShapeResult H (eval P k ρ J H c) := by
+theorem eval_shape (H : Heap) (ρ : Own.Env) (J : List JEntry) (c : Code) (slots : Src.NatMap Own.RVal)
+    (hh : HeapOk H) (henv : EnvBounded H.size ρ) (hstack : StackBounded H.size J)
+    (hslots : EnvBounded H.size slots) :
+    ShapeResult H (eval P k ρ J H c slots) := by
   match c with
   | .act a c' =>
     rw [eval_act]
@@ -25,8 +26,8 @@ theorem eval_shape (H : Heap) (ρ : Own.Env) (J : List JEntry) (c : Code)
     intro H' hop
     obtain ⟨hh', hsize⟩ := action_shape hh hop
     have grows : H.size ≤ H'.size := Nat.le_of_eq hsize.symm
-    exact (eval_shape H' ρ J c' hh' (henv.mono grows)
-      (hstack.mono grows)).preheap grows
+    exact (eval_shape H' ρ J c' slots hh' (henv.mono grows)
+      (hstack.mono grows) (hslots.mono grows)).preheap grows
   | .bind x r c' =>
     by_cases hc : ∃ f args, r = .call f args
     · obtain ⟨f, args, rfl⟩ := hc
@@ -38,23 +39,66 @@ theorem eval_shape (H : Heap) (ρ : Own.Env) (J : List JEntry) (c : Code)
       intro pair hp
       obtain ⟨v, H'⟩ := pair
       obtain ⟨hh', hsize, hv⟩ := callShape v H' hp
-      exact (eval_shape H' (ρ.insert x v) J c' hh' ((henv.mono hsize).insert x hv)
-        (hstack.mono hsize)).preheap hsize
+      exact (eval_shape H' (ρ.insert x v) J c' slots hh' ((henv.mono hsize).insert x hv)
+        (hstack.mono hsize) (hslots.mono hsize)).preheap hsize
     · have hn : ∀ f args, r ≠ .call f args := fun f args h => hc ⟨f, args, h⟩
       rw [eval_bindRhs P k ρ J H x r c' hn]
       apply shape_bind
       intro pair hp
       obtain ⟨v, H'⟩ := pair
       obtain ⟨hh', hsize, hv⟩ := rhs_shape hh henv hp
-      exact (eval_shape H' (ρ.insert x v) J c' hh' ((henv.mono hsize).insert x hv)
-        (hstack.mono hsize)).preheap hsize
+      exact (eval_shape H' (ρ.insert x v) J c' slots hh' ((henv.mono hsize).insert x hv)
+        (hstack.mono hsize) (hslots.mono hsize)).preheap hsize
+  | .reset s x ctor fields uniq c' =>
+    rw [eval_reset]
+    apply shape_bind
+    intro pair hp
+    obtain ⟨sv, H'⟩ := pair
+    obtain ⟨hh', hsize, hsv⟩ := resetMask_shape hh hp
+    exact (eval_shape H' ρ J c' (slots.insert s sv) hh' (henv.mono hsize)
+      (hstack.mono hsize) ((hslots.mono hsize).insert s hsv)).preheap hsize
+  | .reuse x s ctor args uniq c' =>
+    rw [eval_reuse]
+    apply shape_ofOption
+    intro sv _
+    apply shape_bind
+    intro pair hp
+    obtain ⟨v, H'⟩ := pair
+    obtain ⟨hh', hsize, hv⟩ := reuseVal_shape hh henv hp
+    have hslots' : EnvBounded H'.size (slots.erase s) := fun k' w hk' => by
+      have heq : (slots.erase s).get? k' = if k' = s then none else slots.get? k' :=
+        Src.NatMap.get?_setF (s + 1) slots s none k' (Nat.lt_succ_self s)
+      rw [heq] at hk'
+      split at hk'
+      · cases hk'
+      · exact (hslots.mono hsize) k' w hk'
+    exact (eval_shape H' (ρ.insert x v) J c' (slots.erase s) hh' ((henv.mono hsize).insert x hv)
+      (hstack.mono hsize) hslots').preheap hsize
+  | .dropSlot s c' =>
+    rw [eval_dropSlot]
+    apply shape_ofOption
+    intro sv _
+    apply shape_bind
+    intro H' hp
+    obtain ⟨hh', hsize⟩ := dropVal_shape hh hp
+    have grows : H.size ≤ H'.size := Nat.le_of_eq hsize.symm
+    have hslots' : EnvBounded H'.size (slots.erase s) := fun k' w hk' => by
+      have heq : (slots.erase s).get? k' = if k' = s then none else slots.get? k' :=
+        Src.NatMap.get?_setF (s + 1) slots s none k' (Nat.lt_succ_self s)
+      rw [heq] at hk'
+      split at hk'
+      · cases hk'
+      · exact (hslots.mono grows) k' w hk'
+    exact (eval_shape H' ρ J c' (slots.erase s) hh' (henv.mono grows)
+      (hstack.mono grows) hslots').preheap grows
   | .jp j ps captured rec body c' =>
     rw [eval_jp]
-    apply eval_shape H ρ _ c' hh henv
-    intro e he
-    rcases List.mem_cons.mp he with rfl | he
-    · exact henv
-    · exact hstack e he
+    apply eval_shape H ρ _ c' slots hh henv
+    · intro e he
+      rcases List.mem_cons.mp he with rfl | he
+      · exact henv
+      · exact hstack e he
+    · exact hslots
   | .jmp j args =>
     rw [eval_jmp]
     apply shape_ofOption
@@ -70,10 +114,10 @@ theorem eval_shape (H : Heap) (ρ : Own.Env) (J : List JEntry) (c : Code)
     · split
       · apply shape_later
         intro j hj
-        exact smaller j hj H _ _ e.body hh entered afterStack
+        exact smaller j hj H _ _ e.body .leaf hh entered afterStack (envBounded_empty H.size)
       · next uncharged =>
         have := jump_measure lookup (by simpa using uncharged)
-        exact eval_shape H _ (e.after rest) e.body hh entered afterStack
+        exact eval_shape H _ (e.after rest) e.body .leaf hh entered afterStack (envBounded_empty H.size)
     · intro v H' he; cases he
   | .case x alts d =>
     rw [eval_case]
@@ -83,7 +127,7 @@ theorem eval_shape (H : Heap) (ρ : Own.Env) (J : List JEntry) (c : Code)
     | none => intro v H' he; cases he
     | some pair =>
       obtain ⟨key, fields⟩ := pair
-      exact evalAlts_shape H ρ J key alts d hh henv hstack
+      exact evalAlts_shape H ρ J key alts d slots hh henv hstack hslots
   | .ret a =>
     rw [eval_ret]
     apply shape_ofOption
@@ -109,13 +153,14 @@ decreasing_by
     | (simp only [Code.size] at this ⊢; omega)
 
 theorem evalAlts_shape (H : Heap) (ρ : Own.Env) (J : List JEntry) (key : Key.CtorKey)
-    (alts : List Alt) (d : Option Code)
-    (hh : HeapOk H) (henv : EnvBounded H.size ρ) (hstack : StackBounded H.size J) :
-    ShapeResult H (evalAlts P k ρ J H key alts d) := by
+    (alts : List Alt) (d : Option Code) (slots : Src.NatMap Own.RVal)
+    (hh : HeapOk H) (henv : EnvBounded H.size ρ) (hstack : StackBounded H.size J)
+    (hslots : EnvBounded H.size slots) :
+    ShapeResult H (evalAlts P k ρ J H key alts d slots) := by
   match alts, d with
   | [], some c =>
     rw [evalAlts_nil]
-    exact eval_shape H ρ J c hh henv hstack
+    exact eval_shape H ρ J c slots hh henv hstack hslots
   | [], none =>
     rw [evalAlts_nil]
     intro v H' he
@@ -123,8 +168,8 @@ theorem evalAlts_shape (H : Heap) (ρ : Own.Env) (J : List JEntry) (key : Key.Ct
   | .mk key' body :: rest, d =>
     rw [evalAlts_cons]
     split
-    · exact eval_shape H ρ J body hh henv hstack
-    · exact evalAlts_shape H ρ J key rest d hh henv hstack
+    · exact eval_shape H ρ J body slots hh henv hstack hslots
+    · exact evalAlts_shape H ρ J key rest d slots hh henv hstack hslots
 termination_by Code.altsSize alts + Code.optSize d + jweight J + 1
 decreasing_by
   all_goals simp_wf

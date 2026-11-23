@@ -28,6 +28,23 @@ structure RuntimeFuncs (l : Layout) (p : Lir.Program) : Prop where
     p.funcs[l.allocWrapper i]? = some (allocationWrapper (l.allocProc i) c.arity)
   allocProc : ∀ i c, l.ctors[i]? = some c →
     p.funcs[l.allocProc i]? = some (Rt.Rc.Gen.alloc (Rt.Rc.CellLayout.ofFields c.arity c.tag))
+  isUniqueProc : p.funcs[l.isUniqueProc]? = some Rt.Rc.Gen.isUnique
+  resetWrap : ∀ i c cls, l.ctors[i]? = some c →
+    (Rt.Rc.CellLayout.ofFields c.arity c.tag).cls? = some cls →
+    p.funcs[l.resetWrapper i]? = some (mkResetWrapper l.isUniqueProc l.incProc l.decProc
+      (Rt.Rc.CellLayout.ofFields c.arity c.tag) cls)
+  resetUWrap : ∀ i c cls, l.ctors[i]? = some c →
+    (Rt.Rc.CellLayout.ofFields c.arity c.tag).cls? = some cls →
+    p.funcs[l.resetUWrapper i]? = some (mkResetUWrapper l.decProc
+      (Rt.Rc.CellLayout.ofFields c.arity c.tag) cls)
+  reuseWrap : ∀ i c cls, l.ctors[i]? = some c →
+    (Rt.Rc.CellLayout.ofFields c.arity c.tag).cls? = some cls →
+    p.funcs[l.reuseWrapper i]? = some (mkReuseWrapper (l.allocProc i)
+      (Rt.Rc.CellLayout.ofFields c.arity c.tag) cls)
+  reuseUWrap : ∀ i c cls, l.ctors[i]? = some c →
+    (Rt.Rc.CellLayout.ofFields c.arity c.tag).cls? = some cls →
+    p.funcs[l.reuseUWrapper i]? = some (mkReuseUWrapper
+      (Rt.Rc.CellLayout.ofFields c.arity c.tag) cls)
   sourceBound : l.sourceCount ≤ p.funcs.size
 
 theorem inlineProgram_get_lt (l : Layout) (p : Lir.Program) {f : Lir.FunId} (hf : f < l.sourceCount) :
@@ -94,13 +111,7 @@ theorem classify_eq_inc {l : Layout} {s : Lir.Stmt} {dst x : Lir.VReg}
             | cons a as' => cases a <;> cases as' <;> simp at h
             | nil => cases h
           · simp only [hf2, Bool.false_eq_true, ↓reduceIte] at h
-            split at h
-            · split at h
-              · split at h
-                · split at h <;> cases h
-                · cases h
-              · cases h
-            · cases h
+            repeat (first | cases h | (split at h))
 
 theorem classify_eq_dec {l : Layout} {s : Lir.Stmt} {dst x : Lir.VReg}
     (h : classify l s = some (.dec dst x)) :
@@ -145,13 +156,7 @@ theorem classify_eq_dec {l : Layout} {s : Lir.Stmt} {dst x : Lir.VReg}
                   obtain ⟨rfl, rfl⟩ := h
                   rw [hfEq]
           · simp only [hf2, Bool.false_eq_true, ↓reduceIte] at h
-            split at h
-            · split at h
-              · split at h
-                · split at h <;> cases h
-                · cases h
-              · cases h
-            · cases h
+            repeat (first | cases h | (split at h))
 
 theorem classify_eq_alloc {l : Layout} {s : Lir.Stmt} {dst : Lir.VReg} {idx : Nat}
     {lay : Rt.Rc.CellLayout} {cls : Nat} {as : List Lir.Arg}
@@ -213,7 +218,14 @@ theorem classify_eq_alloc {l : Layout} {s : Lir.Stmt} {dst : Lir.VReg} {idx : Na
                       dsimp only [Lir.FunId, Layout.allocWrapper] at hrange ⊢; omega
                     exact ⟨c, hc, by rw [← hfEq], rfl, hcls, hcond.1.1, hcond.1.2, hcond.2⟩
                   · cases h
-            · cases h
+            · repeat (first | cases h | (split at h))
+
+theorem stmtsExtra_cons_nonPair {l : Layout} {s : Lir.Stmt} {rest : List Lir.Stmt}
+    (hnp : ∀ s2 rest2, rest = s2 :: rest2 → classifyPair l s s2 = none) :
+    stmtsExtra l (s :: rest) = stmtExtra l s + stmtsExtra l rest := by
+  cases rest with
+  | nil => simp [stmtsExtra]
+  | cons s2 rest2 => exact stmtsExtra_cons_none l s s2 rest2 (hnp s2 rest2 rfl)
 
 /-! ## 32-bit comparison arithmetic for inline `inc` and `dec` -/
 
@@ -787,6 +799,14 @@ theorem inl_inc_exec {l : Layout} {raw : Lir.Program}
   intro inl
   have hc : classify l (.call [dst] l.incWrapper [.v x, .imm wLit]) = some (.inc dst x) := by
     simp [classify]
+  have hnp : ∀ s2 rest2, restStmts = s2 :: rest2 →
+      classifyPair l (.call [dst] l.incWrapper [.v x, .imm wLit]) s2 = none :=
+    fun s2 _ _ => by simp [classifyPair, hc]
+  have hexp : expandStmts l (newLabel l F) B.term B.cold rest0 fr.label tmp params acc =
+      let r := stepSingle l B.cold (.call [dst] l.incWrapper [.v x, .imm wLit]) fr.label tmp params acc
+      let t := expandStmts l (newLabel l F) B.term B.cold restStmts r.2.1 r.2.2.1 r.2.2.2.1 r.2.2.2.2
+      (r.1 ++ t.1, t.2) := by
+    rw [hrest, expandStmts_cons_single _ _ _ _ _ _ _ _ _ _ hnp]
   have cpNext : ChunkAt l F b B (rawPos + 1) (fr.label + 5) 1 (tmp + 2) [] [.assign dst (.arg (.imm 1))] restStmts := {
     bLookup := hcp.bLookup
     tmpGe := by have := hcp.tmpGe; omega
@@ -798,13 +818,13 @@ theorem inl_inc_exec {l : Layout} {raw : Lir.Program}
     posLe := by omega
     blocksMatch := fun k blk hk => by
       have h := hcp.blocksMatch (5 + k) blk (by
-        rw [hrest]; unfold expandStmts; rw [hc]; dsimp only
+        rw [hexp]; dsimp only [stepSingle]; rw [hc]; dsimp only
         rw [Nat.add_comm 5 k]; exact hk)
       simpa [Nat.add_assoc] using h
     inPosEq := rfl
     endLbl := by
       have := hcp.endLbl
-      rw [hrest, stmtsExtra_cons, stmtExtra, hc] at this
+      rw [hrest, stmtsExtra_cons_nonPair hnp, stmtExtra, hc] at this
       simp only [siteExtra] at this
       dsimp only [Lir.Label] at this ⊢; omega }
   refine ⟨⟨_, _, _, _, cpNext⟩, ?_⟩
@@ -813,25 +833,25 @@ theorem inl_inc_exec {l : Layout} {raw : Lir.Program}
   have hb0 : (inlineFunc l F).blocks[fr.label]? = some {
       params, body := acc.reverse.toArray,
       term := .br .tnz .w64 (.v x) (.imm 1) ⟨fr.label + 5, []⟩ ⟨fr.label + 1, []⟩, cold := B.cold } := by
-    simpa using hcp.blocksMatch 0 _ (by rw [hrest]; unfold expandStmts; rw [hc]; rfl)
+    simpa using hcp.blocksMatch 0 _ (by rw [hexp]; dsimp only [stepSingle]; rw [hc]; rfl)
   have hb1 : (inlineFunc l F).blocks[fr.label + 1]? = some {
       body := #[.assign tmp (.load .w32 .zero (cellAddr x 4))],
       term := .br .ult .w32 (.v tmp) (.imm (UInt64.ofNat (Rt.Rc.maxCount - 1)))
         ⟨fr.label + 2, []⟩ ⟨fr.label + 3, []⟩, cold := B.cold } := by
-    exact hcp.blocksMatch 1 _ (by rw [hrest]; unfold expandStmts; rw [hc]; rfl)
+    exact hcp.blocksMatch 1 _ (by rw [hexp]; dsimp only [stepSingle]; rw [hc]; rfl)
   have hb2 : (inlineFunc l F).blocks[fr.label + 2]? = some {
       body := #[.assign (tmp + 1) (.bin .add .w32 (.v tmp) (.imm 1)),
         .store .w32 (cellAddr x 4) (.v (tmp + 1))],
       term := .jump ⟨fr.label + 5, []⟩, cold := B.cold } := by
-    exact hcp.blocksMatch 2 _ (by rw [hrest]; unfold expandStmts; rw [hc]; rfl)
+    exact hcp.blocksMatch 2 _ (by rw [hexp]; dsimp only [stepSingle]; rw [hc]; rfl)
   have hb3 : (inlineFunc l F).blocks[fr.label + 3]? = some {
       body := #[],
       term := .br .eq .w32 (.v tmp) (.imm (UInt64.ofNat (Rt.Rc.maxCount - 1)))
         ⟨fr.label + 4, []⟩ ⟨fr.label + 5, []⟩, cold := true } := by
-    exact hcp.blocksMatch 3 _ (by rw [hrest]; unfold expandStmts; rw [hc]; rfl)
+    exact hcp.blocksMatch 3 _ (by rw [hexp]; dsimp only [stepSingle]; rw [hc]; rfl)
   have hb4 : (inlineFunc l F).blocks[fr.label + 4]? = some {
       body := #[], term := .fail .heap, cold := true } := by
-    exact hcp.blocksMatch 4 _ (by rw [hrest]; unfold expandStmts; rw [hc]; rfl)
+    exact hcp.blocksMatch 4 _ (by rw [hexp]; dsimp only [stepSingle]; rw [hc]; rfl)
   obtain ⟨jb, postJ, hj0, hjp, hjbody, _, _⟩ :=
     ChunkPos.firstBlock_of_expandStmts l (newLabel l F) B.term B.cold restStmts
       (fr.label + 5) (tmp + 2) [] [.assign dst (.arg (.imm 1))]
@@ -1190,6 +1210,14 @@ theorem inl_dec_exec {l : Layout} {raw : Lir.Program} (hr : RuntimeFuncs l raw)
   have hc : classify l (.call [dst] l.decWrapper [.v x]) = some (.dec dst x) := by
     have hne : l.decWrapper ≠ l.incWrapper := by simp [Layout.decWrapper, Layout.incWrapper]
     simp [classify, hne]
+  have hnp : ∀ s2 rest2, restStmts = s2 :: rest2 →
+      classifyPair l (.call [dst] l.decWrapper [.v x]) s2 = none :=
+    fun s2 _ _ => by simp [classifyPair, hc]
+  have hexp : expandStmts l (newLabel l F) B.term B.cold rest0 fr.label tmp params acc =
+      let r := stepSingle l B.cold (.call [dst] l.decWrapper [.v x]) fr.label tmp params acc
+      let t := expandStmts l (newLabel l F) B.term B.cold restStmts r.2.1 r.2.2.1 r.2.2.2.1 r.2.2.2.2
+      (r.1 ++ t.1, t.2) := by
+    rw [hrest, expandStmts_cons_single _ _ _ _ _ _ _ _ _ _ hnp]
   have cpNext : ChunkAt l F b B (rawPos + 1) (fr.label + 5) 1 (tmp + 2) [] [.assign dst (.arg (.imm 1))] restStmts := {
     bLookup := hcp.bLookup
     tmpGe := by have := hcp.tmpGe; omega
@@ -1201,13 +1229,13 @@ theorem inl_dec_exec {l : Layout} {raw : Lir.Program} (hr : RuntimeFuncs l raw)
     posLe := by omega
     blocksMatch := fun k blk hk => by
       have h := hcp.blocksMatch (5 + k) blk (by
-        rw [hrest]; unfold expandStmts; rw [hc]; dsimp only
+        rw [hexp]; dsimp only [stepSingle]; rw [hc]; dsimp only
         rw [Nat.add_comm 5 k]; exact hk)
       simpa [Nat.add_assoc] using h
     inPosEq := rfl
     endLbl := by
       have := hcp.endLbl
-      rw [hrest, stmtsExtra_cons, stmtExtra, hc] at this
+      rw [hrest, stmtsExtra_cons_nonPair hnp, stmtExtra, hc] at this
       simp only [siteExtra] at this
       dsimp only [Lir.Label] at this ⊢; omega }
   have hF' : inl.funcs[fr.fn]? = some (inlineFunc l F) := by
@@ -1215,24 +1243,24 @@ theorem inl_dec_exec {l : Layout} {raw : Lir.Program} (hr : RuntimeFuncs l raw)
   have hb0 : (inlineFunc l F).blocks[fr.label]? = some {
       params, body := acc.reverse.toArray,
       term := .br .tnz .w64 (.v x) (.imm 1) ⟨fr.label + 5, []⟩ ⟨fr.label + 1, []⟩, cold := B.cold } := by
-    simpa using hcp.blocksMatch 0 _ (by rw [hrest]; unfold expandStmts; rw [hc]; rfl)
+    simpa using hcp.blocksMatch 0 _ (by rw [hexp]; dsimp only [stepSingle]; rw [hc]; rfl)
   have hb1 : (inlineFunc l F).blocks[fr.label + 1]? = some {
       body := #[.assign tmp (.load .w32 .zero (cellAddr x 4))],
       term := .br .eq .w32 (.v tmp) (.imm 0) ⟨fr.label + 2, []⟩ ⟨fr.label + 3, []⟩, cold := B.cold } := by
-    exact hcp.blocksMatch 1 _ (by rw [hrest]; unfold expandStmts; rw [hc]; rfl)
+    exact hcp.blocksMatch 1 _ (by rw [hexp]; dsimp only [stepSingle]; rw [hc]; rfl)
   have hb2 : (inlineFunc l F).blocks[fr.label + 2]? = some {
       body := #[.call [] l.decProc [.v x]],
       term := .jump ⟨fr.label + 5, []⟩, cold := B.cold } := by
-    exact hcp.blocksMatch 2 _ (by rw [hrest]; unfold expandStmts; rw [hc]; rfl)
+    exact hcp.blocksMatch 2 _ (by rw [hexp]; dsimp only [stepSingle]; rw [hc]; rfl)
   have hb3 : (inlineFunc l F).blocks[fr.label + 3]? = some {
       body := #[],
       term := .br .slt .w32 (.v tmp) (.imm 0) ⟨fr.label + 5, []⟩ ⟨fr.label + 4, []⟩, cold := B.cold } := by
-    exact hcp.blocksMatch 3 _ (by rw [hrest]; unfold expandStmts; rw [hc]; rfl)
+    exact hcp.blocksMatch 3 _ (by rw [hexp]; dsimp only [stepSingle]; rw [hc]; rfl)
   have hb4 : (inlineFunc l F).blocks[fr.label + 4]? = some {
       body := #[.assign (tmp + 1) (.bin .sub .w32 (.v tmp) (.imm 1)),
         .store .w32 (cellAddr x 4) (.v (tmp + 1))],
       term := .jump ⟨fr.label + 5, []⟩, cold := B.cold } := by
-    exact hcp.blocksMatch 4 _ (by rw [hrest]; unfold expandStmts; rw [hc]; rfl)
+    exact hcp.blocksMatch 4 _ (by rw [hexp]; dsimp only [stepSingle]; rw [hc]; rfl)
   obtain ⟨jb, postJ, hj0, hjp, hjbody, _, _⟩ :=
     ChunkPos.firstBlock_of_expandStmts l (newLabel l F) B.term B.cold restStmts
       (fr.label + 5) (tmp + 2) [] [.assign dst (.arg (.imm 1))]
@@ -1756,6 +1784,14 @@ theorem inl_alloc_exec {l : Layout} {raw : Lir.Program}
     Lir.Stmt.store .w64 (cellAddr dst) (.imm hdr) :: mkFieldStores dst 0 args
   have hpubLen : pubInit.reverse.length = 1 + args.length := by
     simp [pubInit, mkFieldStores_length]; omega
+  have hnp : ∀ s2 rest2, restStmts = s2 :: rest2 →
+      classifyPair l (.call [dst] (l.allocWrapper idx) args) s2 = none :=
+    fun s2 _ _ => by simp [classifyPair, hclsSite]
+  have hexp : expandStmts l (newLabel l F) B.term B.cold rest0 fr.label tmp params acc =
+      let r := stepSingle l B.cold (.call [dst] (l.allocWrapper idx) args) fr.label tmp params acc
+      let t := expandStmts l (newLabel l F) B.term B.cold restStmts r.2.1 r.2.2.1 r.2.2.2.1 r.2.2.2.2
+      (r.1 ++ t.1, t.2) := by
+    rw [hrest, expandStmts_cons_single _ _ _ _ _ _ _ _ _ _ hnp]
   have cpNext : ChunkAt l F b B (rawPos + 1) (fr.label + 6) (1 + args.length) (tmp + 5) [dst]
       pubInit.reverse restStmts := {
     bLookup := hcp.bLookup
@@ -1768,13 +1804,13 @@ theorem inl_alloc_exec {l : Layout} {raw : Lir.Program}
     posLe := by omega
     blocksMatch := fun k blk hk => by
       have h := hcp.blocksMatch (6 + k) blk (by
-        rw [hrest]; unfold expandStmts; rw [hclsSite]; dsimp only
+        rw [hexp]; dsimp only [stepSingle]; rw [hclsSite]; dsimp only
         rw [Nat.add_comm 6 k]; exact hk)
       simpa [Nat.add_assoc] using h
     inPosEq := by omega
     endLbl := by
       have := hcp.endLbl
-      rw [hrest, stmtsExtra_cons, stmtExtra, hclsSite] at this
+      rw [hrest, stmtsExtra_cons_nonPair hnp, stmtExtra, hclsSite] at this
       simp only [siteExtra] at this
       dsimp only [Lir.Label] at this ⊢; omega }
   refine ⟨⟨_, _, _, _, cpNext⟩, ?_⟩
@@ -1791,31 +1827,31 @@ theorem inl_alloc_exec {l : Layout} {raw : Lir.Program}
         params,
         body := (Lir.Stmt.assign tmp (.load .w64 .zero (ctxAddr headOff)) :: acc).reverse.toArray,
         term := .br .eq .w64 (.v tmp) (.imm 0) ⟨fr.label + 2, []⟩ ⟨fr.label + 1, []⟩,
-        cold := B.cold } (by rw [hrest]; unfold expandStmts; rw [hclsSite]; rfl)
+        cold := B.cold } (by rw [hexp]; dsimp only [stepSingle]; rw [hclsSite]; rfl)
     simpa using h0
   have hb1 : (inlineFunc l F).blocks[fr.label + 1]? = some {
       body := #[.assign (tmp + 1) (.load .w64 .zero (cellAddr tmp)),
         .store .w64 (ctxAddr headOff) (.v (tmp + 1))],
       term := .jump ⟨fr.label + 6, [.v tmp]⟩, cold := B.cold } := by
-    exact hcp.blocksMatch 1 _ (by rw [hrest]; unfold expandStmts; rw [hclsSite]; rfl)
+    exact hcp.blocksMatch 1 _ (by rw [hexp]; dsimp only [stepSingle]; rw [hclsSite]; rfl)
   have hb2 : (inlineFunc l F).blocks[fr.label + 2]? = some {
       body := #[.assign (tmp + 2) (.load .w64 .zero (ctxAddr Rt.bumpOff)),
         .assign (tmp + 3) (.load .w64 .zero (ctxAddr Rt.limitOff))],
       term := .brOvf .addC (tmp + 4) (.v (tmp + 2)) (.imm bytes) ⟨fr.label + 3, []⟩ ⟨fr.label + 5, []⟩,
       cold := B.cold } := by
-    exact hcp.blocksMatch 2 _ (by rw [hrest]; unfold expandStmts; rw [hclsSite]; rfl)
+    exact hcp.blocksMatch 2 _ (by rw [hexp]; dsimp only [stepSingle]; rw [hclsSite]; rfl)
   have hb3 : (inlineFunc l F).blocks[fr.label + 3]? = some {
       body := #[],
       term := .br .ule .w64 (.v (tmp + 4)) (.v (tmp + 3)) ⟨fr.label + 4, []⟩ ⟨fr.label + 5, []⟩,
       cold := B.cold } := by
-    exact hcp.blocksMatch 3 _ (by rw [hrest]; unfold expandStmts; rw [hclsSite]; rfl)
+    exact hcp.blocksMatch 3 _ (by rw [hexp]; dsimp only [stepSingle]; rw [hclsSite]; rfl)
   have hb4 : (inlineFunc l F).blocks[fr.label + 4]? = some {
       body := #[.store .w64 (ctxAddr Rt.bumpOff) (.v (tmp + 4))],
       term := .jump ⟨fr.label + 6, [.v (tmp + 2)]⟩, cold := B.cold } := by
-    exact hcp.blocksMatch 4 _ (by rw [hrest]; unfold expandStmts; rw [hclsSite]; rfl)
+    exact hcp.blocksMatch 4 _ (by rw [hexp]; dsimp only [stepSingle]; rw [hclsSite]; rfl)
   have hb5 : (inlineFunc l F).blocks[fr.label + 5]? = some {
       body := #[], term := .fail .heap, cold := true } := by
-    exact hcp.blocksMatch 5 _ (by rw [hrest]; unfold expandStmts; rw [hclsSite]; rfl)
+    exact hcp.blocksMatch 5 _ (by rw [hexp]; dsimp only [stepSingle]; rw [hclsSite]; rfl)
   obtain ⟨jb, postJ, hj0, hjp, hjbody, _, _⟩ :=
     ChunkPos.firstBlock_of_expandStmts l (newLabel l F) B.term B.cold restStmts
       (fr.label + 6) (tmp + 5) [dst] pubInit.reverse

@@ -37,6 +37,53 @@ theorem evalActions_sub {ρ target : Own.Env} (h : EnvSub ρ target)
     | timeout | resource _ | trap | stuck =>
       simp [Own.Plain.evalActions, ha, Result.bind] at he
 
+theorem evalResetMask_sub {ρ target : Own.Env} (h : EnvSub ρ target)
+    {H : Own.Heap} {x : Fir.Var} {ctor : Fir.CtorInfo} {mask : Nat} {uniq : Bool}
+    {res : Own.RVal × Own.Heap}
+    (he : Own.Plain.evalResetMask ρ H x ctor mask uniq = .ok res) :
+    Own.Plain.evalResetMask target H x ctor mask uniq = .ok res := by
+  unfold Own.Plain.evalResetMask at he ⊢
+  split at he
+  · cases he
+  · next hfl =>
+    simp only [hfl]
+    cases hx : ρ.get? x with
+    | none => simp [hx] at he
+    | some v =>
+      rw [hx] at he
+      rw [h x v hx]
+      exact he
+
+theorem evalReuseVal_sub {ρ target : Own.Env} (h : EnvSub ρ target)
+    {H : Own.Heap} {sv : Own.RVal} {ctor : Fir.CtorInfo} {args : List Fir.Arg} {uniq : Bool}
+    {res : Own.RVal × Own.Heap}
+    (he : Own.Plain.evalReuseVal ρ H sv ctor args uniq = .ok res) :
+    Own.Plain.evalReuseVal target H sv ctor args uniq = .ok res := by
+  unfold Own.Plain.evalReuseVal at he ⊢
+  cases ha : Own.evalArgs ρ args with
+  | none => simp [ha] at he
+  | some vs =>
+    have ha' : Own.evalArgs target args = some vs := by
+      clear he
+      induction args generalizing vs with
+      | nil => simpa [Own.evalArgs] using ha
+      | cons a rest ih =>
+        simp only [Own.evalArgs] at ha ⊢
+        cases hv : Own.evalArg ρ a with
+        | none => simp [hv] at ha
+        | some v =>
+          have hv' : Own.evalArg target a = some v := by
+            cases a with
+            | var x => exact h x v hv
+            | lit _ | erased => exact hv
+          simp only [hv, hv'] at ha ⊢
+          cases hr : Own.evalArgs ρ rest with
+          | none => simp [hr] at ha
+          | some vs' =>
+            rw [ih vs' hr]
+            simpa [hr] using ha
+    simpa only [ha, ha'] using he
+
 theorem prefix_reach_sub {P : Program} (first : Nat) (as : List Action)
     {ρ : Own.Env} {fr : Frame} {stk : List (Frame × Fir.Var)} {H H' : Own.Heap}
     {rest : List Instr} {table : ActionTable} (env : EnvSub ρ fr.env)

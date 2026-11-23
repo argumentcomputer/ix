@@ -19,7 +19,7 @@ theorem consume_fieldless {P : Program} {l : Layout} {x : Nat}
       Fir.CtorInfo.ofKey P.base.ctors c.key = some c ∧ c.tag ≤ Rt.maxTag ∧
       P.base.known.natZero ≠ some c.key ∧ P.base.known.natSucc ≠ some c.key ∧
       result = .bind x (.alloc c args kind) := by
-  simp only [consume, reserved, Bool.false_eq_true, ↓reduceIte] at accepted
+  simp only [consume, reserved, isReuseOp, Bool.false_eq_true, ↓reduceIte] at accepted
   by_cases hs : (kind == .shared && c.nscalar == 0 && c.fieldKinds.length == c.nobj &&
       c.fieldKinds.all (· == .shared) && args.length == c.arity &&
       Fir.CtorInfo.ofKey P.base.ctors c.key == some c) = true

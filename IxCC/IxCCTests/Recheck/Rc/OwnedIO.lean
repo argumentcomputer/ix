@@ -36,11 +36,12 @@ def fail {α : Type} (msg : String) : IO α := throw (IO.userError msg)
 /-- The plain-RC certificate for any ownership map: `finishPlainRcCert` with `bodies` in place of
 the canonical map and without its admission (test-only and untrusted: the verifier decides). -/
 def finishWith (cfg : Recheck.Config) (front : Recheck.RcReplay.ProducedFir)
-    (bodies : Src.NatMap Code) (borrows : Own.Plain.BorrowSigs := .leaf) :
+    (bodies : Src.NatMap Code) (borrows : Own.Plain.BorrowSigs := .leaf)
+    (uniqs : Own.Plain.UniqSigs := .leaf) (useFull : Bool := false) :
     Except Recheck.Err Recheck.RcReplay.Cert := do
   let some candidate := Cfg.Rc.generate front.fir bodies |
     throw { stage := .rt, code := "rc.cfg", message := "ownership candidate lowering declined" }
-  let lowered ← (Cfg.Rc.Public.lower { names := cfg.names } front.fir bodies candidate borrows).mapError
+  let lowered ← (Cfg.Rc.Public.lower { names := cfg.names } front.fir bodies candidate borrows uniqs).mapError
     fun message => { stage := .rt, code := "rc.lower", message }
   let reps : Lir.FunId → Option (List Xv.Stacking.ArgRep) :=
     (⟨lowered.runtime, lowered.drop⟩ : Cfg.Rc.Public.Lowered).reps
@@ -54,9 +55,11 @@ def finishWith (cfg : Recheck.Config) (front : Recheck.RcReplay.ProducedFir)
   let stacked ← (Xv.Stacking.run allocated.program frames reps rcEnv).mapError
     (Recheck.Err.ofBackend ∘ .stacking)
   let order := X86.Layout.Order.produce (X86.Layout.tunnel stacked.program) stacked.shape
+  let own := if useFull then Own.Plain.Certificate.encodeFull front.fir bodies borrows uniqs
+    else Own.Plain.Certificate.encodeWith bodies borrows
   pure { base := { table := front.tableCert, relevance := front.relevance, mid := front.mid
                    alloc := allocated.outs, frames, order }
-         own := Own.Plain.Certificate.encodeWith bodies borrows }
+         own }
 
 /-! ## Edits at the first site the checker's context allows (threaded as `Mutate` threads it) -/
 
@@ -189,11 +192,16 @@ def liveness (logs : FilePath) : IO Unit := do
     let liveCertB ← IO.ofExcept ((finishWith fr.cfg fr.front liveB liveSigs).mapError (·.render))
     let liveArtB ← IO.ofExcept ((Recheck.RcReplay.run fr.cfg fr.input.program liveCertB).mapError
       fun e => s!"{root}: the verifier refused the borrowed liveness placement: {e.render}")
+    let (liveF, liveFB, liveFU) := Own.Plain.Live.liveMapFull fr.front.fir
+    let liveCertF ← IO.ofExcept ((finishWith fr.cfg fr.front liveF liveFB liveFU true).mapError (·.render))
+    let liveArtF ← IO.ofExcept ((Recheck.RcReplay.run fr.cfg fr.input.program liveCertF).mapError
+      fun e => s!"{root}: the verifier refused the FBIP liveness placement: {e.render}")
     let (_, prodArt) ← IO.ofExcept ((Recheck.RcReplay.produce (ReplayIO.config root) fr.input).mapError
       (·.render))
-    unless prodArt.backend.object == liveArtB.backend.object do
-      fail s!"{root}: production RcReplay.produce did not emit the borrowed liveness object"
+    unless prodArt.backend.object == liveArtF.backend.object do
+      fail s!"{root}: production RcReplay.produce did not emit the FBIP liveness object"
     let _ ← runNative logs s!"live-borrow-{root}" liveArtB (listCases root) (listWant root)
+    let fbipHigh ← runNative logs s!"live-fbip-{root}" liveArtF (listCases root) (listWant root)
     let canonicalCert ← IO.ofExcept ((finishWith fr.cfg fr.front fr.canonical).mapError (·.render))
     let canonicalArt ← IO.ofExcept ((Recheck.RcReplay.run fr.cfg fr.input.program canonicalCert).mapError
       fun e => s!"{root}: the verifier refused the canonical placement: {e.render}")
@@ -201,7 +209,7 @@ def liveness (logs : FilePath) : IO Unit := do
       fail s!"{root}: the liveness certificate's object is the canonical certificate's"
     let liveHigh ← runNative logs s!"live-{root}" artifact (listCases root) (listWant root)
     let canonHigh ← runNative logs s!"canonical-{root}" canonicalArt (listCases root) (listWant root)
-    IO.println s!"PASS liveness placement {root}: refused by the old check, admitted, emitted by produce, another object than canonical, {(listCases root).length} values; heap high water (bytes) {liveHigh}, canonical {canonHigh}"
+    IO.println s!"PASS liveness placement {root}: refused by the old check, admitted, emitted by produce, another object than canonical, {(listCases root).length} values; heap high water (bytes) fbip {fbipHigh}, live {liveHigh}, canonical {canonHigh}"
 
 /-- Each kind of wrong placement is refused at admission with the checker's reason. -/
 def wrongPlacements : IO Unit := do
@@ -314,7 +322,7 @@ def budget (logs : FilePath) : IO Unit := do
     ((Recheck.RcReplay.run cfg input.program handMade).map fun _ => ())
   -- Under liveness, `fanOver` drops the 2 dead captures per fan function and fits within `limit`.
   let (overCert, overArt) ← IO.ofExcept ((Recheck.RcReplay.produce cfg0 input).mapError (·.render))
-  let (overBodies, _) ← IO.ofExcept (Own.Plain.Certificate.decodeWith fr.fir overCert.own)
+  let (overBodies, _, _) ← IO.ofExcept (Own.Plain.Certificate.decodeFull fr.fir overCert.own)
   let overWork := Own.Plain.Certificate.capturedWork overBodies
   unless overWork < work && overWork ≤ limit do
     fail s!"fanOver: liveness captured work {overWork} did not shrink below canonical {work} and limit {limit}"
@@ -372,7 +380,7 @@ def budget (logs : FilePath) : IO Unit := do
   let canonWork := Own.Plain.Certificate.capturedWork canonUnder
   unless canonWork ≤ limit && canonWork + fanFunctions * (fanLeaves + 1) > limit do
     fail s!"fanUnder: canonical captured work {canonWork} is not just within the limit {limit}"
-  let (bodies, _) ← IO.ofExcept (Own.Plain.Certificate.decodeWith fr.fir cert.own)
+  let (bodies, _, _) ← IO.ofExcept (Own.Plain.Certificate.decodeFull fr.fir cert.own)
   let work := Own.Plain.Certificate.capturedWork bodies
   unless work ≤ canonWork && work ≤ limit do
     fail s!"fanUnder: liveness captured work {work} exceeds canonical {canonWork} or limit {limit}"

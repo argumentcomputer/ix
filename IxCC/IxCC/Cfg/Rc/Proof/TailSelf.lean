@@ -8,31 +8,33 @@ open Cfg.Proof (Impl spine)
 /-- Self-tail calls are the existing block-zero back edge, not an additional
 runtime call. Extra target activation bindings are ignored by EnvSub. -/
 theorem At.tail_self {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    {borrows : Own.Plain.BorrowSigs} (checked : checkScopedProgram F bodies P borrows = true)
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (checked : checkScopedProgram F bodies P borrows uniqs = true)
     {fr : Frame} {ρ : Own.Env}
-    {saved : List Own.Plain.JEntry} {args : List Fir.Arg}
-    (stateRel : At F P fr ρ saved (.tcall fr.fn args))
+    {saved : List Own.Plain.JEntry} {args : List Fir.Arg} {slots : Src.NatMap Own.RVal}
+    (stateRel : At F P fr ρ saved (.tcall fr.fn args) slots)
     {source : Fir.Fun} {body : Own.Plain.Code} (sourceLookup : F.fun? fr.fn = some source)
     (bodyLookup : bodies.get? fr.fn = some body) {vs : List Own.RVal}
     (values : Own.evalArgs ρ args = some vs) (arity : vs.length = source.params.length)
     (stk : List (Frame × Fir.Var)) (H : Own.Heap) :
     ∃ after, step P (.run fr stk H) = .next (.run after stk H) true ∧
-      At F P after (Own.bindAll .leaf (source.params.map (·.1)) vs) [] body := by
-  obtain ⟨fd, scope, params, acc, next, first, lo, lookup, range, layout, cursor,
-    env, below, scopedNames, joins⟩ := stateRel
+      At F P after (Own.bindAll .leaf (source.params.map (·.1)) vs) [] body .leaf := by
+  obtain ⟨fd, scope, params, acc, next, first, lo, slotBase, lookup, range, layout, cursor,
+    env, below, loSlot, slotSub, scopedNames, vb, rc, joins⟩ := stateRel
   obtain ⟨actual, table, actualLookup, tableLookup, source', body', sourceLookup', bodyLookup',
     lowering, bounds, collected⟩ := checked_entry (checkScopedProgram_parts checked).1 range
   have hs : source' = source := Option.some.inj (sourceLookup'.symm.trans sourceLookup)
   have hc : body' = body := Option.some.inj (bodyLookup'.symm.trans bodyLookup)
   subst source'; subst body'
   have targetEq : actual = fd := Option.some.inj (actualLookup.symm.trans lookup)
-  have fdEq : fd = lowerFunction F.size fr.fn source body := targetEq.symm.trans lowering
+  have fdEq : fd = lowerFunction F.size fr.fn source body F.ctors := targetEq.symm.trans lowering
   rw [fdEq] at lookup layout
+  let entryFirst := source.vars + Own.Plain.slotBound body
   let ownFd : Own.Fun := { Own.immFun source with
-    body := skeleton F.size source.vars body
-    vars := source.vars + actionCount body }
+    body := skeleton F.size entryFirst body F.ctors source.vars
+    vars := entryFirst + actionCount body }
   obtain ⟨term, entryBlock⟩ := Cfg.Proof.block_zero fr.fn ownFd
-  change (lowerFunction F.size fr.fn source body).block? 0 =
+  change (lowerFunction F.size fr.fn source body F.ctors).block? 0 =
     some { params := ownFd.params.zip ownFd.sig.params, body := spine ownFd.body, term } at entryBlock
   have paramsEq : (ownFd.params.zip ownFd.sig.params).map (·.1) = ownFd.params :=
     Cfg.Proof.zip_fst (by simp [ownFd, Own.immFun])

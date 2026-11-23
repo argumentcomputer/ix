@@ -17,15 +17,16 @@ arguments then construct ownership, denotations and register words, and the
 proved whole-code simulation supplies every initialized entry result. -/
 theorem numeric_entry {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
     {config : Rt.Config} {lowered : Public.Lowered} {borrows : Own.Plain.BorrowSigs}
-    (checked : checkScopedProgram F bodies P borrows = true)
-    (accepted : Public.lower config F bodies P borrows = .ok lowered)
+    {uniqs : Own.Plain.UniqSigs}
+    (checked : checkScopedProgram F bodies P borrows uniqs = true)
+    (accepted : Public.lower config F bodies P borrows uniqs = .ok lowered)
     {f : Nat} {sourceFunction : Fir.Fun} (sourceLookup : F.fun? f = some sourceFunction)
     {numbers : List Nat} {words : List Lir.Word} (encoded : Rt.natWords numbers = some words)
     (arity : numbers.length = sourceFunction.params.length)
     {size budget context : Lir.Word} {memory : X86.Memory}
     (region : Rt.Proof.RegionOk context size) (readable : Rt.Proof.LirRegion memory context size) :
     ∃ pairs functions left initialized base limit,
-      CodeAdmission F bodies P config pairs functions borrows ∧
+      CodeAdmission F bodies P config pairs functions borrows uniqs ∧
       (∀ clock, Lir.eval {lowered.runtime.program with main := lowered.runtime.init}
         clock [size, budget] memory context = .ok ([left], initialized)) ∧
       Rt.Proof.InitPost context budget memory initialized ∧
@@ -48,6 +49,7 @@ theorem numeric_entry {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P 
   exact main_entry_result admission (checked_physical admission f clock) sourceLookup den
     (numeric_selectOwned_balance _ numbers balance)
     (fun v hv => numeric_selectBorrowed_reachable {} _ _ numbers v hv)
+    (fun v hv => numeric_selectUnique_uniq F.ctors {} _ _ _ _ numbers v hv)
     represented compatible (by simpa only [Own.litArgs, List.length_map] using arity)
     (heap.numeric_selectOwned _ numbers)
 

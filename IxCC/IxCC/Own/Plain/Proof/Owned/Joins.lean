@@ -5,8 +5,7 @@ import IxCC.Own.Plain.Proof.Owned.Rhs
 A declaration saves its body with the context it was checked from (`OwnedEntry`): nothing moves,
 the captured list is recorded against the join in `Δ`. A jump hands over the arguments' tokens
 and one token of each captured variable that is not an immediate of the declaration; the body
-starts from exactly those (`Ctx.enter`), so the counts are the jump's with the vacuous tokens of
-immediates added or dropped. -/
+starts from exactly those (`Ctx.enter`, with `rset = .leaf` and `slots = .leaf`). -/
 
 set_option autoImplicit false
 
@@ -107,16 +106,19 @@ theorem Ctx.ownHas_ofList {xs : List Var} {y : Var} (hn : xs.Nodup)
 
 /-- After a jump, the body continues on its declaration's stack (and, for a recursive join, on
 itself, charged). -/
-theorem OwnedEntry.after_stack {borrows : BorrowSigs} {Δ Δd : JCtx} {pbrw : Src.NatSet} {Γd : Ctx}
+theorem OwnedEntry.after_stack {borrows : BorrowSigs} {uniqs : UniqSigs} {retUniq : Bool}
+    {ctors : List Lam.CtorInfo} {K : Lam.Known} {Δ Δd : JCtx} {pbrw : Src.NatSet} {Γd : Ctx}
     {lexd captured : List Var} {older : Joins} {restf : List Fir.JEntry} {resto : List JEntry}
     {ef : Fir.JEntry} {eo : JEntry}
-    (entry : OwnedEntry borrows Δ Δd pbrw Γd lexd captured restf ef eo)
-    (tail : OwnedStack borrows Δ Γd.pbrw ef.env eo.env lexd older restf resto) (hn : lexd.Nodup)
-    (hf : Plain.fresh lexd ef.params = true) (vs : List RVal) (ws : List Fir.Val) :
-    OwnedStack borrows (if ef.isRec then Δd.insert ef.id captured else Δd) Γd.pbrw
-      (Fir.bindAll ef.env ef.params ws) (Own.bindAll eo.env eo.params vs) (lexd ++ ef.params)
-      (if ef.isRec then (ef.id, lexd) :: older else older) (ef.after restf) (eo.after resto) := by
-  have tail' : OwnedStack borrows (if ef.isRec then Δd.insert ef.id captured else Δd) Γd.pbrw
+    (entry : OwnedEntry borrows uniqs retUniq ctors K Δ Δd pbrw Γd lexd captured restf ef eo)
+    (tail : OwnedStack borrows uniqs retUniq ctors K Δ Γd.pbrw ef.env eo.env lexd older restf resto)
+    (hn : lexd.Nodup) (hf : Plain.fresh lexd ef.params = true) (vs : List RVal) (ws : List Fir.Val) :
+    OwnedStack borrows uniqs retUniq ctors K (if ef.isRec then Δd.insert ef.id captured else Δd)
+      Γd.pbrw (Fir.bindAll ef.env ef.params ws) (Own.bindAll eo.env eo.params vs)
+      (lexd ++ ef.params) (if ef.isRec then (ef.id, lexd) :: older else older)
+      (ef.after restf) (eo.after resto) := by
+  have tail' : OwnedStack borrows uniqs retUniq ctors K
+      (if ef.isRec then Δd.insert ef.id captured else Δd) Γd.pbrw
       ef.env eo.env lexd older restf resto := by
     apply tail.transfer
     intro e he
@@ -133,10 +135,10 @@ theorem OwnedEntry.after_stack {borrows : BorrowSigs} {Δ Δd : JCtx} {pbrw : Sr
     exact tail'.rebind ef.params vs ws hf
   | true =>
     have hro : eo.isRec = true := by rw [entry.isRec]; exact hr
-    simp only [Fir.JEntry.after, JEntry.after, if_pos hr, if_pos hro]
-    simp only [if_pos hr] at tail'
-    have entry' : OwnedEntry borrows (Δd.insert ef.id captured) Δd Γd.pbrw Γd lexd captured restf
-        { ef with charged := true } { eo with charged := true } :=
+    simp only [Fir.JEntry.after, JEntry.after, ite_eq_left hr, ite_eq_left hro]
+    simp only [ite_eq_left hr] at tail'
+    have entry' : OwnedEntry borrows uniqs retUniq ctors K (Δd.insert ef.id captured) Δd Γd.pbrw
+        Γd lexd captured restf { ef with charged := true } { eo with charged := true } :=
       ⟨entry.id, rfl, entry.params, entry.isRec, entry.erases, entry.typed, entry.imm,
         entry.immIn, entry.pbrwIn, fun _ h => h, entry.sub, entry.nodup,
         Src.NatMap.get?_insert_self ..,
@@ -149,23 +151,29 @@ theorem OwnedEntry.after_stack {borrows : BorrowSigs} {Δ Δd : JCtx} {pbrw : Sr
 section
 variable {functions : Signatures} {H : Heap} {external : Nat → Nat} {live : List Var}
   {Γ : Ctx} {ρf : Fir.Env} {ρo : Own.Env} {owned : List RVal} {lex : Joins} {Δ : JCtx}
-  {Jf : List Fir.JEntry} {Jo : List JEntry} {borrows : BorrowSigs}
+  {Jf : List Fir.JEntry} {Jo : List JEntry} {borrows : BorrowSigs} {uniqs : UniqSigs}
+  {retUniq : Bool} {ctors : List Lam.CtorInfo} {K : Lam.Known} {priv : Nat → Prop}
+  {slots : Src.NatMap RVal} {slotVals : List RVal}
 
 /-- A join declaration: the stack gains the entry, typed as the checker typed its body. -/
-theorem OwnedState.declare (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
+theorem OwnedState.declare (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo
+    borrows uniqs retUniq ctors K priv slots slotVals)
     {j : Fir.JoinId} {ps captured : List Var} {rec : Bool} {body : Code}
     (hnd : nodupVars captured = true) (hneed : Γ.needCaptured j captured = .ok ())
-    (htyped : checkCode (if rec then Δ.insert j captured else Δ) (Γ.enter captured ps) body borrows = .ok ())
+    (htyped : checkCode (if rec then Δ.insert j captured else Δ) (Γ.enter captured ps) body
+      borrows uniqs retUniq ctors K = .ok ())
     (hnone : (stackArities Jf).lookup j = none) (hf : fresh live ps = true)
     (hb : scopeOk functions (live ++ ps)
       (if rec then (j, ps.length) :: stackArities Jf else stackArities Jf) (eraseCode body) = true) :
     OwnedState functions H external live Γ ρf ρo owned ((j, live) :: lex) (Δ.insert j captured)
       ({ id := j, charged := false, env := ρf, params := ps, body := eraseCode body,
          isRec := rec } :: Jf)
-      ({ id := j, charged := false, env := ρo, params := ps, body, isRec := rec } :: Jo) borrows := by
+      ({ id := j, charged := false, env := ρo, params := ps, body, isRec := rec } :: Jo)
+      borrows uniqs retUniq ctors K priv slots slotVals := by
   have hfresh := lookup_none_fresh hnone
   have hcap := Ctx.needCaptured_avail hneed
-  have entry : OwnedEntry borrows (Δ.insert j captured) Δ Γ.pbrw Γ live captured Jf
+  have entry : OwnedEntry borrows uniqs retUniq ctors K (Δ.insert j captured) Δ Γ.pbrw Γ live
+      captured Jf
       { id := j, charged := false, env := ρf, params := ps, body := eraseCode body, isRec := rec }
       { id := j, charged := false, env := ρo, params := ps, body, isRec := rec } := by
     refine ⟨rfl, rfl, rfl, rfl, rfl, htyped, fun x hx => ?_, fun x hx => st.known x ?_,
@@ -175,9 +183,15 @@ theorem OwnedState.declare (st : OwnedState functions H external live Γ ρf ρo
       hfresh⟩
     · obtain ⟨v, hv, himm⟩ := st.immOk x hx
       obtain ⟨v', w, hv', hw, hd⟩ := st.den x (by simp [Ctx.avail_eq, hx])
-      have : v' = v := Option.some.inj (hv'.symm.trans hv)
-      subst this
-      exact ⟨v', w, hv, hw, himm, fun H' => den_imm himm hd⟩
+      have : v' = v := Option.some.inj (hv'.symm.trans hv); subst this
+      refine ⟨v', w, hv, hw, himm, fun hux => ?_, fun H' => den_imm himm hd⟩
+      obtain ⟨_, u', hu', hvu⟩ := st.uniqOk x hux
+      have : u' = v' := Option.some.inj (hu'.symm.trans hv); subst this
+      refine ⟨himm, ?_⟩
+      cases u' with
+      | loc l => exact absurd rfl (himm l)
+      | ctor0 c => exact hvu
+      | lit _ | erased => trivial
     · simp [Ctx.known_eq, hx]
     · simp [Ctx.known_eq, hx]
   exact { st with
@@ -187,10 +201,42 @@ theorem OwnedState.declare (st : OwnedState functions H external live Γ ρf ρo
       (e := { id := j, charged := false, env := ρf, params := ps, body := eraseCode body, isRec := rec })
       (List.Sublist.refl _) ⟨hf, hb⟩ st.scope }
 
-/-- `jump_body` with the token transfer as reference counts: the body's tokens count what the jumping path held (the heap is unchanged by a jump). The checked jump: the target found on both stacks, the arguments, and the state its body
-starts from — the arguments' tokens and those of the captured variables that are not immediates
-of the declaration, exactly the context the body was checked from. -/
-theorem jump_body_refs (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
+private theorem takeArgs_noPriv {Γ Γ₁ : Ctx} {args : List Arg} {vs : List RVal}
+    (hpriv : ∀ l, priv l → ∀ x, Γ.avail x = true → ρo.get? x ≠ some (.loc l))
+    (hev : Own.evalArgs ρo args = some vs) (ht : Γ.takeArgs args = .ok Γ₁) :
+    ∀ l, priv l → ∀ v, v ∈ vs → v ≠ .loc l := by
+  induction args generalizing Γ vs with
+  | nil => intro _ _ _ hv; simp [Own.evalArgs] at hev; subst hev; cases hv
+  | cons a as ih =>
+    cases ha : Own.evalArg ρo a with
+    | none => simp [Own.evalArgs, ha] at hev
+    | some v0 =>
+      cases has : Own.evalArgs ρo as with
+      | none => simp [Own.evalArgs, ha, has] at hev
+      | some vs' =>
+        have : v0 :: vs' = vs := by simpa [Own.evalArgs, ha, has] using hev
+        subst this
+        simp only [Ctx.takeArgs] at ht
+        cases hta : Γ.takeArg a with
+        | error _ => rw [hta] at ht; cases ht
+        | ok Γm =>
+          rw [hta] at ht
+          have hwm := Ctx.takeArg_weaker hta
+          intro l hl v hm
+          rcases List.mem_cons.mp hm with rfl | hm
+          · cases a with
+            | lit _ | erased => simp [Own.evalArg] at ha; subst ha; intro h; cases h
+            | var y =>
+              have havy : Γ.avail y = true := by
+                rcases Ctx.take_ok hta with ⟨hi, _⟩ | ⟨_, n, hn, _⟩
+                · simp [Ctx.avail_eq, hi]
+                · simp [Ctx.avail_eq, Ctx.tokens_eq, hn]
+              intro hEq; subst hEq; exact hpriv l hl y havy ha
+          · exact ih (fun l' hl' x hx => hpriv l' hl' x (hwm.avail hx)) has ht l hl v hm
+
+/-- `jump_body` with token transfer as reference counts. -/
+theorem jump_body_refs (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo
+    borrows uniqs retUniq ctors K priv slots slotVals)
     {j : Fir.JoinId} {args : List Arg} {captured : List Var} {Γ₁ Γ₂ : Ctx} {what : String}
     (hΔ : Δ.get? j = some captured) (h1 : Γ.takeArgs args = .ok Γ₁)
     (h2 : Γ₁.takeVars captured = .ok Γ₂) (h3 : Γ₂.closed what = .ok ())
@@ -203,8 +249,9 @@ theorem jump_body_refs (st : OwnedState functions H external live Γ ρf ρo own
         ∃ (Δb : JCtx) (Γb : Ctx) (lexd : List Var) (lexb : Joins) (owned' : List RVal),
           OwnedState functions H external (lexd ++ ef.params) Γb
             (Fir.bindAll ef.env ef.params ws) (Own.bindAll eo.env eo.params vs) owned' lexb Δb
-            (ef.after restf) (eo.after resto) borrows ∧
-          checkCode Δb Γb eo.body borrows = .ok () ∧ eraseCode eo.body = ef.body ∧
+            (ef.after restf) (eo.after resto) borrows uniqs retUniq ctors K priv .leaf [] ∧
+          checkCode Δb Γb eo.body borrows uniqs retUniq ctors K = .ok () ∧
+          eraseCode eo.body = ef.body ∧
           scopeOk functions (lexd ++ ef.params) (stackArities (ef.after restf)) ef.body = true ∧
           SameRefs owned owned') := by
   obtain ⟨lexd, captured', older, Δd, Γd, eo, resto, hlo, entry, oview, fview, tail, escope,
@@ -214,20 +261,25 @@ theorem jump_body_refs (st : OwnedState functions H external live Γ ρf ρo own
     have := entry.here; rw [hid, hΔ] at this; exact (Option.some.inj this).symm
   subst captured'
   obtain ⟨vs, ws, owned₁, hvs, hws, hds, inv₁, hs₁, hw₁⟩ := takeArgs_sem st.takeInv h1
-  obtain ⟨cvs, owned₂, hcvs, havail, inv₂, hs₂, _⟩ := takeVars_sem inv₁ h2
+  obtain ⟨cvs, owned₂, hcvs, havail, inv₂, hs₂, hw₂⟩ := takeVars_sem inv₁ h2
   obtain ⟨toks₂, htok₂, hr₂⟩ := inv₂.roots
   have hnil := closed_nil htok₂ h3
   subst hnil
   have ho₂ := EnvRoots.nil_inv hr₂
   subst ho₂
+  obtain ⟨skeys, hsk, hsroots⟩ := st.slotRoots
+  have hsnil := (hsk.same (hw₂.trans hw₁).rset).closed_nil (closed_rset h3)
+  subst hsnil
+  have hsv := EnvRoots.nil_inv hsroots
+  subst hsv
+  have hvsNoPriv := takeArgs_noPriv st.privNoVar hvs h1
   refine ⟨vs, ws, eo, resto, hvs, hws, hds.length, hlo, entry.params, entry.charged, fun hlen => ?_⟩
-  -- The captured variables the body holds tokens for, and their values.
   let p : Var → Bool := fun c => !Γd.isImm c
   have hsubC : ∀ c, c ∈ captured → c ∈ lexd := entry.sub
   have hsav : ∀ c, c ∈ lexd → eo.env.get? c = ρo.get? c := oview.agree
   obtain ⟨cvsF, hcF, hsF⟩ := EnvRoots.filter p hcvs (fun c hc hpc => by
     have hi : Γd.isImm c = true := by simpa [p] using hpc
-    obtain ⟨v, _, hv, _, himm, _⟩ := entry.imm c hi
+    obtain ⟨v, _, hv, _, himm, _, _⟩ := entry.imm c hi
     exact ⟨v, by rw [← hsav c (hsubC c hc)]; exact hv, himm⟩)
   have hfilt : ∀ c, c ∈ captured.filter p → c ∈ lexd := fun c hc => hsubC c ((List.mem_filter.mp hc).1)
   have hnlex : lexd.Nodup := oview.captured_nodup
@@ -243,8 +295,8 @@ theorem jump_body_refs (st : OwnedState functions H external live Γ ρf ρo own
     have h0 : SameRefs owned (vs ++ cvsF) :=
       hs₁.trans (SameRefs.append (SameRefs.refl vs) (hs₂.trans (by simpa using hsF)))
     exact h0.trans (SameRefs.comm vs cvsF)
-  have hbal : Balance H external (cvsF ++ vs) := hrefs.balance st.counts
-  -- Denotations of what the body may read.
+  have hbal : Balance H external ((cvsF ++ vs) ++ []) := by
+    simpa using hrefs.balance (by simpa using st.counts)
   have hdenF : EnvDen H (captured.filter p) ef.env eo.env := by
     intro c hc
     have hcC : c ∈ captured := (List.mem_filter.mp hc).1
@@ -261,14 +313,42 @@ theorem jump_body_refs (st : OwnedState functions H external live Γ ρf ρo own
   have hown : ∀ y, (Γd.enter captured ef.params).own.contains y = true →
       y ∈ Γd.entered captured ef.params := fun y hy => Ctx.ownHas_ofList hnodupE hy
   have hbrwB : ∀ y, (Γd.enter captured ef.params).brw.get? y = none := fun _ => rfl
-  refine ⟨_, _, lexd, _, cvsF ++ vs, ⟨fun y hy => ?_, ⟨_, htokB, hroots⟩, hbal, fun y hy => ?_,
-    fresh_nodup_append hnlex escope.1, fun y hy => ?_, fun y hy => ?_, fun y hy => ?_, fun y e hy => ?_,
+  have hbindParamMem : ∀ y v, y ∈ ef.params → (Own.bindAll eo.env ef.params vs).get? y = some v →
+      v ∈ vs := by
+    intro y v hy hv
+    have hget : ∀ (ρ : Own.Env) (ps : List Var) (vals : List RVal),
+        vals.length = ps.length → y ∈ ps → (Own.bindAll ρ ps vals).get? y = some v → v ∈ vals := by
+      intro ρ ps
+      induction ps generalizing ρ with
+      | nil => intro _ _ hm; cases hm
+      | cons q qs ih =>
+        intro vals hlen' hm hv'
+        cases vals with
+        | nil => simp at hlen'
+        | cons u us =>
+          by_cases hq : y ∈ qs
+          · exact List.mem_cons_of_mem _ (ih (ρ.insert q u) us (by simpa using hlen') hq hv')
+          · rcases List.mem_cons.mp hm with rfl | hq'
+            · simp only [Own.bindAll] at hv'
+              rw [get_bindAll_untouched _ _ _ _ hq, Src.NatMap.get?_insert_self] at hv'
+              cases hv'; exact List.mem_cons_self
+            · exact absurd hq' hq
+    exact hget eo.env ef.params vs hvlen hy hv
+  refine ⟨_, _, lexd, _, cvsF ++ vs, ⟨fun y hy => ?_, ⟨_, htokB, hroots⟩,
+    ⟨[], Ctx.SlotKeys.empty rfl, rfl⟩, hbal, fun y hy => ?_,
+    fresh_nodup_append hnlex escope.1, fun y hy => ?_, fun y hy => ?_, fun y hy => ?_,
+    fun y e hy => ?_, fun y key hc => by simp [Ctx.enter, Src.NatMap.get?] at hc,
+    fun v y key idx hp => by simp [Ctx.enter, Src.NatMap.get?] at hp,
+    fun y key _ hc => by simp [Ctx.enter, Src.NatMap.get?] at hc,
+    fun v y key idx _ _ hp => by simp [Ctx.enter, Src.NatMap.get?] at hp,
+    fun y hy => ?_, fun s cls u hrs => by simp [Ctx.enter, Src.NatMap.get?] at hrs,
+    st.privBound, st.privNoEdge, fun l hl y hy => ?_,
+    fun _ _ s hs => by simp [Ctx.enter, Src.NatMap.contains, Src.NatMap.get?] at hs,
     entry.after_stack tail hnlex escope.1 vs ws, StackScope.after escope tscope⟩,
     entry.typed, entry.erases, by rw [stackArities_after]; exact escope.2, hrefs⟩
-  · -- avail in the body: an immediate of the declaration, a token, or a caller-backed `pbrw`.
-    simp only [Ctx.avail_eq, Ctx.borrowed_eq, hbrwB, Bool.or_eq_true, decide_eq_true_eq] at hy
+  · simp only [Ctx.avail_eq, Ctx.borrowed_eq, hbrwB, Bool.or_eq_true, decide_eq_true_eq] at hy
     rcases hy with ((hi | hp) | hb) | hpb
-    · obtain ⟨v, w, hv, hw, himm, hall⟩ := entry.imm y hi
+    · obtain ⟨v, w, hv, hw, _, _, hall⟩ := entry.imm y hi
       obtain ⟨h1', h2'⟩ := hbody y (entry.immIn y hi)
       exact ⟨v, w, by rw [h1']; exact hv, by rw [h2']; exact hw, hall H⟩
     · have hm : y ∈ Γd.entered captured ef.params := htokB.mem hp
@@ -286,7 +366,7 @@ theorem jump_body_refs (st : OwnedState functions H external live Γ ρf ρo own
       · exact List.mem_append_left _ (hfilt y hm)
       · exact List.mem_append_right _ hm
     · exact List.mem_append_left _ (entry.pbrwIn y hpb)
-  · obtain ⟨v, _, hv, _, himm, _⟩ := entry.imm y hy
+  · obtain ⟨v, _, hv, _, himm, _, _⟩ := entry.imm y hy
     exact ⟨v, by rw [(hbody y (entry.immIn y hy)).1]; exact hv, himm⟩
   · simp [Ctx.borrowed_eq, hbrwB] at hy
   · have hpbΓ : Γ.isPbrw y = true := entry.pbrwSub y hy
@@ -294,11 +374,34 @@ theorem jump_body_refs (st : OwnedState functions H external live Γ ρf ρo own
     have hlex := entry.pbrwIn y hy
     exact ⟨v, by rw [(hbody y hlex).1, hsav y hlex]; exact hv, hreach⟩
   · simp [hbrwB] at hy
+  · simp only [Ctx.isUniq, Ctx.enter, contains_interSet, Bool.and_eq_true] at hy
+    obtain ⟨hi, hu⟩ := hy
+    obtain ⟨v, _, hv, _, _, himmU, _⟩ := entry.imm y hi
+    exact ⟨(fun hc => by simp only [Ctx.isImm, Ctx.enter] at hc; rw [hi] at hc; cases hc),
+      v, by rw [(hbody y (entry.immIn y hi)).1]; exact hv, (himmU hu).toUniqVal⟩
+  · simp only [Ctx.avail_eq, Ctx.borrowed_eq, hbrwB, Bool.or_eq_true, decide_eq_true_eq] at hy
+    rcases hy with ((hi | hp) | hb) | hpb
+    · obtain ⟨v, _, hv, _, himm, _, _⟩ := entry.imm y hi
+      rw [(hbody y (entry.immIn y hi)).1, hv]
+      intro hEq; cases hEq; exact himm l rfl
+    · have hm : y ∈ Γd.entered captured ef.params := htokB.mem hp
+      rcases List.mem_append.mp hm with hm' | hm'
+      · have hcC : y ∈ captured := (List.mem_filter.mp hm').1
+        rw [(hbody y (hfilt y hm')).1, hsav y (hfilt y hm')]
+        exact st.privNoVar l hl y (hw₁.avail (havail y hcC))
+      · intro hEq
+        rw [entry.params] at hEq
+        exact hvsNoPriv l hl (.loc l) (hbindParamMem y (.loc l) hm' hEq) rfl
+    · simp at hb
+    · have hpbΓ : Γ.isPbrw y = true := entry.pbrwSub y hpb
+      have hlex := entry.pbrwIn y hpb
+      rw [(hbody y hlex).1, hsav y hlex]
+      exact st.privNoVar l hl y (by simp [Ctx.avail_eq, hpbΓ])
 
 /-- **A checked jump**: the target found on both stacks, the arguments, and the state its body
-starts from — the arguments' tokens and those of the captured variables that are not immediates
-of the declaration, exactly the context the body was checked from. -/
-theorem jump_body (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
+starts from. -/
+theorem jump_body (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo
+    borrows uniqs retUniq ctors K priv slots slotVals)
     {j : Fir.JoinId} {args : List Arg} {captured : List Var} {Γ₁ Γ₂ : Ctx} {what : String}
     (hΔ : Δ.get? j = some captured) (h1 : Γ.takeArgs args = .ok Γ₁)
     (h2 : Γ₁.takeVars captured = .ok Γ₂) (h3 : Γ₂.closed what = .ok ())
@@ -311,8 +414,9 @@ theorem jump_body (st : OwnedState functions H external live Γ ρf ρo owned le
         ∃ (Δb : JCtx) (Γb : Ctx) (lexd : List Var) (lexb : Joins) (owned' : List RVal),
           OwnedState functions H external (lexd ++ ef.params) Γb
             (Fir.bindAll ef.env ef.params ws) (Own.bindAll eo.env eo.params vs) owned' lexb Δb
-            (ef.after restf) (eo.after resto) borrows ∧
-          checkCode Δb Γb eo.body borrows = .ok () ∧ eraseCode eo.body = ef.body ∧
+            (ef.after restf) (eo.after resto) borrows uniqs retUniq ctors K priv .leaf [] ∧
+          checkCode Δb Γb eo.body borrows uniqs retUniq ctors K = .ok () ∧
+          eraseCode eo.body = ef.body ∧
           scopeOk functions (lexd ++ ef.params) (stackArities (ef.after restf)) ef.body = true) := by
   obtain ⟨vs, ws, eo, resto, h₁, h₂, h₃, h₄, h₅, h₆, h₇⟩ := jump_body_refs st hΔ h1 h2 h3 hl
   refine ⟨vs, ws, eo, resto, h₁, h₂, h₃, h₄, h₅, h₆, fun hlen => ?_⟩

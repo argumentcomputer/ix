@@ -34,9 +34,10 @@ def entries (F : Fir.Program) (bodies : Src.NatMap Own.Plain.Code) :
   | f :: rest => do
     let fd ← F.fun? f
     let body ← bodies.get? f
-    let lowered := lowerFunction F.size f fd body
-    if !functionBounds F.size fd.vars lowered then none else do
-      let table ← collect F.size fd.vars (instructions lowered)
+    let first := fd.vars + Own.Plain.slotBound body
+    let lowered := lowerFunction F.size f fd body F.ctors
+    if !functionBounds F.size first lowered then none else do
+      let table ← collect F.size first (instructions lowered)
       let tail ← entries F bodies rest
       some ((f, lowered, table) :: tail)
 
@@ -52,8 +53,8 @@ def generate (F : Fir.Program) (bodies : Src.NatMap Own.Plain.Code) : Option Pro
     actions := Src.NatMap.ofList (es.map fun e => (e.1, e.2.2)) }
 
 def checkProgram (F : Fir.Program) (bodies : Src.NatMap Own.Plain.Code) (candidate : Program)
-    (borrows : Own.Plain.BorrowSigs := .leaf) : Bool :=
-  Own.Plain.checkOwned F bodies borrows &&
+    (borrows : Own.Plain.BorrowSigs := .leaf) (uniqs : Own.Plain.UniqSigs := .leaf) : Bool :=
+  Own.Plain.checkOwned F bodies borrows uniqs &&
     match generate F bodies with
     | none => false
     | some expected => programEq expected candidate

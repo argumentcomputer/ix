@@ -6,8 +6,9 @@ namespace IxCC.Cfg.Rc
 def EntryOk (F : Fir.Program) (bodies : Src.NatMap Own.Plain.Code)
     (f : Nat) (fd : Cfg.Fun) (table : ActionTable) : Prop :=
   ∃ source body, F.fun? f = some source ∧ bodies.get? f = some body ∧
-    fd = lowerFunction F.size f source body ∧ functionBounds F.size source.vars fd = true ∧
-    collect F.size source.vars (instructions fd) = some table
+    fd = lowerFunction F.size f source body F.ctors ∧
+    functionBounds F.size (source.vars + Own.Plain.slotBound body) fd = true ∧
+    collect F.size (source.vars + Own.Plain.slotBound body) (instructions fd) = some table
 
 theorem entries_ok {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     {ids : List Nat} {es : List (Nat × Cfg.Fun × ActionTable)}
@@ -27,9 +28,11 @@ theorem entries_ok {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
         split at h
         · cases h
         · next hbound =>
-          have bound : functionBounds F.size source.vars (lowerFunction F.size f source body) = true := by
+          have bound : functionBounds F.size (source.vars + Own.Plain.slotBound body)
+              (lowerFunction F.size f source body F.ctors) = true := by
             simpa using hbound
-          cases ht : collect F.size source.vars (instructions (lowerFunction F.size f source body)) with
+          cases ht : collect F.size (source.vars + Own.Plain.slotBound body)
+              (instructions (lowerFunction F.size f source body F.ctors)) with
           | none => simp [ht] at h
           | some table =>
             simp only [ht, bind, Option.bind] at h
@@ -70,8 +73,8 @@ theorem generate_entry {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
         (List.mem_map.mpr ⟨(f, fd, table), mem, rfl⟩)
 
 theorem checked_entry {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} {borrows : Own.Plain.BorrowSigs}
-    (h : checkProgram F bodies P borrows = true) {f : Nat} (hf : f < F.size) :
+    {P : Program} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (h : checkProgram F bodies P borrows uniqs = true) {f : Nat} (hf : f < F.size) :
     ∃ fd table, P.base.fun? f = some fd ∧ P.actions.get? f = some table ∧ EntryOk F bodies f fd table :=
   generate_entry (checkProgram_parts h).2 hf
 

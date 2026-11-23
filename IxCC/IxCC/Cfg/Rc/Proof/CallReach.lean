@@ -6,13 +6,14 @@ namespace IxCC.Cfg.Rc
 open IxCC.Sem (Result)
 
 def SimAt (F : Fir.Program) (bodies : Src.NatMap Own.Plain.Code) (P : Program) (clock : Nat) : Prop :=
-  ∀ fr ρ saved H code stk, At F P fr ρ saved code →
-    Reach P clock (.run fr stk H) stk (Own.Plain.eval {source := F, bodies} clock ρ saved H code)
+  ∀ fr ρ saved H code slots stk, At F P fr ρ saved code slots →
+    Reach P clock (.run fr stk H) stk (Own.Plain.eval {source := F, bodies} clock ρ saved H code slots)
 
 /-- The source call charge is matched by the actual checked target entry.
 Only a strictly smaller-clock induction hypothesis is used. -/
 theorem call_reach {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    {borrows : Own.Plain.BorrowSigs} (checked : checkScopedProgram F bodies P borrows = true)
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (checked : checkScopedProgram F bodies P borrows uniqs = true)
     (clock : Nat)
     (ih : ∀ k < clock, SimAt F bodies P k) (f : Nat) (vs : List Own.RVal)
     (stk : List (Frame × Fir.Var)) (H : Own.Heap) :
@@ -29,7 +30,7 @@ theorem call_reach {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : P
       by_cases arity : vs.length = fd.params.length
       · simp only [arity, ↓reduceIte]
         obtain ⟨fr, step, frame⟩ := checked_entry_step checked (checked_source_dense checked hf) hf hb vs arity stk H
-        exact Reach.charge step (fun k smaller => ih k (by omega) _ _ _ _ _ _ frame)
+        exact Reach.charge step (fun k smaller => ih k (by omega) _ _ _ _ _ _ _ frame)
       · simp only [arity, ↓reduceIte]
         exact Reach.stuck
 

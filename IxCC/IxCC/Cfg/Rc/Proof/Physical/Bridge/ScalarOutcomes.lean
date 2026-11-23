@@ -25,17 +25,20 @@ section
 variable {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
   {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
   {main clock : Nat} {sourceJoins : List Fir.JEntry} {borrows : Own.Plain.BorrowSigs}
+  {uniqs : Own.Plain.UniqSigs}
 
 /-- **`x := a`.** -/
-theorem argument_result (admission : CodeAdmission F bodies P config pairs functions borrows)
+theorem argument_result (admission : CodeAdmission F bodies P config pairs functions borrows uniqs)
     {x : Fir.Var} (arg : Fir.Arg) {k : Own.Plain.Code}
-    (next : PhysicalCode F P config pairs main clock sourceJoins k borrows) :
-    PhysicalCode F P config pairs main clock sourceJoins (.bind x (.arg arg) k) borrows := by
-  intro H addresses external live Γ Δ sourceEnv ownedEnv roots lex ownedJoins sourceFunction
-    function source target memory context base bump limit regionBytes slots lists callers
-    sourceLookup before heap
+    (next : PhysicalCode F P config pairs main clock sourceJoins k borrows bodies uniqs) :
+    PhysicalCode F P config pairs main clock sourceJoins (.bind x (.arg arg) k)
+      borrows bodies uniqs := by
+  intro H addresses external retUniq priv rslots slotVals live Γ Δ sourceEnv ownedEnv roots lex
+    ownedJoins sourceFunction function source target memory context base bump limit regionBytes
+    slots lists callers sourceLookup before heap
   show ResultAt _ _ _ _ _ _ _ _ _ _ _ _ _
     (Fir.eval F clock sourceEnv sourceJoins (.bind x (.arg arg) (Own.Plain.eraseCode k)))
+    F.ctors retUniq priv
   rw [Fir.eval_bind_arg]
   rcases Own.Plain.fir_rhs_pure F sourceEnv (.arg arg) with stuck | ⟨logical, evaluation⟩
   · rw [stuck]; trivial
@@ -66,33 +69,40 @@ theorem argument_result (admission : CodeAdmission F bodies P config pairs funct
       have activation : Activation F P pairs
           (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main) H addresses
           external (live ++ [x]) Γ' Δ (sourceEnv.insert x logical) (ownedEnv.insert x value) owned'
-          lex sourceJoins ownedJoins k sourceFunction.vars function
-          {source with rest := tail, env := source.env.insert x value} after borrows :=
+          lex sourceJoins ownedJoins k (funcFirst bodies source.fn sourceFunction) function
+          {source with rest := tail, env := source.env.insert x value} after
+          borrows uniqs retUniq priv rslots slotVals :=
         ⟨state, typed, continuation value, frame, bodyScope, running, fused⟩
-      have heap' : HeapState P pairs H addresses memory external owned' context base bump limit
-          regionBytes slots lists :=
-        ⟨by rw [holdRoots_sameRefs refs]; exact heap.ready, heap.ordered, heap.compatible,
+      have refsAll : Own.Plain.SameRefs (owned' ++ slotVals) (roots ++ slotVals) :=
+        Own.Plain.SameRefs.append refs (Own.Plain.SameRefs.refl slotVals)
+      have heap' : HeapState P pairs H addresses memory external (owned' ++ slotVals)
+          context base bump limit regionBytes slots lists :=
+        ⟨by rw [holdRoots_sameRefs refsAll]; exact heap.ready, heap.ordered, heap.compatible,
           heap.extent⟩
       exact ResultAt.prefix trace (Own.Plain.ReachablePreserved.refl H external)
+        (Own.Plain.PrivPreserved.refl before.owned.privNoEdge)
         (HeapHistory.refl _ _) (by omega)
-        (next H addresses external (live ++ [x]) Γ' Δ (sourceEnv.insert x logical)
-          (ownedEnv.insert x value) owned' lex ownedJoins sourceFunction function
-          {source with rest := tail, env := source.env.insert x value} after memory context base
-          bump limit regionBytes slots lists callers sourceLookup activation heap')
+        (next H addresses external retUniq priv rslots slotVals (live ++ [x]) Γ' Δ
+          (sourceEnv.insert x logical) (ownedEnv.insert x value) owned' lex ownedJoins
+          sourceFunction function {source with rest := tail, env := source.env.insert x value}
+          after memory context base bump limit regionBytes slots lists callers sourceLookup
+          activation heap')
     · exact ResultAt.of_fails failed
 
 
 /-- **`x := op args`**: the result is an immediate; the arguments the signature marks become
 immediates (their tokens are vacuous). -/
-theorem primitive_result (admission : CodeAdmission F bodies P config pairs functions borrows)
+theorem primitive_result (admission : CodeAdmission F bodies P config pairs functions borrows uniqs)
     {x : Fir.Var} (op : Lam.Prim) (args : List Fir.Arg) {k : Own.Plain.Code}
-    (next : PhysicalCode F P config pairs main clock sourceJoins k borrows) :
-    PhysicalCode F P config pairs main clock sourceJoins (.bind x (.prim op args) k) borrows := by
-  intro H addresses external live Γ Δ sourceEnv ownedEnv roots lex ownedJoins sourceFunction
-    function source target memory context base bump limit regionBytes slots lists callers
-    sourceLookup before heap
+    (next : PhysicalCode F P config pairs main clock sourceJoins k borrows bodies uniqs) :
+    PhysicalCode F P config pairs main clock sourceJoins (.bind x (.prim op args) k)
+      borrows bodies uniqs := by
+  intro H addresses external retUniq priv rslots slotVals live Γ Δ sourceEnv ownedEnv roots lex
+    ownedJoins sourceFunction function source target memory context base bump limit regionBytes
+    slots lists callers sourceLookup before heap
   show ResultAt _ _ _ _ _ _ _ _ _ _ _ _ _
     (Fir.eval F clock sourceEnv sourceJoins (.bind x (.prim op args) (Own.Plain.eraseCode k)))
+    F.ctors retUniq priv
   rw [Fir.eval_bind_prim]
   rcases Own.Plain.fir_rhs_pure F sourceEnv (.prim op args) with stuck | ⟨logical, evaluation⟩
   · rw [stuck]; trivial
@@ -113,14 +123,16 @@ theorem primitive_result (admission : CodeAdmission F bodies P config pairs func
       Own.Plain.needArgs_sem before.owned.den havail
     have primitive : Fir.primResult F op logicalArgs = .ok logical := by
       simpa only [Fir.evalRhs, sourceArgs] using evaluation
-    obtain ⟨value, result, den, immediate⟩ := Own.Plain.primResult_immediate pins denArgs primitive
-    have argsImmediate := Own.Plain.primResult_args_immediate denArgs primitive
+    obtain ⟨value, result, den, immediate⟩ := Own.Plain.primResult_immUniq pins denArgs primitive
+    have argsImmediate := Own.Plain.primResult_args_immUniq denArgs primitive
     obtain ⟨owned', pre', refs⟩ := before.owned.pre.immArgs (Own.Plain.primImmArgs op args.length)
       args (fun y hy => by
         refine ⟨havail y hy, ?_⟩
         obtain ⟨v, _, hv, _, _⟩ := before.owned.den y (havail y hy)
         exact ⟨v, hv, argsImmediate v (Own.Plain.evalArgs_mem arguments hy hv)⟩)
-    have state := pre'.bindImm fresh den immediate (refs.balance before.owned.counts)
+    have refsAll : Own.Plain.SameRefs (roots ++ slotVals) (owned' ++ slotVals) :=
+      Own.Plain.SameRefs.append refs (Own.Plain.SameRefs.refl slotVals)
+    have state := pre'.bindImmUniq fresh den immediate (refsAll.balance before.owned.counts)
     have lexicalEffect : Own.evalRhs .rc ({ctors := F.ctors, known := F.known} : Own.Tables)
         ownedEnv H (.fir (.prim op args)) = .ok (value, H) := by
       simp [Own.evalRhs, arguments, result, Sem.Result.map]
@@ -139,19 +151,21 @@ theorem primitive_result (admission : CodeAdmission F bodies P config pairs func
       have activation : Activation F P pairs
           (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main) H addresses
           external (live ++ [x])
-          ((Ctx.immArgs Γ (Own.Plain.primImmArgs op args.length) args).setImm x) Δ
+          ((Ctx.immArgs Γ (Own.Plain.primImmArgs op args.length) args).setImmUniq x) Δ
           (sourceEnv.insert x logical) (ownedEnv.insert x value) owned' lex sourceJoins ownedJoins k
-          sourceFunction.vars function {source with rest := tail, env := source.env.insert x value}
-          after borrows :=
+          (funcFirst bodies source.fn sourceFunction) function
+          {source with rest := tail, env := source.env.insert x value}
+          after borrows uniqs retUniq priv rslots slotVals :=
         ⟨state, typed, continuation value, frame, bodyScope, running, fused⟩
-      have heap' : HeapState P pairs H addresses memory external owned' context base bump limit
-          regionBytes slots lists :=
-        ⟨by rw [← holdRoots_sameRefs refs]; exact heap.ready, heap.ordered, heap.compatible,
+      have heap' : HeapState P pairs H addresses memory external (owned' ++ slotVals)
+          context base bump limit regionBytes slots lists :=
+        ⟨by rw [← holdRoots_sameRefs refsAll]; exact heap.ready, heap.ordered, heap.compatible,
           heap.extent⟩
       exact ResultAt.prefix trace (Own.Plain.ReachablePreserved.refl H external)
+        (Own.Plain.PrivPreserved.refl before.owned.privNoEdge)
         (HeapHistory.refl _ _) (by omega)
-        (next H addresses external (live ++ [x])
-          ((Ctx.immArgs Γ (Own.Plain.primImmArgs op args.length) args).setImm x) Δ
+        (next H addresses external retUniq priv rslots slotVals (live ++ [x])
+          ((Ctx.immArgs Γ (Own.Plain.primImmArgs op args.length) args).setImmUniq x) Δ
           (sourceEnv.insert x logical) (ownedEnv.insert x value) owned' lex ownedJoins
           sourceFunction function {source with rest := tail, env := source.env.insert x value}
           after memory context base bump limit regionBytes slots lists callers sourceLookup

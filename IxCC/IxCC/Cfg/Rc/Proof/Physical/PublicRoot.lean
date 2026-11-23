@@ -7,11 +7,11 @@ namespace IxCC.Cfg.Rc.Native.Spec
 entry function and preserves all layout and inline RC simulations. -/
 theorem accepted_root_eval_stages {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Public.Lowered}
-    {borrows : Own.Plain.BorrowSigs}
-    (checked : checkScopedProgram F bodies P borrows = true)
-    (accepted : Public.lower config F bodies P borrows = .ok lowered) :
-    ∃ pairs functions, CodeAdmission F bodies P config pairs functions borrows ∧
-      ∀ root words memory context,
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (checked : checkScopedProgram F bodies P borrows uniqs = true)
+    (accepted : Public.lower config F bodies P borrows uniqs = .ok lowered) :
+    ∃ pairs functions, CodeAdmission F bodies P config pairs functions borrows uniqs ∧
+      ∀ root, root < P.base.size → ∀ words memory context,
         Sem.Sim Eq (Inline.inlineClock lowered.runtime.program)
           (fun clock => Lir.eval (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) root)
             clock words memory context)
@@ -28,13 +28,20 @@ theorem accepted_root_eval_stages {config : Rt.Config} {F : Fir.Program}
       (Public.Spec.labels (Public.Spec.inlinedPublicProgram (layoutOf P) functions main)) :=
     splitEq ▸ Public.Spec.program_split _
   refine ⟨pairs, functions, ⟨checked, consuming, lowering, switches⟩, ?_⟩
-  intro root words memory context
+  intro root hroot words memory context
   have splitRoot : Lir.ProgSim (Public.Spec.inlinedPublicProgram (layoutOf P) functions root)
       {lowered.runtime.program with main := root}
       (Public.Spec.labels (Public.Spec.inlinedPublicProgram (layoutOf P) functions main)) :=
     ⟨rfl, split.funcs⟩
   have inlEq := Public.Spec.inlinedPublicProgram_eq_inline (layoutOf P) functions root length
   have hr := Public.Spec.rawPublicProgram_runtimeFuncs (l := layoutOf P) length root
+  have hno := Public.Spec.rawPublicProgram_noRuntimeReuseCalls (l := layoutOf P) length root
+  have hrootNp : Prune.isPrunableReuse (layoutOf P)
+      (Public.Spec.rawPublicProgram (layoutOf P) functions root).main = false := by
+    dsimp only [Prune.isPrunableReuse, Public.Spec.rawPublicProgram, rawProgram, layoutOf,
+      Layout.isUniqueProc, Layout.init, Layout.incProc]
+    exact decide_eq_false fun ⟨h1, _⟩ =>
+      Nat.not_lt.mpr (Nat.le_trans (Nat.le_of_lt hroot) (by omega)) h1
   have stage12 : ∀ clock,
       Lir.eval (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) root)
         clock words memory context ≠ .stuck →
@@ -54,7 +61,7 @@ theorem accepted_root_eval_stages {config : Rt.Config} {F : Fir.Program}
       (fun clock => Lir.eval (Public.Spec.inlinedPublicProgram (layoutOf P) functions root)
         clock words memory context) := by
     rw [inlEq]
-    apply Inline.inlineProgram_sim_clock hr words memory context
+    apply Prune.pruneUnusedReuse_inlineProgram_sim_clock hr hno hrootNp words memory context
     intro k
     have hle := Inline.fuelFor_le_split (Public.Spec.inlinedPublicProgram (layoutOf P) functions main) k
     have hsame : Lir.fuelFor (Public.Spec.inlinedPublicProgram (layoutOf P) functions root) k =
@@ -93,10 +100,11 @@ deterministic consumption identifies the intermediate program receipt. -/
 theorem admitted_root_eval_stages {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Public.Lowered}
     {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-    {borrows : Own.Plain.BorrowSigs}
-    (admission : CodeAdmission F bodies P config pairs functions borrows)
-    (accepted : Public.lower config F bodies P borrows = .ok lowered)
-    (root : Nat) (words : List Lir.Word) (memory : X86.Memory) (context : Lir.Word) :
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (admission : CodeAdmission F bodies P config pairs functions borrows uniqs)
+    (accepted : Public.lower config F bodies P borrows uniqs = .ok lowered)
+    (root : Nat) (hroot : root < P.base.size)
+    (words : List Lir.Word) (memory : X86.Memory) (context : Lir.Word) :
     Sem.Sim Eq (Inline.inlineClock lowered.runtime.program)
       (fun clock => Lir.eval (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) root)
         clock words memory context)
@@ -105,7 +113,7 @@ theorem admitted_root_eval_stages {config : Rt.Config} {F : Fir.Program}
     accepted_root_eval_stages admission.scopedProgram accepted
   have same : pairs' = pairs := Except.ok.inj (admission'.consuming.symm.trans admission.consuming)
   subst pairs'
-  exact transfer root words memory context
+  exact transfer root hroot words memory context
 
 
 end IxCC.Cfg.Rc.Native.Spec

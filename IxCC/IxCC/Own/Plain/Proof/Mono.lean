@@ -40,7 +40,7 @@ theorem jump_measure {j : JoinId} {J : List JEntry} {e : JEntry} {rest : List JE
 section
 set_option linter.unusedSectionVars false
 variable {k : Nat}
-  (ih : ∀ j < k, ∀ j', j ≤ j' → ∀ ρ J H c, Agrees (eval P j' ρ J H c) (eval P j ρ J H c))
+  (ih : ∀ j < k, ∀ j', j ≤ j' → ∀ ρ J H c slots, Agrees (eval P j' ρ J H c slots) (eval P j ρ J H c slots))
 include ih
 
 theorem callFun_agrees_of {k' : Nat} (hk : k ≤ k') (fd : Fir.Fun) (body : Code)
@@ -48,7 +48,7 @@ theorem callFun_agrees_of {k' : Nat} (hk : k ≤ k') (fd : Fir.Fun) (body : Code
     Agrees (callFun P k' fd body vs H) (callFun P k fd body vs H) := by
   unfold callFun
   split
-  · exact Agrees.later hk fun j j' hj hj' => ih j (by omega) j' (by omega) _ [] H body
+  · exact Agrees.later hk fun j j' hj hj' => ih j (by omega) j' (by omega) _ [] H body .leaf
   · exact .refl _
 
 theorem evalCall_agrees_of {k' : Nat} (hk : k ≤ k') (f : FunId) (vs : List RVal) (H : Heap) :
@@ -58,24 +58,36 @@ theorem evalCall_agrees_of {k' : Nat} (hk : k ≤ k') (f : FunId) (vs : List RVa
     callFun_agrees_of P ih hk fd body vs H
 
 mutual
-theorem eval_agrees_of {k' : Nat} (hk : k ≤ k') (ρ : Own.Env) (J : List JEntry) (H : Heap) (c : Code) :
-    Agrees (eval P k' ρ J H c) (eval P k ρ J H c) := by
+theorem eval_agrees_of {k' : Nat} (hk : k ≤ k') (ρ : Own.Env) (J : List JEntry) (H : Heap)
+    (c : Code) (slots : Src.NatMap Own.RVal) :
+    Agrees (eval P k' ρ J H c slots) (eval P k ρ J H c slots) := by
   match c with
   | .act a c' =>
     rw [eval_act, eval_act]
-    exact .bind (.refl _) fun H' _ => eval_agrees_of hk ρ J H' c'
+    exact .bind (.refl _) fun H' _ => eval_agrees_of hk ρ J H' c' slots
   | .bind x r c' =>
     by_cases hr : ∃ f args, r = .call f args
     · obtain ⟨f, args, rfl⟩ := hr
       rw [eval_bindCall, eval_bindCall]
       exact Agrees.ofOption _ fun vs _ => .bind (evalCall_agrees_of P ih hk f vs H) fun p _ =>
-        eval_agrees_of hk (ρ.insert x p.1) J p.2 c'
+        eval_agrees_of hk (ρ.insert x p.1) J p.2 c' slots
     · have hr' : ∀ f args, r ≠ .call f args := fun f args h => hr ⟨f, args, h⟩
       rw [eval_bindRhs _ _ _ _ _ _ _ _ hr', eval_bindRhs _ _ _ _ _ _ _ _ hr']
-      exact .bind (.refl _) fun p _ => eval_agrees_of hk (ρ.insert x p.1) J p.2 c'
+      exact .bind (.refl _) fun p _ => eval_agrees_of hk (ρ.insert x p.1) J p.2 c' slots
+  | .reset s x ctor fields uniq c' =>
+    rw [eval_reset, eval_reset]
+    exact .bind (.refl _) fun p _ => eval_agrees_of hk ρ J p.2 c' (slots.insert s p.1)
+  | .reuse x s ctor args uniq c' =>
+    rw [eval_reuse, eval_reuse]
+    exact Agrees.ofOption _ fun _ _ => .bind (.refl _) fun p _ =>
+      eval_agrees_of hk (ρ.insert x p.1) J p.2 c' (slots.erase s)
+  | .dropSlot s c' =>
+    rw [eval_dropSlot, eval_dropSlot]
+    exact Agrees.ofOption _ fun _ _ => .bind (.refl _) fun H' _ =>
+      eval_agrees_of hk ρ J H' c' (slots.erase s)
   | .jp j ps captured rec body c' =>
     rw [eval_jp, eval_jp]
-    exact eval_agrees_of hk ρ _ H c'
+    exact eval_agrees_of hk ρ _ H c' slots
   | .jmp j args =>
     rw [eval_jmp, eval_jmp]
     refine Agrees.ofOption _ fun p hp => Agrees.ofOption _ fun vs _ => ?_
@@ -83,16 +95,16 @@ theorem eval_agrees_of {k' : Nat} (hk : k ≤ k') (ρ : Own.Env) (J : List JEntr
     unfold jumpTo
     split
     · split
-      · exact Agrees.later hk fun i i' hi hi' => ih i (by omega) i' (by omega) _ _ H e.body
+      · exact Agrees.later hk fun i i' hi hi' => ih i (by omega) i' (by omega) _ _ H e.body .leaf
       · next hc =>
         have := jump_measure hp (by simpa using hc)
-        exact eval_agrees_of hk _ (e.after rest) H e.body
+        exact eval_agrees_of hk _ (e.after rest) H e.body .leaf
     · exact .refl _
   | .case x alts d =>
     rw [eval_case, eval_case]
     refine Agrees.ofOption _ fun v _ => ?_
     cases v.asCtor P.source.known H with
-    | some kf => exact evalAlts_agrees_of hk ρ J H kf.1 alts d
+    | some kf => exact evalAlts_agrees_of hk ρ J H kf.1 alts d slots
     | none => exact .refl _
   | .ret a => rw [eval_ret, eval_ret]; exact .refl _
   | .tcall f args =>
@@ -108,18 +120,18 @@ decreasing_by
     | (simp only [Code.size] at this ⊢; omega)
 
 theorem evalAlts_agrees_of {k' : Nat} (hk : k ≤ k') (ρ : Own.Env) (J : List JEntry) (H : Heap)
-    (key : Key.CtorKey) (alts : List Alt) (d : Option Code) :
-    Agrees (evalAlts P k' ρ J H key alts d) (evalAlts P k ρ J H key alts d) := by
+    (key : Key.CtorKey) (alts : List Alt) (d : Option Code) (slots : Src.NatMap Own.RVal) :
+    Agrees (evalAlts P k' ρ J H key alts d slots) (evalAlts P k ρ J H key alts d slots) := by
   match alts, d with
   | [], some c =>
     rw [evalAlts_nil, evalAlts_nil]
-    exact eval_agrees_of hk ρ J H c
+    exact eval_agrees_of hk ρ J H c slots
   | [], none => rw [evalAlts_nil, evalAlts_nil]; exact .refl _
   | .mk key' body :: rest, d =>
     rw [evalAlts_cons, evalAlts_cons]
     split
-    · exact eval_agrees_of hk ρ J H body
-    · exact evalAlts_agrees_of hk ρ J H key rest d
+    · exact eval_agrees_of hk ρ J H body slots
+    · exact evalAlts_agrees_of hk ρ J H key rest d slots
 termination_by Code.altsSize alts + Code.optSize d + jweight J + 1
 decreasing_by
   all_goals simp_wf
@@ -130,15 +142,19 @@ decreasing_by
 end
 end
 
-theorem eval_agrees : ∀ k k', k ≤ k' → ∀ ρ J H c,
-    Agrees (eval P k' ρ J H c) (eval P k ρ J H c) := by
+theorem eval_agrees_slots : ∀ k k', k ≤ k' → ∀ ρ J H c slots,
+    Agrees (eval P k' ρ J H c slots) (eval P k ρ J H c slots) := by
   intro k
   induction k using Nat.strongRecOn with
-  | _ k ih => intro k' hk ρ J H c; exact eval_agrees_of P ih hk ρ J H c
+  | _ k ih => intro k' hk ρ J H c slots; exact eval_agrees_of P ih hk ρ J H c slots
+
+theorem eval_agrees : ∀ k k', k ≤ k' → ∀ ρ J H c,
+    Agrees (eval P k' ρ J H c) (eval P k ρ J H c) :=
+  fun k k' hk ρ J H c => eval_agrees_slots P k k' hk ρ J H c .leaf
 
 theorem evalCall_agrees {k k' : Nat} (hk : k ≤ k') (f : FunId) (vs : List RVal) (H : Heap) :
     Agrees (evalCall P k' f vs H) (evalCall P k f vs H) :=
-  evalCall_agrees_of P (fun j _ j' hj => eval_agrees P j j' hj) hk f vs H
+  evalCall_agrees_of P (fun j _ j' hj => eval_agrees_slots P j j' hj) hk f vs H
 
 theorem eval_mono (ρ : Own.Env) (J : List JEntry) (H : Heap) (c : Code) :
     ClockMono fun k => eval P k ρ J H c :=

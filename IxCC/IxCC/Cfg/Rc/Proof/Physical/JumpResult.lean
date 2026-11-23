@@ -20,20 +20,22 @@ section
 variable {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
   {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
   {main clock : Nat} {sourceJoins : List Fir.JEntry} {borrows : Own.Plain.BorrowSigs}
+  {uniqs : Own.Plain.UniqSigs}
 
 /-- **A jump**: the body is any Own code that erases to the source entry's (the one the checker
 typed at the declaration). -/
-theorem jump_result (admission : CodeAdmission F bodies P config pairs functions borrows)
-    (smaller : ∀ k, k < clock → PhysicalAtClock F P config pairs main k borrows)
+theorem jump_result (admission : CodeAdmission F bodies P config pairs functions borrows uniqs)
+    (smaller : ∀ k, k < clock → PhysicalAtClock F P config pairs main k borrows bodies uniqs)
     {j : Fir.JoinId} {args : List Fir.Arg}
     (next : ∀ entry rest, Fir.lookupJ j sourceJoins = some (entry, rest) → entry.charged = false →
       ∀ body : Own.Plain.Code, Own.Plain.eraseCode body = entry.body →
-        PhysicalCode F P config pairs main clock (entry.after rest) body borrows) :
-    PhysicalCode F P config pairs main clock sourceJoins (.jmp j args) borrows := by
-  intro H addresses external live Γ Δ sourceEnv ownedEnv roots lex ownedJoins sourceFunction
-    function source target memory context base bump limit regionBytes slots lists callers
-    sourceLookup before heap
+        PhysicalCode F P config pairs main clock (entry.after rest) body borrows bodies uniqs) :
+    PhysicalCode F P config pairs main clock sourceJoins (.jmp j args) borrows bodies uniqs := by
+  intro H addresses external retUniq priv rslots slotVals live Γ Δ sourceEnv ownedEnv roots lex
+    ownedJoins sourceFunction function source target memory context base bump limit regionBytes
+    slots lists callers sourceLookup before heap
   show ResultAt _ _ _ _ _ _ _ _ _ _ _ _ _ (Fir.eval F clock sourceEnv sourceJoins (.jmp j args))
+    F.ctors retUniq priv
   rw [Fir.eval_jmp]
   obtain ⟨captured, Γ₁, Γ₂, hΔ, h1, h2, h3⟩ := Own.Plain.checkCode_jmp before.typed
   cases found : Fir.lookupJ j sourceJoins with
@@ -43,11 +45,17 @@ theorem jump_result (admission : CodeAdmission F bodies P config pairs functions
     simp only [Sem.Result.ofOption, Sem.Result.bind_ok]
     obtain ⟨vs, ws, eo, resto, ownArgs, sourceArgs, lengths, ownedLookup, params, charged, body⟩ :=
       Own.Plain.jump_body_refs before.owned hΔ h1 h2 h3 found
+    obtain ⟨skeys, hsk, hsr⟩ := before.owned.slotRoots
+    have hsnil := (hsk.same ((Own.Plain.Ctx.takeVars_weaker h2).rset.trans
+      (Own.Plain.Ctx.takeArgs_weaker h1).rset)).closed_nil (Own.Plain.closed_rset h3)
+    subst hsnil
+    have hsv := Own.Plain.EnvRoots.nil_inv hsr
+    subst hsv
     simp only [sourceArgs, Sem.Result.bind_ok]
     by_cases length : ws.length = entry.params.length
     · obtain ⟨Δb, Γb, lexd, lexb, owned', state, typed, erased, scope, refs⟩ := body length
       have sourceRange : source.fn < F.size := by
-        obtain ⟨_, _, _, _, _, _, _, _, range, _⟩ := before.layout
+        obtain ⟨_, _, _, _, _, _, _, _, _, range, _⟩ := before.layout
         exact range
       have programSize : P.base.size = F.size :=
         generate_size (checkProgram_parts (checkScopedProgram_parts admission.scopedProgram).1).2
@@ -55,7 +63,7 @@ theorem jump_result (admission : CodeAdmission F bodies P config pairs functions
       have arity : vs.length = eo.params.length := by rw [params, lengths]; exact length
       have realParams : ∀ fd, P.base.fun? source.fn = some fd →
           ∀ (label : Nat) (block : Cfg.Block), fd.blocks[label]? = some block →
-            ∀ x ∈ block.params.map Prod.fst, x < sourceFunction.vars :=
+            ∀ x ∈ block.params.map Prod.fst, x < funcFirst bodies source.fn sourceFunction :=
         fun fd fdLookup label block blockLookup =>
           checked_block_params admission.scopedProgram sourceRange sourceLookup fdLookup blockLookup
       rcases jump_entry admission.consuming before.layout ownedLookup ownArgs arity before.frame
@@ -66,16 +74,20 @@ theorem jump_result (admission : CodeAdmission F bodies P config pairs functions
             (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main) H addresses
             external (lexd ++ entry.params) Γb Δb (Fir.bindAll entry.env entry.params ws)
             (Own.bindAll eo.env eo.params vs) owned' lexb (entry.after rest) (eo.after resto)
-            eo.body sourceFunction.vars function after final borrows :=
-          ⟨state, typed, afterLayout, afterFrame, by rw [erased]; exact scope, running, fused⟩
-        have heap' : HeapState P pairs H addresses memory external owned' context base bump limit
-            regionBytes slots lists :=
-          ⟨by rw [← holdRoots_sameRefs refs]; exact heap.ready, heap.ordered, heap.compatible,
-            heap.extent⟩
+            eo.body (funcFirst bodies after.fn sourceFunction) function after final
+            borrows uniqs retUniq priv .leaf [] :=
+          ⟨state, typed, afterLayout, by simpa only [sameFn] using afterFrame,
+            by rw [erased]; exact scope, running, fused⟩
+        have heap' : HeapState P pairs H addresses memory external (owned' ++ [])
+            context base bump limit regionBytes slots lists :=
+          ⟨by simpa only [List.append_nil] using (by rw [← holdRoots_sameRefs refs]; simpa using heap.ready),
+            heap.ordered, heap.compatible, heap.extent⟩
         have lookupAfter : F.fun? after.fn = some sourceFunction := by
           simpa only [sameFn] using sourceLookup
         have hreach : Own.Plain.ReachablePreserved H H external :=
           Own.Plain.ReachablePreserved.refl H external
+        have hpriv : Own.Plain.PrivPreserved H H priv :=
+          Own.Plain.PrivPreserved.refl before.owned.privNoEdge
         have history : HeapHistory H.size addresses H.size addresses :=
           ⟨Nat.le_refl _, fun _ _ => rfl⟩
         simp only [Fir.jumpTo, if_pos length]
@@ -83,20 +95,21 @@ theorem jump_result (admission : CodeAdmission F bodies P config pairs functions
         cases isCharged : entry.charged with
         | false =>
           simp only [Bool.false_eq_true, ↓reduceIte]
-          exact ResultAt.prefix trace hreach history (by omega)
-            (next entry rest found isCharged eo.body erased H addresses external
-              (lexd ++ entry.params) Γb Δb _ _ owned' lexb _ sourceFunction function after final
-              memory context base bump limit regionBytes slots lists callers lookupAfter activation
-              heap')
+          exact ResultAt.prefix trace hreach hpriv history (by omega)
+            (next entry rest found isCharged eo.body erased H addresses external retUniq priv
+              .leaf [] (lexd ++ entry.params) Γb Δb _ _ owned' lexb _ sourceFunction function
+              after final memory context base bump limit regionBytes slots lists callers
+              lookupAfter activation heap')
         | true =>
           simp only [↓reduceIte]
           apply ResultAt.charge trace
-            (by simpa only [charged, isCharged, Bool.toNat_true] using costBound) hreach history
+            (by simpa only [charged, isCharged, Bool.toNat_true] using costBound)
+            hreach hpriv history
           intro k clockEq
-          exact smaller k (by omega) (entry.after rest) eo.body H addresses external
-            (lexd ++ entry.params) Γb Δb _ _ owned' lexb _ sourceFunction function after final
-            memory context base bump limit regionBytes slots lists callers lookupAfter activation
-            heap'
+          exact smaller k (by omega) (entry.after rest) eo.body H addresses external retUniq priv
+            .leaf [] (lexd ++ entry.params) Γb Δb _ _ owned' lexb _ sourceFunction function
+            after final memory context base bump limit regionBytes slots lists callers
+            lookupAfter activation heap'
       · exact ResultAt.of_fails failure
     · simp only [Fir.jumpTo, if_neg length]
       trivial

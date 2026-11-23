@@ -8,23 +8,25 @@ open Cfg.Proof (Impl spine)
 first entry is free; a recursive re-entry preserves the source charge flag. -/
 theorem At.jump {F : Fir.Program} {P : Program} {fr : Frame} {ρ : Own.Env}
     {saved rest : List Own.Plain.JEntry} {j : Fir.JoinId} {args : List Fir.Arg}
-    (stateRel : At F P fr ρ saved (.jmp j args)) {e : Own.Plain.JEntry}
+    {slots : Src.NatMap Own.RVal}
+    (stateRel : At F P fr ρ saved (.jmp j args) slots) {e : Own.Plain.JEntry}
     (found : Own.Plain.lookupJ j saved = some (e, rest)) {vs : List Own.RVal}
     (values : Own.evalArgs ρ args = some vs) (arity : vs.length = e.params.length)
     (stk : List (Frame × Fir.Var)) (H : Own.Heap) :
     ∃ after, step P (.run fr stk H) = .next (.run after stk H) e.charged ∧
-      At F P after (Own.bindAll e.env e.params vs) (e.after rest) e.body := by
-  obtain ⟨fd, scope, params, acc, next, first, lo, lookup, range, layout, cursor,
-    env, below, scopedNames, joins⟩ := stateRel
+      At F P after (Own.bindAll e.env e.params vs) (e.after rest) e.body .leaf := by
+  obtain ⟨fd, scope, params, acc, next, first, lo, slotBase, lookup, range, layout, cursor,
+    env, below, loSlot, slotSub, scopedNames, vb, rc, joins⟩ := stateRel
   obtain ⟨bj, scope', ps, loEntry, loBody, bodyFirst, label, idEq, previous, lower,
-    paramsEq, chargeRec, bodyLayout, savedSub, savedBelow, psLower, bound, psUpper, bodyNames⟩ := joins.lookup found
+    paramsEq, chargeRec, bodyLayout, savedSub, savedBelow, psLower, bound, bodySlot, psUpper,
+    bodyNames, bodyVb, bodyRc⟩ := joins.lookup found
   simp only [skeleton, Impl] at layout
   simp only [skeleton, spine] at cursor
   obtain ⟨term, targetBlock⟩ := Cfg.Proof.impl_head bodyLayout
   have length : vs.length = ps.length := by rw [arity, paramsEq]; simp
   let after : Frame := { fr with
     blk := bj
-    rest := spine (skeleton P.base.size bodyFirst e.body)
+    rest := spine (skeleton P.base.size bodyFirst e.body F.ctors slotBase)
     env := Own.bindAll fr.env (ps.map (·.1)) vs }
   refine ⟨after, ?_, ?_⟩
   · simp only [step, cursor]
@@ -32,7 +34,8 @@ theorem At.jump {F : Fir.Program} {P : Program} {fr : Frame} {ρ : Own.Env}
     simp only [Cfg.Proof.termStep, Cfg.Proof.jumpTerm, label]
     rw [Cfg.Proof.takeEdge_eq targetBlock (Cfg.Proof.evalArgs_sub env values) length]
     simp [after]
-  · refine ⟨fd, _, ps, [], bj + 1, bodyFirst, loBody, lookup, range, bodyLayout, rfl, ?_, ?_, bodyNames, ?_⟩
+  · refine ⟨fd, _, ps, [], bj + 1, bodyFirst, loBody, slotBase, lookup, range, bodyLayout, rfl,
+      ?_, ?_, bodySlot, SlotSub.leaf slotBase _, bodyNames, bodyVb, bodyRc, ?_⟩
     · rw [paramsEq]
       exact Cfg.Proof.Sub.bindAll savedSub _ _
     · apply Cfg.Proof.below_bindAll (fun y v hy => Nat.lt_of_lt_of_le (savedBelow y v hy) bound) ?_ vs
@@ -56,7 +59,7 @@ theorem At.jump {F : Fir.Program} {P : Program} {fr : Frame} {ρ : Own.Env}
           (previous.agree agree) bound paramsEq (fun _ => recCase)
           (by simpa [recCase] using bodyLayout)
           (fun y v hy => by rw [agree y (savedBelow y v hy)]; exact savedSub y v hy)
-          savedBelow psLower bound psUpper bodyNames
+          savedBelow psLower bound bodySlot psUpper bodyNames bodyVb bodyRc
         simpa [recCase] using self
 
 

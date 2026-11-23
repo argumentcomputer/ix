@@ -100,10 +100,10 @@ def syntheticControls : IO Unit := do
   | .ok _ => IO.println "PASS acceptance capture-order (another placement the checker types)"
   | .error e => throw (IO.userError s!"reordered captured list refused: {e}")
   let encoded := Own.Plain.Certificate.code (Own.Plain.lowerCode [0, 1] [] body)
-  match Own.Plain.Certificate.code? 0 encoded body with
+  match Own.Plain.Certificate.code? F.ctors 0 encoded body with
   | .error _ => IO.println "PASS refusal action-depth"
   | .ok _ => throw (IO.userError "zero code depth accepted")
-  match Own.Plain.Certificate.bodyMap? 1 (Own.Plain.Certificate.bodyMap candidate.bodies) F.funs with
+  match Own.Plain.Certificate.bodyMap? F.ctors 1 (Own.Plain.Certificate.bodyMap candidate.bodies) F.funs with
   | .error _ => IO.println "PASS refusal map-depth"
   | .ok _ => throw (IO.userError "insufficient map depth accepted")
   match Own.Plain.Certificate.ofText F "{" with

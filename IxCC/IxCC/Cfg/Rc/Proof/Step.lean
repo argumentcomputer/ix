@@ -50,8 +50,30 @@ theorem step_action_success {P : Program} {fr : Frame} {stk : List (Frame × Fir
 
 theorem step_ordinary {P : Program} {fr : Frame} {stk : List (Frame × Fir.Var)} {H : Heap}
     {i : Instr} {rest : List Instr} (hr : fr.rest = i :: rest)
-    (ho : reserved P.base.size i = false) :
+    (ho : reserved P.base.size i = false)
+    (hnr : isReuseOp P.base.size i = false) :
     step P (.run fr stk H) = Cfg.step .rc P.base (.run fr stk H) := by
-  simp only [step, hr, ho, Bool.false_eq_true, ↓reduceIte]
+  simp only [step, hr, ho, hnr, Bool.false_eq_true, ↓reduceIte]
+
+theorem step_reset {P : Program} {fr : Frame} {stk : List (Frame × Fir.Var)} {H H' : Heap}
+    {slotReg x ctorIdx mask : Nat} {uniq : Bool} {rest : List Instr}
+    {ctor : Fir.CtorInfo} {sv : RVal}
+    (hr : fr.rest = resetMarker P.base.size slotReg x ctorIdx mask uniq :: rest)
+    (hctor : heapCtorAt P.base.ctors ctorIdx = some ctor)
+    (he : Own.Plain.evalResetMask fr.env H x ctor mask uniq = .ok (sv, H')) :
+    step P (.run fr stk H) = .next (.run { fr with rest, env := fr.env.insert slotReg sv } stk H') false := by
+  simp only [step, hr, reserved_resetMarker, isReuseOp_resetMarker, Bool.false_eq_true, ↓reduceIte,
+    decodeReset_resetMarker, decodeReuse_resetMarker, hctor, he]
+
+theorem step_reuse {P : Program} {fr : Frame} {stk : List (Frame × Fir.Var)} {H H' : Heap}
+    {dst slotReg ctorIdx : Nat} {uniq : Bool} {args : List Fir.Arg} {rest : List Instr}
+    {ctor : Fir.CtorInfo} {sv v : RVal}
+    (hr : fr.rest = reuseMarker P.base.size dst slotReg ctorIdx uniq args :: rest)
+    (hctor : heapCtorAt P.base.ctors ctorIdx = some ctor)
+    (hsv : fr.env.get? slotReg = some sv)
+    (he : Own.Plain.evalReuseVal fr.env H sv ctor args uniq = .ok (v, H')) :
+    step P (.run fr stk H) = .next (.run { fr with rest, env := fr.env.insert dst v } stk H') false := by
+  simp only [step, hr, reserved_reuseMarker, isReuseOp_reuseMarker, Bool.false_eq_true, ↓reduceIte,
+    decodeReset_reuseMarker, decodeReuse_reuseMarker, hctor, hsv, he]
 
 end IxCC.Cfg.Rc

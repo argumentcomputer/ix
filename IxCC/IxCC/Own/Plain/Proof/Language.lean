@@ -95,6 +95,34 @@ theorem reachable_selectBorrowedVals_lits (H : Heap) (external : Nat → Nat) :
     · exact .imm (fun _ h => by cases h)
     · exact reachable_selectBorrowedVals_lits H external bs ns v hv
 
+theorem uniqVal_selectUniqueVals_lits {ctors : List Lam.CtorInfo} {H : Heap}
+    {external : Nat → Nat} {owned : List RVal} :
+    ∀ (bs us : List Bool) (ns : List Nat) (v : RVal),
+    v ∈ selectUniqueVals bs us (litArgs ns) → UniqVal ctors H external owned v
+  | [], [], _, _, hv => by rw [selectUniqueVals_all_false _ [] _ rfl] at hv; cases hv
+  | _ :: _, _, [], _, hv => by simp [selectUniqueVals, litArgs] at hv
+  | [], _ :: _, [], _, hv => by simp [selectUniqueVals, litArgs] at hv
+  | true :: bs, _ :: us, _ :: ns, v, hv =>
+    uniqVal_selectUniqueVals_lits bs us ns v (by simpa [selectUniqueVals, litArgs] using hv)
+  | true :: bs, [], _ :: ns, v, hv =>
+    uniqVal_selectUniqueVals_lits bs [] ns v (by simpa [selectUniqueVals, litArgs] using hv)
+  | false :: bs, false :: us, _ :: ns, v, hv =>
+    uniqVal_selectUniqueVals_lits bs us ns v (by simpa [selectUniqueVals, litArgs] using hv)
+  | false :: bs, [], _ :: ns, v, hv =>
+    uniqVal_selectUniqueVals_lits bs [] ns v (by simpa [selectUniqueVals, litArgs] using hv)
+  | false :: bs, true :: us, n :: ns, v, hv => by
+    simp only [selectUniqueVals, litArgs, List.map_cons, List.mem_cons] at hv
+    rcases hv with rfl | hv
+    · trivial
+    · exact uniqVal_selectUniqueVals_lits bs us ns v hv
+  | [], false :: us, _ :: ns, v, hv =>
+    uniqVal_selectUniqueVals_lits [] us ns v (by simpa [selectUniqueVals, litArgs] using hv)
+  | [], true :: us, n :: ns, v, hv => by
+    simp only [selectUniqueVals, litArgs, List.map_cons, List.mem_cons] at hv
+    rcases hv with rfl | hv
+    · trivial
+    · exact uniqVal_selectUniqueVals_lits [] us ns v hv
+
 theorem ResultRel.refines {before : Heap} {external : Nat → Nat}
     {source : Result Fir.Val} {target : Result (RVal × Heap)}
     (h : ResultRel before external source target) :
@@ -107,16 +135,40 @@ theorem ResultRel.refines {before : Heap} {external : Nat → Nat}
   | stuck => exact .stuck
 
 mutual
-theorem eval_borrows_irrel {F : Fir.Program} {bodies : Src.NatMap Code}
-    {b₁ b₂ : BorrowSigs} {k : Nat} {ρ : Env} {J : List JEntry} {H : Heap} (c : Code) :
-    eval { source := F, bodies, borrows := b₁ } k ρ J H c =
-      eval { source := F, bodies, borrows := b₂ } k ρ J H c := by
+theorem eval_sigs_irrel {F : Fir.Program} {bodies : Src.NatMap Code}
+    {b₁ b₂ : BorrowSigs} {u₁ u₂ : UniqSigs} {k : Nat} {ρ : Env} {J : List JEntry} {H : Heap}
+    {slots : Src.NatMap RVal} (c : Code) :
+    eval { source := F, bodies, borrows := b₁, uniqs := u₁ } k ρ J H c slots =
+      eval { source := F, bodies, borrows := b₂, uniqs := u₂ } k ρ J H c slots := by
   cases c with
   | act a c' =>
     rw [eval_act, eval_act]
     cases evalAction ρ H a with
-    | ok H' => exact eval_borrows_irrel c'
+    | ok H' => exact eval_sigs_irrel c'
     | timeout | resource _ | trap | stuck => rfl
+  | reset s x ctor fields uniq c' =>
+    rw [eval_reset, eval_reset]
+    cases evalResetMask ρ H x ctor (fieldsMask fields) uniq with
+    | ok p => exact eval_sigs_irrel c'
+    | timeout | resource _ | trap | stuck => rfl
+  | reuse x s ctor args uniq c' =>
+    rw [eval_reuse, eval_reuse]
+    cases slots.get? s with
+    | none => rfl
+    | some sv =>
+      simp only [Result.ofOption, Result.bind_ok]
+      cases evalReuseVal ρ H sv ctor args uniq with
+      | ok p => exact eval_sigs_irrel c'
+      | timeout | resource _ | trap | stuck => rfl
+  | dropSlot s c' =>
+    rw [eval_dropSlot, eval_dropSlot]
+    cases slots.get? s with
+    | none => rfl
+    | some sv =>
+      simp only [Result.ofOption, Result.bind_ok]
+      cases evalDropVal H sv with
+      | ok H' => exact eval_sigs_irrel c'
+      | timeout | resource _ | trap | stuck => rfl
   | bind x r c' =>
     cases r with
     | call f args =>
@@ -125,20 +177,20 @@ theorem eval_borrows_irrel {F : Fir.Program} {bodies : Src.NatMap Code}
       | none => rfl
       | some vs =>
         simp only [Result.ofOption, Result.bind_ok]
-        rw [evalCall_borrows_irrel (b₁ := b₁) (b₂ := b₂)]
-        cases evalCall { source := F, bodies, borrows := b₂ } k f vs H with
-        | ok p => exact eval_borrows_irrel c'
+        rw [evalCall_sigs_irrel (b₁ := b₁) (b₂ := b₂) (u₁ := u₁) (u₂ := u₂)]
+        cases evalCall { source := F, bodies, borrows := b₂, uniqs := u₂ } k f vs H with
+        | ok p => exact eval_sigs_irrel c'
         | timeout | resource _ | trap | stuck => rfl
     | arg _ | ctor _ _ | proj _ _ _ | prim _ _ =>
       rw [eval_bindRhs _ _ _ _ _ _ _ _ (by intro _ _ h; cases h),
           eval_bindRhs _ _ _ _ _ _ _ _ (by intro _ _ h; cases h)]
       simp only [Program.tables]
       cases evalRhs { ctors := F.ctors, known := F.known } ρ H _ with
-      | ok p => exact eval_borrows_irrel c'
+      | ok p => exact eval_sigs_irrel c'
       | timeout | resource _ | trap | stuck => rfl
   | jp j ps cap rec body c' =>
     rw [eval_jp, eval_jp]
-    exact eval_borrows_irrel c'
+    exact eval_sigs_irrel c'
   | jmp j args =>
     rw [eval_jmp, eval_jmp]
     cases h : lookupJ j J with
@@ -155,10 +207,10 @@ theorem eval_borrows_irrel {F : Fir.Program} {bodies : Src.NatMap Code}
             simp only [↓reduceIte]
             cases k with
             | zero => rfl
-            | succ k => exact eval_borrows_irrel p.1.body
+            | succ k => exact eval_sigs_irrel p.1.body
           | false =>
             simp only [Bool.false_eq_true, ↓reduceIte]
-            exact eval_borrows_irrel p.1.body
+            exact eval_sigs_irrel p.1.body
         · simp [hl]
   | case x alts d =>
     rw [eval_case, eval_case]
@@ -168,13 +220,13 @@ theorem eval_borrows_irrel {F : Fir.Program} {bodies : Src.NatMap Code}
       simp only [Result.ofOption, Result.bind_ok]
       cases v.asCtor F.known H with
       | none => rfl
-      | some p => exact evalAlts_borrows_irrel alts d
+      | some p => exact evalAlts_sigs_irrel alts d
   | ret a => rw [eval_ret, eval_ret]
   | tcall f args =>
     rw [eval_tcall, eval_tcall]
     cases Own.evalArgs ρ args with
     | none => rfl
-    | some vs => exact evalCall_borrows_irrel
+    | some vs => exact evalCall_sigs_irrel
   | trap => rw [eval_trap, eval_trap]
 termination_by (k, c.size + jweight J)
 decreasing_by
@@ -194,24 +246,25 @@ decreasing_by
        simp only [Code.size]
        omega)
 
-theorem evalAlts_borrows_irrel {F : Fir.Program} {bodies : Src.NatMap Code}
-    {b₁ b₂ : BorrowSigs} {k : Nat} {ρ : Env} {J : List JEntry} {H : Heap} {key : Key.CtorKey}
+theorem evalAlts_sigs_irrel {F : Fir.Program} {bodies : Src.NatMap Code}
+    {b₁ b₂ : BorrowSigs} {u₁ u₂ : UniqSigs} {k : Nat} {ρ : Env} {J : List JEntry} {H : Heap}
+    {slots : Src.NatMap RVal} {key : Key.CtorKey}
     (alts : List Alt) (d : Option Code) :
-    evalAlts { source := F, bodies, borrows := b₁ } k ρ J H key alts d =
-      evalAlts { source := F, bodies, borrows := b₂ } k ρ J H key alts d := by
+    evalAlts { source := F, bodies, borrows := b₁, uniqs := u₁ } k ρ J H key alts d slots =
+      evalAlts { source := F, bodies, borrows := b₂, uniqs := u₂ } k ρ J H key alts d slots := by
   cases alts with
   | nil =>
     rw [evalAlts_nil, evalAlts_nil]
     cases d with
     | none => rfl
-    | some c => exact eval_borrows_irrel c
+    | some c => exact eval_sigs_irrel c
   | cons a rest =>
     cases a with
     | mk key' body =>
       rw [evalAlts_cons, evalAlts_cons]
       by_cases hk : key' = key
-      · simp only [hk, ↓reduceIte]; exact eval_borrows_irrel body
-      · simp only [hk, ↓reduceIte]; exact evalAlts_borrows_irrel rest d
+      · simp only [hk, ↓reduceIte]; exact eval_sigs_irrel body
+      · simp only [hk, ↓reduceIte]; exact evalAlts_sigs_irrel rest d
 termination_by (k, Code.altsSize alts + Code.optSize d + jweight J + 1)
 decreasing_by
   all_goals simp_wf
@@ -221,10 +274,10 @@ decreasing_by
     | omega
     | (have := Code.size_pos body; omega)
 
-theorem evalCall_borrows_irrel {F : Fir.Program} {bodies : Src.NatMap Code}
-    {b₁ b₂ : BorrowSigs} {k : Nat} {f : Fir.FunId} {vs : List RVal} {H : Heap} :
-    evalCall { source := F, bodies, borrows := b₁ } k f vs H =
-      evalCall { source := F, bodies, borrows := b₂ } k f vs H := by
+theorem evalCall_sigs_irrel {F : Fir.Program} {bodies : Src.NatMap Code}
+    {b₁ b₂ : BorrowSigs} {u₁ u₂ : UniqSigs} {k : Nat} {f : Fir.FunId} {vs : List RVal} {H : Heap} :
+    evalCall { source := F, bodies, borrows := b₁, uniqs := u₁ } k f vs H =
+      evalCall { source := F, bodies, borrows := b₂, uniqs := u₂ } k f vs H := by
   rw [evalCall_eq, evalCall_eq]
   cases F.fun? f with
   | none => rfl
@@ -237,36 +290,52 @@ theorem evalCall_borrows_irrel {F : Fir.Program} {bodies : Src.NatMap Code}
       · simp only [hl, ↓reduceIte]
         cases k with
         | zero => rfl
-        | succ k => exact eval_borrows_irrel body
+        | succ k => exact eval_sigs_irrel body
       · simp [hl]
 termination_by (k, 0)
 end
 
+theorem eval_borrows_irrel {F : Fir.Program} {bodies : Src.NatMap Code}
+    {b₁ b₂ : BorrowSigs} {k : Nat} {ρ : Env} {J : List JEntry} {H : Heap} (c : Code) :
+    eval { source := F, bodies, borrows := b₁ } k ρ J H c =
+      eval { source := F, bodies, borrows := b₂ } k ρ J H c :=
+  eval_sigs_irrel c
+
+theorem evalCall_borrows_irrel {F : Fir.Program} {bodies : Src.NatMap Code}
+    {b₁ b₂ : BorrowSigs} {k : Nat} {f : Fir.FunId} {vs : List RVal} {H : Heap} :
+    evalCall { source := F, bodies, borrows := b₁ } k f vs H =
+      evalCall { source := F, bodies, borrows := b₂ } k f vs H :=
+  evalCall_sigs_irrel
+
 /-- An accepted map simulates the source on a numbered function called with natural-number
-arguments (the ownership checker's refinement, `checkOwnedWith_refines`). -/
-theorem owned_call_sim {F : Fir.Program} {candidate : Src.NatMap Code} {borrows : BorrowSigs}
-    (checked : checkOwned F candidate borrows = true) {f : Fir.FunId} (hf : f < F.size)
+arguments (the ownership checker's refinement, `checkOwnedFull_refines`). -/
+theorem owned_call_sim {F : Fir.Program} {candidate : Src.NatMap Code}
+    {borrows : BorrowSigs} {uniqs : UniqSigs}
+    (checked : checkOwned F candidate borrows uniqs = true) {f : Fir.FunId} (hf : f < F.size)
     (ns : List Nat) :
     Sim (fun w p => Proof.Den p.2 p.1 w) id
       (fun k => Fir.run F k f (Fir.litArgs ns))
       (fun k => run { source := F, bodies := candidate } k f (litArgs ns) {}) where
   forward k _ := ⟨k, by
-    have h := (checkOwnedWith_refines checked k hf (dens_lits {} ns)
+    have h := (checkOwnedFull_refines checked k hf (dens_lits {} ns)
       (balance_selectOwnedVals_lits_empty _ ns)
-      (fun v hv => reachable_selectBorrowedVals_lits {} _ _ ns v hv)).refines
-    rw [evalCall_borrows_irrel (b₂ := .leaf)] at h
+      (fun v hv => reachable_selectBorrowedVals_lits {} _ _ ns v hv)
+      (fun v hv => uniqVal_selectUniqueVals_lits _ _ ns v hv)).refines
+    rw [evalCall_sigs_irrel (b₂ := .leaf) (u₂ := .leaf)] at h
     exact h⟩
   timeout k h := by
-    have related := (checkOwnedWith_refines checked k hf (dens_lits {} ns)
+    have related := (checkOwnedFull_refines checked k hf (dens_lits {} ns)
       (balance_selectOwnedVals_lits_empty _ ns)
-      (fun v hv => reachable_selectBorrowedVals_lits {} _ _ ns v hv)).refines
-    rw [evalCall_borrows_irrel (b₂ := .leaf)] at related
+      (fun v hv => reachable_selectBorrowedVals_lits {} _ _ ns v hv)
+      (fun v hv => uniqVal_selectUniqueVals_lits _ _ ns v hv)).refines
+    rw [evalCall_sigs_irrel (b₂ := .leaf) (u₂ := .leaf)] at related
     change Fir.evalCall F k f (Fir.litArgs ns) = .timeout at h
     rw [h] at related
     exact Result.Refines.timeout_iff.mp related
 
-theorem owned_refines_lang {F : Fir.Program} {candidate : Src.NatMap Code} {borrows : BorrowSigs}
-    (checked : checkOwned F candidate borrows = true)
+theorem owned_refines_lang {F : Fir.Program} {candidate : Src.NatMap Code}
+    {borrows : BorrowSigs} {uniqs : UniqSigs}
+    (checked : checkOwned F candidate borrows uniqs = true)
     (exports : ∀ f, f ∈ F.exports → f < F.size) :
     Sem.Refines F ({ source := F, bodies := candidate } : Program) := by
   refine Sem.Refines.of_sim (R := Lang.ObsEq) (fun _ _ h => h) fun i => ⟨id, ?_⟩
@@ -337,8 +406,9 @@ theorem checked_lower_refines {A : Anf.Program} {F : Fir.Program}
 
 /-- The same stage for any map the ownership checker accepts. -/
 theorem owned_lower_refines {A : Anf.Program} {F : Fir.Program}
-    {candidate : Src.NatMap Code} {borrows : BorrowSigs} (lowered : Fir.lower A = .ok F)
-    (checked : checkOwned F candidate borrows = true) :
+    {candidate : Src.NatMap Code} {borrows : BorrowSigs} {uniqs : UniqSigs}
+    (lowered : Fir.lower A = .ok F)
+    (checked : checkOwned F candidate borrows uniqs = true) :
     Sem.Refines A ({ source := F, bodies := candidate } : Program) :=
   (Fir.Proof.lower_refines lowered).trans
     (owned_refines_lang checked (exports_of_lower lowered))

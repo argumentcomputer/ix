@@ -56,11 +56,12 @@ source edge splitting, inline RC fast paths, and whole-program edge splitting.
 The static code admission and exported main are from the same acceptance receipt. -/
 theorem accepted_eval_stages {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Public.Lowered}
-    {borrows : Own.Plain.BorrowSigs}
-    (checked : checkScopedProgram F bodies P borrows = true)
-    (accepted : Public.lower config F bodies P borrows = .ok lowered) :
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (checked : checkScopedProgram F bodies P borrows uniqs = true)
+    (accepted : Public.lower config F bodies P borrows uniqs = .ok lowered)
+    (hmain : ∀ m : Nat, P.base.exports.head? = some m → m < P.base.size) :
     ∃ main pairs functions,
-      CodeAdmission F bodies P config pairs functions borrows ∧ P.base.exports.head? = some main ∧
+      CodeAdmission F bodies P config pairs functions borrows uniqs ∧ P.base.exports.head? = some main ∧
       ∀ words memory context,
         Sem.Sim Eq (Inline.inlineClock lowered.runtime.program)
           (fun clock => Lir.eval (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main)
@@ -79,6 +80,13 @@ theorem accepted_eval_stages {config : Rt.Config} {F : Fir.Program}
     splitEq ▸ Public.Spec.program_split _
   have inlEq := Public.Spec.inlinedPublicProgram_eq_inline (layoutOf P) functions main length
   have hr := Public.Spec.rawPublicProgram_runtimeFuncs (l := layoutOf P) length main
+  have hno := Public.Spec.rawPublicProgram_noRuntimeReuseCalls (l := layoutOf P) length main
+  have hmainNp : Prune.isPrunableReuse (layoutOf P) (Public.Spec.rawPublicProgram (layoutOf P) functions main).main = false := by
+    have hlt : (main : Nat) < P.base.size := hmain main entry
+    dsimp only [Prune.isPrunableReuse, Public.Spec.rawPublicProgram, rawProgram, layoutOf,
+      Layout.isUniqueProc, Layout.init, Layout.incProc]
+    exact decide_eq_false fun ⟨h1, _⟩ =>
+      Nat.not_lt.mpr (Nat.le_trans (Nat.le_of_lt hlt) (by omega)) h1
   refine ⟨main, pairs, functions, ⟨checked, consuming, lowering, switches⟩, entry, ?_⟩
   intro words memory context
   have stage12 : ∀ clock,
@@ -100,7 +108,7 @@ theorem accepted_eval_stages {config : Rt.Config} {F : Fir.Program}
       (fun clock => Lir.eval (Public.Spec.inlinedPublicProgram (layoutOf P) functions main)
         clock words memory context) := by
     rw [inlEq]
-    apply Inline.inlineProgram_sim_clock hr words memory context
+    apply Prune.pruneUnusedReuse_inlineProgram_sim_clock hr hno hmainNp words memory context
     intro k
     have hle := Inline.fuelFor_le_split (Public.Spec.inlinedPublicProgram (layoutOf P) functions main) k
     rw [← splitEq, inlEq] at hle

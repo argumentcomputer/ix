@@ -15,9 +15,10 @@ theorem checkFunction_intercepts {limit first : Nat} {fd : Cfg.Fun} {table : Act
   rw [hcode] at hcheck
   exact checked_head_intercepts hcheck hreserved
 
-theorem skeleton_action (limit first : Nat) (a : Action) (k : Own.Plain.Code) :
-    skeleton limit first (.act a k) =
-      .bind first (markerRhs limit a) (skeleton limit (first + 1) k) := rfl
+theorem skeleton_action (limit first : Nat) (a : Action) (k : Own.Plain.Code)
+    (ctors : List Lam.CtorInfo := []) (slotBase : Nat := first) :
+    skeleton limit first (.act a k) ctors slotBase =
+      .bind first (markerRhs limit a) (skeleton limit (first + 1) k ctors slotBase) := rfl
 
 theorem markerRhs_eq (limit first : Nat) (a : Action) :
     Instr.bind first (markerRhs limit a) = marker limit first a := by cases a <;> rfl
@@ -27,17 +28,19 @@ small-step execution is proved in `prefix_reach`; this is not a separate toy
 instruction translation. Its reversed accumulator convention is preserved. -/
 theorem lower_actionPrefix (limit first self : Nat) (J : Cfg.Lower.JScope)
     (cur : BlockId) (params : List (Fir.Var × Own.PSig)) (acc : List Instr)
-    (next : BlockId) (out : Cfg.Lower.Out) (as : List Action) (k : Own.Plain.Code) :
+    (next : BlockId) (out : Cfg.Lower.Out) (as : List Action) (k : Own.Plain.Code)
+    (ctors : List Lam.CtorInfo := []) (slotBase : Nat := first) :
     Cfg.Lower.code self J cur params acc next out
-      (skeleton limit first (Own.Plain.actionPrefix as k)) =
+      (skeleton limit first (Own.Plain.actionPrefix as k) ctors slotBase) =
     Cfg.Lower.code self J cur params ((encodePrefix limit first as).reverse ++ acc) next out
-      (skeleton limit (first + as.length) k) := by
+      (skeleton limit (first + as.length) k ctors slotBase) := by
   induction as generalizing first acc with
   | nil => simp [Own.Plain.actionPrefix, encodePrefix]
   | cons a as ih =>
     simp only [Own.Plain.actionPrefix, skeleton, Cfg.Lower.code]
     rw [ih, markerRhs_eq]
-    simp [encodePrefix, List.reverse_cons, List.append_assoc, Nat.add_assoc, Nat.add_comm,
-      Nat.add_left_comm]
+    simp only [encodePrefix, List.reverse_cons, List.append_assoc, List.singleton_append,
+      List.length_cons]
+    rw [Nat.add_assoc first 1 as.length, Nat.add_comm 1 as.length]
 
 end IxCC.Cfg.Rc

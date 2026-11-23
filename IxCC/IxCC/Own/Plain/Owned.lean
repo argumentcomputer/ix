@@ -1,4 +1,5 @@
 import IxCC.Own.Plain.Check
+import IxCC.Rt.Rc.Classes
 
 /-! # The ownership checker (heap stage 2)
 
@@ -36,15 +37,41 @@ namespace IxCC.Own.Plain
 
 open IxCC.Fir (Var JoinId FunId Arg Rhs)
 
+/-- Structural emptiness test for `Src.NatMap`. -/
+def mapIsEmpty {α : Type} : Src.NatMap α → Bool
+  | .leaf => true
+  | .node none z o => mapIsEmpty z && mapIsEmpty o
+  | .node (some _) _ _ => false
+
+/-- Structural intersection of two `Src.NatSet`s. -/
+def interSet : Src.NatSet → Src.NatSet → Src.NatSet
+  | .leaf, _ => .leaf
+  | _, .leaf => .leaf
+  | .node va za oa, .node vb zb ob =>
+    .node (if va.isSome && vb.isSome then some () else none) (interSet za zb) (interSet oa ob)
+
+/-- A 0-arity constructor `c` agrees with `ctors` (cannot collide with a positive-arity key). -/
+def ctor0Valid (ctors : List Lam.CtorInfo) (c : Fir.CtorInfo) : Bool :=
+  match Fir.CtorInfo.ofKey ctors c.key with
+  | some info => info.arity == 0
+  | none => true
+
 /-- One path's ownership context. `total` is the sum of `own` (kept so that terminals cost O(1)).
 `pbrw` holds caller-backed function-lifetime borrowed variables (parameters marked `@borrowed`
 and variables projected or copied from them); unlike epoch-scoped `brw`, `pbrw` survives releases
-and calls for the lifetime of the activation. -/
+and calls for the lifetime of the activation.
+`ctorOf` records known constructor keys from enclosing `case` arms; `projOf` records projections
+`(parent, key, idx)`; `uniq` tracks statically guaranteed unique owned variables (`tokens = 1`);
+`rset` tracks live reset slots `slot ↦ (sizeClass, guaranteedUnique)`. -/
 structure Ctx where
   imm : Src.NatSet := .leaf
   own : Src.NatMap Nat := .leaf
   brw : Src.NatMap Nat := .leaf
   pbrw : Src.NatSet := .leaf
+  ctorOf : Src.NatMap Key.CtorKey := .leaf
+  projOf : Src.NatMap (Var × Key.CtorKey × Nat) := .leaf
+  uniq : Src.NatSet := .leaf
+  rset : Src.NatMap (Nat × Bool) := .leaf
   epoch : Nat := 0
   total : Nat := 0
   deriving Inhabited
@@ -53,6 +80,7 @@ namespace Ctx
 
 def isImm (Γ : Ctx) (x : Var) : Bool := Γ.imm.contains x
 def isPbrw (Γ : Ctx) (x : Var) : Bool := Γ.pbrw.contains x
+def isUniq (Γ : Ctx) (x : Var) : Bool := Γ.uniq.contains x
 def tokens (Γ : Ctx) (x : Var) : Nat := Γ.own.getD x 0
 def borrowed (Γ : Ctx) (x : Var) : Bool := Γ.brw.get? x == some Γ.epoch
 def avail (Γ : Ctx) (x : Var) : Bool :=
@@ -65,23 +93,41 @@ def borrowable (Γ : Ctx) (x : Var) : Bool :=
 def addOwn (Γ : Ctx) (x : Var) (n : Nat) : Ctx :=
   { Γ with own := Γ.own.insert x (Γ.tokens x + n), total := Γ.total + n }
 
+def addUniqOwn (Γ : Ctx) (x : Var) : Ctx :=
+  { Γ.addOwn x 1 with uniq := Γ.uniq.insert x }
+
 /-- `x` is now known to be an immediate: its tokens (if any) are vacuous and dropped. -/
 def setImm (Γ : Ctx) (x : Var) : Ctx :=
   { Γ with imm := Γ.imm.insert x, own := Γ.own.erase x, brw := Γ.brw.erase x,
-           total := Γ.total - Γ.tokens x }
+           uniq := Γ.uniq.erase x, total := Γ.total - Γ.tokens x }
+
+/-- `x` is a table-valid immediate (literal, erased, prim/bool, or valid 0-arity ctor),
+safe to pass to `@unique` parameters and return from `@unique` functions. -/
+def setImmUniq (Γ : Ctx) (x : Var) : Ctx :=
+  { Γ.setImm x with uniq := Γ.uniq.insert x }
 
 def setBorrow (Γ : Ctx) (x : Var) : Ctx := { Γ with brw := Γ.brw.insert x Γ.epoch }
 
 def setPbrw (Γ : Ctx) (x : Var) : Ctx := { Γ with pbrw := Γ.pbrw.insert x }
 
+def setCtor (Γ : Ctx) (x : Var) (key : Key.CtorKey) : Ctx :=
+  { Γ with ctorOf := Γ.ctorOf.insert x key }
+
+def setProj (Γ : Ctx) (x y : Var) (key : Key.CtorKey) (idx : Nat) : Ctx :=
+  { Γ with projOf := Γ.projOf.insert x (y, key, idx) }
+
+def clearUniq (Γ : Ctx) (x : Var) : Ctx :=
+  { Γ with uniq := Γ.uniq.erase x }
+
 /-- A release (`dec`, a non-tail call): every epoch-borrowed variable dies (`pbrw` survives). -/
 def release (Γ : Ctx) : Ctx := { Γ with epoch := Γ.epoch + 1 }
 
-/-- Consume one token of `x`; an immediate is free. -/
+/-- Consume one token of `x`; an immediate is free. Clears static uniqueness of `x`. -/
 def take (Γ : Ctx) (x : Var) : Except String Ctx :=
   if Γ.isImm x then .ok Γ else
   match Γ.own.get? x with
-  | some (n + 1) => .ok { Γ with own := Γ.own.insert x n, total := Γ.total - 1 }
+  | some (n + 1) =>
+    .ok { Γ with own := Γ.own.insert x n, uniq := Γ.uniq.erase x, total := Γ.total - 1 }
   | _ =>
     if Γ.isPbrw x then .error s!"v{x} is a borrowed parameter and consumed without an increment"
     else if Γ.borrowed x then .error s!"v{x} is borrowed and consumed without an increment"
@@ -103,6 +149,44 @@ def takeOwnedArgs : Ctx → List Bool → List Arg → Except String Ctx
   | Γ, true :: bs, _ :: as => takeOwnedArgs Γ bs as
   | Γ, false :: bs, a :: as => do takeOwnedArgs (← Γ.takeArg a) bs as
   | Γ, [], a :: as => do takeOwnedArgs (← Γ.takeArg a) [] as
+
+/-- Consume tokens for non-borrowed (`false`) argument positions, verifying `@unique` positions
+hold a statically unique value (`isUniq`) at the moment they are consumed. -/
+def takeOwnedUniqueArgs : Ctx → List Bool → List Bool → List Arg → Except String Ctx
+  | Γ, _, _, [] => .ok Γ
+  | Γ, true :: bs, _ :: us, _ :: as => takeOwnedUniqueArgs Γ bs us as
+  | Γ, true :: bs, [], _ :: as => takeOwnedUniqueArgs Γ bs [] as
+  | Γ, false :: bs, true :: us, a :: as => do
+    match a with
+    | .var x =>
+      unless Γ.isUniq x do
+        throw s!"v{x} passed to @unique parameter is not statically unique"
+      takeOwnedUniqueArgs (← Γ.take x) bs us as
+    | _ => takeOwnedUniqueArgs Γ bs us as
+  | Γ, false :: bs, false :: us, a :: as => do
+    takeOwnedUniqueArgs (← Γ.takeArg a) bs us as
+  | Γ, false :: bs, [], a :: as => do
+    takeOwnedUniqueArgs (← Γ.takeArg a) bs [] as
+  | Γ, [], true :: us, a :: as => do
+    match a with
+    | .var x =>
+      unless Γ.isUniq x do
+        throw s!"v{x} passed to @unique parameter is not statically unique"
+      takeOwnedUniqueArgs (← Γ.take x) [] us as
+    | _ => takeOwnedUniqueArgs Γ [] us as
+  | Γ, [], false :: us, a :: as => do
+    takeOwnedUniqueArgs (← Γ.takeArg a) [] us as
+  | Γ, [], [], a :: as => do
+    takeOwnedUniqueArgs (← Γ.takeArg a) [] [] as
+
+/-- Clear static uniqueness on any non-immediate variable passed in a borrowed (`true`) call position
+(a callee may increment and return a copy of a borrowed argument). -/
+def clearBorrowedUniq : Ctx → List Bool → List Arg → Ctx
+  | Γ, _, [] => Γ
+  | Γ, true :: bs, .var x :: as =>
+    clearBorrowedUniq (if Γ.isImm x then Γ else Γ.clearUniq x) bs as
+  | Γ, _ :: bs, _ :: as => clearBorrowedUniq Γ bs as
+  | Γ, [], _ => Γ
 
 /-- Check that every borrowed (`true`) argument of a non-tail call is caller-backed or still owned
 in `Γ` (checked *after* `takeOwnedArgs` so an owned+borrowed alias cannot cause use-after-free). -/
@@ -147,9 +231,9 @@ def needCaptured (Γ : Ctx) (j : JoinId) : List Var → Except String Unit
   | [] => .ok ()
   | c :: cs => do Γ.need c s!"captured by join j{j}"; Γ.needCaptured j cs
 
-/-- Argument positions marked immediate by `imms` (a primitive's signature) become immediates. -/
+/-- Argument positions marked immediate by `imms` (a primitive's signature) become valid immediates. -/
 def immArgs : Ctx → List Bool → List Arg → Ctx
-  | Γ, true :: ms, .var x :: as => immArgs (Γ.setImm x) ms as
+  | Γ, true :: ms, .var x :: as => immArgs (Γ.setImmUniq x) ms as
   | Γ, _ :: ms, _ :: as => immArgs Γ ms as
   | Γ, _, _ => Γ
 
@@ -172,13 +256,14 @@ def primImmArgs (op : Lam.Prim) (arity : Nat) : List Bool :=
 namespace Ctx
 
 /-- `inc x n`: only unit increments (the native fragment's); an epoch-borrowed variable becomes
-owned, while a caller-backed `pbrw` variable mints an owned token and stays `pbrw`. -/
+owned, while a caller-backed `pbrw` variable mints an owned token and stays `pbrw`.
+Clears static uniqueness of `x`. -/
 def inc (Γ : Ctx) (x : Var) (n : Nat) : Except String Ctx :=
   if n != 1 then .error s!"inc v{x} {n}: only unit increments are admitted" else
   if Γ.isImm x then .ok Γ
-  else if 0 < Γ.tokens x then .ok (Γ.addOwn x 1)
-  else if Γ.isPbrw x then .ok (Γ.addOwn x 1)
-  else if Γ.borrowed x then .ok ({ Γ with brw := Γ.brw.erase x }.addOwn x 1)
+  else if 0 < Γ.tokens x then .ok ((Γ.clearUniq x).addOwn x 1)
+  else if Γ.isPbrw x then .ok ((Γ.clearUniq x).addOwn x 1)
+  else if Γ.borrowed x then .ok ({ Γ with brw := Γ.brw.erase x, uniq := Γ.uniq.erase x }.addOwn x 1)
   else if Γ.brw.contains x then .error s!"inc v{x}: a release ended its borrow"
   else .error s!"inc v{x}: v{x} is dead"
 
@@ -187,15 +272,87 @@ def dec (Γ : Ctx) (x : Var) : Except String Ctx :=
   | .ok Γ' => .ok Γ'.release
   | .error e => .error s!"dec: {e}"
 
+/-- Check and promote the projected fields of a `reset` from `x` (`ctor.key`) into owned tokens. -/
+def promoteResetFields (Γ0 : Ctx) (x : Var) (key : Key.CtorKey) :
+    Nat → List (Option Var) → Ctx → Except String Ctx
+  | _, [], Γ => .ok Γ
+  | j, none :: rest, Γ => promoteResetFields Γ0 x key (j + 1) rest Γ
+  | j, some v :: rest, Γ => do
+    if v == x then throw s!"reset v{x}: field {j} aliases scrutinee"
+    unless Γ0.projOf.get? v == some (x, key, j) do
+      throw s!"reset v{x}: v{v} is not a projection of field {j} of v{x}"
+    unless Γ0.avail v do
+      throw s!"reset v{x}: projected field v{v} is not available"
+    let Γ' :=
+      if Γ.isImm v then Γ
+      else ({ Γ with brw := Γ.brw.erase v, uniq := Γ.uniq.erase v }.addOwn v 1)
+    promoteResetFields Γ0 x key (j + 1) rest Γ'
+
+/-- Valid heap constructor layout for `reset`/`reuse` (scanned shared dynamic cell). -/
+def validReuseCtor (c : Fir.CtorInfo) : Option Nat :=
+  if decide (0 < c.arity) && decide (c.arity ≤ 61) && decide (c.nscalar = 0) &&
+      decide (c.fieldKinds.length = c.nobj) && c.fieldKinds.all (· == .shared) then
+    let lay := Rt.Rc.CellLayout.ofFields c.arity c.tag
+    if lay.ok then lay.cls? else none
+  else none
+
+/-- Check `.reset s x ctor fields uniq`: consumes one token of `x`, promotes every `some v`
+projected field to an owned token, advances the borrow epoch, and opens reset slot `s`. -/
+def reset (Γ : Ctx) (ctors : List Lam.CtorInfo) (s : Nat) (x : Var) (ctor : Fir.CtorInfo)
+    (fields : List (Option Var)) (uniq : Bool) (known : Lam.Known := {}) : Except String Ctx := do
+  unless Fir.CtorInfo.ofKey ctors ctor.key == some ctor do
+    throw s!"reset s{s}: constructor does not match program constructor table"
+  if known.natZero == some ctor.key || known.natSucc == some ctor.key then
+    throw s!"reset s{s}: cannot reset Nat constructor"
+  let some cls := validReuseCtor ctor | throw s!"reset s{s}: invalid constructor layout"
+  if Γ.rset.contains s then throw s!"reset s{s}: slot already live"
+  unless Γ.ctorOf.get? x == some ctor.key do
+    throw s!"reset s{s}: v{x} is not known to have constructor tag"
+  unless fields.length == ctor.arity do
+    throw s!"reset s{s}: field list length {fields.length} != arity {ctor.arity}"
+  if Γ.isImm x then throw s!"reset s{s}: cannot reset immediate v{x}"
+  if uniq && !Γ.isUniq x then
+    throw s!"reset s{s}: static unique reset on non-unique v{x}"
+  let Γ₁ ← Γ.take x
+  let Γ₂ ← promoteResetFields Γ x ctor.key 0 fields Γ₁
+  return { Γ₂.release with rset := Γ₂.rset.insert s (cls, uniq) }
+
+/-- Check `.reuse x s ctor args uniq`: consumes slot `s` (matching size class and static
+uniqueness flag) and `args`, binds fresh statically unique `x`. -/
+def reuse (Γ : Ctx) (ctors : List Lam.CtorInfo) (x : Var) (s : Nat) (ctor : Fir.CtorInfo)
+    (args : List Arg) (uniq : Bool) (known : Lam.Known := {}) : Except String Ctx := do
+  if Γ.known x then throw s!"v{x} rebound"
+  unless Fir.CtorInfo.ofKey ctors ctor.key == some ctor do
+    throw s!"reuse v{x}: constructor does not match program constructor table"
+  if known.natZero == some ctor.key || known.natSucc == some ctor.key then
+    throw s!"reuse v{x}: cannot reuse for Nat constructor"
+  let some cls := validReuseCtor ctor | throw s!"reuse v{x}: invalid constructor layout"
+  unless args.length == ctor.arity do
+    throw s!"reuse v{x}: argument count {args.length} != arity {ctor.arity}"
+  let some (slotCls, slotUniq) := Γ.rset.get? s | throw s!"reuse v{x}: slot s{s} is not live"
+  unless slotCls == cls do
+    throw s!"reuse v{x}: class mismatch (slot class {slotCls}, ctor class {cls})"
+  if uniq && !slotUniq then
+    throw s!"reuse v{x}: static unique reuse on non-unique slot s{s}"
+  let Γ₁ := { Γ with rset := Γ.rset.erase s }
+  let Γ₂ ← Γ₁.takeArgs args
+  return Γ₂.addUniqOwn x
+
+/-- Check `.dropSlot s`: consumes and releases unused reset slot `s`. -/
+def dropSlot (Γ : Ctx) (s : Nat) : Except String Ctx := do
+  unless Γ.rset.contains s do throw s!"dropSlot s{s}: slot is not live"
+  return { Γ.release with rset := Γ.rset.erase s }
+
 /-- The variables a join body holds tokens for: its captured variables that are not immediates
 of the declaration, then its parameters. -/
 def entered (Γ : Ctx) (captured params : List Var) : List Var :=
   captured.filter (fun c => !Γ.isImm c) ++ params
 
-/-- The context a join body starts from (inheriting `imm` and caller-backed `pbrw`). -/
+/-- The context a join body starts from (inheriting `imm`, valid immediate `uniq`, and caller-backed `pbrw`). -/
 def enter (Γ : Ctx) (captured params : List Var) : Ctx :=
   let owned := Γ.entered captured params
-  { imm := Γ.imm, pbrw := Γ.pbrw, own := Src.NatMap.ofList (owned.map (·, 1)), total := owned.length }
+  { imm := Γ.imm, pbrw := Γ.pbrw, uniq := interSet Γ.imm Γ.uniq,
+    own := Src.NatMap.ofList (owned.map (·, 1)), total := owned.length }
 
 def entry (params : List Var) : Ctx :=
   { own := Src.NatMap.ofList (params.map (·, 1)), total := params.length }
@@ -214,19 +371,36 @@ def entryBorrowed : List Var → List Bool → List Var
   | _ :: ps, false :: bs => entryBorrowed ps bs
   | _, [] => []
 
-/-- Function entry context with borrow mask `borrows`. Specializes definitionally to `entry`
-when `borrows = []`. -/
-def entryWith (params : List Var) (borrows : List Bool) : Ctx :=
+/-- Unique parameters selected by `(borrows, uniqs)`: owned and marked `@unique`. -/
+def entryUnique : List Var → List Bool → List Bool → List Var
+  | [], _, _ => []
+  | _ :: ps, true :: bs, _ :: us => entryUnique ps bs us
+  | _ :: ps, true :: bs, [] => entryUnique ps bs []
+  | p :: ps, false :: bs, true :: us => p :: entryUnique ps bs us
+  | _ :: ps, false :: bs, false :: us => entryUnique ps bs us
+  | _ :: ps, false :: bs, [] => entryUnique ps bs []
+  | p :: ps, [], true :: us => p :: entryUnique ps [] us
+  | _ :: ps, [], false :: us => entryUnique ps [] us
+  | _, [], [] => []
+
+/-- Function entry context with borrow mask `borrows` and optional uniqueness mask `uniqs`.
+Specializes definitionally to `entry` when `borrows = []` and `uniqs = []`. -/
+def entryWith (params : List Var) (borrows : List Bool) (uniqs : List Bool := []) : Ctx :=
   let owned := entryOwned params borrows
   let borrowed := entryBorrowed params borrows
+  let unique := entryUnique params borrows uniqs
   { own := Src.NatMap.ofList (owned.map (·, 1))
     pbrw := Src.NatMap.ofList (borrowed.map (·, ()))
+    uniq := Src.NatMap.ofList (unique.map (·, ()))
     total := owned.length }
 
-/-- At a terminal: every token the path holds has been consumed. -/
+/-- At a terminal: every token and reset slot the path holds has been consumed. -/
 def closed (Γ : Ctx) (what : String) : Except String Unit :=
-  if Γ.total == 0 then .ok ()
-  else .error s!"{what}: {Γ.total} token(s) still held (a missing dec): {(Γ.own.toList.filter (·.2 > 0)).map (·.1)}"
+  if Γ.total == 0 && mapIsEmpty Γ.rset then .ok ()
+  else if Γ.total != 0 then
+    .error s!"{what}: {Γ.total} token(s) still held (a missing dec): {(Γ.own.toList.filter (·.2 > 0)).map (·.1)}"
+  else
+    .error s!"{what}: reset slot(s) still live (missing reuse or dropSlot)"
 
 end Ctx
 
@@ -237,43 +411,59 @@ def nodupFrom (seen : Src.NatSet) : List Var → Bool
 
 def nodupVars (xs : List Var) : Bool := nodupFrom .leaf xs
 
-def bindCtx (Γ : Ctx) (x : Var) (r : Rhs) (borrows : BorrowSigs := .leaf) : Except String Ctx :=
+def bindCtx (Γ : Ctx) (x : Var) (r : Rhs) (borrows : BorrowSigs := .leaf)
+    (uniqs : UniqSigs := .leaf) (ctors : List Lam.CtorInfo := []) : Except String Ctx :=
   match r with
   | .arg (.var y) =>
-    if Γ.isImm y then .ok (Γ.setImm x)
+    if Γ.isImm y then .ok (if Γ.isUniq y then Γ.setImmUniq x else Γ.setImm x)
     else if Γ.tokens y == 0 && Γ.isPbrw y then .ok (Γ.setPbrw x)
-    else do return (← Γ.take y).addOwn x 1
-  | .arg _ => .ok (Γ.setImm x)
+    else do
+      let wasUniq := Γ.isUniq y && Γ.tokens y == 1
+      let Γ₁ ← Γ.take y
+      return if wasUniq then Γ₁.addUniqOwn x else Γ₁.addOwn x 1
+  | .arg _ => .ok (Γ.setImmUniq x)
   | .ctor c args =>
-    if c.arity == 0 then .ok (Γ.setImm x) else do return (← Γ.takeArgs args).addOwn x 1
+    if c.arity == 0 then .ok (if ctor0Valid ctors c then Γ.setImmUniq x else Γ.setImm x)
+    else do return (← Γ.takeArgs args).addUniqOwn x
   | .call f args => do
     let bs := borrows.getD f []
-    let Γ₁ ← Γ.takeOwnedArgs bs args
+    let (us, retU) := uniqs.getD f ([], false)
+    let Γ₁ ← Γ.takeOwnedUniqueArgs bs us args
     Γ₁.checkCallBorrowed bs args
-    return Γ₁.release.addOwn x 1
-  | .proj y _ _ => do
+    let Γ₂ := (Γ₁.clearBorrowedUniq bs args).release
+    return if retU then Γ₂.addUniqOwn x else Γ₂.addOwn x 1
+  | .proj y key idx => do
     Γ.need y "projected"
-    return if Γ.isImm y then Γ.setImm x else if Γ.isPbrw y then Γ.setPbrw x else Γ.setBorrow x
+    let Γ' := if Γ.isImm y then Γ.setImmUniq x else if Γ.isPbrw y then Γ.setPbrw x else Γ.setBorrow x
+    return Γ'.setProj x y key idx
   | .prim op args => do
     Γ.needArgs args
-    return (Ctx.immArgs Γ (primImmArgs op args.length) args).setImm x
+    return (Ctx.immArgs Γ (primImmArgs op args.length) args).setImmUniq x
 
 /-- Join-capture context: join id to the variables whose tokens a jump hands to the body. -/
 abbrev JCtx := Src.NatMap (List Var)
 
 mutual
-def checkCode (Δ : JCtx) (Γ : Ctx) (c : Code) (borrows : BorrowSigs := .leaf) : Except String Unit :=
+def checkCode (Δ : JCtx) (Γ : Ctx) (c : Code) (borrows : BorrowSigs := .leaf)
+    (uniqs : UniqSigs := .leaf) (retUniq : Bool := false)
+    (ctors : List Lam.CtorInfo := []) (known : Lam.Known := {}) : Except String Unit :=
   match c with
-  | .act (.inc x n) k => do checkCode Δ (← Γ.inc x n) k borrows
-  | .act (.dec x) k => do checkCode Δ (← Γ.dec x) k borrows
+  | .act (.inc x n) k => do checkCode Δ (← Γ.inc x n) k borrows uniqs retUniq ctors known
+  | .act (.dec x) k => do checkCode Δ (← Γ.dec x) k borrows uniqs retUniq ctors known
   | .bind x r k => do
     if Γ.known x then throw s!"v{x} rebound"
-    checkCode Δ (← bindCtx Γ x r borrows) k borrows
+    checkCode Δ (← bindCtx Γ x r borrows uniqs ctors) k borrows uniqs retUniq ctors known
+  | .reset s x ctor fields uniq k => do
+    checkCode Δ (← Γ.reset ctors s x ctor fields uniq known) k borrows uniqs retUniq ctors known
+  | .reuse x s ctor args uniq k => do
+    checkCode Δ (← Γ.reuse ctors x s ctor args uniq known) k borrows uniqs retUniq ctors known
+  | .dropSlot s k => do
+    checkCode Δ (← Γ.dropSlot s) k borrows uniqs retUniq ctors known
   | .jp j ps captured rec body k => do
     unless nodupVars captured do throw s!"join j{j}: repeated captured variable"
     Γ.needCaptured j captured
-    checkCode (if rec then Δ.insert j captured else Δ) (Γ.enter captured ps) body borrows
-    checkCode (Δ.insert j captured) Γ k borrows
+    checkCode (if rec then Δ.insert j captured else Δ) (Γ.enter captured ps) body borrows uniqs retUniq ctors known
+    checkCode (Δ.insert j captured) Γ k borrows uniqs retUniq ctors known
   | .jmp j args => do
     let some captured := Δ.get? j | throw s!"jump to unknown join j{j}"
     let Γ ← Γ.takeArgs args
@@ -281,23 +471,39 @@ def checkCode (Δ : JCtx) (Γ : Ctx) (c : Code) (borrows : BorrowSigs := .leaf) 
     Γ.closed s!"jump to j{j}"
   | .case x alts dflt => do
     Γ.need x "scrutinised"
-    checkAlts Δ Γ alts borrows
-    checkOpt Δ Γ dflt borrows
-  | .ret a => do (← Γ.takeArg a).closed "return"
+    checkAlts Δ Γ x alts borrows uniqs retUniq ctors known
+    checkOpt Δ Γ dflt borrows uniqs retUniq ctors known
+  | .ret a => do
+    if retUniq then
+      match a with
+      | .var y =>
+        unless Γ.isUniq y do
+          throw s!"return v{y}: not statically unique for @unique return"
+      | _ => pure ()
+    (← Γ.takeArg a).closed "return"
   | .tcall f args => do
     let bs := borrows.getD f []
-    let Γ₁ ← Γ.takeOwnedArgs bs args
+    let (us, calleeRetU) := uniqs.getD f ([], false)
+    if retUniq && !calleeRetU then
+      throw s!"tail call of f{f}: callee does not guarantee @unique return"
+    let Γ₁ ← Γ.takeOwnedUniqueArgs bs us args
     Γ₁.checkTailBorrowed bs args
     Γ₁.closed s!"tail call of f{f}"
   | .trap => .ok ()
-def checkAlts (Δ : JCtx) (Γ : Ctx) (alts : List Alt) (borrows : BorrowSigs := .leaf) : Except String Unit :=
+def checkAlts (Δ : JCtx) (Γ : Ctx) (x : Var) (alts : List Alt) (borrows : BorrowSigs := .leaf)
+    (uniqs : UniqSigs := .leaf) (retUniq : Bool := false)
+    (ctors : List Lam.CtorInfo := []) (known : Lam.Known := {}) : Except String Unit :=
   match alts with
   | [] => .ok ()
-  | .mk _ body :: rest => do checkCode Δ Γ body borrows; checkAlts Δ Γ rest borrows
-def checkOpt (Δ : JCtx) (Γ : Ctx) (dflt : Option Code) (borrows : BorrowSigs := .leaf) : Except String Unit :=
+  | .mk key body :: rest => do
+    checkCode Δ (Γ.setCtor x key) body borrows uniqs retUniq ctors known
+    checkAlts Δ Γ x rest borrows uniqs retUniq ctors known
+def checkOpt (Δ : JCtx) (Γ : Ctx) (dflt : Option Code) (borrows : BorrowSigs := .leaf)
+    (uniqs : UniqSigs := .leaf) (retUniq : Bool := false)
+    (ctors : List Lam.CtorInfo := []) (known : Lam.Known := {}) : Except String Unit :=
   match dflt with
   | none => .ok ()
-  | some c => checkCode Δ Γ c borrows
+  | some c => checkCode Δ Γ c borrows uniqs retUniq ctors known
 end
 
 -- The candidate erases to the source (`eraseCode c = s`), decided without building `eraseCode`.
@@ -305,6 +511,10 @@ mutual
 def erases : Code → Fir.Code → Bool
   | .act _ k, s => erases k s
   | .bind x r k, .bind x' r' k' => decide (x = x') && decide (r = r') && erases k k'
+  | .reset _ _ _ _ _ k, s => erases k s
+  | .reuse x _ c args _ k, .bind x' (.ctor c' args') k' =>
+    decide (x = x') && decide (c = c') && decide (args = args') && erases k k'
+  | .dropSlot _ k, s => erases k s
   | .jp j ps _ rec b k, .jp j' ps' rec' b' k' =>
     decide (j = j') && decide (ps = ps') && decide (rec = rec') && erases b b' && erases k k'
   | .jmp j args, .jmp j' args' => decide (j = j') && decide (args = args')
@@ -338,38 +548,57 @@ def borrowsValid (F : Fir.Program) (borrows : BorrowSigs) : Bool :=
     | _, none => true
     | none, some _ => false
 
+/-- Validate per-function uniqueness signatures: exported entry points never assume `@unique`
+parameters (external ABI), every declared mask matches arity, and no parameter is both
+`@borrowed` and `@unique`. -/
+def uniqsValid (F : Fir.Program) (borrows : BorrowSigs) (uniqs : UniqSigs) : Bool :=
+  F.exports.all (fun f => ((uniqs.getD f ([], false)).1).all (!·)) &&
+  (List.range F.size).all fun f =>
+    match F.fun? f, uniqs.get? f with
+    | some fd, some (us, _) =>
+      let bs := borrows.getD f []
+      us.length == fd.params.length &&
+        (us.zip bs).all fun (u, b) => !(u && b)
+    | _, none => true
+    | none, some _ => false
+
 def checkBodyE (fd : Fir.Fun) (body : Code) (borrows : BorrowSigs := .leaf)
-    (selfBorrows : List Bool := []) : Except String Unit := do
+    (selfBorrows : List Bool := []) (uniqs : UniqSigs := .leaf)
+    (selfUniq : List Bool × Bool := ([], false))
+    (ctors : List Lam.CtorInfo := []) (known : Lam.Known := {}) : Except String Unit := do
   unless erases body fd.body do throw "ownership code does not erase to the Fir body"
-  checkCode .leaf (Ctx.entryWith (fd.params.map (·.1)) selfBorrows) body borrows
+  checkCode .leaf (Ctx.entryWith (fd.params.map (·.1)) selfBorrows selfUniq.1) body borrows
+    uniqs selfUniq.2 ctors known
 
 /-- The listed functions' candidates, with the reason for the first refusal. -/
 def checkFuns (F : Fir.Program) (candidate : Src.NatMap Code) (fs : List FunId)
-    (borrows : BorrowSigs := .leaf) : Except String Unit :=
+    (borrows : BorrowSigs := .leaf) (uniqs : UniqSigs := .leaf) : Except String Unit :=
   match fs with
   | [] => .ok ()
   | f :: fs =>
     match F.fun? f, candidate.get? f with
     | some fd, some body =>
-      match checkBodyE fd body borrows (borrows.getD f []) with
-      | .ok () => checkFuns F candidate fs borrows
+      match checkBodyE fd body borrows (borrows.getD f []) uniqs (uniqs.getD f ([], false)) F.ctors F.known with
+      | .ok () => checkFuns F candidate fs borrows uniqs
       | .error e => .error s!"f{f}: {e}"
     | _, _ => .error s!"f{f}: missing"
 
 /-- Every numbered function's candidate, with the reason for the first refusal. -/
 def checkMapE (F : Fir.Program) (candidate : Src.NatMap Code)
-    (borrows : BorrowSigs := .leaf) : Except String Unit := do
+    (borrows : BorrowSigs := .leaf) (uniqs : UniqSigs := .leaf) : Except String Unit := do
   unless sameShape F.funs candidate do throw "candidate and source function maps differ in shape"
-  checkFuns F candidate (List.range F.size) borrows
+  checkFuns F candidate (List.range F.size) borrows uniqs
 
 /-- **The ownership checker.** Same source domain as `checkPlainMap` (written contracts
 `.many`/shared only); `checkContractOwned` takes `checkContractPlainMap`'s. -/
 def checkOwned (F : Fir.Program) (candidate : Src.NatMap Code)
-    (borrows : BorrowSigs := .leaf) : Bool :=
-  programDomain F && checkBoolPins F && borrowsValid F borrows && (checkMapE F candidate borrows).isOk
+    (borrows : BorrowSigs := .leaf) (uniqs : UniqSigs := .leaf) : Bool :=
+  programDomain F && checkBoolPins F && borrowsValid F borrows && uniqsValid F borrows uniqs &&
+    (checkMapE F candidate borrows uniqs).isOk
 
 def checkContractOwned (F : Fir.Program) (candidate : Src.NatMap Code)
-    (borrows : BorrowSigs := .leaf) : Bool :=
-  contractProgramDomain F && checkBoolPins F && borrowsValid F borrows && (checkMapE F candidate borrows).isOk
+    (borrows : BorrowSigs := .leaf) (uniqs : UniqSigs := .leaf) : Bool :=
+  contractProgramDomain F && checkBoolPins F && borrowsValid F borrows && uniqsValid F borrows uniqs &&
+    (checkMapE F candidate borrows uniqs).isOk
 
 end IxCC.Own.Plain

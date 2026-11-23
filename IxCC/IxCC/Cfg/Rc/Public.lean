@@ -43,8 +43,9 @@ def Lowered.reps (l : Lowered) (f : Lir.FunId) : Option (List Xv.Stacking.ArgRep
   if f == l.drop then some [.word] else l.runtime.reps f
 
 def lower (config : Rt.Config) (F : Fir.Program) (bodies : Src.NatMap Own.Plain.Code)
-    (P : Program) (borrows : Own.Plain.BorrowSigs := .leaf) : Except String Lowered := do
-  let original ← Native.lower config F bodies P borrows
+    (P : Program) (borrows : Own.Plain.BorrowSigs := .leaf)
+    (uniqs : Own.Plain.UniqSigs := .leaf) : Except String Lowered := do
+  let original ← Native.lower config F bodies P borrows uniqs
   let layout : Native.Layout := ⟨P.base.size, P.base.ctors.filter (fun c => c.arity > 0)⟩
   let drop := original.program.funcs.size
   let program : Lir.Program :=

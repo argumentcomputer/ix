@@ -11,8 +11,8 @@ theorem case_entry {F : Fir.Program} {P : Program} {pairs : List (Nat × Cfg.Fun
     (consuming : consumeAll P = .ok pairs) (switches : Rt.checkSwitches P.base = .ok ())
     {source : Cfg.Frame} {target : Lir.Frame} {ρ : Own.Env} {saved : List Own.Plain.JEntry}
     {x : Fir.Var} {alts : List Own.Plain.Alt} {default : Option Own.Plain.Code}
-    {key : Key.CtorKey} {body : Own.Plain.Code}
-    (sourceState : At F P source ρ saved (.case x alts default))
+    {key : Key.CtorKey} {body : Own.Plain.Code} {rslots : Src.NatMap Own.RVal}
+    (sourceState : At F P source ρ saved (.case x alts default) rslots)
     (selected : ownCase key alts default = some body)
     {addresses : AddressMap} {heap : Own.Heap} {bound : Nat} {function : Cfg.Fun}
     (frame : FrameState P pairs lp addresses heap.size bound function source target)
@@ -25,7 +25,7 @@ theorem case_entry {F : Fir.Program} {P : Program} {pairs : List (Nat × Cfg.Fun
     (compatibleHeap : HeapCtorOk (tablesOf P pairs) heap)
     (running : target.dsts = []) (context : Lir.Word) (callers : List Lir.Frame) :
     (∃ after final cost,
-      At F P after ρ saved body ∧ FrameState P pairs lp addresses heap.size bound function after final ∧
+      At F P after ρ saved body rslots ∧ FrameState P pairs lp addresses heap.size bound function after final ∧
       Sem.Star (Lir.semStep lp) {mem, ctx := context, stack := target :: callers} cost
         {mem, ctx := context, stack := final :: callers} ∧
       final.dsts = [] ∧ after.fn = source.fn ∧
@@ -33,7 +33,7 @@ theorem case_entry {F : Fir.Program} {P : Program} {pairs : List (Nat × Cfg.Fun
         FusedDone (tablesOf P pairs) function block after)) ∨
     Sem.Fails (Lir.semStep lp) {mem, ctx := context, stack := target :: callers} := by
   have lexical : EnvSub ρ source.env := by
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, sub, _⟩ := sourceState
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, sub, _⟩ := sourceState
     exact sub
   obtain ⟨fd, block, edges, fallback, edge, targetBlock, sourceLookup, blockLookup,
     finished, terminal, choice, noArgs, forward, targetLookup, noParams, enteredLayout⟩ :=

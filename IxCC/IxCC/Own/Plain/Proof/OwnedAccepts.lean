@@ -37,51 +37,64 @@ open IxCC.Fir (Var Arg)
 
 /-! ## The checker's steps, forwards -/
 
-theorem checkCode_inc_of {Δ : JCtx} {Γ Γ' : Ctx} {x : Var} {k : Code} (h : Γ.inc x 1 = .ok Γ')
-    (hc : checkCode Δ Γ' k = .ok ()) : checkCode Δ Γ (.act (.inc x 1) k) = .ok () := by
-  show (Γ.inc x 1 >>= fun Γ' => checkCode Δ Γ' k) = .ok ()
+theorem checkCode_inc_of {Δ : JCtx} {Γ Γ' : Ctx} {x : Var} {k : Code}
+    {ctors : List Lam.CtorInfo} {known : Lam.Known} (h : Γ.inc x 1 = .ok Γ')
+    (hc : checkCode Δ Γ' k .leaf .leaf false ctors known = .ok ()) :
+    checkCode Δ Γ (.act (.inc x 1) k) .leaf .leaf false ctors known = .ok () := by
+  show (Γ.inc x 1 >>= fun Γ' => checkCode Δ Γ' k .leaf .leaf false ctors known) = .ok ()
   rw [h]
   exact hc
 
 theorem checkCode_bind_of {Δ : JCtx} {Γ Γ' : Ctx} {x : Var} {r : Fir.Rhs} {k : Code}
-    (hk : Γ.known x = false) (hb : bindCtx Γ x r = .ok Γ') (hc : checkCode Δ Γ' k = .ok ()) :
-    checkCode Δ Γ (.bind x r k) = .ok () := by
+    {ctors : List Lam.CtorInfo} {known : Lam.Known}
+    (hk : Γ.known x = false) (hb : bindCtx Γ x r .leaf .leaf ctors = .ok Γ')
+    (hc : checkCode Δ Γ' k .leaf .leaf false ctors known = .ok ()) :
+    checkCode Δ Γ (.bind x r k) .leaf .leaf false ctors known = .ok () := by
   simp only [checkCode, hk, Bool.false_eq_true, ↓reduceIte]
   rw [hb]
   exact hc
 
 theorem checkCode_jp_of {Δ : JCtx} {Γ : Ctx} {j : Fir.JoinId} {ps captured : List Var}
-    {rec : Bool} {body k : Code} (hn : nodupVars captured = true)
+    {rec : Bool} {body k : Code} {ctors : List Lam.CtorInfo} {known : Lam.Known}
+    (hn : nodupVars captured = true)
     (hc : Γ.needCaptured j captured = .ok ())
-    (hb : checkCode (if rec then Δ.insert j captured else Δ) (Γ.enter captured ps) body = .ok ())
-    (hk : checkCode (Δ.insert j captured) Γ k = .ok ()) :
-    checkCode Δ Γ (.jp j ps captured rec body k) = .ok () := by
+    (hb : checkCode (if rec then Δ.insert j captured else Δ) (Γ.enter captured ps) body
+      .leaf .leaf false ctors known = .ok ())
+    (hk : checkCode (Δ.insert j captured) Γ k .leaf .leaf false ctors known = .ok ()) :
+    checkCode Δ Γ (.jp j ps captured rec body k) .leaf .leaf false ctors known = .ok () := by
   simp only [checkCode, hn, ↓reduceIte, pure_bind]
   exact except_bind_of_ok hc (except_bind_of_ok hb hk)
 
 theorem checkCode_jmp_of {Δ : JCtx} {Γ Γ₁ Γ₂ : Ctx} {j : Fir.JoinId} {args : List Arg}
-    {captured : List Var} (hd : Δ.get? j = some captured) (h1 : Γ.takeArgs args = .ok Γ₁)
+    {captured : List Var} {ctors : List Lam.CtorInfo} {known : Lam.Known}
+    (hd : Δ.get? j = some captured) (h1 : Γ.takeArgs args = .ok Γ₁)
     (h2 : Γ₁.takeVars captured = .ok Γ₂) (h3 : Γ₂.closed s!"jump to j{j}" = .ok ()) :
-    checkCode Δ Γ (.jmp j args) = .ok () := by
+    checkCode Δ Γ (.jmp j args) .leaf .leaf false ctors known = .ok () := by
   simp only [checkCode, hd]
   exact except_bind_of_ok h1 (except_bind_of_ok h2 h3)
 
 theorem checkCode_case_of {Δ : JCtx} {Γ : Ctx} {x : Var} {alts : List Alt} {d : Option Code}
-    (h1 : Γ.need x "scrutinised" = .ok ()) (h2 : checkAlts Δ Γ alts = .ok ())
-    (h3 : checkOpt Δ Γ d = .ok ()) : checkCode Δ Γ (.case x alts d) = .ok () := by
+    {ctors : List Lam.CtorInfo} {known : Lam.Known}
+    (h1 : Γ.need x "scrutinised" = .ok ())
+    (h2 : checkAlts Δ Γ x alts .leaf .leaf false ctors known = .ok ())
+    (h3 : checkOpt Δ Γ d .leaf .leaf false ctors known = .ok ()) :
+    checkCode Δ Γ (.case x alts d) .leaf .leaf false ctors known = .ok () := by
   simp only [checkCode]
   exact except_bind_of_ok h1 (except_bind_of_ok h2 h3)
 
-theorem checkCode_ret_of {Δ : JCtx} {Γ Γ' : Ctx} {a : Arg} (h1 : Γ.takeArg a = .ok Γ')
-    (h2 : Γ'.closed "return" = .ok ()) : checkCode Δ Γ (.ret a) = .ok () := by
-  simp only [checkCode]
+theorem checkCode_ret_of {Δ : JCtx} {Γ Γ' : Ctx} {a : Arg}
+    {ctors : List Lam.CtorInfo} {known : Lam.Known} (h1 : Γ.takeArg a = .ok Γ')
+    (h2 : Γ'.closed "return" = .ok ()) :
+    checkCode Δ Γ (.ret a) .leaf .leaf false ctors known = .ok () := by
+  simp only [checkCode, Bool.false_eq_true, ↓reduceIte]
   exact except_bind_of_ok h1 h2
 
 theorem checkCode_tcall_of {Δ : JCtx} {Γ Γ' : Ctx} {f : Fir.FunId} {args : List Arg}
+    {ctors : List Lam.CtorInfo} {known : Lam.Known}
     (h1 : Γ.takeArgs args = .ok Γ') (h2 : Γ'.closed s!"tail call of f{f}" = .ok ()) :
-    checkCode Δ Γ (.tcall f args) = .ok () := by
-  simp only [checkCode, Src.NatMap.getD, Src.NatMap.get?, Option.getD_none]
-  rw [Ctx.takeOwnedArgs_nil]
+    checkCode Δ Γ (.tcall f args) .leaf .leaf false ctors known = .ok () := by
+  simp only [checkCode, Src.NatMap.getD, Src.NatMap.get?, Option.getD_none, Bool.false_and,
+    Bool.false_eq_true, ↓reduceIte, Ctx.takeOwnedUniqueArgs_nil_us, Ctx.takeOwnedArgs_nil]
   refine except_bind_of_ok h1 ?_
   have htb : Γ'.checkTailBorrowed [] args = .ok () := by
     cases args with
@@ -89,9 +102,11 @@ theorem checkCode_tcall_of {Δ : JCtx} {Γ Γ' : Ctx} {f : Fir.FunId} {args : Li
     | cons a _ => cases a <;> rfl
   exact except_bind_of_ok htb h2
 
-theorem checkAlts_cons_of {Δ : JCtx} {Γ : Ctx} {key : Key.CtorKey} {body : Code} {rest : List Alt}
-    (h1 : checkCode Δ Γ body = .ok ()) (h2 : checkAlts Δ Γ rest = .ok ()) :
-    checkAlts Δ Γ (.mk key body :: rest) = .ok () := by
+theorem checkAlts_cons_of {Δ : JCtx} {Γ : Ctx} {x : Var} {key : Key.CtorKey} {body : Code}
+    {rest : List Alt} {ctors : List Lam.CtorInfo} {known : Lam.Known}
+    (h1 : checkCode Δ (Γ.setCtor x key) body .leaf .leaf false ctors known = .ok ())
+    (h2 : checkAlts Δ Γ x rest .leaf .leaf false ctors known = .ok ()) :
+    checkAlts Δ Γ x (.mk key body :: rest) .leaf .leaf false ctors known = .ok () := by
   simp only [checkAlts]
   exact except_bind_of_ok h1 h2
 
@@ -103,16 +118,17 @@ theorem takeArgs_single (Γ : Ctx) (a : Arg) : Γ.takeArgs [a] = Γ.takeArg a :=
 
 theorem Shape.congrI {Γ : Ctx} {I I' : Var → Bool} {t t' : Var → Nat} {P : Var → Prop}
     (h : Shape Γ I t P) (hi : ∀ x, I x = I' x) (ht : ∀ x, t x = t' x) : Shape Γ I' t' P :=
-  ⟨fun x => (h.imm x).trans (hi x), fun x => (h.tokens x).trans (ht x), h.brw, h.pbrw, h.toks,
-    fun x hx => (ht x).symm.trans (h.immZero x ((hi x).trans hx)), h.own⟩
+  ⟨fun x => (h.imm x).trans (hi x), fun x => (h.tokens x).trans (ht x), h.brw, h.pbrw, h.rset,
+    h.toks, fun x hx => (ht x).symm.trans (h.immZero x ((hi x).trans hx)), h.own⟩
 
 /-- A context with the same immediates, tokens and total, and nothing borrowed. -/
 theorem Shape.same {Γ Γ' : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var → Prop}
     (h : Shape Γ I t P) (hi : Γ'.imm = Γ.imm) (ho : Γ'.own = Γ.own) (ht : Γ'.total = Γ.total)
-    (hb : ∀ x, Γ'.brw.get? x = none) (hp : Γ'.pbrw = Γ.pbrw) : Shape Γ' I t P := by
+    (hb : ∀ x, Γ'.brw.get? x = none) (hp : Γ'.pbrw = Γ.pbrw) (hr : Γ'.rset = Γ.rset) :
+    Shape Γ' I t P := by
   obtain ⟨toks, htok⟩ := h.toks
-  refine ⟨fun x => ?_, fun x => ?_, hb, fun x => ?_, ⟨toks, htok.same ho ht⟩, h.immZero,
-    fun x hx => h.own x (by rw [← ho]; exact hx)⟩
+  refine ⟨fun x => ?_, fun x => ?_, hb, fun x => ?_, hr.trans h.rset, ⟨toks, htok.same ho ht⟩,
+    h.immZero, fun x hx => h.own x (by rw [← ho]; exact hx)⟩
   · rw [← h.imm x]; simp only [Ctx.isImm, hi]
   · rw [← h.tokens x]; simp only [Ctx.tokens, ho]
   · rw [← h.pbrw x]; simp only [Ctx.isPbrw, hp]
@@ -126,8 +142,8 @@ theorem shape_immArgs {P : Var → Prop} : ∀ (args : List Arg) {Γ : Ctx} {I :
     show Shape Γ _ _ P
     exact h.congrI (fun y => by simp [argVars]) (fun y => by simp [argVars])
   | .var x :: as, Γ, I, t, h => by
-    show Shape (Ctx.immArgs (Γ.setImm x) (List.replicate as.length true) as) _ _ P
-    refine (shape_immArgs as (shape_setImm h x)).congrI (fun y => ?_) (fun y => ?_)
+    show Shape (Ctx.immArgs (Γ.setImmUniq x) (List.replicate as.length true) as) _ _ P
+    refine (shape_immArgs as (shape_setImmUniq h x)).congrI (fun y => ?_) (fun y => ?_)
     · by_cases h1 : y ∈ argVars as <;> by_cases h2 : y = x <;> simp [argVars, h1, h2]
     · by_cases h1 : y ∈ argVars as <;> by_cases h2 : y = x <;> simp [argVars, h1, h2]
   | .lit _ :: as, Γ, I, t, h => by
@@ -230,7 +246,7 @@ theorem Canon.enter (h : Canon Γ Δ live joins imm arities) (j : Fir.JoinId) (p
       · exact Or.inr hp
   have hk : ((Γ.entered live ps).map (·, 1) |>.map (·.1)).Nodup := by
     rw [Ctx.map_fst_pairs]; exact hent
-  refine ⟨⟨fun x => rfl, fun x => ?_, fun x => rfl, fun x => h.shape.pbrw x,
+  refine ⟨⟨fun x => rfl, fun x => ?_, fun x => rfl, fun x => h.shape.pbrw x, rfl,
       ⟨_, Ctx.Tokens.enter Γ live ps hent⟩,
       fun x hx => ?_, fun x hx => ?_⟩, fun z hz => (by cases hz), fun z hz => ?_, fun j' => ?_,
       fun j' C hC => ?_, fun j' m hm => ?_, hn⟩
@@ -274,12 +290,13 @@ theorem Canon.enter (h : Canon Γ Δ live joins imm arities) (j : Fir.JoinId) (p
 counts come back to the canonical ones. -/
 theorem Canon.copiesTake (h : Canon Γ Δ live joins imm arities) (args : List Arg)
     (hargs : ∀ y, y ∈ argVars args → y ∈ live) {k : Code}
+    {ctors : List Lam.CtorInfo} {known : Lam.Known}
     (hk : ∀ Γ₁, (∃ t, Shape Γ₁ (fun z => Γ.isImm z) t (· ∈ live)) →
       (∃ Γ₂, Γ₁.takeArgs args = .ok Γ₂ ∧
         Shape Γ₂ (fun z => Γ.isImm z) (fun z => if z ∈ live ∧ Γ.isImm z = false then 1 else 0)
           (· ∈ live)) →
-      checkCode Δ Γ₁ k = .ok ()) :
-    checkCode Δ Γ (actionPrefix (copies (heapArgs imm args)) k) = .ok () := by
+      checkCode Δ Γ₁ k .leaf .leaf false ctors known = .ok ()) :
+    checkCode Δ Γ (actionPrefix (copies (heapArgs imm args)) k) .leaf .leaf false ctors known = .ok () := by
   rw [copies_eq]
   refine check_incs _ h.shape (fun y hy => ?_) (fun Γ₁ h₁ => ?_)
   · have hl : y ∈ live := hargs y (heapArgs_sub imm args y hy)
@@ -333,10 +350,11 @@ theorem rhsIn_args {live : List Var} {args : List Arg} {b : Bool}
   exact h.2
 
 mutual
-theorem lowerCode_checks (functions : Signatures) : ∀ (c : Fir.Code) {Γ : Ctx} {Δ : JCtx}
-    {live : List Var} {joins : Joins} {imm : List Var} {arities : JoinArities},
-    Canon Γ Δ live joins imm arities → scopeOk functions live arities c = true →
-    checkCode Δ Γ (lowerCode live joins c imm) = .ok ()
+theorem lowerCode_checks (functions : Signatures) {ctors : List Lam.CtorInfo} {known : Lam.Known} :
+    ∀ (c : Fir.Code) {Γ : Ctx} {Δ : JCtx}
+      {live : List Var} {joins : Joins} {imm : List Var} {arities : JoinArities},
+      Canon Γ Δ live joins imm arities → scopeOk functions live arities c = true →
+      checkCode Δ Γ (lowerCode live joins c imm) .leaf .leaf false ctors known = .ok ()
   | .bind x r k, Γ, Δ, live, joins, imm, arities, h, hs => by
     simp only [scopeOk, Bool.and_eq_true, Bool.not_eq_true'] at hs
     obtain ⟨⟨hx, hr⟩, hk⟩ := hs
@@ -355,35 +373,54 @@ theorem lowerCode_checks (functions : Signatures) : ∀ (c : Fir.Code) {Γ : Ctx
         have hy : Γ₁.take y = .ok Γ₂ := ht
         have hiy₁ : Γ₁.isImm y = Γ.isImm y := h₁.imm y
         cases hiy : Γ.isImm y
-        · have hb : bindCtx Γ₁ x (.arg (.var y)) = .ok (Γ₂.addOwn x 1) := by
-            simp only [bindCtx, hy, hiy₁, hiy, h₁.pbrw y, Bool.and_false, Bool.false_eq_true,
-              ↓reduceIte] <;> rfl
-          refine checkCode_bind_of hknown hb ?_
-          have hyi : imm.contains y = false := by simpa using h.notImmOfImm hiy
-          rw [show nextImm imm x (.arg (.var y)) = imm by
-            simp only [nextImm, isImmRhs, isImmArg, hyi, Bool.false_eq_true, ↓reduceIte]]
-          exact lowerCode_checks functions k (canon_bindOwn h hx' h₂ h.immIn imm h.immSub) hk
-        · have hb : bindCtx Γ₁ x (.arg (.var y)) = .ok (Γ₂.setImm x) := by
-            have hΓ : Γ₁ = Γ₂ := by simp [Ctx.take, hiy₁, hiy] at hy; exact hy
-            subst hΓ
-            simp [bindCtx, hiy₁, hiy]
-          refine checkCode_bind_of hknown hb ?_
-          exact lowerCode_checks functions k
-            (canon_bindImm h hx' h₂ h.immIn _ (h.nextImmOf x _ rfl)) hk
+        · cases hwu : (Γ₁.isUniq y && Γ₁.tokens y == 1) with
+          | true =>
+            have hb : bindCtx Γ₁ x (.arg (.var y)) .leaf .leaf ctors = .ok (Γ₂.addUniqOwn x) := by
+              simp only [bindCtx, hy, hiy₁, hiy, h₁.pbrw y, hwu, Bool.and_false,
+                Bool.false_eq_true, ↓reduceIte] <;> rfl
+            refine checkCode_bind_of hknown hb ?_
+            have hyi : imm.contains y = false := by simpa using h.notImmOfImm hiy
+            rw [show nextImm imm x (.arg (.var y)) = imm by
+              simp only [nextImm, isImmRhs, isImmArg, hyi, Bool.false_eq_true, ↓reduceIte]]
+            exact lowerCode_checks functions k (canon_bindUniqOwn h hx' h₂ h.immIn imm h.immSub) hk
+          | false =>
+            have hb : bindCtx Γ₁ x (.arg (.var y)) .leaf .leaf ctors = .ok (Γ₂.addOwn x 1) := by
+              simp only [bindCtx, hy, hiy₁, hiy, h₁.pbrw y, hwu, Bool.and_false,
+                Bool.false_eq_true, ↓reduceIte] <;> rfl
+            refine checkCode_bind_of hknown hb ?_
+            have hyi : imm.contains y = false := by simpa using h.notImmOfImm hiy
+            rw [show nextImm imm x (.arg (.var y)) = imm by
+              simp only [nextImm, isImmRhs, isImmArg, hyi, Bool.false_eq_true, ↓reduceIte]]
+            exact lowerCode_checks functions k (canon_bindOwn h hx' h₂ h.immIn imm h.immSub) hk
+        · have hΓ : Γ₁ = Γ₂ := by simp [Ctx.take, hiy₁, hiy] at hy; exact hy
+          subst hΓ
+          cases huy : Γ₁.isUniq y with
+          | true =>
+            have hb : bindCtx Γ₁ x (.arg (.var y)) .leaf .leaf ctors = .ok (Γ₁.setImmUniq x) := by
+              simp [bindCtx, hiy₁, hiy, huy]
+            refine checkCode_bind_of hknown hb ?_
+            exact lowerCode_checks functions k
+              (canon_bindImmUniq h hx' h₂ h.immIn _ (h.nextImmOf x _ rfl)) hk
+          | false =>
+            have hb : bindCtx Γ₁ x (.arg (.var y)) .leaf .leaf ctors = .ok (Γ₁.setImm x) := by
+              simp [bindCtx, hiy₁, hiy, huy]
+            refine checkCode_bind_of hknown hb ?_
+            exact lowerCode_checks functions k
+              (canon_bindImm h hx' h₂ h.immIn _ (h.nextImmOf x _ rfl)) hk
       | lit l =>
-        have hb : bindCtx Γ₁ x (.arg (.lit l)) = .ok (Γ₂.setImm x) := by
+        have hb : bindCtx Γ₁ x (.arg (.lit l)) .leaf .leaf ctors = .ok (Γ₂.setImmUniq x) := by
           have hΓ : Γ₁ = Γ₂ := Except.ok.inj (ht : Except.ok Γ₁ = Except.ok Γ₂)
           rw [← hΓ]; rfl
         refine checkCode_bind_of hknown hb ?_
         exact lowerCode_checks functions k
-          (canon_bindImm h hx' h₂ h.immIn _ (h.nextImmOf x _ rfl)) hk
+          (canon_bindImmUniq h hx' h₂ h.immIn _ (h.nextImmOf x _ rfl)) hk
       | erased =>
-        have hb : bindCtx Γ₁ x (.arg .erased) = .ok (Γ₂.setImm x) := by
+        have hb : bindCtx Γ₁ x (.arg .erased) .leaf .leaf ctors = .ok (Γ₂.setImmUniq x) := by
           have hΓ : Γ₁ = Γ₂ := Except.ok.inj (ht : Except.ok Γ₁ = Except.ok Γ₂)
           rw [← hΓ]; rfl
         refine checkCode_bind_of hknown hb ?_
         exact lowerCode_checks functions k
-          (canon_bindImm h hx' h₂ h.immIn _ (h.nextImmOf x _ rfl)) hk
+          (canon_bindImmUniq h hx' h₂ h.immIn _ (h.nextImmOf x _ rfl)) hk
     | ctor c args =>
       obtain ⟨hlen, hall⟩ := rhsIn_ctor hr
       have hargs : ∀ y, y ∈ argVars args → y ∈ live := argVars_sub_live hall
@@ -392,36 +429,48 @@ theorem lowerCode_checks (functions : Signatures) : ∀ (c : Fir.Code) {Γ : Ctx
       rintro Γ₁ ⟨t₁, h₁⟩ ⟨Γ₂, ht, h₂⟩
       have hknown := shape_unknown h₁ hx' hxi
       cases hc : c.arity == 0
-      · have hb : bindCtx Γ₁ x (.ctor c args) = .ok (Γ₂.addOwn x 1) := by
+      · have hb : bindCtx Γ₁ x (.ctor c args) .leaf .leaf ctors = .ok (Γ₂.addUniqOwn x) := by
           simp only [bindCtx, hc, Bool.false_eq_true, ↓reduceIte, ht] <;> rfl
         refine checkCode_bind_of hknown hb ?_
         rw [show nextImm imm x (.ctor c args) = imm by simp [nextImm, isImmRhs, hc]]
-        exact lowerCode_checks functions k (canon_bindOwn h hx' h₂ h.immIn imm h.immSub) hk
+        exact lowerCode_checks functions k (canon_bindUniqOwn h hx' h₂ h.immIn imm h.immSub) hk
       · have hnil : args = [] := by
           rw [beq_iff_eq] at hc
           rw [hc] at hlen
           exact List.eq_nil_of_length_eq_zero hlen
         subst hnil
         have hΓ : Γ₁ = Γ₂ := Except.ok.inj (ht : Except.ok Γ₁ = Except.ok Γ₂)
-        have hb : bindCtx Γ₁ x (.ctor c []) = .ok (Γ₂.setImm x) := by
-          rw [← hΓ]; simp only [bindCtx, hc, ↓reduceIte]
-        refine checkCode_bind_of hknown hb ?_
-        exact lowerCode_checks functions k
-          (canon_bindImm h hx' h₂ h.immIn _ (h.nextImmOf x _ rfl)) hk
+        cases hcv : ctor0Valid ctors c with
+        | true =>
+          have hb : bindCtx Γ₁ x (.ctor c []) .leaf .leaf ctors = .ok (Γ₂.setImmUniq x) := by
+            rw [← hΓ]; simp only [bindCtx, hc, hcv, ↓reduceIte]
+          refine checkCode_bind_of hknown hb ?_
+          exact lowerCode_checks functions k
+            (canon_bindImmUniq h hx' h₂ h.immIn _ (h.nextImmOf x _ rfl)) hk
+        | false =>
+          have hb : bindCtx Γ₁ x (.ctor c []) .leaf .leaf ctors = .ok (Γ₂.setImm x) := by
+            rw [← hΓ]; simp only [bindCtx, hc, hcv, Bool.false_eq_true, ↓reduceIte]
+          refine checkCode_bind_of hknown hb ?_
+          exact lowerCode_checks functions k
+            (canon_bindImm h hx' h₂ h.immIn _ (h.nextImmOf x _ rfl)) hk
     | call f args =>
       have hargs : ∀ y, y ∈ argVars args → y ∈ live := argVars_sub_live (rhsIn_args hr)
       simp only [lowerCode]
       refine h.copiesTake args hargs ?_
       rintro Γ₁ ⟨t₁, h₁⟩ ⟨Γ₂, ht, h₂⟩
       have hknown := shape_unknown h₁ hx' hxi
-      have hb : bindCtx Γ₁ x (.call f args) = .ok (Γ₂.release.addOwn x 1) := by
+      have hb : bindCtx Γ₁ x (.call f args) .leaf .leaf ctors = .ok (Γ₂.release.addOwn x 1) := by
         simp only [bindCtx, Src.NatMap.getD, Src.NatMap.get?, Option.getD_none,
-          Ctx.takeOwnedArgs_nil, ht, bind, Except.bind]
+          Ctx.takeOwnedUniqueArgs_nil_us, Ctx.takeOwnedArgs_nil, ht, bind, Except.bind]
         have hcb : Γ₂.checkCallBorrowed [] args = .ok () := by
           cases args with
           | nil => rfl
           | cons a _ => cases a <;> rfl
-        simp [hcb, pure, Except.pure]
+        have hcl : Γ₂.clearBorrowedUniq [] args = Γ₂ := by
+          cases args with
+          | nil => rfl
+          | cons a _ => cases a <;> rfl
+        simp [hcb, hcl, pure, Except.pure]
       refine checkCode_bind_of hknown hb ?_
       rw [show nextImm imm x (.call f args) = imm by simp [nextImm, isImmRhs]]
       exact lowerCode_checks functions k
@@ -437,54 +486,59 @@ theorem lowerCode_checks (functions : Signatures) : ∀ (c : Fir.Code) {Γ : Ctx
           simp only [nextImm, isImmRhs, hc, Bool.false_eq_true, ↓reduceIte]]
         cases hiy : Γ.isImm y
         · -- borrowed, then the producer's increment makes it owned
-          have hb : bindCtx Γ x (.proj y c i) = .ok (Γ.setBorrow x) := by
+          have hb : bindCtx Γ x (.proj y c i) .leaf .leaf ctors =
+              .ok ((Γ.setBorrow x).setProj x y c i) := by
             simp only [bindCtx, hneed, hiy, h.shape.pbrw y, Bool.false_eq_true, ↓reduceIte] <;> rfl
           refine checkCode_bind_of hknown hb ?_
-          have hs₂ : Shape ({ Γ.setBorrow x with brw := (Γ.setBorrow x).brw.erase x } : Ctx)
+          let Γb := (Γ.setBorrow x).setProj x y c i
+          have hs₂ : Shape ({ Γb with brw := Γb.brw.erase x, uniq := Γb.uniq.erase x } : Ctx)
               (fun z => Γ.isImm z) (fun z => if z ∈ live ∧ Γ.isImm z = false then 1 else 0)
               (· ∈ live) := by
-            refine h.shape.same rfl rfl rfl (fun z => ?_) rfl
-            show ((Γ.setBorrow x).brw.erase x).get? z = none
-            rw [Src.NatMap.get?_erase, Ctx.brw_setBorrow]
+            refine h.shape.same rfl rfl rfl (fun z => ?_) rfl rfl
+            show (Γb.brw.erase x).get? z = none
+            rw [Src.NatMap.get?_erase, show Γb.brw = (Γ.setBorrow x).brw from rfl, Ctx.brw_setBorrow]
             by_cases hz : z = x
             · simp only [hz, ↓reduceIte]
             · simp only [hz, ↓reduceIte]; exact h.shape.brw z
           have htx : Γ.tokens x = 0 := by
             rw [h.shape.tokens x]; simp [hx']
-          have hbx : (Γ.setBorrow x).borrowed x = true := by
-            simp [Ctx.borrowed_eq, Ctx.brw_setBorrow]
-          have hinc : (Γ.setBorrow x).inc x 1 =
-              .ok (({ Γ.setBorrow x with brw := (Γ.setBorrow x).brw.erase x } : Ctx).addOwn x 1) := by
-            have hix : (Γ.setBorrow x).isImm x = false := by rw [Ctx.isImm_setBorrow]; exact hxi
-            have htx' : (Γ.setBorrow x).tokens x = 0 := by rw [Ctx.tokens_setBorrow]; exact htx
-            have hpx : (Γ.setBorrow x).isPbrw x = false := h.shape.pbrw x
+          have hbx : Γb.borrowed x = true := by
+            simp [Γb, Ctx.borrowed_eq, Ctx.brw_setBorrow]
+          have hinc : Γb.inc x 1 =
+              .ok (({ Γb with brw := Γb.brw.erase x, uniq := Γb.uniq.erase x } : Ctx).addOwn x 1) := by
+            have hix : Γb.isImm x = false := by simpa [Γb] using hxi
+            have htx' : Γb.tokens x = 0 := by simpa [Γb] using htx
+            have hpx : Γb.isPbrw x = false := h.shape.pbrw x
             simp only [Ctx.inc, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte, hix, htx',
               Nat.lt_irrefl, hpx, hbx]
           refine checkCode_inc_of hinc ?_
           exact lowerCode_checks functions k (canon_bindOwn h hx' hs₂ h.immIn imm h.immSub) hk
-        · have hb : bindCtx Γ x (.proj y c i) = .ok (Γ.setImm x) := by
+        · have hb : bindCtx Γ x (.proj y c i) .leaf .leaf ctors =
+              .ok ((Γ.setImmUniq x).setProj x y c i) := by
             simp only [bindCtx, hneed, hiy, ↓reduceIte] <;> rfl
           refine checkCode_bind_of hknown hb ?_
-          have hinc : (Γ.setImm x).inc x 1 = .ok (Γ.setImm x) := by
-            simp [Ctx.inc, Ctx.isImm_setImm]
+          have hinc : ((Γ.setImmUniq x).setProj x y c i).inc x 1 =
+              .ok ((Γ.setImmUniq x).setProj x y c i) := by
+            simp [Ctx.inc, Ctx.isImm_setImmUniq]
           refine checkCode_inc_of hinc ?_
           exact lowerCode_checks functions k
-            (canon_bindImm h hx' h.shape h.immIn imm (fun z hz => Or.inl (h.immSub z hz))) hk
+            ((canon_bindImmUniq h hx' h.shape h.immIn imm (fun z hz => Or.inl (h.immSub z hz))).setProj x y c i) hk
       · simp only [lowerCode, hc, ↓reduceIte]
         have hiy : Γ.isImm y = true := h.immSub y (by simpa using hc)
-        have hb : bindCtx Γ x (.proj y c i) = .ok (Γ.setImm x) := by
+        have hb : bindCtx Γ x (.proj y c i) .leaf .leaf ctors =
+            .ok ((Γ.setImmUniq x).setProj x y c i) := by
           simp only [bindCtx, hneed, hiy, ↓reduceIte] <;> rfl
         refine checkCode_bind_of hknown hb ?_
         exact lowerCode_checks functions k
-          (canon_bindImm h hx' h.shape h.immIn _ (h.nextImmOf x _ rfl)) hk
+          ((canon_bindImmUniq h hx' h.shape h.immIn _ (h.nextImmOf x _ rfl)).setProj x y c i) hk
     | prim op args =>
       have hall := rhsIn_args hr
       have hargs : ∀ y, y ∈ argVars args → y ∈ live := argVars_sub_live hall
       have hknown := shape_unknown h.shape hx' hxi
       have hneed : Γ.needArgs args = .ok () :=
         needArgs_ok (fun z hz => h.avail (all_argIn_var hall z hz))
-      have hb : bindCtx Γ x (.prim op args) =
-          .ok ((Ctx.immArgs Γ (List.replicate args.length true) args).setImm x) := by
+      have hb : bindCtx Γ x (.prim op args) .leaf .leaf ctors =
+          .ok ((Ctx.immArgs Γ (List.replicate args.length true) args).setImmUniq x) := by
         simp only [bindCtx, hneed, primImmArgs_eq] <;> rfl
       simp only [lowerCode]
       refine checkCode_bind_of hknown hb ?_
@@ -502,7 +556,7 @@ theorem lowerCode_checks (functions : Signatures) : ∀ (c : Fir.Code) {Γ : Ctx
         rcases hz with hz | hz
         · exact hargs z hz
         · exact h.immIn z hz
-      refine lowerCode_checks functions k (canon_bindImm h hx' hs₂' hI _ (fun z hz => ?_)) hk
+      refine lowerCode_checks functions k (canon_bindImmUniq h hx' hs₂' hI _ (fun z hz => ?_)) hk
       simp only [nextImm, List.mem_append, List.mem_singleton] at hz
       rcases hz with (hz | hz) | hz
       · left; simp [h.immSub z hz]
@@ -551,7 +605,7 @@ theorem lowerCode_checks (functions : Signatures) : ∀ (c : Fir.Code) {Γ : Ctx
     obtain ⟨⟨hx, ha⟩, hd⟩ := hs
     simp only [lowerCode]
     exact checkCode_case_of (need_ok (h.avail (by simpa using hx)) _)
-      (lowerAlts_checks functions alts h ha) (lowerOpt_checks functions d h hd)
+      (lowerAlts_checks functions x alts h ha) (lowerOpt_checks functions d h hd)
   | .ret a, Γ, Δ, live, joins, imm, arities, h, hs => by
     simp only [scopeOk] at hs
     simp only [lowerCode]
@@ -589,21 +643,23 @@ theorem lowerCode_checks (functions : Signatures) : ∀ (c : Fir.Code) {Γ : Ctx
     exact canonical_transfer h [] (List.nil_sublist _) [] (fun _ hy => by simp [argVars] at hy) _
       (fun _ _ _ _ => by simp only [checkCode])
 
-theorem lowerAlts_checks (functions : Signatures) : ∀ (alts : List Fir.Alt) {Γ : Ctx} {Δ : JCtx}
-    {live : List Var} {joins : Joins} {imm : List Var} {arities : JoinArities},
-    Canon Γ Δ live joins imm arities → scopeAlts functions live arities alts = true →
-    checkAlts Δ Γ (lowerAlts live joins alts imm) = .ok ()
+theorem lowerAlts_checks (functions : Signatures) {ctors : List Lam.CtorInfo} {known : Lam.Known}
+    (x : Var) : ∀ (alts : List Fir.Alt) {Γ : Ctx} {Δ : JCtx}
+      {live : List Var} {joins : Joins} {imm : List Var} {arities : JoinArities},
+      Canon Γ Δ live joins imm arities → scopeAlts functions live arities alts = true →
+      checkAlts Δ Γ x (lowerAlts live joins alts imm) .leaf .leaf false ctors known = .ok ()
   | [], _, _, _, _, _, _, _, _ => by simp only [lowerAlts, checkAlts]
   | .mk key body :: rest, Γ, Δ, live, joins, imm, arities, h, hs => by
     simp only [scopeAlts, Bool.and_eq_true] at hs
     simp only [lowerAlts]
-    exact checkAlts_cons_of (lowerCode_checks functions body h hs.1)
-      (lowerAlts_checks functions rest h hs.2)
+    exact checkAlts_cons_of (lowerCode_checks functions body (h.setCtor x key) hs.1)
+      (lowerAlts_checks functions x rest h hs.2)
 
-theorem lowerOpt_checks (functions : Signatures) : ∀ (d : Option Fir.Code) {Γ : Ctx} {Δ : JCtx}
-    {live : List Var} {joins : Joins} {imm : List Var} {arities : JoinArities},
-    Canon Γ Δ live joins imm arities → scopeOpt functions live arities d = true →
-    checkOpt Δ Γ (lowerOpt live joins d imm) = .ok ()
+theorem lowerOpt_checks (functions : Signatures) {ctors : List Lam.CtorInfo} {known : Lam.Known} :
+    ∀ (d : Option Fir.Code) {Γ : Ctx} {Δ : JCtx}
+      {live : List Var} {joins : Joins} {imm : List Var} {arities : JoinArities},
+      Canon Γ Δ live joins imm arities → scopeOpt functions live arities d = true →
+      checkOpt Δ Γ (lowerOpt live joins d imm) .leaf .leaf false ctors known = .ok ()
   | none, _, _, _, _, _, _, _, _ => by simp only [lowerOpt, checkOpt]
   | some c, Γ, Δ, live, joins, imm, arities, h, hs => by
     simp only [scopeOpt] at hs
@@ -618,7 +674,7 @@ theorem isImm_entry (params : List Var) (x : Var) : (Ctx.entry params).isImm x =
 theorem canon_entry (params : List Var) (hn : params.Nodup) :
     Canon (Ctx.entry params) .leaf params [] [] [] := by
   have hk : ((params.map (·, 1)).map (·.1)).Nodup := by rw [Ctx.map_fst_pairs]; exact hn
-  refine ⟨⟨fun x => rfl, fun x => ?_, fun x => rfl, fun _ => rfl, ⟨_, Ctx.Tokens.entry params hn⟩,
+  refine ⟨⟨fun x => rfl, fun x => ?_, fun x => rfl, fun _ => rfl, rfl, ⟨_, Ctx.Tokens.entry params hn⟩,
       fun x hx => ?_, fun x hx => ?_⟩, fun z hz => (by cases hz), fun z hz => ?_,
       fun j => rfl, fun j C hC => (by cases hC), fun j m hm => (by cases hm), hn⟩
   · rw [show (Ctx.entry params).tokens x = if x ∈ params then 1 else 0 from Ctx.tokens_ofList hn x,
@@ -640,6 +696,9 @@ mutual
 theorem erases_self : ∀ c : Code, erases c (eraseCode c) = true
   | .act _ k => by simp only [eraseCode, erases]; exact erases_self k
   | .bind x r k => by simp [eraseCode, erases, erases_self k]
+  | .reset _ _ _ _ _ k => by simp only [eraseCode, erases]; exact erases_self k
+  | .reuse x _ c args _ k => by simp [eraseCode, erases, erases_self k]
+  | .dropSlot _ k => by simp only [eraseCode, erases]; exact erases_self k
   | .jp j ps _ rec b k => by simp [eraseCode, erases, erases_self b, erases_self k]
   | .jmp j args => by simp [eraseCode, erases]
   | .case x alts d => by simp [eraseCode, erases, erasesAlts_self alts, erasesOpt_self d]
@@ -654,9 +713,10 @@ theorem erasesOpt_self : ∀ d : Option Code, erasesOpt d (eraseOpt d) = true
   | some c => by simp only [eraseOpt, erasesOpt]; exact erases_self c
 end
 
-theorem checkBodyE_of {fd : Fir.Fun} {body : Code} (he : erases body fd.body = true)
-    (hc : checkCode .leaf (Ctx.entry (fd.params.map (·.1))) body = .ok ()) :
-    checkBodyE fd body = .ok () := by
+theorem checkBodyE_of {fd : Fir.Fun} {body : Code} {ctors : List Lam.CtorInfo} {known : Lam.Known}
+    (he : erases body fd.body = true)
+    (hc : checkCode .leaf (Ctx.entry (fd.params.map (·.1))) body .leaf .leaf false ctors known = .ok ()) :
+    checkBodyE fd body .leaf [] .leaf ([], false) ctors known = .ok () := by
   unfold checkBodyE
   simp only [he, ↓reduceIte, pure_bind]
   rw [Ctx.entryWith_all_false _ [] rfl]
@@ -664,7 +724,8 @@ theorem checkBodyE_of {fd : Fir.Fun} {body : Code} (he : erases body fd.body = t
 
 theorem checkFuns_of {F : Fir.Program} {candidate : Src.NatMap Code} :
     ∀ (fs : List Fir.FunId), (∀ f, f ∈ fs → ∃ fd body, F.fun? f = some fd ∧
-      candidate.get? f = some body ∧ checkBodyE fd body = .ok ()) →
+      candidate.get? f = some body ∧
+      checkBodyE fd body .leaf [] .leaf ([], false) F.ctors F.known = .ok ()) →
       checkFuns F candidate fs = .ok ()
   | [], _ => rfl
   | f :: fs, h => by
@@ -712,8 +773,8 @@ theorem checkPlainMap_checkOwned {F : Fir.Program} {candidate : Src.NatMap Code}
     (h : checkPlainMap F candidate = true) : checkOwned F candidate = true := by
   obtain ⟨domain, pins, bound⟩ := checkPlainMap_parts h
   have hc : candidate = (Program.canonical F).bodies := congrArg Program.bodies bound
-  simp only [checkOwned, Bool.and_eq_true, domain, pins, borrowsValid_leaf, true_and, hc,
-    canonical_checkMapE (programDomain_implies_contractProgramDomain domain)]
+  simp only [checkOwned, Bool.and_eq_true, domain, pins, borrowsValid_leaf, uniqsValid_leaf,
+    true_and, hc, canonical_checkMapE (programDomain_implies_contractProgramDomain domain)]
   rfl
 
 /-- **The canonical map is accepted, contract domain** (`checkContractPlainMap` →
@@ -722,8 +783,8 @@ theorem checkContractPlainMap_checkContractOwned {F : Fir.Program} {candidate : 
     (h : checkContractPlainMap F candidate = true) : checkContractOwned F candidate = true := by
   obtain ⟨domain, pins, bound⟩ := checkContractPlainMap_parts h
   have hc : candidate = (Program.canonical F).bodies := congrArg Program.bodies bound
-  simp only [checkContractOwned, Bool.and_eq_true, domain, pins, borrowsValid_leaf, true_and, hc,
-    canonical_checkMapE domain]
+  simp only [checkContractOwned, Bool.and_eq_true, domain, pins, borrowsValid_leaf, uniqsValid_leaf,
+    true_and, hc, canonical_checkMapE domain]
   rfl
 
 /-! ## The landed statements, re-derived from the ownership checker's theorems -/

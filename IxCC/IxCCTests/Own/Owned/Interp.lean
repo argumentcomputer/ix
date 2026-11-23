@@ -98,15 +98,33 @@ def actionI (ρ : Env) (H : Heap) : Action → M Heap
     dropCounted H [v]
 
 mutual
-partial def evalI (P : Program) (budget : Nat) (ρ : Env) (J : List JEntry) (H : Heap) :
-    Code → M (RVal × Heap)
-  | .act a c => do tick budget; evalI P budget ρ J (← actionI ρ H a) c
+partial def evalI (P : Program) (budget : Nat) (ρ : Env) (J : List JEntry) (H : Heap)
+    (rslots : Src.NatMap RVal := .leaf) : Code → M (RVal × Heap)
+  | .act a c => do tick budget; evalI P budget ρ J (← actionI ρ H a) rslots c
+  | .reset s x ctor fields uniq c => do
+    tick budget
+    match evalResetMask ρ H x ctor (fieldsMask fields) uniq with
+    | .ok (sv, H') => evalI P budget ρ J H' (rslots.insert s sv) c
+    | .trap => throw "reset trap"
+    | _ => throw "reset stuck"
+  | .reuse x s ctor args uniq c => do
+    tick budget
+    let some sv := rslots.get? s | throw s!"reuse of unbound slot {s}"
+    match evalReuseVal ρ H sv ctor args uniq with
+    | .ok (v, H') => evalI P budget (ρ.insert x v) J H' (rslots.erase s) c
+    | .trap => throw "reuse trap"
+    | _ => throw "reuse stuck"
+  | .dropSlot s c => do
+    tick budget
+    let some sv := rslots.get? s | throw s!"dropSlot of unbound slot {s}"
+    let H' ← dropCounted H [sv]
+    evalI P budget ρ J H' (rslots.erase s) c
   | .bind x (.call f args) c => do
     tick budget
     event 12 x
     let some vs := Own.evalArgs ρ args | throw "call arguments"
     let (v, H') ← callI P budget f vs H
-    evalI P budget (ρ.insert x v) J H' c
+    evalI P budget (ρ.insert x v) J H' rslots c
   | .bind x r c => do
     tick budget
     event 12 x
@@ -117,27 +135,27 @@ partial def evalI (P : Program) (budget : Nat) (ρ : Env) (J : List JEntry) (H :
         heapEvent 5 (.loc before)
         modify fun s => let live := s.live + 1
           { s with allocs := s.allocs + 1, live, peak := max s.peak live }
-      evalI P budget (ρ.insert x v) J H' c
+      evalI P budget (ρ.insert x v) J H' rslots c
     | .trap => throw "trap"
     | _ => throw "rhs stuck"
   | .jp j ps _ rec body c => do
     tick budget
-    evalI P budget ρ ({ id := j, charged := false, env := ρ, params := ps, body, isRec := rec } :: J) H c
+    evalI P budget ρ ({ id := j, charged := false, env := ρ, params := ps, body, isRec := rec } :: J) H rslots c
   | .jmp j args => do
     tick budget
     event 14 j
     let some (e, rest) := lookupJ j J | throw "jump target"
     let some vs := Own.evalArgs ρ args | throw "jump arguments"
-    evalI P budget (Own.bindAll e.env e.params vs) (e.after rest) H e.body
+    evalI P budget (Own.bindAll e.env e.params vs) (e.after rest) H rslots e.body
   | .case x alts d => do
     tick budget
     event 15 x
     let some v := ρ.get? x | throw "case of unbound"
     let some (key, _) := v.asCtor P.source.known H | throw "case stuck"
     match alts.find? (fun (.mk k _) => k == key) with
-    | some (.mk _ b) => evalI P budget ρ J H b
+    | some (.mk _ b) => evalI P budget ρ J H rslots b
     | none => match d with
-      | some b => evalI P budget ρ J H b
+      | some b => evalI P budget ρ J H rslots b
       | none => throw "no alternative"
   | .ret a => do
     tick budget
@@ -156,7 +174,7 @@ partial def callI (P : Program) (budget : Nat) (f : FunId) (vs : List RVal) (H :
   modify fun c => { c with calls := c.calls + 1, hits := c.hits + (if f == c.watch then 1 else 0) }
   event 18 f
   match P.source.fun? f, P.bodies.get? f with
-  | some fd, some body => evalI P budget (Own.bindAll .leaf (fd.params.map (·.1)) vs) [] H body
+  | some fd, some body => evalI P budget (Own.bindAll .leaf (fd.params.map (·.1)) vs) [] H .leaf body
   | _, _ => throw s!"call of f{f}"
 end
 

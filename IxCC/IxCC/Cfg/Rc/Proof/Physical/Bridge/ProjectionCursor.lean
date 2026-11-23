@@ -99,7 +99,7 @@ theorem projection_frame {P : Cfg.Rc.Program} {pairs : List (Nat × Cfg.Fun)} {l
     Sem.Fails (Lir.semStep lp) {mem, ctx := context, stack := target :: callers} := by
   obtain ⟨actual, rest, accepted, remaining, position⟩ := before.cursor.next head
   have same : actual = .bind x (.proj y key i) := by
-    simpa [consume, Cfg.Rc.reserved, pure, Except.pure] using accepted.symm
+    simpa [consume, Cfg.Rc.reserved, Cfg.Rc.isReuseOp, pure, Except.pure] using accepted.symm
   subst actual
   have initial : ({mem, ctx := context, stack := target :: callers} : Lir.State) =
       Lir.atState mem context target.fn target.label target.pos target.env callers := state_eq rfl running

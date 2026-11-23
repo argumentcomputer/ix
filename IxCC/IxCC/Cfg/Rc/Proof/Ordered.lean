@@ -5,7 +5,8 @@ set_option autoImplicit false
 namespace IxCC.Cfg.Rc
 
 theorem checked_dense {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    {borrows : Own.Plain.BorrowSigs} (checked : checkProgram F bodies P borrows = true)
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (checked : checkProgram F bodies P borrows uniqs = true)
     {f : Nat} {fd : Cfg.Fun} (lookup : P.base.fun? f = some fd) : f < P.base.size := by
   have size := generate_size (checkProgram_parts checked).2
   by_cases h : f < P.base.size
@@ -31,7 +32,8 @@ theorem function_forward (f : Nat) (fd : Own.Fun) {b : Nat} {block : Block} {edg
   exact (Cfg.Proof.lower_ordered singleton).forward found lookup member forward
 
 theorem checked_ordered {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    {borrows : Own.Plain.BorrowSigs} (checked : checkProgram F bodies P borrows = true) :
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (checked : checkProgram F bodies P borrows uniqs = true) :
     Cfg.Ordered P.base where
   dense := checked_dense checked
   forward := by
@@ -41,7 +43,7 @@ theorem checked_ordered {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {
     obtain ⟨actual, table, actualLookup, tableLookup, source, body, sourceLookup, bodyLookup,
       lowering, bounds, collected⟩ := checked_entry checked bound
     have same : actual = fd := Option.some.inj (actualLookup.symm.trans lookup)
-    have exactLower : fd = lowerFunction F.size f source body := same.symm.trans lowering
+    have exactLower : fd = lowerFunction F.size f source body F.ctors := same.symm.trans lowering
     rw [exactLower] at blockLookup
     exact function_forward f _ blockLookup member forward
 

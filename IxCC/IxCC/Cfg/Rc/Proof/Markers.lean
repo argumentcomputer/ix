@@ -11,6 +11,43 @@ theorem decode_marker (limit slot : Nat) (a : Action) : decode limit (marker lim
 theorem reserved_marker (limit slot : Nat) (a : Action) : reserved limit (marker limit slot a) = true := by
   cases a <;> simp [reserved, marker]
 
+theorem isReuseOp_marker (limit slot : Nat) (a : Action) : isReuseOp limit (marker limit slot a) = false := by
+  cases a <;> simp [isReuseOp, marker] <;> omega
+
+theorem reserved_resetMarker (limit slotReg x ctorIdx mask : Nat) (uniq : Bool) :
+    reserved limit (resetMarker limit slotReg x ctorIdx mask uniq) = false := by
+  simp [reserved, resetMarker]
+
+theorem reserved_reuseMarker (limit dst slotReg ctorIdx : Nat) (uniq : Bool) (args : List Fir.Arg) :
+    reserved limit (reuseMarker limit dst slotReg ctorIdx uniq args) = false := by
+  simp [reserved, reuseMarker]
+
+theorem isReuseOp_resetMarker (limit slotReg x ctorIdx mask : Nat) (uniq : Bool) :
+    isReuseOp limit (resetMarker limit slotReg x ctorIdx mask uniq) = true := by
+  simp [isReuseOp, resetMarker]
+
+theorem isReuseOp_reuseMarker (limit dst slotReg ctorIdx : Nat) (uniq : Bool) (args : List Fir.Arg) :
+    isReuseOp limit (reuseMarker limit dst slotReg ctorIdx uniq args) = true := by
+  simp [isReuseOp, reuseMarker]
+
+theorem decodeReset_resetMarker (limit slotReg x ctorIdx mask : Nat) (uniq : Bool) :
+    decodeReset limit (resetMarker limit slotReg x ctorIdx mask uniq) =
+      some (slotReg, x, ctorIdx, mask, uniq) := by
+  cases uniq <;> simp [decodeReset, resetMarker]
+
+theorem decodeReuse_resetMarker (limit slotReg x ctorIdx mask : Nat) (uniq : Bool) :
+    decodeReuse limit (resetMarker limit slotReg x ctorIdx mask uniq) = none := by
+  simp [decodeReuse, resetMarker]
+
+theorem decodeReset_reuseMarker (limit dst slotReg ctorIdx : Nat) (uniq : Bool) (args : List Fir.Arg) :
+    decodeReset limit (reuseMarker limit dst slotReg ctorIdx uniq args) = none := by
+  simp [decodeReset, reuseMarker]
+
+theorem decodeReuse_reuseMarker (limit dst slotReg ctorIdx : Nat) (uniq : Bool) (args : List Fir.Arg) :
+    decodeReuse limit (reuseMarker limit dst slotReg ctorIdx uniq args) =
+      some (dst, slotReg, ctorIdx, uniq, args) := by
+  cases uniq <;> simp [decodeReuse, reuseMarker]
+
 theorem tableEq_iff (a b : ActionTable) : tableEq a b = true ↔ a = b := by
   induction a generalizing b with
   | leaf => cases b <;> simp [tableEq]

@@ -148,9 +148,9 @@ private theorem jump_measure_norm {j : Fir.JoinId} {J : List JEntry} {e : JEntry
 section
 set_option linter.unusedSectionVars false
 variable (F : Fir.Program) (bodies : Src.NatMap Code) {k : Nat}
-  (ih : ∀ j < k, ∀ ρ J H c,
-    eval { source := normalizeProgramContracts F, bodies } j ρ J H c =
-      eval { source := F, bodies } j ρ J H c)
+  (ih : ∀ j < k, ∀ ρ J H c slots,
+    eval { source := normalizeProgramContracts F, bodies } j ρ J H c slots =
+      eval { source := F, bodies } j ρ J H c slots)
 include ih
 
 theorem callFun_normalizeProgramContracts_of (fd : Fir.Fun) (body : Code)
@@ -162,7 +162,7 @@ theorem callFun_normalizeProgramContracts_of (fd : Fir.Fun) (body : Code)
   split
   · cases k with
     | zero => rfl
-    | succ j => exact ih j (Nat.lt_succ_self j) _ [] H body
+    | succ j => exact ih j (Nat.lt_succ_self j) _ [] H body .leaf
   · rfl
 
 theorem evalCall_normalizeProgramContracts_of (f : Fir.FunId) (vs : List RVal) (H : Heap) :
@@ -182,14 +182,15 @@ theorem evalCall_normalizeProgramContracts_of (f : Fir.FunId) (vs : List RVal) (
       exact callFun_normalizeProgramContracts_of F bodies ih fd body vs H
 
 mutual
-theorem eval_normalizeProgramContracts_of (ρ : Own.Env) (J : List JEntry) (H : Heap) (c : Code) :
-    eval { source := normalizeProgramContracts F, bodies } k ρ J H c =
-      eval { source := F, bodies } k ρ J H c := by
+theorem eval_normalizeProgramContracts_of (ρ : Own.Env) (J : List JEntry) (H : Heap)
+    (c : Code) (slots : Src.NatMap Own.RVal) :
+    eval { source := normalizeProgramContracts F, bodies } k ρ J H c slots =
+      eval { source := F, bodies } k ρ J H c slots := by
   match c with
   | .act a c' =>
     rw [eval_act, eval_act]
     cases evalAction ρ H a with
-    | ok H' => exact eval_normalizeProgramContracts_of ρ J H' c'
+    | ok H' => exact eval_normalizeProgramContracts_of ρ J H' c' slots
     | timeout | resource _ | trap | stuck => rfl
   | .bind x r c' =>
     by_cases hr : ∃ f args, r = .call f args
@@ -201,7 +202,7 @@ theorem eval_normalizeProgramContracts_of (ρ : Own.Env) (J : List JEntry) (H : 
         simp only [Sem.Result.ofOption, Sem.Result.bind_ok,
           evalCall_normalizeProgramContracts_of F bodies ih f vs H]
         cases evalCall { source := F, bodies } k f vs H with
-        | ok p => exact eval_normalizeProgramContracts_of (ρ.insert x p.1) J p.2 c'
+        | ok p => exact eval_normalizeProgramContracts_of (ρ.insert x p.1) J p.2 c' slots
         | timeout | resource _ | trap | stuck => rfl
     · have hr' : ∀ f args, r ≠ .call f args := fun f args h => hr ⟨f, args, h⟩
       rw [eval_bindRhs _ _ _ _ _ _ _ _ hr', eval_bindRhs _ _ _ _ _ _ _ _ hr']
@@ -209,11 +210,34 @@ theorem eval_normalizeProgramContracts_of (ρ : Own.Env) (J : List JEntry) (H : 
           ({ source := F, bodies } : Program).tables := rfl
       rw [htables]
       cases evalRhs ({ source := F, bodies } : Program).tables ρ H r with
-      | ok p => exact eval_normalizeProgramContracts_of (ρ.insert x p.1) J p.2 c'
+      | ok p => exact eval_normalizeProgramContracts_of (ρ.insert x p.1) J p.2 c' slots
+      | timeout | resource _ | trap | stuck => rfl
+  | .reset s x ctor fields uniq c' =>
+    rw [eval_reset, eval_reset]
+    cases evalResetMask ρ H x ctor (fieldsMask fields) uniq with
+    | ok p => exact eval_normalizeProgramContracts_of ρ J p.2 c' (slots.insert s p.1)
+    | timeout | resource _ | trap | stuck => rfl
+  | .reuse x s ctor args uniq c' =>
+    rw [eval_reuse, eval_reuse]
+    cases slots.get? s with
+    | none => rfl
+    | some sv =>
+      simp only [Sem.Result.ofOption, Sem.Result.bind_ok]
+      cases evalReuseVal ρ H sv ctor args uniq with
+      | ok p => exact eval_normalizeProgramContracts_of (ρ.insert x p.1) J p.2 c' (slots.erase s)
+      | timeout | resource _ | trap | stuck => rfl
+  | .dropSlot s c' =>
+    rw [eval_dropSlot, eval_dropSlot]
+    cases slots.get? s with
+    | none => rfl
+    | some sv =>
+      simp only [Sem.Result.ofOption, Sem.Result.bind_ok]
+      cases evalDropVal H sv with
+      | ok H' => exact eval_normalizeProgramContracts_of ρ J H' c' (slots.erase s)
       | timeout | resource _ | trap | stuck => rfl
   | .jp j ps captured rec body c' =>
     rw [eval_jp, eval_jp]
-    exact eval_normalizeProgramContracts_of ρ _ H c'
+    exact eval_normalizeProgramContracts_of ρ _ H c' slots
   | .jmp j args =>
     rw [eval_jmp, eval_jmp]
     cases hp : lookupJ j J with
@@ -229,10 +253,10 @@ theorem eval_normalizeProgramContracts_of (ρ : Own.Env) (J : List JEntry) (H : 
         · split
           · cases k with
             | zero => rfl
-            | succ i => exact ih i (Nat.lt_succ_self i) _ _ H e.body
+            | succ i => exact ih i (Nat.lt_succ_self i) _ _ H e.body .leaf
           · next hc =>
             have := jump_measure_norm hp (by simpa using hc)
-            exact eval_normalizeProgramContracts_of _ (e.after rest) H e.body
+            exact eval_normalizeProgramContracts_of _ (e.after rest) H e.body .leaf
         · rfl
   | .case x alts d =>
     rw [eval_case, eval_case]
@@ -243,7 +267,7 @@ theorem eval_normalizeProgramContracts_of (ρ : Own.Env) (J : List JEntry) (H : 
       have hknown : (normalizeProgramContracts F).known = F.known := rfl
       rw [hknown]
       cases v.asCtor F.known H with
-      | some kf => exact evalAlts_normalizeProgramContracts_of ρ J H kf.1 alts d
+      | some kf => exact evalAlts_normalizeProgramContracts_of ρ J H kf.1 alts d slots
       | none => rfl
   | .ret a => rw [eval_ret, eval_ret]
   | .tcall f args =>
@@ -261,19 +285,19 @@ decreasing_by
     | (simp only [Code.size] at this ⊢; omega)
 
 theorem evalAlts_normalizeProgramContracts_of (ρ : Own.Env) (J : List JEntry) (H : Heap)
-    (key : Key.CtorKey) (alts : List Alt) (d : Option Code) :
-    evalAlts { source := normalizeProgramContracts F, bodies } k ρ J H key alts d =
-      evalAlts { source := F, bodies } k ρ J H key alts d := by
+    (key : Key.CtorKey) (alts : List Alt) (d : Option Code) (slots : Src.NatMap Own.RVal) :
+    evalAlts { source := normalizeProgramContracts F, bodies } k ρ J H key alts d slots =
+      evalAlts { source := F, bodies } k ρ J H key alts d slots := by
   match alts, d with
   | [], some c =>
     rw [evalAlts_nil, evalAlts_nil]
-    exact eval_normalizeProgramContracts_of ρ J H c
+    exact eval_normalizeProgramContracts_of ρ J H c slots
   | [], none => rw [evalAlts_nil, evalAlts_nil]
   | .mk key' body :: rest, d =>
     rw [evalAlts_cons, evalAlts_cons]
     split
-    · exact eval_normalizeProgramContracts_of ρ J H body
-    · exact evalAlts_normalizeProgramContracts_of ρ J H key rest d
+    · exact eval_normalizeProgramContracts_of ρ J H body slots
+    · exact evalAlts_normalizeProgramContracts_of ρ J H key rest d slots
 termination_by Code.altsSize alts + Code.optSize d + jweight J + 1
 decreasing_by
   all_goals simp_wf
@@ -284,20 +308,26 @@ decreasing_by
 end
 end
 
+theorem eval_normalizeProgramContracts_slots (F : Fir.Program) (bodies : Src.NatMap Code) :
+    ∀ k ρ J H c slots,
+      eval { source := normalizeProgramContracts F, bodies } k ρ J H c slots =
+        eval { source := F, bodies } k ρ J H c slots := by
+  intro k
+  induction k using Nat.strongRecOn with
+  | _ k ih => intro ρ J H c slots; exact eval_normalizeProgramContracts_of F bodies ih ρ J H c slots
+
 theorem eval_normalizeProgramContracts (F : Fir.Program) (bodies : Src.NatMap Code) :
     ∀ k ρ J H c,
       eval { source := normalizeProgramContracts F, bodies } k ρ J H c =
-        eval { source := F, bodies } k ρ J H c := by
-  intro k
-  induction k using Nat.strongRecOn with
-  | _ k ih => intro ρ J H c; exact eval_normalizeProgramContracts_of F bodies ih ρ J H c
+        eval { source := F, bodies } k ρ J H c :=
+  fun k ρ J H c => eval_normalizeProgramContracts_slots F bodies k ρ J H c .leaf
 
 theorem evalCall_normalizeProgramContracts (F : Fir.Program) (bodies : Src.NatMap Code)
     (k : Nat) (f : Fir.FunId) (vs : List RVal) (H : Heap) :
     evalCall { source := normalizeProgramContracts F, bodies } k f vs H =
       evalCall { source := F, bodies } k f vs H :=
   evalCall_normalizeProgramContracts_of F bodies
-    (fun j _ => eval_normalizeProgramContracts F bodies j) f vs H
+    (fun j _ => eval_normalizeProgramContracts_slots F bodies j) f vs H
 
 theorem run_normalizeProgramContracts (F : Fir.Program) (bodies : Src.NatMap Code)
     (k : Nat) (f : Fir.FunId) (args : List RVal) (H : Heap := {}) :

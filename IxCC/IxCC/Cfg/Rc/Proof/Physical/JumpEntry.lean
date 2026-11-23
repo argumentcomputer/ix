@@ -16,8 +16,8 @@ theorem jump_entry
     {F : Fir.Program} {P : Program} {pairs : List (Nat × Cfg.Fun)} {lp : Lir.Program}
     (consuming : consumeAll P = .ok pairs)
     {source : Cfg.Frame} {target : Lir.Frame} {ρ : Own.Env} {saved rest : List Own.Plain.JEntry}
-    {j : Fir.JoinId} {args : List Fir.Arg} {entry : Own.Plain.JEntry}
-    (sourceState : At F P source ρ saved (.jmp j args))
+    {j : Fir.JoinId} {args : List Fir.Arg} {entry : Own.Plain.JEntry} {rslots : Src.NatMap Own.RVal}
+    (sourceState : At F P source ρ saved (.jmp j args) rslots)
     (found : Own.Plain.lookupJ j saved = some (entry, rest))
     {values : List Own.RVal} (arguments : Own.evalArgs ρ args = some values)
     (arity : values.length = entry.params.length)
@@ -29,7 +29,7 @@ theorem jump_entry
         ∀ x ∈ block.params.map Prod.fst, x < bound)
     (running : target.dsts = []) (mem : X86.Memory) (context : Lir.Word) (callers : List Lir.Frame) :
     (∃ after final cost,
-      At F P after (Own.bindAll entry.env entry.params values) (entry.after rest) entry.body ∧
+      At F P after (Own.bindAll entry.env entry.params values) (entry.after rest) entry.body .leaf ∧
       FrameState P pairs lp addresses heapSize bound function after final ∧
       Sem.Star (Lir.semStep lp) {mem, ctx := context, stack := target :: callers} cost
         {mem, ctx := context, stack := final :: callers} ∧
@@ -38,11 +38,11 @@ theorem jump_entry
       (∀ block, function.blocks[after.blk]? = some block →
         FusedDone (tablesOf P pairs) function block after)) ∨
     Sem.Fails (Lir.semStep lp) {mem, ctx := context, stack := target :: callers} := by
-  obtain ⟨fd, scope, params, acc, next, first, lo, lookup, sourceRange, sourceLayout, cursor,
-    sub, below, scopedNames, joins⟩ := sourceState
+  obtain ⟨fd, scope, params, acc, next, first, lo, slotBase, lookup, sourceRange, sourceLayout, cursor,
+    sub, below, loSlot, slotSub, scopedNames, vb, rc, joins⟩ := sourceState
   obtain ⟨bj, scope', ps, loEntry, loBody, bodyFirst, label, idEq, previous, lower,
-    paramsEq, chargeRec, bodyLayout, savedSub, savedBelow, psLower, bodyLower, psUpper, bodyNames⟩ :=
-    joins.lookup found
+    paramsEq, chargeRec, bodyLayout, savedSub, savedBelow, psLower, bodyLower, bodySlot, psUpper,
+    bodyNames, bodyVb, bodyRc⟩ := joins.lookup found
   let edge : Cfg.Edge := {target := bj, args, back := entry.charged}
   let block : Cfg.Block := {params, body := acc.reverse, term := .jump edge}
   have blockLookup : fd.blocks[source.blk]? = some block := by
@@ -51,7 +51,7 @@ theorem jump_entry
   obtain ⟨terminal, targetLookup⟩ := Cfg.Proof.impl_head bodyLayout
   let targetBlock : Cfg.Block := {
     params := ps
-    body := spine (skeleton P.base.size bodyFirst entry.body)
+    body := spine (skeleton P.base.size bodyFirst entry.body F.ctors slotBase)
     term := terminal }
   have targetLookup' : fd.blocks[bj]? = some targetBlock := by
     simpa only [Cfg.Fun.block?, List.reverse_nil, List.nil_append] using targetLookup
@@ -86,8 +86,9 @@ theorem jump_entry
       rest := targetBlock.body
       env := Own.bindAll source.env (ps.map Prod.fst) values }
     let final : Lir.Frame := {fn := source.fn, label := offset, pos := 0, env := targetEnv}
-    have restored : At F P after (Own.bindAll entry.env entry.params values) (entry.after rest) entry.body := by
-      refine ⟨fd, _, ps, [], bj+1, bodyFirst, loBody, lookup, sourceRange, bodyLayout, rfl, ?_, ?_, bodyNames, ?_⟩
+    have restored : At F P after (Own.bindAll entry.env entry.params values) (entry.after rest) entry.body .leaf := by
+      refine ⟨fd, _, ps, [], bj+1, bodyFirst, loBody, slotBase, lookup, sourceRange, bodyLayout, rfl,
+        ?_, ?_, bodySlot, SlotSub.leaf slotBase _, bodyNames, bodyVb, bodyRc, ?_⟩
       · rw [paramsEq]
         exact Cfg.Proof.Sub.bindAll savedSub _ _
       · apply Cfg.Proof.below_bindAll
@@ -113,7 +114,7 @@ theorem jump_entry
             (previous.agree agree) bodyLower paramsEq (fun _ => recCase)
             (by simpa [recCase] using bodyLayout)
             (fun y value hy => by rw [agree y (savedBelow y value hy)]; exact savedSub y value hy)
-            savedBelow psLower bodyLower psUpper bodyNames
+            savedBelow psLower bodyLower bodySlot psUpper bodyNames bodyVb bodyRc
           simpa [recCase] using self
     have frameArgs : Own.evalArgs source.env args = some values := Cfg.Proof.evalArgs_sub sub arguments
     obtain ⟨body, _, consumedBlock⟩ := (consumeFunction_parts receipt).2.2.2.2.2 blockLookup

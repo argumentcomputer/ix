@@ -34,8 +34,9 @@ theorem shape_later {H : Heap} {k : Nat} {f : Nat → Result (RVal × Heap)}
   | succ k => exact h k (by omega)
 
 def ShapeAtClock (P : Program) (k : Nat) : Prop :=
-  ∀ (H : Heap) (ρ : Own.Env) (J : List JEntry) (c : Code),
-    HeapOk H → EnvBounded H.size ρ → StackBounded H.size J → ShapeResult H (eval P k ρ J H c)
+  ∀ (H : Heap) (ρ : Own.Env) (J : List JEntry) (c : Code) (slots : Src.NatMap Own.RVal),
+    HeapOk H → EnvBounded H.size ρ → StackBounded H.size J → EnvBounded H.size slots →
+    ShapeResult H (eval P k ρ J H c slots)
 
 theorem call_shape_of_smaller {P : Program} {k : Nat}
     (smaller : ∀ j, j < k → ShapeAtClock P j) (f : Fir.FunId) (H : Heap) (vs : List RVal)
@@ -49,8 +50,8 @@ theorem call_shape_of_smaller {P : Program} {k : Nat}
   split
   · apply shape_later
     intro j hj
-    exact smaller j hj H _ [] body hh ((envBounded_empty H.size).bindAll _ hv)
-      (by intro e he; cases he)
+    exact smaller j hj H _ [] body .leaf hh ((envBounded_empty H.size).bindAll _ hv)
+      (by intro e he; cases he) (envBounded_empty H.size)
   · intro v H' he; cases he
 
 end IxCC.Own.Plain

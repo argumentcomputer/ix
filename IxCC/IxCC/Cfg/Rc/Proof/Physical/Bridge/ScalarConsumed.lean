@@ -14,9 +14,9 @@ theorem consume_pure {P : Program} {layout : Layout} {x : Nat} {rhs : Own.Rhs}
     (accepted : consume P layout (.bind x rhs) = .ok actual) : actual = .bind x rhs := by
   match rhs, pureRhs with
   | .fir (.arg a), _ =>
-    simpa [consume, reserved, pure, Except.pure] using accepted.symm
+    simpa [consume, reserved, isReuseOp, pure, Except.pure] using accepted.symm
   | .fir (.prim op args), _ =>
-    simpa [consume, reserved, pure, Except.pure] using accepted.symm
+    simpa [consume, reserved, isReuseOp, pure, Except.pure] using accepted.symm
   | .alloc c args kind, fieldless =>
     change c.fieldless = true at fieldless
     have zero : c.arity = 0 := by simpa only [Fir.CtorInfo.fieldless, beq_iff_eq] using fieldless

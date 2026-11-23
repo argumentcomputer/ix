@@ -51,6 +51,7 @@ theorem loaded_call_sim {cfg : Config} {P : Src.Program} {cert : Cert} {f : Fron
     have simulation := public_entry_eval_sim admission native sourceLookup den
       (numeric_selectOwned_balance _ numbers balance)
       (fun v hv => numeric_selectBorrowed_reachable {} _ _ numbers v hv)
+      (fun v hv => numeric_selectUnique_uniq f.fir.ctors {} _ _ _ _ numbers v hv)
       represented compatible (by simpa only [Own.litArgs, List.length_map] using arity)
       (heap.numeric_selectOwned _ numbers)
     have observed := simulation.map_right fun output =>

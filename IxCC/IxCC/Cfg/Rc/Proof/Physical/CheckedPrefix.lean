@@ -14,29 +14,31 @@ Thus the physical prefix's freshness is derived even when the syntactic
 marker supply is unconstrained by a marker-free continuation. -/
 theorem checked_prefix_cursor
     {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    {borrows : Own.Plain.BorrowSigs} (checked : checkScopedProgram F bodies P borrows = true)
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (checked : checkScopedProgram F bodies P borrows uniqs = true)
     {source : Cfg.Frame} {ρ : Own.Env} {saved : List Own.Plain.JEntry}
-    {actions : List Action} {code : Own.Plain.Code}
-    (layout : At F P source ρ saved (Own.Plain.actionPrefix actions code))
+    {actions : List Action} {code : Own.Plain.Code} {rslots : Src.NatMap Own.RVal}
+    (layout : At F P source ρ saved (Own.Plain.actionPrefix actions code) rslots)
     {sourceFunction : Fir.Fun} (sourceLookup : F.fun? source.fn = some sourceFunction)
     {addresses : AddressMap} {D : Nat → Prop} {target : Lir.Env}
-    (words : FusedWords addresses D sourceFunction.vars source.env target) :
+    (words : FusedWords addresses D (funcFirst bodies source.fn sourceFunction) source.env target) :
     ∃ first tail,
       source.rest = encodePrefix P.base.size first actions ++ tail ∧
-      At F P {source with rest := tail} ρ saved code ∧
+      At F P {source with rest := tail} ρ saved code rslots ∧
       (∀ dummy, first ≤ dummy → source.env.get? dummy = none) := by
-  obtain ⟨emitted, head, after⟩ := layout.action_prefix_cursor
+  obtain ⟨emitted, slotBase, head, after⟩ := layout.action_prefix_cursor
   cases actions with
   | nil =>
-    refine ⟨sourceFunction.vars, _, ?_, after, fun dummy bound => words.reserved_absent bound⟩
+    refine ⟨funcFirst bodies source.fn sourceFunction, _, ?_, after,
+      fun dummy bound => words.reserved_absent bound⟩
     simpa only [encodePrefix, List.nil_append] using head
   | cons action actions =>
-    obtain ⟨fd, scope, params, acc, next, supply, lower, lookup, range, codeLayout, cursor,
-      sub, bounded, names, joins⟩ := layout
+    obtain ⟨fd, scope, params, acc, next, supply, lower, slotBase', lookup, range, codeLayout, cursor,
+      sub, bounded, loSlot, slotSub, names, vb, rc, joins⟩ := layout
     obtain ⟨terminal, blockLookup⟩ := Cfg.Proof.impl_head codeLayout
     have member : marker P.base.size emitted action ∈
         (acc.reverse ++ spine (skeleton P.base.size supply
-          (Own.Plain.actionPrefix (action :: actions) code))) := by
+          (Own.Plain.actionPrefix (action :: actions) code) F.ctors slotBase')) := by
       rw [← cursor, head]
       simp [encodePrefix]
     have markerBound := (checked_marker_bounds checked range sourceLookup lookup blockLookup

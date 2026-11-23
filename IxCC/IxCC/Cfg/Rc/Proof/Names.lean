@@ -23,11 +23,24 @@ theorem paramBound_mem (lo : Nat) {ps : List Fir.Var} {x : Fir.Var} (h : x ∈ p
       exact Nat.lt_of_lt_of_le (Nat.lt_succ_self p) (Nat.le_max_left _ _)
     · exact Nat.lt_of_lt_of_le (ih h) (Nat.le_max_right _ _)
 
+theorem paramBound_le {lo hi : Nat} {ps : List Fir.Var} (hlo : lo ≤ hi)
+    (hps : ∀ x ∈ ps, x < hi) : paramBound lo ps ≤ hi := by
+  induction ps with
+  | nil => exact hlo
+  | cons p ps ih =>
+    simp only [paramBound]
+    have hp := hps p (List.mem_cons.mpr (.inl rfl))
+    have hrest := ih (fun x hx => hps x (List.mem_cons.mpr (.inr hx)))
+    exact Nat.max_le.mpr ⟨hp, hrest⟩
+
 mutual
 theorem names_sound (lo : Nat) : ∀ c, names lo c = true →
     Cfg.Proof.Scoped lo (Own.immCode (Own.Plain.eraseCode c))
-  | .act _ k, h => names_sound lo k h
+  | .act _ k, h | .reset _ _ _ _ _ k, h | .dropSlot _ k, h => names_sound lo k h
   | .bind x r k, h => by
+    simp only [names, Bool.and_eq_true, decide_eq_true_eq] at h
+    exact ⟨h.1, names_sound (x + 1) k h.2⟩
+  | .reuse x _ _ _ _ k, h => by
     simp only [names, Bool.and_eq_true, decide_eq_true_eq] at h
     exact ⟨h.1, names_sound (x + 1) k h.2⟩
   | .jp j ps captured rec b k, h => by

@@ -19,6 +19,9 @@ mutual
 inductive Code where
   | act (a : Action) (k : Code)
   | bind (x : Var) (r : Rhs) (k : Code)
+  | reset (slot : Nat) (x : Var) (ctor : Fir.CtorInfo) (fields : List (Option Var)) (uniq : Bool) (k : Code)
+  | reuse (x : Var) (slot : Nat) (ctor : Fir.CtorInfo) (args : List Arg) (uniq : Bool) (k : Code)
+  | dropSlot (slot : Nat) (k : Code)
   | jp (j : JoinId) (params captured : List Var) (rec : Bool) (body k : Code)
   | jmp (j : JoinId) (args : List Arg)
   | case (x : Var) (alts : List Alt) (dflt : Option Code)
@@ -30,6 +33,30 @@ inductive Alt where
 end
 
 deriving instance Repr for Code, Alt
+
+/-- Live-field bitmask of a `reset` field list: bit `j` is `1` iff `fields[j]` is `some _`. -/
+def fieldsMask : List (Option Var) → Nat
+  | [] => 0
+  | none :: rest => 2 * fieldsMask rest
+  | some _ :: rest => 1 + 2 * fieldsMask rest
+
+mutual
+/-- Maximum reset slot index + 1 used anywhere in `Code` (`0` when no reuse slots are used). -/
+def slotBound : Code → Nat
+  | .act _ k | .bind _ _ k => slotBound k
+  | .reset s _ _ _ _ k => max (s + 1) (slotBound k)
+  | .reuse _ s _ _ _ k => max (s + 1) (slotBound k)
+  | .dropSlot s k => max (s + 1) (slotBound k)
+  | .jp _ _ _ _ b k => max (slotBound b) (slotBound k)
+  | .case _ alts d => max (slotBoundAlts alts) (slotBoundOpt d)
+  | .jmp .. | .ret .. | .tcall .. | .trap => 0
+def slotBoundAlts : List Alt → Nat
+  | [] => 0
+  | .mk _ b :: rest => max (slotBound b) (slotBoundAlts rest)
+def slotBoundOpt : Option Code → Nat
+  | none => 0
+  | some c => slotBound c
+end
 
 def actionPrefix : List Action → Code → Code
   | [], k => k
@@ -131,6 +158,9 @@ mutual
 def eraseCode : Code → Fir.Code
   | .act _ k => eraseCode k
   | .bind x r k => .bind x r (eraseCode k)
+  | .reset _ _ _ _ _ k => eraseCode k
+  | .reuse x _ c args _ k => .bind x (.ctor c args) (eraseCode k)
+  | .dropSlot _ k => eraseCode k
   | .jp j ps _ rec body k => .jp j ps rec (eraseCode body) (eraseCode k)
   | .jmp j args => .jmp j args
   | .case x alts dflt => .case x (eraseAlts alts) (eraseOpt dflt)

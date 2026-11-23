@@ -136,6 +136,21 @@ def largeStressProg (n : Nat) : Fir.Program :=
   let body : Fir.Code := .jp 0 [n] true loopBody (.jmp 0 [.var 0])
   mkProg params body (baseVars + n + 4)
 
+private partial def hasReuse : Code → Bool
+  | .reset .. | .reuse .. => true
+  | .act _ k | .bind _ _ k | .dropSlot _ k => hasReuse k
+  | .jp _ _ _ _ b k => hasReuse b || hasReuse k
+  | .case _ alts d => alts.any (fun | .mk _ b => hasReuse b) || (d.map hasReuse |>.getD false)
+  | .jmp .. | .ret _ | .tcall .. | .trap => false
+
+private partial def hasStaticReuse : Code → Bool
+  | .reset _ _ _ _ true _ | .reuse _ _ _ _ true _ => true
+  | .reset _ _ _ _ false k | .reuse _ _ _ _ false k => hasStaticReuse k
+  | .act _ k | .bind _ _ k | .dropSlot _ k => hasStaticReuse k
+  | .jp _ _ _ _ b k => hasStaticReuse b || hasStaticReuse k
+  | .case _ alts d => alts.any (fun | .mk _ b => hasStaticReuse b) || (d.map hasStaticReuse |>.getD false)
+  | .jmp .. | .ret _ | .tcall .. | .trap => false
+
 /-- Runtime checks for `IxCC.Own.Plain.Live` (called from `tests-own-owned`). Returns failure messages. -/
 def runChecks : Array String := Id.run do
   let mut errs : Array String := #[]
@@ -242,6 +257,193 @@ def runChecks : Array String := Id.run do
       size := 2, exports := [0], ctors := [], known := {} }
   if checkOwned badConsumeProg badConsume aliasBorrows then
     errs := errs.push "borrow-unit/neg-consume: returning borrowed param without inc was accepted"
+  -- Track A4: dynamic `reset`/`reuse`, static `@unique` unconditional reuse, certificate v3
+  -- (`encodeFull`/`decodeFull`), and negative safety controls.
+  -- Positive 1: dynamic `reset`/`reuse` on tail-recursive list reverse (`revAux`).
+  let revAux : Fir.Fun :=
+    { (default : Fir.Fun) with
+      params := [(0, .tobj), (1, .tobj)]
+      body := .case 0
+        [ .mk nilKey (.ret (.var 1)),
+          .mk consKey (.bind 2 (.proj 0 consKey 0)
+            (.bind 3 (.proj 0 consKey 1)
+              (.bind 4 (.ctor consInfo [.var 2, .var 1])
+                (.tcall 1 [.var 3, .var 4])))) ]
+        none
+      vars := 5 }
+  let revMain : Fir.Fun :=
+    { (default : Fir.Fun) with
+      params := [(0, .tobj)]
+      body := .bind 1 (.ctor nilInfo [])
+        (.bind 2 (.call 1 [.var 0, .var 1]) (.ret (.var 2)))
+      vars := 3 }
+  let revProg : Fir.Program :=
+    { funs := Src.NatMap.ofList [(0, revMain), (1, revAux)], size := 2, exports := [0]
+      ctors := [{ key := nilKey, tag := 0, arity := 0 }, { key := consKey, tag := 1, arity := 2 }]
+      known := {} }
+  let (revBodies, revBorrows, revUniqs) := IxCC.Own.Plain.Live.liveMapFull revProg
+  if !checkOwned revProg revBodies revBorrows revUniqs then
+    errs := errs.push "reuse-unit/rev: checkOwned refused liveMapFull output"
+  if !(revBodies.get? 1 |>.map hasReuse |>.getD false) then
+    errs := errs.push "reuse-unit/rev: expected reset/reuse in revAux"
+  match Certificate.decodeFull revProg (Certificate.encodeFull revProg revBodies revBorrows revUniqs) with
+  | .ok (backM, backB, backU) =>
+    let sameBorrow := (List.range 2).all fun idx =>
+      (backB.getD 1 []).getD idx false == (revBorrows.getD 1 []).getD idx false
+    let sameUniq := (List.range 2).all (fun idx =>
+      (backU.getD 1 ([], false)).1.getD idx false == (revUniqs.getD 1 ([], false)).1.getD idx false) &&
+      (backU.getD 1 ([], false)).2 == (revUniqs.getD 1 ([], false)).2
+    if !bodyMapEq backM revBodies || !sameBorrow || !sameUniq || !checkOwned revProg backM backB backU then
+      errs := errs.push "reuse-unit/rev-v3-cert: round trip differs"
+  | .error e => errs := errs.push s!"reuse-unit/rev-v3-cert: decodeFull failed: {e}"
+  -- Positive 2: static `@unique` unconditional reuse (fresh cons passed to swapUniq).
+  let swapUniq : Fir.Fun :=
+    { (default : Fir.Fun) with
+      params := [(0, .tobj)]
+      body := .case 0
+        [ .mk consKey (.bind 1 (.proj 0 consKey 0)
+            (.bind 2 (.proj 0 consKey 1)
+              (.bind 3 (.ctor consInfo [.var 2, .var 1]) (.ret (.var 3))))) ]
+        none
+      vars := 4 }
+  let mkAndSwap : Fir.Fun :=
+    { (default : Fir.Fun) with
+      params := [(0, .tobj), (1, .tobj)]
+      body := .bind 2 (.ctor consInfo [.var 0, .var 1])
+        (.bind 3 (.call 1 [.var 2]) (.ret (.var 3)))
+      vars := 4 }
+  let uniqProg : Fir.Program :=
+    { funs := Src.NatMap.ofList [(0, mkAndSwap), (1, swapUniq)], size := 2, exports := [0]
+      ctors := [{ key := nilKey, tag := 0, arity := 0 }, { key := consKey, tag := 1, arity := 2 }]
+      known := {} }
+  let (uBodies, uBorrows, uUniqs) := IxCC.Own.Plain.Live.liveMapFull uniqProg
+  if !checkOwned uniqProg uBodies uBorrows uUniqs then
+    errs := errs.push "reuse-unit/static-uniq: checkOwned refused liveMapFull output"
+  if uUniqs.getD 1 ([], false) != ([true], true) then
+    errs := errs.push s!"reuse-unit/static-uniq: expected swapUniq uniqs ([true], true), got {repr (uUniqs.getD 1 ([], false))}"
+  if !(uBodies.get? 1 |>.map hasStaticReuse |>.getD false) then
+    errs := errs.push "reuse-unit/static-uniq: expected static uniq=true reset/reuse in swapUniq"
+  match Certificate.decodeFull uniqProg (Certificate.encodeFull uniqProg uBodies uBorrows uUniqs) with
+  | .ok (backM, _, backU) =>
+    if !bodyMapEq backM uBodies || backU.getD 1 ([], false) != ([true], true) then
+      errs := errs.push "reuse-unit/static-uniq-v3-cert: round trip differs"
+  | .error e => errs := errs.push s!"reuse-unit/static-uniq-v3-cert: decodeFull failed: {e}"
+  -- Negative reuse controls.
+  let box1Key : Key.CtorKey := .src 10
+  let big5Key : Key.CtorKey := .src 11
+  let box1Info : Fir.CtorInfo := { key := box1Key, tag := 2, nobj := 1, fieldKinds := [.shared] }
+  let big5Info : Fir.CtorInfo :=
+    { key := big5Key, tag := 3, nobj := 5, fieldKinds := List.replicate 5 .shared }
+  -- Neg 1: size-class mismatch (reset arity-1 cell, reuse as arity-5 cell).
+  let mismatchProg : Fir.Program :=
+    let fd : Fir.Fun :=
+      { (default : Fir.Fun) with
+        params := [(0, .tobj)]
+        body := .case 0
+          [ .mk box1Key (.bind 1 (.proj 0 box1Key 0)
+              (.bind 2 (.ctor big5Info [.var 1, .lit (.nat 0), .lit (.nat 0), .lit (.nat 0), .lit (.nat 0)])
+                (.ret (.var 2)))) ]
+          none
+        vars := 3 }
+    { funs := Src.NatMap.ofList [(0, fd)], size := 1, exports := [0]
+      ctors := [{ key := box1Key, tag := 2, arity := 1 }, { key := big5Key, tag := 3, arity := 5 }]
+      known := {} }
+  let mismatchBody : Code :=
+    .case 0
+      [ .mk box1Key (.bind 1 (.proj 0 box1Key 0)
+          (.reset 0 0 box1Info [some 1] false
+            (.reuse 2 0 big5Info [.var 1, .lit (.nat 0), .lit (.nat 0), .lit (.nat 0), .lit (.nat 0)] false
+              (.ret (.var 2))))) ]
+      none
+  if checkOwned mismatchProg (Src.NatMap.ofList [(0, mismatchBody)]) then
+    errs := errs.push "reuse-unit/neg-class-mismatch: different-class reuse was accepted"
+  -- Neg 2: double reuse of same slot 0.
+  let dblProg : Fir.Program :=
+    let fd : Fir.Fun :=
+      { (default : Fir.Fun) with
+        params := [(0, .tobj)]
+        body := .case 0
+          [ .mk consKey (.bind 1 (.proj 0 consKey 0)
+              (.bind 2 (.proj 0 consKey 1)
+                (.bind 3 (.ctor consInfo [.var 1, .lit (.nat 0)])
+                  (.bind 4 (.ctor consInfo [.var 2, .var 3]) (.ret (.var 4)))))) ]
+          none
+        vars := 5 }
+    { funs := Src.NatMap.ofList [(0, fd)], size := 1, exports := [0]
+      ctors := [{ key := consKey, tag := 1, arity := 2 }], known := {} }
+  let dblBody : Code :=
+    .case 0
+      [ .mk consKey (.bind 1 (.proj 0 consKey 0)
+          (.bind 2 (.proj 0 consKey 1)
+            (.reset 0 0 consInfo [some 1, some 2] false
+              (.reuse 3 0 consInfo [.var 1, .lit (.nat 0)] false
+                (.reuse 4 0 consInfo [.var 2, .var 3] false (.ret (.var 4))))))) ]
+      none
+  if checkOwned dblProg (Src.NatMap.ofList [(0, dblBody)]) then
+    errs := errs.push "reuse-unit/neg-double-reuse: reusing the same slot twice was accepted"
+  -- Neg 3: leaked reset slot at `.ret` (neither reused nor dropped via `.dropSlot`).
+  let leakProg : Fir.Program :=
+    let fd : Fir.Fun :=
+      { (default : Fir.Fun) with
+        params := [(0, .tobj)]
+        body := .case 0 [ .mk consKey (.bind 1 (.proj 0 consKey 0) (.ret (.var 1))) ] none
+        vars := 2 }
+    { funs := Src.NatMap.ofList [(0, fd)], size := 1, exports := [0]
+      ctors := [{ key := consKey, tag := 1, arity := 2 }], known := {} }
+  let leakBody : Code :=
+    .case 0
+      [ .mk consKey (.bind 1 (.proj 0 consKey 0)
+          (.reset 0 0 consInfo [some 1, none] false (.ret (.var 1)))) ]
+      none
+  if checkOwned leakProg (Src.NatMap.ofList [(0, leakBody)]) then
+    errs := errs.push "reuse-unit/neg-leaked-slot: returning with live reset slot was accepted"
+  -- Neg 4: static `uniq = true` reset on a non-unique (exported) parameter.
+  let badStaticProg : Fir.Program :=
+    { funs := Src.NatMap.ofList [(0, swapUniq)], size := 1, exports := [0]
+      ctors := [{ key := consKey, tag := 1, arity := 2 }], known := {} }
+  let badStaticBody : Code :=
+    .case 0
+      [ .mk consKey (.bind 1 (.proj 0 consKey 0)
+          (.bind 2 (.proj 0 consKey 1)
+            (.reset 0 0 consInfo [some 1, some 2] true
+              (.reuse 3 0 consInfo [.var 2, .var 1] true (.ret (.var 3)))))) ]
+      none
+  if checkOwned badStaticProg (Src.NatMap.ofList [(0, badStaticBody)]) then
+    errs := errs.push "reuse-unit/neg-static-nonuniq: uniq=true on exported non-unique param was accepted"
+  -- Neg 5: Nat constructor (`known.natSucc`) reset must be rejected.
+  let natResetProg : Fir.Program :=
+    { badStaticProg with known := { natSucc := some consKey } }
+  let dynSwapBody : Code :=
+    .case 0
+      [ .mk consKey (.bind 1 (.proj 0 consKey 0)
+          (.bind 2 (.proj 0 consKey 1)
+            (.reset 0 0 consInfo [some 1, some 2] false
+              (.reuse 3 0 consInfo [.var 2, .var 1] false (.ret (.var 3)))))) ]
+      none
+  if checkOwned natResetProg (Src.NatMap.ofList [(0, dynSwapBody)]) then
+    errs := errs.push "reuse-unit/neg-nat-reset: resetting known.natSucc ctor was accepted"
+  -- Neg 6: reset without `case` proving constructor identity (`ctorOf` missing).
+  let noCaseProg : Fir.Program :=
+    let fd : Fir.Fun :=
+      { (default : Fir.Fun) with
+        params := [(0, .tobj)]
+        body := .bind 1 (.proj 0 consKey 0)
+          (.bind 2 (.proj 0 consKey 1)
+            (.bind 3 (.ctor consInfo [.var 2, .var 1]) (.ret (.var 3))))
+        vars := 4 }
+    { funs := Src.NatMap.ofList [(0, fd)], size := 1, exports := [0]
+      ctors := [{ key := consKey, tag := 1, arity := 2 }], known := {} }
+  let noCaseBody : Code :=
+    .bind 1 (.proj 0 consKey 0)
+      (.bind 2 (.proj 0 consKey 1)
+        (.reset 0 0 consInfo [some 1, some 2] false
+          (.reuse 3 0 consInfo [.var 2, .var 1] false (.ret (.var 3)))))
+  if checkOwned noCaseProg (Src.NatMap.ofList [(0, noCaseBody)]) then
+    errs := errs.push "reuse-unit/neg-no-ctorof: reset without case-refined ctor identity was accepted"
+  -- Neg 7: exported function with `@unique` parameter in `UniqSigs` must be refused.
+  let expUniq : UniqSigs := Src.NatMap.ofList [(0, ([true], false))]
+  if checkOwned badStaticProg (Src.NatMap.ofList [(0, dynSwapBody)]) .leaf expUniq then
+    errs := errs.push "reuse-unit/neg-export-uniq: exported @unique param was accepted"
   return errs
 
 end LiveTests

@@ -13,8 +13,9 @@ theorem consume_user_call {P : Program} {x f : Nat} {args : List Fir.Arg}
     (range : f < P.base.size) :
     consume P (layoutOf P) (.bind x (.fir (.call f args))) =
       .ok (.bind x (.fir (.call f args))) := by
-  simp [consume, reserved, show f ≠ P.base.size by omega,
-    show f ≠ P.base.size + 1 by omega, pure, Except.pure]
+  simp [consume, reserved, isReuseOp, show f ≠ P.base.size by omega,
+    show f ≠ P.base.size + 1 by omega, show f ≠ P.base.size + 2 by omega,
+    show f ≠ P.base.size + 3 by omega, pure, Except.pure]
 
 /-- A non-tail call spends exactly one charge before its callee body.
 Unrepresentable literal operands instead follow the actual emitted failure

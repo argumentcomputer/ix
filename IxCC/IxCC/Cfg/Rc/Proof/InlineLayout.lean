@@ -472,60 +472,133 @@ end AgreeBelow
 
 /-! ## `stmtsExtra`, `expandStmts`, `expandBlocks`, and `newLabel` -/
 
-def stmtsExtra (l : Layout) (ss : List Lir.Stmt) : Nat :=
-  ss.foldl (fun acc s => acc + stmtExtra l s) 0
-
-theorem stmtsExtra_foldl (l : Layout) (ss : List Lir.Stmt) (acc : Nat) :
-    ss.foldl (fun a s => a + stmtExtra l s) acc = acc + stmtsExtra l ss := by
-  induction ss generalizing acc with
-  | nil => simp [stmtsExtra]
-  | cons s ss ih =>
-    simp only [List.foldl_cons, stmtsExtra]
-    rw [ih (acc + stmtExtra l s), ih (0 + stmtExtra l s)]
-    omega
+theorem classifyPair_none_of_classify_none {l : Layout} {s1 s2 : Lir.Stmt}
+    (h : classify l s1 = none) : classifyPair l s1 s2 = none := by
+  simp [classifyPair, h]
 
 theorem stmtsExtra_nil (l : Layout) : stmtsExtra l [] = 0 := rfl
 
-theorem stmtsExtra_cons (l : Layout) (s : Lir.Stmt) (ss : List Lir.Stmt) :
-    stmtsExtra l (s :: ss) = stmtExtra l s + stmtsExtra l ss := by
-  simp only [stmtsExtra, List.foldl_cons, Nat.zero_add]
-  exact stmtsExtra_foldl l ss (stmtExtra l s)
+theorem stmtsExtra_singleton (l : Layout) (s : Lir.Stmt) :
+    stmtsExtra l [s] = stmtExtra l s := rfl
+
+theorem stmtsExtra_cons_pair (l : Layout) (s1 s2 : Lir.Stmt) (rest : List Lir.Stmt)
+    {fp : RcPair} (h : classifyPair l s1 s2 = some fp) :
+    stmtsExtra l (s1 :: s2 :: rest) = pairExtra fp + stmtsExtra l rest := by
+  simp [stmtsExtra, h]
+
+theorem stmtsExtra_cons_none (l : Layout) (s1 s2 : Lir.Stmt) (rest : List Lir.Stmt)
+    (h : classifyPair l s1 s2 = none) :
+    stmtsExtra l (s1 :: s2 :: rest) = stmtExtra l s1 + stmtsExtra l (s2 :: rest) := by
+  simp [stmtsExtra, h]
+
+theorem stmtsExtra_cons_of_classify_none (l : Layout) (s : Lir.Stmt) (rest : List Lir.Stmt)
+    (h : classify l s = none) :
+    stmtsExtra l (s :: rest) = stmtsExtra l rest := by
+  cases rest with
+  | nil => simp [stmtsExtra, stmtExtra, h]
+  | cons s2 rest2 =>
+    rw [stmtsExtra_cons_none l s s2 rest2 (classifyPair_none_of_classify_none h)]
+    simp [stmtExtra, h]
 
 theorem blockExtra_eq (l : Layout) (b : Lir.Block) : blockExtra l b = stmtsExtra l b.body.toList := rfl
 
-theorem expandStmts_length (l : Layout) (rel : Lir.Label → Lir.Label) (term : Lir.Term) (cold : Bool) :
-    ∀ (ss : List Lir.Stmt) (cur nextTmp : Nat) (params : List Lir.VReg) (acc : List Lir.Stmt),
-      (expandStmts l rel term cold ss cur nextTmp params acc).1.length = 1 + stmtsExtra l ss ∧
-      nextTmp ≤ (expandStmts l rel term cold ss cur nextTmp params acc).2
-  | [], _, _, _, _ => ⟨rfl, Nat.le_refl _⟩
-  | s :: rest, cur, nextTmp, params, acc => by
-    unfold expandStmts
-    cases hc : classify l s with
+theorem stepSingle_len_tmp (l : Layout) (cold : Bool) (s : Lir.Stmt) (cur nextTmp : Nat)
+    (params : List Lir.VReg) (acc : List Lir.Stmt) :
+    let r := stepSingle l cold s cur nextTmp params acc
+    r.1.length = stmtExtra l s ∧ r.2.1 = cur + stmtExtra l s ∧ nextTmp ≤ r.2.2.1 := by
+  unfold stepSingle stmtExtra
+  cases hc : classify l s with
+  | none => exact ⟨rfl, (Nat.add_zero cur).symm, Nat.le_refl _⟩
+  | some site =>
+    cases site <;> dsimp only [siteExtra, Lir.Label, Lir.VReg] <;>
+      exact ⟨rfl, by omega, by omega⟩
+
+theorem stepPair_len_tmp (l : Layout) (cold : Bool) (fp : RcPair) (cur nextTmp : Nat)
+    (params : List Lir.VReg) (acc : List Lir.Stmt) :
+    let r := stepPair l cold fp cur nextTmp params acc
+    r.1.length = pairExtra fp ∧ r.2.1 = cur + pairExtra fp ∧ nextTmp ≤ r.2.2.1 := by
+  cases fp <;> dsimp only [stepPair, pairExtra, Lir.Label, Lir.VReg] <;>
+    exact ⟨rfl, by omega, by omega⟩
+
+theorem expandStmts_nil (l : Layout) (rel : Lir.Label → Lir.Label) (term : Lir.Term) (cold : Bool)
+    (cur nextTmp : Nat) (params : List Lir.VReg) (acc : List Lir.Stmt) :
+    expandStmts l rel term cold [] cur nextTmp params acc =
+      ([{ params, body := acc.reverse.toArray, term := relabelTerm rel term, cold }], nextTmp) := by
+  rw [expandStmts]
+
+theorem expandStmts_cons_single (l : Layout) (rel : Lir.Label → Lir.Label) (term : Lir.Term)
+    (cold : Bool) (s : Lir.Stmt) (rest : List Lir.Stmt) (cur nextTmp : Nat)
+    (params : List Lir.VReg) (acc : List Lir.Stmt)
+    (hnp : ∀ s2 rest2, rest = s2 :: rest2 → classifyPair l s s2 = none) :
+    expandStmts l rel term cold (s :: rest) cur nextTmp params acc =
+      let r := stepSingle l cold s cur nextTmp params acc
+      let t := expandStmts l rel term cold rest r.2.1 r.2.2.1 r.2.2.2.1 r.2.2.2.2
+      (r.1 ++ t.1, t.2) := by
+  cases rest with
+  | nil => rw [expandStmts]
+  | cons s2 rest2 =>
+    rw [expandStmts]
+    simp [hnp s2 rest2 rfl]
+
+theorem expandStmts_cons_pair (l : Layout) (rel : Lir.Label → Lir.Label) (term : Lir.Term)
+    (cold : Bool) (s1 s2 : Lir.Stmt) (rest2 : List Lir.Stmt) (cur nextTmp : Nat)
+    (params : List Lir.VReg) (acc : List Lir.Stmt) {fp : RcPair}
+    (hp : classifyPair l s1 s2 = some fp) :
+    expandStmts l rel term cold (s1 :: s2 :: rest2) cur nextTmp params acc =
+      let r := stepPair l cold fp cur nextTmp params acc
+      let t := expandStmts l rel term cold rest2 r.2.1 r.2.2.1 r.2.2.2.1 r.2.2.2.2
+      (r.1 ++ t.1, t.2) := by
+  rw [expandStmts]
+  simp [hp]
+
+theorem expandStmts_length (l : Layout) (rel : Lir.Label → Lir.Label) (term : Lir.Term) (cold : Bool)
+    (ss : List Lir.Stmt) (cur nextTmp : Nat) (params : List Lir.VReg) (acc : List Lir.Stmt) :
+    (expandStmts l rel term cold ss cur nextTmp params acc).1.length = 1 + stmtsExtra l ss ∧
+    nextTmp ≤ (expandStmts l rel term cold ss cur nextTmp params acc).2 := by
+  match ss with
+  | [] =>
+    rw [expandStmts_nil]
+    exact ⟨rfl, Nat.le_refl _⟩
+  | [s] =>
+    rw [expandStmts_cons_single l rel term cold s [] cur nextTmp params acc (fun _ _ h => by cases h)]
+    have hs := stepSingle_len_tmp l cold s cur nextTmp params acc
+    dsimp only at hs ⊢
+    have ih := expandStmts_length l rel term cold []
+      (stepSingle l cold s cur nextTmp params acc).2.1
+      (stepSingle l cold s cur nextTmp params acc).2.2.1
+      (stepSingle l cold s cur nextTmp params acc).2.2.2.1
+      (stepSingle l cold s cur nextTmp params acc).2.2.2.2
+    refine ⟨?_, Nat.le_trans hs.2.2 ih.2⟩
+    simp only [List.length_append, hs.1, ih.1, stmtsExtra_nil, stmtsExtra_singleton]
+    omega
+  | s1 :: s2 :: rest2 =>
+    cases hp : classifyPair l s1 s2 with
+    | some fp =>
+      rw [expandStmts_cons_pair l rel term cold s1 s2 rest2 cur nextTmp params acc hp]
+      have hsp := stepPair_len_tmp l cold fp cur nextTmp params acc
+      dsimp only at hsp ⊢
+      have ih := expandStmts_length l rel term cold rest2
+        (stepPair l cold fp cur nextTmp params acc).2.1
+        (stepPair l cold fp cur nextTmp params acc).2.2.1
+        (stepPair l cold fp cur nextTmp params acc).2.2.2.1
+        (stepPair l cold fp cur nextTmp params acc).2.2.2.2
+      refine ⟨?_, Nat.le_trans hsp.2.2 ih.2⟩
+      simp only [List.length_append, hsp.1, ih.1, stmtsExtra_cons_pair l s1 s2 rest2 hp]
+      omega
     | none =>
-      have ih := expandStmts_length l rel term cold rest cur nextTmp params (s :: acc)
-      simpa [stmtsExtra_cons, stmtExtra, hc] using ih
-    | some site =>
-      cases site with
-      | inc dst x =>
-        have ih := expandStmts_length l rel term cold rest (cur + 5) (nextTmp + 2) [] [.assign dst (.arg (.imm 1))]
-        dsimp only
-        refine ⟨?_, by omega⟩
-        simp only [List.length_cons, ih.1, stmtsExtra_cons, stmtExtra, hc, siteExtra]
-        omega
-      | dec dst x =>
-        have ih := expandStmts_length l rel term cold rest (cur + 5) (nextTmp + 2) [] [.assign dst (.arg (.imm 1))]
-        dsimp only
-        refine ⟨?_, by omega⟩
-        simp only [List.length_cons, ih.1, stmtsExtra_cons, stmtExtra, hc, siteExtra]
-        omega
-      | alloc dst idx lay cls args =>
-        have ih := expandStmts_length l rel term cold rest (cur + 6) (nextTmp + 5) [dst]
-          (Lir.Stmt.store .w64 (cellAddr dst) (.imm (Rt.Rc.dynamicHeader lay.nobj cls lay.tag 1)) ::
-            mkFieldStores dst 0 args).reverse
-        dsimp only
-        refine ⟨?_, by omega⟩
-        simp only [List.length_cons, ih.1, stmtsExtra_cons, stmtExtra, hc, siteExtra]
-        omega
+      rw [expandStmts_cons_single l rel term cold s1 (s2 :: rest2) cur nextTmp params acc
+        (fun s2' rest2' h => by cases h; exact hp)]
+      have hs := stepSingle_len_tmp l cold s1 cur nextTmp params acc
+      dsimp only at hs ⊢
+      have ih := expandStmts_length l rel term cold (s2 :: rest2)
+        (stepSingle l cold s1 cur nextTmp params acc).2.1
+        (stepSingle l cold s1 cur nextTmp params acc).2.2.1
+        (stepSingle l cold s1 cur nextTmp params acc).2.2.2.1
+        (stepSingle l cold s1 cur nextTmp params acc).2.2.2.2
+      refine ⟨?_, Nat.le_trans hs.2.2 ih.2⟩
+      simp only [List.length_append, hs.1, ih.1, stmtsExtra_cons_none l s1 s2 rest2 hp]
+      omega
+termination_by ss.length
 
 theorem newLabel_succ (l : Layout) (F : Lir.Func) {i : Nat} {B : Lir.Block} (hi : F.blocks[i]? = some B) :
     newLabel l F (i + 1) = newLabel l F i + 1 + blockExtra l B := by
@@ -676,41 +749,110 @@ theorem entry (l : Layout) (F : Lir.Func) {b : Lir.Label} {B : Lir.Block}
     inPosEq := rfl
     endLbl := rfl }⟩
 
+theorem classify_ne_none_of_classifyPair {l : Layout} {s1 s2 : Lir.Stmt} {fp : RcPair}
+    (hp : classifyPair l s1 s2 = some fp) : classify l s1 ≠ none := by
+  intro h; rw [classifyPair_none_of_classify_none h] at hp; cases hp
+
 /-- Head block of `expandStmts`: the first emitted block contains `acc.reverse`
 as a prefix, keeps `params`, and reveals either the next non-inlined statement
 or the relabeled terminator when `ss = []`. -/
 theorem firstBlock_of_expandStmts (l : Layout) (rel : Lir.Label → Lir.Label)
-    (term : Lir.Term) (cold : Bool) :
-    ∀ (ss : List Lir.Stmt) (cur nextTmp : Nat) (params : List Lir.VReg) (acc : List Lir.Stmt),
-      ∃ blk post,
-        (expandStmts l rel term cold ss cur nextTmp params acc).1[0]? = some blk ∧
-        blk.params = params ∧
-        blk.body.toList = acc.reverse ++ post ∧
-        (∀ s rest', ss = s :: rest' → classify l s = none → post.head? = some s) ∧
-        (ss = [] → post = [] ∧ blk.term = relabelTerm rel term)
-  | [], cur, nextTmp, params, acc =>
-    ⟨_, [], rfl, rfl, (by simp), (fun _ _ h _ => by cases h), (fun _ => ⟨rfl, rfl⟩)⟩
-  | s :: rest, cur, nextTmp, params, acc => by
-    unfold expandStmts
-    cases hc : classify l s with
-    | none =>
-      obtain ⟨blk, post, h0, hp, hbody, hhead, hnil⟩ :=
-        firstBlock_of_expandStmts l rel term cold rest cur nextTmp params (s :: acc)
-      refine ⟨blk, s :: post, h0, hp, ?_, ?_, fun h => by cases h⟩
-      · simpa [List.reverse_cons, List.append_assoc] using hbody
-      · intro s' r' heq _; cases heq; rfl
-    | some site =>
-      cases site with
-      | inc dst x =>
+    (term : Lir.Term) (cold : Bool)
+    (ss : List Lir.Stmt) (cur nextTmp : Nat) (params : List Lir.VReg) (acc : List Lir.Stmt) :
+    ∃ blk post,
+      (expandStmts l rel term cold ss cur nextTmp params acc).1[0]? = some blk ∧
+      blk.params = params ∧
+      blk.body.toList = acc.reverse ++ post ∧
+      (∀ s rest', ss = s :: rest' → classify l s = none → post.head? = some s) ∧
+      (ss = [] → post = [] ∧ blk.term = relabelTerm rel term) := by
+  match ss with
+  | [] =>
+    rw [expandStmts_nil]
+    exact ⟨_, [], rfl, rfl, (by simp), (fun _ _ h _ => by cases h), (fun _ => ⟨rfl, rfl⟩)⟩
+  | s :: rest =>
+    by_cases hpair : ∃ s2 rest2 fp, rest = s2 :: rest2 ∧ classifyPair l s s2 = some fp
+    · obtain ⟨s2, rest2, fp, rfl, hp⟩ := hpair
+      have hne := classify_ne_none_of_classifyPair hp
+      rw [expandStmts_cons_pair l rel term cold s s2 rest2 cur nextTmp params acc hp]
+      cases fp with
+      | fusedResetUReuseU slot x dst lay2 cls args =>
+        dsimp only [stepPair, List.nil_append]
+        let fused : List Lir.Stmt :=
+          .store .w64 (cellAddr x 0) (.imm (Rt.Rc.dynamicHeader lay2.nobj cls lay2.tag 1)) ::
+            mkFieldStores x 0 args ++ [.assign slot (.arg (.v x)), .assign dst (.arg (.v x))]
+        obtain ⟨blk, post, h0, hpar, hbody, _, _⟩ :=
+          firstBlock_of_expandStmts l rel term cold rest2 cur nextTmp params (fused.reverse ++ acc)
+        refine ⟨blk, fused ++ post, h0, hpar, ?_, ?_, fun h => by cases h⟩
+        · simpa [List.reverse_append, List.reverse_reverse, List.append_assoc] using hbody
+        · intro _ _ heq hnc; cases heq; exact absurd hnc hne
+      | fusedResetReuse slot x dst idx1 lay1 mask idx2 lay2 cls args =>
+        dsimp only [stepPair, List.cons_append]
         exact ⟨_, [], rfl, rfl, (by simp),
-          (fun _ _ h hnc => by cases h; rw [hc] at hnc; cases hnc), (fun h => by cases h)⟩
-      | dec dst x =>
-        exact ⟨_, [], rfl, rfl, (by simp),
-          (fun _ _ h hnc => by cases h; rw [hc] at hnc; cases hnc), (fun h => by cases h)⟩
-      | alloc dst idx lay cls args =>
-        exact ⟨_, [.assign nextTmp (.load .w64 .zero (ctxAddr (Int.ofNat (8 * cls))))], rfl, rfl,
-          (by simp [List.reverse_cons]),
-          (fun _ _ h hnc => by cases h; rw [hc] at hnc; cases hnc), (fun h => by cases h)⟩
+          (fun _ _ heq hnc => by cases heq; exact absurd hnc hne), (fun h => by cases h)⟩
+    · have hnp : ∀ s2 rest2, rest = s2 :: rest2 → classifyPair l s s2 = none := by
+        intro s2 rest2 hr
+        cases hc : classifyPair l s s2 with
+        | none => rfl
+        | some fp => exact absurd ⟨s2, rest2, fp, hr, hc⟩ hpair
+      rw [expandStmts_cons_single l rel term cold s rest cur nextTmp params acc hnp]
+      dsimp only [stepSingle]
+      cases hc : classify l s with
+      | none =>
+        dsimp only [List.nil_append]
+        obtain ⟨blk, post, h0, hpar, hbody, _, _⟩ :=
+          firstBlock_of_expandStmts l rel term cold rest cur nextTmp params (s :: acc)
+        refine ⟨blk, s :: post, h0, hpar, ?_, ?_, fun h => by cases h⟩
+        · simpa [List.reverse_cons, List.append_assoc] using hbody
+        · intro s' r' heq _; cases heq; rfl
+      | some site =>
+        cases site with
+        | inc dst x =>
+          dsimp only [List.cons_append]
+          exact ⟨_, [], rfl, rfl, (by simp),
+            (fun _ _ h hnc => by cases h; rw [hc] at hnc; cases hnc), (fun h => by cases h)⟩
+        | dec dst x =>
+          dsimp only [List.cons_append]
+          exact ⟨_, [], rfl, rfl, (by simp),
+            (fun _ _ h hnc => by cases h; rw [hc] at hnc; cases hnc), (fun h => by cases h)⟩
+        | alloc dst idx lay cls args =>
+          dsimp only [List.cons_append]
+          exact ⟨_, [.assign nextTmp (.load .w64 .zero (ctxAddr (Int.ofNat (8 * cls))))], rfl, rfl,
+            (by simp [List.reverse_cons]),
+            (fun _ _ h hnc => by cases h; rw [hc] at hnc; cases hnc), (fun h => by cases h)⟩
+        | reset dst x idx lay cls mask =>
+          dsimp only [List.cons_append]
+          exact ⟨_, [], rfl, rfl, (by simp),
+            (fun _ _ h hnc => by cases h; rw [hc] at hnc; cases hnc), (fun h => by cases h)⟩
+        | resetU dst x idx lay cls mask =>
+          dsimp only [List.nil_append]
+          let dead := deadFields lay.nobj mask
+          let hdr := Rt.Rc.dynamicHeader lay.nobj cls lay.tag 1
+          let bodyStmts : List Lir.Stmt :=
+            mkDeadLoads x nextTmp dead ++ mkShellStores x hdr lay.nobj ++
+              mkDeadDecs l.decProc nextTmp dead ++ [.assign dst (.arg (.v x))]
+          obtain ⟨blk, post, h0, hpar, hbody, _, _⟩ :=
+            firstBlock_of_expandStmts l rel term cold rest cur (nextTmp + dead.length) params
+              (bodyStmts.reverse ++ acc)
+          refine ⟨blk, bodyStmts ++ post, h0, hpar, ?_, ?_, fun h => by cases h⟩
+          · simpa [List.reverse_append, List.reverse_reverse, List.append_assoc] using hbody
+          · intro _ _ h hnc; cases h; rw [hc] at hnc; cases hnc
+        | reuse dst slot idx lay cls args =>
+          dsimp only [List.cons_append]
+          exact ⟨_, [], rfl, rfl, (by simp),
+            (fun _ _ h hnc => by cases h; rw [hc] at hnc; cases hnc), (fun h => by cases h)⟩
+        | reuseU dst slot idx lay cls args =>
+          dsimp only [List.nil_append]
+          let hdr := Rt.Rc.dynamicHeader lay.nobj cls lay.tag 1
+          let bodyStmts : List Lir.Stmt :=
+            .store .w64 (cellAddr slot 0) (.imm hdr) :: mkFieldStores slot 0 args ++
+              [.assign dst (.arg (.v slot))]
+          obtain ⟨blk, post, h0, hpar, hbody, _, _⟩ :=
+            firstBlock_of_expandStmts l rel term cold rest cur nextTmp params
+              (bodyStmts.reverse ++ acc)
+          refine ⟨blk, bodyStmts ++ post, h0, hpar, ?_, ?_, fun h => by cases h⟩
+          · simpa [List.reverse_append, List.reverse_reverse, List.append_assoc] using hbody
+          · intro _ _ h hnc; cases h; rw [hc] at hnc; cases hnc
+termination_by ss.length
 
 /-- The entry of block `b` keeps its exact block parameters. -/
 theorem entry_params (l : Layout) (F : Lir.Func) {b : Lir.Label} {B : Lir.Block}
@@ -754,6 +896,25 @@ theorem rest_cons {l : Layout} {F : Lir.Func} {b : Lir.Label} {B : Lir.Block}
       simp
     simp only [Array.getElem?_toList, Array.getElem?_eq_getElem hlt, Option.some.injEq] at hget
     exact ⟨rest', by rw [hget]⟩
+
+/-- If `rest = s1 :: s2 :: rest2`, then `rawPos + 1 < B.body.size` and `B.body[rawPos + 1] = s2`. -/
+theorem rest_cons2 {l : Layout} {F : Lir.Func} {b : Lir.Label} {B : Lir.Block}
+    {rawPos inLbl inPos tmp : Nat} {params : List Lir.VReg} {acc rest : List Lir.Stmt}
+    (cp : ChunkAt l F b B rawPos inLbl inPos tmp params acc rest)
+    {s1 s2 : Lir.Stmt} {rest2 : List Lir.Stmt} (hrest : rest = s1 :: s2 :: rest2) :
+    rawPos + 1 < B.body.size ∧ B.body[rawPos + 1]? = some s2 := by
+  have hposLe := cp.posLe
+  have hlen : (B.body.toList.take rawPos).length = rawPos := by
+    rw [List.length_take]; simp; omega
+  have hsz := congrArg List.length cp.split
+  rw [hrest, List.length_append, hlen] at hsz
+  simp only [Array.length_toList, List.length_cons] at hsz
+  have hlt : rawPos + 1 < B.body.size := by omega
+  have hget : B.body.toList[rawPos + 1]? = some s2 := by
+    rw [cp.split, hrest, List.getElem?_append_right (by omega), hlen]
+    have hsub : rawPos + 1 - rawPos = 1 := by omega
+    rw [hsub]; rfl
+  exact ⟨hlt, by simpa using hget⟩
 
 /-- If `rawPos = B.body.size`, then `rest = []`. -/
 theorem rest_nil {l : Layout} {F : Lir.Func} {b : Lir.Label} {B : Lir.Block}
@@ -805,12 +966,14 @@ theorem step_normal {l : Layout} {F : Lir.Func} {b : Lir.Label} {B : Lir.Block}
       posLe := by omega
       blocksMatch := fun k blk' hk => by
         apply cp.blocksMatch k blk'
-        rw [hrest]; unfold expandStmts; rw [hnc]; exact hk
+        rw [hrest, expandStmts_cons_single l (newLabel l F) B.term B.cold s rest' inLbl tmp params acc
+          (fun _ _ _ => classifyPair_none_of_classify_none hnc)]
+        simpa [stepSingle, hnc] using hk
       inPosEq := by simp [cp.inPosEq]
       endLbl := by
         have := cp.endLbl
-        rw [hrest, stmtsExtra_cons, stmtExtra, hnc] at this
-        simpa using this }⟩
+        rw [hrest, stmtsExtra_cons_of_classify_none l s rest' hnc] at this
+        exact this }⟩
 
 /-- At the end of a block (`rawPos = B.body.size`), the expanded block has
 `inPos = blk.body.size`, `blk.term = relabelTerm (newLabel l F) B.term`,

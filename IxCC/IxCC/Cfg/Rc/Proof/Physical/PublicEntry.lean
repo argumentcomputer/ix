@@ -7,7 +7,8 @@ open IxCC.Cfg.Rc.Proof.Physical.Bridge IxCC.Rt.Rc.Procs
 
 variable {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
   {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-  {borrows : Own.Plain.BorrowSigs} {lowered : Public.Lowered} {root : Nat} {sourceFunction : Fir.Fun}
+  {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+  {lowered : Public.Lowered} {root : Nat} {sourceFunction : Fir.Fun}
   {H : Own.Heap} {addresses : AddressMap} {external : Nat → Nat}
   {values : List Own.RVal} {logical : List Fir.Val} {words : List Lir.Word}
   {memory : X86.Memory} {context base bump limit : Lir.Word} {regionBytes : Nat}
@@ -17,13 +18,15 @@ variable {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
 selected root. Both the whole-code proof and every layout transport are
 discharged; successful evaluation keeps its physical return witness. -/
 theorem public_entry_eval_sim
-    (admission : CodeAdmission F bodies P config pairs functions borrows)
-    (accepted : Public.lower config F bodies P borrows = .ok lowered)
+    (admission : CodeAdmission F bodies P config pairs functions borrows uniqs)
+    (accepted : Public.lower config F bodies P borrows uniqs = .ok lowered)
     (sourceLookup : F.fun? root = some sourceFunction)
     (den : Sem.Forall2 (Own.Proof.Den H) values logical)
     (balance : Own.Rc.Balance H external (Own.Plain.selectOwnedVals (borrows.getD root []) values))
     (hbrw : ∀ v, v ∈ Own.Plain.selectBorrowedVals (borrows.getD root []) values →
       Own.Plain.ReachableFrom H external v)
+    (huniq : ∀ v, v ∈ Own.Plain.selectUniqueVals (borrows.getD root []) (uniqs.getD root ([], false)).1 values →
+      Own.Plain.UniqVal F.ctors H external (Own.Plain.selectOwnedVals (borrows.getD root []) values) v)
     (represented : Rt.Proof.ListRel (fun value word => valueWord addresses value = some word) values words)
     (compatible : ∀ value ∈ values, ValueCtorOk (tablesOf P pairs) value)
     (arity : values.length = sourceFunction.params.length)
@@ -35,18 +38,23 @@ theorem public_entry_eval_sim
       (Inline.inlineEntryClock lowered.runtime.program)
       (fun clock => Fir.run F clock root logical)
       (fun clock => Lir.eval {lowered.runtime.program with main := root} clock words memory context) := by
-  have h1 := entry_eval_sim admission sourceLookup den balance hbrw represented compatible arity heap
-  have h2 := admitted_root_eval_stages admission accepted root words memory context
+  have hroot : root < P.base.size := by
+    rw [generate_size (checkProgram_parts (checkScopedProgram_parts admission.scopedProgram).1).2]
+    exact checked_source_dense admission.scopedProgram sourceLookup
+  have h1 := entry_eval_sim admission sourceLookup den balance hbrw huniq represented compatible arity heap
+  have h2 := admitted_root_eval_stages admission accepted root hroot words memory context
   exact (Sem.Sim.comp (Lir.eval_mono _ words memory context) h1 h2).mono (by rintro a c ⟨b, hr, rfl⟩; exact hr)
 
 theorem public_entry_eval_refines
-    (admission : CodeAdmission F bodies P config pairs functions borrows)
-    (accepted : Public.lower config F bodies P borrows = .ok lowered)
+    (admission : CodeAdmission F bodies P config pairs functions borrows uniqs)
+    (accepted : Public.lower config F bodies P borrows uniqs = .ok lowered)
     (sourceLookup : F.fun? root = some sourceFunction)
     (den : Sem.Forall2 (Own.Proof.Den H) values logical)
     (balance : Own.Rc.Balance H external (Own.Plain.selectOwnedVals (borrows.getD root []) values))
     (hbrw : ∀ v, v ∈ Own.Plain.selectBorrowedVals (borrows.getD root []) values →
       Own.Plain.ReachableFrom H external v)
+    (huniq : ∀ v, v ∈ Own.Plain.selectUniqueVals (borrows.getD root []) (uniqs.getD root ([], false)).1 values →
+      Own.Plain.UniqVal F.ctors H external (Own.Plain.selectOwnedVals (borrows.getD root []) values) v)
     (represented : Rt.Proof.ListRel (fun value word => valueWord addresses value = some word) values words)
     (compatible : ∀ value ∈ values, ValueCtorOk (tablesOf P pairs) value)
     (arity : values.length = sourceFunction.params.length)
@@ -58,7 +66,7 @@ theorem public_entry_eval_refines
       (Sem.behaviour (fun clock => Fir.run F clock root logical))
       (Sem.behaviour (fun clock => Lir.eval {lowered.runtime.program with main := root} clock words memory context)) :=
   Sem.Sim.refines (Fir.run_mono F root logical) (Lir.eval_mono _ words memory context)
-    (public_entry_eval_sim admission accepted sourceLookup den balance hbrw represented compatible arity heap)
+    (public_entry_eval_sim admission accepted sourceLookup den balance hbrw huniq represented compatible arity heap)
 
 
 

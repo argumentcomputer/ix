@@ -32,84 +32,99 @@ theorem functionBounds_marker {limit first : Nat} {fd : Cfg.Fun}
   checked_action_operand reserved decoded
     (List.all_eq_true.mp (functionBounds_block checked lookup).2.1 instruction member)
 
-/-- Every original block uses the original Fir variable bound. Marker
+/-- The register boundary separating real/reset-slot registers (`< funcFirst`) from
+action marker dummy destinations (`≥ funcFirst`). -/
+def funcFirst (bodies : Src.NatMap Own.Plain.Code) (f : Nat) (source : Fir.Fun) : Nat :=
+  source.vars + match bodies.get? f with | some b => Own.Plain.slotBound b | none => 0
+
+theorem funcFirst_eq {bodies : Src.NatMap Own.Plain.Code} {f : Nat} {source : Fir.Fun}
+    {body : Own.Plain.Code} (h : bodies.get? f = some body) :
+    funcFirst bodies f source = source.vars + Own.Plain.slotBound body := by
+  simp [funcFirst, h]
+
+/-- Every original block uses the function's real+slot bound (`funcFirst`). Marker
 destinations remain above that bound even though the lowered function's
 temporary namespace is larger. -/
 theorem checked_source_bounds {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} {borrows : Own.Plain.BorrowSigs}
-    (checked : checkScopedProgram F bodies P borrows = true)
+    {P : Program} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (checked : checkScopedProgram F bodies P borrows uniqs = true)
     {f : Nat} (range : f < F.size) {source : Fir.Fun} {fd : Cfg.Fun}
     (sourceLookup : F.fun? f = some source) (lookup : P.base.fun? f = some fd) :
-    functionBounds P.base.size source.vars fd = true := by
-  obtain ⟨actual, table, actualLookup, _, source', body, sourceLookup', _, lowering,
+    functionBounds P.base.size (funcFirst bodies f source) fd = true := by
+  obtain ⟨actual, table, actualLookup, _, source', body, sourceLookup', bodyLookup, lowering,
     bounds, _⟩ := checked_entry (checkScopedProgram_parts checked).1 range
   have hs : source' = source := Option.some.inj (sourceLookup'.symm.trans sourceLookup)
   have ht : actual = fd := Option.some.inj (actualLookup.symm.trans lookup)
   subst source'; subst actual
-  rw [generate_size (checkProgram_parts (checkScopedProgram_parts checked).1).2]
+  rw [generate_size (checkProgram_parts (checkScopedProgram_parts checked).1).2,
+    funcFirst_eq bodyLookup]
   exact bounds
 
 theorem checked_block_params {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} {borrows : Own.Plain.BorrowSigs}
-    (checked : checkScopedProgram F bodies P borrows = true)
+    {P : Program} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (checked : checkScopedProgram F bodies P borrows uniqs = true)
     {f : Nat} (range : f < F.size) {source : Fir.Fun} {fd : Cfg.Fun}
     (sourceLookup : F.fun? f = some source) (lookup : P.base.fun? f = some fd)
     {index : Nat} {block : Cfg.Block} (blockLookup : fd.blocks[index]? = some block) :
-    ∀ x ∈ block.params.map Prod.fst, x < source.vars :=
+    ∀ x ∈ block.params.map Prod.fst, x < funcFirst bodies f source :=
   functionBounds_params (checked_source_bounds checked range sourceLookup lookup) blockLookup
 
-/-- The real original bound is below every native temporary supply: lowering
-retains source.vars plus marker space, consumption retains vars, and supOf
+/-- The real+slot bound is below every native temporary supply: lowering
+retains `funcFirst` plus marker space, consumption retains vars, and supOf
 includes the function vars field independently of syntactic occurrences. -/
 theorem checked_consumed_sup {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} {borrows : Own.Plain.BorrowSigs}
-    (checked : checkScopedProgram F bodies P borrows = true)
+    {P : Program} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (checked : checkScopedProgram F bodies P borrows uniqs = true)
     {f : Nat} (range : f < F.size) {source : Fir.Fun} {fd actual : Cfg.Fun}
     (sourceLookup : F.fun? f = some source) (lookup : P.base.fun? f = some fd)
     (consuming : consumeFunction P (layoutOf P) fd = .ok actual) :
-    source.vars ≤ Rt.Proof.supOf actual := by
-  obtain ⟨original, table, originalLookup, _, source', body, sourceLookup', _, lowering, _⟩ :=
+    funcFirst bodies f source ≤ Rt.Proof.supOf actual := by
+  obtain ⟨original, table, originalLookup, _, source', body, sourceLookup', bodyLookup, lowering, _⟩ :=
     checked_entry (checkScopedProgram_parts checked).1 range
   have hs : source' = source := Option.some.inj (sourceLookup'.symm.trans sourceLookup)
   have ht : original = fd := Option.some.inj (originalLookup.symm.trans lookup)
   subst source'; subst original
-  have vars : fd.vars = source.vars + actionCount body := by rw [lowering]; rfl
+  have vars : fd.vars = source.vars + Own.Plain.slotBound body + actionCount body := by
+    rw [lowering]; rfl
   have retained := (consumeFunction_parts consuming).2.2.1
+  rw [funcFirst_eq bodyLookup]
   unfold Rt.Proof.supOf
   omega
 
 theorem checked_marker_bounds {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} {borrows : Own.Plain.BorrowSigs}
-    (checked : checkScopedProgram F bodies P borrows = true)
+    {P : Program} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (checked : checkScopedProgram F bodies P borrows uniqs = true)
     {f : Nat} (range : f < F.size) {source : Fir.Fun} {fd : Cfg.Fun}
     (sourceLookup : F.fun? f = some source) (lookup : P.base.fun? f = some fd)
     {index : Nat} {block : Cfg.Block} (blockLookup : fd.blocks[index]? = some block)
     {instruction : Cfg.Instr} (member : instruction ∈ block.body)
     (reserved : Rc.reserved P.base.size instruction = true) {slot : Nat} {action : Action}
     (decoded : decode P.base.size instruction = some (slot, action)) :
-    source.vars ≤ slot ∧ (match action with | .inc x _ | .dec x => x < source.vars) := by
+    funcFirst bodies f source ≤ slot ∧
+      (match action with | .inc x _ | .dec x => x < funcFirst bodies f source) := by
   cases action <;>
     exact functionBounds_marker (checked_source_bounds checked range sourceLookup lookup)
       blockLookup member reserved decoded
 
 /-- Exact original block-zero data from the real checked lowering. -/
 theorem checked_entry_block {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} {borrows : Own.Plain.BorrowSigs}
-    (checked : checkScopedProgram F bodies P borrows = true)
+    {P : Program} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (checked : checkScopedProgram F bodies P borrows uniqs = true)
     {f : Nat} (range : f < F.size) {source : Fir.Fun} {body : Own.Plain.Code}
     (sourceLookup : F.fun? f = some source) (bodyLookup : bodies.get? f = some body) :
     ∃ fd block, P.base.fun? f = some fd ∧ fd.blocks[0]? = some block ∧
       block.params.map Prod.fst = source.params.map Prod.fst ∧
       block.params.length = source.params.length ∧
-      block.body = Cfg.Proof.spine (skeleton P.base.size source.vars body) ∧
-      functionBounds P.base.size source.vars fd = true := by
+      block.body = Cfg.Proof.spine (skeleton P.base.size (funcFirst bodies f source) body F.ctors source.vars) ∧
+      functionBounds P.base.size (funcFirst bodies f source) fd = true := by
   obtain ⟨fd, table, lookup, _, source', body', sourceLookup', bodyLookup', lowering,
     bounds, _⟩ := checked_entry (checkScopedProgram_parts checked).1 range
   have hs : source' = source := Option.some.inj (sourceLookup'.symm.trans sourceLookup)
   have hc : body' = body := Option.some.inj (bodyLookup'.symm.trans bodyLookup)
   subst source'; subst body'
+  let first := source.vars + Own.Plain.slotBound body
   let ownFd : Own.Fun := {Own.immFun source with
-    body := skeleton F.size source.vars body, vars := source.vars + actionCount body}
+    body := skeleton F.size first body F.ctors source.vars, vars := first + actionCount body}
   obtain ⟨terminal, entry⟩ := Cfg.Proof.block_zero f ownFd
   have params : (ownFd.params.zip ownFd.sig.params).map Prod.fst = ownFd.params :=
     Cfg.Proof.zip_fst (by simp [ownFd, Own.immFun])
@@ -118,16 +133,16 @@ theorem checked_entry_block {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Cod
     params := ownFd.params.zip ownFd.sig.params
     body := Cfg.Proof.spine ownFd.body
     term := terminal }, lookup, ?_, params, ?_, ?_, ?_⟩
-  · simpa only [lowering, lowerFunction, Cfg.Fun.block?, ownFd] using entry
+  · simpa only [lowering, lowerFunction, Cfg.Fun.block?, ownFd, first] using entry
   · simp [ownFd, Own.immFun]
-  · simp only [ownFd, size]
-  · simpa only [size] using bounds
+  · dsimp only [ownFd, first]; rw [size, funcFirst_eq bodyLookup]
+  · simpa only [size, funcFirst_eq bodyLookup] using bounds
 
 /-- Construct At at the exact block-zero frame selected by actual admission.
 The statement includes the real source entry step and has no naming premise. -/
 theorem checked_entry_at {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} {borrows : Own.Plain.BorrowSigs}
-    (checked : checkScopedProgram F bodies P borrows = true)
+    {P : Program} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (checked : checkScopedProgram F bodies P borrows uniqs = true)
     {f : Nat} (range : f < F.size) {source : Fir.Fun} {body : Own.Plain.Code}
     (sourceLookup : F.fun? f = some source) (bodyLookup : bodies.get? f = some body)
     {fd : Cfg.Fun} {block : Cfg.Block} (lookup : P.base.fun? f = some fd)
@@ -140,7 +155,7 @@ theorem checked_entry_at {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
       rest := block.body
       env := Own.bindAll .leaf (source.params.map Prod.fst) values }
     step P (.call f values callers H) = .next (.run entry callers H) true ∧
-      At F P entry (Own.bindAll .leaf (source.params.map Prod.fst) values) [] body := by
+      At F P entry (Own.bindAll .leaf (source.params.map Prod.fst) values) [] body .leaf := by
   obtain ⟨fd', block', lookup', blockLookup', params, length, _, _⟩ :=
     checked_entry_block checked range sourceLookup bodyLookup
   have sameFd : fd' = fd := Option.some.inj (lookup'.symm.trans lookup)

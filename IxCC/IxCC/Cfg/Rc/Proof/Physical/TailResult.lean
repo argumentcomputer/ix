@@ -32,37 +32,70 @@ section
 variable {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
   {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
   {main clock : Nat} {sourceJoins : List Fir.JEntry} {borrows : Own.Plain.BorrowSigs}
+  {uniqs : Own.Plain.UniqSigs}
+
+private theorem tail_evalArgs_mem_arg {ρo : Own.Env} :
+    ∀ {args : List Fir.Arg} {vs : List RVal}, Own.evalArgs ρo args = some vs →
+      ∀ v, v ∈ vs → (∃ a, a ∈ args ∧ Own.evalArg ρo a = some v)
+  | [], _, hev, _, hm => by simp [Own.evalArgs] at hev; subst hev; cases hm
+  | a :: as, vs, hev, v, hm => by
+    cases ha : Own.evalArg ρo a with
+    | none => simp [Own.evalArgs, ha] at hev
+    | some v0 =>
+      cases has : Own.evalArgs ρo as with
+      | none => simp [Own.evalArgs, ha, has] at hev
+      | some vs' =>
+        have : v0 :: vs' = vs := by simpa [Own.evalArgs, ha, has] using hev
+        subst this
+        rcases List.mem_cons.mp hm with rfl | hm'
+        · exact ⟨a, List.mem_cons_self, ha⟩
+        · obtain ⟨a', hm'', ha'⟩ := tail_evalArgs_mem_arg has v hm'
+          exact ⟨a', List.mem_cons_of_mem _ hm'', ha'⟩
 
 /-- **A tail call**: the callee runs at a strictly smaller source clock. -/
-theorem tail_result (admission : CodeAdmission F bodies P config pairs functions borrows)
-    (smaller : ∀ k, k < clock → PhysicalAtClock F P config pairs main k borrows)
+theorem tail_result (admission : CodeAdmission F bodies P config pairs functions borrows uniqs)
+    (smaller : ∀ k, k < clock → PhysicalAtClock F P config pairs main k borrows bodies uniqs)
     {f : Fir.FunId} {args : List Fir.Arg} :
-    PhysicalCode F P config pairs main clock sourceJoins (.tcall f args) borrows := by
-  intro H addresses external live Γ Δ sourceEnv ownedEnv roots lex ownedJoins sourceFunction
-    function source target memory context base bump limit regionBytes slots lists callers
-    sourceLookup before heap
+    PhysicalCode F P config pairs main clock sourceJoins (.tcall f args) borrows bodies uniqs := by
+  intro H addresses external retUniq priv rslots slotVals live Γ Δ sourceEnv ownedEnv roots lex
+    ownedJoins sourceFunction function source target memory context base bump limit regionBytes
+    slots lists callers sourceLookup before heap
   show ResultAt _ _ _ _ _ _ _ _ _ _ _ _ _ (Fir.eval F clock sourceEnv sourceJoins (.tcall f args))
+    F.ctors retUniq priv
   have scope : (Own.Plain.signatures F).lookup f = some args.length ∧
       args.all (Own.Plain.argIn live) = true := by
     simpa [Own.Plain.eraseCode, Own.Plain.scopeOk, Bool.and_eq_true] using before.scope
   obtain ⟨calleeSource, calleeRange, calleeLookup, calleeArity⟩ :=
     Own.Plain.signatures_lookup scope.1
-  obtain ⟨Γ', taken, htb, closed⟩ := Own.Plain.checkCode_tcall before.typed
+  obtain ⟨hretU, Γ', taken, htb, closed⟩ := Own.Plain.checkCode_tcall before.typed
   let bs := borrows.getD f []
-  obtain ⟨fields, logical, owned₁, ownArgs, sourceArgs, den, inv₁, refs, _, hbrw⟩ :=
-    Own.Plain.takeOwnedArgs_tail_sem before.owned taken htb
+  let us := (uniqs.getD f ([], false)).1
+  let retU := (uniqs.getD f ([], false)).2
+  obtain ⟨fields, logical, owned₁, ownArgs, sourceArgs, den, inv₁, refs, hw₁, hbrw, huniq, havArgs⟩ :=
+    Own.Plain.takeOwnedUniqueArgs_tail_sem before.owned taken htb closed
   obtain ⟨toks₁, tokens₁, roots₁⟩ := inv₁.roots
   have none := Own.Plain.closed_nil tokens₁ closed
   subst none
   have empty := Own.Plain.EnvRoots.nil_inv roots₁
   subst empty
+  obtain ⟨skeys, hsk, hsr⟩ := before.owned.slotRoots
+  have hsnil := (hsk.same hw₁.rset).closed_nil (Own.Plain.closed_rset closed)
+  subst hsnil
+  have hsv := Own.Plain.EnvRoots.nil_inv hsr
+  subst hsv
+  have hprivArgs : ∀ l, priv l → ∀ v, v ∈ fields → v ≠ .loc l := by
+    intro l hl v hv hEq; subst hEq
+    obtain ⟨a, hma, ha⟩ := tail_evalArgs_mem_arg ownArgs (.loc l) hv
+    cases a with
+    | lit _ | erased => simp [Own.evalArg] at ha
+    | var y => exact before.owned.privNoVar l hl y (havArgs y hma) ha
   have refs' : Own.Plain.SameRefs roots (Own.Plain.selectOwnedVals bs fields) := by simpa using refs
   have balance : Balance H external (Own.Plain.selectOwnedVals bs fields) :=
-    refs'.balance before.owned.counts
+    refs'.balance (by simpa using before.owned.counts)
   have calleeHeap : HeapState P pairs H addresses memory external
-      (Own.Plain.selectOwnedVals bs fields) context base bump limit regionBytes slots lists :=
-    ⟨by rw [← holdRoots_sameRefs refs']; exact heap.ready, heap.ordered, heap.compatible,
-      heap.extent⟩
+      (Own.Plain.selectOwnedVals bs fields ++ []) context base bump limit regionBytes slots lists :=
+    ⟨by simpa only [List.append_nil] using (by rw [← holdRoots_sameRefs refs']; simpa using heap.ready),
+      heap.ordered, heap.compatible, heap.extent⟩
   have arity := source_call_arity scope.1 calleeLookup sourceArgs
   have fieldsArity : fields.length = calleeSource.params.length :=
     (Own.evalArgs_length ownedEnv ownArgs).trans calleeArity.symm
@@ -70,6 +103,8 @@ theorem tail_result (admission : CodeAdmission F bodies P config pairs functions
   have frameArgs : Own.evalArgs source.env args = some fields := Cfg.Proof.evalArgs_sub lexical ownArgs
   have hreach : Own.Plain.ReachablePreserved H H external :=
     Own.Plain.ReachablePreserved.refl H external
+  have hpriv : Own.Plain.PrivPreserved H H priv :=
+    Own.Plain.PrivPreserved.refl before.owned.privNoEdge
   have history : HeapHistory H.size addresses H.size addresses := ⟨Nat.le_refl _, fun _ _ => rfl⟩
   rw [Fir.eval_tcall, sourceArgs]
   simp only [Sem.Result.ofOption, Sem.Result.bind_ok]
@@ -77,8 +112,8 @@ theorem tail_result (admission : CodeAdmission F bodies P config pairs functions
   unfold Fir.callFun
   rw [if_pos arity]
   have entryLayout := before.layout
-  obtain ⟨fd, scopeNames, params, acc, next, supply, low, lookup, sourceRange, layout, cursor,
-    sub, below, names, saved⟩ := before.layout
+  obtain ⟨fd, scopeNames, params, acc, next, supply, low, slotBase, lookup, sourceRange, layout, cursor,
+    sub, below, loSlot, slotSub, names, vb, rc, saved⟩ := before.layout
   have finished : source.rest = [] := by simpa only [skeleton, Cfg.Proof.spine] using cursor
   let sourceBlock : Cfg.Block :=
     {params, body := acc.reverse, term := Cfg.Proof.tcallTerm source.fn f args}
@@ -93,20 +128,22 @@ theorem tail_result (admission : CodeAdmission F bodies P config pairs functions
       Option.some.inj (calleeLookup.symm.trans sourceLookup)
     subst calleeSource
     rcases self_entry_activation admission.scopedProgram admission.consuming sourceLookup
-        entryLayout before.frame ownArgs den balance hbrw fieldsArity before.running memory context []
-        callers with entered | failure
+        entryLayout before.frame ownArgs den balance hbrw huniq
+        before.owned.privBound before.owned.privNoEdge hprivArgs fieldsArity before.running
+        memory context [] callers with entered | failure
     · obtain ⟨after, final, cost, body, erased, activation, sameFn, trace, charged⟩ := entered
-      apply ResultAt.charge trace charged hreach history
+      apply ResultAt.charge trace charged hreach hpriv history
       intro next' clockEq
-      have execution := smaller next' (by omega) [] body H addresses external
+      have execution := smaller next' (by omega) [] body H addresses external retU priv .leaf []
         (sourceFunction.params.map Prod.fst)
-        (Ctx.entryWith (sourceFunction.params.map Prod.fst) bs) .leaf
+        (Ctx.entryWith (sourceFunction.params.map Prod.fst) bs us) .leaf
         (Fir.bindAll .leaf (sourceFunction.params.map Prod.fst) logical)
         (Own.bindAll .leaf (sourceFunction.params.map Prod.fst) fields)
         (Own.Plain.selectOwnedVals bs fields) [] [] sourceFunction
         function after final memory context base bump limit regionBytes slots lists callers
-        (by rw [sameFn]; exact sourceLookup) activation calleeHeap
-      rwa [erased] at execution
+        (by rw [sameFn]; exact sourceLookup) (by simpa only [sameFn] using activation) calleeHeap
+      rw [erased] at execution
+      exact ResultAt.weaken (fun hr => ⟨hretU hr, rfl⟩) (fun _ h => h) execution
     · exact ResultAt.of_fails failure
   · have terminal : sourceBlock.term = .tcall f args := by
       simp [sourceBlock, Cfg.Proof.tcallTerm, self]
@@ -136,22 +173,29 @@ theorem tail_result (admission : CodeAdmission F bodies P config pairs functions
       obtain ⟨originalFd, block, consumedFd, callee, targetEnv, offset, body, calleeCfgLookup,
         calleeBlockLookup, erased, entered, traceEntry, _, activation⟩ :=
         entry_activation admission.scopedProgram admission.consuming admission.lowering main
-          calleeLookup den balance hbrw represented compatible fieldsArity [] memory context callers
+          calleeLookup (priv := priv) den balance hbrw huniq
+          before.owned.privBound before.owned.privNoEdge hprivArgs represented compatible
+          fieldsArity [] memory context callers
       have called := Lir.step_tail (mem := memory) (ctx := context) (rest := callers)
         functionLookup outputLookup pos term evaluated entered
       have trace := (Lir.star_of_step called).trans traceEntry
       simp only [Bool.toNat_true, Nat.add_zero] at trace
-      apply ResultAt.charge trace (Nat.le_refl 1) hreach history
+      apply ResultAt.charge trace (Nat.le_refl 1) hreach hpriv history
       intro next' clockEq
-      have execution := smaller next' (by omega) [] body H addresses external
+      have execution := smaller next' (by omega) [] body H addresses external retU priv .leaf []
         (calleeSource.params.map Prod.fst)
-        (Ctx.entryWith (calleeSource.params.map Prod.fst) bs) .leaf
+        (Ctx.entryWith (calleeSource.params.map Prod.fst) bs us) .leaf
         (Fir.bindAll .leaf (calleeSource.params.map Prod.fst) logical)
         (Own.bindAll .leaf (calleeSource.params.map Prod.fst) fields)
         (Own.Plain.selectOwnedVals bs fields) [] [] calleeSource
-        consumedFd _ _ memory context base bump limit regionBytes slots lists callers
+        consumedFd
+        {fn := f, blk := 0, rest := block.body,
+          env := Own.bindAll .leaf (calleeSource.params.map Prod.fst) fields}
+        {fn := f, label := offset, pos := 0, env := targetEnv}
+        memory context base bump limit regionBytes slots lists callers
         calleeLookup activation calleeHeap
-      rwa [erased] at execution
+      rw [erased] at execution
+      exact ResultAt.weaken (fun hr => ⟨hretU hr, rfl⟩) (fun _ h => h) execution
     · exact ResultAt.of_fails failure
 
 end

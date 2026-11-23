@@ -693,6 +693,492 @@ def mapWithKeyAux {α β : Type} (f : Nat → α → β) : Nat → Nat → Src.N
   | k, w, .node v z o =>
     .node (v.map (f k)) (mapWithKeyAux f k (2 * w) z) (mapWithKeyAux f (k + w) (2 * w) o)
 
+/-! ## Track A4: Interprocedural `@unique` inference and FBIP `reset`/`reuse` placement -/
+
+/-- Clear param `idx`'s `@unique` flag for function `f` in `uniqs`. -/
+def clearParamUniq (uniqs : UniqSigs) (f idx : Nat) : UniqSigs × Bool :=
+  match uniqs.get? f with
+  | none => (uniqs, false)
+  | some (us, retU) =>
+    if us.getD idx false then
+      (uniqs.insert f (us.set idx false, retU), true)
+    else (uniqs, false)
+
+/-- Clear `retUnique` for function `f` in `uniqs`. -/
+def clearRetUniq (uniqs : UniqSigs) (f : Nat) : UniqSigs × Bool :=
+  match uniqs.get? f with
+  | none => (uniqs, false)
+  | some (us, retU) =>
+    if retU then (uniqs.insert f (us, false), true) else (uniqs, false)
+
+/-- Check call/tcall arguments against callee `g`'s `@unique` parameter mask, clearing any
+position that is not guaranteed uniquely moved (or immediate). Returns `(uniqs', changed, uniqVarsAfter)`. -/
+def checkCallArgsUniq (borrows : BorrowSigs) (g : FunId) (imm uniq : VSet)
+    (keepAlive : VSet) (args : List Arg) (st : UniqSigs × Bool) : UniqSigs × Bool × VSet :=
+  let bs := borrows.getD g []
+  let ownedArgs := selectOwnedArgs bs args
+  let counts := countNonImmArgs imm ownedArgs
+  let (st', uniq') := (args.zipIdx).foldl (fun (acc, u) (a, idx) =>
+    let isBrw := bs.getD idx false
+    let isCalleeUniq := (acc.1.getD g ([], false)).1.getD idx false
+    match a with
+    | .var v =>
+      if isBrw then
+        (acc, VSet.eraseP u v)
+      else
+        let ok := imm.contains v || (u.contains v && !keepAlive.contains v && counts.getD v 0 == 1)
+        let acc' :=
+          if isCalleeUniq && !ok then
+            let (m', ch) := clearParamUniq acc.1 g idx
+            (m', acc.2 || ch)
+          else acc
+        (acc', VSet.eraseP u v)
+    | _ => (acc, u)) (st, uniq)
+  (st'.1, st'.2, uniq')
+
+mutual
+/-- One pass over annotated `ACode` refining `uniqs` (`@unique` params and `retUnique`). -/
+def refineUniqCode (borrows : BorrowSigs) (f : FunId) (imm uniq : VSet)
+    (st : UniqSigs × Bool) : ACode → UniqSigs × Bool
+  | .bind x r k liveK =>
+    match r with
+    | .proj y _ _ =>
+      if imm.contains y then
+        refineUniqCode borrows f (Src.NatSet.insert imm x) (Src.NatSet.insert uniq x) st k
+      else
+        refineUniqCode borrows f imm uniq st k
+    | .prim op args =>
+      let imm' := Src.NatSet.insert (addPrimImm (primImmArgs op args.length) args imm) x
+      let uniq' := Src.NatSet.insert (addPrimImm (primImmArgs op args.length) args uniq) x
+      refineUniqCode borrows f imm' uniq' st k
+    | .arg (.var y) =>
+      if imm.contains y then
+        refineUniqCode borrows f (Src.NatSet.insert imm x) (Src.NatSet.insert uniq x) st k
+      else if uniq.contains y && !liveK.contains y then
+        let uniq' := Src.NatSet.insert (VSet.eraseP uniq y) x
+        refineUniqCode borrows f imm uniq' st k
+      else
+        refineUniqCode borrows f imm (VSet.eraseP uniq y) st k
+    | .arg _ =>
+      refineUniqCode borrows f (Src.NatSet.insert imm x) (Src.NatSet.insert uniq x) st k
+    | .ctor c args =>
+      if c.arity == 0 then
+        refineUniqCode borrows f (Src.NatSet.insert imm x) (Src.NatSet.insert uniq x) st k
+      else
+        let uniq' := (argVars args).foldl (fun u v => VSet.eraseP u v) uniq
+        refineUniqCode borrows f imm (Src.NatSet.insert uniq' x) st k
+    | .call g args =>
+      let bs := borrows.getD g []
+      let borrowedArgs := selectBorrowedArgs bs args
+      let keepAlive := VSet.union liveK (VSet.ofVars (argVars borrowedArgs))
+      let (m', ch', uniq') := checkCallArgsUniq borrows g imm uniq keepAlive args st
+      let calleeRetU := (m'.getD g ([], false)).2
+      let uniq'' := if calleeRetU then Src.NatSet.insert uniq' x else uniq'
+      refineUniqCode borrows f imm uniq'' (m', ch') k
+  | .jp _ _ _ body k _ _ _ =>
+    let st := refineUniqCode borrows f imm imm st body
+    refineUniqCode borrows f imm uniq st k
+  | .jmp _ _ => st
+  | .case _ alts d =>
+    let st := refineUniqAlts borrows f imm uniq st alts
+    refineUniqOpt borrows f imm uniq st d
+  | .ret a =>
+    let retU := (st.1.getD f ([], false)).2
+    if retU then
+      match a with
+      | .var y =>
+        if imm.contains y || uniq.contains y then st
+        else
+          let (m', ch) := clearRetUniq st.1 f
+          (m', st.2 || ch)
+      | _ => st
+    else st
+  | .tcall g args =>
+    let (m', ch', _) := checkCallArgsUniq borrows g imm uniq .leaf args st
+    let selfRetU := (m'.getD f ([], false)).2
+    let calleeRetU := (m'.getD g ([], false)).2
+    if selfRetU && !calleeRetU then
+      let (m'', ch2) := clearRetUniq m' f
+      (m'', ch' || ch2)
+    else (m', ch')
+  | .trap => st
+
+def refineUniqAlts (borrows : BorrowSigs) (f : FunId) (imm uniq : VSet)
+    (st : UniqSigs × Bool) : List AAlt → UniqSigs × Bool
+  | [] => st
+  | .mk _ ab _ :: rest =>
+    let st := refineUniqCode borrows f imm uniq st ab
+    refineUniqAlts borrows f imm uniq st rest
+
+def refineUniqOpt (borrows : BorrowSigs) (f : FunId) (imm uniq : VSet)
+    (st : UniqSigs × Bool) : Option (ACode × VSet) → UniqSigs × Bool
+  | none => st
+  | some (ac, _) => refineUniqCode borrows f imm uniq st ac
+end
+
+def refineUniqPass (F : Fir.Program) (borrows : BorrowSigs) (annotated : Src.NatMap ACode)
+    (uniqs : UniqSigs) : UniqSigs × Bool :=
+  (List.range F.size).foldl (fun st f =>
+    match F.fun? f, annotated.get? f with
+    | some fd, some ab =>
+      let bs := borrows.getD f []
+      let us := (st.1.getD f ([], false)).1
+      let initUniq := VSet.ofVars (Ctx.entryUnique (fd.params.map (·.1)) bs us)
+      refineUniqCode borrows f .leaf initUniq st ab
+    | _, _ => st) (uniqs, false)
+
+def uniqFixLoop (F : Fir.Program) (borrows : BorrowSigs) (annotated : Src.NatMap ACode) :
+    Nat → UniqSigs → UniqSigs
+  | 0, uniqs => uniqs
+  | fuel + 1, uniqs =>
+    let (uniqs', changed) := refineUniqPass F borrows annotated uniqs
+    if changed then uniqFixLoop F borrows annotated fuel uniqs' else uniqs'
+
+/-- Total fuel-bounded interprocedural `@unique` parameter and return uniqueness inference.
+Exported functions never assume `@unique` parameters; `@borrowed` parameters are never `@unique`. -/
+def inferUniqs (F : Fir.Program) (borrows : BorrowSigs) (annotated : Src.NatMap ACode) : UniqSigs :=
+  let expSet := VSet.ofVars F.exports
+  let init : UniqSigs := (List.range F.size).foldl (fun m f =>
+    match F.fun? f with
+    | none => m
+    | some fd =>
+      let isExp := expSet.contains f
+      let bs := borrows.getD f []
+      let us := (List.range fd.params.length).map fun i =>
+        if isExp then false else !(bs.getD i false)
+      m.insert f (us, true)) .leaf
+  uniqFixLoop F borrows annotated 64 init
+
+mutual
+/-- Whether `ab` contains a heap `.ctor` of size class `cls` (without entering a `.jp` body). -/
+def hasMatchingCtor (cls : Nat) : ACode → Bool
+  | .bind _ (.ctor c _) k _ => (Ctx.validReuseCtor c == some cls) || hasMatchingCtor cls k
+  | .bind _ _ k _ => hasMatchingCtor cls k
+  | .jp _ _ _ _ k _ _ _ => hasMatchingCtor cls k
+  | .case _ alts d => hasMatchingCtorAlts cls alts || hasMatchingCtorOpt cls d
+  | .jmp .. | .ret .. | .tcall .. | .trap => false
+
+def hasMatchingCtorAlts (cls : Nat) : List AAlt → Bool
+  | [] => false
+  | .mk _ ab _ :: rest => hasMatchingCtor cls ab || hasMatchingCtorAlts cls rest
+
+def hasMatchingCtorOpt (cls : Nat) : Option (ACode × VSet) → Bool
+  | none => false
+  | some (ac, _) => hasMatchingCtor cls ac
+end
+
+/-- Peel leading `.proj x key j` bindings from `ab` (returning `(projected, rest, liveAfter)`). -/
+def peelProjs (x : Var) (key : Key.CtorKey) (arity : Nat) :
+    ACode → VSet → List (Var × Nat) × ACode × VSet
+  | .bind v (.proj y key' j) k liveK, _ =>
+    if y == x && key' == key && j < arity then
+      let (more, rest, liveAfter) := peelProjs x key arity k liveK
+      ((v, j) :: more, rest, liveAfter)
+    else ([], .bind v (.proj y key' j) k liveK, VSet.addVars (VSet.eraseP liveK v) [y])
+  | ac, lb => ([], ac, lb)
+
+mutual
+def ACode.sz : ACode → Nat
+  | .bind _ _ k _ => k.sz + 1
+  | .jp _ _ _ b k _ _ _ => b.sz + k.sz + 1
+  | .case _ alts d => ACode.altsSz alts + ACode.optSz d + 2
+  | _ => 1
+def ACode.altsSz : List AAlt → Nat
+  | [] => 0
+  | .mk _ b _ :: rest => b.sz + ACode.altsSz rest + 1
+def ACode.optSz : Option (ACode × VSet) → Nat
+  | none => 0
+  | some (c, _) => c.sz + 1
+end
+
+theorem peelProjs_sz_le (x : Var) (key : Key.CtorKey) (arity : Nat) :
+    ∀ (ab : ACode) (lb : VSet), (peelProjs x key arity ab lb).2.1.sz ≤ ab.sz
+  | .bind v (.proj y key' j) k liveK, lb => by
+    simp only [peelProjs]
+    split
+    · have ih := peelProjs_sz_le x key arity k liveK
+      simpa only [ACode.sz] using Nat.le_trans ih (Nat.le_succ _)
+    · exact Nat.le_refl _
+  | .bind _ (.arg _) _ _, _ | .bind _ (.ctor _ _) _ _, _ | .bind _ (.call _ _) _ _, _
+  | .bind _ (.prim _ _) _ _, _ | .jp .., _ | .jmp .., _ | .case .., _ | .ret _, _
+  | .tcall .., _ | .trap, _ => Nat.le_refl _
+
+/-- Build the `Option Var` field list of length `arity` for `reset` from peeled projections,
+returning `none` if the same field index has two distinct live projections. -/
+def buildResetFields (arity : Nat) (liveAfter : VSet) (projs : List (Var × Nat)) :
+    Option (List (Option Var)) :=
+  let init : List (Option Var) := List.replicate arity none
+  projs.foldlM (fun acc (v, j) =>
+    if liveAfter.contains v then
+      match acc[j]? with
+      | some none => some (acc.set j (some v))
+      | _ => none
+    else some acc) init
+
+/-- Active reset slots tracked during placement: `(slotId, sizeClass, isGuaranteedUnique)`. -/
+abbrev ActiveSlots := List (Nat × Nat × Bool)
+
+def dropSlotsPrefix (slots : ActiveSlots) (k : Code) : Code :=
+  slots.foldr (fun (s, _, _) acc => .dropSlot s acc) k
+
+/-- Pick and remove a matching active slot for size class `cls`, preferring statically unique slots. -/
+def pickSlot (cls : Nat) (slots : ActiveSlots) : Option ((Nat × Bool) × ActiveSlots) :=
+  match slots.find? (fun p => p.2.1 == cls && p.2.2) with
+  | some (s, _, u) => some ((s, u), slots.filter (fun p => p.1 != s))
+  | none =>
+    match slots.find? (fun p => p.2.1 == cls) with
+    | some (s, _, u) => some ((s, u), slots.filter (fun p => p.1 != s))
+    | none => none
+
+/-- Partition active slots into those still matching a constructor in `ab` vs those to drop now. -/
+def splitSlotsFor (ab : ACode) (slots : ActiveSlots) : ActiveSlots × ActiveSlots :=
+  slots.partition (fun (_, cls, _) => hasMatchingCtor cls ab)
+
+/-- Wrap peeled `.proj x key j` bindings around `k`. -/
+def wrapProjs (x : Var) (key : Key.CtorKey) : List (Var × Nat) → Code → Code
+  | [], k => k
+  | (v, j) :: rest, k => .bind v (.proj x key j) (wrapProjs x key rest k)
+
+mutual
+def placeFbip (ctors : List Lam.CtorInfo) (known : Lam.Known) (borrows : BorrowSigs) (uniqs : UniqSigs)
+    (Δ : Src.NatMap VSet) (owned imm pbrw uniq : VSet) (slots : ActiveSlots) (nextSlot : Nat)
+    (ac : ACode) : Code × Nat :=
+  match ac with
+  | .bind x r k liveK =>
+    match r with
+    | .proj y _ _ =>
+      if imm.contains y then
+        let (k', ns) := placeFbip ctors known borrows uniqs Δ owned (Src.NatSet.insert imm x) pbrw
+          (Src.NatSet.insert uniq x) slots nextSlot k
+        (.bind x r k', ns)
+      else if pbrw.contains y then
+        let dead := VSet.toSortedVars (VSet.diff owned liveK)
+        let owned' := VSet.inter owned liveK
+        let uniq' := VSet.inter uniq owned'
+        let (k', ns) := placeFbip ctors known borrows uniqs Δ owned' imm (Src.NatSet.insert pbrw x) uniq' slots nextSlot k
+        (.bind x r (actionPrefix (decs dead) k'), ns)
+      else
+        let (owned, incs) :=
+          if liveK.contains x then (Src.NatSet.insert owned x, [Action.inc x 1])
+          else (owned, [])
+        let dead := VSet.toSortedVars (VSet.diff owned liveK)
+        let owned' := VSet.inter owned liveK
+        let uniq' := VSet.inter uniq owned'
+        let (k', ns) := placeFbip ctors known borrows uniqs Δ owned' imm pbrw uniq' slots nextSlot k
+        (.bind x r (actionPrefix (incs ++ decs dead) k'), ns)
+    | .prim op args =>
+      let (owned, imm) := applyPrimImm (primImmArgs op args.length) args (owned, imm)
+      let imm := Src.NatSet.insert imm x
+      let dead := VSet.toSortedVars (VSet.diff owned liveK)
+      let owned' := VSet.inter owned liveK
+      let uniq' := VSet.inter uniq owned'
+      let (k', ns) := placeFbip ctors known borrows uniqs Δ owned' imm pbrw uniq' slots nextSlot k
+      (.bind x r (actionPrefix (decs dead) k'), ns)
+    | .arg (.var y) =>
+      if imm.contains y then
+        let (k', ns) := placeFbip ctors known borrows uniqs Δ owned (Src.NatSet.insert imm x) pbrw uniq slots nextSlot k
+        (.bind x r k', ns)
+      else if !owned.contains y && pbrw.contains y then
+        let dead := VSet.toSortedVars (VSet.diff owned liveK)
+        let owned' := VSet.inter owned liveK
+        let uniq' := VSet.inter uniq owned'
+        let (k', ns) := placeFbip ctors known borrows uniqs Δ owned' imm (Src.NatSet.insert pbrw x) uniq' slots nextSlot k
+        (.bind x r (actionPrefix (decs dead) k'), ns)
+      else
+        let movedUniq := uniq.contains y && !liveK.contains y
+        let (incs, owned) := consume owned imm liveK [.var y]
+        let uniq := VSet.eraseP uniq y
+        let (owned, uniq, post) :=
+          if liveK.contains x then
+            (Src.NatSet.insert owned x, if movedUniq then Src.NatSet.insert uniq x else uniq, [])
+          else (owned, uniq, [Action.dec x])
+        let (k', ns) := placeFbip ctors known borrows uniqs Δ owned imm pbrw (VSet.inter uniq owned) slots nextSlot k
+        (actionPrefix incs (.bind x r (actionPrefix post k')), ns)
+    | .arg _ =>
+      let (k', ns) := placeFbip ctors known borrows uniqs Δ owned (Src.NatSet.insert imm x) pbrw uniq slots nextSlot k
+      (.bind x r k', ns)
+    | .ctor c args =>
+      if c.arity == 0 then
+        let (k', ns) := placeFbip ctors known borrows uniqs Δ owned (Src.NatSet.insert imm x) pbrw uniq slots nextSlot k
+        (.bind x r k', ns)
+      else
+        let (incs, owned) := consume owned imm liveK args
+        let dead := VSet.toSortedVars (VSet.diff owned liveK)
+        let owned := VSet.inter owned liveK
+        let uniq := (argVars args).foldl (fun u v => VSet.eraseP u v) uniq
+        let uniq := VSet.inter uniq owned
+        let (owned, uniq, post) :=
+          if liveK.contains x then (Src.NatSet.insert owned x, Src.NatSet.insert uniq x, [])
+          else (owned, uniq, [Action.dec x])
+        let isNat := known.natZero == some c.key || known.natSucc == some c.key
+        match (if isNat then none else Ctx.validReuseCtor c >>= fun cls => pickSlot cls slots) with
+        | some ((s, sUniq), slots') =>
+          let (k', ns) := placeFbip ctors known borrows uniqs Δ owned imm pbrw uniq slots' nextSlot k
+          (actionPrefix (decs dead ++ incs) (.reuse x s c args sUniq (actionPrefix post k')), ns)
+        | none =>
+          let (k', ns) := placeFbip ctors known borrows uniqs Δ owned imm pbrw uniq slots nextSlot k
+          (actionPrefix (decs dead ++ incs) (.bind x r (actionPrefix post k')), ns)
+    | .call f args =>
+      let bs := borrows.getD f []
+      let calleeRetU := (uniqs.getD f ([], false)).2
+      let ownedArgs := selectOwnedArgs bs args
+      let borrowedArgs := selectBorrowedArgs bs args
+      let keepAlive := VSet.union liveK (VSet.ofVars (argVars borrowedArgs))
+      let (incs, ownedAfterTake) := consume owned imm keepAlive ownedArgs
+      let deadBefore := VSet.toSortedVars (VSet.diff ownedAfterTake keepAlive)
+      let ownedAcross := VSet.inter ownedAfterTake keepAlive
+      let deadAfter := VSet.toSortedVars (VSet.diff ownedAcross liveK)
+      let ownedAfterCall := VSet.inter ownedAcross liveK
+      let uniq := (argVars args).foldl (fun u v => VSet.eraseP u v) uniq
+      let uniq := VSet.inter uniq ownedAfterCall
+      let (ownedFinal, uniqFinal, post) :=
+        if liveK.contains x then
+          (Src.NatSet.insert ownedAfterCall x,
+           if calleeRetU then Src.NatSet.insert uniq x else uniq,
+           decs deadAfter)
+        else (ownedAfterCall, uniq, Action.dec x :: decs deadAfter)
+      let (k', ns) := placeFbip ctors known borrows uniqs Δ ownedFinal imm pbrw uniqFinal slots nextSlot k
+      (actionPrefix (decs deadBefore ++ incs) (.bind x r (actionPrefix post k')), ns)
+  | .jp j ps rec body k captured liveBody liveK =>
+    let captured := captured.filter (fun c => !imm.contains c && !pbrw.contains c)
+    let capturedSet := VSet.ofVars captured
+    let ownedBody := VSet.addVars capturedSet ps
+    let deadBody := VSet.toSortedVars (VSet.diff ownedBody liveBody)
+    let ownedBody' := VSet.inter ownedBody liveBody
+    let Δbody := if rec then Δ.insert j capturedSet else Δ
+    let (bodyInner, ns1) := placeFbip ctors known borrows uniqs Δbody ownedBody' imm pbrw .leaf [] nextSlot body
+    let bodyCode := actionPrefix (decs deadBody) bodyInner
+    let deadK := VSet.toSortedVars (VSet.diff owned liveK)
+    let ownedK := VSet.inter owned liveK
+    let uniqK := VSet.inter uniq ownedK
+    let (keepSlots, dropSlots) := splitSlotsFor k slots
+    let (kInner, ns2) := placeFbip ctors known borrows uniqs (Δ.insert j capturedSet) ownedK imm pbrw uniqK keepSlots ns1 k
+    let kCode := dropSlotsPrefix dropSlots (actionPrefix (decs deadK) kInner)
+    (.jp j ps captured rec bodyCode kCode, ns2)
+  | .jmp j args =>
+    let keep := Δ.getD j .leaf
+    let (incs, owned) := consume owned imm keep args
+    let dead := VSet.toSortedVars (VSet.diff owned keep)
+    (dropSlotsPrefix slots (actionPrefix (incs ++ decs dead) (.jmp j args)), nextSlot)
+  | .case x alts d =>
+    let (alts', ns1) := placeAltsFbip ctors known borrows uniqs Δ owned imm pbrw uniq slots nextSlot x alts
+    let (d', ns2) := placeOptFbip ctors known borrows uniqs Δ owned imm pbrw uniq slots ns1 d
+    (.case x alts' d', ns2)
+  | .ret a =>
+    let (incs, owned) := consume owned imm .leaf [a]
+    (dropSlotsPrefix slots (actionPrefix (incs ++ decs (VSet.toSortedVars owned)) (.ret a)), nextSlot)
+  | .tcall f args =>
+    let bs := borrows.getD f []
+    let ownedArgs := selectOwnedArgs bs args
+    let (incs, owned) := consume owned imm .leaf ownedArgs
+    (dropSlotsPrefix slots (actionPrefix (incs ++ decs (VSet.toSortedVars owned)) (.tcall f args)), nextSlot)
+  | .trap => (.trap, nextSlot)
+termination_by ac.sz
+decreasing_by
+  all_goals simp_wf
+  all_goals simp only [ACode.sz]
+  all_goals omega
+
+def placeAltsFbip (ctors : List Lam.CtorInfo) (known : Lam.Known) (borrows : BorrowSigs) (uniqs : UniqSigs)
+    (Δ : Src.NatMap VSet) (owned imm pbrw uniq : VSet) (slots : ActiveSlots) (nextSlot : Nat)
+    (x : Var) (alts : List AAlt) : List Alt × Nat :=
+  match alts with
+  | [] => ([], nextSlot)
+  | .mk key ab lb :: rest =>
+    let (keepSlots, dropSlots) := splitSlotsFor ab slots
+    let tryReset : Option (Code × Nat) :=
+      if !owned.contains x || imm.contains x || pbrw.contains x ||
+          known.natZero == some key || known.natSucc == some key then none
+      else match Fir.CtorInfo.ofKey ctors key with
+      | none => none
+      | some ctor =>
+        match Ctx.validReuseCtor ctor with
+        | none => none
+        | some cls =>
+          match _hpeel : peelProjs x key ctor.arity ab lb with
+          | (projs, bodyAfter, liveAfter) =>
+            if liveAfter.contains x || !hasMatchingCtor cls bodyAfter then none
+            else match buildResetFields ctor.arity liveAfter projs with
+            | none => none
+            | some fields =>
+              let deadOther := VSet.toSortedVars (VSet.diff (VSet.eraseP owned x) lb)
+              let ownedMid := VSet.inter (VSet.eraseP owned x) lb
+              let liveVars := fields.filterMap id
+              let ownedAfter := VSet.inter (VSet.addVars ownedMid liveVars) liveAfter
+              let deadAfter := VSet.toSortedVars (VSet.diff (VSet.addVars ownedMid liveVars) liveAfter)
+              let uniqAfter := VSet.inter (VSet.eraseP uniq x) ownedAfter
+              let isU := uniq.contains x
+              let slots' := (nextSlot, cls, isU) :: keepSlots
+              let (bodyCode, ns1) := placeFbip ctors known borrows uniqs Δ ownedAfter imm pbrw uniqAfter slots' (nextSlot + 1) bodyAfter
+              let cont := actionPrefix (decs deadAfter) bodyCode
+              some (dropSlotsPrefix dropSlots (actionPrefix (decs deadOther)
+                (wrapProjs x key projs (.reset nextSlot x ctor fields isU cont))), ns1)
+    let (armCode, ns1) :=
+      match tryReset with
+      | some r => r
+      | none =>
+        let dead := VSet.toSortedVars (VSet.diff owned lb)
+        let owned' := VSet.inter owned lb
+        let uniq' := VSet.inter uniq owned'
+        let (inner, ns1) := placeFbip ctors known borrows uniqs Δ owned' imm pbrw uniq' keepSlots nextSlot ab
+        (dropSlotsPrefix dropSlots (actionPrefix (decs dead) inner), ns1)
+    let (rest', ns2) := placeAltsFbip ctors known borrows uniqs Δ owned imm pbrw uniq slots ns1 x rest
+    (.mk key armCode :: rest', ns2)
+termination_by ACode.altsSz alts
+decreasing_by
+  all_goals simp_wf
+  all_goals simp only [ACode.altsSz]
+  all_goals first
+    | omega
+    | (have hle := peelProjs_sz_le x key ctor.arity ab lb
+       rw [_hpeel] at hle
+       dsimp only at hle
+       omega)
+
+def placeOptFbip (ctors : List Lam.CtorInfo) (known : Lam.Known) (borrows : BorrowSigs) (uniqs : UniqSigs)
+    (Δ : Src.NatMap VSet) (owned imm pbrw uniq : VSet) (slots : ActiveSlots) (nextSlot : Nat)
+    (opt : Option (ACode × VSet)) : Option Code × Nat :=
+  match opt with
+  | none => (none, nextSlot)
+  | some (ad, ld) =>
+    let (keepSlots, dropSlots) := splitSlotsFor ad slots
+    let dead := VSet.toSortedVars (VSet.diff owned ld)
+    let owned' := VSet.inter owned ld
+    let uniq' := VSet.inter uniq owned'
+    let (inner, ns1) := placeFbip ctors known borrows uniqs Δ owned' imm pbrw uniq' keepSlots nextSlot ad
+    (some (dropSlotsPrefix dropSlots (actionPrefix (decs dead) inner)), ns1)
+termination_by ACode.optSz opt
+decreasing_by
+  simp_wf
+  simp only [ACode.optSz]
+  omega
+end
+
+/-- Place `inc`/`dec`, `@borrowed`, `reset`/`reuse`/`dropSlot`, and static `@unique` on one body. -/
+def liveBodyFull (ctors : List Lam.CtorInfo) (known : Lam.Known) (borrows : BorrowSigs) (uniqs : UniqSigs)
+    (selfBorrows selfUniqs : List Bool) (params : List Var) (ab : ACode) (lb : VSet) : Code :=
+  let owned := VSet.ofVars (Ctx.entryOwned params selfBorrows)
+  let pbrw := VSet.ofVars (Ctx.entryBorrowed params selfBorrows)
+  let uniq := VSet.ofVars (Ctx.entryUnique params selfBorrows selfUniqs)
+  let dead := VSet.toSortedVars (VSet.diff owned lb)
+  let owned' := VSet.inter owned lb
+  let uniq' := VSet.inter uniq owned'
+  actionPrefix (decs dead) (placeFbip ctors known borrows uniqs .leaf owned' .leaf pbrw uniq' [] 0 ab).1
+
+/-- Full Track A3+A4 ownership producer: liveness + interprocedural `@borrowed` + interprocedural
+`@unique` + FBIP `reset`/`reuse` placement. -/
+def liveMapFull (F : Fir.Program) : Src.NatMap Code × BorrowSigs × UniqSigs :=
+  let borrows := inferBorrows F
+  let annotatedPairs : Src.NatMap (ACode × VSet) := F.funs.map fun fd => annotate .leaf fd.body
+  let annotatedBodies : Src.NatMap ACode := annotatedPairs.map (·.1)
+  let uniqs := inferUniqs F borrows annotatedBodies
+  let bodies := mapWithKeyAux (fun f fd =>
+    let (ab, lb) := (annotatedPairs.get? f).getD (annotate .leaf fd.body)
+    let bs := borrows.getD f []
+    let us := (uniqs.getD f ([], false)).1
+    liveBodyFull F.ctors F.known borrows uniqs bs us (fd.params.map (·.1)) ab lb) 0 1 F.funs
+  (bodies, borrows, uniqs)
+
 /-- Place `inc`/`dec` on every function in a FIR program by liveness + interprocedural borrows. -/
 def liveMapWith (F : Fir.Program) : Src.NatMap Code × BorrowSigs :=
   let borrows := inferBorrows F

@@ -11,7 +11,8 @@ open Native.Spec
 
 def runtimeFunctions (layout : Native.Layout) : List Lir.Func :=
   wrappers layout ++ procedures layout ++
-    [Rt.Procs.cxInit, Rt.Procs.natPow, Rt.Procs.natGcd, dropWrapper layout.decProc]
+    [Rt.Procs.cxInit, Rt.Procs.natPow, Rt.Procs.natGcd] ++ reuseProcs layout ++
+    [dropWrapper layout.decProc]
 
 theorem public_functions (layout : Native.Layout) (funcs : List Lir.Func) (main : Nat) :
     (rawPublicProgram layout funcs main).funcs.toList = funcs ++ runtimeFunctions layout := by

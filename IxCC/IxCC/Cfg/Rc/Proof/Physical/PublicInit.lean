@@ -11,8 +11,8 @@ theorem cxInit_split : Rt.Procs.cxInit.splitCriticalEdges = Rt.Procs.cxInit := b
 and the appended release entry at its declared index. -/
 theorem accepted_init {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Lowered}
-    {borrows : Own.Plain.BorrowSigs}
-    (accepted : Public.lower config F bodies P borrows = .ok lowered) :
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (accepted : Public.lower config F bodies P borrows uniqs = .ok lowered) :
     lowered.runtime.program.funcs[lowered.runtime.init]? = some Rt.Procs.cxInit := by
   obtain ⟨original, native, rfl, _⟩ := lower_parts accepted
   obtain ⟨main, pairs, funcs, _, _, _, _, _, _, length, program, init, _⟩ := Native.Spec.lower_parts native
@@ -21,15 +21,17 @@ theorem accepted_init {config : Rt.Config} {F : Fir.Program}
     have hge : (layoutOf P).sourceCount ≤ (layoutOf P).init := by
       simp [layoutOf, Native.Layout.init, Native.Layout.incProc]; omega
     have hinl : (inlinedProgram (layoutOf P) funcs main).funcs[(layoutOf P).init]? = some Rt.Procs.cxInit := by
-      rw [inlinedProgram, Inline.inlineProgram_get_ge _ _ hge]
+      have hle : (layoutOf P).init ≤ (layoutOf P).isUniqueProc := by
+        simp [Native.Layout.isUniqueProc]
+      rw [inlinedProgram, Prune.pruneUnusedReuse_get_le hle, Inline.inlineProgram_get_ge _ _ hge]
       exact raw_init (l := layoutOf P) (funcs := funcs) length main
     simp only [Lir.Program.splitCriticalEdges, Array.getElem?_map, hinl, Option.map_some, cxInit_split]
   exact (assemble_existing original (layoutOf P) (Array.getElem?_eq_some_iff.mp lookup).1).trans lookup
 
 theorem initialize_heap {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Lowered}
-    {borrows : Own.Plain.BorrowSigs}
-    (accepted : Public.lower config F bodies P borrows = .ok lowered)
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (accepted : Public.lower config F bodies P borrows uniqs = .ok lowered)
     (pairs : List (Nat × Cfg.Fun))
     {size budget context : Lir.Word} {memory : X86.Memory}
     (region : Rt.Proof.RegionOk context size) (readable : Rt.Proof.LirRegion memory context size) :

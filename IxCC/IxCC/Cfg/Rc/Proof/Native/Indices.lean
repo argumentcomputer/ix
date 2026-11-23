@@ -89,6 +89,93 @@ theorem raw_init {l : Layout} {funcs : List Lir.Func} (hlen : funcs.length = l.s
   rw [show (procedures l).length = (procedures l).length + 0 by omega, suffix_at]
   rfl
 
+theorem raw_isUnique_proc {l : Layout} {funcs : List Lir.Func} (hlen : funcs.length = l.sourceCount)
+    (main : Nat) : (rawProgram l funcs main).funcs[l.isUniqueProc]? = some Rt.Rc.Gen.isUnique := by
+  simp only [rawProgram, reuseProcs, List.getElem?_toArray, List.append_assoc]
+  rw [show l.isUniqueProc = funcs.length + ((wrappers l).length + ((procedures l).length + 3)) by
+    rw [hlen, wrappers_length, procedures_length]
+    simp [Layout.isUniqueProc, Layout.init, Layout.incProc]; omega,
+    suffix_at, suffix_at, suffix_at]
+  rfl
+
+theorem raw_reset_wrapper {l : Layout} {funcs : List Lir.Func} (hlen : funcs.length = l.sourceCount)
+    (main i : Nat) {c : Lam.CtorInfo} (hc : l.ctors[i]? = some c) {cls : Nat}
+    (hcls : (Rt.Rc.CellLayout.ofFields c.arity c.tag).cls? = some cls) :
+    (rawProgram l funcs main).funcs[l.resetWrapper i]? =
+      some (mkResetWrapper l.isUniqueProc l.incProc l.decProc
+        (Rt.Rc.CellLayout.ofFields c.arity c.tag) cls) := by
+  have hi : i < l.ctors.length := (List.getElem?_eq_some_iff.mp hc).1
+  simp only [rawProgram, reuseProcs, List.getElem?_toArray, List.append_assoc]
+  rw [show l.resetWrapper i = funcs.length + ((wrappers l).length + ((procedures l).length + (4 + i))) by
+    rw [hlen, wrappers_length, procedures_length]
+    simp [Layout.resetWrapper, Layout.init, Layout.incProc]; omega,
+    suffix_at, suffix_at, suffix_at]
+  change (Rt.Procs.cxInit :: Rt.Procs.natPow :: Rt.Procs.natGcd :: Rt.Rc.Gen.isUnique ::
+    (resetWrappers l ++ (resetUWrappers l ++ (reuseWrappers l ++ reuseUWrappers l))))[4 + i]? = _
+  rw [show 4 + i = ([Rt.Procs.cxInit, Rt.Procs.natPow, Rt.Procs.natGcd, Rt.Rc.Gen.isUnique] : List Lir.Func).length + i by rfl]
+  change ([Rt.Procs.cxInit, Rt.Procs.natPow, Rt.Procs.natGcd, Rt.Rc.Gen.isUnique] ++
+    (resetWrappers l ++ (resetUWrappers l ++ (reuseWrappers l ++ reuseUWrappers l))))[_]? = _
+  rw [suffix_at, List.getElem?_append_left (by simp [resetWrappers, hi])]
+  simp [resetWrappers, hc, hcls]
+
+theorem raw_resetU_wrapper {l : Layout} {funcs : List Lir.Func} (hlen : funcs.length = l.sourceCount)
+    (main i : Nat) {c : Lam.CtorInfo} (hc : l.ctors[i]? = some c) {cls : Nat}
+    (hcls : (Rt.Rc.CellLayout.ofFields c.arity c.tag).cls? = some cls) :
+    (rawProgram l funcs main).funcs[l.resetUWrapper i]? =
+      some (mkResetUWrapper l.decProc (Rt.Rc.CellLayout.ofFields c.arity c.tag) cls) := by
+  have hi : i < l.ctors.length := (List.getElem?_eq_some_iff.mp hc).1
+  simp only [rawProgram, reuseProcs, List.getElem?_toArray, List.append_assoc]
+  rw [show l.resetUWrapper i =
+      funcs.length + ((wrappers l).length + ((procedures l).length + (4 + ((resetWrappers l).length + i)))) by
+    rw [hlen, wrappers_length, procedures_length]
+    simp [Layout.resetUWrapper, Layout.init, Layout.incProc, resetWrappers]; omega,
+    suffix_at, suffix_at, suffix_at]
+  change ([Rt.Procs.cxInit, Rt.Procs.natPow, Rt.Procs.natGcd, Rt.Rc.Gen.isUnique] ++
+    (resetWrappers l ++ (resetUWrappers l ++ (reuseWrappers l ++ reuseUWrappers l))))[
+    ([Rt.Procs.cxInit, Rt.Procs.natPow, Rt.Procs.natGcd, Rt.Rc.Gen.isUnique] : List Lir.Func).length +
+      ((resetWrappers l).length + i)]? = _
+  rw [suffix_at, suffix_at, List.getElem?_append_left (by simp [resetUWrappers, hi])]
+  simp [resetUWrappers, hc, hcls]
+
+theorem raw_reuse_wrapper {l : Layout} {funcs : List Lir.Func} (hlen : funcs.length = l.sourceCount)
+    (main i : Nat) {c : Lam.CtorInfo} (hc : l.ctors[i]? = some c) {cls : Nat}
+    (hcls : (Rt.Rc.CellLayout.ofFields c.arity c.tag).cls? = some cls) :
+    (rawProgram l funcs main).funcs[l.reuseWrapper i]? =
+      some (mkReuseWrapper (l.allocProc i) (Rt.Rc.CellLayout.ofFields c.arity c.tag) cls) := by
+  have hi : i < l.ctors.length := (List.getElem?_eq_some_iff.mp hc).1
+  simp only [rawProgram, reuseProcs, List.getElem?_toArray, List.append_assoc]
+  rw [show l.reuseWrapper i =
+      funcs.length + ((wrappers l).length + ((procedures l).length +
+        (4 + ((resetWrappers l).length + ((resetUWrappers l).length + i))))) by
+    rw [hlen, wrappers_length, procedures_length]
+    simp [Layout.reuseWrapper, Layout.init, Layout.incProc, resetWrappers, resetUWrappers]; omega,
+    suffix_at, suffix_at, suffix_at]
+  change ([Rt.Procs.cxInit, Rt.Procs.natPow, Rt.Procs.natGcd, Rt.Rc.Gen.isUnique] ++
+    (resetWrappers l ++ (resetUWrappers l ++ (reuseWrappers l ++ reuseUWrappers l))))[
+    ([Rt.Procs.cxInit, Rt.Procs.natPow, Rt.Procs.natGcd, Rt.Rc.Gen.isUnique] : List Lir.Func).length +
+      ((resetWrappers l).length + ((resetUWrappers l).length + i))]? = _
+  rw [suffix_at, suffix_at, suffix_at, List.getElem?_append_left (by simp [reuseWrappers, hi])]
+  simp [reuseWrappers, List.getElem?_zipIdx, hc, hcls]
+
+theorem raw_reuseU_wrapper {l : Layout} {funcs : List Lir.Func} (hlen : funcs.length = l.sourceCount)
+    (main i : Nat) {c : Lam.CtorInfo} (hc : l.ctors[i]? = some c) {cls : Nat}
+    (hcls : (Rt.Rc.CellLayout.ofFields c.arity c.tag).cls? = some cls) :
+    (rawProgram l funcs main).funcs[l.reuseUWrapper i]? =
+      some (mkReuseUWrapper (Rt.Rc.CellLayout.ofFields c.arity c.tag) cls) := by
+  simp only [rawProgram, reuseProcs, List.getElem?_toArray, List.append_assoc]
+  rw [show l.reuseUWrapper i =
+      funcs.length + ((wrappers l).length + ((procedures l).length +
+        (4 + ((resetWrappers l).length + ((resetUWrappers l).length + ((reuseWrappers l).length + i)))))) by
+    rw [hlen, wrappers_length, procedures_length]
+    simp [Layout.reuseUWrapper, Layout.init, Layout.incProc, resetWrappers, resetUWrappers, reuseWrappers]; omega,
+    suffix_at, suffix_at, suffix_at]
+  change ([Rt.Procs.cxInit, Rt.Procs.natPow, Rt.Procs.natGcd, Rt.Rc.Gen.isUnique] ++
+    (resetWrappers l ++ (resetUWrappers l ++ (reuseWrappers l ++ reuseUWrappers l))))[
+    ([Rt.Procs.cxInit, Rt.Procs.natPow, Rt.Procs.natGcd, Rt.Rc.Gen.isUnique] : List Lir.Func).length +
+      ((resetWrappers l).length + ((resetUWrappers l).length + ((reuseWrappers l).length + i)))]? = _
+  rw [suffix_at, suffix_at, suffix_at, suffix_at]
+  simp [reuseUWrappers, hc, hcls]
+
 
 
 

@@ -14,14 +14,15 @@ open IxCC.Rt.Rc.Procs IxCC.Rt.Proof
 open IxCC.Own.Plain (Ctx JCtx checkCode)
 
 /-- The body the map holds for a numbered function, checked from its parameters with its
-borrow mask. -/
+borrow and uniqueness masks. -/
 theorem checked_owned_body {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    {borrows : Own.Plain.BorrowSigs}
-    (checked : checkScopedProgram F bodies P borrows = true) {f : Nat} {source : Fir.Fun}
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (checked : checkScopedProgram F bodies P borrows uniqs = true) {f : Nat} {source : Fir.Fun}
     (sourceLookup : F.fun? f = some source) :
     ∃ body, f < F.size ∧ bodies.get? f = some body ∧ Own.Plain.eraseCode body = source.body ∧
-      checkCode .leaf (Ctx.entryWith (source.params.map Prod.fst) (borrows.getD f [])) body
-        borrows = .ok () ∧
+      checkCode .leaf
+        (Ctx.entryWith (source.params.map Prod.fst) (borrows.getD f []) (uniqs.getD f ([], false)).1)
+        body borrows uniqs (uniqs.getD f ([], false)).2 F.ctors F.known = .ok () ∧
       Own.Plain.fresh [] (source.params.map Prod.fst) = true ∧
       Own.Plain.scopeOk (Own.Plain.signatures F) (source.params.map Prod.fst)
         (Own.Plain.stackArities []) (Own.Plain.eraseCode body) = true := by
@@ -34,23 +35,30 @@ theorem checked_owned_body {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code
   exact scope
 
 /-- Actual checked entry constructs the complete source/native activation over the typing
-context, including `@borrowed` parameter masks. All register-name bounds, the body, its scope
-and the entry layout come from admission; the arguments' denotation, counts, reachability and
-words are the caller's concrete state. -/
+context, including `@borrowed`, `@unique`, and `priv` isolation invariants. All register-name
+bounds, the body, its scope and the entry layout come from admission; the arguments' denotation,
+counts, reachability, uniqueness, and words are the caller's concrete state. -/
 theorem entry_activation {config : Rt.Config} {F : Fir.Program}
-    {bodies : Src.NatMap Own.Plain.Code} {P : Program} {borrows : Own.Plain.BorrowSigs}
-    (checked : checkScopedProgram F bodies P borrows = true)
+    {bodies : Src.NatMap Own.Plain.Code} {P : Program}
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (checked : checkScopedProgram F bodies P borrows uniqs = true)
     {pairs : List (Nat × Cfg.Fun)} {funcs : List Lir.Func}
     (consuming : consumeAll P = .ok pairs)
     (lowered : Rt.Lower.functions (tablesOf P pairs) (consumed P pairs) (rootsOf config P)
       (List.range P.base.size) = .ok funcs)
     (main : Nat) {f : Nat} {source : Fir.Fun} (sourceLookup : F.fun? f = some source)
     {H : Own.Heap} {external : Nat → Nat} {addresses : AddressMap}
+    {priv : Nat → Prop}
     {values : List Own.RVal} {logical : List Fir.Val} {words : List Lir.Word}
     (den : Sem.Forall2 (Own.Proof.Den H) values logical)
     (balance : Own.Rc.Balance H external (Own.Plain.selectOwnedVals (borrows.getD f []) values))
     (hbrw : ∀ v, v ∈ Own.Plain.selectBorrowedVals (borrows.getD f []) values →
       Own.Plain.ReachableFrom H external v)
+    (huniq : ∀ v, v ∈ Own.Plain.selectUniqueVals (borrows.getD f []) (uniqs.getD f ([], false)).1 values →
+      Own.Plain.UniqVal F.ctors H external (Own.Plain.selectOwnedVals (borrows.getD f []) values) v)
+    (hprivB : ∀ l, priv l → l < H.size)
+    (hprivE : ∀ l, priv l → Own.Rc.edgeCount H l = 0)
+    (hprivArgs : ∀ l, priv l → ∀ v, v ∈ values → v ≠ .loc l)
     (represented : Rt.Proof.ListRel (fun value word => valueWord addresses value = some word) values words)
     (compatible : ∀ value ∈ values, ValueCtorOk (tablesOf P pairs) value)
     (arity : values.length = source.params.length)
@@ -59,6 +67,8 @@ theorem entry_activation {config : Rt.Config} {F : Fir.Program}
     let lp := Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main
     let params := source.params.map Prod.fst
     let bs := borrows.getD f []
+    let us := (uniqs.getD f ([], false)).1
+    let retU := (uniqs.getD f ([], false)).2
     ∃ fd block consumedFd callee targetEnv offset body,
       P.base.fun? f = some fd ∧ fd.blocks[0]? = some block ∧
       Own.Plain.eraseCode body = source.body ∧
@@ -71,12 +81,13 @@ theorem entry_activation {config : Rt.Config} {F : Fir.Program}
           blk := 0
           rest := block.body
           env := Own.bindAll .leaf params values } sourceCallers H) true ∧
-      Activation F P pairs lp H addresses external params (Ctx.entryWith params bs) .leaf
+      Activation F P pairs lp H addresses external params (Ctx.entryWith params bs us) .leaf
         (Fir.bindAll .leaf params logical) (Own.bindAll .leaf params values)
         (Own.Plain.selectOwnedVals bs values) [] [] []
-        body source.vars consumedFd
+        body (funcFirst bodies f source) consumedFd
         {fn := f, blk := 0, rest := block.body, env := Own.bindAll .leaf params values}
-        {fn := f, label := offset, pos := 0, env := targetEnv} borrows := by
+        {fn := f, label := offset, pos := 0, env := targetEnv}
+        borrows uniqs retU priv .leaf [] := by
   dsimp only
   obtain ⟨body, range, bodyLookup, erased, typed, fresh, scope⟩ :=
     checked_owned_body checked sourceLookup
@@ -93,8 +104,10 @@ theorem entry_activation {config : Rt.Config} {F : Fir.Program}
     lookup blockLookup values arity sourceCallers H
   refine ⟨fd, block, consumedFd, callee, targetEnv, offset, body, lookup, blockLookup, erased,
     entered, trace, sourceStep, ?_⟩
-  refine ⟨Own.Plain.ownedState_entryWith_exact (Own.Plain.signatures F) H external _
-      (borrows.getD f []) values logical den (by simpa using arity) fresh balance hbrw borrows,
+  refine ⟨Own.Plain.ownedState_entryFull_exact (Own.Plain.signatures F) H external _
+      (borrows.getD f []) (uniqs.getD f ([], false)).1 values logical den (by simpa using arity)
+      fresh balance hbrw borrows uniqs (uniqs.getD f ([], false)).2 F.ctors F.known priv
+      huniq hprivB hprivE hprivArgs,
     typed, atEntry, ⟨consumedLookup, cursor, registers,
       (Own.Plain.envBounded_empty H.size).bindAll _ (Own.Plain.dens_bounded den),
       FusedCtorOk.empty.bindAll _ _ compatible⟩,

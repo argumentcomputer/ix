@@ -14,21 +14,22 @@ namespace IxCC.Cfg.Rc
 
 /-- The program gate admits only maps the ownership checker accepts. -/
 theorem checkScopedProgram_checkOwned {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} {borrows : Own.Plain.BorrowSigs}
-    (h : checkScopedProgram F bodies P borrows = true) :
-    Own.Plain.checkOwned F bodies borrows = true :=
+    {P : Program} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (h : checkScopedProgram F bodies P borrows uniqs = true) :
+    Own.Plain.checkOwned F bodies borrows uniqs = true :=
   (checkProgram_parts (checkScopedProgram_parts h).1).1
 
 /-- The checker's parts, read from the program gate. -/
 theorem checkScopedProgram_ownedParts {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} {borrows : Own.Plain.BorrowSigs}
-    (h : checkScopedProgram F bodies P borrows = true) :
+    {P : Program} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (h : checkScopedProgram F bodies P borrows uniqs = true) :
     Own.Plain.programDomain F = true ∧ Own.Plain.checkBoolPins F = true ∧
-      Own.Plain.BodiesChecked F bodies borrows ∧ Own.Plain.borrowsValid F borrows = true := by
+      Own.Plain.BodiesChecked F bodies borrows uniqs ∧
+      Own.Plain.borrowsValid F borrows = true ∧ Own.Plain.uniqsValid F borrows uniqs = true := by
   have owned := checkScopedProgram_checkOwned h
   simp only [Own.Plain.checkOwned, Bool.and_eq_true] at owned
-  exact ⟨owned.1.1.1, owned.1.1.2, Own.Plain.checkMapE_ok (Own.Plain.except_isOk owned.2),
-    owned.1.2⟩
+  exact ⟨owned.1.1.1.1, owned.1.1.1.2, Own.Plain.checkMapE_ok (Own.Plain.except_isOk owned.2),
+    owned.1.1.2, owned.1.2⟩
 
 /-- **Nothing the program gate admitted before heap stage 2 is refused now.** Before, the gate's
 Boolean was `Own.Plain.checkPlainMap` (the canonical placement, recomputed and compared) where

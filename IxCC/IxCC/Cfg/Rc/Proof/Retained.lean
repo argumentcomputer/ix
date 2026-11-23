@@ -5,8 +5,8 @@ namespace IxCC.Cfg.Rc
 open IxCC.Sem (Result ClockMono Lang Sim)
 
 theorem checked_retained {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} {borrows : Own.Plain.BorrowSigs}
-    (checked : checkScopedProgram F bodies P borrows = true) :
+    {P : Program} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (checked : checkScopedProgram F bodies P borrows uniqs = true) :
     ∀ i, Sim Eq id
       (Own.Plain.plainRun {source := F, bodies} i) (cfgRun P i) := by
   intro i

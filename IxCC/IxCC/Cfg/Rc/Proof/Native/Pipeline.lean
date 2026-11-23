@@ -37,20 +37,43 @@ def procedures (l : Layout) : List Lir.Func :=
   [Rt.Rc.Procs.inc, Rt.Rc.Gen.dec] ++
     l.ctors.map (fun c => Rt.Rc.Gen.alloc (Rt.Rc.CellLayout.ofFields c.arity c.tag))
 
+def resetWrappers (l : Layout) : List Lir.Func :=
+  l.ctors.map fun c =>
+    let lay := Rt.Rc.CellLayout.ofFields c.arity c.tag
+    mkResetWrapper l.isUniqueProc l.incProc l.decProc lay (lay.cls?.getD 0)
+
+def resetUWrappers (l : Layout) : List Lir.Func :=
+  l.ctors.map fun c =>
+    let lay := Rt.Rc.CellLayout.ofFields c.arity c.tag
+    mkResetUWrapper l.decProc lay (lay.cls?.getD 0)
+
+def reuseWrappers (l : Layout) : List Lir.Func :=
+  l.ctors.zipIdx.map fun (c, i) =>
+    let lay := Rt.Rc.CellLayout.ofFields c.arity c.tag
+    mkReuseWrapper (l.allocProc i) lay (lay.cls?.getD 0)
+
+def reuseUWrappers (l : Layout) : List Lir.Func :=
+  l.ctors.map fun c =>
+    let lay := Rt.Rc.CellLayout.ofFields c.arity c.tag
+    mkReuseUWrapper lay (lay.cls?.getD 0)
+
+def reuseProcs (l : Layout) : List Lir.Func :=
+  [Rt.Rc.Gen.isUnique] ++ resetWrappers l ++ resetUWrappers l ++ reuseWrappers l ++ reuseUWrappers l
+
 def rawProgram (l : Layout) (funcs : List Lir.Func) (main : Nat) : Lir.Program :=
   { funcs := (funcs ++ wrappers l ++ procedures l ++
-      [Rt.Procs.cxInit, Rt.Procs.natPow, Rt.Procs.natGcd]).toArray
+      [Rt.Procs.cxInit, Rt.Procs.natPow, Rt.Procs.natGcd] ++ reuseProcs l).toArray
     main }
 
 def inlinedProgram (l : Layout) (funcs : List Lir.Func) (main : Nat) : Lir.Program :=
-  Inline.inlineProgram l (rawProgram l funcs main)
+  Prune.pruneUnusedReuse l (Inline.inlineProgram l (rawProgram l funcs main))
 
 theorem lower_parts {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Rt.Lowered}
-    {borrows : Own.Plain.BorrowSigs}
-    (accepted : Native.lower config F bodies P borrows = .ok lowered) :
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (accepted : Native.lower config F bodies P borrows uniqs = .ok lowered) :
     ∃ main pairs funcs,
-      checkProgram F bodies P borrows = true ∧
+      checkProgram F bodies P borrows uniqs = true ∧
       Rt.checkSwitches P.base = .ok () ∧
       P.base.exports.head? = some main ∧
       (layoutOf P).ctors.all (fun c => (Rt.Rc.CellLayout.ofFields c.arity c.tag).ok) = true ∧
@@ -64,7 +87,7 @@ theorem lower_parts {config : Rt.Config} {F : Fir.Program}
       lowered.natGcd = (layoutOf P).init + 2 ∧
       lowered.roots = rootsOf config P ∧ lowered.program.check = .ok () := by
   change ((do
-    unless checkProgram F bodies P borrows do throw "unchecked RC Cfg candidate"
+    unless checkProgram F bodies P borrows uniqs do throw "unchecked RC Cfg candidate"
     (Rt.checkSwitches P.base).mapError Rt.SwitchError.render
     let some main := P.base.exports.head? | throw "no exports"
     unless (layoutOf P).ctors.all (fun c => (Rt.Rc.CellLayout.ofFields c.arity c.tag).ok) do
@@ -77,7 +100,7 @@ theorem lower_parts {config : Rt.Config} {F : Fir.Program}
     return {
       program, init := (layoutOf P).init, natPow := (layoutOf P).init + 1
       natGcd := (layoutOf P).init + 2, roots := rootsOf config P }) : Except String Rt.Lowered) = .ok lowered at accepted
-  cases hc : checkProgram F bodies P borrows with
+  cases hc : checkProgram F bodies P borrows uniqs with
   | false =>
     simp only [hc, Bool.false_eq_true, ↓reduceIte, throw, throwThe,
       MonadExceptOf.throw, bind, Except.bind] at accepted

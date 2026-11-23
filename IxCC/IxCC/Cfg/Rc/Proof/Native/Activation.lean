@@ -22,11 +22,16 @@ structure Activation (F : Fir.Program) (P : Program) (pairs : List (Nat × Cfg.F
     (roots : List Own.RVal) (lex : Own.Plain.Joins) (sourceJoins : List Fir.JEntry)
     (ownedJoins : List Own.Plain.JEntry) (code : Own.Plain.Code) (bound : Nat)
     (function : Cfg.Fun) (source : Cfg.Frame) (target : Lir.Frame)
-    (borrows : Own.Plain.BorrowSigs := .leaf) : Prop where
+    (borrows : Own.Plain.BorrowSigs := .leaf)
+    (uniqs : Own.Plain.UniqSigs := .leaf)
+    (retUniq : Bool := false)
+    (priv : Nat → Prop := fun _ => False)
+    (rslots : Src.NatMap Own.RVal := .leaf)
+    (slotVals : List Own.RVal := []) : Prop where
   owned : Own.Plain.OwnedState (Own.Plain.signatures F) H external live Γ sourceEnv ownedEnv roots
-    lex Δ sourceJoins ownedJoins borrows
-  typed : checkCode Δ Γ code borrows = .ok ()
-  layout : At F P source ownedEnv ownedJoins code
+    lex Δ sourceJoins ownedJoins borrows uniqs retUniq F.ctors F.known priv rslots slotVals
+  typed : checkCode Δ Γ code borrows uniqs retUniq F.ctors F.known = .ok ()
+  layout : At F P source ownedEnv ownedJoins code rslots
   frame : FrameState P pairs lp addresses H.size bound function source target
   scope : Own.Plain.scopeOk (Own.Plain.signatures F) live (Own.Plain.stackArities sourceJoins)
     (Own.Plain.eraseCode code) = true
@@ -53,14 +58,16 @@ theorem Activation.lexical {F : Fir.Program} {P : Program} {pairs : List (Nat ×
     {roots : List Own.RVal} {lex : Own.Plain.Joins} {sourceJoins : List Fir.JEntry}
     {ownedJoins : List Own.Plain.JEntry} {code : Own.Plain.Code} {bound : Nat}
     {function : Cfg.Fun} {source : Cfg.Frame} {target : Lir.Frame}
-    {borrows : Own.Plain.BorrowSigs}
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs} {retUniq : Bool}
+    {priv : Nat → Prop} {rslots : Src.NatMap Own.RVal} {slotVals : List Own.RVal}
     (before : Activation F P pairs lp H addresses external live Γ Δ sourceEnv ownedEnv roots
-      lex sourceJoins ownedJoins code bound function source target borrows) :
+      lex sourceJoins ownedJoins code bound function source target borrows uniqs retUniq priv
+      rslots slotVals) :
     EnvSub ownedEnv source.env ∧
     FusedWords addresses (Rt.Proof.Fused (tablesOf P pairs) function) bound ownedEnv target.env ∧
     Own.Plain.EnvBounded H.size ownedEnv ∧
     FusedCtorOk (tablesOf P pairs) (Rt.Proof.Fused (tablesOf P pairs) function) ownedEnv := by
-  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, sub, _⟩ := before.layout
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, sub, _⟩ := before.layout
   exact ⟨sub, before.frame.lexical sub⟩
 
 /-- Reference-count-equal root lists hold the same external owners. -/
@@ -79,16 +86,17 @@ theorem Activation.declare {F : Fir.Program} {P : Program} {pairs : List (Nat ×
     {ownedJoins : List Own.Plain.JEntry} {j : Fir.JoinId} {params captured : List Fir.Var}
     {rec : Bool} {body cont : Own.Plain.Code} {bound : Nat}
     {function : Cfg.Fun} {source : Cfg.Frame} {target : Lir.Frame}
-    {borrows : Own.Plain.BorrowSigs}
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs} {retUniq : Bool}
+    {priv : Nat → Prop} {rslots : Src.NatMap Own.RVal} {slotVals : List Own.RVal}
     (before : Activation F P pairs lp H addresses external live Γ Δ sourceEnv ownedEnv roots
       lex sourceJoins ownedJoins (.jp j params captured rec body cont) bound function source target
-      borrows) :
+      borrows uniqs retUniq priv rslots slotVals) :
     Activation F P pairs lp H addresses external live Γ (Δ.insert j captured) sourceEnv
       ownedEnv roots ((j, live) :: lex)
       ({id := j, charged := false, env := sourceEnv, params, body := Own.Plain.eraseCode body,
         isRec := rec} :: sourceJoins)
       ({id := j, charged := false, env := ownedEnv, params, body, isRec := rec} :: ownedJoins)
-      cont bound function source target borrows := by
+      cont bound function source target borrows uniqs retUniq priv rslots slotVals := by
   obtain ⟨hnd, hneed, htyped, hcont⟩ := Own.Plain.checkCode_jp before.typed
   have scopeFacts := before.scope
   simp only [Own.Plain.eraseCode, Own.Plain.scopeOk, Bool.and_eq_true, decide_eq_true_eq,

@@ -7,6 +7,7 @@ import IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarOutcomes
 import IxCC.Cfg.Rc.Proof.Physical.Bridge.ProjectionOutcomes
 import IxCC.Cfg.Rc.Proof.Physical.CallResult
 import IxCC.Cfg.Rc.Proof.Physical.TailResult
+import IxCC.Cfg.Rc.Proof.Physical.ReuseResult
 import IxCC.Fir.Proof.Mono
 
 /-! Complete simulation of the actual source evaluator by the physical RC lowering, by induction
@@ -24,13 +25,14 @@ section
 variable {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
   {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
   {main clock : Nat} {sourceJoins : List Fir.JEntry} {borrows : Own.Plain.BorrowSigs}
+  {uniqs : Own.Plain.UniqSigs}
 
 /-- A binding, by its right-hand side. -/
-theorem bind_result (admission : CodeAdmission F bodies P config pairs functions borrows)
-    (smaller : ∀ k, k < clock → PhysicalAtClock F P config pairs main k borrows)
+theorem bind_result (admission : CodeAdmission F bodies P config pairs functions borrows uniqs)
+    (smaller : ∀ k, k < clock → PhysicalAtClock F P config pairs main k borrows bodies uniqs)
     {x : Fir.Var} {rhs : Fir.Rhs} {k : Own.Plain.Code}
-    (next : PhysicalCode F P config pairs main clock sourceJoins k borrows) :
-    PhysicalCode F P config pairs main clock sourceJoins (.bind x rhs k) borrows := by
+    (next : PhysicalCode F P config pairs main clock sourceJoins k borrows bodies uniqs) :
+    PhysicalCode F P config pairs main clock sourceJoins (.bind x rhs k) borrows bodies uniqs := by
   cases rhs with
   | arg arg => exact argument_result admission arg next
   | ctor ctor args =>
@@ -46,16 +48,22 @@ end
 /-- **The physical simulation's induction over the typing context.** -/
 theorem eval_physical {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     {P : Program} {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)}
-    {functions : List Lir.Func} {borrows : Own.Plain.BorrowSigs}
-    (admission : CodeAdmission F bodies P config pairs functions borrows) (main clock : Nat)
-    (smaller : ∀ next, next < clock → PhysicalAtClock F P config pairs main next borrows)
+    {functions : List Lir.Func} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (admission : CodeAdmission F bodies P config pairs functions borrows uniqs) (main clock : Nat)
+    (smaller : ∀ next, next < clock → PhysicalAtClock F P config pairs main next borrows bodies uniqs)
     (sourceJoins : List Fir.JEntry) (code : Own.Plain.Code) :
-    PhysicalCode F P config pairs main clock sourceJoins code borrows := by
+    PhysicalCode F P config pairs main clock sourceJoins code borrows bodies uniqs := by
   match code with
   | .act (.inc x n) k =>
     exact physical_inc admission (eval_physical admission main clock smaller sourceJoins k)
   | .act (.dec x) k =>
     exact physical_dec admission (eval_physical admission main clock smaller sourceJoins k)
+  | .reset s x ctor fields uniq k =>
+    exact physical_reset admission (eval_physical admission main clock smaller sourceJoins k)
+  | .reuse x s ctor args uniq k =>
+    exact physical_reuse admission (eval_physical admission main clock smaller sourceJoins k)
+  | .dropSlot s k =>
+    exact physical_dropSlot admission (eval_physical admission main clock smaller sourceJoins k)
   | .bind x rhs k =>
     exact bind_result admission smaller
       (eval_physical admission main clock smaller sourceJoins k)
@@ -82,17 +90,20 @@ decreasing_by
   all_goals simp_wf
   all_goals rw [Prod.lex_def]
   all_goals first
-    | (right; refine ⟨rfl, ?_⟩; simp; omega)
+    | (right; refine ⟨rfl, ?_⟩; omega)
+    | (right; refine ⟨rfl, ?_⟩; simp only [Own.Plain.Code.reset.sizeOf_spec]; omega)
+    | (right; refine ⟨rfl, ?_⟩; simp only [Own.Plain.Code.dropSlot.sizeOf_spec]; omega)
     | (left; rw [erased]; simp only [Own.Plain.eraseCode, Fir.Code.size] at *; omega)
+    | (left; simp only [Own.Plain.eraseCode, Fir.Code.size] at *; omega)
     | (left; simp only [Own.Plain.eraseCode, Fir.Code.size, Fir.jweight, Fir.JEntry.weight,
         Bool.false_eq_true, ↓reduceIte] at *; omega)
 
 /-- **The physical simulation over the typing context**, at every clock. -/
 theorem checked_physical {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     {P : Program} {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)}
-    {functions : List Lir.Func} {borrows : Own.Plain.BorrowSigs}
-    (admission : CodeAdmission F bodies P config pairs functions borrows) (main : Nat) :
-    ∀ clock, PhysicalAtClock F P config pairs main clock borrows := by
+    {functions : List Lir.Func} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (admission : CodeAdmission F bodies P config pairs functions borrows uniqs) (main : Nat) :
+    ∀ clock, PhysicalAtClock F P config pairs main clock borrows bodies uniqs := by
   intro clock
   induction clock using Nat.strongRecOn with
   | ind clock smaller =>
@@ -103,13 +114,13 @@ theorem checked_physical {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
 physical statement is derived here, rather than carried in that contract. -/
 theorem public_physical {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     {P : Program} {config : Rt.Config} {lowered : Public.Lowered}
-    {borrows : Own.Plain.BorrowSigs}
-    (checked : checkScopedProgram F bodies P borrows = true)
-    (accepted : Public.lower config F bodies P borrows = .ok lowered) :
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (checked : checkScopedProgram F bodies P borrows uniqs = true)
+    (accepted : Public.lower config F bodies P borrows uniqs = .ok lowered) :
     ∃ main pairs functions,
-      CodeAdmission F bodies P config pairs functions borrows ∧
+      CodeAdmission F bodies P config pairs functions borrows uniqs ∧
       P.base.exports.head? = some main ∧
-      ∀ clock, PhysicalAtClock F P config pairs main clock borrows := by
+      ∀ clock, PhysicalAtClock F P config pairs main clock borrows bodies uniqs := by
   obtain ⟨main, pairs, functions, admission, entry⟩ := CodeAdmission.of_public checked accepted
   exact ⟨main, pairs, functions, admission, entry, checked_physical admission main⟩
 

@@ -46,15 +46,16 @@ theorem generate_exports {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     subst P
     rfl
 
-theorem lowerFunction_params (limit f : Nat) (source : Fir.Fun) (body : Own.Plain.Code) :
-    (lowerFunction limit f source body).params = source.params.map (·.1) := by
+theorem lowerFunction_params (limit f : Nat) (source : Fir.Fun) (body : Own.Plain.Code)
+    (ctors : List Lam.CtorInfo := []) :
+    (lowerFunction limit f source body ctors).params = source.params.map (·.1) := by
   unfold lowerFunction
   rw [Cfg.function_params f (by simp [Own.immFun])]
   rfl
 
 theorem checked_refines_lang {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} {borrows : Own.Plain.BorrowSigs}
-    (checked : checkScopedProgram F bodies P borrows = true) :
+    {P : Program} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (checked : checkScopedProgram F bodies P borrows uniqs = true) :
     Sem.Refines ({source := F, bodies} : Own.Plain.Program) P := by
   refine Sem.Refines.of_sim (R := Lang.ObsEq) (fun _ _ h => h) fun i => ⟨id, ?_⟩
   obtain ⟨r, ns⟩ := i
@@ -93,7 +94,8 @@ theorem checked_refines_lang {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Co
 
 theorem checked_lower_refines {A : Anf.Program} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {borrows : Own.Plain.BorrowSigs}
-    (lowered : Fir.lower A = .ok F) (checked : checkScopedProgram F bodies P borrows = true) :
+    {uniqs : Own.Plain.UniqSigs}
+    (lowered : Fir.lower A = .ok F) (checked : checkScopedProgram F bodies P borrows uniqs = true) :
     Sem.Refines A P :=
   (Own.Plain.owned_lower_refines lowered
     (checkProgram_parts (checkScopedProgram_parts checked).1).1).trans

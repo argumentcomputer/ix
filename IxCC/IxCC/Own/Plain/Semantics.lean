@@ -1,5 +1,6 @@
 import IxCC.Own.Plain.Program
 import IxCC.Own.Rc.Release
+import IxCC.Own.Rc.Reuse
 import IxCC.Own.Semantics
 
 /-! Executable plain-RC semantics. The source clock/join discipline is the
@@ -16,7 +17,7 @@ def Program.tables (P : Program) : Own.Tables :=
 
 mutual
 def Code.size : Code → Nat
-  | .act _ k | .bind _ _ k => k.size + 1
+  | .act _ k | .bind _ _ k | .reset _ _ _ _ _ k | .reuse _ _ _ _ _ k | .dropSlot _ k => k.size + 1
   | .jp _ _ _ _ b k => b.size + k.size + 1
   | .case _ alts d => Code.altsSize alts + Code.optSize d + 2
   | _ => 1
@@ -30,6 +31,58 @@ end
 
 theorem Code.size_pos (c : Code) : 0 < c.size := by
   cases c <;> simp [Code.size]
+
+/-- The placeholder body written into a reset cell: same constructor, all fields `.erased`
+(immediates), preserving `BodyCtorOk`, `HeapOk`, and `Readback.Scanned`. -/
+def resetShell (ctor : Fir.CtorInfo) : Own.Body :=
+  { ctor, fields := List.replicate ctor.arity .erased }
+
+def incList (H : Own.Heap) : List Own.RVal → Option Own.Heap
+  | [] => some H
+  | v :: vs => do incList (← Rc.inc H v 1) vs
+
+/-- Execute a `reset` of variable `x` with live-field bitmask `mask` (`bit j = 1` means field `j`
+is kept live; `0` means field `j` is dead and dropped on the unique path). -/
+def evalResetMask (ρ : Own.Env) (H : Own.Heap) (x : Var) (ctor : Fir.CtorInfo)
+    (mask : Nat) (uniq : Bool) : Result (Own.RVal × Own.Heap) :=
+  if ctor.fieldless then .stuck else
+  match ρ.get? x with
+  | none => .stuck
+  | some (.loc l) =>
+    match H.cell? l with
+    | some (.live 1 .dyn b) =>
+      let deadFields := (b.fields.zipIdx).filterMap fun (u, j) =>
+        if !Nat.testBit mask j then some u else none
+      match Rc.reuseCell H l (resetShell ctor) with
+      | some (sv, H₁) => Result.ofOption ((Rc.dropAll H₁ deadFields).map (sv, ·))
+      | none => .stuck
+    | some (.live _ _ b) =>
+      if uniq then .stuck
+      else
+        let liveFields := (b.fields.zipIdx).filterMap fun (u, j) =>
+          if Nat.testBit mask j then some u else none
+        match incList H liveFields with
+        | some H₁ => Result.ofOption ((Rc.dropAll H₁ [.loc l]).map (.erased, ·))
+        | none => .stuck
+    | _ => .stuck
+  | some _ => if uniq || mask != 0 then .stuck else .ok (.erased, H)
+
+/-- Execute a `reuse` of slot value `sv` for constructor `ctor` with arguments `args`. -/
+def evalReuseVal (ρ : Own.Env) (H : Own.Heap) (sv : Own.RVal) (ctor : Fir.CtorInfo)
+    (args : List Fir.Arg) (uniq : Bool) : Result (Own.RVal × Own.Heap) :=
+  match Own.evalArgs ρ args with
+  | none => .stuck
+  | some vs =>
+    if !ctor.fieldless && vs.length = ctor.arity then
+      match sv with
+      | .loc l => Result.ofOption (Rc.reuseCell H l { ctor, fields := vs })
+      | .erased => if uniq then .stuck else .ok (Own.Heap.alloc .rc H { ctor, fields := vs })
+      | _ => .stuck
+    else .stuck
+
+/-- Drop an unused reset slot value (`loc` is recycled via `dropAll`, `.erased` is a no-op). -/
+def evalDropVal (H : Own.Heap) (sv : Own.RVal) : Result Own.Heap :=
+  Result.ofOption (Rc.dropAll H [sv])
 
 def evalAction (ρ : Own.Env) (H : Own.Heap) : Action → Result Own.Heap
   | .inc x n =>
@@ -90,11 +143,11 @@ theorem JEntry.jweight_after (e : JEntry) (rest : List JEntry) :
 
 mutual
 def eval (P : Program) (k : Nat) (ρ : Own.Env) (J : List JEntry) (H : Own.Heap)
-    (c : Code) : Result (Own.RVal × Own.Heap) :=
+    (c : Code) (slots : Src.NatMap Own.RVal := .leaf) : Result (Own.RVal × Own.Heap) :=
   match c with
   | .act a c' =>
     match evalAction ρ H a with
-    | .ok H' => eval P k ρ J H' c'
+    | .ok H' => eval P k ρ J H' c' slots
     | .timeout => .timeout
     | .resource r => .resource r
     | .trap => .trap
@@ -103,7 +156,7 @@ def eval (P : Program) (k : Nat) (ρ : Own.Env) (J : List JEntry) (H : Own.Heap)
     match Own.evalArgs ρ args with
     | some vs =>
       match evalCall P k f vs H with
-      | .ok (v, H') => eval P k (ρ.insert x v) J H' c'
+      | .ok (v, H') => eval P k (ρ.insert x v) J H' c' slots
       | .timeout => .timeout
       | .resource r => .resource r
       | .trap => .trap
@@ -111,15 +164,42 @@ def eval (P : Program) (k : Nat) (ρ : Own.Env) (J : List JEntry) (H : Own.Heap)
     | none => .stuck
   | .bind x r c' =>
     match evalRhs P.tables ρ H r with
-    | .ok (v, H') => eval P k (ρ.insert x v) J H' c'
+    | .ok (v, H') => eval P k (ρ.insert x v) J H' c' slots
     | .timeout => .timeout
     | .resource r => .resource r
     | .trap => .trap
     | .stuck => .stuck
+  | .reset s x ctor fields uniq c' =>
+    match evalResetMask ρ H x ctor (fieldsMask fields) uniq with
+    | .ok (sv, H') => eval P k ρ J H' c' (slots.insert s sv)
+    | .timeout => .timeout
+    | .resource r => .resource r
+    | .trap => .trap
+    | .stuck => .stuck
+  | .reuse x s ctor args uniq c' =>
+    match slots.get? s with
+    | some sv =>
+      match evalReuseVal ρ H sv ctor args uniq with
+      | .ok (v, H') => eval P k (ρ.insert x v) J H' c' (slots.erase s)
+      | .timeout => .timeout
+      | .resource r => .resource r
+      | .trap => .trap
+      | .stuck => .stuck
+    | none => .stuck
+  | .dropSlot s c' =>
+    match slots.get? s with
+    | some sv =>
+      match evalDropVal H sv with
+      | .ok H' => eval P k ρ J H' c' (slots.erase s)
+      | .timeout => .timeout
+      | .resource r => .resource r
+      | .trap => .trap
+      | .stuck => .stuck
+    | none => .stuck
   | .jp j ps _ rec body c' =>
     eval P k ρ ({
       id := j, charged := false, env := ρ, params := ps,
-      body, isRec := rec } :: J) H c'
+      body, isRec := rec } :: J) H c' slots
   | .jmp j args =>
     match _h : lookupJ j J, Own.evalArgs ρ args with
     | some (e, rest), some vs =>
@@ -127,15 +207,15 @@ def eval (P : Program) (k : Nat) (ρ : Own.Env) (J : List JEntry) (H : Own.Heap)
         if _hc : e.charged then
           match k with
           | 0 => .timeout
-          | k + 1 => eval P k (Own.bindAll e.env e.params vs) (e.after rest) H e.body
-        else eval P k (Own.bindAll e.env e.params vs) (e.after rest) H e.body
+          | k + 1 => eval P k (Own.bindAll e.env e.params vs) (e.after rest) H e.body .leaf
+        else eval P k (Own.bindAll e.env e.params vs) (e.after rest) H e.body .leaf
       else .stuck
     | _, _ => .stuck
   | .case x alts d =>
     match ρ.get? x with
     | some v =>
       match v.asCtor P.source.known H with
-      | some (key, _) => evalAlts P k ρ J H key alts d
+      | some (key, _) => evalAlts P k ρ J H key alts d slots
       | none => .stuck
     | none => .stuck
   | .ret a =>
@@ -166,13 +246,14 @@ decreasing_by
        omega)
 
 def evalAlts (P : Program) (k : Nat) (ρ : Own.Env) (J : List JEntry) (H : Own.Heap)
-    (key : Key.CtorKey) (alts : List Alt) (d : Option Code) : Result (Own.RVal × Own.Heap) :=
+    (key : Key.CtorKey) (alts : List Alt) (d : Option Code)
+    (slots : Src.NatMap Own.RVal := .leaf) : Result (Own.RVal × Own.Heap) :=
   match alts with
   | [] => match d with
-    | some c => eval P k ρ J H c
+    | some c => eval P k ρ J H c slots
     | none => .stuck
   | .mk key' body :: rest =>
-    if key' = key then eval P k ρ J H body else evalAlts P k ρ J H key rest d
+    if key' = key then eval P k ρ J H body slots else evalAlts P k ρ J H key rest d slots
 termination_by (k, Code.altsSize alts + Code.optSize d + jweight J + 1)
 decreasing_by
   all_goals simp_wf
@@ -189,7 +270,7 @@ def evalCall (P : Program) (k : Nat) (f : FunId) (vs : List Own.RVal) (H : Own.H
     if vs.length = fd.params.length then
       match k with
       | 0 => .timeout
-      | k + 1 => eval P k (Own.bindAll .leaf (fd.params.map (·.1)) vs) [] H body
+      | k + 1 => eval P k (Own.bindAll .leaf (fd.params.map (·.1)) vs) [] H body .leaf
     else .stuck
   | _, _ => .stuck
 termination_by (k, 0)

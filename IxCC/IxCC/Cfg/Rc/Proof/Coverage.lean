@@ -24,17 +24,21 @@ theorem collect_tail {limit first : Nat} {i : Instr} {rest : List Instr} {table 
     | none => simp [collect, ht] at hc
     | some tail =>
       have eq : tail = table := by
-        cases i with
-        | bind x rhs =>
-          cases rhs with
-          | fir r =>
-            cases r <;> simp [collect, ht, hr] at hc <;> exact hc.2
-          | alloc c args kind =>
-            simp [collect, ht, hr] at hc
-            exact hc.2
-          | proj x key index =>
-            simp [collect, ht, hr] at hc
-            exact hc.2
+        simp only [collect, ht, hr, Bool.false_eq_true, ↓reduceIte, bind, Option.bind] at hc
+        split at hc
+        · cases h1 : decodeReset limit i <;> cases h2 : decodeReuse limit i <;>
+            simp [h1, h2] at hc
+          · exact hc.2
+          · exact hc.2
+        · cases i with
+          | bind x rhs =>
+            cases rhs with
+            | fir r =>
+              cases r <;> simp at hc <;> exact hc.2
+            | alloc c args kind =>
+              simp at hc; exact hc.2
+            | proj x key index =>
+              simp at hc; exact hc.2
       exact ⟨tail, rfl, by intro s a h; simpa [← eq] using h⟩
 
 theorem collect_member {limit first : Nat} {code : List Instr} {table : ActionTable} {i : Instr}

@@ -17,6 +17,13 @@ mutual
 def codeEq : Code → Code → Bool
   | .act a k, .act a' k' => decide (a = a') && codeEq k k'
   | .bind x r k, .bind x' r' k' => decide (x = x') && decide (r = r') && codeEq k k'
+  | .reset s x c fs u k, .reset s' x' c' fs' u' k' =>
+    decide (s = s') && decide (x = x') && decide (c = c') && decide (fs = fs') &&
+      decide (u = u') && codeEq k k'
+  | .reuse x s c args u k, .reuse x' s' c' args' u' k' =>
+    decide (x = x') && decide (s = s') && decide (c = c') && decide (args = args') &&
+      decide (u = u') && codeEq k k'
+  | .dropSlot s k, .dropSlot s' k' => decide (s = s') && codeEq k k'
   | .jp j ps captured rec b k, .jp j' ps' captured' rec' b' k' =>
     decide (j = j') && decide (ps = ps') && decide (captured = captured') &&
       decide (rec = rec') && codeEq b b' && codeEq k k'

@@ -20,7 +20,8 @@ theorem entries_keys {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
         simp only [hb, bind, Option.bind] at h
         split at h
         · cases h
-        · cases ht : collect F.size fd.vars (instructions (lowerFunction F.size f fd body)) with
+        · cases ht : collect F.size (fd.vars + Own.Plain.slotBound body)
+            (instructions (lowerFunction F.size f fd body F.ctors)) with
           | none => simp [ht] at h
           | some table =>
             simp only [ht, bind, Option.bind] at h
@@ -59,8 +60,8 @@ theorem generate_reserved_absent {F : Fir.Program} {bodies : Src.NatMap Own.Plai
         (by simpa only [List.map_map, Function.comp_def] using absent)
 
 theorem checked_reserved_absent {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} {borrows : Own.Plain.BorrowSigs}
-    (h : checkProgram F bodies P borrows = true) {f : Nat} (hf : F.size ≤ f) :
+    {P : Program} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (h : checkProgram F bodies P borrows uniqs = true) {f : Nat} (hf : F.size ≤ f) :
     P.base.fun? f = none ∧ P.actions.get? f = none :=
   generate_reserved_absent (checkProgram_parts h).2 hf
 
@@ -77,8 +78,8 @@ theorem generate_size {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
 /-- Legacy execution cannot accidentally call a candidate-supplied function
 at either marker ID after complete-map admission. -/
 theorem checked_reserved_call_stuck {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} {borrows : Own.Plain.BorrowSigs}
-    (h : checkProgram F bodies P borrows = true) (offset : Nat)
+    {P : Program} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (h : checkProgram F bodies P borrows uniqs = true) (offset : Nat)
     (args : List Own.RVal) (stk : List (Frame × Fir.Var)) (H : Own.Heap) :
     Cfg.step .rc P.base (.call (P.base.size + offset) args stk H) = .stuck := by
   have size := generate_size (checkProgram_parts h).2

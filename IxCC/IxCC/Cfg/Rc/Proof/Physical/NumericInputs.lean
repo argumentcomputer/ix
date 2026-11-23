@@ -46,6 +46,44 @@ theorem numeric_selectBorrowed_reachable (H : Own.Heap) (external : Nat → Nat)
     · exact .imm (fun _ h => by cases h)
     · exact numeric_selectBorrowed_reachable H external bs numbers v hv
 
+private theorem mem_selectUniqueVals {bs us : List Bool} {vs : List Own.RVal} {v : Own.RVal}
+    (hv : v ∈ Own.Plain.selectUniqueVals bs us vs) : v ∈ vs := by
+  induction vs generalizing bs us with
+  | nil => simp [Own.Plain.selectUniqueVals] at hv
+  | cons x xs ih =>
+    cases bs with
+    | nil =>
+      cases us with
+      | nil => simp [Own.Plain.selectUniqueVals] at hv
+      | cons u us =>
+        cases u
+        · exact List.mem_cons_of_mem _ (ih (by simpa [Own.Plain.selectUniqueVals] using hv))
+        · simp only [Own.Plain.selectUniqueVals, List.mem_cons] at hv
+          rcases hv with rfl | hv
+          · exact List.mem_cons_self
+          · exact List.mem_cons_of_mem _ (ih hv)
+    | cons b bs =>
+      cases b
+      · cases us with
+        | nil => exact List.mem_cons_of_mem _ (ih (by simpa [Own.Plain.selectUniqueVals] using hv))
+        | cons u us =>
+          cases u
+          · exact List.mem_cons_of_mem _ (ih (by simpa [Own.Plain.selectUniqueVals] using hv))
+          · simp only [Own.Plain.selectUniqueVals, List.mem_cons] at hv
+            rcases hv with rfl | hv
+            · exact List.mem_cons_self
+            · exact List.mem_cons_of_mem _ (ih hv)
+      · cases us with
+        | nil => exact List.mem_cons_of_mem _ (ih (by simpa [Own.Plain.selectUniqueVals] using hv))
+        | cons _ us => exact List.mem_cons_of_mem _ (ih (by simpa [Own.Plain.selectUniqueVals] using hv))
+
+theorem numeric_selectUnique_uniq (ctors : List Lam.CtorInfo) (H : Own.Heap) (external : Nat → Nat)
+    (owned : List Own.RVal) (bs us : List Bool) (numbers : List Nat) (v : Own.RVal)
+    (hv : v ∈ Own.Plain.selectUniqueVals bs us (Own.litArgs numbers)) :
+    Own.Plain.UniqVal ctors H external owned v := by
+  obtain ⟨_, _, rfl⟩ := List.mem_map.mp (mem_selectUniqueVals hv)
+  trivial
+
 theorem HeapState.numeric_selectOwned {P : Program} {pairs : List (Nat × Cfg.Fun)}
     {H : Own.Heap} {addresses : AddressMap} {memory : X86.Memory} {external : Nat → Nat}
     {context base bump limit : Lir.Word} {regionBytes : Nat} {slots : List Slot}

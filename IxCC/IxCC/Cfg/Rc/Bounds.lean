@@ -24,6 +24,12 @@ def instrBound (limit first : Nat) (i : Instr) : Bool :=
     match decode limit i with
     | some (slot, a) => decide (first ≤ slot) && actionBound first a
     | none => false
+  else if isReuseOp limit i then
+    match decodeReset limit i, decodeReuse limit i with
+    | some (slotReg, x, _, _, _), none => decide (slotReg < first) && decide (x < first)
+    | none, some (dst, slotReg, _, _, args) =>
+      decide (dst < first) && decide (slotReg < first) && args.all (argBound first)
+    | _, _ => false
   else match i with
     | .bind x rhs => decide (x < first) && rhsBound limit first rhs
 

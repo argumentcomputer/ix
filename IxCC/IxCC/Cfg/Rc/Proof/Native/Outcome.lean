@@ -13,7 +13,9 @@ open IxCC.Cfg.Rc.Proof.Physical.Bridge IxCC.Rt.Rc.Procs IxCC.Own.Rc
 
 structure Returned (P : Program) (pairs : List (Nat × Cfg.Fun)) (lp : Lir.Program)
     (origin : Own.Heap) (originAddresses : AddressMap) (external : Nat → Nat)
-    (context base limit : Lir.Word) (regionBytes : Nat) (logical : Fir.Val) where
+    (context base limit : Lir.Word) (regionBytes : Nat) (logical : Fir.Val)
+    (ctors : List Lam.CtorInfo := []) (retUniq : Bool := false)
+    (priv : Nat → Prop := fun _ => False) where
   heap : Own.Heap
   addresses : AddressMap
   memory : X86.Memory
@@ -34,16 +36,23 @@ structure Returned (P : Program) (pairs : List (Nat × Cfg.Fun)) (lp : Lir.Progr
   preserved : Own.Plain.ExternalPreserved origin heap external
   reachable : Own.Plain.ReachablePreserved origin heap external
   history : HeapHistory origin.size originAddresses heap.size addresses
+  privPreserved : Own.Plain.PrivPreserved origin heap priv
+  retNoPriv : ∀ k, priv k → value ≠ .loc k
+  uniqRet : retUniq = true → Own.Plain.UniqVal ctors heap external [value] value
 
 variable {P : Program} {pairs : List (Nat × Cfg.Fun)} {lp : Lir.Program}
   {H₀ H₁ : Own.Heap} {addresses₀ addresses₁ : AddressMap} {external : Nat → Nat}
   {context base limit : Lir.Word} {regionBytes : Nat}
+  {ctors ctors' : List Lam.CtorInfo} {retUniq retUniq' : Bool} {priv priv' : Nat → Prop}
 
 def Returned.preheap {logical : Fir.Val}
-    (after : Returned P pairs lp H₁ addresses₁ external context base limit regionBytes logical)
+    (after : Returned P pairs lp H₁ addresses₁ external context base limit regionBytes logical
+      ctors retUniq priv)
     (reachable : Own.Plain.ReachablePreserved H₀ H₁ external)
+    (hpriv : Own.Plain.PrivPreserved H₀ H₁ priv)
     (history : HeapHistory H₀.size addresses₀ H₁.size addresses₁) :
-    Returned P pairs lp H₀ addresses₀ external context base limit regionBytes logical := {
+    Returned P pairs lp H₀ addresses₀ external context base limit regionBytes logical
+      ctors retUniq priv := {
   heap := after.heap
   addresses := after.addresses
   memory := after.memory
@@ -62,14 +71,54 @@ def Returned.preheap {logical : Fir.Val}
   compatible := after.compatible
   preserved := (reachable.trans after.reachable).externalPreserved
   reachable := reachable.trans after.reachable
-  history := history.trans after.history }
+  history := history.trans after.history
+  privPreserved := hpriv.trans after.privPreserved
+  retNoPriv := after.retNoPriv
+  uniqRet := after.uniqRet }
+
+def Returned.weaken {logical : Fir.Val}
+    (after : Returned P pairs lp H₀ addresses₀ external context base limit regionBytes logical
+      ctors retUniq priv)
+    (hret : retUniq' = true → retUniq = true ∧ ctors' = ctors)
+    (hpriv : ∀ l, priv' l → priv l) :
+    Returned P pairs lp H₀ addresses₀ external context base limit regionBytes logical
+      ctors' retUniq' priv' := {
+  heap := after.heap
+  addresses := after.addresses
+  memory := after.memory
+  bump := after.bump
+  slots := after.slots
+  lists := after.lists
+  frame := after.frame
+  value := after.value
+  word := after.word
+  den := after.den
+  balance := after.balance
+  state := after.state
+  terminator := after.terminator
+  represented := after.represented
+  bounded := after.bounded
+  compatible := after.compatible
+  preserved := after.preserved
+  reachable := after.reachable
+  history := after.history
+  privPreserved := after.privPreserved.mono hpriv
+  retNoPriv := fun k hk => after.retNoPriv k (hpriv k hk)
+  uniqRet := fun hr => by
+    obtain ⟨hr1, hc⟩ := hret hr
+    subst hc
+    exact after.uniqRet hr1 }
 
 def ResultAt (P : Program) (pairs : List (Nat × Cfg.Fun)) (lp : Lir.Program)
     (origin : Own.Heap) (originAddresses : AddressMap) (external : Nat → Nat)
     (context base limit : Lir.Word) (regionBytes clock : Nat)
-    (initial : Lir.State) (callers : List Lir.Frame) : Sem.Result Fir.Val → Prop
+    (initial : Lir.State) (callers : List Lir.Frame) (result : Sem.Result Fir.Val)
+    (ctors : List Lam.CtorInfo := []) (retUniq : Bool := false)
+    (priv : Nat → Prop := fun _ => False) : Prop :=
+  match result with
   | .ok logical =>
-      (∃ after : Returned P pairs lp origin originAddresses external context base limit regionBytes logical,
+      (∃ after : Returned P pairs lp origin originAddresses external context base limit regionBytes
+          logical ctors retUniq priv,
         ∃ cost, Sem.Star (Lir.semStep lp) initial cost
           {mem := after.memory, ctx := context, stack := after.frame :: callers}) ∨
       Sem.Fails (Lir.semStep lp) initial
@@ -82,12 +131,28 @@ def ResultAt (P : Program) (pairs : List (Nat × Cfg.Fun)) (lp : Lir.Program)
 
 theorem ResultAt.of_fails {clock : Nat} {initial : Lir.State} {callers : List Lir.Frame}
     {result : Sem.Result Fir.Val} (failed : Sem.Fails (Lir.semStep lp) initial) :
-    ResultAt P pairs lp H₀ addresses₀ external context base limit regionBytes clock initial callers result := by
+    ResultAt P pairs lp H₀ addresses₀ external context base limit regionBytes clock initial callers
+      result ctors retUniq priv := by
   cases result with
   | ok _ | trap => exact .inr failed
   | timeout => exact Sem.Forward.TimeoutOrFail.of_fails failed clock
   | resource _ => exact failed
   | stuck => trivial
+
+theorem ResultAt.weaken {clock : Nat} {initial : Lir.State} {callers : List Lir.Frame}
+    {result : Sem.Result Fir.Val}
+    (hret : retUniq' = true → retUniq = true ∧ ctors' = ctors)
+    (hpriv : ∀ l, priv' l → priv l)
+    (execution : ResultAt P pairs lp H₀ addresses₀ external context base limit regionBytes clock
+      initial callers result ctors retUniq priv) :
+    ResultAt P pairs lp H₀ addresses₀ external context base limit regionBytes clock initial callers
+      result ctors' retUniq' priv' := by
+  cases result with
+  | ok logical =>
+    rcases execution with ⟨after, cost, trace⟩ | failed
+    · exact .inl ⟨after.weaken hret hpriv, cost, trace⟩
+    · exact .inr failed
+  | trap | timeout | resource _ | stuck => exact execution
 
 theorem fails_prefix {initial middle : Lir.State} {cost : Nat}
     (trace : Sem.Star (Lir.semStep lp) initial cost middle)
@@ -102,15 +167,17 @@ theorem ResultAt.prefix {clock₀ clock₁ cost : Nat} {initial middle : Lir.Sta
     {callers : List Lir.Frame} {result : Sem.Result Fir.Val}
     (trace : Sem.Star (Lir.semStep lp) initial cost middle)
     (reachable : Own.Plain.ReachablePreserved H₀ H₁ external)
+    (hpriv : Own.Plain.PrivPreserved H₀ H₁ priv)
     (history : HeapHistory H₀.size addresses₀ H₁.size addresses₁)
     (clockBound : clock₀ ≤ clock₁ + cost)
     (execution : ResultAt P pairs lp H₁ addresses₁ external context base limit regionBytes
-      clock₁ middle callers result) :
-    ResultAt P pairs lp H₀ addresses₀ external context base limit regionBytes clock₀ initial callers result := by
+      clock₁ middle callers result ctors retUniq priv) :
+    ResultAt P pairs lp H₀ addresses₀ external context base limit regionBytes clock₀ initial callers
+      result ctors retUniq priv := by
   cases result with
   | ok logical =>
     rcases execution with ⟨after, more, rest⟩ | failed
-    · exact .inl ⟨after.preheap reachable history, cost + more, trace.trans rest⟩
+    · exact .inl ⟨after.preheap reachable hpriv history, cost + more, trace.trans rest⟩
     · exact .inr (fails_prefix trace failed)
   | trap =>
     rcases execution with ⟨more, final, rest, trapped⟩ | failed
@@ -125,15 +192,17 @@ theorem ResultAt.charge {clock cost : Nat} {initial middle : Lir.State}
     {callers : List Lir.Frame} {body : Nat → Sem.Result Fir.Val}
     (trace : Sem.Star (Lir.semStep lp) initial cost middle) (charged : 1 ≤ cost)
     (reachable : Own.Plain.ReachablePreserved H₀ H₁ external)
+    (hpriv : Own.Plain.PrivPreserved H₀ H₁ priv)
     (history : HeapHistory H₀.size addresses₀ H₁.size addresses₁)
     (next : ∀ smaller, clock = smaller + 1 →
-      ResultAt P pairs lp H₁ addresses₁ external context base limit regionBytes smaller middle callers (body smaller)) :
+      ResultAt P pairs lp H₁ addresses₁ external context base limit regionBytes smaller middle
+        callers (body smaller) ctors retUniq priv) :
     ResultAt P pairs lp H₀ addresses₀ external context base limit regionBytes clock initial callers
-      (Sem.later clock body) := by
+      (Sem.later clock body) ctors retUniq priv := by
   cases clock with
   | zero => exact .inl (Sem.Reaches.timeout_of_star trace (by omega))
   | succ smaller =>
-    exact ResultAt.prefix trace reachable history (by omega) (next smaller rfl)
+    exact ResultAt.prefix trace reachable hpriv history (by omega) (next smaller rfl)
 
 
 

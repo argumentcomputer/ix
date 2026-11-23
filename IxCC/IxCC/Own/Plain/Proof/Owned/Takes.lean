@@ -1,12 +1,12 @@
 import IxCC.Own.Plain.Proof.Owned.State
 
-/-! # Consuming tokens, and binding a fresh variable
+/-! # Consuming tokens, and call/tail-call argument checking
 
 `TakeInv` is the part of `OwnedState` a consuming use needs: what takes a token of each argument
 (`takeArgs`) or of each captured variable (`takeVars`) yields the arguments' values, their
 denotations, and the remaining tokens, with the consumed values' references split off
-(`SameRefs owned (vs ++ owned')`, an immediate counting for nothing). `OwnedState.extend` builds
-the state after a fresh binding from the per-variable facts a step establishes. -/
+(`SameRefs owned (vs ++ owned')`, an immediate counting for nothing). `takeOwnedUniqueArgs_call_sem`
+and `takeOwnedUniqueArgs_tail_sem` additionally verify `@borrowed` and `@unique` call arguments. -/
 
 set_option autoImplicit false
 
@@ -23,8 +23,11 @@ structure TakeInv (H : Heap) (Γ : Ctx) (ρf : Fir.Env) (ρo : Own.Env) (owned :
 
 theorem OwnedState.takeInv {functions : Signatures} {H : Heap} {external : Nat → Nat}
     {live : List Var} {Γ : Ctx} {ρf : Fir.Env} {ρo : Own.Env} {owned : List RVal} {lex : Joins}
-    {Δ : JCtx} {Jf : List Fir.JEntry} {Jo : List JEntry} {borrows : BorrowSigs}
-    (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows) :
+    {Δ : JCtx} {Jf : List Fir.JEntry} {Jo : List JEntry} {borrows : BorrowSigs} {uniqs : UniqSigs}
+    {retUniq : Bool} {ctors : List Lam.CtorInfo} {K : Lam.Known} {priv : Nat → Prop}
+    {slots : Src.NatMap RVal} {slotVals : List RVal}
+    (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows uniqs retUniq
+      ctors K priv slots slotVals) :
     TakeInv H Γ ρf ρo owned := ⟨st.den, st.roots, st.immOk⟩
 
 theorem TakeInv.weaker {H : Heap} {Γ Γ' : Ctx} {ρf : Fir.Env} {ρo : Own.Env} {owned owned' : List RVal}
@@ -127,10 +130,22 @@ theorem closed_nil {Γ : Ctx} {toks : List Var} {what : String} (ht : Ctx.Tokens
   unfold Ctx.closed at hc
   split at hc
   · next h =>
-    have h0 : Γ.total = 0 := by simpa using h
+    have h0 : Γ.total = 0 := by
+      simp only [Bool.and_eq_true, beq_iff_eq] at h
+      exact h.1
     rw [ht.total] at h0
     exact List.eq_nil_of_length_eq_zero h0
-  · cases hc
+  · split at hc <;> cases hc
+
+/-- A closed context holds no live reset slot. -/
+theorem closed_rset {Γ : Ctx} {what : String} (hc : Γ.closed what = .ok ()) :
+    mapIsEmpty Γ.rset = true := by
+  unfold Ctx.closed at hc
+  split at hc
+  · next h =>
+    simp only [Bool.and_eq_true] at h
+    exact h.2
+  · split at hc <;> cases hc
 
 theorem EnvRoots.nil_inv {ρ : Own.Env} {vs : List RVal} (h : EnvRoots ρ [] vs) : vs = [] := by
   unfold EnvRoots at h
@@ -180,12 +195,29 @@ def selectBorrowedVals (bs : List Bool) (vs : List RVal) : List RVal :=
     | false :: bs => selectBorrowedVals bs vs
 termination_by structural vs
 
+/-- Unique argument values selected by `(bs, us)` (owned and marked `@unique`). -/
+def selectUniqueVals (bs us : List Bool) (vs : List RVal) : List RVal :=
+  match vs with
+  | [] => []
+  | v :: vs =>
+    match bs, us with
+    | true :: bs, _ :: us => selectUniqueVals bs us vs
+    | true :: bs, [] => selectUniqueVals bs [] vs
+    | false :: bs, true :: us => v :: selectUniqueVals bs us vs
+    | false :: bs, false :: us => selectUniqueVals bs us vs
+    | false :: bs, [] => selectUniqueVals bs [] vs
+    | [], true :: us => v :: selectUniqueVals [] us vs
+    | [], false :: us => selectUniqueVals [] us vs
+    | [], [] => []
+termination_by structural vs
+
 @[simp] theorem selectOwnedVals_nil_right (bs : List Bool) : selectOwnedVals bs [] = [] := rfl
 @[simp] theorem selectOwnedVals_nil_left (vs : List RVal) : selectOwnedVals [] vs = vs := by
   cases vs <;> rfl
 @[simp] theorem selectBorrowedVals_nil_right (bs : List Bool) : selectBorrowedVals bs [] = [] := rfl
 @[simp] theorem selectBorrowedVals_nil_left (vs : List RVal) : selectBorrowedVals [] vs = [] := by
   cases vs <;> rfl
+@[simp] theorem selectUniqueVals_nil_right (bs us : List Bool) : selectUniqueVals bs us [] = [] := rfl
 
 theorem selectOwnedVals_all_false : ∀ (bs : List Bool) (vs : List RVal),
     bs.all (!·) = true → selectOwnedVals bs vs = vs
@@ -204,6 +236,51 @@ theorem selectBorrowedVals_all_false : ∀ (bs : List Bool) (vs : List RVal),
     cases b
     · simp only [selectBorrowedVals]; exact selectBorrowedVals_all_false bs vs (by simpa using h)
     · simp at h
+
+theorem selectUniqueVals_all_false : ∀ (bs us : List Bool) (vs : List RVal),
+    us.all (!·) = true → selectUniqueVals bs us vs = []
+  | _, _, [], _ => rfl
+  | [], [], _ :: _, _ => rfl
+  | true :: bs, [], _ :: vs, _ => selectUniqueVals_all_false bs [] vs rfl
+  | false :: bs, [], _ :: vs, _ => selectUniqueVals_all_false bs [] vs rfl
+  | true :: bs, _ :: us, _ :: vs, h =>
+    selectUniqueVals_all_false bs us vs (by simp only [List.all_cons, Bool.and_eq_true] at h; exact h.2)
+  | false :: bs, u :: us, _ :: vs, h => by
+    cases u
+    · exact selectUniqueVals_all_false bs us vs (by simpa using h)
+    · simp at h
+  | [], u :: us, _ :: vs, h => by
+    cases u
+    · exact selectUniqueVals_all_false [] us vs (by simpa using h)
+    · simp at h
+
+theorem selectUniqueVals_sub_owned : ∀ (bs us : List Bool) (vs : List RVal) {v : RVal},
+    v ∈ selectUniqueVals bs us vs → v ∈ selectOwnedVals bs vs
+  | _, _, [], _, h => by cases h
+  | [], [], _ :: _, _, h => by cases h
+  | true :: bs, [], _ :: vs, _, h => selectUniqueVals_sub_owned bs [] vs h
+  | false :: bs, [], _ :: vs, _, h =>
+    List.mem_cons_of_mem _ (selectUniqueVals_sub_owned bs [] vs h)
+  | true :: bs, _ :: us, _ :: vs, _, h => selectUniqueVals_sub_owned bs us vs h
+  | false :: bs, false :: us, _ :: vs, _, h =>
+    List.mem_cons_of_mem _ (selectUniqueVals_sub_owned bs us vs h)
+  | false :: bs, true :: us, _ :: vs, _, h => by
+    simp only [selectUniqueVals, List.mem_cons] at h
+    rcases h with rfl | h
+    · exact List.mem_cons_self
+    · exact List.mem_cons_of_mem _ (selectUniqueVals_sub_owned bs us vs h)
+  | [], false :: us, _ :: vs, _, h => by
+    have := selectUniqueVals_sub_owned [] us vs h
+    rw [selectOwnedVals_nil_left] at this ⊢
+    exact List.mem_cons_of_mem _ this
+  | [], true :: us, _ :: vs, _, h => by
+    simp only [selectUniqueVals, List.mem_cons] at h
+    rw [selectOwnedVals_nil_left]
+    rcases h with rfl | h
+    · exact List.mem_cons_self
+    · have := selectUniqueVals_sub_owned [] us vs h
+      rw [selectOwnedVals_nil_left] at this
+      exact List.mem_cons_of_mem _ this
 
 /-- Every variable passed in a borrowed position satisfies `P`. -/
 def BorrowedSatisfies (P : Var → Prop) (bs : List Bool) (args : List Arg) : Prop :=
@@ -348,6 +425,287 @@ theorem takeOwnedArgs_sem_gen {H : Heap} {ρf : Fir.Env} {ρo : Own.Env}
             · exact hQimm _ (fun _ h => by cases h)
             · exact hQ' u hu
 
+theorem takeOwnedUniqueArgs_sem_gen {H : Heap} {ρf : Fir.Env} {ρo : Own.Env}
+    {P : Var → Prop} {Q U : RVal → Prop}
+    (hQimm : ∀ v, ImmVal v → Q v) (hUlit : ∀ l, U (.lit l)) (hUer : U .erased)
+    {Γ Γ' : Ctx} {owned : List RVal} {bs us : List Bool} {args : List Arg}
+    (h : TakeInv H Γ ρf ρo owned)
+    (hU : ∀ x, Γ.isUniq x = true → ∀ v, ρo.get? x = some v → U v)
+    (ht : Γ.takeOwnedUniqueArgs bs us args = .ok Γ')
+    (hbs : BorrowedSatisfies P bs args)
+    (hP : ∀ x, P x → Γ'.avail x = true ∧ ∀ v, ρo.get? x = some v → Q v) :
+    ∃ vs ws owned', Own.evalArgs ρo args = some vs ∧ Fir.evalArgs ρf args = some ws ∧
+      Sem.Forall2 (Proof.Den H) vs ws ∧ TakeInv H Γ' ρf ρo owned' ∧
+      SameRefs owned (selectOwnedVals bs vs ++ owned') ∧ Ctx.Weaker Γ' Γ ∧
+      (∀ v, v ∈ selectBorrowedVals bs vs → Q v) ∧
+      (∀ v, v ∈ selectUniqueVals bs us vs → U v) ∧
+      (∀ x, Arg.var x ∈ args → Γ.avail x = true) := by
+  induction args generalizing Γ owned bs us with
+  | nil =>
+    cases ht
+    exact ⟨[], [], owned, rfl, rfl, .nil, h, SameRefs.refl _, Ctx.Weaker.refl _,
+      (fun _ hm => by cases hm), (fun _ hm => by cases hm), (fun _ hm => by cases hm)⟩
+  | cons a as ih =>
+    have htriv : BorrowedSatisfies P [] as := by cases as <;> trivial
+    have hstepOwned : ∀ (Γ₁ : Ctx) (bs' us' : List Bool) (ha : Γ.takeArg a = .ok Γ₁)
+        (ht' : Γ₁.takeOwnedUniqueArgs bs' us' as = .ok Γ')
+        (hbs' : BorrowedSatisfies P bs' as),
+        ∃ v w owned₁ vs ws owned',
+          Own.evalArg ρo a = some v ∧ a.eval ρf = some w ∧ Proof.Den H v w ∧
+          SameRefs owned (v :: owned₁) ∧ Ctx.Weaker Γ₁ Γ ∧
+          Own.evalArgs ρo as = some vs ∧ Fir.evalArgs ρf as = some ws ∧
+          Sem.Forall2 (Proof.Den H) vs ws ∧ TakeInv H Γ' ρf ρo owned' ∧
+          SameRefs owned₁ (selectOwnedVals bs' vs ++ owned') ∧ Ctx.Weaker Γ' Γ₁ ∧
+          (∀ u, u ∈ selectBorrowedVals bs' vs → Q u) ∧
+          (∀ u, u ∈ selectUniqueVals bs' us' vs → U u) ∧
+          (∀ x, Arg.var x ∈ a :: as → Γ.avail x = true) := by
+      intro Γ₁ bs' us' ha ht' hbs'
+      obtain ⟨v, w, owned₁, hv, hw, hd, h₁, hs₁, hw₁⟩ := takeArg_sem h ha
+      obtain ⟨vs, ws, owned', hvs, hws, hds, h', hs', hw', hQ', hU', hav'⟩ :=
+        ih h₁ (fun x hx => hU x (hw₁.isUniq x hx)) ht' hbs'
+      refine ⟨v, w, owned₁, vs, ws, owned', hv, hw, hd, hs₁, hw₁, hvs, hws, hds, h', hs', hw',
+        hQ', hU', fun x hx => ?_⟩
+      rcases List.mem_cons.mp hx with rfl | hx
+      · rcases Ctx.take_ok ha with ⟨hi, _⟩ | ⟨_, n, hn, _⟩
+        · simp [Ctx.avail_eq, hi]
+        · simp [Ctx.avail_eq, Ctx.tokens_eq, hn]
+      · exact hw₁.avail (hav' x hx)
+    cases bs with
+    | nil =>
+      cases us with
+      | nil =>
+        simp only [Ctx.takeOwnedUniqueArgs] at ht
+        cases ha : Γ.takeArg a with
+        | error e => rw [ha] at ht; cases ht
+        | ok Γ₁ =>
+          rw [ha] at ht
+          obtain ⟨v, w, owned₁, vs, ws, owned', hv, hw, hd, hs₁, hw₁, hvs, hws, hds, h', hs',
+            hw', _, _, hav'⟩ := hstepOwned Γ₁ [] [] ha ht htriv
+          refine ⟨v :: vs, w :: ws, owned', by simp [Own.evalArgs, hv, hvs],
+            by simp [Fir.evalArgs, hw, hws], .cons hd hds, h',
+            hs₁.trans (SameRefs.cons v (by simpa using hs')), hw'.trans hw₁,
+            (fun _ hm => by simp at hm), (fun _ hm => by cases hm), hav'⟩
+      | cons u us =>
+        cases u with
+        | false =>
+          simp only [Ctx.takeOwnedUniqueArgs] at ht
+          cases ha : Γ.takeArg a with
+          | error e => rw [ha] at ht; cases ht
+          | ok Γ₁ =>
+            rw [ha] at ht
+            obtain ⟨v, w, owned₁, vs, ws, owned', hv, hw, hd, hs₁, hw₁, hvs, hws, hds, h', hs',
+              hw', _, hU', hav'⟩ := hstepOwned Γ₁ [] us ha ht htriv
+            refine ⟨v :: vs, w :: ws, owned', by simp [Own.evalArgs, hv, hvs],
+              by simp [Fir.evalArgs, hw, hws], .cons hd hds, h',
+              hs₁.trans (SameRefs.cons v (by simpa using hs')), hw'.trans hw₁,
+              (fun _ hm => by simp at hm), hU', hav'⟩
+        | true =>
+          cases a with
+          | lit l =>
+            simp only [Ctx.takeOwnedUniqueArgs] at ht
+            obtain ⟨vs, ws, owned', hvs, hws, hds, h', hs', hw', _, hU', hav'⟩ :=
+              ih h hU ht htriv
+            refine ⟨.lit l :: vs, .lit l :: ws, owned', by simp [Own.evalArgs, Own.evalArg, hvs],
+              by simp [Fir.evalArgs, Fir.Arg.eval, hws], .cons (Proof.den_lit H l) hds, h',
+              hs'.trans (by simpa using (SameRefs.imm_cons (fun _ hc => by cases hc) _).symm), hw',
+              (fun _ hm => by simp at hm), fun u hu => ?_, fun x hx => ?_⟩
+            · simp only [selectUniqueVals, List.mem_cons] at hu
+              rcases hu with rfl | hu
+              · exact hUlit l
+              · exact hU' u hu
+            · rcases List.mem_cons.mp hx with hc | hx
+              · cases hc
+              · exact hav' x hx
+          | erased =>
+            simp only [Ctx.takeOwnedUniqueArgs] at ht
+            obtain ⟨vs, ws, owned', hvs, hws, hds, h', hs', hw', _, hU', hav'⟩ :=
+              ih h hU ht htriv
+            refine ⟨.erased :: vs, .erased :: ws, owned', by simp [Own.evalArgs, Own.evalArg, hvs],
+              by simp [Fir.evalArgs, Fir.Arg.eval, hws], .cons (Proof.den_erased H) hds, h',
+              hs'.trans (by simpa using (SameRefs.imm_cons (fun _ hc => by cases hc) _).symm), hw',
+              (fun _ hm => by simp at hm), fun u hu => ?_, fun x hx => ?_⟩
+            · simp only [selectUniqueVals, List.mem_cons] at hu
+              rcases hu with rfl | hu
+              · exact hUer
+              · exact hU' u hu
+            · rcases List.mem_cons.mp hx with hc | hx
+              · cases hc
+              · exact hav' x hx
+          | var x =>
+            simp only [Ctx.takeOwnedUniqueArgs] at ht
+            cases hu : Γ.isUniq x with
+            | false => simp [hu, throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at ht
+            | true =>
+              simp only [hu, ↓reduceIte] at ht
+              cases ha : Γ.take x with
+              | error e => rw [ha] at ht; cases ht
+              | ok Γ₁ =>
+                rw [ha] at ht
+                obtain ⟨v, w, owned₁, vs, ws, owned', hv, hw, hd, hs₁, hw₁, hvs, hws, hds, h', hs',
+                  hw', _, hU', hav'⟩ := hstepOwned Γ₁ [] us ha ht htriv
+                refine ⟨v :: vs, w :: ws, owned', by simp [Own.evalArgs, hv, hvs],
+                  by simp [Fir.evalArgs, hw, hws], .cons hd hds, h',
+                  hs₁.trans (SameRefs.cons v (by simpa using hs')), hw'.trans hw₁,
+                  (fun _ hm => by simp at hm), fun u' hu' => ?_, hav'⟩
+                simp only [selectUniqueVals, List.mem_cons] at hu'
+                rcases hu' with rfl | hu'
+                · exact hU x hu u' hv
+                · exact hU' u' hu'
+    | cons b bs =>
+      cases b with
+      | false =>
+        cases us with
+        | nil =>
+          simp only [Ctx.takeOwnedUniqueArgs] at ht
+          cases ha : Γ.takeArg a with
+          | error e => rw [ha] at ht; cases ht
+          | ok Γ₁ =>
+            rw [ha] at ht
+            have hbs' : BorrowedSatisfies P bs as := by simpa [BorrowedSatisfies] using hbs
+            obtain ⟨v, w, owned₁, vs, ws, owned', hv, hw, hd, hs₁, hw₁, hvs, hws, hds, h', hs',
+              hw', hQ', hU', hav'⟩ := hstepOwned Γ₁ bs [] ha ht hbs'
+            refine ⟨v :: vs, w :: ws, owned', by simp [Own.evalArgs, hv, hvs],
+              by simp [Fir.evalArgs, hw, hws], .cons hd hds, h',
+              hs₁.trans (SameRefs.cons v hs'), hw'.trans hw₁, hQ', hU', hav'⟩
+        | cons u us =>
+          cases u with
+          | false =>
+            simp only [Ctx.takeOwnedUniqueArgs] at ht
+            cases ha : Γ.takeArg a with
+            | error e => rw [ha] at ht; cases ht
+            | ok Γ₁ =>
+              rw [ha] at ht
+              have hbs' : BorrowedSatisfies P bs as := by simpa [BorrowedSatisfies] using hbs
+              obtain ⟨v, w, owned₁, vs, ws, owned', hv, hw, hd, hs₁, hw₁, hvs, hws, hds, h', hs',
+                hw', hQ', hU', hav'⟩ := hstepOwned Γ₁ bs us ha ht hbs'
+              refine ⟨v :: vs, w :: ws, owned', by simp [Own.evalArgs, hv, hvs],
+                by simp [Fir.evalArgs, hw, hws], .cons hd hds, h',
+                hs₁.trans (SameRefs.cons v hs'), hw'.trans hw₁, hQ', hU', hav'⟩
+          | true =>
+            cases a with
+            | lit l =>
+              simp only [Ctx.takeOwnedUniqueArgs] at ht
+              have hbs' : BorrowedSatisfies P bs as := by simpa [BorrowedSatisfies] using hbs
+              obtain ⟨vs, ws, owned', hvs, hws, hds, h', hs', hw', hQ', hU', hav'⟩ :=
+                ih h hU ht hbs'
+              refine ⟨.lit l :: vs, .lit l :: ws, owned', by simp [Own.evalArgs, Own.evalArg, hvs],
+                by simp [Fir.evalArgs, Fir.Arg.eval, hws], .cons (Proof.den_lit H l) hds, h',
+                hs'.trans (SameRefs.imm_cons (fun _ hc => by cases hc) _).symm, hw', hQ',
+                fun u' hu' => ?_, fun x hx => ?_⟩
+              · simp only [selectUniqueVals, List.mem_cons] at hu'
+                rcases hu' with rfl | hu'
+                · exact hUlit l
+                · exact hU' u' hu'
+              · rcases List.mem_cons.mp hx with hc | hx
+                · cases hc
+                · exact hav' x hx
+            | erased =>
+              simp only [Ctx.takeOwnedUniqueArgs] at ht
+              have hbs' : BorrowedSatisfies P bs as := by simpa [BorrowedSatisfies] using hbs
+              obtain ⟨vs, ws, owned', hvs, hws, hds, h', hs', hw', hQ', hU', hav'⟩ :=
+                ih h hU ht hbs'
+              refine ⟨.erased :: vs, .erased :: ws, owned', by simp [Own.evalArgs, Own.evalArg, hvs],
+                by simp [Fir.evalArgs, Fir.Arg.eval, hws], .cons (Proof.den_erased H) hds, h',
+                hs'.trans (SameRefs.imm_cons (fun _ hc => by cases hc) _).symm, hw', hQ',
+                fun u' hu' => ?_, fun x hx => ?_⟩
+              · simp only [selectUniqueVals, List.mem_cons] at hu'
+                rcases hu' with rfl | hu'
+                · exact hUer
+                · exact hU' u' hu'
+              · rcases List.mem_cons.mp hx with hc | hx
+                · cases hc
+                · exact hav' x hx
+            | var x =>
+              simp only [Ctx.takeOwnedUniqueArgs] at ht
+              cases hu : Γ.isUniq x with
+              | false => simp [hu, throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at ht
+              | true =>
+                simp only [hu, ↓reduceIte] at ht
+                cases ha : Γ.take x with
+                | error e => rw [ha] at ht; cases ht
+                | ok Γ₁ =>
+                  rw [ha] at ht
+                  have hbs' : BorrowedSatisfies P bs as := by simpa [BorrowedSatisfies] using hbs
+                  obtain ⟨v, w, owned₁, vs, ws, owned', hv, hw, hd, hs₁, hw₁, hvs, hws, hds, h', hs',
+                    hw', hQ', hU', hav'⟩ := hstepOwned Γ₁ bs us ha ht hbs'
+                  refine ⟨v :: vs, w :: ws, owned', by simp [Own.evalArgs, hv, hvs],
+                    by simp [Fir.evalArgs, hw, hws], .cons hd hds, h',
+                    hs₁.trans (SameRefs.cons v hs'), hw'.trans hw₁, hQ', fun u' hu' => ?_, hav'⟩
+                  simp only [selectUniqueVals, List.mem_cons] at hu'
+                  rcases hu' with rfl | hu'
+                  · exact hU x hu u' hv
+                  · exact hU' u' hu'
+      | true =>
+        have hstepBrw : ∀ (us' : List Bool) (ht' : Γ.takeOwnedUniqueArgs bs us' as = .ok Γ'),
+            ∃ vs ws owned', Own.evalArgs ρo (a :: as) = some vs ∧
+              Fir.evalArgs ρf (a :: as) = some ws ∧ Sem.Forall2 (Proof.Den H) vs ws ∧
+              TakeInv H Γ' ρf ρo owned' ∧
+              SameRefs owned (selectOwnedVals (true :: bs) vs ++ owned') ∧ Ctx.Weaker Γ' Γ ∧
+              (∀ v, v ∈ selectBorrowedVals (true :: bs) vs → Q v) ∧
+              (∀ v, v ∈ selectUniqueVals bs us' vs.tail → U v) ∧
+              (∀ x, Arg.var x ∈ a :: as → Γ.avail x = true) := by
+          intro us' ht'
+          have hweak := Ctx.takeOwnedUniqueArgs_weaker ht'
+          cases a with
+          | var x =>
+            obtain ⟨hPx, hbs'⟩ := hbs
+            obtain ⟨hav', hQx⟩ := hP x hPx
+            have hav0 := hweak.avail hav'
+            obtain ⟨v, w, hv, hw, hd⟩ := h.den x hav0
+            obtain ⟨vs, ws, owned', hvs, hws, hds, h', hs', hw', hQ', hU', hav'⟩ :=
+              ih h hU ht' hbs'
+            refine ⟨v :: vs, w :: ws, owned', by simp [Own.evalArgs, Own.evalArg, hv, hvs],
+              by simp [Fir.evalArgs, Fir.Arg.eval, hw, hws], .cons hd hds, h', hs', hw',
+              fun u hu => ?_, hU', fun z hz => ?_⟩
+            · simp only [selectBorrowedVals, List.mem_cons] at hu
+              rcases hu with rfl | hu
+              · exact hQx u hv
+              · exact hQ' u hu
+            · rcases List.mem_cons.mp hz with hEq | hz
+              · cases hEq; exact hav0
+              · exact hav' z hz
+          | lit l =>
+            obtain ⟨vs, ws, owned', hvs, hws, hds, h', hs', hw', hQ', hU', hav'⟩ :=
+              ih h hU ht' hbs
+            refine ⟨.lit l :: vs, .lit l :: ws, owned', by simp [Own.evalArgs, Own.evalArg, hvs],
+              by simp [Fir.evalArgs, Fir.Arg.eval, hws], .cons (Proof.den_lit H l) hds, h', hs',
+              hw', fun u hu => ?_, hU', fun z hz => ?_⟩
+            · simp only [selectBorrowedVals, List.mem_cons] at hu
+              rcases hu with rfl | hu
+              · exact hQimm _ (fun _ hc => by cases hc)
+              · exact hQ' u hu
+            · rcases List.mem_cons.mp hz with hc | hz
+              · cases hc
+              · exact hav' z hz
+          | erased =>
+            obtain ⟨vs, ws, owned', hvs, hws, hds, h', hs', hw', hQ', hU', hav'⟩ :=
+              ih h hU ht' hbs
+            refine ⟨.erased :: vs, .erased :: ws, owned', by simp [Own.evalArgs, Own.evalArg, hvs],
+              by simp [Fir.evalArgs, Fir.Arg.eval, hws], .cons (Proof.den_erased H) hds, h', hs',
+              hw', fun u hu => ?_, hU', fun z hz => ?_⟩
+            · simp only [selectBorrowedVals, List.mem_cons] at hu
+              rcases hu with rfl | hu
+              · exact hQimm _ (fun _ hc => by cases hc)
+              · exact hQ' u hu
+            · rcases List.mem_cons.mp hz with hc | hz
+              · cases hc
+              · exact hav' z hz
+        cases us with
+        | nil =>
+          simp only [Ctx.takeOwnedUniqueArgs] at ht
+          obtain ⟨vs, ws, owned', hvs, hws, hds, h', hs', hw', hQ', hU', hav'⟩ := hstepBrw [] ht
+          refine ⟨vs, ws, owned', hvs, hws, hds, h', hs', hw', hQ', fun u hu => ?_, hav'⟩
+          cases vs with
+          | nil => cases hu
+          | cons _ _ => exact hU' u hu
+        | cons _ us =>
+          simp only [Ctx.takeOwnedUniqueArgs] at ht
+          obtain ⟨vs, ws, owned', hvs, hws, hds, h', hs', hw', hQ', hU', hav'⟩ := hstepBrw us ht
+          refine ⟨vs, ws, owned', hvs, hws, hds, h', hs', hw', hQ', fun u hu => ?_, hav'⟩
+          cases vs with
+          | nil => cases hu
+          | cons _ _ => exact hU' u hu
+
 theorem takeOwnedArgs_call_sem {functions : Signatures} {H : Heap} {external : Nat → Nat}
     {live : List Var} {Γ Γ' : Ctx} {ρf : Fir.Env} {ρo : Own.Env} {owned : List RVal}
     {lex : Joins} {Δ : JCtx} {Jf : List Fir.JEntry} {Jo : List JEntry} {borrows : BorrowSigs}
@@ -359,7 +717,6 @@ theorem takeOwnedArgs_call_sem {functions : Signatures} {H : Heap} {external : N
       SameRefs owned (selectOwnedVals bs vs ++ owned') ∧ Ctx.Weaker Γ' Γ ∧
       ∀ v, v ∈ selectBorrowedVals bs vs → ReachableFrom H (holdRoots external owned') v := by
   have hbs := checkCallBorrowed_ok hchk
-  have hweak := Ctx.takeOwnedArgs_weaker ht
   have hP1 : ∀ x, Γ'.borrowable x = true → Γ'.avail x = true ∧ ∀ v, ρo.get? x = some v → True := by
     intro x hx
     refine ⟨?_, fun _ _ => trivial⟩
@@ -393,7 +750,6 @@ theorem takeOwnedArgs_call_sem {functions : Signatures} {H : Heap} {external : N
       | lit _ => exact .imm (fun _ h => by cases h)
       | ctor0 _ => exact .imm (fun _ h => by cases h)
       | erased => exact .imm (fun _ h => by cases h)
-  -- Transfer hQ across the evaluated args using hbs
   have hmem : ∀ (bs : List Bool) (args : List Arg) (vs : List RVal),
       Own.evalArgs ρo args = some vs → BorrowedSatisfies (fun x => Γ'.borrowable x = true) bs args →
       ∀ v, v ∈ selectBorrowedVals bs vs → ReachableFrom H (holdRoots external owned') v := by
@@ -458,63 +814,182 @@ theorem takeOwnedArgs_tail_sem {functions : Signatures} {H : Heap} {external : N
     have : u = v := Option.some.inj (hu.symm.trans hv); subst this
     exact hreach
 
-/-- **The state after a fresh binding**, from what the step establishes for each variable. -/
-theorem OwnedState.extend {functions : Signatures} {H : Heap} {external : Nat → Nat}
-    {live : List Var} {Γ : Ctx} {ρf : Fir.Env} {ρo : Own.Env} {owned : List RVal} {lex : Joins}
-    {Δ : JCtx} {Jf : List Fir.JEntry} {Jo : List JEntry} {borrows : BorrowSigs}
-    (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
-    {x : Var} (hx : x ∉ live) {Γ' : Ctx} {H' : Heap} {v : RVal} {w : Fir.Val}
-    {owned' : List RVal}
-    (hden : ∀ y, y ≠ x → Γ'.avail y = true →
-      ∃ v w, ρo.get? y = some v ∧ ρf.get? y = some w ∧ Proof.Den H' v w)
-    (hdenx : Proof.Den H' v w)
-    (hroots : ∃ toks, Ctx.Tokens Γ' toks ∧ EnvRoots (ρo.insert x v) toks owned')
-    (hcounts : Balance H' external owned')
-    (hknown : ∀ y, Γ'.known y = true → y = x ∨ Γ.known y = true)
-    (himm : ∀ y, y ≠ x → Γ'.isImm y = true → ∃ v, ρo.get? y = some v ∧ ImmVal v)
-    (himmx : Γ'.isImm x = true → ImmVal v)
-    (hbrw : ∀ y, y ≠ x → Γ'.borrowed y = true → ∃ v, ρo.get? y = some v ∧ CanDup H' v)
-    (hbrwx : Γ'.borrowed x = true → CanDup H' v)
-    (hpbrw : ∀ y, y ≠ x → Γ'.isPbrw y = true → ∃ v, ρo.get? y = some v ∧ ReachableFrom H' external v)
-    (hpbrwx : Γ'.isPbrw x = true → ReachableFrom H' external v)
-    (hpbrwSub : ∀ y, Γ.pbrw.contains y = true → Γ'.pbrw.contains y = true)
-    (hepochs : ∀ y e, Γ'.brw.get? y = some e → e ≤ Γ'.epoch) :
-    OwnedState functions H' external (live ++ [x]) Γ' (ρf.insert x w) (ρo.insert x v) owned'
-      lex Δ Jf Jo borrows := by
-  refine ⟨fun y hy => ?_, hroots, hcounts, fun y hy => ?_,
-    fresh_nodup_append st.distinct (by simp [fresh, hx]), fun y hy => ?_, fun y hy => ?_,
-    fun y hy => ?_, hepochs, (st.stack.mono_pbrw hpbrwSub).bind x v w hx, st.scope.bind x⟩
-  · by_cases he : y = x
-    · subst he
-      exact ⟨v, w, Src.NatMap.get?_insert_self .., Src.NatMap.get?_insert_self .., hdenx⟩
-    · obtain ⟨v', w', h1, h2, h3⟩ := hden y he hy
-      exact ⟨v', w', by rw [Src.NatMap.get?_insert_ne _ _ he]; exact h1,
-        by rw [Src.NatMap.get?_insert_ne _ _ he]; exact h2, h3⟩
-  · rcases hknown y hy with rfl | hk
-    · exact List.mem_append_right _ (List.mem_singleton_self _)
-    · exact List.mem_append_left _ (st.known y hk)
-  · by_cases he : y = x
-    · subst he
-      exact ⟨v, Src.NatMap.get?_insert_self .., himmx hy⟩
-    · obtain ⟨v', h1, h2⟩ := himm y he hy
-      exact ⟨v', by rw [Src.NatMap.get?_insert_ne _ _ he]; exact h1, h2⟩
-  · by_cases he : y = x
-    · subst he
-      exact ⟨v, Src.NatMap.get?_insert_self .., hbrwx hy⟩
-    · obtain ⟨v', h1, h2⟩ := hbrw y he hy
-      exact ⟨v', by rw [Src.NatMap.get?_insert_ne _ _ he]; exact h1, h2⟩
-  · by_cases he : y = x
-    · subst he
-      exact ⟨v, Src.NatMap.get?_insert_self .., hpbrwx hy⟩
-    · obtain ⟨v', h1, h2⟩ := hpbrw y he hy
-      exact ⟨v', by rw [Src.NatMap.get?_insert_ne _ _ he]; exact h1, h2⟩
+/-- Full non-tail call argument checking with `@borrowed` and `@unique` annotations, slot roots,
+and private-frame preservation. -/
+theorem takeOwnedUniqueArgs_call_sem {functions : Signatures} {H : Heap} {external : Nat → Nat}
+    {live : List Var} {Γ Γ' : Ctx} {ρf : Fir.Env} {ρo : Own.Env} {owned : List RVal}
+    {lex : Joins} {Δ : JCtx} {Jf : List Fir.JEntry} {Jo : List JEntry}
+    {borrows : BorrowSigs} {uniqs : UniqSigs} {retUniq : Bool}
+    {ctors : List Lam.CtorInfo} {K : Lam.Known} {priv : Nat → Prop}
+    {slots : Src.NatMap RVal} {slotVals : List RVal}
+    {bs us : List Bool} {args : List Arg}
+    (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows uniqs retUniq
+      ctors K priv slots slotVals)
+    (ht : Γ.takeOwnedUniqueArgs bs us args = .ok Γ') (hchk : Γ'.checkCallBorrowed bs args = .ok ()) :
+    ∃ vs ws owned', Own.evalArgs ρo args = some vs ∧ Fir.evalArgs ρf args = some ws ∧
+      Sem.Forall2 (Proof.Den H) vs ws ∧ TakeInv H Γ' ρf ρo owned' ∧
+      SameRefs owned (selectOwnedVals bs vs ++ owned') ∧ Ctx.Weaker Γ' Γ ∧
+      (∀ v, v ∈ selectBorrowedVals bs vs → ReachableFrom H (holdRoots external (owned' ++ slotVals)) v) ∧
+      (∀ v, v ∈ selectUniqueVals bs us vs →
+        UniqVal ctors H (holdRoots external (owned' ++ slotVals)) (selectOwnedVals bs vs) v) ∧
+      (∀ x, Arg.var x ∈ args → Γ.avail x = true) := by
+  have hbs := checkCallBorrowed_ok hchk
+  have hP1 : ∀ x, Γ'.borrowable x = true → Γ'.avail x = true ∧ ∀ v, ρo.get? x = some v → True := by
+    intro x hx
+    refine ⟨?_, fun _ _ => trivial⟩
+    simp only [Ctx.borrowable_eq, Ctx.avail_eq, Bool.or_eq_true, decide_eq_true_eq] at hx ⊢
+    rcases hx with (h1 | h2) | h3
+    · exact Or.inl (Or.inl (Or.inl h1))
+    · exact Or.inr h2
+    · exact Or.inl (Or.inl (Or.inr h3))
+  have hU : ∀ x, Γ.isUniq x = true → ∀ v, ρo.get? x = some v →
+      UniqVal ctors H external (owned ++ slotVals) v := by
+    intro x hx v hv
+    obtain ⟨_, u, hu, hvu⟩ := st.uniqOk x hx
+    have : u = v := Option.some.inj (hu.symm.trans hv); subst this
+    exact hvu
+  obtain ⟨vs, ws, owned', hvs, hws, hds, inv', hs', hw', _, hUv, hav⟩ :=
+    takeOwnedUniqueArgs_sem_gen (P := fun x => Γ'.borrowable x = true) (Q := fun _ => True)
+      (U := UniqVal ctors H external (owned ++ slotVals))
+      (fun _ _ => trivial) (fun _ => trivial) trivial st.takeInv hU ht hbs hP1
+  refine ⟨vs, ws, owned', hvs, hws, hds, inv', hs', hw', ?_, ?_, hav⟩
+  · have hQ : ∀ x, Γ'.borrowable x = true → ∀ v, ρo.get? x = some v →
+        ReachableFrom H (holdRoots external (owned' ++ slotVals)) v := by
+      intro x hx v hv
+      simp only [Ctx.borrowable_eq, Bool.or_eq_true, decide_eq_true_eq] at hx
+      rcases hx with (hi | hp) | hpos
+      · obtain ⟨u, hu, himm⟩ := inv'.immOk x hi
+        have : u = v := Option.some.inj (hu.symm.trans hv); subst this
+        exact .imm himm
+      · have hp0 : Γ.isPbrw x = true := by rw [← hw'.isPbrw x]; exact hp
+        obtain ⟨u, hu, hreach⟩ := st.pbrwOk x hp0
+        have : u = v := Option.some.inj (hu.symm.trans hv); subst this
+        exact hreach.mono_ext (fun l => by simp [holdRoots])
+      · obtain ⟨toks', htok', hroots'⟩ := inv'.roots
+        have hmem := hroots'.member (htok'.mem hpos) hv
+        cases v with
+        | loc l =>
+          have hp' := refsIn_pos hmem
+          exact .root (by simp only [holdRoots, refsIn_append]; omega)
+        | lit _ => exact .imm (fun _ h => by cases h)
+        | ctor0 _ => exact .imm (fun _ h => by cases h)
+        | erased => exact .imm (fun _ h => by cases h)
+    have hmem : ∀ (bs : List Bool) (args : List Arg) (vs : List RVal),
+        Own.evalArgs ρo args = some vs → BorrowedSatisfies (fun x => Γ'.borrowable x = true) bs args →
+        ∀ v, v ∈ selectBorrowedVals bs vs →
+          ReachableFrom H (holdRoots external (owned' ++ slotVals)) v := by
+      intro bs
+      induction bs with
+      | nil => intro args vs _ _ v hv; simp at hv
+      | cons b bs ih =>
+        intro args vs hev hbs' v hv
+        cases args with
+        | nil => simp [Own.evalArgs] at hev; subst hev; simp at hv
+        | cons a as =>
+          cases ha : Own.evalArg ρo a with
+          | none => simp [Own.evalArgs, ha] at hev
+          | some u =>
+            cases has : Own.evalArgs ρo as with
+            | none => simp [Own.evalArgs, ha, has] at hev
+            | some us =>
+              have hvu : u :: us = vs := by simpa [Own.evalArgs, ha, has] using hev
+              subst hvu
+              cases b with
+              | false =>
+                have hbs'' : BorrowedSatisfies (fun x => Γ'.borrowable x = true) bs as := by
+                  simpa [BorrowedSatisfies] using hbs'
+                exact ih as us has hbs'' v hv
+              | true =>
+                simp only [selectBorrowedVals, List.mem_cons] at hv
+                rcases hv with hEq | hv
+                · rw [hEq]
+                  cases a with
+                  | var x => exact hQ x hbs'.1 u ha
+                  | lit _ => simp [Own.evalArg] at ha; rw [← ha]; exact .imm (fun _ h => by cases h)
+                  | erased => simp [Own.evalArg] at ha; rw [← ha]; exact .imm (fun _ h => by cases h)
+                · cases a with
+                  | var _ => exact ih as us has hbs'.2 v hv
+                  | lit _ | erased => exact ih as us has hbs' v hv
+    exact hmem bs args vs hvs hbs
+  · intro v hv
+    have hu := hUv v hv
+    have hm := selectUniqueVals_sub_owned bs us vs hv
+    cases v with
+    | lit _ | erased => trivial
+    | ctor0 c => exact hu
+    | loc l =>
+      obtain ⟨b, hc, hext, hedge, hrefs⟩ := hu
+      have hpos := refsIn_pos hm
+      have hsplit : refsIn l (owned ++ slotVals) =
+          refsIn l (selectOwnedVals bs vs) + refsIn l (owned' ++ slotVals) := by
+        simp only [refsIn_append, hs' l]; omega
+      exact ⟨b, hc, by simp only [holdRoots]; omega, hedge, by omega⟩
+
+/-- Full tail-call argument checking with `@borrowed` and `@unique` annotations. -/
+theorem takeOwnedUniqueArgs_tail_sem {functions : Signatures} {H : Heap} {external : Nat → Nat}
+    {live : List Var} {Γ Γ' : Ctx} {ρf : Fir.Env} {ρo : Own.Env} {owned : List RVal}
+    {lex : Joins} {Δ : JCtx} {Jf : List Fir.JEntry} {Jo : List JEntry}
+    {borrows : BorrowSigs} {uniqs : UniqSigs} {retUniq : Bool}
+    {ctors : List Lam.CtorInfo} {K : Lam.Known} {priv : Nat → Prop}
+    {slots : Src.NatMap RVal} {slotVals : List RVal}
+    {bs us : List Bool} {args : List Arg} {what : String}
+    (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows uniqs retUniq
+      ctors K priv slots slotVals)
+    (ht : Γ.takeOwnedUniqueArgs bs us args = .ok Γ')
+    (hchk : Γ'.checkTailBorrowed bs args = .ok ())
+    (hcl : Γ'.closed what = .ok ()) :
+    ∃ vs ws owned', Own.evalArgs ρo args = some vs ∧ Fir.evalArgs ρf args = some ws ∧
+      Sem.Forall2 (Proof.Den H) vs ws ∧ TakeInv H Γ' ρf ρo owned' ∧
+      SameRefs owned (selectOwnedVals bs vs ++ owned') ∧ Ctx.Weaker Γ' Γ ∧
+      (∀ v, v ∈ selectBorrowedVals bs vs → ReachableFrom H external v) ∧
+      (∀ v, v ∈ selectUniqueVals bs us vs →
+        UniqVal ctors H external (selectOwnedVals bs vs) v) ∧
+      (∀ x, Arg.var x ∈ args → Γ.avail x = true) := by
+  have hbs := checkTailBorrowed_ok hchk
+  have hweak := Ctx.takeOwnedUniqueArgs_weaker ht
+  have hU : ∀ x, Γ.isUniq x = true → ∀ v, ρo.get? x = some v →
+      UniqVal ctors H external (owned ++ slotVals) v := by
+    intro x hx v hv
+    obtain ⟨_, u, hu, hvu⟩ := st.uniqOk x hx
+    have : u = v := Option.some.inj (hu.symm.trans hv); subst this
+    exact hvu
+  obtain ⟨vs, ws, owned', hvs, hws, hds, inv', hs', hw', hbrw, hUv, hav⟩ :=
+    takeOwnedUniqueArgs_sem_gen (P := fun x => Γ'.isImm x = true ∨ Γ'.isPbrw x = true)
+      (Q := ReachableFrom H external) (U := UniqVal ctors H external (owned ++ slotVals))
+      (fun _ h => .imm h) (fun _ => trivial) trivial st.takeInv hU ht hbs (fun x hx => by
+        rcases hx with hi | hp
+        · refine ⟨by simp [Ctx.avail_eq, hi], fun v hv => ?_⟩
+          have hi0 : Γ.isImm x = true := by rw [← hweak.isImm x]; exact hi
+          obtain ⟨u, hu, himm⟩ := st.immOk x hi0
+          have : u = v := Option.some.inj (hu.symm.trans hv); subst this
+          exact .imm himm
+        · refine ⟨by simp [Ctx.avail_eq, hp], fun v hv => ?_⟩
+          have hp0 : Γ.isPbrw x = true := by rw [← hweak.isPbrw x]; exact hp
+          obtain ⟨u, hu, hreach⟩ := st.pbrwOk x hp0
+          have : u = v := Option.some.inj (hu.symm.trans hv); subst this
+          exact hreach)
+  obtain ⟨toks', htok', hroots'⟩ := inv'.roots
+  have hnil := closed_nil htok' hcl
+  subst hnil
+  have ho' := EnvRoots.nil_inv hroots'
+  subst ho'
+  obtain ⟨skeys, hsk, hsroots⟩ := st.slotRoots
+  have hsnil := (hsk.same hw'.rset).closed_nil (closed_rset hcl)
+  subst hsnil
+  have hsv := EnvRoots.nil_inv hsroots
+  subst hsv
+  refine ⟨vs, ws, [], hvs, hws, hds, inv', hs', hw', hbrw, fun v hv => ?_, hav⟩
+  exact (hUv v hv).sameRefs (fun k => by simpa using hs' k)
 
 /-- A variable not in scope is not known. -/
 theorem OwnedState.unknown {functions : Signatures} {H : Heap} {external : Nat → Nat}
     {live : List Var} {Γ : Ctx} {ρf : Fir.Env} {ρo : Own.Env} {owned : List RVal} {lex : Joins}
-    {Δ : JCtx} {Jf : List Fir.JEntry} {Jo : List JEntry} {borrows : BorrowSigs}
-    (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows) {x : Var}
-    (hx : x ∉ live) : Γ.known x = false := by
+    {Δ : JCtx} {Jf : List Fir.JEntry} {Jo : List JEntry}
+    {borrows : BorrowSigs} {uniqs : UniqSigs} {retUniq : Bool}
+    {ctors : List Lam.CtorInfo} {K : Lam.Known} {priv : Nat → Prop}
+    {slots : Src.NatMap RVal} {slotVals : List RVal}
+    (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows uniqs retUniq
+      ctors K priv slots slotVals) {x : Var} (hx : x ∉ live) : Γ.known x = false := by
   cases hk : Γ.known x with
   | false => rfl
   | true => exact absurd (st.known x hk) hx

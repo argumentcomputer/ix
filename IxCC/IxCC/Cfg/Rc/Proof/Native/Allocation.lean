@@ -18,7 +18,7 @@ theorem consume_allocation {P : Program} {l : Layout} {x : Nat}
       args.contains (.var x) = false ∧ c.arity ≤ Rt.maxFields ∧
       ∃ index, ctorIndex l c.key = some index ∧
         result = .bind x (.fir (.call (l.allocWrapper index) args)) := by
-  simp only [consume, reserved, Bool.false_eq_true, ↓reduceIte] at accepted
+  simp only [consume, reserved, isReuseOp, Bool.false_eq_true, ↓reduceIte] at accepted
   by_cases hs : (kind == .shared && c.nscalar == 0 && c.fieldKinds.length == c.nobj &&
       c.fieldKinds.all (· == .shared) && args.length == c.arity &&
       Fir.CtorInfo.ofKey P.base.ctors c.key == some c) = true

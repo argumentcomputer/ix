@@ -3,7 +3,7 @@ import IxCC.Recheck.Rc.Proof.FrontParts
 import IxCC.Recheck.Rc.Proof.Replay
 import IxCC.Cfg.Rc.Proof.Native.Public
 import IxCC.Cfg.Rc.Proof.Native.Consume
-import IxCC.Cfg.Rc.Proof.InlineSites
+import IxCC.Cfg.Rc.Proof.Prune
 import IxCC.Rt.Proof.Roots
 
 set_option autoImplicit false
@@ -39,8 +39,8 @@ private theorem assembled_function {original : Rt.Lowered} {layout : Layout}
 through consumption, both edge splits and the appended release wrapper. -/
 theorem public_root {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Cfg.Rc.Program} {lowered : Cfg.Rc.Public.Lowered}
-    {borrows : Own.Plain.BorrowSigs}
-    (accepted : Cfg.Rc.Public.lower config F bodies P borrows = .ok lowered)
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (accepted : Cfg.Rc.Public.lower config F bodies P borrows uniqs = .ok lowered)
     {r fn : Nat} {symbol : String} (root : lowered.runtime.roots[r]? = some (fn, symbol))
     (range : fn < P.base.size) :
     ∃ fd function, P.base.fun? fn = some fd ∧
@@ -70,7 +70,10 @@ theorem public_root {config : Rt.Config} {F : Fir.Program}
   have inlFn : (inlinedProgram (layoutOf P) functions main).funcs[fn]? =
       some (Cfg.Rc.Inline.inlineFunc (layoutOf P) function) := by
     have hlt : fn < (layoutOf P).sourceCount := range
-    rw [inlinedProgram, Cfg.Rc.Inline.inlineProgram_get_lt _ _ hlt, raw]; rfl
+    have hle : fn ≤ (layoutOf P).isUniqueProc := by
+      simp [layoutOf, Layout.isUniqueProc, Layout.init, Layout.incProc]; omega
+    rw [inlinedProgram, Cfg.Rc.Prune.pruneUnusedReuse_get_le hle,
+      Cfg.Rc.Inline.inlineProgram_get_lt _ _ hlt, raw]; rfl
   have final := assembled_function program inlFn
   refine ⟨fd, (Cfg.Rc.Inline.inlineFunc (layoutOf P) function).splitCriticalEdges, fdLookup, final, ?_, ?_, ?_, ?_⟩
   · exact (Rt.Proof.split_params_conv (Cfg.Rc.Inline.inlineFunc (layoutOf P) function)).2.trans (conv.trans convention)
@@ -89,8 +92,8 @@ theorem public_root {config : Rt.Config} {F : Fir.Program}
 
 theorem public_init {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Cfg.Rc.Program} {lowered : Cfg.Rc.Public.Lowered}
-    {borrows : Own.Plain.BorrowSigs}
-    (accepted : Cfg.Rc.Public.lower config F bodies P borrows = .ok lowered) :
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (accepted : Cfg.Rc.Public.lower config F bodies P borrows uniqs = .ok lowered) :
     ∃ function, lowered.runtime.program.funcs[lowered.runtime.init]? = some function ∧
       function.conv = .sysvExport Rt.Procs.initSymbol ∧ function.params.length = 2 ∧
       lowered.runtime.init ≠ lowered.drop := by
@@ -102,7 +105,10 @@ theorem public_init {config : Rt.Config} {F : Fir.Program}
     simp [layoutOf, Layout.init, Layout.incProc]; omega
   have inlInit : (inlinedProgram (layoutOf P) functions main).funcs[(layoutOf P).init]? =
       some Rt.Procs.cxInit := by
-    rw [inlinedProgram, Cfg.Rc.Inline.inlineProgram_get_ge _ _ hge]
+    have hle : (layoutOf P).init ≤ (layoutOf P).isUniqueProc := by
+      simp [Layout.isUniqueProc]
+    rw [inlinedProgram, Cfg.Rc.Prune.pruneUnusedReuse_get_le hle,
+      Cfg.Rc.Inline.inlineProgram_get_ge _ _ hge]
     exact raw
   have final := assembled_function program inlInit
   refine ⟨Rt.Procs.cxInit.splitCriticalEdges, ?_, ?_, ?_, ?_⟩
@@ -119,8 +125,8 @@ theorem public_init {config : Rt.Config} {F : Fir.Program}
 
 theorem public_roots {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Cfg.Rc.Program} {lowered : Cfg.Rc.Public.Lowered}
-    {borrows : Own.Plain.BorrowSigs}
-    (accepted : Cfg.Rc.Public.lower config F bodies P borrows = .ok lowered) :
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (accepted : Cfg.Rc.Public.lower config F bodies P borrows uniqs = .ok lowered) :
     lowered.runtime.roots.map Prod.fst = P.base.exports := by
   obtain ⟨original, native, rfl, _⟩ := Cfg.Rc.Public.Spec.lower_parts accepted
   obtain ⟨main, pairs, functions, _, _, _, _, _, _, _, _, _, _, _, roots, _⟩ :=

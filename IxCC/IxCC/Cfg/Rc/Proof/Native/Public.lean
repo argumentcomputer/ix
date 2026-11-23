@@ -14,16 +14,16 @@ def assemble (original : Rt.Lowered) (l : Native.Layout) : Lowered :=
 
 theorem lower_parts {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Lowered}
-    {borrows : Own.Plain.BorrowSigs}
-    (accepted : Public.lower config F bodies P borrows = .ok lowered) :
-    ∃ original, Native.lower config F bodies P borrows = .ok original ∧
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (accepted : Public.lower config F bodies P borrows uniqs = .ok lowered) :
+    ∃ original, Native.lower config F bodies P borrows uniqs = .ok original ∧
       lowered = assemble original (layoutOf P) ∧ lowered.runtime.program.check = .ok () := by
   change ((do
-    let original ← Native.lower config F bodies P borrows
+    let original ← Native.lower config F bodies P borrows uniqs
     let result := assemble original (layoutOf P)
     result.runtime.program.check
     return result) : Except String Lowered) = .ok lowered at accepted
-  cases hn : Native.lower config F bodies P borrows with
+  cases hn : Native.lower config F bodies P borrows uniqs with
   | error e => rw [hn] at accepted; cases accepted
   | ok original =>
     simp only [hn, bind, Except.bind] at accepted
@@ -48,8 +48,8 @@ theorem assemble_existing (original : Rt.Lowered) (l : Native.Layout) {f : Nat}
 
 theorem accepted_drop {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Lowered}
-    {borrows : Own.Plain.BorrowSigs}
-    (accepted : Public.lower config F bodies P borrows = .ok lowered) :
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (accepted : Public.lower config F bodies P borrows uniqs = .ok lowered) :
     lowered.runtime.program.funcs[lowered.drop]? =
       some (dropWrapper (layoutOf P).decProc) := by
   obtain ⟨original, _, rfl, _⟩ := lower_parts accepted

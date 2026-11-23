@@ -29,6 +29,43 @@ namespace IxCC.Own.Plain
 
 open IxCC.Fir (Var JoinId Arg Rhs)
 
+theorem mapIsEmpty_get?_none {α : Type} :
+    ∀ {m : Src.NatMap α}, mapIsEmpty m = true → ∀ k, m.get? k = none
+  | .leaf, _, _ => rfl
+  | .node none z o, h, k => by
+    simp only [mapIsEmpty, Bool.and_eq_true] at h
+    simp only [Src.NatMap.get?]
+    split
+    · rfl
+    · split
+      · exact mapIsEmpty_get?_none h.1 _
+      · exact mapIsEmpty_get?_none h.2 _
+  | .node (some _) _ _, h, _ => by simp [mapIsEmpty] at h
+
+theorem get?_interSet : ∀ (a b : Src.NatSet) (k : Nat),
+    (interSet a b).get? k = if a.contains k && b.contains k then some () else none
+  | .leaf, _, _ => by simp [interSet, Src.NatMap.get?, Src.NatMap.contains]
+  | .node _ _ _, .leaf, _ => by simp [interSet, Src.NatMap.get?, Src.NatMap.contains]
+  | .node va za oa, .node vb zb ob, k => by
+    simp only [interSet, Src.NatMap.get?, Src.NatMap.contains]
+    split
+    · rfl
+    · split
+      · exact get?_interSet za zb (k / 2)
+      · exact get?_interSet oa ob (k / 2)
+
+theorem contains_interSet (a b : Src.NatSet) (k : Nat) :
+    (interSet a b).contains k = (a.contains k && b.contains k) := by
+  simp only [Src.NatMap.contains, get?_interSet]
+  by_cases h : ((Src.NatMap.get? a k).isSome && (Src.NatMap.get? b k).isSome) = true <;> simp [h]
+
+theorem ctor0Valid_ok {ctors : List Lam.CtorInfo} {c : Fir.CtorInfo}
+    (h : ctor0Valid ctors c = true) :
+    ∀ info, Fir.CtorInfo.ofKey ctors c.key = some info → info.arity = 0 := by
+  intro info hi
+  simp only [ctor0Valid, hi, beq_iff_eq] at h
+  exact h
+
 namespace Ctx
 
 variable (Γ : Ctx) (x y : Var)
@@ -41,6 +78,11 @@ theorem tokens_eq : Γ.tokens y = (Γ.own.get? y).getD 0 := rfl
 @[simp] theorem brw_addOwn (n : Nat) : (Γ.addOwn x n).brw = Γ.brw := rfl
 @[simp] theorem epoch_addOwn (n : Nat) : (Γ.addOwn x n).epoch = Γ.epoch := rfl
 @[simp] theorem total_addOwn (n : Nat) : (Γ.addOwn x n).total = Γ.total + n := rfl
+@[simp] theorem ctorOf_addOwn (n : Nat) : (Γ.addOwn x n).ctorOf = Γ.ctorOf := rfl
+@[simp] theorem projOf_addOwn (n : Nat) : (Γ.addOwn x n).projOf = Γ.projOf := rfl
+@[simp] theorem uniq_addOwn (n : Nat) : (Γ.addOwn x n).uniq = Γ.uniq := rfl
+@[simp] theorem isUniq_addOwn (n : Nat) : (Γ.addOwn x n).isUniq y = Γ.isUniq y := rfl
+@[simp] theorem rset_addOwn (n : Nat) : (Γ.addOwn x n).rset = Γ.rset := rfl
 theorem tokens_addOwn (n : Nat) :
     (Γ.addOwn x n).tokens y = if y = x then Γ.tokens x + n else Γ.tokens y := by
   simp only [tokens_eq, addOwn, Src.NatMap.get?_insert]
@@ -48,6 +90,25 @@ theorem tokens_addOwn (n : Nat) :
 theorem ownHas_addOwn (n : Nat) :
     (Γ.addOwn x n).own.contains y = (decide (y = x) || Γ.own.contains y) := by
   simp only [addOwn, Src.NatMap.contains, Src.NatMap.get?_insert]
+  split <;> simp_all
+
+@[simp] theorem isImm_addUniqOwn : (Γ.addUniqOwn x).isImm y = Γ.isImm y := rfl
+@[simp] theorem isPbrw_addUniqOwn : (Γ.addUniqOwn x).isPbrw y = Γ.isPbrw y := rfl
+@[simp] theorem pbrw_addUniqOwn : (Γ.addUniqOwn x).pbrw = Γ.pbrw := rfl
+@[simp] theorem brw_addUniqOwn : (Γ.addUniqOwn x).brw = Γ.brw := rfl
+@[simp] theorem epoch_addUniqOwn : (Γ.addUniqOwn x).epoch = Γ.epoch := rfl
+@[simp] theorem total_addUniqOwn : (Γ.addUniqOwn x).total = Γ.total + 1 := rfl
+@[simp] theorem ctorOf_addUniqOwn : (Γ.addUniqOwn x).ctorOf = Γ.ctorOf := rfl
+@[simp] theorem projOf_addUniqOwn : (Γ.addUniqOwn x).projOf = Γ.projOf := rfl
+@[simp] theorem rset_addUniqOwn : (Γ.addUniqOwn x).rset = Γ.rset := rfl
+theorem tokens_addUniqOwn :
+    (Γ.addUniqOwn x).tokens y = if y = x then Γ.tokens x + 1 else Γ.tokens y :=
+  tokens_addOwn Γ x y 1
+theorem ownHas_addUniqOwn :
+    (Γ.addUniqOwn x).own.contains y = (decide (y = x) || Γ.own.contains y) :=
+  ownHas_addOwn Γ x y 1
+theorem isUniq_addUniqOwn : (Γ.addUniqOwn x).isUniq y = (decide (y = x) || Γ.isUniq y) := by
+  simp only [isUniq, addUniqOwn, Src.NatSet.insert, Src.NatMap.contains, Src.NatMap.get?_insert]
   split <;> simp_all
 
 @[simp] theorem isImm_release : Γ.release.isImm y = Γ.isImm y := rfl
@@ -58,6 +119,11 @@ theorem ownHas_addOwn (n : Nat) :
 @[simp] theorem total_release : Γ.release.total = Γ.total := rfl
 @[simp] theorem epoch_release : Γ.release.epoch = Γ.epoch + 1 := rfl
 @[simp] theorem tokens_release : Γ.release.tokens y = Γ.tokens y := rfl
+@[simp] theorem ctorOf_release : Γ.release.ctorOf = Γ.ctorOf := rfl
+@[simp] theorem projOf_release : Γ.release.projOf = Γ.projOf := rfl
+@[simp] theorem uniq_release : Γ.release.uniq = Γ.uniq := rfl
+@[simp] theorem isUniq_release : Γ.release.isUniq y = Γ.isUniq y := rfl
+@[simp] theorem rset_release : Γ.release.rset = Γ.rset := rfl
 
 @[simp] theorem isImm_setBorrow : (Γ.setBorrow x).isImm y = Γ.isImm y := rfl
 @[simp] theorem isPbrw_setBorrow : (Γ.setBorrow x).isPbrw y = Γ.isPbrw y := rfl
@@ -66,6 +132,11 @@ theorem ownHas_addOwn (n : Nat) :
 @[simp] theorem total_setBorrow : (Γ.setBorrow x).total = Γ.total := rfl
 @[simp] theorem epoch_setBorrow : (Γ.setBorrow x).epoch = Γ.epoch := rfl
 @[simp] theorem tokens_setBorrow : (Γ.setBorrow x).tokens y = Γ.tokens y := rfl
+@[simp] theorem ctorOf_setBorrow : (Γ.setBorrow x).ctorOf = Γ.ctorOf := rfl
+@[simp] theorem projOf_setBorrow : (Γ.setBorrow x).projOf = Γ.projOf := rfl
+@[simp] theorem uniq_setBorrow : (Γ.setBorrow x).uniq = Γ.uniq := rfl
+@[simp] theorem isUniq_setBorrow : (Γ.setBorrow x).isUniq y = Γ.isUniq y := rfl
+@[simp] theorem rset_setBorrow : (Γ.setBorrow x).rset = Γ.rset := rfl
 theorem brw_setBorrow :
     (Γ.setBorrow x).brw.get? y = if y = x then some Γ.epoch else Γ.brw.get? y := by
   simp only [setBorrow, Src.NatMap.get?_insert]
@@ -76,6 +147,11 @@ theorem brw_setBorrow :
 @[simp] theorem total_setPbrw : (Γ.setPbrw x).total = Γ.total := rfl
 @[simp] theorem epoch_setPbrw : (Γ.setPbrw x).epoch = Γ.epoch := rfl
 @[simp] theorem tokens_setPbrw : (Γ.setPbrw x).tokens y = Γ.tokens y := rfl
+@[simp] theorem ctorOf_setPbrw : (Γ.setPbrw x).ctorOf = Γ.ctorOf := rfl
+@[simp] theorem projOf_setPbrw : (Γ.setPbrw x).projOf = Γ.projOf := rfl
+@[simp] theorem uniq_setPbrw : (Γ.setPbrw x).uniq = Γ.uniq := rfl
+@[simp] theorem isUniq_setPbrw : (Γ.setPbrw x).isUniq y = Γ.isUniq y := rfl
+@[simp] theorem rset_setPbrw : (Γ.setPbrw x).rset = Γ.rset := rfl
 theorem isPbrw_setPbrw : (Γ.setPbrw x).isPbrw y = (decide (y = x) || Γ.isPbrw y) := by
   simp only [isPbrw, setPbrw, Src.NatSet.insert, Src.NatMap.contains, Src.NatMap.get?_insert]
   split <;> simp_all
@@ -92,8 +168,93 @@ theorem brw_setImm : (Γ.setImm x).brw.get? y = if y = x then none else Γ.brw.g
   simp only [setImm, Src.NatMap.get?_erase]
 @[simp] theorem epoch_setImm : (Γ.setImm x).epoch = Γ.epoch := rfl
 @[simp] theorem total_setImm : (Γ.setImm x).total = Γ.total - Γ.tokens x := rfl
+@[simp] theorem ctorOf_setImm : (Γ.setImm x).ctorOf = Γ.ctorOf := rfl
+@[simp] theorem projOf_setImm : (Γ.setImm x).projOf = Γ.projOf := rfl
+@[simp] theorem rset_setImm : (Γ.setImm x).rset = Γ.rset := rfl
 theorem ownHas_setImm : (Γ.setImm x).own.contains y = (!decide (y = x) && Γ.own.contains y) := by
   simp only [setImm, Src.NatMap.contains, Src.NatMap.get?_erase]
+  split <;> simp_all
+theorem isUniq_setImm : (Γ.setImm x).isUniq y = (!decide (y = x) && Γ.isUniq y) := by
+  simp only [isUniq, setImm, Src.NatMap.contains, Src.NatMap.get?_erase]
+  split <;> simp_all
+
+theorem isImm_setImmUniq : (Γ.setImmUniq x).isImm y = (decide (y = x) || Γ.isImm y) :=
+  isImm_setImm Γ x y
+@[simp] theorem isPbrw_setImmUniq : (Γ.setImmUniq x).isPbrw y = Γ.isPbrw y := rfl
+@[simp] theorem pbrw_setImmUniq : (Γ.setImmUniq x).pbrw = Γ.pbrw := rfl
+theorem tokens_setImmUniq : (Γ.setImmUniq x).tokens y = if y = x then 0 else Γ.tokens y :=
+  tokens_setImm Γ x y
+theorem brw_setImmUniq : (Γ.setImmUniq x).brw.get? y = if y = x then none else Γ.brw.get? y :=
+  brw_setImm Γ x y
+@[simp] theorem epoch_setImmUniq : (Γ.setImmUniq x).epoch = Γ.epoch := rfl
+@[simp] theorem total_setImmUniq : (Γ.setImmUniq x).total = Γ.total - Γ.tokens x := rfl
+@[simp] theorem ctorOf_setImmUniq : (Γ.setImmUniq x).ctorOf = Γ.ctorOf := rfl
+@[simp] theorem projOf_setImmUniq : (Γ.setImmUniq x).projOf = Γ.projOf := rfl
+@[simp] theorem rset_setImmUniq : (Γ.setImmUniq x).rset = Γ.rset := rfl
+theorem ownHas_setImmUniq : (Γ.setImmUniq x).own.contains y = (!decide (y = x) && Γ.own.contains y) :=
+  ownHas_setImm Γ x y
+theorem isUniq_setImmUniq : (Γ.setImmUniq x).isUniq y = (decide (y = x) || Γ.isUniq y) := by
+  simp only [isUniq, setImmUniq, setImm, Src.NatSet.insert, Src.NatMap.contains,
+    Src.NatMap.get?_insert, Src.NatMap.get?_erase]
+  split <;> simp_all
+
+@[simp] theorem isImm_setCtor (key : Key.CtorKey) : (Γ.setCtor x key).isImm y = Γ.isImm y := rfl
+@[simp] theorem isPbrw_setCtor (key : Key.CtorKey) : (Γ.setCtor x key).isPbrw y = Γ.isPbrw y := rfl
+@[simp] theorem pbrw_setCtor (key : Key.CtorKey) : (Γ.setCtor x key).pbrw = Γ.pbrw := rfl
+@[simp] theorem own_setCtor (key : Key.CtorKey) : (Γ.setCtor x key).own = Γ.own := rfl
+@[simp] theorem brw_setCtor (key : Key.CtorKey) : (Γ.setCtor x key).brw = Γ.brw := rfl
+@[simp] theorem epoch_setCtor (key : Key.CtorKey) : (Γ.setCtor x key).epoch = Γ.epoch := rfl
+@[simp] theorem total_setCtor (key : Key.CtorKey) : (Γ.setCtor x key).total = Γ.total := rfl
+@[simp] theorem tokens_setCtor (key : Key.CtorKey) : (Γ.setCtor x key).tokens y = Γ.tokens y := rfl
+@[simp] theorem projOf_setCtor (key : Key.CtorKey) : (Γ.setCtor x key).projOf = Γ.projOf := rfl
+@[simp] theorem uniq_setCtor (key : Key.CtorKey) : (Γ.setCtor x key).uniq = Γ.uniq := rfl
+@[simp] theorem isUniq_setCtor (key : Key.CtorKey) : (Γ.setCtor x key).isUniq y = Γ.isUniq y := rfl
+@[simp] theorem rset_setCtor (key : Key.CtorKey) : (Γ.setCtor x key).rset = Γ.rset := rfl
+theorem ctorOf_setCtor (key : Key.CtorKey) :
+    (Γ.setCtor x key).ctorOf.get? y = if y = x then some key else Γ.ctorOf.get? y := by
+  simp only [setCtor, Src.NatMap.get?_insert]
+
+@[simp] theorem isImm_setProj (z : Var) (key : Key.CtorKey) (idx : Nat) :
+    (Γ.setProj x z key idx).isImm y = Γ.isImm y := rfl
+@[simp] theorem isPbrw_setProj (z : Var) (key : Key.CtorKey) (idx : Nat) :
+    (Γ.setProj x z key idx).isPbrw y = Γ.isPbrw y := rfl
+@[simp] theorem pbrw_setProj (z : Var) (key : Key.CtorKey) (idx : Nat) :
+    (Γ.setProj x z key idx).pbrw = Γ.pbrw := rfl
+@[simp] theorem own_setProj (z : Var) (key : Key.CtorKey) (idx : Nat) :
+    (Γ.setProj x z key idx).own = Γ.own := rfl
+@[simp] theorem brw_setProj (z : Var) (key : Key.CtorKey) (idx : Nat) :
+    (Γ.setProj x z key idx).brw = Γ.brw := rfl
+@[simp] theorem epoch_setProj (z : Var) (key : Key.CtorKey) (idx : Nat) :
+    (Γ.setProj x z key idx).epoch = Γ.epoch := rfl
+@[simp] theorem total_setProj (z : Var) (key : Key.CtorKey) (idx : Nat) :
+    (Γ.setProj x z key idx).total = Γ.total := rfl
+@[simp] theorem tokens_setProj (z : Var) (key : Key.CtorKey) (idx : Nat) :
+    (Γ.setProj x z key idx).tokens y = Γ.tokens y := rfl
+@[simp] theorem ctorOf_setProj (z : Var) (key : Key.CtorKey) (idx : Nat) :
+    (Γ.setProj x z key idx).ctorOf = Γ.ctorOf := rfl
+@[simp] theorem uniq_setProj (z : Var) (key : Key.CtorKey) (idx : Nat) :
+    (Γ.setProj x z key idx).uniq = Γ.uniq := rfl
+@[simp] theorem isUniq_setProj (z : Var) (key : Key.CtorKey) (idx : Nat) :
+    (Γ.setProj x z key idx).isUniq y = Γ.isUniq y := rfl
+@[simp] theorem rset_setProj (z : Var) (key : Key.CtorKey) (idx : Nat) :
+    (Γ.setProj x z key idx).rset = Γ.rset := rfl
+theorem projOf_setProj (z : Var) (key : Key.CtorKey) (idx : Nat) :
+    (Γ.setProj x z key idx).projOf.get? y = if y = x then some (z, key, idx) else Γ.projOf.get? y := by
+  simp only [setProj, Src.NatMap.get?_insert]
+
+@[simp] theorem isImm_clearUniq : (Γ.clearUniq x).isImm y = Γ.isImm y := rfl
+@[simp] theorem isPbrw_clearUniq : (Γ.clearUniq x).isPbrw y = Γ.isPbrw y := rfl
+@[simp] theorem pbrw_clearUniq : (Γ.clearUniq x).pbrw = Γ.pbrw := rfl
+@[simp] theorem own_clearUniq : (Γ.clearUniq x).own = Γ.own := rfl
+@[simp] theorem brw_clearUniq : (Γ.clearUniq x).brw = Γ.brw := rfl
+@[simp] theorem epoch_clearUniq : (Γ.clearUniq x).epoch = Γ.epoch := rfl
+@[simp] theorem total_clearUniq : (Γ.clearUniq x).total = Γ.total := rfl
+@[simp] theorem tokens_clearUniq : (Γ.clearUniq x).tokens y = Γ.tokens y := rfl
+@[simp] theorem ctorOf_clearUniq : (Γ.clearUniq x).ctorOf = Γ.ctorOf := rfl
+@[simp] theorem projOf_clearUniq : (Γ.clearUniq x).projOf = Γ.projOf := rfl
+@[simp] theorem rset_clearUniq : (Γ.clearUniq x).rset = Γ.rset := rfl
+theorem isUniq_clearUniq : (Γ.clearUniq x).isUniq y = (!decide (y = x) && Γ.isUniq y) := by
+  simp only [isUniq, clearUniq, Src.NatMap.contains, Src.NatMap.get?_erase]
   split <;> simp_all
 
 theorem borrowed_eq : Γ.borrowed y = (Γ.brw.get? y == some Γ.epoch) := rfl
@@ -111,7 +272,7 @@ theorem borrowable_eq : Γ.borrowable y = (Γ.isImm y || Γ.isPbrw y || decide (
 theorem take_ok {Γ Γ' : Ctx} {x : Var} (h : Γ.take x = .ok Γ') :
     (Γ.isImm x = true ∧ Γ' = Γ) ∨
       (Γ.isImm x = false ∧ ∃ n, Γ.own.get? x = some (n + 1) ∧
-        Γ' = { Γ with own := Γ.own.insert x n, total := Γ.total - 1 }) := by
+        Γ' = { Γ with own := Γ.own.insert x n, uniq := Γ.uniq.erase x, total := Γ.total - 1 }) := by
   unfold take at h
   cases hi : Γ.isImm x with
   | true => simp only [hi, ↓reduceIte, Except.ok.injEq] at h; exact Or.inl ⟨rfl, h.symm⟩
@@ -122,21 +283,32 @@ theorem take_ok {Γ Γ' : Ctx} {x : Var} (h : Γ.take x = .ok Γ') :
     · next n hn => exact ⟨n, hn, (Except.ok.inj h).symm⟩
     · split at h <;> (try split at h) <;> (try split at h) <;> cases h
 
-/-- A weaker context: the same immediates, borrows, `pbrw` and epoch, no more tokens. -/
+/-- A weaker context: the same immediates, borrows, `pbrw`, `ctorOf`, `projOf`, `rset` and epoch,
+no more tokens, and no more unique markers. -/
 structure Weaker (Γ' Γ : Ctx) : Prop where
   imm : Γ'.imm = Γ.imm
   brw : Γ'.brw = Γ.brw
   pbrw : Γ'.pbrw = Γ.pbrw
   epoch : Γ'.epoch = Γ.epoch
+  ctorOf : Γ'.ctorOf = Γ.ctorOf
+  projOf : Γ'.projOf = Γ.projOf
+  rset : Γ'.rset = Γ.rset
   tokens : ∀ y, Γ'.tokens y ≤ Γ.tokens y
   ownHas : ∀ y, Γ'.own.contains y = true → Γ.own.contains y = true
+  isUniq : ∀ y, Γ'.isUniq y = true → Γ.isUniq y = true
+  uniqTok : ∀ y, Γ'.isUniq y = true → Γ'.isImm y = false → Γ'.tokens y = Γ.tokens y
 
 theorem Weaker.refl (Γ : Ctx) : Weaker Γ Γ :=
-  ⟨rfl, rfl, rfl, rfl, fun _ => Nat.le_refl _, fun _ h => h⟩
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, fun _ => Nat.le_refl _, fun _ h => h, fun _ h => h,
+    fun _ _ _ => rfl⟩
 
 theorem Weaker.trans {Γ₁ Γ₂ Γ₃ : Ctx} (h₁ : Weaker Γ₁ Γ₂) (h₂ : Weaker Γ₂ Γ₃) : Weaker Γ₁ Γ₃ :=
   ⟨h₁.imm.trans h₂.imm, h₁.brw.trans h₂.brw, h₁.pbrw.trans h₂.pbrw, h₁.epoch.trans h₂.epoch,
-    fun y => Nat.le_trans (h₁.tokens y) (h₂.tokens y), fun y h => h₂.ownHas y (h₁.ownHas y h)⟩
+    h₁.ctorOf.trans h₂.ctorOf, h₁.projOf.trans h₂.projOf, h₁.rset.trans h₂.rset,
+    fun y => Nat.le_trans (h₁.tokens y) (h₂.tokens y),
+    fun y h => h₂.ownHas y (h₁.ownHas y h), fun y h => h₂.isUniq y (h₁.isUniq y h),
+    fun y hu hi => (h₁.uniqTok y hu hi).trans
+      (h₂.uniqTok y (h₁.isUniq y hu) (by simp only [Ctx.isImm, ← h₁.imm]; exact hi))⟩
 
 theorem Weaker.isImm {Γ' Γ : Ctx} (h : Weaker Γ' Γ) (y : Var) : Γ'.isImm y = Γ.isImm y := by
   simp only [Ctx.isImm, h.imm]
@@ -170,7 +342,8 @@ theorem Weaker.known {Γ' Γ : Ctx} (h : Weaker Γ' Γ) {y : Var} (hk : Γ'.know
 theorem take_weaker {Γ Γ' : Ctx} {x : Var} (h : Γ.take x = .ok Γ') : Weaker Γ' Γ := by
   rcases take_ok h with ⟨_, rfl⟩ | ⟨_, n, hn, rfl⟩
   · exact Weaker.refl _
-  · refine ⟨rfl, rfl, rfl, rfl, fun y => ?_, fun y hy => ?_⟩
+  · refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, fun y => ?_, fun y hy => ?_, fun y hy => ?_,
+      fun y hy _ => ?_⟩
     · simp only [tokens_eq, Src.NatMap.get?_insert]
       split
       · next he => subst he; simp [hn]
@@ -179,6 +352,104 @@ theorem take_weaker {Γ Γ' : Ctx} {x : Var} (h : Γ.take x = .ok Γ') : Weaker 
       split at hy
       · next he => subst he; simp [hn]
       · exact hy
+    · simp only [isUniq, Src.NatMap.contains, Src.NatMap.get?_erase] at hy ⊢
+      split at hy
+      · simp at hy
+      · exact hy
+    · simp only [isUniq, Src.NatMap.contains, Src.NatMap.get?_erase] at hy
+      simp only [tokens_eq, Src.NatMap.get?_insert]
+      split at hy
+      · simp at hy
+      · next hne => rw [ite_eq_right hne]
+
+theorem clearUniq_weaker (Γ : Ctx) (x : Var) : Weaker (Γ.clearUniq x) Γ :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, fun _ => Nat.le_refl _, fun _ h => h, fun y hy => by
+    rw [isUniq_clearUniq, Bool.and_eq_true] at hy; exact hy.2, fun _ _ _ => rfl⟩
+
+theorem clearBorrowedUniq_weaker (Γ : Ctx) (bs : List Bool) (args : List Arg) :
+    Weaker (Γ.clearBorrowedUniq bs args) Γ := by
+  induction args generalizing Γ bs with
+  | nil => simp only [clearBorrowedUniq]; exact Weaker.refl _
+  | cons a as ih =>
+    cases bs with
+    | nil => simp only [clearBorrowedUniq]; exact Weaker.refl _
+    | cons b bs =>
+      cases b with
+      | false => simp only [clearBorrowedUniq]; exact ih Γ bs
+      | true =>
+        cases a with
+        | lit _ | erased => simp only [clearBorrowedUniq]; exact ih Γ bs
+        | var x =>
+          simp only [clearBorrowedUniq]
+          split
+          · exact ih Γ bs
+          · exact (ih _ bs).trans (clearUniq_weaker Γ x)
+
+theorem clearBorrowedUniq_own (Γ : Ctx) (bs : List Bool) (args : List Arg) :
+    (Γ.clearBorrowedUniq bs args).own = Γ.own ∧ (Γ.clearBorrowedUniq bs args).total = Γ.total := by
+  induction args generalizing Γ bs with
+  | nil => simp [clearBorrowedUniq]
+  | cons a as ih =>
+    cases bs with
+    | nil => simp [clearBorrowedUniq]
+    | cons b bs =>
+      cases b with
+      | false => simp only [clearBorrowedUniq]; exact ih Γ bs
+      | true =>
+        cases a with
+        | lit _ | erased => simp only [clearBorrowedUniq]; exact ih Γ bs
+        | var x =>
+          simp only [clearBorrowedUniq]
+          split
+          · exact ih Γ bs
+          · exact ih (Γ.clearUniq x) bs
+
+theorem clearBorrowedUniq_avoids (Γ : Ctx) (bs : List Bool) (args : List Arg) {z : Var}
+    (hu : (Γ.clearBorrowedUniq bs args).isUniq z = true)
+    (hi : (Γ.clearBorrowedUniq bs args).isImm z = false) :
+    ∀ a, a ∈ (bs.zip args).filterMap (fun p => if p.1 then some p.2 else none) → a ≠ .var z := by
+  induction args generalizing Γ bs with
+  | nil => intro _ hm; simp at hm
+  | cons a as ih =>
+    cases bs with
+    | nil => intro _ hm; simp at hm
+    | cons b bs =>
+      cases b with
+      | false =>
+        simp only [clearBorrowedUniq] at hu hi
+        exact ih Γ bs hu hi
+      | true =>
+        intro a' hm
+        simp only [List.zip_cons_cons, List.filterMap_cons, ↓reduceIte, List.mem_cons] at hm
+        cases a with
+        | lit _ =>
+          simp only [clearBorrowedUniq] at hu hi
+          rcases hm with rfl | hm
+          · intro h; cases h
+          · exact ih Γ bs hu hi a' hm
+        | erased =>
+          simp only [clearBorrowedUniq] at hu hi
+          rcases hm with rfl | hm
+          · intro h; cases h
+          · exact ih Γ bs hu hi a' hm
+        | var x =>
+          simp only [clearBorrowedUniq] at hu hi
+          split at hu
+          · next hix =>
+            simp only [hix, ↓reduceIte] at hi
+            rcases hm with rfl | hm
+            · intro h; cases h
+              have hw := clearBorrowedUniq_weaker Γ bs as
+              rw [hw.isImm z, hix] at hi; cases hi
+            · exact ih Γ bs hu hi a' hm
+          · next hix =>
+            simp only [hix, ↓reduceIte] at hi
+            rcases hm with rfl | hm
+            · intro h; cases h
+              have hw := clearBorrowedUniq_weaker (Γ.clearUniq z) bs as
+              have huz := hw.isUniq z hu
+              simp [isUniq_clearUniq] at huz
+            · exact ih (Γ.clearUniq x) bs hu hi a' hm
 
 theorem takeArg_weaker {Γ Γ' : Ctx} {a : Arg} (h : Γ.takeArg a = .ok Γ') : Weaker Γ' Γ := by
   cases a with
@@ -274,9 +545,9 @@ theorem needCaptured_avail : ∀ {Γ : Ctx} {j : JoinId} {cs : List Var},
 
 theorem inc_ok {Γ Γ' : Ctx} {x : Var} {n : Nat} (h : Γ.inc x n = .ok Γ') :
     n = 1 ∧ ((Γ.isImm x = true ∧ Γ' = Γ) ∨
-      (Γ.isImm x = false ∧ (0 < Γ.tokens x ∨ Γ.isPbrw x = true) ∧ Γ' = Γ.addOwn x 1) ∨
+      (Γ.isImm x = false ∧ (0 < Γ.tokens x ∨ Γ.isPbrw x = true) ∧ Γ' = (Γ.clearUniq x).addOwn x 1) ∨
       (Γ.isImm x = false ∧ Γ.tokens x = 0 ∧ Γ.isPbrw x = false ∧ Γ.borrowed x = true ∧
-        Γ' = ({ Γ with brw := Γ.brw.erase x } : Ctx).addOwn x 1)) := by
+        Γ' = ({ Γ with brw := Γ.brw.erase x, uniq := Γ.uniq.erase x } : Ctx).addOwn x 1)) := by
   unfold inc at h
   by_cases hn : n = 1
   · subst hn
@@ -426,6 +697,60 @@ theorem Tokens.same {Γ Γ' : Ctx} {toks : List Var} (h : Tokens Γ toks)
     (ho : Γ'.own = Γ.own) (ht : Γ'.total = Γ.total) : Tokens Γ' toks :=
   ⟨fun y => by rw [h.count]; simp only [tokens_eq, ho], by rw [ht, h.total]⟩
 
+theorem Tokens.setImmUniq {Γ : Ctx} {toks : List Var} (h : Tokens Γ toks) (x : Var) :
+    Tokens (Γ.setImmUniq x) (toks.filter (fun y => y != x)) :=
+  (h.setImm x).same rfl rfl
+
+theorem Tokens.addUniqOwn {Γ : Ctx} {toks : List Var} (h : Tokens Γ toks) (x : Var) :
+    Tokens (Γ.addUniqOwn x) (x :: toks) :=
+  (h.addOwn x).same rfl rfl
+
+/-! ## Reset slot keys -/
+
+/-- `skeys` lists the currently live reset slot ids in `Γ.rset`, without duplicates. -/
+structure SlotKeys (Γ : Ctx) (skeys : List Nat) : Prop where
+  nodup : skeys.Nodup
+  mem : ∀ s, s ∈ skeys ↔ Γ.rset.contains s = true
+
+theorem SlotKeys.empty {Γ : Ctx} (hr : Γ.rset = .leaf) : SlotKeys Γ [] :=
+  ⟨List.nodup_nil, fun s => by simp [hr, Src.NatMap.contains, Src.NatMap.get?]⟩
+
+theorem SlotKeys.same {Γ Γ' : Ctx} {skeys : List Nat} (h : SlotKeys Γ skeys)
+    (hr : Γ'.rset = Γ.rset) : SlotKeys Γ' skeys :=
+  ⟨h.nodup, fun s => by rw [hr]; exact h.mem s⟩
+
+theorem SlotKeys.insert {Γ Γ' : Ctx} {skeys : List Nat} {s : Nat} {v : Nat × Bool}
+    (h : SlotKeys Γ skeys) (hfresh : Γ.rset.contains s = false)
+    (hr : Γ'.rset = Γ.rset.insert s v) : SlotKeys Γ' (s :: skeys) := by
+  have hnot : s ∉ skeys := fun hm => by
+    have := (h.mem s).mp hm; rw [hfresh] at this; cases this
+  refine ⟨List.nodup_cons.mpr ⟨hnot, h.nodup⟩, fun s' => ?_⟩
+  rw [hr, List.mem_cons, h.mem s']
+  simp only [Src.NatMap.contains, Src.NatMap.get?_insert]
+  by_cases he : s' = s
+  · simp [he]
+  · simp [he]
+
+theorem SlotKeys.erase {Γ Γ' : Ctx} {skeys : List Nat} {s : Nat}
+    (h : SlotKeys Γ skeys) (hhas : Γ.rset.contains s = true)
+    (hr : Γ'.rset = Γ.rset.erase s) : s ∈ skeys ∧ SlotKeys Γ' (skeys.erase s) := by
+  have hm : s ∈ skeys := (h.mem s).mpr hhas
+  refine ⟨hm, h.nodup.erase s, fun s' => ?_⟩
+  rw [hr, h.nodup.mem_erase_iff, h.mem s']
+  simp only [Src.NatMap.contains, Src.NatMap.get?_erase]
+  by_cases he : s' = s
+  · simp [he]
+  · simp [he]
+
+theorem SlotKeys.closed_nil {Γ : Ctx} {skeys : List Nat} (h : SlotKeys Γ skeys)
+    (hempty : mapIsEmpty Γ.rset = true) : skeys = [] := by
+  cases skeys with
+  | nil => rfl
+  | cons s rest =>
+    have hc := (h.mem s).mp List.mem_cons_self
+    have hn := mapIsEmpty_get?_none hempty s
+    simp [Src.NatMap.contains, hn] at hc
+
 theorem map_fst_pairs (xs : List Var) (n : Nat) :
     (xs.map (fun x => (x, n))).map (fun p => p.1) = xs := by
   induction xs with
@@ -488,17 +813,61 @@ theorem entryBorrowed_all_false : ∀ (ps : List Var) (bs : List Bool),
     · simp only [entryBorrowed]; exact entryBorrowed_all_false ps bs (by simpa using h)
     · simp at h
 
-theorem entryWith_all_false (ps : List Var) (bs : List Bool) (h : bs.all (!·) = true) :
-    entryWith ps bs = entry ps := by
-  simp [entryWith, entry, entryOwned_all_false ps bs h, entryBorrowed_all_false ps bs h,
-    Src.NatMap.ofList]
+theorem entryUnique_sublist_owned : ∀ (ps : List Var) (bs us : List Bool),
+    (entryUnique ps bs us).Sublist (entryOwned ps bs)
+  | [], _, _ => .slnil
+  | _ :: ps, true :: bs, _ :: us => entryUnique_sublist_owned ps bs us
+  | _ :: ps, true :: bs, [] => entryUnique_sublist_owned ps bs []
+  | p :: ps, false :: bs, true :: us => .cons_cons p (entryUnique_sublist_owned ps bs us)
+  | p :: ps, false :: bs, false :: us => .cons p (entryUnique_sublist_owned ps bs us)
+  | p :: ps, false :: bs, [] => .cons p (entryUnique_sublist_owned ps bs [])
+  | p :: ps, [], true :: us => by
+    have h := entryUnique_sublist_owned ps [] us
+    rw [entryOwned_all_false ps [] rfl] at h
+    exact .cons_cons p h
+  | p :: ps, [], false :: us => by
+    have h := entryUnique_sublist_owned ps [] us
+    rw [entryOwned_all_false ps [] rfl] at h
+    exact .cons p h
+  | p :: ps, [], [] => List.nil_sublist (p :: ps)
 
-theorem Tokens.entryWith (params : List Var) (bs : List Bool) (hn : params.Nodup) :
-    Tokens (Ctx.entryWith params bs) (Ctx.entryOwned params bs) :=
+theorem entryUnique_sublist (ps : List Var) (bs us : List Bool) :
+    (entryUnique ps bs us).Sublist ps :=
+  (entryUnique_sublist_owned ps bs us).trans (entryOwned_sublist ps bs)
+
+theorem entryUnique_all_false : ∀ (ps : List Var) (bs us : List Bool),
+    us.all (!·) = true → entryUnique ps bs us = []
+  | [], _, _, _ => rfl
+  | _ :: _, [], [], _ => rfl
+  | _ :: ps, true :: bs, [], _ => entryUnique_all_false ps bs [] rfl
+  | _ :: ps, false :: bs, [], _ => entryUnique_all_false ps bs [] rfl
+  | _ :: ps, true :: bs, _ :: us, h =>
+    entryUnique_all_false ps bs us (by simp only [List.all_cons, Bool.and_eq_true] at h; exact h.2)
+  | _ :: ps, false :: bs, b :: us, h => by
+    cases b
+    · exact entryUnique_all_false ps bs us (by simpa using h)
+    · simp at h
+  | _ :: ps, [], b :: us, h => by
+    cases b
+    · exact entryUnique_all_false ps [] us (by simpa using h)
+    · simp at h
+
+theorem entryWith_all_false_us (ps : List Var) (bs us : List Bool)
+    (hb : bs.all (!·) = true) (hu : us.all (!·) = true) :
+    entryWith ps bs us = entry ps := by
+  simp [entryWith, entry, entryOwned_all_false ps bs hb, entryBorrowed_all_false ps bs hb,
+    entryUnique_all_false ps bs us hu, Src.NatMap.ofList]
+
+theorem entryWith_all_false (ps : List Var) (bs : List Bool) (h : bs.all (!·) = true) :
+    entryWith ps bs = entry ps :=
+  entryWith_all_false_us ps bs [] h rfl
+
+theorem Tokens.entryWith (params : List Var) (bs : List Bool) (us : List Bool := []) (hn : params.Nodup) :
+    Tokens (Ctx.entryWith params bs us) (Ctx.entryOwned params bs) :=
   Tokens.ofList (hn.sublist (entryOwned_sublist params bs)) _ rfl rfl
 
-theorem pbrw_entryWith {params : List Var} {bs : List Bool} (hn : params.Nodup) (y : Var) :
-    (Ctx.entryWith params bs).isPbrw y = decide (y ∈ Ctx.entryBorrowed params bs) := by
+theorem pbrw_entryWith {params : List Var} {bs : List Bool} (us : List Bool := []) (hn : params.Nodup) (y : Var) :
+    (Ctx.entryWith params bs us).isPbrw y = decide (y ∈ Ctx.entryBorrowed params bs) := by
   have hnb : (entryBorrowed params bs).Nodup := hn.sublist (entryBorrowed_sublist params bs)
   have hk : ((entryBorrowed params bs).map (·, ())).map (·.1) = entryBorrowed params bs := by
     simp [List.map_map, Function.comp_def]
@@ -508,6 +877,99 @@ theorem pbrw_entryWith {params : List Var} {bs : List Bool} (hn : params.Nodup) 
   by_cases hy : y ∈ entryBorrowed params bs
   · rw [Src.NatMap.get?_ofList hnk (x := ()) (by simpa using hy)]; simp [hy]
   · rw [Src.NatMap.get?_ofList_none hnk (by rw [hk]; exact hy)]; simp [hy]
+
+theorem uniq_entryWith {params : List Var} {bs us : List Bool} (hn : params.Nodup) (y : Var) :
+    (Ctx.entryWith params bs us).isUniq y = decide (y ∈ Ctx.entryUnique params bs us) := by
+  have hnu : (entryUnique params bs us).Nodup := hn.sublist (entryUnique_sublist params bs us)
+  have hk : ((entryUnique params bs us).map (·, ())).map (·.1) = entryUnique params bs us := by
+    simp [List.map_map, Function.comp_def]
+  have hnk : (((entryUnique params bs us).map (·, ())).map (·.1)).Nodup := by rw [hk]; exact hnu
+  unfold isUniq entryWith Src.NatMap.contains
+  dsimp only
+  by_cases hy : y ∈ entryUnique params bs us
+  · rw [Src.NatMap.get?_ofList hnk (x := ()) (by simpa using hy)]; simp [hy]
+  · rw [Src.NatMap.get?_ofList_none hnk (by rw [hk]; exact hy)]; simp [hy]
+
+theorem takeOwnedUniqueArgs_nil_us (Γ : Ctx) (bs : List Bool) (args : List Arg) :
+    Γ.takeOwnedUniqueArgs bs [] args = Γ.takeOwnedArgs bs args := by
+  induction args generalizing Γ bs with
+  | nil => rfl
+  | cons a as ih =>
+    cases bs with
+    | nil =>
+      simp only [takeOwnedUniqueArgs, takeOwnedArgs]
+      cases Γ.takeArg a <;> simp [ih]
+    | cons b bs =>
+      cases b with
+      | true => exact ih Γ bs
+      | false =>
+        simp only [takeOwnedUniqueArgs, takeOwnedArgs]
+        cases Γ.takeArg a <;> simp [ih]
+
+theorem takeOwnedUniqueArgs_weaker {Γ Γ' : Ctx} {bs us : List Bool} {args : List Arg}
+    (h : Γ.takeOwnedUniqueArgs bs us args = .ok Γ') : Weaker Γ' Γ := by
+  induction args generalizing Γ bs us with
+  | nil => cases h; exact Weaker.refl _
+  | cons a as ih =>
+    cases bs with
+    | nil =>
+      cases us with
+      | nil =>
+        simp only [takeOwnedUniqueArgs] at h
+        cases ha : Γ.takeArg a with
+        | error e => rw [ha] at h; cases h
+        | ok Γ₁ => rw [ha] at h; exact (ih h).trans (takeArg_weaker ha)
+      | cons u us =>
+        cases u with
+        | false =>
+          simp only [takeOwnedUniqueArgs] at h
+          cases ha : Γ.takeArg a with
+          | error e => rw [ha] at h; cases h
+          | ok Γ₁ => rw [ha] at h; exact (ih h).trans (takeArg_weaker ha)
+        | true =>
+          cases a with
+          | lit _ | erased => exact ih h
+          | var x =>
+            simp only [takeOwnedUniqueArgs] at h
+            cases hu : Γ.isUniq x with
+            | false => simp [hu, throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at h
+            | true =>
+              simp only [hu, ↓reduceIte] at h
+              cases ha : Γ.take x with
+              | error e => rw [ha] at h; cases h
+              | ok Γ₁ => rw [ha] at h; exact (ih h).trans (take_weaker ha)
+    | cons b bs =>
+      cases b with
+      | true =>
+        cases us with
+        | nil => exact ih h
+        | cons _ us => exact ih h
+      | false =>
+        cases us with
+        | nil =>
+          simp only [takeOwnedUniqueArgs] at h
+          cases ha : Γ.takeArg a with
+          | error e => rw [ha] at h; cases h
+          | ok Γ₁ => rw [ha] at h; exact (ih h).trans (takeArg_weaker ha)
+        | cons u us =>
+          cases u with
+          | false =>
+            simp only [takeOwnedUniqueArgs] at h
+            cases ha : Γ.takeArg a with
+            | error e => rw [ha] at h; cases h
+            | ok Γ₁ => rw [ha] at h; exact (ih h).trans (takeArg_weaker ha)
+          | true =>
+            cases a with
+            | lit _ | erased => exact ih h
+            | var x =>
+              simp only [takeOwnedUniqueArgs] at h
+              cases hu : Γ.isUniq x with
+              | false => simp [hu, throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at h
+              | true =>
+                simp only [hu, ↓reduceIte] at h
+                cases ha : Γ.take x with
+                | error e => rw [ha] at h; cases h
+                | ok Γ₁ => rw [ha] at h; exact (ih h).trans (take_weaker ha)
 
 end Ctx
 

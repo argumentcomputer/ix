@@ -58,4 +58,54 @@ theorem ResultRel.success {before : Heap} {external : Nat → Nat} {w : Fir.Val}
   cases h with
   | ok hd hb hp _ => exact ⟨_, _, rfl, hd, hb, hp⟩
 
+/-- Strengthened result relation used internally by `Owned.Simulation`: additionally tracks
+private-frame preservation (`PrivPreserved`), non-aliasing of the returned value against private
+locations (`retNoPriv`), and `@unique` return guarantees (`UniqVal`). Projects directly to
+`ResultRel`. -/
+inductive ResultRelFull (before : Heap) (external : Nat → Nat) (priv : Nat → Prop)
+    (ctors : List Lam.CtorInfo) (retUniq : Bool) :
+    Result Fir.Val → Result (RVal × Heap) → Prop
+  | ok {w : Fir.Val} {v : RVal} {after : Heap}
+      (den : Proof.Den after v w)
+      (balance : Balance after external [v])
+      (preserve : ExternalPreserved before after external)
+      (reach : ReachablePreserved before after external)
+      (privPres : PrivPreserved before after priv)
+      (retNoPriv : ∀ l, priv l → v ≠ .loc l)
+      (retU : retUniq = true → UniqVal ctors after external [v] v) :
+      ResultRelFull before external priv ctors retUniq (.ok w) (.ok (v, after))
+  | timeout : ResultRelFull before external priv ctors retUniq .timeout .timeout
+  | trap : ResultRelFull before external priv ctors retUniq .trap .trap
+  | resource (r : Sem.Resource) :
+      ResultRelFull before external priv ctors retUniq (.resource r) (.resource r)
+  | stuck {target : Result (RVal × Heap)} :
+      ResultRelFull before external priv ctors retUniq .stuck target
+
+theorem ResultRelFull.toResultRel {before : Heap} {external : Nat → Nat} {priv : Nat → Prop}
+    {ctors : List Lam.CtorInfo} {retUniq : Bool}
+    {source : Result Fir.Val} {target : Result (RVal × Heap)}
+    (h : ResultRelFull before external priv ctors retUniq source target) :
+    ResultRel before external source target := by
+  cases h with
+  | ok hd hb hp hr _ _ _ => exact .ok hd hb hp hr
+  | timeout => exact .timeout
+  | trap => exact .trap
+  | resource r => exact .resource r
+  | stuck => exact .stuck
+
+theorem ResultRelFull.preheap {H₀ H₁ : Heap} {external : Nat → Nat} {priv : Nat → Prop}
+    {ctors : List Lam.CtorInfo} {retUniq : Bool}
+    {source : Result Fir.Val} {target : Result (RVal × Heap)}
+    (h : ResultRelFull H₁ external priv ctors retUniq source target)
+    (hr : ReachablePreserved H₀ H₁ external) (hpv : PrivPreserved H₀ H₁ priv) :
+    ResultRelFull H₀ external priv ctors retUniq source target := by
+  cases h with
+  | ok hd hb hp hreach hpriv hret hru =>
+    exact .ok hd hb (fun root w he hd' => hp root w he (hr.externalPreserved root w he hd'))
+      (hr.trans hreach) (hpv.trans hpriv) hret hru
+  | timeout => exact .timeout
+  | trap => exact .trap
+  | resource r => exact .resource r
+  | stuck => exact .stuck
+
 end IxCC.Own.Plain

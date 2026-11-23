@@ -33,9 +33,9 @@ bump/free-list history. Its physical simulation is the existing checked
 whole-code theorem instantiated at this reached idle boundary. -/
 theorem recycled_entry {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     {P : Program} {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-    {lowered : Public.Lowered} {borrows : Own.Plain.BorrowSigs}
-    (admission : CodeAdmission F bodies P config pairs functions borrows)
-    (accepted : Public.lower config F bodies P borrows = .ok lowered)
+    {lowered : Public.Lowered} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (admission : CodeAdmission F bodies P config pairs functions borrows uniqs)
+    (accepted : Public.lower config F bodies P borrows uniqs = .ok lowered)
     {H : Heap} {addresses : AddressMap} {memory : X86.Memory} {external : Nat → Nat}
     {context base bump limit : Lir.Word} {regionBytes : Nat}
     {slots : List Slot} {lists : Nat → List Lir.Word}
@@ -53,6 +53,7 @@ theorem recycled_entry {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
   exact public_entry_eval_sim admission accepted sourceLookup (Own.dens_lits H numbers)
     (numeric_selectOwned_balance _ numbers balance)
     (fun v hv => numeric_selectBorrowed_reachable H _ _ numbers v hv)
+    (fun v hv => numeric_selectUnique_uniq F.ctors H _ _ _ _ numbers v hv)
     (numeric_words encoded) (numeric_compatible _ numbers)
     (by simpa only [Own.litArgs, List.length_map] using arity)
     (ready.numeric_selectOwned _ numbers)
@@ -63,9 +64,9 @@ bound during the call or producing both the `Returned` call witness and the
 restored idle `HeapState` after `lowered.drop`. -/
 theorem recycled_call_and_release {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     {P : Program} {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-    {lowered : Public.Lowered} {borrows : Own.Plain.BorrowSigs}
-    (admission : CodeAdmission F bodies P config pairs functions borrows)
-    (accepted : Public.lower config F bodies P borrows = .ok lowered)
+    {lowered : Public.Lowered} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (admission : CodeAdmission F bodies P config pairs functions borrows uniqs)
+    (accepted : Public.lower config F bodies P borrows uniqs = .ok lowered)
     {H : Heap} {addresses : AddressMap} {memory : X86.Memory} {external : Nat → Nat}
     {context base bump limit : Lir.Word} {regionBytes : Nat}
     {slots : List Slot} {lists : Nat → List Lir.Word}
@@ -116,9 +117,9 @@ theorem recycled_call_and_release {F : Fir.Program} {bodies : Src.NatMap Own.Pla
 reference counts `fun _ => 0`. -/
 theorem recycled_call_and_release_idle {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     {P : Program} {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-    {lowered : Public.Lowered} {borrows : Own.Plain.BorrowSigs}
-    (admission : CodeAdmission F bodies P config pairs functions borrows)
-    (accepted : Public.lower config F bodies P borrows = .ok lowered)
+    {lowered : Public.Lowered} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (admission : CodeAdmission F bodies P config pairs functions borrows uniqs)
+    (accepted : Public.lower config F bodies P borrows uniqs = .ok lowered)
     {H : Heap} {addresses : AddressMap} {memory : X86.Memory}
     {context base bump limit : Lir.Word} {regionBytes : Nat}
     {slots : List Slot} {lists : Nat → List Lir.Word}
@@ -243,9 +244,9 @@ satisfies the full idle `HeapState` invariant, so the next public root call
 simulates `Fir.run` via `recycled_entry`. -/
 theorem RecycledPrefix.next_entry {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     {P : Program} {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-    {lowered : Public.Lowered} {borrows : Own.Plain.BorrowSigs}
-    (admission : CodeAdmission F bodies P config pairs functions borrows)
-    (accepted : Public.lower config F bodies P borrows = .ok lowered)
+    {lowered : Public.Lowered} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (admission : CodeAdmission F bodies P config pairs functions borrows uniqs)
+    (accepted : Public.lower config F bodies P borrows uniqs = .ok lowered)
     {external : Nat → Nat} {context base limit : Lir.Word} {regionBytes : Nat}
     {calls : List (Nat × List Nat)}
     {H addresses memory bump slots lists}
@@ -321,9 +322,9 @@ inductive RecycledSession (F : Fir.Program) (P : Program) (config : Rt.Config)
 valid public root calls `calls : List (Nat × List Nat)`. -/
 theorem recycled_session {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     {P : Program} {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-    {lowered : Public.Lowered} {borrows : Own.Plain.BorrowSigs}
-    (admission : CodeAdmission F bodies P config pairs functions borrows)
-    (accepted : Public.lower config F bodies P borrows = .ok lowered)
+    {lowered : Public.Lowered} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (admission : CodeAdmission F bodies P config pairs functions borrows uniqs)
+    (accepted : Public.lower config F bodies P borrows uniqs = .ok lowered)
     {external : Nat → Nat} {context base limit : Lir.Word} {regionBytes : Nat}
     (calls : List (Nat × List Nat))
     (valid : ∀ call ∈ calls, ValidSessionCall F call)
@@ -352,9 +353,9 @@ theorem recycled_session {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
 `HeapState` with `external = fun _ => 0`. -/
 theorem recycled_session_idle {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     {P : Program} {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-    {lowered : Public.Lowered} {borrows : Own.Plain.BorrowSigs}
-    (admission : CodeAdmission F bodies P config pairs functions borrows)
-    (accepted : Public.lower config F bodies P borrows = .ok lowered)
+    {lowered : Public.Lowered} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (admission : CodeAdmission F bodies P config pairs functions borrows uniqs)
+    (accepted : Public.lower config F bodies P borrows uniqs = .ok lowered)
     {context base limit : Lir.Word} {regionBytes : Nat}
     (calls : List (Nat × List Nat))
     (valid : ∀ call ∈ calls, ValidSessionCall F call)

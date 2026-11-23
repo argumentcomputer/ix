@@ -118,6 +118,9 @@ def mutCode (kind : Kind) (target : Nat) (Δ : JCtx) (Γ : Ctx) (inBranch : Bool
   | .ret a => terminalMut kind target Γ (argVars [a]) (.ret a)
   | .tcall f args => terminalMut kind target Γ (argVars args) (.tcall f args)
   | .jmp j args => terminalMut kind target Γ (argVars args) (.jmp j args)
+  | .reset s x ctor fields uniq k => return .reset s x ctor fields uniq k
+  | .reuse x s ctor args uniq k => return .reuse x s ctor args uniq k
+  | .dropSlot s k => return .dropSlot s k
   | .trap => return .trap
 def mutAlts (kind : Kind) (target : Nat) (Δ : JCtx) (Γ : Ctx) : List Alt → StateM MS (List Alt)
   | [] => return []
