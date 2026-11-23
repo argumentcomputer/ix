@@ -29,7 +29,7 @@ fn unsupported_fri_profiles_fail_before_proving() {
     [(1, 1, 0, 2), (0, 2, 0, 2), (0, 1, 1, 2), (0, 1, 0, 0), (0, 1, 0, 2)]
   {
     let config = || fri_config(cap, arity, final_log, queries);
-    if cfg!(feature = "cuda") && (cap != 0 || arity > 1) {
+    if cfg!(feature = "cuda") && (cap != 0 || arity > 10) {
       assert!(std::panic::catch_unwind(config).is_err());
     } else {
       assert!(arithmetic(Val::ONE, 2).prove_fri(config(), 32).is_err());

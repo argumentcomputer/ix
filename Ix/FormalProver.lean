@@ -51,7 +51,7 @@ instance : Nonempty System := SystemNonempty.property
 prover's (`aiur::trace::stark::Parameters::DEFAULT`). -/
 structure ProtocolParameters where
   logBlowup : Nat := 2
-  numQueries : Nat := 100
+  numQueries : Nat := 128
   commitProofOfWorkBits : Nat := 0
   queryProofOfWorkBits : Nat := 20
 

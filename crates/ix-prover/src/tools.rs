@@ -203,12 +203,18 @@ pub fn execute(system: &System, request: &Request) -> Result<Outcome, String> {
   // The span also closes when binding or execution fails, so a rejected
   // claim still records its time; a check that fails before reaching this
   // call records no `aiur/execute` span at all.
+  let kind =
+    if program.first_entry().is_ok_and(|e| RECURSIVE_ENTRIES.contains(&e)) {
+      Kind::Recursion
+    } else {
+      Kind::Ixvm
+    };
   let (bound, (result, ran)) = tracing_texray::examine(tracing::info_span!(
     "aiur/execute"
   ))
   .in_scope(|| -> Result<_, String> {
     let bound =
-      crate::request::bind(program.checked(), Kind::Ixvm, request, &Uncharged)
+      crate::request::bind(program.checked(), kind, request, &Uncharged)
         .map_err(bind_error)?;
     let ran = run(program, &bound)?;
     Ok((bound, ran))

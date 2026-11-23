@@ -419,7 +419,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     let c = &self.system.circuits[ci];
     c.main_width as u128
       + c.stage_2_width as u128
-      + 2 * c.quotient_degree() as u128
+      + 3 * c.quotient_degree() as u128
   }
 
   pub(super) fn packed_layout(

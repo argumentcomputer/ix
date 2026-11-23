@@ -12,10 +12,10 @@
   "num_messages": 2,
   "num_queries": 4,
   "num_shards": 2,
-  "proof_bytes_len": 4646,
-  "proof_digest": "dc7c8e12054564e24548cde31747415ea3a6e7c8cac180d97501effd2cbeb38f",
+  "proof_bytes_len": 5254,
+  "proof_digest": "c6c3cb6290554a83ef1b8845795c93d56ca4d60db1be72eee1d1a93976bd38e5",
   "proof_of_work_bits": 2,
   "query_proof_of_work_bits": 2,
-  "system_bytes_len": 106,
-  "vk_digest": "9130e411661c5337f83e6acd4887932e9afd525dbfe63db65d1a5ae281ee80aa"
+  "system_bytes_len": 146,
+  "vk_digest": "beb481627033b451c7d00a553cd6d9466d7b142fe50e0cda283c026d2242c786"
 }

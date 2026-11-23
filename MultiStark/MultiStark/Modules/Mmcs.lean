@@ -12,7 +12,7 @@ namespace MultiStark.Source
 def mmcs : Aiur.Modules.Program Nat := aiur⟦
 module Mmcs {
   fn mmcs_compress(ap: ProofDeserialize::DigestP, bp: ProofDeserialize::DigestP) -> ProofDeserialize::DigestP {
-      let IV = [UInt32::from_bytes([UInt8::BYTE_103, UInt8::BYTE_230, UInt8::BYTE_9, UInt8::BYTE_106]), UInt32::from_bytes([UInt8::BYTE_133, UInt8::BYTE_174, UInt8::BYTE_103, UInt8::BYTE_187]), UInt32::from_bytes([UInt8::BYTE_114, UInt8::BYTE_243, UInt8::BYTE_110, UInt8::BYTE_60]), UInt32::from_bytes([UInt8::BYTE_58, UInt8::BYTE_245, UInt8::BYTE_79, UInt8::BYTE_165]), UInt32::from_bytes([UInt8::BYTE_127, UInt8::BYTE_82, UInt8::BYTE_14, UInt8::BYTE_81]), UInt32::from_bytes([UInt8::BYTE_140, UInt8::BYTE_104, UInt8::BYTE_5, UInt8::BYTE_155]), UInt32::from_bytes([UInt8::BYTE_171, UInt8::BYTE_217, UInt8::BYTE_131, UInt8::BYTE_31]), UInt32::from_bytes([UInt8::BYTE_25, UInt8::BYTE_205, UInt8::BYTE_224, UInt8::BYTE_91])];
+      let key_cv = StarkHash::v6_merkle_compress_cv();
       let a = (*(ap));
       let b = (*(bp));
       let block = [
@@ -24,7 +24,7 @@ module Mmcs {
         UInt32::from_bytes([b[1][0], b[1][1], b[1][2], b[1][3]]), UInt32::from_bytes([b[1][4], b[1][5], b[1][6], b[1][7]]),
         UInt32::from_bytes([b[2][0], b[2][1], b[2][2], b[2][3]]), UInt32::from_bytes([b[2][4], b[2][5], b[2][6], b[2][7]]),
         UInt32::from_bytes([b[3][0], b[3][1], b[3][2], b[3][3]]), UInt32::from_bytes([b[3][4], b[3][5], b[3][6], b[3][7]])];
-      (&(StarkHash::b3_to_digest(Blake3::compress_init(IV, block, [UInt8::BYTE_0; 8], 64, 11))))
+      (&(StarkHash::b3_to_digest(Blake3::compress_init(key_cv, block, [UInt8::BYTE_0; 8], 64, 75))))
     }
 
   fn frontier_merge(xs: Lists::List<Pcs::FrontierNode>, ys: Lists::List<Pcs::FrontierNode>) -> Lists::List<Pcs::FrontierNode> {

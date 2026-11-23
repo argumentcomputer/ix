@@ -7,7 +7,7 @@ import Aiur.Library.Frontend
 `a * b = q * p + r` with canonical operands and remainder and a UInt64
 quotient. Both sides are below `2^128`, so the ambient field equation cannot
 wrap. Byte decompositions and carries are checked by ordinary Aiur constraints.
-The quadratic extension uses the same nonresidue seven as the native library. -/
+The cubic extension uses $\mathbb{F}_p[X]/(X^3 - X - 1)$, matching the native library. -/
 namespace Aiur.Library.Field.Goldilocks.Emulated
 open Aiur
 
@@ -23,7 +23,7 @@ def dependencies : Modules.Program Nat :=
 private def implementation : Modules.Program Nat := aiur_library% dependencies ⟦
 module Goldilocks: GoldilocksSignature {
   type Goldilocks = Field;
-  type ExtGoldilocks = [Goldilocks; 2];
+  type ExtGoldilocks = [Goldilocks; 3];
   const MODULUS: Field = 18446744069414584321;
 
   inline fn checked_bytes(raw: [Field; 8]) -> [UInt8::U8; 8] {
@@ -124,27 +124,40 @@ module Goldilocks: GoldilocksSignature {
   }
 
   inline fn eg_add(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
-    [gl_add(a[0], b[0]), gl_add(a[1], b[1])]
+    [gl_add(a[0], b[0]), gl_add(a[1], b[1]), gl_add(a[2], b[2])]
   }
   inline fn eg_sub(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
-    [gl_sub(a[0], b[0]), gl_sub(a[1], b[1])]
+    [gl_sub(a[0], b[0]), gl_sub(a[1], b[1]), gl_sub(a[2], b[2])]
   }
   inline fn eg_neg(a: ExtGoldilocks) -> ExtGoldilocks {
-    [gl_neg(a[0]), gl_neg(a[1])]
+    [gl_neg(a[0]), gl_neg(a[1]), gl_neg(a[2])]
   }
   inline fn eg_mul(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
-    [gl_add(gl_mul(a[0], b[0]), gl_mul(7, gl_mul(a[1], b[1]))),
-     gl_add(gl_mul(a[0], b[1]), gl_mul(a[1], b[0]))]
+    let v0 = gl_mul(a[0], b[0]);
+    let v1 = gl_mul(a[1], b[1]);
+    let v2 = gl_mul(a[2], b[2]);
+    let m01 = gl_sub(gl_sub(gl_mul(gl_add(a[0], a[1]), gl_add(b[0], b[1])), v0), v1);
+    let m02 = gl_sub(gl_sub(gl_mul(gl_add(a[0], a[2]), gl_add(b[0], b[2])), v0), v2);
+    let m12 = gl_sub(gl_sub(gl_mul(gl_add(a[1], a[2]), gl_add(b[1], b[2])), v1), v2);
+    [gl_add(v0, m12), gl_add(gl_add(m01, m12), v2), gl_add(gl_add(m02, v1), v2)]
   }
   inline fn eg_inverse(a: ExtGoldilocks) -> ExtGoldilocks {
-    let norm = gl_sub(gl_mul(a[0], a[0]), gl_mul(7, gl_mul(a[1], a[1])));
+    let s = gl_add(a[0], a[2]);
+    let d0 = gl_sub(gl_mul(s, s), gl_mul(a[1], gl_add(a[1], a[2])));
+    let d1 = gl_sub(gl_mul(a[2], a[2]), gl_mul(a[0], a[1]));
+    let d2 = gl_sub(gl_mul(a[1], a[1]), gl_mul(a[2], s));
+    let norm = gl_add(gl_add(gl_mul(a[0], d0), gl_mul(a[2], d1)), gl_mul(a[1], d2));
     let inverse = gl_inverse(norm);
-    [gl_mul(a[0], inverse), gl_mul(gl_neg(a[1]), inverse)]
+    [gl_mul(d0, inverse), gl_mul(d1, inverse), gl_mul(d2, inverse)]
   }
   inline fn eg_inv_nonzero(a: ExtGoldilocks) -> ExtGoldilocks {
-    let norm = gl_sub(gl_mul(a[0], a[0]), gl_mul(7, gl_mul(a[1], a[1])));
+    let s = gl_add(a[0], a[2]);
+    let d0 = gl_sub(gl_mul(s, s), gl_mul(a[1], gl_add(a[1], a[2])));
+    let d1 = gl_sub(gl_mul(a[2], a[2]), gl_mul(a[0], a[1]));
+    let d2 = gl_sub(gl_mul(a[1], a[1]), gl_mul(a[2], s));
+    let norm = gl_add(gl_add(gl_mul(a[0], d0), gl_mul(a[2], d1)), gl_mul(a[1], d2));
     let inverse = gl_inv_nonzero(norm);
-    [gl_mul(a[0], inverse), gl_mul(gl_neg(a[1]), inverse)]
+    [gl_mul(d0, inverse), gl_mul(d1, inverse), gl_mul(d2, inverse)]
   }
   inline fn eg_div(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
     eg_mul(a, eg_inverse(b))
@@ -153,7 +166,7 @@ module Goldilocks: GoldilocksSignature {
     eg_mul(a, eg_inv_nonzero(b))
   }
   inline fn eg_eq(a: ExtGoldilocks, b: ExtGoldilocks) -> Field {
-    gl_eq(a[0], b[0]) * gl_eq(a[1], b[1])
+    gl_eq(a[0], b[0]) * gl_eq(a[1], b[1]) * gl_eq(a[2], b[2])
   }
 }
 ⟧

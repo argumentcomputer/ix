@@ -128,7 +128,7 @@ fn reducing_and_canonical_byte_boundaries_remain_distinct() {
 }
 
 #[test]
-fn quadratic_extension_uses_nonresidue_seven() {
+fn cubic_extension_uses_x3_minus_x_minus_1() {
   let prepared =
     stark_verifier::prepare_compress_gl(program(), &Streams::default())
       .unwrap();
@@ -141,28 +141,62 @@ fn quadratic_extension_uses_nonresidue_seven() {
       .unwrap()
       .output
   };
-  for (a, b) in
-    [([0, 1], [0, 1]), ([3, 5], [7, 11]), ([P - 1, P - 2], [7, P - 1])]
-  {
-    let expected = [
-      sum(product(a[0], b[0]), product(7, product(a[1], b[1]))),
-      sum(product(a[0], b[1]), product(a[1], b[0])),
-    ];
+  assert!(
+    prepared.execute("EmulatedGL::inv_nonzero", vec![scalar(0)]).is_err()
+  );
+  assert_eq!(
+    run("inv_nonzero", &[7]),
+    [scalar(Val::from_u64(7).try_inverse().unwrap().as_canonical_u64())]
+  );
+  for (a, b) in [
+    ([0, 1, 0], [0, 0, 1]),
+    ([3, 5, 7], [11, 13, 17]),
+    ([P - 1, P - 2, P - 3], [7, P - 1, 42]),
+  ] {
+    // Fp[X] / (X^3 - X - 1): X^3 = X + 1, X^4 = X^2 + X.
+    let c0 = product(a[0], b[0]);
+    let c1 = sum(product(a[0], b[1]), product(a[1], b[0]));
+    let c2 = sum(
+      sum(product(a[0], b[2]), product(a[1], b[1])),
+      product(a[2], b[0]),
+    );
+    let c3 = sum(product(a[1], b[2]), product(a[2], b[1]));
+    let c4 = product(a[2], b[2]);
+    let expected = [sum(c0, c3), sum(sum(c1, c3), c4), sum(c2, c4)];
     assert_eq!(
-      run("extension_mul", &[a[0], a[1], b[0], b[1]]),
+      run("extension_mul", &[a[0], a[1], a[2], b[0], b[1], b[2]]),
       expected.map(scalar)
     );
     let inverse = run("extension_inverse", &a);
+    assert_eq!(inverse, run("extension_inv_nonzero", &a));
     let roundtrip = prepared
       .execute(
         "EmulatedGL::extension_mul",
-        vec![scalar(a[0]), scalar(a[1]), inverse[0], inverse[1]],
+        vec![
+          scalar(a[0]),
+          scalar(a[1]),
+          scalar(a[2]),
+          inverse[0],
+          inverse[1],
+          inverse[2],
+        ],
       )
       .unwrap()
       .output;
-    assert_eq!(roundtrip, [scalar(1), scalar(0)]);
+    assert_eq!(roundtrip, [scalar(1), scalar(0), scalar(0)]);
   }
-  assert_eq!(run("extension_inverse", &[0, 0]), [scalar(0), scalar(0)]);
+  assert_eq!(
+    run("extension_inverse", &[0, 0, 0]),
+    [scalar(0), scalar(0), scalar(0)]
+  );
+  assert!(
+    prepared
+      .execute(
+        "EmulatedGL::extension_inv_nonzero",
+        vec![scalar(0), scalar(0), scalar(0)],
+      )
+      .is_err()
+  );
 }
 
 fn forged(entry: &str, args: &[u64], channel: &str, answer: &[u64]) -> String {

@@ -18,10 +18,10 @@
   "num_messages": 0,
   "num_queries": 4,
   "num_shards": 2,
-  "proof_bytes_len": 5362,
-  "proof_digest": "7b76df70b4ec83a84d6771d549d1fcd1cb40d81b1be3636824e166eb9bc1bb7a",
+  "proof_bytes_len": 6538,
+  "proof_digest": "748bdc029d3bca739f9e568b2a18208b5b1f6003b3d0214a5eb5192b1ca9bcfa",
   "proof_of_work_bits": 2,
   "query_proof_of_work_bits": 2,
-  "system_bytes_len": 313,
-  "vk_digest": "b4675144c8d221241c589e25f8e77e5af30b9387996cd8d166f15ff8b34de81d"
+  "system_bytes_len": 355,
+  "vk_digest": "d33d788c024832167f0ec6c5fe142d268161d0b94579e8845a9ab5214d565787"
 }

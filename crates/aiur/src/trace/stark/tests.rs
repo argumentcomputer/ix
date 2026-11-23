@@ -33,10 +33,10 @@ fn writes(n: usize) -> Vec<Json> {
   (0..n).map(|i| json!({"column":i,"source":i,"guard":k(1)})).collect()
 }
 fn parameters() -> Parameters {
-  // The floor (220 conjectured bits) without grinding, slow in debug builds.
+  // Protocol v6 128-bit floor without grinding (128.3b Johnson, 117.0b UD, 282b conj).
   Parameters {
     log_blowup: 1,
-    num_queries: 220,
+    num_queries: 282,
     commit_proof_of_work_bits: 0,
     query_proof_of_work_bits: 0,
   }
@@ -99,6 +99,57 @@ fn cpu_verification_ignores_gpu_prover_environment() {
   assert!(
     key.verify(&[backend.claim("root", &[3], &[8]).unwrap()], &proof).is_err()
   );
+}
+
+#[test]
+fn zk_backend_roundtrip_enforces_min_log_degree_and_rejects_tamper() {
+  let (program, artifact) = fixture();
+  let plan = TracePlan::new(&program, activate(artifact)).unwrap();
+  let params = Parameters {
+    log_blowup: 3,
+    num_queries: 78,
+    commit_proof_of_work_bits: 0,
+    query_proof_of_work_bits: 20,
+  };
+  let backend = ZkBackend::new(&plan, params).unwrap();
+  assert_eq!(backend.min_log_degree(), 8);
+  assert_eq!(backend.zk_randomizer_width(), 4);
+
+  let record = program.execute("root", vec![3]).unwrap();
+  let witness = backend.generate(&record, "root", &[3]).unwrap();
+  for trace in &witness.traces {
+    if trace.height() > 0 {
+      assert!(
+        trace.height() >= 256,
+        "active trace height {} is below v6-zk min height 256",
+        trace.height()
+      );
+    }
+  }
+  let proof = backend.prove("root", &[3], &[9], witness).unwrap();
+  backend.verify("root", &[3], &[9], &proof).unwrap();
+
+  // Wrong output rejected
+  assert!(backend.verify("root", &[3], &[8], &proof).is_err());
+
+  // Tampered log_degree below min_log_degree rejected fail-closed
+  let mut low_deg = proof.clone();
+  low_deg.log_degrees[0] = 7;
+  assert!(
+    backend
+      .verify("root", &[3], &[9], &low_deg)
+      .unwrap_err()
+      .contains("below minimum 8")
+  );
+
+  // Sub-128-bit floor rejected by ZkBackend::new
+  let weak = Parameters {
+    log_blowup: 3,
+    num_queries: 40,
+    commit_proof_of_work_bits: 0,
+    query_proof_of_work_bits: 0,
+  };
+  assert!(ZkBackend::new(&plan, weak).is_err());
 }
 
 #[test]
@@ -165,7 +216,7 @@ fn batch_memory_partition_and_persisted_key() {
 
 #[test]
 fn sliced_lookup_writer_matches_graph_and_retained_proof() {
-  use multi_stark::{batch::Retention, lookup::LookupValues, types::ExtVal};
+  use multi_stark::{batch::Retention, lookup::LookupValues, types::ExtVal3};
   let (program, artifact) = fixture();
   let plan = TracePlan::new(&program, activate(artifact)).unwrap();
   let backend = host_lookups(&plan);
@@ -210,9 +261,9 @@ fn sliced_lookup_writer_matches_graph_and_retained_proof() {
       LookupValues::stage_2_traces(
         &lookups,
         &groups,
-        ExtVal::from_u64(1000000007),
-        &ExtVal::from_u64(1000000009),
-        ExtVal::ZERO,
+        ExtVal3::from_u64(1000000007),
+        &ExtVal3::from_u64(1000000009),
+        ExtVal3::ZERO,
       )
     };
     let (expected, expected_acc) = stage2(reference);
@@ -569,7 +620,7 @@ fn execution_statistics_report_raw_rows_fixed_heights_and_cache_hits() {
   let record = program.execute("root", vec![3]).unwrap();
   let stats = stats_only.execution_statistics(&record);
   assert_eq!(stats.log_blowup, 1);
-  assert_eq!(stats.extension_degree, 2);
+  assert_eq!(stats.extension_degree, 3);
   let rows: Vec<_> =
     stats.circuits.iter().map(|c| (c.rows, c.cache_hits)).collect();
   // root and leaf each run once; the fixed table has 4 rows (3 used in
@@ -1736,7 +1787,17 @@ fn member_lookup_plans_match_generic_and_prune_grouped_work() {
   let package = grouping_fixture();
   let program = package.program.check().unwrap();
   let plan = TracePlan::new(&program, package.trace).unwrap();
-  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let backend = Backend::assemble(
+    &plan,
+    parameters(),
+    true,
+    RomLayout::Vectorized,
+    None,
+    false,
+    true,
+    true,
+  )
+  .unwrap();
   let record = program.execute("Grouped::run", vec![3]).unwrap();
   let witness = backend.generate(&record, "Grouped::run", &[3]).unwrap();
 
@@ -1826,9 +1887,9 @@ fn member_lookup_plans_match_generic_and_prune_grouped_work() {
     multi_stark::lookup::LookupValues::stage_2_traces(
       &lookups,
       &groups,
-      multi_stark::types::ExtVal::from_u64(1000000007),
-      &multi_stark::types::ExtVal::from_u64(1000000009),
-      multi_stark::types::ExtVal::ZERO,
+      multi_stark::types::ExtVal3::from_u64(1000000007),
+      &multi_stark::types::ExtVal3::from_u64(1000000009),
+      multi_stark::types::ExtVal3::ZERO,
     )
   };
   let (actual, actual_acc) = stage2(via_aux);
@@ -1924,7 +1985,17 @@ fn parallel_rom_witness_and_prefix_lookups_match_reference() {
   })));
   let checked = raw_program.check_field::<Val>().unwrap();
   let plan = TracePlan::new(&checked, trace).unwrap();
-  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let backend = Backend::assemble(
+    &plan,
+    parameters(),
+    true,
+    RomLayout::Vectorized,
+    None,
+    false,
+    true,
+    true,
+  )
+  .unwrap();
   let n = Val::from_u64(299);
   let record = checked.execute("store_loop", vec![n]).unwrap();
   assert_eq!(record.memory.len(), 300);
@@ -1937,9 +2008,9 @@ fn parallel_rom_witness_and_prefix_lookups_match_reference() {
     multi_stark::lookup::LookupValues::stage_2_traces(
       &w.lookups,
       &groups,
-      multi_stark::types::ExtVal::from_u64(1000000007),
-      &multi_stark::types::ExtVal::from_u64(1000000009),
-      multi_stark::types::ExtVal::ZERO,
+      multi_stark::types::ExtVal3::from_u64(1000000007),
+      &multi_stark::types::ExtVal3::from_u64(1000000009),
+      multi_stark::types::ExtVal3::ZERO,
     )
   };
   let (actual, actual_acc) = stage2(&witness);

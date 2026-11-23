@@ -359,8 +359,8 @@ impl Source {
 /// the rows.
 pub struct WideBackend<'p, 'a, B: WitnessField = PrimeField> {
   rust: Backend<'p, 'a, B>,
-  system: System<GoldilocksBlake3Config>,
-  key: ProverKey<GoldilocksBlake3Config>,
+  system: System<GoldilocksBlake3V6Config>,
+  key: ProverKey<GoldilocksBlake3V6Config>,
   names: Vec<String>,
   sources: Vec<Source>,
   lookup_plans: Vec<LookupPlan>,

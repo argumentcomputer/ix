@@ -1012,7 +1012,7 @@ mod tests {
     lookup::Lookup,
     p3_matrix::dense::RowMajorMatrix,
     system::{CircuitInputs, System, SystemWitness},
-    types::GoldilocksBlake3Config,
+    types::GoldilocksBlake3V6Config,
   };
   use std::sync::OnceLock;
 
@@ -1038,7 +1038,7 @@ mod tests {
         ..Default::default()
       }];
       let (system, pk) =
-        System::new(GoldilocksBlake3Config::new(cp, fp), inputs);
+        System::new(GoldilocksBlake3V6Config::new(cp, fp), inputs);
       let mut words = (0..16).map(Val::from_u64).collect::<Vec<_>>();
       words[0] = Val::from_u64(3);
       words[1] = Val::from_u64(9);
@@ -1108,7 +1108,7 @@ mod tests {
     let pin = *blake3::hash(&f.key).as_bytes();
     let mut proof = BatchProof::from_bytes(&f.proof).unwrap();
     proof.proofs[0].stage_1_opened_values[0][0][0] +=
-      multi_stark::types::ExtVal::ONE;
+      multi_stark::types::ExtVal3::ONE;
     assert!(
       Input::new(&f.key, pin, &f.claims, &proof.to_bytes().unwrap()).is_err()
     );

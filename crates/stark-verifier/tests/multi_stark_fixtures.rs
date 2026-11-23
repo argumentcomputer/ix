@@ -15,7 +15,7 @@ use multi_stark::{
   p3_matrix::dense::RowMajorMatrix,
   system::{CircuitInputs, System, SystemWitness},
   types::{
-    CommitmentParameters, ExtVal, FriParameters, GoldilocksBlake3Config, Val,
+    CommitmentParameters, ExtVal3, FriParameters, GoldilocksBlake3V6Config, Val,
   },
 };
 use serde_json::json;
@@ -107,10 +107,11 @@ impl<'a> WireCursor<'a> {
     }
   }
 
-  fn read_ef(&mut self) -> Result<[u64; 2], String> {
+  fn read_ef(&mut self) -> Result<[u64; 3], String> {
     let c0 = self.read_canonical_f()?;
     let c1 = self.read_canonical_f()?;
-    Ok([c0, c1])
+    let c2 = self.read_canonical_f()?;
+    Ok([c0, c1, c2])
   }
 
   fn read_array<T>(
@@ -157,14 +158,18 @@ impl<'a> WireCursor<'a> {
   }
 }
 
-/// Mirror of `Ix.Cert.MultiStark.StarkSystem.fromBytes` (`Wire.lean:106-185`).
+/// Mirror of Protocol v6 `stark-key` system wire layout (`SystemDeserialize.lean`).
 fn wire_verify_system(
   bytes: &[u8],
-  expected_system: &System<GoldilocksBlake3Config>,
+  expected_system: &System<GoldilocksBlake3V6Config>,
   expected_cp: CommitmentParameters,
   expected_fp: FriParameters,
 ) -> Result<(), String> {
   let mut c = WireCursor::new(bytes);
+  assert_eq!(c.read_u16_le()?, usize::from(stark_key::PROTOCOL_VERSION));
+  assert_eq!(c.read_u16_le()?, usize::from(stark_key::EXTENSION_DEGREE));
+  assert_eq!(c.read_u16_le()?, usize::from(stark_key::FRI_BATCHING_TENSOR));
+  assert_eq!(c.read_digest()?, expected_system.vk_digest);
   assert_eq!(c.read_u16_le()?, expected_cp.log_blowup);
   assert_eq!(c.read_u16_le()?, expected_cp.cap_height);
   assert_eq!(c.read_u16_le()?, expected_fp.log_final_poly_len);
@@ -185,6 +190,8 @@ fn wire_verify_system(
 
     let node_count = c.read_u16_le()?;
     assert_eq!(node_count, circ.graph.nodes.len());
+    let lookup_prefix_len = c.read_u16_le()?;
+    assert_eq!(lookup_prefix_len, circ.graph.lookup_prefix_len);
     for expected_node in &circ.graph.nodes {
       let tag = c.read_u8()?;
       let decoded = match tag {
@@ -270,34 +277,38 @@ fn wire_verify_system(
   Ok(())
 }
 
-fn ef_to_pair(e: ExtVal) -> [u64; 2] {
+fn ef_to_triple(e: ExtVal3) -> [u64; 3] {
   let coeffs: &[Val] = e.as_basis_coefficients_slice();
-  [coeffs[0].as_canonical_u64(), coeffs[1].as_canonical_u64()]
+  [
+    coeffs[0].as_canonical_u64(),
+    coeffs[1].as_canonical_u64(),
+    coeffs[2].as_canonical_u64(),
+  ]
 }
 
 fn read_opened_round(
   c: &mut WireCursor<'_>,
-) -> Result<Vec<Vec<Vec<[u64; 2]>>>, String> {
+) -> Result<Vec<Vec<Vec<[u64; 3]>>>, String> {
   c.read_vec(|c1| c1.read_vec(|c2| c2.read_vec(WireCursor::read_ef)))
 }
 
 fn assert_opened_round_eq(
-  got: &[Vec<Vec<[u64; 2]>>],
-  expected: &[Vec<Vec<ExtVal>>],
+  got: &[Vec<Vec<[u64; 3]>>],
+  expected: &[Vec<Vec<ExtVal3>>],
 ) {
-  let exp: Vec<Vec<Vec<[u64; 2]>>> = expected
+  let exp: Vec<Vec<Vec<[u64; 3]>>> = expected
     .iter()
     .map(|m| {
-      m.iter().map(|p| p.iter().copied().map(ef_to_pair).collect()).collect()
+      m.iter().map(|p| p.iter().copied().map(ef_to_triple).collect()).collect()
     })
     .collect();
   assert_eq!(got, exp.as_slice());
 }
 
-/// Mirror of `Ix.Cert.MultiStark.BatchProof.fromBytes` (`Wire.lean:189-273`).
+/// Mirror of Protocol v6 `BatchProof` wire layout (`ProofDeserialize.lean`).
 fn wire_verify_batch_proof(
   bytes: &[u8],
-  expected: &BatchProof<GoldilocksBlake3Config>,
+  expected: &BatchProof<GoldilocksBlake3V6Config>,
 ) -> Result<(), String> {
   let mut c = WireCursor::new(bytes);
 
@@ -351,8 +362,12 @@ fn wire_verify_batch_proof(
       exp_p.commitments.quotient_chunks.roots()
     );
     let accs = c.read_vec(WireCursor::read_ef)?;
-    let exp_accs: Vec<[u64; 2]> =
-      exp_p.intermediate_accumulators.iter().copied().map(ef_to_pair).collect();
+    let exp_accs: Vec<[u64; 3]> = exp_p
+      .intermediate_accumulators
+      .iter()
+      .copied()
+      .map(ef_to_triple)
+      .collect();
     assert_eq!(accs, exp_accs);
     assert_eq!(c.read_vec(WireCursor::read_u8)?, exp_p.log_degrees);
 
@@ -403,10 +418,10 @@ fn wire_verify_batch_proof(
     for exp_cpo in &fri.commit_phase_openings {
       assert_eq!(c.read_u8()?, exp_cpo.log_arity);
       let sib_vals = c.read_vec(|cur| cur.read_vec(WireCursor::read_ef))?;
-      let exp_sib_vals: Vec<Vec<[u64; 2]>> = exp_cpo
+      let exp_sib_vals: Vec<Vec<[u64; 3]>> = exp_cpo
         .sibling_values
         .iter()
-        .map(|row| row.iter().copied().map(ef_to_pair).collect())
+        .map(|row| row.iter().copied().map(ef_to_triple).collect())
         .collect();
       assert_eq!(sib_vals, exp_sib_vals);
       let siblings = c.read_vec(WireCursor::read_digest)?;
@@ -414,8 +429,8 @@ fn wire_verify_batch_proof(
     }
 
     let final_poly = c.read_vec(WireCursor::read_ef)?;
-    let exp_final_poly: Vec<[u64; 2]> =
-      fri.final_poly.iter().copied().map(ef_to_pair).collect();
+    let exp_final_poly: Vec<[u64; 3]> =
+      fri.final_poly.iter().copied().map(ef_to_triple).collect();
     assert_eq!(final_poly, exp_final_poly);
     assert_eq!(c.read_canonical_f()?, fri.query_pow_witness.as_canonical_u64());
 
@@ -484,8 +499,8 @@ fn two_circuit_system(
   cp: CommitmentParameters,
   fp: FriParameters,
 ) -> (
-  System<GoldilocksBlake3Config>,
-  multi_stark::system::ProverKey<GoldilocksBlake3Config>,
+  System<GoldilocksBlake3V6Config>,
+  multi_stark::system::ProverKey<GoldilocksBlake3V6Config>,
 ) {
   let x = Expr::main(0);
   let y = Expr::main(1);
@@ -559,7 +574,7 @@ fn two_circuit_system(
     ..Default::default()
   };
 
-  System::new(GoldilocksBlake3Config::new(cp, fp), vec![c0, c1])
+  System::new(GoldilocksBlake3V6Config::new(cp, fp), vec![c0, c1])
 }
 
 fn c0_trace() -> RowMajorMatrix<Val> {
@@ -613,10 +628,10 @@ fn repo_root() -> PathBuf {
 fn dump_and_verify_fixture(
   dir: &Path,
   description: &str,
-  system: &System<GoldilocksBlake3Config>,
+  system: &System<GoldilocksBlake3V6Config>,
   cp: CommitmentParameters,
   fp: FriParameters,
-  proof: &BatchProof<GoldilocksBlake3Config>,
+  proof: &BatchProof<GoldilocksBlake3V6Config>,
   all_claims: &[Vec<Val>],
 ) {
   system.verify_batch(proof).unwrap_or_else(|e| {
@@ -636,7 +651,7 @@ fn dump_and_verify_fixture(
     system_bytes
   );
   let decoded_proof =
-    BatchProof::<GoldilocksBlake3Config>::from_bytes(&proof_bytes)
+    BatchProof::<GoldilocksBlake3V6Config>::from_bytes(&proof_bytes)
       .expect("BatchProof::from_bytes");
   assert_eq!(decoded_proof.to_bytes().unwrap(), proof_bytes);
   decoded_sys
@@ -673,7 +688,7 @@ fn dump_and_verify_fixture(
 
   // Negative check: mutating an opened value must fail native verification.
   let mut bad_proof = proof.clone();
-  bad_proof.proofs[0].stage_1_opened_values[0][0][0] += ExtVal::ONE;
+  bad_proof.proofs[0].stage_1_opened_values[0][0][0] += ExtVal3::ONE;
   assert!(system.verify_batch(&bad_proof).is_err());
 
   let claims_u64: Vec<Vec<u64>> = all_claims
@@ -803,12 +818,12 @@ fn generate_and_verify_multi_stark_fixtures() {
   assert_eq!(proof_2.proofs[1].active, vec![false, true]);
   assert_ne!(
     *proof_2.proofs[0].intermediate_accumulators.last().unwrap(),
-    ExtVal::ZERO,
+    ExtVal3::ZERO,
     "shard 0 should have non-zero LogUp residual"
   );
   assert_ne!(
     *proof_2.proofs[1].intermediate_accumulators.last().unwrap(),
-    ExtVal::ZERO,
+    ExtVal3::ZERO,
     "shard 1 should have non-zero LogUp residual"
   );
   dump_and_verify_fixture(
@@ -830,7 +845,7 @@ fn generate_and_verify_multi_stark_fixtures() {
   let sel = Expr::main(2);
   let one = Expr::constant(Val::ONE);
   let (sys_np, pk_np) = System::new(
-    GoldilocksBlake3Config::new(cp, fp),
+    GoldilocksBlake3V6Config::new(cp, fp),
     vec![CircuitInputs {
       main_width: 3,
       constraints: vec![
@@ -898,7 +913,7 @@ fn generate_and_verify_multi_stark_fixtures() {
   let memseg = Expr::constant(Val::from_u64(16));
   let width_one = Expr::constant(Val::ONE);
   let (sys_ms, pk_ms) = System::new(
-    GoldilocksBlake3Config::new(cp, fp),
+    GoldilocksBlake3V6Config::new(cp, fp),
     vec![CircuitInputs {
       main_width: 3,
       constraints: vec![

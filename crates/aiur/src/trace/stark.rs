@@ -16,10 +16,15 @@ use crate::{
 use multi_stark::{
   expr::Expr,
   lookup::Lookup,
+  p3_adapter::fri_batching::FriBatching,
   p3_field::{PrimeCharacteristicRing, PrimeField64},
   p3_matrix::{Matrix, dense::RowMajorMatrix},
-  system::{CircuitInputs, ProverKey, System, SystemWitness},
-  types::{CommitmentParameters, FriParameters, GoldilocksBlake3Config, Val},
+  system::{
+    CircuitInputs, ProverKey, System, SystemWitness, compute_vk_digest,
+  },
+  types::{
+    CommitmentParameters, ExtVal3, FriParameters, GoldilocksBlake3V6Config, Val,
+  },
 };
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -48,6 +53,7 @@ mod tables;
 mod tests;
 pub mod wide;
 mod witness;
+pub mod zk;
 #[cfg(test)]
 pub use batch::StageOne;
 pub use batch::{
@@ -56,6 +62,7 @@ pub use batch::{
 pub use rom::{RomLayout, rom_lanes};
 pub use statistics::{CircuitMeasurements, ExecutionStatistics};
 pub use witness::ValidatedRecord;
+pub use zk::{ZkBackend, ZkProof};
 
 /// Conversion at this concrete proving adapter only. The native configuration
 /// writes its existing field values directly into multi-stark's matrices.
@@ -88,8 +95,8 @@ impl WitnessField for NativeField<Val> {
   }
 }
 
-pub type Proof = multi_stark::prover::Proof<GoldilocksBlake3Config>;
-pub type BatchProof = multi_stark::batch::BatchProof<GoldilocksBlake3Config>;
+pub type Proof = multi_stark::prover::Proof<GoldilocksBlake3V6Config>;
+pub type BatchProof = multi_stark::batch::BatchProof<GoldilocksBlake3V6Config>;
 
 /// The most rows one LogUp batch may hold, over every shard and active
 /// circuit (padded heights, which only over-count). The depth pass's
@@ -122,13 +129,14 @@ pub struct Parameters {
   pub query_proof_of_work_bits: usize,
 }
 impl Parameters {
-  /// Main's parameters before formal Aiur: blowup 4, 100 queries and 20
-  /// query proof-of-work bits, 220 conjectured bits. The Lean mirror is
-  /// `Aiur.defaultCommitmentParameters` and `Aiur.defaultFriParameters` in
+  /// Protocol v6 (Fp^3) default parameters: blowup 4, 128 queries and 20
+  /// query proof-of-work bits (142.24 bits finite-m Johnson with +14.24 bits
+  /// headroom, 106.78 bits provable UD, 276 bits conjectured). The Lean mirror
+  /// is `Aiur.defaultCommitmentParameters` and `Aiur.defaultFriParameters` in
   /// `Ix/Aiur/Parameters.lean`, checked by the test `lean_mirror_matches`.
   pub const DEFAULT: Self = Self {
     log_blowup: 2,
-    num_queries: 100,
+    num_queries: 128,
     commit_proof_of_work_bits: 0,
     query_proof_of_work_bits: 20,
   };
@@ -180,8 +188,8 @@ pub struct Backend<'p, 'a, B: WitnessField = PrimeField> {
   /// Identifies the records prepared by this backend, whose placements and
   /// device allocations are valid only here.
   preparation_identity: std::sync::Arc<()>,
-  system: System<GoldilocksBlake3Config>,
-  key: ProverKey<GoldilocksBlake3Config>,
+  system: System<GoldilocksBlake3V6Config>,
+  key: ProverKey<GoldilocksBlake3V6Config>,
   names: Vec<String>,
   tables: Vec<tables::FixedTable>,
   rom: rom::Rom,
@@ -251,7 +259,7 @@ fn degree(e: &Expr<Val>) -> usize {
 /// characteristic and total rows by [`MAX_BATCH_ROWS`]. Root caps cover
 /// every active matrix, including height 1.
 fn check_system_shape(
-  system: &System<GoldilocksBlake3Config>,
+  system: &System<GoldilocksBlake3V6Config>,
   parameters: Parameters,
   active: &[bool],
   degrees: &[u8],
@@ -309,7 +317,7 @@ fn build_system(
   parameters: Parameters,
   device: Option<i32>,
 ) -> Result<
-  (System<GoldilocksBlake3Config>, ProverKey<GoldilocksBlake3Config>),
+  (System<GoldilocksBlake3V6Config>, ProverKey<GoldilocksBlake3V6Config>),
   String,
 > {
   let max_degree = (1 << parameters.log_blowup) + 1;
@@ -331,9 +339,10 @@ fn build_system(
       ));
     }
   }
-  let config = GoldilocksBlake3Config::with_device(
+  let config = GoldilocksBlake3V6Config::with_device(
     parameters.commitment(),
     parameters.fri(),
+    FriBatching::Tensor,
     device,
   );
   let (mut system, key) = System::new(config, inputs);
@@ -341,9 +350,14 @@ fn build_system(
   // budget before exposing the system, compiling lookup plans, or exporting
   // keys.
   let blowup = 1usize << parameters.log_blowup;
+  let ext_degree =
+    multi_stark::system::extension_params::<GoldilocksBlake3V6Config>().degree;
   for circuit in &mut system.circuits {
-    lookup_groups::retune(circuit, blowup, 2);
+    lookup_groups::retune(circuit, blowup, ext_degree);
   }
+  // Retuning lookup_group_size updates stage_2_width/constraint_count/max_constraint_degree
+  // on circuits, so recompute vk_digest to match the finalized circuits.
+  system.vk_digest = compute_vk_digest::<Val, ExtVal3>(&system.circuits);
   Ok((system, key))
 }
 
@@ -353,6 +367,15 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     parameters: Parameters,
   ) -> Result<Self, String> {
     Self::new_with_rom_layout(plan, parameters, RomLayout::Vectorized)
+  }
+
+  /// Standalone (non-segmented) backend placed on an optional CUDA device.
+  pub fn new_on_device(
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
+    parameters: Parameters,
+    device: Option<i32>,
+  ) -> Result<Self, String> {
+    Self::build(plan, parameters, false, RomLayout::Vectorized, device, true)
   }
 
   pub fn new_with_rom_layout(
@@ -609,14 +632,17 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       &mut names,
       parameters.log_blowup,
       commit,
+      0,
+      false,
     )?;
     rom.append_circuits(&mut inputs, &mut names, segmented_memory)?;
     let (system, key) = if commit {
       build_system(inputs, &names, parameters, device)?
     } else {
-      let config = GoldilocksBlake3Config::with_device(
+      let config = GoldilocksBlake3V6Config::with_device(
         parameters.commitment(),
         parameters.fri(),
+        FriBatching::Tensor,
         device,
       );
       let (mut system, key) = Self::compile_system_without_commit(
@@ -626,9 +652,13 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
         &tables,
       )?;
       let blowup = 1usize << parameters.log_blowup;
+      let ext_degree =
+        multi_stark::system::extension_params::<GoldilocksBlake3V6Config>()
+          .degree;
       for circuit in &mut system.circuits {
-        lookup_groups::retune(circuit, blowup, 2);
+        lookup_groups::retune(circuit, blowup, ext_degree);
       }
+      system.vk_digest = compute_vk_digest::<Val, ExtVal3>(&system.circuits);
       (system, key)
     };
     let lookup_plans = if commit {
@@ -687,12 +717,12 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// Compile constraint graphs and derive circuit metadata identically to
   /// [`System::new`], skipping preprocessed fixed-table PCS commitment.
   fn compile_system_without_commit(
-    config: GoldilocksBlake3Config,
+    config: GoldilocksBlake3V6Config,
     inputs: Vec<CircuitInputs<Val>>,
     table_range: std::ops::Range<usize>,
     tables: &[tables::FixedTable],
   ) -> Result<
-    (System<GoldilocksBlake3Config>, ProverKey<GoldilocksBlake3Config>),
+    (System<GoldilocksBlake3V6Config>, ProverKey<GoldilocksBlake3V6Config>),
     String,
   > {
     use multi_stark::{
@@ -703,7 +733,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       },
       system::{Circuit, extension_params},
     };
-    let params = extension_params::<GoldilocksBlake3Config>();
+    let params = extension_params::<GoldilocksBlake3V6Config>();
     let d = params.degree;
     let mut circuits = Vec::with_capacity(inputs.len());
     let mut preprocessed_indices = Vec::with_capacity(inputs.len());
@@ -760,11 +790,13 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       preprocessed_indices.push(None);
       circuits.push(circuit);
     }
+    let vk_digest = compute_vk_digest::<Val, ExtVal3>(&circuits);
     let system = System {
       config,
       circuits,
       preprocessed_commit: None,
       preprocessed_indices,
+      vk_digest,
     };
     Ok((system, ProverKey { preprocessed_data: None }))
   }
@@ -780,6 +812,10 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
 
   pub const fn parameters(&self) -> Parameters {
     self.parameters
+  }
+
+  pub const fn system(&self) -> &System<GoldilocksBlake3V6Config> {
+    &self.system
   }
 
   pub const fn rom_layout(&self) -> RomLayout {
@@ -1136,6 +1172,25 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     Ok(self.system.prove(&self.key, &claim, witness))
   }
 
+  /// Prove directly from stage-one main traces, evaluating lookup messages
+  /// lazily per circuit instead of materializing all host lookup buffers upfront.
+  pub fn prove_streaming(
+    &self,
+    entry: &str,
+    args: &[B::Element],
+    output: &[B::Element],
+    traces: Vec<RowMajorMatrix<Val>>,
+  ) -> Result<Proof, String> {
+    self.require_committed()?;
+    if self.segmented_memory {
+      return Err("segmented memory requires a batch proof".into());
+    }
+    let claim = self.claim(entry, args, output)?;
+    let (active, degrees) = self.trace_shape(&traces)?;
+    self.check_shape(&active, &degrees)?;
+    Ok(self.system.prove_streaming(&self.key, &claim, traces))
+  }
+
   /// Verify using trusted compilation and the public call alone. No execution
   /// record, hints, witness matrices or prover-supplied table data are read.
   pub fn verify(
@@ -1156,4 +1211,169 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       .verify(&claim, proof)
       .map_err(|e| format!("STARK verification failed: {e:?}"))
   }
+}
+
+fn build_claim<B: WitnessField>(
+  plan: &TracePlan<'_, B>,
+  entry: &str,
+  args: &[B::Element],
+  output: &[B::Element],
+) -> Result<Vec<Val>, String> {
+  let id = plan.program.entry(entry)?.function;
+  let chip = &plan.artifact.chips[plan.members[id]];
+  let (inputs, depth) = plan.entry_args(id, args);
+  plan.program.inputs[id].validate(inputs, plan.program.field)?;
+  plan.program.outputs[id].validate(output, plan.program.field)?;
+  if chip.depth.column.is_some() && depth.is_none() {
+    return Err(format!(
+      "{entry} is recursive: its public claim needs a depth word after its arguments"
+    ));
+  }
+  Ok(
+    [CALL, plan.callables[&chip.name] as u64]
+      .into_iter()
+      .map(Val::from_u64)
+      .chain(inputs.iter().copied().map(B::into_stark))
+      .chain(depth.map(B::into_stark))
+      .chain(output.iter().copied().map(B::into_stark))
+      .collect(),
+  )
+}
+
+fn auxiliary_counts_for<B: WitnessField>(
+  plan: &TracePlan<'_, B>,
+  record: &Execution<B>,
+  ranges: &RangeCounts,
+) -> Result<Vec<Vec<u64>>, String> {
+  let program = &plan.program.program;
+  let counts = |mi: usize| {
+    let map = record.queries.tables[program.functions.len() + mi]
+      .static_map
+      .as_ref()
+      .ok_or("missing fixed-table record")?;
+    if map.counts.iter().any(|&count| count >= Val::ORDER_U64) {
+      return Err("table count reaches field characteristic".into());
+    }
+    Ok::<_, String>(map.counts.to_vec())
+  };
+  #[cfg(feature = "parallel")]
+  let table_counts = (0..program.maps.len())
+    .into_par_iter()
+    .map(counts)
+    .collect::<Result<_, _>>()?;
+  #[cfg(not(feature = "parallel"))]
+  let table_counts =
+    (0..program.maps.len()).map(counts).collect::<Result<_, _>>()?;
+  let mut table_counts: Vec<Vec<u64>> = table_counts;
+  for (table, range) in plan.depth.tables.iter().enumerate() {
+    let uses = ranges.table(table);
+    let counts = &mut table_counts[range.map - program.functions.len()];
+    if uses.len() > counts.len() {
+      return Err("depth range counts exceed their table".into());
+    }
+    for (count, &n) in counts.iter_mut().zip(uses) {
+      *count = count
+        .checked_add(n)
+        .filter(|&c| c < Val::ORDER_U64)
+        .ok_or("table count reaches field characteristic")?;
+    }
+  }
+  if record.memory.iter().any(|entry| entry.multiplicity >= Val::ORDER_U64) {
+    return Err("ROM count reaches field characteristic".into());
+  }
+  Ok(table_counts)
+}
+
+fn trace_shape_for(
+  circuits: &[multi_stark::system::Circuit<Val>],
+  traces: &[RowMajorMatrix<Val>],
+  device: &[Option<usize>],
+) -> Result<(Vec<bool>, Vec<u8>), String> {
+  if traces.len() != circuits.len() {
+    return Err("wrong circuit count".into());
+  }
+  let mut active = vec![];
+  let mut degrees = vec![];
+  for (ci, (trace, circuit)) in traces.iter().zip(circuits).enumerate() {
+    let height =
+      device.get(ci).copied().flatten().unwrap_or_else(|| trace.height());
+    if trace.width != circuit.main_width
+      || !trace.values.len().is_multiple_of(trace.width)
+      || (height != 0 && !height.is_power_of_two())
+    {
+      return Err("invalid main trace shape".into());
+    }
+    active.push(height != 0);
+    if height != 0 {
+      degrees.push(
+        u8::try_from(height.ilog2()).ok().ok_or("trace height log overflow")?,
+      );
+    }
+  }
+  Ok((active, degrees))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn check_shape_for(
+  circuits: &[multi_stark::system::Circuit<Val>],
+  members_len: usize,
+  tables_len: usize,
+  rom: &rom::Rom,
+  log_blowup: usize,
+  extra_blowup_bits: usize,
+  min_log_degree: usize,
+  active: &[bool],
+  degrees: &[u8],
+) -> Result<(), String> {
+  if active.len() != circuits.len() || !active.contains(&true) {
+    return Err("invalid circuit activation".into());
+  }
+  let mut degrees = degrees.iter();
+  let mut budget = 1u64; // one public root
+  let mut rows = 0u64;
+  let rom_start = members_len + tables_len;
+  for (ci, (circuit, &on)) in circuits.iter().zip(active).enumerate() {
+    if !on {
+      if circuit.preprocessed_height != 0 {
+        return Err("inactive fixed table".into());
+      }
+      continue;
+    }
+    let log = *degrees.next().ok_or("missing trace height")?;
+    if usize::from(log) < min_log_degree {
+      return Err(format!(
+        "circuit {ci} log degree {log} is below minimum {min_log_degree}"
+      ));
+    }
+    // Goldilocks has 2-adicity 32. Include the commitment blowup (plus 1 for
+    // v6-zk's 2x odd-coset hiding PCS).
+    if usize::from(log) + extra_blowup_bits + log_blowup > 32 {
+      return Err("trace domain exceeds Goldilocks capacity".into());
+    }
+    let height = 1u64 << log;
+    if circuit.preprocessed_height != 0
+      && circuit.preprocessed_height as u64 != height
+    {
+      return Err("fixed table height mismatch".into());
+    }
+    let weight = if ci >= rom_start {
+      rom.lanes_for_width(rom.widths[ci - rom_start]) as u64
+    } else {
+      1
+    };
+    rows = height
+      .checked_mul(weight)
+      .and_then(|w| rows.checked_add(w))
+      .filter(|&r| r <= MAX_BATCH_ROWS)
+      .ok_or("trace rows exceed the batch row bound (2^39)")?;
+    budget = height
+      .checked_mul(circuit.num_lookups.max(1) as u64)
+      .and_then(|n| budget.checked_add(n))
+      .filter(|&n| n < Val::ORDER_U64)
+      .ok_or("lookup count reaches field characteristic")?;
+  }
+  if degrees.next().is_some() {
+    return Err("extra trace heights".into());
+  }
+  Ok(())
 }

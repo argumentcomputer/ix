@@ -1,44 +1,47 @@
-//! Untrusted witness preparation for the fixed verifier. Decompression and
-//! native arithmetic here supply hints only; all openings, paths, challenges,
-//! and folds are independently constrained by the verifier circuit.
+//! Untrusted witness preparation for the fixed Protocol v6 (`F_p^3`) verifier.
+//! Decompression and native arithmetic here supply hints only; all openings,
+//! paths, challenges, and folds are independently constrained by the verifier
+//! circuit.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use p3_blake3::Blake3;
 use p3_challenger::{
   CanObserve, CanSampleBits, FieldChallenger, GrindingChallenger,
 };
 use p3_field::{
   BasedVectorSpace, Field, PrimeCharacteristicRing, PrimeField64, TwoAdicField,
 };
-use p3_symmetric::CryptographicHasher;
 use p3_util::reverse_bits_len;
 
+use super::Blake3Domain;
+use super::CubicValue;
 use super::FixedPcsShape;
 use super::FixedVerifierInputs;
-use super::QuadraticValue;
 use multi_stark::config::StarkGenericConfig;
+use multi_stark::p3_adapter::challenger::DomainChallenger;
+use multi_stark::p3_adapter::fri_batching::{
+  FriBatching, tensor_num_challenges, tensor_weights,
+};
 use multi_stark::plonkish::Witness;
 use multi_stark::prover::Proof;
 use multi_stark::prover::observe_claims;
 use multi_stark::prover::sample_lookup_challenges;
-use multi_stark::system::System;
-use multi_stark::types::ExtVal;
-use multi_stark::types::GoldilocksBlake3Config;
-use multi_stark::types::Val;
+use multi_stark::system::{System, compute_vk_digest};
+use multi_stark::types::{ExtVal3, GoldilocksBlake3V6Config, Val};
 
 type Digest = [u8; 32];
 type Path = Vec<Digest>;
 
 #[derive(Clone)]
 pub struct ExpandedPcsWitness {
-  pub proof: Proof<GoldilocksBlake3Config>,
+  pub proof: Proof<GoldilocksBlake3V6Config>,
   pub claims: Vec<Vec<Val>>,
-  pub challenges: [ExtVal; 4],
+  pub challenges: [ExtVal3; 4],
   /// Native diagnostic values only; the circuit derives its own PCS
   /// challenges and indices, and `assign` does not assign these fields.
-  pub pcs_alpha: ExtVal,
-  pub fri_betas: Vec<ExtVal>,
+  pub pcs_col_challenges: Vec<ExtVal3>,
+  pub pcs_open_challenges: Vec<ExtVal3>,
+  pub fri_betas: Vec<ExtVal3>,
   pub query_indices: Vec<usize>,
   /// Query-major, then the four input batches.
   pub input_paths: Vec<[Path; 4]>,
@@ -48,7 +51,7 @@ pub struct ExpandedPcsWitness {
 
 fn validate(
   shape: &FixedPcsShape,
-  proof: &Proof<GoldilocksBlake3Config>,
+  proof: &Proof<GoldilocksBlake3V6Config>,
 ) -> Result<(), String> {
   let matrices = shape.widths[0].len();
   let rounds = usize::from(shape.log_trace);
@@ -118,10 +121,10 @@ fn validate(
 }
 
 fn native_rows(
-  proof: &Proof<GoldilocksBlake3Config>,
+  proof: &Proof<GoldilocksBlake3V6Config>,
   batch: usize,
   matrix: usize,
-) -> Option<&[Vec<ExtVal>]> {
+) -> Option<&[Vec<ExtVal3>]> {
   let matrices = match batch {
     0 => &proof.stage_1_opened_values,
     1 => &proof.stage_2_opened_values,
@@ -133,9 +136,18 @@ fn native_rows(
 }
 
 fn hash_fields(values: impl IntoIterator<Item = Val>) -> Digest {
-  Blake3.hash_iter(
-    values.into_iter().flat_map(|v| v.as_canonical_u64().to_le_bytes()),
-  )
+  let bytes: Vec<u8> = values
+    .into_iter()
+    .flat_map(|v| v.as_canonical_u64().to_le_bytes())
+    .collect();
+  Blake3Domain::MerkleLeaf.hash_bytes(&bytes)
+}
+
+fn compress_pair(left: Digest, right: Digest) -> Digest {
+  let mut block = [0u8; 64];
+  block[..32].copy_from_slice(&left);
+  block[32..].copy_from_slice(&right);
+  Blake3Domain::MerkleCompress.hash_bytes(&block)
 }
 
 /// Expand the native binary frontier wire order. Shared children are
@@ -176,7 +188,7 @@ fn expand_paths(
       }
       let left = current[&(2 * parent)];
       let right = current[&(2 * parent + 1)];
-      next.insert(parent, Blake3.hash_iter(left.into_iter().chain(right)));
+      next.insert(parent, compress_pair(left, right));
     }
     if let Some(rows) = injections.get(&(log_height - level - 1)) {
       let mut seen = BTreeMap::new();
@@ -188,7 +200,7 @@ fn expand_paths(
           }
         } else {
           let digest = next.get_mut(&parent).unwrap();
-          *digest = Blake3.hash_iter(digest.iter().copied().chain(row));
+          *digest = compress_pair(*digest, row);
         }
       }
     }
@@ -216,11 +228,17 @@ fn expand_paths(
 /// Invalid algebra/Merkle data may still produce an assignment; the circuit
 /// must reject it. Malformed dimensions/frontiers return an error here.
 pub fn expand_pcs_witness(
-  system: &System<GoldilocksBlake3Config>,
+  system: &System<GoldilocksBlake3V6Config>,
   shape: &FixedPcsShape,
-  proof: &Proof<GoldilocksBlake3Config>,
+  proof: &Proof<GoldilocksBlake3V6Config>,
   claims: &[&[Val]],
 ) -> Result<ExpandedPcsWitness, String> {
+  if system.config.fri_batching() != FriBatching::Tensor {
+    return Err("Protocol v6 verifier requires FriBatching::Tensor".into());
+  }
+  if system.vk_digest != compute_vk_digest::<Val, ExtVal3>(&system.circuits) {
+    return Err("system vk_digest mismatch".into());
+  }
   system
     .verify_shape(proof)
     .map_err(|e| format!("invalid native proof shape: {e:?}"))?;
@@ -237,23 +255,29 @@ pub fn expand_pcs_witness(
   for &height in &proof.log_degrees {
     challenger.observe(Val::from_u8(height));
   }
-  observe_claims::<GoldilocksBlake3Config>(&mut challenger, claims);
+  observe_claims::<GoldilocksBlake3V6Config>(&mut challenger, claims);
   let (beta, gamma) =
-    sample_lookup_challenges::<GoldilocksBlake3Config>(&mut challenger);
+    sample_lookup_challenges::<GoldilocksBlake3V6Config>(&mut challenger);
   expand_after_lookup(system, shape, proof, claims, challenger, beta, gamma)
 }
 
 /// Shared untrusted PCS normalization after the caller replays its protocol's
 /// lookup transcript. Both single-proof and batch transcripts use this path.
 pub(super) fn expand_after_lookup(
-  system: &System<GoldilocksBlake3Config>,
+  system: &System<GoldilocksBlake3V6Config>,
   shape: &FixedPcsShape,
-  proof: &Proof<GoldilocksBlake3Config>,
+  proof: &Proof<GoldilocksBlake3V6Config>,
   claims: &[&[Val]],
-  mut challenger: multi_stark::types::Challenger,
-  beta: ExtVal,
-  gamma: ExtVal,
+  mut challenger: DomainChallenger<ExtVal3>,
+  beta: ExtVal3,
+  gamma: ExtVal3,
 ) -> Result<ExpandedPcsWitness, String> {
+  if system.config.fri_batching() != FriBatching::Tensor {
+    return Err("Protocol v6 verifier requires FriBatching::Tensor".into());
+  }
+  if system.vk_digest != compute_vk_digest::<Val, ExtVal3>(&system.circuits) {
+    return Err("system vk_digest mismatch".into());
+  }
   system
     .verify_shape(proof)
     .map_err(|e| format!("invalid proof shape: {e:?}"))?;
@@ -264,7 +288,7 @@ pub(super) fn expand_after_lookup(
   }
   let alpha = challenger.sample_algebra_element();
   challenger.observe(proof.commitments.quotient_chunks.clone());
-  let zeta: ExtVal = challenger.sample_algebra_element();
+  let zeta: ExtVal3 = challenger.sample_algebra_element();
   for batch in 0..4 {
     for matrix in 0..shape.widths[batch].len() {
       for row in native_rows(proof, batch, matrix).unwrap() {
@@ -272,9 +296,19 @@ pub(super) fn expand_after_lookup(
       }
     }
   }
-  let pcs_alpha: ExtVal = challenger.sample_algebra_element();
+  let (max_width, max_openings_per_height) = shape.tensor_dimensions();
+  let k_col = tensor_num_challenges(max_width);
+  let pcs_col_challenges: Vec<ExtVal3> =
+    (0..k_col).map(|_| challenger.sample_algebra_element()).collect();
+  let k_open = tensor_num_challenges(max_openings_per_height);
+  let pcs_open_challenges: Vec<ExtVal3> =
+    (0..k_open).map(|_| challenger.sample_algebra_element()).collect();
+  let col_weights = tensor_weights(&pcs_col_challenges, max_width);
+  let open_weights =
+    tensor_weights(&pcs_open_challenges, max_openings_per_height);
+
   let p = &proof.opening_proof;
-  let fri_betas: Vec<ExtVal> = p
+  let fri_betas: Vec<ExtVal3> = p
     .commit_phase_commits
     .iter()
     .zip(&p.commit_pow_witnesses)
@@ -330,7 +364,8 @@ pub(super) fn expand_after_lookup(
   let mut folded = Vec::new();
   let mut reductions = Vec::new();
   for (query, &index) in query_indices.iter().enumerate() {
-    let mut reduced_by_height = BTreeMap::new();
+    let mut reduced_by_height: BTreeMap<usize, (usize, ExtVal3)> =
+      BTreeMap::new();
     for batch in 0..4 {
       for (matrix, row) in
         p.input_openings[batch].opened_values[query].iter().enumerate()
@@ -352,16 +387,20 @@ pub(super) fn expand_after_lookup(
             (z - x).try_inverse().ok_or("opening point equals query point")
           })
           .collect::<Result<_, _>>()?;
-        let (power, reduced) = reduced_by_height
-          .entry(height)
-          .or_insert((ExtVal::ONE, ExtVal::ZERO));
+        let (opening_idx, reduced) =
+          reduced_by_height.entry(height).or_insert((0usize, ExtVal3::ZERO));
         for (point, opened) in
           native_rows(proof, batch, matrix).unwrap().iter().enumerate()
         {
-          for (&at_x, &at_z) in row.iter().zip(opened) {
-            *reduced += *power * (at_z - at_x) * denominators[point];
-            *power *= pcs_alpha;
+          let mut col_acc = ExtVal3::ZERO;
+          for ((&w_col, &at_x), &at_z) in
+            col_weights.iter().zip(row.iter()).zip(opened.iter())
+          {
+            col_acc += w_col * (at_z - at_x);
           }
+          let w_open = open_weights[*opening_idx];
+          *opening_idx += 1;
+          *reduced += w_open * col_acc * denominators[point];
         }
       }
     }
@@ -384,7 +423,7 @@ pub(super) fn expand_after_lookup(
         pair
           .iter()
           .flat_map(
-            <ExtVal as BasedVectorSpace<Val>>::as_basis_coefficients_slice,
+            <ExtVal3 as BasedVectorSpace<Val>>::as_basis_coefficients_slice,
           )
           .copied(),
       ));
@@ -412,7 +451,8 @@ pub(super) fn expand_after_lookup(
     proof: proof.clone(),
     claims: claims.iter().map(|c| c.to_vec()).collect(),
     challenges: [beta, gamma, alpha, zeta],
-    pcs_alpha,
+    pcs_col_challenges,
+    pcs_open_challenges,
     fri_betas,
     query_indices,
     input_paths,
@@ -450,11 +490,11 @@ impl ExpandedPcsWitness {
       |wire, value| witness.set(wire, value).map_err(|e| e.to_string());
     fn extension(
       set: &mut impl FnMut(multi_stark::plonkish::Value, Val) -> Result<(), String>,
-      wire: QuadraticValue,
-      value: ExtVal,
+      wire: CubicValue,
+      value: ExtVal3,
     ) -> Result<(), String> {
       for (wire, &value) in wire.0.into_iter().zip(
-        <ExtVal as BasedVectorSpace<Val>>::as_basis_coefficients_slice(&value),
+        <ExtVal3 as BasedVectorSpace<Val>>::as_basis_coefficients_slice(&value),
       ) {
         set(wire, value)?;
       }

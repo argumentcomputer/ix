@@ -30,8 +30,8 @@ fn fixture() -> (CheckedProgram, TraceArtifact) {
 
 fn parameters() -> Parameters {
   Parameters {
-    log_blowup: 1,
-    num_queries: 220,
+    log_blowup: 2,
+    num_queries: 135,
     commit_proof_of_work_bits: 0,
     query_proof_of_work_bits: 0,
   }

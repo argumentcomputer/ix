@@ -23,12 +23,15 @@ public section
 
 namespace Aiur.FriSecurity
 
-/-- The degree-2 Goldilocks extension: about 128 bits (default when `extensionDegree = 2`). -/
-def fieldBits : Float := 128
+/-- The degree-3 Goldilocks extension: about 192 bits (default when `extensionDegree = 3`). -/
+def fieldBits : Float := 192
 /-- Field bit-width for a degree-`extensionDegree` Goldilocks extension (`64 * extensionDegree`). -/
 def fieldBitsFor (extensionDegree : Nat) : Float := 64.0 * Float.ofNat (max extensionDegree 1)
-/-- BLAKE3 collision resistance. -/
+/-- BLAKE3 collision resistance (default 32-byte digest: 128 bits). -/
 def collisionBits : Float := 128
+/-- Collision resistance in bits for a BLAKE3 / BLAKE3-XOF digest of `digestBytes` bytes
+(`4 * digestBytes`: `128` for 32B, `192` for 48B XOF). -/
+def collisionBitsFor (digestBytes : Nat) : Float := 4.0 * Float.ofNat digestBytes
 
 /-- One circuit of an instance, as the statistics JSON gives it. -/
 structure Circuit where
@@ -50,7 +53,8 @@ structure Parameters where
   queryPow : Nat
   commitPow : Nat
   logArity : Nat
-  extensionDegree : Nat := 2
+  extensionDegree : Nat := 3
+  digestBytes : Nat := 32
   deriving Inhabited
 
 /-- The parameters every Aiur proof uses (`Aiur.defaultFriParameters`). -/
@@ -60,7 +64,8 @@ def Parameters.default : Parameters where
   queryPow := defaultFriParameters.queryProofOfWorkBits
   commitPow := defaultFriParameters.commitProofOfWorkBits
   logArity := defaultFriParameters.maxLogArity
-  extensionDegree := 2
+  extensionDegree := 3
+  digestBytes := 32
 
 /-- `log_blowup · queries + query_pow`, the ethSTARK conjecture's metric. -/
 def Parameters.conjecturedBits (p : Parameters) : Nat :=
@@ -110,7 +115,8 @@ def Key.fromJson? (j : Json) : Except String Key := do
       logBlowup := ← j.getObjValAs? Nat "log_blowup", queries := ← j.getObjValAs? Nat "num_queries"
       queryPow := ← j.getObjValAs? Nat "query_pow", commitPow := ← j.getObjValAs? Nat "commit_pow"
       logArity := ← j.getObjValAs? Nat "max_log_arity"
-      extensionDegree := (j.getObjValAs? Nat "extension_degree").toOption.getD 2 }
+      extensionDegree := (j.getObjValAs? Nat "extension_degree").toOption.getD 3
+      digestBytes := (j.getObjValAs? Nat "digest_bytes").toOption.getD 32 }
     circuits
     shards := (j.getObjValAs? Nat "shards").toOption
     proofBytes := (j.getObjValAs? Nat "proof_bytes").toOption }
@@ -145,7 +151,7 @@ def Instance.effectiveClaimRefs (inst : Instance) : Nat :=
 def Instance.effectiveQuotient (inst : Instance) : Nat :=
   inst.maxQuotient.getD (2 ^ bitLength (max inst.maxDegree 2 - 2))
 
-def instanceOf (circuits : Array Circuit) (extensionDegree : Nat := 2) : Instance where
+def instanceOf (circuits : Array Circuit) (extensionDegree : Nat := 3) : Instance where
   logTrace := (circuits.foldl (fun m (c : Circuit) => max m c.height) 0).log2
   columns := circuits.foldl
     (fun s (c : Circuit) => s + c.main + c.pre + c.stage2 + extensionDegree * c.quotient) 0
@@ -220,6 +226,7 @@ def Regime.limit (r : Regime) : String × Float :=
 4. `conjectured (2025/2010)`: ethSTARK / proximity-gap conjecture. -/
 def terms (inst : Instance) (p : Parameters) : Array Regime := Id.run do
   let F := fieldBitsFor p.extensionDegree
+  let colBits := collisionBitsFor p.digestBytes
   let lt := nat inst.logTrace
   let lb := nat p.logBlowup
   let n := pow2 (lt + lb)
@@ -252,11 +259,11 @@ def terms (inst : Instance) (p : Parameters) : Array Regime := Id.run do
     { name := "CertiFRI proven UD"
       terms := #[("ALI", ali), ("DEEP", certDeep), ("lookup", certLookup),
         ("batching", certBatch), ("commit", certCommit),
-        ("query", certQuery), ("collision", collisionBits)] },
+        ("query", certQuery), ("collision", colBits)] },
     { name := "unique decoding"
       terms := #[("ALI", ali), ("DEEP", deep), ("lookup", lookup),
         ("batching", F - ((lt + lb) + log2 (nf - 1))), ("commit", udrCommit),
-        ("query", queryPow - queries * log2 alpha), ("collision", collisionBits)] }]
+        ("query", queryPow - queries * log2 alpha), ("collision", colBits)] }]
   for (label, lineCount) in [("Johnson, BCHKS25 (3152b14a)", false),
       ("Johnson, DKT26 (4615dcd)", true)] do
     let useLineCount := lineCount && inst.logTrace > 0
@@ -284,7 +291,7 @@ def terms (inst : Instance) (p : Parameters) : Array Regime := Id.run do
           ("lookup", lookup - log2 list),
           ("batching", batching), ("commit", commit),
           ("query", queryPow - queries * log2 ((1 + 0.5 / nat m) * Float.sqrt rho)),
-          ("collision", collisionBits)] }
+          ("collision", colBits)] }
       match best with
       | some (_, b) => if regime.limit.2 > b.limit.2 then best := some (m, regime)
       | none => best := some (m, regime)
@@ -294,7 +301,7 @@ def terms (inst : Instance) (p : Parameters) : Array Regime := Id.run do
   regimes := regimes.push {
     name := "conjectured (2025/2010)"
     terms := #[("ALI", ali), ("DEEP", deep), ("lookup", lookup), ("commit", udrCommit),
-      ("query", queries * (-log2 (rho + eta)) + queryPow), ("collision", collisionBits)] }
+      ("query", queries * (-log2 (rho + eta)) + queryPow), ("collision", colBits)] }
   return regimes
 
 /-- `x` to two decimals. -/
@@ -329,6 +336,48 @@ def report (source : String) (inst : Instance) (p : Parameters) : String := Id.r
     let detail := "  ".intercalate (r.terms.toList.map fun (t, b) => s!"{t} {fmt b}")
     lines := lines.push s!"  {r.name}: {fmt bits} bits (limited by {name})   {detail}"
   return "\n".intercalate lines.toList
+
+/-- Security regime targeted by `--require-min-bits` / `--regime`. -/
+inductive RegimeKind where
+  | proven
+  | johnson
+  | conjectured
+  deriving BEq, Repr
+
+def RegimeKind.parse? : String → Option RegimeKind
+  | "proven" => some .proven
+  | "johnson" => some .johnson
+  | "conjectured" => some .conjectured
+  | _ => none
+
+def RegimeKind.label : RegimeKind → String
+  | .proven => "proven"
+  | .johnson => "johnson"
+  | .conjectured => "conjectured"
+
+/-- Conservative (weakest) security bound in bits for `kind` on `(inst, p)`.
+Returns `(regimeName, limitingTerm, bits)`. -/
+def regimeSecurity (inst : Instance) (p : Parameters) (kind : RegimeKind) :
+    String × String × Float :=
+  let rs : Array Regime := terms inst p
+  let selected : Array Regime := match kind with
+    | .proven => rs.filter fun (r : Regime) => r.name == "CertiFRI proven UD"
+    | .johnson => rs.filter fun (r : Regime) => r.name.startsWith "Johnson"
+    | .conjectured => rs.filter fun (r : Regime) => r.name.startsWith "conjectured"
+  selected.foldl (init := ("none", "none", 1.0e300)) fun best (r : Regime) =>
+    let (termName, bits) := r.limit
+    if bits < best.2.2 then (r.name, termName, bits) else best
+
+/-- Check that `(inst, p)` achieves at least `minBits` in `kind`. -/
+def checkMinBits (inst : Instance) (p : Parameters) (kind : RegimeKind) (minBits : Nat) :
+    Except String (String × String × Float) :=
+  let (rName, termName, bits) := regimeSecurity inst p kind
+  if rName == "none" then
+    .error s!"no matching regime for '{kind.label}'"
+  else if bits ≥ Float.ofNat minBits then
+    .ok (rName, termName, bits)
+  else
+    .error s!"regime '{kind.label}' ({rName}) yields {fmt bits} bits (limited by {termName}), below required {minBits} bits"
 
 end Aiur.FriSecurity
 

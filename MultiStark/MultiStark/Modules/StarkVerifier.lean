@@ -12,7 +12,7 @@ namespace MultiStark.Source
 def starkVerifier : Aiur.Modules.Program Nat := aiur⟦
 module StarkVerifier {
   inline fn ext_is_zero(e: ProofDeserialize::Ext) -> Field {
-      Goldilocks::gl_is_zero(e[0]) * Goldilocks::gl_is_zero(e[1])
+      Goldilocks::gl_is_zero(e[0]) * Goldilocks::gl_is_zero(e[1]) * Goldilocks::gl_is_zero(e[2])
     }
 
   fn b8_onto(b: [UInt8::U8; 8], tail: Bytes::Stream) -> Bytes::Stream {
@@ -77,7 +77,10 @@ module StarkVerifier {
   fn accs_onto(accs: Lists::List<ProofDeserialize::Ext>, tail: Bytes::Stream) -> Bytes::Stream {
       match (*(accs)) {
         Lists::Node::Nil => {  tail } ,
-        Lists::Node::Cons(e, rest) => {  b8_onto(Goldilocks::gl_to_bytes(e[0]), b8_onto(Goldilocks::gl_to_bytes(e[1]), accs_onto(rest, tail))) } ,
+        Lists::Node::Cons(e, rest) => {
+          b8_onto(Goldilocks::gl_to_bytes(e[0]),
+            b8_onto(Goldilocks::gl_to_bytes(e[1]),
+              b8_onto(Goldilocks::gl_to_bytes(e[2]), accs_onto(rest, tail)))) } ,
       }
     }
 
@@ -86,7 +89,7 @@ module StarkVerifier {
       (&(Lists::Node::Cons(UInt8::BYTE_116, (&(Lists::Node::Cons(UInt8::BYTE_105, (&(Lists::Node::Cons(UInt8::BYTE_45,
       (&(Lists::Node::Cons(UInt8::BYTE_115, (&(Lists::Node::Cons(UInt8::BYTE_116, (&(Lists::Node::Cons(UInt8::BYTE_97,
       (&(Lists::Node::Cons(UInt8::BYTE_114, (&(Lists::Node::Cons(UInt8::BYTE_107, (&(Lists::Node::Cons(UInt8::BYTE_47,
-      (&(Lists::Node::Cons(UInt8::BYTE_118, (&(Lists::Node::Cons(UInt8::BYTE_48,
+      (&(Lists::Node::Cons(UInt8::BYTE_118, (&(Lists::Node::Cons(UInt8::BYTE_54,
       tail))))))))))))))))))))))))))))))))))))))))))
     }
 
@@ -116,7 +119,7 @@ module StarkVerifier {
   fn ext_exp_pow2(e: ProofDeserialize::Ext, k: Field) -> ProofDeserialize::Ext {
       match k {
         0 => {  e } ,
-        _ => {  ext_exp_pow2(Goldilocks::eg_mul(e, e), k - 1) } ,
+        _ => {  ext_exp_pow2(Pcs::eg3_mul(e, e), k - 1) } ,
       }
     }
 
@@ -131,7 +134,7 @@ module StarkVerifier {
     }
 
   inline fn trace_vanishing(zeta: ProofDeserialize::Ext, l: Field) -> ProofDeserialize::Ext {
-      Goldilocks::eg_sub(ext_exp_pow2(zeta, l), [1, 0])
+      Pcs::eg3_sub(ext_exp_pow2(zeta, l), [1, 0, 0])
     }
 
   fn pow2(l: Field) -> Field {
@@ -143,22 +146,25 @@ module StarkVerifier {
 
   inline fn trace_selectors(zeta: ProofDeserialize::Ext, l: Field) -> (ProofDeserialize::Ext, ProofDeserialize::Ext, ProofDeserialize::Ext, ProofDeserialize::Ext, Goldilocks::Goldilocks, ProofDeserialize::Ext) {
       let zeta_pow_n = ext_exp_pow2(zeta, l);
-      let zh = Goldilocks::eg_sub(zeta_pow_n, [1, 0]);
+      let zh = Pcs::eg3_sub(zeta_pow_n, [1, 0, 0]);
       let g = two_adic_gen(l);
       let ginv = Goldilocks::gl_inv_nonzero(g);
-      let is_first = Goldilocks::eg_div_nonzero(zh, Goldilocks::eg_sub(zeta, [1, 0]));
-      let is_last = Goldilocks::eg_div_nonzero(zh, Goldilocks::eg_sub(zeta, [ginv, 0]));
-      let is_trans = Goldilocks::eg_sub(zeta, [ginv, 0]);
-      let inv_van = Goldilocks::eg_inv_nonzero(zh);
+      let is_first = Pcs::eg3_div_nonzero(zh, Pcs::eg3_sub(zeta, [1, 0, 0]));
+      let is_last = Pcs::eg3_div_nonzero(zh, Pcs::eg3_sub(zeta, [ginv, 0, 0]));
+      let is_trans = Pcs::eg3_sub(zeta, [ginv, 0, 0]);
+      let inv_van = Pcs::eg3_inv_nonzero(zh);
       (is_first, is_last, is_trans, inv_van, g, zeta_pow_n)
     }
 
   fn ood_fold(acc: ProofDeserialize::Ext, alpha: ProofDeserialize::Ext, x: ProofDeserialize::Ext) -> ProofDeserialize::Ext {
-      Goldilocks::eg_add(Goldilocks::eg_mul(acc, alpha), x)
+      Pcs::eg3_add(Pcs::eg3_mul(acc, alpha), x)
     }
 
-  fn from_ext_basis(c0: ProofDeserialize::Ext, c1: ProofDeserialize::Ext) -> ProofDeserialize::Ext {
-      Goldilocks::eg_add(c0, Goldilocks::eg_mul(c1, [0, 1]))
+  -- Reassemble `c0 + c1*X + c2*X^2` in $\mathbb{F}_p[X]/(X^3 - X - 1)$ (`X^3 = 1 + X`, `X^4 = X + X^2`).
+  fn from_ext_basis(c0: ProofDeserialize::Ext, c1: ProofDeserialize::Ext, c2: ProofDeserialize::Ext) -> ProofDeserialize::Ext {
+      [Goldilocks::gl_add(Goldilocks::gl_add(c0[0], c1[2]), c2[1]),
+       Goldilocks::gl_add(Goldilocks::gl_add(Goldilocks::gl_add(Goldilocks::gl_add(c0[1], c1[0]), c1[2]), c2[1]), c2[2]),
+       Goldilocks::gl_add(Goldilocks::gl_add(Goldilocks::gl_add(c0[2], c1[1]), c2[0]), c2[2])]
     }
 
   fn reconstruct_ext_row(raw: Lists::List<ProofDeserialize::Ext>) -> Lists::List<ProofDeserialize::Ext> {
@@ -166,7 +172,8 @@ module StarkVerifier {
         Lists::Node::Nil => {  (&(Lists::Node::Nil)) } ,
         Lists::Node::Cons(c0, t1) => {
           let Lists::Node::Cons(c1, t2) = (*(t1));
-          (&(Lists::Node::Cons(from_ext_basis(c0, c1), reconstruct_ext_row(t2)))) } ,
+          let Lists::Node::Cons(c2, t3) = (*(t2));
+          (&(Lists::Node::Cons(from_ext_basis(c0, c1, c2), reconstruct_ext_row(t3)))) } ,
       }
     }
 
@@ -176,7 +183,7 @@ module StarkVerifier {
         isf: ProofDeserialize::Ext, isl: ProofDeserialize::Ext, ist: ProofDeserialize::Ext) -> ProofDeserialize::Ext {
       let nd = Lists::lookup(nodes, i);
       match nd {
-        SystemDeserialize::SysNode::Const(c) => {  [c, 0] } ,
+        SystemDeserialize::SysNode::Const(c) => {  [c, 0, 0] } ,
         SystemDeserialize::SysNode::Var(src, off, idx) => {
 
           let sel = src + src + off;
@@ -193,16 +200,16 @@ module StarkVerifier {
         SystemDeserialize::SysNode::IsLastRow => {  isl } ,
         SystemDeserialize::SysNode::IsTransition => {  ist } ,
         SystemDeserialize::SysNode::Add(a, b) => {
-          Goldilocks::eg_add(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
+          Pcs::eg3_add(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
                  eval_at(nodes, b, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist)) } ,
         SystemDeserialize::SysNode::Sub(a, b) => {
-          Goldilocks::eg_sub(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
+          Pcs::eg3_sub(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
                  eval_at(nodes, b, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist)) } ,
         SystemDeserialize::SysNode::Mul(a, b) => {
-          Goldilocks::eg_mul(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
+          Pcs::eg3_mul(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
                  eval_at(nodes, b, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist)) } ,
         SystemDeserialize::SysNode::Neg(a) => {
-          Goldilocks::eg_neg(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist)) } ,
+          Pcs::eg3_neg(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist)) } ,
       }
     }
 
@@ -219,30 +226,44 @@ module StarkVerifier {
       }
     }
 
-  fn pair_mul(a0: ProofDeserialize::Ext, a1: ProofDeserialize::Ext, b0: ProofDeserialize::Ext, b1: ProofDeserialize::Ext) -> (ProofDeserialize::Ext, ProofDeserialize::Ext) {
-      (Goldilocks::eg_add(Goldilocks::eg_mul(a0, b0), Goldilocks::eg_mul([7, 0], Goldilocks::eg_mul(a1, b1))),
-       Goldilocks::eg_add(Goldilocks::eg_mul(a0, b1), Goldilocks::eg_mul(a1, b0)))
+  -- Coordinate-wise multiplication in `Ext3[Y] / (Y^3 - Y - 1)` via Karatsuba (6 `eg3_mul`s).
+  fn triple_mul(a0: ProofDeserialize::Ext, a1: ProofDeserialize::Ext, a2: ProofDeserialize::Ext,
+        b0: ProofDeserialize::Ext, b1: ProofDeserialize::Ext, b2: ProofDeserialize::Ext)
+        -> (ProofDeserialize::Ext, ProofDeserialize::Ext, ProofDeserialize::Ext) {
+      let v0 = Pcs::eg3_mul(a0, b0);
+      let v1 = Pcs::eg3_mul(a1, b1);
+      let v2 = Pcs::eg3_mul(a2, b2);
+      let m01 = Pcs::eg3_sub(Pcs::eg3_sub(Pcs::eg3_mul(Pcs::eg3_add(a0, a1), Pcs::eg3_add(b0, b1)), v0), v1);
+      let m02 = Pcs::eg3_sub(Pcs::eg3_sub(Pcs::eg3_mul(Pcs::eg3_add(a0, a2), Pcs::eg3_add(b0, b2)), v0), v2);
+      let m12 = Pcs::eg3_sub(Pcs::eg3_sub(Pcs::eg3_mul(Pcs::eg3_add(a1, a2), Pcs::eg3_add(b1, b2)), v1), v2);
+      (Pcs::eg3_add(v0, m12),
+       Pcs::eg3_add(Pcs::eg3_add(m01, m12), v2),
+       Pcs::eg3_add(Pcs::eg3_add(m02, v1), v2))
     }
 
-  fn logup_fingerprint(args: Lists::List<Field>, g0: ProofDeserialize::Ext, g1: ProofDeserialize::Ext, nodes: Lists::List<SystemDeserialize::SysNode>,
+  fn logup_fingerprint(args: Lists::List<Field>, g0: ProofDeserialize::Ext, g1: ProofDeserialize::Ext, g2: ProofDeserialize::Ext, nodes: Lists::List<SystemDeserialize::SysNode>,
         main: Lists::List<ProofDeserialize::Ext>, main_next: Lists::List<ProofDeserialize::Ext>, prep: Lists::List<ProofDeserialize::Ext>, prep_next: Lists::List<ProofDeserialize::Ext>,
         s2: Lists::List<ProofDeserialize::Ext>, s2next: Lists::List<ProofDeserialize::Ext>, publics: Lists::List<ProofDeserialize::Ext>,
-        isf: ProofDeserialize::Ext, isl: ProofDeserialize::Ext, ist: ProofDeserialize::Ext) -> (ProofDeserialize::Ext, ProofDeserialize::Ext) {
+        isf: ProofDeserialize::Ext, isl: ProofDeserialize::Ext, ist: ProofDeserialize::Ext) -> (ProofDeserialize::Ext, ProofDeserialize::Ext, ProofDeserialize::Ext) {
       match (*(args)) {
-        Lists::Node::Nil => {  ([0, 0], [0, 0]) } ,
+        Lists::Node::Nil => {  ([0, 0, 0], [0, 0, 0], [0, 0, 0]) } ,
         Lists::Node::Cons(a, rest) => {
-          let (f0, f1) = logup_fingerprint(rest, g0, g1, nodes,
+          let (f0, f1, f2) = logup_fingerprint(rest, g0, g1, g2, nodes,
             main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
-          let (m0, m1) = pair_mul(f0, f1, g0, g1);
+          let (m0, m1, m2) = triple_mul(f0, f1, f2, g0, g1, g2);
           let av = eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next,
                            publics, isf, isl, ist);
-          (Goldilocks::eg_add(m0, av), m1) } ,
+          (Pcs::eg3_add(m0, av), m1, m2) } ,
       }
     }
 
   fn logup_steps_fold(acc: ProofDeserialize::Ext, alpha: ProofDeserialize::Ext, lks: Lists::List<SystemDeserialize::SysLookup>, j: Field, lcount: Field,
-        g: Field, rem: Field, k: Field, p0: ProofDeserialize::Ext, p1: ProofDeserialize::Ext, r0: ProofDeserialize::Ext, r1: ProofDeserialize::Ext,
-        inj0: ProofDeserialize::Ext, inj1: ProofDeserialize::Ext, b0: ProofDeserialize::Ext, b1: ProofDeserialize::Ext, g0: ProofDeserialize::Ext, g1: ProofDeserialize::Ext,
+        g: Field, rem: Field, k: Field,
+        p0: ProofDeserialize::Ext, p1: ProofDeserialize::Ext, p2: ProofDeserialize::Ext,
+        r0: ProofDeserialize::Ext, r1: ProofDeserialize::Ext, r2: ProofDeserialize::Ext,
+        inj0: ProofDeserialize::Ext, inj1: ProofDeserialize::Ext, inj2: ProofDeserialize::Ext,
+        b0: ProofDeserialize::Ext, b1: ProofDeserialize::Ext, b2: ProofDeserialize::Ext,
+        g0: ProofDeserialize::Ext, g1: ProofDeserialize::Ext, g2: ProofDeserialize::Ext,
         nodes: Lists::List<SystemDeserialize::SysNode>,
         main: Lists::List<ProofDeserialize::Ext>, main_next: Lists::List<ProofDeserialize::Ext>, prep: Lists::List<ProofDeserialize::Ext>, prep_next: Lists::List<ProofDeserialize::Ext>,
         s2: Lists::List<ProofDeserialize::Ext>, s2next: Lists::List<ProofDeserialize::Ext>, publics: Lists::List<ProofDeserialize::Ext>,
@@ -251,45 +272,50 @@ module StarkVerifier {
         Lists::Node::Nil => {  acc } ,
         Lists::Node::Cons(lk, rest) => {
           let SystemDeserialize::SysLookup::Mk(mid, args) = lk;
-          let (f0, f1) = logup_fingerprint(args, g0, g1, nodes,
+          let (f0, f1, f2) = logup_fingerprint(args, g0, g1, g2, nodes,
             main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
-          let m0 = Goldilocks::eg_add(f0, b0);
-          let m1 = Goldilocks::eg_add(f1, b1);
+          let m0 = Pcs::eg3_add(f0, b0);
+          let m1 = Pcs::eg3_add(f1, b1);
+          let m2 = Pcs::eg3_add(f2, b2);
           let mv = eval_at(nodes, mid, main, main_next, prep, prep_next, s2, s2next,
                            publics, isf, isl, ist);
 
-          let (rm0, rm1) = pair_mul(r0, r1, m0, m1);
-          let nr0 = Goldilocks::eg_add(rm0, Goldilocks::eg_mul(mv, p0));
-          let nr1 = Goldilocks::eg_add(rm1, Goldilocks::eg_mul(mv, p1));
-          let (np0, np1) = pair_mul(p0, p1, m0, m1);
+          let (rm0, rm1, rm2) = triple_mul(r0, r1, r2, m0, m1, m2);
+          let nr0 = Pcs::eg3_add(rm0, Pcs::eg3_mul(mv, p0));
+          let nr1 = Pcs::eg3_add(rm1, Pcs::eg3_mul(mv, p1));
+          let nr2 = Pcs::eg3_add(rm2, Pcs::eg3_mul(mv, p2));
+          let (np0, np1, np2) = triple_mul(p0, p1, p2, m0, m1, m2);
           match (j + 1 - lcount) {
             0 => {
-
-              let s0 = Lists::lookup(s2, g + g);
-              let s1 = Lists::lookup(s2, g + g + 1);
-              let t0 = Goldilocks::eg_add(Lists::lookup(s2next, 0), inj0);
-              let t1 = Goldilocks::eg_add(Lists::lookup(s2next, 1), inj1);
-              let (c0, c1) = pair_mul(np0, np1, Goldilocks::eg_sub(t0, s0), Goldilocks::eg_sub(t1, s1));
-              ood_fold(ood_fold(acc, alpha, Goldilocks::eg_sub(c0, nr0)), alpha, Goldilocks::eg_sub(c1, nr1)) } ,
+              let g3 = g + g + g;
+              let s0 = Lists::lookup(s2, g3);
+              let s1 = Lists::lookup(s2, g3 + 1);
+              let s2v = Lists::lookup(s2, g3 + 2);
+              let t0 = Pcs::eg3_add(Lists::lookup(s2next, 0), inj0);
+              let t1 = Pcs::eg3_add(Lists::lookup(s2next, 1), inj1);
+              let t2 = Pcs::eg3_add(Lists::lookup(s2next, 2), inj2);
+              let (c0, c1, c2) = triple_mul(np0, np1, np2, Pcs::eg3_sub(t0, s0), Pcs::eg3_sub(t1, s1), Pcs::eg3_sub(t2, s2v));
+              ood_fold(ood_fold(ood_fold(acc, alpha, Pcs::eg3_sub(c0, nr0)), alpha, Pcs::eg3_sub(c1, nr1)), alpha, Pcs::eg3_sub(c2, nr2)) } ,
             _ => {  match rem - 1 {
               0 => {
-
-                let s0 = Lists::lookup(s2, g + g);
-                let s1 = Lists::lookup(s2, g + g + 1);
-                let t0 = Lists::lookup(s2, g + g + 2);
-                let t1 = Lists::lookup(s2, g + g + 3);
-                let (c0, c1) = pair_mul(np0, np1, Goldilocks::eg_sub(t0, s0), Goldilocks::eg_sub(t1, s1));
-                let acc1 = ood_fold(ood_fold(acc, alpha, Goldilocks::eg_sub(c0, nr0)), alpha,
-                                    Goldilocks::eg_sub(c1, nr1));
+                let g3 = g + g + g;
+                let s0 = Lists::lookup(s2, g3);
+                let s1 = Lists::lookup(s2, g3 + 1);
+                let s2v = Lists::lookup(s2, g3 + 2);
+                let t0 = Lists::lookup(s2, g3 + 3);
+                let t1 = Lists::lookup(s2, g3 + 4);
+                let t2 = Lists::lookup(s2, g3 + 5);
+                let (c0, c1, c2) = triple_mul(np0, np1, np2, Pcs::eg3_sub(t0, s0), Pcs::eg3_sub(t1, s1), Pcs::eg3_sub(t2, s2v));
+                let acc1 = ood_fold(ood_fold(ood_fold(acc, alpha, Pcs::eg3_sub(c0, nr0)), alpha,
+                                    Pcs::eg3_sub(c1, nr1)), alpha, Pcs::eg3_sub(c2, nr2));
                 logup_steps_fold(acc1, alpha, rest, j + 1, lcount,
-                  g + 1, k, k, [1, 0], [0, 0], [0, 0], [0, 0],
-                  inj0, inj1, b0, b1, g0, g1, nodes,
+                  g + 1, k, k, [1, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0],
+                  inj0, inj1, inj2, b0, b1, b2, g0, g1, g2, nodes,
                   main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist) } ,
               _ => {
-
                 logup_steps_fold(acc, alpha, rest, j + 1, lcount,
-                  g, rem - 1, k, np0, np1, nr0, nr1,
-                  inj0, inj1, b0, b1, g0, g1, nodes,
+                  g, rem - 1, k, np0, np1, np2, nr0, nr1, nr2,
+                  inj0, inj1, inj2, b0, b1, b2, g0, g1, g2, nodes,
                   main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist) } ,
             } } ,
           } } ,
@@ -302,44 +328,47 @@ module StarkVerifier {
         s2: Lists::List<ProofDeserialize::Ext>, s2next: Lists::List<ProofDeserialize::Ext>, publics: Lists::List<ProofDeserialize::Ext>,
         lch: ProofDeserialize::Ext, fch: ProofDeserialize::Ext, accp: ProofDeserialize::Ext, naccp: ProofDeserialize::Ext,
         isf: ProofDeserialize::Ext, isl: ProofDeserialize::Ext, ist: ProofDeserialize::Ext, alpha: ProofDeserialize::Ext, inorm: Field) -> ProofDeserialize::Ext {
-      let base = fold_roots([0, 0], alpha, zeros, nodes,
+      let base = fold_roots([0, 0, 0], alpha, zeros, nodes,
                  main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
 
-      let b0 = [lch[0], 0]; let b1 = [lch[1], 0];
-      let g0 = [fch[0], 0]; let g1 = [fch[1], 0];
-      let a0 = [accp[0], 0]; let a1 = [accp[1], 0];
-      let na0 = [naccp[0], 0]; let na1 = [naccp[1], 0];
+      let b0 = [lch[0], 0, 0]; let b1 = [lch[1], 0, 0]; let b2 = [lch[2], 0, 0];
+      let g0 = [fch[0], 0, 0]; let g1 = [fch[1], 0, 0]; let g2 = [fch[2], 0, 0];
+      let a0 = [accp[0], 0, 0]; let a1 = [accp[1], 0, 0]; let a2 = [accp[2], 0, 0];
+      let na0 = [naccp[0], 0, 0]; let na1 = [naccp[1], 0, 0]; let na2 = [naccp[2], 0, 0];
 
-      let inj0 = Goldilocks::eg_mul(isl, Goldilocks::eg_mul(Goldilocks::eg_sub(na0, a0), [inorm, 0]));
-      let inj1 = Goldilocks::eg_mul(isl, Goldilocks::eg_mul(Goldilocks::eg_sub(na1, a1), [inorm, 0]));
+      let inj0 = Pcs::eg3_mul(isl, Pcs::eg3_mul(Pcs::eg3_sub(na0, a0), [inorm, 0, 0]));
+      let inj1 = Pcs::eg3_mul(isl, Pcs::eg3_mul(Pcs::eg3_sub(na1, a1), [inorm, 0, 0]));
+      let inj2 = Pcs::eg3_mul(isl, Pcs::eg3_mul(Pcs::eg3_sub(na2, a2), [inorm, 0, 0]));
       match (*(lks)) {
 
         Lists::Node::Nil => {
           let acc = ood_fold(base, alpha,
-            Goldilocks::eg_add(Goldilocks::eg_sub(Lists::lookup(s2next, 0), Lists::lookup(s2, 0)), inj0));
+            Pcs::eg3_add(Pcs::eg3_sub(Lists::lookup(s2next, 0), Lists::lookup(s2, 0)), inj0));
+          let acc = ood_fold(acc, alpha,
+            Pcs::eg3_add(Pcs::eg3_sub(Lists::lookup(s2next, 1), Lists::lookup(s2, 1)), inj1));
           ood_fold(acc, alpha,
-            Goldilocks::eg_add(Goldilocks::eg_sub(Lists::lookup(s2next, 1), Lists::lookup(s2, 1)), inj1)) } ,
+            Pcs::eg3_add(Pcs::eg3_sub(Lists::lookup(s2next, 2), Lists::lookup(s2, 2)), inj2)) } ,
         Lists::Node::Cons(_h, _t) => {
           logup_steps_fold(base, alpha, lks, 0, Lists::length(lks),
-            0, k, k, [1, 0], [0, 0], [0, 0], [0, 0], inj0, inj1,
-            b0, b1, g0, g1, nodes,
+            0, k, k, [1, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], inj0, inj1, inj2,
+            b0, b1, b2, g0, g1, g2, nodes,
             main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist) } ,
       }
     }
 
   inline fn build_publics(lch: ProofDeserialize::Ext, fch: ProofDeserialize::Ext, accp: ProofDeserialize::Ext, naccp: ProofDeserialize::Ext) -> Lists::List<ProofDeserialize::Ext> {
-      (&(Lists::Node::Cons([lch[0], 0], (&(Lists::Node::Cons([lch[1], 0],
-      (&(Lists::Node::Cons([fch[0], 0], (&(Lists::Node::Cons([fch[1], 0],
-      (&(Lists::Node::Cons([accp[0], 0], (&(Lists::Node::Cons([accp[1], 0],
-      (&(Lists::Node::Cons([naccp[0], 0], (&(Lists::Node::Cons([naccp[1], 0],
-      (&(Lists::Node::Nil))))))))))))))))))))))))))
+      (&(Lists::Node::Cons([lch[0], 0, 0], (&(Lists::Node::Cons([lch[1], 0, 0], (&(Lists::Node::Cons([lch[2], 0, 0],
+      (&(Lists::Node::Cons([fch[0], 0, 0], (&(Lists::Node::Cons([fch[1], 0, 0], (&(Lists::Node::Cons([fch[2], 0, 0],
+      (&(Lists::Node::Cons([accp[0], 0, 0], (&(Lists::Node::Cons([accp[1], 0, 0], (&(Lists::Node::Cons([accp[2], 0, 0],
+      (&(Lists::Node::Cons([naccp[0], 0, 0], (&(Lists::Node::Cons([naccp[1], 0, 0], (&(Lists::Node::Cons([naccp[2], 0, 0],
+      (&(Lists::Node::Nil))))))))))))))))))))))))))))))))))))))
     }
 
   fn quotient_eval(slices: Lists::List<ProofDeserialize::Ext>, zeta_pow_n: ProofDeserialize::Ext, pow: ProofDeserialize::Ext) -> ProofDeserialize::Ext {
       match (*(slices)) {
-        Lists::Node::Nil => {  [0, 0] } ,
+        Lists::Node::Nil => {  [0, 0, 0] } ,
         Lists::Node::Cons(c, rest) => {
-          Goldilocks::eg_add(Goldilocks::eg_mul(pow, c), quotient_eval(rest, zeta_pow_n, Goldilocks::eg_mul(pow, zeta_pow_n))) } ,
+          Pcs::eg3_add(Pcs::eg3_mul(pow, c), quotient_eval(rest, zeta_pow_n, Pcs::eg3_mul(pow, zeta_pow_n))) } ,
       }
     }
 
@@ -430,8 +459,8 @@ module StarkVerifier {
           let Lists::Node::Nil = (*(qmat_rest));
           let slices = reconstruct_ext_row(qrow);
           assert_eq!(Fields::is_zero(Lists::length(slices) - qd), 1);
-          let quot = quotient_eval(slices, zeta_pow_n, [1, 0]);
-          assert_eq!(Goldilocks::eg_eq(Goldilocks::eg_mul(comp, invv), quot), 1);
+          let quot = quotient_eval(slices, zeta_pow_n, [1, 0, 0]);
+          assert_eq!(Pcs::eg3_eq(Pcs::eg3_mul(comp, invv), quot), 1);
           ood_loop(rest, pi_rest, ld_rest, acc_rest, s1_rest, s2_rest, prep_opt2,
                    q_rest, naccp, lch, fch, alpha, zeta) } ,
       }
@@ -439,10 +468,10 @@ module StarkVerifier {
 
   fn fingerprint_vals(fch: ProofDeserialize::Ext, vals: Lists::List<UInt64::U64>) -> ProofDeserialize::Ext {
       match (*(vals)) {
-        Lists::Node::Nil => {  [0, 0] } ,
+        Lists::Node::Nil => {  [0, 0, 0] } ,
         Lists::Node::Cons(v, rest) => {
           assert_eq!(Goldilocks::gl_lt_p(v), 1);
-          Goldilocks::eg_add([Goldilocks::gl_val(v), 0], Goldilocks::eg_mul(fch, fingerprint_vals(fch, rest))) } ,
+          Pcs::eg3_add([Goldilocks::gl_val(v), 0, 0], Pcs::eg3_mul(fch, fingerprint_vals(fch, rest))) } ,
       }
     }
 
@@ -450,8 +479,8 @@ module StarkVerifier {
       match (*(claims)) {
         Lists::Node::Nil => {  acc } ,
         Lists::Node::Cons(c, rest) => {
-          let msg = Goldilocks::eg_add(lch, fingerprint_vals(fch, c));
-          claims_acc(Goldilocks::eg_add(acc, Goldilocks::eg_inv_nonzero(msg)), rest, lch, fch) } ,
+          let msg = Pcs::eg3_add(lch, fingerprint_vals(fch, c));
+          claims_acc(Pcs::eg3_add(acc, Pcs::eg3_inv_nonzero(msg)), rest, lch, fch) } ,
       }
     }
 
@@ -618,9 +647,9 @@ module StarkVerifier {
         Lists::Node::Nil => {  acc } ,
         Lists::Node::Cons(m, rest) => {
           let ProofDeserialize::BatchMessage::Mk(args, mult) = m;
-          let msg = Goldilocks::eg_add(lch, fingerprint_vals(fch, args));
-          let term = Goldilocks::eg_mul(Goldilocks::eg_inv_nonzero(msg), [Goldilocks::gl_val(mult), 0]);
-          messages_acc(Goldilocks::eg_add(acc, term), rest, lch, fch) } ,
+          let msg = Pcs::eg3_add(lch, fingerprint_vals(fch, args));
+          let term = Pcs::eg3_mul(Pcs::eg3_inv_nonzero(msg), [Goldilocks::gl_val(mult), 0, 0]);
+          messages_acc(Pcs::eg3_add(acc, term), rest, lch, fch) } ,
       }
     }
 
@@ -950,7 +979,7 @@ module StarkVerifier {
       };
       let (alpha, zeta, post_zeta_input) = Transcript::shard_fiat_shamir(input, shard, s2c, qc, accs);
       assert_eq!(ext_is_zero(zeta), 0);
-      let acc0 = claims_acc([0, 0], h_claims, lch, fch);
+      let acc0 = claims_acc([0, 0, 0], h_claims, lch, fch);
       let _ood = ood_loop(acirc, aprep, log_degrees, accs, stage1, stage2,
                prep_opt, q_opened, acc0, lch, fch, alpha, zeta);
       assert_eq!(Pcs::pcs_fri_verify(post_zeta_input, stage1, stage2, q_opened, prep_opt, opening,
@@ -969,7 +998,7 @@ module StarkVerifier {
         Lists::Node::Cons(h, hrest) => {
           let Lists::Node::Cons(p, prest) = (*(proofs));
           let r = verify_shard(sys, h, shard, p, input, lch, fch);
-          verify_shards(sys, hrest, prest, shard + 1, input, lch, fch, Goldilocks::eg_add(acc, r)) } ,
+          verify_shards(sys, hrest, prest, shard + 1, input, lch, fch, Pcs::eg3_add(acc, r)) } ,
       }
     }
 
@@ -992,7 +1021,7 @@ module StarkVerifier {
       assert_eq!(assert_closure_widths_ok(circuits, headers, messages), 1);
       let prep_cap = opt_commit_cap(commit);
       let (lch, fch, input) = Transcript::batch_fiat_shamir(tlimbs, prep_cap, headers, messages);
-      let acc = messages_acc([0, 0], messages, lch, fch);
+      let acc = messages_acc([0, 0, 0], messages, lch, fch);
       let total = verify_shards(sys, headers, proofs, 0, input, lch, fch, acc);
       assert_eq!(ext_is_zero(total), 1);
       batch_claims(headers)

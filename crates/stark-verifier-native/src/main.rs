@@ -133,7 +133,7 @@ fn fixture(
     p3_field::PrimeCharacteristicRing,
     p3_matrix::dense::RowMajorMatrix,
     system::{CircuitInputs, System, SystemWitness},
-    types::{CommitmentParameters, FriParameters, GoldilocksBlake3Config},
+    types::{CommitmentParameters, FriParameters, GoldilocksBlake3V6Config},
   };
   std::fs::create_dir_all(dir)?;
   let cp = CommitmentParameters { log_blowup: 1, cap_height: 0 };
@@ -159,7 +159,7 @@ fn fixture(
     )],
     ..Default::default()
   }];
-  let (system, pk) = System::new(GoldilocksBlake3Config::new(cp, fp), inputs);
+  let (system, pk) = System::new(GoldilocksBlake3V6Config::new(cp, fp), inputs);
   let rows = 1usize << log_rows;
   let mut values = Vec::with_capacity(rows * columns);
   for row in 0..rows {

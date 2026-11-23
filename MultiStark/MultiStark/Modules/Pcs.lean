@@ -2,7 +2,9 @@ import Aiur.Modules.Frontend
 
 /-! # MultiStark module `Pcs`
 
-The polynomial commitment scheme (FRI) verifier.
+The Protocol `v6` polynomial commitment scheme (FRI) verifier over
+$\mathbb{F}_{p^3} = \mathbb{F}_p[X]/(X^3 - X - 1)$ with multilinear tensor
+FRI batching (`FriBatching::Tensor`).
 
 Formal Aiur source, written as Lean syntax (`aiur⟦ … ⟧`). `MultiStark.recursionSource`
 and `MultiStark.aggregateSource` (`MultiStark/MultiStark/Program.lean`) compose the modules. -/
@@ -11,9 +13,41 @@ namespace MultiStark.Source
 
 def pcs : Aiur.Modules.Program Nat := aiur⟦
 module Pcs {
+  -- Cubic extension field $\mathbb{F}_{p^3} = \mathbb{F}_p[X] / (X^3 - X - 1)$
+  -- ($X^3 = X + 1$, Karatsuba multiplication and adjugate norm inversion),
+  -- delegated to `Goldilocks` so both native Goldilocks and BN254-emulated
+  -- Goldilocks (`CompressGL`) execute mod $p_{\mathrm{GL}}$.
+  inline fn eg3_add(a: ProofDeserialize::Ext, b: ProofDeserialize::Ext) -> ProofDeserialize::Ext {
+      Goldilocks::eg_add(a, b)
+    }
+
+  inline fn eg3_sub(a: ProofDeserialize::Ext, b: ProofDeserialize::Ext) -> ProofDeserialize::Ext {
+      Goldilocks::eg_sub(a, b)
+    }
+
+  inline fn eg3_neg(a: ProofDeserialize::Ext) -> ProofDeserialize::Ext {
+      Goldilocks::eg_neg(a)
+    }
+
+  inline fn eg3_mul(a: ProofDeserialize::Ext, b: ProofDeserialize::Ext) -> ProofDeserialize::Ext {
+      Goldilocks::eg_mul(a, b)
+    }
+
+  fn eg3_inv_nonzero(a: ProofDeserialize::Ext) -> ProofDeserialize::Ext {
+      Goldilocks::eg_inv_nonzero(a)
+    }
+
+  inline fn eg3_div_nonzero(a: ProofDeserialize::Ext, b: ProofDeserialize::Ext) -> ProofDeserialize::Ext {
+      eg3_mul(a, eg3_inv_nonzero(b))
+    }
+
+  inline fn eg3_eq(a: ProofDeserialize::Ext, b: ProofDeserialize::Ext) -> Field {
+      Goldilocks::eg_eq(a, b)
+    }
+
   enum FrontierNode { Mk(Field, Lists::List<Field>, Lists::List<Lists::List<UInt64::U64>>, ProofDeserialize::DigestP) }
 
-  enum Bucket { Mk(Field, ProofDeserialize::Ext, ProofDeserialize::Ext, ProofDeserialize::Ext) }
+  enum Bucket { Mk(Field, Lists::List<ProofDeserialize::Ext>, ProofDeserialize::Ext, ProofDeserialize::Ext) }
 
   enum RollBucket { Mk(Field, ProofDeserialize::Ext) }
 
@@ -119,53 +153,173 @@ module Pcs {
   fn fri_fold2(index_bits: Lists::List<Field>, log_height: Field, beta: ProofDeserialize::Ext, e0: ProofDeserialize::Ext, e1: ProofDeserialize::Ext) -> ProofDeserialize::Ext {
       let g = StarkVerifier::two_adic_gen(log_height + 1);
       let s = exp_by_bits(g, glist_rev(index_bits, (&(Lists::Node::Nil))));
-      let two_s = Goldilocks::gl_add(s, s);
-      let inv_2s = Goldilocks::gl_inv_nonzero(two_s);
+      let inv_2s = Goldilocks::gl_inv_nonzero(Goldilocks::gl_add(s, s));
       let t1 = [Goldilocks::gl_mul(Goldilocks::gl_add(e0[0], e1[0]), 9223372034707292161),
-                Goldilocks::gl_mul(Goldilocks::gl_add(e0[1], e1[1]), 9223372034707292161)];
+                Goldilocks::gl_mul(Goldilocks::gl_add(e0[1], e1[1]), 9223372034707292161),
+                Goldilocks::gl_mul(Goldilocks::gl_add(e0[2], e1[2]), 9223372034707292161)];
       let diff_div = [Goldilocks::gl_mul(Goldilocks::gl_sub(e0[0], e1[0]), inv_2s),
-                      Goldilocks::gl_mul(Goldilocks::gl_sub(e0[1], e1[1]), inv_2s)];
-      Goldilocks::eg_add(t1, Goldilocks::eg_mul(beta, diff_div))
+                      Goldilocks::gl_mul(Goldilocks::gl_sub(e0[1], e1[1]), inv_2s),
+                      Goldilocks::gl_mul(Goldilocks::gl_sub(e0[2], e1[2]), inv_2s)];
+      eg3_add(t1, eg3_mul(beta, diff_div))
+    }
+
+  -- Multilinear tensor FRI batching helpers (`FriBatching::Tensor`).
+  inline fn max2(a: Field, b: Field) -> Field {
+      match UInt32::less_than_fields(a, b) {
+        1 => { b } ,
+        _ => { a } ,
+      }
+    }
+
+  fn round_max_width(round: ProofDeserialize::OpenedRound, acc: Field) -> Field {
+      match (*(round)) {
+        Lists::Node::Nil => { acc } ,
+        Lists::Node::Cons(mat, rest) => {
+          let &Lists::Node::Cons(row0, _mrest) = mat;
+          round_max_width(rest, max2(acc, Lists::length(row0))) } ,
+      }
+    }
+
+  fn openings_at_height(target_h: Field, log_blowup: Field,
+        log_degrees: Lists::List<UInt8::U8>, prep_opt: ProofDeserialize::PreprocessedOpt,
+        prep_indices: Lists::List<SystemDeserialize::OptIdx>) -> Field {
+      match (*(log_degrees)) {
+        Lists::Node::Nil => {
+          let Lists::Node::Nil = (*(prep_indices));
+          0 } ,
+        Lists::Node::Cons(ld, ld_rest) => {
+          let &Lists::Node::Cons(pi, pi_rest) = prep_indices;
+          let rest = openings_at_height(target_h, log_blowup, ld_rest, prep_opt, pi_rest);
+          match Fields::is_zero(UInt8::to_field(ld) + log_blowup - target_h) {
+            1 => {
+              let p_add = match prep_opt {
+                ProofDeserialize::PreprocessedOpt::NoPreprocessed => { 0 } ,
+                ProofDeserialize::PreprocessedOpt::SomePreprocessed(_r) => {
+                  match pi {
+                    SystemDeserialize::OptIdx::NoIdx => { 0 } ,
+                    SystemDeserialize::OptIdx::SomeIdx(_j) => { 2 } ,
+                  } } ,
+              };
+              5 + p_add + rest } ,
+            _ => { rest } ,
+          } } ,
+      }
+    }
+
+  fn max_openings_across_heights(hs: Lists::List<Field>, log_blowup: Field,
+        log_degrees: Lists::List<UInt8::U8>, prep_opt: ProofDeserialize::PreprocessedOpt,
+        prep_indices: Lists::List<SystemDeserialize::OptIdx>, acc: Field) -> Field {
+      match (*(hs)) {
+        Lists::Node::Nil => { acc } ,
+        Lists::Node::Cons(h, rest) => {
+          let c = openings_at_height(h, log_blowup, log_degrees, prep_opt, prep_indices);
+          max_openings_across_heights(rest, log_blowup, log_degrees, prep_opt, prep_indices, max2(acc, c)) } ,
+      }
+    }
+
+  fn tensor_num_challenges_loop(n: Field, pow: Field, k: Field) -> Field {
+      match UInt32::less_than_fields(pow, n) {
+        1 => { tensor_num_challenges_loop(n, pow + pow, k + 1) } ,
+        _ => { k } ,
+      }
+    }
+
+  inline fn tensor_num_challenges(n: Field) -> Field {
+      tensor_num_challenges_loop(n, 1, 0)
+    }
+
+  fn sample_ext_n(input: Bytes::Stream, output: Bytes::Stream, n: Field)
+        -> (Lists::List<ProofDeserialize::Ext>, Bytes::Stream, Bytes::Stream) {
+      match n {
+        0 => { ((&(Lists::Node::Nil)), input, output) } ,
+        _ => {
+          let (c0, c1, c2, i1, o1) = Transcript::ch_sample_ext(input, output);
+          let (rest, i2, o2) = sample_ext_n(i1, o1, n - 1);
+          ((&(Lists::Node::Cons([Goldilocks::gl_val(c0), Goldilocks::gl_val(c1), Goldilocks::gl_val(c2)], rest))), i2, o2) } ,
+      }
+    }
+
+  fn scale_ext_list(ws: Lists::List<ProofDeserialize::Ext>, r: ProofDeserialize::Ext) -> Lists::List<ProofDeserialize::Ext> {
+      match (*(ws)) {
+        Lists::Node::Nil => { (&(Lists::Node::Nil)) } ,
+        Lists::Node::Cons(w, rest) => {
+          (&(Lists::Node::Cons(eg3_mul(w, r), scale_ext_list(rest, r)))) } ,
+      }
+    }
+
+  fn take_ext_list(ws: Lists::List<ProofDeserialize::Ext>, n: Field) -> Lists::List<ProofDeserialize::Ext> {
+      match n {
+        0 => { (&(Lists::Node::Nil)) } ,
+        _ => {
+          let &Lists::Node::Cons(w, rest) = ws;
+          (&(Lists::Node::Cons(w, take_ext_list(rest, n - 1)))) } ,
+      }
+    }
+
+  fn tensor_weights_loop(chals: Lists::List<ProofDeserialize::Ext>, ws: Lists::List<ProofDeserialize::Ext>, cur_len: Field, target: Field) -> Lists::List<ProofDeserialize::Ext> {
+      match (*(chals)) {
+        Lists::Node::Nil => { ws } ,
+        Lists::Node::Cons(r, rest) => {
+          let rem = target - cur_len;
+          match UInt32::less_than_fields(cur_len, rem) {
+            1 => {
+              let scaled = scale_ext_list(ws, r);
+              tensor_weights_loop(rest, Lists::concat(ws, scaled), cur_len + cur_len, target) } ,
+            _ => {
+              let scaled = scale_ext_list(take_ext_list(ws, rem), r);
+              Lists::concat(ws, scaled) } ,
+          } } ,
+      }
+    }
+
+  inline fn tensor_weights(chals: Lists::List<ProofDeserialize::Ext>, len: Field) -> Lists::List<ProofDeserialize::Ext> {
+      match len {
+        0 => { (&(Lists::Node::Nil)) } ,
+        _ => { tensor_weights_loop(chals, (&(Lists::Node::Cons([1, 0, 0], (&(Lists::Node::Nil))))), 1, len) } ,
+      }
     }
 
   fn ro_fold_1pt(p_x: Lists::List<UInt64::U64>, p_z: Lists::List<ProofDeserialize::Ext>,
-        alpha: ProofDeserialize::Ext) -> (ProofDeserialize::Ext, ProofDeserialize::Ext) {
+        col_ws: Lists::List<ProofDeserialize::Ext>) -> ProofDeserialize::Ext {
       match (*(p_x)) {
         Lists::Node::Nil => {
           let Lists::Node::Nil = (*(p_z));
-          ([0, 0], [1, 0]) } ,
+          [0, 0, 0] } ,
         Lists::Node::Cons(lane, pxr) => {
           let &Lists::Node::Cons(pz, pzr) = p_z;
-          let (s, pw) = ro_fold_1pt(pxr, pzr, alpha);
+          let &Lists::Node::Cons(w, wr) = col_ws;
+          let s = ro_fold_1pt(pxr, pzr, wr);
           let v = ProofDeserialize::limb_to_field(lane);
-          (Goldilocks::eg_add(Goldilocks::eg_sub(pz, [v, 0]), Goldilocks::eg_mul(alpha, s)),
-           Goldilocks::eg_mul(alpha, pw)) } ,
+          eg3_add(eg3_mul(w, [Goldilocks::gl_sub(pz[0], v), pz[1], pz[2]]), s) } ,
       }
     }
 
   fn ro_fold_2pt(p_x: Lists::List<UInt64::U64>, pz0: Lists::List<ProofDeserialize::Ext>,
-        pz1: Lists::List<ProofDeserialize::Ext>, alpha: ProofDeserialize::Ext)
-        -> (ProofDeserialize::Ext, ProofDeserialize::Ext, ProofDeserialize::Ext) {
+        pz1: Lists::List<ProofDeserialize::Ext>, col_ws: Lists::List<ProofDeserialize::Ext>)
+        -> (ProofDeserialize::Ext, ProofDeserialize::Ext) {
       match (*(p_x)) {
         Lists::Node::Nil => {
           let Lists::Node::Nil = (*(pz0));
           let Lists::Node::Nil = (*(pz1));
-          ([0, 0], [0, 0], [1, 0]) } ,
+          ([0, 0, 0], [0, 0, 0]) } ,
         Lists::Node::Cons(lane, pxr) => {
           let &Lists::Node::Cons(z0, r0) = pz0;
           let &Lists::Node::Cons(z1, r1) = pz1;
-          let (s0, s1, pw) = ro_fold_2pt(pxr, r0, r1, alpha);
+          let &Lists::Node::Cons(w, wr) = col_ws;
+          let (s0, s1) = ro_fold_2pt(pxr, r0, r1, wr);
           let v = ProofDeserialize::limb_to_field(lane);
-          (Goldilocks::eg_add(Goldilocks::eg_sub(z0, [v, 0]), Goldilocks::eg_mul(alpha, s0)),
-           Goldilocks::eg_add(Goldilocks::eg_sub(z1, [v, 0]), Goldilocks::eg_mul(alpha, s1)),
-           Goldilocks::eg_mul(alpha, pw)) } ,
+          (eg3_add(eg3_mul(w, [Goldilocks::gl_sub(z0[0], v), z0[1], z0[2]]), s0),
+           eg3_add(eg3_mul(w, [Goldilocks::gl_sub(z1[0], v), z1[1], z1[2]]), s1)) } ,
       }
     }
 
   fn ext_row_onto(row: Lists::List<ProofDeserialize::Ext>, tail: Bytes::Stream) -> Bytes::Stream {
       match (*(row)) {
         Lists::Node::Nil => {  tail } ,
-        Lists::Node::Cons(e, rest) => {  StarkVerifier::b8_onto(Goldilocks::gl_to_bytes(e[0]), StarkVerifier::b8_onto(Goldilocks::gl_to_bytes(e[1]), ext_row_onto(rest, tail))) } ,
+        Lists::Node::Cons(e, rest) => {
+          StarkVerifier::b8_onto(Goldilocks::gl_to_bytes(e[0]),
+            StarkVerifier::b8_onto(Goldilocks::gl_to_bytes(e[1]),
+              StarkVerifier::b8_onto(Goldilocks::gl_to_bytes(e[2]), ext_row_onto(rest, tail)))) } ,
       }
     }
 
@@ -216,9 +370,9 @@ module Pcs {
         Lists::Node::Cons(c, rest) => {
           let &Lists::Node::Cons(w, wrest) = witnesses;
           let (i1, o1) = pcs_check_witness(StarkVerifier::snoc_cap(input, c), w, bits);
-          let (b0, b1, i2, _o) = Transcript::ch_sample_ext(i1, o1);
+          let (b0, b1, b2, i2, _o) = Transcript::ch_sample_ext(i1, o1);
           let (bs, i3) = pcs_betas(i2, rest, wrest, bits);
-          ((&(Lists::Node::Cons([Goldilocks::gl_val(b0), Goldilocks::gl_val(b1)], bs))), i3) } ,
+          ((&(Lists::Node::Cons([Goldilocks::gl_val(b0), Goldilocks::gl_val(b1), Goldilocks::gl_val(b2)], bs))), i3) } ,
       }
     }
 
@@ -256,11 +410,11 @@ module Pcs {
       }
     }
 
-  fn build_init_buckets(hs: Lists::List<Field>) -> Lists::List<Bucket> {
+  fn build_init_buckets(hs: Lists::List<Field>, open_ws: Lists::List<ProofDeserialize::Ext>) -> Lists::List<Bucket> {
       match (*(hs)) {
         Lists::Node::Nil => {  (&(Lists::Node::Nil)) } ,
         Lists::Node::Cons(h, rest) => {
-          (&(Lists::Node::Cons(Bucket::Mk(h, [1, 0], [0, 0], [0, 0]), build_init_buckets(rest)))) } ,
+          (&(Lists::Node::Cons(Bucket::Mk(h, open_ws, [0, 0, 0], [0, 0, 0]), build_init_buckets(rest, open_ws)))) } ,
       }
     }
 
@@ -268,7 +422,7 @@ module Pcs {
       match (*(hs)) {
         Lists::Node::Nil => {  (&(Lists::Node::Nil)) } ,
         Lists::Node::Cons(h, rest) => {
-          let zn = Goldilocks::eg_mul(zeta, [StarkVerifier::two_adic_gen(h - log_blowup), 0]);
+          let zn = eg3_mul(zeta, [StarkVerifier::two_adic_gen(h - log_blowup), 0, 0]);
           let g_h = StarkVerifier::two_adic_gen(h);
           (&(Lists::Node::Cons(HeightInfo::Mk(h, zn, g_h), build_height_infos(rest, log_blowup, zeta)))) } ,
       }
@@ -276,32 +430,32 @@ module Pcs {
 
   fn bucket_update_2pt(buckets: Lists::List<Bucket>, lh: Field, p_x: Lists::List<UInt64::U64>,
         pz0: Lists::List<ProofDeserialize::Ext>, pz1: Lists::List<ProofDeserialize::Ext>,
-        alpha: ProofDeserialize::Ext) -> Lists::List<Bucket> {
+        col_ws: Lists::List<ProofDeserialize::Ext>) -> Lists::List<Bucket> {
       let &Lists::Node::Cons(b, rest) = buckets;
-      let Bucket::Mk(h, ap, ro0, ro1) = b;
+      let Bucket::Mk(h, open_ws, ro0, ro1) = b;
       match Fields::is_zero(h - lh) {
         1 => {
-          let (s0, s1, pw) = ro_fold_2pt(p_x, pz0, pz1, alpha);
-          let ro0_2 = Goldilocks::eg_add(ro0, Goldilocks::eg_mul(ap, s0));
-          let ap1 = Goldilocks::eg_mul(ap, pw);
-          let ro1_2 = Goldilocks::eg_add(ro1, Goldilocks::eg_mul(ap1, s1));
-          let ap2 = Goldilocks::eg_mul(ap1, pw);
-          (&(Lists::Node::Cons(Bucket::Mk(h, ap2, ro0_2, ro1_2), rest))) } ,
-        _ => {  (&(Lists::Node::Cons(b, bucket_update_2pt(rest, lh, p_x, pz0, pz1, alpha)))) } ,
+          let &Lists::Node::Cons(w0, ow1) = open_ws;
+          let &Lists::Node::Cons(w1, ow2) = ow1;
+          let (s0, s1) = ro_fold_2pt(p_x, pz0, pz1, col_ws);
+          let ro0_2 = eg3_add(ro0, eg3_mul(w0, s0));
+          let ro1_2 = eg3_add(ro1, eg3_mul(w1, s1));
+          (&(Lists::Node::Cons(Bucket::Mk(h, ow2, ro0_2, ro1_2), rest))) } ,
+        _ => {  (&(Lists::Node::Cons(b, bucket_update_2pt(rest, lh, p_x, pz0, pz1, col_ws)))) } ,
       }
     }
 
   fn bucket_update_1pt(buckets: Lists::List<Bucket>, lh: Field, p_x: Lists::List<UInt64::U64>,
-        pz0: Lists::List<ProofDeserialize::Ext>, alpha: ProofDeserialize::Ext) -> Lists::List<Bucket> {
+        pz0: Lists::List<ProofDeserialize::Ext>, col_ws: Lists::List<ProofDeserialize::Ext>) -> Lists::List<Bucket> {
       let &Lists::Node::Cons(b, rest) = buckets;
-      let Bucket::Mk(h, ap, ro0, ro1) = b;
+      let Bucket::Mk(h, open_ws, ro0, ro1) = b;
       match Fields::is_zero(h - lh) {
         1 => {
-          let (s0, pw) = ro_fold_1pt(p_x, pz0, alpha);
-          let ro0_2 = Goldilocks::eg_add(ro0, Goldilocks::eg_mul(ap, s0));
-          let ap1 = Goldilocks::eg_mul(ap, pw);
-          (&(Lists::Node::Cons(Bucket::Mk(h, ap1, ro0_2, ro1), rest))) } ,
-        _ => {  (&(Lists::Node::Cons(b, bucket_update_1pt(rest, lh, p_x, pz0, alpha)))) } ,
+          let &Lists::Node::Cons(w0, ow1) = open_ws;
+          let s0 = ro_fold_1pt(p_x, pz0, col_ws);
+          let ro0_2 = eg3_add(ro0, eg3_mul(w0, s0));
+          (&(Lists::Node::Cons(Bucket::Mk(h, ow1, ro0_2, ro1), rest))) } ,
+        _ => {  (&(Lists::Node::Cons(b, bucket_update_1pt(rest, lh, p_x, pz0, col_ws)))) } ,
       }
     }
 
@@ -314,20 +468,17 @@ module Pcs {
           (&(Lists::Node::Nil)) } ,
         Lists::Node::Cons(b, brest) => {
           let &Lists::Node::Cons(info, irest) = infos;
-          let Bucket::Mk(h, _ap, ro0, ro1) = b;
+          let Bucket::Mk(h, _open_ws, ro0, ro1) = b;
           let HeightInfo::Mk(_hi_h, zn, g_h) = info;
           let bits_h = Lists::drop(cur_bits, prev_h - h);
           let x = Goldilocks::gl_mul(7, exp_by_bits(g_h, glist_rev(bits_h, (&(Lists::Node::Nil)))));
-          let d0 = Goldilocks::eg_sub(zeta, [x, 0]);
-          let d1 = Goldilocks::eg_sub(zn, [x, 0]);
-          let q0 = Goldilocks::eg_inverse(d0);
-          let p0 = Goldilocks::eg_mul(d0, q0);
-          assert_eq!(p0[0], 1);
-          assert_eq!(p0[1], 0);
-          let q1 = Goldilocks::eg_inv_nonzero(d1);
-          let ro = Goldilocks::eg_add(Goldilocks::eg_mul(q0, ro0), Goldilocks::eg_mul(q1, ro1));
+          let d0 = eg3_sub(zeta, [x, 0, 0]);
+          let d1 = eg3_sub(zn, [x, 0, 0]);
+          let q0 = eg3_inv_nonzero(d0);
+          let q1 = eg3_inv_nonzero(d1);
+          let ro = eg3_add(eg3_mul(q0, ro0), eg3_mul(q1, ro1));
           let _z = match Fields::is_zero(h - log_blowup) {
-            1 => {  assert_eq!(Goldilocks::eg_eq(ro, [0, 0]), 1); 1 } ,
+            1 => {  assert_eq!(eg3_eq(ro, [0, 0, 0]), 1); 1 } ,
             _ => {  1 } ,
           };
           (&(Lists::Node::Cons(RollBucket::Mk(h, ro),
@@ -344,7 +495,7 @@ module Pcs {
 
   fn open_batch_2pt(buckets: Lists::List<Bucket>, log_blowup: Field,
         log_degrees: Lists::List<UInt8::U8>, base_rows: Lists::List<Lists::List<UInt64::U64>>,
-        opened: ProofDeserialize::OpenedRound, alpha: ProofDeserialize::Ext) -> Lists::List<Bucket> {
+        opened: ProofDeserialize::OpenedRound, col_ws: Lists::List<ProofDeserialize::Ext>) -> Lists::List<Bucket> {
       match (*(log_degrees)) {
         Lists::Node::Nil => {
           let Lists::Node::Nil = (*(base_rows));
@@ -356,14 +507,14 @@ module Pcs {
           let &Lists::Node::Cons(pz0, mat1) = mat;
           let &Lists::Node::Cons(pz1, mat2) = mat1;
           let Lists::Node::Nil = (*(mat2));
-          let b = bucket_update_2pt(buckets, UInt8::to_field(ld) + log_blowup, p_x, pz0, pz1, alpha);
-          open_batch_2pt(b, log_blowup, ld_rest, br_rest, op_rest, alpha) } ,
+          let b = bucket_update_2pt(buckets, UInt8::to_field(ld) + log_blowup, p_x, pz0, pz1, col_ws);
+          open_batch_2pt(b, log_blowup, ld_rest, br_rest, op_rest, col_ws) } ,
       }
     }
 
   fn open_quotient(buckets: Lists::List<Bucket>, log_blowup: Field,
         log_degrees: Lists::List<UInt8::U8>, base_rows: Lists::List<Lists::List<UInt64::U64>>,
-        q_opened: ProofDeserialize::OpenedRound, alpha: ProofDeserialize::Ext) -> Lists::List<Bucket> {
+        q_opened: ProofDeserialize::OpenedRound, col_ws: Lists::List<ProofDeserialize::Ext>) -> Lists::List<Bucket> {
       match (*(log_degrees)) {
         Lists::Node::Nil => {
           let Lists::Node::Nil = (*(base_rows));
@@ -374,15 +525,15 @@ module Pcs {
           let &Lists::Node::Cons(qmat, qo_rest) = q_opened;
           let &Lists::Node::Cons(pz0, qmat_rest) = qmat;
           let Lists::Node::Nil = (*(qmat_rest));
-          let b = bucket_update_1pt(buckets, UInt8::to_field(ld) + log_blowup, p_x, pz0, alpha);
-          open_quotient(b, log_blowup, ld_rest, br_rest, qo_rest, alpha) } ,
+          let b = bucket_update_1pt(buckets, UInt8::to_field(ld) + log_blowup, p_x, pz0, col_ws);
+          open_quotient(b, log_blowup, ld_rest, br_rest, qo_rest, col_ws) } ,
       }
     }
 
   fn open_prep(buckets: Lists::List<Bucket>, log_blowup: Field,
         log_degrees: Lists::List<UInt8::U8>, prep_indices: Lists::List<SystemDeserialize::OptIdx>,
         base_rows: Lists::List<Lists::List<UInt64::U64>>, prep_round: ProofDeserialize::OpenedRound,
-        alpha: ProofDeserialize::Ext) -> Lists::List<Bucket> {
+        col_ws: Lists::List<ProofDeserialize::Ext>) -> Lists::List<Bucket> {
       match (*(log_degrees)) {
         Lists::Node::Nil => {
           let Lists::Node::Nil = (*(prep_indices));
@@ -393,26 +544,26 @@ module Pcs {
           let &Lists::Node::Cons(pi, pi_rest) = prep_indices;
           match pi {
             SystemDeserialize::OptIdx::NoIdx => {
-              open_prep(buckets, log_blowup, ld_rest, pi_rest, base_rows, prep_round, alpha) } ,
+              open_prep(buckets, log_blowup, ld_rest, pi_rest, base_rows, prep_round, col_ws) } ,
             SystemDeserialize::OptIdx::SomeIdx(_j) => {
               let &Lists::Node::Cons(p_x, br_rest) = base_rows;
               let &Lists::Node::Cons(mat, pr_rest) = prep_round;
               let &Lists::Node::Cons(pz0, mat1) = mat;
               let &Lists::Node::Cons(pz1, mat2) = mat1;
               let Lists::Node::Nil = (*(mat2));
-              let b = bucket_update_2pt(buckets, UInt8::to_field(ld) + log_blowup, p_x, pz0, pz1, alpha);
-              open_prep(b, log_blowup, ld_rest, pi_rest, br_rest, pr_rest, alpha) } ,
+              let b = bucket_update_2pt(buckets, UInt8::to_field(ld) + log_blowup, p_x, pz0, pz1, col_ws);
+              open_prep(b, log_blowup, ld_rest, pi_rest, br_rest, pr_rest, col_ws) } ,
           } } ,
       }
     }
 
   inline fn open_prep_batch(buckets: Lists::List<Bucket>, rows_p: Lists::List<Lists::List<UInt64::U64>>,
         prep_opt: ProofDeserialize::PreprocessedOpt, prep_indices: Lists::List<SystemDeserialize::OptIdx>,
-        log_degrees: Lists::List<UInt8::U8>, log_blowup: Field, alpha: ProofDeserialize::Ext) -> Lists::List<Bucket> {
+        log_degrees: Lists::List<UInt8::U8>, log_blowup: Field, col_ws: Lists::List<ProofDeserialize::Ext>) -> Lists::List<Bucket> {
       match prep_opt {
         ProofDeserialize::PreprocessedOpt::NoPreprocessed => {  buckets } ,
         ProofDeserialize::PreprocessedOpt::SomePreprocessed(prep_round) => {
-          open_prep(buckets, log_blowup, log_degrees, prep_indices, rows_p, prep_round, alpha) } ,
+          open_prep(buckets, log_blowup, log_degrees, prep_indices, rows_p, prep_round, col_ws) } ,
       }
     }
 
@@ -460,8 +611,12 @@ module Pcs {
     }
 
   inline fn flatten2(e0: ProofDeserialize::Ext, e1: ProofDeserialize::Ext) -> Lists::List<UInt64::U64> {
-      (&(Lists::Node::Cons(Goldilocks::gl_to_bytes(e0[0]), (&(Lists::Node::Cons(Goldilocks::gl_to_bytes(e0[1]),
-        (&(Lists::Node::Cons(Goldilocks::gl_to_bytes(e1[0]), (&(Lists::Node::Cons(Goldilocks::gl_to_bytes(e1[1]), (&(Lists::Node::Nil))))))))))))))
+      (&(Lists::Node::Cons(Goldilocks::gl_to_bytes(e0[0]),
+        (&(Lists::Node::Cons(Goldilocks::gl_to_bytes(e0[1]),
+        (&(Lists::Node::Cons(Goldilocks::gl_to_bytes(e0[2]),
+        (&(Lists::Node::Cons(Goldilocks::gl_to_bytes(e1[0]),
+        (&(Lists::Node::Cons(Goldilocks::gl_to_bytes(e1[1]),
+        (&(Lists::Node::Cons(Goldilocks::gl_to_bytes(e1[2]), (&(Lists::Node::Nil))))))))))))))))))))
     }
 
   fn rollin(folded: ProofDeserialize::Ext, log_folded: Field, beta: ProofDeserialize::Ext, ro_rest: Lists::List<RollBucket>) -> (ProofDeserialize::Ext, Lists::List<RollBucket>) {
@@ -470,7 +625,7 @@ module Pcs {
         Lists::Node::Cons(b, rest) => {
           let RollBucket::Mk(h, ro) = b;
           match Fields::is_zero(h - log_folded) {
-            1 => {  (Goldilocks::eg_add(folded, Goldilocks::eg_mul(Goldilocks::eg_mul(beta, beta), ro)), rest) } ,
+            1 => {  (eg3_add(folded, eg3_mul(eg3_mul(beta, beta), ro)), rest) } ,
             _ => {  (folded, ro_rest) } ,
           } } ,
       }
@@ -502,15 +657,15 @@ module Pcs {
         rows_s2: Lists::List<Lists::List<UInt64::U64>>, rows_q: Lists::List<Lists::List<UInt64::U64>>,
         rows_p: Lists::List<Lists::List<UInt64::U64>>, q_sibs: Lists::List<Lists::List<ProofDeserialize::Ext>>,
         init_buckets: Lists::List<Bucket>, height_infos: Lists::List<HeightInfo>,
-        alpha: ProofDeserialize::Ext, stage1: ProofDeserialize::OpenedRound, stage2: ProofDeserialize::OpenedRound,
+        col_ws: Lists::List<ProofDeserialize::Ext>, stage1: ProofDeserialize::OpenedRound, stage2: ProofDeserialize::OpenedRound,
         q_opened: ProofDeserialize::OpenedRound, prep_opt: ProofDeserialize::PreprocessedOpt,
         prep_indices: Lists::List<SystemDeserialize::OptIdx>, log_degrees: Lists::List<UInt8::U8>,
         zeta: ProofDeserialize::Ext, log_blowup: Field, log_gmax: Field,
         betas: Lists::List<ProofDeserialize::Ext>, final_eval: ProofDeserialize::Ext) -> Lists::List<Lists::List<UInt64::U64>> {
-      let buckets = open_batch_2pt(init_buckets, log_blowup, log_degrees, rows_s1, stage1, alpha);
-      let buckets = open_batch_2pt(buckets, log_blowup, log_degrees, rows_s2, stage2, alpha);
-      let buckets = open_quotient(buckets, log_blowup, log_degrees, rows_q, q_opened, alpha);
-      let buckets = open_prep_batch(buckets, rows_p, prep_opt, prep_indices, log_degrees, log_blowup, alpha);
+      let buckets = open_batch_2pt(init_buckets, log_blowup, log_degrees, rows_s1, stage1, col_ws);
+      let buckets = open_batch_2pt(buckets, log_blowup, log_degrees, rows_s2, stage2, col_ws);
+      let buckets = open_quotient(buckets, log_blowup, log_degrees, rows_q, q_opened, col_ws);
+      let buckets = open_prep_batch(buckets, rows_p, prep_opt, prep_indices, log_degrees, log_blowup, col_ws);
       let roll_buckets = finalize_buckets(buckets, height_infos, idxbits, log_gmax, log_blowup, zeta);
 
       let &Lists::Node::Cons(b0, ro_rest) = roll_buckets;
@@ -518,7 +673,7 @@ module Pcs {
       assert_eq!(Fields::is_zero(h0 - log_gmax), 1);
       let (folded, fri_rows) = verify_query(folded_start, betas, q_sibs, idxbits, log_gmax, ro_rest, log_blowup);
 
-      assert_eq!(Goldilocks::eg_eq(final_eval, folded), 1);
+      assert_eq!(eg3_eq(final_eval, folded), 1);
       fri_rows
     }
 
@@ -550,7 +705,7 @@ module Pcs {
         prows: Lists::List<Lists::List<Lists::List<UInt64::U64>>>,
         step_sibs: Lists::List<Lists::List<Lists::List<ProofDeserialize::Ext>>>,
         init_buckets: Lists::List<Bucket>, height_infos: Lists::List<HeightInfo>,
-        alpha: ProofDeserialize::Ext, stage1: ProofDeserialize::OpenedRound, stage2: ProofDeserialize::OpenedRound,
+        col_ws: Lists::List<ProofDeserialize::Ext>, stage1: ProofDeserialize::OpenedRound, stage2: ProofDeserialize::OpenedRound,
         q_opened: ProofDeserialize::OpenedRound, prep_opt: ProofDeserialize::PreprocessedOpt,
         prep_indices: Lists::List<SystemDeserialize::OptIdx>, log_degrees: Lists::List<UInt8::U8>,
         zeta: ProofDeserialize::Ext, log_blowup: Field, log_gmax: Field,
@@ -575,10 +730,10 @@ module Pcs {
           };
           let (q_sibs, next_step_sibs) = peel_step_sibs(step_sibs);
           let qrows_out = verify_one_query(idxbits, rows_s1, rows_s2, rows_q, rows_p, q_sibs,
-            init_buckets, height_infos, alpha, stage1, stage2, q_opened, prep_opt,
+            init_buckets, height_infos, col_ws, stage1, stage2, q_opened, prep_opt,
             prep_indices, log_degrees, zeta, log_blowup, log_gmax, betas, final_eval);
           (&(Lists::Node::Cons(qrows_out, query_loop(irest, s1rest, s2rest, qrest, prest, next_step_sibs,
-            init_buckets, height_infos, alpha, stage1, stage2, q_opened, prep_opt,
+            init_buckets, height_infos, col_ws, stage1, stage2, q_opened, prep_opt,
             prep_indices, log_degrees, zeta, log_blowup, log_gmax, betas, final_eval)))) } ,
       }
     }
@@ -652,8 +807,24 @@ module Pcs {
         prep_onto(prep_opt, (&(Lists::Node::Nil))))));
       let input = Lists::concat(post_zeta_input, obs);
 
-      let (a0, a1, input, _oa) = Transcript::ch_sample_ext(input, (&(Lists::Node::Nil)));
-      let alpha = [Goldilocks::gl_val(a0), Goldilocks::gl_val(a1)];
+      -- FriBatching::Tensor: derive max_width and max_openings_per_height from the
+      -- authenticated opening structure, then sample col_challenges and open_challenges
+      -- consecutively while threading challenger output buffer state across all calls.
+      let distinct_hs = collect_heights_desc(log_degrees, log_blowup, (&(Lists::Node::Nil)));
+      let max_w = round_max_width(stage1, 0);
+      let max_w = round_max_width(stage2, max_w);
+      let max_w = round_max_width(q_opened, max_w);
+      let max_w = match prep_opt {
+        ProofDeserialize::PreprocessedOpt::NoPreprocessed => { max_w } ,
+        ProofDeserialize::PreprocessedOpt::SomePreprocessed(pr) => { round_max_width(pr, max_w) } ,
+      };
+      let max_open = max_openings_across_heights(distinct_hs, log_blowup, log_degrees, prep_opt, prep_indices, 0);
+      let k_col = tensor_num_challenges(max_w);
+      let k_open = tensor_num_challenges(max_open);
+      let (col_chals, input, output) = sample_ext_n(input, (&(Lists::Node::Nil)), k_col);
+      let (open_chals, input, _output) = sample_ext_n(input, output, k_open);
+      let col_weights = tensor_weights(col_chals, max_w);
+      let open_weights = tensor_weights(open_chals, max_open);
 
       let (betas, input) = pcs_betas(input, commit_phase_commits, pw, commit_pow_bits);
       let input = Lists::concat(input, ext_row_onto(final_poly, (&(Lists::Node::Nil))));
@@ -690,12 +861,11 @@ module Pcs {
           assert_eq!(Mmcs::mmcs_verify_multi(prep_commit, pr, ph, pindices, pproof, lp), 1);
           pr } ,
       };
-      let distinct_hs = collect_heights_desc(log_degrees, log_blowup, (&(Lists::Node::Nil)));
-      let init_buckets = build_init_buckets(distinct_hs);
+      let init_buckets = build_init_buckets(distinct_hs, open_weights);
       let height_infos = build_height_infos(distinct_hs, log_blowup, zeta);
       let step_sibs = extract_step_sibs(commit_phase_openings);
       let fri_rows = query_loop(indices, s1rows, s2rows, qrows, prows, step_sibs,
-        init_buckets, height_infos, alpha, stage1, stage2, q_opened, prep_opt,
+        init_buckets, height_infos, col_weights, stage1, stage2, q_opened, prep_opt,
         prep_indices, log_degrees, zeta, log_blowup, log_gmax, betas, final_eval);
       verify_commit_multi(commit_phase_openings, commit_phase_commits, fri_rows, indices, log_gmax)
     }

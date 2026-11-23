@@ -124,7 +124,11 @@ module ProofDeserialize {
   inline fn read_ext_at(i: Field) -> (Ext, Field) {
       let (a, j0) = read_u64_at(i);
       let (b, j1) = read_u64_at(j0);
-      ([Goldilocks::gl_val(a), Goldilocks::gl_val(b)], j1)
+      let (c, j2) = read_u64_at(j1);
+      assert_eq!(Goldilocks::gl_lt_p(a), 1);
+      assert_eq!(Goldilocks::gl_lt_p(b), 1);
+      assert_eq!(Goldilocks::gl_lt_p(c), 1);
+      ([Goldilocks::gl_val(a), Goldilocks::gl_val(b), Goldilocks::gl_val(c)], j2)
     }
 
   inline fn read_digest_at(i: Field) -> (Digest, Field) {

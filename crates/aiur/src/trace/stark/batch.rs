@@ -167,7 +167,7 @@ pub fn memseg_args(width: usize, ptr: Val) -> [Val; 3] {
 /// Decode only trusted compiler output (or compare its digest with a trusted
 /// key). A key is a statement, not evidence that its program is the intended one.
 pub struct VerifyingKey {
-  system: System<GoldilocksBlake3Config>,
+  system: System<GoldilocksBlake3V6Config>,
   cp: CommitmentParameters,
   fp: FriParameters,
 }
@@ -222,7 +222,7 @@ impl VerifyingKey {
   pub const fn fri_parameters(&self) -> FriParameters {
     self.fp
   }
-  pub const fn system(&self) -> &System<GoldilocksBlake3Config> {
+  pub const fn system(&self) -> &System<GoldilocksBlake3V6Config> {
     &self.system
   }
   pub fn num_circuits(&self) -> usize {
@@ -231,7 +231,7 @@ impl VerifyingKey {
   pub fn validate_preamble(
     &self,
     claim: &[Val],
-    preamble: &multi_stark::batch::BatchPreamble<GoldilocksBlake3Config>,
+    preamble: &multi_stark::batch::BatchPreamble<GoldilocksBlake3V6Config>,
   ) -> Result<(), String> {
     validate_preamble(&self.system, self.cp.log_blowup, &[claim], preamble)
   }
@@ -241,7 +241,7 @@ impl VerifyingKey {
   pub fn validate_normalized_preamble(
     &self,
     claim: &[Val],
-    preamble: &multi_stark::batch::BatchPreamble<GoldilocksBlake3Config>,
+    preamble: &multi_stark::batch::BatchPreamble<GoldilocksBlake3V6Config>,
   ) -> Result<(), String> {
     validate_preamble_with(
       &self.system,
@@ -317,19 +317,19 @@ pub(super) fn circuit_row_weight(circuit: &Circuit<Val>) -> u64 {
 }
 
 fn validate_preamble<C: AsRef<[Val]>>(
-  system: &System<GoldilocksBlake3Config>,
+  system: &System<GoldilocksBlake3V6Config>,
   log_blowup: usize,
   claims: &[C],
-  preamble: &multi_stark::batch::BatchPreamble<GoldilocksBlake3Config>,
+  preamble: &multi_stark::batch::BatchPreamble<GoldilocksBlake3V6Config>,
 ) -> Result<(), String> {
   validate_preamble_with(system, log_blowup, claims, preamble, false)
 }
 
 fn validate_preamble_with<C: AsRef<[Val]>>(
-  system: &System<GoldilocksBlake3Config>,
+  system: &System<GoldilocksBlake3V6Config>,
   log_blowup: usize,
   claims: &[C],
-  preamble: &multi_stark::batch::BatchPreamble<GoldilocksBlake3Config>,
+  preamble: &multi_stark::batch::BatchPreamble<GoldilocksBlake3V6Config>,
   allow_normalized_empty: bool,
 ) -> Result<(), String> {
   let headers = &preamble.headers;
@@ -440,7 +440,7 @@ fn validate_preamble_with<C: AsRef<[Val]>>(
 }
 
 pub(super) fn verify(
-  system: &System<GoldilocksBlake3Config>,
+  system: &System<GoldilocksBlake3V6Config>,
   log_blowup: usize,
   claims: &[Vec<Val>],
   proof: &BatchProof,
@@ -449,7 +449,7 @@ pub(super) fn verify(
 }
 
 fn verify_with(
-  system: &System<GoldilocksBlake3Config>,
+  system: &System<GoldilocksBlake3V6Config>,
   log_blowup: usize,
   claims: &[Vec<Val>],
   proof: &BatchProof,

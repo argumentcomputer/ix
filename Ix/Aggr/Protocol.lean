@@ -97,7 +97,7 @@ def rangeStatementTag : UInt8 := 0x52
 
 /-- A range node's output statement:
 
-`0x52 ‖ blake3(preamble)(32) ‖ lo(u64 LE) ‖ hi(u64 LE) ‖ residual(16)`. -/
+`0x52 ‖ blake3(preamble)(32) ‖ lo(u64 LE) ‖ hi(u64 LE) ‖ residual(24)`. -/
 def rangeStatement (preamble : ByteArray) (lo hi : Nat)
     (residual : ByteArray) : ByteArray :=
   ⟨#[rangeStatementTag] ++ (Address.blake3 preamble).hash.data ++

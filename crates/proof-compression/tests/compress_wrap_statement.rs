@@ -6,7 +6,7 @@ use multi_stark::{
   expr::Expr,
   lookup::Lookup,
   system::{CircuitInputs, System},
-  types::{GoldilocksBlake3Config, Val},
+  types::{GoldilocksBlake3V6Config, Val},
 };
 use p3_field::PrimeCharacteristicRing;
 use stark_verifier::compress_wrap::{Statement, Wrapper};
@@ -27,7 +27,7 @@ fn root_key(scale: u64) -> Vec<u8> {
   message.extend([Expr::main(0), Expr::main(1)]);
   message.extend(std::iter::repeat_n(Expr::constant(Val::ZERO), 14));
   let (system, _) = System::new(
-    GoldilocksBlake3Config::new(cp, fp),
+    GoldilocksBlake3V6Config::new(cp, fp),
     vec![CircuitInputs {
       main_width: 2,
       constraints: vec![relation * Expr::constant(Val::from_u64(scale))],

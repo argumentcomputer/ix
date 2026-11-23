@@ -62,6 +62,7 @@ impl VerifyingKey {
       circuits,
       preprocessed_commit: source.preprocessed_commit.clone(),
       preprocessed_indices: source.preprocessed_indices.clone(),
+      vk_digest: source.vk_digest,
     };
     let key = Self { system };
     key.validate()?;
@@ -138,6 +139,7 @@ impl VerifyingKey {
         circuits: encoded.circuits,
         preprocessed_commit: encoded.preprocessing,
         preprocessed_indices: encoded.indices,
+        vk_digest: [0u8; 32],
       },
     };
     key.validate()?;

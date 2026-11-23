@@ -11,7 +11,7 @@ use multi_stark::{
   p3_matrix::dense::RowMajorMatrix,
   system::{CircuitInputs, System, SystemWitness},
   types::{
-    CommitmentParameters, ExtVal, FriParameters, GoldilocksBlake3Config,
+    CommitmentParameters, ExtVal3, FriParameters, GoldilocksBlake3V6Config,
   },
 };
 
@@ -29,128 +29,127 @@ struct SpecSummary {
   max_constraint_degree: usize,
 }
 
-/// Exact table verified simultaneously by `Aiur/AiurTests/MultiStarkSpec.lean`
-/// (`expectedDepthFixtureSummaries`) for `crates/aiur/tests/fixtures/depth.ixa`
-/// at `log_blowup = 1`, `segmented = true`.
+/// Exact table for `crates/aiur/tests/fixtures/depth.ixa` at `log_blowup = 1`,
+/// `segmented = true`, `ext_degree = 3` (Protocol v6 Fp^3).
 const EXPECTED_DEPTH_FIXTURE: &[SpecSummary] = &[
   SpecSummary {
     name: "Depth::run",
     stage1_width: 7,
-    stage2_width: 6,
+    stage2_width: 9,
     preprocessed_width: 0,
     preprocessed_height: 0,
     lookups: 3,
+    lookup_group_size: 1,
+    quotient_degree: 1,
+    constraint_count: 12,
+    max_constraint_degree: 2,
+  },
+  SpecSummary {
+    name: "Depth::even",
+    stage1_width: 7,
+    stage2_width: 3,
+    preprocessed_width: 0,
+    preprocessed_height: 0,
+    lookups: 2,
+    lookup_group_size: 2,
+    quotient_degree: 2,
+    constraint_count: 12,
+    max_constraint_degree: 3,
+  },
+  SpecSummary {
+    name: "Depth::odd",
+    stage1_width: 7,
+    stage2_width: 3,
+    preprocessed_width: 0,
+    preprocessed_height: 0,
+    lookups: 2,
+    lookup_group_size: 2,
+    quotient_degree: 2,
+    constraint_count: 12,
+    max_constraint_degree: 3,
+  },
+  SpecSummary {
+    name: "Depth::fib",
+    stage1_width: 14,
+    stage2_width: 12,
+    preprocessed_width: 0,
+    preprocessed_height: 0,
+    lookups: 7,
+    lookup_group_size: 2,
+    quotient_degree: 2,
+    constraint_count: 28,
+    max_constraint_degree: 3,
+  },
+  SpecSummary {
+    name: "Depth::loop",
+    stage1_width: 5,
+    stage2_width: 6,
+    preprocessed_width: 0,
+    preprocessed_height: 0,
+    lookups: 2,
     lookup_group_size: 1,
     quotient_degree: 1,
     constraint_count: 9,
     max_constraint_degree: 2,
   },
   SpecSummary {
-    name: "Depth::even",
-    stage1_width: 7,
-    stage2_width: 2,
-    preprocessed_width: 0,
-    preprocessed_height: 0,
-    lookups: 2,
-    lookup_group_size: 2,
-    quotient_degree: 2,
-    constraint_count: 11,
-    max_constraint_degree: 3,
-  },
-  SpecSummary {
-    name: "Depth::odd",
-    stage1_width: 7,
-    stage2_width: 2,
-    preprocessed_width: 0,
-    preprocessed_height: 0,
-    lookups: 2,
-    lookup_group_size: 2,
-    quotient_degree: 2,
-    constraint_count: 11,
-    max_constraint_degree: 3,
-  },
-  SpecSummary {
-    name: "Depth::fib",
-    stage1_width: 14,
-    stage2_width: 8,
-    preprocessed_width: 0,
-    preprocessed_height: 0,
-    lookups: 7,
-    lookup_group_size: 2,
-    quotient_degree: 2,
-    constraint_count: 24,
-    max_constraint_degree: 3,
-  },
-  SpecSummary {
-    name: "Depth::loop",
-    stage1_width: 5,
-    stage2_width: 4,
-    preprocessed_width: 0,
-    preprocessed_height: 0,
-    lookups: 2,
-    lookup_group_size: 1,
-    quotient_degree: 1,
-    constraint_count: 7,
-    max_constraint_degree: 2,
-  },
-  SpecSummary {
     name: "Depth::top",
     stage1_width: 4,
-    stage2_width: 4,
+    stage2_width: 6,
     preprocessed_width: 0,
     preprocessed_height: 0,
     lookups: 2,
     lookup_group_size: 1,
     quotient_degree: 1,
-    constraint_count: 7,
+    constraint_count: 9,
     max_constraint_degree: 2,
   },
   SpecSummary {
     name: "Depth::owned",
     stage1_width: 6,
-    stage2_width: 2,
+    stage2_width: 3,
     preprocessed_width: 0,
     preprocessed_height: 0,
     lookups: 2,
     lookup_group_size: 2,
     quotient_degree: 2,
-    constraint_count: 10,
+    constraint_count: 11,
     max_constraint_degree: 3,
   },
   SpecSummary {
     name: "Depth::link",
     stage1_width: 4,
-    stage2_width: 4,
+    stage2_width: 6,
     preprocessed_width: 0,
     preprocessed_height: 0,
     lookups: 2,
     lookup_group_size: 1,
     quotient_degree: 1,
-    constraint_count: 7,
+    constraint_count: 9,
     max_constraint_degree: 2,
   },
   SpecSummary {
     name: "<table:Depth::range16_inputs>",
     stage1_width: 1,
-    stage2_width: 2,
+    stage2_width: 3,
     preprocessed_width: 2,
     preprocessed_height: 65536,
     lookups: 1,
     lookup_group_size: 1,
     quotient_degree: 1,
-    constraint_count: 2,
+    constraint_count: 3,
     max_constraint_degree: 2,
   },
   SpecSummary {
     name: "<table:Depth::range8_inputs>",
     stage1_width: 1,
-    stage2_width: 2,
+    stage2_width: 3,
     preprocessed_width: 2,
     preprocessed_height: 256,
     lookups: 1,
     lookup_group_size: 1,
     quotient_degree: 1,
-    constraint_count: 2,
+    constraint_count: 3,
     max_constraint_degree: 2,
   },
 ];
@@ -203,7 +202,7 @@ fn depth_fixture_matches_lean_multistark_spec() {
 #[test]
 fn retune_preserves_exact_logup_rational_sum_and_matches_lean_degrees() {
   let make_config = || {
-    GoldilocksBlake3Config::new(
+    GoldilocksBlake3V6Config::new(
       CommitmentParameters { log_blowup: 2, cap_height: 0 },
       FriParameters {
         log_final_poly_len: 0,
@@ -244,14 +243,14 @@ fn retune_preserves_exact_logup_rational_sum_and_matches_lean_degrees() {
   let (ungrouped, _) = System::new(make_config(), build_inputs());
   let (mut retuned, _) = System::new(make_config(), build_inputs());
   for circuit in &mut retuned.circuits {
-    lookup_groups::retune(circuit, 4, 2);
+    lookup_groups::retune(circuit, 4, 3);
   }
-  // Exact metadata parity with `AiurMultiStarkSpecTests.checkMixedDegreeRetune`.
+  // Exact metadata for Protocol v6 Fp^3 (D = 3).
   let expected_meta = [
-    (2usize, 4usize, 14usize, 14usize, 5usize),
-    (2, 2, 4, 4, 3),
-    (2, 2, 12, 12, 3),
-    (4, 4, 14, 14, 5),
+    (2usize, 4usize, 21usize, 21usize, 5usize),
+    (2, 2, 6, 6, 3),
+    (2, 2, 18, 18, 3),
+    (4, 4, 21, 21, 5),
   ];
   for (c, (g, q, s2, cc, md)) in retuned.circuits.iter().zip(expected_meta) {
     assert_eq!(
@@ -304,30 +303,30 @@ fn retune_preserves_exact_logup_rational_sum_and_matches_lean_degrees() {
   let g_retuned: Vec<_> =
     retuned.circuits.iter().map(|c| c.lookup_group_size).collect();
   for (a, b) in [(1000000007u64, 1000000009u64), (42424242, 987654321)] {
-    let alpha = ExtVal::from_u64(a);
-    let beta = ExtVal::from_u64(b);
+    let alpha = ExtVal3::from_u64(a);
+    let beta = ExtVal3::from_u64(b);
     let (_, sums_ungrouped) = LookupValues::stage_2_traces(
       &w_ungrouped.lookups,
       &g_ungrouped,
       alpha,
       &beta,
-      ExtVal::ZERO,
+      ExtVal3::ZERO,
     );
     let (_, sums_retuned) = LookupValues::stage_2_traces(
       &w_retuned.lookups,
       &g_retuned,
       alpha,
       &beta,
-      ExtVal::ZERO,
+      ExtVal3::ZERO,
     );
     assert_eq!(sums_ungrouped, sums_retuned);
     // Cross-check each circuit's running accumulator against the direct
     // ungrouped rational sum ∑_row ∑_slot m / (β + ∑_k γ^k · arg_k),
     // matching `Aiur.MultiStarkSpec.fingerprint` and `multi_stark/src/lookup.rs`.
     let mut direct_running = Vec::with_capacity(traces.len());
-    let mut running = ExtVal::ZERO;
+    let mut running = ExtVal3::ZERO;
     for (circuit, matrix) in ungrouped.circuits.iter().zip(&traces) {
-      let mut total = ExtVal::ZERO;
+      let mut total = ExtVal3::ZERO;
       for r in 0..matrix.height() {
         let row = &matrix.values[r * matrix.width..(r + 1) * matrix.width];
         let view = VarValues {
@@ -342,13 +341,13 @@ fn retune_preserves_exact_logup_rational_sum_and_matches_lean_degrees() {
         let mut buf = vec![];
         circuit.graph.sweep_lookup_prefix(&view, &mut buf);
         for lv in circuit.graph.lookup_values(&buf) {
-          let mut fp = ExtVal::ZERO;
-          let mut pow = ExtVal::ONE;
+          let mut fp = ExtVal3::ZERO;
+          let mut pow = ExtVal3::ONE;
           for &arg in &lv.args {
-            fp += pow * ExtVal::from(arg);
+            fp += pow * ExtVal3::from(arg);
             pow *= beta;
           }
-          total += ExtVal::from(lv.multiplicity) * (alpha + fp).inverse();
+          total += ExtVal3::from(lv.multiplicity) * (alpha + fp).inverse();
         }
       }
       running += total;
@@ -521,56 +520,55 @@ fn ptr_eq_bytecode_round_trips_and_proves_end_to_end() {
   );
 }
 
-/// Exact `C6` vectorized ROM summaries verified simultaneously by
-/// `Aiur/AiurTests/MultiStarkSpec.lean` (`expectedVectorizedRomSummaries`)
-/// for widths `[1, 3, 5, 13]` at `blowup = 4` (`log_blowup = 2`), `segmented = true`.
+/// Exact `C6` vectorized ROM summaries for widths `[1, 3, 5, 13]` at
+/// `blowup = 4` (`log_blowup = 2`), `segmented = true`, `ext_degree = 3` (Protocol v6).
 const EXPECTED_VECTORIZED_ROM_SUMMARIES: &[SpecSummary] = &[
   SpecSummary {
     name: "<ROM:1>",
     stage1_width: 25,
-    stage2_width: 10,
+    stage2_width: 15,
     preprocessed_width: 0,
     preprocessed_height: 0,
     lookups: 10,
     lookup_group_size: 2,
     quotient_degree: 2,
-    constraint_count: 35,
+    constraint_count: 40,
     max_constraint_degree: 3,
   },
   SpecSummary {
     name: "<ROM:3>",
     stage1_width: 41,
-    stage2_width: 10,
+    stage2_width: 15,
     preprocessed_width: 0,
     preprocessed_height: 0,
     lookups: 10,
     lookup_group_size: 2,
     quotient_degree: 2,
-    constraint_count: 35,
+    constraint_count: 40,
     max_constraint_degree: 3,
   },
   SpecSummary {
     name: "<ROM:5>",
     stage1_width: 29,
-    stage2_width: 6,
+    stage2_width: 9,
     preprocessed_width: 0,
     preprocessed_height: 0,
     lookups: 6,
     lookup_group_size: 2,
     quotient_degree: 2,
-    constraint_count: 19,
+    constraint_count: 22,
     max_constraint_degree: 3,
   },
   SpecSummary {
     name: "<ROM:13>",
     stage1_width: 16,
-    stage2_width: 6,
+    stage2_width: 9,
     preprocessed_width: 0,
     preprocessed_height: 0,
     lookups: 3,
     lookup_group_size: 1,
     quotient_degree: 1,
-    constraint_count: 10,
+    constraint_count: 13,
     max_constraint_degree: 2,
   },
 ];
@@ -870,13 +868,13 @@ fn vectorized_rom_matches_lean_multistark_spec_and_cuts_rom3_cells() {
   let s_rom3 = &scalar_backend.statistics()[rom3_idx];
   let v_rom3 = &vec_stats[rom3_idx];
   let scalar_cells =
-    (s_rom3.stage1_width + s_rom3.stage2_width + s_rom3.quotient_degree * 2)
+    (s_rom3.stage1_width + s_rom3.stage2_width + s_rom3.quotient_degree * 3)
       * scalar_rows[rom3_idx];
   let vec_cells =
-    (v_rom3.stage1_width + v_rom3.stage2_width + v_rom3.quotient_degree * 2)
+    (v_rom3.stage1_width + v_rom3.stage2_width + v_rom3.quotient_degree * 3)
       * vec_rows[rom3_idx];
-  assert_eq!(scalar_cells, 112);
-  assert_eq!(vec_cells, 55);
+  assert_eq!(scalar_cells, 144);
+  assert_eq!(vec_cells, 62);
   assert!(vec_cells * 2 < scalar_cells);
 }
 
@@ -885,7 +883,7 @@ fn vectorized_rom_proves_verifies_and_rejects_tampering() {
   let g = Val::from_u64;
   let params = Parameters {
     log_blowup: 2,
-    num_queries: 118,
+    num_queries: 135,
     commit_proof_of_work_bits: 0,
     query_proof_of_work_bits: 0,
   };
@@ -1078,7 +1076,7 @@ fn vectorized_rom_proves_verifies_and_rejects_tampering() {
   };
   let prove_and_verify = |traces: Vec<RowMajorMatrix<Val>>,
                           messages: Vec<
-    multi_stark::batch::BatchMessage<GoldilocksBlake3Config>,
+    multi_stark::batch::BatchMessage<GoldilocksBlake3V6Config>,
   >| {
     let witness = t_backend.witness_from_main(traces);
     let proof = t_backend.system.prove_batch(

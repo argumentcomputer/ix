@@ -338,7 +338,7 @@ fn row_bound_boundary() {
   assert!(unweighted_at_bound > at_bound);
   use multi_stark::batch::BatchMessage;
   let preamble =
-    |n: usize, messages: Vec<BatchMessage<GoldilocksBlake3Config>>| {
+    |n: usize, messages: Vec<BatchMessage<GoldilocksBlake3V6Config>>| {
       let mut headers = vec![header.clone(); n];
       headers[0].claims = vec![claim.clone()];
       multi_stark::batch::BatchPreamble { headers, messages }

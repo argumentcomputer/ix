@@ -4,7 +4,7 @@ use super::{Backend, CircuitStatistics, WitnessField};
 use crate::Execution;
 use multi_stark::{
   p3_field::BasedVectorSpace,
-  types::{ExtVal, Val},
+  types::{ExtVal3, Val},
 };
 use serde::Serialize;
 
@@ -58,7 +58,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     }
     ExecutionStatistics {
       log_blowup: self.parameters.log_blowup,
-      extension_degree: <ExtVal as BasedVectorSpace<Val>>::DIMENSION,
+      extension_degree: <ExtVal3 as BasedVectorSpace<Val>>::DIMENSION,
       circuits: self
         .statistics()
         .into_iter()

@@ -13,7 +13,7 @@ use multi_stark::{
   p3_field::PrimeCharacteristicRing,
   p3_matrix::dense::RowMajorMatrix,
   system::{CircuitInputs, System, SystemWitness},
-  types::{GoldilocksBlake3Config, Val},
+  types::{GoldilocksBlake3V6Config, Val},
 };
 use stark_verifier::compress_wrap::Input;
 
@@ -25,7 +25,7 @@ fn input() -> Input {
   let mut message = vec![one.clone(), Expr::constant(Val::ZERO)];
   message.extend((0..16).map(Expr::main));
   let (system, key) = System::new(
-    GoldilocksBlake3Config::new(cp, fp),
+    GoldilocksBlake3V6Config::new(cp, fp),
     vec![CircuitInputs {
       main_width: 16,
       constraints: vec![Expr::main(0) * Expr::main(0) - Expr::main(1)],

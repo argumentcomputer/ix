@@ -16,7 +16,7 @@ open Aiur
 def signature : Modules.Program Nat := aiur_library% U8.templates ⟦
 signature GoldilocksSignature {
   type Goldilocks = Field;
-  type ExtGoldilocks = [Goldilocks; 2];
+  type ExtGoldilocks = [Goldilocks; 3];
   fn gl_add(a: Goldilocks, b: Goldilocks) -> Goldilocks;
   fn gl_sub(a: Goldilocks, b: Goldilocks) -> Goldilocks;
   fn gl_neg(a: Goldilocks) -> Goldilocks;

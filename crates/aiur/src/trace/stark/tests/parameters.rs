@@ -1,7 +1,7 @@
 use super::*;
 use multi_stark::batch::Retention;
 
-/// Main's parameters are the default, and they are exactly at the floor.
+/// Protocol v6 (Fp^3) default parameters clear the 128-bit floor with headroom.
 #[test]
 fn default_parameters_are_mains() {
   let p = Parameters::default();
@@ -13,10 +13,14 @@ fn default_parameters_are_mains() {
       p.commit_proof_of_work_bits,
       p.query_proof_of_work_bits
     ),
-    (2, 100, 0, 20)
+    (2, 128, 0, 20)
   );
-  assert_eq!(p.conjectured_bits(), 220);
-  assert_eq!(p.conjectured_bits(), stark_key::security::MIN_CONJECTURED_BITS);
+  assert_eq!(p.conjectured_bits(), 276);
+  assert!(p.conjectured_bits() >= stark_key::security::MIN_CONJECTURED_BITS);
+  assert_eq!(
+    stark_key::security::johnson_millibits(&p.commitment(), &p.fri()),
+    142_240
+  );
   p.check().unwrap();
 }
 
@@ -162,20 +166,22 @@ fn lean_mirror_matches() {
     };
 
   for (lb, q, cpow, qpow, expected) in [
-    (2, 100, 0, 20, true),   // default
-    (1, 220, 0, 0, true),    // blowup 1 floor
-    (2, 118, 0, 0, true),    // blowup 2 floor
-    (3, 73, 0, 20, true),    // blowup 3 floor
-    (4, 66, 0, 20, true),    // blowup 4 floor with PoW
-    (4, 88, 0, 0, true),     // blowup 4 floor without PoW
-    (4, 55, 0, 0, false),    // 220 conjectured, 50.2 UD (rejected)
-    (4, 52, 0, 32, false),   // below query floor 53 (rejected)
-    (2, 110, 0, 0, false),   // 220 conjectured, 74.6 UD (rejected)
-    (3, 67, 0, 20, false),   // 221 conjectured, 75.6 UD (rejected)
-    (4, 87, 0, 0, false),    // 79.3 UD (rejected)
-    (2, 99, 0, 20, false),   // 218 conjectured (rejected)
-    (2, 100, 0, 19, false),  // 219 conjectured (rejected)
-    (2, 100, 33, 20, false), // commit PoW > 32 (rejected)
+    (2, 128, 0, 20, true), // Protocol v6 default (142.2b Johnson, 106.8b UD)
+    (1, 282, 0, 0, true),  // blowup 1 floor (128.3b Johnson, 117.0b UD)
+    (2, 135, 0, 0, true),  // blowup 2 floor without PoW (128.9b Johnson)
+    (2, 114, 0, 20, true), // blowup 2 floor with PoW (128.9b Johnson)
+    (3, 78, 0, 20, true), // blowup 3 shrinker --stark-128 (133.5b Johnson, 84.7b UD)
+    (4, 66, 0, 20, true), // blowup 4 floor with PoW (149.0b Johnson, 80.2b UD)
+    (4, 88, 0, 0, true),  // blowup 4 floor without PoW
+    (2, 100, 0, 20, false), // retired v5 default: 115.5b Johnson (< 128b, rejected)
+    (2, 113, 0, 20, false), // 127.9b Johnson (< 128b, rejected)
+    (3, 74, 0, 20, false),  // 127.7b Johnson (< 128b, rejected)
+    (4, 58, 0, 20, false),  // 133.4b Johnson, but 72.9b UD (< 80b, rejected)
+    (4, 55, 0, 0, false),   // 220 conjectured, 50.2 UD (rejected)
+    (4, 52, 0, 32, false),  // below query floor 53 (rejected)
+    (2, 110, 0, 0, false),  // 220 conjectured, 74.6 UD (rejected)
+    (4, 87, 0, 0, false),   // 79.3 UD (rejected)
+    (2, 128, 33, 20, false), // commit PoW > 32 (rejected)
   ] {
     let rust_ok = Parameters {
       log_blowup: lb,
@@ -199,6 +205,97 @@ fn lean_mirror_matches() {
       "Lean/Rust parity mismatch for ({lb}, {q}, {cpow}, {qpow})"
     );
   }
+
+  // Mirror checks for the `v6` 128-bit security profile constants and tables.
+  assert_eq!(
+    field("extensionDegreeV6"),
+    stark_key::security::EXTENSION_DEGREE_V6
+  );
+  assert_eq!(
+    field("protocolVersionV6"),
+    stark_key::security::PROTOCOL_VERSION_V6
+  );
+  assert_eq!(
+    field("minProvableSecurityBits128"),
+    stark_key::security::MIN_PROVABLE_SECURITY_BITS_128
+  );
+  assert_eq!(
+    field("digestBytesXof48"),
+    stark_key::security::DIGEST_BYTES_XOF48
+  );
+  for lb in *stark_key::security::LOG_BLOWUP_RANGE.start()
+    ..=*stark_key::security::LOG_BLOWUP_RANGE.end()
+  {
+    assert_eq!(
+      table_entry("minQueriesForLogBlowup128Ud", lb),
+      stark_key::security::min_queries_for_log_blowup_128_ud(lb).unwrap(),
+      "minQueriesForLogBlowup128Ud mismatch at log_blowup={lb}"
+    );
+    assert_eq!(
+      table_entry("minQueriesForLogBlowup128Johnson", lb),
+      stark_key::security::min_queries_for_log_blowup_128_johnson(lb).unwrap(),
+      "minQueriesForLogBlowup128Johnson mismatch at log_blowup={lb}"
+    );
+  }
+
+  let ext_v6 = field("extensionDegreeV6");
+  let ver_v6 = field("protocolVersionV6");
+  let min_128 = field("minProvableSecurityBits128");
+  let lean_meets_128_ud =
+    |ext: usize, ver: usize, lb: usize, q: usize, cpow: usize, qpow: usize| {
+      if ext < ext_v6 || ver < ver_v6 || !lean_meets_floor(lb, q, cpow, qpow) {
+        return false;
+      }
+      let min_q = table_entry("minQueriesForLogBlowup128Ud", lb);
+      let ud_rate = table_entry("udMillibitsPerQuery", lb);
+      q >= min_q && q * ud_rate + qpow * 1000 >= min_128 * 1000
+    };
+  let lean_meets_128_johnson =
+    |ext: usize, ver: usize, lb: usize, q: usize, cpow: usize, qpow: usize| {
+      if ext < ext_v6 || ver < ver_v6 || !lean_meets_floor(lb, q, cpow, qpow) {
+        return false;
+      }
+      let min_q = table_entry("minQueriesForLogBlowup128Johnson", lb);
+      let johnson_mb = (lb * 500 - johnson_slack) * q + qpow * 1000;
+      q >= min_q && johnson_mb >= min_128 * 1000
+    };
+
+  for (ext, ver, lb, q, cpow, qpow, want_ud, want_j) in [
+    (3, 6, 2, 160, 0, 20, true, true), // v6 UD 128b
+    (3, 6, 2, 118, 0, 20, false, true), // v6 Johnson 128b lower edge
+    (3, 6, 2, 128, 0, 20, false, true), // v6 Johnson 128b recommended
+    (3, 6, 3, 78, 0, 20, false, true), // v6 Johnson lb=3
+    (3, 6, 4, 66, 0, 20, false, true), // v6 Johnson lb=4
+    (2, 6, 2, 160, 0, 20, false, false), // Fp2 rejected
+    (3, 5, 2, 160, 0, 20, false, false), // v5 protocol rejected
+    (3, 6, 2, 100, 0, 20, false, false), // v5 default rejected
+    (3, 6, 4, 55, 0, 0, false, false), // deceptive (4,55,0) rejected
+    (3, 6, 2, 159, 0, 20, false, true), // 127.802 UD, 171.845 Johnson
+    (3, 6, 2, 113, 0, 20, false, false), // 127.915 Johnson (< 128)
+  ] {
+    let p = Parameters {
+      log_blowup: lb,
+      num_queries: q,
+      commit_proof_of_work_bits: cpow,
+      query_proof_of_work_bits: qpow,
+    };
+    let rust_ud =
+      stark_key::security::check_128_ud(ext, ver, &p.commitment(), &p.fri())
+        .is_ok();
+    let rust_j = stark_key::security::check_128_johnson(
+      ext,
+      ver,
+      &p.commitment(),
+      &p.fri(),
+    )
+    .is_ok();
+    let lean_ud = lean_meets_128_ud(ext, ver, lb, q, cpow, qpow);
+    let lean_j = lean_meets_128_johnson(ext, ver, lb, q, cpow, qpow);
+    assert_eq!(rust_ud, want_ud, "Rust 128 UD mismatch");
+    assert_eq!(lean_ud, want_ud, "Lean 128 UD mismatch");
+    assert_eq!(rust_j, want_j, "Rust 128 Johnson mismatch");
+    assert_eq!(lean_j, want_j, "Lean 128 Johnson mismatch");
+  }
 }
 
 #[test]
@@ -208,10 +305,11 @@ fn backends_reject_parameters_below_the_floor() {
   let weak = [
     // #678's original default, 64 conjectured bits.
     Parameters { log_blowup: 1, num_queries: 64, ..parameters() },
-    Parameters { num_queries: 219, ..parameters() },
+    Parameters { num_queries: 281, ..parameters() },
+    // Retired v5 default (115.5b Johnson < 128b).
     Parameters {
       num_queries: 100,
-      query_proof_of_work_bits: 19,
+      query_proof_of_work_bits: 20,
       ..Parameters::DEFAULT
     },
     Parameters { commit_proof_of_work_bits: 33, ..parameters() },
@@ -255,8 +353,8 @@ fn proofs_are_bound_to_their_parameters() {
   let base = parameters();
   let variants = [
     base,
-    Parameters { log_blowup: 2, num_queries: 118, ..base },
-    Parameters { num_queries: 221, ..base },
+    Parameters { log_blowup: 2, num_queries: 135, ..base },
+    Parameters { num_queries: 283, ..base },
     Parameters { commit_proof_of_work_bits: 1, ..base },
     Parameters { query_proof_of_work_bits: 1, ..base },
   ];

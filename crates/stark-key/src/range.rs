@@ -11,10 +11,9 @@
 
 use bincode::serde::encode_to_vec;
 use multi_stark::p3_field::{BasedVectorSpace, PrimeField64};
-use multi_stark::types::ExtVal;
+use multi_stark::types::{ExtVal3, GoldilocksBlake3V6Config, Val as G};
 
-use multi_stark::types::{GoldilocksBlake3Config, Val as G};
-type AiurProof = multi_stark::batch::BatchProof<GoldilocksBlake3Config>;
+type AiurProof = multi_stark::batch::BatchProof<GoldilocksBlake3V6Config>;
 
 /// The byte every range statement opens with. `Ix.Claim` tags live in
 /// `0xE0..=0xF?`, so a range statement never parses as a `CheckEnv` claim.
@@ -56,8 +55,8 @@ pub fn proofs_slice_bytes(
 }
 
 /// The residual sum of shards `[lo, hi)`: each shard's last intermediate
-/// accumulator, added in the challenge field.
-pub fn range_residual(proof: &AiurProof, lo: usize, hi: usize) -> ExtVal {
+/// accumulator, added in the challenge field (`ExtVal3`, Fp^3).
+pub fn range_residual(proof: &AiurProof, lo: usize, hi: usize) -> ExtVal3 {
   proof.proofs[lo..hi]
     .iter()
     .map(|shard| {
@@ -70,21 +69,21 @@ pub fn range_residual(proof: &AiurProof, lo: usize, hi: usize) -> ExtVal {
     .sum()
 }
 
-/// An extension-field element as two canonical little-endian `u64` limbs.
-pub fn ext_bytes(value: ExtVal) -> Vec<u8> {
+/// An extension-field element (`ExtVal3`) as three canonical little-endian `u64` limbs.
+pub fn ext_bytes(value: ExtVal3) -> Vec<u8> {
   let coefficients: &[G] = value.as_basis_coefficients_slice();
   coefficients.iter().flat_map(|c| c.as_canonical_u64().to_le_bytes()).collect()
 }
 
 /// A range node's statement:
-/// `tag ‖ blake3(preamble)(32) ‖ lo(u64 LE) ‖ hi(u64 LE) ‖ residual(16)`.
+/// `tag ‖ blake3(preamble)(32) ‖ lo(u64 LE) ‖ hi(u64 LE) ‖ residual(24)`.
 pub fn range_statement(
   preamble_digest: &[u8; 32],
   lo: usize,
   hi: usize,
-  residual: ExtVal,
+  residual: ExtVal3,
 ) -> Vec<u8> {
-  let mut bytes = Vec::with_capacity(65);
+  let mut bytes = Vec::with_capacity(73);
   bytes.push(RANGE_STATEMENT_TAG);
   bytes.extend_from_slice(preamble_digest);
   bytes.extend((lo as u64).to_le_bytes());
@@ -101,14 +100,16 @@ mod tests {
   #[test]
   fn statement_layout_is_fixed_width() {
     let digest = [7u8; 32];
-    let residual = ExtVal::new([G::from_u64(5), G::from_u64(9)]);
+    let residual =
+      ExtVal3::new([G::from_u64(5), G::from_u64(9), G::from_u64(13)]);
     let bytes = range_statement(&digest, 3, 11, residual);
-    assert_eq!(bytes.len(), 65);
+    assert_eq!(bytes.len(), 73);
     assert_eq!(bytes[0], RANGE_STATEMENT_TAG);
     assert_eq!(&bytes[1..33], &digest);
     assert_eq!(&bytes[33..41], &3u64.to_le_bytes());
     assert_eq!(&bytes[41..49], &11u64.to_le_bytes());
     assert_eq!(&bytes[49..57], &5u64.to_le_bytes());
     assert_eq!(&bytes[57..65], &9u64.to_le_bytes());
+    assert_eq!(&bytes[65..73], &13u64.to_le_bytes());
   }
 }

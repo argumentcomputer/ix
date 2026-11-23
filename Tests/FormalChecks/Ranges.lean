@@ -5,7 +5,7 @@ import Tests.FormalChecks.Common
 
 The range split of a one-shard proof (`stark-verifier ranges PROOF DIR 1` in
 `Scripts/CheckFormal.lean`): one leaf, `[0, 1)`, with no children, and its statement is
-the 65-byte range statement (`Aggr.rangeStatement`).
+the 73-byte Protocol v6 ($\mathbb{F}_{p^3}$) range statement (`Aggr.rangeStatement`).
 -/
 
 namespace Tests.FormalChecks.Ranges
@@ -21,8 +21,8 @@ def main (argv : List String) : IO UInt32 := do
   unless ranges == expected do
     fail s!"ranges.json is {ranges.compress}, expected {expected.compress}"
   let statement ← IO.FS.readBinFile (dir / "ranges" / "0.statement")
-  unless statement.size == 65 do
-    fail s!"0.statement has {statement.size} bytes, expected 65"
+  unless statement.size == 73 do
+    fail s!"0.statement has {statement.size} bytes, expected 73"
   return 0
 
 end Tests.FormalChecks.Ranges

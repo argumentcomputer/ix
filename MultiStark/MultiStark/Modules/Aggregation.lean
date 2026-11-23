@@ -1005,13 +1005,15 @@ module Aggregation {
       let (lo, s3) = ProofDeserialize::read_u64(s2);
       let (hi, s4) = ProofDeserialize::read_u64(s3);
       let (r0, s5) = ProofDeserialize::read_u64(s4);
-      let (r1, stop) = ProofDeserialize::read_u64(s5);
+      let (r1, s6) = ProofDeserialize::read_u64(s5);
+      let (r2, stop) = ProofDeserialize::read_u64(s6);
       let Lists::Node::Nil = (*(stop));
       assert_eq!(Goldilocks::gl_lt_p(lo), 1, "aggr range: non-canonical range start");
       assert_eq!(Goldilocks::gl_lt_p(hi), 1, "aggr range: non-canonical range end");
       assert_eq!(Goldilocks::gl_lt_p(r0), 1, "aggr range: non-canonical residual limb 0");
       assert_eq!(Goldilocks::gl_lt_p(r1), 1, "aggr range: non-canonical residual limb 1");
-      (d, lo, hi, [Goldilocks::gl_val(r0), Goldilocks::gl_val(r1)])
+      assert_eq!(Goldilocks::gl_lt_p(r2), 1, "aggr range: non-canonical residual limb 2");
+      (d, lo, hi, [Goldilocks::gl_val(r0), Goldilocks::gl_val(r1), Goldilocks::gl_val(r2)])
     }
 
   fn aggr_read_digest(s: Bytes::Stream) -> (ProofDeserialize::DigestP, Bytes::Stream) {
@@ -1121,7 +1123,7 @@ module Aggregation {
           let (p, j) = ProofDeserialize::read_proof(i);
           let r = StarkVerifier::verify_shard(sys, h, shard, p, input, lch, fch);
           aggr_verify_range(sys, hrest, j, shard + 1, n - 1, input, lch, fch,
-            Goldilocks::eg_add(acc, r)) } ,
+            Pcs::eg3_add(acc, r)) } ,
       }
     }
 
@@ -1155,9 +1157,9 @@ module Aggregation {
       let (count, j) = ProofDeserialize::read_count_at(pidx);
       assert_eq!(count, n, "aggr range: proof count differs from the range");
       let (total, stop) = aggr_verify_range(sys, Lists::drop(headers, lo), j, lo,
-        n, input, lch, fch, [0, 0]);
+        n, input, lch, fch, [0, 0, 0]);
       assert_eq!(stop, pidx + plen, "aggr range: trailing bytes after the proofs");
-      assert_eq!(Goldilocks::eg_eq(total, r), 1,
+      assert_eq!(Pcs::eg3_eq(total, r), 1,
         "aggr range: residual sum differs from the statement");
       ()
     }
@@ -1180,7 +1182,7 @@ module Aggregation {
         "aggr range: output starts elsewhere than the left child");
       assert_eq!(UInt64::to_field(hi), UInt64::to_field(rhi),
         "aggr range: output ends elsewhere than the right child");
-      assert_eq!(Goldilocks::eg_eq(Goldilocks::eg_add(lr, rr), r), 1,
+      assert_eq!(Pcs::eg3_eq(Pcs::eg3_add(lr, rr), r), 1,
         "aggr range: output residual is not the children's sum");
       ()
     }
@@ -1246,16 +1248,17 @@ module Aggregation {
       }
     }
 
-  -- Enforce the uniform Multi-STARK security envelope (`Ix.Aiur.meetsSecurityFloor` +
-  -- `Ix.Cert.MultiStark.checkParams` + explicit per-`log_blowup` provable UD query floor)
-  -- on an external accelerator verifying key:
+  -- Enforce the uniform Protocol v6 (Fp^3) Multi-STARK security envelope
+  -- (`Ix.Aiur.meetsSecurityFloor` + `stark_key::security::validate_security_floor`)
+  -- on an external accelerator verifying key (`SystemDeserialize::read_system`
+  -- already rejects non-v6, non-Fp^3, and non-Tensor keys):
   -- `cap_height = 0`, `log_final_poly_len = 0`, `max_log_arity = 1`,
   -- `1 <= log_blowup <= 4`, `num_queries >= 1`, `commit_pow_bits <= 32`,
   -- `query_pow_bits <= 32`, `log_blowup * num_queries + query_pow_bits >= 220`,
-  -- and provable unique-decoding query soundness `>= 80` bits:
-  -- `ud_millibits(log_blowup) * num_queries + 1000 * query_pow_bits >= 80000`,
-  -- where `ud_millibits` is `floor(-1000 * log2((1 + 2^(-log_blowup)) / 2))`:
-  -- `1 -> 415`, `2 -> 678`, `3 -> 830`, `4 -> 912` (blocking 50.2-bit `(4, 55, 0)` configs).
+  -- provable unique-decoding query soundness `>= 80` bits
+  -- (`ud_millibits(log_blowup) * num_queries + 1000 * query_pow_bits >= 80000`),
+  -- and finite-m Johnson (m = 16, slack 45 millibits/query) query soundness `>= 128` bits
+  -- (`(500 * log_blowup - 45) * num_queries + 1000 * query_pow_bits >= 128000`).
   fn aggr_assert_security_envelope(sys: SystemDeserialize::Sys) -> () {
       let SystemDeserialize::Sys::Mk(params, _tlimbs, _circuits, _commit, _prep_indices) = sys;
       let SystemDeserialize::SysParams::Mk(log_blowup, cap_height, log_final_poly_len,
@@ -1283,6 +1286,9 @@ module Aggregation {
       };
       assert_eq!(UInt32::less_than_fields(79999, ud_millibits * num_queries + 1000 * query_pow_bits), 1,
         "aggr dynamic link: provable UD query soundness below 80-bit floor");
+      let johnson_millibits = 500 * log_blowup - 45;
+      assert_eq!(UInt32::less_than_fields(127999, johnson_millibits * num_queries + 1000 * query_pow_bits), 1,
+        "aggr dynamic link: finite-m Johnson query soundness below 128-bit floor");
       ()
     }
 

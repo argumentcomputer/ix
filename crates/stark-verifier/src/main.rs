@@ -13,7 +13,7 @@ use multi_stark::{
   p3_field::PrimeCharacteristicRing,
   p3_matrix::dense::RowMajorMatrix,
   system::{CircuitInputs, System, SystemWitness},
-  types::{GoldilocksBlake3Config, Val},
+  types::{GoldilocksBlake3V6Config, Val},
 };
 use std::{
   error::Error,
@@ -78,7 +78,7 @@ fn fixture(
     lookups: vec![Lookup::pull(one, message)],
     ..Default::default()
   }];
-  let (system, pk) = System::new(GoldilocksBlake3Config::new(cp, fp), inputs);
+  let (system, pk) = System::new(GoldilocksBlake3V6Config::new(cp, fp), inputs);
   let x = Val::from_u64(3) * multiplier;
   let y = Val::from_u64(9) * multiplier;
   let mut claim = vec![Val::ONE, Val::ZERO, x, y];
@@ -350,10 +350,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let base_proof = aiur::trace::stark::BatchProof::from_bytes(&proof_bytes)?;
     let mut corrupted_opening = base_proof.clone();
     corrupted_opening.proofs[0].stage_1_opened_values[0][0][0] +=
-      multi_stark::types::ExtVal::ONE;
+      multi_stark::types::ExtVal3::ONE;
     let mut widened_row = base_proof.clone();
     widened_row.proofs[0].stage_1_opened_values[0][0]
-      .push(multi_stark::types::ExtVal::ZERO);
+      .push(multi_stark::types::ExtVal3::ZERO);
     let mut tampered_claim = base_proof.clone();
     tampered_claim.preamble.headers[0].claims[0][0] += Val::ONE;
     let mut over_row_bound = base_proof.clone();

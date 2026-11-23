@@ -168,7 +168,7 @@ def semanticSuite : IO UInt32 := do
   -- Recursion parameter and cache-key contract.
   let recursionDefaults := Aggr.defaultRecursionParameters
   let expectedDefaultFriBytes : ByteArray :=
-    ⟨u64le 0 ++ u64le 1 ++ u64le 100 ++ u64le 0 ++ u64le 20⟩
+    ⟨u64le 0 ++ u64le 1 ++ u64le 128 ++ u64le 0 ++ u64le 20⟩
   let tunedFri : Aiur.FriParameters :=
     { recursionDefaults.fri with numQueries := 50 }
   let tunedFriParameters : Aggr.RecursionParameters :=

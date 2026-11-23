@@ -29,6 +29,7 @@ module EmulatedGL {
   fn mul(a: Field, b: Field) -> Field { Goldilocks::gl_mul(a, b) }
   fn neg(a: Field) -> Field { Goldilocks::gl_neg(a) }
   fn inverse(a: Field) -> Field { Goldilocks::gl_inverse(a) }
+  fn inv_nonzero(a: Field) -> Field { Goldilocks::gl_inv_nonzero(a) }
   fn eq(a: Field, b: Field) -> Field { Goldilocks::gl_eq(a, b) }
   fn is_zero(a: Field) -> Field { Goldilocks::gl_is_zero(a) }
   fn reduce(raw: [Field; 8]) -> Field { Goldilocks::gl_val(bytes(raw)) }
@@ -38,16 +39,17 @@ module EmulatedGL {
     [UInt8::to_field(b[0]), UInt8::to_field(b[1]), UInt8::to_field(b[2]), UInt8::to_field(b[3]),
      UInt8::to_field(b[4]), UInt8::to_field(b[5]), UInt8::to_field(b[6]), UInt8::to_field(b[7])]
   }
-  fn extension_mul(a: [Field; 2], b: [Field; 2]) -> [Field; 2] {
+  fn extension_mul(a: [Field; 3], b: [Field; 3]) -> [Field; 3] {
     Goldilocks::eg_mul(a, b)
   }
-  fn extension_inverse(a: [Field; 2]) -> [Field; 2] { Goldilocks::eg_inverse(a) }
+  fn extension_inverse(a: [Field; 3]) -> [Field; 3] { Goldilocks::eg_inverse(a) }
+  fn extension_inv_nonzero(a: [Field; 3]) -> [Field; 3] { Goldilocks::eg_inv_nonzero(a) }
 }
 ⟧
 
 def entries : List String :=
-  ["add", "sub", "mul", "neg", "inverse", "eq", "is_zero", "reduce", "decode",
-    "encode", "extension_mul", "extension_inverse"].map ("EmulatedGL::" ++ ·)
+  ["add", "sub", "mul", "neg", "inverse", "inv_nonzero", "eq", "is_zero", "reduce", "decode",
+    "encode", "extension_mul", "extension_inverse", "extension_inv_nonzero"].map ("EmulatedGL::" ++ ·)
 
 def program : Modules.Program F :=
   Library.U8.source.append Library.Field.declarations

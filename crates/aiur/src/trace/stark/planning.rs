@@ -1168,7 +1168,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       .map(|(&height, c)| {
         let n =
           if c.preprocessed_height == 0 { height.min(rows) } else { height };
-        let quotient = if quotient { 2 * c.quotient_degree() } else { 0 };
+        let quotient = if quotient { 3 * c.quotient_degree() } else { 0 };
         n as u128 * (c.main_width + c.stage_2_width + quotient) as u128
       })
       .sum()
@@ -1210,7 +1210,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       committed += 8
         * b
         * n
-        * (main + c.stage_2_width as u128 + 2 * c.quotient_degree() as u128);
+        * (main + c.stage_2_width as u128 + 3 * c.quotient_degree() as u128);
       prep += 8
         * (1 + b)
         * c.preprocessed_width as u128

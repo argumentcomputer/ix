@@ -1,21 +1,26 @@
 import LSpec
-import Ix.Cert.MultiStark.Verifier
+import Blake3.Rust
+import MultiStark.Package
+import Ix.FormalProver
 
-/-! # Certified Multi-STARK Verifier Cross-Language Fixture Tests
+/-! # Protocol v6 ($\mathbb{F}_{p^3}$) Aiur Recursive Verifier Cross-Language Fixture Tests
 
-Verifies the Mathlib-free executable verifier `Ix.Cert.MultiStark.verifyBatchBytes`
-against real Rust `multi-stark` (`3515632f`) binary fixtures covering:
+Compiles the formal Aiur recursive verifier (`MultiStark.recursionProgram`, entry point
+`MultiStark::verify_multi_stark_proof`) and executes it via `Ix.FormalProver` against
+real Rust `multi-stark` Protocol `v6` ($\mathbb{F}_{p^3} = \mathbb{F}_p[X]/(X^3 - X - 1)$,
+BLAKE3 `derive_key`, `FriBatching::Tensor`, `vk_digest`) binary fixtures covering:
 1. Grouped preprocessed single-shard proof (`Tests/Fixtures/MultiStark/`)
-2. Multi-shard proof with shared batch challenger (`Tests/Fixtures/MultiStark/two_shard/`)
+2. Multi-shard proof with inactive fixed table (`Tests/Fixtures/MultiStark/two_shard/`)
 3. Single-shard proof without preprocessed trace (`Tests/Fixtures/MultiStark/single_no_prep/`)
 4. Two-shard proof with `MEMSEG = 16` cross-shard closure pairs (`Tests/Fixtures/MultiStark/memseg_two_shard/`)
 
-For every fixture, verifies both acceptance of the genuine proof and rejection of
-4 distinct tampered variants (corrupted proof byte, corrupted claims byte,
-corrupted system byte, and truncated/length-corrupted proof).
+For every accepted fixture, verifies genuine proof acceptance AND rejection of tampered
+proof tail, tampered proof header, tampered claims, truncated proof, and Protocol `v5` /
+$\mathbb{F}_{p^2}$ / `FriBatching::Horner` header downgrade attacks.
 -/
 
 open LSpec
+open Ix
 
 namespace Tests.Ix.MultiStarkVerifier
 
@@ -25,6 +30,64 @@ private def flipByte (bs : ByteArray) (idx : Nat) : ByteArray :=
   else
     bs
 
+private def setU16LE (bs : ByteArray) (offset : Nat) (val : UInt16) : ByteArray :=
+  if offset + 1 < bs.size then
+    let b0 := (val &&& 0xff).toUInt8
+    let b1 := ((val >>> 8) &&& 0xff).toUInt8
+    (bs.set! offset b0).set! (offset + 1) b1
+  else
+    bs
+
+private def pushUInt64LE (acc : ByteArray) (n : UInt64) : ByteArray := Id.run do
+  let mut out := acc
+  for i in [0:8] do
+    out := out.push (n >>> (8 * i).toUInt64).toUInt8
+  return out
+
+private def packBlake3Digest (bs : ByteArray) : Array UInt64 := Id.run do
+  let h := (Blake3.Rust.hash bs).val
+  let mut words : Array UInt64 := Array.mkEmpty 8
+  for i in [0:8] do
+    let b0 := h.get! (4 * i) |>.toUInt64
+    let b1 := h.get! (4 * i + 1) |>.toUInt64
+    let b2 := h.get! (4 * i + 2) |>.toUInt64
+    let b3 := h.get! (4 * i + 3) |>.toUInt64
+    words := words.push (b0 ||| (b1 <<< 8) ||| (b2 <<< 16) ||| (b3 <<< 24))
+  return words
+
+private def buildVerifyRequest (sys clm prf : ByteArray) : IO FormalProver.Request := do
+  let args := packBlake3Digest sys ++ packBlake3Digest clm
+  let mut layout := ByteArray.empty
+  let mut bytes := ByteArray.empty
+  for (chan, payload) in (#[(0, prf), (1, sys), (2, clm)] : Array (UInt64 × ByteArray)) do
+    layout := pushUInt64LE layout chan
+    layout := pushUInt64LE layout 0 -- byte stream
+    layout := pushUInt64LE layout 1 -- key length = 1
+    layout := pushUInt64LE layout 0 -- key = [0]
+    layout := pushUInt64LE layout payload.size.toUInt64
+    bytes := bytes ++ payload
+  FormalProver.Request.buffers MultiStark.recursionEntry args layout bytes ByteArray.empty
+
+private def checkProof (system : FormalProver.System) (sys clm prf : ByteArray) : IO Bool := do
+  try
+    let req ← buildVerifyRequest sys clm prf
+    let out ← system.check req 0 false
+    return out.status == 0
+  catch _ =>
+    return false
+
+private def loadRecursionSystem : IO FormalProver.System := do
+  let cacheDir : System.FilePath :=
+    System.FilePath.mk ".lake/build/multistark-verifier-cache" / MultiStark.recursionDigest
+  IO.FS.createDirAll cacheDir
+  let pkgPath := cacheDir / "recursion.ixa"
+  if !(← pkgPath.pathExists) then
+    let bytes ← MultiStark.compilePackage (aggregate := false) (trace := true)
+    IO.FS.writeBinFile pkgPath bytes
+  let reg ← FormalProver.Registry.new
+  let prog ← reg.load pkgPath.toString
+  reg.system prog {}
+
 private def fixtures : List (String × System.FilePath × Bool) := [
   ("grouped_prep_1shard", "Tests/Fixtures/MultiStark", false),
   ("two_shard", "Tests/Fixtures/MultiStark/two_shard", true),
@@ -33,41 +96,49 @@ private def fixtures : List (String × System.FilePath × Bool) := [
 ]
 
 def suite : IO (List TestSeq) := do
+  let system ← loadRecursionSystem
   let mut tests : TestSeq := .done
-  for (name, dir, needsInactivePrepWaiver) in fixtures do
+  for (name, dir, hasInactivePrep) in fixtures do
     let sys ← IO.FS.readBinFile (dir / "system.bin")
     let prf ← IO.FS.readBinFile (dir / "proof.bin")
     let clm ← IO.FS.readBinFile (dir / "claims.bin")
-    -- Production-strict `verifyBatchBytes` rejects toy fixture parameters (below security floor)
-    tests := tests ++ test s!"{name}: production verifyBatchBytes rejects toy parameters"
-      (!Ix.Cert.MultiStark.verifyBatchBytes sys clm prf)
-    -- If the raw `multi-stark` fixture has an inactive preprocessed circuit, strict active-prep
-    -- enforcement rejects it even when the toy security-floor waiver is enabled
-    if needsInactivePrepWaiver then
+    if hasInactivePrep then
+      -- Strict active-preprocessed invariant: `select_active_prep` rejects shards that
+      -- deactivate a circuit with a fixed preprocessed table.
+      let ok ← checkProof system sys clm prf
       tests := tests ++ test s!"{name}: strict active-preprocessed check rejects inactive fixed table"
-        (!Ix.Cert.MultiStark.verifyBatchBytesWithFloor sys clm prf (allowBelowFloor := true))
-    -- Test-harness waiver verifies the toy Rust fixtures
-    let verify := fun s c p =>
-      Ix.Cert.MultiStark.verifyBatchBytesWithFloor s c p
-        (allowBelowFloor := true) (allowInactivePrep := needsInactivePrepWaiver)
-    let ok := verify sys clm prf
-    tests := tests ++ test s!"{name}: valid Rust proof accepted (test waiver)" ok
-    -- Negative control 1: flip a byte near the end of the proof (FRI/MMCS payload)
-    let badPrf1 := flipByte prf (prf.size - 17)
-    tests := tests ++ test s!"{name}: tampered proof tail rejected"
-      (!verify sys clm badPrf1)
-    -- Negative control 2: flip a byte in the proof header/length prefix
-    let badPrf2 := flipByte prf (min 12 (prf.size - 1))
-    tests := tests ++ test s!"{name}: tampered proof header rejected"
-      (!verify sys clm badPrf2)
-    -- Negative control 3: flip a byte in claims.bin
-    let badClm := flipByte clm (clm.size - 1)
-    tests := tests ++ test s!"{name}: tampered claims rejected"
-      (!verify sys badClm prf)
-    -- Negative control 4: truncated proof rejected without panicking
-    let truncPrf := prf.extract 0 (prf.size / 2)
-    tests := tests ++ test s!"{name}: truncated proof rejected"
-      (!verify sys clm truncPrf)
+        (!ok)
+    else
+      let ok ← checkProof system sys clm prf
+      tests := tests ++ test s!"{name}: valid Protocol v6 Fp^3 Rust proof accepted by Aiur verifier" ok
+      -- Negative control 1: flip a byte near the end of the proof (FRI/MMCS payload)
+      let badPrf1 := flipByte prf (prf.size - 17)
+      tests := tests ++ test s!"{name}: tampered proof tail rejected"
+        (!(← checkProof system sys clm badPrf1))
+      -- Negative control 2: flip a byte in the proof header/length prefix
+      let badPrf2 := flipByte prf (min 12 (prf.size - 1))
+      tests := tests ++ test s!"{name}: tampered proof header rejected"
+        (!(← checkProof system sys clm badPrf2))
+      -- Negative control 3: flip a byte in claims.bin
+      let badClm := flipByte clm (clm.size - 1)
+      tests := tests ++ test s!"{name}: tampered claims rejected"
+        (!(← checkProof system sys badClm prf))
+      -- Negative control 4: truncated proof rejected without panicking
+      let truncPrf := prf.extract 0 (prf.size / 2)
+      tests := tests ++ test s!"{name}: truncated proof rejected"
+        (!(← checkProof system sys clm truncPrf))
+      -- Negative control 5: Protocol v5 header downgrade rejected fail-closed
+      let v5Sys := setU16LE sys 0 5
+      tests := tests ++ test s!"{name}: Protocol v5 downgrade rejected fail-closed"
+        (!(← checkProof system v5Sys clm prf))
+      -- Negative control 6: Fp^2 (extension_degree = 2) header downgrade rejected fail-closed
+      let fp2Sys := setU16LE sys 2 2
+      tests := tests ++ test s!"{name}: Fp^2 (ext_degree=2) downgrade rejected fail-closed"
+        (!(← checkProof system fp2Sys clm prf))
+      -- Negative control 7: FriBatching::Horner (tag 0) downgrade rejected fail-closed
+      let hornerSys := setU16LE sys 4 0
+      tests := tests ++ test s!"{name}: FriBatching::Horner downgrade rejected fail-closed"
+        (!(← checkProof system hornerSys clm prf))
   return [tests]
 
 end Tests.Ix.MultiStarkVerifier

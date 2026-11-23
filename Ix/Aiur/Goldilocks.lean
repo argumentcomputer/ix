@@ -7,7 +7,7 @@ namespace Aiur
 abbrev gSize : UInt64 := 1 - 2 ^ 32
 abbrev G := { u : UInt64 // u < gSize }
 
-abbrev G.extensionDegree : Nat := 2
+abbrev G.extensionDegree : Nat := 3
 
 def G.ofNat (n : Nat) : G :=
   -- Reduce in `Nat` BEFORE narrowing: `toUInt64` wraps mod 2^64, which is

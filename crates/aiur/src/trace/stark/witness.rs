@@ -551,6 +551,344 @@ impl<'r, B: WitnessField> ValidatedRecord<'r, B> {
   }
 }
 
+pub(super) struct WitnessView<'v, 'a, B: WitnessField> {
+  pub(super) plan: &'v TracePlan<'a, B>,
+  pub(super) circuits: &'v [multi_stark::system::Circuit<Val>],
+  pub(super) tables: &'v [tables::FixedTable],
+  pub(super) rom: &'v rom::Rom,
+  pub(super) lookup_plans: &'v [LookupPlan],
+  pub(super) member_lookup_plans: &'v [MemberLookupPlan],
+  pub(super) circuit_chips: &'v [Vec<usize>],
+  pub(super) members: &'v [Vec<usize>],
+  pub(super) placements: &'v [grouping::Placement],
+}
+
+impl<B: WitnessField> WitnessView<'_, '_, B> {
+  /// Populate all traces (and optionally lookup buffers when `LOOKUPS = true`)
+  /// for a standalone proof where every active dynamic circuit is zero-padded
+  /// to at least `min_active_height` (leaving inactive circuits at height 0).
+  pub(super) fn generate_with_min_active_height<const LOOKUPS: bool>(
+    &self,
+    record: &Execution<B>,
+    root: Option<(&str, &[B::Element])>,
+    min_active_height: usize,
+  ) -> Result<SystemWitness<Val>, String> {
+    self.plan.validate_record(record)?;
+    if let Some((entry, args)) = root {
+      self.plan.root(record, entry, args)?;
+    }
+    let functions = self.members.len();
+    let fixed = functions..functions + self.tables.len();
+    let empty = |ci: usize| {
+      (
+        RowMajorMatrix::new(vec![], self.circuits[ci].main_width),
+        LookupValues::builder(0, &self.lookup_plans[ci].widths).finish(),
+      )
+    };
+    let generate = |ci: usize| {
+      if fixed.contains(&ci) {
+        let (trace, lookups) = empty(ci);
+        Ok((trace, lookups, RangeCounts::default()))
+      } else if ci < functions {
+        let rows: usize = self.members[ci]
+          .iter()
+          .map(|&f| record.queries.tables[f].len())
+          .sum();
+        let target = if rows == 0 || min_active_height == 0 {
+          None
+        } else {
+          let natural =
+            rows.checked_next_power_of_two().ok_or("trace height overflow")?;
+          Some(natural.max(min_active_height))
+        };
+        self.function_witness::<LOOKUPS>(ci, record, target)
+      } else {
+        let rom_idx = ci - fixed.end;
+        let payload_width = self.rom.widths[rom_idx];
+        let active_rows = self.rom.row_count_for_entries(
+          payload_width,
+          record.memory.width_cells(payload_width).len(),
+        );
+        let target = if active_rows == 0 || min_active_height == 0 {
+          None
+        } else {
+          let natural = active_rows
+            .checked_next_power_of_two()
+            .ok_or("ROM height overflow")?;
+          Some(natural.max(min_active_height))
+        };
+        let (trace, active_rows) =
+          self.rom.witness_with_active(record, rom_idx, target)?;
+        let lookups = if LOOKUPS {
+          debug_assert!(self.lookup_plans[ci].zero_row_empty);
+          self.auxiliary_lookups_rows(ci, &trace, active_rows)
+        } else {
+          empty(ci).1
+        };
+        Ok((trace, lookups, RangeCounts::default()))
+      }
+    };
+    #[cfg(feature = "parallel")]
+    let results = (0..self.circuits.len())
+      .into_par_iter()
+      .map(generate)
+      .collect::<Result<Vec<_>, String>>()?;
+    #[cfg(not(feature = "parallel"))]
+    let results = (0..self.circuits.len())
+      .map(generate)
+      .collect::<Result<Vec<_>, String>>()?;
+    let mut ranges = RangeCounts::default();
+    let mut traces = Vec::with_capacity(results.len());
+    let mut lookups = Vec::with_capacity(results.len());
+    for (trace, lookup, counts) in results {
+      traces.push(trace);
+      lookups.push(lookup);
+      ranges = ranges.merge(counts);
+    }
+    let table_counts = auxiliary_counts_for(self.plan, record, &ranges)?;
+    let table = |ci: usize| {
+      let trace = self.tables[ci - functions].witness(&table_counts);
+      let lookup = if LOOKUPS {
+        self.auxiliary_lookups_rows(ci, &trace, trace.height())
+      } else {
+        empty(ci).1
+      };
+      (ci, trace, lookup)
+    };
+    #[cfg(feature = "parallel")]
+    let tables: Vec<_> = fixed.clone().into_par_iter().map(table).collect();
+    #[cfg(not(feature = "parallel"))]
+    let tables: Vec<_> = fixed.clone().map(table).collect();
+    for (ci, trace, lookup) in tables {
+      traces[ci] = trace;
+      lookups[ci] = lookup;
+    }
+    Ok(SystemWitness { traces, lookups })
+  }
+
+  fn function_witness<const LOOKUPS: bool>(
+    &self,
+    ci: usize,
+    record: &Execution<B>,
+    min_height: Option<usize>,
+  ) -> Result<(RowMajorMatrix<Val>, LookupValues<Val>, RangeCounts), String> {
+    let mut rows = vec![];
+    for &function in &self.members[ci] {
+      rows.extend(
+        (0..record.queries.tables[function].len())
+          .map(|query| (function, query)),
+      );
+    }
+    let natural_height = if rows.is_empty() {
+      0
+    } else {
+      rows.len().checked_next_power_of_two().ok_or("trace height overflow")?
+    };
+    let height = match min_height {
+      Some(target) => {
+        if natural_height > target {
+          return Err(format!(
+            "circuit {ci} trace height {natural_height} exceeds normalized height {target}"
+          ));
+        }
+        target
+      },
+      None => natural_height,
+    };
+    let width = self.circuits[ci].main_width;
+    let mut values =
+      Val::zero_vec(height.checked_mul(width).ok_or("trace size overflow")?);
+    let lookup_plan = &self.lookup_plans[ci];
+    let mut builder = LookupValues::builder(
+      if LOOKUPS { height } else { 0 },
+      &lookup_plan.widths,
+    );
+    let mut writers = builder.rows_mut();
+    let field = self.plan.program.field;
+    let populate = |worker: &mut Worker<B::Element>,
+                    ranges: &mut RangeCounts,
+                    batch: usize,
+                    cells: &mut [Val],
+                    lookups: &mut [LookupRowMut<'_, Val>]| {
+      for (i, row) in cells.chunks_mut(width).enumerate() {
+        let (function, query) = rows[batch * ROW_BATCH + i];
+        let table = &record.queries.tables[function];
+        let multiplicity = table.count(query);
+        if multiplicity >= Val::ORDER_U64 {
+          return Err("function count reaches field characteristic".into());
+        }
+        let chip = self.plan.members[function];
+        let placement = &self.placements[chip];
+        let name = &self.plan.artifact.functions[function].name;
+        if self.plan.depth.fills[chip].is_empty() {
+          self.plan.fills[function]
+            .fill_into(
+              record,
+              (table, query),
+              &mut worker.scratch,
+              &mut worker.buffer,
+              |column, value| {
+                row[placement.columns[column]] = B::into_stark(value)
+              },
+            )
+            .map_err(|e| format!("{name} query {query}: {e}"))?;
+        } else {
+          // Depth columns are computed from the circuit's own columns: fill
+          // the depth circuit's row, then place it.
+          let source = &mut worker.row;
+          let activation = self.plan.artifact.chips[chip].activation;
+          source.clear();
+          source.resize(activation + 1, field.zero());
+          source[activation] = field.one();
+          self.plan.fills[function]
+            .fill(
+              record,
+              (table, query),
+              &mut worker.scratch,
+              &mut worker.buffer,
+              source,
+            )
+            .and_then(|()| {
+              self.plan.depth.fill(
+                chip,
+                record,
+                table.depth(query),
+                source,
+                field,
+                &mut worker.buffer,
+                ranges,
+              )
+            })
+            .map_err(|e| format!("{name} query {query}: {e}"))?;
+          for (&column, &value) in placement.columns.iter().zip(source.iter()) {
+            row[column] = B::into_stark(value);
+          }
+        }
+        placement.finish(row, multiplicity);
+        if LOOKUPS {
+          self.member_lookup_plans[chip].plan.fill(
+            row,
+            &[],
+            worker,
+            &mut lookups[i],
+          );
+        }
+      }
+      Ok::<_, String>(())
+    };
+    let real_values = &mut values[..rows.len() * width];
+    let real_writers =
+      if LOOKUPS { &mut writers[..rows.len()] } else { &mut [] };
+    #[cfg(feature = "parallel")]
+    let ranges = {
+      let start = || (Worker::<B::Element>::default(), RangeCounts::default());
+      let merge = |a: RangeCounts, b| Ok::<_, String>(a.merge(b));
+      if LOOKUPS {
+        real_values
+          .par_chunks_mut(width * ROW_BATCH)
+          .zip(real_writers.par_chunks_mut(ROW_BATCH))
+          .enumerate()
+          .try_fold(
+            start,
+            |(mut worker, mut ranges), (batch, (cells, lookups))| {
+              populate(&mut worker, &mut ranges, batch, cells, lookups)?;
+              Ok::<_, String>((worker, ranges))
+            },
+          )
+          .map(|state| state.map(|(_, ranges)| ranges))
+          .try_reduce(RangeCounts::default, merge)?
+      } else {
+        real_values
+          .par_chunks_mut(width * ROW_BATCH)
+          .enumerate()
+          .try_fold(start, |(mut worker, mut ranges), (batch, cells)| {
+            populate(&mut worker, &mut ranges, batch, cells, &mut [])?;
+            Ok::<_, String>((worker, ranges))
+          })
+          .map(|state| state.map(|(_, ranges)| ranges))
+          .try_reduce(RangeCounts::default, merge)?
+      }
+    };
+    #[cfg(not(feature = "parallel"))]
+    let ranges = {
+      let mut worker = Worker::<B::Element>::default();
+      let mut ranges = RangeCounts::default();
+      if LOOKUPS {
+        for (batch, (cells, lookups)) in real_values
+          .chunks_mut(width * ROW_BATCH)
+          .zip(real_writers.chunks_mut(ROW_BATCH))
+          .enumerate()
+        {
+          populate(&mut worker, &mut ranges, batch, cells, lookups)?;
+        }
+      } else {
+        for (batch, cells) in
+          real_values.chunks_mut(width * ROW_BATCH).enumerate()
+        {
+          populate(&mut worker, &mut ranges, batch, cells, &mut [])?;
+        }
+      }
+      ranges
+    };
+    drop(writers);
+    Ok((RowMajorMatrix::new(values, width), builder.finish(), ranges))
+  }
+
+  fn auxiliary_lookups_rows(
+    &self,
+    ci: usize,
+    trace: &RowMajorMatrix<Val>,
+    active_rows: usize,
+  ) -> LookupValues<Val> {
+    let plan = &self.lookup_plans[ci];
+    let mut builder = LookupValues::builder(trace.height(), &plan.widths);
+    let mut writers = builder.rows_mut();
+    let active_writers = &mut writers[..active_rows];
+    let fixed = self.circuits[ci].preprocessed.as_ref();
+    let chips = self.circuit_chips.get(ci).map(Vec::as_slice);
+    let populate = |worker: &mut Worker<B::Element>,
+                    batch: usize,
+                    lookups: &mut [LookupRowMut<'_, Val>]| {
+      for (i, lookup) in lookups.iter_mut().enumerate() {
+        let r = batch * ROW_BATCH + i;
+        let row = &trace.values[r * trace.width..(r + 1) * trace.width];
+        if plan.zero_row_empty && row.iter().all(|&v| v == Val::ZERO) {
+          continue;
+        }
+        let fixed_row =
+          fixed.map_or(&[][..], |f| &f.values[r * f.width..(r + 1) * f.width]);
+        if let Some(chips) = chips
+          && let Some(&chip) = chips.iter().find(|&&chip| {
+            let mlp = &self.member_lookup_plans[chip];
+            row[mlp.selector] == Val::ONE
+              && mlp.zero_cols.iter().all(|&col| row[col] == Val::ZERO)
+          })
+        {
+          self.member_lookup_plans[chip]
+            .plan
+            .fill(row, fixed_row, worker, lookup);
+        } else {
+          plan.fill(row, fixed_row, worker, lookup);
+        }
+      }
+    };
+    #[cfg(feature = "parallel")]
+    active_writers.par_chunks_mut(ROW_BATCH).enumerate().for_each_init(
+      Worker::<B::Element>::default,
+      |worker, (batch, lookups)| populate(worker, batch, lookups),
+    );
+    #[cfg(not(feature = "parallel"))]
+    {
+      let mut worker = Worker::<B::Element>::default();
+      for (batch, lookups) in active_writers.chunks_mut(ROW_BATCH).enumerate() {
+        populate(&mut worker, batch, lookups);
+      }
+    }
+    drop(writers);
+    builder.finish()
+  }
+}
+
 impl<B: WitnessField> Backend<'_, '_, B> {
   /// Validate `record` once for this backend so subsequent witness calls can
   /// skip whole-record validation scans.

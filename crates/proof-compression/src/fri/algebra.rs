@@ -1,9 +1,8 @@
 use std::borrow::Borrow;
 
-use p3_field::extension::BinomiallyExtendable;
-use p3_field::{Field, TwoAdicField};
+use p3_field::{Field, PrimeCharacteristicRing, TwoAdicField};
 
-use super::QuadraticValue as Q;
+use super::CubicValue as E;
 use multi_stark::eval::VarValues;
 use multi_stark::expr::RowOffset;
 use multi_stark::expr::Source;
@@ -13,25 +12,28 @@ use multi_stark::plonkish::CircuitBuilder;
 use multi_stark::plonkish::Value;
 use multi_stark::system::Circuit;
 
+/// Extension degree of Protocol v6 (`F_p^3 = F_p[X] / (X^3 - X - 1)`).
+pub(super) const EXTENSION_DEGREE: usize = 3;
+
 /// Boundary wires that the transcript gadget binds. None of these values
 /// is authenticated by the algebraic checks themselves.
 #[derive(Clone, Copy, Debug)]
 pub struct AlgebraicChallenges {
-  pub beta: Q,
-  pub gamma: Q,
-  pub alpha: Q,
-  pub zeta: Q,
+  pub beta: E,
+  pub gamma: E,
+  pub alpha: E,
+  pub zeta: E,
 }
 
 /// Openings of one active circuit. Every entry is the evaluation of a
 /// **base column** in the challenge field, including the stage-2 columns.
 #[derive(Clone, Debug)]
 pub struct CircuitOpenings {
-  pub preprocessed: [Vec<Q>; 2],
-  pub main: [Vec<Q>; 2],
-  pub stage2: [Vec<Q>; 2],
-  pub quotient: Vec<Q>,
-  pub accumulator: Q,
+  pub preprocessed: [Vec<E>; 2],
+  pub main: [Vec<E>; 2],
+  pub stage2: [Vec<E>; 2],
+  pub quotient: Vec<E>,
+  pub accumulator: E,
 }
 
 /// An explicitly unauthenticated algebraic-verifier input interface.
@@ -72,10 +74,10 @@ impl AlgebraicInputs {
     claims: Vec<Vec<Value>>,
   ) -> Self {
     let challenges = AlgebraicChallenges {
-      beta: Q::input(builder, "beta"),
-      gamma: Q::input(builder, "gamma"),
-      alpha: Q::input(builder, "alpha"),
-      zeta: Q::input(builder, "zeta"),
+      beta: E::input(builder, "beta"),
+      gamma: E::input(builder, "gamma"),
+      alpha: E::input(builder, "alpha"),
+      zeta: E::input(builder, "zeta"),
     };
     let openings = circuits
       .iter()
@@ -84,7 +86,7 @@ impl AlgebraicInputs {
       .map(|(i, circuit)| {
         let mut row = |name, len| {
           (0..len)
-            .map(|j| Q::input(builder, &format!("circuit[{i}].{name}[{j}]")))
+            .map(|j| E::input(builder, &format!("circuit[{i}].{name}[{j}]")))
             .collect()
         };
         CircuitOpenings {
@@ -100,8 +102,11 @@ impl AlgebraicInputs {
             row("stage2", circuit.stage_2_width),
             row("stage2_next", circuit.stage_2_width),
           ],
-          quotient: row("quotient", circuit.quotient_degree() * 2),
-          accumulator: Q::input(builder, &format!("circuit[{i}].accumulator")),
+          quotient: row(
+            "quotient",
+            circuit.quotient_degree() * EXTENSION_DEGREE,
+          ),
+          accumulator: E::input(builder, &format!("circuit[{i}].accumulator")),
         }
       })
       .collect();
@@ -112,39 +117,37 @@ impl AlgebraicInputs {
 /// Unnormalized selectors, matching the native two-adic subgroup verifier.
 #[derive(Clone, Copy, Debug)]
 pub struct Selectors {
-  pub is_first_row: Q,
-  pub is_last_row: Q,
-  pub is_transition: Q,
-  pub inv_vanishing: Q,
+  pub is_first_row: E,
+  pub is_last_row: E,
+  pub is_transition: E,
+  pub inv_vanishing: E,
 }
 
 /// Intermediate wires for differential tests and subsequent PCS integration.
 pub struct CircuitEvaluation {
   pub selectors: Selectors,
-  pub zeta_next: Q,
-  pub nodes: Vec<Q>,
-  pub constraints: Vec<Q>,
-  pub composition: Q,
-  pub quotient: Q,
+  pub zeta_next: E,
+  pub nodes: Vec<E>,
+  pub constraints: Vec<E>,
+  pub composition: E,
+  pub quotient: E,
 }
 
 pub struct AlgebraicOutputs {
-  pub claims_accumulator: Q,
+  pub claims_accumulator: E,
   pub circuits: Vec<CircuitEvaluation>,
 }
 
-fn sweep<F: BinomiallyExtendable<2> + multi_stark::traits::Field>(
+fn sweep<F: Field + multi_stark::traits::Field>(
   builder: &mut CircuitBuilder<F>,
   graph: &ConstraintGraph<F>,
-  view: &VarValues<'_, Q>,
-) -> Vec<Q> {
-  let mut values: Vec<Q> = Vec::with_capacity(graph.nodes.len());
+  view: &VarValues<'_, E>,
+) -> Vec<E> {
+  let zero = <F as PrimeCharacteristicRing>::ZERO;
+  let mut values: Vec<E> = Vec::with_capacity(graph.nodes.len());
   for node in &graph.nodes {
     let value = match *node {
-      Node::Const(c) => Q::constant(
-        builder,
-        [c, <F as p3_field::PrimeCharacteristicRing>::ZERO],
-      ),
+      Node::Const(c) => E::constant(builder, [c, zero, zero]),
       Node::Var(col) => {
         let rows = match col.source {
           Source::Preprocessed => view.preprocessed,
@@ -171,44 +174,57 @@ fn sweep<F: BinomiallyExtendable<2> + multi_stark::traits::Field>(
   values
 }
 
-/// Multiply pairs of coordinate-polynomial evaluations. Each coordinate is
-/// itself in the OOD challenge field. This is NOT ordinary multiplication
-/// after recombining the two stage-2 columns into one extension value.
-fn coordinate_mul<F: BinomiallyExtendable<2> + multi_stark::traits::Field>(
+/// Multiply triples of coordinate-polynomial evaluations in
+/// `E[Y] / (Y^3 - Y - 1)` via Karatsuba (6 extension multiplications).
+/// Each coordinate is itself in the OOD challenge field. This is NOT ordinary
+/// multiplication after recombining the three stage-2 columns into one
+/// extension value.
+fn coordinate_mul<F: Field + multi_stark::traits::Field>(
   builder: &mut CircuitBuilder<F>,
-  a: [Q; 2],
-  b: [Q; 2],
-) -> [Q; 2] {
-  let ac = a[0].mul(builder, b[0]);
-  let bd = a[1].mul(builder, b[1]);
-  let a_sum = a[0].add(builder, a[1]);
-  let b_sum = b[0].add(builder, b[1]);
-  let cross = a_sum.mul(builder, b_sum);
-  let cross = cross.sub(builder, ac);
-  let cross = cross.sub(builder, bd);
-  let w_bd = bd.scale(builder, F::W);
-  [ac.add(builder, w_bd), cross]
+  a: [E; EXTENSION_DEGREE],
+  b: [E; EXTENSION_DEGREE],
+) -> [E; EXTENSION_DEGREE] {
+  let v0 = a[0].mul(builder, b[0]);
+  let v1 = a[1].mul(builder, b[1]);
+  let v2 = a[2].mul(builder, b[2]);
+  let a01 = a[0].add(builder, a[1]);
+  let b01 = b[0].add(builder, b[1]);
+  let m01 = a01.mul(builder, b01).sub(builder, v0).sub(builder, v1);
+  let a02 = a[0].add(builder, a[2]);
+  let b02 = b[0].add(builder, b[2]);
+  let m02 = a02.mul(builder, b02).sub(builder, v0).sub(builder, v2);
+  let a12 = a[1].add(builder, a[2]);
+  let b12 = b[1].add(builder, b[2]);
+  let m12 = a12.mul(builder, b12).sub(builder, v1).sub(builder, v2);
+  [
+    v0.add(builder, m12),
+    m01.add(builder, m12).add(builder, v2),
+    m02.add(builder, v1).add(builder, v2),
+  ]
 }
 
 /// Constrain the claim balance and all OOD/quotient identities.
 ///
-/// Supported scope: quadratic binomial challenge field, two-adic *subgroup*
-/// trace domains, fixed active circuits/heights, and grouped lookups.
+/// Supported scope: Protocol v6 cubic trinomial challenge field
+/// `F_p[X]/(X^3 - X - 1)`, two-adic *subgroup* trace domains, fixed active
+/// circuits/heights, and grouped lookups.
 /// Unsupported metadata or mismatched wire shapes are construction errors
 /// and panic. No proof/witness values affect circuit construction.
 ///
 /// This is NOT a proof verifier: callers must additionally constrain exact
 /// Fiat-Shamir replay and PCS verification before making that claim.
 pub fn constrain_algebraic_checks<
-  F: TwoAdicField + BinomiallyExtendable<2> + multi_stark::traits::Field,
+  F: TwoAdicField + multi_stark::traits::Field,
 >(
   builder: &mut CircuitBuilder<F>,
   circuits: &[impl Borrow<Circuit<F>>],
   log_degrees: &[u8],
   inputs: &AlgebraicInputs,
 ) -> AlgebraicOutputs {
-  let zero =
-    Q::constant(builder, [<F as p3_field::PrimeCharacteristicRing>::ZERO; 2]);
+  let zero = E::constant(
+    builder,
+    [<F as PrimeCharacteristicRing>::ZERO; EXTENSION_DEGREE],
+  );
   constrain_algebraic_checks_with_residual(
     builder,
     circuits,
@@ -221,13 +237,13 @@ pub fn constrain_algebraic_checks<
 /// Batch shards can end in a nonzero residual; the batch caller must constrain
 /// its value against the verifier-side messages (and any other shard residuals).
 pub(super) fn constrain_algebraic_checks_with_residual<
-  F: TwoAdicField + BinomiallyExtendable<2> + multi_stark::traits::Field,
+  F: TwoAdicField + multi_stark::traits::Field,
 >(
   builder: &mut CircuitBuilder<F>,
   circuits: &[impl Borrow<Circuit<F>>],
   log_degrees: &[u8],
   inputs: &AlgebraicInputs,
-  residual: Q,
+  residual: E,
 ) -> AlgebraicOutputs {
   let circuits: Vec<&Circuit<F>> =
     circuits.iter().map(Borrow::borrow).collect();
@@ -237,7 +253,11 @@ pub(super) fn constrain_algebraic_checks_with_residual<
   for ((circuit, &log_degree), opening) in
     circuits.iter().zip(log_degrees).zip(&inputs.openings)
   {
-    assert_eq!(circuit.num_publics, 8, "quadratic challenge field required");
+    assert_eq!(
+      circuit.num_publics,
+      4 * EXTENSION_DEGREE,
+      "cubic challenge field required"
+    );
     assert!(
       (1..=multi_stark::lookup::MAX_LOOKUP_GROUP)
         .contains(&circuit.lookup_group_size)
@@ -253,17 +273,15 @@ pub(super) fn constrain_algebraic_checks_with_residual<
       assert_eq!(opening.main[row].len(), circuit.main_width);
       assert_eq!(opening.stage2[row].len(), circuit.stage_2_width);
     }
-    assert_eq!(opening.quotient.len(), circuit.quotient_degree() * 2);
+    assert_eq!(
+      opening.quotient.len(),
+      circuit.quotient_degree() * EXTENSION_DEGREE
+    );
   }
-  let zero =
-    Q::constant(builder, [<F as p3_field::PrimeCharacteristicRing>::ZERO; 2]);
-  let one = Q::constant(
-    builder,
-    [
-      <F as p3_field::PrimeCharacteristicRing>::ONE,
-      <F as p3_field::PrimeCharacteristicRing>::ZERO,
-    ],
-  );
+  let f_zero = <F as PrimeCharacteristicRing>::ZERO;
+  let f_one = <F as PrimeCharacteristicRing>::ONE;
+  let zero = E::constant(builder, [f_zero; EXTENSION_DEGREE]);
+  let one = E::constant(builder, [f_one, f_zero, f_zero]);
   let AlgebraicChallenges { beta, gamma, alpha, zeta } = inputs.challenges;
   // Zero collapses current-row and next-row opening points.
   zeta.inverse(builder);
@@ -271,7 +289,7 @@ pub(super) fn constrain_algebraic_checks_with_residual<
   for claim in &inputs.claims {
     let mut fingerprint = zero;
     for &arg in claim.iter().rev() {
-      let arg = Q::from_base(builder, arg);
+      let arg = E::from_base(builder, arg);
       fingerprint = fingerprint.mul(builder, gamma);
       fingerprint = fingerprint.add(builder, arg);
     }
@@ -287,10 +305,7 @@ pub(super) fn constrain_algebraic_checks_with_residual<
   {
     let log_degree = usize::from(log_degree);
     let g = F::two_adic_generator(log_degree);
-    let last = Q::constant(
-      builder,
-      [Field::inverse(&g), <F as p3_field::PrimeCharacteristicRing>::ZERO],
-    );
+    let last = E::constant(builder, [Field::inverse(&g), f_zero, f_zero]);
     let zeta_pow_n = zeta.exp_power_of_2(builder, log_degree);
     let vanishing = zeta_pow_n.sub(builder, one);
     let inv_vanishing = vanishing.inverse(builder);
@@ -311,7 +326,7 @@ pub(super) fn constrain_algebraic_checks_with_residual<
     let publics: Vec<_> = [beta, gamma, acc, next_acc]
       .into_iter()
       .flat_map(|value| value.0)
-      .map(|value| Q::from_base(builder, value))
+      .map(|value| E::from_base(builder, value))
       .collect();
     let view = VarValues {
       preprocessed: [&opening.preprocessed[0], &opening.preprocessed[1]],
@@ -328,8 +343,9 @@ pub(super) fn constrain_algebraic_checks_with_residual<
     let injection_norm = Field::inverse(
       &(<F as multi_stark::traits::Field>::from_usize(1 << log_degree) * g),
     );
-    let injection: [Q; 2] = std::array::from_fn(|k| {
-      let delta = publics[6 + k].sub(builder, publics[4 + k]);
+    let injection: [E; EXTENSION_DEGREE] = std::array::from_fn(|k| {
+      let delta = publics[3 * EXTENSION_DEGREE + k]
+        .sub(builder, publics[2 * EXTENSION_DEGREE + k]);
       let delta = delta.scale(builder, injection_norm);
       selectors.is_last_row.mul(builder, delta)
     });
@@ -341,22 +357,27 @@ pub(super) fn constrain_algebraic_checks_with_residual<
     } else {
       let groups = circuit.graph.lookups.chunks(circuit.lookup_group_size);
       let count = groups.len();
+      let gamma_coords = [
+        publics[EXTENSION_DEGREE],
+        publics[EXTENSION_DEGREE + 1],
+        publics[EXTENSION_DEGREE + 2],
+      ];
       for (i, group) in groups.enumerate() {
         let messages: Vec<_> = group
           .iter()
           .map(|lookup| {
-            let mut message = [zero; 2];
+            let mut message = [zero; EXTENSION_DEGREE];
             for arg in lookup.args.iter().rev() {
-              message =
-                coordinate_mul(builder, message, [publics[2], publics[3]]);
+              message = coordinate_mul(builder, message, gamma_coords);
               message[0] = message[0].add(builder, nodes[arg.index()]);
             }
-            message[0] = message[0].add(builder, publics[0]);
-            message[1] = message[1].add(builder, publics[1]);
+            for k in 0..EXTENSION_DEGREE {
+              message[k] = message[k].add(builder, publics[k]);
+            }
             message
           })
           .collect();
-        let mut prefix = vec![[one, zero]];
+        let mut prefix = vec![[one, zero, zero]];
         for &message in &messages {
           prefix.push(coordinate_mul(
             builder,
@@ -364,23 +385,23 @@ pub(super) fn constrain_algebraic_checks_with_residual<
             message,
           ));
         }
-        let mut suffix = vec![[one, zero]; group.len() + 1];
+        let mut suffix = vec![[one, zero, zero]; group.len() + 1];
         for j in (0..group.len()).rev() {
           suffix[j] = coordinate_mul(builder, messages[j], suffix[j + 1]);
         }
         let delta = std::array::from_fn(|k| {
           let target = if i + 1 < count {
-            opening.stage2[0][2 * (i + 1) + k]
+            opening.stage2[0][EXTENSION_DEGREE * (i + 1) + k]
           } else {
             opening.stage2[1][k].add(builder, injection[k])
           };
-          target.sub(builder, opening.stage2[0][2 * i + k])
+          target.sub(builder, opening.stage2[0][EXTENSION_DEGREE * i + k])
         });
         let mut constraint =
           coordinate_mul(builder, *prefix.last().unwrap(), delta);
         for (j, lookup) in group.iter().enumerate() {
           let others = coordinate_mul(builder, prefix[j], suffix[j + 1]);
-          for k in 0..2 {
+          for k in 0..EXTENSION_DEGREE {
             let term =
               others[k].mul(builder, nodes[lookup.multiplicity.index()]);
             constraint[k] = constraint[k].sub(builder, term);
@@ -396,19 +417,11 @@ pub(super) fn constrain_algebraic_checks_with_residual<
       composition = composition.add(builder, constraint);
     }
     // Unlike stage 2, quotient coefficient slices MUST be recombined
-    // with the extension basis before summing powers of zeta^n.
-    let basis = Q::constant(
-      builder,
-      [
-        <F as p3_field::PrimeCharacteristicRing>::ZERO,
-        <F as p3_field::PrimeCharacteristicRing>::ONE,
-      ],
-    );
+    // with the cubic extension basis [1, X, X^2] before summing powers of zeta^n.
     let mut quotient = zero;
     let mut power = one;
-    for chunk in opening.quotient.as_chunks::<2>().0 {
-      let imag = chunk[1].mul(builder, basis);
-      let chunk = chunk[0].add(builder, imag);
+    for chunk in opening.quotient.as_chunks::<EXTENSION_DEGREE>().0 {
+      let chunk = E::from_basis(builder, chunk[0], chunk[1], chunk[2]);
       let term = power.mul(builder, chunk);
       quotient = quotient.add(builder, term);
       power = power.mul(builder, zeta_pow_n);
