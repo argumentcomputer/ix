@@ -24,33 +24,49 @@ def edgeArgs (e : Lir.Edge) : SelM (Edge VReg × List (Inst VReg)) := do
   let (vs, pre) ← argRegs e.args
   return ({ target := e.target, args := vs }, pre)
 
-/-- Rule 4: `x := a ± b`, then the carry or borrow edge; a single-use
-64-bit load folds into `add/sub r, m` (the second operand, or either for
-`addC`). -/
+/-- Rule 4: `x := a ± b` or `a * b`, then the carry/borrow/overflow edge;
+a single-use 64-bit load folds into `add/sub r, m` or `mul m`. -/
 def selectBrOvf (o : Lir.Ovf) (x : VReg) (a b : Lir.Arg) (ok ovf : Edge VReg) :
     SelM (List (Inst VReg) × Term VReg) := do
   let site ← sitePos
-  let (mn, tag) := match o with
-    | .addC => (X86.Mnemonic.add, "brOvf.add")
-    | .subB => (.sub, "brOvf.sub")
-  -- The branch is taken on carry (borrow): the overflow edge.
-  let jcc (p : X86.Op) (args : List (XArg VReg)) : Term VReg := .jcc p args [x] .unsignedLt ovf ok
-  if let (.v a', .v b') := (a, b) then
-    if let some m ← sinkLoad? b' site 8 then
-      fire s!"{tag}.mem"
-      return ([], jcc (row mn .w64 .RM) [.r a', .m m])
-    if o == .addC then
-      if let some m ← sinkLoad? a' site 8 then
-        fire s!"{tag}.mem"
-        return ([], jcc (row mn .w64 .RM) [.r b', .m m])
-  let (a, b, pre₁) ← match o, a, b with
-    | _, .v a, b => pure (a, b, [])
-    | .addC, .imm k, .v b => pure (b, Lir.Arg.imm k, [])
-    | _, .imm k, b => do
-        let (t, pre) ← materialize k
-        pure (t, b, pre)
-  let (p, args, pre₂) ← producerArgs mn .w64 (.r a) b tag
-  return (pre₁ ++ pre₂, jcc p args)
+  match o with
+  | .mulOvf =>
+      let hi ← fresh
+      let jcc (args : List (XArg VReg)) : Term VReg :=
+        .jcc (X86.Op.mulM .w64) args [x, hi] .unsignedLt ovf ok
+      if let (.v a', .v b') := (a, b) then
+        if let some m ← sinkLoad? b' site 8 then
+          fire "brOvf.mul.mem"
+          return ([], jcc [.m m, .r a'])
+        if let some m ← sinkLoad? a' site 8 then
+          fire "brOvf.mul.mem"
+          return ([], jcc [.m m, .r b'])
+      let (a', preA) ← argReg a
+      let (b', preB) ← argReg b
+      fire "brOvf.mul.rr"
+      return (preA ++ preB, jcc [.r b', .r a'])
+  | .addC | .subB =>
+      let (mn, tag) := match o with
+        | .addC => (X86.Mnemonic.add, "brOvf.add")
+        | _ => (.sub, "brOvf.sub")
+      -- The branch is taken on carry (borrow): the overflow edge.
+      let jcc (p : X86.Op) (args : List (XArg VReg)) : Term VReg := .jcc p args [x] .unsignedLt ovf ok
+      if let (.v a', .v b') := (a, b) then
+        if let some m ← sinkLoad? b' site 8 then
+          fire s!"{tag}.mem"
+          return ([], jcc (row mn .w64 .RM) [.r a', .m m])
+        if o == .addC then
+          if let some m ← sinkLoad? a' site 8 then
+            fire s!"{tag}.mem"
+            return ([], jcc (row mn .w64 .RM) [.r b', .m m])
+      let (a, b, pre₁) ← match o, a, b with
+        | _, .v a, b => pure (a, b, [])
+        | .addC, .imm k, .v b => pure (b, Lir.Arg.imm k, [])
+        | _, .imm k, b => do
+            let (t, pre) ← materialize k
+            pure (t, b, pre)
+      let (p, args, pre₂) ← producerArgs mn .w64 (.r a) b tag
+      return (pre₁ ++ pre₂, jcc p args)
 
 /-- The Xv terminator for a Lir terminator, and the instructions that must
 precede it. -/

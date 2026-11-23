@@ -59,6 +59,9 @@ theorem local_return_transport (f : Func) (P : Program) (fn : Nat)
       | assign x rhs =>
         simp only [hi] at hs
         cases he : (Stmt.assign x rhs).exec frame.env mem context <;> simp [he] at hs
+      | limb r1 r2 op =>
+        simp only [hi] at hs
+        cases he : (Stmt.limb r1 r2 op).exec frame.env mem context <;> simp [he] at hs
       | store width addr value =>
         simp only [hi] at hs
         cases he : (Stmt.store width addr value).exec frame.env mem context <;> simp [he] at hs

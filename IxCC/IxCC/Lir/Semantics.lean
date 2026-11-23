@@ -92,10 +92,11 @@ def Cond.holds (c : Cond) (w : Width) (a b : Word) : Bool :=
   | .tz => w.truncate (a &&& b) == 0
   | .tnz => w.truncate (a &&& b) != 0
 
-/-- The 64-bit result and whether the unsigned operation carried (borrowed). -/
+/-- The 64-bit result and whether the unsigned operation overflowed (carry/borrow/high-half nonzero). -/
 def Ovf.eval : Ovf → Word → Word → Word × Bool
   | .addC, a, b => (a + b, decide (a + b < a))
   | .subB, a, b => (a - b, decide (a < b))
+  | .mulOvf, a, b => (a * b, decide (2 ^ 64 ≤ a.toNat * b.toNat))
 
 /-- A displacement as a word (two's complement modulo 2^64). -/
 def dispWord (d : Int) : Word := UInt64.ofBitVec (BitVec.ofInt 64 d)
@@ -148,6 +149,42 @@ def Rhs.eval (ρ : Env) (mem : X86.Memory) (ctx : Word) : Rhs → Option Word
       let va ← a.eval ρ
       let vb ← b.eval ρ
       some (if c.holds w va vb then 1 else 0)
+  | .bsr64 a => do
+      let va ← a.eval ρ
+      if va == 0 then none else some (UInt64.ofNat va.toNat.log2)
+
+/-- Multi-result 64-bit limb primitives. `divWide64` returns `none` (stuck) if
+`d = 0` or `d ≤ hi`. -/
+def LimbOp.eval (ρ : Env) : LimbOp → Option (Word × Word)
+  | .mulWide64 a b => do
+      let va ← a.eval ρ
+      let vb ← b.eval ρ
+      let prod := va.toNat * vb.toNat
+      some (va * vb, UInt64.ofNat (prod / 2 ^ 64))
+  | .divWide64 hi lo d => do
+      let vhi ← hi.eval ρ
+      let vlo ← lo.eval ρ
+      let vd ← d.eval ρ
+      if vd.toNat == 0 || vd.toNat ≤ vhi.toNat then none
+      else
+        let dividend := vhi.toNat * 2 ^ 64 + vlo.toNat
+        some (UInt64.ofNat (dividend / vd.toNat), UInt64.ofNat (dividend % vd.toNat))
+  | .addCarry64 a b c => do
+      let va ← a.eval ρ
+      let vb ← b.eval ρ
+      let vc ← c.eval ρ
+      let cin : Nat := if vc == 0 then 0 else 1
+      let sum := va + vb + UInt64.ofNat cin
+      let cout : Word := if 2 ^ 64 ≤ va.toNat + vb.toNat + cin then 1 else 0
+      some (sum, cout)
+  | .subBorrow64 a b c => do
+      let va ← a.eval ρ
+      let vb ← b.eval ρ
+      let vc ← c.eval ρ
+      let bin : Nat := if vc == 0 then 0 else 1
+      let diff := va - vb - UInt64.ofNat bin
+      let bout : Word := if va.toNat < vb.toNat + bin then 1 else 0
+      some (diff, bout)
 
 /-- One local statement. Calls are not local (`step` runs them), so a call
 here is `none`, as is every stuck case. -/
@@ -155,6 +192,9 @@ def Stmt.exec (ρ : Env) (mem : X86.Memory) (ctx : Word) : Stmt → Option (Env 
   | .assign x r => do
       let v ← r.eval ρ mem ctx
       some (ρ.insert x v, mem)
+  | .limb r1 r2 op => do
+      let (v1, v2) ← op.eval ρ
+      some ((ρ.insert r1 v1).insert r2 v2, mem)
   | .store w m a => do
       let address ← m.eval ρ ctx
       let v ← a.eval ρ

@@ -96,9 +96,9 @@ namespace Mnemonic
 
 /-- Classify each `X86.Mnemonic` into its unprivileged computation or control-flow family. -/
 def category : Mnemonic → MnemonicCategory
-  | .add | .or | .and | .sub | .xor | .cmp | .test
+  | .add | .adc | .or | .and | .sub | .sbb | .xor | .cmp | .test
   | .not | .neg | .imul | .mul | .div => .alu
-  | .shl | .shr | .sar | .rol | .ror | .bswap => .bitShiftRotate
+  | .shl | .shr | .sar | .rol | .ror | .bswap | .bsr => .bitShiftRotate
   | .mov | .movzx | .movsx | .movsxd | .lea => .dataMoveAddress
   | .setcc _ | .cmovcc _ => .conditionalData
   | .push | .pop => .stackTransfer
@@ -110,10 +110,10 @@ only defines unprivileged constructors, the substantive opcode-byte privilege
 exclusion check is `EncDesc.isPrivilegedOrSystemOpcode` over `(X86.desc o).enc`. -/
 def isUnprivileged (m : Mnemonic) : Bool :=
   match m with
-  | .add | .or | .and | .sub | .xor | .cmp | .test
+  | .add | .adc | .or | .and | .sub | .sbb | .xor | .cmp | .test
   | .not | .neg
   | .shl | .shr | .sar | .rol | .ror
-  | .bswap
+  | .bswap | .bsr
   | .mov | .movzx | .movsx | .movsxd | .lea | .imul | .mul | .div
   | .setcc _ | .cmovcc _
   | .push | .pop

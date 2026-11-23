@@ -59,6 +59,7 @@ theorem foldl_defStep {body : List Lir.Stmt} :
         · rw [Std.TreeMap.getElem?_insert] at h'
           simp [hx] at h'
           exact hm y' j' r' h'
+      | limb => exact hm y' j' r' h'
       | store => exact hm y' j' r' h'
       | call => exact hm y' j' r' h'
 
@@ -104,6 +105,13 @@ theorem exec_other {s : Lir.Stmt} {ρ ρ' : Env} {mem mem' : X86.Memory} {ctx : 
     refine ⟨fun u hu => ?_, fun _ => rfl⟩
     simp only [Lir.Stmt.defs, List.mem_singleton] at hu
     exact insert_ne (Ne.symm hu)
+  | limb r1 r2 op =>
+    simp only [Lir.Stmt.exec, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.some.injEq,
+      Prod.mk.injEq] at h
+    obtain ⟨⟨v1, v2⟩, -, rfl, rfl⟩ := h
+    refine ⟨fun u hu => ?_, fun _ => rfl⟩
+    simp only [Lir.Stmt.defs, List.mem_cons, List.not_mem_nil, or_false, not_or] at hu
+    rw [insert_ne (Ne.symm hu.2), insert_ne (Ne.symm hu.1)]
   | store w m a =>
     simp only [Lir.Stmt.exec, Option.bind_eq_bind, Option.bind_eq_some_iff] at h
     obtain ⟨_, _, _, _, h⟩ := h
@@ -150,6 +158,9 @@ theorem Rhs.eval_congr {r : Lir.Rhs} {ρ ρ' : Env} {mem mem' : X86.Memory} {ctx
   | test c w a b =>
     simp only [Lir.Rhs.eval]
     rw [hs (fun u hu => by simp [Lir.Rhs.uses, hu]), hs (fun u hu => by simp [Lir.Rhs.uses, hu])]
+  | bsr64 a =>
+    simp only [Lir.Rhs.eval]
+    rw [hs (fun u hu => by simpa [Lir.Rhs.uses] using hu)]
 
 
 /-! ## Windows -/

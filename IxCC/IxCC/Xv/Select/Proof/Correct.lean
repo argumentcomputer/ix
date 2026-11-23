@@ -565,14 +565,15 @@ theorem select_lockstep {p : Lir.Program} {q : VProgram} (hps : ProgSel p q) :
             exact ⟨s₂', by simpa using hpre.trans (Sem.Star.single hstep), hrel⟩
           · -- brOvf
             rw [ht] at hrun
-            obtain ⟨p', pargs, ok', ovf', hxt, hrun⟩ := hrun
-            obtain ⟨σ', hex, hab, hj, hok, hovf⟩ := hrun va vb ha hb
+            obtain ⟨p', pargs, defs, ok', ovf', hxt, hrun⟩ := hrun
+            obtain ⟨σ', σ'', hex, hab, hj, hσ'', hok, hovf⟩ := hrun va vb ha hb
             have hpre := pre_star (rest' := rest') hxf hxb hbody hpos hex
             have hstep := xv_term_eq (rest := rest') (mem := mem) (ctx := ctx)
               (fr := { fr' with pos := xb.body.size, env := σ' }) hxf hxb rfl hxt
             simp only [hj] at hstep
             obtain ⟨s₂', hte', hrel⟩ := edge_next (fr' := { fr' with pos := xb.body.size, env := σ' })
-              (e' := if (o.eval va vb).2 then ovf' else ok') hF hxf₀ hfs hfn hl hd ((henv.above hab hn).insert x _)
+              (e' := if (o.eval va vb).2 then ovf' else ok') hF hxf₀ hfs hfn hl hd
+              (((henv.above hab hn).insert x _).above hσ'' hn)
               (by split <;> assumption) hrest hte
             rw [hte'] at hstep
             exact ⟨s₂', by simpa using hpre.trans (Sem.Star.single hstep), hrel⟩

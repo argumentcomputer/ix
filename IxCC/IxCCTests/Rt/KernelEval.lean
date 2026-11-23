@@ -38,7 +38,7 @@ set_option maxRecDepth 100000 in
 example : summary Fir.Artifacts.tak = some (5, 34, 116, 3, 7) := by decide +kernel
 
 set_option maxRecDepth 100000 in
-example : summary Fir.Artifacts.gcd = some (5, 32, 109, 3, 7) := by decide +kernel
+example : summary Fir.Artifacts.gcd = some (5, 37, 111, 3, 9) := by decide +kernel
 
 set_option maxRecDepth 100000 in
 example : cfgSummary (Cases.cfgOf Cases.values') = some (13, 77, 165, 5, 14) := by decide +kernel

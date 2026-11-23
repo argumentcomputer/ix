@@ -26,10 +26,10 @@ namespace IxCC.X86
 /-! ## Rows -/
 
 inductive Mnemonic where
-  | add | or | and | sub | xor | cmp | test
+  | add | adc | or | and | sub | sbb | xor | cmp | test
   | not | neg
   | shl | shr | sar | rol | ror
-  | bswap
+  | bswap | bsr
   | mov | movzx | movsx | movsxd | lea | imul | mul | div
   | setcc (condition : Condition) | cmovcc (condition : Condition)
   | push | pop
@@ -80,17 +80,17 @@ def Op.control (o : Op) : Bool :=
   | .call | .jmp | .jcc _ | .ret => true
   | _ => false
 
-/-- Rows that read flags as data (`setcc`, `cmovcc`). The typed machine has
-no flags, so they run only as the consumer of a fused pair. -/
+/-- Rows that read flags as data (`setcc`, `cmovcc`, `adc`, `sbb`). The typed
+machine has no flags, so they run only as the consumer of a fused pair. -/
 def Op.consumer (o : Op) : Bool :=
   match o.mn with
-  | .setcc _ | .cmovcc _ => true
+  | .setcc _ | .cmovcc _ | .adc | .sbb => true
   | _ => false
 
 /-- Rows the typed machine runs alone: neither control nor flag consumers. -/
 def Op.linear (o : Op) : Bool :=
   match o.mn with
-  | .call | .jmp | .jcc _ | .ret | .setcc _ | .cmovcc _ => false
+  | .call | .jmp | .jcc _ | .ret | .setcc _ | .cmovcc _ | .adc | .sbb => false
   | _ => true
 
 /-! ## Operands -/
@@ -294,6 +294,32 @@ def aluFlags (operation : AluOp) (width : Width) (left right : Word) : Flags :=
   | .and => resultFlags (left &&& right) false false
   | .or => resultFlags (left ||| right) false false
   | .xor => resultFlags (left ^^^ right) false false
+
+/-- `ADC` flags at `width` with input carry `cf`: CF is unsigned carry-out of
+`left + right + cf`, OF is signed overflow, ZF and SF follow the truncated sum. -/
+def adcFlags (width : Width) (left right : Word) (cf : Bool) : Flags :=
+  let l := left.toBitVec.setWidth width.bits
+  let r := right.toBitVec.setWidth width.bits
+  let cNat : Nat := if cf then 1 else 0
+  let cInt : Int := if cf then 1 else 0
+  let cBV : BitVec width.bits := BitVec.ofNat width.bits cNat
+  let res := l + r + cBV
+  let carry := decide (2 ^ width.bits ≤ l.toNat + r.toNat + cNat)
+  let overflow := decide (res.toInt ≠ l.toInt + r.toInt + cInt)
+  resultFlags res carry overflow
+
+/-- `SBB` flags at `width` with input borrow `cf`: CF is unsigned borrow-out of
+`left - right - cf`, OF is signed overflow, ZF and SF follow the truncated diff. -/
+def sbbFlags (width : Width) (left right : Word) (cf : Bool) : Flags :=
+  let l := left.toBitVec.setWidth width.bits
+  let r := right.toBitVec.setWidth width.bits
+  let cNat : Nat := if cf then 1 else 0
+  let cInt : Int := if cf then 1 else 0
+  let cBV : BitVec width.bits := BitVec.ofNat width.bits cNat
+  let res := l - r - cBV
+  let carry := decide (l.toNat < r.toNat + cNat)
+  let overflow := decide (res.toInt ≠ l.toInt - r.toInt - cInt)
+  resultFlags res carry overflow
 
 /-- Two- and three-operand IMUL set CF = OF = signed overflow; SF and ZF
 are undefined. -/

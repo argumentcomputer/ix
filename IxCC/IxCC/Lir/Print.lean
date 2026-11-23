@@ -66,9 +66,17 @@ def Rhs.text : Rhs → String
   | .addr m => s!"addr {m.text}"
   | .select c w a b t f => s!"select {c.text}.{w.text} {a.text}, {b.text} ? {t.text} : {f.text}"
   | .test c w a b => s!"test {c.text}.{w.text} {a.text}, {b.text}"
+  | .bsr64 a => s!"bsr.64 {a.text}"
+
+def LimbOp.text : LimbOp → String
+  | .mulWide64 a b => s!"mulWide.64 {a.text}, {b.text}"
+  | .divWide64 hi lo d => s!"divWide.64 {hi.text}:{lo.text}, {d.text}"
+  | .addCarry64 a b c => s!"addCarry.64 {a.text}, {b.text}, {c.text}"
+  | .subBorrow64 a b c => s!"subBorrow.64 {a.text}, {b.text}, {c.text}"
 
 def Stmt.text : Stmt → String
   | .assign x r => s!"{VReg.text x} = {r.text}"
+  | .limb r1 r2 op => s!"{VReg.text r1}, {VReg.text r2} = {op.text}"
   | .store w m a => s!"store.{w.text} {m.text}, {a.text}"
   | .call rs f as =>
       let lhs := if rs.isEmpty then "" else s!"{commaSep (rs.map VReg.text)} = "
@@ -85,7 +93,7 @@ def Term.text : Term → String
   | .jump e => s!"jump {e.text}"
   | .br c w a b t f => s!"br {c.text}.{w.text} {a.text}, {b.text} -> {t.text}, {f.text}"
   | .brOvf o x a b ok ovf =>
-      let op := match o with | .addC => "addc" | .subB => "subb"
+      let op := match o with | .addC => "addc" | .subB => "subb" | .mulOvf => "mulovf"
       s!"brovf {op} {VReg.text x} = {a.text}, {b.text} -> {ok.text}, {ovf.text}"
   | .ret as => s!"ret {commaSep (as.map Arg.text)}"
   | .tail f as => s!"tail f{f}({commaSep (as.map Arg.text)})"

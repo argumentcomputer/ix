@@ -143,19 +143,23 @@ theorem edgeArgs_spec {e : Lir.Edge} {c : Ctx} {st st' : St} {e' : Edge VReg} {p
 
 /-! ## `brOvf` (rule 4) -/
 
-/-- The row of a Lir overflow operation. -/
+/-- The row of an additive/subtractive Lir overflow operation. -/
 def ovfOp : Lir.Ovf → X86.AluOp
   | .addC => .add
-  | .subB => .sub
+  | _ => .sub
 
-theorem ovf_eval (o : Lir.Ovf) (a b : Word) : (o.eval a b).1 = (ovfOp o).eval a b := by
-  cases o <;> rfl
+theorem ovf_eval {o : Lir.Ovf} (hne : o ≠ .mulOvf) (a b : Word) : (o.eval a b).1 = (ovfOp o).eval a b := by
+  cases o with
+  | addC => rfl
+  | subB => rfl
+  | mulOvf => exact absurd rfl hne
 
-theorem ovf_carry (o : Lir.Ovf) (a b : Word) :
+theorem ovf_carry {o : Lir.Ovf} (hne : o ≠ .mulOvf) (a b : Word) :
     (X86.ByteEval.aluFlags (ovfOp o) .w64 a b).test .unsignedLt = some (o.eval a b).2 := by
-  cases o
-  · exact add_carry a b
-  · exact sub_borrow a b
+  cases o with
+  | addC => exact add_carry a b
+  | subB => exact sub_borrow a b
+  | mulOvf => exact absurd rfl hne
 
 theorem carry_comm (a b : Word) : (Lir.Ovf.eval .addC b a) = (Lir.Ovf.eval .addC a b) := by
   simp only [Lir.Ovf.eval, Prod.mk.injEq]
@@ -166,6 +170,23 @@ theorem carry_comm (a b : Word) : (Lir.Ovf.eval .addC b a) = (Lir.Ovf.eval .addC
   have := b.toNat_lt_size
   simp only [UInt64.size] at *
   omega
+
+theorem mulOvf_comm (a b : Word) : (Lir.Ovf.eval .mulOvf b a) = (Lir.Ovf.eval .mulOvf a b) := by
+  simp only [Lir.Ovf.eval, Prod.mk.injEq, UInt64.mul_comm b a, Nat.mul_comm b.toNat a.toNat, and_self]
+
+/-- A branch on the carry/overflow of widening `mul r/m64`, defining `[x, hi]`. -/
+theorem execJcc_umul {ρ : Env} {mem : X86.Memory} {ctx : Word} {x hi a : VReg}
+    {factor : XArg VReg} {va vf : Word}
+    (hf : factor.valIn ρ mem ctx .w64 = some vf) (hfi : ∀ k, factor ≠ .i k) (ha : ρ[a]? = some va) :
+    execJcc (X86.Op.mulM .w64) [factor, .r a] [x, hi] .unsignedLt ρ mem ctx =
+      some ((ρ.insert x (Lir.Ovf.eval .mulOvf va vf).1).insert hi (UInt64.ofNat ((va.toNat * vf.toNat) / 2 ^ 64)),
+        mem, (Lir.Ovf.eval .mulOvf va vf).2) := by
+  have hb : bindRow (X86.Op.mulM .w64) [x, hi] [factor, .r a] =
+      some [.input (X86.Table.rmSlot .w64 .read) factor,
+        .fixedTied ⟨.rax, .w64, .readWrite⟩ a x,
+        .fixedDef ⟨.rdx, .w64, .write⟩ hi] := by
+    cases factor <;> rfl
+  exact execJcc_of hb (bound_umul hf hfi ha) (jccTaken_eq (mul_ovf va vf))
 
 /-- A branch on the carry (borrow) of `add`/`sub` defining `x`. -/
 theorem execJcc_alu (op : X86.AluOp) {form : X86.OpEn} {s₁ s₂ : X86.Slot}
@@ -185,36 +206,37 @@ theorem execJcc_alu (op : X86.AluOp) {form : X86.OpEn} {s₁ s₂ : X86.Slot}
   rfl
 
 /-- The `brOvf` row and its operands' values: `x := a op b`, taken on carry. -/
-theorem brOvf_jcc (o : Lir.Ovf) {form : X86.OpEn} {ρ : Env} {mem : X86.Memory} {ctx : Word} {x a : VReg}
+theorem brOvf_jcc {o : Lir.Ovf} (hne : o ≠ .mulOvf) {form : X86.OpEn} {ρ : Env} {mem : X86.Memory} {ctx : Word} {x a : VReg}
     {b : XArg VReg} {va vb : Word}
     (hform : (form = .MR ∧ ∃ y, b = .r y) ∨ ((form = .MI8 ∨ form = .MI) ∧ ∃ k, b = .i k) ∨ (form = .RM ∧ ∃ m, b = .m m))
     (ha : ρ[a]? = some va) (hb : b.valIn ρ mem ctx .w64 = some vb) :
     execJcc (row (ovfOp o).mnemonic .w64 form) [.r a, b] [x] .unsignedLt ρ mem ctx =
       some (ρ.insert x (o.eval va vb).1, mem, (o.eval va vb).2) := by
-  rw [ovf_eval]
+  rw [ovf_eval hne]
   rcases hform with ⟨rfl, y, rfl⟩ | ⟨hf, k, rfl⟩ | ⟨rfl, m, rfl⟩
-  · exact execJcc_alu (ovfOp o) (.inl ⟨rfl, rfl, rfl⟩) ((aluBind _ _ .MR _ _).trans rfl) ha hb (ovf_carry o va vb)
+  · exact execJcc_alu (ovfOp o) (.inl ⟨rfl, rfl, rfl⟩) ((aluBind _ _ .MR _ _).trans rfl) ha hb (ovf_carry hne va vb)
   · rcases hf with rfl | rfl
     · exact execJcc_alu (ovfOp o) (.inr (.inl ⟨rfl, rfl, rfl⟩)) ((aluBind _ _ .MI8 _ _).trans rfl) ha hb
-        (ovf_carry o va vb)
+        (ovf_carry hne va vb)
     · exact execJcc_alu (ovfOp o) (.inr (.inr (.inl ⟨rfl, rfl, rfl⟩))) ((aluBind _ _ .MI _ _).trans rfl) ha hb
-        (ovf_carry o va vb)
+        (ovf_carry hne va vb)
   · exact execJcc_alu (ovfOp o) (.inr (.inr (.inr ⟨rfl, rfl, rfl⟩))) ((aluBind _ _ .RM _ _).trans rfl) ha hb
-      (ovf_carry o va vb)
+      (ovf_carry hne va vb)
 
 
 /-- What `selectBrOvf` guarantees: its prefix runs and its row defines `x`
-with Lir's result, taken on carry or borrow. -/
+(and any fresh scratch defs above `st.next`) with Lir's result, taken on overflow. -/
 def OvfOk (c : Ctx) (st st' : St) (o : Lir.Ovf) (x : VReg) (a b : Lir.Arg) (pre : List (Inst VReg)) (p : X86.Op)
-    (args : List (XArg VReg)) : Prop :=
+    (args : List (XArg VReg)) (defs : List VReg) : Prop :=
   Ext c st st' ∧ readsOf pre = [] ∧
     ∀ N (ρ σ : Env) mem ctx va vb, CtxLow c N → N ≤ st.next → (∀ u ∈ a.uses, u < N) → (∀ u ∈ b.uses, u < N) →
       a.eval ρ = some va → b.eval ρ = some vb → Pend c st st' ρ mem ctx → Agree N (xargsRegs args) ρ σ →
-      ∃ σ', execSeq σ mem ctx pre = some (σ', mem) ∧ (∀ u, u < st.next → σ'[u]? = σ[u]?) ∧
-        execJcc p args [x] .unsignedLt σ' mem ctx = some (σ'.insert x (o.eval va vb).1, mem, (o.eval va vb).2)
+      ∃ σ' σ'', execSeq σ mem ctx pre = some (σ', mem) ∧ (∀ u, u < st.next → σ'[u]? = σ[u]?) ∧
+        execJcc p args defs .unsignedLt σ' mem ctx = some (σ'', mem, (o.eval va vb).2) ∧
+        (∀ u, u < st.next → σ''[u]? = (σ'.insert x (o.eval va vb).1)[u]?)
 
 /-- The general `brOvf` row: `add/sub r/m64, r` or `r/m64, imm`. -/
-theorem ovf_general {o : Lir.Ovf} {x a : VReg} {b : Lir.Arg} {tag : String} {c : Ctx} {st st' : St} {p : X86.Op}
+theorem ovf_general {o : Lir.Ovf} (hne : o ≠ .mulOvf) {x a : VReg} {b : Lir.Arg} {tag : String} {c : Ctx} {st st' : St} {p : X86.Op}
     {args : List (XArg VReg)} {pre : List (Inst VReg)}
     (h : producerArgs (ovfOp o).mnemonic .w64 (.r a) b tag true c st = .ok ((p, args, pre), st')) :
     st.next ≤ st'.next ∧ st'.consumed = st.consumed ∧ readsOf pre = [] ∧ a ∈ xargsRegs args ∧
@@ -228,39 +250,40 @@ theorem ovf_general {o : Lir.Ovf} {x a : VReg} {b : Lir.Arg} {tag : String} {c :
   obtain ⟨σ', he, hab, v', hv', hvt⟩ := hv σ mem ctx vb hbl hb
   rw [X86.Encode.truncate64, X86.Encode.truncate64] at hvt
   subst hvt
-  refine ⟨σ', he, hab, brOvf_jcc o ?_ (by rw [hab a hal]; exact ha) hv'⟩
-  rcases hshape with ⟨rfl, y, rfl⟩ | ⟨hne, k, rfl⟩
+  refine ⟨σ', he, hab, brOvf_jcc hne ?_ (by rw [hab a hal]; exact ha) hv'⟩
+  rcases hshape with ⟨rfl, y, rfl⟩ | ⟨hne', k, rfl⟩
   · exact .inl ⟨rfl, y, rfl⟩
   · refine .inr (.inl ⟨?_, k, rfl⟩)
     rcases hform with h' | ⟨_, h'⟩ | h'
-    · exact absurd h' hne
+    · exact absurd h' hne'
     · exact .inl h'
     · exact .inr h'
 
 /-- The general row on a Lir register and a Lir argument. -/
-theorem ovf_reg {o : Lir.Ovf} {x : VReg} {a b : Lir.Arg} {a' : VReg} {b' : Lir.Arg} {tag : String} {c : Ctx}
+theorem ovf_reg {o : Lir.Ovf} (hne : o ≠ .mulOvf) {x : VReg} {a b : Lir.Arg} {a' : VReg} {b' : Lir.Arg} {tag : String} {c : Ctx}
     {st st' : St} {p : X86.Op} {args : List (XArg VReg)} {pre : List (Inst VReg)}
     (hval : ∀ (ρ : Env) va vb, a.eval ρ = some va → b.eval ρ = some vb →
       ∃ va' vb', ρ[a']? = some va' ∧ b'.eval ρ = some vb' ∧ o.eval va' vb' = o.eval va vb)
     (hlow : ∀ N, (∀ u ∈ a.uses, u < N) → (∀ u ∈ b.uses, u < N) → a' < N ∧ ∀ u ∈ b'.uses, u < N)
     (h : producerArgs (ovfOp o).mnemonic .w64 (.r a') b' tag true c st = .ok ((p, args, pre), st')) :
-    OvfOk c st st' o x a b pre p args := by
-  obtain ⟨hn, hc, hr, ha', hb', hv⟩ := ovf_general (x := x) h
+    OvfOk c st st' o x a b pre p args [x] := by
+  obtain ⟨hn, hc, hr, ha', hb', hv⟩ := ovf_general hne (x := x) h
   refine ⟨Ext.of_le hn hc, hr, fun N ρ σ mem ctx va vb hcl hN hal hbl ha hb hp hag => ?_⟩
   obtain ⟨va', vb', ha'', hb'', heq⟩ := hval ρ va vb ha hb
   obtain ⟨haN, hbN⟩ := hlow N hal hbl
   rw [← heq]
-  exact hv σ mem ctx va' vb' (hag.get ha' haN ha'') (Nat.lt_of_lt_of_le haN hN)
+  obtain ⟨σ', he, hab, hj⟩ := hv σ mem ctx va' vb' (hag.get ha' haN ha'') (Nat.lt_of_lt_of_le haN hN)
     (fun u hu => Nat.lt_of_lt_of_le (hbN u hu) hN) (hag.arg hb' hbN hb'')
+  exact ⟨σ', σ'.insert x (o.eval va' vb').1, he, hab, hj, fun _ _ => rfl⟩
 
 /-- The general row on a materialized immediate and a Lir argument. -/
-theorem ovf_mat {o : Lir.Ovf} {x : VReg} {k : Word} {b : Lir.Arg} {tag : String} {c : Ctx}
+theorem ovf_mat {o : Lir.Ovf} (hne : o ≠ .mulOvf) {x : VReg} {k : Word} {b : Lir.Arg} {tag : String} {c : Ctx}
     {st st₁ st' : St} {t : VReg} {pre₁ : List (Inst VReg)} {p : X86.Op} {args : List (XArg VReg)}
     {pre : List (Inst VReg)} (h₁ : materialize k c st = .ok ((t, pre₁), st₁))
     (h : producerArgs (ovfOp o).mnemonic .w64 (.r t) b tag true c st₁ = .ok ((p, args, pre), st')) :
-    OvfOk c st st' o x (.imm k) b (pre₁ ++ pre) p args := by
+    OvfOk c st st' o x (.imm k) b (pre₁ ++ pre) p args [x] := by
   obtain ⟨rfl, hn₁, hc₁, hr₁, hv₁⟩ := materialize_spec h₁
-  obtain ⟨hn, hc, hr, -, hb', hv⟩ := ovf_general (x := x) h
+  obtain ⟨hn, hc, hr, -, hb', hv⟩ := ovf_general hne (x := x) h
   refine ⟨(Ext.of_le (by rw [hn₁]; exact Nat.le_succ _) hc₁).trans (Ext.of_le hn hc), by simp [hr₁, hr],
     fun N ρ σ mem ctx va vb hcl hN hal hbl ha hb hp hag => ?_⟩
   simp only [Lir.Arg.eval, Option.some.injEq] at ha
@@ -270,12 +293,12 @@ theorem ovf_mat {o : Lir.Ovf} {x : VReg} {k : Word} {b : Lir.Arg} {tag : String}
     exact hag.arg hb' hbl hb
   obtain ⟨σ', he, hab, hj⟩ := hv (σ.insert st.next k) mem ctx k vb (by simp) (by rw [hn₁]; exact Nat.lt_succ_self _)
     (fun u hu => by rw [hn₁]; exact Nat.lt_succ_of_lt (Nat.lt_of_lt_of_le (hbl u hu) hN)) hbσ
-  refine ⟨σ', by rw [execSeq_append (hv₁ σ mem ctx), he], fun u hu => ?_, hj⟩
+  refine ⟨σ', σ'.insert x (o.eval k vb).1, by rw [execSeq_append (hv₁ σ mem ctx), he], fun u hu => ?_, hj, fun _ _ => rfl⟩
   rw [hab u (by rw [hn₁]; exact Nat.lt_succ_of_lt hu)]
   exact insert_below (Nat.le_refl _) u hu
 
 /-- `brOvf` with a sunk 64-bit load (rule 9). -/
-theorem ovf_sunk {o : Lir.Ovf} {x a : VReg} {y : VReg} {site : Nat} {c : Ctx} {st st₁ : St} {m : Amode VReg}
+theorem ovf_sunk {o : Lir.Ovf} (hne : o ≠ .mulOvf) {x a : VReg} {y : VReg} {site : Nat} {c : Ctx} {st st₁ : St} {m : Amode VReg}
     (hs : sinkLoad? y site 8 c st = .ok (some m, st₁)) (hsite : site = c.pos) :
     Ext c st st₁ ∧ st₁.next = st.next ∧
       ∀ N (ρ σ : Env) mem ctx va vy, CtxLow c N → N ≤ st.next → ρ[y]? = some vy → σ[a]? = some va →
@@ -292,30 +315,124 @@ theorem ovf_sunk {o : Lir.Ovf} {x a : VReg} {y : VReg} {site : Nat} {c : Ctx} {s
   have hm := hag.amode (fun u hu => hu) hmN haddr
   have hr := hread .w64 (Nat.le_refl _)
   rw [X86.Encode.truncate64] at hr
-  exact brOvf_jcc o (.inr (.inr ⟨rfl, m, rfl⟩)) ha (valIn_m hm hr)
+  exact brOvf_jcc hne (.inr (.inr ⟨rfl, m, rfl⟩)) ha (valIn_m hm hr)
 
 theorem selectBrOvf_spec {o : Lir.Ovf} {x : VReg} {a b : Lir.Arg} {ok ovf : Edge VReg} {c : Ctx} {st st' : St}
     {pre : List (Inst VReg)} {t : Term VReg} (h : selectBrOvf o x a b ok ovf c st = .ok ((pre, t), st')) :
-    ∃ p args, t = .jcc p args [x] .unsignedLt ovf ok ∧ OvfOk c st st' o x a b pre p args := by
+    ∃ p args defs, t = .jcc p args defs .unsignedLt ovf ok ∧ OvfOk c st st' o x a b pre p args defs := by
   have vlow : ∀ {N : Nat} {y : VReg}, (∀ u ∈ (Lir.Arg.v y).uses, u < N) → y < N :=
     fun h => h _ (by simp [Lir.Arg.uses, Lir.Arg.vreg?])
-  -- a sunk operand: the row reads the register and the load
-  have sunk : ∀ {a' y : VReg} {st₁ : St} {m : Amode VReg} {name : String},
+  -- a sunk operand for addC/subB: the row reads the register and the load
+  have sunk : ∀ {o' : Lir.Ovf} (hne : o' ≠ .mulOvf) {a' y : VReg} {st₁ : St} {m : Amode VReg} {name : String},
       sinkLoad? y (c.site.getD c.size) 8 c st = .ok (some m, st₁) →
       (∀ (ρ : Env) va vb, a.eval ρ = some va → b.eval ρ = some vb →
-        ∃ va' vy, ρ[a']? = some va' ∧ ρ[y]? = some vy ∧ o.eval va' vy = o.eval va vb) →
+        ∃ va' vy, ρ[a']? = some va' ∧ ρ[y]? = some vy ∧ o'.eval va' vy = o'.eval va vb) →
       (∀ N, (∀ u ∈ a.uses, u < N) → (∀ u ∈ b.uses, u < N) → a' < N) →
-      OvfOk c st (fireSt name st₁) o x a b [] (row (ovfOp o).mnemonic .w64 .RM) [.r a', .m m] := by
-    intro a' y st₁ m name hs hval hlow
-    obtain ⟨hext, hn, hv⟩ := ovf_sunk (o := o) (x := x) (a := a') hs rfl
+      OvfOk c st (fireSt name st₁) o' x a b [] (row (ovfOp o').mnemonic .w64 .RM) [.r a', .m m] [x] := by
+    intro o' hne a' y st₁ m name hs hval hlow
+    obtain ⟨hext, hn, hv⟩ := ovf_sunk hne (x := x) (a := a') hs rfl
     refine ⟨hext.trans (Ext.fire c _ _), rfl, fun N ρ σ mem ctx va vb hcl hN hal hbl ha hb hp hag => ?_⟩
     obtain ⟨va', vy, ha', hy, heq⟩ := hval ρ va vb ha hb
     rw [← heq]
-    exact ⟨σ, rfl, fun _ _ => rfl, hv N ρ σ mem ctx va' vy hcl hN hy
+    exact ⟨σ, σ.insert x (o'.eval va' vy).1, rfl, fun _ _ => rfl, hv N ρ σ mem ctx va' vy hcl hN hy
       (hag.get (by simp [xargsRegs, XArg.regs]) (hlow N hal hbl) ha') (hp.left (Ext.fire c _ _))
-      (hag.mono fun u hu => by simp [xargsRegs, XArg.regs, hu])⟩
+      (hag.mono fun u hu => by simp [xargsRegs, XArg.regs, hu]), fun _ _ => rfl⟩
+  -- fallback for mulOvf after allocating hi = st.next
+  have mulFallback : ∀ {st₀ : St}, st₀.next = st.next + 1 → st₀.consumed = st.consumed →
+      (do let (a', preA) ← argReg a; let (b', preB) ← argReg b; fire "brOvf.mul.rr";
+          return (preA ++ preB, Term.jcc (X86.Op.mulM .w64) [.r b', .r a'] [x, st.next] .unsignedLt ovf ok) : SelM _) c st₀ =
+        .ok ((pre, t), st') →
+      ∃ p args defs, t = .jcc p args defs .unsignedLt ovf ok ∧ OvfOk c st st' .mulOvf x a b pre p args defs := by
+    intro st₀ hn₀ hc₀ hm
+    rw [bind_ok] at hm
+    obtain ⟨⟨a', preA⟩, st₁, h₁, hm⟩ := hm
+    rw [bind_ok] at hm
+    obtain ⟨⟨b', preB⟩, st₂, h₂, hm⟩ := hm
+    sel_simp [Option.some.injEq] at hm
+    obtain ⟨⟨rfl, rfl⟩, rfl⟩ := hm
+    obtain ⟨hn₁, hc₁, hr₁, hua, hla, hva⟩ := argReg_spec h₁
+    obtain ⟨hn₂, hc₂, hr₂, hub, -, hvb⟩ := argReg_spec h₂
+    refine ⟨X86.Op.mulM .w64, [.r b', .r a'], [x, st.next], rfl,
+      (Ext.of_le (by rw [hn₀]; exact Nat.le_succ _) hc₀).trans
+        ((Ext.of_le hn₁ hc₁).trans ((Ext.of_le hn₂ hc₂).trans (Ext.fire c _ _))),
+      by simp [hr₁, hr₂], fun N ρ σ mem ctx va vb hcl hN hal hbl ha hb hp hag => ?_⟩
+    have haσ : a.eval σ = some va := hag.arg (fun u hu' => by simp [xargsRegs, XArg.regs, hua u hu']) hal ha
+    obtain ⟨σ₁, he₁, ha₁, hab₁⟩ := hva σ mem ctx va haσ
+    have hbσ : b.eval σ₁ = some vb :=
+      (hag.mono fun u hu' => by simp [xargsRegs, XArg.regs, hub u hu']).above hab₁ (by rw [hn₀]; vomega) |>.arg
+        (fun _ hu' => hu') hbl hb
+    obtain ⟨σ₂, he₂, hb₂, hab₂⟩ := hvb σ₁ mem ctx vb hbσ
+    have ha₂ : σ₂[a']? = some va := by
+      rw [hab₂ a' (hla fun u hu' => by rw [hn₀]; exact Nat.lt_succ_of_lt (Nat.lt_of_lt_of_le (hal u hu') hN))]
+      exact ha₁
+    have hj := execJcc_umul (x := x) (hi := st.next) (factor := .r b') (mem := mem) (ctx := ctx) hb₂ (by simp) ha₂
+    refine ⟨σ₂, _, by rw [execSeq_append he₁, he₂],
+      fun u hu => by rw [hab₂ u (Nat.lt_of_lt_of_le (by rw [hn₀]; exact Nat.lt_succ_of_lt hu) hn₁),
+        hab₁ u (by rw [hn₀]; exact Nat.lt_succ_of_lt hu)],
+      hj, fun u hu => insert_ne (by vomega)⟩
+  have hext₀ : Ext c st { st with next := st.next + 1 } := Ext.of_le (Nat.le_succ st.next) rfl
   unfold selectBrOvf at h
   cases o <;> cases a <;> cases b
+  case mulOvf.v.v a' b' =>
+    sel_simp [Option.some.injEq] at h
+    rw [bind_ok] at h
+    obtain ⟨r₁, st₁, h₁, h⟩ := h
+    obtain ⟨hext₁, hn₁, hnone₁, hsome₁⟩ := sinkLoad?_spec h₁ rfl
+    cases r₁ with
+    | some m =>
+      sel_simp [Option.some.injEq] at h
+      obtain ⟨⟨rfl, rfl⟩, rfl⟩ := h
+      obtain ⟨hlow, hval⟩ := hsome₁ m rfl
+      refine ⟨X86.Op.mulM .w64, [.m m, .r a'], [x, st.next], rfl,
+        hext₀.trans (hext₁.trans (Ext.fire c _ _)), rfl,
+        fun N ρ σ mem ctx va vb hcl hN hal hbl ha hb hp hag => ?_⟩
+      obtain ⟨_, hmN⟩ := hlow N hcl
+      obtain ⟨addr, vy, hy, haddr, hread⟩ := hval ρ mem ctx ((hp.right hext₀).left (Ext.fire c _ _))
+      simp only [Lir.Arg.eval] at ha hb
+      rw [hb] at hy; cases hy
+      have hm := hag.amode (fun u hu' => by simp [xargsRegs, XArg.regs, hu']) hmN haddr
+      have hmf : (XArg.m m).valIn σ mem ctx .w64 = some vb :=
+        valIn_m hm ((hread .w64 (Nat.le_refl _)).trans (by rw [X86.Encode.truncate64]))
+      have haσ : σ[a']? = some va := hag.get (by simp [xargsRegs, XArg.regs]) (vlow hal) ha
+      exact ⟨σ, _, rfl, fun _ _ => rfl, execJcc_umul hmf (by simp) haσ, fun u hu => insert_ne (by vomega)⟩
+    | none =>
+      obtain rfl := hnone₁ rfl
+      sel_simp [Option.some.injEq] at h
+      rw [bind_ok] at h
+      obtain ⟨r₂, st₂, h₂, h⟩ := h
+      obtain ⟨hext₂, hn₂, hnone₂, hsome₂⟩ := sinkLoad?_spec h₂ rfl
+      cases r₂ with
+      | some m =>
+        sel_simp [Option.some.injEq] at h
+        obtain ⟨⟨rfl, rfl⟩, rfl⟩ := h
+        obtain ⟨hlow, hval⟩ := hsome₂ m rfl
+        refine ⟨X86.Op.mulM .w64, [.m m, .r b'], [x, st.next], rfl,
+          hext₀.trans (hext₂.trans (Ext.fire c _ _)), rfl,
+          fun N ρ σ mem ctx va vb hcl hN hal hbl ha hb hp hag => ?_⟩
+        obtain ⟨_, hmN⟩ := hlow N hcl
+        obtain ⟨addr, vy, hy, haddr, hread⟩ := hval ρ mem ctx ((hp.right hext₀).left (Ext.fire c _ _))
+        simp only [Lir.Arg.eval] at ha hb
+        rw [ha] at hy; cases hy
+        have hm := hag.amode (fun u hu' => by simp [xargsRegs, XArg.regs, hu']) hmN haddr
+        have hmf : (XArg.m m).valIn σ mem ctx .w64 = some va :=
+          valIn_m hm ((hread .w64 (Nat.le_refl _)).trans (by rw [X86.Encode.truncate64]))
+        have hbσ : σ[b']? = some vb := hag.get (by simp [xargsRegs, XArg.regs]) (vlow hbl) hb
+        have hj := execJcc_umul (x := x) (hi := st.next) hmf (by simp) hbσ
+        rw [mulOvf_comm va vb] at hj
+        exact ⟨σ, _, rfl, fun _ _ => rfl, hj, fun u hu => insert_ne (by vomega)⟩
+      | none =>
+        obtain rfl := hnone₂ rfl
+        sel_simp [Option.some.injEq] at h
+        exact mulFallback (st₀ := { st with next := st.next + 1 }) rfl rfl h
+  case mulOvf.v.imm a' k =>
+    sel_simp [Option.some.injEq] at h
+    exact mulFallback (st₀ := { st with next := st.next + 1 }) rfl rfl h
+  case mulOvf.imm.v k b' =>
+    sel_simp [Option.some.injEq] at h
+    exact mulFallback (st₀ := { st with next := st.next + 1 }) rfl rfl h
+  case mulOvf.imm.imm ka kb =>
+    sel_simp [Option.some.injEq] at h
+    exact mulFallback (st₀ := { st with next := st.next + 1 }) rfl rfl h
   -- addC, v, v
   case addC.v.v a' b' =>
     sel_simp [Option.some.injEq] at h
@@ -325,7 +442,7 @@ theorem selectBrOvf_spec {o : Lir.Ovf} {x : VReg} {a b : Lir.Arg} {ok ovf : Edge
     | some m =>
       sel_simp [Option.some.injEq] at h
       obtain ⟨⟨rfl, rfl⟩, rfl⟩ := h
-      refine ⟨_, _, rfl, sunk h₁ (fun ρ va vb ha hb => ⟨va, vb, ha, hb, rfl⟩) (fun N hal _ => vlow hal)⟩
+      refine ⟨_, _, _, rfl, sunk (by decide) h₁ (fun ρ va vb ha hb => ⟨va, vb, ha, hb, rfl⟩) (fun N hal _ => vlow hal)⟩
     | none =>
       obtain rfl := (sinkLoad?_spec h₁ rfl).2.2.1 rfl
       sel_simp [Option.some.injEq, beq_self_eq_true] at h
@@ -335,7 +452,7 @@ theorem selectBrOvf_spec {o : Lir.Ovf} {x : VReg} {a b : Lir.Arg} {ok ovf : Edge
       | some m =>
         sel_simp [Option.some.injEq] at h
         obtain ⟨⟨rfl, rfl⟩, rfl⟩ := h
-        refine ⟨_, _, rfl, sunk h₂ (fun ρ va vb ha hb => ⟨vb, va, hb, ha, carry_comm va vb⟩) (fun N _ hbl => vlow hbl)⟩
+        refine ⟨_, _, _, rfl, sunk (by decide) h₂ (fun ρ va vb ha hb => ⟨vb, va, hb, ha, carry_comm va vb⟩) (fun N _ hbl => vlow hbl)⟩
       | none =>
         obtain rfl := (sinkLoad?_spec h₂ rfl).2.2.1 rfl
         sel_simp [Option.some.injEq] at h
@@ -343,9 +460,9 @@ theorem selectBrOvf_spec {o : Lir.Ovf} {x : VReg} {a b : Lir.Arg} {ok ovf : Edge
         obtain ⟨⟨p, args, pre₂⟩, st₃, h₃, h⟩ := h
         sel_simp [Option.some.injEq] at h
         obtain ⟨⟨rfl, rfl⟩, rfl⟩ := h
-        refine ⟨_, _, rfl, ?_⟩
-        simpa using ovf_reg (o := .addC) (x := x) (a := .v a') (b := .v b') (a' := a') (b' := .v b') (fun ρ va vb ha hb => ⟨va, vb, ha, hb, rfl⟩)
-          (fun N hal hbl => ⟨vlow hal, hbl⟩) h₃
+        refine ⟨_, _, _, rfl, ?_⟩
+        simpa using ovf_reg (o := .addC) (by decide) (x := x) (a := .v a') (b := .v b') (a' := a') (b' := .v b')
+          (fun ρ va vb ha hb => ⟨va, vb, ha, hb, rfl⟩) (fun N hal hbl => ⟨vlow hal, hbl⟩) h₃
   case subB.v.v a' b' =>
     sel_simp [Option.some.injEq] at h
     rw [bind_ok] at h
@@ -354,7 +471,7 @@ theorem selectBrOvf_spec {o : Lir.Ovf} {x : VReg} {a b : Lir.Arg} {ok ovf : Edge
     | some m =>
       sel_simp [Option.some.injEq] at h
       obtain ⟨⟨rfl, rfl⟩, rfl⟩ := h
-      refine ⟨_, _, rfl, sunk h₁ (fun ρ va vb ha hb => ⟨va, vb, ha, hb, rfl⟩) (fun N hal _ => vlow hal)⟩
+      refine ⟨_, _, _, rfl, sunk (by decide) h₁ (fun ρ va vb ha hb => ⟨va, vb, ha, hb, rfl⟩) (fun N hal _ => vlow hal)⟩
     | none =>
       obtain rfl := (sinkLoad?_spec h₁ rfl).2.2.1 rfl
       sel_simp [Option.some.injEq, beq_iff_eq, reduceCtorEq] at h
@@ -362,17 +479,17 @@ theorem selectBrOvf_spec {o : Lir.Ovf} {x : VReg} {a b : Lir.Arg} {ok ovf : Edge
       obtain ⟨⟨p, args, pre₂⟩, st₃, h₃, h⟩ := h
       sel_simp [Option.some.injEq] at h
       obtain ⟨⟨rfl, rfl⟩, rfl⟩ := h
-      refine ⟨_, _, rfl, ?_⟩
-      simpa using ovf_reg (o := .subB) (x := x) (a := .v a') (b := .v b') (a' := a') (b' := .v b') (fun ρ va vb ha hb => ⟨va, vb, ha, hb, rfl⟩)
-        (fun N hal hbl => ⟨vlow hal, hbl⟩) h₃
+      refine ⟨_, _, _, rfl, ?_⟩
+      simpa using ovf_reg (o := .subB) (by decide) (x := x) (a := .v a') (b := .v b') (a' := a') (b' := .v b')
+        (fun ρ va vb ha hb => ⟨va, vb, ha, hb, rfl⟩) (fun N hal hbl => ⟨vlow hal, hbl⟩) h₃
   case addC.v.imm a' k =>
     sel_simp [Option.some.injEq] at h
     rw [bind_ok] at h
     obtain ⟨⟨p, args, pre₂⟩, st₃, h₃, h⟩ := h
     sel_simp [Option.some.injEq] at h
     obtain ⟨⟨rfl, rfl⟩, rfl⟩ := h
-    refine ⟨_, _, rfl, ?_⟩
-    simpa using ovf_reg (o := .addC) (x := x) (a := .v a') (b := .imm k) (a' := a') (b' := .imm k)
+    refine ⟨_, _, _, rfl, ?_⟩
+    simpa using ovf_reg (o := .addC) (by decide) (x := x) (a := .v a') (b := .imm k) (a' := a') (b' := .imm k)
       (fun ρ va vb ha hb => ⟨va, vb, ha, hb, rfl⟩) (fun N hal hbl => ⟨vlow hal, hbl⟩) h₃
   case subB.v.imm a' k =>
     sel_simp [Option.some.injEq] at h
@@ -380,8 +497,8 @@ theorem selectBrOvf_spec {o : Lir.Ovf} {x : VReg} {a b : Lir.Arg} {ok ovf : Edge
     obtain ⟨⟨p, args, pre₂⟩, st₃, h₃, h⟩ := h
     sel_simp [Option.some.injEq] at h
     obtain ⟨⟨rfl, rfl⟩, rfl⟩ := h
-    refine ⟨_, _, rfl, ?_⟩
-    simpa using ovf_reg (o := .subB) (x := x) (a := .v a') (b := .imm k) (a' := a') (b' := .imm k)
+    refine ⟨_, _, _, rfl, ?_⟩
+    simpa using ovf_reg (o := .subB) (by decide) (x := x) (a := .v a') (b := .imm k) (a' := a') (b' := .imm k)
       (fun ρ va vb ha hb => ⟨va, vb, ha, hb, rfl⟩) (fun N hal hbl => ⟨vlow hal, hbl⟩) h₃
   case addC.imm.v k b' =>
     sel_simp [Option.some.injEq] at h
@@ -389,8 +506,8 @@ theorem selectBrOvf_spec {o : Lir.Ovf} {x : VReg} {a b : Lir.Arg} {ok ovf : Edge
     obtain ⟨⟨p, args, pre₂⟩, st₃, h₃, h⟩ := h
     sel_simp [Option.some.injEq] at h
     obtain ⟨⟨rfl, rfl⟩, rfl⟩ := h
-    refine ⟨_, _, rfl, ?_⟩
-    simpa using ovf_reg (o := .addC) (x := x) (a := .imm k) (b := .v b') (a' := b') (b' := .imm k)
+    refine ⟨_, _, _, rfl, ?_⟩
+    simpa using ovf_reg (o := .addC) (by decide) (x := x) (a := .imm k) (b := .v b') (a' := b') (b' := .imm k)
       (fun ρ va vb ha hb => ⟨vb, va, hb, ha, carry_comm va vb⟩) (fun N _ hbl => ⟨vlow hbl, by simp [imm_uses]⟩) h₃
   case subB.imm.v k b' =>
     sel_simp [Option.some.injEq] at h
@@ -401,7 +518,7 @@ theorem selectBrOvf_spec {o : Lir.Ovf} {x : VReg} {a b : Lir.Arg} {ok ovf : Edge
     obtain ⟨⟨p, args, pre₂⟩, st₃, h₃, h⟩ := h
     sel_simp [Option.some.injEq] at h
     obtain ⟨⟨rfl, rfl⟩, rfl⟩ := h
-    exact ⟨_, _, rfl, ovf_mat (o := .subB) h₁ h₃⟩
+    exact ⟨_, _, _, rfl, ovf_mat (o := .subB) (by decide) h₁ h₃⟩
   case addC.imm.imm ka kb =>
     sel_simp [Option.some.injEq] at h
     rw [bind_ok] at h
@@ -411,7 +528,7 @@ theorem selectBrOvf_spec {o : Lir.Ovf} {x : VReg} {a b : Lir.Arg} {ok ovf : Edge
     obtain ⟨⟨p, args, pre₂⟩, st₃, h₃, h⟩ := h
     sel_simp [Option.some.injEq] at h
     obtain ⟨⟨rfl, rfl⟩, rfl⟩ := h
-    exact ⟨_, _, rfl, ovf_mat (o := .addC) h₁ h₃⟩
+    exact ⟨_, _, _, rfl, ovf_mat (o := .addC) (by decide) h₁ h₃⟩
   case subB.imm.imm ka kb =>
     sel_simp [Option.some.injEq] at h
     rw [bind_ok] at h
@@ -421,7 +538,7 @@ theorem selectBrOvf_spec {o : Lir.Ovf} {x : VReg} {a b : Lir.Arg} {ok ovf : Edge
     obtain ⟨⟨p, args, pre₂⟩, st₃, h₃, h⟩ := h
     sel_simp [Option.some.injEq] at h
     obtain ⟨⟨rfl, rfl⟩, rfl⟩ := h
-    exact ⟨_, _, rfl, ovf_mat (o := .subB) h₁ h₃⟩
+    exact ⟨_, _, _, rfl, ovf_mat (o := .subB) (by decide) h₁ h₃⟩
 
 
 /-! ## Terminators -/
@@ -438,12 +555,13 @@ def TermRun (t : Lir.Term) (pre : List (Inst VReg)) (t' : Term VReg) (ρ σ : En
         ∃ σ', execSeq σ mem ctx pre = some (σ', mem) ∧ (∀ u, u < n → σ'[u]? = σ[u]?) ∧
           execJcc p pargs [] cond σ' mem ctx = some (σ', mem, c.holds w va vb) ∧
           EdgeRel tt tt' ρ σ' ∧ EdgeRel ff ff' ρ σ'
-  | .brOvf o x a b ok ovf => ∃ p pargs ok' ovf', t' = .jcc p pargs [x] .unsignedLt ovf' ok' ∧
+  | .brOvf o x a b ok ovf => ∃ p pargs defs ok' ovf', t' = .jcc p pargs defs .unsignedLt ovf' ok' ∧
       ∀ va vb, a.eval ρ = some va → b.eval ρ = some vb →
-        ∃ σ', execSeq σ mem ctx pre = some (σ', mem) ∧ (∀ u, u < n → σ'[u]? = σ[u]?) ∧
-          execJcc p pargs [x] .unsignedLt σ' mem ctx = some (σ'.insert x (o.eval va vb).1, mem, (o.eval va vb).2) ∧
-          EdgeRel ok ok' (ρ.insert x (o.eval va vb).1) (σ'.insert x (o.eval va vb).1) ∧
-          EdgeRel ovf ovf' (ρ.insert x (o.eval va vb).1) (σ'.insert x (o.eval va vb).1)
+        ∃ σ' σ'', execSeq σ mem ctx pre = some (σ', mem) ∧ (∀ u, u < n → σ'[u]? = σ[u]?) ∧
+          execJcc p pargs defs .unsignedLt σ' mem ctx = some (σ'', mem, (o.eval va vb).2) ∧
+          (∀ u, u < n → σ''[u]? = (σ'.insert x (o.eval va vb).1)[u]?) ∧
+          EdgeRel ok ok' (ρ.insert x (o.eval va vb).1) σ'' ∧
+          EdgeRel ovf ovf' (ρ.insert x (o.eval va vb).1) σ''
   | .ret as => ∃ vs, t' = .ret vs ∧ ∃ σ', execSeq σ mem ctx pre = some (σ', mem) ∧
       (∀ u, u < n → σ'[u]? = σ[u]?) ∧ ∀ vals, Lir.evalArgs ρ as = some vals → readAll σ' vs = some vals
   | .tail g as => ∃ vs, t' = .tail g vs ∧ ∃ σ', execSeq σ mem ctx pre = some (σ', mem) ∧
@@ -545,34 +663,38 @@ theorem selectTerm_ok {t : Lir.Term} {c : Ctx} {st st' : St} {pre : List (Inst V
     obtain ⟨⟨rfl, rfl⟩, rfl⟩ := h
     obtain ⟨hn₁, hc₁, hr₁, -, hu₁, hfr₁, hv₁⟩ := edgeArgs_spec h₁
     obtain ⟨hn₂, hc₂, hr₂, -, hu₂, hfr₂, hv₂⟩ := edgeArgs_spec h₂
-    obtain ⟨p, args, rfl, hext₃, hr₃, hv₃⟩ := selectBrOvf_spec h₃
+    obtain ⟨p, args, defs, rfl, hext₃, hr₃, hv₃⟩ := selectBrOvf_spec h₃
     have he₁₂ : Ext c st st₂ := (Ext.of_le hn₁ hc₁).trans (Ext.of_le hn₂ hc₂)
     refine ⟨he₁₂.trans hext₃, fun N ρ σ mem ctx hcl hN htu htd hte hp hag => ?_⟩
-    refine ⟨p, args, ok', ovf', rfl, fun va vb ha hb => ?_⟩
+    refine ⟨p, args, defs, ok', ovf', rfl, fun va vb ha hb => ?_⟩
     have hxN : x < N := htd x (by simp [Lir.Term.defs])
     have hlo : ∀ u ∈ Lir.argsUses ok.args, u < N := fun u hu' => hte u (by simp [Lir.Term.edgeUses, Lir.Term.edges, hu'])
     have hlv : ∀ u ∈ Lir.argsUses ovf.args, u < N := fun u hu' => hte u (by simp [Lir.Term.edgeUses, Lir.Term.edges, hu'])
     obtain ⟨σ₁, he₁, hab₁, hE₁⟩ := hv₁ σ mem ctx
     obtain ⟨σ₂, he₂, hab₂, hE₂⟩ := hv₂ σ₁ mem ctx
     have hab₁₂ : ∀ u, u < st.next → σ₂[u]? = σ[u]? := above_trans hab₁ hab₂ hn₁
-    obtain ⟨σ₃, he₃, hab₃, hj⟩ := hv₃ N ρ σ₂ mem ctx va vb hcl (Nat.le_trans hN he₁₂.next)
+    obtain ⟨σ₃, σ₄, he₃, hab₃, hj, hσ₄⟩ := hv₃ N ρ σ₂ mem ctx va vb hcl (Nat.le_trans hN he₁₂.next)
       (fun u hu' => htu u (by simp [Lir.Term.uses, hu'])) (fun u hu' => htu u (by simp [Lir.Term.uses, hu'])) ha hb
       (hp.right he₁₂) ((hag.mono fun u hu' => by simp [Term.uses, hu']).above hab₁₂ hN)
     have hab₃' : ∀ u, u < st.next → σ₃[u]? = σ[u]? := above_trans hab₁₂ hab₃ he₁₂.next
-    have hins : ∀ u, u < N → (σ₃.insert x (o.eval va vb).1)[u]? = (σ.insert x (o.eval va vb).1)[u]? := by
+    have hins : ∀ u, u < N → σ₄[u]? = (σ.insert x (o.eval va vb).1)[u]? := by
       intro u hu'
+      rw [hσ₄ u (Nat.lt_of_lt_of_le (Nat.lt_of_lt_of_le hu' hN) he₁₂.next)]
       by_cases hux : x = u
       · subst hux; simp
       · rw [insert_ne hux, insert_ne hux]; exact hab₃' u (Nat.lt_of_lt_of_le hu' hN)
     have hxt : ∀ t₀, st.next ≤ t₀ → x ≠ t₀ := fun t₀ ht => by have := Nat.lt_of_lt_of_le hxN hN; vomega
-    refine ⟨σ₃, by rw [execSeq_append (by rw [execSeq_append he₁, he₂]), he₃], hab₃', hj, ?_, ?_⟩
+    refine ⟨σ₃, σ₄, by rw [execSeq_append (by rw [execSeq_append he₁, he₂]), he₃], hab₃', hj,
+      fun u hu => hσ₄ u (Nat.lt_of_lt_of_le hu he₁₂.next), ?_, ?_⟩
     · exact edge_rel hfr₁ hE₁ hlo hN
         ((hag.mono fun u hu' => by simp [Term.edgeUses, Term.edges, hu₁ u hu']).insert x _) hins
         (fun t₀ ht₀ ht₂ => by
-          rw [insert_ne (hxt t₀ ht₀), hab₃ t₀ (Nat.lt_of_lt_of_le ht₂ hn₂), hab₂ t₀ ht₂])
+          rw [hσ₄ t₀ (Nat.lt_of_lt_of_le ht₂ hn₂), insert_ne (hxt t₀ ht₀),
+            hab₃ t₀ (Nat.lt_of_lt_of_le ht₂ hn₂), hab₂ t₀ ht₂])
     · exact edge_rel hfr₂ (fun E E' h₁' h₂' h₃' => hE₂ E E' h₁' h₂' h₃') hlv (Nat.le_trans hN hn₁)
         ((hag.mono fun u hu' => by simp [Term.edgeUses, Term.edges, hu₂ u hu']).insert x _) hins
-        (fun t₀ ht₀ ht₂ => by rw [insert_ne (hxt t₀ (Nat.le_trans hn₁ ht₀)), hab₃ t₀ ht₂])
+        (fun t₀ ht₀ ht₂ => by
+          rw [hσ₄ t₀ ht₂, insert_ne (hxt t₀ (Nat.le_trans hn₁ ht₀)), hab₃ t₀ ht₂])
   | ret as =>
     simp only [selectTerm] at h
     rw [bind_ok] at h

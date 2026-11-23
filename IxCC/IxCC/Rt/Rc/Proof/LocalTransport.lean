@@ -76,6 +76,15 @@ theorem local_next_transport (f : Func) (hfree : CallFree f) (P : Program) (fn :
           simp only [he] at hs ⊢
           cases hs
           exact ⟨mem', {frame with pos := frame.pos+1, env := env'}, rfl, hzero, rfl⟩
+      | limb r1 r2 op =>
+        simp only [hi] at hs ⊢
+        cases he : (Stmt.limb r1 r2 op).exec frame.env mem context with
+        | none => simp [he] at hs
+        | some result =>
+          rcases result with ⟨env', mem'⟩
+          simp only [he] at hs ⊢
+          cases hs
+          exact ⟨mem', {frame with pos := frame.pos+1, env := env'}, rfl, hzero, rfl⟩
       | store width address value =>
         simp only [hi] at hs ⊢
         cases he : (Stmt.store width address value).exec frame.env mem context with

@@ -1,5 +1,6 @@
 import IxCC.Xv.Select.Proof.Place
 import IxCC.Xv.Select.Driver
+import IxCC.Xv.Select.Lemmas
 import IxCC.Lir.Proof.Steps
 import IxCC.X86.Width
 
@@ -1307,5 +1308,185 @@ theorem exec_fusedSetcc (k : Prod) {w : X86.Width} {form : X86.OpEn} (hf : k.For
   row_simp [hmem, X86.Op.setccM, X86.Table.setccDesc, X86.Table.setccSem, hb', hpd, hz, X86.Width.truncate,
     X86.Width.mask]
   cases b <;> rfl
+
+/-! ## Widening `mul`, `bsr`, and fused `adc`/`sbb` -/
+
+private theorem merge_mulEffect (before : X86.ByteEval.Flags) (h : Nat) :
+    X86.ByteEval.Flags.merge X86.Table.mulEffect before (X86.ByteEval.umulFlags h) =
+      X86.ByteEval.umulFlags h := rfl
+
+private theorem mul_lo_word (va vf : Word) :
+    UInt64.ofNat (va.toNat * vf.toNat % 18446744073709551616) = va * vf := by
+  apply UInt64.toNat_inj.mp
+  rw [UInt64.toNat_ofNat', UInt64.toNat_mul]
+  change (va.toNat * vf.toNat % 2 ^ 64) % 2 ^ 64 = va.toNat * vf.toNat % 2 ^ 64
+  exact Nat.mod_mod _ _
+
+/-- Widening unsigned `mul r/m64` (`rdx:rax := factor * rax`, setting `CF = OF = (hi ≠ 0)`). -/
+theorem bound_umul {ρ : Env} {mem : X86.Memory} {ctx : Word} {lo hi a : VReg}
+    {factor : XArg VReg} {va vf : Word}
+    (hf : factor.valIn ρ mem ctx .w64 = some vf) (hfi : ∀ k, factor ≠ .i k) (ha : ρ[a]? = some va) :
+    execBound [(X86.Op.mulM .w64,
+      [.input (X86.Table.rmSlot .w64 .read) factor,
+       .fixedTied ⟨.rax, .w64, .readWrite⟩ a lo,
+       .fixedDef ⟨.rdx, .w64, .write⟩ hi])] ρ mem ctx =
+      some ((ρ.insert lo (va * vf)).insert hi (UInt64.ofNat ((va.toNat * vf.toNat) / 2 ^ 64)),
+        mem, X86.ByteEval.umulFlags ((va.toNat * vf.toNat) / 2 ^ 64)) := by
+  obtain ⟨bR, margs, core, hmap, hass, hsl, hmem, hctx, htk, htkm, huse, -, hrun⟩ :=
+    bound_run (o := X86.Op.mulM .w64) (ρ := ρ) (mem := mem) (ctx := ctx)
+      (bs := [.input (X86.Table.rmSlot .w64 .read) factor,
+        .fixedTied ⟨.rax, .w64, .readWrite⟩ a lo,
+        .fixedDef ⟨.rdx, .w64, .write⟩ hi])
+      (by
+        cases factor with
+        | m am => have := Amode.regs_length_le am; simp [Bound.need, Bound.fixed?, XArg.regs, scratch]; omega
+        | _ => simp [Bound.need, Bound.fixed?, XArg.regs, scratch])
+      (by
+        have hdf := XArg.valIn_defined hf
+        intro y hy
+        simp only [Bound.uses, List.flatMap_cons, List.flatMap_nil, List.append_nil, List.mem_append,
+          List.mem_cons, List.not_mem_nil, or_false] at hy
+        rcases hy with hy | rfl
+        · exact hdf y hy
+        · exact ⟨va, ha⟩)
+      (by exact (by decide : [GPR.rax].Nodup)) (by simp [Bound.fixed?])
+  simp only [List.map_eq_cons_iff, List.map_eq_nil_iff, Bound.map_fst_eq_fixedTied,
+    Bound.map_fst_eq_fixedDef] at hmap
+  obtain ⟨bf, _, rfl, hbf, _, _, rfl, ⟨ra, rlo, rfl⟩, _, _, rfl, ⟨rhi, rfl⟩, rfl⟩ := hmap
+  obtain ⟨hra, hrlo⟩ : ra = .rax ∧ rlo = .rax :=
+    hass (.fixedTied ⟨.rax, .w64, .readWrite⟩ (a, ra) (lo, rlo)) (by simp)
+  have hrhi : rhi = .rdx := hass (.fixedDef ⟨.rdx, .w64, .write⟩ (hi, rhi)) (by simp)
+  subst hra hrlo hrhi
+  have hva := huse (a, .rax) (by simp [Bound.uses])
+  rw [ha] at hva
+  simp only [Option.some.injEq] at hva
+  obtain ⟨arg, hsl', hload⟩ : ∃ arg, margs = [arg] ∧ arg.load core .w64 = .ok vf := by
+    cases factor with
+    | i k => exact absurd rfl (hfi k)
+    | r y =>
+      simp only [Bound.map_fst_eq_input_r] at hbf
+      obtain ⟨ry, rfl⟩ := hbf
+      simp [slotArgs, Bound.isSlot, Bound.map, Bound.machine, XArg.map, List.filter_cons, List.mapM_cons] at hsl
+      refine ⟨_, hsl.symm, load_r (huse (y, ry) (by simp [Bound.uses, XArg.regs])) hf⟩
+    | m am =>
+      simp only [Bound.map_fst_eq_input_m] at hbf
+      obtain ⟨amR, rfl, rfl⟩ := hbf
+      cases htm : (amR.map Prod.snd).toMem some with
+      | none =>
+        simp [slotArgs, Bound.isSlot, Bound.map, Bound.machine, XArg.map, List.filter_cons, List.mapM_cons, htm] at hsl
+      | some m =>
+        simp [slotArgs, Bound.isSlot, Bound.map, Bound.machine, XArg.map, List.filter_cons, List.mapM_cons, htm] at hsl
+        simp only [XArg.valIn, Option.bind_eq_some_iff] at hf
+        obtain ⟨addr, haddr, hv⟩ := hf
+        have hv' : mem.read? .w64 addr = .ok vf := by
+          cases h : mem.read? .w64 addr <;> simp_all [Except.toOption]
+        exact ⟨_, hsl.symm, (load_m htm hmem hctx (fun q hq => huse q (by simp [Bound.uses, XArg.regs, hq])) haddr hv').1⟩
+  subst hsl'
+  rw [hrun]
+  have hbfd : bf.defs = [] := by
+    cases bf <;> simp_all [Bound.map, Bound.defs]
+  simp only [List.flatMap_cons, List.flatMap_nil, hbfd, List.nil_append, List.append_nil]
+  simp only [execRow, X86.Op.exec, X86.Op.run, X86.Op.inputs, X86.readSlots, X86.desc, X86.Op.mulM,
+    X86.Table.umulDesc, X86.Table.rmSlot, hload]
+  row_simp [hmem, hload, ← hva, X86.Op.mulM, X86.Table.umulDesc, X86.Table.umulSem,
+    X86.Width.bits, merge_mulEffect, mul_lo_word, Nat.mul_comm vf.toNat va.toNat, hbfd]
+
+/-- `mul r/m64` as an Xv `op`: `(lo, hi) := widen(a * factor)`. -/
+theorem exec_umul {ρ : Env} {mem : X86.Memory} {ctx : Word} {lo hi a : VReg}
+    {factor : XArg VReg} {va vf : Word}
+    (hf : factor.valIn ρ mem ctx .w64 = some vf) (hfi : ∀ k, factor ≠ .i k) (ha : ρ[a]? = some va) :
+    Inst.exec ρ mem ctx (.op (X86.Op.mulM .w64) [lo, hi] [factor, .r a]) =
+      some ((ρ.insert lo (va * vf)).insert hi (UInt64.ofNat ((va.toNat * vf.toNat) / 2 ^ 64)), mem) := by
+  have hb : bindRow (X86.Op.mulM .w64) [lo, hi] [factor, .r a] =
+      some [.input (X86.Table.rmSlot .w64 .read) factor,
+        .fixedTied ⟨.rax, .w64, .readWrite⟩ a lo,
+        .fixedDef ⟨.rdx, .w64, .write⟩ hi] := by
+    cases factor <;> rfl
+  exact exec_op hb (bound_umul hf hfi ha)
+
+/-- `bsr r64, r/m64` on a nonzero operand: `x := va.toNat.log2`. -/
+theorem exec_bsr64 {ρ : Env} {mem : X86.Memory} {ctx : Word} {x a : VReg} {va : Word}
+    (ha : ρ[a]? = some va) (hnz : va ≠ 0) :
+    Inst.exec ρ mem ctx (.op { mn := .bsr, w := .w64, form := .RM } [x] [.r a, .r a]) =
+      some (ρ.insert x (UInt64.ofNat va.toNat.log2), mem) := by
+  have hbind : bindRow { mn := .bsr, w := .w64, form := .RM } [x] [.r a, .r a] =
+      some [.tied (X86.Table.regSlot .w64 .readWrite) a x, .input (X86.Table.rmSlot .w64 .read) (.r a)] := rfl
+  obtain ⟨bR, margs, core, hmap, hass, hsl, hmem, hctx, htk, htkm, huse, -, hrun⟩ :=
+    op_run (ρ := ρ) (mem := mem) (ctx := ctx) hbind
+      (by simp [Bound.need, Bound.fixed?, XArg.regs, scratch]) (by simp [Bound.uses, XArg.regs, ha])
+      List.nodup_nil (by simp [Bound.fixed?])
+  simp only [List.map_eq_cons_iff, List.map_eq_nil_iff, Bound.map_fst_eq_tied, Bound.map_fst_eq_input_r] at hmap
+  obtain ⟨_, _, rfl, ⟨ra, rx, rfl⟩, _, _, rfl, ⟨rb, rfl⟩, rfl⟩ := hmap
+  have hrx : ra = rx := hass (.tied _ (a, ra) (x, rx)) List.mem_cons_self
+  subst hrx
+  simp [slotArgs, Bound.isSlot, Bound.map, Bound.machine, XArg.map, List.filter_cons, List.mapM_cons] at hsl
+  subst hsl
+  have hra := huse (a, ra) (by simp [Bound.uses])
+  have hrb := huse (a, rb) (by simp [Bound.uses, XArg.regs])
+  rw [ha] at hra hrb
+  simp only [Option.some.injEq] at hra hrb
+  have hnzNat : (va.toNat == 0) = false := by
+    simp only [beq_eq_false_iff_ne, ne_eq]
+    intro h0
+    exact hnz (UInt64.toNat_inj.mp (by simpa using h0))
+  rw [hrun]
+  row_simp [← hra, ← hrb, hmem, X86.Table.bsrDesc, X86.Table.bsrSem, hnzNat]
+
+/-- Fused `cmp u, v` + `adc/sbb x, 0` (64-bit, `x` tied to `src`):
+adds or subtracts `CF = (u < v)` to/from `src`. -/
+theorem exec_fusedCarry (isSub : Bool) {ρ : Env} {mem : X86.Memory} {ctx : Word}
+    {u v x src : VReg} {vu vv vs : Word}
+    (hu : ρ[u]? = some vu) (hv : ρ[v]? = some vv) (hs : ρ[src]? = some vs) :
+    Inst.exec ρ mem ctx
+      (.fused { mn := .cmp, w := .w64, form := .MR } [.r u, .r v]
+        { mn := if isSub then .sbb else .adc, w := .w64, form := .MI8 } [x] [.r src, .i 0]) =
+      some (ρ.insert x (if isSub then vs - (if vu < vv then 1 else 0) else vs + (if vu < vv then 1 else 0)), mem) := by
+  have hpb : bindRow { mn := .cmp, w := .w64, form := .MR } [] [.r u, .r v] =
+      some [.input (X86.Table.rmSlot .w64 .read) (.r u), .input (X86.Table.regSlot .w64 .read) (.r v)] := rfl
+  have hcb : bindRow { mn := if isSub then .sbb else .adc, w := .w64, form := .MI8 } [x] [.r src, .i 0] =
+      some [.tied (X86.Table.rmSlot .w64 .readWrite) src x, .input (X86.Table.immSlot .imm8 .w64) (.i 0)] := by
+    cases isSub <;> rfl
+  obtain ⟨pR, cR, pargs, cargs, core, hpm, hcm, hass, hpsl, hcsl, hmem, hctx, htk, huse, -, hrun⟩ :=
+    parts2_run (ρ := ρ) (mem := mem) (ctx := ctx)
+      (p := { mn := .cmp, w := .w64, form := .MR })
+      (c := { mn := if isSub then .sbb else .adc, w := .w64, form := .MI8 })
+      (pb := [.input (X86.Table.rmSlot .w64 .read) (.r u), .input (X86.Table.regSlot .w64 .read) (.r v)])
+      (cb := [.tied (X86.Table.rmSlot .w64 .readWrite) src x, .input (X86.Table.immSlot .imm8 .w64) (.i 0)])
+      (by simp [Bound.need, XArg.regs]) (by simp [Bound.fixed?])
+      (by
+        intro y hy
+        simp only [Bound.uses, XArg.regs, List.cons_append, List.nil_append, List.flatMap_cons, List.flatMap_nil,
+          List.append_nil, List.mem_cons, List.not_mem_nil, or_false] at hy
+        rcases hy with rfl | rfl | rfl
+        · exact ⟨vu, hu⟩
+        · exact ⟨vv, hv⟩
+        · exact ⟨vs, hs⟩)
+  have hpu : ∀ q ∈ pR.flatMap Bound.uses, ρ[q.1]? = some (core.readReg q.2) :=
+    fun q hq => huse q (by simp only [List.flatMap_append, List.mem_append]; exact .inl hq)
+  obtain ⟨hpx, hpd⟩ := fused_prod .cmp (w := .w64) (s₁ := X86.Table.rmSlot .w64 .read)
+    (s₂ := X86.Table.regSlot .w64 .read) (.inl rfl) rfl rfl hpm hpsl hmem hctx hpu
+    (by simpa [XArg.valIn] using hu) (by simpa [XArg.valIn] using hv)
+  simp only [List.map_eq_cons_iff, List.map_eq_nil_iff, Bound.map_fst_eq_tied, Bound.map_fst_eq_input_i] at hcm
+  obtain ⟨_, _, rfl, ⟨rs, rx, rfl⟩, _, _, rfl, rfl, rfl⟩ := hcm
+  have hrx : rs = rx := hass (.tied (X86.Table.rmSlot .w64 .readWrite) (src, rs) (x, rx)) (by simp)
+  subst hrx
+  simp [slotArgs, Bound.isSlot, Bound.map, Bound.machine, XArg.map, List.filter_cons, List.mapM_cons] at hcsl
+  subst hcsl
+  have hrs := huse (src, rs) (by simp [Bound.uses])
+  rw [hs] at hrs
+  have hcf : ((Prod.cmp.flags .w64 vu vv).restrict [.cf]).carry = some (decide (vu < vv)) := by
+    have htest : (Prod.cmp.flags .w64 vu vv).test .unsignedLt = some (decide (vu < vv)) := by
+      simpa [Prod.flags, Lir.Ovf.eval] using Select.sub_borrow vu vv
+    simpa [X86.ByteEval.Flags.restrict, X86.ByteEval.Flags.test] using htest
+  dsimp only [Prod.mnemonic] at hpx
+  rw [Inst.exec, hpb, hcb]
+  simp only [Option.bind_eq_bind, Option.bind_some, hrun, hpx]
+  simp only [List.flatMap_append, hpd, List.flatMap_cons, List.flatMap_nil, List.nil_append, List.append_nil,
+    Bound.defs]
+  cases isSub
+  · row_simp [hmem, (Option.some.inj hrs).symm, X86.Table.adcDesc, X86.Table.carryArithDesc,
+      X86.Table.adcSem, hcf, UInt64.add_zero]
+  · row_simp [hmem, (Option.some.inj hrs).symm, X86.Table.sbbDesc, X86.Table.carryArithDesc,
+      X86.Table.sbbSem, hcf, UInt64.sub_zero]
 
 end IxCC.Xv

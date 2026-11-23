@@ -398,4 +398,30 @@ theorem selectSelect_ok {i : Nat} {x : VReg} {cond : Lir.Cond} {w : Width} {a b 
     subst ht
     exact ⟨_, hv₃ σ mem ctx, insert_below (Nat.le_refl _), by simp [XArg.valIn]⟩
 
+/-! ## Bit-scan-reverse (`bsr64`) -/
+
+theorem selectBsr64_ok {x : VReg} {a : Lir.Arg} {c : Ctx} {st st' : St} {is : List (Inst VReg)}
+    (h : selectBsr64 x a c st = .ok (is, st')) : AssignOk c st st' x (.bsr64 a) is := by
+  unfold selectBsr64 at h
+  rw [bind_ok] at h
+  obtain ⟨⟨a', pre⟩, st₁, h₁, h⟩ := h
+  sel_simp [Option.some.injEq] at h
+  obtain ⟨rfl, rfl⟩ := h
+  obtain ⟨hn, hc, hr, hu, -, hv⟩ := argReg_spec h₁
+  refine ⟨(Ext.of_le hn hc).trans (Ext.fire c _ _), fun N ρ σ mem ctx v hcl hN hx hua hev hp hag => ?_⟩
+  simp only [Lir.Rhs.eval, Option.bind_eq_bind, Option.bind_eq_some_iff] at hev
+  obtain ⟨va, ha, hev⟩ := hev
+  split at hev
+  · cases hev
+  · rename_i hnz
+    simp only [Option.some.injEq] at hev
+    subst hev
+    have hnz' : va ≠ 0 := by intro h0; subst h0; simp at hnz
+    have ha' : a.eval σ = some va :=
+      hag.arg (fun u hu' => by
+          rw [readsOf_append]; exact List.mem_append_right _ (by simp [Inst.uses, xargsRegs, XArg.regs, hu u hu']))
+        (fun u hu' => hua u (by simpa [Lir.Rhs.uses] using hu')) ha
+    obtain ⟨σ₁, he₁, ha₁, hab₁⟩ := hv σ mem ctx va ha'
+    exact Computes.append he₁ hab₁ (Computes.single (exec_bsr64 ha₁ hnz'))
+
 end IxCC.Xv.Select.Proof

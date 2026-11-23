@@ -81,6 +81,40 @@ def bswapSem (width : Width) : SemIn → Except SemFault SemOut
   | ⟨[value], _⟩ => .ok { results := [width.bswap value] }
   | _ => .ok { results := [] }
 
+/-- Add with carry (`adc`): adds `left + right + CF` and sets all four flags.
+Faults if `CF` is undefined. -/
+def adcSem (width : Width) : SemIn → Except SemFault SemOut
+  | ⟨[left, right], flags⟩ =>
+      match flags.carry with
+      | some cf =>
+          let c : Word := if cf then 1 else 0
+          .ok { results := [left + right + c], flags := ByteEval.adcFlags width left right cf }
+      | none => .error (.undefinedCondition .unsignedLt)
+  | _ => .ok { results := [] }
+
+/-- Subtract with borrow (`sbb`): computes `left - right - CF` and sets all four
+flags. Faults if `CF` is undefined. -/
+def sbbSem (width : Width) : SemIn → Except SemFault SemOut
+  | ⟨[left, right], flags⟩ =>
+      match flags.carry with
+      | some cf =>
+          let c : Word := if cf then 1 else 0
+          .ok { results := [left - right - c], flags := ByteEval.sbbFlags width left right cf }
+      | none => .error (.undefinedCondition .unsignedLt)
+  | _ => .ok { results := [] }
+
+/-- Bit-scan-reverse (`bsr`): index of the most significant set bit (`log2`)
+of `src` when nonzero (`ZF = 0`); when `src = 0`, sets `ZF = 1` and leaves the
+destination register unchanged (matching Intel/AMD x86-64 hardware at width 64). -/
+def bsrSem (width : Width) : SemIn → Except SemFault SemOut
+  | ⟨[oldDst, src], _⟩ =>
+      let v := (width.truncate src).toNat
+      if v == 0 then
+        .ok { results := [oldDst], flags := { zero := some true } }
+      else
+        .ok { results := [UInt64.ofNat v.log2], flags := { zero := some false } }
+  | _ => .ok { results := [] }
+
 def mulSem (width : Width) : SemIn → Except SemFault SemOut
   | ⟨[left, right], _⟩ =>
       .ok { results := [left * right], flags := ByteEval.mulFlags width left right }
@@ -177,6 +211,10 @@ def rotateEffect : Flag → FlagEffect
   | .cf | .of => .set
   | .zf | .sf => .unchanged
 
+def bsrEffect : Flag → FlagEffect
+  | .zf => .set
+  | .cf | .sf | .of => .undefined
+
 /-! ## Row families -/
 
 structure Arith where
@@ -240,6 +278,66 @@ def arithDesc (arith : Arith) (width : Width) : OpEn → OpDesc
             imm := fullImm width
             byteRM := width == .w8 }
         mnemonic := arith.name }
+
+/-- `adc`/`sbb` carry-consuming ALU rows: `MR` (`10/11`, `18/19`), `RM`
+(`12/13`, `1A/1B`), `MI` (`80/81 /2,/3`), `MI8` (`83 /2,/3`). -/
+def carryArithDesc (name : String) (digit : Nat) (wide : UInt8)
+    (sem : Width → SemIn → Except SemFault SemOut) (width : Width) : OpEn → OpDesc
+  | .MR =>
+      { slots := [rmSlot width .readWrite, regSlot width .read]
+        sem := sem width
+        flagsOut := allSet
+        flagsIn := [.cf]
+        safe := fun input => input.flags.carry.isSome
+        enc := sized width
+          { opcode := if width == .w8 then wide - 1 else wide
+            modrm := .reg
+            byteReg := width == .w8
+            byteRM := width == .w8 }
+        mnemonic := name }
+  | .RM =>
+      { slots := [regSlot width .readWrite, rmSlot width .read]
+        sem := sem width
+        flagsOut := allSet
+        flagsIn := [.cf]
+        safe := fun input => input.flags.carry.isSome
+        enc := sized width
+          { opcode := if width == .w8 then wide + 1 else wide + 2
+            modrm := .reg
+            byteReg := width == .w8
+            byteRM := width == .w8 }
+        mnemonic := name }
+  | .MI8 =>
+      { slots := [rmSlot width .readWrite, immSlot .imm8 width]
+        sem := sem width
+        flagsOut := allSet
+        flagsIn := [.cf]
+        safe := fun input => input.flags.carry.isSome
+        enc := sized width { opcode := 0x83, modrm := .digit digit, imm := .imm8 }
+        mnemonic := name }
+  | _ =>
+      { slots := [rmSlot width .readWrite, immSlot (ImmKind.argKind (fullImm width)) width]
+        sem := sem width
+        flagsOut := allSet
+        flagsIn := [.cf]
+        safe := fun input => input.flags.carry.isSome
+        enc := sized width
+          { opcode := if width == .w8 then 0x80 else 0x81
+            modrm := .digit digit
+            imm := fullImm width
+            byteRM := width == .w8 }
+        mnemonic := name }
+
+def adcDesc (width : Width) : OpEn → OpDesc := carryArithDesc "adc" 2 0x11 adcSem width
+def sbbDesc (width : Width) : OpEn → OpDesc := carryArithDesc "sbb" 3 0x19 sbbSem width
+
+/-- `bsr r, r/m` (`0F BD /r`). -/
+def bsrDesc (width : Width) : OpDesc :=
+  { slots := [regSlot width .readWrite, rmSlot width .read]
+    sem := bsrSem width
+    flagsOut := bsrEffect
+    enc := sized width { map := .x0F, opcode := 0xbd, modrm := .reg }
+    mnemonic := "bsr" }
 
 /-- `mov r/m, r` (88/89), `mov r, r/m` (8A/8B), `mov r, imm` (B0/B8+r) and
 `mov r/m, imm` (C6/C7 /0). -/
@@ -574,9 +672,11 @@ open Table in
 def desc (o : Op) : OpDesc :=
   match o.mn with
   | .add => arithDesc addArith o.w o.form
+  | .adc => adcDesc o.w o.form
   | .or => arithDesc orArith o.w o.form
   | .and => arithDesc andArith o.w o.form
   | .sub => arithDesc subArith o.w o.form
+  | .sbb => sbbDesc o.w o.form
   | .xor => arithDesc xorArith o.w o.form
   | .cmp => arithDesc cmpArith o.w o.form
   | .not => notDesc o.w
@@ -595,6 +695,7 @@ def desc (o : Op) : OpDesc :=
   | .rol => rotateDesc .rol o.w o.form
   | .ror => rotateDesc .ror o.w o.form
   | .bswap => bswapDesc o.w
+  | .bsr => bsrDesc o.w
   | .div => divDesc o.w
   | .setcc condition => setccDesc condition
   | .cmovcc condition => cmovDesc condition o.w
@@ -649,7 +750,13 @@ def Op.rows : List Op :=
   ([.w32, .w64] : List Width).map (fun w => { mn := .div, w, form := .M }) ++
   Condition.all.map (fun condition => { mn := .setcc condition, w := .w8, form := .M }) ++
   Condition.all.flatMap (fun condition =>
-    ([.w16, .w32, .w64] : List Width).map fun w => { mn := .cmovcc condition, w, form := .RM })
+    ([.w16, .w32, .w64] : List Width).map fun w => { mn := .cmovcc condition, w, form := .RM }) ++
+  ([.adc, .sbb] : List Mnemonic).flatMap (fun mn =>
+    widths.map (fun w => { mn, w, form := .MR }) ++
+    widths.map (fun w => { mn, w, form := .RM }) ++
+    widths.map (fun w => { mn, w, form := .MI }) ++
+    ([.w16, .w32, .w64] : List Width).map (fun w => { mn, w, form := .MI8 })) ++
+  [{ mn := .bsr, w := .w64, form := .RM }]
 
 /-- Control rows. -/
 def Op.callRel32 : Op := { mn := .call, w := .w64, form := .D32 }

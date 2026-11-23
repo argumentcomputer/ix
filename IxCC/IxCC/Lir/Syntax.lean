@@ -67,10 +67,24 @@ inductive BinOp where
   | udiv | urem
   deriving DecidableEq, Repr, Inhabited
 
-/-- Unsigned 64-bit overflow tests: carry out of `add`, borrow out of `sub`. -/
+/-- Unsigned 64-bit overflow tests: carry out of `add`, borrow out of `sub`,
+and high-half nonzero out of widening unsigned `mul` (`mul r/m64`). -/
 inductive Ovf where
   | addC
   | subB
+  | mulOvf
+  deriving DecidableEq, Repr, Inhabited
+
+/-- Multi-result 64-bit unsigned limb primitives (zero heap allocation). -/
+inductive LimbOp where
+  /-- `(lo, hi)` of `a * b` via `mul r/m64` (`rax`, `rdx`). -/
+  | mulWide64 (a b : Arg)
+  /-- `(q, r)` of `(hi * 2^64 + lo) / d` via `div r/m64`; stuck if `d = 0` or `d ≤ hi`. -/
+  | divWide64 (hi lo d : Arg)
+  /-- `(sum, cout)` of `a + b + (c != 0 ? 1 : 0)` with `cout ∈ {0, 1}` via `adc`. -/
+  | addCarry64 (a b c : Arg)
+  /-- `(diff, bout)` of `a - b - (c != 0 ? 1 : 0)` with `bout ∈ {0, 1}` via `sbb`. -/
+  | subBorrow64 (a b c : Arg)
   deriving DecidableEq, Repr, Inhabited
 
 inductive Rhs where
@@ -83,10 +97,14 @@ inductive Rhs where
   | select (c : Cond) (w : Width) (a b t f : Arg)
   /-- `1` if `c w a b` holds, else `0` (`setcc`). -/
   | test (c : Cond) (w : Width) (a b : Arg)
+  /-- Index of the highest set bit (`log2`) of a nonzero 64-bit word (`bsr`); stuck on 0. -/
+  | bsr64 (a : Arg)
   deriving DecidableEq, Repr, Inhabited
 
 inductive Stmt where
   | assign (x : VReg) (r : Rhs)
+  /-- Multi-result limb primitive binding `(r1, r2)`. -/
+  | limb (r1 r2 : VReg) (op : LimbOp)
   /-- Store the low `w` bits of `a`. -/
   | store (w : Width) (m : Addr) (a : Arg)
   /-- Call `f` with `as`, binding its results to `rs`. -/
@@ -168,14 +186,23 @@ def Rhs.uses : Rhs → List VReg
   | .addr m => m.uses
   | .select _ _ a b t f => a.uses ++ b.uses ++ t.uses ++ f.uses
   | .test _ _ a b => a.uses ++ b.uses
+  | .bsr64 a => a.uses
+
+def LimbOp.uses : LimbOp → List VReg
+  | .mulWide64 a b => a.uses ++ b.uses
+  | .divWide64 hi lo d => hi.uses ++ lo.uses ++ d.uses
+  | .addCarry64 a b c => a.uses ++ b.uses ++ c.uses
+  | .subBorrow64 a b c => a.uses ++ b.uses ++ c.uses
 
 def Stmt.uses : Stmt → List VReg
   | .assign _ r => r.uses
+  | .limb _ _ op => op.uses
   | .store _ m a => m.uses ++ a.uses
   | .call _ _ as => argsUses as
 
 def Stmt.defs : Stmt → List VReg
   | .assign x _ => [x]
+  | .limb r1 r2 _ => [r1, r2]
   | .store .. => []
   | .call rs _ _ => rs
 

@@ -54,6 +54,32 @@ theorem bswapSem_ok (width : Width) (input : SemIn) : ∃ out, bswapSem width in
   unfold bswapSem
   split <;> exact ⟨_, rfl⟩
 
+theorem adcSem_ok (width : Width) (input : SemIn) (safe : input.flags.carry.isSome = true) :
+    ∃ out, adcSem width input = .ok out := by
+  obtain ⟨args, flags⟩ := input
+  obtain ⟨cf, hcf⟩ := Option.isSome_iff_exists.mp safe
+  simp only at hcf
+  match args with
+  | [left, right] => simp [adcSem, hcf]
+  | [] | [_] | _ :: _ :: _ :: _ => exact ⟨_, rfl⟩
+
+theorem sbbSem_ok (width : Width) (input : SemIn) (safe : input.flags.carry.isSome = true) :
+    ∃ out, sbbSem width input = .ok out := by
+  obtain ⟨args, flags⟩ := input
+  obtain ⟨cf, hcf⟩ := Option.isSome_iff_exists.mp safe
+  simp only at hcf
+  match args with
+  | [left, right] => simp [sbbSem, hcf]
+  | [] | [_] | _ :: _ :: _ :: _ => exact ⟨_, rfl⟩
+
+theorem bsrSem_ok (width : Width) (input : SemIn) : ∃ out, bsrSem width input = .ok out := by
+  obtain ⟨args, flags⟩ := input
+  match args with
+  | [oldDst, src] =>
+      simp only [bsrSem]
+      split <;> exact ⟨_, rfl⟩
+  | [] | [_] | _ :: _ :: _ :: _ => exact ⟨_, rfl⟩
+
 theorem mulSem_ok (width : Width) (input : SemIn) : ∃ out, mulSem width input = .ok out := by
   unfold mulSem
   split <;> exact ⟨_, rfl⟩
@@ -124,27 +150,40 @@ the flag readers with their condition's flags defined, and every other row
 unconditionally. -/
 theorem Op.safe_ok (o : Op) (input : SemIn) (safe : (desc o).safe input = true) :
     ∃ out, (desc o).sem input = .ok out := by
-  cases hmn : o.mn <;> cases hform : o.form <;>
-    simp only [desc, hmn, hform, arithDesc, notDesc, negDesc, movDesc, movzxDesc, movsxDesc, movsxdDesc,
-      leaDesc, imulDesc, umulDesc, testDesc, shiftDesc, rotateDesc, bswapDesc, divDesc,
-      setccDesc, cmovDesc, pushDesc, popDesc, callDesc, jmpDesc, retDesc, jccDesc] at safe ⊢
-  all_goals first
-    | exact Arith.sem_ok _ _ _
-    | exact notSem_ok _
-    | exact negSem_ok _ _
-    | exact moveSem_ok _
-    | exact zeroExtendSem_ok _ _
-    | exact signExtendSem_ok _ _
-    | exact mulSem_ok _ _
-    | exact umulSem_ok _ _
-    | exact testSem_ok _ _
-    | exact shiftSem_ok _ _ _
-    | exact rotateSem_ok _ _ _
-    | exact bswapSem_ok _ _
-    | exact divSem_ok _ _ safe
-    | exact setccSem_ok _ _ safe
-    | exact cmovSem_ok _ _ safe
-    | exact jccSem_ok _ _ safe
-    | exact ⟨_, rfl⟩
+  cases hmn : o.mn with
+  | add | or | and | sub | xor | cmp =>
+      cases hform : o.form <;> simp only [desc, hmn, hform, arithDesc] at safe ⊢ <;> exact Arith.sem_ok _ _ _
+  | adc =>
+      cases hform : o.form <;> simp only [desc, hmn, hform, adcDesc, carryArithDesc] at safe ⊢ <;> exact adcSem_ok _ _ safe
+  | sbb =>
+      cases hform : o.form <;> simp only [desc, hmn, hform, sbbDesc, carryArithDesc] at safe ⊢ <;> exact sbbSem_ok _ _ safe
+  | test =>
+      cases hform : o.form <;> simp only [desc, hmn, hform, testDesc] at safe ⊢ <;> exact testSem_ok _ _
+  | not => simp only [desc, hmn, notDesc] at safe ⊢; exact notSem_ok _
+  | neg => simp only [desc, hmn, negDesc] at safe ⊢; exact negSem_ok _ _
+  | shl | shr | sar =>
+      cases hform : o.form <;> simp only [desc, hmn, hform, shiftDesc] at safe ⊢ <;> exact shiftSem_ok _ _ _
+  | rol | ror =>
+      cases hform : o.form <;> simp only [desc, hmn, hform, rotateDesc] at safe ⊢ <;> exact rotateSem_ok _ _ _
+  | bswap => simp only [desc, hmn, bswapDesc] at safe ⊢; exact bswapSem_ok _ _
+  | bsr => simp only [desc, hmn, bsrDesc] at safe ⊢; exact bsrSem_ok _ _
+  | mov =>
+      cases hform : o.form <;> simp only [desc, hmn, hform, movDesc] at safe ⊢ <;> exact moveSem_ok _
+  | movzx => simp only [desc, hmn, movzxDesc] at safe ⊢; exact zeroExtendSem_ok _ _
+  | movsx => simp only [desc, hmn, movsxDesc] at safe ⊢; exact signExtendSem_ok _ _
+  | movsxd => simp only [desc, hmn, movsxdDesc] at safe ⊢; exact signExtendSem_ok _ _
+  | lea => simp only [desc, hmn, leaDesc] at safe ⊢; exact moveSem_ok _
+  | imul =>
+      cases hform : o.form <;> simp only [desc, hmn, hform, imulDesc] at safe ⊢ <;> exact mulSem_ok _ _
+  | mul => simp only [desc, hmn, umulDesc] at safe ⊢; exact umulSem_ok _ _
+  | div => simp only [desc, hmn, divDesc] at safe ⊢; exact divSem_ok _ _ safe
+  | setcc => simp only [desc, hmn, setccDesc] at safe ⊢; exact setccSem_ok _ _ safe
+  | cmovcc => simp only [desc, hmn, cmovDesc] at safe ⊢; exact cmovSem_ok _ _ safe
+  | push => simp only [desc, hmn, pushDesc] at safe ⊢; exact moveSem_ok _
+  | pop => simp only [desc, hmn, popDesc] at safe ⊢; exact moveSem_ok _
+  | call => simp only [desc, hmn, callDesc] at safe ⊢; exact ⟨_, rfl⟩
+  | jmp => simp only [desc, hmn, jmpDesc] at safe ⊢; exact ⟨_, rfl⟩
+  | ret => simp only [desc, hmn, retDesc] at safe ⊢; exact ⟨_, rfl⟩
+  | jcc => simp only [desc, hmn, jccDesc] at safe ⊢; exact jccSem_ok _ _ safe
 
 end IxCC.X86

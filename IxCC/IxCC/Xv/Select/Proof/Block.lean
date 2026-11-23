@@ -55,6 +55,7 @@ theorem selectStmt_ext {i : Nat} {s : Lir.Stmt} {c : Ctx} {st st' : St} {is : Li
     (h : selectStmt i s c st = .ok (is, st')) : Ext c st st' := by
   cases s with
   | assign x r => exact (selectStmt_ok hi rfl h).1
+  | limb r1 r2 op => exact (selectStmt_ok hi rfl h).1
   | store w m a => exact (selectStmt_ok hi rfl h).1
   | call rs f as =>
     obtain ⟨_, _, _, hn, hc, -⟩ := selectCall_spec h

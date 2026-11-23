@@ -108,8 +108,8 @@ theorem primitive_sim {T : Tables} (hT : BoolsOk T) {f : Fir.FunId} {lp : Lir.Pr
     case natAdd => exact prim_natAdd hF hH hrun hC hl ho hsup hx hops hlive
     case natSub => exact prim_natSub hF hH hrun hC ho hsup hx hops hlive
     case natMul => exact prim_natMul hF hH hrun hC hl ho hsup hx hops hlive
-    case natDiv => exact prim_natDiv hF hH hrun hC ho hsup hx hops hlive
-    case natMod => exact prim_natMod hF hH hrun hC ho hsup hx hops hlive
+    case natDiv => exact prim_natDiv hF hH hrun hC hl ho hsup hx hops hlive
+    case natMod => exact prim_natMod hF hH hrun hC hl ho hsup hx hops hlive
     case natPow => exact prim_natPow hF hH hpow hrun hC ho hx hops hlive
     case natGcd => exact prim_natGcd hF hH hgcd hrun hC ho hx hops hlive
     case natBeq => exact prim_cmp hT hF hH rfl hrun hC ho hx hops hlive

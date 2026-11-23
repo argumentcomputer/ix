@@ -107,6 +107,7 @@ def suite (a : Assert) (o : Options) (tools : Option Native.Tools) : IO Unit := 
   let where_ := if tools.isSome then " and natively" else ""
   part a s!"bench-k1 entries at Xv, Xl, typed x86, the byte machine{where_}" (Levels.benches a tools)
   part a s!"hand-written values at every level{where_}" (Levels.values a tools)
+  part a "hardware limb primitives (mulWide64/divWide64/addCarry64/subBorrow64/bsr64/brOvf.mulOvf) at every level" (Levels.limbOps a)
   part a s!"generated programs at every level{where_}" (Levels.generated a tools o.generated o.sample)
   if let some t := tools then
     part a "deep recursion on a mapped stack" (Levels.stacks a t)

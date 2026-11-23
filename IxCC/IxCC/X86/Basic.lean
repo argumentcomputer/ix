@@ -222,7 +222,7 @@ def Form.InV0 : Form → Prop
 /-- The fragment vocabulary of a table mnemonic. The table has no
 floating-point, vector, atomic, indirect-call, system-call or TLS rows. -/
 def Mnemonic.form : Mnemonic → Form
-  | .add | .or | .and | .sub | .xor | .cmp | .test | .not | .neg | .bswap => .arithmetic
+  | .add | .adc | .or | .and | .sub | .sbb | .xor | .cmp | .test | .not | .neg | .bswap | .bsr => .arithmetic
   | .shl | .shr | .sar | .rol | .ror => .shift
   | .mov => .move
   | .movzx | .movsx | .movsxd => .load

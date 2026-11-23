@@ -75,6 +75,7 @@ def positionalDefs (con : Nat → Con) : Nat → List VReg → List (Operand VRe
 
 def Stmt.operands : Stmt → List (Operand VReg)
   | .assign x r => r.uses.map (useOp .any) ++ [defOp .any x]
+  | .limb r1 r2 op => op.uses.map (useOp .any) ++ [defOp .any r1, defOp .any r2]
   | .store _ m a => (m.uses ++ a.uses).map (useOp .any)
   | .call rs _ as => positionalUses Conv.argCon 0 as ++ positionalDefs Conv.resultCon 0 rs
 
@@ -147,6 +148,8 @@ private theorem map_useOp_defs (con : Con) (xs : List VReg) :
   cases s with
   | assign x r => simp [Stmt.operands, Stmt.uses, operandUses, useOp, defOp, List.filter_map,
       Function.comp_def]
+  | limb r1 r2 op => simp [Stmt.operands, Stmt.uses, operandUses, useOp, defOp, List.filter_map,
+      Function.comp_def]
   | store w m a => exact map_useOp_uses _ _
   | call rs f as =>
       simp only [Stmt.operands, Stmt.uses, operandUses, List.filter_append, List.map_append]
@@ -158,6 +161,8 @@ private theorem map_useOp_defs (con : Con) (xs : List VReg) :
 @[simp] theorem Stmt.operandDefs_eq (s : Stmt) : operandDefs s.operands = s.defs := by
   cases s with
   | assign x r => simp [Stmt.operands, Stmt.defs, operandDefs, useOp, defOp, List.filter_map,
+      Function.comp_def]
+  | limb r1 r2 op => simp [Stmt.operands, Stmt.defs, operandDefs, useOp, defOp, List.filter_map,
       Function.comp_def]
   | store w m a => exact map_useOp_defs _ _
   | call rs f as =>
@@ -240,6 +245,34 @@ theorem Rhs.eval_congr {r : Rhs} {ρ ρ' : Env} (mem : X86.Memory) (ctx : Word)
   | test c w a b =>
       simp only [Rhs.eval]
       rw [Arg.eval_congr h.append_left, Arg.eval_congr h.append_right]
+  | bsr64 a =>
+      simp only [Rhs.eval]
+      rw [Arg.eval_congr h]
+
+theorem LimbOp.eval_congr {op : LimbOp} {ρ ρ' : Env} (h : Agree op.uses ρ ρ') :
+    op.eval ρ = op.eval ρ' := by
+  cases op with
+  | mulWide64 a b =>
+      simp only [LimbOp.eval]
+      rw [Arg.eval_congr h.append_left, Arg.eval_congr h.append_right]
+  | divWide64 hi lo d =>
+      have h' : Agree ((hi.uses ++ lo.uses) ++ d.uses) ρ ρ' := h
+      simp only [LimbOp.eval]
+      rw [Arg.eval_congr h'.append_left.append_left,
+        Arg.eval_congr h'.append_left.append_right,
+        Arg.eval_congr h'.append_right]
+  | addCarry64 a b c =>
+      have h' : Agree ((a.uses ++ b.uses) ++ c.uses) ρ ρ' := h
+      simp only [LimbOp.eval]
+      rw [Arg.eval_congr h'.append_left.append_left,
+        Arg.eval_congr h'.append_left.append_right,
+        Arg.eval_congr h'.append_right]
+  | subBorrow64 a b c =>
+      have h' : Agree ((a.uses ++ b.uses) ++ c.uses) ρ ρ' := h
+      simp only [LimbOp.eval]
+      rw [Arg.eval_congr h'.append_left.append_left,
+        Arg.eval_congr h'.append_left.append_right,
+        Arg.eval_congr h'.append_right]
 
 /-- The frame lemma for local statements: a statement's result
 depends only on its uses, and it changes only its definitions. -/
@@ -267,6 +300,28 @@ theorem Stmt.exec_frame {s : Stmt} {ρ ρ' ρ₁ : Env} {mem mem₁ : X86.Memory
         simp only [Stmt.defs, List.mem_singleton] at hy
         subst hy
         simp
+  | limb r1 r2 op =>
+      simp only [Stmt.exec, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.some.injEq,
+        Prod.mk.injEq] at h
+      obtain ⟨⟨v1, v2⟩, hv, hρ, hm⟩ := h
+      subst hρ hm
+      refine ⟨(ρ'.insert r1 v1).insert r2 v2, ?_, ?_, ?_⟩
+      · simp only [Stmt.exec, Option.bind_eq_bind]
+        rw [← LimbOp.eval_congr agree, hv]
+        rfl
+      · intro y hy
+        simp only [Stmt.defs, List.mem_cons, List.not_mem_nil, or_false, not_or] at hy
+        have ne1 : (r1 == y) = false := by simpa [beq_iff_eq] using fun e => hy.1 e.symm
+        have ne2 : (r2 == y) = false := by simpa [beq_iff_eq] using fun e => hy.2 e.symm
+        simp [Std.HashMap.getElem?_insert, ne1, ne2]
+      · intro y hy
+        simp only [Stmt.defs, List.mem_cons, List.not_mem_nil, or_false] at hy
+        rcases hy with rfl | rfl
+        · by_cases h12 : r2 = y
+          · subst h12; simp
+          · have ne2 : (r2 == y) = false := by simpa [beq_iff_eq] using h12
+            simp only [Std.HashMap.getElem?_insert, ne2, Bool.false_eq_true, ↓reduceIte, beq_self_eq_true]
+        · simp
   | store w m a =>
       have ha := Addr.eval_congr ctx agree.append_left
       have hv := Arg.eval_congr agree.append_right

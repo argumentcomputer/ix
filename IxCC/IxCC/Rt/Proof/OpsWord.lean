@@ -366,12 +366,12 @@ section ops
 
 variable {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {D : Nat → Prop} {sup : Nat}
   {fn : Nat} {F : Lir.Func} {off : Nat} {starts : NatMap Nat} {C : List PBlock} (hF : lp.funcs[fn]? = some F)
-  (hH : Holds f F off starts C) {st st' : St} {x : Nat} {as : List Fir.Arg} (hC : Ext C st') (ho : Open st)
-  (hsup : sup ≤ st.fresh) (hx : x < sup) (hlive : ∀ a ∈ as, LiveArg D a)
+  (hH : Holds f F off starts C) {st st' : St} {x : Nat} {as : List Fir.Arg} (hC : Ext C st') (hl : Labels st)
+  (ho : Open st) (hsup : sup ≤ st.fresh) (hx : x < sup) (hlive : ∀ a ∈ as, LiveArg D a)
 
 /-! ### The `Nat` codes: `div`, `mod`, `land`, `lor`, `xor` -/
 
-include hF hH hC ho hsup hx hlive in
+include hF hH hC hl ho hsup hx hlive in
 theorem prim_wordDiv {w : Width} {la lb : Lir.Arg}
     (hrun : (primitive f T x (.word w .div) [la, lb]).run st = .ok ((), st'))
     (hops : operands f as = .ok (some [la, lb])) :
@@ -379,11 +379,11 @@ theorem prim_wordDiv {w : Width} {la lb : Lir.Arg}
       (.fir (.prim (.word w .div) as)) := by
   have hrun' : (primitive f T x .natDiv [la, lb]).run st = .ok ((), st') := hrun
   refine rhsSim_of_nat (nop := .natDiv) (wordSem_nat_of rfl fun p q => ?_)
-    (prim_natDiv hF hH hrun' hC ho hsup hx hops hlive)
+    (prim_natDiv hF hH hrun' hC hl ho hsup hx hops hlive)
   rw [sem_nat2 .natDiv (by decide)]
   by_cases hq : q = 0 <;> simp [hq, WordOp.eval, Src.WordResult.val]
 
-include hF hH hC ho hsup hx hlive in
+include hF hH hC hl ho hsup hx hlive in
 theorem prim_wordMod {w : Width} {la lb : Lir.Arg}
     (hrun : (primitive f T x (.word w .mod) [la, lb]).run st = .ok ((), st'))
     (hops : operands f as = .ok (some [la, lb])) :
@@ -391,7 +391,7 @@ theorem prim_wordMod {w : Width} {la lb : Lir.Arg}
       (.fir (.prim (.word w .mod) as)) := by
   have hrun' : (primitive f T x .natMod [la, lb]).run st = .ok ((), st') := hrun
   refine rhsSim_of_nat (nop := .natMod) (wordSem_nat_of rfl fun p q => ?_)
-    (prim_natMod hF hH hrun' hC ho hsup hx hops hlive)
+    (prim_natMod hF hH hrun' hC hl ho hsup hx hops hlive)
   rw [sem_nat2 .natMod (by decide)]
   by_cases hq : q = 0 <;> simp [hq, WordOp.eval, Src.WordResult.val]
 
@@ -784,10 +784,10 @@ theorem prim_word {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {
   cases o
   case div =>
     rcases las with _ | ⟨la, _ | ⟨lb, _ | ⟨lc, las⟩⟩⟩ <;>
-      first | exact prim_wordDiv hF hH hC ho hsup hx hlive hrun hops | (exfalso; word_bad)
+      first | exact prim_wordDiv hF hH hC hl ho hsup hx hlive hrun hops | (exfalso; word_bad)
   case mod =>
     rcases las with _ | ⟨la, _ | ⟨lb, _ | ⟨lc, las⟩⟩⟩ <;>
-      first | exact prim_wordMod hF hH hC ho hsup hx hlive hrun hops | (exfalso; word_bad)
+      first | exact prim_wordMod hF hH hC hl ho hsup hx hlive hrun hops | (exfalso; word_bad)
   case land =>
     rcases las with _ | ⟨la, _ | ⟨lb, _ | ⟨lc, las⟩⟩⟩ <;>
       first | exact prim_wordLand hF hH hC ho hsup hx hlive hrun hops | (exfalso; word_bad)

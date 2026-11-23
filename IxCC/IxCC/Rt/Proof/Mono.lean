@@ -94,10 +94,194 @@ macro "mono" : tactic =>
 theorem Mono.untag' (a : Lir.Arg) : Mono (untag a) := by
   cases a <;> simp only [untag] <;> mono
 
+private theorem nat_beq_zero_succ (n : Nat) : ((n + 1 == 0) : Bool) = false := rfl
+
+private theorem nat_beq_zero_zero : ((0 == 0) : Bool) = true := rfl
+
+private theorem natMap_get?_setF {α : Type} :
+    ∀ (fuel : Nat) (m : NatMap α) (k : Nat) (x : Option α) (k' : Nat),
+      k < fuel → (NatMap.setF fuel m k x).get? k' = if k' = k then x else m.get? k'
+  | 0, _, _, _, _, h => absurd h (Nat.not_lt_zero _)
+  | fuel + 1, m, k, x, k', h => by
+    have hparts : ∀ (n : NatMap α) (j : Nat),
+        n.get? j = if j == 0 then n.parts.1 else if j % 2 == 0 then n.parts.2.1.get? (j / 2)
+          else n.parts.2.2.get? (j / 2) := fun n j => by
+      cases n with
+      | leaf =>
+        cases j with
+        | zero => rfl
+        | succ j1 =>
+          change none = if (j1 + 1 == 0) = true then none else if ((j1 + 1) % 2 == 0) = true then none else none
+          rw [nat_beq_zero_succ]
+          simp only [Bool.false_eq_true, ↓reduceIte]
+          cases (j1 + 1) % 2 <;> rfl
+      | node v z o => rfl
+    rw [hparts m k']
+    unfold NatMap.setF
+    obtain ⟨v, z, o⟩ := m.parts
+    dsimp only
+    cases k with
+    | zero =>
+      rw [nat_beq_zero_zero]
+      simp only [↓reduceIte]
+      cases k' with
+      | zero => rfl
+      | succ k'1 =>
+        change (if (k'1 + 1 == 0) = true then x else if ((k'1 + 1) % 2 == 0) = true then z.get? ((k'1 + 1) / 2)
+          else o.get? ((k'1 + 1) / 2)) = _
+        rw [nat_beq_zero_succ]
+        simp only [Bool.false_eq_true, Nat.succ_ne_zero k'1, ↓reduceIte]
+    | succ k1 =>
+      have hk0 : ((k1 + 1 == 0) : Bool) = false := rfl
+      have hdiv : (k1 + 1) / 2 < fuel :=
+        Nat.lt_of_lt_of_le (Nat.div_lt_self (Nat.succ_pos k1) (by decide)) (Nat.le_of_lt_succ h)
+      have hmod_eq : ∀ (a b : Nat), a % 2 = b % 2 → (a / 2 = b / 2 ↔ a = b) := fun a b hm =>
+        ⟨fun hd => by
+          have ha := Nat.div_add_mod a 2
+          have hb := Nat.div_add_mod b 2
+          rw [hd, hm] at ha
+          exact ha.symm.trans hb,
+         fun he => congrArg (· / 2) he⟩
+      cases hm : (k1 + 1) % 2 with
+      | zero =>
+        rw [hk0, nat_beq_zero_zero]
+        simp only [Bool.false_eq_true, ↓reduceIte]
+        cases k' with
+        | zero =>
+          simp only [Ne.symm (Nat.succ_ne_zero k1), ↓reduceIte]; rfl
+        | succ k'1 =>
+          change (if (k'1 + 1 == 0) = true then v else if ((k'1 + 1) % 2 == 0) = true then
+            (NatMap.setF fuel z ((k1 + 1) / 2) x).get? ((k'1 + 1) / 2) else o.get? ((k'1 + 1) / 2)) = _
+          rw [nat_beq_zero_succ]
+          simp only [Bool.false_eq_true, ↓reduceIte]
+          cases hm' : (k'1 + 1) % 2 with
+          | zero =>
+            rw [nat_beq_zero_zero]
+            simp only [↓reduceIte]
+            rw [natMap_get?_setF fuel z ((k1 + 1) / 2) x ((k'1 + 1) / 2) hdiv]
+            by_cases heq : k'1 + 1 = k1 + 1
+            · simp only [heq, ↓reduceIte]
+            · have hd : (k'1 + 1) / 2 ≠ (k1 + 1) / 2 := fun h => heq ((hmod_eq _ _ (hm'.trans hm.symm)).mp h)
+              simp only [hd, heq, ↓reduceIte]
+          | succ r' =>
+            rw [nat_beq_zero_succ]
+            have hne : k'1 + 1 ≠ k1 + 1 := fun e => by rw [e, hm] at hm'; cases hm'
+            simp only [Bool.false_eq_true, hne, ↓reduceIte]
+      | succ r =>
+        have hk1 : (k1 + 1) % 2 = 1 :=
+          match r, hm, Nat.mod_lt (k1 + 1) (by decide : 0 < 2) with
+          | 0, hm, _ => hm
+          | _ + 1, hm, hlt => absurd (hm ▸ hlt) (Nat.not_lt.mpr (Nat.le_add_left 2 _))
+        rw [hk0, nat_beq_zero_succ]
+        simp only [Bool.false_eq_true, ↓reduceIte]
+        cases k' with
+        | zero =>
+          simp only [Ne.symm (Nat.succ_ne_zero k1), ↓reduceIte]; rfl
+        | succ k'1 =>
+          change (if (k'1 + 1 == 0) = true then v else if ((k'1 + 1) % 2 == 0) = true then
+            z.get? ((k'1 + 1) / 2) else (NatMap.setF fuel o ((k1 + 1) / 2) x).get? ((k'1 + 1) / 2)) = _
+          rw [nat_beq_zero_succ]
+          simp only [Bool.false_eq_true, ↓reduceIte]
+          cases hm' : (k'1 + 1) % 2 with
+          | zero =>
+            rw [nat_beq_zero_zero]
+            have hne : k'1 + 1 ≠ k1 + 1 := fun e => by rw [e, hk1] at hm'; cases hm'
+            simp only [hne, ↓reduceIte]
+          | succ r' =>
+            have hk'1 : (k'1 + 1) % 2 = 1 :=
+              match r', hm', Nat.mod_lt (k'1 + 1) (by decide : 0 < 2) with
+              | 0, hm', _ => hm'
+              | _ + 1, hm', hlt => absurd (hm' ▸ hlt) (Nat.not_lt.mpr (Nat.le_add_left 2 _))
+            rw [nat_beq_zero_succ]
+            simp only [Bool.false_eq_true, ↓reduceIte]
+            rw [natMap_get?_setF fuel o ((k1 + 1) / 2) x ((k'1 + 1) / 2) hdiv]
+            by_cases heq : k'1 + 1 = k1 + 1
+            · simp only [heq, ↓reduceIte]
+            · have hd : (k'1 + 1) / 2 ≠ (k1 + 1) / 2 := fun h => heq ((hmod_eq _ _ (hk'1.trans hk1.symm)).mp h)
+              simp only [hd, heq, ↓reduceIte]
+
+private theorem natMap_get?_insert {α : Type} (m : NatMap α) (k : Nat) (x : α) (k' : Nat) :
+    (m.insert k x).get? k' = if k' = k then some x else m.get? k' :=
+  natMap_get?_setF (k + 1) m k (some x) k' (Nat.lt_succ_self k)
+
+private theorem nat_ne_add_of_lt {a b k : Nat} (h : a < b) : a ≠ b + k :=
+  Nat.ne_of_lt (Nat.lt_of_lt_of_le h (Nat.le_add_right b k))
+
+private theorem nat_add_ne_add {b i j : Nat} (h : i ≠ j) : b + i ≠ b + j :=
+  fun e => h (Nat.add_left_cancel e)
+
+theorem Mono.divModVar' (x : Nat) (o : Lir.BinOp) (zero : Lir.Arg → Lir.Arg) (a b : Lir.Arg) :
+    Mono (divModVar x o zero a b) := by
+  intro st u st' h hl ho
+  have hkey : ∀ (nzBody : List Lir.Stmt) (nzTerm : PTerm) (fastBody slowBody : List Lir.Stmt)
+      (fastArg slowArg zArg : Lir.Arg) (f' : Nat), st.fresh ≤ f' →
+      let curBlk : PBlock :=
+        { params := st.params, body := st.acc.reverse,
+          term := .br .eq b (.imm 1) (loc (st.next + 3)) (loc st.next) }
+      let st₁ : St :=
+        { done := ((((st.done.insert st.cur curBlk)
+            |>.insert st.next { body := nzBody, term := nzTerm })
+            |>.insert (st.next + 1) { body := fastBody, term := .jump ⟨.loc (st.next + 4), [fastArg]⟩ })
+            |>.insert (st.next + 2) { body := slowBody, term := .jump ⟨.loc (st.next + 4), [slowArg]⟩, cold := true })
+            |>.insert (st.next + 3) { term := .jump ⟨.loc (st.next + 4), [zArg]⟩, cold := true },
+          cur := st.next + 4, params := [x], acc := [], next := st.next + 5, fresh := f' }
+      Grows st st₁ ∧ Labels st₁ ∧ Open st₁ := by
+    intro nzBody nzTerm fastBody slowBody fastArg slowArg zArg f' hfr curBlk st₁
+    have hcur := hl.cur
+    dsimp only [st₁]
+    refine ⟨?_, ?_, ?_⟩
+    · refine ⟨Nat.le_add_right st.next 5, hfr, ?_, ?_⟩
+      · intro j bj hj
+        have hjlt := hl.done hj
+        have hjne : j ≠ st.cur := fun e => by subst e; rw [ho] at hj; cases hj
+        simp only [natMap_get?_insert]
+        rw [if_neg (nat_ne_add_of_lt hjlt), if_neg (nat_ne_add_of_lt hjlt),
+          if_neg (nat_ne_add_of_lt hjlt), if_neg (Nat.ne_of_lt hjlt), if_neg hjne]
+        exact hj
+      · intro _
+        refine .inr ⟨curBlk, ?_, rfl, List.prefix_refl _⟩
+        simp only [natMap_get?_insert]
+        rw [if_neg (nat_ne_add_of_lt hcur), if_neg (nat_ne_add_of_lt hcur),
+          if_neg (nat_ne_add_of_lt hcur), if_neg (Nat.ne_of_lt hcur)]
+        simp only [↓reduceIte]
+    · refine ⟨Nat.lt_succ_self (st.next + 4), ?_⟩
+      intro j bj hj
+      dsimp only at hj ⊢
+      simp only [natMap_get?_insert] at hj
+      split at hj
+      · rename_i e; subst e; exact Nat.add_lt_add_left (by decide : 3 < 5) st.next
+      split at hj
+      · rename_i e; subst e; exact Nat.add_lt_add_left (by decide : 2 < 5) st.next
+      split at hj
+      · rename_i e; subst e; exact Nat.add_lt_add_left (by decide : 1 < 5) st.next
+      split at hj
+      · rename_i e; subst e; exact Nat.lt_add_of_pos_right (by decide : 0 < 5)
+      split at hj
+      · rename_i e; subst e; exact Nat.lt_of_lt_of_le hcur (Nat.le_add_right st.next 5)
+      exact Nat.lt_of_lt_of_le (hl.done hj) (Nat.le_add_right st.next 5)
+    · simp only [Open, natMap_get?_insert]
+      rw [if_neg (nat_add_ne_add (by decide : 4 ≠ 3)),
+        if_neg (nat_add_ne_add (by decide : 4 ≠ 2)),
+        if_neg (nat_add_ne_add (by decide : 4 ≠ 1)),
+        if_neg (Ne.symm (Nat.ne_of_lt (Nat.lt_add_of_pos_right (n := st.next) (by decide : 0 < 4)))),
+        if_neg (Ne.symm (nat_ne_add_of_lt hcur))]
+      cases hq : st.done.get? (st.next + 4) with
+      | none => rfl
+      | some bj => exact absurd (hl.done hq) (Nat.not_lt.mpr (Nat.le_add_right st.next 4))
+  cases a <;> cases b <;>
+    (simp only [divModVar, newLabel, close, openAt, untag, bin, temp, freshReg, assign, emit, put, retag,
+       StateT.run, bind, StateT.bind, pure, StateT.pure, modify, modifyGet, MonadStateOf.modifyGet,
+       StateT.modifyGet, MonadState.modifyGet, Except.bind, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+     obtain ⟨-, rfl⟩ := h
+     refine hkey _ _ _ _ _ _ _ _ ?_
+     dsimp only [Lir.VReg]
+     repeat (first | exact Nat.le_refl _ | apply Nat.le_succ_of_le))
+
 theorem Mono.divMod' (x : Nat) (o : Lir.BinOp) (zero : Lir.Arg → Lir.Arg) (a b : Lir.Arg) :
     Mono (divMod x o zero a b) := by
   unfold divMod
   repeat (first
+    | with_reducible exact Mono.divModVar' _ _ _ _ _
     | with_reducible exact Mono.pure' _
     | with_reducible exact Mono.emit' _
     | with_reducible exact Mono.freshReg'

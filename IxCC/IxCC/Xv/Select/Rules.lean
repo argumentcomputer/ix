@@ -335,6 +335,71 @@ def selectStore (w : X86.Width) (m : Lir.Addr) (a : Lir.Arg) : SelM (List (Inst 
           fire "store.reg"
           return pre ++ [.op (row .mov w .MR) [] [.m am, .r t]]
 
+/-- `x := bsr64 a`: index of the highest set bit via `bsr r64, r/m64`. -/
+def selectBsr64 (x : VReg) (a : Lir.Arg) : SelM (List (Inst VReg)) := do
+  let (a', pre) ← argReg a
+  fire "bsr64"
+  return pre ++ [.op (row .bsr .w64 .RM) [x] [.r a', .r a']]
+
+/-- Multi-result 64-bit limb primitives (`mulWide64`, `divWide64`,
+`addCarry64`, `subBorrow64`) — zero heap allocation. -/
+def selectLimb (i : Nat) (r1 r2 : VReg) : Lir.LimbOp → SelM (List (Inst VReg))
+  | .mulWide64 a b => do
+      if let (.v a', .v b') := (a, b) then
+        if let some m ← sinkLoad? b' i 8 then
+          fire "limb.mulWide.load"
+          return [.op (X86.Op.mulM .w64) [r1, r2] [.m m, .r a']]
+        if let some m ← sinkLoad? a' i 8 then
+          fire "limb.mulWide.load"
+          return [.op (X86.Op.mulM .w64) [r1, r2] [.m m, .r b']]
+      let (a', preA) ← argReg a
+      let (b', preB) ← argReg b
+      fire "limb.mulWide"
+      return preA ++ preB ++ [.op (X86.Op.mulM .w64) [r1, r2] [.r b', .r a']]
+  | .divWide64 hi lo d => do
+      let (hi', preHi) ← argReg hi
+      let (lo', preLo) ← argReg lo
+      let (divisor, preD) ← match d with
+        | .v y =>
+            match ← sinkLoad? y i 8 with
+            | some m =>
+                fire "limb.divWide.load"
+                pure (XArg.m m, [])
+            | none => pure (XArg.r y, [])
+        | .imm k =>
+            let (t, pre) ← materialize k
+            pure (XArg.r t, pre)
+      fire "limb.divWide"
+      return preHi ++ preLo ++ preD ++ [.op (X86.Op.divM .w64) [r1, r2] [divisor, .r lo', .r hi']]
+  | .addCarry64 a b c => do
+      let (a', preA) ← argReg a
+      let (b', preB) ← argReg b
+      let (c', preC) ← argReg c
+      let z0 ← fresh
+      let s1 ← fresh
+      let c1 ← fresh
+      fire "limb.addCarry"
+      return preA ++ preB ++ preC ++ [
+        .zero z0,
+        .op (row .add .w64 .MR) [s1] [.r a', .r b'],
+        .fused (row .cmp .w64 .MR) [.r s1, .r a'] (row .adc .w64 .MI8) [c1] [.r z0, .i 0],
+        .fused (row .cmp .w64 .MR) [.r z0, .r c'] (row .adc .w64 .MI8) [r1] [.r s1, .i 0],
+        .fused (row .cmp .w64 .MR) [.r r1, .r s1] (row .adc .w64 .MI8) [r2] [.r c1, .i 0]]
+  | .subBorrow64 a b c => do
+      let (a', preA) ← argReg a
+      let (b', preB) ← argReg b
+      let (c', preC) ← argReg c
+      let z0 ← fresh
+      let d1 ← fresh
+      let b1 ← fresh
+      fire "limb.subBorrow"
+      return preA ++ preB ++ preC ++ [
+        .zero z0,
+        .op (row .sub .w64 .MR) [d1] [.r a', .r b'],
+        .fused (row .cmp .w64 .MR) [.r a', .r b'] (row .adc .w64 .MI8) [b1] [.r z0, .i 0],
+        .fused (row .cmp .w64 .MR) [.r z0, .r c'] (row .sbb .w64 .MI8) [r1] [.r d1, .i 0],
+        .fused (row .cmp .w64 .MR) [.r d1, .r r1] (row .adc .w64 .MI8) [r2] [.r b1, .i 0]]
+
 def selectAssign (i : Nat) (x : VReg) : Lir.Rhs → SelM (List (Inst VReg))
   | .arg (.v a) => do
       fire "move"
@@ -348,10 +413,12 @@ def selectAssign (i : Nat) (x : VReg) : Lir.Rhs → SelM (List (Inst VReg))
       return [.op leaRow [x] [.m am]]
   | .select c w a b t f => selectSelect i x c w a b t f
   | .test c w a b => selectTest x c w a b
+  | .bsr64 a => selectBsr64 x a
 
 /-- The Xv instructions for statement `i`. -/
 def selectStmt (i : Nat) : Lir.Stmt → SelM (List (Inst VReg))
   | .assign x r => selectAssign i x r
+  | .limb r1 r2 op => selectLimb i r1 r2 op
   | .store w m a => selectStore w m a
   | .call rs f as => do
       let (vs, pre) ← argRegs as

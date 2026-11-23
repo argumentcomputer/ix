@@ -115,7 +115,7 @@ theorem prim_word {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {
       | exact rhsSim_of_nat (nop := .natDiv) (Rt.Proof.wordSem_nat_of rfl fun p q => by
           rw [sem_nat2 .natDiv (by decide)]
           by_cases hq : q = 0 <;> simp [hq, WordOp.eval, Src.WordResult.val])
-          (prim_natDiv hF hH hrun hC ho hsup hx hops hlive)
+          (prim_natDiv hF hH hrun hC hl ho hsup hx hops hlive)
       | (exfalso; word_bad)
   case mod =>
     rcases las with _ | ⟨la, _ | ⟨lb, _ | ⟨lc, las⟩⟩⟩ <;>
@@ -123,7 +123,7 @@ theorem prim_word {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {
       | exact rhsSim_of_nat (nop := .natMod) (Rt.Proof.wordSem_nat_of rfl fun p q => by
           rw [sem_nat2 .natMod (by decide)]
           by_cases hq : q = 0 <;> simp [hq, WordOp.eval, Src.WordResult.val])
-          (prim_natMod hF hH hrun hC ho hsup hx hops hlive)
+          (prim_natMod hF hH hrun hC hl ho hsup hx hops hlive)
       | (exfalso; word_bad)
   case land =>
     rcases las with _ | ⟨la, _ | ⟨lb, _ | ⟨lc, las⟩⟩⟩ <;>

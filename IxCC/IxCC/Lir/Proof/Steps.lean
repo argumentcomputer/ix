@@ -60,6 +60,7 @@ theorem step_stmt {s : Stmt} {ρ' : Env} {mem' : X86.Memory}
   cases s with
   | call => simp [Stmt.isCall] at hnc
   | assign x r => simp only [hx]
+  | limb r1 r2 op => simp only [hx]
   | store w m a => simp only [hx]
 
 theorem step_call {rs : List VReg} {g : FunId} {as : List Arg} {vs : List Word} {callee : Frame}

@@ -35,6 +35,10 @@ theorem Stmt.exec_perms {ρ ρ' : Env} {mem mem' : X86.Memory} {ctx : Word} {st 
     simp only [Stmt.exec, bind, Option.bind_eq_some_iff, Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨_, _, _, rfl⟩ := h
     exact .refl _
+  | limb r1 r2 op =>
+    simp only [Stmt.exec, bind, Option.bind_eq_some_iff, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨_, _, _, rfl⟩ := h
+    exact .refl _
   | store w m a =>
     simp only [Stmt.exec, bind, Option.bind_eq_some_iff] at h
     obtain ⟨_, _, _, _, h⟩ := h

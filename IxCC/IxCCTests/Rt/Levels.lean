@@ -151,6 +151,113 @@ def stacks (a : Assert) (t : Native.Tools) : IO (Array String) := do
   let _ ← nativeCheck a t c "deep_big" 0 [([1000000], ⟨0, tag 1000000⟩, none)] { stack := 1 <<< 28 }
   return #["deep recursion: 10⁶ calls fail with status 2 on a 1 MiB stack and return 10⁶ on a 256 MiB one"]
 
+/-- End-to-end backend tests for the new hardware limb primitives (`mulWide64`, `divWide64`,
+`addCarry64`, `subBorrow64`, `bsr64`) and `brOvf .mulOvf` across Lir, Xv, Xl, Validate,
+Stacking, Typed x86, and ByteEval. -/
+def limbOps (a : Assert) : IO (Array String) := do
+  let mkLimbFn (name sym : String) (params : List Lir.VReg) (op : Lir.LimbOp) (retHi : Bool) : Lir.Func :=
+    { name, params, results := 1, conv := .sysvExport sym
+      blocks := #[{ body := #[.limb 10 11 op], term := .ret [.v (if retHi then 11 else 10)] }] }
+  let bsrFn : Lir.Func :=
+    { name := "bsr64", params := [0], results := 1, conv := .sysvExport "limb_bsr64"
+      blocks := #[{ body := #[.assign 10 (.bsr64 (.v 0))], term := .ret [.v 10] }] }
+  let mulOvfFn : Lir.Func :=
+    { name := "mulOvf", params := [0, 1], results := 1, conv := .sysvExport "limb_mulOvf"
+      blocks := #[
+        { term := .brOvf .mulOvf 10 (.v 0) (.v 1) ⟨1, []⟩ ⟨2, []⟩ },
+        { term := .ret [.v 10] },
+        { term := .fail .natOverflow, cold := true }] }
+  let prog : Lir.Program := {
+    main := 0
+    funcs := #[
+      mkLimbFn "mulWideLo" "limb_mulWideLo" [0, 1] (.mulWide64 (.v 0) (.v 1)) false,
+      mkLimbFn "mulWideHi" "limb_mulWideHi" [0, 1] (.mulWide64 (.v 0) (.v 1)) true,
+      mkLimbFn "divWideQ" "limb_divWideQ" [0, 1, 2] (.divWide64 (.v 0) (.v 1) (.v 2)) false,
+      mkLimbFn "divWideR" "limb_divWideR" [0, 1, 2] (.divWide64 (.v 0) (.v 1) (.v 2)) true,
+      mkLimbFn "addCarryS" "limb_addCarryS" [0, 1, 2] (.addCarry64 (.v 0) (.v 1) (.v 2)) false,
+      mkLimbFn "addCarryC" "limb_addCarryC" [0, 1, 2] (.addCarry64 (.v 0) (.v 1) (.v 2)) true,
+      mkLimbFn "subBorrowD" "limb_subBorrowD" [0, 1, 2] (.subBorrow64 (.v 0) (.v 1) (.v 2)) false,
+      mkLimbFn "subBorrowB" "limb_subBorrowB" [0, 1, 2] (.subBorrow64 (.v 0) (.v 1) (.v 2)) true,
+      bsrFn,
+      mulOvfFn] }
+  match prog.check with
+  | .ok () => expect a true ""
+  | .error e => expect a false s!"limbOps: Lir not WellFormed: {e}"
+  let (xv, _) ← IO.ofExcept ((Xv.Select.run prog).mapError fun e => s!"limbOps select: {e.form}: {e.reason}")
+  match xv.check with
+  | .ok () => expect a true ""
+  | .error e => expect a false s!"limbOps: Xv not WellFormed: {e}"
+  let alloc ← IO.ofExcept ((Xv.Alloc.run {} xv).mapError (s!"limbOps alloc: " ++ ·))
+  match Xv.Validate.run {} xv alloc.outs with
+  | .ok _ => expect a true ""
+  | .error e => expect a false s!"limbOps: Validate refused: {e}"
+  let cfg : Backend.Config := {
+    reps := fun fi => prog.funcs[fi]?.map fun f => List.replicate f.params.length .word
+    provenance := testProvenance }
+  let art ← IO.ofExcept ((Backend.emit alloc.program cfg).mapError toString)
+  let c : Compiled := {
+    lir := { program := prog, init := 0, natPow := 0, natGcd := 0, roots := [] }
+    xv, xl := alloc.program, artifact := art }
+  let mem := IxCCTests.Backend.refMemory 0 IxCCTests.Backend.defaultBudget
+  let checkRaw (fn : Nat) (sym : String) (args : List Word) (want : Exit) : IO Unit := do
+    let rl := Lir.eval { prog with main := fn } 1000 args mem IxCCTests.Lir.Region.ctx
+    let rx := Xv.eval { xv with main := fn } 1000 args mem IxCCTests.Lir.Region.ctx
+    let rxl := Xv.Xl.eval { alloc.program with main := fn } {} 1000 args mem IxCCTests.Lir.Region.ctx
+    expect a (IxCCTests.Backend.expected rl == some want) s!"{sym} {args}: Lir {repr (IxCCTests.Backend.expected rl)}, expected {repr want}"
+    expect a (IxCCTests.Backend.expected rx == some want) s!"{sym} {args}: Xv mismatch"
+    expect a (IxCCTests.Backend.expected rxl == some want) s!"{sym} {args}: Xl mismatch"
+    let sh : IxCCTests.Backend.Shadow := { base := IxCCTests.Backend.machineMemory 0 IxCCTests.Backend.defaultBudget }
+    let (et, _, _) ← IO.ofExcept (runExportTyped c sym args sh)
+    let (eb, _, _) ← IO.ofExcept (runExportBytes c sym args sh)
+    expect a (et == want) s!"{sym} {args}: typed {repr et}, expected {repr want}"
+    expect a (eb == want) s!"{sym} {args}: bytes {repr eb}, expected {repr want}"
+  let maxW : Word := 0xffffffffffffffff
+  -- mulWide64: (2^64-1)*(2^64-1) = (2^64-2)*2^64 + 1
+  checkRaw 0 "limb_mulWideLo" [maxW, maxW] ⟨0, 1⟩
+  checkRaw 1 "limb_mulWideHi" [maxW, maxW] ⟨0, maxW - 1⟩
+  checkRaw 0 "limb_mulWideLo" [0x100000000, 0x100000000] ⟨0, 0⟩
+  checkRaw 1 "limb_mulWideHi" [0x100000000, 0x100000000] ⟨0, 1⟩
+  checkRaw 0 "limb_mulWideLo" [0x123456789abcdef0, 0xfedcba9876543210] ⟨0, 0x123456789abcdef0 * 0xfedcba9876543210⟩
+  -- divWide64: ((1 * 2^64 + 0) / 0x100000000 = 0x100000000 rem 0), ((2 * 2^64 + 7) / 3)
+  checkRaw 2 "limb_divWideQ" [1, 0, 0x100000000] ⟨0, 0x100000000⟩
+  checkRaw 3 "limb_divWideR" [1, 0, 0x100000000] ⟨0, 0⟩
+  checkRaw 2 "limb_divWideQ" [2, 7, 3] ⟨0, UInt64.ofNat ((2 * 2 ^ 64 + 7) / 3)⟩
+  checkRaw 3 "limb_divWideR" [2, 7, 3] ⟨0, UInt64.ofNat ((2 * 2 ^ 64 + 7) % 3)⟩
+  checkRaw 2 "limb_divWideQ" [maxW - 1, maxW, maxW] ⟨0, maxW⟩
+  checkRaw 3 "limb_divWideR" [maxW - 1, maxW, maxW] ⟨0, maxW - 1⟩
+  -- addCarry64
+  checkRaw 4 "limb_addCarryS" [maxW, 0, 1] ⟨0, 0⟩
+  checkRaw 5 "limb_addCarryC" [maxW, 0, 1] ⟨0, 1⟩
+  checkRaw 4 "limb_addCarryS" [maxW, maxW, 1] ⟨0, maxW⟩
+  checkRaw 5 "limb_addCarryC" [maxW, maxW, 1] ⟨0, 1⟩
+  checkRaw 4 "limb_addCarryS" [maxW, 0, 0] ⟨0, maxW⟩
+  checkRaw 5 "limb_addCarryC" [maxW, 0, 0] ⟨0, 0⟩
+  checkRaw 4 "limb_addCarryS" [10, 20, 7] ⟨0, 31⟩
+  checkRaw 5 "limb_addCarryC" [10, 20, 7] ⟨0, 0⟩
+  -- subBorrow64
+  checkRaw 6 "limb_subBorrowD" [0, 0, 1] ⟨0, maxW⟩
+  checkRaw 7 "limb_subBorrowB" [0, 0, 1] ⟨0, 1⟩
+  checkRaw 6 "limb_subBorrowD" [0, 1, 0] ⟨0, maxW⟩
+  checkRaw 7 "limb_subBorrowB" [0, 1, 0] ⟨0, 1⟩
+  checkRaw 6 "limb_subBorrowD" [1, 1, 1] ⟨0, maxW⟩
+  checkRaw 7 "limb_subBorrowB" [1, 1, 1] ⟨0, 1⟩
+  checkRaw 6 "limb_subBorrowD" [10, 3, 1] ⟨0, 6⟩
+  checkRaw 7 "limb_subBorrowB" [10, 3, 1] ⟨0, 0⟩
+  checkRaw 6 "limb_subBorrowD" [0, maxW, 1] ⟨0, 0⟩
+  checkRaw 7 "limb_subBorrowB" [0, maxW, 1] ⟨0, 1⟩
+  -- bsr64
+  checkRaw 8 "limb_bsr64" [1] ⟨0, 0⟩
+  checkRaw 8 "limb_bsr64" [2] ⟨0, 1⟩
+  checkRaw 8 "limb_bsr64" [0x80000000] ⟨0, 31⟩
+  checkRaw 8 "limb_bsr64" [0x8000000000000000] ⟨0, 63⟩
+  checkRaw 8 "limb_bsr64" [maxW] ⟨0, 63⟩
+  -- brOvf .mulOvf
+  checkRaw 9 "limb_mulOvf" [0xffffffff, 0xffffffff] ⟨0, 0xffffffff * 0xffffffff⟩
+  checkRaw 9 "limb_mulOvf" [0x100000000, 0x100000000] ⟨3, 0⟩
+  checkRaw 9 "limb_mulOvf" [maxW, 1] ⟨0, maxW⟩
+  checkRaw 9 "limb_mulOvf" [maxW, 2] ⟨3, 0⟩
+  return #[s!"limb primitives (mulWide64, divWide64, addCarry64, subBorrow64, bsr64, brOvf.mulOvf): 39 vectors agree across Lir/Xv/Xl/Typed/Bytes; text {art.encoded.text.size} bytes"]
+
 /-- Every `every`-th generated program at every level, and natively. -/
 def generated (a : Assert) (tools : Option Native.Tools) (count every : Nat) : IO (Array String) := do
   let mut r : Report := {}

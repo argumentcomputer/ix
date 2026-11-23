@@ -91,6 +91,16 @@ theorem aluFlags_congr (op : AluOp) (w : Width) {l₁ l₂ r₁ r₂ : Word} (hl
     (hr : w.truncate r₁ = w.truncate r₂) : ByteEval.aluFlags op w l₁ r₁ = ByteEval.aluFlags op w l₂ r₂ := by
   simp only [ByteEval.aluFlags, setWidth_of_truncate hl, setWidth_of_truncate hr]
 
+theorem adcFlags_congr (w : Width) {l₁ l₂ r₁ r₂ : Word} (hl : w.truncate l₁ = w.truncate l₂)
+    (hr : w.truncate r₁ = w.truncate r₂) (cf : Bool) :
+    ByteEval.adcFlags w l₁ r₁ cf = ByteEval.adcFlags w l₂ r₂ cf := by
+  simp only [ByteEval.adcFlags, setWidth_of_truncate hl, setWidth_of_truncate hr]
+
+theorem sbbFlags_congr (w : Width) {l₁ l₂ r₁ r₂ : Word} (hl : w.truncate l₁ = w.truncate l₂)
+    (hr : w.truncate r₁ = w.truncate r₂) (cf : Bool) :
+    ByteEval.sbbFlags w l₁ r₁ cf = ByteEval.sbbFlags w l₂ r₂ cf := by
+  simp only [ByteEval.sbbFlags, setWidth_of_truncate hl, setWidth_of_truncate hr]
+
 theorem mulFlags_congr (w : Width) {l₁ l₂ r₁ r₂ : Word} (hl : w.truncate l₁ = w.truncate l₂)
     (hr : w.truncate r₁ = w.truncate r₂) : ByteEval.mulFlags w l₁ r₁ = ByteEval.mulFlags w l₂ r₂ := by
   simp only [ByteEval.mulFlags, setWidth_of_truncate hl, setWidth_of_truncate hr]
@@ -178,6 +188,60 @@ theorem aluSem_rel (op : AluOp) (w : Width) {x y : Option Width} (hx : AtWidth w
   have hb' := hb.truncate hy
   refine ⟨aluFlags_congr op w ha' hb', rfl, ResW.one (fun v hv => ?_) hl, ResW.nil _ _⟩
   rw [houts v hv, Encode.truncate_alu, ha', hb', ← Encode.truncate_alu]
+
+theorem adcSem_rel (w : Width) {x y : Option Width} (hx : AtWidth w x) (hy : AtWidth w y)
+    {outs : List Width} (houts : ∀ v ∈ outs, v = w) (hl : outs.length ≤ 1) {vs₁ vs₂ : List Word}
+    (h : RelW [x, y] vs₁ vs₂) (obs : ByteEval.Flags) :
+    SemRelW outs [] (Table.adcSem w ⟨vs₁, obs⟩) (Table.adcSem w ⟨vs₂, obs⟩) := by
+  obtain ⟨a₁, b₁, a₂, b₂, rfl, rfl, ha, hb⟩ := h.two
+  have ha' := ha.truncate hx
+  have hb' := hb.truncate hy
+  simp only [Table.adcSem]
+  cases obs.carry with
+  | none => rfl
+  | some cf =>
+      refine ⟨adcFlags_congr w ha' hb' cf, rfl, ResW.one (fun v hv => ?_) hl, ResW.nil _ _⟩
+      rw [houts v hv]
+      have h1 : w.truncate (a₁ + b₁) = w.truncate (a₂ + b₂) := by
+        simpa [AluOp.eval] using
+          (Encode.truncate_alu .add w a₁ b₁).trans
+            (by rw [ha', hb']; exact (Encode.truncate_alu .add w a₂ b₂).symm)
+      simpa [AluOp.eval] using
+        (Encode.truncate_alu .add w (a₁ + b₁) (if cf then 1 else 0)).trans
+          (by rw [h1]; exact (Encode.truncate_alu .add w (a₂ + b₂) (if cf then 1 else 0)).symm)
+
+theorem sbbSem_rel (w : Width) {x y : Option Width} (hx : AtWidth w x) (hy : AtWidth w y)
+    {outs : List Width} (houts : ∀ v ∈ outs, v = w) (hl : outs.length ≤ 1) {vs₁ vs₂ : List Word}
+    (h : RelW [x, y] vs₁ vs₂) (obs : ByteEval.Flags) :
+    SemRelW outs [] (Table.sbbSem w ⟨vs₁, obs⟩) (Table.sbbSem w ⟨vs₂, obs⟩) := by
+  obtain ⟨a₁, b₁, a₂, b₂, rfl, rfl, ha, hb⟩ := h.two
+  have ha' := ha.truncate hx
+  have hb' := hb.truncate hy
+  simp only [Table.sbbSem]
+  cases obs.carry with
+  | none => rfl
+  | some cf =>
+      refine ⟨sbbFlags_congr w ha' hb' cf, rfl, ResW.one (fun v hv => ?_) hl, ResW.nil _ _⟩
+      rw [houts v hv]
+      have h1 : w.truncate (a₁ - b₁) = w.truncate (a₂ - b₂) := by
+        simpa [AluOp.eval] using
+          (Encode.truncate_alu .sub w a₁ b₁).trans
+            (by rw [ha', hb']; exact (Encode.truncate_alu .sub w a₂ b₂).symm)
+      simpa [AluOp.eval] using
+        (Encode.truncate_alu .sub w (a₁ - b₁) (if cf then 1 else 0)).trans
+          (by rw [h1]; exact (Encode.truncate_alu .sub w (a₂ - b₂) (if cf then 1 else 0)).symm)
+
+theorem bsrSem_rel (w : Width) {outs : List Width} {vs₁ vs₂ : List Word}
+    (h : RelW [none, some w] vs₁ vs₂) (obs : ByteEval.Flags) :
+    SemRelW outs [] (Table.bsrSem w ⟨vs₁, obs⟩) (Table.bsrSem w ⟨vs₂, obs⟩) := by
+  obtain ⟨a₁, b₁, a₂, b₂, rfl, rfl, ha, hb⟩ := h.two
+  subst ha
+  change w.truncate b₁ = w.truncate b₂ at hb
+  have heq : Table.bsrSem w ⟨[a₁, b₁], obs⟩ = Table.bsrSem w ⟨[a₁, b₂], obs⟩ := by
+    simp only [Table.bsrSem, hb]
+  rw [heq]
+  simp only [Table.bsrSem]
+  split <;> exact ⟨rfl, rfl, ResW.same _ _, ResW.nil _ _⟩
 
 theorem cmpSem_rel (w : Width) {x y : Option Width} (hx : AtWidth w x) (hy : AtWidth w y)
     (outs : List Width) {vs₁ vs₂ : List Word} (h : RelW [x, y] vs₁ vs₂) (obs : ByteEval.Flags) :
@@ -356,6 +420,25 @@ theorem sem_rel (o : Op) (hstack : (desc o).stack = .none) {vs₁ vs₂ : List W
     simp only [rowInWidths, desc, arithDesc_implicit, List.filter_nil, List.map_nil, List.append_nil,
       implicitOutWidths] at h ⊢
     exact arith_rel _ w form h obs
+  case adc =>
+    cases form <;>
+    simp only [rowInWidths, desc, Table.adcDesc, Table.carryArithDesc, inWidths, outWidths,
+      implicitOutWidths, Table.rmSlot, Table.regSlot, Table.immSlot, List.filterMap_cons,
+      List.filterMap_nil, Role.writes, ↓reduceIte, Bool.false_eq_true, List.filter_nil,
+      List.map_nil, List.append_nil] at h ⊢ <;>
+    exact adcSem_rel w (an w) (aw w) (by simp) (by simp) h obs
+  case sbb =>
+    cases form <;>
+    simp only [rowInWidths, desc, Table.sbbDesc, Table.carryArithDesc, inWidths, outWidths,
+      implicitOutWidths, Table.rmSlot, Table.regSlot, Table.immSlot, List.filterMap_cons,
+      List.filterMap_nil, Role.writes, ↓reduceIte, Bool.false_eq_true, List.filter_nil,
+      List.map_nil, List.append_nil] at h ⊢ <;>
+    exact sbbSem_rel w (an w) (aw w) (by simp) (by simp) h obs
+  case bsr =>
+    simp only [rowInWidths, desc, Table.bsrDesc, inWidths, outWidths, implicitOutWidths,
+      Table.regSlot, Table.rmSlot, List.filterMap_cons, List.filterMap_nil, Role.writes,
+      ↓reduceIte, Bool.false_eq_true, List.filter_nil, List.map_nil, List.append_nil] at h ⊢
+    exact bsrSem_rel w h obs
   case not =>
     simp only [rowInWidths, desc, Table.notDesc, inWidths, outWidths, implicitOutWidths, Table.rmSlot,
       List.filterMap_cons, List.filterMap_nil, Role.writes, ↓reduceIte,

@@ -49,7 +49,7 @@ theorem prim_natAdd {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word}
     | v ya =>
       lower_run at hrun
       subst hrun
-      refine check_ovf_sim (ss1 := [.assign st.fresh (.bin .sub .w64 (.v ya) (.imm 1))]) hF hH hC hl ho
+      refine check_ovf_sim (ss1 := [.assign st.fresh (.bin .sub .w64 (.v yb) (.imm 1))]) hF hH hC hl ho
         (by simp [Lir.Stmt.isCall]) ?_
       intro P H ρ ρl mem v H' hρ hr
       obtain ⟨rfl, ⟨p, q, n, wa, wb, ha, hb, hwa, hwb, hs, rfl, hra, hrb⟩⟩ := bin2_of hρ hops hlive hnb hr
@@ -57,11 +57,11 @@ theorem prim_natAdd {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word}
       cases hs
       have ha' : ρl[ya]? = some wa := ha
       have hb' : ρl[yb]? = some wb := hb
-      have hyb := hrb yb rfl
-      refine ⟨rfl, ρl.insert st.fresh (wa - 1), wa - 1, wb, by simp only [lir_eval, ha'], by simp, ?_,
+      have hya := hra ya rfl
+      refine ⟨rfl, ρl.insert st.fresh (wb - 1), wa, wb - 1, by simp only [lir_eval, hb'], ?_, by simp,
         fun hc => (hρ.temp hsup _).insert hx ?_⟩
-      · simp (disch := omega) only [Lir.Arg.eval_v, Lir.env_insert_get, if_neg, hb']
-      · exact natAdd_word (natAdd_operands hwa hwb).1 hc
+      · simp (disch := omega) only [Lir.Arg.eval_v, Lir.env_insert_get, if_neg, ha']
+      · exact natAdd_word (natAdd_operands hwa hwb).2 hc
 
 /-! ## `natMul` -/
 
@@ -81,29 +81,17 @@ theorem prim_natMul {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word}
         (do
           let u ← untag (.v ya)
           let t ← bin .sub lb (.imm 1)
-          let p ← bin .mul u t
-          let u1 ← temp (.select .eq .w64 u (.imm 0) (.imm 1) u)
-          let q ← bin .udiv p u1
-          let c1 ← temp (.test .ne .w64 q t)
-          let c2 ← temp (.test .ne .w64 u (.imm 0))
-          let c ← bin .and c1 c2
-          Lower.check .natOverflow fun ok bad => .br .ne c (.imm 0) bad ok
-          assign x (.bin .or .w64 p (.imm 1))).run st = .ok ((), st') →
+          let p ← freshReg
+          Lower.check .natOverflow fun ok bad => .brOvf .mulOvf p u t ok bad
+          assign x (.bin .or .w64 (.v p) (.imm 1))).run st = .ok ((), st') →
         RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
           (.fir (.prim .natMul as)) := by
       intro lb hops hrun
       lower_run at hrun
       subst hrun
       let f0 := st.fresh
-      refine check_br_sim (ss1 := [.assign f0 (.bin .shr .w64 (.v ya) (.imm 1)),
-          .assign (f0 + 1) (.bin .sub .w64 lb (.imm 1)),
-          .assign (f0 + 1 + 1) (.bin .mul .w64 (.v f0) (.v (f0 + 1))),
-          .assign (f0 + 1 + 1 + 1) (.select .eq .w64 (.v f0) (.imm 0) (.imm 1) (.v f0)),
-          .assign (f0 + 1 + 1 + 1 + 1) (.bin .udiv .w64 (.v (f0 + 1 + 1)) (.v (f0 + 1 + 1 + 1))),
-          .assign (f0 + 1 + 1 + 1 + 1 + 1) (.test .ne .w64 (.v (f0 + 1 + 1 + 1 + 1)) (.v (f0 + 1))),
-          .assign (f0 + 1 + 1 + 1 + 1 + 1 + 1) (.test .ne .w64 (.v f0) (.imm 0)),
-          .assign (f0 + 1 + 1 + 1 + 1 + 1 + 1 + 1)
-            (.bin .and .w64 (.v (f0 + 1 + 1 + 1 + 1 + 1)) (.v (f0 + 1 + 1 + 1 + 1 + 1 + 1)))])
+      refine check_mulOvf_sim (ss1 := [.assign f0 (.bin .shr .w64 (.v ya) (.imm 1)),
+          .assign (f0 + 1) (.bin .sub .w64 lb (.imm 1))])
         (ss2 := [.assign x (.bin .or .w64 (.v (f0 + 1 + 1)) (.imm 1))])
         hF hH hC hl ho (by simp [Lir.Stmt.isCall]) (by simp [Lir.Stmt.isCall]) ?_
       intro P H ρ ρl mem v H' hρ hr
@@ -112,21 +100,14 @@ theorem prim_natMul {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word}
       cases hs
       have ha' : ρl[ya]? = some wa := ha
       have hya := hra ya rfl
-      have hu1 : (if wa >>> 1 = 0 then (1 : Word) else wa >>> 1) ≠ 0 := by
-        split
-        · decide
-        · assumption
-      refine ⟨_, _, 0, by
-        simp (disch := omega) only [lir_eval, ha', arg_eval_temp hrb (t := st.fresh) hsup, hb, ↓reduceIte, if_neg,
-          hu1, f0]; try rfl, by simp (disch := omega) only [lir_eval, ↓reduceIte, if_neg, f0]; try rfl, rfl, ?_⟩
-      intro hfl
-      simp only [Lir.holds_ne, decide_eq_false_iff_not, Decidable.not_not] at hfl
+      refine ⟨rfl, _, wa >>> 1, wb - 1, by
+        simp (disch := omega) only [lir_eval, ha', arg_eval_temp hrb (t := st.fresh) hsup, hb, ↓reduceIte, if_neg, f0]; try rfl,
+        by simp (disch := omega) only [lir_eval, ↓reduceIte, if_neg, f0]; try rfl,
+        by simp (disch := omega) only [lir_eval, ↓reduceIte, if_neg, f0]; try rfl, ?_⟩
+      intro hovf
       refine ⟨_, by simp (disch := omega) only [lir_eval, ↓reduceIte, if_neg, f0]; try rfl, ?_⟩
-      refine ((((((((hρ.temp hsup _).temp (by omega) _).temp (by omega) _).temp (by omega) _).temp (by omega) _).temp
-        (by omega) _).temp (by omega) _).temp (by omega) _).insert hx ?_
-      show natWord (p * q) = some _
-      have := natMul_word hwa hwb (mul_flag.1 hfl)
-      simpa using this
+      refine (((hρ.temp hsup _).temp (by omega) _).temp (by omega) _).insert hx ?_
+      exact natMul_ovf_word hwa hwb hovf
     cases lb with
     | imm wbi => exact hgen hops hrun
     | v yb =>
@@ -261,13 +242,7 @@ theorem prim_natMul {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word}
         lower_run at hrun
         subst hrun
         let f0 := st.fresh
-        refine check_br_sim (ss1 := [.assign f0 (.bin .sub .w64 lb (.imm 1)),
-            .assign (f0 + 1) (.bin .mul .w64 (.imm (wai >>> 1)) (.v f0)),
-            .assign (f0 + 1 + 1) (.select .eq .w64 (.imm (wai >>> 1)) (.imm 0) (.imm 1) (.imm (wai >>> 1))),
-            .assign (f0 + 1 + 1 + 1) (.bin .udiv .w64 (.v (f0 + 1)) (.v (f0 + 1 + 1))),
-            .assign (f0 + 1 + 1 + 1 + 1) (.test .ne .w64 (.v (f0 + 1 + 1 + 1)) (.v f0)),
-            .assign (f0 + 1 + 1 + 1 + 1 + 1) (.test .ne .w64 (.imm (wai >>> 1)) (.imm 0)),
-            .assign (f0 + 1 + 1 + 1 + 1 + 1 + 1) (.bin .and .w64 (.v (f0 + 1 + 1 + 1 + 1)) (.v (f0 + 1 + 1 + 1 + 1 + 1)))])
+        refine check_mulOvf_sim (ss1 := [.assign f0 (.bin .sub .w64 lb (.imm 1))])
           (ss2 := [.assign x (.bin .or .w64 (.v (f0 + 1)) (.imm 1))])
           hF hH hC hl ho (by simp [Lir.Stmt.isCall]) (by simp [Lir.Stmt.isCall]) ?_
         intro P H ρ ρl mem v H' hρ hr
@@ -276,21 +251,13 @@ theorem prim_natMul {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word}
         cases hs
         simp only [Lir.Arg.eval_imm, Option.some.injEq] at ha
         subst ha
-        have hu1 : (if wai >>> 1 = 0 then (1 : Word) else wai >>> 1) ≠ 0 := by
-          split
-          · decide
-          · assumption
-        refine ⟨_, _, 0, by
-          simp (disch := omega) only [lir_eval, hb, ↓reduceIte, if_neg, hu1, f0]; try rfl,
-          by simp (disch := omega) only [lir_eval, ↓reduceIte, if_neg, f0]; try rfl, rfl, ?_⟩
-        intro hfl
-        simp only [Lir.holds_ne, decide_eq_false_iff_not, Decidable.not_not] at hfl
+        refine ⟨rfl, _, wai >>> 1, wb - 1, by
+          simp (disch := omega) only [lir_eval, hb, ↓reduceIte, if_neg, f0]; try rfl,
+          rfl, by simp (disch := omega) only [lir_eval, ↓reduceIte, if_neg, f0]; try rfl, ?_⟩
+        intro hovf
         refine ⟨_, by simp (disch := omega) only [lir_eval, ↓reduceIte, if_neg, f0]; try rfl, ?_⟩
-        refine (((((((hρ.temp hsup _).temp (by omega) _).temp (by omega) _).temp (by omega) _).temp (by omega) _).temp
-          (by omega) _).temp (by omega) _).insert hx ?_
-        show natWord (p * q) = some _
-        have := natMul_word hwa hwb (mul_flag.1 hfl)
-        simpa using this
+        refine ((hρ.temp hsup _).temp (by omega) _).insert hx ?_
+        exact natMul_ovf_word hwa hwb hovf
 
 /-! ## `natShl` -/
 

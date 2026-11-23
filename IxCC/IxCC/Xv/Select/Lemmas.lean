@@ -62,6 +62,13 @@ theorem add_carry (a b : Word) :
   simp only [UInt64.lt_iff_toNat_lt, UInt64.toNat_add, UInt64.toNat_toBitVec, UInt64.size] at *
   by_cases hc : 2 ^ 64 ≤ a.toNat + b.toNat <;> simp [hc] <;> omega
 
+theorem mul_ovf (a b : Word) :
+    (ByteEval.umulFlags (a.toNat * b.toNat / 2 ^ 64)).test .unsignedLt = some (Lir.Ovf.eval .mulOvf a b).2 := by
+  simp only [ByteEval.umulFlags, ByteEval.Flags.test, Lir.Ovf.eval, Option.some.injEq]
+  apply Bool.eq_iff_iff.mpr
+  simp only [bne_iff_ne, ne_eq, decide_eq_true_eq, Nat.div_eq_zero_iff]
+  omega
+
 private theorem and_zero (w : Width) (a b : Word) :
     ((a.toBitVec.setWidth w.bits &&& b.toBitVec.setWidth w.bits) == 0) = (w.truncate (a &&& b) == 0) := by
   apply Bool.eq_iff_iff.mpr

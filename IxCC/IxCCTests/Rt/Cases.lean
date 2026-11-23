@@ -303,10 +303,32 @@ def div4Prog : FProgram :=
 def mod4Prog : FProgram :=
   prog [([0], .bind 10 (.prim .natMod [v 0, n 4]) (.ret (v 10)))]
 
+/-- General variable multiplication (`natMul [v 0, v 1]`) uses hardware `brOvf .mulOvf`, not `.udiv`. -/
+def mulGenProg : FProgram :=
+  prog [([0, 1], .bind 10 (.prim .natMul [v 0, v 1]) (.ret (v 10)))]
+
+/-- Variable-divisor `natDiv` and `natMod` emit the 32-bit `div r32` fast path. -/
+def divVarProg : FProgram :=
+  prog [([0, 1], .bind 10 (.prim .natDiv [v 0, v 1]) (.ret (v 10)))]
+
+def modVarProg : FProgram :=
+  prog [([0, 1], .bind 10 (.prim .natMod [v 0, v 1]) (.ret (v 10)))]
+
 def hasUdiv (f : Lir.Func) : Bool :=
   f.blocks.any fun b => b.body.any fun
     | .assign _ (.bin .udiv _ _ _) => true
     | .assign _ (.bin .urem _ _ _) => true
+    | _ => false
+
+def hasMulOvf (f : Lir.Func) : Bool :=
+  f.blocks.any fun b => match b.term with
+    | .brOvf .mulOvf .. => true
+    | _ => false
+
+def hasDiv32 (f : Lir.Func) : Bool :=
+  f.blocks.any fun b => b.body.any fun
+    | .assign _ (.bin .udiv .w32 _ _) => true
+    | .assign _ (.bin .urem .w32 _ _) => true
     | _ => false
 
 def declines : List (String × CProgram × String) :=
@@ -410,6 +432,28 @@ def handWritten (a : Assert) : IO (Array String) := do
       let r ← runLir ldm 0 1000 [x] mdm
       expect a (outcomeWord r == some (expected op [x, q]))
         s!"{label} {x}: Lir {lirOutcome r}, expected {expected op [x, q]}"
+  -- general natMul uses brOvf .mulOvf (no udiv), exact overflow boundary at 2^63
+  let (lmg, mmg) ← lirOf (cfgOf mulGenProg)
+  checkLir a lmg "mulGenProg"
+  expect a (!hasUdiv lmg.program.funcs[0]!) "mulGenProg: lowered natMul [v 0, v 1] still contains udiv"
+  expect a (hasMulOvf lmg.program.funcs[0]!) "mulGenProg: lowered natMul [v 0, v 1] missing brOvf .mulOvf"
+  for (x, y) in [(0, natMax), (natMax, 0), (1, natMax), (2, 2 ^ 62 - 1), (2, 2 ^ 62),
+                 (2 ^ 31, 2 ^ 32 - 1), (2 ^ 31, 2 ^ 32), (3037000499, 3037000500), (3037000500, 3037000500)] do
+    let r ← runLir lmg 0 1000 [x, y] mmg
+    expect a (outcomeWord r == some (expected .natMul [x, y]))
+      s!"mulGenProg ({x}, {y}): Lir {lirOutcome r}, expected {expected .natMul [x, y]}"
+  -- variable-divisor natDiv/natMod emit 32-bit fast path and agree across 32-bit/64-bit/0 boundaries
+  for (label, P, op) in [("divVarProg", divVarProg, Lam.Prim.natDiv),
+                         ("modVarProg", modVarProg, Lam.Prim.natMod)] do
+    let (ldv, mdv) ← lirOf (cfgOf P)
+    checkLir a ldv label
+    expect a (hasDiv32 ldv.program.funcs[0]!) s!"{label}: missing 32-bit fast path (.w32 udiv/urem)"
+    for (x, y) in [(0, 0), (7, 0), (natMax, 0), (0, 1), (1071, 462), (2 ^ 32 - 1, 2 ^ 32 - 1),
+                   (2 ^ 32 - 1, 65537), (2 ^ 32, 2 ^ 32 - 1), (2 ^ 32, 2 ^ 32), (2 ^ 32 + 5, 3),
+                   (natMax, 2 ^ 32 - 1), (natMax, 2 ^ 32), (natMax, natMax), (4660046610375530309, 2880067194370816120)] do
+      let r ← runLir ldv 0 1000 [x, y] mdv
+      expect a (outcomeWord r == some (expected op [x, y]))
+        s!"{label} ({x}, {y}): Lir {lirOutcome r}, expected {expected op [x, y]}"
   -- declines
   for (label, C, code) in declines do
     match Rt.lower {} C with

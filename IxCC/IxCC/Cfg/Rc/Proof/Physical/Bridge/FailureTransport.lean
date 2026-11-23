@@ -27,6 +27,9 @@ theorem local_fail_transport (f : Func) (free : CallFree f) (P : Program) (fn : 
       | assign x rhs =>
         simp only [instruction] at failure
         cases result : (Stmt.assign x rhs).exec frame.env mem context <;> simp [result] at failure
+      | limb r1 r2 op =>
+        simp only [instruction] at failure
+        cases result : (Stmt.limb r1 r2 op).exec frame.env mem context <;> simp [result] at failure
       | store width address value =>
         simp only [instruction] at failure
         cases result : (Stmt.store width address value).exec frame.env mem context <;> simp [result] at failure

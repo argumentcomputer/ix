@@ -57,8 +57,8 @@ def tests : IO Unit := do
     sp := 2 ^ 40 + 8, ret := 2 ^ 46, init := fun _ => 0, flags := {}, other := fun _ => 0 }
   check "canonical driver text byte is inText and not mapped"
     (canonDriver.inText 4096 1024 && !canonDriver.mapped 1024)
-  -- Wave 9 expanded x86-64 ISA subset reference vectors (243 total rows)
-  check "Op.rows total count is 243" (Op.rows.length == 243)
+  -- Expanded x86-64 ISA subset reference vectors (274 total rows, including adc/sbb/bsr)
+  check "Op.rows total count is 274" (Op.rows.length == 274)
   let baseCore : Core := (driver.core [0] bytes).setReg .rax 0x0123456789abcdef
     |>.setReg .rbx 0x0000000080000080
     |>.setReg .rcx 8
@@ -136,4 +136,57 @@ def tests : IO Unit := do
     | .error _ => false
   check "ror .w64 rotates right by cl and preserves ZF/SF"
     (rorOk && Encode.encodeOp rorOp [.reg .rax] == ByteArray.mk #[0x48, 0xd3, 0xc8])
+  -- 5. Limb arithmetic & bit-scan: `adc`, `sbb`, `bsr`
+  let adcMR : Op := { mn := .adc, w := .w64, form := .MR }
+  let adcCore := baseCore.setReg .rax 0xffffffffffffffff |>.setReg .rbx 0
+  let adcMROk := match adcMR.exec [.reg .rax, .reg .rbx] adcCore sampleFlags with
+    | .ok (c, f) =>
+        c.readReg .rax == 0 &&
+        f.carry == some true && f.zero == some true && f.sign == some false && f.overflow == some false
+    | .error _ => false
+  check "adc .w64 .MR adds carry-in and sets CF/ZF/SF/OF"
+    (adcMROk && Encode.encodeOp adcMR [.reg .rax, .reg .rbx] == ByteArray.mk #[0x48, 0x11, 0xd8])
+  let adcMI8 : Op := { mn := .adc, w := .w64, form := .MI8 }
+  let adcMI8Ok := match adcMI8.exec [.reg .rax, .imm 0] (baseCore.setReg .rax 0) sampleFlags with
+    | .ok (c, f) =>
+        c.readReg .rax == 1 &&
+        f.carry == some false && f.zero == some false && f.sign == some false && f.overflow == some false
+    | .error _ => false
+  check "adc .w64 .MI8 materializes CF into register"
+    (adcMI8Ok && Encode.encodeOp adcMI8 [.reg .rax, .imm 0] == ByteArray.mk #[0x48, 0x83, 0xd0, 0x00])
+  let adcNoCfOk := match adcMR.exec [.reg .rax, .reg .rbx] adcCore {} with
+    | .error (.semantic (.undefinedCondition .unsignedLt)) => true
+    | _ => false
+  check "adc faults when CF is undefined" adcNoCfOk
+  let sbbMR : Op := { mn := .sbb, w := .w64, form := .MR }
+  let sbbCore := baseCore.setReg .rax 0 |>.setReg .rbx 0
+  let sbbMROk := match sbbMR.exec [.reg .rax, .reg .rbx] sbbCore sampleFlags with
+    | .ok (c, f) =>
+        c.readReg .rax == 0xffffffffffffffff &&
+        f.carry == some true && f.zero == some false && f.sign == some true && f.overflow == some false
+    | .error _ => false
+  check "sbb .w64 .MR subtracts borrow-in and sets CF/ZF/SF/OF"
+    (sbbMROk && Encode.encodeOp sbbMR [.reg .rax, .reg .rbx] == ByteArray.mk #[0x48, 0x19, 0xd8])
+  let sbbMI8 : Op := { mn := .sbb, w := .w64, form := .MI8 }
+  let sbbMI8Ok := match sbbMI8.exec [.reg .rax, .imm 0] (baseCore.setReg .rax 10) sampleFlags with
+    | .ok (c, f) =>
+        c.readReg .rax == 9 &&
+        f.carry == some false && f.zero == some false && f.sign == some false && f.overflow == some false
+    | .error _ => false
+  check "sbb .w64 .MI8 subtracts borrow-in with imm8=0"
+    (sbbMI8Ok && Encode.encodeOp sbbMI8 [.reg .rax, .imm 0] == ByteArray.mk #[0x48, 0x83, 0xd8, 0x00])
+  let bsrOp : Op := { mn := .bsr, w := .w64, form := .RM }
+  let bsrNzOk := match bsrOp.exec [.reg .rax, .reg .rbx] baseCore sampleFlags with
+    | .ok (c, f) =>
+        c.readReg .rax == 31 && f.zero == some false &&
+        f.carry == none && f.sign == none && f.overflow == none
+    | .error _ => false
+  check "bsr .w64 .RM returns highest set bit index and clears ZF"
+    (bsrNzOk && Encode.encodeOp bsrOp [.reg .rax, .reg .rbx] == ByteArray.mk #[0x48, 0x0f, 0xbd, 0xc3])
+  let bsrZeroOk := match bsrOp.exec [.reg .rax, .reg .rbx] (baseCore.setReg .rbx 0) sampleFlags with
+    | .ok (c, f) =>
+        c.readReg .rax == 0x0123456789abcdef && f.zero == some true &&
+        f.carry == none && f.sign == none && f.overflow == none
+    | .error _ => false
+  check "bsr .w64 .RM preserves dst and sets ZF on zero input" bsrZeroOk
 end IxCCTests.X86.DriverSession.Controls

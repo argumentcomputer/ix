@@ -273,6 +273,23 @@ theorem natMul_word {p q : Nat} {a b : Word} (ha : natWord p = some a) (hb : nat
     · rw [UInt64.toNat_or, hprod]
       exact even_or_one _
 
+/-- `natMul`'s hardware widening overflow check: `u = a >>> 1 = p`, `t = b − 1 = 2q`;
+no 64-bit unsigned overflow (`u.toNat * t.toNat < 2^64`) means `p * q < 2^63` and
+`(u * t) ||| 1` is the word of `p * q`. -/
+theorem natMul_ovf_word {p q : Nat} {a b : Word} (ha : natWord p = some a) (hb : natWord q = some b)
+    (hok : ¬ (2 ^ 64 ≤ (a >>> (1 : Word)).toNat * (b - (1 : Word)).toNat)) :
+    natWord (p * q) = some (((a >>> (1 : Word)) * (b - (1 : Word))) ||| 1) := by
+  have ha' := natWord_toNat ha
+  have hu : (a >>> 1).toNat = p := by
+    rw [UInt64.toNat_shiftRight, ha']; simp [Nat.shiftRight_eq_div_pow]; omega
+  have ht : (b - 1).toNat = 2 * q := sub_one_toNat hb
+  have hlt : p * (2 * q) < 2 ^ 64 := by rw [hu, ht] at hok; omega
+  have hprod : ((a >>> (1 : Word)) * (b - (1 : Word))).toNat = 2 * (p * q) := by
+    rw [UInt64.toNat_mul, hu, ht, Nat.mod_eq_of_lt hlt, Nat.mul_left_comm]
+  refine natWord_iff.2 ⟨by rw [Nat.mul_left_comm] at hlt; omega, ?_⟩
+  rw [UInt64.toNat_or, hprod]
+  exact even_or_one _
+
 /-- A word is `5` exactly when it is the word of two. -/
 theorem natWord_eq_five {p : Nat} {a : Word} (ha : natWord p = some a) : a = 5 ↔ p = 2 := by
   have ha' := natWord_toNat ha
@@ -405,6 +422,34 @@ theorem natMod_word {p q : Nat} {a b : Word} (ha : natWord p = some a) (hb : nat
     rw [UInt64.toNat_mod, untag_toNat ha, untag_toNat hb]
   have hlt : p % q < 2 ^ 63 := Nat.lt_of_le_of_lt (Nat.mod_le _ _) hp
   exact natWord_iff.2 ⟨hlt, by rw [retag_toNat (by omega), hd]⟩
+
+/-- When `(u ||| y) >>> 32 = 0`, both untagged words fit in 32 bits, so `.w32`
+truncation is the identity on both. -/
+theorem untag_or_shr32_eq_zero {u y : Word} (h : (u ||| y) >>> (32 : Word) = 0) :
+    X86.Width.w32.truncate u = u ∧ X86.Width.w32.truncate y = y := by
+  have hbit : ∀ i, 32 ≤ i → i < 64 → u.toBitVec.getLsbD i = false ∧ y.toBitVec.getLsbD i = false := by
+    intro i hi hlt
+    have h0 := congrArg (fun w : Word => w.toBitVec.getLsbD (i - 32)) h
+    simp only [UInt64.toBitVec_shiftRight, UInt64.toBitVec_or, UInt64.toBitVec_zero,
+      BitVec.ushiftRight_eq', BitVec.getLsbD_ushiftRight, BitVec.getLsbD_or, BitVec.getLsbD_zero] at h0
+    have h32 : (32 : Word).toBitVec.toNat % 64 = 32 := rfl
+    have heq : 32 + (i - 32) = i := by omega
+    simp only [BitVec.toNat_umod, show (64 : BitVec 64).toNat = 64 from rfl, h32, heq,
+      Bool.or_eq_false_iff] at h0
+    exact h0
+  have htrunc : ∀ v : Word, (∀ i, 32 ≤ i → i < 64 → v.toBitVec.getLsbD i = false) →
+      X86.Width.w32.truncate v = v := by
+    intro v hv
+    apply UInt64.toBitVec_inj.mp; apply BitVec.eq_of_getLsbD_eq; intro i hi
+    change (v &&& (0xffffffff : Word)).toBitVec.getLsbD i = v.toBitVec.getLsbD i
+    rw [UInt64.toBitVec_and, BitVec.getLsbD_and]
+    have hm : (0xffffffff : Word).toBitVec = BitVec.ofNat 64 (2 ^ 32 - 1) := rfl
+    rw [hm, BitVec.getLsbD_ofNat, Nat.testBit_two_pow_sub_one]
+    by_cases h32 : i < 32
+    · simp [hi, h32]
+    · simp only [hi, h32, decide_true, decide_false, Bool.and_false]
+      exact (hv i (by omega) hi).symm
+  exact ⟨htrunc u (fun i hi hlt => (hbit i hi hlt).1), htrunc y (fun i hi hlt => (hbit i hi hlt).2)⟩
 
 /-- A word is `1` exactly when it is the word of zero. -/
 theorem natWord_eq_one {q : Nat} {b : Word} (hb : natWord q = some b) : b = 1 ↔ q = 0 := by

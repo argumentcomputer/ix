@@ -141,4 +141,46 @@ theorem check_ovf_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Wor
     exact .inl ⟨_, ρl₁.insert x (wa + wb), mem, P, h1.trans (Lir.star_of_step h2), hheap, List.prefix_refl _,
       hok hcar⟩
 
+/-- `natMul`'s check: `brOvf mulOvf p u t ok bad` followed by `ss2` (retagging `p` into `x`). -/
+theorem check_mulOvf_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {D : Nat → Prop} {sup : Nat}
+    {fn : Nat} {F : Lir.Func} {off : Nat} {starts : NatMap Nat} {C : List PBlock} (hF : lp.funcs[fn]? = some F)
+    (hH : Holds f F off starts C) {st : St} {ss1 ss2 : List Lir.Stmt} {p x : Nat} {ca cb : Lir.Arg} {f' : Nat}
+    (hC : Ext C (CheckSt st .natOverflow ss1 ss2 (.brOvf .mulOvf p ca cb (loc (st.next + 1)) (loc st.next)) f'))
+    (hl : Labels st) (ho : Open st) (hnc1 : ∀ s ∈ ss1, s.isCall = false) (hnc2 : ∀ s ∈ ss2, s.isCall = false)
+    {rhs : Own.Rhs}
+    (hsem : ∀ (P : List Word) (H : Own.Heap) (ρ : Own.Env) (ρl : Lir.Env) (mem : X86.Memory) (v : Own.RVal)
+        (H' : Own.Heap), HeapInv T P H ctx mem → EnvRel T P D sup ρ ρl →
+        Own.evalRhs .immortal (ownTables T) ρ H rhs = .ok (v, H') →
+        H' = H ∧ ∃ ρl₁ wa wb, Lir.execList ρl mem ctx ss1 = some (ρl₁, mem) ∧ ca.eval ρl₁ = some wa ∧
+          cb.eval ρl₁ = some wb ∧
+          (¬ (2 ^ 64 ≤ wa.toNat * wb.toNat) →
+            ∃ ρl', Lir.execList (ρl₁.insert p (wa * wb)) mem ctx ss2 = some (ρl', mem) ∧
+              EnvRel T P D sup (ρ.insert x v) ρl')) :
+    RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + (st.next + 1)) ss2.length x rhs := by
+  obtain ⟨⟨lb, hlb, hbody, hterm⟩, hbad, ⟨cbk, post, hcb, hcp, hcbody⟩⟩ := check_code hH hC hl ho
+  simp only [resolveTerm, resolveEdge, resolveTgt, loc, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at hterm
+  intro P H ρ ρl mem rest v H' hheap hρ hr
+  obtain ⟨rfl, ρl₁, wa, wb, hx1, hca, hcbv, hok⟩ := hsem P H ρ ρl mem v H' hheap hρ hr
+  have h1 := Lir.stmts_at (p := lp) (ctx := ctx) (rest := rest) (pre := st.acc.reverse) (post := []) hF hlb
+    (by simpa using hbody) hnc1 hx1
+  simp only [List.length_reverse] at h1
+  have hpos : st.acc.length + ss1.length = lb.body.size := by
+    rw [← Array.length_toList, hbody]; simp
+  by_cases hovf : 2 ^ 64 ≤ wa.toNat * wb.toNat
+  · have h2 := Lir.brOvf_at (p := lp) (mem := mem) (ctx := ctx) (rest := rest) (ρ := ρl₁)
+      (ρ' := ρl₁.insert p (wa * wb)) (e := ⟨off + st.next, []⟩) (vals := []) (va := wa) (vb := wb) hF hlb hpos
+      hterm.symm hca hcbv (by simp [Lir.Ovf.eval, hovf]) rfl hbad (by simp [Lir.Ovf.eval, Lir.bindParams])
+    have h3 := Lir.fail_at (p := lp) (mem := mem) (ctx := ctx) (rest := rest) (pos := 0)
+      (ρ := ρl₁.insert p (wa * wb)) hF hbad rfl rfl
+    exact .inr (Lir.fails_of_star (h1.trans (Lir.star_of_step h2)) h3)
+  · obtain ⟨ρl', hx2, hρ'⟩ := hok hovf
+    have h2 := Lir.brOvf_at (p := lp) (mem := mem) (ctx := ctx) (rest := rest) (ρ := ρl₁)
+      (ρ' := ρl₁.insert p (wa * wb)) (e := ⟨off + (st.next + 1), []⟩) (vals := []) (va := wa) (vb := wb) hF hlb
+      hpos hterm.symm hca hcbv (by simp [Lir.Ovf.eval, hovf]) rfl hcb
+      (by simp [Lir.Ovf.eval, Lir.bindParams, hcp])
+    have h3 := Lir.stmts_at (p := lp) (ctx := ctx) (rest := rest) (pre := []) (post := post) hF hcb
+      (by simpa using hcbody) hnc2 hx2
+    exact .inl ⟨_, ρl', mem, P, h1.trans ((Lir.star_of_step h2).trans (by simpa using h3)), hheap,
+      List.prefix_refl _, hρ'⟩
+
 end IxCC.Rt.Proof

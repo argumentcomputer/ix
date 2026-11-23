@@ -287,6 +287,37 @@ def retag : Lir.Arg → Lir.Rhs
   | .imm w => .arg (.imm (2 * w + 1))
   | .v q => .addr { base := some (.v q), index := some (q, .one), disp := 1 }
 
+/-- General variable-divisor division/remainder: cold zero-divisor guard,
+32-bit `div r32` fast path when `(u | y) < 2^32`, and cold 64-bit fallback. -/
+def divModVar (x : VReg) (o : Lir.BinOp) (zero : Lir.Arg → Lir.Arg) (a b : Lir.Arg) : M Unit := do
+  let nz ← newLabel
+  let fast32 ← newLabel
+  let slow64 ← newLabel
+  let zBlk ← newLabel
+  let join ← newLabel
+  close (.br .eq b (.imm 1) (loc zBlk) (loc nz))
+  openAt nz
+  let u ← untag a
+  let y ← untag b
+  let uy ← bin .or u y
+  let hi ← bin .shr uy (.imm 32)
+  close (.br .ne hi (.imm 0) (loc slow64) (loc fast32))
+  let q32 ← freshReg
+  let r32 ← freshReg
+  put fast32 {
+    body := [.assign q32 (.bin o .w32 u y), .assign r32 (retag (.v q32))],
+    term := .jump ⟨.loc join, [.v r32]⟩
+  }
+  let q64 ← freshReg
+  let r64 ← freshReg
+  put slow64 {
+    body := [.assign q64 (.bin o .w64 u y), .assign r64 (retag (.v q64))],
+    term := .jump ⟨.loc join, [.v r64]⟩,
+    cold := true
+  }
+  put zBlk { term := .jump ⟨.loc join, [zero a]⟩, cold := true }
+  openAt join [x]
+
 /-- `a / b` or `a % b`, with `n / 0 = 0` and `n % 0 = n` (`zero a` is the
 result for a zero divisor). -/
 def divMod (x : VReg) (o : Lir.BinOp) (zero : Lir.Arg → Lir.Arg) (a b : Lir.Arg) : M Unit :=
@@ -313,14 +344,7 @@ def divMod (x : VReg) (o : Lir.BinOp) (zero : Lir.Arg → Lir.Arg) (a b : Lir.Ar
       let u ← untag a
       let q ← bin o u (.imm (w >>> 1))
       assign x (retag q)
-  | b => do
-    let u ← untag a
-    let y ← untag b
-    -- a zero divisor becomes 1, and its result is then replaced
-    let y1 ← temp (.select .eq .w64 b (.imm 1) (.imm 1) y)
-    let q ← bin o u y1
-    let r ← temp (retag q)
-    assign x (.select .eq .w64 b (.imm 1) (zero a) r)
+  | b => divModVar x o zero a b
 
 /-! ## Fixed-width words on tagged words (stage W1)
 
@@ -435,29 +459,25 @@ def primitive (f : FunId) (T : Tables) (x : VReg) (op : Lam.Prim) (as : List Lir
     assign x (.select c .w64 a b (.imm t) (.imm e))
   match op, as with
   | .natAdd, [a, b] =>
-    -- (2p+1 − 1) + (2q+1), carry iff p + q ≥ 2^63
+    -- (2p+1) + (2q+1 − 1), carry iff p + q ≥ 2^63; subtracting 1 from `b` keeps
+    -- accumulator `a` off the two-op dependency chain in loops like `sum-loop`.
     let (a, b) ← match a, b with
       | a, .imm w => pure (a, Lir.Arg.imm (w - 1))
       | .imm w, b => pure (b, Lir.Arg.imm (w - 1))
-      | a, b => do pure (← bin .sub a (.imm 1), b)
+      | a, b => do pure (a, ← bin .sub b (.imm 1))
     check .natOverflow fun ok bad => .brOvf .addC x a b ok bad
   | .natSub, [a, b] =>
     let d ← bin .sub a b
     let r ← bin .or d (.imm 1)
     assign x (.select .ult .w64 a b (.imm 1) r)
   | .natMul, [a, b] =>
-    -- p · 2q, checked by division (Lir has no carry-out multiply)
+    -- p · 2q, checked by hardware widening `mul` (`brOvf .mulOvf`, OF/CF)
     let mulGen := do
       let u ← untag a
       let t ← bin .sub b (.imm 1)
-      let p ← bin .mul u t
-      let u1 ← temp (.select .eq .w64 u (.imm 0) (.imm 1) u)
-      let q ← bin .udiv p u1
-      let c1 ← temp (.test .ne .w64 q t)
-      let c2 ← temp (.test .ne .w64 u (.imm 0))
-      let c ← bin .and c1 c2
-      check .natOverflow fun ok bad => .br .ne c (.imm 0) bad ok
-      assign x (.bin .or .w64 p (.imm 1))
+      let p ← freshReg
+      check .natOverflow fun ok bad => .brOvf .mulOvf p u t ok bad
+      assign x (.bin .or .w64 (.v p) (.imm 1))
     match a with
     | .imm w =>
       if w == 5 then do
