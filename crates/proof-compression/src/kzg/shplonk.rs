@@ -216,7 +216,8 @@ fn scatter_group_quotient(
           if current.is_empty() {
             break;
           }
-          current = super::pcs::divide_by_linear_host::<super::Bn254>(current, a);
+          current =
+            super::pcs::divide_by_linear_host::<super::Bn254>(current, a);
         }
         current
       })

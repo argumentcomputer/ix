@@ -92,7 +92,7 @@ fn poisoned(
 fn signed_advice_and_integer_bounds_match_the_source_contract() {
   let one = BigUint::from(1u8);
   let radix = &one << fq_relation::LIMB_BITS;
-  let prime = modulus();
+  let prime = modulus::<ix_proof_compression::kzg::curve::Bn254>();
   let fr = BigUint::from_bytes_le(&Fr::MODULUS.to_bytes_le());
   let maximum = &prime - 1u8;
   let expression_bound = 12u8 * &radix * &radix + 3u8 * &radix + 4u8;
@@ -309,7 +309,10 @@ fn compiled_constraints_reject_forged_advice_and_excess_weights() {
       .is_err()
   );
   let mask = (BigUint::from(1u8) << fq::LIMB_BITS) - 1u8;
-  for noncanonical in [modulus(), modulus() + 1u8] {
+  for noncanonical in [
+    modulus::<ix_proof_compression::kzg::curve::Bn254>(),
+    modulus::<ix_proof_compression::kzg::curve::Bn254>() + 1u8,
+  ] {
     let invalid = (0..4)
       .map(|i| scalar(&((&noncanonical >> (i * fq::LIMB_BITS)) & &mask)))
       .chain(arguments(&[Fq::from(1), Fq::from(0)]))

@@ -823,6 +823,10 @@ theorem rt1_instruction (hs : ScalarCodec putScalar wide) (hcast : ∀ x, ((enco
       exact rt1_tagged (tag := 12) (by decide) (rt_map (rt1_nats value).rt rfl)
   | fail message =>
       exact rt1_tagged (tag := 13) (by decide) (rt_map (rt1_str message).rt rfl)
+  | ptrEq dest left right =>
+      refine rt1_tagged (tag := 14) (by decide) (rt_bind (rt1_nat dest).rt ?_)
+      refine rt_bind (rt1_nat left).rt ?_
+      exact rt_map (rt1_nat right).rt rfl
 
 end Instructions
 
@@ -1079,9 +1083,9 @@ theorem program_rt (exported : Export F) (encoding : FieldEncoding) (modulus : N
   refine rt1_bind_l (rt1_nat _) (rt_if_pos (by decide) (rt_skip (reads_pure ()) ?_))
   refine rt_bind (rt1_modulus encoding modulus).rt (rt_if_pos (by simp) (rt_skip (reads_pure ()) ?_))
   -- functions
-  refine rt_bind (rt1_list_id fun fn _ => ?_).rt ?_
-  · refine rt1_bind_l (rt1_str fn.name) (rt_bind (rt1_list_id fun t _ => rt1_ty t).rt ?_)
-    refine rt_bind (rt1_ty fn.result).rt (rt_bind (rt1_nat fn.registers).rt ?_)
+  refine rt_bind (rt1_list_id fun func _ => ?_).rt ?_
+  · refine rt1_bind_l (rt1_str func.name) (rt_bind (rt1_list_id fun t _ => rt1_ty t).rt ?_)
+    refine rt_bind (rt1_ty func.result).rt (rt_bind (rt1_nat func.registers).rt ?_)
     refine rt_map (rt1_array (f := id) fun i _ => rt1_instruction hs hcast i).rt ?_
     simp only [Array.map_id]
   -- enums

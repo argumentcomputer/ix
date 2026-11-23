@@ -980,8 +980,8 @@ section Plans
 variable [Field F] [DecidableEq F] {enc : FieldEncoding} {m : Nat} {encode : F → Nat}
 
 theorem rte_plan (hcast : ∀ x, ((encode x : Nat) : F) = x) (hlt : ∀ x, encode x < m)
-    (config fn) (replay : Replay F) (layout representative bytecode) :
-    RTE true enc m (putFunctionOf encode config fn replay layout representative bytecode)
+    (config func) (replay : Replay F) (layout representative bytecode) :
+    RTE true enc m (putFunctionOf encode config func replay layout representative bytecode)
       (getIPlan (F := F)) := by
   have poly : ∀ p, RTE true enc m (putPolynomial encode p) getPoly := fun p =>
     (rtp_poly (enc := enc) hcast hlt p).rte

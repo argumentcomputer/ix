@@ -54,10 +54,7 @@ fn memory_bound<C: KzgCurve>(
   .try_fold(0usize, usize::checked_add)
 }
 
-pub(in crate::kzg) fn coefficients<
-  C: KzgCurve,
-  SC: CoefficientConfig<C>,
->(
+pub(in crate::kzg) fn coefficients<C: KzgCurve, SC: CoefficientConfig<C>>(
   input: &LookupCommitInput<'_, SC>,
   beta: CurveScalar<C>,
   gamma: CurveScalar<C>,
@@ -65,10 +62,7 @@ pub(in crate::kzg) fn coefficients<
   coefficients_with_mode::<C, SC>(input, beta, gamma, settings().passes)
 }
 
-pub(super) fn coefficients_with_mode<
-  C: KzgCurve,
-  SC: CoefficientConfig<C>,
->(
+pub(super) fn coefficients_with_mode<C: KzgCurve, SC: CoefficientConfig<C>>(
   input: &LookupCommitInput<'_, SC>,
   beta: CurveScalar<C>,
   gamma: CurveScalar<C>,
@@ -123,7 +117,12 @@ pub(super) fn coefficients_with_mode<
       .ok()?,
   };
   let run_passes = || {
-    passes::lookup_coefficients::<C, SC>(input, &parameters, &all_columns, widths)
+    passes::lookup_coefficients::<C, SC>(
+      input,
+      &parameters,
+      &all_columns,
+      widths,
+    )
   };
   if mode == PassMode::Force {
     return Some(run_passes().expect(

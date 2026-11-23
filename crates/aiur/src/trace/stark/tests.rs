@@ -1887,9 +1887,9 @@ fn member_lookup_plans_match_generic_and_prune_grouped_work() {
     multi_stark::lookup::LookupValues::stage_2_traces(
       &lookups,
       &groups,
-      multi_stark::types::ExtVal3::from_u64(1000000007),
-      &multi_stark::types::ExtVal3::from_u64(1000000009),
-      multi_stark::types::ExtVal3::ZERO,
+      ExtVal3::from_u64(1000000007),
+      &ExtVal3::from_u64(1000000009),
+      ExtVal3::ZERO,
     )
   };
   let (actual, actual_acc) = stage2(via_aux);
@@ -2008,9 +2008,9 @@ fn parallel_rom_witness_and_prefix_lookups_match_reference() {
     multi_stark::lookup::LookupValues::stage_2_traces(
       &w.lookups,
       &groups,
-      multi_stark::types::ExtVal3::from_u64(1000000007),
-      &multi_stark::types::ExtVal3::from_u64(1000000009),
-      multi_stark::types::ExtVal3::ZERO,
+      ExtVal3::from_u64(1000000007),
+      &ExtVal3::from_u64(1000000009),
+      ExtVal3::ZERO,
     )
   };
   let (actual, actual_acc) = stage2(&witness);

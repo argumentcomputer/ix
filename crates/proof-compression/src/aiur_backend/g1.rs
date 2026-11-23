@@ -151,7 +151,7 @@ pub fn advice(channel: &str, input: &[Scalar]) -> Result<Vec<Scalar>, String> {
       let value = fq::decode(input)?;
       subtraction(
         &BigUint::from_bytes_le(&value.into_bigint().to_bytes_le()),
-        &((modulus() - 1u8) / 2u8),
+        &((modulus::<crate::kzg::curve::Bn254>() - 1u8) / 2u8),
       )
     },
     "bn254.g1.decode" => {
@@ -262,7 +262,8 @@ pub fn encode_chunks(points: [G1Affine; 2]) -> Result<[Scalar; 4], String> {
       .serialize_compressed(bytes.as_mut_slice())
       .map_err(|error| error.to_string())?;
     for (half, block) in bytes.as_chunks::<16>().0.iter().enumerate() {
-      chunks[2 * index + half] = Scalar(Fr::from(u128::from_le_bytes(*block)));
+      chunks[2 * index + half] =
+        Scalar::new(Fr::from(u128::from_le_bytes(*block)));
     }
   }
   Ok(chunks)

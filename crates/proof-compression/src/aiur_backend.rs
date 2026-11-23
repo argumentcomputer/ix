@@ -37,7 +37,7 @@ impl FieldBackend for Bn254 {
   }
 
   fn from_u64(self, value: u64) -> Scalar {
-    Scalar(Fr::from(value))
+    Scalar::new(Fr::from(value))
   }
 
   fn from_word(self, value: FieldWord) -> Scalar {
@@ -47,7 +47,7 @@ impl FieldBackend for Bn254 {
     {
       *chunk = limb.to_le_bytes();
     }
-    Scalar(Fr::from_le_bytes_mod_order(&bytes))
+    Scalar::new(Fr::from_le_bytes_mod_order(&bytes))
   }
 
   fn to_word(self, value: Scalar) -> FieldWord {
@@ -71,6 +71,6 @@ impl FieldBackend for Bn254 {
   }
 
   fn inverse(self, a: Scalar) -> Option<Scalar> {
-    a.0.inverse().map(Scalar)
+    a.0.inverse().map(Scalar::new)
   }
 }

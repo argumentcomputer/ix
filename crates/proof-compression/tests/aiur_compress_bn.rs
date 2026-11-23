@@ -160,7 +160,7 @@ fn recursive_public_call_rejects_stage_gaps_and_noncanonical_accumulators() {
   fixture.public.stage = Stage::new(3).unwrap();
   assert!(fixture.input().is_err());
   fixture.public.stage = Stage::new(2).unwrap();
-  claim[19] = Scalar(ark_bn254::Fr::from(u128::MAX)) + Bn254.one();
+  claim[19] = Scalar::new(ark_bn254::Fr::from(u128::MAX)) + Bn254.one();
   fixture.claims = wire::claims_bytes(&[claim]).unwrap();
   assert!(fixture.input().is_err());
   assert!(Stage::new(0).is_err());

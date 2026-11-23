@@ -74,7 +74,8 @@ pub fn fold_challenge(
   }
   let mut wide = [0u8; 64];
   blake3::Hasher::new().update(&writer.0).finalize_xof().fill(&mut wide);
-  let scalar = Scalar(crate::kzg::curve::Fr::from_le_bytes_mod_order(&wide));
+  let scalar =
+    Scalar::new(crate::kzg::curve::Fr::from_le_bytes_mod_order(&wide));
   if scalar == Bn254.zero() {
     Err("zero compression fold challenge".into())
   } else {

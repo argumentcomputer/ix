@@ -358,20 +358,14 @@ pub(super) fn views<'a, C: KzgCurve>(
   Some(all)
 }
 
-pub(in crate::kzg) fn coefficients<
-  C: KzgCurve,
-  SC: CoefficientConfig<C>,
->(
+pub(in crate::kzg) fn coefficients<C: KzgCurve, SC: CoefficientConfig<C>>(
   input: &QuotientCommitInput<'_, SC>,
   alpha: CurveScalar<C>,
 ) -> Option<Vec<Vec<C::Fr>>> {
   coefficients_with_mode::<C, SC>(input, alpha, settings().passes)
 }
 
-pub(super) fn coefficients_with_mode<
-  C: KzgCurve,
-  SC: CoefficientConfig<C>,
->(
+pub(super) fn coefficients_with_mode<C: KzgCurve, SC: CoefficientConfig<C>>(
   input: &QuotientCommitInput<'_, SC>,
   alpha: CurveScalar<C>,
   mode: PassMode,

@@ -912,7 +912,7 @@ fn check_previous(
     .iter()
     .map(|bytes| {
       ark_bn254::Fr::deserialize_compressed(bytes.as_slice())
-        .map(Scalar)
+        .map(Scalar::new)
         .map_err(|error| error.to_string())
     })
     .collect::<Result<_, _>>()?;

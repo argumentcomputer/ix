@@ -130,10 +130,7 @@ pub(super) fn admit<C: KzgCurve>(
   Some(device)
 }
 
-pub(super) fn lookup_coefficients<
-  C: KzgCurve,
-  SC: CoefficientConfig<C>,
->(
+pub(super) fn lookup_coefficients<C: KzgCurve, SC: CoefficientConfig<C>>(
   input: &LookupCommitInput<'_, SC>,
   parameters: &lookup::Parameters,
   all: &[PolynomialView<'_, C>],
@@ -202,10 +199,7 @@ pub(super) fn lookup_coefficients<
   Some((outputs, CurveScalar(C::fr_from_mont_limbs_unchecked(total))))
 }
 
-pub(super) fn quotient_coefficients<
-  C: KzgCurve,
-  SC: CoefficientConfig<C>,
->(
+pub(super) fn quotient_coefficients<C: KzgCurve, SC: CoefficientConfig<C>>(
   input: &QuotientCommitInput<'_, SC>,
   parameters: &quotient::Parameters,
   all: &[PolynomialView<'_, C>],

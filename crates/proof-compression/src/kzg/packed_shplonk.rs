@@ -162,7 +162,7 @@ impl Proof {
     let extra_values = (0..n)
       .map(|_| {
         Fr::deserialize_compressed(&mut input)
-          .map(Scalar)
+          .map(Scalar::new)
           .map_err(|e| e.to_string())
       })
       .collect::<Result<_, _>>()?;
@@ -581,7 +581,7 @@ impl Pcs for PackedShplonkPcs {
               .filter_map(|(i, &p)| (p == query).then_some(i))
               .collect();
             for column in columns.source.clone() {
-              let value = Scalar(row[source]);
+              let value = Scalar::new(row[source]);
               if matches.is_empty() {
                 extra_values.push(value);
               }
@@ -592,7 +592,7 @@ impl Pcs for PackedShplonkPcs {
             }
           }
           transcript.observe_field_slice(
-            &row.iter().copied().map(Scalar).collect::<Vec<_>>(),
+            &row.iter().copied().map(Scalar::new).collect::<Vec<_>>(),
           );
         }
         claims.push(PackClaim {

@@ -59,7 +59,7 @@ fn number(values: &[Scalar]) -> Result<BigUint, String> {
     .iter()
     .rev()
     .fold(BigUint::from(0u8), |n, limb| (n << LIMB_BITS) + limb);
-  if value >= modulus() {
+  if value >= modulus::<crate::kzg::curve::Bn254>() {
     return Err("noncanonical Fq operand".into());
   }
   Ok(value)
@@ -73,7 +73,7 @@ pub fn decode(values: &[Scalar]) -> Result<Fq, String> {
 
 fn canonical(values: &[Scalar]) -> Result<Vec<Scalar>, String> {
   let limbs = bounded(values)?;
-  let top = digits(&(modulus() - 1u8));
+  let top = digits(&(modulus::<crate::kzg::curve::Bn254>() - 1u8));
   let radix = BigInt::from(1u8) << LIMB_BITS;
   let mut borrow = BigInt::from(0u8);
   let mut differences = vec![];
@@ -126,7 +126,7 @@ fn arithmetic(kind: &str, values: &[Scalar]) -> Result<Vec<Scalar>, String> {
   }
   let a = number(&values[..4])?;
   let b = number(&values[4..])?;
-  let p = modulus();
+  let p = modulus::<crate::kzg::curve::Bn254>();
   let (result, quotient) = match kind {
     "add" => {
       let sum = &a + &b;

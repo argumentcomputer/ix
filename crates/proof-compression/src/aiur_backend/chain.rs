@@ -720,7 +720,7 @@ mod tests {
     assert!(Envelope::from_bytes(&trailing).is_err());
     let mut invalid = value;
     invalid.accumulator[0] =
-      Scalar(ark_bn254::Fr::from(u128::MAX)) + Bn254.one();
+      Scalar::new(ark_bn254::Fr::from(u128::MAX)) + Bn254.one();
     assert!(Envelope::from_bytes(&invalid.to_bytes().unwrap()).is_err());
     let mut oversized = ENVELOPE_MAGIC.to_vec();
     oversized.resize(MAX_ENVELOPE_BYTES + 1, 0);

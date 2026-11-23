@@ -51,7 +51,9 @@ fn combined_product_advice_and_source_match_integer_reduction() {
   let plan = plan();
   let channels = channels();
   let executor = plan.program().prepare_hint_channels(&[], &channels).unwrap();
-  let p = ix_proof_compression::recursive::native_field::modulus();
+  let p = ix_proof_compression::recursive::native_field::modulus::<
+    ix_proof_compression::kzg::curve::Bn254,
+  >();
   let radix = BigUint::from(1u8) << 80usize;
   let cases = [
     Fq::from(0),

@@ -566,7 +566,6 @@ pub(crate) fn read_g1_compressed_for<C: KzgCurve>(
 }
 
 /// Decode one validated BN254 G1 point with a unique compressed representation.
-#[cfg(test)]
 pub(crate) fn read_g1_compressed(
   input: &mut &[u8],
 ) -> Result<G1Affine, SerializationError> {

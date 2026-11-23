@@ -366,7 +366,7 @@ impl Configuration {
 /// Full 256-bit statement digest, retaining both canonical little-endian halves.
 pub fn statement_arguments(statement: &[u8; 32]) -> [Scalar; 2] {
   std::array::from_fn(|index| {
-    Scalar(ark_bn254::Fr::from(u128::from_le_bytes(
+    Scalar::new(ark_bn254::Fr::from(u128::from_le_bytes(
       statement.as_chunks::<16>().0[index],
     )))
   })

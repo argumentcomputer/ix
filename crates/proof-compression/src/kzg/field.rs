@@ -113,6 +113,12 @@ impl<C: KzgCurve> core::fmt::Display for CurveScalar<C> {
 }
 
 impl<C: KzgCurve> CurveScalar<C> {
+  /// Wrap a raw `arkworks` curve scalar element.
+  #[inline]
+  pub const fn new(value: C::Fr) -> Self {
+    Self(value)
+  }
+
   /// Low 64 bits of the canonical value — exact for values < 2^64.
   /// For Aiur-style consumers that only extract bytes/pointers/counters
   /// (values small by construction).

@@ -8,7 +8,9 @@ use std::sync::Arc;
 use ark_serialize::CanonicalSerialize;
 use p3_maybe_rayon::prelude::*;
 
-use multi_stark::config::{LookupCommitInput, ProofConfig, QuotientCommitInput};
+use multi_stark::config::{
+  LookupCommitInput, ProofConfig, QuotientCommitInput,
+};
 use multi_stark::traits::{Field, Pcs};
 
 #[cfg(feature = "cuda")]
@@ -456,8 +458,7 @@ fn host_quotient_matrix<C: KzgCurve, SC: CoefficientConfig<C>>(
   let generator =
     CurveScalar::<C>::two_adic_generator(input.quotient_domain.log_size);
   let mut shift = input.quotient_domain.shift;
-  let mut values =
-    vec![CurveScalar::<C>::ZERO; input.quotient_domain.size()];
+  let mut values = vec![CurveScalar::<C>::ZERO; input.quotient_domain.size()];
   let mut powers: Vec<_> =
     alpha.powers().take(input.constraint_count).collect();
   powers.reverse();
@@ -485,9 +486,10 @@ fn host_quotient_matrix<C: KzgCurve, SC: CoefficientConfig<C>>(
     let selectors =
       super::quotient::CosetSelectors::new(input.trace_domain, domain);
     for pass in &passes {
-      let fixed = input.preprocessed.filter(|_| !pass.fixed.is_empty()).map(
-        |data| pcs.evaluate_matrix_columns(committed(data), domain, &pass.fixed),
-      );
+      let fixed =
+        input.preprocessed.filter(|_| !pass.fixed.is_empty()).map(|data| {
+          pcs.evaluate_matrix_columns(committed(data), domain, &pass.fixed)
+        });
       super::quotient::evaluate_coset::<C, SC>(
         input,
         pass,

@@ -240,7 +240,7 @@ fn incremental_fixed_tables_match_both_rounds() {
     .filter(|c| c.preprocessed_height != 0)
     .map(|c| {
       (c.preprocessed_height
-        * (c.main_width + c.stage_2_width + 2 * c.quotient_degree()))
+        * (c.main_width + c.stage_2_width + 3 * c.quotient_degree()))
         as u64
     })
     .sum();
@@ -249,7 +249,7 @@ fn incremental_fixed_tables_match_both_rounds() {
     .circuits
     .iter()
     .filter(|c| c.preprocessed_height == 0)
-    .map(|c| c.main_width + c.stage_2_width + 2 * c.quotient_degree())
+    .map(|c| c.main_width + c.stage_2_width + 3 * c.quotient_degree())
     .max()
     .unwrap() as u64;
   let options = planning::Options {
@@ -343,7 +343,7 @@ fn packing_reduces_sparse_shards_and_checks_protocol_bounds() {
   let cost = |ci: usize, height: usize| {
     let c = &backend.system.circuits[ci];
     height as u128
-      * (c.main_width + c.stage_2_width + 2 * c.quotient_degree()) as u128
+      * (c.main_width + c.stage_2_width + 3 * c.quotient_degree()) as u128
   };
   let tall = (0..rows.len())
     .filter(|&ci| backend.system.circuits[ci].preprocessed_height == 0)

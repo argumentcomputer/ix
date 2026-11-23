@@ -319,8 +319,8 @@ fn pair_check(points: [G1Affine; 2], srs: &Srs) -> bool {
 
 #[test]
 fn canonical_scalar_transcript_window_msm_and_chunk_transport_match_native() {
-  let a = Scalar(-Fr::from(1));
-  let b = Scalar(Fr::from(9));
+  let a = Scalar::new(-Fr::from(1));
+  let b = Scalar::new(Fr::from(9));
   for value in [Bn254.zero(), Bn254.one(), a, b] {
     let bytes = scalar_bytes(value);
     assert_eq!(

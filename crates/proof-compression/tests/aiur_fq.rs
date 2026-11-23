@@ -105,7 +105,7 @@ fn poisoned(
 
 #[test]
 fn native_advice_preserves_eighty_bit_limbs_and_integer_bounds() {
-  let p = modulus();
+  let p = modulus::<ix_proof_compression::kzg::curve::Bn254>();
   let r = BigUint::from_bytes_le(&ark_bn254::Fr::MODULUS.to_bytes_le());
   let radix = BigUint::from(1u8) << fq::LIMB_BITS;
   assert!((32u8 * &radix * &radix + 32u8 * &radix) < r);
@@ -205,9 +205,11 @@ fn compiled_arithmetic_matches_base_field_at_boundaries() {
       assert_eq!(record.output, fq::encode(inverse));
     }
   }
-  for noncanonical in
-    [modulus(), modulus() + 1u8, (BigUint::from(1u8) << 320) - 1u8]
-  {
+  for noncanonical in [
+    modulus::<ix_proof_compression::kzg::curve::Bn254>(),
+    modulus::<ix_proof_compression::kzg::curve::Bn254>() + 1u8,
+    (BigUint::from(1u8) << 320) - 1u8,
+  ] {
     assert!(executor.execute("FqTest::canonical", raw(&noncanonical)).is_err());
   }
   assert!(executor.execute("FqTest::inverse", vec![Bn254.zero(); 4]).is_err());
@@ -230,7 +232,7 @@ fn canonical_prefix_checks_boundaries_with_zero_fallback_range_advice() {
     }
   });
   let executor = plan.program().prepare_hint_channels(&[], &channels).unwrap();
-  let prime = modulus();
+  let prime = modulus::<ix_proof_compression::kzg::curve::Bn254>();
   let mut values =
     vec![BigUint::from(0u8), &prime - 1u8, prime.clone(), &prime + 1u8];
   let scalar_prime =
@@ -321,8 +323,8 @@ fn add_sub_carries_cover_signed_boundaries_and_reject_outside_the_map() {
     radix.clone(),
     radix.pow(2) - 1u8,
     radix.pow(2),
-    modulus() - 2u8,
-    modulus() - 1u8,
+    modulus::<ix_proof_compression::kzg::curve::Bn254>() - 2u8,
+    modulus::<ix_proof_compression::kzg::curve::Bn254>() - 1u8,
   ];
   for a in &values {
     for b in &values {
@@ -562,8 +564,12 @@ fn compiled_fq_kzg_proofs_reject_altered_quotient_and_carry_columns() {
     ),
   )
   .unwrap();
-  let a = Fq::from_le_bytes_mod_order(&(modulus() / 2u8).to_bytes_le());
-  let b = Fq::from_le_bytes_mod_order(&(modulus() / 3u8).to_bytes_le());
+  let a = Fq::from_le_bytes_mod_order(
+    &(modulus::<ix_proof_compression::kzg::curve::Bn254>() / 2u8).to_bytes_le(),
+  );
+  let b = Fq::from_le_bytes_mod_order(
+    &(modulus::<ix_proof_compression::kzg::curve::Bn254>() / 3u8).to_bytes_le(),
+  );
   let positive_b = Fq::from_le_bytes_mod_order(
     &((BigUint::from(1u8) << 80usize) - 1u8).to_bytes_le(),
   );
@@ -662,8 +668,9 @@ fn canonical_endpoint_forgery_has_valid_raw_limb_decompositions() {
   );
   let backend = Backend::new(&plan, config.clone()).unwrap();
   let entry = "FqTest::canonical";
-  let accepted = raw(&(modulus() - 1u8));
-  let rejected = raw(&modulus());
+  let accepted =
+    raw(&(modulus::<ix_proof_compression::kzg::curve::Bn254>() - 1u8));
+  let rejected = raw(&modulus::<ix_proof_compression::kzg::curve::Bn254>());
   assert_eq!(&accepted[1..], &rejected[1..]);
   assert_eq!(accepted[0] + Bn254.one(), rejected[0]);
   for limb in &rejected {

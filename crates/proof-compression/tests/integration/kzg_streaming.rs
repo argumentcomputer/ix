@@ -120,11 +120,19 @@ fn streamed_chunks_preserve_global_rows_and_quotient_cosets() {
   let x = Expr::main(0);
   let next = Expr::main_next(0);
   let message = vec![x.clone(), next.clone(), Expr::preprocessed_next(0)];
-  let mult = Expr::IsFirstRow + Expr::IsLastRow;
+  let mult = Expr::preprocessed(1);
   let circuit = CircuitInputs {
     main_width: 1,
-    preprocessed: Some(p3_matrix::dense::RowMajorMatrix::new_col(
-      (0..ROWS).map(|i| Scalar::from_usize(i % 97)).collect(),
+    preprocessed: Some(p3_matrix::dense::RowMajorMatrix::new(
+      (0..ROWS)
+        .flat_map(|i| {
+          [
+            Scalar::from_usize(i % 97),
+            if i == 0 || i == ROWS - 1 { Scalar::ONE } else { Scalar::ZERO },
+          ]
+        })
+        .collect(),
+      2,
     )),
     constraints: vec![
       x.clone()

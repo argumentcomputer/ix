@@ -162,6 +162,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ark-bls12-381"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3df4dcc01ff89867cd86b0da835f23c3f02738353aaee7dde7495af71363b8d5"
+dependencies = [
+ "ark-ec",
+ "ark-ff",
+ "ark-serialize",
+ "ark-std",
+]
+
+[[package]]
 name = "ark-bn254"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -419,6 +431,16 @@ name = "bitflags"
 version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4512299f36f043ab09a583e57bceb5a5aab7a73db1805848e8fef3c9e8c78b3"
+
+[[package]]
+name = "blake2b_simd"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3560a7b1951efe814fcd721938313adc56753ca39f4b23847d7e9a2402f5dbff"
+dependencies = [
+ "arrayvec",
+ "constant_time_eq",
+]
 
 [[package]]
 name = "blake3"
@@ -1061,9 +1083,9 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "form_urlencoded"
-version = "1.2.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
+checksum = "afa489199eaffb1211795df1c6236ce1ad0d41a6fa45250add73e3b02420f06e"
 dependencies = [
  "percent-encoding",
 ]
@@ -1907,6 +1929,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "stark-key",
+ "stark-shrinker",
  "stark-verifier",
  "tiny-keccak",
  "tokio",
@@ -1920,6 +1943,7 @@ name = "ix-proof-compression"
 version = "0.1.0"
 dependencies = [
  "aiur",
+ "ark-bls12-381",
  "ark-bn254",
  "ark-ec",
  "ark-ff",
@@ -1927,6 +1951,7 @@ dependencies = [
  "ark-serialize",
  "bincode",
  "bindgen",
+ "blake2b_simd",
  "blake3",
  "blst",
  "multi-stark",
@@ -2280,9 +2305,11 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=6625511141f93476528ad8694e08d11c0872ef39#6625511141f93476528ad8694e08d11c0872ef39"
+source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=48e6e06a33173ef880039257354080b2b1f2b6d6#48e6e06a33173ef880039257354080b2b1f2b6d6"
 dependencies = [
  "bincode",
+ "blake3",
+ "getrandom 0.4.2",
  "itertools 0.14.0",
  "p3-air",
  "p3-blake3",
@@ -4014,6 +4041,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "stark-shrinker"
+version = "0.1.0"
+dependencies = [
+ "aiur",
+ "bincode",
+ "blake3",
+ "ix-proof-compression",
+ "multi-stark",
+ "p3-fri",
+ "p3-merkle-tree",
+ "serde",
+ "stark-key",
+ "stark-verifier",
+]
+
+[[package]]
 name = "stark-verifier"
 version = "0.1.0"
 dependencies = [
@@ -4553,9 +4596,9 @@ checksum = "6d49784317cd0d1ee7ec5c716dd598ec5b4483ea832a2dced265471cc0f690ae"
 
 [[package]]
 name = "url"
-version = "2.5.8"
+version = "2.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed"
+checksum = "f00cd2407bb42c0ef17be88d4cf020f5cceffd121665bac9b8b9493a369b3b1a"
 dependencies = [
  "form_urlencoded",
  "idna",

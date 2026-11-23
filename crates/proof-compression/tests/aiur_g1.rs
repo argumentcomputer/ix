@@ -144,7 +144,9 @@ fn affine_advice_is_canonical_and_rejects_invalid_denominators() {
     .collect();
   assert!(g1::advice("bn254.g1.affine_add", &equal_x).is_err());
   let mut invalid = g1::encode(g)[..8].to_vec();
-  invalid[..4].copy_from_slice(&limbs(&(modulus() + 1u8)));
+  invalid[..4].copy_from_slice(&limbs(
+    &(modulus::<ix_proof_compression::kzg::curve::Bn254>() + 1u8),
+  ));
   assert!(g1::advice("bn254.g1.affine_double", &invalid).is_err());
 }
 
@@ -175,7 +177,7 @@ fn source_relations_reject_forged_slopes_coordinates_and_aliases() {
     for offset in [0, 4, 8] {
       let channels = poisoned(&plan, channel, move |_, output| {
         let value = fq::decode(&output[offset..offset + 4]).unwrap();
-        let alias = modulus()
+        let alias = modulus::<ix_proof_compression::kzg::curve::Bn254>()
           + BigUint::from_bytes_le(&value.into_bigint().to_bytes_le());
         output[offset..offset + 4].copy_from_slice(&limbs(&alias));
       });
@@ -268,7 +270,9 @@ fn complete_group_operations_match_arkworks_and_reject_invalid_points() {
   invalid[1][8] = Bn254.one();
   invalid[2][4] = Bn254.from_u64(3);
   invalid[3][0] = scalar(&(BigUint::from(1u8) << 80usize));
-  invalid[4][..4].copy_from_slice(&limbs(&(modulus() + 1u8)));
+  invalid[4][..4].copy_from_slice(&limbs(
+    &(modulus::<ix_proof_compression::kzg::curve::Bn254>() + 1u8),
+  ));
   invalid.push(vec![Bn254.zero(); 9]);
   for raw in invalid {
     assert!(g1::decode(&raw).is_err());
@@ -288,13 +292,13 @@ fn full_scalar_multiplication_and_msm_use_canonical_fr_digits() {
   for value in
     [Fr::from(0), Fr::from(1), Fr::from(2), Fr::from(7), wide, -Fr::from(1)]
   {
-    let args = g1::encode(g).into_iter().chain([Scalar(value)]).collect();
+    let args = g1::encode(g).into_iter().chain([Scalar::new(value)]).collect();
     assert_eq!(
       executor.execute("G1Test::mul", args).unwrap().output,
       g1::encode((g * value).into_affine())
     );
     let scalar_record =
-      executor.execute("G1Test::scalar", vec![Scalar(value)]).unwrap();
+      executor.execute("G1Test::scalar", vec![Scalar::new(value)]).unwrap();
     assert_eq!(
       scalar_record.output,
       limbs(&BigUint::from_bytes_le(&value.into_bigint().to_bytes_le()))
@@ -307,9 +311,9 @@ fn full_scalar_multiplication_and_msm_use_canonical_fr_digits() {
   ] {
     let args = g1::encode(a)
       .into_iter()
-      .chain([Scalar(s)])
+      .chain([Scalar::new(s)])
       .chain(g1::encode(b))
-      .chain([Scalar(t)])
+      .chain([Scalar::new(t)])
       .collect();
     let expected = (a * s + b * t).into_affine();
     assert_eq!(
@@ -444,7 +448,7 @@ fn actual_compiler_kzg_proves_complete_addition_scalar_multiplication_and_msm()
     ),
     (
       "G1Test::mul",
-      g1::encode(g).into_iter().chain([Scalar(-Fr::from(1))]).collect(),
+      g1::encode(g).into_iter().chain([Scalar::new(-Fr::from(1))]).collect(),
       -g,
     ),
     (

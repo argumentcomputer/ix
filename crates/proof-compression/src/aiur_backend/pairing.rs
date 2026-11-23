@@ -220,7 +220,7 @@ pub fn advice(channel: &str, input: &[Scalar]) -> Result<Vec<Scalar>, String> {
     1 => true,
     _ => return Err("nonboolean product sign".into()),
   };
-  let p = modulus();
+  let p = modulus::<crate::kzg::curve::Bn254>();
   let first = &operands[0] * &operands[1] + &p * &p;
   let second = &operands[2] * &operands[3];
   let numerator = if subtract { first - second } else { first + second };

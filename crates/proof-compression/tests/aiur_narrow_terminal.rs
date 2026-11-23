@@ -104,7 +104,7 @@ fn decode_claims(bytes: &[u8]) -> Vec<Vec<Scalar>> {
     at += 4;
     let mut claim = vec![];
     for _ in 0..len {
-      claim.push(Scalar(
+      claim.push(Scalar::new(
         ark_bn254::Fr::deserialize_compressed(&bytes[at..at + 32]).unwrap(),
       ));
       at += 32;

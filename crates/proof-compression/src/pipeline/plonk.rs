@@ -319,7 +319,9 @@ fn export_bn254_ignition_parameters(
     || powers.g2 != parameters.g2
     || powers.tau_g2 != parameters.tau_g2
   {
-    return Err("PLONK powers differ from the released Ignition anchors".into());
+    return Err(
+      "PLONK powers differ from the released Ignition anchors".into(),
+    );
   }
   let public_setup = parameters.public_setup;
   let temporary = storage::temporary_path(path);

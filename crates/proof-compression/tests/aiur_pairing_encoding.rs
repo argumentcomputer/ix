@@ -29,7 +29,7 @@ fn channels() -> HintChannels<Scalar> {
   hints
 }
 fn power(bit: usize) -> Scalar {
-  Scalar(Fr::from_le_bytes_mod_order(
+  Scalar::new(Fr::from_le_bytes_mod_order(
     &(BigUint::from(1u8) << bit).to_bytes_le(),
   ))
 }
@@ -147,7 +147,7 @@ fn source_rejects_overwide_chunks_and_noncanonical_points_with_forged_advice() {
   let encoded = Fq::MODULUS.to_bytes_le();
   let mut noncanonical = g1::encode_chunks([g, g]).unwrap();
   for (index, block) in encoded.as_chunks::<16>().0.iter().enumerate() {
-    noncanonical[index] = Scalar(Fr::from(u128::from_le_bytes(*block)));
+    noncanonical[index] = Scalar::new(Fr::from(u128::from_le_bytes(*block)));
   }
   assert!(g1::decode_chunks(&noncanonical).is_err());
   assert!(

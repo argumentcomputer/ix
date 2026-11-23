@@ -156,10 +156,8 @@ fn cubic_extension_uses_x3_minus_x_minus_1() {
     // Fp[X] / (X^3 - X - 1): X^3 = X + 1, X^4 = X^2 + X.
     let c0 = product(a[0], b[0]);
     let c1 = sum(product(a[0], b[1]), product(a[1], b[0]));
-    let c2 = sum(
-      sum(product(a[0], b[2]), product(a[1], b[1])),
-      product(a[2], b[0]),
-    );
+    let c2 =
+      sum(sum(product(a[0], b[2]), product(a[1], b[1])), product(a[2], b[0]));
     let c3 = sum(product(a[1], b[2]), product(a[2], b[1]));
     let c4 = product(a[2], b[2]);
     let expected = [sum(c0, c3), sum(sum(c1, c3), c4), sum(c2, c4)];

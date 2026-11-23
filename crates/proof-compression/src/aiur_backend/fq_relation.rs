@@ -38,7 +38,7 @@ fn constants() -> &'static Constants {
     let radix = BigUint::from(1u8) << LIMB_BITS;
     let scalar_modulus =
       BigUint::from_bytes_le(&ark_bn254::Fr::MODULUS.to_bytes_le());
-    let prime = modulus();
+    let prime = modulus::<crate::kzg::curve::Bn254>();
     Constants {
       scalar_midpoint: &scalar_modulus / 2u8,
       scalar_modulus: scalar_modulus.into(),

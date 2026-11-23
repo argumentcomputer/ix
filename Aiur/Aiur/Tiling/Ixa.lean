@@ -343,7 +343,7 @@ def getTests (wide : Bool) : GetM (List (Nat × F)) :=
   getList (return (← getNat, ((← getScalar wide : Nat) : F)))
 
 def getInstruction (wide : Bool) : GetM (Execution.Instruction F) := do
-  match ← getTag "instruction" 14 with
+  match ← getTag "instruction" 15 with
   | 0 => return .literal (← getNat) ((← getScalar wide : Nat) : F)
   | 1 => return .copy (← getNats) (← getNats)
   | 2 => return .neg (← getNat) (← getNat)
@@ -363,7 +363,8 @@ def getInstruction (wide : Bool) : GetM (Execution.Instruction F) := do
       return .hint (← Execution.getTy) (← Execution.getTy) (← getNats) (← getNats) channel
   | 11 => return .assertEq (← getNats) (← getNats) ⟨← getOption getString, ← getBool⟩
   | 12 => return .ret (← getNats)
-  | _ => return .fail (← getString)
+  | 13 => return .fail (← getString)
+  | _ => return .ptrEq (← getNat) (← getNat) (← getNat)
 
 /-- The program section `Export.putProgramWithEncoding` writes, from the
 bytecode version on. Entry IO interfaces become `interfaces`, in entry order. -/

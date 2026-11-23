@@ -213,7 +213,7 @@ pub(crate) fn read_block(
     for (i, b) in bytes[p + 1..p + 1 + len].iter().enumerate() {
       limbs[i / 8] |= u64::from(*b) << (8 * (i % 8));
     }
-    values.push(Scalar(
+    values.push(Scalar::new(
       ark_bn254::Fr::from_bigint(BigInt(limbs))
         .ok_or("fixed entry is not below the modulus")?,
     ));
@@ -291,7 +291,7 @@ fn read_fixed(
           for (i, b) in bytes[p + 1..p + 1 + len].iter().enumerate() {
             limbs[i / 8] |= u64::from(*b) << (8 * (i % 8));
           }
-          *x = Scalar(
+          *x = Scalar::new(
             ark_bn254::Fr::from_bigint(BigInt(limbs))
               .ok_or("fixed entry is not below the modulus")?,
           );
