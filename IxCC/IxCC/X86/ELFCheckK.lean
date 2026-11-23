@@ -75,12 +75,15 @@ a 64-byte window, the section-header table from one walk to its offset
 (`parseK_eq`). The object is never indexed by position. -/
 def parseL (list : List UInt8) (total : Nat) : Option View := do
   let header ← headerK (window list 0 64)
-  require (header.sectionCount == 8 && header.sectionEntrySize == 64 && header.sectionNames == 7)
-  require (decide (header.sectionOffset + 8 * 64 ≤ total))
+  let hasRodata := header.sectionCount == 9 && header.sectionNames == 8
+  require ((header.sectionCount == 8 && header.sectionNames == 7) || hasRodata)
+  require (header.sectionEntrySize == 64)
+  require (decide (header.sectionOffset + header.sectionCount * 64 ≤ total))
   let table := list.drop header.sectionOffset
-  let headers ← (List.range 8).mapM (fun index => sectionHeader (window table (index * 64) 64) 0)
+  let headers ← (List.range header.sectionCount).mapM (fun index =>
+    sectionHeader (window table (index * 64) 64) 0)
   let headers := headers.toArray
-  let names ← headers[7]?
+  let names ← headers[header.sectionNames]?
   let strings ← sliceL list total names.offset names.size
   let sections ← headers.toList.mapM fun sectionInfo => do
     return (⟨sectionInfo, ← cstring strings sectionInfo.nameOffset,
@@ -100,7 +103,11 @@ def parseL (list : List UInt8) (total : Nat) : Option View := do
   let noteSection ← sections[3]?
   let note ← noteK noteSection.data
   let provenance ← provenanceK note.descriptor
-  return ⟨header, sections, text.data, symbols, relocations.toArray, note, provenance⟩
+  let rodata ← if hasRodata then do
+      let ro ← sections[7]?
+      pure (some ro.data)
+    else pure none
+  return ⟨header, sections, text.data, symbols, relocations.toArray, note, provenance, rodata⟩
 
 /-- `parse` in kernel-evaluable style (`parseK_eq`). -/
 def parseK (bytes : ByteArray) : Option View := parseL bytes.data.toList bytes.size
@@ -200,7 +207,7 @@ open IxCC.X86.Encode
 /-- Byte strings compared as lists. -/
 def bytesEq (a b : ByteArray) : Bool := a.data.toList == b.data.toList
 
-def sectionShapeK (index : Nat) (part : ELFRead.Section) : Bool :=
+def sectionShapeK (hasRodata : Bool) (index : Nat) (part : ELFRead.Section) : Bool :=
   let h := part.header
   let expected (name : String) (kind flags link info alignment entrySize : Nat) (size := h.size) :=
     bytesEq part.name name.toUTF8 &&
@@ -214,21 +221,23 @@ def sectionShapeK (index : Nat) (part : ELFRead.Section) : Bool :=
   | 4 => expected ".symtab" 2 0 5 2 8 24
   | 5 => expected ".strtab" 3 0 0 0 1 0
   | 6 => expected ".note.GNU-stack" 1 0 0 0 1 0 0
-  | 7 => expected ".shstrtab" 3 0 0 0 1 0
+  | 7 => if hasRodata then expected ".rodata" 1 2 0 0 8 0 else expected ".shstrtab" 3 0 0 0 1 0
+  | 8 => if hasRodata then expected ".shstrtab" 3 0 0 0 1 0 else false
   | _ => false
 
 def sectionLayoutK (list : List UInt8) (total : Nat) (sections : List ELFRead.Section)
-    (sectionOffset : Nat) (index : Nat) : Bool :=
+    (sectionOffset : Nat) (hasRodata : Bool) (index : Nat) : Bool :=
+  let lastIndex := if hasRodata then 8 else 7
   match sections[index]? with
   | none => false
   | some part =>
-      sectionShapeK index part && part.data.size == part.header.size &&
+      sectionShapeK hasRodata index part && part.data.size == part.header.size &&
       ((ELFRead.sliceL list total part.header.offset part.header.size).map (·.data.toList) ==
         some part.data.data.toList) &&
       (index == 0 || (decide (64 ≤ part.header.offset) &&
         decide (part.header.offset + part.header.size ≤ sectionOffset) &&
         part.header.offset % part.header.alignment == 0)) &&
-      (index == 0 || index == 7 || match sections[index + 1]? with
+      (index == 0 || index == lastIndex || match sections[index + 1]? with
         | none => false
         | some next => decide (part.header.offset + part.header.size ≤ next.header.offset))
 
@@ -236,18 +245,28 @@ def sectionLayoutK (list : List UInt8) (total : Nat) (sections : List ELFRead.Se
 def terminated (part : ELFRead.Section) : Bool :=
   part.data[0]? == some 0 && part.data[part.data.size - 1]? == some 0
 
+def optBytesEq (a b : Option ByteArray) : Bool :=
+  match a, b with
+  | none, none => true
+  | some x, some y => bytesEq x y
+  | _, _ => false
+
 /-- `layout` on the object as a list of `total` bytes. -/
 def layoutK (list : List UInt8) (total : Nat) (view : ELFRead.View) : Bool :=
   let sections := view.sections.toList
-  decide (total < UInt64.size) && view.header == expectedHeader view.header.sectionOffset &&
+  let hasRodata := view.rodata.isSome
+  let sectionCount := if hasRodata then 9 else 8
+  let lastIndex := if hasRodata then 8 else 7
+  decide (total < UInt64.size) && view.header == expectedHeader view.header.sectionOffset hasRodata &&
     decide (64 ≤ view.header.sectionOffset) && view.header.sectionOffset % 8 == 0 &&
-    view.header.sectionOffset + 512 == total && sections.length == 8 &&
-    (List.range 8).all (sectionLayoutK list total sections view.header.sectionOffset) &&
+    view.header.sectionOffset + sectionCount * 64 == total && sections.length == sectionCount &&
+    (List.range sectionCount).all (sectionLayoutK list total sections view.header.sectionOffset hasRodata) &&
     ((sections[1]?).map (·.data.data.toList) == some view.text.data.toList) &&
+    (!hasRodata || optBytesEq ((sections[7]?).map ELFRead.Section.data) view.rodata) &&
     ((sections[4]?).map (fun part => part.data.size) == some (24 * view.symbols.size)) &&
     ((sections[2]?).map (fun part => part.data.size) == some (24 * view.relocations.size)) &&
     ((sections[5]?).map terminated == some true) &&
-    ((sections[7]?).map terminated == some true) &&
+    ((sections[lastIndex]?).map terminated == some true) &&
     view.note.name.data.toList == "IXCC".toUTF8.data.toList ++ [0] && view.note.noteType == 0x43495801
 
 /-- `validName` over the name's bytes as a list. -/
@@ -261,6 +280,14 @@ def exportsOkK (input : Input) : Bool :=
       match input.encoded.blockOffsets[block.toNat]? with
       | some offset => decide (offset < input.encoded.text.size)
       | none => false
+
+def rodataExportsOkK (input : Input) : Bool :=
+  match input.rodata with
+  | none => input.rodataExports.isEmpty
+  | some rodata =>
+      let names := input.rodataExports.map (·.name)
+      decide names.Nodup && names.all validNameK &&
+        input.rodataExports.all fun rs => decide (rs.offset + rs.size ≤ rodata.size)
 
 def relocationBoundsK (view : ELFRead.View) : Bool :=
   view.relocations.toList.all fun relocation =>
@@ -276,13 +303,14 @@ def checkViewK (input : Input) (list : List UInt8) (total : Nat) (view : ELFRead
   | some entryOffset, some entrySymbol =>
       layoutK list total view && validNameK input.exportName &&
       decide (entryOffset < input.encoded.text.size) &&
-      bytesEq view.text input.encoded.text && symbolMeaning entrySymbol == entryMeaning input entryOffset &&
+      bytesEq view.text input.encoded.text && optBytesEq view.rodata input.rodata &&
+      symbolMeaning entrySymbol == entryMeaning input entryOffset &&
       view.symbols.toList.map symbolMeaning == (expectedSymbols input entryOffset).toList &&
       view.relocations.toList.map relocationMeaning ==
         input.encoded.relocations.toList.map (fun relocation =>
           (⟨relocation.offset, relocation.symbol.toUTF8, 2, relocation.addend⟩ : RelocationMeaning)) &&
       relocationBoundsK view &&
-      view.provenance == expectedProvenance input.provenance && exportsOkK input
+      view.provenance == expectedProvenance input.provenance && exportsOkK input && rodataExportsOkK input
   | _, _ => false
 
 /-- `check` in kernel-evaluable style (`checkK_eq`): the object read as a
@@ -319,14 +347,17 @@ theorem array_map_beq {α β : Type} [BEq β] [LawfulBEq β] (a : Array α) (b :
     (a.toList.map f == b.toList) = (a.map f == b) := by
   rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq, ← Array.toList_map, Array.toList_inj]
 
-theorem sectionShapeK_eq (index : Nat) (part : ELFRead.Section) :
-    sectionShapeK index part = sectionShape index part := by
+theorem optBytesEq_eq (a b : Option ByteArray) : optBytesEq a b = (a == b) := by
+  cases a <;> cases b <;> simp [optBytesEq, bytesEq_eq]
+
+theorem sectionShapeK_eq (hasRodata : Bool) (index : Nat) (part : ELFRead.Section) :
+    sectionShapeK hasRodata index part = sectionShape hasRodata index part := by
   unfold sectionShapeK sectionShape
   simp only [bytesEq_eq, bytes_isEmpty]
   rfl
 
 theorem sectionLayoutK_eq (bytes : ByteArray) (view : ELFRead.View) (index : Nat) :
-    sectionLayoutK bytes.data.toList bytes.size view.sections.toList view.header.sectionOffset index =
+    sectionLayoutK bytes.data.toList bytes.size view.sections.toList view.header.sectionOffset view.rodata.isSome index =
       sectionLayout bytes view index := by
   unfold sectionLayoutK sectionLayout
   simp only [Array.getElem?_toList, sectionShapeK_eq, ELFRead.sliceL_eq, option_bytes_beq]
@@ -339,13 +370,14 @@ theorem section_data_beq (o : Option ELFRead.Section) (y : ByteArray) :
 
 theorem layoutK_eq (bytes : ByteArray) (view : ELFRead.View) :
     layoutK bytes.data.toList bytes.size view = layout bytes view := by
-  have sections : sectionLayoutK bytes.data.toList bytes.size view.sections.toList view.header.sectionOffset =
-      sectionLayout bytes view := funext (sectionLayoutK_eq bytes view)
+  have sections : sectionLayoutK bytes.data.toList bytes.size view.sections.toList view.header.sectionOffset
+      view.rodata.isSome = sectionLayout bytes view := funext (sectionLayoutK_eq bytes view)
   have name : (view.note.name.data.toList == "IXCC".toUTF8.data.toList ++ [0]) =
       (view.note.name == "IXCC".toUTF8.push 0) := by
     rw [← bytes_beq_toList, ByteArray.data_push, Array.toList_push]
   unfold layoutK layout terminated
-  simp only [sections, Array.getElem?_toList, Array.length_toList, bytesEq_eq, section_data_beq, name]
+  simp only [sections, Array.getElem?_toList, Array.length_toList, optBytesEq_eq,
+    section_data_beq, name]
 
 theorem validNameK_eq (name : String) : validNameK name = validName name := by
   simp only [validNameK, validName, Array.contains_toList]
@@ -354,6 +386,11 @@ theorem exportsOkK_eq (input : Input) : exportsOkK input = exportsOk input := by
   have names : validNameK = validName := funext validNameK_eq
   simp only [exportsOkK, exportsOk, names]
   rfl
+
+theorem rodataExportsOkK_eq (input : Input) : rodataExportsOkK input = rodataExportsOk input := by
+  have names : validNameK = validName := funext validNameK_eq
+  unfold rodataExportsOkK rodataExportsOk
+  cases input.rodata <;> simp only [names]
 
 theorem relocationBoundsK_eq (view : ELFRead.View) : relocationBoundsK view = relocationBounds view := by
   simp only [relocationBoundsK, relocationBounds, bytesEq_eq, Array.all_toList]
@@ -365,8 +402,8 @@ theorem checkViewK_eq (input : Input) (bytes : ByteArray) (view : ELFRead.View) 
       (fun relocation => (⟨relocation.offset, relocation.symbol.toUTF8, 2, relocation.addend⟩ : RelocationMeaning)) := by
     simp [expectedRelocations]
   unfold checkViewK checkView
-  simp only [layoutK_eq, validNameK_eq, bytesEq_eq, exportsOkK_eq, relocationBoundsK_eq, ← relocations,
-    array_map_beq]
+  simp only [layoutK_eq, validNameK_eq, bytesEq_eq, optBytesEq_eq, exportsOkK_eq, rodataExportsOkK_eq,
+    relocationBoundsK_eq, ← relocations, array_map_beq]
   rfl
 
 /-- The kernel-style validator is the validator. -/

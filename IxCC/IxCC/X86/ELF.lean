@@ -86,6 +86,14 @@ def provenanceNote (provenance : Provenance) : ByteArray :=
   u32 noteName.size ++ u32 description.size ++ u32 0x43495801 ++
     padAlignment noteName 4 ++ padAlignment description 4
 
+/-- A named global read-only object exported from `.rodata` (e.g., an immortal
+static string, `ByteArray`, `BigNat` limb cell, or closed constructor tree). -/
+structure RodataSymbol where
+  name : String
+  offset : Nat
+  size : Nat
+  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
+
 structure Input where
   encoded : Encode.Output
   entryBlock : BlockId
@@ -94,6 +102,13 @@ structure Input where
   symbol (one per export root beyond the entry). -/
   exports : List (String × BlockId) := []
   provenance : Provenance
+  /-- Optional read-only `.rodata` section holding immortal static cells
+  (DR1 statics: string/`ByteArray` literals, `>= 2^63` `BigNat` limb cells,
+  closed constructor trees). When `none`, the exact 8-section layout is emitted. -/
+  rodata : Option ByteArray := none
+  /-- Optional global `STT_OBJECT` symbols defined inside `.rodata`. Must be
+  empty when `rodata` is `none`. -/
+  rodataExports : List RodataSymbol := []
 
 inductive Error where
   | invalidExportName
@@ -104,6 +119,8 @@ inductive Error where
   | duplicateSymbol (name : String)
   | missingString (name : String)
   | missingSymbol (name : String)
+  | rodataSymbolWithoutSection (name : String)
+  | invalidRodataSymbol (name : String) (offset size rodataSize : Nat)
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
 def validName (name : String) : Bool :=
@@ -135,6 +152,11 @@ def textSectionSymbol : ByteArray :=
 
 def functionSymbol (name : Nat) (value size : UInt64) : ByteArray :=
   symbol name 0x12 1 value size
+
+/-- Global `STT_OBJECT` symbol (`STB_GLOBAL = 1`, `STT_OBJECT = 1` → `0x11`)
+defined in `.rodata` (section index 7). -/
+def rodataObjectSymbol (name : Nat) (value size : UInt64) : ByteArray :=
+  symbol name 0x11 7 value size
 
 def undefinedFunctionSymbol (name : Nat) : ByteArray :=
   symbol name 0x12 0 0 0
@@ -172,7 +194,8 @@ def relocationBytes (encoded : Encode.Output) (first : Nat)
   return output
 
 def symbolBytes (encoded : Encode.Output) (entryOffset : Nat)
-    (exportName : String) (exports : List (String × Nat)) (symbols : List String)
+    (exportName : String) (exports : List (String × Nat))
+    (rodataExports : List RodataSymbol) (symbols : List String)
     (strings : StringTable) : Except Error ByteArray := do
   let some exportOffset := strings.offset? exportName
     | throw (.missingString exportName)
@@ -184,6 +207,11 @@ def symbolBytes (encoded : Encode.Output) (entryOffset : Nat)
       | throw (.missingString name)
     output := output ++ functionSymbol nameOffset (UInt64.ofNat offset)
       (UInt64.ofNat (encoded.text.size - offset))
+  for rs in rodataExports do
+    let some nameOffset := strings.offset? rs.name
+      | throw (.missingString rs.name)
+    output := output ++ rodataObjectSymbol nameOffset (UInt64.ofNat rs.offset)
+      (UInt64.ofNat rs.size)
   for name in symbols do
     let some nameOffset := strings.offset? name
       | throw (.missingString name)
@@ -227,13 +255,20 @@ def sectionNames : List String :=
   [".text", ".rela.text", ".note.ixcc", ".symtab", ".strtab",
     ".note.GNU-stack", ".shstrtab"]
 
+def sectionNamesWithRodata : List String :=
+  [".text", ".rela.text", ".note.ixcc", ".symtab", ".strtab",
+    ".note.GNU-stack", ".rodata", ".shstrtab"]
+
 def requireOffset (table : StringTable) (name : String) :
     Except Error Nat :=
   match table.offset? name with
   | some offset => .ok offset
   | none => .error (.missingString name)
 
-/-- Emit one ELF64 little-endian x86-64 relocatable object. -/
+/-- Emit one ELF64 little-endian x86-64 relocatable object, optionally carrying
+a read-only 8-byte-aligned `.rodata` section (flags `SHF_ALLOC = 0x2`) for
+immortal static cells. When `input.rodata = none`, the emitted bytes are
+bit-for-bit identical to the 8-section format. -/
 def write (input : Input) : Except Error ByteArray := do
   if !validName input.exportName then
     throw .invalidExportName
@@ -246,7 +281,7 @@ def write (input : Input) : Except Error ByteArray := do
     throw .invalidExportName
   if symbols.contains input.exportName then
     throw (.duplicateSymbol input.exportName)
-  let names := input.exportName :: input.exports.map (·.1)
+  let names := input.exportName :: (input.exports.map (·.1) ++ input.rodataExports.map (·.name))
   let mut exports : List (String × Nat) := []
   for (name, block) in input.exports do
     if !validName name then
@@ -258,66 +293,146 @@ def write (input : Input) : Except Error ByteArray := do
     if input.encoded.text.size ≤ offset then
       throw (.invalidEntryOffset offset input.encoded.text.size)
     exports := exports ++ [(name, offset)]
-  let strings := buildStringTable (names ++ symbols)
-  let symbolTable ← symbolBytes input.encoded entryOffset input.exportName
-    exports symbols strings
-  let relocations ← relocationBytes input.encoded (3 + exports.length) symbols
-  let note := provenanceNote input.provenance
-  let sectionStrings := buildStringTable sectionNames
+  match input.rodata with
+  | none =>
+      for rs in input.rodataExports do
+        throw (.rodataSymbolWithoutSection rs.name)
+      let strings := buildStringTable (names ++ symbols)
+      let symbolTable ← symbolBytes input.encoded entryOffset input.exportName
+        exports [] symbols strings
+      let relocations ← relocationBytes input.encoded (3 + exports.length) symbols
+      let note := provenanceNote input.provenance
+      let sectionStrings := buildStringTable sectionNames
 
-  let textOffset := alignUp 64 16
-  let relocationOffset := alignUp (textOffset + input.encoded.text.size) 8
-  let noteOffset := alignUp (relocationOffset + relocations.size) 4
-  let symbolOffset := alignUp (noteOffset + note.size) 8
-  let stringOffset := symbolOffset + symbolTable.size
-  let sectionStringOffset := stringOffset + strings.bytes.size
-  let sectionHeadersOffset := alignUp
-    (sectionStringOffset + sectionStrings.bytes.size) 8
+      let textOffset := alignUp 64 16
+      let relocationOffset := alignUp (textOffset + input.encoded.text.size) 8
+      let noteOffset := alignUp (relocationOffset + relocations.size) 4
+      let symbolOffset := alignUp (noteOffset + note.size) 8
+      let stringOffset := symbolOffset + symbolTable.size
+      let sectionStringOffset := stringOffset + strings.bytes.size
+      let sectionHeadersOffset := alignUp
+        (sectionStringOffset + sectionStrings.bytes.size) 8
 
-  let textName ← requireOffset sectionStrings ".text"
-  let relocationName ← requireOffset sectionStrings ".rela.text"
-  let noteSectionName ← requireOffset sectionStrings ".note.ixcc"
-  let symbolName ← requireOffset sectionStrings ".symtab"
-  let stringName ← requireOffset sectionStrings ".strtab"
-  let stackNoteName ← requireOffset sectionStrings ".note.GNU-stack"
-  let sectionStringName ← requireOffset sectionStrings ".shstrtab"
+      let textName ← requireOffset sectionStrings ".text"
+      let relocationName ← requireOffset sectionStrings ".rela.text"
+      let noteSectionName ← requireOffset sectionStrings ".note.ixcc"
+      let symbolName ← requireOffset sectionStrings ".symtab"
+      let stringName ← requireOffset sectionStrings ".strtab"
+      let stackNoteName ← requireOffset sectionStrings ".note.GNU-stack"
+      let sectionStringName ← requireOffset sectionStrings ".shstrtab"
 
-  let headers := nullSectionHeader ++
-    (SectionHeader.bytes
-      { name := textName, sectionType := 1, flags := 0x6
-        offset := textOffset, size := input.encoded.text.size
-        alignment := 16 }) ++
-    (SectionHeader.bytes
-      { name := relocationName, sectionType := 4
-        offset := relocationOffset, size := relocations.size
-        link := 4, info := 1, alignment := 8, entrySize := 24 }) ++
-    (SectionHeader.bytes
-      { name := noteSectionName, sectionType := 7
-        offset := noteOffset, size := note.size, alignment := 4 }) ++
-    (SectionHeader.bytes
-      { name := symbolName, sectionType := 2
-        offset := symbolOffset, size := symbolTable.size
-        link := 5, info := 2, alignment := 8, entrySize := 24 }) ++
-    (SectionHeader.bytes
-      { name := stringName, sectionType := 3
-        offset := stringOffset, size := strings.bytes.size, alignment := 1 }) ++
-    -- Empty and flag-free: tell ELF linkers that this object does not require
-    -- an executable process stack.
-    (SectionHeader.bytes
-      { name := stackNoteName, sectionType := 1
-        offset := sectionStringOffset, size := 0, alignment := 1 }) ++
-    (SectionHeader.bytes
-      { name := sectionStringName, sectionType := 3
-        offset := sectionStringOffset, size := sectionStrings.bytes.size,
-        alignment := 1 })
+      let headers := nullSectionHeader ++
+        (SectionHeader.bytes
+          { name := textName, sectionType := 1, flags := 0x6
+            offset := textOffset, size := input.encoded.text.size
+            alignment := 16 }) ++
+        (SectionHeader.bytes
+          { name := relocationName, sectionType := 4
+            offset := relocationOffset, size := relocations.size
+            link := 4, info := 1, alignment := 8, entrySize := 24 }) ++
+        (SectionHeader.bytes
+          { name := noteSectionName, sectionType := 7
+            offset := noteOffset, size := note.size, alignment := 4 }) ++
+        (SectionHeader.bytes
+          { name := symbolName, sectionType := 2
+            offset := symbolOffset, size := symbolTable.size
+            link := 5, info := 2, alignment := 8, entrySize := 24 }) ++
+        (SectionHeader.bytes
+          { name := stringName, sectionType := 3
+            offset := stringOffset, size := strings.bytes.size, alignment := 1 }) ++
+        -- Empty and flag-free: tell ELF linkers that this object does not require
+        -- an executable process stack.
+        (SectionHeader.bytes
+          { name := stackNoteName, sectionType := 1
+            offset := sectionStringOffset, size := 0, alignment := 1 }) ++
+        (SectionHeader.bytes
+          { name := sectionStringName, sectionType := 3
+            offset := sectionStringOffset, size := sectionStrings.bytes.size,
+            alignment := 1 })
 
-  let output := elfHeader sectionHeadersOffset 8 7
-  let output := (padTo output textOffset) ++ input.encoded.text
-  let output := (padTo output relocationOffset) ++ relocations
-  let output := (padTo output noteOffset) ++ note
-  let output := (padTo output symbolOffset) ++ symbolTable
-  let output := (padTo output stringOffset) ++ strings.bytes
-  let output := (padTo output sectionStringOffset) ++ sectionStrings.bytes
-  return (padTo output sectionHeadersOffset) ++ headers
+      let output := elfHeader sectionHeadersOffset 8 7
+      let output := (padTo output textOffset) ++ input.encoded.text
+      let output := (padTo output relocationOffset) ++ relocations
+      let output := (padTo output noteOffset) ++ note
+      let output := (padTo output symbolOffset) ++ symbolTable
+      let output := (padTo output stringOffset) ++ strings.bytes
+      let output := (padTo output sectionStringOffset) ++ sectionStrings.bytes
+      return (padTo output sectionHeadersOffset) ++ headers
+  | some rodata =>
+      for rs in input.rodataExports do
+        if !validName rs.name then
+          throw .invalidExportName
+        if symbols.contains rs.name || names.count rs.name != 1 then
+          throw (.duplicateSymbol rs.name)
+        if rodata.size < rs.offset + rs.size then
+          throw (.invalidRodataSymbol rs.name rs.offset rs.size rodata.size)
+      let strings := buildStringTable (names ++ symbols)
+      let symbolTable ← symbolBytes input.encoded entryOffset input.exportName
+        exports input.rodataExports symbols strings
+      let relocations ← relocationBytes input.encoded
+        (3 + exports.length + input.rodataExports.length) symbols
+      let note := provenanceNote input.provenance
+      let sectionStrings := buildStringTable sectionNamesWithRodata
+
+      let textOffset := alignUp 64 16
+      let relocationOffset := alignUp (textOffset + input.encoded.text.size) 8
+      let noteOffset := alignUp (relocationOffset + relocations.size) 4
+      let symbolOffset := alignUp (noteOffset + note.size) 8
+      let stringOffset := symbolOffset + symbolTable.size
+      let stackNoteOffset := stringOffset + strings.bytes.size
+      let rodataOffset := alignUp stackNoteOffset 8
+      let sectionStringOffset := rodataOffset + rodata.size
+      let sectionHeadersOffset := alignUp
+        (sectionStringOffset + sectionStrings.bytes.size) 8
+
+      let textName ← requireOffset sectionStrings ".text"
+      let relocationName ← requireOffset sectionStrings ".rela.text"
+      let noteSectionName ← requireOffset sectionStrings ".note.ixcc"
+      let symbolName ← requireOffset sectionStrings ".symtab"
+      let stringName ← requireOffset sectionStrings ".strtab"
+      let stackNoteName ← requireOffset sectionStrings ".note.GNU-stack"
+      let rodataName ← requireOffset sectionStrings ".rodata"
+      let sectionStringName ← requireOffset sectionStrings ".shstrtab"
+
+      let headers := nullSectionHeader ++
+        (SectionHeader.bytes
+          { name := textName, sectionType := 1, flags := 0x6
+            offset := textOffset, size := input.encoded.text.size
+            alignment := 16 }) ++
+        (SectionHeader.bytes
+          { name := relocationName, sectionType := 4
+            offset := relocationOffset, size := relocations.size
+            link := 4, info := 1, alignment := 8, entrySize := 24 }) ++
+        (SectionHeader.bytes
+          { name := noteSectionName, sectionType := 7
+            offset := noteOffset, size := note.size, alignment := 4 }) ++
+        (SectionHeader.bytes
+          { name := symbolName, sectionType := 2
+            offset := symbolOffset, size := symbolTable.size
+            link := 5, info := 2, alignment := 8, entrySize := 24 }) ++
+        (SectionHeader.bytes
+          { name := stringName, sectionType := 3
+            offset := stringOffset, size := strings.bytes.size, alignment := 1 }) ++
+        (SectionHeader.bytes
+          { name := stackNoteName, sectionType := 1
+            offset := stackNoteOffset, size := 0, alignment := 1 }) ++
+        -- Read-only allocatable static data (`SHF_ALLOC = 0x2`, not writable, not executable).
+        (SectionHeader.bytes
+          { name := rodataName, sectionType := 1, flags := 0x2
+            offset := rodataOffset, size := rodata.size, alignment := 8 }) ++
+        (SectionHeader.bytes
+          { name := sectionStringName, sectionType := 3
+            offset := sectionStringOffset, size := sectionStrings.bytes.size,
+            alignment := 1 })
+
+      let output := elfHeader sectionHeadersOffset 9 8
+      let output := (padTo output textOffset) ++ input.encoded.text
+      let output := (padTo output relocationOffset) ++ relocations
+      let output := (padTo output noteOffset) ++ note
+      let output := (padTo output symbolOffset) ++ symbolTable
+      let output := (padTo output stringOffset) ++ strings.bytes
+      let output := (padTo output rodataOffset) ++ rodata
+      let output := (padTo output sectionStringOffset) ++ sectionStrings.bytes
+      return (padTo output sectionHeadersOffset) ++ headers
 
 end IxCC.X86.ELF

@@ -130,4 +130,213 @@ theorem exec_mono (bytes : ByteArray) (name : String) (base : Word) (core₀ : C
           simp only at hk ⊢
           rw [runTo_stop (finish_timeout hk)]
 
+/-! ## Read-only memory framing
+
+No byte-machine step can alter memory permissions or overwrite any byte whose
+`writable` bit is `false`. In particular, a `.rodata` section mapped read-only
+is preserved byte-for-byte across arbitrary `runTo` and `ObjectEval` runs. -/
+
+section ReadOnlyFraming
+
+attribute [local simp] pure Except.pure Functor.map Except.map bind Except.bind
+
+/-- `after` preserves all memory permissions of `before` and agrees with
+`before` on every byte whose `writable` bit is `false`. -/
+def ReadOnlyFrame (before after : Memory) : Prop :=
+  after.readable = before.readable ∧
+  after.writable = before.writable ∧
+  ∀ a : Word, before.writable a = false → after.bytes a = before.bytes a
+
+theorem ReadOnlyFrame.refl (m : Memory) : ReadOnlyFrame m m :=
+  ⟨rfl, rfl, fun _ _ => rfl⟩
+
+theorem ReadOnlyFrame.trans {a b c : Memory} (h1 : ReadOnlyFrame a b) (h2 : ReadOnlyFrame b c) :
+    ReadOnlyFrame a c :=
+  ⟨h2.1.trans h1.1, h2.2.1.trans h1.2.1, fun addr hnw =>
+    (h2.2.2 addr (h1.2.1.symm ▸ hnw)).trans (h1.2.2 addr hnw)⟩
+
+private theorem rangeAllowed_mem {p : Word → Bool} {addr : Word} :
+    ∀ {count : Nat}, Memory.rangeAllowed p addr count = true →
+      ∀ j < count, p (addr + UInt64.ofNat j) = true
+  | 0, _, _, hj => by omega
+  | count + 1, h, j, hj => by
+      simp only [Memory.rangeAllowed, Bool.and_eq_true] at h
+      by_cases hlast : j = count
+      · subst hlast; exact h.2
+      · exact rangeAllowed_mem h.1 j (by omega)
+
+private theorem writeLittle_perms (m : Memory) (addr val : Word) :
+    ∀ count, (m.writeLittle addr val count).readable = m.readable ∧
+      (m.writeLittle addr val count).writable = m.writable
+  | 0 => ⟨rfl, rfl⟩
+  | count + 1 => by
+      simp only [Memory.writeLittle, Memory.writeByte]
+      exact writeLittle_perms m addr val count
+
+theorem write?_readOnlyFrame {m m' : Memory} {w : Width} {addr val : Word}
+    (h : m.write? w addr val = .ok m') : ReadOnlyFrame m m' := by
+  unfold Memory.write? at h
+  split at h
+  · next hall =>
+      cases h
+      have hp := writeLittle_perms m addr val w.bytes
+      refine ⟨hp.1, hp.2, fun a hnw => ?_⟩
+      apply Memory.writeLittle_bytes_outside
+      intro j hj heq
+      have ht := rangeAllowed_mem hall j hj
+      rw [heq] at hnw
+      rw [ht] at hnw
+      cases hnw
+  · cases h
+
+private theorem arg_store_readOnlyFrame {before core after : Core} {w : Width} {val : Word} {arg : Arg}
+    (h : arg.store before w val core = .ok after) : ReadOnlyFrame core.memory after.memory := by
+  cases arg with
+  | reg r => cases h; cases w <;> exact ReadOnlyFrame.refl _
+  | imm _ => cases h; exact ReadOnlyFrame.refl _
+  | mem addr =>
+      simp only [Arg.store] at h
+      cases hw : core.memory.write? w (addr.eval before) val with
+      | error e => simp [hw] at h
+      | ok m' =>
+          simp only [hw, Except.ok.injEq, bind, Except.bind, pure, Except.pure] at h
+          cases h
+          exact write?_readOnlyFrame hw
+
+private theorem writeSlots_readOnlyFrame (before : Core) (slots : List Slot) (args : List Arg)
+    (results : List Word) :
+    ∀ {core after : Core}, writeSlots before core slots args results = .ok after →
+      ReadOnlyFrame core.memory after.memory := by
+  induction slots generalizing args results with
+  | nil =>
+      intro core after h
+      cases args <;> (cases h; exact ReadOnlyFrame.refl _)
+  | cons slot slots ih =>
+      intro core after h
+      cases args with
+      | nil => cases h; exact ReadOnlyFrame.refl _
+      | cons arg args =>
+          unfold writeSlots at h
+          cases hrole : slot.role <;> rw [hrole] at h
+          case read | address => exact ih args results h
+          all_goals
+            cases hs : arg.store before slot.width (results.headD 0) core with
+            | error e => rw [hs] at h; cases h
+            | ok mid =>
+                rw [hs] at h
+                exact (arg_store_readOnlyFrame hs).trans (ih args results.tail h)
+
+private theorem writeImplicits_memory (core : Core) (implicits : List Implicit) (results : List Word) :
+    (writeImplicits core implicits results).memory = core.memory := by
+  induction implicits generalizing core results with
+  | nil => rfl
+  | cons imp imps ih =>
+      simp only [writeImplicits]
+      split
+      · rw [ih]; cases imp.width <;> rfl
+      · exact ih _ _
+
+private theorem stage_readOnlyFrame {o : Op} {core after : Core} {out : SemOut}
+    (h : o.stage core out = .ok after) : ReadOnlyFrame core.memory after.memory := by
+  unfold Op.stage at h
+  cases hst : (desc o).stack <;> rw [hst] at h
+  · cases h; exact ReadOnlyFrame.refl _
+  · cases hw : core.memory.write64? (core.readReg .rsp - 8) (out.results.headD 0) with
+    | error e => rw [hw] at h; cases h
+    | ok m' =>
+        rw [hw] at h; cases h
+        exact write?_readOnlyFrame hw
+  · cases h; exact ReadOnlyFrame.refl _
+
+private theorem op_exec_readOnlyFrame {o : Op} {args : List Arg} {core after : Core}
+    {flags flags' : ByteEval.Flags} (h : o.exec args core flags = .ok (after, flags')) :
+    ReadOnlyFrame core.memory after.memory := by
+  unfold Op.exec Op.run at h
+  cases hi : o.inputs args core with
+  | error e => simp [hi, Except.mapError] at h
+  | ok inputs =>
+    cases hsem : (desc o).sem ⟨inputs, flags.restrict (desc o).flagsIn⟩ with
+    | error e => simp [hi, hsem, Except.mapError] at h
+    | ok out =>
+      cases hst : o.stage core out with
+      | error e => simp [hi, hsem, hst, Except.mapError] at h
+      | ok staged =>
+        cases hws : writeSlots core staged (desc o).slots args out.results with
+        | error e => simp [hi, hsem, hst, hws, Except.mapError] at h
+        | ok written =>
+          simp only [hi, hsem, hst, hws, Except.mapError, bind, Except.bind, pure, Except.pure,
+            Except.ok.injEq, Prod.mk.injEq] at h
+          obtain ⟨rfl, _⟩ := h
+          have h1 := (stage_readOnlyFrame hst).trans (writeSlots_readOnlyFrame core _ args _ hws)
+          rw [writeImplicits_memory]
+          exact h1
+
+/-- Every single byte-machine step preserves all permissions and every
+non-writable byte (such as `.rodata`). -/
+theorem step_readOnlyFrame {text : ByteArray} {base : Word} {state next : ByteEval.State}
+    (h : ByteEval.step text base state = .ok next) :
+    ReadOnlyFrame state.core.memory next.core.memory := by
+  unfold ByteEval.step at h
+  cases hd : Decode.decodeAt text (state.rip - base).toNat with
+  | none => simp [hd] at h
+  | some decoded =>
+      simp only [hd] at h
+      unfold ByteEval.execute at h
+      cases hop : decoded.operation with
+      | op o args =>
+          simp only [hop] at h
+          split at h
+          · -- call rel32
+            cases hw : state.core.memory.write64? (state.core.readReg .rsp - 8)
+                (state.rip + UInt64.ofNat decoded.length) with
+            | error e => simp [hw, Except.mapError] at h
+            | ok m' =>
+                simp only [hw, Except.mapError] at h
+                cases h
+                exact write?_readOnlyFrame hw
+          · -- jmp rel32
+            cases h
+            exact ReadOnlyFrame.refl _
+          · -- jcc rel32
+            simp only [Except.mapError] at h
+            split at h
+            · cases h
+            · cases h
+              exact ReadOnlyFrame.refl _
+          · -- ret
+            cases hr : state.core.memory.read64? (state.core.readReg .rsp) with
+            | error e => simp [hr, Except.mapError] at h
+            | ok target =>
+                simp only [hr, Except.mapError] at h
+                cases h
+                exact ReadOnlyFrame.refl _
+          · -- any linear instruction via `Op.exec`
+            simp only [Except.mapError] at h
+            split at h
+            · cases h
+            · next res hex =>
+                cases h
+                exact op_exec_readOnlyFrame hex
+
+/-- Any bounded `runTo` execution preserves memory permissions and every
+non-writable byte. -/
+theorem runTo_readOnlyFrame {text : ByteArray} {base stop : Word} :
+    ∀ {fuel : Nat} {state final : ByteEval.State},
+      runTo text base stop fuel state = .ok final →
+      ReadOnlyFrame state.core.memory final.core.memory
+  | 0, state, final, h => by
+      simp only [runTo, Except.ok.injEq] at h
+      cases h; exact ReadOnlyFrame.refl _
+  | fuel + 1, state, final, h => by
+      unfold runTo at h
+      split at h
+      · cases h; exact ReadOnlyFrame.refl _
+      · cases hs : ByteEval.step text base state with
+        | error e => simp [hs] at h
+        | ok next =>
+            simp only [hs] at h
+            exact (step_readOnlyFrame hs).trans (runTo_readOnlyFrame h)
+
+end ReadOnlyFraming
+
 end IxCC.X86.ObjectEval

@@ -166,4 +166,134 @@ theorem LinkedAt.lang_run (L : LinkedAt) (i : Nat × List Nat) : Lang.run L i = 
 theorem LinkedAt.run_site (L : Linked) (i : Nat × List Nat) (k : Nat) :
     Lang.run (⟨L, L.driver.site⟩ : LinkedAt) i k = Lang.run L i k := rfl
 
+/-! ## Linked object with read-only `.rodata` static cells (DR1)
+
+`X86.LinkedRodata` extends `X86.Linked` with an optional read-only `.rodata`
+segment mapped at `rodataBase` (8-byte aligned, disjoint from the writable
+region and stack). When the ELF object carries `.rodata`, both `cx_init` and
+the root call execute with `.rodata` readable and non-writable (`writable =
+false`), and readback observes `.rodata` alongside the Lir region. When the
+ELF object has no `.rodata`, execution reduces identically to `X86.Linked`
+(`LinkedRodata.rodata_none_eq`). -/
+
+structure LinkedRodata where
+  linked : Linked
+  /-- Base address where the object's `.rodata` section is mapped read-only. -/
+  rodataBase : Word
+
+namespace LinkedRodata
+
+variable (L : LinkedRodata)
+
+/-- A call's core with `.rodata` mapped read-only when present in the object. -/
+def coreWithRodata (args : List Word) (bytes : Word → UInt8) : Core :=
+  let baseCore := L.linked.driver.core args bytes
+  match ELFRead.rodata? L.linked.object with
+  | none => baseCore
+  | some rodata => { baseCore with memory := ELFRodata.mapRodata baseCore.memory L.rodataBase rodata }
+
+/-- Lir/readback memory view: writable Lir region plus read-only `.rodata` (if any). -/
+def readbackView (m : Memory) : Memory :=
+  let baseView := L.linked.driver.lirView m
+  match ELFRead.rodata? L.linked.object with
+  | none => baseView
+  | some rodata =>
+      { bytes := m.bytes
+        readable := fun a => baseView.readable a || ELFRodata.inRodata L.rodataBase rodata.size a
+        writable := baseView.writable }
+
+def observe (r : Linked.Root) (w : Word) (m : Memory) : Option Obs :=
+  match r.ty with
+  | some (sig, ty) => Rt.readback sig (L.linked.driver.size.toNat / 8) (L.readbackView m) ty w
+  | none => none
+
+def initCall (k : Nat) : Result (Word × Memory) :=
+  ObjectEval.call L.linked.object L.linked.init L.linked.driver.base
+    (L.coreWithRodata [L.linked.driver.size, L.linked.driver.budget] L.linked.driver.initBytes)
+    L.linked.driver.flags k
+
+def rootCall (r : Linked.Root) (ns : List Nat) (bytes : Word → UInt8) (k : Nat) :
+    Result (Word × Memory) :=
+  ObjectEval.call L.linked.object r.symbol L.linked.driver.base
+    (L.coreWithRodata (ns.map UInt64.ofNat) bytes) L.linked.driver.flags k
+
+def call (r : Linked.Root) (ns : List Nat) (k : Nat) : Result (Option Obs) :=
+  if ns.all (· < 2 ^ 64) then
+    (L.initCall k).bind fun v => (L.rootCall r ns v.2.bytes k).map fun v' => L.observe r v'.1 v'.2
+  else .resource .natOverflow
+
+def run (i : Nat × List Nat) (k : Nat) : Result (Option Obs) :=
+  match L.linked.roots[i.1]? with
+  | some r => Sem.entryRun r.params none (L.call r) i.2 k
+  | none => .stuck
+
+theorem call_mono (r : Linked.Root) (ns : List Nat) : ClockMono (L.call r ns) := by
+  unfold call
+  split
+  · exact ClockMono.bind (ObjectEval.call_mono _ _ _ _ _) fun _ =>
+      ClockMono.bind (ObjectEval.call_mono _ _ _ _ _) fun _ => ClockMono.const _
+  · exact ClockMono.const _
+
+/-- Read-only `.rodata` framing for `LinkedRodata.initCall`. -/
+theorem initCall_preserves_rodata {rodata : ByteArray} {k : Nat} {val : Word} {mem' : Memory}
+    (hparse : ELFRead.rodata? L.linked.object = some rodata)
+    (h0 : L.rodataBase ≠ 0) (hal : L.rodataBase.toNat % 8 = 0)
+    (hfit : L.rodataBase.toNat + rodata.size < 2 ^ 63)
+    (hcall : L.initCall k = .ok (val, mem')) :
+    ObjectEval.RodataLoaded L.linked.object L.rodataBase mem' := by
+  unfold initCall coreWithRodata at hcall
+  simp only [hparse] at hcall
+  exact ObjectEval.call_preserves_rodata
+    ⟨rodata, hparse, ELFRodata.mapRodata_mapped _ h0 hal hfit⟩ hcall
+
+/-- Read-only `.rodata` framing for `LinkedRodata.rootCall`. -/
+theorem rootCall_preserves_rodata {rodata : ByteArray} {r : Linked.Root} {ns : List Nat}
+    {bytes : Word → UInt8} {k : Nat} {val : Word} {mem' : Memory}
+    (hparse : ELFRead.rodata? L.linked.object = some rodata)
+    (h0 : L.rodataBase ≠ 0) (hal : L.rodataBase.toNat % 8 = 0)
+    (hfit : L.rodataBase.toNat + rodata.size < 2 ^ 63)
+    (hcall : L.rootCall r ns bytes k = .ok (val, mem')) :
+    ObjectEval.RodataLoaded L.linked.object L.rodataBase mem' := by
+  unfold rootCall coreWithRodata at hcall
+  simp only [hparse] at hcall
+  exact ObjectEval.call_preserves_rodata
+    ⟨rodata, hparse, ELFRodata.mapRodata_mapped _ h0 hal hfit⟩ hcall
+
+/-- Backward compatibility: when the ELF object has no `.rodata` section,
+`LinkedRodata.run` agrees identically with `Linked.run`. -/
+theorem rodata_none_eq (hnone : ELFRead.rodata? L.linked.object = none)
+    (i : Nat × List Nat) (k : Nat) :
+    L.run i k = L.linked.run i k := by
+  have hinit : ∀ k', L.initCall k' = L.linked.initCall k' := by
+    intro k'; simp [initCall, Linked.initCall, coreWithRodata, hnone]
+  have hroot : ∀ r ns bs k', L.rootCall r ns bs k' = L.linked.rootCall r ns bs k' := by
+    intro r ns bs k'; simp [rootCall, Linked.rootCall, coreWithRodata, hnone]
+  have hobs : ∀ r w m, L.observe r w m = L.linked.observe r w m := by
+    intro r w m; simp [observe, Linked.observe, readbackView, hnone]
+  have hcall : ∀ r ns k', L.call r ns k' = L.linked.call r ns k' := by
+    intro r ns k'
+    unfold call Linked.call
+    split
+    · simp only [hinit, hroot, hobs]
+    · rfl
+  unfold run Linked.run
+  cases L.linked.roots[i.1]? with
+  | none => rfl
+  | some r =>
+      dsimp only
+      have hf : L.call r = L.linked.call r := funext fun ns => funext fun k' => hcall r ns k'
+      rw [hf]
+
+end LinkedRodata
+
+instance : Lang (Nat × List Nat) LinkedRodata where
+  Val := Option Obs
+  run := LinkedRodata.run
+  mono L i := by
+    unfold LinkedRodata.run
+    split
+    · exact Sem.entryRun_mono (fun ns => L.call_mono _ ns) _
+    · exact ClockMono.const _
+  obs := id
+
 end IxCC.X86

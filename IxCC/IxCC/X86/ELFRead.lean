@@ -179,17 +179,22 @@ structure View where
   relocations : Array Relocation
   note : Note
   provenance : Provenance
+  rodata : Option ByteArray := none
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
-/-- Fixed section count and table sizes are checked before allocating or
-iterating. Other semantic obligations are stated by the object validator. -/
+/-- Fixed section count (8 without `.rodata`, 9 with `.rodata`) and table sizes
+are checked before allocating or iterating. Other semantic obligations are
+stated by the object validator. -/
 def parse (bytes : ByteArray) : Option View := do
   let header ← header bytes
-  require (header.sectionCount == 8 && header.sectionEntrySize == 64 && header.sectionNames == 7)
-  require (decide (header.sectionOffset + 8 * 64 ≤ bytes.size))
-  let headers ← (List.range 8).mapM (fun index => sectionHeader bytes (header.sectionOffset + index * 64))
+  let hasRodata := header.sectionCount == 9 && header.sectionNames == 8
+  require ((header.sectionCount == 8 && header.sectionNames == 7) || hasRodata)
+  require (header.sectionEntrySize == 64)
+  require (decide (header.sectionOffset + header.sectionCount * 64 ≤ bytes.size))
+  let headers ← (List.range header.sectionCount).mapM (fun index =>
+    sectionHeader bytes (header.sectionOffset + index * 64))
   let headers := headers.toArray
-  let names ← headers[7]?
+  let names ← headers[header.sectionNames]?
   let strings ← slice bytes names.offset names.size
   let sections ← headers.toList.mapM fun sectionInfo => do
     return (⟨sectionInfo, ← cstring strings sectionInfo.nameOffset, ← slice bytes sectionInfo.offset sectionInfo.size⟩ : Section)
@@ -206,8 +211,14 @@ def parse (bytes : ByteArray) : Option View := do
   let noteSection ← sections[3]?
   let note ← note noteSection.data
   let provenance ← provenance note.descriptor
-  return ⟨header, sections, text.data, symbols, relocations.toArray, note, provenance⟩
+  let rodata ← if hasRodata then do
+      let ro ← sections[7]?
+      pure (some ro.data)
+    else pure none
+  return ⟨header, sections, text.data, symbols, relocations.toArray, note, provenance, rodata⟩
 
 def text? (bytes : ByteArray) : Option ByteArray := (parse bytes).map View.text
+
+def rodata? (bytes : ByteArray) : Option ByteArray := (parse bytes).bind View.rodata
 
 end IxCC.X86.ELFRead

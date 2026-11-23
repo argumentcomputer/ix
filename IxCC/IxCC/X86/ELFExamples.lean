@@ -1,4 +1,5 @@
 import IxCC.X86.ELF
+import IxCC.X86.ELFRodata
 import IxCC.X86.EncodeExamples
 
 /-!
@@ -204,5 +205,48 @@ def exportRelocationIndex : Bool :=
 #guard match writeExports IxCC.X86.Examples.callProgram [("g", 7)] with
   | .error (.missingEntryBlock 7) => true
   | _ => false
+
+/-! Optional read-only `.rodata` section (DR1 statics: string, BigNat limbs,
+closed constructor tree): certified via `writeCheckedK`, parsed back via
+`ELFRead.rodata?` and `ELF.rodataSymbol?`, and rejected on invalid symbols. -/
+
+def rodataObjectAccepted : Bool :=
+  match Encode.Program.encode IxCC.X86.Examples.arithmeticProgram with
+  | .error _ => false
+  | .ok encoded =>
+      let (t1, strOff) := ELFRodata.RodataTable.empty.addString "ixcc_str_hello" "hello, ixcc!"
+      let (t2, bigOff) := t1.addLimbArray "ixcc_bignat_2p64" [0, 1]
+      let (t3, ctorOff) := t2.addCtor "ixcc_ctor_pair" 0 [3, 5]
+      let input : Input :=
+        { encoded
+          entryBlock := 0
+          provenance := fixtureProvenance
+          rodata := some t3.bytes
+          rodataExports := t3.symbols }
+      match ELF.writeCheckedK input with
+      | .error _ => false
+      | .ok cert =>
+          ELFRead.rodata? cert.bytes == some t3.bytes &&
+          ELF.rodataSymbol? cert.bytes "ixcc_str_hello" == some (strOff, (ELFRodata.encodeStaticString "hello, ixcc!").size) &&
+          ELF.rodataSymbol? cert.bytes "ixcc_bignat_2p64" == some (bigOff, 40) &&
+          ELF.rodataSymbol? cert.bytes "ixcc_ctor_pair" == some (ctorOff, 24) &&
+          readNatural cert.bytes 60 2 == 9 &&
+          readNatural cert.bytes 62 2 == 8
+
+#guard rodataObjectAccepted
+
+def rodataSymbolWithoutSectionRejected : Bool :=
+  match Encode.Program.encode IxCC.X86.Examples.arithmeticProgram with
+  | .error _ => false
+  | .ok encoded =>
+      match ELF.write
+          { encoded
+            entryBlock := 0
+            provenance := fixtureProvenance
+            rodataExports := [{ name := "bad_sym", offset := 0, size := 8 }] } with
+      | .error (.rodataSymbolWithoutSection "bad_sym") => true
+      | _ => false
+
+#guard rodataSymbolWithoutSectionRejected
 
 end IxCC.X86.ELF.Examples

@@ -75,6 +75,7 @@ def symbolK (name info sectionIndex : Nat) (value size : UInt64) : List UInt8 :=
   u32K name ++ [UInt8.ofNat info] ++ [0] ++ u16K sectionIndex ++ word64K value ++ word64K size
 
 def functionSymbolK (name : Nat) (value size : UInt64) : List UInt8 := symbolK name 0x12 1 value size
+def rodataObjectSymbolK (name : Nat) (value size : UInt64) : List UInt8 := symbolK name 0x11 7 value size
 def undefinedFunctionSymbolK (name : Nat) : List UInt8 := symbolK name 0x12 0 0 0
 
 def listIndexK? [BEq α] (target : α) : List α → Option Nat
@@ -119,6 +120,13 @@ def exportSymbolsK (textSize : Nat) (strings : StringTableK) :
     | none => .error (.missingString name)
     | some nameOffset => .ok (functionSymbolK nameOffset (UInt64.ofNat offset) (UInt64.ofNat (textSize - offset)))
 
+/-- The `.rodata` object symbols. -/
+def rodataSymbolsK (strings : StringTableK) : List RodataSymbol → Except Error (List UInt8) :=
+  concatMapK fun rs =>
+    match strings.offset? rs.name with
+    | none => .error (.missingString rs.name)
+    | some nameOffset => .ok (rodataObjectSymbolK nameOffset (UInt64.ofNat rs.offset) (UInt64.ofNat rs.size))
+
 /-- The undefined runtime symbols. -/
 def undefinedSymbolsK (strings : StringTableK) : List String → Except Error (List UInt8) :=
   concatMapK fun name =>
@@ -127,14 +135,31 @@ def undefinedSymbolsK (strings : StringTableK) : List String → Except Error (L
     | some nameOffset => .ok (undefinedFunctionSymbolK nameOffset)
 
 def symbolBytesK (textSize entryOffset : Nat) (exportName : String) (exports : List (String × Nat))
-    (symbols : List String) (strings : StringTableK) : Except Error (List UInt8) := do
+    (rodataExports : List RodataSymbol) (symbols : List String) (strings : StringTableK) :
+    Except Error (List UInt8) := do
   let some exportOffset := strings.offset? exportName
     | throw (.missingString exportName)
   let first := zerosK 24 ++ symbolK 0 0x03 1 0 0 ++
     functionSymbolK exportOffset (UInt64.ofNat entryOffset) (UInt64.ofNat (textSize - entryOffset))
   let exported ← exportSymbolsK textSize strings exports
+  let rodataSyms ← rodataSymbolsK strings rodataExports
   let undefined ← undefinedSymbolsK strings symbols
-  pure (first ++ exported ++ undefined)
+  pure (first ++ exported ++ rodataSyms ++ undefined)
+
+/-- Check that `rodataExports` is empty when no `.rodata` section is present. -/
+def checkNoRodataExportsK : List RodataSymbol → Except Error Unit
+  | [] => .ok ()
+  | rs :: _ => .error (.rodataSymbolWithoutSection rs.name)
+
+/-- Validate `.rodata` exports against `rodataSize`, matching `write`'s `for` loop. -/
+def checkRodataExportsK (rodataSize : Nat) (symbols names : List String) :
+    List RodataSymbol → Except Error Unit
+  | [] => .ok ()
+  | rs :: rest =>
+    if !validNameK rs.name then .error .invalidExportName
+    else if symbols.contains rs.name || names.count rs.name != 1 then .error (.duplicateSymbol rs.name)
+    else if rodataSize < rs.offset + rs.size then .error (.invalidRodataSymbol rs.name rs.offset rs.size rodataSize)
+    else checkRodataExportsK rodataSize symbols names rest
 
 /-- The further exports with their offsets, checked as `write` checks them. -/
 def exportOffsetsK (encoded : Encode.Output) (symbols names : List String) :
@@ -163,6 +188,10 @@ def sectionNamesK : List String :=
   [".text", ".rela.text", ".note.ixcc", ".symtab", ".strtab",
     ".note.GNU-stack", ".shstrtab"]
 
+def sectionNamesWithRodataK : List String :=
+  [".text", ".rela.text", ".note.ixcc", ".symtab", ".strtab",
+    ".note.GNU-stack", ".rodata", ".shstrtab"]
+
 def requireOffsetK (table : StringTableK) (name : String) : Except Error Nat :=
   match table.offset? name with
   | some offset => .ok offset
@@ -183,63 +212,132 @@ def writeK (input : Input) : Except Error (List UInt8) := do
     throw .invalidExportName
   if symbols.contains input.exportName then
     throw (.duplicateSymbol input.exportName)
-  let names := input.exportName :: input.exports.map (·.1)
+  let names := input.exportName :: (input.exports.map (·.1) ++ input.rodataExports.map (·.name))
   let exports ← exportOffsetsK input.encoded symbols names input.exports
-  let strings := buildStringTableK (names ++ symbols)
-  let symbolTable ← symbolBytesK text.length entryOffset input.exportName exports symbols strings
-  let relocations ← relocationBytesK text.length (3 + exports.length) symbols input.encoded.relocations.toList
-  let note := provenanceNoteK input.provenance
-  let sectionStrings := buildStringTableK sectionNamesK
+  match input.rodata with
+  | none =>
+      checkNoRodataExportsK input.rodataExports
+      let strings := buildStringTableK (names ++ symbols)
+      let symbolTable ← symbolBytesK text.length entryOffset input.exportName exports [] symbols strings
+      let relocations ← relocationBytesK text.length (3 + exports.length) symbols input.encoded.relocations.toList
+      let note := provenanceNoteK input.provenance
+      let sectionStrings := buildStringTableK sectionNamesK
 
-  let textOffset := alignUp 64 16
-  let relocationOffset := alignUp (textOffset + text.length) 8
-  let noteOffset := alignUp (relocationOffset + relocations.length) 4
-  let symbolOffset := alignUp (noteOffset + note.length) 8
-  let stringOffset := symbolOffset + symbolTable.length
-  let sectionStringOffset := stringOffset + strings.bytes.length
-  let sectionHeadersOffset := alignUp (sectionStringOffset + sectionStrings.bytes.length) 8
+      let textOffset := alignUp 64 16
+      let relocationOffset := alignUp (textOffset + text.length) 8
+      let noteOffset := alignUp (relocationOffset + relocations.length) 4
+      let symbolOffset := alignUp (noteOffset + note.length) 8
+      let stringOffset := symbolOffset + symbolTable.length
+      let sectionStringOffset := stringOffset + strings.bytes.length
+      let sectionHeadersOffset := alignUp (sectionStringOffset + sectionStrings.bytes.length) 8
 
-  let textName ← requireOffsetK sectionStrings ".text"
-  let relocationName ← requireOffsetK sectionStrings ".rela.text"
-  let noteSectionName ← requireOffsetK sectionStrings ".note.ixcc"
-  let symbolName ← requireOffsetK sectionStrings ".symtab"
-  let stringName ← requireOffsetK sectionStrings ".strtab"
-  let stackNoteName ← requireOffsetK sectionStrings ".note.GNU-stack"
-  let sectionStringName ← requireOffsetK sectionStrings ".shstrtab"
+      let textName ← requireOffsetK sectionStrings ".text"
+      let relocationName ← requireOffsetK sectionStrings ".rela.text"
+      let noteSectionName ← requireOffsetK sectionStrings ".note.ixcc"
+      let symbolName ← requireOffsetK sectionStrings ".symtab"
+      let stringName ← requireOffsetK sectionStrings ".strtab"
+      let stackNoteName ← requireOffsetK sectionStrings ".note.GNU-stack"
+      let sectionStringName ← requireOffsetK sectionStrings ".shstrtab"
 
-  let headers := zerosK 64 ++
-    sectionHeaderK
-      { name := textName, sectionType := 1, flags := 0x6,
-        offset := textOffset, size := text.length, alignment := 16 } ++
-    sectionHeaderK
-      { name := relocationName, sectionType := 4,
-        offset := relocationOffset, size := relocations.length,
-        link := 4, info := 1, alignment := 8, entrySize := 24 } ++
-    sectionHeaderK
-      { name := noteSectionName, sectionType := 7,
-        offset := noteOffset, size := note.length, alignment := 4 } ++
-    sectionHeaderK
-      { name := symbolName, sectionType := 2,
-        offset := symbolOffset, size := symbolTable.length,
-        link := 5, info := 2, alignment := 8, entrySize := 24 } ++
-    sectionHeaderK
-      { name := stringName, sectionType := 3,
-        offset := stringOffset, size := strings.bytes.length, alignment := 1 } ++
-    sectionHeaderK
-      { name := stackNoteName, sectionType := 1,
-        offset := sectionStringOffset, size := 0, alignment := 1 } ++
-    sectionHeaderK
-      { name := sectionStringName, sectionType := 3,
-        offset := sectionStringOffset, size := sectionStrings.bytes.length, alignment := 1 }
+      let headers := zerosK 64 ++
+        sectionHeaderK
+          { name := textName, sectionType := 1, flags := 0x6,
+            offset := textOffset, size := text.length, alignment := 16 } ++
+        sectionHeaderK
+          { name := relocationName, sectionType := 4,
+            offset := relocationOffset, size := relocations.length,
+            link := 4, info := 1, alignment := 8, entrySize := 24 } ++
+        sectionHeaderK
+          { name := noteSectionName, sectionType := 7,
+            offset := noteOffset, size := note.length, alignment := 4 } ++
+        sectionHeaderK
+          { name := symbolName, sectionType := 2,
+            offset := symbolOffset, size := symbolTable.length,
+            link := 5, info := 2, alignment := 8, entrySize := 24 } ++
+        sectionHeaderK
+          { name := stringName, sectionType := 3,
+            offset := stringOffset, size := strings.bytes.length, alignment := 1 } ++
+        sectionHeaderK
+          { name := stackNoteName, sectionType := 1,
+            offset := sectionStringOffset, size := 0, alignment := 1 } ++
+        sectionHeaderK
+          { name := sectionStringName, sectionType := 3,
+            offset := sectionStringOffset, size := sectionStrings.bytes.length, alignment := 1 }
 
-  let output := elfHeaderK sectionHeadersOffset 8 7
-  let output := (padToK output textOffset) ++ text
-  let output := (padToK output relocationOffset) ++ relocations
-  let output := (padToK output noteOffset) ++ note
-  let output := (padToK output symbolOffset) ++ symbolTable
-  let output := (padToK output stringOffset) ++ strings.bytes
-  let output := (padToK output sectionStringOffset) ++ sectionStrings.bytes
-  return (padToK output sectionHeadersOffset) ++ headers
+      let output := elfHeaderK sectionHeadersOffset 8 7
+      let output := (padToK output textOffset) ++ text
+      let output := (padToK output relocationOffset) ++ relocations
+      let output := (padToK output noteOffset) ++ note
+      let output := (padToK output symbolOffset) ++ symbolTable
+      let output := (padToK output stringOffset) ++ strings.bytes
+      let output := (padToK output sectionStringOffset) ++ sectionStrings.bytes
+      return (padToK output sectionHeadersOffset) ++ headers
+  | some rodataBytes =>
+      let rodata := rodataBytes.data.toList
+      checkRodataExportsK rodata.length symbols names input.rodataExports
+      let strings := buildStringTableK (names ++ symbols)
+      let symbolTable ← symbolBytesK text.length entryOffset input.exportName exports input.rodataExports symbols strings
+      let relocations ← relocationBytesK text.length (3 + exports.length + input.rodataExports.length) symbols
+        input.encoded.relocations.toList
+      let note := provenanceNoteK input.provenance
+      let sectionStrings := buildStringTableK sectionNamesWithRodataK
+
+      let textOffset := alignUp 64 16
+      let relocationOffset := alignUp (textOffset + text.length) 8
+      let noteOffset := alignUp (relocationOffset + relocations.length) 4
+      let symbolOffset := alignUp (noteOffset + note.length) 8
+      let stringOffset := symbolOffset + symbolTable.length
+      let stackNoteOffset := stringOffset + strings.bytes.length
+      let rodataOffset := alignUp stackNoteOffset 8
+      let sectionStringOffset := rodataOffset + rodata.length
+      let sectionHeadersOffset := alignUp (sectionStringOffset + sectionStrings.bytes.length) 8
+
+      let textName ← requireOffsetK sectionStrings ".text"
+      let relocationName ← requireOffsetK sectionStrings ".rela.text"
+      let noteSectionName ← requireOffsetK sectionStrings ".note.ixcc"
+      let symbolName ← requireOffsetK sectionStrings ".symtab"
+      let stringName ← requireOffsetK sectionStrings ".strtab"
+      let stackNoteName ← requireOffsetK sectionStrings ".note.GNU-stack"
+      let rodataName ← requireOffsetK sectionStrings ".rodata"
+      let sectionStringName ← requireOffsetK sectionStrings ".shstrtab"
+
+      let headers := zerosK 64 ++
+        sectionHeaderK
+          { name := textName, sectionType := 1, flags := 0x6,
+            offset := textOffset, size := text.length, alignment := 16 } ++
+        sectionHeaderK
+          { name := relocationName, sectionType := 4,
+            offset := relocationOffset, size := relocations.length,
+            link := 4, info := 1, alignment := 8, entrySize := 24 } ++
+        sectionHeaderK
+          { name := noteSectionName, sectionType := 7,
+            offset := noteOffset, size := note.length, alignment := 4 } ++
+        sectionHeaderK
+          { name := symbolName, sectionType := 2,
+            offset := symbolOffset, size := symbolTable.length,
+            link := 5, info := 2, alignment := 8, entrySize := 24 } ++
+        sectionHeaderK
+          { name := stringName, sectionType := 3,
+            offset := stringOffset, size := strings.bytes.length, alignment := 1 } ++
+        sectionHeaderK
+          { name := stackNoteName, sectionType := 1,
+            offset := stackNoteOffset, size := 0, alignment := 1 } ++
+        sectionHeaderK
+          { name := rodataName, sectionType := 1, flags := 0x2,
+            offset := rodataOffset, size := rodata.length, alignment := 8 } ++
+        sectionHeaderK
+          { name := sectionStringName, sectionType := 3,
+            offset := sectionStringOffset, size := sectionStrings.bytes.length, alignment := 1 }
+
+      let output := elfHeaderK sectionHeadersOffset 9 8
+      let output := (padToK output textOffset) ++ text
+      let output := (padToK output relocationOffset) ++ relocations
+      let output := (padToK output noteOffset) ++ note
+      let output := (padToK output symbolOffset) ++ symbolTable
+      let output := (padToK output stringOffset) ++ strings.bytes
+      let output := (padToK output rodataOffset) ++ rodata
+      let output := (padToK output sectionStringOffset) ++ sectionStrings.bytes
+      return (padToK output sectionHeadersOffset) ++ headers
 
 
 /-! ## `writeK = write` -/
@@ -324,13 +422,13 @@ theorem relocationBytes_eq (encoded : Encode.Output) (first : Nat) (symbols : Li
   | cons relocation relocations ih =>
     simp only [List.forIn_cons, relocationBytesK, ← size_eq_length]
     by_cases bound : encoded.text.size < relocation.offset + 4
-    · simp only [bound, if_true]
+    · simp only [bound, ite_true]
       rfl
-    · simp only [bound, if_false]
+    · simp only [bound, ite_false]
       by_cases addend : (relocation.addend != -4) = true
-      · simp only [addend, if_true]
+      · simp only [addend, ite_true]
         rfl
-      · simp only [addend, if_false, Bool.false_eq_true]
+      · simp only [addend, ite_false, Bool.false_eq_true]
         rw [← listIndex_eq]
         cases listIndex? relocation.symbol symbols with
         | none => rfl
@@ -399,17 +497,22 @@ theorem functionSymbol_mk (name : Nat) (value size : UInt64) :
   rw [← mk_toList (functionSymbol name value size)]
   exact congrArg (fun l => (⟨⟨l⟩⟩ : ByteArray)) (symbol_toList _ _ _ _ _)
 
+theorem rodataObjectSymbol_mk (name : Nat) (value size : UInt64) :
+    rodataObjectSymbol name value size = ⟨⟨rodataObjectSymbolK name value size⟩⟩ := by
+  rw [← mk_toList (rodataObjectSymbol name value size)]
+  exact congrArg (fun l => (⟨⟨l⟩⟩ : ByteArray)) (symbol_toList _ _ _ _ _)
+
 theorem undefinedFunctionSymbol_mk (name : Nat) :
     undefinedFunctionSymbol name = ⟨⟨undefinedFunctionSymbolK name⟩⟩ := by
   rw [← mk_toList (undefinedFunctionSymbol name)]
   exact congrArg (fun l => (⟨⟨l⟩⟩ : ByteArray)) (symbol_toList _ _ _ _ _)
 
 theorem symbolBytes_eq (encoded : Encode.Output) (entryOffset : Nat) (exportName : String)
-    (exports : List (String × Nat)) (symbols names : List String) :
-    (symbolBytes encoded entryOffset exportName exports symbols (buildStringTable names)).map (·.data.toList) =
-      symbolBytesK encoded.text.data.toList.length entryOffset exportName exports symbols
+    (exports : List (String × Nat)) (rodataExports : List RodataSymbol) (symbols names : List String) :
+    (symbolBytes encoded entryOffset exportName exports rodataExports symbols (buildStringTable names)).map (·.data.toList) =
+      symbolBytesK encoded.text.data.toList.length entryOffset exportName exports rodataExports symbols
         (buildStringTableK names) := by
-  unfold symbolBytes symbolBytesK exportSymbolsK undefinedSymbolsK
+  unfold symbolBytes symbolBytesK exportSymbolsK rodataSymbolsK undefinedSymbolsK
   simp only [offset?_eq, ← size_eq_length]
   cases (buildStringTableK names).offset? exportName with
   | none => rfl
@@ -426,19 +529,32 @@ theorem symbolBytes_eq (encoded : Encode.Output) (entryOffset : Nat) (exportName
       | error e => rfl
       | ok exported =>
         simp only [bind, Except.bind, Except.map]
-        rw [forIn_bytes (fun name => match (buildStringTableK names).offset? name with
-          | none => .error (.missingString name)
-          | some nameOffset => .ok (undefinedFunctionSymbolK nameOffset))]
-        · cases concatMapK (fun name => match (buildStringTableK names).offset? name with
-              | none => (.error (Error.missingString name) : Except Error (List UInt8))
-              | some nameOffset => .ok (undefinedFunctionSymbolK nameOffset)) symbols with
+        rw [forIn_bytes (fun (rs : RodataSymbol) => match (buildStringTableK names).offset? rs.name with
+          | none => .error (.missingString rs.name)
+          | some nameOffset => .ok (rodataObjectSymbolK nameOffset (UInt64.ofNat rs.offset)
+              (UInt64.ofNat rs.size)))]
+        · cases concatMapK (fun (rs : RodataSymbol) => match (buildStringTableK names).offset? rs.name with
+              | none => (.error (Error.missingString rs.name) : Except Error (List UInt8))
+              | some nameOffset => .ok (rodataObjectSymbolK nameOffset (UInt64.ofNat rs.offset)
+                  (UInt64.ofNat rs.size))) rodataExports with
           | error e => rfl
-          | ok undefined =>
-            simp only [Except.map, nullSymbol, textSectionSymbol,
-              functionSymbol_mk, List.append_assoc]
-            rfl
-        · intro name b
-          cases (buildStringTableK names).offset? name <;> simp only [undefinedFunctionSymbol_mk] <;> rfl
+          | ok rodataSyms =>
+            simp only [Except.map]
+            rw [forIn_bytes (fun name => match (buildStringTableK names).offset? name with
+              | none => .error (.missingString name)
+              | some nameOffset => .ok (undefinedFunctionSymbolK nameOffset))]
+            · cases concatMapK (fun name => match (buildStringTableK names).offset? name with
+                  | none => (.error (Error.missingString name) : Except Error (List UInt8))
+                  | some nameOffset => .ok (undefinedFunctionSymbolK nameOffset)) symbols with
+              | error e => rfl
+              | ok undefined =>
+                simp only [pure, Except.pure, Except.map, nullSymbol, textSectionSymbol,
+                  functionSymbol_mk, ByteArray.toList_data_append, zeros_toList, symbol_toList,
+                  List.append_assoc]
+            · intro name b
+              cases (buildStringTableK names).offset? name <;> simp only [undefinedFunctionSymbol_mk] <;> rfl
+        · intro rs b
+          cases (buildStringTableK names).offset? rs.name <;> simp only [rodataObjectSymbol_mk] <;> rfl
     · intro p b
       cases (buildStringTableK names).offset? p.1 <;> simp only [functionSymbol_mk] <;> rfl
 
@@ -456,14 +572,13 @@ theorem elfHeader_toList (sectionHeadersOffset sectionCount sectionNamesIndex : 
 theorem requireOffset_eq (names : List String) (name : String) :
     requireOffset (buildStringTable names) name = requireOffsetK (buildStringTableK names) name := by
   simp only [requireOffset, requireOffsetK, offset?_eq]
-
   rfl
 
 theorem symbolBytes_eq' (encoded : Encode.Output) (entryOffset : Nat) (exportName : String)
-    (exports : List (String × Nat)) (symbols names : List String) :
-    (symbolBytes encoded entryOffset exportName exports symbols (buildStringTable names)).map (·.data.toList) =
-      symbolBytesK encoded.text.size entryOffset exportName exports symbols (buildStringTableK names) :=
-  symbolBytes_eq encoded entryOffset exportName exports symbols names
+    (exports : List (String × Nat)) (rodataExports : List RodataSymbol) (symbols names : List String) :
+    (symbolBytes encoded entryOffset exportName exports rodataExports symbols (buildStringTable names)).map (·.data.toList) =
+      symbolBytesK encoded.text.size entryOffset exportName exports rodataExports symbols (buildStringTableK names) :=
+  symbolBytes_eq encoded entryOffset exportName exports rodataExports symbols names
 
 theorem relocationBytes_eq' (encoded : Encode.Output) (first : Nat) (symbols : List String) :
     (relocationBytes encoded first symbols).map (·.data.toList) =
@@ -472,11 +587,45 @@ theorem relocationBytes_eq' (encoded : Encode.Output) (first : Nat) (symbols : L
 
 theorem sectionNames_eq : sectionNames = sectionNamesK := rfl
 
+theorem sectionNamesWithRodata_eq : sectionNamesWithRodata = sectionNamesWithRodataK := rfl
+
+theorem forIn_noRodata {f : RodataSymbol → Unit → Except Error (ForInStep Unit)}
+    (hf : ∀ rs, f rs () = .error (.rodataSymbolWithoutSection rs.name)) :
+    ∀ (l : List RodataSymbol), forIn l () f = checkNoRodataExportsK l
+  | [] => rfl
+  | rs :: _ => by
+      rw [List.forIn_cons, hf rs]
+      rfl
+
+theorem forIn_checkRodata (rodataSize : Nat) (symbols names : List String)
+    {f : RodataSymbol → Unit → Except Error (ForInStep Unit)}
+    (hf : ∀ rs, f rs () =
+      if !validName rs.name then .error .invalidExportName
+      else if symbols.contains rs.name || names.count rs.name != 1 then .error (.duplicateSymbol rs.name)
+      else if rodataSize < rs.offset + rs.size then .error (.invalidRodataSymbol rs.name rs.offset rs.size rodataSize)
+      else .ok (.yield ())) :
+    ∀ (l : List RodataSymbol), forIn l () f = checkRodataExportsK rodataSize symbols names l
+  | [] => rfl
+  | rs :: rest => by
+      have hvn : validNameK = validName := funext validNameK_eq
+      rw [List.forIn_cons, hf rs]
+      simp only [checkRodataExportsK, hvn]
+      by_cases h1 : (!validName rs.name) = true
+      · simp only [h1, ite_true]; rfl
+      simp only [h1, ite_false, Bool.false_eq_true]
+      by_cases h2 : (symbols.contains rs.name || names.count rs.name != 1) = true
+      · simp only [h2, ite_true]; rfl
+      simp only [h2, ite_false, Bool.false_eq_true]
+      by_cases h3 : rodataSize < rs.offset + rs.size
+      · simp only [h3, ite_true]; rfl
+      · simp only [h3, ite_false]
+        exact forIn_checkRodata rodataSize symbols names hf rest
+
 /-- The list writer writes `write`'s bytes. -/
 theorem writeK_eq (input : Input) : (write input).map (·.data.toList) = writeK input := by
   have names : validNameK = validName := funext validNameK_eq
-  unfold write writeK
-  simp only [names, Array.getElem?_toList, ← size_eq_length, runtimeSymbols]
+  unfold write writeK runtimeSymbols
+  simp only [names, Array.getElem?_toList, ← size_eq_length]
   by_cases h1 : (!validName input.exportName) = true
   · simp only [h1, ite_true]
     rfl
@@ -489,20 +638,21 @@ theorem writeK_eq (input : Input) : (write input).map (·.data.toList) = writeK 
   · simp only [h3, ite_true]
     rfl
   simp only [h3, ite_false]
-  generalize (input.encoded.relocations.toList.map (fun relocation => relocation.symbol)).eraseDups = symbols
-  by_cases h4 : (!symbols.all validName) = true
+  let symbols := (input.encoded.relocations.toList.map (fun relocation => relocation.symbol)).eraseDups
+  by_cases h4 : (!(input.encoded.relocations.toList.map (fun relocation => relocation.symbol)).eraseDups.all validName) = true
   · simp only [h4, ite_true]
     rfl
   simp only [h4, ite_false, Bool.false_eq_true]
-  by_cases h5 : symbols.contains input.exportName = true
+  by_cases h5 : (input.encoded.relocations.toList.map (fun relocation => relocation.symbol)).eraseDups.contains input.exportName = true
   · simp only [h5, ite_true]
     rfl
   simp only [h5, ite_false, Bool.false_eq_true]
   unfold exportOffsetsK
   simp only [names, ← size_eq_length, Array.getElem?_toList]
+  let allNames := input.exportName :: (List.map (fun x => x.fst) input.exports ++ List.map (fun x => x.name) input.rodataExports)
   rw [forIn_list (fun (p : String × BlockId) =>
     if !validName p.1 then (.error .invalidExportName : Except Error (List (String × Nat)))
-    else if symbols.contains p.1 || (input.exportName :: input.exports.map (·.1)).count p.1 != 1 then
+    else if symbols.contains p.1 || allNames.count p.1 != 1 then
       .error (.duplicateSymbol p.1)
     else match input.encoded.blockOffsets[p.2.toNat]? with
       | none => .error (.missingEntryBlock p.2)
@@ -511,7 +661,7 @@ theorem writeK_eq (input : Input) : (write input).map (·.data.toList) = writeK 
         else .ok [(p.1, offset)])]
   · cases concatMapK (fun (p : String × BlockId) =>
         if !validName p.1 then (.error .invalidExportName : Except Error (List (String × Nat)))
-        else if symbols.contains p.1 || (input.exportName :: input.exports.map (·.1)).count p.1 != 1 then
+        else if symbols.contains p.1 || allNames.count p.1 != 1 then
           .error (.duplicateSymbol p.1)
         else match input.encoded.blockOffsets[p.2.toNat]? with
           | none => .error (.missingEntryBlock p.2)
@@ -521,59 +671,122 @@ theorem writeK_eq (input : Input) : (write input).map (·.data.toList) = writeK 
     | error e => rfl
     | ok exports =>
       simp only [Except.map, bind, Except.bind, List.nil_append]
-      rw [← symbolBytes_eq']
-      cases symbolBytes input.encoded entryOffset input.exportName exports symbols
-          (buildStringTable (input.exportName :: List.map (fun x => x.fst) input.exports ++ symbols)) with
-      | error e => rfl
-      | ok symbolTable =>
+      cases hro : input.rodata with
+      | none =>
         simp only []
-        rw [← relocationBytes_eq']
-        cases relocationBytes input.encoded (3 + exports.length) symbols with
+        rw [forIn_noRodata (fun _ => rfl)]
+        cases checkNoRodataExportsK input.rodataExports with
         | error e => rfl
-        | ok relocations =>
-          simp only [requireOffset_eq, sectionNames_eq]
-          cases requireOffsetK (buildStringTableK sectionNamesK) ".text" with
+        | ok _ =>
+          simp only []
+          rw [← symbolBytes_eq']
+          cases symbolBytes input.encoded entryOffset input.exportName exports [] symbols
+              (buildStringTable (allNames ++ symbols)) with
           | error e => rfl
-          | ok textName =>
-          cases requireOffsetK (buildStringTableK sectionNamesK) ".rela.text" with
+          | ok symbolTable =>
+            simp only []
+            rw [← relocationBytes_eq']
+            cases relocationBytes input.encoded (3 + exports.length) symbols with
+            | error e => rfl
+            | ok relocations =>
+              simp only [requireOffset_eq, sectionNames_eq]
+              cases requireOffsetK (buildStringTableK sectionNamesK) ".text" with
+              | error e => rfl
+              | ok textName =>
+              cases requireOffsetK (buildStringTableK sectionNamesK) ".rela.text" with
+              | error e => rfl
+              | ok relocationName =>
+              cases requireOffsetK (buildStringTableK sectionNamesK) ".note.ixcc" with
+              | error e => rfl
+              | ok noteSectionName =>
+              cases requireOffsetK (buildStringTableK sectionNamesK) ".symtab" with
+              | error e => rfl
+              | ok symbolName =>
+              cases requireOffsetK (buildStringTableK sectionNamesK) ".strtab" with
+              | error e => rfl
+              | ok stringName =>
+              cases requireOffsetK (buildStringTableK sectionNamesK) ".note.GNU-stack" with
+              | error e => rfl
+              | ok stackNoteName =>
+              cases requireOffsetK (buildStringTableK sectionNamesK) ".shstrtab" with
+              | error e => rfl
+              | ok sectionStringName =>
+              simp only [Except.map, pure, Except.pure, padTo_toList, ByteArray.toList_data_append, elfHeader_toList,
+                sectionHeader_toList, nullSectionHeader, zeros_toList, provenanceNote_toList,
+                (buildStringTable_eq _).1, size_eq_length]
+      | some rodataBytes =>
+        simp only []
+        rw [forIn_checkRodata rodataBytes.size symbols allNames (fun rs => by
+          by_cases c1 : (!validName rs.name) = true
+          · simp only [c1, ite_true]; rfl
+          simp only [c1, ite_false, Bool.false_eq_true]
+          by_cases c2 : (symbols.contains rs.name || allNames.count rs.name != 1) = true
+          · dsimp only [symbols, allNames] at c2 ⊢; simp only [c2, ite_true]; rfl
+          dsimp only [symbols, allNames] at c2 ⊢; simp only [c2, ite_false, Bool.false_eq_true]
+          by_cases c3 : rodataBytes.size < rs.offset + rs.size
+          · simp only [c3, ite_true]; rfl
+          · simp only [c3, ite_false]; rfl)]
+        cases checkRodataExportsK rodataBytes.size symbols allNames input.rodataExports with
+        | error e => rfl
+        | ok _ =>
+          simp only []
+          rw [← symbolBytes_eq']
+          cases symbolBytes input.encoded entryOffset input.exportName exports input.rodataExports symbols
+              (buildStringTable (allNames ++ symbols)) with
           | error e => rfl
-          | ok relocationName =>
-          cases requireOffsetK (buildStringTableK sectionNamesK) ".note.ixcc" with
-          | error e => rfl
-          | ok noteSectionName =>
-          cases requireOffsetK (buildStringTableK sectionNamesK) ".symtab" with
-          | error e => rfl
-          | ok symbolName =>
-          cases requireOffsetK (buildStringTableK sectionNamesK) ".strtab" with
-          | error e => rfl
-          | ok stringName =>
-          cases requireOffsetK (buildStringTableK sectionNamesK) ".note.GNU-stack" with
-          | error e => rfl
-          | ok stackNoteName =>
-          cases requireOffsetK (buildStringTableK sectionNamesK) ".shstrtab" with
-          | error e => rfl
-          | ok sectionStringName =>
-          simp only [Except.map, pure, Except.pure, padTo_toList, ByteArray.toList_data_append, elfHeader_toList,
-            sectionHeader_toList, nullSectionHeader, zeros_toList, provenanceNote_toList,
-            (buildStringTable_eq _).1, size_eq_length]
+          | ok symbolTable =>
+            simp only []
+            rw [← relocationBytes_eq']
+            cases relocationBytes input.encoded (3 + exports.length + input.rodataExports.length) symbols with
+            | error e => rfl
+            | ok relocations =>
+              simp only [requireOffset_eq, sectionNamesWithRodata_eq]
+              cases requireOffsetK (buildStringTableK sectionNamesWithRodataK) ".text" with
+              | error e => rfl
+              | ok textName =>
+              cases requireOffsetK (buildStringTableK sectionNamesWithRodataK) ".rela.text" with
+              | error e => rfl
+              | ok relocationName =>
+              cases requireOffsetK (buildStringTableK sectionNamesWithRodataK) ".note.ixcc" with
+              | error e => rfl
+              | ok noteSectionName =>
+              cases requireOffsetK (buildStringTableK sectionNamesWithRodataK) ".symtab" with
+              | error e => rfl
+              | ok symbolName =>
+              cases requireOffsetK (buildStringTableK sectionNamesWithRodataK) ".strtab" with
+              | error e => rfl
+              | ok stringName =>
+              cases requireOffsetK (buildStringTableK sectionNamesWithRodataK) ".note.GNU-stack" with
+              | error e => rfl
+              | ok stackNoteName =>
+              cases requireOffsetK (buildStringTableK sectionNamesWithRodataK) ".rodata" with
+              | error e => rfl
+              | ok rodataName =>
+              cases requireOffsetK (buildStringTableK sectionNamesWithRodataK) ".shstrtab" with
+              | error e => rfl
+              | ok sectionStringName =>
+              simp only [Except.map, pure, Except.pure, padTo_toList, ByteArray.toList_data_append, elfHeader_toList,
+                sectionHeader_toList, nullSectionHeader, zeros_toList, provenanceNote_toList,
+                (buildStringTable_eq _).1, size_eq_length]
   · intro p acc
     by_cases a : (!validName p.fst) = true
     · simp only [a, ite_true]
       rfl
     simp only [a, ite_false, Bool.false_eq_true]
-    by_cases b : (symbols.contains p.fst ||
-        List.count p.fst (input.exportName :: List.map (fun x => x.fst) input.exports) != 1) = true
-    · simp only [b, ite_true]
+    by_cases b : (symbols.contains p.fst || List.count p.fst allNames != 1) = true
+    · dsimp only [symbols, allNames] at b ⊢
+      simp only [b, ite_true]
       rfl
-    simp only [b, ite_false, Bool.false_eq_true]
-    cases input.encoded.blockOffsets[p.snd.toNat]? with
-    | none => rfl
-    | some offset =>
-      by_cases c : input.encoded.text.size ≤ offset
-      · simp only [c, ite_true]
-        rfl
-      · simp only [c, ite_false]
-        rfl
+    · dsimp only [symbols, allNames] at b ⊢
+      simp only [b, ite_false, Bool.false_eq_true]
+      cases input.encoded.blockOffsets[p.snd.toNat]? with
+      | none => rfl
+      | some offset =>
+        by_cases c : input.encoded.text.size ≤ offset
+        · simp only [c, ite_true]
+          rfl
+        · simp only [c, ite_false]
+          rfl
 
 
 /-- `writeChecked` in kernel-evaluable style: the list writer, accepted by
@@ -594,7 +807,7 @@ theorem writeCheckedK_eq (input : Input) : writeCheckedK input = writeChecked in
   | ok bytes =>
     simp only [Except.map, Except.mapError, bind, Except.bind]
     by_cases accepted : check input bytes = true
-    · rw [dif_pos (by rw [checkK_eq]; exact accepted), dif_pos accepted]
-    · rw [dif_neg (by rw [checkK_eq]; exact accepted), dif_neg accepted]
+    · rw [dite_eq_left (by rw [checkK_eq]; exact accepted), dite_eq_left accepted]
+    · rw [dite_eq_right (by rw [checkK_eq]; exact accepted), dite_eq_right accepted]
 
 end IxCC.X86.ELF
