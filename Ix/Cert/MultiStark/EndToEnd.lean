@@ -67,7 +67,7 @@ theorem ixvm_circuit_sound_of_extracted_trace
     (compiled : Aiur.Optimized.GenericArtifact specialized)
     (physical : Aiur.Optimized.Physical.Prepared compiled.artifact)
     {cfg : Aiur.Optimized.Depth.Config}
-    (certified : Aiur.Optimized.Depth.Certified cfg physical.system)
+    (certified : Aiur.Optimized.Physical.Prepared.DepthCertified compiled physical cfg)
     (bits : cfg.bits ≤ 24)
     (plan : Plan (Aiur.Optimized.Depth.system cfg physical.system) id)
     (activated : plan.WellFormedActivation)

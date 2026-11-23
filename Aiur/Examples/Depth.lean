@@ -12,17 +12,25 @@ tests (`crates/aiur/tests/fixtures/depth.ixa`):
 * `fib`: two co-firing self-calls, gap slots;
 * `run` and `top`: external slots into recursive callees from another SCC;
 * `loop`: the memo-cycle counterexample, whose self-call is an exact slot;
-* `owned`: a unit-returning recursive function, deferred across records. -/
+* `owned`: a unit-returning recursive function, deferred across records.
+
+Every recursion here needs its depth word. The recursive functions double their argument toward
+a target (`4096`, or `64` for `owned`), so the argument of a call is neither a proper part of a
+parameter nor a parameter moved by a literal step, and `Depth.Structural` exempts no SCC:
+doubling is not a measure on the field (`2` has multiplicative order `192` in Goldilocks, so
+`x ↦ 2x` has cycles of `192` rows). `loop` passes its argument unchanged. On a power of two
+`x = 2^(t - n)` below the target `2^t` the functions are the usual ones of `n`: `even`/`odd`
+give the parity of `n`, `fib` the `n`-th Fibonacci number, and `owned` has height `2n`. -/
 def depthExample : Modules.Program Nat := aiur_modules% "
 module Depth {
   fn loop(x: Field) -> Field { loop(x) }
-  fn even(n: Field) -> Field { match n { 0 => 1, _ => odd(n - 1) } }
-  fn odd(n: Field) -> Field { match n { 0 => 0, _ => even(n - 1) } }
-  fn fib(n: Field) -> Field { match n { 0 => 0, 1 => 1, _ => fib(n - 1) + fib(n - 2) } }
-  fn run(n: Field) -> Field { even(n) + fib(n) }
-  fn owned(n: Field) -> () { match n { 0 => (), _ => link(n - 1) } }
-  fn link(n: Field) -> () { owned(n) }
-  fn top(n: Field) -> Field { let _unit = owned(n); n + 1 }
+  fn even(x: Field) -> Field { match x { 4096 => 1, _ => odd(x * 2) } }
+  fn odd(x: Field) -> Field { match x { 4096 => 0, _ => even(x * 2) } }
+  fn fib(x: Field) -> Field { match x { 4096 => 0, 2048 => 1, _ => fib(x * 2) + fib(x * 4) } }
+  fn run(x: Field) -> Field { even(x) + fib(x) }
+  fn owned(x: Field) -> () { match x { 64 => (), _ => link(x * 2) } }
+  fn link(x: Field) -> () { owned(x) }
+  fn top(x: Field) -> Field { let _unit = owned(x); x + 1 }
 }
 "
 
@@ -35,12 +43,19 @@ def main (args : List String) : IO Unit := do
   let compiled ← IO.ofExcept prepared.compileOptimized
   let artifact := compiled.circuit.artifact
   let physical ← IO.ofExcept (Optimized.Physical.prepare artifact)
-  let cfg ← IO.ofExcept (Trace.depthConfig Library.U32.Goldilocks.modulus physical)
+  let (cfg, _) ← IO.ofExcept
+    (Trace.depthConfig Library.U32.Goldilocks.modulus compiled.circuit.inlined.program physical)
   -- The fixture must exercise every slot kind and both limb tables.
   let kinds := cfg.plans.flatMap (·.2.slots)
   for kind in [Optimized.Depth.SlotKind.exact, .gap, .external] do
     unless kinds.contains kind do throw (IO.userError s!"depth fixture has no {reprStr kind} slot")
   unless cfg.limbs == [16, 8] do throw (IO.userError "depth fixture does not use k = 24")
+  -- No SCC of the fixture is exempt: every recursive circuit carries a depth word.
+  unless cfg.structural.isEmpty do
+    throw (IO.userError s!"depth fixture has exempt circuits {cfg.structural}")
+  for name in ["Depth::loop", "Depth::even", "Depth::odd", "Depth::fib", "Depth::owned"] do
+    unless cfg.recursive (physical.representative name) do
+      throw (IO.userError s!"depth fixture circuit {name} has no depth word")
   let (exported, trace) ← IO.ofExcept (Trace.exportPreparedPlan Library.U32.Goldilocks.modulus
     ZMod.val compiled.circuit.inlined.program artifact physical exported)
   let package ← IO.ofExcept (Artifact.package exported Library.U32.Goldilocks.modulus ZMod.val (some trace))

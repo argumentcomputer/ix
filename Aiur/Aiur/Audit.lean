@@ -60,15 +60,20 @@ Section 3a closes that gap for circuits compiled with the depth pass
 `Modules.Prepared.depth_grouped_activated_heap_sound` (and `…_goldilocks`) start
 from acceptance of `Grouping.Plan.checkMemo`, the memo checker over the grouped,
 activated plan the prover commits to, built over the certified depth pass of the
-physical circuits (`Depth.Certified`), with at most `2^39` rows. Acyclicity is
-proved, not assumed: every memo graph over a certified depth system with that many
-rows is acyclic (`Depth.acyclic`), given a field condition that Goldilocks meets
-for gap limbs of at most `k = 24` bits (`Depth.goldilocks_characteristic`).
+physical circuits (`Physical.Prepared.DepthCertified`), with at most `2^39` rows.
+Termination is proved, not assumed. Recursive circuits carry a depth word, except
+those of exempt SCCs, whose calls descend on the structure of an argument or count
+a field argument down (`Depth.Structural`). Among the rows of such a memo graph
+whose arguments have store provenance, calls are well-founded
+(`Physical.Prepared.structural_memo_sound`), given `cfg.bits ≤ 24` and a field
+condition that Goldilocks meets (`Depth.goldilocks_characteristic`). With no exempt
+SCC (`Depth.Certified`) every such memo graph is acyclic (`Depth.acyclic`).
 The exporter checks the decidable side conditions: `Trace.exportPreparedPlan`
 groups and exports `Depth.system cfg physical.system`, refuses a configuration
-that is not `Depth.Certified` (`Trace.depthConfig`, by `Depth.certify`) and a plan
+that is not `Physical.Prepared.DepthCertified` (`Trace.depthConfig`, by
+`Depth.Structural.certify` and `Depth.Structural.check`) and a plan
 that is not `Plan.WellFormedActivation`, and uses gap limbs `[16, 8]`, or none when
-no call slot needs a gap, so `cfg.bits ≤ 24` as the `…_goldilocks` theorems take.
+no call slot needs a gap, so `cfg.bits ≤ 24` as the theorems take.
 The IxVM claim, recursive verifier and aggregation artifacts are exported this way.
 Both verifiers enforce the row bound over the whole batch (every shard and every
 active circuit, the memory circuits included, padded heights): in Rust, `check_shape`
@@ -1547,31 +1552,34 @@ info: @Optimized.Physical.Prepared.depth_grouped_activated_heap_sound : ∀ {F :
   {id : String → Except String ℕ} {source : Generic.Source F} {entries : List String}
   {specialized : Generic.Specialized source entries} (compiled : Optimized.GenericArtifact specialized)
   (prepared : Optimized.Physical.Prepared compiled.artifact) {cfg : Optimized.Depth.Config},
-  Optimized.Depth.Certified cfg prepared.system →
-    ∀ (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg prepared.system) id),
-      plan.WellFormedActivation →
-        ∀ {name : String},
-          name ∈ entries →
-            ∀ {rom : WidthROM F},
-              rom.Valid →
-                ∀ {args : List (SourceValue F)} {result : Value F} {wires : List (WireValue F)} {output : WireValue F},
-                  Circuit.Erasure.Signed compiled.system { channel := name, args := wires, result := output } →
-                    ∀ {root : Circuit.Message F},
-                      Optimized.Depth.erase cfg root =
-                          Circuit.Erasure.message compiled.system { channel := name, args := wires, result := output } →
-                        root.channel ∉ cfg.names →
-                          ∀ {rows : List (Circuit.WeightedRow F)},
-                            rows.length ≤ 2 ^ 39 →
-                              (∀ (n : ℕ), 0 < n → n ≤ 2 ^ 39 * 2 ^ cfg.bits → ↑n ≠ 0) →
-                                plan.checkMemo (Circuit.Erasure.rawROM rom) root rows = Except.ok () →
-                                  DecodesValues specialized.program.enums wires (entryValues args) →
-                                    WireValue.decode specialized.program.enums output = some result →
-                                      ∃ value heap,
-                                        Generic.SourceSemantics.EvalFn source.world name args [] value heap ∧
-                                          Represents
-                                            (WireROM.decode specialized.program.enums
-                                              (Circuit.Erasure.typedROM compiled.system rom))
-                                            heap value result
+  Optimized.Physical.Prepared.DepthCertified compiled prepared cfg →
+    cfg.bits ≤ 24 →
+      ∀ (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg prepared.system) id),
+        plan.WellFormedActivation →
+          ∀ {name : String},
+            name ∈ entries →
+              ∀ {rom : WidthROM F},
+                rom.Valid →
+                  ∀ {args : List (SourceValue F)} {result : Value F} {wires : List (WireValue F)}
+                    {output : WireValue F},
+                    Circuit.Erasure.Signed compiled.system { channel := name, args := wires, result := output } →
+                      ∀ {root : Circuit.Message F},
+                        Optimized.Depth.erase cfg root =
+                            Circuit.Erasure.message compiled.system
+                              { channel := name, args := wires, result := output } →
+                          root.channel ∉ cfg.names →
+                            ∀ {rows : List (Circuit.WeightedRow F)},
+                              rows.length ≤ 2 ^ 39 →
+                                (∀ (n : ℕ), 0 < n → n ≤ 2 ^ 39 * 2 ^ 24 → ↑n ≠ 0) →
+                                  plan.checkMemo (Circuit.Erasure.rawROM rom) root rows = Except.ok () →
+                                    DecodesValues specialized.program.enums wires (entryValues args) →
+                                      WireValue.decode specialized.program.enums output = some result →
+                                        ∃ value heap,
+                                          Generic.SourceSemantics.EvalFn source.world name args [] value heap ∧
+                                            Represents
+                                              (WireROM.decode specialized.program.enums
+                                                (Circuit.Erasure.typedROM compiled.system rom))
+                                              heap value result
 -/
 #guard_msgs in
 #check @Aiur.Optimized.Physical.Prepared.depth_grouped_activated_heap_sound
@@ -1588,33 +1596,35 @@ info: @Modules.Prepared.depth_grouped_activated_heap_sound : ∀ {F : Type} [ins
   {id : String → Except String ℕ} {program : Modules.Program F} (prepared : Modules.Prepared program)
   (compiled : Optimized.ModulesArtifact prepared) (physical : Optimized.Physical.Prepared compiled.circuit.artifact)
   {cfg : Optimized.Depth.Config},
-  Optimized.Depth.Certified cfg physical.system →
-    ∀ (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg physical.system) id),
-      plan.WellFormedActivation →
-        ∀ {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances},
-          prepared.find? external = some entry →
-            ∀ {rom : WidthROM F},
-              rom.Valid →
-                ∀ {args : List (SourceValue F)} {result : Value F} {wires : List (WireValue F)} {output : WireValue F},
-                  Circuit.Erasure.Signed compiled.circuit.system
-                      { channel := entry.resolved.name, args := wires, result := output } →
-                    ∀ {root : Circuit.Message F},
-                      Optimized.Depth.erase cfg root =
-                          Circuit.Erasure.message compiled.circuit.system
-                            { channel := entry.resolved.name, args := wires, result := output } →
-                        root.channel ∉ cfg.names →
-                          ∀ {rows : List (Circuit.WeightedRow F)},
-                            rows.length ≤ 2 ^ 39 →
-                              (∀ (n : ℕ), 0 < n → n ≤ 2 ^ 39 * 2 ^ cfg.bits → ↑n ≠ 0) →
-                                plan.checkMemo (Circuit.Erasure.rawROM rom) root rows = Except.ok () →
-                                  DecodesValues compiled.specialized.program.enums wires (entryValues args) →
-                                    WireValue.decode compiled.specialized.program.enums output = some result →
-                                      ∃ value heap,
-                                        prepared.EvalFn external args value heap ∧
-                                          Represents
-                                            (WireROM.decode compiled.specialized.program.enums
-                                              (Circuit.Erasure.typedROM compiled.circuit.system rom))
-                                            heap value result
+  Optimized.Physical.Prepared.DepthCertified compiled.circuit physical cfg →
+    cfg.bits ≤ 24 →
+      ∀ (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg physical.system) id),
+        plan.WellFormedActivation →
+          ∀ {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances},
+            prepared.find? external = some entry →
+              ∀ {rom : WidthROM F},
+                rom.Valid →
+                  ∀ {args : List (SourceValue F)} {result : Value F} {wires : List (WireValue F)}
+                    {output : WireValue F},
+                    Circuit.Erasure.Signed compiled.circuit.system
+                        { channel := entry.resolved.name, args := wires, result := output } →
+                      ∀ {root : Circuit.Message F},
+                        Optimized.Depth.erase cfg root =
+                            Circuit.Erasure.message compiled.circuit.system
+                              { channel := entry.resolved.name, args := wires, result := output } →
+                          root.channel ∉ cfg.names →
+                            ∀ {rows : List (Circuit.WeightedRow F)},
+                              rows.length ≤ 2 ^ 39 →
+                                (∀ (n : ℕ), 0 < n → n ≤ 2 ^ 39 * 2 ^ 24 → ↑n ≠ 0) →
+                                  plan.checkMemo (Circuit.Erasure.rawROM rom) root rows = Except.ok () →
+                                    DecodesValues compiled.specialized.program.enums wires (entryValues args) →
+                                      WireValue.decode compiled.specialized.program.enums output = some result →
+                                        ∃ value heap,
+                                          prepared.EvalFn external args value heap ∧
+                                            Represents
+                                              (WireROM.decode compiled.specialized.program.enums
+                                                (Circuit.Erasure.typedROM compiled.circuit.system rom))
+                                              heap value result
 -/
 #guard_msgs in
 #check @Aiur.Modules.Prepared.depth_grouped_activated_heap_sound
@@ -1627,7 +1637,7 @@ info: @Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks : ∀ {id 
   {program : Modules.Program Library.U32.Goldilocks.F} (prepared : Modules.Prepared program)
   (compiled : Optimized.ModulesArtifact prepared) (physical : Optimized.Physical.Prepared compiled.circuit.artifact)
   {cfg : Optimized.Depth.Config},
-  Optimized.Depth.Certified cfg physical.system →
+  Optimized.Physical.Prepared.DepthCertified compiled.circuit physical cfg →
     cfg.bits ≤ 24 →
       ∀ (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg physical.system) id),
         plan.WellFormedActivation →
@@ -1856,31 +1866,33 @@ info: @Modules.Prepared.depth_grouped_activated_heap_sound_observed : ∀ {F : T
   {id : String → Except String ℕ} {program : Modules.Program F} (prepared : Modules.Prepared program)
   (compiled : Optimized.ModulesArtifact prepared) (physical : Optimized.Physical.Prepared compiled.circuit.artifact)
   {cfg : Optimized.Depth.Config},
-  Optimized.Depth.Certified cfg physical.system →
-    ∀ (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg physical.system) id),
-      plan.WellFormedActivation →
-        ∀ {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances},
-          prepared.find? external = some entry →
-            ∀ {rom : WidthROM F},
-              rom.Valid →
-                ∀ {args : List (SourceValue F)} {result : Value F} {wires : List (WireValue F)} {output : WireValue F},
-                  Circuit.Erasure.Signed compiled.circuit.system
-                      { channel := entry.resolved.name, args := wires, result := output } →
-                    ∀ {root : Circuit.Message F},
-                      Optimized.Depth.erase cfg root =
-                          Circuit.Erasure.message compiled.circuit.system
-                            { channel := entry.resolved.name, args := wires, result := output } →
-                        root.channel ∉ cfg.names →
-                          ∀ {rows : List (Circuit.WeightedRow F)},
-                            rows.length ≤ 2 ^ 39 →
-                              (∀ (n : ℕ), 0 < n → n ≤ 2 ^ 39 * 2 ^ cfg.bits → ↑n ≠ 0) →
-                                plan.checkMemo (Circuit.Erasure.rawROM rom) root rows = Except.ok () →
-                                  DecodesValues compiled.specialized.program.enums wires (entryValues args) →
-                                    WireValue.decode compiled.specialized.program.enums output = some result →
-                                      ∃ value heap calls,
-                                        prepared.ObsFn external args value heap calls ∧
-                                          Represents (compiled.traceROM rom) heap value result ∧
-                                            Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls
+  Optimized.Physical.Prepared.DepthCertified compiled.circuit physical cfg →
+    cfg.bits ≤ 24 →
+      ∀ (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg physical.system) id),
+        plan.WellFormedActivation →
+          ∀ {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances},
+            prepared.find? external = some entry →
+              ∀ {rom : WidthROM F},
+                rom.Valid →
+                  ∀ {args : List (SourceValue F)} {result : Value F} {wires : List (WireValue F)}
+                    {output : WireValue F},
+                    Circuit.Erasure.Signed compiled.circuit.system
+                        { channel := entry.resolved.name, args := wires, result := output } →
+                      ∀ {root : Circuit.Message F},
+                        Optimized.Depth.erase cfg root =
+                            Circuit.Erasure.message compiled.circuit.system
+                              { channel := entry.resolved.name, args := wires, result := output } →
+                          root.channel ∉ cfg.names →
+                            ∀ {rows : List (Circuit.WeightedRow F)},
+                              rows.length ≤ 2 ^ 39 →
+                                (∀ (n : ℕ), 0 < n → n ≤ 2 ^ 39 * 2 ^ 24 → ↑n ≠ 0) →
+                                  plan.checkMemo (Circuit.Erasure.rawROM rom) root rows = Except.ok () →
+                                    DecodesValues compiled.specialized.program.enums wires (entryValues args) →
+                                      WireValue.decode compiled.specialized.program.enums output = some result →
+                                        ∃ value heap calls,
+                                          prepared.ObsFn external args value heap calls ∧
+                                            Represents (compiled.traceROM rom) heap value result ∧
+                                              Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls
 -/
 #guard_msgs in
 #check @Aiur.Modules.Prepared.depth_grouped_activated_heap_sound_observed
@@ -1897,7 +1909,7 @@ info: @Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks_observed :
   {program : Modules.Program Library.U32.Goldilocks.F} (prepared : Modules.Prepared program)
   (compiled : Optimized.ModulesArtifact prepared) (physical : Optimized.Physical.Prepared compiled.circuit.artifact)
   {cfg : Optimized.Depth.Config},
-  Optimized.Depth.Certified cfg physical.system →
+  Optimized.Physical.Prepared.DepthCertified compiled.circuit physical cfg →
     cfg.bits ≤ 24 →
       ∀ (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg physical.system) id),
         plan.WellFormedActivation →
@@ -1970,29 +1982,32 @@ info: @Optimized.Physical.Prepared.depth_grouped_activated_native_heap_sound_obs
   [inst_1 : DecidableEq F] {id : String → Except String ℕ} {source : Generic.Source F} {entries : List String}
   {specialized : Generic.Specialized source entries} (compiled : Optimized.GenericArtifact specialized)
   (prepared : Optimized.Physical.Prepared compiled.artifact) {cfg : Optimized.Depth.Config},
-  Optimized.Depth.Certified cfg prepared.system →
-    ∀ (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg prepared.system) id),
-      plan.WellFormedActivation →
-        ∀ {name : String},
-          name ∈ entries →
-            ∀ {rom : WidthROM F},
-              rom.Valid →
-                ∀ {args : List (SourceValue F)} {result : Value F} {wires : List (WireValue F)} {output : WireValue F},
-                  Circuit.Erasure.Signed compiled.system { channel := name, args := wires, result := output } →
-                    ∀ {root : Circuit.Message F},
-                      Optimized.Depth.erase cfg root =
-                          Circuit.Erasure.message compiled.system { channel := name, args := wires, result := output } →
-                        root.channel ∉ cfg.names →
-                          ∀ {rows : List (Circuit.WeightedRow F)},
-                            rows.length ≤ 2 ^ 39 →
-                              (∀ (n : ℕ), 0 < n → n ≤ 2 ^ 39 * 2 ^ cfg.bits → ↑n ≠ 0) →
-                                plan.checkMemo (Circuit.Erasure.rawROM rom) root rows = Except.ok () →
-                                  DecodesValues specialized.program.enums wires (entryValues args) →
-                                    WireValue.decode specialized.program.enums output = some result →
-                                      ∃ value heap calls,
-                                        Generic.SourceSemantics.ObsFn source.world name args [] value heap calls ∧
-                                          Represents (compiled.traceROM rom) heap value result ∧
-                                            Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls
+  Optimized.Physical.Prepared.DepthCertified compiled prepared cfg →
+    cfg.bits ≤ 24 →
+      ∀ (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg prepared.system) id),
+        plan.WellFormedActivation →
+          ∀ {name : String},
+            name ∈ entries →
+              ∀ {rom : WidthROM F},
+                rom.Valid →
+                  ∀ {args : List (SourceValue F)} {result : Value F} {wires : List (WireValue F)}
+                    {output : WireValue F},
+                    Circuit.Erasure.Signed compiled.system { channel := name, args := wires, result := output } →
+                      ∀ {root : Circuit.Message F},
+                        Optimized.Depth.erase cfg root =
+                            Circuit.Erasure.message compiled.system
+                              { channel := name, args := wires, result := output } →
+                          root.channel ∉ cfg.names →
+                            ∀ {rows : List (Circuit.WeightedRow F)},
+                              rows.length ≤ 2 ^ 39 →
+                                (∀ (n : ℕ), 0 < n → n ≤ 2 ^ 39 * 2 ^ 24 → ↑n ≠ 0) →
+                                  plan.checkMemo (Circuit.Erasure.rawROM rom) root rows = Except.ok () →
+                                    DecodesValues specialized.program.enums wires (entryValues args) →
+                                      WireValue.decode specialized.program.enums output = some result →
+                                        ∃ value heap calls,
+                                          Generic.SourceSemantics.ObsFn source.world name args [] value heap calls ∧
+                                            Represents (compiled.traceROM rom) heap value result ∧
+                                              Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls
 -/
 #guard_msgs in
 #check @Aiur.Optimized.Physical.Prepared.depth_grouped_activated_native_heap_sound_observed
@@ -2009,7 +2024,7 @@ info: @Optimized.Physical.Prepared.depth_grouped_activated_native_heap_sound_gol
   {id : String → Except String ℕ} {source : Generic.Source Library.U32.Goldilocks.F} {entries : List String}
   {specialized : Generic.Specialized source entries} (compiled : Optimized.GenericArtifact specialized)
   (prepared : Optimized.Physical.Prepared compiled.artifact) {cfg : Optimized.Depth.Config},
-  Optimized.Depth.Certified cfg prepared.system →
+  Optimized.Physical.Prepared.DepthCertified compiled prepared cfg →
     cfg.bits ≤ 24 →
       ∀ (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg prepared.system) id),
         plan.WellFormedActivation →

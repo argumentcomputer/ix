@@ -226,16 +226,17 @@ theorem SourceSound.run {P : List (Call IxVM.F) → Digest → Prop} (sound : So
 /-- **Circuit-level soundness for `P`** (the main circuit statement): for the
 checked source specialized for `verify_claim`, any optimized compilation and
 its physical deduplication, any depth configuration with gap words of at
-most 24 bits that the depth pass certifies (`Depth.Certified`, as
-`Depth.plan` builds it),
+most 24 bits that the depth pass certifies (`Physical.Prepared.DepthCertified`, as
+`Trace.depthConfig` builds it),
 any grouping plan over the depth pass with well-formed activation, any valid
 ROM of at most `2^39` entries, any signed message on `verify_claim`'s channel
 whose arguments decode to `d`, and any rows, at most `2^39` of them, that the
 grouped, activated memo checker accepts for a root outside the depth pass's
 names that erases to that message: some observed derivation of
 `verify_claim(d)`, whose calls the trace's memory carries (`CallsInROM`), gives
-`P` of its calls. No acyclicity is assumed: the depth words make every accepted
-memo graph acyclic (`Depth.plan_checkMemo_sound`).
+`P` of its calls. No acyclicity is assumed: under the depth certificate the entry
+claim of every accepted memo graph has a finite derivation
+(`Physical.Prepared.depth_checkMemo_sound`).
 
 Both bounds come from the verifiers' batch row bound (`MAX_BATCH_ROWS = 2^39`,
 summed over every shard and every active circuit, the memory circuits
@@ -247,7 +248,7 @@ def CircuitSound (P : List (Call IxVM.F) → Digest → Prop) : Prop :=
     (compiled : Aiur.Optimized.GenericArtifact specialized)
     (physical : Aiur.Optimized.Physical.Prepared compiled.artifact)
     {cfg : Aiur.Optimized.Depth.Config},
-    Aiur.Optimized.Depth.Certified cfg physical.system → cfg.bits ≤ 24 →
+    Aiur.Optimized.Physical.Prepared.DepthCertified compiled physical cfg → cfg.bits ≤ 24 →
     ∀ (plan : Aiur.Optimized.Grouping.Plan (Aiur.Optimized.Depth.system cfg physical.system) id),
     plan.WellFormedActivation →
     ∀ {rom : Aiur.WidthROM IxVM.F}, rom.Valid → rom.entries.length ≤ 2 ^ 39 →
@@ -351,7 +352,7 @@ theorem observedHeadline : ObservedHeadline := by
 /-- **The circuit statement follows from the source statement** through the
 generic-level observed headline over the depth pass
 (`Physical.Prepared.depth_grouped_activated_native_heap_sound_goldilocks_observed`:
-memo-checker soundness, `Depth.plan_checkMemo_sound`, with Goldilocks'
+memo-checker soundness, `Physical.Prepared.depth_checkMemo_sound`, with Goldilocks'
 characteristic for 24-bit words). -/
 theorem circuitSound_of_sourceSound {P : List (Call IxVM.F) → Digest → Prop}
     (sound : SourceSound P) : CircuitSound P := by

@@ -177,7 +177,7 @@ unsafe def main (args : List String) : IO Unit := do
       let specialized ← IO.ofExcept (Generic.specialize source entries)
       let compiled ← IO.ofExcept (specialized.compileOptimized {})
       let physical ← IO.ofExcept (Optimized.Physical.prepare compiled.artifact)
-      let cfg ← IO.ofExcept (Trace.depthConfig modulus physical)
+      let (cfg, _) ← IO.ofExcept (Trace.depthConfig modulus compiled.inlined.program physical)
       let snapshot := Optimized.Grouping.Snapshot.capture compiled.artifact physical cfg
         (exported.bytecode.functions.map (·.name) ++ exported.bytecode.maps.map (·.name)) groups
       let path := args[1]?.getD "/tmp/ixvm-grouping.json"

@@ -35,7 +35,8 @@ unsafe def main (args : List String) : IO Unit := do
   if mode == "grouping-snapshot" then
     let compiled ← IO.ofExcept (prepared.compileOptimized {})
     let physical ← IO.ofExcept (Optimized.Physical.prepare compiled.circuit.artifact)
-    let cfg ← IO.ofExcept (Trace.depthConfig MultiStark.modulus physical)
+    let (cfg, _) ← IO.ofExcept
+      (Trace.depthConfig MultiStark.modulus compiled.circuit.inlined.program physical)
     let snapshot := Optimized.Grouping.Snapshot.capture compiled.circuit.artifact physical cfg
       (exported.bytecode.functions.map (·.name) ++ exported.bytecode.maps.map (·.name)) groups
     let path := args[1]?.getD "/tmp/verifier-grouping.json"

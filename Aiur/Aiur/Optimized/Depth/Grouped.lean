@@ -1,4 +1,5 @@
 import Aiur.Optimized.Depth.EndToEnd
+import Aiur.Optimized.Depth.StructuralEndToEnd
 import Aiur.Optimized.Grouping.Memo
 import Aiur.Library.U32.Goldilocks
 
@@ -8,15 +9,21 @@ import Aiur.Library.U32.Goldilocks
 The deployed circuits are the grouped, activated plan over the depth pass of
 the physical circuits: `Grouping.Plan (Depth.system cfg physical.system) id`.
 Acceptance of `Plan.checkMemo` over that plan, the certified depth
-configuration and the row bound `rows.length ≤ 2^39` give the independent
-source evaluation predicate. These theorems replace the hypothesis
+configuration (`Physical.Prepared.DepthCertified`, at most 24 gap limb bits)
+and the row bound `rows.length ≤ 2^39` give the independent source evaluation
+predicate. These theorems replace the hypothesis
 `derived : plan.ActivatedDerives …` of `Modules.Prepared.grouped_activated_heap_sound`;
 no finite derivation and no acyclicity is assumed.
 
 Chain: `Plan.checkMemo_graph` (transport through activation and grouping, one
-row node per row) → `Depth.acyclic` (row bound) → `derives_of_acyclic` →
-`Depth.derives_erase` (depth words) → `Physical.Prepared.native_heap_sound`
+row node per row) → `Physical.Prepared.structural_memo_sound` (row bound: the
+calls between rows with store provenance are well-founded, by depth words or
+by the checked measures of exempt SCCs) → `Physical.Prepared.native_heap_sound`
 (dedup, erasure, compilation, inlining, specialization).
+
+`Depth.plan_checkMemo_sound` is the same step for any system under the
+certificate with no exempt SCC (`Depth.Certified`): `Depth.acyclic` →
+`derives_of_acyclic` → `Depth.derives_erase`.
 -/
 
 namespace Aiur.Optimized.Depth
@@ -78,7 +85,8 @@ over the certified depth pass, with at most `2^39` rows. -/
 theorem Prepared.depth_grouped_activated_heap_sound {source : Generic.Source F}
     {entries : List String} {specialized : Generic.Specialized source entries}
     (compiled : GenericArtifact specialized) (prepared : Prepared compiled.artifact)
-    {cfg : Depth.Config} (certified : Depth.Certified cfg prepared.system)
+    {cfg : Depth.Config} (certified : Prepared.DepthCertified compiled prepared cfg)
+    (bits : cfg.bits ≤ 24)
     (plan : Grouping.Plan (Depth.system cfg prepared.system) id)
     (activated : plan.WellFormedActivation)
     {name : String} (entry : name ∈ entries) {rom : WidthROM F} (valid : rom.Valid)
@@ -88,7 +96,7 @@ theorem Prepared.depth_grouped_activated_heap_sound {source : Generic.Source F}
     (rooted : Depth.erase cfg root = Erasure.message compiled.system ⟨name, wires, output⟩)
     (outside : root.channel ∉ cfg.names)
     {rows : List (WeightedRow F)} (bound : rows.length ≤ 2 ^ 39)
-    (characteristic : ∀ n : Nat, 0 < n → n ≤ 2 ^ 39 * 2 ^ cfg.bits → (n : F) ≠ 0)
+    (characteristic : ∀ n : Nat, 0 < n → n ≤ 2 ^ 39 * 2 ^ 24 → (n : F) ≠ 0)
     (checked : plan.checkMemo (Erasure.rawROM rom) root rows = .ok ())
     (arguments : DecodesValues specialized.program.enums wires (entryValues args))
     (decoded : output.decode specialized.program.enums = some result) :
@@ -96,7 +104,8 @@ theorem Prepared.depth_grouped_activated_heap_sound {source : Generic.Source F}
       Represents ((Erasure.typedROM compiled.system rom).decode specialized.program.enums)
         heap value result :=
   prepared.native_heap_sound compiled entry valid signed
-    (rooted ▸ Depth.plan_checkMemo_sound certified plan activated bound characteristic checked outside)
+    (prepared.depth_checkMemo_sound compiled certified bits plan activated entry valid signed rooted
+      outside bound characteristic checked)
     arguments decoded
 
 end Aiur.Optimized.Physical
@@ -114,7 +123,8 @@ side is trusted to deliver exactly such rows (see `Optimized.EndToEnd`). -/
 theorem Prepared.depth_grouped_activated_heap_sound {program : Modules.Program F}
     (prepared : Modules.Prepared program) (compiled : ModulesArtifact prepared)
     (physical : Physical.Prepared compiled.circuit.artifact)
-    {cfg : Depth.Config} (certified : Depth.Certified cfg physical.system)
+    {cfg : Depth.Config} (certified : Physical.Prepared.DepthCertified compiled.circuit physical cfg)
+    (bits : cfg.bits ≤ 24)
     (plan : Grouping.Plan (Depth.system cfg physical.system) id)
     (activated : plan.WellFormedActivation)
     {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances}
@@ -127,7 +137,7 @@ theorem Prepared.depth_grouped_activated_heap_sound {program : Modules.Program F
       Erasure.message compiled.circuit.system ⟨entry.resolved.name, wires, output⟩)
     (outside : root.channel ∉ cfg.names)
     {rows : List (WeightedRow F)} (bound : rows.length ≤ 2 ^ 39)
-    (characteristic : ∀ n : Nat, 0 < n → n ≤ 2 ^ 39 * 2 ^ cfg.bits → (n : F) ≠ 0)
+    (characteristic : ∀ n : Nat, 0 < n → n ≤ 2 ^ 39 * 2 ^ 24 → (n : F) ≠ 0)
     (checked : plan.checkMemo (Erasure.rawROM rom) root rows = .ok ())
     (arguments : DecodesValues compiled.specialized.program.enums wires (entryValues args))
     (decoded : output.decode compiled.specialized.program.enums = some result) :
@@ -135,7 +145,8 @@ theorem Prepared.depth_grouped_activated_heap_sound {program : Modules.Program F
       Represents ((Erasure.typedROM compiled.circuit.system rom).decode compiled.specialized.program.enums)
         heap value result :=
   compiled.physical_heap_sound physical selected valid signed
-    (rooted ▸ Depth.plan_checkMemo_sound certified plan activated bound characteristic checked outside)
+    (physical.depth_checkMemo_sound compiled.circuit certified bits plan activated
+      (Modules.Prepared.entry_mem selected) valid signed rooted outside bound characteristic checked)
     arguments decoded
 
 /-- The same over Goldilocks with at most `k = 24` limb bits (`cfg.bits ≤ 24`: the exporter
@@ -145,7 +156,8 @@ theorem Prepared.depth_grouped_activated_heap_sound_goldilocks
     {program : Modules.Program Library.U32.Goldilocks.F}
     (prepared : Modules.Prepared program) (compiled : ModulesArtifact prepared)
     (physical : Physical.Prepared compiled.circuit.artifact)
-    {cfg : Depth.Config} (certified : Depth.Certified cfg physical.system) (bits : cfg.bits ≤ 24)
+    {cfg : Depth.Config} (certified : Physical.Prepared.DepthCertified compiled.circuit physical cfg)
+    (bits : cfg.bits ≤ 24)
     (plan : Grouping.Plan (Depth.system cfg physical.system) id)
     (activated : plan.WellFormedActivation)
     {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances}
@@ -165,7 +177,7 @@ theorem Prepared.depth_grouped_activated_heap_sound_goldilocks
     ∃ value heap, prepared.EvalFn external args value heap ∧
       Represents ((Erasure.typedROM compiled.circuit.system rom).decode compiled.specialized.program.enums)
         heap value result :=
-  prepared.depth_grouped_activated_heap_sound compiled physical certified plan activated selected
-    valid signed rooted outside bound (Depth.goldilocks_bound bits) checked arguments decoded
+  prepared.depth_grouped_activated_heap_sound compiled physical certified bits plan activated selected
+    valid signed rooted outside bound Depth.goldilocks_characteristic checked arguments decoded
 
 end Aiur.Modules

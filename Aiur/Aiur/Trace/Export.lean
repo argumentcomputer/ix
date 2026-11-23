@@ -6,6 +6,8 @@ import Aiur.Optimized.EndToEnd
 import Aiur.Optimized.Depth.Basic
 import Aiur.Optimized.Depth.Classify
 import Aiur.Optimized.Depth.Grouped
+import Aiur.Optimized.Depth.Structural
+import Aiur.Optimized.Depth.StructuralEndToEnd
 import Aiur.Artifact
 
 /-! Ixon encoding of companion population plans and physical circuits: the
@@ -147,17 +149,25 @@ needs a large field anyway (`Depth.goldilocks_characteristic`). -/
 def depthLimbs (modulus : Nat) : List Nat :=
   if 2 ^ 16 ≤ modulus then [16, 8] else [Nat.log2 modulus]
 
-/-- The depth pass configuration of a prepared physical system: the untrusted
-planner's output (`Depth.planPrepared`), refused unless it certifies. A plan
-without a gap slot needs no limbs, so it adds no range maps or tables. -/
-def depthConfig [Field F] [DecidableEq F] (modulus : Nat) {artifact : Optimized.Artifact F}
-    (physical : Physical.Prepared artifact) : Except String Depth.Config := do
-  let cfg := Depth.planPrepared physical (depthLimbs modulus)
+/-- The depth pass configuration of the physical circuits compiled from `program`, with the
+measures of its exempt SCCs (`Depth.Structural`): recursive circuits whose calls descend on the
+structure of an argument, or count a field argument down, carry no depth word. It is the
+untrusted planners' output (`Depth.planPrepared`, then `Depth.Structural.plan`), refused unless
+both halves of the depth certificate check (`Physical.Prepared.DepthCertified`). A plan without
+a gap slot needs no limbs, so it adds no range maps or tables. -/
+def depthConfig [Field F] [DecidableEq F] (modulus : Nat) (program : Program F)
+    {artifact : Optimized.Artifact F} (physical : Physical.Prepared artifact) :
+    Except String (Depth.Config × Depth.Structural.Plan) := do
+  let base := Depth.planPrepared physical (depthLimbs modulus)
+  let (cfg, measures) :=
+    Depth.Structural.plan base physical.system program physical.representative
   let cfg := if cfg.plans.any (fun (_, plan) => plan.slots.contains .gap) then cfg
     else { cfg with limbs := [] }
-  unless Depth.certify cfg physical.system do
-    throw "the depth plan does not certify (Depth.Certified)"
-  return cfg
+  unless Depth.Structural.certify cfg physical.system do
+    throw "the depth plan does not certify (Depth.Structural.certify)"
+  unless Depth.Structural.check cfg program physical.representative measures do
+    throw "the depth plan's measures do not check (Depth.Structural.check)"
+  return (cfg, measures)
 
 /-- The execution bytecode with the depth pass's range maps and their tables
 (`Depth.rangeDecl`, `Depth.rangeTables`) appended, so that their callable IDs
@@ -205,7 +215,7 @@ def exportPreparedPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F →
   let original := exported.bytecode
   unless program.functions.length == artifact.layouts.length && program.functions.length == original.functions.length do
     throw "trace program/function count mismatch"
-  let cfg ← depthConfig modulus physical
+  let (cfg, measures) ← depthConfig modulus program physical
   let bytecode := depthBytecode cfg original
   let system := Depth.system cfg physical.system
   let callableNames := bytecode.functions.map (·.name) ++ bytecode.maps.map (·.name)
@@ -222,12 +232,13 @@ def exportPreparedPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F →
     used := used ++ chips.map (·.name)
     packed := packed ++ [⟨chips, group⟩]
   let plan ← Grouping.preparePlan system id packed
-  -- Enforce all executable WS 2B-1 exporter safety certificates (`PlanCertificate`,
-  -- `Depth.Certified`, `cfg.bits ≤ 24`, and `Plan.WellFormedActivation`) before emitting bytes.
+  -- Enforce all executable WS 2B-1 exporter safety certificates (`PlanCertificate`, both
+  -- halves of the depth certificate, `cfg.bits ≤ 24`, and `Plan.WellFormedActivation`) before
+  -- emitting bytes.
   unless Grouping.checkPlanCertificate system plan.singles plan.groups do
     throw "grouping partition failed executable certificate check (Grouping.checkPlanCertificate)"
-  unless Depth.checkGoldilocksPlan cfg physical.system plan do
-    throw "depth-grouped plan failed executable safety certificate (Depth.checkGoldilocksPlan)"
+  unless physical.checkDepthPlan program cfg measures plan do
+    throw "depth-grouped plan failed executable safety certificate (Physical.Prepared.checkDepthPlan)"
   let trace ← Ixon.run do
     nat planVersion
     nat modulus
@@ -245,7 +256,8 @@ def exportPreparedPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F →
 /-- `exportPreparedPlan` after physical deduplication of `artifact`. -/
 def exportPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
     (program : Program F) (artifact : Optimized.Artifact F) (exported : Execution.Export F)
-    (groups : List (String × List String) := []) : Except String (Execution.Export F × ByteArray) := do
+    (groups : List (String × List String) := []) :
+    Except String (Execution.Export F × ByteArray) := do
   exportPreparedPlan modulus encode program artifact (← Physical.prepare artifact) exported groups
 
 private def parMapExcept (xs : List α) (f : α → Except String β) : Except String (List β) :=
@@ -265,7 +277,7 @@ def exportPreparedPlanPar [Field F] [DecidableEq F] (modulus : Nat) (encode : F 
   let original := exported.bytecode
   unless program.functions.length == artifact.layouts.length && program.functions.length == original.functions.length do
     throw "trace program/function count mismatch"
-  let cfg ← depthConfig modulus physical
+  let (cfg, measures) ← depthConfig modulus program physical
   let bytecode := depthBytecode cfg original
   let system := Depth.system cfg physical.system
   let callableNames := bytecode.functions.map (·.name) ++ bytecode.maps.map (·.name)
@@ -286,8 +298,8 @@ def exportPreparedPlanPar [Field F] [DecidableEq F] (modulus : Nat) (encode : F 
   let plan ← Grouping.preparePlan system id packed
   unless Grouping.checkPlanCertificate system plan.singles plan.groups do
     throw "grouping partition failed executable certificate check (Grouping.checkPlanCertificate)"
-  unless Depth.checkGoldilocksPlan cfg physical.system plan do
-    throw "depth-grouped plan failed executable safety certificate (Depth.checkGoldilocksPlan)"
+  unless physical.checkDepthPlan program cfg measures plan do
+    throw "depth-grouped plan failed executable safety certificate (Physical.Prepared.checkDepthPlan)"
   let fnItems := (program.functions.zip artifact.layouts).zip original.functions
   let chipItems := system.chips.zip physical.system.chips
   let fnBytes ← parMapExcept fnItems fun ((func, layout), code) =>
@@ -313,7 +325,8 @@ def exportPreparedPlanPar [Field F] [DecidableEq F] (modulus : Nat) (encode : F 
 /-- `exportPreparedPlanPar` after physical deduplication of `artifact`. -/
 def exportPlanPar [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
     (program : Program F) (artifact : Optimized.Artifact F) (exported : Execution.Export F)
-    (groups : List (String × List String) := []) : Except String (Execution.Export F × ByteArray) := do
+    (groups : List (String × List String) := []) :
+    Except String (Execution.Export F × ByteArray) := do
   exportPreparedPlanPar modulus encode program artifact (← Physical.prepare artifact) exported groups
 
 end Aiur.Trace

@@ -333,7 +333,7 @@ info: @Ix.Cert.Compression.compression_pipeline_sound : ∀ {vk : Ix.Cert.Compre
                   {specialized : Aiur.Generic.Specialized IxVM.source [IxVM.Refinement.verifyClaim]}
                   (compiled : Aiur.Optimized.GenericArtifact specialized)
                   (physical : Aiur.Optimized.Physical.Prepared compiled.artifact) {cfg : Aiur.Optimized.Depth.Config},
-                  Aiur.Optimized.Depth.Certified cfg physical.system →
+                  Aiur.Optimized.Physical.Prepared.DepthCertified compiled physical cfg →
                     cfg.bits ≤ 24 →
                       ∀ (plan : Aiur.Optimized.Grouping.Plan (Aiur.Optimized.Depth.system cfg physical.system) id),
                         plan.WellFormedActivation →
@@ -474,7 +474,7 @@ info: @Ix.Cert.Compression.compression_pipeline_folded_pairing_sound : ∀
                   {specialized : Aiur.Generic.Specialized IxVM.source [IxVM.Refinement.verifyClaim]}
                   (compiled : Aiur.Optimized.GenericArtifact specialized)
                   (physical : Aiur.Optimized.Physical.Prepared compiled.artifact) {cfg : Aiur.Optimized.Depth.Config},
-                  Aiur.Optimized.Depth.Certified cfg physical.system →
+                  Aiur.Optimized.Physical.Prepared.DepthCertified compiled physical cfg →
                     cfg.bits ≤ 24 →
                       ∀ (plan : Aiur.Optimized.Grouping.Plan (Aiur.Optimized.Depth.system cfg physical.system) id),
                         plan.WellFormedActivation →

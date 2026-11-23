@@ -1696,7 +1696,7 @@ theorem lowered_trace_checkMemo_sound
   rfl
 
 /-- **End-to-End Multi-STARK Lowering → Certified Aiur Source Evaluation (Goldilocks):**
-Composes `Depth.checkGoldilocksPlan` (`WS 2B-1`) + `lowered_trace_checkMemo_sound`
+Composes `Physical.Prepared.checkDepthPlan` (`WS 2B-1`) + `lowered_trace_checkMemo_sound`
 (`WS 2B-2`) + `Aiur.Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks`! -/
 theorem lowered_trace_depth_sound_goldilocks
     {program : Aiur.Modules.Program Library.U32.Goldilocks.F}
@@ -1704,7 +1704,8 @@ theorem lowered_trace_depth_sound_goldilocks
     (physical : Physical.Prepared compiled.circuit.artifact)
     {cfg : Depth.Config} {id : String → Except String Nat}
     (plan : Grouping.Plan (Depth.system cfg physical.system) id)
-    (certOK : Depth.checkGoldilocksPlan cfg physical.system plan = true)
+    {measures : Depth.Structural.Plan}
+    (certOK : physical.checkDepthPlan compiled.circuit.inlined.program cfg measures plan = true)
     {external : String}
     {entry : Aiur.Modules.Selection program prepared.environment.assembly.instances}
     (selected : prepared.find? external = some entry)
@@ -1739,7 +1740,7 @@ theorem lowered_trace_depth_sound_goldilocks
     ∃ value heap, prepared.EvalFn external args value heap ∧
       Represents ((Erasure.typedROM compiled.circuit.system rom).decode
         compiled.specialized.program.enums) heap value result := by
-  obtain ⟨certified, bits, activated⟩ := Depth.checkGoldilocksPlan_sound certOK
+  obtain ⟨certified, bits, activated⟩ := Physical.Prepared.checkDepthPlan_sound certOK
   obtain ⟨wrows, hlen, hchecked⟩ :=
     lowered_trace_checkMemo_sound plan (Erasure.rawROM rom) root rows inspected
       hctx hinsp hdemLt provWeight hbal

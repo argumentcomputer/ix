@@ -69,6 +69,9 @@ structure Config where
   plans : List (String × ChipPlan) := []
   /-- SCC ranks: callees lower. -/
   ranks : List (String × Nat) := []
+  /-- Circuits of exempt SCCs (`Depth.Structural`): recursive, without a depth word. `certify`
+  ignores it; only `Structural.certify` lets these call each other at equal rank. -/
+  structural : List String := []
   deriving Repr, BEq, Inhabited
 
 def Config.plan (cfg : Config) (name : String) : ChipPlan := (List.lookup name cfg.plans).getD {}

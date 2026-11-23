@@ -2,6 +2,11 @@
 //! (`tests/fixtures/depth.ixa`): exact slots (`even`/`odd`, `owned`/`link`),
 //! gap slots (`fib`), external slots (`run`, `top`), and a unit-returning
 //! recursive function whose calls cross records.
+//!
+//! The fixture's recursions double their argument toward a target (`4096`,
+//! or `64` for `owned`), so none is structural or a countdown and every
+//! recursive circuit keeps its depth word. On `x = 2^(t - n)` they are the
+//! usual functions of `n`: [`at`] and [`owned_at`] give that argument.
 use super::*;
 use crate::execute::{Partition, owned_heights};
 use multi_stark::batch::Retention;
@@ -15,6 +20,18 @@ pub(super) fn depth_fixture() -> (CheckedProgram, TraceArtifact) {
   let mut program = program.check().unwrap();
   program.track_depth(&trace).unwrap();
   (program, trace)
+}
+
+/// The argument at which `even`, `odd`, `fib` and `run` are at distance `n`
+/// from their target: `2^(12 - n)`.
+pub(super) fn at(n: u32) -> u64 {
+  1 << (12 - n)
+}
+
+/// The argument at which `owned` and `top` are at distance `n` from their
+/// target: `2^(6 - n)`.
+fn owned_at(n: u32) -> u64 {
+  1 << (6 - n)
 }
 
 fn chip<'t>(trace: &'t TraceArtifact, name: &str) -> &'t crate::trace::Chip {
@@ -55,21 +72,24 @@ fn honest_recursion_proves_through_every_slot_kind() {
   let (program, trace) = depth_fixture();
   let plan = TracePlan::new(&program, trace).unwrap();
   let entry = "Depth::run";
-  let record = program.execute(entry, vec![12]).unwrap();
-  // even(12) = 1, fib(12) = 144.
+  let x = at(12);
+  let record = program.execute(entry, vec![x]).unwrap();
+  // At distance 12: even = 1, fib = 144.
   assert_eq!(record.output, [145]);
   let fib = program.callable_id("Depth::fib").unwrap();
-  // fib(n) calls fib(n - 1) last of its intra-SCC callees: height n - 1.
-  assert_eq!(record.query_depth(fib, &[12]), Some(11));
-  assert_eq!(record.query_depth(fib, &[1]), Some(0));
+  // fib at distance n calls distance n - 1 last of its intra-SCC callees:
+  // height n - 1.
+  assert_eq!(record.query_depth(fib, &[at(12)]), Some(11));
+  assert_eq!(record.query_depth(fib, &[at(1)]), Some(0));
   let even = program.callable_id("Depth::even").unwrap();
-  assert_eq!(record.query_depth(even, &[12]), Some(12));
-  let reference = plan.generate_reference(&record, entry, &[12], true).unwrap();
-  let fast = plan.generate(&record, entry, &[12], true).unwrap();
+  assert_eq!(record.query_depth(even, &[at(12)]), Some(12));
+  let reference = plan.generate_reference(&record, entry, &[x], true).unwrap();
+  let fast = plan.generate(&record, entry, &[x], true).unwrap();
   assert_eq!(reference, fast);
-  plan.check(&record, &fast, entry, &[12]).unwrap();
-  // fib(n) for n >= 2 fires both gap slots: fib(n - 1) with gap 0, and
-  // fib(n - 2) with gap 1, except fib(2) (fib(0) has height 0).
+  plan.check(&record, &fast, entry, &[x]).unwrap();
+  // fib at distance n >= 2 fires both gap slots: distance n - 1 with gap 0,
+  // and distance n - 2 with gap 1, except at distance 2 (distance 0 has
+  // height 0).
   let uses: u64 = fast.ranges.table(0).iter().sum();
   assert_eq!(uses, 2 * 11);
   assert_eq!(fast.ranges.table(0)[0], 12);
@@ -78,16 +98,16 @@ fn honest_recursion_proves_through_every_slot_kind() {
 
   let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
   let converted = backend.witness(&record, &fast).unwrap();
-  let direct = backend.generate(&record, entry, &[12]).unwrap();
+  let direct = backend.generate(&record, entry, &[x]).unwrap();
   for (a, b) in converted.traces.iter().zip(&direct.traces) {
     assert_eq!(a.values, b.values);
   }
-  let proof = backend.prove(entry, &[12], &record.output, direct).unwrap();
-  backend.verify(entry, &[12], &record.output, &proof).unwrap();
-  assert!(backend.verify(entry, &[12], &[146], &proof).is_err());
+  let proof = backend.prove(entry, &[x], &record.output, direct).unwrap();
+  backend.verify(entry, &[x], &record.output, &proof).unwrap();
+  assert!(backend.verify(entry, &[x], &[146], &proof).is_err());
 
   let batch = Backend::for_batch_below_floor(&plan, toy_parameters()).unwrap();
-  let stage = batch.generate_stage_1(&record, entry, &[12]).unwrap();
+  let stage = batch.generate_stage_1(&record, entry, &[x]).unwrap();
   // A wrong depth word in a fib row breaks the balance.
   let ci = batch.names.iter().position(|n| n == "Depth::fib").unwrap();
   let column = batch.placements[plan.members[fib]].columns
@@ -98,7 +118,7 @@ fn honest_recursion_proves_through_every_slot_kind() {
     batch
       .prove_batch_stage_1(
         entry,
-        &[12],
+        &[x],
         &record.output,
         forged,
         8,
@@ -109,7 +129,7 @@ fn honest_recursion_proves_through_every_slot_kind() {
   let proof = batch
     .prove_batch_stage_1(
       entry,
-      &[12],
+      &[x],
       &record.output,
       stage,
       8,
@@ -117,11 +137,11 @@ fn honest_recursion_proves_through_every_slot_kind() {
     )
     .unwrap();
   assert!(proof.proofs.len() > 1);
-  batch.verify_batch(entry, &[12], &record.output, &proof).unwrap();
+  batch.verify_batch(entry, &[x], &record.output, &proof).unwrap();
 }
 
 /// A misclassified exact slot fails population with a clear error, rather
-/// than as an unbalanced lookup at verification: `fib(n)` calls `fib(n - 2)`
+/// than as an unbalanced lookup at verification: `fib(x)` calls `fib(4x)`
 /// two below itself.
 #[test]
 fn misclassified_exact_slot_fails_population() {
@@ -135,12 +155,13 @@ fn misclassified_exact_slot_fails_population() {
   }
   let plan = TracePlan::new(&program, trace).unwrap();
   let entry = "Depth::run";
-  let record = program.execute(entry, vec![12]).unwrap();
+  let x = at(12);
+  let record = program.execute(entry, vec![x]).unwrap();
   let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
   let errors = [
-    plan.generate_reference(&record, entry, &[12], true).err(),
-    plan.generate(&record, entry, &[12], true).err(),
-    backend.generate(&record, entry, &[12]).err(),
+    plan.generate_reference(&record, entry, &[x], true).err(),
+    plan.generate(&record, entry, &[x], true).err(),
+    backend.generate(&record, entry, &[x]).err(),
   ];
   for error in errors {
     let error = error.expect("population accepted a misclassified slot");
@@ -160,27 +181,29 @@ fn invalid_gap_and_limb_bounds_are_rejected() {
   let entry = "Depth::run";
   let fib = program.callable_id("Depth::fib").unwrap();
 
-  let mut non_positive = program.execute(entry, vec![2]).unwrap();
-  let row0 = non_positive.queries.tables[fib].lookup(&[0]).1.unwrap();
+  // `run` at distance 2: fib rows at distances 2, 1 and 0.
+  let x = at(2);
+  let mut non_positive = program.execute(entry, vec![x]).unwrap();
+  let row0 = non_positive.queries.tables[fib].lookup(&[at(0)]).1.unwrap();
   non_positive.queries.tables[fib].set_depth(row0, 1);
   for error in [
-    plan.generate_reference(&non_positive, entry, &[2], true).err(),
-    plan.generate(&non_positive, entry, &[2], true).err(),
-    backend.generate(&non_positive, entry, &[2]).err(),
+    plan.generate_reference(&non_positive, entry, &[x], true).err(),
+    plan.generate(&non_positive, entry, &[x], true).err(),
+    backend.generate(&non_positive, entry, &[x]).err(),
   ] {
     let error = error.expect("accepted non-positive depth step");
     assert!(error.contains("callee is not below its caller"), "{error}");
   }
 
-  let mut overflow = program.execute(entry, vec![2]).unwrap();
-  let row1 = overflow.queries.tables[fib].lookup(&[1]).1.unwrap();
-  let row2 = overflow.queries.tables[fib].lookup(&[2]).1.unwrap();
+  let mut overflow = program.execute(entry, vec![x]).unwrap();
+  let row1 = overflow.queries.tables[fib].lookup(&[at(1)]).1.unwrap();
+  let row2 = overflow.queries.tables[fib].lookup(&[at(2)]).1.unwrap();
   overflow.queries.tables[fib].set_depth(row1, (1 << 24) + 9);
   overflow.queries.tables[fib].set_depth(row2, (1 << 24) + 10);
   for error in [
-    plan.generate_reference(&overflow, entry, &[2], true).err(),
-    plan.generate(&overflow, entry, &[2], true).err(),
-    backend.generate(&overflow, entry, &[2]).err(),
+    plan.generate_reference(&overflow, entry, &[x], true).err(),
+    plan.generate(&overflow, entry, &[x], true).err(),
+    backend.generate(&overflow, entry, &[x]).err(),
   ] {
     let error = error.expect("accepted overflowing depth gap");
     assert!(error.contains("exceeds 2^24"), "{error}");
@@ -194,19 +217,21 @@ fn recursive_entry_claims_a_depth_word() {
   let backend =
     Backend::for_batch_below_floor(&plan, toy_parameters()).unwrap();
   let entry = "Depth::fib";
-  let record = program.execute(entry, vec![10]).unwrap();
+  // fib at distance 10 is 55, at height 9.
+  let x = at(10);
+  let record = program.execute(entry, vec![x]).unwrap();
   assert_eq!(record.output, [55]);
-  assert!(backend.claim(entry, &[10], &[55]).is_err());
-  let public = plan.public_args(&record, entry, &[10]).unwrap();
-  assert_eq!(public, [10, 9]);
-  assert!(plan.public_args(&record, entry, &[10, 8]).is_err());
+  assert!(backend.claim(entry, &[x], &[55]).is_err());
+  let public = plan.public_args(&record, entry, &[x]).unwrap();
+  assert_eq!(public, [x, 9]);
+  assert!(plan.public_args(&record, entry, &[x, 8]).is_err());
   let stage = backend.generate_stage_1(&record, entry, &public).unwrap();
   let proof = backend
     .prove_batch_stage_1(entry, &public, &[55], stage, 4, Retention::Regenerate)
     .unwrap();
   backend.verify_batch(entry, &public, &[55], &proof).unwrap();
-  // The row provides fib(10) at its recorded depth word only.
-  assert!(backend.verify_batch(entry, &[10, 8], &[55], &proof).is_err());
+  // The row provides this fib claim at its recorded depth word only.
+  assert!(backend.verify_batch(entry, &[x, 8], &[55], &proof).is_err());
 }
 
 #[test]
@@ -228,10 +253,11 @@ fn owned_heights_are_longest_paths_over_records() {
   assert!(owned_heights(&base, &[(0, 9, 1)]).is_err());
 }
 
-/// `top(6)` calls `owned(6)`, which recurses through `link` down to
-/// `owned(0)`: `owned(n)` has height `2n`. Record A owns 6, 3, 2, 1 and 0;
-/// record B owns 5 and 4, so each record defers one call to the other and
-/// heights must cross records twice (design §9).
+/// `top` at distance 6 (`top(1)`) calls `owned` there, which recurses through
+/// `link` to distance 0 (`owned(64)`): `owned` at distance `n` has height
+/// `2n`. Record A owns distances 6, 3, 2, 1 and 0; record B owns 5 and 4, so
+/// each record defers one call to the other and heights must cross records
+/// twice (design §9).
 #[test]
 fn deferred_heights_cross_records() {
   let (program, trace) = depth_fixture();
@@ -240,11 +266,13 @@ fn deferred_heights_cross_records() {
     Backend::for_batch_below_floor(&plan, toy_parameters()).unwrap();
   let owned = program.callable_id("Depth::owned").unwrap();
   let hints = program.prepare_hints(&[]).unwrap();
-  let owners: [Vec<u64>; 2] = [vec![6, 3, 2, 1, 0], vec![5, 4]];
+  let top = owned_at(6);
+  let owners: [Vec<u64>; 2] =
+    [[6, 3, 2, 1, 0].map(owned_at).to_vec(), [5, 4].map(owned_at).to_vec()];
   let execute = |worker: usize, heights| {
     hints
       .execute_partition(
-        (worker == 0).then(|| ("Depth::top", vec![6])),
+        (worker == 0).then(|| ("Depth::top", vec![top])),
         Partition {
           function: owned,
           owned: owners[worker].iter().map(|&n| vec![n]).collect(),
@@ -258,9 +286,9 @@ fn deferred_heights_cross_records() {
   };
   // First pass: base heights ignore deferred calls; edges carry offsets.
   let first = [execute(0, None), execute(1, None)];
-  assert_eq!(first[0].query_depth(owned, &[6]), Some(1));
-  assert_eq!(first[0].query_depth(owned, &[3]), Some(6));
-  assert_eq!(first[1].query_depth(owned, &[5]), Some(3));
+  assert_eq!(first[0].query_depth(owned, &[owned_at(6)]), Some(1));
+  assert_eq!(first[0].query_depth(owned, &[owned_at(3)]), Some(6));
+  assert_eq!(first[1].query_depth(owned, &[owned_at(5)]), Some(3));
   let mut base = FxHashMap::default();
   let mut edges = vec![];
   for (worker, record) in first.iter().enumerate() {
@@ -274,7 +302,11 @@ fn deferred_heights_cross_records() {
   }
   let heights = owned_heights(&base, &edges).unwrap();
   for n in 0..=6 {
-    assert_eq!(heights[&vec![n]], 2 * n, "owned({n})");
+    assert_eq!(
+      heights[&vec![owned_at(n)]],
+      2 * u64::from(n),
+      "owned at distance {n}"
+    );
   }
   // Second pass: each record learns its deferred calls' heights.
   let supply = |worker: usize| {
@@ -285,15 +317,16 @@ fn deferred_heights_cross_records() {
   };
   let mut records = [execute(0, Some(supply(0))), execute(1, Some(supply(1)))];
   for (worker, record) in records.iter().enumerate() {
-    for &n in &owners[worker] {
-      assert_eq!(record.query_depth(owned, &[n]), Some(2 * n));
+    for &x in &owners[worker] {
+      let n = u64::from(6 - x.ilog2());
+      assert_eq!(record.query_depth(owned, &[x]), Some(2 * n));
     }
   }
   // Without the heights, the replay cannot know its callers' depths.
   assert!(
     hints
       .execute_partition(
-        Some(("Depth::top", vec![6])),
+        Some(("Depth::top", vec![top])),
         Partition {
           function: owned,
           owned: owners[0].iter().map(|&n| vec![n]).collect(),
@@ -321,14 +354,15 @@ fn deferred_heights_cross_records() {
   let intervals: Vec<_> =
     shapes.iter().flat_map(|s| s.memory_intervals.clone()).collect();
   let traces = [
-    backend.generate_stage_1(&records[0], "Depth::top", &[6]).unwrap(),
+    backend.generate_stage_1(&records[0], "Depth::top", &[top]).unwrap(),
     backend.generate_record_stage_1(&records[1]).unwrap(),
   ];
+  // top(x) = x + 1.
   let proof = backend
     .prove_streamed_stage_1(
       "Depth::top",
-      &[6],
-      &[7],
+      &[top],
+      &[top + 1],
       StreamPlan {
         shards: 2,
         memory_intervals: intervals,
@@ -337,7 +371,7 @@ fn deferred_heights_cross_records() {
       |i| Ok(traces[i].clone()),
     )
     .unwrap();
-  backend.verify_batch("Depth::top", &[6], &[7], &proof).unwrap();
+  backend.verify_batch("Depth::top", &[top], &[top + 1], &proof).unwrap();
 }
 
 /// A forged trace whose only imbalance is an out-of-range gap limb must be
@@ -351,9 +385,10 @@ fn out_of_range_gap_limb_is_rejected_by_verifier() {
   let backend =
     Backend::for_batch_below_floor(&plan, toy_parameters()).unwrap();
   let entry = "Depth::run";
-  let record = program.execute(entry, vec![12]).unwrap();
+  let x = at(12);
+  let record = program.execute(entry, vec![x]).unwrap();
   let output = record.output.clone();
-  let stage = backend.generate_stage_1(&record, entry, &[12]).unwrap();
+  let stage = backend.generate_stage_1(&record, entry, &[x]).unwrap();
   let fib = program.callable_id("Depth::fib").unwrap();
   let chip =
     plan.artifact.chips.iter().find(|c| c.name == "Depth::fib").unwrap();
@@ -371,7 +406,7 @@ fn out_of_range_gap_limb_is_rejected_by_verifier() {
   let placement = &backend.placements[plan.members[fib]];
   let (lo_col, hi_col) =
     (placement.columns[column], placement.columns[column + 1]);
-  // Row 0 is fib(12), where both gap slots fire.
+  // Row 0 is fib at distance 12, where both gap slots fire.
   let lo = stage[ci].values[lo_col];
   let hi = stage[ci].values[hi_col];
   let mut forged = stage.clone();
@@ -390,12 +425,12 @@ fn out_of_range_gap_limb_is_rejected_by_verifier() {
     forged[t].values[row] -= Val::ONE;
   }
   let error = backend
-    .prove_batch_stage_1(entry, &[12], &output, forged, 8, Retention::Retain)
+    .prove_batch_stage_1(entry, &[x], &output, forged, 8, Retention::Retain)
     .err()
     .expect("out-of-range gap limb accepted");
   assert!(error.contains("verification failed"), "{error}");
   backend
-    .prove_batch_stage_1(entry, &[12], &output, stage, 8, Retention::Retain)
+    .prove_batch_stage_1(entry, &[x], &output, stage, 8, Retention::Retain)
     .unwrap();
 }
 
