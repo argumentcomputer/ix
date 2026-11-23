@@ -47,4 +47,8 @@ import IxCCGrounding.WordFire
 import IxCCGrounding.WordCheck
 import IxCCGrounding.WordRoot
 import IxCCGrounding.PcRoot
+import IxCCGrounding.LimbWord
+import IxCCGrounding.PcProp
+import IxCCGrounding.StrLit
+import IxCCGrounding.BigNatBridge
 import IxCCGrounding.Fence

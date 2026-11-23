@@ -173,6 +173,7 @@ in
       launch tests-kernel-front $bin/tests-kernel-front
       launch tests-soundness $bin/tests-soundness
       launch tests-bignat $bin/tests-bignat
+      launch tests-bignat-slowpath $bin/tests-bignat-slowpath
       ${pkgs.lib.optionalString native ''launch tests-array $bin/tests-array suite-logs/array''}
       launch src-artifacts $bin/gen-src-artifacts --check
       launch recheck-artifacts $bin/gen-recheck-artifacts --check

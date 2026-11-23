@@ -526,6 +526,16 @@ import IxCC.Rt.Rc.Array.Proof.MutOps
 import IxCC.Rt.Rc.Array.Proof.Release
 import IxCC.Rt.Rc.Array.Proof.Alloc
 import IxCC.Rt.Readback.Array
+import IxCC.Cfg.Rc.Layout
+import IxCC.Cfg.Rc.Inline
+import IxCC.Cfg.Rc.Prune
+import IxCC.BigNat.Entry
+import IxCC.BigNat.Bootstrap
+import IxCC.BigNat.Proof.Entry
+import IxCC.Rt.BigNat.Cell
+import IxCC.Rt.BigNat.Dispatch
+import IxCC.Rt.BigNat.ProofProcs
+import IxCC.Rt.BigNat.Proof
 
 /-! Production API: Ixon v3 ingress, the shared semantic vocabulary, the Src
 front end (ingress, the checked unfolding table, SrcEval, relevance), global and

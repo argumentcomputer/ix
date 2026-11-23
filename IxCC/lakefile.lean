@@ -258,6 +258,14 @@ lean_exe «tests-soundness» where
 lean_exe «tests-bignat» where
   root := `IxCCTests.BigNat.DiffTest
 
+/- Phase 4 arbitrary-precision Nat slow-path entrypoints, bootstrap verifier, .rodata literals, and zero-natOverflow LIR dispatch tests (18,271 checks). -/
+lean_exe «tests-bignat-slowpath» where
+  root := `IxCCTests.BigNat.SlowPathTest
+
+/- Pure-Lean 100k+ arbitrary-precision differential harness comparing BigNat or compiled ixcc executables against Lean 4 GMP. -/
+lean_exe «tests-bignat-nativediff» where
+  root := `IxCCTests.BigNat.NativeDiff
+
 /- DR1 .rodata statics, DR3 contiguous Array/ByteArray/LimbArray runtime, readback, and native Xeon controls. -/
 lean_exe «tests-array» where
   root := `IxCCTests.Array.Main
