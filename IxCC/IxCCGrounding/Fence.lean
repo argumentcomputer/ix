@@ -10,6 +10,10 @@ import IxCCGrounding.GradedHead
 import IxCCGrounding.SelRetype
 import IxCCGrounding.WordRoot
 import IxCCGrounding.PcRoot
+import IxCCGrounding.LimbWord
+import IxCCGrounding.PcProp
+import IxCCGrounding.StrLit
+import IxCCGrounding.BigNatBridge
 
 /-! # The grounding library's axiom fence: every theorem presented as proved uses at most
 the three standard axioms. Building the library checks it (`#guard_msgs`). -/
@@ -1817,3 +1821,396 @@ example {p : Program} {env : KEnv} {κ : CId → KKey} {lpsOf : CId → List Nat
   sansK_of_checkWP h
 
 end ConclusionsAGpWP
+
+/-! ## Wave 3 Layer-3 Widening: Limb Word Ops, `Pc-Prop`, `Lit.str`, and `BigNat` / `ArraySpec` -/
+
+/-! ### `WordAccel` limb-op widening & `CheckSansKS` factorization -/
+
+/-- info: 'IxCC.Grounding.arity_cases' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Grounding.arity_cases
+
+/-- info: 'IxCC.Grounding.spec_arity' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Grounding.spec_arity
+
+/-- info: 'IxCC.Grounding.sansKS_of_sansK' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.sansKS_of_sansK
+
+/-- info: 'IxCC.Grounding.groundFactsWKS_of_sansKS' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.groundFactsWKS_of_sansKS
+
+/-- info: 'IxCC.Grounding.runPair_mem_of_sansKS' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.runPair_mem_of_sansKS
+
+/-- info: 'IxCC.Grounding.headRegimeS_of_sansKS' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.headRegimeS_of_sansKS
+
+/-! ### `LimbWord`: `Ix.Kernel.Model` adequacy for all 5 `IxCC.BigNat.LimbOps` word equations -/
+
+/-- info: 'IxCC.Grounding.bool_den' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.bool_den
+
+/-- info: 'IxCC.Grounding.boolLit_den' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.boolLit_den
+
+/-- info: 'IxCC.Grounding.boolLit_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.boolLit_mem
+
+/-- info: 'IxCC.Grounding.natCmp_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.natCmp_accel
+
+/-- info: 'IxCC.Grounding.natArith_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.natArith_accel
+
+/-- info: 'IxCC.Grounding.boolToNat_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.boolToNat_accel
+
+/-- info: 'IxCC.Grounding.condNat_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.condNat_accel
+
+/-- info: 'IxCC.Grounding.log2_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.log2_mem
+
+/-- info: 'IxCC.Grounding.log2_accel_of_eqn' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.log2_accel_of_eqn
+
+/-- info: 'IxCC.Grounding.clz64_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.clz64_accel
+
+/-- info: 'IxCC.Grounding.clz64_accel_bignat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.clz64_accel_bignat
+
+/-- info: 'IxCC.Grounding.mulWide64_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.mulWide64_accel
+
+/-- info: 'IxCC.Grounding.mulWide64_accel_bignat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.mulWide64_accel_bignat
+
+/-- info: 'IxCC.Grounding.divWide64_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.divWide64_accel
+
+/-- info: 'IxCC.Grounding.divWide64_accel_bignat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.divWide64_accel_bignat
+
+/-- info: 'IxCC.Grounding.addCarry64_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.addCarry64_accel
+
+/-- info: 'IxCC.Grounding.addCarry64_accel_bignat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.addCarry64_accel_bignat
+
+/-- info: 'IxCC.Grounding.subBorrow64_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.subBorrow64_accel
+
+/-- info: 'IxCC.Grounding.subBorrow64_accel_bignat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.subBorrow64_accel_bignat
+
+/-- info: 'IxCC.Grounding.proj_prod_fst' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.proj_prod_fst
+
+/-- info: 'IxCC.Grounding.proj_prod_snd' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.proj_prod_snd
+
+/-- info: 'IxCC.Grounding.boolBasis_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.boolBasis_of_check
+
+/-- info: 'IxCC.Grounding.boolToNat_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.boolToNat_of_check
+
+/-- info: 'IxCC.Grounding.condNat_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.condNat_of_check
+
+/-- info: 'IxCC.Grounding.log2Stored_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.log2Stored_of_check
+
+/-- info: 'IxCC.Grounding.prodBasis_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.prodBasis_of_check
+
+/-- info: 'IxCC.Grounding.limbStmt_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.limbStmt_of_check
+
+/-! ### `PcProp`: `PUnit.casesOn` at `Prop` (`Step Pc-Prop`, discharging `pcInstB`) -/
+
+/-- info: 'IxCC.Grounding.groundCheckWP_of_WPP' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.groundCheckWP_of_WPP
+
+/-- info: 'IxCC.Grounding.punitSort_of_checkWPP' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.punitSort_of_checkWPP
+
+/-- info: 'IxCC.Grounding.punitPropFacts_of_checkWPP' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.punitPropFacts_of_checkWPP
+
+/-- info: 'IxCC.Grounding.pwNamed_holds_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.pwNamed_holds_zero
+
+/-- info: 'IxCC.Grounding.major_dom_with' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.major_dom_with
+
+/-- info: 'IxCC.Grounding.caseSubFires_of_punit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseSubFires_of_punit
+
+/-- info: 'IxCC.Grounding.caseSubFires_of_instWPP' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseSubFires_of_instWPP
+
+/-- info: 'IxCC.Grounding.fundHypsK_of_instWPP' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fundHypsK_of_instWPP
+
+/-- info: 'IxCC.Grounding.rootSound_678ASWPP' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_678ASWPP
+
+/-- info: 'IxCC.Grounding.rootSound_678AGWPP' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_678AGWPP
+
+/-- info: 'IxCC.Grounding.rootSound_678AGWPP_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_678AGWPP_of_check
+
+/-- info: 'IxCC.Grounding.rootSound_678AGpWPP_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_678AGpWPP_of_check
+
+/-! ### `StrLit`: `Lit.str` denotation, UTF-8 readback, and `FoTyStr` root soundness -/
+
+/-- info: 'IxCC.Grounding.strBasis_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.strBasis_of_check
+
+/-- info: 'IxCC.Grounding.strLitToConstructor_eq_strListE' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.strLitToConstructor_eq_strListE
+
+/-- info: 'IxCC.Grounding.char_den' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.char_den
+
+/-- info: 'IxCC.Grounding.strList_den' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.strList_den
+
+/-- info: 'IxCC.Grounding.str_den' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.str_den
+
+/-- info: 'IxCC.Grounding.char_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.char_mem
+
+/-- info: 'IxCC.Grounding.strList_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.strList_mem
+
+/-- info: 'IxCC.Grounding.str_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.str_mem
+
+/-- info: 'IxCC.Grounding.strSet_indep' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.strSet_indep
+
+/-- info: 'IxCC.Grounding.relV_str_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.relV_str_eq
+
+/-- info: 'IxCC.Grounding.relV_str_intro' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.relV_str_intro
+
+/-- info: 'IxCC.Grounding.str_toUTF8_toList_inj' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.str_toUTF8_toList_inj
+
+/-- info: 'IxCC.Grounding.readback_str' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Grounding.readback_str
+
+/-- info: 'IxCC.Grounding.termCorrS_of_corrStrSB' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.termCorrS_of_corrStrSB
+
+/-- info: 'IxCC.Grounding.sansKS_of_checkStrWPP' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.sansKS_of_checkStrWPP
+
+/-- info: 'IxCC.Grounding.punitPropFacts_of_checkStrWPP' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.punitPropFacts_of_checkStrWPP
+
+/-- info: 'IxCC.Grounding.groundFactsStrWPP_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.groundFactsStrWPP_of_check
+
+/-- info: 'IxCC.Grounding.rootSound_str_coreWK' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_str_coreWK
+
+/-- info: 'IxCC.Grounding.rootSound_678AGStrWPP_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_678AGStrWPP_of_check
+
+/-- info: 'IxCC.Grounding.rootSound_678AGpStrWPP_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_678AGpStrWPP_of_check
+
+/-! ### `BigNatBridge`: `ArraySpec` / `Array` η-extensionality, `litSet_inj`, and Layer-1 × Layer-3 `BigNat` adequacy -/
+
+/-- info: 'IxCC.Grounding.falseBasis_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.falseBasis_of_check
+
+/-- info: 'IxCC.Grounding.boolTrueNeFalse_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.boolTrueNeFalse_of_check
+
+/-- info: 'IxCC.Grounding.natBeqStored_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.natBeqStored_of_check
+
+/-- info: 'IxCC.Grounding.bool_true_ne_false' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.bool_true_ne_false
+
+/-- info: 'IxCC.Grounding.boolSet_inj' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.boolSet_inj
+
+/-- info: 'IxCC.Grounding.litSet_inj' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.litSet_inj
+
+/-- info: 'IxCC.Grounding.natPrimBin_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.natPrimBin_accel
+
+/-- info: 'IxCC.Grounding.natPow_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.natPow_accel
+
+/-- info: 'IxCC.Grounding.natPred_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.natPred_accel
+
+/-- info: 'IxCC.Grounding.natPrimCmp_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.natPrimCmp_accel
+
+/-- info: 'IxCC.Grounding.arrayBasis_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.arrayBasis_of_check
+
+/-- info: 'IxCC.Grounding.listSet_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.listSet_mem
+
+/-- info: 'IxCC.Grounding.arraySet_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.arraySet_mem
+
+/-- info: 'IxCC.Grounding.toList_eq_projVal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.toList_eq_projVal
+
+/-- info: 'IxCC.Grounding.toList_mk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.toList_mk
+
+/-- info: 'IxCC.Grounding.toList_arraySet' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.toList_arraySet
+
+/-- info: 'IxCC.Grounding.array_eta' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.array_eta
+
+/-- info: 'IxCC.Grounding.array_ext' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.array_ext
+
+/-- info: 'IxCC.Grounding.arraySet_inj' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.arraySet_inj
+
+/-- info: 'IxCC.Grounding.listLength_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.listLength_accel
+
+/-- info: 'IxCC.Grounding.listConcat_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.listConcat_accel
+
+/-- info: 'IxCC.Grounding.listDropLast_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.listDropLast_accel
+
+/-- info: 'IxCC.Grounding.listSet_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.listSet_accel
+
+/-- info: 'IxCC.Grounding.listGetD_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.listGetD_accel
+
+/-- info: 'IxCC.Grounding.arrayEmpty_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.arrayEmpty_accel
+
+/-- info: 'IxCC.Grounding.arraySize_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.arraySize_accel
+
+/-- info: 'IxCC.Grounding.arrayPush_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.arrayPush_accel
+
+/-- info: 'IxCC.Grounding.arrayPop_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.arrayPop_accel
+
+/-- info: 'IxCC.Grounding.arraySetIfInBounds_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.arraySetIfInBounds_accel
+
+/-- info: 'IxCC.Grounding.arrayGetD_accel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.arrayGetD_accel
+
+/-- info: 'IxCC.Grounding.arraySet_of_toList_eqn' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.arraySet_of_toList_eqn
+
+/-- info: 'IxCC.Grounding.towV_mem_of_ofNat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.towV_mem_of_ofNat
+
+/-- info: 'IxCC.Grounding.limbElems_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.limbElems_mem
+
+/-- info: 'IxCC.Grounding.limbArraySet_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.limbArraySet_mem
+
+/-- info: 'IxCC.Grounding.toNatPrefix_limbArraySet' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.toNatPrefix_limbArraySet
+
+/-- info: 'IxCC.Grounding.toNat_limbArraySet' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.toNat_limbArraySet
+
+/-- info: 'IxCC.Grounding.bigNatBinThm_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.bigNatBinThm_of_check
+
+/-- info: 'IxCC.Grounding.bigNatBinThm_eval' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.bigNatBinThm_eval
+
+/-- info: 'IxCC.Grounding.bigNat_binop_layer3_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.bigNat_binop_layer3_sound
+
+/-- info: 'IxCC.Grounding.bigNatBinWFThm_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.bigNatBinWFThm_of_check
+
+/-- info: 'IxCC.Grounding.bigNat_binop_layer3_wf_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.bigNat_binop_layer3_wf_sound
+
+/-- info: 'IxCC.Grounding.bigNatCmpThm_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.bigNatCmpThm_of_check
+
+/-- info: 'IxCC.Grounding.bigNat_cmp_layer3_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.bigNat_cmp_layer3_sound
+
+/-- info: 'IxCC.Grounding.bigNat_unop_layer3_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.bigNat_unop_layer3_sound
+
+/-! **`rootSound_678AGpWPP_of_check` discharges `pcInstB`**, and
+**`rootSound_678AGpStrWPP_of_check` widens root soundness to `Lit.str` + `Pc-Prop` + words**,
+with the same kernel model laws and zero extra axioms. -/
+
+section ConclusionsW3
+
+open IxCC.Grounding Ix.Kernel Ix.Kernel.SetTheory
+open IxCC.Src (Value CId Program Levels)
+
+variable {V : Type} [Ix.Kernel.SetTheory V] {env : KEnv} {M : Model V env}
+
+/-- `rootSound_678AGpWPP_of_check` has no `pcInstB` hypothesis: `PUnit.casesOn` at `Prop`
+(`Step Pc-Prop`) is discharged directly via `M.mem` + `mem_univ_zero` + `M.iota`. -/
+example {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId}
+    {args : List FoTy} {res : FoTy} {Inst : List (CId × Levels)}
+    (hchk : groundCheckWPP p (selEnv p env κ Sl) κ lpsOf ann Sl = true)
+    (hnc : noCanonAB p (selEnv p env κ Sl) κ Sl = true)
+    (hld : litDefsB (selEnv p env κ Sl) = true)
+    (hinst : instCheckB p (selEnv p env κ Sl) κ lpsOf [root] Inst = true)
+    (hhr : headRegimeSB p (selEnv p env κ Sl) κ lpsOf ann Sl = true)
+    (hR : RootFacts p (selEnv p env κ Sl) κ ann (· ∈ Sl) root args res)
+    {k : Nat} {xs : List Value} {es : List KExpr} {v : Value} {o : IxCC.Sem.Obs} {eo : KExpr}
+    (hA : FoArgs p κ args xs es) (hrun : IxCC.Src.run p k root xs = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some o)
+    (hRT : ResultTag p (selEnv p env κ Sl) κ (· ∈ Sl) res o)
+    (hO : FoObs p κ res o eo) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (X : V)
+    (hX : Denotes M.cval env φ ρ (Expr.mkAppN (.const (κ root) []) es) X) :
+    Denotes M.cval env φ ρ eo X :=
+  rootSound_678AGpWPP_of_check hchk hnc hld hinst hhr hR hA hrun hrb hRT hO φ ρ X hX
+
+/-- `rootSound_678AGpStrWPP_of_check` covers words, `PUnit.casesOn` at `Prop`, and `Lit.str`
+inputs/outputs/literals directly over `Ix.Kernel.Model`. -/
+example {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId}
+    {args : List FoTyStr} {res : FoTyStr} {Inst : List (CId × Levels)}
+    (hchk : groundCheckStrWPP p (selEnv p env κ Sl) κ lpsOf ann Sl = true)
+    (hnc : noCanonAB p (selEnv p env κ Sl) κ Sl = true)
+    (hld : litDefsB (selEnv p env κ Sl) = true)
+    (hsb : strBasisB (selEnv p env κ Sl) = true)
+    (hinst : instCheckB p (selEnv p env κ Sl) κ lpsOf [root] Inst = true)
+    (hhr : headRegimeSB p (selEnv p env κ Sl) κ lpsOf ann Sl = true)
+    (hR : RootFactsStr p (selEnv p env κ Sl) κ ann (· ∈ Sl) root args res)
+    {k : Nat} {xs : List Value} {es : List KExpr} {v : Value} {o : IxCC.Sem.Obs} {eo : KExpr}
+    (hA : FoArgsStr p κ args xs es) (hrun : IxCC.Src.run p k root xs = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some o)
+    (hRT : ResultTagStr p (selEnv p env κ Sl) κ (· ∈ Sl) res o)
+    (hO : FoObsStr p κ res o eo) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (X : V)
+    (hX : Denotes M.cval env φ ρ (Expr.mkAppN (.const (κ root) []) es) X) :
+    Denotes M.cval env φ ρ eo X :=
+  rootSound_678AGpStrWPP_of_check hchk hnc hld hsb hinst hhr hR hA hrun hrb hRT hO φ ρ X hX
+
+end ConclusionsW3

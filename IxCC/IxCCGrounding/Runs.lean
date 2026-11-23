@@ -187,6 +187,7 @@ theorem runs_of_corr {κ : CId → KKey} {lps : List Nat} {ls : Levels} {φ : Le
       (fun d us h => hok d us (by simpa [evalConsts] using h))
       (fun A h => hw A (by simpa [witDoms] using h))) hd
   | natLit => intro Γ hd _ _ _; exact .natLit hd
+  | strLit => intro Γ hd _ _ _; exact .strLit hd
   | @letLive σ nonDep m r ty v b e v' hz hsub hv _ ihv ihb =>
     intro Γ hd hs hok hw
     have hdv : DenotesIn M φ Γ v' := denotesIn_of_subAt0 (subAt0_of_check hsub) hd

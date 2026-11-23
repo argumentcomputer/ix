@@ -455,6 +455,7 @@ inductive TermCorrS (κ : CId → KKey) (lps : List Nat) : Sig → Term → KExp
   | proj {σ : Sig} {s : CId} {i : Nat} {e : Term} {e' : KExpr} :
       TermCorrS κ lps σ e e' → TermCorrS κ lps σ (.proj s i e) (.proj (κ s) i e')
   | natLit {σ : Sig} {n : Nat} : TermCorrS κ lps σ (.natLit n) (.lit (.natVal n))
+  | strLit {σ : Sig} {s : String} : TermCorrS κ lps σ (.strLit s) (.lit (.strVal s))
   | letLive {σ : Sig} {nonDep : Bool} {m : IxCC.Ixon.V3.LetMode} {r : IxCC.Src.Rel} {ty v b : Term}
       {e v' : KExpr} :
       zcopy b e = some v' → subAt0B v' e = true → TermCorrS κ lps σ v v' →

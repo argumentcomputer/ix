@@ -78,8 +78,12 @@ theorem eval_unary {w : Width} {op : WordOp} (h : op.arity = 1) (x y y' : Nat) :
     op.eval w x y = op.eval w x y' := by
   cases op <;> simp [WordOp.arity] at h <;> rfl
 
-theorem arity_cases (op : WordOp) : op.arity = 1 ∨ op.arity = 2 := by
+theorem arity_cases (op : WordOp) : op.arity = 1 ∨ op.arity = 2 ∨ op.arity = 3 := by
   cases op <;> simp [WordOp.arity]
+
+theorem spec_arity {w : Width} {op : WordOp} {f : NForm} (hf : spec w op = some f) :
+    op.arity = 1 ∨ op.arity = 2 := by
+  cases op <;> simp only [spec, reduceCtorEq] at hf <;> simp [WordOp.arity]
 
 section Accel
 
@@ -161,7 +165,7 @@ theorem wordAccel_of_eqns (M : Model V env) (hacc : NatAccel M) (hN : NatBasis e
   have hx' : x < w.size := hx.resolve_left hne
   have hok := spec_ok w op hf
   have hxt := hofN x hx'
-  rcases arity_cases op with h1 | h2
+  rcases spec_arity hf with h1 | h2
   · -- unary
     have h2 : ¬ op.arity = 2 := by rw [h1]; decide
     have hargs : wordArgs M tk w op φ x y = [towV M tk w.bits w.size φ x] := by

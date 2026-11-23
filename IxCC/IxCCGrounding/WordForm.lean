@@ -154,7 +154,11 @@ def spec (w : Width) : WordOp → Option NForm
     | .convert w' => some (if w.bits ≤ w'.bits then xm else .op .mod xm (.lit w'.size))
     | .toNat => some xm
     | .ofNat => some xm
-    | .decEq | .decLt | .decLe => none
+    | .mulWideLo => some (red (.op .mul xm ym))
+    | .mulWideHi => some (.op .div (.op .mul xm ym) S)
+    | .decEq | .decLt | .decLe
+    | .clz64 | .divWideQ | .divWideR
+    | .addCarryLo | .addCarryOut | .subBorrowLo | .subBorrowOut => none
 
 /-- **At words below the size, the theorem's formula is `WordOp.eval`'s number** (for `ofNat`, `x`
 any number). -/

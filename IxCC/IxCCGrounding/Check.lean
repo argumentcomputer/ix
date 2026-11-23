@@ -1352,15 +1352,36 @@ theorem caseRecK_of_sans {ann : IxCC.Src.Relevance.Ann} (h : CheckSans p env κ 
   fun c r hc hr => caseRec_of (List.all_eq_true.mp (h "caseRec" (Sl.all (caseRecB p env κ))
     (by simp [checkParts, checkPartsWith]) (by decide)) c hc) r hr
 
-/-- **Every conjunct of the check but `noWord`, `caseRec` and `caseShape` is sound**, over any word
-clause `Wd` and any kinds `K` whose `case` clause is given (step Pc). -/
-theorem groundFactsWK_of_sansK {ann : IxCC.Src.Relevance.Ann} {Wd : Prop} {K : CId → Prop}
-    (h : CheckSansK p env κ lpsOf ann Sl) (hW : Wd) (hK : CaseRecK K p env κ (· ∈ Sl)) :
+/-- **Every conjunct of the check but `noWord`, `caseRec`, `caseShape`, `eqnCorr` and `valueCorr`**
+(step G4: the string-literal widening replaces `eqnCorr` and `valueCorr` with string-admitting
+checks). -/
+def CheckSansKS (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
+    (ann : IxCC.Src.Relevance.Ann) (Sl : List CId) : Prop :=
+  ∀ name b, (name, b) ∈ checkParts p env κ lpsOf ann Sl →
+    (name ≠ "noWord" ∧ name ≠ "caseRec" ∧ name ≠ "caseShape" ∧
+      name ≠ "eqnCorr" ∧ name ≠ "valueCorr") → b = true
+
+theorem sansKS_of_sansK {ann : IxCC.Src.Relevance.Ann} (h : CheckSansK p env κ lpsOf ann Sl) :
+    CheckSansKS p env κ lpsOf ann Sl :=
+  fun name b hm hn => h name b hm ⟨hn.1, hn.2.1, hn.2.2.1⟩
+
+/-- **Every conjunct of the check but `noWord`, `caseRec`, `caseShape`, `eqnCorr` and `valueCorr` is
+sound**, over any word clause `Wd`, any kinds `K` whose `case` clause is given, and externally
+supplied `TermCorrS` correspondence for `eqn` and `defn` values (step G4). -/
+theorem groundFactsWKS_of_sansKS {ann : IxCC.Src.Relevance.Ann} {Wd : Prop} {K : CId → Prop}
+    (h : CheckSansKS p env κ lpsOf ann Sl) (hW : Wd) (hK : CaseRecK K p env κ (· ∈ Sl))
+    (heqnC : ∀ c thm body d, c ∈ Sl → p.table.resolveOf c = some (.eqn thm body) →
+      eqnData? env (κ c) (κ thm) = some d → TermCorrS κ (lpsOf c) [] body d.body)
+    (hvalC : ∀ c lvls ty v cv val hint, c ∈ Sl → p.table.resolveOf c = none →
+      p.decl? c = some (.defn .defn .safe lvls ty v) →
+      env.find? (κ c) = some (.defnInfo cv val hint) → TermCorrS κ (lpsOf c) [] v val) :
     GroundFactsWithK (RecFacts p env κ lpsOf (· ∈ Sl)) Wd K p env κ lpsOf ann (· ∈ Sl) := by
   have P : ∀ name b, (name, b) ∈ checkParts p env κ lpsOf ann Sl →
-      (name ≠ "noWord" ∧ name ≠ "caseRec" ∧ name ≠ "caseShape") → b = true := h
+      (name ≠ "noWord" ∧ name ≠ "caseRec" ∧ name ≠ "caseShape" ∧
+        name ≠ "eqnCorr" ∧ name ≠ "valueCorr") → b = true := h
   have all : ∀ {f : CId → Bool} (name : String), (name, Sl.all f) ∈ checkParts p env κ lpsOf ann Sl →
-      (name ≠ "noWord" ∧ name ≠ "caseRec" ∧ name ≠ "caseShape") → ∀ c, c ∈ Sl → f c = true :=
+      (name ≠ "noWord" ∧ name ≠ "caseRec" ∧ name ≠ "caseShape" ∧
+        name ≠ "eqnCorr" ∧ name ≠ "valueCorr") → ∀ c, c ∈ Sl → f c = true :=
     fun name hm hn c hc => List.all_eq_true.mp (P name _ hm hn) c hc
   have hE : EqBasis env := eqBasis_of_check (P "eqBasis" (eqBasisB env) (by simp [checkParts, checkPartsWith]) (by decide))
   have hpins := P "pins" (pinsB p env κ Sl) (by simp [checkParts, checkPartsWith]) (by decide)
@@ -1423,13 +1444,12 @@ theorem groundFactsWK_of_sansK {ann : IxCC.Src.Relevance.Ann} {Wd : Prop} {K : C
         TermCorrS κ (lpsOf c) [] body d.body ∧ bvarsLt 0 d.body = true := by
     intro c thm body hc hr
     have h1 := all (f := eqnShapeOkB p env κ) "eqnShape" (by simp [checkParts, checkPartsWith]) (by decide) c hc
-    have h2 := all (f := eqnCorrB p env κ lpsOf) "eqnCorr" (by simp [checkParts, checkPartsWith]) (by decide) c hc
     have h3 := all (f := eqnClosedB p env κ) "eqnClosed" (by simp [checkParts, checkPartsWith]) (by decide) c hc
-    simp only [eqnShapeOkB, eqnCorrB, eqnClosedB, hr] at h1 h2 h3
+    simp only [eqnShapeOkB, eqnClosedB, hr] at h1 h3
     split at h1
     · rename_i d hd
-      rw [hd] at h2 h3
-      exact ⟨d, hd, eqnShape_of_check hE h1, termCorrS_of_check _ _ _ h2, h3⟩
+      rw [hd] at h3
+      exact ⟨d, hd, eqnShape_of_check hE h1, heqnC c thm body d hc hr hd, h3⟩
     · exact absurd h1 (by simp)
   refine ⟨hfaith, natBasis_of (P "natBasis" (natBasisB env) (by simp [checkParts, checkPartsWith]) (by decide)), ?_, ?_, ?_,
     ?_, okClosed_of_check (P "okClosed" (okClosedB p ann Sl) (by simp [checkParts, checkPartsWith]) (by decide))⟩
@@ -1437,9 +1457,7 @@ theorem groundFactsWK_of_sansK {ann : IxCC.Src.Relevance.Ann} {Wd : Prop} {K : C
     obtain ⟨d, _, hsh, hcorr, _⟩ := heqn c thm body hc hr
     exact ⟨⟨d, hsh⟩, fun d' hsh' => eqnShape_body hsh hsh' ▸ hcorr⟩
   · intro c lvls ty v cv val hint hc hr hd hf
-    have h1 := all (f := valueCorrB p env κ lpsOf) "valueCorr" (by simp [checkParts, checkPartsWith]) (by decide) c hc
-    simp only [valueCorrB, hr, hd, hf] at h1
-    exact termCorrS_of_check _ _ _ h1
+    exact hvalC c lvls ty v cv val hint hc hr hd hf
   · intro c t e hc hrp
     cases hrp with
     | value hr hd hf =>
@@ -1462,6 +1480,23 @@ theorem groundFactsWK_of_sansK {ann : IxCC.Src.Relevance.Ann} {Wd : Prop} {K : C
       simp only [letWitB, hr, hd] at h1
       rw [eqnShape_body hsh hsh'] at hA
       exact witness_of_check (List.all_eq_true.mp h1 A hA)
+
+/-- **Every conjunct of the check but `noWord`, `caseRec` and `caseShape` is sound**, over any word
+clause `Wd` and any kinds `K` whose `case` clause is given (step Pc). -/
+theorem groundFactsWK_of_sansK {ann : IxCC.Src.Relevance.Ann} {Wd : Prop} {K : CId → Prop}
+    (h : CheckSansK p env κ lpsOf ann Sl) (hW : Wd) (hK : CaseRecK K p env κ (· ∈ Sl)) :
+    GroundFactsWithK (RecFacts p env κ lpsOf (· ∈ Sl)) Wd K p env κ lpsOf ann (· ∈ Sl) :=
+  groundFactsWKS_of_sansKS (sansKS_of_sansK h) hW hK
+    (fun c thm body d hc hr hd => by
+      have h2 := List.all_eq_true.mp (h "eqnCorr" (Sl.all (eqnCorrB p env κ lpsOf))
+        (by simp [checkParts, checkPartsWith]) (by decide)) c hc
+      simp only [eqnCorrB, hr, hd] at h2
+      exact termCorrS_of_check _ _ _ h2)
+    (fun c lvls ty v cv val hint hc hr hd hf => by
+      have h1 := List.all_eq_true.mp (h "valueCorr" (Sl.all (valueCorrB p env κ lpsOf))
+        (by simp [checkParts, checkPartsWith]) (by decide)) c hc
+      simp only [valueCorrB, hr, hd, hf] at h1
+      exact termCorrS_of_check _ _ _ h1)
 
 /-- **Every conjunct of the check but `noWord` is sound**, over any word clause `Wd` given (step W:
 the word family's check replaces `noWord` by its decided word facts). -/

@@ -109,13 +109,30 @@ structure FundHyps (M : Model V env) (p : Program) (κ : CId → KKey) (lpsOf : 
     env.find? (κ c) = some (.defnInfo cv val hint) →
     ∀ φ, LvAt φ (lpsOf c) ls → Runs M κ Ok (lpsOf c) ls φ [] [] v val
 
-/-- **Everything the fundamental lemma assumes, with the `case` kinds read per instance** (step
-Pc): `FundHyps` with the faithfulness clauses at any kinds (`True`: the lemma reads only their
-arity), the kind read instead at each `Ok` instance (`kindAt`: `ordinary` at its levels, or
-`empty`), and F5's meaning asked at every `case` constant with an `Ok` instance at which the kind
-is `ordinary`. `FundHyps.toK` gives it from `FundHyps`; the Pc family gives it at `OkIn` from the
-decided instance condition `pcInstB`, so that a `case` entry of kind `subsingleton` whose
-condition fails at every instance is fired by F5 as SrcEval fires it there. -/
+/-- **F5 at a `subsingleton`-kind `case` constant `c` at a proposition instance** (step Pc-Prop):
+when SrcEval's `RecKind.atLevels` stays `.subsingleton w []`, SrcEval does not force the major and
+returns minor 0 directly; the model evaluates the `casesOn` application to that minor. -/
+def CaseSubFires (M : Model V env) (p : Program) (κ : CId → KKey) (lpsOf : CId → List Nat)
+    (S : CId → Prop) (Ok : CId → Levels → Prop) (c : CId) : Prop :=
+  ∀ (r : CId) (sf kk : Bool) (lvls np nmot nmin ni : Nat) (ind : CId)
+    (rules : List IxCC.Src.Rule) (ty : Term) (w : IxCC.Src.PropWhen),
+    p.table.resolveOf c = some (.case r) →
+    p.decl? r = some (.recr sf kk lvls np nmot nmin ni ind rules ty) →
+    ∀ (ls : Levels) (φ : LevelParam → Nat) (T : KExpr) (ρ σ : BVarIdx → V) (R : KExpr)
+      (As : List V),
+      (p.table.recKindOf r).map (·.atLevels ls) = some (.subsingleton w []) →
+      HeadAt M p κ lpsOf S Ok (.cases c) ls φ (κ c) T → Fits M.cval env φ ρ T As σ R →
+      As.length = np + 1 + ni + 1 + nmin → LastSiteOk (M.cval (κ c) φ) As →
+      ∃ Mn, As[np + 1 + ni + 1]? = some Mn ∧ As.foldl app (M.cval (κ c) φ) = Mn
+
+/-- **Everything the fundamental lemma assumes, with the `case` kinds read per instance** (steps
+Pc and Pc-Prop): `FundHyps` with the faithfulness clauses at any kinds (`True`: the lemma reads
+only their arity), the kind read instead at each `Ok` instance (`kindAt`: `ordinary` at its
+levels, `empty`, or `subsingleton w []` at a proposition instance), F5's meaning at every `case`
+constant with an `ordinary` instance (`cases`), and the subsingleton branch's meaning at every
+`case` constant with a `subsingleton w []` instance (`subCases`). `FundHyps.toK` gives it from
+`FundHyps`; `PcRoot` gives it at `OkIn` from `pcInstB` (vacuous `subCases`); `PcProp` discharges
+`pcInstB` for `PUnit.casesOn` at `Prop` directly via `CaseSubFires`. -/
 structure FundHypsK (M : Model V env) (p : Program) (κ : CId → KKey) (lpsOf : CId → List Nat)
     (S : CId → Prop) (Ok : CId → Levels → Prop) : Prop where
   laws : LawsCore M
@@ -126,13 +143,18 @@ structure FundHypsK (M : Model V env) (p : Program) (κ : CId → KKey) (lpsOf :
   faith : FaithWithK (RecFacts p env κ lpsOf S) True (fun _ => True) p env κ lpsOf S
   words : WordFires M p κ lpsOf S Ok
   /-- at every `Ok` instance of a `case` entry, its recursor's kind at the instance's levels is
-  `ordinary` (SrcEval forces the major and fires F5), or its kind is `empty` (SrcEval traps) -/
+  `ordinary` (SrcEval forces the major and fires F5), `empty` (SrcEval traps), or `subsingleton w []`
+  (SrcEval takes minor 0 directly without forcing the major) -/
   kindAt : ∀ c r ls, S c → p.table.resolveOf c = some (.case r) → Ok c ls →
     (p.table.recKindOf r).map (·.atLevels ls) = some .ordinary ∨
-      p.table.recKindOf r = some .empty
+      p.table.recKindOf r = some .empty ∨
+      ∃ w, (p.table.recKindOf r).map (·.atLevels ls) = some (.subsingleton w [])
   cases : ∀ c r, S c → p.table.resolveOf c = some (.case r) →
     (∃ ls, Ok c ls ∧ (p.table.recKindOf r).map (·.atLevels ls) = some .ordinary) →
     CaseFires M p κ lpsOf S Ok c
+  subCases : ∀ c r, S c → p.table.resolveOf c = some (.case r) →
+    (∃ ls w, Ok c ls ∧ (p.table.recKindOf r).map (·.atLevels ls) = some (.subsingleton w [])) →
+    CaseSubFires M p κ lpsOf S Ok c
   eqn : ∀ c thm body, S c → p.table.resolveOf c = some (.eqn thm body) → ∃ e : KExpr,
     (∀ φ ρ X, Denotes M.cval env φ ρ e X → M.cval (κ c) φ = X) ∧
     ∀ ls φ, Ok c ls → LvAt φ (lpsOf c) ls → Runs M κ Ok (lpsOf c) ls φ [] [] body e
@@ -154,12 +176,15 @@ theorem FundHyps.toK {M : Model V env} {p : Program} {κ : CId → KKey} {lpsOf 
   kindAt := fun c r _ hS hr _ => by
     rcases (H.faith.caseRec c r hS hr).1 with hk | hk
     · exact .inl (by rw [hk]; rfl)
-    · exact .inr hk
+    · exact .inr (.inl hk)
   cases := fun c r hS hr ⟨ls, _, hk⟩ => by
     rcases (H.faith.caseRec c r hS hr).1 with hk' | hk'
     · exact H.cases c r hS hr hk'
     · rw [hk'] at hk
       simp [IxCC.Src.RecKind.atLevels] at hk
+  subCases := fun c r hS hr ⟨ls, w, _, hk⟩ => by
+    rcases (H.faith.caseRec c r hS hr).1 with hk' | hk' <;>
+      simp [hk', IxCC.Src.RecKind.atLevels] at hk
   eqn := H.eqn
   value := H.value
 

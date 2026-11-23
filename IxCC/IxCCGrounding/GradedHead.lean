@@ -810,14 +810,14 @@ theorem take_dropLast {α : Type _} {l : List α} {j : Nat} (h : j < l.length) :
   congr 1
   omega
 
-/-- **`headRegimeSB` is sound** with every conjunct of the check but `noWord`, `caseRec` and
-`caseShape` (`CheckSansK`; step Pc reads it through `groundCheckWP`). -/
-theorem headRegimeS_of_sansK {p : Program} {env : KEnv} {κ : CId → KKey}
+/-- **`headRegimeSB` is sound** with every conjunct of the check but `noWord`, `caseRec`,
+`caseShape`, `eqnCorr`, and `valueCorr` (`CheckSansKS`; step G4). -/
+theorem headRegimeS_of_sansKS {p : Program} {env : KEnv} {κ : CId → KKey}
     {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId}
-    (hchk : CheckSansK p env κ lpsOf ann Sl)
+    (hchk : CheckSansKS p env κ lpsOf ann Sl)
     (h : headRegimeSB p env κ lpsOf ann Sl = true) : HeadRegime p env κ lpsOf ann (· ∈ Sl) := by
   intro c ls t e hS hOk hrp φ hlv s hs
-  have hpair := runPair_mem_of_sansK hchk hS hrp
+  have hpair := runPair_mem_of_sansKS hchk hS hrp
   have hlv0 : lvlsOf p c = (lpsOf c).length :=
     beq_iff_eq.mp (List.all_eq_true.mp (hchk "lvls" (Sl.all (lvlsB p lpsOf))
       (by simp [checkParts, checkPartsWith]) (by decide)) c hS)
@@ -839,6 +839,14 @@ theorem headRegimeS_of_sansK {p : Program} {env : KEnv} {κ : CId → KKey}
       have h3 := List.all_eq_true.mp h2 pw (hpre.subset hpw)
       exact holds_of_pwAt (profAt_of_lvAt hlv hlen) (beq_iff_eq.mp h3)
   · cases h1
+
+/-- **`headRegimeSB` is sound** with every conjunct of the check but `noWord`, `caseRec` and
+`caseShape` (`CheckSansK`; step Pc reads it through `groundCheckWP`). -/
+theorem headRegimeS_of_sansK {p : Program} {env : KEnv} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId}
+    (hchk : CheckSansK p env κ lpsOf ann Sl)
+    (h : headRegimeSB p env κ lpsOf ann Sl = true) : HeadRegime p env κ lpsOf ann (· ∈ Sl) :=
+  headRegimeS_of_sansKS (sansKS_of_sansK hchk) h
 
 /-- **`headRegimeSB` is sound** with every conjunct of the check but `noWord` (`CheckSans`; step W
 reads it through `groundCheckW`). -/

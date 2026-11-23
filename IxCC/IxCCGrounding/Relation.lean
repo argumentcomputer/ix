@@ -73,6 +73,8 @@ inductive Runs (M : Model V env) (κ : CId → KKey) (Ok : CId → Levels → Pr
       DenotesIn M φ Γ (.const (κ c) ls') → Runs M κ Ok lps ls φ σ Γ (.const c us) (.const (κ c) ls')
   | natLit {σ : Sig} {Γ : List KExpr} {n : Nat} : DenotesIn M φ Γ (.lit (.natVal n)) →
       Runs M κ Ok lps ls φ σ Γ (.natLit n) (.lit (.natVal n))
+  | strLit {σ : Sig} {Γ : List KExpr} {s : String} : DenotesIn M φ Γ (.lit (.strVal s)) →
+      Runs M κ Ok lps ls φ σ Γ (.strLit s) (.lit (.strVal s))
   | app {σ : Sig} {Γ : List KExpr} {f a : Term} {m : IxCC.Src.Mode} {r : IxCC.Src.Rel}
       {f' a' : KExpr} :
       Runs M κ Ok lps ls φ σ Γ f f' →
@@ -183,6 +185,8 @@ inductive RelV (M : Model V env) (p : Program) (κ : CId → KKey) (lpsOf : CId 
     (S : CId → Prop) (Ok : CId → Levels → Prop) : Value → V → Prop
   | lit {n : Nat} {X : V} {φ : LevelParam → Nat} {ρ : BVarIdx → V} :
       Denotes M.cval env φ ρ (litE n) X → RelV M p κ lpsOf S Ok (.lit n) X
+  | str {s : String} {X : V} {φ : LevelParam → Nat} {ρ : BVarIdx → V} :
+      Denotes M.cval env φ ρ (.lit (.strVal s)) X → RelV M p κ lpsOf S Ok (.str s) X
   | con {c : CId} {ls : Levels} {ps : List Slot} {fs : List Value} {φ : LevelParam → Nat}
       {cvC : ConstantVal .anon} {np nf : Nat} {Ps Fs : List V} {ρ σ : BVarIdx → V} {R : KExpr} :
       S c → LvAt φ (lpsOf c) ls → env.find? (κ c) = some (.ctorInfo cvC np nf) →

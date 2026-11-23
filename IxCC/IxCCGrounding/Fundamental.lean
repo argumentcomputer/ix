@@ -640,39 +640,54 @@ theorem fire_stepK (H : FundHypsK M p κ lpsOf S Ok) {k : Nat}
           | some d =>
             cases d with
             | recr sf kk lvls np nmot nmin ni ind rules ty =>
-              -- E0: at kind `empty` SrcEval traps, so the run returns no value; otherwise the kind
-              -- at the instance's levels is `ordinary` (`kindAt`; step Pc)
-              have hkind : (p.table.recKindOf r).map (·.atLevels ls) = some .ordinary := by
-                rcases hkind' with hkind | hkind
-                · exact hkind
-                · simp [hd, hkind, IxCC.Src.RecKind.atLevels, IxCC.Src.recChosen, Result.bind]
-                    at hrun
-              simp only [hd, hkind, IxCC.Src.recChosen] at hrun
-              obtain ⟨⟨j, fields⟩, hsel, hrest⟩ := Result.bind_eq_ok_iff.mp hrun
-              obtain ⟨major, hmaj, hsel'⟩ := Result.bind_eq_ok_iff.mp hsel
-              obtain ⟨minor, hmin, happ⟩ := Result.bind_eq_ok_iff.mp hrest
-              have harity : args.length = np + 1 + ni + 1 + nmin := by
-                rw [hlen]; simp [Program.headArity, hres, hd]
-              have hAsl : As.length = np + 1 + ni + 1 + nmin := by
-                rw [relSlots_length hargs, harity]
-              -- the major
-              obtain ⟨sM, hsM⟩ : ∃ s, args[np + 1 + ni]? = some s :=
-                ⟨_, List.getElem?_eq_getElem (by omega)⟩
-              obtain ⟨Tm, hTm, hrelM⟩ := relSlots_get hargs hsM
-              rw [List.getD_eq_getElem?_getD, hsM, Option.getD_some] at hmaj
-              have hmajR := (ih k' (Nat.lt_succ_self k')).force _ _ _ hmaj hrelM
-              -- F5's meaning
-              obtain ⟨Mn, Ys, hMn, hYs, heq, hchain⟩ :=
-                H.cases c r hSc hres ⟨ls, hOkc, hkind⟩ r sf kk lvls np nmot nmin ni ind rules ty hres hd
-                  ls φ _
-                  ρ σ R As (.cases hSc hlv hfind hOkc) hfit hAsl hlast Tm major j fields hTm hmajR
-                  (ofOption_eq_ok.mp hsel')
-              -- the minor
-              obtain ⟨sm, hsm, hrelm⟩ := relSlots_get' hargs hMn
-              rw [List.getD_eq_getElem?_getD, hsm, Option.getD_some] at hmin
-              have hminR := (ih k' (Nat.lt_succ_self k')).force _ _ _ hmin hrelm
-              rw [heq]
-              exact (ih k' (Nat.lt_succ_self k')).applyAll _ _ _ _ _ happ hminR hYs hchain
+              -- E0: at kind `empty` SrcEval traps; at `ordinary` SrcEval forces the major and fires
+              -- F5; at `subsingleton w []` SrcEval takes minor 0 directly (step Pc-Prop).
+              rcases hkind' with hkind | hkind | ⟨w, hkind⟩
+              · simp only [hd, hkind, IxCC.Src.recChosen] at hrun
+                obtain ⟨⟨j, fields⟩, hsel, hrest⟩ := Result.bind_eq_ok_iff.mp hrun
+                obtain ⟨major, hmaj, hsel'⟩ := Result.bind_eq_ok_iff.mp hsel
+                obtain ⟨minor, hmin, happ⟩ := Result.bind_eq_ok_iff.mp hrest
+                have harity : args.length = np + 1 + ni + 1 + nmin := by
+                  rw [hlen]; simp [Program.headArity, hres, hd]
+                have hAsl : As.length = np + 1 + ni + 1 + nmin := by
+                  rw [relSlots_length hargs, harity]
+                -- the major
+                obtain ⟨sM, hsM⟩ : ∃ s, args[np + 1 + ni]? = some s :=
+                  ⟨_, List.getElem?_eq_getElem (by omega)⟩
+                obtain ⟨Tm, hTm, hrelM⟩ := relSlots_get hargs hsM
+                rw [List.getD_eq_getElem?_getD, hsM, Option.getD_some] at hmaj
+                have hmajR := (ih k' (Nat.lt_succ_self k')).force _ _ _ hmaj hrelM
+                -- F5's meaning
+                obtain ⟨Mn, Ys, hMn, hYs, heq, hchain⟩ :=
+                  H.cases c r hSc hres ⟨ls, hOkc, hkind⟩ r sf kk lvls np nmot nmin ni ind rules ty hres hd
+                    ls φ _
+                    ρ σ R As (.cases hSc hlv hfind hOkc) hfit hAsl hlast Tm major j fields hTm hmajR
+                    (ofOption_eq_ok.mp hsel')
+                -- the minor
+                obtain ⟨sm, hsm, hrelm⟩ := relSlots_get' hargs hMn
+                rw [List.getD_eq_getElem?_getD, hsm, Option.getD_some] at hmin
+                have hminR := (ih k' (Nat.lt_succ_self k')).force _ _ _ hmin hrelm
+                rw [heq]
+                exact (ih k' (Nat.lt_succ_self k')).applyAll _ _ _ _ _ happ hminR hYs hchain
+              · simp [hd, hkind, IxCC.Src.RecKind.atLevels, IxCC.Src.recChosen, Result.bind]
+                  at hrun
+              · simp only [hd, hkind, IxCC.Src.recChosen, List.map_nil, Result.bind_ok,
+                  Nat.add_zero] at hrun
+                obtain ⟨minor, hmin, happ⟩ := Result.bind_eq_ok_iff.mp hrun
+                rw [IxCC.Src.applyAll_nil] at happ
+                rw [← ok_inj happ]
+                have harity : args.length = np + 1 + ni + 1 + nmin := by
+                  rw [hlen]; simp [Program.headArity, hres, hd]
+                have hAsl : As.length = np + 1 + ni + 1 + nmin := by
+                  rw [relSlots_length hargs, harity]
+                obtain ⟨Mn, hMn, heq⟩ :=
+                  H.subCases c r hSc hres ⟨ls, w, hOkc, hkind⟩ r sf kk lvls np nmot nmin ni ind
+                    rules ty w hres hd ls φ _ ρ σ R As hkind (.cases hSc hlv hfind hOkc) hfit hAsl
+                    hlast
+                obtain ⟨sm, hsm, hrelm⟩ := relSlots_get' hargs hMn
+                rw [List.getD_eq_getElem?_getD, hsm, Option.getD_some] at hmin
+                rw [heq]
+                exact (ih k' (Nat.lt_succ_self k')).force _ _ _ hmin hrelm
             | _ => simp [hd] at hrun
         | _ => rw [hres] at hrun; exact absurd hrun (by simp)
   | @recr r _ _ ci hSr hlv hfind =>
@@ -1266,6 +1281,12 @@ theorem eval_stepK (H : FundHypsK M p κ lpsOf S Ok) {k : Nat}
     rw [← ok_inj hrun]
     obtain ⟨X, hX⟩ := hden ρk hctx
     exact ⟨X, hX, .lit hX⟩
+  | @strLit σ Γ s hden =>
+    intro ρ ρk v _ _ _ hctx hrun
+    rw [IxCC.Src.eval_strLit] at hrun
+    rw [← ok_inj hrun]
+    obtain ⟨X, hX⟩ := hden ρk hctx
+    exact ⟨X, hX, .str hX⟩
   | @app σ Γ f a m r f' a' _ ha hirr hsite ihf iha =>
     intro ρ ρk v hcs hlv henv hctx hrun
     rw [IxCC.Src.eval_app] at hrun

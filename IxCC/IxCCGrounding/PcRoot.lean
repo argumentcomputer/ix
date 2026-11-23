@@ -333,13 +333,18 @@ theorem fundHypsK_of_instWP (hL : LawsCore M) {p : Program} {κ : CId → KKey}
   kindAt := fun c r ls hS hr hOk => by
     rcases (hG.faith.caseRec c r hS hr).1 with hk | hk | ⟨w, hk⟩
     · exact .inl (by rw [hk]; rfl)
-    · exact .inr hk
+    · exact .inr (.inl hk)
     · refine .inl ?_
       rw [hk]
       simp [IxCC.Src.RecKind.atLevels, hP c r ls hOk.2 hr w [] hk]
   cases := fun c r hS hr ⟨ls, _, hk⟩ => hcases c r hS hr fun he => by
     rw [he] at hk
     simp [IxCC.Src.RecKind.atLevels] at hk
+  subCases := fun c r hS hr ⟨ls, w, hOk, hk⟩ => by
+    rcases (hG.faith.caseRec c r hS hr).1 with hk' | hk' | ⟨w', hk'⟩
+    · simp [hk', IxCC.Src.RecKind.atLevels] at hk
+    · simp [hk', IxCC.Src.RecKind.atLevels] at hk
+    · simp [hk', IxCC.Src.RecKind.atLevels, hP c r ls hOk.2 hr w' [] hk'] at hk
   eqn := fun c thm body hS hr => by
     obtain ⟨⟨d, hsh⟩, _⟩ := hG.eqns c thm body hS hr
     exact ⟨d.body, fun φ ρ X hX => Denotes_functional (eqn_den M hsh φ ρ) hX,
