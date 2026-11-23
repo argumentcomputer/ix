@@ -19,7 +19,7 @@ theorem consume_allocation {P : Program} {l : Layout} {x : Nat}
       ∃ index, ctorIndex l c.key = some index ∧
         result = .bind x (.fir (.call (l.allocWrapper index) args)) := by
   simp only [consume, reserved, isReuseOp, Bool.false_eq_true, ↓reduceIte] at accepted
-  by_cases hs : (kind == .shared && c.nscalar == 0 && c.fieldKinds.length == c.nobj &&
+  by_cases hs : (kind == .shared && c.fieldKinds.length == c.nobj &&
       c.fieldKinds.all (· == .shared) && args.length == c.arity &&
       Fir.CtorInfo.ofKey P.base.ctors c.key == some c) = true
   · simp only [hs, Bool.true_eq_false, ↓reduceIte, pure, Except.pure, bind, Except.bind] at accepted
@@ -45,7 +45,12 @@ theorem consume_allocation {P : Program} {l : Layout} {x : Nat}
             | some index =>
               simp only [hi, pure, Except.pure, Except.ok.injEq] at accepted
               simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at hs
-              obtain ⟨⟨⟨⟨⟨hk, hscalar⟩, hlen⟩, hshared⟩, hargs⟩, htable⟩ := hs
+              obtain ⟨⟨⟨⟨hk, hlen⟩, hshared⟩, hargs⟩, htable⟩ := hs
+              have hscalar : c.nscalar = 0 := by
+                unfold Fir.CtorInfo.ofKey at htable
+                cases hf : P.base.ctors.find? (·.key == c.key) with
+                | none => simp [hf] at htable
+                | some r => simp only [hf, Option.map_some, Option.some.injEq] at htable; rw [← htable]
               have hknown : P.base.known.natZero ≠ some c.key ∧
                   P.base.known.natSucc ≠ some c.key := by simpa using hn
               exact ⟨hk, hscalar, hlen, hshared, hargs, htable,

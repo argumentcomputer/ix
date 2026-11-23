@@ -33,10 +33,10 @@ def consume (P : Program) (l : Layout) (i : Instr) : Except String Instr := do
     | _, _ => throw "native RC accepts only well-formed reset/reuse markers"
   match i with
   | .bind x (.alloc c args kind) =>
-    unless kind == .shared && c.nscalar == 0 && c.fieldKinds.length == c.nobj &&
+    unless kind == .shared && c.fieldKinds.length == c.nobj &&
         c.fieldKinds.all (· == .shared) && args.length == c.arity &&
         Fir.CtorInfo.ofKey P.base.ctors c.key == some c do
-      throw "allocation is not a table-bound fully scanned shared constructor"
+      throw "allocation is not a table-bound shared constructor"
     if c.tag > Rt.maxTag then throw "constructor tag exceeds physical header"
     if P.base.known.natZero == some c.key || P.base.known.natSucc == some c.key then
       throw "Nat constructor allocation is not admitted"

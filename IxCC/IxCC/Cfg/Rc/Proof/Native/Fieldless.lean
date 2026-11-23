@@ -20,7 +20,7 @@ theorem consume_fieldless {P : Program} {l : Layout} {x : Nat}
       P.base.known.natZero ≠ some c.key ∧ P.base.known.natSucc ≠ some c.key ∧
       result = .bind x (.alloc c args kind) := by
   simp only [consume, reserved, isReuseOp, Bool.false_eq_true, ↓reduceIte] at accepted
-  by_cases hs : (kind == .shared && c.nscalar == 0 && c.fieldKinds.length == c.nobj &&
+  by_cases hs : (kind == .shared && c.fieldKinds.length == c.nobj &&
       c.fieldKinds.all (· == .shared) && args.length == c.arity &&
       Fir.CtorInfo.ofKey P.base.ctors c.key == some c) = true
   · simp only [hs, Bool.true_eq_false, ↓reduceIte, pure, Except.pure, bind, Except.bind] at accepted
@@ -33,7 +33,12 @@ theorem consume_fieldless {P : Program} {l : Layout} {x : Nat}
         have hz : c.fieldless = true := by simp [Fir.CtorInfo.fieldless, zero]
         simp only [hz, Bool.false_eq_true, ↓reduceIte, pure, Except.pure, Except.ok.injEq] at accepted
         simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at hs
-        obtain ⟨⟨⟨⟨⟨hk, hscalar⟩, _⟩, _⟩, hargs⟩, htable⟩ := hs
+        obtain ⟨⟨⟨⟨hk, _⟩, _⟩, hargs⟩, htable⟩ := hs
+        have hscalar : c.nscalar = 0 := by
+          unfold Fir.CtorInfo.ofKey at htable
+          cases hf : P.base.ctors.find? (·.key == c.key) with
+          | none => simp [hf] at htable
+          | some r => simp only [hf, Option.map_some, Option.some.injEq] at htable; rw [← htable]
         have hknown : P.base.known.natZero ≠ some c.key ∧
             P.base.known.natSucc ≠ some c.key := by simpa using hn
         exact ⟨List.length_eq_zero_iff.mp (hargs.trans zero), hk, hscalar,
