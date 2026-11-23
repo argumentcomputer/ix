@@ -258,6 +258,10 @@ lean_exe «tests-soundness» where
 lean_exe «tests-bignat» where
   root := `IxCCTests.BigNat.DiffTest
 
+/- DR1 .rodata statics, DR3 contiguous Array/ByteArray/LimbArray runtime, readback, and native Xeon controls. -/
+lean_exe «tests-array» where
+  root := `IxCCTests.Array.Main
+
 /- The grounding check (`IxCCGrounding.Check`) on the committed closures of
 the grounding subjects, conjunct by conjunct, with negative controls that each
 falsify exactly one conjunct. Built and run by `ixcc-grounding`, not by the

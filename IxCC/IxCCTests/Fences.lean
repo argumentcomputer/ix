@@ -44,3 +44,7 @@ import IxCCTests.Fences.Exe
 import IxCCTests.Fences.ExeShell
 import IxCCTests.Fences.KernelFront
 import IxCCTests.Fences.BigNat
+import IxCCTests.Fences.ArrayElf
+import IxCCTests.Fences.ArrayReadback
+import IxCCTests.Fences.ArrayRt
+import IxCCTests.Fences.ArraySpec

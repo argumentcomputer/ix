@@ -509,6 +509,23 @@ import IxCC.Src.KernelFront.Proof
 import IxCC.Recheck.DefAsserts
 import IxCC.BigNat
 import IxCC.BigNat.Proof
+import IxCC.Lam.Erase.Limb
+import IxCC.Fir.Rep
+import IxCC.Fir.Proof.Rep
+import IxCC.Rt.Proof.LowerRep
+import IxCC.X86.ELFRodata
+import IxCC.Src.ArraySpec
+import IxCC.Src.Table.Array
+import IxCC.Rt.Rc.Array.Layout
+import IxCC.Rt.Rc.Array.Invariant
+import IxCC.Rt.Rc.Array.Procs
+import IxCC.Rt.Rc.Array.Proof.StepLemmas
+import IxCC.Rt.Rc.Array.Proof.Classes
+import IxCC.Rt.Rc.Array.Proof.BasicOps
+import IxCC.Rt.Rc.Array.Proof.MutOps
+import IxCC.Rt.Rc.Array.Proof.Release
+import IxCC.Rt.Rc.Array.Proof.Alloc
+import IxCC.Rt.Readback.Array
 
 /-! Production API: Ixon v3 ingress, the shared semantic vocabulary, the Src
 front end (ingress, the checked unfolding table, SrcEval, relevance), global and

@@ -127,9 +127,9 @@ in
     # each suite's measured time and memory). Each suite's complete output is
     # printed under its name with its status and wall time; the check fails
     # if any suite fails, naming each one.
-    suites = mkCheck "suites" exeInputs ''
+    suites = mkCheck "suites" ([pkgs.binutils] ++ exeInputs) ''
       ${pkgs.lib.optionalString (!native)
-        ''echo "suites: native runs skipped (tests-rt, tests-pipeline, check-backend, tests-corpus, tests-own, tests-exe): ${system} is not x86_64-linux"''}
+        ''echo "suites: native runs skipped (tests-rt, tests-pipeline, check-backend, tests-corpus, tests-own, tests-exe, tests-array): ${system} is not x86_64-linux"''}
       mkdir -p suite-logs
       bin=./.lake/build/bin
       parallel=''${NIX_BUILD_CORES:-1}
@@ -173,6 +173,7 @@ in
       launch tests-kernel-front $bin/tests-kernel-front
       launch tests-soundness $bin/tests-soundness
       launch tests-bignat $bin/tests-bignat
+      ${pkgs.lib.optionalString native ''launch tests-array $bin/tests-array suite-logs/array''}
       launch src-artifacts $bin/gen-src-artifacts --check
       launch recheck-artifacts $bin/gen-recheck-artifacts --check
       launch corpus-kernel-artifacts $bin/corpus kernel-artifacts --check
