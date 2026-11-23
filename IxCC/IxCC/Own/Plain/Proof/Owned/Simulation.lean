@@ -28,6 +28,97 @@ theorem own_jump_measure {j : Fir.JoinId} {J : List JEntry} {e : JEntry} {rest :
   simp only [Code.size]
   omega
 
+private theorem envRoots_bindAll_entryOwned {ρ : Own.Env} :
+    ∀ (ps : List Fir.Var) (vs : List RVal) (bs : List Bool),
+      vs.length = ps.length → ps.Nodup →
+      EnvRoots (Own.bindAll ρ ps vs) (Ctx.entryOwned ps bs) (selectOwnedVals bs vs)
+  | [], [], _, _, _ => rfl
+  | [], _ :: _, _, hl, _ => by simp at hl
+  | _ :: _, [], _, hl, _ => by simp at hl
+  | p :: ps, v :: vs, [], hl, hn => by
+    have hnd := List.nodup_cons.mp hn
+    have htail := envRoots_bindAll_entryOwned (ρ := ρ.insert p v) ps vs [] (by simpa using hl) hnd.2
+    have hp : (Own.bindAll (ρ.insert p v) ps vs).get? p = some v := by
+      rw [get_bindAll_untouched _ _ _ _ hnd.1, Src.NatMap.get?_insert_self]
+    rw [Ctx.entryOwned_all_false _ [] rfl, selectOwnedVals_nil_left] at htail
+    exact EnvRoots.cons hp htail
+  | p :: ps, v :: vs, false :: bs, hl, hn => by
+    have hnd := List.nodup_cons.mp hn
+    have htail := envRoots_bindAll_entryOwned (ρ := ρ.insert p v) ps vs bs (by simpa using hl) hnd.2
+    have hp : (Own.bindAll (ρ.insert p v) ps vs).get? p = some v := by
+      rw [get_bindAll_untouched _ _ _ _ hnd.1, Src.NatMap.get?_insert_self]
+    exact EnvRoots.cons hp htail
+  | p :: ps, v :: vs, true :: bs, hl, hn => by
+    have hnd := List.nodup_cons.mp hn
+    exact envRoots_bindAll_entryOwned (ρ := ρ.insert p v) ps vs bs (by simpa using hl) hnd.2
+
+private theorem bindAll_entryBorrowed_mem {ρ : Own.Env} :
+    ∀ (ps : List Fir.Var) (vs : List RVal) (bs : List Bool),
+      vs.length = ps.length → ps.Nodup →
+      ∀ y, y ∈ Ctx.entryBorrowed ps bs →
+        ∃ v, (Own.bindAll ρ ps vs).get? y = some v ∧ v ∈ selectBorrowedVals bs vs
+  | [], [], _, _, _, _, hy => by cases hy
+  | [], _ :: _, _, hl, _, _, _ => by simp at hl
+  | _ :: _, [], _, hl, _, _, _ => by simp at hl
+  | _, _, [], _, _, _, hy => by rw [Ctx.entryBorrowed_all_false _ [] rfl] at hy; cases hy
+  | p :: ps, v :: vs, false :: bs, hl, hn, y, hy => by
+    have hnd := List.nodup_cons.mp hn
+    exact bindAll_entryBorrowed_mem (ρ := ρ.insert p v) ps vs bs (by simpa using hl) hnd.2 y hy
+  | p :: ps, v :: vs, true :: bs, hl, hn, y, hy => by
+    have hnd := List.nodup_cons.mp hn
+    simp only [Ctx.entryBorrowed, List.mem_cons] at hy
+    rcases hy with rfl | hy
+    · refine ⟨v, ?_, List.mem_cons_self⟩
+      simp only [Own.bindAll]
+      rw [get_bindAll_untouched _ _ _ _ hnd.1, Src.NatMap.get?_insert_self]
+    · obtain ⟨u, hu, hm⟩ :=
+        bindAll_entryBorrowed_mem (ρ := ρ.insert p v) ps vs bs (by simpa using hl) hnd.2 y hy
+      exact ⟨u, hu, List.mem_cons_of_mem _ hm⟩
+
+/-- Function entry with arbitrary borrow mask `bs`: owned parameters hold one token each,
+borrowed parameters are backed by `external`. -/
+theorem ownedState_entryWith_exact (functions : Signatures) (H : Heap) (external : Nat → Nat)
+    (params : List Fir.Var) (bs : List Bool) (vs : List RVal) (ws : List Fir.Val)
+    (hd : Sem.Forall2 (Proof.Den H) vs ws) (hl : vs.length = params.length)
+    (hf : fresh [] params = true) (hb : Balance H external (selectOwnedVals bs vs))
+    (hbrw : ∀ v, v ∈ selectBorrowedVals bs vs → ReachableFrom H external v)
+    (borrows : BorrowSigs := .leaf) :
+    OwnedState functions H external params (Ctx.entryWith params bs)
+      (Fir.bindAll .leaf params ws) (Own.bindAll .leaf params vs) (selectOwnedVals bs vs)
+      [] .leaf [] [] borrows := by
+  have hn : params.Nodup := by simpa using fresh_nodup_append List.nodup_nil hf
+  have htok := Ctx.Tokens.entryWith params bs hn
+  have hroots := envRoots_bindAll_entryOwned (ρ := .leaf) params vs bs hl hn
+  have hden0 : EnvDen H [] (.leaf : Fir.Env) (.leaf : Own.Env) := by intro x hx; simp at hx
+  have hden : EnvDen H params (Fir.bindAll .leaf params ws) (Own.bindAll .leaf params vs) := by
+    simpa using hden0.bindAll params hd hl
+  have himm : ∀ y, (Ctx.entryWith params bs).isImm y = false := fun _ => rfl
+  have hbrw0 : ∀ y, (Ctx.entryWith params bs).brw.get? y = none := fun _ => rfl
+  have hownSub := Ctx.entryOwned_sublist params bs
+  have hbrwSub := Ctx.entryBorrowed_sublist params bs
+  refine ⟨fun y hy => ?_, ⟨_, htok, hroots⟩, hb, fun y hy => ?_, hn,
+    fun y hy => absurd hy (by simp [himm y]), fun y hy => ?_, fun y hy => ?_, fun y e hy => ?_,
+    .nil _ _ _ _, .nil _⟩
+  · simp only [Ctx.avail_eq, himm, Ctx.borrowed_eq, hbrw0, Bool.false_or, Bool.or_eq_true,
+      decide_eq_true_eq] at hy
+    rcases hy with (hp | hb') | hpb
+    · exact hden y (hownSub.subset (htok.mem hp))
+    · simp at hb'
+    · rw [Ctx.pbrw_entryWith hn] at hpb
+      exact hden y (hbrwSub.subset (of_decide_eq_true hpb))
+  · simp only [Ctx.known_eq, himm, hbrw0, Option.isSome_none, Bool.or_false, Bool.false_or,
+      Bool.or_eq_true] at hy
+    rcases hy with ho | hpb
+    · exact hownSub.subset (Ctx.ownHas_ofList (hn.sublist hownSub) ho)
+    · rw [Ctx.pbrw_entryWith hn] at hpb
+      exact hbrwSub.subset (of_decide_eq_true hpb)
+  · simp [Ctx.borrowed_eq, hbrw0] at hy
+  · rw [Ctx.pbrw_entryWith hn] at hy
+    obtain ⟨v, hv, hm⟩ := bindAll_entryBorrowed_mem (ρ := .leaf) params vs bs hl hn y
+      (of_decide_eq_true hy)
+    exact ⟨v, hv, hbrw v hm⟩
+  · simp [hbrw0] at hy
+
 /-- Function entry: parameters own one token each, and the tokens are the arguments' values. -/
 theorem ownedState_entry_exact (functions : Signatures) (H : Heap) (external : Nat → Nat)
     (params : List Fir.Var) (vs : List RVal) (ws : List Fir.Val)
@@ -35,27 +126,10 @@ theorem ownedState_entry_exact (functions : Signatures) (H : Heap) (external : N
     (hf : fresh [] params = true) (hb : Balance H external vs) :
     OwnedState functions H external params (Ctx.entry params)
       (Fir.bindAll .leaf params ws) (Own.bindAll .leaf params vs) vs [] .leaf [] [] := by
-  have hn : params.Nodup := by simpa using fresh_nodup_append List.nodup_nil hf
-  have htok := Ctx.Tokens.entry params hn
-  have hroots : EnvRoots (Own.bindAll .leaf params vs) params vs := by
-    simpa using (EnvRoots.nil (.leaf : Own.Env)).bindAll params vs hl hf
-  have hden0 : EnvDen H [] (.leaf : Fir.Env) (.leaf : Own.Env) := by intro x hx; simp at hx
-  have hden : EnvDen H params (Fir.bindAll .leaf params ws) (Own.bindAll .leaf params vs) := by
-    simpa using hden0.bindAll params hd hl
-  have himm : ∀ y, (Ctx.entry params).isImm y = false := fun _ => rfl
-  have hbrw : ∀ y, (Ctx.entry params).brw.get? y = none := fun _ => rfl
-  refine ⟨fun y hy => ?_, ⟨params, htok, hroots⟩, hb, fun y hy => ?_, hn,
-    fun y hy => absurd hy (by simp [himm y]), fun y hy => ?_, fun y e hy => ?_, .nil _ _ _,
-    .nil _⟩
-  · simp only [Ctx.avail_eq, himm, Ctx.borrowed_eq, hbrw, Bool.false_or, Bool.or_eq_true,
-      decide_eq_true_eq] at hy
-    rcases hy with hp | hb'
-    · exact hden y (htok.mem hp)
-    · simp at hb'
-  · simp only [Ctx.known_eq, himm, hbrw, Option.isSome_none, Bool.or_false, Bool.false_or] at hy
-    exact Ctx.ownHas_ofList hn hy
-  · simp [Ctx.borrowed_eq, hbrw] at hy
-  · simp [hbrw] at hy
+  have h := ownedState_entryWith_exact functions H external params [] vs ws hd hl hf
+    (by simpa [selectOwnedVals_nil_left] using hb)
+    (fun _ hm => by simp [selectBorrowedVals_nil_left] at hm)
+  simpa [selectOwnedVals_nil_left, Ctx.entryWith_all_false params [] rfl] using h
 
 /-- Function entry: parameters own one token each. -/
 theorem ownedState_entry (functions : Signatures) (H : Heap) (external : Nat → Nat)
@@ -68,18 +142,22 @@ theorem ownedState_entry (functions : Signatures) (H : Heap) (external : Nat →
   ⟨vs, ownedState_entry_exact functions H external params vs ws hd hl hf hb, hb⟩
 
 /-- The accepted bodies, for the call step. -/
-def BodiesChecked (F : Fir.Program) (candidate : Src.NatMap Code) : Prop :=
+def BodiesChecked (F : Fir.Program) (candidate : Src.NatMap Code)
+    (borrows : BorrowSigs := .leaf) : Prop :=
   ∀ f fd, f < F.size → F.fun? f = some fd → ∃ body, candidate.get? f = some body ∧
-    eraseCode body = fd.body ∧ checkCode .leaf (Ctx.entry (fd.params.map (·.1))) body = .ok ()
+    eraseCode body = fd.body ∧
+    checkCode .leaf (Ctx.entryWith (fd.params.map (·.1)) (borrows.getD f [])) body borrows = .ok ()
 
-theorem owned_call_of_smaller {F : Fir.Program} {candidate : Src.NatMap Code} {k : Nat}
-    (domain : contractProgramDomain F = true) (bodies : BodiesChecked F candidate)
-    (ih : ∀ j, j < k → AtClockOwned F candidate j)
+theorem owned_call_of_smaller_with {F : Fir.Program} {candidate : Src.NatMap Code}
+    {borrows : BorrowSigs} {k : Nat}
+    (domain : contractProgramDomain F = true) (bodies : BodiesChecked F candidate borrows)
+    (ih : ∀ j, j < k → AtClockOwned F candidate j borrows)
     {f : Fir.FunId} (hf : f < F.size) {H : Heap} {external : Nat → Nat}
     {vs : List RVal} {ws : List Fir.Val} (hd : Sem.Forall2 (Proof.Den H) vs ws)
-    (hb : Balance H external vs) :
+    (hb : Balance H external (selectOwnedVals (borrows.getD f []) vs))
+    (hbrw : ∀ v, v ∈ selectBorrowedVals (borrows.getD f []) vs → ReachableFrom H external v) :
     ResultRel H external (Fir.evalCall F k f ws)
-      (evalCall { source := F, bodies := candidate } k f vs H) := by
+      (evalCall { source := F, bodies := candidate, borrows } k f vs H) := by
   cases hfd : F.fun? f with
   | none =>
     rw [Fir.evalCall_eq, hfd]
@@ -93,30 +171,42 @@ theorem owned_call_of_smaller {F : Fir.Program} {candidate : Src.NatMap Code} {k
     · have hl' : vs.length = fd.params.length := hd.length.trans hl
       simp only [hl, hl', ↓reduceIte]
       refine ResultRel.later fun j hj => ?_
-      obtain ⟨owned, st, _⟩ := ownedState_entry (signatures F) H external (fd.params.map (·.1))
-        vs ws hd (by simpa using hl') freshParams hb
+      have st := ownedState_entryWith_exact (signatures F) H external (fd.params.map (·.1))
+        (borrows.getD f []) vs ws hd (by simpa using hl') freshParams hb hbrw borrows
       have := ih j hj body st (by rw [herase]; exact scopeBody) htyped
       rwa [herase] at this
     · have hl' : ¬vs.length = fd.params.length := by rw [hd.length]; exact hl
       simp only [hl, hl', ↓reduceIte]
       exact .stuck
 
+theorem owned_call_of_smaller {F : Fir.Program} {candidate : Src.NatMap Code} {k : Nat}
+    (domain : contractProgramDomain F = true) (bodies : BodiesChecked F candidate)
+    (ih : ∀ j, j < k → AtClockOwned F candidate j)
+    {f : Fir.FunId} (hf : f < F.size) {H : Heap} {external : Nat → Nat}
+    {vs : List RVal} {ws : List Fir.Val} (hd : Sem.Forall2 (Proof.Den H) vs ws)
+    (hb : Balance H external vs) :
+    ResultRel H external (Fir.evalCall F k f ws)
+      (evalCall { source := F, bodies := candidate } k f vs H) :=
+  owned_call_of_smaller_with domain bodies ih hf hd
+    (by simpa [Src.NatMap.getD, Src.NatMap.get?, selectOwnedVals_nil_left] using hb)
+    (fun _ hm => by simp [Src.NatMap.getD, Src.NatMap.get?, selectBorrowedVals_nil_left] at hm)
+
 section
-variable {F : Fir.Program} {candidate : Src.NatMap Code}
+variable {F : Fir.Program} {candidate : Src.NatMap Code} {borrows : BorrowSigs}
   (domain : contractProgramDomain F = true) (pins : BoolPinsOk F)
-  (bodies : BodiesChecked F candidate)
-variable {k : Nat} (smaller : ∀ j, j < k → AtClockOwned F candidate j)
+  (bodies : BodiesChecked F candidate borrows)
+variable {k : Nat} (smaller : ∀ j, j < k → AtClockOwned F candidate j borrows)
 include domain pins bodies smaller
 
 mutual
 theorem owned_eval {H : Heap} {external : Nat → Nat} {live : List Var} {Γ : Ctx} {Δ : JCtx}
     {ρf : Fir.Env} {ρo : Own.Env} {owned : List RVal} {lex : Joins}
     {Jf : List Fir.JEntry} {Jo : List JEntry} (c : Code)
-    (st : OwnedState (signatures F) H external live Γ ρf ρo owned lex Δ Jf Jo)
+    (st : OwnedState (signatures F) H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
     (scope : scopeOk (signatures F) live (stackArities Jf) (eraseCode c) = true)
-    (typed : checkCode Δ Γ c = .ok ()) :
+    (typed : checkCode Δ Γ c borrows = .ok ()) :
     ResultRel H external (Fir.eval F k ρf Jf (eraseCode c))
-      (eval { source := F, bodies := candidate } k ρo Jo H c) := by
+      (eval { source := F, bodies := candidate, borrows } k ρo Jo H c) := by
   match c with
   | .act (.inc x n) c' =>
     obtain ⟨Γ', hc, typed'⟩ := checkCode_inc typed
@@ -139,23 +229,24 @@ theorem owned_eval {H : Heap} {external : Nat → Nat} {live : List Var} {Γ : C
       have hs : (signatures F).lookup f = some args.length ∧ args.all (argIn live) = true := by
         simpa [rhsIn, Bool.and_eq_true] using hr
       obtain ⟨fd, hf, _, _⟩ := signatures_lookup hs.1
-      obtain ⟨Γ₁, ht, hΓ⟩ := except_bind_ok hbc
+      obtain ⟨Γ₁, ht, hbc'⟩ := except_bind_ok hbc
+      obtain ⟨⟨⟩, hchk, hΓ⟩ := except_bind_ok hbc'
       have hΓ := except_pure_ok hΓ
       subst hΓ
-      obtain ⟨vs, ws, owned₁, hvs, hws, hds, inv₁, hs₁, hw₁⟩ := takeArgs_sem st.takeInv ht
-      have hcall := owned_call_of_smaller domain bodies smaller hf hds
-        (balance_hold.mp (hs₁.balance st.counts))
+      obtain ⟨vs, ws, owned₁, hvs, hws, hds, inv₁, hs₁, hw₁, hbrw⟩ :=
+        takeOwnedArgs_call_sem st ht hchk
+      have hcall := owned_call_of_smaller_with domain bodies smaller hf hds
+        (balance_hold.mp (hs₁.balance st.counts)) hbrw
       show ResultRel H external (Fir.eval F k ρf Jf (.bind x (.call f args) (eraseCode c'))) _
       rw [Fir.eval_bindCall, hws, eval_bindCall, hvs]
       simp only [Result.ofOption, Result.bind_ok]
-      apply ResultRel.bind_frame hcall
-      intro w v H' hd' hb' hp'
+      apply ResultRel.bind_frame_reach hcall
+      intro w v H' hd' hb' _ hreach'
       have pre₁ := st.pre.weaker hw₁ inv₁.roots
-      have pre₂ := pre₁.release.call (release_borrowed pre₁.epochs) hp'
+      have pre₂ := pre₁.release.call (release_borrowed pre₁.epochs) hreach'
       have st' := pre₂.bindOwned hx hd'
         ((SameRefs.comm _ _).balance (balance_resume hb'))
-      exact (owned_eval c' st' hc' typed').preheap
-        (fun root w' hr' hd'' => hp' root w' (external_hold hr') hd'')
+      exact (owned_eval c' st' hc' typed').preheap hreach'.of_holdRoots
     · have hn : ∀ f args, r ≠ .call f args := fun f args h => call ⟨f, args, h⟩
       show ResultRel H external (Fir.eval F k ρf Jf (.bind x r (eraseCode c'))) _
       rw [Fir.eval_bindRhs F k ρf Jf x r (eraseCode c') hn,
@@ -239,16 +330,17 @@ theorem owned_eval {H : Heap} {external : Nat → Nat} {live : List Var} {Γ : C
     show ResultRel H external (Fir.eval F k ρf Jf (.ret a)) _
     rw [Fir.eval_ret, hfa, eval_ret, hev]
     simp only [Result.ofOption, Result.bind_ok]
-    exact .ok hd (hs.balance st.counts) (fun _ _ _ h => h)
+    exact .ok hd (hs.balance st.counts) (fun _ _ _ h => h) (ReachablePreserved.refl H external)
   | .tcall f args =>
-    obtain ⟨Γ', ht, hcl⟩ := checkCode_tcall typed
+    obtain ⟨Γ', ht, hchk, hcl⟩ := checkCode_tcall typed
     have hs : (signatures F).lookup f = some args.length := by
       have : decide ((signatures F).lookup f = some args.length) = true ∧
           args.all (argIn live) = true := by
         simpa only [eraseCode, scopeOk, Bool.and_eq_true] using scope
       simpa using this.1
     obtain ⟨fd, hf, _, _⟩ := signatures_lookup hs
-    obtain ⟨vs, ws, owned₁, hvs, hws, hds, inv₁, hs₁, _⟩ := takeArgs_sem st.takeInv ht
+    obtain ⟨vs, ws, owned₁, hvs, hws, hds, inv₁, hs₁, _, hbrw⟩ :=
+      takeOwnedArgs_tail_sem st ht hchk
     obtain ⟨toks₁, htok₁, hr₁⟩ := inv₁.roots
     have hnil := closed_nil htok₁ hcl
     subst hnil
@@ -257,8 +349,9 @@ theorem owned_eval {H : Heap} {external : Nat → Nat} {live : List Var} {Γ : C
     show ResultRel H external (Fir.eval F k ρf Jf (.tcall f args)) _
     rw [Fir.eval_tcall, hws, eval_tcall, hvs]
     simp only [Result.ofOption, Result.bind_ok]
-    exact owned_call_of_smaller domain bodies smaller hf hds
-      ((by simpa using hs₁ : SameRefs owned vs).balance st.counts)
+    exact owned_call_of_smaller_with domain bodies smaller hf hds
+      ((by simpa using hs₁ : SameRefs owned (selectOwnedVals (borrows.getD f []) vs)).balance st.counts)
+      hbrw
   | .trap =>
     show ResultRel H external (Fir.eval F k ρf Jf .trap) _
     rw [Fir.eval_trap, eval_trap]
@@ -275,12 +368,12 @@ theorem owned_evalAlts {H : Heap} {external : Nat → Nat} {live : List Var} {Γ
     {ρf : Fir.Env} {ρo : Own.Env} {owned : List RVal} {lex : Joins}
     {Jf : List Fir.JEntry} {Jo : List JEntry} (key : Key.CtorKey) (alts : List Alt)
     (d : Option Code)
-    (st : OwnedState (signatures F) H external live Γ ρf ρo owned lex Δ Jf Jo)
+    (st : OwnedState (signatures F) H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
     (ha : scopeAlts (signatures F) live (stackArities Jf) (eraseAlts alts) = true)
     (hd : scopeOpt (signatures F) live (stackArities Jf) (eraseOpt d) = true)
-    (typedAlts : checkAlts Δ Γ alts = .ok ()) (typedOpt : checkOpt Δ Γ d = .ok ()) :
+    (typedAlts : checkAlts Δ Γ alts borrows = .ok ()) (typedOpt : checkOpt Δ Γ d borrows = .ok ()) :
     ResultRel H external (Fir.evalAlts F k ρf Jf key (eraseAlts alts) (eraseOpt d))
-      (evalAlts { source := F, bodies := candidate } k ρo Jo H key alts d) := by
+      (evalAlts { source := F, bodies := candidate, borrows } k ρo Jo H key alts d) := by
   match alts, d with
   | [], some c =>
     simp only [eraseAlts, eraseOpt]
@@ -312,10 +405,11 @@ end
 
 end
 
-/-- **The milestone-1 induction**. -/
+/-- **The milestone-1 induction** (generalised to arbitrary borrow signatures). -/
 theorem owned_refines_of {F : Fir.Program} {candidate : Src.NatMap Code}
+    {borrows : BorrowSigs}
     (domain : contractProgramDomain F = true) (pins : BoolPinsOk F)
-    (bodies : BodiesChecked F candidate) : ∀ k, AtClockOwned F candidate k := by
+    (bodies : BodiesChecked F candidate borrows) : ∀ k, AtClockOwned F candidate k borrows := by
   intro k
   induction k using Nat.strongRecOn with
   | ind k ih =>

@@ -10,6 +10,7 @@ open Lean (Json toJson)
 open IxCC.Recheck.CertJson (arr nat str nats getArr)
 
 def format : String := "ixcc/own-plain/1"
+def formatV2 : String := "ixcc/own-plain/2"
 def maxDepth : Nat := 4096
 
 def action : Action → Json
@@ -84,13 +85,58 @@ def bodyMap? : Nat → Json → Src.NatMap Fir.Fun → Except String (Src.NatMap
       return .node body (← bodyMap? fuel zero zs) (← bodyMap? fuel one os)
     | _, _ => throw "own.cert.functions: complete source and candidate map shapes differ"
 
+def borrowMask (bs : List Bool) : Json :=
+  arr (bs.map fun b => nat (if b then 1 else 0))
+
+def borrowMask? (j : Json) : Except String (List Bool) := do
+  (← getArr j).mapM fun x => do
+    match ← x.getNat? with
+    | 0 => pure false
+    | 1 => pure true
+    | _ => throw "own.cert.borrows: expected 0 or 1 borrow flag"
+
+def borrowMap (borrows : BorrowSigs) : Json :=
+  arr (borrows.toList.filterMap fun (f, bs) =>
+    if bs.any id then some (arr [nat f, borrowMask bs]) else none)
+
+def borrowMap? (j : Json) : Except String BorrowSigs := do
+  let items ← getArr j
+  items.foldlM (fun m item => do
+    match ← getArr item with
+    | [fJ, bsJ] =>
+      let f ← fJ.getNat?
+      if m.contains f then throw s!"own.cert.borrows: duplicate entry for f{f}"
+      let bs ← borrowMask? bsJ
+      pure (m.insert f bs)
+    | _ => throw "own.cert.borrows: expected [funId, [0|1, ...]]") .leaf
+
 def encode (bodies : Src.NatMap Code) : Json := arr [str format, bodyMap bodies]
+
+def encodeWith (bodies : Src.NatMap Code) (borrows : BorrowSigs) : Json :=
+  if borrows.toList.any (fun p => p.2.any id) then
+    arr [str formatV2, bodyMap bodies, borrowMap borrows]
+  else
+    encode bodies
+
 def toText (bodies : Src.NatMap Code) : String := (encode bodies).compress
+
+def toTextWith (bodies : Src.NatMap Code) (borrows : BorrowSigs) : String :=
+  (encodeWith bodies borrows).compress
 
 def decode (F : Fir.Program) (j : Json) : Except String (Src.NatMap Code) := do
   match ← getArr j with
   | [.str version, bodies] =>
     if version == format then bodyMap? maxDepth bodies F.funs
+    else throw "own.cert.version: unsupported wire format"
+  | _ => throw "own.cert.envelope: expected version and complete body map"
+
+def decodeWith (F : Fir.Program) (j : Json) : Except String (Src.NatMap Code × BorrowSigs) := do
+  match ← getArr j with
+  | [.str version, bodies] =>
+    if version == format then return (← bodyMap? maxDepth bodies F.funs, .leaf)
+    else throw "own.cert.version: unsupported wire format"
+  | [.str version, bodies, borrows] =>
+    if version == formatV2 then return (← bodyMap? maxDepth bodies F.funs, ← borrowMap? borrows)
     else throw "own.cert.version: unsupported wire format"
   | _ => throw "own.cert.envelope: expected version and complete body map"
 
@@ -191,21 +237,23 @@ theorem checkParamTotal_ok {limit : Nat} {F : Fir.Program} :
 
 /-- The refusal of a map the checker does not accept: the checker's first reason when the source
 is in the domain and its pins are sound, the domain refusal otherwise. Computed only on refusal. -/
-def checkRefusal (domain : Bool) (F : Fir.Program) (bodies : Src.NatMap Code) : String :=
-  match domain && checkBoolPins F, checkMapE F bodies with
+def checkRefusal (domain : Bool) (F : Fir.Program) (bodies : Src.NatMap Code)
+    (borrows : BorrowSigs := .leaf) : String :=
+  match domain && checkBoolPins F && borrowsValid F borrows, checkMapE F bodies borrows with
   | true, .error e => s!"own.cert.check: ownership proposal refused: {e}"
   | _, _ => "own.cert.check: ownership proposal or source domain refused"
 
 /-- **Certificate admission.** The program must be within the parameter total (checked first, from
 the program alone), the decoded map within the captured-work budget (linear), and the map accepted
-by the ownership checker, which judges any placement of `inc`/`dec` (`Own.Plain.checkOwned`). -/
+by the ownership checker, which judges any placement of `inc`/`dec` and `@borrowed` signatures
+(`Own.Plain.checkOwned`). -/
 def admit (F : Fir.Program) (j : Json) (budget : Nat := Anf.maxCapturedWork)
     (params : Nat := Anf.maxParamTotal) : Except String Program := do
   checkParamTotal params F
-  let bodies ← decode F j
+  let (bodies, borrows) ← decodeWith F j
   checkBudget budget bodies
-  if checkOwned F bodies then return { source := F, bodies }
-  else throw (checkRefusal (programDomain F) F bodies)
+  if checkOwned F bodies borrows then return { source := F, bodies, borrows }
+  else throw (checkRefusal (programDomain F) F bodies borrows)
 
 def ofText (F : Fir.Program) (text : String) (budget : Nat := Anf.maxCapturedWork)
     (params : Nat := Anf.maxParamTotal) : Except String Program := do
@@ -218,10 +266,10 @@ def ofText (F : Fir.Program) (text : String) (budget : Nat := Anf.maxCapturedWor
 def admitContract (F : Fir.Program) (j : Json) (budget : Nat := Anf.maxCapturedWork)
     (params : Nat := Anf.maxParamTotal) : Except String Program := do
   checkParamTotal params F
-  let bodies ← decode F j
+  let (bodies, borrows) ← decodeWith F j
   checkBudget budget bodies
-  if checkContractOwned F bodies then return { source := F, bodies }
-  else throw (checkRefusal (contractProgramDomain F) F bodies)
+  if checkContractOwned F bodies borrows then return { source := F, bodies, borrows }
+  else throw (checkRefusal (contractProgramDomain F) F bodies borrows)
 
 def ofTextContract (F : Fir.Program) (text : String) (budget : Nat := Anf.maxCapturedWork)
     (params : Nat := Anf.maxParamTotal) : Except String Program := do

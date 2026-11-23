@@ -36,7 +36,8 @@ theorem functionBounds_marker {limit first : Nat} {fd : Cfg.Fun}
 destinations remain above that bound even though the lowered function's
 temporary namespace is larger. -/
 theorem checked_source_bounds {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} (checked : checkScopedProgram F bodies P = true)
+    {P : Program} {borrows : Own.Plain.BorrowSigs}
+    (checked : checkScopedProgram F bodies P borrows = true)
     {f : Nat} (range : f < F.size) {source : Fir.Fun} {fd : Cfg.Fun}
     (sourceLookup : F.fun? f = some source) (lookup : P.base.fun? f = some fd) :
     functionBounds P.base.size source.vars fd = true := by
@@ -49,7 +50,8 @@ theorem checked_source_bounds {F : Fir.Program} {bodies : Src.NatMap Own.Plain.C
   exact bounds
 
 theorem checked_block_params {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} (checked : checkScopedProgram F bodies P = true)
+    {P : Program} {borrows : Own.Plain.BorrowSigs}
+    (checked : checkScopedProgram F bodies P borrows = true)
     {f : Nat} (range : f < F.size) {source : Fir.Fun} {fd : Cfg.Fun}
     (sourceLookup : F.fun? f = some source) (lookup : P.base.fun? f = some fd)
     {index : Nat} {block : Cfg.Block} (blockLookup : fd.blocks[index]? = some block) :
@@ -60,7 +62,8 @@ theorem checked_block_params {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Co
 retains source.vars plus marker space, consumption retains vars, and supOf
 includes the function vars field independently of syntactic occurrences. -/
 theorem checked_consumed_sup {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} (checked : checkScopedProgram F bodies P = true)
+    {P : Program} {borrows : Own.Plain.BorrowSigs}
+    (checked : checkScopedProgram F bodies P borrows = true)
     {f : Nat} (range : f < F.size) {source : Fir.Fun} {fd actual : Cfg.Fun}
     (sourceLookup : F.fun? f = some source) (lookup : P.base.fun? f = some fd)
     (consuming : consumeFunction P (layoutOf P) fd = .ok actual) :
@@ -76,7 +79,8 @@ theorem checked_consumed_sup {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Co
   omega
 
 theorem checked_marker_bounds {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} (checked : checkScopedProgram F bodies P = true)
+    {P : Program} {borrows : Own.Plain.BorrowSigs}
+    (checked : checkScopedProgram F bodies P borrows = true)
     {f : Nat} (range : f < F.size) {source : Fir.Fun} {fd : Cfg.Fun}
     (sourceLookup : F.fun? f = some source) (lookup : P.base.fun? f = some fd)
     {index : Nat} {block : Cfg.Block} (blockLookup : fd.blocks[index]? = some block)
@@ -90,7 +94,8 @@ theorem checked_marker_bounds {F : Fir.Program} {bodies : Src.NatMap Own.Plain.C
 
 /-- Exact original block-zero data from the real checked lowering. -/
 theorem checked_entry_block {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} (checked : checkScopedProgram F bodies P = true)
+    {P : Program} {borrows : Own.Plain.BorrowSigs}
+    (checked : checkScopedProgram F bodies P borrows = true)
     {f : Nat} (range : f < F.size) {source : Fir.Fun} {body : Own.Plain.Code}
     (sourceLookup : F.fun? f = some source) (bodyLookup : bodies.get? f = some body) :
     ∃ fd block, P.base.fun? f = some fd ∧ fd.blocks[0]? = some block ∧
@@ -121,7 +126,8 @@ theorem checked_entry_block {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Cod
 /-- Construct At at the exact block-zero frame selected by actual admission.
 The statement includes the real source entry step and has no naming premise. -/
 theorem checked_entry_at {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} (checked : checkScopedProgram F bodies P = true)
+    {P : Program} {borrows : Own.Plain.BorrowSigs}
+    (checked : checkScopedProgram F bodies P borrows = true)
     {f : Nat} (range : f < F.size) {source : Fir.Fun} {body : Own.Plain.Code}
     (sourceLookup : F.fun? f = some source) (bodyLookup : bodies.get? f = some body)
     {fd : Cfg.Fun} {block : Cfg.Block} (lookup : P.base.fun? f = some fd)

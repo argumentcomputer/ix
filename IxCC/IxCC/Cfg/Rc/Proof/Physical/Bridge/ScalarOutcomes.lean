@@ -24,13 +24,13 @@ open IxCC.Own.Plain (Ctx JCtx checkCode)
 section
 variable {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
   {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-  {main clock : Nat} {sourceJoins : List Fir.JEntry}
+  {main clock : Nat} {sourceJoins : List Fir.JEntry} {borrows : Own.Plain.BorrowSigs}
 
 /-- **`x := a`.** -/
-theorem argument_result (admission : CodeAdmission F bodies P config pairs functions)
+theorem argument_result (admission : CodeAdmission F bodies P config pairs functions borrows)
     {x : Fir.Var} (arg : Fir.Arg) {k : Own.Plain.Code}
-    (next : PhysicalCode F P config pairs main clock sourceJoins k) :
-    PhysicalCode F P config pairs main clock sourceJoins (.bind x (.arg arg) k) := by
+    (next : PhysicalCode F P config pairs main clock sourceJoins k borrows) :
+    PhysicalCode F P config pairs main clock sourceJoins (.bind x (.arg arg) k) borrows := by
   intro H addresses external live Γ Δ sourceEnv ownedEnv roots lex ownedJoins sourceFunction
     function source target memory context base bump limit regionBytes slots lists callers
     sourceLookup before heap
@@ -67,13 +67,14 @@ theorem argument_result (admission : CodeAdmission F bodies P config pairs funct
           (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main) H addresses
           external (live ++ [x]) Γ' Δ (sourceEnv.insert x logical) (ownedEnv.insert x value) owned'
           lex sourceJoins ownedJoins k sourceFunction.vars function
-          {source with rest := tail, env := source.env.insert x value} after :=
+          {source with rest := tail, env := source.env.insert x value} after borrows :=
         ⟨state, typed, continuation value, frame, bodyScope, running, fused⟩
       have heap' : HeapState P pairs H addresses memory external owned' context base bump limit
           regionBytes slots lists :=
         ⟨by rw [holdRoots_sameRefs refs]; exact heap.ready, heap.ordered, heap.compatible,
           heap.extent⟩
-      exact ResultAt.prefix trace (fun _ _ _ den => den) (HeapHistory.refl _ _) (by omega)
+      exact ResultAt.prefix trace (Own.Plain.ReachablePreserved.refl H external)
+        (HeapHistory.refl _ _) (by omega)
         (next H addresses external (live ++ [x]) Γ' Δ (sourceEnv.insert x logical)
           (ownedEnv.insert x value) owned' lex ownedJoins sourceFunction function
           {source with rest := tail, env := source.env.insert x value} after memory context base
@@ -83,10 +84,10 @@ theorem argument_result (admission : CodeAdmission F bodies P config pairs funct
 
 /-- **`x := op args`**: the result is an immediate; the arguments the signature marks become
 immediates (their tokens are vacuous). -/
-theorem primitive_result (admission : CodeAdmission F bodies P config pairs functions)
+theorem primitive_result (admission : CodeAdmission F bodies P config pairs functions borrows)
     {x : Fir.Var} (op : Lam.Prim) (args : List Fir.Arg) {k : Own.Plain.Code}
-    (next : PhysicalCode F P config pairs main clock sourceJoins k) :
-    PhysicalCode F P config pairs main clock sourceJoins (.bind x (.prim op args) k) := by
+    (next : PhysicalCode F P config pairs main clock sourceJoins k borrows) :
+    PhysicalCode F P config pairs main clock sourceJoins (.bind x (.prim op args) k) borrows := by
   intro H addresses external live Γ Δ sourceEnv ownedEnv roots lex ownedJoins sourceFunction
     function source target memory context base bump limit regionBytes slots lists callers
     sourceLookup before heap
@@ -141,13 +142,14 @@ theorem primitive_result (admission : CodeAdmission F bodies P config pairs func
           ((Ctx.immArgs Γ (Own.Plain.primImmArgs op args.length) args).setImm x) Δ
           (sourceEnv.insert x logical) (ownedEnv.insert x value) owned' lex sourceJoins ownedJoins k
           sourceFunction.vars function {source with rest := tail, env := source.env.insert x value}
-          after :=
+          after borrows :=
         ⟨state, typed, continuation value, frame, bodyScope, running, fused⟩
       have heap' : HeapState P pairs H addresses memory external owned' context base bump limit
           regionBytes slots lists :=
         ⟨by rw [← holdRoots_sameRefs refs]; exact heap.ready, heap.ordered, heap.compatible,
           heap.extent⟩
-      exact ResultAt.prefix trace (fun _ _ _ den => den) (HeapHistory.refl _ _) (by omega)
+      exact ResultAt.prefix trace (Own.Plain.ReachablePreserved.refl H external)
+        (HeapHistory.refl _ _) (by omega)
         (next H addresses external (live ++ [x])
           ((Ctx.immArgs Γ (Own.Plain.primImmArgs op args.length) args).setImm x) Δ
           (sourceEnv.insert x logical) (ownedEnv.insert x value) owned' lex ownedJoins

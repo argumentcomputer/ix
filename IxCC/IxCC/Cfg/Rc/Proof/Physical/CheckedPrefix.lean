@@ -14,7 +14,7 @@ Thus the physical prefix's freshness is derived even when the syntactic
 marker supply is unconstrained by a marker-free continuation. -/
 theorem checked_prefix_cursor
     {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    (checked : checkScopedProgram F bodies P = true)
+    {borrows : Own.Plain.BorrowSigs} (checked : checkScopedProgram F bodies P borrows = true)
     {source : Cfg.Frame} {ρ : Own.Env} {saved : List Own.Plain.JEntry}
     {actions : List Action} {code : Own.Plain.Code}
     (layout : At F P source ρ saved (Own.Plain.actionPrefix actions code))

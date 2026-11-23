@@ -6,8 +6,8 @@ namespace IxCC.Own.Plain
 open IxCC.Sem (Result ClockMono Obs Lang Sim Forall2)
 
 /-- Retained observations for any map the ownership checker accepts. -/
-theorem owned_retained {F : Fir.Program} {candidate : Src.NatMap Code}
-    (checked : checkOwned F candidate = true)
+theorem owned_retained {F : Fir.Program} {candidate : Src.NatMap Code} {borrows : BorrowSigs}
+    (checked : checkOwned F candidate borrows = true)
     (exports : ∀ f, f ∈ F.exports → f < F.size) :
     ∀ i, Sim (fun w p => Proof.Den p.2 p.1 w) id
       (Fir.firRun F i) (plainRun {source := F, bodies := candidate} i) := by

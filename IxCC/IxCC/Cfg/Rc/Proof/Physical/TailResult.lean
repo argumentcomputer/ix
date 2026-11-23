@@ -31,13 +31,13 @@ theorem source_call_arity {F : Fir.Program} {f : Nat} {args : List Fir.Arg}
 section
 variable {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
   {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-  {main clock : Nat} {sourceJoins : List Fir.JEntry}
+  {main clock : Nat} {sourceJoins : List Fir.JEntry} {borrows : Own.Plain.BorrowSigs}
 
 /-- **A tail call**: the callee runs at a strictly smaller source clock. -/
-theorem tail_result (admission : CodeAdmission F bodies P config pairs functions)
-    (smaller : ∀ k, k < clock → PhysicalAtClock F P config pairs main k)
+theorem tail_result (admission : CodeAdmission F bodies P config pairs functions borrows)
+    (smaller : ∀ k, k < clock → PhysicalAtClock F P config pairs main k borrows)
     {f : Fir.FunId} {args : List Fir.Arg} :
-    PhysicalCode F P config pairs main clock sourceJoins (.tcall f args) := by
+    PhysicalCode F P config pairs main clock sourceJoins (.tcall f args) borrows := by
   intro H addresses external live Γ Δ sourceEnv ownedEnv roots lex ownedJoins sourceFunction
     function source target memory context base bump limit regionBytes slots lists callers
     sourceLookup before heap
@@ -47,18 +47,20 @@ theorem tail_result (admission : CodeAdmission F bodies P config pairs functions
     simpa [Own.Plain.eraseCode, Own.Plain.scopeOk, Bool.and_eq_true] using before.scope
   obtain ⟨calleeSource, calleeRange, calleeLookup, calleeArity⟩ :=
     Own.Plain.signatures_lookup scope.1
-  obtain ⟨Γ', taken, closed⟩ := Own.Plain.checkCode_tcall before.typed
-  obtain ⟨fields, logical, owned₁, ownArgs, sourceArgs, den, inv₁, refs, _⟩ :=
-    Own.Plain.takeArgs_sem before.owned.takeInv taken
+  obtain ⟨Γ', taken, htb, closed⟩ := Own.Plain.checkCode_tcall before.typed
+  let bs := borrows.getD f []
+  obtain ⟨fields, logical, owned₁, ownArgs, sourceArgs, den, inv₁, refs, _, hbrw⟩ :=
+    Own.Plain.takeOwnedArgs_tail_sem before.owned taken htb
   obtain ⟨toks₁, tokens₁, roots₁⟩ := inv₁.roots
   have none := Own.Plain.closed_nil tokens₁ closed
   subst none
   have empty := Own.Plain.EnvRoots.nil_inv roots₁
   subst empty
-  have refs' : Own.Plain.SameRefs roots fields := by simpa using refs
-  have balance : Balance H external fields := refs'.balance before.owned.counts
-  have calleeHeap : HeapState P pairs H addresses memory external fields
-      context base bump limit regionBytes slots lists :=
+  have refs' : Own.Plain.SameRefs roots (Own.Plain.selectOwnedVals bs fields) := by simpa using refs
+  have balance : Balance H external (Own.Plain.selectOwnedVals bs fields) :=
+    refs'.balance before.owned.counts
+  have calleeHeap : HeapState P pairs H addresses memory external
+      (Own.Plain.selectOwnedVals bs fields) context base bump limit regionBytes slots lists :=
     ⟨by rw [← holdRoots_sameRefs refs']; exact heap.ready, heap.ordered, heap.compatible,
       heap.extent⟩
   have arity := source_call_arity scope.1 calleeLookup sourceArgs
@@ -66,7 +68,8 @@ theorem tail_result (admission : CodeAdmission F bodies P config pairs functions
     (Own.evalArgs_length ownedEnv ownArgs).trans calleeArity.symm
   have lexical := before.lexical.1
   have frameArgs : Own.evalArgs source.env args = some fields := Cfg.Proof.evalArgs_sub lexical ownArgs
-  have preserved : Own.Plain.ExternalPreserved H H external := fun _ _ _ h => h
+  have hreach : Own.Plain.ReachablePreserved H H external :=
+    Own.Plain.ReachablePreserved.refl H external
   have history : HeapHistory H.size addresses H.size addresses := ⟨Nat.le_refl _, fun _ _ => rfl⟩
   rw [Fir.eval_tcall, sourceArgs]
   simp only [Sem.Result.ofOption, Sem.Result.bind_ok]
@@ -90,15 +93,17 @@ theorem tail_result (admission : CodeAdmission F bodies P config pairs functions
       Option.some.inj (calleeLookup.symm.trans sourceLookup)
     subst calleeSource
     rcases self_entry_activation admission.scopedProgram admission.consuming sourceLookup
-        entryLayout before.frame ownArgs den balance fieldsArity before.running memory context []
+        entryLayout before.frame ownArgs den balance hbrw fieldsArity before.running memory context []
         callers with entered | failure
     · obtain ⟨after, final, cost, body, erased, activation, sameFn, trace, charged⟩ := entered
-      apply ResultAt.charge trace charged preserved history
+      apply ResultAt.charge trace charged hreach history
       intro next' clockEq
       have execution := smaller next' (by omega) [] body H addresses external
-        (sourceFunction.params.map Prod.fst) (Ctx.entry (sourceFunction.params.map Prod.fst)) .leaf
+        (sourceFunction.params.map Prod.fst)
+        (Ctx.entryWith (sourceFunction.params.map Prod.fst) bs) .leaf
         (Fir.bindAll .leaf (sourceFunction.params.map Prod.fst) logical)
-        (Own.bindAll .leaf (sourceFunction.params.map Prod.fst) fields) fields [] [] sourceFunction
+        (Own.bindAll .leaf (sourceFunction.params.map Prod.fst) fields)
+        (Own.Plain.selectOwnedVals bs fields) [] [] sourceFunction
         function after final memory context base bump limit regionBytes slots lists callers
         (by rw [sameFn]; exact sourceLookup) activation calleeHeap
       rwa [erased] at execution
@@ -131,17 +136,19 @@ theorem tail_result (admission : CodeAdmission F bodies P config pairs functions
       obtain ⟨originalFd, block, consumedFd, callee, targetEnv, offset, body, calleeCfgLookup,
         calleeBlockLookup, erased, entered, traceEntry, _, activation⟩ :=
         entry_activation admission.scopedProgram admission.consuming admission.lowering main
-          calleeLookup den balance represented compatible fieldsArity [] memory context callers
+          calleeLookup den balance hbrw represented compatible fieldsArity [] memory context callers
       have called := Lir.step_tail (mem := memory) (ctx := context) (rest := callers)
         functionLookup outputLookup pos term evaluated entered
       have trace := (Lir.star_of_step called).trans traceEntry
       simp only [Bool.toNat_true, Nat.add_zero] at trace
-      apply ResultAt.charge trace (Nat.le_refl 1) preserved history
+      apply ResultAt.charge trace (Nat.le_refl 1) hreach history
       intro next' clockEq
       have execution := smaller next' (by omega) [] body H addresses external
-        (calleeSource.params.map Prod.fst) (Ctx.entry (calleeSource.params.map Prod.fst)) .leaf
+        (calleeSource.params.map Prod.fst)
+        (Ctx.entryWith (calleeSource.params.map Prod.fst) bs) .leaf
         (Fir.bindAll .leaf (calleeSource.params.map Prod.fst) logical)
-        (Own.bindAll .leaf (calleeSource.params.map Prod.fst) fields) fields [] [] calleeSource
+        (Own.bindAll .leaf (calleeSource.params.map Prod.fst) fields)
+        (Own.Plain.selectOwnedVals bs fields) [] [] calleeSource
         consumedFd _ _ memory context base bump limit regionBytes slots lists callers
         calleeLookup activation calleeHeap
       rwa [erased] at execution

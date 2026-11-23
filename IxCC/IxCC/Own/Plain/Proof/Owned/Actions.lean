@@ -42,27 +42,28 @@ theorem preserved_hold {H H' : Heap} {external : Nat → Nat} {held : List RVal}
 section
 variable {functions : Signatures} {H : Heap} {external : Nat → Nat} {live : List Var}
   {Γ : Ctx} {ρf : Fir.Env} {ρo : Own.Env} {owned : List RVal} {lex : Joins} {Δ : JCtx}
-  {Jf : List Fir.JEntry} {Jo : List JEntry}
+  {Jf : List Fir.JEntry} {Jo : List JEntry} {borrows : BorrowSigs}
 
 /-- `inc_step` with the facts the native step needs: the value incremented, that it may be
 duplicated, and the new token list as reference counts (the value added, or nothing for an
 immediate). -/
-theorem inc_step_refs (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo)
+theorem inc_step_refs (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
     {Γ' : Ctx} {x : Var} {n : Nat} (hc : Γ.inc x n = .ok Γ') :
     ∃ v H' owned', n = 1 ∧ ρo.get? x = some v ∧ CanDup H v ∧
       evalAction ρo H (.inc x n) = .ok H' ∧
-      OwnedState functions H' external live Γ' ρf ρo owned' lex Δ Jf Jo ∧
-      ExternalPreserved H H' external ∧ SameRefs owned' (v :: owned) := by
+      OwnedState functions H' external live Γ' ρf ρo owned' lex Δ Jf Jo borrows ∧
+      ExternalPreserved H H' external ∧ ReachablePreserved H H' external ∧ SameRefs owned' (v :: owned) := by
   obtain ⟨rfl, hcase⟩ := Ctx.inc_ok hc
   obtain ⟨toks, htok, hroots⟩ := st.roots
   have havail : Γ.avail x = true := by
-    rcases hcase with ⟨hi, _⟩ | ⟨_, hp, _⟩ | ⟨_, _, hb, _⟩
+    rcases hcase with ⟨hi, _⟩ | ⟨_, hp | hpb, _⟩ | ⟨_, _, _, hb, _⟩
     · simp [Ctx.avail_eq, hi]
     · simp [Ctx.avail_eq, hp]
+    · simp [Ctx.avail_eq, hpb]
     · simp [Ctx.avail_eq, hb]
   obtain ⟨v, w, hv, hw, hd⟩ := st.den x havail
   have hcan : CanDup H v := by
-    rcases hcase with ⟨hi, _⟩ | ⟨_, hp, _⟩ | ⟨_, _, hb, _⟩
+    rcases hcase with ⟨hi, _⟩ | ⟨_, hp | hpb, _⟩ | ⟨_, _, _, hb, _⟩
     · obtain ⟨v', hv', himm⟩ := st.immOk x hi
       have : v' = v := Option.some.inj (hv'.symm.trans hv)
       subst this
@@ -70,6 +71,10 @@ theorem inc_step_refs (st : OwnedState functions H external live Γ ρf ρo owne
       | loc l => exact absurd rfl (himm l)
       | lit _ | ctor0 _ | erased => trivial
     · exact canDup_member st.counts (hroots.member (htok.mem hp) hv)
+    · obtain ⟨v', hv', hreach⟩ := st.pbrwOk x hpb
+      have : v' = v := Option.some.inj (hv'.symm.trans hv)
+      subst this
+      exact hreach.canDup st.counts
     · obtain ⟨v', hv', hc'⟩ := st.borrowed x hb
       have : v' = v := Option.some.inj (hv'.symm.trans hv)
       subst this; exact hc'
@@ -78,47 +83,54 @@ theorem inc_step_refs (st : OwnedState functions H external live Γ ρf ρo owne
     simp [evalAction, hv, hinc, Result.ofOption]
   have hpres : ExternalPreserved H H' external :=
     ExternalPreserved.of_values (fun root _ => hvals root)
+  have hreach : ReachablePreserved H H' external := ReachablePreserved.inc hinc
   have pre := st.pre.transport (H' := H')
     (fun u w' h => by change H'.value? u = some w'; rw [← hvals u]; exact h)
-    (fun u hu => canDup_inc hu hinc)
-  rcases hcase with ⟨hi, rfl⟩ | ⟨hi, hp, rfl⟩ | ⟨hi, h0, hb, rfl⟩
+    (fun u hu => canDup_inc hu hinc) hreach
+  rcases hcase with ⟨hi, rfl⟩ | ⟨hi, hp, rfl⟩ | ⟨hi, h0, _, hb, rfl⟩
   · -- An immediate: a no-op; its vacuous token is not kept.
     obtain ⟨v', hv', himm⟩ := st.immOk x hi
     have : v' = v := Option.some.inj (hv'.symm.trans hv)
     subst this
     exact ⟨v', H', owned, rfl, hv, hcan, hact, pre.toState ((SameRefs.imm_cons himm owned).balance hb'),
-      hpres, (SameRefs.imm_cons himm owned).symm⟩
-  · refine ⟨v, H', v :: owned, rfl, hv, hcan, hact, ?_, hpres, SameRefs.refl _⟩
+      hpres, hreach, (SameRefs.imm_cons himm owned).symm⟩
+  · refine ⟨v, H', v :: owned, rfl, hv, hcan, hact, ?_, hpres, hreach, SameRefs.refl _⟩
     have hroots' : EnvRoots ρo (x :: toks) (v :: owned) := EnvRoots.cons hv hroots
     refine ⟨fun y hy => pre.den y ?_, ⟨x :: toks, htok.addOwn x, hroots'⟩, hb',
       fun y hy => pre.known y ?_, pre.distinct, fun y hy => pre.immOk y hy,
-      fun y hy => pre.borrowed y hy, pre.epochs, pre.stack, pre.scope⟩
+      fun y hy => pre.borrowed y hy, fun y hy => pre.pbrwOk y hy, pre.epochs, pre.stack, pre.scope⟩
     · simp only [Ctx.avail_eq, Ctx.isImm_addOwn, Ctx.tokens_addOwn, Ctx.borrowed_eq,
-        Ctx.brw_addOwn, Ctx.epoch_addOwn, Bool.or_eq_true, decide_eq_true_eq] at hy ⊢
+        Ctx.brw_addOwn, Ctx.epoch_addOwn, Ctx.isPbrw_addOwn, Bool.or_eq_true, decide_eq_true_eq] at hy ⊢
       split at hy
-      · next he => subst he; exact Or.inl (Or.inr hp)
+      · next he =>
+        subst he
+        rcases hp with hp | hpb
+        · exact Or.inl (Or.inl (Or.inr hp))
+        · exact Or.inr hpb
       · exact hy
     · by_cases he : y = x
       · subst he; exact Ctx.avail_known havail
-      · simp only [Ctx.known_eq, Ctx.isImm_addOwn, Ctx.ownHas_addOwn, Ctx.brw_addOwn, he,
-          decide_false, Bool.false_or] at hy ⊢
+      · simp only [Ctx.known_eq, Ctx.isImm_addOwn, Ctx.ownHas_addOwn, Ctx.brw_addOwn,
+          Ctx.isPbrw_addOwn, he, decide_false, Bool.false_or] at hy ⊢
         exact hy
-  · -- A borrowed variable becomes owned with one token.
-    refine ⟨v, H', v :: owned, rfl, hv, hcan, hact, ?_, hpres, SameRefs.refl _⟩
+  · -- An epoch-borrowed variable becomes owned with one token.
+    refine ⟨v, H', v :: owned, rfl, hv, hcan, hact, ?_, hpres, hreach, SameRefs.refl _⟩
     have htok' : Ctx.Tokens ({ Γ with brw := Γ.brw.erase x } : Ctx) toks := htok.same rfl rfl
     have hroots' : EnvRoots ρo (x :: toks) (v :: owned) := EnvRoots.cons hv hroots
     refine ⟨fun y hy => pre.den y ?_, ⟨x :: toks, htok'.addOwn x, hroots'⟩, hb',
       fun y hy => pre.known y ?_, pre.distinct, fun y hy => pre.immOk y hy,
-      fun y hy => pre.borrowed y ?_, fun y e hy => pre.epochs y e ?_, pre.stack, pre.scope⟩
+      fun y hy => pre.borrowed y ?_, fun y hy => pre.pbrwOk y hy, fun y e hy => pre.epochs y e ?_,
+      pre.stack, pre.scope⟩
     · by_cases he : y = x
       · subst he; exact havail
       · simp only [Ctx.avail_eq, Ctx.isImm_addOwn, Ctx.tokens_addOwn, if_neg he,
-          Ctx.borrowed_eq, Ctx.brw_addOwn, Ctx.epoch_addOwn, Src.NatMap.get?_erase] at hy ⊢
+          Ctx.borrowed_eq, Ctx.brw_addOwn, Ctx.epoch_addOwn, Ctx.isPbrw_addOwn,
+          Src.NatMap.get?_erase] at hy ⊢
         exact hy
     · by_cases he : y = x
       · subst he; exact Ctx.avail_known havail
       · simp only [Ctx.known_eq, Ctx.isImm_addOwn, Ctx.ownHas_addOwn, Ctx.brw_addOwn,
-          Src.NatMap.get?_erase, he, decide_false, Bool.false_or, ↓reduceIte] at hy ⊢
+          Ctx.isPbrw_addOwn, Src.NatMap.get?_erase, he, decide_false, Bool.false_or, ↓reduceIte] at hy ⊢
         exact hy
     · by_cases he : y = x
       · subst he
@@ -133,36 +145,44 @@ theorem inc_step_refs (st : OwnedState functions H external live Γ ρf ρo owne
 
 /-- `dec_step` with the facts the native step needs: the value released and the remaining
 tokens, as reference counts. -/
-theorem dec_step_refs (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo)
+theorem dec_step_refs (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
     {Γ' : Ctx} {x : Var} (hc : Γ.dec x = .ok Γ') :
     ∃ v H' owned', ρo.get? x = some v ∧ SameRefs owned (v :: owned') ∧
       evalAction ρo H (.dec x) = .ok H' ∧
-      OwnedState functions H' external live Γ' ρf ρo owned' lex Δ Jf Jo ∧
-      ExternalPreserved H H' external := by
+      OwnedState functions H' external live Γ' ρf ρo owned' lex Δ Jf Jo borrows ∧
+      ExternalPreserved H H' external ∧ ReachablePreserved H H' external := by
   obtain ⟨Γ₁, ht, rfl⟩ := Ctx.dec_ok hc
   obtain ⟨v, w, owned₁, hv, _, _, inv₁, hs, hw⟩ := take_sem st.takeInv ht
   have hb : Balance H external (v :: owned₁) := hs.balance st.counts
   obtain ⟨H', hact, hb', hheld, hext⟩ := evalAction_dec_owned hv hb
+  have hdrop : Rc.dropAll H [v] = some H' := by
+    simp only [evalAction, hv] at hact
+    cases hd : Rc.dropAll H [v] with
+    | none => rw [hd] at hact; cases hact
+    | some H₁ => rw [hd] at hact; cases hact; rfl
+  have hreachHold : ReachablePreserved H H' (holdRoots external owned₁) :=
+    ReachablePreserved.dropAll H [v] (balance_hold.mp hb) hdrop
   have pre₁ := st.pre.weaker hw inv₁.roots
   have hnb := release_borrowed pre₁.epochs
-  have pre' := pre₁.release.call hnb (preserved_hold hheld hext)
-  exact ⟨v, H', owned₁, hv, hs, hact, pre'.toState hb', ExternalPreserved.of_values hext⟩
+  have pre' := pre₁.release.call hnb hreachHold
+  exact ⟨v, H', owned₁, hv, hs, hact, pre'.toState hb', ExternalPreserved.of_values hext,
+    hreachHold.of_holdRoots⟩
 
-theorem inc_step (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo)
+theorem inc_step (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
     {Γ' : Ctx} {x : Var} {n : Nat} (hc : Γ.inc x n = .ok Γ') :
     ∃ H' owned', evalAction ρo H (.inc x n) = .ok H' ∧
-      OwnedState functions H' external live Γ' ρf ρo owned' lex Δ Jf Jo ∧
-      ExternalPreserved H H' external := by
-  obtain ⟨_, H', owned', _, _, _, hact, st', hp, _⟩ := inc_step_refs st hc
-  exact ⟨H', owned', hact, st', hp⟩
+      OwnedState functions H' external live Γ' ρf ρo owned' lex Δ Jf Jo borrows ∧
+      ReachablePreserved H H' external := by
+  obtain ⟨_, H', owned', _, _, _, hact, st', _, hr, _⟩ := inc_step_refs st hc
+  exact ⟨H', owned', hact, st', hr⟩
 
-theorem dec_step (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo)
+theorem dec_step (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
     {Γ' : Ctx} {x : Var} (hc : Γ.dec x = .ok Γ') :
     ∃ H' owned', evalAction ρo H (.dec x) = .ok H' ∧
-      OwnedState functions H' external live Γ' ρf ρo owned' lex Δ Jf Jo ∧
-      ExternalPreserved H H' external := by
-  obtain ⟨_, H', owned', _, _, hact, st', hp⟩ := dec_step_refs st hc
-  exact ⟨H', owned', hact, st', hp⟩
+      OwnedState functions H' external live Γ' ρf ρo owned' lex Δ Jf Jo borrows ∧
+      ReachablePreserved H H' external := by
+  obtain ⟨_, H', owned', _, _, hact, st', _, hr⟩ := dec_step_refs st hc
+  exact ⟨H', owned', hact, st', hr⟩
 
 end
 

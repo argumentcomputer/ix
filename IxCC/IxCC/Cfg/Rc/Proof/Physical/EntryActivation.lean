@@ -13,17 +13,20 @@ open IxCC.Cfg.Rc.Proof.Physical.Bridge IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs IxCC.Rt.Proof
 open IxCC.Own.Plain (Ctx JCtx checkCode)
 
-/-- The body the map holds for a numbered function, checked from its parameters. -/
+/-- The body the map holds for a numbered function, checked from its parameters with its
+borrow mask. -/
 theorem checked_owned_body {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    (checked : checkScopedProgram F bodies P = true) {f : Nat} {source : Fir.Fun}
+    {borrows : Own.Plain.BorrowSigs}
+    (checked : checkScopedProgram F bodies P borrows = true) {f : Nat} {source : Fir.Fun}
     (sourceLookup : F.fun? f = some source) :
     ∃ body, f < F.size ∧ bodies.get? f = some body ∧ Own.Plain.eraseCode body = source.body ∧
-      checkCode .leaf (Ctx.entry (source.params.map Prod.fst)) body = .ok () ∧
+      checkCode .leaf (Ctx.entryWith (source.params.map Prod.fst) (borrows.getD f [])) body
+        borrows = .ok () ∧
       Own.Plain.fresh [] (source.params.map Prod.fst) = true ∧
       Own.Plain.scopeOk (Own.Plain.signatures F) (source.params.map Prod.fst)
         (Own.Plain.stackArities []) (Own.Plain.eraseCode body) = true := by
   have range := checked_source_dense checked sourceLookup
-  obtain ⟨domain, _, checkedBodies⟩ := checkScopedProgram_ownedParts checked
+  obtain ⟨domain, _, checkedBodies, _⟩ := checkScopedProgram_ownedParts checked
   obtain ⟨body, bodyLookup, erased, typed⟩ := checkedBodies f source range sourceLookup
   obtain ⟨_, fresh, scope⟩ := Own.Plain.programDomain_function domain range sourceLookup
   refine ⟨body, range, bodyLookup, erased, typed, fresh, ?_⟩
@@ -31,11 +34,12 @@ theorem checked_owned_body {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code
   exact scope
 
 /-- Actual checked entry constructs the complete source/native activation over the typing
-context. All register-name bounds, the body, its scope and the entry layout come from admission;
-the arguments' denotation, counts and words are the caller's concrete state. -/
+context, including `@borrowed` parameter masks. All register-name bounds, the body, its scope
+and the entry layout come from admission; the arguments' denotation, counts, reachability and
+words are the caller's concrete state. -/
 theorem entry_activation {config : Rt.Config} {F : Fir.Program}
-    {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    (checked : checkScopedProgram F bodies P = true)
+    {bodies : Src.NatMap Own.Plain.Code} {P : Program} {borrows : Own.Plain.BorrowSigs}
+    (checked : checkScopedProgram F bodies P borrows = true)
     {pairs : List (Nat × Cfg.Fun)} {funcs : List Lir.Func}
     (consuming : consumeAll P = .ok pairs)
     (lowered : Rt.Lower.functions (tablesOf P pairs) (consumed P pairs) (rootsOf config P)
@@ -44,7 +48,9 @@ theorem entry_activation {config : Rt.Config} {F : Fir.Program}
     {H : Own.Heap} {external : Nat → Nat} {addresses : AddressMap}
     {values : List Own.RVal} {logical : List Fir.Val} {words : List Lir.Word}
     (den : Sem.Forall2 (Own.Proof.Den H) values logical)
-    (balance : Own.Rc.Balance H external values)
+    (balance : Own.Rc.Balance H external (Own.Plain.selectOwnedVals (borrows.getD f []) values))
+    (hbrw : ∀ v, v ∈ Own.Plain.selectBorrowedVals (borrows.getD f []) values →
+      Own.Plain.ReachableFrom H external v)
     (represented : Rt.Proof.ListRel (fun value word => valueWord addresses value = some word) values words)
     (compatible : ∀ value ∈ values, ValueCtorOk (tablesOf P pairs) value)
     (arity : values.length = source.params.length)
@@ -52,6 +58,7 @@ theorem entry_activation {config : Rt.Config} {F : Fir.Program}
     (callers : List Lir.Frame) :
     let lp := Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main
     let params := source.params.map Prod.fst
+    let bs := borrows.getD f []
     ∃ fd block consumedFd callee targetEnv offset body,
       P.base.fun? f = some fd ∧ fd.blocks[0]? = some block ∧
       Own.Plain.eraseCode body = source.body ∧
@@ -64,11 +71,12 @@ theorem entry_activation {config : Rt.Config} {F : Fir.Program}
           blk := 0
           rest := block.body
           env := Own.bindAll .leaf params values } sourceCallers H) true ∧
-      Activation F P pairs lp H addresses external params (Ctx.entry params) .leaf
-        (Fir.bindAll .leaf params logical) (Own.bindAll .leaf params values) values [] [] []
+      Activation F P pairs lp H addresses external params (Ctx.entryWith params bs) .leaf
+        (Fir.bindAll .leaf params logical) (Own.bindAll .leaf params values)
+        (Own.Plain.selectOwnedVals bs values) [] [] []
         body source.vars consumedFd
         {fn := f, blk := 0, rest := block.body, env := Own.bindAll .leaf params values}
-        {fn := f, label := offset, pos := 0, env := targetEnv} := by
+        {fn := f, label := offset, pos := 0, env := targetEnv} borrows := by
   dsimp only
   obtain ⟨body, range, bodyLookup, erased, typed, fresh, scope⟩ :=
     checked_owned_body checked sourceLookup
@@ -85,8 +93,8 @@ theorem entry_activation {config : Rt.Config} {F : Fir.Program}
     lookup blockLookup values arity sourceCallers H
   refine ⟨fd, block, consumedFd, callee, targetEnv, offset, body, lookup, blockLookup, erased,
     entered, trace, sourceStep, ?_⟩
-  refine ⟨Own.Plain.ownedState_entry_exact (Own.Plain.signatures F) H external _ values logical den
-      (by simpa using arity) fresh balance,
+  refine ⟨Own.Plain.ownedState_entryWith_exact (Own.Plain.signatures F) H external _
+      (borrows.getD f []) values logical den (by simpa using arity) fresh balance hbrw borrows,
     typed, atEntry, ⟨consumedLookup, cursor, registers,
       (Own.Plain.envBounded_empty H.size).bindAll _ (Own.Plain.dens_bounded den),
       FusedCtorOk.empty.bindAll _ _ compatible⟩,

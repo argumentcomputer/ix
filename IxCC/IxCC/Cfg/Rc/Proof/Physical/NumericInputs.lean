@@ -11,6 +11,58 @@ theorem numeric_refs (location : Nat) (numbers : List Nat) :
   | nil => rfl
   | cons number numbers ih => simpa [Own.litArgs, refsIn] using ih
 
+theorem numeric_selectOwned_refs (location : Nat) :
+    ∀ (bs : List Bool) (numbers : List Nat),
+      refsIn location (Own.Plain.selectOwnedVals bs (Own.litArgs numbers)) = 0
+  | [], numbers => by rw [Own.Plain.selectOwnedVals_nil_left]; exact numeric_refs location numbers
+  | _ :: _, [] => rfl
+  | false :: bs, _ :: numbers => by
+    simpa [Own.Plain.selectOwnedVals, Own.litArgs, refsIn] using
+      numeric_selectOwned_refs location bs numbers
+  | true :: bs, _ :: numbers => by
+    simpa [Own.Plain.selectOwnedVals, Own.litArgs] using
+      numeric_selectOwned_refs location bs numbers
+
+theorem numeric_selectOwned_balance {H : Own.Heap} {external : Nat → Nat} (bs : List Bool)
+    (numbers : List Nat) (h : Balance H external (Own.litArgs numbers)) :
+    Balance H external (Own.Plain.selectOwnedVals bs (Own.litArgs numbers)) := by
+  intro location
+  have hl := h location
+  simpa only [Balance, total, numeric_refs, numeric_selectOwned_refs] using hl
+
+theorem numeric_selectBorrowed_reachable (H : Own.Heap) (external : Nat → Nat) :
+    ∀ (bs : List Bool) (numbers : List Nat) (v : Own.RVal),
+      v ∈ Own.Plain.selectBorrowedVals bs (Own.litArgs numbers) →
+      Own.Plain.ReachableFrom H external v
+  | [], [], _, hv => by simp [Own.Plain.selectBorrowedVals, Own.litArgs] at hv
+  | [], _ :: _, _, hv => by simp [Own.Plain.selectBorrowedVals, Own.litArgs] at hv
+  | _ :: _, [], _, hv => by simp [Own.Plain.selectBorrowedVals, Own.litArgs] at hv
+  | false :: bs, _ :: numbers, v, hv =>
+    numeric_selectBorrowed_reachable H external bs numbers v
+      (by simpa [Own.Plain.selectBorrowedVals, Own.litArgs] using hv)
+  | true :: bs, _ :: numbers, v, hv => by
+    simp only [Own.Plain.selectBorrowedVals, Own.litArgs, List.map_cons, List.mem_cons] at hv
+    rcases hv with rfl | hv
+    · exact .imm (fun _ h => by cases h)
+    · exact numeric_selectBorrowed_reachable H external bs numbers v hv
+
+theorem HeapState.numeric_selectOwned {P : Program} {pairs : List (Nat × Cfg.Fun)}
+    {H : Own.Heap} {addresses : AddressMap} {memory : X86.Memory} {external : Nat → Nat}
+    {context base bump limit : Lir.Word} {regionBytes : Nat} {slots : List Slot}
+    {lists : Nat → List Lir.Word} (bs : List Bool) (numbers : List Nat)
+    (before : HeapState P pairs H addresses memory external (Own.litArgs numbers)
+      context base bump limit regionBytes slots lists) :
+    HeapState P pairs H addresses memory external
+      (Own.Plain.selectOwnedVals bs (Own.litArgs numbers))
+      context base bump limit regionBytes slots lists := by
+  have roots : holdRoots external (Own.Plain.selectOwnedVals bs (Own.litArgs numbers)) =
+      holdRoots external (Own.litArgs numbers) := by
+    funext location
+    simp [holdRoots, numeric_refs, numeric_selectOwned_refs]
+  refine ⟨?_, before.ordered, before.compatible, before.extent⟩
+  rw [roots]
+  exact before.ready
+
 theorem numeric_balance (numbers : List Nat) : Balance {} (fun _ => 0) (Own.litArgs numbers) := by
   intro location
   simp [dynCount, Own.Heap.cell?, edgeCount, total, numeric_refs]

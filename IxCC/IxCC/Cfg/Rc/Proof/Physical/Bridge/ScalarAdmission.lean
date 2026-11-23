@@ -16,7 +16,8 @@ theorem pure_unreserved (limit x : Nat) {rhs : Own.Rhs} (pureRhs : PureRhs rhs) 
 /-- Both destination and temporary bounds follow from actual checked source
 layout and the consuming receipt, including unused original variables. -/
 theorem checked_binding_bounds {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} (checked : checkScopedProgram F bodies P = true)
+    {P : Program} {borrows : Own.Plain.BorrowSigs}
+    (checked : checkScopedProgram F bodies P borrows = true)
     {pairs : List (Nat × Cfg.Fun)} (consuming : consumeAll P = .ok pairs)
     {source : Cfg.Frame} {sourceFd : Fir.Fun} {actualFd : Cfg.Fun}
     (sourceLookup : F.fun? source.fn = some sourceFd)

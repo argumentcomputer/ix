@@ -8,7 +8,8 @@ open Cfg.Proof (Impl spine)
 /-- Self-tail calls are the existing block-zero back edge, not an additional
 runtime call. Extra target activation bindings are ignored by EnvSub. -/
 theorem At.tail_self {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    (checked : checkScopedProgram F bodies P = true) {fr : Frame} {ρ : Own.Env}
+    {borrows : Own.Plain.BorrowSigs} (checked : checkScopedProgram F bodies P borrows = true)
+    {fr : Frame} {ρ : Own.Env}
     {saved : List Own.Plain.JEntry} {args : List Fir.Arg}
     (stateRel : At F P fr ρ saved (.tcall fr.fn args))
     {source : Fir.Fun} {body : Own.Plain.Code} (sourceLookup : F.fun? fr.fn = some source)

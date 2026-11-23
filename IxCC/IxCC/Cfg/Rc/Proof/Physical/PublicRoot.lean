@@ -7,9 +7,10 @@ namespace IxCC.Cfg.Rc.Native.Spec
 entry function and preserves all layout and inline RC simulations. -/
 theorem accepted_root_eval_stages {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Public.Lowered}
-    (checked : checkScopedProgram F bodies P = true)
-    (accepted : Public.lower config F bodies P = .ok lowered) :
-    ∃ pairs functions, CodeAdmission F bodies P config pairs functions ∧
+    {borrows : Own.Plain.BorrowSigs}
+    (checked : checkScopedProgram F bodies P borrows = true)
+    (accepted : Public.lower config F bodies P borrows = .ok lowered) :
+    ∃ pairs functions, CodeAdmission F bodies P config pairs functions borrows ∧
       ∀ root words memory context,
         Sem.Sim Eq (Inline.inlineClock lowered.runtime.program)
           (fun clock => Lir.eval (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) root)
@@ -92,8 +93,9 @@ deterministic consumption identifies the intermediate program receipt. -/
 theorem admitted_root_eval_stages {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Public.Lowered}
     {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-    (admission : CodeAdmission F bodies P config pairs functions)
-    (accepted : Public.lower config F bodies P = .ok lowered)
+    {borrows : Own.Plain.BorrowSigs}
+    (admission : CodeAdmission F bodies P config pairs functions borrows)
+    (accepted : Public.lower config F bodies P borrows = .ok lowered)
     (root : Nat) (words : List Lir.Word) (memory : X86.Memory) (context : Lir.Word) :
     Sem.Sim Eq (Inline.inlineClock lowered.runtime.program)
       (fun clock => Lir.eval (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) root)

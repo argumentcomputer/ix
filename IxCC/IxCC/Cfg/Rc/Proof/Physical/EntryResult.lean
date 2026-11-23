@@ -12,18 +12,24 @@ open IxCC.Own.Plain (Ctx)
 
 theorem entry_result {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
     {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-    (admission : CodeAdmission F bodies P config pairs functions)
-    {main clock : Nat} (complete : PhysicalAtClock F P config pairs main clock)
+    {borrows : Own.Plain.BorrowSigs}
+    (admission : CodeAdmission F bodies P config pairs functions borrows)
+    {main clock : Nat} (complete : PhysicalAtClock F P config pairs main clock borrows)
     {f : Nat} {sourceFunction : Fir.Fun} (sourceLookup : F.fun? f = some sourceFunction)
     {H : Own.Heap} {addresses : AddressMap} {external : Nat → Nat}
     {values : List Own.RVal} {logical : List Fir.Val} {words : List Lir.Word}
-    (den : Sem.Forall2 (Own.Proof.Den H) values logical) (balance : Own.Rc.Balance H external values)
+    (den : Sem.Forall2 (Own.Proof.Den H) values logical)
+    (balance : Own.Rc.Balance H external (Own.Plain.selectOwnedVals (borrows.getD f []) values))
+    (hbrw : ∀ v, v ∈ Own.Plain.selectBorrowedVals (borrows.getD f []) values →
+      Own.Plain.ReachableFrom H external v)
     (represented : Rt.Proof.ListRel (fun value word => valueWord addresses value = some word) values words)
     (compatible : ∀ value ∈ values, ValueCtorOk (tablesOf P pairs) value)
     (arity : values.length = sourceFunction.params.length)
     {memory : X86.Memory} {context base bump limit : Lir.Word} {regionBytes : Nat}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (heap : HeapState P pairs H addresses memory external values context base bump limit regionBytes slots lists)
+    (heap : HeapState P pairs H addresses memory external
+      (Own.Plain.selectOwnedVals (borrows.getD f []) values)
+      context base bump limit regionBytes slots lists)
     (callers : List Lir.Frame) :
     let lp := Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main
     ∃ callee, Lir.enter lp f words = some callee ∧
@@ -33,12 +39,13 @@ theorem entry_result {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P :
   dsimp only
   obtain ⟨fd, block, consumedFd, callee, targetEnv, offset, code, lookup, blockLookup, erased,
     entered, trace, sourceStep, activation⟩ := entry_activation admission.scopedProgram
-      admission.consuming admission.lowering main sourceLookup den balance represented compatible arity
-      [] memory context callers
+      admission.consuming admission.lowering main sourceLookup den balance hbrw represented
+      compatible arity [] memory context callers
   have body := complete [] code H addresses external (sourceFunction.params.map Prod.fst)
-    (Ctx.entry (sourceFunction.params.map Prod.fst)) .leaf
+    (Ctx.entryWith (sourceFunction.params.map Prod.fst) (borrows.getD f [])) .leaf
     (Fir.bindAll .leaf (sourceFunction.params.map Prod.fst) logical)
-    (Own.bindAll .leaf (sourceFunction.params.map Prod.fst) values) values [] [] sourceFunction
+    (Own.bindAll .leaf (sourceFunction.params.map Prod.fst) values)
+    (Own.Plain.selectOwnedVals (borrows.getD f []) values) [] [] sourceFunction
     consumedFd
     {fn := f, blk := 0, rest := block.body, env := Own.bindAll .leaf (sourceFunction.params.map Prod.fst) values}
     {fn := f, label := offset, pos := 0, env := targetEnv}
@@ -48,22 +55,29 @@ theorem entry_result {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P :
   have sourceArity : logical.length = sourceFunction.params.length := den.length.symm.trans arity
   rw [Fir.evalCall_of F (clock+1) sourceLookup, Fir.callFun, if_pos sourceArity]
   simp only [Sem.later]
-  exact ResultAt.prefix trace (fun _ _ _ den => den) (HeapHistory.refl _ _) (by omega) body
+  exact ResultAt.prefix trace (Own.Plain.ReachablePreserved.refl H external)
+    (HeapHistory.refl _ _) (by omega) body
 
 theorem main_entry_result {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
     {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-    (admission : CodeAdmission F bodies P config pairs functions)
-    {main clock : Nat} (complete : PhysicalAtClock F P config pairs main clock)
+    {borrows : Own.Plain.BorrowSigs}
+    (admission : CodeAdmission F bodies P config pairs functions borrows)
+    {main clock : Nat} (complete : PhysicalAtClock F P config pairs main clock borrows)
     {sourceFunction : Fir.Fun} (sourceLookup : F.fun? main = some sourceFunction)
     {H : Own.Heap} {addresses : AddressMap} {external : Nat → Nat}
     {values : List Own.RVal} {logical : List Fir.Val} {words : List Lir.Word}
-    (den : Sem.Forall2 (Own.Proof.Den H) values logical) (balance : Own.Rc.Balance H external values)
+    (den : Sem.Forall2 (Own.Proof.Den H) values logical)
+    (balance : Own.Rc.Balance H external (Own.Plain.selectOwnedVals (borrows.getD main []) values))
+    (hbrw : ∀ v, v ∈ Own.Plain.selectBorrowedVals (borrows.getD main []) values →
+      Own.Plain.ReachableFrom H external v)
     (represented : Rt.Proof.ListRel (fun value word => valueWord addresses value = some word) values words)
     (compatible : ∀ value ∈ values, ValueCtorOk (tablesOf P pairs) value)
     (arity : values.length = sourceFunction.params.length)
     {memory : X86.Memory} {context base bump limit : Lir.Word} {regionBytes : Nat}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (heap : HeapState P pairs H addresses memory external values context base bump limit regionBytes slots lists) :
+    (heap : HeapState P pairs H addresses memory external
+      (Own.Plain.selectOwnedVals (borrows.getD main []) values)
+      context base bump limit regionBytes slots lists) :
     let lp := Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main
     ∃ callee, Lir.State.initial lp words memory context =
         some {mem := memory, ctx := context, stack := [callee]} ∧
@@ -71,7 +85,7 @@ theorem main_entry_result {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
         {mem := memory, ctx := context, stack := [callee]} [] (Fir.run F (clock+1) main logical) := by
   dsimp only
   obtain ⟨callee, entered, execution⟩ := entry_result admission complete sourceLookup den balance
-    represented compatible arity heap []
+    hbrw represented compatible arity heap []
   refine ⟨callee, ?_, execution⟩
   change (Lir.enter (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main) main words).bind
     (fun frame => some ({mem := memory, ctx := context, stack := [frame]} : Lir.State)) = _

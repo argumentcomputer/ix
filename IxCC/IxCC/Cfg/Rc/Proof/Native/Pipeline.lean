@@ -47,9 +47,10 @@ def inlinedProgram (l : Layout) (funcs : List Lir.Func) (main : Nat) : Lir.Progr
 
 theorem lower_parts {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Rt.Lowered}
-    (accepted : Native.lower config F bodies P = .ok lowered) :
+    {borrows : Own.Plain.BorrowSigs}
+    (accepted : Native.lower config F bodies P borrows = .ok lowered) :
     ∃ main pairs funcs,
-      checkProgram F bodies P = true ∧
+      checkProgram F bodies P borrows = true ∧
       Rt.checkSwitches P.base = .ok () ∧
       P.base.exports.head? = some main ∧
       (layoutOf P).ctors.all (fun c => (Rt.Rc.CellLayout.ofFields c.arity c.tag).ok) = true ∧
@@ -63,7 +64,7 @@ theorem lower_parts {config : Rt.Config} {F : Fir.Program}
       lowered.natGcd = (layoutOf P).init + 2 ∧
       lowered.roots = rootsOf config P ∧ lowered.program.check = .ok () := by
   change ((do
-    unless checkProgram F bodies P do throw "unchecked RC Cfg candidate"
+    unless checkProgram F bodies P borrows do throw "unchecked RC Cfg candidate"
     (Rt.checkSwitches P.base).mapError Rt.SwitchError.render
     let some main := P.base.exports.head? | throw "no exports"
     unless (layoutOf P).ctors.all (fun c => (Rt.Rc.CellLayout.ofFields c.arity c.tag).ok) do
@@ -76,7 +77,7 @@ theorem lower_parts {config : Rt.Config} {F : Fir.Program}
     return {
       program, init := (layoutOf P).init, natPow := (layoutOf P).init + 1
       natGcd := (layoutOf P).init + 2, roots := rootsOf config P }) : Except String Rt.Lowered) = .ok lowered at accepted
-  cases hc : checkProgram F bodies P with
+  cases hc : checkProgram F bodies P borrows with
   | false =>
     simp only [hc, Bool.false_eq_true, ↓reduceIte, throw, throwThe,
       MonadExceptOf.throw, bind, Except.bind] at accepted

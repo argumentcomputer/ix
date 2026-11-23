@@ -16,7 +16,8 @@ every successful source lookup is a numbered function. -/
 def sourceDense (F : Fir.Program) : Bool :=
   F.funs.toList.all fun p => decide (p.1 < F.size)
 
-def checkScopedProgram (F : Fir.Program) (bodies : Src.NatMap Own.Plain.Code) (P : Program) : Bool :=
-  checkProgram F bodies P && programNames F bodies && sourceDense F
+def checkScopedProgram (F : Fir.Program) (bodies : Src.NatMap Own.Plain.Code) (P : Program)
+    (borrows : Own.Plain.BorrowSigs := .leaf) : Bool :=
+  checkProgram F bodies P borrows && programNames F bodies && sourceDense F
 
 end IxCC.Cfg.Rc

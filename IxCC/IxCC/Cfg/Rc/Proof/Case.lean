@@ -82,7 +82,8 @@ theorem alts_reach (F : Fir.Program) (bodies : Src.NatMap Own.Plain.Code) (P : P
 termination_by alts.length
 
 theorem case_reach {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    (checked : checkScopedProgram F bodies P = true) (clock : Nat)
+    {borrows : Own.Plain.BorrowSigs} (checked : checkScopedProgram F bodies P borrows = true)
+    (clock : Nat)
     {fr : Frame} {ρ : Own.Env} {saved : List Own.Plain.JEntry} {x : Fir.Var}
     {alts : List Own.Plain.Alt} {d : Option Own.Plain.Code}
     (stateRel : At F P fr ρ saved (.case x alts d)) (H : Own.Heap)

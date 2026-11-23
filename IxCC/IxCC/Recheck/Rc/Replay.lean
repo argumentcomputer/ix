@@ -78,10 +78,10 @@ def runFront (cfg : Config) (P : Src.Program) (c : Cert) : Except Err Front := d
     { stage := .cert, code := "own.plain", message }
   let some candidate := Cfg.Rc.generate fir own.bodies |
     throw { stage := .rt, code := "rc.cfg", message := "ownership candidate lowering declined" }
-  unless Cfg.Rc.checkScopedProgram fir own.bodies candidate do
+  unless Cfg.Rc.checkScopedProgram fir own.bodies candidate own.borrows do
     throw { stage := .rt, code := "rc.scope", message := "scoped dense-source RC gate refused" }
   Recheck.checkParams cfg candidate.base (candidate.base.exports.zipIdx.map fun (f, i) => (i, f))
-  let lowered ← (Cfg.Rc.Public.lower { names := cfg.names } fir own.bodies candidate).mapError fun message =>
+  let lowered ← (Cfg.Rc.Public.lower { names := cfg.names } fir own.bodies candidate own.borrows).mapError fun message =>
     { stage := .rt, code := "rc.lower", message }
   return {
     src, checked, lam, anf, fir, own, cfg := candidate

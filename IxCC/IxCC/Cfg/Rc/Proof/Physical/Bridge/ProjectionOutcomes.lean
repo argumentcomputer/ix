@@ -27,14 +27,14 @@ open IxCC.Own.Plain (Ctx JCtx checkCode)
 section
 variable {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
   {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-  {main clock : Nat} {sourceJoins : List Fir.JEntry}
+  {main clock : Nat} {sourceJoins : List Fir.JEntry} {borrows : Own.Plain.BorrowSigs}
 
 /-- **`x := C`**, a constructor without fields: an immediate. -/
-theorem fieldless_result (admission : CodeAdmission F bodies P config pairs functions)
+theorem fieldless_result (admission : CodeAdmission F bodies P config pairs functions borrows)
     {x : Fir.Var} (ctor : Fir.CtorInfo) (args : List Fir.Arg) (zero : ctor.arity = 0)
     {k : Own.Plain.Code}
-    (next : PhysicalCode F P config pairs main clock sourceJoins k) :
-    PhysicalCode F P config pairs main clock sourceJoins (.bind x (.ctor ctor args) k) := by
+    (next : PhysicalCode F P config pairs main clock sourceJoins k borrows) :
+    PhysicalCode F P config pairs main clock sourceJoins (.bind x (.ctor ctor args) k) borrows := by
   intro H addresses external live Γ Δ sourceEnv ownedEnv roots lex ownedJoins sourceFunction
     function source target memory context base bump limit regionBytes slots lists callers
     sourceLookup before heap
@@ -78,20 +78,21 @@ theorem fieldless_result (admission : CodeAdmission F bodies P config pairs func
           (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main) H addresses
           external (live ++ [x]) (Γ.setImm x) Δ (sourceEnv.insert x (.ctor ctor []))
           (ownedEnv.insert x (.ctor0 ctor)) roots lex sourceJoins ownedJoins k sourceFunction.vars
-          function {source with rest := tail, env := source.env.insert x (.ctor0 ctor)} after :=
+          function {source with rest := tail, env := source.env.insert x (.ctor0 ctor)} after borrows :=
         ⟨state, typed, continuation (.ctor0 ctor), frame, bodyScope, running, fused⟩
-      exact ResultAt.prefix trace (fun _ _ _ den => den) (HeapHistory.refl _ _) (by omega)
+      exact ResultAt.prefix trace (Own.Plain.ReachablePreserved.refl H external)
+        (HeapHistory.refl _ _) (by omega)
         (next H addresses external (live ++ [x]) (Γ.setImm x) Δ (sourceEnv.insert x (.ctor ctor []))
           (ownedEnv.insert x (.ctor0 ctor)) roots lex ownedJoins sourceFunction function
           {source with rest := tail, env := source.env.insert x (.ctor0 ctor)} after memory context
           base bump limit regionBytes slots lists callers sourceLookup activation heap)
     · exact ResultAt.of_fails failed
 
-/-- **`x := y.i`**: borrowed, or immediate. -/
-theorem projection_result (admission : CodeAdmission F bodies P config pairs functions)
+/-- **`x := y.i`**: borrowed, caller-backed borrowed (`pbrw`), or immediate. -/
+theorem projection_result (admission : CodeAdmission F bodies P config pairs functions borrows)
     {x : Fir.Var} (y : Fir.Var) (key : Key.CtorKey) (i : Nat) {k : Own.Plain.Code}
-    (next : PhysicalCode F P config pairs main clock sourceJoins k) :
-    PhysicalCode F P config pairs main clock sourceJoins (.bind x (.proj y key i) k) := by
+    (next : PhysicalCode F P config pairs main clock sourceJoins k borrows) :
+    PhysicalCode F P config pairs main clock sourceJoins (.bind x (.proj y key i) k) borrows := by
   intro H addresses external live Γ Δ sourceEnv ownedEnv roots lex ownedJoins sourceFunction
     function source target memory context base bump limit regionBytes slots lists callers
     sourceLookup before heap
@@ -126,8 +127,9 @@ theorem projection_result (admission : CodeAdmission F bodies P config pairs fun
     obtain ⟨tail, head, continuation⟩ := before.layout.bind_continuation
     have real := checked_bind_real admission.scopedProgram before.layout sourceLookup (by rfl)
     have state : Own.Plain.OwnedState (Own.Plain.signatures F) H external (live ++ [x])
-        (if Γ.isImm y then Γ.setImm x else Γ.setBorrow x) (sourceEnv.insert x logical)
-        (ownedEnv.insert x value) roots lex Δ sourceJoins ownedJoins := by
+        (if Γ.isImm y then Γ.setImm x else if Γ.isPbrw y then Γ.setPbrw x else Γ.setBorrow x)
+        (sourceEnv.insert x logical) (ownedEnv.insert x value) roots lex Δ sourceJoins ownedJoins
+        borrows := by
       cases immediateY : Γ.isImm y with
       | true =>
         simp only [↓reduceIte]
@@ -141,19 +143,47 @@ theorem projection_result (admission : CodeAdmission F bodies P config pairs fun
           before.owned.counts
       | false =>
         simp only [Bool.false_eq_true, ↓reduceIte]
-        exact before.owned.pre.bindBorrow fresh den permission before.owned.counts
+        cases pbrwY : Γ.isPbrw y with
+        | true =>
+          simp only [↓reduceIte]
+          obtain ⟨parent, parentLookup, hreach⟩ := before.owned.pbrwOk y pbrwY
+          have hse := sourceEffect
+          simp only [Own.evalRhs, parentLookup, Sem.Result.ofOption, Sem.Result.bind_ok] at hse
+          cases hview : parent.asCtor F.known H with
+          | none => simp [hview] at hse
+          | some p =>
+            obtain ⟨key', vs⟩ := p
+            simp only [hview] at hse
+            by_cases hk : key' = key
+            · subst hk
+              simp only [↓reduceIte] at hse
+              cases hget : vs[i]? with
+              | none => simp only [hget, Sem.Result.ofOption] at hse; cases hse
+              | some v =>
+                simp only [hget, Sem.Result.ofOption, Sem.Result.bind_ok, Sem.Result.ok.injEq,
+                  Prod.mk.injEq] at hse
+                obtain ⟨rfl, _⟩ := hse
+                exact before.owned.pre.bindPbrw fresh den
+                  (hreach.asCtor_field hview (List.mem_of_getElem? hget)) before.owned.counts
+            · simp [hk] at hse
+        | false =>
+          simp only [Bool.false_eq_true, ↓reduceIte]
+          exact before.owned.pre.bindBorrow fresh den permission before.owned.counts
     rcases projection_frame before.frame heap.ready.idle.live heap.compatible heap.ordered head real
         fullEffect before.running context callers with projected | failed
     · obtain ⟨after, running, trace, frame, fused⟩ := projected
       have activation : Activation F P pairs
           (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main) H addresses
-          external (live ++ [x]) (if Γ.isImm y then Γ.setImm x else Γ.setBorrow x) Δ
+          external (live ++ [x])
+          (if Γ.isImm y then Γ.setImm x else if Γ.isPbrw y then Γ.setPbrw x else Γ.setBorrow x) Δ
           (sourceEnv.insert x logical) (ownedEnv.insert x value) roots lex sourceJoins ownedJoins k
           sourceFunction.vars function {source with rest := tail, env := source.env.insert x value}
-          after :=
+          after borrows :=
         ⟨state, typed, continuation value, frame, bodyScope, running, fused⟩
-      exact ResultAt.prefix trace (fun _ _ _ den => den) (HeapHistory.refl _ _) (by omega)
-        (next H addresses external (live ++ [x]) (if Γ.isImm y then Γ.setImm x else Γ.setBorrow x)
+      exact ResultAt.prefix trace (Own.Plain.ReachablePreserved.refl H external)
+        (HeapHistory.refl _ _) (by omega)
+        (next H addresses external (live ++ [x])
+          (if Γ.isImm y then Γ.setImm x else if Γ.isPbrw y then Γ.setPbrw x else Γ.setBorrow x)
           Δ (sourceEnv.insert x logical) (ownedEnv.insert x value) roots lex ownedJoins
           sourceFunction function {source with rest := tail, env := source.env.insert x value}
           after memory context base bump limit regionBytes slots lists callers sourceLookup

@@ -15,119 +15,136 @@ open Rc
 open IxCC.Sem (Result)
 open IxCC.Fir (Var Arg Rhs)
 
-structure OwnedPre (functions : Signatures) (H : Heap)
+structure OwnedPre (functions : Signatures) (H : Heap) (external : Nat → Nat)
     (live : List Var) (Γ : Ctx) (ρf : Fir.Env) (ρo : Own.Env) (owned : List RVal)
-    (lex : Joins) (Δ : JCtx) (Jf : List Fir.JEntry) (Jo : List JEntry) : Prop where
+    (lex : Joins) (Δ : JCtx) (Jf : List Fir.JEntry) (Jo : List JEntry)
+    (borrows : BorrowSigs := .leaf) : Prop where
   den : ∀ x, Γ.avail x = true → ∃ v w, ρo.get? x = some v ∧ ρf.get? x = some w ∧ Proof.Den H v w
   roots : ∃ toks, Ctx.Tokens Γ toks ∧ EnvRoots ρo toks owned
   known : ∀ x, Γ.known x = true → x ∈ live
   distinct : live.Nodup
   immOk : ∀ x, Γ.isImm x = true → ∃ v, ρo.get? x = some v ∧ ImmVal v
   borrowed : ∀ x, Γ.borrowed x = true → ∃ v, ρo.get? x = some v ∧ CanDup H v
+  pbrwOk : ∀ x, Γ.isPbrw x = true → ∃ v, ρo.get? x = some v ∧ ReachableFrom H external v
   epochs : ∀ x e, Γ.brw.get? x = some e → e ≤ Γ.epoch
-  stack : OwnedStack Δ ρf ρo live lex Jf Jo
+  stack : OwnedStack borrows Δ Γ.pbrw ρf ρo live lex Jf Jo
   scope : StackScope functions live lex Jf
 
 section
 variable {functions : Signatures} {H : Heap} {external : Nat → Nat} {live : List Var}
   {Γ : Ctx} {ρf : Fir.Env} {ρo : Own.Env} {owned : List RVal} {lex : Joins} {Δ : JCtx}
-  {Jf : List Fir.JEntry} {Jo : List JEntry}
+  {Jf : List Fir.JEntry} {Jo : List JEntry} {borrows : BorrowSigs}
 
-theorem OwnedState.pre (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo) :
-    OwnedPre functions H live Γ ρf ρo owned lex Δ Jf Jo :=
-  ⟨st.den, st.roots, st.known, st.distinct, st.immOk, st.borrowed, st.epochs, st.stack, st.scope⟩
+theorem OwnedState.pre (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows) :
+    OwnedPre functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows :=
+  ⟨st.den, st.roots, st.known, st.distinct, st.immOk, st.borrowed, st.pbrwOk, st.epochs, st.stack, st.scope⟩
 
-theorem OwnedPre.toState (pre : OwnedPre functions H live Γ ρf ρo owned lex Δ Jf Jo)
+theorem OwnedPre.toState (pre : OwnedPre functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
     (hb : Balance H external owned) :
-    OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo :=
-  ⟨pre.den, pre.roots, hb, pre.known, pre.distinct, pre.immOk, pre.borrowed, pre.epochs,
+    OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows :=
+  ⟨pre.den, pre.roots, hb, pre.known, pre.distinct, pre.immOk, pre.borrowed, pre.pbrwOk, pre.epochs,
     pre.stack, pre.scope⟩
 
-theorem OwnedPre.weaker (pre : OwnedPre functions H live Γ ρf ρo owned lex Δ Jf Jo)
+theorem OwnedPre.weaker (pre : OwnedPre functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
     {Γ' : Ctx} {owned' : List RVal} (hw : Ctx.Weaker Γ' Γ)
     (hr : ∃ toks, Ctx.Tokens Γ' toks ∧ EnvRoots ρo toks owned') :
-    OwnedPre functions H live Γ' ρf ρo owned' lex Δ Jf Jo :=
+    OwnedPre functions H external live Γ' ρf ρo owned' lex Δ Jf Jo borrows :=
   ⟨fun x hx => pre.den x (hw.avail hx), hr, fun x hx => pre.known x (hw.known hx), pre.distinct,
     fun x hx => pre.immOk x (by rw [← hw.isImm x]; exact hx),
     fun x hx => pre.borrowed x (by rw [← hw.borrowed x]; exact hx),
+    fun x hx => pre.pbrwOk x (by rw [← hw.isPbrw x]; exact hx),
     fun x e hx => by rw [hw.epoch]; exact pre.epochs x e (by rw [← hw.brw]; exact hx),
-    pre.stack, pre.scope⟩
+    hw.pbrw ▸ pre.stack, pre.scope⟩
 
-/-- A release: nothing stays borrowed. -/
-theorem OwnedPre.release (pre : OwnedPre functions H live Γ ρf ρo owned lex Δ Jf Jo) :
-    OwnedPre functions H live Γ.release ρf ρo owned lex Δ Jf Jo := by
+/-- A release: nothing stays epoch-borrowed (`pbrw` survives). -/
+theorem OwnedPre.release (pre : OwnedPre functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows) :
+    OwnedPre functions H external live Γ.release ρf ρo owned lex Δ Jf Jo borrows := by
   have hnb := release_borrowed pre.epochs
   obtain ⟨toks, htok, hr⟩ := pre.roots
   refine ⟨fun y hy => pre.den y ?_, ⟨toks, htok.same rfl rfl, hr⟩,
     fun y hy => pre.known y (by simpa [Ctx.known_eq] using hy), pre.distinct,
     fun y hy => pre.immOk y (by simpa using hy), fun y hy => absurd hy (by simp [hnb y]),
-    fun y e hy => ?_, pre.stack, pre.scope⟩
-  · simp only [Ctx.avail_eq, Ctx.isImm_release, Ctx.tokens_release, hnb, Bool.or_false,
-      Bool.or_eq_true] at hy
+    fun y hy => pre.pbrwOk y (by simpa using hy), fun y e hy => ?_, pre.stack, pre.scope⟩
+  · simp only [Ctx.avail_eq, Ctx.isImm_release, Ctx.tokens_release, Ctx.isPbrw_release, hnb,
+      Bool.or_false, Bool.or_eq_true] at hy
     simp only [Ctx.avail_eq, Bool.or_eq_true, decide_eq_true_eq]
-    rcases hy with hy | hy
-    · exact Or.inl (Or.inl hy)
-    · exact Or.inl (Or.inr (of_decide_eq_true hy))
+    rcases hy with (hy | hy) | hy
+    · exact Or.inl (Or.inl (Or.inl hy))
+    · exact Or.inl (Or.inl (Or.inr (of_decide_eq_true hy)))
+    · exact Or.inr hy
   · simp only [Ctx.brw_release, Ctx.epoch_release] at hy ⊢
     have := pre.epochs y e hy; omega
 
-/-- A heap that keeps every denotation and every permission to increment (allocation). -/
-theorem OwnedPre.transport (pre : OwnedPre functions H live Γ ρf ρo owned lex Δ Jf Jo)
+/-- A heap that keeps every denotation, every permission to increment, and every external-reachable cell. -/
+theorem OwnedPre.transport (pre : OwnedPre functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
     {H' : Heap} (hden : ∀ v w, Proof.Den H v w → Proof.Den H' v w)
-    (hcan : ∀ v, CanDup H v → CanDup H' v) :
-    OwnedPre functions H' live Γ ρf ρo owned lex Δ Jf Jo :=
+    (hcan : ∀ v, CanDup H v → CanDup H' v)
+    (hreach : ReachablePreserved H H' external) :
+    OwnedPre functions H' external live Γ ρf ρo owned lex Δ Jf Jo borrows :=
   { pre with
     den := fun x hx => by
       obtain ⟨v, w, h1, h2, h3⟩ := pre.den x hx
       exact ⟨v, w, h1, h2, hden v w h3⟩
     borrowed := fun x hx => by
       obtain ⟨v, h1, h2⟩ := pre.borrowed x hx
-      exact ⟨v, h1, hcan v h2⟩ }
+      exact ⟨v, h1, hcan v h2⟩
+    pbrwOk := fun x hx => by
+      obtain ⟨v, h1, h2⟩ := pre.pbrwOk x hx
+      exact ⟨v, h1, h2.transport hreach⟩ }
 
-/-- After a call that kept the values of the caller's tokens (held outside the callee). -/
-theorem OwnedPre.call (pre : OwnedPre functions H live Γ ρf ρo owned lex Δ Jf Jo)
+/-- After a call or `dec` that kept every live cell reachable from external owners and caller tokens. -/
+theorem OwnedPre.call (pre : OwnedPre functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
     (hnb : ∀ y, Γ.borrowed y = false) {H' : Heap}
-    (hp : ExternalPreserved H H' (holdRoots external owned)) :
-    OwnedPre functions H' live Γ ρf ρo owned lex Δ Jf Jo := by
-  obtain ⟨toks, htok, hr⟩ := pre.roots
+    (hr : ReachablePreserved H H' (holdRoots external owned)) :
+    OwnedPre functions H' external live Γ ρf ρo owned lex Δ Jf Jo borrows := by
+  obtain ⟨toks, htok, hroots⟩ := pre.roots
+  have hrext : ReachablePreserved H H' external := hr.of_holdRoots
   refine { pre with
     den := fun x hx => ?_
-    borrowed := fun x hx => absurd hx (by simp [hnb x]) }
+    borrowed := fun x hx => absurd hx (by simp [hnb x])
+    pbrwOk := fun x hx => by
+      obtain ⟨v, h1, h2⟩ := pre.pbrwOk x hx
+      exact ⟨v, h1, h2.transport hrext⟩ }
   obtain ⟨v, w, h1, h2, h3⟩ := pre.den x hx
   refine ⟨v, w, h1, h2, ?_⟩
   simp only [Ctx.avail_eq, hnb, Bool.or_false, Bool.or_eq_true, decide_eq_true_eq] at hx
-  rcases hx with hi | hp'
+  rcases hx with (hi | hp') | hpb
   · obtain ⟨u, hu, himm⟩ := pre.immOk x hi
     have : u = v := Option.some.inj (hu.symm.trans h1)
     subst this
     exact den_imm himm h3
-  · exact hp v w (held_external (hr.member (htok.mem hp') h1)) h3
+  · exact hr.externalPreserved v w (held_external (hroots.member (htok.mem hp') h1)) h3
+  · obtain ⟨u, hu, hreach⟩ := pre.pbrwOk x hpb
+    have : u = v := Option.some.inj (hu.symm.trans h1)
+    subst this
+    exact hrext.den hreach h3
 
 /-! ## The fresh variable -/
 
-theorem OwnedPre.fresh_facts (pre : OwnedPre functions H live Γ ρf ρo owned lex Δ Jf Jo)
+theorem OwnedPre.fresh_facts (pre : OwnedPre functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
     {x : Var} (hx : x ∉ live) :
-    Γ.isImm x = false ∧ Γ.own.contains x = false ∧ Γ.brw.get? x = none ∧ Γ.tokens x = 0 := by
+    Γ.isImm x = false ∧ Γ.own.contains x = false ∧ Γ.brw.get? x = none ∧
+      Γ.tokens x = 0 ∧ Γ.isPbrw x = false := by
   have hk : Γ.known x = false := by
     cases h : Γ.known x with
     | false => rfl
     | true => exact absurd (pre.known x h) hx
   simp only [Ctx.known_eq, Bool.or_eq_false_iff] at hk
-  obtain ⟨⟨h1, h2⟩, h3⟩ := hk
-  refine ⟨h1, h2, by simpa using h3, ?_⟩
+  obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := hk
+  refine ⟨h1, h2, by simpa using h3, ?_, h4⟩
   simp only [Src.NatMap.contains] at h2
   simp only [Ctx.tokens_eq]
   cases hg : Γ.own.get? x with
   | none => rfl
   | some n => rw [hg] at h2; cases h2
 
-theorem OwnedPre.not_tok (pre : OwnedPre functions H live Γ ρf ρo owned lex Δ Jf Jo)
+theorem OwnedPre.not_tok (pre : OwnedPre functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
     {x : Var} (hx : x ∉ live) {toks : List Var} (htok : Ctx.Tokens Γ toks) : x ∉ toks := by
   intro hm
   exact hx (pre.known x (Tokens.mem_known htok hm))
 
 /-- The state after a fresh binding, from what the step establishes for each variable. -/
-theorem OwnedPre.extend (pre : OwnedPre functions H live Γ ρf ρo owned lex Δ Jf Jo)
+theorem OwnedPre.extend (pre : OwnedPre functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
     {x : Var} (hx : x ∉ live) {Γ' : Ctx} {H' : Heap} {v : RVal} {w : Fir.Val}
     {owned' : List RVal}
     (hden : ∀ y, y ≠ x → Γ'.avail y = true →
@@ -140,12 +157,15 @@ theorem OwnedPre.extend (pre : OwnedPre functions H live Γ ρf ρo owned lex Δ
     (himmx : Γ'.isImm x = true → ImmVal v)
     (hbrw : ∀ y, y ≠ x → Γ'.borrowed y = true → ∃ v, ρo.get? y = some v ∧ CanDup H' v)
     (hbrwx : Γ'.borrowed x = true → CanDup H' v)
+    (hpbrw : ∀ y, y ≠ x → Γ'.isPbrw y = true → ∃ v, ρo.get? y = some v ∧ ReachableFrom H' external v)
+    (hpbrwx : Γ'.isPbrw x = true → ReachableFrom H' external v)
+    (hpbrwSub : ∀ y, Γ.pbrw.contains y = true → Γ'.pbrw.contains y = true)
     (hepochs : ∀ y e, Γ'.brw.get? y = some e → e ≤ Γ'.epoch) :
     OwnedState functions H' external (live ++ [x]) Γ' (ρf.insert x w) (ρo.insert x v) owned'
-      lex Δ Jf Jo := by
+      lex Δ Jf Jo borrows := by
   refine ⟨fun y hy => ?_, hroots, hcounts, fun y hy => ?_,
     fresh_nodup_append pre.distinct (by simp [fresh, hx]), fun y hy => ?_, fun y hy => ?_,
-    hepochs, pre.stack.bind x v w hx, pre.scope.bind x⟩
+    fun y hy => ?_, hepochs, (pre.stack.mono_pbrw hpbrwSub).bind x v w hx, pre.scope.bind x⟩
   · by_cases he : y = x
     · subst he
       exact ⟨v, w, Src.NatMap.get?_insert_self .., Src.NatMap.get?_insert_self .., hdenx⟩
@@ -165,37 +185,46 @@ theorem OwnedPre.extend (pre : OwnedPre functions H live Γ ρf ρo owned lex Δ
       exact ⟨v, Src.NatMap.get?_insert_self .., hbrwx hy⟩
     · obtain ⟨v', h1, h2⟩ := hbrw y he hy
       exact ⟨v', by rw [Src.NatMap.get?_insert_ne _ _ he]; exact h1, h2⟩
+  · by_cases he : y = x
+    · subst he
+      exact ⟨v, Src.NatMap.get?_insert_self .., hpbrwx hy⟩
+    · obtain ⟨v', h1, h2⟩ := hpbrw y he hy
+      exact ⟨v', by rw [Src.NatMap.get?_insert_ne _ _ he]; exact h1, h2⟩
 
-theorem OwnedPre.bindOwned (pre : OwnedPre functions H live Γ ρf ρo owned lex Δ Jf Jo)
+theorem OwnedPre.bindOwned (pre : OwnedPre functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
     {x : Var} (hx : x ∉ live) {v : RVal} {w : Fir.Val} (hd : Proof.Den H v w)
     (hb : Balance H external (v :: owned)) :
     OwnedState functions H external (live ++ [x]) (Γ.addOwn x 1) (ρf.insert x w)
-      (ρo.insert x v) (v :: owned) lex Δ Jf Jo := by
-  obtain ⟨hi, _, hbx, _⟩ := pre.fresh_facts hx
+      (ρo.insert x v) (v :: owned) lex Δ Jf Jo borrows := by
+  obtain ⟨hi, _, hbx, _, hpbx⟩ := pre.fresh_facts hx
   obtain ⟨toks, htok, hr⟩ := pre.roots
   have hxt := pre.not_tok hx htok
   refine pre.extend hx (fun y he hy => pre.den y ?_) hd
     ⟨x :: toks, htok.addOwn x, EnvRoots.cons (Src.NatMap.get?_insert_self ..)
       (hr.insert_fresh x v hxt)⟩ hb (fun y hy => ?_) (fun y _ hy => pre.immOk y (by simpa using hy))
     (fun hy => by simp [hi] at hy) (fun y _ hy => pre.borrowed y (by simpa [Ctx.borrowed_eq] using hy))
-    (fun hy => by simp [Ctx.borrowed_eq, hbx] at hy) (fun y e hy => pre.epochs y e (by simpa using hy))
+    (fun hy => by simp [Ctx.borrowed_eq, hbx] at hy)
+    (fun y _ hy => pre.pbrwOk y (by simpa using hy))
+    (fun hy => by simp [hpbx] at hy) (fun _ h => h)
+    (fun y e hy => pre.epochs y e (by simpa using hy))
   · simp only [Ctx.avail_eq, Ctx.isImm_addOwn, Ctx.tokens_addOwn, if_neg he, Ctx.borrowed_eq,
-      Ctx.brw_addOwn, Ctx.epoch_addOwn] at hy ⊢
+      Ctx.brw_addOwn, Ctx.epoch_addOwn, Ctx.isPbrw_addOwn] at hy ⊢
     exact hy
-  · simp only [Ctx.known_eq, Ctx.isImm_addOwn, Ctx.ownHas_addOwn, Ctx.brw_addOwn,
+  · simp only [Ctx.known_eq, Ctx.isImm_addOwn, Ctx.ownHas_addOwn, Ctx.brw_addOwn, Ctx.isPbrw_addOwn,
       Bool.or_eq_true, decide_eq_true_eq] at hy ⊢
-    rcases hy with (h | h | h) | h
-    · exact Or.inr (Or.inl (Or.inl h))
+    rcases hy with ((h | h | h) | h) | h
+    · exact Or.inr (Or.inl (Or.inl (Or.inl h)))
     · exact Or.inl h
+    · exact Or.inr (Or.inl (Or.inl (Or.inr h)))
     · exact Or.inr (Or.inl (Or.inr h))
     · exact Or.inr (Or.inr h)
 
-theorem OwnedPre.bindImm (pre : OwnedPre functions H live Γ ρf ρo owned lex Δ Jf Jo)
+theorem OwnedPre.bindImm (pre : OwnedPre functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
     {x : Var} (hx : x ∉ live) {v : RVal} {w : Fir.Val} (hd : Proof.Den H v w) (himm : ImmVal v)
     (hb : Balance H external owned) :
     OwnedState functions H external (live ++ [x]) (Γ.setImm x) (ρf.insert x w)
-      (ρo.insert x v) owned lex Δ Jf Jo := by
-  obtain ⟨_, _, hbx, _⟩ := pre.fresh_facts hx
+      (ρo.insert x v) owned lex Δ Jf Jo borrows := by
+  obtain ⟨_, _, hbx, _, hpbx⟩ := pre.fresh_facts hx
   obtain ⟨toks, htok, hr⟩ := pre.roots
   have hxt := pre.not_tok hx htok
   have hf : toks.filter (fun y => y != x) = toks :=
@@ -208,11 +237,14 @@ theorem OwnedPre.bindImm (pre : OwnedPre functions H live Γ ρf ρo owned lex �
     ⟨toks, htok', hr.insert_fresh x v hxt⟩ hb (fun y hy => ?_)
     (fun y he hy => pre.immOk y (by simpa [Ctx.isImm_setImm, he] using hy)) (fun _ => himm)
     (fun y he hy => pre.borrowed y (by simpa [Ctx.borrowed_eq, Ctx.brw_setImm, he] using hy))
-    (fun hy => by simp [Ctx.borrowed_eq, Ctx.brw_setImm] at hy) (fun y e hy => ?_)
+    (fun hy => by simp [Ctx.borrowed_eq, Ctx.brw_setImm] at hy)
+    (fun y _ hy => pre.pbrwOk y (by simpa using hy))
+    (fun hy => by simp [hpbx] at hy) (fun _ h => h) (fun y e hy => ?_)
   · simp only [Ctx.avail_eq, Ctx.isImm_setImm, Ctx.tokens_setImm, Ctx.borrowed_eq,
-      Ctx.brw_setImm, Ctx.epoch_setImm, he, decide_false, Bool.false_or, ↓reduceIte] at hy ⊢
+      Ctx.brw_setImm, Ctx.epoch_setImm, Ctx.isPbrw_setImm, he, decide_false, Bool.false_or,
+      ↓reduceIte] at hy ⊢
     exact hy
-  · simp only [Ctx.known_eq, Ctx.isImm_setImm, Ctx.ownHas_setImm, Ctx.brw_setImm,
+  · simp only [Ctx.known_eq, Ctx.isImm_setImm, Ctx.ownHas_setImm, Ctx.brw_setImm, Ctx.isPbrw_setImm,
       Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq] at hy ⊢
     by_cases he : y = x
     · exact Or.inl he
@@ -224,24 +256,26 @@ theorem OwnedPre.bindImm (pre : OwnedPre functions H live Γ ρf ρo owned lex �
     · cases hy
     · exact pre.epochs y e hy
 
-theorem OwnedPre.bindBorrow (pre : OwnedPre functions H live Γ ρf ρo owned lex Δ Jf Jo)
+theorem OwnedPre.bindBorrow (pre : OwnedPre functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
     {x : Var} (hx : x ∉ live) {v : RVal} {w : Fir.Val} (hd : Proof.Den H v w)
     (hcan : CanDup H v) (hb : Balance H external owned) :
     OwnedState functions H external (live ++ [x]) (Γ.setBorrow x) (ρf.insert x w)
-      (ρo.insert x v) owned lex Δ Jf Jo := by
-  obtain ⟨hi, _, hbx, _⟩ := pre.fresh_facts hx
+      (ρo.insert x v) owned lex Δ Jf Jo borrows := by
+  obtain ⟨hi, _, _, _, hpbx⟩ := pre.fresh_facts hx
   obtain ⟨toks, htok, hr⟩ := pre.roots
   have hxt := pre.not_tok hx htok
   refine pre.extend hx (fun y he hy => pre.den y ?_) hd
     ⟨toks, htok.same rfl rfl, hr.insert_fresh x v hxt⟩ hb (fun y hy => ?_)
     (fun y _ hy => pre.immOk y (by simpa using hy)) (fun hy => by simp [hi] at hy)
     (fun y he hy => pre.borrowed y (by simpa [Ctx.borrowed_eq, Ctx.brw_setBorrow, he] using hy))
-    (fun _ => hcan) (fun y e hy => ?_)
+    (fun _ => hcan)
+    (fun y _ hy => pre.pbrwOk y (by simpa using hy))
+    (fun hy => by simp [hpbx] at hy) (fun _ h => h) (fun y e hy => ?_)
   · simp only [Ctx.avail_eq, Ctx.isImm_setBorrow, Ctx.tokens_setBorrow, Ctx.borrowed_eq,
-      Ctx.brw_setBorrow, Ctx.epoch_setBorrow, he, ↓reduceIte] at hy ⊢
+      Ctx.brw_setBorrow, Ctx.epoch_setBorrow, Ctx.isPbrw_setBorrow, he, ↓reduceIte] at hy ⊢
     exact hy
   · simp only [Ctx.known_eq, Ctx.isImm_setBorrow, Ctx.own_setBorrow, Ctx.brw_setBorrow,
-      Bool.or_eq_true] at hy ⊢
+      Ctx.isPbrw_setBorrow, Bool.or_eq_true] at hy ⊢
     by_cases he : y = x
     · exact Or.inl he
     · right
@@ -252,26 +286,57 @@ theorem OwnedPre.bindBorrow (pre : OwnedPre functions H live Γ ρf ρo owned le
     · cases hy; exact Nat.le_refl _
     · exact pre.epochs y e hy
 
+theorem OwnedPre.bindPbrw (pre : OwnedPre functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
+    {x : Var} (hx : x ∉ live) {v : RVal} {w : Fir.Val} (hd : Proof.Den H v w)
+    (hreach : ReachableFrom H external v) (hb : Balance H external owned) :
+    OwnedState functions H external (live ++ [x]) (Γ.setPbrw x) (ρf.insert x w)
+      (ρo.insert x v) owned lex Δ Jf Jo borrows := by
+  obtain ⟨hi, _, hbx, _, _⟩ := pre.fresh_facts hx
+  obtain ⟨toks, htok, hr⟩ := pre.roots
+  have hxt := pre.not_tok hx htok
+  refine pre.extend hx (fun y he hy => pre.den y ?_) hd
+    ⟨toks, htok.same rfl rfl, hr.insert_fresh x v hxt⟩ hb (fun y hy => ?_)
+    (fun y _ hy => pre.immOk y (by simpa using hy)) (fun hy => by simp [hi] at hy)
+    (fun y _ hy => pre.borrowed y (by simpa [Ctx.borrowed_eq] using hy))
+    (fun hy => by simp [Ctx.borrowed_eq, hbx] at hy)
+    (fun y he hy => pre.pbrwOk y (by simpa [Ctx.isPbrw_setPbrw, he] using hy))
+    (fun _ => hreach)
+    (fun y hy => by
+      change (Γ.setPbrw x).isPbrw y = true
+      rw [Ctx.isPbrw_setPbrw]; exact Bool.or_eq_true_iff.mpr (Or.inr hy))
+    (fun y e hy => pre.epochs y e hy)
+  · simp only [Ctx.avail_eq, Ctx.isImm_setPbrw, Ctx.tokens_setPbrw, Ctx.borrowed_eq,
+      Ctx.brw_setPbrw, Ctx.epoch_setPbrw, Ctx.isPbrw_setPbrw, he, decide_false, Bool.false_or] at hy ⊢
+    exact hy
+  · simp only [Ctx.known_eq, Ctx.isImm_setPbrw, Ctx.own_setPbrw, Ctx.brw_setPbrw, Ctx.isPbrw_setPbrw,
+      Bool.or_eq_true, decide_eq_true_eq] at hy ⊢
+    by_cases he : y = x
+    · exact Or.inl he
+    · right
+      simp only [he, false_or] at hy
+      exact hy
+
 /-- A variable whose value is an immediate becomes one; its tokens were vacuous. -/
-theorem OwnedPre.setImmVar (pre : OwnedPre functions H live Γ ρf ρo owned lex Δ Jf Jo)
+theorem OwnedPre.setImmVar (pre : OwnedPre functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
     {y : Var} (hy : Γ.avail y = true) {u : RVal} (hu : ρo.get? y = some u) (himm : ImmVal u) :
-    ∃ owned', OwnedPre functions H live (Γ.setImm y) ρf ρo owned' lex Δ Jf Jo ∧
+    ∃ owned', OwnedPre functions H external live (Γ.setImm y) ρf ρo owned' lex Δ Jf Jo borrows ∧
       SameRefs owned owned' := by
   obtain ⟨toks, htok, hr⟩ := pre.roots
   obtain ⟨owned', hr', hs⟩ := EnvRoots.filter_imm hu himm hr
   refine ⟨owned', ⟨fun z hz => ?_, ⟨_, htok.setImm y, hr'⟩, fun z hz => pre.known z ?_,
-    pre.distinct, fun z hz => ?_, fun z hz => pre.borrowed z ?_, fun z e hz => ?_, pre.stack,
-    pre.scope⟩, hs⟩
+    pre.distinct, fun z hz => ?_, fun z hz => pre.borrowed z ?_,
+    fun z hz => pre.pbrwOk z (by simpa using hz), fun z e hz => ?_, pre.stack, pre.scope⟩, hs⟩
   · by_cases he : z = y
     · subst he; exact pre.den z hy
     · apply pre.den z
       simp only [Ctx.avail_eq, Ctx.isImm_setImm, Ctx.tokens_setImm, Ctx.borrowed_eq,
-        Ctx.brw_setImm, Ctx.epoch_setImm, he, decide_false, Bool.false_or, ↓reduceIte] at hz ⊢
+        Ctx.brw_setImm, Ctx.epoch_setImm, Ctx.isPbrw_setImm, he, decide_false, Bool.false_or,
+        ↓reduceIte] at hz ⊢
       exact hz
   · by_cases he : z = y
     · subst he; exact Ctx.avail_known hy
-    · simp only [Ctx.known_eq, Ctx.isImm_setImm, Ctx.ownHas_setImm, Ctx.brw_setImm, he,
-        decide_false, Bool.false_or, Bool.not_false, Bool.true_and, ↓reduceIte] at hz ⊢
+    · simp only [Ctx.known_eq, Ctx.isImm_setImm, Ctx.ownHas_setImm, Ctx.brw_setImm, Ctx.isPbrw_setImm,
+        he, decide_false, Bool.false_or, Bool.not_false, Bool.true_and, ↓reduceIte] at hz ⊢
       exact hz
   · by_cases he : z = y
     · subst he; exact ⟨u, hu, himm⟩
@@ -288,15 +353,16 @@ theorem Ctx.avail_setImm {Γ : Ctx} {y z : Var} (h : Γ.avail y = true) : (Γ.se
   by_cases he : y = z
   · subst he; simp [Ctx.avail_eq, Ctx.isImm_setImm]
   · simp only [Ctx.avail_eq, Ctx.isImm_setImm, Ctx.tokens_setImm, Ctx.borrowed_eq,
-      Ctx.brw_setImm, Ctx.epoch_setImm, he, decide_false, Bool.false_or, ↓reduceIte] at h ⊢
+      Ctx.brw_setImm, Ctx.epoch_setImm, Ctx.isPbrw_setImm, he, decide_false, Bool.false_or,
+      ↓reduceIte] at h ⊢
     exact h
 
 /-- A primitive's marked arguments become immediates (their values are, once it has returned). -/
 theorem OwnedPre.immArgs :
     ∀ (ms : List Bool) (args : List Arg) {Γ : Ctx} {owned : List RVal},
-      OwnedPre functions H live Γ ρf ρo owned lex Δ Jf Jo →
+      OwnedPre functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows →
       (∀ y, Arg.var y ∈ args → Γ.avail y = true ∧ ∃ u, ρo.get? y = some u ∧ ImmVal u) →
-      ∃ owned', OwnedPre functions H live (Γ.immArgs ms args) ρf ρo owned' lex Δ Jf Jo ∧
+      ∃ owned', OwnedPre functions H external live (Γ.immArgs ms args) ρf ρo owned' lex Δ Jf Jo borrows ∧
         SameRefs owned owned'
   | true :: ms, .var y :: as, Γ, owned, pre, hargs => by
     obtain ⟨hy, u, hu, himm⟩ := hargs y List.mem_cons_self

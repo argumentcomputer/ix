@@ -19,17 +19,17 @@ open IxCC.Own.Plain (Ctx JCtx checkCode)
 section
 variable {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
   {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-  {main clock : Nat} {sourceJoins : List Fir.JEntry}
+  {main clock : Nat} {sourceJoins : List Fir.JEntry} {borrows : Own.Plain.BorrowSigs}
 
 /-- **A jump**: the body is any Own code that erases to the source entry's (the one the checker
 typed at the declaration). -/
-theorem jump_result (admission : CodeAdmission F bodies P config pairs functions)
-    (smaller : ∀ k, k < clock → PhysicalAtClock F P config pairs main k)
+theorem jump_result (admission : CodeAdmission F bodies P config pairs functions borrows)
+    (smaller : ∀ k, k < clock → PhysicalAtClock F P config pairs main k borrows)
     {j : Fir.JoinId} {args : List Fir.Arg}
     (next : ∀ entry rest, Fir.lookupJ j sourceJoins = some (entry, rest) → entry.charged = false →
       ∀ body : Own.Plain.Code, Own.Plain.eraseCode body = entry.body →
-        PhysicalCode F P config pairs main clock (entry.after rest) body) :
-    PhysicalCode F P config pairs main clock sourceJoins (.jmp j args) := by
+        PhysicalCode F P config pairs main clock (entry.after rest) body borrows) :
+    PhysicalCode F P config pairs main clock sourceJoins (.jmp j args) borrows := by
   intro H addresses external live Γ Δ sourceEnv ownedEnv roots lex ownedJoins sourceFunction
     function source target memory context base bump limit regionBytes slots lists callers
     sourceLookup before heap
@@ -66,7 +66,7 @@ theorem jump_result (admission : CodeAdmission F bodies P config pairs functions
             (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main) H addresses
             external (lexd ++ entry.params) Γb Δb (Fir.bindAll entry.env entry.params ws)
             (Own.bindAll eo.env eo.params vs) owned' lexb (entry.after rest) (eo.after resto)
-            eo.body sourceFunction.vars function after final :=
+            eo.body sourceFunction.vars function after final borrows :=
           ⟨state, typed, afterLayout, afterFrame, by rw [erased]; exact scope, running, fused⟩
         have heap' : HeapState P pairs H addresses memory external owned' context base bump limit
             regionBytes slots lists :=
@@ -74,7 +74,8 @@ theorem jump_result (admission : CodeAdmission F bodies P config pairs functions
             heap.extent⟩
         have lookupAfter : F.fun? after.fn = some sourceFunction := by
           simpa only [sameFn] using sourceLookup
-        have preserved : Own.Plain.ExternalPreserved H H external := fun _ _ _ h => h
+        have hreach : Own.Plain.ReachablePreserved H H external :=
+          Own.Plain.ReachablePreserved.refl H external
         have history : HeapHistory H.size addresses H.size addresses :=
           ⟨Nat.le_refl _, fun _ _ => rfl⟩
         simp only [Fir.jumpTo, if_pos length]
@@ -82,7 +83,7 @@ theorem jump_result (admission : CodeAdmission F bodies P config pairs functions
         cases isCharged : entry.charged with
         | false =>
           simp only [Bool.false_eq_true, ↓reduceIte]
-          exact ResultAt.prefix trace preserved history (by omega)
+          exact ResultAt.prefix trace hreach history (by omega)
             (next entry rest found isCharged eo.body erased H addresses external
               (lexd ++ entry.params) Γb Δb _ _ owned' lexb _ sourceFunction function after final
               memory context base bump limit regionBytes slots lists callers lookupAfter activation
@@ -90,7 +91,7 @@ theorem jump_result (admission : CodeAdmission F bodies P config pairs functions
         | true =>
           simp only [↓reduceIte]
           apply ResultAt.charge trace
-            (by simpa only [charged, isCharged, Bool.toNat_true] using costBound) preserved history
+            (by simpa only [charged, isCharged, Bool.toNat_true] using costBound) hreach history
           intro k clockEq
           exact smaller k (by omega) (entry.after rest) eo.body H addresses external
             (lexd ++ entry.params) Γb Δb _ _ owned' lexb _ sourceFunction function after final

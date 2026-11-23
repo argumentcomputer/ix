@@ -17,7 +17,7 @@ theorem runFront_spec {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
     Fir.lower f.anf = .ok f.fir ∧
     Own.Plain.Certificate.admit f.fir c.own = .ok f.own ∧
     Cfg.Rc.generate f.fir f.own.bodies = some f.cfg ∧
-    Cfg.Rc.checkScopedProgram f.fir f.own.bodies f.cfg = true := by
+    Cfg.Rc.checkScopedProgram f.fir f.own.bodies f.cfg f.own.borrows = true := by
   unfold runFront at accepted
   cases hfront : Recheck.front cfg P c.base with
   | error e => rw [hfront] at accepted; cases accepted
@@ -46,7 +46,7 @@ theorem runFront_spec {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
             | none => rw [hgen] at accepted; cases accepted
             | some candidate =>
               simp only [hgen] at accepted
-              cases hscope : Cfg.Rc.checkScopedProgram fir own.bodies candidate with
+              cases hscope : Cfg.Rc.checkScopedProgram fir own.bodies candidate own.borrows with
               | false => simp [hscope] at accepted
               | true =>
                 simp only [hscope, Bool.true_eq_false, ↓reduceIte, pure, Except.pure,
@@ -58,7 +58,7 @@ theorem runFront_spec {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
                   cases unit
                   simp only [hparams, bind, Except.bind] at accepted
                   cases hnative : Cfg.Rc.Public.lower { names := cfg.names }
-                      fir own.bodies candidate with
+                      fir own.bodies candidate own.borrows with
                   | error e => rw [hnative] at accepted; cases accepted
                   | ok lowered =>
                     simp only [hnative, Except.mapError, bind, Except.bind,

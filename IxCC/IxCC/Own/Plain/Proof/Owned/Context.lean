@@ -36,6 +36,8 @@ variable (Γ : Ctx) (x y : Var)
 theorem tokens_eq : Γ.tokens y = (Γ.own.get? y).getD 0 := rfl
 
 @[simp] theorem isImm_addOwn (n : Nat) : (Γ.addOwn x n).isImm y = Γ.isImm y := rfl
+@[simp] theorem isPbrw_addOwn (n : Nat) : (Γ.addOwn x n).isPbrw y = Γ.isPbrw y := rfl
+@[simp] theorem pbrw_addOwn (n : Nat) : (Γ.addOwn x n).pbrw = Γ.pbrw := rfl
 @[simp] theorem brw_addOwn (n : Nat) : (Γ.addOwn x n).brw = Γ.brw := rfl
 @[simp] theorem epoch_addOwn (n : Nat) : (Γ.addOwn x n).epoch = Γ.epoch := rfl
 @[simp] theorem total_addOwn (n : Nat) : (Γ.addOwn x n).total = Γ.total + n := rfl
@@ -49,6 +51,8 @@ theorem ownHas_addOwn (n : Nat) :
   split <;> simp_all
 
 @[simp] theorem isImm_release : Γ.release.isImm y = Γ.isImm y := rfl
+@[simp] theorem isPbrw_release : Γ.release.isPbrw y = Γ.isPbrw y := rfl
+@[simp] theorem pbrw_release : Γ.release.pbrw = Γ.pbrw := rfl
 @[simp] theorem own_release : Γ.release.own = Γ.own := rfl
 @[simp] theorem brw_release : Γ.release.brw = Γ.brw := rfl
 @[simp] theorem total_release : Γ.release.total = Γ.total := rfl
@@ -56,6 +60,8 @@ theorem ownHas_addOwn (n : Nat) :
 @[simp] theorem tokens_release : Γ.release.tokens y = Γ.tokens y := rfl
 
 @[simp] theorem isImm_setBorrow : (Γ.setBorrow x).isImm y = Γ.isImm y := rfl
+@[simp] theorem isPbrw_setBorrow : (Γ.setBorrow x).isPbrw y = Γ.isPbrw y := rfl
+@[simp] theorem pbrw_setBorrow : (Γ.setBorrow x).pbrw = Γ.pbrw := rfl
 @[simp] theorem own_setBorrow : (Γ.setBorrow x).own = Γ.own := rfl
 @[simp] theorem total_setBorrow : (Γ.setBorrow x).total = Γ.total := rfl
 @[simp] theorem epoch_setBorrow : (Γ.setBorrow x).epoch = Γ.epoch := rfl
@@ -64,9 +70,21 @@ theorem brw_setBorrow :
     (Γ.setBorrow x).brw.get? y = if y = x then some Γ.epoch else Γ.brw.get? y := by
   simp only [setBorrow, Src.NatMap.get?_insert]
 
+@[simp] theorem isImm_setPbrw : (Γ.setPbrw x).isImm y = Γ.isImm y := rfl
+@[simp] theorem own_setPbrw : (Γ.setPbrw x).own = Γ.own := rfl
+@[simp] theorem brw_setPbrw : (Γ.setPbrw x).brw = Γ.brw := rfl
+@[simp] theorem total_setPbrw : (Γ.setPbrw x).total = Γ.total := rfl
+@[simp] theorem epoch_setPbrw : (Γ.setPbrw x).epoch = Γ.epoch := rfl
+@[simp] theorem tokens_setPbrw : (Γ.setPbrw x).tokens y = Γ.tokens y := rfl
+theorem isPbrw_setPbrw : (Γ.setPbrw x).isPbrw y = (decide (y = x) || Γ.isPbrw y) := by
+  simp only [isPbrw, setPbrw, Src.NatSet.insert, Src.NatMap.contains, Src.NatMap.get?_insert]
+  split <;> simp_all
+
 theorem isImm_setImm : (Γ.setImm x).isImm y = (decide (y = x) || Γ.isImm y) := by
   simp only [isImm, setImm, Src.NatSet.insert, Src.NatMap.contains, Src.NatMap.get?_insert]
   split <;> simp_all
+@[simp] theorem isPbrw_setImm : (Γ.setImm x).isPbrw y = Γ.isPbrw y := rfl
+@[simp] theorem pbrw_setImm : (Γ.setImm x).pbrw = Γ.pbrw := rfl
 theorem tokens_setImm : (Γ.setImm x).tokens y = if y = x then 0 else Γ.tokens y := by
   simp only [tokens_eq, setImm, Src.NatMap.get?_erase]
   split <;> rfl
@@ -80,10 +98,12 @@ theorem ownHas_setImm : (Γ.setImm x).own.contains y = (!decide (y = x) && Γ.ow
 
 theorem borrowed_eq : Γ.borrowed y = (Γ.brw.get? y == some Γ.epoch) := rfl
 
-theorem avail_eq : Γ.avail y = (Γ.isImm y || decide (0 < Γ.tokens y) || Γ.borrowed y) := rfl
+theorem avail_eq : Γ.avail y = (Γ.isImm y || decide (0 < Γ.tokens y) || Γ.borrowed y || Γ.isPbrw y) := rfl
 
 theorem known_eq : Γ.known y =
-    (Γ.isImm y || Γ.own.contains y || (Γ.brw.get? y).isSome) := rfl
+    (Γ.isImm y || Γ.own.contains y || (Γ.brw.get? y).isSome || Γ.isPbrw y) := rfl
+
+theorem borrowable_eq : Γ.borrowable y = (Γ.isImm y || Γ.isPbrw y || decide (0 < Γ.tokens y)) := rfl
 
 /-! ## The consuming operations -/
 
@@ -100,24 +120,29 @@ theorem take_ok {Γ Γ' : Ctx} {x : Var} (h : Γ.take x = .ok Γ') :
     refine Or.inr ⟨rfl, ?_⟩
     split at h
     · next n hn => exact ⟨n, hn, (Except.ok.inj h).symm⟩
-    · split at h <;> (try split at h) <;> cases h
+    · split at h <;> (try split at h) <;> (try split at h) <;> cases h
 
-/-- A weaker context: the same immediates, borrows and epoch, no more tokens. -/
+/-- A weaker context: the same immediates, borrows, `pbrw` and epoch, no more tokens. -/
 structure Weaker (Γ' Γ : Ctx) : Prop where
   imm : Γ'.imm = Γ.imm
   brw : Γ'.brw = Γ.brw
+  pbrw : Γ'.pbrw = Γ.pbrw
   epoch : Γ'.epoch = Γ.epoch
   tokens : ∀ y, Γ'.tokens y ≤ Γ.tokens y
   ownHas : ∀ y, Γ'.own.contains y = true → Γ.own.contains y = true
 
-theorem Weaker.refl (Γ : Ctx) : Weaker Γ Γ := ⟨rfl, rfl, rfl, fun _ => Nat.le_refl _, fun _ h => h⟩
+theorem Weaker.refl (Γ : Ctx) : Weaker Γ Γ :=
+  ⟨rfl, rfl, rfl, rfl, fun _ => Nat.le_refl _, fun _ h => h⟩
 
 theorem Weaker.trans {Γ₁ Γ₂ Γ₃ : Ctx} (h₁ : Weaker Γ₁ Γ₂) (h₂ : Weaker Γ₂ Γ₃) : Weaker Γ₁ Γ₃ :=
-  ⟨h₁.imm.trans h₂.imm, h₁.brw.trans h₂.brw, h₁.epoch.trans h₂.epoch,
+  ⟨h₁.imm.trans h₂.imm, h₁.brw.trans h₂.brw, h₁.pbrw.trans h₂.pbrw, h₁.epoch.trans h₂.epoch,
     fun y => Nat.le_trans (h₁.tokens y) (h₂.tokens y), fun y h => h₂.ownHas y (h₁.ownHas y h)⟩
 
 theorem Weaker.isImm {Γ' Γ : Ctx} (h : Weaker Γ' Γ) (y : Var) : Γ'.isImm y = Γ.isImm y := by
   simp only [Ctx.isImm, h.imm]
+
+theorem Weaker.isPbrw {Γ' Γ : Ctx} (h : Weaker Γ' Γ) (y : Var) : Γ'.isPbrw y = Γ.isPbrw y := by
+  simp only [Ctx.isPbrw, h.pbrw]
 
 theorem Weaker.borrowed {Γ' Γ : Ctx} (h : Weaker Γ' Γ) (y : Var) : Γ'.borrowed y = Γ.borrowed y := by
   simp only [Ctx.borrowed, h.brw, h.epoch]
@@ -125,25 +150,27 @@ theorem Weaker.borrowed {Γ' Γ : Ctx} (h : Weaker Γ' Γ) (y : Var) : Γ'.borro
 theorem Weaker.avail {Γ' Γ : Ctx} (h : Weaker Γ' Γ) {y : Var} (ha : Γ'.avail y = true) :
     Γ.avail y = true := by
   have ht := h.tokens y
-  simp only [avail_eq, h.isImm, h.borrowed, Bool.or_eq_true, decide_eq_true_eq] at ha ⊢
-  rcases ha with (h1 | h2) | h3
-  · exact Or.inl (Or.inl h1)
-  · exact Or.inl (Or.inr (Nat.lt_of_lt_of_le h2 ht))
-  · exact Or.inr h3
+  simp only [avail_eq, h.isImm, h.borrowed, h.isPbrw, Bool.or_eq_true, decide_eq_true_eq] at ha ⊢
+  rcases ha with ((h1 | h2) | h3) | h4
+  · exact Or.inl (Or.inl (Or.inl h1))
+  · exact Or.inl (Or.inl (Or.inr (Nat.lt_of_lt_of_le h2 ht)))
+  · exact Or.inl (Or.inr h3)
+  · exact Or.inr h4
 
 theorem Weaker.known {Γ' Γ : Ctx} (h : Weaker Γ' Γ) {y : Var} (hk : Γ'.known y = true) :
     Γ.known y = true := by
   simp only [known_eq, Bool.or_eq_true] at hk ⊢
-  rw [h.isImm y, h.brw] at hk
-  rcases hk with (h1 | h2) | h3
-  · exact Or.inl (Or.inl h1)
-  · exact Or.inl (Or.inr (h.ownHas y h2))
-  · exact Or.inr h3
+  rw [h.isImm y, h.brw, h.isPbrw y] at hk
+  rcases hk with ((h1 | h2) | h3) | h4
+  · exact Or.inl (Or.inl (Or.inl h1))
+  · exact Or.inl (Or.inl (Or.inr (h.ownHas y h2)))
+  · exact Or.inl (Or.inr h3)
+  · exact Or.inr h4
 
 theorem take_weaker {Γ Γ' : Ctx} {x : Var} (h : Γ.take x = .ok Γ') : Weaker Γ' Γ := by
   rcases take_ok h with ⟨_, rfl⟩ | ⟨_, n, hn, rfl⟩
   · exact Weaker.refl _
-  · refine ⟨rfl, rfl, rfl, fun y => ?_, fun y hy => ?_⟩
+  · refine ⟨rfl, rfl, rfl, rfl, fun y => ?_, fun y hy => ?_⟩
     · simp only [tokens_eq, Src.NatMap.get?_insert]
       split
       · next he => subst he; simp [hn]
@@ -167,6 +194,31 @@ theorem takeArgs_weaker : ∀ {Γ Γ' : Ctx} {args : List Arg}, Γ.takeArgs args
     | ok Γ₁ =>
       rw [ha] at h
       exact (takeArgs_weaker h).trans (takeArg_weaker ha)
+
+theorem takeOwnedArgs_nil (Γ : Ctx) (args : List Arg) :
+    Γ.takeOwnedArgs [] args = Γ.takeArgs args := by
+  induction args generalizing Γ with
+  | nil => rfl
+  | cons a as ih =>
+    simp only [takeOwnedArgs, takeArgs]
+    cases Γ.takeArg a <;> simp [ih]
+
+theorem takeOwnedArgs_weaker {Γ Γ' : Ctx} {bs : List Bool} {args : List Arg}
+    (h : Γ.takeOwnedArgs bs args = .ok Γ') : Weaker Γ' Γ := by
+  induction args generalizing Γ bs with
+  | nil => cases h; exact Weaker.refl _
+  | cons a as ih =>
+    cases bs with
+    | nil =>
+      rw [takeOwnedArgs_nil] at h; exact takeArgs_weaker h
+    | cons b bs =>
+      cases b with
+      | true => exact ih h
+      | false =>
+        simp only [takeOwnedArgs] at h
+        cases ha : Γ.takeArg a with
+        | error e => rw [ha] at h; cases h
+        | ok Γ₁ => rw [ha] at h; exact (ih h).trans (takeArg_weaker ha)
 
 theorem takeVars_weaker : ∀ {Γ Γ' : Ctx} {xs : List Var}, Γ.takeVars xs = .ok Γ' → Weaker Γ' Γ
   | Γ, Γ', [], h => by cases h; exact Weaker.refl _
@@ -222,8 +274,8 @@ theorem needCaptured_avail : ∀ {Γ : Ctx} {j : JoinId} {cs : List Var},
 
 theorem inc_ok {Γ Γ' : Ctx} {x : Var} {n : Nat} (h : Γ.inc x n = .ok Γ') :
     n = 1 ∧ ((Γ.isImm x = true ∧ Γ' = Γ) ∨
-      (Γ.isImm x = false ∧ 0 < Γ.tokens x ∧ Γ' = Γ.addOwn x 1) ∨
-      (Γ.isImm x = false ∧ Γ.tokens x = 0 ∧ Γ.borrowed x = true ∧
+      (Γ.isImm x = false ∧ (0 < Γ.tokens x ∨ Γ.isPbrw x = true) ∧ Γ' = Γ.addOwn x 1) ∨
+      (Γ.isImm x = false ∧ Γ.tokens x = 0 ∧ Γ.isPbrw x = false ∧ Γ.borrowed x = true ∧
         Γ' = ({ Γ with brw := Γ.brw.erase x } : Ctx).addOwn x 1)) := by
   unfold inc at h
   by_cases hn : n = 1
@@ -236,15 +288,21 @@ theorem inc_ok {Γ Γ' : Ctx} {x : Var} {n : Nat} (h : Γ.inc x n = .ok Γ') :
       simp only [hi, Bool.false_eq_true, ↓reduceIte] at h
       by_cases ht : 0 < Γ.tokens x
       · simp only [ht, ↓reduceIte, Except.ok.injEq] at h
-        exact Or.inr (Or.inl ⟨rfl, ht, h.symm⟩)
+        exact Or.inr (Or.inl ⟨rfl, Or.inl ht, h.symm⟩)
       · simp only [ht, ↓reduceIte] at h
-        cases hb : Γ.borrowed x with
+        cases hp : Γ.isPbrw x with
         | true =>
-          simp only [hb, ↓reduceIte, Except.ok.injEq] at h
-          exact Or.inr (Or.inr ⟨rfl, by omega, rfl, h.symm⟩)
+          simp only [hp, ↓reduceIte, Except.ok.injEq] at h
+          exact Or.inr (Or.inl ⟨rfl, Or.inr rfl, h.symm⟩)
         | false =>
-          simp only [hb, Bool.false_eq_true, ↓reduceIte] at h
-          split at h <;> cases h
+          simp only [hp, Bool.false_eq_true, ↓reduceIte] at h
+          cases hb : Γ.borrowed x with
+          | true =>
+            simp only [hb, ↓reduceIte, Except.ok.injEq] at h
+            exact Or.inr (Or.inr ⟨rfl, by omega, rfl, rfl, h.symm⟩)
+          | false =>
+            simp only [hb, Bool.false_eq_true, ↓reduceIte] at h
+            split at h <;> cases h
   · have : (n != 1) = true := by simpa using hn
     simp only [this, ↓reduceIte] at h
     cases h
@@ -399,6 +457,57 @@ theorem Tokens.enter (Γ : Ctx) (captured params : List Var) (hn : (Γ.entered c
 theorem Tokens.entry (params : List Var) (hn : params.Nodup) :
     Tokens (Ctx.entry params) params :=
   Tokens.ofList hn _ rfl rfl
+
+theorem entryOwned_sublist : ∀ (ps : List Var) (bs : List Bool), (entryOwned ps bs).Sublist ps
+  | [], _ => .slnil
+  | p :: ps, false :: bs => .cons_cons p (entryOwned_sublist ps bs)
+  | p :: ps, true :: bs => .cons p (entryOwned_sublist ps bs)
+  | p :: ps, [] => .refl (p :: ps)
+
+theorem entryBorrowed_sublist : ∀ (ps : List Var) (bs : List Bool), (entryBorrowed ps bs).Sublist ps
+  | [], _ => .slnil
+  | p :: ps, true :: bs => .cons_cons p (entryBorrowed_sublist ps bs)
+  | p :: ps, false :: bs => .cons p (entryBorrowed_sublist ps bs)
+  | p :: ps, [] => List.nil_sublist (p :: ps)
+
+theorem entryOwned_all_false : ∀ (ps : List Var) (bs : List Bool),
+    bs.all (!·) = true → entryOwned ps bs = ps
+  | [], _, _ => rfl
+  | _ :: _, [], _ => rfl
+  | p :: ps, b :: bs, h => by
+    cases b
+    · simp only [entryOwned]; congr 1; exact entryOwned_all_false ps bs (by simpa using h)
+    · simp at h
+
+theorem entryBorrowed_all_false : ∀ (ps : List Var) (bs : List Bool),
+    bs.all (!·) = true → entryBorrowed ps bs = []
+  | [], _, _ => rfl
+  | _ :: _, [], _ => rfl
+  | _ :: ps, b :: bs, h => by
+    cases b
+    · simp only [entryBorrowed]; exact entryBorrowed_all_false ps bs (by simpa using h)
+    · simp at h
+
+theorem entryWith_all_false (ps : List Var) (bs : List Bool) (h : bs.all (!·) = true) :
+    entryWith ps bs = entry ps := by
+  simp [entryWith, entry, entryOwned_all_false ps bs h, entryBorrowed_all_false ps bs h,
+    Src.NatMap.ofList]
+
+theorem Tokens.entryWith (params : List Var) (bs : List Bool) (hn : params.Nodup) :
+    Tokens (Ctx.entryWith params bs) (Ctx.entryOwned params bs) :=
+  Tokens.ofList (hn.sublist (entryOwned_sublist params bs)) _ rfl rfl
+
+theorem pbrw_entryWith {params : List Var} {bs : List Bool} (hn : params.Nodup) (y : Var) :
+    (Ctx.entryWith params bs).isPbrw y = decide (y ∈ Ctx.entryBorrowed params bs) := by
+  have hnb : (entryBorrowed params bs).Nodup := hn.sublist (entryBorrowed_sublist params bs)
+  have hk : ((entryBorrowed params bs).map (·, ())).map (·.1) = entryBorrowed params bs := by
+    simp [List.map_map, Function.comp_def]
+  have hnk : (((entryBorrowed params bs).map (·, ())).map (·.1)).Nodup := by rw [hk]; exact hnb
+  unfold isPbrw entryWith Src.NatMap.contains
+  dsimp only
+  by_cases hy : y ∈ entryBorrowed params bs
+  · rw [Src.NatMap.get?_ofList hnk (x := ()) (by simpa using hy)]; simp [hy]
+  · rw [Src.NatMap.get?_ofList_none hnk (by rw [hk]; exact hy)]; simp [hy]
 
 end Ctx
 

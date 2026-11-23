@@ -21,7 +21,8 @@ def At (F : Fir.Program) (P : Program) (fr : Frame) (ρ : Own.Env)
 lookup. One successful source action preserves the complete frame invariant,
 including all saved join environments and layout witnesses. -/
 theorem At.action {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    (checked : checkScopedProgram F bodies P = true) {fr : Frame} {ρ : Own.Env}
+    {borrows : Own.Plain.BorrowSigs} (checked : checkScopedProgram F bodies P borrows = true)
+    {fr : Frame} {ρ : Own.Env}
     {saved : List Own.Plain.JEntry} {a : Action} {k : Own.Plain.Code}
     (stateRel : At F P fr ρ saved (.act a k))
     {stk : List (Frame × Fir.Var)} {H H' : Own.Heap}

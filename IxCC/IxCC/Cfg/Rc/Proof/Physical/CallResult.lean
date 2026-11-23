@@ -27,15 +27,15 @@ open IxCC.Own.Plain (Ctx JCtx checkCode)
 section
 variable {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
   {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-  {main clock : Nat} {sourceJoins : List Fir.JEntry}
+  {main clock : Nat} {sourceJoins : List Fir.JEntry} {borrows : Own.Plain.BorrowSigs}
 
 /-- **`x := f(args)`**: the callee runs at a strictly smaller source clock; the caller's
 continuation at the same clock. -/
-theorem call_result (admission : CodeAdmission F bodies P config pairs functions)
-    (smaller : ∀ k, k < clock → PhysicalAtClock F P config pairs main k)
+theorem call_result (admission : CodeAdmission F bodies P config pairs functions borrows)
+    (smaller : ∀ k, k < clock → PhysicalAtClock F P config pairs main k borrows)
     {x f : Nat} {args : List Fir.Arg} {k : Own.Plain.Code}
-    (next : PhysicalCode F P config pairs main clock sourceJoins k) :
-    PhysicalCode F P config pairs main clock sourceJoins (.bind x (.call f args) k) := by
+    (next : PhysicalCode F P config pairs main clock sourceJoins k borrows) :
+    PhysicalCode F P config pairs main clock sourceJoins (.bind x (.call f args) k) borrows := by
   intro H addresses external live Γ Δ sourceEnv ownedEnv roots lex ownedJoins sourceFunction
     function source target memory context base bump limit regionBytes slots lists callers
     sourceLookup before heap
@@ -54,12 +54,14 @@ theorem call_result (admission : CodeAdmission F bodies P config pairs functions
     generate_size (checkProgram_parts (checkScopedProgram_parts admission.scopedProgram).1).2
   have range : f < P.base.size := by simpa only [programSize] using sourceRange
   obtain ⟨Γ', hbind, typed⟩ := Own.Plain.checkCode_bind before.typed
-  obtain ⟨Γ₁, taken, hΓ⟩ := Own.Plain.except_bind_ok hbind
+  obtain ⟨Γ₁, taken, hrest⟩ := Own.Plain.except_bind_ok hbind
+  obtain ⟨_, hcb, hΓ⟩ := Own.Plain.except_bind_ok hrest
   have hΓ := Own.Plain.except_pure_ok hΓ
   subst hΓ
-  obtain ⟨fields, logical, owned₁, ownArgs, sourceArgs, den, inv₁, refs, weaker⟩ :=
-    Own.Plain.takeArgs_sem before.owned.takeInv taken
-  have balance : Balance H (holdRoots external owned₁) fields :=
+  let bs := borrows.getD f []
+  obtain ⟨fields, logical, owned₁, ownArgs, sourceArgs, den, inv₁, refs, weaker, hbrw⟩ :=
+    Own.Plain.takeOwnedArgs_call_sem before.owned taken hcb
+  have balance : Balance H (holdRoots external owned₁) (Own.Plain.selectOwnedVals bs fields) :=
     balance_hold.mp (refs.balance before.owned.counts)
   have lexical := before.lexical.1
   have frameArgs : Own.evalArgs source.env args = some fields := Cfg.Proof.evalArgs_sub lexical ownArgs
@@ -89,7 +91,7 @@ theorem call_result (admission : CodeAdmission F bodies P config pairs functions
     obtain ⟨fd, block, consumedFd, callee, targetEnv, offset, body, lookup, blockLookup, erased,
       entered, traceEntry, _, activation⟩ :=
       entry_activation admission.scopedProgram admission.consuming admission.lowering main
-        calleeLookup den balance represented compatible fieldsArity
+        calleeLookup den balance hbrw represented compatible fieldsArity
         (({source with rest := sourceTail}, x) :: []) memory context (saved :: callers)
     have calledStep := Lir.step_call (mem := memory) (ctx := context) (rest := callers)
       functionLookup outputLookup position statement evaluated entered
@@ -105,13 +107,14 @@ theorem call_result (admission : CodeAdmission F bodies P config pairs functions
           {source with rest := sourceTail, env := source.env.insert x value} :=
       fun value => consumed_call_done before.frame.lookup before.frame.cursor head
         (consume_user_call range) (source.env.insert x value)
-    have nested : holdRoots external roots = holdRoots (holdRoots external owned₁) fields := by
+    have nested : holdRoots external roots =
+        holdRoots (holdRoots external owned₁) (Own.Plain.selectOwnedVals bs fields) := by
       rw [holdRoots_sameRefs refs]
       funext location
-      simp only [holdRoots, refsIn_append]
+      simp only [holdRoots, refsIn_append, bs]
       omega
-    have calleeHeap : HeapState P pairs H addresses memory (holdRoots external owned₁) fields
-        context base bump limit regionBytes slots lists :=
+    have calleeHeap : HeapState P pairs H addresses memory (holdRoots external owned₁)
+        (Own.Plain.selectOwnedVals bs fields) context base bump limit regionBytes slots lists :=
       ⟨by rw [← nested]; exact heap.ready, heap.ordered, heap.compatible, heap.extent⟩
     cases clock with
     | zero =>
@@ -127,9 +130,10 @@ theorem call_result (admission : CodeAdmission F bodies P config pairs functions
       let calleeNative : Lir.Frame := {fn := f, label := offset, pos := 0, env := targetEnv}
       have execution := smaller smallerClock (Nat.lt_succ_self _) [] body H addresses
         (holdRoots external owned₁) (calleeSource.params.map Prod.fst)
-        (Ctx.entry (calleeSource.params.map Prod.fst)) .leaf
+        (Ctx.entryWith (calleeSource.params.map Prod.fst) bs) .leaf
         (Fir.bindAll .leaf (calleeSource.params.map Prod.fst) logical)
-        (Own.bindAll .leaf (calleeSource.params.map Prod.fst) fields) fields [] []
+        (Own.bindAll .leaf (calleeSource.params.map Prod.fst) fields)
+        (Own.Plain.selectOwnedVals bs fields) [] []
         calleeSource consumedFd calleeCfg calleeNative memory context base bump limit regionBytes
         slots lists (saved :: callers) calleeLookup activation calleeHeap
       rw [erased] at execution
@@ -139,10 +143,10 @@ theorem call_result (admission : CodeAdmission F bodies P config pairs functions
         rw [result] at execution
         simp only [Sem.Result.bind]
         rcases execution with ⟨returned, calleeCost, calleeTrace⟩ | failed
-        · have preservedCallee : Own.Plain.ExternalPreserved H returned.heap
-              (holdRoots external owned₁) := returned.preserved
+        · have reachCallee : Own.Plain.ReachablePreserved H returned.heap
+              (holdRoots external owned₁) := returned.reachable
           have pre₁ := before.owned.pre.weaker weaker inv₁.roots
-          have pre₂ := pre₁.release.call (Own.Plain.release_borrowed pre₁.epochs) preservedCallee
+          have pre₂ := pre₁.release.call (Own.Plain.release_borrowed pre₁.epochs) reachCallee
           have state := pre₂.bindOwned fresh returned.den
             ((Own.Plain.SameRefs.comm _ _).balance (Own.Plain.balance_resume returned.balance))
           obtain ⟨returnStep, resumedFrame⟩ := returned.history.resume savedFrame rfl destination
@@ -157,7 +161,7 @@ theorem call_result (admission : CodeAdmission F bodies P config pairs functions
               returned.addresses external (live ++ [x]) (Γ₁.release.addOwn x 1) Δ
               (sourceEnv.insert x value) (ownedEnv.insert x returned.value)
               (returned.value :: owned₁) lex sourceJoins ownedJoins k sourceFunction.vars function
-              finalSource finalTarget :=
+              finalSource finalTarget borrows :=
             ⟨state, typed, resume returned.value, resumedFrame, bodyScope, rfl,
               fused returned.value⟩
           have rootEq : holdRoots (holdRoots external owned₁) [returned.value] =
@@ -171,16 +175,15 @@ theorem call_result (admission : CodeAdmission F bodies P config pairs functions
               returned.slots returned.lists :=
             ⟨by rw [← rootEq]; exact returned.state.ready, returned.state.ordered,
               returned.state.compatible, returned.state.extent⟩
-          have preserved : Own.Plain.ExternalPreserved H returned.heap external :=
-            fun root logical' externalRoot den' =>
-              preservedCallee root logical' (external_hold externalRoot) den'
+          have hreach : Own.Plain.ReachablePreserved H returned.heap external :=
+            reachCallee.of_holdRoots
           have continuation' := next returned.heap returned.addresses external (live ++ [x])
             (Γ₁.release.addOwn x 1) Δ (sourceEnv.insert x value) (ownedEnv.insert x returned.value)
             (returned.value :: owned₁) lex ownedJoins sourceFunction function finalSource
             finalTarget returned.memory context base returned.bump limit regionBytes
             returned.slots returned.lists callers sourceLookup resumed resumedHeap
           have allTrace := trace.trans (calleeTrace.trans (Lir.star_of_step returnStep))
-          exact ResultAt.prefix allTrace preserved returned.history (by omega) continuation'
+          exact ResultAt.prefix allTrace hreach returned.history (by omega) continuation'
         · exact ResultAt.of_fails (fails_prefix trace failed)
       | timeout =>
         rw [result] at execution

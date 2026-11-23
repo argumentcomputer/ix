@@ -25,14 +25,14 @@ open IxCC.Own.Plain (Ctx JCtx checkCode)
 section
 variable {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
   {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-  {main clock : Nat} {sourceJoins : List Fir.JEntry}
+  {main clock : Nat} {sourceJoins : List Fir.JEntry} {borrows : Own.Plain.BorrowSigs}
 
 /-- **`x := C args`** with at least one field. -/
-theorem allocation_result (admission : CodeAdmission F bodies P config pairs functions)
+theorem allocation_result (admission : CodeAdmission F bodies P config pairs functions borrows)
     {x : Fir.Var} {ctor : Fir.CtorInfo} {args : List Fir.Arg} (positive : 0 < ctor.arity)
     {k : Own.Plain.Code}
-    (next : PhysicalCode F P config pairs main clock sourceJoins k) :
-    PhysicalCode F P config pairs main clock sourceJoins (.bind x (.ctor ctor args) k) := by
+    (next : PhysicalCode F P config pairs main clock sourceJoins k borrows) :
+    PhysicalCode F P config pairs main clock sourceJoins (.bind x (.ctor ctor args) k) borrows := by
   intro H addresses external live Γ Δ sourceEnv ownedEnv roots lex ownedJoins sourceFunction
     function source target memory context base bump limit regionBytes slots lists callers
     sourceLookup before heap
@@ -94,8 +94,9 @@ theorem allocation_result (admission : CodeAdmission F bodies P config pairs fun
         before.frame.compatible.bind x (show ValueCtorOk (tablesOf P pairs) allocated.1 by trivial)⟩
     have fused := consumed_call_done before.frame.lookup before.frame.cursor head consuming
       (source.env.insert x allocated.1)
+    have hreach := Own.Plain.ReachablePreserved.alloc H external {ctor, fields}
     have pre₁ := ((before.owned.pre.weaker weaker inv₁.roots).transport preserve
-      (fun v hv => Own.Plain.canDup_alloc hv _))
+      (fun v hv => Own.Plain.canDup_alloc hv _) hreach)
     have state := pre₁.bindOwned fresh result
       ((Own.Plain.SameRefs.comm _ _).balance (Own.Plain.balance_resume counts))
     have activation : Activation F P pairs
@@ -104,7 +105,7 @@ theorem allocation_result (admission : CodeAdmission F bodies P config pairs fun
         (sourceEnv.insert x (.ctor ctor logical)) (ownedEnv.insert x allocated.1)
         (allocated.1 :: owned₁) lex sourceJoins ownedJoins k sourceFunction.vars function
         {source with rest := tail, env := source.env.insert x allocated.1}
-        {target with pos := target.pos+1, env := target.env.insert x address, dsts := []} :=
+        {target with pos := target.pos+1, env := target.env.insert x address, dsts := []} borrows :=
       ⟨state, typed, actualLayout, frame, bodyScope, rfl, fused⟩
     have fieldBounds := before.frame.bounded.args args frameArgs
     have bodyOk : BodyOk H.size {ctor, fields} := by
@@ -120,7 +121,7 @@ theorem allocation_result (admission : CodeAdmission F bodies P config pairs fun
       ⟨restored, heapOk_alloc heap.ordered bodyOk, heap.compatible.alloc bodyCompatible, heap.extent⟩
     have history : HeapHistory H.size addresses allocated.2.size (placeFresh addresses H.size address) :=
       HeapHistory.allocate H {ctor, fields} addresses address
-    exact ResultAt.prefix trace (fun value logical _ den => preserve value logical den) history
+    exact ResultAt.prefix trace hreach history
       (by omega)
       (next allocated.2 (placeFresh addresses H.size address) external (live ++ [x]) (Γ₁.addOwn x 1) Δ
         (sourceEnv.insert x (.ctor ctor logical)) (ownedEnv.insert x allocated.1)

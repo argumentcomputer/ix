@@ -50,9 +50,10 @@ def verifyContractsAndPolicy : IO Unit := do
       s!"canonicalForSrc PSigs mismatch: got {repr (contractOwn.funParamSigs rootFun)}")
   unless Own.Plain.bodyMapEq contractOwn.bodies canonicalOwn.bodies do
     throw (IO.userError "canonicalForSrc bodies differ from canonical bodies")
-  unless Own.Plain.bodyMapEq p.own.bodies (Own.Plain.Live.liveMap p.front.fir) do
+  let (wantBodies, wantBorrows) := Own.Plain.Live.liveMapWith p.front.fir
+  unless Own.Plain.bodyMapEq p.own.bodies wantBodies do
     throw (IO.userError "produceWith did not emit liveness ownership bodies")
-  unless Own.Plain.checkOwned p.front.fir p.own.bodies do
+  unless Own.Plain.checkOwned p.front.fir p.own.bodies wantBorrows do
     throw (IO.userError "produceWith liveness bodies failed checkOwned")
   let pol ← IO.ofExcept ((Recheck.RcReplay.selectPolicy cfg input).mapError (·.message))
   unless pol == .plainRc do

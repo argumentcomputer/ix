@@ -20,7 +20,8 @@ theorem generate_tables {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
 Only real variable x is inserted, preserving saved join environments below the
 checked real-name bound. Allocation and borrowed projection are not erased. -/
 theorem At.bind {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    (checked : checkScopedProgram F bodies P = true) {fr : Frame} {ρ : Own.Env}
+    {borrows : Own.Plain.BorrowSigs} (checked : checkScopedProgram F bodies P borrows = true)
+    {fr : Frame} {ρ : Own.Env}
     {saved : List Own.Plain.JEntry} {x : Fir.Var} {rhs : Fir.Rhs} {k : Own.Plain.Code}
     (stateRel : At F P fr ρ saved (.bind x rhs k))
     (noCall : ∀ f args, rhs ≠ .call f args)

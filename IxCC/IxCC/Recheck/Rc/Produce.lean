@@ -410,15 +410,15 @@ def ownJsonFitsLimits (ownJson : Lean.Json) : Bool :=
 RC lowering, backend allocation/layout, and `Cert.readBack`. -/
 def finishPlainRcWith (cfg : Config) (front : ProducedFir) (own : Own.Plain.Program)
     (encoded? : Option Lean.Json := none) : Except Err Produced := do
-  let ownJson := encoded?.getD (Own.Plain.Certificate.encode own.bodies)
+  let ownJson := encoded?.getD (Own.Plain.Certificate.encodeWith own.bodies own.borrows)
   let admittedOwn ← (Own.Plain.Certificate.admit front.fir ownJson).mapError fun message =>
     { stage := .cert, code := "own.plain", message }
   let some candidate := Cfg.Rc.generate front.fir admittedOwn.bodies |
     throw { stage := .rt, code := "rc.cfg", message := "ownership candidate lowering declined" }
-  unless Cfg.Rc.checkScopedProgram front.fir admittedOwn.bodies candidate do
+  unless Cfg.Rc.checkScopedProgram front.fir admittedOwn.bodies candidate admittedOwn.borrows do
     throw { stage := .rt, code := "rc.scope", message := "scoped dense-source RC gate refused" }
   Recheck.checkParams cfg candidate.base (candidate.base.exports.zipIdx.map fun (f, i) => (i, f))
-  let lowered ← (Cfg.Rc.Public.lower { names := cfg.names } front.fir admittedOwn.bodies candidate).mapError
+  let lowered ← (Cfg.Rc.Public.lower { names := cfg.names } front.fir admittedOwn.bodies candidate admittedOwn.borrows).mapError
     fun message => { stage := .rt, code := "rc.lower", message }
   let reps : Lir.FunId → Option (List Xv.Stacking.ArgRep) :=
     (⟨lowered.runtime, lowered.drop⟩ : Cfg.Rc.Public.Lowered).reps
@@ -453,23 +453,36 @@ def finishPlainRcCert (cfg : Config) (front : ProducedFir) : Except Err Produced
     throw { stage := .cert, code := "own.plain",
             message := "own.cert.check: ownership proposal or source domain refused" }
   let enriched := Own.Plain.enrichFirContracts front.src front.fir
-  let liveOwn : Own.Plain.Program :=
-    { source := enriched, bodies := Own.Plain.Live.liveMap front.fir }
-  let liveAttempt : Except Err Produced := do
-    (Own.Plain.Certificate.checkBudget Anf.maxCapturedWork liveOwn.bodies).mapError fun message =>
+  let (borrowBodies, borrows) := Own.Plain.Live.liveMapWith front.fir
+  let borrowOwn : Own.Plain.Program := { source := enriched, bodies := borrowBodies, borrows }
+  let borrowAttempt : Except Err Produced := do
+    (Own.Plain.Certificate.checkBudget Anf.maxCapturedWork borrowOwn.bodies).mapError fun message =>
       { stage := .cert, code := "own.plain", message }
-    let ownJson := Own.Plain.Certificate.encode liveOwn.bodies
+    let ownJson := Own.Plain.Certificate.encodeWith borrowOwn.bodies borrowOwn.borrows
     unless ownJsonFitsLimits ownJson do
       throw { stage := .cert, code := "cert.parse",
-              message := "liveness ownership exceeds certificate text/depth limits" }
-    finishPlainRcWith cfg front liveOwn (some ownJson)
-  match liveAttempt with
+              message := "borrowed liveness ownership exceeds certificate text/depth limits" }
+    finishPlainRcWith cfg front borrowOwn (some ownJson)
+  match borrowAttempt with
   | .ok produced => pure produced
   | .error _ =>
-    let canonicalOwn : Own.Plain.Program :=
-      { source := enriched
-        bodies := enriched.funs.map fun fd => Own.Plain.lowerCode (fd.params.map (·.1)) [] fd.body }
-    finishPlainRcWith cfg front canonicalOwn none
+    let liveOwn : Own.Plain.Program :=
+      { source := enriched, bodies := Own.Plain.Live.liveMap front.fir }
+    let liveAttempt : Except Err Produced := do
+      (Own.Plain.Certificate.checkBudget Anf.maxCapturedWork liveOwn.bodies).mapError fun message =>
+        { stage := .cert, code := "own.plain", message }
+      let ownJson := Own.Plain.Certificate.encode liveOwn.bodies
+      unless ownJsonFitsLimits ownJson do
+        throw { stage := .cert, code := "cert.parse",
+                message := "liveness ownership exceeds certificate text/depth limits" }
+      finishPlainRcWith cfg front liveOwn (some ownJson)
+    match liveAttempt with
+    | .ok produced => pure produced
+    | .error _ =>
+      let canonicalOwn : Own.Plain.Program :=
+        { source := enriched
+          bodies := enriched.funs.map fun fd => Own.Plain.lowerCode (fd.params.map (·.1)) [] fd.body }
+      finishPlainRcWith cfg front canonicalOwn none
 
 /-- Single-pass RC certificate producer with allocation outcomes and contract-aware
 `Own.Plain.Program`. -/

@@ -12,7 +12,8 @@ def SimAt (F : Fir.Program) (bodies : Src.NatMap Own.Plain.Code) (P : Program) (
 /-- The source call charge is matched by the actual checked target entry.
 Only a strictly smaller-clock induction hypothesis is used. -/
 theorem call_reach {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    (checked : checkScopedProgram F bodies P = true) (clock : Nat)
+    {borrows : Own.Plain.BorrowSigs} (checked : checkScopedProgram F bodies P borrows = true)
+    (clock : Nat)
     (ih : ∀ k < clock, SimAt F bodies P k) (f : Nat) (vs : List Own.RVal)
     (stk : List (Frame × Fir.Var)) (H : Own.Heap) :
     Reach P clock (.call f vs stk H) stk (Own.Plain.evalCall {source := F, bodies} clock f vs H) := by

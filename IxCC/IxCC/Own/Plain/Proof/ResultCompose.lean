@@ -35,7 +35,21 @@ theorem ResultRel.bind_frame {H H₀ : Heap} {external external₀ : Nat → Nat
       ResultRel H₀ external₀ (f w) (g (v, H'))) :
     ResultRel H₀ external₀ (source.bind f) (target.bind g) := by
   cases h with
-  | ok hd hb hp => exact step _ _ _ hd hb hp
+  | ok hd hb hp _ => exact step _ _ _ hd hb hp
+  | timeout => exact .timeout
+  | trap => exact .trap
+  | resource r => exact .resource r
+  | stuck => exact .stuck
+
+theorem ResultRel.bind_frame_reach {H H₀ : Heap} {external external₀ : Nat → Nat}
+    {source : Result Fir.Val} {target : Result (RVal × Heap)}
+    (h : ResultRel H external source target)
+    {f : Fir.Val → Result Fir.Val} {g : RVal × Heap → Result (RVal × Heap)}
+    (step : ∀ w v H', Proof.Den H' v w → Balance H' external [v] → ExternalPreserved H H' external →
+      ReachablePreserved H H' external → ResultRel H₀ external₀ (f w) (g (v, H'))) :
+    ResultRel H₀ external₀ (source.bind f) (target.bind g) := by
+  cases h with
+  | ok hd hb hp hreach => exact step _ _ _ hd hb hp hreach
   | timeout => exact .timeout
   | trap => exact .trap
   | resource r => exact .resource r

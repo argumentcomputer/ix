@@ -10,7 +10,8 @@ the stale source environment and all suspended frames remain present; exactly
 one live ownership occurrence disappears. This does not yet connect the
 successor's Lir cursor to the actual consumed native instruction. -/
 theorem decrement_cfg {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Cfg.Rc.Program} (accepted : Cfg.Rc.checkScopedProgram F bodies P = true)
+    {P : Cfg.Rc.Program} {borrows : Own.Plain.BorrowSigs}
+    (accepted : Cfg.Rc.checkScopedProgram F bodies P borrows = true)
     {addresses : AddressMap} {saved : List (SavedCaller addresses)}
     {H : Heap} {external : Nat → Nat} {x : Fir.Var} {live : List Fir.Var}
     {ρf : Fir.Env} {ρo : Own.Env} {roots : List RVal} {fr : Cfg.Frame}

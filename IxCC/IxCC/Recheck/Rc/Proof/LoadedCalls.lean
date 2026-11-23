@@ -48,8 +48,11 @@ theorem loaded_call_sim {cfg : Config} {P : Src.Program} {cert : Cert} {f : Fron
       numeric_entry checked native sourceLookup encoded arity region readable
     obtain ⟨den, balance, represented, compatible⟩ :=
       numeric_inputs (P := f.cfg) pairs encoded
-    have simulation := public_entry_eval_sim admission native sourceLookup den balance represented
-      compatible (by simpa only [Own.litArgs, List.length_map] using arity) heap
+    have simulation := public_entry_eval_sim admission native sourceLookup den
+      (numeric_selectOwned_balance _ numbers balance)
+      (fun v hv => numeric_selectBorrowed_reachable {} _ _ numbers v hv)
+      represented compatible (by simpa only [Own.litArgs, List.length_map] using arity)
+      (heap.numeric_selectOwned _ numbers)
     have observed := simulation.map_right fun output =>
       entry.observe model.fuel output.1 output.2
     refine Sim.ofEq (observed.mono ?_) (fun _ => rfl) ?_

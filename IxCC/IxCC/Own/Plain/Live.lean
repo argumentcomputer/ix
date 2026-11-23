@@ -370,7 +370,337 @@ def placeOpt (Δ : Src.NatMap VSet) (owned imm : VSet) : Option (ACode × VSet) 
     some (actionPrefix (decs dead) (place Δ owned' imm ad))
 end
 
-/-- Place `inc`/`dec` on one FIR function body by liveness. -/
+/-- Select arguments at non-borrowed (`false`) positions according to `bs`. -/
+def selectOwnedArgs : List Bool → List Arg → List Arg
+  | _, [] => []
+  | true :: bs, _ :: as => selectOwnedArgs bs as
+  | false :: bs, a :: as => a :: selectOwnedArgs bs as
+  | [], as => as
+
+/-- Select arguments at borrowed (`true`) positions according to `bs`. -/
+def selectBorrowedArgs : List Bool → List Arg → List Arg
+  | _, [] => []
+  | true :: bs, a :: as => a :: selectBorrowedArgs bs as
+  | false :: bs, _ :: as => selectBorrowedArgs bs as
+  | [], _ => []
+
+mutual
+/-- Whether a `Fir.Code` body contains any heap-allocating constructor (`c.arity > 0`). -/
+def hasAllocCode : Fir.Code → Bool
+  | .bind _ (.ctor c _) k => (c.arity > 0) || hasAllocCode k
+  | .bind _ _ k => hasAllocCode k
+  | .jp _ _ _ b k => hasAllocCode b || hasAllocCode k
+  | .case _ alts d => hasAllocAlts alts || hasAllocOpt d
+  | .jmp .. | .ret .. | .tcall .. | .trap => false
+def hasAllocAlts : List Fir.Alt → Bool
+  | [] => false
+  | .mk _ b :: rest => hasAllocCode b || hasAllocAlts rest
+def hasAllocOpt : Option Fir.Code → Bool
+  | none => false
+  | some c => hasAllocCode c
+end
+
+/-- Clear `(f, idx)` to `false` in `borrows`, returning `(borrows', changed)`. -/
+def clearBorrow (borrows : BorrowSigs) (f idx : Nat) : BorrowSigs × Bool :=
+  match borrows.get? f with
+  | none => (borrows, false)
+  | some bs =>
+    if bs.getD idx false then
+      (borrows.insert f (bs.set idx false), true)
+    else (borrows, false)
+
+/-- Clear `(f, i)` for every variable `v` in `args` whose `pbrwSrc` records `(f, i)`
+(optionally restricted to `direct` aliases). -/
+def clearArgsBorrows (f : FunId) (pbrwSrc : Src.NatMap Nat) (directOnly : Bool) (direct : VSet)
+    (args : List Arg) (st : BorrowSigs × Bool) : BorrowSigs × Bool :=
+  args.foldl (fun acc a =>
+    match a with
+    | .var v =>
+      match pbrwSrc.get? v with
+      | some i =>
+        if !directOnly || direct.contains v then clearBorrow acc.1 f i |>.map id (acc.2 || ·)
+        else acc
+      | none => acc
+    | _ => acc) st
+
+/-- Clear `(f, i)` for a single variable if present in `pbrwSrc`. -/
+def clearVarBorrow (f : FunId) (pbrwSrc : Src.NatMap Nat) (directOnly : Bool) (direct : VSet)
+    (v : Var) (st : BorrowSigs × Bool) : BorrowSigs × Bool :=
+  match pbrwSrc.get? v with
+  | some i =>
+    if !directOnly || direct.contains v then
+      let (b', ch) := clearBorrow st.1 f i
+      (b', st.2 || ch)
+    else st
+  | none => st
+
+/-- Check arguments of a `.call` or `.tcall` to callee `g` against `borrows`:
+* owned callee positions force any direct-aliased borrowed param of `f` to become owned;
+* for tail calls (`isTail = true`), borrowed callee positions whose argument is neither immediate
+  nor derived from a borrowed param of `f` force the *callee's* parameter to become owned. -/
+def checkCallArgsBorrow (f g : FunId) (isTail : Bool) (imm direct : VSet)
+    (pbrwSrc : Src.NatMap Nat) (args : List Arg) (st : BorrowSigs × Bool) : BorrowSigs × Bool :=
+  let gbs := st.1.getD g []
+  (args.zipIdx).foldl (fun acc (a, k) =>
+    let isCalleeBrw := gbs.getD k false
+    if isCalleeBrw then
+      if isTail then
+        match a with
+        | .var v =>
+          if !imm.contains v && !pbrwSrc.contains v then
+            let (b', ch) := clearBorrow acc.1 g k
+            (b', acc.2 || ch)
+          else acc
+        | _ => acc
+      else acc
+    else
+      match a with
+      | .var v => clearVarBorrow f pbrwSrc false direct v acc
+      | _ => acc) st
+
+/-- Apply `primImmArgs` to `imm` only (matching `Ctx.immArgs`). -/
+def addPrimImm : List Bool → List Arg → VSet → VSet
+  | true :: ms, .var v :: as, imm => addPrimImm ms as (Src.NatSet.insert imm v)
+  | _ :: ms, _ :: as, imm => addPrimImm ms as imm
+  | _, _, imm => imm
+
+mutual
+/-- One pass over `fd.body` clearing any borrow flags invalidated by consuming uses,
+allocating-function scrutiny (kept owned for FBIP reuse), or non-caller-backed tail calls. -/
+def refineBorrowCode (f : FunId) (allocs : Bool) (imm direct : VSet) (pbrwSrc : Src.NatMap Nat)
+    (st : BorrowSigs × Bool) : Fir.Code → BorrowSigs × Bool
+  | .bind x r k =>
+    match r with
+    | .arg (.var y) =>
+      if imm.contains y then
+        refineBorrowCode f allocs (Src.NatSet.insert imm x) direct pbrwSrc st k
+      else
+        let pbrwSrc' := match pbrwSrc.get? y with
+          | some i => pbrwSrc.insert x i
+          | none => pbrwSrc
+        let direct' := if direct.contains y then Src.NatSet.insert direct x else direct
+        refineBorrowCode f allocs imm direct' pbrwSrc' st k
+    | .arg _ =>
+      refineBorrowCode f allocs (Src.NatSet.insert imm x) direct pbrwSrc st k
+    | .ctor c args =>
+      if c.arity == 0 then
+        refineBorrowCode f allocs (Src.NatSet.insert imm x) direct pbrwSrc st k
+      else
+        let st := clearArgsBorrows f pbrwSrc false direct args st
+        refineBorrowCode f allocs imm direct pbrwSrc st k
+    | .call g args =>
+      let st := checkCallArgsBorrow f g false imm direct pbrwSrc args st
+      refineBorrowCode f allocs imm direct pbrwSrc st k
+    | .proj y _ _ =>
+      if imm.contains y then
+        refineBorrowCode f allocs (Src.NatSet.insert imm x) direct pbrwSrc st k
+      else
+        let pbrwSrc' := match pbrwSrc.get? y with
+          | some i => pbrwSrc.insert x i
+          | none => pbrwSrc
+        refineBorrowCode f allocs imm direct pbrwSrc' st k
+    | .prim op args =>
+      let imm' := Src.NatSet.insert (addPrimImm (primImmArgs op args.length) args imm) x
+      refineBorrowCode f allocs imm' direct pbrwSrc st k
+  | .jp _ _ _ body k =>
+    let st := refineBorrowCode f allocs imm direct pbrwSrc st body
+    refineBorrowCode f allocs imm direct pbrwSrc st k
+  | .jmp _ args =>
+    clearArgsBorrows f pbrwSrc false direct args st
+  | .case x alts d =>
+    let st := if allocs then clearVarBorrow f pbrwSrc true direct x st else st
+    let st := refineBorrowAlts f allocs imm direct pbrwSrc st alts
+    refineBorrowOpt f allocs imm direct pbrwSrc st d
+  | .ret a =>
+    clearArgsBorrows f pbrwSrc false direct [a] st
+  | .tcall g args =>
+    checkCallArgsBorrow f g true imm direct pbrwSrc args st
+  | .trap => st
+
+def refineBorrowAlts (f : FunId) (allocs : Bool) (imm direct : VSet) (pbrwSrc : Src.NatMap Nat)
+    (st : BorrowSigs × Bool) : List Fir.Alt → BorrowSigs × Bool
+  | [] => st
+  | .mk _ body :: rest =>
+    let st := refineBorrowCode f allocs imm direct pbrwSrc st body
+    refineBorrowAlts f allocs imm direct pbrwSrc st rest
+
+def refineBorrowOpt (f : FunId) (allocs : Bool) (imm direct : VSet) (pbrwSrc : Src.NatMap Nat)
+    (st : BorrowSigs × Bool) : Option Fir.Code → BorrowSigs × Bool
+  | none => st
+  | some c => refineBorrowCode f allocs imm direct pbrwSrc st c
+end
+
+/-- One full program sweep of interprocedural borrow refinement. -/
+def refineBorrowPass (F : Fir.Program) (allocs : Src.NatMap Bool) (borrows : BorrowSigs) :
+    BorrowSigs × Bool :=
+  (List.range F.size).foldl (fun st f =>
+    match F.fun? f with
+    | none => st
+    | some fd =>
+      let bs := st.1.getD f []
+      let (pbrwSrc, direct) := (fd.params.zipIdx).foldl (fun (pm, dm) ((p, _), i) =>
+        if bs.getD i false then (pm.insert p i, Src.NatSet.insert dm p) else (pm, dm)) (.leaf, .leaf)
+      refineBorrowCode f (allocs.getD f false) .leaf direct pbrwSrc st fd.body) (borrows, false)
+
+def borrowFixLoop (F : Fir.Program) (allocs : Src.NatMap Bool) : Nat → BorrowSigs → BorrowSigs
+  | 0, borrows => borrows
+  | fuel + 1, borrows =>
+    let (borrows', changed) := refineBorrowPass F allocs borrows
+    if changed then borrowFixLoop F allocs fuel borrows' else borrows'
+
+/-- Total fuel-bounded interprocedural borrow inference. Starts optimistic (`true`) on every
+parameter of every non-exported function and monotonically clears parameters to `false` (owned)
+until fixpoint. Exported functions always own all parameters. -/
+def inferBorrows (F : Fir.Program) : BorrowSigs :=
+  let expSet := VSet.ofVars F.exports
+  let init : BorrowSigs := (List.range F.size).foldl (fun m f =>
+    match F.fun? f with
+    | none => m
+    | some fd =>
+      let b := !expSet.contains f
+      m.insert f (List.replicate fd.params.length b)) .leaf
+  let allocs : Src.NatMap Bool := (List.range F.size).foldl (fun m f =>
+    match F.fun? f with
+    | none => m
+    | some fd => m.insert f (hasAllocCode fd.body)) .leaf
+  let fuel := 64
+  borrowFixLoop F allocs fuel init
+
+mutual
+def placeWith (borrows : BorrowSigs) (Δ : Src.NatMap VSet) (owned imm pbrw : VSet) : ACode → Code
+  | .bind x r k liveK =>
+    match r with
+    | .proj y _ _ =>
+      if imm.contains y then
+        .bind x r (placeWith borrows Δ owned (Src.NatSet.insert imm x) pbrw k)
+      else if pbrw.contains y then
+        let dead := VSet.toSortedVars (VSet.diff owned liveK)
+        let owned' := VSet.inter owned liveK
+        .bind x r (actionPrefix (decs dead) (placeWith borrows Δ owned' imm (Src.NatSet.insert pbrw x) k))
+      else
+        let (owned, incs) :=
+          if liveK.contains x then (Src.NatSet.insert owned x, [Action.inc x 1])
+          else (owned, [])
+        let dead := VSet.toSortedVars (VSet.diff owned liveK)
+        let owned' := VSet.inter owned liveK
+        .bind x r (actionPrefix (incs ++ decs dead) (placeWith borrows Δ owned' imm pbrw k))
+    | .prim op args =>
+      let (owned, imm) := applyPrimImm (primImmArgs op args.length) args (owned, imm)
+      let imm := Src.NatSet.insert imm x
+      let dead := VSet.toSortedVars (VSet.diff owned liveK)
+      let owned' := VSet.inter owned liveK
+      .bind x r (actionPrefix (decs dead) (placeWith borrows Δ owned' imm pbrw k))
+    | .arg (.var y) =>
+      if imm.contains y then
+        .bind x r (placeWith borrows Δ owned (Src.NatSet.insert imm x) pbrw k)
+      else if !owned.contains y && pbrw.contains y then
+        let dead := VSet.toSortedVars (VSet.diff owned liveK)
+        let owned' := VSet.inter owned liveK
+        .bind x r (actionPrefix (decs dead) (placeWith borrows Δ owned' imm (Src.NatSet.insert pbrw x) k))
+      else
+        let (incs, owned) := consume owned imm liveK [.var y]
+        let (owned, post) :=
+          if liveK.contains x then (Src.NatSet.insert owned x, [])
+          else (owned, [Action.dec x])
+        actionPrefix incs (.bind x r (actionPrefix post (placeWith borrows Δ owned imm pbrw k)))
+    | .arg _ =>
+      .bind x r (placeWith borrows Δ owned (Src.NatSet.insert imm x) pbrw k)
+    | .ctor c args =>
+      if c.arity == 0 then
+        .bind x r (placeWith borrows Δ owned (Src.NatSet.insert imm x) pbrw k)
+      else
+        let (incs, owned) := consume owned imm liveK args
+        let dead := VSet.toSortedVars (VSet.diff owned liveK)
+        let owned := VSet.inter owned liveK
+        let (owned, post) :=
+          if liveK.contains x then (Src.NatSet.insert owned x, [])
+          else (owned, [Action.dec x])
+        actionPrefix (decs dead ++ incs) (.bind x r (actionPrefix post (placeWith borrows Δ owned imm pbrw k)))
+    | .call f args =>
+      let bs := borrows.getD f []
+      let ownedArgs := selectOwnedArgs bs args
+      let borrowedArgs := selectBorrowedArgs bs args
+      let keepAlive := VSet.union liveK (VSet.ofVars (argVars borrowedArgs))
+      let (incs, ownedAfterTake) := consume owned imm keepAlive ownedArgs
+      let deadBefore := VSet.toSortedVars (VSet.diff ownedAfterTake keepAlive)
+      let ownedAcross := VSet.inter ownedAfterTake keepAlive
+      let deadAfter := VSet.toSortedVars (VSet.diff ownedAcross liveK)
+      let ownedAfterCall := VSet.inter ownedAcross liveK
+      let (ownedFinal, post) :=
+        if liveK.contains x then (Src.NatSet.insert ownedAfterCall x, decs deadAfter)
+        else (ownedAfterCall, Action.dec x :: decs deadAfter)
+      actionPrefix (decs deadBefore ++ incs) (.bind x r (actionPrefix post (placeWith borrows Δ ownedFinal imm pbrw k)))
+  | .jp j ps rec body k captured liveBody liveK =>
+    let captured := captured.filter (fun c => !imm.contains c && !pbrw.contains c)
+    let capturedSet := VSet.ofVars captured
+    let ownedBody := VSet.addVars capturedSet ps
+    let deadBody := VSet.toSortedVars (VSet.diff ownedBody liveBody)
+    let ownedBody' := VSet.inter ownedBody liveBody
+    let Δbody := if rec then Δ.insert j capturedSet else Δ
+    let bodyCode := actionPrefix (decs deadBody) (placeWith borrows Δbody ownedBody' imm pbrw body)
+    let deadK := VSet.toSortedVars (VSet.diff owned liveK)
+    let ownedK := VSet.inter owned liveK
+    let kCode := actionPrefix (decs deadK) (placeWith borrows (Δ.insert j capturedSet) ownedK imm pbrw k)
+    .jp j ps captured rec bodyCode kCode
+  | .jmp j args =>
+    let keep := Δ.getD j .leaf
+    let (incs, owned) := consume owned imm keep args
+    let dead := VSet.toSortedVars (VSet.diff owned keep)
+    actionPrefix (incs ++ decs dead) (.jmp j args)
+  | .case x alts d =>
+    .case x (placeAltsWith borrows Δ owned imm pbrw alts) (placeOptWith borrows Δ owned imm pbrw d)
+  | .ret a =>
+    let (incs, owned) := consume owned imm .leaf [a]
+    actionPrefix (incs ++ decs (VSet.toSortedVars owned)) (.ret a)
+  | .tcall f args =>
+    let bs := borrows.getD f []
+    let ownedArgs := selectOwnedArgs bs args
+    let (incs, owned) := consume owned imm .leaf ownedArgs
+    actionPrefix (incs ++ decs (VSet.toSortedVars owned)) (.tcall f args)
+  | .trap => .trap
+
+def placeAltsWith (borrows : BorrowSigs) (Δ : Src.NatMap VSet) (owned imm pbrw : VSet) :
+    List AAlt → List Alt
+  | [] => []
+  | .mk key ab lb :: rest =>
+    let dead := VSet.toSortedVars (VSet.diff owned lb)
+    let owned' := VSet.inter owned lb
+    .mk key (actionPrefix (decs dead) (placeWith borrows Δ owned' imm pbrw ab)) ::
+      placeAltsWith borrows Δ owned imm pbrw rest
+
+def placeOptWith (borrows : BorrowSigs) (Δ : Src.NatMap VSet) (owned imm pbrw : VSet) :
+    Option (ACode × VSet) → Option Code
+  | none => none
+  | some (ad, ld) =>
+    let dead := VSet.toSortedVars (VSet.diff owned ld)
+    let owned' := VSet.inter owned ld
+    some (actionPrefix (decs dead) (placeWith borrows Δ owned' imm pbrw ad))
+end
+
+/-- Place `inc`/`dec` on one FIR function body using liveness and interprocedural borrow masks. -/
+def liveBodyWith (borrows : BorrowSigs) (selfBorrows : List Bool) (params : List Var)
+    (body : Fir.Code) : Code :=
+  let (ab, lb) := annotate .leaf body
+  let owned := VSet.ofVars (Ctx.entryOwned params selfBorrows)
+  let pbrw := VSet.ofVars (Ctx.entryBorrowed params selfBorrows)
+  let dead := VSet.toSortedVars (VSet.diff owned lb)
+  let owned' := VSet.inter owned lb
+  actionPrefix (decs dead) (placeWith borrows .leaf owned' .leaf pbrw ab)
+
+/-- Map a `Src.NatMap` preserving its exact trie shape while passing each entry's key. -/
+def mapWithKeyAux {α β : Type} (f : Nat → α → β) : Nat → Nat → Src.NatMap α → Src.NatMap β
+  | _, _, .leaf => .leaf
+  | k, w, .node v z o =>
+    .node (v.map (f k)) (mapWithKeyAux f k (2 * w) z) (mapWithKeyAux f (k + w) (2 * w) o)
+
+/-- Place `inc`/`dec` on every function in a FIR program by liveness + interprocedural borrows. -/
+def liveMapWith (F : Fir.Program) : Src.NatMap Code × BorrowSigs :=
+  let borrows := inferBorrows F
+  let bodies := mapWithKeyAux (fun f fd =>
+    liveBodyWith borrows (borrows.getD f []) (fd.params.map (·.1)) fd.body) 0 1 F.funs
+  (bodies, borrows)
+
+/-- Place `inc`/`dec` on one FIR function body by liveness (without borrowed parameters). -/
 def liveBody (params : List Var) (body : Fir.Code) : Code :=
   let (ab, lb) := annotate .leaf body
   let owned := VSet.ofVars params

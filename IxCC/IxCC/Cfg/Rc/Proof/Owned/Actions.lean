@@ -109,18 +109,18 @@ theorem evalAction_dec_congr {ρ ρ' : Own.Env} {H : Heap} {x : Fir.Var}
 section
 variable {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
   {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-  {main clock : Nat} {sourceJoins : List Fir.JEntry}
+  {main clock : Nat} {sourceJoins : List Fir.JEntry} {borrows : Own.Plain.BorrowSigs}
 
 /-- **One increment**, of an owned, borrowed or immediate variable. -/
-theorem physical_inc (admission : CodeAdmission F bodies P config pairs functions)
+theorem physical_inc (admission : CodeAdmission F bodies P config pairs functions borrows)
     {x : Fir.Var} {n : Nat} {k : Own.Plain.Code}
-    (next : PhysicalCode F P config pairs main clock sourceJoins k) :
-    PhysicalCode F P config pairs main clock sourceJoins (.act (.inc x n) k) := by
+    (next : PhysicalCode F P config pairs main clock sourceJoins k borrows) :
+    PhysicalCode F P config pairs main clock sourceJoins (.act (.inc x n) k) borrows := by
   intro H addresses external live Γ Δ sourceEnv ownedEnv roots lex ownedJoins sourceFunction
     function source target memory context base bump limit regionBytes slots lists callers
     sourceLookup before heap
   obtain ⟨Γ', hinc, typed⟩ := Own.Plain.checkCode_inc before.typed
-  obtain ⟨value, H', owned', rfl, ownLookup, permission, ownAction, state, preserved, refs⟩ :=
+  obtain ⟨value, H', owned', rfl, ownLookup, permission, ownAction, state, preserved, hreach, refs⟩ :=
     Own.Plain.inc_step_refs before.owned hinc
   have sub := before.lexical.1
   have frameLookup : source.env.get? x = some value := sub x value ownLookup
@@ -159,14 +159,14 @@ theorem physical_inc (admission : CodeAdmission F bodies P config pairs function
         (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main) H' addresses external
         live Γ' Δ sourceEnv ownedEnv owned' lex sourceJoins ownedJoins k sourceFunction.vars function
         {source with rest := tail}
-        {target with pos := target.pos+1, env := target.env.insert first 1, dsts := []} :=
+        {target with pos := target.pos+1, env := target.env.insert first 1, dsts := []} borrows :=
       ⟨state, typed, after,
         ⟨before.frame.lookup, cursor', words', by rw [size]; exact before.frame.bounded,
           before.frame.compatible⟩,
         before.scope, rfl,
         consumed_call_done before.frame.lookup before.frame.cursor head' consuming source.env⟩
     have history : HeapHistory H.size addresses H'.size addresses := ⟨by omega, fun _ _ => rfl⟩
-    exact ResultAt.prefix trace preserved history (by omega)
+    exact ResultAt.prefix trace hreach history (by omega)
       (next H' addresses external live Γ' Δ sourceEnv ownedEnv owned' lex ownedJoins sourceFunction
         function {source with rest := tail}
         {target with pos := target.pos+1, env := target.env.insert first 1, dsts := []} mem'
@@ -174,15 +174,15 @@ theorem physical_inc (admission : CodeAdmission F bodies P config pairs function
   · exact ResultAt.of_fails failed
 
 /-- **One decrement**, of an owned or immediate variable: a release. -/
-theorem physical_dec (admission : CodeAdmission F bodies P config pairs functions)
+theorem physical_dec (admission : CodeAdmission F bodies P config pairs functions borrows)
     {x : Fir.Var} {k : Own.Plain.Code}
-    (next : PhysicalCode F P config pairs main clock sourceJoins k) :
-    PhysicalCode F P config pairs main clock sourceJoins (.act (.dec x) k) := by
+    (next : PhysicalCode F P config pairs main clock sourceJoins k borrows) :
+    PhysicalCode F P config pairs main clock sourceJoins (.act (.dec x) k) borrows := by
   intro H addresses external live Γ Δ sourceEnv ownedEnv roots lex ownedJoins sourceFunction
     function source target memory context base bump limit regionBytes slots lists callers
     sourceLookup before heap
   obtain ⟨Γ', hdec, typed⟩ := Own.Plain.checkCode_dec before.typed
-  obtain ⟨value, H', owned', ownLookup, refs, ownAction, state, preserved⟩ :=
+  obtain ⟨value, H', owned', ownLookup, refs, ownAction, state, preserved, hreach⟩ :=
     Own.Plain.dec_step_refs before.owned hdec
   have sub := before.lexical.1
   have frameLookup : source.env.get? x = some value := sub x value ownLookup
@@ -239,14 +239,14 @@ theorem physical_dec (admission : CodeAdmission F bodies P config pairs function
         (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main) H' addresses external
         live Γ' Δ sourceEnv ownedEnv owned' lex sourceJoins ownedJoins k sourceFunction.vars function
         {source with rest := tail}
-        {target with pos := target.pos+1, env := target.env.insert first 1, dsts := []} :=
+        {target with pos := target.pos+1, env := target.env.insert first 1, dsts := []} borrows :=
       ⟨state, typed, after,
         ⟨before.frame.lookup, cursor', words', by rw [size]; exact before.frame.bounded,
           before.frame.compatible⟩,
         before.scope, rfl,
         consumed_call_done before.frame.lookup before.frame.cursor head' consuming source.env⟩
     have history : HeapHistory H.size addresses H'.size addresses := ⟨by omega, fun _ _ => rfl⟩
-    exact ResultAt.prefix trace preserved history (by omega)
+    exact ResultAt.prefix trace hreach history (by omega)
       (next H' addresses external live Γ' Δ sourceEnv ownedEnv owned' lex ownedJoins sourceFunction
         function {source with rest := tail}
         {target with pos := target.pos+1, env := target.env.insert first 1, dsts := []} mem'

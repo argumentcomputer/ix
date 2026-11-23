@@ -17,7 +17,8 @@ open IxCC.Own.Plain (Ctx JCtx checkCode)
 
 theorem Activation.return_value
     {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    (checked : checkScopedProgram F bodies P = true)
+    {borrows : Own.Plain.BorrowSigs}
+    (checked : checkScopedProgram F bodies P borrows = true)
     {pairs : List (Nat × Cfg.Fun)} (consuming : consumeAll P = .ok pairs)
     (functions : Nat → Lir.Func) (main : Nat)
     {H : Own.Heap} {addresses : AddressMap} {external : Nat → Nat} {roots : List Own.RVal}
@@ -27,7 +28,7 @@ theorem Activation.return_value
     {source : Cfg.Frame} {target : Lir.Frame}
     (before : Activation F P pairs (Public.Spec.sourceStage P functions main) H addresses
       external live Γ Δ sourceEnv ownedEnv roots lex sourceJoins ownedJoins (.ret arg)
-      sourceFunction.vars function source target)
+      sourceFunction.vars function source target borrows)
     (sourceLookup : F.fun? source.fn = some sourceFunction)
     {memory : X86.Memory} {context base bump limit : Lir.Word} {regionBytes : Nat}
     {slots : List Slot} {lists : Nat → List Lir.Word}

@@ -32,6 +32,7 @@ structure Returned (P : Program) (pairs : List (Nat × Cfg.Fun)) (lp : Lir.Progr
   bounded : Own.Plain.Bounded heap.size value
   compatible : ValueCtorOk (tablesOf P pairs) value
   preserved : Own.Plain.ExternalPreserved origin heap external
+  reachable : Own.Plain.ReachablePreserved origin heap external
   history : HeapHistory origin.size originAddresses heap.size addresses
 
 variable {P : Program} {pairs : List (Nat × Cfg.Fun)} {lp : Lir.Program}
@@ -40,7 +41,7 @@ variable {P : Program} {pairs : List (Nat × Cfg.Fun)} {lp : Lir.Program}
 
 def Returned.preheap {logical : Fir.Val}
     (after : Returned P pairs lp H₁ addresses₁ external context base limit regionBytes logical)
-    (preserved : Own.Plain.ExternalPreserved H₀ H₁ external)
+    (reachable : Own.Plain.ReachablePreserved H₀ H₁ external)
     (history : HeapHistory H₀.size addresses₀ H₁.size addresses₁) :
     Returned P pairs lp H₀ addresses₀ external context base limit regionBytes logical := {
   heap := after.heap
@@ -59,8 +60,8 @@ def Returned.preheap {logical : Fir.Val}
   represented := after.represented
   bounded := after.bounded
   compatible := after.compatible
-  preserved := fun root value externalRoot den =>
-    after.preserved root value externalRoot (preserved root value externalRoot den)
+  preserved := (reachable.trans after.reachable).externalPreserved
+  reachable := reachable.trans after.reachable
   history := history.trans after.history }
 
 def ResultAt (P : Program) (pairs : List (Nat × Cfg.Fun)) (lp : Lir.Program)
@@ -100,7 +101,7 @@ idle-state invariant inside a partially executed release is required. -/
 theorem ResultAt.prefix {clock₀ clock₁ cost : Nat} {initial middle : Lir.State}
     {callers : List Lir.Frame} {result : Sem.Result Fir.Val}
     (trace : Sem.Star (Lir.semStep lp) initial cost middle)
-    (preserved : Own.Plain.ExternalPreserved H₀ H₁ external)
+    (reachable : Own.Plain.ReachablePreserved H₀ H₁ external)
     (history : HeapHistory H₀.size addresses₀ H₁.size addresses₁)
     (clockBound : clock₀ ≤ clock₁ + cost)
     (execution : ResultAt P pairs lp H₁ addresses₁ external context base limit regionBytes
@@ -109,7 +110,7 @@ theorem ResultAt.prefix {clock₀ clock₁ cost : Nat} {initial middle : Lir.Sta
   cases result with
   | ok logical =>
     rcases execution with ⟨after, more, rest⟩ | failed
-    · exact .inl ⟨after.preheap preserved history, cost + more, trace.trans rest⟩
+    · exact .inl ⟨after.preheap reachable history, cost + more, trace.trans rest⟩
     · exact .inr (fails_prefix trace failed)
   | trap =>
     rcases execution with ⟨more, final, rest, trapped⟩ | failed
@@ -123,7 +124,7 @@ theorem ResultAt.prefix {clock₀ clock₁ cost : Nat} {initial middle : Lir.Sta
 theorem ResultAt.charge {clock cost : Nat} {initial middle : Lir.State}
     {callers : List Lir.Frame} {body : Nat → Sem.Result Fir.Val}
     (trace : Sem.Star (Lir.semStep lp) initial cost middle) (charged : 1 ≤ cost)
-    (preserved : Own.Plain.ExternalPreserved H₀ H₁ external)
+    (reachable : Own.Plain.ReachablePreserved H₀ H₁ external)
     (history : HeapHistory H₀.size addresses₀ H₁.size addresses₁)
     (next : ∀ smaller, clock = smaller + 1 →
       ResultAt P pairs lp H₁ addresses₁ external context base limit regionBytes smaller middle callers (body smaller)) :
@@ -132,7 +133,7 @@ theorem ResultAt.charge {clock cost : Nat} {initial middle : Lir.State}
   cases clock with
   | zero => exact .inl (Sem.Reaches.timeout_of_star trace (by omega))
   | succ smaller =>
-    exact ResultAt.prefix trace preserved history (by omega) (next smaller rfl)
+    exact ResultAt.prefix trace reachable history (by omega) (next smaller rfl)
 
 
 

@@ -23,14 +23,14 @@ open IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar
 section
 variable {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
   {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-  {main clock : Nat} {sourceJoins : List Fir.JEntry}
+  {main clock : Nat} {sourceJoins : List Fir.JEntry} {borrows : Own.Plain.BorrowSigs}
 
 /-- A binding, by its right-hand side. -/
-theorem bind_result (admission : CodeAdmission F bodies P config pairs functions)
-    (smaller : ∀ k, k < clock → PhysicalAtClock F P config pairs main k)
+theorem bind_result (admission : CodeAdmission F bodies P config pairs functions borrows)
+    (smaller : ∀ k, k < clock → PhysicalAtClock F P config pairs main k borrows)
     {x : Fir.Var} {rhs : Fir.Rhs} {k : Own.Plain.Code}
-    (next : PhysicalCode F P config pairs main clock sourceJoins k) :
-    PhysicalCode F P config pairs main clock sourceJoins (.bind x rhs k) := by
+    (next : PhysicalCode F P config pairs main clock sourceJoins k borrows) :
+    PhysicalCode F P config pairs main clock sourceJoins (.bind x rhs k) borrows := by
   cases rhs with
   | arg arg => exact argument_result admission arg next
   | ctor ctor args =>
@@ -46,11 +46,11 @@ end
 /-- **The physical simulation's induction over the typing context.** -/
 theorem eval_physical {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     {P : Program} {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)}
-    {functions : List Lir.Func}
-    (admission : CodeAdmission F bodies P config pairs functions) (main clock : Nat)
-    (smaller : ∀ next, next < clock → PhysicalAtClock F P config pairs main next)
+    {functions : List Lir.Func} {borrows : Own.Plain.BorrowSigs}
+    (admission : CodeAdmission F bodies P config pairs functions borrows) (main clock : Nat)
+    (smaller : ∀ next, next < clock → PhysicalAtClock F P config pairs main next borrows)
     (sourceJoins : List Fir.JEntry) (code : Own.Plain.Code) :
-    PhysicalCode F P config pairs main clock sourceJoins code := by
+    PhysicalCode F P config pairs main clock sourceJoins code borrows := by
   match code with
   | .act (.inc x n) k =>
     exact physical_inc admission (eval_physical admission main clock smaller sourceJoins k)
@@ -90,9 +90,9 @@ decreasing_by
 /-- **The physical simulation over the typing context**, at every clock. -/
 theorem checked_physical {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     {P : Program} {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)}
-    {functions : List Lir.Func}
-    (admission : CodeAdmission F bodies P config pairs functions) (main : Nat) :
-    ∀ clock, PhysicalAtClock F P config pairs main clock := by
+    {functions : List Lir.Func} {borrows : Own.Plain.BorrowSigs}
+    (admission : CodeAdmission F bodies P config pairs functions borrows) (main : Nat) :
+    ∀ clock, PhysicalAtClock F P config pairs main clock borrows := by
   intro clock
   induction clock using Nat.strongRecOn with
   | ind clock smaller =>
@@ -103,12 +103,13 @@ theorem checked_physical {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
 physical statement is derived here, rather than carried in that contract. -/
 theorem public_physical {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     {P : Program} {config : Rt.Config} {lowered : Public.Lowered}
-    (checked : checkScopedProgram F bodies P = true)
-    (accepted : Public.lower config F bodies P = .ok lowered) :
+    {borrows : Own.Plain.BorrowSigs}
+    (checked : checkScopedProgram F bodies P borrows = true)
+    (accepted : Public.lower config F bodies P borrows = .ok lowered) :
     ∃ main pairs functions,
-      CodeAdmission F bodies P config pairs functions ∧
+      CodeAdmission F bodies P config pairs functions borrows ∧
       P.base.exports.head? = some main ∧
-      ∀ clock, PhysicalAtClock F P config pairs main clock := by
+      ∀ clock, PhysicalAtClock F P config pairs main clock borrows := by
   obtain ⟨main, pairs, functions, admission, entry⟩ := CodeAdmission.of_public checked accepted
   exact ⟨main, pairs, functions, admission, entry, checked_physical admission main⟩
 

@@ -13,7 +13,8 @@ with exactly the same returned value and abstract heap. The depth-to-total-clock
 simulation uses the original structural Cfg fuel bound. Native physical-memory
 representation and release-loop costs are separate obligations. -/
 theorem checked_correct {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    (checked : checkScopedProgram F bodies P = true) (f : Nat) (vs : List Own.RVal)
+    {borrows : Own.Plain.BorrowSigs} (checked : checkScopedProgram F bodies P borrows = true)
+    (f : Nat) (vs : List Own.RVal)
     (H : Own.Heap) :
     Sem.Sim Eq id (fun k => Own.Plain.evalCall {source := F, bodies} k f vs H)
       (fun k => run P k f vs H) := by
@@ -34,8 +35,8 @@ theorem checked_correct {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {
     exact ⟨n, s', hn, .inl hlt⟩
 
 theorem checked_correct_traced {Env E : Type} {F : Fir.Program}
-    {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    (checked : checkScopedProgram F bodies P = true) (f : Nat) (vs : List Own.RVal)
+    {bodies : Src.NatMap Own.Plain.Code} {P : Program} {borrows : Own.Plain.BorrowSigs}
+    (checked : checkScopedProgram F bodies P borrows = true) (f : Nat) (vs : List Own.RVal)
     (H : Own.Heap) :
     Sem.TSim (Env := Env) (E := E) Eq id
       (fun _ k => Sem.Traced.lift (Own.Plain.evalCall {source := F, bodies} k f vs H))

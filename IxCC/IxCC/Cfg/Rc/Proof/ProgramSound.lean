@@ -70,7 +70,8 @@ theorem generate_entry {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
         (List.mem_map.mpr ⟨(f, fd, table), mem, rfl⟩)
 
 theorem checked_entry {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} (h : checkProgram F bodies P = true) {f : Nat} (hf : f < F.size) :
+    {P : Program} {borrows : Own.Plain.BorrowSigs}
+    (h : checkProgram F bodies P borrows = true) {f : Nat} (hf : f < F.size) :
     ∃ fd table, P.base.fun? f = some fd ∧ P.actions.get? f = some table ∧ EntryOk F bodies f fd table :=
   generate_entry (checkProgram_parts h).2 hf
 

@@ -14,7 +14,8 @@ namespace IxCC.Cfg.Rc
 open IxCC.Sem (Result)
 
 theorem eval_reach {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    (checked : checkScopedProgram F bodies P = true) (clock : Nat)
+    {borrows : Own.Plain.BorrowSigs} (checked : checkScopedProgram F bodies P borrows = true)
+    (clock : Nat)
     (ihClock : ∀ k < clock, SimAt F bodies P k)
     (fr : Frame) (ρ : Own.Env) (saved : List Own.Plain.JEntry) (H : Own.Heap)
     (code : Own.Plain.Code) (stk : List (Frame × Fir.Var)) (stateRel : At F P fr ρ saved code) :
@@ -137,13 +138,15 @@ decreasing_by
   all_goals omega
 
 theorem checked_sim_at {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    (checked : checkScopedProgram F bodies P = true) : ∀ clock, SimAt F bodies P clock := by
+    {borrows : Own.Plain.BorrowSigs} (checked : checkScopedProgram F bodies P borrows = true) :
+    ∀ clock, SimAt F bodies P clock := by
   intro clock
   induction clock using Nat.strongRecOn with
   | _ clock ih => exact eval_reach checked clock ih
 
 theorem checked_call_reach {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    (checked : checkScopedProgram F bodies P = true) (clock f : Nat) (vs : List Own.RVal)
+    {borrows : Own.Plain.BorrowSigs} (checked : checkScopedProgram F bodies P borrows = true)
+    (clock f : Nat) (vs : List Own.RVal)
     (stk : List (Frame × Fir.Var)) (H : Own.Heap) :
     Reach P clock (.call f vs stk H) stk (Own.Plain.evalCall {source := F, bodies} clock f vs H) :=
   call_reach checked clock (fun k _ => checked_sim_at checked k) f vs stk H

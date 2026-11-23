@@ -8,7 +8,7 @@ namespace IxCC.Cfg.Rc.Native.Spec
 /-- An ordinary checked source destination is below the original Fir bound,
 even when the physical function also has reserved marker destinations. -/
 theorem checked_bind_real {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    (checked : checkScopedProgram F bodies P = true)
+    {borrows : Own.Plain.BorrowSigs} (checked : checkScopedProgram F bodies P borrows = true)
     {source : Cfg.Frame} {ρ : Own.Env} {saved : List Own.Plain.JEntry}
     {x : Nat} {rhs : Fir.Rhs} {code : Own.Plain.Code}
     (atBinding : At F P source ρ saved (.bind x rhs code))

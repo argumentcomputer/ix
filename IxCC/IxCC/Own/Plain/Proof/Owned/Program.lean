@@ -86,8 +86,10 @@ theorem erasesOpt_sound : ∀ (d : Option Code) (d' : Option Fir.Code),
     rw [eraseOpt, erases_sound c s h]
 end
 
-theorem checkBodyE_ok {fd : Fir.Fun} {body : Code} (h : checkBodyE fd body = .ok ()) :
-    eraseCode body = fd.body ∧ checkCode .leaf (Ctx.entry (fd.params.map (·.1))) body = .ok () := by
+theorem checkBodyE_ok {fd : Fir.Fun} {body : Code} {borrows : BorrowSigs} {selfBorrows : List Bool}
+    (h : checkBodyE fd body borrows selfBorrows = .ok ()) :
+    eraseCode body = fd.body ∧
+      checkCode .leaf (Ctx.entryWith (fd.params.map (·.1)) selfBorrows) body borrows = .ok () := by
   unfold checkBodyE at h
   cases he : erases body fd.body
   · simp only [he, Bool.false_eq_true, ↓reduceIte] at h
@@ -95,10 +97,11 @@ theorem checkBodyE_ok {fd : Fir.Fun} {body : Code} (h : checkBodyE fd body = .ok
   · simp only [he, ↓reduceIte, pure_bind] at h
     exact ⟨erases_sound _ _ he, h⟩
 
-theorem checkFuns_ok {F : Fir.Program} {candidate : Src.NatMap Code} :
-    ∀ {fs : List Fir.FunId}, checkFuns F candidate fs = .ok () →
+theorem checkFuns_ok {F : Fir.Program} {candidate : Src.NatMap Code} {borrows : BorrowSigs} :
+    ∀ {fs : List Fir.FunId}, checkFuns F candidate fs borrows = .ok () →
       ∀ f, f ∈ fs → ∀ fd, F.fun? f = some fd → ∃ body, candidate.get? f = some body ∧
-        eraseCode body = fd.body ∧ checkCode .leaf (Ctx.entry (fd.params.map (·.1))) body = .ok ()
+        eraseCode body = fd.body ∧
+        checkCode .leaf (Ctx.entryWith (fd.params.map (·.1)) (borrows.getD f [])) body borrows = .ok ()
   | [], _, _, hf, _, _ => by simp at hf
   | g :: gs, h, f, hf, fd, hfd => by
     unfold checkFuns at h
@@ -109,7 +112,7 @@ theorem checkFuns_ok {F : Fir.Program} {candidate : Src.NatMap Code} :
       | none => rw [hg, hb] at h; cases h
       | some body =>
         simp only [hg, hb] at h
-        cases hc : checkBodyE gd body with
+        cases hc : checkBodyE gd body borrows (borrows.getD g []) with
         | error e => simp only [hc] at h; cases h
         | ok u =>
           simp only [hc] at h
@@ -119,8 +122,8 @@ theorem checkFuns_ok {F : Fir.Program} {candidate : Src.NatMap Code} :
             exact ⟨body, hb, checkBodyE_ok hc⟩
           · exact checkFuns_ok h f hf fd hfd
 
-theorem checkMapE_ok {F : Fir.Program} {candidate : Src.NatMap Code}
-    (h : checkMapE F candidate = .ok ()) : BodiesChecked F candidate := by
+theorem checkMapE_ok {F : Fir.Program} {candidate : Src.NatMap Code} {borrows : BorrowSigs}
+    (h : checkMapE F candidate borrows = .ok ()) : BodiesChecked F candidate borrows := by
   unfold checkMapE at h
   cases hs : sameShape F.funs candidate
   · simp only [hs, Bool.false_eq_true, ↓reduceIte] at h
@@ -129,32 +132,113 @@ theorem checkMapE_ok {F : Fir.Program} {candidate : Src.NatMap Code}
     intro f fd hf hfd
     exact checkFuns_ok h f (List.mem_range.mpr hf) fd hfd
 
+theorem borrowsValid_leaf (F : Fir.Program) : borrowsValid F .leaf = true := by
+  unfold borrowsValid
+  simp only [Bool.and_eq_true, List.all_eq_true]
+  constructor
+  · intro f _
+    simp [Src.NatMap.getD, Src.NatMap.get?]
+  · intro f _
+    cases F.fun? f <;> simp [Src.NatMap.get?]
+
+theorem borrowsValid_export {F : Fir.Program} {borrows : BorrowSigs}
+    (h : borrowsValid F borrows = true) {f : Fir.FunId} (hf : f ∈ F.exports) :
+    (borrows.getD f []).all (!·) = true := by
+  unfold borrowsValid at h
+  simp only [Bool.and_eq_true, List.all_eq_true] at h
+  exact List.all_eq_true.mpr (h.1 f hf)
+
 theorem except_isOk {e : Except String Unit} (h : e.isOk = true) : e = .ok () := by
   cases e with
   | error _ => cases h
   | ok u => rfl
 
-theorem checkOwned_contract {F : Fir.Program} {candidate : Src.NatMap Code}
-    (h : checkOwned F candidate = true) : checkContractOwned F candidate = true := by
+theorem checkOwned_contract {F : Fir.Program} {candidate : Src.NatMap Code} {borrows : BorrowSigs}
+    (h : checkOwned F candidate borrows = true) : checkContractOwned F candidate borrows = true := by
   simp only [checkOwned, checkContractOwned, Bool.and_eq_true] at h ⊢
-  exact ⟨⟨programDomain_implies_contractProgramDomain h.1.1, h.1.2⟩, h.2⟩
+  exact ⟨⟨⟨programDomain_implies_contractProgramDomain h.1.1.1, h.1.1.2⟩, h.1.2⟩, h.2⟩
 
-/-- What the checker established: the contract domain, the Boolean pins, and for every numbered
-function a candidate body that erases to its Fir body and checks from its parameters. -/
+/-- What the checker established (with arbitrary borrow masks). -/
+theorem checkContractOwnedWith_parts {F : Fir.Program} {candidate : Src.NatMap Code}
+    {borrows : BorrowSigs} (h : checkContractOwned F candidate borrows = true) :
+    contractProgramDomain F = true ∧ checkBoolPins F = true ∧ borrowsValid F borrows = true ∧
+      BodiesChecked F candidate borrows := by
+  simp only [checkContractOwned, Bool.and_eq_true] at h
+  exact ⟨h.1.1.1, h.1.1.2, h.1.2, checkMapE_ok (except_isOk h.2)⟩
+
+/-- What the checker established (zero-borrow specialisation, preserving exact signature). -/
 theorem checkContractOwned_parts {F : Fir.Program} {candidate : Src.NatMap Code}
     (h : checkContractOwned F candidate = true) :
     contractProgramDomain F = true ∧ checkBoolPins F = true ∧
       ∀ f fd, f < F.size → F.fun? f = some fd → ∃ body, candidate.get? f = some body ∧
         eraseCode body = fd.body ∧
         checkCode .leaf (Ctx.entry (fd.params.map (·.1))) body = .ok () := by
-  simp only [checkContractOwned, Bool.and_eq_true] at h
-  exact ⟨h.1.1, h.1.2, checkMapE_ok (except_isOk h.2)⟩
+  obtain ⟨d, p, _, b⟩ := checkContractOwnedWith_parts h
+  exact ⟨d, p, fun f fd hf hfd => by
+    simpa [Src.NatMap.getD, Src.NatMap.get?, Ctx.entryWith_all_false _ [] rfl] using b f fd hf hfd⟩
 
-/-- **The milestone-1 induction**, for an accepted map. -/
-theorem owned_refines {F : Fir.Program} {candidate : Src.NatMap Code}
-    (checked : checkContractOwned F candidate = true) : ∀ k, AtClockOwned F candidate k := by
-  obtain ⟨domain, pins, bodies⟩ := checkContractOwned_parts checked
+/-- **The milestone-1 induction**, for an accepted map (with arbitrary borrow masks). -/
+theorem owned_refines {F : Fir.Program} {candidate : Src.NatMap Code} {borrows : BorrowSigs}
+    (checked : checkContractOwned F candidate borrows = true) :
+    ∀ k, AtClockOwned F candidate k borrows := by
+  obtain ⟨domain, pins, _, bodies⟩ := checkContractOwnedWith_parts checked
   exact owned_refines_of domain (checkBoolPins_sound pins) bodies
+
+/-- **An accepted map with `@borrowed` signatures refines Fir's `evalCall`**. -/
+theorem checkContractOwnedWith_refines {F : Fir.Program} {candidate : Src.NatMap Code}
+    {borrows : BorrowSigs} (checked : checkContractOwned F candidate borrows = true) (k : Nat)
+    {f : Fir.FunId} (hf : f < F.size) {H : Heap} {external : Nat → Nat}
+    {vs : List RVal} {ws : List Fir.Val} (hd : Sem.Forall2 (Proof.Den H) vs ws)
+    (hb : Balance H external (selectOwnedVals (borrows.getD f []) vs))
+    (hbrw : ∀ v, v ∈ selectBorrowedVals (borrows.getD f []) vs → ReachableFrom H external v) :
+    ResultRel H external (Fir.evalCall F k f ws)
+      (evalCall { source := F, bodies := candidate, borrows } k f vs H) := by
+  obtain ⟨domain, _, _, bodies⟩ := checkContractOwnedWith_parts checked
+  exact owned_call_of_smaller_with domain bodies (fun j _ => owned_refines checked j) hf hd hb hbrw
+
+theorem checkOwnedWith_refines {F : Fir.Program} {candidate : Src.NatMap Code}
+    {borrows : BorrowSigs} (checked : checkOwned F candidate borrows = true) (k : Nat)
+    {f : Fir.FunId} (hf : f < F.size) {H : Heap} {external : Nat → Nat}
+    {vs : List RVal} {ws : List Fir.Val} (hd : Sem.Forall2 (Proof.Den H) vs ws)
+    (hb : Balance H external (selectOwnedVals (borrows.getD f []) vs))
+    (hbrw : ∀ v, v ∈ selectBorrowedVals (borrows.getD f []) vs → ReachableFrom H external v) :
+    ResultRel H external (Fir.evalCall F k f ws)
+      (evalCall { source := F, bodies := candidate, borrows } k f vs H) :=
+  checkContractOwnedWith_refines (checkOwned_contract checked) k hf hd hb hbrw
+
+/-- Exported entry points own all arguments (`borrowsValid`), so external calls refine with zero
+borrow precondition. -/
+theorem checkOwnedWith_export_refines {F : Fir.Program} {candidate : Src.NatMap Code}
+    {borrows : BorrowSigs} (checked : checkOwned F candidate borrows = true) (k : Nat)
+    {f : Fir.FunId} (hf : f < F.size) (hexp : f ∈ F.exports) {H : Heap} {external : Nat → Nat}
+    {vs : List RVal} {ws : List Fir.Val} (hd : Sem.Forall2 (Proof.Den H) vs ws)
+    (hb : Balance H external vs) :
+    ResultRel H external (Fir.evalCall F k f ws)
+      (evalCall { source := F, bodies := candidate, borrows } k f vs H) := by
+  obtain ⟨_, _, hbv, _⟩ := checkContractOwnedWith_parts (checkOwned_contract checked)
+  have hall := borrowsValid_export hbv hexp
+  exact checkOwnedWith_refines checked k hf hd
+    (by rw [selectOwnedVals_all_false _ _ hall]; exact hb)
+    (fun _ hm => by rw [selectBorrowedVals_all_false _ _ hall] at hm; cases hm)
+
+/-- **Reclamation for accepted maps with `@borrowed` signatures** at any exported root. -/
+theorem checkOwnedWith_export_reclaims {F : Fir.Program} {candidate : Src.NatMap Code}
+    {borrows : BorrowSigs} (checked : checkOwned F candidate borrows = true) (k : Nat)
+    {f : Fir.FunId} (hf : f < F.size) (hexp : f ∈ F.exports) {H : Heap}
+    {vs : List RVal} {ws : List Fir.Val} (hd : Sem.Forall2 (Proof.Den H) vs ws)
+    (hb : Balance H (fun _ => 0) vs) (hh : HeapOk H) {w : Fir.Val}
+    (source : Fir.evalCall F k f ws = .ok w) :
+    ∃ v after released,
+      evalCall { source := F, bodies := candidate, borrows } k f vs H = .ok (v, after) ∧
+      Proof.Den after v w ∧ dropAll after [v] = some released ∧
+      ∀ l, l < released.size → released.cell? l = some .dead := by
+  have related := checkOwnedWith_export_refines checked k hf hexp hd hb
+  rw [source] at related
+  obtain ⟨v, after, success, den, balance, _⟩ := related.success
+  have shape := call_heap_shape { source := F, bodies := candidate, borrows } k f H vs hh (dens_bounded hd)
+  obtain ⟨heapShape, _, _⟩ := shape v after success
+  obtain ⟨released, dropped, dead⟩ := dropAll_reclaims heapShape balance
+  exact ⟨v, after, released, success, den, dropped, dead⟩
 
 /-- **An accepted map refines Fir's `evalCall`** (generalises `checked_contract_program_refines`:
 same conclusion, the premise the ownership checker). The checker lets a path that ends in `trap`
@@ -167,9 +251,10 @@ theorem checkContractOwned_refines {F : Fir.Program} {candidate : Src.NatMap Cod
     {vs : List RVal} {ws : List Fir.Val} (hd : Sem.Forall2 (Proof.Den H) vs ws)
     (hb : Balance H external vs) :
     ResultRel H external (Fir.evalCall F k f ws)
-      (evalCall { source := F, bodies := candidate } k f vs H) := by
-  obtain ⟨domain, _, bodies⟩ := checkContractOwned_parts checked
-  exact owned_call_of_smaller domain bodies (fun j _ => owned_refines checked j) hf hd hb
+      (evalCall { source := F, bodies := candidate } k f vs H) :=
+  checkContractOwnedWith_refines checked k hf hd
+    (by simpa [Src.NatMap.getD, Src.NatMap.get?, selectOwnedVals_nil_left] using hb)
+    (fun _ hm => by simp [Src.NatMap.getD, Src.NatMap.get?, selectBorrowedVals_nil_left] at hm)
 
 /-- **An accepted map refines Fir's `evalCall`** (generalises `checked_program_refines`). -/
 theorem checkOwned_refines {F : Fir.Program} {candidate : Src.NatMap Code}

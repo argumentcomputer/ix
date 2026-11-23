@@ -11,7 +11,8 @@ theorem cxInit_split : Rt.Procs.cxInit.splitCriticalEdges = Rt.Procs.cxInit := b
 and the appended release entry at its declared index. -/
 theorem accepted_init {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Lowered}
-    (accepted : Public.lower config F bodies P = .ok lowered) :
+    {borrows : Own.Plain.BorrowSigs}
+    (accepted : Public.lower config F bodies P borrows = .ok lowered) :
     lowered.runtime.program.funcs[lowered.runtime.init]? = some Rt.Procs.cxInit := by
   obtain ⟨original, native, rfl, _⟩ := lower_parts accepted
   obtain ⟨main, pairs, funcs, _, _, _, _, _, _, length, program, init, _⟩ := Native.Spec.lower_parts native
@@ -27,7 +28,8 @@ theorem accepted_init {config : Rt.Config} {F : Fir.Program}
 
 theorem initialize_heap {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Lowered}
-    (accepted : Public.lower config F bodies P = .ok lowered)
+    {borrows : Own.Plain.BorrowSigs}
+    (accepted : Public.lower config F bodies P borrows = .ok lowered)
     (pairs : List (Nat × Cfg.Fun))
     {size budget context : Lir.Word} {memory : X86.Memory}
     (region : Rt.Proof.RegionOk context size) (readable : Rt.Proof.LirRegion memory context size) :

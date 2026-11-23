@@ -22,16 +22,17 @@ open IxCC.Fir (Var Arg Rhs)
 
 theorem Ctx.avail_known {Γ : Ctx} {y : Var} (h : Γ.avail y = true) : Γ.known y = true := by
   simp only [Ctx.avail_eq, Ctx.known_eq, Bool.or_eq_true, decide_eq_true_eq] at h ⊢
-  rcases h with (h | h) | h
-  · exact Or.inl (Or.inl h)
-  · refine Or.inl (Or.inr ?_)
+  rcases h with ((h | h) | h) | h
+  · exact Or.inl (Or.inl (Or.inl h))
+  · refine Or.inl (Or.inl (Or.inr ?_))
     rw [Ctx.tokens_eq] at h
     cases hg : Γ.own.get? y with
     | none => rw [hg] at h; simp at h
     | some n => simp [Src.NatMap.contains, hg]
-  · refine Or.inr ?_
+  · refine Or.inl (Or.inr ?_)
     simp only [Ctx.borrowed_eq, beq_iff_eq] at h
     simp [h]
+  · exact Or.inr h
 
 theorem canDup_inc {H H' : Heap} {u v : RVal} (hv : CanDup H v) (hi : Rc.inc H u 1 = some H') :
     CanDup H' v := by

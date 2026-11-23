@@ -26,18 +26,20 @@ structure Shape (Γ : Ctx) (I : Var → Bool) (t : Var → Nat) (P : Var → Pro
   imm : ∀ x, Γ.isImm x = I x
   tokens : ∀ x, Γ.tokens x = t x
   brw : ∀ x, Γ.brw.get? x = none
+  pbrw : ∀ x, Γ.isPbrw x = false
   toks : ∃ toks, Ctx.Tokens Γ toks
   immZero : ∀ x, I x = true → t x = 0
   own : ∀ x, Γ.own.contains x = true → P x
 
 theorem Shape.congr {Γ : Ctx} {I : Var → Bool} {t t' : Var → Nat} {P : Var → Prop}
     (h : Shape Γ I t P) (he : ∀ x, t x = t' x) : Shape Γ I t' P :=
-  ⟨h.imm, fun x => (h.tokens x).trans (he x), h.brw, h.toks,
+  ⟨h.imm, fun x => (h.tokens x).trans (he x), h.brw, h.pbrw, h.toks,
     fun x hx => (he x).symm.trans (h.immZero x hx), h.own⟩
 
 theorem Shape.release {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var → Prop}
     (h : Shape Γ I t P) : Shape Γ.release I t P :=
   ⟨fun x => by simpa using h.imm x, fun x => by simpa using h.tokens x, fun x => by simpa using h.brw x,
+    fun x => by simpa using h.pbrw x,
     by obtain ⟨toks, ht⟩ := h.toks; exact ⟨toks, ht.same rfl rfl⟩, h.immZero,
     fun x hx => h.own x (by simpa using hx)⟩
 
@@ -56,7 +58,7 @@ theorem shape_inc {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var → P
     · simp [Ctx.inc, h.imm, hi, ht]
     · obtain ⟨toks, htok⟩ := h.toks
       refine ⟨fun y => by simpa using h.imm y, fun y => ?_, fun y => by simpa using h.brw y,
-        ⟨_, htok.addOwn x⟩, fun y hy => ?_, fun y hy => ?_⟩
+        fun y => by simpa using h.pbrw y, ⟨_, htok.addOwn x⟩, fun y hy => ?_, fun y hy => ?_⟩
       · rw [Ctx.tokens_addOwn]
         by_cases he : y = x
         · subst he; simp [hi, h.tokens]
@@ -94,7 +96,7 @@ theorem shape_take {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var → 
     refine ⟨_, htake, rfl, ?_⟩
     obtain ⟨toks, htok⟩ := h.toks
     obtain ⟨_, _, htok'⟩ := htok.take htake hti
-    refine ⟨fun y => h.imm y, fun y => ?_, h.brw, ⟨_, htok'⟩, fun y hy => ?_, fun y hy => ?_⟩
+    refine ⟨fun y => h.imm y, fun y => ?_, h.brw, h.pbrw, ⟨_, htok'⟩, fun y hy => ?_, fun y hy => ?_⟩
     · simp only [Ctx.tokens_eq, Src.NatMap.get?_insert]
       by_cases he : y = x
       · subst he
@@ -115,8 +117,8 @@ theorem shape_setImm {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var �
     Shape (Γ.setImm x) (fun y => decide (y = x) || I y) (fun y => if y = x then 0 else t y) P := by
   obtain ⟨toks, htok⟩ := h.toks
   refine ⟨fun y => by rw [Ctx.isImm_setImm, h.imm], fun y => by rw [Ctx.tokens_setImm, h.tokens],
-    fun y => by rw [Ctx.brw_setImm, h.brw]; split <;> rfl, ⟨_, htok.setImm x⟩, fun y hy => ?_,
-    fun y hy => ?_⟩
+    fun y => by rw [Ctx.brw_setImm, h.brw]; split <;> rfl, fun y => h.pbrw y, ⟨_, htok.setImm x⟩,
+    fun y hy => ?_, fun y hy => ?_⟩
   · by_cases he : y = x
     · simp [he]
     · simp only [he, decide_false, Bool.false_or] at hy
@@ -403,7 +405,7 @@ structure Canon (Γ : Ctx) (Δ : JCtx) (live : List Var) (joins : Joins) (imm : 
 
 theorem Shape.mono {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P Q : Var → Prop}
     (h : Shape Γ I t P) (hpq : ∀ x, P x → Q x) : Shape Γ I t Q :=
-  ⟨h.imm, h.tokens, h.brw, h.toks, h.immZero, fun x hx => hpq x (h.own x hx)⟩
+  ⟨h.imm, h.tokens, h.brw, h.pbrw, h.toks, h.immZero, fun x hx => hpq x (h.own x hx)⟩
 
 /-- Re-establish the canonical shape for a new scope. -/
 theorem Shape.canon {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var → Prop} {live : List Var}
@@ -411,7 +413,7 @@ theorem Shape.canon {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var →
     (hp : ∀ x, P x → x ∈ live) :
     Shape Γ (fun x => Γ.isImm x) (fun x => if x ∈ live ∧ Γ.isImm x = false then 1 else 0)
       (· ∈ live) := by
-  refine ⟨fun x => rfl, fun x => ?_, h.brw, h.toks, fun x hx => ?_, fun x hx => hp x (h.own x hx)⟩
+  refine ⟨fun x => rfl, fun x => ?_, h.brw, h.pbrw, h.toks, fun x hx => ?_, fun x hx => hp x (h.own x hx)⟩
   · rw [h.tokens, ht, h.imm]
   · simp [hx]
 
@@ -521,7 +523,7 @@ theorem shape_addOwn {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var �
     Shape (Γ.addOwn x 1) I (fun y => if y = x then t y + 1 else t y) (fun y => P y ∨ y = x) := by
   obtain ⟨toks, htok⟩ := h.toks
   refine ⟨fun y => by simpa using h.imm y, fun y => ?_, fun y => by simpa using h.brw y,
-    ⟨_, htok.addOwn x⟩, fun y hy => ?_, fun y hy => ?_⟩
+    fun y => by simpa using h.pbrw y, ⟨_, htok.addOwn x⟩, fun y hy => ?_, fun y hy => ?_⟩
   · rw [Ctx.tokens_addOwn]; split <;> (rename_i he; first | (subst he; rw [h.tokens]) | rw [h.tokens])
   · have hne : y ≠ x := by intro he; subst he; rw [hx] at hy; cases hy
     simp [hne, h.immZero y hy]
@@ -544,7 +546,7 @@ theorem shape_unknown {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {live : Li
     cases hc : Γ.own.contains x
     · rfl
     · exact absurd (h.own x hc) hx
-  simp [Ctx.known_eq, h.imm, hi, ho, h.brw]
+  simp [Ctx.known_eq, h.imm, hi, ho, h.brw, h.pbrw]
 
 /-! ## Binding a fresh variable, in the canonical shape -/
 

@@ -5,8 +5,8 @@ set_option autoImplicit false
 namespace IxCC.Cfg.Rc
 
 theorem checked_dense {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    (checked : checkProgram F bodies P = true) {f : Nat} {fd : Cfg.Fun}
-    (lookup : P.base.fun? f = some fd) : f < P.base.size := by
+    {borrows : Own.Plain.BorrowSigs} (checked : checkProgram F bodies P borrows = true)
+    {f : Nat} {fd : Cfg.Fun} (lookup : P.base.fun? f = some fd) : f < P.base.size := by
   have size := generate_size (checkProgram_parts checked).2
   by_cases h : f < P.base.size
   · exact h
@@ -31,7 +31,8 @@ theorem function_forward (f : Nat) (fd : Own.Fun) {b : Nat} {block : Block} {edg
   exact (Cfg.Proof.lower_ordered singleton).forward found lookup member forward
 
 theorem checked_ordered {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    (checked : checkProgram F bodies P = true) : Cfg.Ordered P.base where
+    {borrows : Own.Plain.BorrowSigs} (checked : checkProgram F bodies P borrows = true) :
+    Cfg.Ordered P.base where
   dense := checked_dense checked
   forward := by
     intro f fd b block edge lookup blockLookup member forward

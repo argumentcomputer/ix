@@ -11,8 +11,8 @@ open IxCC.Rt.Rc.Procs
 
 structure CodeAdmission (F : Fir.Program) (bodies : Src.NatMap Own.Plain.Code)
     (P : Program) (config : Rt.Config) (pairs : List (Nat × Cfg.Fun))
-    (functions : List Lir.Func) : Prop where
-  scopedProgram : checkScopedProgram F bodies P = true
+    (functions : List Lir.Func) (borrows : Own.Plain.BorrowSigs := .leaf) : Prop where
+  scopedProgram : checkScopedProgram F bodies P borrows = true
   consuming : consumeAll P = .ok pairs
   lowering : Rt.Lower.functions (tablesOf P pairs) (consumed P pairs) (rootsOf config P)
     (List.range P.base.size) = .ok functions
@@ -20,9 +20,10 @@ structure CodeAdmission (F : Fir.Program) (bodies : Src.NatMap Own.Plain.Code)
 
 theorem CodeAdmission.of_public {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Public.Lowered}
-    (checked : checkScopedProgram F bodies P = true)
-    (accepted : Public.lower config F bodies P = .ok lowered) :
-    ∃ main pairs functions, CodeAdmission F bodies P config pairs functions ∧
+    {borrows : Own.Plain.BorrowSigs}
+    (checked : checkScopedProgram F bodies P borrows = true)
+    (accepted : Public.lower config F bodies P borrows = .ok lowered) :
+    ∃ main pairs functions, CodeAdmission F bodies P config pairs functions borrows ∧
       P.base.exports.head? = some main := by
   obtain ⟨original, native, _, _⟩ := Public.Spec.lower_parts accepted
   obtain ⟨main, pairs, functions, _, switches, entry, _, consuming, lowering, _⟩ := lower_parts native
@@ -33,7 +34,8 @@ physical continuation starts at the exact current Cfg/native cursor, with all so
 ownership represented in the given heap; the source side runs the code's erasure. Older native
 caller frames remain literal until an actual return instruction resumes one. -/
 def PhysicalAtClock (F : Fir.Program) (P : Program) (config : Rt.Config)
-    (pairs : List (Nat × Cfg.Fun)) (main clock : Nat) : Prop :=
+    (pairs : List (Nat × Cfg.Fun)) (main clock : Nat)
+    (borrows : Own.Plain.BorrowSigs := .leaf) : Prop :=
   ∀ (sourceJoins : List Fir.JEntry) (code : Own.Plain.Code)
     (H : Own.Heap) (addresses : AddressMap) (external : Nat → Nat)
     (live : List Fir.Var) (Γ : Own.Plain.Ctx) (Δ : Own.Plain.JCtx) (sourceEnv : Fir.Env)
@@ -46,7 +48,7 @@ def PhysicalAtClock (F : Fir.Program) (P : Program) (config : Rt.Config)
     F.fun? source.fn = some sourceFunction →
     Activation F P pairs (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main)
       H addresses external live Γ Δ sourceEnv ownedEnv roots lex sourceJoins ownedJoins
-      code sourceFunction.vars function source target →
+      code sourceFunction.vars function source target borrows →
     HeapState P pairs H addresses memory external roots context base bump limit regionBytes slots lists →
     ResultAt P pairs (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main)
       H addresses external context base limit regionBytes clock

@@ -17,8 +17,9 @@ def HeapWitness (A : Anf.Program) (value : Anf.Val) (result : Own.RVal × Own.He
 
 theorem checked_retained {A : Anf.Program} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Cfg.Rc.Program}
+    {borrows : Own.Plain.BorrowSigs}
     (lowered : Fir.lower A = .ok F)
-    (checked : Cfg.Rc.checkScopedProgram F bodies P = true) (i : Nat × List Nat) :
+    (checked : Cfg.Rc.checkScopedProgram F bodies P borrows = true) (i : Nat × List Nat) :
     Sim (HeapWitness A) (fun k => Fir.tickBound A * (k+1))
       (Anf.anfRun A i) (Cfg.Rc.cfgRun P i) := by
   have heap := Own.Plain.owned_retained

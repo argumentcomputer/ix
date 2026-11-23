@@ -53,7 +53,8 @@ theorem lowerFunction_params (limit f : Nat) (source : Fir.Fun) (body : Own.Plai
   rfl
 
 theorem checked_refines_lang {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} (checked : checkScopedProgram F bodies P = true) :
+    {P : Program} {borrows : Own.Plain.BorrowSigs}
+    (checked : checkScopedProgram F bodies P borrows = true) :
     Sem.Refines ({source := F, bodies} : Own.Plain.Program) P := by
   refine Sem.Refines.of_sim (R := Lang.ObsEq) (fun _ _ h => h) fun i => ⟨id, ?_⟩
   obtain ⟨r, ns⟩ := i
@@ -91,8 +92,8 @@ theorem checked_refines_lang {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Co
             fun _ _ _ => rfl
 
 theorem checked_lower_refines {A : Anf.Program} {F : Fir.Program}
-    {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    (lowered : Fir.lower A = .ok F) (checked : checkScopedProgram F bodies P = true) :
+    {bodies : Src.NatMap Own.Plain.Code} {P : Program} {borrows : Own.Plain.BorrowSigs}
+    (lowered : Fir.lower A = .ok F) (checked : checkScopedProgram F bodies P borrows = true) :
     Sem.Refines A P :=
   (Own.Plain.owned_lower_refines lowered
     (checkProgram_parts (checkScopedProgram_parts checked).1).1).trans

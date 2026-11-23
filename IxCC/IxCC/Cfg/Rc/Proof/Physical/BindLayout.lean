@@ -34,7 +34,7 @@ theorem bind_layout {F : Fir.Program} {P : Program} {source : Cfg.Frame} {ρ : O
 
 theorem checked_binding_real
     {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    (checked : checkScopedProgram F bodies P = true)
+    {borrows : Own.Plain.BorrowSigs} (checked : checkScopedProgram F bodies P borrows = true)
     {source : Cfg.Frame} {ρ : Own.Env} {saved : List Own.Plain.JEntry}
     {x : Fir.Var} {rhs : Fir.Rhs} {code : Own.Plain.Code}
     (before : At F P source ρ saved (.bind x rhs code))

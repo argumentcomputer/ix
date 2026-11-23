@@ -56,10 +56,11 @@ source edge splitting, inline RC fast paths, and whole-program edge splitting.
 The static code admission and exported main are from the same acceptance receipt. -/
 theorem accepted_eval_stages {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Public.Lowered}
-    (checked : checkScopedProgram F bodies P = true)
-    (accepted : Public.lower config F bodies P = .ok lowered) :
+    {borrows : Own.Plain.BorrowSigs}
+    (checked : checkScopedProgram F bodies P borrows = true)
+    (accepted : Public.lower config F bodies P borrows = .ok lowered) :
     ∃ main pairs functions,
-      CodeAdmission F bodies P config pairs functions ∧ P.base.exports.head? = some main ∧
+      CodeAdmission F bodies P config pairs functions borrows ∧ P.base.exports.head? = some main ∧
       ∀ words memory context,
         Sem.Sim Eq (Inline.inlineClock lowered.runtime.program)
           (fun clock => Lir.eval (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main)

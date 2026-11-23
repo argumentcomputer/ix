@@ -36,10 +36,11 @@ def fail {α : Type} (msg : String) : IO α := throw (IO.userError msg)
 /-- The plain-RC certificate for any ownership map: `finishPlainRcCert` with `bodies` in place of
 the canonical map and without its admission (test-only and untrusted: the verifier decides). -/
 def finishWith (cfg : Recheck.Config) (front : Recheck.RcReplay.ProducedFir)
-    (bodies : Src.NatMap Code) : Except Recheck.Err Recheck.RcReplay.Cert := do
+    (bodies : Src.NatMap Code) (borrows : Own.Plain.BorrowSigs := .leaf) :
+    Except Recheck.Err Recheck.RcReplay.Cert := do
   let some candidate := Cfg.Rc.generate front.fir bodies |
     throw { stage := .rt, code := "rc.cfg", message := "ownership candidate lowering declined" }
-  let lowered ← (Cfg.Rc.Public.lower { names := cfg.names } front.fir bodies candidate).mapError
+  let lowered ← (Cfg.Rc.Public.lower { names := cfg.names } front.fir bodies candidate borrows).mapError
     fun message => { stage := .rt, code := "rc.lower", message }
   let reps : Lir.FunId → Option (List Xv.Stacking.ArgRep) :=
     (⟨lowered.runtime, lowered.drop⟩ : Cfg.Rc.Public.Lowered).reps
@@ -55,7 +56,7 @@ def finishWith (cfg : Recheck.Config) (front : Recheck.RcReplay.ProducedFir)
   let order := X86.Layout.Order.produce (X86.Layout.tunnel stacked.program) stacked.shape
   pure { base := { table := front.tableCert, relevance := front.relevance, mid := front.mid
                    alloc := allocated.outs, frames, order }
-         own := Own.Plain.Certificate.encode bodies }
+         own := Own.Plain.Certificate.encodeWith bodies borrows }
 
 /-! ## Edits at the first site the checker's context allows (threaded as `Mutate` threads it) -/
 
@@ -184,10 +185,15 @@ def liveness (logs : FilePath) : IO Unit := do
     let cert ← IO.ofExcept ((finishWith fr.cfg fr.front live).mapError (·.render))
     let artifact ← IO.ofExcept ((Recheck.RcReplay.run fr.cfg fr.input.program cert).mapError
       fun e => s!"{root}: the verifier refused the liveness placement: {e.render}")
+    let (liveB, liveSigs) := Own.Plain.Live.liveMapWith fr.front.fir
+    let liveCertB ← IO.ofExcept ((finishWith fr.cfg fr.front liveB liveSigs).mapError (·.render))
+    let liveArtB ← IO.ofExcept ((Recheck.RcReplay.run fr.cfg fr.input.program liveCertB).mapError
+      fun e => s!"{root}: the verifier refused the borrowed liveness placement: {e.render}")
     let (_, prodArt) ← IO.ofExcept ((Recheck.RcReplay.produce (ReplayIO.config root) fr.input).mapError
       (·.render))
-    unless prodArt.backend.object == artifact.backend.object do
-      fail s!"{root}: production RcReplay.produce did not emit the liveness object"
+    unless prodArt.backend.object == liveArtB.backend.object do
+      fail s!"{root}: production RcReplay.produce did not emit the borrowed liveness object"
+    let _ ← runNative logs s!"live-borrow-{root}" liveArtB (listCases root) (listWant root)
     let canonicalCert ← IO.ofExcept ((finishWith fr.cfg fr.front fr.canonical).mapError (·.render))
     let canonicalArt ← IO.ofExcept ((Recheck.RcReplay.run fr.cfg fr.input.program canonicalCert).mapError
       fun e => s!"{root}: the verifier refused the canonical placement: {e.render}")
@@ -308,7 +314,7 @@ def budget (logs : FilePath) : IO Unit := do
     ((Recheck.RcReplay.run cfg input.program handMade).map fun _ => ())
   -- Under liveness, `fanOver` drops the 2 dead captures per fan function and fits within `limit`.
   let (overCert, overArt) ← IO.ofExcept ((Recheck.RcReplay.produce cfg0 input).mapError (·.render))
-  let overBodies ← IO.ofExcept (Own.Plain.Certificate.decode fr.fir overCert.own)
+  let (overBodies, _) ← IO.ofExcept (Own.Plain.Certificate.decodeWith fr.fir overCert.own)
   let overWork := Own.Plain.Certificate.capturedWork overBodies
   unless overWork < work && overWork ≤ limit do
     fail s!"fanOver: liveness captured work {overWork} did not shrink below canonical {work} and limit {limit}"
@@ -321,22 +327,33 @@ def budget (logs : FilePath) : IO Unit := do
     fail s!"fanOver --rc auto: unexpectedly fell back to immortal: {reason.render}"
   | .zeroRc .. =>
     fail "fanOver --rc auto: unexpectedly selected zeroRc"
-  match Own.Plain.Certificate.admit fr.fir overCert.own (overWork - 1) with
-  | .ok _ => fail "fanOver (liveness): admitted under a budget below its work"
-  | .error e => unless e.startsWith "own.cert.budget: " do fail s!"fanOver (liveness): budget {overWork - 1}: {e}"
-  -- Synthetic budget-exceeding program even under liveness: duplicate one fan function in `fr.fir`
-  -- so even `Live.liveMap`'s captured work exceeds `Anf.maxCapturedWork`.
+  if overWork > 0 then
+    match Own.Plain.Certificate.admit fr.fir overCert.own (overWork - 1) with
+    | .ok _ => fail "fanOver (liveness): admitted under a budget below its work"
+    | .error e => unless e.startsWith "own.cert.budget: " do fail s!"fanOver (liveness): budget {overWork - 1}: {e}"
+  else
+    let liveV1 := Own.Plain.Live.liveMap fr.fir
+    let v1Work := Own.Plain.Certificate.capturedWork liveV1
+    unless v1Work > 0 do fail "fanOver (v1 liveness): expected positive captured work"
+    match Own.Plain.Certificate.admit fr.fir (Own.Plain.Certificate.encode liveV1) (v1Work - 1) with
+    | .ok _ => fail "fanOver (v1 liveness): admitted under a budget below its work"
+    | .error e => unless e.startsWith "own.cert.budget: " do fail s!"fanOver (v1 liveness): budget {v1Work - 1}: {e}"
+  -- Synthetic budget-exceeding program even under liveness + borrows: duplicate one fan function
+  -- and mark all fan functions exported so their 198 parameters stay owned and captured work > limit.
   let some fanFn := (List.range fr.fir.size).findSome? fun f => do
     let fd ← fr.fir.fun? f
     if fd.params.length ≥ 198 then some fd else none
     | fail "fanOver: could not locate 198-param fan function"
   let overLiveFir : Fir.Program :=
-    { fr.fir with funs := fr.fir.funs.insert fr.fir.size fanFn, size := fr.fir.size + 1 }
-  let overLiveBodies := Own.Plain.Live.liveMap overLiveFir
+    { fr.fir with
+      funs := fr.fir.funs.insert fr.fir.size fanFn
+      size := fr.fir.size + 1
+      exports := List.range (fr.fir.size + 1) }
+  let (overLiveBodies, overLiveBorrows) := Own.Plain.Live.liveMapWith overLiveFir
   let overLiveWork := Own.Plain.Certificate.capturedWork overLiveBodies
   unless overLiveWork > limit do
     fail s!"fanOver+1: liveness captured work {overLiveWork} is still within limit {limit}"
-  match Own.Plain.Certificate.admit overLiveFir (Own.Plain.Certificate.encode overLiveBodies) with
+  match Own.Plain.Certificate.admit overLiveFir (Own.Plain.Certificate.encodeWith overLiveBodies overLiveBorrows) with
   | .ok _ => fail "fanOver+1: liveness certificate admitted past the budget"
   | .error e => unless e.startsWith "own.cert.budget: " do fail s!"fanOver+1 admit: {e}"
   match Recheck.RcReplay.finishPlainRcCert cfg { fr with fir := overLiveFir } with
@@ -355,21 +372,22 @@ def budget (logs : FilePath) : IO Unit := do
   let canonWork := Own.Plain.Certificate.capturedWork canonUnder
   unless canonWork ≤ limit && canonWork + fanFunctions * (fanLeaves + 1) > limit do
     fail s!"fanUnder: canonical captured work {canonWork} is not just within the limit {limit}"
-  let bodies ← IO.ofExcept (Own.Plain.Certificate.decode fr.fir cert.own)
+  let (bodies, _) ← IO.ofExcept (Own.Plain.Certificate.decodeWith fr.fir cert.own)
   let work := Own.Plain.Certificate.capturedWork bodies
   unless work ≤ canonWork && work ≤ limit do
     fail s!"fanUnder: liveness captured work {work} exceeds canonical {canonWork} or limit {limit}"
   let _ ← runNative logs "budget-fanUnder" artifact fanCases (fanWant "fanUnder")
-  match Own.Plain.Certificate.admit fr.fir cert.own (work - 1) with
-  | .ok _ => fail "fanUnder: admitted under a budget below its work"
-  | .error e => unless e.startsWith "own.cert.budget: " do fail s!"fanUnder: budget {work - 1}: {e}"
+  if work > 0 then
+    match Own.Plain.Certificate.admit fr.fir cert.own (work - 1) with
+    | .ok _ => fail "fanUnder: admitted under a budget below its work"
+    | .error e => unless e.startsWith "own.cert.budget: " do fail s!"fanUnder: budget {work - 1}: {e}"
   let some p := (Own.Plain.Certificate.admit fr.fir cert.own work).toOption |
     fail "fanUnder: refused at a budget equal to its work"
   let some p' := (Own.Plain.Certificate.admit fr.fir cert.own limit).toOption |
     fail "fanUnder: refused at the default budget"
   unless Own.Plain.bodyMapEq p.bodies p'.bodies && Own.Plain.bodyMapEq p.bodies bodies do
     fail "fanUnder: admitted as different programs at two budgets"
-  IO.println s!"PASS budget within the limit (fanUnder, liveness {work} ≤ canonical {canonWork} ≤ {limit}): compiles, verifies, {fanCases.length} values; refused at budget {work - 1}, the same program admitted at {work} and {limit}"
+  IO.println s!"PASS budget within the limit (fanUnder, liveness {work} ≤ canonical {canonWork} ≤ {limit}): compiles, verifies, {fanCases.length} values; admitted at {work} and {limit}"
 
 /-! ## A join's captured list reordered -/
 

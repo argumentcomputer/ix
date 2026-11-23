@@ -39,7 +39,8 @@ private theorem assembled_function {original : Rt.Lowered} {layout : Layout}
 through consumption, both edge splits and the appended release wrapper. -/
 theorem public_root {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Cfg.Rc.Program} {lowered : Cfg.Rc.Public.Lowered}
-    (accepted : Cfg.Rc.Public.lower config F bodies P = .ok lowered)
+    {borrows : Own.Plain.BorrowSigs}
+    (accepted : Cfg.Rc.Public.lower config F bodies P borrows = .ok lowered)
     {r fn : Nat} {symbol : String} (root : lowered.runtime.roots[r]? = some (fn, symbol))
     (range : fn < P.base.size) :
     ∃ fd function, P.base.fun? fn = some fd ∧
@@ -88,7 +89,8 @@ theorem public_root {config : Rt.Config} {F : Fir.Program}
 
 theorem public_init {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Cfg.Rc.Program} {lowered : Cfg.Rc.Public.Lowered}
-    (accepted : Cfg.Rc.Public.lower config F bodies P = .ok lowered) :
+    {borrows : Own.Plain.BorrowSigs}
+    (accepted : Cfg.Rc.Public.lower config F bodies P borrows = .ok lowered) :
     ∃ function, lowered.runtime.program.funcs[lowered.runtime.init]? = some function ∧
       function.conv = .sysvExport Rt.Procs.initSymbol ∧ function.params.length = 2 ∧
       lowered.runtime.init ≠ lowered.drop := by
@@ -117,7 +119,8 @@ theorem public_init {config : Rt.Config} {F : Fir.Program}
 
 theorem public_roots {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Cfg.Rc.Program} {lowered : Cfg.Rc.Public.Lowered}
-    (accepted : Cfg.Rc.Public.lower config F bodies P = .ok lowered) :
+    {borrows : Own.Plain.BorrowSigs}
+    (accepted : Cfg.Rc.Public.lower config F bodies P borrows = .ok lowered) :
     lowered.runtime.roots.map Prod.fst = P.base.exports := by
   obtain ⟨original, native, rfl, _⟩ := Cfg.Rc.Public.Spec.lower_parts accepted
   obtain ⟨main, pairs, functions, _, _, _, _, _, _, _, _, _, _, _, roots, _⟩ :=

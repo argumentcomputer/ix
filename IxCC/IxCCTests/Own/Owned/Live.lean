@@ -163,6 +163,85 @@ def runChecks : Array String := Id.run do
   let cap := firstJoinCaptured body
   if cap != some (List.range n) then
     errs := errs.push s!"live-unit/largeStress({n}): expected sorted captures [0..{n-1}], got {repr cap}"
+  -- Track A3: `@borrowed` inference, certificate v2 round-trip, and negative UAF controls.
+  -- f0 (exported) calls read-only helper f1(xs) which sums a cons-list via tail recursion.
+  let f1 : Fir.Fun :=
+    { (default : Fir.Fun) with
+      params := [(0, .tobj), (1, .tobj)]
+      body := .case 0
+        [ .mk nilKey (.ret (.var 1)),
+          .mk consKey (.bind 2 (.proj 0 consKey 0)
+            (.bind 3 (.proj 0 consKey 1)
+              (.bind 4 (.prim .natAdd [.var 1, .var 2])
+                (.tcall 1 [.var 3, .var 4])))) ]
+        none
+      vars := 5 }
+  let f0 : Fir.Fun :=
+    { (default : Fir.Fun) with
+      params := [(0, .tobj)]
+      body := .bind 1 (.call 1 [.var 0, .lit (.nat 0)]) (.ret (.var 1))
+      vars := 2 }
+  let borrowProg : Fir.Program :=
+    { funs := Src.NatMap.ofList [(0, f0), (1, f1)], size := 2, exports := [0]
+      ctors := [{ key := nilKey, tag := 0, arity := 0 }, { key := consKey, tag := 1, arity := 2 }]
+      known := {} }
+  let (bBodies, bSigs) := IxCC.Own.Plain.Live.liveMapWith borrowProg
+  if bSigs.getD 1 [] != [true, false] then
+    errs := errs.push s!"borrow-unit/infer: expected f1 borrows [true, false], got {repr (bSigs.getD 1 [])}"
+  if !checkOwned borrowProg bBodies bSigs then
+    errs := errs.push "borrow-unit/infer: checkOwned refused liveMapWith output"
+  match Certificate.decodeWith borrowProg (Certificate.encodeWith bBodies bSigs) with
+  | .ok (backM, backB) =>
+    if !bodyMapEq backM bBodies || backB.getD 1 [] != [true, false] then
+      errs := errs.push "borrow-unit/v2-cert: round trip differs"
+  | .error e => errs := errs.push s!"borrow-unit/v2-cert: decodeWith failed: {e}"
+  -- Negative control 1: owned+borrowed aliasing `f1(v0_owned, v0_borrowed)` with 1 token of v0.
+  let aliasHelper : Fir.Fun :=
+    { (default : Fir.Fun) with
+      params := [(0, .tobj), (1, .tobj)]
+      body := .ret (.var 0)
+      vars := 2 }
+  let aliasCaller : Fir.Fun :=
+    { (default : Fir.Fun) with
+      params := [(0, .tobj)]
+      body := .bind 1 (.call 1 [.var 0, .var 0]) (.ret (.var 1))
+      vars := 2 }
+  let aliasProg : Fir.Program :=
+    { funs := Src.NatMap.ofList [(0, aliasCaller), (1, aliasHelper)], size := 2, exports := [0]
+      ctors := [], known := {} }
+  let aliasBodies : Src.NatMap Code := Src.NatMap.ofList
+    [(0, .bind 1 (.call 1 [.var 0, .var 0]) (.ret (.var 1))), (1, .ret (.var 0))]
+  let aliasBorrows : BorrowSigs := Src.NatMap.ofList [(1, [false, true])]
+  if checkOwned aliasProg aliasBodies aliasBorrows then
+    errs := errs.push "borrow-unit/neg-alias: owned+borrowed alias without inc was accepted"
+  -- Negative control 2: tail call passing a local owned variable in a borrowed position.
+  let tailCaller : Fir.Fun :=
+    { (default : Fir.Fun) with
+      params := [(0, .tobj)]
+      body := .tcall 1 [.lit (.nat 0), .var 0]
+      vars := 1 }
+  let tailProg : Fir.Program :=
+    { funs := Src.NatMap.ofList [(0, tailCaller), (1, aliasHelper)], size := 2, exports := [0]
+      ctors := [], known := {} }
+  let tailBodies : Src.NatMap Code := Src.NatMap.ofList
+    [(0, .tcall 1 [.lit (.nat 0), .var 0]), (1, .ret (.var 0))]
+  if checkOwned tailProg tailBodies aliasBorrows then
+    errs := errs.push "borrow-unit/neg-tail: tail call borrowing local owned var was accepted"
+  -- Negative control 3: exported function with a borrowed parameter must be refused.
+  let expBorrow : BorrowSigs := Src.NatMap.ofList [(0, [true])]
+  if checkOwned aliasProg (liveMap aliasProg) expBorrow then
+    errs := errs.push "borrow-unit/neg-export: exported borrowed param was accepted"
+  -- Negative control 4: consuming a borrowed parameter without `inc` must be refused.
+  let badConsume : Src.NatMap Code := Src.NatMap.ofList
+    [(0, .bind 1 (.call 1 [.lit (.nat 0), .var 0]) (.act (.dec 0) (.ret (.var 1)))),
+     (1, .act (.dec 0) (.ret (.var 1)))]
+  let badConsumeProg : Fir.Program :=
+    { funs := Src.NatMap.ofList
+        [(0, { (default : Fir.Fun) with params := [(0, .tobj)], body := .bind 1 (.call 1 [.lit (.nat 0), .var 0]) (.ret (.var 1)), vars := 2 }),
+         (1, { (default : Fir.Fun) with params := [(0, .tobj), (1, .tobj)], body := .ret (.var 1), vars := 2 })]
+      size := 2, exports := [0], ctors := [], known := {} }
+  if checkOwned badConsumeProg badConsume aliasBorrows then
+    errs := errs.push "borrow-unit/neg-consume: returning borrowed param without inc was accepted"
   return errs
 
 end LiveTests

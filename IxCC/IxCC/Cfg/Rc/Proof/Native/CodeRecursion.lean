@@ -9,7 +9,8 @@ open IxCC.Rt.Rc.Procs
 
 def PhysicalCode (F : Fir.Program) (P : Program) (config : Rt.Config)
     (pairs : List (Nat × Cfg.Fun)) (main clock : Nat)
-    (sourceJoins : List Fir.JEntry) (code : Own.Plain.Code) : Prop :=
+    (sourceJoins : List Fir.JEntry) (code : Own.Plain.Code)
+    (borrows : Own.Plain.BorrowSigs := .leaf) : Prop :=
   ∀ (H : Own.Heap) (addresses : AddressMap) (external : Nat → Nat)
     (live : List Fir.Var) (Γ : Own.Plain.Ctx) (Δ : Own.Plain.JCtx) (sourceEnv : Fir.Env)
     (ownedEnv : Own.Env) (roots : List Own.RVal) (lex : Own.Plain.Joins)
@@ -21,7 +22,7 @@ def PhysicalCode (F : Fir.Program) (P : Program) (config : Rt.Config)
     F.fun? source.fn = some sourceFunction →
     Activation F P pairs (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main)
       H addresses external live Γ Δ sourceEnv ownedEnv roots lex sourceJoins ownedJoins
-      code sourceFunction.vars function source target →
+      code sourceFunction.vars function source target borrows →
     HeapState P pairs H addresses memory external roots context base bump limit regionBytes slots lists →
     ResultAt P pairs (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main)
       H addresses external context base limit regionBytes clock
@@ -29,16 +30,16 @@ def PhysicalCode (F : Fir.Program) (P : Program) (config : Rt.Config)
       (Fir.eval F clock sourceEnv sourceJoins (Own.Plain.eraseCode code))
 
 theorem PhysicalAtClock.code {F : Fir.Program} {P : Program} {config : Rt.Config}
-    {pairs : List (Nat × Cfg.Fun)} {main clock : Nat}
-    (all : PhysicalAtClock F P config pairs main clock)
+    {pairs : List (Nat × Cfg.Fun)} {main clock : Nat} {borrows : Own.Plain.BorrowSigs}
+    (all : PhysicalAtClock F P config pairs main clock borrows)
     (sourceJoins : List Fir.JEntry) (code : Own.Plain.Code) :
-    PhysicalCode F P config pairs main clock sourceJoins code :=
+    PhysicalCode F P config pairs main clock sourceJoins code borrows :=
   all sourceJoins code
 
 theorem PhysicalAtClock.of_code {F : Fir.Program} {P : Program} {config : Rt.Config}
-    {pairs : List (Nat × Cfg.Fun)} {main clock : Nat}
-    (all : ∀ sourceJoins code, PhysicalCode F P config pairs main clock sourceJoins code) :
-    PhysicalAtClock F P config pairs main clock :=
+    {pairs : List (Nat × Cfg.Fun)} {main clock : Nat} {borrows : Own.Plain.BorrowSigs}
+    (all : ∀ sourceJoins code, PhysicalCode F P config pairs main clock sourceJoins code borrows) :
+    PhysicalAtClock F P config pairs main clock borrows :=
   all
 
 end IxCC.Cfg.Rc.Native.Spec

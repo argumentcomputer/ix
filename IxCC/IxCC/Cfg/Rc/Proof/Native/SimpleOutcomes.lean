@@ -15,12 +15,12 @@ open IxCC.Own.Plain (Ctx JCtx checkCode)
 section
 variable {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
   {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-  {main clock : Nat} {sourceJoins : List Fir.JEntry}
+  {main clock : Nat} {sourceJoins : List Fir.JEntry} {borrows : Own.Plain.BorrowSigs}
 
 /-- **`ret a`.** -/
-theorem physical_return (admission : CodeAdmission F bodies P config pairs functions)
+theorem physical_return (admission : CodeAdmission F bodies P config pairs functions borrows)
     (arg : Fir.Arg) :
-    PhysicalCode F P config pairs main clock sourceJoins (.ret arg) := by
+    PhysicalCode F P config pairs main clock sourceJoins (.ret arg) borrows := by
   intro H addresses external live Γ Δ sourceEnv ownedEnv roots lex ownedJoins sourceFunction
     function source target memory context base bump limit regionBytes slots lists callers
     sourceLookup before heap
@@ -50,13 +50,14 @@ theorem physical_return (admission : CodeAdmission F bodies P config pairs funct
       bounded := bounded
       compatible := compatible
       preserved := fun _ _ _ h => h
+      reachable := Own.Plain.ReachablePreserved.refl H external
       history := ⟨Nat.le_refl _, fun _ _ => rfl⟩ }
     exact .inl ⟨returned, 0, .refl _⟩
   · exact ResultAt.of_fails failure
 
 /-- **`trap`**: the tokens held are not released (a trap ends the run). -/
-theorem physical_trap (admission : CodeAdmission F bodies P config pairs functions) :
-    PhysicalCode F P config pairs main clock sourceJoins .trap := by
+theorem physical_trap (admission : CodeAdmission F bodies P config pairs functions borrows) :
+    PhysicalCode F P config pairs main clock sourceJoins .trap borrows := by
   intro H addresses external live Γ Δ sourceEnv ownedEnv roots lex ownedJoins sourceFunction
     function source target memory context base bump limit regionBytes slots lists callers
     sourceLookup before heap
@@ -78,7 +79,7 @@ end
 
 section
 variable {F : Fir.Program} {P : Program} {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)}
-  {main clock : Nat} {sourceJoins : List Fir.JEntry}
+  {main clock : Nat} {sourceJoins : List Fir.JEntry} {borrows : Own.Plain.BorrowSigs}
 
 /-- **A join declaration.** -/
 theorem physical_declare {j : Fir.JoinId} {params captured : List Fir.Var} {rec : Bool}
@@ -86,8 +87,8 @@ theorem physical_declare {j : Fir.JoinId} {params captured : List Fir.Var} {rec 
     (next : ∀ sourceEnv : Fir.Env,
       PhysicalCode F P config pairs main clock
         ({id := j, charged := false, env := sourceEnv, params, body := Own.Plain.eraseCode body,
-          isRec := rec} :: sourceJoins) cont) :
-    PhysicalCode F P config pairs main clock sourceJoins (.jp j params captured rec body cont) := by
+          isRec := rec} :: sourceJoins) cont borrows) :
+    PhysicalCode F P config pairs main clock sourceJoins (.jp j params captured rec body cont) borrows := by
   intro H addresses external live Γ Δ sourceEnv ownedEnv roots lex ownedJoins sourceFunction
     function source target memory context base bump limit regionBytes slots lists callers
     sourceLookup before heap

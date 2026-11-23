@@ -14,7 +14,8 @@ open IxCC.Own.Plain (Ctx JCtx checkCode)
 /-- The self-tail back edge re-enters block zero with the function's parameters, over the typing
 context. The Cfg map is the frame's; the callee starts with exactly its parameters' tokens. -/
 theorem self_entry_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} (checked : checkScopedProgram F bodies P = true)
+    {P : Program} {borrows : Own.Plain.BorrowSigs}
+    (checked : checkScopedProgram F bodies P borrows = true)
     {pairs : List (Nat × Cfg.Fun)} (consuming : consumeAll P = .ok pairs) {lp : Lir.Program}
     {H : Heap} {addresses : AddressMap} {external : Nat → Nat}
     {source : Cfg.Frame} {target : Lir.Frame} {ρ : Own.Env} {saved : List Own.Plain.JEntry}
@@ -25,16 +26,21 @@ theorem self_entry_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.C
     {fields : List RVal} {logical : List Fir.Val}
     (arguments : Own.evalArgs ρ args = some fields)
     (den : Sem.Forall2 (Own.Proof.Den H) fields logical)
-    (balance : Balance H external fields) (arity : fields.length = sourceFunction.params.length)
+    (balance : Balance H external (Own.Plain.selectOwnedVals (borrows.getD source.fn []) fields))
+    (hbrw : ∀ v, v ∈ Own.Plain.selectBorrowedVals (borrows.getD source.fn []) fields →
+      Own.Plain.ReachableFrom H external v)
+    (arity : fields.length = sourceFunction.params.length)
     (running : target.dsts = []) (mem : X86.Memory) (context : Lir.Word)
     (sourceCallers : List (Cfg.Frame × Fir.Var)) (callers : List Lir.Frame) :
+    let bs := borrows.getD source.fn []
     (∃ after final cost body,
       Own.Plain.eraseCode body = sourceFunction.body ∧
       Activation F P pairs lp H addresses external (sourceFunction.params.map Prod.fst)
-        (Ctx.entry (sourceFunction.params.map Prod.fst)) .leaf
+        (Ctx.entryWith (sourceFunction.params.map Prod.fst) bs) .leaf
         (Fir.bindAll .leaf (sourceFunction.params.map Prod.fst) logical)
-        (Own.bindAll .leaf (sourceFunction.params.map Prod.fst) fields) fields [] [] []
-        body sourceFunction.vars function after final ∧
+        (Own.bindAll .leaf (sourceFunction.params.map Prod.fst) fields)
+        (Own.Plain.selectOwnedVals bs fields) [] [] []
+        body sourceFunction.vars function after final borrows ∧
       after.fn = source.fn ∧
       Sem.Star (Lir.semStep lp) {mem, ctx := context, stack := target :: callers} cost
         {mem, ctx := context, stack := final :: callers} ∧ 1 ≤ cost) ∨
@@ -99,8 +105,9 @@ theorem self_entry_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.C
     rw [same] at trace
     refine .inl ⟨after, final, charges + (decide (offset ≤ label)).toNat, body, erased, ?_, rfl,
       trace, ?_⟩
-    · refine ⟨Own.Plain.ownedState_entry_exact (Own.Plain.signatures F) H external _ fields logical
-          den (by simpa using arity) fresh balance,
+    · refine ⟨Own.Plain.ownedState_entryWith_exact (Own.Plain.signatures F) H external _
+          (borrows.getD source.fn []) fields logical den (by simpa using arity) fresh
+          balance hbrw borrows,
         typed, entryAt', ⟨frame.lookup, entered, registers,
           frame.bounded.bindAll _ (Own.Plain.dens_bounded den),
           frame.compatible.bindAll _ _ compatible⟩, sourceScope, rfl, ?_⟩

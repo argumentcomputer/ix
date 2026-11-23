@@ -17,12 +17,12 @@ open IxCC.Own.Plain (Ctx JCtx checkCode)
 
 /-- The source branch selected from the erased alternatives is the erasure of the Own branch
 selected from the alternatives, which the checker accepted. -/
-theorem ownCase_erase (key : Key.CtorKey) {Δ : JCtx} {Γ : Ctx} :
+theorem ownCase_erase (key : Key.CtorKey) {Δ : JCtx} {Γ : Ctx} {borrows : Own.Plain.BorrowSigs} :
     ∀ (alts : List Own.Plain.Alt) (d : Option Own.Plain.Code),
-    Own.Plain.checkAlts Δ Γ alts = .ok () → Own.Plain.checkOpt Δ Γ d = .ok () →
+    Own.Plain.checkAlts Δ Γ alts borrows = .ok () → Own.Plain.checkOpt Δ Γ d borrows = .ok () →
     ∀ fbody, firCase key (Own.Plain.eraseAlts alts) (Own.Plain.eraseOpt d) = some fbody →
     ∃ body, ownCase key alts d = some body ∧ Own.Plain.eraseCode body = fbody ∧
-      checkCode Δ Γ body = .ok ()
+      checkCode Δ Γ body borrows = .ok ()
   | [], none, _, _, fbody, h => by simp [Own.Plain.eraseAlts, Own.Plain.eraseOpt, firCase] at h
   | [], some c, _, ho, fbody, h => by
     simp only [Own.Plain.eraseAlts, Own.Plain.eraseOpt, firCase, Option.some.injEq] at h
@@ -40,15 +40,15 @@ theorem ownCase_erase (key : Key.CtorKey) {Δ : JCtx} {Γ : Ctx} :
 section
 variable {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
   {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-  {main clock : Nat} {sourceJoins : List Fir.JEntry}
+  {main clock : Nat} {sourceJoins : List Fir.JEntry} {borrows : Own.Plain.BorrowSigs}
 
 /-- **A `case`.** -/
-theorem case_result (admission : CodeAdmission F bodies P config pairs functions)
+theorem case_result (admission : CodeAdmission F bodies P config pairs functions borrows)
     {x : Fir.Var} {alts : List Own.Plain.Alt} {dflt : Option Own.Plain.Code}
     (next : ∀ body : Own.Plain.Code,
       (Own.Plain.eraseCode body).size < (Own.Plain.eraseCode (.case x alts dflt)).size →
-      PhysicalCode F P config pairs main clock sourceJoins body) :
-    PhysicalCode F P config pairs main clock sourceJoins (.case x alts dflt) := by
+      PhysicalCode F P config pairs main clock sourceJoins body borrows) :
+    PhysicalCode F P config pairs main clock sourceJoins (.case x alts dflt) borrows := by
   intro H addresses external live Γ Δ sourceEnv ownedEnv roots lex ownedJoins sourceFunction
     function source target memory context base bump limit regionBytes slots lists callers
     sourceLookup before heap
@@ -110,7 +110,7 @@ theorem case_result (admission : CodeAdmission F bodies P config pairs functions
           have activation : Activation F P pairs
               (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main) H addresses
               external live Γ Δ sourceEnv ownedEnv roots lex sourceJoins ownedJoins body
-              sourceFunction.vars function after final :=
+              sourceFunction.vars function after final borrows :=
             ⟨before.owned, typed, layout, frame,
               by rw [erased]; exact firCase_scope parts.2.1 parts.2.2 selected, running, fused⟩
           have smaller : (Own.Plain.eraseCode body).size <
@@ -120,7 +120,8 @@ theorem case_result (admission : CodeAdmission F bodies P config pairs functions
             simp only [Own.Plain.eraseCode, Fir.Code.size]
             omega
           rw [← erased]
-          exact ResultAt.prefix trace (fun _ _ _ den => den) (HeapHistory.refl _ _) (by omega)
+          exact ResultAt.prefix trace (Own.Plain.ReachablePreserved.refl H external)
+            (HeapHistory.refl _ _) (by omega)
             (next body smaller H addresses external live Γ Δ sourceEnv ownedEnv roots lex ownedJoins
               sourceFunction function after final memory context base bump limit regionBytes slots
               lists callers (by simpa only [sameFn] using sourceLookup) activation heap)

@@ -7,7 +7,7 @@ namespace IxCC.Recheck.RcReplay
 theorem runFront_native {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
     (accepted : runFront cfg P c = .ok f) :
     Recheck.checkParams cfg f.cfg.base (f.cfg.base.exports.zipIdx.map fun (g, i) => (i, g)) = .ok () ∧
-    Cfg.Rc.Public.lower {names := cfg.names} f.fir f.own.bodies f.cfg =
+    Cfg.Rc.Public.lower {names := cfg.names} f.fir f.own.bodies f.cfg f.own.borrows =
       .ok ⟨f.lowered, f.drop⟩ := by
   unfold runFront at accepted
   cases hfront : Recheck.front cfg P c.base with
@@ -37,7 +37,7 @@ theorem runFront_native {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
             | none => rw [hgen] at accepted; cases accepted
             | some candidate =>
               simp only [hgen] at accepted
-              cases hscope : Cfg.Rc.checkScopedProgram fir own.bodies candidate with
+              cases hscope : Cfg.Rc.checkScopedProgram fir own.bodies candidate own.borrows with
               | false => simp [hscope] at accepted
               | true =>
                 simp only [hscope, Bool.true_eq_false, ↓reduceIte, pure, Except.pure,
@@ -49,7 +49,7 @@ theorem runFront_native {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
                   cases unit
                   simp only [hparams, bind, Except.bind] at accepted
                   cases hnative : Cfg.Rc.Public.lower { names := cfg.names }
-                      fir own.bodies candidate with
+                      fir own.bodies candidate own.borrows with
                   | error e => rw [hnative] at accepted; cases accepted
                   | ok lowered =>
                     simp only [hnative, Except.mapError, bind, Except.bind,

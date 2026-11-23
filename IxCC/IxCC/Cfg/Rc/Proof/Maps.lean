@@ -59,7 +59,8 @@ theorem generate_reserved_absent {F : Fir.Program} {bodies : Src.NatMap Own.Plai
         (by simpa only [List.map_map, Function.comp_def] using absent)
 
 theorem checked_reserved_absent {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} (h : checkProgram F bodies P = true) {f : Nat} (hf : F.size ≤ f) :
+    {P : Program} {borrows : Own.Plain.BorrowSigs}
+    (h : checkProgram F bodies P borrows = true) {f : Nat} (hf : F.size ≤ f) :
     P.base.fun? f = none ∧ P.actions.get? f = none :=
   generate_reserved_absent (checkProgram_parts h).2 hf
 
@@ -76,7 +77,8 @@ theorem generate_size {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
 /-- Legacy execution cannot accidentally call a candidate-supplied function
 at either marker ID after complete-map admission. -/
 theorem checked_reserved_call_stuck {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} (h : checkProgram F bodies P = true) (offset : Nat)
+    {P : Program} {borrows : Own.Plain.BorrowSigs}
+    (h : checkProgram F bodies P borrows = true) (offset : Nat)
     (args : List Own.RVal) (stk : List (Frame × Fir.Var)) (H : Own.Heap) :
     Cfg.step .rc P.base (.call (P.base.size + offset) args stk H) = .stuck := by
   have size := generate_size (checkProgram_parts h).2

@@ -9,7 +9,8 @@ open Native.Spec
 
 theorem accepted_source_entry {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Lowered}
-    (accepted : Public.lower config F bodies P = .ok lowered) :
+    {borrows : Own.Plain.BorrowSigs}
+    (accepted : Public.lower config F bodies P borrows = .ok lowered) :
     ∃ main pairs funcs,
       consumeAll P = .ok pairs ∧
       Rt.Lower.functions (tablesOf P pairs) (consumed P pairs) (rootsOf config P)

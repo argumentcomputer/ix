@@ -37,8 +37,8 @@ def consumeFunction (P : Program) (l : Layout) (fd : Cfg.Fun) : Except String Cf
 /-- First explicit native lowering proposal. The accepted actual Cfg candidate
 is consumed directly; source bodies are used only by its admission check. -/
 def lower (config : Rt.Config) (F : Fir.Program) (bodies : Src.NatMap Own.Plain.Code)
-    (P : Program) : Except String Rt.Lowered := do
-  unless checkProgram F bodies P do throw "unchecked RC Cfg candidate"
+    (P : Program) (borrows : Own.Plain.BorrowSigs := .leaf) : Except String Rt.Lowered := do
+  unless checkProgram F bodies P borrows do throw "unchecked RC Cfg candidate"
   (Rt.checkSwitches P.base).mapError (·.render)
   let some main := P.base.exports.head? | throw "no exports"
   let l : Layout := ⟨P.base.size, P.base.ctors.filter (fun c => c.arity > 0)⟩

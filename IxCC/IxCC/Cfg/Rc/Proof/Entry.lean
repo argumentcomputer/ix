@@ -7,7 +7,8 @@ open Cfg.Proof (spine)
 /-- Construct the simulation invariant at a real checked function entry. All
 function, body, block and name facts come from the executable gate. -/
 theorem checked_entry_step {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    (checked : checkScopedProgram F bodies P = true) {f : Nat} (range : f < F.size)
+    {borrows : Own.Plain.BorrowSigs} (checked : checkScopedProgram F bodies P borrows = true)
+    {f : Nat} (range : f < F.size)
     {source : Fir.Fun} {body : Own.Plain.Code} (sourceLookup : F.fun? f = some source)
     (bodyLookup : bodies.get? f = some body) (vs : List Own.RVal)
     (arity : vs.length = source.params.length) (stk : List (Frame × Fir.Var)) (H : Own.Heap) :

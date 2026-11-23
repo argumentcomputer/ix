@@ -88,50 +88,66 @@ theorem needArgs_sem {H : Heap} {Γ : Ctx} {ρf : Fir.Env} {ρo : Own.Env}
 section
 variable {functions : Signatures} {H : Heap} {external : Nat → Nat} {live : List Var}
   {Γ : Ctx} {ρf : Fir.Env} {ρo : Own.Env} {owned : List RVal} {lex : Joins} {Δ : JCtx}
-  {Jf : List Fir.JEntry} {Jo : List JEntry}
+  {Jf : List Fir.JEntry} {Jo : List JEntry} {borrows : BorrowSigs}
 
 theorem rhs_step {F : Fir.Program} (pins : BoolPinsOk F)
-    (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo)
+    (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
     {x : Var} {r : Fir.Rhs} (hx : x ∉ live) (hn : ∀ f args, r ≠ .call f args)
-    {Γ' : Ctx} (hc : bindCtx Γ x r = .ok Γ') {w : Fir.Val} (hw : Fir.evalRhs F ρf r = .ok w) :
+    {Γ' : Ctx} (hc : bindCtx Γ x r borrows = .ok Γ') {w : Fir.Val} (hw : Fir.evalRhs F ρf r = .ok w) :
     ∃ v H' owned', evalRhs { ctors := F.ctors, known := F.known } ρo H r = .ok (v, H') ∧
       OwnedState functions H' external (live ++ [x]) Γ' (ρf.insert x w) (ρo.insert x v) owned'
-        lex Δ Jf Jo ∧ ExternalPreserved H H' external := by
-  have same : ExternalPreserved H H external := fun _ _ _ h => h
+        lex Δ Jf Jo borrows ∧ ReachablePreserved H H' external := by
+  have same : ReachablePreserved H H external := ReachablePreserved.refl H external
   cases r with
   | call f args => exact absurd rfl (hn f args)
   | arg a =>
     cases a with
     | var y =>
-      obtain ⟨Γ₁, ht, hΓ⟩ := except_bind_ok hc
-      have hΓ := except_pure_ok hΓ
       have hwy : ρf.get? y = some w := Result.ofOption_ok hw
-      obtain ⟨v, w', owned₁, hv, hw', hd, inv₁, hs, hwk⟩ := take_sem st.takeInv ht
-      have : w' = w := Option.some.inj (hw'.symm.trans hwy)
-      subst this
-      have hev : evalRhs { ctors := F.ctors, known := F.known } ρo H (.arg (.var y)) = .ok (v, H) := by
-        simp [evalRhs, Own.evalRhs, Own.evalArg, hv]
+      simp only [bindCtx] at hc
       cases hi : Γ.isImm y with
       | true =>
-        refine ⟨v, H, owned, hev, ?_, same⟩
-        rw [hi] at hΓ
-        simp only [↓reduceIte] at hΓ
-        subst hΓ
-        have hΓ₁ : Γ₁ = Γ := by
-          rcases Ctx.take_ok ht with ⟨_, h⟩ | ⟨hi', _⟩
-          · exact h
-          · rw [hi] at hi'; cases hi'
-        subst hΓ₁
-        obtain ⟨u, hu, himm⟩ := st.immOk y hi
-        have : u = v := Option.some.inj (hu.symm.trans hv)
+        simp only [hi, ↓reduceIte, Except.ok.injEq] at hc
+        subst hc
+        obtain ⟨v, w', hv, hw', hd⟩ := st.den y (by simp [Ctx.avail_eq, hi])
+        have : w' = w := Option.some.inj (hw'.symm.trans hwy)
         subst this
-        exact st.pre.bindImm hx hd himm st.counts
+        obtain ⟨u, hu, himm⟩ := st.immOk y hi
+        have huv : u = v := Option.some.inj (hu.symm.trans hv)
+        subst huv
+        have hev : evalRhs { ctors := F.ctors, known := F.known } ρo H (.arg (.var y)) = .ok (u, H) := by
+          simp [evalRhs, Own.evalRhs, Own.evalArg, hv]
+        exact ⟨u, H, owned, hev, st.pre.bindImm hx hd himm st.counts, same⟩
       | false =>
-        refine ⟨v, H, v :: owned₁, hev, ?_, same⟩
-        rw [hi] at hΓ
-        simp only [Bool.false_eq_true, ↓reduceIte] at hΓ
-        subst hΓ
-        exact (st.pre.weaker hwk inv₁.roots).bindOwned hx hd (hs.balance st.counts)
+        simp only [hi, Bool.false_eq_true, ↓reduceIte] at hc
+        by_cases hpb : (Γ.tokens y == 0 && Γ.isPbrw y) = true
+        · simp only [hpb, ↓reduceIte, Except.ok.injEq] at hc
+          subst hc
+          have hpb' : Γ.isPbrw y = true := (Bool.and_eq_true _ _).mp hpb |>.2
+          obtain ⟨v, w', hv, hw', hd⟩ := st.den y (by simp [Ctx.avail_eq, hpb'])
+          have : w' = w := Option.some.inj (hw'.symm.trans hwy)
+          subst this
+          obtain ⟨u, hu, hreach⟩ := st.pbrwOk y hpb'
+          have huv : u = v := Option.some.inj (hu.symm.trans hv)
+          subst huv
+          have hev : evalRhs { ctors := F.ctors, known := F.known } ρo H (.arg (.var y)) = .ok (u, H) := by
+            simp [evalRhs, Own.evalRhs, Own.evalArg, hv]
+          exact ⟨u, H, owned, hev, st.pre.bindPbrw hx hd hreach st.counts, same⟩
+        · have hpbF : (Γ.tokens y == 0 && Γ.isPbrw y) = false := by
+            cases hb : (Γ.tokens y == 0 && Γ.isPbrw y)
+            · rfl
+            · exact absurd hb hpb
+          simp only [hpbF, Bool.false_eq_true, ↓reduceIte] at hc
+          obtain ⟨Γ₁, ht, hΓ⟩ := except_bind_ok hc
+          have hΓ := except_pure_ok hΓ
+          subst hΓ
+          obtain ⟨v, w', owned₁, hv, hw', hd, inv₁, hs, hwk⟩ := take_sem st.takeInv ht
+          have : w' = w := Option.some.inj (hw'.symm.trans hwy)
+          subst this
+          have hev : evalRhs { ctors := F.ctors, known := F.known } ρo H (.arg (.var y)) = .ok (v, H) := by
+            simp [evalRhs, Own.evalRhs, Own.evalArg, hv]
+          exact ⟨v, H, v :: owned₁, hev,
+            (st.pre.weaker hwk inv₁.roots).bindOwned hx hd (hs.balance st.counts), same⟩
     | lit l =>
       cases hc
       have : w = .lit l := (Option.some.inj (Result.ofOption_ok hw)).symm
@@ -153,7 +169,7 @@ theorem rhs_step {F : Fir.Program} (pins : BoolPinsOk F)
           simp [Fir.evalRhs, hws, harity] at hw; exact hw.symm
         subst hw'
         by_cases hz : c.arity = 0
-        · have hc' : bindCtx Γ x (.ctor c args) = .ok (Γ.setImm x) := by
+        · have hc' : bindCtx Γ x (.ctor c args) borrows = .ok (Γ.setImm x) := by
             simp [bindCtx, hz]
           rw [hc'] at hc
           cases hc
@@ -180,11 +196,11 @@ theorem rhs_step {F : Fir.Program} (pins : BoolPinsOk F)
             balance_hold.mp (hs.balance st.counts)
           obtain ⟨hr, hb, hresult, hpreserve⟩ :=
             evalRhs_alloc_owned (T := { ctors := F.ctors, known := F.known }) hvs hvlen hpos held hds
+          have hreach := ReachablePreserved.alloc H external { ctor := c, fields := vs }
           refine ⟨(H.alloc .rc { ctor := c, fields := vs }).1, (H.alloc .rc { ctor := c, fields := vs }).2,
-            (H.alloc .rc { ctor := c, fields := vs }).1 :: owned₁, hr, ?_,
-            fun root w' _ hd' => hpreserve root w' hd'⟩
+            (H.alloc .rc { ctor := c, fields := vs }).1 :: owned₁, hr, ?_, hreach⟩
           have pre₁ := ((st.pre.weaker hwk inv₁.roots).transport hpreserve
-            (fun v hv => canDup_alloc hv _))
+            (fun v hv => canDup_alloc hv _) hreach)
           exact pre₁.bindOwned hx hresult
             ((SameRefs.comm _ _).balance (balance_resume hb))
       · simp [Fir.evalRhs, hws, harity] at hw
@@ -220,7 +236,16 @@ theorem rhs_step {F : Fir.Program} (pins : BoolPinsOk F)
           exact st.pre.bindImm hx hv (asCtor_field_imm himm hview hm) st.counts
         | false =>
           simp only [Bool.false_eq_true, ↓reduceIte]
-          exact st.pre.bindBorrow hx hv (asCtor_field_canDup st.counts hview hm) st.counts
+          cases hpb' : Γ.isPbrw y with
+          | true =>
+            simp only [↓reduceIte]
+            obtain ⟨u', hu', hreach⟩ := st.pbrwOk y hpb'
+            have : u' = vy := Option.some.inj (hu'.symm.trans hvy)
+            subst this
+            exact st.pre.bindPbrw hx hv (hreach.asCtor_field hview hm) st.counts
+          | false =>
+            simp only [Bool.false_eq_true, ↓reduceIte]
+            exact st.pre.bindBorrow hx hv (asCtor_field_canDup st.counts hview hm) st.counts
       · simp only [hk, ↓reduceIte] at hw; cases hw
   | prim op args =>
     obtain ⟨u, hneed, hΓ⟩ := except_bind_ok hc
@@ -240,42 +265,54 @@ theorem rhs_step {F : Fir.Program} (pins : BoolPinsOk F)
       exact hargs u (evalArgs_mem hvs hy hu))
     exact ⟨v, H, owned', hev, pre'.bindImm hx hden himm (hs'.balance st.counts), same⟩
 
-/-- An argument binding (a move) changes no heap and keeps the token count: the bound value's
-token is the argument's (or vacuous). -/
-theorem arg_step_refs (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo)
-    {x : Var} {a : Arg} (hx : x ∉ live) {Γ' : Ctx} (hc : bindCtx Γ x (.arg a) = .ok Γ')
+/-- An argument binding (a move, immediate copy, or borrowed copy) changes no heap and keeps the
+token count: the bound value's token is the argument's (or vacuous). -/
+theorem arg_step_refs (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo borrows)
+    {x : Var} {a : Arg} (hx : x ∉ live) {Γ' : Ctx} (hc : bindCtx Γ x (.arg a) borrows = .ok Γ')
     {w : Fir.Val} (hw : a.eval ρf = some w) :
     ∃ v owned', Own.evalArg ρo a = some v ∧
       OwnedState functions H external (live ++ [x]) Γ' (ρf.insert x w) (ρo.insert x v) owned'
-        lex Δ Jf Jo ∧ SameRefs owned' owned := by
+        lex Δ Jf Jo borrows ∧ SameRefs owned' owned := by
   cases a with
   | var y =>
-    obtain ⟨Γ₁, ht, hΓ⟩ := except_bind_ok hc
-    have hΓ := except_pure_ok hΓ
-    obtain ⟨v, w', owned₁, hv, hw', hd, inv₁, hs, hwk⟩ := take_sem st.takeInv ht
-    have : w' = w := Option.some.inj (hw'.symm.trans hw)
-    subst this
+    simp only [bindCtx] at hc
     cases hi : Γ.isImm y with
     | true =>
-      refine ⟨v, owned, hv, ?_, SameRefs.refl _⟩
-      rw [hi] at hΓ
-      simp only [↓reduceIte] at hΓ
-      subst hΓ
-      have hΓ₁ : Γ₁ = Γ := by
-        rcases Ctx.take_ok ht with ⟨_, h⟩ | ⟨hi', _⟩
-        · exact h
-        · rw [hi] at hi'; cases hi'
-      subst hΓ₁
-      obtain ⟨u, hu, himm⟩ := st.immOk y hi
-      have : u = v := Option.some.inj (hu.symm.trans hv)
+      simp only [hi, ↓reduceIte, Except.ok.injEq] at hc
+      subst hc
+      obtain ⟨v, w', hv, hw', hd⟩ := st.den y (by simp [Ctx.avail_eq, hi])
+      have : w' = w := Option.some.inj (hw'.symm.trans hw)
       subst this
-      exact st.pre.bindImm hx hd himm st.counts
+      obtain ⟨u, hu, himm⟩ := st.immOk y hi
+      have huv : u = v := Option.some.inj (hu.symm.trans hv)
+      subst huv
+      exact ⟨u, owned, hv, st.pre.bindImm hx hd himm st.counts, SameRefs.refl _⟩
     | false =>
-      refine ⟨v, v :: owned₁, hv, ?_, hs.symm⟩
-      rw [hi] at hΓ
-      simp only [Bool.false_eq_true, ↓reduceIte] at hΓ
-      subst hΓ
-      exact (st.pre.weaker hwk inv₁.roots).bindOwned hx hd (hs.balance st.counts)
+      simp only [hi, Bool.false_eq_true, ↓reduceIte] at hc
+      by_cases hpb : (Γ.tokens y == 0 && Γ.isPbrw y) = true
+      · simp only [hpb, ↓reduceIte, Except.ok.injEq] at hc
+        subst hc
+        have hpb' : Γ.isPbrw y = true := (Bool.and_eq_true _ _).mp hpb |>.2
+        obtain ⟨v, w', hv, hw', hd⟩ := st.den y (by simp [Ctx.avail_eq, hpb'])
+        have : w' = w := Option.some.inj (hw'.symm.trans hw)
+        subst this
+        obtain ⟨u, hu, hreach⟩ := st.pbrwOk y hpb'
+        have huv : u = v := Option.some.inj (hu.symm.trans hv)
+        subst huv
+        exact ⟨u, owned, hv, st.pre.bindPbrw hx hd hreach st.counts, SameRefs.refl _⟩
+      · have hpbF : (Γ.tokens y == 0 && Γ.isPbrw y) = false := by
+          cases hb : (Γ.tokens y == 0 && Γ.isPbrw y)
+          · rfl
+          · exact absurd hb hpb
+        simp only [hpbF, Bool.false_eq_true, ↓reduceIte] at hc
+        obtain ⟨Γ₁, ht, hΓ⟩ := except_bind_ok hc
+        have hΓ := except_pure_ok hΓ
+        subst hΓ
+        obtain ⟨v, w', owned₁, hv, hw', hd, inv₁, hs, hwk⟩ := take_sem st.takeInv ht
+        have : w' = w := Option.some.inj (hw'.symm.trans hw)
+        subst this
+        exact ⟨v, v :: owned₁, hv,
+          (st.pre.weaker hwk inv₁.roots).bindOwned hx hd (hs.balance st.counts), hs.symm⟩
   | lit l =>
     cases hc
     have : w = .lit l := (Option.some.inj hw).symm

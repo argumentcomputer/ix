@@ -14,7 +14,8 @@ private theorem suffix_at {α : Type} (before after : List α) (i : Nat) :
 
 theorem accepted_drop_index {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Public.Lowered}
-    (accepted : Public.lower config F bodies P = .ok lowered) :
+    {borrows : Own.Plain.BorrowSigs}
+    (accepted : Public.lower config F bodies P borrows = .ok lowered) :
     lowered.drop = (layoutOf P).init + 3 := by
   obtain ⟨original, native, rfl, _⟩ := Public.Spec.lower_parts accepted
   obtain ⟨main, pairs, functions, _, _, _, _, _, _, length, program, _⟩ := Native.Spec.lower_parts native
@@ -47,8 +48,9 @@ the actual public drop export. Neither readback nor header shape establishes
 ownership: the Returned invariant supplies the single root occurrence. -/
 theorem Returned.release_public {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     {P : Program} {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-    {lowered : Public.Lowered} (admission : CodeAdmission F bodies P config pairs functions)
-    (accepted : Public.lower config F bodies P = .ok lowered)
+    {lowered : Public.Lowered} {borrows : Own.Plain.BorrowSigs}
+    (admission : CodeAdmission F bodies P config pairs functions borrows)
+    (accepted : Public.lower config F bodies P borrows = .ok lowered)
     {lp : Lir.Program} {origin : Heap} {originAddresses : AddressMap} {external : Nat → Nat}
     {context base limit : Lir.Word} {regionBytes : Nat} {logical : Fir.Val}
     (returned : Returned P pairs lp origin originAddresses external context base limit regionBytes logical) :
