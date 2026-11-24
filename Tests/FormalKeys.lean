@@ -6,7 +6,7 @@ import Ix.Cli.FormalKeys
 certified IxVM, recursive verifier and aggregation programs, on stdout. Each
 program comes from the artifact cache, misses compiling in process; its key is
 derived under the default STARK parameters.
-`tools/check-formal-keys.sh` compares the output with the committed file. -/
+`Scripts/CheckFormalKeys.lean` compares the output with the committed file. -/
 
 open Ix.Cli Ix.Cli.FormalAiur in
 def main (_ : List String) : IO UInt32 := do

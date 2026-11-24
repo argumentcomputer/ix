@@ -324,8 +324,8 @@ jobs:
               - 'Tests/Ix/IOIngress.lean'
               - 'Tests/AggrBindingReuse.lean'
               - 'tools/formal-aiur.keys'
-              - 'tools/check-formal-keys.sh'
-              - 'tools/check-aiur-compression-fixtures.sh'
+              - 'Scripts/CheckFormalKeys.lean'
+              - 'Scripts/CheckAiurCompressionFixtures.lean'
               - 'crates/**'
       - name: Resolve job plan
         id: plan
@@ -1120,6 +1120,8 @@ jobs:
         run: |
           lake run check-formal-modules --wfail
           lake env lean --run Scripts/CheckFormal.lean --self-test
+          lake env lean --run Scripts/CheckFormalKeys.lean --self-test
+          lake env lean --run Scripts/CheckAiurCompressionFixtures.lean --self-test
       - name: Run Aiur axiom sweep, unit tests and formal-package-tests
         run: |
           lake env Aiur/.lake/build/bin/axiom_sweep Aiur
@@ -1130,7 +1132,7 @@ jobs:
           Aiur/.lake/build/bin/u32_tests
           lake env .lake/build/bin/formal-package-tests
       - name: Check Aiur compression compiler fixtures
-        run: bash tools/check-aiur-compression-fixtures.sh
+        run: lake env lean --run Scripts/CheckAiurCompressionFixtures.lean
       - name: Check IxVM execution fixture
         run: |
           tmp=$(mktemp -d)
@@ -1139,7 +1141,7 @@ jobs:
           target/release/ixvm "$tmp/ixvm-execution.ixa" validate IxVM/IxVM/fixtures/nat-add-comm.ixf
           rm -rf "$tmp"
       - name: Check the formal verifying keys match their pins
-        run: bash tools/check-formal-keys.sh
+        run: lake env lean --run Scripts/CheckFormalKeys.lean
 
   # Dedicated lineage for the 944-module IxVMRefinement library so it runs in
   # parallel from t=0 without competing for sticky-disk space with host/formal.

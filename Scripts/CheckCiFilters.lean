@@ -366,6 +366,8 @@ def requiredFilterCoverage : Array (String × String) := #[
   ("Aiur/c/execution.c", "formal"),
   ("Scripts/FriSecurity.lean", "host"),
   ("Scripts/FriSecurity.lean", "formal"),
+  ("Scripts/CheckFormalKeys.lean", "formal"),
+  ("Scripts/CheckAiurCompressionFixtures.lean", "formal"),
   ("Ix/Aiur/Parameters.lean", "formal"),
   ("Ix/Aiur/Parameters.lean", "refinement"),
   ("Ix/MultiStark/Wire.lean", "formal"),

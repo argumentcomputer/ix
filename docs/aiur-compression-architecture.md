@@ -62,7 +62,7 @@ One format per role. Everything else was removed (§5).
 
 The per-column formats (`IXAUKY01`, `IXAUPF01`, `IXAUKL01`, `CompressBN`,
 `CompressFinal`) remain only for the documented fixtures checked by
-`tools/check-aiur-compression-fixtures.sh` and their tests; L3 does not use
+`Scripts/CheckAiurCompressionFixtures.lean` and their tests; L3 does not use
 them.
 
 ## 3. Verification surface
@@ -275,7 +275,7 @@ against the system loader `/lib64/ld-linux-x86-64.so.2`:
 export PATH=$PWD/target/terminal-complete/toolchain/lean-4.34.1-linux/bin:$PATH
 export LIBCLANG_PATH=/usr/lib/llvm-21/lib   # bindgen, system LLVM
 unset LEAN_PATH LEAN_SYSROOT
-bash tools/check-aiur-compression-fixtures.sh
+lake env lean --run Scripts/CheckAiurCompressionFixtures.lean
 ```
 
 Executables already linked against a collected loader must be relinked:
@@ -349,7 +349,7 @@ to user scope bus"), so run them outside the sandbox. The fixture gate with
 option A's environment:
 
 ```bash
-target/light.sh -m 40G bash -c '. <env with option A exports> && bash tools/check-aiur-compression-fixtures.sh'
+target/light.sh -m 40G bash -c '. <env with option A exports> && lake env lean --run Scripts/CheckAiurCompressionFixtures.lean'
 ```
 
 ## 8. Single-process driver

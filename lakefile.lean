@@ -338,7 +338,7 @@ def profileLeancArgs : Array String :=
   if (get_config? profile).isSome then #["-fno-omit-frame-pointer"] else #[]
 
 /-- The committed pins of the certified formal Aiur programs' identities
-and verifying keys (`tools/check-formal-keys.sh`). -/
+and verifying keys (`Scripts/CheckFormalKeys.lean`). -/
 input_file formalAiurKeys where
   path := "tools/formal-aiur.keys"
   text := true
@@ -397,7 +397,7 @@ lean_exe «formal-aggregate-tests» where
 lean_exe «formal-checks» where
   root := `Tests.FormalChecks
 /-- The pin file of the checkout's certified programs;
-`tools/check-formal-keys.sh` compares it with `tools/formal-aiur.keys`. -/
+`Scripts/CheckFormalKeys.lean` compares it with `tools/formal-aiur.keys`. -/
 lean_exe «formal-keys» where
   root := `Tests.FormalKeys
   supportInterpreter := true
@@ -812,6 +812,23 @@ in the transitive definitional closure manifests and TCB fence files. -/
 script "check-ci-filters" := do
   let child ← IO.Process.spawn {
     cmd := "lake", args := #["env", "lean", "--run", "Scripts/CheckCiFilters.lean"]
+    stdout := .inherit, stderr := .inherit }
+  return ← child.wait
+
+/-- Verifying-key gate comparing `lake exe formal-keys` against `tools/formal-aiur.keys`.
+Accepts `--check` (default), `--update`, `--self-test`, or `--help`. -/
+script "check-formal-keys" (args) := do
+  let child ← IO.Process.spawn {
+    cmd := "lean", args := #["--run", "Scripts/CheckFormalKeys.lean"] ++ args.toArray
+    stdout := .inherit, stderr := .inherit }
+  return ← child.wait
+
+/-- Build and verify (or with `--update`, regenerate) committed Aiur compression
+compiler fixtures under `crates/aiur/tests/fixtures/`. -/
+script "check-aiur-compression-fixtures" (args) := do
+  let child ← IO.Process.spawn {
+    cmd := "lean",
+    args := #["--run", "Scripts/CheckAiurCompressionFixtures.lean"] ++ args.toArray
     stdout := .inherit, stderr := .inherit }
   return ← child.wait
 

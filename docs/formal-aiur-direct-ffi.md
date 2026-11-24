@@ -176,7 +176,7 @@ aggregation <identity hex> <key digest hex>
   (`pinnedAllowed`). A mismatch is an error naming the program and both
   digests, whichever artifact was selected.
 - **Updating.** `lake exe formal-keys` derives the file from the checkout's
-  programs; `tools/check-formal-keys.sh` fails when it differs from the
+  programs; `lake env lean --run Scripts/CheckFormalKeys.lean` fails when it differs from the
   committed pins (CI runs it), and `--update` rewrites them.
 
 ## Identities
