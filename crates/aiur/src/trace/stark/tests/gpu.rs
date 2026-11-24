@@ -296,17 +296,15 @@ fn unsupported_hints_stay_on_the_host() {
   }))
   .unwrap();
   let program = program.check().unwrap();
-  let artifact = crate::trace::tests::activate(
-    crate::trace::tests::raw_artifact(json!({
-      "version":1,"modulus":Val::ORDER_U64,
-      "functions":[{"name":"root","chip":"root","witnesses":2,"inputs":[0],"output":[0],
-        "steps":[step(json!({"op":"hint","channel":"half","instruction":0,
-          "type":f(),"key_type":f(),"key":[v(0)],"dest":[1]}))],
-        "writes":writes(2)}],
-      "chips":[{"name":"root","width":2,"inputs":[0],"output":[v(0)],
-        "constraints":[],"sends":[],"memory":[]}]
-    })),
-  );
+  let artifact = activate(raw_artifact(json!({
+    "version":1,"modulus":Val::ORDER_U64,
+    "functions":[{"name":"root","chip":"root","witnesses":2,"inputs":[0],"output":[0],
+      "steps":[step(json!({"op":"hint","channel":"half","instruction":0,
+        "type":f(),"key_type":f(),"key":[v(0)],"dest":[1]}))],
+      "writes":writes(2)}],
+    "chips":[{"name":"root","width":2,"inputs":[0],"output":[v(0)],
+      "constraints":[],"sends":[],"memory":[]}]
+  })));
   let plan = TracePlan::new(&program, artifact).unwrap();
   let mut backend =
     Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
@@ -343,8 +341,8 @@ fn unsupported_hints_stay_on_the_host() {
 #[test]
 fn rom_circuits_fill_on_the_device() {
   use multi_stark::batch::Retention;
-  let mixed = super::mixed_memory();
-  let mixed = (mixed.0, crate::trace::tests::activate(mixed.1));
+  let mixed = mixed_memory();
+  let mixed = (mixed.0, activate(mixed.1));
   let grouping = grouped();
   for ((program, artifact), entry, args) in
     [(mixed, "root", vec![3, 0, 7]), (grouping, ENTRY, vec![3])]
@@ -837,8 +835,8 @@ fn record_model_matches_record_bytes() {
 #[test]
 fn shard_images_match_host_words_and_proofs() {
   use multi_stark::batch::Retention;
-  let mixed = super::mixed_memory();
-  let mixed = (mixed.0, crate::trace::tests::activate(mixed.1));
+  let mixed = mixed_memory();
+  let mixed = (mixed.0, activate(mixed.1));
   for ((mut program, artifact), entry, args) in [
     (mixed, "root", vec![3, 0, 7]),
     (grouped(), ENTRY, vec![3]),

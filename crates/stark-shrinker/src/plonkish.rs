@@ -573,7 +573,9 @@ fn finalize_definitions(
 /// Guaranteed lower bound on `B3_All` active rows from a compact-BLAKE3
 /// `MultiStarkLayout`: each custom trace `t0..t5` has power-of-two padded height
 /// `h`, so its active row count is strictly `> h / 2` whenever `h > 2`.
-fn b3_lower_bound(est: &multi_stark::plonkish::MultiStarkLayout) -> Option<usize> {
+fn b3_lower_bound(
+  est: &multi_stark::plonkish::MultiStarkLayout,
+) -> Option<usize> {
   if est.custom_traces.len() != 9 {
     return None;
   }
@@ -651,7 +653,10 @@ fn plan_hop_lowering(
       .is_some_and(|lb| lb <= double_h);
     if try_merged_double {
       let mut compiled = circuit
-        .lower_to_multi_stark_sharded(Val::from_u8(PLONKISH_NAMESPACE), double_h)
+        .lower_to_multi_stark_sharded(
+          Val::from_u8(PLONKISH_NAMESPACE),
+          double_h,
+        )
         .map_err(|e| format!("hop {hop} lowering failed: {e}"))?;
       compiled = compiled
         .merge_table_traces(double_h)
@@ -812,18 +817,14 @@ fn plan_hop_lowering(
   }
 
   finalize_definitions(&mut definitions, options, mode, params)?;
-  Ok(HopLowering::Final {
-    compiled,
-    definitions,
-    schema,
-    merged: Some(merged),
-  })
+  Ok(HopLowering::Final { compiled, definitions, schema, merged: Some(merged) })
 }
 
-fn next_hop_verifier_plan(
-  vk: &VerifierKey,
+fn next_hop_verifier_plan<'a>(
+  vk: &'a VerifierKey,
   schema: &ClaimSchema,
-) -> Result<(VerifierPlan, Statement<StatementSlot>, ProofProfile), String> {
+) -> Result<(VerifierPlan<'a>, Statement<StatementSlot>, ProofProfile), String>
+{
   let num_circuits = vk.system().circuits.len();
   let log_degrees: Vec<u8> = vk
     .system()
@@ -863,8 +864,8 @@ fn next_hop_verifier_plan(
 fn prove_intermediate_hop(
   compiled: MultiStarkCircuit<Val>,
   definitions: Vec<CircuitInputs<Val>>,
-  schema: ClaimSchema,
-  merged: Option<MergedLayout>,
+  schema: &ClaimSchema,
+  merged: Option<&MergedLayout>,
   assignment: Assignment<Val>,
   expected_publics: &[Val],
   hop_params: OuterFriParams,
@@ -881,7 +882,7 @@ fn prove_intermediate_hop(
     device,
   );
   let (sys, key) = System::new_without_preprocessed(config, definitions);
-  let stage1 = if let Some(layout) = merged.as_ref()
+  let stage1 = if let Some(layout) = merged
     && layout.is_merged()
   {
     let traces = layout.build_traces(&compiled, &assignment)?;
@@ -894,17 +895,18 @@ fn prove_intermediate_hop(
       .map_err(|e| format!("hop {hop} trace shards failed: {e}"))?;
     let count = sys.circuits.len();
     let mut trace_err: Option<String> = None;
-    let s1 = sys.prove_stage_1_streaming((0..count).map(|ci| {
-      match shards.trace(ci) {
-        Ok(t) => t,
-        Err(e) => {
-          if trace_err.is_none() {
-            trace_err = Some(format!("hop {hop} trace {ci}: {e}"));
-          }
-          RowMajorMatrix::new(Vec::new(), sys.circuits[ci].main_width)
+    let s1 =
+      sys.prove_stage_1_streaming((0..count).map(
+        |ci| match shards.trace(ci) {
+          Ok(t) => t,
+          Err(e) => {
+            if trace_err.is_none() {
+              trace_err = Some(format!("hop {hop} trace {ci}: {e}"));
+            }
+            RowMajorMatrix::new(Vec::new(), sys.circuits[ci].main_width)
+          },
         },
-      }
-    }));
+      ));
     if let Some(err) = trace_err {
       return Err(err);
     }
@@ -922,8 +924,9 @@ fn prove_intermediate_hop(
     .map_err(|e| format!("hop {hop} self-verify failed: {e:?}"))?;
 
   let hop_vk = VerifierKey::new(sys);
-  let (plan, stmt_schema, profile) = next_hop_verifier_plan(&hop_vk, &schema)?;
-  if proof.active != profile.active || proof.log_degrees != profile.log_degrees {
+  let (plan, stmt_schema, profile) = next_hop_verifier_plan(&hop_vk, schema)?;
+  if proof.active != profile.active || proof.log_degrees != profile.log_degrees
+  {
     return Err(format!(
       "hop {hop} proof profile mismatch (active/log_degrees)"
     ));
@@ -1620,7 +1623,7 @@ fn prove_lowered_plonkish(
   compiled: MultiStarkCircuit<Val>,
   definitions: Vec<CircuitInputs<Val>>,
   schema: ClaimSchema,
-  merged: Option<MergedLayout>,
+  merged: Option<&MergedLayout>,
   assignment: Assignment<Val>,
   inner_vk_digest: [u8; 32],
   claim_digest: [u8; 32],
@@ -1653,7 +1656,7 @@ fn prove_lowered_plonkish(
   let (proof_bytes, breakdown) = outer.prove_and_drop_key(
     compiled,
     assignment,
-    merged.as_ref(),
+    merged,
     &claims,
     options.compact_encoding,
   )?;
@@ -1734,7 +1737,7 @@ pub fn prove_plonkish_circuit(
     compiled,
     definitions,
     schema,
-    merged,
+    merged.as_ref(),
     assignment,
     inner_vk_digest,
     claim_digest,
@@ -1848,7 +1851,8 @@ impl PlonkishCircuitVerifier {
             FriBatching::Tensor,
             None,
           );
-          let (sys, key) = System::new_without_preprocessed(config, definitions);
+          let (sys, key) =
+            System::new_without_preprocessed(config, definitions);
           drop(key);
           #[cfg(feature = "cuda")]
           multi_stark::cuda::release_device_memory();
@@ -1860,7 +1864,9 @@ impl PlonkishCircuitVerifier {
               stmt_schema,
               ImplementationOptions { compact_blake3: options.compact_blake3 },
             )
-            .map_err(|e| format!("hop {} circuit build failed: {e}", hop + 1))?;
+            .map_err(|e| {
+              format!("hop {} circuit build failed: {e}", hop + 1)
+            })?;
           circuit = next_circuit;
         },
       }
@@ -1995,7 +2001,7 @@ pub fn shrink_fixed_root(
           compiled,
           definitions,
           schema,
-          merged,
+          merged.as_ref(),
           assignment,
           inner_vk_digest,
           claim_digest,
@@ -2016,8 +2022,8 @@ pub fn shrink_fixed_root(
         let (next_circuit, next_assignment) = prove_intermediate_hop(
           compiled,
           definitions,
-          schema,
-          merged,
+          &schema,
+          merged.as_ref(),
           assignment,
           expected_claim,
           hop_params,
@@ -2030,9 +2036,7 @@ pub fn shrink_fixed_root(
       },
     }
   }
-  Err(format!(
-    "FixedRoot shrinking exceeded {MAX_PLONKISH_HOPS} hops"
-  ))
+  Err(format!("FixedRoot shrinking exceeded {MAX_PLONKISH_HOPS} hops"))
 }
 
 /// Strict 1-hop Plonkish shrinker for a normalized Protocol `v6` aggregate root
@@ -3330,8 +3334,10 @@ mod tests {
     let b3_lb = b3_lower_bound(&est).expect("compact BLAKE3 custom traces");
     let tight_max = 1usize << (b3_lb.saturating_sub(1).ilog2());
     assert!(tight_max < b3_lb);
-    let tight_opts =
-      PlonkishOptions { max_trace_height: tight_max, ..PlonkishOptions::default() };
+    let tight_opts = PlonkishOptions {
+      max_trace_height: tight_max,
+      ..PlonkishOptions::default()
+    };
     let plan2 = plan_hop_lowering(
       c2,
       tight_opts,

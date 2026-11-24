@@ -1,12 +1,10 @@
 //! Bounded trace shards and verifier-only keys. Function rows may be partitioned
 //! freely; memory rows remain consecutive and are closed by the batch preamble.
 use super::*;
-use multi_stark::system::Circuit;
-#[cfg(all(feature = "cuda", test))]
-use multi_stark::witness::TraceSource;
 use multi_stark::{
   batch::{BatchMessage, Retention},
-  witness::PreparedWitness,
+  system::Circuit,
+  witness::{PreparedWitness, TraceSource},
 };
 #[cfg(all(feature = "cuda", test))]
 use std::sync::Arc;
@@ -732,7 +730,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       if trace.width() != circuit.main_width || trace.width() == 0 {
         return Err("invalid main trace width".into());
       }
-      if let multi_stark::witness::TraceSource::Host(matrix) = trace
+      if let TraceSource::Host(matrix) = trace
         && !matrix.values.len().is_multiple_of(matrix.width)
       {
         return Err("partial main trace row".into());
