@@ -195,6 +195,11 @@ def isRustBuildInput (path : FilePath) : Bool :=
 embedded fixtures, optional gnark sources, and build-affecting environment
 variables. When none of these change, Lake skips invoking Cargo altogether. -/
 def rustInputDeps (pkg : Package) (features : Array String) : FetchM (Job Unit) := do
+  -- Sandboxed Nix builds omit Rust sources and symlink Crane's prebuilt
+  -- `target/release/libix_ffi.a`; trace the prebuilt archive directly.
+  if !(← (pkg.dir / "Cargo.lock").pathExists) then
+    let prebuilt ← inputBinFile (pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi")
+    return prebuilt.map fun _ => ()
   let crates ← inputDir (pkg.dir / "crates") false isRustBuildInput
   let mut manifestJobs : Array (Job FilePath) := #[
     ← inputTextFile (pkg.dir / "Cargo.toml"),
