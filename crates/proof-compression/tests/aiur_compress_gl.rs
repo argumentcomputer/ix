@@ -80,7 +80,7 @@ fn compiled_root_binds_statement_artifact_and_capacity() {
       .prove(
         &execution,
         &setup,
-        Capacity { max_log_height: 1, quotient_degree: 2 }
+        Capacity { max_log_height: 1, quotient_degree: 4 }
       )
       .is_err()
   );
@@ -88,7 +88,7 @@ fn compiled_root_binds_statement_artifact_and_capacity() {
     .prove(
       &execution,
       &setup,
-      Capacity { max_log_height: 24, quotient_degree: 2 },
+      Capacity { max_log_height: 24, quotient_degree: 4 },
     )
     .unwrap();
   let key =

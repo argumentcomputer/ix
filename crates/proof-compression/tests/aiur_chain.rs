@@ -83,7 +83,7 @@ fn authenticated_chain_proves_and_resumes_a_small_fri_root() {
   }
   let setup = SetupConfig::from_env(true).unwrap();
   let gl_capacity =
-    compress_gl::Capacity { max_log_height: 24, quotient_degree: 2 };
+    compress_gl::Capacity { max_log_height: 24, quotient_degree: 4 };
   let bn_capacity =
     compress_gl::Capacity { max_log_height: 24, quotient_degree: 8 };
   let gl = compress_gl::Wrapper::from_bytes(
@@ -135,7 +135,7 @@ fn authenticated_chain_proves_and_resumes_a_small_fri_root() {
   assert!(Verifier::from_bytes(wrong_capacity, assets()).is_err());
   let mut mismatched = configuration.clone();
   mismatched.bn.key_blake3 = mismatched.gl.key_blake3;
-  mismatched.bn.quotient_degree = 2;
+  mismatched.bn.quotient_degree = gl_capacity.quotient_degree;
   let error =
     Verifier::from_bytes(mismatched, Assets { bn_key: &gl_key, ..assets() })
       .err()
