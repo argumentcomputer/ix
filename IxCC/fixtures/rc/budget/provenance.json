@@ -2,7 +2,7 @@
  {"consumer.equations.json":
   "197a3bafca7fa909856d3002c5ba8ac064db591fd21a9f5999cdade41ef91eb4",
   "anonymous.ixe":
-  "f1019189df84ea4bc2aa970e7df284cabf05c5cf6f1e83f01afdec00e89953ff",
+  "34b0bd84250d21df440afc3d78ef1ac06714a289d9733e87751b134bbefbc550",
   "Fan.lean":
   "3a6322abb5a6e3c361739688b218912465cb0a2d158f87a2735fec60757ba3e1"},
  "source_path": "fixtures/rc/budget",
@@ -12,7 +12,7 @@
  "producer":
  "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
  "named_env_sha256":
- "43620fd831dc1d2c7fbd19f488f6a5f5631793eb55300c2e06a5aa08444483ce",
+ "dfbf945b0b603c850b2583a26b408174a3b81fc61f80cd448052b9bf151b83b2",
  "lean_version":
  "Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)\n",
  "commands":

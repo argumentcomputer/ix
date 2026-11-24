@@ -291,7 +291,7 @@ runs, in this order:
 
 1. the tables, first, because the census and ingress read them: ix's fixture
    package (`refreeze-ixon package`: the root package's
-   `Tests/Fixtures/ixon-v4/`, copied unchanged; its two handoff closures,
+   `Tests/Fixtures/ixon/`, copied unchanged; its two handoff closures,
    `handoff/accepted.ixe` and `handoff/rejected-local-escape.ixe`, are the
    only unbound fixtures: ix's own generator writes them,
    `lake exe ixon-v4-tests --export-handoff` (`Tests/IxonV4Handoff.lean`, an

@@ -140,7 +140,7 @@ and the certified kernel's acceptance of the whole closure.
 
 The portable fixture package (expressions, addressed constants, the text
 grammar and the primitive inventory) is copied byte for byte from the root
-package's `Tests/Fixtures/ixon-v4/`. The compiled `tests-ixon-v3` suite decodes
+package's `Tests/Fixtures/ixon/`. The compiled `tests-ixon-v3` suite decodes
 and re-encodes them with this boundary, checks every binder/arrow bit pattern,
 truncation and trailing bytes, role-binding admission, the primitive table
 against `primitives.tsv`, `Nat` literal bytes, the K1 pack, and regression

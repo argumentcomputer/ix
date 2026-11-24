@@ -171,8 +171,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "scalar.ixe",
-        "sha256": "d6988bfcc8049851624a18019516d363e1b92dfae9172bf4a5db5ce91fe140c2",
-        "bytes": 2718125
+        "sha256": "24320ee8286313f93bd0d3310edec32354abc6026231980053935c13ab3f964c",
+        "bytes": 2719241
       },
       "equations": {
         "path": "scalar.equations.json",
@@ -180,10 +180,10 @@
         "equations": 56,
         "failures": 0
       },
-      "named_env_sha256": "17a995a33144885cf40babdaffc155aac20f8add7523f5283cf899f3ed1e9ea6",
+      "named_env_sha256": "1f96dfc4119f1706808494ef8814b3c37ea9475008056283d55674dfb6dd8617",
       "census": {
         "path": "scalar.census.json",
-        "sha256": "906baec611fc3a0e6bb82f03d41845001d3a67d2fa015ffedfb12b47ca5924bc"
+        "sha256": "677239714378ebed3e816370e406eb18e7a4a1176dd191bc16dcbbe2be6584fd"
       },
       "roots": [
         {
@@ -1844,8 +1844,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "strictAndOr.ixe",
-        "sha256": "51e6399125e6db2040b3ba207fbdcca9c2c6ad244454d15f0755cd7e8a66dd58",
-        "bytes": 97763
+        "sha256": "e9793f4aca3ffb31c08a6d96cd73c9e6428beeae5bb432a606f37bc488fcb2e2",
+        "bytes": 98879
       },
       "equations": {
         "path": "strictAndOr.equations.json",
@@ -1853,10 +1853,10 @@
         "equations": 3,
         "failures": 0
       },
-      "named_env_sha256": "d43a638e4699aff03e0957fee62c8607163fcbc9a0466d03f0364cef369b24a4",
+      "named_env_sha256": "913d224c4de19fa6b054b3065d6bcfd409af672d35b2f8e73c6013a5cd5210e4",
       "census": {
         "path": "strictAndOr.census.json",
-        "sha256": "8747e76da8181a44d71ee58c2ff4a58167023fa22bf9b2cda4f20c564e5c4738"
+        "sha256": "3c587dc562d288c6bb6056562dc317ac5d68a437abdb3639d3a927c08449eb60"
       },
       "roots": [
         {
@@ -1986,8 +1986,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "tuple.ixe",
-        "sha256": "45af00760c7f5300e5a271677d3d95ad3e78ebd2939368fbb0a43e55b62dc41a",
-        "bytes": 70858
+        "sha256": "1f80a7dfaf6bea567db25facc67cb0c2eb4efdc060f174817931bb1f79de532a",
+        "bytes": 71973
       },
       "equations": {
         "path": "tuple.equations.json",
@@ -1995,10 +1995,10 @@
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "a31832240f7148200e5035e8c731bd0b0ae5cb933f5f4588e741f4de176cc340",
+      "named_env_sha256": "5e0e8b8ec387b28f2004bbafe73c556f0889ff1e6a03853344d6fd791b2611fc",
       "census": {
         "path": "tuple.census.json",
-        "sha256": "aff87f92798638d8f5c027f24b8b408ccef8f0123b77ad76bd5d79ff6f90fd84"
+        "sha256": "03a56c4afbc10ef2a3231be54ab6f5abb7d23a4555d57245dcc435d960380968"
       },
       "roots": [
         {
@@ -2114,8 +2114,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "bigctor.ixe",
-        "sha256": "a24ca81b3b147669d2564046a58fa052bd48d9a2e66056926ddb7fbbce4905cf",
-        "bytes": 83798
+        "sha256": "9bb375bcefd7c6e819bc941d51dd1a49e3fb9a82754965b9ec55cf55fef23be6",
+        "bytes": 84913
       },
       "equations": {
         "path": "bigctor.equations.json",
@@ -2123,10 +2123,10 @@
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "8a7d362cbac860238977261441744a03d2772d8379e23ec4c932142f122f059a",
+      "named_env_sha256": "2b1723d900eceec36b5fdbfdc1e4c42bf3142e6dd2ffb78aa4d63aca19acfb8e",
       "census": {
         "path": "bigctor.census.json",
-        "sha256": "fd62e68439dfdcf15bec74412fb8343a630e33141c19c9d50f38d73b7f6f538f"
+        "sha256": "75d985543fe62cdef491b9067a051f26032b25fe9f527e44ed1bd18d6585a9fa"
       },
       "roots": [
         {
@@ -2185,8 +2185,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "typeFormerPolymorphism.ixe",
-        "sha256": "2c57c540261b4765bef13645c513767dbc40479d0c812c5cd9ff175979cba94e",
-        "bytes": 70837
+        "sha256": "e134c1c2d61d3b238e119c415c7531724137e00c16dc6b5e4c0d191520856ac2",
+        "bytes": 71952
       },
       "equations": {
         "path": "typeFormerPolymorphism.equations.json",
@@ -2194,10 +2194,10 @@
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "a30932996352306cf65338aa2a0e677962dfba53f7c3aa84db5ad831645a7091",
+      "named_env_sha256": "718f03279ab23d2b385f72c225477541def4626f2a43b5a490c12d756192aac0",
       "census": {
         "path": "typeFormerPolymorphism.census.json",
-        "sha256": "83029569883c6290979dde181ad1bd40b2aacc713805ad9321920ed15b0a82e6"
+        "sha256": "f14c0360cd10df5a0cba2e57fb9d6bcd08e8ee314b68707558c33549a0a98fdd"
       },
       "roots": [
         {
@@ -2259,8 +2259,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "natShiftr.ixe",
-        "sha256": "fd1431ac3570aa556e0d3db56e20c18f5a0436c175fc014b7cb3e17857c77b7e",
-        "bytes": 182407
+        "sha256": "819578d550eb482244a28ba82af5a3ff375488a3fd50a7db567045ef682022a5",
+        "bytes": 183523
       },
       "equations": {
         "path": "natShiftr.equations.json",
@@ -2268,10 +2268,10 @@
         "equations": 9,
         "failures": 0
       },
-      "named_env_sha256": "79955b00065f5e84ffdb058b8b5e992d957619f745b6741349e6aa77e38d42fd",
+      "named_env_sha256": "71d6545ccdbdcdfe47386049db09f85e6e555dc99bb87fd55abb224f68ce92de",
       "census": {
         "path": "natShiftr.census.json",
-        "sha256": "a068c113bfbc334cb84825d35770d9eca67c252a240ce8c08a6cc8434fffe600"
+        "sha256": "259fb27e3b8ec6517cb7ff2aed34760de3fd2a7fe99122e5fe2ee63a197bb8bd"
       },
       "roots": [
         {

@@ -89,8 +89,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "resource.ixe",
-        "sha256": "b853f71e2260acec1b8a6accd83102ca672efbfdcc0a4dcef991975be0b7faf8",
-        "bytes": 2634910
+        "sha256": "38d954c0985f4829a4385c44d30feee8697f290f1592852203f15bd8063e006d",
+        "bytes": 2636026
       },
       "equations": {
         "path": "resource.equations.json",
@@ -98,10 +98,10 @@
         "equations": 46,
         "failures": 0
       },
-      "named_env_sha256": "af78a6e2084f852efe8e913734cb91b76f1c3640d59ed42cd0332a16ac72d0e4",
+      "named_env_sha256": "9671e891c9bf8e9ad693bb24dbefcc74eb75872dc99131ea36d99442f0c5e721",
       "census": {
         "path": "resource.census.json",
-        "sha256": "9b9bc66318af4e3a6aa59bee87dbfdc91d7bf24f881826f441e44f5cf100d30e"
+        "sha256": "85f682ca604422a6266777d8e8b7f6f85d0887fb91391b24023d2fc963f5ff5d"
       },
       "roots": [
         {

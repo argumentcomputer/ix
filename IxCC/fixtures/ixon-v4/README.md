@@ -2,7 +2,7 @@
 
 The vectors (`addressed.tsv`, `claims.tsv`, `expressions.txt`, `text.tsv`) and
 the primitive inventory `primitives.tsv` are unchanged copies of the root
-package's `Tests/Fixtures/ixon-v4/` in this repository (its Ixon v4 codec is
+package's `Tests/Fixtures/ixon/` in this repository (its Ixon v4 codec is
 `IxCK/Ixon`), copied by `lake exe refreeze-ixon package --ix-repo ..
 --ix-revision HEAD`. The retired v4 resource handoff fixtures (`handoff/`,
 `resource.tsv`) were deleted ahead of the Ixon v5 migration.

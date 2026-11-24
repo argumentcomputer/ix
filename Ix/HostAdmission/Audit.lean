@@ -71,7 +71,7 @@ helpers or their specializations; every execution allowance is unchanged. -/
 -- Hardened `Runtime.lean` surfaces specialized kernel helpers, ruled overrides, and all 5 `Blake3.Rust` externs.
 -- Kernel hardening updates counts (refreshed in reconciliation).
 /-- info: runtime closure of [Ix.HostAdmission.certify,
- Ix.HostAdmission.verifyAddressed]: 8947 compiled functions; inherited externs 128, implemented_by 0, unsafe 41, csimp 9; ruled assumed 6, computed_field 29, implemented_by 1, csimp 32 -/
+ Ix.HostAdmission.verifyAddressed]: 9073 compiled functions; inherited externs 129, implemented_by 0, unsafe 43, csimp 9; ruled assumed 6, computed_field 31, implemented_by 1, csimp 42 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith #[``Ix.HostAdmission.certify, ``Ix.HostAdmission.verifyAddressed]

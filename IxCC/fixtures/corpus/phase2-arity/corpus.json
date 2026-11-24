@@ -104,8 +104,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "arity.ixe",
-        "sha256": "b55880f4bc7e57a8d35bfb6868310c302493372f4cf61cb80b8e9edb90b1fa7d",
-        "bytes": 2622743
+        "sha256": "ba9c600e18c57ab0caed7c7a3b15c39b2cba064f5e74e2e9e4bed6504aadc3e5",
+        "bytes": 2623859
       },
       "equations": {
         "path": "arity.equations.json",
@@ -113,10 +113,10 @@
         "equations": 43,
         "failures": 0
       },
-      "named_env_sha256": "be0c8e9f89c07f8b8751cf522b90abd881ea86b390adaad20782dbcf0e9f5c44",
+      "named_env_sha256": "879baff0292fc26df9b678be2cfaa2719eeaf17805d69a7eb03af5dc0a99092d",
       "census": {
         "path": "arity.census.json",
-        "sha256": "66acdf727887f5c4a2a0cbfe30996f13b4e8e913ef617e74499c441394f91062"
+        "sha256": "9d84c06ea7066bae642cfa2ef3e99cf2a3fdaa83ba2d2416255c7e81b73ed9bb"
       },
       "roots": [
         {

@@ -4,10 +4,10 @@
  "producer":
  "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
  "named_env_sha256":
- "e1d8c07d418be26951e43c28a5216430bebeeb0da3197a0b6e8c69956e900392",
+ "b2615e9ef0aeeab6a4ddda26ff4cf2f2b6f8fa784134c4c8145c469c3802c43b",
  "files":
  {"words.ixe":
-  "af1c678683306d72bcc00e2b10de4f50a96595a972b32d29f92eacf10b29bead",
+  "4e5e88e82293450f5c1cf840af7f55ca335e7eeac91624a1c90916592f210271",
   "words.equations.json":
   "cca7f7caaae721c1a4b83a5ba2b68c855dd1dffc9d07e756b6790b6bf3b64768"},
  "commands":

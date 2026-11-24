@@ -81,8 +81,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "closures.ixe",
-        "sha256": "5136164802ba2ff578105c03a012419e3e4a17640869225fe3de3b919d759f75",
-        "bytes": 70126
+        "sha256": "9d1cc107f111053426d98261882a64255a628e7e7fdd4d27ba1338fe500190ed",
+        "bytes": 71241
       },
       "equations": {
         "path": "closures.equations.json",
@@ -90,10 +90,10 @@
         "equations": 3,
         "failures": 0
       },
-      "named_env_sha256": "017fb7f39ed533f27f264a90c5ed84a93e1f6f3666d1afa3e97d4c67648575d1",
+      "named_env_sha256": "ec570281616e82a814ed2c7cf2b31fee6d4bcd04665908ccc19b1a4495f0823e",
       "census": {
         "path": "closures.census.json",
-        "sha256": "bc9281de23a37dd8779ebc4e0a9571c38d0cc1fe0300fd8303e0e81585d3b4fc"
+        "sha256": "e594e2862deb7830cb20c983533d1261d3ecc4fd56374c70e4f2b09ce133ffc8"
       },
       "roots": [
         {
@@ -129,8 +129,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "loops.ixe",
-        "sha256": "d32dc3a2565de9989b3fc55c1864711b27584c6da826fbf8f78fe6b2edea5264",
-        "bytes": 2608769
+        "sha256": "4ac7f0cd59ae47a1d862025d9c67b3dcc900759b45fb3e457fa1a74ccf3d577f",
+        "bytes": 2609885
       },
       "equations": {
         "path": "loops.equations.json",
@@ -138,10 +138,10 @@
         "equations": 40,
         "failures": 0
       },
-      "named_env_sha256": "b59ab5367027f5d93610dd3a5ddb4fe08161099122be982799c0895d9be14a3f",
+      "named_env_sha256": "21b096b62a144ab98ecdfd7191a5f7c9782fa200ec268531a81aa1ae71558400",
       "census": {
         "path": "loops.census.json",
-        "sha256": "05aa95c9f63975f19e95dd061dfc0571856dbcf94786139cae885f16ce7a1f16"
+        "sha256": "f0de6430b0a6a1facee72e2e69e5542f207e35053e117084f0154a36b80678e9"
       },
       "roots": [
         {
@@ -215,8 +215,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "strings.ixe",
-        "sha256": "ed2a8f147d218fbbfaf0e08b2d245693eddda7bc19b5f843f8e36d9c908edbd1",
-        "bytes": 4650442
+        "sha256": "b34305b7705a4ed6802316f3c11a49c789af1db9692f89348f9ce5b8463fb882",
+        "bytes": 4651558
       },
       "equations": {
         "path": "strings.equations.json",
@@ -224,10 +224,10 @@
         "equations": 62,
         "failures": 0
       },
-      "named_env_sha256": "b437b57edd7527e1c5a8c59a257d4729ebbc2352c5741f37bc879ed3359c2459",
+      "named_env_sha256": "5095e34724f1b2215831b4cb17a1640d60e41d24e9bdb7c880d645877226f6c5",
       "census": {
         "path": "strings.census.json",
-        "sha256": "62ba409f178de6ef5912c65afea48124c2564b5e9b89797a484272d8f6eae039"
+        "sha256": "9302899a35f3684090e75c33b867eb459a84850940f3f05acb678eabeaa1a193"
       },
       "roots": [
         {
@@ -262,8 +262,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "panic.ixe",
-        "sha256": "5ae35d20a338397b4f1ccd4050529848ee5a67be8705b59a7a112e35cbe07f30",
-        "bytes": 400234
+        "sha256": "0ce3b4ec6c70dc6d10d308097e68b5e549e8512286b8d8f4c5a996e3a843db06",
+        "bytes": 401350
       },
       "equations": {
         "path": "panic.equations.json",
@@ -271,10 +271,10 @@
         "equations": 16,
         "failures": 0
       },
-      "named_env_sha256": "a82a349bdedf101a2510804f175977d017c059c0781ad320db94568c63a97e09",
+      "named_env_sha256": "7c0f74c70cca5d114058dedb431e4c5a9fcd68464f6f6419d43cdd7e90615d57",
       "census": {
         "path": "panic.census.json",
-        "sha256": "3acbd0459c1bdbe4c6d1a9a691cc97b332710eb8be74de13eef573a04ca0432a"
+        "sha256": "b74679b52b6fdddffb2e2c9688b7b6860b327453046710baf1a8c6d5dd7ac699"
       },
       "roots": [
         {
@@ -328,8 +328,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "params.ixe",
-        "sha256": "1904ac723031868d1b7bbadb5b1d8b1b145b466cbbb45555363057e3bf29f5a8",
-        "bytes": 72656
+        "sha256": "219e98d1fe2ff7de73ccb7f584e47926ba5ce8d736c2f9ed5ae5db61f64562cf",
+        "bytes": 73771
       },
       "equations": {
         "path": "params.equations.json",
@@ -337,10 +337,10 @@
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "7520beeee8b918f2d1dde6d241677494f4bf1c9c700daa8e8f8f0e1d8386d4f3",
+      "named_env_sha256": "45c1936a7af344a93799efccc8f72b94087942c9e9b16437853c6791ef1a5f42",
       "census": {
         "path": "params.census.json",
-        "sha256": "f9df18eff4e8697234bab6b383798e6f8c92c7c68cd94fb13aeddb4ad86aa345"
+        "sha256": "5b631924643f26c3d2097630878cd9b664ada1d0b1578b52e4c76ddb879bc1ea"
       },
       "roots": [
         {
@@ -407,8 +407,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "erase.ixe",
-        "sha256": "bafd6e601dfafe965c914a1560881196dbbcc8c96c69b1b6a66ff77230822888",
-        "bytes": 83947
+        "sha256": "1066e08297f4902b05d478d7975cc258b09b0ee3f55d8663a35eefea9fb2a09f",
+        "bytes": 85062
       },
       "equations": {
         "path": "erase.equations.json",
@@ -416,10 +416,10 @@
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "0cf084167b4adcdfa52dc5270b4fa529b7b86a3b81327b8caf14bc1788023665",
+      "named_env_sha256": "d919efbcee681e3c0d11dbf880a2aa8a6a9589eed5fa07cccdb684826784d8b8",
       "census": {
         "path": "erase.census.json",
-        "sha256": "e0538ddcf8d862425364b17321bbb72a4e745e4c335def1e089839b3a127da48"
+        "sha256": "a120e6b3b5b3f51c6753ec38d2c00140335648fd9c812aa0c9da256eee135a7f"
       },
       "roots": [
         {
@@ -513,8 +513,8 @@
       ],
       "closure": {
         "path": "admit.ixe",
-        "sha256": "1424e6aa2501a692de9b21c69c54103b36b0c48f953b6b06f45e2ff1bc5534dd",
-        "bytes": 116170
+        "sha256": "1a05af0909a599942032086df77d06429ff4cb6ff5eaa98bf565f48cc501fe86",
+        "bytes": 117286
       },
       "equations": {
         "path": "admit.equations.json",
@@ -522,10 +522,10 @@
         "equations": 6,
         "failures": 0
       },
-      "named_env_sha256": "102e37543c51fc6e0512e13fc45f493dc5f187613c426662c7d539d2a5b61f91",
+      "named_env_sha256": "29c7e66bebff938b43c7b08b1e00566b27c66dc4070468e88bc0f1a77286e0b4",
       "census": {
         "path": "admit.census.json",
-        "sha256": "44865bc066a489b9f417f253288ecea387edf75e2c12bcf6f206441c25fca3a9"
+        "sha256": "b1dbe4970bcbb08e0fc941a6b4793c0822f2d5c863aaffa06565971e376b5586"
       },
       "roots": [
         {
@@ -614,8 +614,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "symbols.ixe",
-        "sha256": "a35ed36539c7d3dcb9bcb084dbf2ad7674cd2a543bade7a006b535f38747b67f",
-        "bytes": 73317
+        "sha256": "acc9e6455079080b41576b73647270bfc4d9c1718484a18e9fe65010f51b118a",
+        "bytes": 74432
       },
       "equations": {
         "path": "symbols.equations.json",
@@ -623,10 +623,10 @@
         "equations": 3,
         "failures": 0
       },
-      "named_env_sha256": "1c1f1c66ad088e66d56e9b527e013c37790968aa0f957305e888df6224261a2d",
+      "named_env_sha256": "7bfa3fab172371965a7ac7b145beecfd06df42f759383ec6cd0ea789e180082c",
       "census": {
         "path": "symbols.census.json",
-        "sha256": "0b80284fc75bfcfd2a2ade044cdd1b68661261fa04ea5e271c3134c7e0e8234c"
+        "sha256": "53c00950750a653ede09193792db6b0269d0e49210ec05eca9ddbdb57319215f"
       },
       "roots": [
         {

@@ -80,8 +80,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "decide.ixe",
-        "sha256": "a12a5977f225145f42ce70f550d242208017008ff7580c1d674e9ea34c7601e2",
-        "bytes": 98825
+        "sha256": "0e99ad4563092e941a720fc1125c75de311114da449dbecf055ad732b3d98994",
+        "bytes": 99941
       },
       "equations": {
         "path": "decide.equations.json",
@@ -89,10 +89,10 @@
         "equations": 4,
         "failures": 0
       },
-      "named_env_sha256": "e6ff29b34e0893a6847ab8f9a7da25a5b8cdae59ff739dba118d84761bb126b8",
+      "named_env_sha256": "df013a35ca46d326eb3b7a8ae5c984ae790b7cf1e3ac81bdc0d615a23bcd7fcc",
       "census": {
         "path": "decide.census.json",
-        "sha256": "9c985807ff8365a800a7a6589e785ca0558b5df20093641976b78218bab1ee21"
+        "sha256": "82ccab61dda1d4df20f69d92612694b663a58634f075aa6e94e1c25b0e46833f"
       },
       "roots": [
         {
@@ -135,8 +135,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "words.ixe",
-        "sha256": "dda913e8f3330950513f3f2c629b9cdd345665935f99ae15defd7edbf2b2707b",
-        "bytes": 1077014
+        "sha256": "34f1216cbdcb43d9baf72a9aaa345ff404361faa1505d695c69d6a88c5dab2d2",
+        "bytes": 1078130
       },
       "equations": {
         "path": "words.equations.json",
@@ -144,10 +144,10 @@
         "equations": 22,
         "failures": 0
       },
-      "named_env_sha256": "bc8a0a58c37d97b83681b92c5232621f48a9cc6cc979ab1c18d2e1d36f303e9f",
+      "named_env_sha256": "8db18220b09ddf67e890952a7f4abf4b037b537aadf2ebe5aab1030fa06f1d11",
       "census": {
         "path": "words.census.json",
-        "sha256": "dd44064ce456e5e2aef015523764eda4e12dabfa84382f44edf163e7abe55759"
+        "sha256": "9b4319ad20f410b7a9730bbb9a6f6f1aeba3861a4eaafd10dbaecd0c96e54c96"
       },
       "roots": [
         {

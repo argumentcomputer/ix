@@ -87,8 +87,8 @@
       "protocol": "args",
       "closure": {
         "path": "fib.ixe",
-        "sha256": "047bb3c2ffdf74b6f66727cbd399210e288321685f0a9e658342a0c5fe7644c8",
-        "bytes": 71152
+        "sha256": "47ef3467543b6af16ec5548a2dd3cc4f249fc4aeb9d320bf0371562ab5d27af9",
+        "bytes": 72267
       },
       "equations": {
         "path": "fib.equations.json",
@@ -96,10 +96,10 @@
         "equations": 3,
         "failures": 0
       },
-      "named_env_sha256": "f19cde826c429248a2be923c6f3ae14ad458c60f6fe97f8c10b14509c70e3f85",
+      "named_env_sha256": "8f95906c07d408e5b81457b63c026d03d8061d63a6c063086e9115bdc0e1b70d",
       "census": {
         "path": "fib.census.json",
-        "sha256": "e56d2e0db2d1d26c8c394b58fd2c685dccac2770dc1633e59d6dcd577b345ff8"
+        "sha256": "3aa87ed05e589a4041b6ce70cbc7c6debb2d0aac56f1f3fbd9f07fe0d922e5a6"
       },
       "roots": [
         {
@@ -205,8 +205,8 @@
       "protocol": "args",
       "closure": {
         "path": "sum-loop.ixe",
-        "sha256": "fbd430a0e65d532377c492395ebdfa92b4ccb4579c78237c75879b2ed0e778fa",
-        "bytes": 2607746
+        "sha256": "682a55688a233bb383d2c3942488178aa338a0e10bf5697f4f4e70ede31f0b77",
+        "bytes": 2608862
       },
       "equations": {
         "path": "sum-loop.equations.json",
@@ -214,10 +214,10 @@
         "equations": 40,
         "failures": 0
       },
-      "named_env_sha256": "83a58c10969b97fb8946725e1ee04defd05b5b727bd7e63c2cf43d4e4d1def0e",
+      "named_env_sha256": "df337281d9a9b76bbff76b6204a6f9480049d6fc3ad98b2fa44476cc6b093dbe",
       "census": {
         "path": "sum-loop.census.json",
-        "sha256": "86a5b211f2b8cac91341c9fd8fa00bac288158c87debd0e745cfe35f9561473f"
+        "sha256": "b566bf74ad61fa3fd10854e2eb4d19c7e32bb63c46a755a4e1e22c4e745a8622"
       },
       "roots": [
         {
@@ -323,8 +323,8 @@
       "protocol": "args",
       "closure": {
         "path": "ackermann.ixe",
-        "sha256": "96da4df66e848d81c09db5706ecfaa5bc36883b4b196232fffbbb79d4ccffad4",
-        "bytes": 2567431
+        "sha256": "0bc8e2beffb24520382a3df423813a341f1a7b5035c7005ab8a260ec1dd0200b",
+        "bytes": 2568547
       },
       "equations": {
         "path": "ackermann.equations.json",
@@ -332,10 +332,10 @@
         "equations": 40,
         "failures": 0
       },
-      "named_env_sha256": "91cdaa996e8fbd59c0db386ae2dce2ba85b9dc176a421e8158de35dd4a27c2e2",
+      "named_env_sha256": "1c817e9a4ca279a29e5a494e90357ac2c836f0e48dcda919bd488fe2d5a37485",
       "census": {
         "path": "ackermann.census.json",
-        "sha256": "a29156b7eec51dba5b03c6c9b58cb68d7f1bc6391d749d5ce6adcc51e6c33cda"
+        "sha256": "636aab1e3a4706136d26e259ded62ba39af02053182c5b97d5789ca41b7d9d61"
       },
       "roots": [
         {
@@ -478,8 +478,8 @@
       "protocol": "args",
       "closure": {
         "path": "tak.ixe",
-        "sha256": "a9c46ba230ba51c4d32116ffedcf62bea258efa0b554f78236bab5bf42c6e7b3",
-        "bytes": 131882
+        "sha256": "94e8bb7b7e849589c2afb122b0a0ae1b6a4e01778456ffe65ef363b43d9913ea",
+        "bytes": 132998
       },
       "equations": {
         "path": "tak.equations.json",
@@ -487,10 +487,10 @@
         "equations": 7,
         "failures": 0
       },
-      "named_env_sha256": "8336a2e536c3f6066101e2cc3f0835cd695289225864e1bac36b3dafcb5ef582",
+      "named_env_sha256": "6f868458631d1c5dd86d661f76745a0229508d817f309cd288a44dca4d1be34c",
       "census": {
         "path": "tak.census.json",
-        "sha256": "8b07f6f37790dde57da9315d1e931fc132f23355d0154521f8bf16ed0bbdae35"
+        "sha256": "8b952c998a4119324b637bcf002a79bd8dcf74a99f38fb98ba30efac6d45a495"
       },
       "roots": [
         {
@@ -622,8 +622,8 @@
       "protocol": "args",
       "closure": {
         "path": "gcd.ixe",
-        "sha256": "346edcf2cce1ca602e61bd6a1b0a1d2865368fe2d19ae24d4dc64c0790979aaa",
-        "bytes": 233451
+        "sha256": "2f2e4b1ee9d6797d4223e87478b497f09660cfc158c52933ce4c32683d34a5b7",
+        "bytes": 234567
       },
       "equations": {
         "path": "gcd.equations.json",
@@ -631,10 +631,10 @@
         "equations": 10,
         "failures": 0
       },
-      "named_env_sha256": "4377a6e0952fd7967cf73486a1375f6070c291a8e9f9c9dee3d0c210216d4043",
+      "named_env_sha256": "c7a693fc485f6b21f6f4a0ff2af1d21eba42dd96062f8156133939adaaec2f93",
       "census": {
         "path": "gcd.census.json",
-        "sha256": "b54d97de0372437199e93d5d38b5f55e99386ac5491c388e209616008a6ae0ab"
+        "sha256": "e7df25f85a57ecf3d60728d4f62d953a61a7a005eb4219a419fd455411126043"
       },
       "roots": [
         {
@@ -775,8 +775,8 @@
       "protocol": "args",
       "closure": {
         "path": "collatz.ixe",
-        "sha256": "373f92a042884b7317e5c6ef32f9998be291c5ee965f1ac8ad7fc4d85f845aa4",
-        "bytes": 2615868
+        "sha256": "f7a698d4d2d87f7fbd67526821084fec47dbbbf77960dc924969313b887743d6",
+        "bytes": 2616984
       },
       "equations": {
         "path": "collatz.equations.json",
@@ -784,10 +784,10 @@
         "equations": 41,
         "failures": 0
       },
-      "named_env_sha256": "6055366078b98f66f867093c050b937a2af579bf1e8175c64cc4fa8a192c1e44",
+      "named_env_sha256": "fd3b70b00a86aa90bc4a29656724fc2e05596cd595e76d7510382f30ca1a3bba",
       "census": {
         "path": "collatz.census.json",
-        "sha256": "9a6cade22cd3f886d62db81128c369a3664cdbdd926d512cc2eb74849a98209a"
+        "sha256": "0424d9d623a8b2762c125c9e3f42a0ac29b6064337f2e5a3cfd74bd9a1939610"
       },
       "roots": [
         {
@@ -876,8 +876,8 @@
       "protocol": "args",
       "closure": {
         "path": "prime-count.ixe",
-        "sha256": "5761ca331c7c4657f0533e1e94e569a4dcd017537837724dda4bf74b779a2372",
-        "bytes": 2615886
+        "sha256": "eea49854c568c8c8dac458ed8c8856aacfdbbe63cd67890f5c50affc022be10c",
+        "bytes": 2617002
       },
       "equations": {
         "path": "prime-count.equations.json",
@@ -885,10 +885,10 @@
         "equations": 41,
         "failures": 0
       },
-      "named_env_sha256": "266d07551737fc9baa33047d6358ba77723760cffb8da74615def4cc50f6285e",
+      "named_env_sha256": "baa0f26b989cb16071c3677b2c7aa3ec1cec048b084e33dedf97d0ed6fa5291c",
       "census": {
         "path": "prime-count.census.json",
-        "sha256": "edca1f79339ed6b43ab30c4f7e81f56dfcb9af68241271a8778149b9fbea8491"
+        "sha256": "bec1d355378eb8a698a0f6da6b22e9147bab36a89e47818601155f5659ce28d9"
       },
       "roots": [
         {
@@ -973,8 +973,8 @@
       "protocol": "args",
       "closure": {
         "path": "even-odd.ixe",
-        "sha256": "eb53a3b7cba121c9451b6ad1878234bc7248c37b082d5694e9ddc85cc4a59841",
-        "bytes": 85311
+        "sha256": "bf3b34e3a17290bd198754cf47edba2de43f4b0606166607bdcdedcf90ca7c65",
+        "bytes": 86426
       },
       "equations": {
         "path": "even-odd.equations.json",
@@ -982,10 +982,10 @@
         "equations": 4,
         "failures": 0
       },
-      "named_env_sha256": "80b61dd15264f5a1668f5cbb121dff5ecec2a5c5149f0dc83d0201b52aa1fe62",
+      "named_env_sha256": "de328880b2ae0dd58e2b6bdae6ed4b5f9f85e6f1adf281ed4f86f615b4b1f105",
       "census": {
         "path": "even-odd.census.json",
-        "sha256": "26c38e2ff57c16c5dd0c8056e3827ca7e07de8a64188475b26325f2966c5f254"
+        "sha256": "c5dc1069b3ac4cebdd9b0dcdb9c922053c5bda0cb7eb8628251087b5faae0164"
       },
       "roots": [
         {
@@ -1077,8 +1077,8 @@
       "protocol": "args",
       "closure": {
         "path": "sfib.ixe",
-        "sha256": "623d482e37077fa410ffb40fe25f47d37f1632729e8cae8d2857d59f448edb9d",
-        "bytes": 124225
+        "sha256": "f0880fcf0159745c5bafe7dba6bfd5f72e679191d87a0eeeeb8783595f52e47b",
+        "bytes": 125341
       },
       "equations": {
         "path": "sfib.equations.json",
@@ -1086,10 +1086,10 @@
         "equations": 5,
         "failures": 0
       },
-      "named_env_sha256": "570285c8c47b5f32d1637d26639fe9da9dc69ac73edd04f90d9cbec3e7188bc1",
+      "named_env_sha256": "352be4b0b012744f9d7a7c83bb5d6d252825cf05ac4ed6741dfd2d5603e4a609",
       "census": {
         "path": "sfib.census.json",
-        "sha256": "e0305b7faa7b8bdd374d5ba1260cb4420f8ca57d2d2b9d1073cef5327aea85c3"
+        "sha256": "fe6860bd78cc408fe8a9ab2344fb8da76eec681ec06275f7e50396daf44c37ad"
       },
       "roots": [
         {

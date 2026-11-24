@@ -15,7 +15,7 @@
 #
 # A change that moves the compiler's bytes, or the kernel's verdicts on
 # this artifact, updates these lines in the same commit and says why.
-blake3	ee3638341f4624f3eb1d76cd6729a8f2d8a39049c28c3bba3e567468792496c5
-bytes	260567742
+blake3	286a72019b78059afe57a574fea1b140cc3dc4e2d625a16a43915538187b894f
+bytes	260567743
 lean-kernel-passed	99519
 lean-kernel-checked	99519

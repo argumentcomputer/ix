@@ -7,7 +7,7 @@ producer ix (and `git` on an ix checkout, read only) and writes fixtures and
 their provenance; required CI never runs it.
 
 * `package --ix-repo DIR --ix-revision REV`: copy ix's Ixon fixture package
-  (`Tests/Fixtures/ixon-v4/` at REV, unchanged) into `fixtures/ixon-v4`:
+  (`Tests/Fixtures/ixon/` at REV, unchanged) into `fixtures/ixon-v4`:
   the claim, expression, `primitives.tsv`, `reject-parity.txt` and text vectors.
 * `tc-primitives --ix-repo DIR --ix-revision REV`: rewrite IxCC's
   primitive table (`V3.PrimAddrs.canonical` in
@@ -51,7 +51,9 @@ def ixFile (repo revision path : String) : IO ByteArray := do
 
 def package (repo revision : String) : IO Unit := do
   for file in packageFiles do
-    let bytes ← ixFile repo revision s!"Tests/Fixtures/ixon-v4/{file}"
+    let bytes ←
+      try ixFile repo revision s!"Tests/Fixtures/ixon/{file}"
+      catch _ => ixFile repo revision s!"Tests/Fixtures/ixon-v4/{file}"
     IO.FS.writeBinFile (fixtures / file) bytes
     IO.println s!"{fixtures / file}: {bytes.size} bytes from ix {revision.take 8}"
 

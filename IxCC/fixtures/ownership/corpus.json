@@ -80,8 +80,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS01-annotated.ixe",
-        "sha256": "cd781c3613a20f874f0d249d844218d9103db2a7f3450c939ef678b4f532f921",
-        "bytes": 65816
+        "sha256": "155f0928af73308ecd0c7744e7efe57287f5540c55fd8e719c2ac7c0f7fb4173",
+        "bytes": 66931
       },
       "equations": {
         "path": "OS01-annotated.equations.json",
@@ -89,10 +89,10 @@
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "44443ae5fba0a63483072e756a99429e43c3d03a4df72a2ed737deef3f8e0058",
+      "named_env_sha256": "b814d1d349eb3e6126653edc22b707a072c9b835135c8b719518c9ba2a110393",
       "census": {
         "path": "OS01-annotated.census.json",
-        "sha256": "425afd9fed8c8946840042e11ed9175f3754f05cb79baab32a3cfe0f515cc070"
+        "sha256": "3deeea23f46aa69c78c38d82bd985734b127c052e3a687f990d1a47957d780dd"
       },
       "roots": [
         {
@@ -227,8 +227,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS01-plain.ixe",
-        "sha256": "59a750396cbc2bea20ee08b149888bd051063805eafb2379fbdaac7c8d63c912",
-        "bytes": 65568
+        "sha256": "79a18ba16d077e5e78ffe45fc1fbf3978bab9ad8b3e4164745cf71718bf91aec",
+        "bytes": 66683
       },
       "equations": {
         "path": "OS01-plain.equations.json",
@@ -236,10 +236,10 @@
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "f5b3354238eb6f6cbbf7e8ab70ee6f047e855691cfd37902d1448f34147be475",
+      "named_env_sha256": "cfa1557a71a764b7664cb45a374c89181e7fbb7ed3906d5039e6ddfe66c12792",
       "census": {
         "path": "OS01-plain.census.json",
-        "sha256": "9484716816fa19d11b3361c2743614a71fee3dbba14f68ade96282c7d4888deb"
+        "sha256": "bb060efe141edcf9642a63de26f7a12d0897778eeda0831d61eaf2689d76f3f3"
       },
       "roots": [
         {
@@ -374,8 +374,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS02-plain.ixe",
-        "sha256": "dc585c0b9d26fe413cab0c74ea67684742d1413467b88db3f6d1d56f494e0bc8",
-        "bytes": 120676
+        "sha256": "e3ec10412b9ce772c7a67492656cb3874b946775a0ef2770f693a32dfb4b5c80",
+        "bytes": 121792
       },
       "equations": {
         "path": "OS02-plain.equations.json",
@@ -383,10 +383,10 @@
         "equations": 3,
         "failures": 0
       },
-      "named_env_sha256": "b0a45a7ee9542ea610be5605f460fb4eab630dda866a2cdea086523e8d6eb72e",
+      "named_env_sha256": "fe8647a675aa61a719fe6bcca6dfe9a0771b6df9585d0aa1d3ccb10ca4ee37cb",
       "census": {
         "path": "OS02-plain.census.json",
-        "sha256": "c11c9699c038d178c4d9eed52a6b102a37ed776302c7c07186466b129cd07647"
+        "sha256": "3eb1a877525a0ef048028870dc9be44bc47f64553ed07d9bd599fb94bfbb9974"
       },
       "roots": [
         {
@@ -525,8 +525,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS03-annotated.ixe",
-        "sha256": "6b7e5d4e14af547de04bdfc336b333a1640f4c5def73ce5a8d94e9d1826e4ec1",
-        "bytes": 65606
+        "sha256": "b68fe6dca81b8c8037bc19a51268ffeae9eeda9b714c8422638460f6f50b1cbb",
+        "bytes": 66721
       },
       "equations": {
         "path": "OS03-annotated.equations.json",
@@ -534,10 +534,10 @@
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "7693f6c0fae0dae5ee6f99d869e6902c93b32e7b85c1dfbc6aed6cc2b4016af0",
+      "named_env_sha256": "801daac17051d69196ee4ca10d0f816e52532bfc9c62bee4fa615c9b016cd0df",
       "census": {
         "path": "OS03-annotated.census.json",
-        "sha256": "e8aadfb5d009167e1bf61e6d96a96042829b913732020d63a8b04144d0890765"
+        "sha256": "979838531f5f139ecbf280b84de67d7164642de2a215a08e82b12655c1d9398b"
       },
       "roots": [
         {
@@ -672,8 +672,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS03-plain.ixe",
-        "sha256": "e2ccc8254a493f20171e2775560e7e10c2373f51e0dd8f1753e78ae8a454fbc5",
-        "bytes": 65358
+        "sha256": "a8ac7d876ac2802db2c74b5766c46bbcc199d64329573df6fdd6a316e8c5344e",
+        "bytes": 66473
       },
       "equations": {
         "path": "OS03-plain.equations.json",
@@ -681,10 +681,10 @@
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "7c19bb4e0859298ce27dacfdf1b431424e80d6c0a091a7cea3a0cc935e7444c0",
+      "named_env_sha256": "ce5a68480bd81bfa4644387a60b45272d2d02d9e670d2277fd7302dbba8aa1e0",
       "census": {
         "path": "OS03-plain.census.json",
-        "sha256": "d403860c1c50c6923331e05d1cebc598d5b0399cf4baea502fd246414a45b1b2"
+        "sha256": "76c2347e4f882820f6c20a42d130358472c106a4aa82b2cde62146ecaeb79fef"
       },
       "roots": [
         {
@@ -819,8 +819,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS03b-annotated.ixe",
-        "sha256": "13f7950828a62c3ed19af73186e23358adef06b8ba57ad36d2e1f181893e233f",
-        "bytes": 70983
+        "sha256": "de0a6fb7316d431fb2ae29128e105af5454fd732f30a33ce7954e74f63425d64",
+        "bytes": 72098
       },
       "equations": {
         "path": "OS03b-annotated.equations.json",
@@ -828,10 +828,10 @@
         "equations": 3,
         "failures": 0
       },
-      "named_env_sha256": "39185ca183b45c1395d1cce696364c077c98481e3d1eeb05fde264ea50467cc1",
+      "named_env_sha256": "ebead1519dc904551f6eff0588a4c90eb922d9a3b9d98dcf11a3dc8e6a4361da",
       "census": {
         "path": "OS03b-annotated.census.json",
-        "sha256": "712287818bd3f75dd71693b8894ab62cff8ad89f01f97ff5e47932aa2caddb9e"
+        "sha256": "53f0fb813b7262df2c109b5ba5ee6283075e70c5668c94bb0cb718422bd7b408"
       },
       "roots": [
         {
@@ -966,8 +966,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS03b-plain.ixe",
-        "sha256": "2ab2260fbe2b9078cdd1b65b64c172479c5a83eb18d4e7864aed9e45d971aaa5",
-        "bytes": 70735
+        "sha256": "cd71e0a91b8cb4078bac68f884a46ab018941b535cb7d8d5c4f8267c987906f2",
+        "bytes": 71850
       },
       "equations": {
         "path": "OS03b-plain.equations.json",
@@ -975,10 +975,10 @@
         "equations": 3,
         "failures": 0
       },
-      "named_env_sha256": "4d5d30440c29b6303083a6b49f633d58c877fa16e639a3a37d9a043ec14c2448",
+      "named_env_sha256": "df1993a043cf9b8986745507bb032de543d79058465bb969af8e69fa0fe9826b",
       "census": {
         "path": "OS03b-plain.census.json",
-        "sha256": "a90edc2bcfce451b83849a5404c70383cdeb32961039d7092fd5b4f3f6f61285"
+        "sha256": "e88575194ec16358e71ee55d581e4e96fb773dbf748d07975478935d2caddfe4"
       },
       "roots": [
         {
@@ -1113,8 +1113,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS14-annotated.ixe",
-        "sha256": "de680fb68f8cc7ab279376fa745fb668a1c5bcfab20da320e0afcda312afbd79",
-        "bytes": 65957
+        "sha256": "3c7a1736af52d60f1f8fc1b7780f91ab2ab30ff80ac0297976c975e67266fccf",
+        "bytes": 67072
       },
       "equations": {
         "path": "OS14-annotated.equations.json",
@@ -1122,10 +1122,10 @@
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "2e876bbb3ac844406bb0e4fd51eedd9cf5166c68472498a4363e3cfd3cdc4ac5",
+      "named_env_sha256": "dbbf568d0b1bff4afe5169f94b7448b5751b8644213a9d515550e95886b6e1bd",
       "census": {
         "path": "OS14-annotated.census.json",
-        "sha256": "e26d0baed031aaf4f9abb4a65df7c8815120f864f0d38e68a15cff196b2d90f6"
+        "sha256": "6e3cb9d769cbd221bd8221811c13f2368da8df384645d5e9b07212f11be62f55"
       },
       "roots": [
         {
@@ -1260,8 +1260,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS14-plain.ixe",
-        "sha256": "23c4530cc5487318f4033593719e0b64f0d99dbd046b2db27535bdf217a0d748",
-        "bytes": 65709
+        "sha256": "5a6e668078ff2cbcb548e50ffe09aeccd2c48e76e2f73484336a02f8903f1357",
+        "bytes": 66824
       },
       "equations": {
         "path": "OS14-plain.equations.json",
@@ -1269,10 +1269,10 @@
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "63d9bf725533e03aeea43123f633d45108738f9e61cb4825751cf0510812b36c",
+      "named_env_sha256": "8c2b08c726fc728a90b714b0b0bb0ec3d8e44729e6faa551d16712f43e177db8",
       "census": {
         "path": "OS14-plain.census.json",
-        "sha256": "2d3e7af9728076c65e4cc1e07268ef38ccf495ef7130474eaf0a332ec3529963"
+        "sha256": "f416d37d9f9bd97fb4d8b74a303357250d3303875e78ab0b69d7c84ca69ad012"
       },
       "roots": [
         {
@@ -1407,8 +1407,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS16-plain.ixe",
-        "sha256": "57ff2a01f26b496e00970226d95d3932005c7362509f0192e941b320fc7fa3ba",
-        "bytes": 88728
+        "sha256": "08d08e1e913b67f9dba84c722a5f76536a2974f5118220ef2a9ca6988c1c41c4",
+        "bytes": 89843
       },
       "equations": {
         "path": "OS16-plain.equations.json",
@@ -1416,10 +1416,10 @@
         "equations": 5,
         "failures": 0
       },
-      "named_env_sha256": "e6c898d69813c74284cc8e02690bc46ba3ded0dc7e33cc4c8d2330f52f278b0c",
+      "named_env_sha256": "ff505f337fcac51c9ee888b06f004fce59616b57af760f62f20a6d06d2d07c1b",
       "census": {
         "path": "OS16-plain.census.json",
-        "sha256": "1ca363c7d534da77fddcdd0144e03527c4830076318f6cb8511bdfe267c2b577"
+        "sha256": "b7f8d2114cac5ed2a2bf2d39ce0cd6985775f773605b35691807da66e01ebe80"
       },
       "roots": [
         {
@@ -1478,8 +1478,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS22-annotated.ixe",
-        "sha256": "8d625366e8c1d4d335a1f657de4a8611c730d36c93187f81fe776a7cddf24c45",
-        "bytes": 65342
+        "sha256": "d33a27bf020aba3c335cabc39b62c01e4be7afcc859376dcbb6ccf72cc4e89b2",
+        "bytes": 66457
       },
       "equations": {
         "path": "OS22-annotated.equations.json",
@@ -1487,10 +1487,10 @@
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "3c0ef86239e1761d956528748c112d8c1f747c1628a48cbc714261751fd5aa05",
+      "named_env_sha256": "52b42d56845c7d734aac74170fbfee12c91bc1336d0059083ff8a1ab63a5de88",
       "census": {
         "path": "OS22-annotated.census.json",
-        "sha256": "8114e9592a07d99278d13ce7059faafa8d4d2c3d19795517a32a19844590d96b"
+        "sha256": "2aee4e5c551a341f3bef05fd903d368aed23d3328dc7f17f1a473a6555af04ee"
       },
       "roots": [
         {
@@ -1625,8 +1625,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS22-plain.ixe",
-        "sha256": "cba1e77026e38a4fc84cfa79511adc74e2b400d57175ef5b3af381739d1b07ce",
-        "bytes": 65094
+        "sha256": "7b2b3f642764c3ea10a194be4473d2e40c15439cc765e6d7d832c2bcbef26c54",
+        "bytes": 66209
       },
       "equations": {
         "path": "OS22-plain.equations.json",
@@ -1634,10 +1634,10 @@
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "e8c944fb1f874c48802752f5dd36a918ce3c2c4f86b29460c041b466dd4d907f",
+      "named_env_sha256": "62aa2f775d0c0238151344bac43364ac6dac105e99f0b903e2c9d2ff5b2f6ffa",
       "census": {
         "path": "OS22-plain.census.json",
-        "sha256": "b160f17126a219a36dd40105388899655497e55e4ad8a5c2a1caf6a438a8e10d"
+        "sha256": "4623983d7b0f82de2d1080001486b178cc3b1eaaac06b28d3886a2a9725610db"
       },
       "roots": [
         {

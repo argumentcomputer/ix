@@ -2,7 +2,7 @@
  {"consumer.equations.json":
   "c76846c2e1f51fe39d89cb2fb0cc3756ca2f7857bc44e013595ce44be0f0233b",
   "anonymous.ixe":
-  "bbe13845524521e50cf93d3c3b0ed49f1b57b37138a01dbb475bab0885e061d9",
+  "5e634446bc7948319ff643e16e8310abe3e9702fb4860f18e7550edd222ac2d8",
   "Deep.lean":
   "1d148c116885489cd969e9e0ef19b6b294ec5e87006cfef1268c23f27e2202d0"},
  "source_path": "fixtures/rc/deep",
@@ -12,7 +12,7 @@
  "producer":
  "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
  "named_env_sha256":
- "53308af7320097c8804badd8ebc25ba1dde5446ffc4510610d3a5b4ccccb6162",
+ "1550bfce2e8bf151b4025f6a7972fccc25fe43afa230af475bf342b140960682",
  "lean_version":
  "Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)\n",
  "commands":
