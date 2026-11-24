@@ -19,13 +19,13 @@ module FieldClient {
      Goldilocks::gl_eq(a, b), Goldilocks::gl_is_zero(a)]
   }
 
-  fn extension(a: [Field; 2], b: [Field; 2]) -> [Field; 2] {
+  fn extension(a: [Field; 3], b: [Field; 3]) -> [Field; 3] {
     Goldilocks::eg_mul(a, b)
   }
 
   fn inverse(a: Field) -> Field { Goldilocks::gl_inverse(a) }
 
-  fn extension_inverse(a: [Field; 2]) -> [Field; 2] {
+  fn extension_inverse(a: [Field; 3]) -> [Field; 3] {
     Goldilocks::eg_inverse(a)
   }
 
@@ -109,10 +109,12 @@ def run : IO Unit := do
     for b in cases do
       expect "arithmetic" [.field a, .field b]
         (fields [a + b, a - b, a * b, -a, if a == b then 1 else 0, if a == 0 then 1 else 0])
-  expect "extension" [fields [0, 1], fields [0, 1]] (fields [7, 0])
-  expect "extension" [fields [3, 5], fields [7, 11]] (fields [406, 68])
-  expect "extension_inverse" [fields [0, 0]] (fields [0, 0])
-  expect "extension_inverse" [fields [0, 1]] (fields [0, (7 : F)⁻¹])
+  expect "extension" [fields [0, 1, 0], fields [0, 1, 0]] (fields [0, 0, 1])
+  expect "extension" [fields [0, 0, 1], fields [0, 1, 0]] (fields [1, 1, 0])
+  expect "extension" [fields [3, 5, 2], fields [7, 11, 13]] (fields [108, 181, 134])
+  expect "extension_inverse" [fields [0, 0, 0]] (fields [0, 0, 0])
+  expect "extension_inverse" [fields [0, 1, 0]] (fields [-1, 0, 1])
+  expect "extension_inverse" [fields [0, 0, 1]] (fields [1, 1, -1])
   for value in [modulus, modulus + 1, 2^64 - 1] do
     unless (prepared.run "FieldClient::decode" [bytes value] (hints := provider)).toOption.isNone do
       throw (IO.userError s!"noncanonical Goldilocks encoding accepted: {value}")
