@@ -294,7 +294,7 @@ impl Buffer {
     Ok(Self { device, pointer })
   }
   fn upload<T: Copy>(device: i32, data: &[T]) -> Result<Self, String> {
-    let buffer = Self::new(device, std::mem::size_of_val(data))?;
+    let buffer = Self::new(device, size_of_val(data))?;
     buffer.write(0, data)?;
     Ok(buffer)
   }
@@ -307,7 +307,7 @@ impl Buffer {
           self.device,
           self.pointer.cast::<u8>().add(offset).cast(),
           data.as_ptr().cast(),
-          std::mem::size_of_val(data),
+          size_of_val(data),
         )
       },
       "GPU population upload",
@@ -568,7 +568,7 @@ pub(super) fn workspace_bytes(words: u64) -> u64 {
     .saturating_mul(words.max(1))
     .saturating_mul(8);
   let bytes = allocated(u128::from(scratch))
-    + allocated(std::mem::size_of::<AiurPopulationError>() as u128);
+    + allocated(size_of::<AiurPopulationError>() as u128);
   u64::try_from(bytes).unwrap_or(u64::MAX)
 }
 
@@ -630,16 +630,12 @@ impl Workspace {
     let bytes = usize::try_from(capacity.saturating_mul(8))
       .map_err(|_| "population scratch size overflow")?;
     let scratch = Buffer::new(device, bytes)?;
-    let error =
-      Buffer::new(device, std::mem::size_of::<AiurPopulationError>())?;
+    let error = Buffer::new(device, size_of::<AiurPopulationError>())?;
     let mut status = std::ptr::null_mut();
     // SAFETY: the out-pointer is valid for writing.
     check(
       unsafe {
-        aiur_gpu_host_alloc(
-          std::mem::size_of::<AiurPopulationError>(),
-          &raw mut status,
-        )
+        aiur_gpu_host_alloc(size_of::<AiurPopulationError>(), &raw mut status)
       },
       "GPU population status allocation",
     )?;
@@ -678,7 +674,7 @@ pub(super) struct DevicePlans {
   /// Per function circuit: whether `AIUR_GPU_TRACE_CIRCUITS` admits it.
   selected: Vec<bool>,
   /// Compiled writers bound by `AIUR_GPU_TRACE=compiled`.
-  compiled: Option<Arc<super::compiled::Selection>>,
+  compiled: Option<Arc<compiled::Selection>>,
   /// Per function circuit: its members' arena-read sites, as (function,
   /// instruction).
   arena_sites: Vec<Vec<(usize, usize)>>,
@@ -1150,9 +1146,7 @@ impl DevicePlans {
       self.programs.iter().flatten().map(|p| p.code.len() as u128).sum();
     let mut fixed = allocated(code * 4)
       + allocated(self.constants.len() as u128 * 8)
-      + allocated(
-        self.callees.len() as u128 * std::mem::size_of::<AiurCallee>() as u128,
-      );
+      + allocated(self.callees.len() as u128 * size_of::<AiurCallee>() as u128);
     let mut sources: Vec<Source> = self.callees.clone();
     for (ci, &on) in self.circuits.iter().enumerate() {
       if on {
@@ -1222,8 +1216,7 @@ impl DevicePlans {
         CircuitModel {
           read,
           members: allocated(
-            (backend.members[ci].len() * std::mem::size_of::<AiurFunction>())
-              as u128,
+            (backend.members[ci].len() * size_of::<AiurFunction>()) as u128,
           ),
           workspace: workspace_bytes(self.scratch_words(ci, &backend.members)),
           arenas: self.uses_arenas(ci),
@@ -1421,7 +1414,7 @@ impl DevicePlans {
   ) -> Result<Option<Self>, String> {
     let mode = match std::env::var("AIUR_GPU_TRACE") {
       Err(std::env::VarError::NotPresent)
-        if backend.gpu_lookup_only && super::compiled::registered() =>
+        if backend.gpu_lookup_only && compiled::registered() =>
       {
         Ok("compiled+generated".to_owned())
       },
@@ -1444,7 +1437,7 @@ impl DevicePlans {
           ));
         }
         let mut plans = Self::select(backend, allowlist()?.as_deref())?;
-        let selection = super::compiled::select(
+        let selection = compiled::select(
           backend,
           &mut plans.circuits,
           &mut plans.callees,
@@ -1561,7 +1554,7 @@ impl DevicePlans {
     })
   }
 
-  pub(super) fn compiled(&self) -> Option<&super::compiled::Selection> {
+  pub(super) fn compiled(&self) -> Option<&compiled::Selection> {
     self.compiled.as_deref()
   }
 
@@ -1940,13 +1933,11 @@ impl Image {
     for &(table, _, _) in &self.callees {
       bytes += allocated(Self::index_slots(counts[table])? as u128 * 4);
     }
-    bytes += allocated(
-      self.callees.len() as u128 * std::mem::size_of::<AiurCallee>() as u128,
-    );
+    bytes +=
+      allocated(self.callees.len() as u128 * size_of::<AiurCallee>() as u128);
     for circuit in self.circuits.iter().flatten() {
-      bytes += allocated(
-        (circuit.members.len() * std::mem::size_of::<AiurFunction>()) as u128,
-      );
+      bytes +=
+        allocated((circuit.members.len() * size_of::<AiurFunction>()) as u128);
     }
     u64::try_from(bytes).map_err(|_| "device record size overflow".into())
   }
@@ -2235,20 +2226,16 @@ impl Sharding {
 }
 
 /// A bitmap of a table's rows that threads mark concurrently.
-struct Marks(Vec<std::sync::atomic::AtomicU64>);
+struct Marks(Vec<AtomicU64>);
 
 impl Marks {
   fn new(rows: usize) -> Self {
-    Self(
-      (0..rows.div_ceil(64))
-        .map(|_| std::sync::atomic::AtomicU64::new(0))
-        .collect(),
-    )
+    Self((0..rows.div_ceil(64)).map(|_| AtomicU64::new(0)).collect())
   }
   #[inline]
   fn set(&self, row: usize) {
     if let Some(word) = self.0.get(row / 64) {
-      word.fetch_or(1 << (row % 64), std::sync::atomic::Ordering::Relaxed);
+      word.fetch_or(1 << (row % 64), Ordering::Relaxed);
     }
   }
   fn set_range(&self, rows: std::ops::Range<usize>) {
@@ -2259,7 +2246,7 @@ impl Marks {
       let mask =
         if take == 64 { u64::MAX } else { ((1u64 << take) - 1) << bit };
       if let Some(word) = self.0.get(row / 64) {
-        word.fetch_or(mask, std::sync::atomic::Ordering::Relaxed);
+        word.fetch_or(mask, Ordering::Relaxed);
       }
       row += take;
     }
@@ -2267,7 +2254,7 @@ impl Marks {
   fn ids(&self) -> Vec<u32> {
     let mut ids = vec![];
     for (w, word) in self.0.iter().enumerate() {
-      let mut bits = word.load(std::sync::atomic::Ordering::Relaxed);
+      let mut bits = word.load(Ordering::Relaxed);
       while bits != 0 {
         ids.push((w * 64) as u32 + bits.trailing_zeros());
         bits &= bits - 1;
@@ -2590,7 +2577,7 @@ pub(super) struct DeviceRecord {
   releasable: bool,
   /// Device bytes of the uploaded record.
   bytes: u64,
-  compiled: Option<Arc<super::compiled::Selection>>,
+  compiled: Option<Arc<compiled::Selection>>,
   /// Depth range-table uses of every real row of the device circuits,
   /// counted at upload.
   ranges: RangeCounts,

@@ -66,8 +66,8 @@ fn fixture<C: KzgCurve>(
         Expr::constant(CurveScalar::<C>::ONE),
         vec![Expr::constant(CurveScalar::<C>::ZERO)],
       ),
-      Lookup::push(Expr::IsFirstRow + Expr::IsLastRow, message.clone()),
-      Lookup::pull(Expr::IsTransition, message.clone()),
+      Lookup::push(Expr::preprocessed(2), message.clone()),
+      Lookup::pull(Expr::preprocessed(3), message.clone()),
       Lookup::push(Expr::main(1), message.clone()),
       Lookup::pull(Expr::preprocessed(0), message),
     ],
@@ -129,7 +129,7 @@ fn quotient_reference<C: KzgCurve>(
         pass.fixed.iter().map(|&i| fixed[i].clone()).collect();
       let fixed =
         (!selected.is_empty()).then(|| evaluations::<C>(&selected, ark_domain));
-      crate::kzg::quotient::evaluate_coset::<C>(
+      crate::kzg::quotient::evaluate_coset::<C, KzgConfig<C>>(
         input,
         pass,
         domain,
@@ -228,7 +228,26 @@ fn compare_paths<C: KzgCurve>(log_size: usize) {
   let rows = 1 << log_size;
   let domain = Radix2Coset::<C> { log_size, shift: CurveScalar::<C>::ONE };
   let ark_domain = Radix2EvaluationDomain::<C::Fr>::new(rows).unwrap();
-  let fixed = vec![vec![C::Fr::from(3u64), C::FR_ONE], scalars::<C>(rows)];
+  let boundary = ark_domain.ifft(
+    &(0..rows)
+      .map(
+        |row| {
+          if row == 0 || row + 1 == rows { C::FR_ONE } else { C::FR_ZERO }
+        },
+      )
+      .collect::<Vec<_>>(),
+  );
+  let transition = ark_domain.ifft(
+    &(0..rows)
+      .map(|row| if row + 1 == rows { C::FR_ZERO } else { C::FR_ONE })
+      .collect::<Vec<_>>(),
+  );
+  let fixed = vec![
+    vec![C::Fr::from(3u64), C::FR_ONE],
+    scalars::<C>(rows),
+    boundary,
+    transition,
+  ];
   let main = vec![scalars::<C>(rows), vec![C::Fr::from(7u64)]];
   let fixed_data =
     KzgProverData::<C>::coefficient_fixture(domain, fixed.clone());

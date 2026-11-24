@@ -266,12 +266,14 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
 
   /// Start loading the index bucket [`Self::intern`] reads first for
   /// `words`.
+  #[cfg(feature = "native")]
   #[inline(always)]
   pub(crate) fn prefetch_intern(&self, words: &[F]) {
     self.index.prefetch(tag(Self::hash(words)));
   }
 
   /// Start loading the words and the count of `cell`.
+  #[cfg(feature = "native")]
   #[inline(always)]
   pub(crate) fn prefetch_cell(&self, cell: CellAt) {
     let bucket = &self.buckets[cell.bucket];

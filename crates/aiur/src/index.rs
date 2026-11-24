@@ -95,6 +95,7 @@ fn lanes_equal(lanes: &[u32; SLOTS], value: u32) -> u32 {
 }
 
 /// Hint that the line at `address` will be read soon.
+#[cfg(feature = "native")]
 #[inline(always)]
 pub(crate) fn prefetch<T>(address: *const T) {
   #[cfg(target_arch = "x86_64")]
@@ -266,6 +267,7 @@ impl RowIndex {
   /// Start loading the home bucket of `tag` into the cache, so a probe that
   /// follows other work finds it there. A hint only: it reads nothing and
   /// cannot fault.
+  #[cfg(feature = "native")]
   #[inline(always)]
   pub(crate) fn prefetch(&self, tag: u32) {
     if self.buckets != 0 {

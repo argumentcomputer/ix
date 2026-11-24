@@ -484,6 +484,7 @@ impl<B: FieldBackend> QueryTable<B> {
 
   /// Start loading the index entry [`Self::lookup`] reads first for
   /// `args`.
+  #[cfg(feature = "native")]
   #[inline(always)]
   pub(crate) fn prefetch(&self, args: &[B::Element]) {
     if let [key] = args

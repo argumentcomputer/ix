@@ -690,7 +690,8 @@ fn device_population_admits_what_fits() {
     Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
       .unwrap();
   let entry = "Depth::run";
-  let record = program.execute(entry, vec![12]).unwrap();
+  let x = depth::at(12);
+  let record = program.execute(entry, vec![x]).unwrap();
   let options = |max_device_bytes| planning::Options {
     max_device_bytes: Some(max_device_bytes),
     ..Default::default()
@@ -734,7 +735,7 @@ fn device_population_admits_what_fits() {
       .prove_incremental(
         &record,
         entry,
-        &[12],
+        &[x],
         &record.output,
         &layout,
         Retention::Regenerate,
@@ -759,7 +760,7 @@ fn device_population_keeps_pipelining() {
   let mut backend =
     Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
       .unwrap();
-  let record = program.execute("Depth::run", vec![12]).unwrap();
+  let record = program.execute("Depth::run", vec![depth::at(12)]).unwrap();
   let options = |max_ram_bytes| planning::Options {
     max_rows: Some(4),
     max_ram_bytes: Some(max_ram_bytes),
@@ -795,7 +796,7 @@ fn record_model_matches_record_bytes() {
   let mut backend =
     Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
       .unwrap();
-  let record = program.execute("Depth::run", vec![12]).unwrap();
+  let record = program.execute("Depth::run", vec![depth::at(12)]).unwrap();
   let plans = DevicePlans::new(&backend);
   let model = plans.record_model(&backend, &record).unwrap();
   let device: Vec<usize> = device_circuits(&plans);
@@ -841,7 +842,7 @@ fn shard_images_match_host_words_and_proofs() {
   for ((mut program, artifact), entry, args) in [
     (mixed, "root", vec![3, 0, 7]),
     (grouped(), ENTRY, vec![3]),
-    (depth::depth_fixture(), "Depth::run", vec![12]),
+    (depth::depth_fixture(), "Depth::run", vec![depth::at(12)]),
   ] {
     program.record_refs(|_| true, &crate::trace::lookup_aliases(&artifact));
     let plan = TracePlan::new(&program, artifact).unwrap();
@@ -1129,7 +1130,7 @@ fn prefetch_reserves_the_next_shard_image() {
   let mut backend =
     Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
       .unwrap();
-  let (entry, args) = ("Depth::run", vec![12]);
+  let (entry, args) = ("Depth::run", vec![depth::at(12)]);
   let record = program.execute(entry, args.clone()).unwrap();
   let layout = backend.uniform_layout(&record, 1).unwrap();
   assert!(layout.shards.len() >= 2);
