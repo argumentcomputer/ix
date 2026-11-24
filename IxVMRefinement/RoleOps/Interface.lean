@@ -1,6 +1,6 @@
 import IxVMRefinement.RoleOps.Guards
-import IxC.Kernel.Semantics.DeclJ
-import IxC.Kernel.Model.JudgeRules
+import IxCK.Kernel.Semantics.DeclJ
+import IxCK.Kernel.Model.JudgeRules
 
 /-! # What a check of a `Nat` operation establishes
 

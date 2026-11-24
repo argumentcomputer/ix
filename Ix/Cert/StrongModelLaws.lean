@@ -1,6 +1,6 @@
 import Ix.Cert.Composition
 import Ix.Cert.ConversionValues
-import IxC.Kernel.Verify.Rules.Defs
+import IxCK.Kernel.Verify.Rules.Defs
 
 /-! # Strong models satisfy the Source laws
 

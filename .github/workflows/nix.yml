@@ -51,7 +51,7 @@ jobs:
             code:
               - 'Ix.lean'
               - 'Ix/**'
-              - 'IxC/**'
+              - 'IxCK/**'
               - 'IxSharingVerify.lean'
               - 'IxSharingVerify/**'
               - 'Main.lean'

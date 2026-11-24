@@ -65,7 +65,7 @@ theorem rename_aliasMap {t : Ix.Kernel.RoleTable} (hwf : t.wf = true)
   Decl.rename_exact ev he (renameMap_aliasMap hwf hlen hsrc hdst)
 
 /-- **The same, as `renameConsts`**, where no projection of the term names a member (the
-circuit's `rename` renames a projection's structure, IxC's `renameConsts` does not). -/
+circuit's `rename` renames a projection's structure, IxCK's `renameConsts` does not). -/
 theorem rename_aliasMap_consts {t : Ix.Kernel.RoleTable} (hwf : t.wf = true)
     {srcAs dstAs : List Bytes.Address} {Γ₁ Γ₂ : Nat → KExpr}
     {e src dst r : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {k : Nat} {E : KExpr}

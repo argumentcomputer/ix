@@ -1,5 +1,5 @@
 import IxVMRefinement.Core.Specs.Whnf
-import IxC.Kernel.Rules.Inversion
+import IxCK.Kernel.Rules.Inversion
 
 /-! # Telescope certificates up to reduction are certificates on a telescope
 

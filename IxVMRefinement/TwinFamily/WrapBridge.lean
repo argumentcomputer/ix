@@ -5,7 +5,7 @@ import IxVMRefinement.TwinFamily.Target
 
 /-! # `WrapRel`, full consumption, and rule-body renaming across twin recursors
 
-Algebra bridging the family reconstruction (`Binding.FamilyRecon`) to IxC's wrapper relation
+Algebra bridging the family reconstruction (`Binding.FamilyRecon`) to IxCK's wrapper relation
 (`Ix.Kernel.Semantics.WrapRel`) and the twin recursor route (`TwinFamily.Facts`):
 
 * **Deterministic full consumption**: `Consumes.unique` and `FullCons.toWrapRel_of_both` show
@@ -343,7 +343,7 @@ private theorem lam_first_arity_go_wb {κ : _root_.Address → KKey} {Γ : Nat �
             simp [lamFirstArity, hval_i]
           · omega)
 
-/-- **Observed wrapper arity gives IxC's `wrapperArity env.find?`** whenever `w` resolves in `env`
+/-- **Observed wrapper arity gives IxCK's `wrapperArity env.find?`** whenever `w` resolves in `env`
 and `calls` is good for `(E, env, t, lim)` under `Decl.PrefixInv`. -/
 theorem wrapperArity_of_observed {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {E₀ E : Ixon.Env} {env : Ix.Kernel.Env .anon} {lim : Option Nat} {w : KKey} {n : Nat}

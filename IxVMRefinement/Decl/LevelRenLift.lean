@@ -1,13 +1,13 @@
 import IxVMRefinement.Decl.NativeCommon
-import IxC.Kernel.Model.LevelRen
-import IxC.Kernel.Model.ThmLevels
+import IxCK.Kernel.Model.LevelRen
+import IxCK.Kernel.Model.ThmLevels
 
 /-! # Typing and conversion at the declared level parameters, from the positional run
 
 The circuit checks a declaration's type with its level parameters renamed to positions
 (`posOf`). Every declaration the reader produces has the positions themselves as parameters,
 except a large eliminator (`k :: List.range k`, the motive universe first). The rules' transport
-along a renaming of level parameters (`Ix.Kernel.Rules.infer_lr`, `IxC/Kernel/Model/LevelRen.lean`)
+along a renaming of level parameters (`Ix.Kernel.Rules.infer_lr`, `IxCK/Kernel/Model/LevelRen.lean`)
 undoes `posOf` for any permutation of the positions:
 
 * `PosSortLift.of_perm`: the sort certificate at the declared parameters, from the positional

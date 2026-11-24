@@ -1,5 +1,5 @@
 import Ix.CompileM
-import IxC.Ixon.Verify.Basic
+import IxCK.Ixon.Verify.Basic
 
 /-!
 # The block state's primary tables on the wire

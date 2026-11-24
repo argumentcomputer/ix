@@ -1,9 +1,9 @@
 import Ix.IxVM.Refinement.Deserialize
-import IxC.Ixon.Verify.BoundedConstant
+import IxCK.Ixon.Verify.BoundedConstant
 
 /-! # The Deserialize slice: the binder-data section
 
-A record's last field is its binder-data section, which IxC reads with
+A record's last field is its binder-data section, which IxCK reads with
 `Ixon.getBinders`:
 
 ```
@@ -17,7 +17,7 @@ IxVM reads it with `IxonDeserialize::get_binders` and its helpers
 (`get_binder_node` and, for a byte with a mode other than the default,
 `get_moded_binder_node`, `get_binder_node_list`, `get_binder_block`,
 `get_binder_block_list`). Each terminating derivation of one of them on a byte
-stream refines IxC's codec on the same bytes: IxC's reader succeeds, consumes
+stream refines IxCK's codec on the same bytes: IxCK's reader succeeds, consumes
 the same bytes, and returns the data the Aiur values represent
 (`RepBinderNode`, `RepBinderBlock`):
 
@@ -131,9 +131,9 @@ theorem RepBinderBlock.mono {h₁ h₂ : Heap F} {b : Ixon.BinderBlock} {v : Sou
 theorem repBinderBlock_heapMono₂ : HeapMono₂ RepBinderBlock :=
   fun _ _ _ _ ext rep => rep.mono ext
 
-/-! ## IxC's reader on the same bytes -/
+/-! ## IxCK's reader on the same bytes -/
 
-/-- **IxC's `Bool` reader on a byte below 2** returns whether the byte is 1. -/
+/-- **IxCK's `Bool` reader on a byte below 2** returns whether the byte is 1. -/
 theorem getBool_of_drop_cons {bytes : List UInt8} {i : Nat} {b : UInt8} {rest : List UInt8}
     (hcons : bytes.drop i = b :: rest) (hb : b.toNat < 2) :
     Ixon.Serialize.get (α := Bool) { idx := i, bytes := ⟨bytes.toArray⟩ } =
@@ -190,7 +190,7 @@ theorem nodeByte_tag2 : ∀ n, n < 256 → n % 8 = 2 → (UInt8.ofNat n &&& 7) =
 theorem nodeByte_tag4 : ∀ n, n < 256 → n % 8 = 4 → (UInt8.ofNat n &&& 7) = 4 := by
   decide +kernel
 
-/-- **IxC's node reader on a binder's byte** `b` (not a share's, its input code
+/-- **IxCK's node reader on a binder's byte** `b` (not a share's, its input code
 not 7): the node of its tag at `allModeOfByte b`, after the tag's payload. -/
 theorem getBinderNode_binder {σ σ' : Ixon.GetState} {b : UInt8}
     (hu8 : Ixon.getU8 σ = .ok b σ') (h3 : b.toNat ≠ 3) (hin : b.toNat / 8 % 8 ≠ 7) :
@@ -233,7 +233,7 @@ theorem getBinderNode_binder {σ σ' : Ixon.GetState} {b : UInt8}
       ↓reduceIte, hok2, hok3]
     rfl
 
-/-- **IxC's node reader on the share byte 3**: the share node of the variant
+/-- **IxCK's node reader on the share byte 3**: the share node of the variant
 that follows. -/
 theorem getBinderNode_share {σ σ' σ2 : Ixon.GetState} {t : Ixon.TagN}
     (hu8 : Ixon.getU8 σ = .ok 3 σ') (hok2 : Ixon.getTagN 0 σ' = .ok t σ2) :
@@ -264,7 +264,7 @@ theorem matchPattern_bits8 {types : Types} {heap : Heap F} {x : Nat} {bs : Envir
   exact mt.symm
 
 /-- **Every terminating derivation of `IxonDeserialize::get_moded_binder_node`**
-on a node byte `b` above 4 (read by IxC's `getU8` at `i`) refines
+on a node byte `b` above 4 (read by IxCK's `getU8` at `i`) refines
 `Ixon.getBinderNode` at `i`: the byte is a binder's (tag 0, 1, 2 or 4) whose
 input code is not 7, and the node carries its mode's code. -/
 theorem getModedBinderNode_refines_at {bytes : List UInt8} {i : Nat} {b : UInt8}
@@ -1080,7 +1080,7 @@ theorem getBinderBlockList_refines_at (count : Nat) (hcount : count < 1844674407
 /-! ## The section -/
 
 /-- **Every terminating derivation of `IxonDeserialize::get_binders` at reader
-offset `i`** refines `Ixon.getBinders` at `i`: IxC reads the same section from
+offset `i`** refines `Ixon.getBinders` at `i`: IxCK reads the same section from
 the same bytes, and the blocks IxVM returns represent it
 (`RepList binderBlockListEnum RepBinderBlock`). -/
 theorem getBinders_refines_at {bytes : List UInt8} {i : Nat}

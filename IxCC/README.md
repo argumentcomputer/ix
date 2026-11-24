@@ -3,7 +3,7 @@
 The certified compiler of [ix](../README.md), implemented in Lean 4. It
 compiles Ixon v5, ix's content-addressed Lean kernel terms, to x86-64. The
 goal is end-to-end certification for two back ends, grounded in Ixon and the
-certified kernel IxC: native x86 code that competes with Lean → Clang, and
+certified kernel IxCK: native x86 code that competes with Lean → Clang, and
 Aiur, first through a fixed evaluator circuit that runs IxCC's source
 evaluator inside a proof system ([end-to-end certification](docs/end-to-end.md)).
 IxCC is the project's Lean namespace.
@@ -37,7 +37,7 @@ prove the accepted recheck, replay, and claim-verification paths correct
 relative to the source evaluator, run on the checked source the front end builds
 from the certificate, and the native driver model, on inputs where that source
 does not go wrong. The grounding library (`IxCCGrounding`, SP-1 in progress)
-discharges SrcEval soundness over IxC's model (`IxC.Kernel.Model` directly via
+discharges SrcEval soundness over IxCK's model (`IxCK.Kernel.Model` directly via
 `Laws678`) on a growing fragment (45 of 50 committed corpus closures through
 the Pc family). The plan to complete the
 *spine* shared by the two back ends is in the
@@ -83,9 +83,9 @@ Main includes:
   `Own.Plain.checkOwned`), P8 defunctionalisation, proof fences and native
   suites;
 - [Ixon v5 ingress](docs/ixon-v4.md) and the certified-kernel front end
-  (`Src.KernelFront`, through ix's `IxC` package, with certified N5
-  `IxC.Resource.check` mode gate (`IxC/Resource/Audit.lean`: `DefaultOk`,
-  `ReadsRespectErasure`, `CheckSound`) and L3b `IxC.Host.Limits`);
+  (`Src.KernelFront`, through ix's `IxCK` package, with certified N5
+  `IxCK.Resource.check` mode gate (`IxCK/Resource/Audit.lean`: `DefaultOk`,
+  `ReadsRespectErasure`, `CheckSound`) and L3b `IxCK.Host.Limits`);
 - the grounding library (`IxCCGrounding`, SP-1 in progress);
 - the x86 target model with its certified
   [encoder](docs/x86-encoded-instructions.md) and
@@ -102,7 +102,7 @@ The earlier pipeline, the Ixby backend and their measurements are on branch
 ## Build and check
 
 IxCC lives in ix under `IxCC/`, as its own Lake package (`«ix-cc»`). It
-requires the `IxC` package beside it (`../IxC`, of which it imports the Ixon
+requires the `IxCK` package beside it (`../IxCK`, of which it imports the Ixon
 v5 codec, role vocabulary, executable certified kernel, resource mode checker,
 host limits, and—for `IxCCGrounding` only—the kernel's model statement, 111
 files total) and `Blake3.Pure`, and nothing of ix's root package. ix's flake

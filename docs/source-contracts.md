@@ -2,7 +2,7 @@
 
 The Ix source frontend maps scoped `@`-prefixed mode annotations and scoped
 definition attributes directly onto the Ixon v5 mode vocabulary
-(`IxC/Ixon/Types/Modes.lean`):
+(`IxCK/Ixon/Types/Modes.lean`):
 
 - `Ixon.BinderMode` (7 modes)
 - `Ixon.ResultMode` (4 modes)
@@ -123,4 +123,4 @@ through `Registry` → `Transport` → `CompileM` into `Ixon.Definition.asserts`
   compilation with `ModeCheck`.
 - `IxTests resource-modes` verifies end-to-end compilation of binders, `let @borrow`,
   constructor `fieldModes`, definition `asserts`, `BinderData.strip`/`apply`
-  roundtrips, and `IxC.Resource.check`.
+  roundtrips, and `IxCK.Resource.check`.

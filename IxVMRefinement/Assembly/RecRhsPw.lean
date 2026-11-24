@@ -1,5 +1,5 @@
 import IxVMRefinement.Assembly.NativeBlockFinalRetHead
-import IxC.Kernel.Model.Inductives.NativeAtRecLate
+import IxCK.Kernel.Model.Inductives.NativeAtRecLate
 
 /-! # Recursor rule `PropWhen` regime alignment for non-modeled recursors
 

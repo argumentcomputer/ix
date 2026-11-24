@@ -6,7 +6,7 @@ import IxCC.Cfg.Print
 import IxCC.Lir.Print
 import IxCC.Xv.Print
 import IxCC.Exe
-import IxC.Host.Limits
+import IxCK.Host.Limits
 
 /-! # The `ixcc` command line
 

@@ -4,11 +4,11 @@ import Ix.IxVM.Consistency.StatementRel
 import Ix.IxVM.Consistency.ReadsKeys
 import Ix.IxVM.Consistency.TableValid
 import Ix.Cert.CompileCorrectProof
-import IxC.Kernel.Ixon.Reader
-import IxC.Kernel.Ixon.RoleTableInj
-import IxC.Kernel.Verify.Rename.Basic
-import IxC.Kernel.Verify.Rename.ExprOps
-import IxC.Kernel.Verify.Rename.Pins
+import IxCK.Kernel.Ixon.Reader
+import IxCK.Kernel.Ixon.RoleTableInj
+import IxCK.Kernel.Verify.Rename.Basic
+import IxCK.Kernel.Verify.Rename.ExprOps
+import IxCK.Kernel.Verify.Rename.Pins
 
 /-!
 # Binder-data section preservation bridge (`RecordSections` ↔ `ReadsIn` / `readRecord` / `compileCorrect`)

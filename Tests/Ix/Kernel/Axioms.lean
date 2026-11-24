@@ -1,10 +1,10 @@
 module
 
-public import IxC.Kernel.MainTheorem
-public import IxC.Kernel.Verify.Cached.MainC
-public import IxC.Kernel.Model.Fold
-public import IxC.Kernel.Model.Capstone
-public import IxC.Kernel.Verify.Tier
+public import IxCK.Kernel.MainTheorem
+public import IxCK.Kernel.Verify.Cached.MainC
+public import IxCK.Kernel.Model.Fold
+public import IxCK.Kernel.Model.Capstone
+public import IxCK.Kernel.Verify.Tier
 public section
 
 /-!
@@ -20,7 +20,7 @@ message changes and the build fails.
 `#print axioms` is blind to compiler escapes (`@[implemented_by]`,
 `@[computed_field]`); `kernel-trust-surface`
 (`Tests/Ix/Kernel/TrustSurface.lean`, derived from upstream's
-`tests/trust-surface.sh`) scans `IxC/Kernel` for those.
+`tests/trust-surface.sh`) scans `IxCK/Kernel` for those.
 
 Of upstream's twenty roots, three are not here: the NDJSON corollary
 `no_False_declaration` (the NDJSON frontend is not imported), and
@@ -133,7 +133,7 @@ info: 'Ix.Kernel.Expr.beq_eq_beqMemo' depends on axioms: [propext, Classical.cho
 #guard_msgs in
 #print axioms Ix.Kernel.Expr.beq_eq_beqMemo
 
-/-! The typing tier (`IxC/Kernel/Verify/Tier.lean`): its guarantee and the fence
+/-! The typing tier (`IxCK/Kernel/Verify/Tier.lean`): its guarantee and the fence
 stand on the same three axioms. -/
 
 /--

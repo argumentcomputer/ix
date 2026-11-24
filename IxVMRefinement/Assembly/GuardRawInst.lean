@@ -1,5 +1,5 @@
 import IxVMRefinement.Assembly.GuardRawSubst
-import IxC.Kernel.Inductives.StructParts
+import IxCK.Kernel.Inductives.StructParts
 
 /-! # Actual capture-avoiding substitution of retained raw syntax
 

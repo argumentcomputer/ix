@@ -6,7 +6,7 @@ import IxVMRefinement.Obs.KernelRoles
 import IxVMRefinement.Obs.KernelRoleSpec0
 import Ix.IxVM.Consistency.Statement
 import Ix.Cert.RoleClosure
-import IxC.Kernel.Ixon.RoleTableInj
+import IxCK.Kernel.Ixon.RoleTableInj
 
 /-! # Claim-phase role-table decoding, context loading, and role lookups
 

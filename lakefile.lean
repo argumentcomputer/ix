@@ -35,7 +35,7 @@ require Cli from git
 require batteries from git
   "https://github.com/leanprover-community/batteries" @ "v4.34.0"
 
-require «ix-kernel» from "IxC" with
+require «ix-ck» from "IxCK" with
   if (get_config? profile).isSome then
     ({} : Lean.NameMap String).insert `profile ""
   else {}
@@ -356,7 +356,7 @@ lean_lib FormalAiurKeys where
 /-- The main library, with Lake's default root: the module `Ix` (`Ix.lean`) and
 its imports, not every module under `Ix/`. A module that `Ix.lean` does not
 import, such as `Ix.Cert.Audit`, is built only when named, as the
-`check-kernel` gate and `lake lint`'s module coverage name it. Nothing the `ix-kernel` dependency or `IxSharingVerify` owns
+`check-kernel` gate and `lake lint`'s module coverage name it. Nothing the `ix-ck` dependency or `IxSharingVerify` owns
 is under the `Ix.` module root (their declaration namespaces are, their module
 names are not), so this library never shadows them. Keep new modules of theirs
 under their roots. -/
@@ -617,7 +617,7 @@ def moduleExclusions : Array ModuleExclusion := #[
     kind := .script }]
 
 /-- The directories whose modules `check-modules` builds, with the root files.
-`IxC/` (its own package, globbed, `lake -d IxC build --wfail`) and
+`IxCK/` (its own package, globbed, `lake -d IxCK build --wfail`) and
 `IxSharingVerify/` (a globbed library, built by `lake lint`) are covered by
 their own targets, and `IxVMRefinement/` (a globbed library) by the refinement
 step only; `Models/` and every directory with its own lakefile are
@@ -906,10 +906,10 @@ lean_lib IxVMRefinement where
 
 end IxVMRefinement
 
-section IxC
+section IxCK
 
-/- The `ix-kernel` dependency owns the certified modules and their artifacts.
-`lake -d IxC build --wfail` checks them without host dependencies;
+/- The `ix-ck` dependency owns the certified modules and their artifacts.
+`lake -d IxCK build --wfail` checks them without host dependencies;
 the host tests below consume that same package. See `docs/kernel.md`. -/
 
 /-- The kernel's fences, derived from con-leche's (`Tests/Ix/Kernel/{Layering,
@@ -970,7 +970,7 @@ lean_exe «kernel-check-ixe» where
   root := `Benchmarks.Kernel.CheckIxeMain
   moreLinkObjs := #[ix_rs]
 
-/-- The role-table generator: regenerates `IxC/Kernel/Ixon/RoleData.lean` (the
+/-- The role-table generator: regenerates `IxCK/Kernel/Ixon/RoleData.lean` (the
 default role table, its evidence records and the Ixon prelude) from a compiled
 Init (`.lake/envs/initstd.ixe`), each binding validated by the verified fold,
 and Source mode's evidence from the certificate module's environment, which it
@@ -994,7 +994,7 @@ script "check-kernel" (args) := do
     let code ← child.wait
     unless code == 0 do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
-  run "lake" #["-d", "IxC", "build", "--wfail"]
+  run "lake" #["-d", "IxCK", "build", "--wfail"]
   -- Batch all root-workspace kernel audit modules, freeze, fences and host-entry
   -- executables into one Lake invocation so dependency tracing runs once.
   run "lake" #["build", "--wfail",
@@ -1065,7 +1065,7 @@ def kernelBridgeFences : List String := [
   "IxKernelBridge.KernelFront.classifyTerm_sound"]
 
 /-- Build the kernel-bridge model (`Models/KernelBridge`, a workspace of its
-own that requires `IxC` and `IxCC` by path: a conditional simulation lemma
+own that requires `IxCK` and `IxCC` by path: a conditional simulation lemma
 between IxCC's source evaluator and the kernel's reduction; its README states
 the scope), whose modules treat warnings as errors and whose audit module
 holds the axiom fences, then check that the fenced theorems are exactly
@@ -1099,4 +1099,4 @@ script "check-kernel-bridge" (args) := do
   IO.println s!"Kernel bridge checks passed: {fenced.length} exact axiom fences."
   return 0
 
-end IxC
+end IxCK

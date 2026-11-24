@@ -1,6 +1,6 @@
 import IxVMRefinement.Decl.ModeledRunMap
 import IxVMRefinement.Decl.VerifiedRunMap
-import IxC.Kernel.Semantics.Inductives.DeclNativeJ
+import IxCK.Kernel.Semantics.Inductives.DeclNativeJ
 
 /-! # Judgement maps for native and twin inductive runs
 

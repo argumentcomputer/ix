@@ -1,7 +1,7 @@
 import IxVMRefinement.Decl.ModeledAux
 import IxVMRefinement.Core.Det
 import IxVMRefinement.Core.Open
-import IxC.Kernel.Model.IndRenJudge
+import IxCK.Kernel.Model.IndRenJudge
 
 /-! # A judgement package for model aliases with positionally reindexed valuations
 
@@ -11,7 +11,7 @@ advice model applied to `lps`, the advice model being stored at positional param
 `range lps.length`. In every model of an environment that stores such an alias, the alias's leaf at
 `ψ` is the target's leaf at `posVal lps ψ`. A renaming `h` of aliases to their targets is therefore
 invisible to the reading (`denoteMeta_renameConsts_pos`), although the level lists differ, which
-IxC's `RenameOk` does not allow.
+IxCK's `RenameOk` does not allow.
 
 `aliasJ h J` adjoins the renaming to a package: a judgement of `aliasJ h J` on a term is `J`'s
 judgement on the term renamed by `h`, at an environment whose `h`-moved keys are stored aliases
@@ -87,7 +87,7 @@ def RenameOkPos (acval : KKey → (LevelParam → Nat) → AnnotTerm) (env : Env
         acval n (Level.substFn φ ci.toConstantVal.levelParams us)) ∧
   (∀ n, env.find? n = none → env.find? (h n) = none)
 
-/-- IxC's condition is the positional one at equal parameter lists. -/
+/-- IxCK's condition is the positional one at equal parameter lists. -/
 theorem RenameOkPos.of_renameOk {acval : KKey → (LevelParam → Nat) → AnnotTerm}
     {env : Env .anon} {h : KKey → KKey} (hro : RenameOk acval env h) :
     RenameOkPos acval env h := by

@@ -1,6 +1,6 @@
 import Ix.RoleEvidence
 import Ix.LeanIngress.Collapse
-import IxC.Kernel.Verify.Rename.Basic
+import IxCK.Kernel.Verify.Rename.Basic
 
 /-! # Source's evidence bundle, read as the Ixon reader reads it
 

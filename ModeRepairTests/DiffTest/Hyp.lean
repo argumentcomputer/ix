@@ -1,4 +1,4 @@
-import IxC.Resource
+import IxCK.Resource
 
 /-! # Decision procedures for the statement's hypotheses (MT)
 
@@ -10,7 +10,7 @@ an input heap (acyclic, `HeapOk`) the walks terminate well inside it. -/
 
 namespace MT.DiffTest
 
-open IxC.Resource Ixon
+open IxCK.Resource Ixon
 
 /-- The statement this tree has: repairs I (an extern's fresh reference carries its cell's
 capability; its new cells' capabilities are below its counter) and K (`ArgOk`'s class and skeleton

@@ -37,7 +37,7 @@ jobs:
           # dependency checkouts are never swept up — the certified kernel's
           # package and its models: the set-theory model, whose Mathlib `rev`
           # is a Lean version tag and moves with the toolchain, and the
-          # kernel-bridge model (path dependencies on IxC and IxCC, Blake3
+          # kernel-bridge model (path dependencies on IxCK and IxCC, Blake3
           # inherited from IxCC); the certified compiler's package (its Blake3
           # pin is a commit, so it is reported and left alone) and its optional
           # benchmark runner (no dependencies); and the Aiur, IxVM and
@@ -47,7 +47,7 @@ jobs:
           # toolchain bump" in docs/kernel.md; IxCC's trust ledger records the
           # toolchain and flake.lock and fails until they are reviewed into it
           # ("Routine updates" in IxCC/docs/trusted-extern-ledger.md).
-          lake_package_directory: ". Benchmarks/** IxC IxCC IxCC/benchmarks/runner Models/SetTheory Models/KernelBridge Aiur IxVM MultiStark"
+          lake_package_directory: ". Benchmarks/** IxCK IxCC IxCC/benchmarks/runner Models/SetTheory Models/KernelBridge Aiur IxVM MultiStark"
           bump_mode: pinned-tags
           pr: true
           update_lean4_nix: true

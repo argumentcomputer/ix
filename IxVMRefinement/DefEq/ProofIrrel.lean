@@ -3,9 +3,9 @@ import IxVMRefinement.Core.RomBound
 import IxVMRefinement.Lib.Words
 import IxVMRefinement.Levels.Spec
 import IxVMRefinement.Subst.Spine
-import IxC.Kernel.Verify.PropRead
-import IxC.Kernel.Verify.InstLevels
-import IxC.Kernel.Verify.PropWhen
+import IxCK.Kernel.Verify.PropRead
+import IxCK.Kernel.Verify.InstLevels
+import IxCK.Kernel.Verify.PropWhen
 
 /-! # Step lemma of `KernelDefEq::try_proof_irrel`
 

@@ -3,8 +3,8 @@ import IxVMRefinement.Obs.Names
 import Aiur.Library.IxVMRep
 import IxVM.Field
 import Ix.IxVM.Refinement.KernelLevels
-import IxC.Kernel.Verify.Level
-import IxC.Kernel.Verify.PropWhen
+import IxCK.Kernel.Verify.Level
+import IxCK.Kernel.Verify.PropWhen
 
 /-! # The term seam: IxVM heap terms and the kernel's `Expr`
 

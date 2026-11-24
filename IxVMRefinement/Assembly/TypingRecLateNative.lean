@@ -9,7 +9,7 @@ At the arm of a late recursor record (a standalone recursor whose canonical comp
 read under the level parameters `ps := recLps large (range k)` (`k` the member's level count,
 `large` whether the record has one more), its stored constant is the canonical annotation of
 that reading (`LoadedReads.canonAnn`, `canonRules`: what every load of the record represents),
-and IxC's recursor stage holds at the step's environment: `NativeRecJ` at
+and IxCK's recursor stage holds at the step's environment: `NativeRecJ` at
 `fam.recParts ⟨keyOf t A, ps, ty⟩ elim large (rules.map rhs)`, with the declared arm of
 `RecStoredJ` storing the canonical recursor.
 

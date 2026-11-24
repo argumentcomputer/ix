@@ -2,8 +2,8 @@ import IxVMRefinement.Core.Seams
 import IxVMRefinement.Ingress.Hashed
 import IxVMRefinement.Obs.IxonDeserialize
 import Ix.IxVM.Refinement.DeserializeBinders
-import IxC.Ixon.Verify.ConstantBounds
-import IxC.Ixon.Verify.ConstantTables
+import IxCK.Ixon.Verify.ConstantBounds
+import IxCK.Ixon.Verify.ConstantTables
 
 /-! # Claim-phase constant deserialization refinement (`IxonDeserialize::get_constant`)
 

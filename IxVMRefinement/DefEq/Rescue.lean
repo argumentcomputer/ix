@@ -5,8 +5,8 @@ import IxVMRefinement.Lib.Words
 import IxVMRefinement.Lib.WordHints
 import IxVMRefinement.Obs.Blake3
 import IxVMRefinement.Ingress.HashedBlock
-import IxC.Kernel.Verify.InstLevels
-import IxC.Kernel.Verify.PropWhen
+import IxCK.Kernel.Verify.InstLevels
+import IxCK.Kernel.Verify.PropWhen
 
 /-! # Step lemmas of `KernelDefEq`: the rescue tier
 

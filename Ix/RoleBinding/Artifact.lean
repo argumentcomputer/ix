@@ -3,7 +3,7 @@ module
 public import Ix.RoleBinding.Publication
 public import Ix.Ixon.Authenticated
 public import Ix.KernelCheck.Step
-public import IxC.Kernel.Admission.UserAxioms
+public import IxCK.Kernel.Admission.UserAxioms
 public import Ix.RoleBinding.RecordDecoding
 
 /-! # Certified checking of an artifact's own binding and records

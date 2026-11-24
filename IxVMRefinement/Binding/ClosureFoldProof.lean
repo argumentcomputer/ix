@@ -29,7 +29,7 @@ is the fold's result (`closureFold_run`). What is left after the fold:
 Also here:
 
 * the `findExt` lemmas: the shapes, the operations' pinned types and `stdAxiomOk` are kept by an
-  extension that keeps every lookup that succeeds (IxC's `EnvExt` also asks about projection
+  extension that keeps every lookup that succeeds (IxCK's `EnvExt` also asks about projection
   tables, which the fold does not track);
 * `joinFam`: the family map after a group. -/
 

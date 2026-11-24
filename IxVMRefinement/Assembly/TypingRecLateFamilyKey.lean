@@ -1,8 +1,8 @@
 import IxVMRefinement.Assembly.TypingRecLateMajorKey
 import IxVMRefinement.StatementRel.ReaderReads
 import IxVMRefinement.Obs.KernelCheck
-import IxC.Kernel.Semantics.Inductives.WrapRelFacts
-import IxC.Kernel.Verify.Inductives.FixRec
+import IxCK.Kernel.Semantics.Inductives.WrapRelFacts
+import IxCK.Kernel.Verify.Inductives.FixRec
 
 /-! # The family key of the reading of a late recursor's type
 

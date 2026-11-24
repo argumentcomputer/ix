@@ -12,7 +12,7 @@ after a native block's install, from
   `projFire` (`NativeBlockNewTable.lean`; the firing is the table's named clause `fire`);
 * `BlockEta`: the two η fields at the new family, as named inputs. What they need beyond the
   install: the capability conjunct reads `caps.eta = true`, i.e. that the family is not a
-  proposition (from the use's never-zero sort) and that IxC's recursion flag `nativeIsRec kinds`
+  proposition (from the use's never-zero sort) and that IxCK's recursion flag `nativeIsRec kinds`
   is false, which only the circuit's `struct_is_rec` verdict can give; the use facts are
   `NativeNoRecFacts.etaUseFacts`.
 -/

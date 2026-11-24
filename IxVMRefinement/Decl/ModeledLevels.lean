@@ -1,8 +1,8 @@
 import IxVMRefinement.Decl.Value
-import IxC.Kernel.Model.Annot.BitLevels
-import IxC.Kernel.Model.DeclIndJ
-import IxC.Kernel.Verify.InferLeaves
-import IxC.Kernel.Verify.Level
+import IxCK.Kernel.Model.Annot.BitLevels
+import IxCK.Kernel.Model.DeclIndJ
+import IxCK.Kernel.Verify.InferLeaves
+import IxCK.Kernel.Verify.Level
 
 /-! # Positional level-parameter judgement package (`posRulesJ`) for modeled declarations
 

@@ -1,7 +1,7 @@
 module
 
 public import Ix.Common
-public import IxC.Ixon.Types.Modes
+public import IxCK.Ixon.Types.Modes
 
 /-!
 # Source contracts before canonicalization

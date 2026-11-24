@@ -13,7 +13,7 @@ under the family's pinned profile) and rewrites the derived fields, among
 them the plain-data crossing diagnostics ix prints (`crossed`).
 
 A verdict is `ok`, or a rejection with:
-* `stage`: `resource` (ix's mode/resource check of the closure: v5 `IxC.Resource.check`
+* `stage`: `resource` (ix's mode/resource check of the closure: v5 `IxCK.Resource.check`
   via `Ix.ModeCheck`, or legacy v4 resource admission in older frozen records),
   `elaboration` (a `SourceContractError` of ix's Lean elaborator), `profile`
   (legacy v4 profile refusals) or `other`;
@@ -149,7 +149,7 @@ def leanResourceCode (s : String) : String :=
       if a.all Char.isDigit then a else capital ((a.splitOn ".").getLastD a)
     s!"{capital ctor}({", ".intercalate args})"
 
-/-- Classify a v5 `IxC.Resource.Verdict.refuse` / `Ix.ModeCheck.checkSubject`
+/-- Classify a v5 `IxCK.Resource.Verdict.refuse` / `Ix.ModeCheck.checkSubject`
 witness into a structured verdict code (never raw arbitrary message text). -/
 def v5ModeRefusalCode (witness : String) : Option String :=
   let w := witness.trimAscii.toString
@@ -207,7 +207,7 @@ def parseV5ModeRefusal (text : String) : Option (Producer × Bool) := do
     else ""
   return ({ verdict := "reject", stage := "resource", code, constant }, needsAddr)
 
-/-- Classify a deterministic v5 `IxC.Resource` limit decline (`mode checking [(uncertified)] declines: …`)
+/-- Classify a deterministic v5 `IxCK.Resource` limit decline (`mode checking [(uncertified)] declines: …`)
 into a structured `resource-decline` verdict code (never raw prose; still fail-closed on typing errors,
 crashes, or unrecognized declines). -/
 def parseV5ModeDecline (text : String) : Option Producer := do
@@ -231,7 +231,7 @@ def parseV5ModeDecline (text : String) : Option Producer := do
 
 /-- The verdict of a failed `ix compile` from its log (as the verdict
 script of the ix usage-ownership fixtures reads it). Resource refusals come in
-v5 `Ix.ModeCheck` / `IxC.Resource` spelling (`mode checking [(uncertified)] refuses
+v5 `Ix.ModeCheck` / `IxCK.Resource` spelling (`mode checking [(uncertified)] refuses
 AT: WITNESS` or deterministic limit declines `mode checking [(uncertified)] declines: …`)
 and legacy v4 spellings (Lean `resource admission (some ADDRESS):
 Ix.Resource.Error.CODE` and retired Rust `… Hash("ADDRESS") …}): CODE" })`). -/

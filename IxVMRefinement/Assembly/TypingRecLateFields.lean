@@ -1,8 +1,8 @@
 import IxVMRefinement.Assembly.TypingRecLateKStored
 import IxVMRefinement.Decl.NativeRec
-import IxC.Kernel.Verify.Denote.TeleOpen
-import IxC.Kernel.Model.Inductives.StructRecKit2
-import IxC.Kernel.Model.Inductives.StructBits
+import IxCK.Kernel.Verify.Denote.TeleOpen
+import IxCK.Kernel.Model.Inductives.StructRecKit2
+import IxCK.Kernel.Model.Inductives.StructBits
 
 /-! # The field sorts of a large eliminator at a propositional family, at the arm
 

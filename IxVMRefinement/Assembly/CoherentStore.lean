@@ -1,4 +1,4 @@
-import IxC.Ixon.Verify.Canonical
+import IxCK.Ixon.Verify.Canonical
 import Ix.Cert.TableAdmission
 import IxVMRefinement.Ingress.Records
 import Ix.IxVM.Refinement.Claim

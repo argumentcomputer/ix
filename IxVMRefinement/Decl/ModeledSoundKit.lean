@@ -1,17 +1,17 @@
 import IxVMRefinement.Decl.ModeledLevels
 import IxVMRefinement.Decl.ModeledTele
-import IxC.Kernel.Model.IndOpenerGrade
-import IxC.Kernel.Model.DeclIndJ
-import IxC.Kernel.Model.Annot.BitRename
-import IxC.Kernel.Model.Annot.BitInst
-import IxC.Kernel.Verify.InferLemmas
-import IxC.Kernel.Verify.InferLeaves
-import IxC.Kernel.Verify.InstSpine
-import IxC.Kernel.Verify.BridgeWfImp
-import IxC.Kernel.Verify.Extend.Iota
-import IxC.Kernel.Verify.Extend.Recs
-import IxC.Kernel.Verify.Denote.VClosed
-import IxC.Kernel.Verify.Denote.IndFrame
+import IxCK.Kernel.Model.IndOpenerGrade
+import IxCK.Kernel.Model.DeclIndJ
+import IxCK.Kernel.Model.Annot.BitRename
+import IxCK.Kernel.Model.Annot.BitInst
+import IxCK.Kernel.Verify.InferLemmas
+import IxCK.Kernel.Verify.InferLeaves
+import IxCK.Kernel.Verify.InstSpine
+import IxCK.Kernel.Verify.BridgeWfImp
+import IxCK.Kernel.Verify.Extend.Iota
+import IxCK.Kernel.Verify.Extend.Recs
+import IxCK.Kernel.Verify.Denote.VClosed
+import IxCK.Kernel.Verify.Denote.IndFrame
 
 /-!
 # Soundness Kit for VM Modeled-Inductive `defeq_lam_tele` Walks

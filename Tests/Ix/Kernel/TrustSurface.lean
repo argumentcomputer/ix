@@ -3,20 +3,20 @@ import Tests.Ix.Kernel.KernelLayout
 /-! # The kernel's trust-surface fence (`kernel-trust-surface`)
 
 Derived from con-leche's `tests/trust-surface.sh` (Apache-2.0), modified; see
-`IxC/Kernel/NOTICE`. Its lexer fixture, upstream's
+`IxCK/Kernel/NOTICE`. Its lexer fixture, upstream's
 `tests/trust-surface/lexer.lean`, is kept unchanged as
 `Tests/Fixtures/trust-surface/lexer.lean` (its text still names upstream's
 script). Upstream's is a Python program in a shell wrapper.
 
-It scans the checker and the theory under `IxC/Kernel/`
+It scans the checker and the theory under `IxCK/Kernel/`
 (`Tests.Ix.Kernel.KernelLayout`, whose table `topLevel` must classify every
-file under `IxC/Kernel/`) for compiler escapes, and the root library's files
+file under `IxCK/Kernel/`) for compiler escapes, and the root library's files
 that substitute code in the certified entries' execution (`rootSources`),
 and its display modules (`displaySources`: the one display-only
 read).
 Ix's boundary (`Ixon`,
 `Audit`, `Ingress`, `Egress`, `Ref`, `Search`) is fenced by Ix's Lean audits
-in `IxC/Kernel/Audit/*`, which see compiled code, not tokens; ruled entries
+in `IxCK/Kernel/Audit/*`, which see compiled code, not tokens; ruled entries
 are recorded once more in the Lean runtime audit
 (`Ix.Kernel.Audit.runtimeRulings`), which checks the compiled closure.
 
@@ -42,7 +42,7 @@ THE ALLOWLIST, and the justification for every entry (file → the tokens
 tolerated there). A token in an allowlisted file that is not on its own
 list fails just as loudly as one in a bare file.
 
-  IxC/Kernel/Expr.lean          computed_field
+  IxCK/Kernel/Expr.lean         computed_field
       The packed `@[computed_field] data`, `Expr.hashW`, `Level.hashData` and
       `Level.hasParamData`: the
       user's ruling R-meta ("we trust the compiler"), the same escape
@@ -50,12 +50,12 @@ list fails just as loudly as one in a bare file.
       it goes through `@[csimp]` + `withPtrEq`/`withPtrAddr` with the
       memoised descent proved equal to `decide (a = b)`.
 
-  IxC/Kernel/Name.lean          computed_field
+  IxCK/Kernel/Name.lean         computed_field
       A cached hash only (`Name.hashData`), as `Lean.Name`'s. Pointer
       equality goes through `@[csimp]` + `withPtrEq` with the redundancy
       proved (`Name.beqPtr_eq`).
 
-  IxC/Kernel/Key.lean           computed_field, ofReduceBool, sorryAx, trustCompiler
+  IxCK/Kernel/Key.lean          computed_field, ofReduceBool, sorryAx, trustCompiler
       A cached hash only (`Key.hashData`), as `Name`'s: the constant keys
       (input, role and derived) hash in O(1). Pointer equality goes
       through `@[csimp]` + `withPtrEq` with the redundancy proved
@@ -68,47 +68,47 @@ list fails just as loudly as one in a bare file.
       (non-standard axioms), IxVM refuses each as a claim's seed and
       refuses every use, and nothing here evaluates natively.
 
-  IxC/Kernel/Roles.lean         ofReduceBool, sorryAx, trustCompiler
+  IxCK/Kernel/Roles.lean        ofReduceBool, sorryAx, trustCompiler
       NAMES ONLY, the same `Role` constructors: their specification
       (`Role.spec`, an axiom of the stated type), the roles their types
       mention (`Role.deps`), `installAnchors`, and `Role.inert`, which
       marks them inert.
 
-  IxC/Kernel/Basis/Names.lean   sorryAx
+  IxCK/Kernel/Basis/Names.lean  sorryAx
       NAME ONLY: `sorryAxName := roleKey .sorryAx` names the `Role.sorryAx`
       key.
 
-  IxC/Kernel/Cached/ParsedC.lean trustCompiler
+  IxCK/Kernel/Cached/ParsedC.lean trustCompiler
       NAME ONLY: checks `cv.name = roleKey .trustCompiler` in the inert
       compiler-trust axiom declaration branch (`checkDeclC`), installing
       nothing so any use declines.
 
-  IxC/Kernel/Cached/Policy.lean sorryAx, trustCompiler
+  IxCK/Kernel/Cached/Policy.lean sorryAx, trustCompiler
       NAME ONLY: looks up `Role.sorryAx` in the user-axiom policy filter and
       checks `cv.name = roleKey .trustCompiler` in the inert compiler-trust
       axiom declaration branch (`checkStdAxiomDeclC`), installing nothing.
 
-  IxC/Kernel/Checker.lean       trustCompiler
+  IxCK/Kernel/Checker.lean      trustCompiler
       NAME ONLY: checks `cv.name = roleKey .trustCompiler` in the inert
       compiler-trust axiom declaration branch (`checkDecl`), installing
       nothing so any use declines.
 
-  IxC/Kernel/Semantics/Bridge/DeclRun.lean trustCompiler
+  IxCK/Kernel/Semantics/Bridge/DeclRun.lean trustCompiler
       NAME ONLY: case-splits on `cv.name = roleKey .trustCompiler` in the
       soundness proof of `checkDecl`'s inert compiler-trust branch.
 
-  IxC/Kernel/Verify/BridgeDecl.lean trustCompiler
+  IxCK/Kernel/Verify/BridgeDecl.lean trustCompiler
       NAME ONLY: case-splits on `cv.name = roleKey .trustCompiler` in the
       fuel-bridge proof for `checkDecl`'s inert compiler-trust branch.
 
-  IxC/Kernel/Verify/Cached/BridgeC.lean trustCompiler
+  IxCK/Kernel/Verify/Cached/BridgeC.lean trustCompiler
       NAME ONLY: case-splits on `cv.name = roleKey .trustCompiler` in the
       simulation proof of `checkDeclC`'s inert compiler-trust branch.
 
-  IxC/Kernel/Admission.lean     sorryAx
+  IxCK/Kernel/Admission.lean    sorryAx
       NAME ONLY: lists `Role.sorryAx` in `userAxiomRoles`.
 
-  IxC/Kernel/Exclusive.lean     unsafe, implemented_by
+  IxCK/Kernel/Exclusive.lean    unsafe, implemented_by
       `withExclusive`: defined as `k false` and `@[implemented_by]` the
       compiled `k (isExclusiveUnsafe a)`, the reference-count read the
       substitution memo keys on. The obligation `h : k true = k false`
@@ -116,26 +116,26 @@ list fails just as loudly as one in a bare file.
       whose continuation returns a `Subsingleton`, so `h` is
       `Subsingleton.elim`. The file's docstring is the justification.
 
-  IxC/Kernel/BasisGen.lean      unsafe, implemented_by
+  IxCK/Kernel/BasisGen.lean     unsafe, implemented_by
       ELABORATION ONLY. `#annotate_basis` / `#annotate_pins` run the
       annotation pass at elaboration time through `unsafe evalTerm`
       (a `meta section`) and splice the resulting literals. Nothing here
       is in the binary; the literals are ordinary data the proofs consume.
 
-  IxC/Kernel/Audit/Axioms.lean  sorryAx
+  IxCK/Kernel/Audit/Axioms.lean sorryAx
       NAME ONLY: checks whether a declaration's dependency graph contains
       Lean's `sorryAx` constant in the axiom audit engine.
 
-  IxC/Kernel/Audit/ClosureManifest.lean  unsafe
+  IxCK/Kernel/Audit/ClosureManifest.lean unsafe
       NAME ONLY: matches `Lean.DefinitionSafety.unsafe` when hashing a
       definition's safety tag into the SHA-256 closure manifest.
 
-  IxC/Kernel/Audit/Roots.lean   ptrAddrUnsafe
+  IxCK/Kernel/Audit/Roots.lean  ptrAddrUnsafe
       NAME ONLY: enumerates Lean's audited runtime primitives
       (`withPtrAddrUnsafe`, `ptrEq`, `ptrAddrUnsafe`, `isExclusiveUnsafe`) in
       `runtimeRulings`.
 
-  IxC/Kernel/Audit/Runtime.lean unsafe, implemented_by, computed_field, extern
+  IxCK/Kernel/Audit/Runtime.lean unsafe, implemented_by, computed_field, extern
       AUDIT ENGINE & NEGATIVE CONTROLS: `Finding.unsafe` constructor and
       elaboration-time `RuntimeControls` negative-control fixtures verifying
       `checkRuntimeWith` rejects unruled escapes.
@@ -171,7 +171,7 @@ list fails just as loudly as one in a bare file.
       `peekSquash` reads one (`unsafeCast`, a `Squash` is its value at run
       time) to print it, and `peekAll` hands it to the safe renderer
       (`Ix.KernelDisplay.Render`). No certified root's compiled closure
-      reaches it (`IxC/Kernel/Audit/Roots.lean`, `Ix/Cert/RuntimeAudit.lean`),
+      reaches it (`IxCK/Kernel/Audit/Roots.lean`, `Ix/Cert/RuntimeAudit.lean`),
       and the `.meta` and `.source` verdicts are `.anon`'s (the erasure test).
       The file is scanned with the display modules (`displaySources`), which
       hold no other escape.
@@ -182,10 +182,10 @@ form of the first two (no `partial` definition at all, `csimp` only with a
 theorem on the standard axioms).
 
 Changes from upstream: the scanned files come from the repository's own
-layout, and a file under `IxC/Kernel/` that the layout does not classify
+layout, and a file under `IxCK/Kernel/` that the layout does not classify
 fails; the allowlist drops upstream's `Main.lean` and
 `ConLeche/Challenge.lean` (not part of this kernel) and names files by
-their paths here; an empty `IxC/Kernel/` scans nothing and passes once the
+their paths here; an empty `IxCK/Kernel/` scans nothing and passes once the
 lexer self-test passes; and three patterns are wider than upstream's
 regular expressions, so this fence reports everything they do and more: a
 token's word boundary is ASCII (a non-ASCII letter next to a token is a
@@ -213,24 +213,24 @@ def tokens : List String :=
    "bv_decide", "ofReduceBool", "sorry", "sorryAx", "trustCompiler", "lcProof", "extern", "axiom"]
 
 def allow : List (String × List String) := [
-  ("IxC/Kernel/Expr.lean", ["computed_field"]),
-  ("IxC/Kernel/Name.lean", ["computed_field"]),
-  ("IxC/Kernel/Key.lean", ["computed_field", "ofReduceBool", "sorryAx", "trustCompiler"]),
-  ("IxC/Kernel/Roles.lean", ["ofReduceBool", "sorryAx", "trustCompiler"]),
-  ("IxC/Kernel/Basis/Names.lean", ["sorryAx"]),
-  ("IxC/Kernel/Cached/ParsedC.lean", ["trustCompiler"]),
-  ("IxC/Kernel/Cached/Policy.lean", ["sorryAx", "trustCompiler"]),
-  ("IxC/Kernel/Checker.lean", ["trustCompiler"]),
-  ("IxC/Kernel/Semantics/Bridge/DeclRun.lean", ["trustCompiler"]),
-  ("IxC/Kernel/Verify/BridgeDecl.lean", ["trustCompiler"]),
-  ("IxC/Kernel/Verify/Cached/BridgeC.lean", ["trustCompiler"]),
-  ("IxC/Kernel/Admission.lean", ["sorryAx"]),
-  ("IxC/Kernel/BasisGen.lean", ["unsafe", "implemented_by"]),
-  ("IxC/Kernel/Exclusive.lean", ["unsafe", "implemented_by"]),
-  ("IxC/Kernel/Audit/Axioms.lean", ["sorryAx"]),
-  ("IxC/Kernel/Audit/ClosureManifest.lean", ["unsafe"]),
-  ("IxC/Kernel/Audit/Roots.lean", ["ptrAddrUnsafe"]),
-  ("IxC/Kernel/Audit/Runtime.lean", ["unsafe", "implemented_by", "computed_field", "extern"]),
+  ("IxCK/Kernel/Expr.lean", ["computed_field"]),
+  ("IxCK/Kernel/Name.lean", ["computed_field"]),
+  ("IxCK/Kernel/Key.lean", ["computed_field", "ofReduceBool", "sorryAx", "trustCompiler"]),
+  ("IxCK/Kernel/Roles.lean", ["ofReduceBool", "sorryAx", "trustCompiler"]),
+  ("IxCK/Kernel/Basis/Names.lean", ["sorryAx"]),
+  ("IxCK/Kernel/Cached/ParsedC.lean", ["trustCompiler"]),
+  ("IxCK/Kernel/Cached/Policy.lean", ["sorryAx", "trustCompiler"]),
+  ("IxCK/Kernel/Checker.lean", ["trustCompiler"]),
+  ("IxCK/Kernel/Semantics/Bridge/DeclRun.lean", ["trustCompiler"]),
+  ("IxCK/Kernel/Verify/BridgeDecl.lean", ["trustCompiler"]),
+  ("IxCK/Kernel/Verify/Cached/BridgeC.lean", ["trustCompiler"]),
+  ("IxCK/Kernel/Admission.lean", ["sorryAx"]),
+  ("IxCK/Kernel/BasisGen.lean", ["unsafe", "implemented_by"]),
+  ("IxCK/Kernel/Exclusive.lean", ["unsafe", "implemented_by"]),
+  ("IxCK/Kernel/Audit/Axioms.lean", ["sorryAx"]),
+  ("IxCK/Kernel/Audit/ClosureManifest.lean", ["unsafe"]),
+  ("IxCK/Kernel/Audit/Roots.lean", ["ptrAddrUnsafe"]),
+  ("IxCK/Kernel/Audit/Runtime.lean", ["unsafe", "implemented_by", "computed_field", "extern"]),
   ("Ix/Cert/Compile.lean", ["ofReduceBool", "sorryAx", "trustCompiler"]),
   ("Ix/Cert/LayoutExtra.lean", ["sorryAx"]),
   ("Ix/Address/Admission.lean", ["implemented_by"]),
@@ -240,7 +240,7 @@ def allow : List (String × List String) := [
 escapes so inlined `@[implemented_by]` or `bv_decide` cannot hide outside the
 core checker/theory fence. -/
 def boundaryDirs : Array System.FilePath :=
-  #["IxC/Ixon", "Ix/Ixon/Authenticated", "Ix/HostAdmission", "Ix/Cert"]
+  #["IxCK/Ixon", "Ix/Ixon/Authenticated", "Ix/HostAdmission", "Ix/Cert"]
 
 /-- Root-library files in the certified entries' execution that substitute
 code: the admission hash, which the authenticated entries run. -/
@@ -671,7 +671,7 @@ def run (args : List String) : IO UInt32 := do
   if (← selftest) != 0 then return 1
   let (kernelCore, unclassified) ← covered
   if ← reportUnclassified "TRUST-SURFACE" unclassified then return 1
-  let allKernel ← leanFilesUnder "IxC/Kernel"
+  let allKernel ← leanFilesUnder "IxCK/Kernel"
   let kernelIx := allKernel.filter (fun f => part? f == some .ix)
   let mut boundarySources : Array String := #[]
   for dir in boundaryDirs do

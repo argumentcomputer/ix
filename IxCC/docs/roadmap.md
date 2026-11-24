@@ -60,10 +60,10 @@ Tree: this branch (`jcb/ixcc`). Phase 1's scalar
 compiler, general plain-RC compiler (`Rt.Rc.Gen` + `Own.Plain.checkOwned`),
 closed-world defunctionalisation (P8), standalone executables (`--exe`,
 `--machine`), and the certified-kernel front end (`Src.KernelFront` with L3b
-limits, Ixon v5 binder-data ingress, and N5 `IxC.Resource.check` mode gate)
+limits, Ixon v5 binder-data ingress, and N5 `IxCK.Resource.check` mode gate)
 are implemented and proved relative to SrcEval; P1 relevance
 preservation (`run_live`, `sound_live_closed`) is proved; the grounding library
-(`IxCCGrounding`, SP-1, directly over `IxC.Kernel.Model`) is in progress
+(`IxCCGrounding`, SP-1, directly over `IxCK.Kernel.Model`) is in progress
 (45 of 50 committed corpus closures through the Pc family); the Aiur routes
 are not started in this tree.
 
@@ -84,10 +84,10 @@ across 16 required checks ([CI guide](ci.md)).
 **Landed since the 2026-11-09 review:**
 - the certified-kernel front end (`Src.KernelFront`, SP-N/HD-1) replaced the
   erased checker (deleted), with role-bound ingress (`0xE5`), Stage A
-  re-derivation of annotations, L3b kernel limits (`IxC.Host.Limits`, incl.
-  `--level-budget`), certified N5 resource mode checking (`IxC.Resource.check`,
+  re-derivation of annotations, L3b kernel limits (`IxCK.Host.Limits`, incl.
+  `--level-budget`), certified N5 resource mode checking (`IxCK.Resource.check`,
   with `DefaultOk`, `ReadsRespectErasure`, and `CheckSound` proved in
-  `IxC/Resource/Proof/` and audited in `IxC/Resource/Audit.lean`), and
+  `IxCK/Resource/Proof/` and audited in `IxCK/Resource/Audit.lean`), and
   reached-only reading;
 - relevance preservation P1 is proved (`Src.Relevance.Proof.P1.Main.run_live`,
   `Recheck.Proof.LiveClosed.sound_live_closed`), and `checkCanonical` covers
@@ -100,23 +100,23 @@ across 16 required checks ([CI guide](ci.md)).
   `X86.Exe.Process.shell_sound` and test-shell native runs replacing the C
   driver in gates), and bounded literal folding are landed;
 - the grounding library `IxCCGrounding` (SP-1) landed through step Pc (447
-  fences directly over `IxC.Kernel.Model` via `Laws678`, 45 of 50 corpus
+  fences directly over `IxCK.Kernel.Model` via `Laws678`, 45 of 50 corpus
   closures including `fib`, `decide (fib 10 = 55)`, word arithmetic, and
   `PUnit.casesOn`);
 - the conditional kernel bridge ([`Models/KernelBridge`](../../Models/KernelBridge/README.md),
   32 fences) is gated (`lake run check-kernel-bridge`); the trust ledger pins
-  the 16 required checks, pure BLAKE3 (`blake3-pure`), the `IxC` closure
-  (`«ix-kernel»`), and an integrity rule;
+  the 16 required checks, pure BLAKE3 (`blake3-pure`), the `IxCK` closure
+  (`«ix-ck»`), and an integrity rule;
 - **Ixon v5 migration (2026-11-21):** migrated wire/ingress (`V4.Convert`,
   `V3.Wire`, `V3.Contracts`, `R5/N2` binder-data section reader), front-end
   (`Src.KernelFront` post-K3 + N2 zero-ness cross-check + R8 `Table.eqn` +
-  N4 `specVersion = 4` + N5 `IxC.Resource.check` mode gate), middle-end IRs
-  (R6/R10), and `IxCCGrounding` (`N3` direct `IxC.Kernel.Model`); retired
+  N4 `specVersion = 4` + N5 `IxCK.Resource.check` mode gate), middle-end IRs
+  (R6/R10), and `IxCCGrounding` (`N3` direct `IxCK.Kernel.Model`); retired
   IxCC's private v4 resource port (R9-ixcc), legacy Aiur model (RL-3), and
   18 obsolete pre-Gen RC proof modules; migrated all 46 ownership fixtures to
   scoped `@`-mode syntax and refroze all fixtures to Ixon v5; widened CI's
-  `ixcc` filter in `.github/workflows/ci.yml` to cover `IxC/Kernel/**`,
-  `IxC/Host/**`, and `IxC/Resource/**`.
+  `ixcc` filter in `.github/workflows/ci.yml` to cover `IxCK/Kernel/**`,
+  `IxCK/Host/**`, and `IxCK/Resource/**`.
 
 **Not proved** (the [certification design](certification-design.md#what-is-proved-today)
 lists the chain link by link): full SP-1 grounding beyond the Pc fragment
@@ -142,8 +142,8 @@ before for those programs ([closures design](closures-design.md#proof-obligation
 | --- | --- |
 | Scalar & top-level compiler | Src-to-ELF recheck path (`Recheck.sound`, `sound_live_closed`), top-level `Compiler.compile` (`--rc auto\|on\|off`, `Compiler.compile_sound`), `CompileClaim` (`verifyProgram_*_sound`, `verifyBytes_*_sound`, `*_rootShape`), `Ring0` (`verifyRing0Sip_sound`), P8 defunctionalisation, certificate/artifact checks and native pipeline suites |
 | General plain RC | `Recheck.RcReplay` API (`RcReplay.run`, `RcReplay.sound`, `recycled_session`); general cell layouts (`Rt.Rc.Gen`, up to 254 scanned fields), ownership certificates admitted by the proved checker (`checkOwned` / `checkContractOwned`, within `Anf.maxCapturedWork`) and replayed exactly, SrcEval-relative object theorem, complete per-stage/native values, executed RC event counts and heap-failure/corruption controls |
-| [Ixon v5 ingress](ixon-v4.md) | ix's v5 codec with canonicity evidence, pure-BLAKE3 authentication, binder-data section reader (R5/N2), unified mode accessors, role-bound ingress (`0xE5`, `specVersion = 4`) with certified-kernel acceptance (`Src.KernelFront`, [byte contract](byte-contract.md)) and N5 `IxC.Resource.check` mode gate; private v4 resource port retired (R9-ixcc) |
-| Grounding library (`IxCCGrounding`) | SP-1 in progress: `rootSound_678AGpWP_of_check` directly over `IxC.Kernel.Model`, 447 fences, 45 of 50 committed corpus closures through step Pc (`ixcc-grounding`) |
+| [Ixon v5 ingress](ixon-v4.md) | ix's v5 codec with canonicity evidence, pure-BLAKE3 authentication, binder-data section reader (R5/N2), unified mode accessors, role-bound ingress (`0xE5`, `specVersion = 4`) with certified-kernel acceptance (`Src.KernelFront`, [byte contract](byte-contract.md)) and N5 `IxCK.Resource.check` mode gate; private v4 resource port retired (R9-ixcc) |
+| Grounding library (`IxCCGrounding`) | SP-1 in progress: `rootSound_678AGpWP_of_check` directly over `IxCK.Kernel.Model`, 447 fences, 45 of 50 committed corpus closures through step Pc (`ixcc-grounding`) |
 | [x86 target model](x86-encoded-instructions.md) | Typed x86 AST and machine, E1 per-form encoder/decoder and execution laws, E2 [streams and ELF objects](x86-stream-objects.md), [stream checking](stream-checking.md), the [reference-model record](x86-reference-model.md) |
 | Standalone executables | `ixcc compile --exe` and `--machine`: static Linux x86-64 executables written by IxCC with no C, linker or driver; the shell proof (`X86.Exe.Process.shell_sound`) composes with the per-call theorems ([design](standalone-executables-design.md#x0-as-implemented)) |
 | Tools | Trust ledger (`check-trusted-externs`, 16 required checks; legacy Aiur retired by RL-3), build-graph manifest (`check-build-graph`), check helpers |

@@ -2,8 +2,8 @@
 `jcb/ixvmc-mo` at 6db9089a7, rebased by engineer MV onto `origin/jcb/certified-ixvm` at f2b985847,
 whose records hold binder modes in a binder-data section: see `withSection`). Kernel package
 only: run from the repository root as
-`lake -d IxC env lean --run ModeRepairTests/Main.lean` after `lake -d IxC build IxC.Resource
-IxC.Kernel.Ixon.Prelude`. Every expectation is asserted; the process exits 1 if any fails.
+`lake -d IxCK env lean --run ModeRepairTests/Main.lean` after `lake -d IxCK build IxCK.Resource
+IxCK.Kernel.Ixon.Prelude`. Every expectation is asserted; the process exits 1 if any fails.
 
 * Part 1: the 41 cases of `Tests/Ix/ResourceModes.lean` that need no record fixture (that file
   imports the root package, so it cannot run here), with their expectations; a case whose
@@ -17,12 +17,12 @@ IxC.Kernel.Ixon.Prelude`. Every expectation is asserted; the process exits 1 if 
 Every case also asserts what soundness gives on its inputs: if the checker accepts and the
 inputs meet `InputsOk` (decided by `inputsOkB`), no fuel tried ends in a violation. A finding
 not yet repaired is marked `open`, and its unsoundness is then expected rather than a failure. -/
-import IxC.Resource
-import IxC.Kernel.Ixon.Prelude
+import IxCK.Resource
+import IxCK.Kernel.Ixon.Prelude
 
 namespace ModeRepair
 
-open IxC.Resource Ixon
+open IxCK.Resource Ixon
 
 /-! ## COPIED verbatim from Tests/Ix/ResourceModes.lean:37-152 at 6db9089a7 -/
 

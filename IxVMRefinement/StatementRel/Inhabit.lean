@@ -2,7 +2,7 @@ import IxVMRefinement.Assembly.LayerSeams
 import IxVMRefinement.RoleVal.CommittedBase
 import Ix.IxVM.Consistency.TableValid
 import Ix.Cert.AcceptedKeys
-import IxC.Kernel.Model.FoldJ
+import IxCK.Kernel.Model.FoldJ
 
 /-! # An inhabitant of the table-validity witness
 

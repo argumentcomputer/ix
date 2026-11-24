@@ -158,15 +158,15 @@ Independent GitHub-hosted or security requirements (`CodeQL`) can remain.
 
 ## The certified compiler (IxCC)
 
-`IxCC/` is a Lake package of its own (`«ix-cc»`). It requires the `IxC`
-package beside it (`../IxC`, importing its Ixon v5 codec, role vocabulary,
+`IxCC/` is a Lake package of its own (`«ix-cc»`). It requires the `IxCK`
+package beside it (`../IxCK`, importing its Ixon v5 codec, role vocabulary,
 tiered admission entry, executed typing core, host limit resolver, and—in the
 separate `IxCCGrounding` library—the kernel's model statement) and Blake3
 (`Blake3.Pure` only); the root package does not require it. Its
 [CI guide](../IxCC/docs/ci.md) describes its 16 required checks (after retiring
 the legacy `aiur` check), which the flake exposes as `ixcc-*`, with
 `packages.ixcc` and `apps.ixcc`. IxCC's Nix expressions select their own
-sources (`IxCC/nix/sources.nix`): `IxCC/`, the pinned `IxC` closure its trust
+sources (`IxCC/nix/sources.nix`): `IxCC/`, the pinned `IxCK` closure its trust
 ledger hashes and, for the ledger check, `flake.lock`, `.github/actions` and
 `.github/workflows/ixcc.yml`. The host's source sets leave `IxCC/` out, so a
 change on one side rebuilds nothing of the other.
@@ -177,8 +177,8 @@ evaluated `ixcc-*` checks to be exactly the trust ledger's `required_checks`
 (the attributes of `IxCC/nix/checks.nix`), so a check dropped from or added
 to the flake fails it. CI Jobs calls it when a pull request or `main` push
 changes IxCC's inputs (the `Detect IxCC changes` path filter, covering `IxCC/**`,
-`IxC/{Ixon,Address,Kernel,Host,Resource}/**`, `IxC/lakefile.lean`,
-`IxC/lake-manifest.json`, `IxC/lean-toolchain`, and shared flake/workflow
+`IxCK/{Ixon,Address,Kernel,Host,Resource}/**`, `IxCK/lakefile.lean`,
+`IxCK/lake-manifest.json`, `IxCK/lean-toolchain`, and shared flake/workflow
 files) and reports to `ci-gate` through `IxCC result`, which also succeeds
 when the change does not reach IxCC. Merge tests calls it on every merge
 group, as the `IxCC (certified compiler)` partition of `merge-gate`. Nix CI
@@ -202,8 +202,8 @@ The repository-wide tools treat `IxCC/` as follows:
 | --- | --- |
 | Root `lake build`, `lake test`, `lake lint` (`build-all`) | Not built: no root library or executable claims the `IxCC.` module root |
 | `check-modules` | Not covered: `IxCC/` has its own lakefile, so it is another workspace. IxCC's `check-build-graph` inventories its modules. Its checks build the production library, every executable, the proof and fence aggregate `IxCCTests.Proofs`, and (separately, in `ixcc-grounding`) `IxCCGrounding`; the kernel-evaluation and artifact modules IxCC's CI guide lists as manual are built by no check |
-| `check-source-docs` | Not scanned. Its rules name ix's retired compiler APIs and private plans, and IxCC's frozen records quote some of those names (recorded compiler output and the historical reference-check command of its fixture refreeze). IxCC's ledger scans its own sources and the pinned `IxC` closure for `axiom`, `sorry` and every spelling of native evaluation it can see (`native_decide`, `decide +native`, `native := true`, the `ofReduceBool`-style axioms), inventories their externs and `@[csimp]` theorems, and enumerates the kernel closure's admitted `implemented_by` rulings |
-| `kernel-layering`, `kernel-trust-surface` | Not applied: they fence `IxC/Kernel/`. IxCC's ledger pins the exact `IxC` closure it imports and rejects any other `IxC` import; `check-build-graph` keeps the kernel's model (`IxC.Kernel.Denotes` and its set theory) out of the production library and shared program build |
+| `check-source-docs` | Not scanned. Its rules name ix's retired compiler APIs and private plans, and IxCC's frozen records quote some of those names (recorded compiler output and the historical reference-check command of its fixture refreeze). IxCC's ledger scans its own sources and the pinned `IxCK` closure for `axiom`, `sorry` and every spelling of native evaluation it can see (`native_decide`, `decide +native`, `native := true`, the `ofReduceBool`-style axioms), inventories their externs and `@[csimp]` theorems, and enumerates the kernel closure's admitted `implemented_by` rulings |
+| `kernel-layering`, `kernel-trust-surface` | Not applied: they fence `IxCK/Kernel/`. IxCC's ledger pins the exact `IxCK` closure it imports and rejects any other `IxCK` import; `check-build-graph` keeps the kernel's model (`IxCK.Kernel.Denotes` and its set theory) out of the production library and shared program build |
 | `ixvm/ixvm-proof-gen --check`, `Scripts/CheckFormal.lean` | Not applicable: they cover formal Aiur and IxVM |
 | Toolchain check (CI Jobs) | Compares `IxCC/lean-toolchain` and `IxCC/benchmarks/runner/lean-toolchain` (IxCC's trust ledger also requires the root toolchain to equal IxCC's) |
 | `update.yml` | Includes the `IxCC` package and its benchmark runner |
@@ -212,7 +212,7 @@ The repository-wide tools treat `IxCC/` as follows:
 
 ## The kernel-bridge model (`Models/KernelBridge`)
 
-`Models/KernelBridge` is a Lake workspace of its own that requires `IxC` and
+`Models/KernelBridge` is a Lake workspace of its own that requires `IxCK` and
 `IxCC` by path: a conditional simulation lemma between IxCC's source
 evaluator and the kernel's reduction (its README states what it does and does
 not prove; it does not establish source adequacy). `lake run
@@ -222,11 +222,11 @@ warnings) and checks that the 32 theorems its `Audit.lean` fences are exactly
 the root lakefile's `kernelBridgeFences`. Merge tests run it in the kernel
 partition on every merge group. CI Jobs runs it on pull requests and `main`
 pushes whose changes reach it (the `kernel-bridge` output of the same path
-filter: `IxCC/`'s Lean sources and Lake files, `IxC/`, the model, the root
+filter: `IxCC/`'s Lean sources and Lake files, `IxCK/`, the model, the root
 `lean-toolchain` and `lakefile.lean`, `ci.yml` and the local actions) and
 reports through `Kernel bridge result`, as `IxCC result` does. It shares
 IxCC's package directory, where Lake checks out and builds Blake3, and writes
-IxC's objects to `.lake/kernel`; both workflows keep `IxCC/.lake` and
+IxCK's objects to `.lake/kernel`; both workflows keep `IxCC/.lake` and
 `Models/KernelBridge/.lake` on the shared `ci-lean-test-x86-64-v4-100gb` sticky
 disk. Its toolchain is in the toolchain check, and `update.yml` bumps it.
 

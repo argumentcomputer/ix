@@ -6,7 +6,7 @@ import IxVMRefinement.Subst.Spine
 import IxVMRefinement.Obs.KernelCheck
 import IxVMRefinement.Obs.KernelDefEq3
 import IxVMRefinement.Obs.KernelTypes0
-import IxC.Kernel.Verify.PropWhen
+import IxCK.Kernel.Verify.PropWhen
 
 /-! # Native one-type inductive front stages and recursor-less route
 

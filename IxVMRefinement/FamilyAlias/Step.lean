@@ -1,5 +1,5 @@
 import IxVMRefinement.Decl.FamilyDeclInv
-import IxC.Kernel.Model.NoRecBlock
+import IxCK.Kernel.Model.NoRecBlock
 
 /-! # The fold invariant across a family on the renamed route, at any sound package
 

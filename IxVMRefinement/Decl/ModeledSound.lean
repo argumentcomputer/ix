@@ -1,14 +1,14 @@
 import IxVMRefinement.Decl.ModeledSoundPlain
-import IxC.Kernel.Model.IndNestedParam
-import IxC.Kernel.Model.IndPinRow
-import IxC.Kernel.Model.Rules.IotaSoundKit
-import IxC.Kernel.Semantics.IndRecsCore
-import IxC.Kernel.Model.IndRecs
-import IxC.Kernel.Model.IndEtaLaw
-import IxC.Kernel.Model.IndUnitLaw
-import IxC.Kernel.Model.Swap
-import IxC.Kernel.Model.IndMembers
-import IxC.Kernel.Model.Capstone
+import IxCK.Kernel.Model.IndNestedParam
+import IxCK.Kernel.Model.IndPinRow
+import IxCK.Kernel.Model.Rules.IotaSoundKit
+import IxCK.Kernel.Semantics.IndRecsCore
+import IxCK.Kernel.Model.IndRecs
+import IxCK.Kernel.Model.IndEtaLaw
+import IxCK.Kernel.Model.IndUnitLaw
+import IxCK.Kernel.Model.Swap
+import IxCK.Kernel.Model.IndMembers
+import IxCK.Kernel.Model.Capstone
 
 /-!
 # Soundness of Nested Modeled-Inductive `iota` Rules and Full `DeclIndVmRunJ` Steps

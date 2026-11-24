@@ -1147,7 +1147,7 @@ def try_nat_binop_addr := aiur_fn⟦
         6 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_div(a, b)))) } ,
         7 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_mod(a, b)))) } ,
         8 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_gcd(a, b)))) } ,
-        -- IxC's cap (N4 removed): `Nat.pow` is computed only for an exponent up to 2^24.
+        -- IxCK's cap (N4 removed): `Nat.pow` is computed only for an exponent up to 2^24.
         9 => {
           let cap = (&(Lists::Node::Cons([UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_1, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0], (&(Lists::Node::Nil)))));
           match KernelKlimbs::klimbs_le(b, cap) {

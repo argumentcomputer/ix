@@ -1118,7 +1118,7 @@
     "IxCC.Recheck.Json"]},
   "IxCCTests.KernelFront.Cli":
   {"path": "IxCCTests/KernelFront/Cli.lean",
-   "imports": ["IxCCTests.Support.Envelope", "IxC.Ixon.Codec"]},
+   "imports": ["IxCCTests.Support.Envelope", "IxCK.Ixon.Codec"]},
   "IxCCTests.KernelFront.Bound":
   {"path": "IxCCTests/KernelFront/Bound.lean",
    "imports":
@@ -4005,7 +4005,7 @@
   "IxCCGrounding.Syntax":
   {"path": "IxCCGrounding/Syntax.lean",
    "imports":
-   ["IxC.Kernel.Core",
+   ["IxCK.Kernel.Core",
     "IxCC.Src.Semantics",
     "IxCC.Src.Readback",
     "IxCC.Src.Relevance.Syntax"]},
@@ -4052,7 +4052,7 @@
   {"path": "IxCCGrounding/Lift.lean", "imports": ["IxCCGrounding.Model"]},
   "IxCCGrounding.Laws":
   {"path": "IxCCGrounding/Laws.lean",
-   "imports": ["IxC.Kernel.Denotes", "IxCCGrounding.Syntax"]},
+   "imports": ["IxCK.Kernel.Denotes", "IxCCGrounding.Syntax"]},
   "IxCCGrounding.Hyps":
   {"path": "IxCCGrounding/Hyps.lean",
    "imports": ["IxCCGrounding.Facts", "IxCCGrounding.Support"]},
@@ -5068,7 +5068,7 @@
    "imports":
    ["IxCC.Src.Syntax",
     "IxCC.Ixon.V3.Env",
-    "IxC.Kernel.Key",
+    "IxCK.Kernel.Key",
     "IxCC.Ixon.V3.Support"]},
   "IxCC.Src.NatMap": {"path": "IxCC/Src/NatMap.lean", "imports": []},
   "IxCC.Src.Load":
@@ -5092,26 +5092,26 @@
     "IxCC.Src.Syntax",
     "IxCC.Src.Pinned",
     "IxCC.Ixon.V4.Convert",
-    "IxC.Ixon.ModeRead"]},
+    "IxCK.Ixon.ModeRead"]},
   "IxCC.Src.KernelFront.Proof":
   {"path": "IxCC/Src/KernelFront/Proof.lean",
    "imports": ["IxCC.Src.KernelFront.Annotate"]},
   "IxCC.Src.KernelFront.Order":
   {"path": "IxCC/Src/KernelFront/Order.lean",
-   "imports": ["IxC.Kernel.Ixon.Prelude"]},
+   "imports": ["IxCK.Kernel.Ixon.Prelude"]},
   "IxCC.Src.KernelFront.Annotate":
   {"path": "IxCC/Src/KernelFront/Annotate.lean",
    "imports":
    ["IxCC.Src.KernelFront.Reading",
     "IxCC.Src.Relevance.Syntax",
-    "IxC.Kernel.Cached.CoreC"]},
+    "IxCK.Kernel.Cached.CoreC"]},
   "IxCC.Src.KernelFront.Accept":
   {"path": "IxCC/Src/KernelFront/Accept.lean",
    "imports":
    ["IxCC.Ixon.V3.Env",
     "IxCC.Src.KernelFront.Order",
-    "IxC.Kernel.Admission.Tier",
-    "IxC.Resource.Check"]},
+    "IxCK.Kernel.Admission.Tier",
+    "IxCK.Resource.Check"]},
   "IxCC.Src.Ingress":
   {"path": "IxCC/Src/Ingress.lean",
    "imports":
@@ -7152,11 +7152,11 @@
   "IxCC.Key": {"path": "IxCC/Key.lean", "imports": ["IxCC.Src.Value"]},
   "IxCC.Ixon.V4.Convert":
   {"path": "IxCC/Ixon/V4/Convert.lean",
-   "imports": ["IxC.Ixon.Codec", "IxCC.Ixon.V3.Const"]},
+   "imports": ["IxCK.Ixon.Codec", "IxCC.Ixon.V3.Const"]},
   "IxCC.Ixon.V3.Wire":
   {"path": "IxCC/Ixon/V3/Wire.lean",
    "imports":
-   ["IxC.Ixon.Canonical",
+   ["IxCK.Ixon.Canonical",
     "IxCC.Ixon.V4.Convert",
     "Std.Data.HashMap",
     "Std.Data.HashSet"]},
@@ -7175,7 +7175,7 @@
    "imports": ["IxCC.Ixon.V3.Wire", "IxCC.Ixon.Merkle", "IxCC.Ixon.PureHash"]},
   "IxCC.Ixon.V3.Contracts":
   {"path": "IxCC/Ixon/V3/Contracts.lean",
-   "imports": ["IxC.Ixon.Types.Modes", "IxCC.Ixon.Uses"]},
+   "imports": ["IxCK.Ixon.Types.Modes", "IxCC.Ixon.Uses"]},
   "IxCC.Ixon.V3.Const":
   {"path": "IxCC/Ixon/V3/Const.lean",
    "imports":
@@ -7191,7 +7191,7 @@
     "IxCC.Ixon.V3.PrimAddrs",
     "IxCC.Ixon.V3.Support"]},
   "IxCC.Ixon.Uses":
-  {"path": "IxCC/Ixon/Uses.lean", "imports": ["IxC.Ixon.Types.Modes"]},
+  {"path": "IxCC/Ixon/Uses.lean", "imports": ["IxCK.Ixon.Types.Modes"]},
   "IxCC.Ixon.Univ":
   {"path": "IxCC/Ixon/Univ.lean", "imports": ["IxCC.Ixon.Serialize"]},
   "IxCC.Ixon.Serialize":
@@ -7332,7 +7332,7 @@
     "IxCC.Lir.Print",
     "IxCC.Xv.Print",
     "IxCC.Exe",
-    "IxC.Host.Limits"]},
+    "IxCK.Host.Limits"]},
   "IxCC.Cfg.WellFormed":
   {"path": "IxCC/Cfg/WellFormed.lean", "imports": ["IxCC.Cfg.Syntax"]},
   "IxCC.Cfg.Syntax":

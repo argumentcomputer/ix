@@ -1,8 +1,8 @@
 module
 public import Aiur.Ixon
 public import Ix.Address
-public import IxC.Ixon.Codec
-meta import IxC.Ixon.Codec
+public import IxCK.Ixon.Codec
+meta import IxCK.Ixon.Codec
 meta import Aiur.Ixon
 
 /-! Content addressing of compiled Aiur artifacts (review item F3).

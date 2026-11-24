@@ -1,5 +1,5 @@
-import IxC.Kernel.Admission
-import IxC.Kernel.Cached.Installed
+import IxCK.Kernel.Admission
+import IxCK.Kernel.Cached.Installed
 import Ix.Address.Pure
 
 /-! # Reading covered recursor records after their canonical entries change

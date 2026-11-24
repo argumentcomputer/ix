@@ -1,5 +1,5 @@
-import IxC.Kernel.Audit.Axioms
-import IxC.Kernel.Audit.ClosureManifest
+import IxCK.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.ClosureManifest
 import Ix.Cert.MultiStark.Security128Audit
 import Ix.Cert.Aggr.Security128Audit
 import Ix.Cert.Compression.Security128Audit

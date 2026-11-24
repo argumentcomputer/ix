@@ -142,7 +142,7 @@ def registry : List Entry := [
   -- every IO byte the IxVM and multi-stark programs read is range-checked
   .suite "io-ingress" .primary Tests.IOIngress.suite,
   -- the role table's wire vectors (Tests/Fixtures/ixon/role-table.tsv), which
-  -- Rust's codec is tested against, are IxC's codec's
+  -- Rust's codec is tested against, are IxCK's codec's
   .runner "role-table-wire" .primary Tests.RoleTableWire.run,
   -- the Ixon reader against a direct translation of compiled Lean constants
   .suite "kernel-reader-roundtrip" .primary Tests.Ix.Kernel.ReaderRoundtrip.suite,
@@ -177,7 +177,7 @@ def registry : List Entry := [
   .suiteIO "getfileenv-body" .primary (do return [← Tests.Ix.EnvBody.suite]),
   -- Reductions no kernel may make beyond Lean's (class methods reduced
   -- without their instance, `numBits ≡ 64`, the `Fin.val` commute): every
-  -- probe's closure through IxC.
+  -- probe's closure through IxCK.
   .runner "kernel-fast-paths" .primary Tests.Ix.Kernel.FastPaths.run,
   -- Aggregate driver/cache/manifest semantics.
   .runner "ix-aggr" .primary Tests.Aggr.convergedSuite,
@@ -241,7 +241,7 @@ def registry : List Entry := [
   -- the IxVM suites check (`IxVM.consistent`'s `ReadIn`).
   .env "ixvm-reader-coverage" (.ci .landingInitStdCli) Tests.Ix.Kernel.ReaderCoverage.run,
 
-  -- Compiler closures & IxC pins (`host-test-closures`)
+  -- Compiler closures & IxCK pins (`host-test-closures`)
   -- auxiliary addresses do not depend on the compile set (closure vs whole env)
   .suite "canon-closure-aux" (.ci .compilerClosures) Tests.Ix.Compile.AuxiliaryClosureCanon.suite,
   .suite "cert-evidence-agreement" (.ci .compilerClosures) Tests.Ix.Cert.Statement.evidenceSuite,
@@ -251,7 +251,7 @@ def registry : List Entry := [
   .runner "compile-closure-whole" (.ci .compilerClosures) Tests.Ix.Compile.ClosureWhole.run,
   .runner "checker-support-regression" (.ci .compilerClosures) Tests.Ix.Compile.CheckerSupport.run,
   .runner "pack-units" (.ci .compilerClosures) Tests.Ix.Compile.PackUnits.run,
-  -- The existing eight IxC selected-producer pins and their subject budgets.
+  -- The existing eight IxCK selected-producer pins and their subject budgets.
   .runner "tc-pins" (.ci .compilerClosures) Tests.Tc.Pins.run,
   -- Exact retained acceleration inputs, value/head witnesses and full closures.
   .runner "kernel-accel-semantics" (.ci .compilerClosures) Tests.Ix.Kernel.AccelSemantics.run,

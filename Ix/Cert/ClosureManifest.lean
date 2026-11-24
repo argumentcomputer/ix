@@ -1,4 +1,4 @@
-import IxC.Kernel.Audit.ClosureManifest
+import IxCK.Kernel.Audit.ClosureManifest
 import Ix.Cert.CompileCorrect
 
 /-! # The definitional closure of `Ix.Cert.CompileCorrect`, pinned

@@ -108,7 +108,7 @@ def registry : List Entry := [
   -- The declaration checker's shape guards: one kind of member per inductive block, no later
   -- use of a recursive field, a recursor header free of `let`.
   .env "ixvm-shape-guards" (.ci .ixvm) Tests.Ix.IxVM.ShapeGuards.run,
-  -- Corpus-driven and synthetic 3-way IxVM / IxC regressions: modeled extract closure,
+  -- Corpus-driven and synthetic 3-way IxVM / IxCK regressions: modeled extract closure,
   -- Lean 4.34 native_decide inert classification, dead-let universe bounds, multi-container
   -- and mutual AST modeled families, semantic imax, and adversarial boundary controls.
   .env "ixvm-synthetic-regressions" (.ci .ixvm) Tests.Ix.IxVM.SyntheticRegressions.run,

@@ -8,7 +8,7 @@ import IxCCTests.Support.Envelope
 /-! # Role-bound environments
 
 `tests-ixon-v3` runs `Binding.run`: sections written in the kernel's grammar
-(`IxC/Kernel/Ixon/RoleTable.lean`) against the kernel's decoder, which IxCC
+(`IxCK/Kernel/Ixon/RoleTable.lean`) against the kernel's decoder, which IxCC
 reads the binding with, and its refusals; the role-bound envelope (`0xE5`)
 against the unbound one of the same closure, and the refusals of IxCC's
 decoder and of the kernel's acceptance; the pins a role table gives

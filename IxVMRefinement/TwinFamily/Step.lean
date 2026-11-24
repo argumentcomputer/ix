@@ -2,7 +2,7 @@ import IxVMRefinement.TwinFamily.Keeps
 
 /-! # The twin's unit step from its target
 
-`TwinStepTarget` gives, for the second family record of a block, IxC's twin record at the
+`TwinStepTarget` gives, for the second family record of a block, IxCK's twin record at the
 positional package and each member stored as a constant that stores its reading. This module
 turns it into the twin's unit step over the family graph (`UnitStepTwin`) at the clause
 `X ∧ FamilyRecsModeled`:
@@ -65,7 +65,7 @@ theorem twinRun_parts {J : Judgements .anon} {env env₂ : Ix.Kernel.Env .anon}
     rw [(hall w hw).1.name_eq]
 
 /-- **The keeping the twin's step needs**: across a twin record of the second record `A` (as
-the target gives it: the record's declaration as read, IxC's record at the positional package,
+the target gives it: the record's declaration as read, IxCK's record at the positional package,
 each member stored as its reading with a model companion, the companions after the step, and
 the reload of each new constant at the key of an address), from an environment the twin's step
 is handed, the prefix invariant and the clause `X` are kept. -/

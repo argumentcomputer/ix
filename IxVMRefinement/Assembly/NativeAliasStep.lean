@@ -15,7 +15,7 @@ folds consume, and proves it from what the block's check gives.
 * `HoldsBlock E₀ E B cb ind`: a record store that holds the block's records and the run's
   blobs. The step's own store is one; so is every record store for a witness store that holds
   them.
-* `AliasInstallOut`: what the block's check puts in front of a prefix, read once: IxC's record
+* `AliasInstallOut`: what the block's check puts in front of a prefix, read once: IxCK's record
   of the install at the registered family (`NativeAtFacts`), whose telescope constant is the
   traced term; the opened head trace from the stored former (`FormerOpenTraceAt`); the family's
   data as the new environment stores it; the new constants with their names and readings; and,
@@ -138,7 +138,7 @@ structure AliasInstallOut (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (env : Ix.
     (B : _root_.Address) (cb : Ixon.Constant) (ind : Ixon.Inductive)
     (blk : List (ConstantInfo .anon)) (p₀ : Ix.Kernel.NativeParts .anon)
     (new : List (ConstantInfo .anon)) (fam : NativeFam .anon) (caps : IndCaps .anon) : Prop where
-  /-- IxC's record of the install, at the registered family. -/
+  /-- IxCK's record of the install, at the registered family. -/
   facts : NativeAtFacts env ⟨new ++ env.consts⟩ blk ind.params.toNat ind.indices.toNat p₀ fam
   pin : Ix.Kernel.basisPinHit blk = none
   nonAux : Decl.DeclNonAux (.indDecl blk ind.params.toNat)
@@ -239,7 +239,7 @@ theorem blockEta_of_indexed (hI : BlockInstall c new B cb ind caps)
     exact hidx (by rw [← hiv, ZMod.val_zero])
 
 /-- **The projection table's bundle at a new family with an index**: no table is stored for
-it, each stored constructor's telescope is IxC's, and a constructor found at one of the block's
+it, each stored constructor's telescope is IxCK's, and a constructor found at one of the block's
 constructor addresses is new. -/
 theorem blockTable_of_indexed {blk : List (ConstantInfo .anon)}
     {p₀ : Ix.Kernel.NativeParts .anon} {fam : NativeFam .anon}
@@ -400,7 +400,7 @@ theorem AliasInstallOut.keeps {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
     HashKeyed.append htwf hC.hashKeyed fun ci hci => by
       obtain ⟨x, -, hn, hsz⟩ := hO.named ci hci
       exact Or.inl ⟨x, hn, hsz⟩
-  -- η stability, from IxC's store step
+  -- η stability, from IxCK's store step
   have hnaKeys : ∀ ci ∈ blk, Decl.NonAuxKey ci.name := fun ci hci =>
     (hO.nonAux.1 ci (by simpa [IxVM.Consistency.installs, hO.pin] using hci)).1
   have heta : Decl.EtaStable ⟨new ++ env.consts⟩ :=

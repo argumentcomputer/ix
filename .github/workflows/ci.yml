@@ -114,7 +114,7 @@ jobs:
               - 'FormalCodegen.lean'
               - 'Ix.lean'
               - 'Ix/**'
-              - 'IxC/**'
+              - 'IxCK/**'
               - 'IxSharingVerify.lean'
               - 'IxSharingVerify/**'
               - 'Main.lean'
@@ -132,7 +132,7 @@ jobs:
               - 'Scripts/FriSecurity.lean'
               - 'tools/formal-aiur.keys'
             kernel:
-              - 'IxC/**'
+              - 'IxCK/**'
               - 'Models/SetTheory/**'
               - 'Ix/Address/**'
               - 'Ix/Address.lean'
@@ -197,7 +197,7 @@ jobs:
               - 'IxVM/**'
               - 'MultiStark/**'
               - 'IxVMRefinement/**'
-              - 'IxC/**'
+              - 'IxCK/**'
               - 'Ix/Aggr/**'
               - 'Ix/Aiur/**'
               - 'Ix/MultiStark/**'
@@ -251,7 +251,7 @@ jobs:
               - 'IxVM/**'
               - 'MultiStark/**'
               - 'IxVMRefinement/**'
-              - 'IxC/**'
+              - 'IxCK/**'
               - 'FormalAiurKeys.lean'
               - 'FormalCodegen.lean'
               - 'Ix/Address/**'
@@ -331,14 +331,14 @@ jobs:
               - 'crates/**'
             ixcc:
               - 'IxCC/**'
-              - 'IxC/Ixon/**'
-              - 'IxC/Address/**'
-              - 'IxC/Kernel/**'
-              - 'IxC/Host/**'
-              - 'IxC/Resource/**'
-              - 'IxC/lakefile.lean'
-              - 'IxC/lake-manifest.json'
-              - 'IxC/lean-toolchain'
+              - 'IxCK/Ixon/**'
+              - 'IxCK/Address/**'
+              - 'IxCK/Kernel/**'
+              - 'IxCK/Host/**'
+              - 'IxCK/Resource/**'
+              - 'IxCK/lakefile.lean'
+              - 'IxCK/lake-manifest.json'
+              - 'IxCK/lean-toolchain'
               - 'flake.nix'
               - 'flake.lock'
               - 'lean-toolchain'
@@ -350,7 +350,7 @@ jobs:
               - 'IxCC/lakefile.lean'
               - 'IxCC/lake-manifest.json'
               - 'IxCC/lean-toolchain'
-              - 'IxC/**'
+              - 'IxCK/**'
               - 'Models/KernelBridge/**'
               - 'lean-toolchain'
               - 'lakefile.lean'
@@ -946,7 +946,7 @@ jobs:
       - name: Warm kernel build caches on main
         if: needs.changes.outputs.is_push == 'true'
         run: |
-          lake -d IxC build --wfail
+          lake -d IxCK build --wfail
           lake -d Models/SetTheory build --wfail
           lake build --wfail \
             Ix.Cert.Audit Ix.Cert.RuntimeAudit Ix.Ixon.BlockOrder.Audit IxSharingVerify \
@@ -957,15 +957,15 @@ jobs:
           lake env lean --run Scripts/CheckCiFilters.lean
           lake run check-kernel --with-model
           lake build --wfail Ix.Cert.Audit Ix.Cert.RuntimeAudit Ix.Ixon.BlockOrder.Audit IxSharingVerify
-          pinned_cb=$(sed -n 's/^def pinnedDigest : String := "\([0-9a-f]\{64\}\)".*/\1/p' IxC/Kernel/Admission/ClosureManifest.lean)
+          pinned_cb=$(sed -n 's/^def pinnedDigest : String := "\([0-9a-f]\{64\}\)".*/\1/p' IxCK/Kernel/Admission/ClosureManifest.lean)
           test -n "$pinned_cb"
           printf '%s  Tests/Fixtures/check-bytes-closure-manifest.txt\n' "$pinned_cb" | sha256sum -c -
           pinned_cc=$(sed -n 's/^def pinnedDigest : String := "\([0-9a-f]\{64\}\)".*/\1/p' Ix/Cert/ClosureManifest.lean)
           test -n "$pinned_cc"
           printf '%s  Tests/Fixtures/compile-correct-closure-manifest.txt\n' "$pinned_cc" | sha256sum -c -
           lake env leanchecker \
-            IxC.Kernel.Audit.Roots \
-            IxC.Kernel.Admission.Audit \
+            IxCK.Kernel.Audit.Roots \
+            IxCK.Kernel.Admission.Audit \
             Ix.Ixon.Authenticated.Audit \
             Ix.Ixon.BlockOrder.Audit \
             Ix.HostAdmission.Audit \
@@ -976,14 +976,14 @@ jobs:
             IxSharingVerify.Audit.CompiledCode \
             IxSharingVerify.Audit.SorryFrontier
           lake -d Models/SetTheory env leanchecker IxSetTheoryModel.Audit
-      - name: Bootstrap IxC certified kernel check (WS 2C)
+      - name: Bootstrap IxCK certified kernel check (WS 2C)
         if: needs.changes.outputs.is_push != 'true'
         run: |
           lake build --wfail ix kernel-check-ixe
           tmp=$(mktemp -d)
           trap 'rm -rf "$tmp"' EXIT
           public_roots="Ix.Kernel.Admission.checkBytes_has_model,Ix.Kernel.Admission.checkBytesWith_has_model,Ix.Kernel.Admission.checkConstants_has_model,Ix.Kernel.Admission.checkConstantsWith_has_model,Ix.Kernel.Admission.checkBytes_has_model_values,Ix.Kernel.Admission.checkBytesWith_has_model_values,Ix.Kernel.Admission.checkBytes_no_proof_of_False,Ix.Kernel.Admission.checkBytesWith_no_proof_of_False,Ix.Kernel.Admission.checkBytes_no_False_theorem,Ix.Kernel.Admission.checkBytesWith_no_False_theorem,Ix.Kernel.Admission.checkBytesWith_no_False_reference,Ix.Kernel.Admission.checkBytes_authentic,Ix.Kernel.Admission.checkBytesWith_authentic,Ix.Kernel.Admission.checkBytes_binding,Ix.Kernel.Admission.checkBytesWith_binding,Ix.Kernel.Admission.checkConstantsAt_has_model,Ix.Kernel.Admission.checkBytes_resources,Ix.Kernel.Admission.checkBytesWith_resources,Ix.Kernel.model_exists,Ix.Kernel.no_False_theorem_accepted"
-          lake env .lake/build/bin/ix compile --no-build --workers 8 --consts "$public_roots" IxC/Kernel/Audit/Roots.lean --out "$tmp/roots.ixe"
+          lake env .lake/build/bin/ix compile --no-build --workers 8 --consts "$public_roots" IxCK/Kernel/Audit/Roots.lean --out "$tmp/roots.ixe"
           lake env .lake/build/bin/kernel-check-ixe --strict --jobs 8 "$tmp/roots.ixe" "$tmp/roots.jsonl"
           lake env .lake/build/bin/kernel-check-ixe --entry --allow-dropped --require-roots "$public_roots" authenticated "$tmp/roots.ixe"
 
@@ -1263,10 +1263,10 @@ jobs:
               Ix.Cert.RecordSectionsBridge
             tmp=$(mktemp -d)
             {
-              echo "import IxC.Kernel.Audit.Axioms"
+              echo "import IxCK.Kernel.Audit.Axioms"
               find IxVMRefinement -name '*.lean' -not -path 'IxVMRefinement/Obs/*' | sort |
                 sed -e 's/\.lean$//' -e 's#/#.#g' -e 's/^/import /'
-              echo "#guard_module_axioms_under IxVMRefinement Ix.IxVM.Consistency IxC.Kernel.Model IxC.Kernel.Semantics"
+              echo "#guard_module_axioms_under IxVMRefinement Ix.IxVM.Consistency IxCK.Kernel.Model IxCK.Kernel.Semantics"
             } > "$tmp/RefinementAxioms.lean"
             lake env lean -DwarningAsError=true "$tmp/RefinementAxioms.lean"
             rm -rf "$tmp"

@@ -3,7 +3,7 @@ import IxVMRefinement.Assembly.GuardHeadRep
 import IxVMRefinement.Guard.Loads
 import IxVMRefinement.Whnf.Delta
 import IxVMRefinement.Core.Steps.Whnf
-import IxC.Kernel.Model.HeadDeltaBetaLevels
+import IxCK.Kernel.Model.HeadDeltaBetaLevels
 
 /-! # The classifier head operation follows the head trace
 

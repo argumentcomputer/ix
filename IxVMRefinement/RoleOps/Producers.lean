@@ -1,6 +1,6 @@
 import IxVMRefinement.RoleOps.Interface
-import IxC.Kernel.Rules.Transport
-import IxC.Kernel.Verify.BridgeWfImp
+import IxCK.Kernel.Rules.Transport
+import IxCK.Kernel.Verify.BridgeWfImp
 
 /-! # The interface from the form a circuit check takes
 

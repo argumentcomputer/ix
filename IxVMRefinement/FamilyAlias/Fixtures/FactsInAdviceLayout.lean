@@ -7,7 +7,7 @@ import IxVMRefinement.FamilyAlias.Fixtures.LargePair
 /-! # The family check's facts at four families in the advice layout
 
 `FamilyCheckFacts` (`FamilyAlias/Facts.lean`) holds of the four families whose fixtures are at
-placeholder keys, with the environment in the advice layout of IxC's in-process model
+placeholder keys, with the environment in the advice layout of IxCK's in-process model
 (`FamilyAlias/AdviceLayout.lean`). These are not stored records: they show the facts at shapes
 the two compiled families do not have, a nested family with a parameter (pins that mention the
 parameter, recursors at a real permutation of the positions) and a pair of large eliminators.

@@ -1,5 +1,5 @@
 import Ix.Cert.Statement
-import IxC.Kernel.Verify.Cached.ReferenceUnder
+import IxCK.Kernel.Verify.Cached.ReferenceUnder
 
 /-! # Ixon acceptance at the reference level, under an axiom policy
 

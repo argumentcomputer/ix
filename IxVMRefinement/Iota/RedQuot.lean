@@ -5,10 +5,10 @@ import IxVMRefinement.Whnf.Basic
 import IxVMRefinement.Core.Roles
 import IxVMRefinement.Core.RomBound
 import IxVMRefinement.Lib.Words
-import IxC.Kernel.Semantics.BasisRules
-import IxC.Kernel.Verify.PropWhen
-import IxC.Kernel.Verify.Subst
-import IxC.Kernel.Verify.Shift
+import IxCK.Kernel.Semantics.BasisRules
+import IxCK.Kernel.Verify.PropWhen
+import IxCK.Kernel.Verify.Subst
+import IxCK.Kernel.Verify.Shift
 
 /-! # `red_quot`: the quotient's ι
 

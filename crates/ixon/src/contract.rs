@@ -1,5 +1,5 @@
 //! The v4 contract vocabulary: independent usage, ownership, and
-//! relative-locality contracts (mirrors `IxC/Ixon/Types/Contract.lean`).
+//! relative-locality contracts (mirrors `IxCK/Ixon/Types/Contract.lean`).
 //!
 //! These types are not on the wire: a record's modes are
 //! [`crate::modes`]. They remain the vocabulary of the Ixon text syntax

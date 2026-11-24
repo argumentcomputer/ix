@@ -1,4 +1,4 @@
-import IxC.Ixon.Canonical
+import IxCK.Ixon.Canonical
 import IxCC.Ixon.V4.Convert
 import Std.Data.HashMap
 import Std.Data.HashSet
@@ -7,7 +7,7 @@ import Std.Data.HashSet
 # The Ixon v5 wire for our Ixon data
 
 Canonical bytes of universes, expressions and constants are ix's Ixon v5
-encodings (`IxC.Ixon.Codec`, TagN integers), computed through the structural
+encodings (`IxCK.Ixon.Codec`, TagN integers), computed through the structural
 correspondence of `IxCC.Ixon.V4.Convert`. Decoding uses ix's bounded,
 canonical constant decoder (`Ixon.Canonical.deConstant`: an input-byte and
 universe-expansion budget, the wire domain check, canonical binder data with

@@ -2,7 +2,7 @@ import IxVMRefinement.Core.Open
 import IxVMRefinement.Lib.Bytes
 import IxVMRefinement.Obs.KernelSubst1
 import IxVMRefinement.Obs.KernelRoles
-import IxC.Kernel.Verify.BridgeWfImp
+import IxCK.Kernel.Verify.BridgeWfImp
 import IxVMRefinement.Decl.ModeledRules
 
 /-! # Opening an operation's equation sides and replacing the operation by its value

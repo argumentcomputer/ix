@@ -1,5 +1,5 @@
 import Ix.Sharing.FamilyNormalizeArea
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 #guard_kernel_axioms Ix.Sharing.Family.cachedComponent_eq [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Sharing.Family.familyStep_eq_reference [propext, Classical.choice, Quot.sound]

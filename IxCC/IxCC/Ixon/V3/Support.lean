@@ -53,7 +53,7 @@ def natFromBytesLE (xs : Array UInt8) : Nat :=
   xs.foldr (fun b n => n * 256 + b.toNat) 0
 
 /-- Whether `bytes` is a canonical little-endian `Nat` literal blob (matching
-`IxC/Kernel/Ixon/Reader.lean`'s `canonicalNatural`): non-empty, and either a
+`IxCK/Kernel/Ixon/Reader.lean`'s `canonicalNatural`): non-empty, and either a
 single byte (`#[0]` for zero) or ending in a non-zero byte. -/
 def canonicalNatBytes (bytes : ByteArray) : Bool :=
   match bytes.data.back? with

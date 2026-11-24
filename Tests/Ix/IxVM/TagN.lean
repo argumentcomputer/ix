@@ -1,6 +1,6 @@
 import Ix.Ixon
-import IxC.Ixon.Canonical
-import IxC.Kernel.Admission.Bytes
+import IxCK.Ixon.Canonical
+import IxCK.Kernel.Admission.Bytes
 import Tests.FFI.Ixon
 import Tests.Ix.IxVM.Harness
 import Tests.Ix.IxVM.Exploits

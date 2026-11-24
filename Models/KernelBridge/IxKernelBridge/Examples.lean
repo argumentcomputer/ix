@@ -25,7 +25,7 @@ What the instances show:
 What they do not show:
 
 - The kernel-side values are hand transcriptions of the definitions, not the
-  output of IxC's Ixon reader on any compiled environment, and `envAdd` is not
+  output of IxCK's Ixon reader on any compiled environment, and `envAdd` is not
   a `checkDecls`-accepted environment (its `Nat.add` is a stand-in whose only
   read property is that it is a definition). Nothing here connects `env` or
   `eRoot` to a compile claim's environment or target.

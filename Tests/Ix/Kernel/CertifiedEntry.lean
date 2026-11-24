@@ -1,4 +1,4 @@
-import IxC.Kernel.Admission.Theorems
+import IxCK.Kernel.Admission.Theorems
 import Ix.Ixon.Authenticated.Theorems
 import Tests.Ix.Kernel.Reader
 

@@ -79,8 +79,8 @@ in
         --objdump ${pkgs.binutils}/bin/objdump ${objectArgs}
     '';
 
-    # The ledger audits IxCC in its workspace: «ix-kernel» at its recorded path
-    # (`../IxC`), the repository's flake.lock and the workflows it scopes.
+    # The ledger audits IxCC in its workspace: «ix-ck» at its recorded path
+    # (`../IxCK`), the repository's flake.lock and the workflows it scopes.
     # The link audit reads the symbol table of every executable the checks
     # ship or run (the shared program build and the grounding suite) and
     # refuses the Blake3 package's native backends.

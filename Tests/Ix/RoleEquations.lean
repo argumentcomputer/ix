@@ -1,7 +1,7 @@
 module
 
-public import IxC.Kernel.RoleEquations
-public import IxC.Kernel.Cached.Installed
+public import IxCK.Kernel.RoleEquations
+public import IxCK.Kernel.Cached.Installed
 public import LSpec
 
 namespace Tests.Ix.RoleEquations

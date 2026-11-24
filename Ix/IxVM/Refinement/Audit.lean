@@ -2,15 +2,15 @@ import Ix.IxVM.Refinement.Statement
 import Ix.IxVM.Refinement.TagNWide
 import Ix.IxVM.Refinement.Deserialize
 import Ix.IxVM.Refinement.DeserializeBinders
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
-/-! # The IxVM ↔ IxC refinement statement, frozen
+/-! # The IxVM ↔ IxCK refinement statement, frozen
 
 `#print` freezes every statement (`def … : Prop`) of
 `Ix.IxVM.Refinement.Statement`, every definition they read from
 `Ix.IxVM.Refinement.Claim`, the observed semantics' records
-(`Aiur.Generic.Observe`) and the policy forms of IxC's acceptance
-(`Ix.Cert.IxonAcceptsRefUnder`, `Ix.Kernel.Cached.AcceptsRefUnder`) and IxC's
+(`Aiur.Generic.Observe`) and the policy forms of IxCK's acceptance
+(`Ix.Cert.IxonAcceptsRefUnder`, `Ix.Kernel.Cached.AcceptsRefUnder`) and IxCK's
 reference normalizer (`Ix.Kernel.nfRef`, frozen by its equations); the
 structurally recursive tree functions are frozen by their equations.
 `#check` freezes the proved theorems, and `#guard_kernel_axioms` and
@@ -945,7 +945,7 @@ fun {α} claimed real => ∀ (x : α), claimed = some x → x = real
 #guard_msgs in
 #print IxVM.Refinement.OptEq
 
-/-! ## IxC acceptance under an axiom policy -/
+/-! ## IxCK acceptance under an axiom policy -/
 
 /--
 info: def Ix.Cert.IxonAcceptsRefUnder : Ix.Kernel.Cached.AxiomPolicy →
@@ -1023,7 +1023,7 @@ fun {md} {m} [Monad m] [MonadExcept (Ix.Kernel.CheckError md) m] ops env cv => d
 #guard_msgs in
 #print Ix.Kernel.checkUserAxiomDecl
 
-/-! ## IxC's reference normalizer -/
+/-! ## IxCK's reference normalizer -/
 
 /--
 info: def Ix.Kernel.nfRef : {md : Ix.Kernel.Mode} →
@@ -1288,7 +1288,7 @@ example (l r : Ix.AssumptionTree) : IxVM.Refinement.treeImages (.node l r) =
 /-! ## Phase 3: the TagN slice
 
 The first refinement: every derivation of `IxonDeserialize::get_tagn0` agrees
-with IxC's `Ixon.getTagN 0` on the same bytes, on every header
+with IxCK's `Ixon.getTagN 0` on the same bytes, on every header
 (`getTagN0_refines`; `getTagN2_refines` and `getTagN4_refines` for the two- and
 four-bit flags), proved from the prepared source through its generated lookup
 facts (`IxVM.Lookup`), the generated mirrors and their lemmas
@@ -1867,7 +1867,7 @@ info: @Ix.Kernel.nfGo_of_whnf_sort : ∀ {md : Ix.Kernel.Mode} {mode : Ix.Kernel
 #guard_kernel_axioms IxVM.Refinement.Mirrors.«IxonDeserialize::unpack_def_kind_safety».of_eval [propext, Classical.choice, Quot.sound]
 
 #guard_module_axioms Aiur.Generic.Observe Ix.IxVM.Refinement.Claim Ix.IxVM.Refinement.Statement
-  Ix.Cert.AcceptsUnder IxC.Kernel.Verify.Cached.ReferenceUnder IxC.Kernel.Verify.Cached.NormalizeRef
+  Ix.Cert.AcceptsUnder IxCK.Kernel.Verify.Cached.ReferenceUnder IxCK.Kernel.Verify.Cached.NormalizeRef
   IxVM.Source IxVM.Static IxVM.Program IxVM.Tables IxVM.Lookup
   Aiur.Generic.LookupFacts Ix.IxVM.Refinement.Exec Ix.IxVM.Refinement.Mirror Ix.IxVM.Refinement.Mirrors.TagN
   Ix.IxVM.Refinement.Mirrors.Deserialize Ix.IxVM.Refinement.TagN Ix.IxVM.Refinement.TagNWide

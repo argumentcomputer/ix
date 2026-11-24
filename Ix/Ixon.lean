@@ -2,7 +2,7 @@
   Ixon: Alpha-invariant serialization format for Lean constants.
 
   This host module reexports the pure types and anonymous codecs from
-  IxC.Ixon.Codec (Ixon v5: TagN integers and binder-data sections), and adds metadata, lazy
+  IxCK.Ixon.Codec (Ixon v5: TagN integers and binder-data sections), and adds metadata, lazy
   records, environments, and hashing.
   The pure anonymous grammar is shared with the certified codec proofs.
 -/
@@ -12,10 +12,10 @@ public import Ix.Address.Admission
 public import Ix.Common
 public import Ix.Environment
 public import Ix.IxonContract
-public import IxC.Ixon.Codec
-public import IxC.Ixon.Bounded.Constant
-public import IxC.Kernel.Admission.Depth
-import all IxC.Ixon.Codec
+public import IxCK.Ixon.Codec
+public import IxCK.Ixon.Bounded.Constant
+public import IxCK.Kernel.Admission.Depth
+import all IxCK.Ixon.Codec
 public import Ix.Merkle
 
 public section

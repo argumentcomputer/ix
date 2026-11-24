@@ -1,10 +1,10 @@
 import Ix.DynamicLink.Codec
-import IxC.Kernel.Rules.Rel
+import IxCK.Kernel.Rules.Rel
 
 /-! # Dynamic Circuit Linking Soundness (`Ix.DynamicLink.Soundness`)
 
 Core soundness theorems for Workstream 5 (both Tier 1 and Tier 2), keeping
-`IxC/Kernel/Denotes.lean`, `IxVM.Consistency.CircuitComposed`, and `Ix.Claim.de`
+`IxCK/Kernel/Denotes.lean`, `IxVM.Consistency.CircuitComposed`, and `Ix.Claim.de`
 completely untouched:
 
 1. **Codec Disjointness:**
@@ -65,9 +65,9 @@ theorem reify_accepted_prop_trace
     P x :=
   hBridge x (hEnc.symm ▸ hTrace)
 
-/-! ## 2. Tier 2: Grounding `EvalAssumption` Leaves into `IxC` (`DefEq.eqProof` / `Red.defEqClosed`) -/
+/-! ## 2. Tier 2: Grounding `EvalAssumption` Leaves into `IxCK` (`DefEq.eqProof` / `Red.defEqClosed`) -/
 
-/-- A grounded closed evaluation equality in an `IxC` environment `env`:
+/-- A grounded closed evaluation equality in an `IxCK` environment `env`:
 both `lhs` and `rhs` are closed terms typing at `typ` in the empty context,
 and `DefEq env d lhs rhs` holds at every binder depth `d` (with `Red env d lhs rhs`
 whenever `lhs` is neither a sort nor a `∀`). -/
@@ -80,9 +80,9 @@ structure GroundedEval {md : Mode} (env : Env md) (lhs rhs typ : Ix.Kernel.Expr 
   red_all : isSortOrPi lhs = false → ∀ d : Nat, Red env d lhs rhs
 
 /-- **Discharge via Closed Equality Proof (from `Claim.check` or Tier 1 Shape 17 bridge):**
-Given a closed `IxC` proof `p` of `@Eq.{u} typ lhs rhs` in the empty context with
+Given a closed `IxCK` proof `p` of `@Eq.{u} typ lhs rhs` in the empty context with
 well-typed `lhs, rhs : typ` and `typ : Sort u`, `GroundedEval env lhs rhs typ` holds
-at every depth `d` via `DefEq.eqProof` and `Red.defEqClosed` (`IxC/Kernel/Rules/Rel.lean`). -/
+at every depth `d` via `DefEq.eqProof` and `Red.defEqClosed` (`IxCK/Kernel/Rules/Rel.lean`). -/
 theorem groundedEval_of_eqProof {md : Mode} {env : Env md}
     {lhs rhs p typ ta tb sT : Ix.Kernel.Expr md} {u v : Ix.Kernel.Level} {ci : Ix.Kernel.ConstantInfo md}
     (hEq : env.find? eqName = some ci)

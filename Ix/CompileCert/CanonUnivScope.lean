@@ -1,6 +1,6 @@
 import Ix.CompileCert.CanonUnivEmit
-import IxC.Kernel.Ixon.Reader
-import IxC.Kernel.Verify.Level
+import IxCK.Kernel.Ixon.Reader
+import IxCK.Kernel.Verify.Level
 
 /-! Parameter-scope preservation for production canonical universes and their
 certified reader interpretation. Canonicalization introduces no parameters

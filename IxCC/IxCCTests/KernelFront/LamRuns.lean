@@ -159,7 +159,7 @@ def arrows (n : Nat) (ty res : X) : X := (List.range n).foldl (fun b _ => arrow 
 
 /-- The adversarial programs, every definition a root. `erasedRun` lives in its own environment
 (built on the same base + enum) so that its non-default `.erased` binder exercises live N5 mode
-checking without forcing `IxC.Resource.check`'s depth-16 class oracle to walk `deep`'s 102 binders. -/
+checking without forcing `IxCK.Resource.check`'s depth-16 class oracle to walk `deep`'s 102 binders. -/
 def adversarialEnvs : IO (List (String × IxCC.Ixon.V3.Env × List (String × IxCC.Ixon.Address))) := do
   let (eBase, en) := IxCCTests.Support.Bound.addEnum (← IxCCTests.Support.Bound.loadBase) 3
   let (e, tr) := IxCCTests.Support.Bound.addTree eBase

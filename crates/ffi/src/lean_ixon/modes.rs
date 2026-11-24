@@ -1,4 +1,4 @@
-//! Ixon resource modes (`IxC/Ixon/Types/Modes.lean`) build/decode.
+//! Ixon resource modes (`IxCK/Ixon/Types/Modes.lean`) build/decode.
 //!
 //! Lean representations:
 //! - `BinderMode`, `ResultMode`, `FieldMode`, `AllocAssert`: enums of

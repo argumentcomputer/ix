@@ -69,7 +69,7 @@ static tables. Execution and refinement proofs use that same source. Import
 `IxVM` to use it from another Lean project; no source files are read at runtime.
 
 `KernelRoleSpec.lean` is the one rendered module: `lake exe ix codegen` writes
-it from IxC's role specifications (`Ix/IxVM/RoleSpecGen.lean`), reading only the
+it from IxCK's role specifications (`Ix/IxVM/RoleSpecGen.lean`), reading only the
 specification digest's bytes. `lake exe ix codegen --check` checks freshness.
 The `ixvm-source` test (`lake exe formal-package-tests`) compares the public
 program, tables, and bytecode with full native preparation of the declaration

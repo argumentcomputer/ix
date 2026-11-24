@@ -1,6 +1,6 @@
-import IxC.Kernel.Admission
-import IxC.Kernel.Cached.CoreC
-import IxC.Kernel.Tier.Ind
+import IxCK.Kernel.Admission
+import IxCK.Kernel.Cached.CoreC
+import IxCK.Kernel.Tier.Ind
 import Ix.Address.Pure
 import Ix.KernelDisplay.Render
 

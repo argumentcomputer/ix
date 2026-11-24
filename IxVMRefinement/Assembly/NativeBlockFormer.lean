@@ -601,7 +601,7 @@ theorem formerChecked_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable
   rw [Decl.posOf_range] at inferred
   exact ⟨ty', hcT, hannT, checked, sty, u, inferred, reduced⟩
 
-/-- **IxC's former stage at a syntactic telescope**: the checked former is the telescope constant
+/-- **IxCK's former stage at a syntactic telescope**: the checked former is the telescope constant
 and the stored former; the record is completed with the sort the telescope ends in, and the
 former is stored at the capability record of that completed record. -/
 theorem sumIndRunJ_of_former {env : Ix.Kernel.Env .anon} {p : Ix.Kernel.InductiveShape .anon}

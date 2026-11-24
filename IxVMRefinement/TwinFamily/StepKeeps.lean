@@ -7,7 +7,7 @@ import IxVMRefinement.Ingress.Hashed
 /-! # The carried clause across the twin record
 
 The twin's unit step (`unitStepTwin_of_installed`) takes the keeping of the prefix invariant and
-of the clause beside it across IxC's twin record (`TwinStepKeeps`). This module proves it at
+of the clause beside it across IxCK's twin record (`TwinStepKeeps`). This module proves it at
 the fold's clause (`FoldExtra`), from the role and record companions of the scoped core after
 the step and one fact about the step's new constants that the twin record does not carry, both
 of which the target gives: each new constant at the key of an address reloads as itself

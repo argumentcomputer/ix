@@ -2,12 +2,12 @@ import Ix.IxVM.Refinement.Statement
 import Ix.IxVM.Refinement.KernelLevels
 import Ix.IxVM.Consistency.ReaderAdmission
 import Ix.IxVM.Consistency.ReaderFootprint
-import IxC.Kernel.MainTheorem
-import IxC.Kernel.Model.Fold
-import IxC.Kernel.Model.Denotes
-import IxC.Kernel.Model.Iota
-import IxC.Kernel.Verify.EnvGuards
-import IxC.Kernel.Rules.Rel
+import IxCK.Kernel.MainTheorem
+import IxCK.Kernel.Model.Fold
+import IxCK.Kernel.Model.Denotes
+import IxCK.Kernel.Model.Iota
+import IxCK.Kernel.Verify.EnvGuards
+import IxCK.Kernel.Rules.Rel
 import Aiur.WireMemory
 import Aiur.Memory.Partition
 
@@ -51,7 +51,7 @@ trace (`View.HashedCollision`, reused), or there is an environment `env` that
   auxiliary constants) with a model in every set theory:
   `∀ V, Nonempty (Ix.Kernel.Model V (claimedEnv env))`.
 
-A model (`Ix.Kernel.Model`, `IxC/Kernel/Denotes.lean`) interprets every claimed
+A model (`Ix.Kernel.Model`, `IxCK/Kernel/Denotes.lean`) interprets every claimed
 constant as a set: a member of what its type denotes, with `False` empty, `Eq`
 equality, every definition what its value denotes, every recursor rule
 computing as Lean's does, structure and unit-like η at the families that have

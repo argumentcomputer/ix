@@ -1,10 +1,10 @@
-import IxC.Kernel.Rules.Derived
-import IxC.Kernel.BasisA
-import IxC.Kernel.Model.Capstone
-import IxC.Kernel.Model.Rules.Sound
-import IxC.Kernel.Model.Denotes
-import IxC.Kernel.Model.Iota
-import IxC.Kernel.Verify.Cached.MainC
+import IxCK.Kernel.Rules.Derived
+import IxCK.Kernel.BasisA
+import IxCK.Kernel.Model.Capstone
+import IxCK.Kernel.Model.Rules.Sound
+import IxCK.Kernel.Model.Denotes
+import IxCK.Kernel.Model.Iota
+import IxCK.Kernel.Verify.Cached.MainC
 import IxCC.Src.Semantics
 import IxCC.Recheck.Proof.Soundness
 import IxCC.CompileClaim.Proof
@@ -13,7 +13,7 @@ import IxCC.CompileClaim.Proof
 # A conditional simulation lemma between `Src.run` and kernel `Red` (`IxKernelBridge.NatBridge`)
 
 This module proves a simulation lemma between `IxCC`'s source evaluator (`Src.eval` /
-`Src.run`) and `IxC`'s kernel reduction (`Ix.Kernel.Rules.Red`), relative to a relation
+`Src.run`) and `IxCK`'s kernel reduction (`Ix.Kernel.Rules.Red`), relative to a relation
 `constSpec` that the user supplies, and composes it with set-theoretic denotation
 (`Ix.Kernel.Denotes` in `Model.ofEnvModelM mp`) and with IxCC's own soundness theorems. It is
 not a source-adequacy theorem for compiled claims: source adequacy against the kernel model

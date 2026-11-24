@@ -1,5 +1,5 @@
 import Ix.Cert.Statement
-import IxC.Kernel.Admission.Theorems
+import IxCK.Kernel.Admission.Theorems
 
 /-! # The reader succeeds over the compiled closure's stream (Route A, B3)
 
@@ -9,14 +9,14 @@ they reference (`blobsOf`) and the artifact's hints (`hintsOf`). The entry
 first prepares the fold's input (`Ix.Kernel.Admission.prepareWith`): the
 byte stage (batch limits, unique keys, authentication), the role table's
 admission, canonical decoding, and the reader over the decoded records
-(`readStream`, `readRecords` threading `Reader.State`). IxC proves what an
+(`readStream`, `readRecords` threading `Reader.State`). IxCK proves what an
 accepted preparation means; this file proves the converse that Route A needs:
 the preparation **succeeds** on the compiled closure.
 
 * `readRecords_complete`, `readStream_complete`: the reader's stream loop
   succeeds on every record-by-record reading (`StreamRead`, each record read
   against the state the records before it left), with distinct addresses:
-  the converse of IxC's `readRecords_spec`. `readStream_complete` also requires
+  the converse of IxCK's `readRecords_spec`. `readStream_complete` also requires
   the final state to keep the prelude's entries (`State.keepsPrelude`);
 * the byte stage on the compiled closure: unique keys (`closure_unique`, from
   the order's distinctness and the blob map), authentication

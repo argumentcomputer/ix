@@ -1,4 +1,4 @@
-import IxC.Kernel.Semantics.DeclIndJ
+import IxCK.Kernel.Semantics.DeclIndJ
 
 /-! # Maps between judgement packages
 

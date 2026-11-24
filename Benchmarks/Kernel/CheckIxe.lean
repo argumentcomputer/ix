@@ -4,7 +4,7 @@ import Benchmarks.Kernel.CheckIxePool
 import Benchmarks.Kernel.CheckIxeMeta
 import Ix.KernelCheck.Binding
 import Ix.RoleBinding.UserAxioms
-import IxC.Host.Limits
+import IxCK.Host.Limits
 
 /-! # Environment check of a compiled Ixon environment (untrusted)
 

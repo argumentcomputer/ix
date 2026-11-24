@@ -1,5 +1,5 @@
 import IxVMRefinement.Core.Rep
-import IxC.Ixon.Codec
+import IxCK.Ixon.Codec
 
 /-! # Loaded constants: IxVM's `KConstantInfo` and the kernel's `ConstantInfo`
 

@@ -19,21 +19,21 @@ require Blake3 from git
   "https://github.com/argumentcomputer/Blake3.lean" @
   "3f8b805614a0bae1c033469ff893a8f0ee85f601"
 
-/- Ix's certified-kernel package (`IxC/`, no dependencies, no Rust). Its
-pure Ixon v5 codec (`IxC.Ixon.Canonical`) is imported by the ingress wire
+/- Ix's certified-kernel package (`IxCK/`, no dependencies, no Rust). Its
+pure Ixon v5 codec (`IxCK.Ixon.Canonical`) is imported by the ingress wire
 layer (`IxCC.Ixon.V4.Convert`, `IxCC.Ixon.V3.Wire`); its role vocabulary
-(`IxC.Kernel.Key`) by the mapping of the kernel's roles to IxCC's pinned
-identities (`IxCC.Src.Pinned`); its host limit resolver (`IxC.Host.Limits`)
-by `IxCC.Cli`; its resource mode checker (`IxC.Resource.Check`) by the N5
+(`IxCK.Kernel.Key`) by the mapping of the kernel's roles to IxCC's pinned
+identities (`IxCC.Src.Pinned`); its host limit resolver (`IxCK.Host.Limits`)
+by `IxCC.Cli`; its resource mode checker (`IxCK.Resource.Check`) by the N5
 ingress gate (`IxCC.Src.KernelFront.Accept`); and its tiered admission entry,
-prelude and executed typing core (`IxC.Kernel.Admission.Tier`,
-`IxC.Kernel.Ixon.Prelude`, `IxC.Kernel.Cached.CoreC`) by the front end over the
+prelude and executed typing core (`IxCK.Kernel.Admission.Tier`,
+`IxCK.Kernel.Ixon.Prelude`, `IxCK.Kernel.Cached.CoreC`) by the front end over the
 kernel (`IxCC.Src.KernelFront`, `docs/kernel-front-end-design.md`). It is the
 package beside this one in the ix workspace; the trust ledger records the
 SHA-256 of every file of the imported closure (including the
 kernel's model statement imported only by `IxCCGrounding`; not the kernel's
 proof tree), so a change to it is reviewed here. -/
-require «ix-kernel» from "../IxC"
+require «ix-ck» from "../IxCK"
 
 @[default_target]
 lean_lib IxCC where
@@ -57,7 +57,7 @@ lean_lib IxCCTests where
 /- The grounding of SrcEval in the certified kernel's model
 (docs/certification-design.md, "The grounding library"): soundness of SrcEval
 in every model of the kernel's reading with the laws. It is the one library
-that imports the kernel's model (`IxC.Kernel.Denotes`); nothing in the
+that imports the kernel's model (`IxCK.Kernel.Denotes`); nothing in the
 production library or the shared program build imports it
 (`check-build-graph`). Built, with its axiom fence, and run on committed
 closures by the required check `ixcc-grounding`. -/

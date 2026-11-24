@@ -1,15 +1,15 @@
 import Ix.Cert.AcceptsUnder
-import IxC.Kernel.RoleEquations
-import IxC.Kernel.Verify.Cached.NormalizeRef
+import IxCK.Kernel.RoleEquations
+import IxCK.Kernel.Verify.Cached.NormalizeRef
 import Ix.Claim
 import Ix.AssumptionTree
 import Ix.SpecDigest
 import Ix.HostAdmission.Merkle
 import Ix.Address.Pure
 
-/-! # What a claim means, in IxC terms
+/-! # What a claim means, in IxCK terms
 
-The meaning of the claims `IxVM::verify_claim` accepts, stated over IxC's
+The meaning of the claims `IxVM::verify_claim` accepts, stated over IxCK's
 reference-level acceptance: `Ix.Cert.IxonAcceptsRef`, and for claims that name
 user axioms its policy form `Ix.Cert.IxonAcceptsRefUnder .allowUser`.
 Definitions only. The statement over the IxVM program is in
@@ -26,7 +26,7 @@ statement is about every authentic view that covers the claim; there is no
 existential form (the statement module says why).
 
 Acceptance in a view (`AcceptsIn`) uses only the view's records and blobs,
-except that it may supply recursor records the view lacks (`Draws`): IxC's
+except that it may supply recursor records the view lacks (`Draws`): IxCK's
 reader reads a block of one inductive that no recursor of the input eliminates
 as an `indDecl` without a recursor, and declines a block of several types
 without its recursors (`Ix.Kernel.Reader.readInductive`, `blockShapeOf`), IxVM
@@ -37,10 +37,10 @@ them as unauthenticated advice.
 
 ## Per variant
 
-* `check ctx a asm`: IxC accepts the closure of `a` (`TypingIn`).
-* `checkEnv ctx root asm`: the tree at `root` has leaves, and IxC accepts the
+* `check ctx a asm`: IxCK accepts the closure of `a` (`TypingIn`).
+* `checkEnv ctx root asm`: the tree at `root` has leaves, and IxCK accepts the
   closure of all of them.
-* `eval ctx input output asm`: IxC accepts the closure of `input` and
+* `eval ctx input output asm`: IxCK accepts the closure of `input` and
   `output` together; the output record is a safe definition with the input's
   universe count and type; and at some fuel in the accepted environment their
   annotated values are definitionally equal (`Ix.Kernel.isDefEqCore` at
@@ -49,7 +49,7 @@ them as unauthenticated advice.
   reveals (`RevealLE`) and, when `binders` is present, its binder-data section
   hashes to it (`sectionAddr`).
 * `contains tree a`: `a` is a leaf of the tree at `tree`.
-* `binding spec b`: the role table with hash `b` binds every role, and IxC
+* `binding spec b`: the role table with hash `b` binds every role, and IxCK
   accepts the closure of the bound constants and evidence theorems under it.
 * `catalog`: `False`. IxVM rejects it (no arm for variant 8), so `False` is
   the strongest true statement for the IxVM theorem. Variant 9, the retired
@@ -57,7 +57,7 @@ them as unauthenticated advice.
   `0 = 1` on it.
 
 The typing claims (`check`, `checkEnv`, `eval`) carry, beside their context's
-specification digest (which must be IxC's, `Ix.SpecDigest.specDigest`):
+specification digest (which must be IxCK's, `Ix.SpecDigest.specDigest`):
 
 * **user axioms** (`axioms = some r`): the view holds the tree at `r`; every
   leaf, used or not, is a stored safe axiom the role table does not bind
@@ -67,7 +67,7 @@ specification digest (which must be IxC's, `Ix.SpecDigest.specDigest`):
   (`AxiomScopeIn`), and it installs every leaf that is not also an assumption
   as a user axiom (`LeavesInstalled`: an assumed leaf stays conditional, like
   any assumption). With `axioms = none` it is the strict fold;
-* **assumptions** `some r`: the typing is conditional. If IxC accepts each
+* **assumptions** `some r`: the typing is conditional. If IxCK accepts each
   leaf of the tree at `r` in the view, separately, it accepts the target;
 * **an assumed binding** (validator 4, `bindingAssumed`): conditional on the
   `binding` claim for the context;
@@ -211,9 +211,9 @@ def TheoremsInProp {md : Ix.Kernel.Mode} (envA : Ix.Kernel.Env md)
       (Ix.Kernel.fueledOps .verified F).ensureSort envA 0 stype = .ok u ∧
       u.isZero = true
 
-/-- **IxC accepts the closure of the seeds `S` in the view `V`, under the
+/-- **IxCK accepts the closure of the seeds `S` in the view `V`, under the
 scope `σ`, and `Q` holds of the run**: an environment drawn from the view
-stores every seed, and IxC's reference-level acceptance under the scope's
+stores every seed, and IxCK's reference-level acceptance under the scope's
 policy (`Ix.Kernel.Cached.AcceptsRefUnder`, with non-auxiliary theorems
 installed as `.opaque`-hinted definitions and `TheoremsInProp` so theorem
 majors unfold as in Lean 4.34.1 and IxVM) holds for the compiled closure of `S`
@@ -298,8 +298,8 @@ def AnchorsTyped (ds : List (Ix.Kernel.Declaration .anon)) : Prop :=
     cv.matchesPin pin = true
 
 /-- **The role specifications the pure declaration fold does not check on its
-own**, under the role table `t` (`IxC/Kernel/Roles.lean`,
-`IxC/Kernel/RoleEquations.lean`): no declaration mismatches an install-checked
+own**, under the role table `t` (`IxCK/Kernel/Roles.lean`,
+`IxCK/Kernel/RoleEquations.lean`): no declaration mismatches an install-checked
 anchor (`Ix.Kernel.Declaration.anchorMismatch?`), every declared anchor has its
 specification's type (`AnchorsTyped`), and every role `t` binds that is specified
 by definition equations (`SpecKind.eqns`) passes `Ix.Kernel.eqnsCheck` at some
@@ -312,8 +312,8 @@ def BindingSpecs (t : Ix.Kernel.RoleTable) (_ : Binding) (envA : Ix.Kernel.Env .
       ∃ F, Ix.Kernel.eqnsCheck (Ix.Kernel.fueledOps .verified F) envA r ev = .ok ()
 
 /-- **The `binding` claim in a view** (`binding spec b`, validator 3): `spec`
-is IxC's specification digest; the view's role table with hash `b` is
-admitted by IxC, binds every role, and IxC's strict fold accepts the closure
+is IxCK's specification digest; the view's role table with hash `b` is
+admitted by IxCK, binds every role, and IxCK's strict fold accepts the closure
 of its bound constants (but for the compiler-trust roles) and evidence theorems
 under it with `BindingSpecs`,
 which checks each bound constant against its role's specification. -/
@@ -358,7 +358,7 @@ def TableAdmitted (V : View) (b : Binding) : Prop :=
 /-- **Every leaf of a claim's axioms tree is a user axiom record**, used or
 not, as IxVM validates it (`KernelRoles::validate_user_axioms`): the view
 stores a safe axiom record at it, and the role table `b` binds no role to it.
-`LeavesInstalled` states, beside it, that IxC installs each leaf that is not an
+`LeavesInstalled` states, beside it, that IxCK installs each leaf that is not an
 assumption. -/
 def UserAxiomLeavesIn (V : View) (b : Binding) (leaves : List Address) : Prop :=
   ∀ a ∈ leaves,
@@ -370,7 +370,7 @@ def AssumedIn (V : View) (asm : Option Address) (a : Address) : Prop :=
   ∃ r leaves, asm = some r ∧ V.LeavesAt r leaves ∧ a ∈ leaves
 
 /-- **Every leaf is installed as a user axiom** in an accepting run, unless it is
-assumed: for each leaf not `assumed`, the declarations IxC accepts install a user
+assumed: for each leaf not `assumed`, the declarations IxCK accepts install a user
 axiom keyed by its address (IxVM type-checks every leaf of the axioms tree, used
 or not, except a leaf that is also one of the claim's assumptions, which stays
 conditional like any assumption). -/
@@ -391,7 +391,7 @@ def AxiomScopeIn (V : View) (b : Binding) :
 
 /-- **Acceptance of `S` under the assumption tree `asm`**: unconditional for
 `none`; for `some r`, the view holds a tree at `r`, and for every such tree,
-if IxC accepts each of its leaves separately in the view, it accepts `S`. -/
+if IxCK accepts each of its leaves separately in the view, it accepts `S`. -/
 def AssumingIn (V : View) (σ : Scope) (S : Address → Prop)
     (Q : Binding → Ix.Kernel.Env .anon → List (Ix.Kernel.Declaration .anon) → Prop) :
     Option Address → Prop
@@ -402,11 +402,11 @@ def AssumingIn (V : View) (σ : Scope) (S : Address → Prop)
 /-- **The typing part of a typing claim**, about the seeds `S` with
 assumptions `asm`, under the context `ctx`, with `Q` of the accepting run:
 
-* `ctx.spec` is IxC's specification digest, and the context is not a
+* `ctx.spec` is IxCK's specification digest, and the context is not a
   literal class (IxVM refuses validator 5);
 * the view holds the role table with hash `ctx.binding` and validates the
   context's axiom scope (`AxiomScopeIn`), and if the context assumes its
-  binding, given the `binding` claim for it, IxC accepts `S` together with
+  binding, given the `binding` claim for it, IxCK accepts `S` together with
   the axioms tree's leaves that are not assumptions under it, installing each
   of them as a user axiom (`LeavesInstalled`), under the assumptions `asm`. -/
 def TypingIn (V : View) (ctx : ClaimContext) (S : Address → Prop) (asm : Option Address)
@@ -625,10 +625,10 @@ def AnchorPinned (envA : Ix.Kernel.Env .anon) (r : Ix.Kernel.Role) : Prop :=
 (`SafeConstant`) and the Lean contract fragment with well-typed reference kinds
 and direct structure projections (`ConstantExprsClosed`), every reference of a
 stored record resolves to a stored record or blob, a projection's block is
-stored, and the role table the view holds is a valid role table admitted by IxC
+stored, and the role table the view holds is a valid role table admitted by IxCK
 (`RoleTable.check`, `preludeFor`, which pins the prelude roles) whose bound
 constants and evidence theorems are stored and whose `.anchor` roles, but for the
-compiler-trust ones (`compilerTrust`, which IxC declines), are accepted by IxC with their
+compiler-trust ones (`compilerTrust`, which IxCK declines), are accepted by IxCK with their
 pinned specification types (`AnchorPinned`) in the view. Because `SafeConstant` restricts
 to the safe fragment, whole-environment `checkEnv` claims whose leaves include `unsafe` or
 `partial` constants are outside `Covers`. -/
@@ -663,7 +663,7 @@ namespace Ix.Claim
 
 open IxVM.Refinement
 
-/-- **A claim's meaning in the view `V`**, in IxC terms (see the module
+/-- **A claim's meaning in the view `V`**, in IxCK terms (see the module
 docstring for each variant). -/
 def HoldsIn (V : View) : Claim → Prop
   | .eval ctx input output asm =>

@@ -1,5 +1,5 @@
 import Ix.IxVM.Consistency.TableValid
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 /-! # The composed consistency statement, frozen
 

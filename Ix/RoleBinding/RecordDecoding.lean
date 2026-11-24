@@ -1,8 +1,8 @@
 module
 
-public import IxC.Kernel.Admission.Bytes
+public import IxCK.Kernel.Admission.Bytes
 public import Ix.Compile.Parallel
-import all IxC.Kernel.Admission.Bytes
+import all IxCK.Kernel.Admission.Bytes
 import Init.Data.List.Monadic
 
 /-! Bounded-parallel authentication and record decoding (`authenticateParallel`,

@@ -27,7 +27,7 @@ derivations), so `aliasOuts_of_member` reads both stages on one inversion:
   `former_tele_typed`), the former checked at the prefix, the telescope constant of the former
   stage (`AliasTele`) with its sort `s`, its parameters opened as the declared former's at a family
   with a constructor, and at every recursion flag the constructors' outputs at the constructor
-  stage staged at `s`, with IxC's later-use condition. At a former declared at its telescope the
+  stage staged at `s`, with IxCK's later-use condition. At a former declared at its telescope the
   telescope constant is the declared former and `s` its sort; otherwise `s` is the level the
   result-sort walk left at the pointer the constructor loop reads (`RepKLevel.det`).
 
@@ -41,7 +41,7 @@ telescope constant's type is the term the builder's walk produces on kernel term
 (`Decl.former_tele_at_traced`), which the built heap term represents at the term seam, and its
 sort is the level the result-sort walk reaches (`Decl.get_result_sort_level_traced`). So the
 conclusion also holds the two facts a later recursor run reads of the family
-(`Decl.TracedBinders`, `Decl.OpenSortTrace`), exactly. IxC's from-scratch check of that
+(`Decl.TracedBinders`, `Decl.OpenSortTrace`), exactly. IxCK's from-scratch check of that
 constant takes its level parameters from the walk (`Decl.tracedTele_allLevelParamsDefined`) and
 its sort typing from the circuit's `k_ensure_sort` (`Decl.constantValCheckJ_of_tm`); the
 parameters it shares with the stored former are the walk's (`Decl.TracedBinders.openPisAtFvars`).
@@ -181,7 +181,7 @@ def AliasGuardAt (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E : Ixon.Env
 definition, from its walked check** (over the named input `FormerTeleConv`): the former checked at
 the prefix as `cvS`; the telescope constant `cvTa` of the former stage (`AliasTele`) with its sort
 `s`, opening its parameters as `cvS` does at a family with a constructor; and at every recursion
-flag the constructors' outputs at the constructor stage staged at `s`, with IxC's later-use
+flag the constructors' outputs at the constructor stage staged at `s`, with IxCK's later-use
 condition on the annotated constructors. Both stages are read on one inversion of the shape
 stage, so `s` is the sort at which the constructor loop compares the fields. The telescope
 constant has the traced binders of the stored former's type and `s` is its traced sort; the

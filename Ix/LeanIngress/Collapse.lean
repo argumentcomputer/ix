@@ -2,10 +2,10 @@ module
 
 public import Ix.Ixon
 public import Ix.LeanIngress.Expr
-public import IxC.Kernel.Env
-public import IxC.Kernel.Tier.Basic
-public import IxC.Kernel.Ixon.RoleTable
-import IxC.Kernel.Ingress.Records
+public import IxCK.Kernel.Env
+public import IxCK.Kernel.Tier.Basic
+public import IxCK.Kernel.Ixon.RoleTable
+import IxCK.Kernel.Ingress.Records
 
 @[expose] public section
 

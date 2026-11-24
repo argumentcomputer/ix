@@ -1,6 +1,6 @@
 import Ix.Cert.Admits
 import Ix.CompileCert.MutualInductiveReading
-import IxC.Kernel.Semantics.Bridge.DeclRun
+import IxCK.Kernel.Semantics.Bridge.DeclRun
 import Ix.Cert.LowerDistinct
 
 /-! # No constructor of a Source-accepted family occurs in its types
@@ -8,7 +8,7 @@ import Ix.Cert.LowerDistinct
 `inductive_reads` reads a standalone family's types with only the inductive as
 its self, so it asks that no constructor of the family occur in them
 (`InductiveReading.NoCtorIn`). That is a fact of Source acceptance, through
-IxC's route-independent shape guard on every accepted `.indDecl`
+IxCK's route-independent shape guard on every accepted `.indDecl`
 (`Ix.Kernel.Semantics.checkDecl_noCtor`), and of the ingress, which carries the
 sources' constants to their keys:
 
@@ -505,7 +505,7 @@ type formers and constructors carry the sources' keys and their types'
 conversions (`convertInductive_entries`, `lowerInductive_decl`,
 `lowerAll_mem`); the reference fold checked it at its prefix
 (`checkSource_refines_ref`, `acceptsRef_decl`), so its declared shape held
-(`Ix.Kernel.Semantics.checkDecl_noCtor`, IxC's route-independent guard): no constructor
+(`Ix.Kernel.Semantics.checkDecl_noCtor`, IxCK's route-independent guard): no constructor
 key occurs in a former's or constructor's type, and so, through the
 conversion, no constructor in the source's types (`noCtorIn_of_ingress`). The
 set theory is a hypothesis of the fold's refinement, not of the statement's

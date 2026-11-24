@@ -1,5 +1,5 @@
-import IxC.Kernel.Denotes
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Denotes
+import IxCK.Kernel.Audit.Axioms
 
 /-! # The model interface of the consistency statement, frozen
 
@@ -8,7 +8,7 @@ The composed consistency statement (`IxVM.Consistency.CircuitComposed`, frozen i
 `∀ (W : Type u) [Ix.Kernel.SetTheory W], Nonempty (Ix.Kernel.Model W env)`. What that says is
 fixed by the class `Ix.Kernel.SetTheory`, the structure `Ix.Kernel.Model` and what the two
 read. `#print` freezes them here: `SetTheory` with its axioms, `Model` with its fields, and
-every definition of `IxC.Kernel.Denotes` and `IxC.Kernel.SetTheory.Core` that the statement
+every definition of `IxCK.Kernel.Denotes` and `IxCK.Kernel.SetTheory.Core` that the statement
 reads through them: the denotation relation `Denotes`, and the model's laws `IotaLaw` (with
 `IotaRule`), `UnitLikeLaw`, `ProjLaw`, `ProjTypeLaw`, `EtaFnLaw`, `NatLitLaw`, `NatAddLaw` and
 `GradedLaw`, with their auxiliaries. The four structurally recursive functions among them are
@@ -163,7 +163,7 @@ constructor:
 #guard_msgs in
 #print Ix.Kernel.Model
 
-/-! ## What they read from `IxC.Kernel.Denotes` -/
+/-! ## What they read from `IxCK.Kernel.Denotes` -/
 
 /--
 info: @[reducible] def Ix.Kernel.BVarIdx : Type :=
@@ -679,7 +679,7 @@ fun {V} [Ix.Kernel.SetTheory V] {md} cval env =>
 #guard_msgs in
 #print Ix.Kernel.EtaFnLaw
 
-/-! ## What they read from `IxC.Kernel.SetTheory.Core` -/
+/-! ## What they read from `IxCK.Kernel.SetTheory.Core` -/
 
 /--
 info: def Ix.Kernel.Equinumerous.{u} : {V : Type u} → (V → V → Prop) → V → V → Prop :=
@@ -711,7 +711,7 @@ They are frozen here with every definition they are in turn defined by, down to 
 `SetTheory`. Where a definition chooses a witness (`Classical.choose`), it is printed with the
 proof it chooses from (`pp.proofs`), and the statement of that proof is frozen beside it. -/
 
-/-! ### `IxC.Kernel.SetTheory.Derive.Sigma` -/
+/-! ### `IxCK.Kernel.SetTheory.Derive.Sigma` -/
 
 /--
 info: @[irreducible] def Ix.Kernel.SetTheory.sfst.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → V → V :=
@@ -738,7 +738,7 @@ info: @Ix.Kernel.SetTheory.ssnd._proof_1 : ∀ {V : Type u_1} [inst : Ix.Kernel.
 #guard_msgs in
 #check @Ix.Kernel.SetTheory.ssnd._proof_1
 
-/-! ### `IxC.Kernel.SetModel.Ops` -/
+/-! ### `IxCK.Kernel.SetModel.Ops` -/
 
 /--
 info: def Ix.Kernel.SetModel.piR.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → Nat → V → (V → V) → V :=
@@ -757,7 +757,7 @@ fun {V} [Ix.Kernel.SetTheory V] v A F => if v = 0 then Ix.Kernel.SetTheory.pt el
 #guard_msgs in
 #print Ix.Kernel.SetModel.lamR
 
-/-! ### `IxC.Kernel.SetTheory.Derive.Univ` -/
+/-! ### `IxCK.Kernel.SetTheory.Derive.Univ` -/
 
 /--
 info: @[irreducible] def Ix.Kernel.SetTheory.univ.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → Nat → V :=
@@ -769,7 +769,7 @@ fun {V} [Ix.Kernel.SetTheory V] x =>
 #guard_msgs in
 #print Ix.Kernel.SetTheory.univ
 
-/-! ### `IxC.Kernel.SetTheory.Derive.Graphs` -/
+/-! ### `IxCK.Kernel.SetTheory.Derive.Graphs` -/
 
 /--
 info: def Ix.Kernel.SetTheory.graph.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → (V → V) → V → V :=
@@ -812,7 +812,7 @@ fun {V} [Ix.Kernel.SetTheory V] A B =>
 #guard_msgs in
 #print Ix.Kernel.SetTheory.piSet
 
-/-! ### `IxC.Kernel.SetTheory.Derive.Pt` -/
+/-! ### `IxCK.Kernel.SetTheory.Derive.Pt` -/
 
 /--
 info: @[irreducible] def Ix.Kernel.SetTheory.ptTag.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → V :=
@@ -858,7 +858,7 @@ fun {V} [Ix.Kernel.SetTheory V] x y => Ix.Kernel.SetTheory.truthVal (x = y)
 #guard_msgs in
 #print Ix.Kernel.SetTheory.eqv
 
-/-! ### `IxC.Kernel.SetTheory.Derive.Pair` -/
+/-! ### `IxCK.Kernel.SetTheory.Derive.Pair` -/
 
 /--
 info: def Ix.Kernel.SetTheory.sing.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → V → V :=
@@ -875,7 +875,7 @@ fun {V} [Ix.Kernel.SetTheory V] a b =>
 #guard_msgs in
 #print Ix.Kernel.SetTheory.kpair
 
-/-! ### `IxC.Kernel.SetTheory.Derive.Sep` -/
+/-! ### `IxCK.Kernel.SetTheory.Derive.Sep` -/
 
 /--
 info: def Ix.Kernel.SetTheory.sep.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → V → (V → Prop) → V :=
@@ -887,7 +887,7 @@ fun {V} [Ix.Kernel.SetTheory V] a p =>
 #guard_msgs in
 #print Ix.Kernel.SetTheory.sep
 
-/-! ### `IxC.Kernel.SetTheory.Derive.Empty` -/
+/-! ### `IxCK.Kernel.SetTheory.Derive.Empty` -/
 
 /--
 info: @Ix.Kernel.SetTheory.empty_exists : ∀ {V : Type u_1} [inst : Ix.Kernel.SetTheory V],

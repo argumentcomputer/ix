@@ -1,5 +1,5 @@
 import IxVMRefinement.Guard.LoadParents
-import IxC.Kernel.Model.ProjGuardCert
+import IxCK.Kernel.Model.ProjGuardCert
 
 /-! # A store for a use's own run, and the firing across two stores
 

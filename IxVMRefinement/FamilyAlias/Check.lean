@@ -1,18 +1,18 @@
 import IxVMRefinement.FamilyAlias.Enter
 import IxVMRefinement.FamilyAlias.Install
 import IxVMRefinement.FamilyAlias.Roots
-import IxC.Kernel.Verify.Rules.Bridge
+import IxCK.Kernel.Verify.Rules.Bridge
 import Ix.IxVM.Consistency.StoredCheck
 
 /-! # The family record over the alias package, found by evaluation
 
-`famRecordCheck` searches for a proof of IxC's renamed record `DeclIndRenRunJ (famJ h)` of a block
+`famRecordCheck` searches for a proof of IxCK's renamed record `DeclIndRenRunJ (famJ h)` of a block
 at an environment that stores the block's model aliases, and returns the proof it finds together
 with the environment after the block. It is sound by construction: what it returns is a proof
 (`famRecord_of_check`). A closed instance is then proved by evaluating the check.
 
 Every stored-data conjunct of the record (lookups, telescope openings, shapes, level lists) is
-decided as the record states it. Every judgement of the record is discharged by a run of IxC's
+decided as the record states it. Every judgement of the record is discharged by a run of IxCK's
 executable checker (`inferTypeCore`, `isDefEqCore`, `whnf` at the verified mode) on the subject
 the family package asks for: the term renamed by the block renaming and by the alias renaming,
 with the level parameters at positions. The run is turned into a derivation by the rules bridge

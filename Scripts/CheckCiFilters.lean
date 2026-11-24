@@ -141,7 +141,7 @@ def parseCiFilters (yaml : String) : Except String (Std.HashMap String (Array St
 /-- Top-level module prefixes belonging to this repository (external dependencies such as
 `Init`, `Std`, `Lean`, `Mathlib`, `Batteries`, `Blake3` are excluded). -/
 def projectRoots : List String :=
-  ["Ix", "IxC", "IxSharingVerify", "Aiur", "IxVM", "MultiStark", "IxVMRefinement",
+  ["Ix", "IxCK", "IxSharingVerify", "Aiur", "IxVM", "MultiStark", "IxVMRefinement",
    "Models", "IxSetTheoryModel", "Tests"]
 
 /-- Nested workspace packages whose `M.X` modules live under `M/M/X.lean`. -/
@@ -272,14 +272,14 @@ def selfCheck : IO Unit := do
   if globMatch "Ix/Claim*.lean" "Ix/Claim/Foo.lean" then
     throw <| IO.userError "self-test failed: `*` crossed `/`"
   -- Trailing `**`
-  unless globMatch "IxC/**" "IxC/Kernel/Admission.lean" do
-    throw <| IO.userError "self-test failed: IxC/** deep match"
-  unless globMatch "IxC/**" "IxC/Kernel.lean" do
-    throw <| IO.userError "self-test failed: IxC/** shallow match"
-  if globMatch "IxC/**" "IxC.lean" then
-    throw <| IO.userError "self-test failed: IxC/** matched sibling file"
-  if globMatch "IxC/**" "IxC" then
-    throw <| IO.userError "self-test failed: IxC/** matched bare directory"
+  unless globMatch "IxCK/**" "IxCK/Kernel/Admission.lean" do
+    throw <| IO.userError "self-test failed: IxCK/** deep match"
+  unless globMatch "IxCK/**" "IxCK/Kernel.lean" do
+    throw <| IO.userError "self-test failed: IxCK/** shallow match"
+  if globMatch "IxCK/**" "IxCK.lean" then
+    throw <| IO.userError "self-test failed: IxCK/** matched sibling file"
+  if globMatch "IxCK/**" "IxCK" then
+    throw <| IO.userError "self-test failed: IxCK/** matched bare directory"
   -- Leading and interior `**`
   unless globMatch "**/*.rs" "lib.rs" && globMatch "**/*.rs" "crates/ix/src/lib.rs" do
     throw <| IO.userError "self-test failed: **/*.rs"
@@ -294,7 +294,7 @@ def selfCheck : IO Unit := do
     ("Ix.Ixon", "Ix/Ixon.lean"),
     ("Ix.Environment", "Ix/Environment.lean"),
     ("Ix.Address.Admission", "Ix/Address/Admission.lean"),
-    ("IxC.Kernel.Admission", "IxC/Kernel/Admission.lean"),
+    ("IxCK.Kernel.Admission", "IxCK/Kernel/Admission.lean"),
     ("Aiur.Generic.AST", "Aiur/Aiur/Generic/AST.lean"),
     ("IxVM.Source", "IxVM/IxVM/Source.lean"),
     ("MultiStark.Basic", "MultiStark/MultiStark/Basic.lean"),
@@ -310,10 +310,10 @@ def selfCheck : IO Unit := do
   let sampleLean :=
     "/- block comment import Fake.One -/\n" ++
     "module public import Init.Core import Ix.HostAdmission -- import Fake.Two\n" ++
-    "private meta import all IxC.Kernel.Audit.Roots\n" ++
+    "private meta import all IxCK.Kernel.Audit.Roots\n" ++
     "def body := \"import Fake.Three\"\n"
   let parsedImps := parseLeanImports sampleLean
-  unless parsedImps == #["Init.Core", "Ix.HostAdmission", "IxC.Kernel.Audit.Roots"] do
+  unless parsedImps == #["Init.Core", "Ix.HostAdmission", "IxCK.Kernel.Audit.Roots"] do
     throw <| IO.userError s!"self-test failed: parseLeanImports = {parsedImps}"
   -- YAML filter parser
   let sampleYaml :=
@@ -321,7 +321,7 @@ def selfCheck : IO Unit := do
     "        with:\n" ++
     "          filters: |\n" ++
     "            kernel:\n" ++
-    "              - 'IxC/**'\n" ++
+    "              - 'IxCK/**'\n" ++
     "              - 'Ix/Address/Admission.lean' # hash impl\n" ++
     "            refinement:\n" ++
     "              - 'Aiur/**'\n" ++
@@ -330,7 +330,7 @@ def selfCheck : IO Unit := do
   match parseCiFilters sampleYaml with
   | .error e => throw <| IO.userError s!"self-test failed: parseCiFilters error: {e}"
   | .ok parsed =>
-    unless parsed.getD "kernel" #[] == #["IxC/**", "Ix/Address/Admission.lean"] do
+    unless parsed.getD "kernel" #[] == #["IxCK/**", "Ix/Address/Admission.lean"] do
       throw <| IO.userError s!"self-test failed: unexpected kernel globs: {parsed.getD "kernel" #[]}"
     unless parsed.getD "refinement" #[] == #["Aiur/**", "Ix/Ixon.lean"] do
       throw <| IO.userError s!"self-test failed: unexpected refinement globs: {parsed.getD "refinement" #[]}"
@@ -392,8 +392,8 @@ def requiredFilterCoverage : Array (String × String) := #[
 import closure must be covered by the corresponding CI filter group. -/
 def transitiveImportChecks : Array (String × String × Array String) := #[
   ("certified-kernel leanchecker roots", "kernel", #[
-    "IxC.Kernel.Audit.Roots",
-    "IxC.Kernel.Admission.Audit",
+    "IxCK.Kernel.Audit.Roots",
+    "IxCK.Kernel.Admission.Audit",
     "Ix.Ixon.Authenticated.Audit",
     "Ix.Ixon.BlockOrder.Audit",
     "Ix.HostAdmission.Audit",

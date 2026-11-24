@@ -2,7 +2,7 @@ import IxVMRefinement.FamilyAlias.Facts
 
 /-! # A member's record from the family check's facts
 
-The first part of the passage from `FamilyCheckFacts` (`FamilyAlias/Facts.lean`) to IxC's renamed
+The first part of the passage from `FamilyCheckFacts` (`FamilyAlias/Facts.lean`) to IxCK's renamed
 record over the family package: one member of the family (a type, a constructor or a recursor
 before its rules) against its model.
 
@@ -10,7 +10,7 @@ before its rules) against its model.
   that stores what `env` stores and every key the renaming sends to a stored key.
 * `renameConsts_block_alias`: on a term that resolves in an environment storing no alias key, the
   block renaming followed by the alias renaming is the renaming to the advice.
-* `memberValRunJ_of_facts`: IxC's member record (`MemberValRunJ`: the member's front door and its
+* `memberValRunJ_of_facts`: IxCK's member record (`MemberValRunJ`: the member's front door and its
   alias at the model key) at an environment `env'` that extends the prefix and stores the
   member's alias, from the member's facts.
 

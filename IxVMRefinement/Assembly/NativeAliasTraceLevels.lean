@@ -5,7 +5,7 @@ import IxVMRefinement.Assembly.NativeAliasTeleWalk
 
 The telescope the circuit builds for a former declared at a definition is registered as the
 term its walk builds on kernel terms (`OpenBinderTrace`, `OpenSortTrace`). That term is not
-read off the heap exactly, so the facts IxC's check of the telescope constant asks of its type
+read off the heap exactly, so the facts IxCK's check of the telescope constant asks of its type
 come from the walk and not from the heap:
 
 * `Trace.allLevelParamsDefined`: a head trace keeps the level parameters of its term within

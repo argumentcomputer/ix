@@ -314,11 +314,11 @@ private def buildGraphTests (root : FilePath) : IO Unit := do
         rejects label fragment checkGraph
   offend api "IxCCGrounding.Check" "production imports the grounding library"
     "production imports the grounding library"
-  offend api "IxC.Kernel.Denotes" "production imports the kernel's model"
+  offend api "IxCK.Kernel.Denotes" "production imports the kernel's model"
     "production imports the kernel's model"
   offend (root / "IxCCTests/IxonV3/Main.lean") "IxCCGrounding.Check"
     "a shared program imports the grounding library" "shared program tests-ixon-v3 imports the grounding library"
-  offend (root / "IxCCTests/Proofs.lean") "IxC.Kernel.Denotes"
+  offend (root / "IxCCTests/Proofs.lean") "IxCK.Kernel.Denotes"
     "the proof aggregate imports the kernel's model" "the shared proof aggregate imports the kernel's model"
   let gfence := root / IxCC.Tools.BuildGraph.groundingFence
   let gsource ← IO.FS.readFile gfence
@@ -423,7 +423,7 @@ private def repositoryTests (temporary repositoryRoot root blake : FilePath) (le
     rejects "repository toolchain" "the repository's lean-toolchain differs from the project's" audited
 
 /-- The workspace dependency (the kernel package) is pinned by its path
-(`../IxC` from `IxCC/` inside ix): the manifest and the ledger must agree on
+(`../IxCK` from `IxCC/` inside ix): the manifest and the ledger must agree on
 it, the path must be relative and hold that package, and the pin records
 nothing else. -/
 private def workspaceDependencyTests (root blake : FilePath) (ledger : Json) : IO Unit := do
@@ -453,7 +453,7 @@ private def workspaceDependencyTests (root blake : FilePath) (ledger : Json) : I
     rejects "workspace manifest path" "Lake dependency inventory drifted" audited
   withPaths recorded (workspace ++ [("lake_rev", toJson (String.ofList (List.replicate 40 '0')))]) do
     rejects "workspace pin with a revision" "pins only its path" audited
-  withPaths "/ix/IxC" [("workspace_path", toJson "/ix/IxC")] do
+  withPaths "/ix/IxCK" [("workspace_path", toJson "/ix/IxCK")] do
     rejects "absolute workspace path" "must be relative" audited
   withFile (root / recorded / "lakefile.lean") "import Lake\nopen Lake DSL\n\npackage other where\n" do
     rejects "workspace path holding another package" "does not hold its lakefile.lean" audited
@@ -670,7 +670,7 @@ private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.w
     "test fixture: the ledger records a native interface"
   let check := audit root [("Blake3", blake.toString)] (some "6.3.0")
   check
-  withFile (root / "IxCC/AuditRegression.lean") "import IxC.Ixon.Verify\n" do
+  withFile (root / "IxCC/AuditRegression.lean") "import IxCK.Ixon.Verify\n" do
     rejects "unledgered pure dependency import" "imports of pure Lean dependencies drifted" check
   let codec := ixCSources / ixClosure.head!
   let rehashedCodec : IO Json := rehashClosure originalLedger ixIndex ixClosure.head! codec
@@ -686,9 +686,9 @@ private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.w
     withFile ledgerPath (← rehashedCodec).compress do
       rejects "native_decide in the kernel closure" "native_decide in rogue_nd is not a listed native_decide site" check
   for command in ["public import", "meta import", "import all"] do
-    withFile codec ((← IO.FS.readFile codec) ++ s!"\n{command} IxC.Ixon.Verify\n") do
+    withFile codec ((← IO.FS.readFile codec) ++ s!"\n{command} IxCK.Ixon.Verify\n") do
       withFile ledgerPath (← rehashedCodec).compress do
-        rejects s!"{command} outside the kernel closure" "imports IxC.Ixon.Verify outside the recorded closure" check
+        rejects s!"{command} outside the kernel closure" "imports IxCK.Ixon.Verify outside the recorded closure" check
   -- the reviewed dependency csimp inventory is exact: dropping a listed
   -- theorem is refused
   withFile ledgerPath (← changeDependency originalLedger ixIndex fun entry => do

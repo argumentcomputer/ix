@@ -1,6 +1,6 @@
-import IxC.Kernel.Verify.Cached.KnotC
-import IxC.Kernel.Verify.Rules.Bridge
-import IxC.Kernel.Model.Rules.Sound
+import IxCK.Kernel.Verify.Cached.KnotC
+import IxCK.Kernel.Verify.Rules.Bridge
+import IxCK.Kernel.Model.Rules.Sound
 import IxCC.Src.KernelFront.Proof
 
 /-!

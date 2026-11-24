@@ -481,8 +481,8 @@ other proofs and composed by aggregation of claims about the same addresses:
 
 > "If both accept the same bytes, and we can use a certified IxVM to create a
 > certificate of typing, then presumably we could enforce that IxCC only runs
-> over inputs accepted by IxC via an IxVM proof (provided the IxVM <-> IxC
-> certification is solid)." (The owner, 2026-11-10; IxC is IxCK's former
+> over inputs accepted by IxCK via an IxVM proof (provided the IxVM <-> IxCK
+> certification is solid)." (The owner, 2026-11-10; IxCK is IxCK's former
 > name. The plan is written on this basis, to be confirmed as DC-3 in the
 > [roadmap](roadmap.md#decisions-to-confirm).)
 
@@ -900,7 +900,7 @@ them). The landed family is unchanged in text and meaning.
 **Over #678's fields themselves.** `Laws678` holds verbatim copies of the five fields of #678's
 public `Model` the family uses (`defn_value`, `iota_rule` with its graded conjunct, `proj_law`,
 `lit_ops`, `cval_params`) and of the definitions behind them, from `jcb/ixvmc-int` at `d4c079de2`
-(`IxC/Kernel/Denotes.lean`, the line range of each recorded in `IxCCGrounding/Laws.lean`); they are
+(`IxCK/Kernel/Denotes.lean`, the line range of each recorded in `IxCCGrounding/Laws.lean`); they are
 to be compared again at the ingest and then replaced by #678's own. `lawsNoCanon_of_678`
 (`IxCCGrounding/Adapt678.lean`) derives `LawsNoCanon` from them at a reading where every `Nat` role
 the reading stores is stored as a definition (`LitDefs`, decided by `litDefsB`: one lookup per role;
@@ -994,7 +994,7 @@ against every `case` instance): 0.9 ms compiled on `tags125` (41 instances), 170
 `rootSound_678G` and `rootSound_678G_of_check` (`IxCCGrounding/Graded.lean`) conclude word for word
 what `rootSound_678A` does, with **no typing hypothesis**: `SitesOkRes` (typing at the sites the
 syntactic direct route refuses) is discharged from a sixth field of #678's model, `graded`
-(`GradedLaw`, copied verbatim from `jcb/ixvmc-int` at `d4c079de2`, `IxC/Kernel/Denotes.lean:504-511`;
+(`GradedLaw`, copied verbatim from `jcb/ixvmc-int` at `d4c079de2`, `IxCK/Kernel/Denotes.lean:504-511`;
 #678's `model_exists` returns a model with it, `Model/Iota.lean:1354`), taken as a hypothesis beside
 `Laws678`, and a decided fact, `HeadRegimeRes` (`headRegimeResB`). `graded` says every stored type and
 definition value has a graded reading: at every application node, under every binder at every member
@@ -1127,7 +1127,7 @@ for them, and `Direct/Check.lean` hosts the helpers 1a and 1b read (`KTab`, `pwA
 | --- | --- |
 | `rootSound_678`, `fibRoot_678`, `decideRoot_678`, `allP_of_check_678`, `const_of_check_678`, `rootSound_678A`, `rootSound_678A_of_check` | five (`Laws678`: `defn_value`, `iota_rule`, `proj_law`, `lit_ops`, `cval_params`), and `SitesOkRes` as a hypothesis (discharged by the direct route where it refuses nothing) |
 | `rootSound_678AS` | five (`Laws678`), and `SitesOk` (every run-term site) as a hypothesis |
-| `rootSound_678G`, `rootSound_678G_of_check` | six: `Laws678` and `graded` (`GradedLaw`, `d4c079de2`, `IxC/Kernel/Denotes.lean:504-511`); no typing hypothesis; the direct route at the run-term sites it accepts |
+| `rootSound_678G`, `rootSound_678G_of_check` | six: `Laws678` and `graded` (`GradedLaw`, `d4c079de2`, `IxCK/Kernel/Denotes.lean:504-511`); no typing hypothesis; the direct route at the run-term sites it accepts |
 | `rootSound_678AG`, `rootSound_678AG_of_check` | six: `Laws678` and `graded`; no typing hypothesis; no direct route at run-term sites (`RecSites` still decided by it inside the check) |
 | `rootSound_678AGp_of_check` | six: `Laws678` and `graded`, every check read on `selEnv` (step Ap, below); `autoParam`/`optParam` binders in an `eqn` function's type admitted, which needs `graded`, so the five-field families and 1a's keep refusing those `eqn` entries |
 | `rootSound_678ASW`, `rootSound_678AGW`, `rootSound_678AGW_of_check`, `rootSound_678AGpW_of_check` | six: `Laws678` and `graded`, as `rootSound_678AGp_of_check`; the word family (step W, below): the check `groundCheckW` has the decided word conjunct `word` for `noWord`, so fixed-width word entries are admitted (`graded` and `proj_law` also type the word towers) |
@@ -1136,7 +1136,7 @@ for them, and `Direct/Check.lean` hosts the helpers 1a and 1b read (`KTab`, `pwA
 **A `let` in a run term (step C, since 2026-11-13).** The kernel stores a run term's ζ-reduct: its
 annotation pass substitutes every `let` away, and **neither `Denotes` reads a `let`** (ours,
 `IxCK/Kernel/Denotes.lean`, has no `letE` rule; #678's says so at `d4c079de2`,
-`IxC/Kernel/Denotes.lean:635`: a stored term has no `let`). So a `let` in a Src run term corresponds
+`IxCK/Kernel/Denotes.lean:635`: a stored term has no `let`). So a `let` in a Src run term corresponds
 to the stored term through a substitution `σ` from Src variables to kernel terms (`TermCorrS`,
 `IxCCGrounding/Syntax.lean`; decided by `corrSB`, which `valueCorr` and `eqnCorr` now evaluate at
 `σ = []` in place of `termCorrB`): a λ-bound variable stands for its kernel variable; a **live**

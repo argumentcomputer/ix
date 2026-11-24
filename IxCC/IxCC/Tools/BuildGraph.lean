@@ -102,7 +102,7 @@ def groundingAssertions (root : FilePath) (graph : Json) : IO (List String × Li
 
 /-- The kernel's model, which only the grounding library may import. -/
 def modelModule (name : String) : Bool :=
-  ["IxC.Kernel.Denotes", "IxC.Kernel.SetModel", "IxC.Kernel.SetTheory", "IxC.Kernel.Verify"].any
+  ["IxCK.Kernel.Denotes", "IxCK.Kernel.SetModel", "IxCK.Kernel.SetTheory", "IxCK.Kernel.Verify"].any
     fun p => name == p || name.startsWith (p ++ ".")
 
 /-- The executables built by `ixcc-grounding` rather than by the shared program build. -/

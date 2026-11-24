@@ -1667,7 +1667,7 @@
  "9f47a166392d75c5d925f9d8878818058e55ac3198aaf7ef87d6fc42a59675f9",
  "grounding_axiom_count": 447,
  "baseline":
- "ixcc-v5: Ixon v5 migration (R4-R10, N1-N7), N5 IxC.Resource.check mode gate, direct IxC.Kernel.Model grounding (447 fences)",
+ "ixcc-v5: Ixon v5 migration (R4-R10, N1-N7), N5 IxCK.Resource.check mode gate, direct IxCK.Kernel.Model grounding (447 fences)",
  "axiom_sha256":
  "efe157756a1d4a4ca217883d0b3dd30a02ec969b88be6ecec9b09203da6bcc98",
  "axiom_count": 6531}

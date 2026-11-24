@@ -3,32 +3,32 @@ import IxVMRefinement.Decl.ModeledAux
 import IxVMRefinement.FamilyAlias.Target
 import IxVMRefinement.FamilyGraph.Graph
 import IxVMRefinement.Assembly.RecRhsPw
-import IxC.Kernel.Model.FoldLate
-import IxC.Kernel.Model.ThmLevels
-import IxC.Kernel.Model.StoreArKeep
+import IxCK.Kernel.Model.FoldLate
+import IxCK.Kernel.Model.ThmLevels
+import IxCK.Kernel.Model.StoreArKeep
 
-/-! # The step of a second family record: its target at IxC's twin record
+/-! # The step of a second family record: its target at IxCK's twin record
 
 A run may accept a second recursor record `rb'` for a mutual or nested block `B` whose family
-record `rb` is installed (`FamilyGraph.twinBlock`). Its unit is stepped by IxC's twin route:
+record `rb` is installed (`FamilyGraph.twinBlock`). Its unit is stepped by IxCK's twin route:
 the one statement that step has to produce from the circuit is `TwinStepTarget`, whose
-conclusion is IxC's own record `DeclRecTwinRunJ` at the positional package `twinPosRulesJ`
+conclusion is IxCK's own record `DeclRecTwinRunJ` at the positional package `twinPosRulesJ`
 (derivations on the terms at positional level parameters, which is how the circuit types a
 recursor whose level parameters are a permutation of the positions).
 
 * `TwinStepTarget`: from the accepted family check of the block with the second record, at any
   limit of the role context, the prefix invariant at that limit, what the record uses stored,
   and the block's family record installed (each of its recursors stored with its model
-  companion): the second record's declaration as read, IxC's twin record for it, each member
+  companion): the second record's declaration as read, IxCK's twin record for it, each member
   stored as a constant that stores its reading, and a model companion at each member.
 * What the fold gets from the conclusion (`envModelN_twinStep`, `declStoreInv_twinStep`,
-  `thmLevels_twinStep`, `twinStep_consts`): IxC's fold invariant with a registry in every set
+  `thmLevels_twinStep`, `twinStep_consts`): IxCK's fold invariant with a registry in every set
   theory, the store facts, the theorems' level parameters, and the constants the step adds (the
   twin recursors at the record's keys and model copies at derived keys).
 * `FamilyRecsModeled`: the clause a fold carries so that the twin's step finds the block's
   family record installed with its companions; the family step establishes it
   (`modelSide_of_target`) and the twin step keeps it (the target's last conjunct).
-* The generated terms. IxC's record asks, of each recursor and each rule, one generated term
+* The generated terms. IxCK's record asks, of each recursor and each rule, one generated term
   related by `WrapRel` to the stored canonical one and to the twin's, which is the canonical
   term itself or is typed (`TwinTypeGen`, `TwinRuleGen`). Where the canonical term is above the
   twin's, no further fact is needed (`twinTypeGen_of_canonical_above`,
@@ -102,7 +102,7 @@ family record); the prefix invariant at that limit, with every stored derived ke
 (`Decl.AuxRootSynced`, a part of the fold's clause); what the second record uses, stored; the
 block's family record installed (wherever the record itself is: in the run's store, or, for a
 stored family, in the witness's); freshness and key freedom of the second record's constant
-addresses. The conclusion is the second record's declaration as read, IxC's twin record for it
+addresses. The conclusion is the second record's declaration as read, IxCK's twin record for it
 over the positional package, each member stored after the step as a constant that stores its
 reading, a model companion at each member, the scoped core's role and record companions after
 the step, and the reload of each new constant at the key of an address. -/
@@ -138,7 +138,7 @@ def TwinStepTarget (RForm : RecordFormPred) : Prop :=
 
 /-! ## What the fold gets from the conclusion -/
 
-/-- **IxC's fold invariant with a registry across the twin step**: the twin block extends the
+/-- **IxCK's fold invariant with a registry across the twin step**: the twin block extends the
 model it is given (`declRecTwinJ`), and the registry is kept as it is. -/
 theorem envModelN_twinStep {env env₂ : Ix.Kernel.Env .anon}
     {block : List (ConstantInfo .anon)} {R : NativeFam .anon → Prop}
@@ -188,7 +188,7 @@ theorem twinStep_consts {J : Judgements .anon} {env env₂ : Ix.Kernel.Env .anon
     exact ⟨w.cvW.name, rfl⟩
 
 /-- **The arity of the stored terms across the twin step** (a statement; not proved here): from
-IxC's twin record, the stored terms after the block are arity-correct and resolve when the
+IxCK's twin record, the stored terms after the block are arity-correct and resolve when the
 prefix's are. -/
 def TwinKeepsStoreAr : Prop :=
   ∀ (env env₂ : Ix.Kernel.Env .anon) (block : List (ConstantInfo .anon)),
@@ -275,13 +275,13 @@ theorem familyRecsStored_of_clause {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
   obtain ⟨⟨cv, mI, rP, rules, hf, ci₀, hrd, hst⟩, -⟩ := h B rb x crb hrb hcrb hx (hstored x hx)
   exact ⟨.recInfo cv mI rP rules, ci₀, hf, hrd, hst⟩
 
-/-! ## The generated terms of IxC's twin record -/
+/-! ## The generated terms of IxCK's twin record -/
 
 section Generated
 
 variable {J : Judgements .anon} {env : Ix.Kernel.Env .anon}
 
-/-- **A term is typed as IxC's twin record asks of a generated term**: closed, over the given
+/-- **A term is typed as IxCK's twin record asks of a generated term**: closed, over the given
 level parameters, resolved, bounded, and inferred at the environment. -/
 def GenTyped (J : Judgements .anon) (env : Ix.Kernel.Env .anon) (lps : List LevelParam)
     (g : KExpr) : Prop :=

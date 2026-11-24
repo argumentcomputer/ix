@@ -1,6 +1,6 @@
 import Ix.IxVM.Refinement.Claim
-import IxC.Kernel.Ingress.Records
-import IxC.Kernel.Verify.Cached.Reference
+import IxCK.Kernel.Ingress.Records
+import IxCK.Kernel.Verify.Cached.Reference
 
 /-! # The kernel's admission of a role table, executed
 

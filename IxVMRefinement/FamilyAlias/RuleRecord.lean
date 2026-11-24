@@ -3,7 +3,7 @@ import IxVMRefinement.FamilyAlias.Enter
 
 /-! # A rule's record from its facts and its alias
 
-IxC's renamed rule record `IotaRuleRenRunJ` (`IxC/Kernel/Model/IndRenRecord.lean`) over the family
+IxCK's renamed rule record `IotaRuleRenRunJ` (`IxCK/Kernel/Model/IndRenRecord.lean`) over the family
 package `famJ h`, at the environment `envM` after the family's types and constructors and the
 environment `envSelf` after its recursors without rules, from a rule's facts with its alias
 found (`RuleAliased`, `FamilyAlias/RuleAliasGroup.lean`): `iotaRuleRenRunJ_of_aliased`.

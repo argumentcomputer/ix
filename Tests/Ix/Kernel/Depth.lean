@@ -1,4 +1,4 @@
-import IxC.Kernel.Admission.Bytes
+import IxCK.Kernel.Admission.Bytes
 
 /-! # Reduction steps and record counts take no native stack (`lake test -- kernel-depth`)
 

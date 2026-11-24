@@ -1,12 +1,12 @@
 import IxVMRefinement.Decl.PointModelTele
-import IxC.Kernel.Model.JudgeRules
-import IxC.Kernel.Model.Harvest
-import IxC.Kernel.Model.IndCons
-import IxC.Kernel.Model.IndCaps
-import IxC.Kernel.Model.Swap
-import IxC.Kernel.Model.CtxOkKit
-import IxC.Kernel.Semantics.IndBlockFacts
-import IxC.Kernel.Rules.Transport
+import IxCK.Kernel.Model.JudgeRules
+import IxCK.Kernel.Model.Harvest
+import IxCK.Kernel.Model.IndCons
+import IxCK.Kernel.Model.IndCaps
+import IxCK.Kernel.Model.Swap
+import IxCK.Kernel.Model.CtxOkKit
+import IxCK.Kernel.Semantics.IndBlockFacts
+import IxCK.Kernel.Rules.Transport
 
 /-! # The one-point interpretation of an inductive block, at the model tier
 

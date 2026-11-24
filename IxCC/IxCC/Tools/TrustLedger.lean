@@ -77,7 +77,7 @@ private def manifestPin (entry : Json) : IO (String × Pin) := do
 /-- How a pure Lean dependency is pinned (`source_kind`).
 
 - `workspace_path`: a package of the enclosing workspace, at `pins.workspace_path`
-  relative to the project root (`../IxC` inside ix); the pins hold nothing else.
+  relative to the project root (`../IxCK` inside ix); the pins hold nothing else.
 - `git`: a package Lake checks out at the revision `pins.lake_rev` (a full
   commit, which `lake-manifest.json` must record) and that Nix builds from the
   node `pins.flake_node` of the repository's `flake.lock` (locked at the same

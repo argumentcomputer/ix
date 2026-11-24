@@ -1,4 +1,4 @@
-import IxC.Kernel.Admission.Depth
+import IxCK.Kernel.Admission.Depth
 
 /-! # The depth scan before KI's rewrite: the oracle of `kernel-depth`'s `differential` case
 

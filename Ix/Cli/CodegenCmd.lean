@@ -1,6 +1,6 @@
 /-
   `ix codegen`: render the shared role specification shape fixture derived from
-  the verified IxC specification data, and IxVM's `KernelRoleSpec.lean`, which
+  the verified IxCK specification data, and IxVM's `KernelRoleSpec.lean`, which
   is rebuilt from the specification digest's bytes alone
   (`IxVM.RoleSpecGen.renderFromBytes`). `--check` fails when a file on disk
   differs, so the rendered circuit specification and the digest cannot drift
@@ -54,7 +54,7 @@ end Ix.Cli.CodegenCmd
 open Ix.Cli.CodegenCmd in
 def codegenCmd : Cli.Cmd := `[Cli|
   "codegen" VIA runCodegenCmd;
-  "Emit or verify the role-binding specification fixtures derived from IxC. With --out, also write the certified Aiur programs' generated native executors (and with --cuda their CUDA trace writers) for inspection."
+  "Emit or verify the role-binding specification fixtures derived from IxCK. With --out, also write the certified Aiur programs' generated native executors (and with --cuda their CUDA trace writers) for inspection."
 
   FLAGS:
     "check"; "Compare emitted fixtures against disk and exit 0 if identical, 1 otherwise."

@@ -5,7 +5,7 @@ import IxCCGrounding.Facts
 # From `Ix.Kernel.Model`'s fields to the canonicity-free laws (`IxCCGrounding.Adapt678`)
 
 `LawsNoCanon M`, the five laws the canonicity-free root theorems take, directly from
-`M : Ix.Kernel.Model V env` (`IxC/Kernel/Denotes.lean`):
+`M : Ix.Kernel.Model V env` (`IxCK/Kernel/Denotes.lean`):
 
 | `LawsNoCanon` field | from `Ix.Kernel.Model` | by |
 | --- | --- | --- |

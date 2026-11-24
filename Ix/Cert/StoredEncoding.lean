@@ -1,7 +1,7 @@
 import Ix.Cert.Resolution
 import Ix.Cert.Stream
-import IxC.Ixon.Verify.Framing
-import IxC.Ixon.Verify.BoundedConstant
+import IxCK.Ixon.Verify.Framing
+import IxCK.Ixon.Verify.BoundedConstant
 
 /-! # The compiled store is canonically encoded
 

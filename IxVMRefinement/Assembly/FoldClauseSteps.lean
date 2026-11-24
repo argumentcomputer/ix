@@ -5,8 +5,8 @@ import IxVMRefinement.Assembly.TypingRecLateNativeAux
 
 /-! # The steps that keep the fold's clause
 
-Each kind of accepted declaration step keeps `FoldClause` (`Assembly/FoldClause.lean`). The IxC
-half is kept by IxC's own lemmas from the step's judgement: `EnvModelN.declRunJ` and
+Each kind of accepted declaration step keeps `FoldClause` (`Assembly/FoldClause.lean`). The IxCK
+half is kept by IxCK's own lemmas from the step's judgement: `EnvModelN.declRunJ` and
 `EnvModelN.late` for the model, `storeFacts_declRunJA`, `storeFacts_lateTa` and the route's
 `StoreArR` lemma for the store facts. The rest is kept from what the step reads off its run.
 
@@ -45,7 +45,7 @@ open Ix.Kernel.Model (rulesJ EnvModelN EnvModelT ArRes StoreArR)
 /-! ## Value steps -/
 
 /-- **A declaration step that stores one constant that is no inductive type or constructor keeps
-the registry** (IxC's `EnvModelN.declRunJ`). -/
+the registry** (IxCK's `EnvModelN.declRunJ`). -/
 theorem FamRegistry.cons_declRunJ {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     (hL : LinkLaws L) {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {env : Ix.Kernel.Env .anon}
     {ci : ConstantInfo .anon}
@@ -421,7 +421,7 @@ theorem NativeAtFacts.newInd {blk : List (ConstantInfo .anon)} {nP nIdx : Nat}
       · cases he
       · exact hmem ci hold cv caps' he
 
-/-- **What IxC's former stage gives of the family an install at a given index count names**,
+/-- **What IxCK's former stage gives of the family an install at a given index count names**,
 at the environment after the install: the telescope constant's facts, the stored former's level
 parameters, and the telescope into the family's sort. The stored former and the telescope
 constant are not related here; at a former declared at a definition they differ. -/
@@ -451,9 +451,9 @@ theorem NativeAtFacts.famStage {blk : List (ConstantInfo .anon)} {nP nIdx : Nat}
     exact hstrip
 
 /-- **The install of a block whose former is declared at a definition keeps the clause**,
-registering its family. From the clause before and IxC's record of the install
+registering its family. From the clause before and IxCK's record of the install
 (`NativeAtFacts`): the model step registers the family (`EnvModelN.nativeAt`); the level
-clauses are IxC's along the routes (`thmLevels_declRunJA`, `storeArR_nativeAtRunJ`); the prefix
+clauses are IxCK's along the routes (`thmLevels_declRunJA`, `storeArR_nativeAtRunJ`); the prefix
 invariant is `PrefixInv.nativeAt`. What the step reads off its run: the load contract and η
 stability at the new environment, that the new keys resolve and are keys of 32-byte addresses
 or of none, and the family read off the store there. -/
@@ -618,7 +618,7 @@ theorem late_companions_read {P : _root_.Address} {ip : Ixon.InductiveProj}
 /-- **The clause at the environment with the recursor.** From the clause before, a registered
 family, the step's relation with the recursor `cn` in front, `cn` at the key of a 32-byte
 address, the companions at the new environment and the recursor's reload. The model step is
-IxC's `EnvModelN.late`; the eight store facts are `storeFacts_lateTa`, at the telescope
+IxCK's `EnvModelN.late`; the eight store facts are `storeFacts_lateTa`, at the telescope
 constant's facts the clause holds for the family; no field of the clause is taken through the
 prefix invariant. -/
 theorem FoldClauseWith.lateRec (hL : LinkLaws L) {fam : NativeFam .anon}

@@ -136,7 +136,7 @@ def flipOne : List (TermKey × List Relevance.Tag) → List (TermKey × List Rel
     | some i => (k, ts.set i (.arg .type)) :: rest
     | none => (k, ts) :: flipOne rest
 
-/-- Ixon v5 & `specVersion = 4` regression checks built directly on `IxC`'s committed
+/-- Ixon v5 & `specVersion = 4` regression checks built directly on `IxCK`'s committed
 v5 prelude records: exercises post-K3 `Reading.corrRec` mode-tamper refusals (λ/Π/let,
 multi-variant binderful shares, mutual definition blocks), N2 fail-closed stored
 zero-ness datum cross-checks (λ bodies, Π types, shared leading Πs, irrelevant lets,
@@ -558,7 +558,7 @@ def run : IO Bool := do
         | some sidecar => pairs := pairs.push (path, sidecar)
         | none => if ← plain.pathExists then pairs := pairs.push (path, plain)
     for line in ← LamRuns.run a pairs do IO.println line
-    -- Ixon v5 & specVersion = 4 checks (R7, R8, N2, N4, N5) on IxC's committed v5 prelude
+    -- Ixon v5 & specVersion = 4 checks (R7, R8, N2, N4, N5) on IxCK's committed v5 prelude
     v5Suite a
     -- `ixcc` at the command line (`Cli.suite`): limits, re-execution, signals, a deep record
     let dir ← IO.FS.createTempDir

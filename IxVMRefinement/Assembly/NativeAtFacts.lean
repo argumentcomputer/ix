@@ -1,20 +1,20 @@
 import IxVMRefinement.Assembly.NativeAliasFormer
 
-/-! # The install of a native block at a given index count, in IxC's terms
+/-! # The install of a native block at a given index count, in IxCK's terms
 
 `NativeAtFacts env env₂ blk nP nIdx p₀ fam` is `NativeNoRecFacts` (`NativeBlockFacts.lean`) with
 the block recognised at the index count `nIdx` (`Ix.Kernel.Model.nativePartsAt?`), which also
-reads a former declared at a definition. It is what the native block step concludes about IxC at
+reads a former declared at a definition. It is what the native block step concludes about IxCK at
 an alias former, where the former's stage is `sumIndRunJ_of_alias`'s. From it:
 
-* `NativeAtFacts.runJ`: IxC's record `NativeAtRunJ rulesJ env blk nP env₂`;
+* `NativeAtFacts.runJ`: IxCK's record `NativeAtRunJ rulesJ env blk nP env₂`;
 * `NativeAtFacts.declRunJ`: the declaration step over the routes `IndRoutesAJ`;
 * `NativeAtFacts.register`: the model step with the family registered;
 * `NativeAtFacts.envExt`: the environment extends.
 
 The declaration layer's invariants along a step of `IndRoutesAJ` (`FullDeclInv`, `FoldStoreInv`,
-`InstallStep`) are not restated here: their IxC store parts are in
-`IxC/Kernel/Model/Inductives/NativeAt.lean`; the IxVM parts (`StrongEnvProps`, `EtaShape`,
+`InstallStep`) are not restated here: their IxCK store parts are in
+`IxCK/Kernel/Model/Inductives/NativeAt.lean`; the IxVM parts (`StrongEnvProps`, `EtaShape`,
 `AuxRootSynced`, the install's shape) are the next step.
 -/
 
@@ -27,7 +27,7 @@ open Ix.Kernel.Model (nativePartsAt? NativeAtRunJ IndRoutesAJ rulesJ)
 
 universe w
 
-/-- **The install of a native block at a given index count, in IxC's terms** (module
+/-- **The install of a native block at a given index count, in IxCK's terms** (module
 docstring). The former is stored at `cvS` with the capability record `caps`, the telescope
 constant the later stages read is `cvTa`, the constructors are stored at `ctorsA`; `fam` is the
 family's summary. -/
@@ -61,7 +61,7 @@ section
 variable {env env₂ : Env .anon} {blk : List (ConstantInfo .anon)} {nP nIdx : Nat}
   {p₀ : NativeParts .anon} {fam : NativeFam .anon}
 
-/-- **IxC's record of the install.** -/
+/-- **IxCK's record of the install.** -/
 theorem NativeAtFacts.runJ (h : NativeAtFacts env env₂ blk nP nIdx p₀ fam) :
     NativeAtRunJ rulesJ env blk nP env₂ := by
   obtain ⟨hdp, hnd, isRec, cvS, cvTa, caps, p₁, p, ctorsA, sortss, kinds, tfvs, trest, isorts, -,

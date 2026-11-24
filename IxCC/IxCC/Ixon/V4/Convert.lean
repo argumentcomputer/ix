@@ -1,4 +1,4 @@
-import IxC.Ixon.Codec
+import IxCK.Ixon.Codec
 import IxCC.Ixon.V3.Const
 
 /-!
@@ -8,7 +8,7 @@ Ixon v5 moves `lam` and `all` binder modes and zero-ness data into each
 record's binder-data section (`Constant.binders`), puts `LetMode` in the `let`
 header, adds `Definition.asserts` and `Constructor.fieldModes`, and keeps the
 TagN wire encoding. The bytes are read and written by ix's pure codec
-(`IxC.Ixon.Codec`, ix's `IxC` package); IxCC imports the mode types directly
+(`IxCK.Ixon.Codec`, ix's `IxCK` package); IxCC imports the mode types directly
 and keeps its own copy of the expression and constant records, so no ix
 constant record reaches `Src` or the recheck path.
 

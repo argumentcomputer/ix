@@ -2,7 +2,7 @@ import IxVMRefinement.FamilyAlias.MembersRun
 
 /-! # The recursors of a family, provisioned from their facts
 
-IxC's renamed record first stores a family's recursors without rules, each at its annotated type
+IxCK's renamed record first stores a family's recursors without rules, each at its annotated type
 (`ProvisionRecsRunJ`), and lists what the install fold then walks. This module gives that run
 from the recursors' facts, as `MembersRun.lean` gives the run of the types and constructors: a
 recursor before its rules is a member like the others, with the same front door and the same

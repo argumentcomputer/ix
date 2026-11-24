@@ -515,7 +515,7 @@ def runSelfTests : IO Unit := do
      \x20 ],\n\
      \x20 \"lean_dependencies\": [\n\
      \x20   {\n\
-     \x20     \"lake_package\": \"«ix-kernel»\",\n\
+     \x20     \"lake_package\": \"«ix-ck»\",\n\
      \x20     \"closure\": {\n\
      \x20       \"z.lean\": \"hz0\",\n\
      \x20       \"a.lean\": \"ha0\"\n\
@@ -527,7 +527,7 @@ def runSelfTests : IO Unit := do
      \x20 ]\n\
      }\n"
 
-  -- 1. Round-trip fidelity (exact key order, empty arrays, UTF-8 «ix-kernel», 2-space indent)
+  -- 1. Round-trip fidelity (exact key order, empty arrays, UTF-8 «ix-ck», 2-space indent)
   let parsedLedger ← IO.ofExcept (Parser.parse sampleLedger)
   assertEq "roundtrip formatting" (pretty parsedLedger) sampleLedger
 
@@ -586,7 +586,7 @@ def runSelfTests : IO Unit := do
      \x20 ],\n\
      \x20 \"lean_dependencies\": [\n\
      \x20   {\n\
-     \x20     \"lake_package\": \"«ix-kernel»\",\n\
+     \x20     \"lake_package\": \"«ix-ck»\",\n\
      \x20     \"closure\": {\n\
      \x20       \"z.lean\": \"hz0\",\n\
      \x20       \"a.lean\": \"ha0\"\n\
@@ -608,8 +608,8 @@ def runSelfTests : IO Unit := do
 
   -- 4. Closure update preserving key order
   let closureUpdate ← IO.ofExcept (Parser.parse "{\"a.lean\": \"ha1\", \"unused.lean\": \"hu\"}")
-  let mergedCl ← IO.ofExcept (mergeClosure merged1 closureUpdate "«ix-kernel»")
-  let mergedCl2 ← IO.ofExcept (mergeClosure mergedCl closureUpdate "«ix-kernel»")
+  let mergedCl ← IO.ofExcept (mergeClosure merged1 closureUpdate "«ix-ck»")
+  let mergedCl2 ← IO.ofExcept (mergeClosure mergedCl closureUpdate "«ix-ck»")
   assertEq "mergeClosure idempotence" (pretty mergedCl2) (pretty mergedCl)
   unless ((pretty mergedCl).splitOn "\"z.lean\": \"hz0\",\n        \"a.lean\": \"ha1\"").length == 2 do
     throw <| IO.userError s!"selftest FAILED [mergeClosure]: unexpected output:\n{pretty mergedCl}"

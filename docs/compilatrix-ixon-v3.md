@@ -86,8 +86,8 @@ addresses; `ixon-v4-tests --primitives` then validates that closure.
 `--export-fixtures` writes `claims.tsv` to `ixon-v4-fixtures/` in the scratch
 directory; copy it into the fixture directory only after validation.
 
-The formal gates are `lake -d IxC build --wfail` (the Ixon codec contracts
-under `IxC/Ixon/Verify`, including the TagN laws, with their audit
-`IxC/Ixon/Audit.lean`) and `lake build --wfail IxSharingVerify` (the
+The formal gates are `lake -d IxCK build --wfail` (the Ixon codec contracts
+under `IxCK/Ixon/Verify`, including the TagN laws, with their audit
+`IxCK/Ixon/Audit.lean`) and `lake build --wfail IxSharingVerify` (the
 canonical sharing construction, `IxSharingVerify`, with its audit). The mode
 checker is uncertified.

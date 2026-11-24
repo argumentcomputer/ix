@@ -1,5 +1,5 @@
 import IxVMRefinement.Guard.InferRep
-import IxC.Kernel.Semantics.Inductives.DeclNativeJ
+import IxCK.Kernel.Semantics.Inductives.DeclNativeJ
 
 /-! # Installation field sorts with actual classifier provenance
 

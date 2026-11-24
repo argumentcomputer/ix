@@ -5,7 +5,7 @@ import IxVMRefinement.Core.Specs.Common
 One spec per in-scope function of `KernelDefEq` (55). The target is the rules tier's
 definitional equality `Ix.Kernel.Rules.DefEq` (no transitivity): every tier's answer `1` lands in
 a rule whose premises the circuit establishes, chaining "reduce, then continue" through `redL`
-and its derived right-hand variants (`IxC/Kernel/Rules/Derived.lean`). Nothing is claimed for an
+and its derived right-hand variants (`IxCK/Kernel/Rules/Derived.lean`). Nothing is claimed for an
 answer `0`.
 
 **A yes is any answer other than `0`.** The circuit tests several of these answers against `0`
@@ -121,7 +121,7 @@ def k_is_def_eq : SpecFn := fun c args h r _ calls => DeClaim c args h r calls
 /-- `k_def_eq_rebase(rc, a, b, types, base)`: **answer `1` is `DefEq` at the caller's depth.**
 The inner run compares the inputs lowered past their unused innermost `g` opened variables, at
 depth `d - g` under the trimmed context; its `DefEq` is moved back to depth `d` by
-`DefEq.lift` (`IxC/Kernel/Rules/Transport.lean`), which reads that the stored terms are closed
+`DefEq.lift` (`IxCK/Kernel/Rules/Transport.lean`), which reads that the stored terms are closed
 (`EnvFacts.storeClosed`) and fixes the images because the ghost context is scoped
 (`GhostScoped`, in `c.types`). `base` is unconstrained (`ctx_trim` keeps a segment with the same
 top end whatever it is). -/

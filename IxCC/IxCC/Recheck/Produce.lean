@@ -92,7 +92,7 @@ acceptance of the whole environment (refused with the kernel's reason and
 classification, code `kernel`, or `kernelLimitCode` for a decline by a limit; only role-bound environments
 are accepted; the kernel runs under `limits`, IxCC's decoder caps by default), the N5
 mode-checker hook (`modeCheck`, defaulting to `Src.KernelFront.defaultModeCheck`, which runs
-`IxC.Resource.check`), the records the seeds reach (`Src.Ingress.reach` from the
+`IxCK.Resource.check`), the records the seeds reach (`Src.Ingress.reach` from the
 seeds of the whole sidecar and the kernel's admitted role table, `Seeds.of`; a reached record
 over IxCC's consumer budget is refused with code `decode`), IxCC's reading of
 them into the table-free `Src.Program` for the chosen roots with the pinned

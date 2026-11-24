@@ -1,9 +1,9 @@
 import IxVMRefinement.Iota.Scan
 import IxVMRefinement.Core.AllSteps
 import IxVMRefinement.Decl.NativeFront
-import IxC.Kernel.Verify.Inductives.FixInv
-import IxC.Kernel.Verify.InstLevels
-import IxC.Kernel.Verify.Subst
+import IxCK.Kernel.Verify.Inductives.FixInv
+import IxCK.Kernel.Verify.InstLevels
+import IxCK.Kernel.Verify.Subst
 
 /-! # The runs of the circuit's `struct_is_rec` scans, read directly
 

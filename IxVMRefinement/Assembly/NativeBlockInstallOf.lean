@@ -8,7 +8,7 @@ import IxVMRefinement.Assembly.NativeBlockNamed
 `ctorOuts_of_member_named`) and distinct names in the prefix, the constants the install puts in
 front of the prefix (`new`), with
 
-* IxC's install with the family named (`NativeNoRecFacts`, the telescope constant the stored
+* IxCK's install with the family named (`NativeNoRecFacts`, the telescope constant the stored
   former);
 * `BlockInstall` (the new constants as the store reads them, `NativeBlockNewFacts.lean`);
 * what `UnitStep` asks of `new`: distinct names, fresh in the prefix, a constant at the key of
@@ -289,7 +289,7 @@ theorem member_bounds {t : Ix.Kernel.RoleTable} {calls : List (Call F)} {E₀ : 
 
 /-! ## The install's new constants -/
 
-/-- **What a native block's install puts in front of the prefix** (module docstring): IxC's
+/-- **What a native block's install puts in front of the prefix** (module docstring): IxCK's
 install with the family named, `BlockInstall`, and what `UnitStep` asks of the new constants. -/
 structure NativeInstallOut (t : Ix.Kernel.RoleTable) (E₀ E : Ixon.Env) (n : Nat)
     (env : Ix.Kernel.Env .anon) (B : _root_.Address) (cb : Ixon.Constant)
@@ -331,7 +331,7 @@ structure NativeInstallOut (t : Ix.Kernel.RoleTable) (E₀ E : Ixon.Env) (n : Na
     tbl.structName = Core.keyOf t (Core.iprjAddr B 0)
 
 /-- **The table stage of a native block's install ran at sorts the classifier checked**: a
-recursion flag and field sorts with `StageSortsChecked`, at which IxC's table stage, run after
+recursion flag and field sorts with `StageSortsChecked`, at which IxCK's table stage, run after
 the stage of that flag with the constructors stored, gives the environment of the install; and
 the result sort of the completed parts is the recognised block's. With
 `Guard.projGuardCert_of_checkNativeTable` this is what a certificate of the new projection table

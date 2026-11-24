@@ -15,7 +15,7 @@ them for either context, beside the earlier ones, with the same proofs: none of 
 role context's limit, and each runs the scoped specifications at the context of the given
 limit. At `lim = some n` each is the earlier statement.
 
-* `nativeNoRecFacts_of_outs_named_with_lim`: IxC's no-recursor install from the two stages'
+* `nativeNoRecFacts_of_outs_named_with_lim`: IxCK's no-recursor install from the two stages'
   outputs, with a property of the recursion flag and the sorts handed through.
 * `InstallSortsCheckedLim`, `nativeInstallOut_of_member_checked_lim`: the new constants of the
   install, and the table stage ran at sorts the classifier checked. The limit index of the
@@ -43,7 +43,7 @@ open LoadedReads (canonAnn canonRawAnn)
 
 universe u
 
-/-- **IxC's no-recursor install of the block, from the outputs of its two stages, with the family named and a property of the sorts handed through, at either role context**: `nativeNoRecFacts_of_outs_named_with` with the member's check read under the
+/-- **IxCK's no-recursor install of the block, from the outputs of its two stages, with the family named and a property of the sorts handed through, at either role context**: `nativeNoRecFacts_of_outs_named_with` with the member's check read under the
 role context of the limit `lim : Option Nat` (`Claim.MemberCheckedLimAt`) and the prefix
 invariant at that limit; the same proof. -/
 theorem nativeNoRecFacts_of_outs_named_with_lim {calls : List (Call F)} {t : Ix.Kernel.RoleTable}

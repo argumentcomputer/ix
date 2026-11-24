@@ -1,6 +1,6 @@
 import Ix.CompileCert.ReaderSpines
 import Ix.CompileCert.Emission
-import IxC.Kernel.Ixon.ReaderSpec
+import IxCK.Kernel.Ixon.ReaderSpec
 
 /-! # The reader's syntactic walks follow the source
 

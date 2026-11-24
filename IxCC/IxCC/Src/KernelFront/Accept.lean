@@ -1,7 +1,7 @@
 import IxCC.Ixon.V3.Env
 import IxCC.Src.KernelFront.Order
-import IxC.Kernel.Admission.Tier
-import IxC.Resource.Check
+import IxCK.Kernel.Admission.Tier
+import IxCK.Resource.Check
 
 /-! # Acceptance of an environment by the certified kernel
 
@@ -457,7 +457,7 @@ theorem accept_spec {env : Ixon.V3.Env} {limits : Ix.Kernel.Admission.Limits} {a
 
 /-! ## N5 mode-checker hook
 
-Runs `IxC.Resource.check` on an accepted closure (`resourceModeCheck`): every
+Runs `IxCK.Resource.check` on an accepted closure (`resourceModeCheck`): every
 record's binder-data section must be complete and canonical (`recordWellFormed`),
 all-default logical closures take the O(records) `allDefault` fast path, and
 closures with non-default modes run the resource mode checker over the logical
@@ -467,10 +467,10 @@ seeds against `acc.env`. Callers may still supply a custom `ModeCheckHook`;
 /-- Extensible resource-mode checking gate invoked on an accepted closure (`N5`). -/
 abbrev ModeCheckHook := Accepted → Except Refusal Unit
 
-/-- N5 resource-mode checking gate backed by `IxC.Resource.check`. -/
+/-- N5 resource-mode checking gate backed by `IxCK.Resource.check`. -/
 def resourceModeCheck (acc : Accepted) : Except Refusal Unit := do
   for (a, c) in acc.constants do
-    (IxC.Resource.recordWellFormed a c).mapError fun e =>
+    (IxCK.Resource.recordWellFormed a c).mapError fun e =>
       { stage := .modeCheck, outcome := some .rejected,
         message := s!"malformed modes: {e}", record := some a }
   let constMap : Std.HashMap KAddr KConstant :=
@@ -478,19 +478,19 @@ def resourceModeCheck (acc : Accepted) : Except Refusal Unit := do
   let blobMap : Std.HashMap KAddr ByteArray :=
     acc.blobs.foldl (fun m (a, b) => m.insert a b) {}
   let logicalSeeds := (Ix.Kernel.Admission.partitionTier acc.constants).1.map (·.1)
-  let subject : IxC.Resource.Subject := {
+  let subject : IxCK.Resource.Subject := {
     table := acc.table
     store := (constMap[·]?)
     blob := (blobMap[·]?)
     seeds := logicalSeeds
   }
-  match IxC.Resource.allDefault subject with
+  match IxCK.Resource.allDefault subject with
   | .error e =>
     throw { stage := .modeCheck, outcome := some .rejected,
             message := s!"malformed modes: {e}" }
   | .ok true => pure ()
   | .ok false =>
-    match IxC.Resource.check {} acc.env subject with
+    match IxCK.Resource.check {} acc.env subject with
     | .accept _ _ => pure ()
     | .refuse at_ w =>
       throw { stage := .modeCheck, outcome := some .rejected,

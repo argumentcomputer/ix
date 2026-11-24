@@ -206,7 +206,7 @@ def buildPlan (cfg : EnvConfig) (formalTmp : FilePath) : Array Step := Id.run do
 
   -- Wave 1: independent codegen/Aiur unit/fixture checks and any missing `.ixa` exports.
   -- The IxVM and MultiStark modules are Lean source (`aiur⟦ … ⟧`). Only
-  -- IxVM/IxVM/Source/KernelRoleSpec.lean is rendered, from IxC's role specifications.
+  -- IxVM/IxVM/Source/KernelRoleSpec.lean is rendered, from IxCK's role specifications.
   let mut wave1 : Array (String × Array String × Array (String × Option String)) := #[
     (".lake/build/bin/ix", #["codegen", "--check"], env)
   ]

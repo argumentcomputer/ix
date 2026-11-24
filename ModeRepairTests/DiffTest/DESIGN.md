@@ -2,7 +2,7 @@
 
 Object under test: `checkBodies {}` against `runR`, unmodified, at `6db9089a7`, imported from
 `~/runs/ixcc/mo-mt`'s kernel package. The tester is a Lake package of ours (`probes/MT/difftest`,
-source `IxCC/plans/mt/difftest/`) with `require «ix-kernel» from "../../../mo-mt/IxC"`, reusing the
+source `IxCC/plans/mt/difftest/`) with `require «ix-ck» from "../../../mo-mt/IxCK"`, reusing the
 built `.lake/kernel` and linking one executable. If Lake will not reuse those artifacts, the fallback
 is interpreted, as `Findings.lean` was. Jobs go through `run.sh MT-dt-*`, capped at 8 GB.
 

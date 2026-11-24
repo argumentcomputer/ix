@@ -165,7 +165,7 @@ def backendSpecs : List BackendSpec := [
       ("prove", ["prove-time", "prove-throughput", "prove-peak-rss", "prove-proof-size", "verify-time"]),
       ("compress", ["compress-time", "compress-peak-rss", "compress-proof-size", "compress-verify-time"]),
       ("e2e", ["e2e-time", "e2e-peak-rss"])] },
-  -- ixvm-ooc: the out-of-circuit IxC kernel (`ix check-lean --anon`). The
+  -- ixvm-ooc: the out-of-circuit IxCK kernel (`ix check-lean --anon`). The
   -- constant rows check each constant's full closure in one process per
   -- env; the env row checks the whole env. The constant rows share
   -- that process, so its peak RSS is the env load, not the constant.

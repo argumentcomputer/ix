@@ -173,8 +173,8 @@
             fileset = pkgs.lib.fileset.unions [
               # What `lake build` reads: Lean sources, manifests, FFI shims.
               (withoutIxcc (pkgs.lib.fileset.fromSource (lake2nix.cleanLakeSource ./.)))
-              ./IxC/lake-manifest.json
-              ./IxC/lean-toolchain
+              ./IxCK/lake-manifest.json
+              ./IxCK/lean-toolchain
               # The pinned verifying keys `FormalAiurKeys` embeds.
               ./tools/formal-aiur.keys
             ];
@@ -375,7 +375,7 @@
 
           # The certified compiler, IxCC/ (its own Lake package, «ix-cc»), with
           # this flake's toolchain and Blake3 build. Its expressions select
-          # their sources from the workspace: IxCC/, the IxC codec closure its
+          # their sources from the workspace: IxCC/, the IxCK codec closure its
           # trust ledger records, and for the ledger check flake.lock and the
           # workflows the ledger scopes. A host-only change leaves its
           # derivations unchanged. See IxCC/docs/ci.md.

@@ -1,5 +1,5 @@
 import IxVMRefinement.Binding.FamilyReconStore
-import IxC.Kernel.Semantics.Inductives.WrapRel
+import IxCK.Kernel.Semantics.Inductives.WrapRel
 
 /-! # Full consumption: the other declared type a family check accepts
 
@@ -16,7 +16,7 @@ This module models `wrap_rel` at `sm = 1`, mirroring the circuit (`KernelCheck.l
 
 * `wrapAt t E` (`get_ci`'s definition arm at a constant's address, `convert_definition`): the
   arity of the stored definition's value as a wrapper `λ x₁ … xₖ, x₁` whose λs all carry the datum
-  `never` (`lam_first_arity`; IxC's `lamFirstArity`). `none` where the load fails.
+  `never` (`lam_first_arity`; IxCK's `lamFirstArity`). `none` where the load fails.
 * `appHead`, `consumeOf`, **`consumeAt`** (`consume_wrapper`, `collect_spine`): a wrapper applied
   to exactly its arity leaves its first argument; `some none` where no wrapper is consumed.
 * `Consumes` (the loop of `wrap_dom` at `sm = 1`): the wrappers at a domain's head consumed one at
@@ -26,11 +26,11 @@ This module models `wrap_rel` at `sm = 1`, mirroring the circuit (`KernelCheck.l
   related as `kexpr_struct_eq` relates them (levels up to semantic equality); binder data by their
   zero-ness (`pw_eq`); and at every binder domain the generated domain's wrappers are consumed
   until none is left, the rest then related to the declared domain. Consumption is forced: unlike
-  IxC's `WrapRel`, a domain does not keep a wrapper it can lose.
+  IxCK's `WrapRel`, a domain does not keep a wrapper it can lose.
 * `FullCons.mono`, `wrapAt_mono`: a store holding the first's records and blobs answers the same.
 * `FullCons.congr_left`, `FullCons.congr_right`: up to the semantic equality of levels on either
   side (`ExprLvEq`).
-* `exprLvEq_wrapRel`, `FullCons.toWrapRel`, **`wrapRel_of_recon`**: IxC's `WrapRel` wherever IxC's
+* `exprLvEq_wrapRel`, `FullCons.toWrapRel`, **`wrapRel_of_recon`**: IxCK's `WrapRel` wherever IxCK's
   environment has the store's wrappers: a type equal to the reconstruction up to levels is above
   a type that is the reconstruction or its full consumption.
 * **`RecordRecon t E B rb`**: the form-agnostic record-level form, `RecordReconWith` at "the
@@ -370,7 +370,7 @@ theorem FullCons.congr_right {W : KKey → Option (Option Nat)} {g d : KExpr}
     cases hd with | letE ht hv hb => exact .letE (iht ht) (ihv hv) (ihb hb)
   | proj _ ih => intro d₁ hd; cases hd with | proj h1 => exact .proj (ih h1)
 
-/-! ## IxC's `WrapRel` -/
+/-! ## IxCK's `WrapRel` -/
 
 theorem wrapLevels_of_lvEqList :
     ∀ {us vs : List KLevel}, LvEqList us vs →
@@ -381,7 +381,7 @@ theorem wrapLevels_of_lvEqList :
   | _ :: _, [], h => False.elim (h fun _ => 0)
   | _ :: _, _ :: _, h => .cons (fun φ => (h φ).1) (wrapLevels_of_lvEqList fun φ => (h φ).2)
 
-/-- **Terms equal up to levels are related by IxC's `WrapRel`.** -/
+/-- **Terms equal up to levels are related by IxCK's `WrapRel`.** -/
 theorem exprLvEq_wrapRel (find? : KKey → Option (Ix.Kernel.ConstantInfo .anon)) {g d : KExpr}
     (h : ExprLvEq g d) : Ix.Kernel.Semantics.WrapRel find? g d := by
   induction h with
@@ -411,7 +411,7 @@ section WrapRel
 
 variable {W : KKey → Option (Option Nat)} {find? : KKey → Option (Ix.Kernel.ConstantInfo .anon)}
 
-/-- **A consumption of the store is one of IxC's environment** where the environment has the
+/-- **A consumption of the store is one of IxCK's environment** where the environment has the
 store's wrappers. -/
 theorem consumeAt_wrapper
     (hW : ∀ w n, W w = some (some n) → Ix.Kernel.Semantics.wrapperArity find? w = some n)
@@ -452,7 +452,7 @@ theorem Consumes.toWrapDom
   | refl _ => intro t' hr; exact .keep hr
   | step hc _ ih => intro t' hr; exact .consume (consumeAt_wrapper hW hc) (ih hr)
 
-/-- **Full consumption is IxC's `WrapRel`** where IxC's environment has the store's wrappers: the
+/-- **Full consumption is IxCK's `WrapRel`** where IxCK's environment has the store's wrappers: the
 consumed wrappers are consumed by `WrapDom.consume`, the rest kept. -/
 theorem FullCons.toWrapRel
     (hW : ∀ w n, W w = some (some n) → Ix.Kernel.Semantics.wrapperArity find? w = some n)
@@ -470,8 +470,8 @@ theorem FullCons.toWrapRel
   | proj _ ih => exact .proj ih
 
 /-- **The reconstruction above the reconstruction or its full consumption**: a type equal to the
-reconstruction `R` up to levels is above (IxC's `WrapRel`) a type that is `R` up to levels or `R`
-fully consumed, where IxC's environment has the store's wrappers. At a canonical record in
+reconstruction `R` up to levels is above (IxCK's `WrapRel`) a type that is `R` up to levels or `R`
+fully consumed, where IxCK's environment has the store's wrappers. At a canonical record in
 `RFormS` and a record in `RecordRecon`, member by member, this is the type part of the twin seam's
 `CanonAbove`. -/
 theorem wrapRel_of_recon

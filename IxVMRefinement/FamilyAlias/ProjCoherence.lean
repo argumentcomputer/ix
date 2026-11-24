@@ -1,14 +1,14 @@
 import IxVMRefinement.FamilyAlias.ProjFacts
 import IxVMRefinement.Assembly.FoldClause
 import IxVMRefinement.Assembly.NativeAliasOpenTrace
-import IxC.Kernel.Model.DeclIndRen
-import IxC.Kernel.Model.IndRenJudge
-import IxC.Kernel.Model.IndMembers
-import IxC.Kernel.Model.IndEtaLaw
-import IxC.Kernel.Model.IndUnitLaw
-import IxC.Kernel.Model.JudgeRules
-import IxC.Kernel.Rules.Inversion
-import IxC.Kernel.SetModel.TreeUnpack
+import IxCK.Kernel.Model.DeclIndRen
+import IxCK.Kernel.Model.IndRenJudge
+import IxCK.Kernel.Model.IndMembers
+import IxCK.Kernel.Model.IndEtaLaw
+import IxCK.Kernel.Model.IndUnitLaw
+import IxCK.Kernel.Model.JudgeRules
+import IxCK.Kernel.Rules.Inversion
+import IxCK.Kernel.SetModel.TreeUnpack
 
 /-! # Coherence of modeled structure projections
 

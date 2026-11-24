@@ -1,5 +1,5 @@
-import IxC.Kernel.Admission
-import IxC.Kernel.Cached.Installed
+import IxCK.Kernel.Admission
+import IxCK.Kernel.Cached.Installed
 import Ix.Address.Pure
 
 /-! The last carrier of an indexed motive can occur after a let. -/

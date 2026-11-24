@@ -1,8 +1,8 @@
 import Ix.IxVM.Refinement.Mirrors.KernelLevels
 import Ix.IxVM.Refinement.TagNWide
 import Aiur.Library.IxVMRep
-import IxC.Kernel.Level
-import IxC.Kernel.Verify.Level
+import IxCK.Kernel.Level
+import IxCK.Kernel.Verify.Level
 
 /-! # The KernelLevels slice: `RepKLevel` and universe level refinement
 

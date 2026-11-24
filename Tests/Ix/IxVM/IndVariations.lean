@@ -10,7 +10,7 @@ import Tests.Ix.IxVM.IndVariationsDefs
 # The inductive variations through three checkers
 
 `ixvm-ind-variations` (manual) runs every fixture through Lean's kernel, the
-certified kernel (IxC, `ixonVerdicts`, as `ix check-lean` checks a record) and
+certified kernel (IxCK, `ixonVerdicts`, as `ix check-lean` checks a record) and
 IxVM (a `CheckEnv` claim owning the fixture's records, everything else assumed,
 in circuit-verdict mode), and prints one row per fixture.
 
@@ -35,7 +35,7 @@ give (`expectedVerdict`): Lean's, except where the program refuses by design wha
 Lean accepts (`refusedByDesign`; a fixture that owns a recursor of a mutual or
 nested family, while `modeledRecursorsRefused`) and where a mutation Lean refuses
 never reaches the claim (`outsideTheClaim`). A `FAILED` line from the host is a
-disagreement with that expectation; the `IV` rows carry Lean's and IxC's
+disagreement with that expectation; the `IV` rows carry Lean's and IxCK's
 verdicts and the expectation. -/
 
 namespace Tests.Ix.IxVM.IndVariations
@@ -619,7 +619,7 @@ def outcomeOf (rows : List (Name × String × String)) : String :=
   | some (nm, o, r) => s!"{o} ({nm}: {(r.replace "\n" " ").take 160})"
   | none => "accept"
 
-/-- `env` with the records whose binder data the compiler left undecided given the data IxC's
+/-- `env` with the records whose binder data the compiler left undecided given the data IxCK's
 pass computes for them (`never` where it computes none), re-addressed with every record that
 names them; and the number of such records. Binder data are the prover's to choose: with
 undecided ones the program refuses a record at its first binder, before the check a fixture
@@ -657,7 +657,7 @@ def run (leanEnv : Environment) : IO UInt32 := do
           let (ok, msg, _) ← leanVerdict leanEnv decls replay
           pure (ok, msg)
       if f.records.isEmpty then
-        IO.println s!"IV\t{f.id}\t{f.kind}\t{f.dim}\tLean={leanMsg}\tIxC=n/a (no records)\tIxVM=n/a\t{f.intent}"
+        IO.println s!"IV\t{f.id}\t{f.kind}\t{f.dim}\tLean={leanMsg}\tIxCK=n/a (no records)\tIxVM=n/a\t{f.intent}"
       else
         -- the compile input: the records and the closure of what they use
         let names := f.records.map (·.name)
@@ -665,7 +665,7 @@ def run (leanEnv : Environment) : IO UInt32 := do
         let (_, closed) := Tests.Ix.Kernel.TutorialMeta.collectDepsWithExtras leanEnv {} seeds
         let input := (closed.filter fun (x, _) => !names.contains x) ++ f.records.map fun ci => (ci.name, ci)
         -- the compile writes each record's binder data with the kernel annotator, as
-        -- `ix compile` does; where IxC's environment does not install for a mutated input,
+        -- `ix compile` does; where IxCK's environment does not install for a mutated input,
         -- it leaves every binder undecided
         let canon := Ix.CompileM.canonInput input.toArray 32
         let (annotated, data) ← try
@@ -674,7 +674,7 @@ def run (leanEnv : Environment) : IO UInt32 := do
         -- These cases exercise the stored syntax, including primitive projection bodies.
         let (rawEnv, _, _) ← IO.ofExcept <| Ix.Cert.compileUnchecked annotated
         let missing := names.filter fun x => (rawEnv.getAddr? (Ix.Name.fromLeanName x)).isNone
-        -- IxC
+        -- IxCK
         let rows ← Tests.Ix.Kernel.SourceIngressCompare.ixonVerdicts rawEnv
         let ixcRows := names.filterMap fun x =>
           (rows[Ix.LeanIngress.ingressKey (Ix.Name.fromLeanName x)]?).map fun (o, r) => (x, o, r)
@@ -703,7 +703,7 @@ def run (leanEnv : Environment) : IO UInt32 := do
           builders := builders.push fun _ => pure { label, accept, rejectsWith, witness }
         | .error e => ixvm := s!"claim not built: {(e.replace "\n" " ").take 160}"
         let miss := if missing.isEmpty then "" else s!"\tnot compiled: {missing}"
-        IO.println s!"IV\t{f.id}\t{f.kind}\t{f.dim}\tLean={leanMsg}\tIxC={ixc}\tIxVM={ixvm}\tbinder data: {data}\t{f.intent}{miss}"
+        IO.println s!"IV\t{f.id}\t{f.kind}\t{f.dim}\tLean={leanMsg}\tIxCK={ixc}\tIxVM={ixvm}\tbinder data: {data}\t{f.intent}{miss}"
     catch e =>
       IO.println s!"IV\t{f.id}\t{f.kind}\t{f.dim}\tERROR\t{e}"
   Tests.Ix.IxVM.runCases "ixvm-ind-variations" builders (jobs := 8)

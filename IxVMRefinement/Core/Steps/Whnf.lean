@@ -5,9 +5,9 @@ import IxVMRefinement.Obs.KernelWhnf
 import IxVMRefinement.Obs.KernelTypes
 import IxVMRefinement.Obs.KernelLevels
 import IxVMRefinement.Obs.KernelRoles1
-import IxC.Kernel.Verify.InstLevels
+import IxCK.Kernel.Verify.InstLevels
 import IxVMRefinement.Lib.Lists
-import IxC.Kernel.Verify.InstList
+import IxCK.Kernel.Verify.InstList
 
 /-! # Step lemmas of `KernelWhnf`, on the registry
 

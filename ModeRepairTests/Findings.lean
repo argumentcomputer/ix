@@ -5,14 +5,14 @@ which cannot be imported (it imports the root package). Brought from `jcb/ixcc-m
 binder-data sections (Ixon v5). It prints and asserts nothing: the driver (`Main.lean`) asserts the
 same encodings. Run in this package: `lake -d ModeRepairTests env lean --run
 ModeRepairTests/Findings.lean [all|b4]` (see README.md). -/
-import IxC.Resource
-import IxC.Kernel.Ixon.Prelude
+import IxCK.Resource
+import IxCK.Kernel.Ixon.Prelude
 -- the tester's decision procedure for `InputsOk` (difftest/DiffTest/Hyp.lean); run from the difftest package
 import DiffTest.Hyp
 
 namespace MT.Findings
 
-open IxC.Resource Ixon
+open IxCK.Resource Ixon
 
 /-! ## COPIED verbatim from their Tests/Ix/ResourceModes.lean:36-152 at 6db9089a7 (branch jcb/ixvmc-mo) -/
 

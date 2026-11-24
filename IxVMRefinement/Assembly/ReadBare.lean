@@ -5,8 +5,8 @@ import Ix.Cert.CtxAgreeProjFields
 import Ix.Cert.SourceNames
 import Ix.Cert.EvidenceTransfer
 import Ix.Cert.ReadingKeys
-import IxC.Ixon.Verify.BoundedConstant
-import IxC.Kernel.Model.Restrict
+import IxCK.Ixon.Verify.BoundedConstant
+import IxCK.Kernel.Model.Restrict
 
 /-! # Bare stream reader completeness, empty `projLevels`, and structural `DeclNonAux`
 

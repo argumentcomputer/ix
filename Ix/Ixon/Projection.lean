@@ -1,8 +1,8 @@
 module
 
-public import IxC.Ixon.Codec
-public import IxC.Kernel.Admission
-public import IxC.Kernel.Egress.Projection
+public import IxCK.Ixon.Codec
+public import IxCK.Kernel.Admission
+public import IxCK.Kernel.Egress.Projection
 
 @[expose] public section
 

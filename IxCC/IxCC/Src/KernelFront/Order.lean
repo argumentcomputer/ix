@@ -1,4 +1,4 @@
-import IxC.Kernel.Ixon.Prelude
+import IxCK.Kernel.Ixon.Prelude
 
 /-! # The order the kernel's entry reads a closure in (untrusted)
 

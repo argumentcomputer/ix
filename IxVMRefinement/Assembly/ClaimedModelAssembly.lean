@@ -2,7 +2,7 @@ import IxVMRefinement.Assembly.ReaderFootprint
 import IxVMRefinement.Assembly.LayerSeams
 import IxVMRefinement.Assembly.PrefixLoad
 import Ix.IxVM.Consistency.Restrict
-import IxC.Kernel.Model.StoreCompanions
+import IxCK.Kernel.Model.StoreCompanions
 
 /-! # Final assembly (`AssemblyObligation`): `claimedEnv` model restriction, prefix fold, and `IxVM.consistent`
 

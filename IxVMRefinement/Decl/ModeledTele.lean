@@ -6,7 +6,7 @@ import IxVMRefinement.Obs.KernelModeled1
 import IxVMRefinement.Obs.KernelModeled4
 import IxVMRefinement.Obs.KernelCheck
 import IxVMRefinement.Obs.KernelWhnf0
-import IxC.Kernel.Verify.InstLevels
+import IxCK.Kernel.Verify.InstLevels
 
 /-! # Telescope, spine, renaming, and major-pin helpers for modeled declarations
 

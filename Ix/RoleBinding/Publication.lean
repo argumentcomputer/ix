@@ -3,8 +3,8 @@ module
 public import Ix.Ixon
 public import Ix.Compile.Parallel
 public import Ix.LeanIngress.Expr
-public import IxC.Kernel.Ixon.RoleTable
-public import IxC.Kernel.Ixon.Reader
+public import IxCK.Kernel.Ixon.RoleTable
+public import IxCK.Kernel.Ixon.Reader
 
 /-! # Role addresses from an artifact's published names
 

@@ -7,13 +7,13 @@ import IxVMRefinement.Assembly.NativeAliasRetHead
 
 `aliasInstallOut_of_member` produces `AliasInstallOut` (`Assembly/NativeAliasStep.lean`) from
 the walk's check of the block's member: both typed stages on one reading with the traced
-telescope (`aliasOuts_of_member_traced`), IxC's install at the registered family
+telescope (`aliasOuts_of_member_traced`), IxCK's install at the registered family
 (`nativeAtFacts_of_alias_outs_keys`), and the new constants named, found, fresh and read.
 
 * `NativeAtFacts.env_of_indexed`: the environment after an install at a family with an index
   is the stored constructors and the stored former in front of the prefix, with the former at
   the family's own capability record; the completed record, the telescope's sort and the
-  constructors' stage are read off IxC's record.
+  constructors' stage are read off IxCK's record.
 * `aliasInstallOut_of_member`: the output, at a check under the role context of either validator.
   The family's key is asked to be none of the four literal-function keys (`hliterals`): the
   typing fold has it from the full table (`alias_literal_keys_distinct`).

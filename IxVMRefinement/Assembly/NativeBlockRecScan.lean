@@ -1,7 +1,7 @@
 import IxVMRefinement.Assembly.NativeBlockRecScanRaw
 import IxVMRefinement.Assembly.NativeBlockNewFacts
 
-/-! # The circuit's `is_rec` verdict at a native block, read as IxC's recursion flag
+/-! # The circuit's `is_rec` verdict at a native block, read as IxCK's recursion flag
 
 `KernelWhnf::struct_is_rec` answers Lean's block-level `is_rec`: it loads the parent, computes the
 block's member addresses, and for each member scans the field domains of each constructor (after
@@ -18,7 +18,7 @@ reads the run directly:
   key whose addresses are members and at which no projection is permitted;
 * `Typing.struct_is_rec_doms`: **an answer other than `1` at the former of a one-member block means
   the canonical constructors' field domains (after the parameters) do not mention the former**;
-* `Typing.nativeIsRec_false_of_doms`: then IxC's recursion flag on the classified kinds is false.
+* `Typing.nativeIsRec_false_of_doms`: then IxCK's recursion flag on the classified kinds is false.
 -/
 
 
@@ -34,7 +34,7 @@ set_option maxHeartbeats 1600000
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
 
-/-! ## IxC's recursion flag from clean field domains -/
+/-! ## IxCK's recursion flag from clean field domains -/
 
 theorem mapM_option_mem {α β : Type} {f : α → Option β} :
     ∀ {l : List α} {r : List β}, l.mapM f = some r → ∀ b ∈ r, ∃ a ∈ l, f a = some b
@@ -90,7 +90,7 @@ theorem recCtorKinds_noRec {T : Core.KKey} {lps : List Ix.Kernel.LevelParam} {nP
       obtain ⟨i, hi, rfl⟩ := List.mem_map.mp hk
       decide
 
-/-- **IxC's recursion flag is false where no constructor's field domain mentions the family.** -/
+/-- **IxCK's recursion flag is false where no constructor's field domain mentions the family.** -/
 theorem nativeIsRec_false_of_doms {T : Core.KKey} {lps : List Ix.Kernel.LevelParam}
     {nP nIdx : Nat} {ctorsA : List (ConstantVal .anon × Nat)}
     {kinds : List (List Ix.Kernel.RecFieldKind)}
@@ -304,7 +304,7 @@ theorem struct_is_rec_doms {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
   rw [List.getD_eq_getElem?_getD, hb0, Option.getD_some]
   exact hdoms
 
-/-- **The circuit's `is_rec` verdict other than `1` gives IxC's recursion flag `false`**: for
+/-- **The circuit's `is_rec` verdict other than `1` gives IxCK's recursion flag `false`**: for
 the classified kinds of stored constructors each of which is the canonical annotation of a
 constructor slot's reading (as the named install stores them), at the family's key and the
 record's parameter count. -/

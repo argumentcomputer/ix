@@ -1,6 +1,6 @@
 import IxVMRefinement.Guard.RawSignature
-import IxC.Kernel.Model.ProjGuardCert
-import IxC.Kernel.Model.GuardClassifierErase
+import IxCK.Kernel.Model.ProjGuardCert
+import IxCK.Kernel.Model.GuardClassifierErase
 
 /-! # A classifier trace computes the classifier function on erased syntax
 

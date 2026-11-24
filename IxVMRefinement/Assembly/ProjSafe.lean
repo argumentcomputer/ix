@@ -5,8 +5,8 @@ import IxVMRefinement.Lib.Words
 import IxVMRefinement.Obs.KernelCheck
 import IxVMRefinement.Obs.KernelRoles
 import Ix.Cert.ReaderKeys
-import IxC.Ixon.Verify.NonrecursiveConstant
-import IxC.Ixon.Verify.TagN
+import IxCK.Ixon.Verify.NonrecursiveConstant
+import IxCK.Ixon.Verify.TagN
 
 /-! # Exact-codec projection canonicality, authentic keying, and safe-definition reading (`ProjSafe`)
 

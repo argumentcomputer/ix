@@ -1,6 +1,6 @@
 import Lean.Data.Json
 import LSpec
-import IxC.Kernel.Ixon.Prelude
+import IxCK.Kernel.Ixon.Prelude
 import Ix.FileDigest
 
 /-! # Init+Std through the `ix` binary (merge queue tier `ci:landing-initstd-cli`)

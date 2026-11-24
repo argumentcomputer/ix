@@ -1,9 +1,9 @@
 import IxVMRefinement.Decl.NativeCommon
-import IxC.Kernel.Model.Inductives.StructRecKit2
-import IxC.Kernel.Model.Inductives.StructEntryFree
-import IxC.Kernel.Semantics.Inductives.DeclStructEta
-import IxC.Kernel.Verify.Rename.Native1
-import IxC.Kernel.Model.Inductives.Scope
+import IxCK.Kernel.Model.Inductives.StructRecKit2
+import IxCK.Kernel.Model.Inductives.StructEntryFree
+import IxCK.Kernel.Semantics.Inductives.DeclStructEta
+import IxCK.Kernel.Verify.Rename.Native1
+import IxCK.Kernel.Model.Inductives.Scope
 
 namespace IxVM.Refinement.Decl
 

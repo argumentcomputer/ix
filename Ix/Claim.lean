@@ -169,7 +169,7 @@ primitives read through a role binding, and these three fields say which:
   built from an environment with user axioms names their tree
   (`Ix.ClaimContext.ofEnv`); IxVM admits exactly the tree's leaves, each a
   safe axiom the role table does not bind (`KernelRoles::load_role_ctx`), and
-  IxC states such a claim with its fold under `allowUser`
+  IxCK states such a claim with its fold under `allowUser`
   (`Ix.Kernel.Cached.AcceptsRefUnder`, `Ix.Cert.IxonAcceptsRefUnder`).
 
 Typing assumptions (`assumptions` on the claims themselves) are a different

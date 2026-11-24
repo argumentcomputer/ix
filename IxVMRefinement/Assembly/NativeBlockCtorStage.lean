@@ -3,10 +3,10 @@ import IxVMRefinement.Assembly.NativeBlockReads
 
 /-! # The no-recursor install of a native block, from the outputs of its walked check
 
-`nativeNoRecFacts_of_outs` reads IxC's no-recursor install of the block (`NativeNoRecFacts`) off
+`nativeNoRecFacts_of_outs` reads IxCK's no-recursor install of the block (`NativeNoRecFacts`) off
 the outputs of the block's two typed stages, as the circuit's check of the block produces them
 (the former checked against the prefix as `cvS`, and the constructors' outputs at the
-constructor stage of every recursion flag, with the later-use condition of IxC's field check),
+constructor stage of every recursion flag, with the later-use condition of IxCK's field check),
 through `Decl.nativeNoRecFacts_of_stage`. The remaining inputs of that assembly are read off the
 block's readings and keys:
 
@@ -30,7 +30,7 @@ universe u
 set_option maxHeartbeats 1600000
 set_option linter.unusedVariables false
 
-/-- **IxC's no-recursor install of the block, from the outputs of its two stages** (module
+/-- **IxCK's no-recursor install of the block, from the outputs of its two stages** (module
 docstring). -/
 theorem nativeNoRecFacts_of_outs {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {E₀ E : Ixon.Env} {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}

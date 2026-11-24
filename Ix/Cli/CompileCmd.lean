@@ -260,7 +260,7 @@ def compileWith (p : Cli.Parsed) (settings : Ix.Kernel.Host.Resolved) : IO UInt3
       | none => throw (IO.userError e)
     | .done artifact bytes =>
       if out.annotated then
-        IO.println "[compile] mode checking: accepted by IxC.Resource.check, which is uncertified \
+        IO.println "[compile] mode checking: accepted by IxCK.Resource.check, which is uncertified \
           (nothing proves it sound)"
       Ix.RoleBinding.Compile.writeAtomic (FilePath.mk outPath) bytes
       pure { status with

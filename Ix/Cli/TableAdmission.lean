@@ -47,7 +47,7 @@ public import Ix.Claim
 public import Ix.Ixon
 public import Ix.Store
 public import Ix.SpecDigest
-public import IxC.Kernel.Admission
+public import IxCK.Kernel.Admission
 
 public section
 

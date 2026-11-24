@@ -13,9 +13,9 @@ its value at run time).
 trust-surface fence (`Tests/Ix/Kernel/TrustSurface.lean`) with this reason:
 *display only; outside the certified closure; `.meta` never decides.*
 
-* It is outside `IxC.Kernel` and outside every certified closure: the kernel,
+* It is outside `IxCK.Kernel` and outside every certified closure: the kernel,
   the reader and the certified entries never import it, and the runtime
-  closures of their roots (`IxC/Kernel/Audit/Roots.lean`, `Ix.Cert`'s runtime
+  closures of their roots (`IxCK/Kernel/Audit/Roots.lean`, `Ix.Cert`'s runtime
   audit) do not reach it.
 * A verdict never depends on it: the `.meta` checker reaches `.anon`'s
   verdicts (the erasure test), the CLI's verdict is the `.anon` run's, and a
@@ -24,7 +24,7 @@ trust-surface fence (`Tests/Ix/Kernel/TrustSurface.lean`) with this reason:
   entry points that print with names (`kernel-check-ixe --meta`, the
   `kernel-meta-names` oracle). The renderer itself (`Ix.KernelDisplay.Render`)
   is safe code that takes the read as a parameter (`Peek`), and this module
-  holds nothing else. `IxC/Kernel/Audit/Roots.lean` and
+  holds nothing else. `IxCK/Kernel/Audit/Roots.lean` and
   `Ix/Cert/RuntimeAudit.lean` check that the runtime closures of the certified
   roots do not reach `peekSquash`. -/
 

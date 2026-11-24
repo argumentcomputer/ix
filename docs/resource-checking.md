@@ -68,20 +68,20 @@ def borrowInDo (@unique owner : Nat) : Id Nat := do
 
 Two things are in this repository:
 
-* **The model and its statement** (`IxC/Resource/`, a library of the `IxC`
+* **The model and its statement** (`IxCK/Resource/`, a library of the `IxCK`
   package that no kernel module imports): run programs read from records
   (`Read.lean`), the reference evaluator `runR` with its four monitors
   (`Eval.lean`), and `ModeSafe` (`Statement.lean`), the statement a modes claim
   carries.
-* **The certified mode checker**, `IxC.Resource.check` (`Check.lean`): an
-  abstract run of `runR`, certified by `IxC/Resource/Proof/` (`DefaultOk`,
-  `ReadsRespectErasure`, and `CheckSound`, audited in `IxC/Resource/Audit.lean`
+* **The certified mode checker**, `IxCK.Resource.check` (`Check.lean`): an
+  abstract run of `runR`, certified by `IxCK/Resource/Proof/` (`DefaultOk`,
+  `ReadsRespectErasure`, and `CheckSound`, audited in `IxCK/Resource/Audit.lean`
   under strictly `[propext, Classical.choice, Quot.sound]`, zero sorries).
   `ix compile` runs it on every artifact compiled from annotated source
   (`Ix.ModeCheck.checkArtifact`, which the compile commands pass to
   `Ix.CompileM.compileAndFinalize`) and says so; a compile with no checker
   passed refuses annotated source. `IxCC`'s N5 ingress gate
-  (`IxCC.Src.KernelFront.defaultModeCheck`) also invokes `IxC.Resource.check`
+  (`IxCC.Src.KernelFront.defaultModeCheck`) also invokes `IxCK.Resource.check`
   (with `recordWellFormed` and the `allDefault` fast path over logical seeds)
   right after certified kernel acceptance. `ix verify` does not run it, its
   import closure does not contain it (`kernel-layering`'s mode fence), and no
@@ -89,7 +89,7 @@ Two things are in this repository:
 
 ## The model
 
-A **run program** (`IxC.Resource.Prog`) has one definition per constant of a
+A **run program** (`IxCK.Resource.Prog`) has one definition per constant of a
 closure: a run body (a definition's value under its leading λs, or the right
 side of an equation of the widened `Subject.runTable : List Address`, which
 accepts per-definition `f.eq_def` theorems and/or `And` conjunctions), a
@@ -130,26 +130,26 @@ claim can carry both conclusions from one reading.
 ## The checker
 
 `check` takes a fast path when every record of the closure has only default
-modes (`IxC.Resource.Proof.defaultOk : DefaultOk` justifies it). Otherwise it
+modes (`IxCK.Resource.Proof.defaultOk : DefaultOk` justifies it). Otherwise it
 reads the constants that have or call non-default modes, with the kernel as
 class oracle (positive answers only; a lack of fuel declines), and checks each
 run body: binding states (live and unique, shared, consumed), regions, aliases,
 once bindings, mode skeletons at every flow. Its verdict is accept, refuse with
-a witness, or decline at a limit. `IxC/Resource/Proof/` certifies all three
+a witness, or decline at a limit. `IxCK/Resource/Proof/` certifies all three
 soundness deliverables:
 
-* `IxC.Resource.Proof.defaultOk : DefaultOk` (the all-default fast path is
+* `IxCK.Resource.Proof.defaultOk : DefaultOk` (the all-default fast path is
   mode-safe);
-* `IxC.Resource.Proof.readsRespectErasure : ReadsRespectErasure` (accepted
+* `IxCK.Resource.Proof.readsRespectErasure : ReadsRespectErasure` (accepted
   erased bindings and fields are never read);
-* `IxC.Resource.Proof.checkSound : ∀ KernelRead, (∀ env s, KernelRead env s → RolesDisjointFromInductives s) → CheckSound KernelRead`
+* `IxCK.Resource.Proof.checkSound : ∀ KernelRead, (∀ env s, KernelRead env s → RolesDisjointFromInductives s) → CheckSound KernelRead`
   (checker acceptance implies `ModeSafe`).
 
-`IxC/Resource/Audit.lean` fences the entire `IxC.Resource.Proof` subtree and
+`IxCK/Resource/Audit.lean` fences the entire `IxCK.Resource.Proof` subtree and
 the five exported soundness theorems (`defaultOk`, `readsRespectErasure`,
 `check_sound_modeOk`, `f4`, `checkSound`) strictly to
 `[propext, Classical.choice, Quot.sound]`.
 
-Tests: `lake -d IxC build IxC.Resource.Audit`, `lake exe IxTests resource-modes`,
+Tests: `lake -d IxCK build IxCK.Resource.Audit`, `lake exe IxTests resource-modes`,
 `lake exe source-contract-tests`, and `ModeRepairTests/Main.lean` (348-case
 differential harness).

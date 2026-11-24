@@ -6,9 +6,9 @@ import IxVMRefinement.Obs.KernelSubst0
 import IxVMRefinement.Obs.KernelSubst1
 import IxVMRefinement.Obs.UInt320
 import Ix.IxVM.Refinement.KernelLevels
-import IxC.Kernel.Verify.Subst
-import IxC.Kernel.Verify.InstList
-import IxC.Kernel.Verify.InstLevels
+import IxCK.Kernel.Verify.Subst
+import IxCK.Kernel.Verify.InstList
+import IxCK.Kernel.Verify.InstLevels
 
 /-! # Substitution: field arithmetic, heap indices, kernel algebra
 

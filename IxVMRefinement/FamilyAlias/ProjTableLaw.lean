@@ -2,14 +2,14 @@ import IxVMRefinement.FamilyAlias.ProjTablePrep
 import IxVMRefinement.FamilyAlias.ProjCoherenceTop
 import IxVMRefinement.FamilyAlias.StoreAr
 import IxVMRefinement.FamilyAlias.EqPin
-import IxC.Kernel.Model.Inductives.StructBodyFrames
-import IxC.Kernel.Model.Inductives.StructEntryKit
-import IxC.Kernel.Model.Inductives.TowerCons
-import IxC.Kernel.Model.IndCons
-import IxC.Kernel.Model.IndUnitLaw
-import IxC.Kernel.Model.Caps
-import IxC.Kernel.Model.RecRulesCons
-import IxC.Kernel.Model.Annot.BitLevels
+import IxCK.Kernel.Model.Inductives.StructBodyFrames
+import IxCK.Kernel.Model.Inductives.StructEntryKit
+import IxCK.Kernel.Model.Inductives.TowerCons
+import IxCK.Kernel.Model.IndCons
+import IxCK.Kernel.Model.IndUnitLaw
+import IxCK.Kernel.Model.Caps
+import IxCK.Kernel.Model.RecRulesCons
+import IxCK.Kernel.Model.Annot.BitLevels
 
 /-! # Chain-axiom installation and `TowerEntryLaw` for modeled structure projections
 

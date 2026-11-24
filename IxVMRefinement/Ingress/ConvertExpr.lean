@@ -5,8 +5,8 @@ import IxVMRefinement.Ingress.Decode
 import IxVMRefinement.Obs.Convert
 import IxVMRefinement.Nat.Utf8
 import IxVMRefinement.Subst.Basic
-import IxC.Kernel.Ixon.Reader
-import IxC.Kernel.Verify.PropWhen
+import IxCK.Kernel.Ixon.Reader
+import IxCK.Kernel.Verify.PropWhen
 import Ix.IxVM.Consistency.Statement
 
 /-! # Expression, Universe, Literal, and Binder-Table Conversion (`Convert` part 1)

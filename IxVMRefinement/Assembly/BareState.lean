@@ -1,5 +1,5 @@
 import IxVMRefinement.Assembly.InductiveRead
-import IxC.Kernel.Verify.Frontend.InModelMemo
+import IxCK.Kernel.Verify.Frontend.InModelMemo
 
 /-! # Definition reading after removing generated declarations
 

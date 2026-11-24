@@ -1,5 +1,5 @@
 import Ix.Cert.CtxAgreeProj
-import IxC.Kernel.Verify.Rename.Ind3
+import IxCK.Kernel.Verify.Rename.Ind3
 
 /-! # Projection owners under a scoped injective renaming
 

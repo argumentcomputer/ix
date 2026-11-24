@@ -3,7 +3,7 @@ import IxVMRefinement.TwinFamily.Reload
 
 /-! # The twin step's target from facts about the twin record
 
-`TwinStepTarget`'s conclusion is the second record's declaration as read, IxC's twin record at
+`TwinStepTarget`'s conclusion is the second record's declaration as read, IxCK's twin record at
 the positional package, each member stored as its reading, a model companion at each member,
 and the scoped core's companions after the step. This module states what the circuit side has
 to hand for it, part by part (`TwinPartsFacts`), and proves the conclusion from that, the
@@ -11,7 +11,7 @@ reading, the block's family record installed, and the companions before the step
 (`twinTarget_of_facts`); with a producer of the facts at every hypothesis of the target, the
 target itself (`twinStepTarget_of_facts`).
 
-The facts are those of IxC's record that are about the second record (its front door, its rules'
+The facts are those of IxCK's record that are about the second record (its front door, its rules'
 stages, its stored annotation) and, member by member, the second record against the canonical
 one (`TwinMemberCmp`), with the canonical recursor of each part named as a member of the block's
 family record. The circuit checks each member of each record on its own against the block's
@@ -20,7 +20,7 @@ records' members at one place are comparable either way:
 
 * the canonical member above the twin's (`CanonAbove`: the two equal up to `WrapRel`, or the
   canonical one the reconstruction and the twin's its full consumption): the canonical terms
-  are the generated ones IxC's record asks, and nothing is typed
+  are the generated ones IxCK's record asks, and nothing is typed
   (`twinTypeGen_of_canonical_above`, `twinRuleGen_of_canonical_above`);
 * the twin's member above the canonical one (`TwinAbove`): the twin's type is the generated
   type, typed by its own front door (`twinTypeGen_of_twin_above`), and each rule carries its
@@ -141,7 +141,7 @@ def TwinRuleFront (J : Judgements .anon) (env envSelf : Ix.Kernel.Env .anon) (f 
         pins.map (Ix.Kernel.Expr.liftLooseBVars (mI - rP) 0) ++
           (List.range (mI - rP)).map (fun i => Ix.Kernel.Expr.bvar (mI - rP - 1 - i)))
 
-/-- With a generated right-hand side for the rule, the stage is IxC's. -/
+/-- With a generated right-hand side for the rule, the stage is IxCK's. -/
 theorem twinRuleJ_of_front {J : Judgements .anon} {env envSelf : Ix.Kernel.Env .anon}
     {f : KKey → KKey} {recName : KKey} {lps : List LevelParam} {cvW' : ConstantVal .anon}
     {mI rP : Nat} {rW rW' rC : RecRule .anon}
@@ -204,7 +204,7 @@ structure TwinMemberCmp (J : Judgements .anon) (env : Ix.Kernel.Env .anon) (f : 
 /-- **What the circuit side hands for a twin record**, over the parts `ws` of the record and a
 peer renaming `f` (taken as `Decl.twinPeerRename ws`, which sends each canonical recursor to its
 twin and fixes the rest): each part's canonical recursor is a member `x` of the block's family
-record `rb`, and the part is comparable with it (`TwinMemberCmp`); and for each part IxC's twin
+record `rb`, and the part is comparable with it (`TwinMemberCmp`); and for each part IxCK's twin
 record's own conjuncts but the generated terms: the front door at the positional package, no
 `let` in the checked type, the canonical recursor stored with the part's counts and rules, the
 level parameters, the rules' stages (`TwinRuleFront`), and the checked recursor storing the
@@ -233,7 +233,7 @@ theorem find_isSome_of_mem {env : Ix.Kernel.Env .anon} {ci : ConstantInfo .anon}
   unfold Ix.Kernel.Env.find?
   exact List.find?_isSome.mpr ⟨ci, h, by simp⟩
 
-/-- **The target's conclusion from the facts** (module docstring): IxC's twin record, each
+/-- **The target's conclusion from the facts** (module docstring): IxCK's twin record, each
 member stored as its reading, a model companion at each member, the companions, and the reload
 of each new constant at the key of an address, after the step, given that the block is the
 parts' declared recursors, the names the step stores distinct and fresh, the companion each

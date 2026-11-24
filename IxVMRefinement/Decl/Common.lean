@@ -7,10 +7,10 @@ import IxVMRefinement.Nat.Levels
 import IxVMRefinement.Infer.Leaves
 import IxVMRefinement.Obs.KernelCheck
 import IxVMRefinement.Lib.Bytes
-import IxC.Kernel.Model.JudgeRules
-import IxC.Kernel.Model.StoreCompanions
-import IxC.Kernel.Model.StoreRecShape
-import IxC.Kernel.Model.StoreFold
+import IxCK.Kernel.Model.JudgeRules
+import IxCK.Kernel.Model.StoreCompanions
+import IxCK.Kernel.Model.StoreRecShape
+import IxCK.Kernel.Model.StoreFold
 
 /-! # Declaration refinement: shared fold invariant and structural helpers
 

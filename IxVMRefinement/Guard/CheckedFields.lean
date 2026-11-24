@@ -7,7 +7,7 @@ import IxVMRefinement.Assembly.GuardRawLookup
 structure-like proposition (one constructor, no index, a level that evaluates to zero) and gives
 field sorts with their `FieldSortsJ` witness and, per field, the evidence of the classifier's
 check (`CheckedSortAt`). Its conclusion is existential in the sorts, so a consumer that runs
-IxC's table stage at them has to keep them together with the run they came from.
+IxCK's table stage at them has to keep them together with the run they came from.
 
 * `CheckedFieldsAt c calls b i nP nF cty u sorts`: the run data of the field loop at the first
   constructor of member `i` of the block at `b`, inside the run `calls`, together with the

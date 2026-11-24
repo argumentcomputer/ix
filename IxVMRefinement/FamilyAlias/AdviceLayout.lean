@@ -1,15 +1,15 @@
 import IxVMRefinement.FamilyAlias.RuleCopy
 
-/-! # From IxC's modeled install to the advice layout
+/-! # From IxCK's modeled install to the advice layout
 
-IxC's own fold installs a mutual or nested block with its in-process model at the derived keys:
+IxCK's own fold installs a mutual or nested block with its in-process model at the derived keys:
 the model of member `X` is a definition at `auxKey X .model` with `X`'s own level parameters, and
 the theorem of rule `j` of recursor `R` is stored at `auxKey (auxKey R .model) (.iota j)` with
 `R`'s level parameters.
 
 The circuit sees the same model as advice records at keys of their own, each definition and
 theorem read with its level parameters at positions. This module states the passage as
-functions of the environment IxC's fold stores (`ModeledFamily`):
+functions of the environment IxCK's fold stores (`ModeledFamily`):
 
 * `advicePrefix`: the prefix in the advice layout. Every constant stored before the block is
   kept; a constant of the model moves to its advice key (`adviceKey`), its constants
@@ -45,7 +45,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal BinderMeta
 
 set_option linter.unusedVariables false
 
-/-- **A block as IxC's fold installs it with its in-process model.** -/
+/-- **A block as IxCK's fold installs it with its in-process model.** -/
 structure ModeledFamily where
   /-- the block, as read: types, constructors, recursors -/
   block : List (ConstantInfo .anon)
@@ -71,7 +71,7 @@ def isModelKey (m : ModeledFamily) (k : KKey) : Bool :=
   | _ => false
 
 /-- The constants stored before the block, newest first: those older than every member of the
-block. What IxC's fold stores with the block or after it (a projection function of a
+block. What IxCK's fold stores with the block or after it (a projection function of a
 structure-like member) is not part of the prefix. -/
 def beforeBlock (m : ModeledFamily) : List (ConstantInfo .anon) :=
   (m.stored.reverse.takeWhile fun c => !m.names.contains c.name).reverse
@@ -152,7 +152,7 @@ def aliasAt (g : KKey → KKey) (k : KKey) (lps : List LevelParam) (ty : KExpr) 
 def storedAt (m : ModeledFamily) (k : KKey) : Option (ConstantInfo .anon) :=
   m.stored.find? (·.name == k)
 
-/-- **A member's alias**: the model's declared type and level parameters, as IxC stores them. -/
+/-- **A member's alias**: the model's declared type and level parameters, as IxCK stores them. -/
 def memberAlias (m : ModeledFamily) (x : KKey) : Option (ConstantInfo .anon) :=
   (storedAt m (auxKey x .model)).map fun c =>
     aliasAt m.adviceRen (auxKey x .model) c.toConstantVal.levelParams c.toConstantVal.type
@@ -165,7 +165,7 @@ def ruleMajor (f : KKey → KKey) (r : RecRule .anon) : KExpr → KExpr :=
   | .inert => id
 
 /-- **The rule copy** of rule `j` of recursor `x`, stored as `r`: the copy of the advice statement
-the prefix stores at the rule theorem's advice key, at the level parameters IxC stores the
+the prefix stores at the rule theorem's advice key, at the level parameters IxCK stores the
 theorem with. -/
 def ruleCopy (m : ModeledFamily) (x : KKey) (j : Nat) (r : RecRule .anon) :
     Option (ConstantInfo .anon) :=
@@ -194,11 +194,11 @@ def familyAliases (m : ModeledFamily) : List (ConstantInfo .anon) :=
 def familyTable (m : ModeledFamily) : List (KKey × KKey) :=
   (familyAliases m).map fun a => (a.name, m.adviceRen a.name)
 
-/-- The annotated types of the listed members, as IxC stores them. -/
+/-- The annotated types of the listed members, as IxCK stores them. -/
 def annotatedTypes (m : ModeledFamily) (ms : List (ConstantInfo .anon)) : List KExpr :=
   ms.filterMap fun c => (storedAt m c.name).map (·.toConstantVal.type)
 
-/-- The annotated right-hand sides of the listed recursors' rules, as IxC stores them. -/
+/-- The annotated right-hand sides of the listed recursors' rules, as IxCK stores them. -/
 def annotatedRules (m : ModeledFamily) (rs : List (ConstantInfo .anon)) : List (List KExpr) :=
   rs.map fun c =>
     match storedAt m c.name with

@@ -14,7 +14,7 @@ Measurements behind the choice of how IxVM checks inductive declarations: the
 costs of checking inductive declarations in the deployed IxVM program, a
 sizeable `Std` shard for the performance baseline, and a census of the
 environment's mutual and nested inductive blocks with the certified kernel's
-in-process modeller (`IxC/Kernel/Frontend/InModel`) run on chosen blocks.
+in-process modeller (`IxCK/Kernel/Frontend/InModel`) run on chosen blocks.
 
 * `ixvm-ind-decl-bench` runs claims through `ixvm-proof test` with statistics and
   prints `FFT <label>: <cost> (expected none)` lines in the harness's format.

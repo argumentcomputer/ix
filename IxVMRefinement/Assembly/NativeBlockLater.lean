@@ -1,6 +1,6 @@
 import IxVMRefinement.Assembly.NativeBlockCtorRuns
 import IxVMRefinement.Decl.NativeRec
-import IxC.Kernel.Verify.Inductives.StructBody
+import IxCK.Kernel.Verify.Inductives.StructBody
 
 /-! # The later-use condition of a native constructor
 
@@ -8,7 +8,7 @@ import IxC.Kernel.Verify.Inductives.StructBody
 binder whose domain mentions the block (`expr_mentions_block(dom, [B]) ≠ 0`) it asserts that the
 binder's body has no loose occurrence of the binder's variable
 (`expr_has_bvar_at(body, 0) = 0`): no later field and not the constructor's result uses a field
-whose domain mentions the block. This is IxC's later-use condition (`structUsedLater`) at every
+whose domain mentions the block. This is IxCK's later-use condition (`structUsedLater`) at every
 field whose domain mentions the family.
 
 * `check_positivity_fields_later_go`, `check_positivity_later_spec`: the raw scan's assertion, read
@@ -122,7 +122,7 @@ theorem check_positivity_fields_later_go {c : ScopedCtx} [c.TableKeyed] {indInde
         exact ih hstR' hst' hg_rec hs_rec (hRB.mono e1) hnp.2 hbas' ev_rec i' (by omega) hmen
           tl rest hr
 
-/-- **`check_positivity` asserts IxC's later-use condition** at every field whose domain
+/-- **`check_positivity` asserts IxCK's later-use condition** at every field whose domain
 mentions `T`: on a constructor type `E` (raw syntax `R`, both with `nP + nF` leading binders)
 whose heap term the run checks, a field whose domain mentions `T` is used by no later binder
 and not by the result (`structUsedLater`). -/

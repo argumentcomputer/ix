@@ -5,8 +5,8 @@ defaultTargets = ["IxKernelBridge"]
 packagesDir = "../../IxCC/.lake/packages"
 
 [[require]]
-name = "ix-kernel"
-path = "../../IxC"
+name = "ix-ck"
+path = "../../IxCK"
 
 [[require]]
 name = "ix-cc"

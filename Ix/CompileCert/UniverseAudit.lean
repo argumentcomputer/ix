@@ -1,6 +1,6 @@
 import Ix.CompileCert.CanonUnivScope
 import Ix.CompileCert.CanonUnivCache
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 import Lean.Compiler.CSimpAttr
 import Lean.Compiler.ImplementedByAttr
 

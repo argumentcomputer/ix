@@ -741,7 +741,7 @@ theorem NativeAtFacts.recognised (h : NativeAtFacts env env₂ blk nP nIdx p₀ 
   obtain ⟨hdp, -⟩ := h
   exact hdp
 
-/-- **IxC's record of the install, at the recognised parts.** -/
+/-- **IxCK's record of the install, at the recognised parts.** -/
 theorem NativeAtFacts.noRecRunJ (h : NativeAtFacts env env₂ blk nP nIdx p₀ fam) :
     DeclNativeNoRecRunJ rulesJ env p₀ env₂ := by
   obtain ⟨-, hnd, isRec, cvS, cvTa, caps, p₁, p, ctorsA, sortss, kinds, tfvs, trest, isorts, -,

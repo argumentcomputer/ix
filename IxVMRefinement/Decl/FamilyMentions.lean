@@ -14,7 +14,7 @@ type, `expr_mentions_addrs(ty, fam) = 0` with `fam` the family record's recursor
   all of whose addresses are in the list, neither as a constant nor as a projection's structure
   (`Expr.mentionsConst`).
 
-The consumer is the recursor's front door in IxC's renamed record (`ConstantValRunJ`'s
+The consumer is the recursor's front door in IxCK's renamed record (`ConstantValRunJ`'s
 `constsResolve` at the provisioning environment, which holds the recursors provisioned before this
 one but not the later ones). -/
 

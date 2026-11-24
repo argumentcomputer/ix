@@ -1,7 +1,7 @@
 import Ix.Cert.CompileCorrect
 import Ix.Cert.ClosureClaims
 import Ix.Cert.Stream
-import IxC.Kernel.Verify.Rename.UnionFold
+import IxCK.Kernel.Verify.Rename.UnionFold
 
 /-! # The final statement composed from its obligations
 

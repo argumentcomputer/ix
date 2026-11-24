@@ -2,7 +2,7 @@ import IxVMRefinement.FamilyAlias.RuleRecord
 
 /-! # A rule's renamed record from its facts and its alias
 
-`iotaRuleRenRunJ_of_aliased`: IxC's renamed rule record `IotaRuleRenRunJ` over the family package
+`iotaRuleRenRunJ_of_aliased`: IxCK's renamed rule record `IotaRuleRenRunJ` over the family package
 `famJ h`, at the environment `envM` after the family's types and constructors and the
 environment `envSelf` after its recursors without rules, from a rule's facts with its alias found
 (`RuleAliased`). The route is `FamilyAlias/RuleRecord.lean`'s module docstring.

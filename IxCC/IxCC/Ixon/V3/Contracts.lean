@@ -1,14 +1,14 @@
-import IxC.Ixon.Types.Modes
+import IxCK.Ixon.Types.Modes
 import IxCC.Ixon.Uses
 
 /-! # Ixon v5 resource modes and binder-data types
 
-Re-exports upstream `IxC.Ixon.Types.Modes` (`Usage`, `BinderMode`, `ResultMode`,
+Re-exports upstream `IxCK.Ixon.Types.Modes` (`Usage`, `BinderMode`, `ResultMode`,
 `AllMode`, `LetMode`, `FieldMode`, `FieldModes`, `AllocAssert`, `DefAsserts`)
 under `IxCC.Ixon.V3` with unified mode accessors (`usage`, `isUnique`,
 `isBorrowed`, `isErased`, `isDefault`, `binderMode`, `isBorrow`), and defines
 IxCC's private copy of the binder-data section types (`BinderNode`,
-`BinderBlock`, `BinderPos`) so `IxC.Address.Core`'s `_root_.Address` never
+`BinderBlock`, `BinderPos`) so `IxCK.Address.Core`'s `_root_.Address` never
 leaks into `Src` or downstream IRs. -/
 
 namespace Ixon.BinderMode
@@ -110,7 +110,7 @@ export _root_.Ixon.DefAsserts (ofCode? ofCode?_toCode toCode_lt)
 end DefAsserts
 
 /-- One numbered node of a record's binder-data block (mirrors
-`IxC.Ixon.BinderNode`). A binder's node carries both its zero-ness datum and
+`IxCK.Ixon.BinderNode`). A binder's node carries both its zero-ness datum and
 its `AllMode`; a share node names the sharing entry's variant. -/
 inductive BinderNode where
   | never (mode : AllMode) : BinderNode
@@ -141,7 +141,7 @@ def isUndecided : BinderNode → Bool
 end BinderNode
 
 /-- The binder data of one expression of a record (mirrors
-`IxC.Ixon.BinderBlock`). -/
+`IxCK.Ixon.BinderBlock`). -/
 structure BinderBlock where
   shared : Bool
   index : UInt64
@@ -150,7 +150,7 @@ structure BinderBlock where
   deriving BEq, DecidableEq, Repr, Inhabited, Hashable
 
 /-- A binder's position in a record's binder-data section (mirrors
-`IxC.Ixon.BinderPos`). -/
+`IxCK.Ixon.BinderPos`). -/
 structure BinderPos where
   shared : Bool
   index : UInt64

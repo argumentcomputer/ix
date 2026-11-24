@@ -1,5 +1,5 @@
 import IxVMRefinement.Core.Det
-import IxC.Kernel.ExprOps
+import IxCK.Kernel.ExprOps
 
 /-! # The family record's reconstruction, as a function of what it reads
 

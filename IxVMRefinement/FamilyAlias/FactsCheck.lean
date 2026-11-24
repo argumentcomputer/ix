@@ -5,7 +5,7 @@ import IxVMRefinement.FamilyAlias.Facts
 `familyFactsCheck` searches for a proof of `FamilyCheckFacts` and returns the proof it finds
 (`familyFacts_of_check`). It is the companion of `famRecordCheck` (`FamilyAlias/Check.lean`) for
 the facts: every stored-data field is decided as stated, and every judgement is discharged by a
-run of IxC's executable checker at the verified mode on the term the fact names, with the level
+run of IxCK's executable checker at the verified mode on the term the fact names, with the level
 parameters at positions, turned into a derivation by the rules bridge.
 
 It is the means by which the facts are shown inhabited at a family's records; it is not complete

@@ -1,7 +1,7 @@
 # Kernel bridge: a conditional simulation lemma (`Models/KernelBridge`)
 
 This standalone Lake package proves a **conditional simulation lemma** between IxCC's
-source evaluator (`IxCC.Src.run`) and IxC's kernel reduction (`Ix.Kernel.Rules.Red`),
+source evaluator (`IxCC.Src.run`) and IxCK's kernel reduction (`Ix.Kernel.Rules.Red`),
 relative to a relation that the user supplies, and composes it with set-theoretic
 denotation (`Ix.Kernel.Denotes` in `Model.ofEnvModelM mp`) and with IxCC's own soundness
 theorems (`IxCC.Recheck.sound_nat`, `IxCC.CompileClaim.verifyBytes_immortal_sound`).
@@ -15,14 +15,14 @@ item S8 of IxCC's [certification design](../../IxCC/docs/certification-design.md
 **Not the route.** Its approach, a simulation of the source evaluator by kernel reduction,
 cannot reach recursion and cannot pass type arguments, numerals, instance methods or `match`
 as Lean elaborates them (below). IxCC's plan replaces it by a denotational relation over
-IxC's strong models
+IxCK's strong models
 ([certification design](../../IxCC/docs/certification-design.md#modelskernelbridge-not-the-route)).
 The package stays, with its gate, as a record of the approach until that relation covers the
 first grounded fragment; its layer that reads a literal's denotation off a reduction may be
 reused; then the package and its gate are removed (a default, open decision DO-12 in the
 [roadmap](../../IxCC/docs/roadmap.md#open-decisions)).
 
-The package lives outside IxCC's production import root, so `IxCC` never imports IxC's
+The package lives outside IxCC's production import root, so `IxCC` never imports IxCK's
 model tier.
 
 ## What is proved
@@ -30,7 +30,7 @@ model tier.
 **Layer 1, `srcRun_to_red`.** Suppose the user supplies:
 
 1. a kernel environment `env` with `natBasisStored env = true` (a decidable check that
-   `Nat`, `Nat.zero`, `Nat.succ` and `Nat.rec` are stored exactly as IxC's basis
+   `Nat`, `Nat.zero`, `Nat.succ` and `Nat.rec` are stored exactly as IxCK's basis
    declarations; no lemma here derives it from `checkDecls`);
 2. a relation `constSpec : Levels → CId → Expr → Prop` from Src constants to closed kernel
    terms, with `hconst : ∀ ls c e, constSpec ls c e → RelConstStep p env constSpec ls c e`.
@@ -81,7 +81,7 @@ one that builds both IxCC and the kernel's proof tree.
 **The kernel side is not tied to the compiled claim.** In the Layer 3 theorems:
 
 - `env` is any environment accepted by `checkDecls μ ev ds = .ok env` for any declaration
-  stream `ds`. Nothing requires `ds` to be IxC's Ixon reader output for the claim's
+  stream `ds`. Nothing requires `ds` to be IxCK's Ixon reader output for the claim's
   environment bytes or `claim.env`; in `checkDecls_verifyBytes_immortal_denotes_nat`, `ds`
   and `env` occur only in `hchk` and `hbasis`, and `envBytes` only in `hver`.
 - `eRoot` is any closed term that the user's `constSpec` relates to the Src root. It is not
@@ -149,7 +149,7 @@ value is the kernel image of the Src definition, for programs of the shape ingre
 | `addLit_bridge` | `def f (a : Nat) : Nat := Nat.add a (nat_lit 1)` (a raw literal, not a numeral) |
 | `addLit_concrete` | the line above with every hypothesis closed: a two-constant Src program, a concrete `Env`, `natBasisStored`, and `Src.run … = .ok (.lit 42)` |
 
-Their kernel-side values are hand transcriptions, not the output of IxC's reader, and the
+Their kernel-side values are hand transcriptions, not the output of IxCK's reader, and the
 concrete `Env` is not a `checkDecls`-accepted environment (its `Nat.add` is a stand-in). That
 the ingested `Abi.nat1` has exactly the shape `id_bridge` needs, before and after the front
 end, and runs, was established in the review by evaluating the loader on its fixture, not
@@ -205,16 +205,16 @@ fenced in `Audit.lean` are exactly the inventory recorded in the root `lakefile.
 (`kernelBridgeFences`). Merge tests run it in the certified-kernel partition on every merge
 group, beside `lake run check-kernel --with-model`; CI Jobs runs it on pull requests whose
 changes reach the package (the `kernel-bridge` path filter of `ci.yml`: IxCC's Lean
-sources and Lake files, `IxC/`, this package, the root `lean-toolchain` and `lakefile.lean`,
+sources and Lake files, `IxCK/`, this package, the root `lean-toolchain` and `lakefile.lean`,
 `ci.yml` and the local actions). `lake build` from this directory builds the same thing
 without the inventory check.
 
-A clean checkout needs nothing built beforehand. The package requires IxC (`../../IxC`)
+A clean checkout needs nothing built beforehand. The package requires IxCK (`../../IxCK`)
 and IxCC (`../../IxCC`) by path, and Blake3 through IxCC. Its `packagesDir` is IxCC's
 (`IxCC/.lake/packages`), so the first build clones Blake3 at the revision of
 `lake-manifest.json` there (network access) and builds it with Cargo, and later IxCC builds
-reuse it. IxC's objects go to the repository root's `.lake/kernel` (IxC's `buildDir`),
-IxCC's to `IxCC/.lake/build`. A cold build compiles IxC's kernel and model tier, the IxCC
+reuse it. IxCK's objects go to the repository root's `.lake/kernel` (IxCK's `buildDir`),
+IxCC's to `IxCC/.lake/build`. A cold build compiles IxCK's kernel and model tier, the IxCC
 modules the bridge imports, Blake3 and this package.
 
 Warnings in this package's modules are errors (`leanOptions` in `lakefile.toml`). The build

@@ -5,7 +5,7 @@ import IxCC.Src.Syntax
 `Src.Term` and the types of its fields derive `BEq` (not `DecidableEq`), so `t == u` does not
 give `t = u` by itself. The instances below make the derived comparisons lawful; they are the
 deriving handler's, on the instances the types already derive (`Univ`, `PropWhen`, `Rel`, `Mode`,
-`Binder`, `Term`; `AllMode` and `LetMode` derive `DecidableEq` in `IxC.Ixon.Types.Modes`).
+`Binder`, `Term`; `AllMode` and `LetMode` derive `DecidableEq` in `IxCK.Ixon.Types.Modes`).
 `Relevance.Proof.Canonical` keeps its own file-local instances for `PropWhen`, `Rel` and
 `FieldClass`; the two coexist (they are proofs of the same `Prop`). -/
 

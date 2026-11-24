@@ -3,7 +3,7 @@ import Ix.ClaimContext
 import Ix.CompileM
 import Ix.CompileCertified
 import Ix.Cli.CatalogCmd
-import IxC.Kernel.Ixon.Prelude
+import IxCK.Kernel.Ixon.Prelude
 
 /-! # The claims `ix verify` and `ix compress` refuse, through the `ix` binary
 

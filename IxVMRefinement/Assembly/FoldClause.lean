@@ -1,13 +1,13 @@
 import IxVMRefinement.Assembly.NativeBlockFinalRetHead
 import IxVMRefinement.Assembly.RecRhsPw
-import IxC.Kernel.Model.Inductives.NativeAtRecLate
+import IxCK.Kernel.Model.Inductives.NativeAtRecLate
 
 /-! # The one clause the declaration folds carry
 
 A fold over accepted declaration steps carries one proposition from step to step. This module
 states it once, with the model held once.
 
-* `TeleChecked env fam`: what IxC's former stage establishes of a registered family's telescope
+* `TeleChecked env fam`: what IxCK's former stage establishes of a registered family's telescope
   constant (`SumIndRunJ`): its type is arity-correct and resolves at the environment, is closed
   and bounded, and mentions only the family's level parameters. It holds whether or not the
   telescope constant is the stored former, and it is kept along lookups.
@@ -16,8 +16,8 @@ states it once, with the model held once.
   the link a recursor run reads between the two (`LinkLaws` is what the clause asks of it). No
   field identifies the two constants.
 * `FoldClauseWith L t E lim env Reg`, `FoldClause L t E lim env`: the clause. Its first part is
-  IxC's: one model in every set theory keeping every registered family's data (`EnvModelN`), and
-  the store facts IxC keeps along every declaration step. The rest is what the refinement reads
+  IxCK's: one model in every set theory keeping every registered family's data (`EnvModelN`), and
+  the store facts IxCK keeps along every declaration step. The rest is what the refinement reads
   beside them: the registry read off the store, the keys, and the circuit's loads against the
   store at the limit. The projection guards are not a separate field: their firing is part of
   that load contract.
@@ -512,25 +512,25 @@ steps run against, `lim` the limit of the role context. -/
 structure FoldClauseWith (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
     (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (lim : Option Nat) (env : Ix.Kernel.Env .anon)
     (Reg : NativeFam .anon → Prop) : Prop where
-  /-- IxC: in every set theory, one model keeps every registered family's data. -/
+  /-- IxCK: in every set theory, one model keeps every registered family's data. -/
   model : ∀ (V : Type u) [Ix.Kernel.SetTheory V], EnvModelN V .verified env Reg
-  /-- IxC: the store invariant. -/
+  /-- IxCK: the store invariant. -/
   store : Ix.Kernel.Open.StoreInv env
-  /-- IxC: the stored recursors' shape facts. -/
+  /-- IxCK: the stored recursors' shape facts. -/
   recShape : Ix.Kernel.Model.RecShape env
-  /-- IxC: the stored recursors' K facts. -/
+  /-- IxCK: the stored recursors' K facts. -/
   recK : Ix.Kernel.Model.RecK env
-  /-- IxC: the stored theorems are typed. -/
+  /-- IxCK: the stored theorems are typed. -/
   thmTyped : Ix.Kernel.Model.ThmTyped env
   /-- Stored definitions at base keys are typed. -/
   defnTyped : Decl.DefnTyped env
-  /-- IxC: the η families' tables. -/
+  /-- IxCK: the η families' tables. -/
   etaTowers : Ix.Kernel.Model.EtaTowers env
-  /-- IxC: a stored theorem's value mentions only its own level parameters. -/
+  /-- IxCK: a stored theorem's value mentions only its own level parameters. -/
   thmLevels : Ix.Kernel.ThmLevels env
-  /-- IxC: the stored terms are arity-correct and resolve. -/
+  /-- IxCK: the stored terms are arity-correct and resolve. -/
   storeArR : StoreArR env
-  /-- IxC's `TableBodies`, with the constructor keys of the projection tables of kept
+  /-- IxCK's `TableBodies`, with the constructor keys of the projection tables of kept
   structures. -/
   strong : Decl.StrongEnvProps env
   /-- Every registered family is read off the store. -/

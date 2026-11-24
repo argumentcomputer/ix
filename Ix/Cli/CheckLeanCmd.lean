@@ -15,7 +15,7 @@ public import Ix.Benchmark.Results
 
 public section
 
-/-! The IxC host record checker behind check-lean. Both modes authenticate
+/-! The IxCK host record checker behind check-lean. Both modes authenticate
 input bytes. A whole-artifact run of a bound artifact also runs the certified
 logical or tiered entry (`Ix.HostAdmission.certify`) and reports its host
 statement. Selected/capped runs report only their selected declarations;
@@ -318,7 +318,7 @@ def CheckReport.failures (r : CheckReport) : Array (String × String) :=
   (r.targets.filter (!success ·.outcome)).map fun t => (t.target.label, s!"{t.outcome}: {t.reason}")
 /-- Whether any checked target or record in the closure was rejected by the
 kernel or reader (`outcome == "reject"`), as opposed to declined as outside
-`IxC`'s fragment (`"decline"`) or blocked solely by a declined dependency. -/
+`IxCK`'s fragment (`"decline"`) or blocked solely by a declined dependency. -/
 def CheckReport.hasReject (r : CheckReport) : Bool :=
   r.targets.any (·.outcome == "reject") || r.rows.any (·.outcome == "reject")
 
@@ -887,7 +887,7 @@ def runOptions (o : Options) : IO UInt32 := do
       h.putStrLn s!"# ix check-lean failures\n# env: {o.path}"
       pure h
     let bytes ← IO.FS.readBinFile o.path
-    IO.println s!"Running IxC record check ({if o.anon then "anon" else "meta"} mode\
+    IO.println s!"Running IxCK record check ({if o.anon then "anon" else "meta"} mode\
 {if o.allowUserAxioms then "; user axioms allowed" else ""}\
 {if o.cfg.allowDeclined then "; declined allowed" else ""})"
     let prepared ← match ← prepareInput bytes o.anon o.allowUserAxioms o.settings with
@@ -936,7 +936,7 @@ end Ix.Cli.CheckLeanCmd
 open Ix.Cli.CheckLeanCmd in
 def checkLeanCmd : Cli.Cmd := `[Cli|
   "check-lean" VIA runCheckLeanCmd;
-  "Check authenticated .ixe declarations with IxC (bound whole inputs use actual artifact admission; meta display by default). Strict: a safe axiom other than propext, Classical.choice and Quot.sound declines unless --allow-user-axioms. Exit 0: everything asked for passed; 3: a declaration failed or the artifact was refused; 4: every declaration passed but the whole artifact, asked for, carries no role binding, so its admission did not run; 5: CONDITIONAL, everything passed only with the listed user axioms admitted (--allow-user-axioms); 6: declined by a kernel limit, which the message names with the flag and variable that raise it; 2: usage, including a selector naming no declaration, a host statement the run could not issue, a malformed limit and a run whose threads cannot fit the address-space limit; 1: infrastructure"
+  "Check authenticated .ixe declarations with IxCK (bound whole inputs use actual artifact admission; meta display by default). Strict: a safe axiom other than propext, Classical.choice and Quot.sound declines unless --allow-user-axioms. Exit 0: everything asked for passed; 3: a declaration failed or the artifact was refused; 4: every declaration passed but the whole artifact, asked for, carries no role binding, so its admission did not run; 5: CONDITIONAL, everything passed only with the listed user axioms admitted (--allow-user-axioms); 6: declined by a kernel limit, which the message names with the flag and variable that raise it; 2: usage, including a selector naming no declaration, a host statement the run could not issue, a malformed limit and a run whose threads cannot fit the address-space limit; 1: infrastructure"
   FLAGS:
     anon; "Anonymous keys and #hex display labels"
     workers : String; "Requested workers (>0; else IX_KERNEL_WORKERS, else LEAN_NUM_THREADS or the processor count). Given, it also bounds the tasks of the whole-artifact entry's phase B"
@@ -948,7 +948,7 @@ def checkLeanCmd : Cli.Cmd := `[Cli|
     "max-depth" : String; "Kernel limit: how deep a record nests, as stored and with shares expanded (else IX_KERNEL_MAX_DEPTH; default 16384); the threads get 16 KiB of stack per level, at least 256 MiB"
     "level-budget" : String; "Kernel limit: work budget per one-directional universe-level comparison (else IX_KERNEL_LEVEL_BUDGET; default 65536)"
     "allow-user-axioms"; "Admit safe axioms beyond the standard three; the role binding must bind sorryAx, propext and Classical.choice. A whole run whose declarations hold any runs the uncertified conditional entry, lists the axioms, issues no host statement and exits 5; so does a selected run that reads one"
-    "allow-declined"; "Record-check mode: tolerate declarations outside IxC's fragment (decline) and their dependents (blocked), failing with exit 3 only on a kernel or reader reject; skips whole-artifact admission and issues no host statement"
+    "allow-declined"; "Record-check mode: tolerate declarations outside IxCK's fragment (decline) and their dependents (blocked), failing with exit 3 only on a kernel or reader reject; skips whole-artifact admission and issues no host statement"
     "fail-out" : String; "Write failing selected labels in consts-file format"
     "host-out" : String; "Write the checked whole-artifact host admission statement (certified, unconditional runs only)"
     "host-store"; "Persist the checked host admission statement in the content-addressed store"

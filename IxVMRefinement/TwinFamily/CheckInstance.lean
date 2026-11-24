@@ -1,16 +1,16 @@
 import IxVMRefinement.Decl.TwinRec
 import IxVMRefinement.Decl.VerifiedRunMap
-import IxC.Kernel.Verify.Inductives.TwinRun
-import IxC.Kernel.Model.NoRecBlock
+import IxCK.Kernel.Verify.Inductives.TwinRun
+import IxCK.Kernel.Model.NoRecBlock
 import Ix.IxVM.Consistency.StoredCheck
 
-/-! # IxC's twin record at the positional package, from a run of IxC's twin check
+/-! # IxCK's twin record at the positional package, from a run of IxCK's twin check
 
-`NativeTwin.check` is IxC's executable check of a second recursor block against the recursors an
+`NativeTwin.check` is IxCK's executable check of a second recursor block against the recursors an
 environment stores: each member's front door, a stored canonical recursor above it (`WrapRel`
 from the canonical type to the member's checked type, and from each canonical rule, renamed to
 the member's peers, to the member's checked rule), its model companion copied, and the rules'
-stages. A successful run gives IxC's record at the package of runs (`NativeTwin.check_semantic`);
+stages. A successful run gives IxCK's record at the package of runs (`NativeTwin.check_semantic`);
 every judgement of a verified run has a rules-tier derivation (`verifiedRunMap`), and a
 rules-tier derivation is one of the positional package (`DeclRecTwinRunJ.to_twinPos`). So a run
 of the check that is accepted gives the record the twin step concludes
@@ -26,7 +26,7 @@ open Ix.Kernel (Env ConstantInfo ConstantVal RecRule fueledOps)
 open Ix.Kernel.Semantics (Judgements DeclRecTwinRunJ ConstantValCheckJ TwinRuleJ)
 open IxVM.Refinement.Decl (JudgementsMap verifiedRunMap twinPosRulesJ)
 
-/-- A map of judgement packages carries IxC's twin record. -/
+/-- A map of judgement packages carries IxCK's twin record. -/
 theorem declRecTwinRunJ_map {md : Ix.Kernel.Mode} {J K : Judgements md}
     (M : JudgementsMap J K) {env env₂ : Env md} {block : List (ConstantInfo md)}
     (h : DeclRecTwinRunJ J env block env₂) : DeclRecTwinRunJ K env block env₂ := by
@@ -56,7 +56,7 @@ where
     | _, _, .nil, _ => .nil
     | _, _, .cons hab hr, h => .cons (h _ _ hab) (forall₂_imp hr h)
 
-/-- **IxC's twin record at the positional package, from an accepted run of IxC's twin check** at
+/-- **IxCK's twin record at the positional package, from an accepted run of IxCK's twin check** at
 the verified mode. -/
 theorem declRecTwinRunJ_twinPos_of_check {fuel : Nat} {env env₂ : Env .anon}
     {block : List (ConstantInfo .anon)}
@@ -65,13 +65,13 @@ theorem declRecTwinRunJ_twinPos_of_check {fuel : Nat} {env env₂ : Env .anon}
   Decl.DeclRecTwinRunJ.to_twinPos
     (declRecTwinRunJ_map (verifiedRunMap fuel) (Ix.Kernel.NativeTwin.check_semantic h))
 
-/-- Whether a run of IxC's twin check is accepted. -/
+/-- Whether a run of IxCK's twin check is accepted. -/
 def twinCheckAccepts (fuel : Nat) (env : Env .anon) (block : List (ConstantInfo .anon)) : Bool :=
   match Ix.Kernel.NativeTwin.check (fueledOps .verified fuel) env block with
   | .ok _ => true
   | .error _ => false
 
-/-- **An accepted run, evaluated, gives IxC's twin record at the positional package.** -/
+/-- **An accepted run, evaluated, gives IxCK's twin record at the positional package.** -/
 theorem declRecTwinRunJ_twinPos_of_accepts {fuel : Nat} {env : Env .anon}
     {block : List (ConstantInfo .anon)} (h : twinCheckAccepts fuel env block = true) :
     ∃ env₂, DeclRecTwinRunJ twinPosRulesJ env block env₂ := by
@@ -81,7 +81,7 @@ theorem declRecTwinRunJ_twinPos_of_accepts {fuel : Nat} {env : Env .anon}
     exact ⟨env₂, declRecTwinRunJ_twinPos_of_check hrun⟩
   · cases h
 
-/-- Whether a run of IxC's twin check is accepted, and after it each member of the block is
+/-- Whether a run of IxCK's twin check is accepted, and after it each member of the block is
 stored as a constant that stores it (`IxVM.Consistency.storedAsCheck`) and has a model
 companion. -/
 def twinStepCheck (fuel : Nat) (env : Env .anon) (block : List (ConstantInfo .anon)) : Bool :=
@@ -96,7 +96,7 @@ def twinStepCheck (fuel : Nat) (env : Env .anon) (block : List (ConstantInfo .an
   | .error _ => false
 
 /-- **The second, third and fourth conjuncts of the twin step's target, from an evaluated
-check**: IxC's twin record at the positional package, each member stored after the step as a
+check**: IxCK's twin record at the positional package, each member stored after the step as a
 constant that stores it, and a model companion at each member. -/
 theorem twinStep_of_check {fuel : Nat} {env : Env .anon} {block : List (ConstantInfo .anon)}
     (h : twinStepCheck fuel env block = true) :

@@ -1,6 +1,6 @@
 import IxVMRefinement.Core.Seams
 import IxVMRefinement.Core.CallScope
-import IxC.Kernel.Rules.Rel
+import IxCK.Kernel.Rules.Rel
 
 /-! # The spec vocabulary, and the conventions every spec statement follows
 

@@ -8,8 +8,8 @@ import IxVMRefinement.Levels.Spec
 
 `ctorOuts_of_member` reads the outputs of the block's two typed stages off the walked check of
 its member: the former checked against the prefix, and, at every recursion flag, the
-constructors' outputs at the constructor stage, with IxC's later-use condition on the annotated
-constructors. `nativeNoRecFacts_of_outs` turns them into IxC's no-recursor install.
+constructors' outputs at the constructor stage, with IxCK's later-use condition on the annotated
+constructors. `nativeNoRecFacts_of_outs` turns them into IxCK's no-recursor install.
 
 The route: the member's check runs the `Induct` arm; its dispatch is native (the run answers `0`
 for the block, `NativeRouteAt`); the shape stage's result sort is the former's; the constructor
@@ -18,7 +18,7 @@ loop is read at the constructor stage (`Decl.native_ctor_staged`) with its load 
 asserts the later-use condition (`Decl.check_positivity_later_spec`).
 
 Two inputs beyond the circuit's arms: `FormerAtTele` (the former's reading is a telescope of the
-record's parameter and index counts, which ties IxC's index count to the record's) and
+record's parameter and index counts, which ties IxCK's index count to the record's) and
 `Decl.AuxRootSynced` (the projection names of the new family are fresh in the prefix, which the
 constructor stage's loop reads as the absence of a projection at the family).
 -/
@@ -64,7 +64,7 @@ theorem nIdx_of_tele {nPd : Nat} {blk : List (ConstantInfo .anon)}
 /-- **The constructor stage of a native block, from its walked check** (with the telescope
 and projection-name inputs): the former checked at the prefix as `cvS`, a telescope ending in the
 block's sort, and at every recursion flag the constructors' outputs at the constructor stage,
-with IxC's later-use condition on the annotated constructors. -/
+with IxCK's later-use condition on the annotated constructors. -/
 theorem ctorOuts_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
     {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive} {n : Nat}
     {env : Ix.Kernel.Env .anon} {blk : List (ConstantInfo .anon)}

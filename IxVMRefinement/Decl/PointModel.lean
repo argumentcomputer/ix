@@ -1,8 +1,8 @@
 import IxVMRefinement.Decl.PointModelLeaf
 import IxVMRefinement.Decl.DeclSpecs
 import IxVMRefinement.Decl.PrefixLoads
-import IxC.Kernel.Model.NoRecBlock
-import IxC.Kernel.Semantics.Inductives.DeclRecTwinExtJ
+import IxCK.Kernel.Model.NoRecBlock
+import IxCK.Kernel.Semantics.Inductives.DeclRecTwinExtJ
 
 /-! # A constructors-only install of a mutual or nested inductive block
 

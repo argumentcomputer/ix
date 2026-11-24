@@ -4,7 +4,7 @@ import Aiur.Modules.Function
 
 The modeled route for inductive declarations: IxVM checks a mutual or
 nested block the way the certified kernel's modeled install does
-(`IxC/Kernel/Inductives/Modeled.lean`, `checkModeled`), against a model of the block
+(`IxCK/Kernel/Inductives/Modeled.lean`, `checkModeled`), against a model of the block
 that the prover supplies as advice.
 
 * **The route** is a function of the inductive block alone (`block_is_modeled`): two or
@@ -310,7 +310,7 @@ def ind_is_modeled := aiur_fn⟦
 ⟧
 
   -- The iota step's comparison at a modeled recursor (`paramsBlind := false`,
-  -- `IxC/Kernel/Core.lean` `iotaRec`, `recFireComparands`): the constructor's levels and
+  -- `IxCK/Kernel/Core.lean` `iotaRec`, `recFireComparands`): the constructor's levels and
   -- parameters are the comparands the recursor's major domain gives, at the redex's
   -- levels and prefix arguments. 1 at a native recursor.
 
@@ -2051,7 +2051,7 @@ def check_iota_rule := aiur_fn⟦
               -- canonical index tuple
               let cty_l = KernelLevels::expr_inst_levels(cty, ilvls);
               -- the residual head before instantiation is a constant (the family former), as
-              -- IxC tests it: a variable head could be captured by a pin instantiation
+              -- IxCK tests it: a variable head could be captured by a pin instantiation
               let (chead0, _) = KernelTypes::collect_spine(KernelCheck::peel_n_foralls(cty_l, cnp + cnf));
               match (*(chead0)) {
                 KernelTypes::KExprNode::Const(_, _) => {  () } ,
@@ -3101,8 +3101,8 @@ def check_proj_pure_body := aiur_fn⟦
     }
 ⟧
 
-  -- Negative-occurrence scan on a block's constructors, mirroring IxC's
-  -- `BlockHasNegOcc` (`IxC/Kernel/Frontend/InModel/Check.lean`): a block with any
+  -- Negative-occurrence scan on a block's constructors, mirroring IxCK's
+  -- `BlockHasNegOcc` (`IxCK/Kernel/Frontend/InModel/Check.lean`): a block with any
   -- member mentioned in a Pi domain of any constructor field has no in-process
   -- projection models, so `modeled_proj_eligible` rejects it.
 

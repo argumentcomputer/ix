@@ -1,6 +1,6 @@
 import IxCC.Src.KernelFront.Reading
 import IxCC.Src.Relevance.Syntax
-import IxC.Kernel.Cached.CoreC
+import IxCK.Kernel.Cached.CoreC
 
 /-! # The relevance annotation from the certified kernel's inference
 

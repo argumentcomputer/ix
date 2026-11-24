@@ -1,8 +1,8 @@
 import IxVMRefinement.StatementRel.StoreInhabit
 import IxVMRefinement.StatementRel.ReadsMono
 import Ix.IxVM.Consistency.StoredCheck
-import IxC.Kernel.Model.Fold
-import IxC.Kernel.Semantics.DeclRun
+import IxCK.Kernel.Model.Fold
+import IxCK.Kernel.Semantics.DeclRun
 
 /-! # An inhabitant of the table-validity shape with a definition
 

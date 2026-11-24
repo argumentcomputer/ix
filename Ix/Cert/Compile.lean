@@ -2,8 +2,8 @@ module
 
 public import Ix.CompileDriver
 public import Ix.Compile.FrontEnd
-public import IxC.Kernel.Ixon.Reader
-public import IxC.Kernel.Ixon.Prelude
+public import IxCK.Kernel.Ixon.Reader
+public import IxCK.Kernel.Ixon.Prelude
 public import Ix.LeanIngress
 import all Ix.Ground
 import all Init.Util

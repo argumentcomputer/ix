@@ -1,5 +1,5 @@
 import IxVMRefinement.FamilyAlias.ProjCoherenceMain
-import IxC.Kernel.Model.JudgeRules
+import IxCK.Kernel.Model.JudgeRules
 
 /-! # Top-level coherence theorems for modeled structure projections
 

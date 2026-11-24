@@ -2,7 +2,7 @@ import IxVMRefinement.FamilyAlias.ModelAliases
 
 /-! # The types and constructors of a family, installed from their facts
 
-IxC's renamed record installs a family's types and constructors in order, each at its annotated
+IxCK's renamed record installs a family's types and constructors in order, each at its annotated
 type (`IndMembersRunJ`). This module gives that run from the members' facts.
 
 * `storedMember`: a member as the record stores it, at its annotated type (a recursor without

@@ -2,7 +2,7 @@ import IxVMRefinement.Core.Registry
 import IxVMRefinement.Obs.KernelLevels
 import IxVMRefinement.Lib.Words
 import IxVMRefinement.Lib.Lists
-import IxC.Kernel.Verify.PropWhen
+import IxCK.Kernel.Verify.PropWhen
 
 /-! # Step lemmas of the `Levels` family: the binder-datum and literal comparisons
 

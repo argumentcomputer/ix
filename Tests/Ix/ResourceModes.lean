@@ -1,6 +1,6 @@
 module
 
-public import IxC.Resource
+public import IxCK.Resource
 public import LSpec
 public import Ix.CompileCertified
 public import Ix.Typing
@@ -13,7 +13,7 @@ import Tests.Ix.SourceContract.SyntaxFixture
 
 Each case is a run program built by hand, with an entry and inputs meeting its
 declared modes: the reference evaluator `runR` must end as stated (a value, or
-the named violation), and the uncertified checker (`IxC.Resource.checkBodies`)
+the named violation), and the uncertified checker (`IxCK.Resource.checkBodies`)
 must accept or refuse as stated. Every case the checker accepts runs without a
 violation (`consistent`), which is what its soundness would give on these
 inputs. The cases follow the mode rules: erased binders and fields; unique
@@ -38,7 +38,7 @@ such types (the mode-repair branch, V7). -/
 
 namespace Tests.ResourceModes
 
-open IxC.Resource Ixon
+open IxCK.Resource Ixon
 
 /-! ## A small library -/
 
@@ -1282,8 +1282,8 @@ def buildFixture : IO (Except String Built) := do
 `erased`. -/
 def eraseBinder (c : Ixon.Constant) (root : Nat) (e : Ixon.Expr) (lam : Bool) (i : Nat) :
     Option Ixon.Constant := do
-  let full := IxC.Resource.binderfulEntries c.sharing
-  let pos ← (IxC.Resource.leadingBinders full (!lam) (i + 1) e 0).toOption
+  let full := IxCK.Resource.binderfulEntries c.sharing
+  let pos ← (IxCK.Resource.leadingBinders full (!lam) (i + 1) e 0).toOption
   let p ← pos[i]?
   let bi ← c.binders.findIdx? fun b => !b.shared && b.index == root.toUInt64 && b.variant == 0
   let b ← c.binders[bi]?
@@ -1308,8 +1308,8 @@ def eraseParam (c : Ixon.Constant) (r : Ref) (i : Nat) (inValue : Bool) : Option
   | .member _ 0, .quot q => eraseBinder c 0 q.typ false i
   | .member _ j, .muts ms => do
     match ← ms[j]? with
-    | .defn d => onDef (IxC.Resource.rootBase c j) d
-    | .recr rr => eraseBinder c (IxC.Resource.rootBase c j) rr.typ false i
+    | .defn d => onDef (IxCK.Resource.rootBase c j) d
+    | .recr rr => eraseBinder c (IxCK.Resource.rootBase c j) rr.typ false i
     | .indc _ => none
   | _, _ => none
 

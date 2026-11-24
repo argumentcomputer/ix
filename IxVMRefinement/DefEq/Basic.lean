@@ -1,7 +1,7 @@
 import IxVMRefinement.Core.Steps.DefEq
 import IxVMRefinement.Core.Open
-import IxC.Kernel.Rules.Derived
-import IxC.Kernel.Rules.Inversion
+import IxCK.Kernel.Rules.Derived
+import IxCK.Kernel.Rules.Inversion
 
 /-! # Shared lemmas of the `KernelDefEq` step lemmas
 

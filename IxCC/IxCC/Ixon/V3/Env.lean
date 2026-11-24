@@ -65,7 +65,7 @@ structure Binding where
 
 /-- The most bytes a binding section can have: 255 bound roles and 255
 evidence entries of 255 proofs each (the format of
-`IxC/Kernel/Ixon/RoleTable.lean`). -/
+`IxCK/Kernel/Ixon/RoleTable.lean`). -/
 def Binding.maxBytes : Nat := 4 + 255 * 33 + 1 + 255 * (2 + 255 * 33)
 
 structure Env where

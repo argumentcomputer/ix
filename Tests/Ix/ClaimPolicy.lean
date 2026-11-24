@@ -2,7 +2,7 @@ module
 
 public import LSpec
 public import Ix.Cli.ClaimPolicy
-public import IxC.Kernel.Ixon.Prelude
+public import IxCK.Kernel.Ixon.Prelude
 
 /-! # The claims `ix verify` and `ix compress` refuse by default
 

@@ -1,6 +1,6 @@
 import IxCC.Src.Syntax
 import IxCC.Ixon.V3.Env
-import IxC.Kernel.Key
+import IxCK.Kernel.Key
 import IxCC.Ixon.V3.Support
 
 /-! # Pinned identities

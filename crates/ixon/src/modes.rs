@@ -1,4 +1,4 @@
-//! Resource modes of an Ixon record (mirrors `IxC/Ixon/Types/Modes.lean`).
+//! Resource modes of an Ixon record (mirrors `IxCK/Ixon/Types/Modes.lean`).
 //!
 //! The modes a record gives its binders, its `let`s, its constructors' fields
 //! and its definitions. Each type is exactly its legal set: no combination of

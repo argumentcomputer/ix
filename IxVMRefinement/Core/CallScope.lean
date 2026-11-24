@@ -353,7 +353,7 @@ structure ScopedLoadBase (c : ScopedCtx) : Prop where
       (Ix.Kernel.reservedBasisNames.contains (c.κ (ixAddr a)) = false ∨
         (ZMod.val p = 0 ∧ ∀ us, Ix.Kernel.isUnitLikeTy c.env (.const (c.κ (ixAddr a)) us) = true))
   /-- Unit-like conversion at an actual raw constructor observation. Producing this field
-  requires the staged former to carry its actual IxC capabilities; raw counts alone do not
+  requires the staged former to carry its actual IxCK capabilities; raw counts alone do not
   justify a unit-like flag in an empty-capability stage. -/
   unitLikeRaw : ∀ (ap ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
       (a : Bytes.Address) (nl ty u blk : SourceValue F) (p i : F) (b : Bytes.Address)

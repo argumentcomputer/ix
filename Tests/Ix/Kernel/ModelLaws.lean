@@ -1,5 +1,5 @@
-import IxC.Kernel.Denotes
-import IxC.Kernel.Semantics.EnvFacts
+import IxCK.Kernel.Denotes
+import IxCK.Kernel.Semantics.EnvFacts
 import Ix.IxVM.Consistency.Restrict
 
 /-! # The model's laws rule out wrong meanings

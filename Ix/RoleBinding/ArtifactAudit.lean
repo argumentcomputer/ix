@@ -31,15 +31,15 @@ replace only their entry/preparation wrappers. No runtime ruling changes. -/
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- Declining an inductive read whose declarations repeat a name (`lowerInductive` over
 -- `lowerInductiveDecls`) adds 11 compiled functions to each of the four closures, the entry's
--- (`IxC/Kernel/Audit/Roots.lean`). Measured against a walk that stops at the guard; externs,
+-- (`IxCK/Kernel/Audit/Roots.lean`). Measured against a walk that stops at the guard; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- Leaving out of the index an input recursor filed under a block only the fallback supplies
 -- (`inputIndexed`) adds 32 compiled functions to each of the four closures, the reader's
--- (`IxC/Kernel/Audit/Roots.lean`): the predicate and the derived equality of `Ixon.Constant`
+-- (`IxCK/Kernel/Audit/Roots.lean`): the predicate and the derived equality of `Ixon.Constant`
 -- that compares a record with the fallback's. Measured before refreezing; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- The role-shape validation merge adds the entry's four compiled functions
--- (`IxC/Kernel/Audit/Roots.lean`) to each closure, measured with the fallback-record
+-- (`IxCK/Kernel/Audit/Roots.lean`) to each closure, measured with the fallback-record
 -- guard. Execution allowances are unchanged.
 -- The expanded catalog adds 703 compiled functions (495 role and 208 key
 -- helpers) and removes eight specializations from each artifact closure.
@@ -47,12 +47,12 @@ replace only their entry/preparation wrappers. No runtime ruling changes. -/
 -- helpers. All direct and reached implementation, extern, unsafe, csimp,
 -- replacement and opaque entries were compared exactly and are unchanged.
 -- The decisions' `of_decide_eq_*` dependencies (`Role.deps`) add 7 compiled functions
--- to each closure here (`IxC/Kernel/Audit/Roots.lean`).
+-- to each closure here (`IxCK/Kernel/Audit/Roots.lean`).
 -- Specification version 5 (the compiler-trust roles) adds the entry's 49 to each
--- closure here, the conditional entries' included (`IxC/Kernel/Audit/Roots.lean`).
+-- closure here, the conditional entries' included (`IxCK/Kernel/Audit/Roots.lean`).
 -- Lifting the parameters of a nested occurrence's index arguments in the in-model generator
 -- (`genNested`'s `fieldIdxAt` and `ctorIdxAt`) adds 2 compiled functions to each closure
--- here, the entry's (`IxC/Kernel/Audit/Roots.lean`).
+-- here, the entry's (`IxCK/Kernel/Audit/Roots.lean`).
 -- Reflexive fields, members behind definitions and erasing fields in the in-model generator
 -- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
@@ -65,9 +65,9 @@ replace only their entry/preparation wrappers. No runtime ruling changes. -/
 -- natural-literal check (`ECx.natAt`) add 24 compiled functions to each closure and one inherited
 -- extern, as for `Admission.checkBytes`.
 -- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
--- add 24 compiled functions to each closure (`IxC/Kernel/Audit/Roots.lean`). Externs,
+-- add 24 compiled functions to each closure (`IxCK/Kernel/Audit/Roots.lean`). Externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
--- Normalized recursor analysis, the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`),
+-- Normalized recursor analysis, the proved csimp replacement (`IxCK/Kernel/Audit/Roots.lean`),
 -- and `Ixon.Env.clearModels` add 48 compiled functions and one ruled csimp (28 to 29).
 -- Factoring `Ixon.CheckOrder.postorder` out of `order` adds 1 compiled function; externs and rulings are unchanged.
 -- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
@@ -85,9 +85,9 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`I
 -- natural-literal check (`ECx.natAt`) add 24 compiled functions to each closure and one inherited
 -- extern, as for `Admission.checkBytes`.
 -- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
--- add 24 compiled functions to each closure (`IxC/Kernel/Audit/Roots.lean`). Externs,
+-- add 24 compiled functions to each closure (`IxCK/Kernel/Audit/Roots.lean`). Externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
--- Normalized recursor analysis, the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`),
+-- Normalized recursor analysis, the proved csimp replacement (`IxCK/Kernel/Audit/Roots.lean`),
 -- and `Ixon.Env.clearModels` add 48 compiled functions and one ruled csimp (28 to 29).
 -- Factoring `Ixon.CheckOrder.postorder` out of `order` adds 1 compiled function; externs and rulings are unchanged.
 -- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
@@ -105,9 +105,9 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered
 -- natural-literal check (`ECx.natAt`) add 24 compiled functions to each closure and one inherited
 -- extern, as for `Admission.checkBytes`.
 -- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
--- add 24 compiled functions to each closure (`IxC/Kernel/Audit/Roots.lean`). Externs,
+-- add 24 compiled functions to each closure (`IxCK/Kernel/Audit/Roots.lean`). Externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
--- Normalized recursor analysis, the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`),
+-- Normalized recursor analysis, the proved csimp replacement (`IxCK/Kernel/Audit/Roots.lean`),
 -- and `Ixon.Env.clearModels` add 48 compiled functions and one ruled csimp (28 to 29).
 -- Factoring `Ixon.CheckOrder.postorder` out of `order` adds 1 compiled function; externs and rulings are unchanged.
 -- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
@@ -125,9 +125,9 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[
 -- natural-literal check (`ECx.natAt`) add 24 compiled functions to each closure and one inherited
 -- extern, as for `Admission.checkBytes`.
 -- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
--- add 24 compiled functions to each closure (`IxC/Kernel/Audit/Roots.lean`). Externs,
+-- add 24 compiled functions to each closure (`IxCK/Kernel/Audit/Roots.lean`). Externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
--- Normalized recursor analysis, the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`),
+-- Normalized recursor analysis, the proved csimp replacement (`IxCK/Kernel/Audit/Roots.lean`),
 -- and `Ixon.Env.clearModels` add 48 compiled functions and one ruled csimp (28 to 29).
 -- Factoring `Ixon.CheckOrder.postorder` out of `order` adds 1 compiled function; externs and rulings are unchanged.
 -- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
@@ -146,18 +146,18 @@ more compiled functions than `checkTiered`'s (the fold under the axiom policy
 and the list); the extern, implemented_by, unsafe and csimp counts and every
 ruling are those of `check` and `checkTiered`. Their kernel entries (`Admission.checkBytesUnder`,
 `checkBytesTieredUsingUnder`) are frozen apart in
-`IxC/Kernel/Audit/Roots.lean` (`userAxiomOperations`). -/
+`IxCK/Kernel/Audit/Roots.lean` (`userAxiomOperations`). -/
 -- Lifting the parameters of a nested occurrence's index arguments in the in-model generator
 -- (`genNested`'s `fieldIdxAt` and `ctorIdxAt`) adds 2 compiled functions to each closure
--- here, the entry's (`IxC/Kernel/Audit/Roots.lean`).
+-- here, the entry's (`IxCK/Kernel/Audit/Roots.lean`).
 -- Reflexive fields, members behind definitions and erasing fields in the in-model generator
 -- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
 -- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
--- add 24 compiled functions (`IxC/Kernel/Audit/Roots.lean`). Externs, implemented_by, unsafe,
+-- add 24 compiled functions (`IxCK/Kernel/Audit/Roots.lean`). Externs, implemented_by, unsafe,
 -- csimp and all ruling counts are unchanged.
--- Normalized recursor analysis, the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`),
+-- Normalized recursor analysis, the proved csimp replacement (`IxCK/Kernel/Audit/Roots.lean`),
 -- and `Ixon.Env.clearModels` add 48 compiled functions and one ruled csimp (28 to 29).
 -- Factoring `Ixon.CheckOrder.postorder` out of `order` adds 1 compiled function; externs and rulings are unchanged.
 -- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).

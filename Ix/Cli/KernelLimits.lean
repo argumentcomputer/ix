@@ -1,7 +1,7 @@
 module
 
 public import Cli
-public import IxC.Host.Limits
+public import IxCK.Host.Limits
 public import Ix.Ixon
 public import Ix.HostAdmission
 public import Ix.RoleBinding.ArtifactTiered
@@ -10,7 +10,7 @@ public import Ix.Runtime.Thread
 /-! # The kernel's limits at the root's command line
 
 What `ix check-lean`, `ix verify-host` and `ix compile` share of the settings
-mechanism (`IxC.Host.Limits`): the flags read from a parsed command line, the
+mechanism (`IxCK.Host.Limits`): the flags read from a parsed command line, the
 limit a host's error is a decline by, and the threads the kernel runs on, sized
 from the limits before any task starts (`prepareThreads`) and checked against
 the process's address-space limit. -/

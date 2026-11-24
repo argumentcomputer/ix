@@ -1,4 +1,4 @@
-import IxC.Kernel.Model.GuardSignature
+import IxCK.Kernel.Model.GuardSignature
 import IxVMRefinement.Nat.Levels
 import IxVMRefinement.Obs.KernelGuard
 

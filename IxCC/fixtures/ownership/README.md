@@ -52,7 +52,7 @@ probes of the design note, renamed by fixture id.
 the root's content address in the object's provenance note: contracts are
 part of a constant's address, so that note differs and nothing else does.
 
-In Ixon v5 (`IxC.Resource.check`), 5 paired twins (`OS01`, `OS03`, `OS03b`,
+In Ixon v5 (`IxCK.Resource.check`), 5 paired twins (`OS01`, `OS03`, `OS03b`,
 `OS14`, `OS22`) plus 2 plain-only fixtures (`OS02`, `OS16`) are compiled in
 `corpus.json`; 16 additional probe-only annotated sources are accepted by v5
 mode checking (`verdicts.json` `"ok"` without corpus fixtures), 23 are rejected

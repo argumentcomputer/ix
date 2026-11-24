@@ -2,7 +2,7 @@ import IxCC.Src.KernelFront.Accept
 import IxCC.Src.Syntax
 import IxCC.Src.Pinned
 import IxCC.Ixon.V4.Convert
-import IxC.Ixon.ModeRead
+import IxCK.Ixon.ModeRead
 
 /-! # IxCC's program against the kernel's reading
 

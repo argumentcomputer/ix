@@ -157,7 +157,7 @@ Missing proofs, unreadable closure records and noncanonical output refuse.
 caller has already built it.
 
 The theorem records have no Lean source a compiler could annotate. With
-`binderData`, their binder-data sections come from IxC's pass over the records
+`binderData`, their binder-data sections come from IxCK's pass over the records
 (`IxVM.RecordSections.sectionsOf`), typed against the certificate store under
 the bound-only table and its prelude, before their addresses are taken; a
 binder whose datum the pass cannot decide is the undecided node. Without
@@ -271,7 +271,7 @@ def generate (limits : Ix.Kernel.Admission.Limits) (env certificates : Ixon.Env)
           unless old == b do throw s!"role generation: conflicting generated blob at {a}"
         else blobs := blobs.push (a, b)
     written := written.push (role, thmOut.map fun (record, proof, _) => (record, proof))
-  -- the theorem records' binder data: IxC's pass over all of them at once,
+  -- the theorem records' binder data: IxCK's pass over all of them at once,
   -- keyed by each record's address without its section
   let bare : Array (Address × Ixon.Constant) := written.foldl (init := #[]) fun acc (_, ts) =>
     acc ++ ts.map fun (record, _) => (Address.admissionHash (Ixon.serConstant record), record)

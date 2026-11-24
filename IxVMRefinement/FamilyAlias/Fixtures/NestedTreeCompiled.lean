@@ -4,13 +4,13 @@ import IxVMRefinement.FamilyAlias.Fixtures.Terms
 /-! # NestedTree, at its compiled records' keys
 
 The family step's conclusion (`inhabited`) for the family of `Fixtures/NestedTree.lean`, with the keys
-of the compiled records: `blk` is the reading, by IxC's reader, of the block record and the
+of the compiled records: `blk` is the reading, by IxCK's reader, of the block record and the
 recursor family record Ix's compiler makes of the family; a member's key is the address of its
 projection record, and an advice constant's key is the address of the advice record
-`IxVM.Model` encodes for it. `pre` is the environment IxC's fold stores for the pinned basis,
+`IxVM.Model` encodes for it. `pre` is the environment IxCK's fold stores for the pinned basis,
 the reading of `List`'s compiled record and the readings of the compiled advice records;
 `aliases` and `tbl` are built from it (`familyAliases`, `familyTable`): a member's alias has the
-type IxC stores for the member's model, a rule copy is the copy of the stored advice statement. -/
+type IxCK stores for the member's model, a rule copy is the copy of the stored advice statement. -/
 
 namespace IxVM.Refinement.Decl.FamilyAlias.Fixtures.NestedTreeCompiled
 
@@ -222,7 +222,7 @@ theorem record_ok :
 theorem roots_ok : ∀ a ∈ aliases, ∃ ci ∈ blk, a.name.base = ci.name := by decide +kernel
 
 /-- **The family step's conclusion holds of this family**: an alias group over the prefix, each
-alias rooted at a member of the block, IxC's renamed record of the block over the family package
+alias rooted at a member of the block, IxCK's renamed record of the block over the family package
 at the environment that stores the aliases, and each member stored as its reading. -/
 theorem inhabited :
     ∃ (h : KKey → KKey) (as : List (ConstantInfo .anon)) (env₂ : Env .anon),

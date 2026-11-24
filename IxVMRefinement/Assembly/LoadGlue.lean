@@ -1,8 +1,8 @@
 import IxVMRefinement.Core.Good
 import IxVMRefinement.Ingress.Records
-import IxC.Ixon.Verify.Framing
-import IxC.Kernel.Model.StoreCompanions
-import IxC.Kernel.Model.Open.StoredFacts
+import IxCK.Ixon.Verify.Framing
+import IxCK.Kernel.Model.StoreCompanions
+import IxCK.Kernel.Model.Open.StoredFacts
 
 /-! # Prefix sentinel store (`sentinelEnv`), `DeclStoreFacts`, and `Core.LoadFacts` assembly
 

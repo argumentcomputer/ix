@@ -1,8 +1,8 @@
 import Ix.IxVM.Consistency.Statement
-import IxC.Kernel.Model.Restrict
-import IxC.Kernel.Model.Open.Tables
-import IxC.Kernel.Semantics.EnvFacts
-import IxC.Kernel.Verify.Rename.Installs
+import IxCK.Kernel.Model.Restrict
+import IxCK.Kernel.Model.Open.Tables
+import IxCK.Kernel.Semantics.EnvFacts
+import IxCK.Kernel.Verify.Rename.Installs
 
 /-!
 # The claimed sub-environment's model (for `AssemblyObligation`)

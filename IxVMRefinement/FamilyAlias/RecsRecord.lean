@@ -2,7 +2,7 @@ import IxVMRefinement.FamilyAlias.RuleRecordOf
 
 /-! # The recursors of a family, installed with their rules
 
-IxC's renamed record installs each recursor of a family with its checked rules over the
+IxCK's renamed record installs each recursor of a family with its checked rules over the
 environment `envSelf` where the recursors are stored without rules (`IndRecsFoldRenRunJ`). This
 module gives that fold from the rules' facts with their aliases (`RecsAliased`):
 

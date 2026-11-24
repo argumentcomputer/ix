@@ -1,7 +1,7 @@
 module
 
 public import Ix.KernelCheck.Step
-import all IxC.Ixon.Types.Kinds
+import all IxCK.Ixon.Types.Kinds
 
 @[expose] public section
 

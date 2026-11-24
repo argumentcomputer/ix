@@ -1,4 +1,4 @@
-import IxC.Resource
+import IxCK.Resource
 import DiffTest.Hyp
 
 /-! # The generator (MT): a typed universe, its run program, programs and inputs
@@ -12,7 +12,7 @@ functions on Ixon records of the same types. -/
 
 namespace MT.DiffTest
 
-open IxC.Resource Ixon
+open IxCK.Resource Ixon
 
 /-! ## Randomness -/
 

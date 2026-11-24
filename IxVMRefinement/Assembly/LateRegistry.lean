@@ -1,12 +1,12 @@
 import IxVMRefinement.Assembly.TypingBasisInv
 import IxVMRefinement.Assembly.TypingDefnStep
-import IxC.Kernel.Model.FoldLate
-import IxC.Kernel.Semantics.Inductives.DeclNativeRecLateExtJ
+import IxCK.Kernel.Model.FoldLate
+import IxCK.Kernel.Semantics.Inductives.DeclNativeRecLateExtJ
 
 /-! # The native families registered so far
 
 A recursor for an ordinary inductive family is installed at its own record, after the family
-(`Ix.Kernel.Semantics.DeclNativeRecLateRunJ`). IxC's model step for it
+(`Ix.Kernel.Semantics.DeclNativeRecLateRunJ`). IxCK's model step for it
 (`Ix.Kernel.Model.EnvModelN.late`) needs the family's data kept at the model the fold carries
 (`NativeFamOk`), so the fold keeps a ghost set of family summaries, the registry, and one model
 that keeps the data of every registered family (`EnvModelN`).
@@ -214,7 +214,7 @@ theorem LateRegistryWith.step {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
 
 /-- **A step that registers a family** (what an inductive block's step concludes to add one).
 Given the registry at `env`: the step's model extension registers `fam` in every set theory
-(`hmodel`, IxC's `EnvModelN.nativeCore` for a native install); the step extends the
+(`hmodel`, IxCK's `EnvModelN.nativeCore` for a native install); the step extends the
 environment; `fam` is read off the store at the new environment (`hat`); and the only family
 the circuit treats as native that the step stores new, under no basis name, is `fam`'s
 (`hnew`). -/
@@ -250,7 +250,7 @@ theorem LateRegistryWith.register {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
   model V _ := hmodel V (h.model V)
 
 /-- **Every declaration step over the derivation package keeps the registry**, when it stores
-no new family the circuit treats as native (IxC's `EnvModelN.declRunJ`). -/
+no new family the circuit treats as native (IxCK's `EnvModelN.declRunJ`). -/
 theorem LateRegistryWith.declRunJ {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
     {env env₂ : Ix.Kernel.Env .anon} {Reg : NativeFam .anon → Prop}
     {d : Ix.Kernel.Declaration .anon} (h : LateRegistryWith.{u} t E env Reg)

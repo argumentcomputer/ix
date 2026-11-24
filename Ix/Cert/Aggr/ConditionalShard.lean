@@ -5,7 +5,7 @@ import Ix.Aggr.Verification
 /-! # Conditional Shard Soundness Companion (`Ix.Cert.Aggr.ConditionalShard`)
 
 Companion generalization of frozen `IxVM.Consistency.CircuitComposed` (leaving every
-frozen file in `Ix/IxVM/` and `IxC/Kernel/` completely untouched!) that tracks:
+frozen file in `Ix/IxVM/` and `IxCK/Kernel/` completely untouched!) that tracks:
 - assumed dependency leaves `A : Address → Prop` (discharged by aggregation Shapes `2–9`, `15`),
 - explicit user axiom sets `Ax : Address → Prop` (merged monotonically via `A7` across
   pair/wrap/cross-binding/discharge shapes), and

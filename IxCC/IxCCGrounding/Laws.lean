@@ -1,10 +1,10 @@
-import IxC.Kernel.Denotes
+import IxCK.Kernel.Denotes
 import IxCCGrounding.Syntax
 
 /-!
 # The kernel's model, and the derived / legacy laws (`IxCCGrounding.Laws`)
 
-**The one module of the development that imports the kernel's model** (`IxC.Kernel.Denotes`,
+**The one module of the development that imports the kernel's model** (`IxCK.Kernel.Denotes`,
 the statement half: `Denotes`, `DenotesList`, `Fits`, `GradedBy`, `SpineOk`, `IotaRule`, `IotaLaw`,
 `ProjLaw`, `natArithOps`, `natCmpOps`, `NatLitLaw`, `GradedLaw`, `Model` and, through its imports,
 the set theory interface and `SetModel.Ops`; not the kernel's proof tree). Every other module
@@ -12,7 +12,7 @@ reaches the model through this one.
 
 ## Direct use of `Ix.Kernel.Model`
 
-`Ix.Kernel.Model V env` (`IxC/Kernel/Denotes.lean`) directly supplies every law the canonicity-free
+`Ix.Kernel.Model V env` (`IxCK/Kernel/Denotes.lean`) directly supplies every law the canonicity-free
 root theorems use:
 
 * `Model.defn_value` (δ),

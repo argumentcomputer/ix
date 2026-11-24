@@ -1,5 +1,5 @@
 import IxVMRefinement.Assembly.LevelClauses
-import IxC.Kernel.Model.StoreArLate
+import IxCK.Kernel.Model.StoreArLate
 
 /-! # The arity clause beside the model invariant
 

@@ -1,6 +1,6 @@
 import Ix.Ixon.BlockOrder
 import Ix.Ixon.Projection.Theorems
-import IxC.Kernel.Ixon.ShapeSpec
+import IxCK.Kernel.Ixon.ShapeSpec
 
 namespace Ixon.BlockOrder
 

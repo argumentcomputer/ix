@@ -6,7 +6,7 @@ Lean's kernel finds a block's nested occurrences syntactically and tests a
 constructor field's positivity after whnf (`check_positivity`), so a field
 that mentions the block only under a definition that drops the argument is
 an ordinary, nonrecursive field: `K True (Box T)` with `K a _ := a` whnfs to
-`True`. IxC's in-process modeller tested the mention syntactically and
+`True`. IxCK's in-process modeller tested the mention syntactically and
 declined such blocks; it now tests the field after rewriting its carriers
 into the auxiliary family, whose install by the fold tests positivity after
 whnf, as Lean does.

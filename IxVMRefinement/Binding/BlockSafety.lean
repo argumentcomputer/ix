@@ -4,7 +4,7 @@ import IxVMRefinement.Assembly.RecordReadBare
 import IxVMRefinement.Assembly.ConstructorHashes
 import IxVMRefinement.Obs.KernelCheck
 import IxVMRefinement.StatementRel.LoadedReads
-import IxC.Ixon.Verify.ConstantBounds
+import IxCK.Ixon.Verify.ConstantBounds
 
 /-! # A block whose member-kind check passed is in Lean's logic when one of its constants is
 

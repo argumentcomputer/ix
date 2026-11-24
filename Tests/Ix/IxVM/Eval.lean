@@ -706,7 +706,7 @@ def commandTests (leanEnv : Lean.Environment) (base : Ix.CompileM.CompileEnv)
   r.build (execute "command claim after bundle transport" w (exactPin := true))
   return seq
 
-/-- IxC's reader on the same Nat literal blobs as the program: the compiler's
+/-- IxCK's reader on the same Nat literal blobs as the program: the compiler's
 `[0]` and `[42]` are read, a trailing zero byte and the empty blob are refused
 (`Ix.Kernel.Reader.canonicalNatural`), each output record through the certified
 entry under the default table. -/
@@ -727,7 +727,7 @@ def natBlobParity (env : Ixon.Env) : IO TestSeq := do
       | .ok _, true => true
       | .error e, false => ((toString e).splitOn "natural literal blob is not canonical").length > 1
       | _, _ => false
-    tests := tests ++ test s!"IxC's reader {if canonical then "reads" else "refuses"} the Nat literal blob {label}"
+    tests := tests ++ test s!"IxCK's reader {if canonical then "reads" else "refuses"} the Nat literal blob {label}"
       (ok && Ix.Kernel.Reader.canonicalNatural blob == canonical)
   return tests
 

@@ -1,6 +1,6 @@
 import IxVMRefinement.Iota.Basic
-import IxC.Kernel.Verify.InferLeaves
-import IxC.Kernel.Verify.StrLitExpr
+import IxCK.Kernel.Verify.InferLeaves
+import IxCK.Kernel.Verify.StrLitExpr
 
 /-! # Reducts and inferred types add no free-variable leaves; full-grade inference is io-grade
 

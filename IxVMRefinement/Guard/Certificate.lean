@@ -1,4 +1,4 @@
-import IxC.Kernel.Model.ProjGuardCert
+import IxCK.Kernel.Model.ProjGuardCert
 import IxVMRefinement.Guard.CtorRaw
 import IxVMRefinement.Decl.Native
 import IxVMRefinement.Guard.Fields
@@ -6,7 +6,7 @@ import IxVMRefinement.Infer.Proj
 
 /-! # The projection guard, as certificates over a witness store
 
-`Ix.Kernel.ProjGuardCert` (`IxC/Kernel/Model/ProjGuardCert.lean`) is the certificate of one
+`Ix.Kernel.ProjGuardCert` (`IxCK/Kernel/Model/ProjGuardCert.lean`) is the certificate of one
 projection table: the table's guards are `structProjGuards` at field sorts whose zero-sets are
 those of the field classifier's signatures of the constructor's raw telescope. This file places
 it over the stores of the proof.
@@ -22,7 +22,7 @@ it over the stores of the proof.
   of a native block produces from the new table's certificate
   (`Guard.projTableFires_of_cert_at`).
 * `GuardCerts.recordsFor`: the clause over `R` is the clause over every record store for `R`.
-* `projGuardCert_of_checkNativeTable`: **install**. The table stage of IxC's native install,
+* `projGuardCert_of_checkNativeTable`: **install**. The table stage of IxCK's native install,
   run at field sorts `sorts` (the caller's argument), stores a table whose certificate holds as
   soon as those sorts have the zero-sets of the classifier's signatures. The sorts to pass are
   the rules-tier sorts of the field domains that the reading of the installing run's checked
@@ -126,7 +126,7 @@ theorem guardCerts_of_noTable {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
 
 /-! ## Install -/
 
-/-- **Install: the table IxC's native install stores carries the certificate of the sorts it
+/-- **Install: the table IxCK's native install stores carries the certificate of the sorts it
 was run at.** `checkNativeTable` takes the field sorts as an argument; at a one-constructor
 block without indices it stores the table whose guards are `structProjGuards` at them. If those
 sorts have the zero-sets of the classifier's signatures of the constructor's raw telescope
@@ -259,7 +259,7 @@ def ProjGuardUseReading : Prop :=
 the refinement of the runtime classifier at the install): under the hypotheses of
 `GuardData.check_prop_fields_sorts`, where the type pointer the loop walks is the type field
 of the constructor the run loaded for member `i` of the block at `b`, there are field sorts
-with their `FieldSortsJ` witness (the sorts to run IxC's table stage at) whose zero-sets are
+with their `FieldSortsJ` witness (the sorts to run IxCK's table stage at) whose zero-sets are
 those of the classifier's signatures of the constructor's raw telescope read from the
 context's store. Its second to fourth conjuncts are the hypotheses of
 `Guard.projGuardCert_of_checkNativeTable`. -/

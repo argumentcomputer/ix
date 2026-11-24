@@ -231,7 +231,7 @@ def TwinSeamStored (RFormS : StoredFormPred) : Prop :=
 /-! ## The twin step from the facts of its parts, whatever supplies the canonical record -/
 
 /-- **The twin step's target conclusion from the facts of the parts**: the second record's
-declaration as read, IxC's twin record, each member stored as its reading with a model companion,
+declaration as read, IxCK's twin record, each member stored as its reading with a model companion,
 the companions and the reload after the step. The canonical record enters only through the facts
 and `FamilyInstalled` (the proof of `twinStepTarget_of_facts`, after its seam). -/
 theorem twinTargetConcl_of_parts {calls : List (Call F)} {t : Ix.Kernel.RoleTable}

@@ -1,6 +1,6 @@
 import Benchmarks.Kernel.CheckIxeFold
 import Ix.Ixon.Authenticated
-import IxC.Host.Limits
+import IxCK.Host.Limits
 
 /-! # The certified entry over an environment check's accepted records (untrusted harness)
 

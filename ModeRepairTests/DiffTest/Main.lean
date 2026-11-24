@@ -1,5 +1,5 @@
-import IxC.Resource
-import IxC.Kernel.Ixon.Prelude
+import IxCK.Resource
+import IxCK.Kernel.Ixon.Prelude
 import DiffTest.Hyp
 import DiffTest.Gen
 
@@ -7,7 +7,7 @@ import DiffTest.Gen
 
 namespace MT.DiffTest
 
-open IxC.Resource Ixon
+open IxCK.Resource Ixon
 
 /-! ## Self-test: the hand-built interface against the reader's rules -/
 

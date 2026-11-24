@@ -1,5 +1,5 @@
 import IxSharingVerify.AllocateSuccess
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 /-!
 # The first-tier search visits polynomially many states

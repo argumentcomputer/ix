@@ -23,7 +23,7 @@ private def evalCases : Except String (Array Ix.AiurInvocation.Case) := do
   let value : Ixon.Expr := .leanLam (.sort 0) (.leanLam (.var 0) (.var 0))
   let beta : Ixon.Expr := .app (.leanLam ty (.var 0)) value
   let constant v : Ixon.Constant := ⟨.defn ⟨.defn, .safe, {}, 0, ty, v⟩, #[], #[], #[.zero], #[]⟩
-  -- hand-built records carry the binder data a compile would write (IxC's pass)
+  -- hand-built records carry the binder data a compile would write (IxCK's pass)
   let input ← IxVM.RecordSections.withSection {} (constant beta)
   let output ← IxVM.RecordSections.withSection {} (constant value)
   let ia := Address.blake3 (Ixon.ser input)

@@ -31,7 +31,7 @@ changes (see "Deriving the verifying keys" in `crates/proof-compression/README.m
 ## Inputs and producer
 
 - Environment: `Nat.add_comm` together with the 108 default-table roles
-  (`IxC/Kernel/Key.lean`), compiled into `nat-default-roles.ixe`
+  (`IxCK/Kernel/Key.lean`), compiled into `nat-default-roles.ixe`
 - Aggregate root: `c825ae9a2dacdea5928696b6ee4638d3acfd64f7540aca2322f84b394b7ab3ff`
   (`ix verify --aggregate` PASS with zero `--allow-*` flags)
 - Backends: Protocol `v6` (`Fp^3`, `Parameters::DEFAULT`: `lb=2, q=128, qpow=20`),

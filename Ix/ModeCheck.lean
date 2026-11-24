@@ -1,12 +1,12 @@
 module
 
 public import Ix.Typing
-public import IxC.Resource
+public import IxCK.Resource
 
 /-!
 # Mode checking of a compiled artifact (uncertified)
 
-`checkArtifact` runs the mode checker (`IxC.Resource.check`) on an artifact:
+`checkArtifact` runs the mode checker (`IxCK.Resource.check`) on an artifact:
 every record of it is a seed. Every record in the subject closure must carry a
 complete binder-data section (`Ixon.Constant.bindersComplete`) and canonical
 mode bytes (`Ixon.Constant.modesCanonical`). An artifact whose every mode is
@@ -24,9 +24,9 @@ structural admissibility: theorems carry none (`modesCanonical`), role-bound
 records must carry default (`{}`) assertions, and constants without a safe run
 body outside the extern set must carry default (`{}`) assertions. A safe
 runnable definition carrying non-default `DefAsserts` skips the untyped fast
-path so certified typing still runs before `IxC.Resource.check`.
+path so certified typing still runs before `IxCK.Resource.check`.
 
-**The checker is uncertified**: nothing proves its verdict (`IxC.Resource.CheckSound`
+**The checker is uncertified**: nothing proves its verdict (`IxCK.Resource.CheckSound`
 is a definition, the statement left to prove), and every message here says so.
 -/
 
@@ -35,7 +35,7 @@ is a definition, the statement left to prove), and every message here says so.
 namespace Ix.ModeCheck
 
 /-- A verdict's message. -/
-def describe : IxC.Resource.Verdict → String
+def describe : IxCK.Resource.Verdict → String
   | .accept _ true => "mode checking (uncertified): every mode is the default"
   | .accept n false => s!"mode checking (uncertified): {n} run bodies checked, accepted"
   | .refuse at_ w => s!"mode checking (uncertified) refuses {at_}: {w}"
@@ -44,8 +44,8 @@ def describe : IxC.Resource.Verdict → String
 /-- Validate closure completeness, canonical mode invariants, and `DefAsserts`
 placement on `s`, returning `true` iff every record in the closure carries only
 default modes and default `DefAsserts` (eligible for the fast path). -/
-def checkSubject (s : IxC.Resource.Subject) : Except String Bool := do
-  let rd := IxC.Resource.Reading.make s
+def checkSubject (s : IxCK.Resource.Subject) : Except String Bool := do
+  let rd := IxCK.Resource.Reading.make s
   rd.complete
   let roleBlocks : Std.HashSet Address :=
     s.table.bound.foldl (init := {}) fun acc (_, x) =>
@@ -69,11 +69,11 @@ def checkSubject (s : IxC.Resource.Subject) : Except String Bool := do
         hasAsserts := true
         if roleBlocks.contains a then
           throw "a constant the role table binds sits in a record that carries modes"
-        let ref : IxC.Resource.Ref := .member a i
+        let ref : IxCK.Resource.Ref := .member a i
         let runnable := d.kind == .defn && d.safety == .safe
-        unless runnable || IxC.Resource.isExtern s ref do
+        unless runnable || IxCK.Resource.isExtern s ref do
           throw "an annotated constant with no run body is not in the extern set: its modes are promises nothing checks"
-  let defaultModes ← IxC.Resource.allDefault s
+  let defaultModes ← IxCK.Resource.allDefault s
   return defaultModes && !hasAsserts
 
 /-- **Mode checking of an artifact** (uncertified): the message of an accept,
@@ -87,7 +87,7 @@ def checkArtifact (ixe : Ixon.Env) (limits : Ix.Kernel.Admission.Limits := Ix.Ty
     (input.pre.records ++ input.pre.evidence).foldl (fun m (a, c) => m.insert a c) {}
   let blobs : Std.HashMap Address ByteArray :=
     (input.blobs ++ input.pre.blobs).foldl (fun m (a, b) => m.insert a b) {}
-  let s : IxC.Resource.Subject :=
+  let s : IxCK.Resource.Subject :=
     { table := input.table, store := fun a => records[a]? <|> prelude[a]?, blob := fun a => blobs[a]?,
       seeds := input.ordered.toList.map (·.1) }
   -- the fast path needs no typing once closure completeness and assertions are verified
@@ -114,7 +114,7 @@ def checkArtifact (ixe : Ixon.Env) (limits : Ix.Kernel.Admission.Limits := Ix.Ty
       (Ix.Typing.typeUncertified input unc env₀ limits).mapError fun e' =>
         s!"mode checking (uncertified): the typing it reads with failed: {e'}{note}"
       pure env₀
-  let v := IxC.Resource.check {} env s
+  let v := IxCK.Resource.check {} env s
   match v with
   | .accept .. => return describe v
   | _ => throw (describe v)

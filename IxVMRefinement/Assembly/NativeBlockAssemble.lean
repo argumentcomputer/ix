@@ -1,7 +1,7 @@
 import IxVMRefinement.Assembly.NativeBlockFacts
 import IxVMRefinement.Decl.NativeFront
 
-/-! # IxC's no-recursor install of a native block, from its two stages
+/-! # IxCK's no-recursor install of a native block, from its two stages
 
 `nativeNoRecFacts_of_stage` assembles `Typing.NativeNoRecFacts` (the stages of
 `DeclNativeNoRecRunJ` with the family named) from:
@@ -11,7 +11,7 @@ import IxVMRefinement.Decl.NativeFront
 * the constructors' stage, at every recursion flag: each constructor's outputs
   (`Decl.NativeCtorOut`) at the environment storing the former at the native capability record of
   that flag;
-* the freshness of the names the install adds, and the later-use condition of IxC's field check
+* the freshness of the names the install adds, and the later-use condition of IxCK's field check
   (`hunused`: a recursive or reflexive field is not used by the later fields).
 
 The kinds of the fields are computed from the constructors (`recCtorKinds`, positivity from the

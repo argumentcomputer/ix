@@ -1,10 +1,10 @@
-import IxC.Ixon.Types.Modes
+import IxCK.Ixon.Types.Modes
 
 /-!
 # The usage algebra
 
 The 3-element Ixon v5 `Usage` algebra (`many`, `once`, `erased`) imported from
-`IxC.Ixon.Types.Modes`, together with parallel combination (`add`),
+`IxCK.Ixon.Types.Modes`, together with parallel combination (`add`),
 multiplicative scaling (`mul`), branch join (`join`), coverage (`covers`), and
 runtime-use count semantics (`admits`).
 -/

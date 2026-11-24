@@ -3,8 +3,8 @@ module
 public import Ix.Ixon
 public import Ix.Common
 public import Ix.Ixon.CheckOrder
-public import IxC.Kernel.Admission
-public import IxC.Kernel.Ixon.Prelude
+public import IxCK.Kernel.Admission
+public import IxCK.Kernel.Ixon.Prelude
 public import Aiur.Ixon
 public import Ix.CompileM
 public import Ix.IxVM.RecordSections
@@ -13,7 +13,7 @@ public import Ix.IxVM.RecordSections
 # Model advice for IxVM's modeled route
 
 IxVM checks a mutual or nested inductive block the way the certified kernel's
-modeled install does (`IxC/Kernel/Inductives/Modeled.lean`): against a *model*
+modeled install does (`IxCK/Kernel/Inductives/Modeled.lean`): against a *model*
 of the block, made of ordinary declarations that IxVM type-checks (a tag
 enumeration and an auxiliary indexed family, both plain inductives on the
 native route; a `_model` definition per type, constructor and recursor; an
@@ -21,7 +21,7 @@ native route; a `_model` definition per type, constructor and recursor; an
 isomorphisms). The circuit side is `IxVM/IxVM/Source/KernelModeled.lean`.
 
 The model is **untrusted prover-side advice**. It is generated here by the
-certified kernel's own in-process modeller (`IxC/Kernel/Frontend/InModel`),
+certified kernel's own in-process modeller (`IxCK/Kernel/Frontend/InModel`),
 reached through the kernel's Ixon reader (`Ix.Kernel.Reader.readRecord`, which
 calls the modeller for every mutual or nested block it reads), and encoded back
 into Ixon records. Nothing binds the model to the block by hashing: IxVM checks
@@ -1321,7 +1321,7 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
 
 A generated record carries its binder-data section like any record, so its
 address covers the data IxVM reads from it. The records are encoded first (each
-naming the ones before it by address), then installed once into IxC's kernel
+naming the ones before it by address), then installed once into IxCK's kernel
 environment (`IxVM.PwHints.KernelEnv.ofView`, typed against the environment's
 records), and then re-addressed bottom-up: each record's references to the
 advice follow their new addresses, the record is put in the compiler's form
@@ -1456,7 +1456,7 @@ def withEmptyPayloads (env : Ixon.Env) : Ixon.Env := Id.run do
 
 /-- Whether a generated one-type inductive block has a constructor field domain that
 mentions the family other than as the head of a direct or reflexive recursive field:
-`fieldErase` (`IxC/Kernel/Frontend/InModel/Nested.lean`) leaves such an occurrence under
+`fieldErase` (`IxCK/Kernel/Frontend/InModel/Nested.lean`) leaves such an occurrence under
 a redex that positivity's WHNF (`normPosDom`) reduces away when generating the recursor,
 so the generated recursor record must carry the normalized domain too. -/
 def indNeedsRecNorm (block : List (ConstantInfo .anon)) (nP : Nat) : Bool :=
@@ -1481,7 +1481,7 @@ def indNeedsRecNorm (block : List (ConstantInfo .anon)) (nP : Nat) : Bool :=
   | _ => false
 
 /-- Replace the constructors and recursor of any generated `.indDecl` that
-`indNeedsRecNorm` flags with those IxC's native install computes over the
+`indNeedsRecNorm` flags with those IxCK's native install computes over the
 normalized constructor domains (`ctorsA`, `cvRa`, and `sumRules`), installing
 `d` first if `k.fe` does not already hold it, so the advice records pass
 `KernelCheck`'s syntactic positivity and native recursor checks. -/

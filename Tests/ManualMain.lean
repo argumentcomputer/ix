@@ -30,7 +30,7 @@ def registry : List Entry := [
   -- controls exercising the Rust executor and circuit-verdict deferred assertions.
   .env "ixvm-must-reject" (.manual "hand-built must-reject fixtures and their controls, checked against Lean's kernel") Tests.Ix.IxVM.MustReject.run,
   .env "ixvm-ind-variations" (.manual "inductive variations through Lean, the certified kernel and IxVM; IX_IV_ONLY") Tests.Ix.IxVM.IndVariations.run,
-  .runner "binder-data-annotators" (.manual "the compiler's inline annotator against IxC's pass on a compiled artifact, byte for byte; IX_BD_IXE") Tests.Ix.IxVM.BinderAnnotators.run,
+  .runner "binder-data-annotators" (.manual "the compiler's inline annotator against IxCK's pass on a compiled artifact, byte for byte; IX_BD_IXE") Tests.Ix.IxVM.BinderAnnotators.run,
   .runner "prim-addrs-artifact" (.manual "every Ix.PrimAddrs address is the record a compiled artifact publishes under its Lean name; IX_PRIM_IXE") Tests.Ix.Kernel.PrimAddrs.artifact,
   -- IxVM against Lean's kernel on a compiled corpus (circuit verdict).
   .env "ixvm-differential" (.manual "a compiled corpus through IxVM and Lean's kernel; IX_DIFF_MODULES, IX_DIFF_LIMIT") Tests.Ix.IxVM.Differential.run,

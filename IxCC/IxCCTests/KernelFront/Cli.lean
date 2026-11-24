@@ -1,5 +1,5 @@
 import IxCCTests.Support.Envelope
-import IxC.Ixon.Codec
+import IxCK.Ixon.Codec
 
 /-! # `ixcc` at the command line: the kernel's limits, the re-execution, signals
 

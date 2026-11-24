@@ -111,7 +111,7 @@ private def Tests.Cli.testCompileContracts : IO Unit := do
       unless result.exitCode == 0 && (← output.pathExists) do
         throw <| IO.userError s!"CLI failed on valid annotated source cliLocal {flags}:\n{result.stderr}\n{result.stdout}"
       let said := result.stderr ++ result.stdout
-      unless (said.splitOn "mode checking: accepted by IxC.Resource.check").length > 1 do
+      unless (said.splitOn "mode checking: accepted by IxCK.Resource.check").length > 1 do
         throw <| IO.userError s!"CLI did not report uncertified mode-check acceptance for cliLocal {flags}"
       let env ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile output))
       unless env.roleBinding.isSome do
@@ -360,7 +360,7 @@ private def Tests.Cli.testDeepRecordExits : IO Unit := do
   finally
     IO.FS.removeDirAll dir
 
-/-! ## The kernel's limits as settings (`IxC/Host/Limits.lean`, `docs/kernel.md`, "Limits at
+/-! ## The kernel's limits as settings (`IxCK/Host/Limits.lean`, `docs/kernel.md`, "Limits at
 the command line, and exit codes"): each limit lowered and raised by its flag and by its
 variable, the flag over the variable, malformed values, the address-space refusal, on
 `ix check-lean`, `ix verify-host`, `ix compile` and `kernel-check-ixe`. -/

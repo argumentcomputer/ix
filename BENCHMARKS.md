@@ -5,7 +5,7 @@
 > and CLI flags, all since removed. Recorded agreement concerns
 > the measured inputs.
 >
-> Current `ix check-lean` uses IxC. The compiler now compiles
+> Current `ix check-lean` uses IxCK. The compiler now compiles
 > Lean verbatim through the certified Lean pipeline (`Ix.Cert.compileReport`).
 > See the [current benchmark commands](docs/benchmarking.md#local-usage)
 > and [checker contract and commands](docs/kernel.md#environment-check).

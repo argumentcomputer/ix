@@ -1,5 +1,5 @@
 import IxVMRefinement.Infer.Basic
-import IxC.Kernel.Rules.Transport
+import IxCK.Kernel.Rules.Transport
 
 /-! # Inference after lowering the context
 
@@ -9,7 +9,7 @@ smallest free index (`expr_glb`) and the list's length, do not occur in the term
 lowered past them (`expr_lower`, the same image at depth `d - g`), inferred under the context
 list without its first `g` entries (a segment of the same ghost context ending at `d - g`) and the
 type lifted back (`expr_lift`, the same image at depth `d`). The derivation at depth `d - g` moves
-to depth `d` by top weakening (`Infer.lift`, `IxC/Kernel/Rules/Transport.lean`): the subject and
+to depth `d` by top weakening (`Infer.lift`, `IxCK/Kernel/Rules/Transport.lean`): the subject and
 the type are scoped below `d - g`, so the renaming fixes them, and the stored terms are closed
 (`EnvFacts.storeClosed`). -/
 

@@ -148,7 +148,7 @@ pub fn get_univ(buf: &mut &[u8]) -> Result<Arc<Univ>, String> {
 
 /// Deserialize a universe from bytes, charging its expanded constructors to
 /// `budget` before building them (a successor run charges its length, every
-/// other tag one), as IxC's bounded decoder does (`Ixon.Bounded`). Only the
+/// other tag one), as IxCK's bounded decoder does (`Ixon.Bounded`). Only the
 /// canonical encoding [`put_univ`] writes is accepted: a `Max`/`IMax` tag
 /// carries the value 0, and a successor run is never followed by another,
 /// so one value has one encoding.

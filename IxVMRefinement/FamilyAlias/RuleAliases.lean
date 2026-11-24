@@ -1,8 +1,8 @@
 import IxVMRefinement.FamilyAlias.RuleCopyBody
 import IxVMRefinement.FamilyAlias.AliasGroupFacts
 import IxVMRefinement.FamilyAlias.MembersFromScope
-import IxC.Kernel.Verify.Denote.IndFrame
-import IxC.Kernel.Semantics.Inductives.DeclNativeRecLateSplitJ
+import IxCK.Kernel.Verify.Denote.IndFrame
+import IxCK.Kernel.Semantics.Inductives.DeclNativeRecLateSplitJ
 
 /-! # The alias of a rule: admissible after the aliases before it
 

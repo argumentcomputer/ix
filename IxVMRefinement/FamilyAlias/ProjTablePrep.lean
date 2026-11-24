@@ -3,17 +3,17 @@ import IxVMRefinement.FamilyAlias.Assembly
 import IxVMRefinement.FamilyAlias.Clause
 import IxVMRefinement.Decl.NativeEnv
 import IxVMRefinement.Infer.Close
-import IxC.Kernel.Model.DeclIndRen
-import IxC.Kernel.Model.IndMembers
-import IxC.Kernel.Model.IndEtaLaw
-import IxC.Kernel.Model.IndUnitLaw
-import IxC.Kernel.Model.Inductives.TowerCons
-import IxC.Kernel.Model.StoreArNative
-import IxC.Kernel.Semantics.Inductives.DeclNativeRecLateSplitJ
-import IxC.Kernel.Rules.Inversion
-import IxC.Kernel.Verify.PropWhen
-import IxC.Kernel.Verify.Inductives.StructBody
-import IxC.Kernel.Verify.InstLevels
+import IxCK.Kernel.Model.DeclIndRen
+import IxCK.Kernel.Model.IndMembers
+import IxCK.Kernel.Model.IndEtaLaw
+import IxCK.Kernel.Model.IndUnitLaw
+import IxCK.Kernel.Model.Inductives.TowerCons
+import IxCK.Kernel.Model.StoreArNative
+import IxCK.Kernel.Semantics.Inductives.DeclNativeRecLateSplitJ
+import IxCK.Kernel.Rules.Inversion
+import IxCK.Kernel.Verify.PropWhen
+import IxCK.Kernel.Verify.Inductives.StructBody
+import IxCK.Kernel.Verify.InstLevels
 
 /-! # Preparation for modeled projection-table installation
 

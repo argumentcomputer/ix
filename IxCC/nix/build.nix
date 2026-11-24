@@ -11,20 +11,20 @@
     inherit workspace;
   };
   inherit (sources) root;
-  # «ix-kernel»: the libraries of ix's `IxC/lakefile.lean` declare
+  # «ix-ck»: the libraries of ix's `IxCK/lakefile.lean` declare
   # `srcDir := ".."` (the ix checkout root), which lean4-nix cannot shadow (it
-  # copies only a dependency's own directory), and its `IxC.Ixon` library
+  # copies only a dependency's own directory), and its `IxCK.Ixon` library
   # also holds the codec's proofs and audits, which import the kernel: linking
   # IxCC's shared library would build all of it. So the sources of the
-  # closure IxCC imports (the files the trust ledger hashes: `IxC.Ixon.Canonical`
-  # and its imports, under `IxC/Address` and `IxC/Ixon`, the role vocabulary
-  # `IxC.Kernel.Key`, and the kernel's tiered admission entry, prelude and
-  # executed typing core with their imports under `IxC/Kernel`, unchanged) are
+  # closure IxCC imports (the files the trust ledger hashes: `IxCK.Ixon.Canonical`
+  # and its imports, under `IxCK/Address` and `IxCK/Ixon`, the role vocabulary
+  # `IxCK.Kernel.Key`, and the kernel's tiered admission entry, prelude and
+  # executed typing core with their imports under `IxCK/Kernel`, unchanged) are
   # packaged under the same package name and toolchain with a library holding
   # exactly those modules, built once here with its shared and static facets.
   # A module the closure imports but the ledger does not record fails this
   # build.
-  ixCSrc = pkgs.runCommand "ix-kernel-src" {} ''
+  ixCSrc = pkgs.runCommand "ix-ck-src" {} ''
     mkdir -p $out
     cp -r ${sources.ixC.modules}/. $out/
     chmod -R u+w $out
@@ -34,16 +34,16 @@
     import Lake
     open Lake DSL
 
-    package «ix-kernel» where
+    package «ix-ck» where
       version := v!"0.1.0"
 
     @[default_target]
-    lean_lib IxC where
+    lean_lib IxCK where
       roots := #[${pkgs.lib.concatMapStringsSep ", " (name: "`" + name) sources.ixC.moduleNames}]
     LAKEFILE
   '';
   ixC = lake2nix.mkLakeDerivation {
-    name = "IxC";
+    name = "IxCK";
     src = ixCSrc;
     buildLibrary = true;
   };
@@ -51,17 +51,17 @@
     src = sources.dependencies;
     depOverrideDeriv = {
       Blake3 = blake3;
-      "«ix-kernel»" = ixC;
+      "«ix-ck»" = ixC;
     };
   };
   # lean4-nix shadows each dependency under `.lake/packages/<manifest name>`;
-  # for `«ix-kernel»` that directory name is not ASCII, and Lake mangles it
-  # when it passes object paths to the linker (`.lake/packages/302253ix-kernel302273/…`
-  # in clang's arguments). Move it to `ix-kernel`, the directory Lake itself
+  # for `«ix-ck»` that directory name is not ASCII, and Lake mangles it
+  # when it passes object paths to the linker (`.lake/packages/302253ix-ck302273/…`
+  # in clang's arguments). Move it to `ix-ck`, the directory Lake itself
   # checks the package out to, and point the package overrides there.
   packageOverrides = pkgs.writers.writeJSON "package-overrides.json" (let
     manifest = builtins.fromJSON (builtins.readFile (root + "/lake-manifest.json"));
-    dir = name: if name == "«ix-kernel»" then "ix-kernel" else name;
+    dir = name: if name == "«ix-ck»" then "ix-ck" else name;
   in
     manifest
     // {
@@ -74,7 +74,7 @@
       manifest.packages;
     });
   asciiPackages = ''
-    mv ".lake/packages/«ix-kernel»" .lake/packages/ix-kernel
+    mv ".lake/packages/«ix-ck»" .lake/packages/ix-ck
     rm -f .lake/package-overrides.json
     cp ${packageOverrides} .lake/package-overrides.json
   '';
@@ -113,7 +113,7 @@
   };
   # The grounding library, with its axiom fence, and its suite (`tests-grounding`), reusing the
   # library's artifacts like the program build; the one build that compiles the kernel's
-  # model (`IxC.Kernel.Denotes` and its imports, in the «ix-kernel» closure the ledger records).
+  # model (`IxCK.Kernel.Denotes` and its imports, in the «ix-ck» closure the ledger records).
   grounding = lake2nix.mkPackage {
     inherit lakeDeps buildInputs;
     src = sources.grounding;

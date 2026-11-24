@@ -1,4 +1,4 @@
-import IxC.Kernel.Core
+import IxCK.Kernel.Core
 import IxCC.Src.Semantics
 import IxCC.Src.Readback
 import IxCC.Src.Relevance.Syntax
@@ -163,7 +163,7 @@ inductive TermCorr (κ : CId → KKey) (lps : List Nat) : Term → KExpr → Pro
 
 The kernel stores the ζ-reduct of a run term (its annotation pass substitutes every `let` away),
 and neither our `Denotes` nor #678's reads a `let` (#678 at `d4c079de2`,
-`IxC/Kernel/Denotes.lean:635`). So a Src `let x := v; b` corresponds to the stored term `e` of its
+`IxCK/Kernel/Denotes.lean:635`). So a Src `let x := v; b` corresponds to the stored term `e` of its
 body with `x` replaced by the kernel copy `v'` of `v`: Src variables stand for kernel *terms*, through
 a substitution `σ : Sig`. A `let` whose variable meets no kernel term (a dead `let`) gets `none`: its
 slot is related to nothing, and nothing about its value is asked. -/

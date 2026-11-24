@@ -34,11 +34,11 @@
     (builtins.attrNames
       (lib.filterAttrs (_: target: target.kind == "lean_exe") graph.targets));
   # The trust ledger is the one record of what IxCC takes from the workspace:
-  # the pure Lean dependency «ix-kernel» (its directory and the import closure
+  # the pure Lean dependency «ix-ck» (its directory and the import closure
   # whose every file it hashes) and the repository files it audits.
   ledger = builtins.fromJSON (builtins.readFile (root + "/docs/trusted-externs.json"));
   ixCEntry = let
-    entries = builtins.filter (entry: entry.lake_package == "«ix-kernel»") ledger.lean_dependencies;
+    entries = builtins.filter (entry: entry.lake_package == "«ix-ck»") ledger.lean_dependencies;
   in
     assert builtins.length entries == 1; builtins.head entries;
   ixCRoot = root + "/${ixCEntry.pins.workspace_path}";
@@ -59,8 +59,8 @@ in {
     inherit root;
     fileset = lib.fileset.unions common;
   };
-  # «ix-kernel»: exactly the codec closure the ledger records, at the paths its
-  # module names give (`IxC/…`), with the package's toolchain and manifest
+  # «ix-ck»: exactly the codec closure the ledger records, at the paths its
+  # module names give (`IxCK/…`), with the package's toolchain and manifest
   # and the closure's module names.
   ixC = {
     modules = lib.fileset.toSource {
@@ -79,7 +79,7 @@ in {
     fileset = root;
   };
   # The workspace as the trust ledger audits it, with IxCC at its path: the
-  # IxCC tree, «ix-kernel»'s lakefile and recorded closure, the repository's
+  # IxCC tree, «ix-ck»'s lakefile and recorded closure, the repository's
   # flake.lock and lean-toolchain, the workflows the ledger scopes, the
   # repository files it pins and the repository-local actions they may use.
   ledgerWorkspace = lib.fileset.toSource {

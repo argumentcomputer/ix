@@ -1,8 +1,8 @@
 import Ix.Cert.Compile
 import Ix.Cert.CompileCorrect
 import Ix.CompileCertified
-import IxC.Kernel.Audit.Runtime
-import IxC.Kernel.Audit.Roots
+import IxCK.Kernel.Audit.Runtime
+import IxCK.Kernel.Audit.Roots
 
 /-! # The compiler's runtime closure, frozen
 
@@ -42,7 +42,7 @@ symbol that no library defines, so a binary that links them fails. -/
 -- Both `Ix.Cert.compile` (which drives `Ix.Compile.compileEnv` / `compileEnvFold`) and
 -- `Ix.Compile.ReadyCompile.reportIO` (the parallel ready-queue driver used by
 -- `Ix.CompileM.compileCertifiedPrepared`) are audited here.
--- Binder-data annotation runs inside compilation through `IxC.Kernel` expressions,
+-- Binder-data annotation runs inside compilation through `IxCK.Kernel` expressions,
 -- keys, levels, and names, adding their computed-field constructors/overrides
 -- (including `Level.hasParamData`) and `Ix.Kernel.{levelHasParam,Expr.instantiate1Lift,
 -- Expr.liftLooseBVars}` csimp replacements to the unruled list (all admitted by
