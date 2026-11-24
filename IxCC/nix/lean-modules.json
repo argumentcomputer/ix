@@ -3696,7 +3696,8 @@
     "IxCC.BigNat.Bootstrap",
     "IxCC.Rt.BigNat.Cell",
     "IxCC.Rt.BigNat.ProofProcs",
-    "IxCC.Rt.BigNat.Proof"]},
+    "IxCC.Rt.BigNat.Proof",
+    "IxCC.Rt.BigNat.LowerBigProof"]},
   "IxCCTests.Fences.BigNat":
   {"path": "IxCCTests/Fences/BigNat.lean", "imports": ["IxCC.BigNat.Proof"]},
   "IxCCTests.Fences.BackendProof":
@@ -3995,6 +3996,23 @@
    "imports": ["IxCC.Own.Plain.Semantics"]},
   "IxCCTests.Cfg.Rc.Bounds":
   {"path": "IxCCTests/Cfg/Rc/Bounds.lean", "imports": ["IxCC.Cfg.Rc.Bounds"]},
+  "IxCCTests.BigNat.WireTest":
+  {"path": "IxCCTests/BigNat/WireTest.lean",
+   "imports":
+   ["IxCC.BigNat.Bootstrap",
+    "IxCC.Rt.BigNat.Link",
+    "IxCC.Rt.BigNat.LowerBig",
+    "IxCC.Backend",
+    "IxCC.Recheck",
+    "IxCC.Lam.Erase.Array",
+    "IxCC.Anf.Pipeline",
+    "IxCC.Fir.Lower",
+    "IxCC.Fir.Rep",
+    "IxCC.Own.Immortal",
+    "IxCC.Cfg.Lower",
+    "IxCC.X86.ELFRodata",
+    "IxCCTests.Exe.Session",
+    "IxCCTests.BigNat.NativeDiffCore"]},
   "IxCCTests.BigNat.SlowPathTest":
   {"path": "IxCCTests/BigNat/SlowPathTest.lean",
    "imports":
@@ -4011,8 +4029,11 @@
     "IxCC.X86.ELFWriteK",
     "IxCC.X86.ELFValidate",
     "IxCC.X86.ELFCheckK"]},
+  "IxCCTests.BigNat.NativeDiffCore":
+  {"path": "IxCCTests/BigNat/NativeDiffCore.lean", "imports": ["IxCC.BigNat"]},
   "IxCCTests.BigNat.NativeDiff":
-  {"path": "IxCCTests/BigNat/NativeDiff.lean", "imports": ["IxCC.BigNat"]},
+  {"path": "IxCCTests/BigNat/NativeDiff.lean",
+   "imports": ["IxCCTests.BigNat.NativeDiffCore", "IxCCTests.BigNat.WireTest"]},
   "IxCCTests.BigNat.DiffTest":
   {"path": "IxCCTests/BigNat/DiffTest.lean", "imports": ["IxCC.BigNat"]},
   "IxCCTests.Backend.Support":
@@ -6720,6 +6741,38 @@
    ["IxCC.Rt.BigNat.Dispatch",
     "IxCC.Rt.BigNat.ProofProcs",
     "IxCC.Rt.Proof.OpsWord"]},
+  "IxCC.Rt.BigNat.LowerBigProof":
+  {"path": "IxCC/Rt/BigNat/LowerBigProof.lean",
+   "imports":
+   ["IxCC.Rt.BigNat.LowerBig",
+    "IxCC.Rt.BigNat.Proof",
+    "IxCC.Rt.Proof.ReadbackCongr"]},
+  "IxCC.Rt.BigNat.LowerBig":
+  {"path": "IxCC/Rt/BigNat/LowerBig.lean",
+   "imports":
+   ["IxCC.Rt.Lower",
+    "IxCC.Rt.BigNat.Cell",
+    "IxCC.Rt.BigNat.Dispatch",
+    "IxCC.Rt.BigNat.Link",
+    "IxCC.Rt.Procs.Entry",
+    "IxCC.Rt.Procs.Nat",
+    "IxCC.Rt.Rc.Array.Wire"]},
+  "IxCC.Rt.BigNat.Link":
+  {"path": "IxCC/Rt/BigNat/Link.lean",
+   "imports":
+   ["IxCC.BigNat.Bootstrap",
+    "IxCC.Rt.BigNat.Dispatch",
+    "IxCC.Rt.Procs.Entry",
+    "IxCC.Rt.Procs.Nat",
+    "IxCC.Rt.Rc.Array.Wire",
+    "IxCC.Lam.Erase.Array",
+    "IxCC.Anf.Pipeline",
+    "IxCC.Fir.Lower",
+    "IxCC.Fir.Rep",
+    "IxCC.Own.Immortal",
+    "IxCC.Cfg.Lower",
+    "IxCC.Recheck.Produce",
+    "IxCC.Lir.WellFormed"]},
   "IxCC.Rt.BigNat.Dispatch":
   {"path": "IxCC/Rt/BigNat/Dispatch.lean",
    "imports": ["IxCC.Rt.Lower", "IxCC.Rt.BigNat.Cell"]},
@@ -7850,6 +7903,8 @@
     "IxCC.Xv.Print",
     "IxCC.Exe",
     "IxCC.Exe.Cert",
+    "IxCC.Rt.BigNat.Link",
+    "IxCC.Rt.BigNat.LowerBig",
     "IxCK.Host.Limits"]},
   "IxCC.Cfg.WellFormed":
   {"path": "IxCC/Cfg/WellFormed.lean", "imports": ["IxCC.Cfg.Syntax"]},
@@ -9050,7 +9105,8 @@
     "IxCC.Lam.Syntax",
     "IxCC.Lir.Syntax",
     "IxCC.Rt.Layout",
-    "Lean.Data.Json"]},
+    "Lean.Data.Json",
+    "Std.Data.HashMap"]},
   "IxCC.BigNat.Basic":
   {"path": "IxCC/BigNat/Basic.lean", "imports": ["IxCC.BigNat.LimbOps"]},
   "IxCC.BigNat":
@@ -10057,4 +10113,7 @@
     "IxCC.Lir.Proof.Opt.Mem",
     "IxCC.Lir.Proof.Opt.Seg",
     "IxCC.Lir.Proof.Opt.Sim",
-    "IxCC.Lir.Proof.Opt.Backend"]}}}
+    "IxCC.Lir.Proof.Opt.Backend",
+    "IxCC.Rt.BigNat.Link",
+    "IxCC.Rt.BigNat.LowerBig",
+    "IxCC.Rt.BigNat.LowerBigProof"]}}}

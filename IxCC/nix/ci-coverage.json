@@ -603,6 +603,9 @@
   "IxCC.Rt.Backend",
   "IxCC.Rt.BigNat.Cell",
   "IxCC.Rt.BigNat.Dispatch",
+  "IxCC.Rt.BigNat.Link",
+  "IxCC.Rt.BigNat.LowerBig",
+  "IxCC.Rt.BigNat.LowerBigProof",
   "IxCC.Rt.BigNat.Proof",
   "IxCC.Rt.BigNat.ProofProcs",
   "IxCC.Rt.Layout",
@@ -1772,7 +1775,7 @@
  "ecb1040fcf889eb2c39b18e5bbd0e208e53aa66588b9b3780a2bbe6982de86e4",
  "grounding_axiom_count": 556,
  "baseline":
- "ixcc-w3-cp3b: Wave 3 Checkpoint 3b (exe-cert-v1 +20, lir-ssa-opt +43; 7,220 + 556 = 7,776 fences)",
+ "ixcc-w4-final: Wave 4 Final Integration (bignat-wire +42; 7,262 + 556 = 7,818 fences)",
  "axiom_sha256":
- "467baec05408ba3aa72be585c6ac4e878093b05581658d930e22ea7be6b9f093",
- "axiom_count": 7220}
+ "7345c3146e0abea8f64272382eb73d8ba3ac5c6a9463f64fe0c88ff31b04fbc8",
+ "axiom_count": 7262}

@@ -408,7 +408,7 @@ def compileLibrary (lib : FrozenLibrary) : Except String CompiledBigNatLib := do
       .fixed limbPins prodKey (kindOverride := some .limbs)).mapError toString
   let budgets : Anf.Pipeline.Budgets :=
     { inline := { noInline := info.noInline } }
-  let trace ← Anf.Pipeline.produce budgets lam
+  let trace ← (Recheck.produceAnf budgets lam).mapError (·.render)
   let (anf, _) ← (Recheck.produceClosures ps.src trace).mapError (·.render)
   let fir ← (Fir.lower anf).mapError (·.render)
   let cert := refineLimbsArrayCert fir (Fir.Rep.inferWithArrays fir info)

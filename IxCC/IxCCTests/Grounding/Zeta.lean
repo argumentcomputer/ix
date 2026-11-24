@@ -168,7 +168,9 @@ def refusedTable : List (String × List String) :=
    ("phase1-resource/resource", ["eqnShape"]),
    ("phase1-decline/loops", ["eqnShape"]),
    ("phase1-decline/strings", ["noWord", "caseRec", "proj", "valueCorr", "caseShape", "caseProg"]),
-   ("phase1-decline/panic", ["noWord", "proj", "valueCorr"]),
+   -- `String.Internal.append` is allowlisted in `Pinned.dr4OpaqueByValuePins` (DR4 `panic!` admission),
+   -- so `groundCheck`'s Phase-1 `notOpaque` conjunct also rejects `phase1-decline/panic`.
+   ("phase1-decline/panic", ["noWord", "notOpaque", "proj", "valueCorr"]),
    ("phase2-closures/closures", ["caseRec", "caseShape"]),
    ("phase2-arity/arity", []),
    ("fixtures/ixon-v4/src-diag/diag",

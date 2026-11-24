@@ -120,4 +120,5 @@ def main : IO Unit := do
         | "Decline.mulN", [n, k] => toString (Decline.mulN n k)
         | "Decline.unboxMatch", [k] => toString (Decline.unboxMatch k)
         | "Decline.subtypeMatch", [k] => toString (Decline.subtypeMatch k)
+        | "Decline.withPanic", [n] => toString (Decline.withPanic n)
         | _, _ => s!"unknown root {root} {args}"

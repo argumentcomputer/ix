@@ -187,12 +187,18 @@ def produceSource (cfg : Config) (inp : Input) : Except Err ProducedSource := do
   pure { table, tableDiags, tableStats, ann, src, checked
          wordHints := Src.Table.wordHints src adm.reached }
 
+/-- Produce an ANF middle-end trace under `budgets` (keeps `Anf.Pipeline.produce`
+centralized inside `Recheck.Produce`). -/
+def produceAnf (budgets : Anf.Pipeline.Budgets) (lam : Lam.Program) :
+    Except Err Anf.Pipeline.Trace :=
+  (Anf.Pipeline.produce budgets lam).mapError fun m =>
+    { stage := .anf, code := "anf.produce", message := m }
+
 /-- The producer: every oracle, run natively (see the module note). -/
 def produceWith (cfg : Config) (inp : Input) : Except Err Produced := do
   let ⟨table, tableDiags, tableStats, ann, src, checked, wordHints⟩ ← produceSource cfg inp
   let (lam, _) ← (Lam.erase src checked).mapError Err.ofErase
-  let trace ← (Anf.Pipeline.produce cfg.budgets lam).mapError fun m =>
-    { stage := .anf, code := "anf.produce", message := m }
+  let trace ← produceAnf cfg.budgets lam
   -- the closures step, as the replay runs it (`Recheck.anfOf`)
   let (anf, stages) ← produceClosures src trace
   let fir ← (Fir.lower anf).mapError Err.ofFir

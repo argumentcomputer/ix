@@ -581,11 +581,14 @@ def declines (a : Assert) (t : Tools) : IO (Array String) := do
 def reports (a : Assert) : IO (Array String) := do
   let base := ["compile", "c.ixe", "--equations", "e.json", "-o", "o.o"]
   match IxCC.Cli.parse (base ++ ["--root", "A", "--root", "B", "--dump-ir", "all", "--stats"]) with
-  | .ok o => expect a (o.roots == ["A", "B"] && o.dumps == IxCC.Cli.dumpLevels && o.stats && o.rc == .off && !o.opt) "parse"
+  | .ok o => expect a (o.roots == ["A", "B"] && o.dumps == IxCC.Cli.dumpLevels && o.stats && o.rc == .off && !o.opt && !o.bignat) "parse"
   | .error e => expect a false s!"parse: {e}"
   match IxCC.Cli.parse (base ++ ["--opt"]) with
   | .ok o => expect a o.opt "parse --opt"
   | .error e => expect a false s!"parse --opt: {e}"
+  match IxCC.Cli.parse (base ++ ["--bignat", "--opt", "--bignat-lib", "b.json"]) with
+  | .ok o => expect a (o.bignat && o.opt && o.bignatLib == some "b.json") "parse --bignat"
+  | .error e => expect a false s!"parse --bignat: {e}"
   -- a certificate fixes the RC policy: `check-cert` parses without `--rc`, and refuses it (below)
   match IxCC.Cli.parse ["check-cert", "c.ixe", "--equations", "e.json", "--cert", "c.json"] with
   | .ok o => expect a (o.cert.isSome && !o.rcExplicit) "parse check-cert"
@@ -599,8 +602,15 @@ def reports (a : Assert) : IO (Array String) := do
       base ++ ["extra"], base ++ ["--cert", "c.json", "--rc", "auto"],
       base ++ ["--opt", "--cert", "c.json"], base ++ ["--opt", "--emit-cert", "c.json"],
       base ++ ["--exe", "a.out", "--opt", "--embed-cert"],
+      base ++ ["--bignat", "--cert", "c.json"], base ++ ["--bignat", "--emit-cert", "c.json"],
+      base ++ ["--exe", "a.out", "--bignat", "--embed-cert"],
+      base ++ ["--exe", "a.out", "--bignat", "--machine"],
+      base ++ ["--bignat", "--rc", "on"], base ++ ["--bignat", "--rc", "auto"],
+      base ++ ["--bignat-lib", "b.json"],
       ["check-cert", "c.ixe", "--equations", "e.json", "--cert", "c.json", "--opt"],
+      ["check-cert", "c.ixe", "--equations", "e.json", "--cert", "c.json", "--bignat"],
       ["verify-exe", "a.out", "--opt"],
+      ["verify-exe", "a.out", "--bignat"],
       ["check-cert", "c.ixe", "--equations", "e.json", "--cert", "c.json", "--rc", "auto"]] do
     expect a (!(IxCC.Cli.parse bad).toBool) s!"parse accepted {bad}"
   -- every erasure decline renders with its own code

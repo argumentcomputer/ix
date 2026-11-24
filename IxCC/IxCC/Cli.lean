@@ -7,6 +7,8 @@ import IxCC.Lir.Print
 import IxCC.Xv.Print
 import IxCC.Exe
 import IxCC.Exe.Cert
+import IxCC.Rt.BigNat.Link
+import IxCC.Rt.BigNat.LowerBig
 import IxCK.Host.Limits
 
 /-! # The `ixcc` command line
@@ -136,6 +138,10 @@ structure Options where
   rcExplicit : Bool := false
   /-- `--opt`: run the formally validated Lir SSA optimizer (`Backend.compileOpt`, default OFF). -/
   opt : Bool := false
+  /-- `--bignat`: compile via DR3/DR4 + Phase 4 arbitrary-precision `Nat` (`Rt.BigNat.lowerRepBig`, default OFF). -/
+  bignat : Bool := false
+  /-- `--bignat-lib FILE`: pre-frozen `ixcc/bignat-bootstrap/1` JSON for `--bignat`. -/
+  bignatLib : Option FilePath := none
   /-- `--exe FILE`: also write a standalone executable of the first root. -/
   exe : Option FilePath := none
   /-- `--embed-cert`: package a hardened `.ix.cert` v1 trailer into `--exe`. -/
@@ -155,7 +161,8 @@ def usage : String :=
   "\n".intercalate [
     "usage:",
     "  ixcc compile CLOSURE.ixe --equations EQ.json [--root NAME]... -o OUT.o",
-    "      [--rc off|on|auto] [--opt] [--cert FILE] [--emit-cert FILE] [--signatures FILE] [--dump-ir LEVEL]... [--stats]",
+    "      [--rc off|on|auto] [--opt] [--bignat [--bignat-lib FILE]] [--cert FILE] [--emit-cert FILE]",
+    "      [--signatures FILE] [--dump-ir LEVEL]... [--stats]",
     "      [--exe FILE [--embed-cert] [--machine] [--stack BYTES] [--region BYTES]]",
     "  ixcc check-cert CLOSURE.ixe --equations EQ.json [--root NAME]... --cert FILE",
     "      [-o OUT.o] [--signatures FILE] [--stats]",
@@ -179,6 +186,8 @@ def parseRest (o : Options) : List String → Except String Options
     | some mode => parseRest { o with rc := mode, rcExplicit := true } rest
     | none => throw s!"unknown --rc mode {m}"
   | "--opt" :: rest => parseRest { o with opt := true } rest
+  | "--bignat" :: rest => parseRest { o with bignat := true } rest
+  | "--bignat-lib" :: f :: rest => parseRest { o with bignatLib := some f } rest
   | "--cert" :: f :: rest => parseRest { o with cert := some f } rest
   | "--emit-cert" :: f :: rest => parseRest { o with emitCert := some f } rest
   | "--signatures" :: f :: rest => parseRest { o with signatures := some f } rest
@@ -229,6 +238,13 @@ def parse : List String → Except String Options
       if o.opt && o.cert.isSome then throw "cannot combine --opt with --cert"
       if o.opt && o.emitCert.isSome then throw "cannot combine --opt with --emit-cert"
       if o.opt && o.embedCert then throw "cannot combine --opt with --embed-cert"
+      if o.bignat && cmd == "check-cert" then throw "--bignat applies only to compile"
+      if o.bignat && o.cert.isSome then throw "cannot combine --bignat with --cert"
+      if o.bignat && o.emitCert.isSome then throw "cannot combine --bignat with --emit-cert"
+      if o.bignat && o.embedCert then throw "cannot combine --bignat with --embed-cert"
+      if o.bignat && o.machine then throw "cannot combine --bignat with --machine"
+      if o.bignat && o.rc != .off then throw "--bignat requires --rc off"
+      if o.bignatLib.isSome && !o.bignat then throw "--bignat-lib applies to --bignat"
       -- a certificate fixes the RC policy (its format), so `--rc` with one is a usage error
       if o.cert.isSome && o.rcExplicit then throw "cannot combine --rc with --cert"
       if cmd == "check-cert" && o.cert.isNone then throw "check-cert needs --cert"
@@ -237,7 +253,8 @@ def parse : List String → Except String Options
       let o ← parseRest { command := cmd } rest
       if o.verifyExe.isNone then throw "no executable given"
       if o.out.isSome || o.exe.isSome || o.cert.isSome || o.emitCert.isSome ||
-          o.signatures.isSome || !o.dumps.isEmpty || o.rcExplicit || o.opt || o.layoutGiven ||
+          o.signatures.isSome || !o.dumps.isEmpty || o.rcExplicit || o.opt ||
+          o.bignat || o.bignatLib.isSome || o.layoutGiven ||
           o.machine || o.embedCert || !o.roots.isEmpty then
         throw "verify-exe accepts only FILE [--closure FILE] [--equations FILE] [--stats] and kernel limits"
       pure o
@@ -444,6 +461,105 @@ def timed {α : Type} (action : ExceptT Err IO α) : ExceptT Err IO (α × Nat) 
 /-- A pure stage, evaluated when the action runs (so `timed` measures it). -/
 def lift {α : Type} (x : Unit → Except Err α) : ExceptT Err IO α := ExceptT.mk (IO.lazyPure x)
 
+/-- Resolve the `ix` executable path for on-demand `--bignat` bootstrap freezing. -/
+private def resolveIxBin : IO String := do
+  if let some envBin ← IO.getEnv "IX_BIN" then
+    if !envBin.isEmpty then return envBin
+  for p in [FilePath.mk "../.lake/build/bin/ix", FilePath.mk ".lake/build/bin/ix"] do
+    if ← p.pathExists then return p.toString
+  return "ix"
+
+/-- Load (from `--bignat-lib` / `IX_BIGNAT_LIB`) or bootstrap-freeze `IxCC.BigNat.Entry`
+and compile the zero-C, zero-GMP Phase 4 BigNat runtime library. -/
+def loadBigNatLib (o : Options) : ExceptT Err IO Rt.BigNat.CompiledBigNatLib := do
+  let libFile? : Option FilePath ← match o.bignatLib with
+    | some f => pure (some f)
+    | none =>
+      match ← IO.getEnv "IX_BIGNAT_LIB" with
+      | some s => pure (if s.isEmpty then none else some (FilePath.mk s))
+      | none => pure none
+  let frozen ← match libFile? with
+    | some f =>
+      let text ← readText f
+      let j ← match Lean.Json.parse text with
+        | .ok j => pure j
+        | .error e => throw (cliErr "cli.bignat" s!"{f}: {e}")
+      match BigNat.Bootstrap.FrozenLibrary.ofJson j with
+      | .ok fl => pure fl
+      | .error e => throw (cliErr "cli.bignat" s!"{f}: {e}")
+    | none =>
+      let (cwd, sourceFile) ← match ← IO.getEnv "IX_BIGNAT_ENTRY" with
+        | some s =>
+          if !s.isEmpty then pure (none, FilePath.mk s)
+          else if ← (FilePath.mk "IxCC/BigNat/Entry.lean").pathExists then
+            pure (none, FilePath.mk "IxCC/BigNat/Entry.lean")
+          else if ← (FilePath.mk "IxCC/IxCC/BigNat/Entry.lean").pathExists then
+            pure (some (FilePath.mk "IxCC"), FilePath.mk "IxCC/BigNat/Entry.lean")
+          else
+            throw (cliErr "cli.bignat" "cannot locate IxCC/BigNat/Entry.lean; pass --bignat-lib FILE or set IX_BIGNAT_ENTRY")
+        | none =>
+          if ← (FilePath.mk "IxCC/BigNat/Entry.lean").pathExists then
+            pure (none, FilePath.mk "IxCC/BigNat/Entry.lean")
+          else if ← (FilePath.mk "IxCC/IxCC/BigNat/Entry.lean").pathExists then
+            pure (some (FilePath.mk "IxCC"), FilePath.mk "IxCC/BigNat/Entry.lean")
+          else
+            throw (cliErr "cli.bignat" "cannot locate IxCC/BigNat/Entry.lean; pass --bignat-lib FILE or set IX_BIGNAT_ENTRY")
+      let ixBin ← resolveIxBin
+      let stamp ← IO.monoNanosNow
+      let fcfg : BigNat.Bootstrap.FreezeConfig :=
+        { ix := ixBin
+        , sourceFile
+        , outDir := FilePath.mk s!"/tmp/ixcc-bignat-cli-{stamp}"
+        , cwd
+        , includeLimbEqns := false
+        , ops := BigNat.Bootstrap.SlowPathOp.numericOps }
+      match ← (BigNat.Bootstrap.freezeClosure fcfg).toBaseIO with
+      | .ok fl => pure fl
+      | .error e => throw (cliErr "cli.bignat" s!"{e}")
+  match Rt.BigNat.compileLibrary frozen with
+  | .ok lib => pure lib
+  | .error e => throw (cliErr "cli.bignat" e)
+
+/-- Compile `inp` via the DR1/DR2/DR3/DR4 + Phase 4 arbitrary-precision `Nat` pipeline
+(`Lam.Erase.Array → Anf → Fir → Fir.Rep → Own → Cfg → Rt.BigNat.lowerRepBig → Backend`),
+optionally running the validated `Lir.Opt` SSA optimizer when `opt = true`. -/
+def compileBigNat (opt : Bool) (lib : Rt.BigNat.CompiledBigNatLib) (cfg : Config) (inp : Input) :
+    Except Err (Artifact × List Xv.Alloc.Outcome × Array Src.Diag) := do
+  let ps ← produceSource cfg inp
+  let (lam, _, info) ← (Lam.Erase.Array.eraseWithArrays ps.src ps.checked .fixed [] none).mapError Err.ofErase
+  let budgets : Anf.Pipeline.Budgets :=
+    { cfg.budgets with inline := { cfg.budgets.inline with noInline := info.noInline } }
+  let trace ← produceAnf budgets lam
+  let (anf, _) ← produceClosures ps.src trace
+  let fir ← (Fir.lower anf).mapError Err.ofFir
+  let repCert := Fir.Rep.inferWithArrays fir info
+  unless Fir.Rep.checkWithArrays fir repCert do
+    throw { stage := .fir, code := "fir.rep", message := "Fir.Rep.checkWithArrays failed" }
+  let own := Own.immortal fir
+  let C := Cfg.lower own
+  checkParams cfg C (List.zipIdx C.exports |>.map fun (f, i) => (i, f))
+  let lowered0 ← (Rt.BigNat.lowerRepBig { names := cfg.names } lib repCert C).mapError Err.ofRt
+  let prog0 := lowered0.program.splitCriticalEdges
+  match prog0.check with
+  | .ok () => pure ()
+  | .error e => throw { stage := .rt, code := "rt.lir", message := toString e }
+  let lirProg := if opt then Lir.Opt.run prog0 else prog0
+  let lowered : Rt.Lowered := { lowered0 with program := lirProg }
+  let (xv, _) ← (Xv.Select.run lirProg).mapError fun e =>
+    { stage := .select, code := e.form, message := e.reason }
+  let allocRes ← (Xv.Alloc.run cfg.env xv).mapError fun msg =>
+    { stage := .alloc, code := "alloc", message := msg }
+  let root := (ps.src.roots.head?.map (·.1)).getD default
+  let bcfg : Backend.Config :=
+    { lowered.config (cfg.provenance.getD (defaultProvenance root)) with env := cfg.env }
+  let backend ← (Backend.emit allocRes.program bcfg).mapError Err.ofBackend
+  let rows := (List.range ps.src.roots.length).zip (ps.src.roots.zip (C.exports.zip lowered.roots))
+  let roots := rootsOf cfg ps.src C lowered rows
+  let art : Artifact :=
+    { src := ps.src, checked := ps.checked, lam, anf, fir, own, cfg := C, lowered
+    , xv, xl := allocRes.program, backend, roots }
+  pure (art, allocRes.outcomes, ps.wordHints)
+
 /-- `compile`, `check-cert`, and `verify-exe`, the kernel under `limits`. -/
 def execute (o : Options) (limits : Ix.Kernel.Admission.Limits := Src.KernelFront.defaultLimits) :
     ExceptT Err IO Unit := do
@@ -478,17 +594,23 @@ def execute (o : Options) (limits : Ix.Kernel.Admission.Limits := Src.KernelFron
   -- come from its verdict on the text that is written. Without a given certificate, with the
   -- middle end's inline-round retry first and, if that fails at any stage, without it
   -- (`withRetry`; each run is the proved composition at its own configuration).
-  let produceRun := fun (cfg : Config) => show ExceptT Err IO _ from do
-    let ((text, outcomes, policy, hints), tProduce) ← timed do
-      match o.cert with
-      | some f => pure (← readText f, none, none, #[])
-      | none =>
-        let (text, outcomes, policy, hints) ← lift fun _ => produceText o.rc cfg inp
-        pure (text, some outcomes, policy, hints)
-    let ((cliCert, a), tRun) ← timed (lift fun _ => checkTextWith o.opt cfg inp text)
-    pure (text, cliCert, outcomes, policy, tProduce, a, tRun, hints)
-  let (text, cliCert, outcomes, policy, tProduce, a, tRun, hints) ←
-    if o.cert.isNone then withRetry cfg produceRun else produceRun cfg
+  let (text?, cliCert?, outcomes, policy, tProduce, a, tRun, hints) ←
+    if o.bignat then
+      let (lib, tLib) ← timed (loadBigNatLib o)
+      let ((a, outcomes, hints), tComp) ← timed (withRetry cfg fun cfg =>
+        lift fun _ => compileBigNat o.opt lib cfg inp)
+      pure (none, none, some outcomes, none, tLib, a, tComp, hints)
+    else
+      let produceRun := fun (cfg : Config) => show ExceptT Err IO _ from do
+        let ((text, outcomes, policy, hints), tProduce) ← timed do
+          match o.cert with
+          | some f => pure (← readText f, none, none, #[])
+          | none =>
+            let (text, outcomes, policy, hints) ← lift fun _ => produceText o.rc cfg inp
+            pure (text, some outcomes, policy, hints)
+        let ((cliCert, a), tRun) ← timed (lift fun _ => checkTextWith o.opt cfg inp text)
+        pure (some text, some cliCert, outcomes, policy, tProduce, a, tRun, hints)
+      if o.cert.isNone then withRetry cfg produceRun else produceRun cfg
   if let some l := Src.Table.wordHintLine hints then IO.eprintln l
   if let some f := o.out then
     write f do
@@ -498,6 +620,8 @@ def execute (o : Options) (limits : Ix.Kernel.Admission.Limits := Src.KernelFron
   if let some f := o.exe then
     -- the bytes and the placement of the executable `--exe` or `--machine` writes
     let (exeBytes, p, certInfo?) ← if o.embedCert then do
+        let some cliCert := cliCert? | throw (cliErr "cli.args" "cannot combine --embed-cert with --bignat")
+        let some text := text? | throw (cliErr "cli.args" "cannot combine --embed-cert with --bignat")
         let isPlainRc := match cliCert with | .plainRc _ => true | .zeroRc _ => false
         let claimPolicy := Exe.Cert.policyOfArtifact cfg inp a isPlainRc text
         let exeKind : X86.Exe.Cert.ExeKind := if o.machine then .machine else .plain
@@ -528,7 +652,7 @@ def execute (o : Options) (limits : Ix.Kernel.Admission.Limits := Src.KernelFron
         IO.println s!"executable: {exeBytes.size} bytes (object text {p.textSize}, shell {p.shellSize}), \
           stack {o.layout.stack} bytes, region {o.layout.region} bytes"
   -- exactly the text that was verified
-  if let some f := o.emitCert then write f (IO.FS.writeFile f text)
+  if let (some f, some text) := (o.emitCert, text?) then write f (IO.FS.writeFile f text)
   if let some f := o.signatures then write f (IO.FS.writeFile f ((signaturesJson a).pretty ++ "\n"))
   for l in o.dumps do
     IO.println s!"== {l} =="
@@ -538,18 +662,24 @@ def execute (o : Options) (limits : Ix.Kernel.Admission.Limits := Src.KernelFron
       exports {a.roots.map (·.symbol)}"
   if let some p := policy then IO.println s!"rc policy: {p}"
   if o.stats then
-    let cert := cliCert.base
-    let certBytes := if text.endsWith "\n" then text.utf8ByteSize - 1 else text.utf8ByteSize
-    let producer := if o.cert.isSome then "certificate read" else "produce"
     IO.println (envelopeLine inp)
     IO.println s!"kernel: accepted {inp.kernel.acc.records.length} records, \
       {inp.kernel.acc.decls.size} logical declarations and {inp.kernel.acc.tier.length} tier constants, \
       within ingress"
-    IO.println s!"time: read {tRead} ms, ingress {tIngress} ms (the kernel's acceptance included), \
-      {producer} {tProduce} ms, run {tRun} ms"
-    IO.println s!"certificate: {certBytes} bytes of JSON; {cert.table.resolve.length} table entries, \
-      {cert.relevance.nodes.length} annotated terms, {cert.mid.steps.length} middle-end steps, \
-      {cert.alloc.length} allocations, {cert.frames.length} frame layouts"
+    match cliCert?, text? with
+    | some cliCert, some text =>
+      let cert := cliCert.base
+      let certBytes := if text.endsWith "\n" then text.utf8ByteSize - 1 else text.utf8ByteSize
+      let producer := if o.cert.isSome then "certificate read" else "produce"
+      IO.println s!"time: read {tRead} ms, ingress {tIngress} ms (the kernel's acceptance included), \
+        {producer} {tProduce} ms, run {tRun} ms"
+      IO.println s!"certificate: {certBytes} bytes of JSON; {cert.table.resolve.length} table entries, \
+        {cert.relevance.nodes.length} annotated terms, {cert.mid.steps.length} middle-end steps, \
+        {cert.alloc.length} allocations, {cert.frames.length} frame layouts"
+    | _, _ =>
+      IO.println s!"time: read {tRead} ms, ingress {tIngress} ms (the kernel's acceptance included), \
+        bignat-lib {tProduce} ms, compile {tRun} ms"
+      IO.println "bignat: enabled (DR1/DR2/DR3/DR4 + Phase 4 arbitrary-precision Nat, zero C/GMP)"
     if o.opt then IO.println "lir.opt: enabled (validated Backend.compileOpt)"
     for l in statsLines a outcomes do IO.println l
     for d in hints do IO.println s!"hint: {d.message}"

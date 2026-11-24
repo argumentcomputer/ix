@@ -563,6 +563,9 @@ import IxCC.Lir.Proof.Opt.Mem
 import IxCC.Lir.Proof.Opt.Seg
 import IxCC.Lir.Proof.Opt.Sim
 import IxCC.Lir.Proof.Opt.Backend
+import IxCC.Rt.BigNat.Link
+import IxCC.Rt.BigNat.LowerBig
+import IxCC.Rt.BigNat.LowerBigProof
 
 /-! Production API: Ixon v3 ingress, the shared semantic vocabulary, the Src
 front end (ingress, the checked unfolding table, SrcEval, relevance), global and

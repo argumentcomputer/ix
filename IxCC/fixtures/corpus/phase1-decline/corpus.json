@@ -69,7 +69,7 @@
       "name": "closures",
       "source": {
         "path": "Decline.lean",
-        "sha256": "5a57bb30a6b3dd90944cf67983304384f01d426932ccc6e2d727fdd0445a58bd",
+        "sha256": "a91559958d4f820a4adceaa71b3783506748e3d1270104fa020b441fd3ac509e",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
@@ -117,7 +117,7 @@
       "name": "loops",
       "source": {
         "path": "Decline.lean",
-        "sha256": "5a57bb30a6b3dd90944cf67983304384f01d426932ccc6e2d727fdd0445a58bd",
+        "sha256": "a91559958d4f820a4adceaa71b3783506748e3d1270104fa020b441fd3ac509e",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
@@ -204,7 +204,7 @@
       "name": "strings",
       "source": {
         "path": "Decline.lean",
-        "sha256": "5a57bb30a6b3dd90944cf67983304384f01d426932ccc6e2d727fdd0445a58bd",
+        "sha256": "a91559958d4f820a4adceaa71b3783506748e3d1270104fa020b441fd3ac509e",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
@@ -251,7 +251,7 @@
       "name": "panic",
       "source": {
         "path": "Decline.lean",
-        "sha256": "5a57bb30a6b3dd90944cf67983304384f01d426932ccc6e2d727fdd0445a58bd",
+        "sha256": "a91559958d4f820a4adceaa71b3783506748e3d1270104fa020b441fd3ac509e",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
@@ -315,7 +315,7 @@
       "name": "params",
       "source": {
         "path": "Decline.lean",
-        "sha256": "5a57bb30a6b3dd90944cf67983304384f01d426932ccc6e2d727fdd0445a58bd",
+        "sha256": "a91559958d4f820a4adceaa71b3783506748e3d1270104fa020b441fd3ac509e",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
@@ -394,7 +394,7 @@
       "name": "erase",
       "source": {
         "path": "Decline.lean",
-        "sha256": "5a57bb30a6b3dd90944cf67983304384f01d426932ccc6e2d727fdd0445a58bd",
+        "sha256": "a91559958d4f820a4adceaa71b3783506748e3d1270104fa020b441fd3ac509e",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
@@ -495,7 +495,7 @@
       "name": "admit",
       "source": {
         "path": "Decline.lean",
-        "sha256": "5a57bb30a6b3dd90944cf67983304384f01d426932ccc6e2d727fdd0445a58bd",
+        "sha256": "a91559958d4f820a4adceaa71b3783506748e3d1270104fa020b441fd3ac509e",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
