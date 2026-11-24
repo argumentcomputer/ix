@@ -1,4 +1,4 @@
-import Ix.IxVM.Refinement.Mirrors.KernelLevels
+import IxVM.Mirrors.KernelLevels
 import Ix.IxVM.Refinement.TagNWide
 import Aiur.Library.IxVMRep
 import IxC.Kernel.Level
@@ -7,7 +7,7 @@ import IxC.Kernel.Verify.Level
 /-! # The KernelLevels slice: `RepKLevel` and universe level refinement
 
 On top of the generated
-mirrors in `Ix.IxVM.Refinement.Mirrors.KernelLevels`, this module establishes:
+mirrors in `IxVM.Mirrors.KernelLevels`, this module establishes:
 
 * `RepKLevel` and `RepKLevelList`: the heap representation predicates connecting
   IxVM's `&KernelTypes::KLevelNode` pointers and `Lists::List<&KLevelNode>`

@@ -1,10 +1,10 @@
-import Ix.IxVM.Refinement.Mirrors.TagN
+import IxVM.Mirrors.TagN
 import Ix.IxVM.Refinement.Statement
 
 /-! # The TagN slice: IxVM's TagN decoder against IxC's `Ixon.getTagN`
 
 The first vertical slice of the refinement.
-The mechanical layer is generated (`Ix.IxVM.Refinement.Mirrors.TagN`: a
+The mechanical layer is generated (`IxVM.Mirrors.TagN`: a
 mirror per function and its lemma `of_eval`, every derivation is a run of the
 mirror). This module is the creative layer on top of it:
 

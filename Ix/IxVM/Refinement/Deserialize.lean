@@ -1,10 +1,10 @@
-import Ix.IxVM.Refinement.Mirrors.Deserialize
+import IxVM.Mirrors.Deserialize
 import Ix.IxVM.Refinement.TagNWide
 
 /-! # The Deserialize slice: `UInt64` and `IxonDeserialize` primitives
 
 On top of the generated
-mirrors in `Ix.IxVM.Refinement.Mirrors.Deserialize`, this module establishes:
+mirrors in `IxVM.Mirrors.Deserialize`, this module establishes:
 
 * `fromField_mapCall_inv` and `u64BytesMeasure_dec`: the decreasing measure on
   8-byte `UInt64` tuples for every count-recursive `IxonDeserialize` function

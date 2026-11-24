@@ -1,8 +1,8 @@
 import IxVMRefinement.Ingress.Decode
 import IxVMRefinement.Ingress.Convert
 import IxVMRefinement.Lib.WordHints
-import IxVMRefinement.Obs.IxonSerialize
-import IxVMRefinement.Obs.Ingress
+import IxVM.Obs.IxonSerialize
+import IxVM.Obs.Ingress
 
 /-! # Projection Serialization and Constant Ingress (`Ingress`)
 

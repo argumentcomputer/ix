@@ -1,6 +1,6 @@
-import IxVMRefinement.Obs.Bytes
-import IxVMRefinement.Obs.UInt8
-import IxVMRefinement.Core.Obs
+import IxVM.Obs.Bytes
+import IxVM.Obs.UInt8
+import Aiur.Generic.Refinement.Obs
 import Aiur.Library.Bytes.Correctness
 import Aiur.Library.U64.Goldilocks
 import Mathlib.Tactic.IntervalCases

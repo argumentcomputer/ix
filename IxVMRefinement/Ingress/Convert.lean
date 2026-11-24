@@ -5,7 +5,7 @@ import IxVMRefinement.Core.RomBound
 /-! # Record-Level Constant Conversion (`Convert` part 2)
 
 Observed-derivation (`ObsFn`) specifications for all record-level functions in
-`IxVM/IxVM/Source/Convert.lean` (`IxVMRefinement.Obs.Convert1`):
+`IxVM/IxVM/Source/Convert.lean` (`IxVM.Obs.Convert`):
 * mutual-block root-offset and constructor-list helpers (`lvls_to_field_spec`,
   `count_ctors_spec`, `mut_const_roots_spec`, `muts_root_offset_spec`, `ctor_at_spec`);
 * raw heap constant-info representations (`RawDefnValRep`, `RawAxioValRep`, `RawQuotValRep`,

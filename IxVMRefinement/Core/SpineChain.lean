@@ -1,5 +1,5 @@
-import IxVMRefinement.Obs.KernelTypes0
-import IxVMRefinement.Core.Obs
+import IxVM.Obs.KernelTypes
+import Aiur.Generic.Refinement.Obs
 import Aiur.Library.List.Correctness
 
 /-! # Application-spine characterization of `KernelTypes::collect_spine`

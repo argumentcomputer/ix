@@ -1,6 +1,6 @@
 import IxC.Kernel.Model.GuardSignature
 import IxVMRefinement.Nat.Levels
-import IxVMRefinement.Obs.KernelGuard
+import IxVM.Obs.KernelGuard
 
 /-! # Functional refinement of the projection guard's zero-signature computation
 

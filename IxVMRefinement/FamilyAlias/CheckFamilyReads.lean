@@ -1,7 +1,4 @@
-import IxVMRefinement.Obs.KernelModeled2
-import IxVMRefinement.Obs.KernelModeled3
-import IxVMRefinement.Obs.KernelModeled4
-import IxVMRefinement.Obs.KernelModeled5
+import IxVM.Obs.KernelModeled
 
 /-! # Heap-chained call readings of `KernelModeled::check_family` and its callees
 

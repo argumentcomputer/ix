@@ -2,8 +2,8 @@ import IxVMRefinement.Assembly.SubStore
 import IxVMRefinement.Assembly.LayerSeams
 import IxVMRefinement.Ingress.Records
 import IxVMRefinement.Lib.Words
-import IxVMRefinement.Obs.KernelCheck
-import IxVMRefinement.Obs.KernelRoles
+import IxVM.Obs.KernelCheck
+import IxVM.Obs.KernelRoles
 import Ix.Cert.ReaderKeys
 import IxC.Ixon.Verify.NonrecursiveConstant
 import IxC.Ixon.Verify.TagN

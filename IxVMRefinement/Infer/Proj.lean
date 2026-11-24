@@ -3,8 +3,8 @@ import IxVMRefinement.Core.ProjFire
 import IxVMRefinement.Infer.Close
 import IxVMRefinement.Infer.ProjBody
 import IxVMRefinement.Whnf.Proj
-import IxVMRefinement.Obs.KernelCheck
-import IxVMRefinement.Obs.KernelGuard
+import IxVM.Obs.KernelCheck
+import IxVM.Obs.KernelGuard
 
 /-! # Step lemmas of the projection helpers of `KernelInfer` and `KernelInferOnly`
 

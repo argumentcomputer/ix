@@ -8,17 +8,9 @@ import IxVMRefinement.FamilyAlias.CallLists
 import IxVMRefinement.Claim.RefSafety
 import IxVMRefinement.Claim.TopRec
 import IxVMRefinement.Claim.TopSeed
-import IxVMRefinement.Obs.KernelCheck2
-import IxVMRefinement.Obs.KernelCheck3
-import IxVMRefinement.Obs.KernelCheck4
-import IxVMRefinement.Obs.KernelCheck12
-import IxVMRefinement.Obs.KernelCheck13
-import IxVMRefinement.Obs.KernelModeled0
-import IxVMRefinement.Obs.KernelModeled1
-import IxVMRefinement.Obs.KernelModeled2
-import IxVMRefinement.Obs.KernelModeled3
-import IxVMRefinement.Obs.KernelModeled5
-import IxVMRefinement.Obs.KernelRoles
+import IxVM.Obs.KernelCheck
+import IxVM.Obs.KernelModeled
+import IxVM.Obs.KernelRoles
 
 /-! # Core circuit specifications for the payload of a binding run
 

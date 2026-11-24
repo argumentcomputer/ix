@@ -17,8 +17,3 @@ lean_lib IxVM where
 lean_exe ixvm where
   root := `IxVM.Main
   supportInterpreter := true
-
-/-- Writes, or with `--check` compares, derived lookup certificates and
-refinement mirrors. The source functions are elaborated at build time. -/
-lean_exe «ixvm-proof-gen» where
-  root := `IxVM.ProofGenMain

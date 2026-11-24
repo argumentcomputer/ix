@@ -1,7 +1,7 @@
 import IxVMRefinement.Assembly.ProjSafe
-import IxVMRefinement.Obs.KernelModeled5
-import IxVMRefinement.Obs.KernelCheck3
-import IxVMRefinement.Obs.KernelLevels2
+import IxVM.Obs.KernelModeled
+import IxVM.Obs.KernelCheck
+import IxVM.Obs.KernelLevels
 
 /-! # Heap-level well-scopedness transport across `rename` and `kexpr_struct_eq`
 

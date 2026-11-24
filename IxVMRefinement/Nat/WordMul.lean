@@ -1,5 +1,5 @@
 import IxVMRefinement.Lib.WordSub
-import IxVMRefinement.Obs.UInt64
+import IxVM.Obs.UInt64
 
 /-! # `UInt64::mul`, over observed derivations
 

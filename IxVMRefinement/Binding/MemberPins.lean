@@ -1,7 +1,7 @@
 import IxVMRefinement.Ingress.Convert
 import IxVMRefinement.Roles.Tables
-import IxVMRefinement.Obs.KernelInfer0
-import IxVMRefinement.Obs.KernelRoles
+import IxVM.Obs.KernelInfer
+import IxVM.Obs.KernelRoles
 
 /-! # The type and recursor counts checked by the binding member validator
 

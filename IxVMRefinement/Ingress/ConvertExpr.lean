@@ -2,7 +2,7 @@ import IxVMRefinement.Ingress.AnnotationTrace
 import IxVMRefinement.Ingress.BinderData
 import IxVMRefinement.Core.LoadedExact
 import IxVMRefinement.Ingress.Decode
-import IxVMRefinement.Obs.Convert
+import IxVM.Obs.Convert
 import IxVMRefinement.Nat.Utf8
 import IxVMRefinement.Subst.Basic
 import IxC.Kernel.Ixon.Reader

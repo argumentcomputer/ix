@@ -6,7 +6,7 @@ import IxVMRefinement.Assembly.TypingRecLateNativeRead
 import IxVMRefinement.Assembly.TypingRecParentArm
 import IxVMRefinement.Decl.NativeRec
 import IxVMRefinement.Callees.ProjAddr
-import IxVMRefinement.Obs.KernelCheck8
+import IxVM.Obs.KernelCheck
 
 /-! # Refinement of `KernelModeled::block_elim`, `check_recs`, and `check_rules`
 

@@ -1,7 +1,7 @@
 import IxVMRefinement.Core.Loaded
 import IxC.Kernel.Verify.InstLevels
 import IxVMRefinement.Nat.Levels
-import IxVMRefinement.Obs.KernelCheck
+import IxVM.Obs.KernelCheck
 import Ix.IxVM.Consistency.Statement
 
 /-! # Parameter coverage of validated annotations

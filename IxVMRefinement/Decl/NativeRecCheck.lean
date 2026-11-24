@@ -1,5 +1,5 @@
 import IxVMRefinement.Decl.NativeRec
-import IxVMRefinement.Obs.KernelCheck
+import IxVM.Obs.KernelCheck
 /-!
 # Native One-Type Inductive Blocks with Recursor (Native Recursor Checker — Part 1)
 

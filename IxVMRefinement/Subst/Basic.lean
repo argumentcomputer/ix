@@ -2,9 +2,8 @@ import IxVMRefinement.Core.Registry
 import IxVMRefinement.Core.Open
 import IxVMRefinement.Core.Window
 import IxVMRefinement.Lib.Lists
-import IxVMRefinement.Obs.KernelSubst0
-import IxVMRefinement.Obs.KernelSubst1
-import IxVMRefinement.Obs.UInt320
+import IxVM.Obs.KernelSubst
+import IxVM.Obs.UInt32
 import Ix.IxVM.Refinement.KernelLevels
 import IxC.Kernel.Verify.Subst
 import IxC.Kernel.Verify.InstList

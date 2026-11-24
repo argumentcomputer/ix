@@ -1,5 +1,5 @@
 import IxVMRefinement.Binding.FamilyReconSites
-import IxVMRefinement.Obs.KernelCheck12
+import IxVM.Obs.KernelCheck
 
 /-! # Flattened family entries and recursive-field classification on `TmOExact`
 

@@ -1,6 +1,6 @@
 import IxVMRefinement.Ingress.Blake3
-import IxVMRefinement.Obs.IxByteStream
-import IxVMRefinement.Obs.IxVMCompat
+import IxVM.Obs.IxByteStream
+import IxVM.Obs.IxVMCompat
 
 /-! # Byte streams read from the host at source level
 

@@ -15,7 +15,7 @@ import IxVMRefinement.Claim.TopWalkCheck
 import IxVMRefinement.Callees.ProjAddr
 import IxVMRefinement.Callees.PutConstant
 import IxVMRefinement.RoleVal.GroupAdmit
-import IxVMRefinement.Obs.KernelDefEq3
+import IxVM.Obs.KernelDefEq
 
 /-! # Reference and witness specifications of `KernelModeled::check_family`
 

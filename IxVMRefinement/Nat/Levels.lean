@@ -1,5 +1,5 @@
 import IxVMRefinement.Core.Registry
-import IxVMRefinement.Obs.KernelLevels
+import IxVM.Obs.KernelLevels
 import IxVMRefinement.Lib.Words
 import IxVMRefinement.Lib.Lists
 import IxC.Kernel.Verify.PropWhen

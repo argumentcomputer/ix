@@ -1,8 +1,8 @@
 import IxVMRefinement.Core.CallHeaps
 import IxVMRefinement.Decl.ModeledInstall
-import IxVMRefinement.Obs.RBTreeMap
-import IxVMRefinement.Obs.KernelCheck
-import IxVMRefinement.Obs.KernelModeled
+import IxVM.Obs.RBTreeMap
+import IxVM.Obs.KernelCheck
+import IxVM.Obs.KernelModeled
 
 /-! # Modeled Inductive Block Dispatch & Top-Level Declaration Assembly (`Modeled.lean`)
 

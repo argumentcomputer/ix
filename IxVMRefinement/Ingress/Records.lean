@@ -1,6 +1,6 @@
 import IxVMRefinement.Ingress.Ingress
 import IxVMRefinement.Core.Seams
-import IxVMRefinement.Obs.KernelCheck
+import IxVM.Obs.KernelCheck
 import IxC.Ixon.Verify.Framing
 import Ix.Cert.Stream
 

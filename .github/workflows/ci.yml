@@ -1143,7 +1143,8 @@ jobs:
       - name: Check the formal verifying keys match their pins
         run: lake env lean --run Scripts/CheckFormalKeys.lean
 
-  # Dedicated lineage for the 944-module IxVMRefinement library so it runs in
+  # Dedicated lineage for the IxVMRefinement library and the derived IxVM
+  # semantic helpers it is written against (`IxVM.Obs.*`), so it runs in
   # parallel from t=0 without competing for sticky-disk space with host/formal.
   ixvm-refinement:
     name: IxVM refinement proofs & axioms
@@ -1170,13 +1171,10 @@ jobs:
           auto-config: false
           use-github-cache: false
           use-mathlib-cache: true
-      - name: Check generated proof mirrors and build IxVMRefinement
+      - name: Build IxVMRefinement and the derived IxVM semantic helpers
         env:
           IS_PUSH: ${{ needs.changes.outputs.is_push }}
         run: |
-          if [ "$IS_PUSH" != "true" ]; then
-            lake exe ixvm/ixvm-proof-gen --check
-          fi
           lake build --wfail IxVMRefinement \
             IxVM.CompiledCert \
             IxVMRefinement.Endpoint.Companions \
@@ -1223,7 +1221,7 @@ jobs:
             tmp=$(mktemp -d)
             {
               echo "import IxC.Kernel.Audit.Axioms"
-              find IxVMRefinement -name '*.lean' -not -path 'IxVMRefinement/Obs/*' | sort |
+              find IxVMRefinement -name '*.lean' | sort |
                 sed -e 's/\.lean$//' -e 's#/#.#g' -e 's/^/import /'
               echo "#guard_module_axioms_under IxVMRefinement Ix.IxVM.Consistency IxC.Kernel.Model IxC.Kernel.Semantics"
             } > "$tmp/RefinementAxioms.lean"

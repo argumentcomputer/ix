@@ -20,7 +20,8 @@ Neither the statements nor the exporters run the module frontend or the DSL
 elaborators (`Source.world` uses the kernel-computable `Generic.elaborateConst`
 for consts). The `ixvm-source` test independently prepares the imported DSL
 metadata and compares the full program, static tables, and exported bytecode.
-`lake exe ixvm/ixvm-proof-gen --check` checks the derived proof scripts.
+The lookup facts, mirrors and path lemmas the proofs use are derived from
+`IxVM.source` where their modules are elaborated (`Aiur.Generic.Derive`).
 
 `verify_claim(digest: [Field; 8])` reads the claim's bytes on IO channel 0,
 checks that their BLAKE3 digest packs to `digest`, decodes the claim and

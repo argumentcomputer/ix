@@ -1,5 +1,5 @@
-import IxVMRefinement.Core.Obs
-import IxVMRefinement.Obs.Names
+import Aiur.Generic.Refinement.Obs
+import IxVM.Obs.Names
 import Aiur.Library.IxVMRep
 import IxVM.Field
 import Ix.IxVM.Refinement.KernelLevels

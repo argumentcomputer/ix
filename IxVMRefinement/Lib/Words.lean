@@ -1,5 +1,5 @@
 import IxVMRefinement.Lib.Lists
-import IxVMRefinement.Obs.WordLists
+import IxVM.Obs.WordLists
 import Ix.IxVM.Refinement.Deserialize
 import Ix.IxVM.Refinement.KernelLevels
 

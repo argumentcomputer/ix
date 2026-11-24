@@ -3,9 +3,8 @@ import IxVMRefinement.FamilyAlias.CallIotaRule
 import IxVMRefinement.FamilyAlias.CallMembers
 import IxVMRefinement.FamilyAlias.CallRecs
 import IxVMRefinement.FamilyAlias.ProjEligible
-import IxVMRefinement.Obs.KernelModeled6
-import IxVMRefinement.Obs.KernelModeled7
-import IxVMRefinement.Obs.KernelLevels0
+import IxVM.Obs.KernelModeled
+import IxVM.Obs.KernelLevels
 
 /-! # Inversion of `KernelModeled::check_projs` and its callees
 

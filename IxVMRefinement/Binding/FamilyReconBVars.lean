@@ -1,8 +1,7 @@
 import IxVMRefinement.Binding.FamilyReconZeta
 import IxVMRefinement.Lib.Words
 import IxVMRefinement.Core.RomBound
-import IxVMRefinement.Obs.KernelCheck4
-import IxVMRefinement.Obs.KernelCheck10
+import IxVM.Obs.KernelCheck
 
 /-! # The reconstruction's bound-variable builders and parameter substitutions on `TmOExact`
 

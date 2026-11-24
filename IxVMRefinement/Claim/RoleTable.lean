@@ -2,8 +2,8 @@ import IxVMRefinement.Claim.RBTree
 import IxVMRefinement.Core.Roles
 import IxVMRefinement.Core.Seams
 import IxVMRefinement.Ingress.Hashed
-import IxVMRefinement.Obs.KernelRoles
-import IxVMRefinement.Obs.KernelRoleSpec0
+import IxVM.Obs.KernelRoles
+import IxVM.Obs.KernelRoleSpec
 import Ix.IxVM.Consistency.Statement
 import Ix.Cert.RoleClosure
 import IxC.Kernel.Ixon.RoleTableInj

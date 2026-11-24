@@ -1,6 +1,6 @@
 import IxVMRefinement.Subst.Steps
 import IxVMRefinement.Lib.Bytes
-import IxVMRefinement.Obs.KernelCheck1
+import IxVM.Obs.KernelCheck
 import IxC.Kernel.Semantics.Inductives.DeclNativeJ
 
 /-! # The actual alias parameter-head checks

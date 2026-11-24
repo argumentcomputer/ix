@@ -1,5 +1,5 @@
 import IxVMRefinement.Guard.FieldTraces
-import IxVMRefinement.Obs.KernelGuard
+import IxVM.Obs.KernelGuard
 import IxVMRefinement.Infer.Proj
 import IxVMRefinement.Decl.NativeRec
 import IxVMRefinement.Decl.NativeRecCheck

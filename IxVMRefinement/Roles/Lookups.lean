@@ -3,8 +3,8 @@ import IxVMRefinement.Claim.RBTree
 import IxVMRefinement.Core.Roles
 import IxVMRefinement.Core.Open
 import IxVMRefinement.Lib.Words
-import IxVMRefinement.Obs.KernelRoles
-import IxVMRefinement.Obs.RBTreeMap0
+import IxVM.Obs.KernelRoles
+import IxVM.Obs.RBTreeMap
 import Mathlib.Tactic.IntervalCases
 
 /-! # `KernelRoles` and `RBTreeMap`: role-map and address-map lookups, table and context queries
