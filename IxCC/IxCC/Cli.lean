@@ -1,5 +1,6 @@
 import IxCC.Recheck
 import IxCC.Recheck.Rc.Produce
+import IxCC.Src.AutoHints
 import IxCC.Anf.Print
 import IxCC.Fir.Print
 import IxCC.Cfg.Print
@@ -14,11 +15,11 @@ import IxCK.Host.Limits
 /-! # The `ixcc` command line
 
 ```text
-ixcc compile CLOSURE.ixe --equations EQ.json [--root NAME]... -o OUT.o
+ixcc compile CLOSURE.ixe [--equations EQ.json] [--root NAME|ADDR|NAME=ADDR]... -o OUT.o
     [--rc off|on|auto] [--cert FILE] [--emit-cert FILE] [--signatures FILE]
     [--dump-ir LEVEL]... [--stats]
     [--exe FILE [--machine] [--stack BYTES] [--region BYTES]]
-ixcc check-cert CLOSURE.ixe --equations EQ.json [--root NAME]... --cert FILE
+ixcc check-cert CLOSURE.ixe [--equations EQ.json] [--root NAME|ADDR|NAME=ADDR]... --cert FILE
     [-o OUT.o] [--signatures FILE] [--stats]
 ```
 
@@ -160,11 +161,11 @@ structure Options where
 def usage : String :=
   "\n".intercalate [
     "usage:",
-    "  ixcc compile CLOSURE.ixe --equations EQ.json [--root NAME]... -o OUT.o",
+    "  ixcc compile CLOSURE.ixe [--equations EQ.json] [--root NAME|ADDR|NAME=ADDR]... -o OUT.o",
     "      [--rc off|on|auto] [--opt] [--bignat [--bignat-lib FILE]] [--cert FILE] [--emit-cert FILE]",
     "      [--signatures FILE] [--dump-ir LEVEL]... [--stats]",
     "      [--exe FILE [--embed-cert] [--machine] [--stack BYTES] [--region BYTES]]",
-    "  ixcc check-cert CLOSURE.ixe --equations EQ.json [--root NAME]... --cert FILE",
+    "  ixcc check-cert CLOSURE.ixe [--equations EQ.json] [--root NAME|ADDR|NAME=ADDR]... --cert FILE",
     "      [-o OUT.o] [--signatures FILE] [--stats]",
     "  ixcc verify-exe FILE [--closure CLOSURE.ixe] [--equations EQ.json] [--stats]",
     "dump levels: lam anf fir cfg lir xv xl all",
@@ -229,7 +230,6 @@ def parse : List String → Except String Options
     if cmd == "compile" || cmd == "check-cert" then do
       let o ← parseRest { command := cmd } rest
       if o.closure.isNone then throw "no closure given"
-      if o.equations.isNone then throw "no --equations sidecar given"
       if cmd == "compile" && o.out.isNone && o.exe.isNone then throw "no -o or --exe output given"
       if o.layoutGiven && o.exe.isNone then throw "--stack and --region apply to --exe"
       if o.machine && o.exe.isNone then throw "--machine applies to --exe"
@@ -560,6 +560,46 @@ def compileBigNat (opt : Bool) (lib : Rt.BigNat.CompiledBigNatLib) (cfg : Config
     , xv, xl := allocRes.program, backend, roots }
   pure (art, allocRes.outcomes, ps.wordHints)
 
+/-- Auto-discovered ingress when `--equations` is omitted: decodes the envelope, resolves
+`--root` specs (`NAME`, `<64-hex>`, `NAME=<64-hex>`, or default `entry`/`main`), runs the
+certified kernel's acceptance and N5 mode check, discovers `.eqn`/`.word` proposals from
+theorem statements alone (`Src.AutoHints.discover`), and finishes Src ingress + faithful
+reading. Returns `(input, proposalCount, autoHintsMs, eqBytes)`. -/
+def ingressAuto (bytes : ByteArray) (roots : List String)
+    (limits : Ix.Kernel.Admission.Limits) (needEqBytes : Bool) :
+    ExceptT Err IO (Input × Nat × Nat × ByteArray) := do
+  let env ← lift fun _ =>
+    (Ixon.V3.decodeAnonymousEnv bytes).mapError fun m =>
+      { stage := .ingress, code := "decode", message := m }
+  let chosen ← lift fun _ =>
+    (Src.AutoHints.resolveRoots env roots).mapError fun m =>
+      { stage := .cli, code := "cli.root", message := m }
+  let acc ← lift fun _ =>
+    (Src.KernelFront.accept env limits).mapError fun r =>
+      { stage := .ingress, code := (r.limit.map kernelLimitCode).getD "kernel", message := r.report }
+  lift fun _ =>
+    (Src.KernelFront.defaultModeCheck acc).mapError fun r =>
+      { stage := .ingress, code := "mode-check", message := r.report }
+  let pins := Src.KernelFront.pinsOfTable acc.table
+  let (proposals, tAutoMs) ← timed (lift fun _ => .ok (Src.AutoHints.discover env pins))
+  let names := chosen.toList.zipIdx.map fun ((_, n), i) => n.getD s!"root{i}"
+  let namedRoots := chosen.zipIdx.map fun ((a, n), i) => (a, some (n.getD s!"root{i}"))
+  let hints : Src.Hints := { roots := namedRoots, proposals }
+  let records ← lift fun _ =>
+    (Src.Ingress.reach env (Src.Ingress.Seeds.of hints pins)).mapError fun m =>
+      { stage := .ingress, code := "decode", message := m }
+  let p ← lift fun _ =>
+    (Src.Ingress.readConsts env records (namedRoots.map (·.1))).mapError fun m =>
+      { stage := .ingress, code := "ingress", message := m }
+  let p := { p with known := { pins } }
+  let p := { p with known := Src.Pinned.known p }
+  let rd ← lift fun _ =>
+    (Src.KernelFront.Reading.build acc p).mapError fun m =>
+      { stage := .ingress, code := "faithful", message := m }
+  let inp : Input := { env, hints, program := p, names, kernel := { acc, rd, fe := Ix.Kernel.mkFEnv acc.env } }
+  let eqBytes := if needEqBytes then (Src.Hints.toK1Json hints).compress.toUTF8 else ByteArray.empty
+  pure (inp, proposals.size, tAutoMs, eqBytes)
+
 /-- `compile`, `check-cert`, and `verify-exe`, the kernel under `limits`. -/
 def execute (o : Options) (limits : Ix.Kernel.Admission.Limits := Src.KernelFront.defaultLimits) :
     ExceptT Err IO Unit := do
@@ -582,8 +622,17 @@ def execute (o : Options) (limits : Ix.Kernel.Admission.Limits := Src.KernelFron
       IO.println s!"layout: stack {v.layout.stack} bytes, region {v.layout.region} bytes, roots {v.rootNames}"
       IO.println s!"time: read {tRead} ms, verify {tVerify} ms"
     return
-  let ((bytes, json, eqBytes), tRead) ← timed (readInputs o)
-  let (inp, tIngress) ← timed (lift fun _ => ingress bytes json o.roots limits)
+  let (bytes, eqBytes, inp, tRead, tIngress, autoStats?, certRoots) ←
+    match o.equations with
+    | some _ =>
+      let ((bytes, json, eqBytes), tRead) ← timed (readInputs o)
+      let (inp, tIngress) ← timed (lift fun _ => ingress bytes json o.roots limits)
+      pure (bytes, eqBytes, inp, tRead, tIngress, (none : Option (Nat × Nat)), o.roots)
+    | none =>
+      let some closure := o.closure | throw (cliErr "cli.args" "no closure")
+      let (bytes, tRead) ← timed (readBin closure)
+      let ((inp, nProps, tAutoMs, eqBytes), tIngress) ← timed (ingressAuto bytes o.roots limits o.embedCert)
+      pure (bytes, eqBytes, inp, tRead, tIngress, some (nProps, tAutoMs), inp.names)
   let cfg := Config.forInput {} inp
   -- a root whose caller would pass a closure has no meaningful caller: refused
   -- before anything is produced (every producer refuses it too, `produceClosures`)
@@ -626,7 +675,7 @@ def execute (o : Options) (limits : Ix.Kernel.Admission.Limits := Src.KernelFron
         let claimPolicy := Exe.Cert.policyOfArtifact cfg inp a isPlainRc text
         let exeKind : X86.Exe.Cert.ExeKind := if o.machine then .machine else .plain
         let built ← lift fun _ =>
-          Exe.Cert.buildCertifiedExe inp o.roots claimPolicy text a exeKind o.layout bytes eqBytes
+          Exe.Cert.buildCertifiedExe inp certRoots claimPolicy text a exeKind o.layout bytes eqBytes
         pure (built.bytes, built.placement, some (built.coreSize, built.payloadSize))
       else if o.machine then do
         let L : X86.Exe.Machine.Layout := { stack := o.layout.stack, region := o.layout.region }
@@ -666,6 +715,8 @@ def execute (o : Options) (limits : Ix.Kernel.Admission.Limits := Src.KernelFron
     IO.println s!"kernel: accepted {inp.kernel.acc.records.length} records, \
       {inp.kernel.acc.decls.size} logical declarations and {inp.kernel.acc.tier.length} tier constants, \
       within ingress"
+    if let some (nProps, tAuto) := autoStats? then
+      IO.println s!"auto-hints: {nProps} proposals in {tAuto} ms"
     match cliCert?, text? with
     | some cliCert, some text =>
       let cert := cliCert.base

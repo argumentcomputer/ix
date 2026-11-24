@@ -1,6 +1,13 @@
 import IxCCTests.Src.Run
+import IxCCTests.Src.AutoHints
 
-/-! Thin root of the `tests-src` executable. -/
+/-! Root of the `tests-src` executable. -/
 
-def main (args : List String) : IO UInt32 :=
-  IxCCTests.Src.Run.main args
+def main (args : List String) : IO UInt32 := do
+  match args with
+  | ["--auto-hints"] => IxCCTests.Src.AutoHints.main
+  | [] =>
+    let code ← IxCCTests.Src.Run.main args
+    if code != 0 then return code
+    IxCCTests.Src.AutoHints.main
+  | _ => IxCCTests.Src.Run.main args

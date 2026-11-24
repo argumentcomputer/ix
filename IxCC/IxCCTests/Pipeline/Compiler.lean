@@ -4,6 +4,7 @@ import IxCCTests.Rt.Cases
 import IxCCTests.Lam.Differential
 import IxCC.CompileClaim
 import IxCCTests.Recheck.Hostile
+import IxCCTests.Src.AutoHints
 
 /-! The compiler: the `ixcc` command line on the fixtures,
 `produce` + `Recheck.run` against the stage suites' pipelines, the
@@ -185,6 +186,136 @@ def rcCommandLine (a : Assert) (t : Tools) : IO (Array String) := do
     "reverseList --rc auto: compile --cert wrote a different object"
   return #["--rc auto/on: gcd selects zeroRc (ixcc/cert/1), reverseList selects plainRc (ixcc/rc-cert/2); check-cert and compile --cert agree"]
 
+/-- Run the CLI capturing stdout/stderr and exit code (in process or via binary). -/
+private def cliCapture (t : Tools) (args : List String) : IO (UInt32 × String) := do
+  match t.bin with
+  | none =>
+    let (out, code) ← IO.FS.withIsolatedStreams (IxCC.Cli.main args)
+    pure (code, out)
+  | some b =>
+    let r ← IO.Process.output { cmd := b.toString, args := args.toArray }
+    pure (r.exitCode, r.stdout ++ r.stderr)
+
+/-- Read the `(name?, address)` root pairs from a sidecar JSON file (for constructing
+`--root NAME=ADDR` specs in equivalence tests). -/
+private def sidecarRootsOf (eqs : FilePath) : IO (Array (IxCC.Ixon.Address × Option String)) := do
+  let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile eqs))
+  let h ← IO.ofExcept (IxCC.Src.Hints.ofK1Json json)
+  pure h.roots
+
+/-- End-to-end auto-hints CLI parity & edge-case tests (no `--equations` sidecar):
+byte-identical `.o` across all `bench-k1` closures, `k1.ixe`, `--rc on/auto`, `--opt`,
+named `.ixe` (`--root entry` and default root), bare `<64-hex>` (`cx_root0`), `check-cert`,
+`--exe --embed-cert` + `verify-exe`, `--stats`, and negative error cases. -/
+def autoHintsCommandLine (a : Assert) (t : Tools) : IO (Array String) := do
+  let mut out := #[]
+  -- 1. All bench-k1 closures: compile WITHOUT --equations vs WITH --equations
+  for name in benchNames do
+    let rs ← sidecarRootsOf (benchEqs name)
+    let some (entryAddr, _) := rs[0]? | throw (IO.userError s!"{name}: missing sidecar root")
+    let autoObj := t.work / s!"{name}.auto.o"
+    let autoCert := t.work / s!"{name}.auto.cert.json"
+    let (code, statsOut) ← cliCapture t ["compile", (benchIxe name).toString,
+      "--root", s!"entry={entryAddr}", "-o", autoObj.toString,
+      "--emit-cert", autoCert.toString, "--stats"]
+    expectEq a code 0 s!"{name} auto-hints: compile exit code ({statsOut})"
+    expect a ((statsOut.splitOn "auto-hints:").length > 1)
+      s!"{name} auto-hints: --stats missing 'auto-hints:' line"
+    expect a ((← IO.FS.readBinFile autoObj) == (← IO.FS.readBinFile (t.work / s!"{name}.o")))
+      s!"{name} auto-hints: object differs from --equations object"
+    -- check-cert without --equations
+    let (cc, ccOut) ← cliCapture t ["check-cert", (benchIxe name).toString,
+      "--root", s!"entry={entryAddr}", "--cert", autoCert.toString]
+    expectEq a cc 0 s!"{name} auto-hints: check-cert exit code ({ccOut})"
+  -- 2. Multi-root k1.ixe without --equations -> byte-identical to k1.o
+  let k1SideRoots ← sidecarRootsOf k1Eqs
+  let mut k1AutoRootArgs : List String := []
+  for (rName, _) in k1Roots do
+    let some (addr, _) := k1SideRoots.find? (·.2 == some rName)
+      | throw (IO.userError s!"k1: missing root {rName}")
+    k1AutoRootArgs := k1AutoRootArgs ++ ["--root", s!"{rName}={addr}"]
+  let k1AutoObj := t.work / "k1.auto.o"
+  let (code, k1Out) ← cliCapture t (["compile", k1Ixe.toString] ++ k1AutoRootArgs ++ ["-o", k1AutoObj.toString])
+  expectEq a code 0 s!"k1 auto-hints: compile exit code ({k1Out})"
+  expect a ((← IO.FS.readBinFile k1AutoObj) == (← IO.FS.readBinFile (t.work / "k1.o")))
+    "k1 auto-hints: multi-root object differs from --equations object"
+  -- 3. Bare 64-hex address exports cx_root0
+  let fibRoots ← sidecarRootsOf (benchEqs "fib")
+  let some (fibAddr, _) := fibRoots[0]? | throw (IO.userError "fib: missing root")
+  let bareObj := t.work / "fib.bare.o"
+  let bareSig := t.work / "fib.bare.sig.json"
+  let (code, bareOut) ← cliCapture t ["compile", (benchIxe "fib").toString,
+    "--root", toString fibAddr, "-o", bareObj.toString, "--signatures", bareSig.toString]
+  expectEq a code 0 s!"fib bare-hex auto-hints: compile exit code ({bareOut})"
+  let bareSigs ← readSignatures bareSig
+  expect a (bareSigs.head?.map (fun (_, sym, _, _, _) => sym) == some "cx_root0")
+    s!"fib bare-hex: expected cx_root0, got {bareSigs}"
+  -- 4. Named .ixe: bare --root entry AND omitted --root default to entry, byte-identical to fib.o
+  let fibBytes ← IO.FS.readBinFile (benchIxe "fib")
+  let namedBytes ← IO.ofExcept (IxCCTests.Src.AutoHints.withNamedMetadata fibBytes [("entry", fibAddr)])
+  let namedIxe := t.work / "fib-named.ixe"
+  IO.FS.writeBinFile namedIxe namedBytes
+  let namedObj1 := t.work / "fib-named-explicit.o"
+  let namedObj2 := t.work / "fib-named-default.o"
+  let (c1, o1) ← cliCapture t ["compile", namedIxe.toString, "--root", "entry", "-o", namedObj1.toString]
+  expectEq a c1 0 s!"named fib --root entry: exit code ({o1})"
+  expect a ((← IO.FS.readBinFile namedObj1) == (← IO.FS.readBinFile (t.work / "fib.o")))
+    "named fib --root entry: object differs from --equations"
+  let (c2, o2) ← cliCapture t ["compile", namedIxe.toString, "-o", namedObj2.toString]
+  expectEq a c2 0 s!"named fib default root: exit code ({o2})"
+  expect a ((← IO.FS.readBinFile namedObj2) == (← IO.FS.readBinFile (t.work / "fib.o")))
+    "named fib default root: object differs from --equations"
+  -- 5. --opt without --equations -> byte-identical to --equations --opt
+  let fibOptEq := t.work / "fib.opt.eq.o"
+  let fibOptAuto := t.work / "fib.opt.auto.o"
+  let (cOptEq, _) ← cliCapture t ["compile", (benchIxe "fib").toString, "--equations", (benchEqs "fib").toString,
+    "--root", "entry", "--opt", "-o", fibOptEq.toString]
+  expectEq a cOptEq 0 "fib --opt with --equations"
+  let (cOptAuto, _) ← cliCapture t ["compile", (benchIxe "fib").toString,
+    "--root", s!"entry={fibAddr}", "--opt", "-o", fibOptAuto.toString]
+  expectEq a cOptAuto 0 "fib --opt auto-hints"
+  expect a ((← IO.FS.readBinFile fibOptAuto) == (← IO.FS.readBinFile fibOptEq))
+    "fib --opt auto-hints: object differs from --equations --opt"
+  -- 6. --rc on and --rc auto without --equations on reverseList -> byte-identical to --equations
+  let rcIxe := "fixtures/rc/real-source/anonymous.ixe"
+  let rcEqs := "fixtures/rc/real-source/consumer.equations.json"
+  let rcRoot := "IxCCTests.Own.H0.reverseList"
+  let rcSideRoots ← sidecarRootsOf rcEqs
+  let some (rcAddr, _) := rcSideRoots.find? (·.2 == some rcRoot)
+    | throw (IO.userError "reverseList: missing sidecar root")
+  let revAutoOn := t.work / "reverseList.auto.rc-on.o"
+  let revAutoAuto := t.work / "reverseList.auto.rc-auto.o"
+  let (cRcOn, oRcOn) ← cliCapture t ["compile", rcIxe, "--root", s!"{rcRoot}={rcAddr}",
+    "--rc", "on", "-o", revAutoOn.toString]
+  expectEq a cRcOn 0 s!"reverseList auto-hints --rc on: exit code ({oRcOn})"
+  expect a ((← IO.FS.readBinFile revAutoOn) == (← IO.FS.readBinFile (t.work / "reverseList.rc-on.o")))
+    "reverseList auto-hints --rc on: object differs from --equations"
+  let (cRcAuto, oRcAuto) ← cliCapture t ["compile", rcIxe, "--root", s!"{rcRoot}={rcAddr}",
+    "--rc", "auto", "-o", revAutoAuto.toString]
+  expectEq a cRcAuto 0 s!"reverseList auto-hints --rc auto: exit code ({oRcAuto})"
+  expect a ((← IO.FS.readBinFile revAutoAuto) == (← IO.FS.readBinFile (t.work / "reverseList.rc-auto.o")))
+    "reverseList auto-hints --rc auto: object differs from --equations"
+  -- 7. --exe --embed-cert + verify-exe WITHOUT --equations
+  let fibExe := t.work / "fib.auto.exe"
+  let (cExe, oExe) ← cliCapture t ["compile", (benchIxe "fib").toString,
+    "--root", s!"entry={fibAddr}", "--exe", fibExe.toString, "--embed-cert"]
+  expectEq a cExe 0 s!"fib auto-hints --exe --embed-cert: exit code ({oExe})"
+  let (cVer, oVer) ← cliCapture t ["verify-exe", fibExe.toString]
+  expectEq a cVer 0 s!"fib auto-hints verify-exe: exit code ({oVer})"
+  -- 8. Negative tests without --equations
+  let absentHex := toString (IxCC.Ixon.Address.replicate 0)
+  for (lbl, args) in [
+    ("anon bare name", ["compile", (benchIxe "fib").toString, "--root", "entry", "-o", (t.work / "bad1.o").toString]),
+    ("invalid hex", ["compile", (benchIxe "fib").toString, "--root", "entry=not-valid-hex", "-o", (t.work / "bad2.o").toString]),
+    ("0x prefix", ["compile", (benchIxe "fib").toString, "--root", s!"0x{fibAddr}", "-o", (t.work / "bad3.o").toString]),
+    ("absent addr", ["compile", (benchIxe "fib").toString, "--root", s!"entry={absentHex}", "-o", (t.work / "bad4.o").toString]),
+    ("anon no root", ["compile", (benchIxe "fib").toString, "-o", (t.work / "bad5.o").toString])
+  ] do
+    let (badCode, _) ← cliCapture t args
+    expectEq a badCode 1 s!"auto-hints negative ({lbl}) should exit 1"
+  out := out.push "auto-hints CLI: byte-identical .o on all 5 bench-k1 + k1.ixe + --opt + --rc on/auto + named .ixe (explicit/default) + bare hex (cx_root0) + --exe --embed-cert/verify-exe + 5 negative controls"
+  return out
+
 /-- Every bench-k1 closure, and `k1.ixe` with its five roots; each compile
 runs the certified kernel's acceptance at ingress (about a second and a half
 on the largest closures). -/
@@ -194,6 +325,7 @@ def commandLine (a : Assert) (t : Tools) : IO (Array String) := do
     out := out ++ (← closure a t name (benchIxe name) (benchEqs name) [("entry", name)])
   out := out ++ (← closure a t "k1" k1Ixe k1Eqs k1Roots)
   out := out ++ (← rcCommandLine a t)
+  out := out ++ (← autoHintsCommandLine a t)
   return out
 
 /-! ## The object the stage suites make -/
@@ -589,6 +721,16 @@ def reports (a : Assert) : IO (Array String) := do
   match IxCC.Cli.parse (base ++ ["--bignat", "--opt", "--bignat-lib", "b.json"]) with
   | .ok o => expect a (o.bignat && o.opt && o.bignatLib == some "b.json") "parse --bignat"
   | .error e => expect a false s!"parse --bignat: {e}"
+  -- optional `--equations`: `compile` and `check-cert` parse cleanly without `--equations`
+  match IxCC.Cli.parse ["compile", "c.ixe", "-o", "o.o"] with
+  | .ok o => expect a (o.equations.isNone && o.out == some "o.o") "parse compile without --equations"
+  | .error e => expect a false s!"parse compile without --equations: {e}"
+  match IxCC.Cli.parse ["compile", "c.ixe", "--root", "entry", "-o", "o.o"] with
+  | .ok o => expect a (o.equations.isNone && o.roots == ["entry"]) "parse compile --root without --equations"
+  | .error e => expect a false s!"parse compile --root without --equations: {e}"
+  match IxCC.Cli.parse ["check-cert", "c.ixe", "--cert", "c.json"] with
+  | .ok o => expect a (o.equations.isNone && o.cert == some "c.json") "parse check-cert without --equations"
+  | .error e => expect a false s!"parse check-cert without --equations: {e}"
   -- a certificate fixes the RC policy: `check-cert` parses without `--rc`, and refuses it (below)
   match IxCC.Cli.parse ["check-cert", "c.ixe", "--equations", "e.json", "--cert", "c.json"] with
   | .ok o => expect a (o.cert.isSome && !o.rcExplicit) "parse check-cert"

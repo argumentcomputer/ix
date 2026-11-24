@@ -150,6 +150,40 @@ def ofK1String (text : String) : Except String Hints := do
   checkJsonText text
   ofK1Json (← Json.parse text)
 
+/-- Serialize `Hints` (roots, `.eqn` equations, and `.word` theorems) into canonical
+`ixcc/k1-equations/1` JSON that round-trips through `ofK1Json`. -/
+def toK1Json (h : Hints) (source : String := "<auto-hints>") : Json :=
+  let rootRows := h.roots.map fun (addr, name?) =>
+    let base := [("address", Json.str (toString addr))]
+    Json.mkObj (match name? with | some n => ("name", Json.str n) :: base | none => base)
+  let eqRows := h.proposals.filterMap fun p =>
+    if p.kind == .eqn then
+      p.theorem?.map fun thm =>
+        let base := [
+          ("definition_address", Json.str (toString p.subject)),
+          ("equation_address", Json.str (toString thm))
+        ]
+        Json.mkObj (match p.name? with | some n => ("definition", Json.str n) :: base | none => base)
+    else none
+  let thmRows := h.proposals.filterMap fun p =>
+    if p.kind == .word then
+      p.theorem?.map fun thm =>
+        let base := [
+          ("kind", Json.str "word"),
+          ("subject_address", Json.str (toString p.subject)),
+          ("theorem_address", Json.str (toString thm))
+        ]
+        Json.mkObj (match p.name? with | some n => ("subject", Json.str n) :: base | none => base)
+    else none
+  let fields : List (String × Json) :=
+    [ ("format", Json.str "ixcc/k1-equations/1")
+    , ("source", Json.str source)
+    , ("roots", Json.arr rootRows)
+    , ("equations", Json.arr eqRows) ] ++
+    (if thmRows.isEmpty then [] else [("theorems", Json.arr thmRows)]) ++
+    [ ("failures", Json.arr #[]) ]
+  Json.mkObj fields
+
 end Hints
 
 end IxCC.Src

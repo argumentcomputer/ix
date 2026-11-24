@@ -1,4 +1,5 @@
 import IxCC.Src.Ingress
+import IxCC.Src.AutoHints
 import IxCC.Src.Table.Build
 import IxCC.Src.KernelFront.Annotate
 import IxCC.Src.Recheck
@@ -131,5 +132,38 @@ def load (bytes : ByteArray) (equations : Lean.Json) (cfg : LoadConfig := {})
   let env ← stage "decode" (V3.decodeAnonymousEnv bytes)
   let hints ← stage "hints" (Hints.ofK1Json equations)
   loadEnv cfg env hints oracle
+
+/-- Auto-discovered front-end pipeline from a decoded environment and resolved roots,
+without an external `--equations` sidecar: runs kernel acceptance once to obtain the
+admitted pins, discovers `.eqn`/`.word` proposals from theorem statements alone, and
+runs ingress, table build/revalidation, relevance, and admission. -/
+def loadEnvAuto (cfg : LoadConfig) (env : V3.Env)
+    (roots : Array (Ixon.Address × Option String))
+    (oracle : RelOracle := kernelOracle) : Except Diag Loaded := do
+  let acc ← (KernelFront.accept env).mapError fun r => Diag.of "kernel" r.report
+  let pins := KernelFront.pinsOfTable acc.table
+  let proposals := AutoHints.discover env pins
+  let hints : Hints := { roots, proposals }
+  let records ← stage "decode" (Ingress.reach env (Ingress.Seeds.of hints pins))
+  let p ← stage "ingress" (Ingress.readConsts env records (hints.roots.map (·.1)))
+  let p := { p with known := { pins } }
+  let p := { p with known := Pinned.known p }
+  let rd ← stage "faithful" (KernelFront.Reading.build acc p)
+  let kernel : KernelFront.Kernel := { acc, rd, fe := Ix.Kernel.mkFEnv acc.env }
+  let (table, tableDiags, tableStats) := Table.build cfg.table p hints.proposals
+  let p := { p with table }
+  stage "table-recheck" (Table.validate cfg.table p)
+  let ann ← stage "relevance-oracle" (oracle kernel p)
+  let (p, checked, admitted) ← finish cfg hints p ann
+  return { env, kernel, hints, program := p, ann, checked, admitted, tableDiags, tableStats
+           wordHints := Table.wordHints p admitted.reached }
+
+/-- Auto-discovered front-end entry point: closure bytes and `--root` specs
+(`NAME`, `<64-hex>`, or `NAME=<64-hex>`), with no external `--equations` sidecar. -/
+def loadAuto (bytes : ByteArray) (roots : List String := []) (cfg : LoadConfig := {})
+    (oracle : RelOracle := kernelOracle) : Except Diag Loaded := do
+  let env ← stage "decode" (V3.decodeAnonymousEnv bytes)
+  let chosen ← stage "roots" (AutoHints.resolveRoots env roots)
+  loadEnvAuto cfg env chosen oracle
 
 end IxCC.Src
