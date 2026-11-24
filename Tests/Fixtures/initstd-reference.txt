@@ -5,22 +5,17 @@
 # `ix compile-lean Benchmarks/Compile/CompileInitStd.lean` writes:
 # the certified compile with its report checks and the default role binding.
 # `ix check-lean <artifact> --anon`, strict as every entry is by default, must
-# admit every role the default table binds but the five compiler-trust
-# roles (Lean.trustCompiler, Lean.reduceBool, Lean.reduceNat, Lean.ofReduceBool,
-# Lean.ofReduceNat), whose records it refuses, pass
-# `lean-kernel-passed` of `lean-kernel-checked` constants, and refuse exactly the
-# `lean-kernel-refused` addresses (the names are for the reader): it declines
-# the non-standard axiom `Lean.trustCompiler` and blocks the four
-# native-evaluation constants that depend on it, so it exits 3.
+# admit all bound roles (including the five inert §7.10 compiler-trust roles
+# `Lean.trustCompiler`, `Lean.reduceBool`, `Lean.reduceNat`, `Lean.ofReduceBool`,
+# `Lean.ofReduceNat`, which are matched at their pinned specifications, install
+# nothing into the logical environment, and still decline if any declaration
+# uses them), pass all `lean-kernel-passed` of `lean-kernel-checked` constants
+# with zero refused, accept the whole artifact, emit a non-conditional host
+# admission statement, and exit 0.
 #
 # A change that moves the compiler's bytes, or the kernel's verdicts on
 # this artifact, updates these lines in the same commit and says why.
 blake3	ee3638341f4624f3eb1d76cd6729a8f2d8a39049c28c3bba3e567468792496c5
 bytes	260567742
-lean-kernel-passed	99514
+lean-kernel-passed	99519
 lean-kernel-checked	99519
-lean-kernel-refused	67448cf1243d685b2738cc756a4b8f4bdbde9b0fc3bb4a831e286bee37fcd07e	Lean.trustCompiler
-lean-kernel-refused	9ff7e16f724d7aee1243b6b670cd19c13e153d7a7472789a9b5a6d68224963ab	Lean.reduceNat
-lean-kernel-refused	2b77efb47edea7e267157f46b9ba12c4845602497b578f5190b488da7f42e9d9	Lean.ofReduceNat
-lean-kernel-refused	6f934549cecd15776349147cb2d7b2161caae5ea2af0e5f773bf6e96a34501dd	Lean.reduceBool
-lean-kernel-refused	2fca8c5354200c2b79352fe0d91bb158db2e1b3a924e142a0cd3e16a4f63c5a3	Lean.ofReduceBool
