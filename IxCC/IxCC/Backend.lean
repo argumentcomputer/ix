@@ -1,3 +1,4 @@
+import IxCC.Lir.Opt.Driver
 import IxCC.Xv.Select.Driver
 import IxCC.Xv.Alloc.Driver
 import IxCC.Xv.Stacking.Run
@@ -148,5 +149,23 @@ def compileWith (alloc : VProgram → Except String LProgram) (p : Lir.Program) 
 falling back to all slots per function (`Alloc.run`). -/
 def compile (p : Lir.Program) (cfg : Config) : Except Error Artifact :=
   compileWith (fun xv => (·.program) <$> Alloc.run cfg.env xv) p cfg
+
+/-- Lir to an ELF object with validated SSA optimization (`Lir.Opt.run`),
+selection, the given allocator, then `emit`. -/
+def compileOptWith (alloc : VProgram → Except String LProgram) (p : Lir.Program) (cfg : Config) :
+    Except Error Artifact :=
+  compileWith alloc (Lir.Opt.run p) cfg
+
+/-- Lir to an ELF object with validated SSA optimization (`Lir.Opt.run`)
+followed by `Backend.compile`. -/
+def compileOpt (p : Lir.Program) (cfg : Config) : Except Error Artifact :=
+  compile (Lir.Opt.run p) cfg
+
+/-- Lir to an ELF object using an externally supplied optimized `Lir.Program`
+certificate `cert`, checked by `Lir.Opt.validateCert` before `Backend.compile`. -/
+def compileWithOptCert (cert : Lir.Program) (p : Lir.Program) (cfg : Config) :
+    Except Error Artifact := do
+  let q ← (Lir.Opt.validateCert p cert).mapError .select
+  compile q cfg
 
 end IxCC.Backend
