@@ -75,6 +75,8 @@ use multi_stark::{
 };
 use std::{
   ffi::c_void,
+  mem::MaybeUninit,
+  ptr::NonNull,
   sync::{Arc, Mutex, RwLock, RwLockReadGuard},
 };
 
@@ -341,17 +343,30 @@ impl Drop for Buffer {
   }
 }
 
+/// Allocates `bytes` of page-locked host memory through CUDA and rejects a
+/// null return value.
+fn host_alloc<T>(bytes: usize, what: &str) -> Result<NonNull<T>, String> {
+  let mut pointer = MaybeUninit::<*mut c_void>::uninit();
+  // SAFETY: `pointer.as_mut_ptr()` is valid for writing by `aiur_gpu_host_alloc`.
+  check(unsafe { aiur_gpu_host_alloc(bytes, pointer.as_mut_ptr()) }, what)?;
+  // SAFETY: `aiur_gpu_host_alloc` returned success (`cudaSuccess`), so it
+  // initialized `pointer`.
+  let pointer = unsafe { pointer.assume_init() };
+  NonNull::new(pointer.cast::<T>())
+    .ok_or_else(|| format!("{what}: allocator returned null pointer"))
+}
+
 /// Words in one page-locked staging buffer.
 const STAGING_WORDS: usize = 8 << 20;
 
 /// A page-locked host buffer of [`STAGING_WORDS`] words.
-struct Staging(*mut u64);
+struct Staging(NonNull<u64>);
 // SAFETY: the allocation is plain host memory owned by this value.
 unsafe impl Send for Staging {}
 impl Drop for Staging {
   fn drop(&mut self) {
     // SAFETY: allocated by `aiur_gpu_host_alloc`, freed once.
-    unsafe { aiur_gpu_host_free(self.0.cast()) };
+    unsafe { aiur_gpu_host_free(self.0.as_ptr().cast()) };
   }
 }
 
@@ -386,15 +401,10 @@ impl Buffer {
       STAGING.lock().unwrap_or_else(std::sync::PoisonError::into_inner).pop();
     let staging = match staging {
       Some(staging) => staging,
-      None => {
-        let mut pointer = std::ptr::null_mut();
-        // SAFETY: the out-pointer is valid for writing.
-        check(
-          unsafe { aiur_gpu_host_alloc(STAGING_WORDS * 8, &raw mut pointer) },
-          "GPU population staging allocation",
-        )?;
-        Staging(pointer.cast())
-      },
+      None => Staging(host_alloc(
+        STAGING_WORDS * 8,
+        "GPU population staging allocation",
+      )?),
     };
     // Pieces split at batch boundaries and into parallel-sized parts.
     const PART: usize = 1 << 17;
@@ -406,7 +416,7 @@ impl Buffer {
                  used: &mut usize,
                  batch_start: &mut usize|
      -> Result<(), String> {
-      let base = staging.0 as usize;
+      let base = staging.0.as_ptr() as usize;
       let copy = |&(at, piece): &(usize, &[T])| {
         // SAFETY: each part has its own range within the staging buffer.
         let words = unsafe {
@@ -436,7 +446,7 @@ impl Buffer {
           aiur_gpu_upload(
             self.device,
             self.pointer.cast::<u64>().add(*batch_start).cast(),
-            staging.0.cast(),
+            staging.0.as_ptr().cast(),
             *used * 8,
           )
         },
@@ -495,15 +505,10 @@ impl Buffer {
       STAGING.lock().unwrap_or_else(std::sync::PoisonError::into_inner).pop();
     let staging = match staging {
       Some(staging) => staging,
-      None => {
-        let mut pointer = std::ptr::null_mut();
-        // SAFETY: the out-pointer is valid for writing.
-        check(
-          unsafe { aiur_gpu_host_alloc(STAGING_WORDS * 8, &raw mut pointer) },
-          "GPU population staging allocation",
-        )?;
-        Staging(pointer.cast())
-      },
+      None => Staging(host_alloc(
+        STAGING_WORDS * 8,
+        "GPU population staging allocation",
+      )?),
     };
     let batch = (STAGING_WORDS / stride).max(1);
     let mut result = Ok(());
@@ -512,8 +517,9 @@ impl Buffer {
       let count = batch.min(rows - first);
       // SAFETY: the staging buffer holds `STAGING_WORDS >= count * stride`
       // words, and only this call uses it.
-      let words =
-        unsafe { std::slice::from_raw_parts_mut(staging.0, count * stride) };
+      let words = unsafe {
+        std::slice::from_raw_parts_mut(staging.0.as_ptr(), count * stride)
+      };
       let threads = if parallel {
         std::thread::available_parallelism().map_or(1, usize::from)
       } else {
@@ -542,7 +548,7 @@ impl Buffer {
           aiur_gpu_upload(
             self.device,
             self.pointer.cast::<u64>().add(first * stride).cast(),
-            staging.0.cast(),
+            staging.0.as_ptr().cast(),
             count * stride * 8,
           )
         },
@@ -621,7 +627,7 @@ struct Workspace {
   capacity: u64,
   error: Buffer,
   /// Page-locked host copy of `error`, written by each launch.
-  status: *mut AiurPopulationError,
+  status: NonNull<AiurPopulationError>,
 }
 // SAFETY: the buffers are owned by this value and used by one launch at a time.
 unsafe impl Send for Workspace {}
@@ -631,21 +637,17 @@ impl Workspace {
       .map_err(|_| "population scratch size overflow")?;
     let scratch = Buffer::new(device, bytes)?;
     let error = Buffer::new(device, size_of::<AiurPopulationError>())?;
-    let mut status = std::ptr::null_mut();
-    // SAFETY: the out-pointer is valid for writing.
-    check(
-      unsafe {
-        aiur_gpu_host_alloc(size_of::<AiurPopulationError>(), &raw mut status)
-      },
+    let status = host_alloc(
+      size_of::<AiurPopulationError>(),
       "GPU population status allocation",
     )?;
-    Ok(Self { scratch, capacity, error, status: status.cast() })
+    Ok(Self { scratch, capacity, error, status })
   }
 }
 impl Drop for Workspace {
   fn drop(&mut self) {
     // SAFETY: allocated by `aiur_gpu_host_alloc`, freed once.
-    unsafe { aiur_gpu_host_free(self.status.cast()) };
+    unsafe { aiur_gpu_host_free(self.status.as_ptr().cast()) };
   }
 }
 
@@ -2978,7 +2980,7 @@ impl DeviceRecord {
             workspace.scratch.as_ptr(),
             ranges.as_ptr(),
             workspace.error.as_ptr(),
-            workspace.status,
+            workspace.status.as_ptr(),
           )
         },
         "GPU depth range counting",
@@ -3393,7 +3395,7 @@ impl DeviceRecord {
         rows,
         height,
         workspace.error.as_ptr(),
-        workspace.status.cast(),
+        workspace.status.as_ptr().cast(),
       );
       // A failed launch may leave work queued on the workspace, so it is
       // freed rather than reused.
@@ -3422,7 +3424,7 @@ impl DeviceRecord {
           height as u64,
           workspace.scratch.as_ptr(),
           workspace.error.as_ptr(),
-          workspace.status,
+          workspace.status.as_ptr(),
         )
       },
       "GPU population",
