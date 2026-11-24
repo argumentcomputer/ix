@@ -186,10 +186,10 @@ impl Options {
 
   /// The committed-cell bound each shard is planned to, if any. A CUDA
   /// prover always runs on a device, so it is bounded even without an
-  /// explicit device index; CPU proving is bounded only on request. A
-  /// single-shard plan is not bounded by cells.
+  /// explicit device index; CPU proving is bounded only on request. Single-shard
+  /// and fixed-layout (`fixed_log_heights`) plans are not bounded by cells.
   pub fn device_cells(&self) -> Result<Option<u64>, String> {
-    if self.single_shard {
+    if self.single_shard || self.fixed_log_heights.is_some() {
       return Ok(None);
     }
     if self.max_cells.is_some() || !cfg!(feature = "cuda") {
@@ -1063,7 +1063,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     &self,
     options: &Options,
   ) -> Result<Option<u64>, String> {
-    if options.single_shard {
+    if options.single_shard || options.fixed_log_heights.is_some() {
       return Ok(None);
     }
     if let Some(bytes) = options.max_device_bytes {
