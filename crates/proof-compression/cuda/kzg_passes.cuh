@@ -165,7 +165,7 @@ __global__ __launch_bounds__(128) void quotient_pass_sweep(
 
 } // namespace
 
-IX_KZG_EXPORT int ix_kzg_lookup_passes(
+IX_KZG_EXPORT int IX_KZG_SYM(lookup_passes)(
     int device, const LookupParameters* parameters, const ConstraintPass* passes,
     size_t pass_count, fr_t* const* outputs, fr_t* total
 ) {
@@ -235,7 +235,7 @@ IX_KZG_EXPORT int ix_kzg_lookup_passes(
       catch (const std::exception& e) { return failure(cudaErrorUnknown, e.what()); }
 }
 
-IX_KZG_EXPORT int ix_kzg_quotient_passes(
+IX_KZG_EXPORT int IX_KZG_SYM(quotient_passes)(
     int device, const QuotientParameters* parameters, const ConstraintPass* passes, size_t pass_count,
     const fr_t* publics, size_t public_count, const fr_t* shifts, const fr_t* inverse_vanishing,
     fr_t* const* outputs
@@ -245,7 +245,7 @@ IX_KZG_EXPORT int ix_kzg_quotient_passes(
         if (!parameters || !publics || public_count < 4 || !shifts || !inverse_vanishing || !outputs)
             return cudaErrorInvalidValue;
         const auto p = *parameters;
-        if (p.trace_log < 10 || p.trace_log > 27 || p.quotient_log < p.trace_log || p.quotient_log > 28
+        if (p.trace_log < 10 || p.trace_log > 27 || p.quotient_log < p.trace_log || p.quotient_log > KZG_MAX_FFT_LOG
             || !p.blocks || p.blocks > 256 || !p.group_size || p.group_size > 8)
             return cudaErrorInvalidValue;
         const size_t n = size_t(1) << p.trace_log, ratio = size_t(1) << (p.quotient_log - p.trace_log);

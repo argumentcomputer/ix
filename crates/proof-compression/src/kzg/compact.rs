@@ -4,20 +4,15 @@
 #[cfg(test)]
 use crate::foreign::KzgCircuitExt;
 
-use super::curve::{Fr, G1_COMPRESSED_BYTES, G1Affine, read_g1_compressed};
+use super::curve::{Bn254, G1AffineOf, KzgCurve, read_g1_compressed_for};
+use super::field::CurveScalar;
+use super::{KzgCommitment, KzgConfig, KzgProof};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-
-use super::KzgCommitment;
-use super::KzgConfig;
-use super::KzgProof;
-use super::Scalar;
 use multi_stark::config::ProofConfig;
 use multi_stark::prover::Commitments;
 use multi_stark::prover::Proof;
 use multi_stark::system::System;
 use multi_stark::traits::Algebra;
-
-const MAGIC: &[u8; 4] = b"KBN1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CompactProofError;
@@ -29,20 +24,40 @@ impl std::fmt::Display for CompactProofError {
 }
 impl std::error::Error for CompactProofError {}
 
-/// Balanced ordinary proofs with all circuits active. Authenticate the system/verifying key separately and
-/// run normal proof verification after decoding; decoding is not verification.
-pub struct FixedProofCodec {
-  template: Proof<KzgConfig>,
+/// Balanced ordinary proofs with caller-supplied activation and trace heights.
+/// Authenticate the system/verifying key separately and run normal proof
+/// verification after decoding; decoding is not verification.
+pub struct FixedProofCodec<C: KzgCurve = Bn254> {
+  template: Proof<KzgConfig<C>>,
   max_openings: usize,
   body_bytes: usize,
 }
 
-impl FixedProofCodec {
+impl<C: KzgCurve> FixedProofCodec<C> {
   pub fn new(
-    system: &System<KzgConfig>,
+    system: &System<KzgConfig<C>>,
     log_degrees: &[u8],
   ) -> Result<Self, CompactProofError> {
-    if log_degrees.len() != system.circuits.len() || log_degrees.is_empty() {
+    Self::new_active(system, &vec![true; system.circuits.len()], log_degrees)
+  }
+
+  /// Derive the encoding from this proof's shape and the trusted circuit
+  /// metadata. Fixed tables must remain active; no matrix dimensions are
+  /// accepted from the encoded body.
+  pub fn new_active(
+    system: &System<KzgConfig<C>>,
+    active: &[bool],
+    log_degrees: &[u8],
+  ) -> Result<Self, CompactProofError> {
+    if active.len() != system.circuits.len()
+      || log_degrees.len() != active.iter().filter(|&&on| on).count()
+      || log_degrees.is_empty()
+      || system
+        .circuits
+        .iter()
+        .zip(active)
+        .any(|(circuit, &on)| !on && circuit.preprocessed_width != 0)
+    {
       return Err(CompactProofError);
     }
     let max_log = system.config.max_log_degree();
@@ -50,7 +65,14 @@ impl FixedProofCodec {
       [KzgCommitment(vec![]), KzgCommitment(vec![]), KzgCommitment(vec![])];
     let mut rounds = [vec![], vec![], vec![], vec![]];
     let mut heights = Vec::new();
-    for (ci, (c, &log)) in system.circuits.iter().zip(log_degrees).enumerate() {
+    for ((ci, c), &log) in system
+      .circuits
+      .iter()
+      .enumerate()
+      .zip(active)
+      .filter_map(|(circuit, &on)| on.then_some(circuit))
+      .zip(log_degrees)
+    {
       let height =
         1usize.checked_shl(u32::from(log)).ok_or(CompactProofError)?;
       if usize::from(log) > max_log
@@ -65,7 +87,7 @@ impl FixedProofCodec {
         .into_iter()
         .enumerate()
       {
-        commitments[i].0.push(vec![G1Affine::default(); width]);
+        commitments[i].0.push(vec![G1AffineOf::<C>::default(); width]);
         let count = match i {
           0 => {
             1 + usize::from(
@@ -75,11 +97,11 @@ impl FixedProofCodec {
           1 => 2,
           _ => 1,
         };
-        rounds[i].push(vec![vec![Scalar::ZERO; width]; count]);
+        rounds[i].push(vec![vec![CurveScalar::<C>::ZERO; width]; count]);
       }
       if c.preprocessed_width != 0 {
         rounds[3].push(vec![
-          vec![Scalar::ZERO; c.preprocessed_width];
+          vec![CurveScalar::<C>::ZERO; c.preprocessed_width];
           1 + usize::from(system.opens_next_row(
             ci,
             multi_stark::expr::Source::Preprocessed
@@ -95,14 +117,17 @@ impl FixedProofCodec {
       prep,
     ] = rounds;
     let template = Proof {
-      active: vec![true; log_degrees.len()],
+      active: active.to_vec(),
       log_degrees: log_degrees.to_vec(),
       commitments: Commitments {
         stage_1_trace,
         stage_2_trace,
         quotient_chunks,
       },
-      intermediate_accumulators: vec![Scalar::ZERO; log_degrees.len()],
+      intermediate_accumulators: vec![
+        CurveScalar::<C>::ZERO;
+        log_degrees.len()
+      ],
       opening_proof: KzgProof(vec![]),
       stage_1_opened_values,
       stage_2_opened_values,
@@ -112,25 +137,25 @@ impl FixedProofCodec {
         .as_ref()
         .map(|_| prep),
     };
-    let body_bytes = points(&template).count() * G1_COMPRESSED_BYTES
+    let body_bytes = points(&template).count() * C::G1_COMPRESSED_BYTES
       + fields(&template).count() * 32;
     Ok(Self { template, max_openings: heights.len() + 1, body_bytes })
   }
 
   pub fn encode(
     &self,
-    proof: &Proof<KzgConfig>,
+    proof: &Proof<KzgConfig<C>>,
   ) -> Result<Vec<u8>, CompactProofError> {
     if proof.active != self.template.active
       || proof.log_degrees != self.template.log_degrees
-      || proof.intermediate_accumulators.last() != Some(&Scalar::ZERO)
+      || proof.intermediate_accumulators.last() != Some(&CurveScalar::<C>::ZERO)
       || shape(proof) != shape(&self.template)
       || proof.opening_proof.0.is_empty()
       || proof.opening_proof.0.len() > self.max_openings
     {
       return Err(CompactProofError);
     }
-    let mut bytes = MAGIC.to_vec();
+    let mut bytes = C::COMPACT_MAGIC.to_vec();
     bytes.push(
       u8::try_from(proof.opening_proof.0.len())
         .map_err(|_error| CompactProofError)?,
@@ -152,19 +177,19 @@ impl FixedProofCodec {
   pub fn decode(
     &self,
     bytes: &[u8],
-  ) -> Result<Proof<KzgConfig>, CompactProofError> {
-    if bytes.len() < 5 || &bytes[..4] != MAGIC {
+  ) -> Result<Proof<KzgConfig<C>>, CompactProofError> {
+    if bytes.len() < 5 || &bytes[..4] != C::COMPACT_MAGIC {
       return Err(CompactProofError);
     }
     let openings = usize::from(bytes[4]);
     if openings == 0
       || openings > self.max_openings
-      || bytes.len() != 5 + self.body_bytes + G1_COMPRESSED_BYTES * openings
+      || bytes.len() != 5 + self.body_bytes + C::G1_COMPRESSED_BYTES * openings
     {
       return Err(CompactProofError);
     }
     let mut proof = self.template.clone();
-    proof.opening_proof.0.resize(openings, G1Affine::default());
+    proof.opening_proof.0.resize(openings, G1AffineOf::<C>::default());
     let mut input = &bytes[5..];
     for commitment in [
       &mut proof.commitments.stage_1_trace,
@@ -172,13 +197,13 @@ impl FixedProofCodec {
       &mut proof.commitments.quotient_chunks,
     ] {
       for point in commitment.0.iter_mut().flatten() {
-        *point =
-          read_g1_compressed(&mut input).map_err(|_error| CompactProofError)?;
+        *point = read_g1_compressed_for::<C>(&mut input)
+          .map_err(|_error| CompactProofError)?;
       }
     }
     for point in &mut proof.opening_proof.0 {
-      *point =
-        read_g1_compressed(&mut input).map_err(|_error| CompactProofError)?;
+      *point = read_g1_compressed_for::<C>(&mut input)
+        .map_err(|_error| CompactProofError)?;
     }
     let accumulator_count = proof.intermediate_accumulators.len() - 1;
     for value in
@@ -195,7 +220,7 @@ impl FixedProofCodec {
         .flatten(),
       )
     {
-      value.0 = Fr::deserialize_compressed(&mut input)
+      value.0 = C::Fr::deserialize_compressed(&mut input)
         .map_err(|_error| CompactProofError)?;
     }
     if !input.is_empty() {
@@ -205,7 +230,9 @@ impl FixedProofCodec {
   }
 }
 
-fn points(proof: &Proof<KzgConfig>) -> impl Iterator<Item = &G1Affine> {
+fn points<C: KzgCurve>(
+  proof: &Proof<KzgConfig<C>>,
+) -> impl Iterator<Item = &G1AffineOf<C>> {
   [
     &proof.commitments.stage_1_trace,
     &proof.commitments.stage_2_trace,
@@ -216,7 +243,9 @@ fn points(proof: &Proof<KzgConfig>) -> impl Iterator<Item = &G1Affine> {
   .chain(&proof.opening_proof.0)
 }
 
-fn fields(proof: &Proof<KzgConfig>) -> impl Iterator<Item = &Scalar> {
+fn fields<C: KzgCurve>(
+  proof: &Proof<KzgConfig<C>>,
+) -> impl Iterator<Item = &CurveScalar<C>> {
   proof
     .intermediate_accumulators
     .iter()
@@ -235,7 +264,7 @@ fn fields(proof: &Proof<KzgConfig>) -> impl Iterator<Item = &Scalar> {
     )
 }
 
-fn shape(proof: &Proof<KzgConfig>) -> Vec<usize> {
+fn shape<C: KzgCurve>(proof: &Proof<KzgConfig<C>>) -> Vec<usize> {
   let mut shape = vec![
     proof.intermediate_accumulators.len(),
     usize::from(proof.preprocessed_opened_values.is_some()),
@@ -268,6 +297,7 @@ fn shape(proof: &Proof<KzgConfig>) -> Vec<usize> {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::kzg::curve::Bls12381;
   use multi_stark::expr::Expr;
   use multi_stark::system::CircuitInputs;
   use multi_stark::system::SystemWitness;
@@ -275,54 +305,11 @@ mod tests {
   use p3_matrix::dense::RowMajorMatrix;
   use std::sync::Arc;
 
-  #[test]
-  fn merged_tables_do_not_allow_cross_table_substitution() {
-    use multi_stark::plonkish::CircuitBuilder;
-    let mut b = CircuitBuilder::<Scalar>::new();
-    let a = b.fixed_table("a", vec![vec![Scalar::ONE]]);
-    b.fixed_table("b", vec![vec![Scalar::ONE]]);
-    let one = b.constant(Scalar::ONE);
-    b.lookup(a, &[one]);
-    let compiled = b
-      .finish()
-      .lower_to_multi_stark(Scalar::from_u8(93))
-      .unwrap()
-      .merge_table_traces(16)
-      .unwrap();
-    let assignment = compiled.witness().generate().unwrap();
+  fn check_roundtrip<C: KzgCurve>() {
+    let f = CurveScalar::<C>::from_u8;
     let (system, key) = System::new(
-      KzgConfig::new(
-        Arc::new(super::super::Srs::unsafe_dev_setup(16, b"table-ids")),
-        4,
-      ),
-      compiled.kzg_circuit_inputs(16, 4).unwrap(),
-    );
-    let claims = compiled.claims(&[]).unwrap();
-    let claims: Vec<_> = claims.iter().map(Vec::as_slice).collect();
-    let mut traces = compiled.traces(&assignment).unwrap();
-    let proof = system.prove_multiple_claims(
-      &key,
-      &claims,
-      SystemWitness::from_stage_1(traces.clone(), &system),
-    );
-    system.verify_multiple_claims(&claims, &proof).unwrap();
-    assert_eq!(traces[1].values, [Scalar::ONE, Scalar::ZERO]);
-    // The tuple is identical, but paying through the other table is invalid.
-    traces[1].values.swap(0, 1);
-    let forged = system.prove_multiple_claims(
-      &key,
-      &claims,
-      SystemWitness::from_stage_1(traces, &system),
-    );
-    assert!(system.verify_multiple_claims(&claims, &forged).is_err());
-  }
-
-  #[test]
-  fn roundtrip_and_reject_malformed_transport() {
-    let f = Scalar::from_u8;
-    let (system, key) = System::new(
-      KzgConfig::new(
-        Arc::new(super::super::Srs::unsafe_dev_setup(8, b"codec")),
+      KzgConfig::<C>::new(
+        Arc::new(super::super::Srs::<C>::unsafe_dev_setup(8, b"codec")),
         4,
       ),
       [CircuitInputs {
@@ -339,13 +326,13 @@ mod tests {
         &system,
       ),
     );
-    let codec = FixedProofCodec::new(&system, &[2]).unwrap();
+    let codec = FixedProofCodec::<C>::new(&system, &[2]).unwrap();
     let bytes = codec.encode(&proof).unwrap();
     let decoded = codec.decode(&bytes).unwrap();
     assert_eq!(codec.encode(&decoded).unwrap(), bytes);
     system.verify_multiple_claims(&[], &decoded).unwrap();
     assert!(proof.to_bytes().is_err());
-    assert!(Proof::<KzgConfig>::from_bytes(&bytes).is_err());
+    assert!(Proof::<KzgConfig<C>>::from_bytes(&bytes).is_err());
     for end in 0..bytes.len() {
       assert!(codec.decode(&bytes[..end]).is_err());
     }
@@ -353,7 +340,7 @@ mod tests {
     bad.push(0);
     assert!(codec.decode(&bad).is_err());
     bad = bytes.clone();
-    bad[5..5 + G1_COMPRESSED_BYTES].fill(0xff);
+    bad[5..5 + C::G1_COMPRESSED_BYTES].fill(0xff);
     assert!(codec.decode(&bad).is_err());
     bad = bytes.clone();
     let n = bad.len();
@@ -366,11 +353,62 @@ mod tests {
     bad_proof.active[0] = false;
     assert!(codec.encode(&bad_proof).is_err());
     bad_proof = proof.clone();
-    bad_proof.intermediate_accumulators[0] = Scalar::ONE;
+    bad_proof.intermediate_accumulators[0] = CurveScalar::<C>::ONE;
     assert!(codec.encode(&bad_proof).is_err());
     bad_proof = proof.clone();
-    bad_proof.stage_1_opened_values[0][0][0] += Scalar::ONE;
+    bad_proof.stage_1_opened_values[0][0][0] += CurveScalar::<C>::ONE;
     let forged = codec.decode(&codec.encode(&bad_proof).unwrap()).unwrap();
     assert!(system.verify_multiple_claims(&[], &forged).is_err());
+  }
+
+  #[test]
+  fn merged_tables_do_not_allow_cross_table_substitution() {
+    use crate::kzg::field::Scalar;
+    use multi_stark::plonkish::CircuitBuilder;
+    let mut b = CircuitBuilder::<Scalar>::new();
+    let a = b.fixed_table("a", vec![vec![Scalar::ONE]]);
+    b.fixed_table("b", vec![vec![Scalar::ONE]]);
+    let one = b.constant(Scalar::ONE);
+    b.lookup(a, &[one]);
+    let compiled = b
+      .finish()
+      .lower_to_multi_stark(Scalar::from_u8(93))
+      .unwrap()
+      .merge_table_traces(16)
+      .unwrap();
+    let assignment = compiled.witness().generate().unwrap();
+    let (system, key) = System::new(
+      KzgConfig::<Bn254>::new(
+        Arc::new(super::super::Srs::<Bn254>::unsafe_dev_setup(
+          16,
+          b"table-ids",
+        )),
+        4,
+      ),
+      compiled.kzg_circuit_inputs(16, 4).unwrap(),
+    );
+    let claims = compiled.claims(&[]).unwrap();
+    let claims: Vec<_> = claims.iter().map(Vec::as_slice).collect();
+    let mut traces = compiled.traces(&assignment).unwrap();
+    let proof = system.prove_multiple_claims(
+      &key,
+      &claims,
+      SystemWitness::from_stage_1(traces.clone(), &system),
+    );
+    system.verify_multiple_claims(&claims, &proof).unwrap();
+    assert_eq!(traces[1].values, [Scalar::ONE, Scalar::ZERO]);
+    traces[1].values.swap(0, 1);
+    let forged = system.prove_multiple_claims(
+      &key,
+      &claims,
+      SystemWitness::from_stage_1(traces, &system),
+    );
+    assert!(system.verify_multiple_claims(&claims, &forged).is_err());
+  }
+
+  #[test]
+  fn roundtrip_and_reject_malformed_transport_for_both_curves() {
+    check_roundtrip::<Bn254>();
+    check_roundtrip::<Bls12381>();
   }
 }

@@ -77,8 +77,32 @@ list fails just as loudly as one in a bare file.
       NAME ONLY: `sorryAxName := roleKey .sorryAx` names the `Role.sorryAx`
       key.
 
-  IxC/Kernel/Cached/Policy.lean sorryAx
-      NAME ONLY: looks up `Role.sorryAx` in the user-axiom policy filter.
+  IxC/Kernel/Cached/ParsedC.lean trustCompiler
+      NAME ONLY: checks `cv.name = roleKey .trustCompiler` in the inert
+      compiler-trust axiom declaration branch (`checkDeclC`), installing
+      nothing so any use declines.
+
+  IxC/Kernel/Cached/Policy.lean sorryAx, trustCompiler
+      NAME ONLY: looks up `Role.sorryAx` in the user-axiom policy filter and
+      checks `cv.name = roleKey .trustCompiler` in the inert compiler-trust
+      axiom declaration branch (`checkStdAxiomDeclC`), installing nothing.
+
+  IxC/Kernel/Checker.lean       trustCompiler
+      NAME ONLY: checks `cv.name = roleKey .trustCompiler` in the inert
+      compiler-trust axiom declaration branch (`checkDecl`), installing
+      nothing so any use declines.
+
+  IxC/Kernel/Semantics/Bridge/DeclRun.lean trustCompiler
+      NAME ONLY: case-splits on `cv.name = roleKey .trustCompiler` in the
+      soundness proof of `checkDecl`'s inert compiler-trust branch.
+
+  IxC/Kernel/Verify/BridgeDecl.lean trustCompiler
+      NAME ONLY: case-splits on `cv.name = roleKey .trustCompiler` in the
+      fuel-bridge proof for `checkDecl`'s inert compiler-trust branch.
+
+  IxC/Kernel/Verify/Cached/BridgeC.lean trustCompiler
+      NAME ONLY: case-splits on `cv.name = roleKey .trustCompiler` in the
+      simulation proof of `checkDeclC`'s inert compiler-trust branch.
 
   IxC/Kernel/Admission.lean     sorryAx
       NAME ONLY: lists `Role.sorryAx` in `userAxiomRoles`.
@@ -193,7 +217,12 @@ def allow : List (String × List String) := [
   ("IxC/Kernel/Key.lean", ["computed_field", "ofReduceBool", "sorryAx", "trustCompiler"]),
   ("IxC/Kernel/Roles.lean", ["ofReduceBool", "sorryAx", "trustCompiler"]),
   ("IxC/Kernel/Basis/Names.lean", ["sorryAx"]),
-  ("IxC/Kernel/Cached/Policy.lean", ["sorryAx"]),
+  ("IxC/Kernel/Cached/ParsedC.lean", ["trustCompiler"]),
+  ("IxC/Kernel/Cached/Policy.lean", ["sorryAx", "trustCompiler"]),
+  ("IxC/Kernel/Checker.lean", ["trustCompiler"]),
+  ("IxC/Kernel/Semantics/Bridge/DeclRun.lean", ["trustCompiler"]),
+  ("IxC/Kernel/Verify/BridgeDecl.lean", ["trustCompiler"]),
+  ("IxC/Kernel/Verify/Cached/BridgeC.lean", ["trustCompiler"]),
   ("IxC/Kernel/Admission.lean", ["sorryAx"]),
   ("IxC/Kernel/BasisGen.lean", ["unsafe", "implemented_by"]),
   ("IxC/Kernel/Exclusive.lean", ["unsafe", "implemented_by"]),

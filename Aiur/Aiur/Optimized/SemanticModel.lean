@@ -64,10 +64,11 @@ theorem compile_semanticModel {program : Program F} {entries : List String} {con
         have logicalArguments : DecodesValues program.enums (logical.conclusion assignment).args args := by
           simpa only [conclusion, Circuit.RuleInstance.conclusion] using arguments
         obtain ⟨result, decoded, evaluated, resultTrusted⟩ :=
-          Compiler.function_sound declarations stages.2.1 lowered romValid logicalValid (sourceCalls := calls) (by
-            intro premise member values argumentDecode trusted
+          Compiler.function_sound declarations stages.2.1 lowered romValid (sourceCalls := calls)
+            (CallGuard.all _ _ _) logicalValid (by
+            intro premise member values argumentDecode trusted _
             exact premises premise (by simpa only [requires, Circuit.RuleInstance.premises] using member) values argumentDecode trusted)
-            callProvenance logicalArguments trusted
+            callProvenance logicalArguments trusted trivial
         rw [conclusion] at decoded
         refine ⟨result, decoded, ⟨_, _, ?_, evaluated⟩, resultTrusted⟩
         have types : function.params.map Prod.snd = args.map Value.type := by

@@ -1,5 +1,6 @@
-//! Validated verifier generation. Keys and profiles are trusted construction
-//! inputs; proof normalization is untrusted and never assigns the statement.
+//! Validated Protocol v6 (`F_p^3`) verifier generation. Keys and profiles are
+//! trusted construction inputs; proof normalization is untrusted and never
+//! assigns the statement.
 use std::{
   fmt,
   sync::atomic::{AtomicU64, Ordering},
@@ -11,18 +12,21 @@ use super::ByteGadgets;
 use super::ExpandedPcsWitness;
 use super::FixedPcsShape;
 use super::FixedVerifierInputs;
+use super::algebra::EXTENSION_DEGREE;
 use multi_stark::batch::BatchMessage;
 use multi_stark::batch::BatchProof;
 use multi_stark::config::StarkGenericConfig;
+use multi_stark::p3_adapter::fri_batching::FriBatching;
 use multi_stark::plonkish::Circuit;
 use multi_stark::plonkish::CircuitBuilder;
 use multi_stark::plonkish::Value;
 use multi_stark::plonkish::Witness;
 use multi_stark::prover::Proof;
 use multi_stark::system::Circuit as StarkCircuit;
-use multi_stark::system::System;
+use multi_stark::system::{System, compute_vk_digest};
 use multi_stark::types::CommitmentParameters;
-use multi_stark::types::GoldilocksBlake3Config as Config;
+use multi_stark::types::ExtVal3;
+use multi_stark::types::GoldilocksBlake3V6Config as Config;
 use multi_stark::types::Val;
 
 /// A verifier-only key. No preprocessed matrices or PCS prover data are retained.
@@ -61,16 +65,18 @@ impl VerifierKey {
       })
       .collect();
     Self::new(System {
-      config: Config::new(
+      config: Config::new_with_batching(
         CommitmentParameters {
           log_blowup: system.config.log_blowup(),
           cap_height: system.config.cap_height(),
         },
         system.config.fri_parameters(),
+        system.config.fri_batching(),
       ),
       circuits,
       preprocessed_commit: system.preprocessed_commit.clone(),
       preprocessed_indices: system.preprocessed_indices.clone(),
+      vk_digest: system.vk_digest,
     })
   }
 
@@ -130,7 +136,7 @@ impl Default for VerifierLimits {
     Self {
       max_circuits: 4096,
       max_graph_nodes: 10_000_000,
-      max_queries: 256,
+      max_queries: 512,
       max_field_retries: 16,
       max_statement_values: 1_000_000,
       max_proof_values: 100_000_000,
@@ -344,6 +350,11 @@ pub(crate) fn validate_parameters(
   if fri.num_queries == 0 {
     return Err(VerifierError::Profile("zero FRI queries"));
   }
+  if stark_key::security::check(&commitment, &fri).is_err() {
+    return Err(VerifierError::Unsupported(
+      "FRI parameters below security floor",
+    ));
+  }
   Ok(())
 }
 
@@ -354,6 +365,14 @@ impl<'a> VerifierPlan<'a> {
     limits: VerifierLimits,
   ) -> Result<Self, VerifierError> {
     let system = key.system();
+    if system.config.fri_batching() != FriBatching::Tensor {
+      return Err(VerifierError::Unsupported(
+        "Protocol v6 verifier requires FriBatching::Tensor",
+      ));
+    }
+    if system.vk_digest != compute_vk_digest::<Val, ExtVal3>(&system.circuits) {
+      return Err(VerifierError::Profile("vk digest mismatch"));
+    }
     let fri = system.config.fri_parameters();
     validate_parameters(
       CommitmentParameters {
@@ -480,7 +499,13 @@ impl<'a> VerifierPlan<'a> {
     // Calculate external wire counts with checked arithmetic before allocating a circuit.
     let widths = sum(shape.widths.iter().flatten().copied())?;
     let ood = sum(shape.widths.iter().enumerate().flat_map(|(batch, ws)| {
-      ws.iter().map(move |&w| w.saturating_mul(if batch == 2 { 2 } else { 4 }))
+      ws.iter().map(move |&w| {
+        w.saturating_mul(if batch == 2 {
+          EXTENSION_DEGREE
+        } else {
+          2 * EXTENSION_DEGREE
+        })
+      })
     }))?;
     let rounds = usize::from(max_log);
     let path_bytes = sum(
@@ -492,14 +517,14 @@ impl<'a> VerifierPlan<'a> {
     )?
     .checked_mul(32)
     .ok_or(VerifierError::Profile("path overflow"))?;
-    let per_query = sum([widths, path_bytes, rounds * 2])?;
+    let per_query = sum([widths, path_bytes, rounds * EXTENSION_DEGREE])?;
     let proof_values = sum([
-      8,
+      4 * EXTENSION_DEGREE,
       96,
       ood,
-      shape.log_degrees.len().saturating_mul(2),
+      shape.log_degrees.len().saturating_mul(EXTENSION_DEGREE),
       rounds * 33,
-      3,
+      1 + EXTENSION_DEGREE,
       per_query
         .checked_mul(fri.num_queries)
         .ok_or(VerifierError::Profile("query overflow"))?,
@@ -535,7 +560,7 @@ impl<'a> VerifierPlan<'a> {
       .collect();
     let encoded = bincode::serde::encode_to_vec(
       (
-        "multi-stark/verifier-plan/v1",
+        "multi-stark/verifier-plan/v2",
         self.key.fingerprint()?,
         &self.profile,
         constants,
@@ -560,7 +585,7 @@ impl<'a> VerifierPlan<'a> {
     let encoded = bincode::serde::encode_to_vec(
       (
         self.identity(schema)?,
-        "plonkish-gadgets/v1",
+        "plonkish-gadgets/v2",
         env!("CARGO_PKG_VERSION"),
         options.compact_blake3,
         compiler,
@@ -746,6 +771,6 @@ pub(super) fn validate_circuit(
   circuit: &StarkCircuit<Val>,
   index: usize,
 ) -> Result<(), VerifierError> {
-  crate::circuit_metadata::validate_circuit(circuit, 2)
+  crate::circuit_metadata::validate_circuit(circuit, EXTENSION_DEGREE)
     .map_err(|field| VerifierError::Circuit { index, field })
 }

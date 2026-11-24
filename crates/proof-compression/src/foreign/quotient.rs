@@ -5,7 +5,7 @@ use num_bigint::BigInt;
 #[cfg(test)]
 use num_bigint::Sign;
 
-use super::{P, Scalar, integer, scalar};
+use super::{CurveScalar, KzgCurve, P, integer, scalar};
 
 pub(super) struct QuotientHint {
   coefficients: [i64; 5],
@@ -34,7 +34,10 @@ impl QuotientHint {
     }
   }
 
-  pub(super) fn evaluate(&self, values: &[Scalar]) -> Result<Scalar, String> {
+  pub(super) fn evaluate<C: KzgCurve>(
+    &self,
+    values: &[CurveScalar<C>],
+  ) -> Result<CurveScalar<C>, String> {
     let words =
       [values[0], values[1], values[2]].map(|v| v.canonical_limbs_le());
     if words.iter().any(|v| v[1..] != [0; 3]) {
@@ -66,11 +69,14 @@ impl QuotientHint {
     if remainder != 0 {
       return Err("invalid Goldilocks gate".into());
     }
-    let quotient = Scalar::from_limbs_le(quotient.0);
+    let quotient = CurveScalar::<C>::from_limbs_le(quotient.0);
     Ok(if is_negative { -quotient } else { quotient })
   }
 
-  fn evaluate_large(&self, values: &[Scalar]) -> Result<Scalar, String> {
+  fn evaluate_large<C: KzgCurve>(
+    &self,
+    values: &[CurveScalar<C>],
+  ) -> Result<CurveScalar<C>, String> {
     let [a, b, c] =
       [integer(values[0]), integer(values[1]), integer(values[2])];
     let [qm, qa, qb, qc, k] = self.coefficients;

@@ -181,11 +181,7 @@ theorem declStep_preserves (hμ : μ.verifiedChecks = true) {F : Nat} {env env�
     obtain ⟨type', value', hcv, -, -, henv2⟩ := hsh
     subst henv2
     exact harvestThm hμ mp hrun
-  | opaqueDecl cv value =>
-    have hsh := hrun
-    obtain ⟨type', value', hcv, -, henv2⟩ := hsh
-    subst henv2
-    exact harvestOpaque hμ mp hrun
+  | opaqueDecl cv value => exact harvestOpaque hμ mp hrun
   | axiomDecl cv => exact axiomStepPB_of hμ mp hrun
   | basisDecl kind => exact basisStepPB_of mp hrun
   | quotDecl k cv =>

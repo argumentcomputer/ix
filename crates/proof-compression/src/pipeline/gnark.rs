@@ -1,8 +1,7 @@
 //! Owned gnark objects behind the gnark archive's C ABI.
 use super::Result;
-use serde::Deserialize;
-#[cfg(feature = "plonk")]
-use serde::Serialize;
+use crate::kzg::curve::Curve;
+use serde::{Deserialize, Serialize};
 #[cfg(feature = "plonk")]
 use std::collections::BTreeMap;
 use std::{ffi::c_void, marker::PhantomData, path::Path, rc::Rc};
@@ -36,7 +35,7 @@ pub struct Manifest {
   pub files: BTreeMap<String, Artifact>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct CircuitInfo {
   pub domain: u64,
@@ -102,9 +101,23 @@ impl Response {
 
 #[cfg(feature = "plonk")]
 pub fn compile(schema: &[u8], circuit_path: &Path) -> Result<CircuitInfo> {
+  compile_for(Curve::Bn254, schema, circuit_path)
+}
+
+#[cfg(feature = "plonk")]
+pub fn compile_for(
+  curve: Curve,
+  schema: &[u8],
+  circuit_path: &Path,
+) -> Result<CircuitInfo> {
   // Inputs remain borrowed until the synchronous C call returns.
-  let result =
-    unsafe { raw::ix_gnark_compile(view(schema), view(path(circuit_path)?)) };
+  let path = path(circuit_path)?;
+  let result = unsafe {
+    match curve {
+      Curve::Bn254 => raw::ix_gnark_compile(view(schema), view(path)),
+      Curve::Bls12381 => raw::ix_gnark_bls_compile(view(schema), view(path)),
+    }
+  };
   Ok(serde_json::from_slice(Response::checked(result)?.bytes())?)
 }
 
@@ -123,20 +136,43 @@ pub struct Preparation<'a> {
 
 #[cfg(feature = "plonk")]
 pub fn prepare(request: &Preparation<'_>) -> Result<()> {
+  prepare_for(Curve::Bn254, request)
+}
+
+#[cfg(feature = "plonk")]
+pub fn prepare_for(curve: Curve, request: &Preparation<'_>) -> Result<()> {
+  let circuit = path(request.circuit)?;
+  let srs = path(request.srs)?;
+  let lagrange = path(request.lagrange)?;
+  let output = path(request.output)?;
   // The adapter retains no Rust pointers after this call.
   let result = unsafe {
-    raw::ix_gnark_prepare(
-      view(request.schema),
-      view(path(request.circuit)?),
-      view(request.circuit_hash.sha256.as_bytes()),
-      request.circuit_hash.bytes,
-      request.domain,
-      view(path(request.srs)?),
-      view(request.srs_digest.as_bytes()),
-      view(path(request.lagrange)?),
-      view(request.lagrange_digest.as_bytes()),
-      view(path(request.output)?),
-    )
+    match curve {
+      Curve::Bn254 => raw::ix_gnark_prepare(
+        view(request.schema),
+        view(circuit),
+        view(request.circuit_hash.sha256.as_bytes()),
+        request.circuit_hash.bytes,
+        request.domain,
+        view(srs),
+        view(request.srs_digest.as_bytes()),
+        view(lagrange),
+        view(request.lagrange_digest.as_bytes()),
+        view(output),
+      ),
+      Curve::Bls12381 => raw::ix_gnark_bls_prepare(
+        view(request.schema),
+        view(circuit),
+        view(request.circuit_hash.sha256.as_bytes()),
+        request.circuit_hash.bytes,
+        request.domain,
+        view(srs),
+        view(request.srs_digest.as_bytes()),
+        view(lagrange),
+        view(request.lagrange_digest.as_bytes()),
+        view(output),
+      ),
+    }
   };
   Response::checked(result)?;
   Ok(())
@@ -155,6 +191,16 @@ impl Prover {
     manifest: &Manifest,
     backend: Backend,
   ) -> Result<Self> {
+    Self::open_for(Curve::Bn254, directory, manifest, backend)
+  }
+
+  #[cfg(feature = "plonk")]
+  pub fn open_for(
+    curve: Curve,
+    directory: &Path,
+    manifest: &Manifest,
+    backend: Backend,
+  ) -> Result<Self> {
     let (cuda, device, memory_bytes, mask_msm) = match backend {
       Backend::Cpu => (0, 0, 0, 0),
       Backend::Cuda { device, memory_bytes, mask_msm } => {
@@ -164,9 +210,17 @@ impl Prover {
     let options =
       raw::ix_gnark_backend { cuda, device, memory_bytes, mask_msm };
     let metadata = serde_json::to_vec(manifest)?;
+    let directory = path(directory)?;
     // The handle returned by Go is an integer, never a Go heap pointer.
     let response = Response::checked(unsafe {
-      raw::ix_gnark_open(view(path(directory)?), view(&metadata), options)
+      match curve {
+        Curve::Bn254 => {
+          raw::ix_gnark_open(view(directory), view(&metadata), options)
+        },
+        Curve::Bls12381 => {
+          raw::ix_gnark_bls_open(view(directory), view(&metadata), options)
+        },
+      }
     })?;
     if response.0.handle == 0 {
       return Err("gnark returned an empty prover handle".into());
@@ -221,15 +275,36 @@ pub fn verify(
   claim: &[u8; 32],
   anchors: &[u8],
 ) -> Result<()> {
+  verify_for(Curve::Bn254, key, trusted_digest, proof, claim, anchors)
+}
+
+#[cfg(feature = "plonk")]
+pub fn verify_for(
+  curve: Curve,
+  key: &[u8],
+  trusted_digest: &[u8; 32],
+  proof: &[u8],
+  claim: &[u8; 32],
+  anchors: &[u8],
+) -> Result<()> {
   // All inputs are borrowed only for the duration of the call.
   Response::checked(unsafe {
-    raw::ix_gnark_verify(
-      view(key),
-      view(trusted_digest),
-      view(proof),
-      view(claim),
-      view(anchors),
-    )
+    match curve {
+      Curve::Bn254 => raw::ix_gnark_verify(
+        view(key),
+        view(trusted_digest),
+        view(proof),
+        view(claim),
+        view(anchors),
+      ),
+      Curve::Bls12381 => raw::ix_gnark_bls_verify(
+        view(key),
+        view(trusted_digest),
+        view(proof),
+        view(claim),
+        view(anchors),
+      ),
+    }
   })?;
   Ok(())
 }
@@ -290,6 +365,29 @@ mod tests {
       })
       .is_err()
     );
+    assert!(
+      Response::checked(unsafe {
+        raw::ix_gnark_bls_compile(invalid, view(b"unused"))
+      })
+      .is_err()
+    );
+    assert!(
+      Response::checked(unsafe {
+        raw::ix_gnark_bls_compile(oversized, view(b"unused"))
+      })
+      .is_err()
+    );
+    assert!(
+      verify_for(
+        Curve::Bls12381,
+        b"bad-key",
+        &[0; 32],
+        b"bad-proof",
+        &[0; 32],
+        &[0; 240],
+      )
+      .is_err()
+    );
   }
   #[test]
   #[ignore = "compiles the full Init verifier circuit"]
@@ -343,14 +441,29 @@ mod tests {
   }
 }
 
-#[cfg(feature = "groth16")]
+#[cfg(all(test, feature = "groth16"))]
 pub(super) fn compile_groth16(
   schema: &[u8],
   output: &Path,
 ) -> Result<CircuitInfo> {
+  compile_groth16_for(Curve::Bn254, schema, output)
+}
+
+#[cfg(feature = "groth16")]
+pub(super) fn compile_groth16_for(
+  curve: Curve,
+  schema: &[u8],
+  output: &Path,
+) -> Result<CircuitInfo> {
+  let output = path(output)?;
   // Both views are borrowed only until the native call returns.
   let response = Response::checked(unsafe {
-    raw::ix_gnark_groth16_compile(view(schema), view(path(output)?))
+    match curve {
+      Curve::Bn254 => raw::ix_gnark_groth16_compile(view(schema), view(output)),
+      Curve::Bls12381 => {
+        raw::ix_gnark_bls_groth16_compile(view(schema), view(output))
+      },
+    }
   })?;
   Ok(serde_json::from_slice(response.bytes())?)
 }
@@ -364,7 +477,8 @@ pub(super) enum Groth16Setup<'a> {
 }
 
 #[cfg(feature = "groth16")]
-pub(super) fn setup_groth16(
+pub(super) fn setup_groth16_for(
+  curve: Curve,
   directory: &Path,
   metadata: &super::groth16::Metadata,
   setup: Groth16Setup<'_>,
@@ -375,15 +489,25 @@ pub(super) fn setup_groth16(
     Groth16Setup::Import { path: file, digest } => (2, path(file)?, digest),
   };
   let encoded = serde_json::to_vec(metadata)?;
+  let directory = path(directory)?;
   // The adapter retains no Rust pointers while writing native keys.
   let response = Response::checked(unsafe {
-    raw::ix_gnark_groth16_setup(
-      view(path(directory)?),
-      view(&encoded),
-      kind,
-      view(descriptor),
-      view(pin.as_bytes()),
-    )
+    match curve {
+      Curve::Bn254 => raw::ix_gnark_groth16_setup(
+        view(directory),
+        view(&encoded),
+        kind,
+        view(descriptor),
+        view(pin.as_bytes()),
+      ),
+      Curve::Bls12381 => raw::ix_gnark_bls_groth16_setup(
+        view(directory),
+        view(&encoded),
+        kind,
+        view(descriptor),
+        view(pin.as_bytes()),
+      ),
+    }
   })?;
   Ok(serde_json::from_slice(response.bytes())?)
 }
@@ -401,7 +525,17 @@ pub(super) enum Groth16Backend {
 
 #[cfg(feature = "groth16")]
 impl Prover {
+  #[cfg(test)]
   pub(super) fn open_groth16(
+    directory: &Path,
+    metadata: &super::groth16::Metadata,
+    backend: &Groth16Backend,
+  ) -> Result<Self> {
+    Self::open_groth16_for(Curve::Bn254, directory, metadata, backend)
+  }
+
+  pub(super) fn open_groth16_for(
+    curve: Curve,
     directory: &Path,
     metadata: &super::groth16::Metadata,
     backend: &Groth16Backend,
@@ -418,13 +552,19 @@ impl Prover {
       library: view(library.as_bytes()),
     };
     let encoded = serde_json::to_vec(metadata)?;
+    let directory = path(directory)?;
     // The native handle owns the circuit, keys, and optional device allocations.
     let response = Response::checked(unsafe {
-      raw::ix_gnark_groth16_open(
-        view(path(directory)?),
-        view(&encoded),
-        options,
-      )
+      match curve {
+        Curve::Bn254 => {
+          raw::ix_gnark_groth16_open(view(directory), view(&encoded), options)
+        },
+        Curve::Bls12381 => raw::ix_gnark_bls_groth16_open(
+          view(directory),
+          view(&encoded),
+          options,
+        ),
+      }
     })?;
     if response.0.handle == 0 {
       return Err("gnark returned an empty prover handle".into());
@@ -434,7 +574,8 @@ impl Prover {
 }
 
 #[cfg(feature = "groth16")]
-pub(super) fn verify_groth16(
+pub(super) fn verify_groth16_for(
+  curve: Curve,
   key: &[u8],
   trusted: &[u8; 32],
   proof: &[u8],
@@ -442,12 +583,30 @@ pub(super) fn verify_groth16(
 ) -> Result<()> {
   // Input buffers remain alive throughout native verification.
   Response::checked(unsafe {
-    raw::ix_gnark_groth16_verify(
-      view(key),
-      view(trusted),
-      view(proof),
-      view(claim),
-    )
+    match curve {
+      Curve::Bn254 => raw::ix_gnark_groth16_verify(
+        view(key),
+        view(trusted),
+        view(proof),
+        view(claim),
+      ),
+      Curve::Bls12381 => raw::ix_gnark_bls_groth16_verify(
+        view(key),
+        view(trusted),
+        view(proof),
+        view(claim),
+      ),
+    }
   })?;
   Ok(())
+}
+
+#[cfg(feature = "groth16")]
+pub(super) fn verify_groth16(
+  key: &[u8],
+  trusted: &[u8; 32],
+  proof: &[u8],
+  claim: &[u8; 32],
+) -> Result<()> {
+  verify_groth16_for(Curve::Bn254, key, trusted, proof, claim)
 }

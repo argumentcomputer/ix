@@ -828,17 +828,40 @@ theorem check_modeled_block_inv {rc iblk r : SourceValue F} {h h' : Heap F}
       (ObsFn.heap_extends ev27).trans (ObsFn.heap_extends ev14),
       fun x hx => by simp [hx]⟩
 
-/-- Inversion of `KernelModeled::check_family`'s initial segment `Seg1` (asserting empty user
-axioms in `rc`). -/
-theorem check_family_seg1_inv {rc iblk rblk v104 : SourceValue F} {h m105 : Heap F}
+/-- Heap monotonicity of `KernelModeled::check_family`'s initial `role_ctx_without_axioms` call. -/
+theorem check_family_seg1_inv {rc v104 : SourceValue F} {h m105 : Heap F}
     {cs107 : List (Call F)}
-    (sg : Obs.«KernelModeled::check_family».Seg1 rc iblk rblk h v104 m105 cs107) :
-    Heap.Extends h m105 := by
-  cases sg with
-  | Nil _ _ ev15 _ he33 _ => exact he33 ▸ ObsFn.heap_extends ev15
-  | Node _ _ _ _ _ _ _ _ heq97 _ _ _ =>
-    injection heq97 with hf
-    exact absurd hf zero_ne_one
+    (ev : ObsFn W "KernelRoles::role_ctx_without_axioms" [rc] h v104 m105 cs107) :
+    Heap.Extends h m105 :=
+  ObsFn.heap_extends ev
+
+/-- `KernelRoles::role_ctx_without_axioms` makes zero subcalls on every path. -/
+theorem role_ctx_without_axioms_cs_nil {rc v104 : SourceValue F} {h m105 : Heap F}
+    {cs107 : List (Call F)}
+    (ev : ObsFn W "KernelRoles::role_ctx_without_axioms" [rc] h v104 m105 cs107) :
+    cs107 = [] := by
+  match Obs.«KernelRoles::role_ctx_without_axioms».obs ev with
+  | .Mk_Nil (hc_oqpaamoz := hcs) .. => exact hcs
+  | .Mk_Node (hc_epdlgeqo := hcs) .. => exact hcs
+  | .Assumed_Nil (hc_fqerfvzf := hcs) .. => exact hcs
+  | .Assumed_Node (hc_lacpekwr := hcs) .. => exact hcs
+  | .MkEval (hc_mtegehcw := hcs) .. => exact hcs
+  | .AssumedEval (hc_fdveciok := hcs) .. => exact hcs
+
+/-- When `rc` already has an empty user-axiom map (`RCAxiomsNil`), `KernelRoles::role_ctx_without_axioms`
+takes the `.Mk_Nil`/`.Assumed_Nil` arm and leaves `rc` and the heap unchanged. -/
+theorem check_family_seg_nil_of_rc {rc v104 : SourceValue F} {h m105 : Heap F}
+    {cs107 : List (Call F)} (hnil : RCAxiomsNil h rc)
+    (ev : ObsFn W "KernelRoles::role_ctx_without_axioms" [rc] h v104 m105 cs107) :
+    v104 = rc ∧ m105 = h := by
+  match Obs.«KernelRoles::role_ctx_without_axioms».obs ev with
+  | .Mk_Nil (he_tjqnarcb := hr) (he_bjpbgtqk := hm) .. => exact ⟨hr, hm⟩
+  | .Assumed_Nil (he_vhvjxozv := hr) (he_etfvzqmu := hm) .. => exact ⟨hr, hm⟩
+  | .Mk_Node (ld_bolbylmd := ld) .. | .Assumed_Node (ld_bolbylmd := ld) ..
+  | .MkEval (ld_bolbylmd := ld) .. | .AssumedEval (ld_bolbylmd := ld) .. =>
+    obtain ⟨node, hl, hshape⟩ := hnil
+    rw [hl] at ld
+    rcases hshape with ⟨_, _, rfl⟩ | ⟨_, rfl⟩ <;> simp at ld
 
 /-- Assembly step oracle for `KernelModeled::check_advice_records`: given the current validated advice
 prefix `(seenSet, c_cur)`, an unvisited advice address `a` (`addr_set_member(a, seen) = 0`), and

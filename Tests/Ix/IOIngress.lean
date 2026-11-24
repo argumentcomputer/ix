@@ -7,17 +7,19 @@ import LSpec
 
 The IxVM, `ix_aggr` and multi-stark verifier programs read their IO streams
 through hints (`hint::<T>("channel", key)`), which return arbitrary field
-elements. A byte must be proved below 256 (`UInt8::from_field`, a byte-table
-lookup) before anything hashes or parses it: BLAKE3 absorbs message bytes as
-packed 32-bit words, so elements that are not bytes could keep a stream's
-digest while the parsers read other fields out of them.
+elements. A byte must be proved below 256 (`UInt8::from_field` or paired
+`UInt8::from_fields`, both byte-table lookups) before anything hashes or parses
+it: BLAKE3 absorbs message bytes as packed 32-bit words, so elements that are
+not bytes could keep a stream's digest while the parsers read other fields out
+of them.
 
 Two kinds of check:
 
 * **Structural**, over the programs' source text
   (`Tests.Ix.IxVM.programSources`):
   - each byte-reading channel (`*.read*`) is read only by its pinned reader
-    functions, and each of them passes what it reads to `UInt8::from_field`;
+    functions, and each of them passes what it reads to `UInt8::from_field` or
+    `UInt8::from_fields`;
   - every other hint channel is a pinned channel, read only by its pinned
     functions: offsets and lengths, and IxVM's advisory reducibility hint,
     which only selects a reduction heuristic, def-eq being sound under any
@@ -44,7 +46,7 @@ def bundles : List System.FilePath :=
 def byteReaders : List (String × List String) := [
   ("ixvm.io.read", ["IxByteStream::read_byte_stream"]),
   ("stark.io.read1", ["StarkIO::read_byte_stream", "ProofDeserialize::read_u8_at"]),
-  ("stark.io.read8", ["ProofDeserialize::read_u64_at"])]
+  ("stark.io.read8", ["StarkIO::read_byte_stream", "ProofDeserialize::read_u64_at"])]
 
 /-- The other hint channels, which read offsets, lengths and advisory values,
 and the functions allowed to read each (`none`: any function). -/
@@ -52,6 +54,9 @@ def otherChannels : List (String × Option (List String)) := [
   ("ixvm.io.info", some ["IxVMCompat::io_get_info"]),
   ("ixvm.io.claim", some ["KernelClaim::run_claim"]),
   ("ixvm.io.tag", some ["Ingress::load_constant_hint"]),
+  -- `Pcs::eg3_inv_nonzero` hints the Goldilocks base-field inverse of the cubic
+  -- norm and immediately enforces `assert_eq!(norm * ninv, 1)` (non-IO field witness).
+  ("goldilocks.inverse", some ["Pcs::eg3_inv_nonzero"]),
   -- `ix_aggr` locates every advice section by `(slot, key)`; the sections it
   -- reads are byte streams read through `StarkIO::read_byte_stream`.
   ("stark.io.info", none), ("stark.io.address", none), ("stark.io.digest", none)]
@@ -67,8 +72,9 @@ def violations : IO (Array String) := do
         if let some (_, readers) := byteReaders.find? (·.1 == channel) then
           unless readers.contains f.name do
             found := found.push s!"{f.name} ({f.file}) reads bytes from {channel} directly"
-          unless (f.body.splitOn "UInt8::from_field(").length > 1 do
-            found := found.push s!"{f.name} ({f.file}) reads {channel} without UInt8::from_field"
+          unless (f.body.splitOn "UInt8::from_field(").length > 1 ||
+                 (f.body.splitOn "UInt8::from_fields(").length > 1 do
+            found := found.push s!"{f.name} ({f.file}) reads {channel} without UInt8::from_field(s)"
         else match otherChannels.find? (·.1 == channel) with
           | some (_, some readers) =>
             unless readers.contains f.name do

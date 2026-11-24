@@ -25,11 +25,11 @@ The depth pass removes that hypothesis (`Optimized.Depth`, `Depth/Grouped.lean`)
 `Modules.Prepared.depth_grouped_activated_heap_sound` starts from acceptance of
 `Grouping.Plan.checkMemo` (`Grouping/Memo.lean`), the memo checker over the
 grouped, activated plan, built over the certified depth pass of the physical
-circuits, with at most `2^39` rows: `Depth.acyclic` proves every such memo graph
-acyclic, so it unfolds to the finite derivation the theorems here start from.
+circuits, with at most `2^39` rows: `Physical.Prepared.structural_memo_sound`
+gives the finite derivation the theorems here start from.
 The exporter emits the depth pass: `Trace.exportPreparedPlan` exports
 `Depth.system cfg physical.system`, refusing a configuration that is not
-`Depth.Certified` and a plan that is not `Plan.WellFormedActivation`, with gap
+`Physical.Prepared.DepthCertified` and a plan that is not `Plan.WellFormedActivation`, with gap
 limbs `[16, 8]` or none (`cfg.bits ≤ 24`). Both verifiers enforce the row bound
 over the whole batch: Rust's `check_shape` and `validate_preamble`
 (`MAX_BATCH_ROWS`), and in circuit `StarkVerifier::assert_batch_bounds`.
@@ -107,6 +107,27 @@ def Plan.WellFormedActivation (plan : Plan source id) : Prop :=
 instance (plan : Plan source id) : Decidable plan.WellFormedActivation := by
   unfold Plan.WellFormedActivation
   infer_instance
+
+/-- Executable boolean checker for `Plan.WellFormedActivation`. -/
+def Plan.checkWellFormedActivation (plan : Plan source id) : Bool :=
+  plan.singles.all fun c => c.wellFormed && (Activation.compile c).wellFormed
+
+theorem Plan.checkWellFormedActivation_iff (plan : Plan source id) :
+    plan.checkWellFormedActivation = true ↔ plan.WellFormedActivation := by
+  simp [Plan.checkWellFormedActivation, Plan.WellFormedActivation]
+
+theorem Plan.checkWellFormedActivation_sound {plan : Plan source id}
+    (checked : plan.checkWellFormedActivation = true) : plan.WellFormedActivation :=
+  plan.checkWellFormedActivation_iff.mp checked
+
+theorem Plan.wellFormedActivation_decide_iff (plan : Plan source id) :
+    decide plan.WellFormedActivation = true ↔ plan.WellFormedActivation :=
+  decide_eq_true_iff
+
+theorem Plan.checkWellFormedActivation_eq_decide (plan : Plan source id) :
+    plan.checkWellFormedActivation = decide plan.WellFormedActivation := by
+  apply Bool.eq_iff_iff.mpr
+  rw [plan.checkWellFormedActivation_iff, plan.wellFormedActivation_decide_iff]
 
 /-- Local rule of a grouped physical plan after applying `Activation.compile` to
 every ungrouped single chip (grouped chips already include activation in

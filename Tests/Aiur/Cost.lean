@@ -20,15 +20,15 @@ open LSpec Aiur
 namespace AiurTests.Cost
 
 /-- A small function-like circuit: main width 4, one lookup
-(stage 2 width `D = 2`), quotient degree 2. -/
+(stage 2 width `D = 3`), quotient degree 2. -/
 def fnShape : CircuitShape :=
-  { mainWidth := 4, stage2Width := 2, quotientDegree := 2,
+  { mainWidth := 4, stage2Width := 3, quotientDegree := 2,
     preprocessedWidth := 0, preprocessedHeight := 0 }
 
-/-- `logBlowup = 2` (production `B = 4`): trace width `4 + 2 = 6`,
-quotient chunks `q·D = 4`; at `h = 8`:
-`(B+1)·6·F(8) + D·F(16) + q·D·F(32) = 30·24 + 2·64 + 4·160 = 1488`. -/
-def handComputed : Float := 1488.0
+/-- `logBlowup = 2` (production `B = 4`, `D = 3`): trace width `4 + 3 = 7`,
+quotient chunks `q·D = 6`; at `h = 8`:
+`(B+1)·7·F(8) + D·F(16) + q·D·F(32) = 35·24 + 3·64 + 6·160 = 1992`. -/
+def handComputed : Float := 1992.0
 
 def transformCostTests : TestSeq :=
   test "F(0) = 0 (empty circuit is deactivated)" (transformCost 0 == 0.0) ++
@@ -63,7 +63,7 @@ def fftCostTests : TestSeq :=
   test "larger blowup costs more"
     (fftCost fnShape 8 1 < fftCost fnShape 8 2) ++
   test "committedWidth = main + stage2 + q·D"
-    (fnShape.committedWidth == 4 + 2 + 2 * G.extensionDegree)
+    (fnShape.committedWidth == 4 + 3 + 2 * G.extensionDegree)
 
 def formatSciTests : TestSeq :=
   test "formatSci 0 = 0" (formatSci 0.0 == "0") ++

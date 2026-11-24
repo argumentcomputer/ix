@@ -1,7 +1,9 @@
 use p3_blake3::Blake3;
 use p3_challenger::{
-  CanObserve, CanSample, CanSampleBits, HashChallenger, SerializingChallenger64,
+  CanObserve, CanSample, CanSampleBits, FieldChallenger, HashChallenger,
+  SerializingChallenger64,
 };
+use p3_field::BasedVectorSpace;
 use p3_symmetric::CryptographicHasher;
 
 use super::*;
@@ -146,12 +148,55 @@ fn byte_reads_after_conditional_retries_cross_digest_boundaries_correctly() {
 }
 
 #[test]
+fn domain_separated_challenger_matches_native_v6_challenger() {
+  use multi_stark::p3_adapter::challenger::DomainChallenger;
+
+  let seed = b"multi-stark/v6/test-seed";
+  for domain in [Blake3Domain::TranscriptSingle, Blake3Domain::TranscriptBatch]
+  {
+    let mut b = CircuitBuilder::new();
+    b.enable_compact_blake3();
+    let bytes = ByteGadgets::new(&mut b);
+    let mut ch = Blake3Challenger::with_domain(&mut b, &bytes, domain, seed);
+    let mut native =
+      DomainChallenger::<ExtVal3>::from_domain(seed.to_vec(), domain);
+    let obs = b.constant(Goldilocks::from_u64(999_999));
+    ch.observe_field(&mut b, &bytes, obs);
+    native.observe(Goldilocks::from_u64(999_999));
+
+    let ext1 = ch.sample_extension(&mut b, &bytes);
+    let native_ext1: ExtVal3 = native.sample_algebra_element();
+    ch.observe_extension(&mut b, &bytes, ext1);
+    native.observe_algebra_element(native_ext1);
+    let ext2 = ch.sample_extension(&mut b, &bytes);
+    let native_ext2: ExtVal3 = native.sample_algebra_element();
+    let bits = ch.sample_bits(&mut b, &bytes, 19);
+    let native_bits = native.sample_bits(19);
+
+    let circuit = b.finish();
+    let assignment = circuit.witness().generate().unwrap();
+    for (wire, expected) in [(ext1, native_ext1), (ext2, native_ext2)] {
+      let actual: Vec<_> =
+        wire.0.iter().map(|&w| assignment.value(w).unwrap()).collect();
+      assert_eq!(actual, expected.as_basis_coefficients_slice());
+    }
+    let actual_bits: u64 = bits
+      .iter()
+      .enumerate()
+      .map(|(i, bit)| {
+        assignment.value(bit.value()).unwrap().as_canonical_u64() << i
+      })
+      .sum();
+    assert_eq!(actual_bits, u64::try_from(native_bits).unwrap());
+  }
+}
+
+#[test]
 fn conditional_retry_circuit_proves_multiple_paths_under_one_outer_key() {
   use multi_stark::system::System;
   use multi_stark::system::SystemWitness;
   use multi_stark::types::CommitmentParameters;
   use multi_stark::types::FriParameters;
-  use multi_stark::types::GoldilocksBlake3Config;
 
   let mut b = CircuitBuilder::new();
   let bytes = ByteGadgets::new(&mut b);
@@ -165,7 +210,7 @@ fn conditional_retry_circuit_proves_multiple_paths_under_one_outer_key() {
   let circuit = b.finish();
   let compiled =
     circuit.lower_to_multi_stark(Goldilocks::from_u8(105)).unwrap();
-  let config = GoldilocksBlake3Config::new(
+  let config = GoldilocksBlake3V6Config::new(
     CommitmentParameters { log_blowup: 1, cap_height: 0 },
     FriParameters {
       log_final_poly_len: 0,

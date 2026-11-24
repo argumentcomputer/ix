@@ -214,7 +214,8 @@ carries. -/
 theorem Prepared.depth_grouped_activated_heap_sound_observed {program : Modules.Program F}
     (prepared : Modules.Prepared program) (compiled : ModulesArtifact prepared)
     (physical : Physical.Prepared compiled.circuit.artifact)
-    {cfg : Depth.Config} (certified : Depth.Certified cfg physical.system)
+    {cfg : Depth.Config} (certified : Physical.Prepared.DepthCertified compiled.circuit physical cfg)
+    (bits : cfg.bits ≤ 24)
     (plan : Grouping.Plan (Depth.system cfg physical.system) id)
     (activated : plan.WellFormedActivation)
     {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances}
@@ -227,7 +228,7 @@ theorem Prepared.depth_grouped_activated_heap_sound_observed {program : Modules.
       Erasure.message compiled.circuit.system ⟨entry.resolved.name, wires, output⟩)
     (outside : root.channel ∉ cfg.names)
     {rows : List (WeightedRow F)} (bound : rows.length ≤ 2 ^ 39)
-    (characteristic : ∀ n : Nat, 0 < n → n ≤ 2 ^ 39 * 2 ^ cfg.bits → (n : F) ≠ 0)
+    (characteristic : ∀ n : Nat, 0 < n → n ≤ 2 ^ 39 * 2 ^ 24 → (n : F) ≠ 0)
     (checked : plan.checkMemo (Erasure.rawROM rom) root rows = .ok ())
     (arguments : DecodesValues compiled.specialized.program.enums wires (entryValues args))
     (decoded : output.decode compiled.specialized.program.enums = some result) :
@@ -235,7 +236,8 @@ theorem Prepared.depth_grouped_activated_heap_sound_observed {program : Modules.
       Represents (compiled.traceROM rom) heap value result ∧
       Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls :=
   compiled.physical_heap_sound_observed physical selected valid signed
-    (rooted ▸ Depth.plan_checkMemo_sound certified plan activated bound characteristic checked outside)
+    (physical.depth_checkMemo_sound compiled.circuit certified bits plan activated
+      (Modules.Prepared.entry_mem selected) valid signed rooted outside bound characteristic checked)
     arguments decoded
 
 /-- The same over Goldilocks with at most `k = 24` limb bits (`cfg.bits ≤ 24`). -/
@@ -243,7 +245,8 @@ theorem Prepared.depth_grouped_activated_heap_sound_goldilocks_observed
     {program : Modules.Program Library.U32.Goldilocks.F}
     (prepared : Modules.Prepared program) (compiled : ModulesArtifact prepared)
     (physical : Physical.Prepared compiled.circuit.artifact)
-    {cfg : Depth.Config} (certified : Depth.Certified cfg physical.system) (bits : cfg.bits ≤ 24)
+    {cfg : Depth.Config} (certified : Physical.Prepared.DepthCertified compiled.circuit physical cfg)
+    (bits : cfg.bits ≤ 24)
     (plan : Grouping.Plan (Depth.system cfg physical.system) id)
     (activated : plan.WellFormedActivation)
     {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances}
@@ -263,8 +266,8 @@ theorem Prepared.depth_grouped_activated_heap_sound_goldilocks_observed
     ∃ value heap calls, prepared.ObsFn external args value heap calls ∧
       Represents (compiled.traceROM rom) heap value result ∧
       Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls :=
-  prepared.depth_grouped_activated_heap_sound_observed compiled physical certified plan activated
-    selected valid signed rooted outside bound (Depth.goldilocks_bound bits) checked arguments decoded
+  prepared.depth_grouped_activated_heap_sound_observed compiled physical certified bits plan activated
+    selected valid signed rooted outside bound Depth.goldilocks_characteristic checked arguments decoded
 
 end Aiur.Modules
 
@@ -316,7 +319,8 @@ pass, with at most `2^39` rows. -/
 theorem Prepared.depth_grouped_activated_native_heap_sound_observed {source : Generic.Source F}
     {entries : List String} {specialized : Generic.Specialized source entries}
     (compiled : GenericArtifact specialized) (prepared : Prepared compiled.artifact)
-    {cfg : Depth.Config} (certified : Depth.Certified cfg prepared.system)
+    {cfg : Depth.Config} (certified : Prepared.DepthCertified compiled prepared cfg)
+    (bits : cfg.bits ≤ 24)
     (plan : Grouping.Plan (Depth.system cfg prepared.system) id)
     (activated : plan.WellFormedActivation)
     {name : String} (entry : name ∈ entries) {rom : WidthROM F} (valid : rom.Valid)
@@ -326,7 +330,7 @@ theorem Prepared.depth_grouped_activated_native_heap_sound_observed {source : Ge
     (rooted : Depth.erase cfg root = Erasure.message compiled.system ⟨name, wires, output⟩)
     (outside : root.channel ∉ cfg.names)
     {rows : List (WeightedRow F)} (bound : rows.length ≤ 2 ^ 39)
-    (characteristic : ∀ n : Nat, 0 < n → n ≤ 2 ^ 39 * 2 ^ cfg.bits → (n : F) ≠ 0)
+    (characteristic : ∀ n : Nat, 0 < n → n ≤ 2 ^ 39 * 2 ^ 24 → (n : F) ≠ 0)
     (checked : plan.checkMemo (Erasure.rawROM rom) root rows = .ok ())
     (arguments : DecodesValues specialized.program.enums wires (entryValues args))
     (decoded : output.decode specialized.program.enums = some result) :
@@ -334,7 +338,8 @@ theorem Prepared.depth_grouped_activated_native_heap_sound_observed {source : Ge
       Represents (compiled.traceROM rom) heap value result ∧
       Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls :=
   prepared.native_heap_sound_observed compiled entry valid signed
-    (rooted ▸ Depth.plan_checkMemo_sound certified plan activated bound characteristic checked outside)
+    (prepared.depth_checkMemo_sound compiled certified bits plan activated entry valid signed rooted
+      outside bound characteristic checked)
     arguments decoded
 
 /-- The same over Goldilocks with at most `k = 24` limb bits (`cfg.bits ≤ 24`). -/
@@ -342,7 +347,8 @@ theorem Prepared.depth_grouped_activated_native_heap_sound_goldilocks_observed
     {source : Generic.Source Library.U32.Goldilocks.F} {entries : List String}
     {specialized : Generic.Specialized source entries}
     (compiled : GenericArtifact specialized) (prepared : Prepared compiled.artifact)
-    {cfg : Depth.Config} (certified : Depth.Certified cfg prepared.system) (bits : cfg.bits ≤ 24)
+    {cfg : Depth.Config} (certified : Prepared.DepthCertified compiled prepared cfg)
+    (bits : cfg.bits ≤ 24)
     (plan : Grouping.Plan (Depth.system cfg prepared.system) id)
     (activated : plan.WellFormedActivation)
     {name : String} (entry : name ∈ entries) {rom : WidthROM Library.U32.Goldilocks.F}
@@ -360,7 +366,7 @@ theorem Prepared.depth_grouped_activated_native_heap_sound_goldilocks_observed
     ∃ value heap calls, Generic.SourceSemantics.ObsFn source.world name args [] value heap calls ∧
       Represents (compiled.traceROM rom) heap value result ∧
       Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls :=
-  prepared.depth_grouped_activated_native_heap_sound_observed compiled certified plan activated entry
-    valid signed rooted outside bound (Depth.goldilocks_bound bits) checked arguments decoded
+  prepared.depth_grouped_activated_native_heap_sound_observed compiled certified bits plan activated
+    entry valid signed rooted outside bound Depth.goldilocks_characteristic checked arguments decoded
 
 end Aiur.Optimized.Physical

@@ -1,21 +1,25 @@
 //! Split quotient constraints by their fixed-column dependencies.
 use std::collections::BTreeSet;
 
-use super::Scalar;
+use super::curve::KzgCurve;
+use super::field::CurveScalar;
 use multi_stark::expr::Source;
 use multi_stark::graph::ConstraintGraph;
 use multi_stark::graph::Node;
 use multi_stark::graph::NodeId;
 use multi_stark::lookup::Lookup;
 
-pub(super) struct Pass {
+pub(super) struct Pass<C: KzgCurve> {
   pub fixed: Vec<usize>,
-  pub graph: ConstraintGraph<Scalar>,
+  pub graph: ConstraintGraph<CurveScalar<C>>,
   pub weights: Vec<usize>,
   pub groups: Vec<(usize, Vec<Lookup<NodeId>>)>,
 }
 
-fn mark(graph: &ConstraintGraph<Scalar>, roots: &[NodeId]) -> Vec<bool> {
+fn mark<C: KzgCurve>(
+  graph: &ConstraintGraph<CurveScalar<C>>,
+  roots: &[NodeId],
+) -> Vec<bool> {
   let mut used = vec![false; graph.nodes.len()];
   for root in roots {
     used[root.index()] = true;
@@ -35,10 +39,10 @@ fn mark(graph: &ConstraintGraph<Scalar>, roots: &[NodeId]) -> Vec<bool> {
   used
 }
 
-pub(super) fn plan(
-  graph: &ConstraintGraph<Scalar>,
+pub(super) fn plan<C: KzgCurve>(
+  graph: &ConstraintGraph<CurveScalar<C>>,
   group_size: usize,
-) -> Vec<Pass> {
+) -> Vec<Pass<C>> {
   let groups = graph.lookups.len().div_ceil(group_size).max(1);
   let roots: Vec<Vec<NodeId>> = graph
     .zeros
@@ -159,9 +163,9 @@ pub(super) fn plan(
     .collect()
 }
 
-pub(super) fn lookup_graph(
-  graph: &ConstraintGraph<Scalar>,
-) -> (Vec<usize>, ConstraintGraph<Scalar>) {
+pub(super) fn lookup_graph<C: KzgCurve>(
+  graph: &ConstraintGraph<CurveScalar<C>>,
+) -> (Vec<usize>, ConstraintGraph<CurveScalar<C>>) {
   let mut graph = graph.clone();
   graph.nodes.truncate(graph.lookup_prefix_len);
   graph.degrees.truncate(graph.lookup_prefix_len);

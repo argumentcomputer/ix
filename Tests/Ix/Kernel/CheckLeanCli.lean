@@ -46,13 +46,13 @@ private def check : IO Nat := do
   let cfg : CheckCfg := { workers := 3, silent := true, progressMs := 0, slowMs := 0 }
   let prepared ← checked (← prepareInput bytes)
   let anonPrepared ← checked (← prepareInput bytes true)
-  -- Repeated prepared runs use fresh observations/checker state, and never
-  -- enter the permanent-marking pool path even when several workers were requested.
+  -- Repeated prepared runs use fresh observations/checker state, and run
+  -- the reclaimable parallel worker pool (`persist := false`) across requested workers.
   for _ in [:3] do
     let r ← checked (← runPrepared prepared cfg (.only aliases))
     ensure (r.targetsCovered == 5 && r.passed == 5 && r.targets.map (·.target.address) == Array.replicate 5 twice.addr)
       "prepared aliases lost exact coverage"
-    ensure (r.execution == .serialTier (some 3) && r.execution.workers == 1) "effective serial execution hidden"
+    ensure (r.execution == .pool 3 && r.execution.workers == 3) "parallel pool execution not reported"
     let a ← checked (← runPrepared anonPrepared cfg (.only #[toString twice.addr]))
     ensure (a.passed == 1 && a.targetsCovered == 1) "prepared anonymous target failed"
   let label (s : String) := toString (fixtureName s)
@@ -98,7 +98,7 @@ private def check : IO Nat := do
     let ok ← call #["--consts", String.intercalate "," (aliases.toList ++ [label "Color"]), "--max", "1", "--workers", "3", "--verbose"] #[]
     expect ok 0
     checkRow ok (5 : Nat) (0 : Nat) (5 : Nat)
-    ensure (ok.stdout.contains "meta mode" && ok.stderr.contains "workers requested 3, effective 1") "mode/execution report changed"
+    ensure (ok.stdout.contains "meta mode" && ok.stderr.contains "workers 3") "mode/execution report changed"
     let typed ← call #["--consts", label "spin._unsafe_rec"] #[]
     expect typed 0
     checkRow typed (1 : Nat) (0 : Nat) (1 : Nat)

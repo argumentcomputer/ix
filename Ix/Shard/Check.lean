@@ -15,15 +15,16 @@ open Ix.Check Ix.Shard IxVM.ClaimHarness
     shard's owned `blocks`: build the `CheckEnv` witness over the owned consts
     (ingress their closure, skip the frontier) and dispatch `runOne`. -/
 def runShardOwned (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat)
-    (runOne : Ix.Claim → IxVM.ClaimHarness.ClaimWitness → String → IO UInt32) : IO UInt32 := do
-  let owned := ownedConstsForBlocks ixonEnv blocks
+    (runOne : Ix.Claim → IxVM.ClaimHarness.ClaimWitness → String → IO UInt32)
+    (inert : Std.HashSet Address := inertUsers ixonEnv) : IO UInt32 := do
+  let owned := ownedConstsForBlocks ixonEnv blocks inert
   IO.println s!"[shard] shard {shardK}: {blocks.size} owned blocks → \
     {owned.size}/{ixonEnv.consts.size} owned consts"
   if owned.isEmpty then
     -- every block of the shard is outside Lean's logic (`ownedConstsPer`)
     IO.println s!"[shard] shard {shardK}: owns no constant in Lean's logic, so no claim"
     return 0
-  match IxVM.ClaimHarness.buildShardCheckEnvWitness ixonEnv owned with
+  match IxVM.ClaimHarness.buildShardCheckEnvWitness ixonEnv owned (inert := inert) with
   | .error e => IO.eprintln s!"shard witness build failed: {e}"; return 1
   | .ok (claim, witness) => runOne claim witness s!"shard {shardK}"
 
@@ -137,9 +138,9 @@ def emitRefinedManifest (tag : String) (envHandle : Aiur.EnvHandle)
 /-- Claim digest of a leaf from its already-known owned constants (no env
     rescan): the digest `ix prove` persists and `ix aggregate` matches on. -/
 def claimDigestOfOwned (ixonEnv : Ixon.Env) (owned : Array Address)
-    (assumeBinding : Bool := false) :
+    (assumeBinding : Bool := false) (inert : Std.HashSet Address := inertUsers ixonEnv) :
     Except String Address := do
-  let (claim, _) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv owned assumeBinding
+  let (claim, _) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv owned assumeBinding inert
   pure (Address.blake3 (Ix.Claim.ser claim))
 
 /-- `K`, `a-b`, or a comma list of those: the leaf ids a run is restricted
@@ -173,9 +174,10 @@ def runShardManifestAll (manifestPath ixePath : String)
   match (← loadEnvAndShards manifestPath ixePath) with
   | .error e => IO.eprintln e; return 1
   | .ok (ixonEnv, shards) =>
+    let inert := inertUsers ixonEnv
     let mut rc : UInt32 := 0
     for (blocks, k) in shards.mapIdx (fun k b => (b, k)) do
-      if (← runShardOwned ixonEnv blocks k runOne) != 0 then rc := 1
+      if (← runShardOwned ixonEnv blocks k runOne inert) != 0 then rc := 1
     pure rc
 
 /-- Check EVERY shard of the partition concurrently after verifying coverage. -/
@@ -186,10 +188,11 @@ def runShardCheckAll (manifestPath ixePath : String) (jobs? : Option Nat)
     | .ok r => pure r
   if !(← shardsCover ixonEnv shards) then return 1
   let maxJobs := max 1 (jobs?.getD shards.size)
+  let inert := inertUsers ixonEnv
   let mut rc : UInt32 := 0
   for chunk in (shards.mapIdx (fun k b => (b, k))).toList.toChunks maxJobs do
     let tasks ← chunk.mapM fun (blocks, k) =>
-      IO.asTask (prio := .dedicated) (runShardOwned ixonEnv blocks k runOne)
+      IO.asTask (prio := .dedicated) (runShardOwned ixonEnv blocks k runOne inert)
     for t in tasks do
       match t.get with
       | .ok r => if r != 0 then rc := 1

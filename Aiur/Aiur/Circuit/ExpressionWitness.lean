@@ -320,6 +320,68 @@ mutual
               exact ⟨b, chainExt.trans e₃, bounded_tuple.mpr (by simp), by
                 simpa only [WireValue.map_tuple, List.map_nil] using
                   WireValue.decode_tuple checked tags (.nil : DecodesValues program.enums [] [])⟩
+    | ptrEq left right =>
+        cases evaluated with
+        | @ptrEq _ _ target v₁ _ v₂ leftEval rightEval =>
+            simp only [lowerExpr] at compiled
+            obtain ⟨leftWire, s₁, leftRun, rest⟩ := bind_ok.mp compiled
+            rcases leftWire with ⟨t₁, ws₁⟩
+            cases t₁ with
+            | field | tuple | enum => simp at rest
+            | ptr target₁ =>
+                cases ws₁ with
+                | nil => simp at rest
+                | cons a₁ ws₁ => cases ws₁ with
+                  | cons => simp at rest
+                  | nil =>
+                      dsimp only at rest
+                      obtain ⟨rightWire, s₂, rightRun, rest⟩ := bind_ok.mp rest
+                      rcases rightWire with ⟨t₂, ws₂⟩
+                      cases t₂ with
+                      | field | tuple | enum => simp at rest
+                      | ptr target₂ =>
+                          cases ws₂ with
+                          | nil => simp at rest
+                          | cons a₂ ws₂ => cases ws₂ with
+                            | cons => simp at rest
+                            | nil =>
+                                dsimp only at rest
+                                split at rest
+                                · simp [StateT.bind, bind, Except.bind] at rest
+                                · rename_i sameTy
+                                  have hty : target₁ = target₂ := by simpa using sameTy
+                                  subst hty
+                                  obtain ⟨⟨⟩, s₃, unchanged, rest⟩ := bind_ok.mp rest
+                                  obtain ⟨_, rfl⟩ := pure_ok.mp unchanged
+                                  obtain ⟨test, s₄, indRun, finished⟩ := bind_ok.mp rest
+                                  obtain ⟨rfl, rfl⟩ := pure_ok.mp finished
+                                  obtain ⟨a, e₁, leftBound, leftDecode⟩ :=
+                                    lowerExpr_complete checked tags typed callComplete leftRun
+                                      layout valid localsBound enableBound active decoded leftEval
+                                  obtain ⟨b, e₂, rightBound, rightDecode⟩ :=
+                                    lowerExpr_complete checked tags typed callComplete rightRun
+                                      e₁.layout e₁.valid (localsBound.mono e₁.increase)
+                                      (e₁.bound enableBound) ((e₁.polynomial enableBound).trans active)
+                                      (e₁.environment localsBound decoded) rightEval
+                                  have lb : a₁.inBounds s₂.nextVar = true :=
+                                    e₂.bound (leftBound a₁ (by simp))
+                                  have rb : a₂.inBounds s₂.nextVar = true := rightBound a₂ (by simp)
+                                  have diffBound : (ArithExpr.sub a₁ a₂).inBounds s₂.nextVar = true := by
+                                    simp [ArithExpr.inBounds, Scalar.Circuit.ArithExpr.inBounds, lb, rb]
+                                  obtain ⟨c, e₃, testBound⟩ :=
+                                    equalIndicator_complete indRun e₂.layout e₂.valid diffBound
+                                  have leftDecodeB := e₂.decoded_value leftBound leftDecode
+                                  have hleftEq := Value.ptr.inj (WireValue.ptr_decoded_eq leftDecodeB)
+                                  have hrightEq := Value.ptr.inj (WireValue.ptr_decoded_eq rightDecode)
+                                  have ha₁c : a₁.denote c = v₁ := (e₃.polynomial lb).trans hleftEq.2.symm
+                                  have ha₂c : a₂.denote c = v₂ := (e₃.polynomial rb).trans hrightEq.2.symm
+                                  have indEq := (equalIndicator_sound indRun e₃.valid).2
+                                  have hdiff : (ArithExpr.sub a₁ a₂).denote c = 0 ↔ v₁ = v₂ := by
+                                    simp [Scalar.Circuit.ArithExpr.denote, ha₁c, ha₂c, sub_eq_zero]
+                                  refine ⟨c, (e₁.trans e₂).trans e₃,
+                                    bounded_field.mpr testBound, ?_⟩
+                                  simpa only [WireValue.map_field, WireValue.decode_field,
+                                    Option.some.injEq, Value.field.injEq, hdiff] using indEq
     | binary op left right =>
         cases evaluated with
         | binary leftEval rightEval operation =>

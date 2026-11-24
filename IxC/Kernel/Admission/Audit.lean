@@ -165,7 +165,7 @@ externs, `implemented_by`, `unsafe`, csimp and their rulings are unchanged. -/
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 8137 compiled functions; inherited externs 114, implemented_by 0, unsafe 41, csimp 8; ruled computed_field 29, implemented_by 1, csimp 32 -/
+ Ix.Kernel.Admission.checkBytes]: 8213 compiled functions; inherited externs 114, implemented_by 0, unsafe 41, csimp 8; ruled computed_field 29, implemented_by 1, csimp 32 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

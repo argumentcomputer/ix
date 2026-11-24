@@ -10,7 +10,11 @@ use super::{
   prover::{self, FixedSetup},
   storage::{self, Manifest, Result},
 };
-use crate::kzg::{KzgConfig, Scalar};
+use crate::kzg::{
+  KzgConfig,
+  curve::{Curve, KzgCurve},
+  field::CurveScalar,
+};
 use multi_stark::plonkish::MultiStarkCircuit;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -69,12 +73,21 @@ impl FixedCache {
   /// Bump the format tag whenever the cached files' layout or contents change
   /// for the same verifying key; restores check each file's digest, and a
   /// stale layout fails the final proof verification.
-  pub(crate) fn from_identity(root: &Path, vk: &[u8]) -> Self {
+  pub(crate) fn from_identity_for<C: KzgCurve>(root: &Path, vk: &[u8]) -> Self {
     let mut hasher = blake3::Hasher::new();
-    hasher.update(b"ix/kzg-fixed-cache/bn254/v2");
+    let tag: &[u8] = match C::CURVE {
+      Curve::Bn254 => b"ix/kzg-fixed-cache/bn254/v2",
+      Curve::Bls12381 => b"ix/kzg-fixed-cache/bls12-381/v2",
+    };
+    hasher.update(tag);
     hasher.update(vk);
     let identity = *hasher.finalize().as_bytes();
     Self::new(root, identity)
+  }
+
+  #[cfg(test)]
+  pub(crate) fn from_identity(root: &Path, vk: &[u8]) -> Self {
+    Self::from_identity_for::<crate::kzg::curve::Bn254>(root, vk)
   }
 
   fn new(root: &Path, identity: [u8; 32]) -> Self {
@@ -147,7 +160,7 @@ impl FixedCache {
 
   /// The circuit metadata and fixed commitment of every partition of a
   /// checked entry, as its `setup-{i}.bin` files record them.
-  pub(crate) fn setup_parts(&self) -> Result<Vec<FixedSetup>> {
+  pub(crate) fn setup_parts<C: KzgCurve>(&self) -> Result<Vec<FixedSetup<C>>> {
     let entry = self.checked_entry()?.ok_or("fixed cache entry is missing")?;
     entry
       .files
@@ -160,22 +173,22 @@ impl FixedCache {
   /// The fixed setup of `compiled` under `config`, from the published entry
   /// when it checks, otherwise committed into a staging directory beside the
   /// entry and published, as a stage's proof would leave it.
-  pub(crate) fn prepare(
+  pub(crate) fn prepare<C: KzgCurve>(
     &self,
-    config: &KzgConfig,
-    compiled: &MultiStarkCircuit<Scalar>,
-  ) -> Result<(Vec<FixedSetup>, Prepared)> {
+    config: &KzgConfig<C>,
+    compiled: &MultiStarkCircuit<CurveScalar<C>>,
+  ) -> Result<(Vec<FixedSetup<C>>, Prepared)> {
     if let Some(bytes) = self.check()? {
-      return Ok((self.setup_parts()?, Prepared::Present { bytes }));
+      return Ok((self.setup_parts::<C>()?, Prepared::Present { bytes }));
     }
     let staged = storage::temporary_path(&self.directory);
-    let result = (|| -> Result<Vec<FixedSetup>> {
+    let result = (|| -> Result<Vec<FixedSetup<C>>> {
       fs::create_dir_all(staged.join("kzg"))?;
-      let manifest = Manifest::for_compiled(compiled, vec![], None)?;
+      let manifest = Manifest::<C>::for_compiled(compiled, vec![], None)?;
       storage::save(&staged.join("manifest.bin"), &manifest)?;
       let parts =
         prover::fixed_setup_in(config, compiled, &staged.join("kzg"))?;
-      self.publish(&staged)?;
+      self.publish::<C>(&staged)?;
       Ok(parts)
     })();
     match fs::remove_dir_all(&staged) {
@@ -213,11 +226,11 @@ impl FixedCache {
     skip_all,
     name = "compression/cache_publish"
   )]
-  pub(crate) fn publish(&self, staged: &Path) -> Result<()> {
+  pub(crate) fn publish<C: KzgCurve>(&self, staged: &Path) -> Result<()> {
     if self.directory.join("ready.bin").try_exists()? {
       return remove_staged_fixed(staged);
     }
-    let manifest: Manifest = storage::load(&staged.join("manifest.bin"))?;
+    let manifest: Manifest<C> = storage::load(&staged.join("manifest.bin"))?;
     let temporary = storage::temporary_path(&self.directory);
     fs::create_dir_all(temporary.join("kzg"))?;
     let mut files = Vec::new();

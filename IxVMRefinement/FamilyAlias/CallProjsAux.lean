@@ -136,8 +136,8 @@ theorem check_rules_stream {rc rm nl ty rp ni rules src dst aset s r : SourceVal
       [rc, rm, nl, ty, rp, ni, rules, src, dst, aset, s] h r h' cs) :
     ∃ bytes', Ingress.Stream h' bytes' r := by
   match Obs.«KernelModeled::check_rules».obs ev with
-  | .run (ev14 := ePins) (ev74 := eCi) (ev157 := eLen) (ev179 := eGo) .. =>
-    have ext := ePins.heap_extends.trans (eCi.heap_extends.trans eLen.heap_extends)
+  | .run (ev14 := ePins) (ev74 := eCi) (ev157 := eLen) (ev_bcyyrzqq := eRen) (ev179 := eGo) .. =>
+    have ext := ePins.heap_extends.trans (eCi.heap_extends.trans (eLen.heap_extends.trans eRen.heap_extends))
     exact check_rules_go_stream eGo _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ bytes rfl (hstr.mono ext)
 
 theorem check_recs_stream {recAs : List Bytes.Address} :

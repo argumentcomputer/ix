@@ -5,7 +5,7 @@ use multi_stark::batch::ShardInput;
 use multi_stark::p3_field::BasedVectorSpace;
 use multi_stark::p3_field::PrimeCharacteristicRing;
 use multi_stark::plonkish::CircuitBuilder;
-use multi_stark::types::ExtVal;
+use multi_stark::types::ExtVal3;
 use multi_stark::types::Val;
 use p3_symmetric::MerkleCap;
 
@@ -88,8 +88,8 @@ fn every_verifier_boundary_rejects_tampering_without_native_prevalidation() {
       reject("public claim", bad, true);
     }
     for c in 0..4 {
-      for coordinate in 0..2 {
-        let unit = ExtVal::from_basis_coefficients_fn(|i| {
+      for coordinate in 0..3 {
+        let unit = ExtVal3::from_basis_coefficients_fn(|i| {
           if i == coordinate { Val::ONE } else { Val::ZERO }
         });
         let mut bad = good.clone();
@@ -99,7 +99,7 @@ fn every_verifier_boundary_rejects_tampering_without_native_prevalidation() {
     }
     for matrix in 0..good.proof.intermediate_accumulators.len() {
       let mut bad = good.clone();
-      bad.proof.intermediate_accumulators[matrix] += ExtVal::ONE;
+      bad.proof.intermediate_accumulators[matrix] += ExtVal3::ONE;
       reject("accumulator chain and final balance", bad, true);
     }
     for batch_index in 0..4 {
@@ -112,7 +112,7 @@ fn every_verifier_boundary_rejects_tampering_without_native_prevalidation() {
       for (matrix, rows) in openings.iter().enumerate() {
         for (point, row) in rows.iter().enumerate() {
           for column in 0..row.len() {
-            for coordinate in 0..2 {
+            for coordinate in 0..3 {
               let mut bad = good.clone();
               let openings = match batch_index {
                 0 => &mut bad.proof.stage_1_opened_values,
@@ -121,7 +121,7 @@ fn every_verifier_boundary_rejects_tampering_without_native_prevalidation() {
                 _ => bad.proof.preprocessed_opened_values.as_mut().unwrap(),
               };
               openings[matrix][point][column] +=
-                ExtVal::from_basis_coefficients_fn(|i| {
+                ExtVal3::from_basis_coefficients_fn(|i| {
                   if i == coordinate { Val::ONE } else { Val::ZERO }
                 });
               reject("OOD opening coordinate", bad, true);
@@ -161,7 +161,7 @@ fn every_verifier_boundary_rejects_tampering_without_native_prevalidation() {
       for round in 0..usize::from(shape.log_trace) {
         let mut bad = good.clone();
         bad.proof.opening_proof.commit_phase_openings[round].sibling_values
-          [query][0] += ExtVal::ONE;
+          [query][0] += ExtVal3::ONE;
         reject("FRI sibling and fold", bad, true);
         for depth in 0..good.fri_paths[query][round].len() {
           let mut bad = good.clone();
@@ -186,7 +186,7 @@ fn every_verifier_boundary_rejects_tampering_without_native_prevalidation() {
     bad.proof.opening_proof.query_pow_witness += Val::ONE;
     reject("query grinding", bad, true);
     let mut bad = good.clone();
-    bad.proof.opening_proof.final_poly[0] += ExtVal::ONE;
+    bad.proof.opening_proof.final_poly[0] += ExtVal3::ONE;
     reject("final polynomial", bad, true);
     println!("{envelope:?}: {count} adversarial assignments rejected");
   }

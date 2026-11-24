@@ -1,6 +1,6 @@
 //! Fixed opening layouts and scalar arithmetic for authenticated verifying keys.
 
-use super::{KzgConfig, Result, Scalar, System};
+use super::{Bn254, CurveScalar, KzgConfig, KzgCurve, Result, System};
 use multi_stark::{
   config::ProofConfig,
   expr::Source,
@@ -8,14 +8,14 @@ use multi_stark::{
 };
 
 #[derive(Clone, Copy)]
-struct CircuitShape {
+struct CircuitShape<C: KzgCurve = Bn254> {
   height: usize,
   // Main, LogUp, quotient, preprocessed.
   widths: [usize; 4],
   main_next: bool,
   preprocessed_next: bool,
   lookup_group_size: usize,
-  omega: Scalar,
+  omega: CurveScalar<C>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,9 +27,9 @@ pub(in crate::pipeline::wrap::outer) struct MatrixLayout {
   pub(in crate::pipeline::wrap::outer) groups: [usize; 2],
 }
 
-pub(in crate::pipeline::wrap::outer) struct OpeningLayout {
+pub(in crate::pipeline::wrap::outer) struct OpeningLayout<C: KzgCurve = Bn254> {
   pub(in crate::pipeline::wrap::outer) matrices: Vec<MatrixLayout>,
-  pub(in crate::pipeline::wrap::outer) factors: Vec<Scalar>,
+  pub(in crate::pipeline::wrap::outer) factors: Vec<CurveScalar<C>>,
   pub(in crate::pipeline::wrap::outer) commitment_count: usize,
   pub(in crate::pipeline::wrap::outer) point_count: usize,
   pub(in crate::pipeline::wrap::outer) field_count: usize,
@@ -72,9 +72,9 @@ fn quotient_width(max_degree: usize) -> Result<usize> {
     .ok_or_else(|| "Solidity quotient width overflow".into())
 }
 
-impl OpeningLayout {
+impl<C: KzgCurve> OpeningLayout<C> {
   pub(in crate::pipeline::wrap::outer) fn new_for_system(
-    system: &System<KzgConfig>,
+    system: &System<KzgConfig<C>>,
     logs: &[u8],
   ) -> Result<Self> {
     if logs.len() != system.circuits.len() {
@@ -85,7 +85,7 @@ impl OpeningLayout {
       let height = 1usize << logs[ci];
       log_degree(height)?;
       let domain = system.config.pcs().natural_domain_for_degree(height);
-      shapes.push(CircuitShape {
+      shapes.push(CircuitShape::<C> {
         height,
         widths: [
           circuit.main_width,
@@ -102,7 +102,7 @@ impl OpeningLayout {
     Self::from_shapes(&shapes)
   }
 
-  fn from_shapes(shapes: &[CircuitShape]) -> Result<Self> {
+  fn from_shapes(shapes: &[CircuitShape<C>]) -> Result<Self> {
     let circuits = shapes.len();
     if circuits < 2 {
       return Err("opening layout requires at least two circuits".into());
@@ -116,8 +116,8 @@ impl OpeningLayout {
       {
         return Err("invalid Solidity circuit opening shape".into());
       }
-      if shape.omega.exp_power_of_2(log) != Scalar::ONE
-        || shape.omega.exp_power_of_2(log - 1) == Scalar::ONE
+      if shape.omega.exp_power_of_2(log) != CurveScalar::<C>::ONE
+        || shape.omega.exp_power_of_2(log - 1) == CurveScalar::<C>::ONE
       {
         return Err("Solidity domain generator has incorrect order".into());
       }
@@ -140,7 +140,8 @@ impl OpeningLayout {
         // Nonzero zeta preserves equality and first-occurrence order of
         // the row factors, including rows belonging to zero-width matrices.
         for (row, group) in groups.iter_mut().enumerate().take(rows) {
-          let factor = if row == 0 { Scalar::ONE } else { shape.omega };
+          let factor =
+            if row == 0 { CurveScalar::<C>::ONE } else { shape.omega };
           *group = match factors.iter().position(|&value| value == factor) {
             Some(index) => index,
             None => {
@@ -195,6 +196,7 @@ impl OpeningLayout {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::kzg::Scalar;
   use multi_stark::traits::TwoAdicField;
 
   fn shapes() -> [CircuitShape; 2] {

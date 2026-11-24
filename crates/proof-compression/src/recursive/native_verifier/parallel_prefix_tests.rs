@@ -1,29 +1,29 @@
 use super::*;
-use crate::kzg::curve::Fr;
-use crate::recursive::native_field::L;
+use crate::kzg::curve::Bls12381;
+use crate::recursive::native_field::limb_count;
 use ark_ec::AffineRepr;
 use ark_ff::PrimeField;
 use multi_stark::plonkish::{Assignment, WitnessError};
 
-struct PointFixture {
-  circuit: Circuit<Scalar>,
-  inputs: Vec<(Value, Scalar)>,
-  expected_publics: Vec<Scalar>,
+struct PointFixture<C: KzgCurve> {
+  circuit: Circuit<CurveScalar<C>>,
+  inputs: Vec<(Value, CurveScalar<C>)>,
+  expected_publics: Vec<CurveScalar<C>>,
   prefix_ends: Vec<usize>,
 }
 
-fn points(count: usize) -> Vec<G1Affine> {
-  let g = G1Affine::generator();
-  let seven = (g * Fr::from(7u8)).into_affine();
+fn points<C: KzgCurve>(count: usize) -> Vec<G1AffineOf<C>> {
+  let g = G1AffineOf::<C>::generator();
+  let seven = (g * C::Fr::from(7u8)).into_affine();
   (0..count)
     .map(|i| match i % 8 {
-      0 => G1Affine::identity(),
+      0 => G1AffineOf::<C>::identity(),
       1 | 2 => g,
       3 => -g,
       4 => seven,
       5 => -seven,
       _ => {
-        let scalar = Fr::from_le_bytes_mod_order(
+        let scalar = C::Fr::from_le_bytes_mod_order(
           blake3::hash(&(i as u64).to_le_bytes()).as_bytes(),
         );
         (g * scalar).into_affine()
@@ -32,15 +32,15 @@ fn points(count: usize) -> Vec<G1Affine> {
     .collect()
 }
 
-impl PointFixture {
-  fn new(points: &[G1Affine], parallel: bool) -> Self {
-    let mut c = Context::new(Builder::new());
-    let generator = G1Affine::generator();
+impl<C: KzgCurve> PointFixture<C> {
+  fn new(points: &[G1AffineOf<C>], parallel: bool) -> Self {
+    let mut c = Context::<C>::new(Builder::<C>::new());
+    let generator = G1AffineOf::<C>::generator();
     c.point(PointSource::Fixed(generator));
     let first_end = c.point_ends.clone();
     c.point(PointSource::Fixed(generator));
     assert_eq!(c.point_ends, first_end);
-    c.point(PointSource::Fixed(G1Affine::identity()));
+    c.point(PointSource::Fixed(G1AffineOf::<C>::identity()));
     for i in 0..points.len() {
       c.point(PointSource::Witness(i));
     }
@@ -64,7 +64,8 @@ impl PointFixture {
       };
       let mut encoded = Vec::new();
       point.serialize_compressed(&mut encoded).unwrap();
-      expected_publics.extend(encoded.into_iter().map(Scalar::from_u8));
+      expected_publics
+        .extend(encoded.into_iter().map(CurveScalar::<C>::from_u8));
     }
 
     let dependencies: Vec<_> =
@@ -74,23 +75,31 @@ impl PointFixture {
     }
     // This opaque suffix hint reads derived values from every point block.
     let sum = c.b.hint("point encoding sum", &dependencies, |values| {
-      Ok(values.iter().copied().fold(Scalar::ZERO, |sum, value| sum + value))
+      Ok(
+        values
+          .iter()
+          .copied()
+          .fold(CurveScalar::<C>::ZERO, |sum, value| sum + value),
+      )
     });
-    let terms: Vec<_> =
-      dependencies.iter().map(|&value| (Scalar::ONE, value)).collect();
-    let constrained_sum = c.b.linear_combination(&terms, Scalar::ZERO);
+    let terms: Vec<_> = dependencies
+      .iter()
+      .map(|&value| (CurveScalar::<C>::ONE, value))
+      .collect();
+    let constrained_sum =
+      c.b.linear_combination(&terms, CurveScalar::<C>::ZERO);
     c.b.assert_equal(sum, constrained_sum);
     c.b.expose_public(sum);
     expected_publics.push(
       expected_publics
         .iter()
         .copied()
-        .fold(Scalar::ZERO, |sum, value| sum + value),
+        .fold(CurveScalar::<C>::ZERO, |sum, value| sum + value),
     );
     Self { circuit: c.b.finish(), inputs, expected_publics, prefix_ends }
   }
 
-  fn generate(&self) -> Result<Assignment<Scalar>, WitnessError> {
+  fn generate(&self) -> Result<Assignment<CurveScalar<C>>, WitnessError> {
     self.generate_changed(None, None)
   }
 
@@ -98,14 +107,14 @@ impl PointFixture {
     &self,
     missing: Option<usize>,
     corrupt: Option<usize>,
-  ) -> Result<Assignment<Scalar>, WitnessError> {
+  ) -> Result<Assignment<CurveScalar<C>>, WitnessError> {
     let mut witness = self.circuit.witness();
     for (i, &(input, mut value)) in self.inputs.iter().enumerate() {
       if Some(i) == missing {
         continue;
       }
       if Some(i) == corrupt {
-        value += Scalar::ONE;
+        value += CurveScalar::<C>::ONE;
       }
       witness.set(input, value)?;
     }
@@ -113,7 +122,7 @@ impl PointFixture {
   }
 }
 
-fn same_relation(a: &PointFixture, b: &PointFixture) {
+fn same_relation<C: KzgCurve>(a: &PointFixture<C>, b: &PointFixture<C>) {
   assert_eq!(a.circuit.stats(), b.circuit.stats());
   assert_eq!(a.prefix_ends, b.prefix_ends);
   assert!(
@@ -149,11 +158,10 @@ fn same_relation(a: &PointFixture, b: &PointFixture) {
   assert_eq!(a.expected_publics, b.expected_publics);
 }
 
-#[test]
-fn point_prefix_matches_serial_inputs_values_and_encodings() {
-  let points = points(9);
-  let serial = PointFixture::new(&points, false);
-  let parallel = PointFixture::new(&points, true);
+fn test_point_prefix_matches_serial<C: KzgCurve>() {
+  let points = points::<C>(9);
+  let serial = PointFixture::<C>::new(&points, false);
+  let parallel = PointFixture::<C>::new(&points, true);
   same_relation(&serial, &parallel);
   let expected = serial.generate().unwrap();
   let actual = parallel.generate().unwrap();
@@ -166,15 +174,23 @@ fn point_prefix_matches_serial_inputs_values_and_encodings() {
   assert!(
     parallel.circuit.num_values() > *parallel.prefix_ends.last().unwrap()
   );
-  assert_eq!(parallel.circuit.stats().inputs, (2 * L + 1) * points.len());
+  assert_eq!(
+    parallel.circuit.stats().inputs,
+    (2 * limb_count::<C>() + 1) * points.len()
+  );
 }
 
 #[test]
-fn point_prefix_preserves_earliest_point_error() {
-  let points = points(4);
-  let serial = PointFixture::new(&points, false);
-  let parallel = PointFixture::new(&points, true);
-  let stride = 2 * L + 1;
+fn point_prefix_matches_serial_inputs_values_and_encodings() {
+  test_point_prefix_matches_serial::<Bn254>();
+  test_point_prefix_matches_serial::<Bls12381>();
+}
+
+fn test_point_prefix_preserves_earliest_error<C: KzgCurve>() {
+  let points = points::<C>(4);
+  let serial = PointFixture::<C>::new(&points, false);
+  let parallel = PointFixture::<C>::new(&points, true);
+  let stride = 2 * limb_count::<C>() + 1;
   for (missing, corrupt) in [
     (Some(0), None),
     (Some(2 * stride - 1), None),
@@ -188,4 +204,10 @@ fn point_prefix_preserves_earliest_point_error() {
     let actual = parallel.generate_changed(missing, corrupt).err().unwrap();
     assert_eq!(actual, expected, "missing={missing:?}, corrupt={corrupt:?}");
   }
+}
+
+#[test]
+fn point_prefix_preserves_earliest_point_error() {
+  test_point_prefix_preserves_earliest_error::<Bn254>();
+  test_point_prefix_preserves_earliest_error::<Bls12381>();
 }

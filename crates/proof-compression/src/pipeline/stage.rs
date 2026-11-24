@@ -16,17 +16,19 @@ mod tests;
 use crate::fri::{self, VerifierKey};
 use crate::kzg::{
   KzgCommitment, KzgConfig, Scalar, Srs, TranscriptKind, VerifierParams,
+  curve::{Bn254, KzgCurve},
+  field::CurveScalar,
 };
-use multi_stark::lookup::LookupValues;
 use multi_stark::plonkish::{Assignment, Circuit};
 use multi_stark::prover::Proof;
-use multi_stark::system::{System, SystemWitness, compute_lookup_values_range};
+use multi_stark::system::System;
+#[cfg(test)]
+use multi_stark::system::SystemWitness;
 #[cfg(test)]
 use multi_stark::traits::Algebra;
 use multi_stark::traits::{Field, TwoAdicField};
-use multi_stark::types::{GoldilocksBlake3Config, Val};
+use multi_stark::types::{GoldilocksBlake3V6Config, Val};
 use p3_field::PrimeField64;
-use p3_matrix::Matrix;
 use serde::{Serialize, de::DeserializeOwned};
 use std::sync::Arc;
 
@@ -36,8 +38,6 @@ use super::{
   lowering,
   prover::{self, validate_config},
 };
-
-const KZG_VERIFIER_MAGIC: &[u8; 8] = b"IXBNKV02";
 
 /// A checked circuit and its witness, ready for lowering and proving.
 /// Keeping preparation separate lets callers inspect costs and choose an SRS
@@ -55,6 +55,10 @@ impl<F: Field> Prepared<F> {
   pub fn public_values(&self) -> &[F] {
     self.assignment.public_values()
   }
+
+  pub fn into_parts(self) -> (Circuit<F>, Assignment<F>) {
+    (self.circuit, self.assignment)
+  }
 }
 
 /// Trusted verifier for the first, FRI-compressed stage.
@@ -66,7 +70,7 @@ pub struct FriVerifier {
 impl FriVerifier {
   pub fn verify(
     &self,
-    proof: &Proof<GoldilocksBlake3Config>,
+    proof: &Proof<GoldilocksBlake3V6Config>,
     expected: &[Val],
   ) -> Result<()> {
     let claims = self.statement.claims(expected)?;
@@ -86,9 +90,9 @@ impl Prepared<Val> {
   /// Prove the root-verifier circuit using caller-selected FRI parameters.
   pub fn prove_fri(
     self,
-    config: GoldilocksBlake3Config,
+    config: GoldilocksBlake3V6Config,
     max_height: usize,
-  ) -> Result<(FriVerifier, Proof<GoldilocksBlake3Config>)> {
+  ) -> Result<(FriVerifier, Proof<GoldilocksBlake3V6Config>)> {
     use multi_stark::config::StarkGenericConfig;
     fri::validate_parameters(
       multi_stark::types::CommitmentParameters {
@@ -105,55 +109,54 @@ impl Prepared<Val> {
     let claims = statement.claims(self.assignment.public_values())?;
     let definitions = lowering::fri_definitions(&compiled);
     validate_config(&config, &definitions)?;
-    let (system, key) = tracing::info_span!("compression/setup")
-      .in_scope(|| System::new_without_preprocessed(config, definitions));
-    // Materialize each circuit's trace and lookup messages one at a time so
-    // preprocessed matrices are never cloned across all circuits and frontend
-    // state (`compiled` and `assignment`) is dropped before stage-1 LDEs.
-    let trace_span = tracing::info_span!("compression/trace").entered();
-    let count = system.circuits.len();
-    let shards = compiled.trace_shards(&self.assignment)?;
-    let mut traces = Vec::with_capacity(count);
-    let mut lookups = Vec::with_capacity(count);
-    for ci in 0..count {
-      let trace = shards.trace(ci)?;
-      let circuit = &system.circuits[ci];
-      let lookup = if trace.height() == 0 || circuit.graph.lookups.is_empty() {
-        LookupValues::builder(trace.height(), &[]).finish()
-      } else {
-        let preprocessed = (circuit.preprocessed_width > 0)
-          .then(|| {
-            compiled
-              .circuit_input(ci)
-              .and_then(|input| input.preprocessed)
-              .ok_or("missing compiled preprocessed matrix")
-          })
-          .transpose()?;
-        if let Some(pp) = &preprocessed {
-          assert_eq!(
-            trace.height(),
-            pp.height(),
-            "circuit {ci}: main trace height must equal preprocessed trace height"
-          );
-        }
-        compute_lookup_values_range(
-          &circuit.graph,
-          &trace,
-          preprocessed.as_ref(),
-          0..trace.height(),
-        )
-      };
-      traces.push(trace);
-      lookups.push(lookup);
+    let mut config = config;
+    if let Some(spill_dir) =
+      KzgConfig::<Bn254>::resolve_disk_spill_dir(&std::env::temp_dir())?
+    {
+      config = config.with_disk_spill(spill_dir);
     }
-    drop(trace_span);
+    let (mut system, key) = tracing::info_span!("compression/setup")
+      .in_scope(|| System::new_without_preprocessed(config, definitions));
+    // Stream each circuit's main trace directly into stage-1 commitment (with
+    // CPU disk-backed LDE spilling when enabled) and drop frontend state
+    // (`compiled` and `assignment`) before stage-2 lookups and quotient work so
+    // all traces, lookup buffers, and 4x LDE matrices are never co-resident.
+    let count = system.circuits.len();
+    let mut trace_err: Option<Box<dyn std::error::Error + Send + Sync>> = None;
+    let stage_1 =
+      tracing::info_span!("compression/trace_stage1").in_scope(|| {
+        let shards = match compiled.trace_shards(&self.assignment) {
+          Ok(shards) => shards,
+          Err(err) => {
+            trace_err = Some(err.into());
+            return None;
+          },
+        };
+        let iter = (0..count).map(|ci| match shards.trace(ci) {
+          Ok(trace) => trace,
+          Err(err) => {
+            if trace_err.is_none() {
+              trace_err = Some(err.into());
+            }
+            p3_matrix::dense::RowMajorMatrix::new(
+              Vec::new(),
+              system.circuits[ci].main_width,
+            )
+          },
+        });
+        Some(system.prove_stage_1_streaming(iter))
+      });
+    if let Some(err) = trace_err {
+      return Err(err);
+    }
+    let stage_1 = stage_1.expect("trace_err handled above");
     drop(compiled);
     drop(self.assignment);
     let refs: Vec<_> = claims.iter().map(Vec::as_slice).collect();
-    let witness = SystemWitness { traces, lookups };
     let proof = tracing::info_span!("compression/prove")
-      .in_scope(|| system.prove_multiple_claims(&key, &refs, witness));
+      .in_scope(|| system.prove_committed(&key, &refs, stage_1));
     drop(key);
+    system.config = system.config.without_disk_spill();
     tracing::info_span!("compression/verify")
       .in_scope(|| system.verify_multiple_claims(&refs, &proof))
       .map_err(|e| format!("new FRI proof: {e:?}"))?;
@@ -161,14 +164,25 @@ impl Prepared<Val> {
   }
 }
 
-/// Prepare a FRI verifier over the selected KZG scalar field. The statement and
-/// all activation anchors come from the trusted previous stage's verifier.
+/// Prepare a FRI verifier over the BN254 KZG scalar field.
 pub fn prepare_kzg(
   verifier: &FriVerifier,
-  proof: &Proof<GoldilocksBlake3Config>,
+  proof: &Proof<GoldilocksBlake3V6Config>,
   expected: &[Val],
   limits: fri::VerifierLimits,
 ) -> Result<Prepared<Scalar>> {
+  prepare_kzg_for::<Bn254>(verifier, proof, expected, limits)
+}
+
+/// Prepare a FRI verifier over the selected KZG curve's scalar field. The
+/// statement and all activation anchors come from the trusted previous stage's
+/// verifier.
+pub fn prepare_kzg_for<C: KzgCurve>(
+  verifier: &FriVerifier,
+  proof: &Proof<GoldilocksBlake3V6Config>,
+  expected: &[Val],
+  limits: fri::VerifierLimits,
+) -> Result<Prepared<CurveScalar<C>>> {
   verifier.verify(proof, expected)?;
   let claims = verifier.statement.claims(expected)?;
   let profile = lowering::fri_profile(&verifier.key, &claims)?;
@@ -181,7 +195,7 @@ pub fn prepare_kzg(
     lowering::FriConstruction::build(&plan, verifier.statement.schema())?
       .assign(&plan, proof, claims)?;
   drop(plan);
-  let foreign = lowering::translate(&source.circuit);
+  let foreign = lowering::translate::<C>(&source.circuit);
   drop(source.circuit);
   let assignment = lowering::assign_foreign(
     &foreign.inputs,
@@ -195,17 +209,17 @@ pub fn prepare_kzg(
 
 /// Trusted verifier for a scalar-field compression stage. It retains only
 /// verification parameters, never the SRS proving powers or fixed matrices.
-pub struct KzgVerifier {
-  pub(in crate::pipeline) system: System<KzgConfig>,
-  pub(in crate::pipeline) params: VerifierParams,
-  pub(in crate::pipeline) statement: ClaimTemplate<Scalar>,
-  pub(in crate::pipeline) codec: crate::kzg::compact::FixedProofCodec,
+pub struct KzgVerifier<C: KzgCurve = Bn254> {
+  pub(in crate::pipeline) system: System<KzgConfig<C>>,
+  pub(in crate::pipeline) params: VerifierParams<C>,
+  pub(in crate::pipeline) statement: ClaimTemplate<CurveScalar<C>>,
+  pub(in crate::pipeline) codec: crate::kzg::compact::FixedProofCodec<C>,
 }
 
-impl KzgVerifier {
+impl<C: KzgCurve> KzgVerifier<C> {
   pub(in crate::pipeline) fn new(
-    system: System<KzgConfig>,
-    statement: ClaimTemplate<Scalar>,
+    system: System<KzgConfig<C>>,
+    statement: ClaimTemplate<CurveScalar<C>>,
   ) -> Result<Self> {
     use multi_stark::config::ProofConfig;
     let params = system.config.pcs().verifier_params().clone();
@@ -244,18 +258,22 @@ impl KzgVerifier {
   }
 
   /// Fixed-shape transport under this trusted key; encoding is not verification.
-  pub fn encode_proof(&self, proof: &Proof<KzgConfig>) -> Result<Vec<u8>> {
+  pub fn encode_proof(&self, proof: &Proof<KzgConfig<C>>) -> Result<Vec<u8>> {
     Ok(self.codec.encode(proof)?)
   }
 
-  pub fn verify_bytes(&self, bytes: &[u8], expected: &[Scalar]) -> Result<()> {
+  pub fn verify_bytes(
+    &self,
+    bytes: &[u8],
+    expected: &[CurveScalar<C>],
+  ) -> Result<()> {
     self.verify(&self.codec.decode(bytes)?, expected)
   }
 
   pub fn verify(
     &self,
-    proof: &Proof<KzgConfig>,
-    expected: &[Scalar],
+    proof: &Proof<KzgConfig<C>>,
+    expected: &[CurveScalar<C>],
   ) -> Result<()> {
     let claims = self.statement.claims(expected)?;
     self
@@ -269,14 +287,14 @@ impl KzgVerifier {
   }
 }
 
-impl Prepared<Scalar> {
+impl<C: KzgCurve> Prepared<CurveScalar<C>> {
   /// Parameters must have trusted provenance and pass Srs::validate before
   /// use. Partitioning is bounded by both max_height and the supplied SRS.
   pub fn prove_kzg(
     self,
-    srs: Arc<Srs>,
+    srs: Arc<Srs<C>>,
     max_height: usize,
-  ) -> Result<(KzgVerifier, Proof<KzgConfig>)> {
+  ) -> Result<(KzgVerifier<C>, Proof<KzgConfig<C>>)> {
     if srs.max_len() < 2
       || !srs.max_len().is_power_of_two()
       || srs.public_setup.max_degree < srs.max_len() - 1
@@ -292,7 +310,7 @@ impl Prepared<Scalar> {
         "partition height must be a power of two within the SRS range".into(),
       );
     }
-    if max_height.ilog2() as usize + 1 > Scalar::TWO_ADICITY {
+    if max_height.ilog2() as usize + 1 > CurveScalar::<C>::TWO_ADICITY {
       return Err("quotient domain exceeds scalar field two-adicity".into());
     }
     let compiled = lowering::lower_first(self.circuit, max_height, max_height)?;
@@ -304,7 +322,7 @@ impl Prepared<Scalar> {
       .with_streaming_lookups()
       .with_streaming_quotient();
     if let Some(spill_dir) =
-      KzgConfig::resolve_disk_spill_dir(&std::env::temp_dir())?
+      KzgConfig::<C>::resolve_disk_spill_dir(&std::env::temp_dir())?
     {
       config = config.with_disk_spill(spill_dir);
     }
@@ -315,14 +333,19 @@ impl Prepared<Scalar> {
   }
 }
 
-pub(in crate::pipeline) fn scalar_statement(expected: &[Val]) -> Vec<Scalar> {
-  expected.iter().map(|v| Scalar::from_u64(v.as_canonical_u64())).collect()
+pub(in crate::pipeline) fn scalar_statement<C: KzgCurve>(
+  expected: &[Val],
+) -> Vec<CurveScalar<C>> {
+  expected
+    .iter()
+    .map(|v| CurveScalar::<C>::from_u64(v.as_canonical_u64()))
+    .collect()
 }
 
-pub(in crate::pipeline) fn prove_lowered(
-  lowered: lowering::Lowered,
-  config: KzgConfig,
-) -> Result<(KzgVerifier, Proof<KzgConfig>)> {
+pub(in crate::pipeline) fn prove_lowered<C: KzgCurve>(
+  lowered: lowering::Lowered<C>,
+  config: KzgConfig<C>,
+) -> Result<(KzgVerifier<C>, Proof<KzgConfig<C>>)> {
   use multi_stark::config::ProofConfig;
   let statement = ClaimTemplate::from_lowered(
     &lowered.compiled,
@@ -370,7 +393,7 @@ impl FriVerifier {
   /// derives, built without a witness.
   pub(in crate::pipeline) fn derive(
     circuit: Circuit<Val>,
-    config: GoldilocksBlake3Config,
+    config: GoldilocksBlake3V6Config,
     height: usize,
   ) -> Result<Self> {
     use multi_stark::config::StarkGenericConfig;
@@ -394,25 +417,25 @@ impl FriVerifier {
   /// Encode the verifier, including its public statement schema. No prover
   /// matrices are included. Authenticate the complete encoding on transport.
   pub fn to_bytes(&self) -> Result<Vec<u8>> {
-    encode_key(b"IXFRIV01", (self.key.to_bytes()?, &self.statement))
+    encode_key(b"IXFRIV02", (self.key.to_bytes()?, &self.statement))
   }
 
   /// Decode an independently trusted verifier with a 64 MiB decoding budget.
   pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
     let (key, statement): (Vec<u8>, ClaimTemplate<Val>) =
-      decode_key(b"IXFRIV01", bytes)?;
+      decode_key(b"IXFRIV02", bytes)?;
     statement.validate()?;
     Ok(Self { key: VerifierKey::from_bytes(&key)?, statement })
   }
 }
 
-impl KzgVerifier {
+impl<C: KzgCurve> KzgVerifier<C> {
   /// The verifier `Prepared::prove_kzg` returns for `circuit`, built without
   /// a witness.
   #[cfg(test)]
   pub(in crate::pipeline) fn derive(
-    circuit: Circuit<Scalar>,
-    srs: Arc<Srs>,
+    circuit: Circuit<CurveScalar<C>>,
+    srs: Arc<Srs<C>>,
     height: usize,
   ) -> Result<Self> {
     use multi_stark::config::ProofConfig;
@@ -421,7 +444,7 @@ impl KzgVerifier {
         "partition height must be a power of two within the SRS range".into(),
       );
     }
-    if height.ilog2() as usize + 1 > Scalar::TWO_ADICITY {
+    if height.ilog2() as usize + 1 > CurveScalar::<C>::TWO_ADICITY {
       return Err("quotient domain exceeds scalar field two-adicity".into());
     }
     let public_count = circuit.public_values().len();
@@ -447,7 +470,7 @@ impl KzgVerifier {
   /// the public statement schema. Proving powers and matrices are excluded.
   pub fn to_bytes(&self) -> Result<Vec<u8>> {
     encode_key(
-      KZG_VERIFIER_MAGIC,
+      C::KZG_VERIFIER_MAGIC,
       (
         self.params.to_bytes()?,
         match self.system.config.transcript_kind() {
@@ -466,12 +489,14 @@ impl KzgVerifier {
     let (params, transcript, circuits, preprocessing, statement): (
       Vec<u8>,
       u8,
-      Vec<multi_stark::system::Circuit<Scalar>>,
-      Option<KzgCommitment>,
-      ClaimTemplate<Scalar>,
-    ) = decode_key(KZG_VERIFIER_MAGIC, bytes)?;
-    let params = VerifierParams::from_bytes(&params)?;
-    if params.max_trace_len().ilog2() as usize + 1 > Scalar::TWO_ADICITY {
+      Vec<multi_stark::system::Circuit<CurveScalar<C>>>,
+      Option<KzgCommitment<C>>,
+      ClaimTemplate<CurveScalar<C>>,
+    ) = decode_key(C::KZG_VERIFIER_MAGIC, bytes)?;
+    let params = VerifierParams::<C>::from_bytes(&params)?;
+    if params.max_trace_len().ilog2() as usize + 1
+      > CurveScalar::<C>::TWO_ADICITY
+    {
       return Err("quotient domain exceeds scalar field two-adicity".into());
     }
     let transcript = match transcript {
@@ -486,6 +511,7 @@ impl KzgVerifier {
         circuits,
         preprocessed_commit: preprocessing,
         preprocessed_indices: indices,
+        vk_digest: [0u8; 32],
       },
       statement,
     )

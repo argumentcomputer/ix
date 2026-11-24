@@ -58,40 +58,46 @@ theorem CertsR.lic_true {env : Ix.Kernel.Env .anon} {d : Nat} {T : KExpr} {As : 
 /-- The first walk of `iota_certs` (the recursor's), from its `let`-bound segment. -/
 theorem iota_certs_seg {c : ScopedCtx} {calls cs99 : List (Call F)} (ih : IH c calls)
     (good : CoreGood c calls) (hsub : ∀ z ∈ cs99, z ∈ calls) (hle : cs99.length ≤ calls.length)
-    {rc rt ra cty clvls ma nc types : SourceValue F} {h m97 : Heap F} {d : Nat}
-    {Γ : Nat → KExpr} {RT : KExpr} {RA : List KExpr}
-    (sg : Obs.«KernelWhnf::iota_certs».Seg1 rc rt ra (.field (RA.length : F)) cty clvls ma nc
-      types h (.field 1) m97 cs99)
+    {rc rt pre maj cty clvls ma nc types : SourceValue F} {h m97 : Heap F} {d : Nat}
+    {Γ : Nat → KExpr} {RT MAJ : KExpr} {PRE : List KExpr}
+    (sg : Obs.«KernelWhnf::iota_certs».Seg1 rc rt pre maj (.field ((PRE.length + 1 : Nat) : F))
+      cty clvls ma nc types h (.field 1) m97 cs99)
     (hrc : c.rc h rc) (htypes : c.types Γ h d types) (hRT : c.tmc h RT rt)
-    (hRA : c.tml d Γ h RA ra) (hRAb : RA.length < 2 ^ 39) :
-    Specs.Whnf.CertsR c.env d true RT RA ∧ Heap.Extends h m97 := by
+    (hPRE : c.tml d Γ h PRE pre) (hMAJ : c.tm d Γ h MAJ maj) (hPREb : PRE.length < 2 ^ 39) :
+    Specs.Whnf.CertsR c.env d true RT (PRE ++ [MAJ]) ∧ Heap.Extends h m97 := by
   rcases sg with ⟨m2, cs13, ev15, he36, he37, hc38⟩ |
-    ⟨v1, m2, cs13, cs46, m76, ev15, hne39, hm84, ev48, hc95⟩
+    ⟨v1, m2, cs13, cs46, v_ra, m_ra, cs_ra, m76, ev15, hne39, ev_snoc, hm84, ev48, hc95⟩
   · subst he37 hc38
     have hn := ih.get (.whnf .slots_never)
       (by simp only [List.length_cons] at hle; omega) ev15 rt _ rfl
       (good.sub fun z hz => hsub z (by simp [hz])) d Γ 0 RT _ (hRT d Γ) rfl
       NatAux.field_one_ne_zero
-    rw [NatAux.val_natCast (n := RA.length) (by omega)] at hn
-    exact ⟨certsR_of_forallsNever RA RT hn, ObsFn.heap_extends ev15⟩
+    rw [NatAux.val_natCast (n := PRE.length + 1) (by omega)] at hn
+    exact ⟨certsR_of_forallsNever (PRE ++ [MAJ]) RT (by simpa using hn), ObsFn.heap_extends ev15⟩
   · subst hm84 hc95
-    have ext : Heap.Extends h (m2 ++ [.construct kexprListEnum "Nil" []]) :=
-      (ObsFn.heap_extends ev15).trans (Heap.Extends.snoc _ _)
-    have hcr := ih.get (.whnf .certs_all)
-      (by simp only [List.length_cons, List.length_append] at hle; omega) ev48 rc rt ra _ types
+    have e15 := ObsFn.heap_extends ev15
+    have hRA := Lib.Lists.snoc_spec (t := kexprTy) (R := TmE c.κ d Γ) tmE_heapMono₂
+      (by rw [Obs.Names.«Lists::snoc<&KernelTypes::KExprNode>».symbol]; exact ev_snoc)
+      (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact tml_mono e15 hPRE)
+      (hMAJ.mono e15)
+    rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol] at hRA
+    have ext : Heap.Extends h (m_ra ++ [.construct kexprListEnum "Nil" []]) :=
+      (e15.trans (ObsFn.heap_extends ev_snoc)).trans (Heap.Extends.snoc _ _)
+    have hcr := ih.get (.whnf .certs_licensed)
+      (by simp only [List.length_cons, List.length_append] at hle; omega) ev48 rc rt v_ra _ types
       rfl (good.sub fun z hz => hsub z (by simp [hz])) (RCRep.mono ext hrc) d Γ
-      (types_mono ext htypes) RT [] RA ((hRT d Γ).mono ext) (TmL.store_nil m2) (tml_mono ext hRA)
-      NatAux.field_one_ne_zero
+      (types_mono ext htypes) RT [] (PRE ++ [MAJ]) ((hRT d Γ).mono ext) (TmL.store_nil m_ra)
+      (tml_mono (Heap.Extends.snoc _ _) hRA) NatAux.field_one_ne_zero
     rw [Ix.Kernel.Expr.instantiateList_nil] at hcr
-    exact ⟨CertsR.lic_true hcr, ext.trans (ObsFn.heap_extends ev48)⟩
+    exact ⟨hcr, ext.trans (ObsFn.heap_extends ev48)⟩
 
-/-- **`KernelWhnf::iota_certs`**: the recursor's walk, then the constructor's, each all skips at `never` slots or certified. -/
+/-- **`KernelWhnf::iota_certs`**: the recursor's walk, then the constructor's, each all skips at `never` slots or licensed-certified. -/
 theorem iota_certs_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::iota_certs" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.iota_certs c args h r h' calls := by
-  intro rc rt ra nr cty clvls ma nc types hargs good hrc d Γ htypes RT RA CT cus MA hRT hRA hnr
-    hCT hcus hMA hnc hRAb hMAb hr0
+  intro rc rt pre maj nr cty clvls ma nc types hargs good hrc d Γ htypes RT PRE MAJ CT cus MA
+    hRT hPRE hMAJ hnr hCT hcus hMA hnc hPREb hMAb hr0
   subst hargs hnr hnc
   rcases Obs.«KernelWhnf::iota_certs».obs ev with
     ⟨m97, cs99, v119, m120, cs130, m150, cs161, sg104, ev132, ev163, he184, he185, hc186⟩ |
@@ -100,7 +106,7 @@ theorem iota_certs_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : He
     ⟨v96, m97, cs99, sg104, hne244, he248, he249, hc250⟩
   · subst hc186
     obtain ⟨h1, e0⟩ := iota_certs_seg ih good (fun z hz => by simp [hz])
-      (by simp only [List.length_append]; omega) sg104 hrc htypes hRT hRA hRAb
+      (by simp only [List.length_append]; omega) sg104 hrc htypes hRT hPRE hMAJ hPREb
     have hinst := ih.get (.subst .expr_inst_levels) (by lt_calls) ev132 cty clvls rfl
       (good.sub fun z hz => by simp [hz]) Γ 0 CT cus ((hCT 0 Γ).mono e0) (LvListRep.mono e0 hcus)
     have hn := ih.get (.whnf .slots_never) (by lt_calls) ev163 v119 _ rfl
@@ -109,18 +115,18 @@ theorem iota_certs_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : He
     exact ⟨h1, certsR_of_forallsNever MA _ hn⟩
   · subst hm232 hc243
     obtain ⟨h1, e0⟩ := iota_certs_seg ih good (fun z hz => by simp [hz])
-      (by simp only [List.length_append]; omega) sg104 hrc htypes hRT hRA hRAb
+      (by simp only [List.length_append]; omega) sg104 hrc htypes hRT hPRE hMAJ hPREb
     have hinst := ih.get (.subst .expr_inst_levels) (by lt_calls) ev132 cty clvls rfl
       (good.sub fun z hz => by simp [hz]) Γ 0 CT cus ((hCT 0 Γ).mono e0) (LvListRep.mono e0 hcus)
     have e1 := ObsFn.heap_extends ev132
     have ext2 : Heap.Extends m120 (m150 ++ [.construct kexprListEnum "Nil" []]) :=
       (ObsFn.heap_extends ev163).trans (Heap.Extends.snoc _ _)
     have ext := e0.trans (e1.trans ext2)
-    have hcr := ih.get (.whnf .certs_all) (by lt_calls) ev196 rc v119 ma _ types rfl
+    have hcr := ih.get (.whnf .certs_licensed) (by lt_calls) ev196 rc v119 ma _ types rfl
       (good.sub fun z hz => by simp [hz]) (RCRep.mono ext hrc) d Γ (types_mono ext htypes) _ []
       MA ((hinst.of_depth_zero d).mono ext2) (TmL.store_nil m150) (tml_mono ext hMA) hr0
     rw [Ix.Kernel.Expr.instantiateList_nil] at hcr
-    exact ⟨h1, CertsR.lic_true hcr⟩
+    exact ⟨h1, hcr⟩
   · exact absurd he248 hr0
 
 /-! ## `iota_cmp` -/

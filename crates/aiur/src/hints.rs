@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Data-only advice with `u64` field values. `HintChannels` accepts the native
+/// element type when keys or answers require a larger field representation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HintEntry {
   #[serde(default)]
@@ -34,6 +36,48 @@ struct Channel<F> {
   function: Arc<HintFunction<F>>,
   fixed: Option<(usize, usize, Arc<HintBinder<F>>)>,
   direct: Option<DirectHintKind>,
+  arenas: Option<Arc<dyn DeviceArenas>>,
+}
+
+/// One arena of [`DeviceArenas`], as canonical words or as bytes (each the
+/// word of its value).
+pub enum ArenaData<'a> {
+  Bytes(&'a [u8]),
+  Words(std::borrow::Cow<'a, [u64]>),
+}
+
+impl ArenaData<'_> {
+  pub fn len(&self) -> usize {
+    match self {
+      Self::Bytes(bytes) => bytes.len(),
+      Self::Words(words) => words.len(),
+    }
+  }
+
+  pub fn is_empty(&self) -> bool {
+    self.len() == 0
+  }
+
+  /// Bytes a copy of this arena occupies.
+  pub fn bytes(&self) -> usize {
+    match self {
+      Self::Bytes(bytes) => bytes.len(),
+      Self::Words(words) => words.len() * 8,
+    }
+  }
+}
+
+/// The data of a read channel in a form a device can evaluate it from:
+/// numbered arenas of values. Binding it to a channel asserts that the
+/// channel's provider answers key `[arena, offset]` with output width `n` by
+/// the `n` values of that arena from `offset`, and fails exactly when they
+/// are not all present (an arena past [`Self::arenas`]'s end is empty).
+pub trait DeviceArenas: Send + Sync {
+  /// The arenas, by number.
+  fn arenas(&self) -> Vec<ArenaData<'_>>;
+  /// Identifies the data: channels bound to one source report the same
+  /// address.
+  fn identity(&self) -> *const ();
 }
 
 /// Host-defined code providers. Names are resolved only by `prepare_hint_channels`.
@@ -49,6 +93,11 @@ impl<F> Default for HintChannels<F> {
 impl<F> HintChannels<F> {
   pub fn new() -> Self {
     Self::default()
+  }
+
+  #[cfg(test)]
+  pub(crate) fn function(&self, name: &str) -> Option<Arc<HintFunction<F>>> {
+    self.channels.get(name).map(|c| c.function.clone())
   }
 
   pub fn insert(
@@ -70,8 +119,24 @@ impl<F> HintChannels<F> {
         function: Arc::new(function),
         fixed: None,
         direct: None,
+        arenas: None,
       },
     );
+    Ok(())
+  }
+
+  /// Declares that channel `name`, already inserted, reads `arenas` as
+  /// [`DeviceArenas`] describes, so a device can evaluate it.
+  pub fn set_device_arenas(
+    &mut self,
+    name: &str,
+    arenas: Arc<dyn DeviceArenas>,
+  ) -> Result<(), String> {
+    let channel = self
+      .channels
+      .get_mut(name)
+      .ok_or_else(|| format!("unknown hint channel {name:?}"))?;
+    channel.arenas = Some(arenas);
     Ok(())
   }
 
@@ -144,6 +209,7 @@ impl<F> HintChannels<F> {
         }),
         fixed: Some((INPUTS, OUTPUTS, binder)),
         direct,
+        arenas: None,
       },
     );
     Ok(())
@@ -156,6 +222,9 @@ pub(crate) struct HintSite<F = u64> {
   pub(crate) output_layout: Option<Layout>,
   pub(crate) registers: Option<Arc<RegisterHint<F>>>,
   pub(crate) direct: Option<DirectHintKind>,
+  /// The provider's data, when a device can evaluate it.
+  #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+  pub(crate) arenas: Option<Arc<dyn DeviceArenas>>,
 }
 
 impl<F: Copy> HintSite<F> {
@@ -177,12 +246,12 @@ impl<F: Copy> HintSite<F> {
 
 /// Shared once per prepared session, including the immutable data captured by
 /// data-backed providers. Records keep this alive for later or parallel replay.
-pub(crate) struct BoundHints<F> {
-  pub(crate) program: Arc<Program>,
+pub(crate) struct BoundHints<F, W = u64> {
+  pub(crate) program: Arc<Program<W>>,
   pub(crate) sites: Vec<Vec<Option<HintSite<F>>>>,
 }
 
-impl<F> std::fmt::Debug for BoundHints<F> {
+impl<F, W> std::fmt::Debug for BoundHints<F, W> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("BoundHints")
       .field("functions", &self.sites.len())
@@ -194,12 +263,16 @@ impl<F> std::fmt::Debug for BoundHints<F> {
 /// caches or ROM pointers. It owns the closures and their captured environment.
 pub struct PreparedHints<'a, B: FieldBackend = PrimeField> {
   pub(crate) program: &'a CheckedProgram<B>,
-  pub(crate) bindings: Arc<BoundHints<B::Element>>,
+  pub(crate) bindings: Arc<BoundHints<B::Element, B::Word>>,
   pub(crate) maps: Vec<Arc<crate::maps::PreparedMap<B>>>,
   pub(crate) dispatch: crate::execute::dispatch::DispatchProgram<B::Element>,
 }
 
 impl<B: FieldBackend> PreparedHints<'_, B> {
+  pub fn program(&self) -> &CheckedProgram<B> {
+    self.program
+  }
+
   /// Bind optional static-map implementations once. The resulting execution
   /// records retain these same closures for witness population. No source
   /// syntax, function implementation, or certifying table is replaced.
@@ -294,6 +367,7 @@ impl<B: FieldBackend> CheckedProgram<B> {
                 output_layout: Some(layout),
                 registers,
                 direct,
+                arenas: provider.arenas.clone(),
               }
             } else if let Some(rows) =
               data.get(&(channel.clone(), key_type.clone()))
@@ -313,6 +387,7 @@ impl<B: FieldBackend> CheckedProgram<B> {
                 output_layout: None,
                 registers: None,
                 direct: None,
+                arenas: None,
               }
             } else {
               HintSite {
@@ -320,6 +395,7 @@ impl<B: FieldBackend> CheckedProgram<B> {
                 output_layout: None,
                 registers: None,
                 direct: None,
+                arenas: None,
               }
             };
             Ok(Some(site))

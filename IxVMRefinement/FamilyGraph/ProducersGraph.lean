@@ -540,21 +540,19 @@ theorem get_count_stream {x_s x_n x_s' : SourceValue F} {bytes : List UInt8} {h 
 reads off the payload after the family record's address and the advice count, still read at the
 heap of the advice walk. -/
 theorem familyOwnAdvice_of_obs {x_rc x_block x_rec_block r : SourceValue F} {h h' : Heap F}
-    {calls : List (Call F)}
+    {calls : List (Call F)} (hnil : Decl.RCAxiomsNil h x_rc)
     (ev : ObsFn Obs.W "KernelModeled::check_family" [x_rc, x_block, x_rec_block] h r h' calls) :
     ∃ advAs, FamilyOwnAdvice x_rc x_block x_rec_block h r h' calls advAs := by
   have hpath := Obs.«KernelModeled::check_family».obs ev
   match hpath with
-  | .run (m105 := m105) (x_s1 := x_s1) (x_s2 := x_s2) (x_advice := x_advice) (sg112 := sg112)
+  | .run (v_nbvrulqd := vSeg) (m_vcemfqfp := m105) (x_s1 := x_s1) (x_s2 := x_s2) (x_advice := x_advice) (ev_wsivmatu := sg112)
       (ev126 := ev126) (ev148 := ev148) (ev194 := ev194) (ev_yqjbwijz := ev_ord)
       (ev231 := ev231) (ev266 := ev266) (ev309 := ev309) (ev344 := ev344) (ev403 := ev403)
       (ev435 := ev435) (ev465 := ev465) (hc1474 := hc) .. =>
-    have e0 : Heap.Extends h m105 := by
-      match sg112 with
-      | .Nil (ev15 := ev15) (he33 := he33) .. =>
-        rw [he33]
-        exact ev15.heap_extends
-      | .Node (heq97 := heq) .. => exact absurd (Value.field.inj heq) zero_ne_one
+    obtain ⟨hvSeg, hm105⟩ := Decl.check_family_seg_nil_of_rc hnil sg112
+    subst vSeg
+    subst m105
+    have e0 : Heap.Extends h h := Heap.Extends.refl h
     obtain ⟨-, bytes, hst⟩ := read_payload_stream ev126
     obtain ⟨a, rem, x_t, x_s, -, hr, -, hs1, -, -⟩ := Decl.get_address_spec hst ev148
     have e1 : x_s1 = x_s := by
@@ -591,7 +589,7 @@ theorem familyCallOwn_of_call {calls : List (Call F)} {bAddr : _root_.Address}
     (hfc : FamilyCallAtLim calls bAddr t B rb lim cs) :
     ∃ advAs, FamilyCallOwn calls bAddr t B rb lim cs advAs := by
   obtain ⟨h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev, hmem, hsub⟩ := hfc
-  obtain ⟨advAs, hown⟩ := familyOwnAdvice_of_obs ev
+  obtain ⟨advAs, hown⟩ := familyOwnAdvice_of_obs hrc.axiomsNil ev
   exact ⟨advAs, h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev, hown, hmem, hsub⟩
 
 /-- **`KernelModeled::check_recs` on a non-empty list compares `1` with its count of recursors**:
@@ -632,7 +630,7 @@ theorem familyCall_record_block {calls : List (Call F)} {bAddr : _root_.Address}
   · exfalso
     obtain ⟨h, h', rc, xb, xrb, r, -, -, ⟨b, hb, rfl⟩, ev, -, hsub⟩ := hfc
     match Obs.«KernelModeled::check_family».obs ev with
-    | .run (m105 := m105) (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
+    | .run (m_vcemfqfp := m105) (ev_wsivmatu := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
         (ev_yqjbwijz := ev_ord) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309)
         (ev344 := ev344) (ev403 := ev403) (ev435 := ev435) (ev465 := ev465) (ev513 := ev513)
         (ev601 := ev601) (ev634 := ev634) (ev664 := ev664) (ev686 := ev686) (ev716 := ev716)
@@ -644,12 +642,7 @@ theorem familyCall_record_block {calls : List (Call F)} {bAddr : _root_.Address}
         (ev_biaifgpd := ev_mv3) (ev1203 := ev1203) (ev_cwwgzxtj := ev_flat) (ev1246 := ev1246)
         (ev_mitevvsv := ev_flen) (ev_rqpeovbn := ev_z1) (ev_xrhmaojz := ev_z2)
         (ev_whimdwjd := ev_vg) (ev1305 := ev1305) (ev1343 := ev1343) (hc1474 := hc1474) .. =>
-      have e0 : Heap.Extends h m105 := by
-        match sg112 with
-        | .Nil (ev15 := ev15) (he33 := he33) .. =>
-          rw [he33]
-          exact ev15.heap_extends
-        | .Node (heq97 := heq) .. => exact absurd (Value.field.inj heq) zero_ne_one
+      have e0 : Heap.Extends h m105 := sg112.heap_extends
       have e784 : Heap.Extends h _ :=
         e0.trans <| ev126.heap_extends.trans <| ev148.heap_extends.trans <|
           ev194.heap_extends.trans <| ev_ord.heap_extends.trans <| ev231.heap_extends.trans <|

@@ -3,7 +3,7 @@
 //! transcript tests constrain these values independently.
 
 use ix_proof_compression::fri::AlgebraicInputs;
-use ix_proof_compression::fri::QuadraticValue;
+use ix_proof_compression::fri::CubicValue;
 use multi_stark::config::StarkGenericConfig;
 use multi_stark::p3_field::BasedVectorSpace;
 use multi_stark::p3_field::PrimeCharacteristicRing;
@@ -12,17 +12,17 @@ use multi_stark::plonkish::Witness;
 use multi_stark::plonkish::WitnessError;
 use multi_stark::prover::Proof;
 use multi_stark::system::System;
-use multi_stark::types::ExtVal;
-use multi_stark::types::GoldilocksBlake3Config;
+use multi_stark::types::ExtVal3;
+use multi_stark::types::GoldilocksBlake3V6Config;
 use multi_stark::types::Val;
 use p3_challenger::{CanObserve, FieldChallenger};
 
 /// Native transcript replay through zeta, in the order used by System::verify.
 pub(crate) fn challenges(
-  system: &System<GoldilocksBlake3Config>,
-  proof: &Proof<GoldilocksBlake3Config>,
+  system: &System<GoldilocksBlake3V6Config>,
+  proof: &Proof<GoldilocksBlake3V6Config>,
   claims: &[&[Val]],
-) -> [ExtVal; 4] {
+) -> [ExtVal3; 4] {
   let mut challenger = system.config.initialise_challenger();
   system.observe_shape(&mut challenger);
   for &active in &proof.active {
@@ -40,9 +40,9 @@ pub(crate) fn challenges(
     challenger.observe(Val::from_usize(claim.len()));
     challenger.observe_slice(claim);
   }
-  let beta: ExtVal = challenger.sample_algebra_element();
+  let beta: ExtVal3 = challenger.sample_algebra_element();
   challenger.observe_algebra_element(beta);
-  let gamma: ExtVal = challenger.sample_algebra_element();
+  let gamma: ExtVal3 = challenger.sample_algebra_element();
   challenger.observe_algebra_element(gamma);
   challenger.observe(proof.commitments.stage_2_trace.clone());
   for &accumulator in &proof.intermediate_accumulators {
@@ -56,8 +56,8 @@ pub(crate) fn challenges(
 
 pub(crate) fn set_extension(
   witness: &mut Witness<'_, Val>,
-  wire: QuadraticValue,
-  value: ExtVal,
+  wire: CubicValue,
+  value: ExtVal3,
 ) -> Result<(), WitnessError> {
   for (wire, &value) in wire.0.iter().zip(value.as_basis_coefficients_slice()) {
     witness.set(*wire, value)?;
@@ -68,9 +68,9 @@ pub(crate) fn set_extension(
 pub(crate) fn assign(
   witness: &mut Witness<'_, Val>,
   inputs: &AlgebraicInputs,
-  proof: &Proof<GoldilocksBlake3Config>,
+  proof: &Proof<GoldilocksBlake3V6Config>,
   claims: &[&[Val]],
-  challenges: [ExtVal; 4],
+  challenges: [ExtVal3; 4],
 ) -> Result<(), WitnessError> {
   assert_eq!(claims.len(), inputs.claims.len());
   for (wires, claim) in inputs.claims.iter().zip(claims) {
@@ -153,9 +153,9 @@ pub(crate) fn expose_boundary(
 /// Expected public instance obtained from the native inputs, independently
 /// of the Plonkish witness assignment. Ordering matches expose_boundary().
 pub(crate) fn statement(
-  proof: &Proof<GoldilocksBlake3Config>,
+  proof: &Proof<GoldilocksBlake3V6Config>,
   claims: &[&[Val]],
-  challenges: [ExtVal; 4],
+  challenges: [ExtVal3; 4],
 ) -> Vec<Val> {
   let mut public: Vec<Val> =
     claims.iter().flat_map(|claim| claim.iter().copied()).collect();

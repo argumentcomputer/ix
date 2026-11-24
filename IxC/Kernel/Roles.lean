@@ -28,7 +28,7 @@ taken from where it lives (`Role.spec_*` below are `rfl`):
 | `block` | the standard axioms' families `Iff` and `Nonempty` (every member: the inductive, its constructor and its recursor) | `stdAxiomOk` (`stdAxiomOkF`), before `propext` or `Classical.choice` is installed: each member is stored as a kernel-checked inductive, constructor or recursor with these parameter, field and binder counts and this type, up to binder data and level-parameter names (`ConstantVal.matchesPin`); the constructors and the recursor's rules are then the kernel's own for that inductive |
 | `anchor` | the literal support (`String`, `String.ofList`, `List`, `List.nil`, `List.cons`, `Char`, `Char.ofNat`), `True`, `True.intro`, `Bool`, `Bool.false`, `Bool.true`, `Bool.rec`, `And`, `And.intro`, `And.rec`, `Lean.reduceBool`, `Lean.reduceNat` | the constant's type, up to binder data and level-parameter names (`listTyOk` …, `ConstantVal.matchesPin`) |
 | `ops` | the certified `Nat` operations | the type (`natOpTyPinned`) and the characterizing equations (`natOpEquations`, `divModCertStmts`), each certified by its evidence in the pre-insertion environment with the operation's self-references replaced by its value |
-| `axiom` | `propext`, `Classical.choice`; `sorryAx`, `Lean.trustCompiler`, `Lean.ofReduceBool`, `Lean.ofReduceNat` (inert) | the axiom's exact type (`ConstantVal.matchesPin`); the inert `sorryAx` is matched at install, installs nothing, and any use of it declines; the checker declines the other inert axioms' declarations as non-standard axioms (below) |
+| `axiom` | `propext`, `Classical.choice`; `sorryAx`, `Lean.trustCompiler`, `Lean.ofReduceBool`, `Lean.ofReduceNat` (inert) | the axiom's exact type (`ConstantVal.matchesPin`); the inert `sorryAx` and compiler-trust axioms (and compiler-trust opaques `Lean.reduceBool`, `Lean.reduceNat`) are matched at install, install nothing, and any use of them declines (below) |
 
 **The standard axioms' families are blocks, never anchors.** Every role that
 occurs in a standard axiom's type, transitively, is a `block` role: an
@@ -69,11 +69,12 @@ over one is certified against the bound constants themselves.
 binding names them and a claim over Lean's `Init` lists no user axiom for
 them. Native evaluation is outside the certified theory: IxVM, as for
 `sorryAx`, refuses every constant that uses one and refuses each as a claim's
-seed, so none enters an environment a claim certifies. This checker declines
-their declarations as non-standard axioms. In
-Lean's `Init`, `Lean.reduceBool` and `Lean.reduceNat` use
-`Lean.trustCompiler`, so neither checker accepts them, nor the two axioms
-whose types mention them.
+seed, so none enters an environment a claim certifies. Under `§7.10`, this
+checker tolerates the five compiler-trust declarations (the three axioms as
+`.axiomDecl` and `Lean.reduceBool` / `Lean.reduceNat` as `.opaqueDecl`) when
+they match their pinned specifications, pass duplicate/closedness/kind-exclusivity
+checks, and installs nothing into the environment; any use of any of the five
+declines (`.notImplemented`).
 
 **`sorryAx` in the fold.** The record at `sorryAx`'s key installs nothing,
 and every use of the key declines (`unknownConstError`,
@@ -141,9 +142,9 @@ inductive Spec (md : Mode) where
   | ops (type : Expr md) (eqs : List (List (Expr md) × Expr md × Expr md))
   /-- An axiom of the given type (`none`: of any type, which no role has since
   version 3). Whether it is installed is the role's: `propext` and
-  `Classical.choice` are, while `sorryAx` is inert: tolerated as a
-  declaration, it installs nothing, and any use declines. The other inert
-  axioms, Lean's compiler-trust axioms, are declined as declarations here. -/
+  `Classical.choice` are, while `sorryAx` and Lean's compiler-trust axioms
+  (`§7.10`) are inert: tolerated as declarations when matching their pins,
+  installing nothing, and any use declines. -/
   | axiom (levels : Nat) (type : Option (Expr md))
   /-- A definition of `levels` universe parameters whose type is `type` up to
   definitional equality, and whose equations hold: an unconditional one by
@@ -1104,11 +1105,12 @@ def Role.usedImplicitly : Role → Bool
 /-- **The inert axiom roles**: `sorryAx` and Lean's compiler-trust axioms
 (`Lean.trustCompiler`, `Lean.ofReduceBool`, `Lean.ofReduceNat`). A binding
 names each, so a stream may declare it, but it installs nothing and no
-accepted constant uses it. This checker tolerates `sorryAx`'s declaration and
-declines the others' (non-standard axioms); IxVM refuses each as a claim's
-seed (`KernelClaim::assert_claimable`) and refuses every use
-(`KernelRoles::axiom_standing`). The
-specification digest commits to this flag (`Ix.SpecDigest.inert`). -/
+accepted constant uses it. This checker tolerates all four inert axioms'
+declarations at their pinned specifications (`§7.10`), installing nothing and
+declining any use; IxVM refuses each as a claim's seed
+(`KernelClaim::assert_claimable`) and refuses every use
+(`KernelRoles::axiom_standing`). The specification digest commits to this
+flag (`Ix.SpecDigest.inert`). -/
 def Role.inert : Role → Bool
   | .sorryAx | .trustCompiler | .ofReduceBool | .ofReduceNat => Bool.true
   | _ => Bool.false
@@ -1368,7 +1370,9 @@ evil : False`) the tolerated declaration. -/
 
 /-- The roles whose constants the fold's step matches against their
 specifications at install. -/
-def installAnchors : List Role := [.boolRec, .and, .andIntro, .andRec, .sorryAx]
+def installAnchors : List Role :=
+  [.boolRec, .and, .andIntro, .andRec, .sorryAx,
+   .trustCompiler, .reduceBool, .reduceNat, .ofReduceBool, .ofReduceNat]
 
 /-- **The pin of an anchor validated at install**: the role's key, its
 specification's level count (positional) and type. Spelled out rather than
@@ -1381,6 +1385,16 @@ def installAnchorPin? : Key md → Option (ConstantVal md)
   | .role .andRec => some { name := .role .andRec, levelParams := [0], type := andRecSpecTy }
   | .role .sorryAx =>
     some { name := .role .sorryAx, levelParams := [0], type := sorryAxSpecTy }
+  | .role .trustCompiler =>
+    some { name := .role .trustCompiler, levelParams := [], type := trustCompilerSpecTy }
+  | .role .reduceBool =>
+    some { name := .role .reduceBool, levelParams := [], type := reduceBoolSpecTy }
+  | .role .reduceNat =>
+    some { name := .role .reduceNat, levelParams := [], type := reduceNatSpecTy }
+  | .role .ofReduceBool =>
+    some { name := .role .ofReduceBool, levelParams := [], type := ofReduceBoolSpecTy }
+  | .role .ofReduceNat =>
+    some { name := .role .ofReduceNat, levelParams := [], type := ofReduceNatSpecTy }
   | _ => none
 
 /-- The pins are the specifications: at a role of `installAnchors` the pin is
@@ -1403,12 +1417,22 @@ def anchorMismatch? (cv : ConstantVal md) : Option (Key md) :=
   | some pin => if cv.matchesPin pin then none else some cv.name
   | none => none
 
-/-- **The first constant a declaration declares whose anchor does not
-match**, if any (`anchorMismatch?`). -/
+/-- **The first constant a declaration declares whose anchor or compiler-trust
+declaration kind does not match**, if any (`anchorMismatch?`). Compiler-trust
+axioms (`§7.10`) are only tolerated as `.axiomDecl`, compiler-trust opaques
+only as `.opaqueDecl`, and none of the five may be declared via `.defnDecl`,
+`.thmDecl`, `.quotDecl`, or `.indDecl`. -/
 def Declaration.anchorMismatch? : Declaration md → Option (Key md)
-  | .axiomDecl cv | .defnDecl cv _ _ | .thmDecl cv _ | .opaqueDecl cv _ | .quotDecl _ cv =>
-    Ix.Kernel.anchorMismatch? cv
-  | .indDecl block _ => block.findSome? (Ix.Kernel.anchorMismatch? ·.toConstantVal)
+  | .axiomDecl cv =>
+    if cv.name.isCompilerTrustOpaque then some cv.name else Ix.Kernel.anchorMismatch? cv
+  | .opaqueDecl cv _ =>
+    if cv.name.isCompilerTrustAxiom then some cv.name else Ix.Kernel.anchorMismatch? cv
+  | .defnDecl cv _ _ | .thmDecl cv _ | .quotDecl _ cv =>
+    if cv.name.isCompilerTrust then some cv.name else Ix.Kernel.anchorMismatch? cv
+  | .indDecl block _ =>
+    block.findSome? fun ci =>
+      let cv := ci.toConstantVal
+      if cv.name.isCompilerTrust then some cv.name else Ix.Kernel.anchorMismatch? cv
   | .basisDecl _ => none
 
 /-! ## Custom user axiom eligibility and extraction -/
@@ -1450,6 +1474,20 @@ theorem Key.isCustomAxiomEligible_ne_sorryAx {k : Key md}
     (h : k.isCustomAxiomEligible = true) :
     k ≠ sorryAxName := by
   intro heq; subst heq; exact nomatch h
+
+theorem Key.isCustomAxiomEligible_not_compilerTrustAxiom {k : Key md}
+    (h : k.isCustomAxiomEligible = true) :
+    k.isCompilerTrustAxiom = false := by
+  cases k with
+  | id _ => rfl
+  | role _ | aux _ _ => exact nomatch h
+
+theorem Key.isCustomAxiomEligible_not_compilerTrustOpaque {k : Key md}
+    (h : k.isCustomAxiomEligible = true) :
+    k.isCompilerTrustOpaque = false := by
+  cases k with
+  | id _ => rfl
+  | role _ | aux _ _ => exact nomatch h
 
 /-- Extract a custom user axiom from a declaration: `some cv` when the
 declaration is `.axiomDecl cv` (distinct from `.opaqueDecl cv value`) and

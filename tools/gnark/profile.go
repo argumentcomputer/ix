@@ -2,14 +2,17 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"strings"
 
 	"github.com/consensys/gnark/frontend"
+	"github.com/zeebo/blake3"
 )
 
 type pointJSON struct{ X, Y string }
@@ -53,6 +56,7 @@ type verifyingKey struct {
 	Generator                                           pointJSON
 	OuterKeys, DeferredKeys                             []string
 	Program                                             scalarProgram
+	ProgramDigest                                       string
 	AccumulatorCount                                    int
 	Claims                                              [][]claimSlot
 	Publics                                             []publicSource
@@ -143,6 +147,123 @@ func g2Keys(encoded []string) ([2]nativeG2, error) {
 		}
 	}
 	return result, nil
+}
+
+const outerIRDomain = "ix/outer-ir/v1"
+
+func appendU32LE(dst []byte, v int) ([]byte, error) {
+	if v < 0 || uint64(v) > math.MaxUint32 {
+		return nil, fmt.Errorf("scalar program integer out of u32 range: %d", v)
+	}
+	return binary.LittleEndian.AppendUint32(dst, uint32(v)), nil
+}
+
+func appendU32LESlice(dst []byte, values []int) ([]byte, error) {
+	var err error
+	if dst, err = appendU32LE(dst, len(values)); err != nil {
+		return nil, err
+	}
+	for _, v := range values {
+		if dst, err = appendU32LE(dst, v); err != nil {
+			return nil, err
+		}
+	}
+	return dst, nil
+}
+
+func (p *scalarProgram) encode() ([]byte, error) {
+	return p.encodeFor(scalarModulus())
+}
+
+func (p *scalarProgram) encodeFor(modulus *big.Int) ([]byte, error) {
+	out := make([]byte, 0, len(outerIRDomain)+16+len(p.Nodes)*9+(len(p.Assertions)+len(p.Coefficients)+len(p.Witnesses))*4)
+	out = append(out, outerIRDomain...)
+	var err error
+	if out, err = appendU32LE(out, len(p.Nodes)); err != nil {
+		return nil, err
+	}
+	for _, n := range p.Nodes {
+		switch n.Op {
+		case "constant":
+			v, err := canonical(n.Value, modulus)
+			if err != nil {
+				return nil, err
+			}
+			var scalar [32]byte
+			v.FillBytes(scalar[:])
+			out = append(out, 0)
+			out = append(out, scalar[:]...)
+		case "input":
+			var kind byte
+			switch n.Kind {
+			case "challenge":
+				kind = 0
+			case "value":
+				kind = 1
+			case "public":
+				kind = 2
+			default:
+				return nil, fmt.Errorf("unknown scalar input kind %q", n.Kind)
+			}
+			out = append(out, 1, kind)
+			if out, err = appendU32LE(out, n.Index); err != nil {
+				return nil, err
+			}
+		case "add":
+			out = append(out, 2)
+			if out, err = appendU32LE(out, n.A); err != nil {
+				return nil, err
+			}
+			if out, err = appendU32LE(out, n.B); err != nil {
+				return nil, err
+			}
+		case "sub":
+			out = append(out, 3)
+			if out, err = appendU32LE(out, n.A); err != nil {
+				return nil, err
+			}
+			if out, err = appendU32LE(out, n.B); err != nil {
+				return nil, err
+			}
+		case "mul":
+			out = append(out, 4)
+			if out, err = appendU32LE(out, n.A); err != nil {
+				return nil, err
+			}
+			if out, err = appendU32LE(out, n.B); err != nil {
+				return nil, err
+			}
+		case "inverse":
+			out = append(out, 5)
+			if out, err = appendU32LE(out, n.A); err != nil {
+				return nil, err
+			}
+		default:
+			return nil, fmt.Errorf("unknown scalar instruction %q", n.Op)
+		}
+	}
+	if out, err = appendU32LESlice(out, p.Assertions); err != nil {
+		return nil, err
+	}
+	if out, err = appendU32LESlice(out, p.Coefficients); err != nil {
+		return nil, err
+	}
+	if out, err = appendU32LESlice(out, p.Witnesses); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (p *scalarProgram) digest() ([32]byte, error) {
+	return p.digestFor(scalarModulus())
+}
+
+func (p *scalarProgram) digestFor(modulus *big.Int) ([32]byte, error) {
+	encoded, err := p.encodeFor(modulus)
+	if err != nil {
+		return [32]byte{}, err
+	}
+	return blake3.Sum256(encoded), nil
 }
 
 func (p *verifyingKey) validate() error {
@@ -270,6 +391,17 @@ func (p *verifyingKey) validate() error {
 				return fmt.Errorf("invalid scalar output")
 			}
 		}
+	}
+	want, err := unhex(p.ProgramDigest, 32)
+	if err != nil {
+		return fmt.Errorf("invalid program digest: %w", err)
+	}
+	got, err := p.Program.digest()
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(got[:], want) {
+		return fmt.Errorf("scalar program digest mismatch: got 0x%x, want 0x%x", got, want)
 	}
 	return nil
 }

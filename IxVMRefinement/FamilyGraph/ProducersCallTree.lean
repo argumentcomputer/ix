@@ -6,6 +6,7 @@ import IxVMRefinement.Obs.KernelModeled0
 import IxVMRefinement.Obs.KernelModeled1
 import IxVMRefinement.Obs.KernelModeled2
 import IxVMRefinement.Obs.KernelModeled3
+import IxVMRefinement.Obs.KernelRoles
 import IxVMRefinement.Obs.Ingress0
 
 /-! # Call-tree descent for `check_family` and `check_witness`
@@ -1284,7 +1285,8 @@ private theorem check_witnesses_descend_aux (n : Nat) :
     | .n0 (hc41 := hc) .. =>
       rw [hc] at hcl; simp at hcl
     | .other (x_x := x_x) (x_rest := x_rest) (cs194 := cs194) (ev59 := ev59) (ev94 := ev94)
-        (ev_updedcyj := evOrd) (ev167 := ev167) (ev129 := ev129) (ev196 := ev196)
+        (ev_updedcyj := evOrd) (ev_zctcgyek := evAx) (ev_gspkxwao := evLkp)
+        (ev167 := ev167) (ev129 := ev129) (ev196 := ev196)
         (he254 := he254) (hm264 := hm264) (he291 := he291) (hc292 := hc) .. =>
       have mkSub : ∀ {fn' args' h₁ r₁ h₁' cs'},
           ObsFn Obs.W fn' args' h₁ r₁ h₁' cs' →
@@ -1310,6 +1312,32 @@ private theorem check_witnesses_descend_aux (n : Nat) :
               rcases List.mem_cons.mp ht with rfl | ht'
               · exact peel_noKey hpl' _ hneWS key hof
               · simp at ht'⟩
+      have mkSubSym : ∀ {fn' nm : String} {tys : List Ty} {args' h₁ r₁ h₁' cs'},
+          ObsFn Obs.W fn' args' h₁ r₁ h₁' cs' →
+          (Instance.mk nm tys).symbol = fn' →
+          tys ≠ [] →
+          nm ≠ "KernelModeled::check_witnesses" →
+          fn' ≠ "KernelModeled::check_witnesses" →
+          cl ∈ cs' → cs'.length < cs_ws.length → (∀ x ∈ cs', x ∈ cs_ws) →
+          (rc = rc₀ ∧ xb = xb₀ ∧
+            ∃ (v_w : SourceValue F) (m_w : Heap F) (cs_w : List (Call F))
+              (elems : List (SourceValue F)),
+              ObsFn Obs.W "KernelModeled::check_witness" [rc, xb, xx, kind, s] h_w v_w m_w cs_w ∧
+              (∀ cl ∈ cs_w, cl ∈ cs_ws) ∧
+              Heap.Extends h_ws h_w ∧ Heap.Extends m_w h_ws' ∧
+              List.RepList Obs.Names.«Lists::Node<&[Field; 32]>» (fun _ a b => a = b) h_ws' elems xlist ∧
+              xx ∈ elems) ∨
+          StrictSubCall ts cl cs_ws :=
+        fun ev' hsym' htys' hneNm hneWS hcl' hlt' hsub' =>
+          Or.inr ⟨_, _, _, _, _, _, ev', hcl', hlt', hsub',
+            fun t ht => by
+              rcases List.mem_cons.mp ht with rfl | ht'
+              · exact hneWS
+              · simp at ht',
+            fun key hof t ht => by
+              rcases List.mem_cons.mp ht with rfl | ht'
+              · exact peel_noKey_sym hsym' htys' hneNm key hof
+              · simp at ht'⟩
       refine peel_eq hc hcl fun hcl hle hsub => ?_
       refine peel ev59 hcl hle hsub (by simp [cl])
         (fun h1 h2 h3 => mkSub ev59 (by decide) (by decide) h1 h2 h3)
@@ -1319,6 +1347,13 @@ private theorem check_witnesses_descend_aux (n : Nat) :
         fun hcl hle hsub => ?_
       refine peel evOrd hcl hle hsub (by simp [cl])
         (fun h1 h2 h3 => mkSub evOrd (by decide) (by decide) h1 h2 h3)
+        fun hcl hle hsub => ?_
+      refine peel evAx hcl hle hsub (by simp [cl])
+        (fun h1 h2 h3 => mkSub evAx (by decide) (by decide) h1 h2 h3)
+        fun hcl hle hsub => ?_
+      refine peel evLkp hcl hle hsub (by simp [cl, Obs.Names.«RBTreeMap::rbtree_map_lookup_or_default<Field>»])
+        (fun h1 h2 h3 => mkSubSym evLkp Obs.Names.«RBTreeMap::rbtree_map_lookup_or_default<Field>».symbol
+          (by decide) (by decide) (by simp [Obs.Names.«RBTreeMap::rbtree_map_lookup_or_default<Field>»]) h1 h2 h3)
         fun hcl hle hsub => ?_
       refine peel ev167 hcl hle hsub (by simp [cl])
         (fun h1 h2 h3 => mkSub ev167 (by decide) (by decide) h1 h2 h3)
@@ -1337,7 +1372,8 @@ private theorem check_witnesses_descend_aux (n : Nat) :
         have hrepCons := List.allocCons_rep _ (fun _ _ _ _ _ h => h) (x := xx) rfl hrepRest
         have hext1 : Heap.Extends h_ws _ :=
           ev59.heap_extends.trans (ev94.heap_extends.trans
-            (evOrd.heap_extends.trans ev167.heap_extends))
+            (evOrd.heap_extends.trans (evAx.heap_extends.trans
+              (evLkp.heap_extends.trans ev167.heap_extends))))
         exact Or.inl ⟨rfl, rfl, _, _, _, xx :: elems, ev129,
           fun x hx => hsub x (List.mem_cons_of_mem _ (List.mem_append_left _ hx)),
           hext1, ev196.heap_extends.trans (Heap.Extends.snoc _ _), hrepCons, List.mem_cons_self⟩
@@ -1355,7 +1391,8 @@ private theorem check_witnesses_descend_aux (n : Nat) :
               have hrepCons := List.allocCons_rep _ (fun _ _ _ _ _ h => h) (x := x_x) rfl hrepRest
               have hextPre : Heap.Extends h_ws _ :=
                 ev59.heap_extends.trans (ev94.heap_extends.trans
-                  (evOrd.heap_extends.trans (ev167.heap_extends.trans ev129.heap_extends)))
+                  (evOrd.heap_extends.trans (evAx.heap_extends.trans
+                    (evLkp.heap_extends.trans (ev167.heap_extends.trans ev129.heap_extends)))))
               exact Or.inl ⟨rfl, rfl, vw, mw, csw, x_x :: elems, evw,
                 fun x hx => hsub x (List.mem_cons_of_mem _ (List.mem_append_right _ (List.mem_cons_of_mem _ (hsubw x hx)))),
                 hextPre.trans hext1, hext2.trans (Heap.Extends.snoc _ _),
@@ -1534,7 +1571,7 @@ private theorem obsFn_check_witness_enclosing_aux (n : Nat) :
                 peel_last ev' hcl' hle' hsub' (fun e => hneW e.symm)
                   (fun h1 h2 h3 => useSub ev' (peel_noKey hpl' _ hneWS) hneWS h1 h2 h3)
             match Obs.«KernelModeled::check_family».obs evCF with
-            | .run (m105 := m105) (m297 := m297) (cs107 := cs107) (cs401 := cs401) (cs433 := cs433) (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
+            | .run (m_vcemfqfp := m105) (m297 := m297) (cs_dmmrylgp := cs107) (cs401 := cs401) (cs433 := cs433) (ev_wsivmatu := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
                 (ev_yqjbwijz := evOrd) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309)
                 (ev344 := ev344) (ev403 := ev403) (ev435 := ev435) (ev465 := ev465)
                 (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)
@@ -1548,90 +1585,81 @@ private theorem obsFn_check_witness_enclosing_aux (n : Nat) :
                 (ev_rqpeovbn := evIz1) (ev_xrhmaojz := evIz2) (ev_whimdwjd := evVal)
                 (ev1305 := ev1305) (ev1343 := ev1343) (ev_apltvwnk := evProjs) (hc1474 := hc) .. =>
               refine peel_eq hc hcl fun hcl hle hsub => ?_
-              refine peel_append hcl hle hsub (fun hcs107 hle107 hsub107 => ?_)
+              refine step sg112 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+              refine step ev126 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+              refine step ev148 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+              refine step ev194 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+              refine step evOrd (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+              refine step ev231 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+              refine step ev266 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+              refine step ev309 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+              -- Now at `ev344 : check_witnesses`!
+              refine peel ev344 hcl hle hsub (by simp [cl]) (fun hcs342 hlt342 hsub342 => ?_)
                 fun hcl hle hsub => ?_
-              · -- Inside `sg112` (`KernelRoles::role_ctx_axioms`)
-                cases sg112 with
-                | Nil _ _ ev15 _ _ hc34 =>
-                  rw [hc34] at hcs107 hle107 hsub107
-                  exact stepLast ev15 (by decide) (by decide) (by decide) hcs107 hle107 hsub107
-                | Node _ _ _ _ _ _ _ ev15 _ _ _ hc102 =>
-                  rw [hc102] at hcs107 hle107 hsub107
-                  exact stepLast ev15 (by decide) (by decide) (by decide) hcs107 hle107 hsub107
-              · refine step ev126 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                refine step ev148 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                refine step ev194 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                refine step evOrd (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                refine step ev231 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                refine step ev266 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                refine step ev309 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                -- Now at `ev344 : check_witnesses`!
-                refine peel ev344 hcl hle hsub (by simp [cl]) (fun hcs342 hlt342 hsub342 => ?_)
-                  fun hcl hle hsub => ?_
-                · -- Inside `ev344`: either direct hit (DONE!) or nested subcall (apply strong IH).
-                  rcases check_witnesses_descend_aux _ (Nat.le_refl _) ev344 hcs342 with
-                    ⟨hrc, hxb, vw, mw, csw, elems, evw, hsubw, hext1, hext2, hrepOut, hmemOut⟩ | hsc
-                  · subst hrc hxb
-                    have hext_rp_ws : Heap.Extends m105 m297 :=
-                      ev126.heap_extends.trans <| ev148.heap_extends.trans <|
-                        ev194.heap_extends.trans <| evOrd.heap_extends.trans <|
-                        ev231.heap_extends.trans <| ev266.heap_extends.trans <| ev309.heap_extends
-                    have hsub_asb : ∀ x ∈ cs401, x ∈ calls := fun x hx =>
-                      hsub x (List.mem_cons_of_mem _ (List.mem_append_right _
-                        (List.mem_cons_of_mem _ (List.mem_append_left _ hx))))
-                    have hsub_cr : ∀ x ∈ cs433, x ∈ calls := fun x hx =>
-                      hsub x (List.mem_cons_of_mem _ (List.mem_append_right _
-                        (List.mem_cons_of_mem _ (List.mem_append_right _
-                          (List.mem_cons_of_mem _ (List.mem_append_left _ hx))))))
-                    exact .mk (ev_rp := ev126)
-                      (ev_pre_ws := ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, ev148,
-                        ev194.heap_extends.trans evOrd.heap_extends, ev231, ev266, ev309⟩)
-                      (ev_ws := ev344) (ev_asb := ev403)
-                      (ev_cr := ev435) (ev_w := evw) (ext_rp_ws := hext_rp_ws)
-                      (ext_ws_w := hext1) (ext_w_ws' := hext2)
-                      (sub_ws := hsub342) (sub_asb := hsub_asb) (sub_cr := hsub_cr)
-                      (sub_w := hsubw) (elems := elems)
-                      (outsideRep := hrepOut) (memOutside := hmemOut)
-                  · obtain ⟨fn', args', h₁, r₁, h₁', cs', ev', hcl', hlt', hsub', hne', hkey'⟩ := hsc
-                    exact (ih (by omega) (hne' _ List.mem_cons_self)
-                      (fun k hk => hkey' k hk _ List.mem_cons_self) ev' hcl').mono
-                      (fun x hx => hsub342 x (hsub' x hx))
-                · -- Remaining 33 calls of `check_family` after `ev344`
-                  refine step ev403 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step ev435 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step ev465 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step ev513 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine stepSym ev601 Obs.Names.«Lists::length<Ixon::MutConst>».symbol (by simp) (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step ev634 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step ev664 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step ev686 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step ev716 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step ev759 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine stepSym ev817 Obs.Names.«Lists::length<&[Field; 32]>».symbol (by simp) (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step ev796 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step ev852 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step evNoRole (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step evNoTypeRole (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine stepSym ev874 Obs.Names.«Lists::length<&[Field; 32]>».symbol (by simp) (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step ev896 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine stepSym ev960 Obs.Names.«Lists::concat<&[Field; 32]>».symbol (by simp) (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine stepSym ev939 Obs.Names.«Lists::concat<&[Field; 32]>».symbol (by simp) (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine stepSym ev1011 Obs.Names.«Lists::concat<&[Field; 32]>».symbol (by simp) (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine stepSym ev990 Obs.Names.«Lists::concat<&[Field; 32]>».symbol (by simp) (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step evMV1 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine stepSym evCat Obs.Names.«Lists::concat<&[Field; 32]>».symbol (by simp) (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step evMV2 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step evMV3 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step ev1203 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step evFlat (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step ev1246 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine stepSym evLenF Obs.Names.«Lists::length<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>».symbol (by simp) (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step evIz1 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step evIz2 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step evVal (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step ev1305 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  refine step ev1343 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  exact stepLast evProjs (by decide) (by decide) (by decide) hcl hle hsub
+              · -- Inside `ev344`: either direct hit (DONE!) or nested subcall (apply strong IH).
+                rcases check_witnesses_descend_aux _ (Nat.le_refl _) ev344 hcs342 with
+                  ⟨hrc, hxb, vw, mw, csw, elems, evw, hsubw, hext1, hext2, hrepOut, hmemOut⟩ | hsc
+                · subst hrc hxb
+                  have hext_rp_ws : Heap.Extends m105 m297 :=
+                    ev126.heap_extends.trans <| ev148.heap_extends.trans <|
+                      ev194.heap_extends.trans <| evOrd.heap_extends.trans <|
+                      ev231.heap_extends.trans <| ev266.heap_extends.trans <| ev309.heap_extends
+                  have hsub_asb : ∀ x ∈ cs401, x ∈ calls := fun x hx =>
+                    hsub x (List.mem_cons_of_mem _ (List.mem_append_right _
+                      (List.mem_cons_of_mem _ (List.mem_append_left _ hx))))
+                  have hsub_cr : ∀ x ∈ cs433, x ∈ calls := fun x hx =>
+                    hsub x (List.mem_cons_of_mem _ (List.mem_append_right _
+                      (List.mem_cons_of_mem _ (List.mem_append_right _
+                        (List.mem_cons_of_mem _ (List.mem_append_left _ hx))))))
+                  exact .mk (ev_rp := ev126)
+                    (ev_pre_ws := ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, ev148,
+                      ev194.heap_extends.trans evOrd.heap_extends, ev231, ev266, ev309⟩)
+                    (ev_ws := ev344) (ev_asb := ev403)
+                    (ev_cr := ev435) (ev_w := evw) (ext_rp_ws := hext_rp_ws)
+                    (ext_ws_w := hext1) (ext_w_ws' := hext2)
+                    (sub_ws := hsub342) (sub_asb := hsub_asb) (sub_cr := hsub_cr)
+                    (sub_w := hsubw) (elems := elems)
+                    (outsideRep := hrepOut) (memOutside := hmemOut)
+                · obtain ⟨fn', args', h₁, r₁, h₁', cs', ev', hcl', hlt', hsub', hne', hkey'⟩ := hsc
+                  exact (ih (by omega) (hne' _ List.mem_cons_self)
+                    (fun k hk => hkey' k hk _ List.mem_cons_self) ev' hcl').mono
+                    (fun x hx => hsub342 x (hsub' x hx))
+              · -- Remaining 33 calls of `check_family` after `ev344`
+                refine step ev403 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step ev435 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step ev465 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step ev513 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine stepSym ev601 Obs.Names.«Lists::length<Ixon::MutConst>».symbol (by simp) (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step ev634 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step ev664 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step ev686 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step ev716 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step ev759 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine stepSym ev817 Obs.Names.«Lists::length<&[Field; 32]>».symbol (by simp) (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step ev796 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step ev852 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step evNoRole (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step evNoTypeRole (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine stepSym ev874 Obs.Names.«Lists::length<&[Field; 32]>».symbol (by simp) (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step ev896 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine stepSym ev960 Obs.Names.«Lists::concat<&[Field; 32]>».symbol (by simp) (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine stepSym ev939 Obs.Names.«Lists::concat<&[Field; 32]>».symbol (by simp) (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine stepSym ev1011 Obs.Names.«Lists::concat<&[Field; 32]>».symbol (by simp) (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine stepSym ev990 Obs.Names.«Lists::concat<&[Field; 32]>».symbol (by simp) (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step evMV1 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine stepSym evCat Obs.Names.«Lists::concat<&[Field; 32]>».symbol (by simp) (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step evMV2 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step evMV3 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step ev1203 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step evFlat (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step ev1246 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine stepSym evLenF Obs.Names.«Lists::length<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>».symbol (by simp) (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step evIz1 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step evIz2 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step evVal (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step ev1305 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                refine step ev1343 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                exact stepLast evProjs (by decide) (by decide) (by decide) hcl hle hsub
         · -- `f` is `KernelModeled::check_witnesses`: ruled out by `hneKey`.
           exact (hneKey key hof (hfName.symm.trans hcws)).elim
 
@@ -2008,33 +2036,20 @@ private theorem find?_append_none_left {α : Type _} {p : α → Bool} {l₁ l�
 
 /-- **The first `IxonDeserialize::get_address` call in a `KernelModeled::check_family` call list
 is the call on its own payload stream `v113` at `m114`.** -/
-theorem check_family_first_get_address {x_rc x_block x_rec_block v104 v113 : SourceValue F}
+theorem check_family_first_get_address {x_rc x_block v104 v113 : SourceValue F}
     {h m105 m114 : Heap F} {calls cs107 cs124 rest : List (Call F)}
-    (sg112 : Obs.«KernelModeled::check_family».Seg1 x_rc x_block x_rec_block h v104 m105 cs107)
+    (ev_wo : ObsFn Obs.W "KernelRoles::role_ctx_without_axioms" [x_rc] h v104 m105 cs107)
     (ev126 : ObsFn Obs.W "KernelModeled::read_payload" [x_block] m105 v113 m114 cs124)
-    (hc : calls = cs107 ++ ((⟨"KernelModeled::read_payload", [x_block], m105⟩ : Call F) ::
-      (cs124 ++ ((⟨"IxonDeserialize::get_address", [v113], m114⟩ : Call F) :: rest)))) :
+    (hc : calls = (⟨"KernelRoles::role_ctx_without_axioms", [x_rc], h⟩ : Call F) ::
+      (cs107 ++ ((⟨"KernelModeled::read_payload", [x_block], m105⟩ : Call F) ::
+        (cs124 ++ ((⟨"IxonDeserialize::get_address", [v113], m114⟩ : Call F) :: rest))))) :
     calls.find? (fun cl => cl.name == "IxonDeserialize::get_address") =
       some ⟨"IxonDeserialize::get_address", [v113], m114⟩ := by
-  have hno107 : ∀ cl ∈ cs107, (cl.name == "IxonDeserialize::get_address") = false := by
-    have hax : ∀ {r' m' cs'}, ObsFn Obs.W "KernelRoles::role_ctx_axioms" [x_rc] h r' m' cs' →
-        ∀ cl ∈ cs', cl.name ≠ "IxonDeserialize::get_address" := by
-      intro r' m' cs' ev
-      exact obsFn_readPayloadClosed_no_get_address ev (fun key hof => by
-        have hsym := Instance.ofSymbol_symbol ⟨"KernelRoles::role_ctx_axioms", []⟩
-          (fun _ => by decide)
-        change Instance.ofSymbol (Instance.symbol ⟨"KernelRoles::role_ctx_axioms", []⟩) = .ok key at hof
-        rw [hsym] at hof
-        injection hof with hkey
-        subst hkey
-        decide)
-    match sg112 with
-    | .Nil (ev15 := ev15) (hc34 := hc34) .. | .Node (ev15 := ev15) (hc102 := hc34) .. =>
-      intro cl hcl
-      rw [hc34] at hcl
-      rcases List.mem_cons.mp hcl with rfl | hcl'
-      · dsimp only; decide
-      · exact beq_false_of_ne (hax ev15 cl hcl')
+  have hcs107 : cs107 = [] := by
+    match Obs.«KernelRoles::role_ctx_without_axioms».obs ev_wo with
+    | .Mk_Nil (hc_oqpaamoz := hcs) .. | .Mk_Node (hc_epdlgeqo := hcs) ..
+    | .Assumed_Nil (hc_fqerfvzf := hcs) .. | .Assumed_Node (hc_lacpekwr := hcs) ..
+    | .MkEval (hc_mtegehcw := hcs) .. | .AssumedEval (hc_fdveciok := hcs) .. => exact hcs
   have hno124 : ∀ cl ∈ cs124, (cl.name == "IxonDeserialize::get_address") = false := by
     intro cl hcl
     refine beq_false_of_ne (obsFn_readPayloadClosed_no_get_address ev126 (fun key hof => ?_) cl hcl)
@@ -2044,10 +2059,14 @@ theorem check_family_first_get_address {x_rc x_block x_rec_block v104 v113 : Sou
     injection hof with hkey
     subst hkey
     decide
-  rw [hc, find?_append_none_left hno107]
+  rw [hc, hcs107, List.nil_append]
   simp only [List.find?_cons]
+  have hwo : (("KernelRoles::role_ctx_without_axioms" : String) == "IxonDeserialize::get_address") = false := by
+    decide
   have hrp : (("KernelModeled::read_payload" : String) == "IxonDeserialize::get_address") = false := by
     decide
+  rw [hwo]
+  dsimp only
   rw [hrp]
   dsimp only
   rw [find?_append_none_left hno124]

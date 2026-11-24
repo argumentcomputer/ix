@@ -22,6 +22,7 @@ use super::{
   storage::Manifest,
   verifying_keys, wrap,
 };
+use crate::kzg::curve::{Bls12381, Bn254, Curve, KzgCurve};
 use sha2::{Digest, Sha256};
 use std::{fs, io::Read, path::Path};
 
@@ -66,56 +67,68 @@ fn report(stage: &str, prepared: Prepared) {
   }
 }
 
-/// Check the Ignition SRS file `config` loads against its pin. A file named
-/// by `IX_KZG_SRS` replaces the release file and is only checked against
-/// the released anchors when it is loaded.
+/// Check the ceremony SRS file `config` loads against its pin.
 fn check_srs(config: &SetupConfig) -> Result<()> {
-  let SetupConfig::Ignition { srs, .. } = config else {
-    eprintln!("parameters: development setup, no Ignition SRS needed");
-    return Ok(());
-  };
-  if std::env::var_os(IGNITION_SRS_VAR).is_some() {
-    eprintln!(
-      "parameters: {} from {IGNITION_SRS_VAR}, not pin-checked",
-      srs.display()
-    );
-    return Ok(());
+  match config {
+    SetupConfig::Ignition { srs } => {
+      if std::env::var_os(IGNITION_SRS_VAR).is_some() {
+        eprintln!(
+          "parameters: {} from {IGNITION_SRS_VAR}, not pin-checked",
+          srs.display()
+        );
+        return Ok(());
+      }
+      if sha256_file(srs)? != verifying_keys::decode(IGNITION_SRS_SHA256)? {
+        return Err(
+          format!(
+            "{} differs from the released Ignition SRS; delete it and rerun",
+            srs.display()
+          )
+          .into(),
+        );
+      }
+      eprintln!("parameters: {} verified", srs.display());
+      Ok(())
+    },
+    SetupConfig::Filecoin { cache, manifest } => {
+      let _ =
+        crate::kzg::srs::filecoin::load_filecoin_cache(cache, *manifest, 2)?;
+      eprintln!(
+        "parameters: Filecoin challenge_19 cache {} verified (manifest {})",
+        cache.display(),
+        blake3::Hash::from_bytes(*manifest).to_hex()
+      );
+      Ok(())
+    },
+    SetupConfig::Development { .. } => {
+      eprintln!("parameters: development setup, no ceremony SRS needed");
+      Ok(())
+    },
   }
-  if sha256_file(srs)? != verifying_keys::decode(IGNITION_SRS_SHA256)? {
-    return Err(
-      format!(
-        "{} differs from the released Ignition SRS; delete it and rerun",
-        srs.display()
-      )
-      .into(),
-    );
-  }
-  eprintln!("parameters: {} verified", srs.display());
-  Ok(())
 }
 
 /// The first stage's manifest for its fixed setup `parts`, with the claims
 /// of a zero statement, as `first::setup` derives it.
-fn first_manifest(parts: &[FixedSetup]) -> Manifest {
+fn first_manifest<C: KzgCurve>(parts: &[FixedSetup<C>]) -> Manifest<C> {
   Manifest {
     widths: parts.iter().map(|(circuit, _)| circuit.main_width).collect(),
     heights: parts
       .iter()
       .map(|(circuit, _)| circuit.preprocessed_height)
       .collect(),
-    claims: first_claims(parts.len(), &[0; 18]),
+    claims: first_claims::<C>(parts.len(), &[0; 18]),
   }
 }
 
 /// The first stage's manifest and fixed setup, from its cache entry or
 /// derived and published, and the entry's status.
-fn prepare_first(
+fn prepare_first_for<C: KzgCurve>(
   root_vk: &[u8],
   config: &SetupConfig,
   cache_root: &Path,
-) -> Result<(Option<(Manifest, Vec<FixedSetup>)>, Prepared, FixedCache)> {
+) -> Result<(Option<(Manifest<C>, Vec<FixedSetup<C>>)>, Prepared, FixedCache)> {
   let plan_id = verifying_keys::decode(verifying_keys::FIRST_PLAN_ID)?;
-  let cache = first::fixed_cache(
+  let cache = first::fixed_cache::<C>(
     &plan_id,
     verifying_keys::FIRST_LOG_HEIGHT,
     config,
@@ -129,7 +142,7 @@ fn prepare_first(
     let layout = verifying_keys::release_root_layout(root_vk)?;
     root::verifier(&key, &FixedRoot::from_bytes(layout)?)?
   };
-  let (manifest, parts, prepared) = first::setup(
+  let (manifest, parts, prepared) = first::setup::<C>(
     &fri,
     verifying_keys::FIRST_LOG_HEIGHT,
     config,
@@ -149,37 +162,48 @@ fn prepare_first(
 }
 
 /// Publish the fixed preprocessing of the bundled version's stages for the
-/// aggregation backend `root_vk` under `config`, and check the Ignition SRS.
+/// aggregation backend `root_vk` under `config`, and check the ceremony SRS.
 pub fn prepare(root_vk: &[u8], config: &CompressConfig) -> Result<()> {
+  match config.curve {
+    Curve::Bn254 => prepare_for::<Bn254>(root_vk, config),
+    Curve::Bls12381 => prepare_for::<Bls12381>(root_vk, config),
+  }
+}
+
+fn prepare_for<C: KzgCurve>(
+  root_vk: &[u8],
+  config: &CompressConfig,
+) -> Result<()> {
   let setup = &config.setup;
   let cache_root = config.fixed_cache.as_path();
   check_srs(setup)?;
   verifying_keys::release_root_layout(root_vk)?;
   fs::create_dir_all(cache_root)?;
-  eprintln!("fixed cache: {}", cache_root.display());
+  eprintln!("fixed cache ({}): {}", C::NAME, cache_root.display());
   let (mut first_setup, prepared, first_cache) =
-    prepare_first(root_vk, setup, cache_root)?;
+    prepare_first_for::<C>(root_vk, setup, cache_root)?;
   report("first KZG", prepared);
-  let mut first_setup = || -> Result<(Manifest, Vec<FixedSetup>)> {
+  let mut first_setup = || -> Result<(Manifest<C>, Vec<FixedSetup<C>>)> {
     if let Some(derived) = first_setup.take() {
       return Ok(derived);
     }
-    let parts = first_cache.setup_parts()?;
-    Ok((first_manifest(&parts), parts))
+    let parts = first_cache.setup_parts::<C>()?;
+    Ok((first_manifest::<C>(&parts), parts))
   };
 
-  if setup.class() == SetupClass::Ignition {
+  if C::CURVE == Curve::Bn254 && setup.class() == SetupClass::Ignition {
     let recursive =
-      wrap::VerifyingKey::from_bytes(verifying_keys::RECURSIVE_VK)?;
+      wrap::VerifyingKey::<Bn254>::from_bytes(verifying_keys::RECURSIVE_VK)?;
     let height = recursive.system()?.circuits[0].preprocessed_height;
     let identity =
       verifying_keys::decode(verifying_keys::RECURSIVE_FRONTEND_ID)?;
-    let cache = wrap::fixed_cache(&identity, height, setup, cache_root)?;
+    let cache =
+      wrap::fixed_cache::<Bn254>(&identity, height, setup, cache_root)?;
     let prepared = match cache.check()? {
       Some(bytes) => Prepared::Present { bytes },
       None => {
         let (manifest, parts) = first_setup()?;
-        let frontend = wrap::frontend(&manifest, parts, setup)?;
+        let frontend = wrap::frontend::<C>(&manifest, parts, setup)?;
         if frontend.identity() != identity {
           return Err(
             format!(
@@ -199,7 +223,7 @@ pub fn prepare(root_vk: &[u8], config: &CompressConfig) -> Result<()> {
     report("recursive KZG", prepared);
   } else {
     let (manifest, parts) = first_setup()?;
-    let (_, prepared) = wrap::frontend(&manifest, parts, setup)?
+    let (_, prepared) = wrap::frontend::<C>(&manifest, parts, setup)?
       .prepared_key(setup, cache_root)?;
     report("recursive KZG", prepared);
   }
@@ -210,6 +234,11 @@ pub fn prepare(root_vk: &[u8], config: &CompressConfig) -> Result<()> {
 /// recursive key into the PLONK cache, and check the key against its pin.
 #[cfg(feature = "plonk")]
 pub fn prepare_plonk(config: &CompressConfig) -> Result<()> {
+  if config.curve != Curve::Bn254 {
+    return Err(
+      "BLS12-381 has no bundled release recursive key yet; run `ix compress --bls12-381 --plonk` or `derive_release_for::<Bls12381>` to derive and cache BLS12-381 PLONK keys".into(),
+    );
+  }
   let key = super::plonk::derive_verifying_key(
     verifying_keys::RECURSIVE_VK,
     &verifying_keys::STATEMENT_PREFIX,
@@ -264,7 +293,8 @@ mod tests {
     let scratch = crate::test_support::TempDir::new("setup-publish");
     let root = scratch.join("cache");
     let compiled = compiled();
-    let setup = crate::pipeline::setup::SetupSource::development(b"setup", 63)?;
+    let setup =
+      crate::pipeline::setup::SetupSource::<Bn254>::development(b"setup", 63)?;
     let config = setup.config(16, 2, false)?;
     let cache = FixedCache::from_identity(&root, b"setup-fixture");
     assert_eq!(cache.check()?, None);

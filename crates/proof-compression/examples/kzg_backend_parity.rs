@@ -216,6 +216,7 @@ fn verify(proof: &Path, verifier: &Path, trusted: &str) -> Result<()> {
     circuits: key.circuits,
     preprocessed_commit: key.fixed,
     preprocessed_indices: key.indices,
+    vk_digest: [0u8; 32],
   };
   let logs = HEIGHTS.map(|h| u8::try_from(h.ilog2()).expect("fixture height"));
   let codec = FixedProofCodec::new(&system, &logs)?;

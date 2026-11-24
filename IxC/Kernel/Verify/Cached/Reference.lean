@@ -123,6 +123,7 @@ theorem installRun_ref {V : Type w} [SetTheory V] (hμ : μ.verifiedChecks = tru
   | @cons pd ds p p₁ q s s₁ s' hstep rest ih =>
     intro hfe hm hnd hB
     obtain ⟨i, fe, pend⟩ := p
+    have hanc := annotDeclStep_anchor_none hstep
     obtain ⟨fe₁, pend₁, rfl, hstepC⟩ := annotDeclStep_ok hstep
     simp only at hfe hstepC
     obtain ⟨hpush₁, -⟩ :=
@@ -130,7 +131,7 @@ theorem installRun_ref {V : Type w} [SetTheory V] (hμ : μ.verifiedChecks = tru
     have hfe₁ : fe₁ = mkFEnv fe₁.env := hpush₁.canon
     obtain ⟨hchainF, new₁, hpend₁⟩ := installRun_trace μ rest (PushChain.self hfe₁)
     obtain ⟨hm₁, -, F₁, hF₁⟩ :=
-      annotStepC_model hμ hfe hfe₁ hm hstepC hchainF hpend₁ hnd hB
+      annotStepC_model hμ hfe hfe₁ hm hanc hstepC hchainF hpend₁ hnd hB
     obtain ⟨F₂, hF₂⟩ := ih hfe₁ hm₁ hnd hB
     refine ⟨max F₁ F₂, ?_⟩
     rw [List.foldlM_cons, checkDecl_mono (Nat.le_max_left F₁ F₂) hF₁]

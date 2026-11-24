@@ -1,11 +1,13 @@
 //! Native proving backends.
 //!
 //! Without the `cuda` feature the crate needs neither nvcc nor the CUDA
-//! toolkit. With it, the BN254 KZG kernels and, with `plonk`, gnark's PLONK
-//! kernels are linked against one sppark source into `libix_bn254_cuda.so`.
-//! The library carries a private C++ runtime, unwinder and CUDA runtime and
-//! exports only its C entry points, so it can join a process that links a
-//! different C++ runtime (the Lean executable links LLVM's libc++).
+//! toolkit. With it, the BN254 KZG kernels (plus, with `plonk`, gnark's BN254
+//! PLONK kernels) are linked against sppark into `libix_bn254_cuda.so`, and
+//! the BLS12-381 KZG kernels are linked into `libix_bls12_381_cuda.so`.
+//! Each library carries a private C++ runtime, unwinder and CUDA runtime and
+//! exports only its curve-prefixed C entry points, so both curves coexist
+//! cleanly alongside a process that links a different C++ runtime (the Lean
+//! executable links LLVM's libc++).
 //!
 //! `IX_RUNTIME_ARTIFACTS` names every shared library an executable built from
 //! this crate must ship beside itself, as a JSON array of
@@ -34,10 +36,16 @@ const SOURCES: &[&str] = &[
   "cuda/plonk/ix_plonk_bn254.h",
 ];
 
-const LIBRARY: &str = "libix_bn254_cuda.so";
+const BN254_LIBRARY: &str = "libix_bn254_cuda.so";
+const BLS12_381_LIBRARY: &str = "libix_bls12_381_cuda.so";
 
-const EXPORTS: &str = r"{
+const BN254_EXPORTS: &str = r"{
     global: ix_kzg_*; ix_plonk_bn254_*;
+    local: *;
+};";
+
+const BLS12_381_EXPORTS: &str = r"{
+    global: ix_kzg_bls12_381_*;
     local: *;
 };";
 
@@ -78,9 +86,15 @@ fn main() {
       source: multi_stark,
       link: true,
     });
+    let (bn254, bls12_381) = build_kzg_cuda();
     artifacts.push(RuntimeArtifact {
-      source: build_bn254_cuda(),
-      path: LIBRARY.to_owned(),
+      source: bn254,
+      path: BN254_LIBRARY.to_owned(),
+      link: true,
+    });
+    artifacts.push(RuntimeArtifact {
+      source: bls12_381,
+      path: BLS12_381_LIBRARY.to_owned(),
       link: true,
     });
   }
@@ -157,17 +171,30 @@ fn kzg_architectures() -> Vec<String> {
   architectures
 }
 
-/// Builds `libix_bn254_cuda.so` in `OUT_DIR` and links it into this crate.
-fn build_bn254_cuda() -> PathBuf {
+/// Parameters for one curve's CUDA shared library.
+struct CurveCudaSpec<'a> {
+  prefix: &'a str,
+  library: &'a str,
+  link_name: &'a str,
+  map_name: &'a str,
+  exports: &'a str,
+  feature_flag: &'a str,
+  domain_flag: &'a str,
+  include_plonk: bool,
+}
+
+/// Builds `libix_bn254_cuda.so` and `libix_bls12_381_cuda.so` in `OUT_DIR`
+/// and links both into this crate.
+fn build_kzg_cuda() -> (PathBuf, PathBuf) {
   assert_eq!(
     env::var("CARGO_CFG_TARGET_OS").as_deref(),
     Ok("linux"),
-    "the BN254 CUDA backend supports Linux targets only"
+    "the KZG CUDA backend supports Linux targets only"
   );
   assert_eq!(
     env::var("CARGO_CFG_TARGET_ARCH").as_deref(),
     Ok("x86_64"),
-    "the BN254 CUDA backend supports x86_64 targets only"
+    "the KZG CUDA backend supports x86_64 targets only"
   );
   let nvcc = multi_stark_cuda("NVCC");
   let architectures = kzg_architectures();
@@ -180,7 +207,7 @@ fn build_bn254_cuda() -> PathBuf {
       architectures.join(",")
     ),
   )
-  .expect("write BN254 CUDA architecture list");
+  .expect("write KZG CUDA architecture list");
   println!(
     "cargo:rustc-env=IX_KZG_CUDA_COMPILED_ARCHS={}",
     architectures.join(",")
@@ -196,36 +223,11 @@ fn build_bn254_cuda() -> PathBuf {
   for directory in ["ec", "ff", "msm", "ntt", "polynomial", "util"] {
     println!("cargo:rerun-if-changed={}", root.join(directory).display());
   }
-  let mut sources = vec!["cuda/kzg.cu", "cuda/kzg_runtime.cpp"];
-  if env::var_os("CARGO_FEATURE_PLONK").is_some() {
-    sources.push("cuda/plonk/plonk.cu");
-  }
-  let mut objects = Vec::new();
-  for source in sources {
-    let object =
-      out.join(Path::new(source).with_extension("o").file_name().unwrap());
-    let mut command = cuda_compile_command(&nvcc, &architectures);
-    command.args([
-      "-c",
-      "-DFEATURE_BN254",
-      "-D__BLST_PORTABLE__",
-      "-DMAX_LG_DOMAIN_SIZE=28",
-    ]);
-    command.arg(format!("-I{}", root.display()));
-    command.arg(format!("-I{}", root.join("util").display()));
-    command.arg(format!("-I{}", blst.display()));
-    command.arg("-include").arg(&architecture_header);
-    // sppark's MSM sort kernel is an ordinary definition in its header;
-    // kzg.cu supplies the library's only instance.
-    if source != "cuda/kzg.cu" {
-      command.arg("-D__MSM_SORT_DONT_IMPLEMENT__");
-    }
-    run(command.arg(source).arg("-o").arg(&object));
-    objects.push(object);
-  }
-  // The host-side field arithmetic calls blst's portable assembly.
+  // The host-side field arithmetic calls blst's portable assembly. Both curve
+  // libraries link the same hidden objects.
   let compiler = env::var_os("CC").unwrap_or_else(|| "cc".into());
   let blst_root = blst.parent().expect("blst sources live under src/");
+  let mut shared_objects = Vec::new();
   for (source, name) in [
     (blst.join("server.c"), "blst_server.o"),
     (blst_root.join("build/assembly.S"), "blst_assembly.o"),
@@ -240,29 +242,84 @@ fn build_bn254_cuda() -> PathBuf {
         .arg("-o")
         .arg(&object),
     );
-    objects.push(object);
+    shared_objects.push(object);
   }
-  let exports = out.join("ix_bn254_cuda.map");
-  std::fs::write(&exports, EXPORTS).expect("write BN254 CUDA export map");
-  let library = out.join(LIBRARY);
-  run(
-    Command::new(&nvcc)
-      .args([
-        "--shared",
-        "--cudart=static",
-        "--compiler-options=-static-libstdc++,-static-libgcc",
-      ])
-      .arg(format!(
-        "-Xlinker=-z,defs,-soname,{LIBRARY},--version-script,{}",
-        exports.display()
-      ))
-      .arg("-o")
-      .arg(&library)
-      .args(&objects)
-      .args(["-ldl", "-lrt", "-lpthread"]),
-  );
+  let build_one = |spec: &CurveCudaSpec<'_>| -> PathBuf {
+    let mut sources = vec!["cuda/kzg.cu", "cuda/kzg_runtime.cpp"];
+    if spec.include_plonk && env::var_os("CARGO_FEATURE_PLONK").is_some() {
+      sources.push("cuda/plonk/plonk.cu");
+    }
+    let mut objects = Vec::new();
+    for source in sources {
+      let stem = Path::new(source)
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .expect("CUDA source has UTF-8 stem");
+      let object = out.join(format!("{}_{stem}.o", spec.prefix));
+      let mut command = cuda_compile_command(&nvcc, &architectures);
+      command.args([
+        "-c",
+        spec.feature_flag,
+        "-D__BLST_PORTABLE__",
+        spec.domain_flag,
+      ]);
+      command.arg(format!("-I{}", root.display()));
+      command.arg(format!("-I{}", root.join("util").display()));
+      command.arg(format!("-I{}", blst.display()));
+      command.arg("-include").arg(&architecture_header);
+      // sppark's MSM sort kernel is an ordinary definition in its header;
+      // kzg.cu supplies the library's only instance.
+      if source != "cuda/kzg.cu" {
+        command.arg("-D__MSM_SORT_DONT_IMPLEMENT__");
+      }
+      run(command.arg(source).arg("-o").arg(&object));
+      objects.push(object);
+    }
+    objects.extend(shared_objects.iter().cloned());
+    let exports = out.join(spec.map_name);
+    std::fs::write(&exports, spec.exports).expect("write KZG CUDA export map");
+    let library = out.join(spec.library);
+    run(
+      Command::new(&nvcc)
+        .args([
+          "--shared",
+          "--cudart=static",
+          "--compiler-options=-static-libstdc++,-static-libgcc",
+        ])
+        .arg(format!(
+          "-Xlinker=-z,defs,-soname,{},--version-script,{}",
+          spec.library,
+          exports.display()
+        ))
+        .arg("-o")
+        .arg(&library)
+        .args(&objects)
+        .args(["-ldl", "-lrt", "-lpthread"]),
+    );
+    println!("cargo:rustc-link-lib=dylib={}", spec.link_name);
+    library
+  };
   println!("cargo:rustc-link-search=native={}", out.display());
-  println!("cargo:rustc-link-lib=dylib=ix_bn254_cuda");
+  let bn254 = build_one(&CurveCudaSpec {
+    prefix: "bn254",
+    library: BN254_LIBRARY,
+    link_name: "ix_bn254_cuda",
+    map_name: "ix_bn254_cuda.map",
+    exports: BN254_EXPORTS,
+    feature_flag: "-DFEATURE_BN254",
+    domain_flag: "-DMAX_LG_DOMAIN_SIZE=28",
+    include_plonk: true,
+  });
+  let bls12_381 = build_one(&CurveCudaSpec {
+    prefix: "bls12_381",
+    library: BLS12_381_LIBRARY,
+    link_name: "ix_bls12_381_cuda",
+    map_name: "ix_bls12_381_cuda.map",
+    exports: BLS12_381_EXPORTS,
+    feature_flag: "-DFEATURE_BLS12_381",
+    domain_flag: "-DMAX_LG_DOMAIN_SIZE=32",
+    include_plonk: false,
+  });
   println!("cargo:rustc-link-arg=-Wl,-rpath,{}", out.display());
   // Tests query the CUDA runtime directly.
   for directory in env::split_paths(&multi_stark_cuda("LIB_DIRS")) {
@@ -270,7 +327,7 @@ fn build_bn254_cuda() -> PathBuf {
       println!("cargo:rustc-link-search=native={}", directory.display());
     }
   }
-  library
+  (bn254, bls12_381)
 }
 
 fn run(command: &mut Command) {

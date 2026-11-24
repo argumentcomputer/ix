@@ -145,7 +145,7 @@ def CircuitToSource : Prop :=
     {specialized : Aiur.Generic.Specialized source entries}
     (compiled : Aiur.Optimized.GenericArtifact specialized)
     (prepared : Aiur.Optimized.Physical.Prepared compiled.artifact) {cfg : Aiur.Optimized.Depth.Config},
-    Aiur.Optimized.Depth.Certified cfg prepared.system → cfg.bits ≤ 24 →
+    Aiur.Optimized.Physical.Prepared.DepthCertified compiled prepared cfg → cfg.bits ≤ 24 →
     ∀ (plan : Aiur.Optimized.Grouping.Plan (Aiur.Optimized.Depth.system cfg prepared.system) id),
     plan.WellFormedActivation →
     ∀ {name : String}, name ∈ entries →

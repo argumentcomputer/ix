@@ -7,7 +7,7 @@ use multi_stark::{
   p3_field::{PrimeCharacteristicRing, PrimeField64},
   p3_matrix::dense::RowMajorMatrix,
   system::{CircuitInputs, System, SystemWitness},
-  types::{CommitmentParameters, FriParameters, GoldilocksBlake3Config, Val},
+  types::{CommitmentParameters, FriParameters, GoldilocksBlake3V6Config, Val},
 };
 use std::{error::Error, path::Path};
 
@@ -41,7 +41,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     lookups: vec![Lookup::pull(one, lookup)],
     ..Default::default()
   }];
-  let (system, pk) = System::new(GoldilocksBlake3Config::new(cp, fp), inputs);
+  let (system, pk) = System::new(GoldilocksBlake3V6Config::new(cp, fp), inputs);
   let args: Vec<_> = args.into_iter().map(Val::from_u64).collect();
   let mut claim = vec![Val::ONE, Val::ZERO];
   claim.extend(&args);

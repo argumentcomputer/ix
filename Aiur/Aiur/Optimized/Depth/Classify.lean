@@ -9,11 +9,21 @@ the components so that callees rank lower, and classifies every call slot.
 `Depth.Certified` re-checks everything soundness needs, so nothing here is
 trusted; a wrong `exact` only makes honest proving fail.
 
-Static exact/gap rule (conservative). An intra-SCC slot on channel `X` is
-`exact` if it is the chip's only intra-SCC slot, or if it is the only slot on
-`X` and every logical call on `X` lies in a control-flow scope exclusive with
-every logical call on every other intra-SCC channel. Otherwise it is `gap`.
-External depth is option E1 for every slot into a recursive chip of another SCC.
+Static exact/gap rule (`N9b`, conservative). An intra-SCC slot on channel `X` is
+`exact` if:
+* it is the chip's only intra-SCC slot; or
+* it is the only slot on `X` and every logical call on `X` lies in a
+  control-flow scope exclusive with every logical call on every other intra-SCC
+  channel; or
+* every logical call on `X` is pairwise exclusive with every other intra-SCC
+  logical call (including other calls on `X`), even when unmerged across
+  multiple physical slots; or
+* per-slot exclusivity: every logical call merged into that specific physical
+  send slot lies in a control-flow scope exclusive with every other intra-SCC
+  logical call in the chip.
+
+Otherwise it is `gap`. External depth is option E1 for every slot into a
+recursive chip of another SCC.
 -/
 
 namespace Aiur.Optimized.Depth
@@ -81,9 +91,12 @@ def components (graph : Array (Array Nat)) : Array Nat := Id.run do
           next := next + 1
   return component
 
-/-- Plan every chip. `calls name` lists a chip's logical calls (physical
-channel, control-flow path), when known. -/
-def plan (source : System F) (calls : String → Option (List (String × Path)))
+/-- Plan every chip, with optional per-physical-send logical-call origins
+(`slotCalls name`, indexed by physical send position, each entry listing the
+`(logicalCallIndex, path)` pairs merged into that physical send). -/
+def planWithSlots (source : System F)
+    (calls : String → Option (List (String × Path)))
+    (slotCalls : String → Option (List (List (Nat × Path))))
     (limbs : List Nat := [16, 8]) : Config := Id.run do
   let graph := callGraph source
   let component := components graph
@@ -102,26 +115,97 @@ def plan (source : System F) (calls : String → Option (List (String × Path)))
       | none => false
     let intraSlots := chip.sends.filter (intra ·.channel)
     let logical := calls chip.name
-    let exactOK (channel : String) : Bool :=
+    let indexed := logical.map List.zipIdx
+    let slotGroups := slotCalls chip.name
+    let exactChannelOK (channel : String) : Bool :=
       intraSlots.length == 1 ||
-        (intraSlots.filter (·.channel == channel)).length == 1 &&
-          match logical with
-          | none => false
-          | some logical =>
-              logical.all fun (x, p) => x != channel ||
-                logical.all fun (y, q) => y == channel || !intra y || Path.exclusive p q
-    let slots := chip.sends.map fun send =>
+        match indexed with
+        | none => false
+        | some indexed =>
+            -- Per-call pairwise exclusivity across all intra-SCC calls
+            -- (covers multiple unmerged mutually-exclusive slots on `channel`).
+            (indexed.all fun ((x, p), idx) => x != channel ||
+              indexed.all fun ((y, q), j) => j == idx || !intra y || Path.exclusive p q) ||
+            -- Single physical slot on `channel` exclusive with all other intra-SCC channels.
+            ((intraSlots.filter (·.channel == channel)).length == 1 &&
+              indexed.all fun ((x, p), _) => x != channel ||
+                indexed.all fun ((y, q), _) => y == channel || !intra y || Path.exclusive p q)
+    let exactSlotOK (slotIdx : Nat) (channel : String) : Bool :=
+      exactChannelOK channel ||
+        match indexed, slotGroups with
+        | some indexed, some groups =>
+            match groups[slotIdx]? with
+            | some myCalls =>
+                !myCalls.isEmpty &&
+                  myCalls.all fun (idx, p) =>
+                    indexed.all fun ((y, q), j) => j == idx || !intra y || Path.exclusive p q
+            | none => false
+        | _, _ => false
+    let slots := chip.sends.zipIdx.map fun (send, slotIdx) =>
       match index[send.channel]? with
       | none => SlotKind.plain
       | some k =>
           if component[k]! == component[i]! then
-            if exactOK send.channel then .exact else .gap
+            if exactSlotOK slotIdx send.channel then .exact else .gap
           else if recursive k then .external else .plain
     plans := plans.push (chip.name, { recursive := recursive i, slots := slots : ChipPlan })
     ranks := ranks.push (chip.name, component[i]!)
   return { limbs, plans := plans.toList, ranks := ranks.toList }
 
+/-- Plan every chip. `calls name` lists a chip's logical calls (physical
+channel, control-flow path), when known. -/
+def plan (source : System F) (calls : String → Option (List (String × Path)))
+    (limbs : List Nat := [16, 8]) : Config :=
+  planWithSlots source calls (fun _ => none) limbs
+
 variable [Field F] [DecidableEq F]
+
+private structure SlotOrigin where
+  channel : String
+  result : WireValue Witness
+  argShapes : List (Ty × Nat)
+  calls : List (Nat × Path)
+
+private def SlotOrigin.compatible (left right : SlotOrigin) : Bool :=
+  left.channel == right.channel && left.result == right.result &&
+    left.argShapes == right.argShapes
+
+private def SlotOrigin.exclusive (left right : SlotOrigin) : Bool :=
+  left.calls.all fun (_, p) => right.calls.all fun (_, q) => Path.exclusive p q
+
+private def insertSlotOrigin (right : SlotOrigin) : List SlotOrigin → List SlotOrigin
+  | [] => [right]
+  | left :: rest =>
+      if left.compatible right && left.exclusive right &&
+          rest.all (fun other => right.exclusive other) then
+        { left with calls := left.calls ++ right.calls } :: rest
+      else
+        left :: insertSlotOrigin right rest
+
+/-- Per-physical-send logical call origins, mirroring `LookupMerging.mergeCalls`
+and fail-closed against `chip.sends` length and physical channels. -/
+def logicalSlotCalls {artifact : Artifact F} (physical : Physical.Prepared artifact)
+    (name : String) : Option (List (List (Nat × Path))) := do
+  let chip ← physical.system.findChip? name
+  let layout ← artifact.layouts.find? (·.chip.name == name)
+  let logicalList := layout.logical.calls.toList
+  let pathOf (scope : ScopeId) : Path := ((layout.logical.scopes[scope]?).map (·.path)).getD []
+  let chipChannels := chip.sends.map (·.channel)
+  if chip.sends.length == logicalList.length then
+    if logicalList.map (fun c => physical.representative c.channel) == chipChannels then
+      return logicalList.zipIdx.map fun (c, idx) => [(idx, pathOf c.scope)]
+    else none
+  else
+    let initial : List SlotOrigin := logicalList.zipIdx.map fun (c, idx) =>
+      { channel := c.channel
+        result := c.result.map layout.layout.column
+        argShapes := c.args.map fun w => (w.type, w.words.length)
+        calls := [(idx, pathOf c.scope)] }
+    let merged := initial.foldl (fun acc s => insertSlotOrigin s acc) []
+    if merged.length == chip.sends.length &&
+        merged.map (fun s => physical.representative s.channel) == chipChannels then
+      return merged.map (·.calls)
+    else none
 
 /-- Logical calls of each physical chip from the optimized layouts, with
 channels renamed to their physical representatives. -/
@@ -134,6 +218,6 @@ def logicalCalls {artifact : Artifact F} (physical : Physical.Prepared artifact)
 
 def planPrepared {artifact : Artifact F} (physical : Physical.Prepared artifact)
     (limbs : List Nat := [16, 8]) : Config :=
-  plan physical.system (logicalCalls physical) limbs
+  planWithSlots physical.system (logicalCalls physical) (logicalSlotCalls physical) limbs
 
 end Aiur.Optimized.Depth

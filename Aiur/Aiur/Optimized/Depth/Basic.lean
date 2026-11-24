@@ -69,6 +69,9 @@ structure Config where
   plans : List (String × ChipPlan) := []
   /-- SCC ranks: callees lower. -/
   ranks : List (String × Nat) := []
+  /-- Circuits of exempt SCCs (`Depth.Structural`): recursive, without a depth word. `certify`
+  ignores it; only `Structural.certify` lets these call each other at equal rank. -/
+  structural : List String := []
   deriving Repr, BEq, Inhabited
 
 def Config.plan (cfg : Config) (name : String) : ChipPlan := (List.lookup name cfg.plans).getD {}
@@ -220,5 +223,27 @@ def Certified (cfg : Config) (source : System F) : Prop := certify cfg source = 
 
 instance (cfg : Config) (source : System F) : Decidable (Certified cfg source) := by
   unfold Certified; infer_instance
+
+theorem certify_iff (cfg : Config) (source : System F) :
+    certify cfg source = true ↔ Certified cfg source :=
+  Iff.rfl
+
+theorem certify_sound {cfg : Config} {source : System F}
+    (checked : certify cfg source = true) : Certified cfg source :=
+  checked
+
+/-- Executable Goldilocks depth certificate: verifies both `Depth.Certified` and
+the `cfg.bits ≤ 24` gap-limb bound required by `Depth.goldilocks_bound`. -/
+def checkGoldilocks (cfg : Config) (source : System F) : Bool :=
+  certify cfg source && decide (cfg.bits ≤ 24)
+
+theorem checkGoldilocks_iff (cfg : Config) (source : System F) :
+    checkGoldilocks cfg source = true ↔ Certified cfg source ∧ cfg.bits ≤ 24 := by
+  simp [checkGoldilocks, Certified]
+
+theorem checkGoldilocks_sound {cfg : Config} {source : System F}
+    (checked : checkGoldilocks cfg source = true) :
+    Certified cfg source ∧ cfg.bits ≤ 24 :=
+  (checkGoldilocks_iff cfg source).mp checked
 
 end Aiur.Optimized.Depth

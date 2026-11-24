@@ -33,23 +33,26 @@ theorem function_sound {program : Program F} (checked : checkDeclarations progra
     {validateInputs : Bool} (compiled : function program config fn validateInputs = .ok chip)
     {rom : WireROM F} {sourceCalls : Aiur.CallRelation F} {assignment : Witness → F}
     (romValid : rom.Valid)
+    (guard : CallGuard program.enums (rom.decode program.enums) sourceCalls)
     (valid : chip.ValidAssignment rom assignment)
     (premises : ∀ message ∈ chip.premises assignment, ∀ args,
       DecodesValues program.enums message.args args →
       (∀ v ∈ args, (rom.decode program.enums).Provenance v) →
+      guard.allowed message.channel args →
       ∃ result, message.result.decode program.enums = some result ∧ sourceCalls message.channel args result)
     (callProvenance : ∀ name args result, sourceCalls name args result →
       (∀ v ∈ args, (rom.decode program.enums).Provenance v) →
       (rom.decode program.enums).Provenance result)
     {args : List (Value F)}
     (arguments : DecodesValues program.enums (chip.conclusion assignment).args args)
-    (trusted : ∀ v ∈ args, (rom.decode program.enums).Provenance v) :
+    (trusted : ∀ v ∈ args, (rom.decode program.enums).Provenance v)
+    (guarded : guard.holds ((fn.params.map Prod.fst).zip args) fn.body) :
     ∃ result, (chip.conclusion assignment).result.decode program.enums = some result ∧
       ROMEvalExprWith program.enums (rom.decode program.enums) sourceCalls
         ((fn.params.map Prod.fst).zip args) fn.body result ∧
       (rom.decode program.enums).Provenance result := by
   let calls : Circuit.CallRelation F := fun name args result => ⟨name, args, result⟩ ∈ chip.premises assignment
-  have callSound : CallsSound program.enums rom calls sourceCalls := fun name args result member =>
+  have callSound : CallsSound program.enums rom calls sourceCalls guard := fun name args result member =>
     premises ⟨name, args, result⟩ member
   obtain ⟨inputs, output, s₁, s₂, s₃, body, s₄,
     inputsRun, outputRun, inputValidation, bodyRun, chipEq⟩ := function_stages compiled
@@ -84,6 +87,7 @@ theorem function_sound {program : Program F} (checked : checkDeclarations progra
   obtain ⟨result, resultDecode, evaluated⟩ := (bodyMeaning assignment s₃root stateValid).2 s₃root
     ((fn.params.map Prod.fst).zip args)
     (by simpa only [parameter_environment] using decoded.environment (fn.params.map Prod.fst)) environmentTrusted
+    guarded
   refine ⟨result, ?_, evaluated, evaluated.provenance (WireROM.decode_valid romValid) callProvenance environmentTrusted⟩
   simpa only [chipEq, ScopedChip.conclusion, lower_target bodyRun, WireValue.map_map, Function.comp_def, Scalar.Circuit.ArithExpr.denote] using resultDecode
 

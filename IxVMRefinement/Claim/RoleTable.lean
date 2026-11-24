@@ -939,13 +939,17 @@ theorem role_ctx_table_full_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
     h' = h ∧ TableFullRep t bAddr h r := by
   obtain ⟨_, tbl, hl_rc, htbl⟩ := hrc
   rcases Obs.«KernelRoles::role_ctx_table».obs ev with
-    ⟨x_tbl, _, _, ld12, rfl, rfl, -⟩ | ⟨x_tbl, _, ld12, -⟩
+    ⟨x_tbl, _, _, ld12, rfl, rfl, -⟩ | ⟨_, _, ld12, -⟩ | ⟨_, _, _, _, ld12, -⟩ | ⟨_, _, _, ld12, -⟩
   · rw [hl_rc] at ld12
     injection ld12 with hv
     injection hv with _ _ hargs
     simp only [List.cons.injEq] at hargs
     obtain ⟨rfl, -⟩ := hargs
     exact ⟨rfl, htbl⟩
+  · rw [hl_rc] at ld12
+    simp at ld12
+  · rw [hl_rc] at ld12
+    simp at ld12
   · rw [hl_rc] at ld12
     simp at ld12
 
@@ -972,9 +976,13 @@ theorem role_ctx_validator_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addres
   obtain ⟨_, tbl, hl_rc, _⟩ := hrc
   obtain ⟨y2, _, ev14, op8, -⟩ := Obs.«KernelRoles::role_ctx_validator».obs ev
   rcases Obs.«KernelRoles::role_ctx_is_assumed».obs ev14 with
-    ⟨_, _, _, ld12, rfl, rfl, -⟩ | ⟨_, _, ld12, -⟩
+    ⟨_, _, _, ld12, rfl, rfl, -⟩ | ⟨_, _, ld12, -⟩ | ⟨_, _, _, _, ld12, -⟩ | ⟨_, _, _, ld12, -⟩
   · simp only [evalBinOp, add_zero, Except.ok.injEq] at op8
     exact ⟨op8.symm, rfl⟩
+  · rw [hl_rc] at ld12
+    simp at ld12
+  · rw [hl_rc] at ld12
+    simp at ld12
   · rw [hl_rc] at ld12
     simp at ld12
 
@@ -985,12 +993,16 @@ theorem role_ctx_axioms_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} 
     r = .construct addrMapEnum "Nil" [] ∧ h' = h := by
   obtain ⟨_, tbl, hl_rc, _⟩ := hrc
   rcases Obs.«KernelRoles::role_ctx_axioms».obs ev with
-    ⟨_, _, x_axioms, ld12, rfl, rfl, -⟩ | ⟨_, _, ld12, -⟩
+    ⟨_, _, x_axioms, ld12, rfl, rfl, -⟩ | ⟨_, _, ld12, -⟩ | ⟨_, _, _, _, ld12, -⟩ | ⟨_, _, _, ld12, -⟩
   · rw [hl_rc] at ld12
     injection ld12 with hv
     injection hv with _ _ hargs
     simp only [List.cons.injEq, and_true] at hargs
     exact ⟨hargs.2.2.symm, rfl⟩
+  · rw [hl_rc] at ld12
+    simp at ld12
+  · rw [hl_rc] at ld12
+    simp at ld12
   · rw [hl_rc] at ld12
     simp at ld12
 
@@ -1001,7 +1013,7 @@ theorem role_ctx_limit_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {
     r = .field (lim : F) ∧ h' = h := by
   obtain ⟨_, tbl, hl_rc, _⟩ := hrc
   rcases Obs.«KernelRoles::role_ctx_limit».obs ev with
-    ⟨_, _, ld12, -⟩ | ⟨_, x_limit, _, ld12, rfl, rfl, -⟩
+    ⟨_, _, ld12, -⟩ | ⟨_, x_limit, _, ld12, rfl, rfl, -⟩ | ⟨_, _, _, ld12, -⟩ | ⟨_, _, _, _, ld12, -⟩
   · rw [hl_rc] at ld12
     simp at ld12
   · rw [hl_rc] at ld12
@@ -1009,6 +1021,10 @@ theorem role_ctx_limit_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {
     injection hv with _ _ hargs
     simp only [List.cons.injEq] at hargs
     exact ⟨hargs.2.1.symm, rfl⟩
+  · rw [hl_rc] at ld12
+    simp at ld12
+  · rw [hl_rc] at ld12
+    simp at ld12
 
 theorem role_addr_index_full_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
     {x_tbl r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
@@ -1197,8 +1213,9 @@ theorem walk_covered_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {li
   obtain ⟨_, tbl, hl_rc, _⟩ := hrc
   match Obs.«KernelRoles::walk_covered».obs ev with
   | .Mk (he38 := hr) (he39 := hh) .. => exact ⟨hr, hh⟩
-  | .Assumed_n0 (ld12 := ld12) .. => rw [hl_rc] at ld12; simp at ld12
-  | .Assumed_other (ld12 := ld12) .. => rw [hl_rc] at ld12; simp at ld12
+  | .Assumed_n0 (ld12 := ld12) .. | .Assumed_other (ld12 := ld12) ..
+  | .MkEval (ld12 := ld12) .. | .AssumedEval_n0 (ld12 := ld12) ..
+  | .AssumedEval_other (ld12 := ld12) .. => rw [hl_rc] at ld12; simp at ld12
 
 theorem group_validation_limit_spec {g : F} (hg : g.val < 4294967296)
     {r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
@@ -1265,7 +1282,10 @@ theorem walk_ctx_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {lim : 
       loadValue_snoc_construct m276 rcEnum "Mk"
         [x_tbl, .field (lim' : F), .construct addrMapEnum "Nil" []],
       htbl.mono ext⟩
-  | .Assumed (ld12 := ld12) .. =>
+  | .Assumed (ld12 := ld12) ..
+  | .MkEval_n0 (ld12 := ld12) .. | .MkEval_other_n0 (ld12 := ld12) ..
+  | .MkEval_other_other (ld12 := ld12) .. | .AssumedEval_n0 (ld12 := ld12) ..
+  | .AssumedEval_other (ld12 := ld12) .. =>
     rw [hl_rc] at ld12
     simp at ld12
 

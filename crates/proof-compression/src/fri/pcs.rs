@@ -4,28 +4,33 @@ use p3_field::{Field, PrimeCharacteristicRing, TwoAdicField};
 
 use super::AlgebraicInputs;
 use super::Blake3Challenger;
+use super::Blake3Domain;
 use super::ByteGadgets;
 use super::ByteValue;
-use super::QuadraticValue as Q;
+use super::CubicValue as E;
 use super::TranscriptCommitments;
-use super::blake3;
+use super::algebra::EXTENSION_DEGREE;
+use super::blake3_domain;
 use super::constrain_algebraic_checks;
 use super::transcript::DEFAULT_FIELD_RETRIES;
 use super::transcript::constrain_active_transcript;
 use multi_stark::config::StarkGenericConfig;
+use multi_stark::p3_adapter::fri_batching::{
+  FriBatching, tensor_num_challenges,
+};
 use multi_stark::plonkish::Bool;
 use multi_stark::plonkish::Circuit;
 use multi_stark::plonkish::CircuitBuilder;
 use multi_stark::plonkish::Value;
-use multi_stark::system::System;
-use multi_stark::types::GoldilocksBlake3Config;
-use multi_stark::types::Val;
+use multi_stark::system::{System, compute_vk_digest};
+use multi_stark::types::{ExtVal3, GoldilocksBlake3V6Config, Val};
 
 pub(super) type Digest = [ByteValue; 32];
 
 /// Fixed active bitmap and heterogeneous trace heights. Preprocessed tables
-/// must be active. Requires some preprocessing, cap zero, binary FRI and a
-/// constant final polynomial. Both grinding phases are supported.
+/// must be active. Requires Protocol v6 (`F_p^3`, `FriBatching::Tensor`),
+/// some preprocessing, cap zero, binary FRI and a constant final polynomial.
+/// Both grinding phases are supported.
 #[derive(Clone, Debug)]
 pub struct FixedPcsShape {
   pub log_trace: u8,
@@ -44,7 +49,7 @@ pub struct FixedPcsShape {
 }
 
 impl FixedPcsShape {
-  pub fn new(system: &System<GoldilocksBlake3Config>, log_trace: u8) -> Self {
+  pub fn new(system: &System<GoldilocksBlake3V6Config>, log_trace: u8) -> Self {
     Self::from_profile(
       system,
       &vec![true; system.circuits.len()],
@@ -54,12 +59,22 @@ impl FixedPcsShape {
 
   /// Heights are supplied in active-circuit order, not canonical order.
   pub fn from_profile(
-    system: &System<GoldilocksBlake3Config>,
+    system: &System<GoldilocksBlake3V6Config>,
     active: &[bool],
     logs: &[u8],
   ) -> Self {
     let fri = system.config.fri_parameters();
     assert_eq!(system.config.cap_height(), 0);
+    assert_eq!(
+      system.config.fri_batching(),
+      FriBatching::Tensor,
+      "Protocol v6 requires FriBatching::Tensor"
+    );
+    assert_eq!(
+      system.vk_digest,
+      compute_vk_digest::<Val, ExtVal3>(&system.circuits),
+      "system vk_digest does not match its circuits"
+    );
     assert_eq!(fri.max_log_arity, 1, "binary FRI required");
     assert_eq!(fri.log_final_poly_len, 0, "constant final polynomial required");
     assert!(
@@ -117,17 +132,39 @@ impl FixedPcsShape {
       widths: [
         circuits.iter().map(|c| c.main_width).collect(),
         circuits.iter().map(|c| c.stage_2_width).collect(),
-        circuits.iter().map(|c| 2 * c.quotient_degree()).collect(),
+        circuits
+          .iter()
+          .map(|c| EXTENSION_DEGREE * c.quotient_degree())
+          .collect(),
         prep_widths,
       ],
     }
+  }
+
+  /// `(max_width, max_openings_per_height)` across all opened matrices, used
+  /// by Protocol v6 `FriBatching::Tensor`.
+  pub(super) fn tensor_dimensions(&self) -> (usize, usize) {
+    let mut max_width = 0usize;
+    let mut openings_per_height: BTreeMap<usize, usize> = BTreeMap::new();
+    for batch in 0..4 {
+      let points = if batch == 2 { 1 } else { 2 };
+      for (&width, &height) in
+        self.widths[batch].iter().zip(&self.heights[batch])
+      {
+        max_width = max_width.max(width);
+        *openings_per_height.entry(height).or_insert(0) += points;
+      }
+    }
+    let max_openings_per_height =
+      openings_per_height.values().copied().max().unwrap_or(0);
+    (max_width, max_openings_per_height)
   }
 }
 
 pub struct PcsQuery {
   pub input_rows: [Vec<Vec<Value>>; 4],
   pub input_paths: [Vec<Digest>; 4],
-  pub fri_siblings: Vec<Q>,
+  pub fri_siblings: Vec<E>,
   pub fri_paths: Vec<Vec<Digest>>,
 }
 
@@ -135,7 +172,7 @@ pub struct PcsInputs {
   pub roots: Vec<Digest>,
   pub commit_pow: Vec<Value>,
   pub query_pow: Value,
-  pub final_poly: Q,
+  pub final_poly: E,
   pub queries: Vec<PcsQuery>,
   pub(super) query_start: usize,
 }
@@ -158,7 +195,7 @@ impl PcsInputs {
         .map(|_| b.input("commit grinding witness"))
         .collect(),
       query_pow: b.input("query grinding witness"),
-      final_poly: Q::input(b, "FRI final constant"),
+      final_poly: E::input(b, "FRI final constant"),
       query_start: queries.start,
       queries: queries
         .map(|_| PcsQuery {
@@ -176,7 +213,7 @@ impl PcsInputs {
               .collect()
           }),
           fri_siblings: (0..rounds)
-            .map(|_| Q::input(b, "FRI sibling"))
+            .map(|_| E::input(b, "FRI sibling"))
             .collect(),
           fri_paths: (0..rounds)
             .map(|round| {
@@ -201,10 +238,11 @@ pub struct FixedVerifierInputs {
 }
 
 /// Complete fixed-profile verifier, including Fiat-Shamir, algebra, Merkle
-/// authentication, opening reduction, and every binary FRI fold. The
-/// transcript rejects exhaustion of its fixed field-sampling retry budget.
+/// authentication, multilinear tensor opening reduction, and every binary FRI
+/// fold. The transcript rejects exhaustion of its fixed field-sampling retry
+/// budget.
 pub fn build_fixed_verifier(
-  system: &System<GoldilocksBlake3Config>,
+  system: &System<GoldilocksBlake3V6Config>,
   log_trace: u8,
   claim_lengths: &[usize],
 ) -> (Circuit<Val>, FixedVerifierInputs) {
@@ -213,7 +251,7 @@ pub fn build_fixed_verifier(
 }
 
 pub fn build_profile_verifier(
-  system: &System<GoldilocksBlake3Config>,
+  system: &System<GoldilocksBlake3V6Config>,
   shape: &FixedPcsShape,
   claim_lengths: &[usize],
 ) -> (Circuit<Val>, FixedVerifierInputs) {
@@ -234,7 +272,7 @@ pub fn build_profile_verifier(
 pub fn constrain_fixed_verifier(
   b: &mut CircuitBuilder<Val>,
   bytes: &ByteGadgets,
-  system: &System<GoldilocksBlake3Config>,
+  system: &System<GoldilocksBlake3V6Config>,
   shape: &FixedPcsShape,
   claims: Vec<Vec<Value>>,
 ) -> FixedVerifierInputs {
@@ -247,7 +285,7 @@ pub fn constrain_fixed_verifier(
 pub(super) fn constrain_fixed_queries(
   b: &mut CircuitBuilder<Val>,
   bytes: &ByteGadgets,
-  system: &System<GoldilocksBlake3Config>,
+  system: &System<GoldilocksBlake3V6Config>,
   shape: &FixedPcsShape,
   claims: Vec<Vec<Value>>,
   queries: std::ops::Range<usize>,
@@ -298,7 +336,7 @@ fn opening_rows<'a>(
   shape: &FixedPcsShape,
   batch: usize,
   matrix: usize,
-) -> Vec<&'a [Q]> {
+) -> Vec<&'a [E]> {
   let matrix = if batch == 3 { shape.preprocessed[matrix] } else { matrix };
   let o = &algebra.openings[matrix];
   match batch {
@@ -317,7 +355,7 @@ fn hash_fields(
 ) -> Digest {
   let encoded: Vec<_> =
     values.into_iter().flat_map(|v| bytes.encode_field64(b, v)).collect();
-  blake3(b, bytes, &encoded)
+  blake3_domain(b, bytes, Blake3Domain::MerkleLeaf, &encoded)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -340,10 +378,10 @@ fn authenticate(
       };
       bytes.select(b, bit, left, right)
     });
-    digest = blake3(b, bytes, &block);
+    digest = blake3_domain(b, bytes, Blake3Domain::MerkleCompress, &block);
     if let Some(row_hash) = injections.get(&(bits.len() - level - 1)) {
       let block: Vec<_> = digest.into_iter().chain(*row_hash).collect();
-      digest = blake3(b, bytes, &block);
+      digest = blake3_domain(b, bytes, Blake3Domain::MerkleCompress, &block);
     }
   }
   for (actual, expected) in digest.into_iter().zip(root) {
@@ -363,17 +401,49 @@ fn reversed_power(b: &mut CircuitBuilder<Val>, g: Val, bits: &[Bool]) -> Value {
   power
 }
 
+/// Expand multilinear tensor challenges into `len` weights matching
+/// `multi_stark::p3_adapter::fri_batching::tensor_weights`.
+fn expand_tensor_weights(
+  b: &mut CircuitBuilder<Val>,
+  challenges: &[E],
+  len: usize,
+) -> Vec<E> {
+  if len == 0 {
+    return Vec::new();
+  }
+  let one = E::constant(b, [Val::ONE, Val::ZERO, Val::ZERO]);
+  let mut weights = Vec::with_capacity(len);
+  weights.push(one);
+  for &r in challenges {
+    let prev_len = weights.len();
+    for i in 0..prev_len {
+      if weights.len() == len {
+        break;
+      }
+      let w = weights[i].mul(b, r);
+      weights.push(w);
+    }
+  }
+  assert_eq!(weights.len(), len);
+  weights
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn constrain_pcs(
   b: &mut CircuitBuilder<Val>,
   bytes: &ByteGadgets,
-  system: &System<GoldilocksBlake3Config>,
+  system: &System<GoldilocksBlake3V6Config>,
   shape: &FixedPcsShape,
   algebra: &AlgebraicInputs,
   commitments: &TranscriptCommitments,
   pcs: &PcsInputs,
   mut challenger: Blake3Challenger,
 ) -> Vec<Vec<Bool>> {
+  assert_eq!(
+    system.config.fri_batching(),
+    FriBatching::Tensor,
+    "Protocol v6 verifier requires FriBatching::Tensor"
+  );
   // PCS observes OOD evaluations in batch, matrix, point, column order.
   for batch in 0..4 {
     for matrix in 0..shape.widths[batch].len() {
@@ -384,7 +454,19 @@ pub(super) fn constrain_pcs(
       }
     }
   }
-  let alpha = challenger.sample_extension(b, bytes);
+  // Sample Protocol v6 multilinear tensor batching challenges in canonical order:
+  // k_col column challenges, then k_open opening-pair challenges.
+  let (max_width, max_openings_per_height) = shape.tensor_dimensions();
+  let k_col = tensor_num_challenges(max_width);
+  let col_challenges: Vec<_> =
+    (0..k_col).map(|_| challenger.sample_extension(b, bytes)).collect();
+  let k_open = tensor_num_challenges(max_openings_per_height);
+  let open_challenges: Vec<_> =
+    (0..k_open).map(|_| challenger.sample_extension(b, bytes)).collect();
+  let col_weights = expand_tensor_weights(b, &col_challenges, max_width);
+  let open_weights =
+    expand_tensor_weights(b, &open_challenges, max_openings_per_height);
+
   let betas: Vec<_> = pcs
     .roots
     .iter()
@@ -422,38 +504,29 @@ pub(super) fn constrain_pcs(
     preprocessed,
   ];
   let zeta = algebra.challenges.zeta;
-  let zero = Q::constant(b, [Val::ZERO; 2]);
-  let one = Q::constant(b, [Val::ONE, Val::ZERO]);
-  // Alpha powers advance per height in (batch, matrix, point, column)
-  // order and do not depend on the query, nor do the alpha-weighted sums of
-  // the out-of-domain evaluations. Both are folded once here; each query
-  // then weights only its own opened row and pays one denominator product
-  // per (matrix, point) instead of one per value. This is the in-circuit
-  // form of the hoisted alpha ladder in Plonky3's native FRI verifier
-  // (PR #2015, commit a724a1aec0acab47384b34efc2a4d163e0351251); the
-  // reduced value and the alpha index of every column are unchanged.
-  let mut alpha_powers: BTreeMap<usize, Vec<Q>> = BTreeMap::new();
-  let mut cursors: BTreeMap<usize, usize> = BTreeMap::new();
-  let mut ood_terms: Vec<Vec<Vec<(usize, Q)>>> = Vec::new();
+  let zero = E::constant(b, [Val::ZERO; EXTENSION_DEGREE]);
+
+  // Hoist per-(batch, matrix, point) tensor-weighted OOD dot products and
+  // per-height opening indices once outside the query loop. Because
+  // `col_weights` is shared across both opening points of a matrix, each query
+  // also computes `sum_j col_weights[j] * opened[j]` only once per matrix.
+  let mut opening_cursors: BTreeMap<usize, usize> = BTreeMap::new();
+  let mut ood_terms: Vec<Vec<Vec<(usize, E)>>> = Vec::new();
   for batch in 0..4 {
     let mut per_matrix = Vec::new();
     for matrix in 0..shape.widths[batch].len() {
       let height = shape.heights[batch][matrix];
-      let powers = alpha_powers.entry(height).or_insert_with(|| vec![one]);
       let mut per_point = Vec::new();
       for row in opening_rows(algebra, shape, batch, matrix) {
-        let start = cursors.get(&height).copied().unwrap_or(0);
+        let opening_idx = opening_cursors.entry(height).or_insert(0);
+        let idx = *opening_idx;
+        *opening_idx += 1;
         let mut weighted = zero;
         for (j, &at_z) in row.iter().enumerate() {
-          while powers.len() <= start + j {
-            let next = powers[powers.len() - 1].mul(b, alpha);
-            powers.push(next);
-          }
-          let term = powers[start + j].mul(b, at_z);
+          let term = col_weights[j].mul(b, at_z);
           weighted = weighted.add(b, term);
         }
-        cursors.insert(height, start + row.len());
-        per_point.push((start, weighted));
+        per_point.push((idx, weighted));
       }
       per_matrix.push(per_point);
     }
@@ -472,7 +545,7 @@ pub(super) fn constrain_pcs(
           &bits[shape.log_lde - height..],
         );
         let point = b.scale(point, Val::GENERATOR);
-        let x = Q::from_base(b, point);
+        let x = E::from_base(b, point);
         let next = zeta.scale(
           b,
           Val::two_adic_generator(height - system.config.log_blowup()),
@@ -503,18 +576,18 @@ pub(super) fn constrain_pcs(
       );
       for (matrix, opened) in query.input_rows[batch].iter().enumerate() {
         let height = shape.heights[batch][matrix];
-        let powers = &alpha_powers[&height];
         let reduced = reductions.entry(height).or_insert(zero);
-        for (point, &(start, weighted)) in
+        let mut at_x = zero;
+        for (j, &x) in opened.iter().enumerate() {
+          let term = col_weights[j].mul_base(b, x);
+          at_x = at_x.add(b, term);
+        }
+        for (point, &(opening_idx, ood_weighted)) in
           ood_terms[batch][matrix].iter().enumerate()
         {
-          let mut at_x = zero;
-          for (j, &x) in opened.iter().enumerate() {
-            let term = powers[start + j].mul_base(b, x);
-            at_x = at_x.add(b, term);
-          }
-          let difference = weighted.sub(b, at_x);
-          let term = difference.mul(b, denominators[&height][point]);
+          let difference = ood_weighted.sub(b, at_x);
+          let scaled = open_weights[opening_idx].mul(b, difference);
+          let term = scaled.mul(b, denominators[&height][point]);
           *reduced = reduced.add(b, term);
         }
       }
@@ -525,8 +598,8 @@ pub(super) fn constrain_pcs(
     let mut folded = reductions[&shape.log_lde];
     for (round, &beta) in betas.iter().enumerate() {
       let sibling = query.fri_siblings[round];
-      let lo = Q::select(b, bits[round], sibling, folded);
-      let hi = Q::select(b, bits[round], folded, sibling);
+      let lo = E::select(b, bits[round], sibling, folded);
+      let hi = E::select(b, bits[round], folded, sibling);
       let leaf = hash_fields(b, bytes, lo.0.into_iter().chain(hi.0));
       authenticate(
         b,

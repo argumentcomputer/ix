@@ -6,6 +6,20 @@
 //!
 //! Usage: fri_sizing <saved-fri-dir> [queries,...] [log-height]
 //!        fri_sizing --statistics <outer-vk.bin>
+//!        fri_sizing --counts-only <saved-fri-dir> [queries,...]
+//!        fri_sizing --count-root <root-input-dir>
+//!        fri_sizing --check-root <root-input-dir> <output-dir>
+//!        fri_sizing --prove-root <root-input-dir> <output-dir>
+//!
+//! `--counts-only` walks the verifier builder without retaining its circuit
+//! or witness. Work still scales with the frontend operation count. Its
+//! operation counts are not physical trace cells or a foreign-field estimate.
+//!
+//! `--check-root` materializes the root verifier circuit and witness, but does
+//! not prove it. Large roots can require tens of GiB; it writes the exact
+//! stage-one/fixed layout to `circuit-cost.json` for `compression_costs`.
+//! `--prove-root` additionally allocates the full FRI prover working set and
+//! writes a resumable `fri/` stage. It does not run either KZG stage.
 
 use ix_proof_compression::foreign::GoldilocksCircuit;
 use ix_proof_compression::fri::{
@@ -13,15 +27,36 @@ use ix_proof_compression::fri::{
   Statement, StatementSlot, VerifierKey, VerifierLimits, VerifierPlan,
 };
 use multi_stark::config::StarkGenericConfig;
-use multi_stark::system::{Circuit, System};
+use multi_stark::plonkish::CircuitStats;
+use multi_stark::system::{Circuit, System, compute_vk_digest};
 use multi_stark::traits::Field;
 use multi_stark::types::{
-  CommitmentParameters, FriParameters, GoldilocksBlake3Config, Val,
+  CommitmentParameters, ExtVal3, FriParameters, GoldilocksBlake3V6Config, Val,
 };
 use p3_field::PrimeField64;
 use std::{fs, path::Path, time::Instant};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+const USAGE: &str = concat!(
+  "fri_sizing <saved-fri-dir> [queries,...] [log-height]\n",
+  "fri_sizing --statistics <outer-vk.bin>\n",
+  "fri_sizing --counts-only <saved-fri-dir> [queries,...]\n",
+  "fri_sizing --count-root <root-input-dir>\n",
+  "fri_sizing --check-root <root-input-dir> <output-dir>\n",
+  "fri_sizing --prove-root <root-input-dir> <output-dir>\n",
+  "Counts-only modes retain no circuit or witness; their work still scales with frontend operations.\n",
+  "--check-root and the default mode materialize circuits and can require tens of GiB.",
+  "\n--prove-root runs the full FRI stage and can require hundreds of GiB; inspect its layout first.",
+);
+
+fn frontend_counts(source: &CircuitStats) -> serde_json::Value {
+  serde_json::json!({
+    "gates": source.gates, "lookups": source.lookups, "values": source.values,
+    "hash_calls": source.hash_calls, "hash_compressions": source.hash_compressions,
+    "tables": source.tables,
+  })
+}
 
 fn decode_claims(bytes: &[u8]) -> Result<Vec<Vec<Val>>> {
   let (words, remainder) = bytes.as_chunks::<8>();
@@ -101,8 +136,9 @@ fn with_queries(key: &VerifierKey, queries: usize) -> VerifierKey {
       max_constraint_degree: c.max_constraint_degree,
     })
     .collect();
+  let vk_digest = compute_vk_digest::<Val, ExtVal3>(&circuits);
   VerifierKey::new(System {
-    config: GoldilocksBlake3Config::new(
+    config: GoldilocksBlake3V6Config::new(
       CommitmentParameters {
         log_blowup: system.config.log_blowup(),
         cap_height: system.config.cap_height(),
@@ -112,11 +148,51 @@ fn with_queries(key: &VerifierKey, queries: usize) -> VerifierKey {
     preprocessed_indices: (0..circuits.len()).map(Some).collect(),
     circuits,
     preprocessed_commit: system.preprocessed_commit.clone(),
+    vk_digest,
   })
 }
 
 fn main() -> Result<()> {
-  let args: Vec<String> = std::env::args().collect();
+  let mut args: Vec<String> = std::env::args().collect();
+  if args.get(1).map(String::as_str) == Some("--help") {
+    println!("{USAGE}");
+    return Ok(());
+  }
+  let counts_only = args.get(1).map(String::as_str) == Some("--counts-only");
+  if counts_only {
+    args.remove(1);
+    if !(2..=3).contains(&args.len())
+      || args[1].starts_with("--")
+      || std::env::var_os("FRI_SIZING_LOWER").is_some()
+    {
+      return Err("usage: fri_sizing --counts-only <saved-fri-dir> [queries,...]; unset FRI_SIZING_LOWER".into());
+    }
+  }
+  if args.get(1).map(String::as_str) == Some("--count-root") {
+    if args.len() != 3 {
+      return Err("usage: fri_sizing --count-root <root-input-dir>".into());
+    }
+    println!(
+      "{}",
+      ix_proof_compression::pipeline::count_root(Path::new(&args[2]))?
+    );
+    return Ok(());
+  }
+  if matches!(
+    args.get(1).map(String::as_str),
+    Some("--check-root" | "--prove-root")
+  ) {
+    if args.len() != 4 {
+      return Err("usage: fri_sizing --check-root|--prove-root <root-input-dir> <output-dir>".into());
+    }
+    let root = Path::new(&args[2]);
+    let out = Path::new(&args[3]);
+    return if args[1] == "--prove-root" {
+      ix_proof_compression::pipeline::prove_root(root, out)
+    } else {
+      ix_proof_compression::pipeline::check_root(root, out)
+    };
+  }
   if args.get(1).map(String::as_str) == Some("--statistics") {
     if args.len() != 3 {
       return Err("usage: fri_sizing --statistics <outer-vk.bin>".into());
@@ -125,11 +201,7 @@ fn main() -> Result<()> {
     println!("{}", key.statistics());
     return Ok(());
   }
-  let dir = Path::new(
-    args
-      .get(1)
-      .ok_or("usage: fri_sizing <saved-fri-dir> [queries,...] [log-height]")?,
-  );
+  let dir = Path::new(args.get(1).ok_or(USAGE)?);
   let queries: Vec<usize> = args
     .get(2)
     .map(|s| s.split(',').map(str::parse).collect())
@@ -188,16 +260,35 @@ fn main() -> Result<()> {
     };
     let plan = VerifierPlan::validate(&key, vk, VerifierLimits::default())?;
     let resources = plan.resources();
+    if counts_only {
+      let source =
+        plan.estimate(schema.clone(), ImplementationOptions::default())?;
+      println!(
+        "{}",
+        serde_json::json!({
+          "mode": "frontend-counts-only", "queries": q,
+          "proof_values": resources.proof_values,
+          "source": frontend_counts(&source),
+          "elapsed_seconds": start.elapsed().as_secs_f64(),
+        })
+      );
+      continue;
+    }
     let (circuit, _inputs) =
       plan.build(schema.clone(), ImplementationOptions::default())?;
     let source = circuit.stats();
     let layout = circuit.multi_stark_layout_with_max_height(1 << log_height)?;
-    let scalar = GoldilocksCircuit::estimate(&circuit);
+    let scalar =
+      GoldilocksCircuit::<ix_proof_compression::kzg::curve::Bn254>::estimate(
+        &circuit,
+      );
     let scalar_rows = scalar.gates + scalar.lookups + scalar.publics + 1;
     // `FRI_SIZING_LOWER` materializes the translated circuit and lays it
     // out as the first stage does, which costs tens of GiB at full size.
     let scalar_layout = if std::env::var_os("FRI_SIZING_LOWER").is_some() {
-      let translated = GoldilocksCircuit::new_preallocated(&circuit);
+      let translated = GoldilocksCircuit::<
+        ix_proof_compression::kzg::curve::Bn254,
+      >::new_preallocated(&circuit);
       let layout = translated
         .circuit
         .multi_stark_layout_with_max_height(1 << log_height)?;
@@ -218,11 +309,7 @@ fn main() -> Result<()> {
     let report = serde_json::json!({
       "queries": q,
       "proof_values": resources.proof_values,
-      "source": {
-        "gates": source.gates, "lookups": source.lookups, "values": source.values,
-        "hash_calls": source.hash_calls, "hash_compressions": source.hash_compressions,
-        "tables": source.tables,
-      },
+      "source": frontend_counts(&source),
       "source_layout": {
         "used_rows": layout.used_rows,
         "main_heights": layout.main_heights,
@@ -242,4 +329,67 @@ fn main() -> Result<()> {
     println!("{report}");
   }
   Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use multi_stark::{expr::Expr, lookup::Lookup, system::CircuitInputs};
+  use p3_field::PrimeCharacteristicRing;
+  use p3_matrix::dense::RowMajorMatrix;
+
+  #[test]
+  fn count_only_matches_materialized_frontend_with_fixed_tables_and_lookups()
+  -> Result<()> {
+    let one = Expr::constant(Val::ONE);
+    let x = Expr::main(0);
+    let y = Expr::main(1);
+    let (system, _) = System::new(
+      GoldilocksBlake3V6Config::new(
+        CommitmentParameters { log_blowup: 2, cap_height: 0 },
+        FriParameters {
+          log_final_poly_len: 0,
+          max_log_arity: 1,
+          num_queries: 2,
+          commit_proof_of_work_bits: 0,
+          query_proof_of_work_bits: 0,
+        },
+      ),
+      vec![CircuitInputs {
+        main_width: 2,
+        preprocessed: Some(RowMajorMatrix::new(vec![Val::ONE; 2], 1)),
+        constraints: vec![x.clone() * x.clone() - y.clone()],
+        lookups: vec![Lookup::pull(
+          one.clone(),
+          vec![one, Expr::constant(Val::ZERO), x, y],
+        )],
+        ..Default::default()
+      }],
+    );
+    let key = VerifierKey::new(system);
+    let plan = VerifierPlan::validate(
+      &key,
+      ProofProfile {
+        envelope: Envelope::Ordinary,
+        active: vec![true],
+        log_degrees: vec![1],
+        claim_lengths: vec![4],
+        message_lengths: vec![],
+        max_field_retries: DEFAULT_FIELD_RETRIES,
+      },
+      VerifierLimits::default(),
+    )?;
+    let schema = Statement {
+      claims: vec![vec![StatementSlot::Public; 4]],
+      messages: vec![],
+    };
+    for compact_blake3 in [false, true] {
+      let options = ImplementationOptions { compact_blake3 };
+      let counted = plan.estimate(schema.clone(), options)?;
+      let (materialized, _) = plan.build(schema.clone(), options)?;
+      assert_eq!(counted, materialized.stats());
+      assert!(counted.tables > 0 && counted.lookups > 0);
+    }
+    Ok(())
+  }
 }

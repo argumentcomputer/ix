@@ -1,7 +1,7 @@
-//! Shard `CheckEnv` claim convention, shared by the Rust shard planner
-//! (`crate::shard`) and the Lean claim builder
-//! (`IxVM.ClaimHarness.shardCheckEnvClaim`). Any change here changes claim
-//! digests; keep the Lean mirror in lockstep.
+//! Shard `CheckEnv` claim convention — the single source of truth shared
+//! by every builder (Lean `IxVM.ClaimHarness.shardCheckEnvClaim`,
+//! [`crate::witness`], `aggregate_controller::prepare`). Any change here
+//! changes claim digests; keep the Lean mirror in lockstep.
 //!
 //! Semantics (mirrors the Aiur kernel's `env_walk`):
 //!
@@ -279,16 +279,19 @@ pub fn inert_users(env: &Env) -> FxHashSet<Address> {
 /// set, assumptions over the thin frontier. Returns the claim plus the
 /// frontier leaves (the caller ships the asm tree it commits to).
 /// The owned constants outside Lean's logic ([`outside_logic_at`]) and those
-/// that use an inert axiom ([`inert_users`]) are left out, as the Lean builder
-/// (`IxVM.ClaimHarness.claimableOwned`) leaves them: IxVM refuses them, and no
-/// constant left in references one, so the rest stays walk-closed. `None` when
-/// no owned constant is left.
+/// that use an inert axiom (`inert`, which must be [`inert_users`] of `env`)
+/// are left out, as the Lean builder (`IxVM.ClaimHarness.claimableOwned`)
+/// leaves them: IxVM refuses them, and no constant left in references one, so
+/// the rest stays walk-closed. `None` when no owned constant is left.
+///
+/// `inert` is a parameter because computing it walks every constant of `env`:
+/// a caller building many shard claims computes it once per environment.
 pub fn shard_check_env_claim(
   ctx: &ClaimContext,
   env: &Env,
+  inert: &FxHashSet<Address>,
   owned: &[Address],
 ) -> Option<(Claim, Vec<Address>)> {
-  let inert = inert_users(env);
   let owned: Vec<Address> = owned
     .iter()
     .filter(|a| !outside_logic_at(env, a) && !inert.contains(*a))
@@ -300,6 +303,60 @@ pub fn shard_check_env_claim(
   let frontier = thin_frontier(env, &owned);
   let assumptions = merkle_root_canonical(&frontier);
   Some((Claim::CheckEnv { ctx: ctx.clone(), root, assumptions }, frontier))
+}
+
+/// Owned constants of each shard, in one environment pass: `result[k]`
+/// holds every constant whose check-schedule block (a projection's `block`,
+/// otherwise the constant itself) is listed in `shards[k]`, sorted. Only
+/// projection headers are parsed. A constant whose header or projection body
+/// does not parse is an error rather than an unowned constant. Mirrors
+/// `Ix.Shard.ownedConstsPer`.
+pub fn owned_per_shard(
+  env: &Env,
+  shards: &[Vec<Address>],
+) -> Result<Vec<Vec<Address>>, String> {
+  let mut shard_of: FxHashMap<&Address, usize> = FxHashMap::default();
+  for (k, blocks) in shards.iter().enumerate() {
+    for block in blocks {
+      shard_of.insert(block, k);
+    }
+  }
+  let mut owned = vec![Vec::new(); shards.len()];
+  for entry in env.consts.iter() {
+    let block = check_block(entry.key(), entry.value())?;
+    if let Some(&k) = shard_of.get(&block) {
+      owned[k].push(entry.key().clone());
+    }
+  }
+  for list in &mut owned {
+    list.sort_unstable();
+  }
+  Ok(owned)
+}
+
+/// The check-schedule block of a constant: a projection's `block`,
+/// otherwise the constant itself. Only projection headers are parsed; a
+/// header or projection body that does not parse is an error.
+pub fn check_block(
+  addr: &Address,
+  lazy: &crate::LazyConstant,
+) -> Result<Address, String> {
+  use crate::lazy::ConstVariantTag as Tag;
+  let tag = lazy.peek_variant().map_err(|e| format!("{}: {e}", addr.hex()))?;
+  Ok(match tag {
+    Tag::IPrj | Tag::CPrj | Tag::RPrj | Tag::DPrj => {
+      match lazy.get().map_err(|e| format!("{}: {e}", addr.hex()))?.info {
+        ConstantInfo::IPrj(ref p) => p.block.clone(),
+        ConstantInfo::CPrj(ref p) => p.block.clone(),
+        ConstantInfo::RPrj(ref p) => p.block.clone(),
+        ConstantInfo::DPrj(ref p) => p.block.clone(),
+        _ => {
+          return Err(format!("{}: projection header mismatch", addr.hex()));
+        },
+      }
+    },
+    _ => addr.clone(),
+  })
 }
 
 /// Error from `walk_check_set`: a walk-reachable constant in neither
@@ -495,6 +552,7 @@ mod tests {
   #[test]
   fn claim_deterministic_and_thin() {
     let (env, a, b, _, _) = chain_env();
+    let inert = inert_users(&env);
     let ctx = ClaimContext {
       spec: crate::proof::spec_digest(),
       binding: Address::hash(b"binding"),
@@ -503,8 +561,9 @@ mod tests {
       literal_class: false,
     };
     let (claim1, f1) =
-      shard_check_env_claim(&ctx, &env, std::slice::from_ref(&a)).unwrap();
-    let (claim2, f2) = shard_check_env_claim(&ctx, &env, &[a]).unwrap();
+      shard_check_env_claim(&ctx, &env, &inert, std::slice::from_ref(&a))
+        .unwrap();
+    let (claim2, f2) = shard_check_env_claim(&ctx, &env, &inert, &[a]).unwrap();
     assert_eq!(claim1, claim2);
     assert_eq!(f1, f2);
     assert_eq!(f1, vec![b]);
@@ -570,6 +629,7 @@ mod tests {
     }
     assert!(!outside_logic_at(&env, &a));
     assert!(!outside_logic_at(&env, &Address::hash(b"absent")));
+    let inert = inert_users(&env);
     let ctx = ClaimContext {
       spec: crate::proof::spec_digest(),
       binding: Address::hash(b"binding"),
@@ -580,15 +640,19 @@ mod tests {
     let (with_outside, f1) = shard_check_env_claim(
       &ctx,
       &env,
+      &inert,
       &[a.clone(), ax.clone(), block.clone(), proj.clone()],
     )
     .unwrap();
     let (safe_only, f2) =
-      shard_check_env_claim(&ctx, &env, std::slice::from_ref(&a)).unwrap();
+      shard_check_env_claim(&ctx, &env, &inert, std::slice::from_ref(&a))
+        .unwrap();
     assert_eq!(with_outside, safe_only);
     assert_eq!(f1, f2);
     assert_eq!(f1, vec![b]);
-    assert!(shard_check_env_claim(&ctx, &env, &[ax, block, proj]).is_none());
+    assert!(
+      shard_check_env_claim(&ctx, &env, &inert, &[ax, block, proj]).is_none()
+    );
   }
 
   /// The constants that use an inert axiom (the axiom the binding binds to
@@ -622,14 +686,19 @@ mod tests {
       binding_assumed: false,
       literal_class: false,
     };
-    let (with_inert, f1) =
-      shard_check_env_claim(&ctx, &env, &[a.clone(), ax.clone(), u.clone()])
-        .unwrap();
+    let (with_inert, f1) = shard_check_env_claim(
+      &ctx,
+      &env,
+      &inert,
+      &[a.clone(), ax.clone(), u.clone()],
+    )
+    .unwrap();
     let (without, f2) =
-      shard_check_env_claim(&ctx, &env, std::slice::from_ref(&a)).unwrap();
+      shard_check_env_claim(&ctx, &env, &inert, std::slice::from_ref(&a))
+        .unwrap();
     assert_eq!(with_inert, without);
     assert_eq!(f1, f2);
-    assert!(shard_check_env_claim(&ctx, &env, &[ax, u]).is_none());
+    assert!(shard_check_env_claim(&ctx, &env, &inert, &[ax, u]).is_none());
   }
 
   #[test]
@@ -639,6 +708,24 @@ mod tests {
     // never visits it.
     let cl = env.bfs_closure(&[a]);
     assert!(cl.contains(&c));
+  }
+
+  #[test]
+  fn owned_per_shard_assigns_projections_to_their_block() {
+    let (env, a, b, c, d) = chain_env();
+    let block = Address::hash(b"block");
+    let wrapper = crate::constant::defn_proj_address(0, &block);
+    env.store_const(
+      wrapper.clone(),
+      crate::constant::defn_proj_constant(0, block.clone()),
+    );
+    let owned =
+      owned_per_shard(&env, &[vec![a.clone(), block], vec![c.clone()]])
+        .unwrap();
+    let mut first = vec![a, wrapper];
+    first.sort_unstable();
+    assert_eq!(owned, vec![first, vec![c]]);
+    assert!(!owned.iter().flatten().any(|x| *x == b || *x == d));
   }
 
   #[test]

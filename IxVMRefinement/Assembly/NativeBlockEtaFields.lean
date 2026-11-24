@@ -42,19 +42,23 @@ universe u
 
 /-! ## Two load facts -/
 
-/-- A level never zero at some levels after two substitutions is not equivalent to `0`. -/
+/-- A level nonzero at some assignment after two substitutions is not equivalent to `0`. -/
 theorem isEquiv_zero_false_of_subst_subst {ps₁ ps₂ : List Ix.Kernel.LevelParam}
     {us₁ us₂ : List Ix.Kernel.Level} {s : Ix.Kernel.Level}
-    (hnz : (Ix.Kernel.Level.subst ps₂ us₂ (Ix.Kernel.Level.subst ps₁ us₁ s)).isNeverZero = true) :
+    (hnz : ¬ ∀ φ, Ix.Kernel.Level.eval φ
+      (Ix.Kernel.Level.subst ps₂ us₂ (Ix.Kernel.Level.subst ps₁ us₁ s)) = 0) :
     (Ix.Kernel.Level.isEquiv s .zero == some true) = false := by
   cases heq : (Ix.Kernel.Level.isEquiv s .zero == some true) with
   | false => rfl
   | true =>
+    exfalso
+    apply hnz
+    intro φ
     have h0 := Decl.eval_zero_of_isEquiv_zero heq
-      (Ix.Kernel.Level.substFn (Ix.Kernel.Level.substFn (fun _ => 0) ps₂ us₂) ps₁ us₁)
-    rw [← Ix.Kernel.Level.eval_subst (Ix.Kernel.Level.substFn (fun _ => 0) ps₂ us₂) ps₁ us₁ s,
-      ← Ix.Kernel.Level.eval_subst (fun _ => 0) ps₂ us₂] at h0
-    exact absurd h0 (Ix.Kernel.Level.isNeverZero_sound (fun _ => 0) _ hnz)
+      (Ix.Kernel.Level.substFn (Ix.Kernel.Level.substFn φ ps₂ us₂) ps₁ us₁)
+    rw [← Ix.Kernel.Level.eval_subst (Ix.Kernel.Level.substFn φ ps₂ us₂) ps₁ us₁ s,
+      ← Ix.Kernel.Level.eval_subst φ ps₂ us₂] at h0
+    exact h0
 
 /-- **A direct load of a one-inductive block's member**: its value is the block's inductive with
 the record's counts (the twin of `former_get_ci_value` for `Ingress::get_ci_iprj`). -/
@@ -221,7 +225,7 @@ theorem NativeInstallOut.etaCaps
     (hidx : ind.indices.toNat = 0)
     {l : Ix.Kernel.Level} {us : List Ix.Kernel.Level}
     (hl : Core.piSortAt ind.params.toNat (Core.posOf (List.range ind.lvls.toNat) ty') = some l)
-    (hnz : (Ix.Kernel.Level.subst (List.range us.length) us l).isNeverZero = true)
+    (hnz : ¬ ∀ φ, Ix.Kernel.Level.eval φ (Ix.Kernel.Level.subst (List.range us.length) us l) = 0)
     {sp v : SourceValue F} {h5 h6 : Heap F} {cs5 : List (Call F)} {sa : Bytes.Address}
     (ev : ObsFn Core.W "KernelWhnf::struct_is_rec" [sp] h5 v h6 cs5) (hv : v ≠ .field 1)
     (good : Core.Good ⟨E, env, t, some n⟩ cs5)
@@ -451,7 +455,8 @@ theorem blockEta_of_install (hrec : BlockUnitRecord E₀ B cb ind)
         (Core.posOf (List.range ind.lvls.toNat) ty') = some l := by
       rw [← hpv]
       exact hpi
-    obtain ⟨he1, he2, he3, he4⟩ := hO.etaCaps hrec hinv hkeys hstored hfreshT hidx hpi' hnz ev5
+    obtain ⟨he1, he2, he3, he4⟩ := hO.etaCaps hrec hinv hkeys hstored hfreshT hidx hpi'
+      (fun h0 => Ix.Kernel.Level.isNeverZero_sound (fun _ => 0) _ hnz (h0 (fun _ => 0))) ev5
       hv5 ⟨good5.1, good5.2⟩ hsa5 hxa c hpc
     have hctor : caps.etaCtor = some ((appCtx ⟨E, env, t, some n⟩ new).stored.κ
         (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) 0)) := by

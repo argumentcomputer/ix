@@ -1,0 +1,88 @@
+{
+  "format": "ix-aiur-kzg-combined-coefficients-v1",
+  "date_utc": "2026-11-13",
+  "base_commit": "4e27c5fcdaef0a7258e4e42693c695881a19e5e9",
+  "default_changed": false,
+  "protocol_changed": false,
+  "unchecked_hints_added": false,
+  "scope": "Opt-in Aiur source overlay; ordinary KZG transcript, opening witnesses and pairing anchors retained.",
+  "algorithm": {
+    "ordering": "Commitment/log/value observations and first-seen opening-factor order stay unchanged. Witness observations stay in native order.",
+    "state": "Each opening factor tracks its fixed r weight and next v power. Each row advances that power by its width.",
+    "matrix_coefficient": "For column j of matrix m, coefficient is v^j times the sum of r_weight * row_start_v_power across that matrix opening rows.",
+    "generator": "Sum all weighted claimed values and emit one negated generator term.",
+    "witnesses": "Original zeta * factor * r_weight and -r_weight terms retained.",
+    "edge_cases": "Zero-width rows still create point batches; repeated factor1/log0, zero v/r, mixed heights and current/next rows are covered. Zero-weight terms in synthetic edge cases are correctness coverage, not a speed claim."
+  },
+  "actual_init": {
+    "before": {
+      "artifact_blake3": "d0f3b7c98b2240094a916e23d0a59724614904941a93a2ad230d4988eacc31e1",
+      "manifest_blake3": "82ff53d4ec0fc4a3ba70a783d112c50f903330199f8c683758fcd694e773a1ad",
+      "main_cells": 734887425,
+      "max_height": 16777216,
+      "private_output_blake3": "e428a96036bdc7321a9b2d762557eb266bfb27ae621745ac0675a62710b101c6",
+      "instructions": 1856716580
+    },
+    "after": {
+      "artifact_blake3": "a4d38f3dfe43e5264213bd2e352387bc06c4d22541e7eac86bdec40e7e13026f",
+      "manifest_blake3": "82ff53d4ec0fc4a3ba70a783d112c50f903330199f8c683758fcd694e773a1ad",
+      "main_cells": 635168387,
+      "max_height": 16777216,
+      "private_output_blake3": "e428a96036bdc7321a9b2d762557eb266bfb27ae621745ac0675a62710b101c6",
+      "instructions": 1651265561
+    },
+    "same_private_outputs": true,
+    "native_pairing_verified": true,
+    "scope": "Exact same input wires, policy and statement. Count-only; no proving traces allocated."
+  },
+  "small_terminal": {
+    "before_main_cells": 2495099,
+    "after_main_cells": 2495317,
+    "before_constraints": 20257381,
+    "after_constraints": 20259825,
+    "domain": 33554432,
+    "artifact_blake3": "fe74b5232268cba80a57ff92dd7367dfb34a878fec37300bde1142c2f31af826",
+    "private_outputs_byte_identical": true,
+    "private_output_blake3": "5099fe4fcedd4589dc3496b0e1fde1070c6ce7f3a3255ae436fa0ba047960e4b",
+    "scope": "Full small development terminal PLONK compilation; slight regression of 218 main cells and 2,444 constraints. No setup/proof from this compile."
+  },
+  "actual_hotspots": {
+    "g1_add_queries_before": 576281,
+    "g1_add_queries_after": 467210,
+    "g1_add_padded_cells_before": 147849216,
+    "g1_add_padded_cells_after": 73924608,
+    "msm_split_padded_cells_before": 26214400,
+    "msm_split_padded_cells_after": 13107200,
+    "blake3_compress_padded_cells_unchanged": 131596288,
+    "range80_padded_cells_unchanged": 117440512
+  },
+  "validation": {
+    "native_reference": "Exact observed-byte vectors, v/r/next challenges and both group outputs agree over synthetic edge cases.",
+    "aiur_reference": "Source synthetic scalar edges agree with native; actual mixed-height/log0/zero-lookup proofs produce equal v/r/next and equal accumulator points for honest and forged opening witnesses.",
+    "existing_source_tests": "Honest/tampered key/claim/quotient/opening and compression-policy tests passed against the candidate.",
+    "actual_compiled_verifier_proof": "Passed: 2,587,844 main cells, height 65,536; altered output rejected. Explicit development setup.",
+    "lean": "Opt-in source typecheck and exporter build passed.",
+    "clippy": "Targeted Rust test passes -D warnings.",
+    "large_proving": "Actual Init count-only; no traces or PLONK circuit allocated."
+  },
+  "source_files": [
+    "MultiStark/MultiStark/BN/KzgPcsCombined.lean",
+    "MultiStark/Examples/KzgCombined.lean",
+    "MultiStark/lakefile.lean",
+    "crates/proof-compression/tests/aiur_kzg_combined.rs"
+  ],
+  "artifact_pins": {
+    "source.ixa": "605def0f3821b9d07efe885bc67804f936fdc4e2757602b7dbba6dfe28dcd0b2",
+    "actual-init.ixa": "a4d38f3dfe43e5264213bd2e352387bc06c4d22541e7eac86bdec40e7e13026f",
+    "small-terminal.ixa": "fe74b5232268cba80a57ff92dd7367dfb34a878fec37300bde1142c2f31af826"
+  },
+  "reproduce": [
+    "lake build multiStark/kzg_combined_export",
+    "MultiStark/.lake/build/bin/kzg_combined_export source NEW_SOURCE_ARTIFACT",
+    "IX_AIUR_KZG_COMBINED_ARTIFACT=NEW_SOURCE_ARTIFACT cargo test --release --locked -p ix-proof-compression --test aiur_kzg_combined -- --include-ignored",
+    "MultiStark/.lake/build/bin/kzg_combined_export final CONFIGURATION_JSON NEW_ARTIFACT --accumulator",
+    "aiur_terminal_count NEW_ARTIFACT ARTIFACT_PIN INPUT_MANIFEST INPUT_PIN RECORD_BYTES NEW_OUTPUT",
+    "aiur_terminal_profile SMALL_ARTIFACT NEW_OUTPUT --compile-plonk"
+  ],
+  "limitation": "The actual Init terminal still has 635,168,387 main cells and maximum height 2^24. This does not make the real final relation fit the 2^24 PLONK target. The small fixture cost is slightly higher."
+}

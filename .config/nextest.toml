@@ -1,3 +1,12 @@
+[test-groups]
+# Heavy STARK, KZG, and Plonkish prover tests allocate multi-GiB LDE/FFT/SRS
+# tables and already use Rayon across all cores. Serialize them in CI so the
+# 8-vCPU / 61.8 GiB runner does not OOM from concurrent prover processes.
+heavy-prover = { max-threads = 1 }
+# Medium proof-compression unit tests can build KZG/recursive witnesses; cap
+# their concurrency so they do not stack peak RSS on the CI runner.
+medium-prover = { max-threads = 2 }
+
 [profile.ci]
 # Print out output for failing tests as soon as they fail, and also at the end
 # of the run (for easy scrollability).
@@ -12,3 +21,20 @@ slow-timeout = { period = "300s", terminate-after = 4 }
 # nondeterministic failure (parallel compilation, sharing, the kernel's
 # caches) pass as "flaky".
 retries = 0
+
+[[profile.ci.overrides]]
+# Multi-GiB prover tests (each allocates ~5-30 GiB RAM and/or multi-GiB spill
+# disk and already saturates all Rayon threads): run completely exclusively so
+# zero other tests overlap with their peak RSS or spill-disk footprint on the
+# 8-vCPU / 61.8 GiB / 100 GB CI runner.
+filter = '(package(stark-shrinker) & (test(plonkish_fixed_root) | test(plonkish_1circuit) | test(end_to_end_stark128))) | (package(ix-ffi) & test(fixed_root_ffi_v2)) | (package(ix-proof-compression) & kind(test) & (test(pipeline_root) | test(plonkish_plan::dynamic_batch))) | (package(ix-proof-compression) & kind(lib) & (test(pipeline::root::fixed) | test(pipeline::first) | test(pipeline::init_fri)))'
+threads-required = "num-test-threads"
+test-group = "@global"
+
+[[profile.ci.overrides]]
+filter = 'package(stark-shrinker) | (package(ix-ffi) & test(fixed_root_ffi)) | (package(ix-proof-compression) & kind(test)) | (package(stark-verifier) & kind(test))'
+test-group = "heavy-prover"
+
+[[profile.ci.overrides]]
+filter = 'package(ix-proof-compression) & kind(lib)'
+test-group = "medium-prover"

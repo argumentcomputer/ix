@@ -8,13 +8,17 @@ open Aiur.FriSecurity
 
 def usage : String := "usage: fri-security [STATISTICS | -] [--instance LOG_TRACE,COLUMNS,CONSTRAINTS,MAX_DEGREE,LOOKUP_ROWS,LOOKUP_WIDTH]
     [--log-blowup N] [--queries N] [--query-pow N] [--commit-pow N] [--log-arity N]
-    [--parameters LOG_BLOWUP,QUERIES,COMMIT_POW,QUERY_POW]... [--drop I,J,...] [--set I:LOG_HEIGHT:MAIN,...] [--table]
+    [--extension-degree N] [--digest-bytes N]
+    [--parameters LOG_BLOWUP,QUERIES,COMMIT_POW,QUERY_POW]... [--drop I,J,...] [--set I:LOG_HEIGHT:MAIN,...]
+    [--require-min-bits N] [--regime proven|johnson|conjectured] [--table]
 
 STATISTICS is the JSON of `stark-verifier statistics KEY PROOF` (an Aiur proof)
 or `fri_sizing --statistics outer-vk.bin` (the compression stage's FRI key), or
 - for standard input. --instance gives an instance's facts directly instead.
 Each --parameters set gets its own report; the other options override the
 key's parameters, which default to Aiur's when only --instance is given.
+--require-min-bits N exits non-zero if any evaluated parameter set falls below N
+bits in the selected --regime (default: proven).
 --table prints one line per parameter set with each regime's weakest term."
 
 def natList (s : String) : Except String (List Nat) :=
@@ -29,6 +33,8 @@ structure Options where
   drop : List Nat := []
   shapes : List (Nat × Nat × Nat) := []
   table : Bool := false
+  requireMinBits : Option Nat := none
+  regime : RegimeKind := .proven
 
 def parse : List String → Options → Except String Options
   | [], o => .ok o
@@ -41,6 +47,16 @@ def parse : List String → Options → Except String Options
     | "--commit-pow" => let v ← one; parse rest { o with overrides := o.overrides ++ [({ · with commitPow := v })] }
     | "--log-arity" => let v ← one; parse rest { o with overrides := o.overrides ++ [({ · with logArity := v })] }
     | "--log-blowup" => let v ← one; parse rest { o with overrides := o.overrides ++ [({ · with logBlowup := v })] }
+    | "--extension-degree" =>
+      let v ← one; parse rest { o with overrides := o.overrides ++ [({ · with extensionDegree := v })] }
+    | "--digest-bytes" =>
+      let v ← one; parse rest { o with overrides := o.overrides ++ [({ · with digestBytes := v })] }
+    | "--require-min-bits" =>
+      let v ← one; parse rest { o with requireMinBits := some v }
+    | "--regime" =>
+      match RegimeKind.parse? value with
+      | some r => parse rest { o with regime := r }
+      | none => .error s!"--regime must be one of: proven, johnson, conjectured (got {value})"
     | "--parameters" =>
       match ← natList value with
       | [b, q, c, p] => parse rest { o with sets := o.sets.push (b, q, c, p) }
@@ -94,8 +110,8 @@ def main (args : List String) : IO UInt32 := do
       | none, some _ => pure { parameters := Parameters.default, circuits := #[] }
       | _, _ => IO.eprintln "give STATISTICS or --instance, not both"; return 2
     let circuits := applyOverrides key.circuits o.drop o.shapes
-    let inst := o.inst.getD (instanceOf circuits)
     let base := o.overrides.foldl (fun p f => f p) key.parameters
+    let inst := o.inst.getD (instanceOf circuits base.extensionDegree)
     let sets := if o.sets.isEmpty then #[base] else o.sets.map fun (b, q, c, pw) =>
       { base with logBlowup := b, queries := q, commitPow := c, queryPow := pw }
     if o.table then
@@ -112,4 +128,17 @@ def main (args : List String) : IO UInt32 := do
           (key.shards.map (s!", {·} shards")).getD "" ++
           (key.proofBytes.map (s!", {·} proof bytes")).getD ""
       for p in sets do IO.println (report source inst p)
+    if let some minBits := o.requireMinBits then
+      let mut failed := false
+      for p in sets do
+        match checkMinBits inst p o.regime minBits with
+        | .ok (rName, termName, bits) =>
+          IO.println s!"[fri-security] PASS: ext Fp^{p.extensionDegree} digest {p.digestBytes}B \
+            ({p.logBlowup},{p.queries},{p.commitPow},{p.queryPow}) \
+            regime '{o.regime.label}' ({rName}) = {fmt bits} bits (limited by {termName}) >= {minBits}"
+        | .error msg =>
+          IO.eprintln s!"[fri-security] FAIL: ext Fp^{p.extensionDegree} digest {p.digestBytes}B \
+            ({p.logBlowup},{p.queries},{p.commitPow},{p.queryPow}): {msg}"
+          failed := true
+      if failed then return 1
     return 0

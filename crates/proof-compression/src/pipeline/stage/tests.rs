@@ -8,8 +8,8 @@ fn fri_config(
   max_log_arity: usize,
   log_final_poly_len: usize,
   num_queries: usize,
-) -> GoldilocksBlake3Config {
-  GoldilocksBlake3Config::new(
+) -> GoldilocksBlake3V6Config {
+  GoldilocksBlake3V6Config::new(
     CommitmentParameters { log_blowup: 2, cap_height },
     FriParameters {
       log_final_poly_len,
@@ -21,13 +21,15 @@ fn fri_config(
   )
 }
 
+const FLOOR_QUERIES: usize = 135; // log_blowup=2, query_pow=0: 270b conj, 91.53b UD, 128.925b finite-m Johnson
+
 #[test]
 fn unsupported_fri_profiles_fail_before_proving() {
   for (cap, arity, final_log, queries) in
-    [(1, 1, 0, 2), (0, 2, 0, 2), (0, 1, 1, 2), (0, 1, 0, 0)]
+    [(1, 1, 0, 2), (0, 2, 0, 2), (0, 1, 1, 2), (0, 1, 0, 0), (0, 1, 0, 2)]
   {
     let config = || fri_config(cap, arity, final_log, queries);
-    if cfg!(feature = "cuda") && (cap != 0 || arity > 1) {
+    if cfg!(feature = "cuda") && (cap != 0 || arity > 10) {
       assert!(std::panic::catch_unwind(config).is_err());
     } else {
       assert!(arithmetic(Val::ONE, 2).prove_fri(config(), 32).is_err());
@@ -58,14 +60,18 @@ fn fri_stage_preserves_publics_through_foreign_translation() -> Result<()> {
     let prepared = arithmetic(value, 2);
     let local = FriVerifier::derive(
       arithmetic(value, 2).circuit,
-      fri_config(0, 1, 0, 2),
+      fri_config(0, 1, 0, FLOOR_QUERIES),
       32,
     )?;
-    let (verifier, proof) = prepared.prove_fri(fri_config(0, 1, 0, 2), 32)?;
+    let (verifier, proof) =
+      prepared.prove_fri(fri_config(0, 1, 0, FLOOR_QUERIES), 32)?;
     assert_eq!(local.to_bytes()?, verifier.to_bytes()?);
     let key_bytes = verifier.to_bytes()?;
     let verifier = FriVerifier::from_bytes(&key_bytes)?;
     assert_eq!(verifier.to_bytes()?, key_bytes);
+    let mut legacy_v5_tag = key_bytes.clone();
+    legacy_v5_tag[..8].copy_from_slice(b"IXFRIV01");
+    assert!(FriVerifier::from_bytes(&legacy_v5_tag).is_err());
     assert!(
       FriVerifier::from_bytes(&key_bytes[..key_bytes.len() - 1]).is_err()
     );
@@ -75,7 +81,7 @@ fn fri_stage_preserves_publics_through_foreign_translation() -> Result<()> {
     let mut bad = FriVerifier::from_bytes(&verifier.to_bytes()?)?;
     bad.statement.locations[0] = (usize::MAX, 3);
     assert!(FriVerifier::from_bytes(&bad.to_bytes()?).is_err());
-    assert!(KzgVerifier::from_bytes(&verifier.to_bytes()?).is_err());
+    assert!(KzgVerifier::<Bn254>::from_bytes(&verifier.to_bytes()?).is_err());
     verifier.verify(&proof, &expected)?;
     assert!(
       verifier.verify(&proof, &[value, value * value + Val::ONE]).is_err()
@@ -83,7 +89,20 @@ fn fri_stage_preserves_publics_through_foreign_translation() -> Result<()> {
     assert!(verifier.verify(&proof, &expected[..1]).is_err());
     let translated =
       prepare_kzg(&verifier, &proof, &expected, Default::default())?;
-    assert_eq!(translated.public_values(), scalar_statement(&expected));
+    assert_eq!(
+      translated.public_values(),
+      scalar_statement::<Bn254>(&expected)
+    );
+    let bls_translated = prepare_kzg_for::<crate::kzg::curve::Bls12381>(
+      &verifier,
+      &proof,
+      &expected,
+      Default::default(),
+    )?;
+    assert_eq!(
+      bls_translated.public_values(),
+      scalar_statement::<crate::kzg::curve::Bls12381>(&expected)
+    );
     assert!(
       prepare_kzg(
         &verifier,
@@ -107,8 +126,10 @@ fn fri_memory_reduction_preserves_the_dense_proof() -> Result<()> {
     32,
   )?;
   let claims = compiled.claims(prepared.assignment.public_values())?;
-  let (system, key) =
-    System::new(fri_config(0, 1, 0, 2), lowering::fri_definitions(&compiled));
+  let (system, key) = System::new(
+    fri_config(0, 1, 0, FLOOR_QUERIES),
+    lowering::fri_definitions(&compiled),
+  );
   let reference = system.prove_multiple_claims(
     &key,
     &claims.iter().map(Vec::as_slice).collect::<Vec<_>>(),
@@ -117,8 +138,8 @@ fn fri_memory_reduction_preserves_the_dense_proof() -> Result<()> {
       &system,
     ),
   );
-  let (verifier, proof) =
-    arithmetic(Val::TWO, 50).prove_fri(fri_config(0, 1, 0, 2), 32)?;
+  let (verifier, proof) = arithmetic(Val::TWO, 50)
+    .prove_fri(fri_config(0, 1, 0, FLOOR_QUERIES), 32)?;
   assert_eq!(proof.to_bytes()?, reference.to_bytes()?);
   assert!(
     verifier.key.system().circuits.iter().all(|c| c.preprocessed.is_none())
@@ -127,13 +148,14 @@ fn fri_memory_reduction_preserves_the_dense_proof() -> Result<()> {
   Ok(())
 }
 
-#[test]
-fn kzg_stages_derive_claims_for_different_layouts_and_parameters() -> Result<()>
-{
-  for (height, value) in [(32, Scalar::ONE), (128, Scalar::TWO)] {
+fn check_kzg_stages<C: KzgCurve>() -> Result<()> {
+  for (height, value) in
+    [(32, CurveScalar::<C>::ONE), (128, CurveScalar::<C>::TWO)]
+  {
     let stage = arithmetic(value, 50);
     let expected = [value, value * value];
-    let srs = Arc::new(Srs::unsafe_dev_setup(height, &height.to_le_bytes()));
+    let srs =
+      Arc::new(Srs::<C>::unsafe_dev_setup(height, &height.to_le_bytes()));
     srs.validate()?;
     let local =
       KzgVerifier::derive(arithmetic(value, 50).circuit, srs.clone(), height)?;
@@ -141,33 +163,35 @@ fn kzg_stages_derive_claims_for_different_layouts_and_parameters() -> Result<()>
     assert_eq!(local.to_bytes()?, verifier.to_bytes()?);
     drop(local);
     let key_bytes = verifier.to_bytes()?;
-    let verifier = KzgVerifier::from_bytes(&key_bytes)?;
+    let verifier = KzgVerifier::<C>::from_bytes(&key_bytes)?;
     assert_eq!(verifier.to_bytes()?, key_bytes);
     let mut wrong_magic = key_bytes.clone();
     wrong_magic[7] ^= 1;
-    assert!(KzgVerifier::from_bytes(&wrong_magic).is_err());
+    assert!(KzgVerifier::<C>::from_bytes(&wrong_magic).is_err());
     assert!(
-      KzgVerifier::from_bytes(&key_bytes[..key_bytes.len() - 1]).is_err()
+      KzgVerifier::<C>::from_bytes(&key_bytes[..key_bytes.len() - 1]).is_err()
     );
     let mut extra_key = key_bytes;
     extra_key.push(0);
-    assert!(KzgVerifier::from_bytes(&extra_key).is_err());
-    let mut bad = KzgVerifier::from_bytes(&verifier.to_bytes()?)?;
+    assert!(KzgVerifier::<C>::from_bytes(&extra_key).is_err());
+    let mut bad = KzgVerifier::<C>::from_bytes(&verifier.to_bytes()?)?;
     bad.system.circuits[0].graph.max_constraint_degree += 1;
-    assert!(KzgVerifier::from_bytes(&bad.to_bytes()?).is_err());
-    let mut bad = KzgVerifier::from_bytes(&verifier.to_bytes()?)?;
+    assert!(KzgVerifier::<C>::from_bytes(&bad.to_bytes()?).is_err());
+    let mut bad = KzgVerifier::<C>::from_bytes(&verifier.to_bytes()?)?;
     bad.system.circuits[0].preprocessed_height = 0;
-    assert!(KzgVerifier::from_bytes(&bad.to_bytes()?).is_err());
-    let mut other = KzgVerifier::from_bytes(&verifier.to_bytes()?)?;
-    other.params = VerifierParams::from_srs(&Srs::unsafe_dev_setup(
+    assert!(KzgVerifier::<C>::from_bytes(&bad.to_bytes()?).is_err());
+    let mut other = KzgVerifier::<C>::from_bytes(&verifier.to_bytes()?)?;
+    other.params = VerifierParams::from_srs(&Srs::<C>::unsafe_dev_setup(
       height,
       b"other-parameters",
     ));
-    let other = KzgVerifier::from_bytes(&other.to_bytes()?)?;
+    let other = KzgVerifier::<C>::from_bytes(&other.to_bytes()?)?;
     assert!(other.verify(&proof, &expected).is_err());
     verifier.verify(&proof, &expected)?;
     assert!(
-      verifier.verify(&proof, &[value, value * value + Scalar::ONE]).is_err()
+      verifier
+        .verify(&proof, &[value, value * value + CurveScalar::<C>::ONE])
+        .is_err()
     );
     assert!(verifier.verify(&proof, &expected[..1]).is_err());
     assert!(verifier.system.circuits.iter().all(|c| c.preprocessed.is_none()));
@@ -185,8 +209,16 @@ fn kzg_stages_derive_claims_for_different_layouts_and_parameters() -> Result<()>
       assert!(prepare_recursive(&verifier, &proof, &wrong).is_err());
     }
   }
-  let srs = Arc::new(Srs::unsafe_dev_setup(8, b"too-small"));
-  assert!(arithmetic(Scalar::ONE, 2).prove_kzg(srs, 16).is_err());
+  let srs = Arc::new(Srs::<C>::unsafe_dev_setup(8, b"too-small"));
+  assert!(arithmetic(CurveScalar::<C>::ONE, 2).prove_kzg(srs, 16).is_err());
+  Ok(())
+}
+
+#[test]
+fn kzg_stages_derive_claims_for_different_layouts_and_parameters() -> Result<()>
+{
+  check_kzg_stages::<Bn254>()?;
+  check_kzg_stages::<crate::kzg::curve::Bls12381>()?;
   Ok(())
 }
 
@@ -226,19 +258,20 @@ fn kzg_table_merging_respects_the_callers_height_bound() -> Result<()> {
 fn verifier_decoder_rejects_trace_cap_without_quotient_headroom() -> Result<()>
 {
   let cap = 1usize << Scalar::TWO_ADICITY;
-  let anchors = Srs::unsafe_dev_setup_prefix(2, cap - 1, b"domain-cap");
+  let anchors =
+    Srs::<Bn254>::unsafe_dev_setup_prefix(2, cap - 1, b"domain-cap");
   let params = VerifierParams::with_max_trace_len(&anchors, cap);
   let encoded = encode_key(
-    KZG_VERIFIER_MAGIC,
+    Bn254::KZG_VERIFIER_MAGIC,
     (
       params.to_bytes()?,
       0u8,
       Vec::<multi_stark::system::Circuit<Scalar>>::new(),
-      Option::<KzgCommitment>::None,
-      ClaimTemplate::recursive(0),
+      Option::<KzgCommitment<Bn254>>::None,
+      ClaimTemplate::<Scalar>::recursive(0),
     ),
   )?;
-  let error = KzgVerifier::from_bytes(&encoded).err().unwrap();
+  let error = KzgVerifier::<Bn254>::from_bytes(&encoded).err().unwrap();
   assert!(error.to_string().contains("quotient domain"));
   Ok(())
 }

@@ -28,6 +28,7 @@ public import Ix.Sharing.Exact.PinnedFast
 public import Ix.Sharing.Exact.Uniform
 import all Ix.Sharing.Exact.Uniform
 import all Ix.Sharing.Exact.UniformSearch
+import all Ix.Sharing.Exact.Basic
 import all Ix.Common
 import all Ix.Sharing.Exact.PinnedFast
 import all Ix.Sharing.Exact.SortedSets
@@ -548,7 +549,91 @@ def tablesOK (tabs : Array CTable) : Bool :=
     (tab[k]!).elim true fun x => x.2.size == k && incList x.2.toList) &&
   incList ((tabs.toList.flatMap tableTerms).mergeSort fun x y => decide (x ≤ y))
 
-/-- `uniformKnapsack` with the rank-based knapsack (module doc). -/
+/-! ## Exact lower-bound pruning for the count-bracket knapsack
+
+Dropping stored entries to reach a lower `Tag0` count bracket `≤ cap` can save
+at most `tag0Size (kCS + bestX.size) - tag0Size kCS ≤ 8` bytes in the table-count
+header. For each component table `tab`, let `m` be its minimum `Δ`; every entry
+`k` has excess penalty `dk - m ≥ 0`. A tiny DP over penalty `p ∈ [0, budget]`
+(`budget ≤ 16`) computes a lower bound `mc[p]` on the minimum total count
+achievable at excess penalty `p`. Whenever every `mc[p]` exceeds `cap` (or any
+table is empty, or `budget < 0`), no cell `c ≤ cap` can tie or beat `bestX`, so
+the full `cap`-wide knapsack is skipped in linear time. -/
+
+/-- Minimum of an optional `Int` and an `Int`. -/
+def optMinInt (a : Option _root_.Int) (b : _root_.Int) : Option _root_.Int :=
+  match a with
+  | none => some b
+  | some x => some (min x b)
+
+/-- Minimum `Δ` across all present entries of a component table. -/
+def tableMinDelta (tab : CTable) : Option _root_.Int :=
+  (List.range tab.size).foldl (fun acc k =>
+    match tab[k]! with
+    | none => acc
+    | some (d, _) => optMinInt acc d) none
+
+/-- Sum of per-table minimum `Δ`s, or `none` if some table has no entries. -/
+def sumMinDeltas (tabs : List CTable) : Option _root_.Int :=
+  tabs.foldl (fun acc tab =>
+    acc.bind fun s => (tableMinDelta tab).map fun m => s + m) (some 0)
+
+/-- Minimum of an optional `Nat` and a `Nat`. -/
+def optMinNat (a : Option Nat) (b : Nat) : Option Nat :=
+  match a with
+  | none => some b
+  | some x => some (min x b)
+
+/-- Inner penalty-DP update for source penalty `p` (min count `c0`) and table
+entry `k`. -/
+def penInner (budget p c0 : Nat) (m : _root_.Int) (tab : CTable)
+    (next : Array (Option Nat)) (k : Nat) : Array (Option Nat) :=
+  match tab[k]! with
+  | none => next
+  | some (dk, _) =>
+    if m ≤ dk then
+      let q := p + (dk - m).toNat
+      if q ≤ budget then next.set! q (optMinNat next[q]! (c0 + k))
+      else next
+    else next
+
+/-- One penalty-DP layer: `next[q]` bounds from below the minimum total count
+achievable at total excess penalty `q ≤ budget`. -/
+def penStep (budget : Nat) (mc : Array (Option Nat)) (m : _root_.Int) (tab : CTable) :
+    Array (Option Nat) :=
+  (List.range mc.size).foldl (fun next p =>
+    match mc[p]! with
+    | none => next
+    | some c0 => (List.range tab.size).foldl (penInner budget p c0 m tab) next)
+    (Array.replicate (budget + 1) none)
+
+/-- Run the penalty-DP over all component tables. -/
+def penRun (budget : Nat) (tabs : List CTable) : Array (Option Nat) :=
+  tabs.foldl (fun mc tab =>
+    match tableMinDelta tab with
+    | none => Array.replicate (budget + 1) none
+    | some m => penStep budget mc m tab)
+    (#[some 0] ++ Array.replicate budget none)
+
+/-- Exact lower-bound pruning check: `true` guarantees no count `c ≤ cap` can
+tie or beat `(bestDelta, bestX)`. -/
+def canPruneKnapsack (kCS cap : Nat) (bestDelta : _root_.Int) (bestX : Array Nat)
+    (tabs : Array CTable) : Bool :=
+  match sumMinDeltas tabs.toList with
+  | none => true
+  | some sumMin =>
+    let budgetInt : _root_.Int :=
+      bestDelta + (tag0Size (kCS + bestX.size) : _root_.Int) - (tag0Size kCS : _root_.Int) - sumMin
+    if budgetInt < 0 then true
+    else if budgetInt ≤ 16 then
+      let mc := penRun budgetInt.toNat tabs.toList
+      mc.all fun o => match o with
+        | none => true
+        | some c0 => decide (cap < c0)
+    else false
+
+/-- `uniformKnapsack` with exact lower-bound pruning and the rank-based knapsack
+(module doc). -/
 def uniformKnapsackFast (limits : Limits) (kCS : Nat) (results : Array CompResult) :
     Except SharingError (_root_.Int × Array Nat × Bool) := do
   let bestX := ((results.foldl (fun acc r => acc ++ r.bestSet) #[]).toList.mergeSort
@@ -560,7 +645,9 @@ def uniformKnapsackFast (limits : Limits) (kCS : Nat) (results : Array CompResul
     if (results.size + 1) * (cap + 1) > limits.maxKnapsackCells then
       throw (.resourceExhausted .knapsackCells limits.maxKnapsackCells)
     let tabs := results.map (·.bySize)
-    if tablesOK tabs then
+    if canPruneKnapsack kCS cap bestDelta bestX tabs then
+      pure (bestDelta, bestX, false)
+    else if tablesOK tabs then
       pure (knapChooseFast kCS cap tabs (bestDelta, bestX, false))
     else
       let dp := results.foldl (fun dp r => knapStep cap dp r.bySize)
@@ -1956,6 +2043,495 @@ theorem bestX_eq (results : Array CompResult) :
   rw [foldl_append_toList]
   exact (List.mergeSort_perm _ _).symm
 
+/-! ## Soundness of exact lower-bound pruning -/
+
+private theorem knapTag0Size_mono {a b : Nat} (h : a ≤ b) : tag0Size a ≤ tag0Size b := by
+  unfold tag0Size Ixon.tagNByteWidth Ixon.tagNEnd1 Ixon.tagNEnd2 Ixon.tagNEnd3 Ixon.tagNEnd4
+    Ixon.tagNEnd5
+  repeat (first | split | omega)
+
+theorem knapChoose_eq_init (kCS : Nat) (dp : Array (Option (_root_.Int × Array Nat)))
+    (init : _root_.Int × Array Nat × Bool)
+    (hgt : ∀ c d s, c < dp.size → dp[c]! = some (d, s) →
+      init.1 + (tag0Size (kCS + init.2.1.size) : _root_.Int) < d + (tag0Size (kCS + c) : _root_.Int)) :
+    knapChoose kCS dp init = init := by
+  unfold knapChoose
+  have key : ∀ (l : List Nat), (∀ c ∈ l, c < dp.size) →
+      l.foldl (fun (acc : _root_.Int × Array Nat × Bool) c =>
+        match dp[c]! with
+        | none => acc
+        | some (d, s) =>
+          let lv : _root_.Int := d + (tag0Size (kCS + c) : _root_.Int)
+          let l0 : _root_.Int := acc.1 + (tag0Size (kCS + acc.2.1.size) : _root_.Int)
+          if lv < l0 || (lv == l0 && setPrec s acc.2.1) then (d, s, true) else acc) init = init := by
+    intro l
+    induction l with
+    | nil => intro _; rfl
+    | cons c l ih =>
+      intro hl
+      simp only [List.foldl_cons]
+      have hc := hl c List.mem_cons_self
+      have hstep : (match dp[c]! with
+        | none => init
+        | some (d, s) =>
+          let lv : _root_.Int := d + (tag0Size (kCS + c) : _root_.Int)
+          let l0 : _root_.Int := init.1 + (tag0Size (kCS + init.2.1.size) : _root_.Int)
+          if lv < l0 || (lv == l0 && setPrec s init.2.1) then (d, s, true) else init) = init := by
+        cases hdp : dp[c]! with
+        | none => rfl
+        | some e =>
+          obtain ⟨d, s⟩ := e
+          have hlt := hgt c d s hc hdp
+          have h1 : ¬ (d + (tag0Size (kCS + c) : _root_.Int) <
+              init.1 + (tag0Size (kCS + init.2.1.size) : _root_.Int)) := by omega
+          have h2 : ¬ ((d + (tag0Size (kCS + c) : _root_.Int) ==
+              init.1 + (tag0Size (kCS + init.2.1.size) : _root_.Int)) = true) := by
+            simp only [beq_iff_eq]; omega
+          simp [h1, h2]
+      rw [hstep]
+      exact ih (fun c' hc' => hl c' (List.mem_cons_of_mem _ hc'))
+  exact key _ (fun c hc => List.mem_range.mp hc)
+
+theorem optMinInt_mono {a : Option _root_.Int} {m : _root_.Int} (ha : a = some m) (b : _root_.Int) :
+    ∃ m', optMinInt a b = some m' ∧ m' ≤ m := by
+  rw [ha]
+  exact ⟨min m b, rfl, Int.min_le_left m b⟩
+
+theorem optMinInt_le_right (a : Option _root_.Int) (b : _root_.Int) :
+    ∃ m, optMinInt a b = some m ∧ m ≤ b := by
+  cases a with
+  | none => exact ⟨b, rfl, Int.le_refl b⟩
+  | some x => exact ⟨min x b, rfl, Int.min_le_right x b⟩
+
+theorem tableMinDelta_fold_mono (tab : CTable) :
+    ∀ (l : List Nat) (acc : Option _root_.Int) (m0 : _root_.Int), acc = some m0 →
+      ∃ m, l.foldl (fun acc k =>
+        match tab[k]! with
+        | none => acc
+        | some (d, _) => optMinInt acc d) acc = some m ∧ m ≤ m0 := by
+  intro l
+  induction l with
+  | nil => intro acc m0 ha; exact ⟨m0, ha, Int.le_refl m0⟩
+  | cons k l ih =>
+    intro acc m0 ha
+    simp only [List.foldl_cons]
+    cases htk : tab[k]! with
+    | none => exact ih acc m0 ha
+    | some e =>
+      obtain ⟨d, _⟩ := e
+      obtain ⟨m1, hm1, hle1⟩ := optMinInt_mono ha d
+      obtain ⟨m2, hm2, hle2⟩ := ih _ m1 hm1
+      exact ⟨m2, hm2, Int.le_trans hle2 hle1⟩
+
+theorem tableMinDelta_fold_le (tab : CTable) :
+    ∀ (l : List Nat) (acc : Option _root_.Int) (k : Nat) (d : _root_.Int) (s : Array Nat),
+      k ∈ l → tab[k]! = some (d, s) →
+      ∃ m, l.foldl (fun acc k =>
+        match tab[k]! with
+        | none => acc
+        | some (d, _) => optMinInt acc d) acc = some m ∧ m ≤ d := by
+  intro l
+  induction l with
+  | nil => intro _ _ _ _ h; cases h
+  | cons a l ih =>
+    intro acc k d s hk htk
+    simp only [List.foldl_cons]
+    rcases List.mem_cons.mp hk with rfl | hmem
+    · rw [htk]
+      obtain ⟨m1, hm1, hle1⟩ := optMinInt_le_right acc d
+      obtain ⟨m2, hm2, hle2⟩ := tableMinDelta_fold_mono tab l _ m1 hm1
+      exact ⟨m2, hm2, Int.le_trans hle2 hle1⟩
+    · exact ih _ k d s hmem htk
+
+theorem tableMinDelta_le {tab : CTable} {k : Nat} {d : _root_.Int} {s : Array Nat}
+    (hk : k < tab.size) (htk : tab[k]! = some (d, s)) :
+    ∃ m, tableMinDelta tab = some m ∧ m ≤ d :=
+  tableMinDelta_fold_le tab (List.range tab.size) none k d s (List.mem_range.mpr hk) htk
+
+theorem optMinNat_mono {a : Option Nat} {x : Nat} (ha : a = some x) (b : Nat) :
+    ∃ y, optMinNat a b = some y ∧ y ≤ x := by
+  rw [ha]
+  exact ⟨min x b, rfl, Nat.min_le_left x b⟩
+
+theorem optMinNat_le_right (a : Option Nat) (b : Nat) :
+    ∃ y, optMinNat a b = some y ∧ y ≤ b := by
+  cases a with
+  | none => exact ⟨b, rfl, Nat.le_refl b⟩
+  | some x => exact ⟨min x b, rfl, Nat.min_le_right x b⟩
+
+theorem penInner_size (budget p c0 : Nat) (m : _root_.Int) (tab : CTable)
+    (next : Array (Option Nat)) (k : Nat) (hs : next.size = budget + 1) :
+    (penInner budget p c0 m tab next k).size = budget + 1 := by
+  unfold penInner
+  cases htk : tab[k]! with
+  | none => exact hs
+  | some e =>
+    obtain ⟨dk, _⟩ := e
+    dsimp only
+    split
+    · split
+      · simp [hs]
+      · exact hs
+    · exact hs
+
+theorem penInner_mono (budget p c0 : Nat) (m : _root_.Int) (tab : CTable)
+    (next : Array (Option Nat)) (k q x : Nat) (hs : next.size = budget + 1)
+    (hq : q ≤ budget) (hx : next[q]! = some x) :
+    ∃ y, (penInner budget p c0 m tab next k)[q]! = some y ∧ y ≤ x := by
+  unfold penInner
+  cases htk : tab[k]! with
+  | none => exact ⟨x, hx, Nat.le_refl x⟩
+  | some e =>
+    obtain ⟨dk, _⟩ := e
+    dsimp only
+    split
+    · split
+      · by_cases heq : p + (dk - m).toNat = q
+        · subst heq
+          rw [getElem!_set!_self' _ _ _ (by omega)]
+          exact optMinNat_mono hx _
+        · rw [getElem!_set!_ne' _ _ _ _ heq]
+          exact ⟨x, hx, Nat.le_refl x⟩
+      · exact ⟨x, hx, Nat.le_refl x⟩
+    · exact ⟨x, hx, Nat.le_refl x⟩
+
+theorem penInner_hit (budget p c0 : Nat) (m : _root_.Int) (tab : CTable)
+    (next : Array (Option Nat)) (k : Nat) (dk : _root_.Int) (sk : Array Nat)
+    (hs : next.size = budget + 1) (htk : tab[k]! = some (dk, sk)) (hmd : m ≤ dk)
+    (hq : p + (dk - m).toNat ≤ budget) :
+    ∃ y, (penInner budget p c0 m tab next k)[p + (dk - m).toNat]! = some y ∧ y ≤ c0 + k := by
+  unfold penInner
+  rw [htk]
+  simp only [hmd, ite_true, hq]
+  rw [getElem!_set!_self' _ _ _ (by omega)]
+  exact optMinNat_le_right _ _
+
+theorem penInner_fold_mono (budget p c0 : Nat) (m : _root_.Int) (tab : CTable) :
+    ∀ (l : List Nat) (next : Array (Option Nat)), next.size = budget + 1 →
+      (l.foldl (penInner budget p c0 m tab) next).size = budget + 1 ∧
+      ∀ q x, q ≤ budget → next[q]! = some x →
+        ∃ y, (l.foldl (penInner budget p c0 m tab) next)[q]! = some y ∧ y ≤ x := by
+  intro l
+  induction l with
+  | nil => intro next hs; exact ⟨hs, fun q x _ hx => ⟨x, hx, Nat.le_refl x⟩⟩
+  | cons k l ih =>
+    intro next hs
+    simp only [List.foldl_cons]
+    have hs1 := penInner_size budget p c0 m tab next k hs
+    obtain ⟨hs2, hmono⟩ := ih _ hs1
+    refine ⟨hs2, fun q x hq hx => ?_⟩
+    obtain ⟨y1, hy1, hle1⟩ := penInner_mono budget p c0 m tab next k q x hs hq hx
+    obtain ⟨y2, hy2, hle2⟩ := hmono q y1 hq hy1
+    exact ⟨y2, hy2, Nat.le_trans hle2 hle1⟩
+
+theorem penInner_fold_hit (budget p c0 : Nat) (m : _root_.Int) (tab : CTable) :
+    ∀ (l : List Nat) (next : Array (Option Nat)) (k : Nat) (dk : _root_.Int) (sk : Array Nat),
+      next.size = budget + 1 → k ∈ l → tab[k]! = some (dk, sk) → m ≤ dk →
+      p + (dk - m).toNat ≤ budget →
+      ∃ y, (l.foldl (penInner budget p c0 m tab) next)[p + (dk - m).toNat]! = some y ∧
+        y ≤ c0 + k := by
+  intro l
+  induction l with
+  | nil => intro _ _ _ _ _ h; cases h
+  | cons a l ih =>
+    intro next k dk sk hs hk htk hmd hq
+    simp only [List.foldl_cons]
+    have hs1 := penInner_size budget p c0 m tab next a hs
+    rcases List.mem_cons.mp hk with rfl | hmem
+    · obtain ⟨y1, hy1, hle1⟩ := penInner_hit budget p c0 m tab next k dk sk hs htk hmd hq
+      obtain ⟨_, hmono⟩ := penInner_fold_mono budget p c0 m tab l _ hs1
+      obtain ⟨y2, hy2, hle2⟩ := hmono _ y1 hq hy1
+      exact ⟨y2, hy2, Nat.le_trans hle2 hle1⟩
+    · exact ih _ k dk sk hs1 hmem htk hmd hq
+
+theorem penStep_fold_mono (budget : Nat) (mc : Array (Option Nat)) (m : _root_.Int) (tab : CTable) :
+    ∀ (l : List Nat) (next : Array (Option Nat)), next.size = budget + 1 →
+      (l.foldl (fun next p =>
+        match mc[p]! with
+        | none => next
+        | some c0 => (List.range tab.size).foldl (penInner budget p c0 m tab) next) next).size =
+        budget + 1 ∧
+      ∀ q x, q ≤ budget → next[q]! = some x →
+        ∃ y, (l.foldl (fun next p =>
+          match mc[p]! with
+          | none => next
+          | some c0 => (List.range tab.size).foldl (penInner budget p c0 m tab) next) next)[q]! =
+            some y ∧ y ≤ x := by
+  intro l
+  induction l with
+  | nil => intro next hs; exact ⟨hs, fun q x _ hx => ⟨x, hx, Nat.le_refl x⟩⟩
+  | cons p l ih =>
+    intro next hs
+    simp only [List.foldl_cons]
+    cases hmp : mc[p]! with
+    | none => exact ih next hs
+    | some c0 =>
+      obtain ⟨hs1, hmono1⟩ := penInner_fold_mono budget p c0 m tab (List.range tab.size) next hs
+      obtain ⟨hs2, hmono2⟩ := ih _ hs1
+      refine ⟨hs2, fun q x hq hx => ?_⟩
+      obtain ⟨y1, hy1, hle1⟩ := hmono1 q x hq hx
+      obtain ⟨y2, hy2, hle2⟩ := hmono2 q y1 hq hy1
+      exact ⟨y2, hy2, Nat.le_trans hle2 hle1⟩
+
+theorem penStep_fold_hit (budget : Nat) (mc : Array (Option Nat)) (m : _root_.Int) (tab : CTable) :
+    ∀ (l : List Nat) (next : Array (Option Nat)) (p c0 k : Nat) (dk : _root_.Int) (sk : Array Nat),
+      next.size = budget + 1 → p ∈ l → mc[p]! = some c0 → k < tab.size →
+      tab[k]! = some (dk, sk) → m ≤ dk → p + (dk - m).toNat ≤ budget →
+      ∃ y, (l.foldl (fun next p =>
+        match mc[p]! with
+        | none => next
+        | some c0 => (List.range tab.size).foldl (penInner budget p c0 m tab) next) next)[p + (dk - m).toNat]! =
+          some y ∧ y ≤ c0 + k := by
+  intro l
+  induction l with
+  | nil => intro _ _ _ _ _ _ _ h; cases h
+  | cons a l ih =>
+    intro next p c0 k dk sk hs hp hmp hk htk hmd hq
+    simp only [List.foldl_cons]
+    rcases List.mem_cons.mp hp with rfl | hmem
+    · rw [hmp]
+      have hs1 := (penInner_fold_mono budget p c0 m tab (List.range tab.size) next hs).1
+      obtain ⟨y1, hy1, hle1⟩ := penInner_fold_hit budget p c0 m tab (List.range tab.size) next
+        k dk sk hs (List.mem_range.mpr hk) htk hmd hq
+      obtain ⟨_, hmono2⟩ := penStep_fold_mono budget mc m tab l _ hs1
+      obtain ⟨y2, hy2, hle2⟩ := hmono2 _ y1 hq hy1
+      exact ⟨y2, hy2, Nat.le_trans hle2 hle1⟩
+    · cases hma : mc[a]! with
+      | none => exact ih next p c0 k dk sk hs hmem hmp hk htk hmd hq
+      | some ca =>
+        have hs1 := (penInner_fold_mono budget a ca m tab (List.range tab.size) next hs).1
+        exact ih _ p c0 k dk sk hs1 hmem hmp hk htk hmd hq
+
+theorem penStep_size (budget : Nat) (mc : Array (Option Nat)) (m : _root_.Int) (tab : CTable) :
+    (penStep budget mc m tab).size = budget + 1 :=
+  (penStep_fold_mono budget mc m tab (List.range mc.size) (Array.replicate (budget + 1) none)
+    (by simp)).1
+
+theorem penStep_hit (budget : Nat) (mc : Array (Option Nat)) (m : _root_.Int) (tab : CTable)
+    {p c0 k : Nat} {dk : _root_.Int} {sk : Array Nat}
+    (hp : p < mc.size) (hmp : mc[p]! = some c0) (hk : k < tab.size)
+    (htk : tab[k]! = some (dk, sk)) (hmd : m ≤ dk) (hq : p + (dk - m).toNat ≤ budget) :
+    ∃ y, (penStep budget mc m tab)[p + (dk - m).toNat]! = some y ∧ y ≤ c0 + k :=
+  penStep_fold_hit budget mc m tab (List.range mc.size) (Array.replicate (budget + 1) none)
+    p c0 k dk sk (by simp) (List.mem_range.mpr hp) hmp hk htk hmd hq
+
+theorem foldl_betterStep_mem :
+    ∀ (L : List (_root_.Int × Array Nat)) (acc : Option (_root_.Int × Array Nat)) (v : _root_.Int × Array Nat),
+      L.foldl betterStep acc = some v → v ∈ L ∨ acc = some v := by
+  intro L
+  induction L with
+  | nil => intro acc v hv; exact Or.inr hv
+  | cons x xs ih =>
+    intro acc v hv
+    simp only [List.foldl_cons] at hv
+    rcases ih _ v hv with hmem | hacc
+    · exact Or.inl (List.mem_cons_of_mem _ hmem)
+    · unfold betterStep at hacc
+      split at hacc
+      · cases hacc; exact Or.inl List.mem_cons_self
+      · exact Or.inr hacc
+
+theorem knapStep_origin {cap : Nat} {dp : Array (Option (_root_.Int × Array Nat))} {tab : CTable}
+    {t : Nat} {d' : _root_.Int} {s' : Array Nat}
+    (ht : t ≤ cap) (hval : (knapStep cap dp tab)[t]! = some (d', s')) :
+    ∃ c d s k dk sk, c < dp.size ∧ dp[c]! = some (d, s) ∧ k < tab.size ∧
+      tab[k]! = some (dk, sk) ∧ c + k = t ∧ d + dk = d' := by
+  have hget := (knapStep_get cap dp tab).2 t ht
+  rw [hget] at hval
+  rcases foldl_betterStep_mem _ none _ hval with hmem | hnone
+  · rw [List.mem_flatMap] at hmem
+    obtain ⟨c, hc, hmem'⟩ := hmem
+    rw [List.mem_range] at hc
+    cases hdc : dp[c]! with
+    | none => rw [hdc] at hmem'; simp at hmem'
+    | some e =>
+      obtain ⟨d, s⟩ := e
+      rw [hdc] at hmem'
+      simp only [Option.elim_some, srcCands] at hmem'
+      split at hmem'
+      · rename_i hcond
+        cases htk : tab[t - c]! with
+        | none => rw [htk] at hmem'; simp at hmem'
+        | some x =>
+          obtain ⟨dk, sk⟩ := x
+          rw [htk] at hmem'
+          simp only [Option.elim_some, List.mem_singleton, knapCand, Prod.mk.injEq] at hmem'
+          exact ⟨c, d, s, t - c, dk, sk, hc, hdc, hcond.2.1, htk, by omega, hmem'.1.symm⟩
+      · simp at hmem'
+  · cases hnone
+
+/-- Joint invariant relating `knapStep` DP layers to `sumMinDeltas` and `penRun`. -/
+def PenInv (cap budget : Nat) (dp : Array (Option (_root_.Int × Array Nat)))
+    (accSum : Option _root_.Int) (mc : Array (Option Nat)) : Prop :=
+  dp.size = cap + 1 ∧ mc.size = budget + 1 ∧
+  match accSum with
+  | none => ∀ t, t ≤ cap → dp[t]! = none
+  | some sMin =>
+    ∀ t d s, t ≤ cap → dp[t]! = some (d, s) →
+      sMin ≤ d ∧
+      (d - sMin ≤ (budget : _root_.Int) →
+        ∃ c0, mc[(d - sMin).toNat]! = some c0 ∧ c0 ≤ t)
+
+theorem penRun_inv (cap budget : Nat) :
+    ∀ (tabs : List CTable) (dp : Array (Option (_root_.Int × Array Nat)))
+      (accSum : Option _root_.Int) (mc : Array (Option Nat)),
+      PenInv cap budget dp accSum mc →
+      PenInv cap budget
+        (tabs.foldl (fun dp tab => knapStep cap dp tab) dp)
+        (tabs.foldl (fun acc tab =>
+          acc.bind fun s => (tableMinDelta tab).map fun m => s + m) accSum)
+        (tabs.foldl (fun mc tab =>
+          match tableMinDelta tab with
+          | none => Array.replicate (budget + 1) none
+          | some m => penStep budget mc m tab) mc) := by
+  intro tabs
+  induction tabs with
+  | nil => intro dp accSum mc hinv; exact hinv
+  | cons tab rest ih =>
+    intro dp accSum mc hinv
+    simp only [List.foldl_cons]
+    apply ih
+    obtain ⟨hdpSz, hmcSz, hprop⟩ := hinv
+    refine ⟨(knapStep_get cap dp tab).1, ?_, ?_⟩
+    · cases tableMinDelta tab with
+      | none => simp
+      | some m => exact penStep_size budget mc m tab
+    · cases hacc : accSum with
+      | none =>
+        rw [hacc] at hprop
+        simp only [Option.bind_none]
+        intro t ht
+        cases hres : (knapStep cap dp tab)[t]! with
+        | none => rfl
+        | some e =>
+          obtain ⟨d', s'⟩ := e
+          obtain ⟨c, d, s, _, _, _, hc, hdc, _, _, _, _⟩ := knapStep_origin ht hres
+          rw [hprop c (by omega)] at hdc
+          cases hdc
+      | some sMin =>
+        rw [hacc] at hprop
+        simp only [Option.bind_some]
+        cases hmin : tableMinDelta tab with
+        | none =>
+          simp only [Option.map_none]
+          intro t ht
+          cases hres : (knapStep cap dp tab)[t]! with
+          | none => rfl
+          | some e =>
+            obtain ⟨d', s'⟩ := e
+            obtain ⟨_, _, _, k, dk, sk, _, _, hk, htk, _, _⟩ := knapStep_origin ht hres
+            obtain ⟨m, hm, _⟩ := tableMinDelta_le hk htk
+            rw [hmin] at hm
+            cases hm
+        | some m =>
+          simp only [Option.map_some]
+          intro t d' s' ht hres
+          obtain ⟨c, d, s, k, dk, sk, hc, hdc, hk, htk, hck, hdd⟩ := knapStep_origin ht hres
+          obtain ⟨m', hm', hmd⟩ := tableMinDelta_le hk htk
+          rw [hmin] at hm'
+          cases hm'
+          obtain ⟨hsle, hmcHit⟩ := hprop c d s (by omega) hdc
+          refine ⟨by omega, fun hbud => ?_⟩
+          have hdbud : d - sMin ≤ (budget : _root_.Int) := by omega
+          obtain ⟨c0, hmc0, hc0le⟩ := hmcHit hdbud
+          have hpLt : (d - sMin).toNat < mc.size := by omega
+          have hqEq : (d - sMin).toNat + (dk - m).toNat = (d' - (sMin + m)).toNat := by omega
+          have hqLe : (d - sMin).toNat + (dk - m).toNat ≤ budget := by omega
+          obtain ⟨y, hy, hyle⟩ := penStep_hit budget mc m tab hpLt hmc0 hk htk hmd hqLe
+          rw [hqEq] at hy
+          exact ⟨y, hy, by omega⟩
+
+theorem penInit_inv (cap budget : Nat) :
+    PenInv cap budget
+      (#[some (0, #[])] ++ Array.replicate cap none)
+      (some 0)
+      (#[some 0] ++ Array.replicate budget none) := by
+  refine ⟨by simp; omega, by simp; omega, ?_⟩
+  intro t d s ht hval
+  cases t with
+  | zero =>
+    have h0 : (#[some ((0 : _root_.Int), (#[] : Array Nat))] ++ Array.replicate cap none)[0]! =
+        some (0, #[]) := by
+      rw [getElem!_pos _ 0 (by simp; omega)]
+      simp
+    rw [h0] at hval
+    cases hval
+    refine ⟨Int.le_refl 0, fun _ => ?_⟩
+    have hm0 : (#[some 0] ++ Array.replicate budget none)[0]! = some 0 := by
+      rw [getElem!_pos _ 0 (by simp; omega)]
+      simp
+    exact ⟨0, by simpa using hm0, Nat.le_refl 0⟩
+  | succ t' =>
+    have hs : (#[some ((0 : _root_.Int), (#[] : Array Nat))] ++ Array.replicate cap none)[t' + 1]! =
+        none := by
+      rw [getElem!_pos _ (t' + 1) (by simp; omega)]
+      rw [Array.getElem_append_right (by simp)]
+      simp
+    rw [hs] at hval
+    cases hval
+
+theorem canPruneKnapsack_sound {kCS cap : Nat} {bestDelta : _root_.Int} {bestX : Array Nat}
+    {tabs : Array CTable}
+    (hprune : canPruneKnapsack kCS cap bestDelta bestX tabs = true) :
+    knapChoose kCS
+      (tabs.toList.foldl (fun dp tab => knapStep cap dp tab)
+        (#[some (0, #[])] ++ Array.replicate cap none))
+      (bestDelta, bestX, false) = (bestDelta, bestX, false) := by
+  unfold canPruneKnapsack at hprune
+  cases hsum : sumMinDeltas tabs.toList with
+  | none =>
+    have hinv := penRun_inv cap 0 tabs.toList _ (some 0) _ (penInit_inv cap 0)
+    unfold sumMinDeltas at hsum
+    rw [hsum] at hinv
+    obtain ⟨hdpSz, _, hnone⟩ := hinv
+    apply knapChoose_eq_init
+    intro c d s hc hval
+    rw [hnone c (by omega)] at hval
+    cases hval
+  | some sMin =>
+    rw [hsum] at hprune
+    simp only at hprune
+    generalize hbi : bestDelta + (tag0Size (kCS + bestX.size) : _root_.Int) -
+        (tag0Size kCS : _root_.Int) - sMin = budgetInt at hprune
+    by_cases hneg : budgetInt < 0
+    · have hinv := penRun_inv cap 0 tabs.toList _ (some 0) _ (penInit_inv cap 0)
+      unfold sumMinDeltas at hsum
+      rw [hsum] at hinv
+      obtain ⟨hdpSz, _, hge⟩ := hinv
+      apply knapChoose_eq_init
+      intro c d s hc hval
+      dsimp only
+      have hsle := (hge c d s (by omega) hval).1
+      have htag := knapTag0Size_mono (Nat.le_add_right kCS c)
+      omega
+    · simp only [hneg, ite_false] at hprune
+      by_cases hle16 : budgetInt ≤ 16
+      · simp only [hle16, ite_true] at hprune
+        have hinv := penRun_inv cap budgetInt.toNat tabs.toList _ (some 0) _
+          (penInit_inv cap budgetInt.toNat)
+        unfold sumMinDeltas at hsum
+        rw [hsum] at hinv
+        obtain ⟨hdpSz, hmcSz, hprop⟩ := hinv
+        rw [Array.all_eq_true] at hprune
+        apply knapChoose_eq_init
+        intro c d s hc hval
+        dsimp only
+        obtain ⟨hsle, hmcHit⟩ := hprop c d s (by omega) hval
+        have htag := knapTag0Size_mono (Nat.le_add_right kCS c)
+        by_cases hleB : d - sMin ≤ (budgetInt.toNat : _root_.Int)
+        · obtain ⟨c0, hmc0, hc0le⟩ := hmcHit hleB
+          have hmcSz' : (penRun budgetInt.toNat tabs.toList).size = budgetInt.toNat + 1 := hmcSz
+          have hidx : (d - sMin).toNat < (penRun budgetInt.toNat tabs.toList).size := by omega
+          have hcheck := hprune (d - sMin).toNat hidx
+          have hmc0' : (penRun budgetInt.toNat tabs.toList)[(d - sMin).toNat]! = some c0 := hmc0
+          rw [getElem!_pos (penRun budgetInt.toNat tabs.toList) (d - sMin).toNat hidx] at hmc0'
+          rw [hmc0'] at hcheck
+          simp only [decide_eq_true_eq] at hcheck
+          omega
+        · omega
+      · simp only [hle16, ite_false] at hprune
+        cases hprune
+
 theorem uniformKnapsack_eq_fast_apply (limits : Limits) (kCS : Nat) (results : Array CompResult) :
     uniformKnapsack limits kCS results = uniformKnapsackFast limits kCS results := by
   unfold uniformKnapsack uniformKnapsackFast
@@ -1968,28 +2544,33 @@ theorem uniformKnapsack_eq_fast_apply (limits : Limits) (kCS : Nat) (results : A
     split
     · rfl
     · rename_i hcells
+      have hdp : results.foldl (fun dp r => knapStep (tag0BracketStart (kCS + bestX.size) - 1 - kCS)
+            dp r.bySize) (#[some (0, #[])] ++ Array.replicate
+              (tag0BracketStart (kCS + bestX.size) - 1 - kCS) none) =
+          (results.map (·.bySize)).toList.foldl
+            (fun dp tab => knapStep (tag0BracketStart (kCS + bestX.size) - 1 - kCS) dp tab)
+            (#[some (0, #[])] ++ Array.replicate
+              (tag0BracketStart (kCS + bestX.size) - 1 - kCS) none) := by
+        rw [← Array.foldl_toList, Array.toList_map, List.foldl_map]
       split
-      · rename_i hok
+      · rename_i hprune
         congr 1
-        have hdp : results.foldl (fun dp r => knapStep (tag0BracketStart (kCS + bestX.size) - 1 - kCS)
-              dp r.bySize) (#[some (0, #[])] ++ Array.replicate
-                (tag0BracketStart (kCS + bestX.size) - 1 - kCS) none) =
-            (results.map (·.bySize)).toList.foldl
-              (fun dp tab => knapStep (tag0BracketStart (kCS + bestX.size) - 1 - kCS) dp tab)
-              (#[some (0, #[])] ++ Array.replicate
-                (tag0BracketStart (kCS + bestX.size) - 1 - kCS) none) := by
-          rw [← Array.foldl_toList, Array.toList_map, List.foldl_map]
         rw [hdp]
-        have hinit := knapInit_inv (tag0BracketStart (kCS + bestX.size) - 1 - kCS)
-          (results.map (·.bySize)) (knapRecon (results.map (·.bySize)) #[] 0) rfl
-        have hrun := (knapRun_inv hok (results.map (·.bySize)).toList 0 _ _ #[] (by simp) (by omega)
-          rfl hinit).1
-        symm
-        apply knapChooseFast_eq _ hrun
-        have := tag0BracketStart_le (kCS + bestX.size)
-        simp only
-        omega
-      · rfl
+        exact canPruneKnapsack_sound hprune
+      · split
+        · rename_i hok
+          congr 1
+          rw [hdp]
+          have hinit := knapInit_inv (tag0BracketStart (kCS + bestX.size) - 1 - kCS)
+            (results.map (·.bySize)) (knapRecon (results.map (·.bySize)) #[] 0) rfl
+          have hrun := (knapRun_inv hok (results.map (·.bySize)).toList 0 _ _ #[] (by simp) (by omega)
+            rfl hinit).1
+          symm
+          apply knapChooseFast_eq _ hrun
+          have := tag0BracketStart_le (kCS + bestX.size)
+          simp only
+          omega
+        · rfl
   · rfl
 
 @[csimp] theorem uniformKnapsack_eq_fast : @uniformKnapsack = @uniformKnapsackFast := by

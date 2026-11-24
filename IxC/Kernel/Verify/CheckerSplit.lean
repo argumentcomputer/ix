@@ -328,6 +328,7 @@ theorem checkOpaqueVal_of_facts {cv : ConstantVal md} {value jv vtype : Expr md}
 /-- **A definition's two halves are `checkDecl`.** -/
 theorem checkDecl_of_split_defn {cv : ConstantVal md} {value : Expr md}
     {hint : ReducibilityHint} {vg : ValueGroup md}
+    (hct : cv.name.isCompilerTrust = false)
     (hnat : (natOpNames.contains cv.name || natDivModNames.contains cv.name) = false)
     (hk : vg.kind = .defn)
     (hI : installConstantVal (fueledOps μ F) env cv = .ok vg.cvA)
@@ -345,13 +346,14 @@ theorem checkDecl_of_split_defn {cv : ConstantVal md} {value : Expr md}
   have hcc := checkConstantVal_of_facts hfind hres hshape hnd hlb hif hann htp htr hst hsort
   have hdv := checkDefnVal_of_facts (cv := { cv with type := type' }) (hint := hint)
     hlbv hivf hannv hvp hvr hvt hde
-  simp only [checkDecl, Bind.bind, Except.bind, Pure.pure, Except.pure, hcc, hdv, h1, h2,
+  simp only [checkDecl, Bind.bind, Except.bind, Pure.pure, Except.pure, hct, hcc, hdv, h1, h2,
     Bool.false_eq_true, ↓reduceIte]
 
 /-- **A theorem's two halves are `checkDecl`**: the header's install
 half, and the check half holding the RAW value (which it annotates
 itself). -/
 theorem checkDecl_of_split_thm {cv : ConstantVal md} {value : Expr md} {vg : ValueGroup md}
+    (hct : cv.name.isCompilerTrust = false)
     (hk : vg.kind = .thm)
     (hI : installConstantVal (fueledOps μ F) env cv = .ok vg.cvA)
     (hjv : vg.jv = value)
@@ -368,10 +370,12 @@ theorem checkDecl_of_split_thm {cv : ConstantVal md} {value : Expr md} {vg : Val
   have hcc := checkConstantVal_of_facts hfind hres hshape hnd hlb hif hann htp htr hst hsort
   have htv := checkThmVal_of_facts (cv := { cv with type := type' }) hst hsort (hthm hk)
     hlbv hivf hannv hvp hvr hvt hde
-  simp only [checkDecl, Bind.bind, Except.bind, hcc, htv]
+  simp only [checkDecl, Bind.bind, Except.bind, hct, Bool.false_eq_true, ↓reduceIte, hcc, htv]
 
-/-- **An opaque's two halves are `checkDecl`.** -/
+/-- **An opaque's two halves are `checkDecl`**, for non-inert opaques. -/
 theorem checkDecl_of_split_opaque {cv : ConstantVal md} {value : Expr md} {vg : ValueGroup md}
+    (hnot : cv.name.isCompilerTrustOpaque = false)
+    (hcta : cv.name.isCompilerTrustAxiom = false)
     (hk : vg.kind = .opaque)
     (hI : installConstantVal (fueledOps μ F) env cv = .ok vg.cvA)
     (hV : installValue (fueledOps μ F) env vg.cvA value = .ok vg.jv)
@@ -387,6 +391,7 @@ theorem checkDecl_of_split_opaque {cv : ConstantVal md} {value : Expr md} {vg : 
   have hcc := checkConstantVal_of_facts hfind hres hshape hnd hlb hif hann htp htr hst hsort
   have hov := checkOpaqueVal_of_facts (cv := { cv with type := type' })
     hlbv hivf hannv hvp hvr hvt hde
-  simp only [checkDecl, Bind.bind, Except.bind, hcc, hov]
+  simp only [checkDecl, hnot, hcta, Bool.false_eq_true, ↓reduceIte, Bind.bind, Except.bind,
+    hcc, hov]
 
 end Ix.Kernel

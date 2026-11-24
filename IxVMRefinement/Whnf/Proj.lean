@@ -1,4 +1,5 @@
 import IxVMRefinement.Whnf.Delta
+import IxVMRefinement.Core.Certs
 import IxVMRefinement.Lib.Bytes
 
 /-! # Step lemma of `KernelWhnf::red_proj`: the structural projection
@@ -152,7 +153,7 @@ theorem red_proj_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (Sour
   subst hargs hfidx
   have p := Obs.«KernelWhnf::red_proj».obs ev
   cases p
-  case Const_Ctor_Induct_n1_n1_n1 m2 cs13 x_head x_args x_caddr x_clvls m70 p78 cs84 x_cnl w101
+  case Const_Ctor_Induct_n1_n1_n1 m2 cs13 x_head x_args x_caddr x_clvls m70 p78 cs84 x_cnl x_cty
       x_cblock x_cind w102 x_nparams x_nfields w103 m145 p153 cs159 x_snl x_sty x_snp x_sni x_snc
       w176 x_sblock x_sidx v217 m218 x225 y226 m227 x233 y234 m235 cs244 cs266 v269 cs289 v292
       v309 m310 x317 y318 m319 x325 y326 m327 cs336 cs350 v353 cs372 v375 v392 m393 x400 y401
@@ -361,6 +362,242 @@ theorem red_proj_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (Sour
         rw [hbm bm hm, ← Ix.Kernel.Level.zeronessOf_subst,
           ← Ix.Kernel.Level.isNeverZero_eq_isNever, ← hlpS]
         exact hlnz
+    have hget : (Specs.Whnf.mkAppN (.const (c.κ (ixAddr ca)) cus) Args).getAppArgs.getD
+        ((tbl.entry (ZMod.val fi)).numParams + ZMod.val fi) (.bvar 0) = A := by
+      rw [getAppArgs_mkAppN]
+      show ([] ++ Args).getD (tbl.numParams + ZMod.val fi) (.bvar 0) = A
+      rw [List.nil_append, hnPt]
+      simp [List.getD_eq_getElem?_getD, hA']
+    rw [hget] at hredp
+    exact hredp
+  case Const_Ctor_Induct_n1_n1_other_n1_n1 m2 cs13 x_head x_args x_caddr x_clvls m70 p78 cs84 x_cnl
+      x_cty x_cblock x_cind w102 x_nparams x_nfields w103 m145 p153 cs159 x_snl x_sty x_snp x_sni
+      x_snc w176 x_sblock x_sidx v217 m218 x225 y226 m227 x233 y234 m235 cs244 cs266 v269 cs289 v292
+      v309 m310 x317 y318 m319 x325 y326 m327 cs336 cs350 v353 cs372 v375 v392 m393 x400 y401
+      m402 cs411 v414 x421 y422 m423 cs432 cs456 v459 x466 m468 cs477 m490 x498 y499 x506 cs528
+      m552 cs563 v_never m_never cs_never m_may cs_may v_ctyi m_ctyi cs_ctyi m_cert cs_cert m_nil
+      v_res m_res cs_res v_idx ev15 ld51 ev86 ld80 ev161 ld155 ev246 op283 ev268 op240 op306 ev291
+      op232 ev338 op367 ev352 op332 op389 ev374 op324 ev434 op450 op428 ev413 ev479 op473 ev458
+      op407 op521 op513 ev530 op505 ev565 ev_never hne_never ev_may ev_ctyi hm_nil ev_cert he_res
+      op_idx ev_lookup he_h' hc_all =>
+    subst hc_all he_h' hm_nil
+    obtain ⟨-, rfl⟩ := WhnfAux.tag_eq (hr.symm.trans he_res)
+    have h39 : (2 : ℕ) ^ 39 = 549755813888 := by norm_num
+    -- the scrutinee: a constructor applied to a spine
+    obtain ⟨hd', sp', H, Args, he, hH, hArgs, rfl⟩ := ih.get (.subst .collect_spine) (by lt_calls)
+      ev15 scrut rfl (good.sub fun x hx => by simp [hx]) d Γ 0 S hS
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at he
+    obtain ⟨rfl, rfl⟩ := he
+    obtain ⟨ca, cus, rfl, hca, hcus⟩ := hH.const_of_load ld51
+    have e15 := ObsFn.heap_extends ev15
+    -- the constructor
+    obtain ⟨ciC, hfindC, vC, hldC, hciC⟩ := ih.get (.callees .get_ci) (by lt_calls) ev86 x_caddr
+      ca rfl (good.allowedTop (by simp_all)) (by resolve_key) (good.sub fun x hx => by simp [hx]) hca
+    rw [ld80] at hldC
+    injection hldC with hvC
+    subst hvC
+    obtain ⟨cvC, nP, nF, rfl, ⟨hcnl, hclt, hcperm, hcty⟩, rfl, rfl, hnP, hnF, bC, iC, jC, hbC, rfl,
+      rfl, hnameC⟩ := WhnfAux.ctor_inv hciC
+    subst hcnl
+    have e86 := ObsFn.heap_extends ev86
+    have ext70 := e15.trans e86
+    -- the structure
+    obtain ⟨ciS, hfindS, vS, hldS, hciS⟩ := ih.get (.callees .get_ci) (by lt_calls) ev161 sa s
+      rfl (good.allowedTop (by simp_all)) (by resolve_key) (good.sub fun x hx => by simp [hx])
+      (Bytes.repAddressRef_heapMono₂ addrTy ext70 hs)
+    rw [ld155] at hldS
+    injection hldS with hvS
+    subst hvS
+    obtain ⟨cvS, caps, nPS, nIS, nCS, rfl, ⟨hsnl, hslt, hsperm, hsty⟩, rfl, rfl, rfl, hnPS, hnIS,
+      hnCS, bS, iS, hbS, rfl, hnameS⟩ := WhnfAux.ind_inv hciS
+    subst hsnl
+    have e161 := ObsFn.heap_extends ev161
+    -- the circuit's tests
+    obtain ⟨rfl, -⟩ := Lib.address_eq_spec ev246 (Bytes.repAddressRef_heapMono₂ addrTy e161 hbC)
+      hbS
+    obtain rfl := NatAux.sub_ok op283
+    obtain ⟨rfl, -⟩ := Lib.is_zero_field ev268
+    obtain rfl := NatAux.mul_ok op240
+    obtain rfl := NatAux.sub_ok op306
+    obtain ⟨rfl, -⟩ := Lib.is_zero_field ev291
+    obtain rfl := NatAux.mul_ok op232
+    obtain ⟨rfl, -⟩ := Lib.is_zero_field ev338
+    obtain rfl := NatAux.sub_ok op367
+    obtain ⟨rfl, -⟩ := Lib.is_zero_field ev352
+    obtain rfl := NatAux.mul_ok op332
+    obtain rfl := NatAux.sub_ok op389
+    obtain ⟨rfl, -⟩ := Lib.is_zero_field ev374
+    obtain rfl := NatAux.mul_ok op324
+    have ext310 : Heap.Extends m145 m310 := (ObsFn.heap_extends ev246).trans
+      ((ObsFn.heap_extends ev268).trans ((ObsFn.heap_extends ev291).trans
+        ((ObsFn.heap_extends ev338).trans ((ObsFn.heap_extends ev352).trans
+          (ObsFn.heap_extends ev374)))))
+    have e2_145 : Heap.Extends m2 m145 := e86.trans e161
+    have ext310' := e2_145.trans ext310
+    obtain ⟨rfl, -⟩ := PrimNat.kl_length ev434 (tml_mono ext310' hArgs)
+    have hlenA : Args.length < 2 ^ 39 := RomBound.bounded_length_lt good.2
+      (c := ⟨Obs.Names.«Lists::length<&KernelTypes::KExprNode>», [x_args], m310⟩) (by simp)
+      (by simp) (tml_mono ext310' hArgs)
+    obtain rfl := NatAux.add_ok op450
+    obtain rfl := NatAux.sub_ok op428
+    obtain ⟨rfl, -⟩ := Lib.is_zero_field ev413
+    obtain ⟨ls, hls, hEq⟩ := hcus
+    have ext402 := ext310'.trans ((ObsFn.heap_extends ev434).trans (ObsFn.heap_extends ev413))
+    obtain ⟨rfl, -⟩ := WhnfAux.lv_length ev479 (by rw [klevelListEnum_eq]; exact hls.mono ext402)
+    have hlenL : ls.length < 2 ^ 39 := RomBound.bounded_length_lt good.2
+      (c := ⟨Obs.Names.«Lists::length<&KernelTypes::KLevelNode>», [x_clvls], m402⟩) (by simp)
+      (by simp) (hls.mono ext402)
+    obtain rfl := NatAux.sub_ok op473
+    obtain ⟨rfl, -⟩ := Lib.is_zero_field ev458
+    obtain rfl := NatAux.mul_ok op407
+    obtain rfl := NatAux.mul_ok op521
+    obtain rfl := NatAux.mul_ok op513
+    obtain ⟨a1, b1, ha1, hb1, ha32, hb32, rfl, -⟩ := Lib.less_than_fields_spec ev530
+    obtain rfl := Value.field.inj ha1
+    obtain rfl := Value.field.inj hb1
+    have hmul := (NatAux.field_inj (NatAux.mul_ok op505)).symm
+    have hA := left_ne_zero_of_mul_eq_one hmul
+    have hLT := WhnfAux.ite01 (right_ne_zero_of_mul_eq_one hmul)
+    have hB := left_ne_zero_of_mul hA
+    have hC := right_ne_zero_of_mul hA
+    have hLEN := WhnfAux.ite01 (left_ne_zero_of_mul hC)
+    have hLV := WhnfAux.ite01 (right_ne_zero_of_mul hC)
+    have hD := left_ne_zero_of_mul hB
+    have hE := right_ne_zero_of_mul hB
+    have hD2 := left_ne_zero_of_mul hD
+    have hAB := WhnfAux.ite01 (left_ne_zero_of_mul hD2)
+    have hCI := WhnfAux.ite01 (right_ne_zero_of_mul hD2)
+    have hE2 := left_ne_zero_of_mul hE
+    have hNP := WhnfAux.ite01 (right_ne_zero_of_mul hE)
+    have hNI := WhnfAux.ite01 (left_ne_zero_of_mul hE2)
+    have hNC := WhnfAux.ite01 (right_ne_zero_of_mul hE2)
+    subst bC
+    have hiC : iC = iS := sub_eq_zero.mp hCI
+    subst iC
+    -- the counts as naturals
+    have hnI0 : nIS = 0 := (NatAux.natCast_eq_zero_iff (by omega)).mp hNI
+    have hnC1 : nCS = 1 := by
+      have h1 : ((nCS : ℕ) : F) = ((1 : ℕ) : F) := by rw [Nat.cast_one]; exact sub_eq_zero.mp hNC
+      exact (NatAux.natCast_inj (by omega) (by omega)).mp h1
+    have hnPS : nPS = nP := (NatAux.natCast_inj (by omega) (by omega)).mp (sub_eq_zero.mp hNP)
+    subst nIS
+    subst nCS
+    subst nPS
+    have hArgsLen : Args.length = nP + nF := by
+      have h1 : ((Args.length : ℕ) : F) = ((nP + nF : ℕ) : F) := by
+        rw [Nat.cast_add]; exact sub_eq_zero.mp hLEN
+      exact (NatAux.natCast_inj (by omega) (by omega)).mp h1
+    have hcusLen : cus.length = cvC.levelParams.length := by
+      have h1 : ((ls.length : ℕ) : F) = ((cvC.levelParams.length : ℕ) : F) := sub_eq_zero.mp hLV
+      rw [WhnfAux.evalEqList_length cus ls (hEq fun _ => 0)]
+      exact (NatAux.natCast_inj (by omega) (by omega)).mp h1
+    have hltF : ZMod.val fi < nF := by
+      rwa [NatAux.val_natCast (n := nF) (by omega)] at hLT
+    -- the projection table
+    rw [Nat.cast_zero, Nat.cast_one] at ld155
+    have ext490' : Heap.Extends m145 m490 := ext310.trans ((ObsFn.heap_extends ev434).trans
+      ((ObsFn.heap_extends ev413).trans ((ObsFn.heap_extends ev479).trans
+        ((ObsFn.heap_extends ev458).trans (ObsFn.heap_extends ev530)))))
+    have hkC : c.κ (ixAddr ca) = c.κ (cprjAddr (ixAddr bS) (ZMod.val iS) (ZMod.val jC)) :=
+      (WhnfAux.name_of_find hfindC).symm.trans hnameC
+    have hkS : c.κ (ixAddr s) = c.κ (iprjAddr (ixAddr bS) (ZMod.val iS)) :=
+      (WhnfAux.name_of_find hfindS).symm.trans hnameS
+    have hfindC' := hfindC
+    rw [hkC] at hfindC'
+    obtain ⟨tbl, htbl, hsn, hctor, hnPt, hnFt, hlpt, -, hent, -, -, bsC, bodyC, hstripC, hbm⟩ :=
+      hc.loads.projTablesAt x_sblock sa p153 _ x_sty _ w176 x_sblock m490 m552 m70 m145 cs563
+        cs159 bS s iS ev565 (good.sub fun x hx => by simp [hx]).raw
+        (Bytes.repAddressRef_heapMono₂ addrTy ext490' hbS) ev161
+        (good.sub fun x hx => by simp [hx]).raw (Bytes.repAddressRef_heapMono₂ addrTy ext70 hs) ld155
+        hbS (ZMod.val jC) cvC nP nF hfindC' (Nat.lt_of_le_of_lt (Nat.zero_le _) hltF)
+    obtain ⟨hfp, -, -, -, ⟨cvT, capsT, hT, hlT, bsT, hsT⟩, -⟩ := hent (ZMod.val fi) hltF
+    have hT' := hT
+    rw [show (tbl.entry (ZMod.val fi)).structName = c.κ (ixAddr s) from hsn.trans hkS.symm,
+      hfindS] at hT'
+    injection hT' with hT'
+    injection hT' with hcvT hcapsT
+    subst cvT
+    -- the structure's sort is nonzero at some assignment (`type_sort_may_be_nonzero = 1`)
+    have ext552 := ext490'.trans (ObsFn.heap_extends ev565)
+    have extNever := ext552.trans (ObsFn.heap_extends ev_never)
+    obtain ⟨l, hl, hlnz⟩ := ih.get (.whnf .type_sort_may_be_nonzero) (by lt_calls) ev_may x_sty _
+      x_clvls rfl (good.sub fun x hx => by simp [hx]) d Γ 0 (posOf cvS.levelParams cvS.type)
+      (nP : F) cus (Tm.mono extNever (hsty d Γ)) rfl
+      ⟨ls, hls.mono (e2_145.trans extNever), hEq⟩ field_one_ne_zero
+    rw [NatAux.val_natCast (n := nP) (by omega)] at hl
+    have hlpS : cvS.levelParams = cvC.levelParams := hlT.trans hlpt
+    have hsT' : cvS.type.stripPis nP = some (bsT, .sort tbl.structSort) := by
+      have := hsT
+      rw [show (tbl.entry (ZMod.val fi)).numParams = nP from hnPt] at this
+      exact this
+    have hl' := WhnfAux.piSortAt_ilp_of_strip cvS.levelParams (posLevels cvS.levelParams) nP
+      cvS.type bsT tbl.structSort hsT'
+    rw [show cvS.type.instantiateLevelParams cvS.levelParams (posLevels cvS.levelParams) =
+      posOf cvS.levelParams cvS.type from rfl] at hl'
+    obtain rfl := Option.some.inj (hl.symm.trans hl')
+    have hcusS : cus.length = cvS.levelParams.length := by rw [hlpS]; exact hcusLen
+    rw [WhnfAux.subst_posOf_level hsperm hcusS] at hlnz
+    -- licensed telescope certificates (`certs_licensed = 1`)
+    have extMay := extNever.trans (ObsFn.heap_extends ev_may)
+    have ext70May : Heap.Extends m70 m_may := e161.trans extMay
+    have hctyi0 := ih.get (.subst .expr_inst_levels) (by lt_calls) ev_ctyi x_cty x_clvls rfl
+      (good.sub fun x hx => by simp [hx]) Γ 0 (posOf cvC.levelParams cvC.type) cus
+      (Tm.mono ext70May (hcty 0 Γ)) ⟨ls, hls.mono (e2_145.trans extMay), hEq⟩
+    rw [WhnfAux.posOf_ilp_perm hcperm hcusLen] at hctyi0
+    have extNil : Heap.Extends h (m_ctyi ++ [.construct kexprListEnum "Nil" []]) :=
+      (ext70.trans (ext70May.trans (ObsFn.heap_extends ev_ctyi))).trans (Heap.Extends.snoc _ _)
+    have ext2Nil : Heap.Extends m2 (m_ctyi ++ [.construct kexprListEnum "Nil" []]) :=
+      ((e2_145.trans extMay).trans (ObsFn.heap_extends ev_ctyi)).trans (Heap.Extends.snoc _ _)
+    have hcr := ih.get (.whnf .certs_licensed) (by lt_calls) ev_cert rc v_ctyi x_args _ types rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono extNil hrc) d Γ (types_mono extNil htypes)
+      (cvC.type.instantiateLevelParams cvC.levelParams cus) [] Args
+      ((hctyi0.of_depth_zero d).mono (Heap.Extends.snoc _ _)) (TmL.store_nil m_ctyi)
+      (tml_mono ext2Nil hArgs) field_one_ne_zero
+    rw [Ix.Kernel.Expr.instantiateList_nil] at hcr
+    -- the reduct
+    have ext2Cert : Heap.Extends m2 m_cert := ext2Nil.trans (ObsFn.heap_extends ev_cert)
+    obtain rfl := NatAux.add_ok op_idx
+    obtain ⟨⟨A, hA', hAt⟩, -⟩ := PrimNat.kl_lookup ev_lookup (tml_mono ext2Cert hArgs)
+    have hvAdd : ZMod.val ((nP : F) + fi) = nP + ZMod.val fi := by
+      have hcast : (nP : F) + fi = ((nP + ZMod.val fi : Nat) : F) := by
+        rw [Nat.cast_add, NatAux.natCast_val]
+      rw [hcast]
+      exact NatAux.val_natCast (by omega)
+    rw [hvAdd] at hA'
+    refine ⟨A, Tm.mono (ObsFn.heap_extends ev_lookup) hAt, ?_⟩
+    have hredp : Red c.env d (.proj (c.κ (ixAddr s)) (ZMod.val fi)
+        (Specs.Whnf.mkAppN (.const (c.κ (ixAddr ca)) cus) Args))
+        ((Specs.Whnf.mkAppN (.const (c.κ (ixAddr ca)) cus) Args).getAppArgs.getD
+          ((tbl.entry (ZMod.val fi)).numParams + ZMod.val fi) (.bvar 0)) := by
+      refine Red.proj (entry := tbl.entry (ZMod.val fi)) (cvC := cvC) (nP := nP) (nF := nF)
+        (us := cus) ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+      · rw [hkS, ← hsn]; exact hfp
+      · rw [getAppFn_mkAppN]
+        show Ix.Kernel.Expr.const (c.κ (ixAddr ca)) cus = Ix.Kernel.Expr.const tbl.ctor cus
+        rw [hctor, hkC]
+      · show ZMod.val fi < tbl.numFields
+        rw [hnFt]; exact hltF
+      · rw [getAppArgs_mkAppN]
+        show ([] ++ Args).length = tbl.numParams + tbl.numFields
+        rw [hnPt, hnFt, List.nil_append, hArgsLen]
+      · show cus.length = tbl.levelParams.length
+        rw [hlpt]; exact hcusLen
+      · intro hEq0 φ
+        exfalso
+        have hz := Ix.Kernel.Level.isEquiv_sound hEq0
+        apply hlnz
+        intro ψ
+        rw [Ix.Kernel.Level.eval_subst]
+        exact (hz _).trans rfl
+      · show c.env.find? tbl.ctor = _
+        rw [hctor, ← hkC]; exact hfindC
+      · rw [getAppArgs_mkAppN]
+        show Certs c.env d true _ ([] ++ Args)
+        rw [List.nil_append]
+        refine Specs.Whnf.CertsR.toCerts hcr ?_
+        rw [hArgsLen]
+        exact Specs.Whnf.stripPis_isSome_instantiateLevelParams cvC.levelParams cus (nP + nF)
+          cvC.type (by rw [hstripC]; rfl)
     have hget : (Specs.Whnf.mkAppN (.const (c.κ (ixAddr ca)) cus) Args).getAppArgs.getD
         ((tbl.entry (ZMod.val fi)).numParams + ZMod.val fi) (.bvar 0) = A := by
       rw [getAppArgs_mkAppN]

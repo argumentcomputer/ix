@@ -6,7 +6,7 @@ use aiur::{
 };
 use multi_stark::p3_goldilocks::Goldilocks;
 
-fn exercise<B: FieldBackend>(field: B) {
+fn exercise<B: FieldBackend<Word = u64>>(field: B) {
   for (channel, words) in [("u32.add", 2), ("u32.add3", 3)] {
     let width = words * 4;
     let bytes = Type::Tuple { items: vec![Type::Field; 4] };

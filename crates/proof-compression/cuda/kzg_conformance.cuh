@@ -1,7 +1,7 @@
 #pragma once
 
 #ifndef __CUDA_ARCH__
-extern "C" int ix_kzg_ntt_parameters(uint32_t lg, fr_t* output) {
+IX_KZG_EXPORT int IX_KZG_SYM(ntt_parameters)(uint32_t lg, fr_t* output) {
     if (!output || lg > KZG_MAX_FFT_LOG) return cudaErrorInvalidValue;
     output[0] = forward_roots_of_unity[lg];
     output[1] = inverse_roots_of_unity[lg];
@@ -33,8 +33,8 @@ template<class F> __global__ void field_conformance(const F* input, F* output) {
 
 // Fixed-size conformance vectors exercise both device fields independently
 // of the MSM and FFT algorithms that consume their Montgomery representation.
-extern "C" int ix_kzg_field_conformance(int device, const fp_t* fq, const fr_t* fr,
-                                        fp_t* fq_output, fr_t* fr_output) {
+IX_KZG_EXPORT int IX_KZG_SYM(field_conformance)(int device, const fp_t* fq, const fr_t* fr,
+                                                fp_t* fq_output, fr_t* fr_output) {
     try {
         if (!fq || !fr || !fq_output || !fr_output) return cudaErrorInvalidValue;
         const auto& gpu = device_gpu(device);

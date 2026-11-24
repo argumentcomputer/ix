@@ -1,5 +1,9 @@
 use super::*;
-use crate::kzg::Srs;
+use crate::kzg::{
+  Srs,
+  curve::{Bls12381, Fq, G1Affine, G2Affine},
+  field::Scalar,
+};
 use ark_ec::AffineRepr;
 use multi_stark::{
   expr::Expr,
@@ -10,15 +14,15 @@ use multi_stark::{
 use p3_matrix::dense::RowMajorMatrix;
 use std::sync::Arc;
 
-struct Fixture {
-  system: System<KzgConfig>,
-  key: ProverKey<KzgConfig>,
-  srs: Arc<Srs>,
+struct Fixture<C: KzgCurve = Bn254> {
+  system: System<KzgConfig<C>>,
+  key: ProverKey<KzgConfig<C>>,
+  srs: Arc<Srs<C>>,
 }
 
-impl Fixture {
+impl<C: KzgCurve> Fixture<C> {
   fn new() -> Self {
-    let srs = Arc::new(Srs::unsafe_dev_setup_prefix(
+    let srs = Arc::new(Srs::<C>::unsafe_dev_setup_prefix(
       4,
       6,
       b"recursive-reuse-development-only",
@@ -28,10 +32,10 @@ impl Fixture {
       [CircuitInputs {
         main_width: 1,
         preprocessed: Some(RowMajorMatrix::new_col(vec![
-          Scalar::ONE,
-          Scalar::ZERO,
-          Scalar::ZERO,
-          Scalar::ZERO,
+          CurveScalar::<C>::ONE,
+          CurveScalar::<C>::ZERO,
+          CurveScalar::<C>::ZERO,
+          CurveScalar::<C>::ZERO,
         ])),
         constraints: vec![
           Expr::main_next(0) - Expr::main(0),
@@ -40,9 +44,9 @@ impl Fixture {
         lookups: vec![Lookup::pull(
           Expr::preprocessed(0),
           vec![
-            Expr::constant(Scalar::from_u8(93)),
-            Expr::constant(Scalar::ONE),
-            Expr::constant(Scalar::ZERO),
+            Expr::constant(CurveScalar::<C>::from_u8(93)),
+            Expr::constant(CurveScalar::<C>::ONE),
+            Expr::constant(CurveScalar::<C>::ZERO),
             Expr::main(0),
           ],
         )],
@@ -52,10 +56,17 @@ impl Fixture {
     Self { system, key, srs }
   }
 
-  fn proof(&self, word: u64) -> (Proof<KzgConfig>, Vec<Vec<Scalar>>) {
-    let value = Scalar::from_u64(word);
-    let claims =
-      vec![vec![Scalar::from_u8(93), Scalar::ONE, Scalar::ZERO, value]];
+  fn proof(
+    &self,
+    word: u64,
+  ) -> (Proof<KzgConfig<C>>, Vec<Vec<CurveScalar<C>>>) {
+    let value = CurveScalar::<C>::from_u64(word);
+    let claims = vec![vec![
+      CurveScalar::<C>::from_u8(93),
+      CurveScalar::<C>::ONE,
+      CurveScalar::<C>::ZERO,
+      value,
+    ]];
     let refs: Vec<_> = claims.iter().map(Vec::as_slice).collect();
     let proof = self.system.prove_multiple_claims(
       &self.key,
@@ -70,19 +81,19 @@ impl Fixture {
   }
 }
 
-fn layout() -> LayoutPolicy {
+fn layout<C: KzgCurve>() -> LayoutPolicy<C> {
   LayoutPolicy {
-    namespace: Scalar::from_u8(94),
+    namespace: CurveScalar::<C>::from_u8(94),
     max_computation_height: 1 << 27,
     max_table_height: 1 << 27,
   }
 }
 
-fn schema(claims: &[Vec<Scalar>]) -> ClaimSchema {
+fn schema<C: KzgCurve>(claims: &[Vec<CurveScalar<C>>]) -> ClaimSchema<C> {
   ClaimSchema::from_claims(claims, &[(0, 3)]).unwrap()
 }
 
-fn relation_digest(circuit: &Circuit<Scalar>) -> [u8; 32] {
+fn relation_digest<C: KzgCurve>(circuit: &Circuit<CurveScalar<C>>) -> [u8; 32] {
   let mut hash = blake3::Hasher::new();
   hash.update(&(circuit.num_values() as u64).to_le_bytes());
   for gate in circuit.gates() {
@@ -117,9 +128,9 @@ fn relation_digest(circuit: &Circuit<Scalar>) -> [u8; 32] {
   *hash.finalize().as_bytes()
 }
 
-fn assignment_digest(
-  circuit: &Circuit<Scalar>,
-  assignment: &Assignment<Scalar>,
+fn assignment_digest<C: KzgCurve>(
+  circuit: &Circuit<CurveScalar<C>>,
+  assignment: &Assignment<CurveScalar<C>>,
 ) -> [u8; 32] {
   let mut hash = blake3::Hasher::new();
   for value in circuit
@@ -138,9 +149,8 @@ fn assignment_digest(
   *hash.finalize().as_bytes()
 }
 
-#[test]
-fn recursive_frontend_reuses_two_statements_and_returns_first() {
-  let fixture = Fixture::new();
+fn test_recursive_frontend_reuse<C: KzgCurve>() {
+  let fixture = Fixture::<C>::new();
   let (proof_a, claims_a) = fixture.proof(0x1234_5678_90ab_cdef);
   let (proof_b, claims_b) = fixture.proof(0x2345_6789_01ab_cdef);
   assert_ne!(
@@ -154,11 +164,11 @@ fn recursive_frontend_reuses_two_statements_and_returns_first() {
   let relation = relation_digest(&circuit);
   let compiled = circuit
     .lower_to_multi_stark_sharded(
-      layout().namespace,
-      layout().max_computation_height,
+      layout::<C>().namespace,
+      layout::<C>().max_computation_height,
     )
     .unwrap()
-    .merge_table_traces(layout().max_table_height)
+    .merge_table_traces(layout::<C>().max_table_height)
     .unwrap();
   assert_eq!(compiled.main_heights().len(), 1);
   assert_eq!(compiled.num_circuits(), 2);
@@ -199,8 +209,13 @@ fn recursive_frontend_reuses_two_statements_and_returns_first() {
 }
 
 #[test]
-fn recursive_witness_rejects_tampering_without_native_preverification() {
-  let fixture = Fixture::new();
+fn recursive_frontend_reuses_two_statements_and_returns_first() {
+  test_recursive_frontend_reuse::<Bn254>();
+  test_recursive_frontend_reuse::<Bls12381>();
+}
+
+fn test_recursive_witness_rejects_tampering<C: KzgCurve>() {
+  let fixture = Fixture::<C>::new();
   let (proof, claims) = fixture.proof(17);
   let plan =
     Plan::new(&fixture.system, &[2], schema(&claims), layout()).unwrap();
@@ -212,11 +227,10 @@ fn recursive_witness_rejects_tampering_without_native_preverification() {
     .check(plan.identity(), &proof, &claims, circuit.witness())
     .unwrap();
   assert_eq!(valid.public_values()[0], claims[0][3]);
-  let pairings = pairing::decode(&valid.public_values()[1..]).unwrap();
+  let pairings = pairing::decode::<C>(&valid.public_values()[1..]).unwrap();
   assert!(!pairings[1].is_zero());
   let mut wrong_keys = bindings.pairing_keys.clone();
-  wrong_keys[1] =
-    (wrong_keys[1] * crate::kzg::curve::Fr::from(2u8)).into_affine();
+  wrong_keys[1] = (wrong_keys[1] * C::Fr::from(2u8)).into_affine();
   assert!(
     bindings::check_pairings(&valid, &bindings.pairing_outputs, &wrong_keys)
       .is_err()
@@ -226,15 +240,17 @@ fn recursive_witness_rejects_tampering_without_native_preverification() {
     let mut bad = proof.clone();
     let mut bad_claims = claims.clone();
     match mutation {
-      "claim" => bad_claims[0][3] += Scalar::ONE,
-      "evaluation" => bad.stage_1_opened_values[0][0][0] += Scalar::ONE,
+      "claim" => bad_claims[0][3] += CurveScalar::<C>::ONE,
+      "evaluation" => {
+        bad.stage_1_opened_values[0][0][0] += CurveScalar::<C>::ONE
+      },
       "commitment" => {
         let point = &mut bad.commitments.stage_1_trace.0[0][0];
-        *point = (*point + G1Affine::generator()).into_affine();
+        *point = (*point + G1AffineOf::<C>::generator()).into_affine();
       },
       "opening" => {
         let point = &mut bad.opening_proof.0[0];
-        *point = (*point + G1Affine::generator()).into_affine();
+        *point = (*point + G1AffineOf::<C>::generator()).into_affine();
       },
       _ => unreachable!(),
     }
@@ -253,8 +269,8 @@ fn recursive_witness_rejects_tampering_without_native_preverification() {
     .unwrap()
     .point;
   for (changed, replacement) in [
-    (input_point.infinity.value(), Scalar::TWO),
-    (input_point.point.x.0[0], Scalar::NEG_ONE),
+    (input_point.infinity.value(), CurveScalar::<C>::TWO),
+    (input_point.point.x.limbs()[0], CurveScalar::<C>::NEG_ONE),
   ] {
     let inputs =
       bindings.request_inputs(plan.identity(), &proof, &claims).unwrap();
@@ -271,17 +287,27 @@ fn recursive_witness_rejects_tampering_without_native_preverification() {
     assert!(circuit.gates().iter().any(|gate| {
       let [a, b, c] = gate.wires.map(|wire| {
         valid.value(wire).unwrap()
-          + if wire == changed { Scalar::ONE } else { Scalar::ZERO }
+          + if wire == changed {
+            CurveScalar::<C>::ONE
+          } else {
+            CurveScalar::<C>::ZERO
+          }
       });
       let [qm, qa, qb, qc, k] = gate.coefficients;
-      qm * a * b + qa * a + qb * b + qc * c + k != Scalar::ZERO
+      qm * a * b + qa * a + qb * b + qc * c + k != CurveScalar::<C>::ZERO
     }));
   }
 }
 
 #[test]
+fn recursive_witness_rejects_tampering_without_native_preverification() {
+  test_recursive_witness_rejects_tampering::<Bn254>();
+  test_recursive_witness_rejects_tampering::<Bls12381>();
+}
+
+#[test]
 fn recursive_vk_rejects_identity_anchors_and_oversized_layout_caps() {
-  let fixture = Fixture::new();
+  let fixture = Fixture::<Bn254>::new();
   let (_, claims) = fixture.proof(17);
   let plan =
     Plan::new(&fixture.system, &[2], schema(&claims), layout()).unwrap();
@@ -296,8 +322,8 @@ fn recursive_vk_rejects_identity_anchors_and_oversized_layout_caps() {
   }
   let oversized = 1usize << (Scalar::TWO_ADICITY + 1);
   for bad_layout in [
-    LayoutPolicy { max_computation_height: oversized, ..layout() },
-    LayoutPolicy { max_table_height: oversized, ..layout() },
+    LayoutPolicy { max_computation_height: oversized, ..layout::<Bn254>() },
+    LayoutPolicy { max_table_height: oversized, ..layout::<Bn254>() },
   ] {
     assert!(
       Plan::new(&fixture.system, &[2], schema(&claims), bad_layout).is_err()
@@ -326,7 +352,7 @@ fn recursive_schema_rejects_malformed_and_constant_claims() {
 
 #[test]
 fn recursive_compact_preflight_rejects_malformed_resource_dimensions() {
-  let mut fixture = Fixture::new();
+  let mut fixture = Fixture::<Bn254>::new();
   let (proof, claims) = fixture.proof(17);
   let encoded =
     crate::kzg::compact::FixedProofCodec::new(&fixture.system, &[2])
@@ -353,7 +379,7 @@ fn recursive_compact_preflight_rejects_malformed_resource_dimensions() {
 
 #[test]
 fn recursive_exact_shape_rejects_every_payload_dimension() {
-  let fixture = Fixture::new();
+  let fixture = Fixture::<Bn254>::new();
   let (proof, claims) = fixture.proof(17);
   let plan =
     Plan::new(&fixture.system, &[2], schema(&claims), layout()).unwrap();
@@ -431,7 +457,7 @@ fn recursive_exact_shape_rejects_every_payload_dimension() {
 
 #[test]
 fn recursive_vk_identity_binds_metadata_and_schema() {
-  let mut fixture = Fixture::new();
+  let mut fixture = Fixture::<Bn254>::new();
   let (_, claims) = fixture.proof(17);
   let id = |system: &System<KzgConfig>, schema, layout| {
     Plan::new(system, &[2], schema, layout).unwrap().identity()
@@ -449,9 +475,9 @@ fn recursive_vk_identity_binds_metadata_and_schema() {
     id(&fixture.system, schema_b, layout())
   );
   for policy in [
-    LayoutPolicy { namespace: Scalar::from_u8(95), ..layout() },
-    LayoutPolicy { max_computation_height: 1 << 26, ..layout() },
-    LayoutPolicy { max_table_height: 1 << 26, ..layout() },
+    LayoutPolicy { namespace: Scalar::from_u8(95), ..layout::<Bn254>() },
+    LayoutPolicy { max_computation_height: 1 << 26, ..layout::<Bn254>() },
+    LayoutPolicy { max_table_height: 1 << 26, ..layout::<Bn254>() },
   ] {
     assert_ne!(baseline, id(&fixture.system, schema(&claims), policy));
   }
@@ -481,7 +507,7 @@ fn recursive_vk_identity_binds_metadata_and_schema() {
 
 #[test]
 fn recursive_vk_rejects_invalid_graph_and_fixed_points_before_construction() {
-  let mut fixture = Fixture::new();
+  let mut fixture = Fixture::<Bn254>::new();
   let (_, claims) = fixture.proof(17);
   assert!(Plan::new(&fixture.system, &[1], schema(&claims), layout()).is_err());
   assert!(Plan::new(&fixture.system, &[], schema(&claims), layout()).is_err());
@@ -497,7 +523,7 @@ fn recursive_vk_rejects_invalid_graph_and_fixed_points_before_construction() {
 
 #[test]
 fn recursive_shape_deduplicates_log_zero_opening_points() {
-  let mut fixture = Fixture::new();
+  let mut fixture = Fixture::<Bn254>::new();
   fixture.system.circuits[0].preprocessed_height = 1;
   let plan = Plan::new(
     &fixture.system,
@@ -511,7 +537,7 @@ fn recursive_shape_deduplicates_log_zero_opening_points() {
 
 #[test]
 fn recursive_vk_rejects_keccak_before_circuit_construction() {
-  let mut fixture = Fixture::new();
+  let mut fixture = Fixture::<Bn254>::new();
   let (_, claims) = fixture.proof(7);
   let plan =
     Plan::new(&fixture.system, &[2], schema(&claims), layout()).unwrap();

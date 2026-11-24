@@ -579,8 +579,10 @@ theorem familyCall_checked_of_chain
     · exact Or.inr (hList advAs hadv423)
   -- 2. Advice set `C.aset` from `check_advice_records_checked`
   have hrc423 : Claim.RCLimRep t bAddr lim C.m423 rc := hrc.mono ext_h_423
+  have hvSeg_eq : C.vSeg = rc := (Decl.check_family_seg_nil_of_rc hrc.axiomsNil C.sg112).1
+  have hrc423_seg : Claim.RCLimRep t bAddr lim C.m423 C.vSeg := by rw [hvSeg_eq]; exact hrc423
   obtain ⟨haset453_raw, -⟩ :=
-    check_advice_records_checked advAs (fun _ => False) hrc423 hadv423
+    check_advice_records_checked advAs (fun _ => False) hrc423_seg hadv423
       AddrMapAll.nil C.evCheckAdv.obs
       (fun cl hcl => hsub cl (C.evCheckAdv.sub cl hcl))
   have haset453 : AddrMapAll addrMapEnum
@@ -948,7 +950,11 @@ theorem familyCall_checked_of_chain
   have evCheckRecs' : ObsFn Obs.W "KernelModeled::check_recs"
       [rc, C.tys, C.recs, C.recM, C.src, C.dst, C.aset, C.s8, C.nRecs, .field ((0 : Nat) : F),
         C.np, C.uo, C.bnl, C.recs, .field 0] C.m1293 C.s9 C.m1331 C.evCheckRecs.cs := by
-    rw [Nat.cast_zero]; exact C.evCheckRecs.obs
+    have hcast : ∀ {a b : SourceValue F} {rest} {h₁ h₂ r cs},
+        a = b → ObsFn Obs.W "KernelModeled::check_recs" (a :: rest) h₁ r h₂ cs →
+        ObsFn Obs.W "KernelModeled::check_recs" (b :: rest) h₁ r h₂ cs :=
+      fun hab h => hab ▸ h
+    simpa only [Nat.cast_zero] using hcast hvSeg_eq C.evCheckRecs.obs
   -- Header-count equations (`block_nparams` and `nRecs = rs.size`) for `check_recs`
   have hnp_ind0 : ∀ ind₀, ms[0]? = some (.indc ind₀) →
       ind₀.params.toNat < 72057594037927936 ∧ C.np = .field (ind₀.params.toNat : F) := by
@@ -1756,7 +1762,12 @@ theorem familyCall_checked_of_chain
       (AddrMapAll.mono (fun _ _ _ _ _ hx => hx) ext_978_1331 haset978)
       hstr9
       (fun cl hcl => hsub cl (C.evCheckProjs.sub cl hcl))
-      C.evCheckProjs.obs
+      (by
+        have hcast : ∀ {a b : SourceValue F} {rest} {h₁ h₂ r cs},
+            a = b → ObsFn Obs.W "KernelModeled::check_projs" (a :: rest) h₁ r h₂ cs →
+            ObsFn Obs.W "KernelModeled::check_projs" (b :: rest) h₁ r h₂ cs :=
+          fun hab h => hab ▸ h
+        exact hcast hvSeg_eq C.evCheckProjs.obs)
   exact ⟨hreads, hcheckFacts, hcompanions, hprojs⟩
 
 /-! ## Payload-stream determinism: identifying `FamilyOwnAdvice`'s advice list with `C.advList` -/

@@ -6,8 +6,14 @@ license.workspace = true
 
 [dependencies]
 aiur = { workspace = true, features = ["stark"] }
+aiur-codegen = { path = "../aiur-codegen" }
+aiur-tracegen = { path = "../aiur-tracegen" }
 ixvm = { workspace = true, features = ["stark"] }
 stark-verifier = { workspace = true }
+stark-key = { workspace = true }
+ixon = { workspace = true }
+aggregate-controller = { workspace = true }
+ix-common = { workspace = true }
 record-pool = { workspace = true }
 multi-stark = { workspace = true }
 rayon = { workspace = true }
@@ -18,11 +24,21 @@ rustc-hash = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing-texray = { workspace = true }
+formal-generated = { path = "../formal-generated", optional = true }
 
 [features]
 default = ["parallel"]
 parallel = ["aiur/parallel", "ixvm/parallel", "stark-verifier/parallel"]
 cuda = ["aiur/cuda", "ixvm/cuda", "stark-verifier/cuda"]
+# The compiled CUDA trace writers for IxVM (crates/formal-generated),
+# selected at run time with AIUR_GPU_TRACE=compiled. Programs without a
+# bundle stay on their other population providers.
+compiled-trace = ["cuda", "native", "ixvm/compiled-trace"]
+# The native executors for IxVM, the recursive verifier and aggregation
+# that `lake build ix` generates from the certified programs
+# (crates/formal-generated). An executor runs jobs only for a program with
+# exactly its fingerprint; other programs use the interpreter.
+native = ["dep:formal-generated", "formal-generated/executors", "aiur/native"]
 
 [lints]
 workspace = true

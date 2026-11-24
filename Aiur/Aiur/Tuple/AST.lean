@@ -6,7 +6,7 @@ namespace Aiur.Tuple
 inductive Ty where
   | field
   | tuple (items : List Ty)
-  deriving Repr, BEq
+  deriving Repr
 
 mutual
   def Ty.decEq : (left right : Ty) → Decidable (left = right)
@@ -40,7 +40,23 @@ inductive BinOp where
 inductive Value (α : Type) where
   | field (value : α)
   | tuple (items : List (Value α))
-  deriving Repr, BEq
+  deriving Repr
+
+mutual
+  def Value.beq [BEq α] : Value α → Value α → Bool
+    | .field x, .field y => x == y
+    | .tuple xs, .tuple ys => Value.listBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+
+  def Value.listBeq [BEq α] : List (Value α) → List (Value α) → Bool
+    | [], [] => true
+    | x :: xs, y :: ys => Value.beq x y && Value.listBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+end
+
+instance [BEq α] : BEq (Value α) := ⟨Value.beq⟩
 
 mutual
   def Value.decEq [DecidableEq α] : (left right : Value α) → Decidable (left = right)
@@ -91,7 +107,25 @@ inductive Pattern (α : Type) where
   | wildcard
   | bind (name : String)
   | tuple (items : List (Pattern α))
-  deriving Repr, BEq
+  deriving Repr
+
+mutual
+  def Pattern.beq [BEq α] : Pattern α → Pattern α → Bool
+    | .literal x, .literal y => x == y
+    | .wildcard, .wildcard => true
+    | .bind x, .bind y => x == y
+    | .tuple xs, .tuple ys => Pattern.listBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+
+  def Pattern.listBeq [BEq α] : List (Pattern α) → List (Pattern α) → Bool
+    | [], [] => true
+    | x :: xs, y :: ys => Pattern.beq x y && Pattern.listBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+end
+
+instance [BEq α] : BEq (Pattern α) := ⟨Pattern.beq⟩
 
 mutual
   def Pattern.decEq [DecidableEq α] : (left right : Pattern α) → Decidable (left = right)
@@ -143,7 +177,36 @@ inductive Expr (α : Type) where
   | binary (op : BinOp) (left right : Expr α)
   | call (function : String) (args : List (Expr α))
   | matchValue (scrutinee : Expr α) (arms : List (Pattern α × Expr α))
-  deriving Repr, BEq
+  deriving Repr
+
+mutual
+  def Expr.beq [BEq α] : Expr α → Expr α → Bool
+    | .literal x, .literal y => x == y
+    | .var x, .var y => x == y
+    | .tuple xs, .tuple ys => Expr.listBeq xs ys
+    | .project v i, .project v' i' => Expr.beq v v' && i == i'
+    | .letValue p v b, .letValue p' v' b' => p == p' && Expr.beq v v' && Expr.beq b b'
+    | .neg v, .neg v' => Expr.beq v v'
+    | .binary op l r, .binary op' l' r' => op == op' && Expr.beq l l' && Expr.beq r r'
+    | .call f xs, .call f' ys => f == f' && Expr.listBeq xs ys
+    | .matchValue s arms, .matchValue s' arms' => Expr.beq s s' && Expr.armsBeq arms arms'
+    | _, _ => false
+  termination_by left _ => sizeOf left
+
+  def Expr.listBeq [BEq α] : List (Expr α) → List (Expr α) → Bool
+    | [], [] => true
+    | x :: xs, y :: ys => Expr.beq x y && Expr.listBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+
+  def Expr.armsBeq [BEq α] : List (Pattern α × Expr α) → List (Pattern α × Expr α) → Bool
+    | [], [] => true
+    | (p, e) :: xs, (p', e') :: ys => p == p' && Expr.beq e e' && Expr.armsBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+end
+
+instance [BEq α] : BEq (Expr α) := ⟨Expr.beq⟩
 
 structure Function (α : Type) where
   name : String

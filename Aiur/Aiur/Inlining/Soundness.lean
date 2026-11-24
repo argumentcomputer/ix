@@ -148,6 +148,17 @@ theorem soundExpr [Field F] [DecidableEq F]
           have middleGood := (Tree.typed checkedProgram closed first heapGood localsGood leftType).2.2
           exact .assertEq (sub left (by simp_wf; omega) locals _ _ _ safe.1 leftType first heapGood localsGood)
             (sub right (by simp_wf; omega) locals _ _ _ safe.2 rightType second middleGood localsGood) operation
+  | ptrEq left right =>
+      simp only [Tree.Safe] at safe
+      simp only [Tree.source]
+      rw [Tree.target] at evaluated
+      cases evaluated with
+      | ptrEq first second h1 h2 sound =>
+          obtain ⟨_,leftType,rest⟩ := Option.bind_eq_some_iff.mp checks
+          obtain ⟨_,rightType,_⟩ := Option.bind_eq_some_iff.mp rest
+          have middleGood := (Tree.typed checkedProgram closed first heapGood localsGood leftType).2.2
+          exact .ptrEq (sub left (by simp_wf; omega) locals _ _ _ safe.1 leftType first heapGood localsGood)
+            (sub right (by simp_wf; omega) locals _ _ _ safe.2 rightType second middleGood localsGood) h1 h2 sound
   | call name es =>
       simp only [Tree.Safe] at safe
       simp only [Tree.source]

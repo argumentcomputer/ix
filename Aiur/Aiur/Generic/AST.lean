@@ -494,7 +494,34 @@ inductive Pattern (α : Type) where
   /-- An expanded constructor qualifier; `params` bind inference slots in `type`.
   Elaboration replaces this with an ordinary nominal constructor pattern. -/
   | constructAs (params : List String) (type : Ty) (constructor : String) (args : List (Pattern α))
-  deriving Repr, BEq, Inhabited, Lean.ToExpr
+  deriving Repr, Inhabited, Lean.ToExpr
+
+mutual
+  def Pattern.beq [BEq α] : Pattern α → Pattern α → Bool
+    | .literal x, .literal y => x == y
+    | .wildcard, .wildcard => true
+    | .bind x, .bind y => x == y
+    | .global n t, .global n' t' => n == n' && t == t'
+    | .load p, .load p' => Pattern.beq p p'
+    | .orElse l r b, .orElse l' r' b' => Pattern.beq l l' && Pattern.beq r r' && b == b'
+    | .tuple xs, .tuple ys => Pattern.listBeq xs ys
+    | .array xs, .array ys => Pattern.listBeq xs ys
+    | .repeat p n, .repeat p' n' => Pattern.beq p p' && n == n'
+    | .record h xs, .record h' ys => h == h' && Pattern.listBeq xs ys
+    | .construct t c xs, .construct t' c' ys => t == t' && c == c' && Pattern.listBeq xs ys
+    | .constructAs ps t c xs, .constructAs ps' t' c' ys =>
+        ps == ps' && t == t' && c == c' && Pattern.listBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+
+  def Pattern.listBeq [BEq α] : List (Pattern α) → List (Pattern α) → Bool
+    | [], [] => true
+    | x :: xs, y :: ys => Pattern.beq x y && Pattern.listBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+end
+
+instance [BEq α] : BEq (Pattern α) := ⟨Pattern.beq⟩
 
 /-- Targets are lexical. A function call always establishes a fresh function
 boundary; labels never refer into a caller. -/
@@ -563,7 +590,53 @@ inductive Expr (α : Type) where
   | matchValue (scrutinee : Expr α) (arms : List (Pattern α × Expr α))
   /-- Named blocks and exits remain explicit through checking and evaluation. -/
   | control (kind : Control) (body : Expr α)
-  deriving Repr, BEq, Inhabited, Lean.ToExpr
+  deriving Repr, Inhabited, Lean.ToExpr
+
+mutual
+  def Expr.beq [BEq α] : Expr α → Expr α → Bool
+    | .literal x, .literal y => x == y
+    | .var x, .var y => x == y
+    | .global n t, .global n' t' => n == n' && t == t'
+    | .tuple xs, .tuple ys => Expr.listBeq xs ys
+    | .array xs, .array ys => Expr.listBeq xs ys
+    | .repeat v n, .repeat v' n' => Expr.beq v v' && n == n'
+    | .index v i, .index v' i' => Expr.beq v v' && i == i'
+    | .slice v s e, .slice v' s' e' => Expr.beq v v' && s == s' && e == e'
+    | .construct n ts c xs, .construct n' ts' c' ys =>
+        n == n' && ts == ts' && c == c' && Expr.listBeq xs ys
+    | .constructAs ps t c xs, .constructAs ps' t' c' ys =>
+        ps == ps' && t == t' && c == c' && Expr.listBeq xs ys
+    | .record h xs, .record h' ys => h == h' && Expr.listBeq xs ys
+    | .member v f, .member v' f' => Expr.beq v v' && f == f'
+    | .update ps os, .update ps' os' => ps == ps' && Expr.listBeq os os'
+    | .builtin op os, .builtin op' os' => op == op' && Expr.listBeq os os'
+    | .project v i, .project v' i' => Expr.beq v v' && i == i'
+    | .letValue p v b, .letValue p' v' b' => p == p' && Expr.beq v v' && Expr.beq b b'
+    | .store v, .store v' => Expr.beq v v'
+    | .load p, .load p' => Expr.beq p p'
+    | .hint t k c, .hint t' k' c' => t == t' && Expr.beq k k' && c == c'
+    | .neg v, .neg v' => Expr.beq v v'
+    | .binary op l r, .binary op' l' r' => op == op' && Expr.beq l l' && Expr.beq r r'
+    | .call n ts xs, .call n' ts' ys => n == n' && ts == ts' && Expr.listBeq xs ys
+    | .matchValue s arms, .matchValue s' arms' => Expr.beq s s' && Expr.armsBeq arms arms'
+    | .control k b, .control k' b' => k == k' && Expr.beq b b'
+    | _, _ => false
+  termination_by left _ => sizeOf left
+
+  def Expr.listBeq [BEq α] : List (Expr α) → List (Expr α) → Bool
+    | [], [] => true
+    | x :: xs, y :: ys => Expr.beq x y && Expr.listBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+
+  def Expr.armsBeq [BEq α] : List (Pattern α × Expr α) → List (Pattern α × Expr α) → Bool
+    | [], [] => true
+    | (p, e) :: xs, (p', e') :: ys => p == p' && Expr.beq e e' && Expr.armsBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+end
+
+instance [BEq α] : BEq (Expr α) := ⟨Expr.beq⟩
 
 structure Function (α : Type) where
   name : String

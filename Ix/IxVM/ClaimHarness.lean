@@ -349,6 +349,38 @@ private def hintToG : Lean.ReducibilityHints → Aiur.G
   | .abbrev => .ofNat 0xFFFFFFFF
   | .regular n => .ofNat (min (1 + n.toNat) 0xFFFFFFFE)
 
+/-- The model advice of `env` (`IxVM.Model.attach`) in the encoding the
+    Rust prover decodes (`ixon::model_advice`): "IXVMMDL\x00", version 1,
+    then the records, hints, blobs, payloads and dependencies, each a
+    little-endian `u64` count followed by its entries in address order. A
+    record is its `Ixon.ser` bytes, a hint its `hintToG` tag. -/
+def modelAdviceBytes (env : Ixon.Env) : ByteArray := Id.run do
+  let u64 (b : ByteArray) (n : Nat) : ByteArray :=
+    (List.range 8).foldl (fun b i => b.push (n >>> (8 * i)).toUInt8) b
+  let bytes (b : ByteArray) (x : ByteArray) : ByteArray := u64 b x.size ++ x
+  let sorted {α} (xs : Array (Address × α)) : Array (Address × α) :=
+    xs.qsort fun a b => a.1.hash.data.toList < b.1.hash.data.toList
+  let mut out := "IXVMMDL".toUTF8.push 0
+  out := u64 out 1
+  let records := sorted env.modelRecords.toArray
+  out := u64 out records.size
+  for (a, c) in records do out := bytes (out ++ a.hash) (Ixon.ser c)
+  let hints := sorted env.modelHints.toArray
+  out := u64 out hints.size
+  for (a, h) in hints do out := u64 (out ++ a.hash) (hintToG h).val.toNat
+  let blobs := sorted env.modelBlobs.toArray
+  out := u64 out blobs.size
+  for (a, x) in blobs do out := bytes (out ++ a.hash) x
+  let payloads := sorted env.models.toArray
+  out := u64 out payloads.size
+  for (a, x) in payloads do out := bytes (out ++ a.hash) x
+  let deps := sorted env.modelDeps.toArray
+  out := u64 out deps.size
+  for (a, ds) in deps do
+    out := u64 (out ++ a.hash) ds.size
+    for d in ds do out := out ++ d.hash
+  return out
+
 /-- Insert all per-address entries for `addr`s satisfying `keep` into
     `ioBuffer`. -/
 def addEntries (ixonEnv : Ixon.Env) (keep : Address → Bool)
@@ -514,15 +546,34 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
   let digestKey := packedDigestKey (Address.blake3 claimBytes)
   let mut ioBuffer : Aiur.IOBuffer := seedBinding env default
   ioBuffer := ioBuffer.extend 0 digestKey (claimBytes.data.map .ofUInt8)
+  let customAxiomsOf (ctx : Ix.ClaimContext) : Array Address :=
+    (ctx.axioms.bind trees.get?).map (·.leaves) |>.getD #[]
   match claim with
   | .check ctx addr _ =>
-    ioBuffer := addScopedEntries env (closureFrom env addr ctx.bindingAssumed) ioBuffer
-  | .eval _ input output _ =>
-    let inputClosure := closureFrom env input
-    let outputClosure := closureFrom env output
-    ioBuffer := addScopedEntries env (inputClosure.union outputClosure) ioBuffer
-  | .checkEnv .. =>
-    ioBuffer := addEntries env (fun _ => true) ioBuffer
+    let roots := #[addr]
+      ++ Ix.primAddrSet.toArray.filter env.consts.contains
+      ++ bindingRoots env ctx.bindingAssumed
+      ++ Ix.ClaimContext.userAxioms env
+      ++ customAxiomsOf ctx
+    ioBuffer := addScopedEntries env (closureFromRoots env roots) ioBuffer
+  | .eval ctx input output _ =>
+    -- `.eval` always validates the role binding (validator 3, ignoring `ctx.bindingAssumed`),
+    -- so its witness must always include role-binding evidence (`bindingRoots env false`).
+    let roots := #[input, output]
+      ++ Ix.primAddrSet.toArray.filter env.consts.contains
+      ++ bindingRoots env false
+      ++ Ix.ClaimContext.userAxioms env
+      ++ customAxiomsOf ctx
+    ioBuffer := addScopedEntries env (closureFromRoots env roots) ioBuffer
+  | .checkEnv ctx root _ =>
+    let some ownedTree := trees.get? root
+      | throw s!"no assumption tree supplied for root {root}"
+    let roots := ownedTree.leaves
+      ++ Ix.primAddrSet.toArray.filter env.consts.contains
+      ++ bindingRoots env ctx.bindingAssumed
+      ++ Ix.ClaimContext.userAxioms env
+      ++ customAxiomsOf ctx
+    ioBuffer := addScopedEntries env (closureFromRoots env roots) ioBuffer
   | .reveal comm _info _binders =>
     ioBuffer := addScopedEntries env (closureFrom env comm) ioBuffer
   | .contains .. => pure ()
@@ -544,10 +595,12 @@ aggregating their members' check-env claims"
     which IxVM refuses as seeds or on their walks. The rest stays closed under
     the claim walk: a safe constant references no unsafe one
     (`KernelCheck::assert_safety`), and a constant that uses no inert axiom
-    references none that does, so no walk from it reaches what is left out. -/
-def claimableOwned (env : Ixon.Env) (owned : Array Address) : Except String (Array Address) := do
+    references none that does, so no walk from it reaches what is left out.
+    `inert` must be `inertUsers env`. -/
+def claimableOwned (env : Ixon.Env) (owned : Array Address)
+    (inert : Std.HashSet Address := inertUsers env) : Except String (Array Address) := do
   if owned.isEmpty then throw "shardCheckEnvClaim: empty owned set"
-  let kept := dropUnclaimable env owned
+  let kept := dropUnclaimable env owned inert
   if kept.isEmpty then
     throw s!"shardCheckEnvClaim: all {owned.size} owned constant(s) are unsafe or partial, \
       outside Lean's logic, or use an inert axiom; IxVM certifies none of them"
@@ -603,20 +656,22 @@ def shardCheckEnvClaimTreesOf (env : Ixon.Env) (owned : Array Address) (assumeBi
 
 /-- The kernel shard claim and its canonical subject/assumption trees, without
     constructing the witness byte closure. Its owned tree holds the
-    `claimableOwned` constants of `owned`. -/
+    `claimableOwned` constants of `owned`. `inert` must be `inertUsers env`
+    (binding `env` to the default role table does not change it); a caller
+    building many shard claims over one environment computes it once. -/
 def shardCheckEnvClaimTrees (env : Ixon.Env) (owned : Array Address)
-    (assumeBinding : Bool := false) :
+    (assumeBinding : Bool := false) (inert : Std.HashSet Address := inertUsers env) :
     Except String (Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
   let env ← withDefaultRoleBinding env
-  shardCheckEnvClaimTreesOf env (← claimableOwned env owned) assumeBinding
+  shardCheckEnvClaimTreesOf env (← claimableOwned env owned inert) assumeBinding
 
 /-- Claim/tree construction plus the byte closure needed by a Lean-built shard
     witness. -/
 def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address)
-    (assumeBinding : Bool := false) :
+    (assumeBinding : Bool := false) (inert : Std.HashSet Address := inertUsers env) :
     Except String (Ix.Claim × Std.HashSet Address × Std.HashMap Address Ix.AssumptionTree) := do
   let env ← withDefaultRoleBinding env
-  let owned ← claimableOwned env owned
+  let owned ← claimableOwned env owned inert
   let (claim, trees) ← shardCheckEnvClaimTreesOf env owned assumeBinding
   let primitiveRoots := Ix.primAddrSet.toArray.filter env.consts.contains
   let closure := closureFromRoots env
@@ -755,10 +810,21 @@ def buildOwnedShardWitness (env : Ixon.Env) (inputs : ShardWitnessInputs) (owned
     ioBuffer ← seedTreeAt root trees ioBuffer
   return (claim, { funcName := `verify_claim, input := digestKey, inputIOBuffer := ioBuffer })
 
+/-- Variant of `buildShardCheckEnvWitness` when `env` already carries its role
+    binding (`withDefaultRoleBinding`) and `owned` is already `claimableOwned`
+    (e.g. from one-pass shard partitioning or `Ix.Shard.partitionOwned`). -/
+def buildShardCheckEnvWitnessOf (env : Ixon.Env) (owned : Array Address)
+    (assumeBinding : Bool := false) :
+    Except String (Ix.Claim × ClaimWitness) := do
+  buildOwnedShardWitness env (← ShardWitnessInputs.ofEnv env assumeBinding) owned
+
+/-- Variant of `buildShardCheckEnvWitness`: THIN frontier asm (see
+    `shardCheckEnvClaimTrees`) with the `closureFrom` byte scope. -/
 def buildShardCheckEnvWitness (env : Ixon.Env) (owned : Array Address)
-    (assumeBinding : Bool := false) : Except String (Ix.Claim × ClaimWitness) := do
+    (assumeBinding : Bool := false) (inert : Std.HashSet Address := inertUsers env) :
+    Except String (Ix.Claim × ClaimWitness) := do
   let env ← withDefaultRoleBinding env
-  let owned ← claimableOwned env owned
+  let owned ← claimableOwned env owned inert
   buildOwnedShardWitness env (← ShardWitnessInputs.ofEnv env assumeBinding) owned
 
 /-- Canonical merkle tree over every const address of `env` a claim may name

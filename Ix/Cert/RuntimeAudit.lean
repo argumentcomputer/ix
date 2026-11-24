@@ -340,8 +340,10 @@ role-evidence and role-binding synthesis, frozen here. -/
  _private.Ix.Compile.KernelAnnotate.0.Ix.Compile.KernelAnnotate.install.unsafe_26,
  _private.Ix.Compile.KernelAnnotate.0.Ix.Compile.KernelAnnotate.install.unsafe_impl_24,
  _private.Ix.Compile.KernelAnnotate.0.Ix.Compile.KernelAnnotate.install.unsafe_impl_27,
- _private.Ix.Compile.KernelAnnotate.0.Ix.Compile.KernelAnnotate.phaseAWorkers.unsafe_3,
- _private.Ix.Compile.KernelAnnotate.0.Ix.Compile.KernelAnnotate.phaseAWorkers.unsafe_impl_4,
+ _private.Ix.Compile.KernelAnnotate.0.Ix.Compile.KernelAnnotate.phaseAWorkers.unsafe_10,
+ _private.Ix.Compile.KernelAnnotate.0.Ix.Compile.KernelAnnotate.phaseAWorkers.unsafe_5,
+ _private.Ix.Compile.KernelAnnotate.0.Ix.Compile.KernelAnnotate.phaseAWorkers.unsafe_impl_11,
+ _private.Ix.Compile.KernelAnnotate.0.Ix.Compile.KernelAnnotate.phaseAWorkers.unsafe_impl_6,
  _private.Ix.Sharing.Exact.Basic.0.Ix.Sharing.Exact.exprPtr.unsafe_1,
  _private.Ix.Sharing.Exact.Basic.0.Ix.Sharing.Exact.exprPtr.unsafe_impl_2] -/
 #guard_msgs (whitespace := lax) in

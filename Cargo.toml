@@ -1,21 +1,37 @@
 [workspace]
 members = [
+  "crates/aggregate-controller",
   "crates/ix-prover",
   "crates/record-pool",
   "crates/aiur",
+  "crates/aiur-codegen",
+  "crates/aiur-codegen-tests",
+  "crates/aiur-tracegen",
+  "crates/aiur-tracegen-tests",
+  "crates/formal-generated",
   "crates/stark-key",
+  "crates/stark-shrinker",
   "crates/stark-verifier",
+  "crates/stark-verifier-native",
   "crates/ixvm",
+  "crates/ixvm-native",
   "crates/common",
   "crates/proof-compression",
   "crates/ffi",
   "crates/ixon",
 ]
 default-members = [
+  "crates/aggregate-controller",
   "crates/ix-prover",
   "crates/record-pool",
   "crates/aiur",
+  "crates/aiur-codegen",
+  "crates/aiur-codegen-tests",
+  "crates/aiur-tracegen",
+  "crates/aiur-tracegen-tests",
+  "crates/formal-generated",
   "crates/stark-key",
+  "crates/stark-shrinker",
   "crates/stark-verifier",
   "crates/ixvm",
   "crates/common",
@@ -42,9 +58,11 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 # Internal crates
+aggregate-controller = { path = "crates/aggregate-controller" }
 record-pool = { path = "crates/record-pool" }
 aiur = { path = "crates/aiur" }
 stark-key = { path = "crates/stark-key" }
+stark-shrinker = { path = "crates/stark-shrinker" }
 ixvm = { path = "crates/ixvm" }
 stark-verifier = { path = "crates/stark-verifier" }
 ix-common = { path = "crates/common" }
@@ -63,7 +81,7 @@ libc = "0.2"
 memmap2 = "0.9"
 # Bundle v3.5.1 to fix large-arena failures (microsoft/mimalloc#1309).
 mimalloc = { git = "https://github.com/argumentcomputer/mimalloc_rust.git", rev = "616cc1f130d9ea2a1111a46b4e98c140e078f882", default-features = false }
-multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "b32f5e6096d4fcf5c7cc14b557f120549c4b2b85" }
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "48e6e06a33173ef880039257354080b2b1f2b6d6" }
 nom = "7.1.3"
 num-bigint = "0.4.6"
 quickcheck = "1.0.3"

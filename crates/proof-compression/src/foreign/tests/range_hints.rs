@@ -15,19 +15,32 @@ fn single_limb_range(
     b.assert_bool(value);
     return;
   }
-  let mut terms = Vec::new();
-  let mut coefficient = Scalar::ONE;
-  for i in 0..bits.div_ceil(16) {
+  let count = bits.div_ceil(RANGE_BITS);
+  if count == 1 {
+    b.lookup(table, &[value]);
+    return;
+  }
+  let mut limbs = Vec::with_capacity(count);
+  for i in 0..count {
     let limb = b.hint("integer limb", &[value], move |v| {
       let words = v[0].canonical_limbs_le();
-      Ok(Scalar::from_u64((words[i / 4] >> (16 * (i % 4))) & 0xffff))
+      Ok(Scalar::from_u64(extract_u20_limb(words, i)))
     });
     b.lookup(table, &[limb]);
-    terms.push((coefficient, limb));
-    coefficient *= Scalar::from_u32(1 << 16);
+    limbs.push(limb);
   }
-  let packed = b.linear_combination(&terms, Scalar::ZERO);
-  b.assert_equal(value, packed);
+  let radix = Scalar::from_u32(1 << RANGE_BITS);
+  let mut coefficient = Scalar::ONE;
+  let mut acc = limbs[0];
+  for &limb in &limbs[1..count - 1] {
+    coefficient *= radix;
+    acc = b.affine([acc, limb], [Scalar::ONE, coefficient], Scalar::ZERO);
+  }
+  coefficient *= radix;
+  b.constrain_gate(
+    [acc, limbs[count - 1], value],
+    [Scalar::ZERO, Scalar::ONE, coefficient, -Scalar::ONE, Scalar::ZERO],
+  );
 }
 
 fn fixture(
@@ -66,9 +79,10 @@ fn assign(
 
 #[test]
 fn grouped_range_hints_preserve_wires_constraints_and_boundary_values() {
-  let bits = [0, 1, 2, 16, 17, 32, 33, 48, 64, 65, 80, 96, 112, 128, 129, 130];
-  let (single, old_inputs) = fixture(&bits, false, 1 << 16);
-  let (grouped, new_inputs) = fixture(&bits, true, 1 << 16);
+  let bits =
+    [0, 1, 2, 20, 21, 32, 40, 41, 60, 64, 65, 80, 100, 120, 128, 129, 130];
+  let (single, old_inputs) = fixture(&bits, false, 1 << RANGE_BITS);
+  let (grouped, new_inputs) = fixture(&bits, true, 1 << RANGE_BITS);
   assert_eq!(
     old_inputs.iter().map(|v| v.index()).collect::<Vec<_>>(),
     new_inputs.iter().map(|v| v.index()).collect::<Vec<_>>()
@@ -88,13 +102,13 @@ fn grouped_range_hints_preserve_wires_constraints_and_boundary_values() {
       new.values.iter().map(|v| v.index()).collect::<Vec<_>>()
     );
   }
-  for digit in [0u64, 1, 0x5555, 0xffff] {
+  for digit in [0u64, 1, 0x5_5555, 0xf_ffff] {
     let values = bits.map(|bits| {
       if bits <= 1 {
         return Scalar::from_u64(digit & u64::try_from(bits).unwrap());
       }
-      (0..bits.div_ceil(16)).fold(Scalar::ZERO, |value, _| {
-        value * Scalar::from_u32(1 << 16) + Scalar::from_u64(digit)
+      (0..bits.div_ceil(RANGE_BITS)).fold(Scalar::ZERO, |value, _| {
+        value * Scalar::from_u32(1 << RANGE_BITS) + Scalar::from_u64(digit)
       })
     });
     let old = assign(&single, &old_inputs, &values);
@@ -109,7 +123,7 @@ fn grouped_range_hints_preserve_wires_constraints_and_boundary_values() {
 
 #[test]
 fn grouped_range_hints_still_reject_non_limbs_with_valid_packing() {
-  let (circuit, inputs) = fixture(&[32], true, 1 << 16);
+  let (circuit, inputs) = fixture(&[32], true, 1 << RANGE_BITS);
   let assignment = assign(&circuit, &inputs, &[Scalar::ZERO]);
   let mut forged = assignment.values(circuit.id()).unwrap().to_vec();
   // The two limb hints directly follow the input; both limbs pack to zero
@@ -124,7 +138,7 @@ fn grouped_range_hints_still_reject_non_limbs_with_valid_packing() {
     .collect();
   assert_eq!(limbs.len(), 2);
   assert_eq!(limbs[1], limbs[0] + 1);
-  forged[limbs[0]] = Scalar::from_u32(1 << 16);
+  forged[limbs[0]] = Scalar::from_u32(1 << RANGE_BITS);
   forged[limbs[1]] = Scalar::NEG_ONE;
   assert_eq!(
     circuit.check_values(&forged),

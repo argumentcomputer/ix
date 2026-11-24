@@ -36,7 +36,7 @@ static_assert(MAX_LG_DOMAIN_SIZE == 28);
 
 namespace {
 constexpr uint64_t NTT_BYTES = 2 * (512 * 32 + 512 * 512 * 32 + 2 * 2 * 16384 * 32);
-constexpr uint64_t MAX_M = UINT64_C(1) << 26;
+constexpr uint64_t MAX_M = UINT64_C(1) << 27;
 constexpr uint32_t MAX_COMMITMENTS = 16;
 constexpr uint32_t MAX_SLOTS = 12 + 2 * MAX_COMMITMENTS;
 constexpr uint64_t MASK_THRESHOLD = 4096;
@@ -494,7 +494,7 @@ extern "C" int ix_plonk_bn254_check_field_abi(const uint64_t fq[3][4],
 extern "C" int ix_plonk_bn254_ntt_parameters(uint32_t log,
     ix_plonk_bn254_fr* root, ix_plonk_bn254_fr* inverse,
     ix_plonk_bn254_fr* size_inverse, ix_plonk_bn254_error* error) {
-    if (log > 26 || !root || !inverse || !size_inverse)
+    if (log > 27 || !root || !inverse || !size_inverse)
         return error_result(error, IX_PLONK_BN254_INVALID, "unsupported NTT parameter request");
     copy_field(root, forward_roots_of_unity[log]);
     copy_field(inverse, inverse_roots_of_unity[log]);

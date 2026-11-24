@@ -36,7 +36,7 @@ def exprNames : Aiur.Expr α → List String
   | .tuple xs | .construct _ _ xs | .call _ xs => xs.flatMap exprNames
   | .project x _ | .store x | .load x | .hint _ x channel | .neg x => exprNames x
   | .letValue p x b => patternNames p ++ exprNames x ++ exprNames b
-  | .binary _ x y | .assertEq _ x y => exprNames x ++ exprNames y
+  | .binary _ x y | .assertEq _ x y | .ptrEq x y => exprNames x ++ exprNames y
   | .matchValue x arms => exprNames x ++ arms.flatMap (fun arm => patternNames arm.1 ++ exprNames arm.2)
 termination_by e => sizeOf e
 decreasing_by
@@ -272,6 +272,119 @@ def lowerMatch (env : List (String × Ty)) (value : Aiur.Expr α)
       let root := stem ++ "0"
       let body := ((matchArms env stem root arms).run 1).1
       .letValue (.bind root) value (body.getD (.matchValue (.var root) []))
+
+theorem bindUsers_ptrEqFree (bindings : List (String × String)) {body : Aiur.Expr α}
+    (hb : body.ptrEqFree = true) : (bindUsers bindings body).ptrEqFree = true := by
+  simp [bindUsers, Aiur.Expr.ptrEqFree, hb]
+
+theorem choiceBody_ptrEqFree (outputs bindings : List (String × String)) (positions : List Nat)
+    {body : Aiur.Expr α} (hb : body.ptrEqFree = true) :
+    (choiceBody outputs bindings positions body).ptrEqFree = true := by
+  unfold choiceBody
+  cases choiceLinks outputs bindings positions with
+  | none => simp [Aiur.Expr.ptrEqFree]
+  | some links => exact bindUsers_ptrEqFree links hb
+
+theorem matchSteps_ptrEqFree (steps : List (Step α)) {body : Aiur.Expr α}
+    {failure : Option (Aiur.Expr α)} (hb : body.ptrEqFree = true)
+    (hf : ∀ f, failure = some f → f.ptrEqFree = true) :
+    (matchSteps steps body failure).ptrEqFree = true := by
+  match steps with
+  | [] => simpa [matchSteps] using hb
+  | .test p input :: rest =>
+      have hrest := matchSteps_ptrEqFree rest hb hf
+      cases failure with
+      | none => simp [matchSteps, Aiur.Expr.ptrEqFree, hrest]
+      | some f => simp [matchSteps, Aiur.Expr.ptrEqFree, hrest, hf f rfl]
+  | .load name input :: rest =>
+      simp [matchSteps, Aiur.Expr.ptrEqFree, matchSteps_ptrEqFree rest hb hf]
+  | .choice outputs left lbs right rbs order :: rest =>
+      simp only [matchSteps]
+      have hrest := matchSteps_ptrEqFree rest hb hf
+      apply matchSteps_ptrEqFree left (choiceBody_ptrEqFree _ _ _ hrest)
+      intro f heq
+      cases heq
+      exact matchSteps_ptrEqFree right (choiceBody_ptrEqFree _ _ _ hrest) hf
+termination_by sizeOf steps
+
+theorem letSteps_ptrEqFree (steps : List (Step α)) {body : Aiur.Expr α}
+    (hb : body.ptrEqFree = true) : (letSteps steps body).ptrEqFree = true := by
+  induction steps with
+  | nil => exact hb
+  | cons step rest ih =>
+      cases step with
+      | test p input => simp [letSteps, Aiur.Expr.ptrEqFree, ih]
+      | load name input => simp [letSteps, Aiur.Expr.ptrEqFree, ih]
+      | choice outputs left lbs right rbs order =>
+          simp only [letSteps]
+          apply matchSteps_ptrEqFree left (choiceBody_ptrEqFree _ _ _ ih)
+          intro f heq
+          cases heq
+          exact matchSteps_ptrEqFree right (choiceBody_ptrEqFree _ _ _ ih) (by intro _ h; cases h)
+
+theorem lowerLet_ptrEqFree (env : List (String × Ty)) (pat : Pattern α)
+    {value body : Aiur.Expr α} (hv : value.ptrEqFree = true) (hb : body.ptrEqFree = true) :
+    (lowerLet env pat value body).ptrEqFree = true := by
+  match pat with
+  | .load p =>
+      simp only [lowerLet]
+      exact lowerLet_ptrEqFree env p (by simpa [Aiur.Expr.ptrEqFree] using hv) hb
+  | p =>
+      unfold lowerLet
+      split
+      · exact lowerLet_ptrEqFree env _ (by simpa [Aiur.Expr.ptrEqFree] using hv) hb
+      · split
+        · simp [Aiur.Expr.ptrEqFree, hv, hb]
+        · simp [Aiur.Expr.ptrEqFree, hv, letSteps_ptrEqFree _ (bindUsers_ptrEqFree _ hb)]
+termination_by sizeOf pat
+
+private theorem mapM_arms_ptrEqFree {arms : List (Pattern α × Aiur.Expr α)}
+    {core : List (Aiur.Pattern α × Aiur.Expr α)}
+    (hm : arms.mapM (fun arm => do return (← arm.1.toCore? env, arm.2)) = some core)
+    (ha : ∀ arm ∈ arms, arm.2.ptrEqFree = true) :
+    ∀ arm ∈ core, arm.2.ptrEqFree = true := by
+  induction arms generalizing core with
+  | nil =>
+      simp only [List.mapM_nil, pure, Option.some.injEq] at hm
+      subst hm
+      simp
+  | cons arm rest ih =>
+      simp only [List.mapM_cons, bind, pure, Option.bind_eq_some_iff, Option.some.injEq] at hm
+      obtain ⟨hd, ⟨cp, _, rfl⟩, tl, htl, rfl⟩ := hm
+      intro a ha'
+      rcases List.mem_cons.mp ha' with rfl | hmem
+      · exact ha arm (by simp)
+      · exact ih htl (fun x hx => ha x (by simp [hx])) a hmem
+
+private theorem matchArms_ptrEqFree (env : List (String × Ty)) (stem root : String)
+    (arms : List (Pattern α × Aiur.Expr α)) (st : Nat)
+    (ha : ∀ arm ∈ arms, arm.2.ptrEqFree = true) :
+    ∀ e, ((matchArms env stem root arms).run st).1 = some e → e.ptrEqFree = true := by
+  induction arms generalizing st with
+  | nil => intro e he; cases he
+  | cons arm rest ih =>
+      rcases arm with ⟨pat, body⟩
+      intro e he
+      simp only [matchArms, bind, StateT.bind, pure, StateT.pure, StateT.run] at he
+      cases he
+      apply matchSteps_ptrEqFree _ (bindUsers_ptrEqFree _ (ha (pat, body) (by simp)))
+      intro f hf
+      exact ih _ (fun a hm => ha a (by simp [hm])) f hf
+
+theorem lowerMatch_ptrEqFree (env : List (String × Ty)) {value : Aiur.Expr α}
+    {arms : List (Pattern α × Aiur.Expr α)} (hv : value.ptrEqFree = true)
+    (ha : ∀ arm ∈ arms, arm.2.ptrEqFree = true) :
+    (lowerMatch env value arms).ptrEqFree = true := by
+  unfold lowerMatch
+  split
+  · rename_i core hm
+    simp only [Aiur.Expr.ptrEqFree, hv, Bool.true_and, List.all_map, List.all_eq_true,
+      Function.comp_def, id_eq]
+    exact mapM_arms_ptrEqFree hm ha
+  · simp only [Aiur.Expr.ptrEqFree, hv, Bool.true_and]
+    cases hb : ((matchArms env _ _ arms).run 1).1 with
+    | none => simp [Aiur.Expr.ptrEqFree]
+    | some e => exact matchArms_ptrEqFree env _ _ arms 1 ha e hb
 
 end PatternLowering
 end Aiur.Generic

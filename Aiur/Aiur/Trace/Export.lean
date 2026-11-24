@@ -1,11 +1,16 @@
 import Aiur.Trace.Compile
+import Aiur.Trace.Parallel
 import Aiur.Optimized.Activation
 import Aiur.Optimized.Physical
 import Aiur.Optimized.Grouping.Plan
 import Aiur.Optimized.EndToEnd
 import Aiur.Optimized.Depth.Basic
 import Aiur.Optimized.Depth.Classify
+import Aiur.Optimized.Depth.Grouped
+import Aiur.Optimized.Depth.Structural
+import Aiur.Optimized.Depth.StructuralEndToEnd
 import Aiur.Artifact
+import Std.Data.HashMap
 
 /-! Ixon encoding of companion population plans and physical circuits: the
 trace section of an artifact. The grammar is documented with its Rust reader,
@@ -19,20 +24,108 @@ H1): the gap limb widths, and per circuit its depth column, SCC rank and call
 slots. -/
 def planVersion : Nat := 3
 
-partial def putPolynomial (encode : F → Nat) : Polynomial F → PutM Unit
-  | .const x => do u8 0; nat (encode x)
-  | .var x => do u8 1; nat x
-  | .add a b => do u8 2; putPolynomial encode a; putPolynomial encode b
-  | .sub a b => do u8 3; putPolynomial encode a; putPolynomial encode b
-  | .mul a b => do u8 4; putPolynomial encode a; putPolynomial encode b
+/-! ## Node pool
 
-private def putPolynomials (encode : F → Nat) (ps : List (Polynomial F)) : PutM Unit :=
-  list ps (putPolynomial encode)
+A section's polynomials share one pool of distinct nodes, written before the
+section (`withNodes`); a polynomial is written as the index of its root. -/
 
-def putOperation (encode : F → Nat) (hintPCs : List Nat) : Operation F → PutM Unit
+/-- A node pool under construction, holding each distinct node once, in the
+order a left-to-right post-order walk of the polynomials, in writing order,
+first completes it. `bytes` are the encoded nodes, each operand as its
+distance back; `index` keys a node by its tag and fields, operands as node
+indices. -/
+structure NodePool where
+  bytes : ByteArray := .empty
+  count : Nat := 0
+  index : Std.HashMap (Nat × Nat × Nat) Nat := {}
+  fieldEncoding : FieldEncoding := .narrow
+  modulus : Option Nat := none
+
+/-- Writes a section whose polynomials share one `NodePool`. -/
+abbrev PoolM := StateT NodePool PutM
+
+/-- The index of the node with tag `tag` and fields `a` and `b` (a leaf's `b`
+is 0), added unless already present. -/
+def NodePool.node (tag a b : Nat) : PoolM Nat := do
+  let encoding := (← getThe NodePool).fieldEncoding
+  if tag != 0 || encoding == .narrow then
+    unless a < 2 ^ 64 do throw s!"integer {a} exceeds UInt64"
+  match (← getThe NodePool).index[(tag, a, b)]? with
+  | some i => return i
+  | none =>
+    let i := (← getThe NodePool).count
+    let modulus := (← getThe NodePool).modulus
+    let putNode : PutM Unit := do
+      u8 tag.toUInt8
+      if tag == 0 then
+        match modulus with
+        | some modulus => encoding.putScalar modulus a
+        | none => encoding.put a
+      else if tag == 1 then nat a
+      else do nat (i - a); nat (i - b)
+    -- Validate in a small buffer without retaining a second reference to the
+    -- growing pool bytes; appending can then keep its linear allocation cost.
+    let node ← MonadExcept.ofExcept (Ixon.run putNode 40)
+    modifyThe NodePool fun pool => { pool with
+      bytes := pool.bytes.append node
+      count := i + 1
+      index := pool.index.insert (tag, a, b) i }
+    return i
+
+/-- The index of `p`'s root, adding the nodes not yet in the pool. -/
+def internPolynomial (encode : F → Nat) : Polynomial F → PoolM Nat
+  | .const x => NodePool.node 0 (encode x) 0
+  | .var x => NodePool.node 1 x 0
+  | .add a b => do
+    let ia ← internPolynomial encode a
+    let ib ← internPolynomial encode b
+    NodePool.node 2 ia ib
+  | .sub a b => do
+    let ia ← internPolynomial encode a
+    let ib ← internPolynomial encode b
+    NodePool.node 3 ia ib
+  | .mul a b => do
+    let ia ← internPolynomial encode a
+    let ib ← internPolynomial encode b
+    NodePool.node 4 ia ib
+
+/-- `body` after the node pool its polynomials reference. Only constant
+payloads use the selected field encoding; variables and backreferences stay TagN. -/
+def withNodesWithEncoding (encoding : FieldEncoding) (body : PoolM Unit)
+    (modulus : Option Nat := none) : PutM Unit := do
+  let outer ← getThe ByteArray
+  modifyThe ByteArray fun _ => ByteArray.emptyWithCapacity (1 <<< 16)
+  let (_, pool) ← body.run { fieldEncoding := encoding, modulus }
+  let inner ← getThe ByteArray
+  modifyThe ByteArray fun _ => outer
+  nat pool.count
+  raw pool.bytes
+  raw inner
+
+/-- Version-two polynomial node encoding. -/
+def withNodes (body : PoolM Unit) : PutM Unit :=
+  withNodesWithEncoding .narrow body
+
+/-- `Ixon.list` over `PoolM`. -/
+@[specialize] def listP (xs : List α) (item : α → PoolM Unit) : PoolM Unit := do
+  nat xs.length
+  for x in xs do item x
+
+/-- `Ixon.array` over `PoolM`. -/
+@[specialize] def arrayP (xs : Array α) (item : α → PoolM Unit) : PoolM Unit := do
+  nat xs.size
+  for x in xs do item x
+
+def putPolynomial (encode : F → Nat) (p : Polynomial F) : PoolM Unit := do
+  nat (← internPolynomial encode p)
+
+private def putPolynomials (encode : F → Nat) (ps : List (Polynomial F)) : PoolM Unit :=
+  listP ps (putPolynomial encode)
+
+def putOperation (encode : F → Nat) (hintPCs : List Nat) : Operation F → PoolM Unit
   | .assign dest values => do u8 0; nats dest; putPolynomials encode values
   | .inverse dest value => do u8 1; nat dest; putPolynomial encode value
-  | .choose dest tests => do u8 2; nats dest; list tests (putPolynomials encode)
+  | .choose dest tests => do u8 2; nats dest; listP tests (putPolynomials encode)
   | .failure dest differences => do u8 3; nats dest; putPolynomials encode differences
   | .call name args dest => do u8 4; str name; putPolynomials encode args; nats dest
   | .store type values dest => do u8 5; putTy type; putPolynomials encode values; nat dest
@@ -43,7 +136,7 @@ def putOperation (encode : F → Nat) (hintPCs : List Nat) : Operation F → Put
       putPolynomials encode key; nats dest
 
 def putChip [Field F] [DecidableEq F] (encode : F → Nat) (source : Circuit.Chip F) :
-    PutM Unit := do
+    PoolM Unit := do
   let chip := Activation.compile source
   unless chip.wellFormed do throw s!"invalid activated circuit {source.name}"
   unless chip.stats.maxConstraintDegree ≤ max 2 source.stats.maxConstraintDegree &&
@@ -54,46 +147,64 @@ def putChip [Field F] [DecidableEq F] (encode : F → Nat) (source : Circuit.Chi
   nat chip.numVars
   nat source.numVars
   nats (chip.inputs.flatMap WireValue.words)
-  list chip.output.words poly
-  list chip.constraints poly
-  list chip.sends fun send => do
+  listP chip.output.words poly
+  listP chip.constraints poly
+  listP chip.sends fun send => do
     str send.channel
-    list (send.args.flatMap WireValue.words) poly
+    listP (send.args.flatMap WireValue.words) poly
     nats send.result.words
     poly send.enable
-  list chip.memory fun cell => do
+  listP chip.memory fun cell => do
     putTy cell.value.type
     poly cell.address
-    list cell.value.words poly
+    listP cell.value.words poly
     poly cell.enable
 
-/-- Replay the actual layout functions to retain their otherwise discarded
-definitions and compaction columns. Equality checks fail closed if either
-compiler evolves without updating its companion metadata. -/
-def putFunction [Field F] [DecidableEq F] (encode : F → Nat) (program : Program F)
-    (config : Config) (fn : Function F) (layout : LaidOutChip F) (representative : String)
-    (bytecode : Execution.Function F) (validateInputs : Bool := true) : PutM Unit := do
-  let source ← MonadExcept.ofExcept (Compiler.function program config fn validateInputs)
-  let aliases ← MonadExcept.ofExcept (resolveAliases source.chip)
+/-- The actual layout functions replayed from the source function alone, to
+retain their otherwise discarded definitions and compaction columns. The
+replay does not depend on the certified layout, so it can run while the
+certified compiler runs; `putFunctionOf` then checks it against the layout. -/
+structure Replay (F : Type) where
+  source : Compiler.Result F
+  degree : Degree.State F
+  layout : ColumnLayout
+  /-- The final chip this replay reproduces, before comparison with the layout. -/
+  chip : Circuit.Chip F
+  columns : List Nat
+
+def replayFunction [Field F] [DecidableEq F] (program : Program F) (config : Config)
+    (func : Function F) (validateInputs : Bool := true) : Except String (Replay F) := do
+  let source ← Compiler.function program config func validateInputs
+  let aliases ← resolveAliases source.chip
   let propagatedScopes := if config.propagateScopes then ScopedPropagation.transform aliases else aliases
   let simplified := if config.simplifyConstraints then (ConstraintElimination.run propagatedScopes).chip
     else propagatedScopes
-  let degree ← MonadExcept.ofExcept (Degree.boundState config simplified)
-  unless degree.chip == layout.logical do throw s!"trace logical layout mismatch in {fn.name}"
-  let merged := (LookupMerging.run config degree.chip layout.layout).chip
-  let columns ← if config.propagateValues then do
+  let degree ← Degree.boundState config simplified
+  let layout := allocateColumns config degree.chip
+  let merged := (LookupMerging.run config degree.chip layout).chip
+  if config.propagateValues then
     let propagated := Propagation.propagate merged merged.numVars (.identity merged)
     let used := propagated.chip.variables
     let columns := (List.range propagated.chip.numVars).filter (used.contains ·)
-    unless Propagation.compact propagated.chip columns == layout.chip do
-      throw s!"trace final compaction mismatch in {fn.name}"
-    pure columns
-  else do
-    unless merged == layout.chip do throw s!"trace final layout mismatch in {fn.name}"
-    pure (List.range merged.numVars)
+    return ⟨source, degree, layout, Propagation.compact propagated.chip columns, columns⟩
+  else
+    return ⟨source, degree, layout, merged, List.range merged.numVars⟩
+
+/-- Check a replay against the certified layout and write its population
+plan. Equality checks fail closed if either compiler evolves without updating
+its companion metadata. -/
+def putFunctionOf [Field F] [DecidableEq F] (encode : F → Nat) (config : Config)
+    (func : Function F) (replay : Replay F) (layout : LaidOutChip F) (representative : String)
+    (bytecode : Execution.Function F) : PoolM Unit := do
+  let ⟨source, degree, replayed, chip, columns⟩ := replay
+  unless degree.chip == layout.logical do throw s!"trace logical layout mismatch in {func.name}"
+  unless replayed == layout.layout do throw s!"trace column allocation mismatch in {func.name}"
+  unless chip == layout.chip do
+    throw (if config.propagateValues then s!"trace final compaction mismatch in {func.name}"
+      else s!"trace final layout mismatch in {func.name}")
   let hintPCs := bytecode.code.toList.zipIdx.filterMap fun (op, pc) =>
     match op with | .hint .. => some pc | _ => none
-  unless source.hints == hintPCs.length do throw s!"trace hint occurrence mismatch in {fn.name}"
+  unless source.hints == hintPCs.length do throw s!"trace hint occurrence mismatch in {func.name}"
   let steps := source.steps ++ (degree.cache.reverse.map fun (scope, value, dest) =>
     Step.mk scope (.assign [dest] [value])).toArray
   let writes := columns.zipIdx.flatMap fun (old, column) =>
@@ -102,31 +213,38 @@ def putFunction [Field F] [DecidableEq F] (encode : F → Nat) (program : Progra
         | some (.auxiliary scope) => source.chip.activation scope
         | _ => .const 1
       (column, id, guard)
-  str fn.name
+  str func.name
   str representative
   nat degree.chip.roles.size
   nats (source.chip.inputs.flatMap WireValue.words)
   nats source.chip.output.words
-  array steps fun step => do
+  arrayP steps fun step => do
     putPolynomial encode (source.chip.activation step.scope)
     putOperation encode hintPCs step.operation
-  list writes fun (column, id, guard) => do
+  listP writes fun (column, id, guard) => do
     nat column; nat id; putPolynomial encode guard
 
+def putFunction [Field F] [DecidableEq F] (encode : F → Nat) (program : Program F)
+    (config : Config) (func : Function F) (layout : LaidOutChip F) (representative : String)
+    (bytecode : Execution.Function F) (validateInputs : Bool := true) : PoolM Unit := do
+  putFunctionOf encode config func
+    (← MonadExcept.ofExcept (replayFunction program config func validateInputs)) layout
+    representative bytecode
+
 def putGroup [Field F] [DecidableEq F] (encode : F → Nat) (group : Grouping.Layout F) :
-    PutM Unit := do
+    PoolM Unit := do
   let poly := putPolynomial encode
   str group.name
   nat group.width
   poly group.activation
-  list group.constraints poly
-  list group.receive poly
-  list group.sends fun s => do poly s.enable; list s.args poly
-  list group.members fun m => do
+  listP group.constraints poly
+  listP group.receive poly
+  listP group.sends fun s => do poly s.enable; listP s.args poly
+  listP group.members fun m => do
     str m.name
     array m.columns nat
     nat m.selector
-    list m.writes fun (column, value) => do nat column; poly value
+    listP m.writes fun (column, value) => do nat column; poly value
 
 /-- A function grouping artifact: checked groups alone, as `grouping_tune` writes
 them for hosts that replace a package's grouping. -/
@@ -135,7 +253,7 @@ def exportGroups [Field F] [DecidableEq F] (encode : F → Nat) (groups : List (
   Ixon.run do
     raw Artifact.groupsMagic
     nat Artifact.formatVersion
-    list groups (putGroup encode)
+    withNodes (listP groups (putGroup encode))
 
 /-! ## Depth pass (Track A, H1) -/
 
@@ -146,17 +264,25 @@ needs a large field anyway (`Depth.goldilocks_characteristic`). -/
 def depthLimbs (modulus : Nat) : List Nat :=
   if 2 ^ 16 ≤ modulus then [16, 8] else [Nat.log2 modulus]
 
-/-- The depth pass configuration of a prepared physical system: the untrusted
-planner's output (`Depth.planPrepared`), refused unless it certifies. A plan
-without a gap slot needs no limbs, so it adds no range maps or tables. -/
-def depthConfig [Field F] [DecidableEq F] (modulus : Nat) {artifact : Optimized.Artifact F}
-    (physical : Physical.Prepared artifact) : Except String Depth.Config := do
-  let cfg := Depth.planPrepared physical (depthLimbs modulus)
+/-- The depth pass configuration of the physical circuits compiled from `program`, with the
+measures of its exempt SCCs (`Depth.Structural`): recursive circuits whose calls descend on the
+structure of an argument, or count a field argument down, carry no depth word. It is the
+untrusted planners' output (`Depth.planPrepared`, then `Depth.Structural.plan`), refused unless
+both halves of the depth certificate check (`Physical.Prepared.DepthCertified`). A plan without
+a gap slot needs no limbs, so it adds no range maps or tables. -/
+def depthConfig [Field F] [DecidableEq F] (modulus : Nat) (program : Program F)
+    {artifact : Optimized.Artifact F} (physical : Physical.Prepared artifact) :
+    Except String (Depth.Config × Depth.Structural.Plan) := do
+  let base := Depth.planPrepared physical (depthLimbs modulus)
+  let (cfg, measures) :=
+    Depth.Structural.plan base physical.system program physical.representative
   let cfg := if cfg.plans.any (fun (_, plan) => plan.slots.contains .gap) then cfg
     else { cfg with limbs := [] }
-  unless Depth.certify cfg physical.system do
-    throw "the depth plan does not certify (Depth.Certified)"
-  return cfg
+  unless Depth.Structural.certify cfg physical.system do
+    throw "the depth plan does not certify (Depth.Structural.certify)"
+  unless Depth.Structural.check cfg program physical.representative measures do
+    throw "the depth plan's measures do not check (Depth.Structural.check)"
+  return (cfg, measures)
 
 /-- The execution bytecode with the depth pass's range maps and their tables
 (`Depth.rangeDecl`, `Depth.rangeTables`) appended, so that their callable IDs
@@ -193,56 +319,168 @@ def putDepth (cfg : Depth.Config) (source : Circuit.Chip F) : PutM Unit := do
     | .gap => do u8 2; nat column
     | .external => do u8 3; nat column
 
-/-- The trace section of an artifact: population plans for every function,
-the activated depth circuits (`Depth.system` of the physical circuits), and
-the checked function groups over them. It also returns `exported` with the
-range maps (`depthBytecode`), which the package must carry. -/
-def exportPreparedPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
+/-- The depth configuration of `physical` and the bytecode the package
+carries: `exported`'s with the depth pass's range maps (`depthBytecode`).
+Every map of `program` must be an exported map, so that the package's map
+names cover the map claims of the circuits. -/
+def exportBytecode [Field F] [DecidableEq F] (modulus : Nat)
     (program : Program F) (artifact : Optimized.Artifact F) (physical : Physical.Prepared artifact)
-    (exported : Execution.Export F) (groups : List (String × List String) := []) :
-    Except String (Execution.Export F × ByteArray) := do
+    (exported : Execution.Export F) (replays : Option (List (Except String (Replay F))) := none) :
+    Except String (Depth.Config × Depth.Structural.Plan × Execution.Bytecode F) := do
   let original := exported.bytecode
   unless program.functions.length == artifact.layouts.length && program.functions.length == original.functions.length do
     throw "trace program/function count mismatch"
-  let cfg ← depthConfig modulus physical
-  let bytecode := depthBytecode cfg original
+  if let some replays := replays then
+    unless replays.length == program.functions.length do throw "trace replay count mismatch"
+  let (cfg, measures) ← depthConfig modulus program physical
+  unless program.maps.all (fun m => original.maps.any (·.name == m.name)) do
+    throw "a program map is not among the exported maps"
+  return (cfg, measures, depthBytecode cfg original)
+
+/-- The trace section for the depth configuration `cfg`, exempt-SCC measures
+`measures`, and the package bytecode `bytecode` (`exportBytecode`): population
+plans for every function of `original`, the activated depth circuits
+(`Depth.system` of the physical circuits), and the checked function groups over
+them. -/
+def exportTraceSection [Field F] [DecidableEq F] (encoding : FieldEncoding)
+    (modulus : Nat) (encode : F → Nat)
+    (program : Program F) (artifact : Optimized.Artifact F) (physical : Physical.Prepared artifact)
+    (original : Execution.Bytecode F) (cfg : Depth.Config) (measures : Depth.Structural.Plan)
+    (bytecode : Execution.Bytecode F)
+    (groups : List (String × List String) := [])
+    (replays : Option (List (Except String (Replay F))) := none) : Except String ByteArray := do
   let system := Depth.system cfg physical.system
   let callableNames := bytecode.functions.map (·.name) ++ bytecode.maps.map (·.name)
   let id := fun name => if callableNames.contains name then pure (callableNames.idxOf name)
     else throw s!"unknown grouped callable {name}"
   let mut used : List String := []
-  let mut packed : List (Grouping.Packed F id) := []
+  let mut selected : List (String × List (Circuit.Chip F)) := []
   for (name, names) in groups do
     let names := (names.map physical.representative).dedup
     let chips := system.chips.filter fun c =>
       names.contains c.name && !used.contains c.name && !artifact.entries.contains c.name
     if chips.length < 2 then continue
-    let group ← Grouping.compile name id chips
     used := used ++ chips.map (·.name)
-    packed := packed ++ [⟨chips, group⟩]
+    selected := selected ++ [(name, chips)]
+  let packed ← selected.parMapM fun (name, chips) => do
+    return (⟨chips, ← Grouping.compile name id chips⟩ : Grouping.Packed F id)
   let plan ← Grouping.preparePlan system id packed
-  -- The backend theorems (`grouped_activated_heap_sound` and its siblings) assume
-  -- `plan.WellFormedActivation`; refuse to export a plan that does not meet it.
-  unless decide plan.WellFormedActivation do
-    throw "an ungrouped chip is not well-formed before or after activation (Plan.WellFormedActivation)"
+  -- Enforce all executable WS 2B-1 exporter safety certificates (`PlanCertificate`, both
+  -- halves of the depth certificate, `cfg.bits ≤ 24`, and `Plan.WellFormedActivation`) before
+  -- emitting bytes.
+  unless Grouping.checkPlanCertificate system plan.singles plan.groups do
+    throw "grouping partition failed executable certificate check (Grouping.checkPlanCertificate)"
+  unless physical.checkDepthPlan program cfg measures plan do
+    throw "depth-grouped plan failed executable safety certificate (Physical.Prepared.checkDepthPlan)"
   let trace ← Ixon.run do
     nat planVersion
-    nat modulus
+    encoding.putModulus modulus
     nats cfg.limbs
-    list ((program.functions.zip artifact.layouts).zip original.functions) fun ((fn, layout), code) => do
-      unless fn.name == code.name do throw "trace bytecode function order mismatch"
-      putFunction encode program artifact.config fn layout (physical.representative fn.name) code
-        (artifact.entries.contains fn.name)
-    list (system.chips.zip physical.system.chips) fun (chip, source) => do
-      putChip encode chip
-      putDepth cfg source
-    list plan.groups fun p => putGroup encode p.checked.layout
+    withNodesWithEncoding encoding (modulus := some modulus) do
+      listP ((program.functions.zip artifact.layouts).zip original.functions).zipIdx
+          fun (((func, layout), code), index) => do
+        unless func.name == code.name do throw "trace bytecode function order mismatch"
+        let replay ← match replays with
+          | some replays => MonadExcept.ofExcept (replays[index]?.getD (throw "missing trace replay"))
+          | none => MonadExcept.ofExcept (replayFunction program artifact.config func
+              (artifact.entries.contains func.name))
+        putFunctionOf encode artifact.config func replay layout (physical.representative func.name) code
+      listP (system.chips.zip physical.system.chips) fun (chip, source) => do
+        putChip encode chip
+        putDepth cfg source
+      listP plan.groups fun p => putGroup encode p.checked.layout
+  return trace
+
+/-- The trace section of an artifact (`exportTraceSection`), with `exported`
+carrying the range maps (`exportBytecode`), which the package must carry. -/
+def exportPreparedPlanWithEncoding [Field F] [DecidableEq F] (encoding : FieldEncoding)
+    (modulus : Nat) (encode : F → Nat)
+    (program : Program F) (artifact : Optimized.Artifact F) (physical : Physical.Prepared artifact)
+    (exported : Execution.Export F) (groups : List (String × List String) := [])
+    (replays : Option (List (Except String (Replay F))) := none) :
+    Except String (Execution.Export F × ByteArray) := do
+  let (cfg, measures, bytecode) ← exportBytecode modulus program artifact physical exported replays
+  let trace ← exportTraceSection encoding modulus encode program artifact physical exported.bytecode cfg
+    measures bytecode groups replays
   return ({ exported with bytecode }, trace)
+
+/-- The version-two trace section with UInt64 field values. -/
+def exportPreparedPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
+    (program : Program F) (artifact : Optimized.Artifact F) (physical : Physical.Prepared artifact)
+    (exported : Execution.Export F) (groups : List (String × List String) := [])
+    (replays : Option (List (Except String (Replay F))) := none) :
+    Except String (Execution.Export F × ByteArray) :=
+  exportPreparedPlanWithEncoding .narrow modulus encode program artifact physical exported groups replays
 
 /-- `exportPreparedPlan` after physical deduplication of `artifact`. -/
 def exportPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
     (program : Program F) (artifact : Optimized.Artifact F) (exported : Execution.Export F)
-    (groups : List (String × List String) := []) : Except String (Execution.Export F × ByteArray) := do
+    (groups : List (String × List String) := []) :
+    Except String (Execution.Export F × ByteArray) := do
   exportPreparedPlan modulus encode program artifact (← Physical.prepare artifact) exported groups
+
+/-- Parallel variant of `exportPreparedPlan` (`A8`). Evaluates per-function
+population replays concurrently via `Task.spawn` and delegates to
+`exportPreparedPlan` (which compiles groups in parallel and encodes a single
+format-v2 shared `NodePool`), producing a byte-for-byte identical trace section
+without altering pure `exportPreparedPlan` or `Optimized.compile`. -/
+def exportPreparedPlanPar [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
+    (program : Program F) (artifact : Optimized.Artifact F) (physical : Physical.Prepared artifact)
+    (exported : Execution.Export F) (groups : List (String × List String) := []) :
+    Except String (Execution.Export F × ByteArray) := do
+  let replays := (program.functions.map fun func =>
+    Task.spawn (prio := .default) fun _ =>
+      replayFunction program artifact.config func (artifact.entries.contains func.name)).map (·.get)
+  exportPreparedPlan modulus encode program artifact physical exported groups (some replays)
+
+/-- `exportPreparedPlanPar` after physical deduplication of `artifact`. -/
+def exportPlanPar [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
+    (program : Program F) (artifact : Optimized.Artifact F) (exported : Execution.Export F)
+    (groups : List (String × List String) := []) :
+    Except String (Execution.Export F × ByteArray) := do
+  exportPreparedPlanPar modulus encode program artifact (← Physical.prepare artifact) exported groups
+
+/-- A trace section for a version-three wide-field package. The caller must
+pair it with `Artifact.packageWide`, which selects the corresponding decoder. -/
+def exportPlanWide [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
+    (program : Program F) (artifact : Optimized.Artifact F) (exported : Execution.Export F)
+    (groups : List (String × List String) := []) : Except String (Execution.Export F × ByteArray) := do
+  exportPreparedPlanWithEncoding .wide modulus encode program artifact
+    (← Physical.prepare artifact) exported groups
+
+/-- `exportPlan` of the generic program `source` with entries `entries`, as
+`Generic.Specialized.compileOptimized` compiles it, using every core: the
+certified layouts come from `compileParallel` (proven equal to
+`Optimized.compile`), and the population replays run alongside it, one task
+per function. -/
+def exportPlanParallelWithEncoding [Field F] [DecidableEq F] (encoding : FieldEncoding)
+    (modulus : Nat) (encode : F → Nat)
+    (source : Generic.Source F) (entries : List String) (exported : Execution.Export F)
+    (groups : List (String × List String) := []) (config : Config := {}) :
+    IO (Execution.Export F × ByteArray) := do
+  let specialized ← IO.ofExcept (Generic.specialize source entries)
+  let inlined ← IO.ofExcept (Inlining.prepare specialized.program specialized.inlineNames entries)
+  let program := inlined.program
+  let replays ← program.functions.mapM fun func => IO.asTask <| IO.lazyPure fun _ =>
+    replayFunction program config func (entries.contains func.name)
+  let artifact ← IO.ofExcept (compileParallel program entries config)
+  let physical ← IO.ofExcept (Physical.prepare artifact)
+  let replays ← replays.mapM fun replay => do IO.ofExcept (← IO.wait replay)
+  IO.ofExcept (exportPreparedPlanWithEncoding encoding modulus encode program artifact physical exported groups
+    (some replays))
+
+/-- Parallel export with the default version-two field encoding. -/
+def exportPlanParallel [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
+    (source : Generic.Source F) (entries : List String) (exported : Execution.Export F)
+    (groups : List (String × List String) := []) (config : Config := {}) :
+    IO (Execution.Export F × ByteArray) :=
+  exportPlanParallelWithEncoding .narrow modulus encode source entries exported groups config
+
+/-- Parallel export for an explicitly selected version-three wide package. -/
+def exportPlanParallelWide [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
+    (source : Generic.Source F) (entries : List String) (exported : Execution.Export F)
+    (groups : List (String × List String) := []) (config : Config := {}) :
+    IO (Execution.Export F × ByteArray) :=
+  exportPlanParallelWithEncoding .wide modulus encode source entries exported groups config
 
 end Aiur.Trace

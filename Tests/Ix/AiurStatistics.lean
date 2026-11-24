@@ -7,7 +7,7 @@ namespace Tests.Ix.AiurStatistics
 open Aiur LSpec Lean
 
 private def shape : CircuitShape :=
-  { mainWidth := 3, stage2Width := 2, quotientDegree := 2,
+  { mainWidth := 3, stage2Width := 3, quotientDegree := 2,
     preprocessedWidth := 100, preprocessedHeight := 0 }
 
 private def measurement (name : String) (rows hits : Nat) : CircuitMeasurement :=
@@ -15,11 +15,11 @@ private def measurement (name : String) (rows hits : Nat) : CircuitMeasurement :
 
 private def rawCircuit (rows hits fixed : Nat) : Json := Json.mkObj [
   ("name", toJson "fixture"), ("stage1_width", toJson (3 : Nat)),
-  ("stage2_width", toJson (2 : Nat)), ("quotient_degree", toJson (2 : Nat)),
+  ("stage2_width", toJson (3 : Nat)), ("quotient_degree", toJson (2 : Nat)),
   ("preprocessed_width", toJson (100 : Nat)), ("preprocessed_height", toJson fixed),
   ("rows", toJson rows), ("cache_hits", toJson hits)]
 
-private def raw (c : Json) (degree : Nat := 2) : Json := Json.mkObj [
+private def raw (c : Json) (degree : Nat := 3) : Json := Json.mkObj [
   ("log_blowup", toJson (2 : Nat)), ("extension_degree", toJson degree),
   ("circuits", .arr #[c])]
 
@@ -27,7 +27,7 @@ def suite : List TestSeq := [
   AiurTests.Cost.tests,
   let stats := computeStats { logBlowup := 2, circuits := #[measurement "small" 1 3, measurement "large" 4 0] }
   test "cached and uncached totals use the same model"
-    (stats.roundedFftCost == 565 && stats.totalUncachedFftCost == 1008.0 && stats.totalCacheHits == 3)
+    (stats.roundedFftCost == 780 && stats.totalUncachedFftCost == 1392.0 && stats.totalCacheHits == 3)
   ++ test "display ranks circuits by cost" (stats.circuits[0]!.name == "large"),
   test "decode real host field names"
     ((ExecutionMeasurements.fromJson (raw (rawCircuit 3 2 0))).toOption.any fun m =>
@@ -41,12 +41,12 @@ def suite : List TestSeq := [
   ++ test "reject missing counts"
     ((ExecutionMeasurements.fromJson (raw (Json.mkObj []))).toOption.isNone)
   ++ test "reject an incompatible extension degree"
-    ((ExecutionMeasurements.fromJson (raw (rawCircuit 4 0 0) 4)).toOption.isNone),
+    ((ExecutionMeasurements.fromJson (raw (rawCircuit 4 0 0) 2)).toOption.isNone),
   let report := Json.mkObj [("execution_statistics", raw (rawCircuit 4 0 0)),
     ("verified", toJson true)]
   let enriched := enrichExecutionReport report
   test "benchmark reports contain Lean-computed FFT costs"
-    ((enriched >>= (·.getObjValAs? Nat "fft-cost")).toOption == some 504)
+    ((enriched >>= (·.getObjValAs? Nat "fft-cost")).toOption == some 696)
   ++ test "keep existing report fields"
     ((enriched >>= (·.getObjValAs? Bool "verified")).toOption == some true)
   ++ test "a missing execution does not fabricate zero cost"

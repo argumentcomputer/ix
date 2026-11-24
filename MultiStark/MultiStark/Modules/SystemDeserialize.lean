@@ -81,6 +81,7 @@ module SystemDeserialize {
 
   fn read_field(i: Bytes::Stream) -> (Field, Bytes::Stream) {
       let (u, j) = read_vk_u64(i);
+      assert_eq!(Goldilocks::gl_lt_p(u), 1);
       (Goldilocks::gl_val(u), j)
     }
 
@@ -182,7 +183,7 @@ module SystemDeserialize {
               let (idx, i2) = read_vk_u16(i1);
               let (rest, i3) = read_nodes_n(i2, n - 1, node_idx + 1);
               ((&(Lists::Node::Cons(SysNode::Var(2, 0, idx), rest))), i3) } ,
-            _ => {
+            15 => {
               let (idx, i2) = read_vk_u16(i1);
               let (rest, i3) = read_nodes_n(i2, n - 1, node_idx + 1);
               ((&(Lists::Node::Cons(SysNode::Var(2, 1, idx), rest))), i3) } ,
@@ -235,7 +236,10 @@ module SystemDeserialize {
       let (k, c4b) = read_vk_tag(c4);
       assert_eq!(Fields::is_zero(k), 0);
       assert_eq!(UInt32::less_than_fields(k, 9), 1);
-      let (ncount, c5) = read_vk_u16(c4b);
+      let (ncount, c5a) = read_vk_u16(c4b);
+      let (lplen, c5) = read_vk_u16(c5a);
+      assert_eq!(UInt32::less_than_fields(lplen, ncount + 1), 1,
+        "vk: lookup_prefix_len exceeds node_count");
       let (nodes, c6) = read_nodes_n(c5, ncount, 0);
       let (zcount, c7) = read_vk_u16(c6);
       let (zeros, c8) = read_node_ids_n(c7, zcount);
@@ -244,7 +248,7 @@ module SystemDeserialize {
 
       let groups = lookup_groups_count(lcount, 0, k);
       let gslots = groups + Fields::is_zero(groups);
-      let s2w = gslots + gslots;
+      let s2w = gslots + gslots + gslots;
       let ccl = Goldilocks::gl_to_bytes(zcount + s2w);
       let s2wl = Goldilocks::gl_to_bytes(s2w);
       let kl = Goldilocks::gl_to_bytes(k);
@@ -272,8 +276,9 @@ module SystemDeserialize {
       let (tag, j) = read_vk_u8(i);
       match UInt8::to_field(tag) {
         0 => {  (OptCommit::NoCommit, j) } ,
-        _ => {
+        1 => {
           let (n, j1) = read_vk_u16(j);
+          assert_eq!(n, 1);
           let (c, j2) = read_vk_cap_n(j1, n);
           (OptCommit::SomeCommit(c), j2) } ,
       }
@@ -312,13 +317,32 @@ module SystemDeserialize {
     }
 
   inline fn read_system(i: Bytes::Stream) -> (Sys, Bytes::Stream) {
-      let (params, plimbs, j) = read_sys_params(i);
+      let (proto_ver, i0) = read_vk_u16(i);
+      assert_eq!(proto_ver, 6, "vk: only Protocol v6 is accepted");
+      let (ext_deg, i1) = read_vk_u16(i0);
+      assert_eq!(ext_deg, 3, "vk: only Fp^3 cubic extension (degree 3) is accepted");
+      let (fri_batching, i2) = read_vk_u16(i1);
+      assert_eq!(fri_batching, 1, "vk: only FriBatching::Tensor (tag 1) is accepted");
+      let (vk_digest, i3) = read_vk_digest(i2);
+      let (params, plimbs, j) = read_sys_params(i3);
       let (n, nlimb, j1) = read_vk_u16_limb(j);
       let (circuits, climbs, j2) = read_sys_circuits_n(j1, n);
       let (commit, j3) = read_opt_commit(j2);
       let (indices, j4) = read_opt_idx_n(j3, n, 0);
+      let l_zero = [UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0];
+      let l_one = [UInt8::BYTE_1, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0];
+      let l_two = [UInt8::BYTE_2, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0];
+      let l_three = [UInt8::BYTE_3, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0];
+      -- Transcript limbs matching `build_v6_challenger_seed` (11 u64s) followed by
+      -- `observe_shape` (D=3, modulus_tag=2, vk_digest 32B = 4 u64s, n, 7 u64s per circuit).
+      let seed_head = (&(Lists::Node::Cons(l_three, (&(Lists::Node::Cons(l_two,
+        (&(Lists::Node::Cons(l_zero, (&(Lists::Node::Cons(l_one, plimbs))))))))))));
+      let shape_body = (&(Lists::Node::Cons(l_three, (&(Lists::Node::Cons(l_two,
+        (&(Lists::Node::Cons(vk_digest[0], (&(Lists::Node::Cons(vk_digest[1],
+        (&(Lists::Node::Cons(vk_digest[2], (&(Lists::Node::Cons(vk_digest[3],
+        (&(Lists::Node::Cons(nlimb, climbs)))))))))))))))))))));
       (Sys::Mk(params,
-              Lists::concat(plimbs, (&(Lists::Node::Cons(nlimb, climbs)))),
+              Lists::concat(seed_head, shape_body),
               circuits, commit, indices),
        j4)
     }

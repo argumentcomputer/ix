@@ -9,6 +9,7 @@ import IxVMRefinement.Obs.KernelModeled0
 import IxVMRefinement.Obs.KernelModeled3
 import IxVMRefinement.Obs.KernelModeled4
 import IxVMRefinement.Obs.KernelModeled5
+import IxVMRefinement.Obs.KernelRoles2
 import IxVMRefinement.Obs.KernelCheck4
 import IxVMRefinement.Obs.KernelCheck5
 import IxVMRefinement.Obs.KernelCheck8
@@ -4629,7 +4630,7 @@ private theorem check_family_unpack {calls : List (Call F)} {bAddr : _root_.Addr
     Nonempty (CheckFamilyUnpack calls bAddr t E₀ R' B rb cr rs lim) := by
   subst hBb hRb
   match Obs.«KernelModeled::check_family».obs ev_cf with
-  | .run (m105 := m105) (v452 := x_v3) (m453 := m453) (m501 := m501) (cs511 := cs511) (x_members := x_members)
+  | .run (v_nbvrulqd := vSeg) (m_vcemfqfp := m105) (v452 := x_v3) (m453 := m453) (m501 := m501) (cs511 := cs511) (x_members := x_members)
       (v588 := v588) (m589 := m589) (cs599 := cs599) (v621 := v621) (m624 := m624)
       (v651 := v651) (m652 := m652) (v673 := x_ta) (m674 := m674) (cs684 := cs684)
       (m704 := m704) (v746 := x_ca) (m747 := m747) (cs757 := cs757)
@@ -4644,7 +4645,7 @@ private theorem check_family_unpack {calls : List (Call F)} {bAddr : _root_.Addr
       (y_svqhibng := v_vg) (m_yarikpkl := m_ya) (v_tpfunfpk := v_eok)
       (x_eezzidwb := v_add) (y_jggqqrgl := v_mul) (v_btzwyhmz := v_or)
       (m1293 := m1293) (v1330 := r_cr) (m1331 := m_cr_out) (cs1341 := cs1341)
-      (sg112 := sg1) (ev126 := e1) (ev148 := e2) (ev194 := e3) (ev_yqjbwijz := e4)
+      (ev_wsivmatu := sg1) (ev126 := e1) (ev148 := e2) (ev194 := e3) (ev_yqjbwijz := e4)
       (ev231 := e5) (ev266 := e6) (ev309 := e7) (ev344 := e8) (ev403 := e9)
       (ev435 := e10) (ev465 := e11) (ev513 := ev_blk) (ev601 := ev_mlen)
       (ev634 := ev_icnt) (heq650 := heq_icnt) (ev664 := ev_bnp) (ev686 := ev_bra)
@@ -4657,10 +4658,19 @@ private theorem check_family_unpack {calls : List (Call F)} {bAddr : _root_.Addr
       (ev_whimdwjd := ev_vg) (op_qfbltjlu := op_1mvg) (op_cnutjuwu := op_eok)
       (op_ymhwloon := op_add) (op_mvhbzaru := op_mul) (op_zaucahqq := op_or)
       (heq_sujkqzii := heq_or) (ev1305 := ev_fro) (ev1343 := ev_cr) (hc1474 := hc) .. =>
+    have hvSeg_eq : vSeg = xrc := by
+      match Obs.«KernelRoles::role_ctx_without_axioms».obs sg1 with
+      | .Mk_Nil (he_tjqnarcb := hr) .. => exact hr
+      | .Assumed_Nil (he_vhvjxozv := hr) .. => exact hr
+      | .Mk_Node (ld_bolbylmd := ld) .. | .Assumed_Node (ld_bolbylmd := ld) ..
+      | .MkEval (ld_bolbylmd := ld) .. | .AssumedEval (ld_bolbylmd := ld) .. =>
+        obtain ⟨_, _, ⟨_, _, _, hl⟩ | ⟨_, hl⟩⟩ := hrc.cases <;> (rw [hl] at ld; simp at ld)
+    subst vSeg
     -- Peel all needed subcall proofs linearly from hc, then drop hc immediately
     have hrest : ∀ cl ∈ cs, cl ∈ calls := hsub_cf
     rw [hc] at hrest
     clear hc hsub_cf ev_cf
+    have hrest := fun cl hcl => hrest cl (List.mem_cons_of_mem _ hcl)
     have hrest := sub_drop (sub_drop (sub_drop (sub_drop (sub_drop (sub_drop
       (sub_drop (sub_drop (sub_drop (sub_drop (sub_drop (sub_drop hrest)))))))))))
     obtain ⟨hsub511, -, hrest⟩ := sub_take hrest
@@ -4679,10 +4689,7 @@ private theorem check_family_unpack {calls : List (Call F)} {bAddr : _root_.Addr
     obtain ⟨hsub1244, hmem_flen, hrest⟩ := sub_take hrest
     have hrest := sub_drop (sub_drop (sub_drop (sub_drop hrest)))
     obtain ⟨-, -, hsub1341⟩ := sub_take hrest
-    have ext_sg1 : Heap.Extends h m105 := by
-      cases sg1 with
-      | Nil _ _ evax _ hh _ => rw [hh]; exact evax.heap_extends
-      | Node _ _ _ _ _ _ _ _ heq _ _ _ => exact absurd (Value.field.inj heq) zero_ne_one
+    have ext_sg1 : Heap.Extends h m105 := sg1.heap_extends
     have ext_h_453 : Heap.Extends h m453 :=
       ext_sg1.trans <| e1.heap_extends.trans <| e2.heap_extends.trans <| e3.heap_extends.trans <|
         e4.heap_extends.trans <| e5.heap_extends.trans <| e6.heap_extends.trans <|

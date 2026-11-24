@@ -13,10 +13,11 @@ rule right-hand sides).
 
 This module reads that equation per declaration: a definition, theorem,
 opaque or axiom declaration of an accepted array is installed under its
-name with its kind (`checkDecls_installs`). Two declared axioms install
+name with its kind (`checkDecls_installs`). Inert declarations install
 nothing of their own, as the kernel specifies (`declCSkels`): `sorryAx`
-(tolerated, never modelled) and `Quot.sound` (a member of the pinned
-quotient block). -/
+(tolerated, never modelled), `Quot.sound` (a member of the pinned quotient
+block), and the five compiler-trust declarations (`§7.10`: `Lean.trustCompiler`,
+`Lean.ofReduceBool`, `Lean.ofReduceNat`, `Lean.reduceBool`, `Lean.reduceNat`). -/
 
 namespace Ix.Kernel.Cached
 
@@ -24,13 +25,16 @@ open Ix.Kernel Ix.Kernel.Cached
 
 /-- The install skeleton a value or axiom declaration contributes under its
 own name; `none` for the declarations whose skeletons depend on the block
-(`basisDecl`, `quotDecl`, `indDecl`) and for the two axioms that install
+(`basisDecl`, `quotDecl`, `indDecl`) and for the inert declarations (`sorryAx`,
+`Quot.sound`, and the five `§7.10` compiler-trust declarations) that install
 nothing of their own. -/
 def declSkel : Declaration md → Option (InstallSkel md)
   | .defnDecl cv _ _ => some (.defn cv.name)
   | .thmDecl cv _ => some (.thm cv.name)
-  | .opaqueDecl cv _ => some (.ax cv.name)
-  | .axiomDecl cv => if cv.name = sorryAxName ∨ cv.name = quotSoundName then none else some (.ax cv.name)
+  | .opaqueDecl cv _ => if cv.name.isCompilerTrustOpaque then none else some (.ax cv.name)
+  | .axiomDecl cv =>
+    if cv.name = sorryAxName ∨ cv.name = quotSoundName ∨ cv.name.isCompilerTrustAxiom = true then none
+    else some (.ax cv.name)
   | _ => none
 
 private theorem foldl_suffix {α β : Type} {g : List α → β → List α}
@@ -78,7 +82,11 @@ theorem declCSkels_suffix (pd : Declaration md) (sk : List (InstallSkel md)) : s
   cases pd with
   | defnDecl cv _ _ => exact cons_suffix _ _
   | thmDecl cv _ => exact cons_suffix _ _
-  | opaqueDecl cv _ => exact cons_suffix _ _
+  | opaqueDecl cv _ =>
+    simp only [declCSkels]
+    split
+    · exact List.suffix_refl _
+    · exact cons_suffix _ _
   | axiomDecl cv =>
     simp only [declCSkels]
     split
@@ -105,7 +113,15 @@ theorem declSkel_mem {pd : Declaration md} {s : InstallSkel md} (h : declSkel pd
   cases pd with
   | defnDecl cv _ _ => cases h; exact List.mem_cons_self
   | thmDecl cv _ => cases h; exact List.mem_cons_self
-  | opaqueDecl cv _ => cases h; exact List.mem_cons_self
+  | opaqueDecl cv _ =>
+    simp only [declSkel] at h
+    simp only [declCSkels]
+    split at h
+    · cases h
+    · rename_i hn
+      cases h
+      simp only [hn]
+      exact List.mem_cons_self
   | axiomDecl cv =>
     simp only [declSkel] at h
     simp only [declCSkels]
@@ -129,7 +145,8 @@ theorem streamSkels_mem {ds : List (Declaration md)} {d : Declaration md} (hd : 
 /-- **Installation by name and kind.** A definition, theorem, opaque or
 axiom declaration of an accepted array is installed under its name, as a
 constant of its kind (a definition as a definition, a theorem as a theorem,
-an opaque or an axiom as an axiom); `sorryAx` and `Quot.sound` excepted. -/
+an opaque or an axiom as an axiom); `sorryAx`, `Quot.sound`, and the five
+inert compiler-trust declarations (`§7.10`) excepted. -/
 theorem checkDecls_installs {ev : Evidences md} {mode : CheckMode} {ds : Array (Declaration md)}
     {env : Env md} (h : checkDecls mode ev ds = .ok env) {d : Declaration md} (hd : d ∈ ds)
     {s : InstallSkel md} (hs : declSkel d = some s) : ∃ ci ∈ env.consts, ciSkel ci = s := by

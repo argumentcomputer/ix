@@ -12,7 +12,7 @@ use multi_stark::system::System;
 use multi_stark::system::SystemWitness;
 use multi_stark::types::CommitmentParameters;
 use multi_stark::types::FriParameters;
-use multi_stark::types::GoldilocksBlake3Config as Config;
+use multi_stark::types::GoldilocksBlake3V6Config as Config;
 use multi_stark::types::Val;
 use p3_matrix::dense::RowMajorMatrix;
 
@@ -22,7 +22,7 @@ fn config() -> Config {
     FriParameters {
       log_final_poly_len: 0,
       max_log_arity: 1,
-      num_queries: 2,
+      num_queries: 135,
       commit_proof_of_work_bits: 0,
       query_proof_of_work_bits: 0,
     },
@@ -214,7 +214,7 @@ fn ordinary_composition_proof_assignment_preserves_statement_owner() {
     prepared.assign_proof(&mut w, &inputs).unwrap();
     assert!(w.generate().is_err());
     let mut corrupt = proof.clone();
-    corrupt.opening_proof.final_poly[0] += multi_stark::types::ExtVal::ONE;
+    corrupt.opening_proof.final_poly[0] += multi_stark::types::ExtVal3::ONE;
     if let Ok(p) = plan.expand_witness(ProofEnvelope::Ordinary {
       proof: &corrupt,
       claims: &claims,
@@ -317,8 +317,12 @@ fn key_transport_constants_and_implementation_equivalence() {
     assert!(w.generate().is_err());
   }
   let mut altered = setup().0;
-  altered.circuits[0].graph.nodes.push(multi_stark::graph::Node::Public(8));
+  altered.circuits[0].graph.nodes.push(multi_stark::graph::Node::Public(12));
   altered.circuits[0].graph.degrees.push(0);
+  altered.vk_digest = multi_stark::system::compute_vk_digest::<
+    Val,
+    multi_stark::types::ExtVal3,
+  >(&altered.circuits);
   let key = VerifierKey::new(altered);
   assert!(matches!(
     VerifierPlan::validate(
@@ -331,10 +335,102 @@ fn key_transport_constants_and_implementation_equivalence() {
 }
 
 #[test]
+fn v6_key_codec_and_plan_reject_v5_fp2_horner_and_tampered_vk_digest() {
+  use multi_stark::p3_adapter::fri_batching::FriBatching;
+
+  let (system, _) = setup();
+  let key = VerifierKey::from_system(&system);
+  let valid_bytes = key.to_bytes().unwrap();
+
+  // 1. Key codec v2 header layout: version(u32), protocol_version(u16),
+  // extension_degree(u16), fri_batching(u16), vk_digest([u8; 32]).
+  // Under bincode standard varint encoding, small integers < 251 encode as 1 byte each.
+  assert_eq!(valid_bytes[0], 2); // KEY_CODEC_VERSION
+  assert_eq!(valid_bytes[1], 6); // PROTOCOL_V6_VERSION
+  assert_eq!(valid_bytes[2], 3); // EXTENSION_DEGREE
+  assert_eq!(valid_bytes[3], 1); // FriBatching::Tensor
+
+  for (offset, bad_val, label) in [
+    (0usize, 1u8, "legacy v5 key version 1"),
+    (1, 5, "Protocol v5"),
+    (2, 2, "Fp^2 extension degree 2"),
+    (3, 0, "Horner batching tag 0"),
+    (4, valid_bytes[4] ^ 1, "tampered vk_digest byte"),
+  ] {
+    let mut mutated = valid_bytes.clone();
+    mutated[offset] = bad_val;
+    assert!(
+      VerifierKey::from_bytes(&mutated).is_err(),
+      "VerifierKey::from_bytes accepted {label}"
+    );
+  }
+
+  // 2. Horner-configured v6 System is rejected by both to_bytes and VerifierPlan::validate.
+  let horner_cfg = Config::new_with_batching(
+    CommitmentParameters { log_blowup: 2, cap_height: 0 },
+    FriParameters {
+      log_final_poly_len: 0,
+      max_log_arity: 1,
+      num_queries: 135,
+      commit_proof_of_work_bits: 0,
+      query_proof_of_work_bits: 0,
+    },
+    FriBatching::Horner,
+  );
+  let (horner_sys, _) = System::new(
+    horner_cfg,
+    [CircuitInputs {
+      main_width: 1,
+      preprocessed: Some(RowMajorMatrix::new(vec![Val::ONE, Val::ZERO], 1)),
+      lookups: vec![Lookup {
+        multiplicity: -Expr::preprocessed(0),
+        args: vec![Expr::main(0)],
+      }],
+      lookup_group_size: 1,
+      ..Default::default()
+    }],
+  );
+  let horner_key = VerifierKey::from_system(&horner_sys);
+  assert!(horner_key.to_bytes().is_err());
+  assert!(
+    VerifierPlan::validate(
+      &horner_key,
+      profile(Envelope::Ordinary),
+      VerifierLimits::default(),
+    )
+    .is_err()
+  );
+
+  // 3. Mismatched vk_digest is rejected by both to_bytes and VerifierPlan::validate.
+  let mut bad_digest_sys = setup().0;
+  bad_digest_sys.vk_digest[0] ^= 1;
+  let bad_digest_key = VerifierKey::new(bad_digest_sys);
+  assert!(bad_digest_key.to_bytes().is_err());
+  assert!(
+    VerifierPlan::validate(
+      &bad_digest_key,
+      profile(Envelope::Ordinary),
+      VerifierLimits::default(),
+    )
+    .is_err()
+  );
+}
+
+#[test]
 fn generic_plan_handles_sparse_mixed_heights_and_grinding() {
   let profile = root::Profile::Smoke;
+  let smoke_floor_config = Config::new(
+    CommitmentParameters { log_blowup: 2, cap_height: 0 },
+    FriParameters {
+      log_final_poly_len: 0,
+      max_log_arity: 1,
+      num_queries: 130,
+      commit_proof_of_work_bits: 3,
+      query_proof_of_work_bits: 4,
+    },
+  );
   let (system, key) =
-    System::new(profile.config(), root::circuit_inputs(profile));
+    System::new(smoke_floor_config, root::circuit_inputs(profile));
   let vk = VerifierKey::from_system(&system);
   let plan = VerifierPlan::validate(
     &vk,
@@ -542,7 +638,7 @@ fn height_one_only_profile_checks_zero_round_fri() {
   prepared.assign_proof(&mut w, &i).unwrap();
   w.generate().unwrap();
   let mut bad = proof;
-  bad.opening_proof.final_poly[0] += multi_stark::types::ExtVal::ONE;
+  bad.opening_proof.final_poly[0] += multi_stark::types::ExtVal3::ONE;
   if let Ok(prepared) = plan
     .expand_witness(ProofEnvelope::Ordinary { proof: &bad, claims: &claims })
   {

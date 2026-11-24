@@ -49,15 +49,15 @@ abbrev «Lists::Node<&KernelLevels::NLEntry>» : String := "${\"name\":\"Lists::
 
 theorem «Lists::Node<&KernelLevels::NLEntry>».symbol : (Instance.mk "Lists::Node" [(.ptr (.named "KernelLevels::NLEntry" []))]).symbol = «Lists::Node<&KernelLevels::NLEntry>» := by decide +kernel
 
-/-- The instance `Lists::lookup<&KernelTypes::KLevelNode>`. -/
-abbrev «Lists::lookup<&KernelTypes::KLevelNode>» : String := "${\"name\":\"Lists::lookup\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KLevelNode\"}}}}]}"
-
-theorem «Lists::lookup<&KernelTypes::KLevelNode>».symbol : (Instance.mk "Lists::lookup" [(.ptr (.named "KernelTypes::KLevelNode" []))]).symbol = «Lists::lookup<&KernelTypes::KLevelNode>» := by decide +kernel
-
 /-- The instance `Lists::Node<&KernelTypes::KLevelNode>`. -/
 abbrev «Lists::Node<&KernelTypes::KLevelNode>» : String := "${\"name\":\"Lists::Node\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KLevelNode\"}}}}]}"
 
 theorem «Lists::Node<&KernelTypes::KLevelNode>».symbol : (Instance.mk "Lists::Node" [(.ptr (.named "KernelTypes::KLevelNode" []))]).symbol = «Lists::Node<&KernelTypes::KLevelNode>» := by decide +kernel
+
+/-- The instance `Lists::lookup<&KernelTypes::KLevelNode>`. -/
+abbrev «Lists::lookup<&KernelTypes::KLevelNode>» : String := "${\"name\":\"Lists::lookup\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KLevelNode\"}}}}]}"
+
+theorem «Lists::lookup<&KernelTypes::KLevelNode>».symbol : (Instance.mk "Lists::lookup" [(.ptr (.named "KernelTypes::KLevelNode" []))]).symbol = «Lists::lookup<&KernelTypes::KLevelNode>» := by decide +kernel
 
 /-- The instance `Lists::Node<[Field; 8]>`. -/
 abbrev «Lists::Node<[Field; 8]>» : String := "${\"name\":\"Lists::Node\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":8}}]}"
@@ -525,9 +525,9 @@ theorem n9255729605679635641 : instanceName [] "Lists::Node" (some [(.ptr (.name
 
 theorem n5134972657930782891 : constructorName [] (.named "KernelLevels::NLEntry" []) = "KernelLevels::NLEntry" := by decide +kernel
 
-theorem n15998708615656281194 : instanceName [] "Lists::lookup" (some [(.ptr (.named "KernelTypes::KLevelNode" []))]) = Names.«Lists::lookup<&KernelTypes::KLevelNode>» := by decide +kernel
-
 theorem n4949039831172210669 : constructorName [] (.named "Lists::Node" [(.ptr (.named "KernelTypes::KLevelNode" []))]) = Names.«Lists::Node<&KernelTypes::KLevelNode>» := by decide +kernel
+
+theorem n15998708615656281194 : instanceName [] "Lists::lookup" (some [(.ptr (.named "KernelTypes::KLevelNode" []))]) = Names.«Lists::lookup<&KernelTypes::KLevelNode>» := by decide +kernel
 
 theorem n13042956061496374075 : instanceName [] "Lists::Node" (some [(.ptr (.named "KernelTypes::KLevelNode" []))]) = Names.«Lists::Node<&KernelTypes::KLevelNode>» := by decide +kernel
 
@@ -993,6 +993,10 @@ theorem n253830841395321305 : constructorName [] (.named "Options::Option" [(.pt
 
 theorem n2169480615683866491 : constructorName [] (.named "KernelRoles::RoleCtxNode" []) = "KernelRoles::RoleCtxNode" := by decide +kernel
 
+theorem n4489227656273905977 : constructorName [] (.named "KernelRoles::EvalMap" []) = "KernelRoles::EvalMap" := by decide +kernel
+
+theorem n17913316682900777353 : constructorName [] (.named "RBTreeMap::RBTreeMap" [.field]) = Names.«RBTreeMap::RBTreeMap<Field>» := by decide +kernel
+
 theorem n8637239332885517644 : constructorName [] (.named "KernelRoles::RoleTableNode" []) = "KernelRoles::RoleTableNode" := by decide +kernel
 
 theorem n7341824060654231630 : instanceName [] "KernelRoles::role_map_lookup_or_default" (some [(.ptr (.array .field 32))]) = Names.«KernelRoles::role_map_lookup_or_default<&[Field; 32]>» := by decide +kernel
@@ -1064,8 +1068,6 @@ theorem n11557261121867711909 : constructorName [] (.named "Ixon::Quotient" []) 
 theorem n17025598268237686609 : instanceName [] "Lists::Node" (some [(.ptr (.array .field 32))]) = Names.«Lists::Node<&[Field; 32]>» := by decide +kernel
 
 theorem n9031585078731768146 : instanceName [] "Lists::concat" (some [(.ptr (.array .field 32))]) = Names.«Lists::concat<&[Field; 32]>» := by decide +kernel
-
-theorem n17913316682900777353 : constructorName [] (.named "RBTreeMap::RBTreeMap" [.field]) = Names.«RBTreeMap::RBTreeMap<Field>» := by decide +kernel
 
 theorem n13719665013194770285 : instanceName [] "Options::Option" (some [(.array .field 8)]) = Names.«Options::Option<[Field; 8]>» := by decide +kernel
 

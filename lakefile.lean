@@ -15,6 +15,12 @@ require aiur from "Aiur"
 require ixvm from "IxVM"
 require multiStark from "MultiStark"
 
+require certifri from git
+  "https://github.com/argumentcomputer/CertiFRI" @ "a835ba93059df440df04570298103a591abb9573"
+
+require «certifri-proofs» from git
+  "https://github.com/argumentcomputer/CertiFRI" @ "a835ba93059df440df04570298103a591abb9573" / "Proofs"
+
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "d8eb3e0d9a8e33fc116e6700df0418a1d8114508"
 
@@ -56,6 +62,16 @@ around Cargo + snapshotting so concurrent variants never race on
 
 The archives are built when native targets need them. Keeping Rust linkage on
 `Ix` keeps `ix_rs` out of the certified kernel's build.
+
+Every archive contains the formal Aiur prover library (`ix-prover`), which the
+`ix` CLI runs in process. `ix_rs_net` also contains the native executors
+generated from the certified programs (`formal_generated`): before Cargo runs,
+`formal-codegen`, which links `ix_rs`, writes them as Rust source, and with
+CUDA the trace writers as CUDA source, to `.lake/build/formal-generated`,
+compiling the programs into the artifact cache (`.lake/aiur`) first when they
+are missing (once per compiler and program revision; several minutes). An
+executor only ever runs for the program with exactly its fingerprint, so a
+stale one is never used.
 -/
 section FFI
 
@@ -63,25 +79,42 @@ section FFI
 def enabled (name : String) : IO Bool :=
   return (← IO.getEnv name) matches some "1" | some "true" | some "yes"
 
+/-- Whether the Rust archives are built with CUDA: IX_CUDA, or
+IX_FORMAL_COMPILED_TRACE=1, which implies it. -/
+def cudaEnabled : IO Bool := do
+  return (← enabled "IX_CUDA") || (← IO.getEnv "IX_FORMAL_COMPILED_TRACE") == some "1"
+
+/-- Whether `ix` links the native executors generated from the certified
+programs (`formal_generated`). -/
+def nativeExecutors : Bool := true
+
 /-- Rust feature selection shared by compilation and native runtime linkage.
-IX_NO_PAR=1 disables parallel; IX_CUDA enables CUDA. For `net` (the `ix` CLI),
-IX_PLONK and IX_GROTH16 add those final compression backends, which otherwise
-end at the recursive KZG proof; with CUDA, Groth16 links an installed ICICLE
-library. -/
-def cargoFeatures (testFfi : Bool := false) (net : Bool := false) : IO (Array String) := do
+IX_NO_PAR=1 disables parallel; `cudaEnabled` enables CUDA. `native` links the
+generated native executors (`formal_generated`), and with
+IX_FORMAL_COMPILED_TRACE=1 also the generated CUDA trace writers of formal
+IxVM (`AIUR_GPU_TRACE=compiled`). For `net` (the `ix` CLI), IX_PLONK and
+IX_GROTH16 add those final compression backends, which otherwise end at the
+recursive KZG proof; with CUDA, Groth16 links an installed ICICLE library. -/
+def cargoFeatures (testFfi : Bool := false) (net : Bool := false) (native : Bool := false) :
+    IO (Array String) := do
   let mut features := #[]
   if net && (← enabled "IX_PLONK") then features := features.push "plonk"
   if net && (← enabled "IX_GROTH16") then features := features.push "groth16"
   if (← IO.getEnv "IX_NO_PAR") != some "1" then features := features.push "parallel"
-  if ← enabled "IX_CUDA" then features := features.push "cuda"
+  if ← cudaEnabled then features := features.push "cuda"
+  if native then
+    features := features.push "native-executors"
+    if (← IO.getEnv "IX_FORMAL_COMPILED_TRACE") == some "1" then
+      features := features.push "formal-compiled-trace"
   if net && !System.Platform.isOSX then features := features.push "net"
   if testFfi then features := features.push "test-ffi"
   return features
 
 /-- Build args for `cargo build --release` with opt-in feature overrides.
 Cargo output is visible with `lake -v build`. -/
-def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String) := do
-  let features ← cargoFeatures testFfi net
+def cargoArgs (testFfi : Bool := false) (net : Bool := false) (native : Bool := false) :
+    IO (Array String) := do
+  let features ← cargoFeatures testFfi net native
   IO.println s!"Ix Rust features: {if features.isEmpty then "none" else ",".intercalate features.toList}"
   let buildArgs := #["build", "--release", "-p", "ix-ffi"]
   if features.isEmpty then return buildArgs
@@ -162,6 +195,11 @@ def isRustBuildInput (path : FilePath) : Bool :=
 embedded fixtures, optional gnark sources, and build-affecting environment
 variables. When none of these change, Lake skips invoking Cargo altogether. -/
 def rustInputDeps (pkg : Package) (features : Array String) : FetchM (Job Unit) := do
+  -- Sandboxed Nix builds omit Rust sources and symlink Crane's prebuilt
+  -- `target/release/libix_ffi.a`; trace the prebuilt archive directly.
+  if !(← (pkg.dir / "Cargo.lock").pathExists) then
+    let prebuilt ← inputBinFile (pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi")
+    return prebuilt.map fun _ => ()
   let crates ← inputDir (pkg.dir / "crates") false isRustBuildInput
   let mut manifestJobs : Array (Job FilePath) := #[
     ← inputTextFile (pkg.dir / "Cargo.toml"),
@@ -182,7 +220,7 @@ def rustInputDeps (pkg : Package) (features : Array String) : FetchM (Job Unit) 
     deps := deps.zipWith (fun _ _ => ()) gnark
   let envVars := #["RUSTFLAGS", "CARGO_BUILD_RUSTFLAGS", "MULTI_STARK_CUDA_ARCHS",
     "LEAN_SYSROOT", "LIBCLANG_PATH", "CLANG_PATH", "IX_CUDA", "IX_NO_PAR",
-    "IX_PLONK", "IX_GROTH16"]
+    "IX_PLONK", "IX_GROTH16", "IX_FORMAL_COMPILED_TRACE"]
   let envVals ← envVars.mapM fun k => do return s!"{k}={(← IO.getEnv k).getD ""}"
   let envKey := s!"features={",".intercalate features.toList};target={System.Platform.target};" ++
     ";".intercalate envVals.toList
@@ -198,10 +236,13 @@ A static archive does not carry its shared-library dependencies to Lean's
 linker, so with CUDA this is an `ld` script naming the archive together with
 the libraries the build scripts report. -/
 def buildRustStatic (pkg : Package) (features : Array String) (args : Array String)
-    (tag : String) : FetchM (Job FilePath) := do
+    (tag : String) (extraDep : Option (Job FilePath) := none) : FetchM (Job FilePath) := do
   let lib := pkg.buildDir / "lib"
   let archive := lib / s!"libix_ffi_{tag}.a"
   let deps ← rustInputDeps pkg features
+  let deps := match extraDep with
+    | some dep => deps.zipWith (fun _ _ => ()) dep
+    | none => deps
   let archiveJob ← buildFileAfterDep archive deps fun _ => do
     withCargoLock (pkg.buildDir / "cargo-ffi.lock") do
       let result ← captureProc' {
@@ -244,10 +285,54 @@ target ix_rs_test pkg : FilePath := do
   let features ← cargoFeatures (testFfi := true)
   buildRustStatic pkg features (← cargoArgs (testFfi := true)) "test"
 
-/-- Build the Rust static lib with `net` for the `ix` CLI. -/
+/-- Writes the generated sources of the certified programs for
+`formal_generated`. It links `ix_rs`, which has no generated code. -/
+lean_exe «formal-codegen» where
+  root := `FormalCodegen
+
+/-- The generated sources of the certified programs in
+`.lake/build/formal-generated`: the native executors, and in a CUDA build
+(`cudaEnabled`) the trace writers. `formal-codegen` writes them, compiling
+programs missing from the artifact cache first; it reruns only when it (and so
+the programs and compiler it links) or the CUDA selection changed, and rewrites
+only files whose contents changed. A CPU build removes any CUDA output. -/
+target formal_generated pkg : FilePath := do
+  let codegen ← «formal-codegen».fetch
+  let cuda ← cudaEnabled
+  let directory := pkg.buildDir / "formal-generated"
+  buildFileAfterDep (directory / "inputs") codegen (extraDepTrace := do
+      let envKey := s!"cuda={cuda};compiledTrace={(← IO.getEnv "IX_FORMAL_COMPILED_TRACE").getD ""};" ++
+        s!"aiur={(← IO.getEnv "IX_AIUR_ARTIFACT").getD ""};" ++
+        s!"verifier={(← IO.getEnv "IX_VERIFIER_ARTIFACT").getD ""};" ++
+        s!"aggr={(← IO.getEnv "IX_AGGR_ARTIFACT").getD ""}"
+      return .ofHash (Hash.ofString envKey) s!"formal_generated: {envKey}") fun exe => do
+    proc {
+      cmd := exe.toString
+      args := #[directory.toString] ++ (if cuda then #["--cuda"] else #[])
+      cwd := pkg.dir
+      env := #[("IX_ROOT", some pkg.dir.toString)]
+    }
+    let inputsPath := directory / "inputs"
+    let mut files : Array FilePath := #[]
+    if ← directory.pathExists then
+      for entry in ← directory.walkDir do
+        if entry != inputsPath && !(← entry.isDir) then
+          files := files.push entry
+    files := files.qsort (·.toString < ·.toString)
+    let mut manifest := s!"cuda {cuda}\n"
+    for f in files do
+      let h := Hash.ofByteArray (← IO.FS.readBinFile f)
+      manifest := manifest ++ s!"{f.toString} {h}\n"
+    IO.FS.writeFile inputsPath manifest
+
+/-- Build the Rust static lib with `net` for the `ix` CLI, with the native
+executors generated from the certified programs. -/
 target ix_rs_net pkg : FilePath := do
-  let features ← cargoFeatures (net := true)
-  buildRustStatic pkg features (← cargoArgs (net := true)) "net"
+  let generated? ← if nativeExecutors then
+      some <$> formal_generated.fetch
+    else pure none
+  let features ← cargoFeatures (net := true) (native := nativeExecutors)
+  buildRustStatic pkg features (← cargoArgs (net := true) (native := nativeExecutors)) "net" generated?
 
 end FFI
 
@@ -256,6 +341,17 @@ call graphs through generated C (LBR and DWARF unwinding are unavailable on
 the benchmark machines). The default build is unaffected. -/
 def profileLeancArgs : Array String :=
   if (get_config? profile).isSome then #["-fno-omit-frame-pointer"] else #[]
+
+/-- The committed pins of the certified formal Aiur programs' identities
+and verifying keys (`Scripts/CheckFormalKeys.lean`). -/
+input_file formalAiurKeys where
+  path := "tools/formal-aiur.keys"
+  text := true
+
+/-- The pins, embedded in the module `FormalAiurKeys`, which Lake rebuilds
+whenever the pin file changes. -/
+lean_lib FormalAiurKeys where
+  needs := #[formalAiurKeys]
 
 /-- The main library, with Lake's default root: the module `Ix` (`Ix.lean`) and
 its imports, not every module under `Ix/`. A module that `Ix.lean` does not
@@ -290,6 +386,9 @@ are installed unchecked on purpose). -/
 lean_lib EntryCaseFixtures where
   roots := #[`Tests.Ix.Kernel.EntryCaseDefs]
 
+/-- The formal claim fixtures; with `image`, the differential checks and
+measurements of the direct compiler handoff; with `pins`, acceptance against
+the pinned verifying keys. -/
 lean_exe «formal-aiur-tests» where
   root := `Tests.FormalAiur
   supportInterpreter := true
@@ -302,6 +401,11 @@ lean_exe «formal-aggregate-tests» where
 `Scripts/CheckFormal.lean`. -/
 lean_exe «formal-checks» where
   root := `Tests.FormalChecks
+/-- The pin file of the checkout's certified programs;
+`Scripts/CheckFormalKeys.lean` compares it with `tools/formal-aiur.keys`. -/
+lean_exe «formal-keys» where
+  root := `Tests.FormalKeys
+  supportInterpreter := true
 
 /-- Formal-package checks (`instance-symbols`, `ixvm-source`, and formal-package
 manual runners) that import the nested `Aiur`/`IxVM`/`MultiStark` proof packages
@@ -387,6 +491,14 @@ lean_exe «sharing-family-normalize» where
 lean_exe «sharing-scratch» where
   root := `Benchmarks.SharingScratch
 
+/-- One constant's IxVM benchmark row: execution and, with `--mode prove`, its
+aggregate proof and root verification, measured in one process
+(`Benchmarks/IxVM.lean`). `ix bench run --backend ixvm` runs it per constant. -/
+lean_exe «bench-ixvm» where
+  root := `Benchmarks.IxVM
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs_net]
+
 lean_exe «bench-compile-init» where
   root := `Benchmarks.CompileInit
 
@@ -422,7 +534,7 @@ lean_lib TruthMinesSpec where
 /- The corpus driver: `gen [--check]` projects `Benchmarks/TruthMines/`
 (lakefile, toolchain, per-member `Drivers/<Q>.lean`) from the typed
 records, `spec` prints the member/driver table, and `build` compiles
-per-member pieces (`pieces/<Q>.ixe`, one watchdogged `ix compile`
+per-member pieces (`pieces/<Q>.ixe`, one `ix compile`
 process each) and assembles + verifies the `truthmines.ixc` catalog
 manifest. Needs `lake build ix` first for the `build` verb. -/
 lean_exe truthmines where
@@ -548,7 +660,15 @@ def isFormalOnlyModule (m : Lean.Name) : Bool :=
     m != `Ix.IxVM.Consistency.ReaderAdmission &&
     m != `Ix.IxVM.Consistency.ReaderFootprint) ||
   m == `Ix.IxVM.ConsistencyAudit ||
+  s.startsWith "Ix.Cert.MultiStark." ||
+  s.startsWith "Ix.Cert.MultiStarkRefinement." ||
+  s.startsWith "Ix.Cert.Aggr." ||
+  s.startsWith "Ix.Cert.Compression." ||
+  s.startsWith "Ix.Cert.IxccAiur." ||
+  m == `Ix.Cert.Security128ClosureManifest ||
+  m == `Ix.Cert.RecordSectionsBridge ||
   m == `Tests.FormalPackageMain ||
+  m == `Tests.Ix.MultiStarkVerifier ||
   m == `Tests.Ix.InstanceSymbols ||
   m == `Tests.Ix.VMSource ||
   m == `Tests.Ix.IxVM.SafeReferencesWalk ||
@@ -697,6 +817,23 @@ in the transitive definitional closure manifests and TCB fence files. -/
 script "check-ci-filters" := do
   let child ← IO.Process.spawn {
     cmd := "lake", args := #["env", "lean", "--run", "Scripts/CheckCiFilters.lean"]
+    stdout := .inherit, stderr := .inherit }
+  return ← child.wait
+
+/-- Verifying-key gate comparing `lake exe formal-keys` against `tools/formal-aiur.keys`.
+Accepts `--check` (default), `--update`, `--self-test`, or `--help`. -/
+script "check-formal-keys" (args) := do
+  let child ← IO.Process.spawn {
+    cmd := "lean", args := #["--run", "Scripts/CheckFormalKeys.lean"] ++ args.toArray
+    stdout := .inherit, stderr := .inherit }
+  return ← child.wait
+
+/-- Build and verify (or with `--update`, regenerate) committed Aiur compression
+compiler fixtures under `crates/aiur/tests/fixtures/`. -/
+script "check-aiur-compression-fixtures" (args) := do
+  let child ← IO.Process.spawn {
+    cmd := "lean",
+    args := #["--run", "Scripts/CheckAiurCompressionFixtures.lean"] ++ args.toArray
     stdout := .inherit, stderr := .inherit }
   return ← child.wait
 

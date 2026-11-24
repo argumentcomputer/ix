@@ -551,7 +551,7 @@ private theorem familyCall_recs_obs {B rb : _root_.Address} {lim : Option Nat}
           x_form] h₃ r₂ h₄ cs₂ ∧ (∀ cl ∈ cs₂, cl ∈ calls) := by
   obtain ⟨h, h', rc, xb, xrb, r, -, -, ⟨b, hb, rfl⟩, ev, -, hsub⟩ := hfc
   match Obs.«KernelModeled::check_family».obs ev with
-  | .run (m105 := m105) (m784 := m784) (m840 := m840) (m1293 := m1293) (sg112 := sg112)
+  | .run (m_vcemfqfp := m105) (m784 := m784) (m840 := m840) (m1293 := m1293) (ev_wsivmatu := sg112)
       (ev126 := ev126) (ev148 := ev148) (ev194 := ev194) (ev_yqjbwijz := evo) (ev231 := ev231)
       (ev266 := ev266) (ev309 := ev309) (ev344 := ev344) (ev403 := ev403) (ev435 := ev435)
       (ev465 := ev465) (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)
@@ -562,12 +562,7 @@ private theorem familyCall_recs_obs {B rb : _root_.Address} {lim : Option Nat}
       (ev_cwwgzxtj := evfl) (ev1246 := ev1246) (ev_mitevvsv := evln) (ev_rqpeovbn := evz1)
       (ev_xrhmaojz := evz2) (ev_whimdwjd := evvg) (ev1305 := ev1305) (ev1343 := ev1343)
       (hc1474 := hc) .. =>
-    have e0 : Heap.Extends h m105 := by
-      match sg112 with
-      | .Nil (ev15 := ev15) (he33 := he33) .. =>
-        rw [he33]
-        exact ev15.heap_extends
-      | .Node (heq97 := heq) .. => exact absurd (Value.field.inj heq) zero_ne_one
+    have e0 : Heap.Extends h m105 := sg112.heap_extends
     have e784 : Heap.Extends h m784 := by
       refine e0.trans ?_
       refine ev126.heap_extends.trans ?_

@@ -1,5 +1,6 @@
 import Tests.Ix.Ixon
 import Tests.Ix.IxonRejectParity
+import Tests.Ix.IxonRustParity
 import Tests.Ix.IxonSyntax
 import Tests.Ix.Claim
 import Tests.Ix.Merkle
@@ -106,6 +107,7 @@ def registry : List Entry := [
   -- `concurrently`: the long role and admission checks run at once
   .suiteIO "ixon" .primary (concurrently (Tests.Ixon.suite ++ Tests.Ix.IxonUniverse.suite)),
   .suiteIO "ixon-reject-parity" .primary Tests.Ix.IxonRejectParity.suite,
+  .suiteIO "ixon-rust-parity" .primary Tests.Ix.IxonRustParity.suite,
   .suite "role-equations" .primary Tests.Ix.RoleEquations.suite,
   .suite "ixon-syntax" .primary Tests.IxonSyntax.suite,
   .suite "claim" .primary Tests.Claim.suite,
@@ -273,6 +275,7 @@ def required : List (String × String) := [
   ("role-table-wire", "primary"),
   ("exact-sharing", "primary"),
   ("ixon-reject-parity", "primary"),
+  ("ixon-rust-parity", "primary"),
   ("role-equations", "primary"),
   ("ixes-manifest", "primary"),
   ("kernel-record-check", "primary"),

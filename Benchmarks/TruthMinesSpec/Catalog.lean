@@ -8,7 +8,7 @@ namespace TruthMinesSpec
 
 /-- Bump whenever a semantic catalog edit invalidates the frozen admission
 spec (`Benchmarks.TruthMinesSpec.Spec`). Echoed into build provenance. -/
-def catalogRevision : String := "ix-corpus-v3"
+def catalogRevision : String := "ix-corpus-v4"
 
 /-- The one toolchain every catalog record must target.
 
@@ -93,57 +93,56 @@ def catalog : Array PackageSpec := #[
   },
   gitPackage "mathlib" `Mathlib
     "https://github.com/leanprover-community/mathlib4"
-    "db584cd6d46c92f209a44c0f1c829460d327499d"
-    #["LeanSearchClient", "Qq", "aesop", "batteries", "importGraph", "plausible", "proofwidgets"] "Apache-2.0" "2026-08-10"
+    "d13f23b723b8a846827a245b89c10fc7d3f11612"
+    #["LeanSearchClient", "Qq", "aesop", "batteries", "importGraph", "plausible", "proofwidgets"] "Apache-2.0" "v4.34.1"
     #[`Mathlib] (notes := "the spine; toolchain and every other core pin are chosen for it"),
   gitPackage "flt" `FLT
     "https://github.com/ImperialCollegeLondon/FLT"
-    "45eb9afc55ce36516fc98ba10618c010fdced7dc"
-    #["mathlib"] "Apache-2.0" "v4.33.0 release tag"
-    #[`FLT] (notes := "Fermat's Last Theorem project. Pinned at its v4.33.0 \
-release tag, the same rev Benchmarks/Compile benches (its mathlib pin is \
-byte-identical to the corpus spine's). Admitted to the full corpus and a \
-member of the mini infrastructure tier."),
+    "43420557744f04b5b62d74ac5c7b63eccf2cb7cd"
+    #["mathlib"] "Apache-2.0" "v4.34.0 release tag"
+    #[`FLT] (notes := "Fermat's Last Theorem project. Pinned at its v4.34.0 \
+release tag, the same rev Benchmarks/Compile benches. Admitted to the full \
+corpus and a member of the mini infrastructure tier."),
   gitPackage "plausible" `Plausible
     "https://github.com/leanprover-community/plausible"
-    "b7eb3304aeae834b12dda98993a37f6a41f6f0bb"
-    #[] "Apache-2.0" "2026-08-10"
-    #[`Plausible] (notes := "pinned by mathlib@leanprover/lean4:v4.33.0"),
+    "118aa17ee84656b8bd727fef7c458ee8c833385c"
+    #[] "Apache-2.0" "v4.34.0"
+    #[`Plausible] (notes := "pinned by mathlib@leanprover/lean4:v4.34.1"),
   gitPackage "LeanSearchClient" `LeanSearchClient
     "https://github.com/leanprover-community/LeanSearchClient"
-    "5f4d51b81cbd3f6b32b156bfad9056621a040404"
-    #[] "Apache-2.0" "2026-08-10"
-    #[`LeanSearchClient] (notes := "pinned by mathlib@leanprover/lean4:v4.33.0"),
+    "ddf04cf3949fa556442341e87d47f9f6e6074707"
+    #[] "Apache-2.0" "v4.34.1 spine"
+    #[`LeanSearchClient] (notes := "pinned by mathlib@leanprover/lean4:v4.34.1"),
   gitPackage "importGraph" `ImportGraph
     "https://github.com/leanprover-community/import-graph"
-    "16f02aa7642864af59f1ff0e384a015994db9118"
-    #["Cli"] "Apache-2.0" "2026-08-10"
-    #[`ImportGraph] (notes := "pinned by mathlib@leanprover/lean4:v4.33.0"),
+    "e928b72544873815af278d38681b31c0293588e3"
+    #["Cli"] "Apache-2.0" "v4.34.1 spine"
+    #[`ImportGraph] (notes := "pinned by mathlib@leanprover/lean4:v4.34.1"),
   gitPackage "proofwidgets" `ProofWidgets
     "https://github.com/leanprover-community/ProofWidgets4"
-    "4be2e3d5087eeb272cf5a8853b8f9dd025ef5957"
-    #[] "Apache-2.0" "2026-08-10"
-    #[`ProofWidgets] (notes := "pinned by mathlib@leanprover/lean4:v4.33.0"),
+    "106ff4fafc74ef4ac99d81dbf3ab399118f497a5"
+    #[] "Apache-2.0" "v4.34.1 spine"
+    #[`ProofWidgets] (notes := "pinned by mathlib@leanprover/lean4:v4.34.1"),
   gitPackage "aesop" `Aesop
     "https://github.com/leanprover-community/aesop"
-    "3448c0bcc5ce01b2d1546e483ec3620e32df3d0e"
-    #["batteries"] "Apache-2.0" "2026-08-10"
-    #[`Aesop] (notes := "pinned by mathlib@leanprover/lean4:v4.33.0"),
+    "355695d523e41d0554926416cba2a2b3544fbbc9"
+    #["batteries"] "Apache-2.0" "v4.34.1 spine"
+    #[`Aesop] (notes := "pinned by mathlib@leanprover/lean4:v4.34.1"),
   gitPackage "Qq" `Qq
     "https://github.com/leanprover-community/quote4"
-    "92c15be17b7caf78c2ad767ec40f89052d908d81"
-    #[] "Apache-2.0" "2026-08-10"
-    #[`Qq] (notes := "pinned by mathlib@leanprover/lean4:v4.33.0"),
+    "6a489d9af5d0c47e5b259e2e8bcdfc1811b5a259"
+    #[] "Apache-2.0" "v4.34.1 spine"
+    #[`Qq] (notes := "pinned by mathlib@leanprover/lean4:v4.34.1"),
   gitPackage "batteries" `Batteries
     "https://github.com/leanprover-community/batteries"
-    "4488d40d070b9700d4d5a6aa342f0d40c31b2a2d"
-    #[] "Apache-2.0" "2026-08-10"
-    #[`Batteries] (notes := "pinned by mathlib@leanprover/lean4:v4.33.0"),
+    "f2effa3d803fda822b1f97b806c47cf2adfbcbc2"
+    #[] "Apache-2.0" "v4.34.0"
+    #[`Batteries] (notes := "pinned by mathlib@leanprover/lean4:v4.34.1"),
   gitPackage "Cli" `Cli
     "https://github.com/leanprover/lean4-cli"
-    "6130a47896ce867c6a4a55373441e59e565bad0f"
-    #[] "Apache-2.0" "2026-08-10"
-    #[`Cli] (notes := "pinned by mathlib@leanprover/lean4:v4.33.0"),
+    "e92c9f15fdfacc8536f31cfb3b7ad26c3c8cd204"
+    #[] "Apache-2.0" "v4.34.0"
+    #[`Cli] (notes := "pinned by mathlib@leanprover/lean4:v4.34.1"),
   gitPackage "Apportionmentlib" `Apportionmentlib
     "https://github.com/mdbrnowski/Apportionmentlib"
     "34e0fb30422829494ba7d634e5ed983db94e54a2"
@@ -186,9 +185,9 @@ member of the mini infrastructure tier."),
     #[`Pacioli] (notes := "Verified core of double-entry accounting mechanics. Genuinely unusual domain."),
   gitPackage "LSpec" `LSpec
     "https://github.com/argumentcomputer/LSpec"
-    "e780f4188c9649aef988270f4d126651460ca9c4"
-    #["plausible"] "MIT" "2026-08-12"
-    #[`LSpec] (notes := "Testing framework on plausible, v2.0.0. Upstream pins plausible at v4.33.0 while our spine takes Mathlib's v4.34.0-rc1 plausible -- a direct version conflict that our root pin resolves in the spine's favour. Whether LSpec survives that is exactly what the probe answers."),
+    "d8eb3e0d9a8e33fc116e6700df0418a1d8114508"
+    #["plausible"] "MIT" "v4.34.1"
+    #[`LSpec] (notes := "Testing framework on plausible; matches ix root lake-manifest.json on v4.34.1."),
   gitPackage "MD4Lean" `MD4Lean
     "https://github.com/acmepjz/md4lean"
     "31907cc18f48a95384f99cee5582c00fb39e0f67"
@@ -206,9 +205,9 @@ member of the mini infrastructure tier."),
     #[`Regex] (subdir? := some "regex") (notes := "SUBDIR regex/ -- lakefile.toml and lean-toolchain are not at the repo root. Verified NFA-based regex engine with correctness proofs. Zero deps, current toolchain, one of the most hermetic packages found. Beats bergmannjg/regex, which claims the same package name on an older toolchain."),
   gitPackage "UnicodeBasic" `UnicodeBasic
     "https://github.com/fgdorais/lean4-unicode-basic"
-    "f199e403002f82257a35add247ae05e00fd01c3c"
-    #[] "Apache-2.0" "2026-08-12"
-    #[`UnicodeBasic] (notes := "Unicode general category and case mapping. Compiles a small bundled C table library with precompileModules -- vendored, no system library, no downloads. Zero deps, current toolchain, 460 dependents."),
+    "0e569d08b6443ce0908d356884c765397253e2f0"
+    #[] "Apache-2.0" "v4.34.0"
+    #[`UnicodeBasic] (notes := "Unicode general category and case mapping, pinned by doc-gen4@v4.34.1. Compiles a small bundled C table library with precompileModules -- vendored, no system library, no downloads."),
   gitPackage "bignum" `Bignum
     "https://github.com/arademaker/bignum"
     "4b32a232d3481f9a7b4b3c101fa0dcd946392508"
@@ -400,9 +399,9 @@ member of the mini infrastructure tier."),
     #[`leansi] (notes := "ANSI terminal formatting. Pure Lean, zero deps. NOTE the root module is lowercase leansi -- easy to get wrong in an import."),
   gitPackage "leansqlite" `SQLite
     "https://github.com/leanprover/leansqlite"
-    "a117edeff8db819a001455bcbafe86748635dd6b"
-    #[] "Apache-2.0" "2026-08-10"
-    #[`SQLite] (notes := "Official Lean FRO SQLite bindings. VENDORS the full sqlite3.c amalgamation -- no system sqlite3, no pkg-config, no downloads. Perfectly hermetic given a C compiler, current toolchain, and now on the doc-gen4 path. Beats BRonen/sqlite-lean, which claims the same SQLite root module."),
+    "f9cdb9eacb5c8b8ecc02ee9fd9e568d7d28c1416"
+    #[] "Apache-2.0" "v4.34.0"
+    #[`SQLite] (notes := "Official Lean FRO SQLite bindings (v4.34.0 release, pinned by doc-gen4@v4.34.1). VENDORS the full sqlite3.c amalgamation -- no system sqlite3, no pkg-config, no downloads."),
   gitPackage "LeanBridge" `LeanBridge
     "https://github.com/CBirkbeck/LeanBridge"
     "4dffaca404780f5ec439bda834fbc90a891174c2"
@@ -426,9 +425,9 @@ member of the mini infrastructure tier."),
     #[`I18n] (notes := "Internationalisation for Lean, used by lean4game. Zero deps."),
   gitPackage "lean4export" `Export
     "https://github.com/leanprover/lean4export"
-    "b18d673bd29b476466a51a3be1012df2ed322b10"
-    #[] "Apache-2.0" "2026-08-10"
-    #[`Export] (notes := "Environment/declaration export. Root module is Export, NOT Lean4Export. Tracks core releases exactly."),
+    "076e8e57707e813375e8f9da8bf989799ace9680"
+    #[] "Apache-2.0" "v4.34.0"
+    #[`Export] (notes := "Environment/declaration export (v4.34.0 release). Root module is Export, NOT Lean4Export. Tracks core releases exactly."),
   gitPackage "loogle" `Loogle
     "https://github.com/nomeata/loogle"
     "9f11169aaebf1ed1e7dcc4077f2aafe0fcf66fd0"
@@ -437,15 +436,15 @@ member of the mini infrastructure tier."),
     (notes := "The generic test root Tests collides at the source-module layer with Paperproof and Verso; public Loogle modules remain complete."),
   gitPackage "subverso" `SubVerso
     "https://github.com/leanprover/subverso"
-    "3a75ede05278806fd3249bb0c97a6fb5777a4f7d"
-    #[] "Apache-2.0" "2026-08-12"
-    #[`SubVerso] (notes := "DELIBERATELY MULTI-TOOLCHAIN: its lakefile branches on Lean.versionString, so it is the one package here designed to tolerate skew. Pinning v4.29.0-rc7 while verso consumes it is intentional, not a bug -- do not 'fix' it. srcDir src. REV IS NOT main HEAD ON PURPOSE: this is the revision verso's own lake-manifest.json pins. Our root pin overrides verso's, so taking subverso's newer main (847084e8) silently broke verso -- MultiVerso/NameMap.lean failed on an identifier that resolves only under the tested pair. When the catalog pins a package another catalogued package depends on, prefer the consumer's tested revision over upstream HEAD."),
+    "9b90b7f938d6169246325df002351014f49945ef"
+    #[] "Apache-2.0" "verso-v4.34.0"
+    #[`SubVerso] (notes := "DELIBERATELY MULTI-TOOLCHAIN: its lakefile branches on Lean.versionString, so it is the one package here designed to tolerate skew. REV IS NOT main HEAD ON PURPOSE: pinned to verso-v4.34.0, the exact revision verso@v4.34.0-patch1 pins in its lake-manifest.json."),
   gitPackage "verso" `Verso
     "https://github.com/leanprover/verso"
-    "74fc8d1b7bb781c3623a06ec6484f34d35eb5fba"
-    #["MD4Lean", "illuminate", "plausible", "subverso"] "Apache-2.0" "2026-08-14"
+    "8ac48ddeafdfb6ec7ee3a16c3fcf8c545f6f7c22"
+    #["MD4Lean", "illuminate", "plausible", "subverso"] "Apache-2.0" "v4.34.0-patch1"
     #[`Verso] (moduleExcludes := #[`Tests])
-    (notes := "The generic test root Tests collides at the source-module layer; all named Verso libraries remain inventoried."),
+    (notes := "v4.34.0-patch1 release. The generic test root Tests collides at the source-module layer; all named Verso libraries remain inventoried."),
   gitPackage "CompPoly" `CompPoly
     "https://github.com/Verified-zkEVM/CompPoly"
     "75c0681bd37567af00e8f0bd13fd59f1423e4217"
@@ -468,24 +467,24 @@ member of the mini infrastructure tier."),
     #[`SemVer] (notes := "Semantic versioning parse and compare. Zero deps, self-contained. Probes green; excluded purely for root-namespace pollution."),
   gitPackage "illuminate" `Illuminate
     "https://github.com/leanprover/illuminate"
-    "76f052847294d189dc9924a33466b4b677f47e67"
-    #[] "Apache-2.0" "2026-08-10"
-    #[`Illuminate] (notes := "Transitive Verso dependency pinned from the resolved Lean 4.33 workspace."),
+    "a1a61c9678da010e958ed24cdfa6f635b85f172a"
+    #[] "Apache-2.0" "v4.34.0"
+    #[`Illuminate] (notes := "Transitive Verso dependency pinned to v4.34.0 (matching verso@v4.34.0-patch1)."),
   gitPackage "doc-gen4" `DocGen4
     "https://github.com/leanprover/doc-gen4"
-    "aceca4eeb5a79092eabefaa75fcb72b701d02205"
-    #["BibtexQuery", "Cli", "MD4Lean", "UnicodeBasic", "leansqlite"] "Apache-2.0" "2026-08-16"
-    #[`DocGen4] (notes := "Official v4.33.0 release; the earlier v4.31.0 pin was rejected by the clean source-anchor build."),
+    "953c8992d174b4e56955e01e101d46668c68f2bb"
+    #["BibtexQuery", "Cli", "MD4Lean", "UnicodeBasic", "leansqlite"] "Apache-2.0" "v4.34.1"
+    #[`DocGen4] (notes := "Official v4.34.1 release."),
   gitPackage "cslib" `Cslib
     "https://github.com/leanprover/cslib"
-    "a1faa284cc5923ac11a4b8d2452749a174ef8cf1"
-    #["mathlib"] "Apache-2.0" "2026-07-29"
-    #[`Cslib] (notes := "Transitive dependency pinned from the resolved Lean 4.33 workspace."),
+    "7c8f6c0f67015df29b152fdcffaf7850db2e9185"
+    #["mathlib"] "Apache-2.0" "v4.34.1"
+    #[`Cslib] (notes := "Official v4.34.1 release; pins the exact v4.34.1 mathlib spine."),
   gitPackage "BibtexQuery" `BibtexQuery
     "https://github.com/dupuisf/BibtexQuery"
-    "5d31b64fb703c5d77f6ef4d1fb958f9bdf1ea539"
-    #["UnicodeBasic"] "Apache-2.0" "2026-02-10"
-    #[`BibtexQuery] (notes := "Transitive doc-gen4 dependency pinned from the resolved Lean 4.33 workspace."),
+    "4d8616fd4870d0a3453d845770833eac7951fe1c"
+    #["UnicodeBasic"] "Apache-2.0" "v4.34.0"
+    #[`BibtexQuery] (notes := "Transitive doc-gen4 dependency pinned by doc-gen4@v4.34.1."),
 
   /- Corpus-growth additions (the TruthMines `to_add` wishlist). These remain
   unadmitted candidates — records without membership in `catalogSpec` — until

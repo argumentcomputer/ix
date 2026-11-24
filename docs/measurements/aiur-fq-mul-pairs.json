@@ -1,0 +1,103 @@
+{
+  "format": "ix-aiur-fq-multiplication-paired-carries-v1",
+  "date_utc": "2026-11-12",
+  "protocol_changed": false,
+  "change": "Combine adjacent radix-2^80 multiplication equations; retain three biased84-bit carries instead of seven. Canonical operands/results and bounded quotient limbs remain constrained.",
+  "integer_argument": {
+    "radix": "B=2^80",
+    "bias": "8B",
+    "pair_radix": "B^2",
+    "pair_correction": "(B^2-1)*8B",
+    "coefficient_bound": "|c_i| <4B^2+B",
+    "paired_residual_bound": "|D| <28B^3+5B^2+17B <64B^3+64B^2+64B <Fr",
+    "telescoping": "Weights1,B^2,B^4,B^6 yield a*b=q*p+raw; Lean checks the telescoping identity and numerical field bound."
+  },
+  "small": {
+    "input": {
+      "claims_blake3": "692cfcee6e75aa8e44850a4d9140a157d770cd2ce680633d2eb0d2bc698cd0cd",
+      "key_blake3": "c75a8dcc1a238e1b3870afa0fad164d47e4e3ff4bc6fdd8b7362926b32232341",
+      "proof_blake3": "be84132464f4fa608ffe485b20ace5bc8118befa82a6bac9869515d367bfedae",
+      "proof_bytes": 3339,
+      "proof_curve_points": 26
+    },
+    "before": {
+      "active_circuits": 166,
+      "fixed_cells": 1054976,
+      "lookup_commitments": 1845,
+      "main_commitments": 6963,
+      "maximum_main_height": 524288,
+      "padded_lookup_cells": 7173852,
+      "padded_main_cells": 11929538,
+      "padded_quotient_cells": 1116680,
+      "quotient_commitments": 236,
+      "unpadded_main_cells": 8226625
+    },
+    "after": {
+      "active_circuits": 166,
+      "fixed_cells": 1054976,
+      "lookup_commitments": 1841,
+      "main_commitments": 6960,
+      "maximum_main_height": 524288,
+      "padded_lookup_cells": 6518492,
+      "padded_main_cells": 11306946,
+      "padded_quotient_cells": 1051144,
+      "quotient_commitments": 236,
+      "unpadded_main_cells": 7714179
+    },
+    "artifact_blake3": "320cb43839d00afef79833de3bea5fb967a3cbdd1d344009649ad9f14e15cb16"
+  },
+  "larger": {
+    "input": {
+      "call_blake3": "f8ef0029daf605be6bc4d79bfc7a76c028c35f8ec1b82c3019e4a06849f309bc",
+      "key_blake3": "9c06bed6d9337ac342714c168725c1f47206ef05b5e6ba69657f31873aaa57dd",
+      "proof_blake3": "430b9f23ed4748ffd1d85898dfab8db35ce2733d95d34b928d37b5a3c678f27f",
+      "proof_bytes": 299070
+    },
+    "before": {
+      "fixed_cells": 1054976,
+      "lookup_cells": 428740440,
+      "main_cells": 747613222,
+      "quotient_cells": 69336722,
+      "quotient_degree": 236,
+      "stage1_width": 6963,
+      "stage2_width": 1845
+    },
+    "after": {
+      "fixed_cells": 1054976,
+      "lookup_cells": 386797400,
+      "main_cells": 707767334,
+      "quotient_cells": 65142418,
+      "quotient_degree": 236,
+      "stage1_width": 6960,
+      "stage2_width": 1841
+    },
+    "max_height": 33554432,
+    "same_output": true
+  },
+  "terminal": {
+    "before_main_cells": 12851884,
+    "after_main_cells": 12565164,
+    "before_estimated_constraints": 90043556,
+    "after_estimated_constraints": 87970978,
+    "estimated_domain": 134217728,
+    "artifact_blake3": "f1abe4f2dd22f84cbd1e093776b2356c7b072e71e97c063c588c97d1a26b684f",
+    "scope": "Development fixture, extrapolated PLONK cost; no full-size PLONK proof. Domain remains too large."
+  },
+  "validation": {
+    "arithmetic_tests": 4,
+    "g1_tests": 4,
+    "point_encoding_tests": 2,
+    "final_source_tests": 1,
+    "kzg_source_tests": 4,
+    "pairing_tests": 4,
+    "combined_product_tests": 2,
+    "fixture_regeneration": "completed",
+    "independent_arithmetic_review": "no soundness issue found; explicit positive and negative retained-carry cases added",
+    "crypto_protocol_change": false
+  },
+  "reproduce": [
+    "cargo test --release --locked -p ix-proof-compression --test aiur_fq --test aiur_g1 --test aiur_pairing_encoding --test aiur_pairing --test aiur_pairing_products --test aiur_final --test aiur_kzg_source",
+    "cargo run --release --locked -p ix-proof-compression --example aiur_verifier_comparison -- crates/aiur/tests/fixtures/kzg-source.ixa NEW_OUTPUT",
+    "cargo run --release --locked -p ix-proof-compression --features plonk --example aiur_final_profile -- crates/aiur/tests/fixtures/compress-final.ixa NEW_OUTPUT --estimate-plonk"
+  ]
+}

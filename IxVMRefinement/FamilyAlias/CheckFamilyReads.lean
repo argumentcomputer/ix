@@ -96,16 +96,17 @@ structure CheckFamilyChain (rc b rb : SourceValue F)
   vSeg : SourceValue F
   m105 : Heap F
   cs107 : List (Call F)
-  sg112 : Obs.«KernelModeled::check_family».Seg1 rc b rb h_in vSeg m105 cs107
+  sg112 : ObsFn Obs.W "KernelRoles::role_ctx_without_axioms" [rc] h_in vSeg m105 cs107
   subSeg : CallSub cs107 calls
   -- Payload stream, order check, witnesses, advice
   payload : SourceValue F
   m114 : Heap F
   evReadPayload : SubCall calls "KernelModeled::read_payload" [b] m105 payload m114
   callsRest : List (Call F)
-  callsPrefix : calls = cs107 ++ ((⟨"KernelModeled::read_payload", [b], m105⟩ : Call F) ::
-    (evReadPayload.cs ++ ((⟨"IxonDeserialize::get_address", [payload], m114⟩ : Call F) ::
-      callsRest)))
+  callsPrefix : calls = (⟨"KernelRoles::role_ctx_without_axioms", [rc], h_in⟩ : Call F) ::
+    (cs107 ++ ((⟨"KernelModeled::read_payload", [b], m105⟩ : Call F) ::
+      (evReadPayload.cs ++ ((⟨"IxonDeserialize::get_address", [payload], m114⟩ : Call F) ::
+        callsRest))))
   xRb : SourceValue F
   s1 : SourceValue F
   m136 : Heap F
@@ -143,7 +144,7 @@ structure CheckFamilyChain (rc b rb : SourceValue F)
   aset : SourceValue F
   m453 : Heap F
   evCheckAdv : SubCall calls "KernelModeled::check_advice_records"
-    [rc, advList, .construct Obs.Names.«RBTreeMap::RBTreeMap<Field>» "Nil" [], wset] m423
+    [vSeg, advList, .construct Obs.Names.«RBTreeMap::RBTreeMap<Field>» "Nil" [], wset] m423
     aset m453
   -- Block and family-record tables (`CallTables.family_tables` inputs)
   members : SourceValue F
@@ -231,7 +232,7 @@ structure CheckFamilyChain (rc b rb : SourceValue F)
   bnl : SourceValue F
   uo : SourceValue F
   m1191 : Heap F
-  evBlockElim : SubCall calls "KernelModeled::block_elim" [rc, tys] mRecsVal
+  evBlockElim : SubCall calls "KernelModeled::block_elim" [vSeg, tys] mRecsVal
     (.tuple [bnl, uo]) m1191
   mRefs : Heap F
   extAfterElim : Heap.Extends m1191 mRefs
@@ -241,11 +242,11 @@ structure CheckFamilyChain (rc b rb : SourceValue F)
   s9 : SourceValue F
   m1331 : Heap F
   evCheckRecs : SubCall calls "KernelModeled::check_recs"
-    [rc, tys, recs, recM, src, dst, aset, s8, nRecs, .field 0, np, uo, bnl, recs, .field 0]
+    [vSeg, tys, recs, recM, src, dst, aset, s8, nRecs, .field 0, np, uo, bnl, recs, .field 0]
     m1293 s9 m1331
   s10 : SourceValue F
   evCheckProjs : SubCall calls "KernelModeled::check_projs"
-    [rc, b, members, .field 0, tys, tyM, src, dst, aset, np, bnl, s9] m1331 s10 h_out
+    [vSeg, b, members, .field 0, tys, tyM, src, dst, aset, np, bnl, s9] m1331 s10 h_out
   ldS10Nil : loadValue h_out s10 = .ok (.construct Obs.Names.«Lists::Node<Field>» "Nil" [])
 
 theorem CheckFamilyChain.ext_m105_m453 {rc b rb : SourceValue F}
@@ -278,7 +279,7 @@ theorem checkFamily_chain {rc b rb r : SourceValue F} {h h' : Heap F} {calls : L
     (ev : ObsFn Obs.W "KernelModeled::check_family" [rc, b, rb] h r h' calls) :
     Nonempty (CheckFamilyChain rc b rb h h' calls) := by
   match Obs.«KernelModeled::check_family».obs ev with
-  | .run (sg112 := sg) (ev126 := e126) (ev148 := e148) (ev194 := e194) (heq217 := q217)
+  | .run (ev_wsivmatu := sg) (ev126 := e126) (ev148 := e148) (ev194 := e194) (heq217 := q217)
       (ev_yqjbwijz := eOrd) (ev231 := e231) (ev266 := e266) (ev309 := e309) (ev344 := e344)
       (ev403 := e403) (ev435 := e435) (ev465 := e465) (ev513 := e513) (ev601 := e601)
       (ev634 := e634) (heq650 := q650) (ev664 := e664) (ev686 := e686) (ev716 := e716)
@@ -291,8 +292,8 @@ theorem checkFamily_chain {rc b rb r : SourceValue F} {h h' : Heap F} {calls : L
       (hc1474 := hc) .. =>
     subst q217 q650 hEqH
     have h0 := callSub_of_eq hc
-    have hSubSeg := callSub_append_left h0
-    have hr := callSub_append_right h0
+    let sSeg := (peel_call h0 sg).1
+    let hr := (peel_call h0 sg).2
     let s126 := (peel_call hr e126).1
     let hr := (peel_call hr e126).2
     let ⟨s148, hr⟩ := peel_call hr e148
@@ -339,7 +340,7 @@ theorem checkFamily_chain {rc b rb r : SourceValue F} {h h' : Heap F} {calls : L
     let sProjs := peel_last hr eProjs
     exact
       ⟨{ vSeg := _, m105 := _, cs107 := _, sg112 := sg
-         subSeg := hSubSeg
+         subSeg := sSeg.sub
          payload := _, m114 := _, evReadPayload := s126
          callsRest := _, callsPrefix := hc
          xRb := _, s1 := _, m136 := _, evGetRb := s148

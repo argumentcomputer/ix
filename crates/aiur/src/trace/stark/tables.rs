@@ -14,6 +14,8 @@ pub(super) fn fixed_tables<B: WitnessField>(
   names: &mut Vec<String>,
   log_blowup: usize,
   materialize: bool,
+  min_height: usize,
+  is_zk: bool,
 ) -> Result<Vec<FixedTable>, String> {
   let program = &plan.program.program;
   let mut groups: Vec<(usize, Vec<usize>)> = vec![];
@@ -30,8 +32,11 @@ pub(super) fn fixed_tables<B: WitnessField>(
   for (input_id, maps) in groups {
     let input = &program.tables[input_id];
     let real_height = input.rows.len();
-    let height =
-      if real_height == 0 { 0 } else { real_height.next_power_of_two() };
+    let height = if real_height == 0 {
+      0
+    } else {
+      real_height.next_power_of_two().max(min_height)
+    };
     // Always keep a preprocessed column, even for a unit -> unit table.
     let mut width = 1usize;
     let mut columns: Vec<(usize, usize, usize)> = vec![];
@@ -114,7 +119,11 @@ pub(super) fn fixed_tables<B: WitnessField>(
       // Linear fixed-table messages can share a cubic logUp step. Unlike
       // function rows, their height is known here: trade an extra quotient
       // column for fewer accumulators only when the FFT work decreases.
-      lookup_group_size: if pair_lookups(maps.len(), height, log_blowup) {
+      // Under v6-zk, start at group size 1 so System::new never exceeds the
+      // ZK quotient degree bound before `lookup_groups::retune_with_zk`.
+      lookup_group_size: if !is_zk
+        && pair_lookups(maps.len(), height, log_blowup)
+      {
         2
       } else {
         1
@@ -131,7 +140,11 @@ pub(super) fn fixed_tables<B: WitnessField>(
   Ok(result)
 }
 
-fn pair_lookups(count: usize, height: usize, log_blowup: usize) -> bool {
+pub(super) fn pair_lookups(
+  count: usize,
+  height: usize,
+  log_blowup: usize,
+) -> bool {
   if log_blowup == 0 || count < 2 || height == 0 {
     return false;
   }
@@ -145,6 +158,12 @@ fn pair_lookups(count: usize, height: usize, log_blowup: usize) -> bool {
 }
 
 impl FixedTable {
+  /// The maps sharing this table, as indices into the program's maps; the
+  /// table's count column `k` belongs to map `maps()[k]`.
+  pub(super) fn maps(&self) -> &[usize] {
+    &self.maps
+  }
+
   pub(super) fn witness(&self, counts: &[Vec<u64>]) -> RowMajorMatrix<Val> {
     let mut values = Vec::with_capacity(self.maps.len() * self.height);
     for row in 0..self.height {

@@ -122,7 +122,7 @@ open Aiur.Ixon in
 private def getHeader (magic : ByteArray) (what : String) : GetM Unit := do
   unless (← getRaw magic.size).data == magic.data do fail s!"not {what}"
   let v ← getNat
-  unless v == version do fail s!"unsupported {what} version {v}"
+  unless v == version || v == 2 do fail s!"unsupported {what} version {v}"
 
 open Aiur.Ixon in
 private def getNats : GetM (Array Nat) := getArray getNat

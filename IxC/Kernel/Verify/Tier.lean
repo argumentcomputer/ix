@@ -365,6 +365,8 @@ theorem opaqueC_ok {env : Env md} (henv : EnvWF env) {acc : List (TierConst md)}
   simp only [opaqueC] at h
   split at h
   · exact nomatch h
+  split at h
+  · exact nomatch h
   rename_i cvA jty s₁ ha
   split at h
   · exact nomatch h
@@ -389,6 +391,8 @@ theorem axiomC_ok {E : Env md} (hE : EnvWF E) {cv : ConstantVal md}
       ∃ c, blk = [c] ∧ c.safety = .unsaf ∧
         (∃ F, installConstantVal (fueledOps .verified F) E cv = .ok c.cv) ∧ SortTyped E c.cv := by
   simp only [axiomC] at h
+  split at h
+  · exact nomatch h
   split at h
   · exact nomatch h
   rename_i cvA jty s₁ ha

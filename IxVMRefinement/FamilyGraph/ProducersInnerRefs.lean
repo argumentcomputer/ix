@@ -545,13 +545,13 @@ theorem FamRunCtx.inner_ref_safe {K : FamRunCtx} {seeds : List _root_.Address}
       | .n1 (hv171 := hv) .. => exact absurd (Value.field.inj hv) (by decide)
       | .n3 (hv447 := hv) .. => exact absurd (Value.field.inj hv) (by decide)
       | .n2 (cs412 := cs412) (ev328 := ev328) (ev_dpuowbtw := ev_walk)
-          (ev414 := ev_ccr) (hc442 := hcw) .. =>
+          (ev_kjcbizia := ev_strip) (ev414 := ev_ccr) (hc442 := hcw) .. =>
         match Obs.«KernelModeled::check_container_rec».obs ev_ccr with
         | .run (cs_ymrayeri := cs_ci) (ev39 := ev39) (ev25 := ev25)
             (ev_nqhglzzq := ev_ci) (ld_hhcwtoqm := hld) (hc96 := hccr) .. =>
           have ext_ci : Heap.Extends h_w _ :=
             ev328.heap_extends.trans (ev_walk.heap_extends.trans
-              (ev39.heap_extends.trans ev25.heap_extends))
+              (ev_strip.heap_extends.trans (ev39.heap_extends.trans ev25.heap_extends)))
           obtain ⟨ab, hab, rfl⟩ := BaseSeams.addr_mono ext_ci hxx_w
           have hsub_ci : ∀ cl ∈ cs_ci, cl ∈ K.calls := fun cl hcl =>
             hsub_fam cl (sub_ws cl (sub_w cl (by rw [hcw]; simp [hccr, hcl])))

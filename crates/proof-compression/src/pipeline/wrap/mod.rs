@@ -9,25 +9,27 @@ pub use recursive::{
   RecursiveProof, RecursiveStage, RecursiveVerifier, prepare_recursive,
 };
 
+use crate::kzg::curve::KzgCurve;
+
 /// Recursively verify the first KZG stage in `first` and prove the recursive
 /// stage into `out`, with its circuit report beside it.
-pub(super) fn run(
+pub(super) fn run<C: KzgCurve>(
   first: &std::path::Path,
   out: &std::path::Path,
   config: &super::StageConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
   std::fs::create_dir_all(out)?;
-  saved::prove(first, out, config)
+  saved::prove::<C>(first, out, config)
 }
 
 /// Load the first KZG stage in `first`, check its setup binding and verify
 /// its proof natively; it must prove `expected`.
-pub(super) fn check_first(
+pub(super) fn check_first<C: KzgCurve>(
   first: &std::path::Path,
   expected: &super::statement::Statement,
   config: &super::StageConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
-  let input = saved::Input::load(first, config)?;
+  let input = saved::Input::<C>::load(first, config)?;
   if super::statement::from_rows(&input.claims)? != *expected {
     return Err("first KZG proof proves another statement".into());
   }

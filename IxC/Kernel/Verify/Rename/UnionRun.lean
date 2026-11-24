@@ -116,6 +116,10 @@ theorem checkDecl_post_free (mode : CheckMode) (ops : (CheckerOps md) (CheckM md
   cases d with
   | defnDecl cv value hint =>
     unfold checkDecl
+    dsimp only
+    by_cases hct : cv.name.isCompilerTrust = true
+    · simp [hct]
+    simp only [hct, Bool.false_eq_true, ↓reduceIte]
     rw [ExPost.post_bind]
     refine ExPost.mono (fun cvA h => ?_) (checkConstantVal_post env cv)
     rw [ExPost.post_bind]
@@ -131,6 +135,10 @@ theorem checkDecl_post_free (mode : CheckMode) (ops : (CheckerOps md) (CheckM md
     split <;> simp [hg]
   | thmDecl cv value =>
     unfold checkDecl
+    dsimp only
+    by_cases hct : cv.name.isCompilerTrust = true
+    · simp [hct]
+    simp only [hct, Bool.false_eq_true, ↓reduceIte]
     rw [ExPost.post_bind]
     refine ExPost.mono (fun cvA h => ?_) (checkConstantVal_post env cv)
     refine ExPost.mono (fun e he => ?_) (checkThmVal_post env cvA value)
@@ -140,7 +148,9 @@ theorem checkDecl_post_free (mode : CheckMode) (ops : (CheckerOps md) (CheckM md
       (by simp [ConstantInfo.name, ConstantInfo.toConstantVal, h])
   | opaqueDecl cv value =>
     unfold checkDecl
-    rw [ExPost.post_bind]
+    simp only [ExPost.post_ite, ExPost.post_pure, ExPost.post_throw, imp_true_iff, and_true,
+      true_and, ExPost.post_bind]
+    refine ⟨fun _ _ _ _ _ _ => ExPost.of_forall fun _ => Grows.refl _ env, fun _ _ => ?_⟩
     refine ExPost.mono (fun cvA h => ?_) (checkConstantVal_post env cv)
     refine ExPost.mono (fun e he => ?_) (checkOpaqueVal_post env cvA value)
     subst he
@@ -150,8 +160,10 @@ theorem checkDecl_post_free (mode : CheckMode) (ops : (CheckerOps md) (CheckM md
   | axiomDecl cv =>
     unfold checkDecl
     simp only [ExPost.post_ite, ExPost.post_pure, ExPost.post_throw, imp_true_iff, and_true,
-      ExPost.post_bind]
-    refine ⟨fun _ _ => Grows.refl _ env, fun _ => ?_⟩
+      true_and, ExPost.post_bind]
+    refine ⟨fun _ _ => Grows.refl _ env, fun _ => ⟨fun _ _ _ =>
+      ⟨fun _ => ExPost.of_forall fun _ => Grows.refl _ env,
+       fun _ _ _ _ _ => Grows.refl _ env⟩, fun _ _ => ?_⟩⟩
     refine ExPost.mono (fun cvA h => ?_) (checkConstantVal_post env cv)
     have hg : Grows (OverN (Declaration.names (.axiomDecl cv))) env
         ⟨.axiomInfo cvA :: env.consts⟩ :=

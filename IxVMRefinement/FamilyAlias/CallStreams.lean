@@ -154,10 +154,10 @@ theorem check_witness_stream {rc blk x kind s r : SourceValue F} {bytes : List U
     (ev : ObsFn W "KernelModeled::check_witness" [rc, blk, x, kind, s] h r h' cs) :
     ∃ bytes' : List UInt8, Ingress.Stream h' bytes' r := by
   match Obs.«KernelModeled::check_witness».obs ev with
-  | .n0 (ev28 := e1) (ev69 := e2) (ev109 := e3) (ev146 := e4) (he164 := hr) (he165 := hh) .. =>
+  | .n0 (ev28 := e1) (ev69 := e2) (ev109 := e3) (ev_uyteqsqx := e3s) (ev146 := e4) (he164 := hr) (he165 := hh) .. =>
     subst hr hh
     exact ⟨bytes, hs.mono (e1.heap_extends.trans (e2.heap_extends.trans
-      (e3.heap_extends.trans e4.heap_extends)))⟩
+      (e3.heap_extends.trans (e3s.heap_extends.trans e4.heap_extends))))⟩
   | .n1 (ev185 := e1) (ev_lbttumfo := e2) (ev282 := e3) (ev_kzxwtasl := e4)
       (ev_scicdnpr := e5) (ev_krpcbbcl := e6) (ev_mvspkqrl := e7) (he307 := hr)
       (he308 := hh) .. =>
@@ -166,12 +166,12 @@ theorem check_witness_stream {rc blk x kind s r : SourceValue F} {bytes : List U
     obtain ⟨b2, hs2⟩ := walk_from_block_stream hs1 e2
     exact ⟨b2, hs2.mono (e3.heap_extends.trans (e4.heap_extends.trans (e5.heap_extends.trans
       (e6.heap_extends.trans e7.heap_extends))))⟩
-  | .n2 (ev328 := e1) (ev_dpuowbtw := e2) (ev414 := e3) (ev_yqkzbtyw := e4) (he440 := hr)
+  | .n2 (ev328 := e1) (ev_dpuowbtw := e2) (ev_kjcbizia := e2s) (ev414 := e3) (ev_yqkzbtyw := e4) (he440 := hr)
       (he441 := hh) .. =>
     subst hr hh
     obtain ⟨b1, hs1⟩ := get_count_stream hs e1
     obtain ⟨b2, hs2⟩ := walk_from_block_stream hs1 e2
-    exact ⟨b2, hs2.mono (e3.heap_extends.trans e4.heap_extends)⟩
+    exact ⟨b2, hs2.mono (e2s.heap_extends.trans (e3.heap_extends.trans e4.heap_extends))⟩
   | .n3 (ev461 := e1) (ev_ndaajwbz := e2) (ev547 := e3) (ev582 := e4) (sg692 := sg)
       (ev717 := e5) (ev_gwtfngxo := e6) (ev_xxjagmga := e7) (he742 := hr) (he743 := hh) .. =>
     subst hr hh
@@ -204,7 +204,8 @@ theorem check_witnesses_stream_field :
       injection hv with hn
       subst hn
       simp at hk
-    | .other (hne42 := hne) (ev59 := e1) (ev94 := e2) (ev_updedcyj := e2') (ev167 := e3)
+    | .other (hne42 := hne) (ev59 := e1) (ev94 := e2) (ev_updedcyj := e2')
+        (ev_zctcgyek := e2ax) (ev_gspkxwao := e2lkp) (ev167 := e3)
         (ev129 := e4) (op235 := op) (ev196 := e5) (he254 := hr) (hm264 := hm) (he291 := hh) .. =>
       have hn0 : n ≠ 0 := fun e => hne (congrArg Value.field e)
       obtain rfl := Lib.sub_one_inv op
@@ -216,7 +217,9 @@ theorem check_witnesses_stream_field :
       obtain ⟨-, hx2⟩ := htup
       rw [← hx2] at hs1
       obtain ⟨b2, hs2⟩ := read_byte_stream hs1 e2
-      obtain ⟨b3, hs3⟩ := check_witness_stream ((hs2.mono e2'.heap_extends).mono e3.heap_extends) e4
+      obtain ⟨b3, hs3⟩ := check_witness_stream
+        ((((hs2.mono e2'.heap_extends).mono e2ax.heap_extends).mono e2lkp.heap_extends).mono
+          e3.heap_extends) e4
       obtain ⟨xs, s', b4, hr', hs4⟩ := check_witnesses_stream_field k hpred hs3 e5
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hr'
       obtain ⟨-, hs'⟩ := hr'

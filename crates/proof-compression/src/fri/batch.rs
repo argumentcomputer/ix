@@ -1,27 +1,32 @@
-//! Shared batch transcript and residual balance, distinct from the
-//! ordinary-proof transcript. Compatibility helpers specialize messages to
-//! constants; the validated plan uses the same implementation with bound wires.
-//! Application policy belongs to the caller in both cases.
+//! Shared Protocol v6 (`F_p^3`) batch transcript and residual balance,
+//! distinct from the ordinary-proof transcript. Compatibility helpers
+//! specialize messages to constants; the validated plan uses the same
+//! implementation with bound wires. Application policy belongs to the caller in
+//! both cases.
 use super::AlgebraicInputs;
 use super::Blake3Challenger;
+use super::Blake3Domain;
 use super::ByteGadgets;
+use super::CubicValue as E;
 use super::ExpandedPcsWitness;
 use super::FixedPcsShape;
 use super::FixedVerifierInputs;
 use super::PcsInputs;
-use super::QuadraticValue as Q;
 use super::TranscriptCommitments;
+use super::algebra::EXTENSION_DEGREE;
 use super::algebra::constrain_algebraic_checks_with_residual;
 use super::pcs::constrain_pcs;
 use super::pcs_witness::expand_after_lookup;
 use multi_stark::batch::BatchMessage;
 use multi_stark::batch::BatchProof;
+use multi_stark::p3_adapter::fri_batching::FriBatching;
 use multi_stark::p3_field::PrimeCharacteristicRing;
 use multi_stark::plonkish::Circuit;
 use multi_stark::plonkish::CircuitBuilder;
 use multi_stark::plonkish::Value;
-use multi_stark::system::System;
-use multi_stark::types::GoldilocksBlake3Config as Config;
+use multi_stark::system::{System, compute_vk_digest};
+use multi_stark::types::ExtVal3;
+use multi_stark::types::GoldilocksBlake3V6Config as Config;
 use multi_stark::types::Val;
 use p3_challenger::CanObserve;
 
@@ -174,26 +179,14 @@ fn constrain_batch_queries(
     .collect();
   let commitments: Vec<_> =
     shapes.iter().map(|_| TranscriptCommitments::allocate(b, bytes)).collect();
-  let mut ch = Blake3Challenger::with_retry_limit(
+  let mut ch = Blake3Challenger::with_domain_and_retry_limit(
     b,
     bytes,
+    Blake3Domain::TranscriptBatch,
     system.config.challenger_seed(),
     shapes[0].max_field_retries,
   );
-  ch.observe_constant(b, bytes, system.circuits.len());
-  for c in &system.circuits {
-    for value in [
-      c.constraint_count(),
-      c.max_constraint_degree(),
-      c.preprocessed_height,
-      c.preprocessed_width,
-      c.main_width,
-      c.stage_2_width,
-      c.lookup_group_size,
-    ] {
-      ch.observe_constant(b, bytes, value);
-    }
-  }
+  ch.observe_v6_system_shape(b, bytes, system);
   if let Some(commit) = &system.preprocessed_commit {
     assert_eq!(commit.roots().len(), 1);
     ch.observe_bytes(&commit.roots()[0].map(|v| bytes.constant(b, v)));
@@ -231,14 +224,14 @@ fn constrain_batch_queries(
   ch.observe_extension(b, bytes, beta);
   let gamma = ch.sample_extension(b, bytes);
   ch.observe_extension(b, bytes, gamma);
-  let zero = Q::constant(b, [Val::ZERO; 2]);
+  let zero = E::constant(b, [Val::ZERO; EXTENSION_DEGREE]);
   let mut total = zero;
   if check_algebra {
     for message in messages {
       let mut fingerprint = zero;
       for &value in message.args.iter().rev() {
         fingerprint = fingerprint.mul(b, gamma);
-        let arg = Q::from_base(b, value);
+        let arg = E::from_base(b, value);
         fingerprint = fingerprint.add(b, arg);
       }
       let term =
@@ -341,6 +334,12 @@ pub fn expand_batch_witness(
   shapes: &[FixedPcsShape],
   batch: &BatchProof<Config>,
 ) -> Result<Vec<ExpandedPcsWitness>, String> {
+  if system.config.fri_batching() != FriBatching::Tensor {
+    return Err("Protocol v6 verifier requires FriBatching::Tensor".into());
+  }
+  if system.vk_digest != compute_vk_digest::<Val, ExtVal3>(&system.circuits) {
+    return Err("system vk_digest mismatch".into());
+  }
   if shapes.is_empty()
     || shapes.len() != batch.proofs.len()
     || shapes.len() != batch.preamble.headers.len()

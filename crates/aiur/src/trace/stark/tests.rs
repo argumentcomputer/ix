@@ -7,9 +7,13 @@ use crate::{
 };
 use serde_json::{Value as Json, json};
 mod depth;
+mod describe;
+#[cfg(feature = "cuda")]
+mod gpu;
 mod memo_cycle;
 mod parameters;
-mod partition;
+mod spec_parity;
+mod streaming;
 
 fn f() -> Json {
   json!({"kind":"field"})
@@ -29,10 +33,10 @@ fn writes(n: usize) -> Vec<Json> {
   (0..n).map(|i| json!({"column":i,"source":i,"guard":k(1)})).collect()
 }
 fn parameters() -> Parameters {
-  // The floor (220 conjectured bits) without grinding, slow in debug builds.
+  // Protocol v6 128-bit floor without grinding (128.3b Johnson, 117.0b UD, 282b conj).
   Parameters {
     log_blowup: 1,
-    num_queries: 220,
+    num_queries: 282,
     commit_proof_of_work_bits: 0,
     query_proof_of_work_bits: 0,
   }
@@ -98,6 +102,57 @@ fn cpu_verification_ignores_gpu_prover_environment() {
 }
 
 #[test]
+fn zk_backend_roundtrip_enforces_min_log_degree_and_rejects_tamper() {
+  let (program, artifact) = fixture();
+  let plan = TracePlan::new(&program, activate(artifact)).unwrap();
+  let params = Parameters {
+    log_blowup: 3,
+    num_queries: 78,
+    commit_proof_of_work_bits: 0,
+    query_proof_of_work_bits: 20,
+  };
+  let backend = ZkBackend::new(&plan, params).unwrap();
+  assert_eq!(backend.min_log_degree(), 8);
+  assert_eq!(backend.zk_randomizer_width(), 4);
+
+  let record = program.execute("root", vec![3]).unwrap();
+  let witness = backend.generate(&record, "root", &[3]).unwrap();
+  for trace in &witness.traces {
+    if trace.height() > 0 {
+      assert!(
+        trace.height() >= 256,
+        "active trace height {} is below v6-zk min height 256",
+        trace.height()
+      );
+    }
+  }
+  let proof = backend.prove("root", &[3], &[9], witness).unwrap();
+  backend.verify("root", &[3], &[9], &proof).unwrap();
+
+  // Wrong output rejected
+  assert!(backend.verify("root", &[3], &[8], &proof).is_err());
+
+  // Tampered log_degree below min_log_degree rejected fail-closed
+  let mut low_deg = proof.clone();
+  low_deg.log_degrees[0] = 7;
+  assert!(
+    backend
+      .verify("root", &[3], &[9], &low_deg)
+      .unwrap_err()
+      .contains("below minimum 8")
+  );
+
+  // Sub-128-bit floor rejected by ZkBackend::new
+  let weak = Parameters {
+    log_blowup: 3,
+    num_queries: 40,
+    commit_proof_of_work_bits: 0,
+    query_proof_of_work_bits: 0,
+  };
+  assert!(ZkBackend::new(&plan, weak).is_err());
+}
+
+#[test]
 fn batch_memory_partition_and_persisted_key() {
   use multi_stark::batch::Retention;
   let (program, artifact) = fixture();
@@ -107,11 +162,26 @@ fn batch_memory_partition_and_persisted_key() {
   let record = program.execute("root", vec![3]).unwrap();
   let mut witness = backend.generate(&record, "root", &[3]).unwrap();
   let memory = witness.traces.last_mut().unwrap();
-  assert_eq!(memory.width, 4);
-  // Two unused but consecutive cells force a memory boundary across shards.
-  memory
-    .values
-    .extend([0, 1, 1, 42, 0, 1, 2, 43, 0, 0, 0, 0].map(Val::from_u64));
+  let lanes = rom_lanes(1);
+  assert_eq!(memory.width, 1 + lanes * 3);
+  // Fill row 0's remaining lanes and add an active row 1 + two padding rows so
+  // the contiguous ROM run spans two shards of height 2 (MEMSEG end = 10).
+  for lane in 1..lanes {
+    let base = 1 + lane * 3;
+    memory.values[base] = Val::ZERO;
+    memory.values[base + 1] = Val::ONE;
+    memory.values[base + 2] = Val::from_u64(40 + lane as u64);
+  }
+  let mut row1 = vec![Val::ZERO; memory.width];
+  row1[0] = Val::from_usize(lanes);
+  for lane in 0..2 {
+    let base = 1 + lane * 3;
+    row1[base] = Val::ZERO;
+    row1[base + 1] = Val::ONE;
+    row1[base + 2] = Val::from_u64(50 + lane as u64);
+  }
+  memory.values.extend(row1);
+  memory.values.extend(vec![Val::ZERO; memory.width * 2]);
   let retained = backend
     .prove_batch_stage_1(
       "root",
@@ -146,7 +216,7 @@ fn batch_memory_partition_and_persisted_key() {
 
 #[test]
 fn sliced_lookup_writer_matches_graph_and_retained_proof() {
-  use multi_stark::{batch::Retention, lookup::LookupValues, types::ExtVal};
+  use multi_stark::{batch::Retention, lookup::LookupValues, types::ExtVal3};
   let (program, artifact) = fixture();
   let plan = TracePlan::new(&program, activate(artifact)).unwrap();
   let backend = host_lookups(&plan);
@@ -154,11 +224,26 @@ fn sliced_lookup_writer_matches_graph_and_retained_proof() {
   let mut traces = backend.generate_stage_1(&record, "root", &[3]).unwrap();
   // Exercise a ROM run spanning two shards, fixed-table padding, zero
   // multiplicities and circuits inactive in the second shard.
-  traces
-    .last_mut()
-    .unwrap()
-    .values
-    .extend([0, 1, 1, 42, 0, 1, 2, 43, 0, 0, 0, 0].map(Val::from_u64));
+  {
+    let memory = traces.last_mut().unwrap();
+    let lanes = rom_lanes(1);
+    for lane in 1..lanes {
+      let base = 1 + lane * 3;
+      memory.values[base] = Val::ZERO;
+      memory.values[base + 1] = Val::ONE;
+      memory.values[base + 2] = Val::from_u64(40 + lane as u64);
+    }
+    let mut row1 = vec![Val::ZERO; memory.width];
+    row1[0] = Val::from_usize(lanes);
+    for lane in 0..2 {
+      let base = 1 + lane * 3;
+      row1[base] = Val::ZERO;
+      row1[base + 1] = Val::ONE;
+      row1[base + 2] = Val::from_u64(50 + lane as u64);
+    }
+    memory.values.extend(row1);
+    memory.values.extend(vec![Val::ZERO; memory.width * 2]);
+  }
   for shard in 0..2 {
     let sliced = backend.slice_stage_1(&traces, shard, 2).unwrap();
     let reference =
@@ -176,9 +261,9 @@ fn sliced_lookup_writer_matches_graph_and_retained_proof() {
       LookupValues::stage_2_traces(
         &lookups,
         &groups,
-        ExtVal::from_u64(1000000007),
-        &ExtVal::from_u64(1000000009),
-        ExtVal::ZERO,
+        ExtVal3::from_u64(1000000007),
+        &ExtVal3::from_u64(1000000009),
+        ExtVal3::ZERO,
       )
     };
     let (expected, expected_acc) = stage2(reference);
@@ -197,7 +282,7 @@ fn sliced_lookup_writer_matches_graph_and_retained_proof() {
       [MEMSEG, 1, 0].map(Val::from_u64).to_vec(),
     ),
     multi_stark::batch::BatchMessage::push(
-      [MEMSEG, 1, 3].map(Val::from_u64).to_vec(),
+      [MEMSEG, 1, (rom_lanes(1) + 2) as u64].map(Val::from_u64).to_vec(),
     ),
   ];
   let reference = backend.system.prove_batch_with(
@@ -258,9 +343,13 @@ fn sliced_lookup_writer_matches_graph_and_retained_proof() {
       [MEMSEG, width as u64, 0].map(Val::from_u64).to_vec(),
     ));
     norm_messages.push(multi_stark::batch::BatchMessage::push(
-      [MEMSEG, width as u64, rows[rom_base + i] as u64]
-        .map(Val::from_u64)
-        .to_vec(),
+      [
+        MEMSEG,
+        width as u64,
+        backend.rom.active_entries(i, &resized[rom_base + i]) as u64,
+      ]
+      .map(Val::from_u64)
+      .to_vec(),
     ));
   }
   let ref_norm = backend.system.prove_batch(
@@ -291,23 +380,12 @@ fn gpu_lookup_policy_retains_single_shards_without_growing_multi_shard_residency
   let single = backend.plan_heights(&heights, &options, 0).unwrap();
   assert_eq!(single.shards, 1);
   assert_eq!(single.retention, RetentionPolicy::Retain);
-  let streamed = backend.plan_stream(&[(&heights, 1)], &options).unwrap();
-  assert_eq!(streamed.retention, RetentionPolicy::Retain);
-  let regenerated = backend
-    .plan_stream(
-      &[(&heights, 1)],
-      &Options { retention: RetentionPolicy::Regenerate, ..options.clone() },
-    )
-    .unwrap();
-  assert_eq!(streamed.peak_bytes, regenerated.peak_bytes);
   let mut many = heights;
   many[0] = 8;
   let options = Options { max_rows: Some(2), ..options };
   let batch = backend.plan_heights(&many, &options, 0).unwrap();
   assert_eq!(batch.shards, 4);
   assert_eq!(batch.retention, RetentionPolicy::Regenerate);
-  let streamed = backend.plan_stream(&[(&many, 2)], &options).unwrap();
-  assert_eq!(streamed.retention, RetentionPolicy::Regenerate);
   assert!(!backend.requires_regeneration(1));
   assert!(backend.requires_regeneration(2));
 }
@@ -336,23 +414,42 @@ fn compare_generated<B: WitnessField>(
   // checks the borrowed width buckets, including counts, empty widths and
   // padding, without sharing the production bucket/index access path.
   let rom_start = backend.members.len() + backend.tables.len();
-  for matrix in &got.traces[rom_start..] {
-    let width = matrix.width - 3;
-    let mut expected = vec![];
-    for entry in record.memory.iter().filter(|m| m.cell.value.len() == width) {
-      expected.extend([
-        Val::from_u64(entry.multiplicity),
-        Val::ONE,
-        Val::from_usize(entry.address),
-      ]);
-      expected.extend(entry.cell.value.iter().copied().map(B::into_stark));
-    }
-    let rows = expected.len() / matrix.width;
+  for (idx, matrix) in got.traces[rom_start..].iter().enumerate() {
+    let width = backend.rom.widths[idx];
+    let lanes = backend.rom.layout.lanes(width);
+    let entries: Vec<_> =
+      record.memory.iter().filter(|m| m.cell.value.len() == width).collect();
+    let rows = entries.len().div_ceil(lanes);
     assert_eq!(
       matrix.height(),
       if rows == 0 { 0 } else { rows.next_power_of_two() }
     );
-    expected.resize(matrix.values.len(), Val::ZERO);
+    let mut expected = vec![Val::ZERO; matrix.values.len()];
+    if lanes == 1 {
+      for (r, entry) in entries.iter().enumerate() {
+        let base = r * matrix.width;
+        expected[base] = Val::from_u64(entry.multiplicity);
+        expected[base + 1] = Val::ONE;
+        expected[base + 2] = Val::from_usize(entry.address);
+        for (k, &v) in entry.cell.value.iter().enumerate() {
+          expected[base + 3 + k] = B::into_stark(v);
+        }
+      }
+    } else {
+      let stride = width + 2;
+      for (r, chunk) in entries.chunks(lanes).enumerate() {
+        let row_base = r * matrix.width;
+        expected[row_base] = Val::from_usize(r * lanes);
+        for (lane, entry) in chunk.iter().enumerate() {
+          let base = row_base + 1 + lane * stride;
+          expected[base] = Val::from_u64(entry.multiplicity);
+          expected[base + 1] = Val::ONE;
+          for (k, &v) in entry.cell.value.iter().enumerate() {
+            expected[base + 2 + k] = B::into_stark(v);
+          }
+        }
+      }
+    }
     assert_eq!(matrix.values, expected);
   }
   // Compare every nonzero message directly to the independent dense graph
@@ -411,11 +508,11 @@ fn fused_rows_and_lookups_match_reference_and_verify() {
   let shapes = backend.statistics();
   assert_eq!(
     shapes.iter().find(|s| s.name == "<ROM:1>").unwrap().stage1_width,
-    4
+    1 + rom_lanes(1) * 3
   );
   assert_eq!(
     shapes.iter().find(|s| s.name == "<ROM:4>").unwrap().stage1_width,
-    7
+    1 + rom_lanes(4) * 6
   );
   for arg in [2, 3, 4] {
     let record = program.execute("root", vec![arg]).unwrap();
@@ -454,8 +551,17 @@ fn erased_rom_views_use_existing_width_buckets() {
 pub(super) fn host_lookups<'p, 'a>(
   plan: &'p TracePlan<'a, PrimeField>,
 ) -> Backend<'p, 'a, PrimeField> {
-  Backend::assemble(plan, toy_parameters(), true, None, false, false, true)
-    .unwrap()
+  Backend::assemble(
+    plan,
+    toy_parameters(),
+    true,
+    RomLayout::Vectorized,
+    None,
+    false,
+    false,
+    true,
+  )
+  .unwrap()
 }
 
 fn fixture() -> (CheckedProgram, TraceArtifact) {
@@ -514,7 +620,7 @@ fn execution_statistics_report_raw_rows_fixed_heights_and_cache_hits() {
   let record = program.execute("root", vec![3]).unwrap();
   let stats = stats_only.execution_statistics(&record);
   assert_eq!(stats.log_blowup, 1);
-  assert_eq!(stats.extension_degree, 2);
+  assert_eq!(stats.extension_degree, 3);
   let rows: Vec<_> =
     stats.circuits.iter().map(|c| (c.rows, c.cache_hits)).collect();
   // root and leaf each run once; the fixed table has 4 rows (3 used in
@@ -578,10 +684,12 @@ fn proves_calls_fixed_maps_and_rom_and_verifies_without_record() {
   let trace = plan.generate(&record, "root", &[3], true).unwrap();
   let witness = backend.witness(&record, &trace).unwrap();
   assert_eq!(witness.traces[2].height(), 4);
-  assert_eq!(
-    witness.traces[3].values,
-    [Val::from_u64(2), Val::ONE, Val::ZERO, Val::from_u64(9)]
-  );
+  let mut expected_rom = vec![Val::ZERO; 1 + rom_lanes(1) * 3];
+  expected_rom[0] = Val::ZERO;
+  expected_rom[1] = Val::from_u64(2);
+  expected_rom[2] = Val::ONE;
+  expected_rom[3] = Val::from_u64(9);
+  assert_eq!(witness.traces[3].values, expected_rom);
   let proof = backend.prove("root", &[3], &[9], witness).unwrap();
   drop(trace);
   drop(record);
@@ -806,9 +914,6 @@ fn recorded_lookup_counts_are_checked_by_the_proof() {
   // integer multiplicity is converted to a field element.
   bad.queries.tables[2].static_map.as_mut().unwrap().counts[0] = Val::ORDER_U64;
   assert!(backend.witness(&bad, &trace).is_err());
-  let mut bad = record;
-  *bad.memory.multiplicity_mut(0) = Val::ORDER_U64;
-  assert!(backend.witness(&bad, &trace).is_err());
 }
 
 /// Interleave widths 0, 1 and 2, including different types of width 1.
@@ -869,11 +974,34 @@ fn mixed_memory() -> (CheckedProgram, TraceArtifact) {
   (program, artifact)
 }
 
+/// `tests/fixtures/memory.ixa` is [`mixed_memory`]'s program and activated
+/// trace, for crates that read fixtures from packages. Set
+/// `AIUR_WRITE_FIXTURES=1` to rewrite it.
+#[test]
+fn memory_fixture_is_current() {
+  let (program, artifact) = mixed_memory();
+  let package = crate::artifact::Package {
+    program: program.program().clone(),
+    trace: Some(activate(artifact)),
+  };
+  let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/memory.ixa");
+  if std::env::var_os("AIUR_WRITE_FIXTURES").is_some() {
+    std::fs::write(path, package.encode()).unwrap();
+  }
+  let stored = crate::artifact::Package::decode(&std::fs::read(path).unwrap());
+  assert_eq!(stored.unwrap(), package, "rewrite with AIUR_WRITE_FIXTURES=1");
+}
+
 #[test]
 fn width_local_rom_shares_types_and_preserves_functionality() {
   let (program, artifact) = mixed_memory();
   let plan = TracePlan::new(&program, activate(artifact)).unwrap();
-  let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
+  let backend = Backend::new_below_floor_with_rom_layout(
+    &plan,
+    toy_parameters(),
+    RomLayout::Scalar,
+  )
+  .unwrap();
   let index =
     |name: &str| backend.names.iter().position(|n| n == name).unwrap();
   assert!(!backend.names.iter().any(|n| n == "<ROM:addresses>"));
@@ -1458,10 +1586,7 @@ fn cuda_host_plan_omits_device_phases() {
     .zip(&backend.system.circuits)
     .map(|(&h, c)| h as u128 * c.main_width as u128)
     .sum();
-  assert_eq!(
-    u128::from(whole.proving_peak_bytes),
-    ((cells * 8 + prep + retained) * 5).div_ceil(4)
-  );
+  assert_eq!(u128::from(whole.proving_peak_bytes), cells * 8 + prep + retained);
 }
 /// The Lean grouping example's package (`Aiur/Examples/Grouping.lean`).
 struct Traced {
@@ -1568,9 +1693,9 @@ fn gpu_population_proves_identically() {
   let program = package.program.check().unwrap();
   let plan = TracePlan::new(&program, package.trace).unwrap();
   let mut backend =
-    Backend::assemble(&plan, toy_parameters(), true, None, true, false, true)
+    Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
       .unwrap();
-  let plans = gpu::DevicePlans::new(&backend);
+  let plans = super::gpu::DevicePlans::new(&backend);
   let device_circuits: Vec<_> = plans
     .circuits
     .iter()
@@ -1594,7 +1719,7 @@ fn gpu_population_proves_identically() {
           retention,
         )
         .unwrap();
-      backend.device_plans = Some(gpu::DevicePlans::new(&backend));
+      backend.device_plans = Some(super::gpu::DevicePlans::new(&backend));
       let stage = backend.prepare_stage_1(&record, entry, &[3]).unwrap();
       assert_eq!(
         stage.cells(),
@@ -1627,31 +1752,472 @@ fn gpu_depth_population_proves_identically() {
   let (program, trace) = depth::depth_fixture();
   let plan = TracePlan::new(&program, trace).unwrap();
   let mut backend =
-    Backend::assemble(&plan, toy_parameters(), true, None, true, false, true)
+    Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
       .unwrap();
-  let plans = gpu::DevicePlans::new(&backend);
+  let plans = super::gpu::DevicePlans::new(&backend);
   let fib = backend.names.iter().position(|n| n == "Depth::fib").unwrap();
   assert!(plans.circuits[fib], "fib's gap slots run on the device");
   let entry = "Depth::run";
-  let record = program.execute(entry, vec![12]).unwrap();
+  let x = depth::at(12);
+  let record = program.execute(entry, vec![x]).unwrap();
   let output = record.output.clone();
   for rows in [4, 64] {
     backend.device_plans = None;
     let host = backend
       .prove_batch_stage_1(
         entry,
-        &[12],
+        &[x],
         &output,
-        backend.generate_stage_1(&record, entry, &[12]).unwrap(),
+        backend.generate_stage_1(&record, entry, &[x]).unwrap(),
         rows,
         Retention::Retain,
       )
       .unwrap();
-    backend.device_plans = Some(gpu::DevicePlans::new(&backend));
-    let stage = backend.prepare_stage_1(&record, entry, &[12]).unwrap();
+    backend.device_plans = Some(super::gpu::DevicePlans::new(&backend));
+    let stage = backend.prepare_stage_1(&record, entry, &[x]).unwrap();
     let device = backend
-      .prove_stage_one(entry, &[12], &output, stage, rows, Retention::Retain)
+      .prove_stage_one(entry, &[x], &output, stage, rows, Retention::Retain)
       .unwrap();
     assert_eq!(device.to_bytes().unwrap(), host.to_bytes().unwrap());
   }
+}
+
+#[test]
+fn member_lookup_plans_match_generic_and_prune_grouped_work() {
+  let package = grouping_fixture();
+  let program = package.program.check().unwrap();
+  let plan = TracePlan::new(&program, package.trace).unwrap();
+  let backend = Backend::assemble(
+    &plan,
+    parameters(),
+    true,
+    RomLayout::Vectorized,
+    None,
+    false,
+    true,
+    true,
+  )
+  .unwrap();
+  let record = program.execute("Grouped::run", vec![3]).unwrap();
+  let witness = backend.generate(&record, "Grouped::run", &[3]).unwrap();
+
+  let normalize = |mut entries: Vec<(usize, Val, Vec<Val>)>| {
+    for (_, _, args) in &mut entries {
+      while args.last() == Some(&Val::ZERO) {
+        args.pop();
+      }
+    }
+    entries.sort_by_key(|(slot, _, _)| *slot);
+    entries
+  };
+
+  let mut saw_pruned = false;
+  for (ci, trace) in
+    witness.traces.iter().enumerate().take(backend.members.len())
+  {
+    let generic = &backend.lookup_plans[ci];
+    let (gen_arith, gen_slots) = generic.stats();
+    for &chip in &backend.circuit_chips[ci] {
+      let mlp = &backend.member_lookup_plans[chip];
+      let (spec_arith, spec_slots) = mlp.plan.stats();
+      if backend.placements[chip].grouped
+        && (spec_arith < gen_arith || spec_slots < gen_slots)
+      {
+        saw_pruned = true;
+      }
+    }
+    for r in 0..trace.height() {
+      let row = &trace.values[r * trace.width..(r + 1) * trace.width];
+      let mut expected = Vec::new();
+      generic.evaluate(row, &[], |slot, mult, args| {
+        expected.push((slot, mult, args.to_vec()));
+      });
+      if let Some(&chip) = backend.circuit_chips[ci].iter().find(|&&chip| {
+        let mlp = &backend.member_lookup_plans[chip];
+        row[mlp.selector] == Val::ONE
+      }) {
+        let mlp = &backend.member_lookup_plans[chip];
+        assert!(mlp.zero_cols.iter().all(|&col| row[col] == Val::ZERO));
+        let mut actual = Vec::new();
+        mlp.plan.evaluate(row, &[], |slot, mult, args| {
+          actual.push((slot, mult, args.to_vec()));
+        });
+        assert_eq!(normalize(actual), normalize(expected));
+      } else {
+        assert!(expected.is_empty(), "padding row emitted lookups");
+      }
+    }
+  }
+  assert!(
+    saw_pruned,
+    "expected member specialization to prune slots or arithmetic on grouped circuits"
+  );
+
+  // Verify auxiliary_lookups falls back soundly on a tampered row where an
+  // inactive member's private column is nonzero.
+  let grouped_ci =
+    backend.placements.iter().find(|p| p.grouped).unwrap().circuit;
+  let mut tampered = witness.traces[grouped_ci].clone();
+  let active_chip = backend.circuit_chips[grouped_ci]
+    .iter()
+    .copied()
+    .find(|&chip| {
+      let sel = backend.member_lookup_plans[chip].selector;
+      tampered.values[sel] == Val::ONE
+    })
+    .unwrap();
+  if let Some(&zero_col) =
+    backend.member_lookup_plans[active_chip].zero_cols.first()
+  {
+    tampered.values[zero_col] = Val::from_u64(7);
+  }
+  let mut traces = witness.traces.clone();
+  traces[grouped_ci] = tampered;
+  let via_aux = backend.witness_from_main(traces.clone());
+  let via_graph = SystemWitness::from_stage_1(traces, &backend.system);
+  let stage2 = |w: SystemWitness<Val>| {
+    let (lookups, groups): (Vec<_>, Vec<_>) = w
+      .traces
+      .into_iter()
+      .zip(w.lookups)
+      .zip(&backend.system.circuits)
+      .filter(|((trace, _), _)| trace.height() != 0)
+      .map(|((_, lookups), circuit)| (lookups, circuit.lookup_group_size))
+      .unzip();
+    multi_stark::lookup::LookupValues::stage_2_traces(
+      &lookups,
+      &groups,
+      ExtVal3::from_u64(1000000007),
+      &ExtVal3::from_u64(1000000009),
+      ExtVal3::ZERO,
+    )
+  };
+  let (actual, actual_acc) = stage2(via_aux);
+  let (expected, expected_acc) = stage2(via_graph);
+  assert_eq!(actual_acc, expected_acc);
+  for (a, b) in actual.iter().zip(expected) {
+    assert_eq!(a.width, b.width);
+    assert_eq!(a.values, b.values);
+  }
+}
+
+#[test]
+fn parallel_rom_witness_and_prefix_lookups_match_reference() {
+  // Store 300 distinct ROM cells (>= 256 threshold) to exercise parallel
+  // Rom::witness population and active-prefix lookup writing.
+  let p = Val::ORDER_U64;
+  let raw_program: Program = serde_json::from_value(json!({
+    "version": 2,
+    "modulus": p,
+    "enums": [],
+    "tables": [],
+    "maps": [],
+    "functions": [{
+      "name": "store_loop",
+      "params": [f()],
+      "result": f(),
+      "registers": 5,
+      "code": [
+        {"op": "store", "type": f(), "value": [0], "dest": 1},
+        {"op": "branch", "tests": [[0, 0]], "otherwise": 3},
+        {"op": "ret", "value": [1]},
+        {"op": "literal", "dest": 2, "value": 1},
+        {"op": "binary", "operator": "sub", "dest": 3, "left": 0, "right": 2},
+        {"op": "call", "function": 0, "args": [3], "dest": [4]},
+        {"op": "ret", "value": [1]}
+      ]
+    }],
+    "entries": [{
+      "name": "store_loop",
+      "function": 0,
+      "inputs": [f()],
+      "output": f()
+    }]
+  }))
+  .unwrap();
+  let sub = |a: Json, b: Json| json!({"sub": [a, b]});
+  let mul = |a: Json, b: Json| json!({"mul": [a, b]});
+  let add = |a: Json, b: Json| json!({"add": [a, b]});
+  // Witnesses: 0=x, 1=out(ptr), 2=s0(x==0), 3=s1(x!=0), 4=inv(x^-1), 5=rec_res.
+  let trace = activate(raw_artifact(json!({
+    "version": 1,
+    "modulus": p,
+    "functions": [{
+      "name": "store_loop",
+      "chip": "store_loop",
+      "witnesses": 6,
+      "inputs": [0],
+      "output": [1],
+      "steps": [
+        step(json!({"op": "store", "type": f(), "values": [v(0)], "dest": 1})),
+        step(json!({"op": "choose", "dest": [2, 3], "tests": [[v(0)], []]})),
+        {"guard": v(3), "action": {"op": "failure", "dest": [4], "differences": [v(0)]}},
+        {"guard": v(3), "action": {"op": "call", "name": "store_loop", "args": [sub(v(0), k(1))], "dest": [5]}}
+      ],
+      "writes": writes(6)
+    }],
+    "chips": [{
+      "name": "store_loop",
+      "width": 6,
+      "inputs": [0],
+      "output": [v(1)],
+      "constraints": [
+        mul(v(2), sub(v(2), k(1))),
+        mul(v(3), sub(v(3), k(1))),
+        mul(v(2), v(3)),
+        sub(add(v(2), v(3)), k(1)),
+        mul(v(2), v(0)),
+        mul(v(3), sub(mul(v(0), v(4)), k(1)))
+      ],
+      "sends": [{
+        "channel": "store_loop",
+        "args": [sub(v(0), k(1))],
+        "result": [5],
+        "enable": v(3)
+      }],
+      "memory": [{
+        "type": f(),
+        "address": v(1),
+        "values": [v(0)],
+        "enable": k(1)
+      }]
+    }]
+  })));
+  let checked = raw_program.check_field::<Val>().unwrap();
+  let plan = TracePlan::new(&checked, trace).unwrap();
+  let backend = Backend::assemble(
+    &plan,
+    parameters(),
+    true,
+    RomLayout::Vectorized,
+    None,
+    false,
+    true,
+    true,
+  )
+  .unwrap();
+  let n = Val::from_u64(299);
+  let record = checked.execute("store_loop", vec![n]).unwrap();
+  assert_eq!(record.memory.len(), 300);
+  let witness = backend.generate(&record, "store_loop", &[n]).unwrap();
+  let reference =
+    SystemWitness::from_stage_1(witness.traces.clone(), &backend.system);
+  let stage2 = |w: &SystemWitness<Val>| {
+    let groups: Vec<_> =
+      backend.system.circuits.iter().map(|c| c.lookup_group_size).collect();
+    multi_stark::lookup::LookupValues::stage_2_traces(
+      &w.lookups,
+      &groups,
+      ExtVal3::from_u64(1000000007),
+      &ExtVal3::from_u64(1000000009),
+      ExtVal3::ZERO,
+    )
+  };
+  let (actual, actual_acc) = stage2(&witness);
+  let (expected, expected_acc) = stage2(&reference);
+  assert_eq!(actual_acc, expected_acc);
+  for (a, b) in actual.iter().zip(expected) {
+    assert_eq!(a.width, b.width);
+    assert_eq!(a.values, b.values);
+  }
+  let rom_ci = backend.names.iter().position(|name| name == "<ROM:1>").unwrap();
+  assert_eq!(witness.traces[rom_ci].height(), 512 / rom_lanes(1));
+  let proof = backend
+    .prove_batch(
+      "store_loop",
+      &[n],
+      &record.output,
+      witness,
+      512,
+      multi_stark::batch::Retention::Retain,
+    )
+    .unwrap();
+  backend.verify_batch("store_loop", &[n], &record.output, &proof).unwrap();
+}
+
+#[test]
+fn validated_record_binds_to_backend_survives_moves_and_rejects_bad_depths() {
+  let (program, trace) = depth::depth_fixture();
+  let plan = TracePlan::new(&program, trace).unwrap();
+  let backend_a = Backend::for_batch(&plan, parameters()).unwrap();
+  let backend_b = Backend::for_batch(&plan, parameters()).unwrap();
+  let x = depth::at(8);
+  let record = program.execute("Depth::run", vec![x]).unwrap();
+
+  let validated = backend_a.validate_record(&record).unwrap();
+  // Rejected by a different backend instance, even for the exact same plan.
+  assert!(
+    backend_b
+      .generate_stage_1_validated(&validated, "Depth::run", &[x])
+      .unwrap_err()
+      .contains("different backend")
+  );
+  assert!(
+    backend_b
+      .generate_validated(&validated, "Depth::run", &[x])
+      .err()
+      .unwrap()
+      .contains("different backend")
+  );
+
+  // Moving the backend keeps its identity valid and matches unvalidated output.
+  let expected =
+    backend_a.generate_stage_1(&record, "Depth::run", &[x]).unwrap();
+  let moved_a = Box::new(backend_a);
+  let actual =
+    moved_a.generate_stage_1_validated(&validated, "Depth::run", &[x]).unwrap();
+  assert_eq!(actual.len(), expected.len());
+  for (a, b) in actual.iter().zip(&expected) {
+    assert_eq!(a.width, b.width);
+    assert_eq!(a.values, b.values);
+  }
+
+  // Overflowed depths are still rejected at validate_record.
+  let mut bad = record.clone();
+  let fib = program
+    .program()
+    .functions
+    .iter()
+    .position(|f| f.name == "Depth::fib")
+    .unwrap();
+  bad.queries.tables[fib].set_depth(0, u64::from(u32::MAX));
+  assert!(
+    moved_a.validate_record(&bad).err().unwrap().contains("depth overflows")
+  );
+}
+
+#[test]
+fn single_member_group_proves_and_empty_group_rejected() {
+  use crate::trace::{FunctionGroup, GroupLookup, GroupMember, Polynomial};
+
+  let package = grouping_fixture();
+  let program = package.program.check().unwrap();
+
+  // An empty 0-member group must still be rejected.
+  let mut empty_trace = package.trace.clone();
+  empty_trace.groups = vec![FunctionGroup {
+    name: "empty".into(),
+    width: 1,
+    activation: Polynomial::Const(0),
+    constraints: vec![],
+    receive: vec![],
+    sends: vec![],
+    members: vec![],
+  }];
+  let empty_plan = TracePlan::new(&program, empty_trace).unwrap();
+  assert!(Backend::for_batch(&empty_plan, parameters()).is_err());
+
+  // Wrap a single chip (`Grouped::memory`) in a 1-member group (`C2`).
+  let chip = package
+    .trace
+    .chips
+    .iter()
+    .find(|c| c.name == "Grouped::memory")
+    .unwrap()
+    .clone();
+  let call_id = program
+    .program()
+    .functions
+    .iter()
+    .position(|f| f.name == chip.name)
+    .unwrap() as u64;
+  let mut receive = vec![Polynomial::Const(CALL), Polynomial::Const(call_id)];
+  receive.extend(chip.inputs.iter().map(|&c| Polynomial::Var(c)));
+  receive.extend(chip.output.iter().cloned());
+  let sends: Vec<GroupLookup> = chip
+    .memory
+    .iter()
+    .map(|cell| {
+      let mut args = vec![
+        Polynomial::Const(ROM),
+        Polynomial::Const(cell.values.len() as u64),
+        cell.address.clone(),
+      ];
+      args.extend(cell.values.iter().cloned());
+      GroupLookup { enable: cell.enable.clone(), args }
+    })
+    .collect();
+  let single_group = FunctionGroup {
+    name: "memory_single_group".into(),
+    width: chip.width,
+    activation: Polynomial::Var(chip.activation),
+    constraints: chip.constraints.clone(),
+    receive,
+    sends,
+    members: vec![GroupMember {
+      name: chip.name.clone(),
+      columns: (0..chip.width).collect(),
+      selector: chip.activation,
+      writes: vec![],
+    }],
+  };
+
+  let mut single_trace = package.trace.clone();
+  single_trace.groups = vec![single_group];
+  let plan = TracePlan::new(&program, single_trace).unwrap();
+  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  assert!(backend.names.iter().any(|n| n == "memory_single_group"));
+
+  let entry = "Grouped::run";
+  let record = program.execute(entry, vec![3]).unwrap();
+  assert_eq!(record.output, vec![140]);
+  let witness = backend.generate(&record, entry, &[3]).unwrap();
+  let proof = backend
+    .prove_batch(
+      entry,
+      &[3],
+      &record.output,
+      witness,
+      2,
+      multi_stark::batch::Retention::Retain,
+    )
+    .unwrap();
+  backend.verify_batch(entry, &[3], &record.output, &proof).unwrap();
+}
+
+/// A backend that shares its plan and program through `Arc`s proves the grouped
+/// fixture to the same key and bytes as one that borrows them, and keeps
+/// proving after every other handle to them is released.
+#[test]
+fn shared_handles_prove_like_borrowed_ones() {
+  use multi_stark::batch::Retention;
+  use std::sync::Arc;
+  let entry = "Grouped::run";
+  let borrowed = {
+    let package = grouping_fixture();
+    let program = package.program.check().unwrap();
+    let plan = TracePlan::new(&program, package.trace).unwrap();
+    let backend = Backend::for_batch(&plan, parameters()).unwrap();
+    let record = program.execute(entry, vec![3]).unwrap();
+    let traces = backend.generate(&record, entry, &[3]).unwrap();
+    let proof = backend
+      .prove_batch(entry, &[3], &record.output, traces, 2, Retention::Retain)
+      .unwrap();
+    (backend.verifying_key_bytes().unwrap(), proof.to_bytes().unwrap())
+  };
+  let package = grouping_fixture();
+  let checked = Arc::new(package.program.check().unwrap());
+  let plan =
+    Arc::new(TracePlan::new(Arc::clone(&checked), package.trace).unwrap());
+  let backend = Backend::for_batch(Arc::clone(&plan), parameters()).unwrap();
+  let record = checked.execute(entry, vec![3]).unwrap();
+  drop((checked, plan));
+  let traces = backend.generate(&record, entry, &[3]).unwrap();
+  let proof = backend
+    .prove_batch(entry, &[3], &record.output, traces, 2, Retention::Retain)
+    .unwrap();
+  backend.verify_batch(entry, &[3], &record.output, &proof).unwrap();
+  assert_eq!(backend.verifying_key_bytes().unwrap(), borrowed.0);
+  assert_eq!(proof.to_bytes().unwrap(), borrowed.1);
+}
+
+#[test]
+fn visible_devices_follow_the_cuda_runtime() {
+  use super::planning::visible_devices;
+  assert_eq!(visible_devices("0,1", 4), 2);
+  assert_eq!(visible_devices("", 4), 0);
+  assert_eq!(visible_devices("-1", 4), 0);
+  assert_eq!(visible_devices("1,7,2", 4), 1);
+  assert_eq!(visible_devices("GPU-8f2a,1", 2), 2);
+  assert_eq!(visible_devices("0,1,2", 1), 1);
 }

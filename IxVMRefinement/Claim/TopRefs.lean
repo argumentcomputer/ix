@@ -123,11 +123,14 @@ theorem role_of_zero_lim {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
         apply hlt_iff.mpr
         rw [RolesAux.val_groupOf, RolesAux.val_natCast (Nat.lt_trans hn (by decide))]
         omega
-    | .Assumed (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
+    | .Assumed (ld12 := ld12) .. | .MkEval_n0 (ld12 := ld12) ..
+    | .MkEval_other_n1 (ld12 := ld12) .. | .MkEval_other_other (ld12 := ld12) ..
+    | .AssumedEval (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
   · match Obs.«KernelRoles::role_of».obs ev with
-    | .Mk_n0 (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
-    | .Mk_other_n1 (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
-    | .Mk_other_other (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
+    | .Mk_n0 (ld12 := ld12) .. | .Mk_other_n1 (ld12 := ld12) ..
+    | .Mk_other_other (ld12 := ld12) .. | .MkEval_n0 (ld12 := ld12) ..
+    | .MkEval_other_n1 (ld12 := ld12) .. | .MkEval_other_other (ld12 := ld12) ..
+    | .AssumedEval (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
     | .Assumed (ld12 := ld12) (ev270 := ev270) (ev248 := ev248) .. =>
       rw [hl] at ld12
       injection ld12 with hv

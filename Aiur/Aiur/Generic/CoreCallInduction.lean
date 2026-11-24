@@ -35,6 +35,10 @@ theorem EvalExpr.openCalls [Field F] [DecidableEq F]
       intro h
       simp only [inScope, Bool.and_eq_true] at h
       exact .assertEq (ih1 h.1) (ih2 h.2) op
+  | ptrEq _ _ h1 h2 s ih1 ih2 =>
+      intro h
+      simp only [inScope, Bool.and_eq_true] at h
+      exact .ptrEq (ih1 h.1) (ih2 h.2) h1 h2 s
   | binary _ _ op ih1 ih2 =>
       intro h
       simp only [inScope, Bool.and_eq_true] at h

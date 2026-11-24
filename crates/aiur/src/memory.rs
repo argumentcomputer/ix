@@ -2,7 +2,9 @@
 //! pointers are indices within a width bucket. A representative store type is
 //! retained only for host diagnostics, never for interning or circuit lookups.
 use crate::bytecode::Type;
-use hashbrown::HashTable;
+use crate::chunks::Chunks;
+use crate::field::Word;
+use crate::index::{RowIndex, tag};
 use serde::{Serialize, Serializer};
 use std::hash::{Hash, Hasher};
 
@@ -19,28 +21,73 @@ pub struct MemoryEntryRef<'a, F = u64> {
   pub multiplicity: u64,
 }
 
-#[derive(Clone, Debug)]
+/// A cell's place in its width's bucket and its representative type.
+#[derive(Clone, Copy, Debug)]
 struct Slot {
-  address: usize,
-  type_id: usize,
-  offset: usize,
-  multiplicity: u64,
+  address: u32,
+  type_id: u32,
 }
+
+/// The cells of one width, in address order: their words, and for each its
+/// record index and its load and store count ([`INDEX`], [`COUNT`]). A cell
+/// is reached by its address alone, so a load or a repeated store touches
+/// its words and its count independently, never through its [`Slot`].
+#[derive(Clone, Debug)]
+struct Bucket<F> {
+  words: Chunks<F>,
+  cells: Chunks<u32>,
+}
+
+const INDEX: usize = 0;
+const COUNT: usize = 1;
+
+/// A cell by its width bucket and its address there.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CellAt {
+  bucket: usize,
+  pub(crate) address: usize,
+}
+
+/// Bytes of one storage chunk.
+const CHUNK_BYTES: usize = 1 << 19;
 
 #[derive(Clone, Debug)]
 pub struct Memory<F = u64> {
-  pub(crate) budget: crate::budget::Budget,
-  base: usize,
-  end: u64,
   types: Vec<(Type, usize)>,
-  words: Vec<F>,
-  slots: Vec<Slot>,
+  slots: Chunks<Slot>,
   widths: Vec<usize>,
-  buckets: Vec<Vec<usize>>,
+  buckets: Vec<Bucket<F>>,
   type_buckets: Vec<usize>,
-  // Stable record indices and cached hashes, with no second payload copy.
-  // Retained after execution so trace population can resolve stores directly.
-  index: HashTable<(u64, usize)>,
+  // Every width's cell addresses, tagged with their hashes, with no second
+  // payload copy ([`Self::matches`]). Retained after execution so trace population can resolve stores
+  // directly.
+  index: RowIndex,
+  index_bytes: usize,
+  // Release the charge after the payload and indexes have been freed.
+  pub(crate) budget: crate::budget::Budget,
+}
+
+/// The cells of one width, by width-local address.
+#[derive(Clone, Copy)]
+pub(crate) struct WidthCells<'a, F> {
+  memory: &'a Memory<F>,
+  bucket: Option<&'a Bucket<F>>,
+}
+
+impl<'a, F: Copy + Eq + Hash + Send + Sync> WidthCells<'a, F> {
+  #[cfg_attr(not(feature = "stark"), allow(dead_code))]
+  pub(crate) fn len(&self) -> usize {
+    self.bucket.map_or(0, |bucket| bucket.cells.len())
+  }
+
+  #[inline]
+  pub(crate) fn get(&self, address: usize) -> Option<MemoryEntryRef<'a, F>> {
+    let bucket = self.bucket?;
+    if address >= bucket.cells.len() {
+      return None;
+    }
+    self.memory.get(bucket.cells.row(address)[INDEX] as usize)
+  }
 }
 
 impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
@@ -51,18 +98,22 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
     widths.dedup();
     let type_buckets =
       types.iter().map(|(_, w)| widths.binary_search(w).unwrap()).collect();
-    let buckets = vec![vec![]; widths.len()];
+    let buckets = widths
+      .iter()
+      .map(|&width| Bucket {
+        words: Chunks::new(width, CHUNK_BYTES),
+        cells: Chunks::new(2, CHUNK_BYTES),
+      })
+      .collect();
     Self {
       budget: Default::default(),
-      base: 0,
-      end: u64::MAX,
       types,
-      words: vec![],
-      slots: vec![],
+      slots: Chunks::new(1, CHUNK_BYTES),
       widths,
       buckets,
       type_buckets,
-      index: HashTable::new(),
+      index: RowIndex::default(),
+      index_bytes: 0,
     }
   }
 
@@ -70,33 +121,58 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
     self.slots.len()
   }
   pub fn is_empty(&self) -> bool {
-    self.slots.is_empty()
+    self.slots.len() == 0
   }
 
-  pub(crate) fn set_range(
-    &mut self,
-    start: u64,
-    end: u64,
-  ) -> Result<(), &'static str> {
-    if !self.is_empty() || start >= end {
-      return Err("invalid empty ROM range");
+  /// Free the chunks prefetched for cells that never came.
+  pub(crate) fn drop_prefetched(&mut self) {
+    self.slots.drop_prefetched(&self.budget);
+    for bucket in &mut self.buckets {
+      bucket.words.drop_prefetched(&self.budget);
+      bucket.cells.drop_prefetched(&self.budget);
     }
-    self.base = usize::try_from(start).ok().ok_or("ROM base overflow")?;
-    self.end = end;
-    Ok(())
+  }
+
+  /// Distinct interned cells per payload width, including empty width buckets.
+  pub fn width_counts(
+    &self,
+  ) -> impl ExactSizeIterator<Item = (usize, usize)> + '_ {
+    self
+      .widths
+      .iter()
+      .copied()
+      .zip(self.buckets.iter().map(|bucket| bucket.cells.len()))
+  }
+
+  pub(crate) fn storage_usage(&self) -> (usize, usize, usize) {
+    let payload =
+      self.buckets.iter().map(|b| b.words.payload_bytes()).sum::<usize>();
+    let vectors = self.slots.capacity_bytes()
+      + self
+        .buckets
+        .iter()
+        .map(|b| b.words.capacity_bytes() + b.cells.capacity_bytes())
+        .sum::<usize>()
+      + self.buckets.capacity() * size_of::<Bucket<F>>();
+    (payload, vectors, self.index.allocated_bytes())
   }
 
   #[inline]
   pub fn get(&self, index: usize) -> Option<MemoryEntryRef<'_, F>> {
-    let slot = self.slots.get(index)?;
-    let (ty, width) = &self.types[slot.type_id];
+    if index >= self.slots.len() {
+      return None;
+    }
+    let slot = *self.slots.at(index);
+    let type_id = slot.type_id as usize;
+    let address = slot.address as usize;
+    let bucket = &self.buckets[self.type_buckets[type_id]];
     Some(MemoryEntryRef {
-      address: slot.address,
+      address,
       cell: CellRef {
-        r#type: ty,
-        value: &self.words[slot.offset..slot.offset + width],
+        r#type: &self.types[type_id].0,
+        value: bucket.words.row(address),
       },
-      multiplicity: slot.multiplicity,
+      multiplicity: u64::from(bucket.cells.row(address)[COUNT]),
     })
   }
 
@@ -113,15 +189,34 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
     (0..self.len()).into_par_iter().map(|i| self.get(i).unwrap())
   }
 
-  #[inline]
-  pub(crate) fn index_for_type(
-    &self,
-    type_id: usize,
-    address: usize,
-  ) -> Option<usize> {
-    self.buckets[self.type_buckets[type_id]]
-      .get(address.checked_sub(self.base)?)
-      .copied()
+  /// The cell at `address` among those of `type_id`'s width.
+  #[inline(always)]
+  pub(crate) fn cell(&self, type_id: usize, address: usize) -> Option<CellAt> {
+    let bucket = self.type_buckets[type_id];
+    (address < self.buckets[bucket].cells.len())
+      .then_some(CellAt { bucket, address })
+  }
+
+  /// A cell's words.
+  #[inline(always)]
+  pub(crate) fn words(&self, cell: CellAt) -> &[F] {
+    self.buckets[cell.bucket].words.row(cell.address)
+  }
+
+  /// A cell's count of loads and stores. Callers fail loudly rather than
+  /// wrap at `u32::MAX`.
+  #[inline(always)]
+  pub(crate) fn count_mut(&mut self, cell: CellAt) -> &mut u32 {
+    &mut self.buckets[cell.bucket].cells.row_mut(cell.address)[COUNT]
+  }
+
+  /// The cells of `width`, consecutive from address zero. The caller may
+  /// have an unused circuit width absent from this execution's type layouts.
+  pub(crate) fn width_cells(&self, width: usize) -> WidthCells<'_, F> {
+    WidthCells {
+      memory: self,
+      bucket: self.widths.binary_search(&width).ok().map(|i| &self.buckets[i]),
+    }
   }
 
   pub fn get_by_width(
@@ -129,89 +224,131 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
     width: usize,
     address: usize,
   ) -> Option<MemoryEntryRef<'_, F>> {
-    let bucket = self.widths.binary_search(&width).ok()?;
-    self.get(*self.buckets[bucket].get(address.checked_sub(self.base)?)?)
+    self.width_cells(width).get(address)
   }
 
-  /// Record indices in consecutive width-local address order. The caller may
-  /// have an unused circuit width absent from this execution's type layouts.
-  #[cfg(feature = "stark")]
-  pub(crate) fn indices_for_width(&self, width: usize) -> &[usize] {
-    self.widths.binary_search(&width).map_or(&[], |i| &self.buckets[i])
-  }
-
-  #[inline]
-  pub(crate) fn address(&self, index: usize) -> usize {
-    self.slots[index].address
-  }
-
-  #[inline]
-  fn matches(&self, index: usize, words: &[F]) -> bool {
-    let slot = &self.slots[index];
-    self.words[slot.offset..slot.offset + self.types[slot.type_id].1] == *words
-  }
-
-  // Keep this in the store/population hot loops, as QueryTable::lookup does.
-  // Otherwise returning the hash plus an optional index spills to the stack.
+  /// Whether the cell at `address` of `bucket` holds `words`. The index
+  /// holds the addresses of every width, so `address` may be past this
+  /// width's cells. A match is the answer whichever width's entry led here,
+  /// since a width holds each encoding at most once.
   #[inline(always)]
-  fn lookup(&self, words: &[F]) -> (u64, Option<usize>) {
+  fn matches(&self, bucket: usize, address: usize, words: &[F]) -> bool {
+    let bucket = &self.buckets[bucket];
+    address < bucket.cells.len() && bucket.words.row(address) == words
+  }
+
+  #[inline(always)]
+  fn hash(words: &[F]) -> u64 {
     let mut hasher = rustc_hash::FxHasher::default();
     hasher.write_usize(words.len());
     for word in words {
       word.hash(&mut hasher);
     }
-    let hash = hasher.finish();
-    let index = self
+    hasher.finish()
+  }
+
+  // Keep this in the store/population hot loops, as QueryTable::lookup does.
+  // Otherwise returning the hash plus an optional index spills to the stack.
+  #[inline(always)]
+  fn lookup(&self, bucket: usize, words: &[F]) -> (u64, Option<usize>) {
+    let hash = Self::hash(words);
+    let address = self
       .index
-      .find(hash, |&(cached, i)| cached == hash && self.matches(i, words));
-    (hash, index.map(|&(_, i)| i))
+      .find(tag(hash), |address| self.matches(bucket, address as usize, words));
+    (hash, address.map(|address| address as usize))
   }
 
   #[inline]
   pub(crate) fn address_of(&self, words: &[F]) -> Option<usize> {
-    self.lookup(words).1.map(|i| self.address(i))
+    let bucket = self.widths.binary_search(&words.len()).ok()?;
+    self.lookup(bucket, words).1
+  }
+
+  /// Start loading the index bucket [`Self::intern`] reads first for
+  /// `words`.
+  #[cfg(feature = "native")]
+  #[inline(always)]
+  pub(crate) fn prefetch_intern(&self, words: &[F]) {
+    self.index.prefetch(tag(Self::hash(words)));
+  }
+
+  /// Start loading the words and the count of `cell`.
+  #[cfg(feature = "native")]
+  #[inline(always)]
+  pub(crate) fn prefetch_cell(&self, cell: CellAt) {
+    let bucket = &self.buckets[cell.bucket];
+    crate::index::prefetch(bucket.words.row(cell.address).as_ptr());
+    crate::index::prefetch(bucket.cells.row(cell.address).as_ptr());
   }
 
   /// The only insertion path: equal encodings share one cell, regardless of
   /// nominal type, and each width's addresses form a consecutive prefix.
+  /// The index holds each cell's address, not its record index, so a
+  /// repeated store reads the index and the words only.
   #[inline]
-  pub(crate) fn intern(
+  pub(crate) fn intern<W: Word>(
     &mut self,
     type_id: usize,
     words: &[F],
-    modulus: u64,
-  ) -> Result<usize, crate::budget::StorageError> {
+    modulus: W,
+  ) -> Result<CellAt, crate::budget::StorageError> {
     debug_assert_eq!(words.len(), self.types[type_id].1);
-    let (hash, found) = self.lookup(words);
-    if let Some(index) = found {
-      return Ok(index);
-    }
-    self.budget.vector(&self.words, words.len())?;
-    self.budget.vector(&self.slots, 1)?;
-    self
-      .budget
-      .hash::<(u64, usize)>(self.index.len(), self.index.capacity())?;
-    let bucket = &mut self.buckets[self.type_buckets[type_id]];
-    self.budget.vector(bucket, 1)?;
-    let address =
-      self.base.checked_add(bucket.len()).ok_or("ROM address overflow")?;
-    if u64::try_from(address).ok().ok_or("ROM address overflow")?
-      >= modulus.min(self.end)
-    {
-      return Err("ROM exceeds field capacity".into());
+    let bucket_id = self.type_buckets[type_id];
+    let (hash, found) = self.lookup(bucket_id, words);
+    if let Some(address) = found {
+      return Ok(CellAt { bucket: bucket_id, address });
     }
     let index = self.slots.len();
-    self.index.insert_unique(hash, (hash, index), |&(hash, _)| hash);
-    let offset = self.words.len();
-    self.words.extend_from_slice(words);
-    bucket.push(index);
-    self.slots.push(Slot { address, type_id, offset, multiplicity: 0 });
-    Ok(index)
+    let entry = self.budget.row(
+      index,
+      size_of_val(words) + size_of::<Slot>() + 2 * size_of::<u32>(),
+    )?;
+    let bucket = &mut self.buckets[bucket_id];
+    let address = bucket.cells.len();
+    // Record indices are below `u32::MAX` ([`crate::budget::MAX_ROWS`]),
+    // and a width's addresses are at most its record indices.
+    if W::from(address as u64) >= modulus {
+      return Err("ROM exceeds field capacity".into());
+    }
+    bucket.words.reserve(&self.budget)?;
+    bucket.cells.reserve(&self.budget)?;
+    self.slots.reserve(&self.budget)?;
+    let replaced =
+      self.budget.index(self.index.growth(), &mut self.index_bytes)?;
+    #[allow(clippy::cast_possible_truncation)]
+    let address_u32 = address as u32;
+    #[allow(clippy::cast_possible_truncation)]
+    let type_id_u32 = type_id as u32;
+    self.index.insert(tag(hash), address_u32);
+    drop(replaced);
+    bucket.words.push(words);
+    bucket.cells.push(&[entry, 0]);
+    self.slots.push(&[Slot { address: address_u32, type_id: type_id_u32 }]);
+    Ok(CellAt { bucket: bucket_id, address })
   }
 
-  #[inline]
-  pub(crate) fn multiplicity_mut(&mut self, address: usize) -> &mut u64 {
-    &mut self.slots[address].multiplicity
+  /// Size the index for `cells` cells, so growing to them does not rehash.
+  pub(crate) fn reserve_index(
+    &mut self,
+    cells: usize,
+  ) -> Result<(), crate::budget::BudgetError> {
+    let replaced = self
+      .budget
+      .index(self.index.reservation(cells), &mut self.index_bytes)?;
+    self.index.reserve(cells);
+    drop(replaced);
+    Ok(())
+  }
+
+  /// The count of the cell with record index `index`.
+  #[cfg(test)]
+  pub(crate) fn multiplicity_mut(&mut self, index: usize) -> &mut u32 {
+    let slot = *self.slots.at(index);
+    let cell = CellAt {
+      bucket: self.type_buckets[slot.type_id as usize],
+      address: slot.address as usize,
+    };
+    self.count_mut(cell)
   }
 }
 
@@ -238,15 +375,16 @@ mod tests {
       .into_iter(),
     );
     for value in 0..1024 {
-      memory.intern(2, &[value, 0], 65537).unwrap();
-      memory.intern(3, &[], 65537).unwrap();
-      let index = memory.intern(0, &[1023 - value], 65537).unwrap();
-      assert_eq!(memory.intern(1, &[1023 - value], 65537).unwrap(), index);
+      memory.intern(2, &[value, 0], 65537u64).unwrap();
+      memory.intern(3, &[], 65537u64).unwrap();
+      let cell = memory.intern(0, &[1023 - value], 65537u64).unwrap();
+      let alias = memory.intern(1, &[1023 - value], 65537u64).unwrap();
+      assert_eq!((alias.bucket, alias.address), (cell.bucket, cell.address));
     }
     assert_eq!(memory.len(), 2049);
     let mut copy = memory.clone();
     for value in 1024..4096 {
-      copy.intern(0, &[value], 65537).unwrap();
+      copy.intern(0, &[value], 65537u64).unwrap();
     }
     // Independently scan the record: indices refer to cells, not allocations
     // or the other width's local address, even after clone/arena/hash growth.
@@ -268,13 +406,13 @@ mod tests {
     let unit = Type::Tuple { items: vec![] };
     let mut memory =
       Memory::new([(Type::Field, 1), (unit.clone(), 0)].into_iter());
-    memory.intern(0, &[7], 17).unwrap();
-    memory.intern(1, &[], 17).unwrap();
+    memory.intern(0, &[7], 17u64).unwrap();
+    memory.intern(1, &[], 17u64).unwrap();
     *memory.multiplicity_mut(0) = 3;
     *memory.multiplicity_mut(1) = 1;
     assert!(memory.get(2).is_none());
-    assert!(memory.matches(1, &[]));
-    assert!(!memory.matches(1, &[7]));
+    assert!(memory.matches(0, 0, &[]));
+    assert!(!memory.matches(0, 1, &[]));
     assert_eq!(memory.get_by_width(1, 0).unwrap().cell.value, &[7]);
     assert!(memory.get_by_width(0, 0).unwrap().cell.value.is_empty());
     let expected = vec![
@@ -296,5 +434,34 @@ mod tests {
     let mut copy = memory.clone();
     *copy.multiplicity_mut(0) = 8;
     assert_eq!(memory.get(0).unwrap().multiplicity, 3);
+  }
+
+  #[test]
+  fn wide_modulus_and_payloads_preserve_addresses_and_identity() {
+    use crate::FieldWord;
+
+    let modulus = FieldWord::from_limbs_le([0, 2, 0, 0]);
+    let low = FieldWord::from(7);
+    let high = FieldWord::from_limbs_le([7, 1, 0, 0]);
+    let mut memory = Memory::new([(Type::Field, 1)].into_iter());
+    let low_cell = memory.intern(0, &[low], modulus).unwrap();
+    let high_cell = memory.intern(0, &[high], modulus).unwrap();
+    assert_ne!(low_cell.address, high_cell.address);
+    let again = memory.intern(0, &[high], modulus).unwrap();
+    assert_eq!(
+      (again.bucket, again.address),
+      (high_cell.bucket, high_cell.address)
+    );
+    assert_eq!(memory.address_of(&[low]), Some(0));
+    assert_eq!(memory.address_of(&[high]), Some(1));
+    assert_eq!(memory.words(high_cell), &[high]);
+
+    let mut limited = Memory::new([(Type::Field, 1)].into_iter());
+    for value in 0..2 {
+      limited.intern(0, &[value], FieldWord::from(2)).unwrap();
+    }
+    assert!(limited.intern(0, &[2], FieldWord::from(2)).is_err());
+    assert_eq!(limited.len(), 2);
+    assert_eq!(limited.intern(0, &[1], FieldWord::from(2)).unwrap().address, 1);
   }
 }

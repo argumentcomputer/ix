@@ -155,6 +155,129 @@ theorem stdAxiomOk_other {env : Env md} {cvA : ConstantVal md}
   unfold stdAxiomOk
   rw [if_neg (fun e => h (Or.inl e)), if_neg (fun e => h (Or.inr e))]
 
+private def Key.isRole : Key md → Bool
+  | .role _ => true
+  | _ => false
+
+private def Expr.roleOnly : Expr md → Bool
+  | .bvar _ | .sort _ | .lit _ => true
+  | .const k _ => k.isRole
+  | .fvar _ ty => ty.roleOnly
+  | .app g a => g.roleOnly && a.roleOnly
+  | .lam t b _ | .forallE t b _ => t.roleOnly && b.roleOnly
+  | .letE t v b _ => t.roleOnly && v.roleOnly && b.roleOnly
+  | .proj s _ x => s.isRole && x.roleOnly
+
+private theorem Key.map_eq_of_isRole (f : md.Id → md'.Id) {k p : Key md} (hp : p.isRole = true) :
+    k.map f = p.map f ↔ k = p := by
+  cases p with
+  | role r =>
+    cases k <;> simp [Key.map]
+  | id _ | aux _ _ => exact nomatch hp
+
+private theorem Expr.mapKeys_eq_of_roleOnly (f : md.Id → md'.Id) :
+    ∀ {e p : Expr md}, p.roleOnly = true → (e.mapKeys f = p.mapKeys f ↔ e = p) := by
+  intro e p hp
+  induction e generalizing p with
+  | bvar i => cases p <;> simp [Expr.mapKeys]
+  | sort u => cases p <;> simp [Expr.mapKeys]
+  | fvar i ty ih =>
+    cases p with
+    | fvar j ty' =>
+      simp only [Expr.roleOnly] at hp
+      simp only [Expr.mapKeys, Expr.fvar.injEq, ih hp]
+    | _ => simp [Expr.mapKeys]
+  | const k us =>
+    cases p with
+    | const k' us' =>
+      simp only [Expr.roleOnly] at hp
+      simp only [Expr.mapKeys, Expr.const.injEq, Key.map_eq_of_isRole f hp]
+    | _ => simp [Expr.mapKeys]
+  | app g a ihg iha =>
+    cases p with
+    | app g' a' =>
+      simp only [Expr.roleOnly, Bool.and_eq_true] at hp
+      simp only [Expr.mapKeys, Expr.app.injEq, ihg hp.1, iha hp.2]
+    | _ => simp [Expr.mapKeys]
+  | lam t b m iht ihb =>
+    cases p with
+    | lam t' b' m' =>
+      simp only [Expr.roleOnly, Bool.and_eq_true] at hp
+      simp only [Expr.mapKeys, Expr.lam.injEq, iht hp.1, ihb hp.2]
+    | _ => simp [Expr.mapKeys]
+  | forallE t b m iht ihb =>
+    cases p with
+    | forallE t' b' m' =>
+      simp only [Expr.roleOnly, Bool.and_eq_true] at hp
+      simp only [Expr.mapKeys, Expr.forallE.injEq, iht hp.1, ihb hp.2]
+    | _ => simp [Expr.mapKeys]
+  | letE t v b m iht ihv ihb =>
+    cases p with
+    | letE t' v' b' m' =>
+      simp only [Expr.roleOnly, Bool.and_eq_true] at hp
+      simp only [Expr.mapKeys, Expr.letE.injEq, iht hp.1.1, ihv hp.1.2, ihb hp.2]
+    | _ => simp [Expr.mapKeys]
+  | lit l => cases p <;> simp [Expr.mapKeys]
+  | proj s i x ihx =>
+    cases p with
+    | proj s' i' x' =>
+      simp only [Expr.roleOnly, Bool.and_eq_true] at hp
+      simp only [Expr.mapKeys, Expr.proj.injEq, Key.map_eq_of_isRole f hp.1, ihx hp.2]
+    | _ => simp [Expr.mapKeys]
+
+private theorem Expr.erasePw_roleOnly : ∀ {e : Expr md}, e.roleOnly = true → e.erasePw.roleOnly = true := by
+  intro e he
+  induction e with
+  | bvar _ | sort _ | lit _ => exact he
+  | const _ _ => exact he
+  | fvar _ _ ih => exact ih he
+  | app _ _ ih1 ih2 =>
+    simp only [Expr.roleOnly, Bool.and_eq_true] at he
+    simp [Expr.erasePw, Expr.roleOnly, ih1 he.1, ih2 he.2]
+  | lam _ _ _ ih1 ih2 | forallE _ _ _ ih1 ih2 =>
+    simp only [Expr.roleOnly, Bool.and_eq_true] at he
+    simp [Expr.erasePw, Expr.roleOnly, ih1 he.1, ih2 he.2]
+  | letE _ _ _ _ ih1 ih2 ih3 =>
+    simp only [Expr.roleOnly, Bool.and_eq_true] at he
+    simp [Expr.erasePw, Expr.roleOnly, ih1 he.1.1, ih2 he.1.2, ih3 he.2]
+  | proj _ _ _ ih =>
+    simp only [Expr.roleOnly, Bool.and_eq_true] at he
+    simp [Expr.erasePw, Expr.roleOnly, he.1, ih he.2]
+
+private theorem ConstantVal.matchesPin_of_roleOnly (f : md.Id → md'.Id) {cv pin : ConstantVal md}
+    (hn : pin.name.isRole = true) (ht : pin.type.roleOnly = true) :
+    ConstantVal.matchesPin (cv.mapKeys f) (pin.mapKeys f) = ConstantVal.matchesPin cv pin := by
+  rw [Bool.eq_iff_iff]
+  simp only [ConstantVal.matchesPin, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq]
+  simp only [ConstantVal.mapKeys_name, ConstantVal.mapKeys_levelParams, ConstantVal.mapKeys_type,
+    Expr.erasePw_mapKeys, Key.map_eq_of_isRole f hn,
+    Expr.mapKeys_eq_of_roleOnly f (Expr.erasePw_roleOnly ht)]
+
+private theorem installAnchorPin?_map (f : md.Id → md'.Id) (k : Key md) :
+    installAnchorPin? (k.map f) = (installAnchorPin? k).map (ConstantVal.mapKeys f) := by
+  cases k with
+  | id _ | aux _ _ => rfl
+  | role r => cases r <;> rfl
+
+private theorem installAnchorPin?_roleOnly (r : Role) {pin : ConstantVal md}
+    (h : installAnchorPin? (.role r) = some pin) :
+    pin.name.isRole = true ∧ pin.type.roleOnly = true := by
+  cases r <;> simp only [installAnchorPin?] at h <;> cases h <;> (cases md <;> decide)
+
+theorem anchorMismatch?_isNone_mapKeys (f : md.Id → md'.Id) (cv : ConstantVal md) :
+    (anchorMismatch? (cv.mapKeys f)).isNone = (anchorMismatch? cv).isNone := by
+  unfold anchorMismatch?
+  simp only [ConstantVal.mapKeys_name, installAnchorPin?_map]
+  cases h : installAnchorPin? cv.name with
+  | none => rfl
+  | some pin =>
+    have hro : pin.name.isRole = true ∧ pin.type.roleOnly = true := by
+      cases hk : cv.name with
+      | id _ | aux _ _ => rw [hk] at h; cases h
+      | role r => rw [hk] at h; exact installAnchorPin?_roleOnly r h
+    simp only [Option.map_some, ConstantVal.matchesPin_of_roleOnly f hro.1 hro.2]
+    cases cv.matchesPin pin <;> rfl
+
 /-- **One declaration at its renaming.** An operation's declaration reads the
 operations' roles and the evidence unprompted, so it is simulated at a scope
 allowing every role (`P.All`, the renaming's); any other at any scope. -/
@@ -167,7 +290,8 @@ theorem checkDecl_sim (mode : CheckMode) (hops : OpsSim P f L ops ops') {ev : Ev
   cases d with
   | defnDecl cv value hint =>
     obtain ⟨hcv, hv⟩ := hd
-    simp only [checkDecl, Declaration.mapKeys]
+    simp only [checkDecl, Declaration.mapKeys, ConstantVal.mapKeys_name, Key.map_isCompilerTrust]
+    refine SimR.ite Iff.rfl (fun _ => SimR.throw_bind) (fun _ => ?_)
     refine SimR.bindE (checkConstantVal_sim_name hops hE hcv) (fun cvA ⟨hcvA, hname⟩ => ?_)
     refine SimR.bind (checkDefnVal_sim hops hE hcvA hv hint) (fun env2 env2' hE2 => ?_)
     simp only [ConstantVal.mapKeys_name, natOpNames_contains_map, natDivModNames_contains_map]
@@ -198,18 +322,45 @@ theorem checkDecl_sim (mode : CheckMode) (hops : OpsSim P f L ops ops') {ev : Ev
     exact SimR.ite Iff.rfl (fun _ => htail) (fun _ => SimR.throw_bind)
   | thmDecl cv value =>
     obtain ⟨hcv, hv⟩ := hd
-    simp only [checkDecl, Declaration.mapKeys]
+    simp only [checkDecl, Declaration.mapKeys, ConstantVal.mapKeys_name, Key.map_isCompilerTrust]
+    refine SimR.ite Iff.rfl (fun _ => SimR.throw_bind) (fun _ => ?_)
     exact SimR.bindE (checkConstantVal_sim hops hE hcv) (fun cvA hcvA => checkThmVal_sim hops hE hcvA hv)
   | opaqueDecl cv value =>
     obtain ⟨hcv, hv⟩ := hd
-    simp only [checkDecl, Declaration.mapKeys]
-    exact SimR.bindE (checkConstantVal_sim hops hE hcv)
-      (fun cvA hcvA => checkOpaqueVal_sim hops hE hcvA hv)
+    simp only [checkDecl, Declaration.mapKeys, ConstantVal.mapKeys_name,
+      Key.map_isCompilerTrustOpaque, Key.map_isCompilerTrustAxiom]
+    refine SimR.ite Iff.rfl (fun _ => ?_) (fun _ => ?_)
+    · refine SimR.ite (by rw [anchorMismatch?_isNone_mapKeys]) (fun _ => ?_) (fun _ => SimR.throw')
+      simp only [hE.find cv.name hcv.1, Option.isSome_map,
+        Expr.looseBVarsBounded_mapKeys, Expr.hasFvar_mapKeys,
+        ConstantVal.mapKeys_levelParams, Expr.allLevelParamsDefined_mapKeys]
+      refine SimR.ite Iff.rfl (fun _ => SimR.throw') (fun _ => ?_)
+      refine SimR.ite Iff.rfl (fun _ => SimR.throw') (fun _ => ?_)
+      refine SimR.ite Iff.rfl (fun _ => SimR.throw') (fun _ => ?_)
+      refine SimR.ite Iff.rfl (fun _ => SimR.throw') (fun _ => ?_)
+      exact SimR.bindE (checkConstantVal_sim hops hE hcv) (fun _ _ => SimR.pure' hE)
+    · refine SimR.ite Iff.rfl (fun _ => SimR.throw') (fun _ => ?_)
+      exact SimR.bindE (checkConstantVal_sim hops hE hcv)
+        (fun cvA hcvA => checkOpaqueVal_sim hops hE hcvA hv)
   | axiomDecl cv =>
-    simp only [checkDecl, Declaration.mapKeys]
+    simp only [checkDecl, Declaration.mapKeys, ConstantVal.mapKeys_name,
+      Key.map_isCompilerTrustAxiom, Key.map_isCompilerTrustOpaque]
     have hcv : cv.Good P := hd
     refine SimR.ite (by simp) (fun _ => ?_) (fun _ => ?_)
     · exact SimR.ite (by rw [quotSoundPin_ren hf hE.pre hcv]) (fun _ => SimR.pure' hE) (fun _ => SimR.throw')
+    refine SimR.ite Iff.rfl (fun _ => ?_) (fun _ => ?_)
+    · refine SimR.ite (by rw [anchorMismatch?_isNone_mapKeys]) (fun _ => ?_) (fun _ => SimR.throw')
+      simp only [hE.find cv.name hcv.1, Option.isSome_map,
+        ConstantVal.mapKeys_levelParams, ConstantVal.mapKeys_type,
+        Expr.looseBVarsBounded_mapKeys, Expr.hasFvar_mapKeys, Expr.allLevelParamsDefined_mapKeys]
+      refine SimR.ite Iff.rfl (fun _ => SimR.throw') (fun _ => ?_)
+      refine SimR.ite (by simp) (fun _ => ?_) (fun _ => ?_)
+      · exact SimR.bindE (checkConstantVal_sim hops hE hcv) (fun _ _ => SimR.pure' hE)
+      · refine SimR.ite Iff.rfl (fun _ => SimR.throw') (fun _ => ?_)
+        refine SimR.ite Iff.rfl (fun _ => SimR.throw') (fun _ => ?_)
+        refine SimR.ite Iff.rfl (fun _ => SimR.throw') (fun _ => ?_)
+        exact SimR.ite Iff.rfl (fun _ => SimR.throw') (fun _ => SimR.pure' hE)
+    refine SimR.ite Iff.rfl (fun _ => SimR.throw') (fun _ => ?_)
     refine SimR.bindE (checkConstantVal_sim hops hE hcv) (fun cvA hcvA => ?_)
     by_cases hok : stdAxiomOk env cvA = true
     · refine SimR.ite (by rw [stdAxiomOk_ren hE hcvA hok])

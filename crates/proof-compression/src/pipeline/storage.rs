@@ -1,6 +1,9 @@
 //! Stage output files: bincode metadata and atomic file publication.
 use super::fixed_cache::Shape;
-use crate::kzg::Scalar;
+use crate::kzg::{
+  curve::{Bn254, KzgCurve},
+  field::CurveScalar,
+};
 use multi_stark::plonkish::MultiStarkCircuit;
 use serde::{Serialize, de::DeserializeOwned};
 use std::{
@@ -15,18 +18,19 @@ pub(crate) type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 /// The shape and public claims of a stage's proof, which the next stage
 /// needs to rebuild the verifier.
 #[derive(serde::Serialize, serde::Deserialize)]
-pub(crate) struct Manifest {
+#[serde(bound = "")]
+pub(crate) struct Manifest<C: KzgCurve = Bn254> {
   pub(crate) widths: Vec<usize>,
   pub(crate) heights: Vec<usize>,
-  pub(crate) claims: Vec<Vec<Scalar>>,
+  pub(crate) claims: Vec<Vec<CurveScalar<C>>>,
 }
 
-impl Manifest {
+impl<C: KzgCurve> Manifest<C> {
   /// The manifest of a compiled circuit, checked against the shape of a
   /// restored fixed-preprocessing cache entry when there is one.
   pub(crate) fn for_compiled(
-    compiled: &MultiStarkCircuit<Scalar>,
-    claims: Vec<Vec<Scalar>>,
+    compiled: &MultiStarkCircuit<CurveScalar<C>>,
+    claims: Vec<Vec<CurveScalar<C>>>,
     cached: Option<&Shape>,
   ) -> Result<Self> {
     let mut manifest = Self { widths: vec![], heights: vec![], claims };
@@ -172,56 +176,169 @@ fn fadvise(fd: std::os::fd::RawFd, offset: i64, len: i64, advice: i32) {
   let _ = unsafe { posix_fadvise(fd, offset, len, advice) };
 }
 
+/// Hint to the OS that `file` will be read sequentially.
+pub(crate) fn fadvise_sequential(file: &File) {
+  #[cfg(all(
+    target_os = "linux",
+    any(
+      target_arch = "x86_64",
+      target_arch = "aarch64",
+      target_arch = "riscv64"
+    )
+  ))]
+  {
+    use std::os::fd::AsRawFd;
+    const POSIX_FADV_SEQUENTIAL: i32 = 2;
+    fadvise(file.as_raw_fd(), 0, 0, POSIX_FADV_SEQUENTIAL);
+  }
+  #[cfg(not(all(
+    target_os = "linux",
+    any(
+      target_arch = "x86_64",
+      target_arch = "aarch64",
+      target_arch = "riscv64"
+    )
+  )))]
+  let _ = file;
+}
+
+/// Available host RAM in GiB (read from `/proc/meminfo` on Linux).
+pub(crate) fn available_host_gib() -> Option<usize> {
+  #[cfg(target_os = "linux")]
+  {
+    let meminfo = fs::read_to_string("/proc/meminfo").ok()?;
+    let parse_kib = |key: &str| -> Option<usize> {
+      meminfo
+        .lines()
+        .find_map(|line| line.strip_prefix(key))?
+        .split_whitespace()
+        .next()?
+        .parse::<usize>()
+        .ok()
+    };
+    let kib = parse_kib("MemAvailable:").or_else(|| parse_kib("MemTotal:"))?;
+    Some(kib >> 20)
+  }
+  #[cfg(not(target_os = "linux"))]
+  {
+    None
+  }
+}
+
+/// Total host RAM in GiB, cached for the lifetime of the process.
+#[cfg(all(
+  target_os = "linux",
+  any(
+    target_arch = "x86_64",
+    target_arch = "aarch64",
+    target_arch = "riscv64"
+  )
+))]
+fn total_host_gib() -> Option<usize> {
+  static TOTAL: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
+  *TOTAL.get_or_init(|| {
+    let meminfo = fs::read_to_string("/proc/meminfo").ok()?;
+    let kib = meminfo
+      .lines()
+      .find_map(|line| line.strip_prefix("MemTotal:"))?
+      .split_whitespace()
+      .next()?
+      .parse::<usize>()
+      .ok()?;
+    Some(kib >> 20)
+  })
+}
+
+/// Whether `fadvise_dontneed` should evict page-cache entries. On hosts with
+/// `< 192 GiB` total RAM (or when `IX_KZG_DISK_SPILL` is explicitly enabled),
+/// evicting prevents multi-gigabyte cache scans from competing with prover
+/// working sets; on high-RAM hosts keeping the fixed-preprocessing cache hot in
+/// page cache avoids redundant disk I/O across cosets and stages.
+#[cfg(all(
+  target_os = "linux",
+  any(
+    target_arch = "x86_64",
+    target_arch = "aarch64",
+    target_arch = "riscv64"
+  )
+))]
+fn should_evict_page_cache() -> bool {
+  const PAGE_CACHE_KEEP_RAM_GIB: usize = 192;
+  let explicit_spill = matches!(
+    std::env::var("IX_KZG_DISK_SPILL").as_deref(),
+    Ok("1" | "true" | "yes")
+  );
+  explicit_spill
+    || total_host_gib().is_none_or(|gib| gib < PAGE_CACHE_KEEP_RAM_GIB)
+}
+
+/// Hint to the OS that `[offset, offset + len)` of `file` (`len == 0` for the
+/// whole file) can be evicted from the page cache to bound resident memory.
+pub(crate) fn fadvise_dontneed(file: &File, offset: u64, len: u64) {
+  #[cfg(all(
+    target_os = "linux",
+    any(
+      target_arch = "x86_64",
+      target_arch = "aarch64",
+      target_arch = "riscv64"
+    )
+  ))]
+  {
+    if !should_evict_page_cache() {
+      return;
+    }
+    use std::os::fd::AsRawFd;
+    const POSIX_FADV_DONTNEED: i32 = 4;
+    if let (Ok(offset), Ok(len)) = (i64::try_from(offset), i64::try_from(len)) {
+      fadvise(file.as_raw_fd(), offset, len, POSIX_FADV_DONTNEED);
+    }
+  }
+  #[cfg(not(all(
+    target_os = "linux",
+    any(
+      target_arch = "x86_64",
+      target_arch = "aarch64",
+      target_arch = "riscv64"
+    )
+  )))]
+  let _ = (file, offset, len);
+}
+
+/// Best-effort host allocator purge at stage and partition boundaries so
+/// released multi-gigabyte arenas return to the OS promptly.
+pub(crate) fn release_host_memory() {
+  #[cfg(all(target_os = "linux", target_env = "gnu"))]
+  {
+    use std::ffi::{c_char, c_void};
+    unsafe extern "C" {
+      fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+      fn malloc_trim(pad: usize) -> i32;
+    }
+    // RTLD_DEFAULT is NULL on glibc Linux. If the embedding binary links
+    // mimalloc dynamically, ask it to purge abandoned arenas first.
+    let mi_collect =
+      unsafe { dlsym(std::ptr::null_mut(), c"mi_collect".as_ptr()) };
+    if !mi_collect.is_null() {
+      // SAFETY: `mi_collect` has C signature `void mi_collect(bool force)`.
+      let collect: unsafe extern "C" fn(bool) =
+        unsafe { std::mem::transmute(mi_collect) };
+      unsafe { collect(true) };
+    }
+    let _ = unsafe { malloc_trim(0) };
+  }
+}
+
 /// Stream-hash a file with BLAKE3 using a bounded buffer so multi-gigabyte
 /// cache files are never memory-mapped into `VmRSS`/`VmHWM`.
 pub(crate) fn blake3_file(path: &Path) -> io::Result<[u8; 32]> {
   const CHUNK_BYTES: usize = 16 << 20;
   const RAYON_THRESHOLD: usize = 128 << 10;
-  #[cfg(all(
-    target_os = "linux",
-    any(
-      target_arch = "x86_64",
-      target_arch = "aarch64",
-      target_arch = "riscv64"
-    )
-  ))]
-  const POSIX_FADV_SEQUENTIAL: i32 = 2;
-  #[cfg(all(
-    target_os = "linux",
-    any(
-      target_arch = "x86_64",
-      target_arch = "aarch64",
-      target_arch = "riscv64"
-    )
-  ))]
-  const POSIX_FADV_DONTNEED: i32 = 4;
 
   let mut file = File::open(path)?;
-  #[cfg(all(
-    target_os = "linux",
-    any(
-      target_arch = "x86_64",
-      target_arch = "aarch64",
-      target_arch = "riscv64"
-    )
-  ))]
-  let fd = {
-    use std::os::fd::AsRawFd;
-    let fd = file.as_raw_fd();
-    fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
-    fd
-  };
+  fadvise_sequential(&file);
   let mut hasher = blake3::Hasher::new();
   let mut buffer = vec![0u8; CHUNK_BYTES];
-  #[cfg(all(
-    target_os = "linux",
-    any(
-      target_arch = "x86_64",
-      target_arch = "aarch64",
-      target_arch = "riscv64"
-    )
-  ))]
-  let mut offset: i64 = 0;
+  let mut offset: u64 = 0;
   loop {
     let mut filled = 0;
     while filled < buffer.len() {
@@ -240,16 +357,8 @@ pub(crate) fn blake3_file(path: &Path) -> io::Result<[u8; 32]> {
     } else {
       hasher.update(&buffer[..filled]);
     }
-    #[cfg(all(
-      target_os = "linux",
-      any(
-        target_arch = "x86_64",
-        target_arch = "aarch64",
-        target_arch = "riscv64"
-      )
-    ))]
-    if let Ok(len) = i64::try_from(filled) {
-      fadvise(fd, offset, len, POSIX_FADV_DONTNEED);
+    if let Ok(len) = u64::try_from(filled) {
+      fadvise_dontneed(&file, offset, len);
       offset = offset.saturating_add(len);
     }
     if filled < buffer.len() {

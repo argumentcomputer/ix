@@ -6,7 +6,7 @@
   "constraints": 4340068,
   "domain": 8388608,
   "commitments": 1,
-  "inner_schema_sha256": "b86e203bcc2dcd87a67c1e325e24328e12534676ada7ea9602ac319568139c29",
+  "inner_schema_sha256": "a48981ae270ff26a303c1e55fa0c385955cb035ffe59f49489c7179fff0e69d8",
   "circuit_sha256": "03b7949ca0e45fdb82c583a0c313d1eb8787ced42d74ad1ec1d81cce3b16a6cd",
   "gnark": "262cf453c107d147a228b6b7418c5cf791c3b79b",
   "files": {

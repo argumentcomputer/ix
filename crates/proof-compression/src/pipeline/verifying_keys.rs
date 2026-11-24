@@ -9,10 +9,13 @@ use super::{
   statement,
   wrap::{PreparedVerifyingKey, VerifyingKey},
 };
-use crate::kzg::{Srs, VerifierParams};
+use crate::kzg::{
+  Srs, VerifierParams,
+  curve::{Curve, KzgCurve},
+};
 
 /// Version of the bundled verifying keys and the layout they were derived for.
-const VERSION: &str = "0.3";
+const VERSION: &str = "0.5";
 
 /// Log2 of the first KZG stage's partition height the keys were derived for.
 pub(super) const FIRST_LOG_HEIGHT: usize = 24;
@@ -20,62 +23,62 @@ pub(super) const FIRST_LOG_HEIGHT: usize = 24;
 /// Serialized aggregation backend key whose roots the layout normalizes: the
 /// formal aggregation program under `aiur::trace::stark::Parameters::DEFAULT`.
 const ROOT_VK_BLAKE3: &str =
-  "f6d00e0451de46e218aa17a93924ae8714d87c7ebe61301470fccc55b409b44e";
+  "d3813ae554af0aa6a24c5c72c796e17403756aa1f9cabbb08519ed4d767c9f13";
 /// The root layout (`.ixl`, see `FixedRoot`) and its content address.
 const LAYOUT: &[u8] =
-  include_bytes!("../../verifying-keys/0.3/root-layout.ixl");
+  include_bytes!("../../verifying-keys/0.5/root-layout.ixl");
 const LAYOUT_BLAKE3: &str =
-  "d5817b2acf708e901d81cf27dff53a3bfe2e0be8704fd023f3c394484afe0485";
+  "035f3b31e438becfe9294b792e7b0cb9aef8a10d073216731ac171c10cdd5748";
 
 /// Backend and entrypoint words of the aggregation program, the statement
 /// prefix every compressed claim of this release carries
 /// ([`statement::backend_prefix`] of the IxVM and aggregation keys).
 pub(super) const STATEMENT_PREFIX: [u64; 10] = [
-  1, 0, 2745045187, 3484230291, 1932183560, 3896061441, 1995940351, 2501828570,
-  1794737524, 3355008152,
+  1, 0, 2736370005, 1983549104, 896032380, 1564468090, 1137178757, 4223943773,
+  1723211272, 3024343524,
 ];
 
 pub(super) const RECURSIVE_VK: &[u8] =
-  include_bytes!("../../verifying-keys/0.3/recursive-vk.bin");
+  include_bytes!("../../verifying-keys/0.5/recursive-vk.bin");
 const RECURSIVE_VK_BLAKE3: &str =
-  "25e785599ee246a08052bd15cae3ca8bef9501b181f886d8e8e7bf2d23e90fbe";
+  "adb2415c05975b848ad38f123a5e49d718ad6a63a094d2e852634da9923e1aa5";
 /// The identifier a recursive KZG packet begins with.
 pub(super) const RECURSIVE_VK_ID: &str =
-  "140532a4f04e5537f03c613ca622cf311f7c0f15c73d1537465375fa041056d4";
+  "07b533959666cf26b9ed44baeda8a2c26bc839591b329c2ccc3d2f8622976914";
 
 /// Identity of the first stage's FRI verifier plan for the bundled backend
 /// and layout, half of its fixed-cache identity. Independent of the KZG setup.
 pub(super) const FIRST_PLAN_ID: &str =
-  "2f29328ca018b01d1a17cb7b69eacb19c460b92d35478dd4d477e6b9fac0c106";
+  "72e4cff851093d7dbb7836324b6f3ccde0f0bfcea8d90609359f8565aa25a224";
 /// Identity of the recursive stage's verifier frontend over the first stage
 /// under Ignition, half of its fixed-cache identity.
 pub(super) const RECURSIVE_FRONTEND_ID: &str =
-  "764d2baf9b01c0956c9f11e4f9c7ba61032a8984b0e202bee929822e8520b3d8";
+  "d82bb2ffb899fa22c711582b8dc4a92b01224d7d3e6f4851465980f0f41838e7";
 
 #[cfg(any(feature = "plonk", test))]
 pub(super) const PLONK_VK: &[u8] =
-  include_bytes!("../../verifying-keys/0.3/plonk-verifying-key.bin");
+  include_bytes!("../../verifying-keys/0.5/plonk-verifying-key.bin");
 /// SHA-256 of the gnark PLONK verifying key, which a PLONK packet begins with.
 #[cfg(any(feature = "plonk", test))]
 pub(super) const PLONK_VK_SHA256: &str =
-  "b12a6c7ffda3adcef019c3ce100fc1d03a66097e40987225a1818cafed762f43";
+  "ae9638f047b26990e810bf46dc664d2cc1fd502e8f09e01fc9fb3b192bca2c25";
 
 /// SHA-256 of the exported recursive verifier description that both final
 /// circuits prove.
 pub(super) const FINAL_SCHEMA_SHA256: &str =
-  "28f594d120a90c52c5207799461e9e3aa44d24803d3a5f2c35a5ca7bb67e7d35";
+  "cf4a1ba84d81563a5c42b71562071727795f6df298befbf94be515f81da80139";
 
 /// The release Groth16 key comes from a development setup: whoever ran it can
 /// forge proofs, so it verifies only when development setups are accepted.
 #[cfg(any(feature = "groth16", test))]
 pub(super) const GROTH16_VK: &[u8] = include_bytes!(
-  "../../verifying-keys/0.3/groth16-development-verifying-key.bin"
+  "../../verifying-keys/0.5/groth16-development-verifying-key.bin"
 );
 /// SHA-256 of the gnark Groth16 verifying key, which a Groth16 packet begins with.
 pub(super) const GROTH16_VK_SHA256: &str =
-  "d8cb6cfd97e5712471cd443b243e109560b018eef454208e69d6dae861cf994e";
+  "3e6bb1fffcb17910c573c95459344f6161d6f17357dbd79fbca7476b1bafbed9";
 pub(super) const GROTH16_CIRCUIT_SHA256: &str =
-  "d717c2ffdaa9b40dbfe9a53877a5d77d4e33c8ea7c5d8d7de4e9e5f125549c0e";
+  "2301c077a77064c77bb87f807397d0d2f8765b03aba10772050729c334bf4161";
 
 /// The setup class of the release Groth16 key, if `allow_development` admits it.
 pub(super) fn groth16_setup(allow_development: bool) -> Result<SetupClass> {
@@ -114,7 +117,8 @@ pub(super) fn check_release_prefix(words: &statement::Statement) -> Result<()> {
     return Err(
       format!(
         "the statement's aggregation backend differs from the one verifying \
-         keys {VERSION} were derived for"
+         keys {VERSION} were derived for: prefix {:?}",
+        &words[..10]
       )
       .into(),
     );
@@ -159,7 +163,7 @@ fn recursive_vk() -> Result<PreparedVerifyingKey> {
   Ok(prepared)
 }
 
-/// Verify a recursive KZG packet of `claim` under the release key.
+/// Verify a BN254 recursive KZG packet of `claim` under the release key.
 pub(super) fn verify_recursive(
   packet: &[u8],
   claim: &[u8],
@@ -176,10 +180,21 @@ pub(super) fn verify_recursive(
   Ok(SetupClass::Ignition)
 }
 
+/// Reject BLS12-381 recursive KZG packets when no explicit `--vk` is supplied.
+pub(super) fn verify_recursive_bls12_381(
+  packet: &[u8],
+  _claim: &[u8],
+) -> Result<SetupClass> {
+  let _id = packet.get(..32).ok_or("truncated compressed proof")?;
+  Err(
+    "BLS12-381 recursive KZG proofs have no bundled release verifying key yet; verify with --vk <vk.bin> --vk-digest <blake3>".into(),
+  )
+}
+
 /// Verify a recursive KZG packet under a verifying key the caller supplies
 /// with an independently trusted digest, against an independently expected
 /// statement.
-pub(super) fn verify_with_vk(
+pub(super) fn verify_with_vk_for<C: KzgCurve>(
   packet: &[u8],
   claim: &[u8],
   expected: &statement::Statement,
@@ -193,7 +208,7 @@ pub(super) fn verify_with_vk(
     );
   }
   statement::bind_claim(claim, expected)?;
-  let vk = VerifyingKey::from_bytes(vk)?;
+  let vk = VerifyingKey::<C>::from_bytes(vk)?;
   let setup = SetupClass::of(&vk.verifier_params()?);
   vk.check_setup_class(setup)?;
   if setup == SetupClass::Development && !allow_development {
@@ -203,21 +218,46 @@ pub(super) fn verify_with_vk(
   Ok(setup)
 }
 
+#[cfg(test)]
+pub(super) fn verify_with_vk(
+  packet: &[u8],
+  claim: &[u8],
+  expected: &statement::Statement,
+  vk: &[u8],
+  trusted_digest: &[u8; 32],
+  allow_development: bool,
+) -> Result<SetupClass> {
+  verify_with_vk_for::<crate::kzg::curve::Bn254>(
+    packet,
+    claim,
+    expected,
+    vk,
+    trusted_digest,
+    allow_development,
+  )
+}
+
 /// Whether a compression of a `root_vk` root under `setup` must produce the
-/// bundled keys: the root is this version's backend and the setup is Ignition.
-pub(super) fn bundled_for(root_vk: &[u8], setup: &super::SetupConfig) -> bool {
-  blake3::hash(root_vk).to_hex().as_str() == ROOT_VK_BLAKE3
+/// bundled keys: BN254, this version's backend, and Ignition.
+pub(super) fn bundled_for(
+  curve: Curve,
+  root_vk: &[u8],
+  setup: &super::SetupConfig,
+) -> bool {
+  curve == Curve::Bn254
+    && blake3::hash(root_vk).to_hex().as_str() == ROOT_VK_BLAKE3
     && setup.class() == SetupClass::Ignition
 }
 
-/// A recursive key proved for this version's backend under Ignition must be
-/// the bundled key.
+/// A recursive key proved for BN254 and this version's backend under Ignition
+/// must be the bundled key.
 pub(super) fn check_recursive_key(
+  curve: Curve,
   root_vk: &[u8],
   setup: &super::SetupConfig,
   vk: &[u8],
 ) -> Result<()> {
-  if bundled_for(root_vk, setup) && vk != RECURSIVE_VK {
+  if bundled_for(curve, root_vk, setup) && vk != RECURSIVE_VK {
     return Err(
       format!("recursive verifying key differs from version {VERSION}'s")
         .into(),
@@ -229,10 +269,14 @@ pub(super) fn check_recursive_key(
 /// Check a compression's statement belongs to the release when its recursive
 /// key is the release key.
 pub(super) fn check_statement(
+  curve: Curve,
   id: &[u8],
   words: &statement::Statement,
 ) -> Result<()> {
-  if id == decode(RECURSIVE_VK_ID)? && words[..10] != STATEMENT_PREFIX {
+  if curve == Curve::Bn254
+    && id == decode(RECURSIVE_VK_ID)?
+    && words[..10] != STATEMENT_PREFIX
+  {
     return Err(format!(
       "the version {VERSION} key compresses a different aggregation program than this build's backend"
     )

@@ -113,7 +113,7 @@ def cases : Except String (Array Builder) := do
     "user axioms: check accepts an assumed bad axiom" env (.check ctx target (some assumed.root)) trees
   return out
 
-/-! ## A whole environment with a user axiom, on the ordinary and the distributed route
+/-! ## A whole environment with a user axiom
 
 The environment holds `axiom ax : Prop` and `def c : Type := Prop` under the default role
 table's binding (its bytes only: the claims assume the binding, as `--assume-binding` makes
@@ -121,14 +121,10 @@ them). Its `checkEnv` claim names the environment's user-axiom tree beside its o
 and its run checks the owned leaves on the record that runs the claim
 (`KernelClaim::walk_leaves_transitive`).
 
-- The ordinary witness (`buildClaimWitness`) carries both trees, and IxVM accepts it.
-- The distributed route (`ix prove --distributed`) refuses the environment
-  (`Ix.Cli.FormalAiur.distributedClaim`): no call is left for the other workers' records.
-  Through the `ix` binary, the refusal comes before any worker starts: the prover host it
-  names does not exist.
-- The same environment without the axiom: the first distributed worker's input
-  (`distributedStreams`), the only worker owning every constant, carries the tree the
-  ordinary witness carries, and IxVM accepts it, through `check_owned`. -/
+- With the user axiom: the ordinary witness (`buildClaimWitness`) carries both trees, and
+  IxVM accepts it through `walk_leaves_transitive`.
+- Without the user axiom: the ordinary witness carries only the owned tree, and IxVM accepts
+  it through `check_owned`. -/
 
 /-- `axiom ax : Prop` (with `withAxiom`) and `def c : Type := Prop`, bound to the default
 role table. -/
@@ -137,11 +133,6 @@ def wholeEnvironment (withAxiom : Bool) : Except String Ixon.Env := do
   let env := if withAxiom then (store env (axiomOf (.sort 0) #[.zero]) (hint := false)).1 else env
   let bytes ← Ix.Kernel.Reader.defaultTableBytes
   withDefaultRoleBinding { env with roleBinding := some { address := Address.blake3 bytes, bytes } }
-
-/-- The message the distributed route refuses an environment with user axioms with. -/
-def distributedRefusal : String := "--distributed does not support an environment with user axioms"
-
-private def mentions (text s : String) : Bool := (text.splitOn s).length > 1
 
 /-- The keys of `io` on channel 1, where a witness carries assumption trees. -/
 private def treeKeys (io : Aiur.IOBuffer) : Array (Array Aiur.G) :=
@@ -163,67 +154,28 @@ def wholeEnvironmentCases : Except String (Array Builder) := do
   unless (treeKeys ordinary.inputIOBuffer).contains (treeKey tree.root) &&
       (treeKeys ordinary.inputIOBuffer).contains (treeKey axRoot) do
     throw "the ordinary witness lacks the owned or the axioms tree"
-  match Ix.Cli.FormalAiur.distributedClaim env true with
-  | .ok _ => throw "the distributed route made a claim over an environment with a user axiom"
-  | .error e =>
-    unless mentions e distributedRefusal do
-      throw s!"the distributed route refused the environment for another reason: {e}"
-  -- without the axiom: one worker owning every constant
+  -- without the axiom: only the owned tree is carried
   let plain ← wholeEnvironment false
-  let (dClaim, dTree) ← Ix.Cli.FormalAiur.distributedClaim plain true
-  let owned := claimableConsts plain
-  let streams ← Ix.Cli.FormalAiur.distributedStreams plain dClaim dTree
-    (Ix.Cli.FormalAiur.distributedScope plain owned) true
-  let plainOrdinary ← buildClaimWitness plain dClaim (({} : Std.HashMap _ _).insert dTree.root dTree)
-  unless treeKeys streams == treeKeys plainOrdinary.inputIOBuffer &&
-      treeKeys streams == #[treeKey dTree.root] do
-    throw "the first distributed worker does not carry the trees the ordinary witness carries"
-  let digest := packedDigestKey (Address.blake3 (Ix.Claim.ser dClaim))
+  let plainCtx ← Ix.ClaimContext.ofEnv plain true
+  unless plainCtx.axioms.isNone do
+    throw "the plain environment unexpectedly carried user axioms"
+  let some plainTree := envCanonicalTree plain | throw "the plain environment has no canonical tree"
+  let plainClaim := Ix.Claim.checkEnv plainCtx plainTree.root none
+  let plainOrdinary ← buildClaimWitness plain plainClaim
+    (({} : Std.HashMap _ _).insert plainTree.root plainTree)
+  unless treeKeys plainOrdinary.inputIOBuffer == #[treeKey plainTree.root] do
+    throw "the plain witness carried unexpected channel-1 trees"
   return #[
     fun _ => pure { label := "whole environment: the ordinary witness of one user axiom and one definition",
                     accept := true, exercises := some "KernelClaim::walk_leaves_transitive",
                     witness := ordinary },
-    fun _ => pure { label := "whole environment without the axiom: the first distributed worker, the only one",
+    fun _ => pure { label := "whole environment without the axiom: ordinary witness",
                     accept := true, exercises := some "IxVMCompat::check_owned",
-                    witness := { funcName := `verify_claim, input := digest, inputIOBuffer := streams } }]
-
-/-- `ix prove --distributed` on the environment with the user axiom, through the `ix`
-binary: refused with `distributedRefusal`, before it starts a prover host. Returns whether
-it was. -/
-def distributedCli : IO Bool := do
-  let ix : System.FilePath := ".lake" / "build" / "bin" / "ix"
-  unless ← ix.pathExists do
-    IO.eprintln s!"[ixvm-user-axioms] {ix} missing: run `lake build ix` first"
-    return false
-  IO.FS.withTempDir fun dir => do
-    let ixe := dir / "axiom.ixe"
-    IO.FS.writeBinFile ixe (← IO.ofExcept (Ixon.serEnv (← IO.ofExcept (wholeEnvironment true))))
-    let manifest := dir / "one.ixes"
-    let shard ← IO.Process.output {
-      cmd := ix.toString
-      args := #["shard", ixe.toString, "--shards", "1", "--out", manifest.toString] }
-    unless shard.exitCode == 0 do
-      IO.eprintln s!"[ixvm-user-axioms] ix shard failed: {shard.stderr}"
-      return false
-    let prover := dir / "no-prover"
-    let out ← IO.Process.output {
-      cmd := ix.toString
-      args := #["prove", "--distributed", "--exec-only", "--assume-binding", "--no-index",
-        "--max-ram", "8", "--ixe", ixe.toString, "--ixes", manifest.toString]
-      env := #[("IX_PROVER_HOST", some prover.toString)] }
-    let text := out.stdout ++ out.stderr
-    if out.exitCode == 0 || !mentions text distributedRefusal then
-      IO.eprintln s!"[ixvm-user-axioms] ix prove --distributed: exit {out.exitCode}, without \
-        the refusal of user axioms: {text.trimAscii}"
-      return false
-    IO.println "[ixvm-user-axioms] ix prove --distributed refuses the environment with a user axiom"
-    return true
+                    witness := plainOrdinary }]
 
 def run : IO UInt32 := do
-  let cli ← distributedCli
-  let code ← Tests.Ix.IxVM.runCases "ixvm-user-axioms"
+  Tests.Ix.IxVM.runCases "ixvm-user-axioms"
     ((← IO.ofExcept cases) ++ (← IO.ofExcept wholeEnvironmentCases))
-  return if code == 0 && cli then 0 else 1
 
 end Tests.Ix.IxVM.UserAxioms
 

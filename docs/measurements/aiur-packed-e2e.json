@@ -1,0 +1,2110 @@
+{
+ "format": "ix-aiur-packed-e2e-v1",
+ "date_utc": "2026-11-14",
+ "scope": "Existing aggregate root -> packed CompressGL (SHPLONK) -> 5x CompressBNPacked::chain_v1, CUDA, Ignition 2^26 prefix. Native verification per stage; no terminal/PLONK.",
+ "command": "IX_KZG_SRS=<ignition srs.bin> IX_KZG_CUDA_SRS_CACHE=1 LD_PRELOAD=libcuda.so.1 LD_LIBRARY_PATH=<multi-stark cuda out> target/cuda/release/examples/compress_gl_packed_chain target/compress-gl/compress-gl.ixa target/compress-wrap/init-raw-root 55f0b8b0... target/packed-bn-stages/gl-chain/chain.ixa 26 5 target/e2e-packed/init --lookup-budget 4 --quotient-degree 4 --streaming --gl-shards 2 --shards 2 --shard-profile target/packed-bn-stages/i3-shard2/stage-3/report.json",
+ "worktree": "/home/sam/repos/ix.aiur-compression-active (HEAD 4e27c5fcd + uncommitted WIP); binary up to date (cargo build: no recompilation)",
+ "srs": "/home/sam/repos/ix.ci-merge-tests/target/aiur-compression-stages-run/params/bn254-ignition-main-197/srs.bin (4,295,001,412 B)",
+ "artifacts": {
+  "compress_gl": {
+   "path": "target/compress-gl/compress-gl.ixa",
+   "blake3": "a05f4ee78f024e8aebfbbdd31a9c4ac9a974a6bcd1cb615b9bdd2eeea71b97ab"
+  },
+  "chain": {
+   "path": "target/packed-bn-stages/gl-chain/chain.ixa",
+   "blake3": "85b20c2b0649c24a5fd25de86e9ab7e6547acf7107914399477b1264cb6d9df6"
+  },
+  "shard_profile_blake3": "ce6ca16e042a06a6bfd3eed1b2cdfe135704df486b43058f6ae678a5ab6b45eb",
+  "gl_key_blake3": "86864e70e2b49494fca3d1f85389a401b1c902402609a33ecde2b7eb2f0f60a9",
+  "gl_key_bytes": 408685,
+  "bn_key_blake3": "63a3ce917cb40e80f44ea407e21a4e8acb4c9e96b9027a9a0888394135cce681",
+  "bn_key_bytes": 442749,
+  "policy_blake3": "84e826407654f915bcc16ccae6042dcdd2ac5f040459196859daeea589f2af85",
+  "bn_copies": [
+   [
+    "KzgIO::read_words",
+    2
+   ],
+   [
+    "KzgGroup_cold_c",
+    2
+   ]
+  ],
+  "gl_copies": [
+   [
+    "verifier_group_05",
+    2
+   ],
+   [
+    "SystemDeserialize::read_vk_u8",
+    2
+   ],
+   [
+    "verifier_group_19",
+    2
+   ],
+   [
+    "verifier_group_20",
+    2
+   ],
+   [
+    "Goldilocks::gl_add",
+    2
+   ],
+   [
+    "verifier_group_28",
+    2
+   ],
+   [
+    "Goldilocks::gl_mul",
+    2
+   ],
+   [
+    "Pcs::rows_pop",
+    2
+   ],
+   [
+    "verifier_group_38",
+    2
+   ]
+  ]
+ },
+ "roots": {
+  "init": {
+   "dir": "/home/sam/repos/ix.aiur-compression-active/target/compress-wrap/init-raw-root",
+   "format": "ix-raw-root-export-v1 (export_root extract)",
+   "aggr_artifact_blake3": "7d687ca0a7815bb5c4a68b94276fe797bb3a9f909b2da795267ac8ec9184c4d1",
+   "ixvm_artifact_blake3": "5bce5f797cd03bf76f6e70404f046baf7ecb90f7b9a76995b6ee8c62d31a1b08",
+   "root_vk": {
+    "blake3": "55f0b8b04acdc211e249b538adcdab95fec15de6c9504ba875ffb52b1f1f8e86",
+    "bytes": 273337
+   },
+   "root_claims": {
+    "blake3": "c67d7ce5ac847836c4962eef2eadc71de89c08577e63d25f1982a145c09a6908",
+    "bytes": 160
+   },
+   "root_proof": {
+    "blake3": "552154c3622f5c737366dbe379a7b7e97560f20865410d142d65fc58bec64399",
+    "bytes": 5438702
+   },
+   "ixon_proof_blake3": "2b3ead368ccd105d7ff052c1754e3e550ad7267e7f939be70f25d4bcfa0dce11",
+   "ix_claim_blake3": "451e99430d55c5f081464828b2a58ca3203616bc90de6c6a47f9d450997cd08f",
+   "shards": 1
+  },
+  "mathlib": {
+   "status": "unavailable: no Mathlib aggregate root proof exists in a current format",
+   "searched": [
+    "target/ of ix.aiur-compression-active, ix.aiur-compression-stages, ix.ci-merge-tests, ix and other ix.* worktrees",
+    "~/.ix/cache (aggregate: 3 Init-era entries, 15-22 MB, Nov 12)",
+    "/opt/dlami/nvme/ixbench{,-cimt} (Init/InitStd/nat only)",
+    "/home/sam/nvme-save"
+   ],
+   "closest": "Mathlib root 67965d94... proven 2026-11-05 at rev fadec3d64 (nvme-save/results/pr678-int/mathlib-stack): 2:04:27 wall, 205.1 GB peak RSS (MemoryMax 235G), verify 4:44; its proof cache was not kept and it predates the current aggr artifact. Hand-written compress of that root: 297 s, 160.7 GB peak RSS.",
+   "inputs_available": {
+    "ixe": "/home/sam/nvme-save/inputs/mathlib/mathlib.ixe (2,349,530,307 B, compiled 2026-11-04, 783,115 constants)",
+    "ixes": "/home/sam/nvme-save/inputs/mathlib/mathlib-230.ixes (38,867,866 B)"
+   },
+   "to_produce": [
+    "(if the Ixon format changed since 2026-11-04) recompile: ix compile Benchmarks/Compile/CompileMathlib.lean (~9 min, 66 GB RSS) and ix shard --max-ram 230",
+    "ix prove --ixe mathlib.ixe --ixes mathlib.ixes --trace-shards --lanes 1 --max-ram 230 --aiur-artifact .lake/aiur/ixvm-5bce5f79....ixa --aggr-artifact .lake/aiur/stark-export-7d687ca0....ixa (same pins as the Init root so the CompressGL root-key pin path is comparable); root must be one trace shard (wrap the root if not)",
+    "export_root expected Mathlib <manifest> <out>; export_root extract <ixvm pkg> 5bce5f79... <aggr pkg> 7d687ca0... <proof addr> <expected ix-claim> <out> <store>",
+    "then the same compress_gl_packed_chain command with the Mathlib root dir and its root-vk blake3"
+   ],
+   "estimated_cost": {
+    "prove_wall_hours": "2.0-2.8 (Nov 5: 2.07 h; current fresh Init prove 591 s vs 433-453 s on Nov 5)",
+    "prove_peak_rss_gb": "~205 with --max-ram 230: needs the machine otherwise idle (exceeds the >=150 GB-available rule only if other agents hold memory)",
+    "verify_minutes": 5,
+    "packed_compressgl_peak_rss_gb": "unknown; Init 110 GB; scales with the root proof's size/shape"
+   }
+  }
+ },
+ "init": {
+  "gl": {
+   "seconds": {
+    "execution": 44.594,
+    "key": 0.451,
+    "pcs_commit": 22.758,
+    "pcs_open": 16.222,
+    "prove": 53.962,
+    "trace": 27.796,
+    "verify": 0.007
+   },
+   "stage_seconds_exec_key_trace_prove": 126.802,
+   "peak_rss_bytes": 109755691008,
+   "proof_wire_bytes": 206797,
+   "proof_blake3": "162c3133ad21a8ad7936c6156bb8870b9f77d97c8fd4782eba3d231d8a13f3a1",
+   "points": 87,
+   "commitment_points": {
+    "lookup": 22,
+    "main": 42,
+    "quotient": 21
+   },
+   "committed_columns": {
+    "lookup": 621,
+    "main": 4436,
+    "quotient": 238
+   },
+   "evaluations_requested": 6140,
+   "extra_values": 0,
+   "cells": {
+    "active_circuits": 83,
+    "instructions": 3926448954,
+    "main_cells_padded": 1470770778,
+    "main_cells_padded_sharded": 1209118298,
+    "main_cells_unpadded": 1022134854,
+    "max_height": 8388608,
+    "quotient_degree": 4
+   },
+   "shards": [
+    [
+     "verifier_group_05",
+     [
+      65536,
+      32768
+     ]
+    ],
+    [
+     "SystemDeserialize::read_vk_u8",
+     [
+      262144,
+      16384
+     ]
+    ],
+    [
+     "verifier_group_19",
+     [
+      524288,
+      262144
+     ]
+    ],
+    [
+     "verifier_group_20",
+     [
+      524288,
+      131072
+     ]
+    ],
+    [
+     "Goldilocks::gl_add",
+     [
+      4194304,
+      16384
+     ]
+    ],
+    [
+     "verifier_group_28",
+     [
+      524288,
+      65536
+     ]
+    ],
+    [
+     "Goldilocks::gl_mul",
+     [
+      2097152,
+      524288
+     ]
+    ],
+    [
+     "Pcs::rows_pop",
+     [
+      524288,
+      32768
+     ]
+    ],
+    [
+     "verifier_group_38",
+     [
+      1048576,
+      524288
+     ]
+    ]
+   ],
+   "native_accepts": true,
+   "native_rejects_changed_output": true,
+   "shape": [
+    [
+     "CompressWrap::verify_root",
+     1
+    ],
+    [
+     "verifier_group_00",
+     524288
+    ],
+    [
+     "verifier_group_01",
+     16384
+    ],
+    [
+     "verifier_group_02",
+     16384
+    ],
+    [
+     "Blake3::compress",
+     1048576
+    ],
+    [
+     "Blake3::compress_chunks",
+     524288
+    ],
+    [
+     "verifier_group_03",
+     2048
+    ],
+    [
+     "verifier_group_04",
+     32768
+    ],
+    [
+     "Blake3::pad_block",
+     2048
+    ],
+    [
+     "verifier_group_05",
+     131072
+    ],
+    [
+     "verifier_group_06",
+     131072
+    ],
+    [
+     "verifier_group_07",
+     4096
+    ],
+    [
+     "verifier_group_22",
+     32768
+    ],
+    [
+     "StarkVerifier::b8_onto",
+     32768
+    ],
+    [
+     "MultiStark::verify_multi_stark_proof",
+     1
+    ],
+    [
+     "verifier_group_08",
+     65536
+    ],
+    [
+     "SystemDeserialize::read_vk_u8",
+     524288
+    ],
+    [
+     "verifier_group_09",
+     32768
+    ],
+    [
+     "verifier_group_10",
+     2048
+    ],
+    [
+     "SystemDeserialize::read_vk_tag",
+     65536
+    ],
+    [
+     "SystemDeserialize::read_nodes_n",
+     65536
+    ],
+    [
+     "verifier_group_11",
+     524288
+    ],
+    [
+     "SystemDeserialize::read_node_ids_n",
+     32768
+    ],
+    [
+     "verifier_group_12",
+     512
+    ],
+    [
+     "Goldilocks::gl_to_bytes",
+     8388608
+    ],
+    [
+     "verifier_group_13",
+     2048
+    ],
+    [
+     "verifier_group_14",
+     4096
+    ],
+    [
+     "verifier_group_15",
+     128
+    ],
+    [
+     "verifier_group_16",
+     65536
+    ],
+    [
+     "verifier_group_17",
+     512
+    ],
+    [
+     "verifier_group_18",
+     4096
+    ],
+    [
+     "verifier_group_19",
+     1048576
+    ],
+    [
+     "ProofDeserialize::read_u64_vec_vec_n",
+     32768
+    ],
+    [
+     "verifier_group_20",
+     1048576
+    ],
+    [
+     "verifier_group_21",
+     32768
+    ],
+    [
+     "verifier_group_23",
+     4096
+    ],
+    [
+     "verifier_group_24",
+     1024
+    ],
+    [
+     "verifier_group_25",
+     32768
+    ],
+    [
+     "verifier_group_26",
+     32768
+    ],
+    [
+     "StarkVerifier::assert_batch_bounds",
+     1
+    ],
+    [
+     "StarkVerifier::lookups_ok",
+     128
+    ],
+    [
+     "verifier_group_32",
+     32768
+    ],
+    [
+     "StarkVerifier::batch_rows",
+     2
+    ],
+    [
+     "StarkVerifier::shard_rows",
+     128
+    ],
+    [
+     "StarkVerifier::at_most_row_bound",
+     1
+    ],
+    [
+     "Goldilocks::gl_add",
+     8388608
+    ],
+    [
+     "verifier_group_27",
+     16384
+    ],
+    [
+     "verifier_group_28",
+     1048576
+    ],
+    [
+     "verifier_group_29",
+     16384
+    ],
+    [
+     "verifier_group_30",
+     256
+    ],
+    [
+     "verifier_group_31",
+     256
+    ],
+    [
+     "${\"name\":\"Lists::concat\",\"types\":[\"field\"]}",
+     4096
+    ],
+    [
+     "Goldilocks::gl_mul",
+     4194304
+    ],
+    [
+     "Goldilocks::gl_sub",
+     1048576
+    ],
+    [
+     "Goldilocks::gl_inverse",
+     8192
+    ],
+    [
+     "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"SystemDeserialize::SysCircuit\"}}]}",
+     128
+    ],
+    [
+     "verifier_group_33",
+     32768
+    ],
+    [
+     "verifier_group_34",
+     65536
+    ],
+    [
+     "StarkVerifier::two_adic_gen",
+     64
+    ],
+    [
+     "verifier_group_35",
+     65536
+    ],
+    [
+     "verifier_group_36",
+     65536
+    ],
+    [
+     "verifier_group_37",
+     32768
+    ],
+    [
+     "Goldilocks::gl_eq",
+     256
+    ],
+    [
+     "Transcript::ch_sample_bits",
+     128
+    ],
+    [
+     "StarkVerifier::take_bits",
+     4096
+    ],
+    [
+     "Pcs::rows_pop",
+     1048576
+    ],
+    [
+     "verifier_group_38",
+     2097152
+    ],
+    [
+     "Goldilocks::gl_is_zero",
+     1
+    ],
+    [
+     "<table:UInt8::byte_inputs>",
+     256
+    ],
+    [
+     "<table:UInt8::pair_inputs>",
+     65536
+    ],
+    [
+     "<table:UInt8::sum_inputs>",
+     1024
+    ],
+    [
+     "<ROM:3>",
+     1048576
+    ],
+    [
+     "<ROM:4>",
+     16384
+    ],
+    [
+     "<ROM:5>",
+     32
+    ],
+    [
+     "<ROM:6>",
+     131072
+    ],
+    [
+     "<ROM:7>",
+     524288
+    ],
+    [
+     "<ROM:8>",
+     512
+    ],
+    [
+     "<ROM:10>",
+     1048576
+    ],
+    [
+     "<ROM:11>",
+     32
+    ],
+    [
+     "<ROM:12>",
+     128
+    ],
+    [
+     "<ROM:26>",
+     2
+    ],
+    [
+     "<ROM:32>",
+     131072
+    ],
+    [
+     "<ROM:34>",
+     16384
+    ]
+   ]
+  },
+  "bn_stages": [
+   {
+    "stage": 1,
+    "seconds": {
+     "execution": 3.92,
+     "pcs_commit": 3.926,
+     "pcs_open": 4.434,
+     "prove": 13.188,
+     "trace": 2.514,
+     "verify": 0.005
+    },
+    "stage_seconds_exec_trace_prove": 19.622,
+    "peak_rss_bytes": 31531687936,
+    "proof_wire_bytes": 121001,
+    "proof_blake3": "f24ba0c5abab93ae29a30ea8429d8df54a4747fb54d4a29a935da126ccf8ed99",
+    "points": 56,
+    "commitment_points": {
+     "lookup": 16,
+     "main": 22,
+     "quotient": 16
+    },
+    "committed_columns": {
+     "lookup": 310,
+     "main": 2574,
+     "quotient": 96
+    },
+    "evaluations_requested": 3604,
+    "extra_values": 0,
+    "verify_cells": {
+     "active_circuits": 44,
+     "instructions": 420571711,
+     "main_cells_padded": 262222199,
+     "main_cells_padded_sharded": 255734135,
+     "max_height": 524288,
+     "quotient_degree": 4,
+     "stage2_cells": 41843490,
+     "total_rows": 2799265
+    },
+    "shards": [
+     [
+      "KzgIO::read_words",
+      [
+       131072,
+       32768
+      ]
+     ],
+     [
+      "KzgGroup_cold_c",
+      [
+       131072,
+       32768
+      ]
+     ]
+    ],
+    "native_accepts": true,
+    "native_rejects_changed_output": true,
+    "deferred_pairing_holds": true,
+    "shape": [
+     [
+      "CompressBNPacked::chain_v1",
+      1
+     ],
+     [
+      "KzgGroup_reuse",
+      262144
+     ],
+     [
+      "KzgGroup_01",
+      65536
+     ],
+     [
+      "KzgGroup_packed_small",
+      8192
+     ],
+     [
+      "KzgIO::read_words",
+      262144
+     ],
+     [
+      "KzgBlake3::realign",
+      262144
+     ],
+     [
+      "KzgBlake3::word_chunks",
+      16384
+     ],
+     [
+      "KzgGroup_packed_mid",
+      65536
+     ],
+     [
+      "KzgIO::byte",
+      65536
+     ],
+     [
+      "KzgGroup_cold_b",
+      131072
+     ],
+     [
+      "KzgIO::u32",
+      131072
+     ],
+     [
+      "BN254Fq::from_limbs",
+      32768
+     ],
+     [
+      "BN254Fq::range80",
+      262144
+     ],
+     [
+      "KzgGroup_cold_c",
+      262144
+     ],
+     [
+      "BN254FqRelation::assert_zero",
+      32768
+     ],
+     [
+      "BN254FqRelation::range89",
+      65536
+     ],
+     [
+      "KzgPackedDeserialize::circuits",
+      128
+     ],
+     [
+      "KzgDeserialize::nodes",
+      65536
+     ],
+     [
+      "KzgGroup_25",
+      65536
+     ],
+     [
+      "KzgPackedDeserialize::copies_of",
+      256
+     ],
+     [
+      "KzgTranscript::observe32",
+      8192
+     ],
+     [
+      "KzgTranscript::reverse_words",
+      65536
+     ],
+     [
+      "BN254G1::add",
+      8192
+     ],
+     [
+      "KzgGroup_10",
+      8192
+     ],
+     [
+      "KzgBlake3::read_block",
+      512
+     ],
+     [
+      "<table:UInt8::byte_inputs>",
+      256
+     ],
+     [
+      "<table:UInt8::pair_inputs>",
+      65536
+     ],
+     [
+      "<table:UInt8::sum_inputs>",
+      1024
+     ],
+     [
+      "<table:BN254Fq::add_sub_carry_inputs>",
+      4
+     ],
+     [
+      "<table:BN254FqRelation::weight_inputs>",
+      4
+     ],
+     [
+      "<table:BN254FqRelation::constant_inputs>",
+      8
+     ],
+     [
+      "<ROM:3>",
+      32768
+     ],
+     [
+      "<ROM:4>",
+      8192
+     ],
+     [
+      "<ROM:5>",
+      8192
+     ],
+     [
+      "<ROM:6>",
+      524288
+     ],
+     [
+      "<ROM:7>",
+      128
+     ],
+     [
+      "<ROM:10>",
+      128
+     ],
+     [
+      "<ROM:11>",
+      8192
+     ],
+     [
+      "<ROM:12>",
+      128
+     ],
+     [
+      "<ROM:13>",
+      512
+     ],
+     [
+      "<ROM:15>",
+      512
+     ],
+     [
+      "<ROM:21>",
+      128
+     ],
+     [
+      "<ROM:32>",
+      2048
+     ],
+     [
+      "<ROM:98>",
+      16
+     ]
+    ]
+   },
+   {
+    "stage": 2,
+    "seconds": {
+     "execution": 3.296,
+     "pcs_commit": 2.913,
+     "pcs_open": 3.193,
+     "prove": 9.917,
+     "trace": 1.925,
+     "verify": 0.005
+    },
+    "stage_seconds_exec_trace_prove": 15.138,
+    "peak_rss_bytes": 30524727296,
+    "proof_wire_bytes": 121225,
+    "proof_blake3": "46bf410c108191ebfcdb7322df2d6626885abf2b9c1f88094168e5be5b29495a",
+    "points": 63,
+    "commitment_points": {
+     "lookup": 18,
+     "main": 25,
+     "quotient": 18
+    },
+    "committed_columns": {
+     "lookup": 310,
+     "main": 2574,
+     "quotient": 96
+    },
+    "evaluations_requested": 3604,
+    "extra_values": 0,
+    "verify_cells": {
+     "active_circuits": 44,
+     "instructions": 349322728,
+     "main_cells_padded": 175250423,
+     "main_cells_padded_sharded": 167681015,
+     "max_height": 524288,
+     "quotient_degree": 4,
+     "stage2_cells": 26732194,
+     "total_rows": 2593505
+    },
+    "shards": [
+     [
+      "KzgIO::read_words",
+      [
+       131072,
+       16384
+      ]
+     ],
+     [
+      "KzgGroup_cold_c",
+      [
+       131072,
+       16384
+      ]
+     ]
+    ],
+    "native_accepts": true,
+    "native_rejects_changed_output": true,
+    "deferred_pairing_holds": true,
+    "shape": [
+     [
+      "CompressBNPacked::chain_v1",
+      1
+     ],
+     [
+      "KzgGroup_reuse",
+      131072
+     ],
+     [
+      "KzgGroup_01",
+      131072
+     ],
+     [
+      "KzgGroup_packed_small",
+      4096
+     ],
+     [
+      "KzgIO::read_words",
+      262144
+     ],
+     [
+      "KzgBlake3::realign",
+      262144
+     ],
+     [
+      "KzgBlake3::word_chunks",
+      16384
+     ],
+     [
+      "KzgGroup_packed_mid",
+      32768
+     ],
+     [
+      "KzgIO::byte",
+      65536
+     ],
+     [
+      "KzgGroup_cold_b",
+      131072
+     ],
+     [
+      "KzgIO::u32",
+      131072
+     ],
+     [
+      "BN254Fq::from_limbs",
+      16384
+     ],
+     [
+      "BN254Fq::range80",
+      131072
+     ],
+     [
+      "KzgGroup_cold_c",
+      262144
+     ],
+     [
+      "BN254FqRelation::assert_zero",
+      16384
+     ],
+     [
+      "BN254FqRelation::range89",
+      65536
+     ],
+     [
+      "KzgPackedDeserialize::circuits",
+      64
+     ],
+     [
+      "KzgDeserialize::nodes",
+      65536
+     ],
+     [
+      "KzgGroup_25",
+      131072
+     ],
+     [
+      "KzgPackedDeserialize::copies_of",
+      128
+     ],
+     [
+      "KzgTranscript::observe32",
+      8192
+     ],
+     [
+      "KzgTranscript::reverse_words",
+      65536
+     ],
+     [
+      "BN254G1::add",
+      8192
+     ],
+     [
+      "KzgGroup_10",
+      8192
+     ],
+     [
+      "KzgBlake3::read_block",
+      512
+     ],
+     [
+      "<table:UInt8::byte_inputs>",
+      256
+     ],
+     [
+      "<table:UInt8::pair_inputs>",
+      65536
+     ],
+     [
+      "<table:UInt8::sum_inputs>",
+      1024
+     ],
+     [
+      "<table:BN254Fq::add_sub_carry_inputs>",
+      4
+     ],
+     [
+      "<table:BN254FqRelation::weight_inputs>",
+      4
+     ],
+     [
+      "<table:BN254FqRelation::constant_inputs>",
+      8
+     ],
+     [
+      "<ROM:3>",
+      32768
+     ],
+     [
+      "<ROM:4>",
+      8192
+     ],
+     [
+      "<ROM:5>",
+      4096
+     ],
+     [
+      "<ROM:6>",
+      524288
+     ],
+     [
+      "<ROM:7>",
+      64
+     ],
+     [
+      "<ROM:10>",
+      64
+     ],
+     [
+      "<ROM:11>",
+      8192
+     ],
+     [
+      "<ROM:12>",
+      64
+     ],
+     [
+      "<ROM:13>",
+      256
+     ],
+     [
+      "<ROM:15>",
+      256
+     ],
+     [
+      "<ROM:21>",
+      64
+     ],
+     [
+      "<ROM:32>",
+      2048
+     ],
+     [
+      "<ROM:98>",
+      16
+     ]
+    ]
+   },
+   {
+    "stage": 3,
+    "seconds": {
+     "execution": 3.352,
+     "pcs_commit": 2.916,
+     "pcs_open": 3.261,
+     "prove": 10.025,
+     "trace": 1.929,
+     "verify": 0.005
+    },
+    "stage_seconds_exec_trace_prove": 15.307,
+    "peak_rss_bytes": 30594519040,
+    "proof_wire_bytes": 121129,
+    "proof_blake3": "d95815935183ab230818b6df4261322db88ae6af0cf1593a9b64799c93557819",
+    "points": 60,
+    "commitment_points": {
+     "lookup": 17,
+     "main": 24,
+     "quotient": 17
+    },
+    "committed_columns": {
+     "lookup": 310,
+     "main": 2574,
+     "quotient": 96
+    },
+    "evaluations_requested": 3604,
+    "extra_values": 0,
+    "verify_cells": {
+     "active_circuits": 44,
+     "instructions": 350758172,
+     "main_cells_padded": 177435191,
+     "main_cells_padded_sharded": 169865783,
+     "max_height": 524288,
+     "quotient_degree": 4,
+     "stage2_cells": 27031330,
+     "total_rows": 2634593
+    },
+    "shards": [
+     [
+      "KzgIO::read_words",
+      [
+       131072,
+       16384
+      ]
+     ],
+     [
+      "KzgGroup_cold_c",
+      [
+       131072,
+       16384
+      ]
+     ]
+    ],
+    "native_accepts": true,
+    "native_rejects_changed_output": true,
+    "deferred_pairing_holds": true,
+    "shape": [
+     [
+      "CompressBNPacked::chain_v1",
+      1
+     ],
+     [
+      "KzgGroup_reuse",
+      131072
+     ],
+     [
+      "KzgGroup_01",
+      131072
+     ],
+     [
+      "KzgGroup_packed_small",
+      8192
+     ],
+     [
+      "KzgIO::read_words",
+      262144
+     ],
+     [
+      "KzgBlake3::realign",
+      262144
+     ],
+     [
+      "KzgBlake3::word_chunks",
+      16384
+     ],
+     [
+      "KzgGroup_packed_mid",
+      32768
+     ],
+     [
+      "KzgIO::byte",
+      65536
+     ],
+     [
+      "KzgGroup_cold_b",
+      131072
+     ],
+     [
+      "KzgIO::u32",
+      131072
+     ],
+     [
+      "BN254Fq::from_limbs",
+      32768
+     ],
+     [
+      "BN254Fq::range80",
+      131072
+     ],
+     [
+      "KzgGroup_cold_c",
+      262144
+     ],
+     [
+      "BN254FqRelation::assert_zero",
+      32768
+     ],
+     [
+      "BN254FqRelation::range89",
+      65536
+     ],
+     [
+      "KzgPackedDeserialize::circuits",
+      64
+     ],
+     [
+      "KzgDeserialize::nodes",
+      65536
+     ],
+     [
+      "KzgGroup_25",
+      131072
+     ],
+     [
+      "KzgPackedDeserialize::copies_of",
+      128
+     ],
+     [
+      "KzgTranscript::observe32",
+      8192
+     ],
+     [
+      "KzgTranscript::reverse_words",
+      65536
+     ],
+     [
+      "BN254G1::add",
+      8192
+     ],
+     [
+      "KzgGroup_10",
+      8192
+     ],
+     [
+      "KzgBlake3::read_block",
+      512
+     ],
+     [
+      "<table:UInt8::byte_inputs>",
+      256
+     ],
+     [
+      "<table:UInt8::pair_inputs>",
+      65536
+     ],
+     [
+      "<table:UInt8::sum_inputs>",
+      1024
+     ],
+     [
+      "<table:BN254Fq::add_sub_carry_inputs>",
+      4
+     ],
+     [
+      "<table:BN254FqRelation::weight_inputs>",
+      4
+     ],
+     [
+      "<table:BN254FqRelation::constant_inputs>",
+      8
+     ],
+     [
+      "<ROM:3>",
+      32768
+     ],
+     [
+      "<ROM:4>",
+      8192
+     ],
+     [
+      "<ROM:5>",
+      8192
+     ],
+     [
+      "<ROM:6>",
+      524288
+     ],
+     [
+      "<ROM:7>",
+      128
+     ],
+     [
+      "<ROM:10>",
+      64
+     ],
+     [
+      "<ROM:11>",
+      8192
+     ],
+     [
+      "<ROM:12>",
+      128
+     ],
+     [
+      "<ROM:13>",
+      256
+     ],
+     [
+      "<ROM:15>",
+      256
+     ],
+     [
+      "<ROM:21>",
+      64
+     ],
+     [
+      "<ROM:32>",
+      2048
+     ],
+     [
+      "<ROM:98>",
+      16
+     ]
+    ]
+   },
+   {
+    "stage": 4,
+    "seconds": {
+     "execution": 3.321,
+     "pcs_commit": 2.949,
+     "pcs_open": 3.201,
+     "prove": 10.004,
+     "trace": 1.943,
+     "verify": 0.005
+    },
+    "stage_seconds_exec_trace_prove": 15.267,
+    "peak_rss_bytes": 30677504000,
+    "proof_wire_bytes": 121225,
+    "proof_blake3": "696d70847accb891771f9190b225a96f8effe830c9ca23fcea35b5f47bb6ca7d",
+    "points": 63,
+    "commitment_points": {
+     "lookup": 18,
+     "main": 25,
+     "quotient": 18
+    },
+    "committed_columns": {
+     "lookup": 310,
+     "main": 2574,
+     "quotient": 96
+    },
+    "evaluations_requested": 3604,
+    "extra_values": 0,
+    "verify_cells": {
+     "active_circuits": 44,
+     "instructions": 350167748,
+     "main_cells_padded": 175727159,
+     "main_cells_padded_sharded": 168157751,
+     "max_height": 524288,
+     "quotient_degree": 4,
+     "stage2_cells": 26851106,
+     "total_rows": 2630497
+    },
+    "shards": [
+     [
+      "KzgIO::read_words",
+      [
+       131072,
+       16384
+      ]
+     ],
+     [
+      "KzgGroup_cold_c",
+      [
+       131072,
+       16384
+      ]
+     ]
+    ],
+    "native_accepts": true,
+    "native_rejects_changed_output": true,
+    "deferred_pairing_holds": true,
+    "shape": [
+     [
+      "CompressBNPacked::chain_v1",
+      1
+     ],
+     [
+      "KzgGroup_reuse",
+      131072
+     ],
+     [
+      "KzgGroup_01",
+      131072
+     ],
+     [
+      "KzgGroup_packed_small",
+      4096
+     ],
+     [
+      "KzgIO::read_words",
+      262144
+     ],
+     [
+      "KzgBlake3::realign",
+      262144
+     ],
+     [
+      "KzgBlake3::word_chunks",
+      16384
+     ],
+     [
+      "KzgGroup_packed_mid",
+      32768
+     ],
+     [
+      "KzgIO::byte",
+      65536
+     ],
+     [
+      "KzgGroup_cold_b",
+      131072
+     ],
+     [
+      "KzgIO::u32",
+      131072
+     ],
+     [
+      "BN254Fq::from_limbs",
+      32768
+     ],
+     [
+      "BN254Fq::range80",
+      131072
+     ],
+     [
+      "KzgGroup_cold_c",
+      262144
+     ],
+     [
+      "BN254FqRelation::assert_zero",
+      32768
+     ],
+     [
+      "BN254FqRelation::range89",
+      65536
+     ],
+     [
+      "KzgPackedDeserialize::circuits",
+      64
+     ],
+     [
+      "KzgDeserialize::nodes",
+      65536
+     ],
+     [
+      "KzgGroup_25",
+      131072
+     ],
+     [
+      "KzgPackedDeserialize::copies_of",
+      128
+     ],
+     [
+      "KzgTranscript::observe32",
+      8192
+     ],
+     [
+      "KzgTranscript::reverse_words",
+      65536
+     ],
+     [
+      "BN254G1::add",
+      8192
+     ],
+     [
+      "KzgGroup_10",
+      8192
+     ],
+     [
+      "KzgBlake3::read_block",
+      512
+     ],
+     [
+      "<table:UInt8::byte_inputs>",
+      256
+     ],
+     [
+      "<table:UInt8::pair_inputs>",
+      65536
+     ],
+     [
+      "<table:UInt8::sum_inputs>",
+      1024
+     ],
+     [
+      "<table:BN254Fq::add_sub_carry_inputs>",
+      4
+     ],
+     [
+      "<table:BN254FqRelation::weight_inputs>",
+      4
+     ],
+     [
+      "<table:BN254FqRelation::constant_inputs>",
+      8
+     ],
+     [
+      "<ROM:3>",
+      32768
+     ],
+     [
+      "<ROM:4>",
+      8192
+     ],
+     [
+      "<ROM:5>",
+      8192
+     ],
+     [
+      "<ROM:6>",
+      524288
+     ],
+     [
+      "<ROM:7>",
+      128
+     ],
+     [
+      "<ROM:10>",
+      64
+     ],
+     [
+      "<ROM:11>",
+      8192
+     ],
+     [
+      "<ROM:12>",
+      128
+     ],
+     [
+      "<ROM:13>",
+      256
+     ],
+     [
+      "<ROM:15>",
+      256
+     ],
+     [
+      "<ROM:21>",
+      64
+     ],
+     [
+      "<ROM:32>",
+      2048
+     ],
+     [
+      "<ROM:98>",
+      16
+     ]
+    ]
+   },
+   {
+    "stage": 5,
+    "seconds": {
+     "execution": 3.374,
+     "pcs_commit": 2.925,
+     "pcs_open": 3.288,
+     "prove": 10.127,
+     "trace": 1.979,
+     "verify": 0.005
+    },
+    "stage_seconds_exec_trace_prove": 15.48,
+    "peak_rss_bytes": 30691655680,
+    "proof_wire_bytes": 121129,
+    "proof_blake3": "abf14d69ca126732849a140ca1af5ed620842191c0c2e24084412fb409d4cca8",
+    "points": 60,
+    "commitment_points": {
+     "lookup": 17,
+     "main": 24,
+     "quotient": 17
+    },
+    "committed_columns": {
+     "lookup": 310,
+     "main": 2574,
+     "quotient": 96
+    },
+    "evaluations_requested": 3604,
+    "extra_values": 0,
+    "verify_cells": {
+     "active_circuits": 44,
+     "instructions": 350679081,
+     "main_cells_padded": 177435191,
+     "main_cells_padded_sharded": 169865783,
+     "max_height": 524288,
+     "quotient_degree": 4,
+     "stage2_cells": 27031330,
+     "total_rows": 2634593
+    },
+    "shards": [
+     [
+      "KzgIO::read_words",
+      [
+       131072,
+       16384
+      ]
+     ],
+     [
+      "KzgGroup_cold_c",
+      [
+       131072,
+       16384
+      ]
+     ]
+    ],
+    "native_accepts": true,
+    "native_rejects_changed_output": true,
+    "deferred_pairing_holds": true,
+    "shape": [
+     [
+      "CompressBNPacked::chain_v1",
+      1
+     ],
+     [
+      "KzgGroup_reuse",
+      131072
+     ],
+     [
+      "KzgGroup_01",
+      131072
+     ],
+     [
+      "KzgGroup_packed_small",
+      8192
+     ],
+     [
+      "KzgIO::read_words",
+      262144
+     ],
+     [
+      "KzgBlake3::realign",
+      262144
+     ],
+     [
+      "KzgBlake3::word_chunks",
+      16384
+     ],
+     [
+      "KzgGroup_packed_mid",
+      32768
+     ],
+     [
+      "KzgIO::byte",
+      65536
+     ],
+     [
+      "KzgGroup_cold_b",
+      131072
+     ],
+     [
+      "KzgIO::u32",
+      131072
+     ],
+     [
+      "BN254Fq::from_limbs",
+      32768
+     ],
+     [
+      "BN254Fq::range80",
+      131072
+     ],
+     [
+      "KzgGroup_cold_c",
+      262144
+     ],
+     [
+      "BN254FqRelation::assert_zero",
+      32768
+     ],
+     [
+      "BN254FqRelation::range89",
+      65536
+     ],
+     [
+      "KzgPackedDeserialize::circuits",
+      64
+     ],
+     [
+      "KzgDeserialize::nodes",
+      65536
+     ],
+     [
+      "KzgGroup_25",
+      131072
+     ],
+     [
+      "KzgPackedDeserialize::copies_of",
+      128
+     ],
+     [
+      "KzgTranscript::observe32",
+      8192
+     ],
+     [
+      "KzgTranscript::reverse_words",
+      65536
+     ],
+     [
+      "BN254G1::add",
+      8192
+     ],
+     [
+      "KzgGroup_10",
+      8192
+     ],
+     [
+      "KzgBlake3::read_block",
+      512
+     ],
+     [
+      "<table:UInt8::byte_inputs>",
+      256
+     ],
+     [
+      "<table:UInt8::pair_inputs>",
+      65536
+     ],
+     [
+      "<table:UInt8::sum_inputs>",
+      1024
+     ],
+     [
+      "<table:BN254Fq::add_sub_carry_inputs>",
+      4
+     ],
+     [
+      "<table:BN254FqRelation::weight_inputs>",
+      4
+     ],
+     [
+      "<table:BN254FqRelation::constant_inputs>",
+      8
+     ],
+     [
+      "<ROM:3>",
+      32768
+     ],
+     [
+      "<ROM:4>",
+      8192
+     ],
+     [
+      "<ROM:5>",
+      8192
+     ],
+     [
+      "<ROM:6>",
+      524288
+     ],
+     [
+      "<ROM:7>",
+      128
+     ],
+     [
+      "<ROM:10>",
+      64
+     ],
+     [
+      "<ROM:11>",
+      8192
+     ],
+     [
+      "<ROM:12>",
+      128
+     ],
+     [
+      "<ROM:13>",
+      256
+     ],
+     [
+      "<ROM:15>",
+      256
+     ],
+     [
+      "<ROM:21>",
+      64
+     ],
+     [
+      "<ROM:32>",
+      2048
+     ],
+     [
+      "<ROM:98>",
+      16
+     ]
+    ]
+   }
+  ],
+  "shape_changes": [
+   {
+    "from": 1,
+    "to": 2,
+    "changed": [
+     [
+      "<ROM:10>",
+      128,
+      64
+     ],
+     [
+      "<ROM:12>",
+      128,
+      64
+     ],
+     [
+      "<ROM:13>",
+      512,
+      256
+     ],
+     [
+      "<ROM:15>",
+      512,
+      256
+     ],
+     [
+      "<ROM:21>",
+      128,
+      64
+     ],
+     [
+      "<ROM:5>",
+      8192,
+      4096
+     ],
+     [
+      "<ROM:7>",
+      128,
+      64
+     ],
+     [
+      "BN254Fq::from_limbs",
+      32768,
+      16384
+     ],
+     [
+      "BN254Fq::range80",
+      262144,
+      131072
+     ],
+     [
+      "BN254FqRelation::assert_zero",
+      32768,
+      16384
+     ],
+     [
+      "KzgGroup_01",
+      65536,
+      131072
+     ],
+     [
+      "KzgGroup_25",
+      65536,
+      131072
+     ],
+     [
+      "KzgGroup_packed_mid",
+      65536,
+      32768
+     ],
+     [
+      "KzgGroup_packed_small",
+      8192,
+      4096
+     ],
+     [
+      "KzgGroup_reuse",
+      262144,
+      131072
+     ],
+     [
+      "KzgPackedDeserialize::circuits",
+      128,
+      64
+     ],
+     [
+      "KzgPackedDeserialize::copies_of",
+      256,
+      128
+     ]
+    ]
+   },
+   {
+    "from": 2,
+    "to": 3,
+    "changed": [
+     [
+      "<ROM:12>",
+      64,
+      128
+     ],
+     [
+      "<ROM:5>",
+      4096,
+      8192
+     ],
+     [
+      "<ROM:7>",
+      64,
+      128
+     ],
+     [
+      "BN254Fq::from_limbs",
+      16384,
+      32768
+     ],
+     [
+      "BN254FqRelation::assert_zero",
+      16384,
+      32768
+     ],
+     [
+      "KzgGroup_packed_small",
+      4096,
+      8192
+     ]
+    ]
+   },
+   {
+    "from": 3,
+    "to": 4,
+    "changed": [
+     [
+      "KzgGroup_packed_small",
+      8192,
+      4096
+     ]
+    ]
+   },
+   {
+    "from": 4,
+    "to": 5,
+    "changed": [
+     [
+      "KzgGroup_packed_small",
+      4096,
+      8192
+     ]
+    ]
+   }
+  ],
+  "steady_capacity_candidates_stages_2_5": [
+   [
+    "<ROM:10>",
+    64
+   ],
+   [
+    "<ROM:11>",
+    8192
+   ],
+   [
+    "<ROM:12>",
+    128
+   ],
+   [
+    "<ROM:13>",
+    256
+   ],
+   [
+    "<ROM:15>",
+    256
+   ],
+   [
+    "<ROM:21>",
+    64
+   ],
+   [
+    "<ROM:32>",
+    2048
+   ],
+   [
+    "<ROM:3>",
+    32768
+   ],
+   [
+    "<ROM:4>",
+    8192
+   ],
+   [
+    "<ROM:5>",
+    8192
+   ],
+   [
+    "<ROM:6>",
+    524288
+   ],
+   [
+    "<ROM:7>",
+    128
+   ],
+   [
+    "<ROM:98>",
+    16
+   ],
+   [
+    "<table:BN254Fq::add_sub_carry_inputs>",
+    4
+   ],
+   [
+    "<table:BN254FqRelation::constant_inputs>",
+    8
+   ],
+   [
+    "<table:BN254FqRelation::weight_inputs>",
+    4
+   ],
+   [
+    "<table:UInt8::byte_inputs>",
+    256
+   ],
+   [
+    "<table:UInt8::pair_inputs>",
+    65536
+   ],
+   [
+    "<table:UInt8::sum_inputs>",
+    1024
+   ],
+   [
+    "BN254Fq::from_limbs",
+    32768
+   ],
+   [
+    "BN254Fq::range80",
+    131072
+   ],
+   [
+    "BN254FqRelation::assert_zero",
+    32768
+   ],
+   [
+    "BN254FqRelation::range89",
+    65536
+   ],
+   [
+    "BN254G1::add",
+    8192
+   ],
+   [
+    "CompressBNPacked::chain_v1",
+    1
+   ],
+   [
+    "KzgBlake3::read_block",
+    512
+   ],
+   [
+    "KzgBlake3::realign",
+    262144
+   ],
+   [
+    "KzgBlake3::word_chunks",
+    16384
+   ],
+   [
+    "KzgDeserialize::nodes",
+    65536
+   ],
+   [
+    "KzgGroup_01",
+    131072
+   ],
+   [
+    "KzgGroup_10",
+    8192
+   ],
+   [
+    "KzgGroup_25",
+    131072
+   ],
+   [
+    "KzgGroup_cold_b",
+    131072
+   ],
+   [
+    "KzgGroup_cold_c",
+    262144
+   ],
+   [
+    "KzgGroup_packed_mid",
+    32768
+   ],
+   [
+    "KzgGroup_packed_small",
+    8192
+   ],
+   [
+    "KzgGroup_reuse",
+    131072
+   ],
+   [
+    "KzgIO::byte",
+    65536
+   ],
+   [
+    "KzgIO::read_words",
+    262144
+   ],
+   [
+    "KzgIO::u32",
+    131072
+   ],
+   [
+    "KzgPackedDeserialize::circuits",
+    64
+   ],
+   [
+    "KzgPackedDeserialize::copies_of",
+    128
+   ],
+   [
+    "KzgTranscript::observe32",
+    8192
+   ],
+   [
+    "KzgTranscript::reverse_words",
+    65536
+   ]
+  ],
+  "seconds": {
+   "srs_load": 3.312,
+   "bn_key": 0.357,
+   "gl": 126.802,
+   "bn_stages_sum": 80.814,
+   "to_first_bn_proof": 150.093,
+   "to_last_bn_proof_5_stages": 211.285,
+   "process_wall_clock": 215.37
+  },
+  "gpu_peak_memory_mib": 37039,
+  "deterministic_vs_g1_run": "GL proof and stages 1-4 proof blake3 identical to docs/measurements/aiur-packed-bn-stages.json run g1_packed_gl_chain"
+ },
+ "comparison": {
+  "handwritten_kzg_plonk": {
+   "source": "docs/measurements/aiur-compression-incremental.json",
+   "warm_s": 403.2,
+   "cold_s_incl_plonk": 1316.7,
+   "fri_stage_peak_rss_bytes": 159374233600
+  },
+  "per_column_aiur_gl_bn": {
+   "source": "docs/measurements/aiur-compression-fresh-init-bn.json + g1 gl_per_column_baseline",
+   "compress_time_s": 207.426,
+   "gl_exec_trace_prove_s": 114.22,
+   "first_v1_exec_prove_s": 77.12,
+   "gl_proof_bytes": 375962,
+   "bn_envelope_bytes": 466166,
+   "peak_rss_bytes": 107846451200
+  },
+  "packed": {
+   "gl_plus_first_bn_s": 146.424,
+   "to_last_bn_proof_s": 211.285,
+   "last_bn_proof_bytes": 121129
+  }
+ },
+ "observations": [
+  "Init, packed chain to the 5th BN proof: 211.3 s of stage compute (SRS 3.3 + GL 126.8 + BN key 0.4 + BN 80.8), 215.4 s process wall; to the first BN proof 150.1 s. Last proof 121,129 B, 60 G1 points, 3,604 evaluations.",
+  "Packed CompressGL dominates: 44.6 s execution + 27.8 s trace + 54.0 s prove, 109.8 GB peak RSS, 37 GB peak GPU memory. BN stages: 19.6 s (stage 1) then ~15.2-15.5 s each, ~30.5-31.5 GB peak RSS.",
+  "Against the per-column Aiur GL->first_v1 run (207.4 s compress-time, 466 KB envelope): GL + first BN stage is 146.4 s vs ~191 s of exec/trace/prove, and the result is a 121 KB packed proof. Against hand-written FRI/KZG/PLONK (403 s warm, 1,317 s cold incl. PLONK): packed chain to 5 BN stages is ~2x faster than warm, but has no terminal/PLONK yet so it is not an end-to-end replacement.",
+  "Shapes never reach a fixed point within 5 stages; from stage 3 they settle into a period-2 cycle. Stages 3 and 5 are identical (177,435,191 padded / 169,865,783 committed cells, 60-point proofs); stage 4 differs from them only in KzgGroup_packed_small (4096 vs 8192) and emits a 63-point proof. A 63-point predecessor drives KzgGroup_packed_small to 8192 and yields a 60-point proof, and vice versa. Stage 2 (verifying stage 1's 56-point proof) is additionally one step lower in BN254Fq::from_limbs, BN254FqRelation::assert_zero, ROM:5/7/12.",
+  "Normalization capacities on Init: per-circuit max over stages 2-5 (steady_capacity_candidates_stages_2_5) covers both phases; only KzgGroup_packed_small (8192), BN254Fq::from_limbs / BN254FqRelation::assert_zero (32768) and ROM:5/7/12 sit at a power-of-two boundary. Stage 1 (verifying packed CompressGL) is larger (262.2M padded, 17 circuits a step higher).",
+  "Mathlib: not run. No current-format Mathlib aggregate root exists; producing one is an estimated 2.0-2.8 h, ~205 GB-RSS ix prove plus export_root (see roots.mathlib.to_produce). Init-vs-Mathlib BN-stage shape differences therefore remain unmeasured.",
+  "Every proof verified natively, a changed last output word was rejected (GL and all 5 BN stages), and every BN stage's deferred accumulator satisfied the pairing under the Ignition anchors. Results are deterministic: GL and stages 1-4 match the g1 run byte for byte."
+ ],
+ "report_dir": "target/e2e-packed/init (per-stage report.json, proofs, keys, gpu.csv, run.log)"
+}

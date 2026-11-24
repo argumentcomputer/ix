@@ -78,11 +78,12 @@ theorem AxiomPolicy.admits_of_not_eligible (policy : AxiomPolicy) {k : Key md}
   · exact h
 
 /-- **The axiom roles' pinned specifications**, each under its role's key:
-the roles whose specification is a typed axiom (`Role.spec`: `propext`,
-`Classical.choice`, `sorryAx`), at the role's level count, and `Quot.sound`,
-the quotient block's axiom (`quotSoundRaw`). -/
+every role in `Role.all` whose specification is a typed axiom (`Role.spec`:
+`propext`, `Classical.choice`, `sorryAx`, `Lean.trustCompiler`, and the
+native-reduction axioms, plus any future typed axiom role), at the role's
+level count, and `Quot.sound`, the quotient block's axiom (`quotSoundRaw`). -/
 def axiomRolePins : List (Role × ConstantVal md) :=
-  ([Role.propext, .choice, .sorryAx].filterMap fun r =>
+  (Role.all.filterMap fun r =>
     match (Role.spec (md := md)) r with
     | .axiom n (some ty) => some (r, { name := .role r, levelParams := List.range n, type := ty })
     | _ => none) ++
@@ -110,6 +111,27 @@ def checkStdAxiomDeclC (fe : FEnv md) (cv : ConstantVal md) : (CheckCM md) (FEnv
       pure fe
     else
       throw (.notImplemented "quotient soundness axiom mismatch"))
+  else if cv.name.isCompilerTrustAxiom then
+    (if (anchorMismatch? cv).isNone then
+      if (fe.find? cv.name).isSome then
+        throw (.invalid msg!"duplicate declaration {cv.name}")
+      else if cv.name = roleKey .trustCompiler then do
+        let _ ← checkConstantValC mode fe cv
+        pure fe
+      else if !LevelParam.nodup cv.levelParams then
+        throw (.invalid msg!"duplicate universe parameters in {cv.name}")
+      else if !Expr.looseBVarsBounded 0 cv.type then
+        throw (.invalid msg!"loose bound variable in type of {cv.name}")
+      else if Expr.hasFvar cv.type then
+        throw (.invalid msg!"unexpected free variable in type of {cv.name}")
+      else if !Expr.allLevelParamsDefinedC cv.levelParams cv.type then
+        throw (.invalid msg!"undeclared universe parameter in type of {cv.name}")
+      else
+        pure fe
+    else
+      throw (.notImplemented msg!"compiler-trust axiom shape mismatch ({cv.name})"))
+  else if cv.name.isCompilerTrustOpaque then
+    throw (.notImplemented msg!"compiler-trust opaque cannot be an axiom ({cv.name})")
   else do
     let (cvA, _) ← checkConstantValC mode fe cv
     if stdAxiomOkF fe cvA then

@@ -10,14 +10,16 @@ import Ix.FileDigest
   on any failed report check, with the default role binding. The artifact's
   Blake3 digest and size must equal the reference in
   `Tests/Fixtures/initstd-reference.txt`. The kernel then checks the
-  artifact (`ix check-lean --anon`), strict as every entry is by default: it
-  must admit every role the default role table binds but the five
-  compiler-trust roles, pass the reference's count of constants, and refuse
-  exactly the reference's constants (`Lean.trustCompiler`, the one
-  native-evaluation axiom it declines, and the four constants that depend on
-  it: the five compiler-trust roles), so the whole-artifact entry does not run
-  and the check exits 3. A change that moves the compiler's bytes, or
-  the kernel's verdicts on the artifact, updates that file in the same commit.
+  artifact (`ix check-lean --anon`), strict as every entry is by default: under
+  `§7.10` the five pinned compiler-trust roles (`Lean.trustCompiler`,
+  `Lean.reduceBool`, `Lean.reduceNat`, `Lean.ofReduceBool`, `Lean.ofReduceNat`)
+  are inert (matched at their pinned specs, installing nothing into the logical
+  environment, with any use still declined). Because nothing in Init+Std uses
+  them, strict checking admits all bound roles, passes all constants in the
+  reference with zero refused, accepts the whole artifact, emits a
+  non-conditional host admission statement, and exits 0. A change that moves the
+  compiler's bytes, or the kernel's verdicts on the artifact, updates that file
+  in the same commit.
   (`--allow-user-axioms`, the uncertified conditional path, is covered on
   small fixtures by `RoleArtifactConsumer`: a second pass here would add
   almost three minutes.)
@@ -37,11 +39,6 @@ def ixExe : System.FilePath := ".lake" / "build" / "bin" / "ix"
 def source : String := "Benchmarks/Compile/CompileInitStd.lean"
 
 def referencePath : System.FilePath := "Tests" / "Fixtures" / "initstd-reference.txt"
-
-/-- The default table's compiler-trust roles (`Lean.trustCompiler`, `Lean.reduceBool`,
-`Lean.reduceNat`, `Lean.ofReduceBool`, `Lean.ofReduceNat`): strict checking refuses each
-one's record, the axioms' as non-standard axioms and the others' through them. -/
-def compilerTrustRoles : Nat := 5
 
 /-- Where `initstd-reference` leaves a copy of its artifact, for the later
 entries of its partition that read Init+Std (`admission-hash-diff-initstd`).
@@ -191,15 +188,17 @@ def reference : IO UInt32 := do
       IO.eprintln s!"[initstd] the Init+Std artifact differs from {referencePath}. If the change \
         is meant to move the compiler's bytes, record blake3 {digest} and bytes {size} there."
     -- the kernel on the artifact, under its role binding: strict, as every
-    -- entry's default, it declines `Lean.trustCompiler` and blocks what depends
-    -- on it, so the whole-artifact entry does not run and the run exits 3
+    -- entry's default; under §7.10 the five pinned compiler-trust roles are
+    -- inert (install nothing, any use still declines) and unused in Init+Std,
+    -- so whole-artifact admission succeeds and the run exits 0
     let roles := (← IO.ofExcept Ix.Kernel.Reader.defaultTable).bound.size
     let failOut := dir / "refused.txt"
     let checked ← runIx #["check-lean", artifact.toString, "--anon", "--fail-out", failOut.toString]
     let both := checked.stdout ++ "\n" ++ checked.stderr
     for l in linesWith both ["bound roles:", "subjects passed", "[check-lean]"] do
       IO.println l
-    let exited := checked.exitCode == 3
+    let expectedExit : UInt32 := if expected.refused.isEmpty then 0 else 3
+    let exited := checked.exitCode == expectedExit
     unless exited do IO.eprintln (tail checked)
     let refused := ((← try IO.FS.readFile failOut catch _ => pure "").splitOn "\n").toArray.filterMap
       fun l => let l := l.trimAscii.toString; if l.isEmpty || l.startsWith "#" then none else some l
@@ -214,15 +213,14 @@ def reference : IO UInt32 := do
       ("ix compile-lean on Init+Std passes its report checks", compiled.exitCode == 0),
       (s!"the artifact's Blake3 digest is the reference's ({expected.blake3})", digest == expected.blake3),
       (s!"the artifact's size is the reference's ({expected.bytes} bytes)", size == expected.bytes),
-      ("ix check-lean --anon exits 3: strict checking refuses constants", exited),
-      (s!"the kernel admits the {roles - compilerTrustRoles} roles the default table binds \
-        but the {compilerTrustRoles} compiler-trust roles, which it refuses",
-        admitted == some (roles - compilerTrustRoles, compilerTrustRoles)),
+      (s!"ix check-lean --anon exits {expectedExit}", exited),
+      (s!"the kernel admits all {roles} roles the default table binds (0 refused)",
+        admitted == some (roles, 0)),
       (s!"the kernel passes {expected.leanPassed} of {expected.leanChecked} constants, \
         as the reference says", counts == some (expected.leanPassed, expected.leanChecked)),
       (s!"the kernel refuses exactly the reference's {expected.refused.size} constants", refusedOk),
-      ("it claims no whole-artifact acceptance and no host statement",
-        !checked.stdout.contains "accepted all" && !checked.stdout.contains "host admission statement" &&
+      ("it accepts the whole artifact and emits a non-conditional host admission statement",
+        checked.stdout.contains "accepted all" && checked.stdout.contains "host admission statement:" &&
         !checked.stdout.contains "CONDITIONAL")]
   finally
     IO.FS.removeDirAll dir

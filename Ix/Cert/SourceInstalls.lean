@@ -55,8 +55,11 @@ theorem installed_push (e : Env md) (c : Ix.Kernel.ConstantInfo md) : Installed 
 
 /-- **The names a declaration installs itself.** -/
 def selfInstalls : Declaration md → List (Key md)
-  | .defnDecl cv _ _ | .thmDecl cv _ | .opaqueDecl cv _ => [cv.name]
-  | .axiomDecl cv => if cv.name = quotSoundName ∨ cv.name = sorryAxName then [] else [cv.name]
+  | .defnDecl cv _ _ | .thmDecl cv _ => [cv.name]
+  | .opaqueDecl cv _ => if cv.name.isCompilerTrustOpaque then [] else [cv.name]
+  | .axiomDecl cv =>
+    if cv.name = quotSoundName ∨ cv.name = sorryAxName ∨ cv.name.isCompilerTrustAxiom then []
+    else [cv.name]
   | .quotDecl .type _ => (BasisKind.quotK.declsA (md := md)).map (·.name)
   | .quotDecl _ _ => []
   | .basisDecl kind => kind.declsA.map (·.name)
@@ -152,6 +155,10 @@ theorem checkDecl_installs_value (ev : Evidences md) (env : Env md) (d : Declara
   cases d with
   | defnDecl cv value hint =>
     unfold checkDecl
+    dsimp only
+    by_cases hct : cv.name.isCompilerTrust = true
+    · simp [hct]
+    simp only [hct, Bool.false_eq_true, ↓reduceIte]
     rw [ExPost.post_bind]
     refine ExPost.mono (fun cvA h => ?_) (checkConstantVal_post env cv)
     rw [ExPost.post_bind]
@@ -167,6 +174,10 @@ theorem checkDecl_installs_value (ev : Evidences md) (env : Env md) (d : Declara
     split <;> simp [hg]
   | thmDecl cv value =>
     unfold checkDecl
+    dsimp only
+    by_cases hct : cv.name.isCompilerTrust = true
+    · simp [hct]
+    simp only [hct, Bool.false_eq_true, ↓reduceIte]
     rw [ExPost.post_bind]
     refine ExPost.mono (fun cvA h => ?_) (checkConstantVal_post env cv)
     refine ExPost.mono (fun e he => ?_) (checkThmVal_post env cvA value)
@@ -176,23 +187,36 @@ theorem checkDecl_installs_value (ev : Evidences md) (env : Env md) (d : Declara
     subst hk
     exact ⟨_, List.mem_cons_self, h.1⟩
   | opaqueDecl cv value =>
-    unfold checkDecl
-    rw [ExPost.post_bind]
-    refine ExPost.mono (fun cvA h => ?_) (checkConstantVal_post env cv)
-    refine ExPost.mono (fun e he => ?_) (checkOpaqueVal_post env cvA value)
-    subst he
-    intro k hk
-    simp only [selfInstalls, List.mem_singleton] at hk
-    subst hk
-    exact ⟨_, List.mem_cons_self, h.1⟩
-  | axiomDecl cv =>
-    by_cases hs : cv.name = quotSoundName ∨ cv.name = sorryAxName
-    · exact ExPost.of_forall fun e => installsAll_of_nil (by simp [selfInstalls, hs])
-    · have hq : ¬ cv.name = quotSoundName := fun h => hs (.inl h)
-      have hsy : ¬ cv.name = sorryAxName := fun h => hs (.inr h)
+    by_cases hct : cv.name.isCompilerTrustOpaque = true
+    · exact ExPost.of_forall fun e => installsAll_of_nil (by simp [selfInstalls, hct])
+    · have hctF : cv.name.isCompilerTrustOpaque = false := Bool.eq_false_iff.mpr hct
       unfold checkDecl
       dsimp only
-      simp only [hq, ↓reduceIte]
+      simp only [hctF, Bool.false_eq_true, ↓reduceIte]
+      by_cases hcta : cv.name.isCompilerTrustAxiom = true
+      · simp [hcta]
+      simp only [hcta, Bool.false_eq_true, ↓reduceIte]
+      rw [ExPost.post_bind]
+      refine ExPost.mono (fun cvA h => ?_) (checkConstantVal_post env cv)
+      refine ExPost.mono (fun e he => ?_) (checkOpaqueVal_post env cvA value)
+      subst he
+      intro k hk
+      simp only [selfInstalls, hctF, Bool.false_eq_true, ↓reduceIte, List.mem_singleton] at hk
+      subst hk
+      exact ⟨_, List.mem_cons_self, h.1⟩
+  | axiomDecl cv =>
+    by_cases hs : cv.name = quotSoundName ∨ cv.name = sorryAxName ∨ cv.name.isCompilerTrustAxiom = true
+    · exact ExPost.of_forall fun e => installsAll_of_nil (by simp [selfInstalls, hs])
+    · have hq : ¬ cv.name = quotSoundName := fun h => hs (.inl h)
+      have hsy : ¬ cv.name = sorryAxName := fun h => hs (.inr (.inl h))
+      have hctF : cv.name.isCompilerTrustAxiom = false :=
+        Bool.eq_false_iff.mpr (fun h => hs (.inr (.inr h)))
+      unfold checkDecl
+      dsimp only
+      simp only [hq, hctF, Bool.false_eq_true, ↓reduceIte]
+      by_cases hcto : cv.name.isCompilerTrustOpaque = true
+      · simp [hcto]
+      simp only [hcto, Bool.false_eq_true, ↓reduceIte]
       rw [ExPost.post_bind]
       refine ExPost.mono (fun cvA h => ?_) (checkConstantVal_post env cv)
       have hg : InstallsAll ⟨.axiomInfo cvA :: env.consts⟩ (.axiomDecl cv) := by
@@ -619,24 +643,33 @@ theorem checkDecl_declares_quot (ev : Evidences md) (env : Env md) (d : Declarat
   cases d with
   | defnDecl cv value hint =>
     have hn : cv.name = quotName := (List.mem_singleton.mp hq).symm
+    have hct : cv.name.isCompilerTrust = false := by rw [hn]; rfl
     unfold checkDecl
+    simp only [hct, Bool.false_eq_true, ↓reduceIte]
     rw [ExPost.post_bind]
     exact ExPost.mono (fun _ h => h.elim) (reserved cv hn)
   | thmDecl cv value =>
     have hn : cv.name = quotName := (List.mem_singleton.mp hq).symm
+    have hct : cv.name.isCompilerTrust = false := by rw [hn]; rfl
     unfold checkDecl
+    simp only [hct, Bool.false_eq_true, ↓reduceIte]
     rw [ExPost.post_bind]
     exact ExPost.mono (fun _ h => h.elim) (reserved cv hn)
   | opaqueDecl cv value =>
     have hn : cv.name = quotName := (List.mem_singleton.mp hq).symm
+    have hct : cv.name.isCompilerTrustOpaque = false := by rw [hn]; rfl
+    have hcta : cv.name.isCompilerTrustAxiom = false := by rw [hn]; rfl
     unfold checkDecl
+    simp only [hct, hcta, Bool.false_eq_true, ↓reduceIte]
     rw [ExPost.post_bind]
     exact ExPost.mono (fun _ h => h.elim) (reserved cv hn)
   | axiomDecl cv =>
     have hn : cv.name = quotName := (List.mem_singleton.mp hq).symm
     have hs : ¬ cv.name = quotSoundName := by rw [hn]; cases md <;> decide
+    have hct : cv.name.isCompilerTrustAxiom = false := by rw [hn]; rfl
+    have hcto : cv.name.isCompilerTrustOpaque = false := by rw [hn]; rfl
     unfold checkDecl
-    simp only [hs, ↓reduceIte]
+    simp only [hs, hct, hcto, Bool.false_eq_true, ↓reduceIte]
     rw [ExPost.post_bind]
     exact ExPost.mono (fun _ h => h.elim) (reserved cv hn)
   | basisDecl kind => cases hq
@@ -697,21 +730,38 @@ theorem accepts_quot {μ : CheckMode} {ev : Evidences md} {ds : List (Declaratio
   obtain ⟨cv, rfl⟩ := checkDecl_declares_quot ev e₀ d₀ hq e₁ step
   exact accepts_installs ⟨F, run⟩ hd
 
-/-- **A reference accept installs every name its declarations declare**, `sorryAx`
-aside, when one of its records declares the quotient type (the prepared stream's
-front always has one). -/
+/-- **A reference accept installs every name its declarations declare**, `sorryAx` and the five
+inert compiler-trust roles (§7.10) aside, when one of its records declares the quotient type
+(the prepared stream's front always has one). -/
 theorem accepts_names {μ : CheckMode} {ev : Evidences md} {ds : List (Declaration md)}
     {env : Env md} (h : Cached.AcceptsRef μ ev ds env)
     (hquot : ∃ d₀ ∈ ds, (quotName : Key md) ∈ d₀.names)
-    {d : Declaration md} (hd : d ∈ ds) {k : Key md} (hk : k ∈ d.names) (hs : k ≠ sorryAxName) :
+    {d : Declaration md} (hd : d ∈ ds) {k : Key md} (hk : k ∈ d.names)
+    (hs : k ≠ sorryAxName) (hct : k.isCompilerTrust = false) :
     Installed env k := by
   obtain ⟨d₀, hd₀, hq⟩ := hquot
   have quot := accepts_quot h hd₀ hq
   have own := accepts_installs h hd
+  have hctA : k.isCompilerTrustAxiom = false := by
+    cases k with
+    | role r =>
+      simp only [Key.isCompilerTrust, Role.isCompilerTrust, Bool.or_eq_false_iff] at hct
+      exact hct.1
+    | _ => rfl
+  have hctO : k.isCompilerTrustOpaque = false := by
+    cases k with
+    | role r =>
+      simp only [Key.isCompilerTrust, Role.isCompilerTrust, Bool.or_eq_false_iff] at hct
+      exact hct.2
+    | _ => rfl
   cases d with
   | defnDecl cv value hint => exact own k hk
   | thmDecl cv value => exact own k hk
-  | opaqueDecl cv value => exact own k hk
+  | opaqueDecl cv value =>
+    have hn : k = cv.name := List.mem_singleton.mp hk
+    subst hn
+    refine own cv.name ?_
+    simp [selfInstalls, hctO]
   | axiomDecl cv =>
     have hn : k = cv.name := List.mem_singleton.mp hk
     subst hn
@@ -719,7 +769,7 @@ theorem accepts_names {μ : CheckMode} {ev : Evidences md} {ds : List (Declarati
     · rw [hsnd]
       exact quot _ (by cases md <;> decide)
     · refine own cv.name ?_
-      simp [selfInstalls, hsnd, hs]
+      simp [selfInstalls, hsnd, hs, hctA]
   | basisDecl kind => cases hk
   | quotDecl qk cv =>
     have hn : k = cv.name := List.mem_singleton.mp hk

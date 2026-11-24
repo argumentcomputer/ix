@@ -734,10 +734,7 @@ theorem readCtors_mapKeys (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P)
       mentionsAny_mapKeys hf hmN (specAll_good hfam i (Expr.GoodList.getD_default hdG' i))]
   simp only [← Family.mapKeys_mems, hk, ht, hm1, hm2]
   refine ExRel.cond rfl (fun _ => ?_) (fun _ => ExRel.throw_bind)
-  -- the reflexive container occurrences' decline, then the mention check
-  refine ExRel.bind (S := fun _ _ => True) (ExRel.forIn_same trivial fun i _ _ _ _ => ?_)
-    fun _ _ _ => ?_
-  · exact ExRel.cond rfl (fun _ => ExRel.throw_bind) (fun _ => ExRel.pure' trivial)
+  -- the mention check
   refine ExRel.bind (S := fun _ _ => True) (ExRel.forIn_same trivial fun i _ _ _ _ => ?_)
     fun _ _ _ => ?_
   · exact ExRel.cond rfl (fun _ => ExRel.throw_bind) (fun _ => ExRel.pure' trivial)

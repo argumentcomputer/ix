@@ -1,28 +1,40 @@
-//! Versioned verifier-only transport; no prover matrices are serialized.
+//! Versioned Protocol v6 (`F_p^3`) verifier-only transport; no prover
+//! matrices are serialized. Legacy v5 (`version == 1`), `F_p^2`, Horner
+//! batching, and mismatched `vk_digest` keys are rejected fail-closed.
 use p3_blake3::Blake3;
 use p3_symmetric::CryptographicHasher;
 use serde::{Deserialize, Serialize};
 
+use super::algebra::EXTENSION_DEGREE;
 use super::plan::VerifierError;
 use super::plan::VerifierKey;
 use super::plan::validate_circuit;
 use multi_stark::graph::ConstraintGraph;
-use multi_stark::system::Circuit;
-use multi_stark::system::System;
-use multi_stark::types::Commitment;
-use multi_stark::types::CommitmentParameters;
-use multi_stark::types::FriParameters;
-use multi_stark::types::GoldilocksBlake3Config;
-use multi_stark::types::Val;
+use multi_stark::p3_adapter::fri_batching::FriBatching;
+use multi_stark::system::{Circuit, System, compute_vk_digest};
+use multi_stark::types::{
+  Commitment, CommitmentParameters, ExtVal3, FriParameters,
+  GoldilocksBlake3V6Config, Val,
+};
+
+const KEY_CODEC_VERSION: u32 = 2;
+const PROTOCOL_V6_VERSION: u16 = 6;
+const EXTENSION_DEGREE_U16: u16 = 3;
+const FRI_BATCHING_TENSOR_TAG: u16 = 1;
 
 #[derive(Serialize, Deserialize)]
 struct CircuitData {
   graph: ConstraintGraph<Val>,
   metadata: [usize; 8],
 }
+
 #[derive(Serialize, Deserialize)]
 struct KeyData {
   version: u32,
+  protocol_version: u16,
+  extension_degree: u16,
+  fri_batching: u16,
+  vk_digest: [u8; 32],
   commitment: [usize; 2],
   fri: [usize; 5],
   circuits: Vec<CircuitData>,
@@ -37,6 +49,9 @@ impl VerifierKey {
     let system = self.system();
     let fri = system.config.fri_parameters();
     serde_json::json!({
+      "protocol_version": PROTOCOL_V6_VERSION,
+      "extension_degree": EXTENSION_DEGREE,
+      "fri_batching": "tensor",
       "log_blowup": system.config.log_blowup(), "cap": system.config.cap_height(),
       "num_queries": fri.num_queries, "commit_pow": fri.commit_proof_of_work_bits,
       "query_pow": fri.query_proof_of_work_bits, "max_log_arity": fri.max_log_arity,
@@ -49,13 +64,27 @@ impl VerifierKey {
     })
   }
 
-  /// Canonical versioned encoding for trusted key transport and fingerprints.
+  /// Canonical versioned Protocol v6 (`F_p^3`) encoding for trusted key
+  /// transport and fingerprints.
   pub fn to_bytes(&self) -> Result<Vec<u8>, VerifierError> {
     let s = self.system();
+    if s.config.fri_batching() != FriBatching::Tensor {
+      return Err(VerifierError::Unsupported(
+        "Protocol v6 key codec requires FriBatching::Tensor",
+      ));
+    }
+    let expected_vk_digest = compute_vk_digest::<Val, ExtVal3>(&s.circuits);
+    if s.vk_digest != expected_vk_digest {
+      return Err(VerifierError::Profile("vk digest mismatch"));
+    }
     let fp = s.config.fri_parameters();
     use multi_stark::config::StarkGenericConfig;
     let data = KeyData {
-      version: 1,
+      version: KEY_CODEC_VERSION,
+      protocol_version: PROTOCOL_V6_VERSION,
+      extension_degree: EXTENSION_DEGREE_U16,
+      fri_batching: FRI_BATCHING_TENSOR_TAG,
+      vk_digest: s.vk_digest,
       commitment: [s.config.log_blowup(), s.config.cap_height()],
       fri: [
         fp.log_final_poly_len,
@@ -88,7 +117,9 @@ impl VerifierKey {
       .map_err(|e| VerifierError::Encoding(e.to_string()))
   }
 
-  /// Decode a trusted key, with a 256 MiB decoding budget. Trust/authentication
+  /// Decode a trusted Protocol v6 (`F_p^3`) key, with a 256 MiB decoding
+  /// budget. Rejects legacy v5, `F_p^2`, Horner batching, below-floor
+  /// parameters, and mismatched `vk_digest` fail-closed. Trust/authentication
   /// remains the caller's responsibility. Profile validation is still required.
   pub fn from_bytes(bytes: &[u8]) -> Result<Self, VerifierError> {
     let (data, used): (KeyData, usize) = bincode::serde::decode_from_slice(
@@ -96,8 +127,16 @@ impl VerifierKey {
       bincode::config::standard().with_limit::<268435456>(),
     )
     .map_err(|e| VerifierError::Encoding(e.to_string()))?;
-    if used != bytes.len() || data.version != 1 {
+    if used != bytes.len() || data.version != KEY_CODEC_VERSION {
       return Err(VerifierError::Profile("key version/trailing bytes"));
+    }
+    if data.protocol_version != PROTOCOL_V6_VERSION
+      || data.extension_degree != EXTENSION_DEGREE_U16
+      || data.fri_batching != FRI_BATCHING_TENSOR_TAG
+    {
+      return Err(VerifierError::Unsupported(
+        "only Protocol v6 (F_p^3, FriBatching::Tensor) keys are supported",
+      ));
     }
     let commitment = CommitmentParameters {
       log_blowup: data.commitment[0],
@@ -134,7 +173,7 @@ impl VerifierKey {
       let count = num_lookups
         .max(1)
         .div_ceil(lookup_group_size)
-        .checked_mul(2)
+        .checked_mul(EXTENSION_DEGREE)
         .and_then(|n| c.graph.zeros.len().checked_add(n))
         .ok_or(VerifierError::Profile("constraint count overflow"))?;
       let circuit = Circuit {
@@ -153,11 +192,16 @@ impl VerifierKey {
       validate_circuit(&circuit, index)?;
       circuits.push(circuit);
     }
+    let expected_vk_digest = compute_vk_digest::<Val, ExtVal3>(&circuits);
+    if data.vk_digest != expected_vk_digest {
+      return Err(VerifierError::Profile("vk digest mismatch"));
+    }
     let key = Self::new(System {
-      config: GoldilocksBlake3Config::new(commitment, fri),
+      config: GoldilocksBlake3V6Config::new(commitment, fri),
       circuits,
       preprocessed_commit: data.preprocessing,
       preprocessed_indices: data.indices,
+      vk_digest: expected_vk_digest,
     });
     let system = key.system();
     if system.preprocessed_indices.len() != system.circuits.len() {
@@ -206,7 +250,7 @@ impl VerifierKey {
 
   pub fn fingerprint(&self) -> Result<[u8; 32], VerifierError> {
     Ok(Blake3.hash_iter(
-      b"multi-stark/verifier-key/v1".iter().copied().chain(self.to_bytes()?),
+      b"multi-stark/verifier-key/v2".iter().copied().chain(self.to_bytes()?),
     ))
   }
 }

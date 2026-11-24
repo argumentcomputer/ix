@@ -124,7 +124,7 @@ example : Circuit.EncodedEntryDerives system "reduce" (entryValues [.tuple [4, 0
   have executed : run (sample.toField Rat) "reduce" [.tuple [4, 0]] 40 =
       .ok (.tuple [.field 0, .field 10], []) := by decide +kernel
   obtain ⟨_, entry, locals, expr, prepared, body⟩ := run_eq_ok_iff.mp executed
-  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec body))
+  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec_exact body))
     (fun _ => (0 : Rat)) (by simp)
   simp only [Value.mapAddress, List.map_cons, List.map_nil] at complete
   exact complete

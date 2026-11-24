@@ -960,6 +960,10 @@ theorem checkDecl_datF (env : Env md) (d : Declaration md) (F : Nat) :
   cases d with
   | defnDecl cv value hint =>
     dsimp only
+    by_cases hct : cv.name.isCompilerTrust = true
+    · simp only [hct, ↓reduceIte, FueledM.atF_bind, FueledM.atF_throw,
+        throw, throwThe, MonadExceptOf.throw, Bind.bind, Except.bind]
+    simp only [hct, Bool.false_eq_true, ↓reduceIte, pure_bind]
     rw [FueledM.atF_bind, checkConstantVal_datF]
     congr 1
     funext cv'
@@ -974,6 +978,11 @@ theorem checkDecl_datF (env : Env md) (d : Declaration md) (F : Nat) :
       | rfl
       | (simp only [FueledM.atF_pure, FueledM.atF_throw]))
   | thmDecl cv value =>
+    dsimp only
+    by_cases hct : cv.name.isCompilerTrust = true
+    · simp only [hct, ↓reduceIte, FueledM.atF_bind, FueledM.atF_throw,
+        throw, throwThe, MonadExceptOf.throw, Bind.bind, Except.bind]
+    simp only [hct, Bool.false_eq_true, ↓reduceIte, pure_bind]
     show ((checkConstantVal (fueledOpsM mode) env cv >>= fun cv =>
       checkThmVal (fueledOpsM mode) env cv value : FueledM md _)).val F = _
     rw [FueledM.atF_bind, checkConstantVal_datF]
@@ -981,23 +990,64 @@ theorem checkDecl_datF (env : Env md) (d : Declaration md) (F : Nat) :
     funext cv'
     rw [checkThmVal_datF]
   | opaqueDecl cv value =>
-    show ((checkConstantVal (fueledOpsM mode) env cv >>= fun cv =>
-      checkOpaqueVal (fueledOpsM mode) env cv value : FueledM md _)).val F = _
-    rw [FueledM.atF_bind, checkConstantVal_datF]
-    congr 1
-    funext cv'
-    rw [checkOpaqueVal_datF]
+    dsimp only
+    by_cases hct : cv.name.isCompilerTrustOpaque = true
+    · rw [if_pos hct, if_pos hct]
+      by_cases hpin : (anchorMismatch? cv).isNone = true
+      · rw [if_pos hpin, if_pos hpin]
+        by_cases hdup : (env.find? cv.name).isSome = true
+        · rw [if_pos hdup, if_pos hdup]; simp only [FueledM.atF_throw]
+        rw [if_neg hdup, if_neg hdup]
+        by_cases hlb : value.looseBVarsBounded 0 = true
+        case neg => simp only [hlb, Bool.not_false, ↓reduceIte, FueledM.atF_throw]
+        simp only [hlb, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+        by_cases hfv : value.hasFvar = true
+        · rw [if_pos hfv, if_pos hfv]; simp only [FueledM.atF_throw]
+        rw [if_neg hfv, if_neg hfv]
+        by_cases hlp : value.allLevelParamsDefined cv.levelParams = true
+        case neg => simp only [hlp, Bool.not_false, ↓reduceIte, FueledM.atF_throw]
+        simp only [hlp, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+        rw [FueledM.atF_bind, checkConstantVal_datF]
+        congr 1
+      · rw [if_neg hpin, if_neg hpin]; simp only [FueledM.atF_throw]
+    · rw [if_neg hct, if_neg hct]
+      by_cases hcta : cv.name.isCompilerTrustAxiom = true
+      · rw [if_pos hcta, if_pos hcta]; simp only [FueledM.atF_throw]
+      rw [if_neg hcta, if_neg hcta]
+      show ((checkConstantVal (fueledOpsM mode) env cv >>= fun cv =>
+        checkOpaqueVal (fueledOpsM mode) env cv value : FueledM md _)).val F = _
+      rw [FueledM.atF_bind, checkConstantVal_datF]
+      congr 1
+      funext cv'
+      rw [checkOpaqueVal_datF]
   | axiomDecl cv =>
     dsimp only
-    -- the `Quot.sound` comparison (task #293) is a pure guard
+    -- the `Quot.sound` and compiler-trust comparisons are pure guards
     by_cases hqs : cv.name = quotSoundName
     · rw [if_pos hqs, if_pos hqs]
       simp only [FueledM.atF_ite, FueledM.atF_pure, FueledM.atF_throw]
     · rw [if_neg hqs, if_neg hqs]
-      rw [FueledM.atF_bind, checkConstantVal_datF]
-      congr 1
-      funext cvA
-      simp only [FueledM.atF_ite, FueledM.atF_pure, FueledM.atF_throw]
+      by_cases hct : cv.name.isCompilerTrustAxiom = true
+      · rw [if_pos hct, if_pos hct]
+        by_cases hpin : (anchorMismatch? cv).isNone = true
+        · rw [if_pos hpin, if_pos hpin]
+          by_cases hdup : (env.find? cv.name).isSome = true
+          · rw [if_pos hdup, if_pos hdup]; simp only [FueledM.atF_throw]
+          rw [if_neg hdup, if_neg hdup]
+          by_cases htc : cv.name = roleKey .trustCompiler
+          · rw [if_pos htc, if_pos htc, FueledM.atF_bind, checkConstantVal_datF]
+            congr 1
+          rw [if_neg htc, if_neg htc]
+          simp only [FueledM.atF_ite, FueledM.atF_pure, FueledM.atF_throw]
+        · rw [if_neg hpin, if_neg hpin]; simp only [FueledM.atF_throw]
+      · rw [if_neg hct, if_neg hct]
+        by_cases hcto : cv.name.isCompilerTrustOpaque = true
+        · rw [if_pos hcto, if_pos hcto]; simp only [FueledM.atF_throw]
+        rw [if_neg hcto, if_neg hcto]
+        rw [FueledM.atF_bind, checkConstantVal_datF]
+        congr 1
+        funext cvA
+        simp only [FueledM.atF_ite, FueledM.atF_pure, FueledM.atF_throw]
   | basisDecl kind => exact checkBasisDecl_datF env kind F
   | quotDecl k cv =>
     dsimp only

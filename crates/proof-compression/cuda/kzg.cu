@@ -50,11 +50,11 @@ __global__ void unpack_affine(affine_t* output, const ArkAffine* input, size_t c
     }
 }
 
-extern "C" void ix_kzg_range_push(const char* name) {
+IX_KZG_EXPORT void IX_KZG_SYM(range_push)(const char* name) {
     if (transfer_profiling()) nvtxRangePushA(name);
 }
 
-extern "C" void ix_kzg_range_pop() {
+IX_KZG_EXPORT void IX_KZG_SYM(range_pop)() {
     if (transfer_profiling()) nvtxRangePop();
 }
 
@@ -65,7 +65,7 @@ static int failure(int code, const char* message) {
     return code;
 }
 
-extern "C" int ix_kzg_devices(int* count) {
+IX_KZG_EXPORT int IX_KZG_SYM(devices)(int* count) {
     try {
         *count = static_cast<int>(ngpus());
         return 0;
@@ -73,7 +73,7 @@ extern "C" int ix_kzg_devices(int* count) {
       catch (const std::exception& e) { return failure(cudaErrorUnknown, e.what()); }
 }
 
-extern "C" int ix_kzg_device_ordinal(int index, int* ordinal) {
+IX_KZG_EXPORT int IX_KZG_SYM(device_ordinal)(int index, int* ordinal) {
     try {
         if (!ordinal || index < 0 || static_cast<size_t>(index) >= ngpus())
             return cudaErrorInvalidDevice;
@@ -91,7 +91,7 @@ static const gpu_t& device_gpu(int ordinal) {
     return select_gpu(found->id());
 }
 
-extern "C" int ix_kzg_memory(int device, size_t* free, size_t* total) {
+IX_KZG_EXPORT int IX_KZG_SYM(memory)(int device, size_t* free, size_t* total) {
     try {
         if (!free || !total) return cudaErrorInvalidValue;
         device_gpu(device);
@@ -133,7 +133,7 @@ int msm_result(RustError status) {
 
 // Arkworks coordinates and scalars use little-endian Montgomery limbs.
 // Sppark affine infinity is (0, 0); projective infinity has Z = 0.
-extern "C" int ix_kzg_msm_create(int device, void** out,
+IX_KZG_EXPORT int IX_KZG_SYM(msm_create)(int device, void** out,
                                           const ArkAffine* points, size_t count) {
     ProfileRange range("kzg/msm-points");
     try {
@@ -168,7 +168,7 @@ __global__ void scale_values(fr_t* output, const fr_t* input, size_t count, fr_t
         output[i] = input[i] * scale;
 }
 
-extern "C" int ix_kzg_msm_invoke(int device, void* context, point_t* out,
+IX_KZG_EXPORT int IX_KZG_SYM(msm_invoke)(int device, void* context, point_t* out,
                                           const fr_t* scalars, size_t count,
                                           const fr_t* normalization) {
     ProfileRange range("kzg/msm-host-scalars");
@@ -205,7 +205,7 @@ extern "C" int ix_kzg_msm_invoke(int device, void* context, point_t* out,
       catch (const std::exception& e) { return failure(cudaErrorUnknown, e.what()); }
 }
 
-extern "C" int ix_kzg_msm_destroy(int device, void* context) {
+IX_KZG_EXPORT int IX_KZG_SYM(msm_destroy)(int device, void* context) {
     try {
         auto* msm = static_cast<MsmContext*>(context);
         if (!msm || msm->device != device) return cudaErrorInvalidValue;
@@ -300,7 +300,7 @@ void transform(const gpu_t& gpu, stream_t& stream, fr_t* data,
 #include "kzg_lookup.cuh"
 #include "kzg_passes.cuh"
 
-extern "C" int ix_kzg_polynomial_upload(int device, const fr_t* input,
+IX_KZG_EXPORT int IX_KZG_SYM(polynomial_upload)(int device, const fr_t* input,
                                                   size_t count, void** output) {
     try {
         if (!input || !output || !count) return cudaErrorInvalidValue;
@@ -318,7 +318,7 @@ extern "C" int ix_kzg_polynomial_upload(int device, const fr_t* input,
       catch (const std::exception& e) { return failure(cudaErrorUnknown, e.what()); }
 }
 
-extern "C" int ix_kzg_polynomial_destroy(int device, void* pointer) {
+IX_KZG_EXPORT int IX_KZG_SYM(polynomial_destroy)(int device, void* pointer) {
     try {
         auto* polynomial = static_cast<ResidentPolynomial*>(pointer);
         if (!polynomial || polynomial->device != device) return cudaErrorInvalidValue;
@@ -331,7 +331,7 @@ extern "C" int ix_kzg_polynomial_destroy(int device, void* pointer) {
       catch (const std::exception& e) { return failure(cudaErrorUnknown, e.what()); }
 }
 
-extern "C" int ix_kzg_msm_invoke_resident(int device, void* context,
+IX_KZG_EXPORT int IX_KZG_SYM(msm_invoke_resident)(int device, void* context,
                                                   point_t* out, const void* polynomial,
                                                   size_t offset, size_t count,
                                                   const fr_t* normalization) {
@@ -370,7 +370,7 @@ extern "C" int ix_kzg_msm_invoke_resident(int device, void* context,
 
 #include "kzg_srs.cuh"
 
-IX_KZG_EXPORT int ix_kzg_fft_batch(int device, const FftJob* jobs,
+IX_KZG_EXPORT int IX_KZG_SYM(fft_batch)(int device, const FftJob* jobs,
                                           size_t job_count, uint32_t lg, bool inverse,
                                           const fr_t* shift, size_t slots) {
     ProfileRange range(inverse ? "kzg/ifft-batch" : "kzg/fft-batch");
@@ -450,21 +450,21 @@ IX_KZG_EXPORT int ix_kzg_fft_batch(int device, const FftJob* jobs,
       catch (const std::exception& e) { return failure(cudaErrorUnknown, e.what()); }
 }
 
-extern "C" int ix_kzg_fft_from(int device, const fr_t* input,
+IX_KZG_EXPORT int IX_KZG_SYM(fft_from)(int device, const fr_t* input,
                                          size_t input_count, fr_t* output,
                                          uint32_t lg, bool inverse, const fr_t* shift) {
     const FftJob job{input, nullptr, output, input_count, nullptr};
-    return ix_kzg_fft_batch(device, &job, 1, lg, inverse, shift, 1);
+    return IX_KZG_SYM(fft_batch)(device, &job, 1, lg, inverse, shift, 1);
 }
 
-extern "C" int ix_kzg_fft(int device, fr_t* values, uint32_t lg,
+IX_KZG_EXPORT int IX_KZG_SYM(fft)(int device, fr_t* values, uint32_t lg,
                                     bool inverse, const fr_t* shift) {
     if (lg > KZG_MAX_FFT_LOG) return cudaErrorInvalidValue;
-    return ix_kzg_fft_from(device, values, size_t(1) << lg,
+    return IX_KZG_SYM(fft_from)(device, values, size_t(1) << lg,
                                     values, lg, inverse, shift);
 }
 
-extern "C" int ix_kzg_evaluate_resident(int device, const fr_t* coefficients,
+IX_KZG_EXPORT int IX_KZG_SYM(evaluate_resident)(int device, const fr_t* coefficients,
                                         const void* resident_pointer, size_t count,
                                         const fr_t* points, size_t point_count, fr_t* results) {
     ProfileRange range("kzg/evaluate");
@@ -501,14 +501,14 @@ extern "C" int ix_kzg_evaluate_resident(int device, const fr_t* coefficients,
       catch (const std::exception& e) { return failure(cudaErrorUnknown, e.what()); }
 }
 
-extern "C" int ix_kzg_evaluate(int device, const fr_t* coefficients,
+IX_KZG_EXPORT int IX_KZG_SYM(evaluate)(int device, const fr_t* coefficients,
                                         size_t count, const fr_t* points,
                                         size_t point_count, fr_t* results) {
-    return ix_kzg_evaluate_resident(device, coefficients, nullptr, count,
+    return IX_KZG_SYM(evaluate_resident)(device, coefficients, nullptr, count,
                                             points, point_count, results);
 }
 
-extern "C" int ix_kzg_divide(int device, const fr_t* input, fr_t* output, size_t count,
+IX_KZG_EXPORT int IX_KZG_SYM(divide)(int device, const fr_t* input, fr_t* output, size_t count,
                                       const fr_t* z) {
     ProfileRange range("kzg/divide");
     try {
@@ -536,7 +536,7 @@ extern "C" int ix_kzg_divide(int device, const fr_t* input, fr_t* output, size_t
     }
 }
 
-extern "C" int ix_kzg_divide_resident(int device, const fr_t* input,
+IX_KZG_EXPORT int IX_KZG_SYM(divide_resident)(int device, const fr_t* input,
                                                size_t count, const fr_t* z, void** output) {
     ProfileRange range("kzg/divide-resident");
     try {
@@ -566,7 +566,7 @@ __global__ void sample_scalars(fr_t* samples, const fr_t* data, size_t count) {
     samples[i] = data[(i * size_t(0x9e3779b97f4a7c15)) % count];
 }
 
-extern "C" int ix_kzg_polynomial_sample(int device, const void* pointer,
+IX_KZG_EXPORT int IX_KZG_SYM(polynomial_sample)(int device, const void* pointer,
                                                  size_t offset, size_t count, fr_t* samples) {
     try {
         if (!pointer || !samples || !count) return cudaErrorInvalidValue;

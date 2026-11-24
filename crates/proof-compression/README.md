@@ -1,9 +1,10 @@
 # Ix proof compression
 
-The pipeline is Goldilocks/Blake3 FRI → BN254 KZG → recursive BN254 KZG,
-with an optional final BN254 PLONK or Groth16 proof. FRI uses Goldilocks and its
-quadratic extension with Blake3 Merkle commitments. Curve arithmetic starts
-when the FRI verifier is translated into BN254 scalar-field constraints.
+The pipeline is Goldilocks/Blake3 FRI → BN254 or BLS12-381 KZG → recursive KZG,
+with an optional final PLONK or Groth16 proof. FRI uses Goldilocks and its
+cubic extension (`Fp^3 = Fp[X]/(X^3 - X - 1)`, Protocol `v6`) with domain-separated
+Blake3 Merkle commitments and `FriBatching::Tensor`. Curve arithmetic starts
+when the FRI verifier is translated into curve scalar-field constraints.
 
 BN254 is unconditional, including builds with `--no-default-features`.
 The main Cargo features are `parallel`, `plonk`, `groth16`, and `cuda`. Either
@@ -37,7 +38,7 @@ development parameters. Final setup is independent: PLONK defaults to Ignition,
 while `--dev-final-srs` prepares local keys for either PLONK or Groth16. With
 `--dev-kzg-srs` as well, neither stage needs Ignition.
 Default verification pins one version of the verifying keys,
-[`0.3`](verifying-keys/0.3): one key per proof system, with the root layout,
+[`0.5`](verifying-keys/0.5): one key per proof system, with the root layout,
 statement prefix and Ignition parameters they were derived for. They belong to
 the formal IxVM and aggregation backends under the default STARK parameters
 ([STARK parameters](../../docs/stark-parameters.md)); see
@@ -113,20 +114,18 @@ install it.
 ## Proving and verification
 
 `ix compress ROOT` and `ix prove ... --compress kzg|plonk|groth16` automatically
-normalize the aggregate root using the versioned
-[version 0.3 layout](verifying-keys/0.3/root-layout.ixl).
-`--fixed-root` is an optional layout override from `ix compress layout`. The
-default layout holds the roots of `Nat.add_comm`'s aggregate under all four
-root shapes (a wrapped leaf, ordinary and structural joins of wrapped leaves,
-and joins of raw leaves), which need the same heights, with one more doubling
-of every circuit (`--headroom 1`). It has 140 circuit heights, 12 of them
-memory circuits, and 18 claim elements. Its root verifier is the formal
-aggregation key, BLAKE3
-`f6d00e0451de46e218aa17a93924ae8714d87c7ebe61301470fccc55b409b44e`.
+normalize the formal aggregate root (an `IXAGGR2` proof) using the versioned
+[version 0.5 layout](verifying-keys/0.5/root-layout.ixl).
+`--fixed-root` is an optional layout override from `ix compress layout`, and
+`ix compress normalize` writes the root input directory without compressing. The
+default layout covers `Nat.add_comm`, `Init+Std`, and full `Mathlib` 4.34.1
+roots with one more doubling of every circuit (`--headroom 1`). Its root
+verifier is the formal Protocol `v6` aggregation key, BLAKE3
+`d3813ae554af0aa6a24c5c72c796e17403756aa1f9cabbb08519ed4d767c9f13`.
 The default rejects another backend key, and normalization rejects executions
 that exceed the fixed bounds before allocating traces. A larger supported
-layout is a new release profile; compression does not resize it per proof.
-The profile supplies normalization bounds, not a bundled compression verifier.
+layout is a new release; `ix compress layout` derives one when a release is
+cut, and compression never resizes it per proof.
 
 A layout file (`.ixl`, [`FixedRoot`](src/pipeline/root/fixed.rs)) is Ixon,
 written with `aiur::ixon`'s primitives, and its BLAKE3 digest is its identity;
@@ -309,8 +308,8 @@ environment and installs them once, before the first KZG stage:
 | --- | --- | --- |
 | `IX_KZG_CUDA_DEVICES` | CUDA ordinals, comma separated, in preference order | `0`; the library itself defaults to every supported device |
 | `IX_KZG_MSM_CHUNK_POINTS` | `1..=2^28` | `2^24` |
-| `IX_KZG_CUDA_RESIDENT_GIB` | device bytes kept for resident coefficients, in GiB | first stage: up to half the device memory; recursive stage: `8` |
-| `IX_KZG_CUDA_SRS_CACHE` | `0`, `1` | `0` |
+| `IX_KZG_CUDA_RESIDENT_GIB` | device bytes kept for resident coefficients, in GiB | adaptive (`total / 3`, bounded by `total / 2` and free VRAM minus reserve) |
+| `IX_KZG_CUDA_SRS_CACHE` | `0`, `1` | `1` |
 | `IX_KZG_CUDA_PASSES` | `0`, `1`, `force` | `1`: constraint passes when the dense working set does not fit |
 | `IX_KZG_CUDA_PROFILE` | set to record NVTX ranges and transfer timings | unset |
 

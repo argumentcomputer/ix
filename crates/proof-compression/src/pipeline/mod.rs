@@ -2,8 +2,10 @@
 mod claims;
 mod lowering;
 mod stage;
-pub use root::{FixedRoot, prepare_root};
-pub use stage::{FriVerifier, KzgVerifier, Prepared, prepare_kzg};
+pub use root::{FixedRoot, count_root, prepare_root};
+pub use stage::{
+  FriVerifier, KzgVerifier, Prepared, prepare_kzg, prepare_kzg_for,
+};
 pub use wrap::{
   RecursiveProof, RecursiveStage, RecursiveVerifier, prepare_recursive,
 };
@@ -13,9 +15,12 @@ mod derive;
 mod development;
 pub(crate) use compress::StageConfig;
 pub use compress::{CompressConfig, CompressInput, compress};
+pub use derive::{
+  ReleaseKeys, derive_recursive_vk, derive_recursive_vk_for, derive_release,
+  derive_release_for,
+};
 #[cfg(any(feature = "plonk", feature = "groth16"))]
-pub use derive::final_schema;
-pub use derive::{ReleaseKeys, derive_recursive_vk, derive_release};
+pub use derive::{final_schema, final_schema_for};
 pub use development::verify_with_development_verifier;
 mod final_proof;
 mod first;
@@ -25,6 +30,7 @@ pub mod gnark;
 pub mod groth16;
 mod init_fri;
 pub mod plonk;
+pub mod plonk_limits;
 mod prepare;
 pub use final_proof::{Artifact, FinalOptions, FinalSystem};
 pub use prepare::{prepare, prepare_plonk};
@@ -36,13 +42,21 @@ mod setup;
 pub use setup::{SetupClass, SetupConfig};
 mod statement;
 pub use statement::backend_prefix;
-mod storage;
+pub(crate) mod storage;
 mod wrap;
 
+use crate::kzg::curve::{Bls12381, Bn254, Curve, KzgCurve};
 use std::{fs, path::Path};
 
-pub const PROOF_TAG: &[u8; 8] = b"IXBN\0\0\0\x01";
+pub const PROOF_TAG: &[u8; 8] = Bn254::RECURSIVE_PROOF_TAG;
+pub const BLS12_381_PROOF_TAG: &[u8; 8] = Bls12381::RECURSIVE_PROOF_TAG;
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+/// The released Ignition identity and pairing anchors, without proving powers.
+/// These are independent of the local SRS cache or a supplied proof.
+pub fn ignition_parameters() -> Result<crate::kzg::VerifierParams> {
+  verifying_keys::ignition_parameters()
+}
 
 /// The statement a compressed proof of `claim` exposes, as the caller
 /// derived it from its aggregation backend, checked to end in the packed
@@ -63,13 +77,36 @@ pub fn check_release_statement(claim: &[u8], statement: &[u8]) -> Result<()> {
   verifying_keys::check_release_prefix(&words)
 }
 
-/// Describe the inner KZG setup selected for a compression run.
+/// Describe the inner KZG setup selected for a BN254 compression run.
 pub fn setup_description(
   development_kzg: bool,
   final_proof: FinalOptions,
 ) -> Result<&'static str> {
   final_proof.validate_setup(development_kzg)?;
   Ok(SetupConfig::from_env(development_kzg)?.class().description())
+}
+
+/// Describe the curve security profile and inner KZG setup selected for a
+/// compression run on `curve` (`Curve::Bn254` or `Curve::Bls12381`).
+pub fn setup_description_for_curve(
+  curve: Curve,
+  development_kzg: bool,
+  final_proof: FinalOptions,
+) -> Result<String> {
+  final_proof.validate_setup(development_kzg)?;
+  let setup = SetupConfig::from_env_for_curve(curve, development_kzg)?;
+  let zk_note = match final_proof.system {
+    FinalSystem::None => "final-kzg (non-ZK)",
+    FinalSystem::Plonk => "gnark PLONK (ZK)",
+    FinalSystem::Groth16 => "gnark Groth16 (ZK)",
+  };
+  Ok(format!(
+    "{} [{}]; {}: {}",
+    curve.as_str(),
+    zk_note,
+    curve.security_label(),
+    setup.class().description(),
+  ))
 }
 
 /// Verify a compressed proof of `claim` under the release key its tag selects.
@@ -82,17 +119,28 @@ pub fn verify(
   if let Some(packet) = proof.strip_prefix(groth16::PROOF_TAG) {
     return groth16::verify(packet, claim, allow_development);
   }
+  if let Some(packet) = proof.strip_prefix(groth16::BLS12_381_PROOF_TAG) {
+    return groth16::verify_bls12_381(packet, claim, allow_development);
+  }
   if let Some(packet) = proof.strip_prefix(plonk::PROOF_TAG) {
     return plonk::verify(packet, claim);
   }
+  if let Some(packet) = proof.strip_prefix(plonk::BLS12_381_PROOF_TAG) {
+    return plonk::verify_bls12_381(packet, claim);
+  }
   if let Some(packet) = proof.strip_prefix(PROOF_TAG) {
     return verifying_keys::verify_recursive(packet, claim);
+  }
+  if let Some(packet) = proof.strip_prefix(BLS12_381_PROOF_TAG) {
+    return verifying_keys::verify_recursive_bls12_381(packet, claim);
   }
   Err("unsupported compressed proof version".into())
 }
 
 /// Verify with a caller-authorized verifying key digest and independently expected
-/// root statement. No proving parameters or bundled catalog entry are needed.
+/// root statement. Supports both BN254 (`IXBN\0\0\0\x01`) and BLS12-381
+/// (`IXCMP\0\0\x04`) recursive KZG proofs without proving parameters or bundled
+/// catalog entries.
 pub fn verify_with_vk(
   proof: &[u8],
   claim: &[u8],
@@ -102,17 +150,27 @@ pub fn verify_with_vk(
   allow_development: bool,
 ) -> Result<SetupClass> {
   let words = check_claim(claim, expected_claims)?;
-  let packet = proof
-    .strip_prefix(PROOF_TAG)
-    .ok_or("unsupported compressed proof curve or version")?;
-  verifying_keys::verify_with_vk(
-    packet,
-    claim,
-    &words,
-    vk,
-    trusted_vk_digest,
-    allow_development,
-  )
+  if let Some(packet) = proof.strip_prefix(PROOF_TAG) {
+    return verifying_keys::verify_with_vk_for::<Bn254>(
+      packet,
+      claim,
+      &words,
+      vk,
+      trusted_vk_digest,
+      allow_development,
+    );
+  }
+  if let Some(packet) = proof.strip_prefix(BLS12_381_PROOF_TAG) {
+    return verifying_keys::verify_with_vk_for::<Bls12381>(
+      packet,
+      claim,
+      &words,
+      vk,
+      trusted_vk_digest,
+      allow_development,
+    );
+  }
+  Err("unsupported compressed proof curve or version".into())
 }
 
 fn prepare_output(out: &Path) -> Result<()> {
@@ -144,6 +202,15 @@ pub fn write_root_input(
 /// proving it.
 pub fn check_root(root: &Path, out: &Path) -> Result<()> {
   root::run(root, out, false)
+}
+
+/// Prove only the Goldilocks FRI compression stage and save its checked output.
+/// The caller authorizes the root key, claims and optional fixed layout in
+/// `root`. Place `out` at a pipeline's `fri/` directory to resume the KZG stages
+/// later, including with a separately built CUDA executable. This allocates
+/// the full FRI proving working set; inspect `count_root` and `check_root` first.
+pub fn prove_root(root: &Path, out: &Path) -> Result<()> {
+  root::run(root, out, true)
 }
 
 /// Write a root input directory: the backend key, root proof, expected
@@ -193,6 +260,7 @@ mod tests {
     let statement =
       statement::to_claims_bytes(&statement::with_claim(&[0; 10], b"claim"));
     let config = |final_proof: FinalSystem| CompressConfig {
+      curve: Curve::Bn254,
       setup: SetupConfig::Development { cache_directory: None },
       fixed_cache: "/does-not-exist".into(),
       plonk_cache: "/does-not-exist".into(),
@@ -234,5 +302,44 @@ mod tests {
       let error = verify(&groth16, b"claim", false).unwrap_err().to_string();
       assert!(error.contains("IX_GROTH16=1"), "{error}");
     }
+    let mut bls_recursive = BLS12_381_PROOF_TAG.to_vec();
+    bls_recursive.extend([0; 32]);
+    assert!(
+      verify(&bls_recursive, b"claim", true)
+        .unwrap_err()
+        .to_string()
+        .contains("BLS12-381")
+    );
+    let mut bls_plonk = plonk::BLS12_381_PROOF_TAG.to_vec();
+    bls_plonk.extend([0; 64]);
+    assert!(verify(&bls_plonk, b"claim", false).is_err());
+    let mut bls_groth16 = groth16::BLS12_381_PROOF_TAG.to_vec();
+    bls_groth16.extend([0; 292 + 32]);
+    assert!(verify(&bls_groth16, b"claim", false).is_err());
+  }
+
+  #[test]
+  fn setup_description_for_both_curves_carries_honest_security_labels() {
+    let bn = setup_description_for_curve(
+      Curve::Bn254,
+      true,
+      FinalOptions::from(FinalSystem::None),
+    )
+    .unwrap();
+    assert!(bn.contains("bn254"));
+    assert!(bn.contains("~100b classical / 0b PQ"));
+    assert!(bn.contains("final-kzg (non-ZK)"));
+
+    let bls = setup_description_for_curve(
+      Curve::Bls12381,
+      true,
+      FinalOptions { system: FinalSystem::Plonk, allow_development: true },
+    )
+    .unwrap();
+    assert!(bls.contains("bls12-381"));
+    assert!(bls.contains("~126–128b classical / 0b PQ"));
+    assert!(bls.contains("EIP-2537"));
+    assert!(bls.contains("Filecoin challenge_19"));
+    assert!(bls.contains("gnark PLONK (ZK)"));
   }
 }

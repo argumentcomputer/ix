@@ -89,7 +89,7 @@ theorem compiled : compile program = .ok system := by
 theorem mapped_derives : EncodedEntryDerives system "mapped" (entryValues [1]) (.field 9) := by
   have executed : Aiur.run program "mapped" [1] 16 = .ok (.field 9, []) := by decide +kernel
   obtain ⟨_, entry, locals, expr, prepared, body⟩ := run_eq_ok_iff.mp executed
-  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec body))
+  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec_exact body))
     (fun _ => (0 : Rat)) (by simp)
   simpa [Value.mapAddress] using complete
 
@@ -99,14 +99,14 @@ example : EncodedMemoEntryDerives system "mapped" (entryValues [1]) (.field 9) :
 example : EncodedEntryDerives system "lazy" (entryValues [0]) (.field 9) := by
   have executed : Aiur.run program "lazy" [0] 16 = .ok (.field 9, []) := by decide +kernel
   obtain ⟨_, entry, locals, expr, prepared, body⟩ := run_eq_ok_iff.mp executed
-  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec body))
+  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec_exact body))
     (fun _ => (0 : Rat)) (by simp)
   simpa [Value.mapAddress] using complete
 
 example : EncodedEntryDerives system "allocate" (entryValues [8]) (.field 8) := by
   have executed : Aiur.run program "allocate" [8] 16 = .ok (.field 8, [.field 8]) := by decide +kernel
   obtain ⟨_, entry, locals, expr, prepared, body⟩ := run_eq_ok_iff.mp executed
-  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec body))
+  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec_exact body))
     (fun _ => (99 : Rat)) (by intro i j hi hj _; simp at hi hj; omega)
   simpa [Value.mapAddress] using complete
 

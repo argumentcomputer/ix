@@ -27,6 +27,10 @@ contract IxGroth16Verifier {
             uint256(_reverse128(uint128(uint256(expectedClaimDigest) >> 128))),
             uint256(_reverse128(uint128(uint256(expectedClaimDigest))))
         ];
+        // EIP-150 forwards at most 63/64 of remaining gas; require enough caller gas
+        // for the full VERIFICATION_GAS stipend so gas starvation reverts instead of
+        // returning false on a valid proof via catch.
+        require(gasleft() >= (VERIFICATION_GAS * 64) / 63 + 10_000, "insufficient gas");
         try verifier.verifyProof{gas: VERIFICATION_GAS}(proof, publicInputs) {
             return true;
         } catch {

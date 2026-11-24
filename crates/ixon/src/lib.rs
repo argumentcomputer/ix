@@ -23,6 +23,7 @@ pub mod lazy;
 pub mod map;
 pub mod merkle;
 pub mod metadata;
+pub mod model_advice;
 pub mod modes;
 pub mod proof;
 pub mod role_table;
@@ -31,6 +32,7 @@ pub mod shard_claim;
 pub mod syntax;
 pub mod tag;
 pub mod univ;
+pub mod witness;
 
 /// Stable identifier for checked Ixon grammar, version 5: version 4's TagN
 /// integers plus each record's binder-data section. Unchecked envelope data

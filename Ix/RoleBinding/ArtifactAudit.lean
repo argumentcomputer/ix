@@ -72,7 +72,7 @@ replace only their entry/preparation wrappers. No runtime ruling changes. -/
 -- Factoring `Ixon.CheckOrder.postorder` out of `order` adds 1 compiled function; externs and rulings are unchanged.
 -- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
 -- Hardened `Runtime.lean` surfaces specialized kernel helpers, ruled overrides, and all 5 `Blake3.Rust` externs.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 8075 compiled functions; inherited externs 118, implemented_by 0, unsafe 41, csimp 9; ruled assumed 6, computed_field 29, implemented_by 1, csimp 32 -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 8151 compiled functions; inherited externs 118, implemented_by 0, unsafe 41, csimp 9; ruled assumed 6, computed_field 29, implemented_by 1, csimp 32 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`Init, `Std] rulings
 
@@ -91,7 +91,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`I
 -- Factoring `Ixon.CheckOrder.postorder` out of `order` adds 1 compiled function; externs and rulings are unchanged.
 -- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
 -- Hardened `Runtime.lean` surfaces specialized kernel helpers, ruled overrides, and all 5 `Blake3.Rust` externs.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 8209 compiled functions; inherited externs 118, implemented_by 0, unsafe 41, csimp 9; ruled assumed 6, computed_field 29, implemented_by 1, csimp 32 -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 8287 compiled functions; inherited externs 118, implemented_by 0, unsafe 41, csimp 9; ruled assumed 6, computed_field 29, implemented_by 1, csimp 32 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered] #[`Init, `Std] rulings
 
@@ -110,7 +110,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered
 -- Factoring `Ixon.CheckOrder.postorder` out of `order` adds 1 compiled function; externs and rulings are unchanged.
 -- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
 -- Hardened `Runtime.lean` surfaces specialized kernel helpers, ruled overrides, and all 5 `Blake3.Rust` externs.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 8075 compiled functions; inherited externs 118, implemented_by 0, unsafe 41, csimp 9; ruled assumed 6, computed_field 29, implemented_by 1, csimp 32 -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 8151 compiled functions; inherited externs 118, implemented_by 0, unsafe 41, csimp 9; ruled assumed 6, computed_field 29, implemented_by 1, csimp 32 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[`Init, `Std] rulings
 
@@ -129,7 +129,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[
 -- Factoring `Ixon.CheckOrder.postorder` out of `order` adds 1 compiled function; externs and rulings are unchanged.
 -- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
 -- Hardened `Runtime.lean` surfaces specialized kernel helpers, ruled overrides, and all 5 `Blake3.Rust` externs.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 8209 compiled functions; inherited externs 118, implemented_by 0, unsafe 41, csimp 9; ruled assumed 6, computed_field 29, implemented_by 1, csimp 32 -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 8287 compiled functions; inherited externs 118, implemented_by 0, unsafe 41, csimp 9; ruled assumed 6, computed_field 29, implemented_by 1, csimp 32 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTieredAt] #[`Init, `Std] rulings
 
@@ -159,7 +159,7 @@ ruling are those of `check` and `checkTiered`. Their kernel entries (`Admission.
 -- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
 -- Hardened `Runtime.lean` surfaces specialized kernel helpers, ruled overrides, and all 5 `Blake3.Rust` externs.
 /-- info: runtime closure of [Ix.RoleBinding.Artifact.checkConditional,
- Ix.RoleBinding.Artifact.checkTieredConditional]: 8270 compiled functions; inherited externs 118, implemented_by 0, unsafe 41, csimp 9; ruled assumed 6, computed_field 29, implemented_by 1, csimp 32 -/
+ Ix.RoleBinding.Artifact.checkTieredConditional]: 8366 compiled functions; inherited externs 118, implemented_by 0, unsafe 41, csimp 9; ruled assumed 6, computed_field 29, implemented_by 1, csimp 32 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith

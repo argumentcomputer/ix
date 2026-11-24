@@ -65,6 +65,63 @@ structure Specialized [DecidableEq F] (s : Source F) (entries : List String) whe
   loweringReady : LoweringReady s program
   typedLowering : TypedLowering s program
 
+private theorem findDuplicate_none_nodup {names seen : List String}
+    (h : Aiur.findDuplicate names seen = none) :
+    names.Nodup ∧ ∀ x ∈ names, x ∉ seen := by
+  induction names generalizing seen with
+  | nil => exact ⟨List.nodup_nil, by simp⟩
+  | cons x xs ih =>
+      simp only [Aiur.findDuplicate] at h
+      split at h
+      · cases h
+      · rename_i hnotin
+        obtain ⟨hnodup, hrest⟩ := ih h
+        refine ⟨List.nodup_cons.mpr ⟨fun hx => hrest x hx (by simp), hnodup⟩, ?_⟩
+        intro y hy
+        rcases List.mem_cons.mp hy with rfl | hmem
+        · simpa using hnotin
+        · intro hys
+          exact hrest y hmem (by simp [hys])
+
+private theorem core_findFunction?_of_mem {fns : List (Aiur.Function α)}
+    (hd : (fns.map (·.name)).Nodup) {fn : Aiur.Function α} (hfn : fn ∈ fns) :
+    fns.find? (·.name == fn.name) = some fn := by
+  induction fns with
+  | nil => cases hfn
+  | cons f fs ih =>
+      simp only [List.map_cons, List.nodup_cons] at hd
+      rcases List.mem_cons.mp hfn with rfl | hmem
+      · simp
+      · have hne : (f.name == fn.name) = false := by
+          simp only [beq_eq_false_iff_ne]
+          intro heq
+          exact hd.1 (List.mem_map.mpr ⟨fn, hmem, heq.symm⟩)
+        simp [List.find?_cons, hne, ih hd.2 hmem]
+
+theorem Specialized.program_ptrEqFree [DecidableEq F] {s : Source F} {entries : List String}
+    (q : Specialized s entries) : q.program.ptrEqFree = true := by
+  simp only [Aiur.Program.ptrEqFree, List.all_map, List.all_eq_true, Function.comp_def, id_eq]
+  intro fn hfn
+  have hmem : fn.name ∈ callableNames q.program := by
+    simp only [callableNames, List.mem_append, List.mem_map]
+    exact Or.inl ⟨fn, hfn, rfl⟩
+  have htc := q.valid.1
+  have hfind : q.program.findFunction? fn.name = some fn := by
+    have hnodup : (q.program.functions.map (·.name)).Nodup := by
+      unfold Aiur.typecheck at htc
+      cases hdecl : (Aiur.checkDeclarations q.program.enums).mapError CheckError.invalidDeclarations with
+      | error e => simp [hdecl, bind, Except.bind] at htc
+      | ok u =>
+          cases u
+          simp only [hdecl, bind, Except.bind] at htc
+          cases hdup : Aiur.findDuplicate (q.program.functions.map (·.name) ++ q.program.maps.map (·.name)) [] with
+          | some dup => simp [hdup, throw, throwThe, MonadExceptOf.throw] at htc
+          | none => exact (List.nodup_append.mp (findDuplicate_none_nodup hdup).1).1
+    exact core_findFunction?_of_mem hnodup hfn
+  have hcomp := q.valid.2.2.2.1 fn.name hmem
+  rw [hfind] at hcomp
+  exact Source.compilerFunction?_ptrEqFree hcomp
+
 /-- Fuel for the collectors: the number of function instances specialization may produce, and the
 depth of enum instantiation. Exhausting either is an error, never a different program. -/
 structure Limits where

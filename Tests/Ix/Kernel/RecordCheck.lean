@@ -103,9 +103,11 @@ private def outcomes (key : Nat → Key md) : IO Nat := do
   ensure (tiered.failed[addr 22]? == some (addr 21)) "tier blocker root changed"
   for n in [1, 3] do
     let requested ← runRecords src [] names tierAddresses { workers := some n, tier := true, skip }
-    ensure (requested.execution == .serialTier (some n) && requested.execution.workers == 1)
-      "tier request silently claimed parallel execution"
-    ensure (requested.rows.map rowKey == tiered.rows.map rowKey) "tier fallback changed outcomes"
+    ensure (requested.execution == .pool n && requested.execution.workers == n)
+      "tier pool execution not reported"
+    ensure (requested.rows.map rowKey == tiered.rows.map rowKey) "tier pool changed outcomes"
+    ensure (requested.counts == tiered.counts && requested.reasons == tiered.reasons &&
+      requested.failed == tiered.failed) "tier pool aggregate maps mismatch"
   -- Inspect the real final logical state: prior good declarations survive a
   -- later failure; failed declarations and typed-only constants do not leak in.
   let state ← checkLoopWith src.view src.read src.commit (← src.init) (Checker.stepRecord []) {}

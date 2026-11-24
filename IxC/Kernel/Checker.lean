@@ -253,6 +253,8 @@ def checkDecl (ops : (CheckerOps md) m) (ev : Evidences md) (env : Env md)
     (d : Declaration md) : m (Env md) := do
   match d with
   | .defnDecl cv value hint => do
+    if cv.name.isCompilerTrust then
+      throw (.notImplemented msg!"compiler-trust constant cannot be a definition ({cv.name})")
     let cv ← checkConstantVal ops env cv
     let env2 ← checkDefnVal ops env cv value hint
     -- Structural-Nat operations: their evidence is one `.defeq` entry
@@ -298,12 +300,36 @@ def checkDecl (ops : (CheckerOps md) m) (ev : Evidences md) (env : Env md)
     if natDivModNames.contains cv.name then
       checkDivModEvidence ops ev env env2 cv.name
     pure env2
-  | .thmDecl cv value =>
+  | .thmDecl cv value => do
+    if cv.name.isCompilerTrust then
+      throw (.notImplemented msg!"compiler-trust constant cannot be a theorem ({cv.name})")
     let cv ← checkConstantVal ops env cv
     checkThmVal ops env cv value
   | .opaqueDecl cv value =>
-    let cv ← checkConstantVal ops env cv
-    checkOpaqueVal ops env cv value
+    -- Compiler-trust opaques (`Lean.reduceBool`, `Lean.reduceNat`, §7.10):
+    -- tolerated as declarations when matching their pinned types and passing
+    -- duplicate/closedness/header checks, installing nothing; any use declines
+    -- (`unknownConstError`, `unresolvedConstsError`).
+    if cv.name.isCompilerTrustOpaque then
+      if (anchorMismatch? cv).isNone then
+        if (env.find? cv.name).isSome then
+          throw (.invalid msg!"duplicate declaration {cv.name}")
+        else if !value.looseBVarsBounded 0 then
+          throw (.invalid msg!"loose bound variable in value of {cv.name}")
+        else if value.hasFvar then
+          throw (.invalid msg!"unexpected free variable in value of {cv.name}")
+        else if !value.allLevelParamsDefined cv.levelParams then
+          throw (.invalid msg!"undeclared universe parameter in value of {cv.name}")
+        else do
+          let _ ← checkConstantVal ops env cv
+          pure env
+      else
+        throw (.notImplemented msg!"compiler-trust opaque shape mismatch ({cv.name})")
+    else if cv.name.isCompilerTrustAxiom then
+      throw (.notImplemented msg!"compiler-trust axiom cannot be an opaque ({cv.name})")
+    else do
+      let cv ← checkConstantVal ops env cv
+      checkOpaqueVal ops env cv value
   | .axiomDecl cv =>
     -- Pinned axioms are *installed*: the two standard axioms
     -- (`propext` via the stored `Iff` recursor and extensionality of
@@ -311,19 +337,15 @@ def checkDecl (ops : (CheckerOps md) m) (ev : Evidences md) (env : Env md)
     -- recursor and global choice).  Their types and the shapes of the
     -- inductives they quantify over are pinned (up to the exporter's
     -- unstable hygienic binder names).  The certified theory is Lean
-    -- with its three standard axioms: the
-    -- compiler-trust axioms (`Lean.trustCompiler`, `Lean.ofReduceBool`,
-    -- `Lean.ofReduceNat`) are non-standard axioms here.  `sorryAx` — the
-    -- one axiom the checker tolerates as a DECLARATION (user ruling) —
-    -- is well-formedness-checked but installs NOTHING: an export
-    -- declares it whenever its module mentions `sorry`, whether or not
-    -- anything uses it, so the record is skipped and the run continues,
-    -- and because there is no set model for it any USE of the name
+    -- with its three standard axioms: the compiler-trust axioms
+    -- (`Lean.trustCompiler`, `Lean.ofReduceBool`, `Lean.ofReduceNat`,
+    -- §7.10) and `sorryAx` are tolerated as *declarations* — matched
+    -- against their pinned types and installing NOTHING, so any USE
     -- declines at the record that uses it (`unknownConstError`,
     -- `IxC/Kernel/Core.lean`, and `unresolvedConstsError`,
-    -- `IxC/Kernel/CheckerBase.lean`).  Any other axiom
-    -- is a positive decline at its own record; a *pinned name* with a
-    -- non-pinned shape likewise (the pin would otherwise shadow).
+    -- `IxC/Kernel/CheckerBase.lean`).  Any other axiom is a positive
+    -- decline at its own record; a *pinned name* with a non-pinned
+    -- shape likewise (the pin would otherwise shadow).
     -- **`Quot.sound` is the pinned quotient BLOCK's own record**
     -- (task #293): the export writes it as an ordinary axiom record
     -- beside the four `#QUOT` ones, so it arrives here — compared with
@@ -340,6 +362,27 @@ def checkDecl (ops : (CheckerOps md) m) (ev : Evidences md) (env : Env md)
         pure env
       else
         throw (.notImplemented "quotient soundness axiom mismatch"))
+    else if cv.name.isCompilerTrustAxiom then
+      (if (anchorMismatch? cv).isNone then
+        if (env.find? cv.name).isSome then
+          throw (.invalid msg!"duplicate declaration {cv.name}")
+        else if cv.name = roleKey .trustCompiler then do
+          let _ ← checkConstantVal ops env cv
+          pure env
+        else if !LevelParam.nodup cv.levelParams then
+          throw (.invalid msg!"duplicate universe parameters in {cv.name}")
+        else if !cv.type.looseBVarsBounded 0 then
+          throw (.invalid msg!"loose bound variable in type of {cv.name}")
+        else if cv.type.hasFvar then
+          throw (.invalid msg!"unexpected free variable in type of {cv.name}")
+        else if !cv.type.allLevelParamsDefined cv.levelParams then
+          throw (.invalid msg!"undeclared universe parameter in type of {cv.name}")
+        else
+          pure env
+      else
+        throw (.notImplemented msg!"compiler-trust axiom shape mismatch ({cv.name})"))
+    else if cv.name.isCompilerTrustOpaque then
+      throw (.notImplemented msg!"compiler-trust opaque cannot be an axiom ({cv.name})")
     else do
       let cvA ← checkConstantVal ops env cv
       if stdAxiomOk env cvA then

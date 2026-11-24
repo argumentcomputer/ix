@@ -6,7 +6,9 @@
 //! eight words, the packed BLAKE3 digest of the claim bytes.
 
 use super::Result;
+#[cfg(test)]
 use crate::kzg::Scalar;
+use crate::kzg::{curve::KzgCurve, field::CurveScalar};
 use ark_ff::PrimeField;
 use p3_field::PrimeField64;
 
@@ -92,7 +94,7 @@ fn usize_u64(value: usize) -> u64 {
   u64::try_from(value).expect("statement length fits in u64")
 }
 
-fn scalar_word(value: Scalar) -> Result<u64> {
+fn scalar_word<C: KzgCurve>(value: CurveScalar<C>) -> Result<u64> {
   let limbs = value.0.into_bigint().0;
   if limbs[1..].iter().any(|&limb| limb != 0)
     || limbs[0] >= multi_stark::types::Val::ORDER_U64
@@ -103,7 +105,9 @@ fn scalar_word(value: Scalar) -> Result<u64> {
 }
 
 /// The statement carried by `values`, eighteen scalar words.
-pub(crate) fn from_scalars(values: &[Scalar]) -> Result<Statement> {
+pub(crate) fn from_scalars<C: KzgCurve>(
+  values: &[CurveScalar<C>],
+) -> Result<Statement> {
   if values.len() != WORDS {
     return Err("statement must hold 18 words".into());
   }
@@ -116,7 +120,9 @@ pub(crate) fn from_scalars(values: &[Scalar]) -> Result<Statement> {
 
 /// The statement carried by a stage's claim rows: rows `1..=18` hold one
 /// word each in their last column, behind the zero anchor of row `0`.
-pub(crate) fn from_rows(claims: &[Vec<Scalar>]) -> Result<Statement> {
+pub(crate) fn from_rows<C: KzgCurve>(
+  claims: &[Vec<CurveScalar<C>>],
+) -> Result<Statement> {
   let schema = super::claims::ClaimTemplate::from_claims(claims, WORDS)?;
   from_scalars(&schema.public_values(claims)?)
 }

@@ -141,12 +141,20 @@ fn max_degree(circuit: &Circuit<Val>, group: usize) -> usize {
     .max(logup_max_degree(&circuit.graph, group)) as usize
 }
 
-fn quotient_degree_from_max(max_degree: usize) -> Option<usize> {
-  (max_degree.max(2) - 1).checked_next_power_of_two()
+fn quotient_degree_from_max(max_degree: usize, is_zk: bool) -> Option<usize> {
+  if is_zk {
+    max_degree.max(1).checked_next_power_of_two()
+  } else {
+    (max_degree.max(2) - 1).checked_next_power_of_two()
+  }
 }
 
-fn quotient_degree(circuit: &Circuit<Val>, group: usize) -> Option<usize> {
-  quotient_degree_from_max(max_degree(circuit, group))
+fn quotient_degree(
+  circuit: &Circuit<Val>,
+  group: usize,
+  is_zk: bool,
+) -> Option<usize> {
+  quotient_degree_from_max(max_degree(circuit, group), is_zk)
 }
 
 /// Synchronize all derived logUp metadata for `group` before the system or
@@ -165,6 +173,15 @@ pub(super) fn set_group(
 }
 
 pub(super) fn retune(circuit: &mut Circuit<Val>, blowup: usize, degree: usize) {
+  retune_with_zk(circuit, blowup, degree, false);
+}
+
+pub(super) fn retune_with_zk(
+  circuit: &mut Circuit<Val>,
+  blowup: usize,
+  degree: usize,
+  is_zk: bool,
+) {
   // Authored Aiur constraints never reference stage 2. Retain the layout if a
   // circuit ever does, since changing its column count would change column IDs.
   if circuit
@@ -177,7 +194,7 @@ pub(super) fn retune(circuit: &mut Circuit<Val>, blowup: usize, degree: usize) {
   }
   let Some(initial_cost) = FftCost::new(
     circuit.stage_2_width,
-    circuit.quotient_degree(),
+    circuit.quotient_degree_for(is_zk),
     blowup,
     degree,
   ) else {
@@ -211,7 +228,9 @@ pub(super) fn retune(circuit: &mut Circuit<Val>, blowup: usize, degree: usize) {
   };
 
   for group in 1..=max_group {
-    let Some(quotient) = quotient_degree(circuit, group) else { continue };
+    let Some(quotient) = quotient_degree(circuit, group, is_zk) else {
+      continue;
+    };
     if quotient > blowup {
       continue;
     }
@@ -234,7 +253,9 @@ pub(super) fn retune(circuit: &mut Circuit<Val>, blowup: usize, degree: usize) {
         .max_constraint_degree
         .max(logup_max_degree_for_order(&degs, &order, group))
         as usize;
-      let Some(quotient) = quotient_degree_from_max(max_deg) else { continue };
+      let Some(quotient) = quotient_degree_from_max(max_deg, is_zk) else {
+        continue;
+      };
       if quotient > blowup {
         continue;
       }
@@ -278,35 +299,47 @@ mod tests {
   use multi_stark::{
     expr::Expr,
     lookup::Lookup,
-    system::{CircuitInputs, System},
-    types::{CommitmentParameters, FriParameters, GoldilocksBlake3Config},
+    system::{CircuitInputs, System, compute_vk_digest},
+    types::{
+      CommitmentParameters, ExtVal3, FriParameters, GoldilocksBlake3V6Config,
+    },
   };
 
-  fn cost_at(stage2: usize, quotient: usize, blowup: usize, h: usize) -> f64 {
-    let [stage2, quotient, blowup, h] = [stage2, quotient, blowup, h]
-      .map(|n| f64::from(u32::try_from(n).unwrap()));
+  fn cost_at(
+    stage2: usize,
+    quotient: usize,
+    blowup: usize,
+    h: usize,
+    degree: usize,
+  ) -> f64 {
+    let [stage2, quotient, blowup, h, degree] =
+      [stage2, quotient, blowup, h, degree]
+        .map(|n| f64::from(u32::try_from(n).unwrap()));
     let transform = |n: f64| n * n.max(2.0).log2();
     (blowup + 1.0) * stage2 * transform(h)
-      + 2.0 * transform(quotient * h)
-      + 2.0 * quotient * transform(blowup * h)
+      + degree * transform(quotient * h)
+      + degree * quotient * transform(blowup * h)
   }
 
   #[test]
   fn fft_dominance_preserves_cost_at_small_and_large_heights() {
-    for blowup in [1, 2, 4, 8] {
-      for before_q in [1, 2, 4, 8] {
-        for after_q in [1, 2, 4, 8] {
-          for before_s2 in [2, 4, 8, 16, 32, 128] {
-            for after_s2 in [2, 4, 8, 16, 32, 128] {
-              let before =
-                FftCost::new(before_s2, before_q, blowup, 2).unwrap();
-              let after = FftCost::new(after_s2, after_q, blowup, 2).unwrap();
-              if after.no_worse_than(before) {
-                for h in [1, 2, 3, 7, 16, 255, 1_024, 65_536, 1 << 30] {
-                  assert!(
-                    cost_at(after_s2, after_q, blowup, h)
-                      <= cost_at(before_s2, before_q, blowup, h)
-                  );
+    for degree in [2usize, 3] {
+      for blowup in [1, 2, 4, 8] {
+        for before_q in [1, 2, 4, 8] {
+          for after_q in [1, 2, 4, 8] {
+            for before_s2 in [3, 6, 12, 24, 48, 192] {
+              for after_s2 in [3, 6, 12, 24, 48, 192] {
+                let before =
+                  FftCost::new(before_s2, before_q, blowup, degree).unwrap();
+                let after =
+                  FftCost::new(after_s2, after_q, blowup, degree).unwrap();
+                if after.no_worse_than(before) {
+                  for h in [1, 2, 3, 7, 16, 255, 1_024, 65_536, 1 << 30] {
+                    assert!(
+                      cost_at(after_s2, after_q, blowup, h, degree)
+                        <= cost_at(before_s2, before_q, blowup, h, degree)
+                    );
+                  }
                 }
               }
             }
@@ -318,9 +351,9 @@ mod tests {
 
   #[test]
   fn fft_cost_rejects_invalid_dimensions_and_overflow() {
-    assert!(FftCost::new(1, 0, 4, 2).is_none());
-    assert!(FftCost::new(1, 3, 4, 2).is_none());
-    assert!(FftCost::new(1, 2, 3, 2).is_none());
+    assert!(FftCost::new(1, 0, 4, 3).is_none());
+    assert!(FftCost::new(1, 3, 4, 3).is_none());
+    assert!(FftCost::new(1, 2, 3, 3).is_none());
     assert!(
       FftCost::new(
         usize::MAX,
@@ -334,7 +367,7 @@ mod tests {
 
   #[test]
   fn retune_allows_quotient_four_and_balances_mixed_degree_lookups() {
-    let config = GoldilocksBlake3Config::new(
+    let config = GoldilocksBlake3V6Config::new(
       CommitmentParameters { log_blowup: 2, cap_height: 0 },
       FriParameters {
         log_final_poly_len: 0,
@@ -347,9 +380,9 @@ mod tests {
     let lin = |i: u32| Lookup::push(Expr::main(0), vec![Expr::main(i)]);
     let quad =
       |i: u32| Lookup::push(Expr::main(0), vec![Expr::main(i) * Expr::main(i)]);
-    // Circuit 0: 14 quadratic-payload lookups => upgrades to group=2, q=4, s2: 28 -> 14.
+    // Circuit 0: 14 quadratic-payload lookups => upgrades to group=2, q=4, s2: 42 -> 21 (D=3).
     // Circuit 1: [lin, quad, lin] => balanced packing puts quad in remainder chunk,
-    // upgrading to group=2, s2: 6 -> 4 while keeping q=2.
+    // upgrading to group=2, s2: 9 -> 6 while keeping q=2.
     let (mut system, _) = System::new(
       config,
       [
@@ -371,15 +404,15 @@ mod tests {
     assert_eq!(system.circuits[1].quotient_degree(), 2);
 
     for circuit in &mut system.circuits {
-      retune(circuit, 4, 2);
+      retune(circuit, 4, 3);
     }
     assert_eq!(system.circuits[0].lookup_group_size, 2);
     assert_eq!(system.circuits[0].quotient_degree(), 4);
-    assert_eq!(system.circuits[0].stage_2_width, 14);
+    assert_eq!(system.circuits[0].stage_2_width, 21);
 
     assert_eq!(system.circuits[1].lookup_group_size, 2);
     assert_eq!(system.circuits[1].quotient_degree(), 2);
-    assert_eq!(system.circuits[1].stage_2_width, 4);
+    assert_eq!(system.circuits[1].stage_2_width, 6);
 
     // End-to-end STARK prove + verifying-key codec round-trip + verify with
     // both `q = 4` lookup grouping and balanced reordered `graph.lookups`.
@@ -388,7 +421,7 @@ mod tests {
       p3_matrix::dense::RowMajorMatrix, system::SystemWitness,
     };
     let (mut system, key) = System::new(
-      GoldilocksBlake3Config::new(
+      GoldilocksBlake3V6Config::new(
         CommitmentParameters { log_blowup: 2, cap_height: 0 },
         FriParameters {
           log_final_poly_len: 0,
@@ -424,8 +457,9 @@ mod tests {
       ],
     );
     for circuit in &mut system.circuits {
-      retune(circuit, 4, 2);
+      retune(circuit, 4, 3);
     }
+    system.vk_digest = compute_vk_digest::<Val, ExtVal3>(&system.circuits);
     assert_eq!(system.circuits[0].quotient_degree(), 4);
     assert_eq!(system.circuits[0].lookup_group_size, 2);
     assert_eq!(system.circuits[1].quotient_degree(), 2);
@@ -482,7 +516,7 @@ mod tests {
 
   #[test]
   fn retune_never_regresses_against_quotient_preserving_group() {
-    let config = GoldilocksBlake3Config::new(
+    let config = GoldilocksBlake3V6Config::new(
       CommitmentParameters { log_blowup: 2, cap_height: 0 },
       FriParameters {
         log_final_poly_len: 0,
@@ -500,14 +534,14 @@ mod tests {
     let (mut system, _) = System::new(
       config,
       vec![
-        // 11 linear lookups: g=2 keeps q=2 (s2=12), while g=4 raises q=4
-        // (s2=6) and regresses small heights relative to (g=2, q=2).
+        // 11 linear lookups: g=2 keeps q=2 (s2=18), while g=4 raises q=4
+        // (s2=9) and regresses small heights relative to (g=2, q=2).
         CircuitInputs {
           main_width: 2,
           lookups: linear_lookups(11),
           ..Default::default()
         },
-        // 28 linear lookups: g=4 (q=4, s2=14) dominates g=2 (q=2, s2=28)
+        // 28 linear lookups: g=4 (q=4, s2=21) dominates g=2 (q=2, s2=42)
         // at every integer height h >= 1.
         CircuitInputs {
           main_width: 2,
@@ -517,7 +551,7 @@ mod tests {
       ],
     );
     for circuit in &mut system.circuits {
-      retune(circuit, 4, 2);
+      retune(circuit, 4, 3);
     }
     assert_eq!(system.circuits[0].quotient_degree(), 2);
     assert_eq!(system.circuits[0].lookup_group_size, 2);

@@ -2,23 +2,23 @@ use super::*;
 use ark_ec::AffineRepr;
 use shape::Shape;
 
-const FRONTEND_VERSION: &[u8] = b"init-kzg-recursive/bn254/frontend/v1";
-
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
-pub(crate) enum ClaimSlot {
-  Constant(Scalar),
+#[serde(bound = "")]
+pub(crate) enum ClaimSlot<C: KzgCurve = Bn254> {
+  Constant(CurveScalar<C>),
   PublicU64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
-pub(crate) struct ClaimSchema {
-  pub(super) rows: Vec<Vec<ClaimSlot>>,
+#[serde(bound = "")]
+pub(crate) struct ClaimSchema<C: KzgCurve = Bn254> {
+  pub(super) rows: Vec<Vec<ClaimSlot<C>>>,
   pub(super) public_locations: Vec<(usize, usize)>,
 }
 
-impl ClaimSchema {
+impl<C: KzgCurve> ClaimSchema<C> {
   pub(crate) fn from_claims(
-    claims: &[Vec<Scalar>],
+    claims: &[Vec<CurveScalar<C>>],
     public_locations: &[(usize, usize)],
   ) -> Result<Self, String> {
     let mut seen = std::collections::BTreeSet::new();
@@ -52,7 +52,10 @@ impl ClaimSchema {
     Ok(schema)
   }
 
-  pub(super) fn validate(&self, claims: &[Vec<Scalar>]) -> Result<(), String> {
+  pub(super) fn validate(
+    &self,
+    claims: &[Vec<CurveScalar<C>>],
+  ) -> Result<(), String> {
     if claims.len() != self.rows.len()
       || claims
         .iter()
@@ -84,7 +87,10 @@ impl ClaimSchema {
   }
 
   #[cfg(test)]
-  pub(super) fn public_values(&self, claims: &[Vec<Scalar>]) -> Vec<Scalar> {
+  pub(super) fn public_values(
+    &self,
+    claims: &[Vec<CurveScalar<C>>],
+  ) -> Vec<CurveScalar<C>> {
     self
       .public_locations
       .iter()
@@ -94,18 +100,19 @@ impl ClaimSchema {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
-pub(crate) struct LayoutPolicy {
-  pub namespace: Scalar,
+#[serde(bound = "")]
+pub(crate) struct LayoutPolicy<C: KzgCurve = Bn254> {
+  pub namespace: CurveScalar<C>,
   pub max_computation_height: usize,
   pub max_table_height: usize,
 }
 
-impl LayoutPolicy {
+impl<C: KzgCurve> LayoutPolicy<C> {
   pub(super) fn legacy() -> Self {
     Self {
-      namespace: Scalar::from_u8(94),
-      max_computation_height: 1 << 29.min(Scalar::TWO_ADICITY - 1),
-      max_table_height: 1 << 29.min(Scalar::TWO_ADICITY - 1),
+      namespace: CurveScalar::<C>::from_u8(94),
+      max_computation_height: 1 << 29.min(CurveScalar::<C>::TWO_ADICITY - 1),
+      max_table_height: 1 << 29.min(CurveScalar::<C>::TWO_ADICITY - 1),
     }
   }
 
@@ -114,7 +121,7 @@ impl LayoutPolicy {
       |&height| {
         height < 2
           || !height.is_power_of_two()
-          || height.ilog2() as usize > Scalar::TWO_ADICITY
+          || height.ilog2() as usize > CurveScalar::<C>::TWO_ADICITY
       },
     ) {
       return Err(
@@ -125,20 +132,20 @@ impl LayoutPolicy {
   }
 }
 
-pub(crate) struct Plan<'a> {
-  pub(super) vk: InnerVerifyingKey<'a>,
-  pub(super) shape: Shape,
-  pub(super) claims: ClaimSchema,
-  pub(super) layout: LayoutPolicy,
+pub(crate) struct Plan<'a, C: KzgCurve = Bn254> {
+  pub(super) vk: InnerVerifyingKey<'a, C>,
+  pub(super) shape: Shape<C>,
+  pub(super) claims: ClaimSchema<C>,
+  pub(super) layout: LayoutPolicy<C>,
   pub(super) identity: [u8; 32],
 }
 
-impl<'a> Plan<'a> {
+impl<'a, C: KzgCurve> Plan<'a, C> {
   pub(crate) fn new(
-    system: &'a System<KzgConfig>,
+    system: &'a System<KzgConfig<C>>,
     logs: &[u8],
-    claims: ClaimSchema,
-    layout: LayoutPolicy,
+    claims: ClaimSchema<C>,
+    layout: LayoutPolicy<C>,
   ) -> Result<Self, String> {
     if system.preprocessed_indices.len() != system.circuits.len()
       || system
@@ -182,10 +189,10 @@ impl<'a> Plan<'a> {
   }
 
   pub(super) fn from_identity(
-    vk: &InnerVerifyingKey<'a>,
+    vk: &InnerVerifyingKey<'a, C>,
     logs: &[u8],
-    claims: ClaimSchema,
-    layout: LayoutPolicy,
+    claims: ClaimSchema<C>,
+    layout: LayoutPolicy<C>,
   ) -> Result<Self, String> {
     if vk.transcript_kind != crate::kzg::TranscriptKind::Blake3 {
       return Err(
@@ -222,7 +229,7 @@ impl<'a> Plan<'a> {
   }
 
   pub(crate) fn count(&self) -> Result<Counts, String> {
-    construct(&self.vk, &self.shape, &self.claims, Builder::counting())
+    construct(&self.vk, &self.shape, &self.claims, Builder::<C>::counting())
       .map(|construction| construction.counts())
   }
 
@@ -240,9 +247,9 @@ impl<'a> Plan<'a> {
 
   pub(crate) fn build(
     &self,
-    proof: &Proof<KzgConfig>,
-    claims: &[Vec<Scalar>],
-  ) -> Result<Built, String> {
+    proof: &Proof<KzgConfig<C>>,
+    claims: &[Vec<CurveScalar<C>>],
+  ) -> Result<Built<C>, String> {
     self.validate_request(proof, claims)?;
     let Compiled { circuit, bindings } = self.compile()?;
     let request = bindings.request_inputs(self.identity(), proof, claims)?;
@@ -262,14 +269,14 @@ impl<'a> Plan<'a> {
   /// The verifier circuit and its deferred pairing keys, without a request.
   pub(crate) fn circuit(
     &self,
-  ) -> Result<(Circuit<Scalar>, Vec<G2Affine>), String> {
+  ) -> Result<(Circuit<CurveScalar<C>>, Vec<G2AffineOf<C>>), String> {
     let Compiled { circuit, bindings } = self.compile()?;
     Ok((circuit, bindings.pairing_keys))
   }
 
-  pub(crate) fn compile(&self) -> Result<Compiled, String> {
+  pub(crate) fn compile(&self) -> Result<Compiled<C>, String> {
     let construction =
-      construct(&self.vk, &self.shape, &self.claims, Builder::new())?;
+      construct(&self.vk, &self.shape, &self.claims, Builder::<C>::new())?;
     let compiled = construction.finish(self);
     let layout = compiled
       .circuit
@@ -302,22 +309,22 @@ impl<'a> Plan<'a> {
 
   pub(crate) fn validate_request(
     &self,
-    proof: &Proof<KzgConfig>,
-    claims: &[Vec<Scalar>],
+    proof: &Proof<KzgConfig<C>>,
+    claims: &[Vec<CurveScalar<C>>],
   ) -> Result<(), String> {
     self.shape.validate(proof)?;
     self.claims.validate(claims)
   }
 }
 
-fn identity(
-  vk: &InnerVerifyingKey<'_>,
-  shape: &Shape,
-  claims: &ClaimSchema,
-  layout: LayoutPolicy,
+fn identity<C: KzgCurve>(
+  vk: &InnerVerifyingKey<'_, C>,
+  shape: &Shape<C>,
+  claims: &ClaimSchema<C>,
+  layout: LayoutPolicy<C>,
 ) -> Result<[u8; 32], String> {
   let mut hash = blake3::Hasher::new();
-  hash.update(FRONTEND_VERSION);
+  hash.update(C::RECURSIVE_FRONTEND_VERSION);
   hash.update(b"one-computation-and-merged-table/v1");
   let parameters = (
     vk.transcript_seed,

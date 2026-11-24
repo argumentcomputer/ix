@@ -7,7 +7,7 @@ use multi_stark::system::System;
 use multi_stark::system::SystemWitness;
 use multi_stark::types::CommitmentParameters;
 use multi_stark::types::FriParameters;
-use multi_stark::types::GoldilocksBlake3Config as Config;
+use multi_stark::types::GoldilocksBlake3V6Config as Config;
 use multi_stark::types::Val;
 use p3_matrix::dense::RowMajorMatrix;
 

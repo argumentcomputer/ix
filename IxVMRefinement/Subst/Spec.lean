@@ -35,13 +35,6 @@ def expr_lbr : GSpecFn := fun args h r h' calls =>
       ∃ b : Nat, r = .field (b : F) ∧ b ≤ idxBound ∧ b ≤ k + d ∧ IdxLt h b e ∧
         (∀ b', b' < b → ¬ IdxLt h b' e) ∧ LbrLeK κ h e k E b
 
-def expr_lbr_let : GSpecFn := fun args h r h' calls =>
-  ∀ ty val body, args = [ty, val, body] → Bounded calls → h' = h ∧
-    ∀ d Γ k T V B, Tm κ d Γ h k T ty → Tm κ d Γ h k V val → Tm κ d Γ h (k + 1) B body →
-      ∃ b : Nat, r = .field (b : F) ∧ b ≤ idxBound ∧ b ≤ k + d ∧
-        IdxLt h b ty ∧ IdxLt h b val ∧ IdxLt h (b + 1) body ∧
-        ∀ b', b' < b → ¬ (IdxLt h b' ty ∧ IdxLt h b' val ∧ IdxLt h (b' + 1) body)
-
 def lbr_max : GSpecFn := fun args h r h' calls =>
   ∀ x y : F, args = [.field x, .field y] → Bounded calls → h' = h ∧
     ZMod.val x < 4294967296 ∧ ZMod.val y < 4294967296 ∧
@@ -85,35 +78,10 @@ def expr_has_bvar_at : GSpecFn := fun args h r h' calls =>
     (r = .field 0 ∨ r = .field 1) ∧
     (r = .field 0 → ∀ d Γ k E, Tm κ d Γ h k E e → NoIdx h (ZMod.val j) (ZMod.val j + 1) e)
 
-def expr_has_bvar_at_binder : GSpecFn := fun args h r h' calls =>
-  ∀ ty body (j : F), args = [ty, body, .field j] → Bounded calls → h' = h ∧
-    (r = .field 0 ∨ r = .field 1) ∧
-    (r = .field 0 → ∀ d Γ k T B, Tm κ d Γ h k T ty → Tm κ d Γ h (k + 1) B body →
-      NoIdx h (ZMod.val j) (ZMod.val j + 1) ty ∧
-      NoIdx h (ZMod.val j + 1) (ZMod.val j + 2) body)
-
-def expr_has_bvar_at_let : GSpecFn := fun args h r h' calls =>
-  ∀ ty val body (j : F), args = [ty, val, body, .field j] → Bounded calls → h' = h ∧
-    (r = .field 0 ∨ r = .field 1) ∧
-    (r = .field 0 → ∀ d Γ k T V B, Tm κ d Γ h k T ty → Tm κ d Γ h k V val →
-      Tm κ d Γ h (k + 1) B body →
-      NoIdx h (ZMod.val j) (ZMod.val j + 1) ty ∧ NoIdx h (ZMod.val j) (ZMod.val j + 1) val ∧
-      NoIdx h (ZMod.val j + 1) (ZMod.val j + 2) body)
-
 def expr_glb : GSpecFn := fun args h r h' calls =>
   ∀ e (cut : F), args = [e, .field cut] → Bounded calls → ZMod.val cut < 4294967296 → h' = h ∧
     ∃ g : Nat, r = .field (g : F) ∧ g < 4294967296 ∧
       ∀ d Γ E, Tm κ d Γ h (ZMod.val cut) E e → NoIdx h (ZMod.val cut) (ZMod.val cut + g) e
-
-def expr_glb_let : GSpecFn := fun args h r h' calls =>
-  ∀ ty val body (cut : F), args = [ty, val, body, .field cut] → Bounded calls →
-    ZMod.val cut + 1 < 4294967296 → h' = h ∧
-    ∃ g : Nat, r = .field (g : F) ∧ g < 4294967296 ∧
-      ∀ d Γ T V B, Tm κ d Γ h (ZMod.val cut) T ty → Tm κ d Γ h (ZMod.val cut) V val →
-        Tm κ d Γ h (ZMod.val cut + 1) B body →
-        NoIdx h (ZMod.val cut) (ZMod.val cut + g) ty ∧
-        NoIdx h (ZMod.val cut) (ZMod.val cut + g) val ∧
-        NoIdx h (ZMod.val cut + 1) (ZMod.val cut + 1 + g) body
 
 def expr_lift : GSpecFn := fun args h r h' calls =>
   ∀ e (s cut : F), args = [e, .field s, .field cut] → Bounded calls →
@@ -214,7 +182,6 @@ end G
 /-- Each function's spec at the keying `κ`. -/
 def gspec (κ : _root_.Address → KKey) : Specs.Subst.Fn → GSpecFn
   | .expr_lbr => G.expr_lbr κ
-  | .expr_lbr_let => G.expr_lbr_let κ
   | .lbr_max => G.lbr_max
   | .lbr_dec => G.lbr_dec
   | .lbr_min => G.lbr_min
@@ -223,10 +190,7 @@ def gspec (κ : _root_.Address → KKey) : Specs.Subst.Fn → GSpecFn
   | .has_bvar_in_range_binder => G.has_bvar_in_range_binder κ
   | .has_bvar_in_range_let => G.has_bvar_in_range_let κ
   | .expr_has_bvar_at => G.expr_has_bvar_at κ
-  | .expr_has_bvar_at_binder => G.expr_has_bvar_at_binder κ
-  | .expr_has_bvar_at_let => G.expr_has_bvar_at_let κ
   | .expr_glb => G.expr_glb κ
-  | .expr_glb_let => G.expr_glb_let κ
   | .expr_lift => G.expr_lift κ
   | .expr_lift_let => G.expr_lift_let κ
   | .expr_lower => G.expr_lower κ

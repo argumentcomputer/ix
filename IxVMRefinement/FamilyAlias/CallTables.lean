@@ -470,7 +470,7 @@ theorem check_family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
       FamilyTables (ixAddr b) (ixAddr b') ms rs m typeAs ctorAs recAs typeMs ctorMs recMs
         xtA xcA xrA xtM xcM xrM xsrc xdst := by
   match Obs.«KernelModeled::check_family».obs ev with
-  | .run (sg112 := sg) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
+  | .run (ev_wsivmatu := sg) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
       (ev_yqjbwijz := evOrd) (ev231 := ev231)
       (ev266 := ev266) (ev309 := ev309) (ev344 := ev344) (ev403 := ev403) (ev435 := ev435)
       (ev465 := ev465) (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)

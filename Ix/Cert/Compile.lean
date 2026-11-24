@@ -2445,31 +2445,123 @@ snapshots across checks. -/
     (blocks : Ix.CondensedBlocks := compileBlocks env) : Except String Unit :=
   checkReportOf out (CheckTasks.spawn env cenv out blocks)
 
+private theorem checkReport_eq_of (env : Ix.Environment)
+    (cenv : Ix.CompileM.CompileEnv) (out : Ixon.Env × Failures)
+    (blocks : Ix.CondensedBlocks) :
+    checkReport env cenv out blocks = checkReportOf out
+      { uncovered := Task.pure (uncovered env out.1 out.2)
+        unauthentic := Task.pure (unauthentic out.1)
+        referenceCycle := Task.pure (referenceCycle out.1)
+        nameHashCollision := Task.pure (nameHashCollision env out.1)
+        mutsMismatch := Task.pure (mutsMismatch out.1)
+        resolutionMismatch := Task.pure (resolutionMismatch cenv.nameToAddr out.1)
+        unresolvedPublished := Task.pure (unresolvedPublished env cenv.nameToAddr out.1)
+        misnamedInput := Task.pure (misnamedInput env)
+        strayConstructor := Task.pure (strayConstructor env)
+        projectionCollision := Task.pure (projectionCollision out.1)
+        unreadablePublished := Task.pure (unreadablePublished env out.1)
+        blobRecordCollision := Task.pure (blobRecordCollision out.1)
+        unownedRecursor := Task.pure (unownedRecursor env out.1)
+        roleRecordKind := Task.pure (roleRecordKind out.1)
+        literalRoleUnnamed := Task.pure (Ix.Cert.literalRoleUnnamed env out.1)
+        unstoredFamilyName := Task.pure (unstoredFamilyName env)
+        misplacedConstructor := Task.pure (misplacedConstructor env)
+        strayLevelParams := Task.pure (strayLevelParams env)
+        strayFamilyMember := Task.pure (strayFamilyMember env blocks)
+        recursorShapeError := Task.pure (recursorShapeError env out.1)
+        unhintedDefinition := Task.pure (unhintedDefinition env out.1) } := by
+  unfold checkReport checkReportOf
+  cases uncovered env out.1 out.2 with
+  | cons _ _ => rfl
+  | nil =>
+  cases unauthentic out.1 with
+  | cons _ _ => rfl
+  | nil =>
+  cases referenceCycle out.1 with
+  | some _ => rfl
+  | none =>
+  cases nameHashCollision env out.1 with
+  | some _ => rfl
+  | none =>
+  cases mutsMismatch out.1 with
+  | some _ => rfl
+  | none =>
+  cases resolutionMismatch cenv.nameToAddr out.1 with
+  | some _ => rfl
+  | none =>
+  cases unresolvedPublished env cenv.nameToAddr out.1 with
+  | some _ => rfl
+  | none =>
+  cases misnamedInput env with
+  | some _ => rfl
+  | none =>
+  cases strayConstructor env with
+  | some _ => rfl
+  | none =>
+  cases projectionCollision out.1 with
+  | some _ => rfl
+  | none =>
+  cases unreadablePublished env out.1 with
+  | some _ => rfl
+  | none =>
+  cases blobRecordCollision out.1 with
+  | some _ => rfl
+  | none =>
+  cases unownedRecursor env out.1 with
+  | some v => rcases v with ⟨_, _, _ | _⟩ <;> rfl
+  | none =>
+  cases roleRecordKind out.1 with
+  | some _ => rfl
+  | none =>
+  cases Ix.Cert.literalRoleUnnamed env out.1 with
+  | some _ => rfl
+  | none =>
+  cases unstoredFamilyName env with
+  | some _ => rfl
+  | none =>
+  cases misplacedConstructor env with
+  | some _ => rfl
+  | none =>
+  cases strayLevelParams env with
+  | some _ => rfl
+  | none =>
+  cases strayFamilyMember env blocks with
+  | some _ => rfl
+  | none =>
+  cases recursorShapeError env out.1 with
+  | some _ => rfl
+  | none =>
+  cases unhintedDefinition env out.1 with
+  | some _ => rfl
+  | none => rfl
+
 /-- **`checkReport` runs as `checkReportPar`**: a spawned task's value is its
 function's (`Task.spawn`), so the two are the same function. -/
 @[csimp] theorem checkReport_eq_par : @checkReport = @checkReportPar := by
   funext env cenv out blocks
-  have hStray :
-      strayFamilyMemberWith env blocks (Task.spawn fun _ => familyRecursors env).get =
-        strayFamilyMember env blocks :=
-    strayFamilyMemberPar_eq env blocks
-  have hUnowned :
-      unownedRecursorWith env out.1 (Task.spawn fun _ => storedRecursorRecords out.1).get
-        (Task.spawn fun _ => familyRecursors env).get = unownedRecursor env out.1 :=
-    unownedRecursorWith_eq env out.1
-  have hRecShape :
-      recursorShapeErrorWith env out.1 (Task.spawn fun _ => storedRecursorRecords out.1).get =
-        recursorShapeError env out.1 := rfl
-  have hRoleKind :
-      roleRecordKindWith out.1 = roleRecordKind out.1 := rfl
-  simp only [checkReportPar, CheckTasks.spawn, uncoveredPar_eq, unauthenticPar_eq,
-    referenceCyclePar_eq, nameHashCollisionFast_eq,
-    mutsMismatchPar_eq, resolutionMismatchPar_eq, unresolvedPublishedPar_eq, misnamedInputPar_eq,
-    strayConstructorPar_eq, projectionCollisionPar_eq, unreadablePublishedPar_eq,
-    blobRecordCollisionPar_eq, hUnowned, hRoleKind, unstoredFamilyNamePar_eq,
-    misplacedConstructorPar_eq, strayLevelParamsPar_eq, hStray, hRecShape,
-    unhintedDefinitionPar_eq]
-  rfl
+  rw [checkReport_eq_of, checkReportPar]
+  apply congrArg (checkReportOf out)
+  unfold CheckTasks.spawn
+  dsimp only
+  congr 1
+  · exact congrArg Task.pure (uncoveredPar_eq env out.1 out.2).symm
+  · exact congrArg Task.pure (unauthenticPar_eq out.1).symm
+  · exact congrArg Task.pure (referenceCyclePar_eq out.1).symm
+  · exact congrArg Task.pure (nameHashCollisionFast_eq env out.1).symm
+  · exact congrArg Task.pure (mutsMismatchPar_eq out.1).symm
+  · exact congrArg Task.pure (resolutionMismatchPar_eq cenv.nameToAddr out.1).symm
+  · exact congrArg Task.pure (unresolvedPublishedPar_eq env cenv.nameToAddr out.1).symm
+  · exact congrArg Task.pure (misnamedInputPar_eq env).symm
+  · exact congrArg Task.pure (strayConstructorPar_eq env).symm
+  · exact congrArg Task.pure (projectionCollisionPar_eq out.1).symm
+  · exact congrArg Task.pure (unreadablePublishedPar_eq env out.1).symm
+  · exact congrArg Task.pure (blobRecordCollisionPar_eq out.1).symm
+  · exact congrArg Task.pure (unownedRecursorWith_eq env out.1).symm
+  · exact congrArg Task.pure (unstoredFamilyNamePar_eq env).symm
+  · exact congrArg Task.pure (misplacedConstructorPar_eq env).symm
+  · exact congrArg Task.pure (strayLevelParamsPar_eq env).symm
+  · exact congrArg Task.pure (strayFamilyMemberPar_eq env blocks).symm
+  · exact congrArg Task.pure (unhintedDefinitionPar_eq env out.1).symm
 
 /-- **The pure compiler, with its failures.** A block that fails to compile
 is recorded, with its dependents, and left out of the environment; the

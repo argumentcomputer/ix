@@ -1,15 +1,16 @@
 /-
-  `ix compress layout|normalize|setup`. `layout` executes a root wrap
-  of each given aggregate proof and sizes one fixed layout that holds all of
-  them; `normalize` proves a root's wrap in that layout and writes the FRI
-  worker's root input. Every root normalized to one layout compresses under
-  the same FRI verifier. `setup` installs the released Ignition proving
+  `ix compress layout|normalize|setup` for formal aggregate roots. Every root
+  is normalized to the one layout the bundled release pins, so every root
+  compresses under the same FRI verifier. `layout` derives that layout when a
+  release is cut: one fixed layout holding the root wrap of each given root.
+  `normalize` proves a root's wrap in the release layout and writes the FRI
+  worker's root input. `setup` installs the released Ignition proving
   parameters and the fixed preprocessing every stage reads.
 -/
 module
 public import Cli
 public import Ix.Cli.Compression
-public import Ix.Cli.FormalAggregate
+public import Ix.Cli.FormalCompress
 
 public section
 namespace Ix.Cli.CompressionCmd
@@ -20,6 +21,8 @@ private def loadRoot (input : String) : IO (Address × Ixon.Proof) := do
     throw <| IO.userError s!"proof {addr} is already compressed"
   let .checkEnv .. := wrapper.claim
     | throw <| IO.userError s!"proof {addr} is not an aggregate CheckEnv proof"
+  unless FormalCompress.isFormalRoot wrapper.proof do
+    throw <| IO.userError s!"proof {addr} is not a formal aggregate root (IXAGGR2); legacy Aiur roots are retired"
   return (addr, wrapper)
 
 def runLayout (p : Cli.Parsed) : IO UInt32 := do
@@ -35,9 +38,9 @@ def runLayout (p : Cli.Parsed) : IO UInt32 := do
     for hex in proofs do
       let (addr, wrapper) ← loadRoot hex
       IO.eprintln s!"Executing the root wrap of {addr}."
-      let (raw, inv) ← FormalAggregate.wrapInvocation ctx wrapper
+      let (raw, inv) ← FormalAggregate.wrapInvocation ctx.toKeys wrapper
       rows := rows.push (← Compression.rootRows ctx.aggrArtifact inv raw)
-      claimLen := (FormalAggregate.outerClaim ctx .aggr wrapper.claim).size
+      claimLen := (FormalAggregate.outerClaim ctx.toKeys .aggr wrapper.claim).size
     let layout ← Compression.rootLayout ctx.aggrArtifact
       ("[" ++ ",".intercalate rows.toList ++ "]") headroom.toUInt32 claimLen.toUInt32
     IO.FS.writeBinFile out layout
@@ -50,15 +53,14 @@ def runLayout (p : Cli.Parsed) : IO UInt32 := do
 def runNormalize (p : Cli.Parsed) : IO UInt32 := do
   try
     let (addr, wrapper) ← loadRoot (p.positionalArg! "proof" |>.as! String)
-    let layoutPath := p.positionalArg! "layout" |>.as! String
     let out := p.positionalArg! "out" |>.as! String
-    let layout ← IO.FS.readBinFile layoutPath
     let ctx ← FormalAggregate.context p
-    IO.eprintln s!"Normalizing aggregate root {addr} to {layoutPath}."
-    let root ← FormalAggregate.normalize ctx wrapper layout
+    let layout ← Compression.releaseRootLayout ctx.aggr.key
+    IO.eprintln s!"Normalizing aggregate root {addr} to the release root layout."
+    let root ← FormalCompress.normalize p ctx wrapper layout
     let claim := Ix.Claim.ser wrapper.claim
     Compression.writeRoot ctx.aggr.key root claim
-      (FormalAggregate.statementBytes ctx wrapper.claim) layout out
+      (FormalAggregate.statementBytes ctx.toKeys wrapper.claim) layout out
     IO.println out
     return 0
   catch e =>
@@ -67,7 +69,7 @@ def runNormalize (p : Cli.Parsed) : IO UInt32 := do
 
 def layoutCmd : Cli.Cmd := `[Cli|
   layout VIA runLayout;
-  "Size one fixed root layout that holds the root wrap of every given aggregate proof."
+  "Derive a release's root layout: one fixed layout that holds the root wrap of every given formal aggregate root. Compression uses only the layout the bundled release pins; this derives it when a release is cut."
 
   FLAGS:
     "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
@@ -83,17 +85,18 @@ def layoutCmd : Cli.Cmd := `[Cli|
 
 def normalizeCmd : Cli.Cmd := `[Cli|
   normalize VIA runNormalize;
-  "Prove a root's wrap in a fixed layout and write the FRI worker's root input directory."
+  "Prove a root's wrap in the release root layout and write the FRI worker's root input directory."
 
   FLAGS:
     "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
     "aiur-artifact-digest" : String; "Require the IxVM artifact's BLAKE3 digest to equal these 64 hex digits (or IX_AIUR_ARTIFACT_DIGEST)."
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
     "aggr-artifact-digest" : String; "Require the aggregation artifact's BLAKE3 digest to equal these 64 hex digits (or IX_AGGR_ARTIFACT_DIGEST)."
+    "max-ram" : Nat; "RAM budget in GiB for proving the normalized root (default MemTotal less 20%)."
+    "gpu-device" : Nat; "Prove the normalized root on this CUDA device (requires a CUDA build)."
 
   ARGS:
     proof : String; "Aggregate Ixon.Proof file or content address in the ix store."
-    layout : String; "Layout file (`.ixl`) from `ix compress layout`."
     out : String; "Empty output directory for root-vk.bin, root-proof.bin, root-claims.bin and fixed-root.ixl."
 ]
 
@@ -122,13 +125,37 @@ private def parametersDir : IO System.FilePath := do
   return (← StoreIO.toIO Store.getHomeDir) / ".ix/compression/params"
 
 private def backendVk (p : Cli.Parsed) : IO ByteArray := do
-  return (← FormalAggregate.aggrIdentity p).2.key
+  return (← FormalAggregate.aggrIdentity p (← FormalProver.Registry.new)).2.2.key
+
+private def resolveSetupCurve (p : Cli.Parsed) : Except String String := do
+  let hasBn := p.hasFlag "bn254"
+  let hasBls := p.hasFlag "bls12-381"
+  if hasBn && hasBls then
+    throw "choose at most one of --bn254 and --bls12-381"
+  let explicit? := (p.flag? "curve").map (·.as! String)
+  let normalized? ← match explicit? with
+    | none => pure none
+    | some "bn254" => pure (some "bn254")
+    | some "bls12-381" | some "bls12_381" => pure (some "bls12-381")
+    | some other =>
+      throw s!"unknown compression curve {other}: expected bn254 or bls12-381"
+  match hasBn, hasBls, normalized? with
+  | true, false, some "bls12-381" => throw "--bn254 conflicts with --curve bls12-381"
+  | false, true, some "bn254" => throw "--bls12-381 conflicts with --curve bn254"
+  | false, true, _ => pure "bls12-381"
+  | true, false, _ => pure "bn254"
+  | false, false, some c => pure c
+  | false, false, none => pure "bn254"
+  | true, true, _ => throw "choose at most one of --bn254 and --bls12-381"
 
 def runSetup (p : Cli.Parsed) : IO UInt32 := do
   try
+    let curve ← IO.ofExcept (resolveSetupCurve p)
     let devKzgSrs := p.hasFlag "dev-kzg-srs"
     if devKzgSrs then
       IO.eprintln "parameters: development setup, nothing to download"
+    else if curve == "bls12-381" then
+      IO.eprintln "parameters: BLS12-381 uses local Filecoin challenge_19 cache (IX_KZG_SRS_CACHE / IX_KZG_SRS_MANIFEST)"
     else if (← IO.getEnv "IX_KZG_SRS").isSome then
       IO.eprintln "parameters: IX_KZG_SRS is set and replaces the release SRS"
     else
@@ -141,8 +168,8 @@ def runSetup (p : Cli.Parsed) : IO UInt32 := do
         else
           IO.eprintln s!"parameters: downloading {ignitionUrl}/{file}"
           download s!"{ignitionUrl}/{file}" path
-    Compression.prepare (← backendVk p) (← Compression.cacheDir).toString
-      devKzgSrs (p.hasFlag "plonk")
+    Compression.prepareForCurve (← backendVk p) (← Compression.cacheDir).toString
+      curve devKzgSrs (p.hasFlag "plonk")
     return 0
   catch e =>
     IO.eprintln s!"compress setup: {e}"
@@ -150,12 +177,15 @@ def runSetup (p : Cli.Parsed) : IO UInt32 := do
 
 def setupCmd : Cli.Cmd := `[Cli|
   "setup" VIA runSetup;
-  "Prepare this machine for compression of the bundled version: download the released BN254 Ignition SRS (4.3 GB, public) into IX_PARAMS_DIR (default ~/.ix/compression/params) if missing and check it against its pin, then publish the fixed preprocessing of the first KZG stage and the recursive stage to the fixed cache, checking each derived key against its bundled pin. Present cache entries are only checked."
+  "Prepare this machine for compression: for BN254 (~100b classical / 0b PQ, Ignition SRS), download the released Ignition SRS (4.3 GB, public) into IX_PARAMS_DIR (default ~/.ix/compression/params) if missing and verify its pin; for BLS12-381 (~126–128b classical / 0b PQ, EIP-2537, Filecoin challenge_19 SRS), verify the local Filecoin cache; then publish fixed preprocessing to the fixed cache."
 
   FLAGS:
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
     "aggr-artifact-digest" : String; "Require the aggregation artifact's BLAKE3 digest to equal these 64 hex digits (or IX_AGGR_ARTIFACT_DIGEST)."
-    "dev-kzg-srs"; "Prepare the known-trapdoor development setup instead of Ignition (not production-secure)."
+    "curve" : String; "Pairing curve backend: bn254 (default) or bls12-381."
+    "bn254"; "Prepare BN254 (~100b classical / 0b PQ, Ignition SRS)."
+    "bls12-381"; "Prepare BLS12-381 (~126–128b classical / 0b PQ, EIP-2537, Filecoin challenge_19 SRS)."
+    "dev-kzg-srs"; "Prepare the known-trapdoor development setup instead of ceremony parameters (not production-secure)."
     "plonk"; "Also build the PLONK circuit, keys and parameter exports into the PLONK cache."
 ]
 

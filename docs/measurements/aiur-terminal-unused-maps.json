@@ -1,0 +1,128 @@
+{
+  "format": "ix-aiur-plonk-unused-map-reduction-v1",
+  "date_utc": "2026-11-13",
+  "source_basis": "4e27c5fcd",
+  "opt_in": true,
+  "default_behavior_changed": false,
+  "scope": "Same small development terminal input, source artifact, capacities and witness ABI. Actual complete compilation and constraint-solver checks; no new PLONK setup or proof.",
+  "transformation": {
+    "remove": "Negative fixed-map pulls whose literal CALL/callable pair is absent from all requests, including the root call.",
+    "replace": "Add a zero constraint on each existing, isolated current-row receiver-weight column.",
+    "preserve": [
+      "all capacities",
+      "all column positions",
+      "all fixed matrices",
+      "all existing expression nodes",
+      "public and private output layout",
+      "binary witnesses"
+    ],
+    "guards": [
+      "A dynamic request namespace or CALL target disables the pass.",
+      "Receiver payload expressions must use only fixed/constant data.",
+      "The weight must be a current-row main variable.",
+      "No constraint, message argument or other lookup count may reference that weight column.",
+      "All structural analysis completes before schema mutation."
+    ]
+  },
+  "safety_scope": "The compiler program-value/call-map relation is preserved: honest unused-map weights are zero, and retained zero constraints remove exactly their absent multiset contributions. No claim is made that compiled proof witnesses or exceptional denominator challenges are identical across changed keys.",
+  "artifact_blake3": "30b1bbce528ca43634e25c1a2978cb4877db5f86bffa175606d59749aad1d6c8",
+  "constraints": {
+    "before": 20257381,
+    "after": 18748505,
+    "saved": 1508876,
+    "reduction_percent": 7.448524564947467
+  },
+  "domain": {
+    "before": 33554432,
+    "after": 33554432,
+    "target": 16777216,
+    "remaining_constraint_reduction": 1971291
+  },
+  "unchanged": {
+    "main_cells": 2495099,
+    "max_height": 65536,
+    "public_fields": 2,
+    "private_outputs": 18,
+    "commitments": 1
+  },
+  "reduction": {
+    "removed": [
+      {
+        "callable": "167",
+        "circuit": "<table:UInt8::byte_inputs>",
+        "rows": 256,
+        "weight_column": 1
+      },
+      {
+        "callable": "170",
+        "circuit": "<table:UInt8::pair_inputs>",
+        "rows": 65536,
+        "weight_column": 2
+      },
+      {
+        "callable": "171",
+        "circuit": "<table:UInt8::pair_inputs>",
+        "rows": 65536,
+        "weight_column": 3
+      },
+      {
+        "callable": "172",
+        "circuit": "<table:UInt8::pair_inputs>",
+        "rows": 65536,
+        "weight_column": 4
+      },
+      {
+        "callable": "178",
+        "circuit": "<table:BN254Fq::add_sub_carry_inputs>",
+        "rows": 4,
+        "weight_column": 0
+      },
+      {
+        "callable": "181",
+        "circuit": "<table:BN254Fp12::x_inputs>",
+        "rows": 64,
+        "weight_column": 0
+      },
+      {
+        "callable": "182",
+        "circuit": "<table:BN254Pairing::line_inputs>",
+        "rows": 128,
+        "weight_column": 0
+      }
+    ],
+    "removed_message_slots": 197060,
+    "skipped_dynamic_requests": false
+  },
+  "schema_blake3": {
+    "before": "621d3442deb2521b17d7377cd09a074d402ffacb7ab309ea39f52720170c388f",
+    "after": "f9edaa3a42475e15d33139cedb5f339efc946a3858543491dd209b03438751e6"
+  },
+  "compiled_circuit_sha256": "4b4d5b6513f74df054a35e26b872b69b35cc15a303e6f61d1a8593fa179e4868",
+  "compile_execution": {
+    "command": [
+      "target/release/examples/aiur_terminal_profile",
+      "crates/aiur/tests/fixtures/compress-final-accumulator.ixa",
+      "/home/sam/repos/ix.aiur-compression-stages/target/full-terminal-plonk/unused-map-compiled",
+      "--reduce-unused-maps",
+      "--compile-plonk"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 20.006644049979514,
+    "peak_resident_bytes": 6439059456,
+    "stopped_for_resource_admission": null
+  },
+  "validation": {
+    "structural_rust_tests": 4,
+    "actual_terminal_abi_test": "passed; original and reduced binary witnesses are byte-identical and removed weight cells are zero",
+    "clippy": "passed with -D warnings",
+    "zero_weight_regression": "Original and reduced systems reject an altered unused weight. A control with the pull removed but without the zero constraint accepts it, demonstrating that the test detects missing enforcement.",
+    "full_compiled_relation": "Honest binary witness accepted; invalid-opening source execution and detached identity private outputs rejected using the reduced compiled circuit.",
+    "source_fixtures_changed": false
+  },
+  "actual_init": "This does not reduce actual Init trace cells or solve its 734,887,425-cell terminal workload. Proof-width/MSM optimizations are separate work.",
+  "reproduce": [
+    "cargo test --release --locked -p ix-proof-compression --lib aiur_backend::plonk::unused_maps",
+    "cargo test --release --locked -p ix-proof-compression --test aiur_terminal",
+    "cargo run --release --locked -p ix-proof-compression --features plonk --example aiur_terminal_profile -- crates/aiur/tests/fixtures/compress-final-accumulator.ixa NEW_OUTPUT --reduce-unused-maps --compile-plonk"
+  ]
+}

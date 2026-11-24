@@ -3,8 +3,7 @@ import IxVMRefinement.Binding.StoreClausesWalk
 import IxVMRefinement.Binding.BasisAt
 import IxVMRefinement.RoleVal.GroupAdmit
 import IxVMRefinement.Claim.TopProj
-import IxVMRefinement.Obs.KernelRoles2
-import IxVMRefinement.Obs.KernelRoles3
+import IxVMRefinement.Obs.KernelRoles
 
 /-! # Literal anchors are never inductive projections (`ClosureRunFacts.literals`)
 

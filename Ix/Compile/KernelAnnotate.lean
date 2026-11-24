@@ -278,12 +278,15 @@ def separable (mode : Ix.Kernel.CheckMode) (fe : FEnv .source) (d : CDecl .sourc
   if d.anchorMismatch?.isSome then none else
   match d with
   | .defnDecl cv v h =>
-    if Ix.Kernel.natOpNames.contains cv.name || Ix.Kernel.natDivModNames.contains cv.name then none
+    if Ix.Kernel.natOpNames.contains cv.name || Ix.Kernel.natDivModNames.contains cv.name ||
+        cv.name.isCompilerTrust then none
     else (run (Ix.Kernel.Cached.annotValueC mode fe cv v)).map fun r => .defnInfo r.1 r.2.2 h
   | .thmDecl cv v =>
-    (run (Ix.Kernel.Cached.annotConstantValC mode fe cv)).map fun r => .thmInfo r.1 v
+    if cv.name.isCompilerTrust then none
+    else (run (Ix.Kernel.Cached.annotConstantValC mode fe cv)).map fun r => .thmInfo r.1 v
   | .opaqueDecl cv v =>
-    (run (Ix.Kernel.Cached.annotValueC mode fe cv v)).map fun r => .axiomInfo r.1
+    if cv.name.isCompilerTrust then none
+    else (run (Ix.Kernel.Cached.annotValueC mode fe cv v)).map fun r => .axiomInfo r.1
   | _ => none
 
 /-- Whether every constant a definition, theorem, opaque or axiom names is
@@ -297,11 +300,23 @@ def resolves (fe : FEnv .source) (d : CDecl .source) : Bool :=
   | .axiomDecl cv => Ix.Kernel.Cached.constsResolveFC fe cv.type
   | _ => true
 
+/-- Whether `d` is one of the five inert compiler-trust declarations (`§7.10`):
+a compiler-trust axiom (`.axiomDecl`) or opaque (`.opaqueDecl`). Handled
+explicitly before `separableKind` so `Lean.reduceBool`/`Lean.reduceNat` never
+bypass inert handling and `Quot.*`/`sorryAx` never misfire into `lenient`. -/
+def isCompilerTrustDecl : CDecl .source → Bool
+  | .axiomDecl cv => cv.name.isCompilerTrust
+  | .opaqueDecl cv _ => cv.name.isCompilerTrust
+  | _ => false
+
 /-- Whether `separable` applies to a declaration's kind: a definition other than a
-pinned `Nat` operation, a theorem, an opaque. -/
+pinned `Nat` operation, a theorem, or a non-compiler-trust opaque. -/
 def separableKind : CDecl .source → Bool
-  | .defnDecl cv _ _ => !(Ix.Kernel.natOpNames.contains cv.name || Ix.Kernel.natDivModNames.contains cv.name)
-  | .thmDecl .. | .opaqueDecl .. => true
+  | .defnDecl cv _ _ =>
+    !(Ix.Kernel.natOpNames.contains cv.name || Ix.Kernel.natDivModNames.contains cv.name) &&
+      !cv.name.isCompilerTrust
+  | .thmDecl cv _ => !cv.name.isCompilerTrust
+  | .opaqueDecl cv _ => !cv.name.isCompilerTrust
   | _ => false
 
 /-- What a worker made of a declaration of a wave, against its own environment:
@@ -319,6 +334,17 @@ what was made. -/
 def makeOne (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source) (fe : FEnv .source)
     (pos : Nat) (d : CDecl .source) : FEnv .source × Made :=
   if !resolves fe d then (fe, .retry)
+  else if isCompilerTrustDecl d then
+    let vis := fe.visibleBelow
+    let (fe', _, err) := step mode ev fe pos d
+    match err with
+    | none =>
+      -- Inert compiler-trust declarations (`§7.10`) succeed without pushing into `fe`;
+      -- enter them leniently so downstream declarations naming them can still be annotated.
+      match lenient mode fe' d with
+      | some fe'' => (fe'', .pushes (fe''.env.consts.take (fe''.visibleBelow - vis)).reverse.toArray)
+      | none => (fe', .retry)
+    | some _ => (fe', .retry)
   else if separableKind d then
     match separable mode fe d with
     | some ci => (fe, .pushes #[ci])
@@ -327,25 +353,48 @@ def makeOne (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source) (fe 
     let vis := fe.visibleBelow
     let (fe', _, err) := step mode ev fe pos d
     match err with
-    | none => (fe', .pushes (fe'.env.consts.take (fe'.visibleBelow - vis)).reverse.toArray)
+    | none =>
+      (fe', .pushes (fe'.env.consts.take (fe'.visibleBelow - vis)).reverse.toArray)
     | some _ => (fe', .retry)
 
 /-- **Phase A on workers**, each with an environment of its own built by `push`
 (never shared, so every push is in place). The prelude's wave (wave 0, whose
-declarations name each other) is made whole by every worker, in order. At every
-other wave, worker `w` makes the declarations of the groups `g` with `g % W = w`
-(`groupOf`, by position in `prepared`; a group's declarations, which may name each
-other, in order on one worker), each against its own environment (`makeOne`) and
-pushed there at once, publishes them, and pushes every other worker's (in worker
-order, a constant already there skipped). The groups of a wave do not name each
-other, so each declaration is made against an environment that answers its lookups
-as the one-by-one fold's does. The first worker's environment, and the
-declarations to retry (in wave order, then worker order). A worker that finds
-`stop` set at a wave publishes nothing for it and the waves after it, and ends:
-the install is abandoned, and no worker waits for it. -/
+declarations name each other) is made once sequentially, its constants marked
+persistent and pushed into each worker's fresh environment before the parallel
+waves begin. At every subsequent wave, worker `w` makes the declarations of the
+groups `g` with `g % W = w` (`groupOf`, by position in `prepared`; a group's
+declarations, which may name each other, in order on one worker), each against
+its own environment (`makeOne`) and pushed there at once, publishes them, and
+pushes every other worker's (in worker order, a constant already there skipped).
+The groups of a wave do not name each other, so each declaration is made against
+an environment that answers its lookups as the one-by-one fold's does. The first
+worker's environment, and the declarations to retry (in wave order, then worker
+order). A worker that finds `stop` set at a wave publishes nothing for it and
+the waves after it, and ends: the install is abandoned, and no worker waits for
+it. -/
 def phaseAWorkers (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source)
     (prepared : Array (CDecl .source)) (groupOf : Array Nat) (waves : Array (Array Nat))
     (workers : Nat) (stop : IO Bool) : IO (FEnv .source × Array Nat) := do
+  if waves.isEmpty then
+    return (Ix.Kernel.mkFEnv Ix.Kernel.Env.empty, #[])
+  -- Wave 0 (the prelude, whose declarations name each other) is made once, not
+  -- repeated on every worker.
+  let mut fe0 : FEnv .source := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
+  let mut retry0 : Array Nat := #[]
+  for i in waves[0]! do
+    if ← stop then return (fe0, retry0)
+    let (fe', m) := makeOne mode ev fe0 i prepared[i]!
+    fe0 := fe'
+    match m with
+    | .pushes cis =>
+      for ci in cis do
+        if (fe0.find? ci.name).isNone then fe0 := fe0.push ci
+    | .retry =>
+      retry0 := retry0.push i
+  if waves.size ≤ 1 || (← stop) then
+    return (fe0, retry0)
+  let baseCis ← fe0.env.consts.reverse.toArray.mapM fun ci =>
+    (unsafe Runtime.markPersistent ci : BaseIO (Ix.Kernel.ConstantInfo .source))
   let W := max 1 workers
   -- worker `w`'s results at wave `k`, at `k * W + w`
   let mut made : Array (IO.Promise (Array (Nat × Made))) := #[]
@@ -353,9 +402,10 @@ def phaseAWorkers (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source
     made := made.push (← IO.Promise.new)
   let outs := made
   let run (w : Nat) : IO (FEnv .source × Array Nat) := do
-    let mut fe : FEnv .source := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
-    let mut retry : Array Nat := #[]
-    for h : k in [:waves.size] do
+    let mut fe : FEnv .source :=
+      baseCis.foldl (fun fe ci => fe.push ci) (Ix.Kernel.mkFEnv Ix.Kernel.Env.empty)
+    let mut retry : Array Nat := if w == 0 then retry0 else #[]
+    for h : k in [1:waves.size] do
       if ← stop then
         for k' in [k:waves.size] do
           if let some p := outs[k' * W + w]? then p.resolve #[]
@@ -363,7 +413,7 @@ def phaseAWorkers (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source
       let wave := waves[k]
       let mut mine : Array (Nat × Made) := #[]
       for i in wave do
-        unless k == 0 || (groupOf[i]?.getD i) % W == w do continue
+        unless (groupOf[i]?.getD i) % W == w do continue
         let (fe', m) := makeOne mode ev fe i prepared[i]!
         fe := fe'
         match m with
@@ -371,16 +421,12 @@ def phaseAWorkers (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source
           -- read by every worker, written by none: no reference counts
           let mut ps : Array (Ix.Kernel.ConstantInfo .source) := #[]
           for ci in cis do
-            let mut ci := ci
-            if k != 0 then
-              ci ← (unsafe Runtime.markPersistent ci : BaseIO (Ix.Kernel.ConstantInfo .source))
+            let ci ← (unsafe Runtime.markPersistent ci : BaseIO (Ix.Kernel.ConstantInfo .source))
             if (fe.find? ci.name).isNone then fe := fe.push ci
             ps := ps.push ci
           mine := mine.push (i, .pushes ps)
         | .retry =>
           mine := mine.push (i, .retry)
-          if k == 0 && w == 0 then retry := retry.push i
-      if k == 0 then continue
       if let some p := outs[k * W + w]? then p.resolve mine
       for w' in [:W] do
         let rs : Array (Nat × Made) ← if w' == w then pure mine else
@@ -587,6 +633,25 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
       safeRefused := safeRefused.push (declName d, "names a constant that is not installed")
       pos := pos + 1
       continue
+    -- Inert compiler-trust declarations (`§7.10`) run through `step` and enter leniently
+    -- before `separableKind`, never misfiring on `Quot.*` or `sorryAx`.
+    if isCompilerTrustDecl d then
+      let (fe', pos', err) := step mode ev fe pos d
+      fe := fe'
+      pos := pos'
+      match err with
+      | none =>
+        if let some fe'' := lenient mode fe d then
+          fe := fe''
+          lenientCount := lenientCount + 1
+        ok := ok + 1
+      | some e =>
+        let why := (Benchmarks.Kernel.CheckIxeStep.checkOutcome e).2
+        failures := failures.push (declName d, why)
+        if let some fe'' := lenient mode fe d then
+          fe := fe''
+          lenientCount := lenientCount + 1
+      continue
     -- a separable declaration's step is its annotation and push (`separable`): made
     -- without the step, a failure leaves nothing to roll back
     if separableKind d then
@@ -771,7 +836,7 @@ def installInput (env : Ix.Environment) (pre : Ix.Kernel.Reader.Prelude .source)
   let tc1 ← IO.monoMsNow
   -- the reference graph as `Ix.Compile.FrontEnd.graph` builds it, then its condensation
   let some refs ← parMap threads stop (fun (nc : Ix.Name × Ix.ConstantInfo) =>
-      (nc.1, (Ix.GraphM.run envI .init (Ix.graphConst nc.2)).1)) envI.consts.toList.toArray
+      (nc.1, (Ix.GraphM.run envI .init (Ix.graphConst nc.2)).1)) envI.consts.toArray
     | return .error abandoned
   let graph : Ix.Map Ix.Name (Ix.Set Ix.Name) := refs.foldl (fun out (n, rs) => out.insert n rs) {}
   let blocks ← IO.lazyPure fun _ => Ix.CondenseM.run graph

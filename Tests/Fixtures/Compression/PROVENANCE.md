@@ -1,7 +1,9 @@
-# Compressed Nat.add_comm root, release 0.3
+# Compressed Nat.add_comm root, release 0.5
 
-`nat-add-comm.ixon-proof` is a recursive KZG proof of `Nat.add_comm`'s
-aggregate root under the bundled 0.3 verifying keys.
+`nat-add-comm.ixon-proof` is a recursive KZG proof of `Nat.add_comm` + the
+default 108-role table's aggregate root under the bundled 0.5 verifying keys
+(Protocol `v6`, 128-bit `Fp^3` FRI, unified `root-layout.ixl` covering `Nat`,
+`Init+Std`, and full `Mathlib` 4.34.1).
 `lake test -- compression-cli` checks that `ix verify` accepts it, and that it
 refuses the same proof under another claim. Replace it whenever the release
 changes (see "Deriving the verifying keys" in `crates/proof-compression/README.md`).
@@ -11,34 +13,45 @@ changes (see "Deriving the verifying keys" in `crates/proof-compression/README.m
 - Format: serialized `Ixon.Proof`, a `CheckEnv` claim with an `IXBN` recursive
   KZG packet
 - Ixon content address (BLAKE3):
-  `69038aa7bfdb8ca7c0fe53d0d88fb95e8d9f9c9193dcf852739ab7c55b10b882`
-- SHA-256: `a78df99ee0328aff20a61452db01fed12e1cf5d41af240b93b0345ec7d24ab2b`
+  `8b71d46ecceae7c06aa888fd6b8850fa70d28add7fa1ad3083187c093b99a672`
+- SHA-256: `d3706dba36d199ce8aca66111726774cc090559e547b203857b28a3a3475d520`
 - Size: 2,020 bytes
 - Claim digest (BLAKE3 of the claim):
-  `9871a66a0f7df6edd6a3a76f606de47892b7f25d750c19266255facfacdcb863`
-- Recursive verifying key: `verifying-keys/0.3/recursive-vk.bin`, BLAKE3
-  `25e785599ee246a08052bd15cae3ca8bef9501b181f886d8e8e7bf2d23e90fbe`, under
-  the released Aztec Ignition setup
+  `c9f440791f4be07cca16a1afe221ce2138a9cc508c8bf74c28f47cf6f567ddf0`
+- Role table: `c60dd3126e86fe6d5221f514a229569a30d1c1075f88f3b23243df82da8194b7`
+  (the default role table, validated in the proof)
+- Root layout: `verifying-keys/0.5/root-layout.ixl` (95 bytes, BLAKE3
+  `035f3b31e438becfe9294b792e7b0cb9aef8a10d073216731ac171c10cdd5748`,
+  `--headroom 1` union over `Nat.add_comm`, `Init+Std`, and full `Mathlib` 4.34.1)
+- Recursive verifying key: `verifying-keys/0.5/recursive-vk.bin`, BLAKE3
+  `adb2415c05975b848ad38f123a5e49d718ad6a63a094d2e852634da9923e1aa5`
+  (ID `07b533959666cf26b9ed44baeda8a2c26bc839591b329c2ccc3d2f8622976914`),
+  under the released Aztec Ignition setup
 
 ## Inputs and producer
 
-- Environment: `Nat.add_comm`'s closure (213 constants), compiled from a file
-  holding only `theorem ixReleaseLayout : True := trivial` with
-  `ix compile --consts Nat.add_comm`; `nat.ixe`, SHA-256
-  `ebf96b76a8a2eff752d75e67e1bc682e3ee569451580b786eb8b9b1859c1fbd9`
-- One shard (`ix shard --shards 1`), aggregated by `ix prove --aggregate`:
-  the wrapped-leaf root
-  `0fb6ff2496f18d386365eefea17d6a7ac5c9f3904b2aa37c4e38ffefa7019e20`
-  (file SHA-256
-  `8dd3ef5452e1c1ad70d09873f68b53b8260080ba41b78ef9ac6e2f552a3e34c9`), one of
-  the four roots the 0.3 layout was derived from
-- Backends: the formal IxVM key (BLAKE3 `4312e28b…`) and aggregation key
-  (BLAKE3 `f6d00e04…`) at the restored STARK parameters
-- Command: `ix compress ROOT --out DIR`, with the Ignition SRS under
-  `IX_PARAMS_DIR` and the fixed preprocessing `release_keys` published
-- Host: 64-core box, 495 GB of RAM, CPU only; 1,903 s wall time and 389 GB
-  peak RSS (box job `params-03-6`)
+- Environment: `Nat.add_comm` together with the 108 default-table roles
+  (`IxC/Kernel/Key.lean`), compiled into `nat-default-roles.ixe`
+- Aggregate root: `c825ae9a2dacdea5928696b6ee4638d3acfd64f7540aca2322f84b394b7ab3ff`
+  (`ix verify --aggregate` PASS with zero `--allow-*` flags)
+- Backends: Protocol `v6` (`Fp^3`, `Parameters::DEFAULT`: `lb=2, q=128, qpow=20`),
+  formal IxVM artifact `e9021411…` and formal aggregation key BLAKE3
+  `d3813ae554af0aa6a24c5c72c796e17403756aa1f9cabbb08519ed4d767c9f13`
+  (artifact `96aefd74…`)
+- Host: NVIDIA RTX PRO 6000 Blackwell (96 GiB VRAM, `sm_120`, CUDA 13.5),
+  32 vCPU, 249 GiB RAM:
+  - GPU Normalize (`--headroom 1`): 9.36 s wall (3.2 s GPU prove)
+  - Stage-0 FRI (`SpillableTwoAdicFriPcs`, NVMe spill): 62.6 GiB peak RSS
+  - GPU Recursive KZG (stage-1 + stage-2, warm fixed preprocessing cache):
+    3m07.54s wall, 129.6 GiB peak RSS
 
-The same run also proved the root in PLONK, under the bundled PLONK key
-(`contracts/plonk/testdata/nat-add-comm.json`), and in Groth16 under the
-bundled development key; `ix verify` accepted both.
+The same run also proved the root in PLONK under the bundled Ignition PLONK key
+(`verifying-keys/0.5/plonk-verifying-key.bin`, SHA-256 `ae9638f0…`, 15,652,020
+constraints, 11.46 s GPU prove, 1.51 ms verify, 292,245 EVM gas; exported to
+`contracts/plonk/testdata/nat-add-comm.json` and `contracts/plonk/src/PlonkVerifier.sol`,
+`forge test` 14/14 PASS) and derived the Release 0.5 development Groth16 key
+(`verifying-keys/0.5/groth16-development-verifying-key.bin`, SHA-256 `3e6bb1ff…`,
+4,568,533 constraints). Both `Init+Std` (99,462 constants) and full `Mathlib`
+4.34.1 (684,691 constants) compress and verify under these exact Release 0.5
+keys (287,909 EVM gas for PLONK; 1.325 s ICICLE CUDA prove / 1.14 ms verify for
+Groth16).

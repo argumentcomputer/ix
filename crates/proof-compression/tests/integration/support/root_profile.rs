@@ -23,7 +23,7 @@ use multi_stark::system::CircuitInputs;
 use multi_stark::system::System;
 use multi_stark::types::CommitmentParameters;
 use multi_stark::types::FriParameters;
-use multi_stark::types::GoldilocksBlake3Config;
+use multi_stark::types::GoldilocksBlake3V6Config;
 use multi_stark::types::Val;
 use p3_blake3::Blake3;
 use p3_symmetric::CryptographicHasher;
@@ -51,12 +51,12 @@ impl Profile {
     vec![7, 7, tables[0], 7, tables[1], 6, 0]
   }
 
-  pub(crate) fn config(self) -> GoldilocksBlake3Config {
+  pub(crate) fn config(self) -> GoldilocksBlake3V6Config {
     let (queries, commit_pow, query_pow) = match self {
       Self::Smoke => (4, 3, 4),
       Self::FullSize => (100, 0, 20),
     };
-    GoldilocksBlake3Config::new(
+    GoldilocksBlake3V6Config::new(
       CommitmentParameters { log_blowup: 2, cap_height: 0 },
       FriParameters {
         log_final_poly_len: 0,
@@ -70,12 +70,12 @@ impl Profile {
 
   /// Same blowup and query count as [`Self::config`], without PoW grinding
   /// (PoW verification is already exercised by [`Self::Smoke`]).
-  pub(crate) fn config_without_pow(self) -> GoldilocksBlake3Config {
+  pub(crate) fn config_without_pow(self) -> GoldilocksBlake3V6Config {
     let queries = match self {
       Self::Smoke => 4,
       Self::FullSize => 100,
     };
-    GoldilocksBlake3Config::new(
+    GoldilocksBlake3V6Config::new(
       CommitmentParameters { log_blowup: 2, cap_height: 0 },
       FriParameters {
         log_final_poly_len: 0,
@@ -89,7 +89,7 @@ impl Profile {
 
   pub(crate) fn shape(
     self,
-    system: &System<GoldilocksBlake3Config>,
+    system: &System<GoldilocksBlake3V6Config>,
   ) -> FixedPcsShape {
     // This fixture has unit consumers. Count ALL slots (even
     // providers) conservatively; fixed metadata makes this a build-time
@@ -390,7 +390,7 @@ fn pack_words(
 }
 
 pub(crate) fn build_statement_verifier(
-  system: &System<GoldilocksBlake3Config>,
+  system: &System<GoldilocksBlake3V6Config>,
   profile: Profile,
 ) -> StatementVerifier {
   let mut b = CircuitBuilder::new();

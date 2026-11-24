@@ -1,4 +1,4 @@
-//! The crate evaluation domain over [`Scalar`]: a multiplicative coset
+//! The crate evaluation domain over [`CurveScalar`]: a multiplicative coset
 //! `shift · H` of the order-`2^log_size` subgroup `H`.
 //!
 //! The selector formulas reproduce the p3 coset semantics the core's
@@ -18,26 +18,27 @@ use multi_stark::traits::LagrangeSelectors;
 use multi_stark::traits::TwoAdicField;
 use multi_stark::traits::batch_inverse;
 
-use super::{curve::Fr, field::Scalar};
+use super::{
+  curve::{Bn254, KzgCurve},
+  field::CurveScalar,
+};
 
-const ONE: Scalar = <Scalar as Algebra<Scalar>>::ONE;
-
-/// A coset `shift · H`, `|H| = 2^log_size`, over the selected scalar field.
+/// A coset `shift · H`, `|H| = 2^log_size`, over a KZG curve's scalar field.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Radix2Coset {
+pub struct Radix2Coset<C: KzgCurve = Bn254> {
   pub log_size: usize,
-  pub shift: Scalar,
+  pub shift: CurveScalar<C>,
 }
 
-impl Radix2Coset {
+impl<C: KzgCurve> Radix2Coset<C> {
   /// The subgroup generator `g`.
   #[inline]
-  pub fn generator(&self) -> Scalar {
-    Scalar::two_adic_generator(self.log_size)
+  pub fn generator(&self) -> CurveScalar<C> {
+    CurveScalar::<C>::two_adic_generator(self.log_size)
   }
 
   /// The coset's points in natural order: `shift · g^i`.
-  pub fn points(&self) -> Vec<Scalar> {
+  pub fn points(&self) -> Vec<CurveScalar<C>> {
     self
       .generator()
       .powers()
@@ -47,75 +48,81 @@ impl Radix2Coset {
   }
 }
 
-impl EvaluationDomain for Radix2Coset {
-  type F = Scalar;
-  type Challenge = Scalar;
+impl<C: KzgCurve> EvaluationDomain for Radix2Coset<C> {
+  type F = CurveScalar<C>;
+  type Challenge = CurveScalar<C>;
 
   #[inline]
   fn size(&self) -> usize {
     assert!(
-      self.log_size <= Scalar::TWO_ADICITY,
+      self.log_size <= CurveScalar::<C>::TWO_ADICITY,
       "domain exceeds scalar two-adicity"
     );
     1 << self.log_size
   }
 
   #[inline]
-  fn first_point(&self) -> Scalar {
+  fn first_point(&self) -> CurveScalar<C> {
     self.shift
   }
 
   #[inline]
-  fn next_point(&self, x: Scalar) -> Scalar {
+  fn next_point(&self, x: CurveScalar<C>) -> CurveScalar<C> {
     x * self.generator()
   }
 
   fn create_disjoint_domain(&self, min_size: usize) -> Self {
     let log_size = p3_util::log2_ceil_usize(min_size);
     assert!(
-      log_size <= Scalar::TWO_ADICITY,
+      log_size <= CurveScalar::<C>::TWO_ADICITY,
       "domain exceeds scalar two-adicity"
     );
     // Multiplying the shift by the field's multiplicative generator
     // leaves the subgroup (and every subgroup coset reachable by
     // repeated application), exactly as in p3.
-    Self {
-      log_size,
-      shift: self.shift * Scalar(<Fr as ark_ff::FftField>::GENERATOR),
-    }
+    Self { log_size, shift: self.shift * CurveScalar(C::FR_GENERATOR) }
   }
 
-  fn selectors_at_point(&self, point: Scalar) -> LagrangeSelectors<Scalar> {
+  fn selectors_at_point(
+    &self,
+    point: CurveScalar<C>,
+  ) -> LagrangeSelectors<CurveScalar<C>> {
+    let one = <CurveScalar<C> as Algebra<CurveScalar<C>>>::ONE;
     let unshifted = point * self.shift.inverse();
-    let z_h = unshifted.exp_power_of_2(self.log_size) - ONE;
+    let z_h = unshifted.exp_power_of_2(self.log_size) - one;
     let g_inv = self.generator().inverse();
     LagrangeSelectors {
-      is_first_row: z_h * (unshifted - ONE).inverse(),
+      is_first_row: z_h * (unshifted - one).inverse(),
       is_last_row: z_h * (unshifted - g_inv).inverse(),
       is_transition: unshifted - g_inv,
       inv_vanishing: z_h.inverse(),
     }
   }
 
-  fn selectors_on_coset(&self, coset: Self) -> LagrangeSelectors<Vec<Scalar>> {
-    assert_eq!(self.shift, ONE, "selectors_on_coset needs the group itself");
-    assert_ne!(coset.shift, ONE, "coset must be disjoint from the group");
+  fn selectors_on_coset(
+    &self,
+    coset: Self,
+  ) -> LagrangeSelectors<Vec<CurveScalar<C>>> {
+    let one = <CurveScalar<C> as Algebra<CurveScalar<C>>>::ONE;
+    assert_eq!(self.shift, one, "selectors_on_coset needs the group itself");
+    assert_ne!(coset.shift, one, "coset must be disjoint from the group");
     assert!(coset.log_size >= self.log_size);
     let rate_bits = coset.log_size - self.log_size;
 
     // Z_H(X) = X^n − 1 is periodic over the coset with period
     // 2^rate_bits: (s·w^j·h)^n = s^n·w^{jn} and h^n = 1.
     let s_pow_n = coset.shift.exp_power_of_2(self.log_size);
-    let vanishing: Vec<Scalar> = Scalar::two_adic_generator(rate_bits)
-      .powers()
-      .take(1 << rate_bits)
-      .map(|x| s_pow_n * x - ONE)
-      .collect();
+    let vanishing: Vec<CurveScalar<C>> =
+      CurveScalar::<C>::two_adic_generator(rate_bits)
+        .powers()
+        .take(1 << rate_bits)
+        .map(|x| s_pow_n * x - one)
+        .collect();
 
     let xs = coset.points();
     let single_point_selector = |i: u64| {
       let subgroup_point = self.generator().exp_u64(i);
-      let denoms: Vec<Scalar> =
+      let denoms: Vec<CurveScalar<C>> =
         xs.iter().map(|&x| x - subgroup_point).collect();
       let inverses = batch_inverse(&denoms);
       vanishing
@@ -143,14 +150,13 @@ impl EvaluationDomain for Radix2Coset {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::kzg::curve::Bls12381;
 
-  /// `selectors_on_coset` must agree pointwise with `selectors_at_point`
-  /// evaluated at each coset point.
-  #[test]
-  fn coset_selectors_match_pointwise() {
+  fn check_domain_suite<C: KzgCurve>() {
+    let one = <CurveScalar<C> as Algebra<CurveScalar<C>>>::ONE;
     for log_size in [0usize, 1, 3] {
       for extra_bits in [0usize, 1, 2] {
-        let trace = Radix2Coset { log_size, shift: ONE };
+        let trace = Radix2Coset::<C> { log_size, shift: one };
         let coset = trace.create_disjoint_domain(1 << (log_size + extra_bits));
         let on_coset = trace.selectors_on_coset(coset);
         for (i, x) in coset.points().into_iter().enumerate() {
@@ -162,47 +168,58 @@ mod tests {
         }
       }
     }
-  }
 
-  /// The disjoint domain must be disjoint: the vanishing polynomial of
-  /// the trace domain is nonzero on every coset point.
-  #[test]
-  fn disjoint_domain_is_disjoint() {
-    let trace = Radix2Coset { log_size: 4, shift: ONE };
+    let trace = Radix2Coset::<C> { log_size: 4, shift: one };
     let coset = trace.create_disjoint_domain(1 << 6);
     for x in coset.points() {
-      assert!(!(x.exp_power_of_2(4) - ONE).is_zero());
+      assert!(!(x.exp_power_of_2(4) - one).is_zero());
     }
-  }
 
-  #[test]
-  fn next_point_walks_the_domain() {
-    let domain = Radix2Coset { log_size: 3, shift: ONE };
+    let domain = Radix2Coset::<C> { log_size: 3, shift: one };
     let points = domain.points();
     for i in 0..points.len() - 1 {
       assert_eq!(domain.next_point(points[i]), points[i + 1]);
     }
+
+    let max =
+      Radix2Coset::<C> { log_size: CurveScalar::<C>::TWO_ADICITY, shift: one };
+    assert_eq!(max.size(), 1usize << CurveScalar::<C>::TWO_ADICITY);
+    assert_eq!(
+      max.generator().exp_power_of_2(CurveScalar::<C>::TWO_ADICITY),
+      one
+    );
+    let max_coset = max.create_disjoint_domain(max.size());
+    assert_ne!(
+      max_coset.shift.exp_power_of_2(CurveScalar::<C>::TWO_ADICITY),
+      one
+    );
   }
 
   #[test]
-  fn largest_domain_has_supported_order() {
-    let trace = Radix2Coset { log_size: Scalar::TWO_ADICITY, shift: ONE };
-    assert_eq!(trace.size(), 1usize << Scalar::TWO_ADICITY);
-    assert_eq!(trace.generator().exp_power_of_2(Scalar::TWO_ADICITY), ONE);
-    let coset = trace.create_disjoint_domain(trace.size());
-    assert_ne!(coset.shift.exp_power_of_2(Scalar::TWO_ADICITY), ONE);
+  fn domain_properties_hold_for_both_curves() {
+    check_domain_suite::<Bn254>();
+    check_domain_suite::<Bls12381>();
   }
 
   #[test]
   #[should_panic(expected = "domain exceeds scalar two-adicity")]
   fn disjoint_domain_rejects_oversized_quotient() {
-    let trace = Radix2Coset { log_size: Scalar::TWO_ADICITY, shift: ONE };
+    let one = <CurveScalar<Bn254> as Algebra<CurveScalar<Bn254>>>::ONE;
+    let trace = Radix2Coset::<Bn254> {
+      log_size: CurveScalar::<Bn254>::TWO_ADICITY,
+      shift: one,
+    };
     trace.create_disjoint_domain(trace.size() + 1);
   }
 
   #[test]
   #[should_panic(expected = "domain exceeds scalar two-adicity")]
   fn rejects_oversized_domain() {
-    Radix2Coset { log_size: Scalar::TWO_ADICITY + 1, shift: ONE }.size();
+    let one = <CurveScalar<Bls12381> as Algebra<CurveScalar<Bls12381>>>::ONE;
+    Radix2Coset::<Bls12381> {
+      log_size: CurveScalar::<Bls12381>::TWO_ADICITY + 1,
+      shift: one,
+    }
+    .size();
   }
 }

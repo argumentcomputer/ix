@@ -13,7 +13,7 @@ use multi_stark::p3_matrix::dense::RowMajorMatrix;
 use multi_stark::system::CircuitInputs;
 use multi_stark::types::CommitmentParameters;
 use multi_stark::types::FriParameters;
-use multi_stark::types::GoldilocksBlake3Config;
+use multi_stark::types::GoldilocksBlake3V6Config;
 use multi_stark::types::Val;
 
 pub(crate) const HEIGHT: usize = 128;
@@ -49,8 +49,8 @@ impl Function {
 }
 
 /// Tiny test parameters, NOT a production security configuration.
-pub(crate) fn config() -> GoldilocksBlake3Config {
-  GoldilocksBlake3Config::new(
+pub(crate) fn config() -> GoldilocksBlake3V6Config {
+  GoldilocksBlake3V6Config::new(
     CommitmentParameters { log_blowup: 1, cap_height: 0 },
     FriParameters {
       log_final_poly_len: 0,

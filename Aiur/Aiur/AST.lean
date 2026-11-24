@@ -8,7 +8,7 @@ inductive Ty where
   | tuple (items : List Ty)
   | ptr (target : Ty)
   | enum (name : String)
-  deriving Repr, BEq
+  deriving Repr
 
 mutual
   def Ty.decEq : (left right : Ty) → Decidable (left = right)
@@ -76,7 +76,25 @@ inductive Value (α : Type) (Address : Type := α) where
   | tuple (items : List (Value α Address))
   | ptr (target : Ty) (address : Address)
   | construct (enumName constructor : String) (args : List (Value α Address))
-  deriving Repr, BEq
+  deriving Repr
+
+mutual
+  def Value.beq [BEq α] [BEq Address] : Value α Address → Value α Address → Bool
+    | .field x, .field y => x == y
+    | .tuple xs, .tuple ys => Value.listBeq xs ys
+    | .ptr t x, .ptr u y => t == u && x == y
+    | .construct e c xs, .construct e' c' ys => e == e' && c == c' && Value.listBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+
+  def Value.listBeq [BEq α] [BEq Address] : List (Value α Address) → List (Value α Address) → Bool
+    | [], [] => true
+    | x :: xs, y :: ys => Value.beq x y && Value.listBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+end
+
+instance [BEq α] [BEq Address] : BEq (Value α Address) := ⟨Value.beq⟩
 
 mutual
   def Value.decEq [DecidableEq α] [DecidableEq Address] :
@@ -217,7 +235,26 @@ inductive Pattern (α : Type) where
   | bind (name : String)
   | tuple (items : List (Pattern α))
   | construct (enumName constructor : String) (args : List (Pattern α))
-  deriving Repr, BEq
+  deriving Repr
+
+mutual
+  def Pattern.beq [BEq α] : Pattern α → Pattern α → Bool
+    | .literal x, .literal y => x == y
+    | .wildcard, .wildcard => true
+    | .bind x, .bind y => x == y
+    | .tuple xs, .tuple ys => Pattern.listBeq xs ys
+    | .construct e c xs, .construct e' c' ys => e == e' && c == c' && Pattern.listBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+
+  def Pattern.listBeq [BEq α] : List (Pattern α) → List (Pattern α) → Bool
+    | [], [] => true
+    | x :: xs, y :: ys => Pattern.beq x y && Pattern.listBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+end
+
+instance [BEq α] : BEq (Pattern α) := ⟨Pattern.beq⟩
 
 mutual
   def Pattern.decEq [DecidableEq α] : (left right : Pattern α) → Decidable (left = right)
@@ -290,9 +327,45 @@ inductive Expr (α : Type) where
   | neg (value : Expr α)
   | binary (op : BinOp) (left right : Expr α)
   | assertEq (assertion : Assertion) (left right : Expr α)
+  | ptrEq (left right : Expr α)
   | call (function : String) (args : List (Expr α))
   | matchValue (scrutinee : Expr α) (arms : List (Pattern α × Expr α))
-  deriving Repr, BEq
+  deriving Repr
+
+mutual
+  def Expr.beq [BEq α] : Expr α → Expr α → Bool
+    | .literal x, .literal y => x == y
+    | .var x, .var y => x == y
+    | .tuple xs, .tuple ys => Expr.listBeq xs ys
+    | .construct e c xs, .construct e' c' ys => e == e' && c == c' && Expr.listBeq xs ys
+    | .project v i, .project v' i' => Expr.beq v v' && i == i'
+    | .letValue p v b, .letValue p' v' b' => p == p' && Expr.beq v v' && Expr.beq b b'
+    | .store v, .store v' => Expr.beq v v'
+    | .load p, .load p' => Expr.beq p p'
+    | .hint t k c, .hint t' k' c' => t == t' && Expr.beq k k' && c == c'
+    | .neg v, .neg v' => Expr.beq v v'
+    | .binary op l r, .binary op' l' r' => op == op' && Expr.beq l l' && Expr.beq r r'
+    | .assertEq a l r, .assertEq a' l' r' => a == a' && Expr.beq l l' && Expr.beq r r'
+    | .ptrEq l r, .ptrEq l' r' => Expr.beq l l' && Expr.beq r r'
+    | .call f xs, .call f' ys => f == f' && Expr.listBeq xs ys
+    | .matchValue s arms, .matchValue s' arms' => Expr.beq s s' && Expr.armsBeq arms arms'
+    | _, _ => false
+  termination_by left _ => sizeOf left
+
+  def Expr.listBeq [BEq α] : List (Expr α) → List (Expr α) → Bool
+    | [], [] => true
+    | x :: xs, y :: ys => Expr.beq x y && Expr.listBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+
+  def Expr.armsBeq [BEq α] : List (Pattern α × Expr α) → List (Pattern α × Expr α) → Bool
+    | [], [] => true
+    | (p, e) :: xs, (p', e') :: ys => p == p' && Expr.beq e e' && Expr.armsBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+end
+
+instance [BEq α] : BEq (Expr α) := ⟨Expr.beq⟩
 
 /-- A selected table result contains no executable user code or allocations. -/
 def Constant.toExpr : Constant α → Expr α
@@ -387,6 +460,7 @@ def Expr.map (f : α → β) : Expr α → Expr β
   | .neg value => .neg (value.map f)
   | .binary op left right => .binary op (left.map f) (right.map f)
   | .assertEq message left right => .assertEq message (left.map f) (right.map f)
+  | .ptrEq left right => .ptrEq (left.map f) (right.map f)
   | .call name args => .call name (args.map (Expr.map f))
   | .matchValue scrutinee arms =>
       .matchValue (scrutinee.map f) (arms.map fun arm => (arm.1.map f, arm.2.map f))
@@ -414,7 +488,7 @@ def Program.toField (F : Type) [NatCast F] (program : Program Nat) : Program F :
 
 /-- A syntactic boundary for the original deterministic fragment. -/
 def Expr.noHints : Expr α → Bool
-  | .hint _ _ _ => false
+  | .hint _ _ _ | .ptrEq _ _ => false
   | .literal _ | .var _ => true
   | .tuple items | .construct _ _ items | .call _ items =>
       (items.map Expr.noHints).all id
@@ -434,5 +508,29 @@ decreasing_by
 
 def Program.noHints (program : Program α) : Bool :=
   (program.functions.map fun function => function.body.noHints).all id
+
+/-- Syntactic predicate excluding `ptr_eq` expressions. -/
+def Expr.ptrEqFree : Expr α → Bool
+  | .ptrEq _ _ => false
+  | .literal _ | .var _ => true
+  | .tuple items | .construct _ _ items | .call _ items =>
+      (items.map Expr.ptrEqFree).all id
+  | .project value _ | .store value | .load value | .neg value | .hint _ value _ => value.ptrEqFree
+  | .letValue _ value body | .binary _ value body | .assertEq _ value body =>
+      value.ptrEqFree && body.ptrEqFree
+  | .matchValue value arms => value.ptrEqFree && (arms.map fun arm => arm.2.ptrEqFree).all id
+termination_by expr => sizeOf expr
+decreasing_by
+  all_goals simp_wf
+  all_goals
+    first
+    | omega
+    | have h := List.sizeOf_lt_of_mem ‹_ ∈ _›
+      first
+      | omega
+      | cases arm; simp_all only [Prod.mk.sizeOf_spec]; omega
+
+def Program.ptrEqFree (program : Program α) : Bool :=
+  (program.functions.map fun function => function.body.ptrEqFree).all id
 
 end Aiur

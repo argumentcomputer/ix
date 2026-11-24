@@ -2,7 +2,7 @@ import Aiur.Modules.Frontend
 
 /-! # MultiStark module `Transcript`
 
-The Fiat-Shamir transcript.
+The Protocol `v6` domain-separated BLAKE3 Fiat-Shamir transcript over $\mathbb{F}_{p^3}$.
 
 Formal Aiur source, written as Lean syntax (`aiur⟦ … ⟧`). `MultiStark.recursionSource`
 and `MultiStark.aggregateSource` (`MultiStark/MultiStark/Program.lean`) compose the modules. -/
@@ -14,8 +14,8 @@ module Transcript {
   fn ch_sample8(input: Bytes::Stream, output: Bytes::Stream) -> ([UInt8::U8; 8], Bytes::Stream, Bytes::Stream) {
       match (*(output)) {
         Lists::Node::Nil => {
-
-          let h = Blake3::hash(input);
+          let batch_cv = StarkHash::v6_transcript_batch_cv();
+          let h = StarkHash::b3_dk_hash((&(batch_cv)), input);
           let fwd = StarkHash::b3_flatten_onto(h, (&(Lists::Node::Nil)));
           let rev = StarkVerifier::rev_onto(fwd, (&(Lists::Node::Nil)));
           let &Lists::Node::Cons(b0, r1) = rev;
@@ -47,10 +47,11 @@ module Transcript {
       }
     }
 
-  fn ch_sample_ext(input: Bytes::Stream, output: Bytes::Stream) -> ([UInt8::U8; 8], [UInt8::U8; 8], Bytes::Stream, Bytes::Stream) {
+  fn ch_sample_ext(input: Bytes::Stream, output: Bytes::Stream) -> ([UInt8::U8; 8], [UInt8::U8; 8], [UInt8::U8; 8], Bytes::Stream, Bytes::Stream) {
       let (c0, i0, o0) = ch_sample_field(input, output);
       let (c1, i1, o1) = ch_sample_field(i0, o0);
-      (c0, c1, i1, o1)
+      let (c2, i2, o2) = ch_sample_field(i1, o1);
+      (c0, c1, c2, i2, o2)
     }
 
   fn ch_sample_bits(input: Bytes::Stream, output: Bytes::Stream, n: Field)
@@ -72,11 +73,12 @@ module Transcript {
       let input = StarkVerifier::cap_onto(prep, input);
       let input = StarkVerifier::limbs_onto(tlimbs, input);
       let input = StarkVerifier::seed_tag_onto(input);
-      let (l0, l1, input, _ol) = ch_sample_ext(input, (&(Lists::Node::Nil)));
-      let input = Lists::concat(input, StarkVerifier::b8_onto(l0, StarkVerifier::b8_onto(l1, (&(Lists::Node::Nil)))));
-      let (f0, f1, input, _of) = ch_sample_ext(input, (&(Lists::Node::Nil)));
-      let input = Lists::concat(input, StarkVerifier::b8_onto(f0, StarkVerifier::b8_onto(f1, (&(Lists::Node::Nil)))));
-      ([Goldilocks::gl_val(l0), Goldilocks::gl_val(l1)], [Goldilocks::gl_val(f0), Goldilocks::gl_val(f1)], input)
+      let (l0, l1, l2, input, _ol) = ch_sample_ext(input, (&(Lists::Node::Nil)));
+      let input = Lists::concat(input, StarkVerifier::b8_onto(l0, StarkVerifier::b8_onto(l1, StarkVerifier::b8_onto(l2, (&(Lists::Node::Nil))))));
+      let (f0, f1, f2, input, _of) = ch_sample_ext(input, (&(Lists::Node::Nil)));
+      let input = Lists::concat(input, StarkVerifier::b8_onto(f0, StarkVerifier::b8_onto(f1, StarkVerifier::b8_onto(f2, (&(Lists::Node::Nil))))));
+      ([Goldilocks::gl_val(l0), Goldilocks::gl_val(l1), Goldilocks::gl_val(l2)],
+       [Goldilocks::gl_val(f0), Goldilocks::gl_val(f1), Goldilocks::gl_val(f2)], input)
     }
 
   fn shard_fiat_shamir(input: Bytes::Stream, shard: Field, s2: ProofDeserialize::MerkleCap, q: ProofDeserialize::MerkleCap,
@@ -84,10 +86,11 @@ module Transcript {
       let input = StarkVerifier::snoc_b8(input, Goldilocks::gl_to_bytes(shard));
       let input = StarkVerifier::snoc_cap(input, s2);
       let input = Lists::concat(input, StarkVerifier::accs_onto(accs, (&(Lists::Node::Nil))));
-      let (a0, a1, input, _oa) = ch_sample_ext(input, (&(Lists::Node::Nil)));
+      let (a0, a1, a2, input, _oa) = ch_sample_ext(input, (&(Lists::Node::Nil)));
       let input = StarkVerifier::snoc_cap(input, q);
-      let (z0, z1, zinput, _oz) = ch_sample_ext(input, (&(Lists::Node::Nil)));
-      ([Goldilocks::gl_val(a0), Goldilocks::gl_val(a1)], [Goldilocks::gl_val(z0), Goldilocks::gl_val(z1)], zinput)
+      let (z0, z1, z2, zinput, _oz) = ch_sample_ext(input, (&(Lists::Node::Nil)));
+      ([Goldilocks::gl_val(a0), Goldilocks::gl_val(a1), Goldilocks::gl_val(a2)],
+       [Goldilocks::gl_val(z0), Goldilocks::gl_val(z1), Goldilocks::gl_val(z2)], zinput)
     }
 }
 ⟧

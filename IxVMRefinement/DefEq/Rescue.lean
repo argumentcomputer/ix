@@ -1072,7 +1072,7 @@ theorem try_eta_struct_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List
       LvListRep.mono (e85.trans (e176.trans (e215.trans (E310.trans E389)))) hus
     have hTy389 : c.tmk d Γ 0 m389 (posOf cvT.levelParams cvT.type) x_ind_ty :=
       (TmC.mono (E310.trans E389) htyT) d Γ
-    obtain ⟨l, hpi, hnz⟩ := ih.get (.whnf .type_sort_never) (by lt_calls) ev422 x_ind_ty _
+    obtain ⟨l, hpi, hnz⟩ := ih.get (.whnf .type_sort_may_be_nonzero) (by lt_calls) ev422 x_ind_ty _
       x_s_lvls rfl (good.sub fun x hx => by simp [hx]) d Γ 0 _ (cnP : F) us hTy389 rfl hus389
       hy388
     rw [hcnPv] at hpi

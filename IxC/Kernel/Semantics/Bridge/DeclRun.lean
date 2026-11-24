@@ -125,6 +125,9 @@ theorem declThmRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
   simp only [checkDecl, checkThmVal, fueledOps_annotate,
     fueledOps_inferType, fueledOps_isDefEq, fueledOps_ensureSort,
     Bind.bind, Except.bind] at h
+  by_cases hct : cv.name.isCompilerTrust = true
+  · rw [if_pos hct] at h; exact nomatch h
+  rw [if_neg hct] at h
   cases hccv : checkConstantVal (fueledOps μ F) env cv with
   | error e => rw [hccv] at h; exact nomatch h
   | ok cv' =>
@@ -204,9 +207,44 @@ theorem declAxiomRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
         (quotBasis.getD 4 (.axiomInfo default)) = true
     · rw [if_pos hpin] at h
       simp only [pure, Except.pure, Except.ok.injEq] at h
-      exact Or.inl ⟨hqs, h.symm⟩
+      exact Or.inl ⟨Or.inl hqs, h.symm⟩
     · rw [if_neg hpin] at h; exact nomatch h
   rw [if_neg hqs] at h
+  by_cases hct : cv.name.isCompilerTrustAxiom = true
+  · rw [if_pos hct] at h
+    by_cases hpin : (anchorMismatch? cv).isNone = true
+    · rw [if_pos hpin] at h
+      by_cases hdup : (env.find? cv.name).isSome = true
+      · rw [if_pos hdup] at h; exact nomatch h
+      rw [if_neg hdup] at h
+      by_cases htc : cv.name = roleKey .trustCompiler
+      · rw [if_pos htc] at h
+        cases hccv : checkConstantVal (fueledOps μ F) env cv with
+        | error e => rw [hccv] at h; exact nomatch h
+        | ok _ =>
+          rw [hccv] at h
+          simp only [pure, Except.pure, Except.ok.injEq] at h
+          exact Or.inl ⟨Or.inr hct, h.symm⟩
+      rw [if_neg htc] at h
+      by_cases hnd : LevelParam.nodup cv.levelParams = true
+      case neg => simp only [hnd, Bool.not_false, ↓reduceIte] at h; exact nomatch h
+      simp only [hnd, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+      by_cases hlb : cv.type.looseBVarsBounded 0 = true
+      case neg => simp only [hlb, Bool.not_false, ↓reduceIte] at h; exact nomatch h
+      simp only [hlb, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+      by_cases hfv : cv.type.hasFvar = true
+      · rw [if_pos hfv] at h; exact nomatch h
+      rw [if_neg hfv] at h
+      by_cases hlp : cv.type.allLevelParamsDefined cv.levelParams = true
+      case neg => simp only [hlp, Bool.not_false, ↓reduceIte] at h; exact nomatch h
+      simp only [hlp, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+      simp only [pure, Except.pure, Except.ok.injEq] at h
+      exact Or.inl ⟨Or.inr hct, h.symm⟩
+    · rw [if_neg hpin] at h; exact nomatch h
+  rw [if_neg hct] at h
+  by_cases hcto : cv.name.isCompilerTrustOpaque = true
+  · rw [if_pos hcto] at h; exact nomatch h
+  rw [if_neg hcto] at h
   refine Or.inr ?_
   cases hccv : checkConstantVal (fueledOps μ F) env cv with
   | error e => rw [hccv] at h; exact nomatch h
@@ -243,6 +281,34 @@ theorem declOpaqueRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
     DeclOpaqueRun μ F env cv value env₂ := by
   simp only [checkDecl, checkOpaqueVal, fueledOps_annotate,
     fueledOps_inferType, fueledOps_isDefEq, Bind.bind, Except.bind] at h
+  by_cases hct : cv.name.isCompilerTrustOpaque = true
+  · rw [if_pos hct] at h
+    by_cases hpin : (anchorMismatch? cv).isNone = true
+    · rw [if_pos hpin] at h
+      by_cases hdup : (env.find? cv.name).isSome = true
+      · rw [if_pos hdup] at h; exact nomatch h
+      rw [if_neg hdup] at h
+      by_cases hlb : value.looseBVarsBounded 0 = true
+      case neg => simp only [hlb, Bool.not_false, ↓reduceIte] at h; exact nomatch h
+      simp only [hlb, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+      by_cases hfv : value.hasFvar = true
+      · rw [if_pos hfv] at h; exact nomatch h
+      rw [if_neg hfv] at h
+      by_cases hlp : value.allLevelParamsDefined cv.levelParams = true
+      case neg => simp only [hlp, Bool.not_false, ↓reduceIte] at h; exact nomatch h
+      simp only [hlp, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+      cases hccv : checkConstantVal (fueledOps μ F) env cv with
+      | error e => rw [hccv] at h; exact nomatch h
+      | ok _ =>
+        rw [hccv] at h
+        simp only [pure, Except.pure, Except.ok.injEq] at h
+        exact Or.inl ⟨hct, h.symm⟩
+    · rw [if_neg hpin] at h; exact nomatch h
+  rw [if_neg hct] at h
+  by_cases hcta : cv.name.isCompilerTrustAxiom = true
+  · rw [if_pos hcta] at h; exact nomatch h
+  rw [if_neg hcta] at h
+  refine Or.inr ?_
   cases hccv : checkConstantVal (fueledOps μ F) env cv with
   | error e => rw [hccv] at h; exact nomatch h
   | ok cv' =>
@@ -299,6 +365,9 @@ theorem declDefnRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
     DeclDefnRun μ F env cv value hint env₂ := by
   simp only [checkDecl, checkDefnVal, fueledOps_annotate,
     fueledOps_inferType, fueledOps_isDefEq, Bind.bind, Except.bind] at h
+  by_cases hct : cv.name.isCompilerTrust = true
+  · rw [if_pos hct] at h; exact nomatch h
+  rw [if_neg hct] at h
   cases hccv : checkConstantVal (fueledOps μ F) env cv with
   | error e => rw [hccv] at h; exact nomatch h
   | ok cv' =>

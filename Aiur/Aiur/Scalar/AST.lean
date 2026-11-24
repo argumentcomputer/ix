@@ -24,7 +24,33 @@ inductive Expr (α : Type) where
   | binary (op : BinOp) (left right : Expr α)
   | call (function : String) (args : List (Expr α))
   | matchValue (scrutinee : Expr α) (arms : List (Pattern α × Expr α))
-  deriving Repr, BEq
+  deriving Repr
+
+mutual
+  def Expr.beq [BEq α] : Expr α → Expr α → Bool
+    | .literal x, .literal y => x == y
+    | .var x, .var y => x == y
+    | .neg v, .neg v' => Expr.beq v v'
+    | .binary op l r, .binary op' l' r' => op == op' && Expr.beq l l' && Expr.beq r r'
+    | .call f xs, .call f' ys => f == f' && Expr.listBeq xs ys
+    | .matchValue s arms, .matchValue s' arms' => Expr.beq s s' && Expr.armsBeq arms arms'
+    | _, _ => false
+  termination_by left _ => sizeOf left
+
+  def Expr.listBeq [BEq α] : List (Expr α) → List (Expr α) → Bool
+    | [], [] => true
+    | x :: xs, y :: ys => Expr.beq x y && Expr.listBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+
+  def Expr.armsBeq [BEq α] : List (Pattern α × Expr α) → List (Pattern α × Expr α) → Bool
+    | [], [] => true
+    | (p, e) :: xs, (p', e') :: ys => p == p' && Expr.beq e e' && Expr.armsBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+end
+
+instance [BEq α] : BEq (Expr α) := ⟨Expr.beq⟩
 
 structure Function (α : Type) where
   name : String

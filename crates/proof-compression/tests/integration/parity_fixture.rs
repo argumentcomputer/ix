@@ -128,7 +128,7 @@ fn parity_fixture_proofs_share_one_key_and_shape() {
       // Main, stage 2, quotient, and preprocessing: each input batch
       // opens both matrices at each query, with fixed column widths.
       assert_eq!(fri.input_openings.len(), 4);
-      for (opening, width) in fri.input_openings.iter().zip([2, 4, 2, 2]) {
+      for (opening, width) in fri.input_openings.iter().zip([2, 6, 3, 2]) {
         assert_eq!(opening.opened_values.len(), NUM_QUERIES);
         for query in &opening.opened_values {
           assert_eq!(query.len(), 2);

@@ -88,7 +88,7 @@ because their hash orders coincided. **Fixed on both sides** by
 ordering the collection canonically (the below inductives' own
 `sort_consts` partition-refinement order — content-derived and
 alpha-invariant; see `docs/ix_canonicity.md`, "below.rec block").
-Post-fix, the full ladder is ALIGNED and the Mathlib output is
+Post-fix, every environment is ALIGNED and the Mathlib output is
 byte-identical to the pre-fix Rust artifact (Rust's hash order happened
 to already coincide with the canonical order for this block), so no
 persisted artifact changed. Every other aux phase was and is

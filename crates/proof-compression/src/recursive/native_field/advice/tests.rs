@@ -1,8 +1,11 @@
 use super::*;
-use crate::{kzg::curve::Fq, recursive::native_field::FqGadget};
+use crate::{
+  kzg::curve::{Bls12381, Bn254},
+  recursive::native_field::FqGadget,
+};
 use ark_ff::PrimeField;
 
-fn integer_reference(value: Scalar) -> BigUint {
+fn integer_reference<C: KzgCurve>(value: CurveScalar<C>) -> BigUint {
   BigUint::from_bytes_le(
     &value
       .canonical_limbs_le()
@@ -12,77 +15,82 @@ fn integer_reference(value: Scalar) -> BigUint {
   )
 }
 
-fn range_reference<const N: usize>(value: Scalar) -> [Scalar; N] {
+fn range_reference<C: KzgCurve, const N: usize>(
+  value: CurveScalar<C>,
+) -> [CurveScalar<C>; N] {
   let n = integer_reference(value);
   let bits = crate::recursive::native_field::RANGE_BITS;
   let mask = (BigUint::from(1u8) << bits) - BigUint::from(1u8);
-  std::array::from_fn(|i| scalar(&((&n >> (bits * i)) & &mask)))
+  std::array::from_fn(|i| scalar::<C>(&((&n >> (bits * i)) & &mask)))
 }
 
-fn relation_reference(
-  values: &[Scalar],
+fn relation_reference<C: KzgCurve>(
+  values: &[CurveScalar<C>],
   pc: &[i8],
   lc: &[i8],
   constant: i8,
-  p_hint: &[BigUint; L],
-) -> Result<[Scalar; RELATION_ADVICE_LEN], String> {
-  let mut t = vec![BigInt::from(0u8); 2 * L];
+  p_hint: &[BigUint],
+) -> Result<Vec<CurveScalar<C>>, String> {
+  let l = limb_count::<C>();
+  let advice_len = relation_advice_len::<C>();
+  let mut t = vec![BigInt::from(0u8); 2 * l];
   let mut at = 0;
   for &c in pc {
-    for i in 0..L {
-      for j in 0..L {
+    for i in 0..l {
+      for j in 0..l {
         t[i + j] += BigInt::from(c)
           * BigInt::from(integer_reference(values[at + i]))
-          * BigInt::from(integer_reference(values[at + L + j]));
+          * BigInt::from(integer_reference(values[at + l + j]));
       }
     }
-    at += 2 * L;
+    at += 2 * l;
   }
   for &c in lc {
-    for i in 0..L {
+    for i in 0..l {
       t[i] += BigInt::from(c) * BigInt::from(integer_reference(values[at + i]));
     }
-    at += L;
+    at += l;
   }
   t[0] += constant;
   let total = t.iter().rev().fold(BigInt::from(0u8), |a, c| (a << W) + c);
-  let prime = BigInt::from(modulus());
+  let prime = BigInt::from(modulus::<C>());
   if &total % &prime != BigInt::from(0u8) {
     return Err("nonzero Fq relation".into());
   }
-  let q: BigInt = total / prime + (BigInt::from(1u8) << QUOTIENT_BIAS_BITS);
+  let q: BigInt =
+    total / prime + (BigInt::from(1u8) << quotient_bias_bits::<C>());
   let q = q.to_biguint().ok_or("negative biased quotient")?;
-  if q.bits() > QUOTIENT_BITS as u64 {
+  if q.bits() > quotient_bits::<C>() as u64 {
     return Err("Fq quotient overflow".into());
   }
-  let q = digits(&q);
-  let bias = digits(&(BigUint::from(1u8) << QUOTIENT_BIAS_BITS));
-  for i in 0..L {
-    for j in 0..L {
+  let q = digits::<C>(&q);
+  let bias = digits::<C>(&(BigUint::from(1u8) << quotient_bias_bits::<C>()));
+  for i in 0..l {
+    for j in 0..l {
       t[i + j] -= BigInt::from(p_hint[i].clone())
         * (BigInt::from(q[j].clone()) - BigInt::from(bias[j].clone()));
     }
   }
-  let mut out = [Scalar::ZERO; RELATION_ADVICE_LEN];
-  for i in 0..L {
-    out[i] = scalar(&q[i]);
+  let mut out = vec![CurveScalar::<C>::ZERO; advice_len];
+  for i in 0..l {
+    out[i] = scalar::<C>(&q[i]);
   }
   let radix = BigInt::from(1u8) << W;
   let block_radix = &radix * &radix;
   let mut carry = BigInt::from(0u8);
-  for j in 0..L {
+  for j in 0..l {
     carry += &t[2 * j] + &radix * &t[2 * j + 1];
     if &carry % &block_radix != BigInt::from(0u8) {
       return Err("nonintegral Fq carry".into());
     }
     carry /= &block_radix;
-    if j < L - 1 {
+    if j < l - 1 {
       let biased: BigInt = &carry + (BigInt::from(1u8) << CARRY_BIAS_BITS);
       let v = biased.to_biguint().ok_or("negative biased carry")?;
       if v.bits() > CARRY_BITS as u64 {
         return Err("Fq carry overflow".into());
       }
-      out[L + j] = scalar(&v);
+      out[l + j] = scalar::<C>(&v);
     }
   }
   if carry != BigInt::from(0u8) {
@@ -91,14 +99,14 @@ fn relation_reference(
   Ok(out)
 }
 
-struct Case {
+struct Case<C: KzgCurve> {
   products: Vec<i8>,
   linear: Vec<i8>,
   constant: i8,
-  values: Vec<Scalar>,
+  values: Vec<CurveScalar<C>>,
 }
 
-fn cases(count: usize) -> Vec<Case> {
+fn cases<C: KzgCurve>(count: usize) -> Vec<Case<C>> {
   let mut state = 0x918e_6af2_a79d_c043u64;
   let mut next = || {
     let mut bytes = [0; 48];
@@ -106,7 +114,7 @@ fn cases(count: usize) -> Vec<Case> {
       state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
       *word = state.to_le_bytes();
     }
-    Fq::from_le_bytes_mod_order(&bytes)
+    C::Fq::from_le_bytes_mod_order(&bytes)
   };
   (0..count)
     .map(|index| {
@@ -122,42 +130,47 @@ fn cases(count: usize) -> Vec<Case> {
       ][index % 8]
         .clone();
       let constant: i8 = [-4, 0, 4][index % 3];
-      let mut total = Fq::from(constant.unsigned_abs());
+      let mut total = C::Fq::from(constant.unsigned_abs());
       if constant < 0 {
         total = -total;
       }
       let mut values = Vec::new();
       for &coefficient in &products {
-        let a = if index < 8 { -Fq::from(1u8) } else { next() };
+        let a = if index < 8 { -C::Fq::from(1u8) } else { next() };
         let b = next();
-        let term = Fq::from(coefficient.unsigned_abs()) * a * b;
+        let term = C::Fq::from(coefficient.unsigned_abs()) * a * b;
         total += if coefficient < 0 { -term } else { term };
-        values.extend(FqGadget::witness_values(a));
-        values.extend(FqGadget::witness_values(b));
+        values.extend(FqGadget::<C>::witness_values(a));
+        values.extend(FqGadget::<C>::witness_values(b));
       }
       let addend = next();
       total += addend;
-      values.extend(FqGadget::witness_values(addend));
-      values.extend(FqGadget::witness_values(total));
+      values.extend(FqGadget::<C>::witness_values(addend));
+      values.extend(FqGadget::<C>::witness_values(total));
       Case { products, linear: vec![1, -1], constant, values }
     })
     .collect()
 }
 
-#[test]
-fn range_extraction_and_integer_encoding_match_full_width_reference() {
+fn check_range_extraction<C: KzgCurve>() {
   for value in [
-    Scalar::ZERO,
-    Scalar::ONE,
-    Scalar::NEG_ONE,
-    Scalar::from_limbs_le([u64::MAX, u64::MAX, u64::MAX, 1]),
+    CurveScalar::<C>::ZERO,
+    CurveScalar::<C>::ONE,
+    CurveScalar::<C>::NEG_ONE,
+    CurveScalar::<C>::from_limbs_le([u64::MAX, u64::MAX, u64::MAX, 1]),
   ] {
     assert_eq!(integer(value), integer_reference(value));
-    assert_eq!(range_limbs::<1>(value), range_reference::<1>(value));
-    assert_eq!(range_limbs::<4>(value), range_reference::<4>(value));
-    assert_eq!(range_limbs::<5>(value), range_reference::<5>(value));
-    assert_eq!(range_limbs::<6>(value), range_reference::<6>(value));
+    assert_eq!(range_limbs::<C, 1>(value), range_reference::<C, 1>(value));
+    assert_eq!(range_limbs::<C, 4>(value), range_reference::<C, 4>(value));
+    assert_eq!(range_limbs::<C, 5>(value), range_reference::<C, 5>(value));
+    assert_eq!(range_limbs::<C, 6>(value), range_reference::<C, 6>(value));
   }
+}
+
+#[test]
+fn range_extraction_and_integer_encoding_match_full_width_reference() {
+  check_range_extraction::<Bn254>();
+  check_range_extraction::<Bls12381>();
 }
 
 #[test]
@@ -189,64 +202,77 @@ fn carry_division_preserves_signed_exactness_at_radix_boundaries() {
   }
 }
 
-#[test]
-fn zero_and_quotient_limit_errors_match_reference() {
-  let modulus_digits = digits(&modulus());
+fn check_zero_and_quotient_limits<C: KzgCurve>() {
+  let l = limb_count::<C>();
+  let modulus_digits = digits::<C>(&modulus::<C>());
   assert_eq!(
-    relation(&[], &[], &[], 0),
-    relation_reference(&[], &[], &[], 0, &modulus_digits)
+    relation::<C>(&[], &[], &[], 0),
+    relation_reference::<C>(&[], &[], &[], 0, &modulus_digits)
   );
-  let mut values = vec![Scalar::ZERO; 2 * L];
-  values[L - 1] = Scalar::NEG_ONE;
-  for (value, limb) in values[L..].iter_mut().zip(&modulus_digits) {
-    *value = scalar(limb);
+  let mut values = vec![CurveScalar::<C>::ZERO; 2 * l];
+  values[l - 1] = CurveScalar::<C>::NEG_ONE;
+  for (value, limb) in values[l..].iter_mut().zip(&modulus_digits) {
+    *value = scalar::<C>(limb);
   }
   for (coefficient, error) in
     [(1, "Fq quotient overflow"), (-1, "negative biased quotient")]
   {
     let expected = Err(error.into());
-    assert_eq!(relation(&values, &[coefficient], &[], 0), expected);
+    assert_eq!(relation::<C>(&values, &[coefficient], &[], 0), expected);
     assert_eq!(
-      relation_reference(&values, &[coefficient], &[], 0, &modulus_digits),
+      relation_reference::<C>(&values, &[coefficient], &[], 0, &modulus_digits),
       expected
     );
   }
 }
 
 #[test]
-fn maximal_representatives_have_exact_signed_integer_quotients() {
-  let field_bits = Fq::MODULUS_BIT_SIZE as usize;
+fn zero_and_quotient_limit_errors_match_reference() {
+  check_zero_and_quotient_limits::<Bn254>();
+  check_zero_and_quotient_limits::<Bls12381>();
+}
+
+fn check_maximal_representatives<C: KzgCurve>() {
+  let l = limb_count::<C>();
+  let field_bits = C::Fq::MODULUS_BIT_SIZE as usize;
   let max = (BigUint::from(1u8) << field_bits) - 1u8;
   let total = 3u8 * &max * &max + 3u8 * &max + 4u8;
-  let residue = &total % modulus();
-  let quotient = &total / modulus();
+  let residue = &total % modulus::<C>();
+  let quotient = &total / modulus::<C>();
   let mut values = Vec::new();
   for n in [&max, &max, &max, &residue] {
-    values.extend(digits(n).map(|limb| scalar(&limb)));
+    values.extend(digits::<C>(n).into_iter().map(|limb| scalar::<C>(&limb)));
   }
   for sign in [-1i8, 1] {
     let advice =
-      relation(&values, &[3 * sign], &[3 * sign, -sign], 4 * sign).unwrap();
-    let encoded_quotient = advice[..L]
+      relation::<C>(&values, &[3 * sign], &[3 * sign, -sign], 4 * sign)
+        .unwrap();
+    let encoded_quotient = advice[..l]
       .iter()
       .rev()
       .fold(BigUint::from(0u8), |acc, &limb| (acc << W) + integer(limb));
-    let expected = (BigInt::from(1u8) << QUOTIENT_BIAS_BITS)
+    let expected = (BigInt::from(1u8) << quotient_bias_bits::<C>())
       + sign * BigInt::from(quotient.clone());
     assert_eq!(BigInt::from(encoded_quotient), expected);
-    let top = integer(advice[L - 1]);
-    assert!(top.bits() <= (QUOTIENT_BITS - W * (L - 1)) as u64);
-    for &carry in &advice[L..] {
+    let top = integer(advice[l - 1]);
+    assert!(top.bits() <= (quotient_bits::<C>() - W * (l - 1)) as u64);
+    for &carry in &advice[l..] {
       assert!(integer(carry).bits() <= CARRY_BITS as u64);
     }
   }
 }
 
 #[test]
-fn quotient_carries_and_rejections_match_reference() {
-  let modulus_digits = digits(&modulus());
-  for mut case in cases(256) {
-    let expected = relation_reference(
+fn maximal_representatives_have_exact_signed_integer_quotients() {
+  check_maximal_representatives::<Bn254>();
+  check_maximal_representatives::<Bls12381>();
+}
+
+fn check_quotient_carries_and_rejections<C: KzgCurve>() {
+  let l = limb_count::<C>();
+  let modulus_digits = digits::<C>(&modulus::<C>());
+  for mut case in cases::<C>(256) {
+    let expected = relation_reference::<C>(
       &case.values,
       &case.products,
       &case.linear,
@@ -255,12 +281,12 @@ fn quotient_carries_and_rejections_match_reference() {
     )
     .unwrap();
     assert_eq!(
-      relation(&case.values, &case.products, &case.linear, case.constant),
+      relation::<C>(&case.values, &case.products, &case.linear, case.constant),
       Ok(expected)
     );
-    let last_input = case.values.len() - L;
-    case.values[last_input] += Scalar::ONE;
-    let expected = relation_reference(
+    let last_input = case.values.len() - l;
+    case.values[last_input] += CurveScalar::<C>::ONE;
+    let expected = relation_reference::<C>(
       &case.values,
       &case.products,
       &case.linear,
@@ -269,13 +295,13 @@ fn quotient_carries_and_rejections_match_reference() {
     );
     assert!(expected.is_err());
     assert_eq!(
-      relation(&case.values, &case.products, &case.linear, case.constant),
+      relation::<C>(&case.values, &case.products, &case.linear, case.constant),
       expected
     );
-    case.values[0] = Scalar::NEG_ONE;
+    case.values[0] = CurveScalar::<C>::NEG_ONE;
     assert_eq!(
-      relation(&case.values, &case.products, &case.linear, case.constant),
-      relation_reference(
+      relation::<C>(&case.values, &case.products, &case.linear, case.constant),
+      relation_reference::<C>(
         &case.values,
         &case.products,
         &case.linear,
@@ -284,14 +310,21 @@ fn quotient_carries_and_rejections_match_reference() {
       )
     );
   }
-  let prime = FqGadget::witness_values(Fq::from(0u8));
-  let redundant = digits(&modulus()).map(|v| scalar(&v));
+  let prime = FqGadget::<C>::witness_values(C::Fq::from(0u8));
+  let redundant: Vec<_> =
+    digits::<C>(&modulus::<C>()).into_iter().map(|v| scalar::<C>(&v)).collect();
   for representative in [prime, redundant] {
     let values: Vec<_> =
-      representative.into_iter().cycle().take(3 * L).collect();
+      representative.into_iter().cycle().take(3 * l).collect();
     assert_eq!(
-      relation(&values, &[-3], &[3], 0),
-      relation_reference(&values, &[-3], &[3], 0, &modulus_digits)
+      relation::<C>(&values, &[-3], &[3], 0),
+      relation_reference::<C>(&values, &[-3], &[3], 0, &modulus_digits)
     );
   }
+}
+
+#[test]
+fn quotient_carries_and_rejections_match_reference() {
+  check_quotient_carries_and_rejections::<Bn254>();
+  check_quotient_carries_and_rejections::<Bls12381>();
 }

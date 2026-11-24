@@ -1,0 +1,292 @@
+{
+  "format": "ix-compress-wrap-layout-v1",
+  "version": 1,
+  "grouping": "t65536",
+  "artifact_blake3": "f6e11dfceb853a180288fd1c27bb58562362ef25430e65a80b5a15e4e4bde743",
+  "layout": {
+    "key_blake3": "035f69c7552caed03d1e53663c9898b4a4c827b0a9fbaba3680ece898756c325",
+    "log_heights": [
+      1,
+      19,
+      21,
+      20,
+      19,
+      19,
+      17,
+      17,
+      20,
+      20,
+      20,
+      17,
+      20,
+      19,
+      19,
+      21,
+      8,
+      16,
+      10,
+      21,
+      15,
+      5,
+      17,
+      19,
+      9,
+      20,
+      5,
+      7,
+      2,
+      17,
+      14
+    ],
+    "memory_circuits": [
+      [
+        3,
+        19
+      ],
+      [
+        4,
+        20
+      ],
+      [
+        5,
+        21
+      ],
+      [
+        6,
+        22
+      ],
+      [
+        7,
+        23
+      ],
+      [
+        8,
+        24
+      ],
+      [
+        10,
+        25
+      ],
+      [
+        11,
+        26
+      ],
+      [
+        12,
+        27
+      ],
+      [
+        26,
+        28
+      ],
+      [
+        32,
+        29
+      ],
+      [
+        34,
+        30
+      ]
+    ],
+    "claim_len": 18
+  },
+  "layout_blake3": "271cd62d9c6f4d7213f25396decb1db384a88e4ac176074757ee6e1570430f75",
+  "sizing": {
+    "admission": {
+      "circuits": [
+        {
+          "fixed": false,
+          "log_height": 1,
+          "name": "CompressWrap::verify_root",
+          "rows": 1
+        },
+        {
+          "fixed": false,
+          "log_height": 19,
+          "name": "StarkIO::read_byte_stream",
+          "rows": 273499
+        },
+        {
+          "fixed": false,
+          "log_height": 21,
+          "name": "G_cold",
+          "rows": 958062
+        },
+        {
+          "fixed": false,
+          "log_height": 20,
+          "name": "Blake3::compress",
+          "rows": 811072
+        },
+        {
+          "fixed": false,
+          "log_height": 19,
+          "name": "Blake3::compress_chunks",
+          "rows": 459154
+        },
+        {
+          "fixed": false,
+          "log_height": 19,
+          "name": "SystemDeserialize::read_vk_u8",
+          "rows": 273337
+        },
+        {
+          "fixed": false,
+          "log_height": 17,
+          "name": "SystemDeserialize::read_vk_u16",
+          "rows": 110400
+        },
+        {
+          "fixed": false,
+          "log_height": 17,
+          "name": "UInt32::less_than_fields",
+          "rows": 72851
+        },
+        {
+          "fixed": false,
+          "log_height": 20,
+          "name": "ProofDeserialize::read_u64_at",
+          "rows": 679797
+        },
+        {
+          "fixed": false,
+          "log_height": 20,
+          "name": "ProofDeserialize::read_u64_vec_n",
+          "rows": 583037
+        },
+        {
+          "fixed": false,
+          "log_height": 20,
+          "name": "${\"name\":\"Lists::length\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":8}}]}",
+          "rows": 518080
+        },
+        {
+          "fixed": false,
+          "log_height": 17,
+          "name": "StarkHash::b3_rows_chunks",
+          "rows": 68347
+        },
+        {
+          "fixed": false,
+          "log_height": 20,
+          "name": "Pcs::rows_pop",
+          "rows": 547155
+        },
+        {
+          "fixed": false,
+          "log_height": 19,
+          "name": "Pcs::select_rows",
+          "rows": 378036
+        },
+        {
+          "fixed": false,
+          "log_height": 19,
+          "name": "Pcs::bucket_update",
+          "rows": 326596
+        },
+        {
+          "fixed": false,
+          "log_height": 21,
+          "name": "Pcs::ro_fold",
+          "rows": 1048304
+        },
+        {
+          "fixed": true,
+          "log_height": 8,
+          "name": "<table:UInt8::byte_inputs>",
+          "rows": 256
+        },
+        {
+          "fixed": true,
+          "log_height": 16,
+          "name": "<table:UInt8::pair_inputs>",
+          "rows": 65536
+        },
+        {
+          "fixed": true,
+          "log_height": 10,
+          "name": "<table:UInt8::sum_inputs>",
+          "rows": 1024
+        },
+        {
+          "fixed": false,
+          "log_height": 21,
+          "name": "<ROM:3>",
+          "rows": 999348
+        },
+        {
+          "fixed": false,
+          "log_height": 15,
+          "name": "<ROM:4>",
+          "rows": 16066
+        },
+        {
+          "fixed": false,
+          "log_height": 5,
+          "name": "<ROM:5>",
+          "rows": 22
+        },
+        {
+          "fixed": false,
+          "log_height": 17,
+          "name": "<ROM:6>",
+          "rows": 94602
+        },
+        {
+          "fixed": false,
+          "log_height": 19,
+          "name": "<ROM:7>",
+          "rows": 326396
+        },
+        {
+          "fixed": false,
+          "log_height": 9,
+          "name": "<ROM:8>",
+          "rows": 267
+        },
+        {
+          "fixed": false,
+          "log_height": 20,
+          "name": "<ROM:10>",
+          "rows": 525134
+        },
+        {
+          "fixed": false,
+          "log_height": 5,
+          "name": "<ROM:11>",
+          "rows": 25
+        },
+        {
+          "fixed": false,
+          "log_height": 7,
+          "name": "<ROM:12>",
+          "rows": 77
+        },
+        {
+          "fixed": false,
+          "log_height": 2,
+          "name": "<ROM:26>",
+          "rows": 2
+        },
+        {
+          "fixed": false,
+          "log_height": 17,
+          "name": "<ROM:32>",
+          "rows": 112144
+        },
+        {
+          "fixed": false,
+          "log_height": 14,
+          "name": "<ROM:34>",
+          "rows": 13527
+        }
+      ]
+    },
+    "rule": "execution rows of the sizing root, padded to a power of two; one power of two more where rows exceed 900/1000 of it; fixed tables at their preprocessed height",
+    "sizing_root": {
+      "root_claims_blake3": "c67d7ce5ac847836c4962eef2eadc71de89c08577e63d25f1982a145c09a6908",
+      "root_key_blake3": "55f0b8b04acdc211e249b538adcdab95fec15de6c9504ba875ffb52b1f1f8e86",
+      "root_proof_blake3": "552154c3622f5c737366dbe379a7b7e97560f20865410d142d65fc58bec64399"
+    }
+  }
+}

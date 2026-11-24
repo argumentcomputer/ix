@@ -2942,4 +2942,70 @@ theorem «KernelLevels::level_reduce».obs {x_l : SourceValue F} {h h' : Heap F}
             simp only [Names.n7102954107258114659] at hne232
             exact (selectArm_nil_inv sel169).elim
 
+/-- The evaluation paths of `KernelLevels::level_has_param`: one constructor per combination of selected arms. -/
+inductive «KernelLevels::level_has_param».Path (x_l : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | Zero
+      (ld_bolbylmd : loadValue h x_l = .ok (.construct "KernelTypes::KLevelNode" "Zero" []))
+      (he_kfrxnewv : r = (.field 0))
+      (he_tacqvwri : h' = h)
+      (hc_wurtzljz : calls = [])
+  | Succ
+      (x_u : SourceValue F) (cs_ftvqhmkf : List (Call F))
+      (ld_bolbylmd : loadValue h x_l = .ok (.construct "KernelTypes::KLevelNode" "Succ" [x_u]))
+      (ev_amlgeepl : ObsFn W "KernelLevels::level_has_param" [x_u] h r h' cs_ftvqhmkf)
+      (hc_hjjaelsh : calls = ((⟨"KernelLevels::level_has_param", [x_u], h⟩ : Call F) :: cs_ftvqhmkf))
+  | other
+      (v_hirlhoca : SourceValue F)
+      (ld_bolbylmd : loadValue h x_l = .ok v_hirlhoca)
+      (hne_wuquyfpr : ∀ vs : List (SourceValue F), vs.length = 0 → (v_hirlhoca : SourceValue F) ≠ .construct "KernelTypes::KLevelNode" "Zero" vs)
+      (hne_edobuhnb : ∀ vs : List (SourceValue F), vs.length = 1 → (v_hirlhoca : SourceValue F) ≠ .construct "KernelTypes::KLevelNode" "Succ" vs)
+      (he_vpckpvxl : r = (.field 1))
+      (he_qmjnuked : h' = h)
+      (hc_kjrxaxhl : calls = [])
+
+/-- **Every observed derivation of `KernelLevels::level_has_param` takes one of its paths.** -/
+theorem «KernelLevels::level_has_param».obs {x_l : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W "KernelLevels::level_has_param" [x_l] h r h' calls) :
+    «KernelLevels::level_has_param».Path x_l h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelLevels.level_has_param.lookup
+    (by simp [IxVM.KernelLevels.level_has_param, ControlLower.hasControl]) ev
+  simp only [IxVM.KernelLevels.level_has_param] at d0
+  obtain ⟨v_hirlhoca, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨p10, d11, ld_bolbylmd⟩ := d7.load_inv
+  obtain ⟨l13, rfl, rfl⟩ := d11.var_inv
+  simp at l13
+  subst l13
+  rcases selectArm_cons_inv sel8 with ⟨mt14, rfl⟩ | ⟨nm15, sel16⟩
+  · obtain ⟨vs17, hv18, -, ml19⟩ := matchPattern_construct_inv mt14
+    rw [Names.n7102954107258114659] at hv18
+    subst hv18
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml19
+    obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+    exact «KernelLevels::level_has_param».Path.Zero ld_bolbylmd rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne_wuquyfpr := matchPattern_construct_none (by trivial) nm15
+    simp only [Names.n7102954107258114659] at hne_wuquyfpr
+    rcases selectArm_cons_inv sel16 with ⟨mt24, rfl⟩ | ⟨nm25, sel26⟩
+    · obtain ⟨vs27, hv28, -, ml29⟩ := matchPattern_construct_inv mt24
+      rw [Names.n7102954107258114659] at hv28
+      subst hv28
+      obtain ⟨x_u, vs30, b31, b32, rfl, mt33, ml34, rfl⟩ := matchListWith_cons_inv ml29
+      obtain rfl := matchPattern_bind_inv mt33
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml34
+      obtain ⟨vs35, m36, c37, cs_ftvqhmkf, a39, ev_amlgeepl, rfl⟩ := d9.call_inv
+      rw [instanceName_plain_some] at ev_amlgeepl
+      obtain ⟨v41, vs42, m43, c44, c45, rfl, d46, a47, rfl⟩ := a39.cons_inv
+      obtain ⟨l48, rfl, rfl⟩ := d46.var_inv
+      simp at l48
+      subst l48
+      obtain ⟨rfl, rfl, rfl⟩ := a47.nil_inv
+      exact «KernelLevels::level_has_param».Path.Succ _ _ ld_bolbylmd ev_amlgeepl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · have hne_edobuhnb := matchPattern_construct_none (by trivial) nm25
+      simp only [Names.n7102954107258114659] at hne_edobuhnb
+      rcases selectArm_cons_inv sel26 with ⟨mt51, rfl⟩ | ⟨nm52, sel53⟩
+      · obtain rfl := matchPattern_wildcard_inv mt51
+        obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+        exact «KernelLevels::level_has_param».Path.other _ ld_bolbylmd hne_wuquyfpr hne_edobuhnb rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      · exact (matchPattern_wildcard_none nm52).elim
+
 end IxVM.Refinement.Obs

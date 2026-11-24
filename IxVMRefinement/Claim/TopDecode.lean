@@ -49,7 +49,10 @@ private theorem td_getScope_ok_inv {variant : UInt64} {bs : List UInt8} {i : Nat
       .ok valByte { idx := i + 2, bytes := ⟨bs.toArray⟩ })
     {w : UInt8} {st : Ixon.GetState}
     (hok : Claim.getScope variant { idx := i, bytes := ⟨bs.toArray⟩ } = .ok w st) :
-    w = valByte ∧ st = { idx := i + 2, bytes := ⟨bs.toArray⟩ } := by
+    w = valByte ∧ st = { idx := i + 2, bytes := ⟨bs.toArray⟩ } ∧
+      (valByte = Claim.validatorForVariant variant ∨
+        valByte = Claim.VALIDATOR_ERASED_LEAN_ASSUMED ∨
+        valByte = Claim.VALIDATOR_ERASED_LEAN_CLASS) := by
   unfold Claim.getScope at hok
   simp only [bind, EStateM.bind, pure, EStateM.pure, h1] at hok
   by_cases hfmt : (fmt == Ixon.Env.OBJECT_FORMAT) = true
@@ -59,19 +62,19 @@ private theorem td_getScope_ok_inv {variant : UInt64} {bs : List UInt8} {i : Nat
   by_cases hc1 : (valByte == Claim.validatorForVariant variant) = true
   · simp only [hc1, ↓reduceIte] at hok
     obtain ⟨hw, hst⟩ := Ixon.Verify.TagN.pure_ok_inv hok
-    exact ⟨hw.symm, hst⟩
+    exact ⟨hw.symm, hst, .inl (beq_iff_eq.mp hc1)⟩
   simp only [hc1, Bool.false_eq_true, ↓reduceIte] at hok
   by_cases hc2 : (valByte == Claim.VALIDATOR_ERASED_LEAN_ASSUMED &&
       Claim.variantMayAssume variant) = true
   · simp only [hc2, ↓reduceIte] at hok
     obtain ⟨hw, hst⟩ := Ixon.Verify.TagN.pure_ok_inv hok
-    exact ⟨hw.symm, hst⟩
+    exact ⟨hw.symm, hst, .inr (.inl (beq_iff_eq.mp (Bool.and_eq_true _ _ |>.mp hc2).1))⟩
   simp only [hc2, Bool.false_eq_true, ↓reduceIte] at hok
   by_cases hc3 : (valByte == Claim.VALIDATOR_ERASED_LEAN_CLASS &&
       variant == Claim.VARIANT_CHECK_ENV_CLAIM) = true
   · simp only [hc3, ↓reduceIte] at hok
     obtain ⟨hw, hst⟩ := Ixon.Verify.TagN.pure_ok_inv hok
-    exact ⟨hw.symm, hst⟩
+    exact ⟨hw.symm, hst, .inr (.inr (beq_iff_eq.mp (Bool.and_eq_true _ _ |>.mp hc3).1))⟩
   simp only [hc3, Bool.false_eq_true, ↓reduceIte] at hok
   by_cases hc4 : (Claim.validatorForVariant variant == Claim.VALIDATOR_ERASED_LEAN &&
       valByte == Claim.VALIDATOR_ERASED_LEAN_RETIRED) = true
@@ -137,7 +140,7 @@ private theorem td_role_ctx_axioms_lim_spec {t : Ix.Kernel.RoleTable} {bAddr : _
     r = .construct addrMapEnum "Nil" [] ∧ h' = h := by
   obtain ⟨tbl, htbl, ⟨n, -, -, hl⟩ | ⟨-, hl⟩⟩ := hrc.cases
   · rcases Obs.«KernelRoles::role_ctx_axioms».obs ev with
-      ⟨_, _, x_axioms, ld12, rfl, rfl, -⟩ | ⟨_, _, ld12, -⟩
+      ⟨_, _, x_axioms, ld12, rfl, rfl, -⟩ | ⟨_, _, ld12, -⟩ | ⟨_, _, _, _, ld12, -⟩ | ⟨_, _, _, ld12, -⟩
     · rw [hl] at ld12
       injection ld12 with hv
       injection hv with _ _ hargs
@@ -145,8 +148,12 @@ private theorem td_role_ctx_axioms_lim_spec {t : Ix.Kernel.RoleTable} {bAddr : _
       exact ⟨hargs.2.2.symm, rfl⟩
     · rw [hl] at ld12
       simp at ld12
+    · rw [hl] at ld12
+      simp at ld12
+    · rw [hl] at ld12
+      simp at ld12
   · rcases Obs.«KernelRoles::role_ctx_axioms».obs ev with
-      ⟨_, _, _, ld12, -⟩ | ⟨_, x_axioms, ld12, rfl, rfl, -⟩
+      ⟨_, _, _, ld12, -⟩ | ⟨_, x_axioms, ld12, rfl, rfl, -⟩ | ⟨_, _, _, _, ld12, -⟩ | ⟨_, _, _, ld12, -⟩
     · rw [hl] at ld12
       simp at ld12
     · rw [hl] at ld12
@@ -154,6 +161,10 @@ private theorem td_role_ctx_axioms_lim_spec {t : Ix.Kernel.RoleTable} {bAddr : _
       injection hv with _ _ hargs
       simp only [List.cons.injEq, and_true] at hargs
       exact ⟨hargs.2.symm, rfl⟩
+    · rw [hl] at ld12
+      simp at ld12
+    · rw [hl] at ld12
+      simp at ld12
 
 /-- **`KernelClaim::run_check_env` on `asm = None` at a limit**: `run_check_env_none_spec` over
 `RCLimRep`. -/
@@ -458,7 +469,7 @@ theorem verify_claim_decode_typing_spec
   · simp [hret9, bind, EStateM.bind, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hget_claim
   simp only [hret9, Bool.false_eq_true, ↓reduceIte, bind, EStateM.bind, pure, EStateM.pure] at hget_claim
   obtain ⟨w_val, st_scope, hok_scope, hok_payload⟩ := Ixon.Verify.TagN.bind_ok_inv hget_claim
-  obtain ⟨hw_val, rfl⟩ := td_getScope_ok_inv hu8_fmt hu8_val hok_scope
+  obtain ⟨hw_val, rfl, hval_ok⟩ := td_getScope_ok_inv hu8_fmt hu8_val hok_scope
   subst w_val
   have hvar_45 := td_getPayload_typing_variant hok_payload hscope
   -- 14. `match UInt8::to_field(variant) { ... }`
@@ -475,7 +486,7 @@ theorem verify_claim_decode_typing_spec
     hsub_run cl (by simp [hcl])
   rcases hvar_45 with htv4 | htv5
   · -- Variant 4 (`Claim.check`)
-    rw [htv4] at pr_sz0 hok_payload
+    rw [htv4] at pr_sz0 hok_payload hval_ok
     change projectValue (TagN.u64Value 4) 0 = .ok x_variant at pr_sz0
     simp only [TagN.u64Value, projectValue, List.getElem?_cons_zero, pure, Except.pure,
       Except.ok.injEq] at pr_sz0
@@ -489,6 +500,28 @@ theorem verify_claim_decode_typing_spec
     case inr =>
       exact absurd rfl (MatchesConst.none_inv (MatchesConst.literal 4) nm4)
     obtain ⟨_, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 4) mt4
+    -- `match UInt8::to_field(validator) { 10 => ..., 11 => ..., _ => ... }`
+    obtain ⟨v_vsc, m_vsc, bs_varm, body_varm, c_vsc, c_varm, d_vsc, sel_varm, d_arm, rfl⟩ :=
+      d_arm.matchValue_inv
+    obtain ⟨_, _, _, cs_vsc, a_vsc, ev_vsc, rfl⟩ := d_vsc.call_inv
+    rw [instanceName_plain_some] at ev_vsc
+    obtain ⟨_, _, _, _, _, rfl, d_vsc0, a_vsc1, rfl⟩ := a_vsc.cons_inv
+    obtain ⟨l_vsc0, rfl, rfl⟩ := d_vsc0.var_inv; simp at l_vsc0; subst l_vsc0
+    obtain ⟨rfl, rfl, rfl⟩ := a_vsc1.nil_inv
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_vsc
+    have hsub_arm : ∀ cl ∈ c_varm, cl ∈ calls := fun cl hcl =>
+      hsub_arm cl (by simp [hcl])
+    rcases selectArm_cons_inv sel_varm with ⟨mt10, _⟩ | ⟨_, sel_varm1⟩
+    · obtain ⟨heq10, _⟩ := MatchesConst.some_inv (MatchesConst.literal 10) mt10
+      rcases hval_ok with rfl | rfl | rfl <;>
+        exact absurd (Value.field.inj heq10) (by decide)
+    rcases selectArm_cons_inv sel_varm1 with ⟨mt11, _⟩ | ⟨_, sel_varm2⟩
+    · obtain ⟨heq11, _⟩ := MatchesConst.some_inv (MatchesConst.literal 11) mt11
+      rcases hval_ok with rfl | rfl | rfl <;>
+        exact absurd (Value.field.inj heq11) (by decide)
+    rcases selectArm_cons_inv sel_varm2 with ⟨mt_w, rfl⟩ | ⟨nm_w, _⟩
+    case inr => exact (matchPattern_wildcard_none nm_w).elim
+    obtain rfl := matchPattern_wildcard_inv mt_w
     -- Arm 4 body:
     -- `let (binding, axioms, s) = get_claim_context(s);`
     obtain ⟨_, m_ctx, bs_ctx, c_ctx, ca1, d_ctx, mt_ctx, da1, rfl⟩ := d_arm.letValue_inv
@@ -635,7 +668,7 @@ theorem verify_claim_decode_typing_spec
       fun cl hcl => hsub_arm cl (by simp [instanceName_plain_some, hcl]),
       fun cl hcl => hsub_arm cl (by simp [instanceName_plain_some, hcl])⟩⟩
   · -- Variant 5 (`Claim.checkEnv`)
-    rw [htv5] at pr_sz0 hok_payload
+    rw [htv5] at pr_sz0 hok_payload hval_ok
     change projectValue (TagN.u64Value 5) 0 = .ok x_variant at pr_sz0
     simp only [TagN.u64Value, projectValue, List.getElem?_cons_zero, pure, Except.pure,
       Except.ok.injEq] at pr_sz0
@@ -653,6 +686,28 @@ theorem verify_claim_decode_typing_spec
     case inr =>
       exact absurd rfl (MatchesConst.none_inv (MatchesConst.literal 5) nm5)
     obtain ⟨_, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 5) mt5
+    -- `match UInt8::to_field(validator) { 10 => ..., 11 => ..., _ => ... }`
+    obtain ⟨v_vsc, m_vsc, bs_varm, body_varm, c_vsc, c_varm, d_vsc, sel_varm, d_arm, rfl⟩ :=
+      d_arm.matchValue_inv
+    obtain ⟨_, _, _, cs_vsc, a_vsc, ev_vsc, rfl⟩ := d_vsc.call_inv
+    rw [instanceName_plain_some] at ev_vsc
+    obtain ⟨_, _, _, _, _, rfl, d_vsc0, a_vsc1, rfl⟩ := a_vsc.cons_inv
+    obtain ⟨l_vsc0, rfl, rfl⟩ := d_vsc0.var_inv; simp at l_vsc0; subst l_vsc0
+    obtain ⟨rfl, rfl, rfl⟩ := a_vsc1.nil_inv
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_vsc
+    have hsub_arm : ∀ cl ∈ c_varm, cl ∈ calls := fun cl hcl =>
+      hsub_arm cl (by simp [hcl])
+    rcases selectArm_cons_inv sel_varm with ⟨mt10, _⟩ | ⟨_, sel_varm1⟩
+    · obtain ⟨heq10, _⟩ := MatchesConst.some_inv (MatchesConst.literal 10) mt10
+      rcases hval_ok with rfl | rfl | rfl <;>
+        exact absurd (Value.field.inj heq10) (by decide)
+    rcases selectArm_cons_inv sel_varm1 with ⟨mt11, _⟩ | ⟨_, sel_varm2⟩
+    · obtain ⟨heq11, _⟩ := MatchesConst.some_inv (MatchesConst.literal 11) mt11
+      rcases hval_ok with rfl | rfl | rfl <;>
+        exact absurd (Value.field.inj heq11) (by decide)
+    rcases selectArm_cons_inv sel_varm2 with ⟨mt_w, rfl⟩ | ⟨nm_w, _⟩
+    case inr => exact (matchPattern_wildcard_none nm_w).elim
+    obtain rfl := matchPattern_wildcard_inv mt_w
     -- Arm 5 body:
     -- `let (binding, axioms, s) = get_claim_context(s);`
     obtain ⟨_, m_ctx, bs_ctx, c_ctx, ca1, d_ctx, mt_ctx, da1, rfl⟩ := d_arm.letValue_inv

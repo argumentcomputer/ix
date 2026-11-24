@@ -26,7 +26,31 @@ inductive Layout where
   | ptr (target : Ty)
   | tuple (items : List Layout)
   | enum (name : String) (constructors : List (String × Layout))
-  deriving Repr, BEq
+  deriving Repr
+
+mutual
+  def Layout.beq : Layout → Layout → Bool
+    | .field, .field => true
+    | .ptr t, .ptr u => t == u
+    | .tuple xs, .tuple ys => Layout.listBeq xs ys
+    | .enum n cs, .enum n' cs' => n == n' && Layout.ctorListBeq cs cs'
+    | _, _ => false
+  termination_by left _ => sizeOf left
+
+  def Layout.listBeq : List Layout → List Layout → Bool
+    | [], [] => true
+    | x :: xs, y :: ys => Layout.beq x y && Layout.listBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+
+  def Layout.ctorListBeq : List (String × Layout) → List (String × Layout) → Bool
+    | [], [] => true
+    | (n, l) :: xs, (n', l') :: ys => n == n' && Layout.beq l l' && Layout.ctorListBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+end
+
+instance : BEq Layout := ⟨Layout.beq⟩
 
 def Layout.type : Layout → Ty
   | .field => .field

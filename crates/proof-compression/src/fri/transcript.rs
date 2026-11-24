@@ -4,29 +4,36 @@ use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use p3_goldilocks::Goldilocks;
 
 use super::AlgebraicInputs;
+use super::Blake3Domain;
 use super::ByteGadgets;
 use super::ByteValue;
-use super::QuadraticValue;
-use super::blake3;
+use super::CubicValue;
+use super::algebra::EXTENSION_DEGREE;
+use super::blake3_domain;
+use multi_stark::p3_adapter::fri_batching::FriBatching;
 use multi_stark::plonkish::Bool;
 use multi_stark::plonkish::CircuitBuilder;
 use multi_stark::plonkish::Value;
-use multi_stark::system::System;
-use multi_stark::types::GoldilocksBlake3Config;
+use multi_stark::system::{System, compute_vk_digest};
+use multi_stark::traits::ExtensionModulus;
+use multi_stark::types::{ExtVal3, GoldilocksBlake3V6Config, Val};
 
 #[cfg(test)]
 #[path = "transcript_tests.rs"]
 mod tests;
 
-/// Constrained reference Goldilocks/BLAKE3 challenger. Observation invalidates
-/// buffered output; each flush chains its digest; sampling pops bytes from
-/// the END of that digest, matching p3's HashChallenger exactly.
+/// Constrained reference Goldilocks/BLAKE3 challenger supporting both plain
+/// unkeyed BLAKE3 and Protocol v6 BLAKE3 `derive_key` domain separation.
+/// Observation invalidates buffered output; each flush chains its digest;
+/// sampling pops bytes from the END of that digest, matching p3's
+/// `HashChallenger` exactly.
 ///
 /// Field sampling selects the FIRST canonical candidate, with a fixed retry
 /// budget. Exhaustion is rejected; no modular reduction or skipped valid
 /// candidates are allowed. Conditional buffer updates are circuit relations.
 #[derive(Clone)]
 pub struct Blake3Challenger {
+  domain: Blake3Domain,
   input: Vec<ByteValue>,
   output: Vec<ByteValue>,
   encodings: HashMap<Value, [ByteValue; 8]>,
@@ -61,6 +68,7 @@ impl Blake3Challenger {
       }
     }
   }
+
   /// Low bits of the next little-endian u64. Native sample_bits always
   /// consumes eight bytes, even for zero bits, and does not reject >= p.
   pub fn sample_bits(
@@ -83,7 +91,28 @@ impl Blake3Challenger {
     bytes: &ByteGadgets,
     seed: &[u8],
   ) -> Self {
-    Self::with_retry_limit(b, bytes, seed, DEFAULT_FIELD_RETRIES)
+    Self::with_domain_and_retry_limit(
+      b,
+      bytes,
+      Blake3Domain::Plain,
+      seed,
+      DEFAULT_FIELD_RETRIES,
+    )
+  }
+
+  pub fn with_domain(
+    b: &mut CircuitBuilder<Goldilocks>,
+    bytes: &ByteGadgets,
+    domain: Blake3Domain,
+    seed: &[u8],
+  ) -> Self {
+    Self::with_domain_and_retry_limit(
+      b,
+      bytes,
+      domain,
+      seed,
+      DEFAULT_FIELD_RETRIES,
+    )
   }
 
   /// The retry limit is a circuit constant, never prover advice. Zero
@@ -94,7 +123,24 @@ impl Blake3Challenger {
     seed: &[u8],
     max_field_retries: usize,
   ) -> Self {
+    Self::with_domain_and_retry_limit(
+      b,
+      bytes,
+      Blake3Domain::Plain,
+      seed,
+      max_field_retries,
+    )
+  }
+
+  pub fn with_domain_and_retry_limit(
+    b: &mut CircuitBuilder<Goldilocks>,
+    bytes: &ByteGadgets,
+    domain: Blake3Domain,
+    seed: &[u8],
+    max_field_retries: usize,
+  ) -> Self {
     Self {
+      domain,
       input: seed.iter().map(|&x| bytes.constant(b, x)).collect(),
       output: vec![],
       encodings: HashMap::new(),
@@ -130,7 +176,7 @@ impl Blake3Challenger {
     &mut self,
     b: &mut CircuitBuilder<Goldilocks>,
     bytes: &ByteGadgets,
-    value: QuadraticValue,
+    value: CubicValue,
   ) {
     for coordinate in value.0 {
       self.observe_field(b, bytes, coordinate);
@@ -154,7 +200,7 @@ impl Blake3Challenger {
     let Some(old) = self.dynamic.take() else {
       return std::array::from_fn(|_| {
         if self.output.is_empty() {
-          let digest = blake3(b, bytes, &self.input);
+          let digest = blake3_domain(b, bytes, self.domain, &self.input);
           self.input = digest.to_vec();
           self.output = digest.to_vec();
         }
@@ -164,7 +210,7 @@ impl Blake3Challenger {
     assert_eq!(self.input.len(), 32);
     // At most one digest boundary can be crossed by a <=32-byte read.
     // Hashing speculatively is safe: state advances only when required.
-    let digest = blake3(b, bytes, &self.input);
+    let digest = blake3_domain(b, bytes, self.domain, &self.input);
     let fresh: [_; 32] = std::array::from_fn(|i| digest[31 - i]);
     let terms: Vec<_> = old.remaining[..N]
       .iter()
@@ -282,8 +328,8 @@ impl Blake3Challenger {
     &mut self,
     b: &mut CircuitBuilder<Goldilocks>,
     bytes: &ByteGadgets,
-  ) -> QuadraticValue {
-    QuadraticValue(std::array::from_fn(|_| self.sample_field(b, bytes)))
+  ) -> CubicValue {
+    CubicValue(std::array::from_fn(|_| self.sample_field(b, bytes)))
   }
 
   /// Observe a fixed integer through the same canonical field encoding.
@@ -295,6 +341,49 @@ impl Blake3Challenger {
   ) {
     let value = b.constant(Goldilocks::from_usize(value));
     self.observe_field(b, bytes, value);
+  }
+
+  /// Observe the Protocol v6 system shape prefix (`D = 3`, `CubicTrinomial`
+  /// tag, canonical `vk_digest`) followed by circuit count and per-circuit
+  /// shape metadata, matching `System::observe_shape`.
+  pub(super) fn observe_v6_system_shape(
+    &mut self,
+    b: &mut CircuitBuilder<Goldilocks>,
+    bytes: &ByteGadgets,
+    system: &System<GoldilocksBlake3V6Config>,
+  ) {
+    assert_eq!(
+      system.config.fri_batching(),
+      FriBatching::Tensor,
+      "Protocol v6 verifier requires FriBatching::Tensor"
+    );
+    assert_eq!(
+      system.vk_digest,
+      compute_vk_digest::<Val, ExtVal3>(&system.circuits),
+      "system vk_digest does not match its circuits"
+    );
+    self.observe_constant(b, bytes, EXTENSION_DEGREE);
+    self.observe_constant(
+      b,
+      bytes,
+      usize::from(ExtensionModulus::<Val>::CubicTrinomial.tag()),
+    );
+    let vk_digest = system.vk_digest.map(|x| bytes.constant(b, x));
+    self.observe_bytes(&vk_digest);
+    self.observe_constant(b, bytes, system.circuits.len());
+    for circuit in &system.circuits {
+      for item in [
+        circuit.constraint_count(),
+        circuit.max_constraint_degree(),
+        circuit.preprocessed_height,
+        circuit.preprocessed_width,
+        circuit.main_width,
+        circuit.stage_2_width,
+        circuit.lookup_group_size,
+      ] {
+        self.observe_constant(b, bytes, item);
+      }
+    }
   }
 }
 
@@ -321,18 +410,20 @@ impl TranscriptCommitments {
   }
 }
 
-/// Constrain the reference multi-stark transcript through OOD challenge zeta
-/// and bind all four challenge wires consumed by the algebraic verifier.
+/// Constrain the reference Protocol v6 multi-stark transcript through OOD
+/// challenge zeta and bind all four challenge wires consumed by the algebraic
+/// verifier.
 ///
 /// Scope: all circuits active, fixed heights, cap height zero, Goldilocks,
-/// quadratic challenges, and bounded rejection-sampling retries. System metadata,
+/// cubic trinomial (`F_p^3`) challenges, domain-separated BLAKE3, and bounded
+/// rejection-sampling retries. System metadata, canonical `vk_digest`,
 /// preprocessing commitment, and protocol seed are trusted circuit constants.
 /// PCS/Merkle/FRI authentication is NOT performed by this function.
 /// Returns the constrained challenger state for the PCS continuation.
 pub fn constrain_transcript(
   b: &mut CircuitBuilder<Goldilocks>,
   bytes: &ByteGadgets,
-  system: &System<GoldilocksBlake3Config>,
+  system: &System<GoldilocksBlake3V6Config>,
   log_degrees: &[u8],
   inputs: &AlgebraicInputs,
   commitments: &TranscriptCommitments,
@@ -353,7 +444,7 @@ pub fn constrain_transcript(
 pub(super) fn constrain_active_transcript(
   b: &mut CircuitBuilder<Goldilocks>,
   bytes: &ByteGadgets,
-  system: &System<GoldilocksBlake3Config>,
+  system: &System<GoldilocksBlake3V6Config>,
   active: &[bool],
   log_degrees: &[u8],
   inputs: &AlgebraicInputs,
@@ -369,26 +460,14 @@ pub(super) fn constrain_active_transcript(
   assert_eq!(system.circuits.len(), active.len());
   assert_eq!(active.iter().filter(|&&a| a).count(), log_degrees.len());
   assert_eq!(log_degrees.len(), inputs.openings.len());
-  let mut challenger = Blake3Challenger::with_retry_limit(
+  let mut challenger = Blake3Challenger::with_domain_and_retry_limit(
     b,
     bytes,
+    Blake3Domain::TranscriptSingle,
     system.config.challenger_seed(),
     max_field_retries,
   );
-  challenger.observe_constant(b, bytes, system.circuits.len());
-  for circuit in &system.circuits {
-    for item in [
-      circuit.constraint_count(),
-      circuit.max_constraint_degree(),
-      circuit.preprocessed_height,
-      circuit.preprocessed_width,
-      circuit.main_width,
-      circuit.stage_2_width,
-      circuit.lookup_group_size,
-    ] {
-      challenger.observe_constant(b, bytes, item);
-    }
-  }
+  challenger.observe_v6_system_shape(b, bytes, system);
   for &enabled in active {
     challenger.observe_constant(b, bytes, usize::from(enabled));
   }

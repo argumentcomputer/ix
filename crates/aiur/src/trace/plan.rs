@@ -3,6 +3,258 @@
 //! immutable sources. Pure arithmetic is shared across recipes. Runtime code
 //! has no polynomial trees, degree tracking, or column allocation decisions.
 use super::*;
+use crate::host::{DirectHintKind, DirectMapKind};
+
+#[inline(always)]
+#[allow(clippy::cast_possible_truncation)] // Bounds are checked before casting.
+fn eval_direct_map<B: FieldBackend>(
+  kind: DirectMapKind,
+  field: B,
+  args: &[Value<B::Element>],
+  scratch: &mut [B::Element],
+  start: usize,
+  width: usize,
+) -> Result<(), String> {
+  macro_rules! pair {
+    () => {{
+      if args.len() != 2 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let va = field
+        .try_to_u64(args[0].get(scratch))
+        .map_err(|_err| "no table entry for map input".to_string())?;
+      let vb = field
+        .try_to_u64(args[1].get(scratch))
+        .map_err(|_err| "no table entry for map input".to_string())?;
+      if (va | vb) > 255 {
+        return Err("no table entry for map input".into());
+      }
+      (va, vb)
+    }};
+  }
+  match kind {
+    DirectMapKind::FromField => {
+      if args.len() != 1 || width != 1 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let val = args[0].get(scratch);
+      if field
+        .try_to_u64(val)
+        .map_err(|_err| "no table entry for map input".to_string())?
+        >= 256
+      {
+        return Err("no table entry for map input".into());
+      }
+      scratch[start] = val;
+    },
+    DirectMapKind::RangePair => {
+      if width != 0 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let _ = pair!();
+    },
+    DirectMapKind::RawXor => {
+      if width != 1 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let (va, vb) = pair!();
+      scratch[start] = field.from_u64(va ^ vb);
+    },
+    DirectMapKind::RawAnd => {
+      if width != 1 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let (va, vb) = pair!();
+      scratch[start] = field.from_u64(va & vb);
+    },
+    DirectMapKind::RawOr => {
+      if width != 1 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let (va, vb) = pair!();
+      scratch[start] = field.from_u64(va | vb);
+    },
+    DirectMapKind::RawLt => {
+      if width != 1 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let (va, vb) = pair!();
+      scratch[start] = field.from_u64(u64::from(va < vb));
+    },
+    DirectMapKind::RawAdd => {
+      if width != 2 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let (va, vb) = pair!();
+      let sum = va + vb;
+      scratch[start] = field.from_u64(sum & 255);
+      scratch[start + 1] = field.from_u64(sum >> 8);
+    },
+    DirectMapKind::RawSub => {
+      if width != 2 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let (va, vb) = pair!();
+      scratch[start] = field.from_u64(va.wrapping_sub(vb) & 255);
+      scratch[start + 1] = field.from_u64(u64::from(va < vb));
+    },
+    DirectMapKind::RawMul => {
+      if width != 2 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let (va, vb) = pair!();
+      let product = va * vb;
+      scratch[start] = field.from_u64(product & 255);
+      scratch[start + 1] = field.from_u64(product >> 8);
+    },
+    DirectMapKind::RawXorSplit4 => {
+      if width != 2 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let (va, vb) = pair!();
+      let xor = va ^ vb;
+      scratch[start] = field.from_u64(xor >> 4);
+      scratch[start + 1] = field.from_u64((xor & 15) << 4);
+    },
+    DirectMapKind::RawXorSplit7 => {
+      if width != 2 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let (va, vb) = pair!();
+      let xor = va ^ vb;
+      scratch[start] = field.from_u64(xor >> 7);
+      scratch[start + 1] = field.from_u64((xor & 127) << 1);
+    },
+    DirectMapKind::RawSumByte => {
+      if args.len() != 1 || width != 1 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let row = field
+        .try_to_u64(args[0].get(scratch))
+        .map_err(|_err| "no table entry for map input".to_string())?;
+      if row >= 768 {
+        return Err("no table entry for map input".into());
+      }
+      scratch[start] = field.from_u64(row & 255);
+    },
+    DirectMapKind::RawBitDecomp => {
+      if args.len() != 1 || width != 8 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let row = field
+        .try_to_u64(args[0].get(scratch))
+        .map_err(|_err| "no table entry for map input".to_string())?;
+      if row >= 256 {
+        return Err("no table entry for map input".into());
+      }
+      for i in 0..8 {
+        scratch[start + i] = field.from_u64((row >> i) & 1);
+      }
+    },
+  }
+  Ok(())
+}
+
+#[inline(always)]
+#[allow(clippy::cast_possible_truncation)]
+fn eval_direct_hint<B: FieldBackend>(
+  kind: DirectHintKind,
+  field: B,
+  key: &[Value<B::Element>],
+  scratch: &mut [B::Element],
+  start: usize,
+  width: usize,
+) -> Result<(), String> {
+  #[inline(always)]
+  fn read_u32_word<B: FieldBackend>(
+    field: B,
+    scratch: &[B::Element],
+    vals: &[Value<B::Element>],
+  ) -> Result<u32, String> {
+    let b0 = field.try_to_u64(vals[0].get(scratch))?;
+    let b1 = field.try_to_u64(vals[1].get(scratch))?;
+    let b2 = field.try_to_u64(vals[2].get(scratch))?;
+    let b3 = field.try_to_u64(vals[3].get(scratch))?;
+    if (b0 | b1 | b2 | b3) > 255 {
+      return Err("non-byte u32 sum operand".into());
+    }
+    Ok(u32::from_le_bytes([b0 as u8, b1 as u8, b2 as u8, b3 as u8]))
+  }
+
+  #[inline(always)]
+  fn write_u32_bytes<B: FieldBackend>(
+    field: B,
+    scratch: &mut [B::Element],
+    start: usize,
+    word: u32,
+  ) {
+    let bytes = word.to_le_bytes();
+    scratch[start] = field.from_u64(u64::from(bytes[0]));
+    scratch[start + 1] = field.from_u64(u64::from(bytes[1]));
+    scratch[start + 2] = field.from_u64(u64::from(bytes[2]));
+    scratch[start + 3] = field.from_u64(u64::from(bytes[3]));
+  }
+
+  match kind {
+    DirectHintKind::U32Bytes => {
+      if key.len() != 1 || width != 4 {
+        return Err("hint input width mismatch".into());
+      }
+      let word = field.try_to_u64(key[0].get(scratch))? as u32;
+      write_u32_bytes(field, scratch, start, word);
+    },
+    DirectHintKind::U32Sub => {
+      if key.len() != 2 || width != 4 {
+        return Err("hint input width mismatch".into());
+      }
+      let a = field.try_to_u64(key[0].get(scratch))? as u32;
+      let b = field.try_to_u64(key[1].get(scratch))? as u32;
+      write_u32_bytes(field, scratch, start, a.wrapping_sub(b));
+    },
+    DirectHintKind::U32Add => {
+      if key.len() != 8 || width != 4 {
+        return Err("hint input width mismatch".into());
+      }
+      let w0 = read_u32_word(field, scratch, &key[0..4])?;
+      let w1 = read_u32_word(field, scratch, &key[4..8])?;
+      write_u32_bytes(field, scratch, start, w0.wrapping_add(w1));
+    },
+    DirectHintKind::U32Add3 => {
+      if key.len() != 12 || width != 4 {
+        return Err("hint input width mismatch".into());
+      }
+      let w0 = read_u32_word(field, scratch, &key[0..4])?;
+      let w1 = read_u32_word(field, scratch, &key[4..8])?;
+      let w2 = read_u32_word(field, scratch, &key[8..12])?;
+      write_u32_bytes(
+        field,
+        scratch,
+        start,
+        w0.wrapping_add(w1).wrapping_add(w2),
+      );
+    },
+    DirectHintKind::U32Lt => {
+      if key.len() != 2 || width != 12 {
+        return Err("hint input width mismatch".into());
+      }
+      let a = field.try_to_u64(key[0].get(scratch))? as u32;
+      let b = field.try_to_u64(key[1].get(scratch))? as u32;
+      write_u32_bytes(field, scratch, start, a);
+      write_u32_bytes(field, scratch, start + 4, a.wrapping_sub(b));
+      write_u32_bytes(field, scratch, start + 8, b);
+    },
+    DirectHintKind::BytesLe => {
+      if key.len() != 1 || width != 8 {
+        return Err("hint input width mismatch".into());
+      }
+      let bytes = field.try_to_u64(key[0].get(scratch))?.to_le_bytes();
+      for (i, &byte) in bytes.iter().enumerate() {
+        scratch[start + i] = field.from_u64(u64::from(byte));
+      }
+    },
+  }
+  Ok(())
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum Value<F> {
@@ -142,9 +394,9 @@ impl<B: FieldBackend> Builder<B> {
     self.shared.insert(op, value);
     value
   }
-  fn expr(&mut self, p: &Polynomial) -> Value<B::Element> {
+  fn expr(&mut self, p: &Polynomial<B::Word>) -> Value<B::Element> {
     match p {
-      Polynomial::Const(v) => Value::Constant(self.field.from_u64(*v)),
+      Polynomial::Const(v) => Value::Constant(self.field.from_word(*v)),
       Polynomial::Var(i) => self.logical[*i],
       Polynomial::Add(xs) | Polynomial::Sub(xs) | Polynomial::Mul(xs) => {
         let a = self.expr(&xs[0]);
@@ -157,7 +409,7 @@ impl<B: FieldBackend> Builder<B> {
       },
     }
   }
-  fn exprs(&mut self, ps: &[Polynomial]) -> Vec<Value<B::Element>> {
+  fn exprs(&mut self, ps: &[Polynomial<B::Word>]) -> Vec<Value<B::Element>> {
     ps.iter().map(|p| self.expr(p)).collect()
   }
   fn assign(
@@ -177,7 +429,7 @@ impl<B: FieldBackend> Builder<B> {
 
 impl<B: FieldBackend> FillPlan<B> {
   pub(super) fn compile(
-    plan: &FunctionPlan,
+    plan: &FunctionPlan<B::Word>,
     callables: &FxHashMap<String, usize>,
     program: &CheckedProgram<B>,
   ) -> Self {
@@ -279,7 +531,7 @@ impl<B: FieldBackend> FillPlan<B> {
   pub(super) fn fill(
     &self,
     record: &Execution<B>,
-    query: (&[B::Element], crate::query::QueryOutputRef<'_, B::Element>),
+    query: (&crate::query::QueryTable<B>, usize),
     scratch: &mut Vec<B::Element>,
     buffer: &mut Vec<B::Element>,
     row: &mut [B::Element],
@@ -294,7 +546,7 @@ impl<B: FieldBackend> FillPlan<B> {
   pub(super) fn fill_into(
     &self,
     record: &Execution<B>,
-    query: (&[B::Element], crate::query::QueryOutputRef<'_, B::Element>),
+    query: (&crate::query::QueryTable<B>, usize),
     scratch: &mut Vec<B::Element>,
     buffer: &mut Vec<B::Element>,
     mut write: impl FnMut(usize, B::Element),
@@ -304,10 +556,8 @@ impl<B: FieldBackend> FillPlan<B> {
     // Every retained slot is an input/output or has one earlier producer.
     // Producers overwrite their spans; only inactive/partial producers
     // need zeroing. Unused scratch slots are never read by the live graph.
-    let (input, output) = query;
-    scratch[..self.inputs].copy_from_slice(input);
-    scratch[self.inputs..self.inputs + self.output]
-      .copy_from_slice(output.output);
+    let (table, row) = query;
+    table.read_row(row, &mut scratch[..self.inputs + self.output]);
     for k in &self.kernels {
       if k.guard.get(scratch) != field.one() {
         scratch[k.start..k.start + k.width].fill(field.zero());
@@ -341,18 +591,23 @@ impl<B: FieldBackend> FillPlan<B> {
             field.inverse(v).ok_or("zero failure witness")?;
         },
         Node::Call { callable, args } => {
-          buffer.clear();
-          buffer.extend(args.iter().map(|v| v.get(scratch)));
           let table = &record.queries.tables[*callable];
           if let Some(map) = &table.static_map {
-            map
-              .binding
-              .evaluate(buffer, &mut scratch[k.start..k.start + k.width])?;
+            if let Some(kind) = map.binding.direct {
+              eval_direct_map(kind, field, args, scratch, k.start, k.width)?;
+            } else {
+              buffer.clear();
+              buffer.extend(args.iter().map(|v| v.get(scratch)));
+              map
+                .binding
+                .evaluate(buffer, &mut scratch[k.start..k.start + k.width])?;
+            }
           } else {
+            buffer.clear();
+            buffer.extend(args.iter().map(|v| v.get(scratch)));
             if let Some(id) = table.lookup(buffer).1 {
-              scratch[k.start..k.start + k.width]
-                .copy_from_slice(table.output(id).output);
-            } else if k.width != 0 || !record.is_deferred(*callable, buffer) {
+              table.read_output(id, &mut scratch[k.start..k.start + k.width]);
+            } else {
               return Err("missing recorded callee".into());
             }
           }
@@ -361,14 +616,23 @@ impl<B: FieldBackend> FillPlan<B> {
           buffer.clear();
           buffer.extend(values.iter().map(|v| v.get(scratch)));
           scratch[k.start] = field.from_u64(
-            record.memory.address_of(buffer).ok_or("missing recorded store")?
-              as u64,
+            u64::try_from(
+              record
+                .memory
+                .address_of(buffer)
+                .ok_or("missing recorded store")?,
+            )
+            .map_err(|_error| "ROM address overflow")?,
           );
         },
         Node::Load { address, .. } => {
-          let address = usize::try_from(field.to_u64(address.get(scratch)))
-            .ok()
-            .ok_or("ROM address overflow")?;
+          let address = usize::try_from(
+            field
+              .try_to_u64(address.get(scratch))
+              .map_err(|_error| "ROM address overflow")?,
+          )
+          .ok()
+          .ok_or("ROM address overflow")?;
           let cell = &record
             .memory
             .get_by_width(k.width, address)
@@ -380,16 +644,20 @@ impl<B: FieldBackend> FillPlan<B> {
           scratch[k.start..k.start + k.width].copy_from_slice(cell.value);
         },
         Node::Hint { instruction, key } => {
-          buffer.clear();
-          buffer.extend(key.iter().map(|v| v.get(scratch)));
-          record.hints.sites[self.function][*instruction]
+          let site = record.hints.sites[self.function][*instruction]
             .as_ref()
-            .ok_or("missing hint site")?
-            .evaluate(
+            .ok_or("missing hint site")?;
+          if let Some(kind) = site.direct {
+            eval_direct_hint(kind, field, key, scratch, k.start, k.width)?;
+          } else {
+            buffer.clear();
+            buffer.extend(key.iter().map(|v| v.get(scratch)));
+            site.evaluate(
               buffer,
               &mut scratch[k.start..k.start + k.width],
               field,
             )?;
+          }
         },
       }
     }
@@ -399,6 +667,116 @@ impl<B: FieldBackend> FillPlan<B> {
       }
     }
     Ok(())
+  }
+}
+
+impl<B: FieldBackend<Word = u64>> FillPlan<B> {
+  /// This plan in the stable description schema; `plan` is the function's
+  /// artifact plan, which names its hint sites.
+  pub(super) fn describe(
+    &self,
+    program: &CheckedProgram<B>,
+    plan: &FunctionPlan,
+  ) -> describe::FunctionDescription {
+    use super::describe::{
+      FunctionDescription, HintSite, KernelDescription, NodeDescription as N,
+      Operand, WriteDescription,
+    };
+    let field = self.field;
+    let op = |v: &Value<B::Element>| match v {
+      Value::Constant(c) => Operand::Const(field.to_u64(*c)),
+      Value::Slot(i) => Operand::Slot(*i),
+    };
+    let ops = |vs: &[Value<B::Element>]| vs.iter().map(op).collect::<Vec<_>>();
+    let functions = program.program.functions.len();
+    let kernels = self
+      .kernels
+      .iter()
+      .map(|k| {
+        let node = match &k.node {
+          Node::Arithmetic(Arithmetic::Add(a, b)) => {
+            N::Add { a: op(a), b: op(b) }
+          },
+          Node::Arithmetic(Arithmetic::Sub(a, b)) => {
+            N::Sub { a: op(a), b: op(b) }
+          },
+          Node::Arithmetic(Arithmetic::Mul(a, b)) => {
+            N::Mul { a: op(a), b: op(b) }
+          },
+          Node::Arithmetic(Arithmetic::Select(g, a, b)) => {
+            N::Select { guard: op(g), a: op(a), b: op(b) }
+          },
+          Node::Inverse(v) => N::Inverse { value: op(v) },
+          Node::Choice(tests) => {
+            N::Choice { tests: tests.iter().map(|t| ops(t)).collect() }
+          },
+          Node::Failure(xs) => N::Failure { differences: ops(xs) },
+          Node::Call { callable, args } if *callable >= functions => {
+            N::Map { map: callable - functions, args: ops(args) }
+          },
+          Node::Call { callable, args } => N::Call {
+            callee: program.program.functions[*callable].name.clone(),
+            args: ops(args),
+          },
+          Node::Store { values } => {
+            N::Store { width: values.len(), values: ops(values) }
+          },
+          Node::Load { address } => {
+            N::Load { width: k.width, address: op(address) }
+          },
+          Node::Hint { instruction, key } => {
+            let (channel, r#type, key_type) = plan
+              .steps
+              .iter()
+              .find_map(|step| match &step.action {
+                Action::Hint {
+                  instruction: i,
+                  channel,
+                  r#type,
+                  key_type,
+                  ..
+                } if i == instruction => {
+                  Some((channel.clone(), r#type.clone(), key_type.clone()))
+                },
+                _ => None,
+              })
+              .expect("a hint kernel comes from a hint step");
+            N::Hint {
+              site: HintSite {
+                function: plan.name.clone(),
+                instruction: *instruction,
+                channel,
+                r#type,
+                key_type,
+              },
+              key: ops(key),
+            }
+          },
+        };
+        KernelDescription {
+          guard: op(&k.guard),
+          start: k.start,
+          width: k.width,
+          node,
+        }
+      })
+      .collect();
+    FunctionDescription {
+      name: plan.name.clone(),
+      inputs: self.inputs,
+      outputs: self.output,
+      slots: self.scratch,
+      kernels,
+      writes: self
+        .writes
+        .iter()
+        .map(|w| WriteDescription {
+          guard: op(&w.guard),
+          column: w.column,
+          value: op(&w.value),
+        })
+        .collect(),
+    }
   }
 }
 
@@ -418,6 +796,8 @@ pub(super) mod device {
   pub(crate) const OP_MAP: u32 = 7;
   pub(crate) const OP_CALL: u32 = 8;
   pub(crate) const OP_HINT: u32 = 9;
+  pub(crate) const OP_STORE: u32 = 10;
+  pub(crate) const OP_LOAD: u32 = 11;
   const CONSTANT: u32 = 0x8000_0000;
 
   /// Canonical field constants shared by every encoded plan of a program.
@@ -446,6 +826,14 @@ pub(super) mod device {
     Call(u32),
   }
 
+  /// A device lookup table: a function's recorded queries, or the ROM cells
+  /// of one width, in which stores and loads find their cells.
+  #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+  pub(crate) enum Source {
+    Function(usize),
+    Rom(usize),
+  }
+
   pub(crate) struct Encoded {
     pub code: Vec<u32>,
     pub scratch: u32,
@@ -453,14 +841,15 @@ pub(super) mod device {
     pub outputs: u32,
   }
 
-  impl<B: FieldBackend> FillPlan<B> {
+  impl<B: FieldBackend<Word = u64>> FillPlan<B> {
     /// The plan's kernels and column writes, writing physical `column`s, or
-    /// `None` when a kernel needs host-only state: memory, or a callable or
-    /// hint site without a device implementation.
+    /// `None` when a kernel needs a callable or hint site without a device
+    /// implementation. `rom(width)` is the lookup slot of that width's ROM.
     pub(crate) fn encode(
       &self,
       call: &mut impl FnMut(usize) -> Option<Target>,
       hint: &mut impl FnMut(usize) -> Option<u32>,
+      rom: &mut impl FnMut(usize) -> Option<u32>,
       column: &impl Fn(usize) -> usize,
       constants: &mut Constants,
     ) -> Option<Encoded> {
@@ -532,7 +921,18 @@ pub(super) mod device {
             }
             OP_HINT
           },
-          Node::Store { .. } | Node::Load { .. } => return None,
+          Node::Store { values } => {
+            body
+              .extend([rom(values.len())?, u32::try_from(values.len()).ok()?]);
+            for v in values {
+              body.push(word(v)?);
+            }
+            OP_STORE
+          },
+          Node::Load { address } => {
+            body.extend([rom(k.width)?, word(address)?]);
+            OP_LOAD
+          },
         };
         code.extend([
           op,

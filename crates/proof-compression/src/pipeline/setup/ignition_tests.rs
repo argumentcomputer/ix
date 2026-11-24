@@ -16,7 +16,7 @@ fn release_parameters_fix_identity_degree_and_anchors() -> storage::Result<()> {
     }
     assert_eq!(SetupClass::of(&changed), SetupClass::Development);
   }
-  let source = SetupSource::ignition(PathBuf::from("absent-srs.bin"))?;
+  let source = SetupSource::<Bn254>::ignition(PathBuf::from("absent-srs.bin"))?;
   assert_eq!(source.class(), SetupClass::Ignition);
   assert_eq!(source.srs(8, true)?.g1, release.g1);
   assert!(source.srs(8, false).is_err());
@@ -26,9 +26,9 @@ fn release_parameters_fix_identity_degree_and_anchors() -> storage::Result<()> {
 #[test]
 fn release_identity_does_not_depend_on_path_or_stage() -> storage::Result<()> {
   let a = SetupConfig::Ignition { srs: PathBuf::from("a.bin") }
-    .for_stage(FIRST_SEED, 8)?;
+    .for_stage::<Bn254>(FIRST_SEED, 8)?;
   let b = SetupConfig::Ignition { srs: PathBuf::from("b.bin") }
-    .for_stage(b"other-stage", 8)?;
+    .for_stage::<Bn254>(b"other-stage", 8)?;
   assert_eq!(a.identity(8, 2)?, b.identity(8, 2)?);
   assert_ne!(a.identity(8, 2)?, a.identity(4, 2)?);
   assert_ne!(a.identity(8, 2)?, a.identity(8, 4)?);
@@ -49,8 +49,8 @@ fn missing_release_requires_explicit_development() -> storage::Result<()> {
   })?;
   assert_eq!(config.class(), SetupClass::Development);
   assert_eq!(
-    config.for_stage(FIRST_SEED, 8)?.identity(8, 2)?,
-    SetupSource::development(FIRST_SEED, 7)?.identity(8, 2)?
+    config.for_stage::<Bn254>(FIRST_SEED, 8)?.identity(8, 2)?,
+    SetupSource::<Bn254>::development(FIRST_SEED, 7)?.identity(8, 2)?
   );
   Ok(())
 }
@@ -59,7 +59,7 @@ fn missing_release_requires_explicit_development() -> storage::Result<()> {
 #[ignore = "requires the released native gnark SRS under IX_KZG_SRS or IX_PARAMS_DIR"]
 fn installed_gnark_srs_matches_release() -> storage::Result<()> {
   let config = SetupConfig::from_env(false)?;
-  let source = config.for_stage(FIRST_SEED, 1024)?;
+  let source = config.for_stage::<Bn254>(FIRST_SEED, 1024)?;
   let srs = source.srs(1024, false)?;
   srs.validate()?;
   assert_eq!(

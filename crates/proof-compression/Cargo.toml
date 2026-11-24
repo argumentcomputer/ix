@@ -9,12 +9,15 @@ publish = false
 aiur = { path = "../aiur", default-features = false, features = ["stark"] }
 multi-stark = { workspace = true }
 stark-key = { path = "../stark-key" }
+stark-verifier = { path = "../stark-verifier" }
+ark-bls12-381 = { version = "0.5", features = ["curve"] }
 ark-bn254 = { version = "0.5", features = ["curve"] }
 ark-ec = "0.5"
 ark-ff = { version = "0.5", features = ["asm"] }
 ark-poly = "0.5"
 ark-serialize = { version = "0.5", features = ["std"] }
 bincode = { version = "2", features = ["serde"] }
+blake2b_simd = "1"
 blake3 = { workspace = true, features = ["mmap", "rayon"] }
 tiny-keccak = { workspace = true }
 num-bigint = { workspace = true }
@@ -62,7 +65,17 @@ default = ["parallel"]
 # the CUDA toolkit at build time and a visible GPU at runtime; CPU-only
 # builds neither compile sppark nor link CUDA.
 cuda = ["multi-stark/cuda", "dep:rayon", "dep:sppark", "dep:blst"]
-parallel = ["multi-stark/parallel", "aiur/parallel", "p3-maybe-rayon/parallel", "ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel"]
+parallel = ["multi-stark/parallel", "aiur/parallel", "p3-maybe-rayon/parallel", "dep:rayon", "ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel"]
+# Shared fixed slots (`System::new_shared`), which exist only in the
+# multi-stark fork `formal-aiur/shared-fixed`. Enable this feature only
+# together with the fork patched over the pinned multi-stark, as
+# `tools/cargo-shared-fixed.sh` does; the pin itself stays upstream. Without
+# it, a system with no shared slot is built by the pinned multi-stark.
+shared-fixed = []
+
+[[test]]
+name = "aiur_kzg_packed_shared_fixed"
+required-features = ["shared-fixed"]
 
 [lints]
 workspace = true

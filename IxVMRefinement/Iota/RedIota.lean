@@ -353,14 +353,17 @@ theorem red_iota_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (Sour
   intro rc rt lvls sp np nm nmi ni rules rp major types hargs good hrc d Γ htypes k us nl kf cv mI
     rP rls p As M hrr hlen hp hmh hAs hM hred x hr
   subst hargs
-  rcases Obs.«KernelWhnf::red_iota».obs ev with
-    ⟨m2, cs13, x_mh, x_margs, x_caddr, x_clvls, m70, p78, cs84, x_cnl, x_cty, x_cblock, x_cind, x_cidx, x_cnp, x_cnf, w101, v153, m156, cs164, v167, m170, cs178, m212, cs223, x_rfields, x_rrhs, m266, x273, y274, m275, x281, y282, m283, cs292, v295, x302, y303, m304, cs313, cs337, v340, cs360, v363, x370, m372, cs381, v393, x401, v420, v452, m453, cs463, v482, m483, cs493, m513, x521, y522, m523, cs532, cs618, v623, v624, v628, m645, cs653, v735, m736, cs746, v765, m766, cs776, v780, m789, cs797, v816, m817, cs827, v831, m840, cs848, v870, m879, cs887, v891, m900, cs908, v912, ev15, ld51, ev86, ld80, ev180, ev166, heq210, ev225, ev315, op331, op309, ev294, op354, ev339, op288, ev383, op377, ev362, op280, op416, op408, op435, ev465, ev495, ev534, ev655, op685, op721, ev620, op528, ev748, ev799, ev778, ev850, ev829, he871, op933, ev910, ev889, he935, hc936⟩ |
-    ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, he0, -, -⟩ |
-    ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, he0, -, -⟩ |
-    ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, he0, -, -⟩ |
-    ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, he0, -, -⟩ |
-    ⟨-, -, -, -, -, -, -, -, he0, -, -⟩
-  · subst he935 hc936
+  cases Obs.«KernelWhnf::red_iota».obs ev
+  case Const_Ctor_n1_bind_bind_n1_n1_n1 m2 cs13 x_mh x_margs x_caddr x_clvls m70 p78 cs84 x_cnl
+      x_cty x_cblock x_cind x_cidx x_cnp x_cnf w101 v153 m156 cs164 v167 m170 cs178 m212 cs223
+      x_rfields x_rrhs m266 x273 y274 m275 x281 y282 m283 cs292 v295 x302 y303 m304 cs313 cs337
+      v340 cs360 v363 x370 m372 cs381 v393 x401 v420 v452 m453 cs463 v482 m483 cs493 m513 cs532
+      m_icerts cs618 v624 v628 v735 m736 cs746 v765 m766 cs776 v780 m789 cs797 v816 m817 cs827
+      v831 m840 cs848 v870 m879 cs887 v891 m900 cs908 v912 ev15 ld51 ev86 ld80 ev180 ev166 heq210
+      ev225 ev315 op331 op309 ev294 op354 ev339 op288 ev383 op377 ev362 op280 op416 op408 op435
+      ev465 ev495 ev534 op685 op721 ev620 ev748 ev799 ev778 ev850 ev829 he871 op933 ev910 ev889
+      he935 hc936 =>
+    subst he935 hc936
     obtain ⟨-, rfl⟩ := tuple2_inj (hr.symm.trans he871)
     obtain ⟨⟨hfind, ⟨u0, blk0, idx0, hci⟩, -⟩, hus⟩ := hrr
     obtain ⟨p', i', m', mi', hval, hnp, hni, hnm, hnmi, hrP, hmI, hrPmI, hmIb, hrules⟩ :=
@@ -379,7 +382,6 @@ theorem red_iota_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (Sour
     have e465 := ObsFn.heap_extends ev465
     have e495 := ObsFn.heap_extends ev495
     have e534 := ObsFn.heap_extends ev534
-    have e655 := ObsFn.heap_extends ev655
     have e620 := ObsFn.heap_extends ev620
     have e748 := ObsFn.heap_extends ev748
     have e799 := ObsFn.heap_extends ev799
@@ -391,8 +393,8 @@ theorem red_iota_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (Sour
     have Z212 := e180.trans (e166.trans e225)
     have Z266 := Z212.trans V266
     have Z483 := Z266.trans (e465.trans e495)
-    have Z645 := Z483.trans (e534.trans e655)
-    have Z513 := Z645.trans e620
+    have Z513a := Z483.trans e534
+    have Z513 := Z513a.trans e620
     have Z766 := Z513.trans (e748.trans (e799.trans e778))
     have Z817 := Z766.trans (e850.trans e829)
     have X70 := e15.trans e86
@@ -529,19 +531,13 @@ theorem red_iota_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (Sour
     rw [hmIv, Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol] at hpre
     rw [hmIv] at hmIle
     -- the comparisons and the certificates both answer
-    obtain ⟨u521, w522, rfl, rfl⟩ := NatAux.binop_fields op528
-    have huw := (NatAux.field_inj (NatAux.mul_ok op528)).symm
-    have hu0 : (Value.field u521 : SourceValue F) ≠ .field 0 := fun e =>
-      left_ne_zero_of_mul_eq_one huw (Value.field.inj e)
-    have hw0 : (Value.field w522 : SourceValue F) ≠ .field 0 := fun e =>
-      right_ne_zero_of_mul_eq_one huw (Value.field.inj e)
     have hcmp := ih.get (.whnf .iota_cmp) (by lt_calls) ev534 rc v452 v482 (.field (mI : F))
       x_cty x_clvls (.field (nP : F)) x_margs (.field i') types rfl
       (good.sub fun z hz => by simp [hz]) (RCRep.mono (X70.trans Z483) hrc) d Γ
       (types_mono (X70.trans Z483) htypes) (cv.type.instantiateLevelParams cv.levelParams us)
       (As.take mI) (mI : F) (posOf cvj.levelParams cvj.type) usj (nP : F) MA i' (hRT.mono e495)
       hpre rfl (hcty.mono Z483) (husj.mono (e86.trans Z483)) rfl (tml_mono (e86.trans Z483) hMA)
-      rfl hu0
+      rfl NatAux.field_one_ne_zero
     obtain ⟨MD, k', mus, hMD, hMDfn, hmus, hpar, hidxc⟩ := hcmp
     rw [hmIv] at hMD
     rw [hnPv] at hpar hidxc
@@ -554,36 +550,30 @@ theorem red_iota_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (Sour
         apply hne
         have h1 : (mI : F) = (rP : F) := by rw [hmI, hrP, hi0, add_zero]
         exact (NatAux.natCast_inj (by omega) (by omega)).mp h1)
-    have hM523 := hM.mono (X70.trans Z483 |>.trans e534)
-    have hra := Lib.Lists.snoc_spec (t := kexprTy) (R := TmE c.κ d Γ) tmE_heapMono₂
-      (by rw [Obs.Names.«Lists::snoc<&KernelTypes::KExprNode>».symbol]; exact ev655)
-      (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact tml_mono e534 hpre)
-      hM523
-    rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol] at hra
+    have hM513 := hM.mono (X70.trans Z513a)
     have hv624 := NatAux.add_ok op685
     subst hv624
     have hv628 := NatAux.add_ok op721
     subst hv628
-    have hralen : (As.take mI ++ [Ix.Kernel.Expr.mkAppN (.const rl.ctor usj) MA]).length =
-        mI + 1 := by
-      simp only [List.length_append, List.length_take, List.length_singleton]; omega
-    have hrab : (As.take mI ++ [Ix.Kernel.Expr.mkAppN (.const rl.ctor usj) MA]).length < 2 ^ 39 :=
+    have hpreb : (As.take mI).length < 2 ^ 39 :=
       RomBound.bounded_length_lt good.2
-        (c := ⟨"KernelWhnf::iota_certs", [rc, v452, v623, .field ((mI : F) + 1), x_cty, x_clvls,
-          x_margs, .field ((nP : F) + (nF : F)), types], m645⟩) (by simp) (by simp) hra
-    have hcerts := ih.get (.whnf .iota_certs) (by lt_calls) ev620 rc v452 v623 _ x_cty x_clvls
-      x_margs _ types rfl (good.sub fun z hz => by simp [hz]) (RCRep.mono (X70.trans Z645) hrc) d
-      Γ (types_mono (X70.trans Z645) htypes) _ _ (posOf cvj.levelParams cvj.type) usj MA
-      (hRT.mono (e495.trans (e534.trans e655))) hra
-      (by rw [hralen, Nat.cast_add, Nat.cast_one]) (hcty.mono Z645)
-      (husj.mono (e86.trans Z645)) (tml_mono (e86.trans Z645) hMA)
-      (by rw [hMAlen, Nat.cast_add]) hrab hMAb hw0
+        (c := ⟨"KernelWhnf::iota_cmp", [rc, v452, v482, .field (mI : F), x_cty, x_clvls,
+          .field (nP : F), x_margs, .field i', types], m483⟩) (by simp [hmI]) (by simp) hpre
+    have hprelen : (As.take mI).length = mI := by
+      simp only [List.length_take]; omega
+    have hcerts := ih.get (.whnf .iota_certs) (by lt_calls) ev620 rc v452 v482 major _ x_cty
+      x_clvls x_margs _ types rfl (good.sub fun z hz => by simp [hz])
+      (RCRep.mono (X70.trans Z513a) hrc) d Γ (types_mono (X70.trans Z513a) htypes) _ _ _
+      (posOf cvj.levelParams cvj.type) usj MA (hRT.mono (e495.trans e534)) (tml_mono e534 hpre)
+      hM513 (by rw [hprelen, Nat.cast_add, Nat.cast_one]) (hcty.mono Z513a)
+      (husj.mono (e86.trans Z513a)) (tml_mono (e86.trans Z513a) hMA)
+      (by rw [hMAlen, Nat.cast_add]) hpreb hMAb NatAux.field_one_ne_zero
     obtain ⟨hc1, hc2⟩ := hcerts
     rw [husjlen, posOf_inst husjlen halpdj'] at hc2
     -- the reduct
     have hRHS0 := ih.get (.subst .expr_inst_levels) (by lt_calls) ev748 x_rrhs lvls rfl
       (good.sub fun z hz => by simp [hz]) Γ 0 _ us
-      ((hrhs 0 Γ).mono (V266.trans (e465.trans (e495.trans (e534.trans (e655.trans e620))))))
+      ((hrhs 0 Γ).mono (V266.trans (e465.trans (e495.trans (e534.trans e620)))))
       (hus.mono (X70.trans Z513))
     rw [hlen, posOf_inst hlen halpdR] at hRHS0
     obtain ⟨-, hpreR⟩ := Lib.Lists.take_spec (t := kexprTy) (R := TmE c.κ d Γ) tmE_heapMono₂
@@ -628,6 +618,6 @@ theorem red_iota_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (Sour
       rw [mkAppN_mkAppN, List.take_append_drop]
     rw [mkAppN_mkAppN _ (As.take rP) (MA.drop nP), hsplit]
     exact red_mkAppN _ hfire
-  all_goals exact (tag_zero_ne_one (he0.symm.trans hr)).elim
+  all_goals exact (tag_zero_ne_one (‹r = .tuple [.field 0, _]›.symm.trans hr)).elim
 
 end IxVM.Refinement.Core

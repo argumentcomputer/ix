@@ -52,8 +52,8 @@ impl DirectMapOp {
   ) -> Result<(), String> {
     macro_rules! pair {
       ($a:expr, $b:expr) => {{
-        let va = field.to_u64(regs[$a as usize]);
-        let vb = field.to_u64(regs[$b as usize]);
+        let va = field.try_to_u64(regs[$a as usize]).unwrap_or(u64::MAX);
+        let vb = field.try_to_u64(regs[$b as usize]).unwrap_or(u64::MAX);
         if (va | vb) > 255 {
           return Err("no table entry for map input".into());
         }
@@ -63,7 +63,7 @@ impl DirectMapOp {
     match self {
       Self::FromField { src, dst } => {
         let val = regs[src as usize];
-        let row = field.to_u64(val);
+        let row = field.try_to_u64(val).unwrap_or(u64::MAX);
         if row >= 256 {
           return Err("no table entry for map input".into());
         }
@@ -129,7 +129,7 @@ impl DirectMapOp {
         regs[dst1 as usize] = field.from_u64((xor & 127) << 1);
       },
       Self::RawSumByte { src, dst } => {
-        let row = field.to_u64(regs[src as usize]);
+        let row = field.try_to_u64(regs[src as usize]).unwrap_or(u64::MAX);
         if row >= 768 {
           return Err("no table entry for map input".into());
         }
@@ -137,7 +137,7 @@ impl DirectMapOp {
         regs[dst as usize] = field.from_u64(row & 255);
       },
       Self::RawBitDecomp { src, dst_off } => {
-        let row = field.to_u64(regs[src as usize]);
+        let row = field.try_to_u64(regs[src as usize]).unwrap_or(u64::MAX);
         if row >= 256 {
           return Err("no table entry for map input".into());
         }
@@ -166,10 +166,10 @@ pub(crate) fn eval_direct_hint<B: FieldBackend>(
     regs: &[B::Element],
     idxs: &[u32],
   ) -> Result<u32, String> {
-    let b0 = field.to_u64(regs[idxs[0] as usize]);
-    let b1 = field.to_u64(regs[idxs[1] as usize]);
-    let b2 = field.to_u64(regs[idxs[2] as usize]);
-    let b3 = field.to_u64(regs[idxs[3] as usize]);
+    let b0 = field.try_to_u64(regs[idxs[0] as usize]).unwrap_or(u64::MAX);
+    let b1 = field.try_to_u64(regs[idxs[1] as usize]).unwrap_or(u64::MAX);
+    let b2 = field.try_to_u64(regs[idxs[2] as usize]).unwrap_or(u64::MAX);
+    let b3 = field.try_to_u64(regs[idxs[3] as usize]).unwrap_or(u64::MAX);
     if (b0 | b1 | b2 | b3) > 255 {
       return Err("non-byte u32 sum operand".into());
     }
@@ -192,12 +192,12 @@ pub(crate) fn eval_direct_hint<B: FieldBackend>(
 
   match kind {
     DirectHintKind::U32Bytes => {
-      let word = field.to_u64(regs[reg_slice[0] as usize]) as u32;
+      let word = field.try_to_u64(regs[reg_slice[0] as usize])? as u32;
       write_u32_bytes(field, regs, &reg_slice[1..5], word);
     },
     DirectHintKind::U32Sub => {
-      let a = field.to_u64(regs[reg_slice[0] as usize]) as u32;
-      let b = field.to_u64(regs[reg_slice[1] as usize]) as u32;
+      let a = field.try_to_u64(regs[reg_slice[0] as usize])? as u32;
+      let b = field.try_to_u64(regs[reg_slice[1] as usize])? as u32;
       write_u32_bytes(field, regs, &reg_slice[2..6], a.wrapping_sub(b));
     },
     DirectHintKind::U32Add => {
@@ -217,14 +217,14 @@ pub(crate) fn eval_direct_hint<B: FieldBackend>(
       );
     },
     DirectHintKind::U32Lt => {
-      let a = field.to_u64(regs[reg_slice[0] as usize]) as u32;
-      let b = field.to_u64(regs[reg_slice[1] as usize]) as u32;
+      let a = field.try_to_u64(regs[reg_slice[0] as usize])? as u32;
+      let b = field.try_to_u64(regs[reg_slice[1] as usize])? as u32;
       write_u32_bytes(field, regs, &reg_slice[2..6], a);
       write_u32_bytes(field, regs, &reg_slice[6..10], a.wrapping_sub(b));
       write_u32_bytes(field, regs, &reg_slice[10..14], b);
     },
     DirectHintKind::BytesLe => {
-      let bytes = field.to_u64(regs[reg_slice[0] as usize]).to_le_bytes();
+      let bytes = field.try_to_u64(regs[reg_slice[0] as usize])?.to_le_bytes();
       for (i, &byte) in bytes.iter().enumerate() {
         regs[reg_slice[1 + i] as usize] = field.from_u64(u64::from(byte));
       }
@@ -272,6 +272,11 @@ pub(crate) enum Action<F> {
     inv: F,
   },
   DivDyn {
+    dest: u32,
+    left: u32,
+    right: u32,
+  },
+  PtrEq {
     dest: u32,
     left: u32,
     right: u32,
@@ -610,6 +615,16 @@ pub(crate) fn prepare<B: FieldBackend>(
                 },
                 _ => None,
               }
+            },
+            Instruction::PtrEq { dest, left, right } => match (
+              u32::try_from(*dest).ok(),
+              u32::try_from(*left).ok(),
+              u32::try_from(*right).ok(),
+            ) {
+              (Some(dest), Some(left), Some(right)) => {
+                Some(Action::PtrEq { dest, left, right })
+              },
+              _ => None,
             },
             Instruction::Branch { tests, otherwise } if tests.len() == 1 => {
               let (reg, value) = tests[0];

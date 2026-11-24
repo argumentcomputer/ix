@@ -1,0 +1,247 @@
+{
+  "format": "ix-aiur-terminal-pairing-gadget-v1",
+  "date_utc": "2026-11-13",
+  "boundary": {
+    "source_entry": "CompressFinal::verify_accumulator_v1",
+    "source_relation": "KZG verification, accumulator folding, original statement, policy, stage and fixed anchor checks; returns 18 canonical affine words. Pairing remains deferred in this Aiur entry.",
+    "terminal_schema": "ix-aiur-plonk-terminal-v1",
+    "private_outputs": 18,
+    "public_fields": 2,
+    "backend_relation": "Existing constrained gnark BN254 PairingCheck on the same private affine outputs. Canonical limb/range, infinity and curve checks bind the representation.",
+    "output_binding": "Private outputs participate in the root LogUp request and prechallenge commitment; G2 constants must match the artifact fixed configuration row.",
+    "reference": "Full-source verify_v1 remains available as a reference. An ordinary KZG proof of the accumulator entry does not discharge pairing."
+  },
+  "same_input_regression": {
+    "reference": {
+      "artifact_blake3": "60661cb7d738d4911cd4459b54633706c5ab9b733917b5f0667be72108cba00e",
+      "execution_seconds": 1.00586725,
+      "format": "ix-aiur-final-fixture-cost-v1",
+      "main_cells": 9096974,
+      "max_height": 262144,
+      "plonk": {
+        "constraints": 62413327,
+        "domain": 67108864
+      },
+      "public_fields": 2,
+      "schema_bytes": 8746096,
+      "scope": "development regression, not Init compression"
+    },
+    "gadget": {
+      "artifact_blake3": "30b1bbce528ca43634e25c1a2978cb4877db5f86bffa175606d59749aad1d6c8",
+      "execution_seconds": 0.217002306,
+      "format": "ix-aiur-terminal-gadget-cost-v1",
+      "main_cells": 2495099,
+      "max_height": 65536,
+      "plonk": {
+        "commitments": 1,
+        "compile_seconds": 23.1368002,
+        "constraints": 20257381,
+        "domain": 33554432,
+        "public_inputs": 2,
+        "within_target_domain": false
+      },
+      "private_outputs": 18,
+      "public_fields": 2,
+      "schema_bytes": 8381614,
+      "scope": "Development predecessor; complete terminal relation uses gnark PairingCheck. Not Init compression."
+    },
+    "native_compile_execution": {
+      "command": [
+        "target/release/examples/aiur_terminal_profile",
+        "target/terminal-gadget/compress-final-accumulator.ixa",
+        "/home/sam/repos/ix.aiur-compression-stages/target/full-terminal-plonk/gadget-compiled",
+        "--compile-plonk"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 25.02114039499429,
+      "peak_resident_bytes": 6524674048,
+      "stopped_for_resource_admission": null
+    },
+    "compiled_circuit_bytes": 415398927,
+    "compiled_circuit_sha256": "e5bc4a8922d55e62886fdbde60955510c08caf57b6f563914e48e035afcd2d05",
+    "target_domain": 16777216,
+    "additional_constraint_reduction_required": 3480167,
+    "scope": "Actual complete constraint-system compilation for a small development predecessor. No key setup or PLONK proof at 2^25 or 2^26."
+  },
+  "compiler_fixture": {
+    "artifact_blake3": "30b1bbce528ca43634e25c1a2978cb4877db5f86bffa175606d59749aad1d6c8",
+    "cases": [
+      {
+        "case": "honest",
+        "main_cells": 2495099,
+        "max_height": 65536,
+        "private_outputs": 18,
+        "public_inputs": 2,
+        "schema_blake3": "621d3442deb2521b17d7377cd09a074d402ffacb7ab309ea39f52720170c388f",
+        "schema_bytes": 8381614,
+        "source_execution_passed": true,
+        "witness_bytes": 79843820
+      },
+      {
+        "case": "forged",
+        "main_cells": 2495099,
+        "max_height": 65536,
+        "private_outputs": 18,
+        "public_inputs": 2,
+        "schema_blake3": "621d3442deb2521b17d7377cd09a074d402ffacb7ab309ea39f52720170c388f",
+        "schema_bytes": 8381614,
+        "source_execution_passed": true,
+        "witness_bytes": 79843820
+      }
+    ],
+    "format": "ix-aiur-terminal-gadget-fixture-v1",
+    "scope": "Development predecessor; source execution defers pairing. The constrained terminal backend must reject the forged-opening case."
+  },
+  "validation": {
+    "rust": "Configuration/anchor substitution, statement/stage rejection, private-output binary ordering, generic public-output distinction and existing generic JSON/binary byte compatibility passed.",
+    "go_small": "26 tests passed; tiny complete pairing fixture has 1,826,105 constraints, a 2^21 domain, two public fields and one commitment. Both infinity accepted; one infinity, malformed/aliased coordinates and detached valid pairs rejected.",
+    "actual_rust_fixture": "The complete 20,257,381-constraint system accepted the honest binary witness, rejected the forged-opening source execution and detached identity private outputs with honest Main.",
+    "development_plonk_proof": {
+      "status": "passed",
+      "scope": "Tiny native-gadget conformance fixture with explicit known-trapdoor development setup; not Init or the complete 20.26M-constraint regression circuit.",
+      "constraints": 1826105,
+      "domain": 2097152,
+      "public_fields": 2,
+      "commitments": 1,
+      "native_proof_bytes": 584,
+      "solidity_proof_bytes": 864,
+      "binary_private_witness_bridge": true,
+      "independent_expected_public_fields": true,
+      "changed_statement_rejected": true,
+      "changed_proof_rejected": true,
+      "phase_seconds": {
+        "compile": 1.323676,
+        "srs": 5.130138,
+        "lagrange": 70.167696,
+        "setup": 4.930194,
+        "witness_decode": 0.000399,
+        "prove": 14.672402,
+        "verify": 0.002655,
+        "negative_verification": 7.4e-05
+      },
+      "log": "target/terminal-gadget/go/development-proof.log"
+    },
+    "targeted_accumulator_regeneration": "Passed exact byte comparison with --accumulator --check.",
+    "full_source_reference_regeneration": "Passed exact byte comparison; the full-source reference artifact is unchanged.",
+    "standard_rust_tests": "Nonignored terminal binding/budget test and two generic/capacity regressions passed.",
+    "independent_boundary_review": "No substantive finding: root/commitment output binding, canonical affine representation, complete infinity handling, validated fixed G2 anchors, and full artifact-configuration row binding reviewed."
+  },
+  "actual_init_terminal_count": {
+    "actual_plonk_constraints_measured": false,
+    "artifact_blake3": "d0f3b7c98b2240094a916e23d0a59724614904941a93a2ad230d4988eacc31e1",
+    "execution_seconds": 55.591177568,
+    "format": "ix-aiur-terminal-count-v1",
+    "instructions": 1856716580,
+    "main_cells": 734887425,
+    "manifest_blake3": "82ff53d4ec0fc4a3ba70a783d112c50f903330199f8c683758fcd694e773a1ad",
+    "max_height": 16777216,
+    "native_pairing_verified": true,
+    "private_output_blake3": "e428a96036bdc7321a9b2d762557eb266bfb27ae621745ac0675a62710b101c6",
+    "private_outputs": 18,
+    "scope": "Authenticated source execution and exact padded row counts only; no proving traces or full PLONK circuit allocated.",
+    "stage": 2,
+    "statement": "8f2b55dec474487065c6b4937fc129bb58efc1687686c2f00127751b007bb955",
+    "within_2_24_main_cell_budget": false,
+    "within_exporter_main_cell_limit": false
+  },
+  "actual_init_heaviest_circuits": [
+    {
+      "fixed_cells": 0,
+      "height": 1048576,
+      "lookup_slots": 72351744,
+      "main_cells": 147849216,
+      "main_width": 141,
+      "name": "BN254G1::add"
+    },
+    {
+      "fixed_cells": 0,
+      "height": 262144,
+      "lookup_slots": 59244544,
+      "main_cells": 131596288,
+      "main_width": 502,
+      "name": "Blake3::compress"
+    },
+    {
+      "fixed_cells": 0,
+      "height": 16777216,
+      "lookup_slots": 100663296,
+      "main_cells": 117440512,
+      "main_width": 7,
+      "name": "BN254Fq::range80"
+    },
+    {
+      "fixed_cells": 0,
+      "height": 8388608,
+      "lookup_slots": 8388608,
+      "main_cells": 50331648,
+      "main_width": 6,
+      "name": "<ROM:3>"
+    },
+    {
+      "fixed_cells": 0,
+      "height": 2097152,
+      "lookup_slots": 16777216,
+      "main_cells": 39845888,
+      "main_width": 19,
+      "name": "BN254FqRelation::assert_zero"
+    },
+    {
+      "fixed_cells": 0,
+      "height": 4194304,
+      "lookup_slots": 33554432,
+      "main_cells": 33554432,
+      "main_width": 8,
+      "name": "BN254FqRelation::range89"
+    },
+    {
+      "fixed_cells": 0,
+      "height": 1048576,
+      "lookup_slots": 8388608,
+      "main_cells": 26214400,
+      "main_width": 25,
+      "name": "KzgMsm::split"
+    },
+    {
+      "fixed_cells": 0,
+      "height": 2097152,
+      "lookup_slots": 8388608,
+      "main_cells": 23068672,
+      "main_width": 11,
+      "name": "KzgTranscript::reverse_onto"
+    },
+    {
+      "fixed_cells": 0,
+      "height": 524288,
+      "lookup_slots": 2097152,
+      "main_cells": 22544384,
+      "main_width": 43,
+      "name": "KzgMsm::add_points"
+    },
+    {
+      "fixed_cells": 0,
+      "height": 1048576,
+      "lookup_slots": 6291456,
+      "main_cells": 18874368,
+      "main_width": 18,
+      "name": "Blake3::compress_chunks"
+    },
+    {
+      "fixed_cells": 0,
+      "height": 2097152,
+      "lookup_slots": 12582912,
+      "main_cells": 16777216,
+      "main_width": 8,
+      "name": "BN254Fq::from_limbs"
+    },
+    {
+      "fixed_cells": 0,
+      "height": 1048576,
+      "lookup_slots": 4194304,
+      "main_cells": 16777216,
+      "main_width": 16,
+      "name": "KzgBlake3::read_block"
+    }
+  ],
+  "actual_init_scope": "Input comes from the independently pinned, natively verified fresh Init GL-to-BN chain. Final stage two source counts only; no witness matrices, full PLONK circuit, setup or proof. Native pairing verification of the output passed. Its 734,887,425 main cells exceed both target and current exporter limits.",
+  "incomplete": "The 2^24 target is unmet even for the small complete fixture; actual Init requires much larger reductions in verification work. No full pipeline or Mathlib completion claim."
+}

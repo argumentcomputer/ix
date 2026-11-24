@@ -119,7 +119,7 @@ fn overrides_preserve_sparse_and_permuted_tables_counts_and_fresh_sessions() {
           .get(&QueryInput { function: 1, args: vec![x] })
           .unwrap();
         assert_eq!(square.multiplicity, 2);
-        assert_eq!(square.output, [x * x % 97]);
+        assert_eq!(*square.output, [x * x % 97]);
         assert_eq!(
           native
             .queries

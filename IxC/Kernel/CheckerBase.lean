@@ -88,6 +88,8 @@ inference, which the annotation pass reaches before this guard runs. -/
 def unresolvedConstsError (where_ : Msg md) (e : Expr md) : CheckError md :=
   if e.mentionsConst sorryAxName then
     .notImplemented msg!"use of the sorryAx axiom in {where_}"
+  else if compilerTrustKeys.any e.mentionsConst then
+    .notImplemented msg!"use of a compiler-trust constant in {where_}"
   else .invalid msg!"unknown constant in {where_}"
 
 /-- The first name a list repeats. -/

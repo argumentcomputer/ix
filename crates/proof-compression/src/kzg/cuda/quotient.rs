@@ -2,7 +2,10 @@
 //! output.
 
 use super::*;
-use crate::kzg::{config::KzgConfig, field::Scalar, pcs::CommittedMatrix};
+use crate::kzg::{
+  field::CurveScalar,
+  pcs::{CoefficientConfig, CoefficientData, CommittedMatrix},
+};
 use multi_stark::config::QuotientCommitInput;
 use multi_stark::expr::{RowOffset, Source};
 use multi_stark::graph::{ConstraintGraph, Node, NodeId};
@@ -71,29 +74,6 @@ const _: () = {
   assert!(std::mem::offset_of!(Parameters, blocks) == 180);
 };
 
-unsafe extern "C" {
-  fn ix_kzg_quotient(
-    device: i32,
-    parameters: *const Parameters,
-    columns: *const Column,
-    column_count: usize,
-    evaluation_columns: usize,
-    nodes: *const Instruction,
-    node_count: usize,
-    roots: *const u32,
-    root_count: usize,
-    lookups: *const Lookup,
-    lookup_count: usize,
-    args: *const u32,
-    arg_count: usize,
-    publics: *const [u64; 4],
-    public_count: usize,
-    coset_shifts: *const [u64; 4],
-    inverse_vanishing: *const [u64; 4],
-    outputs: *const *mut [u64; 4],
-  ) -> i32;
-}
-
 pub(super) struct Program {
   pub(super) nodes: Vec<Instruction>,
   pub(super) roots: Vec<u32>,
@@ -102,23 +82,30 @@ pub(super) struct Program {
   pub(super) slots: usize,
 }
 
-fn encode(
-  graph: &ConstraintGraph<Scalar>,
+fn encode<C: KzgCurve>(
+  graph: &ConstraintGraph<CurveScalar<C>>,
   widths: [usize; 3],
   publics: usize,
 ) -> Option<Program> {
-  encode_range(graph, widths, publics, graph.nodes.len(), &graph.zeros, None)
+  encode_range::<C>(
+    graph,
+    widths,
+    publics,
+    graph.nodes.len(),
+    &graph.zeros,
+    None,
+  )
 }
 
-pub(super) fn encode_lookup(
-  graph: &ConstraintGraph<Scalar>,
+pub(super) fn encode_lookup<C: KzgCurve>(
+  graph: &ConstraintGraph<CurveScalar<C>>,
   widths: [usize; 3],
 ) -> Option<Program> {
-  encode_range(graph, widths, 0, graph.lookup_prefix_len, &[], None)
+  encode_range::<C>(graph, widths, 0, graph.lookup_prefix_len, &[], None)
 }
 
-fn encode_range(
-  graph: &ConstraintGraph<Scalar>,
+fn encode_range<C: KzgCurve>(
+  graph: &ConstraintGraph<CurveScalar<C>>,
   widths: [usize; 3],
   publics: usize,
   n: usize,
@@ -209,7 +196,7 @@ fn encode_range(
     }
     let mut encoded = Instruction { out, ..Default::default() };
     match *node {
-      Node::Const(value) => encoded.value = value.0.0.0,
+      Node::Const(value) => encoded.value = C::fr_mont_limbs(value.0),
       Node::Var(column) => {
         let source = match column.source {
           Source::Preprocessed => 0,
@@ -265,18 +252,25 @@ fn encode_range(
   Some(Program { nodes, roots, lookups, args, slots: slots as usize })
 }
 
-pub(super) fn encode_pass(
-  graph: &ConstraintGraph<Scalar>,
+pub(super) fn encode_pass<C: KzgCurve>(
+  graph: &ConstraintGraph<CurveScalar<C>>,
   widths: [usize; 3],
   publics: usize,
   roots: &[NodeId],
   lookups: core::ops::Range<usize>,
 ) -> Option<Program> {
-  encode_range(graph, widths, publics, graph.nodes.len(), roots, Some(&lookups))
+  encode_range::<C>(
+    graph,
+    widths,
+    publics,
+    graph.nodes.len(),
+    roots,
+    Some(&lookups),
+  )
 }
 
-pub(super) fn pass_columns(
-  all: &[PolynomialView<'_>],
+pub(super) fn pass_columns<C: KzgCurve>(
+  all: &[PolynomialView<'_, C>],
   program: &Program,
   extra: &[usize],
 ) -> Option<(Vec<Column>, usize)> {
@@ -289,7 +283,7 @@ pub(super) fn pass_columns(
   for &column in extra {
     *used.get_mut(column)? = true;
   }
-  let mut columns = column_descriptors(all);
+  let mut columns = column_descriptors::<C>(all);
   let mut count = 0;
   for ((descriptor, (_, _, constant)), needed) in
     columns.iter_mut().zip(all).zip(used)
@@ -305,10 +299,10 @@ pub(super) fn pass_columns(
   Some((columns, count))
 }
 
-pub(super) fn matrix(
-  data: (&crate::kzg::pcs::KzgProverData, usize),
-) -> Option<&CommittedMatrix> {
-  data.0.matrices.get(data.1)
+pub(super) fn matrix<C: KzgCurve, D: CoefficientData<C>>(
+  data: (&D, usize),
+) -> Option<&CommittedMatrix<C>> {
+  data.0.matrix(data.1)
 }
 
 pub(super) fn allocation<T>(count: usize) -> Option<usize> {
@@ -319,7 +313,7 @@ pub(super) fn allocation<T>(count: usize) -> Option<usize> {
     .checked_mul(size_of::<T>())
 }
 
-fn memory_bound(
+fn memory_bound<C: KzgCurve>(
   program: &Program,
   n: usize,
   ratio: usize,
@@ -339,13 +333,13 @@ fn memory_bound(
   // remaining headroom covers allocator granularity and runtime state. The
   // memory query excludes live allocations and credits reusable pool pages.
   [
-    allocation::<Fr>(elements)?,
+    allocation::<C::Fr>(elements)?,
     allocation::<Instruction>(program.nodes.len())?,
     allocation::<u32>(program.roots.len())?,
     allocation::<Lookup>(program.lookups.len())?,
     allocation::<u32>(program.args.len())?,
     allocation::<Column>(columns)?,
-    allocation::<Fr>(publics)?,
+    allocation::<C::Fr>(publics)?,
     HEADROOM,
   ]
   .into_iter()
@@ -354,9 +348,9 @@ fn memory_bound(
 
 /// Every column of the input matrices as a host slice with its device
 /// residency and constant flag. Disk-backed columns are not admitted.
-pub(super) fn views<'a>(
-  matrices: impl IntoIterator<Item = &'a CommittedMatrix>,
-) -> Option<Vec<PolynomialView<'a>>> {
+pub(super) fn views<'a, C: KzgCurve>(
+  matrices: impl IntoIterator<Item = &'a CommittedMatrix<C>>,
+) -> Option<Vec<PolynomialView<'a, C>>> {
   let mut all = Vec::new();
   for matrix in matrices {
     all.extend(matrix.cuda_columns()?);
@@ -364,25 +358,25 @@ pub(super) fn views<'a>(
   Some(all)
 }
 
-pub(in crate::kzg) fn coefficients(
-  input: &QuotientCommitInput<'_, KzgConfig>,
-  alpha: Scalar,
-) -> Option<Vec<Vec<Fr>>> {
-  coefficients_with_mode(input, alpha, settings().passes)
+pub(in crate::kzg) fn coefficients<C: KzgCurve, SC: CoefficientConfig<C>>(
+  input: &QuotientCommitInput<'_, SC>,
+  alpha: CurveScalar<C>,
+) -> Option<Vec<Vec<C::Fr>>> {
+  coefficients_with_mode::<C, SC>(input, alpha, settings().passes)
 }
 
-pub(super) fn coefficients_with_mode(
-  input: &QuotientCommitInput<'_, KzgConfig>,
-  alpha: Scalar,
+pub(super) fn coefficients_with_mode<C: KzgCurve, SC: CoefficientConfig<C>>(
+  input: &QuotientCommitInput<'_, SC>,
+  alpha: CurveScalar<C>,
   mode: PassMode,
-) -> Option<Vec<Vec<Fr>>> {
+) -> Option<Vec<Vec<C::Fr>>> {
   let trace = input.trace_domain;
   let quotient = input.quotient_domain;
   if trace.log_size < 10
-    || quotient.log_size > 28
+    || quotient.log_size > C::MAX_FFT_LOG
     || trace.log_size > quotient.log_size
-    || trace.shift != Scalar::ONE
-    || quotient.shift == Scalar::ZERO
+    || trace.shift != CurveScalar::<C>::ONE
+    || quotient.shift == CurveScalar::<C>::ZERO
   {
     return None;
   }
@@ -417,7 +411,8 @@ pub(super) fn coefficients_with_mode(
   {
     return None;
   }
-  let program = encode(&circuit.graph, widths, input.lookup_publics.len())?;
+  let program =
+    encode::<C>(&circuit.graph, widths, input.lookup_publics.len())?;
   let generator = trace.generator().0;
   let generator_inverse = generator.inverse()?;
   let mut shift = quotient.shift.0;
@@ -425,11 +420,11 @@ pub(super) fn coefficients_with_mode(
   let mut inverse_vanishing = Vec::with_capacity(ratio);
   for _ in 0..ratio {
     shifts.push(shift);
-    inverse_vanishing.push((shift.pow([n as u64]) - Fr::ONE).inverse()?);
+    inverse_vanishing.push((shift.pow([n as u64]) - C::FR_ONE).inverse()?);
     shift *= quotient.generator().0;
   }
   let all_columns =
-    views([fixed, Some(main), Some(stage2)].into_iter().flatten())?;
+    views::<C>([fixed, Some(main), Some(stage2)].into_iter().flatten())?;
   if all_columns
     .iter()
     .any(|(column, _, _)| column.is_empty() || column.len() > n)
@@ -438,7 +433,7 @@ pub(super) fn coefficients_with_mode(
   }
   let evaluated =
     all_columns.iter().filter(|(_, _, constant)| !constant).count();
-  let bytes = memory_bound(
+  let bytes = memory_bound::<C>(
     &program,
     n,
     ratio,
@@ -446,15 +441,14 @@ pub(super) fn coefficients_with_mode(
     evaluated,
     input.lookup_publics.len(),
   )?;
+  let delta = (input.lookup_publics[3].0 - input.lookup_publics[2].0)
+    * (C::Fr::from(n as u64) * generator).inverse()?;
   let parameters = Parameters {
-    alpha: alpha.0.0.0,
-    generator: generator.0.0,
-    generator_inverse: generator_inverse.0.0,
-    delta: ((input.lookup_publics[3].0 - input.lookup_publics[2].0)
-      * (Fr::from(n as u64) * generator).inverse()?)
-    .0
-    .0,
-    quotient_shift_inverse: quotient.shift.0.inverse()?.0.0,
+    alpha: C::fr_mont_limbs(alpha.0),
+    generator: C::fr_mont_limbs(generator),
+    generator_inverse: C::fr_mont_limbs(generator_inverse),
+    delta: C::fr_mont_limbs(delta),
+    quotient_shift_inverse: C::fr_mont_limbs(quotient.shift.0.inverse()?),
     trace_log: u32::try_from(trace.log_size).ok()?,
     quotient_log: u32::try_from(quotient.log_size).ok()?,
     slots: u32::try_from(program.slots.max(1)).ok()?,
@@ -463,7 +457,7 @@ pub(super) fn coefficients_with_mode(
     blocks: u32::try_from(n.div_ceil(TILE).min(MAX_BLOCKS)).ok()?,
   };
   let run_passes = || {
-    passes::quotient_coefficients(
+    passes::quotient_coefficients::<C, SC>(
       input,
       &parameters,
       &all_columns,
@@ -477,8 +471,8 @@ pub(super) fn coefficients_with_mode(
       "forced KZG quotient passes are unsupported or no selected device admits them",
     ));
   }
-  let mut columns = column_descriptors(&all_columns);
-  let device = acquire_columns(&mut columns, &all_columns, bytes);
+  let mut columns = column_descriptors::<C>(&all_columns);
+  let device = acquire_columns::<C>(&mut columns, &all_columns, bytes);
   if device.is_none()
     && mode == PassMode::Fallback
     && let Some(output) = run_passes()
@@ -488,27 +482,27 @@ pub(super) fn coefficients_with_mode(
   let device = device.unwrap_or_else(|| {
     panic!(
       "KZG quotient of {n} rows needs {bytes} bytes and no selected device admits it (budgets {:?}); lower IX_KZG_CUDA_RESIDENT_GIB or the chunk size",
-      device_budgets()
+      device_budgets::<C>()
     )
   });
-  let mut outputs: Vec<_> = (0..ratio).map(|_| vec![Fr::ZERO; n]).collect();
+  let mut outputs: Vec<_> = (0..ratio).map(|_| vec![C::FR_ZERO; n]).collect();
   let output_pointers: Vec<*mut [u64; 4]> =
     outputs.iter_mut().map(|values| values.as_mut_ptr().cast()).collect();
   let started = std::time::Instant::now();
   // Every borrowed coefficient and output buffer outlives the synchronous call.
   check(
     unsafe {
-      ix_kzg_quotient(
+      C::ffi_quotient(
         device.id(),
-        &parameters,
-        columns.as_ptr(),
+        std::ptr::from_ref(&parameters).cast(),
+        columns.as_ptr().cast(),
         columns.len(),
         evaluated,
-        program.nodes.as_ptr(),
+        program.nodes.as_ptr().cast(),
         program.nodes.len(),
         program.roots.as_ptr(),
         program.roots.len(),
-        program.lookups.as_ptr(),
+        program.lookups.as_ptr().cast(),
         program.lookups.len(),
         program.args.as_ptr(),
         program.args.len(),
@@ -522,6 +516,7 @@ pub(super) fn coefficients_with_mode(
     "resident quotient",
   );
   tracing::info!(
+    curve = C::NAME,
     device = device.id(),
     rows = n,
     ratio,
@@ -534,16 +529,20 @@ pub(super) fn coefficients_with_mode(
 }
 
 /// Current admission budget of every selected device, for diagnostics.
-pub(super) fn device_budgets() -> Vec<usize> {
-  let devices = Devices::get();
-  (0..devices.ids.len()).map(|index| devices.potential_budget(index)).collect()
+pub(super) fn device_budgets<C: KzgCurve>() -> Vec<usize> {
+  let devices = Devices::get::<C>();
+  (0..devices.ids.len())
+    .map(|index| devices.potential_budget::<C>(index))
+    .collect()
 }
 
-pub(super) type PolynomialView<'a> =
-  (&'a [Fr], Option<&'a ResidentPolynomial>, bool);
+pub(super) type PolynomialView<'a, C> =
+  (&'a [<C as KzgCurve>::Fr], Option<&'a ResidentPolynomial<C>>, bool);
 
-fn preferred_devices(all_columns: &[PolynomialView<'_>]) -> Vec<usize> {
-  let devices = Devices::get();
+fn preferred_devices<C: KzgCurve>(
+  all_columns: &[PolynomialView<'_, C>],
+) -> Vec<usize> {
+  let devices = Devices::get::<C>();
   let mut preferred: Vec<_> = (0..devices.ids.len()).collect();
   preferred.sort_by_cached_key(|&index| {
     std::cmp::Reverse(
@@ -558,8 +557,8 @@ fn preferred_devices(all_columns: &[PolynomialView<'_>]) -> Vec<usize> {
   preferred
 }
 
-pub(super) fn column_descriptors(
-  all_columns: &[PolynomialView<'_>],
+pub(super) fn column_descriptors<C: KzgCurve>(
+  all_columns: &[PolynomialView<'_, C>],
 ) -> Vec<Column> {
   let mut next_slot = 0;
   all_columns
@@ -577,7 +576,7 @@ pub(super) fn column_descriptors(
         resident: std::ptr::null(),
         count: column.len(),
         padding: 0,
-        constant: column[0].0.0,
+        constant: C::fr_mont_limbs(column[0]),
         slot,
         reserved: 0,
       }
@@ -587,24 +586,24 @@ pub(super) fn column_descriptors(
 
 /// Check admission under each device's lease, preferring resident columns.
 /// Busy devices remain candidates until their current operation completes.
-pub(super) fn acquire_device(
-  all_columns: &[PolynomialView<'_>],
+pub(super) fn acquire_device<C: KzgCurve>(
+  all_columns: &[PolynomialView<'_, C>],
   bytes: usize,
 ) -> Option<Device<'static>> {
   Device::assert_unleased();
-  let devices = Devices::get();
-  devices.acquire_admitted(&preferred_devices(all_columns), |device| {
-    bytes <= devices.potential_budget(device.index)
-      && device.prepare_budget(bytes)
+  let devices = Devices::get::<C>();
+  devices.acquire_admitted(&preferred_devices::<C>(all_columns), |device| {
+    bytes <= devices.potential_budget::<C>(device.index)
+      && device.prepare_budget::<C>(bytes)
   })
 }
 
 /// Point descriptors at the resident copies that live on `device`. The
 /// kernels reject a resident pointer from another device and upload every
 /// unbound column from its host slice instead.
-pub(super) fn bind_resident(
+pub(super) fn bind_resident<C: KzgCurve>(
   columns: &mut [Column],
-  all_columns: &[PolynomialView<'_>],
+  all_columns: &[PolynomialView<'_, C>],
   device: &Device<'_>,
 ) {
   for (column, (_, resident, _)) in columns.iter_mut().zip(all_columns) {
@@ -614,12 +613,12 @@ pub(super) fn bind_resident(
   }
 }
 
-pub(super) fn acquire_columns(
+pub(super) fn acquire_columns<C: KzgCurve>(
   columns: &mut [Column],
-  all_columns: &[PolynomialView<'_>],
+  all_columns: &[PolynomialView<'_, C>],
   bytes: usize,
 ) -> Option<Device<'static>> {
-  let device = acquire_device(all_columns, bytes)?;
-  bind_resident(columns, all_columns, &device);
+  let device = acquire_device::<C>(all_columns, bytes)?;
+  bind_resident::<C>(columns, all_columns, &device);
   Some(device)
 }

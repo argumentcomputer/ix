@@ -2,19 +2,18 @@
 
 use std::io::{self, Read, Write};
 
-use super::curve::Fr;
+use super::curve::{Bn254, KzgCurve};
+use super::field::{CurveScalar, Scalar};
 use ark_ff::{BigInt, PrimeField};
 use p3_maybe_rayon::prelude::*;
-
-use super::Scalar;
 
 const BLOCK_FIELDS: usize = 1 << 20;
 const FIELD_BYTES: usize = 32;
 
-pub(crate) fn write_fields<T: Sync>(
+pub(crate) fn write_fields<C: KzgCurve, T: Sync>(
   writer: &mut impl Write,
   values: &[T],
-  field: impl Fn(&T) -> Fr + Sync,
+  field: impl Fn(&T) -> C::Fr + Sync,
 ) -> io::Result<()> {
   let mut bytes = vec![0; values.len().min(BLOCK_FIELDS) * FIELD_BYTES];
   for values in values.chunks(BLOCK_FIELDS) {
@@ -41,10 +40,10 @@ pub(crate) fn write_fields<T: Sync>(
   Ok(())
 }
 
-pub(crate) fn read_fields<T: Copy + Send>(
+pub(crate) fn read_fields<C: KzgCurve, T: Copy + Send>(
   reader: &mut impl Read,
   count: usize,
-  convert: impl Fn(Fr) -> T + Sync + Send,
+  convert: impl Fn(C::Fr) -> T + Sync + Send,
 ) -> io::Result<Vec<T>> {
   let mut values: Vec<T> = Vec::new();
   values.try_reserve_exact(count).map_err(io::Error::other)?;
@@ -63,7 +62,7 @@ pub(crate) fn read_fields<T: Copy + Send>(
           let limbs: [u64; 4] = std::array::from_fn(|i| {
             u64::from_le_bytes(bytes.as_chunks::<8>().0[i])
           });
-          let value = Fr::from_bigint(BigInt(limbs)).ok_or_else(|| {
+          let value = C::Fr::from_bigint(BigInt(limbs)).ok_or_else(|| {
             io::Error::new(
               io::ErrorKind::InvalidData,
               "noncanonical scalar field element",
@@ -81,51 +80,72 @@ pub(crate) fn read_fields<T: Copy + Send>(
   Ok(values)
 }
 
-/// Write canonical 32-byte little-endian scalars without a length prefix.
+/// Write canonical 32-byte little-endian scalars for `C` without a length prefix.
+pub fn write_scalars_for<C: KzgCurve>(
+  writer: &mut impl Write,
+  values: &[CurveScalar<C>],
+) -> io::Result<()> {
+  write_fields::<C, _>(writer, values, |value| value.0)
+}
+
+/// Read exactly `count` canonical scalars for `C`, rejecting values at least the modulus.
+pub fn read_scalars_for<C: KzgCurve>(
+  reader: &mut impl Read,
+  count: usize,
+) -> io::Result<Vec<CurveScalar<C>>> {
+  read_fields::<C, _>(reader, count, CurveScalar)
+}
+
+/// Write canonical 32-byte little-endian BN254 scalars without a length prefix.
 pub fn write_scalars(
   writer: &mut impl Write,
   values: &[Scalar],
 ) -> io::Result<()> {
-  write_fields(writer, values, |value| value.0)
+  write_scalars_for::<Bn254>(writer, values)
 }
 
-/// Read exactly `count` canonical scalars, rejecting values at least the modulus.
+/// Read exactly `count` canonical BN254 scalars, rejecting values at least the modulus.
 pub fn read_scalars(
   reader: &mut impl Read,
   count: usize,
 ) -> io::Result<Vec<Scalar>> {
-  read_fields(reader, count, Scalar)
+  read_scalars_for::<Bn254>(reader, count)
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::kzg::curve::Bls12381;
   use ark_ff::{BigInteger, Field};
   use ark_serialize::CanonicalSerialize;
 
-  #[test]
-  fn field_stream_matches_arkworks_across_blocks() {
+  fn check_stream<C: KzgCurve>() {
     let values: Vec<_> =
-      (0..BLOCK_FIELDS + 17).map(|i| Fr::from(i as u64).square()).collect();
+      (0..BLOCK_FIELDS + 17).map(|i| C::Fr::from(i as u64).square()).collect();
     let mut expected = Vec::new();
     for value in &values {
       value.serialize_compressed(&mut expected).unwrap();
     }
     let mut actual = Vec::new();
-    write_fields(&mut actual, &values, |value| *value).unwrap();
+    write_fields::<C, _>(&mut actual, &values, |value| *value).unwrap();
     assert_eq!(actual, expected);
     let decoded =
-      read_fields(&mut actual.as_slice(), values.len(), |value| value).unwrap();
+      read_fields::<C, _>(&mut actual.as_slice(), values.len(), |value| value)
+        .unwrap();
     assert_eq!(decoded, values);
+
+    assert!(
+      read_scalars_for::<C>(&mut C::Fr::MODULUS.to_bytes_le().as_slice(), 1)
+        .is_err()
+    );
+    assert!(read_scalars_for::<C>(&mut [255; 32].as_slice(), 1).is_err());
+    assert!(read_scalars_for::<C>(&mut [0; 31].as_slice(), 1).is_err());
+    assert!(read_scalars_for::<C>(&mut [].as_slice(), 0).unwrap().is_empty());
   }
 
   #[test]
-  fn scalar_stream_rejects_invalid_and_truncated_fields() {
-    assert!(
-      read_scalars(&mut Fr::MODULUS.to_bytes_le().as_slice(), 1).is_err()
-    );
-    assert!(read_scalars(&mut [255; 32].as_slice(), 1).is_err());
-    assert!(read_scalars(&mut [0; 31].as_slice(), 1).is_err());
-    assert!(read_scalars(&mut [].as_slice(), 0).unwrap().is_empty());
+  fn field_stream_matches_arkworks_across_blocks_for_both_curves() {
+    check_stream::<Bn254>();
+    check_stream::<Bls12381>();
   }
 }
