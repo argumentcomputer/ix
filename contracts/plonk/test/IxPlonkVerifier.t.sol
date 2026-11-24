@@ -26,9 +26,9 @@ contract GasGriefPlonkVerifier is IPlonkVerifier {
 
 contract IxPlonkVerifierTest {
     Vm private constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
-    /// SHA-256 of crates/proof-compression/verifying-keys/0.4/plonk-verifying-key.bin,
+    /// SHA-256 of crates/proof-compression/verifying-keys/0.5/plonk-verifying-key.bin,
     /// the key src/PlonkVerifier.sol is generated from.
-    string private constant RELEASE_KEY_SHA256 = "032ff41ec34de4488553485a361d80d23e0dde1e8acbb07457e4625c85aa324b";
+    string private constant RELEASE_KEY_SHA256 = "ae9638f047b26990e810bf46dc664d2cc1fd502e8f09e01fc9fb3b192bca2c25";
     IxPlonkVerifier private adapter;
     PlonkVerifier private plonk;
     bytes private proof;

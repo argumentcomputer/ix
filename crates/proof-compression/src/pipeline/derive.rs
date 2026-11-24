@@ -123,7 +123,7 @@ mod tests {
   use super::*;
 
   const RECURSIVE_VK: &[u8] =
-    include_bytes!("../../verifying-keys/0.4/recursive-vk.bin");
+    include_bytes!("../../verifying-keys/0.5/recursive-vk.bin");
 
   fn ignition() -> SetupConfig {
     let setup = SetupConfig::from_env(false).unwrap();
