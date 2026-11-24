@@ -56,6 +56,11 @@ use std::time::Instant;
 /// compact envelopes from `v1` Aiur `.ixa` envelopes).
 pub const PLONKISH_ENVELOPE_VERSION: u16 = 2;
 
+/// Maximum number of recursive Plonkish hops permitted in an `IXSTARK6\0` v2
+/// envelope (`1` direct hop for small roots, up to `4` automatic hops for
+/// full-scale 59-circuit Protocol `v6` `FixedRoot` aggregate roots).
+pub const MAX_PLONKISH_HOPS: u8 = 4;
+
 /// Domain separation context for Plonkish shrinker verifying-key pinning.
 const PLONKISH_VK_CONTEXT: &str = "ix/stark-shrinker/plonkish/v2/vk";
 
@@ -70,7 +75,7 @@ pub const PLONKISH_HEADER_LEN: usize = 9 // magic
   + 1 // mode_tag (1=v6, 2=v6-zk)
   + 1 // fri_batching (1=Tensor)
   + 1 // payload_codec (0=bincode, 1=compact_v1)
-  + 1 // hops (1 or 2)
+  + 1 // hops (1..=MAX_PLONKISH_HOPS)
   + 2 * 9 // lb, cap, lfp, mla, q, cpow, qpow, zk_randomizer_width, min_log_degree
   + 32 * 3 // shrinker_vk_digest, inner_vk_digest, claim_digest
   + 8; // proof_len
@@ -162,6 +167,35 @@ impl OuterFriParams {
     num_queries: 66,
     commit_proof_of_work_bits: 0,
     query_proof_of_work_bits: 20,
+    cap_height: 0,
+    max_log_arity: 1,
+    log_final_poly_len: 0,
+  };
+
+  /// Fast 128-bit in-circuit verifiable intermediate hop profile
+  /// (`lb=2, q=128, qpow=20, cap=0, mla=1, lfp=0`: 142.24b Johnson,
+  /// 106.78b UD, 276b conjectured). Used for wide/tall intermediate hops
+  /// (`>= 2^25` rows or unmerged sharded Stage-0 FRI) where `lb=2` fits
+  /// cleanly in VRAM and host RAM.
+  pub const HOP_INTERMEDIATE_FAST: Self = Self {
+    log_blowup: 2,
+    num_queries: 128,
+    commit_proof_of_work_bits: 0,
+    query_proof_of_work_bits: 20,
+    cap_height: 0,
+    max_log_arity: 1,
+    log_final_poly_len: 0,
+  };
+
+  /// Compact 128-bit in-circuit verifiable intermediate hop profile
+  /// (`lb=4, q=58, qpow=28, cap=0, mla=1, lfp=0`: 141.39b Johnson,
+  /// 80.90b UD, 260b conjectured). Shrinks a 1-circuit `2^24` intermediate
+  /// proof down to `~696 KiB` so the final 1-circuit C2 hop packs into `2^23`.
+  pub const HOP_INTERMEDIATE_COMPACT: Self = Self {
+    log_blowup: 4,
+    num_queries: 58,
+    commit_proof_of_work_bits: 0,
+    query_proof_of_work_bits: 28,
     cap_height: 0,
     max_log_arity: 1,
     log_final_poly_len: 0,
@@ -282,9 +316,9 @@ pub struct PlonkishOptions {
   /// Align auxiliary/tail trace heights to `max_log - k * max_log_arity` to
   /// eliminate forced low-arity FRI rounds.
   pub align_heights_to_fri_arity: bool,
-  /// When `Comp` exceeds `B3_All`'s height by <= 2x, cap `Comp` shards at
+  /// When `Comp` exceeds `B3_All`'s height by <= 3x, cap `Comp` shards at
   /// `B3_All`'s height to eliminate the tallest forced binary FRI round and
-  /// reduce `max_log` by 1.
+  /// reduce `max_log` by 1 (adding at most 3 width-3 main columns).
   pub cap_comp_to_b3_height: bool,
   /// Horizontally pack all merged circuits (`Comp`, `B3_All`, `UnifiedTable`)
   /// into ONE single uniform-height `multi-stark` circuit (`num_circuits == 1`),
@@ -453,7 +487,7 @@ fn lower_circuit_for_mode(
     let b3_est =
       (h0.saturating_mul(4)).next_power_of_two().min(options.max_trace_height);
     if layout_est.main_height > b3_est
-      && layout_est.used_rows <= b3_est.saturating_mul(2)
+      && layout_est.used_rows <= b3_est.saturating_mul(3)
       && b3_est >= (1 << 18)
     {
       effective_max_height = b3_est;
@@ -489,6 +523,17 @@ fn lower_circuit_for_mode(
     } else {
       (raw_definitions, None)
     };
+  finalize_definitions(&mut definitions, options, mode, params)?;
+
+  Ok((compiled, definitions, schema, merged_layout))
+}
+
+fn finalize_definitions(
+  definitions: &mut [CircuitInputs<Val>],
+  options: PlonkishOptions,
+  mode: ShrinkMode,
+  params: OuterFriParams,
+) -> Result<(), String> {
   let blowup = 1usize << params.log_blowup;
   let is_zk = mode.is_zk();
   let min_zk_height = if is_zk {
@@ -522,8 +567,393 @@ fn lower_circuit_for_mode(
       }
     }
   }
+  Ok(())
+}
 
-  Ok((compiled, definitions, schema, merged_layout))
+/// Guaranteed lower bound on `B3_All` active rows from a compact-BLAKE3
+/// `MultiStarkLayout`: each custom trace `t0..t5` has power-of-two padded height
+/// `h`, so its active row count is strictly `> h / 2` whenever `h > 2`.
+fn b3_lower_bound(est: &multi_stark::plonkish::MultiStarkLayout) -> Option<usize> {
+  if est.custom_traces.len() != 9 {
+    return None;
+  }
+  let sum: usize = est.custom_traces[..6]
+    .iter()
+    .map(|&(h, _, _)| if h <= 2 { 1 } else { h / 2 + 1 })
+    .sum();
+  Some(sum)
+}
+
+enum HopLowering {
+  Final {
+    compiled: MultiStarkCircuit<Val>,
+    definitions: Vec<CircuitInputs<Val>>,
+    schema: ClaimSchema,
+    merged: Option<MergedLayout>,
+  },
+  Intermediate {
+    compiled: MultiStarkCircuit<Val>,
+    definitions: Vec<CircuitInputs<Val>>,
+    schema: ClaimSchema,
+    merged: Option<MergedLayout>,
+    hop_params: OuterFriParams,
+  },
+}
+
+fn intermediate_hop_params_for_height(height: usize) -> OuterFriParams {
+  if height >= (1 << 25) {
+    OuterFriParams::HOP_INTERMEDIATE_FAST
+  } else {
+    OuterFriParams::HOP_INTERMEDIATE_COMPACT
+  }
+}
+
+/// Deterministically decide whether `circuit` lowers directly into the final
+/// 1-circuit C2 STARK under `(options, mode, params)` or requires an
+/// in-circuit-verifiable transparent intermediate hop (`cap=0, mla=1, lfp=0`).
+///
+/// Used identically by both [`shrink_fixed_root`] and
+/// [`PlonkishCircuitVerifier::derive_fixed_root`] so prover and independent
+/// verifier always derive the exact same hop chain without reading proof bytes.
+fn plan_hop_lowering(
+  circuit: Circuit<Val>,
+  options: PlonkishOptions,
+  mode: ShrinkMode,
+  params: OuterFriParams,
+  hop: u8,
+) -> Result<HopLowering, String> {
+  if !options.merge_blake3_and_tables
+    || !options.merge_tables
+    || hop >= MAX_PLONKISH_HOPS
+  {
+    let (compiled, definitions, schema, merged) =
+      lower_circuit_for_mode(circuit, options, mode, params)?;
+    return Ok(HopLowering::Final { compiled, definitions, schema, merged });
+  }
+
+  let public_count = circuit.public_values().len();
+  let max_h = options.max_trace_height;
+  let double_h = max_h.saturating_mul(2);
+  let layout_est = circuit.multi_stark_layout_with_max_height(max_h);
+
+  // Fast path when the layout already guarantees B3_All exceeds `max_h`
+  // (e.g. real 59-circuit FixedRoot at 2^26 or Stage-0 FRI verifier at 2^25).
+  let definitely_exceeds_max = match &layout_est {
+    Err(_) => true,
+    Ok(est) => b3_lower_bound(est).is_some_and(|lb| lb > max_h),
+  };
+  if definitely_exceeds_max {
+    let double_est = circuit.multi_stark_layout_with_max_height(double_h);
+    let try_merged_double = double_est
+      .as_ref()
+      .ok()
+      .and_then(b3_lower_bound)
+      .is_some_and(|lb| lb <= double_h);
+    if try_merged_double {
+      let mut compiled = circuit
+        .lower_to_multi_stark_sharded(Val::from_u8(PLONKISH_NAMESPACE), double_h)
+        .map_err(|e| format!("hop {hop} lowering failed: {e}"))?;
+      compiled = compiled
+        .merge_table_traces(double_h)
+        .map_err(|e| format!("hop {hop} table merge failed: {e}"))?;
+      let schema = ClaimSchema::from_lowered(&compiled, public_count)?;
+      let raw_defs = compiled.circuit_inputs();
+      let (mut definitions, merged) = MergedLayout::try_merge(
+        &compiled,
+        raw_defs,
+        PLONKISH_NAMESPACE,
+        double_h,
+        1,
+        true,
+      )?;
+      let (merged_opt, hop_params) = if merged.is_merged() {
+        (Some(merged), intermediate_hop_params_for_height(double_h))
+      } else {
+        (None, OuterFriParams::HOP_INTERMEDIATE_FAST)
+      };
+      finalize_definitions(
+        &mut definitions,
+        options,
+        ShrinkMode::Stark128,
+        hop_params,
+      )?;
+      return Ok(HopLowering::Intermediate {
+        compiled,
+        definitions,
+        schema,
+        merged: merged_opt,
+        hop_params,
+      });
+    }
+
+    // Circuit exceeds even `double_h` (e.g. 59-circuit FixedRoot -> Stage-0 FRI):
+    // lower unmerged sharded at `max_h` (or `double_h` if a custom trace needed it)
+    // with fast lb=2, q=128 transparent FRI.
+    let unmerged_h = if layout_est.is_ok() { max_h } else { double_h };
+    let mut compiled = circuit
+      .lower_to_multi_stark_sharded(
+        Val::from_u8(PLONKISH_NAMESPACE),
+        unmerged_h,
+      )
+      .map_err(|e| format!("hop {hop} unmerged lowering failed: {e}"))?;
+    compiled = compiled
+      .merge_table_traces(unmerged_h)
+      .map_err(|e| format!("hop {hop} unmerged table merge failed: {e}"))?;
+    let schema = ClaimSchema::from_lowered(&compiled, public_count)?;
+    let mut definitions = compiled.circuit_inputs();
+    let hop_params = OuterFriParams::HOP_INTERMEDIATE_FAST;
+    finalize_definitions(
+      &mut definitions,
+      options,
+      ShrinkMode::Stark128,
+      hop_params,
+    )?;
+    return Ok(HopLowering::Intermediate {
+      compiled,
+      definitions,
+      schema,
+      merged: None,
+      hop_params,
+    });
+  }
+
+  // Circuit may fit inside `max_h`: lower once with 3x comp-cap heuristic.
+  let mut effective_max_height = max_h;
+  if options.cap_comp_to_b3_height
+    && let Ok(est) = &layout_est
+    && est.custom_traces.len() == 9
+  {
+    let h0 = est.custom_traces[0].0;
+    let b3_est = (h0.saturating_mul(4)).next_power_of_two().min(max_h);
+    if est.main_height > b3_est
+      && est.used_rows <= b3_est.saturating_mul(3)
+      && b3_est >= (1 << 18)
+    {
+      effective_max_height = b3_est;
+    }
+  }
+  let mut compiled = circuit
+    .lower_to_multi_stark_sharded(
+      Val::from_u8(PLONKISH_NAMESPACE),
+      effective_max_height,
+    )
+    .map_err(|e| format!("hop {hop} lowering failed: {e}"))?;
+  compiled = compiled
+    .merge_table_traces(effective_max_height)
+    .map_err(|e| format!("hop {hop} table merge failed: {e}"))?;
+  let schema = ClaimSchema::from_lowered(&compiled, public_count)?;
+  let raw_defs = compiled.circuit_inputs();
+  let align_arity =
+    if options.align_heights_to_fri_arity { params.max_log_arity } else { 1 };
+  let (mut definitions, merged) = MergedLayout::try_merge(
+    &compiled,
+    raw_defs,
+    PLONKISH_NAMESPACE,
+    max_h,
+    align_arity,
+    options.pack_single_circuit,
+  )?;
+
+  if !merged.is_merged() {
+    // Exact B3_All active height exceeded `max_h`; retry merging at `double_h`
+    // without re-lowering (try_merge returned `definitions` unmodified).
+    let (mut defs2, merged2) = MergedLayout::try_merge(
+      &compiled,
+      definitions,
+      PLONKISH_NAMESPACE,
+      double_h,
+      1,
+      true,
+    )?;
+    let (merged_opt, hop_params) = if merged2.is_merged() {
+      (Some(merged2), intermediate_hop_params_for_height(double_h))
+    } else {
+      (None, OuterFriParams::HOP_INTERMEDIATE_FAST)
+    };
+    finalize_definitions(
+      &mut defs2,
+      options,
+      ShrinkMode::Stark128,
+      hop_params,
+    )?;
+    return Ok(HopLowering::Intermediate {
+      compiled,
+      definitions: defs2,
+      schema,
+      merged: merged_opt,
+      hop_params,
+    });
+  }
+
+  // In multi-hop mode (`hop > 1`), if a 2^24 intermediate verifier lands right
+  // at `max_h >= 2^24` and another hop remains, insert one compact intermediate
+  // hop (`HOP_INTERMEDIATE_COMPACT`) so the final 1-circuit C2 hop drops to
+  // 2^23 (halving final proving RAM/time so even `--stark-128-zk` fits 249 GiB).
+  let max_packed_h = definitions
+    .iter()
+    .map(|d| d.preprocessed.as_ref().map_or(0, Matrix::height))
+    .max()
+    .unwrap_or(0);
+  if hop > 1 && max_packed_h >= max_h && max_h >= (1 << 24) {
+    let hop_params = OuterFriParams::HOP_INTERMEDIATE_COMPACT;
+    finalize_definitions(
+      &mut definitions,
+      options,
+      ShrinkMode::Stark128,
+      hop_params,
+    )?;
+    return Ok(HopLowering::Intermediate {
+      compiled,
+      definitions,
+      schema,
+      merged: Some(merged),
+      hop_params,
+    });
+  }
+
+  finalize_definitions(&mut definitions, options, mode, params)?;
+  Ok(HopLowering::Final {
+    compiled,
+    definitions,
+    schema,
+    merged: Some(merged),
+  })
+}
+
+fn next_hop_verifier_plan(
+  vk: &VerifierKey,
+  schema: &ClaimSchema,
+) -> Result<(VerifierPlan, Statement<StatementSlot>, ProofProfile), String> {
+  let num_circuits = vk.system().circuits.len();
+  let log_degrees: Vec<u8> = vk
+    .system()
+    .circuits
+    .iter()
+    .map(|c| {
+      u8::try_from(c.preprocessed_height.ilog2())
+        .map_err(|err| format!("intermediate hop log_degree overflow: {err}"))
+    })
+    .collect::<Result<_, _>>()?;
+  let profile = ProofProfile {
+    envelope: FriEnvelope::Ordinary,
+    active: vec![true; num_circuits],
+    log_degrees,
+    claim_lengths: schema.template.iter().map(Vec::len).collect(),
+    message_lengths: vec![],
+    max_field_retries: ix_proof_compression::fri::DEFAULT_FIELD_RETRIES,
+  };
+  let mut stmt_schema = Statement {
+    claims: schema
+      .template
+      .iter()
+      .map(|row| row.iter().copied().map(StatementSlot::Constant).collect())
+      .collect(),
+    messages: vec![],
+  };
+  for &(r, c) in &schema.locations {
+    stmt_schema.claims[r][c] = StatementSlot::Public;
+  }
+  let plan =
+    VerifierPlan::validate(vk, profile.clone(), VerifierLimits::default())
+      .map_err(|e| format!("intermediate hop verifier plan invalid: {e}"))?;
+  Ok((plan, stmt_schema, profile))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prove_intermediate_hop(
+  compiled: MultiStarkCircuit<Val>,
+  definitions: Vec<CircuitInputs<Val>>,
+  schema: ClaimSchema,
+  merged: Option<MergedLayout>,
+  assignment: Assignment<Val>,
+  expected_publics: &[Val],
+  hop_params: OuterFriParams,
+  options: PlonkishOptions,
+  hop: u8,
+  device: Option<i32>,
+) -> Result<(Circuit<Val>, Assignment<Val>), String> {
+  hop_params.check_for_mode(ShrinkMode::Stark128, device)?;
+  let claims = schema.materialize(expected_publics)?;
+  let config = GoldilocksBlake3V6Config::with_device(
+    hop_params.commitment(),
+    hop_params.fri(),
+    FriBatching::Tensor,
+    device,
+  );
+  let (sys, key) = System::new_without_preprocessed(config, definitions);
+  let stage1 = if let Some(layout) = merged.as_ref()
+    && layout.is_merged()
+  {
+    let traces = layout.build_traces(&compiled, &assignment)?;
+    drop(compiled);
+    drop(assignment);
+    sys.prove_stage_1_streaming(traces)
+  } else {
+    let shards = compiled
+      .trace_shards(&assignment)
+      .map_err(|e| format!("hop {hop} trace shards failed: {e}"))?;
+    let count = sys.circuits.len();
+    let mut trace_err: Option<String> = None;
+    let s1 = sys.prove_stage_1_streaming((0..count).map(|ci| {
+      match shards.trace(ci) {
+        Ok(t) => t,
+        Err(e) => {
+          if trace_err.is_none() {
+            trace_err = Some(format!("hop {hop} trace {ci}: {e}"));
+          }
+          RowMajorMatrix::new(Vec::new(), sys.circuits[ci].main_width)
+        },
+      }
+    }));
+    if let Some(err) = trace_err {
+      return Err(err);
+    }
+    drop(compiled);
+    drop(assignment);
+    s1
+  };
+  let refs: Vec<&[Val]> = claims.iter().map(Vec::as_slice).collect();
+  let proof = sys.prove_committed(&key, &refs, stage1);
+  drop(key);
+  #[cfg(feature = "cuda")]
+  multi_stark::cuda::release_device_memory();
+  sys
+    .verify_multiple_claims(&refs, &proof)
+    .map_err(|e| format!("hop {hop} self-verify failed: {e:?}"))?;
+
+  let hop_vk = VerifierKey::new(sys);
+  let (plan, stmt_schema, profile) = next_hop_verifier_plan(&hop_vk, &schema)?;
+  if proof.active != profile.active || proof.log_degrees != profile.log_degrees {
+    return Err(format!(
+      "hop {hop} proof profile mismatch (active/log_degrees)"
+    ));
+  }
+  let (next_circuit, inputs) = plan
+    .build(
+      stmt_schema,
+      ImplementationOptions { compact_blake3: options.compact_blake3 },
+    )
+    .map_err(|e| format!("hop {} circuit build failed: {e}", hop + 1))?;
+  let expanded = plan
+    .expand_witness(ProofEnvelope::Ordinary { proof: &proof, claims: &claims })
+    .map_err(|e| format!("hop {} witness expansion failed: {e}", hop + 1))?;
+  let mut witness = next_circuit.witness();
+  inputs
+    .assign_statement(&mut witness, &Statement { claims, messages: vec![] })
+    .map_err(|e| format!("hop {} statement assign failed: {e}", hop + 1))?;
+  expanded
+    .assign_proof(&mut witness, &inputs)
+    .map_err(|e| format!("hop {} proof assign failed: {e}", hop + 1))?;
+  let next_assignment = witness
+    .generate()
+    .map_err(|e| format!("hop {} witness generate failed: {e}", hop + 1))?;
+  if next_assignment.public_values() != expected_publics {
+    return Err(format!(
+      "hop {} public statement mismatch with expected claim",
+      hop + 1
+    ));
+  }
+  Ok((next_circuit, next_assignment))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -654,7 +1084,7 @@ impl PlonkishVerifyReport {
        \x20 Pinned VK : {svk}\n\
        \x20 Inner VK  : {ivk}\n\
        \x20 Claim     : {claim}\n\
-       \x20 Proof     : {env} bytes ({raw} B payload, codec={codec}) | verified in {ms:.2} ms",
+       \x20 Proof     : {env} bytes ({raw} B payload, codec={codec}, hops={hops}) | verified in {ms:.2} ms",
       flag = self.header.mode.cli_flag(),
       proto = self.header.mode.protocol_name(),
       c = self.outer_circuits,
@@ -672,6 +1102,7 @@ impl PlonkishVerifyReport {
       raw = self.proof_bytes,
       codec =
         if self.header.compact_encoding { "compact-v1" } else { "bincode" },
+      hops = self.header.hops,
       ms = self.verify_ms,
     )
   }
@@ -798,7 +1229,7 @@ impl PlonkishEnvelope {
     pos += 1;
     let hops = bytes[pos];
     pos += 1;
-    if !(1..=2).contains(&hops) {
+    if !(1..=MAX_PLONKISH_HOPS).contains(&hops) {
       return Err(format!("unsupported Plonkish hop count {hops}"));
     }
     let params = OuterFriParams {
@@ -1183,11 +1614,13 @@ impl OuterSystem {
   }
 }
 
-/// Prove a single Plonkish `Circuit<Val>` + `Assignment<Val>` directly into an
-/// independently self-verified `IXSTARK6\0` v2 envelope (`--stark-128` or
-/// `--stark-128-zk`), also returning the independent verifier handle.
-pub fn prove_plonkish_circuit(
-  circuit: Circuit<Val>,
+#[allow(clippy::too_many_arguments)]
+fn prove_lowered_plonkish(
+  start: Instant,
+  compiled: MultiStarkCircuit<Val>,
+  definitions: Vec<CircuitInputs<Val>>,
+  schema: ClaimSchema,
+  merged: Option<MergedLayout>,
   assignment: Assignment<Val>,
   inner_vk_digest: [u8; 32],
   claim_digest: [u8; 32],
@@ -1197,9 +1630,6 @@ pub fn prove_plonkish_circuit(
   hops: u8,
   device: Option<i32>,
 ) -> Result<(PlonkishShrinkOutput, PlonkishCircuitVerifier), String> {
-  let start = Instant::now();
-  let (compiled, definitions, schema, merged) =
-    lower_circuit_for_mode(circuit, options, mode, params)?;
   let trace_dimensions: Vec<(usize, usize)> = definitions
     .iter()
     .map(|d| (d.preprocessed.as_ref().map_or(0, Matrix::height), d.main_width))
@@ -1281,6 +1711,41 @@ pub fn prove_plonkish_circuit(
   ))
 }
 
+/// Prove a single Plonkish `Circuit<Val>` + `Assignment<Val>` directly into an
+/// independently self-verified `IXSTARK6\0` v2 envelope (`--stark-128` or
+/// `--stark-128-zk`), also returning the independent verifier handle.
+#[allow(clippy::too_many_arguments)]
+pub fn prove_plonkish_circuit(
+  circuit: Circuit<Val>,
+  assignment: Assignment<Val>,
+  inner_vk_digest: [u8; 32],
+  claim_digest: [u8; 32],
+  mode: ShrinkMode,
+  params: OuterFriParams,
+  options: PlonkishOptions,
+  hops: u8,
+  device: Option<i32>,
+) -> Result<(PlonkishShrinkOutput, PlonkishCircuitVerifier), String> {
+  let start = Instant::now();
+  let (compiled, definitions, schema, merged) =
+    lower_circuit_for_mode(circuit, options, mode, params)?;
+  prove_lowered_plonkish(
+    start,
+    compiled,
+    definitions,
+    schema,
+    merged,
+    assignment,
+    inner_vk_digest,
+    claim_digest,
+    mode,
+    params,
+    options,
+    hops,
+    device,
+  )
+}
+
 /// Independent verifier for a Plonkish-shrunk `IXSTARK6\0` v2 envelope.
 pub struct PlonkishCircuitVerifier {
   mode: ShrinkMode,
@@ -1293,17 +1758,14 @@ pub struct PlonkishCircuitVerifier {
 }
 
 impl PlonkishCircuitVerifier {
-  /// Derive the verifier independently from the circuit description alone
-  /// (without any proof or witness).
-  pub fn derive(
-    circuit: Circuit<Val>,
+  fn from_lowered(
+    definitions: Vec<CircuitInputs<Val>>,
+    schema: ClaimSchema,
     mode: ShrinkMode,
     params: OuterFriParams,
     options: PlonkishOptions,
     hops: u8,
   ) -> Result<Self, String> {
-    let (_compiled, definitions, schema, _merged) =
-      lower_circuit_for_mode(circuit, options, mode, params)?;
     let (outer, sys_vk_digest, prep_roots, rw, mld) =
       OuterSystem::build(definitions, mode, params, None, false)?;
     let vk_digest = compute_plonkish_vk_digest(
@@ -1328,8 +1790,27 @@ impl PlonkishCircuitVerifier {
     })
   }
 
+  /// Derive the verifier independently from the circuit description alone
+  /// (without any proof or witness).
+  pub fn derive(
+    circuit: Circuit<Val>,
+    mode: ShrinkMode,
+    params: OuterFriParams,
+    options: PlonkishOptions,
+    hops: u8,
+  ) -> Result<Self, String> {
+    let (_compiled, definitions, schema, _merged) =
+      lower_circuit_for_mode(circuit, options, mode, params)?;
+    Self::from_lowered(definitions, schema, mode, params, options, hops)
+  }
+
   /// Derive an independent Plonkish verifier for a normalized `FixedRoot`
   /// aggregate backend without any proof or witness.
+  ///
+  /// Uses the exact same deterministic hop planner as [`shrink_fixed_root`]:
+  /// 1 hop when the `FixedRoot` verifier fits directly inside `max_trace_height`,
+  /// or automatic multi-hop lowering (up to [`MAX_PLONKISH_HOPS`]) for large
+  /// multi-circuit `FixedRoot`s.
   pub fn derive_fixed_root(
     inner_key: &AiurVerifyingKey,
     layout: &FixedRoot,
@@ -1337,14 +1818,64 @@ impl PlonkishCircuitVerifier {
     params: OuterFriParams,
     options: PlonkishOptions,
   ) -> Result<Self, String> {
-    let circuit = layout
+    let mut circuit = layout
       .circuit(inner_key, VerifierLimits::default())
       .map_err(|e| format!("fixed root verifier circuit failed: {e}"))?;
-    Self::derive(circuit, mode, params, options, 1)
+    for hop in 1..=MAX_PLONKISH_HOPS {
+      match plan_hop_lowering(circuit, options, mode, params, hop)? {
+        HopLowering::Final { definitions, schema, .. } => {
+          return Self::from_lowered(
+            definitions,
+            schema,
+            mode,
+            params,
+            options,
+            hop,
+          );
+        },
+        HopLowering::Intermediate {
+          compiled,
+          definitions,
+          schema,
+          hop_params,
+          ..
+        } => {
+          drop(compiled);
+          hop_params.check_for_mode(ShrinkMode::Stark128, None)?;
+          let config = GoldilocksBlake3V6Config::with_device(
+            hop_params.commitment(),
+            hop_params.fri(),
+            FriBatching::Tensor,
+            None,
+          );
+          let (sys, key) = System::new_without_preprocessed(config, definitions);
+          drop(key);
+          #[cfg(feature = "cuda")]
+          multi_stark::cuda::release_device_memory();
+          let hop_vk = VerifierKey::new(sys);
+          let (plan, stmt_schema, _profile) =
+            next_hop_verifier_plan(&hop_vk, &schema)?;
+          let (next_circuit, _inputs) = plan
+            .build(
+              stmt_schema,
+              ImplementationOptions { compact_blake3: options.compact_blake3 },
+            )
+            .map_err(|e| format!("hop {} circuit build failed: {e}", hop + 1))?;
+          circuit = next_circuit;
+        },
+      }
+    }
+    Err(format!(
+      "FixedRoot verifier derivation exceeded {MAX_PLONKISH_HOPS} hops"
+    ))
   }
 
   pub const fn vk_digest(&self) -> &[u8; 32] {
     &self.vk_digest
+  }
+
+  pub const fn hops(&self) -> u8 {
+    self.hops
   }
 
   pub fn num_outer_circuits(&self) -> usize {
@@ -1425,12 +1956,87 @@ impl PlonkishCircuitVerifier {
   }
 }
 
-/// 1-hop Plonkish shrinker for a normalized Protocol `v6` aggregate root with a
+/// Plonkish shrinker for a normalized Protocol `v6` aggregate root with a
 /// trusted [`FixedRoot`] layout (`.ixl`).
 ///
-/// The verifier circuit depends solely on `(inner_key, layout)` — never on any
-/// proof or witness — so [`PlonkishCircuitVerifier::derive_fixed_root`] derives
-/// the exact same pinned `shrinker_vk_digest` completely independently.
+/// Uses 1 direct hop whenever the verifier circuit fits inside
+/// `options.max_trace_height`, and automatically lowers through transparent
+/// in-circuit-verifiable intermediate hops (up to [`MAX_PLONKISH_HOPS`]) when
+/// a full-scale multi-circuit `FixedRoot` exceeds `max_trace_height` (such as
+/// a 59-circuit Release `0.5` aggregate root).
+///
+/// The hop schedule depends solely on `(inner_key, layout, mode, params, options)`
+/// — never on any proof or witness — so [`PlonkishCircuitVerifier::derive_fixed_root`]
+/// derives the exact same pinned `shrinker_vk_digest` and `hops` independently.
+#[allow(clippy::too_many_arguments)]
+pub fn shrink_fixed_root(
+  inner_key: &AiurVerifyingKey,
+  layout: &FixedRoot,
+  inner_proof: &AiurBatchProof,
+  expected_claim: &[Val],
+  mode: ShrinkMode,
+  params: OuterFriParams,
+  options: PlonkishOptions,
+  device: Option<i32>,
+) -> Result<(PlonkishShrinkOutput, PlonkishCircuitVerifier), String> {
+  let start = Instant::now();
+  let prepared = layout
+    .prepare(inner_key, inner_proof, expected_claim, VerifierLimits::default())
+    .map_err(|e| format!("fixed root preparation failed: {e}"))?;
+  let (mut circuit, mut assignment) = prepared.into_parts();
+  let inner_vk_digest = layout.identity(inner_key);
+  let claim_digest = hash_publics(expected_claim);
+
+  for hop in 1..=MAX_PLONKISH_HOPS {
+    match plan_hop_lowering(circuit, options, mode, params, hop)? {
+      HopLowering::Final { compiled, definitions, schema, merged } => {
+        return prove_lowered_plonkish(
+          start,
+          compiled,
+          definitions,
+          schema,
+          merged,
+          assignment,
+          inner_vk_digest,
+          claim_digest,
+          mode,
+          params,
+          options,
+          hop,
+          device,
+        );
+      },
+      HopLowering::Intermediate {
+        compiled,
+        definitions,
+        schema,
+        merged,
+        hop_params,
+      } => {
+        let (next_circuit, next_assignment) = prove_intermediate_hop(
+          compiled,
+          definitions,
+          schema,
+          merged,
+          assignment,
+          expected_claim,
+          hop_params,
+          options,
+          hop,
+          device,
+        )?;
+        circuit = next_circuit;
+        assignment = next_assignment;
+      },
+    }
+  }
+  Err(format!(
+    "FixedRoot shrinking exceeded {MAX_PLONKISH_HOPS} hops"
+  ))
+}
+
+/// Strict 1-hop Plonkish shrinker for a normalized Protocol `v6` aggregate root
+/// with a trusted [`FixedRoot`] layout (`.ixl`).
 #[allow(clippy::too_many_arguments)]
 pub fn shrink_fixed_root_1hop(
   inner_key: &AiurVerifyingKey,
@@ -2001,7 +2607,7 @@ mod tests {
       assert!(peek_plonkish_header(&bad).is_err());
 
       // Invalid hop count rejected
-      for hops in [0u8, 3u8] {
+      for hops in [0u8, MAX_PLONKISH_HOPS + 1] {
         let mut bad = good.clone();
         bad[18] = hops;
         assert!(peek_plonkish_header(&bad).is_err());
@@ -2068,6 +2674,8 @@ mod tests {
       ("COMPACT_400KB_BALANCED", OuterFriParams::COMPACT_400KB_BALANCED),
       ("ULTRA_COMPACT_400KB_ZK", OuterFriParams::ULTRA_COMPACT_400KB_ZK),
       ("HOP1_DEFAULT", OuterFriParams::HOP1_DEFAULT),
+      ("HOP_INTERMEDIATE_FAST", OuterFriParams::HOP_INTERMEDIATE_FAST),
+      ("HOP_INTERMEDIATE_COMPACT", OuterFriParams::HOP_INTERMEDIATE_COMPACT),
     ] {
       p.check().unwrap_or_else(|e| panic!("{name} failed floor: {e}"));
       assert!(p.johnson_millibits() >= 128_000, "{name} < 128b Johnson");
@@ -2086,6 +2694,8 @@ mod tests {
     assert!(OuterFriParams::COMPACT_400KB_BALANCED.is_cuda_compatible());
     assert!(OuterFriParams::ULTRA_COMPACT_400KB_ZK.is_cuda_compatible());
     assert!(OuterFriParams::HOP1_DEFAULT.is_cuda_compatible());
+    assert!(OuterFriParams::HOP_INTERMEDIATE_FAST.is_cuda_compatible());
+    assert!(OuterFriParams::HOP_INTERMEDIATE_COMPACT.is_cuda_compatible());
     assert!(
       !OuterFriParams {
         cap_height: 1,
@@ -2629,8 +3239,9 @@ mod tests {
       )
       .unwrap();
       assert_eq!(ver.num_outer_circuits(), 1);
+      assert_eq!(ver.hops(), 1);
 
-      let (out, _) = shrink_fixed_root_1hop(
+      let (out, _) = shrink_fixed_root(
         &inner_vk,
         &fixed,
         &inner_proof,
@@ -2644,6 +3255,7 @@ mod tests {
       assert_eq!(out.vk_digest, *ver.vk_digest());
       assert_eq!(out.trace_dimensions.len(), 1);
       assert_eq!(out.report.header.mode, mode);
+      assert_eq!(out.report.header.hops, 1);
       let rep = ver
         .verify_report(
           &out.envelope_bytes,
@@ -2653,6 +3265,15 @@ mod tests {
         )
         .unwrap();
       assert_eq!(rep.header.mode, mode);
+      assert_eq!(rep.header.hops, 1);
+      // Tampered hop count (1 -> 2) rejected fail-closed even though 2 <= MAX_PLONKISH_HOPS!
+      let mut bad_hops = out.envelope_bytes.clone();
+      bad_hops[18] = 2;
+      assert!(
+        ver
+          .verify(&bad_hops, &expected, Some(&inner_id), Some(&claim_digest))
+          .is_err()
+      );
       // Wrong public claim rejected fail-closed!
       assert!(
         ver
@@ -2665,15 +3286,114 @@ mod tests {
           .is_err()
       );
       eprintln!(
-        "[FIXED_ROOT {}] dims={:?} prove={:.1}ms verify={:.2}ms env={}B ({:.1}KB)",
+        "[FIXED_ROOT {}] dims={:?} hops={} prove={:.1}ms verify={:.2}ms env={}B ({:.1}KB)",
         mode.cli_flag(),
         out.trace_dimensions,
+        rep.header.hops,
         out.prove_ms,
         rep.verify_ms,
         rep.envelope_bytes,
         to_kib(rep.envelope_bytes),
       );
     }
+  }
+
+  #[test]
+  fn plonkish_multihop_planner_and_comp_cap_slack() {
+    let (inner_vk, fixed, _inner_proof, _expected) = build_fixed_root_fixture();
+
+    // 1. Default max_trace_height (2^24): small FixedRoot plans 1 direct Final hop.
+    let c1 = fixed.circuit(&inner_vk, VerifierLimits::default()).unwrap();
+    let plan1 = plan_hop_lowering(
+      c1,
+      PlonkishOptions::default(),
+      ShrinkMode::Stark128,
+      OuterFriParams::COMPACT_400KB_BALANCED,
+      1,
+    )
+    .unwrap();
+    match plan1 {
+      HopLowering::Final { definitions, merged, .. } => {
+        assert_eq!(definitions.len(), 1);
+        assert!(merged.as_ref().is_some_and(MergedLayout::is_merged));
+      },
+      HopLowering::Intermediate { .. } => {
+        panic!("expected 1-hop Final plan on small FixedRoot at 2^24");
+      },
+    }
+
+    // 2. Tighter max_trace_height below B3_All active height: planner automatically
+    //    selects an in-circuit verifiable Intermediate hop (cap=0, mla=1, lfp=0)
+    //    instead of silently falling back to unmerged circuits that fail lfp=8.
+    let c2 = fixed.circuit(&inner_vk, VerifierLimits::default()).unwrap();
+    let est = c2.multi_stark_layout_with_max_height(1 << 24).unwrap();
+    let b3_lb = b3_lower_bound(&est).expect("compact BLAKE3 custom traces");
+    let tight_max = 1usize << (b3_lb.saturating_sub(1).ilog2());
+    assert!(tight_max < b3_lb);
+    let tight_opts =
+      PlonkishOptions { max_trace_height: tight_max, ..PlonkishOptions::default() };
+    let plan2 = plan_hop_lowering(
+      c2,
+      tight_opts,
+      ShrinkMode::Stark128Zk,
+      OuterFriParams::COMPACT_400KB_BALANCED,
+      1,
+    )
+    .unwrap();
+    match plan2 {
+      HopLowering::Intermediate { hop_params, .. } => {
+        assert_eq!(hop_params.cap_height, 0);
+        assert_eq!(hop_params.max_log_arity, 1);
+        assert_eq!(hop_params.log_final_poly_len, 0);
+        hop_params.check().unwrap();
+      },
+      HopLowering::Final { .. } => {
+        panic!(
+          "expected Intermediate hop when max_trace_height ({tight_max}) < b3_lower_bound ({b3_lb})"
+        );
+      },
+    }
+
+    // 3. Verify intermediate hop parameter selection by height threshold.
+    assert_eq!(
+      intermediate_hop_params_for_height(1 << 25),
+      OuterFriParams::HOP_INTERMEDIATE_FAST
+    );
+    assert_eq!(
+      intermediate_hop_params_for_height(1 << 24),
+      OuterFriParams::HOP_INTERMEDIATE_COMPACT
+    );
+
+    // 4. Verify b3_lower_bound & 3x comp-cap heuristic on real Hop-1c dimensions:
+    //    custom_traces[0..6] = [2^21, 2^21, 2^21, 2^21, 2^18, 2^20], used_rows = 17,392,784.
+    let hop1c_est = multi_stark::plonkish::MultiStarkLayout {
+      used_rows: 17_392_784,
+      main_height: 17_825_792,
+      main_heights: vec![1 << 24, 1 << 20],
+      main_width: 3,
+      preprocessed_width: 17,
+      table_heights: vec![16, 256, 16],
+      custom_traces: vec![
+        (1 << 21, 32, 14),
+        (1 << 21, 40, 14),
+        (1 << 21, 32, 14),
+        (1 << 21, 40, 14),
+        (1 << 18, 12, 8),
+        (1 << 20, 4, 18),
+        (65536, 1, 3),
+        (512, 1, 4),
+        (256, 1, 1),
+      ],
+      advice_cells: 0,
+      preprocessed_cells: 0,
+      trace_field_bytes: 0,
+    };
+    let h0 = hop1c_est.custom_traces[0].0;
+    let b3_est = (h0 * 4).next_power_of_two().min(1 << 24);
+    assert_eq!(b3_est, 1 << 23);
+    assert!(hop1c_est.used_rows > b3_est * 2, "old 2x cap missed by 3.6%");
+    assert!(hop1c_est.used_rows <= b3_est * 3, "new 3x cap fits 2^23 cleanly");
+    assert!(b3_lower_bound(&hop1c_est).unwrap() <= (1 << 23));
   }
 
   #[cfg(feature = "cuda")]

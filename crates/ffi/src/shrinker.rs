@@ -9,11 +9,11 @@ use lean_ffi::object::{
   LeanBorrowed, LeanByteArray, LeanIOResult, LeanOwned, LeanString,
 };
 use stark_shrinker::{
-  COMPACT_PARAMS, CompiledVerifier, DEFAULT_PARAMS, OuterFriParams,
-  PlonkishCircuitVerifier, PlonkishOptions, StarkShrinker,
+  COMPACT_PARAMS, CompiledVerifier, DEFAULT_PARAMS, MAX_PLONKISH_HOPS,
+  OuterFriParams, PlonkishCircuitVerifier, PlonkishOptions, StarkShrinker,
   StarkShrinkerVerifier, decode_single_claim_bytes,
   envelope::{ShrinkMode, peek_header},
-  hash_publics, peek_plonkish_header, shrink_fixed_root_1hop,
+  hash_publics, peek_plonkish_header, shrink_fixed_root,
 };
 use std::path::Path;
 
@@ -162,7 +162,7 @@ fn shrink_fixed_root_with_params(
   }
   let claim_vals = decode_single_claim_bytes(expected_claim_bytes)?;
   let mode = if is_zk { ShrinkMode::Stark128Zk } else { ShrinkMode::Stark128 };
-  let (output, _verifier) = shrink_fixed_root_1hop(
+  let (output, _verifier) = shrink_fixed_root(
     &inner_key,
     &layout,
     &inner_proof,
@@ -182,9 +182,9 @@ fn verify_fixed_root_bytes(
   expected_claim_bytes: &[u8],
 ) -> Result<String, String> {
   let header = peek_plonkish_header(envelope_bytes)?;
-  if header.hops != 1 {
+  if !(1..=MAX_PLONKISH_HOPS).contains(&header.hops) {
     return Err(format!(
-      "FixedRoot Plonkish verifier expects 1-hop envelope (got {} hops)",
+      "FixedRoot Plonkish verifier expects 1..={MAX_PLONKISH_HOPS} hops (got {} hops)",
       header.hops
     ));
   }

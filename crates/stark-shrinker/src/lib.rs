@@ -44,11 +44,12 @@ pub use envelope::{
   COMPACT_PARAMS, DEFAULT_PARAMS, ENVELOPE_MAGIC, HEADER_LEN, is_shrunk,
 };
 pub use plonkish::{
-  OuterFriParams, PLONKISH_ENVELOPE_VERSION, PLONKISH_HEADER_LEN,
-  PlonkishCircuitVerifier, PlonkishEnvelope, PlonkishHeader, PlonkishOptions,
-  PlonkishShrinkOutput, PlonkishVerifyReport, decode_single_claim_bytes,
-  hash_publics, peek_plonkish_header, prove_plonkish_circuit,
-  shrink_fixed_root_1hop, shrink_single_batch_1hop, shrink_single_batch_2hop,
+  MAX_PLONKISH_HOPS, OuterFriParams, PLONKISH_ENVELOPE_VERSION,
+  PLONKISH_HEADER_LEN, PlonkishCircuitVerifier, PlonkishEnvelope,
+  PlonkishHeader, PlonkishOptions, PlonkishShrinkOutput, PlonkishVerifyReport,
+  decode_single_claim_bytes, hash_publics, peek_plonkish_header,
+  prove_plonkish_circuit, shrink_fixed_root, shrink_fixed_root_1hop,
+  shrink_single_batch_1hop, shrink_single_batch_2hop,
 };
 
 /// Convert a 32-byte BLAKE3 digest into the 8 canonical Goldilocks `u32` limb
