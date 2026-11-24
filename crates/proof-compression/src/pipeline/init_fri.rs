@@ -155,6 +155,7 @@ mod tests {
     )
     .unwrap();
     assert_eq!(bn254.public_values(), scalar_statement::<Bn254>(&expected));
+    drop(bn254);
     let bls = prepare_kzg_for::<Bls12381>(
       &verifier,
       &proof,

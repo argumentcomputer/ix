@@ -190,6 +190,9 @@ fn different_root_statements_and_trace_shard_counts() {
       )
       .unwrap();
       assert_eq!(bn254.public_values().len(), expected.len());
+      // Drop the BN254 verifier circuit & witness before constructing the
+      // BLS12-381 equivalent so both multi-GiB witnesses are not co-resident.
+      drop(bn254);
       let bls = prepare_kzg_for::<Bls12381>(
         &verifier,
         &compressed,

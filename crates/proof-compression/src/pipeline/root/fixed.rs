@@ -505,7 +505,6 @@ mod tests {
       query_proof_of_work_bits: 17,
     };
     let backend = Backend::for_batch(&plan, params)?;
-    let (cp, fp) = (params.commitment(), params.fri());
     let bytes = backend.verifying_key_bytes()?;
     let key = AiurVerifyingKey::from_bytes(&bytes)?;
     for logs in [vec![4, 4, 2, 1, 1], vec![4, 4, 3, 1]] {
@@ -537,7 +536,21 @@ mod tests {
     assert!(FixedRoot::from_bytes(&long_count).is_err());
     let other = FixedRoot::new(vec![4, 4, 2, 2], vec![(2, 3)], 4)?;
     assert_ne!(fixed.identity(&key), other.identity(&key));
-    let config = || GoldilocksBlake3V6Config::new(cp, fp);
+    // Use the production Stage-0 FRI profile (log_blowup = 2, 128 queries, 20b PoW)
+    // for outer FRI proving instead of reusing the inner log_blowup = 4 blowup,
+    // keeping peak spill-disk usage ~4x smaller (<15 GiB) on CI runners.
+    let config = || {
+      GoldilocksBlake3V6Config::new(
+        CommitmentParameters { log_blowup: 2, cap_height: 0 },
+        FriParameters {
+          log_final_poly_len: 0,
+          max_log_arity: 1,
+          num_queries: 128,
+          commit_proof_of_work_bits: 0,
+          query_proof_of_work_bits: 20,
+        },
+      )
+    };
     let local = FriVerifier::derive(
       fixed.circuit(&key, Default::default())?,
       config(),
@@ -621,7 +634,21 @@ mod tests {
     )?;
     assert!(FixedRoot::memory_lanes(&bad_key, 8, 0).is_err());
     let fixed = FixedRoot::new(vec![3, 1], vec![(1, 1), (8, 0)], 2)?;
-    let config = || GoldilocksBlake3V6Config::new(cp, fp);
+    // Use the production Stage-0 FRI profile (log_blowup = 2, 128 queries, 20b PoW)
+    // for outer FRI proving instead of reusing the inner log_blowup = 4 blowup,
+    // keeping peak spill-disk usage ~4x smaller (<15 GiB) on CI runners.
+    let config = || {
+      GoldilocksBlake3V6Config::new(
+        CommitmentParameters { log_blowup: 2, cap_height: 0 },
+        FriParameters {
+          log_final_poly_len: 0,
+          max_log_arity: 1,
+          num_queries: 128,
+          commit_proof_of_work_bits: 0,
+          query_proof_of_work_bits: 20,
+        },
+      )
+    };
     // Generated before, and independently of, every certificate and witness.
     let local = FriVerifier::derive(
       fixed.circuit(&key, Default::default())?,

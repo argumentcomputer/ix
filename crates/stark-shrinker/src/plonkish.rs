@@ -3145,13 +3145,13 @@ mod tests {
     let channel = Val::from_u64(MEMSEG);
     let (system, pk) = System::new(
       GoldilocksBlake3V6Config::new(cp, fp),
-      [(8usize, 8usize), (1, 2)].into_iter().map(|(width, height)| {
+      [(2usize, 4usize), (1, 2)].into_iter().map(|(width, height)| {
         CircuitInputs {
           main_width: width + 3,
           preprocessed: Some(RowMajorMatrix::new_col(vec![Val::ZERO; height])),
           lookups: vec![
             Lookup::pull(
-              if width == 8 { Expr::main(2) } else { Val::ZERO.into() },
+              if width == 2 { Expr::main(2) } else { Val::ZERO.into() },
               vec![Expr::main(0), Expr::main(1)],
             ),
             Lookup::push(
@@ -3177,10 +3177,10 @@ mod tests {
     );
     let inner_vk_bytes = stark_key::to_bytes(&system, cp, fp);
     let inner_vk = AiurVerifyingKey::from_bytes(&inner_vk_bytes).unwrap();
-    let fixed = FixedRoot::new(vec![3, 1], vec![(1, 1), (8, 0)], 2).unwrap();
+    let fixed = FixedRoot::new(vec![2, 1], vec![(1, 1), (2, 0)], 2).unwrap();
 
     let expected = vec![Val::from_u32(19), Val::from_u32(39)];
-    let messages = [(1u32, 2u32), (8, 8)]
+    let messages = [(1u32, 2u32), (2, 4)]
       .into_iter()
       .flat_map(|(width, end)| {
         [
@@ -3193,7 +3193,7 @@ mod tests {
         ]
       })
       .collect();
-    let traces = [(8usize, 8u32, 8usize), (1, 2, 2)]
+    let traces = [(2usize, 4u32, 4usize), (1, 2, 2)]
       .into_iter()
       .map(|(width, end, height)| {
         let row_width = width + 3;
@@ -3227,7 +3227,20 @@ mod tests {
     let _gpu_guard = gpu_test_guard();
     let (inner_vk, fixed, inner_proof, expected) = build_fixed_root_fixture();
 
-    let outer_params = OuterFriParams::COMPACT_400KB_FAST;
+    // Production 128-bit floor for both v6 and v6-zk (lb=3 >= 3, 129.13b Johnson,
+    // 82.25b CertiFRI UD, 245b conjectured, 8-ary FRI, lfp=8): halves LDE blowup
+    // and quotient degree vs lb=4 so the 2^20-row FixedRoot roundtrip stays well
+    // within 61.8 GiB CI runners (`COMPACT_400KB_FAST` lb=4 is already covered
+    // for both v6 and v6-zk in `plonkish_1circuit_v6_and_v6_zk_roundtrip_...`).
+    let outer_params = OuterFriParams {
+      log_blowup: 3,
+      num_queries: 75,
+      commit_proof_of_work_bits: 0,
+      query_proof_of_work_bits: 20,
+      cap_height: 0,
+      max_log_arity: 3,
+      log_final_poly_len: 8,
+    };
     let opts = PlonkishOptions::default();
     let inner_id = fixed.identity(&inner_vk);
     let claim_digest = hash_publics(&expected);
