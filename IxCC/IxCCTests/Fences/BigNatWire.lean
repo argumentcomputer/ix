@@ -3,6 +3,7 @@ import IxCC.BigNat.Bootstrap
 import IxCC.Rt.BigNat.Cell
 import IxCC.Rt.BigNat.ProofProcs
 import IxCC.Rt.BigNat.Proof
+import IxCC.Rt.BigNat.LowerBigProof
 
 /-! Exact axiom fences for Wave 3 Phase 4 arbitrary-precision `Nat` slow-path
 entrypoints (`IxCC.BigNat.Proof.Entry`), `LimbOps` word equations
@@ -298,3 +299,135 @@ Every theorem depends strictly on subsets of `[propext, Classical.choice, Quot.s
 
 /-- info: 'IxCC.Rt.BigNat.primitiveBig_core' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Rt.BigNat.primitiveBig_core
+
+/-! ## `IxCC.Rt.Readback` Arbitrary-Precision `readbackBig` Fences -/
+
+/-- info: 'IxCC.Rt.readbackNatWord_small' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.readbackNatWord_small
+
+/-- info: 'IxCC.Rt.readbackBig_nat_small' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.readbackBig_nat_small
+
+/-- info: 'IxCC.Rt.readbackBig_ctor0' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.readbackBig_ctor0
+
+/-- info: 'IxCC.Rt.readbackBig_cell' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.readbackBig_cell
+
+/-- info: 'IxCC.Rt.readbackBig_nat_eq_readback_of_odd' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.readbackBig_nat_eq_readback_of_odd
+
+/-- info: 'IxCC.Rt.readWordsList_congr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.readWordsList_congr
+
+/-- info: 'IxCC.Rt.readbackNatWord_congr_read64' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.readbackNatWord_congr_read64
+
+/-- info: 'IxCC.Rt.readbackBig_congr_read64' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.readbackBig_congr_read64
+
+/-! ## `IxCC.Rt.BigNat.Cell` Kernel-Evaluable `.rodata` `*K` & Readback Equivalence Fences -/
+
+/-- info: 'IxCC.Rt.BigNat.encodeStaticLimbArrayK_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.encodeStaticLimbArrayK_eq
+
+/-- info: 'IxCC.Rt.BigNat.encodeBigNatLiteralK_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.encodeBigNatLiteralK_eq
+
+/-- info: 'IxCC.Rt.BigNat.addBigNatLiteralK_toRodataTable' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.addBigNatLiteralK_toRodataTable
+
+/-- info: 'IxCC.Rt.BigNat.readWordsList_eq_readWordsRange' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.readWordsList_eq_readWordsRange
+
+/-- info: 'IxCC.Rt.BigNat.limbsToNatList_eq_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.limbsToNatList_eq_toNat
+
+/-- info: 'IxCC.Rt.BigNat.isCanonicalLimbsList_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.isCanonicalLimbsList_iff
+
+/-- info: 'IxCC.Rt.BigNat.isCanonicalLimbsList_eq_isCanonicalBigNat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.isCanonicalLimbsList_eq_isCanonicalBigNat
+
+/-- info: 'IxCC.Rt.BigNat.readbackNatWord_eq_readbackBigNat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.readbackNatWord_eq_readbackBigNat
+
+/-- info: 'IxCC.Rt.BigNat.NatVal.readbackBig' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.NatVal.readbackBig
+
+/-! ## `IxCC.Rt.BigNat.LowerBigProof` Structural Zero-`natOverflow`, `.rodata` & Simulation Fences -/
+
+/-- info: 'IxCC.Rt.BigNat.lirProgramNoOvf_iff_checkEmpty' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.lirProgramNoOvf_iff_checkEmpty
+
+/-- info: 'IxCC.Rt.BigNat.lirStep_ne_natOverflow' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.lirStep_ne_natOverflow
+
+/-- info: 'IxCC.Rt.BigNat.semStep_ne_natOverflow' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.semStep_ne_natOverflow
+
+/-- info: 'IxCC.Rt.BigNat.failsNoOvf_of_noNatOverflow' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.failsNoOvf_of_noNatOverflow
+
+/-- info: 'IxCC.Rt.BigNat.lirRun_ne_natOverflow' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.lirRun_ne_natOverflow
+
+/-- info: 'IxCC.Rt.BigNat.lirEval_ne_natOverflow' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.lirEval_ne_natOverflow
+
+/-- info: 'IxCC.Rt.BigNat.functionBig_noNatOverflow' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.functionBig_noNatOverflow
+
+/-- info: 'IxCC.Rt.BigNat.arrayPrimFuncBig_noNatOverflow' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.arrayPrimFuncBig_noNatOverflow
+
+/-- info: 'IxCC.Rt.BigNat.functionRepBig_noNatOverflow' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.functionRepBig_noNatOverflow
+
+/-- info: 'IxCC.Rt.BigNat.bigNatLitProc_noNatOverflow' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.bigNatLitProc_noNatOverflow
+
+/-- info: 'IxCC.Rt.BigNat.cxInit_noNatOverflow' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.cxInit_noNatOverflow
+
+/-- info: 'IxCC.Rt.BigNat.natPowBig_noNatOverflow' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.natPowBig_noNatOverflow
+
+/-- info: 'IxCC.Rt.BigNat.natGcdBig_noNatOverflow' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.natGcdBig_noNatOverflow
+
+/-- info: 'IxCC.Rt.BigNat.extendedArrayRuntimeFuncs_noNatOverflow' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.extendedArrayRuntimeFuncs_noNatOverflow
+
+/-- info: 'IxCC.Rt.BigNat.buildCoreWrappers_noNatOverflow' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.buildCoreWrappers_noNatOverflow
+
+/-- info: 'IxCC.Rt.BigNat.lowerBig_noNatOverflow' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.lowerBig_noNatOverflow
+
+/-- info: 'IxCC.Rt.BigNat.lowerRepBig_noNatOverflow' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.lowerRepBig_noNatOverflow
+
+/-- info: 'IxCC.Rt.BigNat.buildBigNatRodataK_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.buildBigNatRodataK_eq
+
+/-- info: 'IxCC.Rt.BigNat.buildBigNatRodata_entry_bytes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.buildBigNatRodata_entry_bytes
+
+/-- info: 'IxCC.Rt.BigNat.buildBigNatRodata_natVal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.buildBigNatRodata_natVal
+
+/-- info: 'IxCC.Rt.BigNat.readbackBig_congr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.readbackBig_congr
+
+/-- info: 'IxCC.Rt.BigNat.natSwitchBig_isZero_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.natSwitchBig_isZero_iff
+
+/-- info: 'IxCC.Rt.BigNat.operandBig_nat_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.operandBig_nat_sim
+
+/-- info: 'IxCC.Rt.BigNat.primitiveBig_sim_readback_noOvf' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.primitiveBig_sim_readback_noOvf
+
+/-- info: 'IxCC.Rt.BigNat.projBig_natSucc_sim_readback_noOvf' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.BigNat.projBig_natSucc_sim_readback_noOvf

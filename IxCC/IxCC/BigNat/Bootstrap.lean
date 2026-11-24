@@ -6,6 +6,7 @@ import IxCC.Lam.Syntax
 import IxCC.Lir.Syntax
 import IxCC.Rt.Layout
 import Lean.Data.Json
+import Std.Data.HashMap
 
 /-! # Pure-Lean `BigNat` Closure Freezer & Bootstrap Checker (`IxCC.BigNat.Bootstrap`)
 
@@ -191,6 +192,15 @@ def all : List SlowPathOp :=
   , .land, .lor, .xor
   , .shiftLeft, .shiftRight
   , .log2, .toDecimal, .ofDecimal ]
+
+/-- The 17 pure-`Array UInt64` numeric slow-path operations (the 16 `Lam.Prim` `Nat`
+ops plus `log2`, requiring zero `String` / `Char` runtime dependencies). -/
+def numericOps : List SlowPathOp :=
+  [ .add, .sub, .pred, .mul, .div, .mod, .pow, .gcd
+  , .beq, .ble, .blt
+  , .land, .lor, .xor
+  , .shiftLeft, .shiftRight
+  , .log2 ]
 
 /-- Short canonical key name (used in manifests and diagnostics). -/
 def key : SlowPathOp → String
@@ -478,21 +488,28 @@ def termBigNatLits : Src.Term → List Nat
   | .var _ | .sort _ | .const _ _ | .pi _ _ _ | .strLit _ => []
 
 /-- Static bootstrap check: verify that no non-theorem runtime definition in `p`
-outside the 5 hardware-pinned `LimbOps` (whose bodies are replaced by hardware word
-equations) contains any `Nat` literal `≥ 2^63`. -/
-def checkSrcNoBigNatLit (p : Src.Program) (pins : Pinned.LimbPins) : Except String Unit := do
-  let mut bad : List (CId × List Nat) := []
+outside the 5 hardware-pinned `LimbOps` and table-resolved word/prim/csimp operations
+contains any `Nat` literal `≥ 2^63`. -/
+def checkSrcNoBigNatLit (p : Src.Program) (pins : Pinned.LimbPins)
+    (nameOf : Ixon.Address → Option String := fun _ => none) : Except String Unit := do
+  let mut bad : List (CId × String × List Nat) := []
   for c in List.range p.size do
     if (Pinned.limbAt? pins (p.addr c)).isSome then
       continue
+    if (p.table.resolveOf c).isSome then
+      continue
     match p.decl? c with
     | some (.defn .defn _ _ _ val) =>
+      let nm := (nameOf (p.addr c)).getD (p.short c)
+      -- `UInt64.size` / `USize.size` are purely type-level `Fin` moduli erased by `Lam.erase`
+      if nm == "UInt64.size" || nm == "USize.size" then
+        continue
       let bigs := termBigNatLits val
       if !bigs.isEmpty then
-        bad := bad ++ [(c, bigs)]
+        bad := bad ++ [(c, nm, bigs)]
     | _ => pure ()
   if !bad.isEmpty then
-    let desc := ", ".intercalate (bad.map fun (c, ns) => s!"cid {c} ({p.short c}): {ns}")
+    let desc := ", ".intercalate (bad.map fun (c, nm, ns) => s!"cid {c} ({nm}): {ns}")
     throw s!"bootstrap: runtime definition(s) contain Nat literals ≥ 2^63: {desc}"
 
 /-- Validate all 5 `LimbOps` word equations in `p` via `Src.Table.checkLimb`. -/
@@ -511,15 +528,10 @@ def validateLimbEquations (cfg : Table.Config) (p : Src.Program) (pins : Pinned.
 
 /-- Scan a compiled `Lir.Program` and report any `(funId, blockLabel)` whose terminator
 is `.fail .natOverflow`. An empty list proves syntactic absence of `natOverflow` exits. -/
-def checkLirHasNoNatOverflow (lp : Lir.Program) : List (Lir.FunId × Lir.Label) := Id.run do
-  let mut hits : List (Lir.FunId × Lir.Label) := []
-  for fi in [:lp.funcs.size] do
-    let f := lp.funcs[fi]!
-    for bi in [:f.blocks.size] do
-      let b := f.blocks[bi]!
-      if b.term == .fail .natOverflow then
-        hits := hits ++ [(fi, bi)]
-  return hits
+def checkLirHasNoNatOverflow (lp : Lir.Program) : List (Lir.FunId × Lir.Label) :=
+  lp.funcs.toList.zipIdx.flatMap fun (f, fi) =>
+    f.blocks.toList.zipIdx.filterMap fun (b, bi) =>
+      if b.term == .fail .natOverflow then some (fi, bi) else none
 
 /-- Pure-Lean executable bootstrap index verifier: exercises every `IxCC.BigNat.Entry`
 operation across boundary and multi-limb values (`0`, `1`, `2^63 - 1`, `2^63`, `2^64 - 1`,
@@ -592,112 +604,250 @@ def verifyInternalIndices : Except String Nat := do
 /-! ## Pure-Lean Closure Freezer (`ix compile --consts ... --equations`) -/
 
 /-- Configuration for freezing `IxCC.BigNat.Entry` + all 5 `LimbOps` word equations
-via `ix compile --consts ... --equations`. -/
+via `ix compile --no-build --consts ... --equations --equations-out ... --word-equations`. -/
 structure FreezeConfig where
   /-- Path to the pinned `ix` binary. -/
   ix : FilePath
-  /-- Path to the Lean module root (`IxCC/IxCC/BigNat/Bootstrap.lean`, which imports `Entry`). -/
+  /-- Path to the Lean module root (`IxCC/BigNat/Bootstrap.lean` or `IxCC/BigNat/Entry.lean`). -/
   sourceFile : FilePath := "IxCC/BigNat/Bootstrap.lean"
   /-- Output directory for frozen `.ixe`, `.equations.json`, and `bignat-bootstrap.json`. -/
   outDir : FilePath
   /-- Optional directories prepended to `PATH` when invoking `ix`. -/
   ixPath : List String := []
+  /-- Optional directories prepended to `LEAN_PATH` when invoking `ix`. -/
+  leanPath : List String := []
   /-- Working directory for `ix` (typically the `IxCC` package root). -/
   cwd : Option FilePath := none
   /-- Include all 5 `LimbOps` equation theorems in `--consts`. -/
   includeLimbEqns : Bool := true
+  /-- Subset of slow-path operations to freeze (defaults to all 19). -/
+  ops : List SlowPathOp := SlowPathOp.all
   deriving Inhabited
+
+/-- Seed `--consts` list for a given `FreezeConfig`. -/
+def freezeConstsOf (cfg : FreezeConfig) : List String :=
+  let entries := cfg.ops.map SlowPathOp.leanName
+  let limbDefs := limbEquationSpecs.map (·.2.1)
+  let limbThms := if cfg.includeLimbEqns then limbEquationSpecs.map (·.2.2) else []
+  (entries ++ limbDefs ++ limbThms).eraseDups
 
 /-- Exact `ix compile` arguments for the anonymous frozen closure + equations sidecar. -/
 def compileAnonArgs (cfg : FreezeConfig) (anonIxe anonEqs : FilePath) : Array String :=
   #[ "compile"
+   , "--no-build"
    , "--anon"
-   , "--consts", ",".intercalate (allFreezeConsts cfg.includeLimbEqns)
-   , "--equations", anonEqs.toString
-   , "-o", anonIxe.toString
+   , "--consts", ",".intercalate (freezeConstsOf cfg)
+   , "--equations"
+   , "--equations-out", anonEqs.toString
+   , "--word-equations"
+   , "--out", anonIxe.toString
    , cfg.sourceFile.toString ]
 
-/-- Exact `ix compile` arguments for the named twin closure used by `ix addr-of`. -/
+/-- Exact `ix compile` arguments for the named twin closure used for in-memory §4/§5 resolution. -/
 def compileNamedArgs (cfg : FreezeConfig) (namedIxe namedEqs : FilePath) : Array String :=
   #[ "compile"
-   , "--consts", ",".intercalate (allFreezeConsts cfg.includeLimbEqns)
-   , "--equations", namedEqs.toString
-   , "-o", namedIxe.toString
+   , "--no-build"
+   , "--consts", ",".intercalate (freezeConstsOf cfg)
+   , "--equations"
+   , "--equations-out", namedEqs.toString
+   , "--word-equations"
+   , "--out", namedIxe.toString
    , cfg.sourceFile.toString ]
 
 /-- Exact `ix addr-of` arguments resolving a Lean constant name against the named twin. -/
 def addrOfArgs (namedIxe : FilePath) (constName : String) : Array String :=
   #["addr-of", namedIxe.toString, constName]
 
+private def addrBytesLt (a b : Ixon.Address) : Bool := Id.run do
+  let n := min a.hash.size b.hash.size
+  for i in [:n] do
+    let x := a.hash.get! i
+    let y := b.hash.get! i
+    if x != y then return x < y
+  return a.hash.size < b.hash.size
+
+private def natFromBytesLE (bs : ByteArray) : Nat := Id.run do
+  let mut acc : Nat := 0
+  let mut shift : Nat := 0
+  for i in [:bs.size] do
+    acc := acc ||| ((bs.get! i).toNat <<< shift)
+    shift := shift + 8
+  return acc
+
+/-- Decode Section 4 (names) and Section 5 (named → §2 constant rank) directly from a named
+`.ixe` envelope in memory (< 5ms, zero `ix addr-of` subprocess spawns). -/
+def extractNamedMap (bytes : ByteArray) : Except String (Std.HashMap String String) := do
+  let env ← Ixon.V3.decodeAnonymousEnv bytes
+  let constOrder : Array Ixon.Address :=
+    (env.consts.toArray.map (·.1)).qsort addrBytesLt
+  let parseMeta : _root_.Ixon.GetM (Std.HashMap String String) := do
+    let numNames := (← _root_.Ixon.getTagN 0).value.toNat
+    let mut namesLookup : Std.HashMap ByteArray String := {}
+    let mut nameRev : Array String := Array.mkEmpty numNames
+    for _ in [:numNames] do
+      let addrBytes ← _root_.Ixon.getBytes 32
+      let tag ← _root_.Ixon.getU8
+      let nm ← match tag with
+        | 0 => pure ""
+        | 1 =>
+          let pBytes ← _root_.Ixon.getBytes 32
+          let len := (← _root_.Ixon.getTagN 0).value.toNat
+          let sBytes ← _root_.Ixon.getBytes len
+          let some s := String.fromUTF8? sBytes | throw "§4 invalid UTF-8 name"
+          let parent := namesLookup.getD pBytes ""
+          pure (if parent.isEmpty then s else s!"{parent}.{s}")
+        | 2 =>
+          let pBytes ← _root_.Ixon.getBytes 32
+          let len := (← _root_.Ixon.getTagN 0).value.toNat
+          let nBytes ← _root_.Ixon.getBytes len
+          let n := natFromBytesLE nBytes
+          let parent := namesLookup.getD pBytes ""
+          pure (if parent.isEmpty then toString n else s!"{parent}.{n}")
+        | t => throw s!"§4 invalid name component tag {t}"
+      nameRev := nameRev.push nm
+      namesLookup := namesLookup.insert addrBytes nm
+    let numNamed := (← _root_.Ixon.getTagN 0).value.toNat
+    let mut out : Std.HashMap String String := Std.HashMap.emptyWithCapacity numNamed
+    for _ in [:numNamed] do
+      let nameIdx := (← _root_.Ixon.getTagN 0).value.toNat
+      let constRank := (← _root_.Ixon.getTagN 0).value.toNat
+      let _hint ← _root_.Ixon.getTagN 0
+      let metaLen := (← _root_.Ixon.getTagN 0).value.toNat
+      let _skip ← _root_.Ixon.getBytes metaLen
+      if let (some nm, some addr) := (nameRev[nameIdx]?, constOrder[constRank]?) then
+        out := out.insert nm (bytesToHex addr.hash)
+    return out
+  match parseMeta.run { bytes := env.metadata, idx := 0 } with
+  | .ok m _ => .ok m
+  | .error e _ => .error s!"extractNamedMap: {e}"
+
+/-- Convert an `ix/compile-equations/2` JSON sidecar into an address-resolved
+`ixcc/k1-equations/1` JSON sidecar using `namedMap` from `extractNamedMap`. -/
+def convertIxEquations (sourceName : String) (rootNames : List String)
+    (namedMap : Std.HashMap String String) (rawJson : Json) : Except String Json := do
+  let fmt ← (rawJson.getObjValAs? String "format").mapError fun e =>
+    s!"bootstrap: equations json missing format: {e}"
+  unless fmt == "ix/compile-equations/2" do
+    throw s!"bootstrap: unexpected ix equations format '{fmt}'"
+  let eqArr ← (rawJson.getObjValAs? (Array Json) "equations").mapError fun e =>
+    s!"bootstrap: equations json missing equations: {e}"
+  let thmArr := match rawJson.getObjValAs? (Array Json) "theorems" with
+    | .ok arr => arr
+    | .error _ => #[]
+  let resolve (nm : String) : Except String String :=
+    match namedMap[nm]? with
+    | some a => .ok a
+    | none => .error s!"bootstrap: name '{nm}' absent from .ixe §5 table"
+  let mut rootRows : Array Json := #[]
+  for r in rootNames do
+    let ra ← resolve r
+    rootRows := rootRows.push (Json.mkObj [("name", .str r), ("address", .str ra)])
+  let mut eqRows : Array Json := #[]
+  for p in eqArr do
+    let d ← (p.getObjValAs? String "definition").mapError (s!"bootstrap: eq missing definition: {·}")
+    let e ← (p.getObjValAs? String "equation").mapError (s!"bootstrap: eq missing equation: {·}")
+    let da ← resolve d
+    let ea ← resolve e
+    eqRows := eqRows.push (Json.mkObj [
+      ("definition", .str d), ("definition_address", .str da),
+      ("equation", .str e), ("equation_address", .str ea)
+    ])
+  let mut thmRows : Array Json := #[]
+  for t in thmArr do
+    let k ← (t.getObjValAs? String "kind").mapError (s!"bootstrap: thm missing kind: {·}")
+    let s ← (t.getObjValAs? String "subject").mapError (s!"bootstrap: thm missing subject: {·}")
+    let n ← (t.getObjValAs? String "theorem").mapError (s!"bootstrap: thm missing theorem: {·}")
+    let sa ← resolve s
+    let na ← resolve n
+    thmRows := thmRows.push (Json.mkObj [
+      ("kind", .str k), ("subject", .str s), ("subject_address", .str sa),
+      ("theorem", .str n), ("theorem_address", .str na)
+    ])
+  let fields : List (String × Json) :=
+    [ ("format", .str "ixcc/k1-equations/1")
+    , ("source", .str sourceName)
+    , ("roots", .arr rootRows)
+    , ("equations", .arr eqRows) ] ++
+    (if thmRows.isEmpty then [] else [("theorems", .arr thmRows)]) ++
+    [ ("failures", .arr #[]) ]
+  pure (Json.mkObj fields)
+
 private def runCmd (cmd : String) (args : Array String) (cwd : Option FilePath)
-    (extraPath : List String) : IO String := do
-  let env ← if extraPath.isEmpty then pure #[] else do
+    (extraPath extraLeanPath : List String) : IO String := do
+  let mut env : Array (String × Option String) := #[]
+  if !extraPath.isEmpty then
     let old := (← IO.getEnv "PATH").getD ""
-    pure #[("PATH", some (":".intercalate (extraPath ++ [old])))]
+    env := env.push ("PATH", some (":".intercalate (extraPath ++ [old])))
+  if !extraLeanPath.isEmpty then
+    let old := (← IO.getEnv "LEAN_PATH").getD ""
+    let val := if old.isEmpty then ":".intercalate extraLeanPath
+               else ":".intercalate (extraLeanPath ++ [old])
+    env := env.push ("LEAN_PATH", some val)
   let out ← IO.Process.output { cmd, args, cwd, env }
   unless out.exitCode == 0 do
-    throw (IO.userError s!"bootstrap: `{cmd} {" ".intercalate args.toList}` exited {out.exitCode}\n{out.stderr}")
+    throw (IO.userError s!"bootstrap: `{cmd} {" ".intercalate args.toList}` exited {out.exitCode}\n{out.stdout}\n{out.stderr}")
   return out.stdout
 
-private def resolveAddr (cfg : FreezeConfig) (namedIxe : FilePath) (name : String) :
-    IO Ixon.Address := do
-  let out ← runCmd cfg.ix.toString (addrOfArgs namedIxe name) cfg.cwd cfg.ixPath
-  let line := ((out.splitOn "\n").filter (!·.trimAscii.isEmpty)).getLast?.getD "" |>.trimAscii.toString
-  match hexToAddr? line with
-  | some a => pure a
-  | none => throw (IO.userError s!"bootstrap: `ix addr-of {name}` returned invalid address: {out}")
+private def resolveFromMap (namedMap : Std.HashMap String String) (name : String) :
+    Except String Ixon.Address := do
+  let some hex := namedMap[name]?
+    | throw s!"bootstrap: '{name}' absent from .ixe §5 name table"
+  let some a := hexToAddr? hex
+    | throw s!"bootstrap: invalid hex address for '{name}': {hex}"
+  pure a
 
 /-- Freeze `IxCC.BigNat.Entry` + all 5 `LimbOps` word equations with `ix compile`,
-resolve all entrypoint and `LimbPins` addresses, validate ingress + `Src.Table.checkLimb` +
-`checkSrcNoBigNatLit`, write the frozen library JSON, and return `FrozenLibrary`. -/
+resolve all entrypoint and `LimbPins` addresses in memory from the `.ixe` §4/§5 tables,
+convert `ix/compile-equations/2` to `ixcc/k1-equations/1`, validate ingress +
+`Src.Table.checkLimb` + `checkSrcNoBigNatLit`, write the frozen library JSON, and return
+`FrozenLibrary`. -/
 def freezeClosure (cfg : FreezeConfig) : IO FrozenLibrary := do
   IO.FS.createDirAll cfg.outDir
-  let anonIxe := cfg.outDir / "bignat-entry.ixe"
-  let anonEqs := cfg.outDir / "bignat-entry.anon.equations.json"
   let namedIxe := cfg.outDir / "bignat-entry.named.ixe"
   let namedEqs := cfg.outDir / "bignat-entry.named.equations.json"
-  let ixVersion := (← runCmd cfg.ix.toString #["--version"] cfg.cwd cfg.ixPath).trimAscii.toString
-  let _ ← runCmd cfg.ix.toString (compileAnonArgs cfg anonIxe anonEqs) cfg.cwd cfg.ixPath
-  let _ ← runCmd cfg.ix.toString (compileNamedArgs cfg namedIxe namedEqs) cfg.cwd cfg.ixPath
-  let closureBytes ← IO.FS.readBinFile anonIxe
-  let anonJson ← IO.ofExcept (Json.parse (← IO.FS.readFile anonEqs))
-  let namedJson ← IO.ofExcept (Json.parse (← IO.FS.readFile namedEqs))
-  unless anonJson == namedJson do
-    throw (IO.userError "bootstrap: anonymous and named equation sidecars differ")
+  let ixVersion := (← runCmd cfg.ix.toString #["--version"] cfg.cwd cfg.ixPath cfg.leanPath).trimAscii.toString
+  let _ ← runCmd cfg.ix.toString (compileNamedArgs cfg namedIxe namedEqs) cfg.cwd cfg.ixPath cfg.leanPath
+  let closureBytes ← IO.FS.readBinFile namedIxe
+  let rawEqJson ← IO.ofExcept (Json.parse (← IO.FS.readFile namedEqs))
+  let namedMap ← IO.ofExcept (extractNamedMap closureBytes)
+  let rootNames := cfg.ops.map SlowPathOp.leanName
+  let equationsJson ← IO.ofExcept (convertIxEquations cfg.sourceFile.toString rootNames namedMap rawEqJson)
   let mut entryAddrs : List (SlowPathOp × Ixon.Address) := []
-  for op in SlowPathOp.all do
-    let a ← resolveAddr cfg namedIxe op.leanName
+  for op in cfg.ops do
+    let a ← IO.ofExcept (resolveFromMap namedMap op.leanName)
     entryAddrs := entryAddrs ++ [(op, a)]
   let mut limbOps : List (Src.LimbOp × Nat) := []
   let mut limbEqnAddrs : List (Src.LimbOp × Ixon.Address) := []
   for (op, defName, thmName) in limbEquationSpecs do
-    let defAddr ← resolveAddr cfg namedIxe defName
+    let defAddr ← IO.ofExcept (resolveFromMap namedMap defName)
     limbOps := limbOps ++ [(op, Pinned.addrNat defAddr)]
     if cfg.includeLimbEqns then
-      let thmAddr ← resolveAddr cfg namedIxe thmName
+      let thmAddr ← IO.ofExcept (resolveFromMap namedMap thmName)
       limbEqnAddrs := limbEqnAddrs ++ [(op, thmAddr)]
-  let prodType ← resolveAddr cfg namedIxe "Prod"
-  let prodMk ← resolveAddr cfg namedIxe "Prod.mk"
-  let natLog2 ← resolveAddr cfg namedIxe "Nat.log2"
-  let boolToNat ← resolveAddr cfg namedIxe "Bool.toNat"
-  let cond ← resolveAddr cfg namedIxe "cond"
+  let prodType? := (resolveFromMap namedMap "Prod").toOption.map Pinned.addrNat
+  let prodMk? := (resolveFromMap namedMap "Prod.mk").toOption.map Pinned.addrNat
+  let natLog2? := (resolveFromMap namedMap "Nat.log2").toOption.map Pinned.addrNat
+  let boolToNat? := (resolveFromMap namedMap "Bool.toNat").toOption.map Pinned.addrNat
+  let cond? := (resolveFromMap namedMap "cond").toOption.map Pinned.addrNat
   let limbPins : Pinned.LimbPins :=
     { ops := limbOps
-    , prodType := some (Pinned.addrNat prodType)
-    , prodMk := some (Pinned.addrNat prodMk)
-    , natLog2 := some (Pinned.addrNat natLog2)
-    , boolToNat := some (Pinned.addrNat boolToNat)
-    , cond := some (Pinned.addrNat cond) }
+    , prodType := prodType?
+    , prodMk := prodMk?
+    , natLog2 := natLog2?
+    , boolToNat := boolToNat?
+    , cond := cond? }
   -- Validate the frozen closure through IxCC's own Src loader, checkLimb, and zero-natOverflow checker
-  match Src.load closureBytes anonJson with
+  match Src.load closureBytes equationsJson with
   | .error diag => throw (IO.userError s!"bootstrap: Src.load failed: {diag}")
   | .ok loaded =>
     if cfg.includeLimbEqns then
       IO.ofExcept (validateLimbEquations { words := true } loaded.program limbPins limbEqnAddrs)
-    IO.ofExcept (checkSrcNoBigNatLit loaded.program limbPins)
+    let revMap : Std.HashMap String String :=
+      namedMap.fold (init := {}) fun m nm hex => m.insert hex nm
+    IO.ofExcept (checkSrcNoBigNatLit loaded.program limbPins fun a => revMap[bytesToHex a.hash]?)
     let _ ← IO.ofExcept verifyInternalIndices
     let lib : FrozenLibrary :=
-      { closureBytes, equationsJson := anonJson, limbPins, entryAddrs, limbEqnAddrs, ixVersion }
+      { closureBytes, equationsJson, limbPins, entryAddrs, limbEqnAddrs, ixVersion }
     IO.FS.writeFile (cfg.outDir / "bignat-bootstrap.json") (lib.toJson.pretty ++ "\n")
     pure lib
 

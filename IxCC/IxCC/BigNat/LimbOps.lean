@@ -74,15 +74,16 @@ Intended x86-64 lowering: `lzcnt` (or `bsr` with zero guard). -/
   if x == 0 then 64 else UInt64.ofNat (63 - Nat.log2 x.toNat)
 
 /-- Derived runtime helper: compute `a * b + acc + carry` as `(lo, hi)` using only
-`mulWide64` and `addCarry64` (zero `Nat` arithmetic). Since
+`mulWide64`, `addCarry64 _ _ false`, and raw 64-bit word additions (zero `Nat` arithmetic
+and zero intermediate `Prod` allocations under ANF shrinking). Since
 `(2^64 - 1)^2 + 2*(2^64 - 1) = 2^128 - 1 < 2^128`, the high word never overflows. -/
 @[inline] def mulAddCarry64 (a b acc carry : UInt64) : UInt64 × UInt64 :=
   let p := mulWide64 a b
   let r1 := addCarry64 p.1 acc false
   let r2 := addCarry64 r1.1 carry false
-  let q1 := addCarry64 p.2 0 r1.2
-  let q2 := addCarry64 q1.1 0 r2.2
-  (r2.1, q2.1)
+  let c1 : UInt64 := if r1.2 then 1 else 0
+  let c2 : UInt64 := if r2.2 then 1 else 0
+  (r2.1, p.2 + c1 + c2)
 
 /-! ### Exact Algebraic Specifications -/
 
@@ -245,30 +246,20 @@ theorem clz64_shift_norm (x : UInt64) (hx : x ≠ 0) :
     rw [heq] at h2
     exact h2
 
-private theorem mulAddCarry64_arith {B a b acc carry pLo pHi s1 c1 s2 c2 hi1 ov1 hi2 ov2 : Nat}
+private theorem mulAddCarry64_hi_lt {B a b acc carry pLo pHi s1 c1 s2 c2 : Nat}
     (hbound : a * b + acc + carry < B * B)
     (hmul : pLo + pHi * B = a * b)
     (hs1 : s1 + c1 * B = pLo + acc)
-    (hs2 : s2 + c2 * B = s1 + carry)
-    (hh1 : hi1 + ov1 * B = pHi + c1)
-    (hh2 : hi2 + ov2 * B = hi1 + c2) :
-    s2 + hi2 * B = a * b + acc + carry := by
-  have he1 : s2 + (c1 + c2) * B = pLo + acc + carry := by rw [Nat.add_mul]; omega
-  have he2 : hi2 + (ov1 + ov2) * B = pHi + c1 + c2 := by rw [Nat.add_mul]; omega
-  have htot : s2 + hi2 * B + (ov1 + ov2) * (B * B) = a * b + acc + carry := by
-    have hm := congrArg (· * B) he2
-    simp only [Nat.add_mul, Nat.mul_assoc] at hm he1 ⊢
-    omega
-  have h0 : ov1 + ov2 = 0 := by
-    cases h : ov1 + ov2 with
-    | zero => rfl
-    | succ k =>
-      have : B * B ≤ (k + 1) * (B * B) :=
-        Nat.le_mul_of_pos_left _ (Nat.succ_pos k)
-      rw [h] at htot
-      omega
-  rw [h0, Nat.zero_mul, Nat.add_zero] at htot
-  exact htot
+    (hs2 : s2 + c2 * B = s1 + carry) :
+    s2 + (pHi + c1 + c2) * B = a * b + acc + carry ∧ pHi + c1 + c2 < B := by
+  have htot : s2 + (pHi + c1 + c2) * B = a * b + acc + carry := by
+    rw [Nat.add_mul, Nat.add_mul]; omega
+  have hlt : (pHi + c1 + c2) * B < B * B := by omega
+  have hhi : pHi + c1 + c2 < B :=
+    match Nat.lt_or_ge (pHi + c1 + c2) B with
+    | Or.inl h => h
+    | Or.inr h => False.elim ((Nat.not_le_of_gt hlt) (Nat.mul_le_mul_right B h))
+  exact ⟨htot, hhi⟩
 
 theorem mulAddCarry64_spec (a b acc carry : UInt64) :
     (mulAddCarry64 a b acc carry).1.toNat + (mulAddCarry64 a b acc carry).2.toNat * 2 ^ 64 =
@@ -286,14 +277,23 @@ theorem mulAddCarry64_spec (a b acc carry : UInt64) :
   have hmul := mulWide64_spec a b
   have hs1 := addCarry64_spec (mulWide64 a b).1 acc false
   have hs2 := addCarry64_spec (addCarry64 (mulWide64 a b).1 acc false).1 carry false
-  have hh1 := addCarry64_spec (mulWide64 a b).2 0 (addCarry64 (mulWide64 a b).1 acc false).2
-  have hh2 := addCarry64_spec
-    (addCarry64 (mulWide64 a b).2 0 (addCarry64 (mulWide64 a b).1 acc false).2).1 0
-    (addCarry64 (addCarry64 (mulWide64 a b).1 acc false).1 carry false).2
-  have h0 : (0 : UInt64).toNat = 0 := rfl
   have hf : false.toNat = 0 := rfl
   rw [hf, Nat.add_zero] at hs1 hs2
-  rw [h0, Nat.add_zero] at hh1 hh2
-  exact mulAddCarry64_arith hbound hmul hs1 hs2 hh1 hh2
+  have ⟨htot, hlt⟩ := mulAddCarry64_hi_lt hbound hmul hs1 hs2
+  have hc : ∀ x : Bool, (if x then (1 : UInt64) else 0).toNat = x.toNat := by
+    intro x; cases x <;> rfl
+  have hc1 := hc (addCarry64 (mulWide64 a b).1 acc false).2
+  have hc2 := hc (addCarry64 (addCarry64 (mulWide64 a b).1 acc false).1 carry false).2
+  have hadd : ∀ (x y : UInt64), x.toNat + y.toNat < 2 ^ 64 → (x + y).toNat = x.toNat + y.toNat := by
+    intro x y hxy
+    rw [UInt64.toNat_add]
+    exact Nat.mod_eq_of_lt hxy
+  have h1 := hadd (mulWide64 a b).2 (if (addCarry64 (mulWide64 a b).1 acc false).2 then 1 else 0)
+    (by rw [hc1]; exact Nat.lt_of_le_of_lt (Nat.le_add_right _ _) hlt)
+  have h2 := hadd ((mulWide64 a b).2 + if (addCarry64 (mulWide64 a b).1 acc false).2 then 1 else 0)
+    (if (addCarry64 (addCarry64 (mulWide64 a b).1 acc false).1 carry false).2 then 1 else 0)
+    (by rw [h1, hc1, hc2]; exact hlt)
+  rw [h2, h1, hc1, hc2]
+  exact htot
 
 end IxCC.BigNat

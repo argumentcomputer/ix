@@ -353,4 +353,213 @@ theorem NatVal.matches_slowNat {mem : Memory} {a : IxCC.BigNat.Entry.SlowNat} {w
       have heq : limbs.toArray = ls := IxCC.BigNat.toNat_inj hc.wf hwf_ls hval
       exact ⟨by rw [hc.readbackLimbs, heq], hev⟩
 
+/-! ## Kernel-Evaluable `.rodata` BigNat Encoders (`*K`) -/
+
+/-- Kernel-evaluable static `LimbArray` / `BigNat` cell encoder (zero `ByteArray` copies). -/
+def encodeStaticLimbArrayK (limbs : List Word) : List UInt8 :=
+  encodeWordsK (staticHeader 0 tagLimbArray :: UInt64.ofNat limbs.length :: UInt64.ofNat limbs.length :: limbs)
+
+/-- Kernel-evaluable static `BigNat` literal encoder (`n ≥ 2^63`). -/
+def encodeBigNatLiteralK (n : Nat) : List UInt8 :=
+  encodeStaticLimbArrayK (IxCC.BigNat.ofNat n).toList
+
+/-- Kernel-evaluable `.rodata` table append for a `≥ 2^63` `Nat` literal. -/
+def addBigNatLiteralK (t : RodataTableK) (name : String) (n : Nat) : RodataTableK × Nat :=
+  t.addCell name (encodeBigNatLiteralK n)
+
+theorem encodeStaticLimbArrayK_eq (limbs : List Word) :
+    (⟨⟨encodeStaticLimbArrayK limbs⟩⟩ : ByteArray) = encodeStaticLimbArray limbs :=
+  encodeWordsK_eq _
+
+theorem encodeBigNatLiteralK_eq (n : Nat) :
+    (⟨⟨encodeBigNatLiteralK n⟩⟩ : ByteArray) = encodeBigNatLiteral n :=
+  encodeStaticLimbArrayK_eq _
+
+theorem addBigNatLiteralK_toRodataTable (t : RodataTableK) (name : String) (n : Nat) :
+    let (t', off) := addBigNatLiteralK t name n
+    (t'.toRodataTable, off) = addBigNatLiteral t.toRodataTable name n := by
+  simp only [addBigNatLiteralK, addBigNatLiteral, RodataTable.addLimbArray]
+  rw [← encodeStaticLimbArrayK_eq]
+  exact RodataTableK.addCell_toRodataTable t name (encodeBigNatLiteralK n)
+
+/-! ## Exact Equivalence Between `Rt.readbackBig` and `Rt.Readback.readbackBigNat` -/
+
+private theorem readWordsList_eq_mapM (m : Memory) (addr : Word) :
+    ∀ (n off : Nat),
+      Rt.readWordsList m addr off n =
+        (List.range n).mapM fun j =>
+          match m.read64? (addr + UInt64.ofNat (24 + 8 * (off + j))) with
+          | .ok w => some w
+          | .error _ => none
+  | 0, _ => rfl
+  | n + 1, off => by
+    rw [List.range_succ_eq_map, List.mapM_cons]
+    unfold Rt.readWordsList
+    simp only [Nat.add_zero]
+    cases m.read64? (addr + UInt64.ofNat (24 + 8 * off)) with
+    | error _ => rfl
+    | ok w =>
+      simp only [List.mapM_map]
+      have ih := readWordsList_eq_mapM m addr n (off + 1)
+      rw [ih]
+      have hfn :
+          (fun x => match m.read64? (addr + UInt64.ofNat (24 + 8 * (off + 1 + x))) with
+            | .ok w => some w | .error _ => none) =
+          ((fun j => match m.read64? (addr + UInt64.ofNat (24 + 8 * (off + j))) with
+            | .ok w => some w | .error _ => none) ∘ Nat.succ) := by
+        funext x
+        simp only [Function.comp, show off + 1 + x = off + x.succ by omega]
+      rw [hfn]
+      cases ((List.range n).mapM ((fun j =>
+        match m.read64? (addr + UInt64.ofNat (24 + 8 * (off + j))) with
+        | .ok w => some w | .error _ => none) ∘ Nat.succ)) <;> rfl
+
+theorem readWordsList_eq_readWordsRange (m : Memory) (addr : Word) (n : Nat) :
+    Rt.readWordsList m addr 0 n = readWordsRange m addr n := by
+  rw [readWordsList_eq_mapM]
+  unfold readWordsRange arrayPayloadOffset
+  simp only [Nat.zero_add]
+  rfl
+
+theorem limbsToNatList_eq_toNat (limbs : List Word) :
+    Rt.limbsToNatList limbs = IxCC.BigNat.toNat limbs.toArray := by
+  have aux : ∀ (ls : List Word), Rt.limbsToNatList ls = IxCC.BigNat.toNatPrefix ls.toArray ls.length := by
+    intro ls
+    induction ls with
+    | nil => rfl
+    | cons w ws ih =>
+      have hshift : ∀ (k : Nat), k ≤ ws.length →
+          IxCC.BigNat.toNatPrefix (w :: ws).toArray (k + 1) =
+            w.toNat + 2 ^ 64 * IxCC.BigNat.toNatPrefix ws.toArray k := by
+        intro k hk
+        induction k with
+        | zero =>
+          simp only [IxCC.BigNat.toNatPrefix, Nat.zero_add, Nat.pow_zero, Nat.mul_one, Nat.mul_zero, Nat.add_zero]
+          have h0 : IxCC.BigNat.getLimb (w :: ws).toArray 0 = w := by
+            rw [IxCC.BigNat.getLimb_lt (by simp)]; rfl
+          rw [h0]
+        | succ k ihk =>
+          rw [IxCC.BigNat.toNatPrefix, ihk (by omega)]
+          conv => rhs; rw [IxCC.BigNat.toNatPrefix]
+          have hg1 : IxCC.BigNat.getLimb (w :: ws).toArray (k + 1) = ws[k]'(by omega) := by
+            rw [IxCC.BigNat.getLimb_lt (by simp; omega)]; rfl
+          have hg2 : IxCC.BigNat.getLimb ws.toArray k = ws[k]'(by omega) := by
+            rw [IxCC.BigNat.getLimb_lt (by simp; omega)]; rfl
+          rw [hg1, hg2, Nat.mul_add, Nat.pow_succ (2 ^ 64) k]
+          have hcomm : (ws[k]'(by omega)).toNat * ((2 ^ 64) ^ k * 2 ^ 64) =
+              2 ^ 64 * ((ws[k]'(by omega)).toNat * (2 ^ 64) ^ k) := by
+            rw [Nat.mul_comm ((2 ^ 64) ^ k) (2 ^ 64), ← Nat.mul_assoc,
+              Nat.mul_comm ((ws[k]'(by omega)).toNat) (2 ^ 64), Nat.mul_assoc]
+          rw [hcomm, Nat.add_assoc]
+      simp only [Rt.limbsToNatList, List.length_cons, ih]
+      exact (hshift ws.length (Nat.le_refl _)).symm
+  simpa [IxCC.BigNat.toNat] using aux limbs
+
+theorem isCanonicalLimbsList_iff (limbs : List Word) :
+    Rt.isCanonicalLimbsList limbs = true ↔
+      IxCC.BigNat.WF limbs.toArray ∧ Rt.natLimit ≤ IxCC.BigNat.toNat limbs.toArray := by
+  cases limbs with
+  | nil =>
+    simp [Rt.isCanonicalLimbsList, IxCC.BigNat.toNat, Rt.natLimit]
+  | cons w rest =>
+    cases rest with
+    | nil =>
+      simp only [Rt.isCanonicalLimbsList, decide_eq_true_eq]
+      have hto : IxCC.BigNat.toNat [w].toArray = w.toNat := by
+        rw [← limbsToNatList_eq_toNat]; simp [Rt.limbsToNatList]
+      rw [hto]
+      constructor
+      · intro hge
+        refine ⟨Or.inr ?_, hge⟩
+        have hg : IxCC.BigNat.getLimb [w].toArray 0 = w := by
+          rw [IxCC.BigNat.getLimb_lt (by simp)]; rfl
+        simp only [List.size_toArray, List.length_singleton, Nat.sub_self, hg]
+        intro hz
+        rw [hz] at hge
+        simp [Rt.natLimit] at hge
+      · exact (·.2)
+    | cons w1 rest' =>
+      simp only [Rt.isCanonicalLimbsList]
+      have hlast : (w1 :: rest').getLast? = some ((w1 :: rest').getLast (List.cons_ne_nil _ _)) :=
+        List.getLast?_eq_some_getLast (List.cons_ne_nil _ _)
+      rw [hlast]
+      simp only [bne_iff_ne, ne_eq]
+      let top := (w1 :: rest').getLast (List.cons_ne_nil _ _)
+      have hlen : (w :: w1 :: rest').toArray.size = rest'.length + 2 := by simp
+      have htop_eq : IxCC.BigNat.getLimb (w :: w1 :: rest').toArray ((w :: w1 :: rest').toArray.size - 1) = top := by
+        rw [IxCC.BigNat.getLimb_lt (by omega)]
+        simp only [List.getElem_toArray]
+        have hidx : (w :: w1 :: rest').toArray.size - 1 = (rest'.length + 1) := by omega
+        simp only [hidx, List.getElem_cons_succ]
+        exact (List.getLast_eq_getElem (List.cons_ne_nil w1 rest')).symm
+      constructor
+      · intro hne
+        have hwf : IxCC.BigNat.WF (w :: w1 :: rest').toArray := Or.inr (by rw [htop_eq]; exact hne)
+        have htop_pos : 1 ≤ top.toNat := by
+          have : top.toNat ≠ 0 := fun h0 => hne (UInt64.toNat_inj.mp (by simpa using h0))
+          omega
+        have hge : 2 ^ 64 ≤ IxCC.BigNat.toNat (w :: w1 :: rest').toArray := by
+          unfold IxCC.BigNat.toNat
+          rw [hlen]
+          change 2 ^ 64 ≤ IxCC.BigNat.toNatPrefix (w :: w1 :: rest').toArray ((rest'.length + 1) + 1)
+          rw [IxCC.BigNat.toNatPrefix]
+          have hsub : (w :: w1 :: rest').toArray.size - 1 = rest'.length + 1 := by omega
+          have htop_eq' : IxCC.BigNat.getLimb (w :: w1 :: rest').toArray (rest'.length + 1) = top := by
+            rwa [← hsub]
+          rw [htop_eq']
+          have hpow : 2 ^ 64 ≤ (2 ^ 64) ^ (rest'.length + 1) := by
+            have : (2 ^ 64) ^ 1 ≤ (2 ^ 64) ^ (rest'.length + 1) :=
+              Nat.pow_le_pow_right (by decide) (by omega)
+            simpa using this
+          have hmul : 1 * 2 ^ 64 ≤ top.toNat * (2 ^ 64) ^ (rest'.length + 1) :=
+            Nat.mul_le_mul htop_pos hpow
+          omega
+        exact ⟨hwf, by unfold Rt.natLimit; omega⟩
+      · rintro ⟨hwf, _⟩
+        rcases hwf with h0 | htop
+        · omega
+        · rwa [htop_eq] at htop
+
+theorem isCanonicalLimbsList_eq_isCanonicalBigNat (limbs : List Word) :
+    Rt.isCanonicalLimbsList limbs = isCanonicalBigNat limbs.toArray := by
+  apply Bool.eq_iff_iff.mpr
+  rw [isCanonicalLimbsList_iff, isCanonicalBigNat_iff]
+  rfl
+
+/-- **`Rt.readbackNatWord` agrees identically with `Rt.Readback.readbackBigNat` on all words.** -/
+theorem readbackNatWord_eq_readbackBigNat (m : Memory) (w : Word) :
+    Rt.readbackNatWord m w = readbackBigNat m w := by
+  unfold Rt.readbackNatWord readbackBigNat readbackLimbArray
+  split
+  · rfl
+  · simp only [Rt.bigNatTag, ArrayKind.scan, ArrayKind.tag, tagLimbArray]
+    cases m.read64? w with
+    | error _ => rfl
+    | ok hdr =>
+      cases m.read64? (w + 8) with
+      | error _ => rfl
+      | ok sz =>
+        cases m.read64? (w + 16) with
+        | error _ => rfl
+        | ok cap =>
+          dsimp only
+          by_cases hcond : ((hdr &&& 0xFF).toNat == 0 &&
+              ((hdr >>> 16) &&& 0xFFFF).toNat == 0x7F03 &&
+              decide (sz.toNat ≤ cap.toNat)) = true
+          · simp only [hcond, ↓reduceIte]
+            rw [readWordsList_eq_readWordsRange]
+            cases readWordsRange m w sz.toNat with
+            | none => rfl
+            | some limbs =>
+              simp only [Option.map_some, isCanonicalLimbsList_eq_isCanonicalBigNat, limbsToNatList_eq_toNat]
+          · simp only [hcond, Bool.false_eq_true, ↓reduceIte]
+
+/-- Any `NatVal mem n w` reads back via `Rt.readbackBig` to `some (.nat n)`. -/
+theorem NatVal.readbackBig {sig : Sig} {fuel : Nat} {mem : Memory} {n : Nat} {w : Word}
+    (h : NatVal mem n w) :
+    Rt.readbackBig sig fuel mem .nat w = some (.nat n) := by
+  unfold Rt.readbackBig
+  rw [readbackNatWord_eq_readbackBigNat, h.readback]
+  rfl
+
 end IxCC.Rt.BigNat
