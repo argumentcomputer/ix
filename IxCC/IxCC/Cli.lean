@@ -131,8 +131,11 @@ structure Options where
   signatures : Option FilePath := none
   dumps : List String := []
   stats : Bool := false
+  /-- `--rc`: reference-counting mode (`off`, `on`, `auto`). -/
   rc : RcMode := .off
   rcExplicit : Bool := false
+  /-- `--opt`: run the formally validated Lir SSA optimizer (`Backend.compileOpt`, default OFF). -/
+  opt : Bool := false
   /-- `--exe FILE`: also write a standalone executable of the first root. -/
   exe : Option FilePath := none
   /-- `--embed-cert`: package a hardened `.ix.cert` v1 trailer into `--exe`. -/
@@ -152,7 +155,7 @@ def usage : String :=
   "\n".intercalate [
     "usage:",
     "  ixcc compile CLOSURE.ixe --equations EQ.json [--root NAME]... -o OUT.o",
-    "      [--rc off|on|auto] [--cert FILE] [--emit-cert FILE] [--signatures FILE] [--dump-ir LEVEL]... [--stats]",
+    "      [--rc off|on|auto] [--opt] [--cert FILE] [--emit-cert FILE] [--signatures FILE] [--dump-ir LEVEL]... [--stats]",
     "      [--exe FILE [--embed-cert] [--machine] [--stack BYTES] [--region BYTES]]",
     "  ixcc check-cert CLOSURE.ixe --equations EQ.json [--root NAME]... --cert FILE",
     "      [-o OUT.o] [--signatures FILE] [--stats]",
@@ -175,6 +178,7 @@ def parseRest (o : Options) : List String → Except String Options
     match RcMode.parse m with
     | some mode => parseRest { o with rc := mode, rcExplicit := true } rest
     | none => throw s!"unknown --rc mode {m}"
+  | "--opt" :: rest => parseRest { o with opt := true } rest
   | "--cert" :: f :: rest => parseRest { o with cert := some f } rest
   | "--emit-cert" :: f :: rest => parseRest { o with emitCert := some f } rest
   | "--signatures" :: f :: rest => parseRest { o with signatures := some f } rest
@@ -221,6 +225,10 @@ def parse : List String → Except String Options
       if o.layoutGiven && o.exe.isNone then throw "--stack and --region apply to --exe"
       if o.machine && o.exe.isNone then throw "--machine applies to --exe"
       if o.embedCert && o.exe.isNone then throw "--embed-cert applies to --exe"
+      if o.opt && cmd == "check-cert" then throw "--opt applies only to compile"
+      if o.opt && o.cert.isSome then throw "cannot combine --opt with --cert"
+      if o.opt && o.emitCert.isSome then throw "cannot combine --opt with --emit-cert"
+      if o.opt && o.embedCert then throw "cannot combine --opt with --embed-cert"
       -- a certificate fixes the RC policy (its format), so `--rc` with one is a usage error
       if o.cert.isSome && o.rcExplicit then throw "cannot combine --rc with --cert"
       if cmd == "check-cert" && o.cert.isNone then throw "check-cert needs --cert"
@@ -229,7 +237,7 @@ def parse : List String → Except String Options
       let o ← parseRest { command := cmd } rest
       if o.verifyExe.isNone then throw "no executable given"
       if o.out.isSome || o.exe.isSome || o.cert.isSome || o.emitCert.isSome ||
-          o.signatures.isSome || !o.dumps.isEmpty || o.rcExplicit || o.layoutGiven ||
+          o.signatures.isSome || !o.dumps.isEmpty || o.rcExplicit || o.opt || o.layoutGiven ||
           o.machine || o.embedCert || !o.roots.isEmpty then
         throw "verify-exe accepts only FILE [--closure FILE] [--equations FILE] [--stats] and kernel limits"
       pure o
@@ -332,13 +340,11 @@ def CliCert.ofText (text : String) : Except Err CliCert :=
   if text.trimAscii.toString.startsWith "[\"ixcc/rc-cert/2\"" then .plainRc <$> RcReplay.Cert.parse text
   else .zeroRc <$> Cert.ofText text
 
-/-- **`check-cert`'s verifier**, on a certificate's text: the text read (`CliCert.ofText`), its
-relevance annotation checked to be the annotator's (Stage A, `checkCanonicalRelevance`), the
-certificate replayed (`run`, or `RcReplay.run` for a plain-RC certificate), and decoded Ixon v5
-`Definition.asserts` enforced (`DefAsserts.checkWithReading` / `checkRcWithReading`). `compile`
-runs it on the text it is about to write, so a successful compile is one whose written certificate
-this accepts. -/
-def checkText (cfg : Config) (inp : Input) (text : String) : Except Err (CliCert × Artifact) := do
+/-- **`check-cert`'s verifier**, on a certificate's text, with optional validated
+`Lir.Opt` backend recompilation (`Backend.compileOpt`) when `opt = true`
+(opt-in `--opt` on `ixcc compile`, default `false`). -/
+def checkTextWith (opt : Bool) (cfg : Config) (inp : Input) (text : String) :
+    Except Err (CliCert × Artifact) := do
   let cc ← CliCert.ofText text
   unless checkCanonicalRelevance cfg inp cc.base.table cc.base.relevance do
     throw { stage := .relevance, code := "relevance-canonical",
@@ -346,10 +352,36 @@ def checkText (cfg : Config) (inp : Input) (text : String) : Except Err (CliCert
   match cc with
   | .zeroRc cert =>
     let a ← DefAsserts.runWithReading cfg inp.program inp.kernel.rd cert
-    return (cc, a)
+    if !opt then
+      return (cc, a)
+    else
+      let root := (a.src.roots.head?.map (·.1)).getD default
+      let bcfg : Backend.Config :=
+        { a.lowered.config (cfg.provenance.getD (defaultProvenance root)) with env := cfg.env }
+      let backend ← (Backend.compileOpt a.lowered.program bcfg).mapError Err.ofBackend
+      return (cc, { a with backend })
   | .plainRc cert =>
     let rcArt ← DefAsserts.runRcWithReading cfg inp.program inp.kernel.rd cert
-    return (cc, ← rcArt.toRecheckArtifact cert)
+    let a ← rcArt.toRecheckArtifact cert
+    if !opt then
+      return (cc, a)
+    else
+      let root := (rcArt.front.src.roots.head?.map (·.1)).getD default
+      let provenance := cfg.provenance.getD (.ixir1Policy root 3 1)
+      let bcfg : Backend.Config :=
+        { rcArt.front.lowered.config provenance with
+          reps := rcArt.front.reps, env := rcArt.front.env cfg.env }
+      let backend ← (Backend.compileOpt rcArt.front.lowered.program bcfg).mapError Err.ofBackend
+      return (cc, { a with backend })
+
+/-- **`check-cert`'s verifier**, on a certificate's text: the text read (`CliCert.ofText`), its
+relevance annotation checked to be the annotator's (Stage A, `checkCanonicalRelevance`), the
+certificate replayed (`run`, or `RcReplay.run` for a plain-RC certificate), and decoded Ixon v5
+`Definition.asserts` enforced (`DefAsserts.checkWithReading` / `checkRcWithReading`). `compile`
+runs it on the text it is about to write, so a successful compile is one whose written certificate
+this accepts. -/
+def checkText (cfg : Config) (inp : Input) (text : String) : Except Err (CliCert × Artifact) :=
+  checkTextWith false cfg inp text
 
 /-- The certificate text `compile` writes under `--rc` mode `rc` (the producer's file text, read
 back through the verifier's reader inside the producer), with the allocation outcomes and, for
@@ -453,7 +485,7 @@ def execute (o : Options) (limits : Ix.Kernel.Admission.Limits := Src.KernelFron
       | none =>
         let (text, outcomes, policy, hints) ← lift fun _ => produceText o.rc cfg inp
         pure (text, some outcomes, policy, hints)
-    let ((cliCert, a), tRun) ← timed (lift fun _ => checkText cfg inp text)
+    let ((cliCert, a), tRun) ← timed (lift fun _ => checkTextWith o.opt cfg inp text)
     pure (text, cliCert, outcomes, policy, tProduce, a, tRun, hints)
   let (text, cliCert, outcomes, policy, tProduce, a, tRun, hints) ←
     if o.cert.isNone then withRetry cfg produceRun else produceRun cfg
@@ -518,6 +550,7 @@ def execute (o : Options) (limits : Ix.Kernel.Admission.Limits := Src.KernelFron
     IO.println s!"certificate: {certBytes} bytes of JSON; {cert.table.resolve.length} table entries, \
       {cert.relevance.nodes.length} annotated terms, {cert.mid.steps.length} middle-end steps, \
       {cert.alloc.length} allocations, {cert.frames.length} frame layouts"
+    if o.opt then IO.println "lir.opt: enabled (validated Backend.compileOpt)"
     for l in statsLines a outcomes do IO.println l
     for d in hints do IO.println s!"hint: {d.message}"
 

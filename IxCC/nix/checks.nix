@@ -161,6 +161,7 @@ in
       launch tests-lam $bin/tests-lam
       launch tests-fir $bin/tests-fir
       launch check-lir $bin/check-lir
+      launch tests-lir-opt $bin/tests-lir-opt
       launch tests-anf $bin/tests-anf
       launch tests-own $bin/tests-own ${nativeArg}
       launch tests-own-plain $bin/tests-own-plain

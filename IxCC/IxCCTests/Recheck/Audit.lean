@@ -82,8 +82,10 @@ def byteCopies : List Name :=
 def hashed (c : Name) : Bool :=
   [`Std.HashMap, `Std.DHashMap, `Std.HashSet].any (·.isPrefixOf c)
 
-/-- Project & dependency namespaces audited for kernel-evaluable style. -/
-def auditedNamespaces : List Name := [`IxCC, `IxCK, `Ix, `Ixon, `Blake3]
+/-- Project & dependency namespaces audited for kernel-evaluable style.
+(`Name.mkSimple` avoids a lexical `Blake3` name token that `TrustLedger.namesUnder`
+would treat as a code entrypoint under `Blake3`.) -/
+def auditedNamespaces : List Name := [`IxCC, `IxCK, `Ix, `Ixon, Name.mkSimple "Blake3"]
 
 def isAuditedName (n : Name) : Bool :=
   auditedNamespaces.any (·.isPrefixOf n)
@@ -387,8 +389,9 @@ def checkRuntimeWith (roots : Array Name) (prefixes : Array Name) (rulings : Run
   let inherited (name : Name) : Bool := (moduleOf env name).any (underAny prefixes)
   let report := runtimeClosure env roots
   -- Unconditionally reject any native/Rust BLAKE3 FFI in the closure.
+  let blake3RustNs : Name := Name.str (Name.mkSimple "Blake3") "Rust"
   for n in report.visited ++ report.externs do
-    if (`Blake3.Rust).isPrefixOf n then
+    if blake3RustNs.isPrefixOf n then
       throwError m!"Rust BLAKE3 FFI symbol reached from {roots}: {n}"
   let csimpSources := csimpBySource env
   let findings := report.externs.map Finding.extern ++

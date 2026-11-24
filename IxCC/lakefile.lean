@@ -285,6 +285,11 @@ critical-edge splitting, clock monotonicity and exactness, and determinism. -/
 lean_exe «check-lir» where
   root := `IxCCTests.Lir.Main
 
+/- Validated Lir SSA optimizer (GVN/CSE, LICM, div-magic, store forwarding/DSE):
+unit tests, negative-control mutants, Lir.Gen fuzzing, and K1/K2/K3 parity. -/
+lean_exe «tests-lir-opt» where
+  root := `IxCCTests.Lir.Opt.Main
+
 /- Selection: Lir.eval against Xv.eval on the kernels and on generated Lir, in
 lock-step (outcome, memory and clock), with per-rule firing counts. -/
 lean_exe «check-xv-select» where

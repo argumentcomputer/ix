@@ -542,6 +542,27 @@ import IxCC.Lam.Erase.Array
 import IxCC.Rt.Rc.Array.Wire
 import IxCC.Rt.Proof.StrHoist
 import IxCC.Rt.Proof.ArrayWire
+import IxCC.CompileClaim.Closure
+import IxCC.X86.Exe.Cert
+import IxCC.Exe.Cert
+import IxCC.Exe.Cert.Proof
+import IxCC.X86.Exe.Plain.Proof.Spec
+import IxCC.X86.Exe.Plain.Proof.Blocks
+import IxCC.X86.Exe.Plain.Proof.Report
+import IxCC.X86.Exe.Plain.Proof.Parse
+import IxCC.X86.Exe.Plain.Proof.Shell
+import IxCC.Exe.Plain.Exe
+import IxCC.Lir.Opt.DivMagic
+import IxCC.Lir.Opt.Sym
+import IxCC.Lir.Opt.Check
+import IxCC.Lir.Opt.Gvn
+import IxCC.Lir.Opt.Licm
+import IxCC.Lir.Opt.Driver
+import IxCC.Lir.Proof.Opt.Arith
+import IxCC.Lir.Proof.Opt.Mem
+import IxCC.Lir.Proof.Opt.Seg
+import IxCC.Lir.Proof.Opt.Sim
+import IxCC.Lir.Proof.Opt.Backend
 
 /-! Production API: Ixon v3 ingress, the shared semantic vocabulary, the Src
 front end (ingress, the checked unfolding table, SrcEval, relevance), global and
