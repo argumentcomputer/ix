@@ -216,18 +216,21 @@ theorem prim_natSub {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word}
       rw [natSub_word hwa hwb])
 
 /-- The `Nat`-valued binary primitives' meanings (a word primitive's is `Lam.wordSem`'s, partial,
-so `op.isWord = false`; every caller names a constructor and discharges it `by decide`). -/
+so `op.isWord = false`; an array primitive has no meaning on literals, so `op.isArr = false`;
+every caller names a constructor and discharges it `by decide`). -/
 theorem sem_nat2 (op : Lam.Prim)
-    (hop : op ≠ .natBeq ∧ op ≠ .natBle ∧ op ≠ .natBlt ∧ op ≠ .natPred ∧ op.isWord = false) (p q : Nat) :
+    (hop : op ≠ .natBeq ∧ op ≠ .natBle ∧ op ≠ .natBlt ∧ op ≠ .natPred ∧ op.isWord = false ∧
+      op.isArr = false) (p q : Nat) :
     op.sem [p, q] = some (.nat (match op with
       | .natAdd => p + q | .natSub => p - q | .natMul => p * q
       | .natDiv => if q = 0 then 0 else p / q | .natMod => if q = 0 then p else p % q
       | .natPow => p ^ q | .natGcd => Nat.gcd p q | .natLand => p &&& q | .natLor => p ||| q
       | .natXor => p ^^^ q | .natShl => p * 2 ^ q | .natShr => p / 2 ^ q
       | _ => 0)) := by
-  obtain ⟨h1, h2, h3, h4, h5⟩ := hop
+  obtain ⟨h1, h2, h3, h4, h5, h6⟩ := hop
   cases op
   case word => simp [Lam.Prim.isWord] at h5
+  case arr => simp [Lam.Prim.isArr] at h6
   all_goals first | exact absurd rfl h1 | exact absurd rfl h2 | exact absurd rfl h3 | exact absurd rfl h4 |
     simp [Lam.Prim.sem, Lam.Prim.sem.srcOp, Src.PrimOp.eval2, shiftRight_eval]
 

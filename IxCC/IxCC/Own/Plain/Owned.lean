@@ -257,6 +257,10 @@ def primImmArgs (op : Lam.Prim) (arity : Nat) : List Bool :=
   | .natAdd | .natSub | .natMul | .natDiv | .natMod | .natPow | .natGcd | .natBeq | .natBle
   | .natLand | .natLor | .natXor | .natShl | .natShr | .natPred | .natBlt => List.replicate arity true
   | .word .. => List.replicate arity true
+  -- Placeholder (lane prims-core): sound only while Own's `primResult` is stuck on `.arr`, so this
+  -- mask is never read on a successful run. Array arguments are heap values, not immediates:
+  -- lane own-sigs replaces this arm by the primitive's signature (`PrimSig`).
+  | .arr .. => List.replicate arity true
 
 namespace Ctx
 
