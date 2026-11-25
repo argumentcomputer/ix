@@ -1,7 +1,7 @@
 import IxCC.Recheck.Produce
-import IxCCCorrect.Shape2Produce
 import IxCC.Recheck.Rc.Produce
-import IxCCCorrect.ShapeTree
+import IxCC.Shape.Src.Produce
+import IxCC.Shape.Src.Tree
 
 /-! # `tests-shape`: the shape producer and the shape check on committed closures
 
@@ -15,7 +15,8 @@ instance. Then a table per family and a histogram of the classes. The suite repo
 asserts nothing and always exits 0. `SHAPE_ONLY=<family>` runs one family; `SHAPE_DETAIL=1`
 prints a refused instance's body. -/
 
-open IxCC IxCC.Src IxCC.Correct.Shape2
+open IxCC IxCC.Src IxCC.SrcShape
+open IxCC.Shape (Shape arrows)
 
 namespace IxCCTests.Shape
 
@@ -88,6 +89,8 @@ def showShape : Shape → String
   | .inter a b => s!"({showShape a} & {showShape b})"
   | .fn a b => s!"({showShape a} -> {showShape b})"
   | .word w => s!"W{w.bits}"
+  | .natLt b => s!"N<{b}"
+  | .arr e _ => s!"[{showShape e}]"
 
 /-- A term on one line: `#i` a variable, `cN` a constant, `~a` an argument irrelevant at `ls`,
 `'a` a by-name one, `\` a λ (`\~` irrelevant binder), `T` a type or sort. -/
@@ -311,6 +314,10 @@ def families : List (String × String) :=
    ("rc-real-source", "fixtures/rc/real-source"),
    ("fold", "fixtures/fold")]
 
+/-- The decline corpus, run only with `SHAPE_DECLINE=1`: its roots are meant to be declined
+ somewhere, and this says whether the shape check is where (or would be). -/
+def declineFamily : String × String := ("phase1-decline", "fixtures/corpus/phase1-decline")
+
 /-- The closures of a directory: each `.ixe` with its sidecar (`<stem>.equations.json`,
 else `consumer.equations.json`, else `equations.json`). -/
 def closuresOf (dir : String) : IO (List (String × String × String)) := do
@@ -420,7 +427,7 @@ def rcEndToEnd (label ixe eqs : String) : IO (Bool × Nat) := do
     let ms := treeMapsFor f sc arities
     let trees := (ms.filter fun m => !m.isEmpty).length
     let t0 ← IO.monoMsNow
-    match rcRunShaped cfg k.program c sc ms arities with
+    match rcRunShapedTree cfg k.program c sc ms arities with
     | .ok _ =>
       IO.println s!"rcRunShaped accepts: {roots.length} roots at {arities} parameters \
         ({trees} with a tree result), {sc.insts.length} instances, {sc.datas.length} data \
@@ -482,11 +489,12 @@ def bump (key : String) : List (String × Nat) → List (String × Nat)
 
 def run : IO UInt32 := do
   let only ← IO.getEnv "SHAPE_ONLY"
+  let fams := if (← IO.getEnv "SHAPE_DECLINE").isSome then families ++ [declineFamily] else families
   let rootOnly ← IO.getEnv "SHAPE_ROOT"
   let mut rows : List (String × Nat × Nat × Nat × Nat) := []
   let mut hist : List (String × Nat) := []
   let mut unloadable : List String := []
-  for (family, dir) in families do
+  for (family, dir) in fams do
     if only.isSome && only != some family then continue
     let mut total := 0
     let mut viewed := 0
@@ -537,7 +545,7 @@ def run : IO UInt32 := do
     IO.println "the whole checked path (Recheck.run, then runShaped):"
     let mut ok := 0
     let mut n := 0
-    for (family, dir) in families do
+    for (family, dir) in fams do
       if only.isSome && only != some family then continue
       for (stem, ixe, eqs) in ← closuresOf dir do
         n := n + 1
@@ -550,7 +558,7 @@ def run : IO UInt32 := do
     let mut rok := 0
     let mut rn := 0
     let mut rtrees := 0
-    for (family, dir) in families do
+    for (family, dir) in fams do
       if only.isSome && only != some family then continue
       for (stem, ixe, eqs) in ← closuresOf dir do
         rn := rn + 1

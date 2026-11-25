@@ -45,59 +45,8 @@ routes and the progress targets are definitions and have no fence. -/
 
 /-! ## `IxCCCorrect.Progress` -/
 
-/-- info: 'IxCC.Correct.NeverWrong.neverStuck' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Correct.NeverWrong.neverStuck
-
-/-- info: 'IxCC.Correct.viewed_stuck_iff' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Correct.viewed_stuck_iff
-
-/-- info: 'IxCC.Correct.neverStuck_iff' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Correct.neverStuck_iff
-
-/-- info: 'IxCC.Correct.neverWrong_iff' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Correct.neverWrong_iff
-
-/-- info: 'IxCC.Correct.not_goesWrong_iff' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Correct.not_goesWrong_iff
-
-/-- info: 'IxCC.Correct.rc_not_goesWrong_iff' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Correct.rc_not_goesWrong_iff
-
-/-- info: 'IxCC.Correct.not_stuck_of_refinesOn' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Correct.not_stuck_of_refinesOn
-
-/-- info: 'IxCC.Correct.recheck_sound_of_neverWrong' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Correct.recheck_sound_of_neverWrong
-
-/-- info: 'IxCC.Correct.recheck_not_stuck' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Correct.recheck_not_stuck
-
-/-- info: 'IxCC.Correct.recheck_not_stuck_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Correct.recheck_not_stuck_at
-
-/-- info: 'IxCC.Correct.rc_sound_of_neverWrong' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Correct.rc_sound_of_neverWrong
-
-/-- info: 'IxCC.Correct.rc_not_stuck' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Correct.rc_not_stuck
-
-/-- info: 'IxCC.Correct.rc_not_stuck_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Correct.rc_not_stuck_at
-
-/-- info: 'IxCC.Correct.plainExeOutcome_mono' depends on axioms: [propext] -/
-#guard_msgs in #print axioms IxCC.Correct.plainExeOutcome_mono
-
-/-- info: 'IxCC.Correct.plain_exe_sound_of_neverWrong' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Correct.plain_exe_sound_of_neverWrong
-
-/-- info: 'IxCC.Correct.rc_plain_exe_sound_of_neverWrong' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Correct.rc_plain_exe_sound_of_neverWrong
-
-/-- info: 'IxCC.Correct.plain_exe_specified_of_neverStuck' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Correct.plain_exe_specified_of_neverStuck
-
-/-- info: 'IxCC.Correct.rc_plain_exe_specified_of_neverStuck' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Correct.rc_plain_exe_specified_of_neverStuck
+/-! The model-free statements (`NeverStuck`, `NeverWrong` and their discharge lemmas) moved to
+production, `IxCC.Shape.Progress`; their fences are in `IxCCTests/Fences/SrcShape.lean`. -/
 
 /-- info: 'IxCC.Correct.FunctionalProgress.safety' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.FunctionalProgress.safety

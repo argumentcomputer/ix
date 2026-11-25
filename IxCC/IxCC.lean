@@ -251,6 +251,12 @@ import IxCC.Sem.Entry
 import IxCC.Fir.Proof.Lang
 import IxCC.Fir.Proof.FirstOrder
 import IxCC.Shape.Basic
+import IxCC.Shape.Progress
+import IxCC.Shape.Src.Judgment
+import IxCC.Shape.Src.Check
+import IxCC.Shape.Src.Produce
+import IxCC.Shape.Src.Hook
+import IxCC.Shape.Src.Tree
 import IxCC.Fir.Shape
 import IxCC.Fir.Proof.Shape
 import IxCC.Fir.ShapeInfer
