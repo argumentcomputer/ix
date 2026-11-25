@@ -13,6 +13,7 @@ private def indent (n : Nat) : String := String.ofList (List.replicate (2 * n) '
 def renderKey : Key.CtorKey → String
   | .src c => s!"C{c}"
   | .clo g n => s!"clo({g.render},{n})"
+  | .arr => "arr"
 
 def Arg.render : Arg → String
   | .var x => s!"v{x}"

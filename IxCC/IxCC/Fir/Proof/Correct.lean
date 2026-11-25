@@ -45,7 +45,7 @@ def obsV : Val → Option Obs
   | .ctor c fs =>
     match c.key with
     | .src cid => (obsList fs).map (.ctor cid)
-    | .clo .. => none
+    | _ => none
   | .erased => none
 
 def obsList : List Val → Option (List Obs)
@@ -80,6 +80,7 @@ theorem vr_obs : ∀ {v : Anf.Val} {w : Val}, VR A v w → Anf.obsV v = obsV w
       simp only [Anf.obsV, obsV, hk, vrs_obs hvs]
     | clo f n =>
       simp only [Anf.obsV, obsV, hk]
+    | arr => simp only [Anf.obsV, obsV, hk]
 
 theorem vrs_obs : ∀ {vs : List Anf.Val} {ws : List Val}, VRs A vs ws → Anf.obsList vs = obsList ws
   | _, _, .nil => rfl

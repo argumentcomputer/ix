@@ -227,6 +227,7 @@ def allCloAlts : List Alt → Bool
   | [] => true
   | .mk (.clo ..) _ _ :: rest => allCloAlts rest
   | .mk (.src _) _ _ :: _ => false
+  | .mk .arr _ _ :: _ => false
 
 /-- Deduplicate constructor keys, keeping first occurrence order (structurally recursive). -/
 def dedupKeysAux (seen : List Key.CtorKey) : List Key.CtorKey → List Key.CtorKey
@@ -249,6 +250,7 @@ def checkBindPlain (P : Program) (dc : DecCert) (env : List KAbs) (b : Bind) :
       match c with
       | .clo .. => some (some [c], [])
       | .src _ => some (some [], [])
+      | .arr => none
     else none
   | .proj c i _ => some (fieldFlow dc c i, [])
   | .prim _ _ => some (some [], [])

@@ -365,6 +365,7 @@ theorem dv_obs : ∀ {v w : Val}, DV X v w → obsV v = obsV w
     cases c with
     | src c => simp only [obsV, dvs_obs h]
     | clo f j => rfl
+    | arr => rfl
   | _, _, .closId .. => rfl
   | _, _, .closMask .. => rfl
   | _, _, .wrap .. => rfl

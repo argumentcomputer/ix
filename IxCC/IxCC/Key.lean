@@ -9,8 +9,8 @@ source `CRef`) and universe profiles (D18), never from digests: they compare
 by `DecidableEq`, no theorem mentions a hash, and an address is only a label
 for diagnostics.
 
-* `CtorKey` names a constructor: a source constructor, or (Phase 2, P8) a
-  closure shape.
+* `CtorKey` names a constructor: a source constructor, (Phase 2, P8) a
+  closure shape, or the one reserved key of an array value (`arr`).
 * `GKey` names a global: erasure makes `const`, `byName`, `recStar` and
   `wrapper` globals, each at a universe profile; P4, P5 and P8 add `spec`,
   `worker`, `lam` and `dispatch`, and the closures step adds `entry`.
@@ -33,6 +33,11 @@ inductive CtorKey where
   | src (c : Src.CId)
   /-- P8's closure constructor: global `f` with `supplied` arguments. -/
   | clo (f : GKey) (supplied : Nat)
+  /-- The reserved key of an array value (decision D1 of `plans/ONE-PIPELINE.md`): below
+  erasure an `Array`, `ByteArray` or `String` is `con arr elems`, one field per element, built
+  and read only by the array primitives (`Src.ArrOp`). No source constructor and no closure
+  shape has this key, and no constructor table row should. -/
+  | arr
 
 /-- Global identity (D19). -/
 inductive GKey where
@@ -81,7 +86,9 @@ def CtorKey.decEq : (a b : CtorKey) → Decidable (a = b)
     | isTrue hf =>
       if hn : n = m then isTrue (hf ▸ hn ▸ rfl) else isFalse (fun e => by cases e; exact hn rfl)
     | isFalse hf => isFalse (fun e => by cases e; exact hf rfl)
-  | .src _, .clo .. | .clo .., .src _ => isFalse (fun e => by cases e)
+  | .arr, .arr => isTrue rfl
+  | .src _, .clo .. | .clo .., .src _ | .src _, .arr | .arr, .src _ | .clo .., .arr | .arr, .clo .. =>
+    isFalse (fun e => by cases e)
   termination_by structural a => a
 
 def GKey.decEq : (a b : GKey) → Decidable (a = b)

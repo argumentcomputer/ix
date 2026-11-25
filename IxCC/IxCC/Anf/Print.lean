@@ -24,6 +24,7 @@ def renderCtor (P : Program) : Key.CtorKey → String
     | some i => s!"C{c}#{i.tag}"
     | none => s!"C{c}?"
   | .clo g n => s!"clo({g.render},{n})"
+  | .arr => "arr"
 
 private def atoms (d : Nat) (as : List Atom) : String := " ".intercalate (as.map (·.render d))
 

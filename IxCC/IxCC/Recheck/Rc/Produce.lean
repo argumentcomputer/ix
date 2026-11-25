@@ -197,6 +197,7 @@ mutual
 def ctorKeyHash : Key.CtorKey → UInt64
   | .src c => mixHash 11 (hash c)
   | .clo f n => mixHash 12 (mixHash (keyHash f) (hash n))
+  | .arr => mixHash 13 0
   termination_by structural k => k
 
 /-- A structural hash of a global key, for `keyIndex` only. Keys compare by `DecidableEq`;

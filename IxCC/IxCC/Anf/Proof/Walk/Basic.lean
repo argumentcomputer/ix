@@ -51,6 +51,7 @@ theorem obs : ∀ {v w : Val}, WV Q Valid Xc v w → obsV v = obsV w
     cases c with
     | src c => simp only [obsV, obsList_eq h]
     | clo f j => rfl
+    | arr => rfl
   | _, _, .idc _ _ => rfl
   | _, _, .walkc _ _ _ _ _ _ _ _ _ _ _ _ _ _ => rfl
   | _, _, .xc _ _ _ => rfl

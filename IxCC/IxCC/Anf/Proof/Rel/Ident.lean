@@ -63,6 +63,7 @@ theorem obs : ∀ {v w : Val}, IdV v w → obsV v = obsV w
     cases c with
     | src c => simp only [obsV, obsList_eq h]
     | clo f j => rfl
+    | arr => rfl
   | _, _, .clos _ _ => rfl
 
 theorem obsList_eq : ∀ {vs ws : List Val}, IdVs vs ws → obsList vs = obsList ws

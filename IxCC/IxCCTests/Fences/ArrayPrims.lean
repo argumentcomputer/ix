@@ -1,4 +1,8 @@
 import IxCC.Sem.ValModel
+import IxCC.Anf.Proof.Rel.ValModel
+import IxCC.Anf.Proof.Defun.Narrow
+import IxCC.Anf.Proof.Defun.ValModel
+import IxCC.Anf.Proof.Convert.ValModel
 
 /-! Required axiom fences for the array primitives on the certified pipeline
 (`plans/ONE-PIPELINE.md`, lane `prims-core`): the operations' meaning over a value model
@@ -55,3 +59,41 @@ every pass uses (`IxCC/Sem/ValModel.lean`). Expected messages are preserved verb
 
 /-- info: 'IxCC.Src.ArrOp.neverResource' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Src.ArrOp.neverResource
+
+/-! The array value encoding below erasure (decision D1: a constructor value under the reserved
+key `Key.CtorKey.arr`): every Anf relation of the `Base` shape, closure conversion's relation and
+Lam-to-Anf conversion's relation respect the value models (`Sem.ModelRel`), and the
+closure-narrowing proof's array scrutinee case. -/
+
+/-- info: 'IxCC.Anf.Rel.Pw.toForall2' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Anf.Rel.Pw.toForall2
+
+/-- info: 'IxCC.Anf.Rel.Pw.ofForall2' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Anf.Rel.Pw.ofForall2
+
+/-- info: 'IxCC.Anf.Rel.Base.modelRel' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Rel.Base.modelRel
+
+/-- info: 'IxCC.Anf.Defun.Narrow.Proof.evalAlts_allClo_arr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Narrow.Proof.evalAlts_allClo_arr
+
+/-- info: 'IxCC.Anf.Defun.Proof.DVs.toForall2' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.DVs.toForall2
+
+/-- info: 'IxCC.Anf.Defun.Proof.DVs.ofForall2' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.DVs.ofForall2
+
+/-- info: 'IxCC.Anf.Defun.Proof.dv_modelRel' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.dv_modelRel
+
+/-- info: 'IxCC.Anf.Convert.Proof.VRs.toForall2' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Convert.Proof.VRs.toForall2
+
+/-- info: 'IxCC.Anf.Convert.Proof.VRs.ofForall2' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Convert.Proof.VRs.ofForall2
+
+/-- info: 'IxCC.Anf.Convert.Proof.CloR.lam_clos' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Convert.Proof.CloR.lam_clos
+
+/-- info: 'IxCC.Anf.Convert.Proof.vr_modelRel' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Convert.Proof.vr_modelRel

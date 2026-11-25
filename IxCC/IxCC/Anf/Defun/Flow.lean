@@ -167,6 +167,7 @@ def stepBindPlain (P : Program) (ctors : Array Lam.CtorInfo) (env : List Abs) (b
       | .clo .., some idx => some [idx]
       | .clo .., none => none
       | .src _, _ => absBot
+      | .arr, _ => absBot
     (rf, st)
   | .proj c i _ => (getFieldFlow st (findCtorIdx ctors c) i, st)
   | .prim _ _ => (absBot, st)

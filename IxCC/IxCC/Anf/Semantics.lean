@@ -75,7 +75,28 @@ def shape : Val → String
   | .lit (.str _) => "str"
   | .box => "box"
 
+/-- An array value's elements (decision D1: `con Key.CtorKey.arr elems`). -/
+def asArr : Val → Option (List Val)
+  | .con .arr xs => some xs
+  | _ => none
+
+/-- A `Nat` literal. -/
+def asNat : Val → Option Nat
+  | .lit (.nat n) => some n
+  | _ => none
+
 end Val
+
+/-- **Anf's value model** for the array primitives (`Src.ArrOp.eval`), as Lam's (`Lam.model`): a
+`Nat` is a literal and an array is a constructor value under the reserved key `Key.CtorKey.arr`
+with one field per element (decision D1). A `List` value is not readable yet (`Lam.model`). -/
+def model : Sem.ValModel Val where
+  nat n := .lit (.nat n)
+  asNat := Val.asNat
+  arr xs := .con .arr xs
+  asArr := Val.asArr
+  list _ := .box
+  asList _ := none
 
 def Atom.eval (ρ : List Val) : Atom → Option Val
   | .var i => ρ[i]?

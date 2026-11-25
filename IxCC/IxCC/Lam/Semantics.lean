@@ -69,7 +69,30 @@ def shape : Val → String
   | .lit (.str _) => "str"
   | .box => "box"
 
+/-- An array value's elements (decision D1: `con Key.CtorKey.arr elems`). -/
+def asArr : Val → Option (List Val)
+  | .con .arr xs => some xs
+  | _ => none
+
+/-- A `Nat` literal. -/
+def asNat : Val → Option Nat
+  | .lit (.nat n) => some n
+  | _ => none
+
 end Val
+
+/-- **Lam's value model** for the array primitives (`Src.ArrOp.eval`): a `Nat` is a literal and an
+array is a constructor value under the reserved key `Key.CtorKey.arr` with one field per element
+(decision D1). A `List` value is not readable yet: `Known` does not pin the `List` constructors, so
+`ofList` is stuck and `toList` returns □ (stuck under any use). Pinning them is the first step of
+the lane that produces `ofList`/`toList` (erasure of `Array.mk`/`Array.toList`). -/
+def model : Sem.ValModel Val where
+  nat n := .lit (.nat n)
+  asNat := Val.asNat
+  arr xs := .con .arr xs
+  asArr := Val.asArr
+  list _ := .box
+  asList _ := none
 
 /-- Literal arguments of a primitive. -/
 def natArgs : List Val → Option (List Nat)

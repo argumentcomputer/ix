@@ -181,6 +181,9 @@ import IxCC.Anf.Proof.Convert.Correct
 import IxCC.Anf.Proof.Rel.Basic
 import IxCC.Anf.Proof.Rel.Fund
 import IxCC.Anf.Proof.Rel.Ident
+import IxCC.Anf.Proof.Rel.ValModel
+import IxCC.Anf.Proof.Defun.ValModel
+import IxCC.Anf.Proof.Convert.ValModel
 import IxCC.Anf.Proof.Walk.Beq
 import IxCC.Anf.Proof.Walk.Monad
 import IxCC.Anf.Proof.Walk.Rel
@@ -240,6 +243,7 @@ import IxCC.Own.Plain.Check
 import IxCC.Own.Plain.Semantics
 import IxCC.Fir.Proof.Unfold
 import IxCC.Sem.Forall2
+import IxCC.Sem.ValModel
 import IxCC.Fir.Proof.Mono
 import IxCC.Fir.Proof.Rel
 import IxCC.Fir.Proof.Lowering
@@ -521,6 +525,7 @@ import IxCC.Fir.Proof.Rep
 import IxCC.Rt.Proof.LowerRep
 import IxCC.X86.ELFRodata
 import IxCC.Src.ArraySpec
+import IxCC.Src.ArrayOp
 import IxCC.Src.Table.Array
 import IxCC.Rt.Rc.Array.Layout
 import IxCC.Rt.Rc.Array.Invariant
