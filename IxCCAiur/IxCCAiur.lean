@@ -15,6 +15,7 @@ import IxCCAiur.Schedule
 import IxCCAiur.ScheduleJson
 import IxCCAiur.TypedRep
 import IxCCAiur.Peephole
+import IxCCAiur.InlineFuse
 import IxCCAiur.TypedLower
 import IxCCAiur.TypedWorld
 import IxCCAiur.TypedGadgets
