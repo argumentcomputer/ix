@@ -1,5 +1,6 @@
 import IxCC.Recheck.Produce
 import IxCCCorrect.Shape2Produce
+import IxCCCorrect.ShapeHook
 
 /-! # `tests-shape`: the shape producer and the shape check on committed closures
 
@@ -327,6 +328,63 @@ def closuresOf (dir : String) : IO (List (String × String × String)) := do
     | none => IO.println s!"{dir}/{n}: no sidecar found, skipped"
   return out
 
+/-- How many `Nat` parameters a root shape starts with. -/
+def natParams : Shape → Nat
+  | .fn .nat τ => natParams τ + 1
+  | _ => 0
+
+/-- **The whole checked path on one closure**: the recheck producer and `Recheck.run`,
+the shape producer on the checked source the run made (one certificate for all roots),
+and `runShaped` (`IxCCCorrect.ShapeHook`), whose acceptance is the hypothesis of
+`runShaped_sound`. -/
+def endToEnd (label ixe eqs : String) : IO Bool := do
+  let bytes ← IO.FS.readBinFile ixe
+  let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile eqs))
+  let k ← match Recheck.ingress bytes json [] with
+    | .ok k => pure k
+    | .error e => throw (IO.userError s!"{label}: ingress: {e.render}")
+  let cfg : Recheck.Config := {}
+  let cfg := cfg.forInput k
+  let out ← IO.getStdout
+  IO.print s!"{label}: "
+  out.flush
+  match Recheck.produce cfg k with
+  | .error e =>
+    IO.println s!"the recheck producer declines: {(e.render).take 160}"
+    return false
+  | .ok c =>
+    match Recheck.run cfg k.program c with
+    | .error e =>
+      IO.println s!"Recheck.run declines: {(e.render).take 160}"
+      return false
+    | .ok a =>
+      IO.print "run; "
+      out.flush
+      let roots := a.src.roots.map fun r => r.2
+      let sc := Produce.produceAll a.src roots
+      IO.print s!"{sc.insts.length} instances; "
+      out.flush
+      if sc.insts.length > 4000 then
+        IO.println "the shape producer did not converge on some root; not checked"
+        return false
+      let arities := roots.map fun root =>
+        match sc.insts.find? fun e => e.1 == root with
+        | some e => natParams e.2.2
+        | none => 0
+      let t0 ← IO.monoMsNow
+      match runShaped cfg k.program c sc arities with
+      | .ok _ =>
+        IO.println s!"runShaped accepts: {roots.length} roots at {arities} parameters, \
+          {sc.insts.length} instances, {sc.datas.length} data entries ({(← IO.monoMsNow) - t0} ms)"
+        return true
+      | .error (.recheck e) =>
+        IO.println s!"runShaped: Recheck.run declines: {(e.render).take 160}"
+        return false
+      | .error .shape =>
+        IO.println s!"runShaped refuses the shape certificate or a root \
+          (arities {arities}, certOk {certOk a.src sc})"
+        return false
+
 def bump (key : String) : List (String × Nat) → List (String × Nat)
   | [] => [(key, 1)]
   | (k, n) :: rest => if k == key then (k, n + 1) :: rest else (k, n) :: bump key rest
@@ -381,6 +439,19 @@ def run : IO UInt32 := do
     IO.println s!"  {n}  {k}"
   if !unloadable.isEmpty then IO.println s!"not loaded: {unloadable}"
   IO.println s!"accepted {tot.2.1 + tot.2.2.1} of {tot.1} roots"
+  if (← IO.getEnv "SHAPE_E2E").isSome then
+    IO.println "the whole checked path (Recheck.run, then runShaped):"
+    let mut ok := 0
+    let mut n := 0
+    for (family, dir) in families do
+      if only.isSome && only != some family then continue
+      for (stem, ixe, eqs) in ← closuresOf dir do
+        n := n + 1
+        let r ← try endToEnd s!"  {family} {stem}" ixe eqs catch e => do
+          IO.println s!"  {family} {stem}: {(toString e).take 200}"
+          pure false
+        if r then ok := ok + 1
+    IO.println s!"runShaped accepted {ok} of {n} closures"
   return 0
 
 end IxCCTests.Shape

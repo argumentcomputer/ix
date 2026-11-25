@@ -421,12 +421,13 @@ def interOf : List Shape → Shape
   | [σ] => σ
   | σ :: rest => .inter σ (interOf rest)
 
-/-- **The proposed certificate** for root constant `root` of `p`, and, for each field
-taken from its uses, its entry, its index and the number of shapes it is used at. -/
-def produceWith (p : Program) (root : CId) (fuel : Nat := 400) (steps : Nat := 20000) :
+/-- **The proposed certificate** for the root constants `roots` of `p`, and, for each
+field taken from its uses, its entry, its index and the number of shapes it is used at. -/
+def produceAllWith (p : Program) (roots : List CId) (fuel : Nat := 400) (steps : Nat := 20000) :
     Cert × List (Nat × Nat × Nat) :=
   let m : M Unit := do
-    let _ ← addInst p fuel [] root []
+    roots.forM fun root => do
+      let _ ← addInst p fuel [] root []
     loop p fuel steps
   let s := (m.run {}).2
   let usesOf := fun (d j : Nat) => (s.uses.filter fun u => u.1 == d && u.2.1 == j).map fun u => u.2.2.1
@@ -437,8 +438,17 @@ def produceWith (p : Program) (root : CId) (fuel : Nat := 400) (steps : Nat := 2
   let insts := (s.insts.map fun e => (e.1, e.2.1, refix p datas e.1 e.2.2)).eraseDups
   ({ insts, enums := s.enums, datas, lets := s.lets }, s.polys.map fun x => (x.1, x.2, (usesOf x.1 x.2).length))
 
+/-- The certificate for one root, with the use counts. -/
+def produceWith (p : Program) (root : CId) (fuel : Nat := 400) (steps : Nat := 20000) :
+    Cert × List (Nat × Nat × Nat) :=
+  produceAllWith p [root] fuel steps
+
 /-- **The proposed certificate** for root constant `root` of `p`. -/
 def produce (p : Program) (root : CId) (fuel : Nat := 400) (steps : Nat := 20000) : Cert :=
   (produceWith p root fuel steps).1
+
+/-- **The proposed certificate** for several roots at once (one table of entries). -/
+def produceAll (p : Program) (roots : List CId) (fuel : Nat := 400) (steps : Nat := 40000) : Cert :=
+  (produceAllWith p roots fuel steps).1
 
 end IxCC.Correct.Shape2.Produce

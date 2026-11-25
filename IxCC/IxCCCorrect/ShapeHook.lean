@@ -16,7 +16,8 @@ that "the checker accepted" is the only hypothesis left:
   parameters) in the certificate `sc`, and its declared result type is `Nat`.
 * `runShaped cfg P c sc arities`: **the recheck path with the shape check**:
   `Recheck.run`, then `certOk` on the checked source the run made, then `natRootOk` for
-  each root at its stated parameter count. It only *checks* `sc`; the producer of `sc`
+  each root at its stated parameter count (`rootOk`: a `Nat` root, or an enumeration
+  root every constructor of which the root's view reads back). It only *checks* `sc`; the producer of `sc`
   (`IxCCCorrect.Shape2Produce`, unproved) is not on this path.
 * `runShaped_sound`: `Recheck.sound` with no "source goes wrong" case, for every covered
   input of a stated root, from `runShaped … = .ok a` alone.
@@ -113,6 +114,73 @@ theorem neverStuck_checked {src : Src.Program} {ch : Src.Relevance.Checked} {sc 
     rw [e']
     exact ⟨fun hw => (by cases hw), fun hw => (by cases hw)⟩
 
+/-- **An enumeration root of the certificate, on a front**: root `r` has the instance of
+`n` `Nat` parameters and a result that is an enumeration of the certificate, none of
+whose constructors has a universe parameter and each of which the root's view reads
+back (finitely many evaluations of the view). -/
+def enumRootOk (f : Recheck.Front) (sc : Cert) (r n : Nat) : Bool :=
+  match f.src.roots[r]? with
+  | some (_, c) =>
+    sc.enums.any fun e =>
+      decide (lookupEnum sc.enums e.1 = some e.2) &&
+      decide ((c, ([] : Levels), arrows (List.replicate n .nat) (.enum e.1)) ∈ sc.insts) &&
+      e.2.all fun c' =>
+        decide ((IxCC.Lam.Erase.Input.ofProgram f.src f.checked).lvls c' = 0) &&
+        (f.view r (Lang.obs (S := CheckedProgram)
+          ((IxCC.Lam.Erase.Input.ofProgram f.src f.checked, Value.con c' [] [] []) :
+            Lang.Val CheckedProgram))).isSome
+  | none => false
+
+/-- **Functional progress at an enumeration root, from the two checks.** -/
+theorem neverWrong_of_enumRoot {f : Recheck.Front} {sc : Cert} (h : certOk f.src sc = true)
+    {r : Nat} (ns : List Nat) (hn : enumRootOk f sc r ns.length = true) :
+    NeverWrong f.source (r, ns) := by
+  unfold enumRootOk at hn
+  cases hroot : f.src.roots[r]? with
+  | none => simp [hroot] at hn
+  | some e =>
+    obtain ⟨addr, c⟩ := e
+    simp only [hroot] at hn
+    obtain ⟨⟨B, cs⟩, -, he⟩ := List.any_eq_true.1 hn
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at he
+    obtain ⟨⟨hB, hc⟩, hall⟩ := he
+    refine neverWrong_of_cert_enum h hroot ns hc hB ?_
+    intro c' hc'
+    have hc2 := List.all_eq_true.1 hall c' hc'
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hc2
+    refine ⟨hc2.1, ?_⟩
+    intro hnone
+    have h2 := hc2.2
+    rw [hnone] at h2
+    exact Bool.noConfusion h2
+
+/-- A root the corollaries read: a `Nat` root or an enumeration root. -/
+def rootOk (f : Recheck.Front) (sc : Cert) (r n : Nat) : Bool :=
+  natRootOk f.src sc r n || enumRootOk f sc r n
+
+/-- Each root from `r` on is a `Nat` or enumeration root at its stated parameter count. -/
+def frontRootsOk (f : Recheck.Front) (sc : Cert) : Nat → List Nat → Bool
+  | _, [] => true
+  | r, n :: rest => rootOk f sc r n && frontRootsOk f sc (r + 1) rest
+
+theorem frontRootsOk_get {f : Recheck.Front} {sc : Cert} : ∀ (arities : List Nat) (r0 : Nat),
+    frontRootsOk f sc r0 arities = true → ∀ (i n : Nat), arities[i]? = some n →
+    rootOk f sc (r0 + i) n = true
+  | [], _, _, i, n, hi => by simp at hi
+  | m :: rest, r0, h, i, n, hi => by
+    simp only [frontRootsOk, Bool.and_eq_true] at h
+    cases i with
+    | zero =>
+      simp only [List.getElem?_cons_zero, Option.some.injEq] at hi
+      subst hi
+      exact h.1
+    | succ i =>
+      simp only [List.getElem?_cons_succ] at hi
+      have := frontRootsOk_get rest (r0 + 1) h.2 i n hi
+      have e : r0 + (i + 1) = r0 + 1 + i := by omega
+      rw [e]
+      exact this
+
 /-- What the shaped recheck path refuses with. -/
 inductive Refusal where
   /-- the recheck path declined or rejected the program -/
@@ -122,18 +190,20 @@ inductive Refusal where
   | shape
 
 /-- **The recheck path with the shape check.** `arities` states, root by root from root
-0, how many `Nat` parameters the root takes. The shape certificate `sc` is only
-checked. -/
+0, how many `Nat` parameters the root takes; each must be a `Nat` root or an enumeration
+root (`rootOk`). The shape certificate `sc` is only checked. -/
 def runShaped (cfg : Recheck.Config) (P : Src.Program) (c : Recheck.Cert) (sc : Cert)
     (arities : List Nat) : Except Refusal Recheck.Artifact :=
   match Recheck.run cfg P c with
   | .error e => .error (.recheck e)
-  | .ok a => if certOk a.src sc && rootsOk a.src sc 0 arities then .ok a else .error .shape
+  | .ok a =>
+    if certOk a.src sc && frontRootsOk a.front sc 0 arities then .ok a else .error .shape
 
 /-- What `runShaped` accepted, `Recheck.run` made, and the two checks hold of it. -/
 theorem runShaped_ok {cfg : Recheck.Config} {P : Src.Program} {c : Recheck.Cert} {sc : Cert}
     {arities : List Nat} {a : Recheck.Artifact} (h : runShaped cfg P c sc arities = .ok a) :
-    Recheck.run cfg P c = .ok a ∧ certOk a.src sc = true ∧ rootsOk a.src sc 0 arities = true := by
+    Recheck.run cfg P c = .ok a ∧ certOk a.src sc = true ∧
+      frontRootsOk a.front sc 0 arities = true := by
   unfold runShaped at h
   cases hrun : Recheck.run cfg P c with
   | error e => simp [hrun] at h
@@ -159,10 +229,14 @@ theorem runShaped_sound {cfg : Recheck.Config} {P : Src.Program} {c : Recheck.Ce
         a.front.view r (Lang.obs v) = some w) ∧
     (∀ k, ¬ (Lang.run (a.linked D) (r, ns) k).GoesWrong) := by
   obtain ⟨hrun, hcert, hroots⟩ := runShaped_ok h
-  have hn := rootsOk_get arities 0 hroots r ns.length hr
+  have hn := frontRootsOk_get arities 0 hroots r ns.length hr
   rw [Nat.zero_add] at hn
-  exact recheck_sound_of_neverWrong hrun D hD (r, ns) hi
-    (neverWrong_of_check (f := a.front) hcert ns hn)
+  refine recheck_sound_of_neverWrong hrun D hD (r, ns) hi ?_
+  unfold rootOk at hn
+  simp only [Bool.or_eq_true] at hn
+  rcases hn with hn | hn
+  · exact neverWrong_of_check (f := a.front) hcert ns hn
+  · exact neverWrong_of_enumRoot (f := a.front) hcert ns hn
 
 /-! ## Any view, and the reference-counted path -/
 
