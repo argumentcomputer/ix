@@ -709,16 +709,16 @@ def enumCtorOk (cert : Cert) (c : CId) (σ : Shape) : Bool :=
     decide (lookupEnum cert.enums e.1 = some e.2) && decide (c ∈ e.2) && decide (σ = .enum e.1)
 
 /-- A constructor of a data entry, at the instance `params → fields → data d`. -/
-def dataCtorOk (cert : Cert) (c : CId) (σ : Shape) : Bool :=
+def dataCtorOk (cert : Cert) (c : CId) (ls : Levels) (σ : Shape) : Bool :=
   (List.range cert.datas.length).any fun d =>
     match cert.datas[d]? with
     | some D => D.ctors.any fun e =>
         decide (e.1 = c) && decide ((argsUpTo D.params.length σ).length = D.params.length) &&
-          decide (σ = arrows (argsUpTo D.params.length σ ++ e.2) (.data d))
+          decide (ls = D.ls) && decide (σ = arrows (argsUpTo D.params.length σ ++ e.2) (.data d))
     | none => false
 
 theorem dataCtorOk_sound {p : Program} {cert : Cert} {c : CId} {σ : Shape} {ls : Levels}
-    (h : dataCtorOk cert c σ = true) :
+    (h : dataCtorOk cert c ls σ = true) :
     ∃ σs τ, HeadOk p cert.sig (.ctor c) ls σs τ ∧ σ = arrows σs τ := by
   obtain ⟨d, -, hd⟩ := List.any_eq_true.1 h
   cases hD : cert.datas[d]? with
@@ -727,10 +727,10 @@ theorem dataCtorOk_sound {p : Program} {cert : Cert} {c : CId} {σ : Shape} {ls 
     simp only [hD] at hd
     obtain ⟨⟨c', fl⟩, hmem, he⟩ := List.any_eq_true.1 hd
     simp only [Bool.and_eq_true, decide_eq_true_eq] at he
-    obtain ⟨⟨hc, hlen⟩, hσ⟩ := he
+    obtain ⟨⟨⟨hc, hlen⟩, hls⟩, hσ⟩ := he
     subst hc
     obtain ⟨j, hj⟩ := List.mem_iff_getElem?.1 hmem
-    exact ⟨_, _, .ctor c' ls d D j _ fl hD hj hlen, hσ⟩
+    exact ⟨_, _, .ctor c' ls d D j _ fl hD hj hlen hls, hσ⟩
 
 /-- A data entry's constructors are constructors of its inductive, from index `j`
 on, with the entry's parameter count and their own field counts. -/
@@ -863,7 +863,7 @@ def entryOk (p : Program) (cert : Cert) (c : CId) (ls : Levels) (σ : Shape) : B
     | some (.defn .defn .safe _ _ v) =>
       chkWith (fun e => synth cert.insts cert.datas cert.lets ls [] v e) (isLam v) σ
     | some (.ctor _ _ _ _ np nf _) =>
-      zeroOk p c np nf σ || succOk p c np nf σ || enumCtorOk cert c σ || dataCtorOk cert c σ
+      zeroOk p c np nf σ || succOk p c np nf σ || enumCtorOk cert c σ || dataCtorOk cert c ls σ
     | some (.recr _ _ _ np nmot nmin ni ind rules _) =>
       (isOrdinary ((p.table.recKindOf c).map (fun (x : RecKind) => x.atLevels ls)) && recrOk p cert ls σ ind np nmot nmin ni rules) ||
         (match (p.table.recKindOf c).map (fun (x : RecKind) => x.atLevels ls) with

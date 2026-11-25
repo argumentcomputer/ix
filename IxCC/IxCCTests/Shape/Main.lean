@@ -1,6 +1,7 @@
 import IxCC.Recheck.Produce
 import IxCCCorrect.Shape2Produce
-import IxCCCorrect.ShapeHook
+import IxCC.Recheck.Rc.Produce
+import IxCCCorrect.ShapeTree
 
 /-! # `tests-shape`: the shape producer and the shape check on committed closures
 
@@ -385,6 +386,102 @@ def endToEnd (label ixe eqs : String) : IO Bool := do
           (arities {arities}, certOk {certOk a.src sc})"
         return false
 
+/-- **The whole reference-counted path on one closure**: the plain-RC producer and its
+replay (`Recheck.RcReplay.produce`), the shape producer on the checked source the replay
+made, a proposed entry map for the roots whose result is a data entry (`treeMap`), and
+`rcRunShaped` (`IxCCCorrect.ShapeTree`), whose acceptance is the hypothesis of
+`rcRunShaped_sound`. Returns (accepted, tree roots among them). -/
+def rcEndToEnd (label ixe eqs : String) : IO (Bool × Nat) := do
+  let bytes ← IO.FS.readBinFile ixe
+  let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile eqs))
+  let k ← match Recheck.ingress bytes json [] with
+    | .ok k => pure k
+    | .error e => throw (IO.userError s!"{label}: ingress: {e.render}")
+  let cfg : Recheck.Config := {}
+  let cfg := cfg.forInput k
+  let out ← IO.getStdout
+  IO.print s!"{label}: "
+  out.flush
+  match Recheck.RcReplay.produce cfg k with
+  | .error e =>
+    IO.println s!"the plain-RC producer declines: {(e.render).take 160}"
+    return (false, 0)
+  | .ok (c, a) =>
+    let f := a.front
+    let roots := f.src.roots.map fun r => r.2
+    let sc := Produce.produceAll f.src roots
+    IO.print s!"rc replay; {sc.insts.length} instances; "
+    out.flush
+    if sc.insts.length > 4000 then
+      IO.println "the shape producer did not converge on some root; not checked"
+      return (false, 0)
+    let arities := roots.map fun root =>
+      match sc.insts.find? fun e => e.1 == root with
+      | some e => natParams e.2.2
+      | none => 0
+    let I := IxCC.Lam.Erase.Input.ofProgram f.src f.checked
+    let mut ms : List (List (Nat × Nat)) := []
+    let mut trees := 0
+    for (root, r) in roots.zipIdx do
+      let n := arities.getD r 0
+      let m := match sc.insts.find? (fun e => e.1 == root), f.tys r with
+        | some e, some (G, .ind i) =>
+          match resAfter n e.2.2 with
+          | .data d => treeMap I f.anf.ctors G sc.datas 10000 [(d, i)] []
+          | _ => []
+        | _, _ => []
+      if !m.isEmpty then trees := trees + 1
+      ms := ms ++ [m]
+    let t0 ← IO.monoMsNow
+    match rcRunShaped cfg k.program c sc ms arities with
+    | .ok _ =>
+      IO.println s!"rcRunShaped accepts: {roots.length} roots at {arities} parameters \
+        ({trees} with a tree result), {sc.insts.length} instances, {sc.datas.length} data \
+        entries, entry maps {ms} ({(← IO.monoMsNow) - t0} ms)"
+      return (true, trees)
+    | .error (.recheck e) =>
+      IO.println s!"rcRunShaped: RcReplay.run declines: {(e.render).take 160}"
+      return (false, 0)
+    | .error .shape =>
+      let bad := (List.range roots.length).filter fun r =>
+        !rcRootOk f sc (ms.getD r []) r (arities.getD r 0)
+      IO.println s!"rcRunShaped refuses the shape certificate or a root (arities {arities}, \
+        certOk {certOk f.src sc}, entry maps {ms}, roots refused {bad})"
+      return (false, 0)
+
+/-- How the decision's time grows with the certificate: the producer stopped after
+`steps` steps on root `i` of `p`, then `entryOk` on each instance in turn, timed (up to
+two minutes): how many pass, the first refused, the slowest and how many instances its
+constant has. -/
+def scale (label : String) (p : Src.Program) (i : Nat) : IO Unit := do
+  let some (_, c) := p.roots[i]? | return
+  let out ← IO.getStdout
+  for steps in [800, 3200, 12800, 20000] do
+    let cert := Produce.produce p c (steps := steps)
+    let n := cert.insts.length
+    IO.print s!"{label}: {steps} producer steps, {n} instances: "
+    out.flush
+    let t0 ← IO.monoMsNow
+    let mut passed := 0
+    let mut firstBad : Option Nat := none
+    let mut slow := (0, 0)
+    let mut checked := 0
+    for (e, j) in cert.insts.zipIdx do
+      let a ← IO.monoMsNow
+      if a - t0 > 120000 then break
+      let ok := entryOk p cert e.1 e.2.1 e.2.2
+      let b ← IO.monoMsNow
+      checked := checked + 1
+      if ok then passed := passed + 1 else if firstBad.isNone then firstBad := some j
+      if b - a > slow.1 then slow := (b - a, j)
+    let t1 ← IO.monoMsNow
+    let slowConst := match cert.insts[slow.2]? with
+      | some e => (cert.insts.filter fun (x : CId × Levels × Shape) => x.1 == e.1).length
+      | none => 0
+    IO.println s!"checked {checked} in {t1 - t0} ms, {passed} pass, first refused {firstBad}, \
+      slowest entry {slow.2} at {slow.1} ms (its constant has {slowConst} instances)"
+    out.flush
+
 def bump (key : String) : List (String × Nat) → List (String × Nat)
   | [] => [(key, 1)]
   | (k, n) :: rest => if k == key then (k, n + 1) :: rest else (k, n) :: bump key rest
@@ -419,6 +516,9 @@ def run : IO UInt32 := do
         for (name, i) in names.zipIdx do
           if let some want := rootOnly then
             if name != want then continue
+          if (← IO.getEnv "SHAPE_SCALE").isSome then
+            scale s!"{label} {name}" p i
+            continue
           total := total + 1
           match ← runRoot label p i name with
           | .viewed => viewed := viewed + 1
@@ -452,6 +552,21 @@ def run : IO UInt32 := do
           pure false
         if r then ok := ok + 1
     IO.println s!"runShaped accepted {ok} of {n} closures"
+    IO.println "the whole reference-counted path (RcReplay.produce, then rcRunShaped):"
+    let mut rok := 0
+    let mut rn := 0
+    let mut rtrees := 0
+    for (family, dir) in families do
+      if only.isSome && only != some family then continue
+      for (stem, ixe, eqs) in ← closuresOf dir do
+        rn := rn + 1
+        let (r, t) ← try rcEndToEnd s!"  {family} {stem}" ixe eqs catch e => do
+          IO.println s!"  {family} {stem}: {(toString e).take 200}"
+          pure (false, 0)
+        if r then
+          rok := rok + 1
+          rtrees := rtrees + t
+    IO.println s!"rcRunShaped accepted {rok} of {rn} closures ({rtrees} tree roots)"
   return 0
 
 end IxCCTests.Shape

@@ -69,6 +69,8 @@ structure DataDecl where
   params : List Shape
   ctors : List (CId × List Shape)
   struct : Bool
+  /-- the levels its constructor values carry (F1 stores the head's): erasure reads them -/
+  ls : Levels := []
 
 /-- A signature: the shapes each constant has at each instantiation of its levels
 (several, where it is used at several), and the constructors of each enumeration in
@@ -187,7 +189,7 @@ inductive HeadOk (p : Program) (sig : Sig) : Head → Levels → List Shape → 
   /-- F1 at a constructor of a data entry: its parameter slots, then its fields -/
   | ctor (c : CId) (ls : Levels) (d : Nat) (D : DataDecl) (j : Nat) (ps fl : List Shape) :
       sig.datas d = some D → D.ctors[j]? = some (c, fl) → ps.length = D.params.length →
-      HeadOk p sig (.ctor c) ls (ps ++ fl) (.data d)
+      ls = D.ls → HeadOk p sig (.ctor c) ls (ps ++ fl) (.data d)
   /-- F2: an ordinary recursor with parameters and no index, at minors of any shapes
   `ms` under which each rule's body, in the environment F2 builds (the parameters, the
   motive, the minors, the fields), has the result shape -/
@@ -228,7 +230,7 @@ inductive ValOk (p : Program) (sig : Sig) : Value → Shape → Prop
   | data {c : CId} {ls : Levels} {ps : List Slot} {fs : List Value} {d : Nat} {D : DataDecl}
       {j : Nat} {fl : List Shape} :
       sig.datas d = some D → D.ctors[j]? = some (c, fl) → ps.length = D.params.length →
-      ValsOk p sig fs fl → ValOk p sig (.con c ls ps fs) (.data d)
+      ValsOk p sig fs fl → ls = D.ls → ValOk p sig (.con c ls ps fs) (.data d)
   | irr {t : Option Term} {ρ : List Slot} {ls : Levels} : ValOk p sig (.irr t ρ ls) .irr
   /-- a value of two shapes -/
   | inter {v : Value} {a b : Shape} : ValOk p sig v a → ValOk p sig v b → ValOk p sig v (.inter a b)
@@ -381,7 +383,7 @@ theorem fire_cases_ord (p : Program) (k : Nat) (ls : Levels) (c r : CId) (args :
         (force p k (args.getD (np + 1 + 1 + j) default)).bind fun minor =>
           applyAll p k minor fields := by
   rw [fire_cases]
-  simp only [hres, hdecl, hkind, Option.map_some] <;> rfl
+  simp only [hres, hdecl, hkind] <;> rfl
 
 /-- F3 at a `case` entry: the minor, on fields from the slots after the motive. -/
 theorem fire_cases_sub (p : Program) (k : Nat) (ls : Levels) (c r : CId) (args : List Slot)
@@ -399,7 +401,7 @@ theorem fire_cases_sub (p : Program) (k : Nat) (ls : Levels) (c r : CId) (args :
     funext x
     cases x <;> rfl
   rw [fire_cases]
-  simp only [hres, hdecl, hkind, recChosen, e] <;> rfl
+  simp only [hres, hdecl, hkind, recChosen] <;> rfl
 
 /-- F2 at an ordinary recursor with one motive, `np` parameters and no index. -/
 theorem fire_recr_ord (p : Program) (k : Nat) (ls : Levels) (r : CId) (args : List Slot)
@@ -416,7 +418,7 @@ theorem fire_recr_ord (p : Program) (k : Nat) (ls : Levels) (r : CId) (args : Li
           | none => .stuck
         | none => .stuck := by
   rw [fire_recr]
-  simp only [hdecl, hkind, Option.map_some] <;> rfl
+  simp only [hdecl, hkind] <;> rfl
 
 /-- F3 at a subsingleton recursor: rule 0, on fields from the index slots. -/
 theorem fire_recr_sub (p : Program) (k : Nat) (ls : Levels) (r : CId) (args : List Slot)
@@ -439,7 +441,7 @@ theorem fire_recr_sub (p : Program) (k : Nat) (ls : Levels) (r : CId) (args : Li
     funext x
     cases x <;> rfl
   rw [fire_recr]
-  simp only [hdecl, hkind, recChosen, e] <;> rfl
+  simp only [hdecl, hkind, recChosen] <;> rfl
 
 variable {p : Program} {sig : Sig}
 
@@ -652,6 +654,18 @@ theorem ValOk.data_inv {v : Value} {d : Nat} (h : ValOk p sig v (.data d)) :
       D.ctors[j]? = some (c, fl) ∧ ps.length = D.params.length ∧ ValsOk p sig fs fl := by
   cases h with
   | data hD hc hps hfs => exact ⟨_, _, _, _, _, _, _, rfl, hD, hc, hps, hfs⟩
+  | pap h ls args σs done rest τ σ hh hσs hargs hrest hσ =>
+    cases rest with
+    | nil => exact absurd rfl hrest
+    | cons a r => simp [arrows] at hσ
+
+/-- Canonical forms at a data entry, with the levels the value carries. -/
+theorem ValOk.data_inv_ls {v : Value} {d : Nat} (h : ValOk p sig v (.data d)) :
+    ∃ (c : CId) (ls : Levels) (ps : List Slot) (fs : List Value) (D : DataDecl) (j : Nat)
+      (fl : List Shape), v = .con c ls ps fs ∧ sig.datas d = some D ∧
+      D.ctors[j]? = some (c, fl) ∧ ls = D.ls ∧ ValsOk p sig fs fl := by
+  cases h with
+  | data hD hc hps hfs hls => exact ⟨_, _, _, _, _, _, _, rfl, hD, hc, hls, hfs⟩
   | pap h ls args σs done rest τ σ hh hσs hargs hrest hσ =>
     cases rest with
     | nil => exact absurd rfl hrest
@@ -879,7 +893,7 @@ theorem allOk (hsig : SigOk p sig) : ∀ k, AllOk p sig k := by
             refine .inr ⟨.lit (n + 1), ?_, .lit⟩
             show ctorResult p c ls [] [Value.lit n] = .ok (.lit (n + 1))
             simp [ctorResult, hz, hs]
-    | ctor c ls d D j ps fl hD hc hps =>
+    | ctor c ls d D j ps fl hD hc hps hls =>
       obtain ⟨s, lv, ty, hdecl, hz, hs⟩ := hsig.datas _ _ hD j c fl hc
       rw [fire_ctor, hdecl, ← hps]
       show ResOk p sig (.data d) ((forceAll p k (slots.drop ps.length)).bind
@@ -891,7 +905,7 @@ theorem allOk (hsig : SigOk p sig) : ∀ k, AllOk p sig k := by
       · rw [hto]
         exact .inl rfl
       · rw [hvs]
-        refine .inr ⟨.con c ls (slots.take ps.length) vs, ?_, .data hD hc hpl hok⟩
+        refine .inr ⟨.con c ls (slots.take ps.length) vs, ?_, .data hD hc hpl hok hls⟩
         show ctorResult p c ls (slots.take ps.length) vs = _
         simp [ctorResult, hz, hs]
     | cases c r ls ps σ ind flds τ s kk lv nmot rules ty hres hdecl hkind hscrut =>

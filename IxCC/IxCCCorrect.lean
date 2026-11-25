@@ -11,6 +11,7 @@ import IxCCCorrect.Shape2
 import IxCCCorrect.Shape2Check
 import IxCCCorrect.Shape2Produce
 import IxCCCorrect.ShapeHook
+import IxCCCorrect.ShapeTree
 import IxCCCorrect.Compile
 import IxCCCorrect.GroundRoot
 import IxCCCorrect.GroundCheck
@@ -53,6 +54,10 @@ propositions that elaborate, and what the existing theorems establish today.
 * `IxCCCorrect.ShapeHook`: the shape check beside the recheck path (`runShaped`), and
   `Recheck.sound` with no "source goes wrong" case from its acceptance alone
   (`runShaped_sound`); `neverStuck_checked`, the unviewed statement.
+* `IxCCCorrect.ShapeTree`: results with fields on the reference-counted path: the
+  decision that the tree view reads a result shape (`mapReads`, `reads_val`), and
+  `rcRunShaped_sound`, `RcReplay.sound` with no "source goes wrong" case for `Nat` and
+  constructor-tree results.
 * `IxCCCorrect.Compile`: the certified route as it stands. `CompiledToday`, the
   proposition of `CorrectToday`'s strength about the pure compiler's output
   (`IxCC.Compile.compile`), with the proof that every output meets it

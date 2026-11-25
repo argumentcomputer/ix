@@ -21,6 +21,8 @@ that "the checker accepted" is the only hypothesis left:
   (`IxCCCorrect.Shape2Produce`, unproved) is not on this path.
 * `runShaped_sound`: `Recheck.sound` with no "source goes wrong" case, for every covered
   input of a stated root, from `runShaped … = .ok a` alone.
+* `rcRunShaped`, `rcRunShaped_sound`: the same on the reference-counted path; they are in
+  `IxCCCorrect.ShapeTree`, with the roots that return constructor trees.
 * `neverStuck_checked`: the unviewed statement, for any result shape: the checked
   source (not the source viewed at readback types) is stuck or trapping at no clock.
   This is the proposition `Compose.NeverStuck` of the circuit back end, with never-trap
@@ -189,6 +191,32 @@ inductive Refusal where
   parameter count -/
   | shape
 
+/-- **The shape check on an artifact the recheck path made**: the certificate checks on
+its checked source, and each root is a `Nat` or enumeration root at its stated parameter
+count. This is what `compile` calls, having run the replay itself. -/
+def checkShaped (a : Recheck.Artifact) (sc : Cert) (arities : List Nat) : Bool :=
+  certOk a.src sc && frontRootsOk a.front sc 0 arities
+
+/-- **`Recheck.sound` with no escape, from the replay and the shape check.** -/
+theorem checkShaped_sound {cfg : Recheck.Config} {P : Src.Program} {c : Recheck.Cert}
+    {a : Recheck.Artifact} (hrun : Recheck.run cfg P c = .ok a) {sc : Cert}
+    {arities : List Nat} (h : checkShaped a sc arities = true)
+    (D : X86.Driver) (hD : D.Ok a.backend.encoded.text.size) (r : Nat) (ns : List Nat)
+    (hr : arities[r]? = some ns.length) (hi : a.front.Covered c (r, ns)) :
+    (∀ k w, Lang.run (a.linked D) (r, ns) k = .ok w →
+      ∃ k' v, Lang.run (⟨a.src, a.checked⟩ : CheckedProgram) (r, ns) k' = .ok v ∧
+        a.front.view r (Lang.obs v) = some w) ∧
+    (∀ k, ¬ (Lang.run (a.linked D) (r, ns) k).GoesWrong) := by
+  simp only [checkShaped, Bool.and_eq_true] at h
+  have hn := frontRootsOk_get arities 0 h.2 r ns.length hr
+  rw [Nat.zero_add] at hn
+  refine recheck_sound_of_neverWrong hrun D hD (r, ns) hi ?_
+  unfold rootOk at hn
+  simp only [Bool.or_eq_true] at hn
+  rcases hn with hn | hn
+  · exact neverWrong_of_check (f := a.front) h.1 ns hn
+  · exact neverWrong_of_enumRoot (f := a.front) h.1 ns hn
+
 /-- **The recheck path with the shape check.** `arities` states, root by root from root
 0, how many `Nat` parameters the root takes; each must be a `Nat` root or an enumeration
 root (`rootOk`). The shape certificate `sc` is only checked. -/
@@ -310,39 +338,6 @@ theorem rc_neverWrong_of_check {f : Recheck.RcReplay.Front} {sc : Cert}
     simp only [hroot, Bool.and_eq_true, decide_eq_true_eq] at hn
     exact neverWrong_of_shape_view (sig := sc.sig) (view := f.view) (sigOk_of_cert h) hroot ns
       hn.1 (rc_view_nat_ok (rc_tys_nat_of_resultTy hroot hn.2))
-
-/-- **The reference-counted recheck path with the shape check.** As `runShaped`. -/
-def rcRunShaped (cfg : Recheck.Config) (P : Src.Program) (c : Recheck.RcReplay.Cert) (sc : Cert)
-    (arities : List Nat) : Except Refusal Recheck.RcReplay.Artifact :=
-  match Recheck.RcReplay.run cfg P c with
-  | .error e => .error (.recheck e)
-  | .ok a =>
-    if certOk a.front.src sc && rootsOk a.front.src sc 0 arities then .ok a else .error .shape
-
-/-- **`RcReplay.sound` with no escape, from the checker's acceptance alone**, for the
-roots with a `Nat` result. -/
-theorem rcRunShaped_sound {cfg : Recheck.Config} {P : Src.Program} {c : Recheck.RcReplay.Cert}
-    {sc : Cert} {arities : List Nat} {a : Recheck.RcReplay.Artifact}
-    (h : rcRunShaped cfg P c sc arities = .ok a) (D : X86.Driver)
-    (hD : D.Ok a.backend.encoded.text.size) (r : Nat) (ns : List Nat)
-    (hr : arities[r]? = some ns.length) (hi : a.front.Covered c (r, ns)) :
-    (∀ k w, Lang.run (a.linked D) (r, ns) k = .ok w →
-      ∃ k' v, Lang.run (⟨a.front.src, a.front.checked⟩ : CheckedProgram) (r, ns) k' = .ok v ∧
-        a.front.view r (Lang.obs v) = some w) ∧
-    (∀ k, ¬ (Lang.run (a.linked D) (r, ns) k).GoesWrong) := by
-  unfold rcRunShaped at h
-  cases hrun : Recheck.RcReplay.run cfg P c with
-  | error e => simp [hrun] at h
-  | ok a' =>
-    simp only [hrun] at h
-    split at h
-    · rename_i hc
-      cases h
-      simp only [Bool.and_eq_true] at hc
-      have hn := rootsOk_get arities 0 hc.2 r ns.length hr
-      rw [Nat.zero_add] at hn
-      exact rc_sound_of_neverWrong hrun D hD (r, ns) hi (rc_neverWrong_of_check hc.1 ns hn)
-    · cases h
 
 /-- **`RcReplay.sound` for a shaped root of any result shape, given that the tree view
 reads the shape.** The reference-counted path reads first-order constructor trees

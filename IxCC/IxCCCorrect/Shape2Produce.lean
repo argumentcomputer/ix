@@ -195,7 +195,7 @@ def mkData (p : Program) : Nat → Levels → CId → Nat → List CId → List 
     | none =>
       let d := s.datas.length
       let blank : DataDecl :=
-        { ind, params := List.replicate np .irr, ctors := [], struct := false }
+        { ind, params := List.replicate np .irr, ctors := [], struct := false, ls }
       set { s with datas := s.datas ++ [blank], keys := (key, d) :: s.keys }
       let cs ← ctors.mapM fun k => do
         match p.decl? k with
@@ -210,7 +210,7 @@ def mkData (p : Program) : Nat → Levels → CId → Nat → List CId → List 
       let entry : DataDecl :=
         { ind, params := List.replicate np .irr
           ctors := cs.map fun e => (e.1, e.2.map fun f => if f.2 && single then Shape.any else f.1)
-          struct := single }
+          struct := single, ls }
       modify fun s => { s with datas := s.datas.set d entry, polys := s.polys ++ polyFields }
       pure (.sh (.data d))
 
