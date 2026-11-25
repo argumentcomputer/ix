@@ -234,11 +234,39 @@ theorem chkWith_sound {sig : Sig} {ls : Levels} {Γ : List Shape} {t : Term}
   | .irr, h => hf _ _ (of_decide_eq_true h)
   | .fn _ _, h => hf _ _ (of_decide_eq_true h)
 
+/-- Does synthesis of the term read what is expected of it? Only a λ does, and a `let`
+passes the expectation to its body. For every other term `synth` is the same at every
+expectation, so an argument of that kind is synthesized once, not once per candidate
+shape of the function. -/
+def readsExp : Term → Bool
+  | .lam _ _ _ => true
+  | .letE _ _ _ _ _ _ => true
+  | _ => false
+
+/-- Is a candidate shape of a function worth an argument check, given what is expected of
+the application? With the whole shape `ρ` expected, every consumer of the result only
+asks whether `ρ` is among it (`chkWith`, `rulesOk`), so a candidate `σ → τ` with `ρ` not
+among `τ`'s parts is dropped before its argument is checked. Soundness is untouched (the
+result only shrinks). -/
+def wants : Exp → Shape → Bool
+  | .full ρ, .fn _ τ => decide (ρ ∈ parts τ)
+  | .full _, _ => false
+  | _, _ => true
+
 /-- **Shape synthesis at levels `ls`**: the shapes of a term in a context, an
 intersection with its parts. Only a λ reads what is expected: the whole shape (a λ
 passed as an argument, a body checked against an instance), or the domain (a λ applied
 on the spot: the domain is the argument's shape). An argument and a body are checked
-against the shape they must have (`chkWith`). -/
+against the shape they must have (`chkWith`).
+
+**Running time.** An argument that does not read its expectation (`readsExp`) is
+synthesized once per application (`asN`), and the function's candidates are first
+pruned by the expected result (`wants`). What remains super-linear: a constant's
+candidates are found by a scan of the instance list (`instsOf`, linear in the
+certificate), and a λ argument is checked once per surviving candidate of its function,
+so the work at a body is at most the product, along a chain of λ arguments nested in λ
+arguments, of the candidates surviving at each; exponential only in that nesting depth,
+and only at constants with several instances of the same argument and result shapes. -/
 def synth (insts : List (CId × Levels × Shape)) (datas : List DataDecl) (lets : List Shape)
     (ls : Levels) :
     List Shape → Term → Exp → List Shape
@@ -247,13 +275,16 @@ def synth (insts : List (CId × Levels × Shape)) (datas : List DataDecl) (lets 
   | _, .sort _, _ => [.irr]
   | _, .pi _ _ _, _ => [.irr]
   | _, .const c us, _ => (instsOf insts c (us.map (evalUniv ls))).flatMap parts
-  | Γ, .app f a _ r, _ =>
-    ((match f with
+  | Γ, .app f a _ r, e =>
+    let asN := synth insts datas lets ls Γ a .none
+    (((match f with
       | .lam _ _ _ =>
-        (if r.irrAt ls then [Shape.irr] else synth insts datas lets ls Γ a .none).flatMap fun σ =>
+        (if r.irrAt ls then [Shape.irr] else asN).flatMap fun σ =>
           synth insts datas lets ls Γ f (.dom σ)
-      | _ => synth insts datas lets ls Γ f .none).flatMap fun s =>
-      appRes (r.irrAt ls) (fun σ => chkWith (fun e => synth insts datas lets ls Γ a e) (isLam a) σ)
+      | _ => synth insts datas lets ls Γ f .none).filter (wants e)).flatMap fun s =>
+      appRes (r.irrAt ls) (fun σ =>
+        if readsExp a then chkWith (fun e => synth insts datas lets ls Γ a e) (isLam a) σ
+        else chkWith (fun _ => asN) false σ)
         s).flatMap parts
   | Γ, .lam b _ body, e =>
     match e with
@@ -303,6 +334,7 @@ theorem synth_sound (cert : Cert) (ls : Levels) : ∀ (t : Term) (Γ : List Shap
     obtain ⟨τ₀, h, hp⟩ := List.mem_flatMap.1 h
     refine hasShape_parts _ _ hp ?_
     obtain ⟨s, hs, hτ⟩ := List.mem_flatMap.1 h
+    have hs := (List.mem_filter.1 hs).1
     have hf : HasShape cert.sig ls Γ f s := by
       cases f with
       | lam b d body =>
@@ -320,7 +352,10 @@ theorem synth_sound (cert : Cert) (ls : Levels) : ∀ (t : Term) (Γ : List Shap
     obtain ⟨σ', rfl, hc⟩ := mem_appRes hτ
     rcases hc with ⟨hr, rfl⟩ | ⟨hr, ha⟩
     · exact .appIrr hr hf
-    · exact .app hr hf (chkWith_sound _ (fun e σ h => iha _ _ _ h) _ isLam_eq _ ha)
+    · split at ha
+      · exact .app hr hf (chkWith_sound _ (fun e σ h => iha _ _ _ h) _ isLam_eq _ ha)
+      · exact .app hr hf (chkWith_sound _ (fun _ σ h => iha _ _ _ h) false
+          (fun h => absurd h Bool.false_ne_true) _ ha)
   | lam b d body _ ihb =>
     intro Γ e σ h
     cases e with
@@ -708,29 +743,48 @@ def enumCtorOk (cert : Cert) (c : CId) (σ : Shape) : Bool :=
   cert.enums.any fun e =>
     decide (lookupEnum cert.enums e.1 = some e.2) && decide (c ∈ e.2) && decide (σ = .enum e.1)
 
+/-- Constructor `c` of entry `D`, numbered `d`, at the instance `params → fields → data d`. -/
+def dataCtorAt (c : CId) (ls : Levels) (σ : Shape) (d : Nat) (D : DataDecl) : Bool :=
+  D.ctors.any fun e =>
+    decide (e.1 = c) && decide ((argsUpTo D.params.length σ).length = D.params.length) &&
+      decide (ls = D.ls) && decide (σ = arrows (argsUpTo D.params.length σ ++ e.2) (.data d))
+
+/-- The entries from number `d` on, in one pass (an indexed scan would read the list
+quadratically: `cert.datas[d]?` is linear in `d`, and a program with polymorphic
+recursion has as many entries as instances). -/
+def dataCtorScan (c : CId) (ls : Levels) (σ : Shape) : Nat → List DataDecl → Bool
+  | _, [] => false
+  | d, D :: rest => dataCtorAt c ls σ d D || dataCtorScan c ls σ (d + 1) rest
+
+theorem dataCtorScan_sound {c : CId} {ls : Levels} {σ : Shape} :
+    ∀ (l : List DataDecl) (d0 : Nat), dataCtorScan c ls σ d0 l = true →
+      ∃ i D, l[i]? = some D ∧ dataCtorAt c ls σ (d0 + i) D = true
+  | [], _, h => by simp [dataCtorScan] at h
+  | D :: rest, d0, h => by
+    simp only [dataCtorScan, Bool.or_eq_true] at h
+    rcases h with h | h
+    · exact ⟨0, D, by simp, by simpa using h⟩
+    · obtain ⟨i, D', hi, hD'⟩ := dataCtorScan_sound rest (d0 + 1) h
+      refine ⟨i + 1, D', by simpa using hi, ?_⟩
+      rw [show d0 + (i + 1) = d0 + 1 + i by omega]
+      exact hD'
+
 /-- A constructor of a data entry, at the instance `params → fields → data d`. -/
 def dataCtorOk (cert : Cert) (c : CId) (ls : Levels) (σ : Shape) : Bool :=
-  (List.range cert.datas.length).any fun d =>
-    match cert.datas[d]? with
-    | some D => D.ctors.any fun e =>
-        decide (e.1 = c) && decide ((argsUpTo D.params.length σ).length = D.params.length) &&
-          decide (ls = D.ls) && decide (σ = arrows (argsUpTo D.params.length σ ++ e.2) (.data d))
-    | none => false
+  dataCtorScan c ls σ 0 cert.datas
 
 theorem dataCtorOk_sound {p : Program} {cert : Cert} {c : CId} {σ : Shape} {ls : Levels}
     (h : dataCtorOk cert c ls σ = true) :
     ∃ σs τ, HeadOk p cert.sig (.ctor c) ls σs τ ∧ σ = arrows σs τ := by
-  obtain ⟨d, -, hd⟩ := List.any_eq_true.1 h
-  cases hD : cert.datas[d]? with
-  | none => simp [hD] at hd
-  | some D =>
-    simp only [hD] at hd
-    obtain ⟨⟨c', fl⟩, hmem, he⟩ := List.any_eq_true.1 hd
-    simp only [Bool.and_eq_true, decide_eq_true_eq] at he
-    obtain ⟨⟨⟨hc, hlen⟩, hls⟩, hσ⟩ := he
-    subst hc
-    obtain ⟨j, hj⟩ := List.mem_iff_getElem?.1 hmem
-    exact ⟨_, _, .ctor c' ls d D j _ fl hD hj hlen hls, hσ⟩
+  obtain ⟨d, D, hD, hd⟩ := dataCtorScan_sound cert.datas 0 h
+  rw [Nat.zero_add] at hd
+  unfold dataCtorAt at hd
+  obtain ⟨⟨c', fl⟩, hmem, he⟩ := List.any_eq_true.1 hd
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at he
+  obtain ⟨⟨⟨hc, hlen⟩, hls⟩, hσ⟩ := he
+  subst hc
+  obtain ⟨j, hj⟩ := List.mem_iff_getElem?.1 hmem
+  exact ⟨_, _, .ctor c' ls d D j _ fl hD hj hlen hls, hσ⟩
 
 /-- A data entry's constructors are constructors of its inductive, from index `j`
 on, with the entry's parameter count and their own field counts. -/

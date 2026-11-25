@@ -362,12 +362,12 @@ def endToEnd (label ixe eqs : String) : IO Bool := do
       IO.print "run; "
       out.flush
       let roots := a.src.roots.map fun r => r.2
-      let sc := Produce.produceAll a.src roots
-      IO.print s!"{sc.insts.length} instances; "
+      let tp ← IO.monoMsNow
+      let sc ← match Produce.propose a.src roots with
+        | .ok sc => pure sc
+        | .error d => throw (IO.userError s!"{d.render} in {(← IO.monoMsNow) - tp} ms: declined")
+      IO.print s!"{sc.insts.length} instances in {(← IO.monoMsNow) - tp} ms; "
       out.flush
-      if sc.insts.length > 4000 then
-        IO.println "the shape producer did not converge on some root; not checked"
-        return false
       let arities := roots.map fun root =>
         match sc.insts.find? fun e => e.1 == root with
         | some e => natParams e.2.2
@@ -409,29 +409,15 @@ def rcEndToEnd (label ixe eqs : String) : IO (Bool × Nat) := do
   | .ok (c, a) =>
     let f := a.front
     let roots := f.src.roots.map fun r => r.2
-    let sc := Produce.produceAll f.src roots
-    IO.print s!"rc replay; {sc.insts.length} instances; "
+    let tp ← IO.monoMsNow
+    let sc ← match Produce.propose f.src roots with
+      | .ok sc => pure sc
+      | .error d => throw (IO.userError s!"{d.render} in {(← IO.monoMsNow) - tp} ms: declined")
+    IO.print s!"rc replay; {sc.insts.length} instances in {(← IO.monoMsNow) - tp} ms; "
     out.flush
-    if sc.insts.length > 4000 then
-      IO.println "the shape producer did not converge on some root; not checked"
-      return (false, 0)
-    let arities := roots.map fun root =>
-      match sc.insts.find? fun e => e.1 == root with
-      | some e => natParams e.2.2
-      | none => 0
-    let I := IxCC.Lam.Erase.Input.ofProgram f.src f.checked
-    let mut ms : List (List (Nat × Nat)) := []
-    let mut trees := 0
-    for (root, r) in roots.zipIdx do
-      let n := arities.getD r 0
-      let m := match sc.insts.find? (fun e => e.1 == root), f.tys r with
-        | some e, some (G, .ind i) =>
-          match resAfter n e.2.2 with
-          | .data d => treeMap I f.anf.ctors G sc.datas 10000 [(d, i)] []
-          | _ => []
-        | _, _ => []
-      if !m.isEmpty then trees := trees + 1
-      ms := ms ++ [m]
+    let arities := aritiesFor f.src sc
+    let ms := treeMapsFor f sc arities
+    let trees := (ms.filter fun m => !m.isEmpty).length
     let t0 ← IO.monoMsNow
     match rcRunShaped cfg k.program c sc ms arities with
     | .ok _ =>

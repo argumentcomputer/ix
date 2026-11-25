@@ -505,4 +505,33 @@ def treeMap (I : IxCC.Lam.Erase.Input) (T : List Lam.CtorInfo) (G : Rt.Sig)
         | none => []
       treeMap I T G datas fuel (todo ++ new) (acc ++ [e])
 
+/-- How many `Nat` parameters a root shape starts with. -/
+def natParamsOf : Shape → Nat
+  | .fn .nat τ => natParamsOf τ + 1
+  | _ => 0
+
+/-- **The proposed entry maps of a front's roots** (untrusted, as `treeMap`), root by
+root: for a root whose instance in `sc` has, after its `arities[r]` parameters, a data
+entry as result and whose readback type is an inductive, the map from that pair; `[]`
+otherwise (a `Nat` or enumeration root needs none). -/
+def treeMapsFor (f : Recheck.RcReplay.Front) (sc : Cert) (arities : List Nat) :
+    List (List (Nat × Nat)) :=
+  let I := IxCC.Lam.Erase.Input.ofProgram f.src f.checked
+  (f.src.roots.zipIdx).map fun (e, r) =>
+    match sc.insts.find? (fun x => x.1 == e.2 && x.2.1 == ([] : Levels)), f.tys r with
+    | some x, some (G, .ind i) =>
+      match resAfter (arities.getD r 0) x.2.2 with
+      | .data d => treeMap I f.anf.ctors G sc.datas 10000 [(d, i)] []
+      | _ => []
+    | _, _ => []
+
+/-- **The roots' parameter counts as the certificate states them** (untrusted): root `r`'s
+instance at no levels, its leading `Nat` parameters. A caller with a fixed calling
+convention (an executable's arity) passes that instead. -/
+def aritiesFor (src : Src.Program) (sc : Cert) : List Nat :=
+  src.roots.map fun e =>
+    match sc.insts.find? (fun x => x.1 == e.2 && x.2.1 == ([] : Levels)) with
+    | some x => natParamsOf x.2.2
+    | none => 0
+
 end IxCC.Correct.Shape2

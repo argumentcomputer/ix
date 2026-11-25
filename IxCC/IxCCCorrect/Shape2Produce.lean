@@ -96,6 +96,8 @@ structure St where
   later : List (Levels × List TV × List TV × Term) := []
   /-- the shapes of `let`-bound λs, read off the types the `let`s state -/
   lets : List Shape := []
+  /-- how many instances `insts` holds (kept so the loop's cap costs nothing per step) -/
+  ninsts : Nat := 0
 
 abbrev M := StateM St
 
@@ -300,7 +302,7 @@ def addInst (p : Program) (fuel : Nat) (ls : Levels) (c : CId) (infos : List (Op
   let σ := refix p (← get).datas c σ0
   let s ← get
   if !s.insts.contains (c, ls, σ) then
-    set { s with insts := s.insts ++ [(c, ls, σ)]
+    set { s with insts := s.insts ++ [(c, ls, σ)], ninsts := s.ninsts + 1,
                  todo := s.todo ++ [(c, ls, σ, infos.map Prod.snd)] }
   match projFn p c with
   | some (np, i) =>
@@ -401,7 +403,7 @@ def step (p : Program) (fuel : Nat) : M Bool := do
         modify fun s =>
           let e := (g, us.map (evalUniv ls), σ)
           if s.insts.contains e then s
-          else { s with insts := s.insts ++ [e]
+          else { s with insts := s.insts ++ [e], ninsts := s.ninsts + 1,
                         todo := s.todo ++ [(g, us.map (evalUniv ls), σ, targs)] }
       | some _ => pure ()
       | none =>
@@ -450,5 +452,67 @@ def produce (p : Program) (root : CId) (fuel : Nat := 400) (steps : Nat := 20000
 /-- **The proposed certificate** for several roots at once (one table of entries). -/
 def produceAll (p : Program) (roots : List CId) (fuel : Nat := 400) (steps : Nat := 40000) : Cert :=
   (produceAllWith p roots fuel steps).1
+
+/-! ## The producer as `compile` calls it: bounded, and refusing when it does not converge
+
+`produceAll` stops after a number of steps and returns whatever it has; on a program with
+no finite set of instances (polymorphic recursion: `α × α` at every depth) that is a
+certificate of thousands of instances that the decision then refuses, slowly. `propose`
+stops at an instance cap as well, and refuses instead of proposing when the queues are
+not empty. Its running time is bounded by `steps` walks of at most `fuel` depth, each
+step's bookkeeping linear in the instances held (at most `maxInsts`). -/
+
+/-- The producer's budgets. -/
+structure Limits where
+  /-- depth of a walk, and of a type evaluation -/
+  fuel : Nat := 400
+  /-- instance bodies and sites walked -/
+  steps : Nat := 40000
+  /-- instances proposed; past it the producer stops and refuses -/
+  maxInsts : Nat := 4000
+
+/-- Why the producer proposes nothing. Never a soundness matter: a refusal declines the
+program, as the decision's refusal does. -/
+inductive Declined where
+  /-- the step budget ran out with walks still queued -/
+  | diverged (steps insts : Nat)
+  /-- more instances than the cap (polymorphic recursion, or a program too large) -/
+  | tooMany (insts : Nat)
+  deriving Repr
+
+def Declined.render : Declined → String
+  | .diverged s n => s!"shape producer: no fixed point after {s} steps ({n} instances)"
+  | .tooMany n => s!"shape producer: more than the cap of instances ({n})"
+
+/-- The loop with an instance cap: `some true` when the queues ran empty, `some false` when
+the steps ran out first, `none` at the cap. -/
+def loopCapped (p : Program) (fuel cap : Nat) : Nat → M (Option Bool)
+  | 0 => do
+    let s ← get
+    pure (some (s.todo.isEmpty && s.later.isEmpty))
+  | n + 1 => do
+    if (← get).ninsts > cap then return none
+    if (← step p fuel) then loopCapped p fuel cap n else return some true
+
+/-- **The certificate `compile` checks** for the root constants `roots` of the checked
+source `p`, or why there is none. Untrusted: `certOk` decides what it proposes. -/
+def propose (p : Program) (roots : List CId) (lim : Limits := {}) : Except Declined Cert :=
+  let m : M (Option Bool) := do
+    roots.forM fun root => do
+      let _ ← addInst p lim.fuel [] root []
+    loopCapped p lim.fuel lim.maxInsts lim.steps
+  let (r, s) := m.run {}
+  match r with
+  | none => .error (.tooMany s.ninsts)
+  | some false => .error (.diverged lim.steps s.ninsts)
+  | some true =>
+    let usesOf := fun (d j : Nat) =>
+      (s.uses.filter fun u => u.1 == d && u.2.1 == j).map fun u => u.2.2.1
+    let datas := s.datas.zipIdx.map fun e =>
+      { e.1 with ctors := e.1.ctors.map fun k =>
+          (k.1, k.2.zipIdx.map fun f =>
+            if s.polys.contains (e.2, f.2) then interOf (usesOf e.2 f.2) else f.1) }
+    let insts := (s.insts.map fun e => (e.1, e.2.1, refix p datas e.1 e.2.2)).eraseDups
+    .ok { insts, enums := s.enums, datas, lets := s.lets }
 
 end IxCC.Correct.Shape2.Produce
