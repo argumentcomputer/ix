@@ -237,6 +237,7 @@ theorem reads_lt {p : Src.Program} {cert : Cert} {I : IxCC.Lam.Erase.Input}
     | fn _ _ => cases ty <;> simp [readsOk] at hr
     | inter _ _ => cases ty <;> simp [readsOk] at hr
     | any => cases ty <;> simp [readsOk] at hr
+    | word _ => cases ty <;> simp [readsOk] at hr
 
 /-- **A value of a shape read at `ty` is read at `ty`.** -/
 theorem reads_val {p : Src.Program} {cert : Cert} {I : IxCC.Lam.Erase.Input}

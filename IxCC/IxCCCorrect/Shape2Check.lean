@@ -41,6 +41,8 @@ structure Cert where
   datas : List DataDecl
   /-- shapes to try for a `let`-bound λ, which has no expected shape where it stands -/
   lets : List Shape := []
+  /-- per width, the data entries of its tower: `UIntN` (the word's entry), `BitVec`, `Fin` -/
+  words : List (Width × Nat × Nat × Nat) := []
 
 /-- The constructors a certificate lists for an enumeration: its first entry's. -/
 def lookupEnum : List (CId × List CId) → CId → Option (List CId)
@@ -65,6 +67,79 @@ def Cert.sig (cert : Cert) : Sig where
   inst c ls σ := (c, ls, σ) ∈ cert.insts
   enums := lookupEnum cert.enums
   datas d := cert.datas[d]?
+  words w := (cert.words.lookup w).map (·.1)
+
+theorem mem_of_lookup {α β : Type} [BEq α] [LawfulBEq α] :
+    ∀ (l : List (α × β)) (a : α) (b : β), l.lookup a = some b → (a, b) ∈ l
+  | [], _, _, h => by simp at h
+  | (a', b') :: l, a, b, h => by
+    simp only [List.lookup] at h
+    split at h
+    · rename_i heq
+      simp only [Option.some.injEq] at h
+      subst h
+      have ha : a = a' := by simpa using heq
+      subst ha
+      exact List.mem_cons.2 (.inl rfl)
+    · exact List.mem_cons.2 (.inr (mem_of_lookup l a b h))
+
+/-- **A width's tower entries** `(w, d, dB, dF)`: `UIntN.ofBitVec` the one constructor of
+entry `d`, with no parameter and a field of entry `dB`; `BitVec.ofFin` that of `dB`, one
+parameter, a field of `dF`; `Fin.mk` that of `dF`, one parameter, fields `nat` and `irr`;
+none at universe levels. Then the tower F6w builds is a value of `d` (`wordEntryOk_sound`). -/
+def wordEntryOk (p : Program) (cert : Cert) (e : Width × Nat × Nat × Nat) : Bool :=
+  match p.wordCtor? e.1, p.known.bitVecOfFin, p.known.finMk, cert.datas[e.2.1]?,
+      cert.datas[e.2.2.1]?, cert.datas[e.2.2.2]? with
+  | some c, some bv, some fin, some D, some DB, some DF =>
+    decide (D.ctors = [(c, [.data e.2.2.1])]) && decide (D.params.length = 0) &&
+      decide (D.ls = []) && decide (DB.ctors = [(bv, [.data e.2.2.2])]) &&
+      decide (DB.params.length = 1) && decide (DB.ls = []) &&
+      decide (DF.ctors = [(fin, [.nat, .irr])]) && decide (DF.params.length = 1) &&
+      decide (DF.ls = [])
+  | _, _, _, _, _, _ => false
+
+theorem wordEntryOk_sound {p : Program} {cert : Cert} {w : Width} {d dB dF : Nat}
+    (h : wordEntryOk p cert (w, d, dB, dF) = true) (n : Nat) (hn : n < w.size) :
+    ∃ v, p.mkWord? w n = some v ∧ p.asWord? w v = some n ∧ ValOk p cert.sig v (.data d) := by
+  unfold wordEntryOk at h
+  cases hc : p.wordCtor? w with
+  | none => simp [hc] at h
+  | some c =>
+  cases hb : p.known.bitVecOfFin with
+  | none => simp [hc, hb] at h
+  | some bv =>
+  cases hf : p.known.finMk with
+  | none => simp [hc, hb, hf] at h
+  | some fin =>
+  cases hD : cert.datas[d]? with
+  | none => simp [hc, hb, hf, hD] at h
+  | some D =>
+  cases hDB : cert.datas[dB]? with
+  | none => simp [hc, hb, hf, hD, hDB] at h
+  | some DB =>
+  cases hDF : cert.datas[dF]? with
+  | none => simp [hc, hb, hf, hD, hDB, hDF] at h
+  | some DF =>
+  simp only [hc, hb, hf, hD, hDB, hDF, Bool.and_eq_true, decide_eq_true_eq] at h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨hct, hp⟩, hl⟩, hbt⟩, hpb⟩, hlb⟩, hft⟩, hpf⟩, hlf⟩ := h
+  refine ⟨.con c [] [] [.con bv [] [.val (.lit w.bits)]
+    [.con fin [] [.val (.lit w.size)] [.lit n, .irr none [] []]]], ?_, ?_, ?_⟩
+  · simp [Program.mkWord?, hc, hb, hf]
+  · simp [Program.asWord?, hc, hb, hf, hn]
+  · have hF : ValOk p cert.sig (.con fin [] [.val (.lit w.size)] [.lit n, .irr none [] []])
+        (.data dF) :=
+      .data (j := 0) hDF (by simp [hft]) (by simp [hpf]) (.cons .lit (.cons .irr .nil)) hlf.symm
+    have hB : ValOk p cert.sig (.con bv [] [.val (.lit w.bits)]
+        [.con fin [] [.val (.lit w.size)] [.lit n, .irr none [] []]]) (.data dB) :=
+      .data (j := 0) hDB (by simp [hbt]) (by simp [hpb]) (.cons hF .nil) hlb.symm
+    exact .data (j := 0) hD (by simp [hct]) (by simp [hp]) (.cons hB .nil) hl.symm
+
+/-- F6w at a word operation: the instance is its operand and result shapes, and a word
+result's width has entries. -/
+def wordOk (cert : Cert) (w : Width) (op : WordOp) (σ : Shape) : Bool :=
+  match wordArgs w op with
+  | some (σs, τ) => decide (σ = arrows σs τ) && wordResOk cert.sig τ
+  | none => false
 
 /-- The shapes the certificate lists for a constant at given levels. -/
 def instsOf : List (CId × Levels × Shape) → CId → Levels → List Shape
@@ -118,6 +193,7 @@ theorem mem_appRes {irrArg : Bool} {argOk : Shape → Bool} {s τ : Shape}
   | irr => simp [appRes] at h
   | inter _ _ => simp [appRes] at h
   | any => simp [appRes] at h
+  | word _ => simp [appRes] at h
 
 /-- What a projection returns, per shape of its subject: field `i` of a structure's
 entry of the projected inductive. -/
@@ -162,6 +238,7 @@ theorem mem_projRes {datas : List DataDecl} {s : CId} {i : Nat} {σ τ : Shape}
   | fn _ _ => simp [projRes] at h
   | inter _ _ => simp [projRes] at h
   | any => simp [projRes] at h
+  | word _ => simp [projRes] at h
 
 /-- What is known of the shape of a term being synthesized: nothing, all of it, or
 (for a λ in function position) its domain. -/
@@ -193,6 +270,7 @@ theorem hasShape_parts {sig : Sig} {ls : Levels} {Γ : List Shape} {e : Term} :
   | .irr, τ, h, he => by simp [parts] at h; subst h; exact he
   | .fn _ _, τ, h, he => by simp [parts] at h; subst h; exact he
   | .any, τ, h, he => by simp [parts] at h; subst h; exact he
+  | .word _, τ, h, he => by simp [parts] at h; subst h; exact he
 
 /-- Is the term a λ? -/
 def isLam : Term → Bool
@@ -215,6 +293,7 @@ def chkWith (f : Exp → List Shape) (lam : Bool) : Shape → Bool
   | .data d => decide (Shape.data d ∈ f (.full (.data d)))
   | .irr => decide (Shape.irr ∈ f (.full .irr))
   | .fn σ τ => decide (Shape.fn σ τ ∈ f (.full (.fn σ τ)))
+  | .word w => decide (Shape.word w ∈ f (.full (.word w)))
 
 theorem chkWith_sound {sig : Sig} {ls : Levels} {Γ : List Shape} {t : Term}
     (f : Exp → List Shape) (hf : ∀ e σ, σ ∈ f e → HasShape sig ls Γ t σ) (lam : Bool)
@@ -236,6 +315,7 @@ theorem chkWith_sound {sig : Sig} {ls : Levels} {Γ : List Shape} {t : Term}
   | .data _, h => hf _ _ (of_decide_eq_true h)
   | .irr, h => hf _ _ (of_decide_eq_true h)
   | .fn _ _, h => hf _ _ (of_decide_eq_true h)
+  | .word _, h => hf _ _ (of_decide_eq_true h)
 
 /-- Does synthesis of the term read what is expected of it? Only a λ does, and a `let`
 passes the expectation to its body. For every other term `synth` is the same at every
@@ -419,6 +499,7 @@ theorem synth_sound (cert : Cert) (ls : Levels) : ∀ (t : Term) (Γ : List Shap
       | irr => simp [synth] at h
       | inter _ _ => simp [synth] at h
       | any => simp [synth] at h
+      | word _ => simp [synth] at h
   | pi b d c _ _ =>
     intro Γ e σ h
     simp [synth] at h
@@ -487,6 +568,13 @@ def fldsOf (p : Program) (cert : Cert) (ind : CId) : Shape → Option (Nat × Li
     match cert.datas[d]? with
     | some D => if D.ind = ind then some (D.params.length, D.ctors.map fun e => e.2) else none
     | none => none
+  | .word w =>
+    match cert.words.lookup w with
+    | some e =>
+      match cert.datas[e.1]? with
+      | some D => if D.ind = ind then some (D.params.length, D.ctors.map fun e => e.2) else none
+      | none => none
+    | none => none
   | _ => none
 
 theorem fldsOf_sound {p : Program} {cert : Cert} {ind : CId} {σ : Shape} {np : Nat}
@@ -530,6 +618,21 @@ theorem fldsOf_sound {p : Program} {cert : Cert} {ind : CId} {σ : Shape} {np : 
   | fn _ _ => simp [fldsOf] at h
   | inter _ _ => simp [fldsOf] at h
   | any => simp [fldsOf] at h
+  | word w =>
+    simp only [fldsOf] at h
+    cases hw : cert.words.lookup w with
+    | none => simp [hw] at h
+    | some e =>
+      cases hD : cert.datas[e.1]? with
+      | none => simp [hw, hD] at h
+      | some D =>
+        simp only [hw, hD] at h
+        split at h
+        · rename_i hI
+          subst hI
+          cases h
+          exact .word (sig := cert.sig) (d := e.1) (by simp [Cert.sig, hw]) hD
+        · cases h
 
 def isOrdinary : Option RecKind → Bool
   | some .ordinary => true
@@ -944,7 +1047,7 @@ def entryOk (p : Program) (cert : Cert) (c : CId) (ls : Levels) (σ : Shape) : B
           | some (RecKind.subsingleton _ srcs) => casesSubOk σ np nmin ni srcs
           | _ => false)
     | _ => false
-  | some (.word _ _ _) => false
+  | some (.word w op _) => wordOk cert w op σ
   | none =>
     match p.decl? c with
     | some (.defn .defn .safe _ _ v) =>
@@ -1010,7 +1113,16 @@ theorem entryOk_sound {p : Program} {cert : Cert} {c : CId} {ls : Levels} {σ : 
                 rw [hkind] at hsub
                 exact Bool.noConfusion hsub
         | _ => simp [hd] at h
-    | word w op thm => simp [hres] at h
+    | word w op thm =>
+      simp only [hres] at h
+      unfold wordOk at h
+      cases ha : wordArgs w op with
+      | none => simp [ha] at h
+      | some st =>
+        obtain ⟨σs, τ⟩ := st
+        simp only [ha, Bool.and_eq_true, decide_eq_true_eq] at h
+        obtain ⟨rfl, hτ⟩ := h
+        exact .head (.word hres) (.word w op ls σs τ ha hτ)
   | none =>
     simp only [hres] at h
     cases hd : p.decl? c with
@@ -1069,13 +1181,25 @@ constructors are as listed. -/
 def certOk (p : Program) (cert : Cert) : Bool :=
   (cert.insts.all fun e => entryOk p cert e.1 e.2.1 e.2.2) &&
     (cert.enums.all fun e => enumOk p e.1 0 e.2) &&
-    (cert.datas.all fun D => ctorsOk p D 0 D.ctors && structOk p D)
+    (cert.datas.all fun D => ctorsOk p D 0 D.ctors && structOk p D) &&
+    cert.words.all (wordEntryOk p cert)
 
 theorem sigOk_of_cert {p : Program} {cert : Cert} (h : certOk p cert = true) :
     SigOk p cert.sig := by
   unfold certOk at h
   simp only [Bool.and_eq_true] at h
-  obtain ⟨⟨hi, he⟩, hdt⟩ := h
+  obtain ⟨⟨⟨hi, he⟩, hdt⟩, hwd⟩ := h
+  have hW : ∀ w d, cert.sig.words w = some d → ∀ n, n < w.size →
+      ∃ v, p.mkWord? w n = some v ∧ p.asWord? w v = some n ∧ ValOk p cert.sig v (.data d) := by
+    intro w d hw n hn
+    have hw' : (cert.words.lookup w).map (·.1) = some d := hw
+    cases hl : cert.words.lookup w with
+    | none => simp [hl] at hw'
+    | some e =>
+      obtain ⟨d', dB, dF⟩ := e
+      simp only [hl, Option.map_some, Option.some.injEq] at hw'
+      subst hw'
+      exact wordEntryOk_sound (List.all_eq_true.1 hwd _ (mem_of_lookup _ _ _ hl)) n hn
   have hD : ∀ (d : Nat) (D : DataDecl), cert.datas[d]? = some D →
       ctorsOk p D 0 D.ctors = true ∧ structOk p D = true := by
     intro d D hd
@@ -1083,7 +1207,7 @@ theorem sigOk_of_cert {p : Program} {cert : Cert} (h : certOk p cert = true) :
     simpa using this
   refine ⟨fun c ls σ hc => entryOk_sound (List.all_eq_true.1 hi (c, ls, σ) hc),
     fun I cs hI i c hic => ?_, fun d D hd j c fl hj => ?_,
-    fun d D hd hst c fl hct => structOk_sound (hD d D hd).2 hst c fl hct⟩
+    fun d D hd hst c fl hct => structOk_sound (hD d D hd).2 hst c fl hct, hW⟩
   · have hmem := mem_of_lookupEnum _ _ _ hI
     obtain ⟨s, lv, ty, hd, hz, hs⟩ :=
       enumOk_sound cs 0 (List.all_eq_true.1 he (I, cs) hmem) i c hic

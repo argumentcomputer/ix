@@ -54,6 +54,10 @@ inductive Shape where
   | inter (a b : Shape)
   /-- any value, never looked at: a method nobody uses -/
   | any
+  /-- a fixed-width word: the tower `UIntN.ofBitVec (BitVec.ofFin (Fin.mk n _))` with `n`
+  below the width's size, as F6w makes it. The bound is an invariant of the shape (only F6w
+  produces it), not of the value form: a tower source code builds by F1 has a `data` shape -/
+  | word (w : Width)
   deriving DecidableEq, Repr
 
 /-- `σ₁ → … → σₙ → τ`. -/
@@ -79,6 +83,8 @@ structure Sig where
   inst : CId → Levels → Shape → Prop
   enums : CId → Option (List CId)
   datas : Nat → Option DataDecl
+  /-- the data entry of each width's tower, where words of the width are used -/
+  words : Width → Option Nat := fun _ => none
 
 /-- **The term judgment at levels `ls`.** An argument, a `let` and a λ are read at
 `ls` as SrcEval reads them: an irrelevant argument is not looked at and its slot has
@@ -125,8 +131,39 @@ inductive HasShape (sig : Sig) (ls : Levels) : List Shape → Term → Shape →
   /-- a value nobody looks at -/
   | toAny {Γ : List Shape} {e : Term} {σ : Shape} :
       HasShape sig ls Γ e σ → HasShape sig ls Γ e .any
+  /-- a word read as its width's tower entry: projections (`toBitVec`, `toFin`, `val`) and
+  the reference bodies of the decisions destructure it -/
+  | wordData {Γ : List Shape} {e : Term} {w : Width} {d : Nat} :
+      HasShape sig ls Γ e (.word w) → sig.words w = some d → HasShape sig ls Γ e (.data d)
 
 /-! ## Special heads -/
+
+/-- **The operand shapes and the result shape of a word operation**, for the operations of
+W1 that F6w computes: one or two word operands (`ofNat`'s a `Nat`), a word or a `Nat`
+result. The decisions are not primitives in W1 (`WordResult.dec` is stuck) and the limb
+operations are not user code; neither is in the fragment. -/
+def wordArgs (w : Width) : WordOp → Option (List Shape × Shape)
+  | .ofNat => some ([.nat], .word w)
+  | .toNat => some ([.word w], .nat)
+  | .convert w' => some ([.word w], .word w')
+  | .complement => some ([.word w], .word w)
+  | .neg => some ([.word w], .word w)
+  | .add => some ([.word w, .word w], .word w)
+  | .sub => some ([.word w, .word w], .word w)
+  | .mul => some ([.word w, .word w], .word w)
+  | .div => some ([.word w, .word w], .word w)
+  | .mod => some ([.word w, .word w], .word w)
+  | .land => some ([.word w, .word w], .word w)
+  | .lor => some ([.word w, .word w], .word w)
+  | .xor => some ([.word w, .word w], .word w)
+  | .shiftLeft => some ([.word w, .word w], .word w)
+  | .shiftRight => some ([.word w, .word w], .word w)
+  | _ => none
+
+/-- A word result names its width's entry. -/
+def wordResOk (sig : Sig) : Shape → Bool
+  | .word w => (sig.words w).isSome
+  | _ => true
 
 /-- The shape of a field F3 hands a rule: an index slot's, or irrelevant. -/
 def srcShape (idx : List Shape) : FieldSrc → Shape
@@ -147,6 +184,9 @@ inductive ScrutOk (p : Program) (sig : Sig) : Shape → CId → Nat → List (Li
   | nat {N : CId} : (some N == p.known.nat) = true → ScrutOk p sig .nat N 0 [[], [.nat]]
   | data {d : Nat} {D : DataDecl} : sig.datas d = some D →
       ScrutOk p sig (.data d) D.ind D.params.length (D.ctors.map fun e => e.2)
+  /-- a word, scrutinised as its width's tower entry -/
+  | word {w : Width} {d : Nat} {D : DataDecl} : sig.words w = some d → sig.datas d = some D →
+      ScrutOk p sig (.word w) D.ind D.params.length (D.ctors.map fun e => e.2)
 
 /-- **A special head fired on slots of shapes `σs` returns a `τ`.** One clause per
 kind of head in the fragment; the program facts in each are what the firing rule
@@ -215,6 +255,10 @@ inductive HeadOk (p : Program) (sig : Sig) : Head → Levels → List Shape → 
       peelLams (pre.length + srcs.length) rule.rhs = some body →
       HasShape sig ls ((srcs.map (srcShape idx)).reverse ++ pre.reverse) body τ →
       HeadOk p sig (.recr r) ls (pre ++ (idx ++ [maj])) τ
+  /-- F6w at a word operation of the fragment (`wordArgs`); a word result's width has an
+  entry -/
+  | word (w : Width) (op : WordOp) (ls : Levels) (σs : List Shape) (τ : Shape) :
+      wordArgs w op = some (σs, τ) → wordResOk sig τ = true → HeadOk p sig (.word w op) ls σs τ
 
 /-! ## The value judgment -/
 
@@ -232,6 +276,11 @@ inductive ValOk (p : Program) (sig : Sig) : Value → Shape → Prop
       sig.datas d = some D → D.ctors[j]? = some (c, fl) → ps.length = D.params.length →
       ValsOk p sig fs fl → ls = D.ls → ValOk p sig (.con c ls ps fs) (.data d)
   | irr {t : Option Term} {ρ : List Slot} {ls : Levels} : ValOk p sig (.irr t ρ ls) .irr
+  /-- a word: a tower F6w reads (its number below the width's size) that is a value of the
+  width's tower entry -/
+  | word {v : Value} {w : Width} {n d : Nat} :
+      p.asWord? w v = some n → sig.words w = some d → ValOk p sig v (.data d) →
+      ValOk p sig v (.word w)
   /-- a value of two shapes -/
   | inter {v : Value} {a b : Shape} : ValOk p sig v a → ValOk p sig v b → ValOk p sig v (.inter a b)
   /-- every value has the shape nobody looks at -/
@@ -288,6 +337,8 @@ inductive Unfolds (p : Program) : CId → Term → Prop
 /-- δ of `c` is the special head `h`. -/
 inductive HeadOf (p : Program) : CId → Head → Prop
   | prim {c : CId} {op : PrimOp} : p.table.resolveOf c = some (.prim op) → HeadOf p c (.prim op)
+  | word {c thm : CId} {w : Width} {op : WordOp} :
+      p.table.resolveOf c = some (.word w op thm) → HeadOf p c (.word w op)
   | cases {c r : CId} : p.table.resolveOf c = some (.case r) → HeadOf p c (.cases c)
   | ctor {c : CId} {s : Bool} {lv : Nat} {ind : CId} {cidx np nf : Nat} {ty : Term} :
       p.table.resolveOf c = none → p.decl? c = some (.ctor s lv ind cidx np nf ty) →
@@ -326,6 +377,10 @@ structure SigOk (p : Program) (sig : Sig) : Prop where
   /-- an entry E6 may project is of an inductive with exactly that constructor -/
   structs : ∀ d D, sig.datas d = some D → D.struct = true → ∀ c fl, D.ctors = [(c, fl)] →
     ∃ s lv np ni ty, p.decl? D.ind = some (.induct s lv np ni ty [c])
+  /-- the tower F6w builds at a width with an entry is a word of the width and a value of
+  the entry -/
+  words : ∀ w d, sig.words w = some d → ∀ n, n < w.size →
+    ∃ v, p.mkWord? w n = some v ∧ p.asWord? w v = some n ∧ ValOk p sig v (.data d)
 
 /-! ## Small facts -/
 
@@ -349,6 +404,7 @@ theorem evalConst_head {p : Program} {k : Nat} {ls : Levels} {c : CId} {h : Head
     (hof : HeadOf p c h) : evalConst p k ls c = headValue p k ls h := by
   cases hof with
   | prim hres => rw [evalConst_eq, hres] <;> rfl
+  | word hres => rw [evalConst_eq, hres] <;> rfl
   | cases hres => rw [evalConst_eq, hres] <;> rfl
   | ctor hres hdecl => rw [evalConst_eq, hres, hdecl] <;> rfl
   | recr hres hdecl => rw [evalConst_eq, hres, hdecl] <;> rfl
@@ -681,6 +737,29 @@ theorem ValOk.inter_inv {v : Value} {a b : Shape} (h : ValOk p sig v (.inter a b
     | nil => exact absurd rfl hrest
     | cons a r => simp [arrows] at hσ
 
+/-- Canonical forms at a word: the tower F6w reads, and a value of the width's entry. -/
+theorem ValOk.word_inv {v : Value} {w : Width} (h : ValOk p sig v (.word w)) :
+    ∃ n d, p.asWord? w v = some n ∧ sig.words w = some d ∧ ValOk p sig v (.data d) := by
+  cases h with
+  | word ha hw hd => exact ⟨_, _, ha, hw, hd⟩
+  | pap h ls args σs done rest τ σ hh hσs hargs hrest hσ =>
+    cases rest with
+    | nil => exact absurd rfl hrest
+    | cons a r => simp [arrows] at hσ
+
+/-- F2 and F5 at a data entry. -/
+theorem selectRule_data (hsig : SigOk p sig) {d : Nat} {D : DataDecl} {v : Value}
+    (hD : sig.datas d = some D) (hv : ValOk p sig v (.data d)) :
+    ∃ j fs fl, p.selectRule D.ind D.params.length v = some (j, fs) ∧
+      (D.ctors.map fun e => e.2)[j]? = some fl ∧ EnvOk p sig fs fl := by
+  obtain ⟨c, ls, ps, fs, D', j, fl, rfl, hD', hc, hps, hfs⟩ := hv.data_inv
+  rw [hD] at hD'
+  cases hD'
+  obtain ⟨s, lv, ty, hdecl, -, -⟩ := hsig.datas _ _ hD j c fl hc
+  refine ⟨j, fs.map Slot.val, fl, ?_, ?_, ValsOk.toEnv _ _ hfs⟩
+  · simp [Program.selectRule, hdecl, hps]
+  · simp [hc]
+
 /-- **F2 and F5 select a rule** on a value of the scrutinised shape, and the fields
 they hand on have the constructor's field shapes. -/
 theorem selectRule_ok (hsig : SigOk p sig) {σ : Shape} {ind : CId} {np : Nat}
@@ -689,14 +768,12 @@ theorem selectRule_ok (hsig : SigOk p sig) {σ : Shape} {ind : CId} {np : Nat}
     ∃ j fs fl, p.selectRule ind np v = some (j, fs) ∧ flds[j]? = some fl ∧
       EnvOk p sig fs fl := by
   cases hs with
-  | @data d D hD =>
-    obtain ⟨c, ls, ps, fs, D', j, fl, rfl, hD', hc, hps, hfs⟩ := hv.data_inv
-    rw [hD] at hD'
-    cases hD'
-    obtain ⟨s, lv, ty, hdecl, -, -⟩ := hsig.datas _ _ hD j c fl hc
-    refine ⟨j, fs.map Slot.val, fl, ?_, ?_, ValsOk.toEnv _ _ hfs⟩
-    · simp [Program.selectRule, hdecl, hps]
-    · simp [hc]
+  | @data d D hD => exact selectRule_data hsig hD hv
+  | @word w d D hw hD =>
+    obtain ⟨n, d', -, hw', hvd⟩ := hv.word_inv
+    rw [hw] at hw'
+    cases hw'
+    exact selectRule_data hsig hD hvd
   | enum hI =>
     obtain ⟨c, ls, cs', rfl, hI', hc⟩ := hv.enum_inv
     rw [hI] at hI'
@@ -733,6 +810,137 @@ theorem HeadOk.arity (hsig : SigOk p sig) {h : Head} {ls : Levels} {σs : List S
   | recrSub r ls pre idx maj τ s kk lv np nmot nmin ind rules ty w srcs rule body hdecl hkind
       hpre hrule hpeel hbody =>
     simp [Program.headArity, hdecl, Decl.recArity, hpre] <;> omega
+  | word w op ls σs τ h hτ =>
+    cases op <;> simp only [wordArgs, reduceCtorEq, Option.some.injEq, Prod.mk.injEq] at h <;>
+      (obtain ⟨rfl, -⟩ := h; simp [Program.headArity, WordOp.arity])
+
+/-! ## F6w on words -/
+
+theorem asWord_lt {w : Width} {v : Value} {n : Nat} (h : p.asWord? w v = some n) :
+    n < w.size := by
+  unfold Program.asWord? at h
+  split at h
+  · split at h
+    · rename_i hc
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+      simp only [Option.some.injEq] at h
+      subst h
+      exact hc.2
+    · cases h
+  · cases h
+
+theorem ValsOk.one_inv {vs : List Value} {σ : Shape} (h : ValsOk p sig vs [σ]) :
+    ∃ a, vs = [a] ∧ ValOk p sig a σ := by
+  cases h with
+  | cons ha hvs =>
+    cases hvs
+    exact ⟨_, rfl, ha⟩
+
+theorem ValsOk.two_inv {vs : List Value} {σ₁ σ₂ : Shape} (h : ValsOk p sig vs [σ₁, σ₂]) :
+    ∃ a b, vs = [a, b] ∧ ValOk p sig a σ₁ ∧ ValOk p sig b σ₂ := by
+  cases h with
+  | cons ha hvs =>
+    cases hvs with
+    | cons hb hnil =>
+      cases hnil
+      exact ⟨_, _, rfl, ha, hb⟩
+
+/-- **F6w's result on words of the fragment**: on forced operands of the operation's
+shapes it returns a value of the result shape. The operations reduce modulo the size or
+are bounded by their operands, so a result tower is in range (`SigOk.words`). -/
+theorem wordValue_ok (hsig : SigOk p sig) {w : Width} {op : WordOp} {σs : List Shape}
+    {τ : Shape} (h : wordArgs w op = some (σs, τ)) (hτ : wordResOk sig τ = true)
+    {vs : List Value} (hvs : ValsOk p sig vs σs) :
+    ∃ v, p.wordValue w op vs = .ok v ∧ ValOk p sig v τ := by
+  have hS : 0 < w.size := w.size_pos
+  have hres : ∀ (w' : Width) (n : Nat), n < w'.size → wordResOk sig (.word w') = true →
+      ∃ v, p.wordResult (.word w' n) = .ok v ∧ ValOk p sig v (.word w') := by
+    intro w' n hn hs
+    obtain ⟨d, hd⟩ := Option.isSome_iff_exists.1 hs
+    obtain ⟨v, hmk, has, hvd⟩ := hsig.words w' d hd n hn
+    exact ⟨v, by simp [Program.wordResult, hmk, IxCC.Sem.Result.ofOption], .word has hd hvd⟩
+  -- two word operands, a word result `f x y`
+  have hbin : ∀ (f : Nat → Nat → Nat), (∀ x y, x < w.size → y < w.size → f x y < w.size) →
+      σs = [.word w, .word w] → τ = .word w → op.arity = 2 →
+      (∀ x y, op.eval w x y = .word w (f x y)) →
+      ∃ v, p.wordValue w op vs = .ok v ∧ ValOk p sig v τ := by
+    intro f hf hσ hτ' har he
+    subst hσ
+    subst hτ'
+    obtain ⟨a, b, rfl, ha, hb⟩ := hvs.two_inv
+    obtain ⟨x, -, hax, -, -⟩ := ha.word_inv
+    obtain ⟨y, -, hby, -, -⟩ := hb.word_inv
+    have hw : p.wordValue w op [a, b] = p.wordResult (op.eval w x y) := by
+      simp [Program.wordValue, har, hax, hby]
+    rw [hw, he]
+    exact hres w _ (hf x y (asWord_lt hax) (asWord_lt hby)) hτ
+  -- one word operand, a word result `f x`
+  have hun : ∀ (w' : Width) (f : Nat → Nat), (∀ x, x < w.size → f x < w'.size) →
+      σs = [.word w] → τ = .word w' → op.arity = 1 → op ≠ .ofNat →
+      (∀ x y, op.eval w x y = .word w' (f x)) →
+      ∃ v, p.wordValue w op vs = .ok v ∧ ValOk p sig v τ := by
+    intro w' f hf hσ hτ' har hno he
+    subst hσ
+    subst hτ'
+    obtain ⟨a, rfl, ha⟩ := hvs.one_inv
+    obtain ⟨x, -, hax, -, -⟩ := ha.word_inv
+    have hw : p.wordValue w op [a] = p.wordResult (op.eval w x 0) := by
+      cases op <;> first | exact absurd rfl hno | simp [Program.wordValue, har, hax]
+    rw [hw, he]
+    exact hres w' _ (hf x (asWord_lt hax)) hτ
+  cases op <;> simp only [wordArgs, reduceCtorEq, Option.some.injEq, Prod.mk.injEq] at h <;>
+    obtain ⟨hσ, hτ'⟩ := h
+  · exact hbin (fun x y => (x + y) % w.size) (fun x y _ _ => Nat.mod_lt _ hS) hσ.symm
+      hτ'.symm rfl (fun _ _ => rfl)
+  · exact hbin (fun x y => (w.size - y + x) % w.size) (fun x y _ _ => Nat.mod_lt _ hS) hσ.symm
+      hτ'.symm rfl (fun _ _ => rfl)
+  · exact hbin (fun x y => (x * y) % w.size) (fun x y _ _ => Nat.mod_lt _ hS) hσ.symm
+      hτ'.symm rfl (fun _ _ => rfl)
+  · exact hbin (fun x y => x / y) (fun x y hx _ => Nat.lt_of_le_of_lt (Nat.div_le_self x y) hx)
+      hσ.symm hτ'.symm rfl (fun _ _ => rfl)
+  · exact hbin (fun x y => x % y) (fun x y hx _ => Nat.lt_of_le_of_lt (Nat.mod_le x y) hx)
+      hσ.symm hτ'.symm rfl (fun _ _ => rfl)
+  · exact hbin (fun x y => x &&& y) (fun x y hx _ => Nat.lt_of_le_of_lt Nat.and_le_left hx)
+      hσ.symm hτ'.symm rfl (fun _ _ => rfl)
+  · exact hbin (fun x y => x ||| y) (fun x y hx hy => Nat.or_lt_two_pow hx hy) hσ.symm
+      hτ'.symm rfl (fun _ _ => rfl)
+  · exact hbin (fun x y => x ^^^ y) (fun x y hx hy => Nat.xor_lt_two_pow hx hy) hσ.symm
+      hτ'.symm rfl (fun _ _ => rfl)
+  · exact hbin (fun x y => (x <<< (y % w.bits)) % w.size) (fun x y _ _ => Nat.mod_lt _ hS)
+      hσ.symm hτ'.symm rfl (fun _ _ => rfl)
+  · exact hbin (fun x y => x >>> (y % w.bits))
+      (fun x y hx _ => Nat.lt_of_le_of_lt (Nat.shiftRight_le _ _) hx) hσ.symm hτ'.symm rfl
+      (fun _ _ => rfl)
+  · exact hun w (fun x => (w.size - 1) ^^^ x)
+      (fun x hx => Nat.xor_lt_two_pow (Nat.sub_lt hS Nat.one_pos) hx) hσ.symm hτ'.symm rfl
+      (by simp) (fun _ _ => rfl)
+  · exact hun w (fun x => (w.size - x) % w.size) (fun x _ => Nat.mod_lt _ hS) hσ.symm
+      hτ'.symm rfl (by simp) (fun _ _ => rfl)
+  · -- `ofNat`: a `Nat` operand
+    subst hσ
+    subst hτ'
+    obtain ⟨a, rfl, ha⟩ := hvs.one_inv
+    obtain ⟨x, rfl⟩ := ha.nat_inv
+    have hw : p.wordValue w .ofNat [.lit x] = p.wordResult (.word w (x % w.size)) := by
+      simp [Program.wordValue, WordOp.arity, WordOp.eval]
+    rw [hw]
+    exact hres w _ (Nat.mod_lt _ hS) hτ
+  · -- `toNat`: a `Nat` result
+    subst hσ
+    subst hτ'
+    obtain ⟨a, rfl, ha⟩ := hvs.one_inv
+    obtain ⟨x, -, hax, -, -⟩ := ha.word_inv
+    refine ⟨.lit x, ?_, .lit⟩
+    simp [Program.wordValue, WordOp.arity, WordOp.eval, hax, Program.wordResult]
+  · -- `convert`: to a wider width the number is kept, to a narrower one reduced
+    rename_i w'
+    refine hun w' (fun x => if w.bits ≤ w'.bits then x else x % w'.size) (fun x hx => ?_)
+      hσ.symm hτ'.symm rfl (by simp) (fun x y => ?_)
+    · by_cases hb : w.bits ≤ w'.bits <;> simp [hb] <;>
+        first
+        | exact Nat.lt_of_lt_of_le hx (Width.size_le_of_bits_le hb)
+        | exact Nat.mod_lt _ w'.size_pos
+    · by_cases hb : w.bits ≤ w'.bits <;> simp [WordOp.eval, hb]
 
 /-- Forcing slots of shape `nat` times out or returns literals. -/
 theorem forceAll_nat {k : Nat}
@@ -1052,6 +1260,15 @@ theorem allOk (hsig : SigOk p sig) : ∀ k, AllOk p sig k := by
           | none => .stuck)
         rw [hlen, hpeel]
         exact A.term ls _ _ body τ hbody henv
+    | word w op ls σs τ hw hτ =>
+      rw [fire_word]
+      rcases forceAll_ok hslot slots σs hslots with hto | ⟨vs, hvs, hok⟩
+      · rw [hto]
+        exact .inl rfl
+      · rw [hvs]
+        show ResOk p sig τ (p.wordValue w op vs)
+        obtain ⟨v, hv, hvo⟩ := wordValue_ok hsig hw hτ hok
+        exact .inr ⟨v, hv, hvo⟩
   -- E8 (δ)
   have hconst : ∀ (ls : Levels) (c : CId) (σ : Shape), sig.inst c ls σ →
       ResOk p sig σ (evalConst p k ls c) := by
@@ -1259,6 +1476,14 @@ theorem allOk (hsig : SigOk p sig) : ∀ k, AllOk p sig k := by
       rcases ih ρ hρ with h1 | ⟨v, h1, _⟩
       · exact .inl h1
       · exact .inr ⟨v, h1, .any⟩
+    | wordData _ hw ih =>
+      intro hρ
+      rcases ih ρ hρ with h1 | ⟨v, h1, hv⟩
+      · exact .inl h1
+      · obtain ⟨n, d', -, hw', hvd⟩ := hv.word_inv
+        rw [hw] at hw'
+        cases hw'
+        exact .inr ⟨v, h1, hvd⟩
   exact ⟨hterm, hconst, happ, hslot⟩
 
 /-- **A shaped root on shaped argument values times out or returns a value of its

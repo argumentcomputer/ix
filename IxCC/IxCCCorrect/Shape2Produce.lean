@@ -98,6 +98,8 @@ structure St where
   lets : List Shape := []
   /-- how many instances `insts` holds (kept so the loop's cap costs nothing per step) -/
   ninsts : Nat := 0
+  /-- per width met, the entries of its tower: `UIntN`, `BitVec`, `Fin` -/
+  words : List (Width × Nat × Nat × Nat) := []
 
 abbrev M := StateM St
 
@@ -116,6 +118,34 @@ def sortish : Term → Bool
 def polyTy : Term → Bool
   | .pi _ d c => sortish d || polyTy c
   | _ => false
+
+/-- The width whose pinned `UIntN.ofBitVec` is the inductive's one constructor. -/
+def wordOf (p : Program) (ctors : List CId) : Option Width :=
+  match ctors with
+  | [k] => (p.known.wordCtors.find? fun e => e.2 == k).map (·.1)
+  | _ => none
+
+/-- Record a width's tower entries, read off the `UIntN` entry just made: its one field an
+entry (`BitVec`) whose one field is an entry (`Fin`). The checker decides the rest
+(`wordEntryOk`). -/
+def recordWord (w : Width) (tv : TV) : M Unit := do
+  let s ← get
+  if s.words.any (·.1 == w) then return
+  match tv with
+  | .sh (.data d) =>
+    match s.datas[d]? with
+    | some D =>
+      match D.ctors with
+      | [(_, [.data dB])] =>
+        match s.datas[dB]? with
+        | some DB =>
+          match DB.ctors with
+          | [(_, [.data dF])] => set { s with words := s.words ++ [(w, d, dB, dF)] }
+          | _ => pure ()
+        | none => pure ()
+      | _ => pure ()
+    | none => pure ()
+  | _ => pure ()
 
 mutual
 
@@ -179,7 +209,12 @@ def tyConst (p : Program) : Nat → Levels → CId → List TV → M TV
           modify fun s =>
             if s.enums.any (·.1 == c) then s else { s with enums := s.enums ++ [(c, ctors)] }
           pure (.sh (.enum c))
-        else mkData p fuel ls c np ctors (args.take np)
+        else match wordOf p ctors with
+          | some w => do
+            let tv ← mkData p fuel ls c np ctors (args.take np)
+            recordWord w tv
+            pure (.sh (.word w))
+          | none => mkData p fuel ls c np ctors (args.take np)
       | some (.defn _ _ _ _ v) => do
         let f ← tyEval p fuel ls [] v
         tyApply p fuel f args
@@ -438,7 +473,7 @@ def produceAllWith (p : Program) (roots : List CId) (fuel : Nat := 400) (steps :
         (k.1, k.2.zipIdx.map fun f =>
           if s.polys.contains (e.2, f.2) then interOf (usesOf e.2 f.2) else f.1) }
   let insts := (s.insts.map fun e => (e.1, e.2.1, refix p datas e.1 e.2.2)).eraseDups
-  ({ insts, enums := s.enums, datas, lets := s.lets }, s.polys.map fun x => (x.1, x.2, (usesOf x.1 x.2).length))
+  ({ insts, enums := s.enums, datas, lets := s.lets, words := s.words }, s.polys.map fun x => (x.1, x.2, (usesOf x.1 x.2).length))
 
 /-- The certificate for one root, with the use counts. -/
 def produceWith (p : Program) (root : CId) (fuel : Nat := 400) (steps : Nat := 20000) :
@@ -513,6 +548,6 @@ def propose (p : Program) (roots : List CId) (lim : Limits := {}) : Except Decli
           (k.1, k.2.zipIdx.map fun f =>
             if s.polys.contains (e.2, f.2) then interOf (usesOf e.2 f.2) else f.1) }
     let insts := (s.insts.map fun e => (e.1, e.2.1, refix p datas e.1 e.2.2)).eraseDups
-    .ok { insts, enums := s.enums, datas, lets := s.lets }
+    .ok { insts, enums := s.enums, datas, lets := s.lets, words := s.words }
 
 end IxCC.Correct.Shape2.Produce

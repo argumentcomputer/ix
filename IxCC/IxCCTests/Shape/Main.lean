@@ -87,6 +87,7 @@ def showShape : Shape → String
   | .any => "*"
   | .inter a b => s!"({showShape a} & {showShape b})"
   | .fn a b => s!"({showShape a} -> {showShape b})"
+  | .word w => s!"W{w.bits}"
 
 /-- A term on one line: `#i` a variable, `cN` a constant, `~a` an argument irrelevant at `ls`,
 `'a` a by-name one, `\` a λ (`\~` irrelevant binder), `T` a type or sort. -/
