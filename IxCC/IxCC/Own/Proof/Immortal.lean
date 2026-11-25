@@ -316,6 +316,53 @@ theorem immortalOk_alloc (hH : H.immortalOk = true) {c : Fir.CtorInfo} {vs : Lis
   | loc ℓ' => simpa [Heap.size] using hlocs ℓ' hx
   | _ => rfl
 
+/-! ### Array primitives
+
+Own's code evaluator gives an array-primitive binding its meaning (`arrStep`); Fir does not yet,
+so there the binding is stuck and any Own outcome is in lock-step with it. -/
+
+private theorem fir_primResult_arr (op : Src.ArrOp) (vs : List Fir.Val) :
+    Fir.primResult F (.arr op) vs = .stuck := by
+  unfold Fir.primResult
+  split <;> rfl
+
+theorem isArrPrim_immRhs (r : Fir.Rhs) : (immRhs r).isArrPrim = r.isArrPrim := by
+  cases r <;> rfl
+
+mutual
+
+/-- The embedding keeps a body free of array-primitive bindings. -/
+theorem immCode_arrFree : ∀ (c : Fir.Code), c.arrFree = true → (immCode c).arrFree = true
+  | .bind _ r k, h => by
+    simp only [Fir.Code.arrFree, Bool.and_eq_true, Bool.not_eq_true'] at h
+    simp only [immCode, Code.arrFree, isArrPrim_immRhs, h.1, Bool.not_false, Bool.true_and]
+    exact immCode_arrFree k h.2
+  | .jp _ _ _ b k, h => by
+    simp only [Fir.Code.arrFree, Bool.and_eq_true] at h
+    simp only [immCode, Code.arrFree, immCode_arrFree b h.1, immCode_arrFree k h.2, Bool.and_self]
+  | .case _ alts d, h => by
+    simp only [Fir.Code.arrFree, Bool.and_eq_true] at h
+    simp only [immCode, Code.arrFree, immAlts_arrFree alts h.1, immOpt_arrFree d h.2, Bool.and_self]
+  | .jmp .., _ => rfl
+  | .ret _, _ => rfl
+  | .tcall .., _ => rfl
+  | .trap, _ => rfl
+
+theorem immAlts_arrFree : ∀ (alts : List Fir.Alt), Fir.Code.altsArrFree alts = true →
+    Code.altsArrFree (immAlts alts) = true
+  | [], _ => rfl
+  | .mk _ b :: as, h => by
+    simp only [Fir.Code.altsArrFree, Bool.and_eq_true] at h
+    simp only [immAlts, Code.altsArrFree, immCode_arrFree b h.1, immAlts_arrFree as h.2,
+      Bool.and_self]
+
+theorem immOpt_arrFree :
+    ∀ (d : Option Fir.Code), Fir.Code.optArrFree d = true → Code.optArrFree (immOpt d) = true
+  | none, _ => rfl
+  | some c, h => immCode_arrFree c h
+
+end
+
 theorem rhs_lock (hb : BoolsOk F) (hH : H.immortalOk = true) (ρf : Fir.Env) (ρo : Env) (henv : EnvO H ρf ρo) (r : Fir.Rhs)
     (hr : ∀ f as, r ≠ .call f as) :
     Lock H (Fir.evalRhs F ρf r) (evalRhs .immortal (immortal F).tables ρo H (immRhs r)) := by
@@ -468,10 +515,21 @@ theorem eval_lock (ρf : Fir.Env) (Jf : List Fir.JEntry) (c : Fir.Code) (ρo : E
       exact eval_lock _ Jf c' _ Jo H' ((henv.ext hx).insert x hd) (hJ.ext hx) hok
     · have hr' : ∀ f as, r ≠ .call f as := fun f as h => hr ⟨f, as, h⟩
       rw [Fir.eval_bindRhs _ _ _ _ _ _ _ hr']
-      simp only [immCode]
-      rw [eval_bindRhs _ _ _ _ _ _ _ _ _ (by cases r <;> simp_all [immRhs])]
-      refine (rhs_lock hb hH ρf ρo henv r hr').bind fun w v H' hd hok hx => ?_
-      exact eval_lock _ Jf c' _ Jo H' ((henv.ext hx).insert x hd) (hJ.ext hx) hok
+      cases ha : r.isArrPrim
+      · simp only [immCode]
+        rw [eval_bindRhs _ _ _ _ _ _ _ _ _ (by cases r <;> simp_all [immRhs])
+          (by rw [isArrPrim_immRhs]; exact ha)]
+        refine (rhs_lock hb hH ρf ρo henv r hr').bind fun w v H' hd hok hx => ?_
+        exact eval_lock _ Jf c' _ Jo H' ((henv.ext hx).insert x hd) (hJ.ext hx) hok
+      · obtain ⟨op, as, rfl⟩ := Fir.Rhs.isArrPrim_eq_true ha
+        simp only [immCode, immRhs]
+        rw [eval_bindArr]
+        simp only [Fir.evalRhs]
+        cases hws : Fir.evalArgs ρf as with
+        | none => exact .stuck
+        | some ws =>
+          simp only [Result.ofOption, fir_primResult_arr]
+          exact .stuck
   | .jp j ps r b c' =>
     rw [Fir.eval_jp]
     simp only [immCode]

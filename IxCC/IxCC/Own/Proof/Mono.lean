@@ -79,8 +79,13 @@ theorem eval_agrees_of {k' : Nat} (hk : k ≤ k') (ρ : Env) (J : List JEntry) (
       exact Agrees.ofOption _ fun vs _ => .bind (evalCall_agrees_of pol P ih hk f vs H) fun p _ =>
         eval_agrees_of hk (ρ.insert x p.1) J p.2 c'
     · have hr' : ∀ f as, r ≠ .fir (.call f as) := fun f as h => hr ⟨f, as, h⟩
-      rw [eval_bindRhs _ _ _ _ _ _ _ _ _ hr', eval_bindRhs _ _ _ _ _ _ _ _ _ hr']
-      exact .bind (.refl _) fun p _ => eval_agrees_of hk (ρ.insert x p.1) J p.2 c'
+      cases ha : r.isArrPrim
+      · rw [eval_bindRhs _ _ _ _ _ _ _ _ _ hr' ha, eval_bindRhs _ _ _ _ _ _ _ _ _ hr' ha]
+        exact .bind (.refl _) fun p _ => eval_agrees_of hk (ρ.insert x p.1) J p.2 c'
+      · obtain ⟨op, as, rfl⟩ := Rhs.isArrPrim_eq_true ha
+        rw [eval_bindArr, eval_bindArr]
+        exact Agrees.ofOption _ fun vs _ => .bind (.refl _) fun p _ =>
+          eval_agrees_of hk (ρ.insert x p.1) J p.2 c'
   | .jp j ps φ r b c' =>
     rw [eval_jp, eval_jp]
     exact eval_agrees_of hk ρ _ H c'

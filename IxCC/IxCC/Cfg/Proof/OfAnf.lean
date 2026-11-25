@@ -1,5 +1,6 @@
 import IxCC.Cfg.Proof.Lang
 import IxCC.Fir.Proof.Lowering
+import IxCC.Fir.Proof.ArrFree
 
 /-! # Anf → Cfg (`Cfg.ofAnf_correct`)
 
@@ -221,6 +222,12 @@ theorem immortal_good {A : Anf.Program} {F : Fir.Program} (h : Fir.lower A = .ok
     simp only [Own.immFun, hps, List.map_map, List.mem_map, List.mem_range, Function.comp] at hp
     obtain ⟨x, hx, rfl⟩ := hp
     exact hx
+  arrFree {f fd} hf := by
+    rw [Own.Proof.immortal_fun?] at hf
+    obtain ⟨fd', hfd', rfl⟩ := Option.map_eq_some_iff.1 hf
+    obtain ⟨-, gd, -, hfn⟩ := lower_fun_inv h hfd'
+    obtain ⟨st, he, -⟩ := Fir.Proof.function_ok hfn
+    exact Own.Proof.immCode_arrFree _ (Fir.Proof.exp_arrFree he)
 
 end IxCC.Cfg.Proof
 

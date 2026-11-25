@@ -5,6 +5,9 @@ import IxCC.Anf.Proof.Convert.ValModel
 import IxCC.Fir.Proof.Lowering
 import IxCC.Anf.Props
 import IxCC.Lam.Props
+import IxCC.Fir.Proof.ArrFree
+import IxCC.Own.Proof.Immortal
+import IxCC.Cfg.Proof.Sim
 
 /-! Required axiom fences for the array primitives on the certified pipeline
 (`plans/ONE-PIPELINE.md`, lane `prims-core`): the operations' meaning over a value model
@@ -100,7 +103,8 @@ closure-narrowing proof's array scrutinee case. -/
 /-- info: 'IxCC.Anf.Convert.Proof.vr_modelRel' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Anf.Convert.Proof.vr_modelRel
 
-/-! The Anf → Fir lowering declines array primitives (`fir.arrays`) until stage B. -/
+/-! The Anf → Fir lowering declines array primitives (`fir.arrays`); the immortal route that
+lowering feeds is to be retired (design D9), so array primitives reach only the RC route. -/
 
 /-- info: 'IxCC.Fir.Proof.exp_prim_arr' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Fir.Proof.exp_prim_arr
@@ -125,3 +129,50 @@ level's value model) in `primResult`. -/
 
 /-- info: 'IxCC.Anf.primResult_arr' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Anf.primResult_arr
+
+/-! A lowered Fir body binds no array primitive (`Code.arrFree`). -/
+
+/-- info: 'IxCC.Fir.Rhs.isArrPrim_eq_true' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Fir.Rhs.isArrPrim_eq_true
+
+/-- info: 'IxCC.Fir.Proof.projections_arrFree' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.projections_arrFree
+
+/-- info: 'IxCC.Fir.Proof.exp_arrFree' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.exp_arrFree
+
+/-- info: 'IxCC.Fir.Proof.exps_arrFree' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.exps_arrFree
+
+/-- info: 'IxCC.Fir.Proof.opt_arrFree' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.opt_arrFree
+
+/-! Own's code evaluator gives an array-primitive binding its meaning (`arrStep`: the operation
+over pending values `pmodel`, then the result placed on the heap). -/
+
+/-- info: 'IxCC.Own.Rhs.isArrPrim_eq_true' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Own.Rhs.isArrPrim_eq_true
+
+/-- info: 'IxCC.Own.eval_bindArr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.eval_bindArr
+
+/-- info: 'IxCC.Own.Proof.isArrPrim_immRhs' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Own.Proof.isArrPrim_immRhs
+
+/-- info: 'IxCC.Own.Proof.immCode_arrFree' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Own.Proof.immCode_arrFree
+
+/-- info: 'IxCC.Own.Proof.immAlts_arrFree' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Own.Proof.immAlts_arrFree
+
+/-- info: 'IxCC.Own.Proof.immOpt_arrFree' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Own.Proof.immOpt_arrFree
+
+/-! Cfg's instructions run `Own.evalRhs`, which has no array case: the immortal-route
+simulation carries `Code.arrFree` of every body and join body. -/
+
+/-- info: 'IxCC.Cfg.Proof.JArr.lookup' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Cfg.Proof.JArr.lookup
+
+/-- info: 'IxCC.Cfg.Proof.JArr.after' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Cfg.Proof.JArr.after

@@ -201,6 +201,9 @@ structure Good (q : Own.Program) : Prop where
   sigLen : ∀ {f : FunId} {fd : Own.Fun}, q.fun? f = some fd → fd.sig.params.length = fd.params.length
   names : ∀ {f : FunId} {fd : Own.Fun}, q.fun? f = some fd →
     ∃ lo, (∀ p ∈ fd.params, p < lo) ∧ Scoped lo fd.body
+  /-- No function body binds an array primitive: Cfg's instructions run `Own.evalRhs`, which has no
+  array case, while Own's code evaluator gives them their meaning (`Own.arrStep`). -/
+  arrFree : ∀ {f : FunId} {fd : Own.Fun}, q.fun? f = some fd → fd.body.arrFree = true
 
 /-- The Cfg frame `fr` runs Own code `c` with Own's environment `ρo` and
 join stack `Jo` (see the module comment). -/
@@ -351,13 +354,37 @@ theorem at_entry {q : Own.Program} (G : Good q) {f : FunId} {fd : Own.Fun} (hf :
   · rw [henv]; exact (sub_leaf ρb).bindAll _ _
   · exact below_bindAll (below_leaf lo) hlo vs
 
+/-- Every join body on Own's stack is free of array-primitive bindings. -/
+def JArr (Jo : List Own.JEntry) : Prop := ∀ e ∈ Jo, e.body.arrFree = true
+
+theorem JArr.lookup {j : Fir.JoinId} : ∀ {Jo : List Own.JEntry} {e : Own.JEntry} {rest : List Own.JEntry},
+    JArr Jo → Own.lookupJ j Jo = some (e, rest) → e.body.arrFree = true ∧ JArr rest
+  | [], _, _, _, h => by simp [Own.lookupJ] at h
+  | e' :: Jo, e, rest, hJ, h => by
+    simp only [Own.lookupJ] at h
+    split at h
+    · simp only [Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact ⟨hJ _ (List.mem_cons_self ..), fun e he => hJ e (List.mem_cons_of_mem _ he)⟩
+    · exact JArr.lookup (fun e he => hJ e (List.mem_cons_of_mem _ he)) h
+
+theorem JArr.after {e : Own.JEntry} {rest : List Own.JEntry} (he : e.body.arrFree = true)
+    (hr : JArr rest) : JArr (e.after rest) := by
+  unfold Own.JEntry.after
+  split
+  · intro e' h
+    rcases List.mem_cons.1 h with rfl | h
+    · exact he
+    · exact hr e' h
+  · exact hr
+
 /-! ## The simulation -/
 
 section
 
 variable {pol : AllocPol} {q : Own.Program} (G : Good q) {k : Nat}
   (ih : ∀ k' < k, ∀ (fr : Frame) (ρo : Env) (Jo : List Own.JEntry) (H : Heap) (c : Own.Code)
-    (stk : List (Frame × Var)), At q fr ρo Jo c →
+    (stk : List (Frame × Var)), At q fr ρo Jo c → c.arrFree = true → JArr Jo →
     Reach pol (lower q) k' (.run fr stk H) stk (Own.eval pol q k' ρo Jo H c))
 include G ih
 
@@ -380,6 +407,7 @@ theorem call_reach (f : FunId) (vs : List RVal) (stk : List (Frame × Var)) (H :
       have hsig := G.sigLen hf
       refine Reach.charge (step_call (lower_fun_of G hf) hb (by simp [hl, hsig])) fun k' hk => ?_
       refine ih k' (by cfg_omega) _ _ [] H fd.body stk (at_entry G hf .leaf vs _ rfl rfl rfl ?_)
+        (G.arrFree hf) (fun _ h => nomatch h)
       simp only [zip_fst hsig]
     · simp only [hl, ↓reduceIte]
       exact Reach.stuck
@@ -390,7 +418,8 @@ mutual
 
 /-- **The forward lemma**, over every continuation stack. -/
 theorem eval_reach (fr : Frame) (ρo : Env) (Jo : List Own.JEntry) (H : Heap) (c : Own.Code)
-    (stk : List (Frame × Var)) (hat : At q fr ρo Jo c) :
+    (stk : List (Frame × Var)) (hat : At q fr ρo Jo c) (hna : c.arrFree = true)
+    (hJa : JArr Jo) :
     Reach pol (lower q) k (.run fr stk H) stk (Own.eval pol q k ρo Jo H c) := by
   match c with
   | .bind x r c' =>
@@ -398,6 +427,8 @@ theorem eval_reach (fr : Frame) (ρo : Env) (Jo : List Own.JEntry) (H : Heap) (c
     have hfun := lower_fun_of G hf
     simp only [Impl] at himpl
     simp only [spine] at hrest
+    have hna' : r.isArrPrim = false ∧ c'.arrFree = true := by
+      simpa only [Own.Code.arrFree, Bool.and_eq_true, Bool.not_eq_true'] using hna
     simp only [Scoped] at hsc
     have hat' : ∀ v, At q { fr with rest := spine c', env := fr.env.insert x v } (ρo.insert x v) Jo c' := by
       intro v
@@ -416,14 +447,14 @@ theorem eval_reach (fr : Frame) (ρo : Env) (Jo : List Own.JEntry) (H : Heap) (c
       | some vs =>
         simp only [Result.ofOption, Result.bind_ok]
         exact Reach.call (step_run_call hrest (evalArgs_sub hsub hv)) (call_reach G ih f vs _ H)
-          fun v H' _ => eval_reach _ _ Jo H' c' stk (hat' v)
+          fun v H' _ => eval_reach _ _ Jo H' c' stk (hat' v) hna'.2 hJa
     · have hr' : ∀ f as, r ≠ .fir (.call f as) := fun f as h => hr ⟨f, as, h⟩
-      rw [Own.eval_bindRhs _ _ _ _ _ _ _ _ _ hr']
+      rw [Own.eval_bindRhs _ _ _ _ _ _ _ _ _ hr' hna'.1]
       rcases evalRhs_cases pol q.tables ρo H r with he | ⟨p, he⟩
       · rw [he]; exact Reach.stuck
       · rw [he, Result.bind_ok]
         have he' : Own.evalRhs pol (lower q).tables fr.env H r = .ok p := evalRhs_sub_ok hsub he
-        refine Reach.free ?_ (eval_reach _ _ Jo p.2 c' stk (hat' p.1))
+        refine Reach.free ?_ (eval_reach _ _ Jo p.2 c' stk (hat' p.1) hna'.2 hJa)
         rw [step_run_bind hrest hr', he']
   | .jp j ps φ r b c' =>
     obtain ⟨fd, Jc, params, acc, next, lo, hf, hs, himpl, hrest, hsub, hbelow, hsc, hjc⟩ := hat
@@ -431,9 +462,16 @@ theorem eval_reach (fr : Frame) (ρo : Env) (Jo : List Own.JEntry) (H : Heap) (c
     simp only [spine] at hrest
     simp only [Scoped] at hsc
     obtain ⟨hps, ⟨lo', hlo', hpl, hscb⟩, hsck⟩ := hsc
+    have hna' : b.arrFree = true ∧ c'.arrFree = true := by
+      simpa only [Own.Code.arrFree, Bool.and_eq_true] using hna
     rw [Own.eval_jp]
     refine eval_reach fr ρo _ H c' stk ⟨fd, _, params, acc, next, lo, hf, hs, himpl.1, hrest, hsub, hbelow, hsck,
-      ?_⟩
+      ?_⟩ hna'.2 ?_
+    rotate_left
+    · intro e he
+      rcases List.mem_cons.1 he with rfl | he
+      · exact hna'.1
+      · exact hJa e he
     exact .cons (e := { id := j, charged := false, env := ρo, params := ps.map (·.1), body := b, isRec := r })
       (ps := ps) hjc (Nat.le_refl lo) rfl (fun h => by cases h) himpl.2 hsub hbelow hps hlo' hpl hscb
   | .jmp j as =>
@@ -449,6 +487,8 @@ theorem eval_reach (fr : Frame) (ρo : Env) (Jo : List Own.JEntry) (H : Heap) (c
       simp only [Result.ofOption, Result.bind_ok]
       obtain ⟨bj, Jc', ps, loₑ, lo_b, hlk, hid, hjc', hloₑ, hpe, hch, hib, hse, hbe, hpsₑ, hlob, hpb, hscb⟩ :=
         hjc.lookup hl
+      obtain ⟨heb, hJr⟩ := hJa.lookup hl
+      have hJa' := JArr.after heb hJr
       cases hv : Own.evalArgs ρo as with
       | none => exact Reach.stuck
       | some vs =>
@@ -491,11 +531,11 @@ theorem eval_reach (fr : Frame) (ρo : Env) (Jo : List Own.JEntry) (H : Heap) (c
           cases hc : e.charged with
           | true =>
             simp only [↓reduceIte]
-            exact Reach.charge (by rw [hstep, hc]) fun k' hk => ih k' (by cfg_omega) _ _ _ H e.body stk hat'
+            exact Reach.charge (by rw [hstep, hc]) fun k' hk => ih k' (by cfg_omega) _ _ _ H e.body stk hat' heb hJa'
           | false =>
             simp only [Bool.false_eq_true, ↓reduceIte]
             have := Own.jump_measure hl hc
-            exact Reach.free (by rw [hstep, hc]) (eval_reach _ _ _ H e.body stk hat')
+            exact Reach.free (by rw [hstep, hc]) (eval_reach _ _ _ H e.body stk hat' heb hJa')
         · simp only [hlen, ↓reduceIte]
           exact Reach.stuck
   | .case x alts d =>
@@ -514,8 +554,10 @@ theorem eval_reach (fr : Frame) (ρo : Env) (Jo : List Own.JEntry) (H : Heap) (c
       | some p =>
         obtain ⟨key, fs⟩ := p
         simp only
+        have hna' : Own.Code.altsArrFree alts = true ∧ Own.Code.optArrFree d = true := by
+          simpa only [Own.Code.arrFree, Bool.and_eq_true] using hna
         refine alts_reach fr ρo Jo H stk key alts d next fd Jc lo hf hs hrest himpl.2.1 himpl.2.2 hsc.1 hsc.2 hsub
-          hbelow hjc ?_
+          hbelow hjc hna'.1 hna'.2 hJa ?_
         rw [step_run_term hrest hfun himpl.1]
         simp only [termStep, caseTerm, hsub x v hx]
         have : v.asCtor (lower q).known H = some (key, fs) := hac
@@ -555,7 +597,8 @@ theorem eval_reach (fr : Frame) (ρo : Env) (Jo : List Own.JEntry) (H : Heap) (c
           let fr' : Frame :=
             { fr with blk := 0, rest := spine fd.body, env := Own.bindAll fr.env (fd.params.zip fd.sig.params |>.map (·.1)) vs }
           refine Reach.charge (s' := .run fr' stk H) ?_ fun k' hk => ih k' (by cfg_omega) _ _ [] H fd.body stk
-            (at_entry G hf fr.env vs fr' rfl rfl rfl (by simp only [fr', zip_fst hsig]))
+            (at_entry G hf fr.env vs fr' rfl rfl rfl (by simp only [fr', zip_fst hsig])) (G.arrFree hf)
+            (fun _ h => nomatch h)
           rw [step_run_term hrest hfun himpl]
           simp only [termStep, tcallTerm, ↓reduceIte]
           rw [takeEdge_eq hb (evalArgs_sub hsub hv) (by simp [hl, hsig])]
@@ -589,6 +632,7 @@ theorem alts_reach (fr : Frame) (ρo : Env) (Jo : List Own.JEntry) (H : Heap) (s
     (hopt : ImplOpt (Lower.function fr.fn fd).block? fr.fn Jc (next + countAlts alts) d)
     (hsa : ScopedAlts lo alts) (hso : ScopedOpt lo d) (hsub : Sub ρo fr.env) (hbelow : Below lo ρo)
     (hjc : JC (Lower.function fr.fn fd).block? fr.fn fr.env lo Jc Jo)
+    (hna : Own.Code.altsArrFree alts = true) (hoa : Own.Code.optArrFree d = true) (hJa : JArr Jo)
     (hstep : step pol (lower q) (.run fr stk H) =
       match selectEdge key (armEdges next alts) (d.map fun _ => ({ target := next + countAlts alts } : Edge)) with
       | some e => takeEdge (Lower.function fr.fn fd) fr stk H e
@@ -604,7 +648,7 @@ theorem alts_reach (fr : Frame) (ρo : Env) (Jo : List Own.JEntry) (H : Heap) (s
     simp only [ScopedOpt] at hso
     obtain ⟨t, hb⟩ := impl_head hopt
     refine Reach.free ?_ (eval_reach { fr with blk := next + countAlts [], rest := spine c } ρo Jo H c stk
-      ⟨fd, Jc, [], [], _, lo, hf, hs, hopt, rfl, hsub, hbelow, hso, hjc⟩)
+      ⟨fd, Jc, [], [], _, lo, hf, hs, hopt, rfl, hsub, hbelow, hso, hjc⟩ hoa hJa)
     rw [hstep]
     simp only [armEdges, selectEdge, Option.map_some]
     rw [takeEdge_eq (vs := []) hb rfl (by simp)]
@@ -617,7 +661,8 @@ theorem alts_reach (fr : Frame) (ρo : Env) (Jo : List Own.JEntry) (H : Heap) (s
     · simp only [hk, ↓reduceIte]
       obtain ⟨t, hb⟩ := impl_head harms.1
       refine Reach.free ?_ (eval_reach { fr with blk := next, rest := spine b } ρo Jo H b stk
-        ⟨fd, Jc, [], [], _, lo, hf, hs, harms.1, rfl, hsub, hbelow, hsa.1, hjc⟩)
+        ⟨fd, Jc, [], [], _, lo, hf, hs, harms.1, rfl, hsub, hbelow, hsa.1, hjc⟩
+        (by simp only [Own.Code.altsArrFree, Bool.and_eq_true] at hna; exact hna.1) hJa)
       rw [hstep]
       simp only [armEdges, selectEdge, hk, ↓reduceIte]
       rw [takeEdge_eq (vs := []) hb rfl (by simp)]
@@ -626,7 +671,8 @@ theorem alts_reach (fr : Frame) (ρo : Env) (Jo : List Own.JEntry) (H : Heap) (s
       have hc : next + countAlts (.mk key' b :: as) = next + 1 + count b + countAlts as := by
         simp only [countAlts]; cfg_omega
       refine alts_reach fr ρo Jo H stk key as d (next + 1 + count b) fd Jc lo hf hs hrest harms.2
-        (by rw [← hc]; exact hopt) hsa.2 hso hsub hbelow hjc ?_
+        (by rw [← hc]; exact hopt) hsa.2 hso hsub hbelow hjc
+        (by simp only [Own.Code.altsArrFree, Bool.and_eq_true] at hna; exact hna.2) hoa hJa ?_
       rw [hstep]
       simp only [armEdges, selectEdge, hk, ↓reduceIte, hc]
 termination_by Own.Code.altsSize alts + Own.Code.optSize d + Own.jweight Jo + 1
@@ -644,7 +690,7 @@ end
 /-- **The simulation at every clock.** -/
 theorem eval_reach_all {pol : AllocPol} {q : Own.Program} (G : Good q) :
     ∀ (k : Nat) (fr : Frame) (ρo : Env) (Jo : List Own.JEntry) (H : Heap) (c : Own.Code)
-      (stk : List (Frame × Var)), At q fr ρo Jo c →
+      (stk : List (Frame × Var)), At q fr ρo Jo c → c.arrFree = true → JArr Jo →
       Reach pol (lower q) k (.run fr stk H) stk (Own.eval pol q k ρo Jo H c) := by
   intro k
   induction k using Nat.strongRecOn with

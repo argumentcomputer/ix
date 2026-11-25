@@ -16,7 +16,9 @@ step, `timeout` included.
   literal as a constructor; a dead cell, □ or a closure-free mismatch is
   stuck.
 * `prim` is exact on `Nat`; Boolean results are the pinned field-less
-  constructors. Own never returns `resource` (its heap is unbounded).
+  constructors. A binding of an array primitive is evaluated by `eval` (`arrStep`):
+  `Src.ArrOp.eval` over the heap, the result placed in a cell; `evalRhs` has no
+  array case. Own never returns `resource` (its heap is unbounded).
 
 Never evaluated on the recheck path (D17). -/
 
@@ -94,6 +96,73 @@ def evalRhs (pol : AllocPol) (T : Tables) (ρ : Env) (H : Heap) : Rhs → Result
       | none => .stuck
     | none => .stuck
 
+/-! ## Array primitives (the code evaluator `eval`)
+
+An array is a cell under `Fir.arrInfo n` holding its elements, or the field-less immediate
+`ctor0 (Fir.arrInfo 0)` when empty. An array primitive is `Src.ArrOp.eval` over *pending* values
+(`PVal`: an Own value, or an array not yet placed in the heap, `pmodel`), then the result is placed
+in the heap (`PVal.place`). This lives in `eval`, not in `evalRhs`: `evalRhs`, which Cfg's
+instructions and the reference-counted route run, has no array case (an array primitive is stuck
+there, as `primResult`). -/
+
+/-- An array's elements in the heap: a live cell under the reserved key, or a field-less array. -/
+def RVal.asArr (H : Heap) : RVal → Option (List RVal)
+  | .loc ℓ =>
+    match H.cell? ℓ with
+    | some (.live _ _ b) => if b.ctor.key = .arr then some b.fields else none
+    | _ => none
+  | .ctor0 c => if c.key = .arr then some [] else none
+  | _ => none
+
+/-- A value an array primitive computes before it is placed: an Own value, or an array of
+pending values. -/
+inductive PVal where
+  | val (v : RVal)
+  | arr (xs : List PVal)
+  deriving Inhabited
+
+def PVal.asNat : PVal → Option Nat
+  | .val (.lit (.nat n)) => some n
+  | _ => none
+
+def PVal.asArr (H : Heap) : PVal → Option (List PVal)
+  | .val v => (v.asArr H).map (·.map .val)
+  | .arr xs => some xs
+
+/-- The array primitives' value model over pending values in heap `H`. -/
+def pmodel (H : Heap) : Sem.ValModel PVal where
+  nat n := .val (.lit (.nat n))
+  asNat := PVal.asNat
+  arr := .arr
+  asArr := PVal.asArr H
+  list _ := .val .erased
+  asList _ := none
+
+mutual
+
+/-- Place a pending value in the heap: an array becomes a cell under `Fir.arrInfo n` (the empty
+one the immediate `ctor0 (Fir.arrInfo 0)`), its elements placed first. -/
+def PVal.place (pol : AllocPol) (H : Heap) : PVal → RVal × Heap
+  | .val v => (v, H)
+  | .arr xs =>
+    let r := PVal.placeList pol H xs
+    if r.1.isEmpty then (.ctor0 (Fir.arrInfo 0), r.2)
+    else r.2.alloc pol { ctor := Fir.arrInfo r.1.length, fields := r.1 }
+
+def PVal.placeList (pol : AllocPol) (H : Heap) : List PVal → List RVal × Heap
+  | [] => ([], H)
+  | x :: xs =>
+    let a := PVal.place pol H x
+    let b := PVal.placeList pol a.2 xs
+    (a.1 :: b.1, b.2)
+
+end
+
+/-- An array primitive on Own values: `Src.ArrOp.eval` over the heap's arrays, then the result
+placed. -/
+def arrStep (pol : AllocPol) (H : Heap) (op : Src.ArrOp) (vs : List RVal) : Result (RVal × Heap) :=
+  (op.eval (pmodel H) (vs.map .val)).map (PVal.place pol H)
+
 /-! ## Join points (as in Fir) -/
 
 structure JEntry where
@@ -147,6 +216,16 @@ def eval (pol : AllocPol) (P : Program) (k : Nat) (ρ : Env) (J : List JEntry) (
     match evalArgs ρ as with
     | some vs =>
       match evalCall pol P k f vs H with
+      | .ok (v, H') => eval pol P k (ρ.insert x v) J H' c'
+      | .timeout => .timeout
+      | .resource r => .resource r
+      | .trap => .trap
+      | .stuck => .stuck
+    | none => .stuck
+  | .bind x (.fir (.prim (.arr op) as)) c' =>
+    match evalArgs ρ as with
+    | some vs =>
+      match arrStep pol H op vs with
       | .ok (v, H') => eval pol P k (ρ.insert x v) J H' c'
       | .timeout => .timeout
       | .resource r => .resource r

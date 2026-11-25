@@ -131,4 +131,44 @@ end
 theorem Code.size_pos (c : Code) : 0 < c.size := by
   cases c <;> simp [Code.size]
 
+/-! ## Array-primitive bindings -/
+
+/-- A right-hand side that is an array primitive (`Lam.Prim.arr`). -/
+def Rhs.isArrPrim : Rhs → Bool
+  | .fir r => r.isArrPrim
+  | _ => false
+
+theorem Rhs.isArrPrim_eq_true {r : Rhs} (h : r.isArrPrim = true) :
+    ∃ op as, r = .fir (.prim (.arr op) as) := by
+  match r, h with
+  | .fir (.prim p as), h =>
+    obtain ⟨op, rfl⟩ := Lam.Prim.isArr_eq_true h
+    exact ⟨op, as, rfl⟩
+  | .fir (.arg _), h => cases h
+  | .fir (.ctor ..), h => cases h
+  | .fir (.proj ..), h => cases h
+  | .fir (.call ..), h => cases h
+  | .alloc .., h => cases h
+  | .proj .., h => cases h
+
+mutual
+
+/-- No binding of an array primitive anywhere in the code: the code Cfg runs as Own does
+(`Cfg.Proof.Good`; Cfg's instructions run `Own.evalRhs`, which has no array case). -/
+def Code.arrFree : Code → Bool
+  | .bind _ r k => !r.isArrPrim && k.arrFree
+  | .jp _ _ _ _ b k => b.arrFree && k.arrFree
+  | .case _ alts d => Code.altsArrFree alts && Code.optArrFree d
+  | .jmp .. | .ret _ | .tcall .. | .trap => true
+
+def Code.altsArrFree : List Alt → Bool
+  | [] => true
+  | .mk _ b :: as => b.arrFree && Code.altsArrFree as
+
+def Code.optArrFree : Option Code → Bool
+  | none => true
+  | some c => c.arrFree
+
+end
+
 end IxCC.Own

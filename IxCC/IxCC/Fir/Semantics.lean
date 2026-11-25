@@ -111,6 +111,11 @@ def boolVal (P : Program) (b : Bool) : Option Val :=
   | some c => (P.ctorInfo? c).map (.ctor · [])
   | none => none
 
+/-- The constructor info of an array of `n` elements (decision D1 of `plans/ONE-PIPELINE.md`): the
+reserved key `Key.CtorKey.arr`, one object field per element, no table row. -/
+def arrInfo (n : Nat) : CtorInfo :=
+  { key := .arr, tag := 0, nobj := n, fieldKinds := List.replicate n .shared }
+
 /-- A saturated primitive on evaluated arguments (as Anf's `primResult`). -/
 def primResult (P : Program) (p : Lam.Prim) (vs : List Val) : Result Val :=
   match natArgs vs with

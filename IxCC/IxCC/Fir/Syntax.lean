@@ -187,6 +187,44 @@ end
 theorem Code.size_pos (c : Code) : 0 < c.size := by
   cases c <;> simp [Code.size]
 
+/-! ## Array-primitive bindings -/
+
+/-- A right-hand side that is an array primitive (`Lam.Prim.arr`). -/
+def Rhs.isArrPrim : Rhs → Bool
+  | .prim op _ => op.isArr
+  | _ => false
+
+theorem Rhs.isArrPrim_eq_true {r : Rhs} (h : r.isArrPrim = true) :
+    ∃ op as, r = .prim (.arr op) as := by
+  match r, h with
+  | .prim p as, h =>
+    obtain ⟨op, rfl⟩ := Lam.Prim.isArr_eq_true h
+    exact ⟨op, as, rfl⟩
+  | .arg _, h => cases h
+  | .ctor .., h => cases h
+  | .proj .., h => cases h
+  | .call .., h => cases h
+
+mutual
+
+/-- No binding of an array primitive anywhere in the code (what `Fir.lower` produces while it
+declines them, `fir.arrays`). -/
+def Code.arrFree : Code → Bool
+  | .bind _ r k => !r.isArrPrim && k.arrFree
+  | .jp _ _ _ b k => b.arrFree && k.arrFree
+  | .case _ alts d => Code.altsArrFree alts && Code.optArrFree d
+  | .jmp .. | .ret _ | .tcall .. | .trap => true
+
+def Code.altsArrFree : List Alt → Bool
+  | [] => true
+  | .mk _ b :: as => b.arrFree && Code.altsArrFree as
+
+def Code.optArrFree : Option Code → Bool
+  | none => true
+  | some c => c.arrFree
+
+end
+
 def Program.nodes (P : Program) : Nat := P.funList.foldl (fun n (_, f) => n + f.body.size) 0
 
 end IxCC.Fir

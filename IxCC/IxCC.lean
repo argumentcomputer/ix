@@ -246,6 +246,7 @@ import IxCC.Sem.ValModel
 import IxCC.Fir.Proof.Mono
 import IxCC.Fir.Proof.Rel
 import IxCC.Fir.Proof.Lowering
+import IxCC.Fir.Proof.ArrFree
 import IxCC.Fir.Proof.Env
 import IxCC.Fir.Proof.Corr
 import IxCC.Fir.Proof.Sim
