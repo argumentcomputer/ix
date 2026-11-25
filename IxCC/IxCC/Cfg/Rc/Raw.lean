@@ -1,6 +1,7 @@
 import IxCC.Cfg.Rc.Syntax
 import IxCC.Rt.Lower
 import IxCC.Fir.Shape
+import IxCC.Fir.ShapeInfer
 
 /-!
 # Raw 64-bit words on the reference-counted route (`Cfg.Rc.Raw`)
@@ -160,29 +161,6 @@ def rawOk (L : RawLayout) (C : Cfg.Program) : Bool :=
   C.exports.all (exportOk L C) && L.rets.isEmpty
 
 
-/-- **The admission gate of this step**: the reference-counted route accepts only the empty
-layout. The lowering, the flow check and the producer are in place; the physical proofs do not
-yet carry raw registers through every construct (`Cfg.Rc.Proof.Physical.Bridge.RawWords` is the
-relation they will carry), so a non-empty layout is refused rather than compiled unproved. -/
-def emptyLayout (L : RawLayout) : Bool :=
-  (match L.vars with
-    | .leaf => true
-    | _ => false) && L.rets.isEmpty
-
-theorem emptyLayout_isRaw {L : RawLayout} (h : emptyLayout L = true) (f x : Nat) :
-    L.isRaw f x = false := by
-  unfold emptyLayout at h
-  unfold RawLayout.isRaw
-  split at h
-  · rename_i hv
-    simp [hv, Src.NatMap.getD, Src.NatMap.get?]
-  · simp at h
-
-theorem emptyLayout_retRaw {L : RawLayout} (h : emptyLayout L = true) (f : Nat) :
-    L.retRaw f = false := by
-  unfold emptyLayout at h
-  simp only [Bool.and_eq_true, List.isEmpty_iff] at h
-  simp [RawLayout.retRaw, h.2]
 /-! ## The untrusted producer -/
 
 /-- A shape held natively as a 64-bit raw word. -/
@@ -320,6 +298,12 @@ def infer (F : Fir.Program) (sc : Fir.Shape.ShapeCert) (P : Program) : RawLayout
   let fuel := start.rets.length + (start.vars.toList.map (·.2.length)).foldl (· + ·) 0 + 1
   let settled := settle fuel { P with raw := start }
   if rawOk settled.raw settled.base then settled.raw else {}
+
+/-- **The candidate with its raw layout**: `infer` over the shape certificate the producer infers
+and checks (`Fir.ShapeInfer.run`). The replay recomputes it; nothing in it is trusted, since the
+native lowering checks `rawOk`. -/
+def withLayout (F : Fir.Program) (P : Program) : Program :=
+  { P with raw := infer F (Fir.ShapeInfer.run F).1 P }
 
 end Raw
 

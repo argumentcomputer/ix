@@ -2,11 +2,15 @@ import IxCC.Rt.Proof.Mono
 import IxCC.Cfg.Rc.Proof.Native.RawFacts
 import IxCC.Cfg.Rc.Proof.Native.CodeContract
 import IxCC.Cfg.Rc.Proof.Owned.Admission
+import IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarConsumed
+import IxCC.Cfg.Rc.Proof.Physical.TailCall
+import IxCC.Cfg.Rc.Proof.Physical.Edge
+import IxCC.Cfg.Rc.Proof.Check
 
 /-! Required axiom fences for raw 64-bit words on the reference-counted route (lane
 `rc-raw-words`, `plans/ONE-PIPELINE.md` sections 2.4 and 7.3): the lowering's operand and
-instruction facts over raw positions (`Rt.Proof`), the layout's flow check and gate
-(`Cfg.Rc.Raw`, `Cfg.Rc.Native.Spec`), and the raw register relation the physical proofs will
+instruction facts over raw positions (`Rt.Proof`), the layout's flow check
+(`Cfg.Rc.Raw`, `Cfg.Rc.Native.Spec`), and the raw register relation the physical proofs
 carry (`Cfg.Rc.Proof.Physical.Bridge.RawWords`, `RawSlots`). Expected messages are preserved
 verbatim. -/
 
@@ -88,20 +92,8 @@ verbatim. -/
 /-- info: 'IxCC.Cfg.Rc.rawEq_iff' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Cfg.Rc.rawEq_iff
 
-/-- info: 'IxCC.Cfg.Rc.Raw.emptyLayout_isRaw' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Cfg.Rc.Raw.emptyLayout_isRaw
-
-/-- info: 'IxCC.Cfg.Rc.Raw.emptyLayout_retRaw' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Cfg.Rc.Raw.emptyLayout_retRaw
-
 /-- info: 'IxCC.Cfg.Rc.Raw.rawFnInstr_heap' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Cfg.Rc.Raw.rawFnInstr_heap
-
-/-- info: 'IxCC.Cfg.Rc.Native.Spec.tablesOf_tagged' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.tablesOf_tagged
-
-/-- info: 'IxCC.Cfg.Rc.Native.Spec.CodeAdmission.tagged' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.CodeAdmission.tagged
 
 /-- info: 'IxCC.Cfg.Rc.Native.Spec.tablesOf_rawVar' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.tablesOf_rawVar
@@ -225,3 +217,107 @@ verbatim. -/
 
 /-- info: 'IxCC.Cfg.Rc.Proof.Physical.Bridge.live_omit_of_noRaw' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Cfg.Rc.Proof.Physical.Bridge.live_omit_of_noRaw
+
+/-! The physical proofs over raw registers (session 3): the raw path of a 64-bit word operation and a raw copy (`Bridge.Scalar`), the flow check at a cursor, a runtime procedure, an entry and an edge (`Native.Spec`), and the candidate at its layout. -/
+
+/-- info: 'IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.rawPrim_word' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.rawPrim_word
+
+/-- info: 'IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.argsFit_rawFlag' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.argsFit_rawFlag
+
+/-- info: 'IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.slots_untag' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.slots_untag
+
+/-- info: 'IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.evalArgs_temp' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.evalArgs_temp
+
+/-- info: 'IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.untagAt_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.untagAt_run
+
+/-- info: 'IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.checked64_run' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.checked64_run
+
+/-- info: 'IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.fails_back' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.fails_back
+
+/-- info: 'IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.omit_insert_frame' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.omit_insert_frame
+
+/-- info: 'IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.rawVal_of_toNat' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.rawVal_of_toNat
+
+/-- info: 'IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.rawWord_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.rawWord_sim
+
+/-- info: 'IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.rawCopy_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.rawCopy_sim
+
+/-- info: 'IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.raw_pure_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.raw_pure_sim
+
+/-- info: 'IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.rawPrim_of_noRaw' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.rawPrim_of_noRaw
+
+/-- info: 'IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.rawPure_of_flows' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.rawPure_of_flows
+
+/-- info: 'IxCC.Cfg.Rc.Native.Spec.funOk_raw' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.funOk_raw
+
+/-- info: 'IxCC.Cfg.Rc.Native.Spec.fusable_noRaw' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.fusable_noRaw
+
+/-- info: 'IxCC.Cfg.Rc.Native.Spec.Cursor.rawCases' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.Cursor.rawCases
+
+/-- info: 'IxCC.Cfg.Rc.Native.Spec.ConsumedCursor.rawCases' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.ConsumedCursor.rawCases
+
+/-- info: 'IxCC.Cfg.Rc.Native.Spec.ConsumedCursor.noRaw' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.ConsumedCursor.noRaw
+
+/-- info: 'IxCC.Cfg.Rc.Native.Spec.termOk_source' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.termOk_source
+
+/-- info: 'IxCC.Cfg.Rc.Native.Spec.termOk_edge' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.termOk_edge
+
+/-- info: 'IxCC.Cfg.Rc.Native.Spec.edgeOk_fits' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.edgeOk_fits
+
+/-- info: 'IxCC.Cfg.Rc.Native.Spec.paramsOf_tables' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.paramsOf_tables
+
+/-- info: 'IxCC.Cfg.Rc.Native.Spec.exportOk_params' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.exportOk_params
+
+/-- info: 'IxCC.Cfg.Rc.Native.Spec.entry_of_export' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.entry_of_export
+
+/-- info: 'IxCC.Cfg.Rc.Native.Spec.rawParams_runtime' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.rawParams_runtime
+
+/-- info: 'IxCC.Cfg.Rc.Native.Spec.operandsAt_runtime' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.operandsAt_runtime
+
+/-- info: 'IxCC.Cfg.Rc.Native.Spec.rawFnInstr_runtime' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.rawFnInstr_runtime
+
+/-- info: 'IxCC.Cfg.Rc.Native.Spec.FrameState.fused' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.FrameState.fused
+
+/-- info: 'IxCC.Cfg.Rc.Native.Spec.FrameState.ofFused' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.FrameState.ofFused
+
+/-- info: 'IxCC.Cfg.Rc.Native.Spec.rawParams_actual' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.rawParams_actual
+
+/-- info: 'IxCC.Cfg.Rc.Native.Spec.tcall_fits' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.tcall_fits
+
+/-- info: 'IxCC.Cfg.Rc.Native.Spec.CodeAdmission.rawOk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.CodeAdmission.rawOk
+
+/-- info: 'IxCC.Cfg.Rc.generate_withRaw' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.generate_withRaw

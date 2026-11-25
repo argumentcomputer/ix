@@ -419,8 +419,9 @@ def finishPlainRcWith (cfg : Config) (front : ProducedFir) (own : Own.Plain.Prog
   let ownJson := encoded?.getD (Own.Plain.Certificate.encodeWith own.bodies own.borrows)
   let admittedOwn ← (Own.Plain.Certificate.admit front.fir ownJson).mapError fun message =>
     { stage := .cert, code := "own.plain", message }
-  let some candidate := Cfg.Rc.generate front.fir admittedOwn.bodies |
+  let some candidate₀ := Cfg.Rc.generate front.fir admittedOwn.bodies |
     throw { stage := .rt, code := "rc.cfg", message := "ownership candidate lowering declined" }
+  let candidate := Cfg.Rc.Raw.withLayout front.fir candidate₀
   unless Cfg.Rc.checkScopedProgram front.fir admittedOwn.bodies candidate admittedOwn.borrows admittedOwn.uniqs do
     throw { stage := .rt, code := "rc.scope", message := "scoped dense-source RC gate refused" }
   Recheck.checkParams cfg candidate.base (candidate.base.exports.zipIdx.map fun (f, i) => (i, f))

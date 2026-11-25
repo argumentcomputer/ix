@@ -40,6 +40,17 @@ theorem generate_raw {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {raw
     simp only [he, bind, Option.bind, Option.some.injEq] at h
     rw [← h]
 
+/-- The candidate at another raw layout is the same candidate with that layout. -/
+theorem generate_withRaw {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {raw : RawLayout}
+    {P : Program} (h : generate F bodies raw = some P) (raw' : RawLayout) :
+    generate F bodies raw' = some { P with raw := raw' } := by
+  unfold generate at h ⊢
+  cases he : entries F bodies (List.range F.size) with
+  | none => simp [he] at h
+  | some es =>
+    simp only [he, bind, Option.bind, Option.some.injEq] at h ⊢
+    rw [← h]
+
 theorem checkProgram_parts {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     {candidate : Program} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
     (h : checkProgram F bodies candidate borrows uniqs = true) :

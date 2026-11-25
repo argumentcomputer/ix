@@ -72,8 +72,8 @@ def lower (config : Rt.Config) (F : Fir.Program) (bodies : Src.NatMap Own.Plain.
     let lowered ← consumeFunction P l fd
     pure (f, lowered)
   let consumed : Cfg.Program := { P.base with funs := Src.NatMap.ofList pairs }
-  unless Raw.rawOk P.raw consumed && Raw.emptyLayout P.raw do
-    throw "the raw word layout fails the native flow check or the admission gate"
+  unless Raw.rawOk P.raw consumed do
+    throw "the raw word layout fails the native flow check"
   let named := P.base.exports.zipIdx.map fun (f, i) =>
     (f, Rt.Lower.symbolOf ((config.names[i]?).getD s!"root{i}"))
   let roots := named.map fun (f, symbol) => (f, (named.lookup f).getD symbol)

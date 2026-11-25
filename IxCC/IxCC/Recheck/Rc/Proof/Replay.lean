@@ -17,7 +17,7 @@ theorem runFront_spec {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
     Recheck.anfOf c.base f.src f.lam = .ok f.anf ∧
     (∃ rawFir, Fir.lower f.anf = .ok rawFir ∧ Own.Plain.Sink.run rawFir = f.fir) ∧
     Own.Plain.Certificate.admit f.fir c.own = .ok f.own ∧
-    Cfg.Rc.generate f.fir f.own.bodies = some f.cfg ∧
+    Cfg.Rc.generate f.fir f.own.bodies f.cfg.raw = some f.cfg ∧
     Cfg.Rc.checkScopedProgram f.fir f.own.bodies f.cfg f.own.borrows f.own.uniqs = true := by
   unfold runFront at accepted
   cases hfront : Recheck.front cfg P c.base with
@@ -45,8 +45,10 @@ theorem runFront_spec {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
             simp only [hown, Except.mapError, bind, Except.bind] at accepted
             cases hgen : Cfg.Rc.generate (Own.Plain.Sink.run rawFir) own.bodies with
             | none => rw [hgen] at accepted; cases accepted
-            | some candidate =>
+            | some candidate₀ =>
               simp only [hgen] at accepted
+              generalize hlayout : Cfg.Rc.Raw.withLayout (Own.Plain.Sink.run rawFir) candidate₀ =
+                candidate at accepted
               cases hscope : Cfg.Rc.checkScopedProgram (Own.Plain.Sink.run rawFir) own.bodies candidate own.borrows own.uniqs with
               | false => simp [hscope] at accepted
               | true =>
@@ -65,7 +67,9 @@ theorem runFront_spec {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
                     simp only [hnative, Except.mapError, bind, Except.bind,
                       pure, Except.pure, Except.ok.injEq] at accepted
                     subst accepted
-                    exact ⟨rfl, ⟨st, herase⟩, hanf, ⟨rawFir, hfir, rfl⟩, hown, hgen, hscope⟩
+                    refine ⟨rfl, ⟨st, herase⟩, hanf, ⟨rawFir, hfir, rfl⟩, hown, ?_, hscope⟩
+                    rw [← hlayout]
+                    exact Cfg.Rc.generate_withRaw hgen _
 
 /-- Every accepted RC certificate front end refines its actual stage-S source
 through the abstract checked RC Cfg machine, on every covered input

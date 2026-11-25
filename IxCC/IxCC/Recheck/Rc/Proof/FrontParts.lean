@@ -35,8 +35,10 @@ theorem runFront_native {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
             simp only [hown, Except.mapError, bind, Except.bind] at accepted
             cases hgen : Cfg.Rc.generate (Own.Plain.Sink.run rawFir) own.bodies with
             | none => rw [hgen] at accepted; cases accepted
-            | some candidate =>
+            | some candidate₀ =>
               simp only [hgen] at accepted
+              generalize hlayout : Cfg.Rc.Raw.withLayout (Own.Plain.Sink.run rawFir) candidate₀ =
+                candidate at accepted
               cases hscope : Cfg.Rc.checkScopedProgram (Own.Plain.Sink.run rawFir) own.bodies candidate own.borrows own.uniqs with
               | false => simp [hscope] at accepted
               | true =>

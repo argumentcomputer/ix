@@ -19,23 +19,14 @@ structure CodeAdmission (F : Fir.Program) (bodies : Src.NatMap Own.Plain.Code)
   lowering : Rt.Lower.functions (tablesOf P pairs) (consumed P pairs) (rootsOf config P)
     (List.range P.base.size) = .ok functions
   switches : Rt.checkSwitches P.base = .ok ()
-  rawChecked : (Raw.rawOk P.raw (consumed P pairs) && Raw.emptyLayout P.raw) = true
+  rawChecked : Raw.rawOk P.raw (consumed P pairs) = true
 
 theorem CodeAdmission.rawOk {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
     {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
     {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
     (admission : CodeAdmission F bodies P config pairs functions borrows uniqs) :
-    Raw.rawOk P.raw (consumed P pairs) = true := by
-  have checked := admission.rawChecked
-  simp only [Bool.and_eq_true] at checked
-  exact checked.1
-
-theorem CodeAdmission.tagged {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
-    {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
-    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
-    (admission : CodeAdmission F bodies P config pairs functions borrows uniqs) :
-    Rt.Proof.Tagged (tablesOf P pairs) :=
-  tablesOf_tagged admission.rawChecked
+    Raw.rawOk P.raw (consumed P pairs) = true :=
+  admission.rawChecked
 
 theorem CodeAdmission.of_public {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Public.Lowered}
