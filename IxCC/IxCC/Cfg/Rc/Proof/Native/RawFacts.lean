@@ -95,9 +95,10 @@ theorem funOk_heap {f : Nat} {fd : Cfg.Fun} (h : Raw.funOk L C f fd = true) {j :
   · simp only [Raw.hasRaw, Bool.or_eq_false_iff, Bool.not_eq_false', List.isEmpty_iff] at noRaw
     refine ⟨fun y => ?_, noRaw.2⟩
     simp [RawLayout.isRaw, noRaw.1]
-  · simp only [Raw.heapFree, List.all_eq_true] at free
+  · simp only [Raw.rawFree, List.all_eq_true] at free
     have := free b (List.mem_of_getElem? lookup) i member
-    simp [heap] at this
+    rw [Raw.rawFnInstr_heap heap] at this
+    cases this
 
 /-! ## At a cursor -/
 

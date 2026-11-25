@@ -112,9 +112,43 @@ every heap construct.) -/
 def heapFree (C : Cfg.Program) (fd : Cfg.Fun) : Bool :=
   fd.blocks.all fun b => b.body.all fun i => !heapInstr C i
 
+/-- An instruction a function with a raw register may hold, in this step: a 64-bit word
+operation on the raw path (a raw destination or a raw operand), a copy into a raw register, the
+`Nat` successor's projection, a call of a program function. Everything else (a heap-cell
+instruction, an increment or decrement marker, a tagged copy, a tagged primitive) is excluded,
+so the physical proofs need no agreement of raw registers across `instr_sim` (a widening for
+later). -/
+def rawFnInstr (L : RawLayout) (C : Cfg.Program) (f : Nat) : Cfg.Instr → Bool
+  | .bind x (.fir (.prim (.word .w64 _) as)) => L.isRaw f x || as.any fun
+    | .var y => L.isRaw f y
+    | _ => false
+  | .bind x (.fir (.arg _)) => L.isRaw f x
+  | .bind _ (.proj _ c _) => C.known.natSucc == some c
+  | .bind _ (.fir (.call g _)) => decide (g < C.size)
+  | _ => false
+
+/-- A heap-cell instruction is never one a function with a raw register may hold. -/
+theorem rawFnInstr_heap {L : RawLayout} {C : Cfg.Program} {f : Nat} :
+    ∀ {i : Cfg.Instr}, heapInstr C i = true → rawFnInstr L C f i = false
+  | .bind _ (.alloc _ _ _), _ => rfl
+  | .bind _ (.proj _ c _), h => by
+    cases hc : C.known.natSucc == some c <;> simp_all [heapInstr, rawFnInstr, bne]
+  | .bind _ (.fir (.call g _)), h => by
+    simp only [heapInstr, decide_eq_true_eq] at h
+    simp only [rawFnInstr]
+    exact decide_eq_false (Nat.not_lt.mpr (Nat.le_trans (Nat.le_add_right C.size 2) h))
+  | .bind _ (.fir (.arg _)), h => by simp [heapInstr] at h
+  | .bind _ (.fir (.prim _ _)), h => by simp [heapInstr] at h
+  | .bind _ (.fir (.ctor _ _)), h => by simp [heapInstr] at h
+  | .bind _ (.fir (.proj _ _ _)), h => by simp [heapInstr] at h
+
+/-- Every instruction of the function is one a function with a raw register may hold. -/
+def rawFree (L : RawLayout) (C : Cfg.Program) (f : Nat) (fd : Cfg.Fun) : Bool :=
+  fd.blocks.all fun b => b.body.all (rawFnInstr L C f)
+
 /-- One function's part of the check. -/
 def funOk (L : RawLayout) (C : Cfg.Program) (f : Nat) (fd : Cfg.Fun) : Bool :=
-  fd.blocks.all (blockOk L C f) && (!hasRaw L f || heapFree C fd)
+  fd.blocks.all (blockOk L C f) && (!hasRaw L f || rawFree L C f fd)
 
 /-- **The native flow check of a raw layout over the program it lowers.** No function returns a
 raw word yet (`rets` is empty): a result goes tagged, which is a later step. -/
@@ -253,9 +287,10 @@ def demoteExport (P : Program) (f : Nat) : Demote :=
   { vars := (paramNames P f 0).filter (P.raw.isRaw f) |>.map (f, ·)
     rets := if P.raw.retRaw f then [f] else [] }
 
-/-- A function with a heap-cell instruction loses every raw register and its raw result. -/
+/-- A function with an instruction `rawFnInstr` excludes loses every raw register and its raw
+result. -/
 def demoteHeap (P : Program) (f : Nat) (fd : Cfg.Fun) : Demote :=
-  if heapFree P.base fd then {} else
+  if rawFree P.raw P.base f fd then {} else
     { vars := (P.raw.vars.getD f []).map (f, ·), rets := if P.raw.retRaw f then [f] else [] }
 
 def demotions (P : Program) : Demote :=

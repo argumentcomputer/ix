@@ -94,6 +94,9 @@ verbatim. -/
 /-- info: 'IxCC.Cfg.Rc.Raw.emptyLayout_retRaw' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Cfg.Rc.Raw.emptyLayout_retRaw
 
+/-- info: 'IxCC.Cfg.Rc.Raw.rawFnInstr_heap' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.Raw.rawFnInstr_heap
+
 /-- info: 'IxCC.Cfg.Rc.Native.Spec.tablesOf_tagged' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.tablesOf_tagged
 
