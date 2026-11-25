@@ -56,3 +56,4 @@ import IxCCTests.Fences.OwnReuse
 import IxCCTests.Fences.RtRcScalarTail
 import IxCCTests.Fences.BigNatWire
 import IxCCTests.Fences.LirOpt
+import IxCCTests.Fences.ArrayPrims
