@@ -916,6 +916,13 @@ theorem dataCtorScan_sound {c : CId} {ls : Levels} {σ : Shape} :
       rw [show d0 + (i + 1) = d0 + 1 + i by omega]
       exact hD'
 
+/-- A constructor whose value nobody inspects: the instance `params → fields → any`, at a
+constructor that is not one of `Nat`'s. -/
+def ctorAnyOk (p : Program) (c : CId) (np nf : Nat) (σ : Shape) : Bool :=
+  !(some c == p.known.natZero) && !(some c == p.known.natSucc) &&
+    decide ((argsUpTo (np + nf) σ).length = np + nf) &&
+    decide (σ = arrows (argsUpTo (np + nf) σ) .any)
+
 /-- A constructor of a data entry, at the instance `params → fields → data d`. -/
 def dataCtorOk (cert : Cert) (c : CId) (ls : Levels) (σ : Shape) : Bool :=
   dataCtorScan c ls σ 0 cert.datas
@@ -1063,8 +1070,12 @@ def entryOk (p : Program) (cert : Cert) (c : CId) (ls : Levels) (σ : Shape) : B
     match p.decl? c with
     | some (.defn .defn .safe _ _ v) =>
       chkWith (fun e => synth cert.insts cert.datas cert.lets ls [] v e) (isLam v) σ
+    | some (.defn .opaq .safe _ _ v) =>
+      p.table.isOpaqueByValue c &&
+        chkWith (fun e => synth cert.insts cert.datas cert.lets ls [] v e) (isLam v) σ
     | some (.ctor _ _ _ _ np nf _) =>
-      zeroOk p c np nf σ || succOk p c np nf σ || enumCtorOk cert c σ || dataCtorOk cert c ls σ
+      zeroOk p c np nf σ || succOk p c np nf σ || enumCtorOk cert c σ || dataCtorOk cert c ls σ ||
+        ctorAnyOk p c np nf σ
     | some (.recr _ _ _ np nmot nmin ni ind rules _) =>
       (isOrdinary ((p.table.recKindOf c).map (fun (x : RecKind) => x.atLevels ls)) && recrOk p cert ls σ ind np nmot nmin ni rules) ||
         (match (p.table.recKindOf c).map (fun (x : RecKind) => x.atLevels ls) with
@@ -1143,11 +1154,14 @@ theorem entryOk_sound {p : Program} {cert : Cert} {c : CId} {ls : Levels} {σ : 
       | defn kind safety lvls ty v =>
         cases kind <;> cases safety <;>
           simp only [hd, Bool.false_eq_true] at h
-        exact .body (.defn hres hd)
-          (chkWith_sound _ (fun e σ h => synth_sound cert ls _ _ _ _ h) _ isLam_eq _ h)
+        · exact .body (.defn hres hd)
+            (chkWith_sound _ (fun e σ h => synth_sound cert ls _ _ _ _ h) _ isLam_eq _ h)
+        · simp only [Bool.and_eq_true] at h
+          exact .body (.opaq hres hd h.1)
+            (chkWith_sound _ (fun e σ h => synth_sound cert ls _ _ _ _ h) _ isLam_eq _ h.2)
       | ctor s lv ind cidx np nf ty =>
         simp only [hd, Bool.or_eq_true] at h
-        rcases h with ((hz | hs) | he) | hdt
+        rcases h with (((hz | hs) | he) | hdt) | hany
         · simp only [zeroOk, Bool.and_eq_true, decide_eq_true_eq] at hz
           obtain ⟨⟨⟨h1, h2⟩, hz'⟩, h3⟩ := hz
           rw [h1, h2] at hd
@@ -1165,6 +1179,10 @@ theorem entryOk_sound {p : Program} {cert : Cert} {c : CId} {ls : Levels} {σ : 
           exact .enumCtor hres hI hc
         · obtain ⟨σs, τ, hh, rfl⟩ := dataCtorOk_sound (p := p) (ls := ls) hdt
           exact .head (.ctor hres hd) hh
+        · simp only [ctorAnyOk, Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at hany
+          obtain ⟨⟨⟨hz', hs'⟩, hl⟩, hσ⟩ := hany
+          rw [hσ]
+          exact .head (.ctor hres hd) (.ctorAny c ls s lv ind cidx np nf ty _ hd hz' hs' hl)
       | recr s kk lv np nmot nmin ni ind rules ty =>
         simp only [hd, Bool.or_eq_true, Bool.and_eq_true] at h
         rcases h with ⟨hk, hr⟩ | hsub

@@ -268,6 +268,13 @@ inductive HeadOk (p : Program) (sig : Sig) : Head → Levels → List Shape → 
   | ctor (c : CId) (ls : Levels) (d : Nat) (D : DataDecl) (j : Nat) (ps fl : List Shape) :
       sig.datas d = some D → D.ctors[j]? = some (c, fl) → ps.length = D.params.length →
       ls = D.ls → HeadOk p sig (.ctor c) ls (ps ++ fl) (.data d)
+  /-- F1 at a constructor whose value nobody inspects (a `String` built where strings have
+  shape `any`): its fields are forced, of any shapes, and the result is a value -/
+  | ctorAny (c : CId) (ls : Levels) (s : Bool) (lv : Nat) (ind : CId) (cidx np nf : Nat) (ty : Term)
+      (σs : List Shape) :
+      p.decl? c = some (.ctor s lv ind cidx np nf ty) → (some c == p.known.natZero) = false →
+      (some c == p.known.natSucc) = false → σs.length = np + nf →
+      HeadOk p sig (.ctor c) ls σs .any
   /-- F2: an ordinary recursor with parameters and no index, at minors of any shapes
   `ms` under which each rule's body, in the environment F2 builds (the parameters, the
   motive, the minors, the fields), has the result shape -/
@@ -371,6 +378,11 @@ inductive Unfolds (p : Program) : CId → Term → Prop
   | defn {c : CId} {lvls : Nat} {ty v : Term} :
       p.table.resolveOf c = none → p.decl? c = some (.defn .defn .safe lvls ty v) →
       Unfolds p c v
+  /-- an opaque constant of the opaque-by-value allowlist (`String.Internal.append`, which every
+  `panic!` reaches): SrcEval unfolds its value -/
+  | opaq {c : CId} {lvls : Nat} {ty v : Term} :
+      p.table.resolveOf c = none → p.decl? c = some (.defn .opaq .safe lvls ty v) →
+      p.table.isOpaqueByValue c = true → Unfolds p c v
 
 /-- δ of `c` is the special head `h`. -/
 inductive HeadOf (p : Program) : CId → Head → Prop
@@ -437,6 +449,9 @@ theorem evalConst_unfolds {p : Program} {k : Nat} {ls : Levels} {c : CId} {t : T
   | eqn hres => rw [evalConst_eq, hres] <;> rfl
   | csimp hres => rw [evalConst_eq, hres] <;> rfl
   | defn hres hdecl => rw [evalConst_eq, hres, hdecl] <;> rfl
+  | opaq hres hdecl hob =>
+    rw [evalConst_eq, hres, hdecl]
+    simp only [hob, ↓reduceIte] <;> rfl
 
 theorem evalConst_head {p : Program} {k : Nat} {ls : Levels} {c : CId} {h : Head}
     (hof : HeadOf p c h) : evalConst p k ls c = headValue p k ls h := by
@@ -839,6 +854,8 @@ theorem HeadOk.arity (hsig : SigOk p sig) {h : Head} {ls : Levels} {σs : List S
   | ctor c ls d D j ps fl hD hc hps =>
     obtain ⟨s, lv, ty, hdecl, -, -⟩ := hsig.datas _ _ hD j c fl hc
     simp [Program.headArity, hdecl, hps]
+  | ctorAny c ls s lv ind cidx np nf ty σs hdecl hz hs hlen =>
+    simp [Program.headArity, hdecl, hlen]
   | cases c r ls ps σ ind flds τ s kk lv nmot rules ty hres hdecl hkind hscrut =>
     simp [Program.headArity, hres, hdecl] <;> omega
   | casesSub c r ls ps idx maj τ s kk lv nmot ind rules ty w srcs hres hdecl hkind hlt =>
@@ -1153,6 +1170,24 @@ theorem allOk (hsig : SigOk p sig) : ∀ k, AllOk p sig k := by
       · rw [hvs]
         refine .inr ⟨.con c ls (slots.take ps.length) vs, ?_, .data hD hc hpl hok hls⟩
         show ctorResult p c ls (slots.take ps.length) vs = _
+        simp [ctorResult, hz, hs]
+    | ctorAny c ls s lv ind cidx np nf ty σs hdecl hz hs hlen =>
+      rw [fire_ctor, hdecl]
+      show ResOk p sig .any ((forceAll p k (slots.drop np)).bind (ctorResult p c ls (slots.take np)))
+      have h2 : EnvOk p sig slots (σs.take np ++ σs.drop np) := by
+        rw [List.take_append_drop]
+        exact hslots
+      have hd := EnvOk.drop (σs.take np) slots h2
+      have htl : (σs.take np).length = np := by
+        rw [List.length_take, hlen]
+        omega
+      rw [htl] at hd
+      rcases forceAll_ok hslot _ _ hd with hto | ⟨vs, hvs, -⟩
+      · rw [hto]
+        exact .inl rfl
+      · rw [hvs]
+        refine .inr ⟨.con c ls (slots.take np) vs, ?_, .any⟩
+        show ctorResult p c ls (slots.take np) vs = _
         simp [ctorResult, hz, hs]
     | cases c r ls ps σ ind flds τ s kk lv nmot rules ty hres hdecl hkind hscrut =>
       rw [fire_cases_ord p k ls c r slots hres hdecl hkind]
