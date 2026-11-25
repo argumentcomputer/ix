@@ -364,7 +364,7 @@ theorem fundHypsK_of_instWPP (hL : LawsCore M) {p : Program} {κ : CId → KKey}
       (recClassB p env κ r = some .flat ∨ recClassB p env κ r = some .noParams) →
         RecNoLevels env (κ r))
     (hG : GroundFactsWithK (RecFacts p env κ lpsOf S) Wd (KindsP p) p env κ lpsOf ann S)
-    (hT : SitesOk M p κ lpsOf ann S) (hI : InstClosed p Inst)
+    (hT : SitesOk M p κ lpsOf ann S) (hI : InstClosed p Inst) (hU : InstUniform p env κ lpsOf Inst)
     (hcases : ∀ c r, S c → p.table.resolveOf c = some (.case r) →
       p.table.recKindOf r ≠ some .empty → CaseFires M p κ lpsOf S (OkIn p ann Inst) c)
     (hsub : ∀ c r w, S c → p.table.resolveOf c = some (.case r) →
@@ -374,6 +374,8 @@ theorem fundHypsK_of_instWPP (hL : LawsCore M) {p : Program} {κ : CId → KKey}
     FundHypsK M p κ lpsOf S (OkIn p ann Inst) where
   laws := hL
   canon := hcanon
+  ordinary := fun r hr hk => ⟨fun _ hOk => hOk.1.1.trans (hG.faith.lvls r hr),
+    .inr (.inr (recLevelAgree_of_mem hU.2 (fun _ _ h => h.2) hk))⟩
   natBasis := hG.natBasis
   faith := (hG.faith.monoW fun _ => trivial).monoK fun _ _ => trivial
   words := hW
@@ -421,7 +423,7 @@ theorem rootSound_678ASWPP {p : Program}
     Denotes M.cval env φ ρ eo X :=
   have hLN := lawsNoCanon_of_model M hLD
   rootSound_coreWK hLN.core hG hR
-    (allPK (fundHypsK_of_instWPP hLN.core (.inr hNC.recs) hG hT hI
+    (allPK (fundHypsK_of_instWPP hLN.core (.inr hNC.recs) hG hT hI hU
       (caseFires_of_instWP hLN.defn_value hLN.iota_rule hLN.cval_params hG.faith hG.natBasis hC
         hNC hU)
       (caseSubFires_of_instWPP hLN.defn_value hLN.iota_rule hLN.cval_params hG.faith hC hNC hPU)

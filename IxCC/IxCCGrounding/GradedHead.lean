@@ -1571,7 +1571,7 @@ theorem rootSound_678AS {p : Program} {κ : CId → KKey}
     Denotes M.cval env φ ρ eo X :=
   have hLN := lawsNoCanon_of_model M hLD
   rootSound_core hLN.core hG hR
-    (allP (fundHyps_of_inst hLN.core (.inr hNC.recs) hG hT hI
+    (allP (fundHyps_of_inst hLN.core (.inr hNC.recs) hG hT hI hU
       (caseFires_of_inst hLN.defn_value hLN.iota_rule hLN.cval_params hG.faith hG.natBasis hC hNC
         hU)))
     ⟨hR.ok, hroot⟩ hA hrun hrb hRT hO φ ρ X hX

@@ -779,12 +779,13 @@ theorem noCanon_of_check {p : Program} {κ : CId → KKey} {Sl : List CId}
   · have h1 := (Bool.and_eq_true _ _).mp (hall r hr)
     have h2 := h1.2
     have hk' : (match recClassB p env κ r with
-        | some .flat | some .noParams =>
+        | some .flat | some .noParams | some .ordinary =>
           match (KTab.of env)[κ r]? with
           | some (.recInfo _ _ _ rules) => ctorsNoLevelsB (KTab.of env) rules
           | _ => false
         | _ => true) = true := h2
-    rcases hk with hk | hk <;> rw [hk] at hk' <;> simp only at hk' <;> rw [KTab.get_of] at hk' <;>
+    rcases hk with hk | hk | hk <;> rw [hk] at hk' <;> simp only at hk' <;>
+      rw [KTab.get_of] at hk' <;>
       split at hk' <;>
       first
         | (rename_i cvr mI rP rules hf; exact ⟨cvr, mI, rP, rules, hf, hn rules hk'⟩)

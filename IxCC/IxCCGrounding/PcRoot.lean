@@ -321,12 +321,15 @@ theorem fundHypsK_of_instWP (hL : LawsCore M) {p : Program} {κ : CId → KKey}
         RecNoLevels env (κ r))
     (hG : GroundFactsWithK (RecFacts p env κ lpsOf S) Wd (KindsP p) p env κ lpsOf ann S)
     (hT : SitesOk M p κ lpsOf ann S) (hI : InstClosed p Inst) (hP : PcInst p Inst)
+    (hU : InstUniform p env κ lpsOf Inst)
     (hcases : ∀ c r, S c → p.table.resolveOf c = some (.case r) →
       p.table.recKindOf r ≠ some .empty → CaseFires M p κ lpsOf S (OkIn p ann Inst) c)
     (hW : WordFires M p κ lpsOf S (OkIn p ann Inst)) :
     FundHypsK M p κ lpsOf S (OkIn p ann Inst) where
   laws := hL
   canon := hcanon
+  ordinary := fun r hr hk => ⟨fun _ hOk => hOk.1.1.trans (hG.faith.lvls r hr),
+    .inr (.inr (recLevelAgree_of_mem hU.2 (fun _ _ h => h.2) hk))⟩
   natBasis := hG.natBasis
   faith := (hG.faith.monoW fun _ => trivial).monoK fun _ _ => trivial
   words := hW
@@ -373,7 +376,7 @@ theorem rootSound_678ASWP {p : Program}
     Denotes M.cval env φ ρ eo X :=
   have hLN := lawsNoCanon_of_model M hLD
   rootSound_coreWK hLN.core hG hR
-    (allPK (fundHypsK_of_instWP hLN.core (.inr hNC.recs) hG hT hI hP
+    (allPK (fundHypsK_of_instWP hLN.core (.inr hNC.recs) hG hT hI hP hU
       (caseFires_of_instWP hLN.defn_value hLN.iota_rule hLN.cval_params hG.faith hG.natBasis hC
         hNC hU)
       (wordFires_of_facts hLN.core M.proj_law M.graded hG.natBasis hG.faith.words)))

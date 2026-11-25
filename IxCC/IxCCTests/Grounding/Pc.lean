@@ -115,10 +115,10 @@ def run : IO Bool := do
       if (famFalse j rts true).isEmpty then famWP := famWP ++ [label]
       if label == "phase1-decline/strings" then strings? := some i
       if label == closuresLabel then closures? := some i
-    expect a (jobs.length == 50 && famW.length == 44 && (famW.filter (· != "src-words")).length == 43 &&
-        famWP.length == 45 && famW.all famWP.contains && famWP.filter (!famW.contains ·) == [closuresLabel])
+    expect a (jobs.length == 50 && famW.length == 45 && (famW.filter (· != "src-words")).length == 44 &&
+        famWP.length == 46 && famW.all famWP.contains && famWP.filter (!famW.contains ·) == [closuresLabel])
       s!"pc: on {jobs.length} closures the word family holds on {famW.length}, the Pc family on \
-        {famWP.length}, beyond the word family's {famWP.filter (!famW.contains ·)}, expected 44, 45 \
+        {famWP.length}, beyond the word family's {famWP.filter (!famW.contains ·)}, expected 45, 46 \
         and [{closuresLabel}]"
     let some ic := closures? | throw (IO.userError "pc: no closures closure")
     let jc := famOn ic

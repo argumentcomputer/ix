@@ -18,6 +18,53 @@ import IxCCGrounding.BigNatBridge
 /-! # The grounding library's axiom fence: every theorem presented as proved uses at most
 the three standard axioms. Building the library checks it (`#guard_msgs`). -/
 
+/-! ## W-c: recursors with parameters (`RecLevels`, `RecOrdFacts`, `RecOrdinary`, `Check`) -/
+
+/-- info: 'IxCC.Grounding.recLevelAgree_of_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.recLevelAgree_of_mem
+
+/-- info: 'IxCC.Grounding.levelsAt_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.levelsAt_of_check
+
+/-- info: 'IxCC.Grounding.instUniformRec_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.instUniformRec_of_check
+
+/-- info: 'IxCC.Grounding.recClassB_ordinary' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.recClassB_ordinary
+
+/-- info: 'IxCC.Grounding.lamPw_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.lamPw_of_check
+
+/-- info: 'IxCC.Grounding.recOrdRules_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.recOrdRules_of_check
+
+/-- info: 'IxCC.Grounding.idUnivs_eval' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.idUnivs_eval
+
+/-- info: 'IxCC.Grounding.selfCalls_mentions' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.selfCalls_mentions
+
+/-- info: 'IxCC.Grounding.selfCalls_evalConsts' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.selfCalls_evalConsts
+
+/-- info: 'IxCC.Grounding.recBodiesSelf_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.recBodiesSelf_of_check
+
+/-- info: 'IxCC.Grounding.spineOk_lamTeleG' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.spineOk_lamTeleG
+
+/-- info: 'IxCC.Grounding.paramsBlindIotaG' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.paramsBlindIotaG
+
+/-- info: 'IxCC.Grounding.ctorFields_canonP' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.ctorFields_canonP
+
+/-- info: 'IxCC.Grounding.fire_ordinaryK' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fire_ordinaryK
+
+/-- info: 'IxCC.Grounding.recShapeOrdinary_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.recShapeOrdinary_of
+
 /-- info: 'IxCC.Grounding.eq_of_inhabited' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.eq_of_inhabited
 

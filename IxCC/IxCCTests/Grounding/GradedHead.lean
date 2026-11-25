@@ -49,10 +49,10 @@ Step Ap (`IxCCGrounding.SelRetype`), in the same pass over the 51: `selEnv` rety
 to true), nothing on the other 45; on each of the six, three planted controls are refused by
 `eqnShape` on `selEnv` (the selector's value made `λ α s. α → α`, its first λ's datum made a
 proposition, the selected argument made `Nat`); the family over six fields read on `selEnv`
-(`groundCheck`, `noCanonAB`, `litDefsB`, `instCheckB`, `headRegimeSB`) holds on 44: the 37 the check
+(`groundCheck`, `noCanonAB`, `litDefsB`, `instCheckB`, `headRegimeSB`) holds on 45: the 37 the check
 accepted when step Ap landed, the six (`resource` since step E0, which admits its `Empty.casesOn`
 entry, of kind `empty`: `IxCCTests.Grounding.CaseEmpty`) and `arity` (since step C's closure-capture
-case: `IxCCTests.Grounding.LetClo`).
+case: `IxCCTests.Grounding.LetClo`), and `sparse` (since W-c admits `List.rec`, `Option.rec`).
 
 The word subject `grounding/words` (fixed-width word arithmetic only, stage W1: 30 word entries) is
 refused by that family by `noWord` alone: on `selEnv` every other conjunct of `groundCheck` and
@@ -61,7 +61,7 @@ constructors, which no run term names) added to its closure.
 
 The word family (step W: `groundCheckW`, `noWord` replaced by the decided word conjunct, and the other
 decided hypotheses of `rootSound_678AGpW_of_check`, on `selEnv` of the closure with the word
-entries' runtime references) holds on 45: exactly the 44 of the family over six fields and
+entries' runtime references) holds on 46: exactly the 45 of the family over six fields and
 `grounding/words` (`IxCCTests.Grounding.Words`: its roots, `src-words`, the planted controls).
 
 The witness shape (`IxCCTests.Grounding.LetWit`), in the same pass over the 51: the conjunct
@@ -571,8 +571,9 @@ def run : IO Bool := do
       {famAGp.filter (!accepted.contains ·)} beyond the {accepted.length} the check accepts"
     expect a (nAp == forLoops.length && nApPlants == 3 * forLoops.length)
       s!"Ap: {nAp} for-loop closures retyped, {nApPlants} plants"
-    expect a (famAGp.length == 42 && accepted.all famAGp.contains &&
-        famAGp.filter (!accepted.contains ·) == forLoops ++ ["phase2-arity/arity"])
+    expect a (famAGp.length == 43 && accepted.all famAGp.contains &&
+        famAGp.filter (!accepted.contains ·) ==
+          forLoops ++ ["phase2-closures/sparse", "phase2-arity/arity"])
       s!"Ap: the family over six fields on selEnv holds on {famAGp}"
     expect a (nWords == 1 && !famAGp.contains wordsLabel) s!"words: {wordsLabel} seen {nWords} times"
     expect a (famW.length == famAGp.length + 1 && famAGp.all famW.contains &&

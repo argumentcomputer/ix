@@ -1004,8 +1004,8 @@ inductive RecClass where
   minor premise to its field; `Nat.rec`, whose `succ` rule calls the recursor, which the check then
   refuses at `recShape`, `RecBodies`) -/
   | noParams
-  /-- kind `ordinary`, no indices, the inductive stored as never a proposition, with parameters: F2
-  (not admitted) -/
+  /-- kind `ordinary`, no indices, the inductive stored as never a proposition, with parameters: F2,
+  admitted since W-c (`fire_ordinaryK`: `List.rec`, `Option.rec`) -/
   | ordinary
   deriving DecidableEq, Repr
 
@@ -1037,7 +1037,7 @@ def recClassB (p : Program) (env : KEnv) (κ : CId → KKey) (r : CId) : Option 
 /-- **The recursor classes the check admits**: those the fundamental lemma handles. G3 adds them
 one at a time, each when its case of the fundamental lemma is proved; extending the list only
 makes the check accept more (`groundCheckWith_mono`). -/
-def admittedClasses : List RecClass := [.empty, .eqRec, .flat, .noParams]
+def admittedClasses : List RecClass := [.empty, .eqRec, .flat, .noParams, .ordinary]
 
 /-- **The checked shape of a recursor entry**: the kernel stores `κ r` as a recursor whose major
 index and rule prefix are the Src declaration's counts, at the level parameters `lpsOf r`, whose

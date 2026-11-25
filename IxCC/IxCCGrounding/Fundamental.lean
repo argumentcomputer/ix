@@ -3,6 +3,7 @@ import IxCCGrounding.Heads
 import IxCCGrounding.EqRec
 import IxCCGrounding.RecFlat
 import IxCCGrounding.RecRun
+import IxCCGrounding.RecOrdinary
 
 /-!
 # The fundamental lemma (`IxCCGrounding.Fundamental`), step (f)
@@ -705,7 +706,7 @@ theorem fire_stepK (H : FundHypsK M p κ lpsOf S Ok) {k : Nat}
           obtain ⟨cl, hcl, hadm⟩ :=
             H.faith.recs.cls r hSr sf kk' lvls np nmot nmin ni ind rules ty hd
           simp only [admittedClasses, List.mem_cons, List.not_mem_nil, or_false] at hadm
-          rcases hadm with rfl | rfl | rfl | rfl
+          rcases hadm with rfl | rfl | rfl | rfl | rfl
           · -- `empty`: the table's kind is `empty`, at every level, and F4 traps
             have hkind := recClassB_empty hcl
             simp [hd, hkind, IxCC.Src.RecKind.atLevels, IxCC.Src.recChosen, Result.bind] at hrun
@@ -938,6 +939,10 @@ theorem fire_stepK (H : FundHypsK M p κ lpsOf S Ok) {k : Nat}
           · -- `noParams` (part E): F2, the rule body evaluated; `fire_noParams`
             exact fire_noParamsK H (ih k' (Nat.lt_succ_self k')) hcl hrun0 hargs
               (.recr hSr hlv hfind hOkr) hfit hlen hlast
+          · -- `ordinary` (W-c): F2 at a recursor with parameters; `fire_ordinaryK`
+            exact fire_ordinaryK H (ih k' (Nat.lt_succ_self k')).force
+              (ih k' (Nat.lt_succ_self k')).eval hcl (H.faith.recs.ordinary r hSr hcl)
+              (H.ordinary r hSr hcl) hrun0 hargs (.recr hSr hlv hfind hOkr) hfit hlen hlast
         | _ => simp [hd] at hrun
   | @prim op _ _ ci hfind hlp _ =>
     -- F6

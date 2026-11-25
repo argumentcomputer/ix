@@ -83,13 +83,15 @@ theorem fundHyps_of_instW (hL : LawsCore M) {p : Program} {κ : CId → KKey}
       (recClassB p env κ r = some .flat ∨ recClassB p env κ r = some .noParams) →
         RecNoLevels env (κ r))
     (hG : GroundFactsW Wd p env κ lpsOf ann S) (hT : SitesOk M p κ lpsOf ann S)
-    (hI : InstClosed p Inst)
+    (hI : InstClosed p Inst) (hU : InstUniform p env κ lpsOf Inst)
     (hcases : ∀ c r, S c → p.table.resolveOf c = some (.case r) →
       p.table.recKindOf r = some .ordinary → CaseFires M p κ lpsOf S (OkIn p ann Inst) c)
     (hW : WordFires M p κ lpsOf S (OkIn p ann Inst)) :
     FundHyps M p κ lpsOf S (OkIn p ann Inst) where
   laws := hL
   canon := hcanon
+  ordinary := fun r hr hk => ⟨fun _ hOk => hOk.1.1.trans (hG.faith.lvls r hr),
+    .inr (.inr (recLevelAgree_of_mem hU.2 (fun _ _ h => h.2) hk))⟩
   natBasis := hG.natBasis
   faith := hG.faith.monoW fun _ => trivial
   words := hW
@@ -109,10 +111,11 @@ theorem fundHyps_of_inst (hL : LawsCore M) {p : Program} {κ : CId → KKey}
       (recClassB p env κ r = some .flat ∨ recClassB p env κ r = some .noParams) →
         RecNoLevels env (κ r))
     (hG : GroundFacts p env κ lpsOf ann S) (hT : SitesOk M p κ lpsOf ann S) (hI : InstClosed p Inst)
+    (hU : InstUniform p env κ lpsOf Inst)
     (hcases : ∀ c r, S c → p.table.resolveOf c = some (.case r) →
       p.table.recKindOf r = some .ordinary → CaseFires M p κ lpsOf S (OkIn p ann Inst) c) :
     FundHyps M p κ lpsOf S (OkIn p ann Inst) :=
-  fundHyps_of_instW hL hcanon hG hT hI hcases (wordFires_of_noWord hG.faith.words)
+  fundHyps_of_instW hL hcanon hG hT hI hU hcases (wordFires_of_noWord hG.faith.words)
 
 /-- **The root theorem directly over `Ix.Kernel.Model`, at `case` entries over level-polymorphic
 families**: `rootSound_678` with `NoCanonA` for `NoCanon`, the `case` shapes the check reads
@@ -136,7 +139,7 @@ theorem rootSound_678A {p : Program} {κ : CId → KKey}
   have hLN := lawsNoCanon_of_model M hLD
   rootSound_core hLN.core hG hR
     (allP (fundHyps_of_inst hLN.core (.inr hNC.recs) hG (sitesOk_of_res hLN.core hG hT) hI
-      (caseFires_of_inst hLN.defn_value hLN.iota_rule hLN.cval_params hG.faith hG.natBasis hC hNC
+      hU (caseFires_of_inst hLN.defn_value hLN.iota_rule hLN.cval_params hG.faith hG.natBasis hC hNC
         hU)))
     ⟨hR.ok, hroot⟩ hA hrun hrb hRT hO φ ρ X hX
 

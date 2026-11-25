@@ -274,14 +274,16 @@ meaning at each `case` constant. -/
 theorem fundHyps_of_core (hL : LawsCore M) {p : Program} {κ : CId → KKey}
     {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {S : CId → Prop}
     (hcanon : CtorCanon M ∨ ∀ r, S r →
-      (recClassB p env κ r = some .flat ∨ recClassB p env κ r = some .noParams) →
-        RecNoLevels env (κ r))
+      (recClassB p env κ r = some .flat ∨ recClassB p env κ r = some .noParams ∨
+        recClassB p env κ r = some .ordinary) → RecNoLevels env (κ r))
     (hG : GroundFacts p env κ lpsOf ann S) (hT : SitesOk M p κ lpsOf ann S)
     (hcases : ∀ c r, S c → p.table.resolveOf c = some (.case r) →
       p.table.recKindOf r = some .ordinary → CaseFires M p κ lpsOf S (Ok p ann) c) :
     FundHyps M p κ lpsOf S (Ok p ann) where
   laws := hL
-  canon := hcanon
+  canon := hcanon.imp_right fun h r hr hk => h r hr (hk.elim .inl fun h => .inr (.inl h))
+  ordinary := fun r hr hk => ⟨fun _ hOk => hOk.1.trans (hG.faith.lvls r hr),
+    hcanon.elim .inl fun h => .inr (.inl (h r hr (.inr (.inr hk))))⟩
   natBasis := hG.natBasis
   faith := hG.faith.monoW fun _ => trivial
   words := wordFires_of_noWord hG.faith.words

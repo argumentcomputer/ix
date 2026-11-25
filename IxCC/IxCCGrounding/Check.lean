@@ -625,7 +625,9 @@ def recSitesB (r : CId) : Bool :=
 `Eq.rec` bases hold; where it is `flat`, its rules' telescopes (`RecTele`), the program side
 (`RecProg`) and its rules' constructors (`RecCtorsRaw`); where it is of class `noParams` (part E),
 those three and its rules' fields (`RecFields`), its rule bodies (`RecBodies`) and its rule bodies'
-sites typed by the direct route (`RecSites`). -/
+sites typed by the direct route (`RecSites`); where it is of class `ordinary` (W-c), the first three,
+its rules as ι with parameters reads them (`RecOrdRules`), its rule bodies with self-calls
+(`RecBodiesSelf`) and its rule bodies' sites (`RecSites`). -/
 def recShapeB (c : CId) : Bool :=
   match p.decl? c with
   | some (.recr ..) =>
@@ -635,7 +637,10 @@ def recShapeB (c : CId) : Bool :=
         (recTeleB env (κ c) && recProgB p κ Sl c && recCtorsRawB p env κ c)) &&
       (recClassB p env κ c != some .noParams ||
         (recTeleB env (κ c) && recProgB p κ Sl c && recCtorsRawB p env κ c &&
-          recFieldsB env (κ c) && recBodiesB p env κ lpsOf c && recSitesB p env κ lpsOf c))
+          recFieldsB env (κ c) && recBodiesB p env κ lpsOf c && recSitesB p env κ lpsOf c)) &&
+      (recClassB p env κ c != some .ordinary ||
+        (recTeleB env (κ c) && recProgB p κ Sl c && recCtorsRawB p env κ c &&
+          recOrdRulesB env (κ c) && recBodiesSelfB p env κ lpsOf c && recSitesB p env κ lpsOf c))
   | _ => true
 
 def primB (c : CId) : Bool :=
@@ -1158,7 +1163,7 @@ theorem recShape_of {c : CId} (h : recShapeB p env κ lpsOf Sl c = true) :
   unfold recShapeB at h
   rw [hd] at h
   simp only [Bool.and_eq_true, Bool.or_eq_true, bne_iff_ne, ne_eq] at h
-  obtain ⟨⟨⟨h1, h2⟩, h4⟩, -⟩ := h
+  obtain ⟨⟨⟨⟨h1, h2⟩, h4⟩, -⟩, -⟩ := h
   refine ⟨recStored_of_check h1, fun hk => ?_, fun hk => ?_⟩
   · rcases h2 with h2 | ⟨h2, h3⟩
     · exact absurd hk h2
@@ -1180,11 +1185,30 @@ theorem recShapeNoParams_of {c : CId} (h : recShapeB p env κ lpsOf Sl c = true)
   unfold recShapeB at h
   rw [hd] at h
   simp only [Bool.and_eq_true, Bool.or_eq_true, bne_iff_ne, ne_eq] at h
-  obtain ⟨-, h7⟩ := h
+  obtain ⟨⟨-, h7⟩, -⟩ := h
   rcases h7 with h7 | ⟨⟨⟨⟨⟨h7, h8⟩, h9⟩, h10⟩, h11⟩, h12⟩
   · exact absurd hk h7
   · exact ⟨recTele_of_check h7, recProg_of_check h8, recCtorsRaw_of_check h9,
       recFields_of_check h10, recBodies_of_check h11, recSites_of_check h12⟩
+
+/-- The `recShape` conjunct gives, at a recursor of class `ordinary` (W-c), its rules' telescopes,
+the program side, its rules' constructors, its rules as ι with parameters reads them, its rule
+bodies with self-calls and its rule bodies' sites typed by the direct route. -/
+theorem recShapeOrdinary_of {c : CId} (h : recShapeB p env κ lpsOf Sl c = true) :
+    ∀ sf kk lvls np nmot nmin ni ind rules ty,
+      p.decl? c = some (.recr sf kk lvls np nmot nmin ni ind rules ty) →
+      recClassB p env κ c = some .ordinary →
+        RecTele env (κ c) ∧ RecProg p κ (· ∈ Sl) c ∧ RecCtorsRaw p env κ c ∧ RecOrdRules env (κ c) ∧
+          RecBodiesSelf p env κ lpsOf c ∧ RecSites p env κ lpsOf c := by
+  intro sf kk lvls np nmot nmin ni ind rules ty hd hk
+  unfold recShapeB at h
+  rw [hd] at h
+  simp only [Bool.and_eq_true, Bool.or_eq_true, bne_iff_ne, ne_eq] at h
+  obtain ⟨-, h7⟩ := h
+  rcases h7 with h7 | ⟨⟨⟨⟨⟨h7, h8⟩, h9⟩, h10⟩, h11⟩, h12⟩
+  · exact absurd hk h7
+  · exact ⟨recTele_of_check h7, recProg_of_check h8, recCtorsRaw_of_check h9,
+      recOrdRules_of_check h10, recBodiesSelf_of_check h11, recSites_of_check h12⟩
 
 theorem prim_of {c : CId} (h : primB p env κ c = true) :
     ∀ op, p.table.resolveOf c = some (.prim op) → κ c = primKey op ∧
@@ -1417,6 +1441,11 @@ theorem groundFactsWKS_of_sansKS {ann : IxCC.Src.Relevance.Ann} {Wd : Prop} {K :
         noParams := fun r hr hk => by
           obtain ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, hd⟩ := recClassB_recr hk
           exact recShapeNoParams_of (all (f := recShapeB p env κ lpsOf Sl) "recShape"
+            (by simp [checkParts, checkPartsWith]) (by decide) r hr) sf kk lvls np nmot nmin ni ind rules ty hd
+            hk
+        ordinary := fun r hr hk => by
+          obtain ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, hd⟩ := recClassB_recr hk
+          exact recShapeOrdinary_of (all (f := recShapeB p env κ lpsOf Sl) "recShape"
             (by simp [checkParts, checkPartsWith]) (by decide) r hr) sf kk lvls np nmot nmin ni ind rules ty hd
             hk },
       fun c hc => noQuot_of (all (f := declOkB p env κ admittedClasses) "declOk"
