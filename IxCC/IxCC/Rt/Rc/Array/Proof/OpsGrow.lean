@@ -63,11 +63,13 @@ private theorem growCap_eval {k : ElemKind} {n : Nat} (hn : n < k.maxCap) (hmc :
   unfold growCap
   simp only [decide_eq_true_eq, Nat.max_def]
   by_cases h1 : k.maxCap < 2 * n
-  · rw [if_pos h1, if_pos h1]
-  · rw [if_neg h1, if_neg h1]
+  · simp only [h1, ↓reduceIte]
+  · simp only [h1, ↓reduceIte]
     by_cases h3 : n + 1 < 2 * n
-    · rw [if_pos h3, if_neg (by omega)]
-    · rw [if_neg h3, if_pos (by omega)]
+    · have h4 : ¬ 2 * n ≤ n + 1 := by omega
+      simp only [h3, h4, ↓reduceIte]
+    · have h4 : 2 * n ≤ n + 1 := by omega
+      simp only [h3, h4, ↓reduceIte]
 
 theorem ElemKind.maxCap_lt (k : ElemKind) : k.maxCap < 2 ^ 62 := by
   have := k.perWord_le

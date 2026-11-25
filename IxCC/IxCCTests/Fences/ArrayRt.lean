@@ -7,7 +7,7 @@ import IxCC.Rt.Rc.Array.Proof.MutOps
 import IxCC.Rt.Rc.Array.Proof.Release
 import IxCC.Rt.Rc.Array.Proof.Alloc
 import IxCC.Rt.Proof.ArrayWire
-import IxCC.Rt.Rc.Array.Proof.OpsCopying
+import IxCC.Rt.Rc.Array.Proof.OpsExtract
 
 /-! Exact axiom fences for DR3 native contiguous array runtime (`Layout`,
 `Invariant`, `Procs`, `Proof.{Classes,BasicOps,MutOps,Release,Alloc}`).
@@ -430,3 +430,9 @@ release on array cells, the procedures' paths -/
 
 /-- info: 'IxCC.Rt.Rc.Array.pop_shared_packed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Rt.Rc.Array.pop_shared_packed
+
+/-- info: 'IxCC.Rt.Rc.Array.extractList_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Rc.Array.extractList_eq
+
+/-- info: 'IxCC.Rt.Rc.Array.extract_packed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Rc.Array.extract_packed

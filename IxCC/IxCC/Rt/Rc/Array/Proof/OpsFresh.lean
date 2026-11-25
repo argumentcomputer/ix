@@ -61,7 +61,7 @@ theorem fresh_copy {mem m1 : Memory} {ctx base bump limit : Word}
     {lists lists' : Nat → List Word} {k : ElemKind} {cls' : Nat} {b bump' : Word}
     (hd : AllocDone mem m1 ctx base bump limit lists k cls' b bump' lists')
     (halloc : ArrayAllocator mem ctx base bump limit lists)
-    (hlo : minArrayClass ≤ cls') (hhi : cls' ≤ maxClass)
+    (_hlo : minArrayClass ≤ cls') (_hhi : cls' ≤ maxClass)
     {a : Word} {refs cls cap : Nat} {xs : List Word} (h : ArrCell mem a refs cls cap k xs)
     (ha : Allocated base bump lists a (classBytes cls)) {off n : Nat} (hn : off + n ≤ xs.length)
     (hcap : n ≤ k.capOfClass cls') :
