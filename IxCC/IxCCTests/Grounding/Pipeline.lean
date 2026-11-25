@@ -3,6 +3,7 @@ import IxCC.Recheck.Proof.Front
 import IxCCCorrect.GroundCheck
 import IxCCCorrect.GroundShape
 import IxCCCorrect.Unique
+import IxCCCorrect.UniqueIota
 
 /-! # `tests-grounding pipeline`: the pipeline's grounding check on every committed root
 
@@ -137,6 +138,33 @@ def exactOf (bytes : ByteArray) (json : Lean.Json) (name : String) : Except Stri
       | none => .error "noRoot"
       | some (addr, _) => groundShapeCheckP k c a addr
 
+/-- **Why `declOk` refuses** a root: the recursors of its closure whose class the check does not
+admit, with their parameter count, their class, and per rule the kernel's firing mode and whether
+the ι step compares parameters (`RecRule.compareParams`). -/
+def declOkDiag (k : Src.KernelFront.Kernel) (src : Program) (root : CId) : String :=
+  let κ := keyMap k.rd
+  let Sl := closureOf src root
+  let env' := IxCC.Grounding.selEnv src k.acc.env κ Sl
+  let bad := Sl.filter fun c => !IxCC.Grounding.declOkB src env' κ IxCC.Grounding.admittedClasses c
+  let show1 := fun (c : CId) =>
+    let np := match src.decl? c with
+      | some (.recr _ _ _ np _ _ _ _ _ _) => s!"{np}"
+      | some (.quot ..) => "quot"
+      | _ => "?"
+    let cls := match IxCC.Grounding.recClassB src env' κ c with
+      | some cl => s!"{repr cl}"
+      | none => "none"
+    let rules : List String := match env'.find? (κ c) with
+      | some (.recInfo _ _ _ rs) => rs.map fun (rl : Ix.Kernel.RecRule .anon) =>
+          let f : String := match rl.fire with
+            | .plain => "plain"
+            | .nested .. => "nested"
+            | .inert => "inert"
+          s!"{f}/cmp={rl.compareParams}"
+      | _ => []
+    s!"{c} np={np} class={cls} rules={rules}"
+  ", ".intercalate (bad.map show1)
+
 /-- A stored constant of type `Bool.true = Bool.false → False` (the witness `numeralBasisB` asks
 for), if the environment has one. -/
 def neKey? (env : IxCC.Grounding.KEnv) : Option IxCC.Grounding.KKey :=
@@ -157,6 +185,7 @@ def neKeyRev? (env : IxCC.Grounding.KEnv) : Option IxCC.Grounding.KKey :=
 def run : IO Bool := do
   let only ← IO.getEnv "GROUND_ONLY"
   let out ← IO.getStdout
+  let fast := (← IO.getEnv "GROUND_FAST").isSome
   let mut rows : List (String × Nat × Nat × Nat × Nat) := []
   let mut hist : List (String × Nat) := []
   let mut shapeHist : List (String × Nat) := []
@@ -183,12 +212,14 @@ def run : IO Bool := do
         let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile eqs))
         let env := ld.kernel.acc.env
         let ne := neKey? env
-        let sep := match ne with
+        let sepW := match ne with
           | some kNe => numeralBasisB env kNe
           | none => false
+        let sep := sepW || numeralBasisIB env
+        let parts := s!"nat {IxCC.Grounding.natBasisB env}, bool {IxCC.Grounding.boolBasisB env}, Nat.beq {IxCC.Grounding.natBeqStoredB env}, litDefs {IxCC.Grounding.litDefsB env}, Bool.rec {boolRecB env}"
         if ne.isSome || (neKeyRev? env).isSome then
           witnessed := witnessed ++ [s!"{label} (true≠false: {ne.isSome}, false≠true: {(neKeyRev? env).isSome})"]
-        IO.println s!"{label}: {ld.src.roots.length} roots, {ld.mode}, numerals separated: {sep}"
+        IO.println s!"{label}: {ld.src.roots.length} roots, {ld.mode}, numerals separated: {sep} ({parts})"
         for (name, i) in ld.names.zipIdx do
           let some r := ld.src.roots[i]? | continue
           total := total + 1
@@ -199,7 +230,7 @@ def run : IO Bool := do
             accepted := accepted + 1
             let natRes := abi.result == ResTy.nat
             if sep && natRes then separated := separated + 1
-            let efS ← match exactOf bytes json name with
+            let efS ← match (if fast then .error "skipped (GROUND_FAST)" else exactOf bytes json name) with
               | .ok _ =>
                 escapeFree := escapeFree + 1
                 pure "escape-free"
@@ -210,6 +241,8 @@ def run : IO Bool := do
           | .error reason =>
             hist := bump reason hist
             IO.println s!"{label} {name}: refuse, {reason} ({(← IO.monoMsNow) - t0} ms)"
+            if reason.startsWith "check: declOk" then
+              IO.println s!"  declOk: {declOkDiag ld.kernel srcI r.2}"
           out.flush
     rows := rows ++ [(family, total, accepted, escapeFree, separated)]
   IO.println "family: roots, accepted by groundCheck, escape-free (groundShapeCheck: also compiled and shaped), unique (a Nat result in an environment that separates numerals)"
