@@ -7,7 +7,7 @@ import IxCC.Rt.Rc.Array.Proof.MutOps
 import IxCC.Rt.Rc.Array.Proof.Release
 import IxCC.Rt.Rc.Array.Proof.Alloc
 import IxCC.Rt.Proof.ArrayWire
-import IxCC.Rt.Rc.Array.Proof.OpsBoxed
+import IxCC.Rt.Rc.Array.Proof.OpsRefuse
 
 /-! Exact axiom fences for DR3 native contiguous array runtime (`Layout`,
 `Invariant`, `Procs`, `Proof.{Classes,BasicOps,MutOps,Release,Alloc}`).
@@ -460,3 +460,18 @@ release on array cells, the procedures' paths -/
 
 /-- info: 'IxCC.Rt.Rc.Array.extract_boxed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Rt.Rc.Array.extract_boxed
+
+/-- info: 'IxCC.Rt.Rc.Array.reaches_call' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Rc.Array.reaches_call
+
+/-- info: 'IxCC.Rt.Rc.Array.alloc_refuses' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Rc.Array.alloc_refuses
+
+/-- info: 'IxCC.Rt.Rc.Array.push_grow_refuses' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Rc.Array.push_grow_refuses
+
+/-- info: 'IxCC.Rt.Rc.Array.push_shared_packed_refuses' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Rc.Array.push_shared_packed_refuses
+
+/-- info: 'IxCC.Rt.Rc.Array.set_shared_packed_refuses' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Rc.Array.set_shared_packed_refuses
