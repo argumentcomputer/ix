@@ -23,7 +23,7 @@ weaknesses W1 to W7 listed there:
 | | `CorrectToday` (the certifying route) | `CompiledToday` (this route) |
 | --- | --- | --- |
 | W1 | the source semantics is IxCC's evaluator on a program made from a certificate, which is quantified existentially | unchanged in the proposition (`SourceToday` still binds a certificate). On this route nobody supplies it: `Compile.check_sound` names it as the text `compile` returns, a function of the three arguments |
-| W2 | the hint sidecar and the root selection are quantified existentially | gone: the hints are derived from the environment and the root is the target (`Compile.ingress` has no other argument) |
+| W2 | the hint sidecar and the root selection are quantified existentially | gone: the hints are derived from the environment and the root is the target (`Compile.ingressAs` has no other argument than the root's name, an option) |
 | W3 | the `goesWrong` disjunct | unchanged (hook (a) of `Compile.compile`) |
 | W4 | the resource disjuncts | unchanged |
 | W5 | traces of a core image, related to the shipped file by `zeroShdr` and a page tail | gone for the file `compile` returns: the traces are those of the file itself (`LoadedFile exe`, `FileTrace exe`; `execImage_checked`). It returns for a file with a trailer attached |
@@ -142,7 +142,7 @@ def ExecutableToday (kind : X86.Exe.Cert.ExeKind) (cfg : Recheck.Config) (P : Sr
 said of the executable left as `X`.
 
 There is an input `inp` that is the compiler's ingress of `envBytes` for the
-claim's target at the claim's kernel limits (`Compile.ingress`: no sidecar, no root
+claim's target and root name at the claim's kernel limits (`Compile.ingressAs`: no sidecar, no root
 selection), such that:
 
 * `envBytes` decodes to an environment with the claim's root and role table that
@@ -154,7 +154,7 @@ selection), such that:
 def CompiledAs (claim : Compile.Claim) (envBytes : ByteArray)
     (X : Recheck.Config → Src.Program → Prop) : Prop :=
   ∃ (inp : Recheck.Input) (cfg : Recheck.Config),
-    Compile.ingress envBytes claim.target claim.options.kernelLimits = .ok inp ∧
+    Compile.ingressAs envBytes claim.target claim.options.name claim.options.kernelLimits = .ok inp ∧
     Ixon.V3.decodeAnonymousEnv envBytes = .ok inp.env ∧
     inp.env.root = claim.env ∧
     inp.env.bindingAddress = some claim.roleTable ∧
@@ -347,7 +347,7 @@ theorem compiledAs_of_stages {envBytes : ByteArray} {target : Ixon.Address}
   obtain ⟨hing, htarget, hrole, hcfg, hacc⟩ := Compile.check_sound hcheck
   obtain ⟨ht, ho, henv, hrt, -, hexe, -, -, x, hx, hbytes, harity, hresult⟩ :=
     Compile.build_spec hbuild
-  obtain ⟨hdec, -, haccept, -, -, -⟩ := Compile.ingress_parts hing
+  obtain ⟨hdec, -, haccept, -, -, -⟩ := Compile.ingressAs_parts hing
   refine ⟨ht, ho, hexe.symm, c.inp, c.cfg, ?_, hdec, henv.symm, ?_, ?_, ?_, hcfg,
     hX x hacc hx hbytes harity hresult⟩
   · rw [ht, ho]; exact hing

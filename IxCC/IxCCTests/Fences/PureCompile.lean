@@ -76,3 +76,12 @@ the target statements (`IxCCCorrect/Fence.lean`). -/
 
 /-- info: 'IxCC.Compile.check_seedClosure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Compile.check_seedClosure
+
+/-- info: 'IxCC.Compile.ingressAs_parts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Compile.ingressAs_parts
+
+/-- info: 'IxCC.Compile.zeroPolicy_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Compile.zeroPolicy_ok
+
+/-- info: 'IxCC.Compile.zeroPolicy_refuses' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Compile.zeroPolicy_refuses

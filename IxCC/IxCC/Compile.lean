@@ -102,6 +102,11 @@ structure Options where
   under any larger ones; `workers` (how many tasks the kernel's second phase
   runs on) cannot change a verdict at all (`Ix.Kernel.Admission.Limits`). -/
   kernelLimits : Ix.Kernel.Admission.Limits := Src.KernelFront.defaultLimits
+  /-- The root's name: the object's symbol `cx_<name>` and the name the certificate
+  gives the root. `none` names it `root0`. It changes the object and the certificate
+  (not the executable's behaviour), so it is an option and in the claim; the command
+  line passes the name a `--root NAME=ADDR` (or a named envelope's `--root NAME`) gives. -/
+  name : Option String := none
   deriving Repr
 
 instance : Inhabited Options := ⟨{}⟩
@@ -196,15 +201,20 @@ def ingressRoots (env : Ixon.V3.Env) (chosen : Array (Ixon.Address × Option Str
   let rd ← (Src.KernelFront.Reading.build acc p).mapError fun m => ingressErr "faithful" m
   pure { env, hints, program := p, names, kernel := { acc, rd, fe := Ix.Kernel.mkFEnv acc.env } }
 
-/-- **Ingress of the environment's bytes for one target**: the envelope decoded
-(`Ixon.V3.decodeAnonymousEnv`: every constant and blob under its address), the
+/-- **Ingress of the environment's bytes for one target named `name`**: the envelope
+decoded (`Ixon.V3.decodeAnonymousEnv`: every constant and blob under its address), the
 target a constant of it, and `ingressRoots` with the target as the only root. -/
-def ingress (envBytes : ByteArray) (target : Ixon.Address)
+def ingressAs (envBytes : ByteArray) (target : Ixon.Address) (name : Option String)
     (limits : Ix.Kernel.Admission.Limits) : Except Err Input := do
   let env ← (Ixon.V3.decodeAnonymousEnv envBytes).mapError fun m => ingressErr "decode" m
   let () ← require (env.consts.contains target)
     (ingressErr "roots" s!"target {target} is not a constant of the environment")
-  ingressRoots env #[(target, none)] limits
+  ingressRoots env #[(target, name)] limits
+
+/-- `ingressAs` with the root unnamed (`root0`). -/
+def ingress (envBytes : ByteArray) (target : Ixon.Address)
+    (limits : Ix.Kernel.Admission.Limits) : Except Err Input :=
+  ingressAs envBytes target none limits
 
 /-! ## The certificate checker -/
 
@@ -247,14 +257,40 @@ def checkPlain (cfg : Config) (inp : Input) (cert : RcReplay.Cert) :
   let a ← rc.toRecheckArtifact cert
   pure (rc, a)
 
+/-- Whether the checked program selects the zero-RC policy
+(`Own.Plain.selectRcPolicyForSrc`). -/
+def selectsZeroRc (a : Recheck.Artifact) : Bool :=
+  Own.Plain.selectRcPolicyForSrc a.src a.front.fir == .zeroRc
+
+/-- The contract recheck the zero-RC claim stands on: the contract-aware ownership
+check within the parameter limit. Given the replay, this is the verdict of
+`Recheck.runWithContracts` (and of `Exe.Cert.policyOfArtifact`, which `verify-exe`
+replays). -/
+def zeroRcContractsOk (a : Recheck.Artifact) : Bool :=
+  (Own.Plain.Certificate.checkParamTotal Anf.maxParamTotal a.fir).isOk && a.checkContractOwn
+
 /-- Whether an artifact of the immortal replay is one the zero-RC policy claims:
-the checked program selects zero RC and passes the contract-aware ownership check
-within the parameter limit. Given the replay, this is the verdict of
-`Recheck.runWithContracts` and the selection that `CompileClaim.verifyProgram`
-requires of a `.zeroRc` claim. -/
+the checked program selects zero RC and passes the contract recheck. This is the
+selection that `CompileClaim.verifyProgram` requires of a `.zeroRc` claim. -/
 def zeroRcOk (a : Recheck.Artifact) : Bool :=
-  Own.Plain.selectRcPolicyForSrc a.src a.front.fir == .zeroRc &&
-    ((Own.Plain.Certificate.checkParamTotal Anf.maxParamTotal a.fir).isOk && a.checkContractOwn)
+  selectsZeroRc a && zeroRcContractsOk a
+
+/-- The refusal of a program that selects zero RC and whose contract recheck refuses
+it (`exe.cert.policy`, as `Exe.Cert.policyOfArtifact` and the command line's
+`--embed-cert` refuse it): a failed policy recheck is an error, never a weaker label. -/
+def policyErr : Err :=
+  { stage := .cert, code := "exe.cert.policy"
+    message := "the program selects the zero-RC policy, and the contract recheck its claim stands \
+      on (the contract-aware ownership check within the parameter limit) refuses it" }
+
+/-- **The policy of a zero-RC-format artifact**: `.zeroRc` when the program selects
+zero RC and the contract recheck accepts; a refusal (`policyErr`) when it selects
+zero RC and the recheck refuses; `.immortal` when it does not select zero RC (a
+program that selects plain RC, compiled on the immortal backend). -/
+def zeroPolicy (a : Recheck.Artifact) : Except Err CompilePolicy :=
+  if selectsZeroRc a then
+    if zeroRcContractsOk a then .ok .zeroRc else .error policyErr
+  else .ok .immortal
 
 /-- What `certify` returns: the certificate, the checker's verdict on it, and the
 producer's reports. -/
@@ -276,13 +312,15 @@ structure Certified where
   wordHints : Array Src.Diag := #[]
   note : Option String := none
 
-/-- A produced zero-RC-format certificate through its checker. The policy is
-`.zeroRc` exactly when the checked artifact is one that policy claims
-(`zeroRcOk`), else `.immortal`: the same object either way. -/
+/-- A produced zero-RC-format certificate through its checker, with its policy
+(`zeroPolicy`): `.zeroRc` when the checked program selects zero RC and passes the
+contract recheck, `.immortal` when it does not select zero RC, and a refusal when it
+selects zero RC and the recheck refuses (never relabelled `.immortal`). -/
 def certifyZero (cfg : Config) (inp : Input) (p : Recheck.Produced) (note : Option String) :
     Except Err Certified := do
   let a ← checkZero cfg inp p.cert
-  pure { cfg, policy := if zeroRcOk a then .zeroRc else .immortal, cert := p.text
+  let policy ← zeroPolicy a
+  pure { cfg, policy, cert := p.text
          replay := .zero p.cert a, alloc := p.alloc, wordHints := p.wordHints, note }
 
 /-- A produced plain-RC certificate that its replay accepted (`rc`): Stage A, and
@@ -377,7 +415,7 @@ before anything is produced (`checkFnParams`); then `certify` under the input's
 configuration, with the inline-round retry; then the seed-closure check on the
 accepted certificate's table (`seedClosure`). -/
 def check (envBytes : ByteArray) (target : Ixon.Address) (opts : Options) : Except Err Checked := do
-  let inp ← ingress envBytes target opts.kernelLimits
+  let inp ← ingressAs envBytes target opts.name opts.kernelLimits
   let () ← require (targetIsRoot inp target)
     (ingressErr "roots" "the ingested program's first root is not the target")
   let roleTable ← orRefuse (ingressErr "kernel" "the environment is not role-bound") inp.env.bindingAddress
