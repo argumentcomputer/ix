@@ -147,9 +147,9 @@ inductive HeadOk (p : Program) (sig : Sig) : Head → Levels → List Shape → 
       p.table.recKindOf r = some .ordinary → ScrutOk p sig σ ind ps.length flds →
       HeadOk p sig (.cases c) ls (ps ++ (.irr :: σ :: flds.map fun fl => arrows fl τ)) τ
   /-- F1 at a constructor of a data entry: its parameter slots, then its fields -/
-  | ctor (c : CId) (ls : Levels) (d : Nat) (D : DataDecl) (j : Nat) (fl : List Shape) :
-      sig.datas d = some D → D.ctors[j]? = some (c, fl) →
-      HeadOk p sig (.ctor c) ls (D.params ++ fl) (.data d)
+  | ctor (c : CId) (ls : Levels) (d : Nat) (D : DataDecl) (j : Nat) (ps fl : List Shape) :
+      sig.datas d = some D → D.ctors[j]? = some (c, fl) → ps.length = D.params.length →
+      HeadOk p sig (.ctor c) ls (ps ++ fl) (.data d)
   /-- F2: an ordinary recursor without parameters or indices, at minors of any
   shapes `ms` under which each rule's body, in the environment F2 builds, has the
   result shape -/
@@ -540,9 +540,9 @@ theorem HeadOk.arity (hsig : SigOk p sig) {h : Head} {ls : Levels} {σs : List S
   | prim op ls hp => simp [Program.headArity]
   | pred op ls B t f cs hp ht hf hB htm hfm => simp [Program.headArity]
   | succ c ls s lv ind cidx ty hdecl hz hs => simp [Program.headArity, hdecl]
-  | ctor c ls d D j fl hD hc =>
+  | ctor c ls d D j ps fl hD hc hps =>
     obtain ⟨s, lv, ty, hdecl, -, -⟩ := hsig.datas _ _ hD j c fl hc
-    simp [Program.headArity, hdecl]
+    simp [Program.headArity, hdecl, hps]
   | cases c r ls ps σ ind flds τ s kk lv nmot rules ty hres hdecl hkind hscrut =>
     simp [Program.headArity, hres, hdecl] <;> omega
   | recr r ls σ ind flds ms τ s kk lv rules ty hdecl hkind hscrut hrules =>
@@ -707,20 +707,20 @@ theorem allOk (hsig : SigOk p sig) : ∀ k, AllOk p sig k := by
             refine .inr ⟨.lit (n + 1), ?_, .lit⟩
             show ctorResult p c ls [] [Value.lit n] = .ok (.lit (n + 1))
             simp [ctorResult, hz, hs]
-    | ctor c ls d D j fl hD hc =>
+    | ctor c ls d D j ps fl hD hc hps =>
       obtain ⟨s, lv, ty, hdecl, hz, hs⟩ := hsig.datas _ _ hD j c fl hc
-      rw [fire_ctor, hdecl]
-      show ResOk p sig (.data d) ((forceAll p k (slots.drop D.params.length)).bind
-        (ctorResult p c ls (slots.take D.params.length)))
+      rw [fire_ctor, hdecl, ← hps]
+      show ResOk p sig (.data d) ((forceAll p k (slots.drop ps.length)).bind
+        (ctorResult p c ls (slots.take ps.length)))
       have hfl := EnvOk.drop _ _ hslots
-      have hpl : (slots.take D.params.length).length = D.params.length :=
-        EnvOk.length _ _ (EnvOk.take _ _ hslots)
+      have hpl : (slots.take ps.length).length = D.params.length :=
+        (EnvOk.length _ _ (EnvOk.take _ _ hslots)).trans hps
       rcases forceAll_ok hslot _ _ hfl with hto | ⟨vs, hvs, hok⟩
       · rw [hto]
         exact .inl rfl
       · rw [hvs]
-        refine .inr ⟨.con c ls (slots.take D.params.length) vs, ?_, .data hD hc hpl hok⟩
-        show ctorResult p c ls (slots.take D.params.length) vs = _
+        refine .inr ⟨.con c ls (slots.take ps.length) vs, ?_, .data hD hc hpl hok⟩
+        show ctorResult p c ls (slots.take ps.length) vs = _
         simp [ctorResult, hz, hs]
     | cases c r ls ps σ ind flds τ s kk lv nmot rules ty hres hdecl hkind hscrut =>
       rw [fire_cases_ord p k ls c r slots hres hdecl hkind]
