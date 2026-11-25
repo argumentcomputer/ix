@@ -167,6 +167,21 @@ def declOkDiag (k : Src.KernelFront.Kernel) (src : Program) (root : CId) : Strin
     s!"{c} np={np} class={cls} rules={rules}"
   ", ".intercalate (bad.map show1)
 
+/-- The bases of the modeled-route members (for the report). -/
+def modeledBases (env : IxCC.Grounding.KEnv) : List String :=
+  (env.consts.filterMap fun ci => match ci.name with
+    | .aux b .model => some s!"{repr b}"
+    | _ => none).eraseDups
+
+/-- How many constants of the environment the kernel installed through the modeled route (a
+member's `_model`) and through the nested modeller (`pack` transports): where `CtorCanon` would
+have to be argued through generated models rather than the direct routes' leaves. -/
+def modeledCount (env : IxCC.Grounding.KEnv) : Nat × Nat :=
+  env.consts.foldl (fun acc ci => match ci.name with
+    | .aux _ .model => (acc.1 + 1, acc.2)
+    | .aux _ (.pack _) => (acc.1, acc.2 + 1)
+    | _ => acc) (0, 0)
+
 /-- **Whether an enumeration answer is unique** (`agrees_unique_enum`): the enumeration and its
 recursor found from the claim's constructor keys, then checked by `enumUniqueB`. -/
 def enumUnique? (acc : Src.KernelFront.Accepted) (cs : List Ixon.Address) : Bool :=
@@ -240,7 +255,9 @@ def run : IO Bool := do
         let parts := s!"nat {IxCC.Grounding.natBasisB env}, bool {IxCC.Grounding.boolBasisB env}, Nat.beq {IxCC.Grounding.natBeqStoredB env}, litDefs {IxCC.Grounding.litDefsB env}, Bool.rec {boolRecB env}, Nat.rec {natRecB env}"
         if ne.isSome || (neKeyRev? env).isSome then
           witnessed := witnessed ++ [s!"{label} (true≠false: {ne.isSome}, false≠true: {(neKeyRev? env).isSome})"]
-        IO.println s!"{label}: {ld.src.roots.length} roots, {ld.mode}, numerals separated: {sep} ({parts})"
+        let mc := modeledCount env
+        if mc.1 > 0 then IO.println s!"  modeled bases: {(modeledBases env).take 10}"
+        IO.println s!"{label}: {ld.src.roots.length} roots, {ld.mode}, numerals separated: {sep} ({parts}); modeled-route constants {mc.1}, nested packs {mc.2}"
         for (name, i) in ld.names.zipIdx do
           let some r := ld.src.roots[i]? | continue
           total := total + 1
