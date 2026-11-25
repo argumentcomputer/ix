@@ -47,13 +47,57 @@
     src = ixCSrc;
     buildLibrary = true;
   };
-  lakeDeps = lake2nix.buildDeps {
-    src = sources.dependencies;
-    depOverrideDeriv = {
-      Blake3 = blake3;
-      "«ix-ck»" = ixC;
-    };
+  # «ix-ck» for the grounding build only: the same package with the kernel's proof
+  # tree the target statements cite (the ledger's proof-only closure, `IxCKProofs`)
+  # beside the closure above (`IxCK`, unchanged), starting from `ixC`'s artifacts
+  # so the closure above is not rebuilt and keeps its traces. The production
+  # library and the shared program build keep `ixC`, so a change to the proof tree
+  # rebuilds only this package and the grounding build.
+  ixCProofSrc = pkgs.runCommand "ix-ck-proof-src" {} ''
+    mkdir -p $out
+    cp -r ${sources.ixC.modules}/. $out/
+    chmod -R u+w $out
+    cp -r ${sources.ixCProof.modules}/. $out/
+    chmod -R u+w $out
+    cp ${sources.ixC.toolchain} $out/lean-toolchain
+    cp ${sources.ixC.manifest} $out/lake-manifest.json
+    cat > $out/lakefile.lean <<'LAKEFILE'
+    import Lake
+    open Lake DSL
+
+    package «ix-ck» where
+      version := v!"0.1.0"
+
+    @[default_target]
+    lean_lib IxCK where
+      roots := #[${pkgs.lib.concatMapStringsSep ", " (name: "`" + name) sources.ixC.moduleNames}]
+
+    lean_lib IxCKProofs where
+      roots := #[${pkgs.lib.concatMapStringsSep ", " (name: "`" + name) sources.ixCProof.moduleNames}]
+    LAKEFILE
+  '';
+  ixCProof = lake2nix.mkLakeDerivation {
+    name = "IxCKProofs";
+    src = ixCProofSrc;
+    prePatch = ''
+      cp -R ${ixC}/.lake .
+      chmod -R u+w .lake
+    '';
+    buildPhase = ''
+      runHook preBuild
+      lake build IxCKProofs IxCKProofs:static
+      runHook postBuild
+    '';
   };
+  lakeDepsWith = ixck:
+    lake2nix.buildDeps {
+      src = sources.dependencies;
+      depOverrideDeriv = {
+        Blake3 = blake3;
+        "«ix-ck»" = ixck;
+      };
+    };
+  lakeDeps = lakeDepsWith ixC;
   # lean4-nix shadows each dependency under `.lake/packages/<manifest name>`;
   # for `«ix-ck»` that directory name is not ASCII, and Lake mangles it
   # when it passes object paths to the linker (`.lake/packages/302253ix-ck302273/…`
@@ -114,9 +158,11 @@
   # The grounding library and the target statements (`IxCCCorrect`), each with its axiom
   # fence, and the grounding suite (`tests-grounding`), reusing the library's artifacts like
   # the program build; the one build that compiles the kernel's model (`IxCK.Kernel.Denotes`
-  # and its imports, in the «ix-ck» closure the ledger records).
+  # and its imports, in the «ix-ck» closure the ledger records) and links the kernel's proof
+  # tree the target statements cite (`ixCProof`).
   grounding = lake2nix.mkPackage {
-    inherit lakeDeps buildInputs;
+    inherit buildInputs;
+    lakeDeps = lakeDepsWith ixCProof;
     src = sources.grounding;
     name = "ixcc-grounding";
     postConfigure = asciiPackages;
@@ -157,5 +203,5 @@
     '';
   mkCheck = mkCheckWith programs;
 in {
-  inherit ixccLib programs grounding mkCheck mkCheckWith ixC auditSrc ledgerWorkspace;
+  inherit ixccLib programs grounding mkCheck mkCheckWith ixC ixCProof auditSrc ledgerWorkspace;
 }

@@ -1,4 +1,5 @@
 import IxCC.Tools.SourceScan
+import IxCC.Ixon.PureHash
 import Lake.Toml.Load
 
 /-! Fail-closed validation of the hand-reviewed native/build trust ledger.
@@ -57,6 +58,20 @@ SHA-256 of every file of their import closure, which fixes the audited source
 whatever the pin. -/
 def leanDependencies (ledger : Json) : IO (Array Json) :=
   match ledger.getObjVal? "lean_dependencies" with
+  | .ok value => array value
+  | .error _ => pure #[]
+
+/-- Proof-only dependencies (`proof_only_dependencies`, absent: none): modules of a
+workspace dependency, outside the closure its `lean_dependencies` entry records,
+that only the non-production libraries the entry names (`importers`) may import,
+never production or a program of the shared build. Each entry names the package
+(whose `lean_dependencies` entry gives its directory), the modules the importers
+import from it (`imported_modules`), every file of their import closure outside
+the recorded closure (`closure_files`), and one BLAKE3 digest over those files
+(`closure_blake3`, `proofOnlyDigest`): the files are pinned together, not one by
+one, so a change to the dependency's proofs re-pins one digest. -/
+def proofOnlyDependencies (ledger : Json) : IO (Array Json) :=
+  match ledger.getObjVal? "proof_only_dependencies" with
   | .ok value => array value
   | .error _ => pure #[]
 
@@ -233,6 +248,17 @@ def validateShape (ledger : Json) : IO (Array Json × Array Json × Array Json) 
     let _ ← implementedByRecords entry
     let _ ← nativeDecideRecords entry
     let _ ← leanSource entry
+    retirement entry
+    ids := (← strField entry "id") :: ids
+  for entry in ← proofOnlyDependencies ledger do
+    fields entry ["id", "status", "owner", "lake_package", "importers", "imported_modules",
+      "closure_files", "closure_blake3", "semantics_assumed", "proof_effect", "trust_basis", "tests",
+      "retirement"]
+    let _ ← jsonStrings (← field entry "importers")
+    let _ ← jsonStrings (← field entry "imported_modules")
+    let _ ← jsonStrings (← field entry "closure_files")
+    need (isHex 64 (← strField entry "closure_blake3"))
+      "proof-only closure_blake3 must be 64 lowercase hex digits"
     retirement entry
     ids := (← strField entry "id") :: ids
   unique ids "ledger ids"
@@ -639,10 +665,12 @@ revision, and the project's imports under its `import_root` are exactly its
 `imported_modules` and its uses of names under that root exactly its
 `project_entrypoints`: this is the audit that refuses an import of another
 module of the package (`Blake3.Rust`, `Blake3.C`, the root module `Blake3`).
+The modules of a proof-only dependency (`proofModules`, from
+`validateProofOnly`) account for the imports they name as well.
 Returns the number of closure files checked and of `native_decide`s admitted. -/
 def validateLeanDependencies (root : FilePath) (ledger : Json) (lake : Array Token)
     (sources : List (FilePath × Array Token)) (overrides : List (String × String))
-    (flakeLock : FilePath) : IO (Nat × Nat) := do
+    (flakeLock : FilePath) (proofModules : List String := []) : IO (Nat × Nat) := do
   let manifest ← readJson (root / "lake-manifest.json")
   let packages ← arrField manifest "packages"
   let packagesDir := (manifest.getObjValAs? String "packagesDir").toOption.getD ".lake/packages"
@@ -730,8 +758,150 @@ def validateLeanDependencies (root : FilePath) (ledger : Json) (lake : Array Tok
         need (projectImports.contains mod) s!"{package}: recorded module {mod} is not imported by the project"
       sameSet (sources.flatMap fun source => namesUnder source.2 importRoot)
         (← jsonStrings (← field entry "project_entrypoints")) s!"qualified uses of {importRoot}"
-  sameSet unresolved declared "imports of pure Lean dependencies"
+  sameSet unresolved (declared ++ proofModules) "imports of pure Lean dependencies"
   return (checkedFiles, admitted)
+
+/-! ## Proof-only dependencies
+
+The kernel's proof tree is a dependency of the target statements, not of the
+compiler: `IxCCCorrect` cites the kernel's theorems (model existence of an
+accepted environment), which production never imports. Those modules are
+recorded apart from the dependency's closure (`proofOnlyDependencies`): every
+file is audited, more strictly than the closure production links (nothing is
+admitted by a ruling), and the files are pinned by one digest. -/
+
+/-- Names a proof-only closure file may not spell, beyond those `hygieneDependency`
+refuses (an `axiom` declaration, `sorry`, `native_decide` and every spelling of
+native evaluation): `admit`, `bv_decide`, `unsafe` and `partial`. Its files must
+also declare no extern, no `implemented_by` and no `@[csimp]` theorem
+(`proofOnlyClosure`). Comments and literals are not scanned. -/
+def proofOnlyForbiddenNames : List String := ["admit", "bv_decide", "unsafe", "partial"]
+
+/-- The hygiene of a proof-only closure file (`proofOnlyForbiddenNames`). -/
+def proofOnlyHygiene (tokens : Array Token) : Except String Unit := do
+  hygieneDependency tokens
+  for token in tokens do
+    if token.kind == .name && proofOnlyForbiddenNames.contains token.text then
+      throw s!"line {token.line}: {token.text} is not allowed in a proof-only dependency"
+
+/-- The digest of a proof-only closure, given as `(path, bytes)` in path order:
+the BLAKE3 (`Blake3.Pure`, lowercase hex) of its `b3sum` listing, one line
+`<BLAKE3 of the file>  <path>` per file, each ended by a newline, the paths
+relative to the dependency's source directory. From that directory,
+`LC_ALL=C sort` of the paths, then `xargs b3sum | b3sum`, prints the same
+digest. -/
+def proofOnlyDigest (closure : List (String × ByteArray)) : String :=
+  let line (entry : String × ByteArray) : String :=
+    s!"{(IxCC.Ixon.Address.blake3Pure entry.2).toHex}  {entry.1}\n"
+  (IxCC.Ixon.Address.blake3Pure (String.join (closure.map line)).toUTF8).toHex
+
+/-- A proof-only dependency's closure as the tree stands: the files of the
+import closure of its `imported_modules` under the source directory of the
+`lean_dependencies` entry for the same (workspace) package, other than that
+entry's recorded closure, in path order, each with its bytes. Every such file
+passes `proofOnlyHygiene`, declares no extern, `implemented_by` or `@[csimp]`
+theorem, and imports only the toolchain or the package's modules (those under a
+module root of the recorded closure); the recorded closure is closed under
+imports itself (`validateLeanDependencies`). -/
+def proofOnlyClosure (root : FilePath) (ledger : Json) (overrides : List (String × String))
+    (entry : Json) : IO (List (String × ByteArray)) := do
+  let package ← strField entry "lake_package"
+  let mut base := none
+  for dependency in ← leanDependencies ledger do
+    if (← strField dependency "lake_package") == package then base := some dependency
+  let some dependency := base
+    | throw (IO.userError s!"proof-only dependency {package} has no lean_dependencies entry")
+  let .workspace dir ← leanSource dependency
+    | throw (IO.userError s!"proof-only dependency {package} is not a workspace dependency")
+  let packageRoot := ((optional overrides package).map FilePath.mk).getD (root / dir)
+  let sourceRoot ← IO.FS.realPath (packageRoot / (← strField dependency "source_dir"))
+  let recorded := (← pairs (← field dependency "closure")).map (·.1)
+  let moduleRoots := (recorded.map fun relative => (relative.splitOn "/").headD "").eraseDups
+  let mut seen : List String := []
+  let mut result : List (String × ByteArray) := []
+  let mut pending ← jsonStrings (← field entry "imported_modules")
+  while !pending.isEmpty do
+    let mod := pending.head!
+    pending := pending.tail!
+    let relative := mod.replace "." "/" ++ ".lean"
+    if seen.contains relative then continue
+    seen := relative :: seen
+    -- the recorded closure is audited file by file by its own entry
+    if recorded.contains relative then continue
+    let path := sourceRoot / relative
+    need (← path.pathExists) s!"{package}: proof-only module {mod} has no source {relative}"
+    let bytes ← IO.FS.readBinFile path
+    let some text := String.fromUTF8? bytes
+      | throw (IO.userError s!"{package}: {relative} is not UTF-8")
+    let label (error : String) : String := s!"{package}: {relative}: {error}"
+    let tokens ← checked ((scan text).mapError label)
+    checked ((proofOnlyHygiene tokens).mapError label)
+    need (← checked ((externs tokens).mapError label)).isEmpty
+      s!"{package}: {relative} declares native symbols"
+    need (← checked ((implementedBys tokens).mapError label)).isEmpty
+      s!"{package}: {relative} declares an implemented_by substitution"
+    need (← checked ((csimps tokens).mapError label)).isEmpty
+      s!"{package}: {relative} declares a csimp theorem"
+    for imp in imports tokens do
+      let head := (imp.splitOn ".").headD ""
+      if toolchainRoots.contains head then continue
+      need (moduleRoots.contains head)
+        s!"{package}: {relative} imports {imp}, outside the package and the toolchain"
+      pending := imp :: pending
+    result := (relative, bytes) :: result
+  return result.mergeSort (fun a b => a.1 ≤ b.1)
+
+/-- The library of a project source: the first component of its path relative
+to the project root, without `.lean` (`IxCCCorrect` for `IxCCCorrect.lean` and
+`IxCCCorrect/Unique.lean`). -/
+private def libraryOf (root path : FilePath) : String :=
+  let relative := (path.toString.dropPrefix (root.toString ++ "/")).toString
+    |>.dropPrefix "./" |>.toString
+  (FilePath.mk ((relative.splitOn "/").headD "")).withExtension "" |>.toString
+
+/-- Each proof-only dependency: its `imported_modules` are none of a
+`lean_dependencies` entry's, each is imported by some project source, and only
+sources of the libraries it names (`importers`) import any of them; its closure
+(`proofOnlyClosure`, which audits every file) is exactly `closure_files`, with
+the digest `closure_blake3`. Returns the modules recorded, which account for
+those imports (`validateLeanDependencies`), and the number of files audited. -/
+def validateProofOnly (root : FilePath) (ledger : Json) (overrides : List (String × String))
+    (sources : List (FilePath × Array Token)) : IO (List String × Nat) := do
+  let mut active := []
+  for dependency in ← leanDependencies ledger do
+    active := active ++ (← jsonStrings (← field dependency "imported_modules"))
+  let mut modules := []
+  let mut audited := 0
+  for entry in ← proofOnlyDependencies ledger do
+    let package ← strField entry "lake_package"
+    let importers ← jsonStrings (← field entry "importers")
+    let imported ← jsonStrings (← field entry "imported_modules")
+    need (!importers.isEmpty && !imported.isEmpty)
+      s!"{package}: a proof-only dependency names its importers and modules"
+    for mod in imported do
+      need (!active.contains mod)
+        s!"{package}: {mod} is recorded both as an imported and as a proof-only module"
+      need (!modules.contains mod) s!"{package}: {mod} is recorded by two proof-only entries"
+      let importing := sources.filter fun (_, tokens) => (imports tokens).contains mod
+      need (!importing.isEmpty)
+        s!"{package}: proof-only module {mod} is imported by none of {importers}"
+      for (path, _) in importing do
+        need (importers.contains (libraryOf root path))
+          s!"{package}: {path} imports {mod}, a proof-only module that only {importers} may import"
+    let closure ← proofOnlyClosure root ledger overrides entry
+    let actual := closure.map (·.1)
+    let recorded ← jsonStrings (← field entry "closure_files")
+    let added := actual.filter (!recorded.contains ·)
+    let gone := recorded.filter (!actual.contains ·)
+    need (added.isEmpty && gone.isEmpty)
+      s!"{package}: proof-only closure files drifted (record them with check-trusted-externs --record and review): new {added.take 20}, gone {gone.take 20}"
+    let digest := proofOnlyDigest closure
+    let pinned ← strField entry "closure_blake3"
+    need (digest == pinned)
+      s!"{package}: proof-only closure changed ({actual.length} files): ledger {pinned}, actual {digest}; review the change, then record it with check-trusted-externs --record"
+    modules := modules ++ imported
+    audited := audited + closure.length
+  return (modules, audited)
 
 /-- The Lean seed is the project's `lean-toolchain`, and inside a larger
 repository the repository's `lean-toolchain` (whose Lean ix's flake builds IxCC
@@ -884,14 +1054,16 @@ def audit (root : FilePath) (overrides : List (String × String)) (gmp : Option 
   validateImports root ledger interfaces sources
   validateProjectCSimps root ledger sources
   let cargoCount ← validateNative root interfaces sources lake overrides repo.flakeLock
-  let (leanFiles, nativeDecides) ← validateLeanDependencies root ledger lake sources overrides repo.flakeLock
+  let (proofModules, proofFiles) ← validateProofOnly root ledger overrides sources
+  let (leanFiles, nativeDecides) ←
+    validateLeanDependencies root ledger lake sources overrides repo.flakeLock proofModules
   validateSeeds root repo seeds gmp
   validateCI repo ledger
   validateRequiredChecks root ledger
   validateIntegrityRule root ledger
   let mut symbols := 0
   for entry in interfaces do symbols := symbols + (← arrField entry "foreign_symbols").size
-  IO.println s!"trusted-extern ledger ok: {interfaces.size} native interfaces, {symbols} foreign symbols, {cargoCount} Cargo packages, {(← leanDependencies ledger).size} pure Lean dependencies ({leanFiles} files, {nativeDecides} admitted native_decide sites), {seeds.size} seed/build entries, {specifications.size} specification assumptions"
+  IO.println s!"trusted-extern ledger ok: {interfaces.size} native interfaces, {symbols} foreign symbols, {cargoCount} Cargo packages, {(← leanDependencies ledger).size} pure Lean dependencies ({leanFiles} files, {nativeDecides} admitted native_decide sites), {(← proofOnlyDependencies ledger).size} proof-only ({proofFiles} files), {seeds.size} seed/build entries, {specifications.size} specification assumptions"
 
 /-! ## The link audit
 
@@ -961,9 +1133,11 @@ def auditLinkedFiles (nm : String) (paths : List FilePath) : IO Unit := do
 /-- The ledger's mechanical pins as the tree now stands, for review before
 they replace the recorded ones (`tools/RecordLedgerPins.lean`): the hash of
 every file `integrity.rule` covers and of every listed or configured
-repository file, the revision of every `flake.lock` node, and the commit of
-every remote CI action. It never edits the ledger, and records nothing else:
-seed versions, symbols, closures and the other entries are reviewed by hand. -/
+repository file, the revision of every `flake.lock` node, the commit of
+every remote CI action, and each proof-only dependency's closure files and
+digest (`proof_only`, by entry id; the closure is audited as it is recorded).
+It never edits the ledger, and records nothing else: seed versions, symbols,
+the pure dependencies' closures and the other entries are reviewed by hand. -/
 def recordPins (root : FilePath) (repositoryRoot flakeLock : Option FilePath := none) :
     IO Json := do
   let root ← IO.FS.realPath root
@@ -980,10 +1154,17 @@ def recordPins (root : FilePath) (repositoryRoot flakeLock : Option FilePath := 
       s!"{repository} is pinned at several commits; record ci_actions by hand"
   let object (entries : List (String × String)) : Json :=
     Json.mkObj (entries.map fun (key, value) => (key, toJson value))
+  let mut proofOnly := []
+  for entry in ← proofOnlyDependencies ledger do
+    let closure ← proofOnlyClosure root ledger [] entry
+    proofOnly := proofOnly ++ [(← strField entry "id", Json.mkObj [
+      ("closure_files", toJson (closure.map (·.1))),
+      ("closure_blake3", toJson (proofOnlyDigest closure))])]
   return Json.mkObj [
     ("tracked_files", object (covered.zip digests)),
     ("repository_files", object (repositoryFiles.zip repositoryDigests)),
     ("flake_nodes", object (← flakeRevisions repo.flakeLock)),
-    ("ci_actions", object actions.eraseDups)]
+    ("ci_actions", object actions.eraseDups),
+    ("proof_only", Json.mkObj proofOnly)]
 
 end IxCC.Tools.TrustLedger

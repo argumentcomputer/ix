@@ -27,7 +27,9 @@ tree still contains monolithic test and proof modules that need migration.
   depends on `../IxCK` (its Ixon codec, the role vocabulary `IxCK.Kernel.Key`
   with which it maps the kernel's roles to its pinned identities, and the kernel's tiered
   admission entry and executed typing core, which the front end over the
-  kernel uses; not the kernel's proof tree) and Blake3 (its pure Lean module
+  kernel uses; production never imports the kernel's proof tree, whose part the
+  target statements `IxCCCorrect` cite is the trust ledger's proof-only
+  dependency `ix-kernel-proofs`) and Blake3 (its pure Lean module
   `Blake3.Pure` only, and of it only `Blake3.Pure.hash`, with which IxCC
   computes every address; the module's closure is two files of the package,
   `Blake3/Pure.lean` and the root module `Blake3.lean`, whose three

@@ -31,8 +31,10 @@ prelude and executed typing core (`IxCK.Kernel.Admission.Tier`,
 kernel (`IxCC.Src.KernelFront`, `docs/kernel-front-end-design.md`). It is the
 package beside this one in the ix workspace; the trust ledger records the
 SHA-256 of every file of the imported closure (including the
-kernel's model statement imported only by `IxCCGrounding` and `IxCCCorrect`; not the kernel's
-proof tree), so a change to it is reviewed here. -/
+kernel's model statement imported only by `IxCCGrounding` and `IxCCCorrect`), so a change to
+it is reviewed here. The part of the kernel's proof tree that the target statements
+(`IxCCCorrect`) cite, which nothing else may import, is the ledger's proof-only dependency
+(`ix-kernel-proofs`), pinned by one BLAKE3 digest over its files. -/
 require «ix-ck» from "../IxCK"
 
 @[default_target]

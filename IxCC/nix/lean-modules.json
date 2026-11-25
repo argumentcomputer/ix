@@ -5403,7 +5403,8 @@
   {"path": "IxCC/Tools/X86Check.lean", "imports": ["IxCC.Tools.Check"]},
   "IxCC.Tools.TrustLedger":
   {"path": "IxCC/Tools/TrustLedger.lean",
-   "imports": ["IxCC.Tools.SourceScan", "Lake.Toml.Load"]},
+   "imports":
+   ["IxCC.Tools.SourceScan", "IxCC.Ixon.PureHash", "Lake.Toml.Load"]},
   "IxCC.Tools.SourceScan":
   {"path": "IxCC/Tools/SourceScan.lean", "imports": ["IxCC.Tools.Check"]},
   "IxCC.Tools.Check": {"path": "IxCC/Tools/Check.lean", "imports": ["Lean"]},
