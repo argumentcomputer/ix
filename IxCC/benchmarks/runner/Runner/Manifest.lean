@@ -25,6 +25,8 @@ structure Fixture where
   expected : String
   /-- The output at the bench arguments, where recorded. -/
   benchExpected : Option String
+  /-- Optional environment variables recorded for the fixture (e.g. `LEAN_STACK_SIZE_KB`). -/
+  env : List (String × String) := []
   twin : Twin
 
 structure Manifest where
@@ -40,6 +42,11 @@ def strs (value : Json) (key : String) : Except String (List String) := do
 def Fixture.parse (value : Json) : Except String Fixture := do
   let twin ← field value "twin"
   let entry ← field value "entry"
+  let env : List (String × String) ← match value.getObjVal? "env" with
+    | .ok j =>
+      let m ← j.getObj?
+      m.toList.mapM fun (k, v) => do pure (k, ← v.getStr?)
+    | .error _ => pure []
   return {
     name := ← str value "name", rung := ← str value "rung", variant := ← str value "variant"
     lean := ← str (← field value "lean") "path"
@@ -47,6 +54,7 @@ def Fixture.parse (value : Json) : Except String Fixture := do
     testArgs := ← strs value "test_args", benchArgs := ← strs value "bench_args"
     expected := ← str value "expected"
     benchExpected := (str value "bench_expected").toOption
+    env
     twin := { path := ← str twin "path", language := ← str twin "language",
               compile := ← strs twin "compile" } }
 

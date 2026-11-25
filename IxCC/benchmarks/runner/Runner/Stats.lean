@@ -12,6 +12,23 @@ def median (values : Array Float) : Float :=
   else if sorted.size % 2 == 1 then sorted[sorted.size / 2]!
   else (sorted[sorted.size / 2 - 1]! + sorted[sorted.size / 2]!) / 2
 
+/-- Linear-interpolated quantile `p ∈ [0, 1]` of `values`. -/
+def percentile (values : Array Float) (p : Float) : Float :=
+  let sorted := values.qsort (· < ·)
+  if sorted.isEmpty then 0
+  else if sorted.size == 1 then sorted[0]!
+  else
+    let clamped := if p < 0 then 0 else if p > 1 then 1 else p
+    let pos := clamped * (sorted.size - 1).toFloat
+    let lo := pos.floor.toUInt64.toNat
+    let hi := min (sorted.size - 1) (lo + 1)
+    let frac := pos - lo.toFloat
+    sorted[lo]! + frac * (sorted[hi]! - sorted[lo]!)
+
+/-- Interquartile range (`Q3 - Q1`). -/
+def iqr (values : Array Float) : Float :=
+  percentile values 0.75 - percentile values 0.25
+
 /-- One xorshift step. -/
 def xorshift (state : UInt64) : UInt64 :=
   let s := state ^^^ (state <<< 13)
