@@ -191,7 +191,7 @@ def why (p : Src.Program) (cert : Cert) (ls : Levels) :
     | .dom σ =>
       if !b.propWhen.allowsBeta ls then some ("λ whose binder forbids β at these levels", "")
       else why p cert ls (σ :: Γ) body .none
-    | .none => some ("λ with no expected shape", "")
+    | .none | .after _ _ => some ("λ with no expected shape", "")
   | Γ, .letE _ _ r _ v body, e =>
     if r.irrAt ls then why p cert ls (.irr :: Γ) body e
     else
@@ -436,36 +436,43 @@ def rcEndToEnd (label ixe eqs : String) : IO (Bool × Nat) := do
       return (false, 0)
 
 /-- How the decision's time grows with the certificate: the producer stopped after
-`steps` steps on root `i` of `p`, then `entryOk` on each instance in turn, timed (up to
-two minutes): how many pass, the first refused, the slowest and how many instances its
-constant has. -/
+`steps` steps on root `i` of `p`, then `entryOk` on each instance in turn, each timed
+inside `IO.lazyPure` (a pure `let` may be moved past the clock), up to two minutes: how
+many pass, the total, and the five slowest instances with their kind, the number of
+instances of their constant, and their body's size. -/
 def scale (label : String) (p : Src.Program) (i : Nat) : IO Unit := do
   let some (_, c) := p.roots[i]? | return
   let out ← IO.getStdout
-  for steps in [800, 3200, 12800, 20000] do
+  for steps in [800, 1600, 3200] do
     let cert := Produce.produce p c (steps := steps)
     let n := cert.insts.length
-    IO.print s!"{label}: {steps} producer steps, {n} instances: "
+    IO.print s!"{label}: {steps} producer steps, {n} instances, {cert.datas.length} entries: "
     out.flush
     let t0 ← IO.monoMsNow
     let mut passed := 0
-    let mut firstBad : Option Nat := none
-    let mut slow := (0, 0)
     let mut checked := 0
+    let mut times : List (Nat × Nat) := []
     for (e, j) in cert.insts.zipIdx do
       let a ← IO.monoMsNow
       if a - t0 > 120000 then break
-      let ok := entryOk p cert e.1 e.2.1 e.2.2
+      let ok ← IO.lazyPure fun _ => entryOk p cert e.1 e.2.1 e.2.2
       let b ← IO.monoMsNow
       checked := checked + 1
-      if ok then passed := passed + 1 else if firstBad.isNone then firstBad := some j
-      if b - a > slow.1 then slow := (b - a, j)
+      if ok then passed := passed + 1
+      times := (b - a, j) :: times
     let t1 ← IO.monoMsNow
-    let slowConst := match cert.insts[slow.2]? with
-      | some e => (cert.insts.filter fun (x : CId × Levels × Shape) => x.1 == e.1).length
-      | none => 0
-    IO.println s!"checked {checked} in {t1 - t0} ms, {passed} pass, first refused {firstBad}, \
-      slowest entry {slow.2} at {slow.1} ms (its constant has {slowConst} instances)"
+    IO.println s!"checked {checked} in {t1 - t0} ms, {passed} pass"
+    let top := (times.mergeSort fun x y => x.1 ≥ y.1).take 5
+    for (ms, j) in top do
+      match cert.insts[j]? with
+      | some (d, ls, σ) =>
+        let same := (cert.insts.filter fun (x : CId × Levels × Shape) => x.1 == d).length
+        let size := match bodyOf p d with
+          | some t => (showTerm ls t).length
+          | none => 0
+        IO.println s!"    {ms} ms: #{j} {kindOf p d} {(hex (p.addr d)).take 8}, {same} instances of \
+          its constant, body {size} chars, shape {(showShape σ).take 120}"
+      | none => pure ()
     out.flush
 
 def bump (key : String) : List (String × Nat) → List (String × Nat)

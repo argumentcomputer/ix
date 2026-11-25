@@ -169,6 +169,9 @@ inductive Exp where
   | none
   | full (σ : Shape)
   | dom (σ : Shape)
+  /-- the term is the function of an application spine with `n + 1` arguments still to
+  come, whose result is expected to be `ρ` (read only to prune a head's candidates) -/
+  | after (n : Nat) (ρ : Shape)
 
 /-- A shape and, at an intersection, its parts. -/
 def parts : Shape → List Shape
@@ -249,9 +252,41 @@ asks whether `ρ` is among it (`chkWith`, `rulesOk`), so a candidate `σ → τ`
 among `τ`'s parts is dropped before its argument is checked. Soundness is untouched (the
 result only shrinks). -/
 def wants : Exp → Shape → Bool
-  | .full ρ, .fn _ τ => decide (ρ ∈ parts τ)
+  | .full ρ, .fn _ τ => reach 0 ρ τ
+  | .after n ρ, .fn _ τ => reach (n + 1) ρ τ
   | .full _, _ => false
+  | .after _ _, _ => false
   | _, _ => true
+where
+  /-- `τ`, applied to `n` more arguments (through the parts each application keeps), can
+  have `ρ` among its parts -/
+  reach : Nat → Shape → Shape → Bool
+    | 0, ρ, τ => decide (ρ ∈ parts τ)
+    | n + 1, ρ, τ => (parts τ).any fun τ' =>
+      match τ' with
+      | .fn _ τ'' => reach n ρ τ''
+      | _ => false
+
+/-- What the function of an application is expected to be, from what the application is:
+a spine's expected result travels to its head, so the head's candidates are pruned before
+any argument is checked (a λ argument in the middle of a spine is then checked against
+the one candidate that can give the result, not against every instance of the head). -/
+def fnExp : Exp → Exp
+  | .full ρ => .after 0 ρ
+  | .after n ρ => .after (n + 1) ρ
+  | _ => .none
+
+/-- **One application step of `synth`**: the function's candidates `fs`, pruned by the
+expectation `e`, each applied to the argument. `asN` is the argument's synthesis at no
+expectation, used for every candidate when the argument does not read its expectation;
+`full` re-synthesizes it at an expectation (a λ). A function of its own, so that `asN`
+is an argument evaluated once before the call, never a binding moved into the closure
+that runs once per candidate. -/
+@[noinline] def appStep (irrArg readsE lamA : Bool) (full : Exp → List Shape)
+    (asN : List Shape) (e : Exp) (fs : List Shape) : List Shape :=
+  ((fs.filter (wants e)).flatMap fun s =>
+    appRes irrArg (fun σ => if readsE then chkWith full lamA σ else chkWith (fun _ => asN) false σ)
+      s).flatMap parts
 
 /-- **Shape synthesis at levels `ls`**: the shapes of a term in a context, an
 intersection with its parts. Only a λ reads what is expected: the whole shape (a λ
@@ -277,15 +312,12 @@ def synth (insts : List (CId × Levels × Shape)) (datas : List DataDecl) (lets 
   | _, .const c us, _ => (instsOf insts c (us.map (evalUniv ls))).flatMap parts
   | Γ, .app f a _ r, e =>
     let asN := synth insts datas lets ls Γ a .none
-    (((match f with
+    appStep (r.irrAt ls) (readsExp a) (isLam a) (fun e => synth insts datas lets ls Γ a e) asN e
+      (match f with
       | .lam _ _ _ =>
         (if r.irrAt ls then [Shape.irr] else asN).flatMap fun σ =>
           synth insts datas lets ls Γ f (.dom σ)
-      | _ => synth insts datas lets ls Γ f .none).filter (wants e)).flatMap fun s =>
-      appRes (r.irrAt ls) (fun σ =>
-        if readsExp a then chkWith (fun e => synth insts datas lets ls Γ a e) (isLam a) σ
-        else chkWith (fun _ => asN) false σ)
-        s).flatMap parts
+      | _ => synth insts datas lets ls Γ f (fnExp e))
   | Γ, .lam b _ body, e =>
     match e with
     | .full (.fn σ τ) =>
@@ -330,7 +362,7 @@ theorem synth_sound (cert : Cert) (ls : Levels) : ∀ (t : Term) (Γ : List Shap
     exact hasShape_parts _ _ hp (.const (mem_instsOf _ _ _ _ hs))
   | app f a m r ihf iha =>
     intro Γ e σ h
-    simp only [synth] at h
+    simp only [synth, appStep] at h
     obtain ⟨τ₀, h, hp⟩ := List.mem_flatMap.1 h
     refine hasShape_parts _ _ hp ?_
     obtain ⟨s, hs, hτ⟩ := List.mem_flatMap.1 h
@@ -360,6 +392,7 @@ theorem synth_sound (cert : Cert) (ls : Levels) : ∀ (t : Term) (Γ : List Shap
     intro Γ e σ h
     cases e with
     | none => simp [synth] at h
+    | after _ _ => simp [synth] at h
     | dom σ' =>
       simp only [synth] at h
       split at h
