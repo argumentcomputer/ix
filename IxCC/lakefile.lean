@@ -289,6 +289,13 @@ shared program build (`nix/sources.nix`). -/
 lean_exe «tests-grounding» where
   root := `IxCCTests.Grounding.Main
 
+/- The shape producer and the shape decision (`IxCCCorrect.Shape2Produce`,
+`IxCCCorrect.Shape2Check`) on the committed K1 benchmark closures and the phase-1 scalar
+corpus, root by root: accept, or the first instance the decision refuses. It reports and
+asserts nothing. Not part of the shared program build or of any required check. -/
+lean_exe «tests-shape» where
+  root := `IxCCTests.Shape.Main
+
 lean_exe «tests-ixon-v3» where
   root := `IxCCTests.IxonV3.Main
 

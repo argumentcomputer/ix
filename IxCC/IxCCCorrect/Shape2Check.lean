@@ -157,34 +157,51 @@ theorem mem_projRes {datas : List DataDecl} {s : CId} {i : Nat} {σ τ : Shape}
   | irr => simp [projRes] at h
   | fn _ _ => simp [projRes] at h
 
-/-- **Shape synthesis at levels `ls`**: the shapes of a term in a context. `e` is the
-shape expected, which a λ needs and nothing else reads. -/
+/-- What is known of the shape of a term being synthesized: nothing, all of it, or
+(for a λ in function position) its domain. -/
+inductive Exp where
+  | none
+  | full (σ : Shape)
+  | dom (σ : Shape)
+
+/-- **Shape synthesis at levels `ls`**: the shapes of a term in a context. Only a λ
+reads what is expected: the whole shape (a λ passed as an argument, a body checked
+against an instance), or the domain (a λ applied on the spot: the domain is the
+argument's shape). -/
 def synth (insts : List (CId × Levels × Shape)) (datas : List DataDecl) (ls : Levels) :
-    List Shape → Term → Option Shape → List Shape
+    List Shape → Term → Exp → List Shape
   | Γ, .var i, _ => (Γ[i]?).toList
   | _, .natLit _, _ => [.nat]
   | _, .sort _, _ => [.irr]
   | _, .pi _ _ _, _ => [.irr]
   | _, .const c us, _ => instsOf insts c (us.map (evalUniv ls))
   | Γ, .app f a _ r, _ =>
-    (synth insts datas ls Γ f none).flatMap fun s =>
-      appRes (r.irrAt ls) (fun σ => decide (σ ∈ synth insts datas ls Γ a (some σ))) s
+    (match f with
+      | .lam _ _ _ =>
+        (if r.irrAt ls then [Shape.irr] else synth insts datas ls Γ a .none).flatMap fun σ =>
+          synth insts datas ls Γ f (.dom σ)
+      | _ => synth insts datas ls Γ f .none).flatMap fun s =>
+      appRes (r.irrAt ls) (fun σ => decide (σ ∈ synth insts datas ls Γ a (.full σ))) s
   | Γ, .lam b _ body, e =>
     match e with
-    | some (.fn σ τ) =>
+    | .full (.fn σ τ) =>
       if b.propWhen.allowsBeta ls then
-        if τ ∈ synth insts datas ls (σ :: Γ) body (some τ) then [.fn σ τ] else []
+        if τ ∈ synth insts datas ls (σ :: Γ) body (.full τ) then [.fn σ τ] else []
+      else []
+    | .dom σ =>
+      if b.propWhen.allowsBeta ls then
+        (synth insts datas ls (σ :: Γ) body .none).map fun τ => .fn σ τ
       else []
     | _ => []
   | Γ, .letE _ _ r _ v body, e =>
     if r.irrAt ls then synth insts datas ls (.irr :: Γ) body e
-    else (synth insts datas ls Γ v none).flatMap fun σ => synth insts datas ls (σ :: Γ) body e
-  | Γ, .proj s i e', _ => (synth insts datas ls Γ e' none).flatMap fun σ => projRes datas s i σ
+    else (synth insts datas ls Γ v .none).flatMap fun σ => synth insts datas ls (σ :: Γ) body e
+  | Γ, .proj s i e', _ => (synth insts datas ls Γ e' .none).flatMap fun σ => projRes datas s i σ
   | _, _, _ => []
 
 /-- A synthesized shape is a derivation. -/
 theorem synth_sound (cert : Cert) (ls : Levels) : ∀ (t : Term) (Γ : List Shape)
-    (e : Option Shape) (σ : Shape), σ ∈ synth cert.insts cert.datas ls Γ t e → HasShape cert.sig ls Γ t σ := by
+    (e : Exp) (σ : Shape), σ ∈ synth cert.insts cert.datas ls Γ t e → HasShape cert.sig ls Γ t σ := by
   intro t
   induction t with
   | var i =>
@@ -204,15 +221,36 @@ theorem synth_sound (cert : Cert) (ls : Levels) : ∀ (t : Term) (Γ : List Shap
     intro Γ e σ h
     simp only [synth] at h
     obtain ⟨s, hs, hτ⟩ := List.mem_flatMap.1 h
+    have hf : HasShape cert.sig ls Γ f s := by
+      cases f with
+      | lam b d body =>
+        obtain ⟨σ₀, -, hs'⟩ := List.mem_flatMap.1 hs
+        exact ihf _ _ _ hs'
+      | var _ => exact ihf _ _ _ hs
+      | sort _ => exact ihf _ _ _ hs
+      | const _ _ => exact ihf _ _ _ hs
+      | app _ _ _ _ => exact ihf _ _ _ hs
+      | pi _ _ _ => exact ihf _ _ _ hs
+      | letE _ _ _ _ _ _ => exact ihf _ _ _ hs
+      | proj _ _ _ => exact ihf _ _ _ hs
+      | natLit _ => exact ihf _ _ _ hs
+      | strLit _ => exact ihf _ _ _ hs
     obtain ⟨σ', rfl, hc⟩ := mem_appRes hτ
     rcases hc with ⟨hr, rfl⟩ | ⟨hr, ha⟩
-    · exact .appIrr hr (ihf _ _ _ hs)
-    · exact .app hr (ihf _ _ _ hs) (iha _ _ _ (of_decide_eq_true ha))
+    · exact .appIrr hr hf
+    · exact .app hr hf (iha _ _ _ (of_decide_eq_true ha))
   | lam b d body _ ihb =>
     intro Γ e σ h
     cases e with
     | none => simp [synth] at h
-    | some s =>
+    | dom σ' =>
+      simp only [synth] at h
+      split at h
+      · rename_i hb
+        obtain ⟨τ', hbody, rfl⟩ := List.mem_map.1 h
+        exact .lam hb (ihb _ _ _ hbody)
+      · simp at h
+    | full s =>
       cases s with
       | fn σ' τ' =>
         simp only [synth] at h
@@ -402,7 +440,7 @@ def rulesOk (insts : List (CId × Levels × Shape)) (datas : List DataDecl) (ls 
       | some rule =>
         match peelLams (1 + ms.length + fl.length) rule.rhs with
         | some body =>
-          decide (τ ∈ synth insts datas ls (fl.reverse ++ (ms.reverse ++ [.irr])) body (some τ))
+          decide (τ ∈ synth insts datas ls (fl.reverse ++ (ms.reverse ++ [.irr])) body (.full τ))
         | none => false
       | none => false) && rulesOk insts datas ls rules ms τ (j + 1) rest
 
@@ -622,7 +660,7 @@ def entryOk (p : Program) (cert : Cert) (c : CId) (ls : Levels) (σ : Shape) : B
   | some (.prim op) =>
     if op.isPredicate then predOk p cert op σ
     else decide (σ = arrows (List.replicate op.arity .nat) .nat)
-  | some (.eqn _ body) => decide (σ ∈ synth cert.insts cert.datas ls [] body (some σ))
+  | some (.eqn _ body) => decide (σ ∈ synth cert.insts cert.datas ls [] body (.full σ))
   | some (.csimp g us _) => decide ((g, us.map (evalUniv ls), σ) ∈ cert.insts)
   | some (.case r) =>
     match p.decl? r with
@@ -632,7 +670,7 @@ def entryOk (p : Program) (cert : Cert) (c : CId) (ls : Levels) (σ : Shape) : B
   | some (.word _ _ _) => false
   | none =>
     match p.decl? c with
-    | some (.defn .defn .safe _ _ v) => decide (σ ∈ synth cert.insts cert.datas ls [] v (some σ))
+    | some (.defn .defn .safe _ _ v) => decide (σ ∈ synth cert.insts cert.datas ls [] v (.full σ))
     | some (.ctor _ _ _ _ np nf _) =>
       zeroOk p c np nf σ || succOk p c np nf σ || enumCtorOk cert c σ || dataCtorOk cert c σ
     | some (.recr _ _ _ np nmot nmin ni ind rules _) =>

@@ -7,6 +7,9 @@ import IxCCCorrect.Progress
 import IxCCCorrect.Shape
 import IxCCCorrect.Shape1
 import IxCCCorrect.Shape1Check
+import IxCCCorrect.Shape2
+import IxCCCorrect.Shape2Check
+import IxCCCorrect.Shape2Produce
 import IxCCCorrect.Fence
 
 /-!
@@ -36,6 +39,11 @@ propositions that elaborate, and what the existing theorems establish today.
 * `IxCCCorrect.Shape1`, `IxCCCorrect.Shape1Check`: the second class, first-order
   `Nat` and enumeration programs with irrelevant positions, `case` and recursors,
   with its decision (`certOk`, `neverWrong_of_cert_nat`).
+* `IxCCCorrect.Shape2`, `IxCCCorrect.Shape2Check`: the third class, with data
+  (constructors with parameters and fields, `case` at data, projections), its decision,
+  and `run_ok_vals`, the unviewed statement at any shaped argument values.
+* `IxCCCorrect.Shape2Produce`: an untrusted producer of shape certificates from a
+  checked source program (run on the committed closures by `tests-shape`).
 * `IxCCCorrect.Fence`: the library's axiom fence, an exact `#print axioms`
   assertion for every theorem above (each within `propext`, `Classical.choice`,
   `Quot.sound`).
