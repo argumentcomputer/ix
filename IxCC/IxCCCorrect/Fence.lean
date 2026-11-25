@@ -6,7 +6,12 @@ import IxCCCorrect.Shape1
 import IxCCCorrect.Shape1Check
 import IxCCCorrect.Shape2
 import IxCCCorrect.Shape2Check
+import IxCCCorrect.ShapeHook
 import IxCCCorrect.Compile
+import IxCCCorrect.GroundRoot
+import IxCCCorrect.GroundCheck
+import IxCCCorrect.Compose
+import IxCCCorrect.ComposeExe
 
 /-! # The target statements' axiom fence: every theorem `IxCCCorrect` proves uses at most the
 three standard axioms. Building the library checks it (`#guard_msgs`), in the required check
@@ -328,8 +333,14 @@ routes and the progress targets are definitions and have no fence. -/
 /-- info: 'IxCC.Correct.Shape2.fire_cases_ord' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.Shape2.fire_cases_ord
 
+/-- info: 'IxCC.Correct.Shape2.fire_cases_sub' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.fire_cases_sub
+
 /-- info: 'IxCC.Correct.Shape2.fire_recr_ord' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.Shape2.fire_recr_ord
+
+/-- info: 'IxCC.Correct.Shape2.fire_recr_sub' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.fire_recr_sub
 
 /-- info: 'IxCC.Correct.Shape2.EnvOk.get' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Correct.Shape2.EnvOk.get
@@ -345,6 +356,15 @@ routes and the progress targets are definitions and have no fence. -/
 
 /-- info: 'IxCC.Correct.Shape2.EnvOk.reverse' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Correct.Shape2.EnvOk.reverse
+
+/-- info: 'IxCC.Correct.Shape2.slotOk_irrNone' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.slotOk_irrNone
+
+/-- info: 'IxCC.Correct.Shape2.envOk_fields' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.envOk_fields
+
+/-- info: 'IxCC.Correct.Shape2.envOk_fields_lt' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.envOk_fields_lt
 
 /-- info: 'IxCC.Correct.Shape2.EnvOk.take' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Correct.Shape2.EnvOk.take
@@ -372,6 +392,9 @@ routes and the progress targets are definitions and have no fence. -/
 
 /-- info: 'IxCC.Correct.Shape2.ValOk.data_inv' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Correct.Shape2.ValOk.data_inv
+
+/-- info: 'IxCC.Correct.Shape2.ValOk.inter_inv' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.ValOk.inter_inv
 
 /-- info: 'IxCC.Correct.Shape2.selectRule_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.Shape2.selectRule_ok
@@ -426,6 +449,15 @@ routes and the progress targets are definitions and have no fence. -/
 /-- info: 'IxCC.Correct.Shape2.mem_projRes' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Correct.Shape2.mem_projRes
 
+/-- info: 'IxCC.Correct.Shape2.hasShape_parts' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.hasShape_parts
+
+/-- info: 'IxCC.Correct.Shape2.isLam_eq' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.isLam_eq
+
+/-- info: 'IxCC.Correct.Shape2.chkWith_sound' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.chkWith_sound
+
 /-- info: 'IxCC.Correct.Shape2.synth_sound' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.Shape2.synth_sound
 
@@ -441,11 +473,20 @@ routes and the progress targets are definitions and have no fence. -/
 /-- info: 'IxCC.Correct.Shape2.casesOk_sound' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Correct.Shape2.casesOk_sound
 
+/-- info: 'IxCC.Correct.Shape2.casesSubOkAt_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.casesSubOkAt_sound
+
 /-- info: 'IxCC.Correct.Shape2.rulesOk_sound' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.Shape2.rulesOk_sound
 
+/-- info: 'IxCC.Correct.Shape2.recrOkAt_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.recrOkAt_sound
+
 /-- info: 'IxCC.Correct.Shape2.recrOk_sound' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.Shape2.recrOk_sound
+
+/-- info: 'IxCC.Correct.Shape2.recrSubOkAt_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.recrSubOkAt_sound
 
 /-- info: 'IxCC.Correct.Shape2.dataCtorOk_sound' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.Shape2.dataCtorOk_sound
@@ -470,6 +511,51 @@ routes and the progress targets are definitions and have no fence. -/
 
 /-- info: 'IxCC.Correct.Shape2.neverWrong_of_cert_enum' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.Shape2.neverWrong_of_cert_enum
+
+/-! ## `IxCCCorrect.ShapeHook` -/
+
+/-- info: 'IxCC.Correct.Shape2.tys_nat_of_resultTy' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.tys_nat_of_resultTy
+
+/-- info: 'IxCC.Correct.Shape2.rootsOk_get' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.rootsOk_get
+
+/-- info: 'IxCC.Correct.Shape2.neverWrong_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.neverWrong_of_check
+
+/-- info: 'IxCC.Correct.Shape2.neverStuck_checked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.neverStuck_checked
+
+/-- info: 'IxCC.Correct.Shape2.neverWrong_of_enumRoot' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.neverWrong_of_enumRoot
+
+/-- info: 'IxCC.Correct.Shape2.frontRootsOk_get' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.frontRootsOk_get
+
+/-- info: 'IxCC.Correct.Shape2.runShaped_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.runShaped_ok
+
+/-- info: 'IxCC.Correct.Shape2.runShaped_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.runShaped_sound
+
+/-- info: 'IxCC.Correct.Shape2.neverWrong_of_shape_view' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.neverWrong_of_shape_view
+
+/-- info: 'IxCC.Correct.Shape2.rc_tys_nat_of_resultTy' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.rc_tys_nat_of_resultTy
+
+/-- info: 'IxCC.Correct.Shape2.rc_view_nat_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.rc_view_nat_ok
+
+/-- info: 'IxCC.Correct.Shape2.rc_neverWrong_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.rc_neverWrong_of_check
+
+/-- info: 'IxCC.Correct.Shape2.rcRunShaped_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.rcRunShaped_sound
+
+/-- info: 'IxCC.Correct.Shape2.rc_sound_of_shape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.rc_sound_of_shape
+
 /-! ## `IxCCCorrect.Compile` -/
 
 /-- info: 'IxCC.Correct.extract_all' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -496,6 +582,9 @@ routes and the progress targets are definitions and have no fence. -/
 /-- info: 'IxCC.Correct.executable_today' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.executable_today
 
+/-- info: 'IxCC.Correct.compiledAs_of_stages' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.compiledAs_of_stages
+
 /-- info: 'IxCC.Correct.compile_today' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.compile_today
 
@@ -514,5 +603,136 @@ routes and the progress targets are definitions and have no fence. -/
 /-- info: 'IxCC.Correct.compileWith_route' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.compileWith_route
 
-/-- info: 'IxCC.Correct.compiledAs_of_stages' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Correct.compiledAs_of_stages
+/-! ## `IxCCCorrect.GroundRoot` -/
+
+/-- info: 'IxCC.Correct.foArgs_nats' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.foArgs_nats
+
+/-- info: 'IxCC.Correct.denotesList_lits' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.denotesList_lits
+
+/-- info: 'IxCC.Correct.rootCanon_coreWK' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.rootCanon_coreWK
+
+/-- info: 'IxCC.Correct.Grounded.canon_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Grounded.canon_sound
+
+/-- info: 'IxCC.Correct.Grounded.app_denotes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Grounded.app_denotes
+
+/-- info: 'IxCC.Correct.Grounded.same' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Grounded.same
+
+/-! ## `IxCCCorrect.GroundCheck` -/
+
+/-- info: 'IxCC.Correct.viewTag_some' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.viewTag_some
+
+/-- info: 'IxCC.Correct.ctorsListed_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.ctorsListed_sound
+
+/-- info: 'IxCC.Correct.resultOk_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.resultOk_sound
+
+/-- info: 'IxCC.Correct.groundOkB_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.groundOkB_sound
+
+/-- info: 'IxCC.Correct.groundCheck_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.groundCheck_sound
+
+/-! ## `IxCCCorrect.Compose` -/
+
+/-- info: 'IxCC.Correct.admits_of_ingress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.admits_of_ingress
+
+/-- info: 'IxCC.Correct.obsOf_lit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.obsOf_lit
+
+/-- info: 'IxCC.Correct.obsOf_con' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.obsOf_con
+
+/-- info: 'IxCC.Correct.viewNat_viewOf' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.viewNat_viewOf
+
+/-- info: 'IxCC.Correct.viewNat_treeViewOf' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.viewNat_treeViewOf
+
+/-- info: 'IxCC.Correct.srcRun_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.srcRun_ok
+
+/-- info: 'IxCC.Correct.agrees_of_srcPlainEval' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.agrees_of_srcPlainEval
+
+/-- info: 'IxCC.Correct.recheck_agrees' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.recheck_agrees
+
+/-- info: 'IxCC.Correct.rc_agrees' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.rc_agrees
+
+/-- info: 'IxCC.Correct.groundCheckRecheck_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.groundCheckRecheck_sound
+
+/-- info: 'IxCC.Correct.groundCheckRc_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.groundCheckRc_sound
+
+/-! ## `IxCCCorrect.ComposeExe` -/
+
+/-- info: 'IxCC.Correct.written_append' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.written_append
+
+/-- info: 'IxCC.Correct.written_prefix' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.written_prefix
+
+/-- info: 'IxCC.Correct.stdout_started' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.stdout_started
+
+/-- info: 'IxCC.Correct.accepted_prefix' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Correct.accepted_prefix
+
+/-- info: 'IxCC.Correct.writeSeq_written_other' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.writeSeq_written_other
+
+/-- info: 'IxCC.Correct.writeSeq_written_prefix' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.writeSeq_written_prefix
+
+/-- info: 'IxCC.Correct.stdout_reportsMsg' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.stdout_reportsMsg
+
+/-- info: 'IxCC.Correct.stdout_printsResult' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.stdout_printsResult
+
+/-- info: 'IxCC.Correct.stdout_plainRefused' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.stdout_plainRefused
+
+/-- info: 'IxCC.Correct.stdout_of_outcome' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.stdout_of_outcome
+
+/-- info: 'IxCC.Correct.parseArg_of_parseArgBytes' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.parseArg_of_parseArgBytes
+
+/-- info: 'IxCC.Correct.mapM_parseArg_of_parseArgsList' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.mapM_parseArg_of_parseArgsList
+
+/-- info: 'IxCC.Correct.abi_parse_of_parseArgsList' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.abi_parse_of_parseArgsList
+
+/-- info: 'IxCC.Correct.answer_lt_of_agrees' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.answer_lt_of_agrees
+
+/-- info: 'IxCC.Correct.tier1Stdout_of_outcome' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.tier1Stdout_of_outcome
+
+/-- info: 'IxCC.Correct.recheck_arity' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.recheck_arity
+
+/-- info: 'IxCC.Correct.plain_exe_agrees' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.plain_exe_agrees
+
+/-- info: 'IxCC.Correct.plain_exe_tier1Stdout' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.plain_exe_tier1Stdout
+
+/-- info: 'IxCC.Correct.rc_plain_exe_agrees' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.rc_plain_exe_agrees
+
+/-- info: 'IxCC.Correct.rc_plain_exe_tier1Stdout' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.rc_plain_exe_tier1Stdout

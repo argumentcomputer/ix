@@ -149,6 +149,9 @@ in
       # sum-loop's big-step levels run in child processes with a 4 GiB Lean
       # stack (LEAN_STACK_SIZE_KB): about 4.4 GB peak.
       launch tests-pipeline $bin/tests-pipeline ${nativeArg}
+      # the pure compiler (`IxCC.Compile.compile`) is a function of its arguments and is the
+      # compiler the command line runs: twice, in another process, against `ixcc compile`
+      launch tests-pure-compile $bin/tests-pure-compile
       launch corpus-check $bin/corpus check
       launch certified-census-protocol $bin/certified-census --self-test
       launch tests-corpus $bin/tests-corpus ${nativeArg} ${exeArg}

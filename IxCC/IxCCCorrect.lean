@@ -12,6 +12,10 @@ import IxCCCorrect.Shape2Check
 import IxCCCorrect.Shape2Produce
 import IxCCCorrect.ShapeHook
 import IxCCCorrect.Compile
+import IxCCCorrect.GroundRoot
+import IxCCCorrect.GroundCheck
+import IxCCCorrect.Compose
+import IxCCCorrect.ComposeExe
 import IxCCCorrect.Fence
 
 /-!
@@ -54,6 +58,13 @@ propositions that elaborate, and what the existing theorems establish today.
   (`IxCC.Compile.compile`), with the proof that every output meets it
   (`compile_today`, `compile_route`), and `compileWith`, the compiler with the two
   further checks of the route between its stages.
+* `IxCCCorrect.GroundRoot`: the grounding library's root theorem restated at a canonical
+  result, in existence form, as the composition with the compiler needs it.
+* `IxCCCorrect.GroundCheck`: `groundCheck`, the pipeline's grounding check (run on every
+  committed root by `tests-grounding pipeline`), and its soundness.
+* `IxCCCorrect.Compose`, `IxCCCorrect.ComposeExe`: the compiled object, and then what the
+  plain executable prints over its checked core, agree with the kernel meaning of the
+  claimed address, for a program both the certificate checker and `groundCheck` accept.
 * `IxCCCorrect.Fence`: the library's axiom fence, an exact `#print axioms`
   assertion for every theorem above (each within `propext`, `Classical.choice`,
   `Quot.sound`).
