@@ -22,9 +22,11 @@ collected in `Checked`. `check` implies `Checked` (`Fir.Proof.Shape.check_checke
 **Range facts are shapes.** The rules for `Nat` primitives carry bounds
 (`natLt a + natLt b` is `natLt (a + b)`), so a checked `natLt b` is a validated range.
 
-**Array primitives.** `Lam.Prim` has no array operation at this commit. The rules for them
-(`ArrOk` in the statement module) have a marked place below; the value judgment already has
-its `arr` clause, read through `ArrEnc`.
+**Array primitives.** `Fir.primResult` evaluates them (`Src.ArrOp.eval` at `Fir.model`), and
+today's rules give their results only `any` (`natPrimResult`, `primAny`), so soundness holds for
+every array reader. Their typed rules (`ArrOk`) are stated below and sound at Fir's reader
+(`arrEnc`, `Fir.Proof.Shape.arrOkSound_fir`); they are not yet a rule of `RhsOk`, which would
+make soundness hold at that reader only. The value judgment reads arrays through `ArrEnc`.
 
 The checker (`check` and everything it calls) recurses structurally and uses lists and
 `Src.NatMap` only, so the kernel can evaluate it (the style `IxCCTests.Recheck.Audit` checks).
@@ -80,10 +82,14 @@ end ShapeCert
 
 /-- How `Fir.Val` holds an array: the one reader the value judgment needs. (Recommended
 encoding, design note 1.4: a constructor value under a reserved key with one field per element,
-so no `Val` constructor is added.) Soundness holds for every reader while no primitive makes
-an array. -/
+so no `Val` constructor is added.) Soundness holds for every reader while no rule gives an
+array primitive's result a shape other than `any`. -/
 structure ArrEnc where
   asArr : Val → Option (List Val)
+
+/-- **Fir's array reader**: a constructor value under the reserved key `Key.CtorKey.arr`
+(`Fir.Val.asArr`, the reader of `Fir.model`). -/
+def arrEnc : ArrEnc := ⟨Val.asArr⟩
 
 /-! ## The value judgment: what a shape says of a `Fir` value -/
 
@@ -175,19 +181,42 @@ inductive PrimOk : Lam.Prim → List Shape → Shape → Prop
   | shr {a : Nat} {σ τ : Shape} : σ.le (.natLt a) = true → PrimOk .natShr [σ, τ] (.natLt a)
   | pred {a : Nat} {σ : Shape} : σ.le (.natLt a) = true → PrimOk .natPred [σ] (.natLt a)
 
-/-! ### Array primitives: the marked place (lane `prims-core`)
+/-! ### Array primitives (lane `prims-core`)
 
-`IxCCDesign.OnePipeline.ShapeCert.ArrOk` (the twelve operations: typed rules that keep the
-element shape and track a static length, each with an untyped fallback) goes here once
-`Lam.Prim` has an array constructor and `Fir.primResult` evaluates it. What lands with it:
+`ArrOk` is the statement module's (`IxCCDesign.OnePipeline.ShapeCert.ArrOk`): the twelve
+operations, typed rules that keep the element shape and track a static length, each with an
+untyped fallback. It is sound at Fir's reader (`Fir.Proof.Shape.arrOkSound_fir`, from
+`arrOk_sound` in any model whose arrays the reader reads back). What is still to land:
 
-* `inductive ArrOk : ArrOp → List Shape → Shape → Prop`, as the statement module has it;
-* one rule of `RhsOk`, `arr : ArgsOk fs args σs → ArrOk op σs τ → RhsOk P cert fs (.prim (.arr op) args) τ`;
-* `arrShape : ArrOp → List Shape → Shape` beside `primShape`, and its case in `rhsOk`;
-* `Fir.Proof.Shape.arrOkSound`, and the `arr` case of `rhsSound`.
+* one rule of `RhsOk`, `arr : ArgsOk fs args σs → ArrOk op σs τ →
+  RhsOk P cert fs (.prim (.arr op) args) τ`, and its case in `rhsSound`;
+* `arrShape : ArrOp → List Shape → Shape` beside `primShape`, and its case in `rhsOk`.
 
-`natPrimResult` and `primShape` already answer `any` for a primitive they do not list, so
-today's rules stay sound when the constructor is added. -/
+The rule makes `rhsSound`, `evalSound`, `codeSound` and `checkSound` hold at `arrEnc` only (an
+empty array has shape `arr e (some 0)` only for a reader that reads it), a statement change that
+waits for the orchestrator. Until then `natPrimResult` and `primShape` answer `any` for an
+array primitive, so today's rules are sound for every reader. -/
+
+/-- **An array primitive on operands of shapes `σs` returns a `τ`.** The typed rules keep the
+element shape and track a static length; each has an untyped fallback, so generic code checks. -/
+inductive ArrOk : Src.ArrOp → List Shape → Shape → Prop
+  | empty {σ e : Shape} : ArrOk .empty [σ] (.arr e (some 0))
+  | replicate {σ ν e : Shape} : ν.le e = true → ArrOk .replicate [σ, ν] (.arr e none)
+  | sizeKnown {e : Shape} {n : Nat} : ArrOk .size [.arr e (some n)] (.natLt (n + 1))
+  | size {σ : Shape} : ArrOk .size [σ] .nat
+  | get {e τ : Shape} {n : Option Nat} : ArrOk .get [.arr e n, τ] e
+  | set {e τ ν : Shape} {n : Option Nat} : ν.le e = true → ArrOk .set [.arr e n, τ, ν] (.arr e n)
+  | push {e ν : Shape} {n : Option Nat} : ν.le e = true →
+      ArrOk .push [.arr e n, ν] (.arr e (n.map (· + 1)))
+  | pop {e : Shape} {n : Option Nat} : ArrOk .pop [.arr e n] (.arr e (n.map (· - 1)))
+  | append {e : Shape} {n m : Option Nat} : ArrOk .append [.arr e n, .arr e m] (.arr e none)
+  | extract {e σ τ : Shape} {n : Option Nat} : ArrOk .extract [.arr e n, σ, τ] (.arr e none)
+  | copySlice {e σ τ υ : Shape} {n m : Option Nat} :
+      ArrOk .copySlice [.arr e n, σ, .arr e m, τ, υ] (.arr e none)
+  /-- whatever the operands, an operation that returns an array returns an array -/
+  | arrAny {op : Src.ArrOp} {σs : List Shape} :
+      op ≠ .size → op ≠ .get → op ≠ .toList → ArrOk op σs (.arr .any none)
+  | any {op : Src.ArrOp} {σs : List Shape} : ArrOk op σs .any
 
 /-- **A right-hand side yields a value of shape `σ`.** A call always checks its arguments: the
 callee was checked under its parameters' shapes. -/
@@ -300,6 +329,14 @@ shapes gives a literal of the result shape. -/
 def PrimOkSound (cert : ShapeCert) (enc : ArrEnc) : Prop :=
   ∀ (P : Program) (op : Lam.Prim) (σs : List Shape) (τ : Shape) (vs : List Val) (v : Val),
     PrimOk op σs τ → ValsOk cert enc σs vs → Fir.primResult P op vs = .ok v → ValOk cert enc τ v
+
+/-- The rules for the array primitives are sound in a value model (the statement module's
+`ArrOkSound`). `Fir.model` reads no `List` value, so it is not `Lawful`; the theorem proved
+(`Fir.Proof.Shape.arrOk_sound`) asks only that the model read back its arrays. -/
+def ArrOkSound (cert : ShapeCert) (enc : ArrEnc) (M : Sem.ValModel Val) : Prop :=
+  M.Lawful → M.asArr = enc.asArr → (M.nat = fun n => .lit (.nat n)) →
+    ∀ (op : Src.ArrOp) (σs : List Shape) (τ : Shape) (vs : List Val) (v : Val),
+      ArrOk op σs τ → ValsOk cert enc σs vs → op.eval M vs = .ok v → ValOk cert enc τ v
 
 /-! ## The checker -/
 

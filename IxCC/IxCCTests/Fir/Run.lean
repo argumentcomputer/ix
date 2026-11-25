@@ -3,6 +3,7 @@ import IxCCTests.Fir.Rules
 import IxCCTests.Fir.Gen
 import IxCCTests.Fir.Bench
 import IxCCTests.Fir.Render
+import IxCCTests.Fir.ArrayPrims
 
 /-! The `tests-fir` suite: the rules of Fir, the
 Phase 1 Own fragment and Cfg; every root and first-order constant of the K1
@@ -55,6 +56,7 @@ def main (args : List String) : IO UInt32 := do
     part a "rules of Fir, Own and Cfg; hand-written Anf; well-formedness" (Rules.run a)
     part a "k1.ixe and bench-k1: Anf → Fir → Own → Cfg" (Differential.packs a)
     part a "the fallback route, declined at Fir" (Differential.fallback a)
+    part a "array primitives at Fir and Own (hand-written Fir)" (ArrayPrims.run a)
     part a "generated first-order Anf programs" (Gen.firstOrder a 1000)
     part a "generated Lam programs through the Anf pipeline" (Gen.lamGen a 300)
     part a "bench-k1 entries at their test sizes" (Bench.entries a (← IO.appPath))

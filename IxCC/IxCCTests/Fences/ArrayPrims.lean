@@ -9,6 +9,7 @@ import IxCC.Fir.Proof.ArrFree
 import IxCC.Own.Proof.Immortal
 import IxCC.Own.Plain.Proof.Owned.PrimStep
 import IxCC.Cfg.Proof.Sim
+import IxCC.Fir.Proof.Shape
 
 /-! Required axiom fences for the array primitives on the certified pipeline
 (`plans/ONE-PIPELINE.md`, lane `prims-core`): the operations' meaning over a value model
@@ -221,3 +222,39 @@ simulation carries `Code.arrFree` of every body and join body. -/
 
 /-- info: 'IxCC.Cfg.Proof.JArr.after' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Cfg.Proof.JArr.after
+
+/-! The shape certificate's array rules (`Fir.Shape.ArrOk`, the statement module's) are sound in a
+model whose arrays the reader reads back, and so at Fir's model and reader (`Fir.Shape.arrEnc`). -/
+
+/-- info: 'IxCC.Fir.Proof.Shape.valsOk_cons_inv' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.Shape.valsOk_cons_inv
+
+/-- info: 'IxCC.Fir.Proof.Shape.valsOk_nil_inv' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.Shape.valsOk_nil_inv
+
+/-- info: 'IxCC.Fir.Proof.Shape.valOk_arr_inv' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.Shape.valOk_arr_inv
+
+/-- info: 'IxCC.Fir.Proof.Shape.mem_extractList' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.Shape.mem_extractList
+
+/-- info: 'IxCC.Fir.Proof.Shape.mem_copySliceList' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.Shape.mem_copySliceList
+
+/-- info: 'IxCC.Fir.Proof.Shape.eval_ok_arr' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.Shape.eval_ok_arr
+
+/-- info: 'IxCC.Fir.Proof.Shape.arrOk_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.Shape.arrOk_sound
+
+/-- info: 'IxCC.Fir.Proof.Shape.arrOkSound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.Shape.arrOkSound
+
+/-- info: 'IxCC.Fir.Proof.Shape.model_asArr_arr' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.Shape.model_asArr_arr
+
+/-- info: 'IxCC.Fir.Proof.Shape.arrOkSound_fir' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.Shape.arrOkSound_fir
+
+/-- info: 'IxCC.Fir.Proof.Shape.primResult_arrOk' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.Shape.primResult_arrOk
