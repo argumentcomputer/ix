@@ -20,6 +20,7 @@ import IxCCCorrect.Compose
 import IxCCCorrect.ComposeExe
 import IxCCCorrect.GroundShape
 import IxCCCorrect.ComposeExit
+import IxCCCorrect.UniqueIota
 import IxCCCorrect.Unique
 import IxCCCorrect.Fence
 
@@ -87,6 +88,8 @@ propositions that elaborate, and what the existing theorems establish today.
   clauses for the checked core (`Tier1Core`), all but the shipped-file link of `Tier1`.
 * `IxCCCorrect.Unique`: two answers that agree are equal, at a `Nat` result, where a set theory
   exists and the environment stores what separates numerals (`agrees_unique`).
+* `IxCCCorrect.UniqueIota`: the same with `Bool.true ≠ Bool.false` from the `Bool` recursor's
+  ι-law, so no stored witness theorem is needed (`agrees_unique_iota`).
 * `IxCCCorrect.Fence`: the library's axiom fence, an exact `#print axioms`
   assertion for every theorem above (each within `propext`, `Classical.choice`,
   `Quot.sound`).
