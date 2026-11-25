@@ -21,6 +21,7 @@ export IxCC.SrcShape (
   recrSubOkAt_sound zeroOk succOk enumCtorOk dataCtorAt dataCtorScan dataCtorScan_sound
   dataCtorOk ctorAnyOk dataCtorOk_sound ctorsOk ctorsOk_sound structOk structOk_sound enumOk
   enumOk_sound entryOk entryOk_sound certOk sigOk_of_cert neverWrong_of_cert_nat
-  neverWrong_of_cert_enum)
+  neverWrong_of_cert_enum
+  argsAll arrows_data_inj getElem?_singleton_some valOk_single wordCtorOk wordCtorOk_sound wordEntryOk_range )
 
 end IxCC.Correct.Shape2

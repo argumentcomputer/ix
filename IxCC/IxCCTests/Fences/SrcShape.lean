@@ -3,7 +3,8 @@ import IxCC.Shape.Src.Tree
 /-! Required axiom fences for the source-level shape discipline in production
 (`IxCC.Shape.Progress`, `IxCC.Shape.Src.*`): the progress statements' discharge lemmas (moved
 from `IxCCCorrect.Progress`, whose fence they were in), the judgment's soundness, the
-decision's soundness, and the hooks' theorems with no "source goes wrong" case. Each is within
+decision's soundness, the range and word lemmas, and the hooks' theorems with no "source goes wrong"
+case. Each is within
 `propext`, `Classical.choice`, `Quot.sound`. Expected messages are preserved verbatim. -/
 
 /-- info: 'IxCC.Progress.NeverWrong.neverStuck' depends on axioms: [propext, Quot.sound] -/
@@ -93,7 +94,7 @@ decision's soundness, and the hooks' theorems with no "source goes wrong" case. 
 /-- info: 'IxCC.SrcShape.synth_sound' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.SrcShape.synth_sound
 
-/-- info: 'IxCC.SrcShape.chkWith_sound' depends on axioms: [propext] -/
+/-- info: 'IxCC.SrcShape.chkWith_sound' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.SrcShape.chkWith_sound
 
 /-- info: 'IxCC.SrcShape.entryOk_sound' depends on axioms: [propext, Quot.sound] -/
@@ -164,3 +165,18 @@ decision's soundness, and the hooks' theorems with no "source goes wrong" case. 
 
 /-- info: 'IxCC.SrcShape.rcRunShapedTree_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.SrcShape.rcRunShapedTree_sound
+
+/-- info: 'IxCC.SrcShape.wordEntryOk_range' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.SrcShape.wordEntryOk_range
+
+/-- info: 'IxCC.SrcShape.wordCtorOk_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.SrcShape.wordCtorOk_sound
+
+/-- info: 'IxCC.SrcShape.arrows_data_inj' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.SrcShape.arrows_data_inj
+
+/-- info: 'IxCC.SrcShape.valOk_single' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.SrcShape.valOk_single
+
+/-- info: 'IxCC.SrcShape.ValOk.natLt_inv' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.SrcShape.ValOk.natLt_inv
