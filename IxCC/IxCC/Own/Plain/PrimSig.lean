@@ -12,8 +12,9 @@ A signature replaces the rule "every argument and the result of a primitive is a
 which is true of the primitives of today (`Lam.Prim`: `Nat` and fixed-width word operations, read
 as `Nat` literals) and of no primitive over a heap value. Today's rule is the signature
 `PrimSig.scalar`, which `lamSig` gives every primitive: the checker's step under it is the old
-step (`primStep_conservative`, `Proof/Owned/PrimStep.lean`). Design: `plans/ONE-PIPELINE.md`,
-section 3.2. -/
+step (`primStep_conservative`, `Proof/Owned/PrimStep.lean`), and the semantic contract a
+signature has to meet is `PrimSig.PureSound` (`Proof/Owned/Rhs.lean`), met by `lamSig`
+(`lamSig_pureSound`). Design: `plans/ONE-PIPELINE.md`, section 3.2. -/
 
 set_option autoImplicit false
 

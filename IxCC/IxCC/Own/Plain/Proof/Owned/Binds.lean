@@ -870,6 +870,51 @@ theorem OwnedPre.immArgs :
   | [], _, Γ, owned, pre, _ => ⟨owned, by simpa [Ctx.immArgs] using pre, SameRefs.refl _⟩
   | _ :: _, [], Γ, owned, pre, _ => ⟨owned, by simpa [Ctx.immArgs] using pre, SameRefs.refl _⟩
 
+/-- **The arguments a signature marks `imm` become valid immediates**, given that the value of
+each is one: position by position, so an argument the signature only reads, or consumes, is
+asked nothing. (`OwnedPre.immArgs` above is the same for a mask and asks it of every argument;
+it remains for the `Cfg.Rc` bridge.) -/
+theorem OwnedPre.markImm :
+    ∀ (us : List ArgUse) (args : List Arg) {Γ : Ctx} {owned : List RVal},
+      OwnedPre functions H external live Γ ρf ρo owned lex Δ Jf Jo
+        borrows uniqs retUniq ctors K priv slots slotVals →
+      (∀ (i : Nat) (y : Var), us[i]? = some ArgUse.imm → args[i]? = some (Arg.var y) →
+        Γ.avail y = true ∧ ∃ u, ρo.get? y = some u ∧ ImmUniq ctors u) →
+      ∃ owned', OwnedPre functions H external live (Plain.markImm Γ us args) ρf ρo owned' lex Δ
+        Jf Jo borrows uniqs retUniq ctors K priv slots slotVals ∧ SameRefs owned owned'
+  | [], args, Γ, owned, pre, _ => by
+    have hΓ : Plain.markImm Γ [] args = Γ := by cases args <;> rfl
+    refine ⟨owned, ?_, SameRefs.refl _⟩
+    rw [hΓ]; exact pre
+  | u :: us, [], Γ, owned, pre, _ => by
+    have hΓ : Plain.markImm Γ (u :: us) [] = Γ := by cases u <;> rfl
+    refine ⟨owned, ?_, SameRefs.refl _⟩
+    rw [hΓ]; exact pre
+  | u :: us, a :: as, Γ, owned, pre, hargs => by
+    by_cases hm : u = .imm ∧ ∃ y, a = .var y
+    · obtain ⟨rfl, y, rfl⟩ := hm
+      obtain ⟨hy, v, hv, himm⟩ := hargs 0 y rfl rfl
+      obtain ⟨owned₁, pre₁, hs₁⟩ := pre.setImmUniqVar hy hv himm
+      obtain ⟨owned', pre', hs'⟩ := OwnedPre.markImm us as pre₁ (fun i z hi hz => by
+        obtain ⟨hz', rest⟩ := hargs (i + 1) z (by simpa using hi) (by simpa using hz)
+        exact ⟨Ctx.avail_setImmUniq hz', rest⟩)
+      exact ⟨owned', pre', hs₁.trans hs'⟩
+    · have hstep : Plain.markImm Γ (u :: us) (a :: as) = Plain.markImm Γ us as := by
+        cases u <;> cases a <;> first | rfl | exact absurd ⟨rfl, _, rfl⟩ hm
+      obtain ⟨owned', pre', hs'⟩ := OwnedPre.markImm us as pre (fun i z hi hz =>
+        hargs (i + 1) z (by simpa using hi) (by simpa using hz))
+      refine ⟨owned', ?_, hs'⟩
+      rw [hstep]; exact pre'
+
+/-- A release where the signature has one: nothing stays epoch-borrowed. -/
+theorem OwnedPre.releaseIf (pre : OwnedPre functions H external live Γ ρf ρo owned lex Δ Jf Jo
+    borrows uniqs retUniq ctors K priv slots slotVals) (release : Bool) :
+    OwnedPre functions H external live (if release then Γ.release else Γ) ρf ρo owned lex Δ Jf Jo
+      borrows uniqs retUniq ctors K priv slots slotVals := by
+  cases release <;> simp only [Bool.false_eq_true, ↓reduceIte]
+  · exact pre
+  · exact pre.release
+
 end
 
 end IxCC.Own.Plain

@@ -1,4 +1,5 @@
 import IxCC.Own.Plain.Proof.Owned.Actions
+import IxCC.Own.Plain.Proof.Owned.Inversion
 import IxCC.Own.Plain.Proof.Frames
 import IxCC.Fir.Proof.Unfold
 
@@ -6,8 +7,10 @@ import IxCC.Fir.Proof.Unfold
 
 From the checker's verdict on `x := r` and the source's successful step, the Own step and the
 state after it: a moved token (`x := y`, preserving static uniqueness), an immediate (literals,
-field-less constructors, projections of immediates, primitives), a fresh allocation (statically
-unique!), or a borrowed projection (with `setProj` recorded). -/
+field-less constructors, projections of immediates), a fresh allocation (statically unique!), a
+borrowed projection (with `setProj` recorded), or a primitive under its ownership signature
+(`prim_step_pure`: what is an immediate afterwards is what the signature says, from its contract
+`PrimSig.PureSound`, which `lamSig_pureSound` gives for every primitive of today). -/
 
 set_option autoImplicit false
 
@@ -64,6 +67,29 @@ theorem evalArgs_mem {ρ : Own.Env} :
           have : v = u := Option.some.inj (ha.symm.trans hu)
           subst this; exact List.mem_cons_self
         · exact List.mem_cons_of_mem _ (evalArgs_mem hs hy hu)
+
+/-- The value of a variable argument, at its position. -/
+theorem evalArgs_var_at {ρ : Own.Env} :
+    ∀ {args : List Arg} {vs : List RVal} {i : Nat} {y : Var}, Own.evalArgs ρ args = some vs →
+      args[i]? = some (Arg.var y) → ∃ u, ρ.get? y = some u ∧ vs[i]? = some u
+  | [], _, _, _, _, hy => by simp at hy
+  | a :: as, vs, i, y, h, hy => by
+    cases ha : Own.evalArg ρ a with
+    | none => simp [Own.evalArgs, ha] at h
+    | some v =>
+      cases hs : Own.evalArgs ρ as with
+      | none => simp [Own.evalArgs, ha, hs] at h
+      | some vs' =>
+        have : v :: vs' = vs := by simpa [Own.evalArgs, ha, hs] using h
+        subst this
+        cases i with
+        | zero =>
+          have hay : a = .var y := by simpa using hy
+          subst hay
+          exact ⟨v, ha, rfl⟩
+        | succ i =>
+          obtain ⟨u, hu, hi⟩ := evalArgs_var_at hs (i := i) (y := y) (by simpa using hy)
+          exact ⟨u, hu, by simpa using hi⟩
 
 /-- Variables a primitive reads are available, so they denote. -/
 theorem needArgs_sem {H : Heap} {Γ : Ctx} {ρf : Fir.Env} {ρo : Own.Env}
@@ -161,6 +187,46 @@ theorem primResult_args_immUniq {F : Fir.Program} {H : Heap}
   | some ns =>
     rw [hn] at hnat
     exact natArgs_immUniq hnat
+
+/-! ## What a signature promises
+
+The checker learns that a value is an immediate from a signature (`primStep`: `markImm` for the
+arguments marked `imm`, `ResUse.imm` for the result), so each signature owes the fact. -/
+
+/-- **The contract of a signature for a primitive that touches no heap** (every primitive of
+today). On argument values `vs` with result `v`:
+* each argument the signature marks `imm` is a valid immediate;
+* each argument it consumes is an immediate, so the token taken was vacuous and nothing was
+  released;
+* the result is a valid immediate, whatever the signature calls it: `imm` asks exactly this, and
+  a token (`fresh`) or a borrow (`borrowed`) of an immediate is vacuous.
+
+A primitive that reads or makes a cell (an array operation, a `Nat` held in a limb cell) meets a
+contract over the heap instead; this one is the case in which the heap is unchanged. -/
+structure PrimSig.PureSound (ctors : List Lam.CtorInfo) (sig : PrimSig) (vs : List RVal)
+    (v : RVal) : Prop where
+  immArgs : ∀ (i : Nat) (u : RVal), sig.args[i]? = some ArgUse.imm → vs[i]? = some u →
+    ImmUniq ctors u
+  consumed : ∀ (i : Nat) (u : RVal), sig.args[i]? = some ArgUse.consume → vs[i]? = some u →
+    ImmVal u
+  result : ImmUniq ctors v
+
+/-- **Today's primitives meet their signature.** A primitive that succeeds read every argument
+as a `Nat` literal (`natArgs`) and returned a literal or a pinned Boolean constructor: the
+arguments `lamSig` marks `imm` are immediates and so is the result. The fact comes from the
+primitive's semantics, per signature, and not from a rule about primitives in general. -/
+theorem lamSig_pureSound {F : Fir.Program} {H : Heap}
+    {op : Lam.Prim} {vs : List RVal} {ws : List Fir.Val} {w : Fir.Val}
+    (hpins : BoolPinsOk F) (hargs : Sem.Forall2 (Proof.Den H) vs ws)
+    (hresult : Fir.primResult F op ws = .ok w) (arity : Nat) :
+    ∃ v, Own.primResult { ctors := F.ctors, known := F.known } op vs = .ok v ∧
+      Proof.Den H v w ∧ (lamSig op arity).PureSound F.ctors vs v := by
+  obtain ⟨v, hres, hden, himm⟩ := primResult_immUniq hpins hargs hresult
+  have hall := primResult_args_immUniq hargs hresult
+  refine ⟨v, hres, hden, fun i u _ hu => hall u (List.mem_of_getElem? hu), fun i u hi _ => ?_,
+    himm⟩
+  have hm : ArgUse.consume ∈ List.replicate arity ArgUse.imm := List.mem_of_getElem? hi
+  cases List.eq_of_mem_replicate hm
 
 private theorem asCtor_field_immUniq {ctors : List Lam.CtorInfo} {H : Heap} {K : Lam.Known}
     {parent v : RVal} {key : Key.CtorKey} {fields : List RVal}
@@ -265,11 +331,69 @@ private theorem taken_avoids_localPriv (st : OwnedState functions H external liv
     rw [refsIn_append] at hrefs
     omega
 
+/-- **A primitive that touches no heap, under its signature.** From the checker's verdict on
+`x := op args` under `sig` (`primStep`) and a result that meets the signature's contract
+(`PrimSig.PureSound`), the state after the binding: the consumed arguments' tokens were vacuous,
+the arguments marked `imm` are immediates, a release ends the epoch borrows, and the result is
+bound as an immediate, an owned value or a borrow as the signature says. The heap is the same and
+so are the references the tokens hold. The fact that an operand or the result is an immediate is
+the signature's, through the contract. -/
+theorem prim_step_pure (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo
+      borrows uniqs retUniq ctors K priv slots slotVals)
+    {x : Var} (hx : x ∉ live) {sig : PrimSig} {args : List Arg} {Γ' : Ctx}
+    (hc : primStep Γ sig x args = .ok Γ')
+    {vs : List RVal} (hvs : Own.evalArgs ρo args = some vs)
+    {v : RVal} {w : Fir.Val} (hd : Proof.Den H v w)
+    (sound : sig.PureSound ctors vs v) :
+    ∃ owned', OwnedState functions H external (live ++ [x]) Γ' (ρf.insert x w) (ρo.insert x v)
+        owned' lex Δ Jf Jo borrows uniqs retUniq ctors K priv slots slotVals ∧
+      SameRefs owned owned' := by
+  obtain ⟨Γ₁, _, htake, hread, rfl⟩ := primStep_ok hc
+  -- the consumed arguments: immediates, so the tokens taken held no reference
+  obtain ⟨taken, owned₁, inv₁, hs₁, hwk, hpos⟩ := takeConsumed_sem st.takeInv htake
+  have htaken : AllImm taken := fun t ht => by
+    obtain ⟨i, y, hi, hy, hv⟩ := hpos t ht
+    obtain ⟨u, hu, hvi⟩ := evalArgs_var_at hvs hy
+    have : u = t := Option.some.inj (hu.symm.trans hv)
+    subst this
+    exact sound.consumed i u hi hvi
+  have hs₁' : SameRefs owned owned₁ := hs₁.trans (SameRefs.allImm htaken owned₁)
+  have pre₁ := st.pre.weaker hwk inv₁.roots (fun k => Nat.le_of_eq (hs₁' k).symm)
+  -- the arguments marked `imm`: still held (`checkRead`), and immediates by the contract
+  obtain ⟨owned₂, pre₂, hs₂⟩ := pre₁.markImm sig.args args (fun i y hi hy => by
+    obtain ⟨u, hu, hvi⟩ := evalArgs_var_at hvs hy
+    exact ⟨checkRead_held hread i .imm y hi (fun h => by cases h) hy, u, hu,
+      sound.immArgs i u hi hvi⟩)
+  have hs : SameRefs owned owned₂ := hs₁'.trans hs₂
+  have pre₃ := pre₂.releaseIf sig.release
+  have hbal : Balance H external (owned₂ ++ slotVals) :=
+    (SameRefs.append hs (SameRefs.refl slotVals)).balance st.counts
+  have himm : ImmVal v := sound.result.1
+  -- the result
+  cases hres : sig.result with
+  | imm => exact ⟨owned₂, pre₃.bindImmUniq hx hd sound.result hbal, hs⟩
+  | fresh unique =>
+    have hcons : SameRefs owned₂ (v :: owned₂) := (SameRefs.imm_cons himm owned₂).symm
+    have hbal' : Balance H external ((v :: owned₂) ++ slotVals) :=
+      (SameRefs.append hcons (SameRefs.refl slotVals)).balance hbal
+    have hpv : ∀ l, pre₃.localPriv l → v ≠ .loc l := fun l _ => himm l
+    cases unique with
+    | true =>
+      exact ⟨v :: owned₂, pre₃.bindUniqOwned hx hd hbal' sound.result.toUniqVal hpv,
+        hs.trans hcons⟩
+    | false => exact ⟨v :: owned₂, pre₃.bindOwned hx hd hbal' hpv, hs.trans hcons⟩
+  | borrowed ofArg =>
+    have hbrw : BorrowVal H v := by
+      cases v with
+      | loc l => exact absurd rfl (himm l)
+      | lit _ | ctor0 _ | erased => trivial
+    exact ⟨owned₂, pre₃.bindBorrow hx hd hbrw hbal, hs⟩
+
 theorem rhs_step {F : Fir.Program} (pins : BoolPinsOk F)
     (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo
       borrows uniqs retUniq F.ctors F.known priv slots slotVals)
     {x : Var} {r : Fir.Rhs} (hx : x ∉ live) (hn : ∀ f args, r ≠ .call f args)
-    {Γ' : Ctx} (hc : bindCtx Γ x r borrows uniqs F.ctors = .ok Γ')
+    {Γ' : Ctx} (hc : bindStep Γ x r borrows uniqs F.ctors = .ok Γ')
     {w : Fir.Val} (hw : Fir.evalRhs F ρf r = .ok w) :
     ∃ v H' owned', evalRhs { ctors := F.ctors, known := F.known } ρo H r = .ok (v, H') ∧
       OwnedState functions H' external (live ++ [x]) Γ' (ρf.insert x w) (ρo.insert x v) owned'
@@ -280,6 +404,7 @@ theorem rhs_step {F : Fir.Program} (pins : BoolPinsOk F)
   cases r with
   | call f args => exact absurd rfl (hn f args)
   | arg a =>
+    replace hc : bindCtx Γ x (.arg a) borrows uniqs F.ctors = .ok Γ' := hc
     cases a with
     | var y =>
       have hwy : ρf.get? y = some w := Result.ofOption_ok hw
@@ -376,6 +501,7 @@ theorem rhs_step {F : Fir.Program} (pins : BoolPinsOk F)
       refine ⟨.erased, H, owned, by simp [evalRhs, Own.evalRhs, Own.evalArg], ?_, same, sameP⟩
       exact st.pre.bindImmUniq hx (Proof.den_erased H) ⟨(fun _ h => by cases h), trivial⟩ st.counts
   | ctor c args =>
+    replace hc : bindCtx Γ x (.ctor c args) borrows uniqs F.ctors = .ok Γ' := hc
     cases hws : Fir.evalArgs ρf args with
     | none => simp [Fir.evalRhs, hws] at hw
     | some ws =>
@@ -499,6 +625,7 @@ theorem rhs_step {F : Fir.Program} (pins : BoolPinsOk F)
             hprivLoc.mono (fun _ h => Or.inl h)⟩
       · simp [Fir.evalRhs, hws, harity] at hw
   | proj y key i =>
+    replace hc : bindCtx Γ x (.proj y key i) borrows uniqs F.ctors = .ok Γ' := hc
     obtain ⟨u, hneed, hΓ⟩ := except_bind_ok hc
     have hΓ := except_pure_ok hΓ
     have hy : Γ.avail y = true := Ctx.need_avail hneed
@@ -550,22 +677,16 @@ theorem rhs_step {F : Fir.Program} (pins : BoolPinsOk F)
               hxlive hylive' hvy' hview hget hvx'
       · simp only [hk, ↓reduceIte] at hw; cases hw
   | prim op args =>
-    obtain ⟨u, hneed, hΓ⟩ := except_bind_ok hc
-    have hΓ := except_pure_ok hΓ; subst hΓ
-    have havail := Ctx.needArgs_avail hneed
-    obtain ⟨vs, ws, hvs, hws, hds⟩ := needArgs_sem st.den havail
+    -- under the primitive's signature: the step is `primStep`, the facts are its contract's
+    replace hc : primStep Γ (lamSig op args.length) x args = .ok Γ' := hc
+    obtain ⟨_, hneed, _, _, _⟩ := primStep_ok hc
+    obtain ⟨vs, ws, hvs, hws, hds⟩ := needArgs_sem st.den (Ctx.needArgs_avail hneed)
     simp only [Fir.evalRhs, hws] at hw
-    obtain ⟨v, hres, hden, himm⟩ := primResult_immUniq pins hds hw
-    have hargs := primResult_args_immUniq hds hw
+    obtain ⟨v, hres, hden, sound⟩ := lamSig_pureSound pins hds hw args.length
     have hev : evalRhs { ctors := F.ctors, known := F.known } ρo H (.prim op args) = .ok (v, H) := by
       simp [evalRhs, Own.evalRhs, hvs, hres, Result.map]
-    obtain ⟨owned', pre', hs'⟩ := st.pre.immArgs (primImmArgs op args.length) args (fun y hy => by
-      refine ⟨havail y hy, ?_⟩
-      obtain ⟨u, _, hu, _, _⟩ := st.den y (havail y hy)
-      exact ⟨u, hu, hargs u (evalArgs_mem hvs hy hu)⟩)
-    have hbal' : Balance H external (owned' ++ slotVals) :=
-      (SameRefs.append hs' (SameRefs.refl slotVals)).balance st.counts
-    exact ⟨v, H, owned', hev, pre'.bindImmUniq hx hden himm hbal', same, sameP⟩
+    obtain ⟨owned', st', _⟩ := prim_step_pure st hx hc hvs hden sound
+    exact ⟨v, H, owned', hev, st', same, sameP⟩
 
 /-- An argument binding (a move, immediate copy, or borrowed copy) changes no heap and keeps the
 token count: the bound value's token is the argument's (or vacuous). -/

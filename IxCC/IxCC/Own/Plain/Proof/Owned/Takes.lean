@@ -124,6 +124,47 @@ theorem takeVars_sem {H : Heap} {ρf : Fir.Env} {ρo : Own.Env} :
         · exact hw₁.avail (havs y hy)
       · exact hs₁.trans (SameRefs.cons v hs')
 
+/-- **Taking a primitive's consumed arguments**: the values taken, each the value of a variable
+in a position the signature consumes, with their references split off the remaining tokens'. -/
+theorem takeConsumed_sem {H : Heap} {ρf : Fir.Env} {ρo : Own.Env} :
+    ∀ {us : List ArgUse} {args : List Arg} {Γ Γ' : Ctx} {owned : List RVal},
+      TakeInv H Γ ρf ρo owned → takeConsumed Γ us args = .ok Γ' →
+      ∃ taken owned', TakeInv H Γ' ρf ρo owned' ∧ SameRefs owned (taken ++ owned') ∧
+        Ctx.Weaker Γ' Γ ∧
+        ∀ v, v ∈ taken → ∃ (i : Nat) (y : Var), us[i]? = some ArgUse.consume ∧
+          args[i]? = some (Arg.var y) ∧ ρo.get? y = some v
+  | [], args, Γ, Γ', owned, h, ht => by
+    have hΓ : Γ = Γ' := by cases args <;> exact Except.ok.inj ht
+    subst hΓ
+    exact ⟨[], owned, h, SameRefs.refl _, Ctx.Weaker.refl _, fun _ hv => by cases hv⟩
+  | u :: us, [], Γ, Γ', owned, h, ht => by
+    have hΓ : Γ = Γ' := by cases u <;> exact Except.ok.inj ht
+    subst hΓ
+    exact ⟨[], owned, h, SameRefs.refl _, Ctx.Weaker.refl _, fun _ hv => by cases hv⟩
+  | u :: us, a :: as, Γ, Γ', owned, h, ht => by
+    by_cases hm : u = .consume ∧ ∃ y, a = .var y
+    · obtain ⟨rfl, y, rfl⟩ := hm
+      have ht0 : (Γ.take y >>= fun Γ₁ => takeConsumed Γ₁ us as) = .ok Γ' := ht
+      cases hty : Γ.take y with
+      | error e => rw [hty] at ht0; cases ht0
+      | ok Γ₁ =>
+        rw [hty] at ht0
+        obtain ⟨v, _, owned₁, hv, _, _, h₁, hs₁, hw₁⟩ := take_sem h hty
+        obtain ⟨taken, owned', h', hs', hw', hpos⟩ := takeConsumed_sem h₁ ht0
+        refine ⟨v :: taken, owned', h', hs₁.trans (SameRefs.cons v hs'), hw'.trans hw₁,
+          fun t ht' => ?_⟩
+        rcases List.mem_cons.mp ht' with rfl | ht'
+        · exact ⟨0, y, rfl, rfl, hv⟩
+        · obtain ⟨i, z, h1, h2, h3⟩ := hpos t ht'
+          exact ⟨i + 1, z, by simpa using h1, by simpa using h2, h3⟩
+    · have hstep : takeConsumed Γ (u :: us) (a :: as) = takeConsumed Γ us as := by
+        cases u <;> cases a <;> first | rfl | exact absurd ⟨rfl, _, rfl⟩ hm
+      rw [hstep] at ht
+      obtain ⟨taken, owned', h', hs', hw', hpos⟩ := takeConsumed_sem h ht
+      exact ⟨taken, owned', h', hs', hw', fun t ht' => by
+        obtain ⟨i, z, h1, h2, h3⟩ := hpos t ht'
+        exact ⟨i + 1, z, by simpa using h1, by simpa using h2, h3⟩⟩
+
 /-- A closed context holds no token. -/
 theorem closed_nil {Γ : Ctx} {toks : List Var} {what : String} (ht : Ctx.Tokens Γ toks)
     (hc : Γ.closed what = .ok ()) : toks = [] := by

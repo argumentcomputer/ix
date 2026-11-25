@@ -508,12 +508,13 @@ theorem owned_eval {H : Heap} {external : Nat → Nat} {priv : Nat → Prop} {re
         scopeOk (signatures F) (live ++ [x]) (stackArities Jf) (eraseCode c') = true := by
       simpa [eraseCode, scopeOk, Bool.and_eq_true, and_assoc] using scope
     obtain ⟨hx, hr, hc'⟩ := parts
-    obtain ⟨Γ', hbc, typed'⟩ := checkCode_bind typed
+    obtain ⟨Γ', hbs, typed'⟩ := checkCode_bindStep typed
     by_cases call : ∃ f args, r = .call f args
     · obtain ⟨f, args, rfl⟩ := call
       have hs : (signatures F).lookup f = some args.length ∧ args.all (argIn live) = true := by
         simpa [rhsIn, Bool.and_eq_true] using hr
       obtain ⟨fd, hf, _, _⟩ := signatures_lookup hs.1
+      have hbc : bindCtx Γ x (.call f args) borrows uniqs F.ctors = .ok Γ' := hbs
       simp only [bindCtx] at hbc
       obtain ⟨Γ₁, ht, hbc'⟩ := except_bind_ok hbc
       obtain ⟨⟨⟩, hchk, hΓ⟩ := except_bind_ok hbc'
@@ -664,7 +665,7 @@ theorem owned_eval {H : Heap} {external : Nat → Nat} {priv : Nat → Prop} {re
         eval_bindRhs _ k ρo Jo H x r c' hn]
       rcases fir_rhs_pure F ρf r with hstuck | ⟨w, hw⟩
       · rw [hstuck]; exact .stuck
-      · obtain ⟨v, H', owned', hev, st', hreach, hpriv⟩ := rhs_step pins st hx hn hbc hw
+      · obtain ⟨v, H', owned', hev, st', hreach, hpriv⟩ := rhs_step pins st hx hn hbs hw
         rw [hw, Result.bind_ok]
         change ResultRelFull H external priv F.ctors retUniq _
           ((evalRhs { ctors := F.ctors, known := F.known } ρo H r).bind _)
