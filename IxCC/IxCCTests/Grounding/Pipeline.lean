@@ -5,6 +5,7 @@ import IxCCCorrect.GroundShape
 import IxCCCorrect.Unique
 import IxCCCorrect.UniqueIota
 import IxCCCorrect.UniqueNat
+import IxCCCorrect.UniqueEnum
 
 /-! # `tests-grounding pipeline`: the pipeline's grounding check on every committed root
 
@@ -166,6 +167,25 @@ def declOkDiag (k : Src.KernelFront.Kernel) (src : Program) (root : CId) : Strin
     s!"{c} np={np} class={cls} rules={rules}"
   ", ".intercalate (bad.map show1)
 
+/-- **Whether an enumeration answer is unique** (`agrees_unique_enum`): the enumeration and its
+recursor found from the claim's constructor keys, then checked by `enumUniqueB`. -/
+def enumUnique? (acc : Src.KernelFront.Accepted) (cs : List Ixon.Address) : Bool :=
+  let keys := cs.filterMap (keyOf acc)
+  match keys.head? with
+  | none => false
+  | some k0 =>
+    match acc.env.find? k0 with
+    | some (.ctorInfo cv _ _) =>
+      match cv.type with
+      | .const D [] =>
+        acc.env.consts.any fun ci => match ci with
+          | .recInfo _ _ _ rules =>
+            (keys.all fun k => rules.any (·.ctor == k)) &&
+              enumUniqueB acc cs D (rules.map (·.ctor)) ci.name
+          | _ => false
+      | _ => false
+    | _ => false
+
 /-- A stored constant of type `Bool.true = Bool.false → False` (the witness `numeralBasisB` asks
 for), if the environment has one. -/
 def neKey? (env : IxCC.Grounding.KEnv) : Option IxCC.Grounding.KKey :=
@@ -231,6 +251,9 @@ def run : IO Bool := do
             accepted := accepted + 1
             let natRes := abi.result == ResTy.nat
             if sep && natRes then separated := separated + 1
+            else match abi.result with
+              | .enum cs => if enumUnique? ld.kernel.acc cs then separated := separated + 1
+              | _ => pure ()
             let efS ← match (if fast then .error "skipped (GROUND_FAST)" else exactOf bytes json name) with
               | .ok _ =>
                 escapeFree := escapeFree + 1
