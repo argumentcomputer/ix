@@ -1,6 +1,8 @@
 import IxCCAiur.Backward
 import IxCCAiur.Compose
 import IxCCAiur.Fib
+import IxCCAiur.Gcd
+import IxCCAiur.Roots
 
 /-! # Direct `IxCC Fir → Formal Aiur` Certified Compiler Audit Surface
 
@@ -1079,5 +1081,188 @@ info: 'IxCC.AiurBackend.Fib.accepted_backward' depends on axioms: [propext, Clas
 info: 'IxCC.AiurBackend.Fib.accepted_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
 -/
 #guard_msgs (whitespace := lax) in #print axioms Fib.accepted_sound
+
+/-! ## 7. Without the Escape: Source Progress from the Shape Decision
+
+`Progress.neverStuck_of_sigOk` reads the source-progress lane's
+`Shape2.run_ok` at the checked source's `run`; `Progress.checkShape` is the
+decision and `Progress.neverStuck_of_checkShape` its soundness for
+`Compose.NeverStuck`. `Instance.decision` is one Boolean per closure on the
+front half's result, and `Fib.accepted`, `Gcd.accepted` and the three of
+`IxCCAiur.Roots` are the statements **with no disjunct and no progress
+hypothesis**: the kernel evaluates the decision (`decide +kernel`). -/
+
+/--
+info: @Progress.neverStuck_of_sigOk : ∀ {src : Src.Program} {ch : Src.Relevance.Checked} {sig : Correct.Shape2.Sig},
+  Correct.Shape2.SigOk src sig →
+    ∀ {r : ℕ} {addr : Ixon.Address} {c : Src.CId},
+      src.roots[r]? = some (addr, c) →
+        ∀ (ns : List ℕ) {ρ : Correct.Shape2.Shape},
+          sig.inst c [] (Correct.Shape2.arrows (List.replicate ns.length Correct.Shape2.Shape.nat) ρ) →
+            Compose.NeverStuck { p := src, ch := ch } (r, ns)
+-/
+#guard_msgs (whitespace := lax) in
+#check @Progress.neverStuck_of_sigOk
+
+/--
+info: @Progress.neverStuck_of_checkShape : ∀ {src : Src.Program} {ch : Src.Relevance.Checked} {cert : Correct.Shape2.Cert}
+  {r : ℕ} {ns : List ℕ},
+  Progress.checkShape src cert r ns.length = true → Compose.NeverStuck { p := src, ch := ch } (r, ns)
+-/
+#guard_msgs (whitespace := lax) in
+#check @Progress.neverStuck_of_checkShape
+
+/--
+info: def IxCC.AiurBackend.Progress.checkShape : Src.Program → Correct.Shape2.Cert → ℕ → ℕ → Bool :=
+fun src cert r n =>
+  Correct.Shape2.certOk src cert &&
+    match src.roots[r]? with
+    | some (fst, c) =>
+      cert.insts.any fun e => decide (e.1 = c) && decide (e.2.1 = []) && (Progress.resultAfter n e.2.2).isSome
+    | none => false
+-/
+#guard_msgs (whitespace := lax) in
+#print Progress.checkShape
+
+/--
+info: def IxCC.AiurBackend.Instance.decision : ℕ → Except Recheck.Err Recheck.FrontFir → Bool :=
+fun n x =>
+  match x with
+  | Except.ok f =>
+    f.fir.exports[0]?.isSome &&
+      match f.src.roots[0]? with
+      | some (fst, c) =>
+        decide (Recheck.declaredParams f.src c = some n) &&
+          Progress.checkShape f.src (Correct.Shape2.Produce.produce f.src c) 0 n
+      | none => false
+  | Except.error a => false
+-/
+#guard_msgs (whitespace := lax) in
+#print Instance.decision
+
+/--
+info: @Instance.accepted_nat : ∀ {cfg : Recheck.Config} {P : Src.Program} {c : Recheck.Cert} {n : ℕ} {f : Recheck.FrontFir},
+  Recheck.runFir cfg P c = Except.ok f →
+    Instance.decision n (Recheck.runFir cfg P c) = true →
+      ∀ {prog : Aiur.Generic.Program ℕ},
+        lowerProgram f.fir = Except.ok prog →
+          ∀ {moduleProg : Aiur.Modules.Program Claim.G} (prepared : Aiur.Modules.Prepared moduleProg),
+            World.checkWorld prepared.environment.source prog = true →
+              ∀ {as : List Claim.G},
+                as.length = n →
+                  ∀ {y : Claim.G},
+                    Claim.Accepted prepared 0 (List.map Aiur.Value.field as)
+                        (Aiur.Value.construct Claim.G objQName "N" [Aiur.Value.field Claim.G y]) →
+                      ∃ k v,
+                        Sem.Lang.run { p := f.src, ch := f.checked } (0, List.map ZMod.val as) k = Sem.Result.ok v ∧
+                          Sem.Lang.obs v = some (Sem.Obs.nat (ZMod.val y))
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @Instance.accepted_nat
+
+/--
+info: Fib.decision_fib : Instance.decision 1
+    (Recheck.runFir IxCCTests.Recheck.Artifacts.Fib.cfg IxCCTests.Recheck.Artifacts.Fib.program
+      IxCCTests.Recheck.Artifacts.Fib.cert) =
+  true
+-/
+#guard_msgs (whitespace := lax) in
+#check @Fib.decision_fib
+
+/--
+info: @Fib.accepted : ∀ {f : Recheck.FrontFir},
+  Recheck.runFir IxCCTests.Recheck.Artifacts.Fib.cfg IxCCTests.Recheck.Artifacts.Fib.program
+        IxCCTests.Recheck.Artifacts.Fib.cert =
+      Except.ok f →
+    ∀ {prog : Aiur.Generic.Program ℕ},
+      lowerProgram f.fir = Except.ok prog →
+        ∀ {moduleProg : Aiur.Modules.Program Claim.G} (prepared : Aiur.Modules.Prepared moduleProg),
+          World.checkWorld prepared.environment.source prog = true →
+            ∀ {x y : Claim.G},
+              Claim.Accepted prepared 0 [Aiur.Value.field x]
+                  (Aiur.Value.construct Claim.G objQName "N" [Aiur.Value.field Claim.G y]) →
+                ∃ k v,
+                  Sem.Lang.run { p := f.src, ch := f.checked } (0, [ZMod.val x]) k = Sem.Result.ok v ∧
+                    Sem.Lang.obs v = some (Sem.Obs.nat (ZMod.val y))
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @Fib.accepted
+
+/--
+info: @Gcd.accepted : ∀ {f : Recheck.FrontFir},
+  Recheck.runFir IxCCTests.Recheck.Artifacts.Gcd.cfg IxCCTests.Recheck.Artifacts.Gcd.program
+        IxCCTests.Recheck.Artifacts.Gcd.cert =
+      Except.ok f →
+    ∀ {prog : Aiur.Generic.Program ℕ},
+      lowerProgram f.fir = Except.ok prog →
+        ∀ {moduleProg : Aiur.Modules.Program Claim.G} (prepared : Aiur.Modules.Prepared moduleProg),
+          World.checkWorld prepared.environment.source prog = true →
+            ∀ {a b y : Claim.G},
+              Claim.Accepted prepared 0 [Aiur.Value.field a, Aiur.Value.field b]
+                  (Aiur.Value.construct Claim.G objQName "N" [Aiur.Value.field Claim.G y]) →
+                ∃ k v,
+                  Sem.Lang.run { p := f.src, ch := f.checked } (0, [ZMod.val a, ZMod.val b]) k = Sem.Result.ok v ∧
+                    Sem.Lang.obs v = some (Sem.Obs.nat (ZMod.val y))
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @Gcd.accepted
+
+/--
+info: 'IxCC.AiurBackend.Progress.neverStuck_of_sigOk' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Progress.neverStuck_of_sigOk
+
+/--
+info: 'IxCC.AiurBackend.Progress.neverStuck_of_checkShape' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Progress.neverStuck_of_checkShape
+
+/--
+info: 'IxCC.AiurBackend.Progress.accepted_nat' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Progress.accepted_nat
+
+/--
+info: 'IxCC.AiurBackend.Progress.accepted_enum' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Progress.accepted_enum
+
+/--
+info: 'IxCC.AiurBackend.Instance.accepted_nat' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Instance.accepted_nat
+
+/--
+info: 'IxCC.AiurBackend.Fib.decision_fib' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Fib.decision_fib
+
+/--
+info: 'IxCC.AiurBackend.Fib.accepted' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Fib.accepted
+
+/--
+info: 'IxCC.AiurBackend.Gcd.accepted' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Gcd.accepted
+
+/--
+info: 'IxCC.AiurBackend.EvenOdd.accepted' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms EvenOdd.accepted
+
+/--
+info: 'IxCC.AiurBackend.Sfib.accepted' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Sfib.accepted
+
+/--
+info: 'IxCC.AiurBackend.Tak.accepted' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Tak.accepted
 
 end IxCC.AiurBackend.Audit

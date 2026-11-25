@@ -5,7 +5,11 @@ import IxCCAiur.Backward
 import IxCCAiur.Compose
 import IxCCAiur.World
 import IxCCAiur.Claim
+import IxCCAiur.Progress
+import IxCCAiur.Instance
 import IxCCAiur.Fib
+import IxCCAiur.Gcd
+import IxCCAiur.Roots
 import IxCCAiur.Hints
 import IxCCAiur.Driver
 import IxCCAiur.Audit

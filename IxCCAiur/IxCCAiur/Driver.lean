@@ -1,4 +1,4 @@
-import IxCCAiur.World
+import IxCCAiur.Progress
 import IxCCAiur.Hints
 import IxCC.Recheck.RunFir
 import IxCC.Recheck.Produce
@@ -102,6 +102,19 @@ def worldReport (l : Linked) : WorldReport :=
     functions := World.checkFunctions s l.lowered
     failing := World.failing s l.lowered
     refuses := !World.checkFunctions s changed && !World.checkTable s "UInt8::pair_units" [] }
+
+/-! ## The shape decision -/
+
+/-- The source-progress lane's shape decision for root 0 at `n` `Nat`
+arguments (`Progress.checkShape`), on the certificate its untrusted producer
+proposes for the checked source. Where it holds, an accepted claim of the
+entry is the source's value without the stuck-source disjunct
+(`Progress.accepted_nat`); where it does not, the statement keeps the
+disjunct. It does not gate the package. -/
+def shapeCheck (f : Recheck.FrontFir) (n : Nat) : Bool :=
+  match f.src.roots[0]? with
+  | some (_, c) => Progress.checkShape f.src (Correct.Shape2.Produce.produce f.src c) 0 n
+  | none => false
 
 /-! ## The two evaluators -/
 

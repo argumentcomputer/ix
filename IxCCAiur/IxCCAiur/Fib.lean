@@ -1,4 +1,4 @@
-import IxCCAiur.Claim
+import IxCCAiur.Instance
 import IxCCTests.Recheck.Artifacts.Fib
 
 /-! # The `fib` closure: an accepted claim, read at the source
@@ -18,8 +18,10 @@ What the theorems still take as hypotheses is on the Aiur side, and is what
 the driver computes natively when it writes a package (`IxCCAiur.Driver`):
 that the lowering accepts the Fir program (`hlow`), a prepared Aiur program
 (`prepared`) that passes the world check (`hw`), and the accepted claim
-(`Claim.Accepted`). `accepted_sound` adds source progress on the input
-(`Compose.NeverStuck`), which no theorem here provides. -/
+(`Claim.Accepted`). `accepted_sound` takes source progress on the input
+(`Compose.NeverStuck`) as a hypothesis; `accepted` does not: the kernel also
+evaluates the source-progress lane's shape decision on the checked source
+(`decision_fib`), which gives it (`Progress.neverStuck_of_checkShape`). -/
 
 set_option autoImplicit false
 
@@ -108,5 +110,37 @@ theorem accepted_sound {f : Recheck.FrontFir} (hf : Recheck.runFir cfg program c
   rcases accepted_backward hf hlow prepared hw acc with h | ⟨k, hk⟩
   · exact h
   · exact absurd hk (hp k)
+
+/-! ## Without the escape -/
+
+set_option maxRecDepth 1000000 in
+/-- **The kernel's evaluation of the decision on the `fib` closure**
+(`Instance.decision`): the front half accepts, root 0 declares one parameter,
+and its checked source passes the shape decision on the certificate the
+untrusted producer proposes. -/
+theorem decision_fib : Instance.decision 1 (Recheck.runFir cfg program cert) = true := by
+  decide +kernel
+
+/-- **SrcEval is stuck at no clock on `fib`'s root**, on any `Nat` argument. -/
+theorem neverStuck {f : Recheck.FrontFir} (hf : Recheck.runFir cfg program cert = .ok f)
+    (x : Nat) : NeverStuck ⟨f.src, f.checked⟩ (0, [x]) :=
+  ((Instance.facts hf decision_fib).2 [x] rfl).2
+
+/-- **`fib`: an accepted claim, read at the source.** Let `f` be what the front
+half makes of the `fib` closure, `prog` its lowering, and `prepared` a prepared
+Aiur program that passes the world check for `prog`. If the checker accepts
+the claim that `Prog::main0` on the field element `x` returns
+`Prog::Obj::N(y)`, then SrcEval on root 0 (`entry`) and the `Nat` argument
+`x.val` returns, at some clock, a value whose observation is the `Nat`
+`y.val`. No disjunct and no progress hypothesis (`decision_fib`). -/
+theorem accepted {f : Recheck.FrontFir} (hf : Recheck.runFir cfg program cert = .ok f)
+    {prog : Aiur.Generic.Program Nat} (hlow : lowerProgram f.fir = .ok prog)
+    {moduleProg : Aiur.Modules.Program G} (prepared : Aiur.Modules.Prepared moduleProg)
+    (hw : World.checkWorld prepared.environment.source prog = true)
+    {x y : G}
+    (acc : Accepted prepared 0 [.field x] (.construct objQName "N" [.field y])) :
+    ∃ k v, Sem.Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) (0, [x.val]) k = .ok v ∧
+      Sem.Lang.obs (S := CheckedProgram) v = some (.nat y.val) :=
+  Instance.accepted_nat hf decision_fib hlow prepared hw (as := [x]) rfl acc
 
 end IxCC.AiurBackend.Fib

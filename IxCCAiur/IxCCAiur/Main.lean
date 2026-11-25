@@ -75,6 +75,8 @@ def run (o : Options) : IO UInt32 := do
     refuses changed bodies and a changed table {world.refuses}"
   unless world.failing.isEmpty do
     IO.println s!"world: lowered functions that differ from the prepared source: {world.failing}"
+  IO.println s!"shape: {Driver.shapeCheck front.levels o.args.length} \
+    (root 0 at {o.args.length} Nat arguments; where true the claim has no stuck-source disjunct)"
   let start ← IO.monoMsNow
   let expected := Driver.firRun fir 0 o.args
   IO.println s!"fir: {reprStr expected} ({(← IO.monoMsNow) - start} ms)"
