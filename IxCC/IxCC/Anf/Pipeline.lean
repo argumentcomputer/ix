@@ -104,6 +104,112 @@ structure Trace where
 applies to every certificate's middle end). -/
 def maxSteps : Nat := 64
 
+/-- Count non-`tick` nodes of `todo`, stopping as soon as the count passes `cap`. -/
+private def countNonTickUpTo (cap : Nat) : Nat → List Exp → Nat → Nat
+  | 0, _, acc => acc
+  | _, [], acc => acc
+  | fuel + 1, e :: todo, acc =>
+    if acc > cap then acc
+    else
+      match e with
+      | .bind _ b body =>
+        match b with
+        | .fn _ fb => countNonTickUpTo cap fuel (fb :: body :: todo) (acc + 2)
+        | .con _ as | .prim _ as | .call _ as | .app _ as =>
+          countNonTickUpTo cap fuel (body :: todo) (acc + as.length + 2)
+        | .atom _ | .glob _ | .proj .. => countNonTickUpTo cap fuel (body :: todo) (acc + 2)
+      | .join _ _ b body => countNonTickUpTo cap fuel (b :: body :: todo) (acc + 1)
+      | .jump _ as => countNonTickUpTo cap fuel todo (acc + as.length + 1)
+      | .case _ alts d => countNonTickUpTo cap fuel (alts.map Alt.body ++ d.toList ++ todo) (acc + 1)
+      | .ret _ | .trap => countNonTickUpTo cap fuel todo (acc + 1)
+      | .tick body => countNonTickUpTo cap fuel (body :: todo) acc
+
+private def nonTickNodesLe (e : Exp) (cap : Nat) : Bool :=
+  countNonTickUpTo cap (maxGlobalNodes + 2) [e] 0 ≤ cap
+
+/-- Total call-site count per global across `P`. -/
+private def callSiteCounts (P : Program) : Src.NatMap Nat :=
+  P.globalList.foldl (fun m (_, gd) =>
+    gd.body.sites.foldl (fun m g => m.insert g (m.getD g 0 + 1)) m) .leaf
+
+/-- Post-P5 inline oracle: inlines non-recursive, non-dispatcher callees that are
+single-call-site helpers (≤ 512 nodes, zero code duplication) or small bodies
+ignoring `tick` inflation (≤ 160 non-tick nodes). -/
+private def producePostExtraRound (P : Program) (noInline : List Key.GKey) : Inline.Round :=
+  let recs := Inline.directRecursive P
+  let counts := callSiteCounts P
+  let inl : Src.NatMap Bool :=
+    Src.NatMap.ofList (P.globalList.map fun (g, gd) =>
+      let ok :=
+        !Inline.isNoInlineKey noInline gd.key &&
+        !Walk.isDispatchKey gd.key &&
+        !recs.contains g &&
+        (gd.ps.isEmpty ||
+          nonTickNodesLe gd.body 160 ||
+          (counts.getD g 0 == 1 && gd.body.nodesLe 512 && !P.roots.contains g) ||
+          (match gd.key with
+           | .byName .. | .wrapper .. => true
+           | _ => false))
+      (g, ok))
+  P.globalList.filterMap fun (f, gd) =>
+    if Walk.isDispatchKey gd.key then none
+    else
+      let sites : Src.NatSet := gd.body.sites.foldl (fun s g => s.insert g) .leaf
+      let refs := (gd.body.refs.foldl (init := ((.leaf : Src.NatSet), ([] : List GlobalId)))
+        fun (seen, acc) g => if seen.contains g then (seen, acc) else (Src.NatSet.insert seen g, g :: acc)).2.reverse
+      let cs := refs.filter fun g =>
+        g != f && (match P.global? g with
+          | some gd' => inl.getD g false && (gd'.ps.isEmpty || sites.contains g)
+          | none => false)
+      if cs.isEmpty then none else some (f, cs.take Inline.maxCertCallees)
+
+private def refinePostExtraLoop (B : Budgets) :
+    Nat → Program → List PostStep → Program × List PostStep
+  | 0, P, revSteps => (P, revSteps)
+  | rem + 1, P, revSteps =>
+    if revSteps.length + 3 > maxPostSteps then (P, revSteps)
+    else
+      let r := producePostExtraRound P B.inline.noInline
+      if r.isEmpty || !Inline.checkCert r then (P, revSteps)
+      else
+        let res :=
+          match PostStep.run B.shrink.params (.inline r) P with
+          | .ok P3 => some (r, P3)
+          | .error _ =>
+            let r' := r.filter fun e => (PostStep.run B.shrink.params (.inline [e]) P).isOk
+            if r'.isEmpty then none
+            else (PostStep.run B.shrink.params (.inline r') P).toOption.map (r', ·)
+        match res with
+        | none => (P, revSteps)
+        | some (r', P3) =>
+          let steps1 := PostStep.inline r' :: revSteps
+          let (P2, steps2) :=
+            match Shrink.produce B.shrink P3 with
+            | .ok (c, P2', _) =>
+              if c.any (· > 0) && c.length ≤ P3.size && Shrink.checkCert c then
+                match checkGlobalNodes P2' with
+                | .ok P2'' => (P2'', PostStep.shrink c :: steps1)
+                | .error _ => (P3, steps1)
+              else (P3, steps1)
+            | .error _ => (P3, steps1)
+          let (P4, steps3) :=
+            if steps2.length + 1 ≤ maxPostSteps then
+              let Pp := Prune.run P2
+              if Pp.size < P2.size then (Pp, PostStep.prune :: steps2) else (P2, steps2)
+            else (P2, steps2)
+          refinePostExtraLoop B rem P4 steps3
+
+/-- Follow `producePostBy` with up to 4 rounds of post-P5 single-use / tick-free
+inlining + shrink + prune, keeping the original `(pc, Qout)` if any budget check fails. -/
+private def refinePostExtra (B : Budgets) (pc : PostCert) (Qout : Program) : PostCert × Program :=
+  let (Q', revSteps) := refinePostExtraLoop B 4 Qout pc.steps.reverse
+  let pc' : PostCert := { pc with steps := revSteps.reverse }
+  if checkPostCert pc' && firstOrder Q' then
+    match checkGlobalNodes Q' with
+    | .ok Q'' => (pc', Q'')
+    | .error _ => (pc, Qout)
+  else (pc, Qout)
+
 /-- The Phase 1 schedule with the default oracles, within what the re-run
 accepts: P1 and every shrink step are followed by the re-run's size, depth
 and back-end work check (`checkGlobalNodes`), and a program that fails it is
@@ -166,11 +272,12 @@ def produceOnce (B : Budgets := {}) (L : Lam.Program) : Except String Trace := d
     if firstOrder P then (none, none)
     else match defun P with
       | .ok Q8 =>
-        let (pc, Qout) := producePostBy B.shrink.params
+        let (pc0, Qout0) := producePostBy B.shrink.params
           (fun Q => match Shrink.produce B.shrink Q with
             | .ok (c, Q', _) => .ok (c, Q')
             | .error e => .error e)
           P.size Q8 B.inline.noInline
+        let (pc, Qout) := refinePostExtra B pc0 Qout0
         (some pc, some Qout)
       | .error _ => (none, none)
   return { cert := { shrink := B.shrink.params, steps := steps.toList, post }
@@ -186,9 +293,20 @@ def withRetryFallback {ε α : Type} (retry : Bool) (attempt : Bool → Except �
   | .error e => if retry then attempt false else .error e
 
 /-- `produceOnce`, falling back to the run without the inline-round retry
-when the run with it fails (`withRetryFallback`). -/
-def produce (B : Budgets := {}) (L : Lam.Program) : Except String Trace :=
-  withRetryFallback B.retryInline fun retry => produceOnce { B with retryInline := retry } L
+when the run with it fails (`withRetryFallback`). On higher-order closures
+(`post.isSome`), retries once with `smallJoin := Shrink.maxCertSmallJoin` (64)
+so defunctionalized join-of-closure dispatchers simplify cleanly without
+affecting first-order Phase 1 certificates. -/
+def produce (B : Budgets := {}) (L : Lam.Program) : Except String Trace := do
+  let tr ← withRetryFallback B.retryInline fun retry => produceOnce { B with retryInline := retry } L
+  if tr.cert.post.isSome && B.shrink.params.smallJoin < Shrink.maxCertSmallJoin then
+    let B' : Budgets :=
+      { B with shrink := { B.shrink with params := { B.shrink.params with smallJoin := Shrink.maxCertSmallJoin } } }
+    match withRetryFallback B'.retryInline fun retry => produceOnce { B' with retryInline := retry } L with
+    | .ok tr' => return tr'
+    | .error _ => return tr
+  else
+    return tr
 
 /-! ## What the Anf → Fir boundary will decline -/
 

@@ -2,6 +2,7 @@ import IxCC.Cfg.Rc.Proof.Language
 import IxCC.Recheck.Rc.Replay
 import IxCC.Recheck.Proof.Middle
 import IxCC.Own.Plain.Proof.Certificate
+import IxCC.Own.Plain.Proof.Sink
 
 /-! Compose the actual certificate-consuming front end with the abstract RC
 Cfg machine. This deliberately retains the existing accepted stage-S source
@@ -14,7 +15,7 @@ theorem runFront_spec {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
     Recheck.front cfg P c.base = .ok (f.src, f.checked) ∧
     (∃ st, Lam.erase f.src f.checked = .ok (f.lam, st)) ∧
     Recheck.anfOf c.base f.src f.lam = .ok f.anf ∧
-    Fir.lower f.anf = .ok f.fir ∧
+    (∃ rawFir, Fir.lower f.anf = .ok rawFir ∧ Own.Plain.Sink.run rawFir = f.fir) ∧
     Own.Plain.Certificate.admit f.fir c.own = .ok f.own ∧
     Cfg.Rc.generate f.fir f.own.bodies = some f.cfg ∧
     Cfg.Rc.checkScopedProgram f.fir f.own.bodies f.cfg f.own.borrows f.own.uniqs = true := by
@@ -36,17 +37,17 @@ theorem runFront_spec {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
         simp only [hanf, bind, Except.bind] at accepted
         cases hfir : Fir.lower anf with
         | error e => rw [hfir] at accepted; cases accepted
-        | ok fir =>
+        | ok rawFir =>
           simp only [hfir, Except.mapError, bind, Except.bind] at accepted
-          cases hown : Own.Plain.Certificate.admit fir c.own with
+          cases hown : Own.Plain.Certificate.admit (Own.Plain.Sink.run rawFir) c.own with
           | error e => rw [hown] at accepted; cases accepted
           | ok own =>
             simp only [hown, Except.mapError, bind, Except.bind] at accepted
-            cases hgen : Cfg.Rc.generate fir own.bodies with
+            cases hgen : Cfg.Rc.generate (Own.Plain.Sink.run rawFir) own.bodies with
             | none => rw [hgen] at accepted; cases accepted
             | some candidate =>
               simp only [hgen] at accepted
-              cases hscope : Cfg.Rc.checkScopedProgram fir own.bodies candidate own.borrows own.uniqs with
+              cases hscope : Cfg.Rc.checkScopedProgram (Own.Plain.Sink.run rawFir) own.bodies candidate own.borrows own.uniqs with
               | false => simp [hscope] at accepted
               | true =>
                 simp only [hscope, Bool.true_eq_false, ↓reduceIte, pure, Except.pure,
@@ -58,13 +59,13 @@ theorem runFront_spec {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
                   cases unit
                   simp only [hparams, bind, Except.bind] at accepted
                   cases hnative : Cfg.Rc.Public.lower { names := cfg.names }
-                      fir own.bodies candidate own.borrows own.uniqs with
+                      (Own.Plain.Sink.run rawFir) own.bodies candidate own.borrows own.uniqs with
                   | error e => rw [hnative] at accepted; cases accepted
                   | ok lowered =>
                     simp only [hnative, Except.mapError, bind, Except.bind,
                       pure, Except.pure, Except.ok.injEq] at accepted
                     subst accepted
-                    exact ⟨rfl, ⟨st, herase⟩, hanf, hfir, hown, hgen, hscope⟩
+                    exact ⟨rfl, ⟨st, herase⟩, hanf, ⟨rawFir, hfir, rfl⟩, hown, hgen, hscope⟩
 
 /-- Every accepted RC certificate front end refines its actual stage-S source
 through the abstract checked RC Cfg machine, on every covered input
@@ -73,10 +74,18 @@ producer or certificate. -/
 theorem source_refines_cfg {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
     (accepted : runFront cfg P c = .ok f) :
     Sem.RefinesOn (f.Covered c) (⟨f.src, f.checked⟩ : Lam.Erase.Proof.CheckedProgram) f.cfg := by
-  obtain ⟨_, ⟨st, herase⟩, hanf, hfir, _, _, hscope⟩ := runFront_spec accepted
+  obtain ⟨_, ⟨st, herase⟩, hanf, ⟨rawFir, hfir, hsink⟩, _, _, hscope⟩ := runFront_spec accepted
+  have hown : Sem.Refines f.fir f.cfg :=
+    (Own.Plain.owned_refines_lang
+      (Cfg.Rc.checkProgram_parts (Cfg.Rc.checkScopedProgram_parts hscope).1).1
+      (by rw [← hsink, Own.Plain.Sink.run_exports, Own.Plain.Sink.run_size]
+          exact Own.Plain.exports_of_lower hfir)).trans
+      (Cfg.Rc.checked_refines_lang hscope)
+  have hmid : Sem.Refines f.anf f.cfg :=
+    ((Fir.Proof.lower_refines hfir).trans (Own.Plain.Sink.run_refines rawFir)).trans
+      (hsink ▸ hown)
   exact Sem.RefinesOn.refines_trans (Lam.Erase.Proof.erase_refines herase)
-    ((Recheck.anfOf_refines hanf).trans_refines
-      (Cfg.Rc.checked_lower_refines hfir hscope))
+    ((Recheck.anfOf_refines hanf).trans_refines hmid)
 
 
 /-- **The checker runs on a budgeted map.** The verifier runs the ownership checker three times on

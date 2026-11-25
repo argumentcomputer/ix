@@ -43,11 +43,22 @@ theorem source_retained {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
         (Lang.obs (S := Lam.Erase.Proof.CheckedProgram) value) result)
       (Lang.behaviour (⟨f.src, f.checked⟩ : Lam.Erase.Proof.CheckedProgram) i)
       (Lang.behaviour f.cfg i) := by
-  obtain ⟨_, ⟨st, erased⟩, anf, fir, _, _, checked⟩ := runFront_spec accepted
+  obtain ⟨_, ⟨st, erased⟩, anf, ⟨rawFir, fir, hsink⟩, _, _, checked⟩ := runFront_spec accepted
   have front := Sem.RefinesOn.refines_trans (Lam.Erase.Proof.erase_refines erased)
     (Recheck.anfOf_refines anf)
-  have tail := (checked_retained fir checked i).refines
-    (Lang.mono f.anf i) (Lang.mono f.cfg i)
+  have hexp : ∀ g, g ∈ f.fir.exports → g < f.fir.size := by
+    rw [← hsink, Own.Plain.Sink.run_exports, Own.Plain.Sink.run_size]
+    exact Own.Plain.exports_of_lower fir
+  have heap := Own.Plain.owned_retained
+    (Cfg.Rc.checkProgram_parts (Cfg.Rc.checkScopedProgram_parts checked).1).1 hexp i
+  have tailCfg := Sem.Sim.comp (Lang.mono f.cfg i) heap (Cfg.Rc.checked_retained checked i)
+  have sinkTail := Sem.Sim.comp (Lang.mono f.cfg i)
+    (hsink ▸ Own.Plain.Sink.run_sim rawFir i) tailCfg
+  have all := Sem.Sim.comp (Lang.mono f.cfg i) (Fir.Proof.lower_retained fir i) sinkTail
+  have tail := (all.mono (R' := HeapWitness f.anf) fun _ _ ⟨logical, related, _, heq, middle, den, equal⟩ => by
+    subst heq
+    subst equal
+    exact ⟨logical, related, den⟩).refines (Lang.mono f.anf i) (Lang.mono f.cfg i)
   exact ((front i hi).trans tail).mono fun _ _ ⟨value, observed, retained⟩ =>
     ⟨value, observed.symm, retained⟩
 

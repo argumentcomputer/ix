@@ -1,6 +1,8 @@
 import IxCC.Cfg.Rc.Check
 import IxCC.Cfg.Rc.Inline
 import IxCC.Cfg.Rc.Prune
+import IxCC.Cfg.Rc.InlineWrappers
+import IxCC.Cfg.Rc.FastDec
 import IxCC.Rt.Lower
 import IxCC.Rt.Switches
 import IxCC.Lir.WellFormed
@@ -94,7 +96,9 @@ def lower (config : Rt.Config) (F : Fir.Program) (bodies : Src.NatMap Own.Plain.
     reuseWrappers ++ reuseUWrappers
   let raw : Lir.Program := { funcs := (funcs ++ wrappers ++ procedures ++
     [Rt.Procs.cxInit, Rt.Procs.natPow, Rt.Procs.natGcd] ++ reuseProcs).toArray, main }
-  let program : Lir.Program := (Prune.pruneUnusedReuse l (Inline.inlineProgram l raw)).splitCriticalEdges
+  let program : Lir.Program :=
+    (Prune.pruneDeadRuntime l (FastDec.install l (InlineWrappers.inlineProgram l
+      (Prune.pruneUnusedReuse l (Inline.inlineProgram l raw))))).splitCriticalEdges
   program.check
   return {
     program

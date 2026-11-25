@@ -192,18 +192,19 @@ namespace RcReplay
 
 theorem runFront_ctors {cfg : Config} {P : Src.Program} {cert : Cert} {f : Front}
     (h : runFront cfg P cert = .ok f) : f.cfg.base.ctors = f.anf.ctors := by
-  obtain ⟨-, -, -, hfir, -, hgen, -⟩ := runFront_spec h
+  obtain ⟨-, -, -, ⟨rawFir, hfir, hsink⟩, -, hgen, -⟩ := runFront_spec h
   have ht := congrArg Own.Tables.ctors (Cfg.Rc.generate_tables hgen)
-  exact ht.trans (Fir.Proof.lower_fields hfir).2.2.1
+  exact ht.trans (hsink ▸ (Own.Plain.Sink.run_ctors rawFir).trans (Fir.Proof.lower_fields hfir).2.2.1)
 
 theorem runFront_boolKnown {cfg : Config} {P : Src.Program} {cert : Cert} {f : Front}
     (h : runFront cfg P cert = .ok f) :
     f.cfg.base.known.boolFalse = f.src.known.boolFalse.map .src ∧
       f.cfg.base.known.boolTrue = f.src.known.boolTrue.map .src := by
-  obtain ⟨-, ⟨st, her⟩, hanf, hfir, -, hgen, -⟩ := runFront_spec h
+  obtain ⟨-, ⟨st, her⟩, hanf, ⟨rawFir, hfir, hsink⟩, -, hgen, -⟩ := runFront_spec h
   have hk : f.cfg.base.known = f.lam.known :=
     (congrArg Own.Tables.known (Cfg.Rc.generate_tables hgen)).trans
-      ((Fir.Proof.lower_fields hfir).2.2.2.trans (anfOf_known hanf))
+      (hsink ▸ (Own.Plain.Sink.run_known rawFir).trans
+        ((Fir.Proof.lower_fields hfir).2.2.2.trans (anfOf_known hanf)))
   rw [hk, erase_known her]
   exact ⟨rfl, rfl⟩
 

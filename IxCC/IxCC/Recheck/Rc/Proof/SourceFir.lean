@@ -23,11 +23,15 @@ theorem source_fir_retained {cfg : Config} {P : Src.Program} {c : Cert} {f : Fro
         (Lang.obs (S := Lam.Erase.Proof.CheckedProgram) value) logical)
       (Lang.behaviour (⟨f.src, f.checked⟩ : Lam.Erase.Proof.CheckedProgram) i)
       (Lang.behaviour f.fir i) := by
-  obtain ⟨_, ⟨st, erased⟩, anf, fir, _, _, _⟩ := runFront_spec accepted
+  obtain ⟨_, ⟨st, erased⟩, anf, ⟨rawFir, fir, hsink⟩, _, _, _⟩ := runFront_spec accepted
   have front := Sem.RefinesOn.refines_trans (Lam.Erase.Proof.erase_refines erased)
     (Recheck.anfOf_refines anf)
-  have tail := (Fir.Proof.lower_retained fir i).refines
-    (Lang.mono f.anf i) (Lang.mono f.fir i)
+  have hraw := (Fir.Proof.lower_retained fir i).refines
+    (Lang.mono f.anf i) (Lang.mono rawFir i)
+  have tail : Sem.Behaviour.Refines (Fir.Proof.FirWitness f.anf)
+      (Lang.behaviour f.anf i) (Lang.behaviour f.fir i) :=
+    hsink ▸ (hraw.trans (Own.Plain.Sink.run_retained rawFir i)).mono
+      fun _ _ ⟨_, hw, heq⟩ => heq ▸ hw
   exact ((front i hi).trans tail).mono fun _ _ ⟨value, observed, retained⟩ =>
     ⟨value, observed.symm, retained⟩
 

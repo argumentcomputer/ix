@@ -50,4 +50,34 @@ def pruneUnusedReuse (l : Layout) (p : Lir.Program) : Lir.Program :=
     funcs := p.funcs.mapIdx fun i F =>
       if isPrunableReuse l i && !used.contains i then pruneStub F else F }
 
+def isPrunableDeadRuntime (l : Layout) (i : Nat) : Bool :=
+  decide ((l.sourceCount ≤ i ∧ i < l.incProc) ∨
+    i = l.incProc ∨
+    (l.decProc < i ∧ i < l.init) ∨
+    i = l.isUniqueProc)
+
+def calledByIndices (fs : List Nat) (p : Lir.Program) (acc : Src.NatSet := .leaf) : Src.NatSet :=
+  fs.foldl (fun m fi =>
+    match p.funcs[fi]? with
+    | some F => funcCallees F m
+    | none => m) acc
+
+def calledRuntimeRootsBase (l : Layout) (p : Lir.Program) : Src.NatSet :=
+  let s1 := calledByIndices (List.range l.sourceCount) p .leaf
+  let reuseRange := (List.range (4 * l.ctors.length)).map (fun j => l.init + 4 + j)
+  calledByIndices reuseRange p s1
+
+def calledRuntimeRoots (l : Layout) (p : Lir.Program) : Src.NatSet :=
+  let base := calledRuntimeRootsBase l p
+  let liveWrappers :=
+    ((List.range (2 + l.ctors.length)).map (fun j => l.sourceCount + j)).filter
+      (fun fi => base.contains fi)
+  calledByIndices liveWrappers p base
+
+def pruneDeadRuntime (l : Layout) (p : Lir.Program) : Lir.Program :=
+  let used := calledRuntimeRoots l p
+  { p with
+    funcs := p.funcs.mapIdx fun i F =>
+      if isPrunableDeadRuntime l i && !used.contains i then pruneStub F else F }
+
 end IxCC.Cfg.Rc.Prune

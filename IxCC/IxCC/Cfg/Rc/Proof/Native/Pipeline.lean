@@ -66,7 +66,8 @@ def rawProgram (l : Layout) (funcs : List Lir.Func) (main : Nat) : Lir.Program :
     main }
 
 def inlinedProgram (l : Layout) (funcs : List Lir.Func) (main : Nat) : Lir.Program :=
-  Prune.pruneUnusedReuse l (Inline.inlineProgram l (rawProgram l funcs main))
+  Prune.pruneDeadRuntime l (FastDec.install l (InlineWrappers.inlineProgram l
+    (Prune.pruneUnusedReuse l (Inline.inlineProgram l (rawProgram l funcs main)))))
 
 theorem lower_parts {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Rt.Lowered}

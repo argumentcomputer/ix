@@ -385,20 +385,38 @@ def selectBorrowedArgs : List Bool → List Arg → List Arg
   | [], _ => []
 
 mutual
-/-- Whether a `Fir.Code` body contains any heap-allocating constructor (`c.arity > 0`). -/
-def hasAllocCode : Fir.Code → Bool
-  | .bind _ (.ctor c _) k => (c.arity > 0) || hasAllocCode k
-  | .bind _ _ k => hasAllocCode k
-  | .jp _ _ _ b k => hasAllocCode b || hasAllocCode k
-  | .case _ alts d => hasAllocAlts alts || hasAllocOpt d
-  | .jmp .. | .ret .. | .tcall .. | .trap => false
-def hasAllocAlts : List Fir.Alt → Bool
-  | [] => false
-  | .mk _ b :: rest => hasAllocCode b || hasAllocAlts rest
-def hasAllocOpt : Option Fir.Code → Bool
-  | none => false
-  | some c => hasAllocCode c
+/-- Size classes of reusable heap constructors allocated in a `Fir.Code` body. -/
+def allocClassesCode : Fir.Code → VSet
+  | .bind _ (.ctor c _) k =>
+    let rest := allocClassesCode k
+    match Ctx.validReuseCtor c with
+    | some cls => Src.NatSet.insert rest cls
+    | none => rest
+  | .bind _ _ k => allocClassesCode k
+  | .jp _ _ _ b k => VSet.union (allocClassesCode b) (allocClassesCode k)
+  | .case _ alts d => VSet.union (allocClassesAlts alts) (allocClassesOpt d)
+  | .jmp .. | .ret .. | .tcall .. | .trap => .leaf
+def allocClassesAlts : List Fir.Alt → VSet
+  | [] => .leaf
+  | .mk _ b :: rest => VSet.union (allocClassesCode b) (allocClassesAlts rest)
+def allocClassesOpt : Option Fir.Code → VSet
+  | none => .leaf
+  | some c => allocClassesCode c
 end
+
+/-- Whether any arm of `alts` scrutinizes a non-Nat reusable heap constructor whose size class
+is allocated in the enclosing function (so keeping the scrutinee owned enables FBIP reuse). -/
+def caseCanReset (ctors : List Lam.CtorInfo) (known : Lam.Known) (allocClasses : VSet)
+    (alts : List Fir.Alt) : Bool :=
+  !VSet.isEmpty allocClasses &&
+  alts.any fun alt =>
+    !(known.natZero == some alt.key || known.natSucc == some alt.key) &&
+    match Fir.CtorInfo.ofKey ctors alt.key with
+    | some c =>
+      match Ctx.validReuseCtor c with
+      | some cls => allocClasses.contains cls
+      | none => false
+    | none => false
 
 /-- Clear `(f, idx)` to `false` in `borrows`, returning `(borrows', changed)`. -/
 def clearBorrow (borrows : BorrowSigs) (f idx : Nat) : BorrowSigs × Bool :=
@@ -466,72 +484,75 @@ def addPrimImm : List Bool → List Arg → VSet → VSet
 
 mutual
 /-- One pass over `fd.body` clearing any borrow flags invalidated by consuming uses,
-allocating-function scrutiny (kept owned for FBIP reuse), or non-caller-backed tail calls. -/
-def refineBorrowCode (f : FunId) (allocs : Bool) (imm direct : VSet) (pbrwSrc : Src.NatMap Nat)
+FBIP-resettable scrutiny (kept owned for reuse), or non-caller-backed tail calls. -/
+def refineBorrowCode (ctors : List Lam.CtorInfo) (known : Lam.Known) (f : FunId)
+    (allocClasses imm direct : VSet) (pbrwSrc : Src.NatMap Nat)
     (st : BorrowSigs × Bool) : Fir.Code → BorrowSigs × Bool
   | .bind x r k =>
     match r with
     | .arg (.var y) =>
       if imm.contains y then
-        refineBorrowCode f allocs (Src.NatSet.insert imm x) direct pbrwSrc st k
+        refineBorrowCode ctors known f allocClasses (Src.NatSet.insert imm x) direct pbrwSrc st k
       else
         let pbrwSrc' := match pbrwSrc.get? y with
           | some i => pbrwSrc.insert x i
           | none => pbrwSrc
         let direct' := if direct.contains y then Src.NatSet.insert direct x else direct
-        refineBorrowCode f allocs imm direct' pbrwSrc' st k
+        refineBorrowCode ctors known f allocClasses imm direct' pbrwSrc' st k
     | .arg _ =>
-      refineBorrowCode f allocs (Src.NatSet.insert imm x) direct pbrwSrc st k
+      refineBorrowCode ctors known f allocClasses (Src.NatSet.insert imm x) direct pbrwSrc st k
     | .ctor c args =>
       if c.arity == 0 then
-        refineBorrowCode f allocs (Src.NatSet.insert imm x) direct pbrwSrc st k
+        refineBorrowCode ctors known f allocClasses (Src.NatSet.insert imm x) direct pbrwSrc st k
       else
         let st := clearArgsBorrows f pbrwSrc false direct args st
-        refineBorrowCode f allocs imm direct pbrwSrc st k
+        refineBorrowCode ctors known f allocClasses imm direct pbrwSrc st k
     | .call g args =>
       let st := checkCallArgsBorrow f g false imm direct pbrwSrc args st
-      refineBorrowCode f allocs imm direct pbrwSrc st k
+      refineBorrowCode ctors known f allocClasses imm direct pbrwSrc st k
     | .proj y _ _ =>
       if imm.contains y then
-        refineBorrowCode f allocs (Src.NatSet.insert imm x) direct pbrwSrc st k
+        refineBorrowCode ctors known f allocClasses (Src.NatSet.insert imm x) direct pbrwSrc st k
       else
         let pbrwSrc' := match pbrwSrc.get? y with
           | some i => pbrwSrc.insert x i
           | none => pbrwSrc
-        refineBorrowCode f allocs imm direct pbrwSrc' st k
+        refineBorrowCode ctors known f allocClasses imm direct pbrwSrc' st k
     | .prim op args =>
       let imm' := Src.NatSet.insert (addPrimImm (primImmArgs op args.length) args imm) x
-      refineBorrowCode f allocs imm' direct pbrwSrc st k
+      refineBorrowCode ctors known f allocClasses imm' direct pbrwSrc st k
   | .jp _ _ _ body k =>
-    let st := refineBorrowCode f allocs imm direct pbrwSrc st body
-    refineBorrowCode f allocs imm direct pbrwSrc st k
+    let st := refineBorrowCode ctors known f allocClasses imm direct pbrwSrc st body
+    refineBorrowCode ctors known f allocClasses imm direct pbrwSrc st k
   | .jmp _ args =>
     clearArgsBorrows f pbrwSrc false direct args st
   | .case x alts d =>
-    let st := if allocs then clearVarBorrow f pbrwSrc true direct x st else st
-    let st := refineBorrowAlts f allocs imm direct pbrwSrc st alts
-    refineBorrowOpt f allocs imm direct pbrwSrc st d
+    let st := if caseCanReset ctors known allocClasses alts then clearVarBorrow f pbrwSrc true direct x st else st
+    let st := refineBorrowAlts ctors known f allocClasses imm direct pbrwSrc st alts
+    refineBorrowOpt ctors known f allocClasses imm direct pbrwSrc st d
   | .ret a =>
     clearArgsBorrows f pbrwSrc false direct [a] st
   | .tcall g args =>
     checkCallArgsBorrow f g true imm direct pbrwSrc args st
   | .trap => st
 
-def refineBorrowAlts (f : FunId) (allocs : Bool) (imm direct : VSet) (pbrwSrc : Src.NatMap Nat)
+def refineBorrowAlts (ctors : List Lam.CtorInfo) (known : Lam.Known) (f : FunId)
+    (allocClasses imm direct : VSet) (pbrwSrc : Src.NatMap Nat)
     (st : BorrowSigs × Bool) : List Fir.Alt → BorrowSigs × Bool
   | [] => st
   | .mk _ body :: rest =>
-    let st := refineBorrowCode f allocs imm direct pbrwSrc st body
-    refineBorrowAlts f allocs imm direct pbrwSrc st rest
+    let st := refineBorrowCode ctors known f allocClasses imm direct pbrwSrc st body
+    refineBorrowAlts ctors known f allocClasses imm direct pbrwSrc st rest
 
-def refineBorrowOpt (f : FunId) (allocs : Bool) (imm direct : VSet) (pbrwSrc : Src.NatMap Nat)
+def refineBorrowOpt (ctors : List Lam.CtorInfo) (known : Lam.Known) (f : FunId)
+    (allocClasses imm direct : VSet) (pbrwSrc : Src.NatMap Nat)
     (st : BorrowSigs × Bool) : Option Fir.Code → BorrowSigs × Bool
   | none => st
-  | some c => refineBorrowCode f allocs imm direct pbrwSrc st c
+  | some c => refineBorrowCode ctors known f allocClasses imm direct pbrwSrc st c
 end
 
 /-- One full program sweep of interprocedural borrow refinement. -/
-def refineBorrowPass (F : Fir.Program) (allocs : Src.NatMap Bool) (borrows : BorrowSigs) :
+def refineBorrowPass (F : Fir.Program) (allocs : Src.NatMap VSet) (borrows : BorrowSigs) :
     BorrowSigs × Bool :=
   (List.range F.size).foldl (fun st f =>
     match F.fun? f with
@@ -540,9 +561,9 @@ def refineBorrowPass (F : Fir.Program) (allocs : Src.NatMap Bool) (borrows : Bor
       let bs := st.1.getD f []
       let (pbrwSrc, direct) := (fd.params.zipIdx).foldl (fun (pm, dm) ((p, _), i) =>
         if bs.getD i false then (pm.insert p i, Src.NatSet.insert dm p) else (pm, dm)) (.leaf, .leaf)
-      refineBorrowCode f (allocs.getD f false) .leaf direct pbrwSrc st fd.body) (borrows, false)
+      refineBorrowCode F.ctors F.known f (allocs.getD f .leaf) .leaf direct pbrwSrc st fd.body) (borrows, false)
 
-def borrowFixLoop (F : Fir.Program) (allocs : Src.NatMap Bool) : Nat → BorrowSigs → BorrowSigs
+def borrowFixLoop (F : Fir.Program) (allocs : Src.NatMap VSet) : Nat → BorrowSigs → BorrowSigs
   | 0, borrows => borrows
   | fuel + 1, borrows =>
     let (borrows', changed) := refineBorrowPass F allocs borrows
@@ -559,12 +580,24 @@ def inferBorrows (F : Fir.Program) : BorrowSigs :=
     | some fd =>
       let b := !expSet.contains f
       m.insert f (List.replicate fd.params.length b)) .leaf
-  let allocs : Src.NatMap Bool := (List.range F.size).foldl (fun m f =>
+  let allocs : Src.NatMap VSet := (List.range F.size).foldl (fun m f =>
     match F.fun? f with
     | none => m
-    | some fd => m.insert f (hasAllocCode fd.body)) .leaf
+    | some fd => m.insert f (allocClassesCode fd.body)) .leaf
   let fuel := 64
   borrowFixLoop F allocs fuel init
+
+/-- Whether a freshly projected variable `x` can stay epoch-borrowed with zero `inc`/`dec`:
+immediately scrutinized by `case x` and dead in all arms, or immediately passed to a
+primitive position marked immediate (`primImmArgs`). Requires no intervening release. -/
+def canBorrowProj (x : Var) : ACode → Bool
+  | .case s alts d =>
+    s == x &&
+    alts.all (fun | .mk _ _ lb => !lb.contains x) &&
+    (match d with | none => true | some (_, ld) => !ld.contains x)
+  | .bind _ (.prim op args) _ _ =>
+    ((primImmArgs op args.length).zip args).any fun (m, a) => m && a == .var x
+  | _ => false
 
 mutual
 def placeWith (borrows : BorrowSigs) (Δ : Src.NatMap VSet) (owned imm pbrw : VSet) : ACode → Code
@@ -578,10 +611,11 @@ def placeWith (borrows : BorrowSigs) (Δ : Src.NatMap VSet) (owned imm pbrw : VS
         let owned' := VSet.inter owned liveK
         .bind x r (actionPrefix (decs dead) (placeWith borrows Δ owned' imm (Src.NatSet.insert pbrw x) k))
       else
-        let (owned, incs) :=
-          if liveK.contains x then (Src.NatSet.insert owned x, [Action.inc x 1])
-          else (owned, [])
         let dead := VSet.toSortedVars (VSet.diff owned liveK)
+        let (owned, incs) :=
+          if liveK.contains x && !(dead.isEmpty && canBorrowProj x k) then
+            (Src.NatSet.insert owned x, [Action.inc x 1])
+          else (owned, [])
         let owned' := VSet.inter owned liveK
         .bind x r (actionPrefix (incs ++ decs dead) (placeWith borrows Δ owned' imm pbrw k))
     | .prim op args =>
@@ -958,10 +992,11 @@ def placeFbip (ctors : List Lam.CtorInfo) (known : Lam.Known) (borrows : BorrowS
         let (k', ns) := placeFbip ctors known borrows uniqs Δ owned' imm (Src.NatSet.insert pbrw x) uniq' slots nextSlot k
         (.bind x r (actionPrefix (decs dead) k'), ns)
       else
-        let (owned, incs) :=
-          if liveK.contains x then (Src.NatSet.insert owned x, [Action.inc x 1])
-          else (owned, [])
         let dead := VSet.toSortedVars (VSet.diff owned liveK)
+        let (owned, incs) :=
+          if liveK.contains x && !(dead.isEmpty && canBorrowProj x k) then
+            (Src.NatSet.insert owned x, [Action.inc x 1])
+          else (owned, [])
         let owned' := VSet.inter owned liveK
         let uniq' := VSet.inter uniq owned'
         let (k', ns) := placeFbip ctors known borrows uniqs Δ owned' imm pbrw uniq' slots nextSlot k
@@ -1154,6 +1189,153 @@ decreasing_by
   omega
 end
 
+mutual
+/-- Whether sinking `.reset s` through pure non-releasing bindings and `.case` can land
+directly adjacent to a `.reuse _ s` (enabling `fusedResetReuse`/`fusedResetUReuseU`). -/
+def canFuseReset (s : Nat) : Code → Bool
+  | .reuse _ s' _ _ _ _ => s == s'
+  | .bind _ (.ctor _ []) k => canFuseReset s k
+  | .bind _ (.arg (.lit _)) k => canFuseReset s k
+  | .bind _ (.arg .erased) k => canFuseReset s k
+  | .bind _ (.prim _ _) k => canFuseReset s k
+  | .case _ alts dflt => canFuseResetAlts s alts || canFuseResetOpt s dflt
+  | _ => false
+
+def canFuseResetAlts (s : Nat) : List Alt → Bool
+  | [] => false
+  | .mk _ b :: rest => canFuseReset s b || canFuseResetAlts s rest
+
+def canFuseResetOpt (s : Nat) : Option Code → Bool
+  | none => false
+  | some b => canFuseReset s b
+end
+
+mutual
+/-- Rename reset slot `oldS` to `newS` throughout `Code` so duplicated branch resets keep
+distinct SSA slot registers during CFG lowering (`Cfg.Rc.Lower.skeleton`). -/
+def renameSlot (oldS newS : Nat) : Code → Code
+  | .act a k => .act a (renameSlot oldS newS k)
+  | .bind x r k => .bind x r (renameSlot oldS newS k)
+  | .reset s x c fs u k =>
+    .reset (if s == oldS then newS else s) x c fs u (renameSlot oldS newS k)
+  | .reuse x s c args u k =>
+    .reuse x (if s == oldS then newS else s) c args u (renameSlot oldS newS k)
+  | .dropSlot s k =>
+    .dropSlot (if s == oldS then newS else s) (renameSlot oldS newS k)
+  | .jp j ps cap rec b k =>
+    .jp j ps cap rec (renameSlot oldS newS b) (renameSlot oldS newS k)
+  | .case x alts dflt =>
+    .case x (renameSlotAlts oldS newS alts) (renameSlotOpt oldS newS dflt)
+  | c => c
+
+def renameSlotAlts (oldS newS : Nat) : List Alt → List Alt
+  | [] => []
+  | .mk key b :: rest => .mk key (renameSlot oldS newS b) :: renameSlotAlts oldS newS rest
+
+def renameSlotOpt (oldS newS : Nat) : Option Code → Option Code
+  | none => none
+  | some b => some (renameSlot oldS newS b)
+end
+
+mutual
+/-- Push a single `.reset s x c fs u` past pure non-releasing bindings (`ctor` arity 0,
+non-var `arg`, `prim` not referencing `x`) and `.case z` (`z ≠ x`) when doing so lands it
+directly adjacent to `.reuse _ s`, assigning fresh SSA slot IDs on `.case` splits so every
+branch keeps a distinct CFG slot register. -/
+def sinkOneReset (s : Nat) (x : Var) (c : Fir.CtorInfo) (fs : List (Option Var))
+    (fVars : VSet) (u : Bool) (code : Code) (ns : Nat) : Code × Nat :=
+  match code with
+  | .bind y (.ctor c0 []) k =>
+    if y != x && !fVars.contains y && canFuseReset s k then
+      let (k', ns') := sinkOneReset s x c fs fVars u k ns
+      (.bind y (.ctor c0 []) k', ns')
+    else (.reset s x c fs u (.bind y (.ctor c0 []) k), ns)
+  | .bind y (.arg (.lit l)) k =>
+    if y != x && !fVars.contains y && canFuseReset s k then
+      let (k', ns') := sinkOneReset s x c fs fVars u k ns
+      (.bind y (.arg (.lit l)) k', ns')
+    else (.reset s x c fs u (.bind y (.arg (.lit l)) k), ns)
+  | .bind y (.arg .erased) k =>
+    if y != x && !fVars.contains y && canFuseReset s k then
+      let (k', ns') := sinkOneReset s x c fs fVars u k ns
+      (.bind y (.arg .erased) k', ns')
+    else (.reset s x c fs u (.bind y (.arg .erased) k), ns)
+  | .bind y (.prim op args) k =>
+    if y != x && !fVars.contains y && !(argVars args).contains x && canFuseReset s k then
+      let (k', ns') := sinkOneReset s x c fs fVars u k ns
+      (.bind y (.prim op args) k', ns')
+    else (.reset s x c fs u (.bind y (.prim op args) k), ns)
+  | .case z alts dflt =>
+    if z != x && (!alts.isEmpty || dflt.isSome) &&
+        (canFuseResetAlts s alts || canFuseResetOpt s dflt) then
+      let (alts', ns1) := sinkOneResetAlts s x c fs fVars u alts ns
+      let (dflt', ns2) := sinkOneResetOpt s x c fs fVars u dflt ns1
+      (.case z alts' dflt', ns2)
+    else (.reset s x c fs u (.case z alts dflt), ns)
+  | k => (.reset s x c fs u k, ns)
+
+def sinkOneResetAlts (s : Nat) (x : Var) (c : Fir.CtorInfo) (fs : List (Option Var))
+    (fVars : VSet) (u : Bool) : List Alt → Nat → List Alt × Nat
+  | [], ns => ([], ns)
+  | .mk key b :: rest, ns =>
+    let s' := ns
+    let (b', ns1) := sinkOneReset s x c fs fVars u b (ns + 1)
+    let (rest', ns2) := sinkOneResetAlts s x c fs fVars u rest ns1
+    (.mk key (renameSlot s s' b') :: rest', ns2)
+
+def sinkOneResetOpt (s : Nat) (x : Var) (c : Fir.CtorInfo) (fs : List (Option Var))
+    (fVars : VSet) (u : Bool) : Option Code → Nat → Option Code × Nat
+  | none, ns => (none, ns)
+  | some b, ns =>
+    let s' := ns
+    let (b', ns1) := sinkOneReset s x c fs fVars u b (ns + 1)
+    (some (renameSlot s s' b'), ns1)
+end
+
+mutual
+def sinkResetsAux : Code → Nat → Code × Nat
+  | .act a k, ns =>
+    let (k', ns') := sinkResetsAux k ns
+    (.act a k', ns')
+  | .bind x r k, ns =>
+    let (k', ns') := sinkResetsAux k ns
+    (.bind x r k', ns')
+  | .reset s x c fs u k, ns =>
+    let (k', ns1) := sinkResetsAux k ns
+    sinkOneReset s x c fs (VSet.ofVars (fs.filterMap id)) u k' ns1
+  | .reuse x s c args u k, ns =>
+    let (k', ns') := sinkResetsAux k ns
+    (.reuse x s c args u k', ns')
+  | .dropSlot s k, ns =>
+    let (k', ns') := sinkResetsAux k ns
+    (.dropSlot s k', ns')
+  | .jp j ps cap rec b k, ns =>
+    let (b', ns1) := sinkResetsAux b ns
+    let (k', ns2) := sinkResetsAux k ns1
+    (.jp j ps cap rec b' k', ns2)
+  | .case x alts dflt, ns =>
+    let (alts', ns1) := sinkResetsAlts alts ns
+    let (dflt', ns2) := sinkResetsOpt dflt ns1
+    (.case x alts' dflt', ns2)
+  | c, ns => (c, ns)
+
+def sinkResetsAlts : List Alt → Nat → List Alt × Nat
+  | [], ns => ([], ns)
+  | .mk key b :: rest, ns =>
+    let (b', ns1) := sinkResetsAux b ns
+    let (rest', ns2) := sinkResetsAlts rest ns1
+    (.mk key b' :: rest', ns2)
+
+def sinkResetsOpt : Option Code → Nat → Option Code × Nat
+  | none, ns => (none, ns)
+  | some b, ns =>
+    let (b', ns1) := sinkResetsAux b ns
+    (some b', ns1)
+end
+
+def sinkResets (c : Code) : Code :=
+  (sinkResetsAux c (slotBound c)).1
+
 /-- Place `inc`/`dec`, `@borrowed`, `reset`/`reuse`/`dropSlot`, and static `@unique` on one body. -/
 def liveBodyFull (ctors : List Lam.CtorInfo) (known : Lam.Known) (borrows : BorrowSigs) (uniqs : UniqSigs)
     (selfBorrows selfUniqs : List Bool) (params : List Var) (ab : ACode) (lb : VSet) : Code :=
@@ -1163,7 +1345,7 @@ def liveBodyFull (ctors : List Lam.CtorInfo) (known : Lam.Known) (borrows : Borr
   let dead := VSet.toSortedVars (VSet.diff owned lb)
   let owned' := VSet.inter owned lb
   let uniq' := VSet.inter uniq owned'
-  actionPrefix (decs dead) (placeFbip ctors known borrows uniqs .leaf owned' .leaf pbrw uniq' [] 0 ab).1
+  sinkResets (actionPrefix (decs dead) (placeFbip ctors known borrows uniqs .leaf owned' .leaf pbrw uniq' [] 0 ab).1)
 
 /-- Full Track A3+A4 ownership producer: liveness + interprocedural `@borrowed` + interprocedural
 `@unique` + FBIP `reset`/`reuse` placement. -/

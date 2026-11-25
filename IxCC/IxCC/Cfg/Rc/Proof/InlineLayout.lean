@@ -502,6 +502,15 @@ theorem stmtsExtra_cons_of_classify_none (l : Layout) (s : Lir.Stmt) (rest : Lis
 
 theorem blockExtra_eq (l : Layout) (b : Lir.Block) : blockExtra l b = stmtsExtra l b.body.toList := rfl
 
+theorem mkSharedIncBlocks_length (x : Lir.VReg) (cur : Lir.Label) (tmp : Lir.VReg)
+    (live : List Nat) : (mkSharedIncBlocks x cur tmp live).length = 5 * live.length := by
+  induction live generalizing cur tmp with
+  | nil => rfl
+  | cons _ rest ih => simp [mkSharedIncBlocks, ih]; omega
+
+theorem mkSharedDecBlocks_length (decProc : Nat) (x : Lir.VReg) (cur : Lir.Label) (tmp : Lir.VReg)
+    (doneEdge : Lir.Edge) : (mkSharedDecBlocks decProc x cur tmp doneEdge).length = 5 := rfl
+
 theorem stepSingle_len_tmp (l : Layout) (cold : Bool) (s : Lir.Stmt) (cur nextTmp : Nat)
     (params : List Lir.VReg) (acc : List Lir.Stmt) :
     let r := stepSingle l cold s cur nextTmp params acc
@@ -510,14 +519,32 @@ theorem stepSingle_len_tmp (l : Layout) (cold : Bool) (s : Lir.Stmt) (cur nextTm
   cases hc : classify l s with
   | none => exact ⟨rfl, (Nat.add_zero cur).symm, Nat.le_refl _⟩
   | some site =>
-    cases site <;> dsimp only [siteExtra, Lir.Label, Lir.VReg] <;>
+    cases site with
+    | reset dst x idx lay cls mask =>
+      dsimp only [siteExtra, Lir.Label, Lir.VReg]
+      by_cases hle : (liveFields lay.nobj mask).length ≤ maxInlineResetLive
+      · simp only [hle, ↓reduceIte, List.length_append, List.length_cons, List.length_nil,
+          mkSharedIncBlocks_length, mkSharedDecBlocks_length]
+        exact ⟨by omega, by omega, by omega⟩
+      · simp [hle]; omega
+    | _ =>
+      dsimp only [siteExtra, Lir.Label, Lir.VReg]
       exact ⟨rfl, by omega, by omega⟩
 
 theorem stepPair_len_tmp (l : Layout) (cold : Bool) (fp : RcPair) (cur nextTmp : Nat)
     (params : List Lir.VReg) (acc : List Lir.Stmt) :
     let r := stepPair l cold fp cur nextTmp params acc
     r.1.length = pairExtra fp ∧ r.2.1 = cur + pairExtra fp ∧ nextTmp ≤ r.2.2.1 := by
-  cases fp <;> dsimp only [stepPair, pairExtra, Lir.Label, Lir.VReg] <;>
+  cases fp with
+  | fusedResetReuse slot x dst idx1 lay1 mask idx2 lay2 cls args =>
+    dsimp only [stepPair, pairExtra, Lir.Label, Lir.VReg]
+    by_cases hle : (liveFields lay1.nobj mask).length ≤ maxInlineResetLive
+    · simp only [hle, ↓reduceIte, List.length_append, List.length_cons, List.length_nil,
+        mkSharedIncBlocks_length, mkSharedDecBlocks_length]
+      exact ⟨by omega, by omega, by omega⟩
+    · simp [hle]
+  | _ =>
+    dsimp only [stepPair, pairExtra, Lir.Label, Lir.VReg]
     exact ⟨rfl, by omega, by omega⟩
 
 theorem expandStmts_nil (l : Layout) (rel : Lir.Label → Lir.Label) (term : Lir.Term) (cold : Bool)
@@ -785,10 +812,20 @@ theorem firstBlock_of_expandStmts (l : Layout) (rel : Lir.Label → Lir.Label)
         refine ⟨blk, fused ++ post, h0, hpar, ?_, ?_, fun h => by cases h⟩
         · simpa [List.reverse_append, List.reverse_reverse, List.append_assoc] using hbody
         · intro _ _ heq hnc; cases heq; exact absurd hnc hne
-      | fusedResetReuse slot x dst idx1 lay1 mask idx2 lay2 cls args =>
+      | fusedResetUReuseU1 slot x dst lay1 mask deadIdx lay2 cls args =>
         dsimp only [stepPair, List.cons_append]
-        exact ⟨_, [], rfl, rfl, (by simp),
+        exact ⟨_, [.assign nextTmp (.load .w64 .zero (cellAddr x (Int.ofNat (8 * (deadIdx + 1)))))],
+          rfl, rfl, (by simp [List.reverse_cons]),
           (fun _ _ heq hnc => by cases heq; exact absurd hnc hne), (fun h => by cases h)⟩
+      | fusedResetReuse slot x dst idx1 lay1 mask idx2 lay2 cls args =>
+        dsimp only [stepPair]
+        by_cases hle : (liveFields lay1.nobj mask).length ≤ maxInlineResetLive
+        · simp only [hle, ↓reduceIte, List.cons_append, List.append_assoc]
+          exact ⟨_, [], rfl, rfl, (by simp),
+            (fun _ _ heq hnc => by cases heq; exact absurd hnc hne), (fun h => by cases h)⟩
+        · simp only [hle, ↓reduceIte, List.cons_append]
+          exact ⟨_, [], rfl, rfl, (by simp),
+            (fun _ _ heq hnc => by cases heq; exact absurd hnc hne), (fun h => by cases h)⟩
     · have hnp : ∀ s2 rest2, rest = s2 :: rest2 → classifyPair l s s2 = none := by
         intro s2 rest2 hr
         cases hc : classifyPair l s s2 with
@@ -820,9 +857,13 @@ theorem firstBlock_of_expandStmts (l : Layout) (rel : Lir.Label → Lir.Label)
             (by simp [List.reverse_cons]),
             (fun _ _ h hnc => by cases h; rw [hc] at hnc; cases hnc), (fun h => by cases h)⟩
         | reset dst x idx lay cls mask =>
-          dsimp only [List.cons_append]
-          exact ⟨_, [], rfl, rfl, (by simp),
-            (fun _ _ h hnc => by cases h; rw [hc] at hnc; cases hnc), (fun h => by cases h)⟩
+          by_cases hle : (liveFields lay.nobj mask).length ≤ maxInlineResetLive
+          · simp only [hle, ↓reduceIte, List.cons_append, List.append_assoc]
+            exact ⟨_, [], rfl, rfl, (by simp),
+              (fun _ _ h hnc => by cases h; rw [hc] at hnc; cases hnc), (fun h => by cases h)⟩
+          · simp only [hle, ↓reduceIte, List.cons_append]
+            exact ⟨_, [], rfl, rfl, (by simp),
+              (fun _ _ h hnc => by cases h; rw [hc] at hnc; cases hnc), (fun h => by cases h)⟩
         | resetU dst x idx lay cls mask =>
           dsimp only [List.nil_append]
           let dead := deadFields lay.nobj mask

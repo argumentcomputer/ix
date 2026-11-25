@@ -1,4 +1,5 @@
 import IxCC.Own.Plain.Certificate
+import IxCC.Own.Plain.Sink
 import IxCC.Cfg.Rc.Public
 import IxCC.Cfg.Rc.Scoped
 import IxCC.Recheck.Run
@@ -73,7 +74,8 @@ def runFront (cfg : Config) (P : Src.Program) (c : Cert) : Except Err Front := d
   let (src, checked) ← Recheck.front cfg P c.base
   let (lam, _) ← (Lam.erase src checked).mapError Err.ofErase
   let anf ← Recheck.anfOf c.base src lam
-  let fir ← (Fir.lower anf).mapError Err.ofFir
+  let rawFir ← (Fir.lower anf).mapError Err.ofFir
+  let fir := Own.Plain.Sink.run rawFir
   let own ← (Own.Plain.Certificate.admit fir c.own).mapError fun message =>
     { stage := .cert, code := "own.plain", message }
   let some candidate := Cfg.Rc.generate fir own.bodies |

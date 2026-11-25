@@ -22,8 +22,8 @@ theorem accepted_drop_index {config : Rt.Config} {F : Fir.Program}
   change original.program.funcs.size = _
   rw [program]
   simp only [Lir.Program.splitCriticalEdges, Array.size_map, inlinedProgram,
-    Prune.pruneUnusedReuse, Inline.inlineProgram,
-    Array.size_mapIdx, rawProgram, List.size_toArray,
+    Prune.pruneDeadRuntime, FastDec.install, InlineWrappers.inlineProgram, Prune.pruneUnusedReuse,
+    Inline.inlineProgram, Array.size_mapIdx, rawProgram, List.size_toArray,
     List.length_append, List.length_cons, List.length_nil, length, wrappers_length, procedures_length]
   simp [layoutOf, Layout.init, Layout.incProc]
   omega
@@ -76,36 +76,75 @@ theorem Returned.release_public {F : Fir.Program} {bodies : Src.NatMap Own.Plain
     splitEq ▸ Public.Spec.program_split _
   have splitDrop : Lir.ProgSim (Public.Spec.inlinedPublicProgram (layoutOf P) functions' lowered.drop)
       {lowered.runtime.program with main := lowered.drop}
-      (Public.Spec.labels (Public.Spec.inlinedPublicProgram (layoutOf P) functions' main)) :=
-    ⟨rfl, split.funcs⟩
+      (Public.Spec.labels (Public.Spec.inlinedPublicProgram (layoutOf P) functions' main)) := by
+    rw [inlinedPublicProgram_main_upd (layoutOf P) functions' main lowered.drop]
+    exact ⟨rfl, split.funcs⟩
   let inl := Public.Spec.inlinedPublicProgram (layoutOf P) functions' lowered.drop
+  let postDec := Public.Spec.postDecPublicProgram (layoutOf P) functions' lowered.drop
+  let preDec := InlineWrappers.inlineProgram (layoutOf P)
+    (Prune.pruneUnusedReuse (layoutOf P)
+      (Inline.inlineProgram (layoutOf P) (Public.Spec.rawPublicProgram (layoutOf P) functions' lowered.drop)))
+  have inlEq : inl = Prune.pruneDeadRuntime (layoutOf P) postDec :=
+    Public.Spec.inlinedPublicProgram_eq_inline (layoutOf P) functions' lowered.drop length
   let arr := (inlinedProgram (layoutOf P) functions' lowered.drop).funcs
   have dropSize : lowered.drop = arr.size := by
     rw [equal]
     change original.program.funcs.size = _
     rw [program]
-    simp [arr, Lir.Program.splitCriticalEdges, inlinedProgram, Prune.pruneUnusedReuse,
-      Inline.inlineProgram, rawProgram]
-  have wrapper : inl.funcs[lowered.drop]? = some (Public.dropWrapper (layoutOf P).decProc) := by
+    simp [arr, Lir.Program.splitCriticalEdges, inlinedProgram, Prune.pruneDeadRuntime,
+      FastDec.install, InlineWrappers.inlineProgram, Prune.pruneUnusedReuse, Inline.inlineProgram,
+      rawProgram]
+  have hneDrop : lowered.drop ≠ (layoutOf P).decProc := by
+    rw [accepted_drop_index accepted]
+    apply Nat.ne_of_gt
+    simp only [Layout.init, Layout.decProc]
+    exact Nat.lt_of_lt_of_le (Nat.lt_succ_self _)
+      (Nat.le_trans (Nat.le_add_right _ _)
+        (Nat.le_trans (Nat.le_add_right _ _) (Nat.le_add_right _ _)))
+  have hnpDrop : Prune.isPrunableDeadRuntime (layoutOf P) lowered.drop = false := by
+    apply Prune.isPrunableDeadRuntime_of_gt_isUnique
+    rw [accepted_drop_index accepted]
+    simp only [Layout.isUniqueProc, reuseProcs, List.length_append, List.length_cons,
+      List.length_nil]
+    omega
+  have wrapperInl : inl.funcs[lowered.drop]? = some (Public.dropWrapper (layoutOf P).decProc) := by
     change (arr.push (Public.dropWrapper (layoutOf P).decProc))[lowered.drop]? = _
     rw [dropSize, Array.getElem?_push_size]
-  have runtime : inl.funcs[(layoutOf P).decProc]? = some Gen.dec := by
-    have hge : (layoutOf P).sourceCount ≤ (layoutOf P).decProc := by
-      simp [layoutOf, Layout.decProc, Layout.incProc]; omega
-    have hle : (layoutOf P).decProc ≤ (layoutOf P).isUniqueProc := by
-      simp [Layout.isUniqueProc, Layout.init, Layout.decProc]; omega
-    have hraw := raw_dec_proc (l := layoutOf P) (funcs := functions') length lowered.drop
-    have hinl : (inlinedProgram (layoutOf P) functions' lowered.drop).funcs[(layoutOf P).decProc]? = some Gen.dec := by
-      rw [inlinedProgram, Prune.pruneUnusedReuse_get_le hle, Inline.inlineProgram_get_ge _ _ hge]
-      exact hraw
-    have hlt := (Array.getElem?_eq_some_iff.mp hinl).1
-    simpa [inl, Public.Spec.inlinedPublicProgram, Array.getElem?_push_lt hlt, Array.getElem?_eq_getElem hlt] using hinl
+  have wrapperPost : postDec.funcs[lowered.drop]? = some (Public.dropWrapper (layoutOf P).decProc) := by
+    rw [inlEq, Prune.pruneDeadRuntime_get_not_prunable hnpDrop] at wrapperInl
+    exact wrapperInl
+  have wrapper : preDec.funcs[lowered.drop]? = some (Public.dropWrapper (layoutOf P).decProc) := by
+    rw [show postDec = FastDec.install (layoutOf P) preDec from rfl,
+      FastDec.install_get_ne _ _ hneDrop] at wrapperPost
+    exact wrapperPost
+  have runtime : preDec.funcs[(layoutOf P).decProc]? = some Gen.dec :=
+    Public.Spec.preDecPublicProgram_decProc (l := layoutOf P) length lowered.drop
   obtain ⟨H', memory', slots', lists', clock, released, ready, frame, execution⟩ :=
     drop_top returned.state returned.represented wrapper runtime rfl
-  refine ⟨H', memory', slots', lists', clock, released, ready, frame, ?_⟩
-  rw [program_eval_transfer splitDrop clock [returned.word] returned.memory context
-    (by rw [execution]; intro impossible; cases impossible)]
-  exact execution
+  obtain ⟨clock', execFast⟩ :=
+    FastDec.install_forward_eq runtime
+      (by rw [execution]; intro h; cases h)
+      (by rw [execution]; intro h; cases h)
+  have hmainPost : postDec.main = lowered.drop := by
+    rw [show postDec = Public.Spec.postDecPublicProgram (layoutOf P) functions' lowered.drop from rfl,
+      Public.Spec.postDecPublicProgram, FastDec.install_main, InlineWrappers.inlineProgram_main,
+      Prune.pruneUnusedReuse_main]
+    rfl
+  have hliveDrop : Prune.LiveRuntimeFn (layoutOf P) postDec postDec.main := by
+    rw [hmainPost]
+    exact Prune.liveRuntimeFn_of_not_prunable hnpDrop
+  have execPruned : Lir.eval inl clock' [returned.word] returned.memory context =
+      .ok ([1], memory') := by
+    rw [inlEq, Prune.pruneDeadRuntime_eval_eq
+      (Public.Spec.postDecPublicProgram_noDeadRuntimeCalls length lowered.drop)
+      (Public.Spec.postDecPublicProgram_noWrapperToWrapperCalls length lowered.drop)
+      hliveDrop]
+    rw [execution] at execFast
+    exact execFast
+  refine ⟨H', memory', slots', lists', clock', released, ready, frame, ?_⟩
+  rw [program_eval_transfer splitDrop clock' [returned.word] returned.memory context
+    (by rw [execPruned]; intro impossible; cases impossible)]
+  exact execPruned
 
 
 

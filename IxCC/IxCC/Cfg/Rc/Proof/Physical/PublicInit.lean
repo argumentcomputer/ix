@@ -23,7 +23,13 @@ theorem accepted_init {config : Rt.Config} {F : Fir.Program}
     have hinl : (inlinedProgram (layoutOf P) funcs main).funcs[(layoutOf P).init]? = some Rt.Procs.cxInit := by
       have hle : (layoutOf P).init ≤ (layoutOf P).isUniqueProc := by
         simp [Native.Layout.isUniqueProc]
-      rw [inlinedProgram, Prune.pruneUnusedReuse_get_le hle, Inline.inlineProgram_get_ge _ _ hge]
+      have hneDec : (layoutOf P).init ≠ (layoutOf P).decProc := by
+        simp [Native.Layout.init, Native.Layout.decProc]; omega
+      have hnpInit : Prune.isPrunableDeadRuntime (layoutOf P) (layoutOf P).init = false :=
+        Prune.isPrunableDeadRuntime_init (layoutOf P)
+      rw [inlinedProgram, Prune.pruneDeadRuntime_get_not_prunable hnpInit,
+        FastDec.install_get_ne _ _ hneDec, InlineWrappers.inlineProgram_get_le hle,
+        Prune.pruneUnusedReuse_get_le hle, Inline.inlineProgram_get_ge _ _ hge]
       exact raw_init (l := layoutOf P) (funcs := funcs) length main
     simp only [Lir.Program.splitCriticalEdges, Array.getElem?_map, hinl, Option.map_some, cxInit_split]
   exact (assemble_existing original (layoutOf P) (Array.getElem?_eq_some_iff.mp lookup).1).trans lookup

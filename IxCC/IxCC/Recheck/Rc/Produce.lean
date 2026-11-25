@@ -317,6 +317,7 @@ structure ProducedFir where
   lam : Lam.Program
   anf : Anf.Program
   fir : Fir.Program
+  rawFir : Fir.Program := fir
   tableCert : Src.Table.TableCert
   relevance : Src.Relevance.Ann
   mid : Anf.Pipeline.Cert
@@ -354,8 +355,9 @@ def produceFir (cfg : Config) (inp : Recheck.Input) : Except Err ProducedFir := 
     { stage := .anf, code := "anf.produce", message := m }
   -- the closures step, as the replays run it (`Recheck.anfOf`)
   let (anf, stages) ← Recheck.produceClosures src trace
-  let fir ← (Fir.lower anf).mapError Err.ofFir
-  pure { src, checked, lam, anf, fir
+  let rawFir ← (Fir.lower anf).mapError Err.ofFir
+  let fir := Own.Plain.Sink.run rawFir
+  pure { src, checked, lam, anf, fir, rawFir
          tableCert := Src.Table.TableCert.ofTable table
          relevance := ann
          mid := trace.cert
@@ -364,7 +366,7 @@ def produceFir (cfg : Config) (inp : Recheck.Input) : Except Err ProducedFir := 
 
 /-- Finish a zero-RC (`ixcc/cert/1`) certificate from an already-produced `ProducedFir`. -/
 def finishZeroRcCert (cfg : Config) (front : ProducedFir) : Except Err Recheck.Produced := do
-  let C := Cfg.lower (Own.immortal front.fir)
+  let C := Cfg.lower (Own.immortal front.rawFir)
   Recheck.checkParams cfg C (C.exports.zipIdx.map fun (f, i) => (i, f))
   if !(Rt.lowerStrs C).isEmpty then
     throw { stage := .rt, code := "rt.string",

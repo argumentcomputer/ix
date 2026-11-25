@@ -55,6 +55,36 @@ inductive ResetFinish (l : Layout) (F : Lir.Func) (b : Lir.Label) (B : Lir.Block
       (hcp : ChunkPos l F b B rawPos inLbl (decEndPos + 1)) :
       ResetFinish l F b B rawPos dst x inBlk inLbl decEndPos
 
+/-- How an inlined shared-path `decProc` call (`mkSharedDecBlocks`) finishes after `decProc`
+returns `[]` (`reset` jumps to `joinLbl([.imm 1])`, `fusedResetReuse` jumps to `allocLbl`). -/
+inductive SharedDecFinish (l : Layout) (F : Lir.Func) (b : Lir.Label) (B : Lir.Block)
+    (rawPos : Nat) (slot : Lir.VReg) (decLbl : Lir.Label) (x : Lir.VReg) : Prop
+  | reset (joinLbl : Lir.Label)
+      (hltLbl : decLbl + 2 < joinLbl)
+      (hdecBlk : (inlineFunc l F).blocks[decLbl + 2]? =
+        some { body := #[.call [] l.decProc [.v x]], term := .jump ⟨joinLbl, [.imm 1]⟩, cold := true })
+      (hjoin : ∃ jb, (inlineFunc l F).blocks[joinLbl]? = some jb ∧ jb.params = [slot])
+      (hcp : ChunkPos l F b B rawPos joinLbl 0) :
+      SharedDecFinish l F b B rawPos slot decLbl x
+  | fused (dst : Lir.VReg) (idx2 : Nat) (c2 : Lam.CtorInfo) (lay2 : Rt.Rc.CellLayout) (cls : Nat)
+      (args : List Lir.Arg) (allocLbl pubLbl : Lir.Label) (aBase : Nat)
+      (pubBlk : Lir.Block) (postJ : List Lir.Stmt)
+      (hB : F.blocks[b]? = some B)
+      (hpos₂ : rawPos < B.body.size)
+      (hc2 : l.ctors[idx2]? = some c2)
+      (hlay2 : lay2 = Rt.Rc.CellLayout.ofFields c2.arity c2.tag)
+      (hcls2 : lay2.cls? = some cls) (hok2 : lay2.ok = true) (hlen2 : args.length = c2.arity)
+      (hstmt₂ : B.body[rawPos] = .call [dst] (l.reuseWrapper idx2) (.v slot :: args))
+      (hargsLt : argsMax args 0 < freshBase F)
+      (hds : dst ≠ slot) (hnd : argsContainVReg dst args = false) (hns : argsContainVReg slot args = false)
+      (haGe : freshBase F ≤ aBase)
+      (hltAlloc : decLbl + 2 < allocLbl)
+      (hdecBlk : (inlineFunc l F).blocks[decLbl + 2]? =
+        some { body := #[.call [] l.decProc [.v x]], term := .jump ⟨allocLbl, []⟩, cold := true })
+      (halloc : InlineAllocShape (inlineFunc l F) allocLbl pubLbl aBase slot dst (.imm 1) lay2 cls args pubBlk postJ)
+      (hcp : ChunkPos l F b B (rawPos + 1) pubLbl (1 + args.length)) :
+      SharedDecFinish l F b B rawPos slot decLbl x
+
 /-- Stack-level correspondence: either matching frames, or a suspended RC / reuse
 fast-path/slow-path site frame pair. -/
 inductive StackRel (l : Layout) (raw : Lir.Program) : List Lir.Frame → List Lir.Frame → Prop
@@ -159,79 +189,125 @@ inductive StackRel (l : Layout) (raw : Lir.Program) : List Lir.Frame → List Li
       (hagree : AgreeBelow (freshBase F) caller₁.env caller₂.env)
       (hrest : StackRel l raw rest₁ rest₂) :
       StackRel l raw (wFr :: caller₁ :: rest₁) (caller₂ :: rest₂)
-  /-- Fused `reset`+`reuse` cold redirect — stage 1 (under `resetWrapper idx1`). -/
-  | consFusedCold1 {F : Lir.Func} {B coldBlk : Lir.Block} {caller₁ caller₂ : Lir.Frame}
-      {rest₁ rest₂ : List Lir.Frame} {slot dst : Lir.VReg} {idx2 tmp : Nat}
-      {args : List Lir.Arg} {inLbl : Lir.Label}
+  /-- Suspended shared-path `decProc` call inside inlined `.reset` / `.fusedResetReuse` (`live.length ≤ maxInlineResetLive`). -/
+  | consResetSharedDec {F : Lir.Func} {B : Lir.Block} {wFr caller₁ caller₂ : Lir.Frame}
+      {rest₁ rest₂ : List Lir.Frame} {slot x : Lir.VReg} {idx1 : Nat} {c1 : Lam.CtorInfo}
+      {lay1 : Rt.Rc.CellLayout} {cls1 : Nat} {decLbl : Lir.Label}
+      (hc1 : l.ctors[idx1]? = some c1)
+      (hlay1 : lay1 = Rt.Rc.CellLayout.ofFields c1.arity c1.tag)
+      (hcls1 : lay1.cls? = some cls1)
+      (hwPos : wFr.fn = l.resetWrapper idx1 ∧ wFr.label = (3 + 2 * lay1.nobj) + 2 * lay1.nobj ∧ wFr.pos = 1 ∧ wFr.dsts = [])
+      (hlt : caller₁.fn < l.sourceCount)
+      (hfn : caller₂.fn = caller₁.fn)
+      (hF : raw.funcs[caller₁.fn]? = some F)
+      (hdsts₁ : caller₁.dsts = [slot])
+      (hdsts₂ : caller₂.dsts = [])
+      (hinPos : caller₂.label = decLbl + 2 ∧ caller₂.pos = 1)
+      (hfin : SharedDecFinish l F caller₁.label B caller₁.pos slot decLbl x)
+      (hagree : AgreeBelow (freshBase F) caller₁.env caller₂.env)
+      (hrest : StackRel l raw rest₁ rest₂) :
+      StackRel l raw (wFr :: caller₁ :: rest₁) (caller₂ :: rest₂)
+  /-- Fused `reset`+`reuse` fallback (`live.length > maxInlineResetLive`) — stage 1 (under `resetWrapper idx1`). -/
+  | consFusedCold1 {F : Lir.Func} {B pubBlk : Lir.Block} {caller₁ caller₂ : Lir.Frame}
+      {rest₁ rest₂ : List Lir.Frame} {slot x dst : Lir.VReg} {idx1 idx2 tmp : Nat}
+      {c2 : Lam.CtorInfo} {lay2 : Rt.Rc.CellLayout} {cls : Nat} {mask : UInt64}
+      {args : List Lir.Arg} {postJ : List Lir.Stmt} {inLbl : Lir.Label}
       (hlt : caller₁.fn < l.sourceCount)
       (hfn : caller₂.fn = caller₁.fn)
       (hF : raw.funcs[caller₁.fn]? = some F)
       (hB : F.blocks[caller₁.label]? = some B)
       (hpos₂ : caller₁.pos < B.body.size)
+      (hc2 : l.ctors[idx2]? = some c2)
+      (hlay2 : lay2 = Rt.Rc.CellLayout.ofFields c2.arity c2.tag)
+      (hcls2 : lay2.cls? = some cls) (hok2 : lay2.ok = true) (hlen2 : args.length = c2.arity)
       (hstmt₂ : B.body[caller₁.pos] = .call [dst] (l.reuseWrapper idx2) (.v slot :: args))
       (hargsLt : argsMax args 0 < freshBase F)
-      (hnotSlot : argsContainVReg slot args = false)
+      (hds : dst ≠ slot) (hnd : argsContainVReg dst args = false) (hns : argsContainVReg slot args = false)
       (hdsts₁ : caller₁.dsts = [slot])
       (hdsts₂ : caller₂.dsts = [tmp + 1])
       (htmpGe : freshBase F ≤ tmp)
-      (hcoldPos : caller₂.label = inLbl + 3 ∧ caller₂.pos = 1)
-      (hcoldBlk : (inlineFunc l F).blocks[inLbl + 3]? = some coldBlk)
-      (hcoldSz : coldBlk.body.size = 2)
-      (hcoldStmt : coldBlk.body[1]? = some (.call [tmp + 2] (l.reuseWrapper idx2) (.v (tmp + 1) :: args)))
-      (hcoldTerm : coldBlk.term = .jump ⟨inLbl + 4, [.v (tmp + 1), .v (tmp + 2)]⟩)
-      (hjoinBlk : ∃ jb, (inlineFunc l F).blocks[inLbl + 4]? = some jb ∧ jb.params = [slot, dst])
-      (hcpNext : ChunkPos l F caller₁.label B (caller₁.pos + 1) (inLbl + 4) 0)
+      (hcoldPos : caller₂.label = inLbl + 2 ∧ caller₂.pos = 1)
+      (hcoldBlk : (inlineFunc l F).blocks[inLbl + 2]? =
+        some { body := #[.call [tmp + 1] (l.resetWrapper idx1) [.v x, .imm mask]],
+               term := .br .tnz .w64 (.v (tmp + 1)) (.imm 1) ⟨inLbl + 3, []⟩ ⟨inLbl + 9, [.v (tmp + 1), .v (tmp + 1)]⟩,
+               cold := true })
+      (halloc : InlineAllocShape (inlineFunc l F) (inLbl + 3) (inLbl + 9) (tmp + 2) slot dst (.v (tmp + 1)) lay2 cls args pubBlk postJ)
+      (hcpNext : ChunkPos l F caller₁.label B (caller₁.pos + 1) (inLbl + 9) (1 + args.length))
       (hagree : AgreeBelow (freshBase F) caller₁.env caller₂.env)
       (hrest : StackRel l raw rest₁ rest₂) :
       StackRel l raw (caller₁ :: rest₁) (caller₂ :: rest₂)
-  /-- Fused `reset`+`reuse` cold redirect — stage 2 (between `resetWrapper` return and `reuseWrapper` call). -/
-  | consFusedColdMid {F : Lir.Func} {B coldBlk : Lir.Block} {caller₁ caller₂ : Lir.Frame}
-      {rest₁ rest₂ : List Lir.Frame} {slot dst : Lir.VReg} {idx2 tmp : Nat}
-      {args : List Lir.Arg} {inLbl : Lir.Label} {slotVal : Lir.Word}
+  /-- Fused `reset`+`reuse` fallback (`live.length > maxInlineResetLive`) — stage 2 (after `resetWrapper` returns `slotVal`). -/
+  | consFusedColdMid {F : Lir.Func} {B pubBlk : Lir.Block} {caller₁ caller₂ : Lir.Frame}
+      {rest₁ rest₂ : List Lir.Frame} {slot x dst : Lir.VReg} {idx1 idx2 tmp : Nat}
+      {c2 : Lam.CtorInfo} {lay2 : Rt.Rc.CellLayout} {cls : Nat} {mask : UInt64}
+      {args : List Lir.Arg} {postJ : List Lir.Stmt} {inLbl : Lir.Label} {slotVal : Lir.Word}
       (hlt : caller₁.fn < l.sourceCount)
       (hfn : caller₂.fn = caller₁.fn)
       (hF : raw.funcs[caller₁.fn]? = some F)
       (hB : F.blocks[caller₁.label]? = some B)
       (hpos₂ : caller₁.pos < B.body.size)
+      (hc2 : l.ctors[idx2]? = some c2)
+      (hlay2 : lay2 = Rt.Rc.CellLayout.ofFields c2.arity c2.tag)
+      (hcls2 : lay2.cls? = some cls) (hok2 : lay2.ok = true) (hlen2 : args.length = c2.arity)
       (hstmt₂ : B.body[caller₁.pos] = .call [dst] (l.reuseWrapper idx2) (.v slot :: args))
       (hargsLt : argsMax args 0 < freshBase F)
-      (hnotSlot : argsContainVReg slot args = false)
+      (hds : dst ≠ slot) (hnd : argsContainVReg dst args = false) (hns : argsContainVReg slot args = false)
       (hdsts₁ : caller₁.dsts = [])
       (hdsts₂ : caller₂.dsts = [])
       (htmpGe : freshBase F ≤ tmp)
       (hslot₁ : caller₁.env[slot]? = some slotVal)
       (hslot₂ : caller₂.env[tmp + 1]? = some slotVal)
-      (hcoldPos : caller₂.label = inLbl + 3 ∧ caller₂.pos = 1)
-      (hcoldBlk : (inlineFunc l F).blocks[inLbl + 3]? = some coldBlk)
-      (hcoldSz : coldBlk.body.size = 2)
-      (hcoldStmt : coldBlk.body[1]? = some (.call [tmp + 2] (l.reuseWrapper idx2) (.v (tmp + 1) :: args)))
-      (hcoldTerm : coldBlk.term = .jump ⟨inLbl + 4, [.v (tmp + 1), .v (tmp + 2)]⟩)
-      (hjoinBlk : ∃ jb, (inlineFunc l F).blocks[inLbl + 4]? = some jb ∧ jb.params = [slot, dst])
-      (hcpNext : ChunkPos l F caller₁.label B (caller₁.pos + 1) (inLbl + 4) 0)
+      (hcoldPos : caller₂.label = inLbl + 2 ∧ caller₂.pos = 1)
+      (hcoldBlk : (inlineFunc l F).blocks[inLbl + 2]? =
+        some { body := #[.call [tmp + 1] (l.resetWrapper idx1) [.v x, .imm mask]],
+               term := .br .tnz .w64 (.v (tmp + 1)) (.imm 1) ⟨inLbl + 3, []⟩ ⟨inLbl + 9, [.v (tmp + 1), .v (tmp + 1)]⟩,
+               cold := true })
+      (halloc : InlineAllocShape (inlineFunc l F) (inLbl + 3) (inLbl + 9) (tmp + 2) slot dst (.v (tmp + 1)) lay2 cls args pubBlk postJ)
+      (hcpNext : ChunkPos l F caller₁.label B (caller₁.pos + 1) (inLbl + 9) (1 + args.length))
       (hagreeNe : ∀ r < freshBase F, r ≠ slot → caller₁.env[r]? = caller₂.env[r]?)
       (hrest : StackRel l raw rest₁ rest₂) :
       StackRel l raw (caller₁ :: rest₁) (caller₂ :: rest₂)
-  /-- Fused `reset`+`reuse` cold redirect — stage 3 (under `reuseWrapper idx2`). -/
-  | consFusedCold2 {F : Lir.Func} {B coldBlk : Lir.Block} {caller₁ caller₂ : Lir.Frame}
-      {rest₁ rest₂ : List Lir.Frame} {slot dst : Lir.VReg} {tmp : Nat}
-      {inLbl : Lir.Label} {slotVal : Lir.Word}
+  /-- Suspended cold pointer `decProc` call inside fused 1-dead-field `resetU`+`reuseU`. -/
+  | consFusedResetU1Dec {F : Lir.Func} {B joinBlk : Lir.Block} {wFr caller₁ caller₂ : Lir.Frame}
+      {rest₁ rest₂ : List Lir.Frame} {slot x dst : Lir.VReg} {idx1 idx2 deadIdx tmp : Nat}
+      {c1 c2 : Lam.CtorInfo} {lay1 lay2 : Rt.Rc.CellLayout} {cls : Nat} {mask xVal : Lir.Word}
+      {args : List Lir.Arg} {postJ : List Lir.Stmt} {inLbl : Lir.Label}
+      (hc1 : l.ctors[idx1]? = some c1)
+      (hlay1 : lay1 = Rt.Rc.CellLayout.ofFields c1.arity c1.tag)
+      (hcls1 : lay1.cls? = some cls)
+      (hc2 : l.ctors[idx2]? = some c2)
+      (hlay2 : lay2 = Rt.Rc.CellLayout.ofFields c2.arity c2.tag)
+      (hcls2 : lay2.cls? = some cls) (hlen2 : args.length = c2.arity)
+      (hdead : deadFields lay1.nobj mask = [deadIdx])
+      (hwPos : wFr.fn = l.resetUWrapper idx1 ∧ wFr.label = 1 + 2 * deadIdx + 1 ∧ wFr.pos = 1 ∧ wFr.dsts = [])
+      (hw0 : wFr.env[0]? = some xVal)
+      (hw1 : wFr.env[1]? = some mask)
+      (hwvals : ∀ j < lay1.nobj, ∃ v, wFr.env[2 + j]? = some v)
       (hlt : caller₁.fn < l.sourceCount)
       (hfn : caller₂.fn = caller₁.fn)
       (hF : raw.funcs[caller₁.fn]? = some F)
-      (hdsts₁ : caller₁.dsts = [dst])
-      (hdsts₂ : caller₂.dsts = [tmp + 2])
-      (htmpGe : freshBase F ≤ tmp)
-      (hslot₁ : caller₁.env[slot]? = some slotVal)
-      (hslot₂ : caller₂.env[tmp + 1]? = some slotVal)
-      (hcoldPos : caller₂.label = inLbl + 3 ∧ caller₂.pos = 2)
-      (hcoldBlk : (inlineFunc l F).blocks[inLbl + 3]? = some coldBlk)
-      (hcoldSz : coldBlk.body.size = 2)
-      (hcoldTerm : coldBlk.term = .jump ⟨inLbl + 4, [.v (tmp + 1), .v (tmp + 2)]⟩)
-      (hjoinBlk : ∃ jb, (inlineFunc l F).blocks[inLbl + 4]? = some jb ∧ jb.params = [slot, dst])
-      (hcpNext : ChunkPos l F caller₁.label B caller₁.pos (inLbl + 4) 0)
-      (hagreeNe : ∀ r < freshBase F, r ≠ slot → caller₁.env[r]? = caller₂.env[r]?)
+      (hB : F.blocks[caller₁.label]? = some B)
+      (hpos₂ : caller₁.pos < B.body.size)
+      (hstmt₂ : B.body[caller₁.pos] = .call [dst] (l.reuseUWrapper idx2) (.v slot :: args))
+      (hsx : slot ≠ x) (hns : argsContainVReg slot args = false)
+      (hxLt : (x : Nat) < freshBase F) (hargsLt : argsMax args 0 < freshBase F)
+      (hx : caller₁.env[x]? = some xVal)
+      (hdsts₁ : caller₁.dsts = [slot])
+      (hdsts₂ : caller₂.dsts = [])
+      (hinPos : caller₂.label = inLbl + 1 ∧ caller₂.pos = (1 + lay1.nobj) + 1)
+      (hb1 : (inlineFunc l F).blocks[inLbl + 1]? =
+        some { body := (mkShellStores x (Rt.Rc.dynamicHeader lay1.nobj cls lay1.tag 1) lay1.nobj ++
+                 [Lir.Stmt.call [] l.decProc [.v tmp]]).toArray,
+               term := .jump ⟨inLbl + 2, []⟩, cold := true })
+      (hjb : (inlineFunc l F).blocks[inLbl + 2]? = some joinBlk)
+      (hjbP : joinBlk.params = [])
+      (hjbBody : joinBlk.body.toList =
+        (.store .w64 (cellAddr x 0) (.imm (Rt.Rc.dynamicHeader lay2.nobj cls lay2.tag 1)) ::
+          mkFieldStores x 0 args) ++ [.assign slot (.arg (.v x)), .assign dst (.arg (.v x))] ++ postJ)
+      (hcpNext : ChunkPos l F caller₁.label B (caller₁.pos + 1) (inLbl + 2) (3 + args.length))
+      (hagree : AgreeBelow (freshBase F) caller₁.env caller₂.env)
       (hrest : StackRel l raw rest₁ rest₂) :
-      StackRel l raw (caller₁ :: rest₁) (caller₂ :: rest₂)
+      StackRel l raw (wFr :: caller₁ :: rest₁) (caller₂ :: rest₂)
 
 /-- Whole-state correspondence: identical memory and context, related stacks,
 and the running top frame always has empty `dsts`. -/
@@ -358,20 +434,20 @@ theorem enter_rel (l : Layout) (raw : Lir.Program) {g : Lir.FunId} {vs : List Li
 /-- Unified single-step or single-site matching relation between `raw` and `inlineProgram l raw`. -/
 inductive MatchedStep (l : Layout) (raw : Lir.Program) (s₁ s₂ : Lir.State) : Prop
   | rawStuck : Lir.step raw s₁ = .stuck → MatchedStep l raw s₁ s₂
-  | rawStuckWithin {c₁ : Nat} : c₁ ≤ 3 →
+  | rawStuckWithin {c₁ : Nat} : c₁ ≤ 12 →
       Sem.Reaches (Lir.semStep raw) s₁ c₁ .stuck →
       MatchedStep l raw s₁ s₂
   | sameFinal {r : Sem.Result (List Lir.Word × X86.Memory)} :
       Sem.Final (Lir.semStep raw s₁) r → Sem.Final (Lir.semStep (inlineProgram l raw) s₂) r →
       MatchedStep l raw s₁ s₂
-  | sameOom {c₁ : Nat} : c₁ ≤ 3 →
+  | sameOom {c₁ : Nat} : c₁ ≤ 12 →
       Sem.Reaches (Lir.semStep raw) s₁ c₁ (.resource .heap) →
       Sem.Reaches (Lir.semStep (inlineProgram l raw)) s₂ 0 (.resource .heap) →
       MatchedStep l raw s₁ s₂
   | sync {s₁' s₂' s₁'' s₂'' : Lir.State} {b₁ b₂ : Bool} {c₁ c₂ : Nat} :
       Lir.semStep raw s₁ = .next s₁' b₁ → Sem.Star (Lir.semStep raw) s₁' c₁ s₁'' →
       Lir.semStep (inlineProgram l raw) s₂ = .next s₂' b₂ → Sem.Star (Lir.semStep (inlineProgram l raw)) s₂' c₂ s₂'' →
-      b₁.toNat + c₁ ≤ b₂.toNat + c₂ + 3 →
+      b₁.toNat + c₁ ≤ b₂.toNat + c₂ + 12 →
       StateRel l raw s₁'' s₂'' →
       MatchedStep l raw s₁ s₂
 
@@ -488,7 +564,7 @@ private theorem step_resetDec_sync {l : Layout} {raw : Lir.Program} (hr : Runtim
       Sem.Star (Lir.semStep raw) s₁' c₁ s₁'' ∧
       Lir.semStep (inlineProgram l raw) { mem, ctx, stack := caller₂ :: rest₂ } = .next s₂' b₂ ∧
       Sem.Star (Lir.semStep (inlineProgram l raw)) s₂' c₂ s₂'' ∧
-      b₁.toNat + c₁ ≤ b₂.toNat + c₂ + 3 ∧
+      b₁.toNat + c₁ ≤ b₂.toNat + c₂ + 12 ∧
       StateRel l raw s₁'' s₂'' := by
   have hF' : (inlineProgram l raw).funcs[caller₂.fn]? = some (inlineFunc l F) := by
     rw [hfn, inlineProgram_get_lt l raw hlt, hF]; rfl
@@ -709,9 +785,17 @@ private theorem matched_of_ret {l : Layout} {raw : Lir.Program} {mem : X86.Memor
       exact ⟨rfl, rfl, .consResetDecCall hW hshape ⟨hwPos.1, hwPos.2.1, rfl⟩ hjLt hw0 hw1 hwvals hlt hfn hF hdsts₁ rfl
         hinPos hinBlk hdrop hiLe hdecs hvals hx hfin hagree hrest', fun _ _ h => by cases h; rfl⟩
     | cons _ _ => exact .rawStuck (by simpa [hwPos.2.2, Lir.bindParams] using hstep₁)
-  | @consFusedCold1 F B coldBlk caller₁ caller₂ rest₁' rest₂' slot dst idx2 tmp args inLbl
-      hlt hfn hF hB hpos₂ hstmt₂ hargsLt hnotSlot hdsts₁ hdsts₂ htmpGe hcoldPos hcoldBlk hcoldSz
-      hcoldStmt hcoldTerm hjoinBlk hcpNext hagree hrest' =>
+  | consResetSharedDec hc1 hlay1 hcls1 hwPos hlt hfn hF hdsts₁ hdsts₂ hinPos hfin hagree hrest' =>
+    cases vals with
+    | nil =>
+      refine .sync (Lir.semStep_next.mpr (by simpa [hwPos.2.2.2, Lir.bindParams] using hstep₁)) (.refl _)
+        (Lir.semStep_next.mpr (by simpa [hdsts₂, Lir.bindParams] using hstep₂)) (.refl _) (by omega) ?_
+      exact ⟨rfl, rfl, .consResetSharedDec hc1 hlay1 hcls1 ⟨hwPos.1, hwPos.2.1, hwPos.2.2.1, rfl⟩
+        hlt hfn hF hdsts₁ rfl hinPos hfin hagree hrest', fun _ _ h => by cases h; rfl⟩
+    | cons _ _ => exact .rawStuck (by simpa [hwPos.2.2.2, Lir.bindParams] using hstep₁)
+  | @consFusedCold1 F B pubBlk caller₁ caller₂ rest₁' rest₂' slot x dst idx1 idx2 tmp c2 lay2 cls mask args postJ inLbl
+      hlt hfn hF hB hpos₂ hc2 hlay2 hcls2 hok2 hlen2 hstmt₂ hargsLt hds hnd hns hdsts₁ hdsts₂ htmpGe
+      hcoldPos hcoldBlk halloc hcpNext hagree hrest' =>
     cases vals with
     | nil => exact .rawStuck (by simpa [hdsts₁, Lir.bindParams] using hstep₁)
     | cons slotVal vs =>
@@ -721,60 +805,34 @@ private theorem matched_of_ret {l : Layout} {raw : Lir.Program} {mem : X86.Memor
         have hs₁ := Lir.semStep_next.mpr (by simpa [hdsts₁, Lir.bindParams] using hstep₁)
         have hs₂ := Lir.semStep_next.mpr (by simpa [hdsts₂, Lir.bindParams] using hstep₂)
         refine .sync hs₁ (.refl _) hs₂ (.refl _) (by omega) ?_
-        refine ⟨rfl, rfl, .consFusedColdMid (slotVal := slotVal) hlt hfn hF hB hpos₂ hstmt₂ hargsLt hnotSlot rfl rfl htmpGe
-          (by simp) (by simp) hcoldPos hcoldBlk hcoldSz hcoldStmt hcoldTerm hjoinBlk hcpNext ?_ hrest',
+        refine ⟨rfl, rfl, .consFusedColdMid (slotVal := slotVal) hlt hfn hF hB hpos₂ hc2 hlay2 hcls2 hok2 hlen2
+          hstmt₂ hargsLt hds hnd hns rfl rfl htmpGe (by simp) (by simp) hcoldPos hcoldBlk halloc hcpNext ?_ hrest',
           fun _ _ h => by cases h; rfl⟩
         intro r hr hne
         rw [Lir.env_insert_ne _ _ (Ne.symm hne), Lir.env_insert_ne _ _ (by omega)]
         exact hagree r hr
-  | consFusedColdMid hlt hfn hF hB hpos₂ hstmt₂ hargsLt hnotSlot hdsts₁ hdsts₂ htmpGe hslot₁ hslot₂
-      hcoldPos hcoldBlk hcoldSz hcoldStmt hcoldTerm hjoinBlk hcpNext hagreeNe hrest' =>
+  | consFusedColdMid hlt hfn hF hB hpos₂ hc2 hlay2 hcls2 hok2 hlen2 hstmt₂ hargsLt hds hnd hns
+      hdsts₁ hdsts₂ htmpGe hslot₁ hslot₂ hcoldPos hcoldBlk halloc hcpNext hagreeNe hrest' =>
     cases vals with
     | nil =>
       refine .sync (Lir.semStep_next.mpr (by simpa [hdsts₁, Lir.bindParams] using hstep₁)) (.refl _)
         (Lir.semStep_next.mpr (by simpa [hdsts₂, Lir.bindParams] using hstep₂)) (.refl _) (by omega) ?_
-      exact ⟨rfl, rfl, .consFusedColdMid hlt hfn hF hB hpos₂ hstmt₂ hargsLt hnotSlot rfl rfl htmpGe hslot₁ hslot₂
-        hcoldPos hcoldBlk hcoldSz hcoldStmt hcoldTerm hjoinBlk hcpNext hagreeNe hrest',
+      exact ⟨rfl, rfl, .consFusedColdMid hlt hfn hF hB hpos₂ hc2 hlay2 hcls2 hok2 hlen2 hstmt₂ hargsLt hds hnd hns
+        rfl rfl htmpGe hslot₁ hslot₂ hcoldPos hcoldBlk halloc hcpNext hagreeNe hrest',
         fun _ _ h => by cases h; rfl⟩
     | cons _ _ => exact .rawStuck (by simpa [hdsts₁, Lir.bindParams] using hstep₁)
-  | @consFusedCold2 F B coldBlk caller₁ caller₂ rest₁' rest₂' slot dst tmp inLbl slotVal
-      hlt hfn hF hdsts₁ hdsts₂ htmpGe hslot₁ hslot₂ hcoldPos hcoldBlk hcoldSz hcoldTerm
-      hjoinBlk hcpNext hagreeNe hrest' =>
+  | consFusedResetU1Dec hc1 hlay1 hcls1 hc2 hlay2 hcls2 hlen2 hdead hwPos hw0 hw1 hwvals
+      hlt hfn hF hB hpos₂ hstmt₂ hsx hns hxLt hargsLt hx hdsts₁ hdsts₂ hinPos hb1 hjb hjbP hjbBody
+      hcpNext hagree hrest' =>
     cases vals with
-    | nil => exact .rawStuck (by simpa [hdsts₁, Lir.bindParams] using hstep₁)
-    | cons dstVal vs =>
-      cases vs with
-      | cons _ _ => exact .rawStuck (by simpa [hdsts₁, Lir.bindParams] using hstep₁)
-      | nil =>
-        obtain ⟨jb, hbJ, hjp⟩ := hjoinBlk
-        have hF' : (inlineProgram l raw).funcs[caller₂.fn]? = some (inlineFunc l F) := by
-          rw [hfn, inlineProgram_get_lt l raw hlt, hF]; rfl
-        have hs₁ := Lir.semStep_next.mpr (by simpa [hdsts₁, Lir.bindParams] using hstep₁)
-        have hs₂_1 := Lir.semStep_next.mpr (by simpa [hdsts₂, Lir.bindParams] using hstep₂)
-        let env2a := caller₂.env.insert (tmp + 2) dstVal
-        have hslot2a : env2a[tmp + 1]? = some slotVal := by
-          rw [Lir.env_insert_ne _ _ (by dsimp only [Lir.VReg]; omega)]; exact hslot₂
-        have hdst2a : env2a[tmp + 2]? = some dstVal := by simp [env2a]
-        have hs₂_2 : Lir.semStep (inlineProgram l raw)
-            { mem, ctx, stack := { caller₂ with env := env2a, dsts := [] } :: rest₂' } =
-            .next { mem, ctx, stack := { caller₂ with label := inLbl + 4, pos := 0, env := (env2a.insert slot slotVal).insert dst dstVal, dsts := [] } :: rest₂' } false := by
-          apply Lir.semStep_next.mpr
-          rw [Lir.step_term (fr := { caller₂ with env := env2a, dsts := [] })
-            hF' (by rw [hcoldPos.1]; exact hcoldBlk) (by rw [hcoldPos.2, hcoldSz])]
-          have hfwd : ¬ (inLbl + 4 ≤ caller₂.label) := by rw [hcoldPos.1]; dsimp only [Lir.Label]; omega
-          simp [hcoldTerm, Lir.takeEdge, Lir.evalArgs, Lir.Arg.eval, hslot2a, hdst2a, hbJ, hjp, Lir.bindParams, hfwd]
-        refine .sync hs₁ (.refl _) hs₂_1 (.free hs₂_2 (.refl _)) (by omega) ?_
-        refine ⟨rfl, rfl, .cons (.source hlt hfn hF hcpNext ?_ rfl) hrest',
-          fun _ _ h => by cases h; rfl⟩
-        intro r hr
-        by_cases hrd : r = dst
-        · subst hrd; simp
-        · rw [Lir.env_insert_ne _ _ (Ne.symm hrd), Lir.env_insert_ne _ _ (Ne.symm hrd)]
-          by_cases hrs : r = slot
-          · subst hrs; simp [hslot₁]
-          · rw [Lir.env_insert_ne _ _ (Ne.symm hrs),
-              Lir.env_insert_ne _ _ (by dsimp only [Lir.VReg] at hrs ⊢; omega)]
-            exact hagreeNe r hr hrs
+    | nil =>
+      refine .sync (Lir.semStep_next.mpr (by simpa [hwPos.2.2.2, Lir.bindParams] using hstep₁)) (.refl _)
+        (Lir.semStep_next.mpr (by simpa [hdsts₂, Lir.bindParams] using hstep₂)) (.refl _) (by omega) ?_
+      exact ⟨rfl, rfl, .consFusedResetU1Dec hc1 hlay1 hcls1 hc2 hlay2 hcls2 hlen2 hdead
+        ⟨hwPos.1, hwPos.2.1, hwPos.2.2.1, rfl⟩ hw0 hw1 hwvals
+        hlt hfn hF hB hpos₂ hstmt₂ hsx hns hxLt hargsLt hx hdsts₁ rfl hinPos hb1 hjb hjbP hjbBody
+        hcpNext hagree hrest', fun _ _ h => by cases h; rfl⟩
+    | cons _ _ => exact .rawStuck (by simpa [hwPos.2.2.2, Lir.bindParams] using hstep₁)
 
 private theorem matched_of_runtime_edge {l : Layout} {raw : Lir.Program} {F : Lir.Func}
     {mem : X86.Memory} {ctx : Lir.Word} {fr₁ : Lir.Frame} {rest₁ rest₂ : List Lir.Frame}
@@ -862,6 +920,97 @@ private theorem matched_of_edge {l : Layout} {raw : Lir.Program} {F : Lir.Func} 
         exact ⟨rfl, rfl, .cons (.source hlt hfn hF hcp' hagree' (by simp [hdsts₁, hdsts₂])) hrest,
           fun _ _ h => by cases h; exact hdsts₁⟩
 
+/-- Shared continuation matcher for inlined `.fusedResetReuse` (`live.length ≤ maxInlineResetLive`):
+given synchronized prefixes reaching `s2 = reuseWrapper idx2 (.v slot :: args)` with `slot = 1`
+in `raw` and `allocLbl` in `inl`, matches `raw_reuse_cold_exec` against `exec_inlineAlloc_blocks`. -/
+private theorem match_fused_shared_alloc {l : Layout} {raw : Lir.Program} (hr : RuntimeFuncs l raw)
+    {F : Lir.Func} {B pubBlk : Lir.Block} {caller₁ caller₂ : Lir.Frame}
+    {rest₁ rest₂ : List Lir.Frame} {slot dst : Lir.VReg} {idx2 : Nat} {c2 : Lam.CtorInfo}
+    {lay2 : Rt.Rc.CellLayout} {cls : Nat} {args : List Lir.Arg} {postJ : List Lir.Stmt}
+    {allocLbl pubLbl : Lir.Label} {aBase : Nat} {envD : Lir.Env}
+    {s₁_0 s₁' s₂_0 s₂' : Lir.State} {b₁ : Bool} {c₁ : Nat} {mem_dec : X86.Memory} {ctx₁ : Lir.Word}
+    (hlt : caller₁.fn < l.sourceCount) (hfn : caller₂.fn = caller₁.fn)
+    (hF : raw.funcs[caller₁.fn]? = some F) (hB : F.blocks[caller₁.label]? = some B)
+    (hpos₂ : caller₁.pos < B.body.size)
+    (hc2 : l.ctors[idx2]? = some c2)
+    (hlay2 : lay2 = Rt.Rc.CellLayout.ofFields c2.arity c2.tag)
+    (hcls2 : lay2.cls? = some cls) (hok2 : lay2.ok = true) (hlen2 : args.length = c2.arity)
+    (hstmt₂ : B.body[caller₁.pos] = .call [dst] (l.reuseWrapper idx2) (.v slot :: args))
+    (hargsLt : argsMax args 0 < freshBase F)
+    (hds : dst ≠ slot) (hnd : argsContainVReg dst args = false) (hns : argsContainVReg slot args = false)
+    (haGe : freshBase F ≤ aBase)
+    (halloc : InlineAllocShape (inlineFunc l F) allocLbl pubLbl aBase slot dst (.imm 1) lay2 cls args pubBlk postJ)
+    (hcpNext : ChunkPos l F caller₁.label B (caller₁.pos + 1) pubLbl (1 + args.length))
+    (hagreeD : AgreeBelow (freshBase F) caller₁.env envD)
+    (hrest : StackRel l raw rest₁ rest₂)
+    (hcBound : b₁.toNat + c₁ + 2 ≤ 12)
+    (hs₁ : Lir.semStep raw s₁_0 = .next s₁' b₁)
+    (hpref₁ : Sem.Star (Lir.semStep raw) s₁' c₁
+      { mem := mem_dec, ctx := ctx₁, stack := { caller₁ with env := caller₁.env.insert slot 1, dsts := [] } :: rest₁ })
+    (hs₂ : Lir.semStep (inlineProgram l raw) s₂_0 = .next s₂' false)
+    (hpref₂ : Sem.Star (Lir.semStep (inlineProgram l raw)) s₂' 0
+      { mem := mem_dec, ctx := ctx₁, stack := { fn := caller₂.fn, label := allocLbl, pos := 0, env := envD } :: rest₂ }) :
+    MatchedStep l raw s₁_0 s₂_0 := by
+  have hF' : (inlineProgram l raw).funcs[caller₂.fn]? = some (inlineFunc l F) := by
+    rw [hfn, inlineProgram_get_lt l raw hlt, hF]; rfl
+  have hargsIns : Lir.evalArgs (caller₁.env.insert slot 1) args = Lir.evalArgs caller₁.env args :=
+    evalArgs_eq_of_agree_ne (bound := freshBase F) (slot := slot)
+      (fun r _ hne => Lir.env_insert_ne _ _ (Ne.symm hne)) hargsLt hns
+  have hargsEq : Lir.evalArgs caller₁.env args = Lir.evalArgs envD args :=
+    hagreeD.evalArgs_eq hargsLt
+  cases hargs : Lir.evalArgs caller₁.env args with
+  | none =>
+    have hargs' : List.mapM (Lir.Arg.eval (caller₁.env.insert slot 1)) args = none := hargsIns.trans hargs
+    have hstk : Lir.step raw
+        { mem := mem_dec, ctx := ctx₁, stack := { caller₁ with env := caller₁.env.insert slot 1, dsts := [] } :: rest₁ } = .stuck := by
+      unfold Lir.step
+      simp [hF, hB, hpos₂, hstmt₂, Lir.evalArgs, Lir.Arg.eval, hargs']
+    have hr := reaches_of_star_reaches (Sem.Star.head hs₁ hpref₁) (.final (k := 0) (by rw [Lir.semStep, hstk]; exact .stuck))
+    exact .rawStuckWithin (by cases b₁ <;> simp at hcBound ⊢ <;> omega) hr
+  | some vals =>
+    have h1tnz : Lir.Cond.holds .tnz .w64 1 1 = true := by decide
+    have hraw2 := raw_reuse_cold_exec hr
+      (fr := { caller₁ with env := caller₁.env.insert slot 1, dsts := [] })
+      hF hB hpos₂ hc2 hlay2 hcls2 hok2 hlen2 hstmt₂ (by simp) (by rw [hargsIns, hargs]) h1tnz
+      (rest := rest₁) (mem := mem_dec) (ctx := ctx₁)
+    have hinl2 := exec_inlineAlloc_blocks (p := inlineProgram l raw) (F' := inlineFunc l F)
+      (pubBlk := pubBlk) (fn := caller₂.fn) (base := allocLbl) (pubLbl := pubLbl)
+      (aBase := aBase) (bound := freshBase F) (dst := dst) (lay := lay2) (cls := cls)
+      (args := args) (vals := vals) (postJ := postJ) (pre := some (slot, .imm 1, 1))
+      (env0 := envD) (mem := mem_dec) (ctx := ctx₁) (rest := rest₂)
+      hF' halloc.pubGt haGe hargsLt hnd
+      (fun sl a w h => by cases h; exact ⟨hds, hns, fun _ _ => rfl⟩)
+      (by rw [← hargsEq, hargs]) halloc.pubParams halloc.pubBody
+      halloc.b0 halloc.b1 halloc.b2 halloc.b3 halloc.b4 halloc.b5 halloc.pubLookup
+    cases hres : evalAllocReserve lay2 cls mem_dec ctx₁ with
+    | stuck =>
+      rw [hres] at hraw2
+      have hr := reaches_of_star_reaches (Sem.Star.head hs₁ hpref₁) hraw2
+      exact .rawStuckWithin (by cases b₁ <;> simp at hcBound ⊢ <;> omega) hr
+    | oom =>
+      rw [hres] at hraw2 hinl2
+      have hr₁ := reaches_of_star_reaches (Sem.Star.head hs₁ hpref₁) hraw2
+      have hr₂ := reaches_of_star_reaches (Sem.Star.head hs₂ hpref₂) hinl2
+      exact .sameOom (by cases b₁ <;> simp at hcBound ⊢ <;> omega) hr₁ (by simpa using hr₂)
+    | ok addr mem₂ =>
+      rw [hres] at hraw2 hinl2
+      dsimp only at hraw2 hinl2
+      cases hwf : writeFieldsMem mem₂ addr 0 vals with
+      | none =>
+        rw [hwf] at hraw2
+        have hr := reaches_of_star_reaches (Sem.Star.head hs₁ hpref₁) hraw2
+        exact .rawStuckWithin (by cases b₁ <;> simp at hcBound ⊢ <;> omega) hr
+      | some mem' =>
+        rw [hwf] at hraw2 hinl2
+        obtain ⟨s₁'', hs₁₂, hstar₁₂⟩ := hraw2
+        obtain ⟨env', hstar₂₂, hag'⟩ := hinl2
+        have hagree' : AgreeBelow (freshBase F) ((caller₁.env.insert slot 1).insert dst addr) env' :=
+          fun r hr' => (((hagreeD.insert_same slot 1).insert_same dst addr) r hr').trans (hag' r hr')
+        refine .sync hs₁ (hpref₁.trans (.charge hs₁₂ hstar₁₂)) hs₂ (hpref₂.trans hstar₂₂)
+          (by cases b₁ <;> simp at hcBound ⊢ <;> omega) ?_
+        exact ⟨rfl, rfl, .cons (.source hlt hfn hF hcpNext hagree' rfl) hrest,
+          fun _ _ h => by cases h; rfl⟩
+
 /-! ## Master single-step / single-site simulation theorem -/
 
 theorem step_match {l : Layout} {raw : Lir.Program} (hr : RuntimeFuncs l raw)
@@ -916,9 +1065,7 @@ theorem step_match {l : Layout} {raw : Lir.Program} (hr : RuntimeFuncs l raw)
       fun _ _ h => by cases h; rfl⟩
   | consColdRedirect _ _ _ hdsts₁ _ _ _ _ _ _ _ _ _ _ _ =>
     have h0 := htopDsts _ _ rfl; rw [hdsts₁] at h0; cases h0
-  | consFusedCold1 _ _ _ _ _ _ _ _ hdsts₁ _ _ _ _ _ _ _ _ _ _ _ =>
-    have h0 := htopDsts _ _ rfl; rw [hdsts₁] at h0; cases h0
-  | consFusedCold2 _ _ _ hdsts₁ _ _ _ _ _ _ _ _ _ _ _ _ =>
+  | consFusedCold1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hdsts₁ _ _ _ _ _ _ _ _ =>
     have h0 := htopDsts _ _ rfl; rw [hdsts₁] at h0; cases h0
   | @consResetDec F W B inBlk wFr caller₁ caller₂ rest₁ rest₂ dst x deadBase n base oldBase k i decBasePos
       xVal mask inLbl hW hshape hwPos hkLe hw0 hw1 hwvals hlt hfn hF hdsts₁ hdsts₂ hinPos hinBlk
@@ -942,45 +1089,215 @@ theorem step_match {l : Layout} {raw : Lir.Program} (hr : RuntimeFuncs l raw)
         hW hshape (k := j + 1) ⟨rfl, rfl, rfl⟩ (by omega) hw0 hw1 hwvals hlt hfn hF
         hdsts₁ hdsts₂ hinPos hinBlk hdrop hiLe hdecs hvals hx hfin hagree hrest (mem := mem₁) (ctx := ctx₁)
     exact .sync sAfter (Sem.Star.head hs₁ hst₁) hs₂ hst₂ (by cases b₁ <;> simp at hchg ⊢ <;> omega) hrel'
-  | @consFusedColdMid F B coldBlk caller₁ caller₂ rest₁ rest₂ slot dst idx2 tmp args inLbl slotVal
-      hlt hfn hF hB hpos₂ hstmt₂ hargsLt hnotSlot hdsts₁ hdsts₂ htmpGe hslot₁ hslot₂
-      hcoldPos hcoldBlk hcoldSz hcoldStmt hcoldTerm hjoinBlk hcpNext hagreeNe hrest =>
+  | @consResetSharedDec F B wFr caller₁ caller₂ rest₁ rest₂ slot x idx1 c1 lay1 cls1 decLbl
+      hc1 hlay1 hcls1 hwPos hlt hfn hF hdsts₁ hdsts₂ hinPos hfin hagree hrest =>
+    have hF' : (inlineProgram l raw).funcs[caller₂.fn]? = some (inlineFunc l F) := by
+      rw [hfn, inlineProgram_get_lt l raw hlt, hF]; rfl
+    have hwrapF : raw.funcs[wFr.fn]? = some (mkResetWrapper l.isUniqueProc l.incProc l.decProc lay1 cls1) := by
+      rw [hwPos.1, hlay1]; exact hr.resetWrap idx1 c1 cls1 hc1 (by rwa [← hlay1])
+    have hretBlk := mkResetWrapper_shared_ret_block l.isUniqueProc l.incProc l.decProc lay1 cls1
+    have hs₁ : Lir.semStep raw { mem := mem₁, ctx := ctx₁, stack := wFr :: caller₁ :: rest₁ } =
+        .next { mem := mem₁, ctx := ctx₁, stack := { caller₁ with env := caller₁.env.insert slot 1, dsts := [] } :: rest₁ } false := by
+      apply Lir.semStep_next.mpr
+      rw [Lir.step_term (fr := wFr) hwrapF (by rw [hwPos.2.1]; exact hretBlk) (by rw [hwPos.2.2.1]; rfl)]
+      simp [Lir.evalArgs, Lir.Arg.eval, hdsts₁, Lir.bindParams]
+    cases hfin with
+    | reset joinLbl hltLbl hdecBlk hjoin hcpNext =>
+      obtain ⟨jb, hbJ, hjp⟩ := hjoin
+      have hs₂ : Lir.semStep (inlineProgram l raw) { mem := mem₁, ctx := ctx₁, stack := caller₂ :: rest₂ } =
+          .next { mem := mem₁, ctx := ctx₁, stack := { caller₂ with label := joinLbl, pos := 0, env := caller₂.env.insert slot 1, dsts := [] } :: rest₂ } false := by
+        apply Lir.semStep_next.mpr
+        rw [Lir.step_term (fr := caller₂) hF' (by rw [hinPos.1]; exact hdecBlk) (by rw [hinPos.2]; rfl)]
+        have hfwd : ¬ (joinLbl ≤ caller₂.label) := by rw [hinPos.1]; dsimp only [Lir.Label] at hltLbl ⊢; omega
+        simp [Lir.takeEdge, Lir.evalArgs, Lir.Arg.eval, hbJ, hjp, Lir.bindParams, hfwd, hdsts₂]
+      refine .sync hs₁ (.refl _) hs₂ (.refl _) (by omega) ?_
+      exact ⟨rfl, rfl, .cons (.source hlt hfn hF hcpNext (hagree.insert_same slot 1) rfl) hrest,
+        fun _ _ h => by cases h; rfl⟩
+    | fused dst idx2 c2 lay2 cls args allocLbl pubLbl aBase pubBlk postJ
+        hB hpos₂ hc2 hlay2 hcls2 hok2 hlen2 hstmt₂ hargsLt hds hnd hns haGe hltAlloc hdecBlk halloc hcpNext =>
+      have hs₂ : Lir.semStep (inlineProgram l raw) { mem := mem₁, ctx := ctx₁, stack := caller₂ :: rest₂ } =
+          .next { mem := mem₁, ctx := ctx₁, stack := { fn := caller₂.fn, label := allocLbl, pos := 0, env := caller₂.env } :: rest₂ } false := by
+        apply Lir.semStep_next.mpr
+        rw [Lir.step_term (fr := caller₂) hF' (by rw [hinPos.1]; exact hdecBlk) (by rw [hinPos.2]; rfl)]
+        have hfwd : ¬ (allocLbl ≤ caller₂.label) := by rw [hinPos.1]; dsimp only [Lir.Label] at hltAlloc ⊢; omega
+        have hfrA : ({ caller₂ with label := allocLbl, pos := 0 } : Lir.Frame) =
+            { fn := caller₂.fn, label := allocLbl, pos := 0, env := caller₂.env } := by
+          cases caller₂; dsimp only at hdsts₂; subst hdsts₂; rfl
+        rw [← hfrA]
+        simp [Lir.takeEdge, Lir.evalArgs, halloc.b0, Lir.bindParams, hfwd]
+      exact match_fused_shared_alloc hr hlt hfn hF hB hpos₂ hc2 hlay2 hcls2 hok2 hlen2 hstmt₂
+        hargsLt hds hnd hns haGe halloc hcpNext hagree hrest (by simp) hs₁ (.refl _) hs₂ (.refl _)
+  | @consFusedColdMid F B pubBlk caller₁ caller₂ rest₁ rest₂ slot x dst idx1 idx2 tmp c2 lay2 cls mask
+      args postJ inLbl slotVal hlt hfn hF hB hpos₂ hc2 hlay2 hcls2 hok2 hlen2 hstmt₂ hargsLt hds hnd hns
+      hdsts₁ hdsts₂ htmpGe hslot₁ hslot₂ hcoldPos hcoldBlk halloc hcpNext hagreeNe hrest =>
     have hF' : (inlineProgram l raw).funcs[caller₂.fn]? = some (inlineFunc l F) := by
       rw [hfn, inlineProgram_get_lt l raw hlt, hF]; rfl
     have hargsEq : Lir.evalArgs caller₁.env args = Lir.evalArgs caller₂.env args :=
-      evalArgs_eq_of_agree_ne hagreeNe hargsLt hnotSlot
+      evalArgs_eq_of_agree_ne hagreeNe hargsLt hns
     cases hargs : Lir.evalArgs caller₁.env args with
     | none =>
       have hargs' : List.mapM (Lir.Arg.eval caller₁.env) args = none := hargs
       exact .rawStuck (by unfold Lir.step; simp [hF, hB, hpos₂, hstmt₂, Lir.evalArgs, Lir.Arg.eval, hslot₁, hargs'])
     | some vals =>
-      have hfull₁ : Lir.evalArgs caller₁.env (.v slot :: args) = some (slotVal :: vals) := by
-        simp only [Lir.evalArgs, List.mapM_cons, Lir.Arg.eval, hslot₁, Option.bind_eq_bind, Option.bind_some]
-        rw [show List.mapM (Lir.Arg.eval caller₁.env) args = some vals from hargs]; rfl
-      have hfull₂ : Lir.evalArgs caller₂.env (.v (tmp + 1) :: args) = some (slotVal :: vals) := by
-        simp only [Lir.evalArgs, List.mapM_cons, Lir.Arg.eval, hslot₂, Option.bind_eq_bind, Option.bind_some]
-        rw [show List.mapM (Lir.Arg.eval caller₂.env) args = some vals from (hargsEq.symm.trans hargs)]; rfl
-      obtain ⟨heFwd, _, _⟩ := enter_rel l raw (g := l.reuseWrapper idx2) (vs := slotVal :: vals)
-      cases hent : Lir.enter raw (l.reuseWrapper idx2) (slotVal :: vals) with
+      by_cases htag : Lir.Cond.holds .tnz .w64 slotVal 1 = true
+      · have hraw := raw_reuse_cold_exec hr hF hB hpos₂ hc2 hlay2 hcls2 hok2 hlen2 hstmt₂ hslot₁ hargs htag
+          (rest := rest₁) (mem := mem₁) (ctx := ctx₁)
+        have sBr : Lir.semStep (inlineProgram l raw) { mem := mem₁, ctx := ctx₁, stack := caller₂ :: rest₂ } =
+            .next { mem := mem₁, ctx := ctx₁, stack := { fn := caller₂.fn, label := inLbl + 3, pos := 0, env := caller₂.env } :: rest₂ } false := by
+          apply Lir.semStep_next.mpr
+          rw [Lir.step_term (fr := caller₂) hF' (by rw [hcoldPos.1]; exact hcoldBlk) (by rw [hcoldPos.2]; rfl)]
+          have hfwd : ¬ (inLbl + 3 ≤ caller₂.label) := by rw [hcoldPos.1]; dsimp only [Lir.Label]; omega
+          have hfr3 : ({ caller₂ with label := inLbl + 3, pos := 0 } : Lir.Frame) =
+              { fn := caller₂.fn, label := inLbl + 3, pos := 0, env := caller₂.env } := by
+            cases caller₂; dsimp only at hdsts₂; subst hdsts₂; rfl
+          rw [← hfr3]
+          simp [Lir.Arg.eval, hslot₂, htag, Lir.takeEdge, Lir.evalArgs, halloc.b0, Lir.bindParams, hfwd]
+        have hinl := exec_inlineAlloc_blocks (p := inlineProgram l raw) (F' := inlineFunc l F)
+          (pubBlk := pubBlk) (fn := caller₂.fn) (base := inLbl + 3) (pubLbl := inLbl + 9)
+          (aBase := tmp + 2) (bound := freshBase F) (dst := dst) (lay := lay2) (cls := cls)
+          (args := args) (vals := vals) (postJ := postJ) (pre := some (slot, .v (tmp + 1), slotVal))
+          (env0 := caller₂.env) (mem := mem₁) (ctx := ctx₁) (rest := rest₂)
+          hF' halloc.pubGt (by omega) hargsLt hnd
+          (fun sl a w h => by
+            cases h; exact ⟨hds, hns, fun env' hagA => by
+              simp only [Lir.Arg.eval]; rw [← hagA (tmp + 1) (by omega), hslot₂]⟩)
+          (by rw [← hargsEq, hargs]) halloc.pubParams halloc.pubBody
+          halloc.b0 halloc.b1 halloc.b2 halloc.b3 halloc.b4 halloc.b5 halloc.pubLookup
+        cases hres : evalAllocReserve lay2 cls mem₁ ctx₁ with
+        | stuck => rw [hres] at hraw; exact .rawStuckWithin (by omega) hraw
+        | oom =>
+          rw [hres] at hraw hinl
+          exact .sameOom (by omega) hraw (.free sBr hinl)
+        | ok addr mem₂ =>
+          rw [hres] at hraw hinl
+          dsimp only at hraw hinl
+          cases hwf : writeFieldsMem mem₂ addr 0 vals with
+          | none => rw [hwf] at hraw; exact .rawStuckWithin (by omega) hraw
+          | some mem' =>
+            rw [hwf] at hraw hinl
+            obtain ⟨s₁', hs₁, hstar₁⟩ := hraw
+            obtain ⟨env', hstar₂, hag'⟩ := hinl
+            have hagree' : AgreeBelow (freshBase F) (caller₁.env.insert dst addr) env' := fun r hr' => by
+              rw [← hag' r hr']
+              by_cases hrd : r = dst
+              · subst hrd; simp
+              · rw [Lir.env_insert_ne _ _ (Ne.symm hrd), Lir.env_insert_ne _ _ (Ne.symm hrd)]
+                by_cases hrs : r = slot
+                · subst hrs; simp [hslot₁]
+                · rw [Lir.env_insert_ne _ _ (Ne.symm hrs)]; exact hagreeNe r hr' hrs
+            refine .sync hs₁ hstar₁ sBr hstar₂ (by simp) ?_
+            exact ⟨rfl, rfl, .cons (.source hlt hfn hF hcpNext hagree' rfl) hrest,
+              fun _ _ h => by cases h; rfl⟩
+      · have hcell : Lir.Cond.holds .tnz .w64 slotVal 1 = false := by simpa using htag
+        have hraw := raw_reuse_hot_exec hr hF hB hpos₂ hc2 hlay2 hcls2 hlen2 hstmt₂ hslot₁ hargs hcell
+          (rest := rest₁) (mem := mem₁) (ctx := ctx₁)
+        dsimp only at hraw
+        let envPub := (caller₂.env.insert slot slotVal).insert dst slotVal
+        have sBr : Lir.semStep (inlineProgram l raw) { mem := mem₁, ctx := ctx₁, stack := caller₂ :: rest₂ } =
+            .next { mem := mem₁, ctx := ctx₁, stack := { fn := caller₂.fn, label := inLbl + 9, pos := 0, env := envPub } :: rest₂ } false := by
+          apply Lir.semStep_next.mpr
+          rw [Lir.step_term (fr := caller₂) hF' (by rw [hcoldPos.1]; exact hcoldBlk) (by rw [hcoldPos.2]; rfl)]
+          have hfwd : ¬ (inLbl + 9 ≤ caller₂.label) := by rw [hcoldPos.1]; dsimp only [Lir.Label]; omega
+          have hfrP : ({ caller₂ with label := inLbl + 9, pos := 0, env := envPub } : Lir.Frame) =
+              { fn := caller₂.fn, label := inLbl + 9, pos := 0, env := envPub } := by
+            cases caller₂; dsimp only at hdsts₂; subst hdsts₂; rfl
+          rw [← hfrP]
+          simp [Lir.Arg.eval, hslot₂, hcell, Lir.takeEdge, Lir.evalArgs, halloc.pubLookup, halloc.pubParams, Lir.bindParams, hfwd, envPub]
+        have hargsPub : Lir.evalArgs envPub args = some vals := by
+          simp only [envPub]
+          rw [evalArgs_insert_not_mem (argsContainVReg_false hnd),
+            evalArgs_insert_not_mem (argsContainVReg_false hns), ← hargsEq, hargs]
+        have hpubBody' : pubBlk.body.toList =
+            [] ++ (.store .w64 (cellAddr dst 0) (.imm (Rt.Rc.dynamicHeader lay2.nobj cls lay2.tag 1)) :: mkFieldStores dst 0 args) ++ postJ := by
+          simpa [cellAddr] using halloc.pubBody
+        have hwr := exec_writeReuse (p := inlineProgram l raw) (F := inlineFunc l F) (B := pubBlk)
+          (fn := caller₂.fn) (lbl := inLbl + 9) (base := dst) (addr := slotVal)
+          (hdr := Rt.Rc.dynamicHeader lay2.nobj cls lay2.tag 1)
+          (ctx := ctx₁) (rest := rest₂) (env := envPub)
+          hF' halloc.pubLookup (by simp [envPub]) hpubBody' hargsPub (mem := mem₁)
+        cases hwm : writeReuseMem mem₁ slotVal (Rt.Rc.dynamicHeader lay2.nobj cls lay2.tag 1) vals with
+        | none => rw [hwm] at hraw; exact .rawStuckWithin (by omega) hraw
+        | some mem' =>
+          rw [hwm] at hraw hwr
+          obtain ⟨s₁', hs₁, hstar₁⟩ := hraw
+          have hagree' : AgreeBelow (freshBase F) (caller₁.env.insert dst slotVal) envPub := fun r hr' => by
+            simp only [envPub]
+            by_cases hrd : r = dst
+            · subst hrd; simp
+            · rw [Lir.env_insert_ne _ _ (Ne.symm hrd), Lir.env_insert_ne _ _ (Ne.symm hrd)]
+              by_cases hrs : r = slot
+              · subst hrs; simp [hslot₁]
+              · rw [Lir.env_insert_ne _ _ (Ne.symm hrs)]; exact hagreeNe r hr' hrs
+          refine .sync hs₁ hstar₁ sBr (by simpa using hwr) (by simp) ?_
+          exact ⟨rfl, rfl, .cons (.source hlt hfn hF hcpNext hagree' rfl) hrest,
+            fun _ _ h => by cases h; rfl⟩
+  | @consFusedResetU1Dec F B joinBlk wFr caller₁ caller₂ rest₁ rest₂ slot x dst idx1 idx2 deadIdx tmp
+      c1 c2 lay1 lay2 cls mask xVal args postJ inLbl
+      hc1 hlay1 hcls1 hc2 hlay2 hcls2 hlen2 hdead hwPos hw0 hw1 hwvals
+      hlt hfn hF hB hpos₂ hstmt₂ hsx hns hxLt hargsLt hx hdsts₁ hdsts₂ hinPos hb1 hjb hjbP hjbBody
+      hcpNext hagree hrest =>
+    have hF' : (inlineProgram l raw).funcs[caller₂.fn]? = some (inlineFunc l F) := by
+      rw [hfn, inlineProgram_get_lt l raw hlt, hF]; rfl
+    have hwF : raw.funcs[wFr.fn]? = some (mkResetUWrapper l.decProc lay1 cls) := by
+      rw [hwPos.1, hlay1]; exact hr.resetUWrap idx1 c1 cls hc1 (by rwa [← hlay1])
+    have hshape := mkResetUWrapper_decLoopShape l.decProc lay1 cls
+    obtain ⟨hdeadLt, _, hdeadNext⟩ := deadFields_singleton_split hdead
+    have hwEq : ({ fn := wFr.fn, label := 1 + 2 * deadIdx + 1, pos := 1, env := wFr.env, dsts := [] } : Lir.Frame) = wFr := by
+      cases wFr; dsimp only at hwPos; obtain ⟨_, rfl, rfl, rfl⟩ := hwPos; rfl
+    have sAfter : Lir.semStep raw { mem := mem₁, ctx := ctx₁, stack := wFr :: caller₁ :: rest₁ } =
+        .next { mem := mem₁, ctx := ctx₁, stack :=
+          { fn := wFr.fn, label := 1 + 2 * (deadIdx + 1), pos := 0, env := wFr.env, dsts := [] } :: caller₁ :: rest₁ } false := by
+      rw [← hwEq]; exact raw_decLoop_after_call hwF hshape hdeadLt
+    have hloop := raw_decLoop_step hr hwF hshape hw0 hw1 hdsts₁ hwvals (deadIdx + 1) (by omega)
+      (mem := mem₁) (ctx := ctx₁) (rest := rest₁)
+    rw [hdeadNext] at hloop; dsimp only at hloop
+    have hargsIns : Lir.evalArgs (caller₁.env.insert slot xVal) args = Lir.evalArgs caller₁.env args :=
+      evalArgs_eq_of_agree_ne (bound := freshBase F) (slot := slot)
+        (fun r _ hne => Lir.env_insert_ne _ _ (Ne.symm hne)) hargsLt hns
+    have hargsEq : Lir.evalArgs caller₁.env args = Lir.evalArgs caller₂.env args :=
+      hagree.evalArgs_eq hargsLt
+    cases hargs : Lir.evalArgs caller₁.env args with
+    | none =>
+      have hargs' : List.mapM (Lir.Arg.eval (caller₁.env.insert slot xVal)) args = none := hargsIns.trans hargs
+      have hstk : Lir.step raw
+          { mem := mem₁, ctx := ctx₁, stack := { caller₁ with env := caller₁.env.insert slot xVal, dsts := [] } :: rest₁ } = .stuck := by
+        unfold Lir.step
+        simp [hF, hB, hpos₂, hstmt₂, Lir.evalArgs, Lir.Arg.eval, hargs']
+      exact .rawStuckWithin (by omega)
+        (.free sAfter (reaches_of_star_reaches hloop (.final (k := 0) (by rw [Lir.semStep, hstk]; exact .stuck))))
+    | some vals =>
+      have hraw2 := raw_reuseU_exec hr (slotVal := xVal)
+        (fr := { caller₁ with env := caller₁.env.insert slot xVal, dsts := [] })
+        hF hB hpos₂ hc2 hlay2 hcls2 hlen2 hstmt₂ (by simp) (by rw [hargsIns, hargs])
+        (rest := rest₁) (mem := mem₁) (ctx := ctx₁)
+      dsimp only at hraw2
+      cases hwm : writeReuseMem mem₁ xVal (Rt.Rc.dynamicHeader lay2.nobj cls lay2.tag 1) vals with
       | none =>
-        exact .rawStuck (by unfold Lir.step; simp [hF, hB, hpos₂, hstmt₂, hfull₁, hent])
-      | some callee₁ =>
-        obtain ⟨callee₂, hent₂, hfrCallee, hdstCallee⟩ := heFwd callee₁ hent
-        have hs₁ := Lir.semStep_next.mpr
-          (Lir.step_call (p := raw) (mem := mem₁) (ctx := ctx₁) (rest := rest₁) hF hB hpos₂ hstmt₂ hfull₁ hent)
-        have hposC : caller₂.pos < coldBlk.body.size := by rw [hcoldPos.2, hcoldSz]; omega
-        have hgetC : coldBlk.body[caller₂.pos]'hposC = .call [tmp + 2] (l.reuseWrapper idx2) (.v (tmp + 1) :: args) := by
-          have h1 : coldBlk.body[caller₂.pos]? = some (.call [tmp + 2] (l.reuseWrapper idx2) (.v (tmp + 1) :: args)) := by
-            rw [hcoldPos.2]; exact hcoldStmt
-          rw [Array.getElem?_eq_getElem hposC, Option.some.injEq] at h1; exact h1
-        have hs₂ := Lir.semStep_next.mpr
-          (Lir.step_call (p := inlineProgram l raw) (mem := mem₁) (ctx := ctx₁) (rest := rest₂)
-            hF' (by rw [hcoldPos.1]; exact hcoldBlk) hposC hgetC hfull₂ hent₂)
-        refine .sync hs₁ (.refl _) hs₂ (.refl _) (by simp) ?_
-        exact ⟨rfl, rfl, .cons hfrCallee
-          (.consFusedCold2 hlt hfn hF rfl rfl htmpGe hslot₁ hslot₂ ⟨hcoldPos.1, by rw [hcoldPos.2]⟩
-            hcoldBlk hcoldSz hcoldTerm hjoinBlk hcpNext hagreeNe hrest),
-          fun _ _ h => by cases h; exact hdstCallee⟩
+        rw [hwm] at hraw2
+        exact .rawStuckWithin (by omega) (.free sAfter (reaches_of_star_reaches hloop hraw2))
+      | some mem' =>
+        rw [hwm] at hraw2
+        obtain ⟨s₁'', hs₁₂, hstar₂⟩ := hraw2
+        have hx₂ : caller₂.env[x]? = some xVal := by rw [← hagree x hxLt, hx]
+        have sJmp : Lir.semStep (inlineProgram l raw) { mem := mem₁, ctx := ctx₁, stack := caller₂ :: rest₂ } =
+            .next { mem := mem₁, ctx := ctx₁, stack := { fn := caller₂.fn, label := inLbl + 2, pos := 0, env := caller₂.env, dsts := [] } :: rest₂ } false := by
+          apply Lir.semStep_next.mpr
+          rw [Lir.step_term (fr := caller₂) hF' (by rw [hinPos.1]; exact hb1)
+            (by rw [hinPos.2]; simp [mkShellStores_length])]
+          have hfwd : ¬ (inLbl + 2 ≤ caller₂.label) := by rw [hinPos.1]; dsimp only [Lir.Label]; omega
+          have hfrJ : ({ caller₂ with label := inLbl + 2, pos := 0 } : Lir.Frame) =
+              { fn := caller₂.fn, label := inLbl + 2, pos := 0, env := caller₂.env, dsts := [] } := by
+            cases caller₂; dsimp only at hdsts₂; subst hdsts₂; rfl
+          rw [← hfrJ]
+          simp [Lir.takeEdge, Lir.evalArgs, hjb, hjbP, Lir.bindParams, hfwd]
+        have hjoin := exec_fusedResetU1_join (p := inlineProgram l raw) (F' := inlineFunc l F) (joinBlk := joinBlk)
+          (fn := caller₂.fn) (joinLbl := inLbl + 2) (slot := slot) (x := x) (dst := dst)
+          (lay2 := lay2) (cls := cls) (args := args) (postJ := postJ)
+          (xVal := xVal) (ctx := ctx₁) (vals := vals) (env := caller₂.env) (mem := mem₁) (mem' := mem') (rest := rest₂)
+          hF' hjb hsx hx₂ (by rw [← hargsEq, hargs]) hjbBody hwm
+        refine .sync sAfter (hloop.trans (.charge hs₁₂ hstar₂)) sJmp hjoin (by simp) ?_
+        exact ⟨rfl, rfl, .cons (.source hlt hfn hF hcpNext ((hagree.insert_same slot xVal).insert_same dst xVal) rfl) hrest,
+          fun _ _ h => by cases h; rfl⟩
   | @cons fr₁ fr₂ rest₁ rest₂ hfr hrest =>
     have htop : fr₁.dsts = [] := htopDsts fr₁ rest₁ rfl
     cases hfr with
@@ -1128,7 +1445,7 @@ theorem step_match {l : Layout} {raw : Lir.Program} (hr : RuntimeFuncs l raw)
           | fusedResetReuse slot x dst idx1 lay1 mask idx2 lay2 cls args =>
             obtain ⟨hc1, hc2, hle, hdead, hdx, hsx, hds, hnd, hns⟩ := classifyPair_eq_fusedResetReuse hp
             obtain ⟨c1, hc1', hs1Eq0, hlay1, hcls1, _, _⟩ := classify_eq_reset hc1
-            obtain ⟨c2, hc2', hs2Eq0, hlay2, hcls2, hlen2, _, _, _⟩ := classify_eq_reuse hc2
+            obtain ⟨c2, hc2', hs2Eq0, hlay2, hcls2, hlen2, hok2, _, _⟩ := classify_eq_reuse hc2
             have hs1Eq : B.body[fr₁.pos] = .call [slot] (l.resetWrapper idx1) [.v x, .imm mask] := hs1Eq0
             have hs2Eq : B.body[fr₁.pos + 1] = .call [dst] (l.reuseWrapper idx2) (.v slot :: args) := hget2.trans hs2Eq0
             have hxLt : (x : Nat) < freshBase F := by
@@ -1145,36 +1462,88 @@ theorem step_match {l : Layout} {raw : Lir.Program} (hr : RuntimeFuncs l raw)
             | none =>
               exact .rawStuck (by unfold Lir.step; simp [hF, hB, hpos, hs1Eq, Lir.evalArgs, Lir.Arg.eval, hx])
             | some xVal =>
-              obtain ⟨hcpNext, hjoinBlk, hcoldBlk, hinlHot, hinlCold⟩ :=
-                inl_fusedResetReuse_exec hr (hfn ▸ hlt) (by rwa [hfn]) hdsts₂ hcp hrestPair hp
-                  hpos rfl hpos2 hget2 (by rw [← hxEq, hx]) hxLt (rest := rest₂) (mem := mem₁) (ctx := ctx₁)
               cases hu : evalUniqueCheck xVal mem₁ with
               | stuck =>
                 exact .rawStuckWithin (by omega)
                   (raw_reset_stuck hr hF hB hpos hc1' hlay1 hcls1 hs1Eq hx hu)
               | shared =>
-                obtain ⟨callee, env', s₂', hentRaw, hag', hs₂, hstar₂⟩ := hinlCold hu
-                have hs₁ : Lir.semStep raw { mem := mem₁, ctx := ctx₁, stack := fr₁ :: rest₁ } =
-                    .next { mem := mem₁, ctx := ctx₁, stack := callee :: { fr₁ with pos := fr₁.pos + 1, dsts := [slot] } :: rest₁ } true := by
-                  apply Lir.semStep_next.mpr
-                  exact Lir.step_call hF hB hpos hs1Eq (by simp [Lir.evalArgs, Lir.Arg.eval, hx]) hentRaw
-                have hwrapGe : l.sourceCount ≤ l.resetWrapper idx1 := by
-                  simp [Layout.resetWrapper, Layout.init, Layout.incProc]; omega
-                have hcalleeFn : callee.fn = l.resetWrapper idx1 ∧ callee.dsts = [] := by
-                  simp only [Lir.enter] at hentRaw
-                  cases hrf : raw.funcs[l.resetWrapper idx1]? with
-                  | none => simp [hrf] at hentRaw
-                  | some wf =>
-                    simp only [hrf, Option.bind_eq_bind, Option.bind_some] at hentRaw
-                    cases hbp : Lir.bindParams {} wf.params [xVal, mask] with
-                    | none => simp [hbp] at hentRaw
-                    | some ρ => simp only [hbp, Option.bind_some, Option.some.injEq] at hentRaw; subst hentRaw; exact ⟨rfl, rfl⟩
-                have hagree' : AgreeBelow (freshBase F) fr₁.env env' := fun r hr' => (hagree r hr').trans (hag' r hr')
-                refine .sync hs₁ (.refl _) hs₂ hstar₂ (by simp) ?_
-                exact ⟨rfl, rfl, .cons (.runtime (by rw [hcalleeFn.1]; exact hwrapGe))
-                  (.consFusedCold1 hlt hfn hF hB hpos2 hs2Eq hargsLt hns rfl rfl hcp.tmpGe ⟨rfl, rfl⟩
-                    hcoldBlk rfl rfl rfl hjoinBlk hcpNext hagree' hrest),
-                  fun _ _ h => by cases h; exact hcalleeFn.2⟩
+                by_cases hliveLe : (liveFields lay1.nobj mask).length ≤ maxInlineResetLive
+                · obtain ⟨hcpNext, ⟨pubBlk, postJ, halloc⟩, hdec2, _, hinlShared⟩ :=
+                    inl_fusedResetReuse_inline_exec hr (hfn ▸ hlt) (by rwa [hfn]) hdsts₂ hcp hrestPair hp
+                      hpos rfl hpos2 hget2 (by rw [← hxEq, hx]) hxLt hargsLt hliveLe
+                      (rest := rest₂) (mem := mem₁) (ctx := ctx₁)
+                  have hrawS := raw_reset_shared_exec hr hF hB hpos hc1' hlay1 hcls1 hs1Eq hx hu
+                    (rest := rest₁) (mem := mem₁) (ctx := ctx₁)
+                  dsimp only at hrawS
+                  have hinlS := hinlShared hu
+                  have hmaxL : (liveFields lay1.nobj mask).length ≤ 6 := hliveLe
+                  cases hincEv : evalSharedIncList xVal (liveFields lay1.nobj mask) mem₁ with
+                  | oom =>
+                    rw [hincEv] at hrawS hinlS
+                    exact .sameOom (by omega) hrawS hinlS
+                  | stuck =>
+                    rw [hincEv] at hrawS
+                    exact .rawStuckWithin (by omega) hrawS
+                  | ok mem_inc =>
+                    rw [hincEv] at hrawS hinlS
+                    dsimp only at hrawS hinlS
+                    cases hdecEv : evalDecSite xVal mem_inc with
+                    | stuck =>
+                      rw [hdecEv] at hrawS
+                      exact .rawStuckWithin (by omega) hrawS
+                    | free =>
+                      rw [hdecEv] at hrawS hinlS
+                      obtain ⟨wEnv', s₁', hs₁, hstar₁⟩ := hrawS
+                      obtain ⟨env1, s₂', hs₂, hstar₂, hag1⟩ := hinlS
+                      have hagree' : AgreeBelow (freshBase F) fr₁.env env1 := fun r hr' => (hagree r hr').trans (hag1 r hr')
+                      have hdecGe : l.sourceCount ≤ l.decProc := by simp [Layout.decProc, Layout.incProc]; omega
+                      have hposEq : fr₁.pos + 1 + 1 = fr₁.pos + 2 := by omega
+                      refine .sync hs₁ hstar₁ hs₂ hstar₂ (by simp; omega) ?_
+                      refine ⟨rfl, rfl, .cons (.runtime hdecGe)
+                        (.consResetSharedDec hc1' hlay1 hcls1 ⟨rfl, rfl, rfl, rfl⟩ hlt hfn hF rfl rfl ⟨rfl, rfl⟩
+                          (.fused dst idx2 c2 lay2 cls args _ _ _ pubBlk postJ hB hpos2 hc2' hlay2 hcls2 hok2 hlen2
+                            hs2Eq hargsLt hds hnd hns (by have := hcp.tmpGe; omega)
+                            (by dsimp only [Lir.Label]; omega) hdec2 halloc (by simpa [hposEq] using hcpNext))
+                          hagree' hrest),
+                        fun _ _ h => by cases h; rfl⟩
+                    | ok mem_dec =>
+                      rw [hdecEv] at hrawS hinlS
+                      obtain ⟨s₁', hs₁, hstar₁⟩ := hrawS
+                      obtain ⟨envD, s₂', hs₂, hstar₂, hagD⟩ := hinlS
+                      have hagreeD : AgreeBelow (freshBase F) fr₁.env envD := fun r hr' => (hagree r hr').trans (hagD r hr')
+                      have hposEq : fr₁.pos + 1 + 1 = fr₁.pos + 2 := by omega
+                      exact match_fused_shared_alloc hr (caller₁ := { fr₁ with pos := fr₁.pos + 1 })
+                        (caller₂ := fr₂) hlt hfn hF hB hpos2 hc2' hlay2 hcls2 hok2 hlen2 hs2Eq
+                        hargsLt hds hnd hns (by have := hcp.tmpGe; omega) halloc
+                        (by simpa [hposEq] using hcpNext) hagreeD hrest (by simp; omega)
+                        hs₁ hstar₁ hs₂ hstar₂
+                · obtain ⟨hcpNext, ⟨pubBlk, postJ, halloc⟩, hcoldBlk, _, hinlCold⟩ :=
+                    inl_fusedResetReuse_fallback_exec hr (hfn ▸ hlt) (by rwa [hfn]) hdsts₂ hcp hrestPair hp
+                      hpos rfl hpos2 hget2 (by rw [← hxEq, hx]) hxLt hargsLt hliveLe
+                      (rest := rest₂) (mem := mem₁) (ctx := ctx₁)
+                  obtain ⟨callee, env', s₂', hentRaw, hag', hs₂, hstar₂⟩ := hinlCold hu
+                  have hs₁ : Lir.semStep raw { mem := mem₁, ctx := ctx₁, stack := fr₁ :: rest₁ } =
+                      .next { mem := mem₁, ctx := ctx₁, stack := callee :: { fr₁ with pos := fr₁.pos + 1, dsts := [slot] } :: rest₁ } true := by
+                    apply Lir.semStep_next.mpr
+                    exact Lir.step_call hF hB hpos hs1Eq (by simp [Lir.evalArgs, Lir.Arg.eval, hx]) hentRaw
+                  have hwrapGe : l.sourceCount ≤ l.resetWrapper idx1 := by
+                    simp [Layout.resetWrapper, Layout.init, Layout.incProc]; omega
+                  have hcalleeFn : callee.fn = l.resetWrapper idx1 ∧ callee.dsts = [] := by
+                    simp only [Lir.enter] at hentRaw
+                    cases hrf : raw.funcs[l.resetWrapper idx1]? with
+                    | none => simp [hrf] at hentRaw
+                    | some wf =>
+                      simp only [hrf, Option.bind_eq_bind, Option.bind_some] at hentRaw
+                      cases hbp : Lir.bindParams {} wf.params [xVal, mask] with
+                      | none => simp [hbp] at hentRaw
+                      | some ρ => simp only [hbp, Option.bind_some, Option.some.injEq] at hentRaw; subst hentRaw; exact ⟨rfl, rfl⟩
+                  have hagree' : AgreeBelow (freshBase F) fr₁.env env' := fun r hr' => (hagree r hr').trans (hag' r hr')
+                  have hposEq : fr₁.pos + 1 + 1 = fr₁.pos + 2 := by omega
+                  refine .sync hs₁ (.refl _) hs₂ hstar₂ (by simp) ?_
+                  exact ⟨rfl, rfl, .cons (.runtime (by rw [hcalleeFn.1]; exact hwrapGe))
+                    (.consFusedCold1 hlt hfn hF hB hpos2 hc2' hlay2 hcls2 hok2 hlen2 hs2Eq hargsLt hds hnd hns
+                      rfl rfl hcp.tmpGe ⟨rfl, rfl⟩ hcoldBlk halloc (by simpa [hposEq] using hcpNext) hagree' hrest),
+                    fun _ _ h => by cases h; exact hcalleeFn.2⟩
               | unique =>
                 have hraw1 := raw_reset_hot_prefix hr hF hB hpos hc1' hlay1 hcls1 hs1Eq hx hu
                   (rest := rest₁) (mem := mem₁) (ctx := ctx₁)
@@ -1247,18 +1616,32 @@ theorem step_match {l : Layout} {raw : Lir.Program} (hr : RuntimeFuncs l raw)
                       | some mem' =>
                         rw [hwm] at hraw2
                         obtain ⟨s₁'', hs₁₂, hstar2⟩ := hraw2
-                        obtain ⟨env2, s₂', hag2, hs₂, hstar₂⟩ :=
-                          hinlHot hu (by rw [← hargsEq, hargs]) hwm
-                        have hagree' : AgreeBelow (freshBase F) ((fr₁.env.insert slot xVal).insert dst xVal) env2 :=
-                          fun r hr' => ((hagree.insert_same slot xVal).insert_same dst xVal r hr').trans (hag2 r hr')
                         have hposEq : fr₁.pos + 1 + 1 = fr₁.pos + 2 := by omega
                         have htot₁ : Sem.Star (Lir.semStep raw) s₁' 2
                             { mem := mem', ctx := ctx₁,
                               stack := { fr₁ with pos := fr₁.pos + 2, env := (fr₁.env.insert slot xVal).insert dst xVal, dsts := [] } :: rest₁ } := by
                           simpa [hposEq] using hstar1'.trans (.charge hs₁₂ hstar2)
-                        refine .sync hs₁ htot₁ hs₂ hstar₂ (by simp) ?_
-                        exact ⟨rfl, rfl, .cons (.source hlt hfn hF hcpNext hagree' rfl) hrest,
-                          fun _ _ h => by cases h; rfl⟩
+                        by_cases hliveLe : (liveFields lay1.nobj mask).length ≤ maxInlineResetLive
+                        · obtain ⟨hcpNext, _, _, hinlHot, _⟩ :=
+                            inl_fusedResetReuse_inline_exec hr (hfn ▸ hlt) (by rwa [hfn]) hdsts₂ hcp hrestPair hp
+                              hpos rfl hpos2 hget2 (by rw [← hxEq, hx]) hxLt hargsLt hliveLe
+                              (rest := rest₂) (mem := mem₁) (ctx := ctx₁)
+                          obtain ⟨env2, s₂', hag2, hs₂, hstar₂⟩ := hinlHot hu (by rw [← hargsEq, hargs]) hwm
+                          have hagree' : AgreeBelow (freshBase F) ((fr₁.env.insert slot xVal).insert dst xVal) env2 :=
+                            fun r hr' => ((hagree.insert_same slot xVal).insert_same dst xVal r hr').trans (hag2 r hr')
+                          refine .sync hs₁ htot₁ hs₂ hstar₂ (by simp) ?_
+                          exact ⟨rfl, rfl, .cons (.source hlt hfn hF hcpNext hagree' rfl) hrest,
+                            fun _ _ h => by cases h; rfl⟩
+                        · obtain ⟨hcpNext, _, _, hinlHot, _⟩ :=
+                            inl_fusedResetReuse_fallback_exec hr (hfn ▸ hlt) (by rwa [hfn]) hdsts₂ hcp hrestPair hp
+                              hpos rfl hpos2 hget2 (by rw [← hxEq, hx]) hxLt hargsLt hliveLe
+                              (rest := rest₂) (mem := mem₁) (ctx := ctx₁)
+                          obtain ⟨env2, s₂', hag2, hs₂, hstar₂⟩ := hinlHot hu (by rw [← hargsEq, hargs]) hwm
+                          have hagree' : AgreeBelow (freshBase F) ((fr₁.env.insert slot xVal).insert dst xVal) env2 :=
+                            fun r hr' => ((hagree.insert_same slot xVal).insert_same dst xVal r hr').trans (hag2 r hr')
+                          refine .sync hs₁ htot₁ hs₂ hstar₂ (by simp) ?_
+                          exact ⟨rfl, rfl, .cons (.source hlt hfn hF hcpNext hagree' rfl) hrest,
+                            fun _ _ h => by cases h; rfl⟩
           | fusedResetUReuseU slot x dst lay2 cls args =>
             obtain ⟨idx1, lay1, mask, idx2, hc1, hc2, hle, hdead, hdx, hsx, hds, hnd, hns⟩ :=
               classifyPair_eq_fusedResetUReuseU hp
@@ -1358,6 +1741,135 @@ theorem step_match {l : Layout} {raw : Lir.Program} (hr : RuntimeFuncs l raw)
                       refine .sync hs₁ htot₁ hs₂ hstar₂ (by simp) ?_
                       exact ⟨rfl, rfl, .cons (.source hlt hfn hF hcpNext ((hagree.insert_same slot xVal).insert_same dst xVal) rfl) hrest,
                         fun _ _ h => by cases h; rfl⟩
+          | fusedResetUReuseU1 slot x dst lay1 mask deadIdx lay2 cls args =>
+            obtain ⟨idx1, idx2, hc1, hc2, hle, hdead, hdx, hsx, hds, hnd, hns⟩ :=
+              classifyPair_eq_fusedResetUReuseU1 hp
+            obtain ⟨c1, hc1', hs1Eq0, hlay1, hcls1, _, _⟩ := classify_eq_resetU hc1
+            obtain ⟨c2, hc2', hs2Eq0, hlay2, hcls2, hlen2, _, _, _⟩ := classify_eq_reuseU hc2
+            have hs1Eq : B.body[fr₁.pos] = .call [slot] (l.resetUWrapper idx1) [.v x, .imm mask] := hs1Eq0
+            have hs2Eq : B.body[fr₁.pos + 1] = .call [dst] (l.reuseUWrapper idx2) (.v slot :: args) := hget2.trans hs2Eq0
+            have hxLt : (x : Nat) < freshBase F := by
+              have h1 := call_args_lt_freshBase hB (by rw [← hs1Eq]; exact hsMem)
+              have h2 : x ≤ argsMax [.v x, .imm mask] 0 := mem_le_argsMax (by simp)
+              dsimp only [Lir.VReg] at h2 ⊢; omega
+            have hargsLt : argsMax args 0 < freshBase F := by
+              have h1 := call_args_lt_freshBase hB (by rw [← hs2Eq, hget2]; exact hs2Mem)
+              have h2 : argsMax args 0 ≤ argsMax (.v slot :: args) 0 := by
+                unfold argsMax; rw [List.foldl_cons]; exact argsMax_mono_local args (Nat.zero_le _)
+              omega
+            have hxEq : fr₁.env[x]? = fr₂.env[x]? := hagree x hxLt
+            cases hx : fr₁.env[x]? with
+            | none =>
+              exact .rawStuck (by unfold Lir.step; simp [hF, hB, hpos, hs1Eq, Lir.evalArgs, Lir.Arg.eval, hx])
+            | some xVal =>
+              have hraw1 := raw_resetU_prefix hr hF hB hpos hc1' hlay1 hcls1 hs1Eq hx
+                (rest := rest₁) (mem := mem₁) (ctx := ctx₁)
+              cases hlf : loadFieldsMem mem₁ xVal (List.range lay1.nobj) with
+              | none =>
+                rw [hlf] at hraw1; exact .rawStuckWithin (by omega) hraw1
+              | some allVals =>
+                rw [hlf] at hraw1; dsimp only at hraw1
+                cases hws : writeShellMem mem₁ xVal (Rt.Rc.dynamicHeader lay1.nobj cls lay1.tag 1) lay1.nobj with
+                | none =>
+                  rw [hws] at hraw1; exact .rawStuckWithin (by omega) hraw1
+                | some mem_sh =>
+                  rw [hws] at hraw1
+                  obtain ⟨wEnv, s₁', hw0, hw1, hwvals, hs₁, hstar1⟩ := hraw1
+                  obtain ⟨hdeadLt, hdead0, hdeadNext⟩ := deadFields_singleton_split hdead
+                  have hallLen : allVals.length = lay1.nobj := by have := loadFieldsMem_length hlf; simpa using this
+                  let deadVal := allVals[deadIdx]'(by omega)
+                  have hloadDead : Lir.loadWord mem₁ .w64 .zero (xVal + Lir.dispWord (Int.ofNat (8 * (deadIdx + 1)))) = some deadVal := by
+                    have h1 := loadFieldsMem_get hlf deadIdx (by simp [hdeadLt])
+                    simpa [deadVal] using h1
+                  have hwF : raw.funcs[l.resetUWrapper idx1]? = some (mkResetUWrapper l.decProc lay1 cls) := by
+                    rw [hlay1]; exact hr.resetUWrap idx1 c1 cls hc1' (by rwa [← hlay1])
+                  have hshape := mkResetUWrapper_decLoopShape l.decProc lay1 cls
+                  have hwvals' : ∀ j < lay1.nobj, ∃ v, wEnv[2 + j]? = some v := fun j hj =>
+                    ⟨allVals[j]'(by omega), by rw [hwvals j hj, List.getElem?_eq_getElem (by omega)]⟩
+                  have hloop0 := raw_decLoop_step hr hwF hshape hw0 hw1
+                    (caller := { fr₁ with pos := fr₁.pos + 1, dsts := [slot] }) rfl hwvals' 0 (Nat.zero_le _)
+                    (mem := mem_sh) (ctx := ctx₁) (rest := rest₁)
+                  rw [hdead0] at hloop0; dsimp only at hloop0
+                  obtain ⟨_, deadVal', hdeadEnv, _, hloopStar0⟩ := hloop0
+                  have hdeadEq : deadVal' = deadVal := by
+                    have h1 := hwvals deadIdx hdeadLt
+                    rw [hdeadEnv, List.getElem?_eq_getElem (by omega), Option.some.injEq] at h1
+                    exact h1
+                  subst hdeadEq
+                  obtain ⟨hcpNext, hb1, ⟨joinBlk, postJ, hjb, hjbP, hjbBody⟩, hinlHot, hinlCold⟩ :=
+                    inl_fusedResetUReuseU1_exec hr (hfn ▸ hlt) (by rwa [hfn]) hdsts₂ hcp hrestPair hp
+                      hpos rfl hpos2 hget2 (by rw [← hxEq, hx]) hxLt hargsLt hloadDead
+                      (rest := rest₂) (ctx := ctx₁)
+                  by_cases htag : Lir.Cond.holds .tnz .w64 deadVal 1 = true
+                  · have hdecImm := raw_decProc_imm hr
+                      (caller := { fn := l.resetUWrapper idx1, label := 1 + 2 * deadIdx + 1, pos := 1, env := wEnv, dsts := [] })
+                      (rest := { fr₁ with pos := fr₁.pos + 1, dsts := [slot] } :: rest₁)
+                      (ctx := ctx₁) (mem := mem_sh) rfl htag
+                    have sAfter := raw_decLoop_after_call (wEnv := wEnv) (ctx := ctx₁) (mem := mem_sh)
+                      (caller := { fr₁ with pos := fr₁.pos + 1, dsts := [slot] }) (rest := rest₁) hwF hshape hdeadLt
+                    have hloop1 := raw_decLoop_step hr hwF hshape hw0 hw1
+                      (caller := { fr₁ with pos := fr₁.pos + 1, dsts := [slot] }) rfl hwvals' (deadIdx + 1) (by omega)
+                      (mem := mem_sh) (ctx := ctx₁) (rest := rest₁)
+                    rw [hdeadNext] at hloop1; dsimp only at hloop1
+                    have hstar1' : Sem.Star (Lir.semStep raw) s₁' 1
+                        { mem := mem_sh, ctx := ctx₁,
+                          stack := { fr₁ with pos := fr₁.pos + 1, env := fr₁.env.insert slot xVal, dsts := [] } :: rest₁ } :=
+                      hstar1.trans (hloopStar0.trans (hdecImm.trans (.free sAfter hloop1)))
+                    have hargsIns : Lir.evalArgs (fr₁.env.insert slot xVal) args = Lir.evalArgs fr₁.env args :=
+                      evalArgs_eq_of_agree_ne (bound := freshBase F) (slot := slot)
+                        (fun r _ hne => Lir.env_insert_ne _ _ (Ne.symm hne)) hargsLt hns
+                    have hargsEq : Lir.evalArgs fr₁.env args = Lir.evalArgs fr₂.env args := hagree.evalArgs_eq hargsLt
+                    cases hargs : Lir.evalArgs fr₁.env args with
+                    | none =>
+                      have hargs' : List.mapM (Lir.Arg.eval (fr₁.env.insert slot xVal)) args = none := hargsIns.trans hargs
+                      have hstk2 : Lir.step raw
+                          { mem := mem_sh, ctx := ctx₁,
+                            stack := { fr₁ with pos := fr₁.pos + 1, env := fr₁.env.insert slot xVal, dsts := [] } :: rest₁ } = .stuck := by
+                        unfold Lir.step; simp [hF, hB, hpos2, hs2Eq, Lir.evalArgs, Lir.Arg.eval, hargs']
+                      exact .rawStuckWithin (by omega)
+                        (.charge hs₁ (reaches_of_star_reaches hstar1' (.final (k := 0) (by rw [Lir.semStep, hstk2]; exact .stuck))))
+                    | some vals =>
+                      have hraw2 := raw_reuseU_exec hr (slotVal := xVal)
+                        (fr := { fr₁ with pos := fr₁.pos + 1, env := fr₁.env.insert slot xVal, dsts := [] })
+                        hF hB hpos2 hc2' hlay2 hcls2 hlen2 hs2Eq (by simp) (by rw [hargsIns, hargs])
+                        (rest := rest₁) (mem := mem_sh) (ctx := ctx₁)
+                      dsimp only at hraw2
+                      have hvlen : vals.length = lay2.nobj := by
+                        have := evalArgs_length hargs; rw [hlay2]; dsimp [Rt.Rc.CellLayout.ofFields]; omega
+                      have hover : writeReuseMem mem_sh xVal (Rt.Rc.dynamicHeader lay2.nobj cls lay2.tag 1) vals =
+                          writeReuseMem mem₁ xVal (Rt.Rc.dynamicHeader lay2.nobj cls lay2.tag 1) vals :=
+                        writeReuseMem_after_writeShellMem (by omega) hws
+                      rw [hover] at hraw2
+                      cases hwm : writeReuseMem mem₁ xVal (Rt.Rc.dynamicHeader lay2.nobj cls lay2.tag 1) vals with
+                      | none =>
+                        rw [hwm] at hraw2
+                        exact .rawStuckWithin (by omega) (.charge hs₁ (reaches_of_star_reaches hstar1' hraw2))
+                      | some mem' =>
+                        rw [hwm] at hraw2
+                        obtain ⟨s₁'', hs₁₂, hstar2⟩ := hraw2
+                        obtain ⟨env2, s₂', hag2, hs₂, hstar₂⟩ := hinlHot htag (by rw [← hargsEq, hargs]) hwm
+                        have hagree' : AgreeBelow (freshBase F) ((fr₁.env.insert slot xVal).insert dst xVal) env2 :=
+                          fun r hr' => ((hagree.insert_same slot xVal).insert_same dst xVal r hr').trans (hag2 r hr')
+                        have hposEq : fr₁.pos + 1 + 1 = fr₁.pos + 2 := by omega
+                        have htot₁ : Sem.Star (Lir.semStep raw) s₁' 2
+                            { mem := mem', ctx := ctx₁,
+                              stack := { fr₁ with pos := fr₁.pos + 2, env := (fr₁.env.insert slot xVal).insert dst xVal, dsts := [] } :: rest₁ } := by
+                          simpa [hposEq] using hstar1'.trans (.charge hs₁₂ hstar2)
+                        refine .sync hs₁ htot₁ hs₂ hstar₂ (by simp) ?_
+                        exact ⟨rfl, rfl, .cons (.source hlt hfn hF hcpNext hagree' rfl) hrest,
+                          fun _ _ h => by cases h; rfl⟩
+                  · have htagF : Lir.Cond.holds .tnz .w64 deadVal 1 = false := by simpa using htag
+                    obtain ⟨env1, s₂', hag1, hs₂, hstar₂⟩ := hinlCold htagF hws
+                    have hagree' : AgreeBelow (freshBase F) fr₁.env env1 := fun r hr' => (hagree r hr').trans (hag1 r hr')
+                    have hdecGe : l.sourceCount ≤ l.decProc := by simp [Layout.decProc, Layout.incProc]; omega
+                    have hposEq : fr₁.pos + 1 + 1 = fr₁.pos + 2 := by omega
+                    refine .sync hs₁ (hstar1.trans hloopStar0) hs₂ hstar₂ (by simp) ?_
+                    exact ⟨rfl, rfl, .cons (.runtime hdecGe)
+                      (.consFusedResetU1Dec hc1' hlay1 hcls1 hc2' hlay2 hcls2 hlen2 hdead
+                        ⟨rfl, rfl, rfl, rfl⟩ hw0 hw1 hwvals' hlt hfn hF hB hpos2 hs2Eq
+                        hsx hns hxLt hargsLt hx rfl rfl ⟨rfl, rfl⟩ hb1 hjb hjbP hjbBody
+                        (by simpa [hposEq] using hcpNext) hagree' hrest),
+                      fun _ _ h => by cases h; rfl⟩
         · have hnp : ∀ s2 rest2, restStmts = s2 :: rest2 → classifyPair l s s2 = none := by
             intro s2 rest2 h2
             cases hcp' : classifyPair l s s2 with
@@ -1561,31 +2073,74 @@ theorem step_match {l : Layout} {raw : Lir.Program} (hr : RuntimeFuncs l raw)
                   exact .rawStuckWithin (by omega)
                     (raw_reset_stuck hr hF hB hpos hc hlay hclsOk hsEq hx hu)
                 | shared =>
-                  obtain ⟨hcpNext, hjoinBlk, hcoldBlk, callee, env', s₂', hentRaw, hag', hs₂, hstar₂⟩ :=
-                    inl_reset_cold_exec hr (hfn ▸ hlt) (by rwa [hfn]) hdsts₂ hcp
-                      (by rwa [← hsEq]) (by rwa [← hsEq]) (by rwa [← hsEq]) hpos hsEq
-                      (by rw [← hxEq, hx]) hxLt hu (rest := rest₂) (mem := mem₁) (ctx := ctx₁)
-                  have hs₁ : Lir.semStep raw { mem := mem₁, ctx := ctx₁, stack := fr₁ :: rest₁ } =
-                      .next { mem := mem₁, ctx := ctx₁, stack := callee :: { fr₁ with pos := fr₁.pos + 1, dsts := [dst] } :: rest₁ } true := by
-                    apply Lir.semStep_next.mpr
-                    exact Lir.step_call hF hB hpos hsEq (by simp [Lir.evalArgs, Lir.Arg.eval, hx]) hentRaw
-                  have hwrapGe : l.sourceCount ≤ l.resetWrapper idx := by
-                    simp [Layout.resetWrapper, Layout.init, Layout.incProc]; omega
-                  have hcalleeFn : callee.fn = l.resetWrapper idx ∧ callee.dsts = [] := by
-                    simp only [Lir.enter] at hentRaw
-                    cases hrf : raw.funcs[l.resetWrapper idx]? with
-                    | none => simp [hrf] at hentRaw
-                    | some wf =>
-                      simp only [hrf, Option.bind_eq_bind, Option.bind_some] at hentRaw
-                      cases hbp : Lir.bindParams {} wf.params [xVal, mask] with
-                      | none => simp [hbp] at hentRaw
-                      | some ρ => simp only [hbp, Option.bind_some, Option.some.injEq] at hentRaw; subst hentRaw; exact ⟨rfl, rfl⟩
-                  have hagree' : AgreeBelow (freshBase F) fr₁.env env' := fun r hr' => (hagree r hr').trans (hag' r hr')
-                  refine .sync hs₁ (.refl _) hs₂ hstar₂ (by simp) ?_
-                  exact ⟨rfl, rfl, .cons (.runtime (by rw [hcalleeFn.1]; exact hwrapGe))
-                    (.consColdRedirect hlt hfn hF rfl rfl (by have := hcp.tmpGe; dsimp only [Lir.VReg]; omega)
-                      ⟨rfl, rfl⟩ (by dsimp only [Lir.Label]; omega) hcoldBlk rfl rfl hjoinBlk hcpNext hagree' hrest),
-                    fun _ _ h => by cases h; exact hcalleeFn.2⟩
+                  by_cases hliveLe : (liveFields lay.nobj mask).length ≤ maxInlineResetLive
+                  · have hrawS := raw_reset_shared_exec hr hF hB hpos hc hlay hclsOk hsEq hx hu
+                      (rest := rest₁) (mem := mem₁) (ctx := ctx₁)
+                    dsimp only at hrawS
+                    obtain ⟨hcpNext, hjoinBlk, hdec2, hinlS⟩ :=
+                      inl_reset_shared_exec hr (hfn ▸ hlt) (by rwa [hfn]) hdsts₂ hcp
+                        (by rwa [← hsEq]) (by rwa [← hsEq]) (by rwa [← hsEq]) hpos hsEq
+                        (by rw [← hxEq, hx]) hxLt hu hliveLe (rest := rest₂) (mem := mem₁) (ctx := ctx₁)
+                    have hmaxL : (liveFields lay.nobj mask).length ≤ 6 := hliveLe
+                    cases hincEv : evalSharedIncList xVal (liveFields lay.nobj mask) mem₁ with
+                    | oom =>
+                      rw [hincEv] at hrawS hinlS
+                      exact .sameOom (by omega) hrawS hinlS
+                    | stuck =>
+                      rw [hincEv] at hrawS
+                      exact .rawStuckWithin (by omega) hrawS
+                    | ok mem_inc =>
+                      rw [hincEv] at hrawS hinlS
+                      dsimp only at hrawS hinlS
+                      cases hdecEv : evalDecSite xVal mem_inc with
+                      | stuck =>
+                        rw [hdecEv] at hrawS
+                        exact .rawStuckWithin (by omega) hrawS
+                      | ok mem' =>
+                        rw [hdecEv] at hrawS hinlS
+                        obtain ⟨s₁', hs₁, hstar₁⟩ := hrawS
+                        obtain ⟨envD, s₂', hs₂, hstar₂, hagD⟩ := hinlS
+                        have hagree' : AgreeBelow (freshBase F) (fr₁.env.insert dst 1) envD :=
+                          fun r hr' => ((hagree.insert_same dst 1) r hr').trans (hagD r hr')
+                        refine .sync hs₁ hstar₁ hs₂ hstar₂ (by simp; omega) ?_
+                        exact ⟨rfl, rfl, .cons (.source hlt hfn hF hcpNext hagree' rfl) hrest,
+                          fun _ _ h => by cases h; rfl⟩
+                      | free =>
+                        rw [hdecEv] at hrawS hinlS
+                        obtain ⟨wEnv', s₁', hs₁, hstar₁⟩ := hrawS
+                        obtain ⟨env1, s₂', hs₂, hstar₂, hag1⟩ := hinlS
+                        have hagree' : AgreeBelow (freshBase F) fr₁.env env1 := fun r hr' => (hagree r hr').trans (hag1 r hr')
+                        have hdecGe : l.sourceCount ≤ l.decProc := by simp [Layout.decProc, Layout.incProc]; omega
+                        refine .sync hs₁ hstar₁ hs₂ hstar₂ (by simp; omega) ?_
+                        exact ⟨rfl, rfl, .cons (.runtime hdecGe)
+                          (.consResetSharedDec hc hlay hclsOk ⟨rfl, rfl, rfl, rfl⟩ hlt hfn hF rfl rfl ⟨rfl, rfl⟩
+                            (.reset _ (by dsimp only [Lir.Label]; omega) hdec2 hjoinBlk hcpNext) hagree' hrest),
+                          fun _ _ h => by cases h; rfl⟩
+                  · obtain ⟨hcpNext, hjoinBlk, hcoldBlk, callee, env', s₂', hentRaw, hag', hs₂, hstar₂⟩ :=
+                      inl_reset_cold_exec hr (hfn ▸ hlt) (by rwa [hfn]) hdsts₂ hcp
+                        (by rwa [← hsEq]) (by rwa [← hsEq]) (by rwa [← hsEq]) hpos hsEq
+                        (by rw [← hxEq, hx]) hxLt hu hliveLe (rest := rest₂) (mem := mem₁) (ctx := ctx₁)
+                    have hs₁ : Lir.semStep raw { mem := mem₁, ctx := ctx₁, stack := fr₁ :: rest₁ } =
+                        .next { mem := mem₁, ctx := ctx₁, stack := callee :: { fr₁ with pos := fr₁.pos + 1, dsts := [dst] } :: rest₁ } true := by
+                      apply Lir.semStep_next.mpr
+                      exact Lir.step_call hF hB hpos hsEq (by simp [Lir.evalArgs, Lir.Arg.eval, hx]) hentRaw
+                    have hwrapGe : l.sourceCount ≤ l.resetWrapper idx := by
+                      simp [Layout.resetWrapper, Layout.init, Layout.incProc]; omega
+                    have hcalleeFn : callee.fn = l.resetWrapper idx ∧ callee.dsts = [] := by
+                      simp only [Lir.enter] at hentRaw
+                      cases hrf : raw.funcs[l.resetWrapper idx]? with
+                      | none => simp [hrf] at hentRaw
+                      | some wf =>
+                        simp only [hrf, Option.bind_eq_bind, Option.bind_some] at hentRaw
+                        cases hbp : Lir.bindParams {} wf.params [xVal, mask] with
+                        | none => simp [hbp] at hentRaw
+                        | some ρ => simp only [hbp, Option.bind_some, Option.some.injEq] at hentRaw; subst hentRaw; exact ⟨rfl, rfl⟩
+                    have hagree' : AgreeBelow (freshBase F) fr₁.env env' := fun r hr' => (hagree r hr').trans (hag' r hr')
+                    refine .sync hs₁ (.refl _) hs₂ hstar₂ (by simp) ?_
+                    exact ⟨rfl, rfl, .cons (.runtime (by rw [hcalleeFn.1]; exact hwrapGe))
+                      (.consColdRedirect hlt hfn hF rfl rfl (by have := hcp.tmpGe; dsimp only [Lir.VReg]; omega)
+                        ⟨rfl, rfl⟩ (by dsimp only [Lir.Label]; omega) hcoldBlk rfl rfl hjoinBlk hcpNext hagree' hrest),
+                      fun _ _ h => by cases h; exact hcalleeFn.2⟩
                 | unique =>
                   have hraw := raw_reset_hot_prefix hr hF hB hpos hc hlay hclsOk hsEq hx hu
                     (rest := rest₁) (mem := mem₁) (ctx := ctx₁)
@@ -1613,27 +2168,30 @@ theorem step_match {l : Layout} {raw : Lir.Program} (hr : RuntimeFuncs l raw)
                         exact ⟨allVals[j]'(by omega), by rw [hwvals j hj, List.getElem?_eq_getElem (by omega)]⟩
                       have hagree' : AgreeBelow (freshBase F) fr₁.env env' := fun r hr' => (hagree r hr').trans (hag' r hr')
                       let dead := deadFields lay.nobj mask
+                      let live := liveFields lay.nobj mask
+                      let joinLbl := if live.length ≤ maxInlineResetLive then fr₂.label + 8 + 5 * live.length else fr₂.label + 4
+                      let deadBase := if live.length ≤ maxInlineResetLive then tmp + 1 else tmp + 2
                       let hdr := Rt.Rc.dynamicHeader lay.nobj cls lay.tag 1
                       let hotBody : List Lir.Stmt :=
-                        mkDeadLoads x (tmp + 2) dead ++ mkShellStores x hdr lay.nobj ++ mkDeadDecs l.decProc (tmp + 2) dead
-                      let inBlk : Lir.Block := { body := hotBody.toArray, term := .jump ⟨fr₂.label + 4, [.v x]⟩, cold := B.cold }
+                        mkDeadLoads x deadBase dead ++ mkShellStores x hdr lay.nobj ++ mkDeadDecs l.decProc deadBase dead
+                      let inBlk : Lir.Block := { body := hotBody.toArray, term := .jump ⟨joinLbl, [.v x]⟩, cold := B.cold }
                       have hdecs : ∀ q < dead.length,
-                          inBlk.body[(dead.length + (1 + lay.nobj)) + q]? = some (.call [] l.decProc [.v (tmp + 2 + q)]) := by
+                          inBlk.body[(dead.length + (1 + lay.nobj)) + q]? = some (.call [] l.decProc [.v (deadBase + q)]) := by
                         intro q hq
                         simp only [inBlk, hotBody, List.getElem?_toArray]
-                        have hpre : (mkDeadLoads x (tmp + 2) dead ++ mkShellStores x hdr lay.nobj).length = dead.length + (1 + lay.nobj) := by
+                        have hpre : (mkDeadLoads x deadBase dead ++ mkShellStores x hdr lay.nobj).length = dead.length + (1 + lay.nobj) := by
                           simp [mkDeadLoads_length, mkShellStores_length]
                         rw [List.getElem?_append_right (by omega), hpre, Nat.add_sub_cancel_left]
-                        exact mkDeadDecs_getElem? l.decProc (tmp + 2) dead q hq
+                        exact mkDeadDecs_getElem? l.decProc deadBase dead q hq
                       have hfin : ResetFinish l F fr₁.label B (fr₁.pos + 1) dst x inBlk (fr₂.label + 2)
                           ((dead.length + (1 + lay.nobj)) + dead.length) :=
-                        .jump (fr₂.label + 4) (by dsimp only [Lir.Label]; omega)
+                        .jump joinLbl (by dsimp only [joinLbl, Lir.Label]; split <;> omega)
                           (by simp [inBlk, hotBody, mkDeadLoads_length, mkShellStores_length, mkDeadDecs_length]; omega)
                           rfl hjoinBlk hcpNext
                       refine .sync hs₁ hstar₁ hs₂ hstar₂ (by simp) ?_
                       refine ⟨rfl, rfl, .consResetDec (W := mkResetWrapper l.isUniqueProc l.incProc l.decProc lay cls)
                         (B := B) (inBlk := inBlk) (n := lay.nobj) (base := 2) (oldBase := 3) (k := 0) (i := 0)
-                        (decBasePos := dead.length + (1 + lay.nobj)) (deadBase := tmp + 2)
+                        (decBasePos := dead.length + (1 + lay.nobj)) (deadBase := deadBase)
                         hwF hshape ⟨rfl, rfl, rfl⟩ (Nat.zero_le _) hw0 hw1 hwvals' hlt hfn hF rfl rfl
                         ⟨rfl, by simp [dead]⟩ hb2 (by simp [deadFrom_zero]) (Nat.zero_le _) hdecs ?_ hx' hfin hagree' hrest,
                         fun _ _ h => by cases h; rfl⟩
@@ -1730,7 +2288,7 @@ theorem step_match {l : Layout} {raw : Lir.Program} (hr : RuntimeFuncs l raw)
                     have hlen : allVals.length = lay.nobj := by have := loadFieldsMem_length hlf; simpa using this
                     rw [hdeadVals q hq, hwvals _ hltN, List.getElem?_eq_getElem (by omega)]
             | reuse dst slot idx lay cls args =>
-              obtain ⟨c, hc, hsEq0, hlay, hclsOk, hlen, _, _, _⟩ := classify_eq_reuse hcls
+              obtain ⟨c, hc, hsEq0, hlay, hclsOk, hlen, hok, _, _⟩ := classify_eq_reuse hcls
               have hsEq : B.body[fr₁.pos] = .call [dst] (l.reuseWrapper idx) (.v slot :: args) := hsEq0
               have hfullLt : argsMax (.v slot :: args) 0 < freshBase F :=
                 call_args_lt_freshBase hB (by rw [← hsEq]; exact hsMem)
@@ -1752,36 +2310,32 @@ theorem step_match {l : Layout} {raw : Lir.Program} (hr : RuntimeFuncs l raw)
                   have hargs' : List.mapM (Lir.Arg.eval fr₁.env) args = none := hargs
                   exact .rawStuck (by unfold Lir.step; simp [hF, hB, hpos, hsEq, Lir.evalArgs, Lir.Arg.eval, hslot, hargs'])
                 | some vals =>
-                  obtain ⟨hcpNext, hjoinBlk, hinlHot, hinlCold⟩ :=
-                    inl_reuse_exec hr (hfn ▸ hlt) (by rwa [hfn]) hdsts₂ hcp
+                  obtain ⟨hcpNext, hinlHot, hinlCold⟩ :=
+                    inl_reuse_exec (raw := raw) (hfn ▸ hlt) (by rwa [hfn]) hdsts₂ hcp
                       (by rwa [← hsEq]) (by rwa [← hsEq]) hpos hsEq
-                      (by rw [← hslotEq, hslot]) (by rw [← hargsEq, hargs])
+                      (by rw [← hslotEq, hslot]) (by rw [← hargsEq, hargs]) hargsLt
                       (rest := rest₂) (mem := mem₁) (ctx := ctx₁)
                   by_cases htag : Lir.Cond.holds .tnz .w64 slotVal 1 = true
-                  · obtain ⟨callee, hentRaw, hcoldBlk, s₂', hs₂, hstar₂⟩ := hinlCold htag
-                    have hfullArgs : Lir.evalArgs fr₁.env (.v slot :: args) = some (slotVal :: vals) := by
-                      simp only [Lir.evalArgs, List.mapM_cons, Lir.Arg.eval, hslot, Option.bind_eq_bind, Option.bind_some]
-                      rw [show List.mapM (Lir.Arg.eval fr₁.env) args = some vals from hargs]; rfl
-                    have hs₁ : Lir.semStep raw { mem := mem₁, ctx := ctx₁, stack := fr₁ :: rest₁ } =
-                        .next { mem := mem₁, ctx := ctx₁, stack := callee :: { fr₁ with pos := fr₁.pos + 1, dsts := [dst] } :: rest₁ } true := by
-                      apply Lir.semStep_next.mpr
-                      exact Lir.step_call hF hB hpos hsEq hfullArgs hentRaw
-                    have hwrapGe : l.sourceCount ≤ l.reuseWrapper idx := by
-                      simp [Layout.reuseWrapper, Layout.init, Layout.incProc]; omega
-                    have hcalleeFn : callee.fn = l.reuseWrapper idx ∧ callee.dsts = [] := by
-                      simp only [Lir.enter] at hentRaw
-                      cases hrf : raw.funcs[l.reuseWrapper idx]? with
-                      | none => simp [hrf] at hentRaw
-                      | some wf =>
-                        simp only [hrf, Option.bind_eq_bind, Option.bind_some] at hentRaw
-                        cases hbp : Lir.bindParams {} wf.params (slotVal :: vals) with
-                        | none => simp [hbp] at hentRaw
-                        | some ρ => simp only [hbp, Option.bind_some, Option.some.injEq] at hentRaw; subst hentRaw; exact ⟨rfl, rfl⟩
-                    refine .sync hs₁ (.refl _) hs₂ hstar₂ (by simp) ?_
-                    exact ⟨rfl, rfl, .cons (.runtime (by rw [hcalleeFn.1]; exact hwrapGe))
-                      (.consColdRedirect hlt hfn hF rfl rfl hcp.tmpGe ⟨rfl, rfl⟩
-                        (by dsimp only [Lir.Label]; omega) hcoldBlk rfl rfl hjoinBlk hcpNext hagree hrest),
-                      fun _ _ h => by cases h; exact hcalleeFn.2⟩
+                  · have hraw := raw_reuse_cold_exec hr hF hB hpos hc hlay hclsOk hok hlen hsEq hslot hargs htag
+                      (rest := rest₁) (mem := mem₁) (ctx := ctx₁)
+                    have hinl := hinlCold htag
+                    cases hres : evalAllocReserve lay cls mem₁ ctx₁ with
+                    | stuck => rw [hres] at hraw; exact .rawStuckWithin (by omega) hraw
+                    | oom => rw [hres] at hraw hinl; exact .sameOom (by omega) hraw hinl
+                    | ok addr mem₂ =>
+                      rw [hres] at hraw hinl
+                      dsimp only at hraw hinl
+                      cases hwf : writeFieldsMem mem₂ addr 0 vals with
+                      | none => rw [hwf] at hraw; exact .rawStuckWithin (by omega) hraw
+                      | some mem' =>
+                        rw [hwf] at hraw hinl
+                        obtain ⟨s₁', hs₁, hstar₁⟩ := hraw
+                        obtain ⟨env', s₂', hs₂, hstar₂, hag'⟩ := hinl
+                        have hagree' : AgreeBelow (freshBase F) (fr₁.env.insert dst addr) env' :=
+                          fun r hr' => ((hagree.insert_same dst addr) r hr').trans (hag' r hr')
+                        refine .sync hs₁ hstar₁ hs₂ hstar₂ (by simp) ?_
+                        exact ⟨rfl, rfl, .cons (.source hlt hfn hF hcpNext hagree' rfl) hrest,
+                          fun _ _ h => by cases h; rfl⟩
                   · have hcell : Lir.Cond.holds .tnz .w64 slotVal 1 = false := by simpa using htag
                     have hraw := raw_reuse_hot_exec hr hF hB hpos hc hlay hclsOk hlen hsEq hslot hargs hcell
                       (rest := rest₁) (mem := mem₁) (ctx := ctx₁)
@@ -1972,7 +2526,7 @@ theorem backward_run {l : Layout} {raw : Lir.Program} (hr : RuntimeFuncs l raw) 
     ∀ fuel k s₁ s₂ r, StateRel l raw s₁ s₂ →
       Sem.runClocked (Lir.semStep (inlineProgram l raw)) fuel k s₂ = r →
       r ≠ .timeout → (∀ fail, r ≠ .resource fail) →
-      ∃ r₁, r₁ ≠ .timeout ∧ Sem.Reaches (Lir.semStep raw) s₁ (k + 3 * fuel) r₁ := by
+      ∃ r₁, r₁ ≠ .timeout ∧ Sem.Reaches (Lir.semStep raw) s₁ (k + 12 * fuel) r₁ := by
   intro fuel
   induction fuel using Nat.strongRecOn with
   | ind fuel ih =>
@@ -2005,7 +2559,7 @@ theorem backward_run {l : Layout} {raw : Lir.Program} (hr : RuntimeFuncs l raw) 
 /-- **`inlineProgram l raw` simulates `raw` with exact value equality.** -/
 theorem inlineProgram_sim {l : Layout} {raw : Lir.Program} (hr : RuntimeFuncs l raw)
     (args : List Lir.Word) (mem : X86.Memory) (ctx : Lir.Word) :
-    Sem.Sim Eq (fun k => k + 3 * Lir.fuelFor (inlineProgram l raw) k)
+    Sem.Sim Eq (fun k => k + 12 * Lir.fuelFor (inlineProgram l raw) k)
       (fun k => Lir.eval raw k args mem ctx)
       (fun k => Lir.eval (inlineProgram l raw) k args mem ctx) := by
   let inl := inlineProgram l raw
@@ -2053,8 +2607,8 @@ theorem inlineProgram_sim {l : Layout} {raw : Lir.Program} (hr : RuntimeFuncs l 
                 Lir.eval inl k args mem ctx := by
               rw [Lir.eval_eq, hinit₂]
             obtain ⟨r₁, hr₁nt, hreach₁⟩ := backward_run hr (Lir.fuelFor inl k) k s₁ s₂ _ hrel hrun₂ hto hres'
-            have hto₁ : Sem.Reaches (Lir.semStep raw) s₁ (k + 3 * Lir.fuelFor inl k) .timeout :=
-              hk ▸ hruns₁ (k + 3 * Lir.fuelFor inl k)
+            have hto₁ : Sem.Reaches (Lir.semStep raw) s₁ (k + 12 * Lir.fuelFor inl k) .timeout :=
+              hk ▸ hruns₁ (k + 12 * Lir.fuelFor inl k)
             exact absurd (hreach₁.det hto₁) hr₁nt }
 
 /-! ## Lifting `inlineProgram_sim` across `splitCriticalEdges` and clock maps -/
@@ -2124,15 +2678,20 @@ theorem fuelFor_le_split (p : Lir.Program) (k : Nat) :
 theorem fuelFor_main (p : Lir.Program) (m k : Nat) :
     Lir.fuelFor { p with main := m } k = Lir.fuelFor p k := rfl
 
-/-- Target-indexed clock map for `inlineProgram` followed by `splitCriticalEdges`. -/
-def inlineClock (p : Lir.Program) (k : Nat) : Nat := k + 3 * Lir.fuelFor p k
+/-- Single-pass target-indexed clock map (`k + 3072 * fuelFor p k`, absorbing the ≤256×
+size reduction of `pruneDeadRuntime`). -/
+def inlineStepClock (p : Lir.Program) (k : Nat) : Nat := k + 3072 * Lir.fuelFor p k
+
+/-- Target-indexed clock map for `inlineProgram`, `InlineWrappers`, `FastDec`, `pruneDeadRuntime`, and `splitCriticalEdges`. -/
+def inlineClock (p : Lir.Program) (k : Nat) : Nat :=
+  inlineStepClock p (inlineStepClock p (inlineStepClock p k))
 
 /-- Entry-level clock map composing `Nat.succ` with `inlineClock`. -/
 def inlineEntryClock (p : Lir.Program) (k : Nat) : Nat := Nat.succ (inlineClock p k)
 
 theorem inlineProgram_sim_clock {l : Layout} {raw : Lir.Program} (hr : RuntimeFuncs l raw)
     (args : List Lir.Word) (mem : X86.Memory) (ctx : Lir.Word)
-    {f : Nat → Nat} (hf : ∀ k, k + 3 * Lir.fuelFor (inlineProgram l raw) k ≤ f k) :
+    {f : Nat → Nat} (hf : ∀ k, k + 12 * Lir.fuelFor (inlineProgram l raw) k ≤ f k) :
     Sem.Sim Eq f
       (fun k => Lir.eval raw k args mem ctx)
       (fun k => Lir.eval (inlineProgram l raw) k args mem ctx) :=
@@ -2140,7 +2699,7 @@ theorem inlineProgram_sim_clock {l : Layout} {raw : Lir.Program} (hr : RuntimeFu
   { forward := hsim.forward
     timeout := fun k hk => by
       apply hsim.timeout k
-      by_cases h0 : Lir.eval raw (k + 3 * Lir.fuelFor (inlineProgram l raw) k) args mem ctx = .timeout
+      by_cases h0 : Lir.eval raw (k + 12 * Lir.fuelFor (inlineProgram l raw) k) args mem ctx = .timeout
       · exact h0
       · have heq := Lir.eval_mono raw args mem ctx (hf k) h0
         dsimp only at heq

@@ -4,6 +4,8 @@ import IxCC.Recheck.Rc.Proof.Replay
 import IxCC.Cfg.Rc.Proof.Native.Public
 import IxCC.Cfg.Rc.Proof.Native.Consume
 import IxCC.Cfg.Rc.Proof.Prune
+import IxCC.Cfg.Rc.Proof.InlineWrappers
+import IxCC.Cfg.Rc.Proof.FastDec
 import IxCC.Rt.Proof.Roots
 
 set_option autoImplicit false
@@ -72,7 +74,17 @@ theorem public_root {config : Rt.Config} {F : Fir.Program}
     have hlt : fn < (layoutOf P).sourceCount := range
     have hle : fn ≤ (layoutOf P).isUniqueProc := by
       simp [layoutOf, Layout.isUniqueProc, Layout.init, Layout.incProc]; omega
-    rw [inlinedProgram, Cfg.Rc.Prune.pruneUnusedReuse_get_le hle,
+    have hneDec : fn ≠ (layoutOf P).decProc := by
+      simp [layoutOf, Layout.decProc, Layout.incProc]; omega
+    have hnpFn : Cfg.Rc.Prune.isPrunableDeadRuntime (layoutOf P) fn = false := by
+      unfold Cfg.Rc.Prune.isPrunableDeadRuntime
+      rw [decide_eq_false_iff_not]
+      simp only [layoutOf, Layout.isUniqueProc, Layout.init, Layout.decProc, Layout.incProc]
+      intro hbad; rcases hbad with ⟨h1, _⟩ | h1 | ⟨h1, _⟩ | h1 <;> omega
+    rw [inlinedProgram, Cfg.Rc.Prune.pruneDeadRuntime_get_not_prunable hnpFn,
+      Cfg.Rc.FastDec.install_get_ne _ _ hneDec,
+      Cfg.Rc.InlineWrappers.inlineProgram_get_le hle,
+      Cfg.Rc.Prune.pruneUnusedReuse_get_le hle,
       Cfg.Rc.Inline.inlineProgram_get_lt _ _ hlt, raw]; rfl
   have final := assembled_function program inlFn
   refine ⟨fd, (Cfg.Rc.Inline.inlineFunc (layoutOf P) function).splitCriticalEdges, fdLookup, final, ?_, ?_, ?_, ?_⟩
@@ -107,7 +119,13 @@ theorem public_init {config : Rt.Config} {F : Fir.Program}
       some Rt.Procs.cxInit := by
     have hle : (layoutOf P).init ≤ (layoutOf P).isUniqueProc := by
       simp [Layout.isUniqueProc]
-    rw [inlinedProgram, Cfg.Rc.Prune.pruneUnusedReuse_get_le hle,
+    have hneDec : (layoutOf P).init ≠ (layoutOf P).decProc := by
+      simp [Layout.init, Layout.decProc]; omega
+    rw [inlinedProgram,
+      Cfg.Rc.Prune.pruneDeadRuntime_get_not_prunable (Cfg.Rc.Prune.isPrunableDeadRuntime_init _),
+      Cfg.Rc.FastDec.install_get_ne _ _ hneDec,
+      Cfg.Rc.InlineWrappers.inlineProgram_get_le hle,
+      Cfg.Rc.Prune.pruneUnusedReuse_get_le hle,
       Cfg.Rc.Inline.inlineProgram_get_ge _ _ hge]
     exact raw
   have final := assembled_function program inlInit
@@ -138,8 +156,9 @@ theorem public_roots {config : Rt.Config} {F : Fir.Program}
 theorem runFront_exports_lt {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
     (accepted : runFront cfg P c = .ok f) :
     ∀ fn ∈ f.cfg.base.exports, fn < f.cfg.base.size := by
-  obtain ⟨_, _, _, fir, _, generated, _⟩ := runFront_spec accepted
-  rw [Cfg.Rc.generate_exports generated, Cfg.Rc.generate_size generated]
+  obtain ⟨_, _, _, ⟨rawFir, fir, hsink⟩, _, generated, _⟩ := runFront_spec accepted
+  rw [Cfg.Rc.generate_exports generated, Cfg.Rc.generate_size generated,
+    ← hsink, Own.Plain.Sink.run_exports, Own.Plain.Sink.run_size]
   exact Recheck.fir_exports_lt fir
 
 /-- Actual selection and certificate validation preserve each root's SysV

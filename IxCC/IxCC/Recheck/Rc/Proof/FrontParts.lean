@@ -27,17 +27,17 @@ theorem runFront_native {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
         simp only [hanf, bind, Except.bind] at accepted
         cases hfir : Fir.lower anf with
         | error e => rw [hfir] at accepted; cases accepted
-        | ok fir =>
+        | ok rawFir =>
           simp only [hfir, Except.mapError, bind, Except.bind] at accepted
-          cases hown : Own.Plain.Certificate.admit fir c.own with
+          cases hown : Own.Plain.Certificate.admit (Own.Plain.Sink.run rawFir) c.own with
           | error e => rw [hown] at accepted; cases accepted
           | ok own =>
             simp only [hown, Except.mapError, bind, Except.bind] at accepted
-            cases hgen : Cfg.Rc.generate fir own.bodies with
+            cases hgen : Cfg.Rc.generate (Own.Plain.Sink.run rawFir) own.bodies with
             | none => rw [hgen] at accepted; cases accepted
             | some candidate =>
               simp only [hgen] at accepted
-              cases hscope : Cfg.Rc.checkScopedProgram fir own.bodies candidate own.borrows own.uniqs with
+              cases hscope : Cfg.Rc.checkScopedProgram (Own.Plain.Sink.run rawFir) own.bodies candidate own.borrows own.uniqs with
               | false => simp [hscope] at accepted
               | true =>
                 simp only [hscope, Bool.true_eq_false, ↓reduceIte, pure, Except.pure,
@@ -49,7 +49,7 @@ theorem runFront_native {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
                   cases unit
                   simp only [hparams, bind, Except.bind] at accepted
                   cases hnative : Cfg.Rc.Public.lower { names := cfg.names }
-                      fir own.bodies candidate own.borrows own.uniqs with
+                      (Own.Plain.Sink.run rawFir) own.bodies candidate own.borrows own.uniqs with
                   | error e => rw [hnative] at accepted; cases accepted
                   | ok lowered =>
                     simp only [hnative, Except.mapError, bind, Except.bind,
