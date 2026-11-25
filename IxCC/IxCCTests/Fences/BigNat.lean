@@ -1,8 +1,12 @@
 import IxCC.BigNat.Proof
+import IxCC.Nat.Rep
 
 /-! Exact Layer-1 axiom fences for the pure-Lean formally verified `IxCC.BigNat`
 library (166 theorems across `LimbOps`, `Basic`, `Linear`, `Toom3`, `Mul`, `InvDiv`,
-`Div`, `Lehmer`, and `GcdConv`). Every theorem depends strictly on subsets of
+`Div`, `Lehmer`, and `GcdConv`) and for the two representation primitives of
+arbitrary-precision `Nat` (`IxCC.Nat.Rep`, 53 theorems: the specification over limb lists,
+`limbsBijection`, `toLimbs`, `ofLimbs` and their canonical equations).
+Every theorem depends strictly on subsets of
 `[propext, Classical.choice, Quot.sound]` — zero `sorryAx`, zero
 `Lean.ofReduceBool` / `Lean.trustCompiler`, zero custom axioms.
 Expected messages are preserved verbatim. -/
@@ -522,3 +526,164 @@ Expected messages are preserved verbatim. -/
 
 /-- info: 'IxCC.BigNat.ofDecimal_toDecimal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.BigNat.ofDecimal_toDecimal
+
+/-! ### Representation primitives `toLimbs` / `ofLimbs` (`IxCC.Nat.Rep`, 53 fences) -/
+
+/-- info: 'IxCC.NatRep.limbBase_eq' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.NatRep.limbBase_eq
+
+/-- info: 'IxCC.NatRep.limbBase_pos' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.NatRep.limbBase_pos
+
+/-- info: 'IxCC.NatRep.one_lt_limbBase' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.NatRep.one_lt_limbBase
+
+/-- info: 'IxCC.NatRep.natOfLimbs_nil' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.NatRep.natOfLimbs_nil
+
+/-- info: 'IxCC.NatRep.natOfLimbs_cons' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.NatRep.natOfLimbs_cons
+
+/-- info: 'IxCC.NatRep.limbsFuel_zero' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.NatRep.limbsFuel_zero
+
+/-- info: 'IxCC.NatRep.limbsFuel_succ' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.NatRep.limbsFuel_succ
+
+/-- info: 'IxCC.NatRep.limbsFuel_zero_right' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.NatRep.limbsFuel_zero_right
+
+/-- info: 'IxCC.NatRep.limbsFuel_succ_of_ne' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.NatRep.limbsFuel_succ_of_ne
+
+/-- info: 'IxCC.NatRep.div_limbBase_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.div_limbBase_le
+
+/-- info: 'IxCC.NatRep.natOfLimbs_limbsFuel' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.natOfLimbs_limbsFuel
+
+/-- info: 'IxCC.NatRep.limbsFuel_lt' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.NatRep.limbsFuel_lt
+
+/-- info: 'IxCC.NatRep.limbsFuel_ne_nil' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.limbsFuel_ne_nil
+
+/-- info: 'IxCC.NatRep.limbsFuel_getLast' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.limbsFuel_getLast
+
+/-- info: 'IxCC.NatRep.canonical_limbsFuel' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.canonical_limbsFuel
+
+/-- info: 'IxCC.NatRep.natOfLimbs_pos' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.natOfLimbs_pos
+
+/-- info: 'IxCC.NatRep.canonical_tail' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.NatRep.canonical_tail
+
+/-- info: 'IxCC.NatRep.limbsFuel_natOfLimbs' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.limbsFuel_natOfLimbs
+
+/-- info: 'IxCC.NatRep.limbsBijection' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.limbsBijection
+
+/-- info: 'IxCC.NatRep.natOfLimbs_limbsOf' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.natOfLimbs_limbsOf
+
+/-- info: 'IxCC.NatRep.canonical_limbsOf' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.canonical_limbsOf
+
+/-- info: 'IxCC.NatRep.limbsOf_natOfLimbs' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.limbsOf_natOfLimbs
+
+/-- info: 'IxCC.NatRep.limbsFuel_eq_limbsOf' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.limbsFuel_eq_limbsOf
+
+/-- info: 'IxCC.NatRep.limbsOf_zero' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.NatRep.limbsOf_zero
+
+/-- info: 'IxCC.NatRep.limbsOf_of_ne' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.limbsOf_of_ne
+
+/-- info: 'IxCC.NatRep.natOfLimbs_inj' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.natOfLimbs_inj
+
+/-- info: 'IxCC.NatRep.natOfLimbs_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.natOfLimbs_lt
+
+/-- info: 'IxCC.NatRep.le_natOfLimbs' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.le_natOfLimbs
+
+/-- info: 'IxCC.NatRep.toLimbsFuel_zero' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.NatRep.toLimbsFuel_zero
+
+/-- info: 'IxCC.NatRep.toLimbsFuel_succ' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.NatRep.toLimbsFuel_succ
+
+/-- info: 'IxCC.NatRep.ofNat_mod_limbBase' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.NatRep.ofNat_mod_limbBase
+
+/-- info: 'IxCC.NatRep.toNat_ofNat_of_lt' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.NatRep.toNat_ofNat_of_lt
+
+/-- info: 'IxCC.NatRep.toList_toLimbsFuel' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.NatRep.toList_toLimbsFuel
+
+/-- info: 'IxCC.NatRep.toList_toLimbs' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.NatRep.toList_toLimbs
+
+/-- info: 'IxCC.NatRep.map_toNat_map_ofNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.map_toNat_map_ofNat
+
+/-- info: 'IxCC.NatRep.map_ofNat_map_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.map_ofNat_map_toNat
+
+/-- info: 'IxCC.NatRep.toLimbs_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.toLimbs_spec
+
+/-- info: 'IxCC.NatRep.ofLimbs_mk_nil' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.NatRep.ofLimbs_mk_nil
+
+/-- info: 'IxCC.NatRep.ofLimbs_mk_cons' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.NatRep.ofLimbs_mk_cons
+
+/-- info: 'IxCC.NatRep.foldr_eq_natOfLimbs' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.NatRep.foldr_eq_natOfLimbs
+
+/-- info: 'IxCC.NatRep.ofLimbs_spec' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.NatRep.ofLimbs_spec
+
+/-- info: 'IxCC.NatRep.limbs_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.limbs_lt
+
+/-- info: 'IxCC.NatRep.canonical_toLimbs' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.canonical_toLimbs
+
+/-- info: 'IxCC.NatRep.ofLimbs_toLimbs' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.ofLimbs_toLimbs
+
+/-- info: 'IxCC.NatRep.toLimbs_ofLimbs' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.toLimbs_ofLimbs
+
+/-- info: 'IxCC.NatRep.toLimbs_inj' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.toLimbs_inj
+
+/-- info: 'IxCC.NatRep.toLimbs_zero' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.NatRep.toLimbs_zero
+
+/-- info: 'IxCC.NatRep.toList_toLimbs_of_ne' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.toList_toLimbs_of_ne
+
+/-- info: 'IxCC.NatRep.lt_pow_size_toLimbs' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.lt_pow_size_toLimbs
+
+/-- info: 'IxCC.NatRep.pow_size_toLimbs_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.pow_size_toLimbs_le
+
+/-- info: 'IxCC.NatRep.toLimbs_eqn' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.toLimbs_eqn
+
+/-- info: 'IxCC.NatRep.ofLimbs_nil_eqn' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.NatRep.ofLimbs_nil_eqn
+
+/-- info: 'IxCC.NatRep.ofLimbs_cons_eqn' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.NatRep.ofLimbs_cons_eqn
