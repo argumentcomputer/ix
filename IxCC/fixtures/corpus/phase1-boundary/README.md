@@ -14,6 +14,7 @@ source computes reaches `2⁶³`).
 | `boundary` | [`src/Boundary.lean`](src/Boundary.lean) | 59 | one root per primitive (`+ - * / % ^ gcd &&& \|\|\| ^^^ <<< >>>`, `Nat.beq`/`ble`/`blt`, `decide` of `= ≤ < >`, `!=`, fused `if`, `min`, `max`, `pred`, `succ`), each with a literal operand on the left and on the right; literals of at least `2⁶³` in live code, a dead branch and a `match` arm; intermediate values past `2⁶³` |
 | `fields254`, `fields255` | [`src/Fields254.lean`](src/Fields254.lean), [`src/Fields255.lean`](src/Fields255.lean) | 1 + 1 | a structure of 254 `Nat` fields (the most a header counts), allocated and read; 255 fields is declined at `ingress: decode` (`mk255`, which the root reaches, is past the depth budget) |
 | `tags16`, `tags17`, `tags125`, `tags126` | [`src/Limits.lean`](src/Limits.lean) | 4 | inductives of 16, 17, 125 and 126 constructors, the last with a field |
+| `vs0` | [`src/Vs0.lean`](src/Vs0.lean) | 1 | VS0 (`plans/ONE-PIPELINE.md`): a `UInt64` loop whose value has its top bit set on most iterations; on the RC route a raw 64-bit register (`tests-pipeline-rc`), on the immortal route `natOverflow` (allowed) |
 
 Every case also runs with each argument at `2⁶³`, `2⁶⁴ − 1` (the entry
 wrapper's check, also on the typed x86 machine and ByteEval) and `2⁶⁴`
