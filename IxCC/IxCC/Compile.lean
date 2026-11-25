@@ -19,7 +19,8 @@ statements of the environment itself).
 
 ```text
 envBytes ─decode─→ ─kernel acceptance, N5 modes─→ ─hints derived, reach, read─→ Input      (ingress)
-  ─deterministic producer (untrusted)─→ certificate ─the proved checker─→ Artifact        (check)
+  ─deterministic producer (untrusted)─→ certificate ─the proved checker─→ Artifact
+  ─the seed closure through the kernel's logical entry (KF-4)─                            (check)
   ─[hook (a): shape decision]─ ─[hook (b): grounding checks]─
   ─Exe.build / Exe.buildMachine (written and checked)─→ executable bytes, claim           (build)
 ```
@@ -46,21 +47,19 @@ immortal backend, the plain-RC certificate, and the automatic choice between the
 Not here: `--opt` (the `Lir.Opt` passes; see the note on `compile`), and the
 uncertified `--bignat` path, whose library comes from outside the process.
 
-**Checks, and one that is not here.** Inside `compile`: the certified kernel's
-acceptance of the whole environment at `opts.kernelLimits` and the N5 mode check
-(ingress); that the program's first root is `target`; the function-parameter
-refusal; Stage A (the certificate's relevance annotation is the annotator's);
-the replay; the decoded definition assertions; the executable's own fragment
-(`Exe.fragment` or `Exe.machine`: all-`Nat` parameters, a result the shell
-renders), which implies the root checks of `CompileClaim.verifyProgram`; and the
-written file's structural and shell checks. Not inside: the seed-closure check
-of `CompileClaim.verifyBytes` (`CompileClaim.checkCertSeedClosure`), which runs the
-kernel a second time, through its logical entry, on the records the target and the
-table's theorems reach, and requires the role table to restrict the committed
-default one. No theorem about the executable reads its result today, and ingress
-has already admitted every record at the same limits; it belongs with the
-grounding checks (hook (b)), which decide in what form the logical tier of the
-target is to be established. -/
+**Checks.** Inside `compile`: the certified kernel's acceptance of the whole
+environment at `opts.kernelLimits` and the N5 mode check (ingress); that the
+program's first root is `target`; the function-parameter refusal; Stage A (the
+certificate's relevance annotation is the annotator's); the replay; the decoded
+definition assertions; the seed-closure check of `CompileClaim.verifyBytes` and
+`verify-exe` (`seedClosure`: the kernel a second time, through its logical entry,
+on the records the target and the table's theorems reach, under the committed
+default role table, which the environment's must restrict); the executable's own
+fragment (`Exe.fragment` or `Exe.machine`: all-`Nat` parameters, a result the
+shell renders), which implies the root checks of `CompileClaim.verifyProgram`; and
+the written file's structural and shell checks. So a file `compile` returns,
+packaged with its certificate, is one `verify-exe` accepts: `compile` refuses
+exactly where the verifier would. -/
 
 set_option autoImplicit false
 
@@ -221,6 +220,12 @@ def Replay.artifact : Replay → Recheck.Artifact
   | .zero _ a => a
   | .plain _ _ a => a
 
+/-- The accepted certificate's unfolding table (what `CompileClaim.tableCertOfText`
+reads from its text under the policy). -/
+def Replay.table : Replay → Src.Table.TableCert
+  | .zero cert _ => cert.table
+  | .plain cert _ _ => cert.base.table
+
 def relevanceErr : Err :=
   { stage := .relevance, code := "relevance-canonical"
     message := "certificate relevance annotation does not match canonical annotator output" }
@@ -342,6 +347,22 @@ structure Checked extends Certified where
   /-- The role table's address (the environment is role-bound). -/
   roleTable : Ixon.Address
 
+/-- **The seed-closure check** (`KF-4` + `SP-0`, `CompileClaim.checkSeedClosure`):
+the records the target and the theorems of the accepted certificate's table reach,
+admitted by the certified kernel's pure logical entry under the committed prelude
+and the committed default role table (which the environment's table must restrict),
+with the `N5` mode check. `verify-exe` runs it (`exe.cert.kf4`), so `compile` runs
+it too: what `compile` returns is what the verifier accepts. -/
+def seedClosure (inp : Input) (target : Ixon.Address) (tc : Src.Table.TableCert)
+    (limits : Ix.Kernel.Admission.Limits) : Except Err Unit :=
+  seedClosureOf (CompileClaim.checkSeedClosure inp target tc limits)
+where
+  /-- The check's verdict as a refusal (a separate function, so that statements about it
+  never unfold the check). -/
+  seedClosureOf {α : Type} : Except String α → Except Err Unit
+    | .ok _ => .ok ()
+    | .error m => .error { stage := .ingress, code := "kf4", message := m }
+
 /-- Whether the program's first root is the constant at `target`. -/
 def targetIsRoot (inp : Input) (target : Ixon.Address) : Bool :=
   match inp.program.roots.head? with
@@ -353,7 +374,8 @@ of the ingested program is `target` (`targetIsRoot`: `readConsts` resolves the o
 root by address, so this cannot refuse; it is checked so that the claim's target
 needs no lemma about ingress); a root whose caller would pass a closure is refused
 before anything is produced (`checkFnParams`); then `certify` under the input's
-configuration, with the inline-round retry. -/
+configuration, with the inline-round retry; then the seed-closure check on the
+accepted certificate's table (`seedClosure`). -/
 def check (envBytes : ByteArray) (target : Ixon.Address) (opts : Options) : Except Err Checked := do
   let inp ← ingress envBytes target opts.kernelLimits
   let () ← require (targetIsRoot inp target)
@@ -362,6 +384,7 @@ def check (envBytes : ByteArray) (target : Ixon.Address) (opts : Options) : Exce
   let cfg := Config.forInput {} inp
   let () ← checkFnParams cfg.names inp.program
   let c ← withRetry cfg fun cfg => certify opts.rc cfg inp
+  let () ← seedClosure inp target c.replay.table opts.kernelLimits
   pure { c with inp, roleTable }
 
 /-- An executable's bytes with the root's parameter count and rendering. -/
@@ -414,8 +437,8 @@ between the stages, on `c : Checked`; each only refuses.
   "source goes wrong" case of the checker's soundness theorem is empty.
 * **HOOK (b), the grounding checks** (`IxCCGrounding`): that the checked source's
   table and constants agree with the kernel's reading of the admitted environment
-  (`c.inp.kernel`), and whatever establishes the target in the kernel's logical
-  tier (today's `CompileClaim.checkCertSeedClosure` is the candidate).
+  (`c.inp.kernel`). The target's logical tier is established in `check` already
+  (`seedClosure`).
 
 Production may not import either library, so the function with both checks is
 assembled where they may be imported, as

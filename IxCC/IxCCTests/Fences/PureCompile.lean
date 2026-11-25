@@ -67,3 +67,12 @@ the target statements (`IxCCCorrect/Fence.lean`). -/
 
 /-- info: 'IxCC.Compile.compile_deterministic' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Compile.compile_deterministic
+
+/-- info: 'IxCC.Compile.seedClosureOf_ok' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Compile.seedClosureOf_ok
+
+/-- info: 'IxCC.Compile.seedClosure_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Compile.seedClosure_ok
+
+/-- info: 'IxCC.Compile.check_seedClosure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Compile.check_seedClosure

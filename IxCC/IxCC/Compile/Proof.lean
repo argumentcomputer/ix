@@ -237,6 +237,7 @@ theorem check_sound {envBytes : ByteArray} {target : Ixon.Address} {opts : Optio
   obtain ⟨roleTable, hrole, h⟩ := bind_ok h
   obtain ⟨_, -, h⟩ := bind_ok h
   obtain ⟨cert, hcert, h⟩ := bind_ok h
+  obtain ⟨_, -, h⟩ := bind_ok h
   cases h
   refine ⟨hing, targetIsRoot_ok (require_ok htarget), orRefuse_ok hrole, ?_⟩
   rcases withRetry_ok hcert with hc | hc
@@ -244,6 +245,36 @@ theorem check_sound {envBytes : ByteArray} {target : Ixon.Address} {opts : Optio
     exact ⟨.inl hs.cfg_eq, by rw [hs.cfg_eq]; exact hs.accepted⟩
   · have hs := certify_sound hc
     exact ⟨.inr hs.cfg_eq, by rw [hs.cfg_eq]; exact hs.accepted⟩
+
+theorem seedClosureOf_ok {α : Type} {r : Except String α}
+    (h : seedClosure.seedClosureOf r = .ok ()) : ∃ a, r = .ok a := by
+  cases r with
+  | ok a => exact ⟨a, rfl⟩
+  | error m => cases h
+
+theorem seedClosure_ok {inp : Input} {target : Ixon.Address} {tc : Src.Table.TableCert}
+    {limits : Ix.Kernel.Admission.Limits} (h : seedClosure inp target tc limits = .ok ()) :
+    ∃ acc, CompileClaim.checkSeedClosure inp target tc limits = .ok acc := by
+  unfold seedClosure at h
+  exact seedClosureOf_ok h
+
+/-- **`check` ran the seed-closure check** (`KF-4` + `SP-0`) on the accepted
+certificate's table, at the options' kernel limits, and it accepted: the records
+the target and the table's theorems reach are admitted by the certified kernel's
+logical entry under the committed prelude and default role table, which the
+environment's role table restricts (`CompileClaim.ClosureAccepted`). -/
+theorem check_seedClosure {envBytes : ByteArray} {target : Ixon.Address} {opts : Options}
+    {c : Checked} (h : check envBytes target opts = .ok c) :
+    ∃ acc, CompileClaim.checkSeedClosure c.inp target c.replay.table opts.kernelLimits = .ok acc := by
+  unfold check at h
+  obtain ⟨inp, -, h⟩ := bind_ok h
+  obtain ⟨_, -, h⟩ := bind_ok h
+  obtain ⟨roleTable, -, h⟩ := bind_ok h
+  obtain ⟨_, -, h⟩ := bind_ok h
+  obtain ⟨cert, -, h⟩ := bind_ok h
+  obtain ⟨_, hseed, h⟩ := bind_ok h
+  cases h
+  exact seedClosure_ok hseed
 
 theorem executable_plain {layout : X86.Exe.Layout} {a : Recheck.Artifact} {x : Executable}
     (h : executable .plain layout a = .ok x) :

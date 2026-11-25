@@ -14,9 +14,10 @@ verification:
    table (`Ix.Kernel.Admission.defaultBinding` / `Ix.Kernel.Reader.defaultTable`),
    so role identities and certificate evidence cannot be spoofed per-artifact.
 3. **Pure logical seed-closure check (`checkSeedClosure`)**: computes the
-   dependency-ordered closure of `S` (following table `refs`, recursor records
+   closure of `S` (following table `refs`, recursor records
    and their dependencies, `groundEdges`, `literalEdges`, and certificate
-   `evidenceEdges`, plus reached block projections and referenced blobs) and
+   `evidenceEdges`, plus reached block projections and referenced blobs), in the
+   order ingress's kernel acceptance checked the whole environment in, and
    submits it to the **pure logical** certified kernel entry
    `Ix.Kernel.Admission.checkBytes` (which uses the committed `preludeFor` and
    committed `defaultBinding`, with no typing tier / no `partial` or `unsafe`
@@ -154,9 +155,14 @@ def seedDfsStep (store : RecordStore) (index : RecIndex)
           | none => stk) stack
         seedDfsStep store index recOwner extra fuel stack done active out
 
-/-- Compute the dependency-ordered seed closure of `seeds` within `inputConstants`,
-backed by `pre` under `defTable`. Returns `none` only if a seed is absent from
-`inputConstants` or the DFS fuel bound is exhausted. -/
+/-- Compute the seed closure of `seeds` within `inputConstants`, backed by `pre` under
+`defTable`, as addresses of `inputConstants` in their order there. The walk decides
+which records are members; the order is the input's, so when `inputConstants` is in
+check order (`Accepted.constants`: the order the kernel accepted the whole environment
+in), so is the closure, since the closure is closed under the references and the extra
+edges and the restriction of a dependency order to such a set is one. The order is not
+trusted either way: a wrong one is a decline of the kernel's entry. Fails only if a seed
+is absent from `inputConstants` or the walk's fuel bound is exhausted. -/
 def seedClosureOrder (defTable : Ix.Kernel.RoleTable) (pre : Prelude .anon)
     (inputConstants : List (KAddr × KConstant)) (seeds : Array KAddr) :
     Except String (Array KAddr) := do
@@ -197,22 +203,21 @@ def seedClosureOrder (defTable : Ix.Kernel.RoleTable) (pre : Prelude .anon)
     active := active'
     primaryOut := out'
   let mut seen : Std.HashSet KAddr := {}
-  let mut out : Array KAddr := #[]
   for address in primaryOut do
     if seen.contains address then continue
     seen := seen.insert address
-    out := out.push address
     for r in Order.recursorRecords index address do
       unless seen.contains r || !store.contains r do
         seen := seen.insert r
-        out := out.push r
-  let mut projections : Array KAddr := #[]
-  for (a, c) in inputConstants do
+  -- The closure's members (the primary records reached, their recursor records, and the
+  -- projection records of the blocks reached) in the order of `inputConstants`, which is
+  -- the order the kernel accepted the whole environment in. The walk's own postorder is
+  -- not a dependency order once the extra edges close a cycle: the evidence of a bound
+  -- operation may cite a theorem that mentions the operation (`String.utf8ByteSize`), and
+  -- the walk then emits the theorem before the operation.
+  pure (inputConstants.toArray.filterMap fun (a, c) =>
     let o := Order.owner a c
-    if o != a && seen.contains o && !seen.contains a then
-      projections := projections.push a
-  projections := projections.qsort (fun x y => x.cmpBytes y == .lt)
-  pure ((out ++ projections).filter input.contains)
+    if seen.contains a || (o != a && seen.contains o) then some a else none)
 
 /-- Filter `allBlobs` to the blobs referenced by `closureConstants` (preserving order). -/
 def closureBlobsOf (allBlobs : Ix.Kernel.Ingress.Blobs)

@@ -25,9 +25,7 @@ and that it is the compiler the command line already runs:
   `ixcc compile … --exe F --embed-cert` writes exactly the returned executable
   with the `.ix.cert` v1 trailer made from what `compile` and `check` return
   (`package`), which `Exe.Cert.verifyExeBytes` accepts for the claim's six-field
-  projection (`Claim.legacy`). So the developer path loses nothing. Where that verifier
-  refuses the packaged file at its seed-closure check, `--embed-cert` (which runs it before
-  writing) rejects with exit 3 and writes nothing.
+  projection (`Claim.legacy`). So the developer path loses nothing.
 * **Not like for like, reported and not required equal**: the command line with the
   fixture's `--equations` sidecar and its root's name. The hints then come from the
   sidecar instead of the environment, and the root has another name.
@@ -232,7 +230,10 @@ structure Counts where
   cli : Nat := 0
   embedded : Nat := 0
   verified : Nat := 0
+  /-- `compile` refused at the seed-closure check (`ingress: kf4`). -/
   seedClosureRefused : Nat := 0
+  /-- Of those, the command line (which runs that check only under `--embed-cert`) compiled. -/
+  cliWithoutSeedClosure : Nat := 0
   sidecarSame : Nat := 0
   sidecarDiffers : Nat := 0
   sidecarOnlyOne : Nat := 0
@@ -278,7 +279,14 @@ def runCase (r : IO.Ref Nat) (n : IO.Ref Counts) (work : FilePath) (c : Case) (o
   n.modify fun k => { k with cli := k.cli + 1 }
   match first with
   | .error e =>
-    expect r (code != 0) s!"{tag}: compile refuses ({e.render}) and the command line exits 0"
+    if e.code == "kf4" then
+      n.modify fun k => { k with seedClosureRefused := k.seedClosureRefused + 1 }
+      IO.println s!"    compile refuses at the seed-closure check: {e.message}"
+      if code == 0 then
+        n.modify fun k => { k with cliWithoutSeedClosure := k.cliWithoutSeedClosure + 1 }
+        IO.println s!"    the command line, which runs that check only under --embed-cert, compiles"
+    else
+      expect r (code != 0) s!"{tag}: compile refuses ({e.render}) and the command line exits 0"
   | .ok out =>
     expect r (code == 0) s!"{tag}: compile succeeds and the command line exits {code}"
     if code == 0 then
@@ -295,20 +303,11 @@ def runCase (r : IO.Ref Nat) (n : IO.Ref Counts) (work : FilePath) (c : Case) (o
       let emb := work / "cli.embedded"
       if ← emb.pathExists then IO.FS.removeFile emb
       let code ← ixcc (base ++ ["--exe", emb.toString, "--embed-cert"] ++ kindArgs opts ++ layoutArgs opts)
+      expect r (code == 0) s!"{tag}: the command line's --embed-cert exits {code}"
       match package bytes c.target opts with
       | .error e => fail r s!"{tag}: package: {e.render}"
       | .ok (out', payload, file) =>
         expect r (out'.exe == out.exe && out'.cert == out.cert) s!"{tag}: check then build is not compile"
-        -- `--embed-cert` runs verify-exe's verifier on the bytes before it writes them and rejects
-        -- (exit 3, nothing written) when it refuses; so it writes this suite's packaged file
-        -- exactly when the verifier below accepts it
-        let verdict := Exe.Cert.verifyExeBytes file none none opts.kernelLimits
-        if verdict.isOk then
-          expect r (code == 0) s!"{tag}: verify-exe accepts the packaged file and the command line's --embed-cert exits {code}"
-        else
-          expect r (code == 3 && !(← emb.pathExists))
-            s!"{tag}: verify-exe refuses the packaged file and the command line's --embed-cert exits {code} \
-              (expected 3, with nothing written)"
         if code == 0 then
           let cliFile ← IO.FS.readBinFile emb
           expect r (cliFile == file)
@@ -323,20 +322,15 @@ def runCase (r : IO.Ref Nat) (n : IO.Ref Counts) (work : FilePath) (c : Case) (o
           expect r (X86.Exe.Cert.zeroShdr (file.extract 0 coreSize) == out.exe)
             s!"{tag}: the core under the trailer is not the returned executable"
         | .error e => fail r s!"{tag}: extractTrailer: {e.render}"
-        -- `verify-exe` on the packaged file (the command line's own, byte for byte, when it wrote
-        -- one). It runs one check `compile` does not: the seed-closure check (`exe.cert.kf4`). A
-        -- refusal there is counted and reported, not a failure of this suite (the command line
-        -- then writes nothing, above); any other refusal is.
-        match verdict with
+        -- `verify-exe` on the packaged file (the command line's own, byte for byte): it must
+        -- accept every file `compile` returns, the seed-closure check (`exe.cert.kf4`) included,
+        -- which `compile` runs too.
+        match Exe.Cert.verifyExeBytes file none none opts.kernelLimits with
         | .ok v =>
           expect r (v.claim == out.claim.legacy) s!"{tag}: verify-exe reads another claim"
           expect r (v.exeKind == opts.kind && v.layout == opts.layout) s!"{tag}: verify-exe reads another kind or layout"
           n.modify fun k => { k with verified := k.verified + 1 }
-        | .error e =>
-          if e.code == "exe.cert.kf4" then
-            n.modify fun k => { k with seedClosureRefused := k.seedClosureRefused + 1 }
-            IO.println s!"    verify-exe refuses the packaged file at its seed-closure check: {e.message}"
-          else fail r s!"{tag}: verify-exe refuses the packaged output: {e.render}"
+        | .error e => fail r s!"{tag}: verify-exe refuses the packaged output: {e.render}"
         n.modify fun k => { k with embedded := k.embedded + 1 }
   -- not like for like: the sidecar's hints and the root's name
   if withSidecar then
@@ -434,8 +428,9 @@ def run (args : List String) : IO UInt32 := do
   IO.println s!"  {k.cases} compiles ({k.compiled} compiled, {k.refused} refused): {k.twice} evaluated twice, \
     {k.children} repeated in another process and environment, {k.cli} compared with the command line \
     (executable, object digest, certificate text), {k.embedded} packaged and compared with --embed-cert"
-  IO.println s!"  verify-exe on the {k.embedded} packaged files: {k.verified} accepted with the claim's \
-    projection; {k.seedClosureRefused} refused at its seed-closure check (exe.cert.kf4), which compile does not run"
+  IO.println s!"  verify-exe on the {k.embedded} packaged files: {k.verified} accepted with the claim's projection"
+  IO.println s!"  the seed-closure check: {k.seedClosureRefused} compiles refused there \
+    ({k.cliWithoutSeedClosure} of which the command line compiles without --embed-cert)"
   IO.println s!"  not like for like (sidecar hints, the root's name): {k.sidecarSame} executables equal, \
     {k.sidecarDiffers} differ, {k.sidecarOnlyOne} compile on one side only"
   let failures ← r.get
