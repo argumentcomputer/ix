@@ -7,6 +7,7 @@ import IxCCTests.Grounding.LetClo
 import IxCCTests.Grounding.LetWit
 import IxCCTests.Grounding.Words
 import IxCCTests.Grounding.Pc
+import IxCCTests.Grounding.Pipeline
 
 /-- `tests-grounding` runs the grounding check on the committed closures, with its negative
 controls (`IxCCTests.Grounding.Run`), the canonicity-free family's decided fact on the
@@ -19,8 +20,15 @@ its controls (`IxCCTests.Grounding.CaseEmpty`), and step C's closure-capture `le
 shape) on the corpus, `closures` and `src-words`, with its controls
 (`IxCCTests.Grounding.LetWit`), and the word family (step W) on `grounding/words` and `src-words`,
 with its controls (`IxCCTests.Grounding.Words`), and the Pc family (step Pc: `PUnit.casesOn` at its
-ordinary instances) on the corpus and `closures`, with its controls (`IxCCTests.Grounding.Pc`). -/
-def main : IO UInt32 := do
+ordinary instances) on the corpus and `closures`, with its controls (`IxCCTests.Grounding.Pc`).
+
+`tests-grounding pipeline` runs instead the report of the pipeline's grounding check
+(`IxCC.Correct.groundCheck`) on every committed root (`IxCCTests.Grounding.Pipeline`); it asserts
+nothing. -/
+def main (args : List String) : IO UInt32 := do
+  if args == ["pipeline"] then
+    let _ ← IxCCTests.Grounding.Pipeline.run
+    return 0
   let ok1 ← IxCCTests.Grounding.run
   let ok2 ← IxCCTests.Grounding.NoCanon.run
   let ok3 ← IxCCTests.Grounding.Zeta.run
