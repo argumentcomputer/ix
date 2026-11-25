@@ -331,6 +331,7 @@ def bodyOf (p : Program) (c : CId) : Option Term :=
   | none =>
     match p.decl? c with
     | some (.defn .defn .safe _ _ v) => some v
+    | some (.defn .opaq .safe _ _ v) => if p.table.isOpaqueByValue c then some v else none
     | _ => none
 
 def peel : Term → Nat × Term
@@ -474,6 +475,8 @@ def step (p : Program) (fuel : Nat) : M Bool := do
       | none =>
         match p.decl? c with
         | some (.defn .defn .safe _ _ v) => walk p fuel ls [] targs v
+        | some (.defn .opaq .safe _ _ v) =>
+          if p.table.isOpaqueByValue c then walk p fuel ls [] targs v else pure ()
         | _ => pure ()
       pure true
 

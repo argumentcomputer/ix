@@ -19,7 +19,7 @@ export IxCC.SrcShape (
   predOk predOk_sound casesOk casesOk_sound casesSubOkAt casesSubOk casesSubOkAt_sound
   rulesOk rulesOk_sound recrOkAt recrOk recrOkAt_sound recrOk_sound recrSubOkAt recrSubOk
   recrSubOkAt_sound zeroOk succOk enumCtorOk dataCtorAt dataCtorScan dataCtorScan_sound
-  dataCtorOk dataCtorOk_sound ctorsOk ctorsOk_sound structOk structOk_sound enumOk
+  dataCtorOk ctorAnyOk dataCtorOk_sound ctorsOk ctorsOk_sound structOk structOk_sound enumOk
   enumOk_sound entryOk entryOk_sound certOk sigOk_of_cert neverWrong_of_cert_nat
   neverWrong_of_cert_enum)
 
