@@ -392,6 +392,7 @@ def synth (insts : List (CId × Levels × Shape)) (datas : List DataDecl) (lets 
     List Shape → Term → Exp → List Shape
   | Γ, .var i, _ => ((Γ[i]?).toList).flatMap parts
   | _, .natLit _, _ => [.nat]
+  | _, .strLit _, _ => [.any]
   | _, .sort _, _ => [.irr]
   | _, .pi _ _ _, _ => [.irr]
   | _, .const c us, _ => (instsOf insts c (us.map (evalUniv ls))).flatMap parts
@@ -423,7 +424,6 @@ def synth (insts : List (CId × Levels × Shape)) (datas : List DataDecl) (lets 
         else [])).flatMap fun σ => synth insts datas lets ls (σ :: Γ) body e
   | Γ, .proj s i e', _ =>
     ((synth insts datas lets ls Γ e' .none).flatMap fun σ => projRes datas s i σ).flatMap parts
-  | _, _, _ => []
 
 /-- A synthesized shape is a derivation. -/
 theorem synth_sound (cert : Cert) (ls : Levels) : ∀ (t : Term) (Γ : List Shape)
@@ -544,6 +544,8 @@ theorem synth_sound (cert : Cert) (ls : Levels) : ∀ (t : Term) (Γ : List Shap
   | strLit s =>
     intro Γ e σ h
     simp [synth] at h
+    subst h
+    exact .strLit
 
 /-! ## Reading a shape apart (unproved helpers; the checks compare afterwards) -/
 

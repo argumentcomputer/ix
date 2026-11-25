@@ -128,6 +128,9 @@ inductive HasShape (sig : Sig) (ls : Levels) : List Shape → Term → Shape →
   | var {Γ : List Shape} {i : Nat} {σ : Shape} :
       Γ[i]? = some σ → HasShape sig ls Γ (.var i) σ
   | natLit {Γ : List Shape} {n : Nat} : HasShape sig ls Γ (.natLit n) .nat
+  /-- a string literal: SrcEval makes it a `str` value, which nothing in the fragment reads (a
+  string used as a projection subject or a major is stuck), so its shape is `any` -/
+  | strLit {Γ : List Shape} {s : String} : HasShape sig ls Γ (.strLit s) .any
   | sort {Γ : List Shape} {u : Ixon.Univ} : HasShape sig ls Γ (.sort u) .irr
   | pi {Γ : List Shape} {b : Binder} {d c : Term} : HasShape sig ls Γ (.pi b d c) .irr
   | const {Γ : List Shape} {c : CId} {us : List Ixon.Univ} {σ : Shape} :
@@ -1402,6 +1405,10 @@ theorem allOk (hsig : SigOk p sig) : ∀ k, AllOk p sig k := by
       intro _
       rw [eval_natLit]
       exact .inr ⟨_, rfl, .lit⟩
+    | strLit =>
+      intro _
+      rw [eval_strLit]
+      exact .inr ⟨_, rfl, .any⟩
     | sort =>
       intro _
       rw [eval_sort]
