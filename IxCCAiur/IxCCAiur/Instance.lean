@@ -11,7 +11,7 @@ an instance is one kernel evaluation (`IxCCAiur.Fib`, `IxCCAiur.Gcd`):
   covered, `Recheck.ExactDeclared`);
 * root 0 passes the shape decision at `n` `Nat` arguments
   (`Progress.checkShape`) on the certificate the source-progress lane's
-  untrusted producer proposes (`Shape2.Produce.produce`).
+  untrusted producer proposes (`SrcShape.Produce.produce`).
 
 `accepted_nat` is `Progress.accepted_nat` with those facts read off the
 decision: for a closure whose decision holds, an accepted `Nat` claim of the
@@ -35,7 +35,7 @@ def decision (n : Nat) : Except Recheck.Err Recheck.FrontFir → Bool
       match f.src.roots[0]? with
       | some (_, c) =>
         decide (Recheck.declaredParams f.src c = some n) &&
-          Progress.checkShape f.src (Correct.Shape2.Produce.produce f.src c) 0 n
+          Progress.checkShape f.src (SrcShape.Produce.produce f.src c) 0 n
       | none => false
   | .error _ => false
 
@@ -66,7 +66,7 @@ theorem facts {cfg : Recheck.Config} {P : Src.Program} {c : Recheck.Cert} {n : N
       cases hm
       exact hlen
     · exact Progress.neverStuck_of_checkShape
-        (cert := Correct.Shape2.Produce.produce f.src c0) (by rw [hlen]; exact hshape)
+        (cert := SrcShape.Produce.produce f.src c0) (by rw [hlen]; exact hshape)
 
 /-- **An accepted `Nat` claim of a decided closure, read at the source.** If
 the decision holds for the closure at `n` arguments and the checker accepts

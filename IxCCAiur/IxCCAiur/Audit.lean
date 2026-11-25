@@ -1084,17 +1084,17 @@ info: 'IxCC.AiurBackend.Fib.accepted_sound' depends on axioms: [propext, Classic
 
 /-! ## 7. Without the Escape: Source Progress from the Shape Decision
 
-`Progress.checkShape` is the source-progress lane's shape decision
-(`Shape2.certOk` and the root's instance) as a Boolean on the checked source,
-and `Progress.neverStuck_of_checkShape` its soundness for
-`Compose.NeverStuck`, by the lane's `Shape2.neverStuck_checked`
-(`IxCCCorrect.ShapeHook`). `Instance.decision` is one Boolean per closure on the
-front half's result, and `Fib.accepted`, `Gcd.accepted` and the three of
-`IxCCAiur.Roots` are the statements **with no disjunct and no progress
-hypothesis**: the kernel evaluates the decision (`decide +kernel`). -/
+`Progress.checkShape` is the production shape decision (`SrcShape.certOk` and
+the root's instance) as a Boolean on the checked source, and
+`Progress.neverStuck_of_checkShape` its soundness for `Compose.NeverStuck`, by
+`SrcShape.neverStuck_checked` (`IxCC.Shape.Src.Hook`). `Instance.decision` is
+one Boolean per closure on the front half's result, and `Fib.accepted`,
+`Gcd.accepted` and the three of `IxCCAiur.Roots` are the statements **with no
+disjunct and no progress hypothesis**: the kernel evaluates the decision
+(`decide +kernel`). -/
 
 /--
-info: @Progress.neverStuck_of_checkShape : ∀ {src : Src.Program} {ch : Src.Relevance.Checked} {cert : Correct.Shape2.Cert}
+info: @Progress.neverStuck_of_checkShape : ∀ {src : Src.Program} {ch : Src.Relevance.Checked} {cert : SrcShape.Cert}
   {r : ℕ} {ns : List ℕ},
   Progress.checkShape src cert r ns.length = true → Compose.NeverStuck { p := src, ch := ch } (r, ns)
 -/
@@ -1102,9 +1102,9 @@ info: @Progress.neverStuck_of_checkShape : ∀ {src : Src.Program} {ch : Src.Rel
 #check @Progress.neverStuck_of_checkShape
 
 /--
-info: def IxCC.AiurBackend.Progress.checkShape : Src.Program → Correct.Shape2.Cert → ℕ → ℕ → Bool :=
+info: def IxCC.AiurBackend.Progress.checkShape : Src.Program → SrcShape.Cert → ℕ → ℕ → Bool :=
 fun src cert r n =>
-  Correct.Shape2.certOk src cert &&
+  SrcShape.certOk src cert &&
     match src.roots[r]? with
     | some (fst, c) =>
       cert.insts.any fun e => decide (e.1 = c) && decide (e.2.1 = []) && (Progress.resultAfter n e.2.2).isSome
@@ -1122,7 +1122,7 @@ fun n x =>
       match f.src.roots[0]? with
       | some (fst, c) =>
         decide (Recheck.declaredParams f.src c = some n) &&
-          Progress.checkShape f.src (Correct.Shape2.Produce.produce f.src c) 0 n
+          Progress.checkShape f.src (SrcShape.Produce.produce f.src c) 0 n
       | none => false
   | Except.error a => false
 -/

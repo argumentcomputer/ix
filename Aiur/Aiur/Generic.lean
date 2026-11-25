@@ -17,3 +17,4 @@ import Aiur.Generic.SliceFacts
 import Aiur.Generic.Circuit
 import Aiur.Generic.NativeCircuit
 import Aiur.Generic.LoweringTypeFacts
+import Aiur.Generic.LawfulBEq

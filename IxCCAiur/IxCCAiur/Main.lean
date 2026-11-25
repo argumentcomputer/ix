@@ -31,7 +31,8 @@ structure Options where
   stats : Bool := false
 
 def usage : String :=
-  "usage: ixcc-aiur CLOSURE.ixe EQUATIONS.json [--root NAME] [--args N,N,...] [-o PACKAGE.ixa] [--stats]"
+  "usage: ixcc-aiur CLOSURE.ixe [--equations EQUATIONS.json | EQUATIONS.json] \
+[--root NAME|ADDR|NAME=ADDR] [--args N,N,...] [-o PACKAGE.ixa] [--stats]"
 
 def parseNats (s : String) : Except String (List Nat) :=
   (s.splitOn ",").filter (· != "") |>.mapM fun w =>
@@ -41,6 +42,7 @@ def parseNats (s : String) : Except String (List Nat) :=
 
 def parse : List String → Options → Except String Options
   | [], o => .ok o
+  | "--equations" :: path :: rest, o => parse rest { o with equations := some path }
   | "--root" :: name :: rest, o => parse rest { o with root := some name }
   | "--args" :: ns :: rest, o => do parse rest { o with args := ← parseNats ns }
   | "-o" :: path :: rest, o => parse rest { o with out := some path }
@@ -56,13 +58,17 @@ def showObs : Option Sem.Obs → String
   | none => "none"
 
 def run (o : Options) : IO UInt32 := do
-  let (some closure, some equations) := (o.closure, o.equations)
+  let some closure := o.closure
     | IO.eprintln usage; return 2
   let bytes ← IO.FS.readBinFile closure
-  let text ← IO.FS.readFile equations
-  let json ← IO.ofExcept (Src.Hints.checkJsonText text >>= fun () => Lean.Json.parse text)
   let start ← IO.monoMsNow
-  let front ← IO.ofExcept (Driver.front bytes json o.root.toList)
+  let front ← match o.equations with
+    | some eqPath =>
+      let text ← IO.FS.readFile eqPath
+      let json ← IO.ofExcept (Src.Hints.checkJsonText text >>= fun () => Lean.Json.parse text)
+      IO.ofExcept (Driver.front bytes json o.root.toList)
+    | none =>
+      IO.ofExcept (Driver.frontAuto bytes o.root.toList)
   let fir := front.levels.fir
   IO.println s!"front: roots {front.input.names}, fir functions {fir.funList.length}, \
     constructors {fir.ctors.length}, exports {fir.exports.length} ({(← IO.monoMsNow) - start} ms)"

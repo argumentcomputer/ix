@@ -1,7 +1,9 @@
 import IxCCAiur.Progress
 import IxCCAiur.Hints
+import IxCC.Compile
 import IxCC.Recheck.RunFir
 import IxCC.Recheck.Produce
+import IxCC.Src.AutoHints
 import IxCC.Fir.Proof.Lang
 import Aiur.Trace.Export
 import Aiur.Artifact
@@ -49,13 +51,32 @@ structure Front where
   cert : Recheck.Cert
   levels : Recheck.FrontFir
 
-/-- Ingress, `produce`, and the recheck path up to Fir. -/
+/-- Run `produceFir`, Stage A canonical relevance check, and `Recheck.runFir` on an ingested
+input, retrying without `retryInline` on failure when `retryInline` is enabled. -/
+def frontOfInput (input : Recheck.Input) : Except String Front := do
+  let baseCfg := Recheck.Config.forInput {} input
+  let attempt (cfg : Recheck.Config) : Except Recheck.Err Front := do
+    let cert ← Recheck.produceFir cfg input
+    unless Recheck.checkCanonicalRelevance cfg input cert.table cert.relevance do
+      throw { stage := .relevance, code := "relevance-canonical"
+              message := "certificate relevance annotation does not match canonical annotator output" }
+    let levels ← Recheck.runFir cfg input.program cert
+    return { input, cfg, cert, levels }
+  (Compile.withRetry baseCfg attempt).mapError (·.render)
+
+/-- Ingress with an explicit `ixcc/k1-equations/1` JSON sidecar, `produceFir`, and `runFir`. -/
 def front (bytes : ByteArray) (equations : Lean.Json) (roots : List String) : Except String Front := do
   let input ← (Recheck.ingress bytes equations roots).mapError (·.render)
-  let cfg := Recheck.Config.forInput {} input
-  let cert ← (Recheck.produce cfg input).mapError (·.render)
-  let levels ← (Recheck.runFir cfg input.program cert).mapError (·.render)
-  return { input, cfg, cert, levels }
+  frontOfInput input
+
+/-- Auto-discovered ingress (`Src.AutoHints.resolveRoots` + `Compile.ingressRoots`),
+`produceFir`, and `runFir`, requiring no external `EQUATIONS.json` sidecar. -/
+def frontAuto (bytes : ByteArray) (roots : List String := [])
+    (limits : Ix.Kernel.Admission.Limits := Src.KernelFront.defaultLimits) : Except String Front := do
+  let env ← (Ixon.V3.decodeAnonymousEnv bytes).mapError fun m => s!"ingress: decode: {m}"
+  let chosen ← (Src.AutoHints.resolveRoots env roots).mapError fun m => s!"cli: cli.root: {m}"
+  let input ← (Compile.ingressRoots env chosen limits).mapError (·.render)
+  frontOfInput input
 
 /-- A lowered program, linked with the `UInt64` library and prepared for the
 one entry `Prog::main<i>`. -/
@@ -113,7 +134,7 @@ entry is the source's value without the stuck-source disjunct
 disjunct. It does not gate the package. -/
 def shapeCheck (f : Recheck.FrontFir) (n : Nat) : Bool :=
   match f.src.roots[0]? with
-  | some (_, c) => Progress.checkShape f.src (Correct.Shape2.Produce.produce f.src c) 0 n
+  | some (_, c) => Progress.checkShape f.src (SrcShape.Produce.produce f.src c) 0 n
   | none => false
 
 /-! ## The two evaluators -/

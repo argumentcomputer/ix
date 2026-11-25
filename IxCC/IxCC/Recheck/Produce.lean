@@ -255,6 +255,18 @@ theorem checkCanonicalRelevance_iff (cfg : Config) (inp : Input)
 def produce (cfg : Config) (inp : Input) : Except Err Cert :=
   (·.cert) <$> produceWith cfg inp
 
+/-- Front-half producer up to `Fir`: table, relevance annotation, admission, middle-end oracles,
+closures, and `Fir.lower`. Skips ownership, Cfg, SysV parameter limits (`maxParams`), `rt.string`,
+and the native x86 back end (`Rt`/`Xv`/`X86`). Returns a `Cert` with empty native back-end fields,
+sufficient for `Recheck.runFir`. -/
+def produceFir (cfg : Config) (inp : Input) : Except Err Cert := do
+  let ⟨table, _, _, ann, src, checked, _⟩ ← produceSource cfg inp
+  let (lam, _) ← (Lam.erase src checked).mapError Err.ofErase
+  let trace ← produceAnf cfg.budgets lam
+  let (anf, _) ← produceClosures src trace
+  let _ ← (Fir.lower anf).mapError Err.ofFir
+  pure { table := Src.Table.TableCert.ofTable table, relevance := ann, mid := trace.cert }
+
 /-- The configuration for an input: its root names unless the configuration
 gives some. -/
 def Config.forInput (cfg : Config) (inp : Input) : Config :=
