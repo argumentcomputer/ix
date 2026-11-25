@@ -14,6 +14,8 @@ import IxCCCorrect.GroundRoot
 import IxCCCorrect.GroundCheck
 import IxCCCorrect.Compose
 import IxCCCorrect.ComposeExe
+import IxCCCorrect.GroundShape
+import IxCCCorrect.Unique
 
 /-! # The target statements' axiom fence: every theorem `IxCCCorrect` proves uses at most the
 three standard axioms. Building the library checks it (`#guard_msgs`), in the required check
@@ -859,3 +861,40 @@ routes and the progress targets are definitions and have no fence. -/
 
 /-- info: 'IxCC.Correct.rc_plain_exe_tier1Stdout' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.rc_plain_exe_tier1Stdout
+
+/-! ## `IxCCCorrect.Unique` -/
+
+/-- info: 'IxCC.Correct.accepted_has_model' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.accepted_has_model
+
+/-- info: 'IxCC.Correct.numeralBasis_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.numeralBasis_of_check
+
+/-- info: 'IxCC.Correct.sameDenotation_lit_unique' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.sameDenotation_lit_unique
+
+/-- info: 'IxCC.Correct.agrees_unique' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.agrees_unique
+
+/-! ## `IxCCCorrect.GroundShape` -/
+
+/-- info: 'IxCC.Correct.returnsCanon_of_shape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.returnsCanon_of_shape
+
+/-- info: 'IxCC.Correct.neverWrong_of_groundShape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.neverWrong_of_groundShape
+
+/-- info: 'IxCC.Correct.groundShapeCheck_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.groundShapeCheck_sound
+
+/-- info: 'IxCC.Correct.groundShapeCheckP_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.groundShapeCheckP_sound
+
+/-- info: 'IxCC.Correct.recheck_agrees_shaped' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.recheck_agrees_shaped
+
+/-- info: 'IxCC.Correct.plain_exe_tier1Stdout_shaped' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.plain_exe_tier1Stdout_shaped
+
+/-- info: 'IxCC.Correct.tier1Check_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.tier1Check_sound

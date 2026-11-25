@@ -18,6 +18,8 @@ import IxCCCorrect.GroundRoot
 import IxCCCorrect.GroundCheck
 import IxCCCorrect.Compose
 import IxCCCorrect.ComposeExe
+import IxCCCorrect.GroundShape
+import IxCCCorrect.Unique
 import IxCCCorrect.Fence
 
 /-!
@@ -68,20 +70,26 @@ propositions that elaborate, and what the existing theorems establish today.
   followed by the untrusted shape producer and the hook's shape decision
   (`compileCertified`, declining with a typed reason), and its theorem with no
   "source goes wrong" escape (`CompiledSound`, `compileCertified_sound`).
-* `IxCCCorrect.GroundRoot`: the grounding library's root theorem restated at a canonical
-  result, in existence form, as the composition with the compiler needs it.
-* `IxCCCorrect.GroundCheck`: `groundCheck`, the pipeline's grounding check (run on every
-  committed root by `tests-grounding pipeline`), and its soundness.
-* `IxCCCorrect.Compose`, `IxCCCorrect.ComposeExe`: the compiled object, and then what the
-  plain executable prints over its checked core, agree with the kernel meaning of the
-  claimed address, for a program both the certificate checker and `groundCheck` accept.
+* `IxCCCorrect.GroundRoot`, `IxCCCorrect.GroundCheck`: the grounding root theorem at a
+  canonical result in the existence form `SameDenotation` asks for (`Grounded.same`), and
+  `groundCheck`, the Denotes-free pipeline decision that establishes its hypotheses on what the
+  certificate checker checked (`groundCheck_sound`).
+* `IxCCCorrect.Compose`, `IxCCCorrect.ComposeExe`: the compiled object, and what the plain
+  executable prints, agree with the kernel meaning of the claimed address
+  (`recheck_agrees`, `plain_exe_tier1Stdout`), under `NeverWrong` and `ReturnsCanon`.
+* `IxCCCorrect.GroundShape`: the same with the shape check deciding both hypotheses
+  (`groundShapeCheck_sound`, `recheck_agrees_shaped`, `plain_exe_tier1Stdout_shaped`), and the
+  check a `compile` calls (`tier1Check`, `tier1Check_sound`: `Admits` and the first clause of
+  `Tier1` for the checked core).
+* `IxCCCorrect.Unique`: two answers that agree are equal, at a `Nat` result, where a set theory
+  exists and the environment stores what separates numerals (`agrees_unique`).
 * `IxCCCorrect.Fence`: the library's axiom fence, an exact `#print axioms`
   assertion for every theorem above (each within `propext`, `Classical.choice`,
   `Quot.sound`).
 
 The tiers, the routes and the two progress targets are definitions: nothing here
 proves them. The library
-imports the compiler (`IxCC`), the grounding library's syntax (`IxCCGrounding`) and
+imports the compiler (`IxCC`), the grounding library (`IxCCGrounding`) and
 the kernel's model statement (`IxCK.Kernel.Denotes`), so it is outside the
 production import root (`IxCC` must not import the grounding library, the
 kernel's model or this library, `IxCC.Tools.BuildGraph`). It is built, with its
