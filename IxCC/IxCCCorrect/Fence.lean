@@ -19,6 +19,7 @@ import IxCCCorrect.Unique
 import IxCCCorrect.ComposeExit
 import IxCCCorrect.UniqueIota
 import IxCCCorrect.UniqueNat
+import IxCCCorrect.CanonLaw
 
 /-! # The target statements' axiom fence: every theorem `IxCCCorrect` proves uses at most the
 three standard axioms. Building the library checks it (`#guard_msgs`), in the required check
@@ -985,3 +986,11 @@ routes and the progress targets are definitions and have no fence. -/
 
 /-- info: 'IxCC.Correct.agrees_unique_rec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.agrees_unique_rec
+
+/-! ## `IxCCCorrect.CanonLaw` -/
+
+/-- info: 'IxCC.Correct.selRetype1_eq_of_not_defn' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.selRetype1_eq_of_not_defn
+
+/-- info: 'IxCC.Correct.ctorCanon_selRetype' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.ctorCanon_selRetype

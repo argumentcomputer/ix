@@ -22,6 +22,7 @@ import IxCCCorrect.GroundShape
 import IxCCCorrect.ComposeExit
 import IxCCCorrect.UniqueIota
 import IxCCCorrect.UniqueNat
+import IxCCCorrect.CanonLaw
 import IxCCCorrect.Unique
 import IxCCCorrect.Fence
 
@@ -93,6 +94,8 @@ propositions that elaborate, and what the existing theorems establish today.
   ι-law, so no stored witness theorem is needed (`agrees_unique_iota`).
 * `IxCCCorrect.UniqueNat`: the same through `Nat.rec`'s ι-law (zero is no successor, the
   successor is injective), with neither `Nat.beq` nor `Bool` read (`agrees_unique_rec`).
+* `IxCCCorrect.CanonLaw`: `ModelsCtorCanon`, the hypothesis recursors with parameters need
+  (constructor canonicity in every model), and its transfer to the retyped reading.
 * `IxCCCorrect.Fence`: the library's axiom fence, an exact `#print axioms`
   assertion for every theorem above (each within `propext`, `Classical.choice`,
   `Quot.sound`).
