@@ -296,4 +296,131 @@ theorem push_shared_boxed {P : Program} {fn : FunId} {t : Fns}
         rcases hy with hy | hy; exact Or.inl hy; exact Or.inr (Or.inl hy))).trans
       (hfr5.mono (fun y hy => Or.inr (Or.inl hy)))).trans (hfr6.mono (fun y hy => Or.inr (Or.inr (Or.inl hy))))
 
+
+/-- The increments of the first `n` elements of `a`. -/
+theorem incs_keep_take {P : Program} {t : Fns} (hf : FnsOk P t .boxed)
+    {mem mem0 : Memory} {ctx base bump limit : Word} {lists : Nat → List Word}
+    (halloc : ArrayAllocator mem ctx base bump limit lists) {a : Word} {refs cls cap : Nat}
+    {xs : List Word} (h : ArrCell mem a refs cls cap .boxed xs) {n : Nat} (hn : n ≤ xs.length)
+    (hincs : IncAll mem (xs.take n) mem0)
+    (hptr : ∀ y ∈ xs.take n, Cond.holds .tnz .w64 y 1 = false → y.toNat + 8 ≤ 2 ^ 64)
+    (hcw : ∀ y, CountWords (xs.take n) y → ¬ AllocBytes ctx lists y ∧ ¬ CellBytes a cls y) :
+    MemFrame mem mem0 (CountWords (xs.take n)) ∧ ArrCell mem0 a refs cls cap .boxed xs ∧
+      ArrayAllocator mem0 ctx base bump limit lists ∧
+      Returns0 P t.incs (incsEnv a 0 n) mem ctx (2 * n) mem0 := by
+  have hs := h.shell
+  have hfit := hs.fit
+  have hp := hs.payload_le
+  have hm := Nat.mul_le_mul_left ElemKind.boxed.bytes (show n ≤ cap by have := hs.size_le; omega)
+  have hb8 : ElemKind.boxed.bytes = 8 := rfl
+  have hlen : (xs.take n).length = n := by simp; omega
+  have hfr0 : MemFrame mem mem0 (CountWords (xs.take n)) := hincs.frame hptr
+  refine ⟨hfr0, hfr0.arrCell h (fun y y1 y2 hy => (hcw y hy).2 ⟨y1, y2⟩),
+    halloc.frame hfr0 (fun y hy => (hcw y hy).1), ?_⟩
+  have hel : ElemsAt mem a .boxed 0 (xs.take n) := by
+    intro j hj
+    rw [List.getElem_take, Nat.zero_add]
+    exact h.elems j (by simp at hj; omega)
+  have := incs_returns (ctx := ctx) hf.incs hf.inc (lo := 0) (ys := xs.take n)
+    (by rw [hlen, Nat.zero_add]; rw [hb8] at hp hm; omega) hel hincs hptr
+    (fun y hy hr => (hcw y hy).2 ⟨by
+        obtain ⟨r1, _⟩ := hr; unfold arrayPayloadOffset at r1; omega, by
+        obtain ⟨_, r2⟩ := hr; rw [hlen, Nat.zero_add] at r2; rw [hb8] at hp hm r2
+        unfold arrayPayloadOffset at hp r2; omega⟩)
+  simpa only [Nat.zero_add, hlen] using this
+
+/-- **`pop`, copying**: a shared non-empty boxed array; the elements kept are incremented first,
+and there is nothing to drop (the second result is an immediate). -/
+theorem pop_shared_boxed {P : Program} {fn : FunId} {t : Fns}
+    (hfn : P.funcs[fn]? = some (pop t .boxed)) (hf : FnsOk P t .boxed)
+    {mem : Memory} {ctx base bump limit : Word} {lists : Nat → List Word}
+    (halloc : ArrayAllocator mem ctx base bump limit lists) {a : Word} {refs cls cap : Nat}
+    {xs : List Word} (h : ArrCell mem a refs cls cap .boxed xs) (hsh : 1 < refs)
+    (ha : Allocated base bump lists a (classBytes cls)) (hne : xs ≠ [])
+    (hroom : AllocRoom bump limit lists .boxed (xs.length - 1)) {mem0 : Memory}
+    (hincs : IncAll mem (xs.take (xs.length - 1)) mem0)
+    (hptr : ∀ y ∈ xs.take (xs.length - 1), Cond.holds .tnz .w64 y 1 = false → y.toNat + 8 ≤ 2 ^ 64)
+    (hcw : ∀ y, CountWords (xs.take (xs.length - 1)) y → ¬ AllocBytes ctx lists y ∧
+      ¬ CellBytes a cls y) :
+    ∃ b mem' bump' lists',
+      Returns2 P fn (({} : Env).insert 0 a) mem ctx (3 * xs.length + 3) b 1 mem' ∧
+      ArrCell mem' b 1 (allocClass .boxed (xs.length - 1))
+        (ElemKind.boxed.capOfClass (allocClass .boxed (xs.length - 1))) .boxed
+        xs.dropLast ∧
+      ArrCell mem' a (refs - 1) cls cap .boxed xs ∧
+      ArrayAllocator mem' ctx base bump' limit lists' ∧
+      Allocated base bump' lists' b (classBytes (allocClass .boxed (xs.length - 1))) ∧
+      Allocated base bump' lists' a (classBytes cls) ∧
+      (∀ c m, Allocated base bump lists c m → Allocated base bump' lists' c m) ∧
+      MemFrame mem mem' (fun y => AllocBytes ctx lists y ∨
+        CellBytes b (allocClass .boxed (xs.length - 1)) y ∨ CountWord a y ∨
+        CountWords (xs.take (xs.length - 1)) y) := by
+  obtain ⟨hfr0, h0, halloc0, hincsR⟩ := incs_keep_take hf halloc h (Nat.sub_le _ _) hincs hptr hcw
+  have hpos : 0 < xs.length := List.length_pos_iff.mpr hne
+  have hn : xs.length - 1 ≤ ElemKind.boxed.maxCap := by have := h.len_le_maxCap; omega
+  obtain ⟨hlo, hhi, hcap⟩ := allocClass_spec .boxed hn
+  obtain ⟨b, m1, bump', lists', hret, hd⟩ := alloc_returns hf.alloc hf.classFor hf.classWords
+    halloc0 hn hroom
+  obtain ⟨hdrop, hsb, hdb, hsrc, hfit, hacc, hapart, hafter⟩ :=
+    fresh_copy hd halloc0 hlo hhi h0 ha (off := 0) (n := xs.length - 1) (by omega) hcap
+  obtain ⟨m2, hcopy, hel2, hfr2⟩ := copy_returns hf.copy hfit hdrop hsb hdb hsrc hacc hapart
+  obtain ⟨hw3, hb3, ha3, hal3, hA3, hsep, hfr3⟩ := hafter m2 hel2 hfr2
+  simp only [List.drop_zero, ← List.dropLast_eq_take] at hb3
+  let m3 := m2.write .w64 (b + 8) (UInt64.ofNat (xs.length - 1))
+  have ha24 := ha3.shell.classBytes_ge_24
+  have hafit := ha3.shell.fit
+  obtain ⟨hdec, _⟩ := ha3.shell.decArr_returns_shared hf.dec hsh ctx
+  let m4 := storeCount m3 a (UInt64.ofNat (refs - 2))
+  have hfr4 : MemFrame m3 m4 (CountWord a) := countFrame' (by omega) _
+  have ha4 : ArrCell m4 a (refs - 1) cls cap .boxed xs := by
+    have := ha3.withCount (refs' := refs - 1) (by omega) (by have := ha3.shell.refs_le; omega)
+    rwa [show refs - 1 - 1 = refs - 2 by omega] at this
+  have hb4 := hfr4.arrCell hb3 (fun y y1 y2 hy => by
+    unfold CountWord at hy; rcases hsep with hs | hs <;> omega)
+  have hal4 : ArrayAllocator m4 ctx base bump' limit lists' :=
+    hal3.frame hfr4 (fun y hy => by unfold CountWord at hy; exact hA3.not_allocBytes hal3 y (by omega) (by omega))
+  refine ⟨b, m4, bump', lists', ?_, hb4, ha4, hal4, hd.allocated, hA3,
+    fun c m hc => (hd.keeps c m hc).1, ?_⟩
+  · have hmax := h.shell.refs_le
+    unfold maxCount at hmax
+    have hne' : Cond.holds .eq .w32 (UInt64.ofNat (refs - 1)) (UInt64.ofNat 0) = false := by
+      rw [cond_eq_ofNat .w32 (by show refs - 1 < 2 ^ 32; omega) (by decide)]; simp; omega
+    have hlen := h.arrRead.len_lt
+    have hnz : Cond.holds .eq .w64 (UInt64.ofNat xs.length) (UInt64.ofNat 0) = false := by
+      rw [cond_eq_w64]
+      exact beq_false_of_ne (fun hq => by
+        have := congrArg UInt64.toNat hq
+        rw [u64_toNat_ofNat_lt (by omega), u64_toNat_ofNat_lt (by decide)] at this; omega)
+    refine returns2_of_star (lbl := 5) (env' := ?env) hfn rfl rfl ?ha ?hb (fun rest => ?run)
+    case run =>
+      refine star_assign hfn rfl (by body_pos) rfl (rhs_load_eval (cellAddr_eval_8 (by env_lookup))
+        h.shell.size_load) ?_
+      refine star_br_false_fwd hfn rfl rfl rfl rfl (by arg_eval) (by arg_eval) hnz
+        (evalArgs_nil _) rfl rfl ?_
+      refine star_assign hfn rfl (by body_pos) rfl (rhs_bin_eval (by arg_eval) (by arg_eval)
+        (binOp_sub64 xs.length 1 (by omega) (by omega))) ?_
+      refine star_assign hfn rfl (by body_pos) rfl (rhs_load_eval (cellAddr_eval_4 (by env_lookup))
+        h.shell.count_load) ?_
+      refine star_br_false_fwd hfn rfl rfl rfl rfl (by arg_eval) (by arg_eval) hne'
+        (evalArgs_nil _) rfl rfl ?_
+      refine star_call0_eq (c' := xs.length + 4) hfn rfl (by body_pos) rfl
+        (evalArgs3 (by arg_eval) (by arg_eval) (by arg_eval)) hf.incs rfl hincsR ?_ (by omega)
+      refine star_jump_fwd hfn rfl rfl rfl rfl (evalArgs_nil _) rfl rfl ?_
+      refine star_call1_eq (c' := xs.length - 1 + 2) hfn rfl (by body_pos) rfl
+        (evalArgs1 (by arg_eval)) hf.alloc rfl hret ?_ (by omega)
+      refine star_call0_eq (c' := 1) hfn rfl (by body_pos) rfl
+        (evalArgs5 (by arg_eval) (by arg_eval) (by arg_eval) (by arg_eval) (by arg_eval)) hf.copy rfl
+        hcopy ?_ (by omega)
+      refine star_store hfn rfl (by body_pos) rfl (cellAddr_eval_8 (by env_lookup)) (by arg_eval)
+        hw3 ?_
+      refine star_call0_eq (c' := 0) hfn rfl (by body_pos) rfl (evalArgs1 (by arg_eval)) hf.dec rfl
+        hdec ?_ rfl
+      exact .refl _
+    case ha => arg_eval
+    case hb => arg_eval
+  · refine (hfr0.mono (fun y hy => Or.inr (Or.inr (Or.inr hy)))).trans ?_
+    exact (hfr3.mono (fun y hy => by
+        rcases hy with hy | hy; exact Or.inl hy; exact Or.inr (Or.inl hy))).trans
+      (hfr4.mono (fun y hy => Or.inr (Or.inr (Or.inl hy))))
+
 end IxCC.Rt.Rc.Array

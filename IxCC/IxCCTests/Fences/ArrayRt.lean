@@ -7,7 +7,7 @@ import IxCC.Rt.Rc.Array.Proof.MutOps
 import IxCC.Rt.Rc.Array.Proof.Release
 import IxCC.Rt.Rc.Array.Proof.Alloc
 import IxCC.Rt.Proof.ArrayWire
-import IxCC.Rt.Rc.Array.Proof.OpsExtract
+import IxCC.Rt.Rc.Array.Proof.OpsBoxed
 
 /-! Exact axiom fences for DR3 native contiguous array runtime (`Layout`,
 `Invariant`, `Procs`, `Proof.{Classes,BasicOps,MutOps,Release,Alloc}`).
@@ -436,3 +436,21 @@ release on array cells, the procedures' paths -/
 
 /-- info: 'IxCC.Rt.Rc.Array.extract_packed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Rt.Rc.Array.extract_packed
+
+/-- info: 'IxCC.Rt.Rc.Array.incs_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Rc.Array.incs_returns
+
+/-- info: 'IxCC.Rt.Rc.Array.incs_keep' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Rc.Array.incs_keep
+
+/-- info: 'IxCC.Rt.Rc.Array.incs_keep_take' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Rc.Array.incs_keep_take
+
+/-- info: 'IxCC.Rt.Rc.Array.set_shared_boxed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Rc.Array.set_shared_boxed
+
+/-- info: 'IxCC.Rt.Rc.Array.push_shared_boxed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Rc.Array.push_shared_boxed
+
+/-- info: 'IxCC.Rt.Rc.Array.pop_shared_boxed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Rc.Array.pop_shared_boxed
