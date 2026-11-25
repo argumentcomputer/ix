@@ -82,7 +82,7 @@ in
     # The ledger audits IxCC in its workspace: «ix-ck» at its recorded path
     # (`../IxCK`), the repository's flake.lock and the workflows it scopes.
     # The link audit reads the symbol table of every executable the checks
-    # ship or run (the shared program build and the grounding suite) and
+    # ship or run (the shared program build and the grounding build's suites) and
     # refuses the Blake3 package's native backends.
     trusted-extern-ledger = mkCheck "trusted-extern-ledger" [pkgs.binutils] ''
       ./.lake/build/bin/check-trusted-externs \
@@ -200,10 +200,14 @@ in
     # building the library checks its axiom fence; `tests-grounding` runs the check its theorems
     # take on the committed closures, conjunct by conjunct, with its negative controls. The same
     # build compiles the target statements (`IxCCCorrect`), which import the grounding library's
-    # syntax and the kernel's model, and so checks their axiom fence. Its own build
-    # (`nix/build.nix`), so the kernel's model never enters the shared program build.
+    # syntax and the kernel's model, and so checks their axiom fence, and the shape suite
+    # (`tests-shape`), run here on the committed K1 and phase-1 scalar closures: it reports, root
+    # by root, whether the shape decision accepts the untrusted producer's certificate, and fails
+    # only if a closure does not load. Its own build (`nix/build.nix`), so the kernel's model
+    # never enters the shared program build.
     grounding = mkCheckWith grounding "grounding" [] ''
       ./.lake/build/bin/tests-grounding
+      ./.lake/build/bin/tests-shape
     '';
 
     # Deterministic typed-x86 and ByteEval step counts must

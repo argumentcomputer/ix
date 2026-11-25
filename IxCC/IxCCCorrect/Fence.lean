@@ -4,6 +4,8 @@ import IxCCCorrect.Progress
 import IxCCCorrect.Shape
 import IxCCCorrect.Shape1
 import IxCCCorrect.Shape1Check
+import IxCCCorrect.Shape2
+import IxCCCorrect.Shape2Check
 
 /-! # The target statements' axiom fence: every theorem `IxCCCorrect` proves uses at most the
 three standard axioms. Building the library checks it (`#guard_msgs`), in the required check
@@ -301,3 +303,169 @@ routes and the progress targets are definitions and have no fence. -/
 
 /-- info: 'IxCC.Correct.Shape1.neverWrong_of_cert_enum' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.Shape1.neverWrong_of_cert_enum
+
+/-! ## `IxCCCorrect.Shape2` -/
+
+/-- info: 'IxCC.Correct.Shape2.eval2_bool' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.eval2_bool
+
+/-- info: 'IxCC.Correct.Shape2.getElem?_two_add' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.getElem?_two_add
+
+/-- info: 'IxCC.Correct.Shape2.evalConst_unfolds' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.evalConst_unfolds
+
+/-- info: 'IxCC.Correct.Shape2.evalConst_head' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.evalConst_head
+
+/-- info: 'IxCC.Correct.Shape2.headArity_ctor' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.headArity_ctor
+
+/-- info: 'IxCC.Correct.Shape2.getElem?_append_add' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.getElem?_append_add
+
+/-- info: 'IxCC.Correct.Shape2.fire_cases_ord' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.fire_cases_ord
+
+/-- info: 'IxCC.Correct.Shape2.fire_recr_ord' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.fire_recr_ord
+
+/-- info: 'IxCC.Correct.Shape2.EnvOk.get' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.EnvOk.get
+
+/-- info: 'IxCC.Correct.Shape2.EnvOk.getD' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.EnvOk.getD
+
+/-- info: 'IxCC.Correct.Shape2.EnvOk.length' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.EnvOk.length
+
+/-- info: 'IxCC.Correct.Shape2.EnvOk.append' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.EnvOk.append
+
+/-- info: 'IxCC.Correct.Shape2.EnvOk.reverse' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.EnvOk.reverse
+
+/-- info: 'IxCC.Correct.Shape2.EnvOk.take' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.EnvOk.take
+
+/-- info: 'IxCC.Correct.Shape2.EnvOk.drop' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.EnvOk.drop
+
+/-- info: 'IxCC.Correct.Shape2.ValsOk.toEnv' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.ValsOk.toEnv
+
+/-- info: 'IxCC.Correct.Shape2.ValsOk.get' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.ValsOk.get
+
+/-- info: 'IxCC.Correct.Shape2.EnvOk.all_replicate' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.EnvOk.all_replicate
+
+/-- info: 'IxCC.Correct.Shape2.envOk_lits' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.envOk_lits
+
+/-- info: 'IxCC.Correct.Shape2.ValOk.nat_inv' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.ValOk.nat_inv
+
+/-- info: 'IxCC.Correct.Shape2.ValOk.enum_inv' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.ValOk.enum_inv
+
+/-- info: 'IxCC.Correct.Shape2.ValOk.data_inv' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.ValOk.data_inv
+
+/-- info: 'IxCC.Correct.Shape2.selectRule_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.selectRule_ok
+
+/-- info: 'IxCC.Correct.Shape2.HeadOk.arity' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.HeadOk.arity
+
+/-- info: 'IxCC.Correct.Shape2.forceAll_nat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.forceAll_nat
+
+/-- info: 'IxCC.Correct.Shape2.forceAll_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.forceAll_ok
+
+/-- info: 'IxCC.Correct.Shape2.applyAll_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.applyAll_ok
+
+/-- info: 'IxCC.Correct.Shape2.allOk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.allOk
+
+/-- info: 'IxCC.Correct.Shape2.run_ok_vals' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.run_ok_vals
+
+/-- info: 'IxCC.Correct.Shape2.run_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.run_ok
+
+/-- info: 'IxCC.Correct.Shape2.eraseVal_enum_levels' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.eraseVal_enum_levels
+
+/-- info: 'IxCC.Correct.Shape2.view_nat_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.view_nat_ok
+
+/-- info: 'IxCC.Correct.Shape2.view_enum_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.view_enum_ok
+
+/-- info: 'IxCC.Correct.Shape2.neverWrong_of_shape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.neverWrong_of_shape
+
+/-- info: 'IxCC.Correct.Shape2.recheck_sound_of_shape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.recheck_sound_of_shape
+
+/-! ## `IxCCCorrect.Shape2Check` -/
+
+/-- info: 'IxCC.Correct.Shape2.mem_of_lookupEnum' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.mem_of_lookupEnum
+
+/-- info: 'IxCC.Correct.Shape2.mem_instsOf' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.mem_instsOf
+
+/-- info: 'IxCC.Correct.Shape2.mem_appRes' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.mem_appRes
+
+/-- info: 'IxCC.Correct.Shape2.mem_projRes' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.mem_projRes
+
+/-- info: 'IxCC.Correct.Shape2.synth_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.synth_sound
+
+/-- info: 'IxCC.Correct.Shape2.fldsOf_sound' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.fldsOf_sound
+
+/-- info: 'IxCC.Correct.Shape2.isOrdinary_sound' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.isOrdinary_sound
+
+/-- info: 'IxCC.Correct.Shape2.predOk_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.predOk_sound
+
+/-- info: 'IxCC.Correct.Shape2.casesOk_sound' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.casesOk_sound
+
+/-- info: 'IxCC.Correct.Shape2.rulesOk_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.rulesOk_sound
+
+/-- info: 'IxCC.Correct.Shape2.recrOk_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.recrOk_sound
+
+/-- info: 'IxCC.Correct.Shape2.dataCtorOk_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.dataCtorOk_sound
+
+/-- info: 'IxCC.Correct.Shape2.ctorsOk_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.ctorsOk_sound
+
+/-- info: 'IxCC.Correct.Shape2.structOk_sound' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.structOk_sound
+
+/-- info: 'IxCC.Correct.Shape2.enumOk_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.enumOk_sound
+
+/-- info: 'IxCC.Correct.Shape2.entryOk_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.entryOk_sound
+
+/-- info: 'IxCC.Correct.Shape2.sigOk_of_cert' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.sigOk_of_cert
+
+/-- info: 'IxCC.Correct.Shape2.neverWrong_of_cert_nat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.neverWrong_of_cert_nat
+
+/-- info: 'IxCC.Correct.Shape2.neverWrong_of_cert_enum' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.Shape2.neverWrong_of_cert_enum
