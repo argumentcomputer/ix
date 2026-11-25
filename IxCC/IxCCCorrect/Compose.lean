@@ -192,6 +192,7 @@ def abiObs (abi : Abi) (answer : Nat) : Obs :=
   match abi.result with
   | .nat => .nat answer
   | .enum _ => .ctor answer []
+  | .word _ _ => .nat answer
 
 /-- **Where the checked source evaluates to an observation, that observation is an answer that
 agrees with the kernel meaning of the target.** `GroundOk` is what `groundCheck` established;

@@ -57,6 +57,9 @@ inductive ResTy where
   executable prints. The claim lists them so that an answer names a constant of
   the committed environment without reference to the compiler's tags. -/
   | enum (ctors : List Ixon.Address)
+  /-- An unsigned word of `bits` bits (owner-approved P5): the answer is its number, the
+  kernel term `UIntN.ofNat` (the constant at `ofNat`) applied to that number. -/
+  | word (bits : Nat) (ofNat : Ixon.Address)
   deriving DecidableEq, Repr, Inhabited
 
 /-- How arguments reach the process and how the result leaves it. A byte-array
@@ -87,6 +90,7 @@ def resultKind (abi : Abi) : X86.Exe.ResultKind :=
   match abi.result with
   | .nat => .nat
   | .enum ctors => .enum ctors.length
+  | .word _ _ => .nat
 
 /-- One argument: a non-empty string of ASCII digits, read in decimal. There is no
 upper bound: the argument is a Lean `Nat`. (Today's shell refuses a numeral at or

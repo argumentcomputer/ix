@@ -770,6 +770,9 @@ routes and the progress targets are definitions and have no fence. -/
 /-- info: 'IxCC.Correct.groundCheck_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.groundCheck_sound
 
+/-- info: 'IxCC.Correct.GroundOk.result_not_word' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.GroundOk.result_not_word
+
 /-! ## `IxCCCorrect.Compose` -/
 
 /-- info: 'IxCC.Correct.admits_of_ingress' depends on axioms: [propext, Classical.choice, Quot.sound] -/

@@ -242,6 +242,7 @@ theorem tier1Exit_of_outcome {claim : Claim} {acc : Src.KernelFront.Accepted} {s
   cases result with
   | nat =>
     cases hr : claim.abi.result with
+    | word bits a => exact absurd hr (hok.result_not_word bits a)
     | nat =>
       simp only [IxCC.Exe.Plain.resultObs, abiObs, hr, Obs.nat.injEq] at hobs
       subst hobs
@@ -255,6 +256,7 @@ theorem tier1Exit_of_outcome {claim : Claim} {acc : Src.KernelFront.Accepted} {s
       simp [IxCC.Exe.Plain.resultObs, abiObs, hr] at hobs
   | enum n =>
     cases hr : claim.abi.result with
+    | word bits a => exact absurd hr (hok.result_not_word bits a)
     | nat =>
       simp [IxCC.Exe.Plain.resultObs, abiObs, hr] at hobs
     | enum cs =>

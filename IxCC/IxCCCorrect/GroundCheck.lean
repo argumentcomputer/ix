@@ -444,6 +444,24 @@ def GroundOk (acc : Src.KernelFront.Accepted) (src : Program) (I : Lam.Erase.Inp
       (List.replicate (arityOf src root) FoTy.nat) res ∧
     ResultOk src I view (keyOf acc) κ res abi.result
 
+/-- What `groundCheck` validates is a `Nat` or an enumeration result, never a word (P5: word results
+are not grounded yet). -/
+theorem GroundOk.result_not_word {acc : Src.KernelFront.Accepted} {src : Program}
+    {I : Lam.Erase.Input} {view : View} {target : Ixon.Address} {abi : Abi}
+    (h : GroundOk acc src I view target abi) (bits : Nat) (a : Ixon.Address) :
+    abi.result ≠ ResTy.word bits a := by
+  obtain ⟨κ, lpsOf, ann, Sl, Inst, root, res, -, -, -, -, -, hRes⟩ := h
+  intro hw
+  cases res with
+  | nat =>
+    have h1 : abi.result = ResTy.nat := hRes
+    rw [h1] at hw
+    cases hw
+  | enum D =>
+    obtain ⟨addrs, h1, -⟩ := hRes
+    rw [h1] at hw
+    cases hw
+
 /-- **The check is sound**: an accepting `groundCheck` gives the hypotheses of the composed
 theorems. -/
 theorem groundCheck_sound {k : Src.KernelFront.Kernel} {src : Program}

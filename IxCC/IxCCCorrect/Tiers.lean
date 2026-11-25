@@ -98,6 +98,8 @@ def answerTerm (abi : Abi) (key : Ixon.Address → Option KKey) (answer : Nat) :
   match abi.result with
   | .nat => some (litE answer)
   | .enum ctors => ((ctors[answer]?).bind key).map fun k => Ix.Kernel.Expr.const k []
+  | .word bits ofNat =>
+    if answer < 2 ^ bits then (key ofNat).map fun k => .app (.const k []) (litE answer) else none
 
 /-- **The answer agrees with the kernel meaning of the target**: in every model of
 the admitted environment, the target applied to the arguments (as literals)
