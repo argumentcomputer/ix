@@ -1,4 +1,4 @@
-import IxCCGrounding.RecRun
+import IxCCGrounding.RecOrdinary
 
 /-!
 # ι at a recursor with parameters, from the law's own spine (`IxCCCorrect.SpineIota`)
@@ -23,6 +23,10 @@ the major's domain names (`hK`, `hys`). A SrcEval constructor value carries the 
 built at (`RelV.con`); where those differ from the recursor's, equating the two images is
 `CtorCanon`'s level half (`ctorFields_canon`). For a constructor without level parameters it is
 `cval_params` alone (`ctorFields_noLevels`). See `plans/GROUNDING.md` §23.
+
+The proofs now live in the grounding library (`IxCC.Grounding.spineOk_lamTeleG`,
+`IxCC.Grounding.paramsBlindIotaG`, in `IxCCGrounding.RecOrdinary`), where the fundamental lemma's
+F2 case at an `ordinary` recursor reads them; the statements here are unchanged.
 -/
 
 set_option autoImplicit false
@@ -49,33 +53,8 @@ theorem spineOk_lamTele {cval : KKey → (LevelParam → Nat) → V} {φ : Level
       Denotes cval env φ ρ (lamTele bs b) H → SpineOk H xs → xs.length = bs.length →
       (∀ p ∈ bs, regime φ p.2.pw ≠ 0) →
       (∀ C : KExpr, Fits cval env φ ρ (piTele bs C) xs (pushAll xs ρ) C) ∧
-        ∃ Y, Denotes cval env φ (pushAll xs ρ) b Y ∧ xs.foldl app H = Y
-  | [], b, ρ, H, [], hH, _, _, _ =>
-    ⟨fun C => by rw [pushAll_nil]; exact .nil, H, by rwa [pushAll_nil], rfl⟩
-  | [], _, _, _, _ :: _, _, _, hl, _ => by simp at hl
-  | _ :: _, _, _, _, [], _, _, hl, _ => by simp at hl
-  | (A, m) :: bs, b, ρ, H, x :: xs, hH, hsp, hl, hreg => by
-    have hH' : Denotes cval env φ ρ (.lam A (lamTele bs b) m) H := hH
-    obtain ⟨Ad, F, hA, hF, -, rfl⟩ := den_lam.mp hH'
-    have hr : regime φ m.pw ≠ 0 := hreg (A, m) (List.mem_cons_self ..)
-    obtain ⟨⟨v, A', B, hmem, hx⟩, hsp'⟩ := hsp
-    -- the product the law names is in graph regime, so it has the λ's domain
-    have hv : v ≠ 0 := by
-      intro hv0
-      subst hv0
-      exact lamR_ne_pt hr (eq_pt_of_mem_piR_zero hmem)
-    have hAA : A' = Ad := lamR_dom_eq hr hv hmem
-    rw [hAA] at hx
-    have happ : app (lamR (regime φ m.pw) Ad F) x = F x := app_lamR_pos hr hx
-    rw [happ] at hsp'
-    obtain ⟨hfit, Y, hY, hfold⟩ := spineOk_lamTele bs b (ρ := push x ρ) (hF x hx) hsp'
-      (by simpa using hl) (fun p hp => hreg p (List.mem_cons_of_mem _ hp))
-    refine ⟨fun C => ?_, Y, by rwa [pushAll_cons], ?_⟩
-    · have h := hfit C
-      rw [← pushAll_cons] at h
-      exact .cons hA hx h
-    · rw [List.foldl_cons, happ]
-      exact hfold
+        ∃ Y, Denotes cval env φ (pushAll xs ρ) b Y ∧ xs.foldl app H = Y :=
+  spineOk_lamTeleG
 
 /-- **ι at a recursor with parameters, at a rule that does not compare them** (no canonicity):
 the recursor applied to its prefix `As.take mI` and to a major that is rule `krl`'s constructor
@@ -101,43 +80,8 @@ theorem paramsBlindIota (M : Model V env) (hι : IotaLaw M.cval env) {kr : KKey}
       Denotes M.cval env φ (pushAll (As.take mI ++ ys.drop nP) ρ) b Y ∧
       As.foldl app (M.cval kr φ) = Y ∧
       ∀ C : KExpr, Fits M.cval env φ ρ (piTele bs C) (As.take mI ++ ys.drop nP)
-        (pushAll (As.take mI ++ ys.drop nP) ρ) C := by
-  -- the arguments: the prefix and the major
-  have hdrop : As.drop mI = [ys.foldl app K] := by
-    rw [List.getElem?_eq_getElem (by omega)] at hmaj
-    rw [List.drop_eq_getElem_cons (by omega), Option.some.inj hmaj,
-      List.drop_eq_nil_of_le (by omega)]
-  have hsplit : As = As.take mI ++ [ys.foldl app K] := by rw [← hdrop, List.take_append_drop]
-  have hxl : (As.take mI).length = mI := by simp; omega
-  have hfit' := hfit
-  rw [hsplit] at hfit'
-  obtain ⟨σ1, R1, hf1, hf2⟩ := fits_append hfit'
-  have hR1 : R1 = .forallE dom body m := by rw [fits_piBody hf1, hxl, hpb]
-  subst hR1
-  obtain ⟨X, hX, hKX⟩ : ∃ X, Denotes M.cval env φ σ1 dom X ∧ ys.foldl app K ∈ˢ X := by
-    cases hf2 with
-    | cons hA hx _ => exact ⟨_, hA, hx⟩
-  -- ι at rule `krl`, at the recursor's own level parameters; no parameter comparison
-  have hRden : Denotes M.cval env φ ρ (.const kr (cvr.levelParams.map .param)) (M.cval kr φ) := by
-    have h1 : Denotes M.cval env φ ρ (.const kr (cvr.levelParams.map .param))
-        (M.cval kr (Level.substFn φ cvr.levelParams (cvr.levelParams.map .param))) :=
-      Denotes.const (ci := .recInfo cvr mI mI krules) hf (by simp [ConstantInfo.toConstantVal])
-    rwa [substFn_self] at h1
-  obtain ⟨H, hH, -, hspine, heq⟩ := hι kr cvr mI mI krules krl hf hkrl cvC nP nF hcC
-    (cvr.levelParams.map .param) φ ρ σ1 σC (As.take mI) ys dom body RC m D ls (M.cval kr φ) K X
-    (by simp) hxl hyl hRden (by rw [inst_self]; exact hf1) hdom hX hK hys hKX
-    (fun h => absurd h (by rw [hcmp]; decide)) (fun h => absurd rfl h)
-  rw [inst_self] at hH
-  have e2 : (As.take mI).take mI = As.take mI := by rw [List.take_take, Nat.min_self]
-  rw [e2] at hspine heq
-  -- β through the right-hand side, along the law's own spine
-  rw [hrhs] at hH
-  obtain ⟨hfits, Y, hY, hYe⟩ := spineOk_lamTele bs b hH hspine
-    (by simp [hxl, hyl]; omega) hreg
-  refine ⟨H, Y, by rw [hrhs]; exact hH, hY, ?_, hfits⟩
-  have e3 : As.foldl app (M.cval kr φ) =
-      (As.take mI ++ [ys.foldl app K]).foldl app (M.cval kr φ) := by rw [← hsplit]
-  rw [e3, heq, hYe]
+        (pushAll (As.take mI ++ ys.drop nP) ρ) C :=
+  paramsBlindIotaG M hι hf hkrl hcmp hcC hrhs hbsl hreg hfit hlen hpb hdom hK hys hyl hmaj
 
 end Sem
 
