@@ -16,7 +16,8 @@ Design note: `plans/ONE-PIPELINE.md`, section 2.3.
 * `check_checked`: the Boolean checker implies the rules; `check_sound`, `check_codeSound`:
   the two together, the form a back end reads.
 * `arrOk_sound`, `arrOkSound_fir`: the array rules `ArrOk` are sound in a model whose arrays the
-  reader reads back, in particular at Fir's (`arrEnc`).
+  reader reads back, in particular at Fir's (`arrEnc`); `rhsSound` reads them through `RhsOk.arr`,
+  and the checker decides them (`arrOk`: `arrShape_ok`, `arrOk_rhsOk`).
 
 `rhsSound`, `evalSound`, `codeSound`, `checkSound` and the `check_*` forms are stated at Fir's
 array reader `arrEnc`, the one Fir's values use (the array rules read arrays as Fir holds them);
@@ -899,6 +900,9 @@ theorem rhsSound {P : Program} {cert : ShapeCert} {fs : FunShapes} {ρ : Env}
     obtain ⟨vs, hvs, hres⟩ := evalRhs_prim_ok hv
     exact primOkSound cert arrEnc P _ _ _ _ _ hprim (argsSound hρ _ _ _ hargs hvs) hres
   | primAny => exact .any v
+  | arr hargs harr =>
+    obtain ⟨vs, hvs, hres⟩ := evalRhs_prim_ok hv
+    exact primResult_arrOk P cert harr (argsSound hρ _ _ _ hargs hvs) hres
   | call _ => cases hv
   | weaken _ hle ih => exact leSound arrEnc cert _ _ _ hle (ih hv)
 
@@ -1370,6 +1374,85 @@ theorem projShape_ok {P : Program} {cert : ShapeCert} {fs : FunShapes} {x : Var}
       exact .projNat hs hle
     · cases h
 
+/-- The shape `arrShape` computes is one the array rules give. -/
+theorem arrShape_ok (op : Src.ArrOp) (σs : List Shape) : ArrOk op σs (arrShape op σs) := by
+  have fb : ∀ {o : Src.ArrOp}, o ≠ .size → o ≠ .get → o ≠ .toList → ArrOk o σs (.arr .any none) :=
+    fun h1 h2 h3 => .arrAny h1 h2 h3
+  cases op <;> dsimp only [arrShape]
+  case empty =>
+    split
+    · exact .empty
+    · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+  case replicate =>
+    split
+    · exact .replicate (Shape.le_refl _)
+    · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+  case size =>
+    split
+    · exact .sizeKnown
+    · exact .size
+    · exact .any
+  case get =>
+    split
+    · exact .get
+    · exact .any
+  case set =>
+    split
+    · split
+      · exact .set ‹_›
+      · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+    · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+  case push =>
+    split
+    · split
+      · exact .push ‹_›
+      · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+    · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+  case pop =>
+    split
+    · exact .pop
+    · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+  case append =>
+    split
+    · split
+      · subst_vars
+        exact .append
+      · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+    · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+  case extract =>
+    split
+    · exact .extract
+    · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+  case copySlice =>
+    split
+    · split
+      · subst_vars
+        exact .copySlice
+      · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+    · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+  case ofList => exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+  case toList => exact .any
+
+/-- What `arrOk` accepts is a right-hand side the rules give. -/
+theorem arrOk_rhsOk {P : Program} {cert : ShapeCert} {fs : FunShapes} {op : Src.ArrOp}
+    {args : List Arg} {σs : List Shape} {τ : Shape} (hargs : ArgsOk fs args σs)
+    (h : arrOk op σs τ = true) : RhsOk P cert fs (.prim (.arr op) args) τ := by
+  have hw : ∀ e : Shape, (Shape.arr e (some 0)).le (.arr e none) = true := fun e => by
+    simp [Shape.le, Shape.le_refl]
+  unfold arrOk at h
+  simp only [Bool.or_eq_true] at h
+  rcases h with h | h
+  · exact .weaken (.arr hargs (arrShape_ok op σs)) h
+  · split at h
+    · exact .arr hargs .empty
+    · exact .weaken (.arr hargs .empty) (hw _)
+    · exact .arr hargs (.replicate h)
+    · cases h
+
+theorem primRhsOk_of_not_arr {op : Lam.Prim} (hp : op.isArr = false) (σs : List Shape)
+    (τ : Shape) : primRhsOk op σs τ = (primShape op σs).le τ := by
+  cases op <;> first | rfl | cases hp
+
 /-- `rhsOk` decides a rule. -/
 theorem rhsOk_sound {P : Program} {cert : ShapeCert} {fs : FunShapes} {r : Rhs} {τ : Shape}
     (h : rhsOk P cert fs r τ = true) : RhsOk P cert fs r τ := by
@@ -1391,7 +1474,11 @@ theorem rhsOk_sound {P : Program} {cert : ShapeCert} {fs : FunShapes} {r : Rhs} 
     rcases h with h | h
     · subst h
       exact .primAny
-    · exact .weaken (.prim (argShapes_ok fs args) (primShape_ok op _)) h
+    · cases hp : op.isArr
+      · rw [primRhsOk_of_not_arr hp] at h
+        exact .weaken (.prim (argShapes_ok fs args) (primShape_ok op _)) h
+      · obtain ⟨aop, rfl⟩ := Lam.Prim.isArr_eq_true hp
+        exact arrOk_rhsOk (argShapes_ok fs args) h
   | call g args =>
     simp only [rhsOk, Bool.and_eq_true] at h
     exact .weaken (.call (argsOk_sound _ _ h.1)) h.2

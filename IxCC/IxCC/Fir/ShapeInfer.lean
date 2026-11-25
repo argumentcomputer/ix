@@ -37,11 +37,13 @@ shape the producer assumes of each (`any` assumes nothing; `nat` is what today's
 passes). The certificate's facts hold under that assumption (`ShapeSound` asks the arguments to
 have the parameter shapes), so whoever runs an export must supply it.
 
-**Arrays: the marked place.** No primitive makes an array at this commit, so no `arr` shape is
-ever inferred and the native flow condition (`Fir.Rep.flowsOk`) holds of every certificate
-produced here. When array primitives exist (lane `prims-core`), their transfer function goes in
-`rhsShape`, and the demotion loop of section 2.5 (lower an element shape to `any` along every
-flow that `Shape.flowOk` refuses, report it) goes after `infer`.
+**Arrays: the marked place.** The checker has the array rules (`Fir.Shape.ArrOk`, `arrOk`), but
+`Fir.lower` still refuses array primitives, so no program this producer sees has one; it gives an
+array primitive's result `any` (`primShape`), no `arr` shape is ever inferred, and the native
+flow condition (`Fir.Rep.flowsOk`) holds of every certificate produced here. When array
+primitives reach `Fir.lower`'s output (lane `prims-core`, design D9), their transfer function
+(`Fir.Shape.arrShape`) goes in `rhsShape`, and the demotion loop of section 2.5 (lower an element
+shape to `any` along every flow that `Shape.flowOk` refuses, report it) goes after `infer`.
 -/
 
 set_option autoImplicit false

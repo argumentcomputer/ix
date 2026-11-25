@@ -186,15 +186,10 @@ inductive PrimOk : Lam.Prim → List Shape → Shape → Prop
 `ArrOk` is the statement module's (`IxCCDesign.OnePipeline.ShapeCert.ArrOk`): the twelve
 operations, typed rules that keep the element shape and track a static length, each with an
 untyped fallback. It is sound at Fir's reader (`Fir.Proof.Shape.arrOkSound_fir`, from
-`arrOk_sound` in any model whose arrays the reader reads back). What is still to land:
-
-* one rule of `RhsOk`, `arr : ArgsOk fs args σs → ArrOk op σs τ →
-  RhsOk P cert fs (.prim (.arr op) args) τ`, and its case in `rhsSound`;
-* `arrShape : ArrOp → List Shape → Shape` beside `primShape`, and its case in `rhsOk`.
-
-The soundness theorems are stated at `arrEnc` (an empty array has shape `arr e (some 0)` only for
-a reader that reads it). Until the rule lands `natPrimResult` and `primShape` answer `any` for an
-array primitive. -/
+`arrOk_sound` in any model whose arrays the reader reads back), and it is a rule of `RhsOk`
+(`RhsOk.arr`), decided by `arrOk` (`arrShape` beside `primShape`, and the element shape of a fresh
+`empty` or `replicate` read from the target). The soundness theorems are stated at `arrEnc` (an
+empty array has shape `arr e (some 0)` only for a reader that reads it). -/
 
 /-- **An array primitive on operands of shapes `σs` returns a `τ`.** The typed rules keep the
 element shape and track a static length; each has an untyped fallback, so generic code checks. -/
@@ -242,6 +237,9 @@ inductive RhsOk (P : Program) (cert : ShapeCert) (fs : FunShapes) : Rhs → Shap
   | prim {op : Lam.Prim} {args : List Arg} {σs : List Shape} {τ : Shape} :
       ArgsOk fs args σs → PrimOk op σs τ → RhsOk P cert fs (.prim op args) τ
   | primAny {op : Lam.Prim} {args : List Arg} : RhsOk P cert fs (.prim op args) .any
+  /-- an array primitive by its rules (`ArrOk`) -/
+  | arr {op : Src.ArrOp} {args : List Arg} {σs : List Shape} {τ : Shape} :
+      ArgsOk fs args σs → ArrOk op σs τ → RhsOk P cert fs (.prim (.arr op) args) τ
   | call {g : FunId} {args : List Arg} :
       ArgsOk fs args (cert.fn g).params → RhsOk P cert fs (.call g args) (cert.fn g).ret
   | weaken {r : Rhs} {σ τ : Shape} : RhsOk P cert fs r σ → σ.le τ = true → RhsOk P cert fs r τ
@@ -403,6 +401,71 @@ def primShape (op : Lam.Prim) (σs : List Shape) : Shape :=
     | none => .nat
   | op => natPrimResult op
 
+/-- The best shape the array rules give an array primitive's result on operands of shapes `σs`
+(`arrShape_ok`: `ArrOk op σs (arrShape op σs)`): the element shape is kept and a static length
+tracked where the operands allow, else the untyped fallback. -/
+def arrShape (op : Src.ArrOp) (σs : List Shape) : Shape :=
+  match op with
+  | .empty =>
+    match σs with
+    | [_] => .arr .any (some 0)
+    | _ => .arr .any none
+  | .replicate =>
+    match σs with
+    | [_, ν] => .arr ν none
+    | _ => .arr .any none
+  | .size =>
+    match σs with
+    | [.arr _ (some n)] => .natLt (n + 1)
+    | [_] => .nat
+    | _ => .any
+  | .get =>
+    match σs with
+    | [.arr e _, _] => e
+    | _ => .any
+  | .set =>
+    match σs with
+    | [.arr e n, _, ν] => if ν.le e then .arr e n else .arr .any none
+    | _ => .arr .any none
+  | .push =>
+    match σs with
+    | [.arr e n, ν] => if ν.le e then .arr e (n.map (· + 1)) else .arr .any none
+    | _ => .arr .any none
+  | .pop =>
+    match σs with
+    | [.arr e n] => .arr e (n.map (· - 1))
+    | _ => .arr .any none
+  | .append =>
+    match σs with
+    | [.arr e _, .arr e' _] => if e = e' then .arr e none else .arr .any none
+    | _ => .arr .any none
+  | .extract =>
+    match σs with
+    | [.arr e _, _, _] => .arr e none
+    | _ => .arr .any none
+  | .copySlice =>
+    match σs with
+    | [.arr e _, _, .arr e' _, _, _] => if e = e' then .arr e none else .arr .any none
+    | _ => .arr .any none
+  | .ofList => .arr .any none
+  | .toList => .any
+
+/-- Decides the array rules at a target shape: `arrShape` weakens to it, or a fresh `empty` or
+`replicate` takes its element shape from it. -/
+def arrOk (op : Src.ArrOp) (σs : List Shape) (τ : Shape) : Bool :=
+  (arrShape op σs).le τ ||
+    match op, σs, τ with
+    | .empty, [_], .arr _ (some 0) => true
+    | .empty, [_], .arr _ none => true
+    | .replicate, [_, ν], .arr e none => ν.le e
+    | _, _, _ => false
+
+/-- Decides a primitive's rules at a target shape: an array primitive by `arrOk`, any other by
+`primShape`. -/
+def primRhsOk : Lam.Prim → List Shape → Shape → Bool
+  | .arr op, σs, τ => arrOk op σs τ
+  | op, σs, τ => (primShape op σs).le τ
+
 /-- The fields an entry lists for a constructor. -/
 def ctorFields (D : DataDecl Key.CtorKey) (c : Key.CtorKey) : Option (List Shape) :=
   (D.ctors.find? (·.1 == c)).map (·.2)
@@ -453,7 +516,7 @@ def rhsOk (P : Program) (cert : ShapeCert) (fs : FunShapes) : Rhs → Shape → 
       match projShape P cert fs x c i with
       | some σ => σ.le τ
       | none => false
-  | .prim op args, τ => τ == .any || (primShape op (args.map (argShape fs))).le τ
+  | .prim op args, τ => τ == .any || primRhsOk op (args.map (argShape fs)) τ
   | .call g args, τ => argsOk fs args (cert.fn g).params && (cert.fn g).ret.le τ
 
 mutual

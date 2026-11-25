@@ -1,6 +1,7 @@
 import IxCCTests.Fir.Support
 import IxCC.Own.Immortal
 import IxCC.Own.Plain.Owned
+import IxCC.Fir.ShapeInfer
 
 /-! The array primitives at Fir and Own (`plans/ONE-PIPELINE.md`, lane prims-core, stage B).
 `Fir.lower` still refuses them (`fir.arrays`, `IxCCTests.Anf.ArrayPrims`), so the program here is
@@ -12,6 +13,10 @@ hand-written Fir: one function `fun n => …` per root, its bindings numbered fr
 * Own (the immortal embedding), under both allocation policies, has the same outcome and a value
   denoting Fir's (`sameFirOwn`: an array is a cell under `arrInfo n`, the empty one the immediate
   `ctor0 (arrInfo 0)`).
+* The shape certificate (`Fir.Shape.check`) accepts a hand-written certificate with typed array
+  shapes (`ArrOk`: element shapes kept, static lengths tracked, `size` of a known length bounded),
+  refuses two wrong ones, and accepts what the producer proposes for both programs; the typed
+  function returns a value of its result shape at every argument, at Fir and at Own.
 * The ownership checker declines an array primitive (`own.arrays`). -/
 
 namespace IxCCTests.Fir.ArrayPrims
@@ -83,6 +88,33 @@ def program : FProgram :=
   { funs := Src.NatMap.ofList (fs.zipIdx.map fun (f, i) => (i, f)), size := fs.length
     exports := List.range fs.length, ctors := [], known := {} }
 
+/-- A function whose certificate types its arrays: `fun n =>` (shapes on the right). -/
+def typedBody : Code :=
+  seq [arr .empty [lit 0],            -- 1 : arr nat (some 0)
+    arr .push [v 1, v 0],             -- 2 : arr nat (some 1)
+    arr .push [v 2, lit 7],           -- 3 : arr nat (some 2)
+    arr .replicate [lit 3, v 0],      -- 4 : arr nat none
+    arr .append [v 3, v 4],           -- 5 : arr nat none
+    arr .size [v 3],                  -- 6 : natLt 3
+    arr .get [v 5, v 6],              -- 7 : nat
+    arr .set [v 3, lit 0, v 7],       -- 8 : arr nat (some 2)
+    arr .size [v 8]]                  -- 9 : natLt 3
+
+def typedFun : IxCC.Fir.Fun :=
+  { key := .const 0 [], params := [(0, .tobj)], body := typedBody, vars := 16 }
+
+def typed : FProgram :=
+  { funs := Src.NatMap.ofList [(0, typedFun)], size := 1, exports := [0], ctors := [], known := {} }
+
+def typedShapes (size6 arr2 : IxCC.Shape.Shape) : IxCC.Fir.Shape.ShapeCert :=
+  let ns : IxCC.Shape.Shape := .nat
+  let fs : IxCC.Fir.Shape.FunShapes :=
+    { params := [ns], ret := .natLt 3,
+      vars := Src.NatMap.ofList [(0, ns), (1, .arr ns (some 0)), (2, arr2), (3, .arr ns (some 2)),
+        (4, .arr ns none), (5, .arr ns none), (6, size6), (7, ns), (8, .arr ns (some 2)),
+        (9, .natLt 3)] }
+  { funs := Src.NatMap.ofList [(0, fs)] }
+
 def args : List Nat := [0, 1, 2, 5, 9]
 
 def clock : Nat := 20
@@ -105,12 +137,30 @@ def run (a : Assert) : IO (Array String) := do
         let ro ← runOwn pol O clock r [n]
         expect a (sameFirOwn rf ro) s!"Own: {label} at {n}: {ownOutcome ro}, Fir {firOutcome rf}"
       runs := runs + 1
+  -- the shape certificate
+  let good := typedShapes (.natLt 3) (.arr .nat (some 1))
+  expect a (IxCC.Fir.Shape.check typed good) "the typed array certificate is refused"
+  expect a (!IxCC.Fir.Shape.check typed (typedShapes (.natLt 2) (.arr .nat (some 1))))
+    "a certificate bounding the size of a length-2 array by 2 is accepted"
+  expect a (!IxCC.Fir.Shape.check typed (typedShapes (.natLt 3) (.arr .nat (some 5))))
+    "a certificate giving a push the wrong length is accepted"
+  expect a (IxCC.Fir.ShapeInfer.run typed).2
+    "the producer's certificate for the typed function is refused"
+  expect a (IxCC.Fir.ShapeInfer.run F).2 "the producer's certificate for the array roots is refused"
+  let To := IxCC.Own.immortal typed
+  for n in args do
+    let rf ← runFir typed clock 0 [n]
+    expect a (match rf with | .ok (.lit (.nat m)) => m < 3 | _ => false)
+      s!"typed at {n}: {firOutcome rf} is not below 3"
+    let ro ← runOwn .immortal To clock 0 [n]
+    expect a (sameFirOwn rf ro) s!"typed at {n}: Own {ownOutcome ro}, Fir {firOutcome rf}"
   let declined := match IxCC.Own.Plain.bindStep {} 1 (arr .size [v 0]) with
     | .error e => e.startsWith "own.arrays"
     | .ok _ => false
   expect a declined "the ownership checker accepts an array primitive"
   return #[s!"arrays at Fir: {roots.length} roots × {args.length} arguments agree with the list model ({runs} runs, {traps} traps)",
     s!"arrays at Own: the same outcomes and denoting values under both policies ({2 * runs} runs)",
+    "arrays: the shape certificate accepts typed array shapes and refuses two wrong ones",
     "arrays: the ownership checker declines with own.arrays"]
 
 end IxCCTests.Fir.ArrayPrims

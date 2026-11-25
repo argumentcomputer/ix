@@ -258,3 +258,14 @@ model whose arrays the reader reads back, and so at Fir's model and reader (`Fir
 
 /-- info: 'IxCC.Fir.Proof.Shape.primResult_arrOk' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Fir.Proof.Shape.primResult_arrOk
+
+/-! The array rules are a rule of `RhsOk` (`RhsOk.arr`), decided by `arrOk` (`arrShape`). -/
+
+/-- info: 'IxCC.Fir.Proof.Shape.arrShape_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.Shape.arrShape_ok
+
+/-- info: 'IxCC.Fir.Proof.Shape.arrOk_rhsOk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.Shape.arrOk_rhsOk
+
+/-- info: 'IxCC.Fir.Proof.Shape.primRhsOk_of_not_arr' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.Shape.primRhsOk_of_not_arr
