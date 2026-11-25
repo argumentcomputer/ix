@@ -14,7 +14,9 @@
 //! memory are then of executing, proving and verifying alone.
 use aiur::field::FieldBackend;
 use aiur::{
-  artifact::ExecutionPackage,
+  artifact::{
+    self, EXECUTION_MAGIC, ExecutionPackage, PACKAGE_MAGIC, Package,
+  },
   hints::HintChannels,
   trace::{
     TracePlan,
@@ -60,18 +62,34 @@ fn main() -> Result<(), Box<dyn Error>> {
   let path = args.get(1).ok_or(USAGE)?;
   let total = Instant::now();
   let start = Instant::now();
-  let (package, digest) = ExecutionPackage::load(path.as_ref())?;
-  eprintln!("artifact {path}: blake3 {digest}");
-  let (program, trace) = package.package.traced()?;
+  let (raw_bytes, digest) = artifact::read(path.as_ref())?;
+  let (package, embedded_args, embedded_hints, kind) =
+    if raw_bytes.starts_with(PACKAGE_MAGIC) {
+      let pkg = Package::decode(&raw_bytes)
+        .map_err(|e| format!("invalid program package {path}: {e}"))?;
+      (pkg, Vec::new(), Vec::new(), "program")
+    } else if raw_bytes.starts_with(EXECUTION_MAGIC) {
+      let exec = ExecutionPackage::decode(&raw_bytes)
+        .map_err(|e| format!("invalid execution package {path}: {e}"))?;
+      (exec.package, exec.args, exec.hints, "execution")
+    } else {
+      return Err(format!(
+        "unrecognized artifact magic in {path} (expected IXAIURP\\0 or IXAIURX\\0)"
+      )
+      .into());
+    };
+  eprintln!("artifact {path} ({kind}): blake3 {digest}");
+  let (program, trace) = package.traced()?;
   let mut program = program.check_field::<multi_stark::types::Val>()?;
   program.track_depth(&trace)?;
   let field = program.field();
   let address =
-    field.decode(override_args.as_deref().unwrap_or(&package.args))?;
+    field.decode(override_args.as_deref().unwrap_or(&embedded_args))?;
   let mut channels = HintChannels::new();
+  aiur::library::u32::register(&mut channels, field)?;
   aiur::library::u64::register(&mut channels, field)?;
   aiur::library::ixcc::register(&mut channels, field)?;
-  let hints = program.prepare_hint_channels(&package.hints, &channels)?;
+  let hints = program.prepare_hint_channels(&embedded_hints, &channels)?;
   let plan = TracePlan::new(&program, trace)?;
   let entry =
     &program.program().entries.first().ok_or("no selected entrypoint")?.name;

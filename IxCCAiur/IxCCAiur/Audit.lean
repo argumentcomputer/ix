@@ -1,5 +1,6 @@
 import IxCCAiur.Backward
 import IxCCAiur.Compose
+import IxCCAiur.CompiledCert
 import IxCCAiur.Fib
 import IxCCAiur.Gcd
 import IxCCAiur.Roots
@@ -1248,5 +1249,22 @@ info: 'IxCC.AiurBackend.Sfib.accepted' depends on axioms: [propext, Classical.ch
 info: 'IxCC.AiurBackend.Tak.accepted' depends on axioms: [propext, Classical.choice, Quot.sound]
 -/
 #guard_msgs (whitespace := lax) in #print axioms Tak.accepted
+
+/-! ## 8. Compiled Artifact Certificate (`IxCCAiur.CompiledCert`) -/
+
+/--
+info: 'IxCC.AiurBackend.CompiledCert.Cert.accepted_of_checkMemo' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms CompiledCert.Cert.accepted_of_checkMemo
+
+/--
+info: 'IxCC.AiurBackend.CompiledCert.Cert.accepted_nat_backward' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms CompiledCert.Cert.accepted_nat_backward
+
+/--
+info: 'IxCC.AiurBackend.CompiledCert.Cert.accepted_nat' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms CompiledCert.Cert.accepted_nat
 
 end IxCC.AiurBackend.Audit

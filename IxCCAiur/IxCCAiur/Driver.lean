@@ -1,4 +1,5 @@
 import IxCCAiur.Progress
+import IxCCAiur.CompiledCert
 import IxCCAiur.Hints
 import IxCC.Compile
 import IxCC.Recheck.RunFir
@@ -171,21 +172,59 @@ def firRun (P : Fir.Program) (i : Nat) (args : List Nat) (clock : Nat := 1000000
 
 /-! ## Circuits and the package -/
 
-/-- Per chip of the compiled circuits: name, columns, call lookups, memory
-lookups (before grouping and the depth pass). -/
-def chipStats (l : Linked) : Except String (List (String × Nat × Nat × Nat)) := do
-  let compiled ← l.prepared.compileOptimized {}
-  return compiled.circuit.artifact.system.chips.map fun c =>
+/-- Per-chip summary `(name, columns, call lookups, memory lookups)` from an
+optimized circuit artifact (before grouping and the depth pass). -/
+def chipSummaryOf {moduleProg : Aiur.Modules.Program F}
+    {prepared : Aiur.Modules.Prepared moduleProg}
+    (compiled : Aiur.Optimized.ModulesArtifact prepared) :
+    List (String × Nat × Nat × Nat) :=
+  compiled.circuit.artifact.system.chips.map fun c =>
     (c.name, c.numVars, c.sends.length, c.memory.length)
 
-/-- The execution package for the linked entry on `args`: the compiled
-program, its circuits (the certified optimizing compiler with its default
-configuration, no grouping), and the invocation. No hint data. -/
-def package (l : Linked) (args : List Nat) : Except String ByteArray := do
+/-- Result of a single compilation + trace export: carries chip stats, the
+serialized `.ixa` artifact (`IXAIURP\0` program package or `IXAIURX\0` execution
+package), and its pure-Lean BLAKE3 digest. -/
+structure Compiled where
+  chips : List (String × Nat × Nat × Nat)
+  kind : CompiledCert.ArtifactKind
+  bytes : ByteArray
+  digest : Ixon.Address
+
+/-- Compile `l` once (`compileOptimized` + parallel `Trace.exportPlanPar`),
+returning chip stats and the serialized `.ixa` artifact with its BLAKE3 digest.
+Defaults to a reusable `IXAIURP\0` program package (`ArtifactKind.program`). -/
+def compilePackage (l : Linked)
+    (kind : CompiledCert.ArtifactKind := .program)
+    (args : List Nat := [])
+    (config : Aiur.Optimized.Config := {})
+    (groups : List (String × List String) := []) : Except String Compiled := do
   let execution ← l.prepared.exportExecution
-  let compiled ← l.prepared.compileOptimized {}
-  let (execution, trace) ← Aiur.Trace.exportPlan modulus ZMod.val
-    compiled.circuit.inlined.program compiled.circuit.artifact execution
-  Aiur.Artifact.execution execution modulus ZMod.val (some trace) args [] #[]
+  let compiled ← l.prepared.compileOptimized config
+  let chips := chipSummaryOf compiled
+  let (execution, trace) ← Aiur.Trace.exportPlanPar modulus ZMod.val
+    compiled.circuit.inlined.program compiled.circuit.artifact execution groups
+  let bytes ← match kind with
+    | .program => Aiur.Artifact.package execution modulus ZMod.val (some trace)
+    | .execution => Aiur.Artifact.execution execution modulus ZMod.val (some trace) args [] #[]
+  return { chips, kind, bytes, digest := Ixon.Address.blake3Pure bytes }
+
+/-- Per chip of the compiled circuits: name, columns, call lookups, memory
+lookups (before grouping and the depth pass). -/
+def chipStats (l : Linked) (config : Aiur.Optimized.Config := {}) :
+    Except String (List (String × Nat × Nat × Nat)) := do
+  let compiled ← l.prepared.compileOptimized config
+  return chipSummaryOf compiled
+
+/-- The reusable program package (`IXAIURP\0`) for the linked entry: compiled
+program and certified trace plan, independent of any invocation's arguments. -/
+def programPackage (l : Linked) (config : Aiur.Optimized.Config := {})
+    (groups : List (String × List String) := []) : Except String ByteArray :=
+  (·.bytes) <$> compilePackage l .program [] config groups
+
+/-- The execution package (`IXAIURX\0`) for the linked entry on `args`: the
+compiled program, its circuits, and one invocation. No hint data. -/
+def package (l : Linked) (args : List Nat) (config : Aiur.Optimized.Config := {})
+    (groups : List (String × List String) := []) : Except String ByteArray :=
+  (·.bytes) <$> compilePackage l .execution args config groups
 
 end IxCC.AiurBackend.Driver
