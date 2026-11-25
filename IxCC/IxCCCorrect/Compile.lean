@@ -1,6 +1,7 @@
 import IxCC.Compile.Proof
 import IxCCCorrect.Today
 import IxCCCorrect.Tiers
+import IxCCCorrect.AdmitsKernel
 
 /-!
 # The certified route, as it stands (`IxCCCorrect.Compile`)
@@ -35,9 +36,10 @@ segments are the options' stack and region (`LayoutIs`, the first conjunct of
 `Correct`).
 
 The theorem does not read a tier flag: `Compile.Claim` has none, and the corollary
-`compile_admits` gives the admission conjunct of `Tier1` and `Tier3` (`Admits`) for
-**every** `IxCC.Correct.Claim` that agrees with the output's claim on the root, the
-role table and the kernel limits, whatever its `tiers`.
+`compile_admits` gives, for **every** `IxCC.Correct.Claim` that agrees with the output's
+claim on the root, the role table and the kernel limits, whatever its `tiers`, IxCK's
+acceptance of the committed environment, and the admission conjunct of `Tier1` and
+`Tier3` (`Admits`, by reading and model) wherever the reader keys the claim's target.
 
 `CertifiedRouteToday` is the predicate on a compile function, as
 `CertifiedRoute` is; `compileWith` is `compile` with two further refusals between
@@ -380,18 +382,29 @@ theorem compile_route : CertifiedRouteToday Compile.compile :=
 
 /-! ## Consequences in the target vocabulary -/
 
-/-- **The kernel admits the committed environment, in the sense `Tier1` and `Tier3`
-ask** (`Admits`): for every claim of this library that agrees with the compiler's
-on the environment's root, the role table and the kernel limits. No tier flag is
-read. -/
+/-- **The kernel admits the committed environment**: for every claim of this library that
+agrees with the compiler's on the environment's root, the role table and the kernel limits,
+IxCK's checker accepts the decoded environment at the claim's limits (the first conjunct, what
+`Admits` was before the owner-approved restatement), and wherever the reader keys the claim's
+target (owner-approved P4), the environment is admitted in the sense `Tier1` and `Tier3` ask,
+by reading and model (`Admits`, at the acceptance's reading, by `admits_of_accept`). No tier
+flag is read. -/
 theorem compile_admits {envBytes : ByteArray} {target : Ixon.Address} {opts : Compile.Options}
     {out : Compile.Output} (h : Compile.compile envBytes target opts = .ok out) (claim : Claim)
     (henv : claim.env = out.claim.env) (hrole : claim.roleTable = out.claim.roleTable)
     (hlimits : claim.kernelLimits = out.claim.options.kernelLimits) :
-    ∃ acc, Admits claim envBytes acc := by
+    ∃ acc : Src.KernelFront.Accepted,
+      (∃ env, Ixon.V3.decodeAnonymousEnv envBytes = .ok env ∧ env.root = claim.env ∧
+        env.bindingAddress = some claim.roleTable ∧
+        Src.KernelFront.accept env claim.kernelLimits = .ok acc) ∧
+      (keyOf acc claim.target ≠ none → Admits claim envBytes acc) := by
   obtain ⟨-, -, -, inp, cfg, -, hdec, hroot, hbind, hacc, -⟩ := compile_today h
-  exact ⟨inp.kernel.acc, inp.env, hdec, by rw [henv]; exact hroot, by rw [hrole]; exact hbind,
-    by rw [hlimits]; exact hacc⟩
+  have hroot' : inp.env.root = claim.env := by rw [henv]; exact hroot
+  have hbind' : inp.env.bindingAddress = some claim.roleTable := by rw [hrole]; exact hbind
+  have hacc' : Src.KernelFront.accept inp.env claim.kernelLimits = .ok inp.kernel.acc := by
+    rw [hlimits]; exact hacc
+  exact ⟨inp.kernel.acc, ⟨inp.env, hdec, hroot', hbind', hacc'⟩,
+    fun hkey => admits_of_accept ⟨inp.env, hdec, hroot', hbind', hacc', hkey⟩⟩
 
 /-- **The digest of the returned file is the digest `Claim.Binds` reads from any
 packaging of it.** If `file` is the returned executable with a trailer attached
