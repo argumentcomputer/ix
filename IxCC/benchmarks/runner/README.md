@@ -63,8 +63,20 @@ taskset -c 5 ./.lake/build/bin/runner perf OUT --cpu 2 [--perf PATH] [--runs 3] 
 # Pure-Lean K4/K5 (or full K1–K5) apples-to-apples process-profile runner:
 lake build bench-k45
 ./.lake/build/bin/bench-k45 run OUT --rungs K4,K5 --cpu 2 --blocks 10 \
-    [--closures DIR] [--rc off|on|auto|both] [--stack BYTES] [--region BYTES]
+    [--closures DIR] [--rc off|on|auto|both] [--opt] [--bignat [--bignat-lib FILE]] \
+    [--embed-cert] [--gcc] [--no-harness] [--cc CC] [--stack BYTES] [--region BYTES]
 ```
+
+Both `runner` and `bench-k45` invalidate pre-existing executables and objects
+before rebuilding, record every built executable's SHA-256 digest and build
+status in `build.json` / `k45-build.json`, and refuse to check or measure any
+row that lacks a current `"built"` record or whose on-disk SHA-256 does not
+match. For `bench-k45`, fixtures whose `entry` returns a non-`--exe` shape
+supported by [`k45_harness.c`](k45_harness.c) (such as `ByteArray` in `blake3`
+or `Nat × Nat` pairs) are automatically linked from the compiled `.o` unless
+`--no-harness` is passed, and their build mode (`standalone-exe` vs
+`object+harness(...)`), exact commands, toolchain versions, and SHA-256 digests
+are recorded in `k45-build.json`, `k45-samples.json`, and `k45-report.{md,json}`.
 
 `build` also writes each row's disassembly (`OUT/asm/<row>/<fixture>.txt`),
 ixcc's IR at every level (`OUT/ixcc/<fixture>.ir.txt`) and
