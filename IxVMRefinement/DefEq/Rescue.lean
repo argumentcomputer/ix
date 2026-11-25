@@ -3,7 +3,7 @@ import IxVMRefinement.Core.Certs
 import IxVMRefinement.Core.RomBound
 import IxVMRefinement.Lib.Words
 import IxVMRefinement.Lib.WordHints
-import IxVMRefinement.Obs.Blake3
+import IxVM.Obs.Blake3
 import IxVMRefinement.Ingress.HashedBlock
 import IxC.Kernel.Verify.InstLevels
 import IxC.Kernel.Verify.PropWhen

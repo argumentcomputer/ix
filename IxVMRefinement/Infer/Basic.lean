@@ -2,8 +2,8 @@ import IxVMRefinement.Core.Registry
 import IxVMRefinement.Core.Open
 import IxVMRefinement.Core.RomBound
 import IxVMRefinement.Core.Steps.Whnf
-import IxVMRefinement.Obs.KernelInfer
-import IxVMRefinement.Obs.KernelInferOnly
+import IxVM.Obs.KernelInfer
+import IxVM.Obs.KernelInferOnly
 import IxVMRefinement.Subst.Inst
 import IxVMRefinement.Nat.Basic
 

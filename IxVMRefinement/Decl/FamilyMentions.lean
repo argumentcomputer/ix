@@ -1,5 +1,5 @@
 import IxVMRefinement.Decl.NativeFront
-import IxVMRefinement.Obs.KernelModeled4
+import IxVM.Obs.KernelModeled
 
 /-! # A modeled recursor's type names no member of its own family record
 

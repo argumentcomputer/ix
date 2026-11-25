@@ -5,7 +5,7 @@ import IxVMRefinement.Binding.FamilyFlat
 import IxVMRefinement.Binding.FamilyRecon
 import IxVMRefinement.Binding.StoreLevelsDef
 import IxVMRefinement.Assembly.AdviceListed
-import IxVMRefinement.Obs.KernelModeled1
+import IxVM.Obs.KernelModeled
 import IxVMRefinement.Ingress.Stream
 
 /-! # A group's admission with modeled blocks: the family checks and the store

@@ -1,13 +1,10 @@
 import IxVMRefinement.Core.CallHeaps
 import IxVMRefinement.Core.Rep
 import Ix.IxVM.Refinement.Statement
-import IxVMRefinement.Obs.KernelCheck13
-import IxVMRefinement.Obs.KernelModeled0
-import IxVMRefinement.Obs.KernelModeled1
-import IxVMRefinement.Obs.KernelModeled2
-import IxVMRefinement.Obs.KernelModeled3
-import IxVMRefinement.Obs.KernelRoles
-import IxVMRefinement.Obs.Ingress0
+import IxVM.Obs.KernelCheck
+import IxVM.Obs.KernelModeled
+import IxVM.Obs.KernelRoles
+import IxVM.Obs.Ingress
 
 /-! # Call-tree descent for `check_family` and `check_witness`
 

@@ -1,8 +1,8 @@
 import IxVMRefinement.Claim.Constant
 import IxVMRefinement.Claim.Decode
 import IxVMRefinement.Core.Specs.Callees
-import IxVMRefinement.Obs.Ingress0
-import IxVMRefinement.Obs.IxVMCompat0
+import IxVM.Obs.Ingress
+import IxVM.Obs.IxVMCompat
 
 /-! # Claim-phase claimable-seed refusals and closure walking
 

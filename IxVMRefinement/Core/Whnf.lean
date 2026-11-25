@@ -1,11 +1,11 @@
 import IxVMRefinement.Core.Registry
-import IxVMRefinement.Obs.KernelWhnf
+import IxVM.Obs.KernelWhnf
 
 /-! # The slice, on the registry: `apply_spine`
 
 The first step lemma stated against the registry, and the pattern every package's step lemmas
-follow: take the derivation's path from the generated path lemma
-(`IxVMRefinement.Obs`, `«f».obs`), read the callees' specs from the induction hypothesis
+follow: take the derivation's path from the derived path lemma
+(`IxVM.Obs`, `«f».obs`), read the callees' specs from the induction hypothesis
 (`IH.get`), and conclude the function's registered spec. -/
 
 namespace IxVM.Refinement.Core

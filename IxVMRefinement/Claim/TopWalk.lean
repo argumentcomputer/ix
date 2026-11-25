@@ -6,9 +6,9 @@ import IxVMRefinement.Claim.RefSafety
 import IxVMRefinement.Assembly.TypingSkeleton
 import IxVMRefinement.Assembly.TypingDefnStep
 import IxVMRefinement.StatementRel.LoadedReadsWalked
-import IxVMRefinement.Obs.KernelRoles
-import IxVMRefinement.Obs.KernelRoleSpec0
-import IxVMRefinement.Obs.KernelClaim1
+import IxVM.Obs.KernelRoles
+import IxVM.Obs.KernelRoleSpec
+import IxVM.Obs.KernelClaim
 
 /-! # The claim layer's walk export for the typing half
 

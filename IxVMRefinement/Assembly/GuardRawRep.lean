@@ -1,6 +1,6 @@
 import IxVMRefinement.Subst.Steps
 import IxVMRefinement.Levels.Smart
-import IxVMRefinement.Obs.KernelGuard0
+import IxVM.Obs.KernelGuard
 
 /-! # Representation preservation by the structural classifier's substitution
 

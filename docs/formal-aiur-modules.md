@@ -74,8 +74,12 @@ specification digest's bytes. `lake exe ix codegen --check` checks freshness.
 The `ixvm-source` test (`lake exe formal-package-tests`) compares the public
 program, tables, and bytecode with full native preparation of the declaration
 metadata.
-`lake exe ixvm/ixvm-proof-gen --check` checks the derived lookup and mirror
-proof scripts; the lookup lemma for the example is `IxVM.KernelWhnf.whnf.lookup`.
+The semantic helpers the proofs are written against are derived from
+`IxVM.source` when their modules are elaborated (`Aiur.Generic.Derive`, through
+the commands of `IxVM/IxVM/Derive.lean`): the lookup facts (`IxVM.Lookup`), the
+mirrors (`IxVM.Mirrors.*`) and the path lemmas (`IxVM.Obs.*`).
+No file is generated and nothing is run by hand; the lookup lemma for the
+example is `IxVM.KernelWhnf.whnf.lookup`.
 
 `MultiStark/MultiStark/Modules/*.lean` hold proof and system decoding,
 transcript, hash adapters, Merkle verification, PCS, the STARK verifier, and

@@ -3,8 +3,8 @@ import IxVMRefinement.Binding.PayloadAdvice
 import IxVMRefinement.FamilyGraph.InnerChecked
 import IxVMRefinement.Callees.Modeled
 import IxVMRefinement.Lib.Lists
-import IxVMRefinement.Obs.KernelModeled
-import IxVMRefinement.Obs.KernelClaim
+import IxVM.Obs.KernelModeled
+import IxVM.Obs.KernelClaim
 
 /-! # What a family check's own loads give of the records it names
 

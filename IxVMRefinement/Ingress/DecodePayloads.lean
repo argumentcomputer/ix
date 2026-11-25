@@ -1,7 +1,7 @@
 import Ix.IxVM.Refinement.DeserializeBinders
 import IxC.Ixon.Verify.BoundedConstant
 import IxC.Ixon.Verify.Framing
-import IxVMRefinement.Obs.IxonDeserialize
+import IxVM.Obs.IxonDeserialize
 import IxVMRefinement.Lib.Lists
 import IxVMRefinement.Lib.Words
 import IxVMRefinement.Ingress.Hashed

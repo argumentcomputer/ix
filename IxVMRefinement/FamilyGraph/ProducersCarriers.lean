@@ -8,16 +8,11 @@ import IxVMRefinement.Binding.PayloadDirectLoads
 import IxVMRefinement.Claim.TopSeed
 import IxVMRefinement.FamilyAlias.CallLists
 import IxVMRefinement.Ingress.Ingress
-import IxVMRefinement.Obs.Convert1
-import IxVMRefinement.Obs.Ingress0
-import IxVMRefinement.Obs.KernelCheck0
-import IxVMRefinement.Obs.KernelModeled0
-import IxVMRefinement.Obs.KernelModeled2
-import IxVMRefinement.Obs.KernelModeled3
-import IxVMRefinement.Obs.KernelModeled4
-import IxVMRefinement.Obs.KernelModeled5
-import IxVMRefinement.Obs.KernelModeled6
-import IxVMRefinement.Obs.KernelTypes0
+import IxVM.Obs.Convert
+import IxVM.Obs.Ingress
+import IxVM.Obs.KernelCheck
+import IxVM.Obs.KernelModeled
+import IxVM.Obs.KernelTypes
 
 /-! # Carrier extraction, logic safety, and block uniqueness from `check_family`
 

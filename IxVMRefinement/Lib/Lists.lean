@@ -1,5 +1,5 @@
-import IxVMRefinement.Obs.Lists
-import IxVMRefinement.Core.Obs
+import IxVM.Obs.Lists
+import Aiur.Generic.Refinement.Obs
 import Aiur.Library.List.Correctness
 
 /-! # The generic `Lists` functions, over observed derivations
@@ -10,7 +10,7 @@ list operation of the same name: `length` the length (as a field element), `conc
 the concatenation, `drop`/`take` with a counter `n` the list without / with its first
 `n.val` elements (a derivation exists only for `n.val` at most the length), `lookup`
 the element at `i.val`, and so on. Each proof inverts the derivation with the
-generated path lemma (`IxVMRefinement.Obs`, `«Lists::f».obs`) and recurses on the list
+derived path lemma (`IxVM.Obs.Lists`, `«Lists::f».obs`) and recurses on the list
 or the counter.
 
 The list a derivation returns lives in the final heap; the heap only grows

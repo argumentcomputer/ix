@@ -1,5 +1,5 @@
-import IxVMRefinement.Obs.KernelLevels
-import IxVMRefinement.Core.Obs
+import IxVM.Obs.KernelLevels
+import Aiur.Generic.Refinement.Obs
 import IxVMRefinement.Levels.Rom
 import Ix.IxVM.Refinement.LevelsObs
 

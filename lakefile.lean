@@ -616,7 +616,9 @@ their own targets, and `IxVMRefinement/` (a globbed library) by the refinement
 step only; `Models/` and every directory with its own lakefile are
 other workspaces. The nested Aiur, IxVM and MultiStark packages are built
 with `--wfail` by their own CI step (`aiur/Aiur` globs every module; every
-IxVM and MultiStark module is reachable from its library or executable root). -/
+MultiStark module is reachable from its library or executable root, and so is
+every IxVM module but the derived semantic helpers `IxVM.Lookup`,
+`IxVM.Mirrors.*` and `IxVM.Obs.*`, which the refinement step builds). -/
 def coveredDirs : Array FilePath := #["Ix", "Tests", "Benchmarks", "Apps"]
 def coveredRootFiles : Array FilePath :=
   #["Ix.lean", "Main.lean", "Tests.lean", "Apps.lean"]
@@ -887,13 +889,13 @@ end IxSharingVerify
 
 section IxVMRefinement
 
-/-- **The IxVM refinement core and its generated path lemmas**: every module under
-`IxVMRefinement/` — the path lemmas `lake exe ixvm/ixvm-proof-gen` writes under
-`IxVMRefinement/Obs/` (about 100 modules, 11 MB, about 50 minutes of CPU) and the
-hand-written proofs that use them (`IxVMRefinement/Core/`). Built only by the
-refinement step, `lake build --wfail IxVMRefinement`: it is not a default target,
-its directory is not one of `coveredDirs`, and `build-all` (the lint driver) skips
-it (`separateLibs`). -/
+/-- **The IxVM refinement proofs**: every module under `IxVMRefinement/`. They are
+written against the path lemmas of the IxVM functions, which the modules `IxVM.Obs.*` of
+the IxVM package derive from `IxVM.source` when they are elaborated
+(`Aiur.Generic.Derive`): building this library builds those too, at the cost of checking
+every derived proof. Built only by the refinement step,
+`lake build --wfail IxVMRefinement`: it is not a default target, its directory is not
+one of `coveredDirs`, and `build-all` (the lint driver) skips it (`separateLibs`). -/
 lean_lib IxVMRefinement where
   globs := #[.submodules `IxVMRefinement]
 

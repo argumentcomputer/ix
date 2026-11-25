@@ -4,9 +4,9 @@ import IxVMRefinement.Lib.Words
 import IxVMRefinement.Lib.WordSub
 import IxVMRefinement.Lib.WordOps
 import IxVMRefinement.Lib.Lists
-import IxVMRefinement.Obs.KernelKlimbs
-import IxVMRefinement.Obs.IxVMCompat
-import IxVMRefinement.Obs.KernelLevels
+import IxVM.Obs.KernelKlimbs
+import IxVM.Obs.IxVMCompat
+import IxVM.Obs.KernelLevels
 
 /-! # Limbs, words and fields: the toolkit of the `Nat` natives
 

@@ -1,6 +1,6 @@
 import IxVMRefinement.Core.Rekey
 import IxVMRefinement.Lib.Bytes
-import IxVMRefinement.Obs.KernelSubst1
+import IxVM.Obs.KernelSubst
 
 /-! # Projection heads inspected by constant substitution
 

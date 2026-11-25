@@ -1,5 +1,5 @@
 import IxVMRefinement.Binding.MemberLoadPins
-import IxVMRefinement.Obs.KernelRoleSpec1
+import IxVM.Obs.KernelRoleSpec
 
 /-! # The inductives and constructors selected at the two standard-axiom families -/
 

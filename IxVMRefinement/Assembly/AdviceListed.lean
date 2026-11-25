@@ -1,6 +1,6 @@
 import IxVMRefinement.Claim.TopBase
 import IxVMRefinement.Core.Rep
-import IxVMRefinement.Obs.KernelModeled3
+import IxVM.Obs.KernelModeled
 
 /-! # The advice records a family check lists itself
 
@@ -9,7 +9,7 @@ import IxVMRefinement.Obs.KernelModeled3
 the advice walk of a family check nested in its calls (a container's recursor's check runs one, and
 so may the check of a basis role's record and its closure), is the family check's own advice
 list. Recorded calls do not mark which call made which, so the walk is read off the family check's
-unfolding, `«KernelModeled::check_family».Path.run` (generated, `Obs/KernelModeled3.lean`).
+unfolding, `«KernelModeled::check_family».Path.run` (derived, `IxVM.Obs.KernelModeled`).
 
 * `FamilyOwnAdvice`: the family check's unfolding paired with its own witness walk, witness set
   build, and advice walk reading `advAs`;

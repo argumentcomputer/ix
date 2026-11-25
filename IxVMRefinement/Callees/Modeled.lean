@@ -3,9 +3,8 @@ import IxVMRefinement.Core.Open
 import IxVMRefinement.Core.RomBound
 import IxVMRefinement.Lib.Bytes
 import IxVMRefinement.Lib.Lists
-import IxVMRefinement.Obs.KernelCheck
-import IxVMRefinement.Obs.KernelModeled
-import IxVMRefinement.Obs.KernelModeled0
+import IxVM.Obs.KernelCheck
+import IxVM.Obs.KernelModeled
 
 /-! # Recursor parent scan and modeled-route gates
 

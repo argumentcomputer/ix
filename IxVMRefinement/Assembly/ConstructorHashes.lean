@@ -1,6 +1,6 @@
 import IxVMRefinement.Core.CallHeaps
 import IxVMRefinement.Callees.ProjAddr
-import IxVMRefinement.Obs.KernelCheck
+import IxVM.Obs.KernelCheck
 import Ix.IxVM.Consistency.ReaderFootprint
 
 /-! # Constructor hashes observed during block checking -/

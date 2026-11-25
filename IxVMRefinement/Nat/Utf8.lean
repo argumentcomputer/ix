@@ -1,5 +1,5 @@
 import IxVMRefinement.Core.Registry
-import IxVMRefinement.Obs.KernelNatPrim
+import IxVM.Obs.KernelNatPrim
 import IxVMRefinement.Lib.Words
 import IxVMRefinement.Lib.Lists
 import Mathlib.Tactic.Ring

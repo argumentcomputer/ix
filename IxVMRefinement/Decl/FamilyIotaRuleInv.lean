@@ -2,7 +2,7 @@ import IxVMRefinement.Decl.ModeledRules
 
 /-! # Inversion of `KernelModeled::check_iota_rule`
 
-`KernelModeled::check_iota_rule` has no generated path lemma (`IxVMRefinement/Obs.lean` skips it
+`KernelModeled::check_iota_rule` has no derived path lemma (`Aiur.Generic.Derive.Obs` skips it
 as too costly), so its observation is inverted here by hand over `ObsFn`/`ObsExpr`, step by step
 through the source body (`IxVM/IxVM/Source/KernelModeled.lean`).
 

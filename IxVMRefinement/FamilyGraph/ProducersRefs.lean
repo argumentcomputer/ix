@@ -5,22 +5,14 @@ import IxVMRefinement.FamilyGraph.ProducersCallTree
 import IxVMRefinement.Binding.PayloadDirectLoads
 import IxVMRefinement.Claim.RefSafetyExcept
 import IxVMRefinement.Claim.TopCheckFacts
-import IxVMRefinement.Obs.Ingress0
-import IxVMRefinement.Obs.IxonDeserialize0
-import IxVMRefinement.Obs.KernelCheck2
-import IxVMRefinement.Obs.KernelCheck3
-import IxVMRefinement.Obs.KernelCheck10
-import IxVMRefinement.Obs.KernelCheck12
-import IxVMRefinement.Obs.KernelCheck13
-import IxVMRefinement.Obs.KernelClaim0
-import IxVMRefinement.Obs.KernelDefEq3
-import IxVMRefinement.Obs.KernelModeled0
-import IxVMRefinement.Obs.KernelModeled1
-import IxVMRefinement.Obs.KernelModeled2
-import IxVMRefinement.Obs.KernelModeled3
-import IxVMRefinement.Obs.KernelModeled4
-import IxVMRefinement.Obs.KernelRoles
-import IxVMRefinement.Obs.RBTreeMap0
+import IxVM.Obs.Ingress
+import IxVM.Obs.IxonDeserialize
+import IxVM.Obs.KernelCheck
+import IxVM.Obs.KernelClaim
+import IxVM.Obs.KernelDefEq
+import IxVM.Obs.KernelModeled
+import IxVM.Obs.KernelRoles
+import IxVM.Obs.RBTreeMap
 
 /-! # Reference closure and container witness obligations from `check_family`
 

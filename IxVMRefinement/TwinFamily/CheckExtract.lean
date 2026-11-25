@@ -15,11 +15,8 @@ import IxVMRefinement.Decl.NativeCommon
 import IxVMRefinement.Decl.NativeRecFieldRange
 import IxVMRefinement.Core.Det
 import IxVMRefinement.Core.Rekey
-import IxVMRefinement.Obs.KernelModeled0
-import IxVMRefinement.Obs.KernelModeled3
-import IxVMRefinement.Obs.KernelModeled4
-import IxVMRefinement.Obs.KernelModeled5
-import IxVMRefinement.Obs.KernelCheck8
+import IxVM.Obs.KernelModeled
+import IxVM.Obs.KernelCheck
 import IxVMRefinement.Claim.TopDefn
 import IxVMRefinement.StatementRel.ClosedFacts
 import IxVMRefinement.Assembly.TypingStore

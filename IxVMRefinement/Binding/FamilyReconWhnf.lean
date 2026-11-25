@@ -1,6 +1,6 @@
 import IxVMRefinement.Binding.FamilyReconBVars
-import IxVMRefinement.Obs.KernelWhnf
-import IxVMRefinement.Obs.KernelCheck11
+import IxVM.Obs.KernelWhnf
+import IxVM.Obs.KernelCheck
 
 /-! # The reconstruction's head normalization on `TmOExact` (without `UnfoldAnswers` or `ProjAnswers`)
 

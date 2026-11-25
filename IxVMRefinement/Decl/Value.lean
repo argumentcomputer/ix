@@ -1,8 +1,8 @@
 import IxVMRefinement.Decl.Common
 import IxVMRefinement.Core.Roles
-import IxVMRefinement.Obs.KernelCheck
-import IxVMRefinement.Obs.KernelRoles
-import IxVMRefinement.Obs.KernelRoleSpec
+import IxVM.Obs.KernelCheck
+import IxVM.Obs.KernelRoles
+import IxVM.Obs.KernelRoleSpec
 
 /-! # Value, Axiom, Opaque, Theorem, Quotient, and Basis Declarations
 

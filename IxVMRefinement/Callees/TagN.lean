@@ -1,7 +1,7 @@
 import IxVMRefinement.Core.Registry
 import IxVMRefinement.Lib.WordHints
 import IxVMRefinement.Lib.Bytes
-import IxVMRefinement.Obs.IxonSerialize0
+import IxVM.Obs.IxonSerialize
 
 /-! # TagN and little-endian `UInt64` writers (`IxonSerialize0`)
 

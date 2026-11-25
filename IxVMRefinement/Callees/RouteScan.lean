@@ -4,7 +4,7 @@ import IxVMRefinement.Decl.NativeCommon
 import IxVMRefinement.Ingress.Ingress
 import IxVMRefinement.Ingress.TraceRecords
 import IxVMRefinement.Claim.TopProj
-import IxVMRefinement.Obs
+import IxVM.Obs
 
 /-! # The nested-occurrence scan of the dispatch, as a function of the scanned term
 

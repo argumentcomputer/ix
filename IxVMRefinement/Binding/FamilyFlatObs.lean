@@ -1,13 +1,7 @@
 import IxVMRefinement.Binding.FamilyReconCanon
 import IxVMRefinement.Core.SpineChain
-import IxVMRefinement.Obs.KernelCheck0
-import IxVMRefinement.Obs.KernelCheck1
-import IxVMRefinement.Obs.KernelCheck2
-import IxVMRefinement.Obs.KernelCheck3
-import IxVMRefinement.Obs.KernelCheck4
-import IxVMRefinement.Obs.KernelModeled3
-import IxVMRefinement.Obs.KernelModeled4
-import IxVMRefinement.Obs.KernelModeled6
+import IxVM.Obs.KernelCheck
+import IxVM.Obs.KernelModeled
 
 /-! # Flattened-family observation refinement on `TmOExact`
 

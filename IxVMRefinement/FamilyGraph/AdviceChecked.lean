@@ -2,8 +2,7 @@ import IxVMRefinement.Claim.TopBase
 import IxVMRefinement.Assembly.FamilyAdviceWalk
 import IxVMRefinement.Assembly.TypingSkeleton
 import IxVMRefinement.Ingress.Decode
-import IxVMRefinement.Obs.KernelModeled1
-import IxVMRefinement.Obs.KernelModeled2
+import IxVM.Obs.KernelModeled
 
 /-! # The checks a family check runs on its advice records
 

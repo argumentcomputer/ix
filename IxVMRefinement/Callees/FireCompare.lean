@@ -1,6 +1,5 @@
 import IxVMRefinement.Callees.FireAux
-import IxVMRefinement.Obs.KernelModeled
-import IxVMRefinement.Obs.KernelModeled1
+import IxVM.Obs.KernelModeled
 
 /-! # Modeled recursor firing (`KernelModeled::fire_compare`, `KernelModeled::fire_ok`)
 
