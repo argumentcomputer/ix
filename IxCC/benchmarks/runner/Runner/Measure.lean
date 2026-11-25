@@ -89,9 +89,14 @@ def measureProcess (manifest : Manifest) (out : FilePath) (cpu blocks : Nat)
   let fixtures := manifest.fixtures.filter fun f => only.all (·.contains f.name)
   let env ← environment cpu
   let mut samples : Array Sample := #[]
+  let mut digests : Array Json := #[]
   for (fixture, index) in fixtures.toList.zipIdx do
-    let rows ← builtRows out false fixture
-    if rows.isEmpty then continue
+    let rowsWithDigests ← builtRowsWithDigests out false fixture
+    if rowsWithDigests.isEmpty then continue
+    let rows := rowsWithDigests.map (·.1)
+    for (row, sha) in rowsWithDigests do
+      digests := digests.push (Json.mkObj [
+        ("fixture", Json.str fixture.name), ("row", Json.str row.name), ("sha256", Json.str sha)])
     -- One untimed warm-up run per row (page cache, binary loading).
     for row in rows do
       let _ ← run "taskset" (["-c", toString cpu, (binary out row fixture).toString] ++ fixture.benchArgs)
@@ -109,6 +114,7 @@ def measureProcess (manifest : Manifest) (out : FilePath) (cpu blocks : Nat)
   IO.FS.writeFile (out / "samples.json") ((Json.mkObj [
     ("format", Json.str "ixcc/benchmark-samples/1"),
     ("environment", env), ("environment_end", ← environment cpu), ("blocks", toJson blocks),
+    ("binary_sha256", Json.arr digests),
     ("samples", Json.arr (samples.map Sample.json))]).pretty ++ "\n")
 
 /-! ## Entry profile -/
@@ -180,11 +186,16 @@ def calibrate (manifest : Manifest) (out : FilePath) (cpu targetMs : Nat) (only 
 def planFor (plans : List (String × String × Plan)) (fixture : Fixture) (row : Row) : Option Plan :=
   (plans.find? fun (f, r, _) => f == fixture.name && r == row.name).map (·.2.2)
 
+/-- The selected rows of a fixture with a verified built binary (and digest) and a plan. -/
+def plannedRowsWithDigests (out : FilePath) (plans : List (String × String × Plan)) (rows : Option (List String))
+    (fixture : Fixture) : IO (List (Row × Plan × String)) := do
+  return ((← builtRowsWithDigests out true fixture).filter (fun (r, _) => rowSelected rows r)).filterMap
+    fun (row, sha) => (planFor plans fixture row).map fun p => (row, p, sha)
+
 /-- The selected rows of a fixture with a binary and a plan. -/
 def plannedRows (out : FilePath) (plans : List (String × String × Plan)) (rows : Option (List String))
     (fixture : Fixture) : IO (List (Row × Plan)) := do
-  return ((← builtRows out true fixture).filter (rowSelected rows)).filterMap fun row =>
-    (planFor plans fixture row).map (row, ·)
+  return (← plannedRowsWithDigests out plans rows fixture).map fun (r, p, _) => (r, p)
 
 /-! ## Quiet blocks
 
@@ -268,10 +279,15 @@ def measureEntry (manifest : Manifest) (out : FilePath) (cpu blocks : Nat) (only
   let sibs ← siblings cpu
   let controller ← controllerCpu
   let mut samples : Array Json := #[]
+  let mut digests : Array Json := #[]
   let mut invalid := 0
   for (fixture, index) in (manifest.fixtures.filter fun f => only.all (·.contains f.name)).toList.zipIdx do
-    let rows ← plannedRows out plans rows fixture
-    if rows.isEmpty then continue
+    let rowsWithDigests ← plannedRowsWithDigests out plans rows fixture
+    if rowsWithDigests.isEmpty then continue
+    let rows := rowsWithDigests.map fun (r, p, _) => (r, p)
+    for (row, _, sha) in rowsWithDigests do
+      digests := digests.push (Json.mkObj [
+        ("fixture", Json.str fixture.name), ("row", Json.str row.name), ("sha256", Json.str sha)])
     let some want := fixture.benchExpected.map trimmed
       | throw (IO.userError s!"{fixture.name}: no bench_expected")
     -- one untimed process per row (page cache, binary loading)
@@ -317,6 +333,7 @@ def measureEntry (manifest : Manifest) (out : FilePath) (cpu blocks : Nat) (only
           ("attempts", toJson g.attempts), ("sibling_max", toJson 0.10)]
       | none => Json.null),
     ("invalid_attempts", toJson invalid),
+    ("binary_sha256", Json.arr digests),
     ("samples", Json.arr samples)]).pretty ++ "\n")
   IO.println s!"invalid block attempts: {invalid}"
 

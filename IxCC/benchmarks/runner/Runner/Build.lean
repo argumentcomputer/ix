@@ -33,6 +33,25 @@ def run (cmd : String) (args : List String) (cwd : Option FilePath := none)
     throw (IO.userError s!"{cmd} {" ".intercalate args} exited {output.exitCode}:\n{output.stderr}")
   return output
 
+/-- Remove `path` if it exists so a failed rebuild can never leave a stale artifact behind. -/
+def removeIfExists (path : FilePath) : IO Unit := do
+  if ← path.pathExists then
+    try IO.FS.removeFile path catch _ => pure ()
+
+/-- Compute the lowercase hex SHA-256 digest of `path` using `sha256sum`. -/
+def fileSha256 (path : FilePath) : IO String := do
+  let out ← run "sha256sum" [path.toString]
+  let some hex := (out.stdout.splitOn " ").head?
+    | throw (IO.userError s!"sha256sum returned empty output for {path}")
+  let hex := hex.trimAscii.toString
+  if hex.length != 64 then
+    throw (IO.userError s!"unexpected sha256sum digest '{hex}' for {path}")
+  return hex
+
+/-- Compute the SHA-256 digest of `path` if it exists, otherwise `none`. -/
+def fileSha256? (path : FilePath) : IO (Option String) := do
+  if ← path.pathExists then some <$> fileSha256 path else pure none
+
 /-- The process profile's binary of `row` for `fixture`. -/
 def binary (out : FilePath) (row : Row) (fixture : Fixture) : FilePath :=
   out / "bin" / row.name / fixture.name
@@ -131,10 +150,12 @@ structure Status where
   fixture : String
   status : String
   detail : String := ""
+  sha256 : Option String := none
 
 def Status.json (s : Status) : Json :=
-  Json.mkObj [("profile", Json.str s.profile), ("row", Json.str s.row),
-    ("fixture", Json.str s.fixture), ("status", Json.str s.status), ("detail", Json.str s.detail)]
+  Json.mkObj ([("profile", Json.str s.profile), ("row", Json.str s.row),
+    ("fixture", Json.str s.fixture), ("status", Json.str s.status), ("detail", Json.str s.detail)] ++
+    match s.sha256 with | some h => [("sha256", Json.str h)] | none => [])
 
 /-! ## The ixcc row's object -/
 
@@ -142,13 +163,20 @@ def Status.json (s : Status) : Json :=
 `ok` with the wall time and `--stats` text, or the compiler's diagnostic. -/
 def compileClosure (o : Options) (out : FilePath) (fixture : Fixture) (arity : Nat) :
     IO (Except String (Float × String)) := do
-  let closure := o.closures / s!"{fixture.name}.ixe"
-  let equations := o.closures / s!"{fixture.name}.equations.json"
-  unless ← closure.pathExists do return .error s!"no frozen closure {closure}"
   let dir := out / "ixcc"
   IO.FS.createDirAll dir
   let obj := dir / s!"{fixture.name}.o"
   let sig := dir / s!"{fixture.name}.sig.json"
+  let statsFile := dir / s!"{fixture.name}.stats.txt"
+  let irFile := dir / s!"{fixture.name}.ir.txt"
+  -- Invalidate any stale object/metadata from an earlier run before compiling.
+  removeIfExists obj
+  removeIfExists sig
+  removeIfExists statsFile
+  removeIfExists irFile
+  let closure := o.closures / s!"{fixture.name}.ixe"
+  let equations := o.closures / s!"{fixture.name}.equations.json"
+  unless ← closure.pathExists do return .error s!"no frozen closure {closure}"
   let common := ["compile", closure.toString, "--equations", equations.toString,
     "-o", obj.toString]
   let cmd := o.ixcc.headD "ixcc"
@@ -157,11 +185,13 @@ def compileClosure (o : Options) (out : FilePath) (fixture : Fixture) (arity : N
   let output ← IO.Process.output { cmd, args := (lead ++ common ++ ["--signatures", sig.toString, "--stats"]).toArray }
   let stop ← IO.monoNanosNow
   if output.exitCode != 0 then
+    removeIfExists obj
+    removeIfExists sig
     return .error (output.stderr.trimAscii.toString)
-  IO.FS.writeFile (dir / s!"{fixture.name}.stats.txt") output.stdout
+  IO.FS.writeFile statsFile output.stdout
   -- the IR at every level, for attribution (an untimed second run)
   let dump ← IO.Process.output { cmd, args := (lead ++ common ++ ["--dump-ir", "all"]).toArray }
-  IO.FS.writeFile (dir / s!"{fixture.name}.ir.txt") dump.stdout
+  IO.FS.writeFile irFile dump.stdout
   -- the root must be `entry` with the fixture's arity and a Nat result
   let json ← IO.ofExcept (Json.parse (← IO.FS.readFile sig))
   let roots ← IO.ofExcept ((json.getObjValD "roots").getArr?)
@@ -171,8 +201,11 @@ def compileClosure (o : Options) (out : FilePath) (fixture : Fixture) (arity : N
     let ty := (root.getObjValD "type").getStr?.toOption
     let symbol := (root.getObjValD "symbol").getStr?.toOption
     unless params == some arity && ty == some "n" && symbol == some "cx_entry" do
+      removeIfExists obj
       return .error s!"unexpected root signature {root.compress}"
-  | _ => return .error s!"expected one root, got {roots.size}"
+  | _ =>
+    removeIfExists obj
+    return .error s!"expected one root, got {roots.size}"
   return .ok ((stop - start).toFloat / 1e6, output.stdout)
 
 /-! ## Entry-profile objects shared by rows -/
@@ -206,6 +239,7 @@ def buildEntryRow (o : Options) (root out : FilePath) (row : Row) (fixture : Fix
   IO.FS.createDirAll obj
   let target := entryBinary out row fixture
   IO.FS.createDirAll (target.parent.getD out)
+  removeIfExists target
   let driver := (out / "entry-obj" / "driver.o").toString
   let here ← IO.FS.realPath "entry"
   let fixtureMacro := s!"-DFIXTURE_{fixture.ident}"
@@ -280,6 +314,7 @@ def buildProcessRow (o : Options) (manifest : Manifest) (root out : FilePath) (r
     IO (Option String) := do
   let target := binary out row fixture
   IO.FS.createDirAll (target.parent.getD out)
+  removeIfExists target
   match row with
   | .leanClang =>
     let c := out / "c" / (fixture.name ++ ".c")
@@ -324,6 +359,8 @@ def buildProcessRow (o : Options) (manifest : Manifest) (root out : FilePath) (r
 def build (manifest : Manifest) (root out : FilePath) (o : Options) : IO Unit := do
   IO.FS.createDirAll out
   let out ← IO.FS.realPath out
+  -- Remove any stale build manifest before rebuilding so a failed build cannot leave yesterday's record.
+  removeIfExists (out / "build.json")
   let fixtures := manifest.fixtures.filter o.selects
   -- shared entry-profile objects
   let common := out / "entry-obj"
@@ -365,11 +402,15 @@ def build (manifest : Manifest) (root out : FilePath) (o : Options) : IO Unit :=
         IO.eprintln s!"ixcc/{fixture.name}: {why}"
       for row in Row.entry ++ o.variants.map (Row.variant ·.1) do
         match ← buildEntryRow o root out row fixture k with
-        | some s => statuses := statuses.push { profile := "entry", row := row.name, fixture := fixture.name, status := s }
+        | some s =>
+          let digest ← if s == "built" then some <$> fileSha256 (entryBinary out row fixture) else pure none
+          statuses := statuses.push { profile := "entry", row := row.name, fixture := fixture.name, status := s, sha256 := digest }
         | none => pure ()
     for row in Row.process do
       match ← buildProcessRow o manifest root out row fixture getGmpFlags with
-      | some s => statuses := statuses.push { profile := "process", row := row.name, fixture := fixture.name, status := s }
+      | some s =>
+        let digest ← if s == "built" then some <$> fileSha256 (binary out row fixture) else pure none
+        statuses := statuses.push { profile := "process", row := row.name, fixture := fixture.name, status := s, sha256 := digest }
       | none => pure ()
     IO.println s!"built {fixture.name}"
   IO.FS.writeFile (out / "build.json") ((Json.mkObj [
@@ -389,17 +430,57 @@ def build (manifest : Manifest) (root out : FilePath) (o : Options) : IO Unit :=
 
 /-! ## Check -/
 
-/-- The rows of a profile whose binary exists for `fixture`. -/
+/-- A build record loaded from `build.json`. -/
+structure BuildRecord where
+  profile : String
+  row : String
+  fixture : String
+  status : String
+  sha256 : Option String
+
+/-- Load all recorded row build outcomes from `OUT/build.json`. -/
+def loadBuildRecords (out : FilePath) : IO (Array BuildRecord) := do
+  let path := out / "build.json"
+  unless ← path.pathExists do
+    throw (IO.userError s!"missing build manifest {path}; run `build` first")
+  let json ← IO.ofExcept ((Json.parse (← IO.FS.readFile path)).mapError IO.userError)
+  let raw ← IO.ofExcept (((json.getObjValD "statuses").getArr?).mapError IO.userError)
+  raw.mapM fun e => IO.ofExcept ((do
+    return {
+      profile := ← (← e.getObjVal? "profile").getStr?
+      row := ← (← e.getObjVal? "row").getStr?
+      fixture := ← (← e.getObjVal? "fixture").getStr?
+      status := ← (← e.getObjVal? "status").getStr?
+      sha256 := (e.getObjValD "sha256").getStr?.toOption
+    } : Except String BuildRecord).mapError IO.userError)
+
+/-- The rows of a profile that `build.json` records as `"built"` for `fixture`,
+after verifying each executable exists on disk and matches its recorded SHA-256 digest. -/
+def builtRowsWithDigests (out : FilePath) (entry : Bool) (fixture : Fixture) :
+    IO (List (Row × String)) := do
+  let records ← loadBuildRecords out
+  let profile := if entry then "entry" else "process"
+  let matching := records.filter fun r =>
+    r.profile == profile && r.fixture == fixture.name && r.status == "built"
+  let mut result : List (Row × String) := []
+  for rec in matching do
+    let some row := Row.ofName? rec.row
+      | throw (IO.userError s!"build.json: unknown row '{rec.row}' for {fixture.name}")
+    let path := if entry then entryBinary out row fixture else binary out row fixture
+    unless ← path.pathExists do
+      throw (IO.userError s!"build.json records {profile}/{rec.row}/{fixture.name} as built, but {path} is missing")
+    let some expected := rec.sha256
+      | throw (IO.userError s!"build.json entry for {profile}/{rec.row}/{fixture.name} is missing sha256; re-run `build`")
+    let actual ← fileSha256 path
+    if actual != expected then
+      throw (IO.userError s!"digest mismatch for {path}: build.json has {expected}, on-disk binary has {actual}")
+    unless result.any (·.1 == row) do
+      result := result ++ [(row, actual)]
+  return result
+
+/-- The rows of a profile verified against `build.json` and their on-disk SHA-256 digests. -/
 def builtRows (out : FilePath) (entry : Bool) (fixture : Fixture) : IO (List Row) := do
-  let variants ← if entry && (← (out / "entry").pathExists) then do
-      let dirs ← (out / "entry").readDir
-      let names := (dirs.map (·.fileName)).qsort (· < ·) |>.toList
-      pure (names.filterMap fun n => match Row.ofName? n with
-        | some (.variant v) => some (Row.variant v)
-        | _ => none)
-    else pure []
-  (if entry then Row.entry ++ variants else Row.process).filterM fun row =>
-    (if entry then entryBinary out row fixture else binary out row fixture).pathExists
+  return (← builtRowsWithDigests out entry fixture).map (·.1)
 
 def trimmed (s : String) : String := s.trimAscii.toString
 
