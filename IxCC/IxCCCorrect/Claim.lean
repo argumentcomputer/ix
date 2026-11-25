@@ -63,6 +63,29 @@ def ArgTy.natCount : List ArgTy → Nat
   | 0 => rfl
   | n + 1 => by simp [List.replicate_succ, natCount, natCount_replicate_nat n]
 
+/-- A field of a first-order data constructor (owner-approved P2): a `Nat`, or a value of type
+`ty` of the data family. -/
+inductive FieldTy where
+  | nat
+  | sub (ty : Nat)
+  deriving DecidableEq, Repr, Inhabited
+
+/-- One constructor of a first-order data type: its address and its fields. -/
+structure DataCtor where
+  addr : Ixon.Address
+  fields : List FieldTy
+  deriving DecidableEq, Repr, Inhabited
+
+/-- **A first-order data family** (owner-approved P2): the levels and the closed parameters
+(kernel terms) every constructor is applied at, each type's constructors in the order of the
+index the executable prints, and the result's type. -/
+structure DataTy where
+  levels : List Ix.Kernel.Level
+  params : List (Ix.Kernel.Expr .anon)
+  types : List (List DataCtor)
+  root : Nat
+  deriving DecidableEq, Repr, Inhabited
+
 /-- The type of a root's result. -/
 inductive ResTy where
   /-- Lean's `Nat`. -/
@@ -74,7 +97,27 @@ inductive ResTy where
   /-- An unsigned word of `bits` bits (owner-approved P5): the answer is its number, the
   kernel term `UIntN.ofNat` (the constant at `ofNat`) applied to that number. -/
   | word (bits : Nat) (ofNat : Ixon.Address)
+  /-- A first-order data value (owner-approved P2): a constructor tree of the family `ty`. -/
+  | data (ty : DataTy)
   deriving DecidableEq, Repr, Inhabited
+
+/-- **An answer** (owner-approved P2): a number, at a `Nat` or a word result; or a constructor at
+its index with its fields' answers (an enumeration's constructor has none). -/
+inductive Answer where
+  | nat (n : Nat)
+  | node (ctor : Nat) (fields : List Answer)
+  deriving Repr, Inhabited
+
+mutual
+/-- The bytes of a data answer: a number in decimal, a node as `(#k f₁ … fₙ)`. -/
+def Answer.renderTree : Answer → List UInt8
+  | .nat n => X86.Exe.Plain.natDecimal n
+  | .node k fs => [40, 35] ++ X86.Exe.Plain.natDecimal k ++ Answer.renderFields fs ++ [41]
+/-- The fields of a node, each after a space. -/
+def Answer.renderFields : List Answer → List UInt8
+  | [] => []
+  | a :: as => [32] ++ Answer.renderTree a ++ Answer.renderFields as
+end
 
 /-- How arguments reach the process and how the result leaves it. A byte-array
 convention (standard input to standard output) is a second constructor here and a
@@ -105,6 +148,7 @@ def resultKind (abi : Abi) : X86.Exe.ResultKind :=
   | .nat => .nat
   | .enum ctors => .enum ctors.length
   | .word _ _ => .nat
+  | .data _ => .nat
 
 /-- One argument: a non-empty string of ASCII digits, read in decimal. There is no
 upper bound: the argument is a Lean `Nat`. (Today's shell refuses a numeral at or
@@ -118,10 +162,14 @@ that is not a numeral. -/
 def parse (abi : Abi) (args : List (List Nat)) : Option (List Nat) :=
   if args.length = abi.arity then args.mapM parseArg else none
 
-/-- The bytes an answer is written as: a `Nat` result's value, or an enumeration
-result's constructor index (`X86.Exe.Plain.renderPlain`). -/
-def render (abi : Abi) (answer : Nat) : List UInt8 :=
-  X86.Exe.Plain.renderPlain abi.resultKind answer
+/-- The bytes an answer is written as: a number as `X86.Exe.Plain.renderPlain` writes it (a
+`Nat` or word result's value, an enumeration's constructor index); a data answer as its tree
+(`Answer.renderTree`) and a newline (owner-approved P2; the shell does not write trees yet). -/
+def render (abi : Abi) (answer : Answer) : List UInt8 :=
+  match abi.result, answer with
+  | .data _, a => a.renderTree ++ [10]
+  | _, .nat n => X86.Exe.Plain.renderPlain abi.resultKind n
+  | _, .node k _ => X86.Exe.Plain.renderPlain abi.resultKind k
 
 end Abi
 

@@ -120,6 +120,7 @@ def showAbi (abi : Abi) : String :=
     | .nat => "Nat"
     | .enum cs => s!"enum of {cs.length}"
     | .word bits _ => s!"word of {bits} bits"
+    | .data _ => "data"
   s!"{abi.params.length} Nat -> {res}"
 
 def bump (key : String) : List (String × Nat) → List (String × Nat)

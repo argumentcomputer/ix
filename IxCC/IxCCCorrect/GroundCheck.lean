@@ -462,6 +462,22 @@ theorem GroundOk.result_not_word {acc : Src.KernelFront.Accepted} {src : Program
     rw [h1] at hw
     cases hw
 
+/-- What `groundCheck` validates is never a data result (P2: data results are not grounded yet). -/
+theorem GroundOk.result_not_data {acc : Src.KernelFront.Accepted} {src : Program}
+    {I : Lam.Erase.Input} {view : View} {target : Ixon.Address} {abi : Abi}
+    (h : GroundOk acc src I view target abi) (ty : DataTy) : abi.result ≠ ResTy.data ty := by
+  obtain ⟨κ, lpsOf, ann, Sl, Inst, root, res, -, -, -, -, -, hRes⟩ := h
+  intro hw
+  cases res with
+  | nat =>
+    have h1 : abi.result = ResTy.nat := hRes
+    rw [h1] at hw
+    cases hw
+  | enum D =>
+    obtain ⟨addrs, h1, -⟩ := hRes
+    rw [h1] at hw
+    cases hw
+
 /-- **The check is sound**: an accepting `groundCheck` gives the hypotheses of the composed
 theorems. -/
 theorem groundCheck_sound {k : Src.KernelFront.Kernel} {src : Program}

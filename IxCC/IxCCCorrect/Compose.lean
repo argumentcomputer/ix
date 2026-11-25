@@ -188,11 +188,9 @@ theorem returnsCanon_of_at {src : Program} {ns : List Nat} (h : ReturnsCanonAt s
 
 /-- The observation an answer is returned as: its number at a `Nat` result, the constructor at
 its index at an enumeration. -/
-def abiObs (abi : Abi) (answer : Nat) : Obs :=
-  match abi.result with
-  | .nat => .nat answer
-  | .enum _ => .ctor answer []
-  | .word _ _ => .nat answer
+def abiObs (_ : Abi) : Answer → Obs
+  | .nat n => .nat n
+  | .node t _ => .ctor t []
 
 /-- **Where the checked source evaluates to an observation, that observation is an answer that
 agrees with the kernel meaning of the target.** `GroundOk` is what `groundCheck` established;
@@ -225,7 +223,7 @@ theorem agrees_of_srcPlainEval {claim : Claim} {acc : Src.KernelFront.Accepted} 
     obtain ⟨n, rfl⟩ := hcan
     have ho : o = .nat n := hnat n o (by rw [obsOf_lit] at hview'; exact hview')
     have hr : claim.abi.result = ResTy.nat := hRes
-    refine ⟨n, by rw [ho]; simp only [abiObs, hr], ?_⟩
+    refine ⟨.nat n, by rw [ho]; rfl, ?_⟩
     unfold Agrees
     refine ⟨κ root, litE n, hkey, by simp only [answerTerm, hr], ?_⟩
     rw [hargT]
@@ -240,7 +238,7 @@ theorem agrees_of_srcPlainEval {claim : Claim} {acc : Src.KernelFront.Accepted} 
       rw [obsOf_con hl, hvt] at hview'
       cases hview'
       rfl
-    refine ⟨t, by rw [ho]; simp only [abiObs, hr], ?_⟩
+    refine ⟨.node t [], by rw [ho]; rfl, ?_⟩
     unfold Agrees
     refine ⟨κ root, .const (κ c) [], hkey,
       by simp only [answerTerm, hr, haddr, Option.bind_some, hk, Option.map_some], ?_⟩

@@ -248,7 +248,7 @@ theorem is needed. -/
 theorem agrees_unique_iota {claim : Claim} {acc : Src.KernelFront.Accepted}
     (hV : ∃ V : Type u, Nonempty (Ix.Kernel.SetTheory V))
     (hB : numeralBasisIB acc.env = true) (hres : claim.abi.result = ResTy.nat)
-    {xs : List Nat} {a b : Nat} (ha : Agrees.{u} claim acc xs a) (hb : Agrees.{u} claim acc xs b) :
+    {xs : List Nat} {a b : Answer} (ha : Agrees.{u} claim acc xs a) (hb : Agrees.{u} claim acc xs b) :
     a = b := by
   obtain ⟨V, ⟨inst⟩⟩ := hV
   haveI : Ix.Kernel.SetTheory V := inst
@@ -258,9 +258,15 @@ theorem agrees_unique_iota {claim : Claim} {acc : Src.KernelFront.Accepted}
   obtain ⟨t2, o2, hk2, ht2, hs2⟩ := hb
   rw [hk1] at hk2
   cases hk2
-  simp only [answerTerm, hres, Option.some.injEq] at ht1 ht2
-  subst ht1
-  subst ht2
-  exact sameDenotation_lit_unique_iota (numeralBasisI_of_check hB) M hs1 hs2
+  cases a with
+  | node _ _ => simp [answerTerm, hres] at ht1
+  | nat na =>
+    cases b with
+    | node _ _ => simp [answerTerm, hres] at ht2
+    | nat nb =>
+      simp only [answerTerm, hres, Option.some.injEq] at ht1 ht2
+      subst ht1
+      subst ht2
+      exact congrArg Answer.nat (sameDenotation_lit_unique_iota (numeralBasisI_of_check hB) M hs1 hs2)
 
 end IxCC.Correct

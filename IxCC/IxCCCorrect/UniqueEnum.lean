@@ -351,7 +351,7 @@ theorem agrees_unique_enum {claim : Claim} {acc : Src.KernelFront.Accepted}
     (hV : ∃ V : Type u, Nonempty (Ix.Kernel.SetTheory V)) {cs : List Ixon.Address}
     (hres : claim.abi.result = ResTy.enum cs) {D : KKey} {ks : List KKey} {kr : KKey}
     (hB : enumUniqueB acc cs D ks kr = true)
-    {xs : List Nat} {a b : Nat} (ha : Agrees.{u} claim acc xs a) (hb : Agrees.{u} claim acc xs b) :
+    {xs : List Nat} {a b : Answer} (ha : Agrees.{u} claim acc xs a) (hb : Agrees.{u} claim acc xs b) :
     a = b := by
   obtain ⟨V, ⟨inst⟩⟩ := hV
   haveI : Ix.Kernel.SetTheory V := inst
@@ -364,12 +364,28 @@ theorem agrees_unique_enum {claim : Claim} {acc : Src.KernelFront.Accepted}
   obtain ⟨t2, o2, hk2, ht2, hs2⟩ := hb
   rw [hk1] at hk2
   cases hk2
+  -- the answers are constructor indices
+  obtain ⟨ta, rfl⟩ : ∃ ta, a = .node ta [] := by
+    cases a with
+    | nat n => simp [answerTerm, hres] at ht1
+    | node t fs =>
+      cases fs with
+      | nil => exact ⟨t, rfl⟩
+      | cons f fs => simp [answerTerm, hres] at ht1
+  obtain ⟨tb, rfl⟩ : ∃ tb, b = .node tb [] := by
+    cases b with
+    | nat n => simp [answerTerm, hres] at ht2
+    | node t fs =>
+      cases fs with
+      | nil => exact ⟨t, rfl⟩
+      | cons f fs => simp [answerTerm, hres] at ht2
+  suffices hab : ta = tb by rw [hab]
   simp only [answerTerm, hres] at ht1 ht2
   -- the answers' constructors
-  cases hca : cs[a]? with
+  cases hca : cs[ta]? with
   | none => rw [hca] at ht1; cases ht1
   | some ca =>
-    cases hcb : cs[b]? with
+    cases hcb : cs[tb]? with
     | none => rw [hcb] at ht2; cases ht2
     | some cb =>
       rw [hca] at ht1
@@ -391,9 +407,9 @@ theorem agrees_unique_enum {claim : Claim} {acc : Src.KernelFront.Accepted}
             intro hkk
             have hla := (List.getElem?_eq_some_iff.mp hca).1
             have hlb := (List.getElem?_eq_some_iff.mp hcb).1
-            have hma : (cs.map (keyOf acc))[a]? = some (some ka) := by
+            have hma : (cs.map (keyOf acc))[ta]? = some (some ka) := by
               simp [hca, hka]
-            have hmb : (cs.map (keyOf acc))[b]? = some (some kb) := by
+            have hmb : (cs.map (keyOf acc))[tb]? = some (some kb) := by
               simp [hcb, hkb]
             rw [hkk] at hma
             exact hab ((List.Nodup.getElem?_inj (by simpa using hla) hnd).mp (hma.trans hmb.symm))

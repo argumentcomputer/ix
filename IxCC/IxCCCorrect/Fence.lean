@@ -773,6 +773,9 @@ routes and the progress targets are definitions and have no fence. -/
 /-- info: 'IxCC.Correct.GroundOk.result_not_word' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.GroundOk.result_not_word
 
+/-- info: 'IxCC.Correct.GroundOk.result_not_data' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.GroundOk.result_not_data
+
 /-! ## `IxCCCorrect.Compose` -/
 
 /-- info: 'IxCC.Correct.admits_of_ingress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -857,6 +860,9 @@ routes and the progress targets are definitions and have no fence. -/
 
 /-- info: 'IxCC.Correct.answer_lt_of_agrees' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.answer_lt_of_agrees
+
+/-- info: 'IxCC.Correct.render_eq_of_obs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.render_eq_of_obs
 
 /-- info: 'IxCC.Correct.tier1Stdout_of_outcome' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.tier1Stdout_of_outcome

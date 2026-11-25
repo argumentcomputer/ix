@@ -92,15 +92,42 @@ def SameDenotation.{w} (kenv : KEnv) (e₁ e₂ : KExpr) : Prop :=
     (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V),
     ∃ X, Ix.Kernel.Denotes M.cval kenv φ ρ e₁ X ∧ Ix.Kernel.Denotes M.cval kenv φ ρ e₂ X
 
-/-- The kernel term of an answer: a `Nat` literal, or the enumeration's constructor
-at the printed index, by the address the claim lists. -/
-def answerTerm (abi : Abi) (key : Ixon.Address → Option KKey) (answer : Nat) : Option KExpr :=
-  match abi.result with
-  | .nat => some (litE answer)
-  | .enum ctors => ((ctors[answer]?).bind key).map fun k => Ix.Kernel.Expr.const k []
-  | .word bits ofNat =>
-    if answer < 2 ^ bits then (key ofNat).map fun k => .app (.const k []) (litE answer) else none
 
+mutual
+/-- The kernel term of a data answer at type `i` of the family: the constructor at the answer's
+index, at the family's levels, applied to the family's parameters and its fields' terms. -/
+def dataTerm (ty : DataTy) (key : Ixon.Address → Option KKey) (i : Nat) :
+    Answer → Option KExpr
+  | .nat _ => none
+  | .node j fs => do
+    let cs ← ty.types[i]?
+    let c ← cs[j]?
+    let k ← key c.addr
+    let args ← dataFields ty key c.fields fs
+    pure (Ix.Kernel.Expr.mkAppN (.const k ty.levels) (ty.params ++ args))
+/-- The fields' terms: a literal at a `Nat` field, a data term at a field of the family. -/
+def dataFields (ty : DataTy) (key : Ixon.Address → Option KKey) :
+    List FieldTy → List Answer → Option (List KExpr)
+  | [], [] => some []
+  | .nat :: fts, .nat n :: fs => (dataFields ty key fts fs).map ((litE n : KExpr) :: ·)
+  | .sub i :: fts, a :: fs => do
+    let t ← dataTerm ty key i a
+    let ts ← dataFields ty key fts fs
+    pure (t :: ts)
+  | _, _ => none
+end
+
+/-- The kernel term of an answer: a `Nat` literal; the enumeration's constructor at the printed
+index, by the address the claim lists; the width's `ofNat` applied to the literal; a data
+answer's constructor tree (owner-approved P2, P5). -/
+def answerTerm (abi : Abi) (key : Ixon.Address → Option KKey) (answer : Answer) : Option KExpr :=
+  match abi.result, answer with
+  | .nat, .nat n => some (litE n)
+  | .enum ctors, .node t [] => ((ctors[t]?).bind key).map fun k => Ix.Kernel.Expr.const k []
+  | .word bits ofNat, .nat n =>
+    if n < 2 ^ bits then (key ofNat).map fun k => .app (.const k []) (litE n) else none
+  | .data ty, a => dataTerm ty key ty.root a
+  | _, _ => none
 /-- **The kernel terms the target is applied to**: the literals of the invocation's numbers at
 the `Nat` parameters, in order, and the claim's own terms at the erased ones (owner-approved P3). -/
 def argTerms : List ArgTy → List Nat → List KExpr
@@ -118,7 +145,7 @@ theorem argTerms_replicate : ∀ xs : List Nat,
 /-- **The answer agrees with the kernel meaning of the target**: in every model of
 the admitted environment, the target applied to the arguments (as literals)
 denotes what the answer's term denotes. -/
-def Agrees.{w} (claim : Claim) (acc : Src.KernelFront.Accepted) (xs : List Nat) (answer : Nat) :
+def Agrees.{w} (claim : Claim) (acc : Src.KernelFront.Accepted) (xs : List Nat) (answer : Answer) :
     Prop :=
   ∃ target out, keyOf acc claim.target = some target ∧
     answerTerm claim.abi (keyOf acc) answer = some out ∧

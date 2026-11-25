@@ -244,9 +244,9 @@ theorem abi_parse_of_parseArgsList {abi : Abi} {args : List (List Nat)} {ns : Li
 check bounds. -/
 theorem answer_lt_of_agrees {claim : Claim} {acc : Src.KernelFront.Accepted} {src : Src.Program}
     {I : Lam.Erase.Input} {view : View}
-    (hok : GroundOk acc src I view claim.target claim.abi) {xs : List Nat} {answer : Nat}
-    (hag : Agrees.{u} claim acc xs answer) {cs : List Ixon.Address}
-    (hr : claim.abi.result = ResTy.enum cs) : answer < 2 ^ 63 := by
+    (hok : GroundOk acc src I view claim.target claim.abi) {xs : List Nat} {t : Nat}
+    {fs : List Answer} (hag : Agrees.{u} claim acc xs (.node t fs)) {cs : List Ixon.Address}
+    (hr : claim.abi.result = ResTy.enum cs) : t < 2 ^ 63 := by
   obtain ⟨κ, lpsOf, ann, Sl, Inst, root, res, -, -, -, -, -, hRes⟩ := hok
   cases res with
   | nat =>
@@ -260,12 +260,55 @@ theorem answer_lt_of_agrees {claim : Claim} {acc : Src.KernelFront.Accepted} {sr
     rw [hcs] at hlt
     unfold Agrees at hag
     obtain ⟨target, out, -, hterm, -⟩ := hag
-    simp only [answerTerm, hr] at hterm
-    cases hget : cs[answer]? with
-    | none => rw [hget] at hterm; cases hterm
-    | some a =>
-      obtain ⟨h2, -⟩ := List.getElem?_eq_some_iff.mp hget
-      omega
+    cases fs with
+    | cons f fs => simp [answerTerm, hr] at hterm
+    | nil =>
+      simp only [answerTerm, hr] at hterm
+      cases hget : cs[t]? with
+      | none => rw [hget] at hterm; cases hterm
+      | some a =>
+        obtain ⟨h2, -⟩ := List.getElem?_eq_some_iff.mp hget
+        omega
+
+/-- **An answer observed as the shell's result is rendered as the shell writes it**, at a
+convention `groundCheck` accepted: the claim's rendering of the answer is the shell's rendering of
+the printed value, shorter than `2 ^ 63` bytes. -/
+theorem render_eq_of_obs {claim : Claim} {acc : Src.KernelFront.Accepted} {src : Src.Program}
+    {I : Lam.Erase.Input} {view : View}
+    (hok : GroundOk acc src I view claim.target claim.abi) {xs : List Nat} {answer : Answer}
+    (hag : Agrees.{u} claim acc xs answer) {result : ResultKind} {v : Nat}
+    (hmatch : PlainCallMatches result (.ok (some (IxCC.Exe.Plain.resultObs result v))) (.value v))
+    (hobs : IxCC.Exe.Plain.resultObs result v = abiObs claim.abi answer) :
+    claim.abi.render answer = renderPlain result v ∧ (renderPlain result v).length < 2 ^ 63 := by
+  have hag' := hag
+  obtain ⟨target, out, -, hterm, -⟩ := hag'
+  cases hr : claim.abi.result with
+  | word bits a => exact absurd hr (hok.result_not_word bits a)
+  | data ty => exact absurd hr (hok.result_not_data ty)
+  | nat =>
+    cases answer with
+    | node t fs => simp [answerTerm, hr] at hterm
+    | nat n =>
+      cases result with
+      | nat =>
+        simp only [IxCC.Exe.Plain.resultObs, abiObs, Obs.nat.injEq] at hobs
+        subst hobs
+        have hv : v < 2 ^ 63 := (show _ ∧ v < 2 ^ 63 from hmatch).2
+        have hl := (natDecimal_length_le v hv).2
+        exact ⟨by simp [Abi.render, Abi.resultKind, hr], by simp [renderPlain]; omega⟩
+      | enum k => simp [IxCC.Exe.Plain.resultObs, abiObs] at hobs
+  | enum cs =>
+    cases answer with
+    | nat n => simp [answerTerm, hr] at hterm
+    | node t fs =>
+      have hlt := answer_lt_of_agrees hok hag hr
+      cases result with
+      | nat => simp [IxCC.Exe.Plain.resultObs, abiObs] at hobs
+      | enum k =>
+        simp only [IxCC.Exe.Plain.resultObs, abiObs, Obs.ctor.injEq, and_true] at hobs
+        subst hobs
+        have hl := (natDecimal_length_le v hlt).2
+        exact ⟨by simp [Abi.render, Abi.resultKind, hr, renderPlain], by simp [renderPlain]; omega⟩
 
 /-! ## The first clause of `Tier1`, from an outcome -/
 
@@ -308,35 +351,9 @@ theorem tier1Stdout_of_outcome {claim : Claim} {acc : Src.KernelFront.Accepted} 
     refine Or.inr ⟨ns, answer, abi_parse_of_parseArgsList (hlen.trans harity.symm) hparse, ?_, hag⟩
     have hout : stdout (started D ++ ρ) = stdout ρ := (written_append 1 (started D) ρ).trans rfl
     rw [hout]
-    cases result with
-    | nat =>
-      cases hr : claim.abi.result with
-      | word bits a => exact absurd hr (hok.result_not_word bits a)
-      | nat =>
-        simp only [IxCC.Exe.Plain.resultObs, abiObs, hr, Obs.nat.injEq] at hobs
-        subst hobs
-        have hv : v < 2 ^ 63 := (show _ ∧ v < 2 ^ 63 from hmatch).2
-        have hl := (natDecimal_length_le v hv).2
-        have e : claim.abi.render v = renderPlain .nat v := by
-          simp [Abi.render, Abi.resultKind, hr]
-        rw [e]
-        exact stdout_printsResult hprint (by simp [renderPlain]; omega)
-      | enum cs =>
-        simp [IxCC.Exe.Plain.resultObs, abiObs, hr] at hobs
-    | enum n =>
-      cases hr : claim.abi.result with
-      | word bits a => exact absurd hr (hok.result_not_word bits a)
-      | nat =>
-        simp [IxCC.Exe.Plain.resultObs, abiObs, hr] at hobs
-      | enum cs =>
-        have hlt := answer_lt_of_agrees hok hag hr
-        simp only [IxCC.Exe.Plain.resultObs, abiObs, hr, Obs.ctor.injEq, and_true] at hobs
-        subst hobs
-        have hl := (natDecimal_length_le v hlt).2
-        have e : claim.abi.render v = renderPlain (.enum n) v := by
-          simp [Abi.render, Abi.resultKind, hr, renderPlain]
-        rw [e]
-        exact stdout_printsResult hprint (by simp [renderPlain]; omega)
+    obtain ⟨hre, hl⟩ := render_eq_of_obs hok hag hmatch hobs
+    rw [hre]
+    exact stdout_printsResult hprint hl
 
 /-! ## The claim's arity is the executable's -/
 

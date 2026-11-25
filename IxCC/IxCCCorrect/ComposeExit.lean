@@ -239,35 +239,9 @@ theorem tier1Exit_of_outcome {claim : Claim} {acc : Src.KernelFront.Accepted} {s
   refine ⟨ns, answer, abi_parse_of_parseArgsList (hlen.trans harity.symm) hparse, ?_, hag⟩
   have hout : stdout (started D ++ full) = stdout full := (written_append 1 (started D) full).trans rfl
   rw [hout]
-  cases result with
-  | nat =>
-    cases hr : claim.abi.result with
-    | word bits a => exact absurd hr (hok.result_not_word bits a)
-    | nat =>
-      simp only [IxCC.Exe.Plain.resultObs, abiObs, hr, Obs.nat.injEq] at hobs
-      subst hobs
-      have hv : v < 2 ^ 63 := (show _ ∧ v < 2 ^ 63 from hmatch).2
-      have hl := (natDecimal_length_le v hv).2
-      have e : claim.abi.render v = renderPlain .nat v := by
-        simp [Abi.render, Abi.resultKind, hr]
-      rw [e]
-      exact writeSeq_written_full hw (by simp [renderPlain]; omega)
-    | enum cs =>
-      simp [IxCC.Exe.Plain.resultObs, abiObs, hr] at hobs
-  | enum n =>
-    cases hr : claim.abi.result with
-    | word bits a => exact absurd hr (hok.result_not_word bits a)
-    | nat =>
-      simp [IxCC.Exe.Plain.resultObs, abiObs, hr] at hobs
-    | enum cs =>
-      have hlt := answer_lt_of_agrees hok hag hr
-      simp only [IxCC.Exe.Plain.resultObs, abiObs, hr, Obs.ctor.injEq, and_true] at hobs
-      subst hobs
-      have hl := (natDecimal_length_le v hlt).2
-      have e : claim.abi.render v = renderPlain (.enum n) v := by
-        simp [Abi.render, Abi.resultKind, hr, renderPlain]
-      rw [e]
-      exact writeSeq_written_full hw (by simp [renderPlain]; omega)
+  obtain ⟨hre, hl⟩ := render_eq_of_obs hok hag hmatch hobs
+  rw [hre]
+  exact writeSeq_written_full hw hl
 
 /-! ## Both clauses for the checked core -/
 
