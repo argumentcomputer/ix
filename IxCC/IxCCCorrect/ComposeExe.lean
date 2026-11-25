@@ -259,6 +259,7 @@ theorem answer_lt_of_agrees {claim : Claim} {acc : Src.KernelFront.Accepted} {sr
     have hcs : addrs = cs := by cases hr'; rfl
     rw [hcs] at hlt
     unfold Agrees at hag
+    simp only at hag
     obtain ⟨target, out, -, hterm, -⟩ := hag
     cases fs with
     | cons f fs => simp [answerTerm, hr] at hterm

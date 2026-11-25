@@ -1,6 +1,7 @@
 import IxCC.Exe.Plain.Exe
 import IxCCCorrect.GroundCheck
 import IxCCCorrect.Progress
+import IxCCCorrect.AdmitsKernel
 
 /-!
 # The compiled object computes the kernel meaning (`IxCCCorrect.Compose`)
@@ -67,17 +68,17 @@ universe u
 
 /-- **`Admits` from ingress at the claim's limits**: ingress decodes the bytes and runs the
 kernel's tiered entry over the whole environment (`Recheck.ingress_parts`); the root and the role
-table are compared by the checker. -/
+table are compared by the checker. Since the owner-approved restatement, through IxCK's acceptance
+(`admits_of_accept`: the reading of the accepted environment, and its model). -/
 theorem admits_of_ingress {claim : Claim} {envBytes : ByteArray} {equations : Lean.Json}
     {roots : List String} {inp : Recheck.Input}
     (h : Recheck.ingress envBytes equations roots claim.kernelLimits = .ok inp)
     (henv : inp.env.root = claim.env)
     (hrole : inp.env.bindingAddress = some claim.roleTable)
     (hkey : keyOf inp.kernel.acc claim.target ≠ none) :
-    Admits claim envBytes inp.kernel.acc := by
+    Admits.{u} claim envBytes inp.kernel.acc := by
   obtain ⟨hdec, hacc, -⟩ := Recheck.ingress_parts h
-  unfold Admits
-  exact ⟨inp.env, hdec, henv, hrole, hacc, hkey⟩
+  exact admits_of_accept ⟨inp.env, hdec, henv, hrole, hacc, hkey⟩
 
 /-! ## G1: the observation bridge, at canonical forms -/
 
@@ -225,6 +226,7 @@ theorem agrees_of_srcPlainEval {claim : Claim} {acc : Src.KernelFront.Accepted} 
     have hr : claim.abi.result = ResTy.nat := hRes
     refine ⟨.nat n, by rw [ho]; rfl, ?_⟩
     unfold Agrees
+    simp only
     refine ⟨κ root, litE n, hkey, by simp only [answerTerm, hr], ?_⟩
     rw [hargT]
     unfold SameDenotation
@@ -240,6 +242,7 @@ theorem agrees_of_srcPlainEval {claim : Claim} {acc : Src.KernelFront.Accepted} 
       rfl
     refine ⟨.node t [], by rw [ho]; rfl, ?_⟩
     unfold Agrees
+    simp only
     refine ⟨κ root, .const (κ c) [], hkey,
       by simp only [answerTerm, hr, haddr, Option.bind_some, hk, Option.map_some], ?_⟩
     rw [hargT]

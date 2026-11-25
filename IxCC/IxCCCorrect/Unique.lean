@@ -109,6 +109,7 @@ theorem agrees_unique {claim : Claim} {acc : Src.KernelFront.Accepted} {kNe : KK
   haveI : Ix.Kernel.SetTheory V := inst
   obtain ⟨M⟩ := accepted_has_model V acc
   unfold Agrees at ha hb
+  simp only at ha hb
   obtain ⟨t1, o1, hk1, ht1, hs1⟩ := ha
   obtain ⟨t2, o2, hk2, ht2, hs2⟩ := hb
   rw [hk1] at hk2

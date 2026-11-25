@@ -505,6 +505,7 @@ theorem groundCheck_sound {k : Src.KernelFront.Kernel} {src : Program}
           simp only [Except.ok.injEq] at h
           subst h
           subst h7
+          rw [keyOf_eq]
           exact ⟨keyMap k.rd, lpsMap k.acc.env (keyMap k.rd), ann, closureOf src root,
             (instWalk src [root] instFuel).getD [], root, res, rfl, hres, h8, rfl,
             ⟨h2, h3, h4, h5, h6, rootFacts_of_check h1⟩, resultOk_sound h9⟩

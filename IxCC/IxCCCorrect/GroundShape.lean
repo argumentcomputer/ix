@@ -36,7 +36,7 @@ plain_exe_tier1Stdout_shaped : Recheck.run cfg P c = .ok a → Exe.build a layou
 tier1Check_sound : Recheck.ingress envBytes equations roots claim.kernelLimits = .ok inp →
   Recheck.run cfg P c = .ok a → Exe.build a layout = .ok ⟨inp', ce⟩ →
   tier1Check claim inp c a sc = true →
-  ∃ acc, Admits claim envBytes acc ∧ Tier1Stdout claim acc ce.bytes
+  ∃ acc : Src.KernelFront.Accepted, Admits claim envBytes acc ∧ Tier1Stdout claim acc ce.bytes
 ```
 
 No source evaluator, no "source goes wrong" and no hypothesis about SrcEval remains: every
@@ -331,7 +331,8 @@ theorem tier1Check_sound {claim : Claim} {envBytes : ByteArray} {equations : Lea
     {layout : X86.Exe.Layout} {inp' : X86.Exe.Input} {ce : X86.Exe.Certified inp'}
     (hb : IxCC.Exe.build a layout = .ok ⟨inp', ce⟩) {sc : Shape2.Cert}
     (hcheck : tier1Check claim inp c a sc = true) :
-    ∃ acc, Admits claim envBytes acc ∧ Tier1Stdout.{u} claim acc ce.bytes := by
+    ∃ acc : Src.KernelFront.Accepted,
+      Admits claim envBytes acc ∧ Tier1Stdout.{u} claim acc ce.bytes := by
   unfold tier1Check at hcheck
   simp only [Bool.and_eq_true, decide_eq_true_eq] at hcheck
   obtain ⟨⟨henv, hrole⟩, hg⟩ := hcheck

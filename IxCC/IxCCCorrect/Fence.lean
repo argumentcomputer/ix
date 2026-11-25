@@ -22,6 +22,7 @@ import IxCCCorrect.UniqueNat
 import IxCCCorrect.CanonLaw
 import IxCCCorrect.UniqueEnum
 import IxCCCorrect.SpineIota
+import IxCCCorrect.AdmitsKernel
 
 /-! # The target statements' axiom fence: every theorem `IxCCCorrect` proves uses at most the
 three standard axioms. Building the library checks it (`#guard_msgs`), in the required check
@@ -1050,3 +1051,32 @@ routes and the progress targets are definitions and have no fence. -/
 
 /-- info: 'IxCC.Correct.paramsBlindIota' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.paramsBlindIota
+
+/-! ## `IxCCCorrect.Tiers`, `IxCCCorrect.AdmitsKernel` (owner-approved: `Admits` by reading and model) -/
+
+/-- info: 'IxCC.Correct.keyOf_def' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.keyOf_def
+
+/-- info: 'IxCC.Correct.keyOf_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.keyOf_eq
+
+/-- info: 'IxCC.Correct.installDecls_of_checkDecls' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.installDecls_of_checkDecls
+
+/-- info: 'IxCC.Correct.readCore_of_tiered' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.readCore_of_tiered
+
+/-- info: 'IxCC.Correct.readPrepared_of_acceptPrepared' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.readPrepared_of_acceptPrepared
+
+/-- info: 'IxCC.Correct.readEnv_of_accept' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.readEnv_of_accept
+
+/-- info: 'IxCC.Correct.acceptedEnv_model' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.acceptedEnv_model
+
+/-- info: 'IxCC.Correct.accepted_hasModel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.accepted_hasModel
+
+/-- info: 'IxCC.Correct.admits_of_accept' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.admits_of_accept

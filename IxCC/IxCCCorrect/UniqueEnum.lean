@@ -360,6 +360,7 @@ theorem agrees_unique_enum {claim : Claim} {acc : Src.KernelFront.Accepted}
   obtain ⟨⟨hnd, hin⟩, hrec⟩ := hB
   have hE := enumRecStored_of_check hrec
   unfold Agrees at ha hb
+  simp only at ha hb
   obtain ⟨t1, o1, hk1, ht1, hs1⟩ := ha
   obtain ⟨t2, o2, hk2, ht2, hs2⟩ := hb
   rw [hk1] at hk2

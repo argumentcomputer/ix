@@ -16,7 +16,7 @@ exit_of_outcome : PlainExeOutcome srcEval (fun _ => False) arity result D args �
 tier1Check_sound_core : Recheck.ingress envBytes equations roots claim.kernelLimits = .ok inp →
   Recheck.run cfg P c = .ok a → Exe.build a layout = .ok ⟨inp', ce⟩ →
   tier1Check claim inp c a sc = true →
-  ∃ acc, Admits claim envBytes acc ∧ Tier1Core claim acc ce.bytes
+  ∃ acc : Src.KernelFront.Accepted, Admits claim envBytes acc ∧ Tier1Core claim acc ce.bytes
 ```
 
 `Tier1Core claim acc image` is the body of `Tier1` word for word, over `LoadedFile image` and
@@ -283,7 +283,8 @@ theorem tier1Check_sound_core {claim : Claim} {envBytes : ByteArray} {equations 
     {layout : X86.Exe.Layout} {inp' : X86.Exe.Input} {ce : X86.Exe.Certified inp'}
     (hb : IxCC.Exe.build a layout = .ok ⟨inp', ce⟩) {sc : Shape2.Cert}
     (hcheck : tier1Check claim inp c a sc = true) :
-    ∃ acc, Admits claim envBytes acc ∧ Tier1Core.{u} claim acc ce.bytes := by
+    ∃ acc : Src.KernelFront.Accepted,
+      Admits claim envBytes acc ∧ Tier1Core.{u} claim acc ce.bytes := by
   unfold tier1Check at hcheck
   simp only [Bool.and_eq_true, decide_eq_true_eq] at hcheck
   obtain ⟨⟨henv, hrole⟩, hg⟩ := hcheck

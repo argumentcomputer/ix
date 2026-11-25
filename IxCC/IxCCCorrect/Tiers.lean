@@ -3,6 +3,7 @@ import IxCCCorrect.Process
 import IxCC.Recheck.Produce
 import IxCCGrounding.Syntax
 import IxCK.Kernel.Denotes
+import IxCCCorrect.Reading
 
 /-!
 # `Correct`: the proposition a claim states (`IxCCCorrect.Tiers`)
@@ -23,9 +24,10 @@ hold are correct" is a computational argument about the hash, made outside Lean.
 
 **Kernel meaning is denotation in every model.** The meaning of the constant at
 `claim.target` is taken from the certified kernel's own statement
-(`Ix.Kernel.Model`, `Ix.Kernel.Denotes`): the kernel admits the committed
-environment (`Admits`, the tiered entry over the whole environment), and in every
-model of the environment it installed, over every set theory, the target applied
+(`Ix.Kernel.Model`, `Ix.Kernel.Denotes`): the kernel's reader reads the committed
+environment and what it read has a model in every set theory (`Admits`, owner-approved: by
+reading and model), and in every model of the environment it read, over every set theory, the
+target applied
 to the arguments and the answer denote the same set (`SameDenotation`). This is
 what the grounding library proves about IxCC's evaluator and what the kernel's
 main theorem gives a model for. Two costs, both stated in the design note: the
@@ -63,26 +65,43 @@ open IxCC.Grounding (KEnv KKey KExpr litE)
 
 /-- The key the kernel's reader gives the constant at an address
 (`Ix.Kernel.Reader.Ctx.keyAt`): its role's key where the table binds it,
-otherwise the key of the address. -/
-def keyOf (acc : Src.KernelFront.Accepted) (a : Ixon.Address) : Option KKey :=
+otherwise the key of the address. Irreducible: read through `keyOf_def`, so that a statement over
+an acceptance's reading (`EnvReading.ofAccepted`) matches one over `keyOf` without unfolding the
+reader. -/
+@[irreducible] def keyOf (acc : Src.KernelFront.Accepted) (a : Ixon.Address) : Option KKey :=
   (acc.ctx.keyAt (Src.KernelFront.kaddr a)).toOption
 
-/-- **The certified kernel admits the committed environment.** `envBytes` decodes
-(every constant and blob under its address, the root the canonical Merkle root of
-the constants: `Ixon.V3.decodeAnonymousEnv`), has the claim's root and role table,
-and the kernel's tiered entry accepts it at the claim's limits, with result `acc`
-(`Src.KernelFront.accept`, a function of the decoded environment). `acc.env` is
-the logical environment the kernel installed; it has a model in every set theory
-(`Ix.Kernel.Admission.checkBytesTiered_has_model`). The claim's target resolves:
-the kernel's reader keys a constant at it (`keyOf`; owner-approved P4: a target the
-reader cannot key, a block member whose projection record the bytes omit, is refused
-here rather than making `Agrees` unsatisfiable). -/
-def Admits (claim : Claim) (envBytes : ByteArray) (acc : Src.KernelFront.Accepted) : Prop :=
+theorem keyOf_def (acc : Src.KernelFront.Accepted) (a : Ixon.Address) :
+    keyOf acc a = (acc.ctx.keyAt (Src.KernelFront.kaddr a)).toOption := by
+  unfold keyOf; rfl
+
+theorem keyOf_eq (acc : Src.KernelFront.Accepted) :
+    keyOf acc = fun a => (acc.ctx.keyAt (Src.KernelFront.kaddr a)).toOption :=
+  funext (keyOf_def acc)
+
+/-- **What the statements read of an acceptance**: the environment the kernel installed and the
+reader's keys (`keyOf`). A coercion: a statement about a reading applies to an acceptance. -/
+abbrev EnvReading.ofAccepted (acc : Src.KernelFront.Accepted) : EnvReading :=
+  ⟨acc.env, keyOf acc⟩
+
+instance : Coe Src.KernelFront.Accepted EnvReading := ⟨EnvReading.ofAccepted⟩
+
+/-- **The committed environment is read, and what is read has a model** (owner-approved: `Admits`
+by reading and model). `envBytes` decodes (every constant and blob under its address, the root the
+canonical Merkle root of the constants: `Ixon.V3.decodeAnonymousEnv`), has the claim's root and role
+table, and IxCK's reader, without type checking (`readEnv`: the kernel entry's byte admission, role
+table, prelude, decode and reader, and the install half of its fold), reads it at the claim's limits
+to `r`; `r.kenv` has a model in every set theory (`HasModel`). The claim's target resolves: the
+reader keys a constant at it (owner-approved P4). IxCK's acceptance gives it
+(`IxCCCorrect.AdmitsKernel.admits_of_accept`, from the kernel's model-existence theorem); an IxVM
+`checkEnv` certificate of the source is to give it without IxCK in the argument. -/
+def Admits.{u} (claim : Claim) (envBytes : ByteArray) (r : EnvReading) : Prop :=
   ∃ env, Ixon.V3.decodeAnonymousEnv envBytes = .ok env ∧
     env.root = claim.env ∧
     env.bindingAddress = some claim.roleTable ∧
-    Src.KernelFront.accept env claim.kernelLimits = .ok acc ∧
-    keyOf acc claim.target ≠ none
+    readEnv env claim.kernelLimits = .ok r ∧
+    HasModel.{u} r.kenv ∧
+    r.keyAt claim.target ≠ none
 
 /-- **Two kernel terms denote the same set in every model** of `kenv`, over every
 set theory, at every level assignment and variable environment; and they do
@@ -145,11 +164,11 @@ theorem argTerms_replicate : ∀ xs : List Nat,
 /-- **The answer agrees with the kernel meaning of the target**: in every model of
 the admitted environment, the target applied to the arguments (as literals)
 denotes what the answer's term denotes. -/
-def Agrees.{w} (claim : Claim) (acc : Src.KernelFront.Accepted) (xs : List Nat) (answer : Answer) :
+def Agrees.{w} (claim : Claim) (r : EnvReading) (xs : List Nat) (answer : Answer) :
     Prop :=
-  ∃ target out, keyOf acc claim.target = some target ∧
-    answerTerm claim.abi (keyOf acc) answer = some out ∧
-    SameDenotation.{w} acc.env
+  ∃ target out, r.keyAt claim.target = some target ∧
+    answerTerm claim.abi r.keyAt answer = some out ∧
+    SameDenotation.{w} r.kenv
       (Ix.Kernel.Expr.mkAppN (Ix.Kernel.Expr.const target []) (argTerms claim.abi.params xs))
       out
 
@@ -180,14 +199,14 @@ There is no source evaluator and no "source goes wrong" case: a file that writes
 anything else to standard output on any input, from any loader state, falsifies
 it. Failures are not constrained here (see `Tier3`). -/
 def Tier1.{w} (claim : Claim) (envBytes exe : ByteArray) : Prop :=
-  ∃ acc, Admits claim envBytes acc ∧
+  ∃ r, Admits.{w} claim envBytes r ∧
     ∀ args, ArgsOk args → ∀ s₀, LoadedFile exe args s₀ → ∀ σ, FileTrace exe s₀ σ →
       (stdout σ = [] ∨
         ∃ xs answer, claim.abi.parse args = some xs ∧
-          stdout σ <+: claim.abi.render answer ∧ Agrees.{w} claim acc xs answer) ∧
+          stdout σ <+: claim.abi.render answer ∧ Agrees.{w} claim r xs answer) ∧
       (exitStatus σ = some 0 →
         ∃ xs answer, claim.abi.parse args = some xs ∧
-          stdout σ = claim.abi.render answer ∧ Agrees.{w} claim acc xs answer)
+          stdout σ = claim.abi.render answer ∧ Agrees.{w} claim r xs answer)
 
 /-! ## Tier 2: safety -/
 
@@ -232,11 +251,11 @@ def statusOf (m : X86.Exe.Message) : Word := UInt64.ofNat m.status
 * a status `excused` names (none in `Tier3`).
 
 Not among them: the `natOverflow`, `trap`, `abi` and `notValue` reports. -/
-def Ending.{w} (excused : Word → Prop) (claim : Claim) (acc : Src.KernelFront.Accepted)
+def Ending.{w} (excused : Word → Prop) (claim : Claim) (r : EnvReading)
     (args : List (List Nat)) (σ : List Sys) : Prop :=
   ∃ c, exitStatus σ = some c ∧
     ((c = 0 ∧ ∃ xs answer, claim.abi.parse args = some xs ∧
-        stdout σ = claim.abi.render answer ∧ Agrees.{w} claim acc xs answer) ∨
+        stdout σ = claim.abi.render answer ∧ Agrees.{w} claim r xs answer) ∨
      ((claim.abi.parse args = none ∨ args = []) ∧
         (c = statusOf .count ∨ c = statusOf .numeral) ∧ stdout σ = []) ∨
      ((c = UInt64.ofNat X86.Exe.writeFailed ∨ c = statusOf .confine) ∧ EnvRefused σ) ∨
@@ -255,11 +274,11 @@ def WithinBounds (claim : Claim) (s₀ s : ByteEval.State) : Prop :=
 
 /-- Tier 3 with a set of excused exit statuses (`Tier3` and `Tier3Transitional`). -/
 def Tier3With.{w} (excused : Word → Prop) (claim : Claim) (envBytes exe : ByteArray) : Prop :=
-  ∃ acc, Admits claim envBytes acc ∧
+  ∃ r, Admits.{w} claim envBytes r ∧
     ∀ args, ArgsOk args → ∀ s₀, LoadedFile exe args s₀ → Mapped exe args s₀ →
       Acc (Next (execImage exe)) s₀ ∧
       (∀ σ s, FileRun exe s₀ σ s → CanStep (execImage exe) s ∧ WithinBounds claim s₀ s) ∧
-      (∀ σ, Ended (execImage exe) s₀ σ → Ending.{w} excused claim acc args σ)
+      (∀ σ, Ended (execImage exe) s₀ σ → Ending.{w} excused claim r args σ)
 
 /-- **Tier 3.** The kernel admits the committed environment, and for every
 invocation and every loader state whose mappings are as the file's headers ask
