@@ -9,8 +9,9 @@ A register the lowering's tables name raw (`Rt.Lower.Tables.rawVar fn`) holds th
 `n` of a `Nat` literal `n < 2^64` (`RawVal`), not the tagged word `valueWord` gives. The tagged
 relation (`FusedWords`) omits it, with the fused comparisons (`Omit`); `RawWords` states what
 it holds. A function the flow check lets hold a raw register has no heap-cell instruction
-(`Cfg.Rc.Raw.rawOk`), so in a function with one, `RawWords` is vacuous (`RawWords.of_noRaw`)
-and `Omit` is the fused comparisons alone (`FusedWords.toFused`, `FusedWords.ofFused`).
+(`Cfg.Rc.Raw.rawOk`), so in a function with a heap-cell instruction `RawWords` is vacuous
+(`RawWords.of_noRaw`) and `Omit` is the fused comparisons alone (`FusedWords.toFused`,
+`FusedWords.ofFused`).
 -/
 
 set_option autoImplicit false

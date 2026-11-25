@@ -329,7 +329,7 @@ theorem rawWord_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word}
   have star₁ := straight_star (rest := rest) hF hH ext₁ ho noCall exec
   cases flag : T.rawVar f x with
   | true =>
-    rw [if_pos flag] at hk'
+    simp only [flag, ↓reduceIte] at hk'
     have core := LowerRep.wordRaw64_core (ctx := ctx) hF hH hk' hC hl₁ ho₁ (Nat.le_refl _)
       (Nat.lt_of_lt_of_le hx (Nat.le_trans hsup grows₁))
     obtain ⟨c, ρl', w, star₂, hw, hρx, keep₂⟩ := core ρl₁ mem rest ns _ n evalUs nums readsUs hs
@@ -341,7 +341,7 @@ theorem rawWord_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word}
       (v := .lit (.nat n)) (by rw [flag]; exact SlotVal.raw.2 (rawVal_of_toNat hw))
     exact .inl ⟨0 + c, ρl', n, rfl, star₁.trans star₂, afterWords, afterRaws⟩
   | false =>
-    rw [if_neg (by simp [flag])] at hk'
+    simp only [flag, Bool.false_eq_true, ↓reduceIte] at hk'
     obtain ⟨r, st₂, hr, hk''⟩ := run_bind hk'
     have fresh : freshReg.run st₁ = .ok (st₁.fresh, { st₁ with fresh := st₁.fresh + 1 }) := rfl
     rw [fresh] at hr
@@ -435,7 +435,7 @@ theorem raw_pure_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word
     obtain ⟨o, rfl⟩ := rawPrim_word raw
     simp only [instr] at hrun
     have raw' : rawPrim T f x (.word .w64 o) as = true := raw
-    rw [if_pos raw'] at hrun
+    simp only [raw', ↓reduceIte] at hrun
     change (rawWord f T x o as).run st = .ok (true, st') at hrun
     rcases rawWord_sim hF hH hrun hC hl ho hsup hx (liveArgs_of hlive) words raws effect with
       ⟨charge, after, n, rfl, trace, afterWords, afterRaws⟩ | failed
