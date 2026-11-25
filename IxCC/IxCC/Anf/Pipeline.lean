@@ -11,7 +11,7 @@ import IxCC.Anf.Pipeline.PostCert
 `Anf.Pipeline` (Phase 1): P1, then the steps of a
 certificate. `produce` follows the Phase 1 schedule
 
-  P1 → P2 → prune → (P3 → P2)* → P4 → P2 → (P3 → P2)* → prune
+  P1 → P2⁺ → prune → (P3 → P2⁺)* → P4 → P2⁺ → (P3 → P2⁺)* → prune
 
 (the designed order `P1 → P2 → P3 → P2 → P4 → P2 → P3 → P2`, with each inlining invocation
 iterated as rounds, each round followed by a shrink, until the default
@@ -20,6 +20,18 @@ heuristic choice natively; the recheck (`run`) re-runs the proved passes on
 those choices (D17: P1 has no certificate; P2 reads rounds per global and two
 size bounds; P3 inline rounds; P4 its decisions). `run` never searches, so it
 is the function `Recheck.run` evaluates in the kernel.
+
+`P2⁺` is a shrink step repeated while it still changes the program
+(`shrinkFixpoint`): one step threads its work budget (`maxStepWork`) through
+the globals in id order, so on a large program it stops before the later
+globals reach their fixpoint, and what it leaves undone is what the next
+inline round's oracle and P8 then see. On the arithmetic library the residue
+of single steps was 704 closure alternatives, every one a known function
+(a by-name thunk or a matcher alternative applied where it is bound, the
+`fun h => …` branch of a `dite` returned by such a thunk, a function global
+applied in place) that the shrink rules remove once they run to their
+fixpoint. A program whose shrink steps reach their fixpoint gets no extra
+step, so its certificate and its program are unchanged.
 
 Pruning the globals unreachable from the roots (an addition to the designed order)
 runs after the first shrink (erasure's unused helpers), inside every P3 and
@@ -217,6 +229,31 @@ private def refinePostExtra (B : Budgets) (pc : PostCert) (Qout : Program) : Pos
     | .error _ => (pc, Qout)
   else (pc, Qout)
 
+/-- A shrink step repeated while it still changes the program (`P2⁺` in the
+module note): each repetition is an ordinary certificate step, taken while the
+certificate keeps `reserve` steps (this one included) for what follows, and
+only if the re-run's program check (`checkGlobalNodes`) accepts its result; it
+stops at the first step in which no global's rounds fire. Producer only (the
+re-run replays each step as any other `shrink` step); structural on `fuel`, with
+no map. -/
+def shrinkFixpoint (B : Budgets) (reserve : Nat) :
+    Nat → Program → Array Step → Array (String × Program) → Walk.Fires →
+      Program × Array Step × Array (String × Program) × Walk.Fires
+  | 0, P, steps, stages, fires => (P, steps, stages, fires)
+  | fuel + 1, P, steps, stages, fires =>
+    if steps.size + reserve > maxSteps then (P, steps, stages, fires)
+    else
+      match Shrink.produce B.shrink P with
+      | .error _ => (P, steps, stages, fires)
+      | .ok (c, P2, f) =>
+        if c.all (· == 0) then (P, steps, stages, fires)
+        else
+          match checkGlobalNodes P2 with
+          | .error _ => (P, steps, stages, fires)
+          | .ok P2 =>
+            shrinkFixpoint B reserve fuel P2 (steps.push (.shrink c)) (stages.push ("P2", P2))
+              (fires.add f)
+
 /-- The Phase 1 schedule with the default oracles, within what the re-run
 accepts: P1 and every shrink step are followed by the re-run's size, depth
 and back-end work check (`checkGlobalNodes`), and a program that fails it is
@@ -230,7 +267,10 @@ the re-run refuses alone (`Budgets.retryInline`), and ends that invocation's
 rounds if it is still refused or no caller is left; a refused
 specialisation ends the schedule's phases, as one that adds no global does;
 and a round or specialisation is only begun while the certificate has room
-for its two steps and the final prune (`maxSteps`). Where the re-run would
+for its two steps and the final prune (`maxSteps`). Every shrink step is
+repeated while it still changes the program (`shrinkFixpoint`), so the next
+inline round's oracle, the specialiser and P8 see each global at its shrink
+fixpoint whatever the step's work budget left undone. Where the re-run would
 accept every step anyway, none of these checks changes a choice. -/
 def produceOnce (B : Budgets := {}) (L : Lam.Program) : Except String Trace := do
   let p1 ← checkLamNodes L >>= convert >>= checkGlobalNodes
@@ -238,10 +278,11 @@ def produceOnce (B : Budgets := {}) (L : Lam.Program) : Except String Trace := d
   let mut steps : Array Step := #[]
   let mut stages : Array (String × Program) := #[("P1", p1)]
   let mut fires : Walk.Fires := {}
-  -- P2, then drop what the roots never reach (erasure's wrappers and helpers)
+  -- P2⁺, then drop what the roots never reach (erasure's wrappers and helpers)
   let (c, P2, f) ← Shrink.produce B.shrink P
   P ← checkGlobalNodes P2; fires := fires.add f
   steps := steps.push (.shrink c); stages := stages.push ("P2", P)
+  (P, steps, stages, fires) := shrinkFixpoint B 3 maxSteps P steps stages fires
   P := Prune.run P
   steps := steps.push .prune; stages := stages.push ("prune", P)
   for phase in [0:4] do
@@ -260,7 +301,8 @@ def produceOnce (B : Budgets := {}) (L : Lam.Program) : Except String Trace := d
       let (c, P2, f) ← Shrink.produce B.shrink P
       P ← checkGlobalNodes P2; fires := fires.add f
       steps := steps.push (.shrink c); stages := stages.push ("P2", P)
-    -- (P3, P2) rounds
+      (P, steps, stages, fires) := shrinkFixpoint B 2 maxSteps P steps stages fires
+    -- (P3, P2⁺) rounds
     for _ in [0:B.inline.rounds] do
       if steps.size + 3 > maxSteps then break
       let r := Inline.produce B.inline P
@@ -279,6 +321,7 @@ def produceOnce (B : Budgets := {}) (L : Lam.Program) : Except String Trace := d
       let (c, P2, f) ← Shrink.produce B.shrink P3
       P ← checkGlobalNodes P2; fires := fires.add f
       steps := steps.push (.shrink c); stages := stages.push ("P2", P)
+      (P, steps, stages, fires) := shrinkFixpoint B 2 maxSteps P steps stages fires
   P := Prune.run P
   steps := steps.push .prune; stages := stages.push ("prune", P)
   let (post, postOut) : Option PostCert × Option Program :=
