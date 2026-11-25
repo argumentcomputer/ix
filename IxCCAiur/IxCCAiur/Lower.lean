@@ -7,9 +7,10 @@ import Aiur.HeapMono
 
 Lowers the compiler's own `IxCC.Fir.Program` (the program `Fir.lower` makes, before
 ownership and reference counting; `IxCC.Recheck.runFir`) to a Formal Aiur module
-(`Prog`) linking with `Aiur.Library.U64.source`. Not yet run through
-`Aiur.Modules.prepare`: the world hypothesis `Backward.LoweredWorld` is still to
-be discharged for a lowered program. Covers:
+(`Prog`) linking with `Aiur.Library.U64.source`. The driver (`IxCCAiur.Driver`)
+runs the result through `Aiur.Modules.prepare`; the world hypothesis
+`Backward.LoweredWorld` follows from a check on what that returns
+(`IxCCAiur.World`). Covers:
 - **Closure constructors (`CtorKey.clo`)** alongside source constructors
   (`CtorKey.src`), indexed injectively into `Obj` (`C<idx>` / `K<idx>`).
 - **String / UTF-8 byte literals (`Lit.str`)** via a linked `Bytes` enum

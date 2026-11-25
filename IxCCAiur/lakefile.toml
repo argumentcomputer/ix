@@ -4,6 +4,8 @@ defaultTargets = ["IxCCAiur"]
 # with its backward simulation. It is a package of its own because it needs
 # both sides: `ix-cc` (which must not depend on Mathlib) and `aiur` (which
 # does). Nothing in `IxCC` or in the root package imports it.
+# `IxCCAiur.Fib` imports one generated artifact of `ix-cc`'s test library
+# (`IxCCTests.Recheck.Artifacts.Fib`, the K1 `fib` closure as Lean terms).
 #
 # Shares the root package's packages directory, so the Mathlib and Blake3
 # checkouts and builds that the root package (through `aiur`) uses serve this
@@ -22,3 +24,10 @@ path = "../Aiur"
 
 [[lean_lib]]
 name = "IxCCAiur"
+
+# The driver: one root of a closure through `Recheck.runFir`, the lowering and
+# Formal Aiur's preparation to an execution package for the Rust host
+# (`crates/aiur/examples/ixcc_prove.rs`).
+[[lean_exe]]
+name = "ixcc-aiur"
+root = "IxCCAiur.Main"

@@ -1,5 +1,6 @@
 import IxCCAiur.Backward
 import IxCCAiur.Compose
+import IxCCAiur.Fib
 
 /-! # Direct `IxCC Fir → Formal Aiur` Certified Compiler Audit Surface
 
@@ -11,10 +12,13 @@ concrete `IxCC.Fir.Program` covering `.src` and `.clo` constructors, `Lit.str`
 byte lists, non-recursive & recursive join points (`.jp`/`.jmp`), `Nat`
 primitives, and `.trap`. The Fir program, its evaluator and its values are the
 compiler's own (`IxCC.Fir`); section 5 pins the composition with the compiler's
-front half (`IxCCAiur.Compose`).
+front half (`IxCCAiur.Compose`), and section 6 the world check
+(`IxCCAiur.World`), the public result (`IxCCAiur.Claim`) and the `fib` instance
+(`IxCCAiur.Fib`).
 
-Not audited here because nothing proves it yet: `Backward.LoweredWorld` for any
-lowered program (the fixture is lowered and run in Fir only). -/
+The fixture of section 4 is lowered and run in Fir only; the lowered `fib`
+closure is prepared and world-checked by the driver (`IxCCAiur.Driver`,
+`ixcc-aiur`) and proved and verified by the Rust host, outside this file. -/
 
 namespace IxCC.AiurBackend.Audit
 
@@ -888,5 +892,192 @@ set_option pp.deepTerms true in
 
 /-- info: 'IxCC.AiurBackend.Compose.circuit_source_sound_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Compose.circuit_source_sound_goldilocks
+
+/-! ## 6. The World Check, the Public Result and the `fib` Instance
+
+`World.loweredWorld_of_check` replaces the world hypothesis by a Boolean on
+the prepared source; it rests on `==` being equality on `Aiur.Generic.Expr`
+(`Aiur.Generic.Expr.eq_of_beq`, in the `aiur` package). `Claim.Accepted` is the
+bundle of what the circuit theorems assume about a claim, printed in full
+below. `Claim.accepted_nat_backward` reads a `Prog::Obj::N(y)` result at the
+source, and `Fib.accepted_backward` and `Fib.accepted_sound` are its instance
+for the K1 `fib` closure, on which the kernel evaluates the front half
+(`Fib.summary_fib`, by `decide +kernel`: no axiom beyond the three). -/
+
+/--
+info: @Aiur.Generic.Expr.eq_of_beq : ∀ {α : Type} [inst : BEq α] [LawfulBEq α] (a b : Aiur.Generic.Expr α),
+  a.beq b = true → a = b
+-/
+#guard_msgs (whitespace := lax) in
+#check @Aiur.Generic.Expr.eq_of_beq
+
+/--
+info: @World.loweredWorld_of_check : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F],
+  FieldCompatible F →
+    ∀ {P : Program} {prog : Aiur.Generic.Program ℕ},
+      lowerProgram P = Except.ok prog →
+        ∀ (s : Aiur.Generic.Source F), World.checkWorld s prog = true → LoweredWorld P prog s.world
+-/
+#guard_msgs (whitespace := lax) in
+#check @World.loweredWorld_of_check
+
+/--
+info: def IxCC.AiurBackend.Claim.Accepted : {moduleProg : Aiur.Modules.Program Claim.G} →
+  Aiur.Modules.Prepared moduleProg → ℕ → List (Aiur.SourceValue Claim.G) → Aiur.Value Claim.G → Prop :=
+fun {moduleProg} prepared i args result =>
+  ∃ id compiled physical dcfg plan external entry rom wires output root rows,
+    Aiur.Optimized.Physical.Prepared.DepthCertified compiled.circuit physical dcfg ∧
+      dcfg.bits ≤ 24 ∧
+        plan.WellFormedActivation ∧
+          prepared.find? external = some entry ∧
+            entry.resolved.name = qualified (entryName i) ∧
+              rom.Valid ∧
+                Aiur.Circuit.Erasure.Signed compiled.circuit.system
+                    { channel := entry.resolved.name, args := wires, result := output } ∧
+                  Aiur.Optimized.Depth.erase dcfg root =
+                      Aiur.Circuit.Erasure.message compiled.circuit.system
+                        { channel := entry.resolved.name, args := wires, result := output } ∧
+                    root.channel ∉ dcfg.names ∧
+                      rows.length ≤ 2 ^ 39 ∧
+                        plan.checkMemo (Aiur.Circuit.Erasure.rawROM rom) root rows = Except.ok () ∧
+                          Aiur.DecodesValues compiled.specialized.program.enums wires (Aiur.entryValues args) ∧
+                            Aiur.WireValue.decode compiled.specialized.program.enums output = some result
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#print Claim.Accepted
+
+/--
+info: @Claim.accepted_nat_backward : ∀ {cfg : Recheck.Config} {P : Src.Program} {c : Recheck.Cert} {f : Recheck.FrontFir},
+  Recheck.runFir cfg P c = Except.ok f →
+    ∀ {prog : Aiur.Generic.Program ℕ},
+      lowerProgram f.fir = Except.ok prog →
+        ∀ {moduleProg : Aiur.Modules.Program Claim.G} (prepared : Aiur.Modules.Prepared moduleProg),
+          World.checkWorld prepared.environment.source prog = true →
+            ∀ {i : ℕ} {g : FunId},
+              f.fir.exports[i]? = some g →
+                ∀ {as : List Claim.G} {y : Claim.G},
+                  Claim.Accepted prepared i (List.map Aiur.Value.field as)
+                      (Aiur.Value.construct Claim.G objQName "N" [Aiur.Value.field Claim.G y]) →
+                    f.Covered c (i, List.map ZMod.val as) →
+                      (∃ k v,
+                          Sem.Lang.run { p := f.src, ch := f.checked } (i, List.map ZMod.val as) k = Sem.Result.ok v ∧
+                            Sem.Lang.obs v = some (Sem.Obs.nat (ZMod.val y))) ∨
+                        ∃ k, Sem.Lang.run { p := f.src, ch := f.checked } (i, List.map ZMod.val as) k = Sem.Result.stuck
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @Claim.accepted_nat_backward
+
+/--
+info: Fib.summary_fib : Fib.summary
+    (Recheck.runFir IxCCTests.Recheck.Artifacts.Fib.cfg IxCCTests.Recheck.Artifacts.Fib.program
+      IxCCTests.Recheck.Artifacts.Fib.cert) =
+  some (some 1, 1)
+-/
+#guard_msgs (whitespace := lax) in
+#check @Fib.summary_fib
+
+/--
+info: @Fib.accepted_backward : ∀ {f : Recheck.FrontFir},
+  Recheck.runFir IxCCTests.Recheck.Artifacts.Fib.cfg IxCCTests.Recheck.Artifacts.Fib.program
+        IxCCTests.Recheck.Artifacts.Fib.cert =
+      Except.ok f →
+    ∀ {prog : Aiur.Generic.Program ℕ},
+      lowerProgram f.fir = Except.ok prog →
+        ∀ {moduleProg : Aiur.Modules.Program Claim.G} (prepared : Aiur.Modules.Prepared moduleProg),
+          World.checkWorld prepared.environment.source prog = true →
+            ∀ {x y : Claim.G},
+              Claim.Accepted prepared 0 [Aiur.Value.field x]
+                  (Aiur.Value.construct Claim.G objQName "N" [Aiur.Value.field Claim.G y]) →
+                (∃ k v,
+                    Sem.Lang.run { p := f.src, ch := f.checked } (0, [ZMod.val x]) k = Sem.Result.ok v ∧
+                      Sem.Lang.obs v = some (Sem.Obs.nat (ZMod.val y))) ∨
+                  ∃ k, Sem.Lang.run { p := f.src, ch := f.checked } (0, [ZMod.val x]) k = Sem.Result.stuck
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @Fib.accepted_backward
+
+/--
+info: @Fib.accepted_sound : ∀ {f : Recheck.FrontFir},
+  Recheck.runFir IxCCTests.Recheck.Artifacts.Fib.cfg IxCCTests.Recheck.Artifacts.Fib.program
+        IxCCTests.Recheck.Artifacts.Fib.cert =
+      Except.ok f →
+    ∀ {prog : Aiur.Generic.Program ℕ},
+      lowerProgram f.fir = Except.ok prog →
+        ∀ {moduleProg : Aiur.Modules.Program Claim.G} (prepared : Aiur.Modules.Prepared moduleProg),
+          World.checkWorld prepared.environment.source prog = true →
+            ∀ {x y : Claim.G},
+              Claim.Accepted prepared 0 [Aiur.Value.field x]
+                  (Aiur.Value.construct Claim.G objQName "N" [Aiur.Value.field Claim.G y]) →
+                Compose.NeverStuck { p := f.src, ch := f.checked } (0, [ZMod.val x]) →
+                  ∃ k v,
+                    Sem.Lang.run { p := f.src, ch := f.checked } (0, [ZMod.val x]) k = Sem.Result.ok v ∧
+                      Sem.Lang.obs v = some (Sem.Obs.nat (ZMod.val y))
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @Fib.accepted_sound
+
+/--
+info: 'Aiur.Generic.Pattern.eq_of_beq' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Aiur.Generic.Pattern.eq_of_beq
+
+/--
+info: 'Aiur.Generic.Expr.eq_of_beq' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Aiur.Generic.Expr.eq_of_beq
+
+/--
+info: 'IxCC.AiurBackend.World.loweredWorld_of_check' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms World.loweredWorld_of_check
+
+/--
+info: 'IxCC.AiurBackend.Claim.entry_source_backward_checked' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Claim.entry_source_backward_checked
+
+/--
+info: 'IxCC.AiurBackend.Claim.accepted_source_backward' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Claim.accepted_source_backward
+
+/--
+info: 'IxCC.AiurBackend.Claim.accepted_nat_backward' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Claim.accepted_nat_backward
+
+/--
+info: 'IxCC.AiurBackend.Claim.accepted_nat_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Claim.accepted_nat_sound
+
+/--
+info: 'IxCC.AiurBackend.Claim.accepted_enum_backward' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Claim.accepted_enum_backward
+
+/--
+info: 'IxCC.AiurBackend.Claim.accepted_enum_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Claim.accepted_enum_sound
+
+/--
+info: 'IxCC.AiurBackend.Fib.summary_fib' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Fib.summary_fib
+
+/--
+info: 'IxCC.AiurBackend.Fib.accepted_backward' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Fib.accepted_backward
+
+/--
+info: 'IxCC.AiurBackend.Fib.accepted_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Fib.accepted_sound
 
 end IxCC.AiurBackend.Audit

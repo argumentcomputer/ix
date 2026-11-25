@@ -24,9 +24,10 @@ a premise (the accepted run supplies it), and neither is trap-freedom (every
 pass keeps a trap, and the lowered trap has no derivation,
 `Backward.trap_no_derivation`).
 
-**Hypotheses that are still open.** `Backward.LoweredWorld` (that the prepared
+**Hypotheses.** `Backward.LoweredWorld` (that the prepared
 Aiur source holds the lowered functions and the `UInt64` library's contracts)
-is taken as a hypothesis, as in `Backward`; nothing constructs it yet.
+is taken as a hypothesis here, as in `Backward`; `IxCCAiur.Claim` replaces it
+by the Boolean `World.checkWorld` on the prepared source.
 `FrontFir.Covered` restricts the input to the root's declared parameter count
 (or to a program the closures step left unchanged), as every theorem about
 the front half does.
@@ -34,7 +35,7 @@ the front half does.
 **What is related.** The Aiur result `r` on heap `h'` represents a Fir value
 `w` (`Backward.VR`), and `w` has the source value's observation
 (`Sem.Lang.ObsEq`). No statement here reads `w` off the public output of a
-proof. -/
+proof; `IxCCAiur.Claim` does, for `Nat` and enumeration results. -/
 
 set_option autoImplicit false
 
