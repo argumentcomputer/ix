@@ -63,6 +63,11 @@ theorem valOk_nat_inv {cert : ShapeCert} {enc : ArrEnc} {v : Val}
   cases h with
   | nat n => exact ⟨n, rfl⟩
 
+theorem valOk_word_inv {cert : ShapeCert} {enc : ArrEnc} {w : Src.Width} {v : Val}
+    (h : ValOk cert enc (.word w) v) : ∃ n, v = .lit (.nat n) ∧ n < w.size := by
+  cases h with
+  | word hn => exact ⟨_, rfl, hn⟩
+
 /-- **Weakening is sound.** -/
 theorem leSound (enc : ArrEnc) : LeSound enc := by
   intro cert σ
@@ -95,6 +100,10 @@ theorem leSound (enc : ArrEnc) : LeSound enc := by
       simp only [Shape.le, decide_eq_true_eq] at hle
       obtain ⟨n, rfl, hn⟩ := valOk_natLt_inv hv
       exact .natLt (Nat.lt_of_lt_of_le hn hle)
+    | word w =>
+      simp only [Shape.le, decide_eq_true_eq] at hle
+      obtain ⟨n, rfl, hn⟩ := valOk_natLt_inv hv
+      exact .word (Nat.lt_of_lt_of_le hn hle)
     | _ => simp [Shape.le] at hle
   | enum i =>
     intro τ v hle hv
@@ -131,6 +140,20 @@ theorem leSound (enc : ArrEnc) : LeSound enc := by
       simp [Shape.le] at hle
       obtain ⟨rfl, rfl⟩ := hle
       exact hv
+    | _ => simp [Shape.le] at hle
+  | word w =>
+    intro τ v hle hv
+    obtain ⟨n, rfl, hn⟩ := valOk_word_inv hv
+    cases τ with
+    | any => exact .any _
+    | nat => exact .nat n
+    | natLt b =>
+      simp only [Shape.le, decide_eq_true_eq] at hle
+      exact .natLt (Nat.lt_of_lt_of_le hn hle)
+    | word w' =>
+      have hw : w = w' := by simpa [Shape.le] using hle
+      subst hw
+      exact .word hn
     | _ => simp [Shape.le] at hle
   | arr e n ih =>
     intro τ v hle hv

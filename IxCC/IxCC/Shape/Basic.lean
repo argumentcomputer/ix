@@ -19,10 +19,21 @@ read it, one per evaluator, each sound on its own, and neither is carried throug
 
 The constructors are the progress judgment's (`nat`, `enum`, `data`, `irr`, `fn`, `inter`,
 `any`, with the same names and arguments, so that judgment can take this type as it is) and
-two more: `natLt b` (a natural below `b`: a word of width `w` is `natLt (2 ^ w)`, a checked
-range is any other bound) and `arr e n` (an array of `e`, of length `n` where the length is
-static). `DataDecl` is the progress judgment's table entry with the constructor identity a
-parameter: a source constant at SrcEval, a constructor key at `Fir`.
+three more: `natLt b` (a natural below `b`, a checked range), `arr e n` (an array of `e`, of
+length `n` where the length is static), and `word w` (a fixed-width word of width `w`).
+`DataDecl` is the progress judgment's table entry with the constructor identity a parameter:
+a source constant at SrcEval, a constructor key at `Fir`. `SrcCert` is the progress
+judgment's certificate.
+
+**A word is its own constructor, not `natLt (2 ^ w)`.** At SrcEval a `UInt8` is a constructor
+tower `UInt8.ofBitVec (BitVec.ofFin (Fin.mk n _))` and a `Nat` below 256 is a literal; F6 reads
+the second and F6w the first, so the progress judgment must tell them apart (its `word w`
+values are the towers F6w reads, with `n` below the size). Below erasure the two coincide (the
+tower is unboxed to its number), so at `Fir` `word w` has exactly the values of
+`natLt (2 ^ w)` (`Fir.Shape.ValOk.word`), weakens into and from it (`Shape.le`: `word w ≤
+natLt b` when `2 ^ w ≤ b`, `natLt b ≤ word w` when `b ≤ 2 ^ w`, `word w ≤ nat`), and is held
+the same way natively: a raw machine register of the width (`Shape.slot`), a packed element
+(`Shape.elemKind`), never a counted cell (`Shape.immediate`), `Fir.Rep.word` (`Shape.rep`).
 
 A shape states a value fact, never a layout. The native layout is a function of the shape,
 below (`Shape.slot`, `Shape.elemKind`, `Shape.immediate`, `Shape.rep`), together with one
@@ -39,8 +50,8 @@ namespace IxCC.Shape
 open IxCC.Src (CId Width)
 
 /-- **A shape**: what is known of a value. The first seven constructors are the progress
-judgment's, in its order (`IxCCCorrect.Shape2.Shape`), so its case analyses keep their goal
-order when it takes this type; `natLt` and `arr` follow. -/
+judgment's, in its order, so its case analyses keep their goal order; `natLt`, `arr` and
+`word` follow. -/
 inductive Shape where
   /-- A `Nat` literal. -/
   | nat
@@ -60,15 +71,16 @@ inductive Shape where
   | natLt (b : Nat)
   /-- An array whose elements have shape `elem`, of length `len` where static. -/
   | arr (elem : Shape) (len : Option Nat)
+  /-- A fixed-width word of width `w`: at SrcEval the tower F6w reads (its number below
+  `2 ^ w`, an invariant only F6w establishes); at `Fir` a literal below `2 ^ w`, as
+  `natLt (2 ^ w)`. -/
+  | word (w : Width)
   deriving DecidableEq, Repr, Inhabited
 
 /-- `σ₁ → … → σₙ → τ`. -/
 def arrows : List Shape → Shape → Shape
   | [], τ => τ
   | σ :: σs, τ => .fn σ (arrows σs τ)
-
-/-- The shape of a word of width `w`. -/
-def Shape.word (w : Width) : Shape := .natLt w.size
 
 /-- **One instance of a data type**: its inductive, the shapes of its parameter slots, each
 constructor with the shapes of its fields in order, and whether it is a structure a projection
@@ -85,14 +97,30 @@ structure DataDecl (κ : Type) where
   ls : Src.Levels := []
   deriving Repr, Inhabited
 
+/-- **The progress judgment's certificate** (untrusted; its decision checks it): the instances
+`(constant, levels, shape)` the program uses, each enumeration's constructors in index order,
+the table of data entries, the shapes to try for a `let`-bound λ (which has no expected shape
+where it stands: the join points of `do` blocks), and per width the data entries of its tower
+(`UIntN`, `BitVec`, `Fin`). -/
+structure SrcCert where
+  insts : List (CId × Src.Levels × Shape)
+  enums : List (CId × List CId)
+  datas : List (DataDecl CId)
+  lets : List Shape := []
+  words : List (Width × Nat × Nat × Nat) := []
+
 /-- **Fact weakening**, decided: every value of shape `σ` has shape `τ`. A length may be
-forgotten, a bound raised, anything forgotten altogether. (Sound at `Fir` by
-`Fir.Proof.Shape.leSound`.) -/
+forgotten, a bound raised, anything forgotten altogether; a word is a natural below its size.
+(Sound at `Fir` by `Fir.Proof.Shape.leSound`. The progress judgment at SrcEval does not use
+it: there a word is a tower, not a literal.) -/
 def Shape.le : Shape → Shape → Bool
   | _, .any => true
   | .natLt a, .natLt b => decide (a ≤ b)
   | .natLt _, .nat => true
   | .arr e n, .arr e' n' => Shape.le e e' && (n'.isNone || n' == n)
+  | .word w, .natLt b => decide (w.size ≤ b)
+  | .word _, .nat => true
+  | .natLt b, .word w => decide (b ≤ w.size)
   | σ, τ => σ == τ
 
 /-! ## What the native back end derives
@@ -123,6 +151,7 @@ inductive NativeSlot where
 one tagged word otherwise. -/
 def Shape.slot : Shape → NativeSlot
   | .irr => .none
+  | .word w => .raw w
   | .natLt b =>
     match widthOfBound b with
     | some w => .raw w
@@ -140,6 +169,7 @@ inductive ElemKind where
 
 /-- The element kind of an array whose elements have shape `e`. -/
 def Shape.elemKind : Shape → ElemKind
+  | .word w => .packed w
   | .natLt b =>
     match widthOfBound b with
     | some w => .packed w
@@ -152,6 +182,7 @@ erased position hold no reference; an enumeration value is a tagged immediate. -
 def Shape.immediate : Shape → Bool
   | .irr | .enum _ => true
   | .natLt b => (widthOfBound b).isSome
+  | .word _ => true
   | _ => false
 
 /-- **A flow the native back end takes at no cost or at the cost of one box or unbox.** The
@@ -170,6 +201,7 @@ bits, one tagged word otherwise. A derived quantity: `Fir.Rep.elaborate` inserts
 `unbox` from it (`Fir.Rep.ofShapes`). -/
 def Shape.rep : Shape → Fir.Rep
   | .natLt b => if b ≤ 2 ^ 64 then .word else .tobj
+  | .word _ => .word
   | _ => .tobj
 
 /-! ## Small facts -/
@@ -198,5 +230,12 @@ theorem Shape.word_immediate (w : Width) : (Shape.word w).immediate = true := by
 /-- A word of any width elaborates raw. -/
 theorem Shape.word_rep (w : Width) : (Shape.word w).rep = .word := by
   cases w <;> first | rfl | decide
+
+/-- A word weakens to a natural below its size, and back. -/
+theorem Shape.word_le_natLt (w : Width) : (Shape.word w).le (.natLt w.size) = true := by
+  simp [Shape.le]
+
+theorem Shape.natLt_le_word (w : Width) : (Shape.natLt w.size).le (.word w) = true := by
+  simp [Shape.le]
 
 end IxCC.Shape
