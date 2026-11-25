@@ -1,0 +1,343 @@
+{"repro_command":
+ "bench-k45 run --rungs K1 --cpu 2 --blocks 10 --closures ../../fixtures/ixon-v4/bench-k1 --rc off --bignat --opt --bignat-lib /tmp/pr694-bench/bignat-lib.json /tmp/pr694-bench/k1-bignat-opt",
+ "ixcc_config":
+ {"stack_bytes": null,
+  "region_bytes": null,
+  "rc_mode": "off",
+  "opt": true,
+  "harness": true,
+  "embed_cert": false,
+  "closures": "../../fixtures/ixon-v4/bench-k1",
+  "cc": "cc",
+  "bignat_lib_sha256":
+  "7cba24f00900b9c060eaf6c4e08e6d2bc515319cb5c9d22684099f52f9a784fb",
+  "bignat_lib": "/tmp/pr694-bench/bignat-lib.json",
+  "bignat": true},
+ "geomeans":
+ [{"rung": "K1",
+   "row": "clang-O2",
+   "low": 0.262247,
+   "high": 0.267859,
+   "geomean": 0.264576,
+   "fixtures": 9},
+  {"rung": "K1",
+   "row": "clang-O3",
+   "low": 0.277972,
+   "high": 0.287593,
+   "geomean": 0.281446,
+   "fixtures": 9},
+  {"rung": "K1",
+   "row": "ixcc",
+   "low": 0.910297,
+   "high": 0.931671,
+   "geomean": 0.917066,
+   "fixtures": 9}],
+ "fixtures":
+ [{"text_bytes":
+   {"lean-clang": 2047585, "ixcc": 7577, "clang-O3": 391, "clang-O2": 391},
+   "sha256":
+   {"lean-clang":
+    "b7165c8931f7a89e6c99675d02e7672c4ecf390f2cb2e0748cd7055ef7dcfcca",
+    "ixcc": "d1e4281273904d98408a17c05bbfd46a14a5785d98187511f24b441aaca26597",
+    "clang-O3":
+    "f4e2f9931ef4d688da70933ae225e4b0753131186558d95522ae28b7757697cd",
+    "clang-O2":
+    "b86fff3c830da6cfc576943d4c5174b4c244ed86ebcf7002321e8970c6c94b68"},
+   "rung": "K1",
+   "ratio_to_lean_clang":
+   {"ixcc": {"median": 1.355444, "low": 1.345435, "high": 1.359457},
+    "clang-O3": {"median": 0.399295, "low": 0.396414, "high": 0.400203},
+    "clang-O2": {"median": 0.398992, "low": 0.397221, "high": 0.401202}},
+   "mode":
+   {"lean-clang": "lean-clang",
+    "ixcc": "standalone-exe",
+    "clang-O3": "clang-twin",
+    "clang-O2": "clang-twin"},
+   "median_rss_kib":
+   {"lean-clang": 8820, "ixcc": 1584, "clang-O3": 1584, "clang-O2": 1584},
+   "median_ms":
+   {"lean-clang": 524.307271,
+    "ixcc": 710.877092,
+    "clang-O3": 209.299525,
+    "clang-O2": 209.102242},
+   "fixture": "fib",
+   "file_bytes":
+   {"lean-clang": 4479952, "ixcc": 9538, "clang-O3": 16184, "clang-O2": 16184},
+   "bench_args": ["40"]},
+  {"text_bytes":
+   {"lean-clang": 2047649, "ixcc": 7121, "clang-O3": 361, "clang-O2": 359},
+   "sha256":
+   {"lean-clang":
+    "7c3410307f4284fd669927141f9c957af2081959e68f81a8942691ba60b3b64c",
+    "ixcc": "23e449f7044a69a95a68ceaa4ae22e30fee546372461ec7c7a08bea9889989bd",
+    "clang-O3":
+    "2ea41f887914511d49da72d722cd3caddde8b1a57cbd78787bcb4212a951a347",
+    "clang-O2":
+    "32d47f800b4256c47fba35cb2b6cbc4157be046f545a4a9a6964849cf5ce7384"},
+   "rung": "K1",
+   "ratio_to_lean_clang":
+   {"ixcc": {"median": 0.641613, "low": 0.640019, "high": 0.64489},
+    "clang-O3": {"median": 0.013537, "low": 0.012846, "high": 0.014774},
+    "clang-O2": {"median": 0.013715, "low": 0.013296, "high": 0.015043}},
+   "mode":
+   {"lean-clang": "lean-clang",
+    "ixcc": "standalone-exe",
+    "clang-O3": "clang-twin",
+    "clang-O2": "clang-twin"},
+   "median_rss_kib":
+   {"lean-clang": 8800, "ixcc": 1584, "clang-O3": 1584, "clang-O2": 1584},
+   "median_ms":
+   {"lean-clang": 155.421101,
+    "ixcc": 99.792424,
+    "clang-O3": 2.106025,
+    "clang-O2": 2.132523},
+   "fixture": "sum-loop",
+   "file_bytes":
+   {"lean-clang": 4480224, "ixcc": 9074, "clang-O3": 16160, "clang-O2": 16160},
+   "bench_args": ["100000000"]},
+  {"text_bytes":
+   {"lean-clang": 2048417, "ixcc": 7592, "clang-O3": 423, "clang-O2": 423},
+   "sha256":
+   {"lean-clang":
+    "062911343fc66b891d34fb0d38ff85e07f3a19c5dc99090ac4cd772d9db10bb1",
+    "ixcc": "e903bb7b13718d932f32f3ebb16c6c1318ab47448ee5fbc251b7398e3ba0ce92",
+    "clang-O3":
+    "1e3a1e333de051615dfcd365485aad8b3fe2991699bf2c23bf52aedcceb0a94d",
+    "clang-O2":
+    "1e3a1e333de051615dfcd365485aad8b3fe2991699bf2c23bf52aedcceb0a94d"},
+   "rung": "K1",
+   "ratio_to_lean_clang":
+   {"ixcc": {"median": 1.173172, "low": 1.158253, "high": 1.188367},
+    "clang-O3": {"median": 0.476227, "low": 0.47521, "high": 0.477121},
+    "clang-O2": {"median": 0.475343, "low": 0.47467, "high": 0.476737}},
+   "mode":
+   {"lean-clang": "lean-clang",
+    "ixcc": "standalone-exe",
+    "clang-O3": "clang-twin",
+    "clang-O2": "clang-twin"},
+   "median_rss_kib":
+   {"lean-clang": 8818, "ixcc": 1584, "clang-O3": 1584, "clang-O2": 1584},
+   "median_ms":
+   {"lean-clang": 74.527651,
+    "ixcc": 87.560705,
+    "clang-O3": 35.483532,
+    "clang-O2": 35.452765},
+   "fixture": "ackermann",
+   "file_bytes":
+   {"lean-clang": 4480904, "ixcc": 9538, "clang-O3": 16192, "clang-O2": 16192},
+   "bench_args": ["3", "10"]},
+  {"text_bytes":
+   {"lean-clang": 2050529, "ixcc": 8902, "clang-O3": 603, "clang-O2": 603},
+   "sha256":
+   {"lean-clang":
+    "8a7d104621028966b1967e20fbd3e8965e5c1a70b7c82f8b161fc80c8bac7bda",
+    "ixcc": "a9e654b7b6be4cc0fae1f9a467fe43278126997e5328d441c46d6269e781babb",
+    "clang-O3":
+    "4c86427dbf1111c2d1b8f9d6f710fa92f3164e145ad8138a7486b19eec4456a0",
+    "clang-O2":
+    "4c86427dbf1111c2d1b8f9d6f710fa92f3164e145ad8138a7486b19eec4456a0"},
+   "rung": "K1",
+   "ratio_to_lean_clang":
+   {"ixcc": {"median": 0.864383, "low": 0.833627, "high": 0.895136},
+    "clang-O3": {"median": 0.589568, "low": 0.579109, "high": 0.601498},
+    "clang-O2": {"median": 0.589894, "low": 0.580998, "high": 0.594061}},
+   "mode":
+   {"lean-clang": "lean-clang",
+    "ixcc": "standalone-exe",
+    "clang-O3": "clang-twin",
+    "clang-O2": "clang-twin"},
+   "median_rss_kib":
+   {"lean-clang": 8798, "ixcc": 1584, "clang-O3": 1584, "clang-O2": 1584},
+   "median_ms":
+   {"lean-clang": 9.080165,
+    "ixcc": 7.857578,
+    "clang-O3": 5.35703,
+    "clang-O2": 5.28805},
+   "fixture": "tak",
+   "file_bytes":
+   {"lean-clang": 4483000, "ixcc": 10850, "clang-O3": 16184, "clang-O2": 16184},
+   "bench_args": ["24", "24", "16", "8"]},
+  {"text_bytes":
+   {"lean-clang": 2048033, "ixcc": 24946, "clang-O3": 410, "clang-O2": 402},
+   "sha256":
+   {"lean-clang":
+    "24a8512bb8c929bb5077d19f949eb71cf481e7120b33d8413578882d6183ea24",
+    "ixcc": "ae9c809562f11d358b852f5216adeb1fe27badb7e3d319ba180e396e7ffc03a5",
+    "clang-O3":
+    "74c1878f3fc12cb58d3a97ed465e9a2d5a2d29da47bb9d536dee67c5e4b6b983",
+    "clang-O2":
+    "7b82da4528dc3a8f9ee6b5f03de5dc43d7faca7a22160b7a67fd0238ce3c736b"},
+   "rung": "K1",
+   "ratio_to_lean_clang":
+   {"ixcc": {"median": 0.61461, "low": 0.576748, "high": 0.656674},
+    "clang-O3": {"median": 0.581334, "low": 0.551848, "high": 0.652563},
+    "clang-O2": {"median": 0.580019, "low": 0.557534, "high": 0.614054}},
+   "mode":
+   {"lean-clang": "lean-clang",
+    "ixcc": "standalone-exe",
+    "clang-O3": "clang-twin",
+    "clang-O2": "clang-twin"},
+   "median_rss_kib":
+   {"lean-clang": 8778, "ixcc": 1584, "clang-O3": 1584, "clang-O2": 1584},
+   "median_ms":
+   {"lean-clang": 3.244173,
+    "ixcc": 1.963863,
+    "clang-O3": 1.890624,
+    "clang-O2": 1.896081},
+   "fixture": "gcd",
+   "file_bytes":
+   {"lean-clang": 4480440, "ixcc": 26898, "clang-O3": 16152, "clang-O2": 16152},
+   "bench_args": ["4660046610375530309", "2880067194370816120"]},
+  {"text_bytes":
+   {"lean-clang": 2048673, "ixcc": 52886, "clang-O3": 426, "clang-O2": 424},
+   "sha256":
+   {"lean-clang":
+    "7e8dd312661977473f3bb1567ce63360681d9c3d57fa2184c37f86a8c21c459f",
+    "ixcc": "c54d7ebf6b007ffdf9188a52d01df0a2537832b28714ed82f19bc0dc1624ee8d",
+    "clang-O3":
+    "0eff8df6c183ca02cd9ac25dcbc5f1f62f61d0d5b2e9df2f4e50e0bb9ae98f7f",
+    "clang-O2":
+    "98a722de78a97a9a1d5ec79bb4a5b956a4dd0ab195f3128663107433855d0711"},
+   "rung": "K1",
+   "ratio_to_lean_clang":
+   {"ixcc": {"median": 1.923703, "low": 1.922544, "high": 1.92507},
+    "clang-O3": {"median": 0.27457, "low": 0.274234, "high": 0.27543},
+    "clang-O2": {"median": 0.274316, "low": 0.273811, "high": 0.27495}},
+   "mode":
+   {"lean-clang": "lean-clang",
+    "ixcc": "standalone-exe",
+    "clang-O3": "clang-twin",
+    "clang-O2": "clang-twin"},
+   "median_rss_kib":
+   {"lean-clang": 8724, "ixcc": 1584, "clang-O3": 1584, "clang-O2": 1584},
+   "median_ms":
+   {"lean-clang": 491.432179,
+    "ixcc": 945.532176,
+    "clang-O3": 135.022278,
+    "clang-O2": 134.892057},
+   "fixture": "collatz",
+   "file_bytes":
+   {"lean-clang": 4481344, "ixcc": 54834, "clang-O3": 16160, "clang-O2": 16160},
+   "bench_args": ["1000000"]},
+  {"text_bytes":
+   {"lean-clang": 2048865, "ixcc": 39092, "clang-O3": 486, "clang-O2": 487},
+   "sha256":
+   {"lean-clang":
+    "14cdb529fa10c5cdf8c3feff5127695ae78b46b61119ba63968e2e49eb7a9e49",
+    "ixcc": "e5325109837cc186f01390ce8b5effb671bdfe7dd8cb655a1381b2f9b29a3b4e",
+    "clang-O3":
+    "f43255b92777404d2ef28be83eb0b32336483199a8065577511755abcebae38e",
+    "clang-O2":
+    "e6aeeabeda701420c0b503038631f1889991ed27d1721f7838769b8ae2ba52ae"},
+   "rung": "K1",
+   "ratio_to_lean_clang":
+   {"ixcc": {"median": 0.923745, "low": 0.923109, "high": 0.924524},
+    "clang-O3": {"median": 0.540762, "low": 0.54017, "high": 0.541047},
+    "clang-O2": {"median": 0.540336, "low": 0.540041, "high": 0.540453}},
+   "mode":
+   {"lean-clang": "lean-clang",
+    "ixcc": "standalone-exe",
+    "clang-O3": "clang-twin",
+    "clang-O2": "clang-twin"},
+   "median_rss_kib":
+   {"lean-clang": 8806, "ixcc": 1584, "clang-O3": 1584, "clang-O2": 1584},
+   "median_ms":
+   {"lean-clang": 530.404244,
+    "ixcc": 489.860225,
+    "clang-O3": 286.931047,
+    "clang-O2": 286.688276},
+   "fixture": "prime-count",
+   "file_bytes":
+   {"lean-clang": 4481744, "ixcc": 41042, "clang-O3": 16160, "clang-O2": 16160},
+   "bench_args": ["2000000"]},
+  {"text_bytes":
+   {"lean-clang": 2047457, "ixcc": 4061, "clang-O3": 365, "clang-O2": 365},
+   "sha256":
+   {"lean-clang":
+    "3b8a623c203581a29068c586c11eed9e1fd3658560514d85753fa249a74daf03",
+    "ixcc": "565ec522441df7e5f0203a5cea508bad9dee90007910f80f2444487ddfb6a26c",
+    "clang-O3":
+    "f321906d30a9deae2817b3d03e1c3c7bf92e6d0391a206c6ceaa78dac7dd74ff",
+    "clang-O2":
+    "e05f8c02d6fe981b51a6502e4d084704a4ba99049cdf7a5e95a6e7e428a7082a"},
+   "rung": "K1",
+   "ratio_to_lean_clang":
+   {"ixcc": {"median": 0.390016, "low": 0.378633, "high": 0.443511},
+    "clang-O3": {"median": 0.372821, "low": 0.359345, "high": 0.400605},
+    "clang-O2": {"median": 0.400829, "low": 0.375502, "high": 0.410971}},
+   "mode":
+   {"lean-clang": "lean-clang",
+    "ixcc": "standalone-exe",
+    "clang-O3": "clang-twin",
+    "clang-O2": "clang-twin"},
+   "median_rss_kib":
+   {"lean-clang": 14964, "ixcc": 1584, "clang-O3": 1584, "clang-O2": 1584},
+   "median_ms":
+   {"lean-clang": 5.30337,
+    "ixcc": 2.112145,
+    "clang-O3": 2.003833,
+    "clang-O2": 2.103744},
+   "fixture": "even-odd",
+   "file_bytes":
+   {"lean-clang": 4479944, "ixcc": 6018, "clang-O3": 16224, "clang-O2": 16224},
+   "bench_args": ["200000"]},
+  {"text_bytes":
+   {"lean-clang": 2047585, "ixcc": 16454, "clang-O3": 588, "clang-O2": 538},
+   "sha256":
+   {"lean-clang":
+    "d7ce50162441bdfeacb16820925ccf092db82a5fdad5f8e2500c31a7fdd9f3a3",
+    "ixcc": "d74f8fe33df617082bac2ed22411c6493eaa5b7f9d3d9b79e92239f02192a40a",
+    "clang-O3":
+    "ce194c019e55e4fd6d416df70278a8b19e8d8fa14add4d191c98ffcbfae43278",
+    "clang-O2":
+    "1230abbb31e0d97abec46fa02b0a22a97ba8e36bb8960d7020f307071645999b"},
+   "rung": "K1",
+   "ratio_to_lean_clang":
+   {"ixcc": {"median": 1.221272, "low": 1.215258, "high": 1.230526},
+    "clang-O3": {"median": 0.226885, "low": 0.224241, "high": 0.228197},
+    "clang-O2": {"median": 0.12014, "low": 0.119718, "high": 0.120809}},
+   "mode":
+   {"lean-clang": "lean-clang",
+    "ixcc": "standalone-exe",
+    "clang-O3": "clang-twin",
+    "clang-O2": "clang-twin"},
+   "median_rss_kib":
+   {"lean-clang": 8764, "ixcc": 1584, "clang-O3": 1584, "clang-O2": 1584},
+   "median_ms":
+   {"lean-clang": 202.110731,
+    "ixcc": 247.206401,
+    "clang-O3": 45.754198,
+    "clang-O2": 24.329778},
+   "fixture": "sfib",
+   "file_bytes":
+   {"lean-clang": 4479960, "ixcc": 18402, "clang-O3": 16160, "clang-O2": 16160},
+   "bench_args": ["100000000"]}],
+ "environment":
+ {"worker_siblings": "2,34",
+  "worker_max_khz": "unavailable",
+  "worker_cur_khz": "unavailable",
+  "worker_cpu": 2,
+  "platform_profile": "unavailable",
+  "loadavg": "1.37 2.88 2.81 1/932 50033",
+  "kernel":
+  "Linux 7.0.0-1017-aws #18~24.04.1-Ubuntu SMP PREEMPT Thu Oct 29 17:57:24 UTC 2026 x86_64",
+  "governor": "unavailable",
+  "energy_preference": "unavailable",
+  "cpu_model": "Intel(R) Xeon(R) 6975P-C",
+  "boost": "unavailable",
+  "ac_online": "no mains supply listed"},
+ "build_versions":
+ {"repository": "0c324194f9d4",
+  "objdump": "GNU objdump (GNU Binutils for Ubuntu) 2.42",
+  "leanc":
+  "clang version 22.1.4 (https://github.com/llvm/llvm-project 35990504507d79e0b9deb809c8ee5e1b34ceef20)",
+  "lean":
+  "Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)",
+  "ixcc_sha256":
+  "bcf63d37739d222782a544990e4ec9721ac136ef77814f0a15adb376bb5c9d91",
+  "ixcc": "../../.lake/build/bin/ixcc",
+  "gcc": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "g++": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "clang++": "Ubuntu clang version 18.1.3 (1ubuntu1)",
+  "clang": "Ubuntu clang version 18.1.3 (1ubuntu1)",
+  "cc": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"}}
