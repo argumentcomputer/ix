@@ -20,6 +20,7 @@ theorem Activation.return_value
     {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
     (checked : checkScopedProgram F bodies P borrows uniqs = true)
     {pairs : List (Nat × Cfg.Fun)} (consuming : consumeAll P = .ok pairs)
+    (tagged : Rt.Proof.Tagged (tablesOf P pairs))
     (functions : Nat → Lir.Func) (main : Nat)
     {H : Own.Heap} {addresses : AddressMap} {external : Nat → Nat} {roots : List Own.RVal}
     {retUniq : Bool} {priv : Nat → Prop} {rslots : Src.NatMap Own.RVal} {slotVals : List Own.RVal}
@@ -109,7 +110,7 @@ theorem Activation.return_value
       context base bump limit regionBytes slots lists :=
     ⟨by rw [← holdRoots_sameRefs refs]; simpa using heap.ready, heap.ordered, heap.compatible,
       heap.extent⟩
-  rcases before.frame.cursor.ret consuming nativeRange lookup before.frame.lookup blockLookup
+  rcases before.frame.cursor.ret consuming tagged nativeRange lookup before.frame.lookup blockLookup
       finished rfl before.frame.words frameValue before.running memory context callers with
       returned | failure
   · obtain ⟨word, represented, ret⟩ := returned

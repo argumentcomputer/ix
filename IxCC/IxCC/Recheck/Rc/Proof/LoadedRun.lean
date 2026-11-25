@@ -9,7 +9,7 @@ theorem loaded_root_shape {cfg : Config} {P : Src.Program} {cert : Cert} {f : Fr
     f.lowered.roots.map Prod.fst = f.fir.exports := by
   obtain ⟨_, _, _, _, _, generated, _⟩ := runFront_spec accepted
   obtain ⟨original, native, equal, _⟩ := Cfg.Rc.Public.Spec.lower_parts (runFront_native accepted).2
-  obtain ⟨main, pairs, functions, _, _, _, _, _, _, _, _, _, _, _, roots, _⟩ :=
+  obtain ⟨main, pairs, functions, _, _, _, _, _, _, _, _, _, _, _, _, roots, _⟩ :=
     Cfg.Rc.Native.Spec.lower_parts native
   have shape : f.lowered.roots.map Prod.fst = f.cfg.base.exports := by
     have lowered := congrArg (fun value : Cfg.Rc.Public.Lowered => value.runtime.roots.map Prod.fst) equal

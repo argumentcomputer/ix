@@ -120,7 +120,7 @@ theorem allocation_result (admission : CodeAdmission F bodies P config pairs fun
   have head : source.rest = .bind x (.alloc ctor args .shared) :: tail := bindingHead
   have real := checked_binding_real admission.scopedProgram before.layout sourceLookup
     (by simp [Own.immRhs, reserved]) (by simp [Own.immRhs, isReuseOp])
-  rcases allocation_step_of (Public.Spec.rawSource config P pairs) main before.frame.cursor
+  rcases allocation_step_of (Public.Spec.rawSource config P pairs) main admission.tagged before.frame.cursor
       {ctors := F.ctors, known := F.known} ctor args x head before.frame.lookup frameArgs den balance
       positive ready before.frame.words real before.frame.bounded before.running callers with
       success | failure

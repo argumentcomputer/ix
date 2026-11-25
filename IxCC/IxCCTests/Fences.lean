@@ -33,6 +33,7 @@ import IxCCTests.Fences.RtProof
 import IxCCTests.Fences.FirProof
 import IxCCTests.Fences.FirShape
 import IxCCTests.Fences.SrcShape
+import IxCCTests.Fences.RcRawWords
 import IxCCTests.Fences.OwnProof
 import IxCCTests.Fences.CfgLower
 import IxCCTests.Fences.Front

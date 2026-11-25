@@ -9,7 +9,7 @@ namespace IxCC.Cfg.Rc.Native.Spec
 open IxCC.Rt.Lower IxCC.Rt.Proof
 open IxCC.Cfg.Rc.Proof.Physical.Bridge IxCC.Rt.Rc.Procs
 
-theorem Cursor.ret {T : Tables} {P : Cfg.Program} {lp : Lir.Program}
+theorem Cursor.ret {T : Tables} (tagged : Tagged T) {P : Cfg.Program} {lp : Lir.Program}
     {source : Cfg.Frame} {target : Lir.Frame} (cursor : Cursor T P lp source target)
     {fd : Cfg.Fun} {block : Cfg.Block}
     (sourceLookup : P.fun? source.fn = some fd) (blockLookup : fd.blocks[source.blk]? = some block)
@@ -40,7 +40,8 @@ theorem Cursor.ret {T : Tables} {P : Cfg.Program} {lp : Lir.Program}
       cases switch
   simp only [unfused, terminal] at code
   obtain ⟨_, ⟨operand, lowered, rfl⟩ | rfl⟩ := term_ret code opened
-  · have live : LiveArg (Fused T fd) arg :=
+  · rw [tagged.operandAt_ret] at lowered
+    have live : LiveArg (Fused T fd) arg :=
       fused_term_live blockLookup (args := [arg]) (fun y member => by
         simp only [otherUses, terminal, List.mem_append]
         exact .inr (by simpa [Cfg.Check.termVars] using argVars_of_mem member)) arg (by simp)
@@ -65,7 +66,7 @@ theorem Cursor.ret {T : Tables} {P : Cfg.Program} {lp : Lir.Program}
 /-- Recover the current consumed return block from accepted consumption.
 The source terminator is preserved even when its body contains RC markers. -/
 theorem ConsumedCursor.ret {P : Program} {pairs : List (Nat × Cfg.Fun)}
-    (consuming : consumeAll P = .ok pairs) {lp : Lir.Program}
+    (consuming : consumeAll P = .ok pairs) (tagged : Tagged (tablesOf P pairs)) {lp : Lir.Program}
     {source : Cfg.Frame} {target : Lir.Frame} (cursor : ConsumedCursor P pairs lp source target)
     (range : source.fn < P.base.size) {fd actual : Cfg.Fun} {block : Cfg.Block}
     (sourceLookup : P.base.fun? source.fn = some fd)
@@ -89,7 +90,7 @@ theorem ConsumedCursor.ret {P : Program} {pairs : List (Nat × Cfg.Fun)}
   rw [finished] at consumeRest
   simp only [List.mapM_nil, pure, Except.pure, Except.ok.injEq] at consumeRest
   subst rest
-  apply Cursor.ret position actualLookup targetBlock rfl terminal registers argument running mem context callers
+  apply Cursor.ret tagged position actualLookup targetBlock rfl terminal registers argument running mem context callers
 
 
 

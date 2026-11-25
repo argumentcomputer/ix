@@ -40,7 +40,7 @@ theorem get_ofList_absent {α : Type} (xs : List (Nat × α))
 /-- Sparse trie extras cannot hide behind the program size: both maps are
 constructed only from the exact successful numbered entry list. -/
 theorem generate_reserved_absent {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} (h : generate F bodies = some P) {f : Nat} (hf : F.size ≤ f) :
+    {raw : RawLayout} {P : Program} (h : generate F bodies raw = some P) {f : Nat} (hf : F.size ≤ f) :
     P.base.fun? f = none ∧ P.actions.get? f = none := by
   unfold generate at h
   cases he : entries F bodies (List.range F.size) with
@@ -66,7 +66,7 @@ theorem checked_reserved_absent {F : Fir.Program} {bodies : Src.NatMap Own.Plain
   generate_reserved_absent (checkProgram_parts h).2 hf
 
 theorem generate_size {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} (h : generate F bodies = some P) : P.base.size = F.size := by
+    {raw : RawLayout} {P : Program} (h : generate F bodies raw = some P) : P.base.size = F.size := by
   unfold generate at h
   cases he : entries F bodies (List.range F.size) with
   | none => simp [he] at h

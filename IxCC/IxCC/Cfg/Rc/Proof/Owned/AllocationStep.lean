@@ -169,6 +169,7 @@ theorem fused_allocation_instruction_of
 /-- `allocation_step` with the fields' tokens given directly. -/
 theorem allocation_step_of
     {P : Program} {pairs : List (Nat × Cfg.Fun)} (functions : Nat → Lir.Func) (main : Nat)
+    (tagged : Rt.Proof.Tagged (tablesOf P pairs))
     {source : Cfg.Frame} {target : Lir.Frame}
     (cursor : ConsumedCursor P pairs (Public.Spec.sourceStage P functions main) source target)
     (tables : Own.Tables) (ctor : Fir.CtorInfo) (args : List Fir.Arg) (x : Fir.Var)
@@ -232,7 +233,7 @@ theorem allocation_step_of
   · obtain ⟨operands, nativeFunction, nativeBlock, lowered, nativeLookup, nativeBlockLookup,
       nativePosition, statement, continuation⟩ := success
     have lowered' : Rt.Lower.operands target.fn args = .ok (some operands) := by
-      simpa only [fn] using lowered
+      rw [tagged.operandsAt_params] at lowered; simpa only [fn] using lowered
     obtain ⟨effect, result, counts, preserve, outcome⟩ :=
       fused_allocation_instruction_of tables ctor args x arguments den balance arity positive
         (by omega) tagBound nobj nscalar shared ready

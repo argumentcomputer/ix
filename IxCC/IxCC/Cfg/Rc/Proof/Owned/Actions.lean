@@ -31,6 +31,7 @@ open IxCC.Own.Plain (Ctx JCtx checkCode)
 projection's, an immediate), not only a lexical token's. -/
 theorem copy_marker_step_of
     {P : Program} {pairs : List (Nat × Cfg.Fun)} (functions : Nat → Lir.Func) (main : Nat)
+    (tagged : Rt.Proof.Tagged (tablesOf P pairs))
     {source : Cfg.Frame} {target : Lir.Frame}
     (cursor : ConsumedCursor P pairs (Public.Spec.sourceStage P functions main) source target)
     {dummy x : Nat} {tail : List Cfg.Instr}
@@ -72,7 +73,7 @@ theorem copy_marker_step_of
       position, statement, continuation⟩ := success
     have operandsKnown : Rt.Lower.operands source.fn [.var x, .lit (.nat 1)] =
         .ok (some [.v x, .imm 3]) := rfl
-    rw [operandsKnown] at lowered
+    rw [tagged.operandsAt_params, operandsKnown] at lowered
     cases lowered
     obtain ⟨wrapperLookup, procedureLookup⟩ := source_stage_increment_runtime P functions main
     obtain ⟨H', action, tokens, values, outcome⟩ :=
@@ -138,7 +139,7 @@ theorem physical_inc (admission : CodeAdmission F bodies P config pairs function
       List.nodup_nil⟩
   have ready : Gen.AllocatorReady maxClass H addresses memory (holdRoots external ([] ++ (roots ++ slotVals)))
       context base bump limit slots lists := by simpa using heap.ready
-  rcases copy_marker_step_of (Public.Spec.rawSource config P pairs) main before.frame.cursor head'
+  rcases copy_marker_step_of (Public.Spec.rawSource config P pairs) main admission.tagged before.frame.cursor head'
       before.frame.lookup tokens frameLookup permission ready before.frame.words
       (absent first (Nat.le_refl _)) before.running callers with stepped | failed
   · obtain ⟨H₂, mem', action, _, ready', trace, cursor', words', values⟩ := stepped

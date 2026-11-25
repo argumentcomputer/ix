@@ -7,7 +7,7 @@ open IxCC.Cfg.Rc.Proof.Physical.Bridge IxCC.Rt.Rc.Procs IxCC.Rt.Proof IxCC.Rt.Lo
 
 /-- A real finished raw cursor yields the actual tail-call terminator and
 dynamic argument words, or follows the emitted Nat-overflow failure. -/
-theorem Cursor.tail_receipt {T : Tables} {P : Cfg.Program} {lp : Lir.Program}
+theorem Cursor.tail_receipt {T : Tables} (tagged : Rt.Proof.Tagged T) {P : Cfg.Program} {lp : Lir.Program}
     {source : Cfg.Frame} {target : Lir.Frame} (cursor : Cursor T P lp source target)
     {fd : Cfg.Fun} {block : Cfg.Block}
     (sourceLookup : P.fun? source.fn = some fd) (blockLookup : fd.blocks[source.blk]? = some block)
@@ -47,6 +47,7 @@ theorem Cursor.tail_receipt {T : Tables} {P : Cfg.Program} {lp : Lir.Program}
       term_live blockLookup (fun y member => by
         simp only [otherUses, terminal, List.mem_append]
         exact .inr (by simpa [Cfg.Check.termVars] using argVars_of_mem member))
+    rw [tagged.operandsAt_params] at lowered
     obtain ⟨words, evaluated, represented, _⟩ := fused_operands_words registers lowered live arguments
     obtain ⟨output, outputLookup, size, term⟩ :=
       closedAt_of held (Grows.refl _) extension (t := .tail f operands) rfl
@@ -68,7 +69,7 @@ caller literally. Entry and the optional forward trampoline are executed,
 so a successful native enter is not a caller-supplied premise. -/
 theorem FrameState.tail {config : Rt.Config} {P : Program}
     {pairs : List (Nat × Cfg.Fun)} {funcs : List Lir.Func}
-    (consuming : consumeAll P = .ok pairs)
+    (consuming : consumeAll P = .ok pairs) (tagged : Rt.Proof.Tagged (tablesOf P pairs))
     (lowered : Rt.Lower.functions (tablesOf P pairs) (consumed P pairs) (rootsOf config P)
       (List.range P.base.size) = .ok funcs)
     (main : Nat) {addresses : AddressMap} {heapSize bound : Nat} {function : Cfg.Fun}
@@ -113,7 +114,7 @@ theorem FrameState.tail {config : Rt.Config} {P : Program}
       exact .inr (by simpa [Cfg.Check.termVars] using argVars_of_mem member))
   have compatible := before.compatible.args live arguments
   have bounded := before.bounded.args args arguments
-  rcases position.tail_receipt before.lookup actualBlock rfl terminal before.words arguments
+  rcases position.tail_receipt tagged before.lookup actualBlock rfl terminal before.words arguments
       running mem context callers with success | failed
   · obtain ⟨words, lirFunction, output, operands, represented, functionLookup,
       outputLookup, pos, term, evaluated⟩ := success

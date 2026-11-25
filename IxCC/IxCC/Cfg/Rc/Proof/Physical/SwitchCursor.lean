@@ -34,7 +34,7 @@ theorem Cursor.switch_reaches {T : Tables} {P : Cfg.Program} {lp : Lir.Program}
     (∃ F starts off C low pe le targetEnv,
       lp.funcs[source.fn]? = some F ∧ Lowered T source.fn fd F starts ∧
       starts.get? source.blk = some off ∧ Holds source.fn F off starts C ∧ off ≤ low ∧
-      EdgeOk C source.fn edge pe ∧ edge.back = decide (edge.target ≤ source.blk) ∧
+      EdgeOk C source.fn T edge pe ∧ edge.back = decide (edge.target ≤ source.blk) ∧
       resolveEdge source.fn off starts pe = .ok le ∧
       ReachesEdge lp source.fn F mem context callers low
         (Lir.atState mem context target.fn target.label target.pos target.env callers) le targetEnv ∧
@@ -69,7 +69,7 @@ theorem Cursor.switch_reaches {T : Tables} {P : Cfg.Program} {lp : Lir.Program}
       cases impossible
     have fresh : bound ≤ state.fresh := Nat.le_trans real supply
     have reaches : ∃ pe le targetEnv,
-        EdgeOk C source.fn edge pe ∧ edge.back = decide (edge.target ≤ source.blk) ∧
+        EdgeOk C source.fn T edge pe ∧ edge.back = decide (edge.target ≤ source.blk) ∧
         resolveEdge source.fn off starts pe = .ok le ∧
         ReachesEdge lp source.fn F mem context callers (off+state.cur)
           (Lir.atState mem context source.fn (off+state.cur) state.acc.length target.env callers)

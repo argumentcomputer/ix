@@ -34,7 +34,7 @@ theorem accepted_root_eval_stages {config : Rt.Config} {F : Fir.Program}
             clock words memory context)
           (fun clock => Lir.eval {lowered.runtime.program with main := root} clock words memory context) := by
   obtain ⟨original, native, equal, _⟩ := Public.Spec.lower_parts accepted
-  obtain ⟨main, pairs, functions, _, switches, entry, hok, consuming, lowering, length, program, _⟩ :=
+  obtain ⟨main, pairs, functions, _, switches, entry, hok, consuming, rawChecked, lowering, length, program, _⟩ :=
     Native.Spec.lower_parts native
   have splitEq : lowered.runtime.program =
       (Public.Spec.inlinedPublicProgram (layoutOf P) functions main).splitCriticalEdges := by
@@ -44,7 +44,7 @@ theorem accepted_root_eval_stages {config : Rt.Config} {F : Fir.Program}
       lowered.runtime.program
       (Public.Spec.labels (Public.Spec.inlinedPublicProgram (layoutOf P) functions main)) :=
     splitEq ▸ Public.Spec.program_split _
-  refine ⟨pairs, functions, ⟨checked, consuming, lowering, switches⟩, ?_⟩
+  refine ⟨pairs, functions, ⟨checked, consuming, lowering, switches, rawChecked⟩, ?_⟩
   intro root hroot words memory context
   have splitRoot : Lir.ProgSim (Public.Spec.inlinedPublicProgram (layoutOf P) functions root)
       {lowered.runtime.program with main := root}

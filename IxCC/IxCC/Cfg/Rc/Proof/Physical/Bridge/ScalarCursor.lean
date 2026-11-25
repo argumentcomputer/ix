@@ -10,7 +10,8 @@ open IxCC IxCC.Rt IxCC.Rt.Proof IxCC.Rt.Lower
 open IxCC.Rt.Rc.Procs IxCC.Cfg.Rc.Native.Spec
 open IxCC.Lir (Word)
 
-theorem cursor_step {T : Tables} (bools : BoolsOk T) {P : Cfg.Program} {lp : Lir.Program}
+theorem cursor_step {T : Tables} (bools : BoolsOk T) (tagged : Rt.Proof.Tagged T) {P : Cfg.Program}
+    {lp : Lir.Program}
     (pow : lp.funcs[T.natPow]? = some Procs.natPow)
     (gcd : lp.funcs[T.natGcd]? = some Procs.natGcd)
     {source : Cfg.Frame} {target : Lir.Frame} {fd : Cfg.Fun}
@@ -87,7 +88,7 @@ theorem cursor_step {T : Tables} (bools : BoolsOk T) {P : Cfg.Program} {lp : Lir
     obtain ⟨continues, next, lowered, ⟨rfl, rest⟩ | ⟨rfl, rfl⟩⟩ := rest_cons lowering unfused
     · obtain ⟨grows, labeled', opened'⟩ := instr_mono lowered labeled opened
       have nextExt : Ext chunk next := (rest_grows rest labeled' opened').ext extension
-      have simulate := instr_sim bools targetLookup held pow gcd pureRhs lowered nextExt labeled opened
+      have simulate := instr_sim bools tagged targetLookup held pow gcd pureRhs lowered nextExt labeled opened
         (Nat.le_trans supply fresh) real live (ctx := context)
       rcases simulate addresses H source.env target.env mem callers value H' related effect with
         ⟨charge, registers, trace, afterRelated⟩ | failed

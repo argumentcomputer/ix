@@ -37,7 +37,7 @@ instance : Lang (Nat × List Nat) Program where
   obs := Own.Plain.obsV
 
 theorem generate_exports {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} (h : generate F bodies = some P) : P.base.exports = F.exports := by
+    {raw : RawLayout} {P : Program} (h : generate F bodies raw = some P) : P.base.exports = F.exports := by
   unfold generate at h
   cases he : entries F bodies (List.range F.size) with
   | none => simp [he] at h

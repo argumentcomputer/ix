@@ -32,6 +32,7 @@ theorem tablesOf_boolsOk (P : Program) (pairs : List (Nat × Cfg.Fun)) :
 an actual consumed scalar instruction. Every code/operand receipt comes from
 the cursor; the resource branch is the emitted target failure. -/
 theorem frame_step {P : Program} {pairs : List (Nat × Cfg.Fun)} {lp : Lir.Program}
+    (tagged : Rt.Proof.Tagged (tablesOf P pairs))
     (pow : lp.funcs[(tablesOf P pairs).natPow]? = some Procs.natPow)
     (gcd : lp.funcs[(tablesOf P pairs).natGcd]? = some Procs.natGcd)
     {addresses : AddressMap} {bound size : Nat} {fd : Cfg.Fun}
@@ -60,7 +61,7 @@ theorem frame_step {P : Program} {pairs : List (Nat × Cfg.Fun)} {lp : Lir.Progr
   have sourceEffect : Own.evalRhs .rc (ownTables (tablesOf P pairs)) source.env H rhs =
       .ok (value, H') := effect
   obtain ⟨same, result⟩ := cursor_step (source := {source with rest := .bind x rhs :: rest})
-    (tablesOf_boolsOk P pairs) pow gcd before.lookup position
+    (tablesOf_boolsOk P pairs) tagged pow gcd before.lookup position
     before.words before.compatible before.bounded supply rfl pureRhs real sourceEffect mem context callers
   refine ⟨same, ?_⟩
   have initial : ({mem, ctx := context, stack := target :: callers} : Lir.State) =

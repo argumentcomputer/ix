@@ -27,7 +27,7 @@ open IxCC.Own.Plain (Ctx JCtx checkCode)
 /-! ## Pure helpers shared by `dropSlot`, `reuse`, and `reset` -/
 
 private theorem generate_known {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} (h : generate F bodies = some P) : P.base.known = F.known := by
+    {raw : RawLayout} {P : Program} (h : generate F bodies raw = some P) : P.base.known = F.known := by
   unfold generate at h
   cases he : entries F bodies (List.range F.size) with
   | none => simp [he] at h
@@ -48,8 +48,8 @@ private theorem ctorOk_of_validReuse {F : Fir.Program} {bodies : Src.NatMap Own.
   have hctors : P.base.ctors = F.ctors := generate_ctors hgen
   have hknown : P.base.known = F.known := generate_known hgen
   obtain ⟨_, _, _, htag, _, _, _, _, _, _, _, _⟩ := validReuseCtor_full hvc
-  refine ⟨by simpa [tablesOf, Rt.Lower.tables, consumed, hctors] using hct, ?_, htag⟩
-  simp [tablesOf, Rt.Lower.tables, consumed, Rt.Lower.isNatKey, hknown, hnz, hns]
+  refine ⟨by simpa [tablesOf, Raw.rawTables, Rt.Lower.tables, consumed, hctors] using hct, ?_, htag⟩
+  simp [tablesOf, Raw.rawTables, Rt.Lower.tables, consumed, Rt.Lower.isNatKey, hknown, hnz, hns]
 
 private theorem envRoots_cons_inv {m : Src.NatMap RVal} {a : Nat} {l : List Nat} {xs : List RVal}
     (h : Own.Plain.EnvRoots m (a :: l) xs) :
@@ -421,7 +421,7 @@ theorem physical_dropSlot (admission : CodeAdmission F bodies P config pairs fun
       position, statement, continuation⟩ := success
     have operandsKnown : Rt.Lower.operands source.fn [.var (slotBase + s)] =
         .ok (some [.v (slotBase + s)]) := rfl
-    rw [operandsKnown] at lowered
+    rw [admission.tagged.operandsAt_params, operandsKnown] at lowered
     cases lowered
     obtain ⟨wrapLookup, decLookup⟩ :=
       source_stage_decrement_runtime P (Public.Spec.rawSource config P pairs) main
@@ -608,6 +608,7 @@ theorem physical_reuse (admission : CodeAdmission F bodies P config pairs functi
   rcases before.frame.cursor.call head consuming memory context callers with success | failure
   · obtain ⟨operands, nativeFunction, block, lowered, functionLookup, blockLookupLir,
       position, statement, continuation⟩ := success
+    rw [admission.tagged.operandsAt_params] at lowered
     obtain ⟨words, hevalWords, hrelWords, _⟩ :=
       fused_operands_words before.frame.words lowered liveArgs hframeArgs
     obtain ⟨hwlen, hgetWord⟩ := listRel_getElem hrelWords
@@ -944,7 +945,7 @@ theorem physical_reset (admission : CodeAdmission F bodies P config pairs functi
         .ok (some [.v x, .imm (UInt64.ofNat (2 * mask + 1))]) := by
       simp only [Rt.Lower.operands, Rt.Lower.operand, mask, hmaskNat, Option.map_some,
         pure, Except.pure, bind, Except.bind]
-    rw [hop] at lowered
+    rw [admission.tagged.operandsAt_params, hop] at lowered
     cases lowered
     let wrapEnv : Lir.Env := (({} : Lir.Env).insert 0 vxWord).insert 1 (UInt64.ofNat (2 * mask + 1))
     have henter : Lir.enter lp callee [vxWord, UInt64.ofNat (2 * mask + 1)] =

@@ -127,7 +127,7 @@ theorem tail_result (admission : CodeAdmission F bodies P config pairs functions
     have sameCallee : calleeSource = sourceFunction :=
       Option.some.inj (calleeLookup.symm.trans sourceLookup)
     subst calleeSource
-    rcases self_entry_activation admission.scopedProgram admission.consuming sourceLookup
+    rcases self_entry_activation admission.scopedProgram admission.consuming admission.tagged sourceLookup
         entryLayout before.frame ownArgs den balance hbrw huniq
         before.owned.privBound before.owned.privNoEdge hprivArgs fieldsArity before.running
         memory context [] callers with entered | failure
@@ -166,7 +166,7 @@ theorem tail_result (admission : CodeAdmission F bodies P config pairs functions
     rw [finished] at consumeRest
     simp only [List.mapM_nil, pure, Except.pure, Except.ok.injEq] at consumeRest
     subst rest
-    rcases position.tail_receipt before.frame.lookup consumedBlock rfl terminal before.frame.words
+    rcases position.tail_receipt admission.tagged before.frame.lookup consumedBlock rfl terminal before.frame.words
         frameArgs before.running memory context callers with success | failure
     · obtain ⟨argumentWords, nativeFunction, output, operands, represented, functionLookup,
         outputLookup, pos, term, evaluated⟩ := success

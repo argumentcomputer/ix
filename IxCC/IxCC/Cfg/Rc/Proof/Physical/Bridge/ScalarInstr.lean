@@ -39,7 +39,8 @@ theorem pure_effect {T : Tables} {rhs : Own.Rhs} (pureRhs : PureRhs rhs)
   | .fir (.call ..), impossible | .fir (.ctor ..), impossible | .fir (.proj ..), impossible
   | .proj .., impossible => exact False.elim impossible
 
-theorem instr_sim {T : Tables} (hT : BoolsOk T) {f : Fir.FunId} {lp : Lir.Program} {ctx : Word}
+theorem instr_sim {T : Tables} (hT : BoolsOk T) (tagged : Rt.Proof.Tagged T) {f : Fir.FunId}
+    {lp : Lir.Program} {ctx : Word}
     {D : Nat → Prop} {sup : Nat} {fn : Nat} {F : Lir.Func} {off : Nat} {starts : NatMap Nat} {C : List PBlock}
     (hF : lp.funcs[fn]? = some F) (hH : Holds f F off starts C)
     (hpow : lp.funcs[T.natPow]? = some Procs.natPow) (hgcd : lp.funcs[T.natGcd]? = some Procs.natGcd)
@@ -49,13 +50,15 @@ theorem instr_sim {T : Tables} (hT : BoolsOk T) {f : Fir.FunId} {lp : Lir.Progra
     RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x r := by
   match r, pureRhs, hrun, hlive with
   | .fir (.arg a), _, hrun, hlive =>
-    rcases withOperands_run hrun with ⟨las, hops, _, hk⟩ | ⟨_, impossible, _⟩
-    · obtain ⟨la, rfl, hop⟩ := operands_one hops
+    rcases withOperandsAt_run hrun with ⟨las, hops, _, hk⟩ | ⟨_, impossible, _⟩
+    · rw [tagged.operandsAt_var] at hops
+      obtain ⟨la, rfl, hop⟩ := operands_one hops
       simp only [assign_run, Except.ok.injEq, Prod.mk.injEq, true_and] at hk
       subst hk
       exact arg_sim hF hH hC ho hx hop (liveArgs_of hlive a (by simp))
     · cases impossible
   | .fir (.prim op args), _, hrun, hlive =>
+    rw [tagged.instr_prim] at hrun
     rcases withOperands_run hrun with ⟨las, hops, _, hk⟩ | ⟨_, impossible, _⟩
     · exact primitive_sim hT hF hH hpow hgcd hk hC hl ho hsup hx hops (liveArgs_of hlive)
     · cases impossible

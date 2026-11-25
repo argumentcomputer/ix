@@ -50,6 +50,7 @@ theorem FrameState.call {config : Rt.Config} {P : Program}
     (consuming : consumeAll P = .ok pairs)
     (lowered : Rt.Lower.functions (tablesOf P pairs) (consumed P pairs) (rootsOf config P)
       (List.range P.base.size) = .ok funcs)
+    (tagged : Rt.Proof.Tagged (tablesOf P pairs))
     (main : Nat) {addresses : AddressMap} {heapSize bound : Nat} {function : Cfg.Fun}
     {source : Cfg.Frame} {target : Lir.Frame}
     (before : FrameState P pairs (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main)
@@ -78,7 +79,7 @@ theorem FrameState.call {config : Rt.Config} {P : Program}
   have live := consumed_call_live before.cursor head (consume_user_call range) before.lookup
   have compatible := before.compatible.args live arguments
   have bounded := before.bounded.args args arguments
-  rcases consumed_user_call_entry consuming lowered main before.cursor head before.lookup
+  rcases consumed_user_call_entry consuming lowered main before.cursor head before.lookup tagged
       before.words arguments range lookup blockLookup arity real running mem context callers with success | failed
   · obtain ⟨consumedFd, targetEnv, offset, consumedLookup, trace, entered, words, saved, savedWords⟩ := success
     refine .inl ⟨consumedFd, targetEnv, offset, trace, ?_, ?_⟩

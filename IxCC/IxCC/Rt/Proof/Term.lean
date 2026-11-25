@@ -41,7 +41,7 @@ theorem fails_closed {lp : Lir.Program} {fn : Nat} {F : Lir.Func} {off : Nat} {s
 
 theorem term_jump {f : Fir.FunId} {T : Tables} {src : Nat} {e : Cfg.Edge} {st st' : St}
     (h : (term f T src (.jump e)).run st = .ok ((), st')) (hl : Labels st) (ho : Open st) :
-    ∃ pe st₁, (edge f src e).run st = .ok (pe, st₁) ∧ st' = closeSt st₁ (.jump pe) ∧ Grows st st' ∧
+    ∃ pe st₁, (edge f T src e).run st = .ok (pe, st₁) ∧ st' = closeSt st₁ (.jump pe) ∧ Grows st st' ∧
       st₁.cur = st.cur ∧ st₁.acc = st.acc := by
   simp only [term] at h
   obtain ⟨pe, st₁, h₁, h₂⟩ := run_bind h
@@ -52,14 +52,14 @@ theorem term_jump {f : Fir.FunId} {T : Tables} {src : Nat} {e : Cfg.Edge} {st st
 
 theorem term_ret {f : Fir.FunId} {T : Tables} {src : Nat} {a : Fir.Arg} {st st' : St}
     (h : (term f T src (.ret a)).run st = .ok ((), st')) (ho : Open st) :
-    Grows st st' ∧ ((∃ la, operand f a = .ok (some la) ∧ st' = closeSt st (.ret la)) ∨
+    Grows st st' ∧ ((∃ la, operandAt f (T.rawRet f) a = .ok (some la) ∧ st' = closeSt st (.ret la)) ∨
       st' = closeSt st (.fail .natOverflow)) := by
   simp only [term] at h
   obtain ⟨b, st₁, h₁, h₂⟩ := run_bind h
   simp only [StateT.run, pure, StateT.pure, Except.pure, Except.ok.injEq, Prod.mk.injEq, true_and] at h₂
   subst h₂
-  rcases withOperands_run h₁ with ⟨las, hops, -, hk⟩ | ⟨-, -, rfl⟩
-  · obtain ⟨la, rfl, hop⟩ := operands_one hops
+  rcases withOperandsAt_run h₁ with ⟨las, hops, -, hk⟩ | ⟨-, -, rfl⟩
+  · obtain ⟨la, rfl, hop⟩ := operandsAt_one hops
     rw [close_run] at hk
     simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hk
     subst hk
@@ -68,13 +68,13 @@ theorem term_ret {f : Fir.FunId} {T : Tables} {src : Nat} {a : Fir.Arg} {st st' 
 
 theorem term_tcall {f : Fir.FunId} {T : Tables} {src : Nat} {g : Nat} {as : List Fir.Arg} {st st' : St}
     (h : (term f T src (.tcall g as)).run st = .ok ((), st')) (ho : Open st) :
-    Grows st st' ∧ ((∃ las, operands f as = .ok (some las) ∧ st' = closeSt st (.tail g las)) ∨
+    Grows st st' ∧ ((∃ las, operandsAt f (T.rawParams g 0) as = .ok (some las) ∧ st' = closeSt st (.tail g las)) ∨
       st' = closeSt st (.fail .natOverflow)) := by
   simp only [term] at h
   obtain ⟨b, st₁, h₁, h₂⟩ := run_bind h
   simp only [StateT.run, pure, StateT.pure, Except.pure, Except.ok.injEq, Prod.mk.injEq, true_and] at h₂
   subst h₂
-  rcases withOperands_run h₁ with ⟨las, hops, -, hk⟩ | ⟨-, -, rfl⟩
+  rcases withOperandsAt_run h₁ with ⟨las, hops, -, hk⟩ | ⟨-, -, rfl⟩
   · rw [close_run] at hk
     simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hk
     subst hk
@@ -126,7 +126,7 @@ theorem fused_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {fn : Nat} {F 
     {key : Key.CtorKey}
     (hkey : (if c.holds .w64 wa wb then T.known.boolTrue else T.known.boolFalse) = some key)
     {e : Cfg.Edge} (hsel : Cfg.selectEdge key alts d = some e) :
-    ∃ pe le, EdgeOk C f e pe ∧ e.back = decide (e.target ≤ src) ∧ resolveEdge f off starts pe = .ok le ∧
+    ∃ pe le, EdgeOk C f T e pe ∧ e.back = decide (e.target ≤ src) ∧ resolveEdge f off starts pe = .ok le ∧
       ReachesEdge lp fn F mem ctx rest (off + st.cur) (Lir.atState mem ctx fn (off + st.cur) st.acc.length ρl rest)
         le ρl := by
   unfold fusedSwitch at hrun

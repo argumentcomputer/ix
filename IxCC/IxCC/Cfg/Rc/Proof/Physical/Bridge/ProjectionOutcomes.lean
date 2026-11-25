@@ -143,7 +143,7 @@ theorem fieldless_result (admission : CodeAdmission F bodies P config pairs func
     obtain ⟨supply, real⟩ := checked_binding_bounds admission.scopedProgram admission.consuming
       sourceLookup before.frame.lookup before.layout pureRhs
     obtain ⟨pow, gcd⟩ := source_stage_scalar_runtime P pairs (Public.Spec.rawSource config P pairs) main
-    rcases (frame_step pow gcd before.frame supply head pureRhs real effect before.running
+    rcases (frame_step admission.tagged pow gcd before.frame supply head pureRhs real effect before.running
         memory context callers).2 with scalar | failed
     · obtain ⟨charge, after, running, trace, frame, fused⟩ := scalar
       have activation : Activation F P pairs

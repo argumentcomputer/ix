@@ -68,7 +68,7 @@ theorem take_edge {P : Cfg.Program} {lp : Lir.Program} {ctx : Word} {fr : Cfg.Fr
     (hρ : EnvRel (tables P) Pw (Fused (tables P) fd) (supOf fd) fr.env ρl)
     (hheap : HeapInv (tables P) Pw H ctx s₂.mem) (hctx : s₂.ctx = ctx)
     (hstk : ListRel (SuspAt P lp Pw) stk lrest)
-    {e : Cfg.Edge} (he : e ∈ b.term.edges) {pe : PEdge} {le : Lir.Edge} (hok : EdgeOk C fr.fn e pe)
+    {e : Cfg.Edge} (he : e ∈ b.term.edges) {pe : PEdge} {le : Lir.Edge} (hok : EdgeOk C fr.fn (tables P) e pe)
     (hres : resolveEdge fr.fn off starts pe = .ok le)
     (hreach : ReachesEdge lp fr.fn F s₂.mem s₂.ctx lrest low s₂ le ρl)
     {s₁' : Cfg.State} (hs : Cfg.takeEdge fd fr stk H e = .next s₁' e.back) :
@@ -98,7 +98,7 @@ theorem take_edge {P : Cfg.Program} {lp : Lir.Program} {ctx : Word} {fr : Cfg.Fr
           rw [hL.edges hb he] at hbk
           have := hL.mono hot hoff (of_decide_eq_true hbk)
           omega
-        rcases edge_complete (D := Fused (tables P) fd) (sup := supOf fd) hF hH hok hres hreach hρ
+        rcases edge_complete (noRaw_tables P) (D := Fused (tables P) fd) (sup := supOf fd) hF hH hok hres hreach hρ
           (edge_live hb he) hvs (by simpa using hlen.symm) (params_lt_sup hbt) hot htb (htp.trans hhead) hback with
           hfail | ⟨c, ρt, hstar, hc, hρt⟩
         · exact .inr hfail

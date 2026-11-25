@@ -19,6 +19,14 @@ structure CodeAdmission (F : Fir.Program) (bodies : Src.NatMap Own.Plain.Code)
   lowering : Rt.Lower.functions (tablesOf P pairs) (consumed P pairs) (rootsOf config P)
     (List.range P.base.size) = .ok functions
   switches : Rt.checkSwitches P.base = .ok ()
+  rawChecked : (Raw.rawOk P.raw (consumed P pairs) && Raw.emptyLayout P.raw) = true
+
+theorem CodeAdmission.tagged {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
+    {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (admission : CodeAdmission F bodies P config pairs functions borrows uniqs) :
+    Rt.Proof.Tagged (tablesOf P pairs) :=
+  tablesOf_tagged admission.rawChecked
 
 theorem CodeAdmission.of_public {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Public.Lowered}
@@ -28,8 +36,9 @@ theorem CodeAdmission.of_public {config : Rt.Config} {F : Fir.Program}
     ∃ main pairs functions, CodeAdmission F bodies P config pairs functions borrows uniqs ∧
       P.base.exports.head? = some main := by
   obtain ⟨original, native, _, _⟩ := Public.Spec.lower_parts accepted
-  obtain ⟨main, pairs, functions, _, switches, entry, _, consuming, lowering, _⟩ := lower_parts native
-  exact ⟨main, pairs, functions, ⟨checked, consuming, lowering, switches⟩, entry⟩
+  obtain ⟨main, pairs, functions, _, switches, entry, _, consuming, rawChecked, lowering, _⟩ :=
+    lower_parts native
+  exact ⟨main, pairs, functions, ⟨checked, consuming, lowering, switches, rawChecked⟩, entry⟩
 
 /-- Recursive code simulation at a source clock, over the Own code and the typing context. Every
 physical continuation starts at the exact current Cfg/native cursor, with all source and caller

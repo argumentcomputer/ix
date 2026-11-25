@@ -352,6 +352,96 @@ theorem Mono.clz64Code' (x : Nat) (u : Lir.Arg) (tagged : Bool) :
      dsimp only [Lir.VReg]
      repeat (first | exact Nat.le_refl _ | apply Nat.le_succ_of_le))
 
+/-- Closing the open block, adding two blocks at the next two labels and opening the third: the
+chunk grows. -/
+private theorem grows_three {st : St} (hl : Labels st) (ho : Open st) (t : PTerm) (b0 b1 : PBlock)
+    (ps : List Nat) (f' : Nat) (hfr : st.fresh ≤ f') :
+    let curBlk : PBlock := { params := st.params, body := st.acc.reverse, term := t }
+    let st₁ : St :=
+      { done := ((st.done.insert st.cur curBlk).insert st.next b0).insert (st.next + 1) b1,
+        cur := st.next + 2, params := ps, acc := [], next := st.next + 3, fresh := f' }
+    Grows st st₁ ∧ Labels st₁ ∧ Open st₁ := by
+  intro curBlk st₁
+  have hcur := hl.cur
+  dsimp only [st₁]
+  refine ⟨?_, ?_, ?_⟩
+  · refine ⟨Nat.le_add_right st.next 3, hfr, ?_, ?_⟩
+    · intro j bj hj
+      have hjlt := hl.done hj
+      have hjne : j ≠ st.cur := fun e => by subst e; rw [ho] at hj; cases hj
+      simp only [natMap_get?_insert]
+      rw [ite_eq_right (nat_ne_add_of_lt hjlt), ite_eq_right (Nat.ne_of_lt hjlt), ite_eq_right hjne]
+      exact hj
+    · intro _
+      refine .inr ⟨curBlk, ?_, rfl, List.prefix_refl _⟩
+      simp only [natMap_get?_insert]
+      rw [ite_eq_right (nat_ne_add_of_lt hcur), ite_eq_right (Nat.ne_of_lt hcur)]
+      simp only [↓reduceIte]
+  · refine ⟨Nat.lt_succ_self (st.next + 2), ?_⟩
+    intro j bj hj
+    dsimp only at hj ⊢
+    simp only [natMap_get?_insert] at hj
+    split at hj
+    · rename_i e; subst e; exact Nat.add_lt_add_left (by decide : 1 < 3) st.next
+    split at hj
+    · rename_i e; subst e; exact Nat.lt_add_of_pos_right (by decide : 0 < 3)
+    split at hj
+    · rename_i e; subst e; exact Nat.lt_of_lt_of_le hcur (Nat.le_add_right st.next 3)
+    exact Nat.lt_of_lt_of_le (hl.done hj) (Nat.le_add_right st.next 3)
+  · simp only [Open, natMap_get?_insert]
+    rw [ite_eq_right (nat_add_ne_add (by decide : 2 ≠ 1)),
+      ite_eq_right (Ne.symm (Nat.ne_of_lt (Nat.lt_add_of_pos_right (n := st.next) (by decide : 0 < 2)))),
+      ite_eq_right (Ne.symm (nat_ne_add_of_lt hcur))]
+    cases hq : st.done.get? (st.next + 2) with
+    | none => rfl
+    | some bj => exact absurd (hl.done hq) (Nat.not_lt.mpr (Nat.le_add_right st.next 2))
+
+theorem Mono.divModRaw64' (x : Nat) (o : Lir.BinOp) (zero : Lir.Arg → Lir.Arg) (a b : Lir.Arg) :
+    Mono (LowerRep.divModRaw64 x o zero a b) := by
+  intro st v st' h hl ho
+  simp only [LowerRep.divModRaw64, newLabel, close, openAt, put, freshReg, StateT.run, bind,
+    StateT.bind, pure, modify, modifyGet, MonadStateOf.modifyGet, StateT.modifyGet,
+    MonadState.modifyGet, Except.bind, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+  obtain ⟨-, rfl⟩ := h
+  exact grows_three hl ho _ _ _ _ _ (Nat.le_succ _)
+
+theorem Mono.checked64' (x : Nat) (r : Lir.Arg) : Mono (checked64 x r) := by
+  unfold checked64
+  mono
+
+/-- The raw 64-bit word operations (`LowerRep.wordRaw64`). -/
+theorem Mono.wordRaw64' (f : Fir.FunId) (x : Nat) (op : Src.WordOp) (las : List Lir.Arg) :
+    Mono (LowerRep.wordRaw64 f x op las) := by
+  unfold LowerRep.wordRaw64
+  repeat (first
+    | with_reducible exact Mono.divModRaw64' _ _ _ _ _
+    | with_reducible exact Mono.clz64Code' _ _ _
+    | with_reducible exact Mono.pure' _
+    | with_reducible exact Mono.emit' _
+    | with_reducible exact Mono.freshReg'
+    | with_reducible exact Mono.throw' _
+    | with_reducible apply Mono.bind'
+    | with_reducible intro _
+    | split
+    | unfold assign
+    | unfold temp
+    | unfold bin)
+
+theorem Mono.untagAt' (T : Tables) (f : Fir.FunId) :
+    ∀ (as : List Fir.Arg) (las : List Lir.Arg), Mono (untagAt T f as las)
+  | [], las => by
+    cases las <;> (simp only [untagAt]; exact Mono.pure' _)
+  | _ :: _, [] => by simp only [untagAt]; exact Mono.pure' _
+  | a :: as, la :: las => by
+    simp only [untagAt]
+    have rest : ∀ u : Lir.Arg, Mono (do let us ← untagAt T f as las; pure (u :: us)) :=
+      fun _ => Mono.bind' (Mono.untagAt' T f as las) (fun _ => Mono.pure' _)
+    split
+    · exact Mono.bind' (Mono.pure' _) rest
+    · refine Mono.bind' ?_ rest
+      unfold bin temp assign
+      exact Mono.bind' Mono.freshReg' (fun _ => Mono.bind' (Mono.emit' _) (fun _ => Mono.pure' _))
+
 /-- A fixed-width word primitive's expansion (stage W1). -/
 theorem Mono.word' (f : Fir.FunId) (x : Nat) (w : Src.Width) (op : Src.WordOp) (las : List Lir.Arg) :
     Mono (Lower.word f x w op las) := by
@@ -425,6 +515,28 @@ theorem withOperands_mono {f : Fir.FunId} {as : List Fir.Arg} {k : List Lir.Arg 
   · exact hk las hr hl ho
   · cases hb
 
+theorem withOperandsAt_mono {f : Fir.FunId} {raw : List Bool} {as : List Fir.Arg} {k : List Lir.Arg → M Unit}
+    (hk : ∀ las, Mono (k las)) {st st' : St} (h : (withOperandsAt f raw as k).run st = .ok (true, st'))
+    (hl : Labels st) (ho : Open st) : Grows st st' ∧ Labels st' ∧ Open st' := by
+  rcases withOperandsAt_run h with ⟨las, -, -, hr⟩ | ⟨-, hb, -⟩
+  · exact hk las hr hl ho
+  · cases hb
+
+/-- The raw path of a primitive binding, where it continues its block. -/
+theorem rawPrimCode_mono {f : Fir.FunId} {T : Tables} {x : Nat} {op : Lam.Prim} {as : List Fir.Arg}
+    {st st' : St} (h : (rawPrimCode f T x op as).run st = .ok (true, st')) (hl : Labels st) (ho : Open st) :
+    Grows st st' ∧ Labels st' ∧ Open st' := by
+  unfold rawPrimCode at h
+  split at h
+  · unfold rawWord at h
+    refine withOperandsAt_mono (fun las => ?_) h hl ho
+    refine Mono.bind' (Mono.untagAt' T f _ las) (fun us => ?_)
+    split
+    · exact Mono.wordRaw64' _ _ _ _
+    · exact Mono.bind' Mono.freshReg' (fun _ =>
+        Mono.bind' (Mono.wordRaw64' _ _ _ _) (fun _ => Mono.checked64' _ _))
+  · exact withOperands_mono (fun las => primitive_mono f T x _ las) h hl ho
+
 /-- **An instruction that continues its block keeps it open and grows the
 chunk.** -/
 theorem instr_mono {f : Fir.FunId} {T : Tables} {i : Cfg.Instr} {st st' : St}
@@ -432,12 +544,17 @@ theorem instr_mono {f : Fir.FunId} {T : Tables} {i : Cfg.Instr} {st st' : St}
     Grows st st' ∧ Labels st' ∧ Open st' := by
   match i, h with
   | .bind x (.fir (.arg a)), h =>
-    refine withOperands_mono (fun las => ?_) h hl ho
+    refine withOperandsAt_mono (fun las => ?_) h hl ho
     split
     · unfold assign; exact Mono.emit' _
     · exact Mono.pure' _
-  | .bind x (.fir (.prim op as)), h => exact withOperands_mono (fun las => primitive_mono f T x op las) h hl ho
-  | .bind x (.fir (.call g as)), h => exact withOperands_mono (fun las => Mono.emit' _) h hl ho
+  | .bind x (.fir (.prim op as)), h =>
+    cases hr : rawPrim T f x op as
+    · rw [instr_prim_tagged hr] at h
+      exact withOperands_mono (fun las => primitive_mono f T x op las) h hl ho
+    · rw [instr_prim_raw hr] at h
+      exact rawPrimCode_mono h hl ho
+  | .bind x (.fir (.call g as)), h => exact withOperandsAt_mono (fun las => Mono.emit' _) h hl ho
   | .bind x (.alloc c as κ), h => exact withOperands_mono (fun las => alloc_mono f T x c las) h hl ho
   | .bind x (.fir (.ctor ..)), h =>
     simp [instr, throw, throwThe, MonadExceptOf.throw, StateT.lift, Except.bind, bind, StateT.bind, StateT.run] at h

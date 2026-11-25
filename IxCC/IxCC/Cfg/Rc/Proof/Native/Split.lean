@@ -597,7 +597,7 @@ theorem accepted_split {config : Rt.Config} {F : Fir.Program}
       Lir.ProgSim (inlinedPublicProgram (layoutOf P) funcs main) lowered.runtime.program
         (labels (inlinedPublicProgram (layoutOf P) funcs main)) := by
   obtain ⟨original, hn, rfl, _⟩ := lower_parts accepted
-  obtain ⟨main, pairs, funcs, _, _, _, _, hc, hf, hlen, hp, _⟩ := Native.Spec.lower_parts hn
+  obtain ⟨main, pairs, funcs, _, _, _, _, hc, _, hf, hlen, hp, _⟩ := Native.Spec.lower_parts hn
   have he := assemble_split hp
   exact ⟨main, pairs, funcs, hc, hf, hlen, he, he ▸ program_split _⟩
 

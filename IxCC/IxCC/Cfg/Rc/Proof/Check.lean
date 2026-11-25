@@ -19,18 +19,35 @@ theorem mapEq_iff {α : Type} (eq : α → α → Bool)
 theorem funEq_iff (a b : Cfg.Fun) : funEq a b = true ↔ a = b := by
   cases a; cases b; simp [funEq, and_assoc]
 
+theorem rawEq_iff (a b : RawLayout) : rawEq a b = true ↔ a = b := by
+  rcases a with ⟨av, ar⟩
+  rcases b with ⟨bv, br⟩
+  simp only [rawEq, Bool.and_eq_true, mapEq_iff (fun x y : List Nat => decide (x = y))
+    (fun x y => decide_eq_true_iff) av bv, decide_eq_true_eq, RawLayout.mk.injEq]
+
 theorem programEq_iff (a b : Program) : programEq a b = true ↔ a = b := by
-  rcases a with ⟨⟨af, az, ae, ac, ⟨an, as, ab, atrue⟩⟩, aa⟩
-  rcases b with ⟨⟨bf, bz, be, bc, ⟨bn, bs, bb, btrue⟩⟩, ba⟩
-  simp [programEq, mapEq_iff _ funEq_iff, mapEq_iff _ tableEq_iff, and_assoc]
+  rcases a with ⟨⟨af, az, ae, ac, ⟨an, as, ab, atrue⟩⟩, aa, ar⟩
+  rcases b with ⟨⟨bf, bz, be, bc, ⟨bn, bs, bb, btrue⟩⟩, ba, br⟩
+  simp [programEq, mapEq_iff _ funEq_iff, mapEq_iff _ tableEq_iff, rawEq_iff, and_assoc]
+
+/-- The generated program carries the layout it was given. -/
+theorem generate_raw {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {raw : RawLayout}
+    {P : Program} (h : generate F bodies raw = some P) : P.raw = raw := by
+  unfold generate at h
+  cases he : entries F bodies (List.range F.size) with
+  | none => simp [he] at h
+  | some es =>
+    simp only [he, bind, Option.bind, Option.some.injEq] at h
+    rw [← h]
 
 theorem checkProgram_parts {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     {candidate : Program} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
     (h : checkProgram F bodies candidate borrows uniqs = true) :
-    Own.Plain.checkOwned F bodies borrows uniqs = true ∧ generate F bodies = some candidate := by
+    Own.Plain.checkOwned F bodies borrows uniqs = true ∧
+      generate F bodies candidate.raw = some candidate := by
   simp only [checkProgram, Bool.and_eq_true] at h
   refine ⟨h.1, ?_⟩
-  cases hg : generate F bodies with
+  cases hg : generate F bodies candidate.raw with
   | none => simp [hg] at h
   | some expected =>
     have eq : expected = candidate := (programEq_iff ..).mp (by simpa [hg] using h.2)

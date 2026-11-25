@@ -43,7 +43,7 @@ theorem scalar_switch {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {fn : Nat}
     (hac : v.asCtor T.known H = some (c, fs)) {e : Cfg.Edge} (hsel : Cfg.selectEdge c alts d = some e)
     (hdis : Dispatches T H v alts)
     (compatible : ValueCtorOk T v) (noncell : ∀ l, v ≠ .loc l) :
-    ∃ pe le ρl', EdgeOk C f e pe ∧ e.back = decide (e.target ≤ src) ∧ resolveEdge f off starts pe = .ok le ∧
+    ∃ pe le ρl', EdgeOk C f T e pe ∧ e.back = decide (e.target ≤ src) ∧ resolveEdge f off starts pe = .ok le ∧
       ReachesEdge lp fn F mem ctx rest (off + st.cur) (Lir.atState mem ctx fn (off + st.cur) st.acc.length ρl rest)
         le ρl' ∧ FusedWords addresses D sup ρ ρl' := by
   obtain ⟨wx, represented, hwx⟩ := hρ.word hv hxD
@@ -58,7 +58,7 @@ theorem scalar_switch {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {fn : Nat}
   have hacc : st₂.acc = st.acc := ha₂.trans ha₁
   have hfresh : st₂.fresh = st.fresh := hf₂.trans hf₁
   rw [← hcur, ← hacc]
-  have hR : ∀ p q, AltIn C f T src alts es p q → EdgeOk C f p.2 q.2 ∧ p.2.back = decide (p.2.target ≤ src) :=
+  have hR : ∀ p q, AltIn C f T src alts es p q → EdgeOk C f T p.2 q.2 ∧ p.2.back = decide (p.2.target ≤ src) :=
     fun p q h => ⟨h.1.2.1, h.1.2.2⟩
   dsimp only at h₄
   split at h₄
@@ -224,7 +224,7 @@ theorem scalar_switch_checked {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {f
     (compatibleHeap : HeapCtorOk T H)
     (pins : pinsApart T.known = true) (accepted : switchOk T alts d = true)
     (compatible : ValueCtorOk T v) (noncell : ∀ l, v ≠ .loc l) :
-    ∃ pe le ρl', EdgeOk C f e pe ∧ e.back = decide (e.target ≤ src) ∧ resolveEdge f off starts pe = .ok le ∧
+    ∃ pe le ρl', EdgeOk C f T e pe ∧ e.back = decide (e.target ≤ src) ∧ resolveEdge f off starts pe = .ok le ∧
       ReachesEdge lp fn F mem ctx rest (off + st.cur) (Lir.atState mem ctx fn (off + st.cur) st.acc.length ρl rest)
         le ρl' ∧ FusedWords addresses D sup ρ ρl' := by
   exact scalar_switch hF hH hrun hl ho hg hC hρ hsup hxD hv hac hsel

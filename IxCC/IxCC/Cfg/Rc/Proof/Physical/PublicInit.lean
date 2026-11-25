@@ -15,7 +15,7 @@ theorem accepted_init {config : Rt.Config} {F : Fir.Program}
     (accepted : Public.lower config F bodies P borrows uniqs = .ok lowered) :
     lowered.runtime.program.funcs[lowered.runtime.init]? = some Rt.Procs.cxInit := by
   obtain ⟨original, native, rfl, _⟩ := lower_parts accepted
-  obtain ⟨main, pairs, funcs, _, _, _, _, _, _, length, program, init, _⟩ := Native.Spec.lower_parts native
+  obtain ⟨main, pairs, funcs, _, _, _, _, _, _, _, length, program, init, _⟩ := Native.Spec.lower_parts native
   have lookup : original.program.funcs[original.init]? = some Rt.Procs.cxInit := by
     rw [program, init]
     have hge : (layoutOf P).sourceCount ≤ (layoutOf P).init := by

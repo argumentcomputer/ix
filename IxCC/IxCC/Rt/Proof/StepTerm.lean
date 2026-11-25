@@ -259,7 +259,8 @@ theorem step_term_sel {P : Cfg.Program} {lp : Lir.Program} {ctx : Word} (ht : Ta
         simp only [hav, Sem.Step.next.injEq] at hs
         obtain ⟨rfl, rfl⟩ := hs
         obtain ⟨-, ⟨la, hop, rfl⟩ | rfl⟩ := term_ret hcode ho
-        · have hlive : LiveArg (Fused (tables P) fd) a :=
+        · rw [operandAt_noRaw (noRaw_tables P)] at hop
+          have hlive : LiveArg (Fused (tables P) fd) a :=
             term_live hb (as := [a]) (fun y hy => by
               simp only [otherUses, hterm, List.mem_append]
               exact .inr (by simpa [Cfg.Check.termVars] using argVars_of_mem hy)) a (by simp)
@@ -277,7 +278,8 @@ theorem step_term_sel {P : Cfg.Program} {lp : Lir.Program} {ctx : Word} (ht : Ta
         simp only [hvs, Sem.Step.next.injEq] at hs
         obtain ⟨rfl, rfl⟩ := hs
         obtain ⟨-, ⟨las, hops, rfl⟩ | rfl⟩ := term_tcall hcode ho
-        · have hlive : ∀ a ∈ as, LiveArg (Fused (tables P) fd) a :=
+        · rw [operandsAt_noRaw (noRaw_tables P)] at hops
+          have hlive : ∀ a ∈ as, LiveArg (Fused (tables P) fd) a :=
             term_live hb (fun y hy => by
               simp only [otherUses, hterm, List.mem_append]
               exact .inr (by simpa [Cfg.Check.termVars] using argVars_of_mem hy))

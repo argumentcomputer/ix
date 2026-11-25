@@ -33,6 +33,7 @@ theorem consumed_user_call_entry {config : Rt.Config} {P : Program}
     {callerFunction : Cfg.Fun}
     (callerLookup : (consumed P pairs).fun? source.fn = some callerFunction)
     {addresses : AddressMap} {bound : Nat} {sourceEnv : Own.Env}
+    (tagged : Rt.Proof.Tagged (tablesOf P pairs))
     (registers : FusedWords addresses (Rt.Proof.Fused (tablesOf P pairs) callerFunction)
       bound sourceEnv target.env)
     {values : List Own.RVal} (arguments : Own.evalArgs sourceEnv args = some values)
@@ -62,6 +63,7 @@ theorem consumed_user_call_entry {config : Rt.Config} {P : Program}
   rcases cursor.call head decision mem context callers with success | failed
   · obtain ⟨operands, function, output, operandsLowered, functionLookup,
       outputLookup, position, statement, continuation⟩ := success
+    rw [tagged.operandsAt_params] at operandsLowered
     have live := consumed_call_live cursor head decision callerLookup
     obtain ⟨words, evaluated, represented, _⟩ :=
       fused_operands_words registers operandsLowered live arguments

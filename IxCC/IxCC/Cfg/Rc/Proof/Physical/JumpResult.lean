@@ -66,7 +66,7 @@ theorem jump_result (admission : CodeAdmission F bodies P config pairs functions
             ∀ x ∈ block.params.map Prod.fst, x < funcFirst bodies source.fn sourceFunction :=
         fun fd fdLookup label block blockLookup =>
           checked_block_params admission.scopedProgram sourceRange sourceLookup fdLookup blockLookup
-      rcases jump_entry admission.consuming before.layout ownedLookup ownArgs arity before.frame
+      rcases jump_entry admission.consuming admission.tagged before.layout ownedLookup ownArgs arity before.frame
           nativeRange realParams before.running memory context callers with entered | failure
       · obtain ⟨after, final, cost, afterLayout, afterFrame, trace, costBound, running, sameFn,
           fused⟩ := entered

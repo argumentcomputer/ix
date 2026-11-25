@@ -9,6 +9,7 @@ open IxCC.Rt.Rc.Procs
 
 theorem case_entry {F : Fir.Program} {P : Program} {pairs : List (Nat × Cfg.Fun)} {lp : Lir.Program}
     (consuming : consumeAll P = .ok pairs) (switches : Rt.checkSwitches P.base = .ok ())
+    (tagged : Rt.Proof.Tagged (tablesOf P pairs))
     {source : Cfg.Frame} {target : Lir.Frame} {ρ : Own.Env} {saved : List Own.Plain.JEntry}
     {x : Fir.Var} {alts : List Own.Plain.Alt} {default : Option Own.Plain.Code}
     {key : Key.CtorKey} {body : Own.Plain.Code} {rslots : Src.NatMap Own.RVal}
@@ -63,7 +64,7 @@ theorem case_entry {F : Fir.Program} {P : Program} {pairs : List (Nat × Cfg.Fun
   · obtain ⟨native, starts, off, chunks, low, pe, le, targetEnv, nativeLookup, layout, start,
       held, lower, edgeOk, back, resolved, reached, words⟩ := reached
     have arguments : Own.evalArgs ρ edge.args = some [] := by simp [noArgs, Own.evalArgs]
-    rcases consumed_take_edge receipt frame.lookup blockLookup nativeLookup layout start held lower
+    rcases consumed_take_edge tagged receipt frame.lookup blockLookup nativeLookup layout start held lower
         member targetLookup edgeOk resolved lexical lexical words arguments
         (by simp [noParams]) (by simp [noParams]) reached with failure | success
     · exact .inr (same ▸ failure)

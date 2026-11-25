@@ -55,6 +55,134 @@ theorem withOperands_run {f : Fir.FunId} {as : List Fir.Arg} {k : List Lir.Arg �
         obtain ⟨rfl, rfl⟩ := h
         exact .inl ⟨las, rfl, rfl, by rw [StateT.run, hk]⟩
 
+theorem withOperandsAt_run {f : Fir.FunId} {raw : List Bool} {as : List Fir.Arg} {k : List Lir.Arg → M Unit}
+    {st st' : St} {b : Bool}
+    (h : (withOperandsAt f raw as k).run st = .ok (b, st')) :
+    (∃ las, operandsAt f raw as = .ok (some las) ∧ b = true ∧ (k las).run st = .ok ((), st')) ∨
+    (operandsAt f raw as = .ok none ∧ b = false ∧ st' = closeSt st (.fail .natOverflow)) := by
+  unfold withOperandsAt at h
+  cases hop : operandsAt f raw as with
+  | error e =>
+    simp [hop, bind, StateT.bind, StateT.run, MonadLift.monadLift, liftM, monadLift, StateT.lift, Except.bind] at h
+  | ok o =>
+    cases o with
+    | none =>
+      simp [hop, bind, StateT.bind, StateT.run, MonadLift.monadLift, liftM, monadLift, StateT.lift, Except.bind,
+        close, modify, modifyGet, MonadStateOf.modifyGet, StateT.modifyGet, MonadState.modifyGet, pure, StateT.pure,
+        Except.pure] at h
+      exact .inr ⟨rfl, h.1, h.2.symm⟩
+    | some las =>
+      simp [hop, bind, StateT.bind, StateT.run, MonadLift.monadLift, liftM, monadLift, StateT.lift, Except.bind,
+        pure, StateT.pure, Except.pure] at h
+      cases hk : k las st with
+      | error e => simp [hk] at h
+      | ok v =>
+        simp only [hk, Except.ok.injEq, Prod.mk.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        exact .inl ⟨las, rfl, rfl, by rw [StateT.run, hk]⟩
+
+/-- At a tagged position an operand is today's. -/
+theorem operandAt_false (f : Fir.FunId) (a : Fir.Arg) : operandAt f false a = operand f a := by
+  cases a <;> rfl
+
+/-- Operands at positions none of which is raw are today's operands. -/
+theorem operandsAt_tagged {f : Fir.FunId} :
+    ∀ {raw : List Bool} {as : List Fir.Arg}, (∀ r ∈ raw, r = false) → operandsAt f raw as = operands f as
+  | _, [], _ => rfl
+  | raw, a :: as, h => by
+    have head : raw.headD false = false := by
+      cases raw with
+      | nil => rfl
+      | cons r rs => exact h r (by simp)
+    have tail : ∀ r ∈ raw.tail, r = false := by
+      intro r hr
+      cases raw with
+      | nil => simp at hr
+      | cons r' rs => exact h r (by simp_all)
+    rw [operandsAt.eq_2, operands.eq_2, head, operandAt_false, operandsAt_tagged tail]
+
+theorem operandsAt_one {f : Fir.FunId} {raw : List Bool} {a : Fir.Arg} {las : List Lir.Arg}
+    (h : operandsAt f raw [a] = .ok (some las)) :
+    ∃ la, las = [la] ∧ operandAt f (raw.headD false) a = .ok (some la) := by
+  rw [operandsAt.eq_2] at h
+  generalize operandAt f (raw.headD false) a = r at h ⊢
+  simp only [operandsAt, bind, Except.bind, pure, Except.pure] at h
+  cases r with
+  | error e => simp at h
+  | ok o =>
+    cases o with
+    | none => simp at h
+    | some la => simp only [Except.ok.injEq, Option.some.injEq] at h; exact ⟨la, h.symm, rfl⟩
+
+theorem operandsAt_noRaw {T : Tables} (hR : NoRaw T) (f g : Fir.FunId) (b : Nat) (as : List Fir.Arg) :
+    operandsAt f (T.rawParams g b) as = operands f as :=
+  operandsAt_tagged (by simp [hR.params])
+
+theorem operandAt_noRaw {T : Tables} (hR : NoRaw T) (f g : Fir.FunId) (a : Fir.Arg) :
+    operandAt f (T.rawRet g) a = operand f a := by
+  rw [hR.ret]; exact operandAt_false f a
+
+/-- The immortal route's tables have no raw position. -/
+theorem noRaw_tables (P : Cfg.Program) : NoRaw (tables P) :=
+  ⟨fun _ _ => rfl, fun _ _ => rfl, fun _ => rfl⟩
+
+/-- Every position of the tables is tagged: a raw layout that names no register (the
+reference-counted route while its proofs carry no raw register). -/
+structure Tagged (T : Tables) : Prop where
+  var : ∀ f x, T.rawVar f x = false
+  params : ∀ f b, ∀ r ∈ T.rawParams f b, r = false
+  ret : ∀ f, T.rawRet f = false
+
+theorem NoRaw.tagged {T : Tables} (h : NoRaw T) : Tagged T :=
+  ⟨h.var, fun f b r hr => (by rw [h.params] at hr; cases hr), h.ret⟩
+
+theorem Tagged.operandsAt_params {T : Tables} (h : Tagged T) (f g : Fir.FunId) (b : Nat)
+    (as : List Fir.Arg) : operandsAt f (T.rawParams g b) as = operands f as :=
+  operandsAt_tagged (h.params g b)
+
+theorem Tagged.operandsAt_var {T : Tables} (h : Tagged T) (f g : Fir.FunId) (x : Nat)
+    (as : List Fir.Arg) : operandsAt f [T.rawVar g x] as = operands f as :=
+  operandsAt_tagged (by simp [h.var])
+
+theorem Tagged.operandAt_ret {T : Tables} (h : Tagged T) (f g : Fir.FunId) (a : Fir.Arg) :
+    operandAt f (T.rawRet g) a = operand f a := by
+  rw [h.ret]; exact operandAt_false f a
+
+theorem Tagged.rawPrim {T : Tables} (h : Tagged T) (f : Fir.FunId) (x : Nat) (op : Lam.Prim)
+    (as : List Fir.Arg) : Lower.rawPrim T f x op as = false := by
+  unfold Lower.rawPrim
+  split
+  · simp only [h.var, Bool.false_or, List.any_eq_false]
+    intro a _
+    split <;> simp
+  · rfl
+
+theorem Tagged.instr_prim {T : Tables} (h : Tagged T) (f : Fir.FunId) (x : Nat) (op : Lam.Prim)
+    (as : List Fir.Arg) :
+    instr f T (.bind x (.fir (.prim op as))) = withOperands f as (primitive f T x op) := by
+  simp only [instr, h.rawPrim, Bool.false_eq_true, ↓reduceIte]
+
+/-- On tables with no raw position, a primitive binding takes today's path. -/
+theorem rawPrim_noRaw {T : Tables} (hR : NoRaw T) (f : Fir.FunId) (x : Nat) (op : Lam.Prim)
+    (as : List Fir.Arg) : rawPrim T f x op as = false := by
+  unfold rawPrim
+  split
+  · simp only [hR.var, Bool.false_or, List.any_eq_false]
+    intro a _
+    split <;> simp
+  · rfl
+
+theorem instr_prim_noRaw {T : Tables} (hR : NoRaw T) (f : Fir.FunId) (x : Nat) (op : Lam.Prim)
+    (as : List Fir.Arg) :
+    instr f T (.bind x (.fir (.prim op as))) = withOperands f as (primitive f T x op) := by
+  simp only [instr, rawPrim_noRaw hR, Bool.false_eq_true, ↓reduceIte]
+
+/-- A primitive binding off the raw path is today's. -/
+theorem instr_prim_tagged {T : Tables} {f : Fir.FunId} {x : Nat} {op : Lam.Prim} {as : List Fir.Arg}
+    (h : rawPrim T f x op as = false) :
+    instr f T (.bind x (.fir (.prim op as))) = withOperands f as (primitive f T x op) := by
+  simp only [instr, h, Bool.false_eq_true, ↓reduceIte]
+
 theorem operands_one {f : Fir.FunId} {a : Fir.Arg} {las : List Lir.Arg} (h : operands f [a] = .ok (some las)) :
     ∃ la, las = [la] ∧ operand f a = .ok (some la) := by
   simp only [operands, bind, Except.bind, pure, Except.pure] at h
@@ -130,7 +258,7 @@ theorem primitive_sim {T : Tables} (hT : BoolsOk T) {f : Fir.FunId} {lp : Lir.Pr
 
 /-- **An instruction other than a call simulates Cfg's**, from where its
 code starts to where the next instruction's starts. -/
-theorem instr_sim {T : Tables} (hT : BoolsOk T) {f : Fir.FunId} {lp : Lir.Program} {ctx : Word}
+theorem instr_sim {T : Tables} (hT : BoolsOk T) (hR : NoRaw T) {f : Fir.FunId} {lp : Lir.Program} {ctx : Word}
     {D : Nat → Prop} {sup : Nat} {fn : Nat} {F : Lir.Func} {off : Nat} {starts : NatMap Nat} {C : List PBlock}
     (hF : lp.funcs[fn]? = some F) (hH : Holds f F off starts C)
     (hpow : lp.funcs[T.natPow]? = some Procs.natPow) (hgcd : lp.funcs[T.natGcd]? = some Procs.natGcd)
@@ -140,13 +268,15 @@ theorem instr_sim {T : Tables} (hT : BoolsOk T) {f : Fir.FunId} {lp : Lir.Progra
     RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x r := by
   match r, hnc, hrun, hlive with
   | .fir (.arg a), _, hrun, hlive =>
-    rcases withOperands_run hrun with ⟨las, hops, -, hk⟩ | ⟨-, h, -⟩
-    · obtain ⟨la, rfl, hop⟩ := operands_one hops
+    rcases withOperandsAt_run hrun with ⟨las, hops, -, hk⟩ | ⟨-, h, -⟩
+    · rw [operandsAt_tagged (by simp [hR.var])] at hops
+      obtain ⟨la, rfl, hop⟩ := operands_one hops
       simp only [assign_run, Except.ok.injEq, Prod.mk.injEq, true_and] at hk
       subst hk
       exact arg_sim hF hH hC ho hx hop (liveArgs_of hlive a (by simp))
     · cases h
   | .fir (.prim op as), _, hrun, hlive =>
+    rw [instr_prim_noRaw hR] at hrun
     rcases withOperands_run hrun with ⟨las, hops, -, hk⟩ | ⟨-, h, -⟩
     · exact primitive_sim hT hF hH hpow hgcd hk hC hl ho hsup hx hops (liveArgs_of hlive)
     · cases h
@@ -170,19 +300,42 @@ theorem instr_sim {T : Tables} (hT : BoolsOk T) {f : Fir.FunId} {lp : Lir.Progra
 
 /-- An instruction whose lowering ended the block closed it with `fail
 natOverflow`. -/
+theorem instr_prim_raw {T : Tables} {f : Fir.FunId} {x : Nat} {op : Lam.Prim} {as : List Fir.Arg}
+    (h : rawPrim T f x op as = true) :
+    instr f T (.bind x (.fir (.prim op as))) = rawPrimCode f T x op as := by
+  simp only [instr, h, ↓reduceIte]
+
+/-- The raw path, where it ends the block, ends it with `fail natOverflow`. -/
+theorem rawPrimCode_false {T : Tables} {f : Fir.FunId} {x : Nat} {op : Lam.Prim} {as : List Fir.Arg}
+    {st st' : St} (hrun : (rawPrimCode f T x op as).run st = .ok (false, st')) :
+    st' = closeSt st (.fail .natOverflow) := by
+  unfold rawPrimCode at hrun
+  split at hrun
+  · unfold rawWord at hrun
+    rcases withOperandsAt_run hrun with ⟨_, _, h, _⟩ | ⟨-, -, h⟩
+    · cases h
+    · exact h
+  · rcases withOperands_run hrun with ⟨_, _, h, _⟩ | ⟨-, -, h⟩
+    · cases h
+    · exact h
+
 theorem instr_false {T : Tables} {f : Fir.FunId} {st st' : St} {i : Cfg.Instr}
     (hrun : (instr f T i).run st = .ok (false, st')) : st' = closeSt st (.fail .natOverflow) := by
   match i, hrun with
   | .bind x (.fir (.arg a)), hrun =>
-    rcases withOperands_run hrun with ⟨_, _, h, _⟩ | ⟨-, -, h⟩
+    rcases withOperandsAt_run hrun with ⟨_, _, h, _⟩ | ⟨-, -, h⟩
     · cases h
     · exact h
   | .bind x (.fir (.prim op as)), hrun =>
-    rcases withOperands_run hrun with ⟨_, _, h, _⟩ | ⟨-, -, h⟩
-    · cases h
-    · exact h
+    cases hr : rawPrim T f x op as
+    · rw [instr_prim_tagged hr] at hrun
+      rcases withOperands_run hrun with ⟨_, _, h, _⟩ | ⟨-, -, h⟩
+      · cases h
+      · exact h
+    · rw [instr_prim_raw hr] at hrun
+      exact rawPrimCode_false hrun
   | .bind x (.fir (.call g as)), hrun =>
-    rcases withOperands_run hrun with ⟨_, _, h, _⟩ | ⟨-, -, h⟩
+    rcases withOperandsAt_run hrun with ⟨_, _, h, _⟩ | ⟨-, -, h⟩
     · cases h
     · exact h
   | .bind x (.alloc c as κ), hrun =>

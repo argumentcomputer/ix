@@ -270,6 +270,7 @@ theorem call_result (admission : CodeAdmission F bodies P config pairs functions
       outputLookup, position, statement, continuation⟩ := called
     have liveArgs := consumed_call_live before.frame.cursor head (consume_user_call range)
       before.frame.lookup
+    rw [admission.tagged.operandsAt_params] at operandsLowered
     obtain ⟨argumentWords, evaluated, represented, _⟩ :=
       fused_operands_words before.frame.words operandsLowered liveArgs frameArgs
     have compatible := before.frame.compatible.args liveArgs frameArgs

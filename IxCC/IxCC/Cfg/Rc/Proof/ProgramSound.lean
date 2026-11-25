@@ -49,7 +49,7 @@ theorem entries_ok {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
 /-- A numbered entry has both its actual lowered function and actual complete
 table in the generated maps, together with the source and layout witnesses. -/
 theorem generate_entry {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} (h : generate F bodies = some P) {f : Nat} (hf : f < F.size) :
+    {raw : RawLayout} {P : Program} (h : generate F bodies raw = some P) {f : Nat} (hf : f < F.size) :
     ∃ fd table, P.base.fun? f = some fd ∧ P.actions.get? f = some table ∧ EntryOk F bodies f fd table := by
   unfold generate at h
   cases he : entries F bodies (List.range F.size) with

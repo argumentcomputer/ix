@@ -16,7 +16,8 @@ context. The Cfg map is the frame's; the callee starts with exactly its paramete
 theorem self_entry_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     {P : Program} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
     (checked : checkScopedProgram F bodies P borrows uniqs = true)
-    {pairs : List (Nat × Cfg.Fun)} (consuming : consumeAll P = .ok pairs) {lp : Lir.Program}
+    {pairs : List (Nat × Cfg.Fun)} (consuming : consumeAll P = .ok pairs)
+    (tagged : Rt.Proof.Tagged (tablesOf P pairs)) {lp : Lir.Program}
     {H : Heap} {addresses : AddressMap} {external : Nat → Nat} {priv : Nat → Prop}
     {source : Cfg.Frame} {target : Lir.Frame} {ρ : Own.Env} {saved : List Own.Plain.JEntry}
     {rslots : Src.NatMap Own.RVal}
@@ -83,7 +84,7 @@ theorem self_entry_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.C
       nativeLower, edgeOk, back, resolved, reached⟩ :=
     frame.cursor.jump_reaches consuming nativeRange lookup frame.lookup blockLookup finished rfl mem context callers
   have length : entryBlock.params.length = fields.length := entryLength.trans arity.symm
-  rcases consumed_take_edge receipt frame.lookup blockLookup nativeLookup lowering start held nativeLower
+  rcases consumed_take_edge tagged receipt frame.lookup blockLookup nativeLookup lowering start held nativeLower
       member entryBlockLookup edgeOk resolved sub (Cfg.Proof.sub_leaf source.env) frame.words arguments
       length (functionBounds_params bounds entryBlockLookup) reached with failure | success
   · right

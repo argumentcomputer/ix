@@ -57,7 +57,7 @@ theorem Cursor.call {T : Tables} {P : Cfg.Program} {lp : Lir.Program}
     (instruction : source.rest = .bind x (.fir (.call callee args)) :: tail)
     (mem : X86.Memory) (context : Lir.Word) (callers : List Lir.Frame) :
     (∃ operands function block,
-      Rt.Lower.operands source.fn args = .ok (some operands) ∧
+      Rt.Lower.operandsAt source.fn (T.rawParams callee 0) args = .ok (some operands) ∧
       lp.funcs[target.fn]? = some function ∧ function.blocks[target.label]? = some block ∧
       ∃ position : target.pos < block.body.size,
         block.body[target.pos] = .call [x] callee operands ∧
@@ -78,7 +78,7 @@ theorem Cursor.call {T : Tables} {P : Cfg.Program} {lp : Lir.Program}
   obtain ⟨continues, after, lowered, ⟨rfl, rest⟩ | ⟨rfl, rfl⟩⟩ := rest_cons lowering unfused
   · obtain ⟨grows, labeled', opened'⟩ := instr_mono lowered labeled opened
     have afterExt : Ext chunk after := (rest_grows rest labeled' opened').ext extension
-    rcases withOperands_run lowered with ⟨operands, hop, _, emitted⟩ | ⟨_, impossible, _⟩
+    rcases withOperandsAt_run lowered with ⟨operands, hop, _, emitted⟩ | ⟨_, impossible, _⟩
     · rw [emit_run] at emitted
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at emitted
       subst after

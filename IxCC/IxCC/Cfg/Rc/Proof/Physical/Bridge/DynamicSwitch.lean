@@ -24,7 +24,7 @@ theorem dynamic_switch {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {fn : Nat
     {ℓ : Nat} (hv : ρ.get? x = some (.loc ℓ)) {c : Key.CtorKey} {fs : List Own.RVal}
     (hac : (Own.RVal.loc ℓ).asCtor T.known H = some (c, fs)) {e : Cfg.Edge} (hsel : Cfg.selectEdge c alts d = some e)
     (hdis : Dispatches T H (.loc ℓ) alts) :
-    ∃ pe le ρl', EdgeOk C f e pe ∧ e.back = decide (e.target ≤ src) ∧ resolveEdge f off starts pe = .ok le ∧
+    ∃ pe le ρl', EdgeOk C f T e pe ∧ e.back = decide (e.target ≤ src) ∧ resolveEdge f off starts pe = .ok le ∧
       ReachesEdge lp fn F mem ctx rest (off + st.cur) (Lir.atState mem ctx fn (off + st.cur) st.acc.length ρl rest)
         le ρl' ∧ FusedWords addresses D sup ρ ρl' := by
   obtain ⟨wx, hrel, hwx⟩ := hρ.word hv hxD
@@ -38,7 +38,7 @@ theorem dynamic_switch {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {fn : Nat
   have hacc : st₂.acc = st.acc := ha₂.trans ha₁
   have hfresh : st₂.fresh = st.fresh := hf₂.trans hf₁
   rw [← hcur, ← hacc]
-  have hR : ∀ p q, AltIn C f T src alts es p q → EdgeOk C f p.2 q.2 ∧ p.2.back = decide (p.2.target ≤ src) :=
+  have hR : ∀ p q, AltIn C f T src alts es p q → EdgeOk C f T p.2 q.2 ∧ p.2.back = decide (p.2.target ≤ src) :=
     fun p q h => ⟨h.1.2.1, h.1.2.2⟩
   dsimp only at h₄
   split at h₄
@@ -93,7 +93,7 @@ theorem dynamic_switch {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {fn : Nat
       have heven := live_pointer_even hcellAt
       have htag := live_tag_read hcellAt
       obtain ⟨pe, hpick, hok, hb⟩ : ∃ pe, (if cellTests es = [] then chainOrPick wx (immTests es) dd
-          else chainOrPick (UInt64.ofNat b.ctor.tag) (cellTests es) dd) = some pe ∧ EdgeOk C f e pe ∧
+          else chainOrPick (UInt64.ofNat b.ctor.tag) (cellTests es) dd) = some pe ∧ EdgeOk C f T e pe ∧
           e.back = decide (e.target ≤ src) := by
         by_cases hce : cellTests es = []
         · simp only [hce, ↓reduceIte]
@@ -171,7 +171,7 @@ theorem dynamic_switch_checked {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {
     (hac : (Own.RVal.loc ℓ).asCtor T.known H = some (c, fs)) {e : Cfg.Edge} (hsel : Cfg.selectEdge c alts d = some e)
     (compatible : HeapCtorOk T H)
     (pins : pinsApart T.known = true) (accepted : switchOk T alts d = true) :
-    ∃ pe le ρl', EdgeOk C f e pe ∧ e.back = decide (e.target ≤ src) ∧ resolveEdge f off starts pe = .ok le ∧
+    ∃ pe le ρl', EdgeOk C f T e pe ∧ e.back = decide (e.target ≤ src) ∧ resolveEdge f off starts pe = .ok le ∧
       ReachesEdge lp fn F mem ctx rest (off + st.cur) (Lir.atState mem ctx fn (off + st.cur) st.acc.length ρl rest)
         le ρl' ∧ FusedWords addresses D sup ρ ρl' := by
   exact dynamic_switch hF hH hrun hl ho hg hC hheap hρ hsup hxD hv hac hsel

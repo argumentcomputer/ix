@@ -16,7 +16,7 @@ theorem ordinary_jump_reaches {T : Tables} {lp : Lir.Program} {fn src : Nat}
     (lowered : (term fn T src (.jump e)).run state = .ok ((), final))
     (labels : Labels state) (opened : Open state) (extension : Ext C final)
     (mem : X86.Memory) (context : Word) (registers : Lir.Env) (callers : List Lir.Frame) :
-    ∃ pe le, EdgeOk C fn e pe ∧ e.back = decide (e.target ≤ src) ∧
+    ∃ pe le, EdgeOk C fn T e pe ∧ e.back = decide (e.target ≤ src) ∧
       resolveEdge fn off starts pe = .ok le ∧
       ReachesEdge lp fn F mem context callers (off+state.cur)
         (Lir.atState mem context fn (off+state.cur) state.acc.length registers callers) le registers := by
@@ -39,7 +39,7 @@ theorem Cursor.jump_reaches {T : Tables} {P : Cfg.Program} {lp : Lir.Program}
     ∃ F starts off C low pe le,
       lp.funcs[source.fn]? = some F ∧ Lowered T source.fn fd F starts ∧
       starts.get? source.blk = some off ∧ Holds source.fn F off starts C ∧ off ≤ low ∧
-      EdgeOk C source.fn e pe ∧ e.back = decide (e.target ≤ source.blk) ∧
+      EdgeOk C source.fn T e pe ∧ e.back = decide (e.target ≤ source.blk) ∧
       resolveEdge source.fn off starts pe = .ok le ∧
       ReachesEdge lp source.fn F mem context callers low
         (Lir.atState mem context target.fn target.label target.pos target.env callers) le target.env := by
@@ -78,7 +78,7 @@ theorem ConsumedCursor.jump_reaches {P : Program} {pairs : List (Nat × Cfg.Fun)
     ∃ F starts off C low pe le,
       lp.funcs[source.fn]? = some F ∧ Lowered (tablesOf P pairs) source.fn actual F starts ∧
       starts.get? source.blk = some off ∧ Holds source.fn F off starts C ∧ off ≤ low ∧
-      EdgeOk C source.fn e pe ∧ e.back = decide (e.target ≤ source.blk) ∧
+      EdgeOk C source.fn (tablesOf P pairs) e pe ∧ e.back = decide (e.target ≤ source.blk) ∧
       resolveEdge source.fn off starts pe = .ok le ∧
       ReachesEdge lp source.fn F mem context callers low
         (Lir.atState mem context target.fn target.label target.pos target.env callers) le target.env := by

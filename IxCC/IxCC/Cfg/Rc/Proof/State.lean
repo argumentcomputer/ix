@@ -45,7 +45,7 @@ theorem SlotSub.erase {slotBase : Nat} {slots : Src.NatMap Own.RVal} {env : Own.
   · exact h s' sv' hs'
 
 theorem generate_ctors {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} (h : generate F bodies = some P) : P.base.ctors = F.ctors := by
+    {raw : RawLayout} {P : Program} (h : generate F bodies raw = some P) : P.base.ctors = F.ctors := by
   unfold generate at h
   cases he : entries F bodies (List.range F.size) with
   | none => simp [he] at h

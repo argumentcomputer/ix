@@ -14,7 +14,7 @@ layout reconstructs all source join environments. Register coverage remains
 over the entire actual Cfg map. -/
 theorem jump_entry
     {F : Fir.Program} {P : Program} {pairs : List (Nat × Cfg.Fun)} {lp : Lir.Program}
-    (consuming : consumeAll P = .ok pairs)
+    (consuming : consumeAll P = .ok pairs) (tagged : Rt.Proof.Tagged (tablesOf P pairs))
     {source : Cfg.Frame} {target : Lir.Frame} {ρ : Own.Env} {saved rest : List Own.Plain.JEntry}
     {j : Fir.JoinId} {args : List Fir.Arg} {entry : Own.Plain.JEntry} {rslots : Src.NatMap Own.RVal}
     (sourceState : At F P source ρ saved (.jmp j args) rslots)
@@ -70,7 +70,7 @@ theorem jump_entry
     rw [arity, paramsEq]
     simp
   have real := paramsReal fd lookup bj targetBlock targetLookup'
-  rcases consumed_take_edge receipt frame.lookup blockLookup nativeLookup layout start held nativeLower
+  rcases consumed_take_edge tagged receipt frame.lookup blockLookup nativeLookup layout start held nativeLower
       member targetLookup' edgeOk resolved sub savedSub frame.words arguments length real reached with failure | success
   · right
     have same : Lir.atState mem context target.fn target.label target.pos target.env callers =

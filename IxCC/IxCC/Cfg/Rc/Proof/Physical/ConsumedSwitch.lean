@@ -28,7 +28,7 @@ theorem ConsumedCursor.switch_reaches {P : Program} {pairs : List (Nat × Cfg.Fu
     (∃ F starts off C low pe le targetEnv,
       lp.funcs[source.fn]? = some F ∧ Lowered (tablesOf P pairs) source.fn actual F starts ∧
       starts.get? source.blk = some off ∧ Holds source.fn F off starts C ∧ off ≤ low ∧
-      EdgeOk C source.fn edge pe ∧ edge.back = decide (edge.target ≤ source.blk) ∧
+      EdgeOk C source.fn (tablesOf P pairs) edge pe ∧ edge.back = decide (edge.target ≤ source.blk) ∧
       resolveEdge source.fn off starts pe = .ok le ∧
       ReachesEdge lp source.fn F mem context callers low
         (Lir.atState mem context target.fn target.label target.pos target.env callers) le targetEnv ∧

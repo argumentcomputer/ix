@@ -15,13 +15,13 @@ open IxCC.Src (NatMap)
 words and parameter binding. The total charge is the reached charges charge
 plus the exact final jump charge. No heap invariant or target run is assumed. -/
 theorem dynamic_edge_complete
-    {addresses : AddressMap} {D : Nat → Prop} {bound f : Nat}
+    {T : Tables} (tagged : Tagged T) {addresses : AddressMap} {D : Nat → Prop} {bound f : Nat}
     {lp : Lir.Program} {fn : Nat} {F : Lir.Func} {off : Nat} {starts : NatMap Nat}
     {C : List PBlock} {mem : X86.Memory} {ctx : Word} {rest : List Lir.Frame}
     {low : Nat} {s : Lir.State}
     (hF : lp.funcs[fn]? = some F) (hH : Holds f F off starts C)
     {e : Cfg.Edge} {pe : PEdge} {le : Lir.Edge}
-    (hok : EdgeOk C f e pe) (hres : resolveEdge f off starts pe = .ok le)
+    (hok : EdgeOk C f T e pe) (hres : resolveEdge f off starts pe = .ok le)
     {source : Own.Env} {target : Lir.Env}
     (reach : ReachesEdge lp fn F mem ctx rest low s le target)
     (registers : FusedWords addresses D bound source target)
@@ -47,6 +47,7 @@ theorem dynamic_edge_complete
   · simp only [resolveEdge, resolveTgt, start, bind, Except.bind, pure, Except.pure,
       Except.ok.injEq] at hres
     subst hres
+    rw [tagged.operandsAt_params] at lowered
     obtain ⟨words, actual, represented, _⟩ := fused_operands_words registers lowered live evaluated
     obtain ⟨after, binding, related⟩ := registers.bindParams represented arity real
     have jump := step words block after actual lookup (parameters ▸ binding)
@@ -74,7 +75,7 @@ theorem dynamic_edge_complete
 /-- The accepted raw function layout determines the target chunk, target
 parameter names, and source back-edge classification. The lexical and Cfg
 environments stay related, with neither replaced by a projection. -/
-theorem raw_take_edge {T : Tables} {P : Cfg.Program} {lp : Lir.Program}
+theorem raw_take_edge {T : Tables} (tagged : Tagged T) {P : Cfg.Program} {lp : Lir.Program}
     {fn blockId : Nat} {fd : Cfg.Fun} {block targetBlock : Cfg.Block} {F : Lir.Func}
     {starts : NatMap Nat} {off low : Nat} {C : List PBlock}
     (sourceLookup : P.fun? fn = some fd) (blockLookup : fd.blocks[blockId]? = some block)
@@ -82,7 +83,7 @@ theorem raw_take_edge {T : Tables} {P : Cfg.Program} {lp : Lir.Program}
     (start : starts.get? blockId = some off) (held : Holds fn F off starts C) (lower : off ≤ low)
     {e : Cfg.Edge} (member : e ∈ block.term.edges)
     (targetLookup : fd.blocks[e.target]? = some targetBlock) {pe : PEdge} {le : Lir.Edge}
-    (edge : EdgeOk C fn e pe) (resolved : resolveEdge fn off starts pe = .ok le)
+    (edge : EdgeOk C fn T e pe) (resolved : resolveEdge fn off starts pe = .ok le)
     {addresses : AddressMap} {bound : Nat} {lexical cfgEnv : Own.Env} {registerEnv : Lir.Env}
     (sub : EnvSub lexical cfgEnv)
     (registers : FusedWords addresses (Fused T fd) bound lexical registerEnv)
@@ -121,7 +122,7 @@ theorem raw_take_edge {T : Tables} {P : Cfg.Program} {lp : Lir.Program}
     rw [layout.edges blockLookup member] at hb
     have := layout.mono targetStart start (of_decide_eq_true hb)
     omega
-  rcases dynamic_edge_complete functionLookup held edge resolved reached registers
+  rcases dynamic_edge_complete tagged functionLookup held edge resolved reached registers
       (edge_live blockLookup member) arguments (by simpa using arity) real
       targetStart physicalLookup (params.trans head) back with failed | success
   · exact .inl failed
@@ -137,6 +138,7 @@ the selected join's complete saved lexical environment. Original and consumed
 block bodies are paired by the real consume receipt. No saved capture is
 discarded and no separate saved-register assumption is required. -/
 theorem consumed_take_edge {P : Program} {pairs : List (Nat × Cfg.Fun)} {lp : Lir.Program}
+    (tagged : Tagged (tablesOf P pairs))
     {fn blockId : Nat} {original actual : Cfg.Fun} {block targetBlock : Cfg.Block}
     {F : Lir.Func} {starts : NatMap Nat} {off low : Nat} {C : List PBlock}
     (consuming : consumeFunction P (layoutOf P) original = .ok actual)
@@ -147,7 +149,7 @@ theorem consumed_take_edge {P : Program} {pairs : List (Nat × Cfg.Fun)} {lp : L
     (start : starts.get? blockId = some off) (held : Holds fn F off starts C) (lower : off ≤ low)
     {e : Cfg.Edge} (member : e ∈ block.term.edges)
     (targetLookup : original.blocks[e.target]? = some targetBlock)
-    {pe : PEdge} {le : Lir.Edge} (edge : EdgeOk C fn e pe)
+    {pe : PEdge} {le : Lir.Edge} (edge : EdgeOk C fn (tablesOf P pairs) e pe)
     (resolved : resolveEdge fn off starts pe = .ok le)
     {addresses : AddressMap} {bound : Nat} {lexical saved cfgEnv : Own.Env}
     {registerEnv : Lir.Env}
@@ -185,7 +187,7 @@ theorem consumed_take_edge {P : Program} {pairs : List (Nat × Cfg.Fun)} {lp : L
     ⟨fun h => registers.dom (sub _ _ h), fun h live => registers.word (sub _ _ h) live⟩
   have savedRegisters : FusedWords addresses (Fused (tablesOf P pairs) actual) bound saved registerEnv :=
     ⟨fun h => registers.dom (savedSub _ _ h), fun h live => registers.word (savedSub _ _ h) live⟩
-  rcases raw_take_edge actualLookup actualBlock functionLookup layout start held lower
+  rcases raw_take_edge tagged actualLookup actualBlock functionLookup layout start held lower
       member actualTarget edge resolved sub activeRegisters arguments arity real reached with failed | success
   · exact .inl failed
   · obtain ⟨offset, charges, label, words, after, targetStart, labelLower, represented,

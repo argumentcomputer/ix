@@ -31,7 +31,7 @@ theorem fused_switch
     (lookup : frame.env.get? x = some value)
     (constructor : value.asCtor T.known heap = some (key, fields))
     (selected : Cfg.selectEdge key alts default = some edge) :
-    (∃ pe le target', EdgeOk C f edge pe ∧ edge.back = decide (edge.target ≤ index) ∧
+    (∃ pe le target', EdgeOk C f T edge pe ∧ edge.back = decide (edge.target ≤ index) ∧
       resolveEdge f off starts pe = .ok le ∧
       ReachesEdge lp fn F mem context callers (off + st.cur)
         (Lir.atState mem context fn (off + st.cur) st.acc.length target callers) le target' ∧

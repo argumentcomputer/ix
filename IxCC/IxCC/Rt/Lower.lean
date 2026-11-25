@@ -149,6 +149,19 @@ structure Tables where
   /-- The runtime procedures' functions. -/
   natPow : FunId
   natGcd : FunId
+  /-- The registers each function holds as raw 64-bit words (`[0, 2^64)`, untagged): the
+  reference-counted route's word layout (`Cfg.Rc.Raw`). None on the immortal route. -/
+  rawVar : FunId → VReg → Bool := fun _ _ => false
+  /-- The raw flags of a block's parameters, in order (block 0: the function's parameters). -/
+  rawParams : FunId → Nat → List Bool := fun _ _ => []
+  /-- Whether a function returns a raw word. -/
+  rawRet : FunId → Bool := fun _ => false
+
+/-- No register, parameter or result is raw: the immortal route's tables. -/
+structure NoRaw (T : Tables) : Prop where
+  var : ∀ f x, T.rawVar f x = false
+  params : ∀ f b, T.rawParams f b = []
+  ret : ∀ f, T.rawRet f = false
 
 def tables (P : Cfg.Program) : Tables :=
   -- a `Bool` word only for a key outside `Nat`'s, within the tag limit (the
@@ -279,6 +292,37 @@ natOverflow` where a literal has no word (Cfg evaluates it here). Returns
 whether the block goes on. -/
 def withOperands (f : FunId) (as : List Fir.Arg) (k : List Lir.Arg → M Unit) : M Bool := do
   match ← operands f as with
+  | some ls => k ls; pure true
+  | none => close (.fail .natOverflow); pure false
+
+/-- An operand at a position held raw (`Tables.rawVar`): a variable as it is (the route that
+sets raw positions checks that only raw registers reach one), a `Nat` literal below `2^64` as
+its untagged word; `none` (the block fails with `natOverflow`) for anything else. -/
+def rawOperand (f : FunId) : Fir.Arg → Except Error (Option Lir.Arg)
+  | .var x => pure (some (.v x))
+  | .lit (.nat n) => pure (if n < 2 ^ 64 then some (.imm (UInt64.ofNat n)) else none)
+  | .lit (.str _) => throw (.string f)
+  | .erased => pure none
+
+/-- An operand at a position that is raw or not (a variable is its register either way). -/
+def operandAt (f : FunId) (raw : Bool) : Fir.Arg → Except Error (Option Lir.Arg)
+  | .var x => pure (some (.v x))
+  | a => if raw then rawOperand f a else operand f a
+
+/-- Operands at positions with the given raw flags (a missing flag is `false`). -/
+def operandsAt (f : FunId) (raw : List Bool) : List Fir.Arg → Except Error (Option (List Lir.Arg))
+  | [] => pure (some [])
+  | a :: as => do
+    let x ← operandAt f (raw.headD false) a
+    let xs ← operandsAt f raw.tail as
+    pure (match x, xs with
+      | some x, some xs => some (x :: xs)
+      | _, _ => none)
+
+/-- `withOperands` at positions with the given raw flags. -/
+def withOperandsAt (f : FunId) (raw : List Bool) (as : List Fir.Arg) (k : List Lir.Arg → M Unit) :
+    M Bool := do
+  match ← operandsAt f raw as with
   | some ls => k ls; pure true
   | none => close (.fail .natOverflow); pure false
 
@@ -550,6 +594,81 @@ def word (f : FunId) (x : VReg) (w : Src.Width) (op : Src.WordOp) (as : List Lir
     if w.bits ≤ w'.bits then assign x (.arg a) else assign x (.bin .and .w64 a (.imm (tagMask w')))
   | op, as => if w = .w64 then word64 f x op as else wordNarrow f x w op as
 
+end Lower
+
+namespace LowerRep
+
+open Lower
+
+/-- Raw 64-bit unsigned division / remainder with `n / 0 = 0` and `n % 0 = n` over full `[0, 2^64)`. -/
+def divModRaw64 (x : VReg) (o : Lir.BinOp) (zero : Lir.Arg → Lir.Arg) (a b : Lir.Arg) : M Unit := do
+  let nz ← newLabel
+  let zBlk ← newLabel
+  let join ← newLabel
+  close (.br .eq b (.imm 0) (loc zBlk) (loc nz))
+  let q ← freshReg
+  put nz {
+    body := [.assign q (.bin o .w64 a b)]
+    term := .jump ⟨.loc join, [.v q]⟩
+  }
+  put zBlk { term := .jump ⟨.loc join, [zero a]⟩, cold := true }
+  openAt join [x]
+
+/-- Emit a raw 64-bit `UInt64` or hardware limb-component operation on raw 64-bit operands,
+producing a raw 64-bit result in `x` (zero tagging, zero `natOverflow`). -/
+def wordRaw64 (f : FunId) (x : VReg) (op : Src.WordOp) (as : List Lir.Arg) : M Unit :=
+  match op, as with
+  | .add, [a, b] => assign x (.bin .add .w64 a b)
+  | .sub, [a, b] => assign x (.bin .sub .w64 a b)
+  | .mul, [a, b] => assign x (.bin .mul .w64 a b)
+  | .div, [a, b] => divModRaw64 x .udiv (fun _ => .imm 0) a b
+  | .mod, [a, b] => divModRaw64 x .urem id a b
+  | .land, [a, b] => assign x (.bin .and .w64 a b)
+  | .lor, [a, b] => assign x (.bin .or .w64 a b)
+  | .xor, [a, b] => assign x (.bin .xor .w64 a b)
+  | .shiftLeft, [a, b] => do
+    let s ← bin .and b (.imm 63)
+    assign x (.bin .shl .w64 a s)
+  | .shiftRight, [a, b] => do
+    let s ← bin .and b (.imm 63)
+    assign x (.bin .shr .w64 a s)
+  | .complement, [a] => assign x (.bin .xor .w64 a (.imm 0xFFFFFFFFFFFFFFFF))
+  | .neg, [a] => assign x (.bin .sub .w64 (.imm 0) a)
+  | .ofNat, [a] => assign x (.arg a)
+  | .toNat, [a] => assign x (.arg a)
+  | .convert .w64, [a] => assign x (.arg a)
+  | .convert w', [a] => assign x (.bin .and .w64 a (.imm (UInt64.ofNat (w'.size - 1))))
+  | .clz64, [a] => clz64Code x a false
+  | .mulWideLo, [a, b] => do
+    let hi ← freshReg
+    emit (.limb x hi (.mulWide64 a b))
+  | .mulWideHi, [a, b] => do
+    let lo ← freshReg
+    emit (.limb lo x (.mulWide64 a b))
+  | .divWideQ, [hi, lo, d] => do
+    let r ← freshReg
+    emit (.limb x r (.divWide64 hi lo d))
+  | .divWideR, [hi, lo, d] => do
+    let q ← freshReg
+    emit (.limb q x (.divWide64 hi lo d))
+  | .addCarryLo, [a, b, c] => do
+    let co ← freshReg
+    emit (.limb x co (.addCarry64 a b c))
+  | .addCarryOut, [a, b, c] => do
+    let s ← freshReg
+    emit (.limb s x (.addCarry64 a b c))
+  | .subBorrowLo, [a, b, c] => do
+    let bo ← freshReg
+    emit (.limb x bo (.subBorrow64 a b c))
+  | .subBorrowOut, [a, b, c] => do
+    let d ← freshReg
+    emit (.limb d x (.subBorrow64 a b c))
+  | op, _ => throw (.prim f (.word .w64 op))
+
+end LowerRep
+
+namespace Lower
+
 def primitive (f : FunId) (T : Tables) (x : VReg) (op : Lam.Prim) (as : List Lir.Arg) : M Unit := do
   let bool := fun (c : Lir.Cond) (a b : Lir.Arg) => do
     let some (t, e) := T.bools | throw (.noBool f)
@@ -642,6 +761,53 @@ def compareOf : Lam.Prim → Option Lir.Cond
   | .natBlt => some .ult
   | _ => none
 
+/-! ## Raw 64-bit words (the reference-counted route's word layout)
+
+A register `Tables.rawVar` names holds the untagged word `n` of a `UInt64` (`n < 2^64`): no
+tag, no `natOverflow`. A 64-bit word operation that reads or writes one runs on raw operands
+(`LowerRep.wordRaw64`): a raw register as it is, a tagged one untagged (`w >>> 1`), a literal
+below `2^64` as its word. Its result goes to a raw destination as it is, and to a tagged one
+through `checked64` (`natOverflow` at or above `2^63`, the tagged word's limit). -/
+
+/-- How a word operation reads an operand: a raw register and a literal raw (`rawOperand`), a
+tagged register as it is (then untagged by `untagAt`). -/
+def rawFlag (T : Tables) (f : FunId) : Fir.Arg → Bool
+  | .var y => T.rawVar f y
+  | _ => true
+
+/-- Untag the operands read from tagged registers (`w >>> 1`). -/
+def untagAt (T : Tables) (f : FunId) : List Fir.Arg → List Lir.Arg → M (List Lir.Arg)
+  | a :: as, la :: las => do
+    let u ← if rawFlag T f a then pure la else bin .shr la (.imm 1)
+    let us ← untagAt T f as las
+    pure (u :: us)
+  | _, _ => pure []
+
+/-- Whether a primitive binding takes the raw path: a 64-bit word operation with a raw
+destination or a raw operand. -/
+def rawPrim (T : Tables) (f : FunId) (x : VReg) : Lam.Prim → List Fir.Arg → Bool
+  | .word .w64 _, as => T.rawVar f x || as.any fun
+    | .var y => T.rawVar f y
+    | _ => false
+  | _, _ => false
+
+/-- The raw path of a 64-bit word operation: the operation on raw operands, its result raw, or
+tagged through `checked64`; `false` if the block ended with `fail natOverflow` (a literal at or
+above `2^64`). -/
+def rawWord (f : FunId) (T : Tables) (x : VReg) (op : Src.WordOp) (as : List Fir.Arg) : M Bool :=
+  withOperandsAt f (as.map (rawFlag T f)) as fun las => do
+    let us ← untagAt T f as las
+    if T.rawVar f x then LowerRep.wordRaw64 f x op us
+    else do
+      let r ← freshReg
+      LowerRep.wordRaw64 f r op us
+      checked64 x (.v r)
+
+/-- A primitive binding's code: the raw path where `rawPrim` says, today's otherwise. -/
+def rawPrimCode (f : FunId) (T : Tables) (x : VReg) : Lam.Prim → List Fir.Arg → M Bool
+  | .word .w64 op, as => rawWord f T x op as
+  | op, as => withOperands f as (primitive f T x op)
+
 /-! ## Allocation and projection -/
 
 def isNatKey (T : Tables) (k : Key.CtorKey) : Bool :=
@@ -686,11 +852,12 @@ def proj (f : FunId) (T : Tables) (x y : VReg) (c : Key.CtorKey) (i : Nat) : M U
 
 /-- One instruction; `false` if the block ended with `fail natOverflow`. -/
 def instr (f : FunId) (T : Tables) : Cfg.Instr → M Bool
-  | .bind x (.fir (.arg a)) => withOperands f [a] fun
+  | .bind x (.fir (.arg a)) => withOperandsAt f [T.rawVar f x] [a] fun
     | [a] => assign x (.arg a)
     | _ => pure ()
-  | .bind x (.fir (.prim op as)) => withOperands f as (primitive f T x op)
-  | .bind x (.fir (.call g as)) => withOperands f as fun as => emit (.call [x] g as)
+  | .bind x (.fir (.prim op as)) =>
+    if rawPrim T f x op as then rawPrimCode f T x op as else withOperands f as (primitive f T x op)
+  | .bind x (.fir (.call g as)) => withOperandsAt f (T.rawParams g 0) as fun as => emit (.call [x] g as)
   | .bind _ (.fir (.ctor ..)) => throw (.form f "a Fir constructor in Cfg")
   | .bind _ (.fir (.proj ..)) => throw (.form f "a Fir projection in Cfg")
   | .bind x (.alloc c as _) => withOperands f as (alloc f T x c)
@@ -704,9 +871,9 @@ def instrs (f : FunId) (T : Tables) : List Cfg.Instr → M Bool
 
 /-- A Cfg edge from block `src`: to the target's chunk, or to a new cold
 `fail natOverflow` block if an argument has no word. -/
-def edge (f : FunId) (src : Nat) (e : Cfg.Edge) : M PEdge := do
+def edge (f : FunId) (T : Tables) (src : Nat) (e : Cfg.Edge) : M PEdge := do
   unless e.back == decide (e.target ≤ src) do throw (.edgeOrder f src)
-  match ← operands f e.args with
+  match ← operandsAt f (T.rawParams f e.target) e.args with
   | some as => pure ⟨.blk e.target, as⟩
   | none => pure (loc (← coldBlock (.fail .natOverflow)))
 
@@ -754,7 +921,7 @@ def KeyKind.isNat : KeyKind → Bool
 /-- An alternative's key kind and lowered edge. -/
 def switchAlt (f : FunId) (T : Tables) (src : Nat) (ke : Key.CtorKey × Cfg.Edge) : M (KeyKind × PEdge) := do
   let some kind := keyKind T ke.1 | throw (.switch f src "a key outside the constructor table")
-  pure (kind, ← edge f src ke.2)
+  pure (kind, ← edge f T src ke.2)
 
 /-- Whether a lowered alternative has the zero key. -/
 def isZero : KeyKind × PEdge → Bool
@@ -819,7 +986,7 @@ def tagSwitch (x : VReg) (es : List (KeyKind × PEdge)) (dd : Option PEdge) : M 
 def switch (f : FunId) (T : Tables) (src : Nat) (x : VReg) (alts : List (Key.CtorKey × Cfg.Edge))
     (d : Option Cfg.Edge) : M Unit := do
   let es ← alts.mapM (switchAlt f T src)
-  let dd ← d.mapM (edge f src)
+  let dd ← d.mapM (edge f T src)
   let nats := es.filter (·.1.isNat)
   if !nats.isEmpty then
     unless nats.length == es.length do throw (.switch f src "Nat keys mixed with other keys")
@@ -845,19 +1012,19 @@ def fusedClose (c : Lir.Cond) (a b : Lir.Arg) (te fe : Option PEdge) : M Unit :=
 /-- A switch on the `Bool` a comparison just produced, as the branch. -/
 def fusedSwitch (f : FunId) (T : Tables) (src : Nat) (c : Lir.Cond) (a b : Lir.Arg)
     (alts : List (Key.CtorKey × Cfg.Edge)) (d : Option Cfg.Edge) : M Unit := do
-  let te ← (boolEdge alts d T.known.boolTrue).mapM (edge f src)
-  let fe ← (boolEdge alts d T.known.boolFalse).mapM (edge f src)
+  let te ← (boolEdge alts d T.known.boolTrue).mapM (edge f T src)
+  let fe ← (boolEdge alts d T.known.boolFalse).mapM (edge f T src)
   fusedClose c a b te fe
 
 def term (f : FunId) (T : Tables) (src : Nat) : Cfg.Term → M Unit
-  | .jump e => do close (.jump (← edge f src e))
+  | .jump e => do close (.jump (← edge f T src e))
   | .switch x alts d => switch f T src x alts d
   | .ret a => do
-    let _ ← withOperands f [a] fun
+    let _ ← withOperandsAt f [T.rawRet f] [a] fun
       | [a] => close (.ret a)
       | _ => pure ()
   | .tcall g as => do
-    let _ ← withOperands f as fun as => close (.tail g as)
+    let _ ← withOperandsAt f (T.rawParams g 0) as fun as => close (.tail g as)
   | .trap => close .trap
 
 /-! ## Blocks and functions -/
@@ -1354,71 +1521,6 @@ def unbox64 (x : VReg) (a : Lir.Arg) : M Unit :=
       term := .jump ⟨.loc join, [.v rBox]⟩
     }
     openAt join [x]
-
-/-- Raw 64-bit unsigned division / remainder with `n / 0 = 0` and `n % 0 = n` over full `[0, 2^64)`. -/
-def divModRaw64 (x : VReg) (o : Lir.BinOp) (zero : Lir.Arg → Lir.Arg) (a b : Lir.Arg) : M Unit := do
-  let nz ← newLabel
-  let zBlk ← newLabel
-  let join ← newLabel
-  close (.br .eq b (.imm 0) (loc zBlk) (loc nz))
-  let q ← freshReg
-  put nz {
-    body := [.assign q (.bin o .w64 a b)]
-    term := .jump ⟨.loc join, [.v q]⟩
-  }
-  put zBlk { term := .jump ⟨.loc join, [zero a]⟩, cold := true }
-  openAt join [x]
-
-/-- Emit a raw 64-bit `UInt64` or hardware limb-component operation on raw 64-bit operands,
-producing a raw 64-bit result in `x` (zero tagging, zero `natOverflow`). -/
-def wordRaw64 (f : FunId) (x : VReg) (op : Src.WordOp) (as : List Lir.Arg) : M Unit :=
-  match op, as with
-  | .add, [a, b] => assign x (.bin .add .w64 a b)
-  | .sub, [a, b] => assign x (.bin .sub .w64 a b)
-  | .mul, [a, b] => assign x (.bin .mul .w64 a b)
-  | .div, [a, b] => divModRaw64 x .udiv (fun _ => .imm 0) a b
-  | .mod, [a, b] => divModRaw64 x .urem id a b
-  | .land, [a, b] => assign x (.bin .and .w64 a b)
-  | .lor, [a, b] => assign x (.bin .or .w64 a b)
-  | .xor, [a, b] => assign x (.bin .xor .w64 a b)
-  | .shiftLeft, [a, b] => do
-    let s ← bin .and b (.imm 63)
-    assign x (.bin .shl .w64 a s)
-  | .shiftRight, [a, b] => do
-    let s ← bin .and b (.imm 63)
-    assign x (.bin .shr .w64 a s)
-  | .complement, [a] => assign x (.bin .xor .w64 a (.imm 0xFFFFFFFFFFFFFFFF))
-  | .neg, [a] => assign x (.bin .sub .w64 (.imm 0) a)
-  | .ofNat, [a] => assign x (.arg a)
-  | .toNat, [a] => assign x (.arg a)
-  | .convert .w64, [a] => assign x (.arg a)
-  | .convert w', [a] => assign x (.bin .and .w64 a (.imm (UInt64.ofNat (w'.size - 1))))
-  | .clz64, [a] => clz64Code x a false
-  | .mulWideLo, [a, b] => do
-    let hi ← freshReg
-    emit (.limb x hi (.mulWide64 a b))
-  | .mulWideHi, [a, b] => do
-    let lo ← freshReg
-    emit (.limb lo x (.mulWide64 a b))
-  | .divWideQ, [hi, lo, d] => do
-    let r ← freshReg
-    emit (.limb x r (.divWide64 hi lo d))
-  | .divWideR, [hi, lo, d] => do
-    let q ← freshReg
-    emit (.limb q x (.divWide64 hi lo d))
-  | .addCarryLo, [a, b, c] => do
-    let co ← freshReg
-    emit (.limb x co (.addCarry64 a b c))
-  | .addCarryOut, [a, b, c] => do
-    let s ← freshReg
-    emit (.limb s x (.addCarry64 a b c))
-  | .subBorrowLo, [a, b, c] => do
-    let bo ← freshReg
-    emit (.limb x bo (.subBorrow64 a b c))
-  | .subBorrowOut, [a, b, c] => do
-    let d ← freshReg
-    emit (.limb d x (.subBorrow64 a b c))
-  | op, _ => throw (.prim f (.word .w64 op))
 
 /-- Deliver a raw 64-bit result `r` into destination variable `x` of representation `rx`. -/
 def finishRaw64 (x : VReg) (rx : Fir.Rep) (r : Lir.Arg) : M Unit :=

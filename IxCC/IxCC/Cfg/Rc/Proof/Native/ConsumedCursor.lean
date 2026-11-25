@@ -78,7 +78,7 @@ theorem ConsumedCursor.call {P : Program} {pairs : List (Nat × Cfg.Fun)}
     (consuming : consume P (layoutOf P) instruction = .ok (.bind x (.fir (.call callee args))))
     (mem : X86.Memory) (context : Lir.Word) (callers : List Lir.Frame) :
     (∃ operands function block,
-      Rt.Lower.operands source.fn args = .ok (some operands) ∧
+      Rt.Lower.operandsAt source.fn ((tablesOf P pairs).rawParams callee 0) args = .ok (some operands) ∧
       lp.funcs[target.fn]? = some function ∧ function.blocks[target.label]? = some block ∧
       ∃ position : target.pos < block.body.size,
         block.body[target.pos] = .call [x] callee operands ∧
