@@ -184,12 +184,17 @@ def groundShapeCheck (inp : Recheck.Input) (c : Recheck.Cert) (a : Recheck.Artif
           else .error "shape: the certificate does not list root 0 at its first-order type"
         else .error "shape: certOk refused the certificate"
 
-/-- The same, with the certificate the untrusted producer proposes for root 0. -/
+/-- The same, with the certificate the untrusted producer proposes for root 0 (at most 4000
+steps; a certificate of 4000 instances or more is refused unchecked: the producer's instance list
+is quadratic, and `Closures.polyRec` does not converge). -/
 def groundShapeCheckP (inp : Recheck.Input) (c : Recheck.Cert) (a : Recheck.Artifact)
     (target : Ixon.Address) : Except String Abi :=
   match a.src.roots.head? with
   | none => .error "noRoot"
-  | some (_, root) => groundShapeCheck inp c a (Shape2.Produce.produce a.src root) target
+  | some (_, root) =>
+    let sc := Shape2.Produce.produce a.src root 400 4000
+    if sc.insts.length < 4000 then groundShapeCheck inp c a sc target
+    else .error "shape: the producer did not converge (4000 instances)"
 
 /-- **What the combined check establishes**: `groundCheck`'s `GroundOk`, and on every input of the
 claim's arity the two facts about SrcEval the composed theorems take as hypotheses. -/
@@ -257,7 +262,10 @@ theorem groundShapeCheckP_sound {inp : Recheck.Input} {c : Recheck.Cert} {a : Re
   unfold groundShapeCheckP at h
   split at h
   · cases h
-  · exact groundShapeCheck_sound h
+  · dsimp only at h
+    split at h
+    · exact groundShapeCheck_sound h
+    · cases h
 
 /-! ## The escape-free theorems -/
 
