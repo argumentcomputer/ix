@@ -16,6 +16,6 @@ export IxCC.SrcShape.Produce (
   tyConst mkData fieldShapes piShape refix bodyOf peel projFn addInst addSite ctorSites
   walk step loop interOf produceAllWith produceWith produce produceAll Limits Declined
   Declined.render loopCapped propose
-  holdsWord mentions prune rangeShape variants withRanges )
+  holdsWord mentions prune rangeShape variants withRanges rangeRes natWrappers )
 
 end IxCC.Correct.Shape2.Produce

@@ -409,13 +409,14 @@ theorem chkWith_sound {sig : Sig} {ls : Levels} {Γ : List Shape} {t : Term}
     | _ => simp at hle
   | .arr _ _, h => hf _ _ (of_decide_eq_true h)
 
-/-- Does synthesis of the term read what is expected of it? Only a λ does, and a `let`
-passes the expectation to its body. For every other term `synth` is the same at every
-expectation, so an argument of that kind is synthesized once, not once per candidate
-shape of the function. -/
+/-- Does synthesis of the term read what is expected of it? A λ does, a `let` passes the
+expectation to its body, and a literal takes its bound from it. For every other term `synth`
+is the same at every expectation, so an argument of that kind is synthesized once, not once
+per candidate shape of the function. -/
 def readsExp : Term → Bool
   | .lam _ _ _ => true
   | .letE _ _ _ _ _ _ => true
+  | .natLit _ => true
   | _ => false
 
 /-- Is a candidate shape of a function worth an argument check, given what is expected of
