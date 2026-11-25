@@ -5,6 +5,8 @@ import IxCCCorrect.Routes
 import IxCCCorrect.Today
 import IxCCCorrect.Progress
 import IxCCCorrect.Shape
+import IxCCCorrect.Shape1
+import IxCCCorrect.Shape1Check
 
 /-!
 # `IxCCCorrect`: the target statements of IxCC
@@ -30,6 +32,9 @@ propositions that elaborate, and what the existing theorems establish today.
   executable theorems.
 * `IxCCCorrect.Shape`: the first program class with progress proved (`allOk`,
   `neverWrong_of_shape`), by a syntactic typing of SrcEval's values.
+* `IxCCCorrect.Shape1`, `IxCCCorrect.Shape1Check`: the second class, first-order
+  `Nat` and enumeration programs with irrelevant positions, `case` and recursors,
+  with its decision (`certOk`, `neverWrong_of_cert_nat`).
 
 The tiers, the routes and the two progress targets are definitions: nothing here
 proves them. The library
