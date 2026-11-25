@@ -162,7 +162,7 @@ inductive HeadAt (M : Model V env) (p : Program) (κ : CId → KKey) (lpsOf : CI
       S c → LvAt φ (lpsOf c) ls → env.find? (κ c) = some ci → Ok c ls →
       HeadAt M p κ lpsOf S Ok (.cases c) ls φ (κ c) ci.toConstantVal.type
   | recr {r : CId} {ls : Levels} {φ : LevelParam → Nat} {ci : ConstantInfo .anon} :
-      S r → LvAt φ (lpsOf r) ls → env.find? (κ r) = some ci →
+      S r → LvAt φ (lpsOf r) ls → env.find? (κ r) = some ci → Ok r ls →
       HeadAt M p κ lpsOf S Ok (.recr r) ls φ (κ r) ci.toConstantVal.type
   | prim {op : IxCC.Src.PrimOp} {ls : Levels} {φ : LevelParam → Nat} {ci : ConstantInfo .anon} :
       env.find? (primKey op) = some ci → ci.toConstantVal.levelParams = [] →

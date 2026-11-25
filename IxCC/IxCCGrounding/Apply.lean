@@ -59,7 +59,7 @@ theorem head_mem (M : Model V env) {p : Program} {κ : CId → KKey} {lpsOf : CI
   cases hh with
   | ctor _ _ hf => exact mem_key M hf φ ρ
   | cases _ _ hf => exact mem_key M hf φ ρ
-  | recr _ _ hf => exact mem_key M hf φ ρ
+  | recr _ _ hf _ => exact mem_key M hf φ ρ
   | prim hf _ _ => exact mem_key M hf φ ρ
   | word _ _ hf _ _ => exact mem_key M hf φ ρ
 
