@@ -7,6 +7,11 @@
 //! `UInt64` library's byte decompositions and `ixcc.divmod`. The package
 //! carries no hint data. Nothing here is on the verifier's side: the verifier
 //! reads the compiled circuits and the public call alone.
+//!
+//! `--args N,N,...` replaces the package's arguments (one compiled program,
+//! several invocations). `--no-controls` skips the reference trace check and
+//! the negative controls, for measurements: the report's times, rows and peak
+//! memory are then of executing, proving and verifying alone.
 use aiur::field::FieldBackend;
 use aiur::{
   artifact::ExecutionPackage,
@@ -20,6 +25,9 @@ use multi_stark::p3_matrix::Matrix;
 use serde_json::json;
 use std::{error::Error, time::Instant};
 
+const USAGE: &str = "usage: ixcc_prove PACKAGE.ixa [PROOF.bin] [REPORT.json] \
+                     [--args N,N,...] [--no-controls]";
+
 /// Peak resident set size of this process in kilobytes, where the platform
 /// reports it.
 fn peak_rss_kb() -> Option<u64> {
@@ -29,10 +37,27 @@ fn peak_rss_kb() -> Option<u64> {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-  let args: Vec<_> = std::env::args().collect();
-  let path = args
-    .get(1)
-    .ok_or("usage: ixcc_prove PACKAGE.ixa [PROOF.bin] [REPORT.json]")?;
+  let mut args = Vec::new();
+  let mut override_args: Option<Vec<u64>> = None;
+  let mut controls = true;
+  let mut raw = std::env::args();
+  while let Some(arg) = raw.next() {
+    match arg.as_str() {
+      "--args" => {
+        let list = raw.next().ok_or("--args needs a comma-separated list")?;
+        override_args = Some(
+          list
+            .split(',')
+            .filter(|word| !word.is_empty())
+            .map(str::parse)
+            .collect::<Result<_, _>>()?,
+        );
+      },
+      "--no-controls" => controls = false,
+      _ => args.push(arg),
+    }
+  }
+  let path = args.get(1).ok_or(USAGE)?;
   let total = Instant::now();
   let start = Instant::now();
   let (package, digest) = ExecutionPackage::load(path.as_ref())?;
@@ -41,7 +66,8 @@ fn main() -> Result<(), Box<dyn Error>> {
   let mut program = program.check_field::<multi_stark::types::Val>()?;
   program.track_depth(&trace)?;
   let field = program.field();
-  let address = field.decode(&package.args)?;
+  let address =
+    field.decode(override_args.as_deref().unwrap_or(&package.args))?;
   let mut channels = HintChannels::new();
   aiur::library::u64::register(&mut channels, field)?;
   aiur::library::ixcc::register(&mut channels, field)?;
@@ -67,8 +93,10 @@ fn main() -> Result<(), Box<dyn Error>> {
   // The independent trace writer and its constraint check, outside the
   // measured witness and proving times.
   let start = Instant::now();
-  let reference = plan.generate_reference(&record, entry, &address, true)?;
-  plan.check(&record, &reference, entry, &address)?;
+  if controls {
+    let reference = plan.generate_reference(&record, entry, &address, true)?;
+    plan.check(&record, &reference, entry, &address)?;
+  }
   let check_seconds = start.elapsed().as_secs_f64();
 
   let statistics = backend.statistics();
@@ -82,6 +110,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     })
     .collect();
   let rows: usize = witness.traces.iter().map(|t| t.height()).sum();
+  // Rows of the fixed tables and of the memory argument, apart from the
+  // program's own circuits.
+  let rows_named = |prefix: &str| -> usize {
+    statistics
+      .iter()
+      .zip(&witness.traces)
+      .filter(|(s, _)| s.name.starts_with(prefix))
+      .map(|(_, t)| t.height())
+      .sum()
+  };
+  let table_rows = rows_named("<table:");
+  let rom_rows = rows_named("<ROM:");
+  let program_rows = rows - table_rows - rom_rows;
   let active = witness.traces.iter().filter(|t| t.height() > 0).count();
   let stage1_words: usize = witness.traces.iter().map(|t| t.values.len()).sum();
   let output = record.output.clone();
@@ -113,7 +154,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(changed)
   };
   let mut rejections = Vec::new();
-  for index in 0..output.len() {
+  let checked_outputs = if controls { output.len() } else { 0 };
+  let checked_arguments = if controls { address.len() } else { 0 };
+  for index in 0..checked_outputs {
     let wrong = flip(&output, index)?;
     match backend.verify(entry, &address, &wrong, &proof) {
       Ok(()) => {
@@ -145,7 +188,7 @@ fn main() -> Result<(), Box<dyn Error>> {
       },
     }
   }
-  for index in 0..address.len() {
+  for index in 0..checked_arguments {
     let wrong = flip(&address, index)?;
     match backend.verify(entry, &wrong, &output, &proof) {
       Ok(()) => {
@@ -172,6 +215,8 @@ fn main() -> Result<(), Box<dyn Error>> {
       "total_seconds": total_seconds,
       "peak_rss_kb": peak_rss_kb,
       "proof_bytes": bytes.len(), "rows": rows, "active_circuits": active,
+      "program_rows": program_rows, "table_rows": table_rows,
+      "rom_rows": rom_rows, "controls": controls,
       "stage1_words": stage1_words,
       "verified": true, "rejected_wrong_claims": rejections.len(),
       "rejections": rejections, "circuits": circuits,
