@@ -88,6 +88,7 @@
   {"roots": ["IxCCTests.Backend.ProbeMain"], "kind": "lean_exe"},
   "IxCCTests": {"roots": ["IxCCTests"], "kind": "lean_lib"},
   "IxCCGrounding": {"roots": ["IxCCGrounding"], "kind": "lean_lib"},
+  "IxCCCorrect": {"roots": ["IxCCCorrect"], "kind": "lean_lib"},
   "IxCC": {"roots": ["IxCC"], "kind": "lean_lib"}},
  "schema_version": 1,
  "modules":
@@ -4502,6 +4503,60 @@
     "IxCCGrounding.StrLit",
     "IxCCGrounding.BigNatBridge",
     "IxCCGrounding.Fence"]},
+  "IxCCCorrect.Today":
+  {"path": "IxCCCorrect/Today.lean",
+   "imports": ["IxCC.Exe.Plain.Exe", "IxCCCorrect.Process"]},
+  "IxCCCorrect.Tiers":
+  {"path": "IxCCCorrect/Tiers.lean",
+   "imports":
+   ["IxCCCorrect.Claim",
+    "IxCCCorrect.Process",
+    "IxCC.Recheck.Produce",
+    "IxCCGrounding.Syntax",
+    "IxCK.Kernel.Denotes"]},
+  "IxCCCorrect.Shape1Check":
+  {"path": "IxCCCorrect/Shape1Check.lean", "imports": ["IxCCCorrect.Shape1"]},
+  "IxCCCorrect.Shape1":
+  {"path": "IxCCCorrect/Shape1.lean", "imports": ["IxCCCorrect.Shape"]},
+  "IxCCCorrect.Shape":
+  {"path": "IxCCCorrect/Shape.lean",
+   "imports": ["IxCC.Src.Proof.Unfold", "IxCCCorrect.Progress"]},
+  "IxCCCorrect.Routes":
+  {"path": "IxCCCorrect/Routes.lean", "imports": ["IxCCCorrect.Tiers"]},
+  "IxCCCorrect.Progress":
+  {"path": "IxCCCorrect/Progress.lean",
+   "imports":
+   ["IxCC.Exe.Plain.Exe", "IxCC.Recheck.Produce", "IxCK.Kernel.Denotes"]},
+  "IxCCCorrect.Process":
+  {"path": "IxCCCorrect/Process.lean",
+   "imports":
+   ["IxCC.X86.Exe.Process", "IxCC.X86.Exe.Read", "IxCC.X86.Exe.Cert"]},
+  "IxCCCorrect.Fence":
+  {"path": "IxCCCorrect/Fence.lean",
+   "imports":
+   ["IxCCCorrect.Routes",
+    "IxCCCorrect.Today",
+    "IxCCCorrect.Progress",
+    "IxCCCorrect.Shape",
+    "IxCCCorrect.Shape1",
+    "IxCCCorrect.Shape1Check"]},
+  "IxCCCorrect.Claim":
+  {"path": "IxCCCorrect/Claim.lean",
+   "imports":
+   ["IxCC.CompileClaim", "IxCC.X86.Exe.Cert", "IxCC.X86.Exe.Plain.Proof.Spec"]},
+  "IxCCCorrect":
+  {"path": "IxCCCorrect.lean",
+   "imports":
+   ["IxCCCorrect.Claim",
+    "IxCCCorrect.Process",
+    "IxCCCorrect.Tiers",
+    "IxCCCorrect.Routes",
+    "IxCCCorrect.Today",
+    "IxCCCorrect.Progress",
+    "IxCCCorrect.Shape",
+    "IxCCCorrect.Shape1",
+    "IxCCCorrect.Shape1Check",
+    "IxCCCorrect.Fence"]},
   "IxCC.Xv.XlSemantics":
   {"path": "IxCC/Xv/XlSemantics.lean",
    "imports": ["IxCC.Xv.Semantics", "IxCC.Lir.Operands"]},

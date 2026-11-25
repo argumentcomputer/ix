@@ -1789,8 +1789,23 @@
  "grounding_axiom_sha256":
  "ecb1040fcf889eb2c39b18e5bbd0e208e53aa66588b9b3780a2bbe6982de86e4",
  "grounding_axiom_count": 556,
+ "correct_modules":
+ ["IxCCCorrect",
+  "IxCCCorrect.Claim",
+  "IxCCCorrect.Fence",
+  "IxCCCorrect.Process",
+  "IxCCCorrect.Progress",
+  "IxCCCorrect.Routes",
+  "IxCCCorrect.Shape",
+  "IxCCCorrect.Shape1",
+  "IxCCCorrect.Shape1Check",
+  "IxCCCorrect.Tiers",
+  "IxCCCorrect.Today"],
+ "correct_axiom_sha256":
+ "19f60584e57a973021f84a795c88378ec8abe8cc0d6fec7d5647520b412d386f",
+ "correct_axiom_count": 93,
  "baseline":
- "ixcc-2-int: auto-hints, bench-k45, k1 Lir.Opt and k23 RC integration (k1 +58, k23 +9; 7,329 + 556 = 7,885 fences)",
+ "ixcc-2-int2: IxCCCorrect registered (its fence 93; 7,329 + 556 + 93 = 7,978 fences)",
  "axiom_sha256":
  "f1c2ba46872744461450f818c938906c568966efbac861f664dc6fdd3f08ae96",
  "axiom_count": 7329}
