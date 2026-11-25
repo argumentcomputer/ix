@@ -375,6 +375,7 @@ def ctorFields (D : DataDecl Key.CtorKey) (c : Key.CtorKey) : Option (List Shape
 def isClo : Key.CtorKey → Bool
   | .clo _ _ => true
   | .src _ => false
+  | .arr => false
 
 /-- A constructor application at a target shape. -/
 def ctorOk (cert : ShapeCert) (fs : FunShapes) (c : CtorInfo) (args : List Arg) : Shape → Bool

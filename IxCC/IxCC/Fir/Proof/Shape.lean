@@ -1067,6 +1067,7 @@ theorem isClo_inv {k : Key.CtorKey} (h : isClo k = true) : ∃ g n, k = .clo g n
   cases k with
   | src c => cases h
   | clo g n => exact ⟨g, n, rfl⟩
+  | arr => cases h
 
 theorem ctorOk_sound {P : Program} {cert : ShapeCert} {fs : FunShapes} {c : CtorInfo}
     {args : List Arg} {τ : Shape} (h : ctorOk cert fs c args τ = true) :

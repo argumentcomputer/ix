@@ -129,7 +129,7 @@ def tables (P : Program) (cfg : Config) : Tables :=
         match cfg.indOf c with
         | some ind => addCtor ind r.key r.arity gs
         | none => gs
-    | .clo _ _ => gs
+    | .clo _ _ | .arr => gs
   { enums := (groups.filter fun g => g.ctors.all (·.2 == 0)).map fun g => (g.ind, g.ctors.map (·.1))
     datas := groups.filter fun g => !g.ctors.all (·.2 == 0) }
 
@@ -161,6 +161,7 @@ def classify (t : Tables) (k : Key.CtorKey) : Kind :=
       match findData k t.datas 0 with
       | some (d, ci) => .data d ci
       | none => .other
+  | .arr => .other
 
 /-! ## The analysis state -/
 
