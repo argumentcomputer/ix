@@ -1,23 +1,38 @@
 import IxCC.Fir.Semantics
+import IxCC.Fir.Shape
 import IxCC.Lam.WordSem
 import IxCC.Lam.Erase.Limb
 import IxCC.Lam.Erase.Array
 
-/-! # DR2 Stage W2: Checked Word Representations, Scalar Fields, and `box` / `unbox` in Fir
+/-! # Representations in Fir: derived from shapes, and the frozen side path's layout
 
-Activates `Fir.Rep.word` (unboxed 64-bit unsigned integer `< 2^64`), `Fir.Rep.obj` (uniform
-polymorphic value where a `UInt64` is boxed in a 1-scalar-word cell `⟨nobj = 0, nscalar = 1,
-tag = 0⟩`), `Fir.Rep.tobj` (Phase 1 tagged/pointer value), and `CtorInfo.nscalar > 0` scalar
-tails via a kernel-evaluable representation certificate (`Fir.Rep.Cert`, D17):
+`Fir.Rep.word` (an unboxed 64-bit word `< 2^64`), `Fir.Rep.obj` (a uniform value where a
+`UInt64` is boxed in a 1-scalar-word cell `⟨nobj = 0, nscalar = 1, tag = 0⟩`), `Fir.Rep.tobj`
+(a Phase 1 tagged/pointer value), and `CtorInfo.nscalar > 0` scalar tails.
 
-* `Cert.check`: linear structural validator verifying that every `.word` variable, parameter,
-  join-point parameter, function return, and scalar-tail constructor field is guaranteed to
-  evaluate in `Fir.eval` to `.lit (.nat n)` with `n < 2^64`, and that no `.obj` value (which may
-  hold a boxed 1-scalar-word cell) reaches a tagged-`Nat` primitive or `Nat` switch without
-  unboxing (`Fir.Proof.Rep.check_sound`).
-* `RepRhs` / `RepCode` / `RepProgram`: Stage W2 explicit-representation Fir with `Rhs.box` and
-  `Rhs.unbox` and scalar-tail `CtorInfo` (`nscalar > 0`) populated by `elaborate`.
-* `infer`: kernel-evaluable bounded-fixpoint producer of `Cert` for a `Fir.Program`. -/
+**This module states no certificate.** The hand-off from the front half to a back end is
+`(Fir.Program, Fir.Shape.ShapeCert)` with `Fir.Shape.check` (design note
+`plans/ONE-PIPELINE.md`, section 2.3). A representation is a function of a shape
+(`Shape.rep`), so the native back end's layout is derived:
+
+* `ofShapes`: the representation of every position, `Shape.rep` of its shape. Its facts (a
+  `.word` position holds a literal below `2^64`) are theorems of the shape checker's soundness
+  (`Fir.Proof.Rep.ofShapes_valOk`, `ofShapes_envOk`, `ofShapes_runSound`), not of a
+  representation checker.
+* `flowsOk`: the native back end's own condition on flows (design note, section 2.5): an array
+  keeps its element kind along every flow, and a packed array reaches no position of unknown
+  shape. The shape checker does not ask it; a back end that does not hold arrays packed does
+  not either.
+* `elaborateShapes`: `RepProgram` with explicit `box` and `unbox` at every flow between a raw
+  word and a tagged position, from the derived representations: the first step of the native
+  back end, not the hand-off.
+
+**The frozen side path** (`compileBigNat`, `--bignat`, DR3 arrays as bound functions,
+`Rt.lowerRep`, `Rt.BigNat.lowerRepBig`) keeps its own layout, inputs unchanged: `inferWithArrays`
+chooses it and `checkWithArrays` tests it for internal consistency. Neither is a certificate:
+nothing on the certified path reads either, and no theorem mentions `checkWithArrays`. `check`
+(with `Fir.Proof.Rep.check_sound`) and `infer` stay for the side path's `Rt.lowerRep` and its
+tests. All of it is retired with the side path (design note, section 5). -/
 
 set_option autoImplicit false
 
@@ -289,7 +304,9 @@ def checkFun (P : Program) (cert : Cert) (f : FunId) (fd : Fun) : Bool :=
   checkParams fc (fd.params.map (·.1)) fc.params &&
   checkCode P cert fc fd.body
 
-/-- **Kernel-evaluable certificate checker** for Stage W2 representations on `Fir.Program`. -/
+/-- The side path's representation check for Stage W2 on `Fir.Program` (sound:
+`Fir.Proof.Rep.check_sound`), read by `Rt.lowerRep` and its tests. Not part of the hand-off:
+there, representations are derived from the checked shapes (`ofShapes`). -/
 def check (P : Program) (cert : Cert) : Bool :=
   cert.ctors.all (checkCtorRep P) &&
   (List.range P.size).all fun f =>
@@ -387,11 +404,14 @@ structure ElabSt where
   deriving Inhabited
 
 /-- Coerce operand `a` from its representation under `fc` to `expected`, wrapping `k` in a
-`.box` or `.unbox` binding when crossing the `.word` ↔ `.obj` boundary. -/
+`.box` or `.unbox` binding when crossing the boundary between a raw `.word` and a tagged
+position (`.obj`, `.tobj`). On a certificate `check` accepts, a `.word` variable never reaches a
+`.tobj` position, so the `.tobj` case only acts on representations derived from shapes
+(`ofShapes`), where a word flows into a position of shape `nat` or `any`. -/
 def coerceArg (fc : FunCert) (a : Arg) (expected : Fir.Rep) (next : Var) :
     Arg × Option (Var × RepRhs) × Var :=
   match a, expected with
-  | .var y, .obj =>
+  | .var y, .obj | .var y, .tobj =>
     if fc.varRep y == .word then (.var next, some (next, .box (.var y)), next + 1)
     else (a, none, next)
   | .var y, .word =>
@@ -415,45 +435,60 @@ def coerceArgs (fc : FunCert) : List Arg → List Fir.Rep → Var →
 def wrapBinds (bs : List (Var × RepRhs)) (k : RepCode) : RepCode :=
   bs.foldr (fun (x, r) acc => .bind x r acc) k
 
+/-- A tagged representation (`.obj` or `.tobj`). -/
+def isTagged (r : Fir.Rep) : Bool := r == .obj || r == .tobj
+
 mutual
 
+/-- Elaborate a body: every flow between a raw word and a tagged position gets an explicit
+`box` or `unbox`. A word primitive's operands are unboxed and its result is boxed into an
+`.obj` binder (a `.tobj` binder receives it as the lowering tags it, as today); a comparison
+reads either kind; any other primitive reads tagged operands and its result is unboxed into a
+`.word` binder. On a certificate `check` accepts, the cases that box into `.tobj` or unbox a
+primitive's result never arise, so the output is what it was before representations were
+derived from shapes. -/
 def elabCode (P : Program) (cert : Cert) (fc : FunCert) (next : Var) : Code → RepCode × Var
   | .bind x rhs k =>
     let rx := fc.varRep x
-    let (preBinds, r', postBox, next1) : List (Var × RepRhs) × RepRhs × Bool × Var :=
+    -- `post`: the coercion from the right-hand side's own kind into `x`'s, through a fresh temporary
+    let (preBinds, r', post, next1) : List (Var × RepRhs) × RepRhs × Option (Arg → RepRhs) × Var :=
       match rhs with
       | .arg a =>
         match a, rx with
-        | .var y, .obj =>
-          if fc.varRep y == .word then ([], .box (.var y), false, next)
-          else ([], .arg a, false, next)
-        | _, _ => ([], .arg a, false, next)
+        | .var y, .obj | .var y, .tobj =>
+          if fc.varRep y == .word then ([], .box (.var y), none, next)
+          else ([], .arg a, none, next)
+        | _, _ => ([], .arg a, none, next)
       | .ctor c as =>
         let c' := (cert.ctorInfo P.ctors c.key).getD c
         let reps := match cert.ctorRep? c.key with
           | some cr => List.replicate cr.nobj cr.objRep ++ List.replicate cr.nscalar .word
           | none => List.replicate as.length .tobj
         let (as', bs, n1) := coerceArgs fc as reps next
-        (bs, .ctor c' as', false, n1)
+        (bs, .ctor c' as', none, n1)
       | .proj y c i =>
         let fr := cert.fieldRep c i
-        if fr == .word && rx == .obj then ([], .proj y c i, true, next)
-        else ([], .proj y c i, false, next)
+        ([], .proj y c i, if fr == .word && isTagged rx then some .box else none, next)
       | .prim (.word w op) as =>
         -- Unbox any `.obj`/`.tobj` operands for raw word execution; box output if destination is `.obj`.
         let (as', bs, n1) := coerceArgs fc as (List.replicate as.length .word) next
-        (bs, .prim (.word w op) as', rx == .obj, n1)
+        (bs, .prim (.word w op) as', if rx == .obj then some .box else none, n1)
       | .prim op as =>
-        ([], .prim op as, false, next)
+        if isCmpPrim op then ([], .prim op as, none, next)
+        else
+          let (as', bs, n1) := coerceArgs fc as (List.replicate as.length .tobj) next
+          (bs, .prim op as', if rx == .word then some .unbox else none, n1)
       | .call g as =>
         let gc := cert.funCert g
         let (as', bs, n1) := coerceArgs fc as gc.params next
-        (bs, .call g as', gc.ret == .word && rx == .obj, n1)
-    let (k', next2) := elabCode P cert fc (if postBox then next1 + 1 else next1) k
-    if postBox then
-      (wrapBinds preBinds (.bind next1 r' (.bind x (.box (.var next1)) k')), next2)
-    else
-      (wrapBinds preBinds (.bind x r' k'), next2)
+        (bs, .call g as',
+          if gc.ret == .word && isTagged rx then some .box
+          else if isTagged gc.ret && rx == .word then some .unbox
+          else none, n1)
+    let (k', next2) := elabCode P cert fc (if post.isSome then next1 + 1 else next1) k
+    match post with
+    | some co => (wrapBinds preBinds (.bind next1 r' (.bind x (co (.var next1)) k')), next2)
+    | none => (wrapBinds preBinds (.bind x r' k'), next2)
   | .jp j ps isRec body k =>
     let jrs := fc.joinReps j
     let psRep := ps.zipIdx.map fun (p, i) => (p, jrs.getD i .tobj)
@@ -520,6 +555,101 @@ def applyParams (P : Program) (cert : Cert) : Program :=
       m.insert f { fd with params }
     | none => m
   { P with funs }
+
+/-! ## Representations as a function of the shapes (design note, sections 2.4 and 2.5)
+
+Nothing here is checked: a representation is computed from a checked shape certificate, and its
+facts come from the shape checker's soundness (`Fir.Proof.Rep.ofShapes_valOk`). -/
+
+section Shapes
+
+open IxCC.Shape (Shape)
+open IxCC.Fir.Shape (FunShapes ShapeCert argShape projShape)
+
+/-- The representations of one function's positions: `Shape.rep` of their shapes (a position
+the certificate does not list is `any`, whose representation is `.tobj`, the default of
+`FunCert`). -/
+def funCertOf (fs : FunShapes) : FunCert where
+  params := fs.params.map fun σ => σ.rep
+  ret := fs.ret.rep
+  vars := fs.vars.map fun σ => σ.rep
+  joins := fs.joins.map fun σs => σs.map fun σ => σ.rep
+
+/-- **The native representation of a program, from its shapes.** No scalar tails yet
+(`ctors = []`): a raw constructor field needs every construction of its key to supply a word,
+and the shape rules let a constructor be built at `any` with any fields (`RhsOk.ctorAny`), so
+that is a condition of the native back end on the flow "value to field", for lane
+`rc-raw-words`. No array bindings: under the design, array operations are primitives. -/
+def ofShapes (sc : ShapeCert) : Cert where
+  funs := sc.funs.map funCertOf
+
+/-! ### The native flow condition
+
+Every flow, its source shape and its target shape, asked `Shape.flowOk`: an argument to a
+parameter or a join parameter, a right-hand side to its binder, an operand to its result
+(`ret`), a callee's result to its binder or to the caller's result (tail call), a value to a
+constructor field, a field to its binder.
+
+**Fields hold arrays boxed** (phase 1, stricter than section 2.5 reads): a constructor's
+arguments flow into positions of unknown shape, and a field read flows out as an array of
+unknown elements. Reason: a cell's layout is fixed per constructor key, not per table entry, and
+a scrutinee weakened from `data d` to `any` is projected with no entry in view, so an entry's
+packed field would reach a position of unknown shape unseen. A per-key field kind lifts this.
+
+Primitive operands: no primitive reads an array at this commit; the array primitives' flows
+go in `rhsFlows` with their rules (lane `prims-core`). -/
+
+/-- Arguments flowing into positions of the listed shapes. -/
+def argsFlow (fs : FunShapes) : List Arg → List Shape → Bool
+  | a :: as, τ :: τs => (argShape fs a).flowOk τ && argsFlow fs as τs
+  | _, _ => true
+
+/-- What a field read hands on: an array of unknown elements if it is an array. -/
+def fieldSource : Shape → Shape
+  | .arr _ n => .arr .any n
+  | σ => σ
+
+/-- The flows of a right-hand side bound to `x`. -/
+def rhsFlows (P : Program) (sc : ShapeCert) (fs : FunShapes) (x : Var) : Fir.Rhs → Bool
+  | .arg a => (argShape fs a).flowOk (fs.var x)
+  | .ctor _ as => argsFlow fs as (List.replicate as.length .any)
+  | .proj y c i => (fieldSource ((projShape P sc fs y c i).getD .any)).flowOk (fs.var x)
+  | .prim _ _ => true
+  | .call g as => argsFlow fs as (sc.fn g).params && (sc.fn g).ret.flowOk (fs.var x)
+
+mutual
+
+def codeFlows (P : Program) (sc : ShapeCert) (fs : FunShapes) : Code → Bool
+  | .bind x r k => rhsFlows P sc fs x r && codeFlows P sc fs k
+  | .jp _ _ _ body k => codeFlows P sc fs body && codeFlows P sc fs k
+  | .jmp j as => argsFlow fs as (fs.join j)
+  | .case _ alts d => altsFlows P sc fs alts && optFlows P sc fs d
+  | .ret a => (argShape fs a).flowOk fs.ret
+  | .tcall g as => argsFlow fs as (sc.fn g).params && (sc.fn g).ret.flowOk fs.ret
+  | .trap => true
+
+def altsFlows (P : Program) (sc : ShapeCert) (fs : FunShapes) : List Alt → Bool
+  | [] => true
+  | .mk _ body :: rest => codeFlows P sc fs body && altsFlows P sc fs rest
+
+def optFlows (P : Program) (sc : ShapeCert) (fs : FunShapes) : Option Code → Bool
+  | none => true
+  | some c => codeFlows P sc fs c
+
+end
+
+/-- **The native flow condition** of a certificate: every flow of every function's body. A
+condition of the native back end alone (the shape checker and the circuit back end do not ask
+it); with it, a position of shape `arr e` holds a cell of element kind `e.elemKind`. -/
+def flowsOk (P : Program) (sc : ShapeCert) : Bool :=
+  P.funs.toList.all fun e => codeFlows P sc (sc.fn e.1) e.2.body
+
+/-- **The native back end's first step**: the program with explicit `box` and `unbox`, at the
+representations derived from the shapes. -/
+def elaborateShapes (P : Program) (sc : ShapeCert) : RepProgram :=
+  elaborate P (ofShapes sc)
+
+end Shapes
 
 /-! ## Local Representation Inference (kernel-evaluable, D17)
 
@@ -594,9 +724,12 @@ def checkArrayPrimSpec (fd : Fun) (fc : FunCert) (spec : ArrayPrimSpec) : Bool :
   inBounds && arityOk && isValidRep fc.ret && retOk &&
   checkParams fc (fd.params.map (·.1)) fc.params
 
-/-- **DR3 + Stage W2 certificate checker**: validates all constructor scalar-tail overrides,
-validates every pinned array/bytearray primitive binding via `checkArrayPrimSpec`, and runs
-`checkFun` on every user function outside `cert.arrayPrims`. -/
+/-- **The frozen side path's consistency test of its own layout** (`inferWithArrays`'s
+output; `compileBigNat`, the big-number wire tests): constructor scalar-tail overrides, every
+pinned array/bytearray binding by `checkArrayPrimSpec` (arity and index bounds only: any
+function is accepted as an array primitive), and `checkFun` on every other function.
+**Not a certificate**: no theorem mentions it, and nothing on the certified path runs it; the
+hand-off's facts come from `Fir.Shape.check`. Retired with the side path. -/
 def checkWithArrays (P : Program) (cert : Cert) : Bool :=
   cert.ctors.all (checkCtorRep P) &&
   (List.range P.size).all fun f =>
@@ -828,7 +961,8 @@ private def buildJoinsOpt (vars : Src.NatMap Fir.Rep) (jm : Src.NatMap (List Fir
 
 end
 
-/-- Infer a checked DR3 + Stage W2 `Cert` for `P` from `Lam.Erase.Array.ArrayEraseInfo`:
+/-- The frozen side path's layout (untrusted, uncertified): a DR3 + Stage W2 `Cert` for `P`
+from `Lam.Erase.Array.ArrayEraseInfo`:
 * binds every surviving pinned `Array`/`ByteArray` global (including `.worker`s from
   `Anf.DeadParam`) to its native `ArrayPrimSpec`;
 * records `arrayMkKey`, `byteArrayMkKey`, `listNilTag`, `listConsTag`;

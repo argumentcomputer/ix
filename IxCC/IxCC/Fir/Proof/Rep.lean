@@ -1,14 +1,19 @@
 import IxCC.Fir.Rep
 import IxCC.Fir.Proof.Unfold
+import IxCC.Fir.Proof.Shape
 import IxCC.Src.Proof.NatMap
 import IxCC.Sem.Forall2
 
-/-! # Representation Soundness for DR2 Stage W2 (`Fir.Rep.check_sound`)
+/-! # Representation Soundness (`Fir.Rep.check_sound`, `Fir.Proof.Rep.ofShapes_runSound`)
 
-Proves that whenever `Fir.Rep.check P cert = true`, every `.word`-annotated parameter, local
-variable, join-point parameter, function return, and constructor scalar-tail field evaluates in
-`Fir.eval` to `.lit (.nat n)` with `n < 2 ^ 64` (`check_sound`, `run_sound`), and that explicit
-`RepRhs.box` / `RepRhs.unbox` preserve exact `Fir.Val` values on `[0, 2 ^ 64)`.
+For the side path: whenever `Fir.Rep.check P cert = true`, every `.word`-annotated parameter,
+local variable, join-point parameter, function return, and constructor scalar-tail field
+evaluates in `Fir.eval` to `.lit (.nat n)` with `n < 2 ^ 64` (`check_sound`, `run_sound`), and
+explicit `RepRhs.box` / `RepRhs.unbox` preserve exact `Fir.Val` values on `[0, 2 ^ 64)`.
+
+For representations derived from a checked shape certificate (`Fir.Rep.ofShapes`): the same
+invariant, from the shape checker's soundness alone (`ofShapes_valOk`, `ofShapes_envOk`,
+`ofShapes_runSound`, `ofShapes_codeSound`).
 
 Zero `sorry`, strictly standard axioms `[propext, Classical.choice, Quot.sound]`. -/
 
@@ -759,5 +764,116 @@ theorem evalRepRhs_unbox_word {P : Program} {ρ : Env} {a : Arg} {n : Nat}
     (ha : a.eval ρ = some (.lit (.nat n))) (hlt : n < 2 ^ 64) :
     evalRepRhs P ρ (.unbox a) = .ok (.lit (.nat n)) := by
   simp [evalRepRhs, ha, hlt]
+
+/-! ## Representations derived from shapes: their facts are the shape checker's
+
+`Fir.Rep.ofShapes` states no fact of its own. A `.word` position is one of shape `natLt b` with
+`b ≤ 2^64`, and the shape checker's soundness (`Fir.Proof.Shape.checkSound`, `codeSound`) says it
+holds a literal below `b`. So the representation invariant of the derived layout holds of every
+run with no representation checker (`ofShapes_runSound`, `ofShapes_codeSound`). -/
+
+section Shapes
+
+open IxCC.Fir.Shape (FunShapes ShapeCert ArrEnc)
+
+theorem natMap_get?_map {α β : Type} (f : α → β) :
+    ∀ (m : Src.NatMap α) (k : Nat), (m.map f).get? k = (m.get? k).map f
+  | .leaf, _ => rfl
+  | .node v z o, k => by
+    simp only [Src.NatMap.map, Src.NatMap.get?]
+    split
+    · rfl
+    · split
+      · exact natMap_get?_map f z (k / 2)
+      · exact natMap_get?_map f o (k / 2)
+
+/-- The derived layout has no scalar tails. -/
+theorem ofShapes_ctorRep? (sc : ShapeCert) (k : Key.CtorKey) : (ofShapes sc).ctorRep? k = none :=
+  rfl
+
+mutual
+
+/-- Every value is well formed under the derived layout: it overrides no constructor. -/
+theorem ctorValOk_ofShapes (sc : ShapeCert) : (v : Val) → CtorValOk (ofShapes sc) v
+  | .lit l => .lit l
+  | .erased => .erased
+  | .ctor _ fs =>
+    .ctor (ctorValsOk_ofShapes sc fs) (fun cr h => by rw [ofShapes_ctorRep?] at h; cases h)
+
+theorem ctorValsOk_ofShapes (sc : ShapeCert) : (fs : List Val) → ∀ v ∈ fs, CtorValOk (ofShapes sc) v
+  | [] => fun _ h => absurd h List.not_mem_nil
+  | x :: xs => fun v h =>
+    match List.mem_cons.1 h with
+    | .inl e => e ▸ ctorValOk_ofShapes sc x
+    | .inr h' => ctorValsOk_ofShapes sc xs v h'
+
+end
+
+/-- **A shape's fact gives its representation's.** -/
+theorem ofShapes_valOk {sc : ShapeCert} {enc : ArrEnc} {σ : IxCC.Shape.Shape} {v : Val}
+    (h : Fir.Shape.ValOk sc enc σ v) : ValOk (ofShapes sc) σ.rep v := by
+  cases σ with
+  | natLt b =>
+    obtain ⟨n, rfl, hn⟩ := IxCC.Fir.Proof.Shape.valOk_natLt_inv h
+    by_cases hb : b ≤ 2 ^ 64
+    · simp only [IxCC.Shape.Shape.rep, hb, ↓reduceIte, ValOk]
+      exact ⟨n, Nat.lt_of_lt_of_le hn hb, rfl⟩
+    · simp only [IxCC.Shape.Shape.rep, hb, ↓reduceIte, ValOk]
+      exact ctorValOk_ofShapes sc _
+  | _ => exact ctorValOk_ofShapes sc v
+
+theorem ofShapes_funCert (sc : ShapeCert) (f : FunId) :
+    (ofShapes sc).funCert f = funCertOf (sc.fn f) := by
+  simp only [Cert.funCert, ofShapes, ShapeCert.fn, Src.NatMap.getD, natMap_get?_map]
+  cases sc.funs.get? f <;> rfl
+
+theorem funCertOf_varRep (fs : FunShapes) (x : Var) : (funCertOf fs).varRep x = (fs.var x).rep := by
+  simp only [FunCert.varRep, funCertOf, FunShapes.var, Src.NatMap.getD, natMap_get?_map]
+  cases fs.vars.get? x <;> rfl
+
+theorem funCertOf_ret (fs : FunShapes) : (funCertOf fs).ret = fs.ret.rep := rfl
+
+theorem funCertOf_params (fs : FunShapes) : (funCertOf fs).params = fs.params.map (·.rep) := rfl
+
+theorem funCertOf_joinReps (fs : FunShapes) (j : JoinId) :
+    (funCertOf fs).joinReps j = (fs.join j).map (·.rep) := by
+  simp only [FunCert.joinReps, funCertOf, FunShapes.join, Src.NatMap.getD, natMap_get?_map]
+  cases fs.joins.get? j <;> rfl
+
+/-- An environment that has its shapes has the derived representations. -/
+theorem ofShapes_envOk {sc : ShapeCert} {enc : ArrEnc} {fs : FunShapes} {ρ : Env}
+    (h : Fir.Shape.EnvOk sc enc fs ρ) : EnvOk (ofShapes sc) (funCertOf fs) ρ := by
+  intro x v hx
+  rw [funCertOf_varRep]
+  exact ofShapes_valOk (h x v hx)
+
+/-- A `.word` position of the derived layout holds a literal below `2^64` in an environment that
+has its shapes: the fact a native back end reads to keep the position in a raw register. -/
+theorem ofShapes_word {sc : ShapeCert} {enc : ArrEnc} {fs : FunShapes} {ρ : Env} {x : Var}
+    {v : Val} (hρ : Fir.Shape.EnvOk sc enc fs ρ) (hw : (funCertOf fs).varRep x = .word)
+    (hx : ρ.get? x = some v) : ∃ n < 2 ^ 64, v = .lit (.nat n) := by
+  have h := ofShapes_envOk hρ x v hx
+  rw [hw] at h
+  exact h
+
+/-- **The derived layout holds of every run** of a program whose shape certificate checks:
+called on arguments of its parameters' shapes, a function returns a value of its result's
+representation. From `checkSound` alone; no representation checker is involved. -/
+theorem ofShapes_runSound (enc : ArrEnc) {P : Program} {sc : ShapeCert}
+    (hchk : Fir.Shape.Checked P sc) {f : FunId} {k : Nat} {args : List Val} {v : Val}
+    (hf : f < P.size) (hargs : Fir.Shape.ValsOk sc enc (sc.fn f).params args)
+    (hrun : Fir.run P k f args = .ok v) :
+    ValOk (ofShapes sc) ((ofShapes sc).funCert f).ret v := by
+  rw [ofShapes_funCert, funCertOf_ret]
+  exact ofShapes_valOk (IxCC.Fir.Proof.Shape.checkSound enc P sc hchk f k args v hf hargs hrun)
+
+/-- The same from inside a body, the form a back end's simulation carries. -/
+theorem ofShapes_codeSound (enc : ArrEnc) {P : Program} {sc : ShapeCert}
+    (hchk : Fir.Shape.Checked P sc) {fs : FunShapes} {k : Nat} {ρ : Env} {c : Code} {v : Val}
+    (hρ : Fir.Shape.EnvOk sc enc fs ρ) (hc : Fir.Shape.CodeOk P sc fs c)
+    (heval : Fir.eval P k ρ [] c = .ok v) : ValOk (ofShapes sc) (funCertOf fs).ret v :=
+  ofShapes_valOk (IxCC.Fir.Proof.Shape.codeSound enc P sc hchk fs k ρ c v hρ hc heval)
+
+end Shapes
 
 end IxCC.Fir.Proof.Rep

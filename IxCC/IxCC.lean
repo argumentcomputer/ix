@@ -250,6 +250,9 @@ import IxCC.Fir.Proof.Correct
 import IxCC.Sem.Entry
 import IxCC.Fir.Proof.Lang
 import IxCC.Fir.Proof.FirstOrder
+import IxCC.Shape.Basic
+import IxCC.Fir.Shape
+import IxCC.Fir.Proof.Shape
 import IxCC.Own.Proof.Unfold
 import IxCC.Own.Proof.Mono
 import IxCC.Own.Proof.Heap
