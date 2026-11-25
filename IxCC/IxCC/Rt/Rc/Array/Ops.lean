@@ -252,6 +252,7 @@ def push (t : Fns) (k : ElemKind) : Func where
         .assign 9 (.select .ult .w64 (i k.maxCap) (v 7) (v 6) (v 8)),
         .call [10] t.alloc [v 9],
         .call [] t.copy [v 0, i 0, v 10, i 0, v 2],
+        .store .w64 (cellAddr 10 8) (v 2),
         .store k.width (elemAt k 10 2) (v 1),
         .store .w64 (cellAddr 10 8) (v 6),
         .assign 11 (.load .w8 .zero (cellAddr 0 1)),
@@ -266,6 +267,7 @@ def push (t : Fns) (k : ElemKind) : Func where
     { body := #[.assign 13 (.bin .add .w64 (v 2) (i 1)),
         .call [14] t.alloc [v 13],
         .call [] t.copy [v 0, i 0, v 14, i 0, v 2],
+        .store .w64 (cellAddr 14 8) (v 2),
         .store k.width (elemAt k 14 2) (v 1),
         .store .w64 (cellAddr 14 8) (v 13),
         .call [] t.dec [v 0]]
@@ -311,14 +313,15 @@ def extract (t : Fns) (k : ElemKind) : Func where
         .assign 4 (.select .ult .w64 (v 2) (v 3) (v 2) (v 3)),
         .assign 5 (.bin .sub .w64 (v 4) (v 1)),
         .assign 6 (.select .ult .w64 (v 1) (v 4) (v 5) (i 0)),
-        .assign 7 (.bin .add .w64 (v 1) (v 6))]
+        .assign 9 (.select .ult .w64 (v 1) (v 4) (v 1) (i 0)),
+        .assign 7 (.bin .add .w64 (v 9) (v 6))]
       term := .jump (to 1) },
     -- 1: keep the elements copied
-    { body := keepStmts t k (v 0) (v 1) (v 7)
+    { body := keepStmts t k (v 0) (v 9) (v 7)
       term := .jump (to 2) },
-    -- 2: a fresh cell, the copy
+    -- 2: a fresh cell, the copy (from `start`, or from 0 when nothing is copied)
     { body := #[.call [8] t.alloc [v 6],
-        .call [] t.copy [v 0, v 1, v 8, i 0, v 6],
+        .call [] t.copy [v 0, v 9, v 8, i 0, v 6],
         .store .w64 (cellAddr 8 8) (v 6)]
       term := .ret [v 8] }]
 
