@@ -750,9 +750,10 @@ def assertsCase : IO (ByteArray × Lean.Json) := do
   and remove the stale outputs they would have replaced; two outputs naming one file, or an output
   naming an input, are usage errors that leave the input intact; the outcome of each code
   (`Cli.classify`) and the exit statuses the usage text lists;
-* **`--embed-cert`**: `Scalar.factorial`, whose executable `verify-exe` rejects (KF-4), is
-  rejected (exit 3) and nothing written; `fib`'s is verified and prints its claim; the policy
-  recheck refusing is an error, not `immortal`; a verifier refusing the bytes is a rejection;
+* **`--embed-cert`**: `Scalar.factorial`'s executable (refused by `verify-exe`'s KF-4 until the
+  seed-closure check submitted its closure in check order) and `fib`'s are verified, print their
+  claims and are written with their outputs; the policy recheck refusing is an error, not
+  `immortal`; a verifier refusing the bytes is a rejection with nothing written;
 * **`verify-exe`**: prints the environment root; `--expect-target` and `--expect-env` accept the
   claim's own and reject (exit 3) others; malformed addresses, or the flags on `compile`, are
   usage errors. -/
@@ -878,16 +879,21 @@ def failClosed (a : Assert) (t : Tools) : IO (Array String) := do
   out := out.push "all or nothing: declined (exit 1), usage (exit 2: missing closure, --root naming nothing, \
     clashing outputs, an output naming the input) and rejected (exit 3: check-cert, compile --cert) runs \
     leave no output, stale ones removed; classify and the exit-status table"
-  -- C. --embed-cert runs the executable verifier on its bytes
+  -- C. --embed-cert runs the executable verifier on its bytes. `Scalar.factorial`'s executable,
+  -- which the seed-closure check (KF-4) refused until that check submitted its closure in check
+  -- order (`CompileClaim/Closure.lean`), is verified, and every output is written over the stale one
   let scalar : FilePath := "fixtures/corpus/phase1-scalar"
   let fOuts := [w / "fact.exe", w / "fact.o", w / "fact.cert"]
   stale fOuts
   let (code, msg) ← cliCapture t ["compile", (scalar / "scalar.ixe").toString, "--equations",
     (scalar / "scalar.equations.json").toString, "--root", "Scalar.factorial", "--exe", (w / "fact.exe").toString,
     "--embed-cert", "-o", (w / "fact.o").toString, "--emit-cert", (w / "fact.cert").toString]
-  expectEq a code 3 s!"Scalar.factorial --exe --embed-cert: exit code ({msg})"
-  expect a (has msg "exe.cert.kf4") s!"Scalar.factorial --embed-cert: not refused by verify-exe's KF-4: {msg}"
-  noneLeft "Scalar.factorial --embed-cert" fOuts
+  expectEq a code 0 s!"Scalar.factorial --exe --embed-cert: exit code ({msg})"
+  expect a (has msg "executable certificate verified: target ")
+    s!"Scalar.factorial --embed-cert: no claim line: {msg}"
+  for f in fOuts do
+    let written ← if ← f.pathExists then pure ((← IO.FS.readBinFile f) != "stale".toUTF8) else pure false
+    expect a written s!"Scalar.factorial --embed-cert: {f} not written"
   let fibExe := w / "fib.cert.exe"
   let (code, msg) ← cliCapture t (["compile"] ++ fib ++ ["--exe", fibExe.toString, "--embed-cert"])
   expectEq a code 0 s!"fib --exe --embed-cert: exit code ({msg})"
@@ -913,9 +919,9 @@ def failClosed (a : Assert) (t : Tools) : IO (Array String) := do
         s!"--embed-cert with a refusing verifier: {repr f.outcome} {f.err.render}"
     | .ok _ => expect a false "--embed-cert wrote what its verifier refused"
   | .error e => expect a false s!"fib: compileText: {e.render}"
-  out := out.push "--embed-cert: Scalar.factorial (verify-exe's KF-4 refuses it) rejected with nothing written; \
-    fib verified and its claim printed; a refused policy recheck an error, not immortal; a refusing \
-    verifier a rejection"
+  out := out.push "--embed-cert: Scalar.factorial (once refused by KF-4) and fib verified, their claims \
+    printed and their outputs written; a refused policy recheck an error, not immortal; a refusing \
+    verifier a rejection with nothing written"
   -- D. verify-exe states what it verified, and checks what it is told to expect
   let fibRoots ← sidecarRootsOf (benchEqs "fib")
   let some (fibAddr, _) := fibRoots[0]? | throw (IO.userError "fib: no sidecar root")

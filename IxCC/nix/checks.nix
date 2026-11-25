@@ -163,6 +163,7 @@ in
       launch check-xv-select $bin/check-xv-select
       launch tests-lam $bin/tests-lam
       launch tests-fir $bin/tests-fir
+      launch tests-fir-shape $bin/tests-fir-shape
       launch check-lir $bin/check-lir
       launch tests-lir-opt $bin/tests-lir-opt
       launch tests-anf $bin/tests-anf
@@ -203,14 +204,19 @@ in
     # building the library checks its axiom fence; `tests-grounding` runs the check its theorems
     # take on the committed closures, conjunct by conjunct, with its negative controls. The same
     # build compiles the target statements (`IxCCCorrect`), which import the grounding library's
-    # syntax and the kernel's model, and so checks their axiom fence, and the shape suite
-    # (`tests-shape`), run here on the committed K1 and phase-1 scalar closures: it reports, root
-    # by root, whether the shape decision accepts the untrusted producer's certificate, and fails
-    # only if a closure does not load. Its own build (`nix/build.nix`), so the kernel's model
-    # never enters the shared program build.
+    # syntax and the kernel's model, and so checks their axiom fence, and the suites over the
+    # target statements, run here: the shape suite (`tests-shape`: root by root, whether the shape
+    # decision accepts the untrusted producer's certificate), the certified route's compiler
+    # (`tests-compile-certified`: twice, in another process, against `compile`; it asserts), and
+    # the pipeline's grounding check on every committed root (`tests-grounding pipeline`). The
+    # shape suite and the pipeline report are reports: each lists a closure that does not load and
+    # asserts nothing, so here they fail only if they crash. Its own
+    # build (`nix/build.nix`), so the kernel's model never enters the shared program build.
     grounding = mkCheckWith grounding "grounding" [] ''
       ./.lake/build/bin/tests-grounding
       ./.lake/build/bin/tests-shape
+      ./.lake/build/bin/tests-compile-certified
+      ./.lake/build/bin/tests-grounding pipeline
     '';
 
     # Deterministic typed-x86 and ByteEval step counts must

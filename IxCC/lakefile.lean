@@ -269,7 +269,7 @@ lean_exe «tests-pure-compile» where
 producer and the shape decision) on every root of the corpus families: twice in one process,
 again in another process under another environment, against `compile`, with accept and decline
 counts per family. It imports the target statements (`IxCCCorrect`), so it is built with them by
-`ixcc-grounding` (`groundingTargets`), not by the shared program build. -/
+`ixcc-grounding` (`groundingTargets`), not by the shared program build, and run there. -/
 lean_exe «tests-compile-certified» where
   root := `IxCCTests.Compile.CertifiedMain
 
@@ -307,15 +307,17 @@ lean_exe «tests-array» where
 
 /- The grounding check (`IxCCGrounding.Check`) on the committed closures of
 the grounding subjects, conjunct by conjunct, with negative controls that each
-falsify exactly one conjunct. Built and run by `ixcc-grounding`, not by the
-shared program build (`nix/sources.nix`). -/
+falsify exactly one conjunct; with the argument `pipeline`, instead the report of the
+pipeline's grounding check (`IxCC.Correct.groundCheck`) on every committed root, which asserts
+nothing. Both built and run by `ixcc-grounding`, not by the shared program build
+(`nix/sources.nix`). -/
 lean_exe «tests-grounding» where
   root := `IxCCTests.Grounding.Main
 
 /- The shape producer and the shape decision (`IxCCCorrect.Shape2Produce`,
-`IxCCCorrect.Shape2Check`) on the committed K1 benchmark closures and the phase-1 scalar
-corpus, root by root: accept, or the first instance the decision refuses. It reports and
-asserts nothing (it fails only if a closure does not load). It imports the target
+`IxCCCorrect.Shape2Check`) on every committed family's closures, root by root: accept, or the
+first instance the decision refuses. It reports and asserts nothing (a closure that does not
+load is listed; it fails only if it crashes). It imports the target
 statements, so like `tests-grounding` it is built and run by `ixcc-grounding`, not by the
 shared program build (`nix/sources.nix`). -/
 lean_exe «tests-shape» where
