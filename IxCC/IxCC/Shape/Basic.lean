@@ -38,24 +38,26 @@ namespace IxCC.Shape
 
 open IxCC.Src (CId Width)
 
-/-- **A shape**: what is known of a value. -/
+/-- **A shape**: what is known of a value. The first seven constructors are the progress
+judgment's, in its order (`IxCCCorrect.Shape2.Shape`), so its case analyses keep their goal
+order when it takes this type; `natLt` and `arr` follow. -/
 inductive Shape where
-  /-- Nothing: every value has it. -/
-  | any
-  /-- An irrelevant position: a type, a proof, an erased argument (`□` from erasure on). -/
-  | irr
   /-- A `Nat` literal. -/
   | nat
-  /-- A `Nat` literal below `b`. -/
-  | natLt (b : Nat)
   /-- A field-less constructor of the enumeration `ind`. -/
   | enum (ind : CId)
   /-- A constructor value of entry `d` of the data table, its fields at the listed shapes. -/
   | data (d : Nat)
+  /-- An irrelevant position: a type, a proof, an erased argument (`□` from erasure on). -/
+  | irr
   /-- A function: at SrcEval a closure typed by its code, at `Fir` a closure constructor. -/
   | fn (dom cod : Shape)
   /-- Both shapes at once (at SrcEval: a method of a dictionary used at several types). -/
   | inter (a b : Shape)
+  /-- Nothing: every value has it (at SrcEval: a method nobody uses). -/
+  | any
+  /-- A `Nat` literal below `b`. -/
+  | natLt (b : Nat)
   /-- An array whose elements have shape `elem`, of length `len` where static. -/
   | arr (elem : Shape) (len : Option Nat)
   deriving DecidableEq, Repr, Inhabited
@@ -77,6 +79,10 @@ structure DataDecl (κ : Type) where
   params : List Shape
   ctors : List (κ × List Shape)
   struct : Bool
+  /-- The universe levels its constructor values carry. SrcEval's value judgment fixes them,
+  since erasure reads their profile (`IxCCCorrect.ShapeTree`); `[]` at `Fir`, where levels
+  are gone and nothing reads it. -/
+  ls : Src.Levels := []
   deriving Repr, Inhabited
 
 /-- **Fact weakening**, decided: every value of shape `σ` has shape `τ`. A length may be
