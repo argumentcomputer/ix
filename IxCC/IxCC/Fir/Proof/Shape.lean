@@ -247,13 +247,14 @@ theorem argsSound {cert : ShapeCert} {enc : ArrEnc} {fs : FunShapes} {ρ : Env}
 
 /-! ## Primitives -/
 
-/-- A successful primitive read literals and returned what `Lam.Prim.sem` says: a literal, or
-a Boolean. -/
+/-- A successful scalar primitive (`op.isArr = false`) read literals and returned what
+`Lam.Prim.sem` says: a literal, or a Boolean. -/
 theorem primResult_ok_inv {P : Program} {op : Lam.Prim} {vs : List Val} {v : Val}
-    (h : primResult P op vs = .ok v) :
+    (hp : op.isArr = false) (h : primResult P op vs = .ok v) :
     ∃ ns, natArgs vs = some ns ∧
       ((∃ n, op.sem ns = some (.nat n) ∧ v = .lit (.nat n)) ∨ ∃ b, op.sem ns = some (.bool b)) := by
   simp only [primResult] at h
+  rw [arrResult_of_not_arr hp] at h
   cases hns : natArgs vs with
   | none => simp [hns] at h
   | some ns =>
@@ -439,8 +440,9 @@ theorem valsOk_both {cert : ShapeCert} {enc : ArrEnc} {σ τ : Shape} {a b : Nat
 
 /-- A primitive that returned on a literal on the left returned on two literals. -/
 theorem prim_right_lit {P : Program} {op : Lam.Prim} {n1 : Nat} {v2 v : Val}
-    (h : primResult P op [.lit (.nat n1), v2] = .ok v) : ∃ n2, v2 = .lit (.nat n2) := by
-  obtain ⟨ns, hns, _⟩ := primResult_ok_inv h
+    (hp : op.isArr = false) (h : primResult P op [.lit (.nat n1), v2] = .ok v) :
+    ∃ n2, v2 = .lit (.nat n2) := by
+  obtain ⟨ns, hns, _⟩ := primResult_ok_inv hp h
   cases v2 with
   | lit l =>
     cases l with
@@ -458,7 +460,7 @@ theorem primOkSound (cert : ShapeCert) (enc : ArrEnc) : PrimOkSound cert enc := 
   intro P op σs τ vs v hok hvs hres
   cases hok with
   | word =>
-    obtain ⟨ns, _, hsem | hsem⟩ := primResult_ok_inv hres
+    obtain ⟨ns, _, hsem | hsem⟩ := primResult_ok_inv rfl hres
     · obtain ⟨n, hsem, rfl⟩ := hsem
       rw [sem_word] at hsem
       obtain ⟨m, hm, hlt⟩ := wordSem_lt ns _ hsem
@@ -469,7 +471,11 @@ theorem primOkSound (cert : ShapeCert) (enc : ArrEnc) : PrimOkSound cert enc := 
       obtain ⟨m, hm, _⟩ := wordSem_lt ns _ hsem
       cases hm
   | natAny _ =>
-    obtain ⟨ns, _, hsem | hsem⟩ := primResult_ok_inv hres
+    cases hpa : op.isArr
+    case true =>
+      obtain ⟨aop, rfl⟩ := Lam.Prim.isArr_eq_true hpa
+      exact .any v
+    obtain ⟨ns, _, hsem | hsem⟩ := primResult_ok_inv hpa hres
     · obtain ⟨n, _, rfl⟩ := hsem
       exact natPrimResult_lit cert enc _ n
     · obtain ⟨b, hsem⟩ := hsem
@@ -487,13 +493,13 @@ theorem primOkSound (cert : ShapeCert) (enc : ArrEnc) : PrimOkSound cert enc := 
     exact .natLt (mul_lt_mul_of_lt hn1 hn2)
   | sub hσ =>
     obtain ⟨n1, v2, rfl, hn1, _⟩ := valsOk_left hσ hvs
-    obtain ⟨n2, rfl⟩ := prim_right_lit hres
+    obtain ⟨n2, rfl⟩ := prim_right_lit rfl hres
     have hv := prim2_inv hres (r := n1 - n2) rfl
     subst hv
     exact .natLt (Nat.lt_of_le_of_lt (Nat.sub_le _ _) hn1)
   | div hσ =>
     obtain ⟨n1, v2, rfl, hn1, _⟩ := valsOk_left hσ hvs
-    obtain ⟨n2, rfl⟩ := prim_right_lit hres
+    obtain ⟨n2, rfl⟩ := prim_right_lit rfl hres
     have hv := prim2_inv hres (r := if n2 == 0 then 0 else n1 / n2) rfl
     subst hv
     refine .natLt (Nat.lt_of_le_of_lt ?_ hn1)
@@ -502,7 +508,7 @@ theorem primOkSound (cert : ShapeCert) (enc : ArrEnc) : PrimOkSound cert enc := 
     · exact Nat.div_le_self _ _
   | mod hσ =>
     obtain ⟨n1, v2, rfl, hn1, _⟩ := valsOk_left hσ hvs
-    obtain ⟨n2, rfl⟩ := prim_right_lit hres
+    obtain ⟨n2, rfl⟩ := prim_right_lit rfl hres
     have hv := prim2_inv hres (r := if n2 == 0 then n1 else n1 % n2) rfl
     subst hv
     refine .natLt (Nat.lt_of_le_of_lt ?_ hn1)
@@ -511,7 +517,7 @@ theorem primOkSound (cert : ShapeCert) (enc : ArrEnc) : PrimOkSound cert enc := 
     · exact Nat.mod_le _ _
   | modBound _ hσ _ =>
     obtain ⟨n1, v2, rfl, hn1, _⟩ := valsOk_left hσ hvs
-    obtain ⟨n2, rfl⟩ := prim_right_lit hres
+    obtain ⟨n2, rfl⟩ := prim_right_lit rfl hres
     have hv := prim2_inv hres (r := if n2 == 0 then n1 else n1 % n2) rfl
     subst hv
     refine .natLt (Nat.lt_of_le_of_lt ?_ hn1)
@@ -520,13 +526,13 @@ theorem primOkSound (cert : ShapeCert) (enc : ArrEnc) : PrimOkSound cert enc := 
     · exact Nat.mod_le _ _
   | land hσ =>
     obtain ⟨n1, v2, rfl, hn1, _⟩ := valsOk_left hσ hvs
-    obtain ⟨n2, rfl⟩ := prim_right_lit hres
+    obtain ⟨n2, rfl⟩ := prim_right_lit rfl hres
     have hv := prim2_inv hres (r := n1 &&& n2) rfl
     subst hv
     exact .natLt (Nat.lt_of_le_of_lt Nat.and_le_left hn1)
   | shr hσ =>
     obtain ⟨n1, v2, rfl, hn1, _⟩ := valsOk_left hσ hvs
-    obtain ⟨n2, rfl⟩ := prim_right_lit hres
+    obtain ⟨n2, rfl⟩ := prim_right_lit rfl hres
     have hv := prim2_inv hres (r := if n1.log2 < n2 then 0 else n1 / 2 ^ n2) rfl
     subst hv
     refine .natLt (Nat.lt_of_le_of_lt ?_ hn1)

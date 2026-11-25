@@ -83,7 +83,7 @@ def rhsIn (functions : Signatures) (live : List Var) : Rhs → Bool
       decide (c.nscalar = 0) && decide (c.fieldKinds.length = c.nobj) &&
       c.fieldKinds.all (fun k => decide (k = .shared))
   | .proj x _ _ => live.contains x
-  | .prim p args => decide (args.length = p.arity) && args.all (argIn live)
+  | .prim p args => decide (args.length = p.arity) && !p.isArr && args.all (argIn live)
   | .call f args => decide (functions.lookup f = some args.length) && args.all (argIn live)
 
 mutual

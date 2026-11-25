@@ -166,12 +166,34 @@ theorem primStep_conservative (Γ : Ctx) (op : Lam.Prim) (x : Var) (args : List 
   rw [markImm_eq_immArgs, ← primImmArgs_eq_sig]
   rfl
 
-/-- **The checker's binding step is `bindCtx`**, on every right-hand side. -/
+/-- An accepted primitive step: the primitive is not an array one (`own.arrays`), and the step
+was `primStep` under `lamSig`. -/
+theorem bindStep_prim {Γ Γ' : Ctx} {x : Var} {op : Lam.Prim} {args : List Arg}
+    {borrows : BorrowSigs} {uniqs : UniqSigs} {ctors : List Lam.CtorInfo}
+    (h : bindStep Γ x (.prim op args) borrows uniqs ctors = .ok Γ') :
+    op.isArr = false ∧ primStep Γ (lamSig op args.length) x args = .ok Γ' := by
+  unfold bindStep at h
+  cases hp : op.isArr
+  · simp only [hp, Bool.false_eq_true, ↓reduceIte] at h
+    exact ⟨rfl, h⟩
+  · simp [hp, throw, throwThe, MonadExceptOf.throw] at h
+
+/-- An accepted binding binds no array primitive. -/
+theorem bindStep_isArrPrim {Γ Γ' : Ctx} {x : Var} {r : Fir.Rhs} {borrows : BorrowSigs}
+    {uniqs : UniqSigs} {ctors : List Lam.CtorInfo}
+    (h : bindStep Γ x r borrows uniqs ctors = .ok Γ') : r.isArrPrim = false := by
+  cases r <;> first | exact (bindStep_prim h).1 | rfl
+
+/-- **The checker's binding step is `bindCtx`**, on every right-hand side but an array primitive
+(which it declines). -/
 theorem bindStep_eq_bindCtx (Γ : Ctx) (x : Var) (r : Fir.Rhs) (borrows : BorrowSigs)
-    (uniqs : UniqSigs) (ctors : List Lam.CtorInfo) :
+    (uniqs : UniqSigs) (ctors : List Lam.CtorInfo) (hr : r.isArrPrim = false) :
     bindStep Γ x r borrows uniqs ctors = bindCtx Γ x r borrows uniqs ctors := by
   cases r with
-  | prim op args => exact primStep_conservative Γ op x args
+  | prim op args =>
+    have hp : op.isArr = false := hr
+    simp only [bindStep, hp, Bool.false_eq_true, ↓reduceIte]
+    exact primStep_conservative Γ op x args
   | arg a => rfl
   | ctor c args => rfl
   | call f args => rfl

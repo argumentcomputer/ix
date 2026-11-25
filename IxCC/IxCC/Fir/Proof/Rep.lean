@@ -379,11 +379,13 @@ theorem checkRhs_sound {P : Program} {cert : Cert} {fc : FunCert} {ρ : Env}
   | prim op as =>
     simp only [checkRhs, Bool.and_eq_true] at hc
     obtain ⟨hvalid, hbody⟩ := hc
+    have hna : op.isArr = false := by
+      cases op <;> first | rfl | simp [Lam.Prim.isArr] at hbody
     simp only [evalRhs] at heval
     cases hvs : Fir.evalArgs ρ as with
     | none => simp [hvs] at heval
     | some vs =>
-      simp only [hvs, primResult] at heval
+      simp only [hvs, primResult, arrResult_of_not_arr hna] at heval
       cases hns : Fir.natArgs vs with
       | none => simp [hns] at heval
       | some ns =>
@@ -406,7 +408,7 @@ theorem checkRhs_sound {P : Program} {cert : Cert} {fc : FunCert} {ρ : Env}
               | erased => simp [hrx, isValidRep] at hvalid
             | _ =>
               simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hbody
-              rcases hbody.1 with hrx | hrx <;> rw [hrx] <;> exact .lit (.nat n)
+              rcases hbody.2.1 with hrx | hrx <;> rw [hrx] <;> exact .lit (.nat n)
           | bool b =>
             cases op with
             | word w wo => exact absurd hsem (Lam.wordSem_ne_bool w wo ns b)
@@ -429,7 +431,7 @@ theorem checkRhs_sound {P : Program} {cert : Cert} {fc : FunCert} {ρ : Env}
                       simp only [hci, Option.map_some, Option.some.injEq] at hb
                       subst hb
                       exact .ctor (fun _ h => nomatch h) (fun _ _ _ _ _ h => by simp at h)
-                rcases hbody.1 with hrx | hrx <;> rw [hrx] <;> exact hbv
+                rcases hbody.2.1 with hrx | hrx <;> rw [hrx] <;> exact hbv
   | call _ _ => simp [evalRhs] at heval
 
 /-! ## Join-Stack Invariant & Full Program Soundness (`check_sound`, `run_sound`) -/

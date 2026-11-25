@@ -45,7 +45,7 @@ def rhsInSet (P : Fir.Program) (live : Src.NatSet) : Rhs → Bool
       decide (c.nscalar = 0) && decide (c.fieldKinds.length = c.nobj) &&
       c.fieldKinds.all (fun k => decide (k = .shared))
   | .proj x _ _ => live.contains x
-  | .prim p args => decide (args.length = p.arity) && args.all (argInSet live)
+  | .prim p args => decide (args.length = p.arity) && !p.isArr && args.all (argInSet live)
   | .call f args => decide (signatureArity P f = some args.length) && args.all (argInSet live)
 
 mutual

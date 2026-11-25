@@ -26,8 +26,10 @@ the events Anf charges, and `Fir.tickBound` bounds the difference.
   project by key, as Anf does; `case` takes the first alternative with the
   value's key, else the default, else is stuck.
 * `prim` is exact on `Nat`; Boolean results are the pinned `Bool`
-  constructors. Fir never returns `resource`.
-* □ (`erased`) is stuck under `case`, `proj` and `prim`; scope,
+  constructors; an array primitive is `Src.ArrOp.eval` at `model` (an array is
+  `ctor (arrInfo n) elems`, decision D1; `get` and `set` out of range trap). Fir
+  never returns `resource`.
+* □ (`erased`) is stuck under `case`, `proj` and a scalar `prim`; scope,
   arity and key errors are stuck.
 
 The semantics is never evaluated on the recheck path (D17). It recurses
@@ -116,15 +118,57 @@ reserved key `Key.CtorKey.arr`, one object field per element, no table row. -/
 def arrInfo (n : Nat) : CtorInfo :=
   { key := .arr, tag := 0, nobj := n, fieldKinds := List.replicate n .shared }
 
-/-- A saturated primitive on evaluated arguments (as Anf's `primResult`). -/
+namespace Val
+
+/-- An array value's elements: a constructor value under the reserved key. -/
+def asArr : Val → Option (List Val)
+  | .ctor c fs => if c.key = .arr then some fs else none
+  | _ => none
+
+/-- A `Nat` literal. -/
+def asNat : Val → Option Nat
+  | .lit (.nat n) => some n
+  | _ => none
+
+end Val
+
+/-- **Fir's value model** for the array primitives (`Src.ArrOp.eval`), as Anf's (`Anf.model`): a
+`Nat` is a literal, an array is `ctor (arrInfo n) elems`. A `List` value is not readable yet
+(`Lam.model`): `ofList` is stuck, `toList` returns □. -/
+def model : Sem.ValModel Val where
+  nat n := .lit (.nat n)
+  asNat := Val.asNat
+  arr xs := .ctor (arrInfo xs.length) xs
+  asArr := Val.asArr
+  list _ := .erased
+  asList _ := none
+
+/-- An array primitive on evaluated arguments: `Src.ArrOp.eval` at Fir's value model. Any other
+primitive is stuck here. -/
+def arrResult : Lam.Prim → List Val → Result Val
+  | .arr op, vs => op.eval model vs
+  | _, _ => .stuck
+
+/-- A saturated primitive on evaluated arguments (as Anf's `primResult`): a scalar primitive's
+meaning on literals, else an array primitive's (`arrResult`). -/
 def primResult (P : Program) (p : Lam.Prim) (vs : List Val) : Result Val :=
   match natArgs vs with
   | some ns =>
     match p.sem ns with
     | some (.nat n) => .ok (.lit (.nat n))
     | some (.bool b) => Result.ofOption (boolVal P b)
-    | none => .stuck
-  | none => .stuck
+    | none => arrResult p vs
+  | none => arrResult p vs
+
+theorem arrResult_of_not_arr {p : Lam.Prim} (hp : p.isArr = false) (vs : List Val) :
+    arrResult p vs = .stuck := by
+  cases p <;> first | rfl | cases hp
+
+/-- An array primitive's meaning is `Src.ArrOp.eval` at Fir's value model. -/
+theorem primResult_arr (P : Program) (op : Src.ArrOp) (vs : List Val) :
+    primResult P (.arr op) vs = op.eval model vs := by
+  unfold primResult
+  split <;> rfl
 
 /-- A right-hand side other than a call. -/
 def evalRhs (P : Program) (ρ : Env) : Rhs → Result Val

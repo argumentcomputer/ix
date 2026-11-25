@@ -18,10 +18,11 @@ open IxCC.Sem (Result)
 theorem primResult_immediate {F : Fir.Program} {H : Heap}
     {op : Lam.Prim} {vs : List RVal} {ws : List Fir.Val} {w : Fir.Val}
     (hpins : BoolPinsOk F) (hargs : Sem.Forall2 (Proof.Den H) vs ws)
-    (hresult : Fir.primResult F op ws = .ok w) :
+    (hp : op.isArr = false) (hresult : Fir.primResult F op ws = .ok w) :
     ∃ v, Own.primResult { ctors := F.ctors, known := F.known } op vs = .ok v ∧
       Proof.Den H v w ∧ ∀ l, v ≠ .loc l := by
   unfold Fir.primResult at hresult
+  rw [Fir.arrResult_of_not_arr hp] at hresult
   unfold Own.primResult
   rw [Values.natArgs_den hargs]
   cases hn : Fir.natArgs ws with
@@ -72,9 +73,10 @@ theorem natArgs_immediate : ∀ {vs : List RVal} {ns : List Nat},
 theorem primResult_args_immediate {F : Fir.Program} {H : Heap}
     {op : Lam.Prim} {vs : List RVal} {ws : List Fir.Val} {w : Fir.Val}
     (hargs : Sem.Forall2 (Proof.Den H) vs ws)
-    (hresult : Fir.primResult F op ws = .ok w) :
+    (hp : op.isArr = false) (hresult : Fir.primResult F op ws = .ok w) :
     ∀ v ∈ vs, ∀ l, v ≠ .loc l := by
   unfold Fir.primResult at hresult
+  rw [Fir.arrResult_of_not_arr hp] at hresult
   have hnat := Values.natArgs_den hargs
   cases hn : Fir.natArgs ws with
   | none => simp [hn] at hresult
@@ -94,11 +96,11 @@ theorem primitive_owned (P : Program) (k : Nat) (ρ : Own.Env) (J : List JEntry)
     {external : Nat → Nat} {roots vs : List RVal} {ws : List Fir.Val} {w : Fir.Val}
     (hpins : BoolPinsOk P.source) (hb : Balance H external roots)
     (ha : Own.evalArgs ρ args = some vs) (hd : Sem.Forall2 (Proof.Den H) vs ws)
-    (hr : Fir.primResult P.source op ws = .ok w) :
+    (hp : op.isArr = false) (hr : Fir.primResult P.source op ws = .ok w) :
     ∃ v, eval P k ρ J H (.bind x (.prim op args) c) =
         eval P k (ρ.insert x v) J H c ∧
       Proof.Den H v w ∧ Balance H external (v :: roots) ∧ (∀ l, v ≠ .loc l) := by
-  obtain ⟨v, hv, hden, himm⟩ := primResult_immediate hpins hd hr
+  obtain ⟨v, hv, hden, himm⟩ := primResult_immediate hpins hd hp hr
   refine ⟨v, ?_, hden, balance_immediate hb himm, himm⟩
   rw [eval_bindRhs P k ρ J H x (.prim op args) c (by intro f as h; cases h)]
   have he : evalRhs P.tables ρ H (.prim op args) = .ok (v, H) := by

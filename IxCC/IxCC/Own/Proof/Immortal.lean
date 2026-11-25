@@ -2,6 +2,7 @@ import IxCC.Own.Proof.Mono
 import IxCC.Own.Proof.Heap
 import IxCC.Own.Immortal
 import IxCC.Fir.Proof.Mono
+import IxCC.Sem.ValModel
 
 /-! # The Phase 1 Own refinement (`Own.immortal_refines`)
 
@@ -28,7 +29,7 @@ set_option autoImplicit false
 
 namespace IxCC.Own.Proof
 
-open IxCC.Sem (Result later ClockMono Sim Forall2)
+open IxCC.Sem (Result later ClockMono Sim Forall2 ModelRel)
 open IxCC.Fir (Var FunId JoinId Arg)
 
 /-- The `Bool` pins of a Fir program, where its table lists them, have no
@@ -318,13 +319,176 @@ theorem immortalOk_alloc (hH : H.immortalOk = true) {c : Fir.CtorInfo} {vs : Lis
 
 /-! ### Array primitives
 
-Own's code evaluator gives an array-primitive binding its meaning (`arrStep`); Fir does not yet,
-so there the binding is stuck and any Own outcome is in lock-step with it. -/
+Fir computes an array primitive by `Src.ArrOp.eval` at `Fir.model`; Own by the same function over
+pending values (`pmodel`), then places the result (`arrStep`). A pending value denotes a Fir value
+(`PDen`): an Own value by `Den`, a pending array by its elements. That relation respects the two
+models (`modelRel_pden`), so `Src.ArrOp.eval_refines` relates the two outcomes, and placing a
+denoting pending value under the immortal policy gives a denoting value in an extended immortal
+heap (`place_den`). -/
 
-private theorem fir_primResult_arr (op : Src.ArrOp) (vs : List Fir.Val) :
-    Fir.primResult F (.arr op) vs = .stuck := by
-  unfold Fir.primResult
-  split <;> rfl
+mutual
+
+/-- A pending Own value denotes a Fir value in `H`. -/
+inductive PDen (H : Heap) : PVal → Fir.Val → Prop
+  | val {v : RVal} {w : Fir.Val} : Den H v w → PDen H (.val v) w
+  | arr {ps : List PVal} {ws : List Fir.Val} :
+      PDens H ps ws → PDen H (.arr ps) (.ctor (Fir.arrInfo ws.length) ws)
+
+/-- Pending values denote Fir values, one by one. -/
+inductive PDens (H : Heap) : List PVal → List Fir.Val → Prop
+  | nil : PDens H [] []
+  | cons {p : PVal} {w : Fir.Val} {ps : List PVal} {ws : List Fir.Val} :
+      PDen H p w → PDens H ps ws → PDens H (p :: ps) (w :: ws)
+
+end
+
+mutual
+
+theorem PDen.ext {H H' : Heap} (hx : Ext H H') :
+    ∀ (p : PVal) {w : Fir.Val}, PDen H p w → PDen H' p w
+  | .val _, _, h => by cases h with | val hd => exact .val (hd.ext hx)
+  | .arr ps, _, h => by cases h with | arr hps => exact .arr (PDens.ext hx ps hps)
+
+theorem PDens.ext {H H' : Heap} (hx : Ext H H') :
+    ∀ (ps : List PVal) {ws : List Fir.Val}, PDens H ps ws → PDens H' ps ws
+  | [], _, h => by cases h; exact .nil
+  | p :: ps, _, h => by
+    cases h with | cons hp hps => exact .cons (PDen.ext hx p hp) (PDens.ext hx ps hps)
+
+end
+
+theorem pdens_of_forall2 {H : Heap} :
+    ∀ {ws : List Fir.Val} {ps : List PVal}, Forall2 (fun w p => PDen H p w) ws ps → PDens H ps ws
+  | _, _, .nil => .nil
+  | _, _, .cons h hs => .cons h (pdens_of_forall2 hs)
+
+theorem forall2_of_pdens {H : Heap} :
+    ∀ {ps : List PVal} {ws : List Fir.Val}, PDens H ps ws → Forall2 (fun w p => PDen H p w) ws ps
+  | _, _, .nil => .nil
+  | _, _, .cons h hs => .cons h (forall2_of_pdens hs)
+
+theorem forall2_val_of_dens {H : Heap} :
+    ∀ {vs : List RVal} {ws : List Fir.Val}, Forall2 (Den H) vs ws →
+      Forall2 (fun w p => PDen H p w) ws (vs.map PVal.val)
+  | _, _, .nil => .nil
+  | _, _, .cons h hs => .cons (.val h) (forall2_val_of_dens hs)
+
+/-- **Denotation respects the two array models**, Fir's as the source and Own's pending one as
+the target. -/
+theorem modelRel_pden (H : Heap) : ModelRel Fir.model (pmodel H) (fun w p => PDen H p w) where
+  nat _ := .val (den_lit H _)
+  asNat {w p n} h hw := by
+    cases w with
+    | lit l =>
+      cases l with
+      | nat m =>
+        simp only [Fir.model, Fir.Val.asNat, Option.some.injEq] at hw
+        subst hw
+        cases h with
+        | val hd => rw [den_lit_inv hd]; rfl
+      | str _ => simp [Fir.model, Fir.Val.asNat] at hw
+    | ctor _ _ => simp [Fir.model, Fir.Val.asNat] at hw
+    | erased => simp [Fir.model, Fir.Val.asNat] at hw
+  arr h := .arr (pdens_of_forall2 h)
+  asArr {w p ws} h hw := by
+    cases w with
+    | ctor c ws0 =>
+      simp only [Fir.model, Fir.Val.asArr] at hw
+      split at hw
+      · next hc =>
+        simp only [Option.some.injEq] at hw
+        subst hw
+        cases h with
+        | val hd =>
+          rename_i v
+          cases v with
+          | loc ℓ =>
+            obtain ⟨r, m, b, ws', hcell, hw', hl⟩ := den_loc hd
+            cases hw'
+            refine ⟨b.fields.map PVal.val, ?_,
+              forall2_val_of_dens (dens_of_toFirList (Nat.le_succ _) hl)⟩
+            simp [pmodel, PVal.asArr, RVal.asArr, hcell, hc]
+          | ctor0 c' =>
+            simp only [Den, Heap.value?, toFir, Option.some.injEq, Fir.Val.ctor.injEq] at hd
+            obtain ⟨rfl, rfl⟩ := hd
+            exact ⟨[], by simp [pmodel, PVal.asArr, RVal.asArr, hc], .nil⟩
+          | lit _ => simp [Den, Heap.value?, toFir] at hd
+          | erased => simp [Den, Heap.value?, toFir] at hd
+        | arr hps => exact ⟨_, rfl, forall2_of_pdens hps⟩
+      · cases hw
+    | lit _ => simp [Fir.model, Fir.Val.asArr] at hw
+    | erased => simp [Fir.model, Fir.Val.asArr] at hw
+  list _ := .val (den_erased H)
+  asList _ hw := by simp [Fir.model] at hw
+
+mutual
+
+/-- Placing a denoting pending value under the immortal policy: a denoting value in an extended
+immortal heap. -/
+theorem place_den {H : Heap} (hH : H.immortalOk = true) :
+    ∀ (p : PVal) {w : Fir.Val}, PDen H p w →
+      Den (p.place .immortal H).2 (p.place .immortal H).1 w ∧ Ext H (p.place .immortal H).2 ∧
+        (p.place .immortal H).2.immortalOk = true
+  | .val _, _, h => by
+    cases h with
+    | val hd => exact ⟨hd, Ext.refl H, hH⟩
+  | .arr ps, _, h => by
+    cases h with
+    | arr hps =>
+      rename_i ws
+      obtain ⟨hds, hx, hok⟩ := placeList_den hH ps hps
+      simp only [PVal.place]
+      generalize PVal.placeList .immortal H ps = r at hds hx hok ⊢
+      obtain ⟨vs, H'⟩ := r
+      dsimp only at hds hx hok ⊢
+      cases vs with
+      | nil =>
+        cases hds
+        exact ⟨den_ctor0 H' _, hx, hok⟩
+      | cons v vs' =>
+        have hlen := hds.length
+        simp only [List.isEmpty_cons, Bool.false_eq_true, ↓reduceIte]
+        rw [← hlen]
+        refine ⟨den_alloc .immortal H' _ hds, hx.trans (Ext.alloc .immortal H' _), ?_⟩
+        refine immortalOk_alloc hok hds ?_ ?_
+        · simp [Fir.CtorInfo.arity, Fir.arrInfo]
+        · simp [Fir.CtorInfo.fieldless, Fir.CtorInfo.arity, Fir.arrInfo]
+
+theorem placeList_den {H : Heap} (hH : H.immortalOk = true) :
+    ∀ (ps : List PVal) {ws : List Fir.Val}, PDens H ps ws →
+      Forall2 (Den (PVal.placeList .immortal H ps).2) (PVal.placeList .immortal H ps).1 ws ∧
+        Ext H (PVal.placeList .immortal H ps).2 ∧
+        (PVal.placeList .immortal H ps).2.immortalOk = true
+  | [], _, h => by
+    cases h
+    exact ⟨.nil, Ext.refl H, hH⟩
+  | p :: ps, _, h => by
+    cases h with
+    | cons hp hps =>
+      obtain ⟨hd1, hx1, hok1⟩ := place_den hH p hp
+      obtain ⟨hds2, hx2, hok2⟩ := placeList_den hok1 ps (PDens.ext hx1 ps hps)
+      simp only [PVal.placeList]
+      exact ⟨.cons (hd1.ext hx2) hds2, hx1.trans hx2, hok2⟩
+
+end
+
+/-- **An array primitive in lock step**: Fir's `Src.ArrOp.eval` against Own's `arrStep`. -/
+theorem arrStep_lock {vs : List RVal} {ws : List Fir.Val} (hH : H.immortalOk = true)
+    (hds : Forall2 (Den H) vs ws) (op : Src.ArrOp) :
+    Lock H (op.eval Fir.model ws) (arrStep .immortal H op vs) := by
+  have hR := Src.ArrOp.eval_refines (modelRel_pden H) op (forall2_val_of_dens hds)
+  unfold arrStep
+  generalize op.eval Fir.model ws = r at hR ⊢
+  generalize hs : op.eval (pmodel H) (vs.map PVal.val) = s at hR ⊢
+  have hns : ∀ f, s ≠ .resource f := fun f h => Src.ArrOp.eval_ne_resource _ op _ f (hs.trans h)
+  cases hR with
+  | ok hp =>
+    obtain ⟨hd, hx, hok⟩ := place_den hH _ hp
+    exact .ok hd hok hx
+  | timeout => exact .timeout
+  | trap => exact .trap
+  | stuck => exact .stuck
+  | resource f => exact absurd rfl (hns f)
 
 theorem isArrPrim_immRhs (r : Fir.Rhs) : (immRhs r).isArrPrim = r.isArrPrim := by
   cases r <;> rfl
@@ -364,7 +528,7 @@ theorem immOpt_arrFree :
 end
 
 theorem rhs_lock (hb : BoolsOk F) (hH : H.immortalOk = true) (ρf : Fir.Env) (ρo : Env) (henv : EnvO H ρf ρo) (r : Fir.Rhs)
-    (hr : ∀ f as, r ≠ .call f as) :
+    (hr : ∀ f as, r ≠ .call f as) (ha : r.isArrPrim = false) :
     Lock H (Fir.evalRhs F ρf r) (evalRhs .immortal (immortal F).tables ρo H (immRhs r)) := by
   cases r with
   | arg a =>
@@ -429,7 +593,8 @@ theorem rhs_lock (hb : BoolsOk F) (hH : H.immortalOk = true) (ρf : Fir.Env) (ρ
     | none => exact .stuck
     | some ws =>
       obtain ⟨vs, hvs, hds⟩ := evalArgs_den henv as hws
-      simp only [hvs, Fir.primResult, primResult, natArgs_den hds, immortal, Program.tables]
+      simp only [hvs, Fir.primResult, primResult, natArgs_den hds, immortal, Program.tables,
+        Fir.arrResult_of_not_arr (show op.isArr = false from ha)]
       cases hn : Fir.natArgs ws with
       | none => dsimp only; exact .stuck
       | some ns =>
@@ -519,7 +684,7 @@ theorem eval_lock (ρf : Fir.Env) (Jf : List Fir.JEntry) (c : Fir.Code) (ρo : E
       · simp only [immCode]
         rw [eval_bindRhs _ _ _ _ _ _ _ _ _ (by cases r <;> simp_all [immRhs])
           (by rw [isArrPrim_immRhs]; exact ha)]
-        refine (rhs_lock hb hH ρf ρo henv r hr').bind fun w v H' hd hok hx => ?_
+        refine (rhs_lock hb hH ρf ρo henv r hr' ha).bind fun w v H' hd hok hx => ?_
         exact eval_lock _ Jf c' _ Jo H' ((henv.ext hx).insert x hd) (hJ.ext hx) hok
       · obtain ⟨op, as, rfl⟩ := Fir.Rhs.isArrPrim_eq_true ha
         simp only [immCode, immRhs]
@@ -528,8 +693,10 @@ theorem eval_lock (ρf : Fir.Env) (Jf : List Fir.JEntry) (c : Fir.Code) (ρo : E
         cases hws : Fir.evalArgs ρf as with
         | none => exact .stuck
         | some ws =>
-          simp only [Result.ofOption, fir_primResult_arr]
-          exact .stuck
+          obtain ⟨vs, hvs, hds⟩ := evalArgs_den henv as hws
+          simp only [hvs, Result.ofOption, Result.bind_ok, Fir.primResult_arr]
+          refine (arrStep_lock hH hds op).bind fun w v H' hd hok hx => ?_
+          exact eval_lock _ Jf c' _ Jo H' ((henv.ext hx).insert x hd) (hJ.ext hx) hok
   | .jp j ps r b c' =>
     rw [Fir.eval_jp]
     simp only [immCode]

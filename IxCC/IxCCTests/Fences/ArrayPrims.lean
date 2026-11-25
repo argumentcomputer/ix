@@ -7,6 +7,7 @@ import IxCC.Anf.Props
 import IxCC.Lam.Props
 import IxCC.Fir.Proof.ArrFree
 import IxCC.Own.Proof.Immortal
+import IxCC.Own.Plain.Proof.Owned.PrimStep
 import IxCC.Cfg.Proof.Sim
 
 /-! Required axiom fences for the array primitives on the certified pipeline
@@ -130,7 +131,14 @@ level's value model) in `primResult`. -/
 /-- info: 'IxCC.Anf.primResult_arr' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Anf.primResult_arr
 
-/-! A lowered Fir body binds no array primitive (`Code.arrFree`). -/
+/-! Fir's evaluator gives the array primitives their meaning over `Fir.model` (an array is a
+constructor value under `Fir.arrInfo n`); a lowered body binds none (`Code.arrFree`). -/
+
+/-- info: 'IxCC.Fir.arrResult_of_not_arr' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Fir.arrResult_of_not_arr
+
+/-- info: 'IxCC.Fir.primResult_arr' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Fir.primResult_arr
 
 /-- info: 'IxCC.Fir.Rhs.isArrPrim_eq_true' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Fir.Rhs.isArrPrim_eq_true
@@ -148,13 +156,41 @@ level's value model) in `primResult`. -/
 #guard_msgs in #print axioms IxCC.Fir.Proof.opt_arrFree
 
 /-! Own's code evaluator gives an array-primitive binding its meaning (`arrStep`: the operation
-over pending values `pmodel`, then the result placed on the heap). -/
+over pending values `pmodel`, then the result placed on the heap); the immortal lock-step
+relation covers it (`arrStep_lock`). -/
 
 /-- info: 'IxCC.Own.Rhs.isArrPrim_eq_true' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Own.Rhs.isArrPrim_eq_true
 
 /-- info: 'IxCC.Own.eval_bindArr' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.eval_bindArr
+
+/-- info: 'IxCC.Own.Proof.PDen.ext' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Proof.PDen.ext
+
+/-- info: 'IxCC.Own.Proof.PDens.ext' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Proof.PDens.ext
+
+/-- info: 'IxCC.Own.Proof.pdens_of_forall2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Proof.pdens_of_forall2
+
+/-- info: 'IxCC.Own.Proof.forall2_of_pdens' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Proof.forall2_of_pdens
+
+/-- info: 'IxCC.Own.Proof.forall2_val_of_dens' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Proof.forall2_val_of_dens
+
+/-- info: 'IxCC.Own.Proof.modelRel_pden' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Proof.modelRel_pden
+
+/-- info: 'IxCC.Own.Proof.place_den' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Proof.place_den
+
+/-- info: 'IxCC.Own.Proof.placeList_den' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Proof.placeList_den
+
+/-- info: 'IxCC.Own.Proof.arrStep_lock' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Proof.arrStep_lock
 
 /-- info: 'IxCC.Own.Proof.isArrPrim_immRhs' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Own.Proof.isArrPrim_immRhs
@@ -167,6 +203,15 @@ over pending values `pmodel`, then the result placed on the heap). -/
 
 /-- info: 'IxCC.Own.Proof.immOpt_arrFree' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Own.Proof.immOpt_arrFree
+
+/-! The ownership checker declines an array primitive (`own.arrays`) until the reference-counted
+route gives it a meaning. -/
+
+/-- info: 'IxCC.Own.Plain.bindStep_prim' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Own.Plain.bindStep_prim
+
+/-- info: 'IxCC.Own.Plain.bindStep_isArrPrim' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Own.Plain.bindStep_isArrPrim
 
 /-! Cfg's instructions run `Own.evalRhs`, which has no array case: the immortal-route
 simulation carries `Code.arrFree` of every body and join body. -/

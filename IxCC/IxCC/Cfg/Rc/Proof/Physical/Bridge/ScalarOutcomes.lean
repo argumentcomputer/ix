@@ -104,13 +104,18 @@ theorem primitive_result (admission : CodeAdmission F bodies P config pairs func
     (Fir.eval F clock sourceEnv sourceJoins (.bind x (.prim op args) (Own.Plain.eraseCode k)))
     F.ctors retUniq priv
   rw [Fir.eval_bind_prim]
-  rcases Own.Plain.fir_rhs_pure F sourceEnv (.prim op args) with stuck | ⟨logical, evaluation⟩
+  have scope : x ∉ live ∧ Own.Plain.rhsIn (Own.Plain.signatures F) live (.prim op args) = true ∧
+      Own.Plain.scopeOk (Own.Plain.signatures F) (live ++ [x])
+        (Own.Plain.stackArities sourceJoins) (Own.Plain.eraseCode k) = true := by
+    simpa [Own.Plain.eraseCode, Own.Plain.scopeOk, Bool.and_eq_true, and_assoc] using before.scope
+  have notArr : op.isArr = false := by
+    have h := scope.2.1
+    simp only [Own.Plain.rhsIn, Bool.and_eq_true, Bool.not_eq_true'] at h
+    exact h.1.2
+  rcases Own.Plain.fir_rhs_pure F sourceEnv (.prim op args) notArr with
+    stuck | ⟨logical, evaluation⟩
   · rw [stuck]; trivial
   · rw [evaluation, Sem.Result.bind_ok]
-    have scope : x ∉ live ∧ Own.Plain.rhsIn (Own.Plain.signatures F) live (.prim op args) = true ∧
-        Own.Plain.scopeOk (Own.Plain.signatures F) (live ++ [x])
-          (Own.Plain.stackArities sourceJoins) (Own.Plain.eraseCode k) = true := by
-      simpa [Own.Plain.eraseCode, Own.Plain.scopeOk, Bool.and_eq_true, and_assoc] using before.scope
     obtain ⟨fresh, _, bodyScope⟩ := scope
     have pins := Own.Plain.checkBoolPins_sound
       (checkScopedProgram_ownedParts admission.scopedProgram).2.1
@@ -123,8 +128,9 @@ theorem primitive_result (admission : CodeAdmission F bodies P config pairs func
       Own.Plain.needArgs_sem before.owned.den havail
     have primitive : Fir.primResult F op logicalArgs = .ok logical := by
       simpa only [Fir.evalRhs, sourceArgs] using evaluation
-    obtain ⟨value, result, den, immediate⟩ := Own.Plain.primResult_immUniq pins denArgs primitive
-    have argsImmediate := Own.Plain.primResult_args_immUniq denArgs primitive
+    obtain ⟨value, result, den, immediate⟩ :=
+      Own.Plain.primResult_immUniq pins denArgs notArr primitive
+    have argsImmediate := Own.Plain.primResult_args_immUniq denArgs notArr primitive
     obtain ⟨owned', pre', refs⟩ := before.owned.pre.immArgs (Own.Plain.primImmArgs op args.length)
       args (fun y hy => by
         refine ⟨havail y hy, ?_⟩
