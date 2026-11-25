@@ -1,21 +1,23 @@
 import IxCCAiur.Claim
 import IxCCCorrect.Shape2Produce
+import IxCCCorrect.ShapeHook
 
 /-! # Source progress from the shape check, and accepted claims without the escape
 
 `Compose` and `Claim` end with "the source evaluator returns that value, **or
 is stuck on that input**", and remove the second disjunct under
 `Compose.NeverStuck`. This file supplies `NeverStuck` from the source-progress
-lane's shape check (`IxCCCorrect.Shape2`, `Shape2Check`):
+lane's shape check (`IxCCCorrect.Shape2Check`, `IxCCCorrect.ShapeHook`):
 
-* `neverStuck_of_sigOk`: `Shape2.run_ok` (a shaped root on `Nat` arguments
-  times out or returns a value of its result shape) read at the language's
-  `run`. No view and no readback type enter: the claim's result is read by
-  `Claim.result_nat`, not by the native roots' view.
 * `checkShape src cert r n`: the lane's decision `Shape2.certOk` on a shape
   certificate, and the certificate lists an instance of root `r`'s constant
-  at no levels that takes `n` `Nat` arguments. `neverStuck_of_checkShape` is
-  its soundness. The certificate is untrusted (`Shape2.Produce.produce`
+  at no levels that takes `n` `Nat` arguments (of any result shape).
+  `neverStuck_of_checkShape` is its soundness for `Compose.NeverStuck`, by
+  the lane's `Shape2.neverStuck_checked`: the unviewed statement on the
+  checked source, which is the proposition `NeverStuck` asks for (and that
+  the source never traps, which is not needed here). No view and no readback
+  type enter: the claim's result is read by `Claim.result_nat`, not by the
+  native roots' view. The certificate is untrusted (`Shape2.Produce.produce`
   proposes one).
 * `accepted_nat`, `accepted_enum`: an accepted claim, read at the source,
   **with no disjunct**: SrcEval returns that value.
@@ -31,32 +33,7 @@ namespace IxCC.AiurBackend.Progress
 open Aiur Aiur.Generic
 open IxCC.Lam.Erase.Proof (CheckedProgram)
 open IxCC.AiurBackend.Lower IxCC.AiurBackend.Compose IxCC.AiurBackend.Claim
-open IxCC.Correct.Shape2 (Shape arrows SigOk)
-
-/-! ## The bridge -/
-
-/-- **A shaped root is stuck at no clock on `Nat` arguments.** The
-source-progress lane's `Shape2.run_ok`, read at the checked source's `run`
-(`Lam.Erase.Proof.srcRun`): the unviewed, per-input statement the circuit
-route needs. -/
-theorem neverStuck_of_sigOk {src : Src.Program} {ch : Src.Relevance.Checked}
-    {sig : Correct.Shape2.Sig} (hsig : SigOk src sig)
-    {r : Nat} {addr : Ixon.Address} {c : Src.CId} (hroot : src.roots[r]? = some (addr, c))
-    (ns : List Nat) {ρ : Shape}
-    (hc : sig.inst c [] (arrows (List.replicate ns.length .nat) ρ)) :
-    NeverStuck ⟨src, ch⟩ (r, ns) := by
-  intro k
-  have e : Sem.Lang.run (⟨src, ch⟩ : CheckedProgram) (r, ns) k =
-      IxCC.Lam.Erase.Proof.srcRun ⟨src, ch⟩ (r, ns) k := rfl
-  unfold IxCC.Lam.Erase.Proof.srcRun at e
-  simp only [hroot] at e
-  rcases Correct.Shape2.run_ok hsig ns hc k with hr | ⟨v, hr, _⟩
-  · rw [hr] at e
-    rw [e]
-    simp [Sem.Result.map, Sem.Result.bind]
-  · rw [hr] at e
-    rw [e]
-    simp [Sem.Result.map, Sem.Result.bind]
+open IxCC.Correct.Shape2 (Shape arrows)
 
 /-! ## The decision -/
 
@@ -72,19 +49,17 @@ theorem resultAfter_sound : ∀ (n : Nat) (σ ρ : Shape), resultAfter n σ = so
     simp only [resultAfter, Option.some.injEq] at h
     subst h
     rfl
-  | n + 1, .fn .nat τ, ρ, h => by
-    simp only [resultAfter] at h
-    have hτ := resultAfter_sound n τ ρ h
-    subst hτ
-    rfl
-  | _ + 1, .fn (.enum _) _, _, h => by simp [resultAfter] at h
-  | _ + 1, .fn (.data _) _, _, h => by simp [resultAfter] at h
-  | _ + 1, .fn .irr _, _, h => by simp [resultAfter] at h
-  | _ + 1, .fn (.fn _ _) _, _, h => by simp [resultAfter] at h
-  | _ + 1, .nat, _, h => by simp [resultAfter] at h
-  | _ + 1, .enum _, _, h => by simp [resultAfter] at h
-  | _ + 1, .data _, _, h => by simp [resultAfter] at h
-  | _ + 1, .irr, _, h => by simp [resultAfter] at h
+  | n + 1, σ, ρ, h => by
+    cases σ with
+    | «fn» dom τ =>
+      cases dom with
+      | nat =>
+        simp only [resultAfter] at h
+        have hτ := resultAfter_sound n τ ρ h
+        subst hτ
+        rfl
+      | _ => simp [resultAfter] at h
+    | _ => simp [resultAfter] at h
 
 /-- **The shape decision for root `r` on `n` `Nat` arguments**: the
 certificate passes the source-progress lane's check on the program
@@ -118,7 +93,7 @@ theorem neverStuck_of_checkShape {src : Src.Program} {ch : Src.Relevance.Checked
     have hls : ls = [] := hls
     have hσ : σ = arrows (List.replicate ns.length .nat) ρ := resultAfter_sound _ _ _ hρ
     subst hc hls hσ
-    exact neverStuck_of_sigOk (sig := cert.sig) (Correct.Shape2.sigOk_of_cert hcert) hr ns hmem
+    exact fun k => (Correct.Shape2.neverStuck_checked hcert hr ns hmem k).1
 
 /-! ## Accepted claims without the escape -/
 

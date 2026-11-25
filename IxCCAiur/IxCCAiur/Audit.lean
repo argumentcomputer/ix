@@ -1084,25 +1084,14 @@ info: 'IxCC.AiurBackend.Fib.accepted_sound' depends on axioms: [propext, Classic
 
 /-! ## 7. Without the Escape: Source Progress from the Shape Decision
 
-`Progress.neverStuck_of_sigOk` reads the source-progress lane's
-`Shape2.run_ok` at the checked source's `run`; `Progress.checkShape` is the
-decision and `Progress.neverStuck_of_checkShape` its soundness for
-`Compose.NeverStuck`. `Instance.decision` is one Boolean per closure on the
+`Progress.checkShape` is the source-progress lane's shape decision
+(`Shape2.certOk` and the root's instance) as a Boolean on the checked source,
+and `Progress.neverStuck_of_checkShape` its soundness for
+`Compose.NeverStuck`, by the lane's `Shape2.neverStuck_checked`
+(`IxCCCorrect.ShapeHook`). `Instance.decision` is one Boolean per closure on the
 front half's result, and `Fib.accepted`, `Gcd.accepted` and the three of
 `IxCCAiur.Roots` are the statements **with no disjunct and no progress
 hypothesis**: the kernel evaluates the decision (`decide +kernel`). -/
-
-/--
-info: @Progress.neverStuck_of_sigOk : ∀ {src : Src.Program} {ch : Src.Relevance.Checked} {sig : Correct.Shape2.Sig},
-  Correct.Shape2.SigOk src sig →
-    ∀ {r : ℕ} {addr : Ixon.Address} {c : Src.CId},
-      src.roots[r]? = some (addr, c) →
-        ∀ (ns : List ℕ) {ρ : Correct.Shape2.Shape},
-          sig.inst c [] (Correct.Shape2.arrows (List.replicate ns.length Correct.Shape2.Shape.nat) ρ) →
-            Compose.NeverStuck { p := src, ch := ch } (r, ns)
--/
-#guard_msgs (whitespace := lax) in
-#check @Progress.neverStuck_of_sigOk
 
 /--
 info: @Progress.neverStuck_of_checkShape : ∀ {src : Src.Program} {ch : Src.Relevance.Checked} {cert : Correct.Shape2.Cert}
@@ -1209,11 +1198,6 @@ info: @Gcd.accepted : ∀ {f : Recheck.FrontFir},
 #guard_msgs (whitespace := lax) in
 set_option pp.deepTerms true in
 #check @Gcd.accepted
-
-/--
-info: 'IxCC.AiurBackend.Progress.neverStuck_of_sigOk' depends on axioms: [propext, Classical.choice, Quot.sound]
--/
-#guard_msgs (whitespace := lax) in #print axioms Progress.neverStuck_of_sigOk
 
 /--
 info: 'IxCC.AiurBackend.Progress.neverStuck_of_checkShape' depends on axioms: [propext, Classical.choice, Quot.sound]
