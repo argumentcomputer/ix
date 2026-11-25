@@ -47,9 +47,9 @@ Lean's typing excludes all three at a root of type `Nat` or of an enumeration, b
 nor `NeverWrong` carries typing, and no law of `Ix.Kernel.Model` separates a structure's value from
 a numeral. So the bridge needs the canonical form as a fact about SrcEval: `ReturnsCanon`. The
 shape discipline proves it on the way to `NeverWrong` and then drops it (`Shape1.run_ok` concludes
-`ValOk`, `neverWrong_of_shape` keeps only the view's acceptance); `returnsCanon_of_shape1` below
-recovers it for milestone M1. **`FunctionalProgress` as defined delivers `NeverWrong` only: for
-tier 1 it has to deliver `ReturnsCanon` as well.**
+`ValOk`, `neverWrong_of_shape` keeps only the view's acceptance); `returnsCanon_of_shape`
+(`IxCCCorrect.GroundShape`) recovers it for milestone M2. **`FunctionalProgress` as defined
+delivers `NeverWrong` only: for tier 1 it has to deliver `ReturnsCanon` as well.**
 -/
 
 set_option autoImplicit false
