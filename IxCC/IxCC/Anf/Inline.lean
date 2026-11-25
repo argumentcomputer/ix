@@ -293,6 +293,79 @@ def inlinablePostP8 (maxSize : Nat) (recs : Src.NatSet) (gd : GDef) (g : GlobalI
      | .byName .. | .wrapper .. => true
      | _ => false))
 
+/-! ## The closure round (`produceClosureRound`; not on the recheck path) -/
+
+/-- Whether a binding's value is a closure the program knows: a local function,
+a function global's value, a copy of a variable holding one, or an application
+of one (a partial application; a saturated application of a known function is
+a `call` once shrunk). `env` says it per value variable in scope. -/
+def bindIsClosure (P : Program) (env : List Bool) : Bind → Bool
+  | .fn .. => true
+  | .glob h => (P.arity? h).any (· > 0)
+  | .atom (.var i) => env.getD i false
+  | .app (.var i) _ => env.getD i false
+  | _ => false
+
+/-- Whether an operand is a variable holding a known closure (`bindIsClosure`). -/
+def atomIsClosure (env : List Bool) : Atom → Bool
+  | .var i => env.getD i false
+  | _ => false
+
+mutual
+
+/-- The callees of the `call`s in `e` that pass a known closure
+(`bindIsClosure`), with repetition, in order. Join and `case` parameters, and
+a local function's parameters, hold no known closure. -/
+def closureSites (P : Program) (env : List Bool) : Exp → List GlobalId
+  | .bind _ b e => bindClosureSites P env b ++ closureSites P (bindIsClosure P env b :: env) e
+  | .join n _ b e => closureSites P (List.replicate n false ++ env) b ++ closureSites P env e
+  | .case _ alts d => altsClosureSites P env alts ++ optClosureSites P env d
+  | .tick e => closureSites P env e
+  | .jump .. | .ret _ | .trap => []
+  termination_by structural e => e
+
+def bindClosureSites (P : Program) (env : List Bool) : Bind → List GlobalId
+  | .call g as => if as.any (atomIsClosure env) then [g] else []
+  | .fn ps b => closureSites P (List.replicate ps.length false ++ env) b
+  | _ => []
+  termination_by structural b => b
+
+def altsClosureSites (P : Program) (env : List Bool) : List Alt → List GlobalId
+  | [] => []
+  | .mk _ n b :: as =>
+    closureSites P (List.replicate n false ++ env) b ++ altsClosureSites P env as
+  termination_by structural as => as
+
+def optClosureSites (P : Program) (env : List Bool) : Option Exp → List GlobalId
+  | none => []
+  | some e => closureSites P env e
+  termination_by structural o => o
+
+end
+
+/-- The closure round: for each caller, the callees it passes a known closure
+to (`closureSites`: a by-name thunk to a lazy combinator, an alternative to
+a matcher, a method to a dictionary's consumer), first call first, at most
+`maxCertCallees` of them; never a callee on a cycle of the reference graph
+(`directRecursive`) or withheld by `noInline`. Inlining such a call puts the
+closure's application into the caller, where the next shrink step reduces it
+(β of a local function, the known call of a function global), so the round
+removes closures at the cost of the callees' bodies only. The producer takes it
+when the default oracle's round is refused (`Pipeline.produceOnce`). Pure:
+`NatSet`s and structural recursion, no `HashSet`. -/
+def produceClosureRound (B : Budgets) (P : Program) : Round :=
+  let recs := directRecursive P
+  P.globalList.filterMap fun (f, gd) =>
+    let sites := closureSites P (List.replicate gd.ps.length false) gd.body
+    let cs := (sites.foldl (init := ((.leaf : Src.NatSet), ([] : List GlobalId)))
+      fun (seen, acc) g =>
+        if seen.contains g then (seen, acc) else (Src.NatSet.insert seen g, g :: acc)).2.reverse
+    let cs := cs.filter fun g =>
+      g != f && !recs.contains g && (match P.global? g with
+        | some gd' => !isNoInlineKey B.noInline gd'.key
+        | none => false)
+    if cs.isEmpty then none else some (f, cs.take maxCertCallees)
+
 /-- Pure post-P8 inline oracle (skips `.dispatch _` globals as both callers and
 callees, uses `directRecursive`, zero `HashSet`/`Quot.sound`). -/
 def producePostP8 (maxSize : Nat := 128) (P : Program) (noInline : List Key.GKey := []) : Round :=
