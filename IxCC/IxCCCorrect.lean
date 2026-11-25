@@ -3,6 +3,8 @@ import IxCCCorrect.Process
 import IxCCCorrect.Tiers
 import IxCCCorrect.Routes
 import IxCCCorrect.Today
+import IxCCCorrect.Progress
+import IxCCCorrect.Shape
 
 /-!
 # `IxCCCorrect`: the target statements of IxCC
@@ -21,8 +23,16 @@ propositions that elaborate, and what the existing theorems establish today.
   (`CertifiedRoute`, `CertifyingRoute`).
 * `IxCCCorrect.Today`: `CorrectToday`, and the proof that today's verifier
   establishes it (`correctToday_of_accepts`).
+* `IxCCCorrect.Progress`: source progress in the two strengths the tiers need
+  (`NeverStuck`, `NeverWrong`), the targets (`SafetyProgress`,
+  `FunctionalProgress`), and the proofs that each strength removes the
+  "source goes wrong" disjunct from `Recheck.sound`, `RcReplay.sound` and the plain
+  executable theorems.
+* `IxCCCorrect.Shape`: the first program class with progress proved (`allOk`,
+  `neverWrong_of_shape`), by a syntactic typing of SrcEval's values.
 
-The tiers and the routes are definitions: nothing here proves them. The library
+The tiers, the routes and the two progress targets are definitions: nothing here
+proves them. The library
 imports the compiler (`IxCC`), the grounding library's syntax (`IxCCGrounding`) and
 the kernel's model statement (`IxCK.Kernel.Denotes`), so it is outside the
 production import root (`IxCC` must not import the grounding library or the
