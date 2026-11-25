@@ -3,23 +3,25 @@ import IxCCCorrect.Shape2Produce
 
 /-! # `tests-shape`: the shape producer and the shape check on committed closures
 
-For each committed closure listed below and each of its roots: the kernel accepts the
+For each closure of the committed families listed in `families` and each of its sidecar roots: the kernel accepts the
 closure (`Recheck.ingress`), the front end builds the checked source SrcEval runs (the
 table, the annotation, lazification, as `tests-grounding` does), the untrusted producer
 proposes a shape certificate (`IxCC.Correct.Shape2.Produce.produce`), and the decision
-`IxCC.Correct.Shape2.certOk` is run on it. One line per root: `accept`, or `reject` with the
-first instance the decision refuses (its constant's kind and address, its levels and the
-proposed shape). The suite reports; it asserts nothing, and always exits 0 once every closure
-loads. -/
+`IxCC.Correct.Shape2.certOk` is run on it. One line per root: `accept` with the root's shape, or `reject` with the
+class of the first instance the decision refuses (`why`, a diagnosis for reading) and that
+instance. Then a table per family and a histogram of the classes. The suite reports; it
+asserts nothing and always exits 0. `SHAPE_ONLY=<family>` runs one family; `SHAPE_DETAIL=1`
+prints a refused instance's body. -/
 
 open IxCC IxCC.Src IxCC.Correct.Shape2
 
 namespace IxCCTests.Shape
 
 /-- The checked source of a closure, with every sidecar root. -/
-def loadSrc (stem : String) : IO Src.Program := do
-  let bytes ← IO.FS.readBinFile s!"{stem}.ixe"
-  let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile s!"{stem}.equations.json"))
+def loadSrc (ixe eqs : String) : IO Src.Program := do
+  let stem := ixe
+  let bytes ← IO.FS.readBinFile ixe
+  let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile eqs))
   let k ← match Recheck.ingress bytes json [] with
     | .ok k => pure k
     | .error e => throw (IO.userError s!"{stem}: ingress: {e.render}")
@@ -109,51 +111,256 @@ def detail (p : Src.Program) (cert : Cert) (c : CId) (ls : Levels) : String :=
     s!"  body: {(showTerm ls t).take 1500}\n  names:\n" ++ "\n".intercalate lines
   | none => s!"  (no body; levels {ls})"
 
+/-- A coarse class of a constant, for the histogram of refusals. -/
+def kindClass (p : Src.Program) (c : CId) : String :=
+  let recClass (r : CId) (what : String) : String :=
+    match p.decl? r with
+    | some (.recr _ _ _ np nmot _ ni _ _ _) =>
+      let kind := match p.table.recKindOf r with
+        | some .ordinary => ""
+        | some (.subsingleton _ _) => ", subsingleton"
+        | some .empty => ", empty"
+        | none => ", no kind"
+      s!"{what}{kind}{if np > 0 then ", parameters" else ""}\
+        {if ni > 0 then ", indices" else ""}{if nmot > 1 then ", several motives" else ""}"
+    | _ => what
+  match p.table.resolveOf c with
+  | some (.prim _) => "primitive"
+  | some (.word _ _ _) => "word operation"
+  | some (.csimp _ _ _) => "csimp"
+  | some (.eqn _ _) => "definition"
+  | some (.case r) => recClass r "case"
+  | none =>
+    match p.decl? c with
+    | some (.recr ..) => recClass c "recursor"
+    | some d => d.kindName
+    | none => "undeclared"
+
+/-- Why synthesis gives a term no shape: a class and a detail. A diagnosis for reading;
+nothing depends on it. It follows `synth` and reports the first subterm that fails. -/
+def why (p : Src.Program) (cert : Cert) (ls : Levels) :
+    List Shape → Src.Term → Exp → Option (String × String)
+  | Γ, .var i, _ => if (Γ[i]?).isSome then none else some ("variable out of scope", s!"#{i}")
+  | _, .const c us, _ =>
+    if (instsOf cert.insts c (us.map (evalUniv ls))).isEmpty then
+      some (s!"no instance proposed: {kindClass p c}", s!"c{c}")
+    else none
+  | _, .strLit _, _ => some ("string literal", "")
+  | Γ, .app f a _ r, _ =>
+    let irrArg := r.irrAt ls
+    let argShapes := if irrArg then [Shape.irr] else synth cert.insts cert.datas ls Γ a .none
+    let isLam := match f with
+      | .lam _ _ _ => true
+      | _ => false
+    let fShapes :=
+      if isLam then argShapes.flatMap fun σ => synth cert.insts cert.datas ls Γ f (.dom σ)
+      else synth cert.insts cert.datas ls Γ f .none
+    match fShapes with
+    | [] =>
+      if isLam then
+        match argShapes with
+        | [] => (why p cert ls Γ a .none).orElse fun _ =>
+            some ("applied λ whose argument needs an expected shape", "")
+        | σ :: _ => (why p cert ls Γ f (.dom σ)).orElse fun _ => some ("applied λ has no shape", "")
+      else (why p cert ls Γ f .none).orElse fun _ => some ("function has no shape", "")
+    | s :: _ =>
+      match s with
+      | .fn σ _ =>
+        if irrArg then
+          if σ = .irr then none
+          else some ("irrelevant argument at a relevant domain", showShape σ)
+        else if σ ∈ synth cert.insts cert.datas ls Γ a (.full σ) then none
+        else (why p cert ls Γ a (.full σ)).orElse fun _ =>
+          some ("argument shape mismatch", s!"expected {showShape σ}, has \
+            {(synth cert.insts cert.datas ls Γ a .none).map showShape}")
+      | .irr => some ("applies a value of unknown shape", "")
+      | s => some ("applies a value that is not a function", showShape s)
+  | Γ, .lam b _ body, e =>
+    match e with
+    | .full (.fn σ τ) =>
+      if !b.propWhen.allowsBeta ls then some ("λ whose binder forbids β at these levels", "")
+      else if τ ∈ synth cert.insts cert.datas ls (σ :: Γ) body (.full τ) then none
+      else (why p cert ls (σ :: Γ) body (.full τ)).orElse fun _ =>
+        some ("result shape mismatch", s!"expected {showShape τ}, has \
+          {(synth cert.insts cert.datas ls (σ :: Γ) body .none).map showShape}")
+    | .full s => some ("λ where a value that is not a function is expected", showShape s)
+    | .dom σ =>
+      if !b.propWhen.allowsBeta ls then some ("λ whose binder forbids β at these levels", "")
+      else why p cert ls (σ :: Γ) body .none
+    | .none => some ("λ with no expected shape", "")
+  | Γ, .letE _ _ r _ v body, e =>
+    if r.irrAt ls then why p cert ls (.irr :: Γ) body e
+    else
+      match synth cert.insts cert.datas ls Γ v .none with
+      | [] => (why p cert ls Γ v .none).orElse fun _ => some ("let value has no shape", "")
+      | σ :: _ => why p cert ls (σ :: Γ) body e
+  | Γ, .proj s i e', _ =>
+    match synth cert.insts cert.datas ls Γ e' .none with
+    | [] => (why p cert ls Γ e' .none).orElse fun _ => some ("projection subject has no shape", "")
+    | σ :: _ =>
+      if (projRes cert.datas s i σ).isEmpty then
+        some ("projection from a value that is not a structure entry", showShape σ)
+      else none
+  | _, _, _ => none
+
+/-- The class and detail of a refused instance. -/
+def reason (p : Src.Program) (cert : Cert) (d : CId) (ls : Levels) (σ : Shape) : String × String :=
+  match bodyOf p d with
+  | some t =>
+    match why p cert ls [] t (.full σ) with
+    | some r => r
+    | none => ("result shape mismatch", s!"expected {showShape σ}, has \
+        {(synth cert.insts cert.datas ls [] t .none).map showShape}")
+  | none => (s!"refused instance of a {kindClass p d}", showShape σ)
+
+/-- Is this the shape of a root the immortal path's corollaries cover: `Nat` parameters,
+a `Nat` or enumeration result? -/
+def viewedShape : Shape → Bool
+  | .nat => true
+  | .enum _ => true
+  | .fn .nat τ => viewedShape τ
+  | _ => false
+
+/-- The outcome on one root. -/
+inductive Outcome where
+  /-- `certOk`, at a root shape `neverWrong_of_cert_nat` or `_enum` reads -/
+  | viewed
+  /-- `certOk`, at another root shape (`run_ok_vals` only) -/
+  | unviewed
+  /-- refused, with the class of the first refused instance -/
+  | refused (cls : String)
+
 /-- Run the producer and the decision on root `i` of `p`. -/
-def runRoot (label : String) (p : Src.Program) (i : Nat) (name : String) : IO Bool := do
+def runRoot (label : String) (p : Src.Program) (i : Nat) (name : String) : IO Outcome := do
   let some (_, c) := p.roots[i]? | do
     IO.println s!"{label} {name}: no such root"
-    return false
+    return .refused "no such root"
+  let out ← IO.getStdout
+  IO.print s!"{label} {name}: "
+  out.flush
+  let t0 ← IO.monoMsNow
   let cert := Produce.produce p c
+  let n := cert.insts.length
+  IO.print s!"produced {n}"
+  out.flush
+  let tp ← IO.monoMsNow
+  IO.print s!" in {tp - t0} ms; "
+  out.flush
+  if n > 4000 then
+    IO.println s!"reject [the producer did not converge: {n} instances, not checked]"
+    return .refused "the producer did not converge (more than 4000 instances)"
   let size := s!"{cert.insts.length} instances, {cert.enums.length} enumerations, \
     {cert.datas.length} data entries"
-  if certOk p cert then
+  let ok := certOk p cert
+  let t1 ← IO.monoMsNow
+  if ok then
     let rootShape := match cert.insts.head? with
-      | some e => showShape e.2.2
-      | none => "?"
-    IO.println s!"{label} {name}: accept, root shape {rootShape} ({size})"
-    return true
+      | some e => e.2.2
+      | none => .irr
+    IO.println s!"accept, root shape {showShape rootShape} ({size}; {t1 - t0} ms)"
+    return if viewedShape rootShape then .viewed else .unviewed
   else
     match cert.insts.find? fun e => !entryOk p cert e.1 e.2.1 e.2.2 with
     | some (d, ls, σ) =>
-      IO.println s!"{label} {name}: reject ({size}); first refused instance: {kindOf p d} \
-        {hex (p.addr d)} at levels {ls}, shape {showShape σ}"
+      let (cls, det) := reason p cert d ls σ
+      IO.println s!"reject [{cls}] {det} ({size}; {t1 - t0} ms); first refused \
+        instance: {kindOf p d} {(hex (p.addr d)).take 16} at levels {ls}, shape {showShape σ}"
       if (← IO.getEnv "SHAPE_DETAIL").isSome then IO.println (detail p cert d ls)
+      return .refused cls
     | none =>
-      IO.println s!"{label} {name}: reject ({size}); every instance passes, an enumeration or \
-        data entry is refused"
-    return false
+      IO.println s!"reject [table entry refused] ({size}; {t1 - t0} ms)"
+      return .refused "table entry refused"
 
-def benchK1 : List String :=
-  ["ackermann", "collatz", "even-odd", "fib", "gcd", "prime-count", "sfib", "sum-loop", "tak"]
+/-- The committed families: a label and the directory of its closures. Not listed, because
+their roots are meant to be declined: `fixtures/corpus/phase1-decline` and
+`fixtures/ixon-v4/src-diag`. -/
+def families : List (String × String) :=
+  [("bench-k1", "fixtures/ixon-v4/bench-k1"),
+   ("k1", "fixtures/ixon-v4/k1"),
+   ("phase1-scalar", "fixtures/corpus/phase1-scalar"),
+   ("phase1-abi", "fixtures/corpus/phase1-abi"),
+   ("phase1-boundary", "fixtures/corpus/phase1-boundary"),
+   ("phase1-machines", "fixtures/corpus/phase1-machines"),
+   ("phase1-resource", "fixtures/corpus/phase1-resource"),
+   ("phase2-arity", "fixtures/corpus/phase2-arity"),
+   ("phase2-closures", "fixtures/corpus/phase2-closures"),
+   ("grounding", "fixtures/corpus/grounding"),
+   ("ownership", "fixtures/ownership"),
+   ("rc-budget", "fixtures/rc/budget"),
+   ("rc-deep", "fixtures/rc/deep"),
+   ("rc-real-source", "fixtures/rc/real-source"),
+   ("fold", "fixtures/fold")]
+
+/-- The closures of a directory: each `.ixe` with its sidecar (`<stem>.equations.json`,
+else `consumer.equations.json`, else `equations.json`). -/
+def closuresOf (dir : String) : IO (List (String × String × String)) := do
+  let entries ← System.FilePath.readDir dir
+  let names := (entries.toList.map fun e => e.fileName).filter fun n => n.endsWith ".ixe"
+  let names := names.mergeSort fun a b => a ≤ b
+  let mut out := []
+  for n in names do
+    let stem := (n.dropRight 4)
+    let cands := [s!"{dir}/{stem}.equations.json", s!"{dir}/consumer.equations.json",
+      s!"{dir}/equations.json"]
+    let mut eqs := none
+    for c in cands do
+      if eqs.isNone && (← System.FilePath.pathExists c) then eqs := some c
+    match eqs with
+    | some e => out := out ++ [(stem, s!"{dir}/{n}", e)]
+    | none => IO.println s!"{dir}/{n}: no sidecar found, skipped"
+  return out
+
+def bump (key : String) : List (String × Nat) → List (String × Nat)
+  | [] => [(key, 1)]
+  | (k, n) :: rest => if k == key then (k, n + 1) :: rest else (k, n) :: bump key rest
 
 def run : IO UInt32 := do
-  let mut accepted := 0
-  let mut total := 0
-  for b in benchK1 do
-    let p ← loadSrc s!"fixtures/ixon-v4/bench-k1/{b}"
-    total := total + 1
-    if ← runRoot "bench-k1" p 0 b then accepted := accepted + 1
-  let stem := "fixtures/corpus/phase1-scalar/scalar"
-  let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile s!"{stem}.equations.json"))
-  let names := match Src.Hints.ofK1Json json with
-    | .ok h => h.roots.toList.map fun (r : Ixon.Address × Option String) => r.2.getD "?"
-    | .error _ => []
-  let p ← loadSrc stem
-  for (name, i) in names.zipIdx do
-    total := total + 1
-    if ← runRoot "scalar" p i name then accepted := accepted + 1
-  IO.println s!"accepted {accepted} of {total} roots"
+  let only ← IO.getEnv "SHAPE_ONLY"
+  let mut rows : List (String × Nat × Nat × Nat × Nat) := []
+  let mut hist : List (String × Nat) := []
+  let mut unloadable : List String := []
+  for (family, dir) in families do
+    if only.isSome && only != some family then continue
+    let mut total := 0
+    let mut viewed := 0
+    let mut unviewed := 0
+    let mut refused := 0
+    for (stem, ixe, eqs) in ← closuresOf dir do
+      let label := s!"{family} {stem}"
+      let loaded ← try
+        let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile eqs))
+        let names := match Src.Hints.ofK1Json json with
+          | .ok h => h.roots.toList.map fun (r : Ixon.Address × Option String) => r.2.getD "?"
+          | .error _ => []
+        let p ← loadSrc ixe eqs
+        pure (some (p, names))
+      catch e =>
+        IO.println s!"{label}: not loaded: {(toString e).take 300}"
+        pure none
+      match loaded with
+      | none => unloadable := unloadable ++ [label]
+      | some (p, names) =>
+        for (name, i) in names.zipIdx do
+          total := total + 1
+          match ← runRoot label p i name with
+          | .viewed => viewed := viewed + 1
+          | .unviewed => unviewed := unviewed + 1
+          | .refused cls =>
+            refused := refused + 1
+            hist := bump cls hist
+    rows := rows ++ [(family, total, viewed, unviewed, refused)]
+  IO.println "family: roots, accepted at a Nat or enumeration root shape, accepted at another \
+    root shape, refused"
+  let mut tot := (0, 0, 0, 0)
+  for (family, n, v, u, r) in rows do
+    IO.println s!"  {family}: {n}, {v}, {u}, {r}"
+    tot := (tot.1 + n, tot.2.1 + v, tot.2.2.1 + u, tot.2.2.2 + r)
+  IO.println s!"  all: {tot.1}, {tot.2.1}, {tot.2.2.1}, {tot.2.2.2}"
+  IO.println "first refusals by class:"
+  for (k, n) in hist.mergeSort fun a b => a.2 ≥ b.2 do
+    IO.println s!"  {n}  {k}"
+  if !unloadable.isEmpty then IO.println s!"not loaded: {unloadable}"
+  IO.println s!"accepted {tot.2.1 + tot.2.2.1} of {tot.1} roots"
   return 0
 
 end IxCCTests.Shape

@@ -56,6 +56,8 @@ structure St where
   keys : List ((CId × Levels × List Shape) × Nat) := []
   /-- instances whose bodies are still to be walked, with the type arguments of the use -/
   todo : List (CId × Levels × Shape × List TV) := []
+  /-- type-evaluation steps left: when they run out, every type is unknown -/
+  gas : Nat := 400000
 
 abbrev M := StateM St
 
@@ -69,7 +71,10 @@ mutual
 /-- Evaluate a term as a type. -/
 def tyEval (p : Program) : Nat → Levels → List TV → Term → M TV
   | 0, _, _, _ => pure .opaque
-  | fuel + 1, ls, env, t =>
+  | fuel + 1, ls, env, t => do
+    let s ← get
+    if s.gas == 0 then return .opaque
+    set { s with gas := s.gas - 1 }
     match t with
     | .var i => pure (env.getD i .opaque)
     | .sort _ => pure (.sh .irr)
