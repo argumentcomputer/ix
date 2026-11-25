@@ -250,6 +250,13 @@ def joinRet (cx : Cx) (w : W) (r : Option Shape) : W :=
       if new == old then w
       else { w with st := { w.st with rets := w.st.rets.insert cx.f new, changed := true } }
 
+/-- The enumeration in `t` containing both pinned `Bool` constructors of `P`, if present. -/
+def boolEnum? (P : Program) (t : Tables) : Option Src.CId :=
+  match P.known.boolTrue, P.known.boolFalse with
+  | some tt, some ff =>
+    (t.enums.find? fun e => e.2.contains tt && e.2.contains ff).map (·.1)
+  | _, _ => none
+
 /-- The shape of a right-hand side, and the state after its effects on the tables. -/
 def rhsShape (cx : Cx) (w : W) : Rhs → Option Shape × W
   | .arg a => (argShape? w.vm a, w)
@@ -271,10 +278,21 @@ def rhsShape (cx : Cx) (w : W) : Rhs → Option Shape × W
         | some s => (s, w)
         | none => (some .any, w)
       | none => (some .any, w)
+    | some (.natLt a) =>
+      if cx.P.known.natSucc == some c && i == 0 then (some (.natLt a), w)
+      else (some .any, w)
+    | some (.word wd) =>
+      if cx.P.known.natSucc == some c && i == 0 then (some (.natLt wd.size), w)
+      else (some .any, w)
     | some σ =>
       if σ.le .nat && cx.P.known.natSucc == some c && i == 0 then (some .nat, w)
       else (some .any, w)
-  | .prim op as => ((argShapes? w.vm as).map (primShape op), w)
+  | .prim op as =>
+    if isBoolPrim op then
+      match boolEnum? cx.P cx.t with
+      | some ind => (some (.enum ind), w)
+      | none => (some .any, w)
+    else ((argShapes? w.vm as).map (primShape op), w)
   | .call g as => (w.st.rets.get? g, callArgs cx w g as)
 
 /-- A jump's arguments, joined into the join point's parameters. -/

@@ -617,6 +617,69 @@ theorem asCtor_zero (K : Lam.Known) :
 theorem asCtor_succ (K : Lam.Known) (n : Nat) :
     Val.asCtor K (.lit (.nat (n + 1))) = K.natSucc.map (·, [.lit (.nat n)]) := rfl
 
+theorem boolPrim_sem_bool {op : Lam.Prim} {ns : List Nat} {r : Src.PrimResult}
+    (hb : isBoolPrim op = true) (hsem : op.sem ns = some r) : ∃ b, r = .bool b := by
+  cases op <;> simp [isBoolPrim] at hb
+  all_goals
+    cases ns with
+    | nil => simp [Lam.Prim.sem] at hsem
+    | cons a rest =>
+      cases rest with
+      | nil => simp [Lam.Prim.sem] at hsem
+      | cons b rest' =>
+        cases rest' with
+        | nil =>
+          simp [Lam.Prim.sem, Lam.Prim.sem.srcOp, Src.PrimOp.eval2] at hsem
+          subst hsem
+          exact ⟨_, rfl⟩
+        | cons _ _ => simp [Lam.Prim.sem] at hsem
+
+theorem boolVal_ok_inv {P : Program} {b : Bool} {v : Val}
+    (h : boolVal P b = some v) :
+    ∃ c : CtorInfo, v = .ctor c [] ∧
+      ((b = true ∧ P.known.boolTrue = some c.key) ∨ (b = false ∧ P.known.boolFalse = some c.key)) := by
+  cases b with
+  | true =>
+    simp only [boolVal, ↓reduceIte] at h
+    cases ht : P.known.boolTrue with
+    | none => simp [ht] at h
+    | some k =>
+      simp only [ht] at h
+      cases hc : P.ctorInfo? k with
+      | none => simp [hc] at h
+      | some ci =>
+        simp only [hc, Option.map_some, Option.some.injEq] at h
+        subst h
+        have hk : ci.key = k := by
+          unfold Program.ctorInfo? CtorInfo.ofKey at hc
+          cases hf : P.ctors.find? (·.key == k) with
+          | none => simp [hf] at hc
+          | some e =>
+            simp only [hf, Option.map_some, Option.some.injEq] at hc
+            subst hc
+            rfl
+        exact ⟨ci, rfl, .inl ⟨rfl, hk ▸ rfl⟩⟩
+  | false =>
+    simp only [boolVal, Bool.false_eq_true, ↓reduceIte] at h
+    cases hf0 : P.known.boolFalse with
+    | none => simp [hf0] at h
+    | some k =>
+      simp only [hf0] at h
+      cases hc : P.ctorInfo? k with
+      | none => simp [hc] at h
+      | some ci =>
+        simp only [hc, Option.map_some, Option.some.injEq] at h
+        subst h
+        have hk : ci.key = k := by
+          unfold Program.ctorInfo? CtorInfo.ofKey at hc
+          cases hf : P.ctors.find? (·.key == k) with
+          | none => simp [hf] at hc
+          | some e =>
+            simp only [hf, Option.map_some, Option.some.injEq] at hc
+            subst hc
+            rfl
+        exact ⟨ci, rfl, .inr ⟨rfl, hk ▸ rfl⟩⟩
+
 /-- **A checked right-hand side yields a value of its shape** (a call is not a right-hand side
 of `evalRhs`: it is stuck there, and `evalSound` treats it). -/
 theorem rhsSound {P : Program} {cert : ShapeCert} {enc : ArrEnc} {fs : FunShapes} {ρ : Env}
@@ -650,6 +713,28 @@ theorem rhsSound {P : Program} {cert : ShapeCert} {enc : ArrEnc} {fs : FunShapes
       rw [hfl] at hi
       rw [← hf] at hfi
       exact valsOk_get _ _ hfields _ _ _ hi hfi
+  | projNatLt _ hle =>
+    obtain ⟨vx, c', fields, hget, hctor, _, hfi⟩ := evalRhs_proj_ok hv
+    obtain ⟨n, rfl, hn⟩ := valOk_le_natLt hle (hρ _ _ hget)
+    cases n with
+    | zero =>
+      rw [asCtor_zero] at hctor
+      cases hz : P.known.natZero with
+      | none => rw [hz] at hctor; cases hctor
+      | some z =>
+        rw [hz] at hctor
+        cases hctor
+        simp at hfi
+    | succ m =>
+      rw [asCtor_succ] at hctor
+      cases hs : P.known.natSucc with
+      | none => rw [hs] at hctor; cases hctor
+      | some s =>
+        rw [hs] at hctor
+        cases hctor
+        simp at hfi
+        subst hfi
+        exact .natLt (Nat.lt_of_succ_lt hn)
   | projNat _ hle =>
     obtain ⟨vx, c', fields, hget, hctor, _, hfi⟩ := evalRhs_proj_ok hv
     obtain ⟨n, rfl⟩ := valOk_nat_inv (leSound enc cert _ _ _ hle (hρ _ _ hget))
@@ -676,6 +761,23 @@ theorem rhsSound {P : Program} {cert : ShapeCert} {enc : ArrEnc} {fs : FunShapes
   | prim hargs hprim =>
     obtain ⟨vs, hvs, hres⟩ := evalRhs_prim_ok hv
     exact primOkSound cert enc P _ _ _ _ _ hprim (argsSound hρ _ _ _ hargs hvs) hres
+  | @primBool op _ _ _ _ _ hbp hE htt hff httm hffm =>
+    obtain ⟨vs, _, hres⟩ := evalRhs_prim_ok hv
+    simp only [primResult] at hres
+    cases hns : natArgs vs with
+    | none => simp [hns] at hres
+    | some ns =>
+      simp only [hns] at hres
+      cases hsem : op.sem ns with
+      | none => simp [hsem] at hres
+      | some res =>
+        obtain ⟨b, rfl⟩ := boolPrim_sem_bool hbp hsem
+        simp only [hsem] at hres
+        obtain ⟨ci, rfl, ⟨rfl, hkt⟩ | ⟨rfl, hkf⟩⟩ := boolVal_ok_inv (ofOption_ok hres)
+        · rw [htt, Option.some.injEq] at hkt
+          exact .enum hE (hkt ▸ httm)
+        · rw [hff, Option.some.injEq] at hkf
+          exact .enum hE (hkf ▸ hffm)
   | primAny => exact .any v
   | call _ => cases hv
   | weaken _ hle ih => exact leSound enc cert _ _ _ hle (ih hv)
@@ -1138,6 +1240,24 @@ theorem projShape_ok {P : Program} {cert : ShapeCert} {fs : FunShapes} {x : Var}
       | some fl =>
         simp only [hf] at h
         exact .projData hx hD (ctorFields_mem hf) h
+  · rename_i a hx
+    split at h
+    · rename_i hcond
+      cases h
+      simp only [Bool.and_eq_true, beq_iff_eq] at hcond
+      obtain ⟨hs, hi⟩ := hcond
+      subst hi
+      exact .projNatLt hs (by rw [hx]; exact Shape.le_refl _)
+    · cases h
+  · rename_i w hx
+    split at h
+    · rename_i hcond
+      cases h
+      simp only [Bool.and_eq_true, beq_iff_eq] at hcond
+      obtain ⟨hs, hi⟩ := hcond
+      subst hi
+      exact .projNatLt hs (by rw [hx]; exact Shape.word_le_natLt w)
+    · cases h
   · split at h
     · rename_i hcond
       cases h
@@ -1165,9 +1285,26 @@ theorem rhsOk_sound {P : Program} {cert : ShapeCert} {fs : FunShapes} {r : Rhs} 
         exact .weaken (projShape_ok hp) h
   | prim op args =>
     simp only [rhsOk, Bool.or_eq_true, beq_iff_eq] at h
-    rcases h with h | h
+    rcases h with (h | h) | h
     · subst h
       exact .primAny
+    · cases τ with
+      | enum ind =>
+        simp only [Bool.and_eq_true] at h
+        obtain ⟨hbp, hbo⟩ := h
+        unfold boolEnumOk at hbo
+        cases hE : cert.enum? ind with
+        | none => simp [hE] at hbo
+        | some ks =>
+          cases htt : P.known.boolTrue with
+          | none => simp [hE, htt] at hbo
+          | some tt =>
+            cases hff : P.known.boolFalse with
+            | none => simp [hE, htt, hff] at hbo
+            | some ff =>
+              simp only [hE, htt, hff, Bool.and_eq_true] at hbo
+              exact .primBool hbp hE htt hff (by simpa using hbo.1) (by simpa using hbo.2)
+      | _ => simp at h
     · exact .weaken (.prim (argShapes_ok fs args) (primShape_ok op _)) h
   | call g args =>
     simp only [rhsOk, Bool.and_eq_true] at h

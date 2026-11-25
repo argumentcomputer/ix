@@ -29,11 +29,15 @@ structure Options where
   args : Option (List Nat) := none
   out : Option String := none
   execPackage : Bool := false
+  typed : Bool := false
+  noInline : Bool := false
+  pairTable : Bool := false
   stats : Bool := false
 
 def usage : String :=
   "usage: ixcc-aiur CLOSURE.ixe [--equations EQUATIONS.json | EQUATIONS.json] \
-[--root NAME|ADDR|NAME=ADDR] [--args N,N,...] [-o PACKAGE.ixa] [--exec] [--stats]"
+[--root NAME|ADDR|NAME=ADDR] [--args N,N,...] [-o PACKAGE.ixa] [--exec] \
+[--typed] [--no-inline] [--pair-table] [--stats]"
 
 def parseNats (s : String) : Except String (List Nat) :=
   (s.splitOn ",").filter (· != "") |>.mapM fun w =>
@@ -48,6 +52,9 @@ def parse : List String → Options → Except String Options
   | "--args" :: ns :: rest, o => do parse rest { o with args := some (← parseNats ns) }
   | "-o" :: path :: rest, o => parse rest { o with out := some path }
   | "--exec" :: rest, o => parse rest { o with execPackage := true }
+  | "--typed" :: rest, o => parse rest { o with typed := true }
+  | "--no-inline" :: rest, o => parse rest { o with noInline := true }
+  | "--pair-table" :: rest, o => parse rest { o with pairTable := true }
   | "--stats" :: rest, o => parse rest { o with stats := true }
   | arg :: rest, o =>
     if arg.startsWith "-" then .error s!"unknown option {arg}"
@@ -64,6 +71,67 @@ def printChipStats (chips : List (String × Nat × Nat × Nat)) (ms : Nat) : IO 
   for (name, columns, sends, memory) in chips do
     IO.println s!"chip {name}: columns {columns}, calls {sends}, memory {memory}"
 
+def runTyped (o : Options) (front : Driver.Front) : IO UInt32 := do
+  let fir := front.levels.fir
+  let sched : Schedule.CircuitSchedule := {
+    autoInline := !o.noInline
+    rangeCheck := if o.pairTable then .pairTable else .auto
+  }
+  let start ← IO.monoMsNow
+  let linked ← IO.ofExcept (Driver.linkTyped front.levels.src fir 0 sched)
+  IO.println s!"lowered (typed, tier {reprStr linked.lowered.tier}, fir-shapes {linked.shapeAccepted}, \
+    ret {reprStr linked.exportRep}): {linked.lowered.program.functions.length} functions, \
+    entry {linked.entry} ({(← IO.monoMsNow) - start} ms)"
+  let world := Driver.typedWorldReport linked
+  IO.println s!"world: tables {world.tables}, library {world.library}, functions {world.functions}, \
+    refuses changed bodies and a changed table {world.refuses}"
+  unless world.failing.isEmpty do
+    IO.println s!"world: lowered functions that differ from the prepared source: {world.failing}"
+  let arity := match o.args with
+    | some ns => ns.length
+    | none =>
+      match fir.exports[0]?.bind fir.fun? with
+      | some fd => fd.params.length
+      | none => 0
+  IO.println s!"shape: {Driver.shapeCheck front.levels arity} \
+    (root 0 at {arity} Nat arguments; where true the claim has no stuck-source disjunct)"
+  let mut agree := true
+  if let some args := o.args then
+    let start ← IO.monoMsNow
+    let expected := Driver.firRun fir 0 args
+    IO.println s!"fir: {reprStr expected} ({(← IO.monoMsNow) - start} ms)"
+    let start ← IO.monoMsNow
+    let actual := Driver.typedAiurRun fir linked args
+    match actual with
+    | .ok (value, obs) =>
+      IO.println s!"aiur: value {reprStr value}, observation {showObs obs} ({(← IO.monoMsNow) - start} ms)"
+    | .error e => IO.println s!"aiur: no derivation found: {e} ({(← IO.monoMsNow) - start} ms)"
+    agree := match expected, actual with
+      | .ok (some a), .ok (_, some b) => a == b
+      | _, _ => false
+    IO.println s!"agree: {agree}"
+  if let some path := o.out then
+    unless world.ok do
+      IO.eprintln "ixcc-aiur: the world check failed; no package written"
+      return 1
+    unless agree do
+      IO.eprintln "ixcc-aiur: the evaluators do not agree on a value; no package written"
+      return 1
+    let kind : CompiledCert.ArtifactKind := if o.execPackage then .execution else .program
+    let start ← IO.monoMsNow
+    let compiled ← IO.ofExcept (Driver.compileTypedPackage linked sched kind (o.args.getD []))
+    let elapsed := (← IO.monoMsNow) - start
+    if o.stats then
+      printChipStats compiled.chips elapsed
+    Aiur.Artifact.write path compiled.bytes
+    IO.println s!"package: {path}, {compiled.bytes.size} bytes, kind {compiled.kind.label}, \
+      blake3 {compiled.digest} ({elapsed} ms)"
+  else if o.stats then
+    let start ← IO.monoMsNow
+    let chips ← IO.ofExcept (Driver.typedChipStats linked sched)
+    printChipStats chips ((← IO.monoMsNow) - start)
+  return 0
+
 def run (o : Options) : IO UInt32 := do
   let some closure := o.closure
     | IO.eprintln usage; return 2
@@ -79,6 +147,8 @@ def run (o : Options) : IO UInt32 := do
   let fir := front.levels.fir
   IO.println s!"front: roots {front.input.names}, fir functions {fir.funList.length}, \
     constructors {fir.ctors.length}, exports {fir.exports.length} ({(← IO.monoMsNow) - start} ms)"
+  if o.typed then
+    return ← runTyped o front
   let start ← IO.monoMsNow
   let linked ← IO.ofExcept (Driver.link fir 0)
   IO.println s!"lowered: {linked.lowered.functions.length} functions, entry {linked.entry} \

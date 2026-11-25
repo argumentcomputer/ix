@@ -11,6 +11,10 @@ import IxCCAiur.Fib
 import IxCCAiur.Gcd
 import IxCCAiur.Roots
 import IxCCAiur.Hints
+import IxCCAiur.Schedule
+import IxCCAiur.TypedRep
+import IxCCAiur.TypedLower
+import IxCCAiur.TypedWorld
 import IxCCAiur.CompiledCert
 import IxCCAiur.Driver
 import IxCCAiur.Audit

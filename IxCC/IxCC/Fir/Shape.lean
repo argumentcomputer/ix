@@ -194,6 +194,17 @@ element shape and track a static length, each with an untyped fallback) goes her
 `natPrimResult` and `primShape` already answer `any` for a primitive they do not list, so
 today's rules stay sound when the constructor is added. -/
 
+/-- Whether a primitive returns a pinned `Bool` constructor (`natBeq`, `natBle`, `natBlt`). -/
+def isBoolPrim : Lam.Prim → Bool
+  | .natBeq | .natBle | .natBlt => true
+  | _ => false
+
+/-- Whether `ind` is an enumeration in `cert` that contains both pinned `Bool` constructors of `P`. -/
+def boolEnumOk (P : Program) (cert : ShapeCert) (ind : Src.CId) : Bool :=
+  match cert.enum? ind, P.known.boolTrue, P.known.boolFalse with
+  | some ks, some tt, some ff => ks.contains tt && ks.contains ff
+  | _, _, _ => false
+
 /-- **A right-hand side yields a value of shape `σ`.** A call always checks its arguments: the
 callee was checked under its parameters' shapes. -/
 inductive RhsOk (P : Program) (cert : ShapeCert) (fs : FunShapes) : Rhs → Shape → Prop
@@ -212,12 +223,23 @@ inductive RhsOk (P : Program) (cert : ShapeCert) (fs : FunShapes) : Rhs → Shap
       {fl : List Shape} {σ : Shape} :
       fs.var x = .data d → cert.data? d = some D → (c, fl) ∈ D.ctors → fl[i]? = some σ →
       RhsOk P cert fs (.proj x c i) σ
+  /-- the predecessor a bounded `Nat` literal peels to preserves its bound -/
+  | projNatLt {x : Var} {c : Key.CtorKey} {a : Nat} :
+      P.known.natSucc = some c → (fs.var x).le (.natLt a) = true →
+      RhsOk P cert fs (.proj x c 0) (.natLt a)
   /-- the predecessor a `Nat` literal peels to -/
   | projNat {x : Var} {c : Key.CtorKey} : P.known.natSucc = some c → (fs.var x).le .nat = true →
       RhsOk P cert fs (.proj x c 0) .nat
   | projAny {x : Var} {c : Key.CtorKey} {i : Nat} : RhsOk P cert fs (.proj x c i) .any
   | prim {op : Lam.Prim} {args : List Arg} {σs : List Shape} {τ : Shape} :
       ArgsOk fs args σs → PrimOk op σs τ → RhsOk P cert fs (.prim op args) τ
+  /-- a `Nat` comparison primitive yields the pinned `Bool` enumeration when recorded in `cert` -/
+  | primBool {op : Lam.Prim} {args : List Arg} {ind : Src.CId} {ks : List Key.CtorKey}
+      {tt ff : Key.CtorKey} :
+      isBoolPrim op = true → cert.enum? ind = some ks →
+      P.known.boolTrue = some tt → P.known.boolFalse = some ff →
+      tt ∈ ks → ff ∈ ks →
+      RhsOk P cert fs (.prim op args) (.enum ind)
   | primAny {op : Lam.Prim} {args : List Arg} : RhsOk P cert fs (.prim op args) .any
   | call {g : FunId} {args : List Arg} :
       ArgsOk fs args (cert.fn g).params → RhsOk P cert fs (.call g args) (cert.fn g).ret
@@ -410,6 +432,8 @@ def projShape (P : Program) (cert : ShapeCert) (fs : FunShapes) (x : Var) (c : K
       | some fl => fl[i]?
       | none => none
     | none => none
+  | .natLt a => if P.known.natSucc == some c && i == 0 then some (.natLt a) else none
+  | .word w => if P.known.natSucc == some c && i == 0 then some (.natLt w.size) else none
   | σ => if σ.le .nat && P.known.natSucc == some c && i == 0 then some .nat else none
 
 /-- Decides `RhsOk` at a target shape. -/
@@ -421,7 +445,12 @@ def rhsOk (P : Program) (cert : ShapeCert) (fs : FunShapes) : Rhs → Shape → 
       match projShape P cert fs x c i with
       | some σ => σ.le τ
       | none => false
-  | .prim op args, τ => τ == .any || (primShape op (args.map (argShape fs))).le τ
+  | .prim op args, τ =>
+    τ == .any ||
+      (match τ with
+       | .enum ind => isBoolPrim op && boolEnumOk P cert ind
+       | _ => false) ||
+      (primShape op (args.map (argShape fs))).le τ
   | .call g args, τ => argsOk fs args (cert.fn g).params && (cert.fn g).ret.le τ
 
 mutual

@@ -1,5 +1,6 @@
 import IxCCAiur.Progress
 import IxCCAiur.CompiledCert
+import IxCCAiur.TypedWorld
 import IxCCAiur.Hints
 import IxCC.Compile
 import IxCC.Recheck.RunFir
@@ -226,5 +227,120 @@ compiled program, its circuits, and one invocation. No hint data. -/
 def package (l : Linked) (args : List Nat) (config : Aiur.Optimized.Config := {})
     (groups : List (String × List String) := []) : Except String ByteArray :=
   (·.bytes) <$> compilePackage l .execution args config groups
+
+/-! ## Typed / Unboxed Lowering Path (`TypedLower` + `CircuitSchedule`) -/
+
+/-- A typed/unboxed lowered program, demand-linked and prepared for `Prog::main<i>`. -/
+structure TypedLinked where
+  lowered : TypedLower.LoweredProgram
+  shapeAccepted : Bool
+  program : Aiur.Modules.Program F
+  entry : String
+  exportRep : TypedRep.Rep
+  prepared : Aiur.Modules.Prepared program
+
+/-- Infer & check `Fir.Shape.ShapeCert`, lower with `TypedLower`, demand-link,
+and prepare `Prog::main<i>`. -/
+def linkTyped (src : Src.Program) (P : Fir.Program) (i : Nat)
+    (sched : Schedule.CircuitSchedule := {}) : Except String TypedLinked := do
+  let (cert, shapeAccepted) := TypedRep.inferCheckedShapes src P
+  let lowered ← TypedLower.lowerProgram P cert sched
+  let program := TypedLower.linkedProgram F lowered
+  let entry := qualified (entryName i)
+  let exportRep := lowered.exportReps[i]?.getD .obj
+  let prepared ← Aiur.Modules.prepare program [entry]
+  return { lowered, shapeAccepted, program, entry, exportRep, prepared }
+
+/-- Evaluate the tier-aware world check on a typed prepared source. -/
+def typedWorldReport (l : TypedLinked) : WorldReport :=
+  let s := l.prepared.environment.source
+  let changed : Aiur.Generic.Program Nat :=
+    { l.lowered.program with
+      functions := l.lowered.program.functions.map fun g => { g with body := .tuple [] } }
+  let tablesOk := match l.lowered.tier with
+    | .none => true
+    | .byte256 => TypedWorld.checkU8ByteTable s
+    | .u32 | .u64 => World.checkTables s
+  let libOk := match l.lowered.tier with
+    | .u64 => checkU64Functions s
+    | _ => true
+  let fnsOk := World.checkFunctions s l.lowered.program
+  let refuses :=
+    !World.checkFunctions s changed &&
+    (match l.lowered.tier with
+     | .byte256 => !World.checkTable s "U8Byte::byte_units" []
+     | .u32 | .u64 => !World.checkTable s "UInt8::pair_units" []
+     | .none => true)
+  { tables := tablesOk, library := libOk, functions := fnsOk
+    failing := World.failing s l.lowered.program, refuses }
+
+/-- Read an unboxed typed Aiur `SourceValue` back as an observation. -/
+def typedReadback (P : Fir.Program) (cert : Fir.Shape.ShapeCert) (feat : TypedRep.Features)
+    (heap : Aiur.Heap F) : Nat → TypedRep.Rep → Aiur.SourceValue F → Option Sem.Obs
+  | 0, _, _ => none
+  | _ + 1, .nat _, .field x => some (.nat x.val)
+  | _ + 1, .w8, .field x => some (.nat x.val)
+  | _ + 1, .w16, .field x => some (.nat x.val)
+  | _ + 1, .w32, .tuple [.field b0, .field b1, .field b2, .field b3] =>
+    some (.nat (b0.val + 256 * b1.val + 65536 * b2.val + 16777216 * b3.val))
+  | _ + 1, .w64, .tuple [.field b0, .field b1, .field b2, .field b3,
+                         .field b4, .field b5, .field b6, .field b7] =>
+    some (.nat (Aiur.Library.U64.pack b0.val b1.val b2.val b3.val b4.val b5.val b6.val b7.val))
+  | _ + 1, .enum _, .construct _ name [] => do
+    let idx ← (objCtorNames P).idxOf? name
+    let entry ← P.ctors[idx]?
+    let .src cid := entry.key | none
+    return .ctor cid []
+  | fuel + 1, .data d, .construct _ name ps => do
+    let idx ← (objCtorNames P).idxOf? name
+    let entry ← P.ctors[idx]?
+    let .src cid := entry.key | none
+    let D ← cert.data? d
+    let (_, fl) ← D.ctors.find? (·.1 == entry.key)
+    let fs ← (ps.zip fl).mapM fun (pv, sh) => do
+      let fr := TypedRep.repOf P cert feat sh
+      let val ← if TypedRep.dataFieldNeedsPtr P cert feat d fr then
+        match pv with
+        | .ptr _ a => heap[a]?
+        | _ => none
+      else some pv
+      typedReadback P cert feat heap fuel fr val
+    return .ctor cid fs
+  | fuel + 1, .obj, v => readback P heap (fuel + 1) v
+  | _ + 1, _, _ => none
+
+/-- Evaluate a typed linked entry on `Nat` inputs via Formal Aiur's fuelled evaluator. -/
+def typedAiurRun (P : Fir.Program) (l : TypedLinked) (args : List Nat) (fuel : Nat := 100000000) :
+    Except String (Aiur.SourceValue F × Option Sem.Obs) := do
+  let hints := l.prepared.environment.source.checkedHints
+    (Hints.dispatcher (fun (x : F) => x.val))
+  let (value, heap) ← l.prepared.run l.entry (args.map fun n => .field (n : F)) fuel hints
+  let feat := TypedRep.scanFeatures P
+  return (value, typedReadback P l.lowered.cert feat heap 10000 l.exportRep value)
+
+/-- Compile a typed linked program once (`compileOptimized` + budget check + parallel
+`Trace.exportPlanPar`), returning chip stats, serialized `.ixa`, and its BLAKE3 digest. -/
+def compileTypedPackage (l : TypedLinked)
+    (sched : Schedule.CircuitSchedule := {})
+    (kind : CompiledCert.ArtifactKind := .program)
+    (args : List Nat := []) : Except String Compiled := do
+  let execution ← l.prepared.exportExecution
+  let compiled ← l.prepared.compileOptimized sched.aiurConfig
+  let chips := chipSummaryOf compiled
+  let summary : Schedule.CircuitSummary :=
+    { chips := chips.map fun (name, columns, calls, memory) => { name, columns, calls, memory } }
+  summary.checkBudget sched.budget
+  let (execution, trace) ← Aiur.Trace.exportPlanPar modulus ZMod.val
+    compiled.circuit.inlined.program compiled.circuit.artifact execution sched.groups
+  let bytes ← match kind with
+    | .program => Aiur.Artifact.package execution modulus ZMod.val (some trace)
+    | .execution => Aiur.Artifact.execution execution modulus ZMod.val (some trace) args [] #[]
+  return { chips, kind, bytes, digest := Ixon.Address.blake3Pure bytes }
+
+/-- Per-chip stats for a typed linked program. -/
+def typedChipStats (l : TypedLinked) (sched : Schedule.CircuitSchedule := {}) :
+    Except String (List (String × Nat × Nat × Nat)) := do
+  let compiled ← l.prepared.compileOptimized sched.aiurConfig
+  return chipSummaryOf compiled
 
 end IxCC.AiurBackend.Driver
