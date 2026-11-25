@@ -7,6 +7,7 @@
   {"roots": ["IxCCTests.Soundness.Main"], "kind": "lean_exe"},
   "tests-shrink":
   {"roots": ["IxCCTests.Pipeline.ShrinkMain"], "kind": "lean_exe"},
+  "tests-shape": {"roots": ["IxCCTests.Shape.Main"], "kind": "lean_exe"},
   "tests-rt-rc": {"roots": ["IxCCTests.Rt.Rc.Main"], "kind": "lean_exe"},
   "tests-rt": {"roots": ["IxCCTests.Rt.Main"], "kind": "lean_exe"},
   "tests-relevance":
@@ -340,6 +341,9 @@
   "IxCCTests.Soundness.Main":
   {"path": "IxCCTests/Soundness/Main.lean",
    "imports": ["IxCCTests.Soundness.Run"]},
+  "IxCCTests.Shape.Main":
+  {"path": "IxCCTests/Shape/Main.lean",
+   "imports": ["IxCC.Recheck.Produce", "IxCCCorrect.Shape2Produce"]},
   "IxCCTests.Sem.Toy.Tick":
   {"path": "IxCCTests/Sem/Toy/Tick.lean", "imports": ["IxCCTests.Sem.Toy.Big"]},
   "IxCCTests.Sem.Toy.Stack":
@@ -4514,6 +4518,13 @@
     "IxCC.Recheck.Produce",
     "IxCCGrounding.Syntax",
     "IxCK.Kernel.Denotes"]},
+  "IxCCCorrect.Shape2Produce":
+  {"path": "IxCCCorrect/Shape2Produce.lean",
+   "imports": ["IxCCCorrect.Shape2Check"]},
+  "IxCCCorrect.Shape2Check":
+  {"path": "IxCCCorrect/Shape2Check.lean", "imports": ["IxCCCorrect.Shape2"]},
+  "IxCCCorrect.Shape2":
+  {"path": "IxCCCorrect/Shape2.lean", "imports": ["IxCCCorrect.Shape"]},
   "IxCCCorrect.Shape1Check":
   {"path": "IxCCCorrect/Shape1Check.lean", "imports": ["IxCCCorrect.Shape1"]},
   "IxCCCorrect.Shape1":
@@ -4539,7 +4550,9 @@
     "IxCCCorrect.Progress",
     "IxCCCorrect.Shape",
     "IxCCCorrect.Shape1",
-    "IxCCCorrect.Shape1Check"]},
+    "IxCCCorrect.Shape1Check",
+    "IxCCCorrect.Shape2",
+    "IxCCCorrect.Shape2Check"]},
   "IxCCCorrect.Claim":
   {"path": "IxCCCorrect/Claim.lean",
    "imports":
@@ -4556,6 +4569,9 @@
     "IxCCCorrect.Shape",
     "IxCCCorrect.Shape1",
     "IxCCCorrect.Shape1Check",
+    "IxCCCorrect.Shape2",
+    "IxCCCorrect.Shape2Check",
+    "IxCCCorrect.Shape2Produce",
     "IxCCCorrect.Fence"]},
   "IxCC.Xv.XlSemantics":
   {"path": "IxCC/Xv/XlSemantics.lean",

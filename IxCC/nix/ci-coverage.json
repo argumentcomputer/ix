@@ -1799,13 +1799,16 @@
   "IxCCCorrect.Shape",
   "IxCCCorrect.Shape1",
   "IxCCCorrect.Shape1Check",
+  "IxCCCorrect.Shape2",
+  "IxCCCorrect.Shape2Check",
+  "IxCCCorrect.Shape2Produce",
   "IxCCCorrect.Tiers",
   "IxCCCorrect.Today"],
  "correct_axiom_sha256":
- "19f60584e57a973021f84a795c88378ec8abe8cc0d6fec7d5647520b412d386f",
- "correct_axiom_count": 93,
+ "2cd41ccd267bb8755da341087596612c2118992607dc21522affb5904b6eaabd",
+ "correct_axiom_count": 147,
  "baseline":
- "ixcc-2-int2: IxCCCorrect registered (its fence 93; 7,329 + 556 + 93 = 7,978 fences)",
+ "ixcc-2-int3: anf-prune (Anf fences +2) and IxCCCorrect M2 (fence 93 -> 147); 7,331 + 556 + 147 = 8,034 fences",
  "axiom_sha256":
- "f1c2ba46872744461450f818c938906c568966efbac861f664dc6fdd3f08ae96",
- "axiom_count": 7329}
+ "0b41e0f8f7799528f4b0ee2f79786b8c8696363a54f33eb877c55a99af68af9f",
+ "axiom_count": 7331}
