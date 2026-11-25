@@ -217,6 +217,8 @@ theorem agrees_of_srcPlainEval {claim : Claim} {acc : Src.KernelFront.Accepted} 
     rw [hlen]
     simp [Abi.arity, hparams]
   rw [harity] at hG
+  have hargT : argTerms claim.abi.params ns = ns.map fun n => (litE n : KExpr) := by
+    rw [hparams, harity, argTerms_replicate]
   have hcan0 := hcan
   cases res with
   | nat =>
@@ -226,6 +228,7 @@ theorem agrees_of_srcPlainEval {claim : Claim} {acc : Src.KernelFront.Accepted} 
     refine ⟨n, by rw [ho]; simp only [abiObs, hr], ?_⟩
     unfold Agrees
     refine ⟨κ root, litE n, hkey, by simp only [answerTerm, hr], ?_⟩
+    rw [hargT]
     unfold SameDenotation
     intro V _ M φ ρ
     exact hG.same M hsrc hcan0 φ ρ
@@ -241,6 +244,7 @@ theorem agrees_of_srcPlainEval {claim : Claim} {acc : Src.KernelFront.Accepted} 
     unfold Agrees
     refine ⟨κ root, .const (κ c) [], hkey,
       by simp only [answerTerm, hr, haddr, Option.bind_some, hk, Option.map_some], ?_⟩
+    rw [hargT]
     unfold SameDenotation
     intro V _ M φ ρ
     exact hG.same M hsrc hcan0 φ ρ

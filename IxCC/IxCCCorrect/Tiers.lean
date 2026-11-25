@@ -101,6 +101,20 @@ def answerTerm (abi : Abi) (key : Ixon.Address → Option KKey) (answer : Nat) :
   | .word bits ofNat =>
     if answer < 2 ^ bits then (key ofNat).map fun k => .app (.const k []) (litE answer) else none
 
+/-- **The kernel terms the target is applied to**: the literals of the invocation's numbers at
+the `Nat` parameters, in order, and the claim's own terms at the erased ones (owner-approved P3). -/
+def argTerms : List ArgTy → List Nat → List KExpr
+  | [], _ => []
+  | .nat :: ps, x :: xs => litE x :: argTerms ps xs
+  | .nat :: _, [] => []
+  | .erased e :: ps, xs => e :: argTerms ps xs
+
+/-- At `Nat` parameters only, the terms are the literals. -/
+theorem argTerms_replicate : ∀ xs : List Nat,
+    argTerms (List.replicate xs.length .nat) xs = xs.map fun n => (litE n : KExpr)
+  | [] => rfl
+  | x :: xs => by simp [List.replicate_succ, argTerms, argTerms_replicate xs]
+
 /-- **The answer agrees with the kernel meaning of the target**: in every model of
 the admitted environment, the target applied to the arguments (as literals)
 denotes what the answer's term denotes. -/
@@ -109,7 +123,7 @@ def Agrees.{w} (claim : Claim) (acc : Src.KernelFront.Accepted) (xs : List Nat) 
   ∃ target out, keyOf acc claim.target = some target ∧
     answerTerm claim.abi (keyOf acc) answer = some out ∧
     SameDenotation.{w} acc.env
-      (Ix.Kernel.Expr.mkAppN (Ix.Kernel.Expr.const target []) (xs.map fun n => (litE n : KExpr)))
+      (Ix.Kernel.Expr.mkAppN (Ix.Kernel.Expr.const target []) (argTerms claim.abi.params xs))
       out
 
 /-! ## The file is laid out as the claim says -/

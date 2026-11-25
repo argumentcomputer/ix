@@ -47,7 +47,21 @@ inductive Platform where
 /-- The type of a root's parameter. `Nat` is Lean's `Nat`: no width. -/
 inductive ArgTy where
   | nat
+  /-- An argument erased at run time (a proof or a type, owner-approved P3): the claim names
+  its closed kernel term, the kernel meaning applies the target to it, and the shell does not
+  read it from the command line. -/
+  | erased (term : Ix.Kernel.Expr .anon)
   deriving DecidableEq, Repr, Inhabited
+
+/-- The number of `Nat` parameters: the arguments an invocation passes. -/
+def ArgTy.natCount : List ArgTy → Nat
+  | [] => 0
+  | .nat :: ps => natCount ps + 1
+  | .erased _ :: ps => natCount ps
+
+@[simp] theorem ArgTy.natCount_replicate_nat : ∀ n : Nat, natCount (List.replicate n .nat) = n
+  | 0 => rfl
+  | n + 1 => by simp [List.replicate_succ, natCount, natCount_replicate_nat n]
 
 /-- The type of a root's result. -/
 inductive ResTy where
@@ -83,7 +97,7 @@ structure Abi where
 
 namespace Abi
 
-def arity (abi : Abi) : Nat := abi.params.length
+def arity (abi : Abi) : Nat := ArgTy.natCount abi.params
 
 /-- The shell's rendering class of the result (`X86.Exe.ResultKind`). -/
 def resultKind (abi : Abi) : X86.Exe.ResultKind :=

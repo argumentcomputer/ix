@@ -1027,3 +1027,11 @@ routes and the progress targets are definitions and have no fence. -/
 
 /-- info: 'IxCC.Correct.agrees_unique_enum' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.agrees_unique_enum
+
+/-! ## `IxCCCorrect.Claim`, `IxCCCorrect.Tiers` (owner-approved P3) -/
+
+/-- info: 'IxCC.Correct.ArgTy.natCount_replicate_nat' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.ArgTy.natCount_replicate_nat
+
+/-- info: 'IxCC.Correct.argTerms_replicate' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.argTerms_replicate
