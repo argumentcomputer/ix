@@ -21,6 +21,7 @@ import IxCCCorrect.UniqueIota
 import IxCCCorrect.UniqueNat
 import IxCCCorrect.CanonLaw
 import IxCCCorrect.UniqueEnum
+import IxCCCorrect.SpineIota
 
 /-! # The target statements' axiom fence: every theorem `IxCCCorrect` proves uses at most the
 three standard axioms. Building the library checks it (`#guard_msgs`), in the required check
@@ -1041,3 +1042,11 @@ routes and the progress targets are definitions and have no fence. -/
 
 /-- info: 'IxCC.Correct.argTerms_replicate' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Correct.argTerms_replicate
+
+/-! ## `IxCCCorrect.SpineIota` -/
+
+/-- info: 'IxCC.Correct.spineOk_lamTele' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.spineOk_lamTele
+
+/-- info: 'IxCC.Correct.paramsBlindIota' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.paramsBlindIota

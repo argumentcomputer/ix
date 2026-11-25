@@ -24,6 +24,7 @@ import IxCCCorrect.UniqueIota
 import IxCCCorrect.UniqueNat
 import IxCCCorrect.CanonLaw
 import IxCCCorrect.UniqueEnum
+import IxCCCorrect.SpineIota
 import IxCCCorrect.Unique
 import IxCCCorrect.Fence
 
@@ -99,6 +100,8 @@ propositions that elaborate, and what the existing theorems establish today.
   (constructor canonicity in every model), and its transfer to the retyped reading.
 * `IxCCCorrect.UniqueEnum`: the answer is unique at an enumeration result, distinct constructors
   separated by the enumeration recursor's ι-law (`agrees_unique_enum`).
+* `IxCCCorrect.SpineIota`: ι at a recursor with parameters from the law's own spine, in every
+  model (`spineOk_lamTele`, `paramsBlindIota`): no canonicity for parameters.
 * `IxCCCorrect.Fence`: the library's axiom fence, an exact `#print axioms`
   assertion for every theorem above (each within `propext`, `Classical.choice`,
   `Quot.sound`).
