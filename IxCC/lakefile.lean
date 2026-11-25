@@ -124,6 +124,13 @@ and the lowerings re-run by the kernel. -/
 lean_exe «tests-fir» where
   root := `IxCCTests.Fir.Main
 
+/- The shape certificate at Fir: on the K1 benchmarks and the scalar corpus, the untrusted
+producer (`Fir.ShapeInfer`) and the checker (`Fir.Shape.check`), accept or first refusal per
+root, the trivial certificate and a refused mutant per closure, the native flow condition; and,
+at build time, the checker's path audited for the kernel-evaluable style. -/
+lean_exe «tests-fir-shape» where
+  root := `IxCCTests.Fir.ShapeMain
+
 /- The runtime lowering: `Rt.lower` from Cfg to
 Lir on k1.ixe, bench-k1 and generated programs against Cfg (related values,
 typed readback, traps, the clock relation, heap and natOverflow), the
