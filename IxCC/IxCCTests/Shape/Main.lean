@@ -276,12 +276,32 @@ def runRoot (label : String) (p : Src.Program) (i : Nat) (name : String) : IO Ou
         {match bodyOf p d with | some t => (showTerm ls t).take 700 | none => ""}"
   let ok := certOk p cert
   let t1 ← IO.monoMsNow
-  if ok then
-    let rootShape := match cert.insts.head? with
+  let rootInst := cert.insts.find? fun e => e.1 == c && e.2.1 == ([] : Levels)
+  if ok && rootInst.isSome then
+    let rootShape := match rootInst with
       | some e => e.2.2
       | none => .irr
     IO.println s!"accept, root shape {showShape rootShape} ({size}; {t1 - t0} ms)"
     return if viewedShape rootShape then .viewed else .unviewed
+  else if ok then
+    -- the producer pruned the root's own instance: say why it fails against what is left
+    let raw := (Produce.produceWith p c (doPrune := false)).1
+    match raw.insts.find? fun e => e.1 == c && e.2.1 == ([] : Levels) with
+    | some (d, ls, σ) =>
+      let (cls, det) := reason p cert d ls σ
+      IO.println s!"reject [root: {cls}] {det} ({size}; {t1 - t0} ms); the root's instance, \
+        shape {showShape σ}, does not check against the instances that do"
+      if (← IO.getEnv "SHAPE_DETAIL").isSome then
+        IO.println (detail p cert d ls)
+        -- every instance the pruning dropped, with why it fails against what is left
+        for (d', ls', σ') in raw.insts do
+          if !(cert.insts.contains (d', ls', σ')) then
+            let (cls', det') := reason p cert d' ls' σ'
+            IO.println s!"    pruned #{d'} {kindOf p d'} {(hex (p.addr d')).take 8} {ls'} : {(showShape σ').take 90}: [{cls'}] {det'.take 120}"
+      return .refused s!"root: {cls}"
+    | none =>
+      IO.println s!"reject [root instance missing] ({size}; {t1 - t0} ms)"
+      return .refused "root instance missing"
   else
     match cert.insts.find? fun e => !entryOk p cert e.1 e.2.1 e.2.2 with
     | some (d, ls, σ) =>
@@ -326,7 +346,7 @@ def closuresOf (dir : String) : IO (List (String × String × String)) := do
   let names := names.mergeSort fun a b => a ≤ b
   let mut out := []
   for n in names do
-    let stem := (n.dropRight 4)
+    let stem := String.ofList (n.toList.take (n.length - 4))
     let cands := [s!"{dir}/{stem}.equations.json", s!"{dir}/consumer.equations.json",
       s!"{dir}/equations.json"]
     let mut eqs := none

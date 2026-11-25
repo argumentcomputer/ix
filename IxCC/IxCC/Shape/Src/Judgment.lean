@@ -131,6 +131,14 @@ inductive HasShape (sig : Sig) (ls : Levels) : List Shape → Term → Shape →
   /-- a string literal: SrcEval makes it a `str` value, which nothing in the fragment reads (a
   string used as a projection subject or a major is stuck), so its shape is `any` -/
   | strLit {Γ : List Shape} {s : String} : HasShape sig ls Γ (.strLit s) .any
+  /-- a literal below a bound -/
+  | natLitLt {Γ : List Shape} {n b : Nat} : n < b → HasShape sig ls Γ (.natLit n) (.natLt b)
+  /-- a natural below a bound is a natural -/
+  | natLtNat {Γ : List Shape} {e : Term} {b : Nat} :
+      HasShape sig ls Γ e (.natLt b) → HasShape sig ls Γ e .nat
+  /-- a bound may be raised -/
+  | natLtLe {Γ : List Shape} {e : Term} {b b' : Nat} :
+      HasShape sig ls Γ e (.natLt b) → b ≤ b' → HasShape sig ls Γ e (.natLt b')
   | sort {Γ : List Shape} {u : Ixon.Univ} : HasShape sig ls Γ (.sort u) .irr
   | pi {Γ : List Shape} {b : Binder} {d c : Term} : HasShape sig ls Γ (.pi b d c) .irr
   | const {Γ : List Shape} {c : CId} {us : List Ixon.Univ} {σ : Shape} :
@@ -268,6 +276,12 @@ inductive HeadOk (p : Program) (sig : Sig) : Head → Levels → List Shape → 
   | ctor (c : CId) (ls : Levels) (d : Nat) (D : DataDecl) (j : Nat) (ps fl : List Shape) :
       sig.datas d = some D → D.ctors[j]? = some (c, fl) → ps.length = D.params.length →
       ls = D.ls → HeadOk p sig (.ctor c) ls (ps ++ fl) (.data d)
+  /-- F1 at the tower constructor of a width, at the width's entry: the value is a word, since
+  the entry's fields carry the range (`SigOk.wordsRange`) -/
+  | ctorWord (c : CId) (ls : Levels) (d : Nat) (D : DataDecl) (j : Nat) (ps fl : List Shape)
+      (w : Width) :
+      sig.datas d = some D → D.ctors[j]? = some (c, fl) → ps.length = D.params.length →
+      ls = D.ls → sig.words w = some d → HeadOk p sig (.ctor c) ls (ps ++ fl) (.word w)
   /-- F1 at a constructor whose value nobody inspects (a `String` built where strings have
   shape `any`): its fields are forced, of any shapes, and the result is a value -/
   | ctorAny (c : CId) (ls : Levels) (s : Bool) (lv : Nat) (ind : CId) (cidx np nf : Nat) (ty : Term)
@@ -321,6 +335,8 @@ inductive ValOk (p : Program) (sig : Sig) : Value → Shape → Prop
       sig.datas d = some D → D.ctors[j]? = some (c, fl) → ps.length = D.params.length →
       ValsOk p sig fs fl → ls = D.ls → ValOk p sig (.con c ls ps fs) (.data d)
   | irr {t : Option Term} {ρ : List Slot} {ls : Levels} : ValOk p sig (.irr t ρ ls) .irr
+  /-- a literal below a bound -/
+  | natLt {n b : Nat} : n < b → ValOk p sig (.lit n) (.natLt b)
   /-- a word: a tower F6w reads (its number below the width's size) that is a value of the
   width's tower entry -/
   | word {v : Value} {w : Width} {n d : Nat} :
@@ -431,6 +447,9 @@ structure SigOk (p : Program) (sig : Sig) : Prop where
   the entry -/
   words : ∀ w d, sig.words w = some d → ∀ n, n < w.size →
     ∃ v, p.mkWord? w n = some v ∧ p.asWord? w v = some n ∧ ValOk p sig v (.data d)
+  /-- every value of a width's entry is a word of the width: the entry's `Fin` field is a natural
+  below the size, so a tower F1 builds there is in range -/
+  wordsRange : ∀ w d v, sig.words w = some d → ValOk p sig v (.data d) → ∃ n, p.asWord? w v = some n
 
 /-! ## Small facts -/
 
@@ -790,6 +809,16 @@ theorem ValOk.inter_inv {v : Value} {a b : Shape} (h : ValOk p sig v (.inter a b
     | nil => exact absurd rfl hrest
     | cons a r => simp [arrows] at hσ
 
+/-- Canonical forms below a bound: a literal below it. -/
+theorem ValOk.natLt_inv {v : Value} {b : Nat} (h : ValOk p sig v (.natLt b)) :
+    ∃ n, v = .lit n ∧ n < b := by
+  cases h with
+  | natLt hn => exact ⟨_, rfl, hn⟩
+  | pap h ls args σs done rest τ σ hh hσs hargs hrest hσ =>
+    cases rest with
+    | nil => exact absurd rfl hrest
+    | cons a r => simp [arrows] at hσ
+
 /-- Canonical forms at a word: the tower F6w reads, and a value of the width's entry. -/
 theorem ValOk.word_inv {v : Value} {w : Width} (h : ValOk p sig v (.word w)) :
     ∃ n d, p.asWord? w v = some n ∧ sig.words w = some d ∧ ValOk p sig v (.data d) := by
@@ -856,6 +885,9 @@ theorem HeadOk.arity (hsig : SigOk p sig) {h : Head} {ls : Levels} {σs : List S
     simp [Program.headArity, hdecl, hps]
   | ctorAny c ls s lv ind cidx np nf ty σs hdecl hz hs hlen =>
     simp [Program.headArity, hdecl, hlen]
+  | ctorWord c ls d D j ps fl w hD hc hps hls hw =>
+    obtain ⟨s, lv, ty, hdecl, -, -⟩ := hsig.datas _ _ hD j c fl hc
+    simp [Program.headArity, hdecl, hps]
   | cases c r ls ps σ ind flds τ s kk lv nmot rules ty hres hdecl hkind hscrut =>
     simp [Program.headArity, hres, hdecl] <;> omega
   | casesSub c r ls ps idx maj τ s kk lv nmot ind rules ty w srcs hres hdecl hkind hlt =>
@@ -1171,6 +1203,24 @@ theorem allOk (hsig : SigOk p sig) : ∀ k, AllOk p sig k := by
         refine .inr ⟨.con c ls (slots.take ps.length) vs, ?_, .data hD hc hpl hok hls⟩
         show ctorResult p c ls (slots.take ps.length) vs = _
         simp [ctorResult, hz, hs]
+    | ctorWord c ls d D j ps fl w hD hc hps hls hw =>
+      obtain ⟨s, lv, ty, hdecl, hz, hs⟩ := hsig.datas _ _ hD j c fl hc
+      rw [fire_ctor, hdecl, ← hps]
+      show ResOk p sig (.word w) ((forceAll p k (slots.drop ps.length)).bind
+        (ctorResult p c ls (slots.take ps.length)))
+      have hfl := EnvOk.drop _ _ hslots
+      have hpl : (slots.take ps.length).length = D.params.length :=
+        (EnvOk.length _ _ (EnvOk.take _ _ hslots)).trans hps
+      rcases forceAll_ok hslot _ _ hfl with hto | ⟨vs, hvs, hok⟩
+      · rw [hto]
+        exact .inl rfl
+      · rw [hvs]
+        have hvd : ValOk p sig (.con c ls (slots.take ps.length) vs) (.data d) :=
+          .data hD hc hpl hok hls
+        obtain ⟨n, hn⟩ := hsig.wordsRange w d _ hw hvd
+        refine .inr ⟨.con c ls (slots.take ps.length) vs, ?_, .word hn hw hvd⟩
+        show ctorResult p c ls (slots.take ps.length) vs = _
+        simp [ctorResult, hz, hs]
     | ctorAny c ls s lv ind cidx np nf ty σs hdecl hz hs hlen =>
       rw [fire_ctor, hdecl]
       show ResOk p sig .any ((forceAll p k (slots.drop np)).bind (ctorResult p c ls (slots.take np)))
@@ -1444,6 +1494,22 @@ theorem allOk (hsig : SigOk p sig) : ∀ k, AllOk p sig k := by
       intro _
       rw [eval_strLit]
       exact .inr ⟨_, rfl, .any⟩
+    | natLitLt hlt =>
+      intro _
+      rw [eval_natLit]
+      exact .inr ⟨_, rfl, .natLt hlt⟩
+    | natLtNat _ ih =>
+      intro hρ
+      rcases ih ρ hρ with h1 | ⟨v, h1, hv⟩
+      · exact .inl h1
+      · obtain ⟨n, rfl, -⟩ := hv.natLt_inv
+        exact .inr ⟨_, h1, .lit⟩
+    | natLtLe _ hle ih =>
+      intro hρ
+      rcases ih ρ hρ with h1 | ⟨v, h1, hv⟩
+      · exact .inl h1
+      · obtain ⟨n, rfl, hn⟩ := hv.natLt_inv
+        exact .inr ⟨_, h1, .natLt (Nat.lt_of_lt_of_le hn hle)⟩
     | sort =>
       intro _
       rw [eval_sort]

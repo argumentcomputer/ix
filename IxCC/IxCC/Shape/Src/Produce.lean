@@ -103,6 +103,8 @@ structure St where
   words : List (Width × Nat × Nat × Nat) := []
   /-- the types of string literals met as arguments (found by a first run): their shape is `any` -/
   strTys : List CId := []
+  /-- per width, the generic entries of its tower (shared by every width) beside the ranged ones -/
+  generic : List (Width × Nat × Nat × Nat) := []
 
 abbrev M := StateM St
 
@@ -156,11 +158,25 @@ def recordWord (w : Width) (tv : TV) : M Unit := do
     match s.datas[d]? with
     | some D =>
       match D.ctors with
-      | [(_, [.data dB])] =>
+      | [(uc, [.data dB])] =>
         match s.datas[dB]? with
         | some DB =>
           match DB.ctors with
-          | [(_, [.data dF])] => set { s with words := s.words ++ [(w, d, dB, dF)] }
+          | [(bvc, [.data dF])] =>
+            match s.datas[dF]? with
+            | some DF =>
+              match DF.ctors with
+              | [(finc, _)] =>
+                -- the ranged copies: the `Fin` field a natural below the size, per width
+                let n := s.datas.length
+                let rF : DataDecl := { DF with ctors := [(finc, [.natLt w.size, .irr])] }
+                let rB : DataDecl := { DB with ctors := [(bvc, [.data n])] }
+                let rU : DataDecl := { D with ctors := [(uc, [.data (n + 1)])] }
+                set { s with datas := s.datas ++ [rF, rB, rU]
+                             words := s.words ++ [(w, n + 2, n + 1, n)]
+                             generic := s.generic ++ [(w, d, dB, dF)] }
+              | _ => pure ()
+            | none => pure ()
           | _ => pure ()
         | none => pure ()
       | _ => pure ()
@@ -491,9 +507,96 @@ def interOf : List Shape → Shape
   | [σ] => σ
   | σ :: rest => .inter σ (interOf rest)
 
+/-! ## Ranged variants of the instances that build towers, and pruning
+
+A tower built by F1 is a word only at a width's ranged entries (`Fin` field a natural below the
+size), and its number is below the size only when it comes from a literal or from a parameter of
+such a range. So for every instance that mentions a width's generic tower entries, or that takes
+a natural and returns something holding a word (`Char`), the producer adds a variant at the
+ranged entries with its natural parameters below the size. It cannot tell which of the generic
+and the ranged instances check, so it keeps those `entryOk` accepts, repeatedly (`prune`): the
+decision then sees only instances that check. Nothing here is trusted. -/
+
+/-- A shape with entries renamed by `m` and the `nat` domain at position `sel` (if any) read as a
+natural below `S`. -/
+def rangeShape (m : List (Nat × Nat)) (S : Nat) : Option Nat → Shape → Shape
+  | sel, .fn a b =>
+    .fn (if sel == some 0 && a == .nat then .natLt S else rangeShape m S none a)
+      (rangeShape m S (sel.bind fun i => if i == 0 then none else some (i - 1)) b)
+  | _, .data d =>
+    match m.lookup d with
+    | some r => .data r
+    | none => .data d
+  | _, .inter a b => .inter (rangeShape m S none a) (rangeShape m S none b)
+  | _, σ => σ
+
+/-- Does the shape name one of the entries? -/
+def mentions (ds : List Nat) : Shape → Bool
+  | .data d => ds.contains d
+  | .fn a b => mentions ds a || mentions ds b
+  | .inter a b => mentions ds a || mentions ds b
+  | _ => false
+
+/-- Does the result of the shape hold a word (a word, or an entry with a word field)? -/
+def holdsWord (datas : List DataDecl) (σ : Shape) : Bool :=
+  match resAfter (argsAll σ).length σ with
+  | .word _ => true
+  | .data d =>
+    match datas[d]? with
+    | some D => D.ctors.any fun k => k.2.any fun f => match f with | .word _ => true | _ => false
+    | none => false
+  | _ => false
+
+/-- The ranged variants of the instances, per width. -/
+def variants (p : Program) (datas : List DataDecl) (words generic : List (Width × Nat × Nat × Nat))
+    (insts : List (CId × Levels × Shape)) : List (CId × Levels × Shape) :=
+  insts.flatMap fun e =>
+    (words.zip generic).flatMap fun (r, g) =>
+      let w := r.1
+      let gs := [g.2.1, g.2.2.1, g.2.2.2]
+      let m := [(g.2.1, r.2.1), (g.2.2.1, r.2.2.1), (g.2.2.2, r.2.2.2)]
+      let σ := e.2.2
+      let res := resAfter (argsAll σ).length σ
+      let isCtor := match p.table.resolveOf e.1, p.decl? e.1 with
+        | none, some (.ctor ..) => true
+        | _, _ => false
+      let isPrim := match p.table.resolveOf e.1 with
+        | some (.word ..) | some (.prim _) => true
+        | _ => false
+      let σ' :=
+        if isCtor then
+          if res == .word w && p.wordCtor? w == some e.1 then
+            [arrows ((argsAll σ).map (rangeShape m 0 none)) res]
+          else if mentions [g.2.2.1, g.2.2.2] res then
+            [refix p datas e.1 (rangeShape m 0 none σ)]
+          else []
+        else if isPrim then []
+        else if mentions gs σ || ((argsAll σ).contains .nat && holdsWord datas σ) then
+          -- the entries renamed, and one variant per `nat` parameter read as below the size
+          rangeShape m 0 none σ ::
+            ((argsAll σ).zipIdx.filterMap fun (a, i) =>
+              if a == .nat then some (rangeShape m w.size (some i) σ) else none)
+        else []
+      (σ'.filter (· != σ)).map fun τ => (e.1, e.2.1, τ)
+
+/-- Keep the instances the decision accepts, until none is dropped (at most `n` rounds). -/
+def prune (p : Program) : Nat → Cert → Cert
+  | 0, c => c
+  | n + 1, c =>
+    let keep := c.insts.filter fun e => entryOk p c e.1 e.2.1 e.2.2
+    if keep.length == c.insts.length then c else prune p n { c with insts := keep }
+
+/-- The certificate with the ranged variants, pruned; as it is where no width is met. -/
+def withRanges (p : Program) (s : St) (c : Cert) (doPrune : Bool := true) : Cert :=
+  if s.words.isEmpty then c
+  else
+    let c' := { c with insts := (c.insts ++ variants p c.datas s.words s.generic c.insts).eraseDups }
+    if doPrune then prune p 24 c' else c'
+
 /-- **The proposed certificate** for the root constants `roots` of `p`, and, for each
 field taken from its uses, its entry, its index and the number of shapes it is used at. -/
-def produceAllWith (p : Program) (roots : List CId) (fuel : Nat := 400) (steps : Nat := 20000) :
+def produceAllWith (p : Program) (roots : List CId) (fuel : Nat := 400) (steps : Nat := 20000)
+    (doPrune : Bool := true) :
     Cert × List (Nat × Nat × Nat) :=
   let m : M Unit := do
     roots.forM fun root => do
@@ -508,12 +611,12 @@ def produceAllWith (p : Program) (roots : List CId) (fuel : Nat := 400) (steps :
         (k.1, k.2.zipIdx.map fun f =>
           if s.polys.contains (e.2, f.2) then interOf (usesOf e.2 f.2) else f.1) }
   let insts := (s.insts.map fun e => (e.1, e.2.1, refix p datas e.1 e.2.2)).eraseDups
-  ({ insts, enums := s.enums, datas, lets := s.lets, words := s.words }, s.polys.map fun x => (x.1, x.2, (usesOf x.1 x.2).length))
+  (withRanges p s { insts, enums := s.enums, datas, lets := s.lets, words := s.words } doPrune, s.polys.map fun x => (x.1, x.2, (usesOf x.1 x.2).length))
 
 /-- The certificate for one root, with the use counts. -/
-def produceWith (p : Program) (root : CId) (fuel : Nat := 400) (steps : Nat := 20000) :
-    Cert × List (Nat × Nat × Nat) :=
-  produceAllWith p [root] fuel steps
+def produceWith (p : Program) (root : CId) (fuel : Nat := 400) (steps : Nat := 20000)
+    (doPrune : Bool := true) : Cert × List (Nat × Nat × Nat) :=
+  produceAllWith p [root] fuel steps doPrune
 
 /-- **The proposed certificate** for root constant `root` of `p`. -/
 def produce (p : Program) (root : CId) (fuel : Nat := 400) (steps : Nat := 20000) : Cert :=
@@ -585,6 +688,6 @@ def propose (p : Program) (roots : List CId) (lim : Limits := {}) : Except Decli
           (k.1, k.2.zipIdx.map fun f =>
             if s.polys.contains (e.2, f.2) then interOf (usesOf e.2 f.2) else f.1) }
     let insts := (s.insts.map fun e => (e.1, e.2.1, refix p datas e.1 e.2.2)).eraseDups
-    .ok { insts, enums := s.enums, datas, lets := s.lets, words := s.words }
+    .ok (withRanges p s { insts, enums := s.enums, datas, lets := s.lets, words := s.words })
 
 end IxCC.SrcShape.Produce
