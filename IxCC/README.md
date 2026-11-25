@@ -75,6 +75,19 @@ program parses its arguments and renders its output in Lean compiled with it
 and effects are planned in stages
 ([standalone executables](docs/standalone-executables-design.md)).
 
+**What the command line covers.** `ixcc compile` writes only what its
+certificate replay has verified, all outputs together or none (a failed run
+removes the files it would have replaced), and exits 1 for a declined program,
+2 for a usage error, 3 for a certificate or artifact that failed a check and
+4 for an internal error. `--exe --embed-cert` writes an executable only once
+`verify-exe`'s verifier accepts it; `ixcc verify-exe FILE --expect-target ADDR
+--expect-env ADDR` checks that the claim is for that target and environment.
+Two experimental modes are not covered by certificate replay and must be asked
+for as such: `ixcc compile --uncertified --opt` (the replayed object rebuilt by
+the Lir SSA optimizer) and `ixcc compile --uncertified --bignat` (arbitrary-
+precision `Nat` and arrays, no certificate at all); their objects' provenance
+notes say so ([the command line](docs/compiler-design.md#the-command-line-fails-closed)).
+
 The [roadmap](docs/roadmap.md) states the fragment exactly, plans the way to
 end-to-end certification for both back ends, and keeps the decision register.
 Main includes:

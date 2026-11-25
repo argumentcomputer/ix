@@ -468,7 +468,7 @@ soon as it passes one of these fixed budgets
 | `Specialize.maxWork` | the work charged for the call sites a specialisation step examines | 67,108,864 | 5,028,389 | 13× |
 | `Specialize.maxNodes` | the nodes of the specialisations those sites may build | 1,048,576 | 3,316 | 316× |
 | `Anf.maxCapturedWork` | the captured tokens a plain-RC ownership certificate makes the ownership checker take (`Own.Plain.Certificate.capturedWork`: at each jump the target join's captured list, at each join declaration its own), at certificate admission, before the checker runs | 1,048,576 | 1,925 (`Machines.fibMain`, canonical placement; heap stage 2's survey, not `tests-corpus`'s); the test input `fixtures/rc/budget` sits at the boundary: `fanUnder` 1,044,352 (admitted; its plain-RC certificate is within the text limits, nesting 410 and 51,379,451 bytes (54,727,677 before 2026-11-13's `succBle` rule), since its roots call the fan functions in parts of two: in four parts it nested 2,208 deep and `check-cert` refused it), `fanOver` 1,049,600 (refused) | 545× |
-| `Anf.maxParamTotal` | the parameters of a program's functions and of the join points their bodies declare (`Own.Plain.Certificate.paramTotal`), which cost no Anf node, while the source-domain check and the ownership checker walk each one; checked first at plain-RC certificate admission, before the certificate is decoded, and in `Recheck.runWithContracts` before its domain check (one run of the check takes under a second at the limit, the plain-RC verifier's steps from Fir about 4.7 s). Past it, `--rc on`, and `check-cert` or `--cert` with a plain-RC certificate, refuse with `cert: own.plain: own.cert.params: …` (the total and the limit), exit 1, no object; `--rc auto` compiles under the immortal policy and prints that reason on its `rc policy:` line; `--rc off` and a zero-RC certificate are not affected (the immortal route runs no domain check). The producer is not expected to reach it from an artifact (an argument from the code, not a proof: [roadmap, "Hardening"](roadmap.md#hardening)), so only a certificate made by hand, one that skips the `prune` step, gets past the other limits with more. It does not bound the relevance check against the canonical annotator (Stage A, which runs on the source first; linear in the parameters since 2026-11-13, about 2 s at the limit), the plain-RC back end's per-function term (`Xv.Validate`, no pass over the whole state at a call since 2026-11-13; its parameters' distinctness check and the per-edge binding stay superlinear), the layout's function-count term (`Backend.lay`, linear in the functions and call sites since 2026-11-13) or the RC policy selection (linear in the function count since 2026-11-13); each is measured in the roadmap | 1,048,576 | 240 (`Closures.stateLoop`; the benchmark closures 386, `const_fold`; heap stage 2's survey, not `tests-corpus`'s) | 4,369× (2,716× over the benchmark closures) |
+| `Anf.maxParamTotal` | the parameters of a program's functions and of the join points their bodies declare (`Own.Plain.Certificate.paramTotal`), which cost no Anf node, while the source-domain check and the ownership checker walk each one; checked first at plain-RC certificate admission, before the certificate is decoded, and in `Recheck.runWithContracts` before its domain check (one run of the check takes under a second at the limit, the plain-RC verifier's steps from Fir about 4.7 s). Past it, `--rc on`, and `check-cert` or `--cert` with a plain-RC certificate, refuse with `cert: own.plain: own.cert.params: …` (the total and the limit), no object (exit 1 for `--rc on`, a decline; exit 3 for a given certificate, a rejection); `--rc auto` compiles under the immortal policy and prints that reason on its `rc policy:` line; `--rc off` and a zero-RC certificate are not affected (the immortal route runs no domain check). The producer is not expected to reach it from an artifact (an argument from the code, not a proof: [roadmap, "Hardening"](roadmap.md#hardening)), so only a certificate made by hand, one that skips the `prune` step, gets past the other limits with more. It does not bound the relevance check against the canonical annotator (Stage A, which runs on the source first; linear in the parameters since 2026-11-13, about 2 s at the limit), the plain-RC back end's per-function term (`Xv.Validate`, no pass over the whole state at a call since 2026-11-13; its parameters' distinctness check and the per-edge binding stay superlinear), the layout's function-count term (`Backend.lay`, linear in the functions and call sites since 2026-11-13) or the RC policy selection (linear in the function count since 2026-11-13); each is measured in the roadmap | 1,048,576 | 240 (`Closures.stateLoop`; the benchmark closures 386, `const_fold`; heap stage 2's survey, not `tests-corpus`'s) | 4,369× (2,716× over the benchmark closures) |
 
 The committed values are `tests-corpus`'s survey of every committed program
 (188 measured, 2026-11-25), which also checks every walk against the visit
@@ -1323,6 +1323,67 @@ rest).
   in Lean compiled with it (`lib/IxccExe.lean`). The region is a segment of its
   own; the session theorem is proved over the linked-object model
   ([design](standalone-executables-design.md#x2-as-implemented)).
+
+## The command line fails closed
+
+`ixcc` (`IxCC/IxCC/Cli.lean`, whose module comment is the reference) tells its
+modes apart and writes nothing it has not checked:
+
+- **Modes no certificate replay covers.** `ixcc compile --uncertified --opt`
+  replays the certificate, then rebuilds the object from the replayed Lir with
+  `Backend.compileOpt`; `ixcc compile --uncertified --bignat [--bignat-lib FILE]`
+  produces and checks no certificate (it lowers through
+  `Rt.BigNat.lowerRepBig`, with a BigNat library from `--bignat-lib`,
+  `IX_BIGNAT_LIB`, or frozen by an external `ix`). Without `--uncertified`
+  either flag is a usage error naming what is not covered. With it the run
+  prints one line on standard error, and the object's provenance note
+  (`Recheck.uncertifiedProvenance`; the executable `--exe` writes carries the
+  same note) sets the top bit of its pass-policy word:
+
+  | Mode | Lowering word | Pass-policy word | Note's last eight bytes |
+  | --- | --- | --- | --- |
+  | certified, zero RC (`--rc off`, `auto`) | 1 | 1 | `01 00 00 00 01 00 00 00` |
+  | certified, plain RC (`--rc on`, `auto`) | 3 | 1 | `03 00 00 00 01 00 00 00` |
+  | `--uncertified --opt` | 1 or 3 (the replay's) | `0x80000002` | `01 00 00 00 02 00 00 80` (or `03 …`) |
+  | `--uncertified --bignat` | 4 | `0x80000001` | `04 00 00 00 01 00 00 80` |
+  | `--uncertified --bignat --opt` | 4 | `0x80000002` | `04 00 00 00 02 00 00 80` |
+
+  Neither mode checks definition assertions (`@[no_alloc]`, `@[no_rc]`,
+  `@[bounded_stack]`) on what it writes, so each declines a program that
+  carries any (`assert.uncertified`), and neither combines with `--cert`,
+  `--emit-cert` or `--embed-cert`. The separate `--bignat` route is to be
+  retired in favour of one certified pipeline.
+- **All or nothing.** A run computes the object, the executable, the
+  certificate text and the signatures first, then writes them to temporary
+  files and renames them into place; a run that fails writes none and removes
+  the files its `-o`, `--exe`, `--emit-cert` and `--signatures` name, so no
+  stale or partial output survives a failure. No two outputs may name one
+  file, and no output an input.
+- **Exit statuses.** 0 success; 1 declined (the program is outside what the
+  compiler accepts); 2 a usage error (a malformed command line, or a file or
+  root it names that cannot be used); 3 rejected (a certificate or an
+  artifact failed a check: `check-cert`'s verifier on any certificate text,
+  `--embed-cert`'s checks, `verify-exe`); 4 an internal error; 6 declined by a
+  kernel limit.
+- **`--embed-cert`** runs the executable verifier (`Exe.Cert.verifyExeBytes`,
+  what `verify-exe` runs) on the bytes it is about to write and writes nothing
+  unless it accepts them; the policy its claim binds comes from
+  `Exe.Cert.policyOfArtifact`, whose contract recheck refusing is a
+  rejection, not a weaker `immortal` label. (Before 2026-11-24 it wrote, for
+  example, `Scalar.factorial`'s and `sum-loop`'s executables, which
+  `verify-exe` rejects at its KF-4 seed-closure check.)
+- **`verify-exe FILE [--expect-target ADDR] [--expect-env ADDR]`** prints the
+  claim's target, policy and arity, then its environment root and role table;
+  each `--expect-*` rejects an executable whose claim names another, so a
+  "verified" can be one for this target in this environment.
+- **The array analyses** of the `--bignat` lowering (`Rt.LowerRep`:
+  liveness, taint, parameter flags), which decide where an array is
+  protected before an in-place update, run to their fixpoints within bounds
+  that suffice (every round only adds elements of a finite universe the
+  program fixes: `|blocks| · |variables read| + 2`, `|variables read| + 1`,
+  `Σ |parameters| + 1` rounds); a bound reached without convergence refuses
+  the program (`rt.internal`, exit 4) rather than lowering on a partial
+  result. They ran fixed round counts before (32, 12 and 16 at most).
 
 ## Bootstrap and trust
 

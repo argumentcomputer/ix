@@ -59,6 +59,39 @@ Phase 1 pipeline (lowering version 1) under its default pass policy
 (version 1). -/
 def defaultProvenance (root : Ixon.Address) : X86.ELF.Provenance := .ixir1Policy root 1 1
 
+/-! ## Provenance of an object no certificate replay covers
+
+An `ixir1Policy` provenance note ends in two little-endian 32-bit words, the lowering version and
+the pass-policy version (`X86.ELF.Provenance.bytes`). Every object the certified routes write has
+pass policy 1 and lowering 1 (zero RC, `defaultProvenance`) or 3 (plain RC). An object `ixcc
+compile --uncertified` writes, which no certificate replay covers, has the top bit of its
+pass-policy word set (`uncertifiedPolicyBit`), so a consumer of the file can tell it apart from
+the note alone: with `--opt` its pass policy is 2 (`optPassPolicy`: the Lir SSA optimizer and a
+back end run after the replay), on the replay's lowering (1 or 3); with `--bignat` its lowering is
+4 (`bigNatLowering`: no certificate at all), pass policy 1, or 2 with `--opt`. The certified
+routes' notes are unchanged. -/
+
+/-- The bit of the pass-policy word that marks an object no certificate replay covers. -/
+def uncertifiedPolicyBit : UInt32 := 0x80000000
+
+/-- The pass-policy version of an object built by `Backend.compileOpt` (`--opt`). -/
+def optPassPolicy : UInt32 := 2
+
+/-- The lowering version of an object built by `Rt.BigNat.lowerRepBig` (`--bignat`). -/
+def bigNatLowering : UInt32 := 4
+
+/-- The provenance of an uncertified object compiled from the root at `root`: lowering
+`lowering`, pass policy `passPolicy` with `uncertifiedPolicyBit` set. -/
+def uncertifiedProvenance (root : Ixon.Address) (lowering passPolicy : UInt32) :
+    X86.ELF.Provenance :=
+  .ixir1Policy root lowering (passPolicy ||| uncertifiedPolicyBit)
+
+/-- Whether a provenance says the object is covered by certificate replay (its pass-policy word
+without `uncertifiedPolicyBit`). -/
+def provenanceCovered : X86.ELF.Provenance → Bool
+  | .ixir1Policy _ _ passPolicy => passPolicy &&& uncertifiedPolicyBit == 0
+  | .ixir2 _ => true
+
 /-- The certificate: untrusted, linear in the program's size. -/
 structure Cert where
   table : Src.Table.TableCert := {}

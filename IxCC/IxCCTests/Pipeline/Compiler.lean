@@ -25,6 +25,8 @@ certificate's serialisation, and the declines.
   `Alloc.run`, `Backend.emit`; `IxCCTests.Rt.Machine.compile`).
 * **Round trips**: the certificate's JSON parses back to a certificate with
   the same JSON, and `run` on it makes the same object.
+* **Failing closed** (`failClosed`): the uncertified modes, outputs all or nothing, the exit
+  statuses, `--embed-cert`'s executable verifier and `verify-exe`'s `--expect-*`.
 * **Declines**: the fallback route (a sidecar without equations), declined
   at `fir` with `fir.closures` before the closures step, compiles; a root
   with six parameters with
@@ -265,17 +267,17 @@ def autoHintsCommandLine (a : Assert) (t : Tools) : IO (Array String) := do
   expectEq a c2 0 s!"named fib default root: exit code ({o2})"
   expect a ((← IO.FS.readBinFile namedObj2) == (← IO.FS.readBinFile (t.work / "fib.o")))
     "named fib default root: object differs from --equations"
-  -- 5. --opt without --equations -> byte-identical to --equations --opt
+  -- 5. --uncertified --opt without --equations -> byte-identical to --equations --uncertified --opt
   let fibOptEq := t.work / "fib.opt.eq.o"
   let fibOptAuto := t.work / "fib.opt.auto.o"
   let (cOptEq, _) ← cliCapture t ["compile", (benchIxe "fib").toString, "--equations", (benchEqs "fib").toString,
-    "--root", "entry", "--opt", "-o", fibOptEq.toString]
-  expectEq a cOptEq 0 "fib --opt with --equations"
+    "--root", "entry", "--uncertified", "--opt", "-o", fibOptEq.toString]
+  expectEq a cOptEq 0 "fib --uncertified --opt with --equations"
   let (cOptAuto, _) ← cliCapture t ["compile", (benchIxe "fib").toString,
-    "--root", s!"entry={fibAddr}", "--opt", "-o", fibOptAuto.toString]
-  expectEq a cOptAuto 0 "fib --opt auto-hints"
+    "--root", s!"entry={fibAddr}", "--uncertified", "--opt", "-o", fibOptAuto.toString]
+  expectEq a cOptAuto 0 "fib --uncertified --opt auto-hints"
   expect a ((← IO.FS.readBinFile fibOptAuto) == (← IO.FS.readBinFile fibOptEq))
-    "fib --opt auto-hints: object differs from --equations --opt"
+    "fib --uncertified --opt auto-hints: object differs from --equations --uncertified --opt"
   -- 6. --rc on and --rc auto without --equations on reverseList -> byte-identical to --equations
   let rcIxe := "fixtures/rc/real-source/anonymous.ixe"
   let rcEqs := "fixtures/rc/real-source/consumer.equations.json"
@@ -312,8 +314,9 @@ def autoHintsCommandLine (a : Assert) (t : Tools) : IO (Array String) := do
     ("anon no root", ["compile", (benchIxe "fib").toString, "-o", (t.work / "bad5.o").toString])
   ] do
     let (badCode, _) ← cliCapture t args
-    expectEq a badCode 1 s!"auto-hints negative ({lbl}) should exit 1"
-  out := out.push "auto-hints CLI: byte-identical .o on all 5 bench-k1 + k1.ixe + --opt + --rc on/auto + named .ixe (explicit/default) + bare hex (cx_root0) + --exe --embed-cert/verify-exe + 5 negative controls"
+    -- each `--root` names nothing in the closure (`cli.root`): a usage error
+    expectEq a badCode 2 s!"auto-hints negative ({lbl}) should exit 2"
+  out := out.push "auto-hints CLI: byte-identical .o on all 5 bench-k1 + k1.ixe + --uncertified --opt + --rc on/auto + named .ixe (explicit/default) + bare hex (cx_root0) + --exe --embed-cert/verify-exe + 5 negative controls (exit 2)"
   return out
 
 /-- Every bench-k1 closure, and `k1.ixe` with its five roots; each compile
@@ -706,6 +709,239 @@ def declines (a : Assert) (t : Tools) : IO (Array String) := do
   expectEq a code 2 "a usage error's exit code"
   return out
 
+/-! ## Failing closed -/
+
+/-- `needle` occurs in `hay`. -/
+private def hasBytes (hay needle : ByteArray) : Bool := Id.run do
+  if needle.size == 0 then return true
+  if hay.size < needle.size then return false
+  for i in [0:hay.size - needle.size + 1] do
+    if (hay.extract i (i + needle.size)) == needle then return true
+  return false
+
+/-- An object's provenance note: its descriptor and its lowering and pass-policy words. -/
+private def notePolicy (object : ByteArray) : Option (ByteArray × Nat × Nat) := do
+  let v ← IxCC.X86.ELFRead.parse object
+  match v.provenance with
+  | .ixir1Policy _ lowering passPolicy => some (v.note.descriptor, lowering, passPolicy)
+  | .ixir2 _ => none
+
+/-- The two-constructor enumeration program of `Hostile.enumEnv` (`main : Bool := idc true`), its
+`main` asserting `@[no_alloc]`: the closure's bytes and sidecar. -/
+def assertsCase : IO (ByteArray × Lean.Json) := do
+  let b := IxCCTests.Recheck.Hostile.base (← IxCCTests.Support.Bound.loadBase) 2
+  let asserted : IxCC.Ixon.V3.ConstantInfo :=
+    .defn { kind := .defn, safety := .safe, asserts := { alloc := .noAlloc }, lvls := 0
+            typ := IxCCTests.Recheck.Hostile.enumC, value := .app (.ref 1 #[]) (.ref 2 #[]) }
+  let (e, main) := IxCCTests.IxonV3.Builder.store b.env
+    ⟨asserted, #[], #[b.enumI, b.idc, b.ctors[1]!], #[], #[]⟩
+  pure (IxCCTests.Recheck.Hostile.bytes e, IxCCTests.Recheck.Hostile.sidecar [("main", main)])
+
+/-- `ixcc` failing closed, in process (or the binary with `--bin`):
+* **uncertified modes**: `--opt`, `--bignat` (with or without `--opt`) refused without
+  `--uncertified` (exit 2, naming what is not covered), `--uncertified` alone refused; with it,
+  one line on standard error, and the object's provenance note marked (pass-policy word
+  `0x80000002` on lowering 1; the certified object's `(1, 1)`), the executable carrying the same
+  note; a program with a definition assertion compiles certified and is declined (exit 1,
+  `assert.uncertified`) under `--uncertified --opt` and `--uncertified --bignat`;
+* **all or nothing, exit statuses**: a run declined after the object was computed (`--machine`
+  on a one-parameter root), a usage error (a missing closure, `--root` naming nothing) and a
+  rejection (another program's certificate, `check-cert` and `compile --cert`) each write nothing
+  and remove the stale outputs they would have replaced; two outputs naming one file, or an output
+  naming an input, are usage errors that leave the input intact; the outcome of each code
+  (`Cli.classify`) and the exit statuses the usage text lists;
+* **`--embed-cert`**: `Scalar.factorial`, whose executable `verify-exe` rejects (KF-4), is
+  rejected (exit 3) and nothing written; `fib`'s is verified and prints its claim; the policy
+  recheck refusing is an error, not `immortal`; a verifier refusing the bytes is a rejection;
+* **`verify-exe`**: prints the environment root; `--expect-target` and `--expect-env` accept the
+  claim's own and reject (exit 3) others; malformed addresses, or the flags on `compile`, are
+  usage errors. -/
+def failClosed (a : Assert) (t : Tools) : IO (Array String) := do
+  let w := t.work / "failclosed"
+  IO.FS.createDirAll w
+  let has := fun (s needle : String) => (s.splitOn needle).length > 1
+  let fibIxe := (benchIxe "fib").toString
+  let fibEqs := (benchEqs "fib").toString
+  let fib := [fibIxe, "--equations", fibEqs, "--root", "entry"]
+  let stale := fun (fs : List FilePath) => fs.forM fun f => IO.FS.writeFile f "stale"
+  let noneLeft := fun (label : String) (fs : List FilePath) => fs.forM fun f => do
+    expect a (!(← f.pathExists)) s!"{label}: {f} is left behind"
+  let mut out := #[]
+  -- A. the uncertified modes
+  for (flags, needle) in [(["--opt"], "--opt writes an object no certificate covers"),
+      (["--bignat"], "--bignat writes an object no certificate covers"),
+      (["--bignat", "--opt"], "--bignat writes an object no certificate covers"),
+      (["--uncertified"], "--uncertified applies to --opt and --bignat")] do
+    let obj := w / "refused.o"
+    let (code, msg) ← cliCapture t (["compile"] ++ fib ++ flags ++ ["-o", obj.toString])
+    expectEq a code 2 s!"{flags}: exit code"
+    expect a (has msg needle) s!"{flags}: the refusal does not say what is not covered: {msg}"
+    expect a (has msg "--uncertified") s!"{flags}: the refusal does not name --uncertified: {msg}"
+    noneLeft s!"{flags}" [obj]
+  let certObj := w / "fib.o"
+  let (code, msg) ← cliCapture t (["compile"] ++ fib ++ ["-o", certObj.toString])
+  expectEq a code 0 s!"fib: exit code ({msg})"
+  expect a (!has msg "uncertified") s!"fib: a certified compile printed an uncertified line: {msg}"
+  let optObj := w / "fib.uncertified-opt.o"
+  let optExe := w / "fib.uncertified-opt.exe"
+  let (code, msg) ← cliCapture t (["compile"] ++ fib ++ ["--uncertified", "--opt", "-o", optObj.toString,
+    "--exe", optExe.toString])
+  expectEq a code 0 s!"fib --uncertified --opt: exit code ({msg})"
+  let warn := (msg.splitOn "\n").filter (·.startsWith "ixcc: uncertified (--opt): ")
+  expectEq a warn.length 1 s!"fib --uncertified --opt: uncertified lines in {msg}"
+  expect a (warn.all (has · "not covered by certificate replay")) s!"fib --uncertified --opt: {warn}"
+  let certNote := notePolicy (← IO.FS.readBinFile certObj)
+  let optNote := notePolicy (← IO.FS.readBinFile optObj)
+  expect a (certNote.map (·.2) == some (1, 1)) s!"fib: the certified note's words are {certNote.map (·.2)}"
+  expect a (optNote.map (·.2) == some (1, 0x80000002))
+    s!"fib --uncertified --opt: the note's words are {optNote.map (·.2)}, not (1, 0x80000002)"
+  let exeBytes ← IO.FS.readBinFile optExe
+  match certNote, optNote with
+  | some (certDesc, _), some (optDesc, _) =>
+    expect a (hasBytes exeBytes optDesc && !hasBytes exeBytes certDesc)
+      "fib --uncertified --opt: the executable does not carry the uncertified note alone"
+    expectEq a (certDesc.size, (certDesc.extract 0 (certDesc.size - 8)) == optDesc.extract 0 (optDesc.size - 8))
+      (optDesc.size, true) "fib: the notes differ outside their policy words"
+  | _, _ => expect a false "fib: a note could not be read"
+  out := out.push "uncertified modes: --opt, --bignat, --bignat --opt refused without --uncertified (exit 2), \
+    --uncertified alone refused; with it one standard-error line, note words (1, 0x80000002) against \
+    the certified (1, 1), the executable carrying the same note"
+  -- a definition assertion: checked when certified, declined when uncertified
+  let (asBytes, asJson) ← assertsCase
+  let asIxe := w / "asserts.ixe"
+  let asEqs := w / "asserts.equations.json"
+  IO.FS.writeBinFile asIxe asBytes
+  IO.FS.writeFile asEqs asJson.pretty
+  let asserted := [asIxe.toString, "--equations", asEqs.toString]
+  let (code, msg) ← cliCapture t (["compile"] ++ asserted ++ ["-o", (w / "asserts.o").toString])
+  expectEq a code 0 s!"@[no_alloc] main: certified compile ({msg})"
+  for flags in [["--uncertified", "--opt"], ["--uncertified", "--bignat"]] do
+    let obj := w / "asserts.uncertified.o"
+    stale [obj]
+    let (code, msg) ← cliCapture t (["compile"] ++ asserted ++ flags ++ ["-o", obj.toString])
+    expectEq a code 1 s!"@[no_alloc] main {flags}: exit code ({msg})"
+    expect a (has msg "assert.uncertified") s!"@[no_alloc] main {flags}: {msg}"
+    noneLeft s!"@[no_alloc] main {flags}" [obj]
+  out := out.push "definition assertions: @[no_alloc] main compiles certified (checked); \
+    --uncertified --opt and --uncertified --bignat decline it (exit 1, assert.uncertified), nothing written"
+  -- B. all or nothing, and the exit statuses
+  let mOuts := [w / "m.o", w / "m.exe", w / "m.cert", w / "m.sig"]
+  stale mOuts
+  let (code, msg) ← cliCapture t (["compile"] ++ fib ++ ["-o", (w / "m.o").toString, "--exe", (w / "m.exe").toString,
+    "--machine", "--emit-cert", (w / "m.cert").toString, "--signatures", (w / "m.sig").toString])
+  expectEq a code 1 s!"fib --exe --machine (one parameter): exit code ({msg})"
+  noneLeft "declined after the object was computed" mOuts
+  let uOuts := [w / "u.o", w / "u.cert"]
+  stale uOuts
+  let (code, _) ← cliCapture t ["compile", (w / "missing.ixe").toString, "--equations", fibEqs,
+    "-o", (w / "u.o").toString, "--emit-cert", (w / "u.cert").toString]
+  expectEq a code 2 "a missing closure: exit code"
+  noneLeft "a missing closure" uOuts
+  stale uOuts
+  let (code, _) ← cliCapture t (["compile", fibIxe, "--equations", fibEqs, "--root", "nosuch",
+    "-o", (w / "u.o").toString, "--emit-cert", (w / "u.cert").toString])
+  expectEq a code 2 "--root naming no root: exit code"
+  noneLeft "--root naming no root" uOuts
+  let gcdCert := w / "gcd.cert"
+  let (code, _) ← cliCapture t ["compile", (benchIxe "gcd").toString, "--equations", (benchEqs "gcd").toString,
+    "-o", (w / "gcd.o").toString, "--emit-cert", gcdCert.toString]
+  expectEq a code 0 "gcd: exit code"
+  let tak := [(benchIxe "tak").toString, "--equations", (benchEqs "tak").toString]
+  let (code, msg) ← cliCapture t (["check-cert"] ++ tak ++ ["--cert", gcdCert.toString])
+  expectEq a code 3 s!"check-cert of gcd's certificate on tak: exit code ({msg})"
+  let rOuts := [w / "r.o", w / "r.sig"]
+  stale rOuts
+  let (code, _) ← cliCapture t (["compile"] ++ tak ++ ["--cert", gcdCert.toString, "-o", (w / "r.o").toString,
+    "--signatures", (w / "r.sig").toString])
+  expectEq a code 3 "compile --cert with gcd's certificate on tak: exit code"
+  noneLeft "a rejected certificate" rOuts
+  let copy := w / "in.ixe"
+  IO.FS.writeBinFile copy (← IO.FS.readBinFile (benchIxe "fib"))
+  for args in [["compile", copy.toString, "--equations", fibEqs, "-o", copy.toString],
+      ["compile", fibIxe, "--equations", fibEqs, "-o", (w / "c.o").toString, "--emit-cert", (w / "./c.o").toString]] do
+    let (code, msg) ← cliCapture t args
+    expectEq a code 2 s!"{args}: exit code ({msg})"
+  expect a ((← IO.FS.readBinFile copy) == (← IO.FS.readBinFile (benchIxe "fib")))
+    "an output naming the input: the input changed"
+  let err := fun (code : String) => ({ stage := .cli, code, message := "" } : Err)
+  let cases : List (Cli.Outcome × String × Cli.Outcome) := [(.declined, "rt.internal", .internal),
+    (.rejected, "cli.read", .usage), (.rejected, "assert.no_alloc", .declined),
+    (.rejected, "table.entry", .rejected), (.declined, "erase-string", .declined)]
+  for (k, code, want) in cases do
+    expect a (Cli.classify k (err code) == want) s!"classify {repr k} {code}"
+  let outcomes : List Cli.Outcome := [.declined, .usage, .rejected, .internal]
+  expect a (outcomes.map (·.exitCode) == [1, 2, 3, 4])
+    "the outcomes' exit statuses"
+  expect a (has Cli.usage "1 declined" && has Cli.usage "2 usage error" && has Cli.usage "3 rejected"
+    && has Cli.usage "4 internal error" && has Cli.usage "6 declined by a kernel limit")
+    "the usage text does not list the exit statuses"
+  out := out.push "all or nothing: declined (exit 1), usage (exit 2: missing closure, --root naming nothing, \
+    clashing outputs, an output naming the input) and rejected (exit 3: check-cert, compile --cert) runs \
+    leave no output, stale ones removed; classify and the exit-status table"
+  -- C. --embed-cert runs the executable verifier on its bytes
+  let scalar : FilePath := "fixtures/corpus/phase1-scalar"
+  let fOuts := [w / "fact.exe", w / "fact.o", w / "fact.cert"]
+  stale fOuts
+  let (code, msg) ← cliCapture t ["compile", (scalar / "scalar.ixe").toString, "--equations",
+    (scalar / "scalar.equations.json").toString, "--root", "Scalar.factorial", "--exe", (w / "fact.exe").toString,
+    "--embed-cert", "-o", (w / "fact.o").toString, "--emit-cert", (w / "fact.cert").toString]
+  expectEq a code 3 s!"Scalar.factorial --exe --embed-cert: exit code ({msg})"
+  expect a (has msg "exe.cert.kf4") s!"Scalar.factorial --embed-cert: not refused by verify-exe's KF-4: {msg}"
+  noneLeft "Scalar.factorial --embed-cert" fOuts
+  let fibExe := w / "fib.cert.exe"
+  let (code, msg) ← cliCapture t (["compile"] ++ fib ++ ["--exe", fibExe.toString, "--embed-cert"])
+  expectEq a code 0 s!"fib --exe --embed-cert: exit code ({msg})"
+  expect a (has msg "executable certificate verified: target ") s!"fib --embed-cert: no claim line: {msg}"
+  let gcdInp ← benchInput "gcd"
+  let takInp ← benchInput "tak"
+  let (gcdC, gcdArt) ← compileIn "gcd" gcdInp
+  match Exe.Cert.policyOfArtifact (Config.forInput {} gcdInp) gcdInp gcdArt false gcdC.toText with
+  | .ok p => expect a (p == .zeroRc) s!"gcd: the claim's policy is {repr p}"
+  | .error e => expect a false s!"gcd: the claim's policy refused: {e.render}"
+  match Exe.Cert.policyOfArtifact (Config.forInput {} takInp) takInp gcdArt false gcdC.toText with
+  | .ok p => expect a false s!"a refused contract recheck labelled the claim {repr p}"
+  | .error e => expect a (e.code == "exe.cert.policy") s!"a refused contract recheck: {e.render}"
+  let fibInp ← benchInput "fib"
+  let fibCfg := Config.forInput {} fibInp
+  match Cli.compileText .off fibCfg fibInp with
+  | .ok (text, cc, art) =>
+    let r ← (Cli.embedCertified fibCfg fibInp [] cc text art .plain {} ByteArray.empty ByteArray.empty
+      Src.KernelFront.defaultLimits (verify := fun _ => .error (Exe.err "exe.cert.trailer" "refused"))).run
+    match r with
+    | .error f =>
+      expect a (f.outcome == .rejected && f.err.code == "exe.cert.trailer")
+        s!"--embed-cert with a refusing verifier: {repr f.outcome} {f.err.render}"
+    | .ok _ => expect a false "--embed-cert wrote what its verifier refused"
+  | .error e => expect a false s!"fib: compileText: {e.render}"
+  out := out.push "--embed-cert: Scalar.factorial (verify-exe's KF-4 refuses it) rejected with nothing written; \
+    fib verified and its claim printed; a refused policy recheck an error, not immortal; a refusing \
+    verifier a rejection"
+  -- D. verify-exe states what it verified, and checks what it is told to expect
+  let fibRoots ← sidecarRootsOf (benchEqs "fib")
+  let some (fibAddr, _) := fibRoots[0]? | throw (IO.userError "fib: no sidecar root")
+  let envRoot := (← IO.ofExcept (IxCC.Ixon.V3.decodeAnonymousEnv (← IO.FS.readBinFile (benchIxe "fib")))).root
+  let other := toString (IxCC.Ixon.Address.replicate 7)
+  let (code, msg) ← cliCapture t ["verify-exe", fibExe.toString]
+  expectEq a code 0 s!"verify-exe: exit code ({msg})"
+  expect a (has msg s!"target {fibAddr}" && has msg s!"environment: root {envRoot}")
+    s!"verify-exe does not state the target and environment: {msg}"
+  let (code, msg) ← cliCapture t ["verify-exe", fibExe.toString, "--expect-target", toString fibAddr,
+    "--expect-env", toString envRoot]
+  expectEq a code 0 s!"verify-exe with the claim's own target and environment: exit code ({msg})"
+  for (flag, needle) in [("--expect-target", "not " ++ other ++ " (--expect-target)"),
+      ("--expect-env", "not " ++ other ++ " (--expect-env)")] do
+    let (code, msg) ← cliCapture t ["verify-exe", fibExe.toString, flag, other]
+    expectEq a code 3 s!"verify-exe {flag} another: exit code ({msg})"
+    expect a (has msg needle) s!"verify-exe {flag} another: {msg}"
+  for args in [["verify-exe", fibExe.toString, "--expect-target", "xyz"],
+      ["verify-exe", fibExe.toString, "--expect-env", "0x" ++ toString fibAddr],
+      ["compile"] ++ fib ++ ["-o", (w / "e.o").toString, "--expect-target", toString fibAddr]] do
+    let (code, _) ← cliCapture t args
+    expectEq a code 2 s!"{args}: exit code"
+  out := out.push "verify-exe: target and environment root stated; --expect-target/--expect-env accept the \
+    claim's own, reject others (exit 3); malformed or misplaced, usage errors"
+  return out
+
 /-! ## Reports -/
 
 /-- The command line's parser, its IR dumps, statistics and signatures
@@ -715,12 +951,17 @@ def reports (a : Assert) : IO (Array String) := do
   match IxCC.Cli.parse (base ++ ["--root", "A", "--root", "B", "--dump-ir", "all", "--stats"]) with
   | .ok o => expect a (o.roots == ["A", "B"] && o.dumps == IxCC.Cli.dumpLevels && o.stats && o.rc == .off && !o.opt && !o.bignat) "parse"
   | .error e => expect a false s!"parse: {e}"
-  match IxCC.Cli.parse (base ++ ["--opt"]) with
-  | .ok o => expect a o.opt "parse --opt"
-  | .error e => expect a false s!"parse --opt: {e}"
-  match IxCC.Cli.parse (base ++ ["--bignat", "--opt", "--bignat-lib", "b.json"]) with
-  | .ok o => expect a (o.bignat && o.opt && o.bignatLib == some "b.json") "parse --bignat"
+  match IxCC.Cli.parse (base ++ ["--uncertified", "--opt"]) with
+  | .ok o => expect a (o.opt && o.uncertified) "parse --uncertified --opt"
+  | .error e => expect a false s!"parse --uncertified --opt: {e}"
+  match IxCC.Cli.parse (base ++ ["--bignat", "--opt", "--bignat-lib", "b.json", "--uncertified"]) with
+  | .ok o => expect a (o.bignat && o.opt && o.uncertified && o.bignatLib == some "b.json") "parse --bignat"
   | .error e => expect a false s!"parse --bignat: {e}"
+  let addr := toString (IxCC.Ixon.Address.replicate 9)
+  match IxCC.Cli.parse ["verify-exe", "a.out", "--expect-target", addr, "--expect-env", addr] with
+  | .ok o => expect a (o.expectTarget == some (IxCC.Ixon.Address.replicate 9) &&
+      o.expectEnv == some (IxCC.Ixon.Address.replicate 9)) "parse verify-exe --expect-target --expect-env"
+  | .error e => expect a false s!"parse verify-exe --expect-target --expect-env: {e}"
   -- optional `--equations`: `compile` and `check-cert` parse cleanly without `--equations`
   match IxCC.Cli.parse ["compile", "c.ixe", "-o", "o.o"] with
   | .ok o => expect a (o.equations.isNone && o.out == some "o.o") "parse compile without --equations"
@@ -749,10 +990,22 @@ def reports (a : Assert) : IO (Array String) := do
       base ++ ["--exe", "a.out", "--bignat", "--machine"],
       base ++ ["--bignat", "--rc", "on"], base ++ ["--bignat", "--rc", "auto"],
       base ++ ["--bignat-lib", "b.json"],
+      -- the uncertified modes need `--uncertified`, and it needs one of them
+      base ++ ["--opt"], base ++ ["--bignat"], base ++ ["--bignat", "--opt"], base ++ ["--uncertified"],
+      base ++ ["--uncertified", "--opt", "--cert", "c.json"],
+      base ++ ["--exe", "a.out", "--uncertified", "--opt", "--embed-cert"],
       ["check-cert", "c.ixe", "--equations", "e.json", "--cert", "c.json", "--opt"],
       ["check-cert", "c.ixe", "--equations", "e.json", "--cert", "c.json", "--bignat"],
+      ["check-cert", "c.ixe", "--equations", "e.json", "--cert", "c.json", "--uncertified", "--opt"],
       ["verify-exe", "a.out", "--opt"],
       ["verify-exe", "a.out", "--bignat"],
+      ["verify-exe", "a.out", "--uncertified"],
+      -- `--expect-*` take addresses, and only on `verify-exe`
+      ["verify-exe", "a.out", "--expect-target", "abc"], ["verify-exe", "a.out", "--expect-env", addr ++ "00"],
+      base ++ ["--expect-target", addr], base ++ ["--expect-env", addr],
+      -- no two outputs on one file, no output on an input
+      base ++ ["--emit-cert", "o.o"], base ++ ["--signatures", "./o.o"], base ++ ["--exe", "c.ixe"],
+      ["compile", "c.ixe", "--equations", "e.json", "-o", "e.json"],
       ["check-cert", "c.ixe", "--equations", "e.json", "--cert", "c.json", "--rc", "auto"]] do
     expect a (!(IxCC.Cli.parse bad).toBool) s!"parse accepted {bad}"
   -- every erasure decline renders with its own code

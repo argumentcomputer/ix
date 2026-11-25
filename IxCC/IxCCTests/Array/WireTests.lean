@@ -18,6 +18,9 @@ Verifies the full `Src → Lam → Anf → Fir → Fir.Rep → Own → Cfg → R
 → Backend.compile → TestShell` pipeline natively on x86-64 Xeon (seccomp-confined, zero C):
 
 1. **Always-on wire runtime & committed fixture controls (zero external `ix` required):**
+   * The array analyses (`Rt.LowerRep.liveInFix`, `taintedFix`, `paramMutFix`) on programs
+     that need more rounds than their old fixed counts: each reaches its complete fixpoint within
+     its bound, `checkArrayAnalyses` accepts them, and a bound too small is refused.
    * Relocated 36-proc extended array runtime (`Wire.lean`): `arrSwapBoxed`, `arrSwapLimbs`,
      `arrOfListBoxed`/`arrToListBoxed`, `arrOfListLimbs`/`arrToListLimbs` (across `< 2^63`
      immediates and `≥ 2^63` boxed 64-bit limbs), `byteArrOfArr`/`byteArrToArr`,
@@ -772,11 +775,103 @@ private def testAliasingCow (ixBin : String) (logs : FilePath) (cnt : IO.Ref Nat
         s!"alias-cow({mode}) == {expected} (got {w.toNat / 2})"
   IO.println "PASS WireTests: Aliasing/COW, nested Array, ByteArray ops & UTF-8 String natively on Xeon"
 
+/-! ## The array analyses run to their fixpoints (`Rt.LowerRep`)
+
+Each program below needs more rounds than the fixed round counts the three analyses ran before
+(liveness `min (blocks + 2) 32`, taint `min (blocks + 3) 12`, parameter flags
+`min (functions + 1) 16`), whose results on them were partial (a protection missing): the
+fixpoint is reached, complete and within the analysis's bound, the totals the lowerings call
+return it, and a bound too small is refused (`rt.internal`), never answered with a partial
+result. -/
+
+private def psig : Own.PSig := Own.PSig.plain .obj
+
+/-- `n + 1` blocks in a line: block 0 takes `x0`, block `i` jumps to `i + 1`, the last returns
+`x0`; liveness carries `x0` back one block per round. -/
+private def liveLine (n : Nat) : Cfg.Fun :=
+  { key := .const 0 [], sig := default
+    blocks := (List.range (n + 1)).map fun i =>
+      { params := if i == 0 then [(0, psig)] else []
+        term := if i == n then .ret (.var 0) else .jump { target := i + 1 } } }
+
+/-- Block `i` binds `x (i + 1) := x i` and jumps on, the last returns `x n`; taint flows back one
+block per round (a round folds the blocks in order). -/
+private def taintLine (n : Nat) : Cfg.Fun :=
+  { key := .const 0 [], sig := default
+    blocks := (List.range (n + 1)).map fun i =>
+      if i == n then { term := .ret (.var n) }
+      else
+        { params := if i == 0 then [(0, psig)] else []
+          body := [.bind (i + 1) (.fir (.arg (.var i)))]
+          term := .jump { target := i + 1 } } }
+
+/-- `n + 1` functions: `f i x := f (i + 1) x` (a tail call), `f n x := x` (the parameter
+escapes); the flag travels back one function per round. -/
+private def chainFun (n i : Nat) : Cfg.Fun :=
+  { key := .const i [], sig := default
+    blocks := [{ params := [(0, psig)]
+                 term := if i == n then .ret (.var 0) else .tcall (i + 1) [.var 0] }] }
+
+private def mutChain (n : Nat) : Cfg.Program :=
+  { funs := Src.NatMap.ofDense ((List.range (n + 1)).map (chainFun n)), size := n + 1
+    exports := [0], ctors := [], known := default }
+
+def testArrayAnalyses (cnt : IO.Ref Nat) : IO Unit := do
+  let n := 40
+  let fd := liveLine n
+  match LowerRep.liveInFix 0 fd with
+  | .ok (m, rounds) =>
+    require cnt (rounds > min (fd.blocks.length + 2) 32)
+      s!"liveness on {n + 1} blocks in a line: {rounds} rounds, not more than the old 32"
+    require cnt (rounds ≤ LowerRep.liveInBound fd) s!"liveness: {rounds} rounds past its bound"
+    require cnt ((List.range (n + 1)).all fun i => i == 0 || (m.getD i .leaf).contains 0)
+      "liveness: x0 not live into every block after the first"
+    require cnt (LowerRep.sameSetMap (LowerRep.computeLiveIn fd) m) "computeLiveIn is not the fixpoint"
+  | .error e => require cnt false s!"liveness refused: {e.render}"
+  match LowerRep.liveInFix 0 fd (fuel := 32) with
+  | .error (.internal 0 _) => require cnt true ""
+  | _ => require cnt false "liveness within 32 rounds on a line of 41 blocks was not refused"
+  let td := taintLine 20
+  match LowerRep.taintedFix 0 td .leaf with
+  | .ok (t, rounds) =>
+    require cnt (rounds > min (td.blocks.length + 3) 12)
+      s!"taint along 21 blocks: {rounds} rounds, not more than the old 12"
+    require cnt (rounds ≤ LowerRep.taintedBound td) s!"taint: {rounds} rounds past its bound"
+    require cnt ((List.range 21).all t.contains) "taint: some x i does not flow to the result"
+    require cnt (LowerRep.sameSet (LowerRep.computeTainted td .leaf) t) "computeTainted is not the fixpoint"
+  | .error e => require cnt false s!"taint refused: {e.render}"
+  match LowerRep.taintedFix 0 td .leaf (fuel := 12) with
+  | .error (.internal 0 _) => require cnt true ""
+  | _ => require cnt false "taint within 12 rounds along 21 blocks was not refused"
+  let P := mutChain 20
+  match LowerRep.paramMutFix P {} with
+  | .ok (pm, rounds) =>
+    require cnt (rounds > min (P.size + 1) 16)
+      s!"parameter flags along 21 functions: {rounds} rounds, not more than the old 16"
+    require cnt (rounds ≤ LowerRep.paramMutBound P {}) s!"parameter flags: {rounds} rounds past their bound"
+    require cnt ((List.range 21).all fun f => pm.getD f [] == [true])
+      "parameter flags: some function's escaping parameter is not flagged"
+    require cnt (LowerRep.sameFlags (LowerRep.computeParamMutates P {}) pm)
+      "computeParamMutates is not the fixpoint"
+  | .error e => require cnt false s!"parameter flags refused: {e.render}"
+  match LowerRep.paramMutFix P {} (fuel := 16) with
+  | .error (.internal _ _) => require cnt true ""
+  | _ => require cnt false "parameter flags within 16 rounds along 21 functions were not refused"
+  -- the guard the lowerings' callers run: an array program, every analysis to its fixpoint
+  let arrCert : Fir.Rep.Cert := { arrayMkKey := some (Key.CtorKey.src 0) }
+  require cnt (LowerRep.checkArrayAnalyses arrCert P).isOk "checkArrayAnalyses refused converging analyses"
+  let rounds := fun (r : Except Rt.Error Nat) => match r with | .ok k => toString k | .error _ => "-"
+  IO.println s!"PASS WireTests: array analyses reach their fixpoints past the old round counts \
+    (liveness {rounds ((·.2) <$> LowerRep.liveInFix 0 fd)} > 32, \
+    taint {rounds ((·.2) <$> LowerRep.taintedFix 0 td .leaf)} > 12, \
+    parameter flags {rounds ((·.2) <$> LowerRep.paramMutFix P {})} > 16) and refuse a bound too small"
+
 /-! ## Entry Point -/
 
 def run (logs : FilePath) (cliIx : Option String := none) (requireIx : Bool := false) : IO Nat := do
   IO.FS.createDirAll logs
   let cnt ← IO.mkRef 0
+  testArrayAnalyses cnt
   testWireProcs logs cnt
   testRodataElf cnt
   testCommittedDeclines logs cnt

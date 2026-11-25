@@ -10,6 +10,10 @@ import IxCCTests.Pipeline.Words
 * the `ixcc` command line on the bench-k1 closures and `k1.ixe`,
   `produce` + `run` against the stage suites' pipeline, the certificate's
   round trip, declines and rejections (`Compiler`);
+* the command line failing closed: `--opt` and `--bignat` only with `--uncertified` (marked in
+  the provenance note, one standard-error line, definition assertions declined), outputs all or
+  nothing, the exit statuses, `--embed-cert`'s executable verifier and `verify-exe
+  --expect-target`/`--expect-env` (`Compiler.failClosed`);
 * certificate mutations (`Mutants`);
 * every level of every K1 program on its test input (`Levels`);
 * the compiled `k1.ixe` roots against their Lean-compiled twin on generated
@@ -30,7 +34,7 @@ inputs per root, default 60; `--words-every`: the words part runs the typed and 
 machines on every K-th case, default 5; `--bin`: spawn this `ixcc` binary for
 the command-line part instead of running it in process; `--full`: every
 level at the test size, including the ones the default runs at a reduced
-size to fit the CI budget; `--only`: `cli`, `same`, `json`, `declines`, `reports`,
+size to fit the CI budget; `--only`: `cli`, `same`, `json`, `declines`, `reports`, `failclosed`,
 `mutants`, `levels`, `twin`, `defun`, `words`). `tests-pipeline --level NAME LEVEL ARGS…` is
 the child-process mode of `Levels`. -/
 
@@ -117,6 +121,9 @@ def suite (a : Assert) (o : Options) (work : FilePath) : IO Unit := do
   if want "json" then part a "certificates through JSON" (Compiler.roundTrips a)
   if want "declines" then part a "declines and rejections" (Compiler.declines a tools)
   if want "reports" then part a "the command line's parser, IR dumps, statistics and signatures" (Compiler.reports a)
+  if want "failclosed" then
+    part a "the command line failing closed: uncertified modes, all-or-nothing outputs, exit statuses, \
+      --embed-cert's verifier, verify-exe's expectations" (Compiler.failClosed a tools)
   if want "mutants" then
     part a s!"certificate mutations ({o.mutants} per class per entry){if native.isSome then ", natively too" else ""}"
       (Mutants.run a o.mutants o.seed native)

@@ -2039,7 +2039,35 @@ def fusedEndRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.Fun
     | t => termRep f T cert fc blockReps src t sc rc
   | _ => close (.fail .natOverflow)
 
-/-! ### DR3 Backward Liveness & Per-Parameter Mutability Analysis -/
+/-! ### DR3 Backward Liveness & Per-Parameter Mutability Analysis
+
+Three analyses decide where an array is protected (`rt_arr_inc_val`) before an in-place update:
+the variables live after each instruction (`computeLiveIn`), the variables that may flow to a
+mutating parameter or to the result (`computeTainted`), and the parameters a function may mutate
+or return (`computeParamMutates`). Each grows its sets from empty, so a result taken before its
+fixpoint is too small: a protection is missing and a shared array is updated in place. Each
+therefore runs rounds until one changes nothing (`fixpoint`), within a bound that provably
+suffices, because every round only adds elements of a finite universe the program fixes:
+
+* `computeLiveIn` (round-robin over the blocks, each block's live-in from the previous round's;
+  monotone, so the rounds increase from `.leaf`): its elements are pairs of a block and a variable
+  the function reads (`usedVars`: rounds add only variables of right-hand sides and terminators,
+  and carry them back from successors). `liveInBound = |blocks| · |usedVars| + 2` rounds suffice:
+  the first gives every block its entry, each further round that changes anything adds a pair, and
+  the last changes nothing.
+* `computeTainted` (each round only inserts, and only variables the function reads):
+  `taintedBound = |usedVars| + 1`.
+* `computeParamMutates` (each round only turns flags from `false` to `true`, one per parameter of
+  every function that is not a native array primitive; each round runs `computeTainted` to its own
+  fixpoint): `paramMutBound = Σ |params| + 1`.
+
+Sets are compared by their elements (`setElems`), not as tries (`erase` leaves empty nodes). If a
+bound were ever reached without convergence, `checkArrayAnalyses` refuses the program
+(`rt.internal`); `ixcc compile --bignat` and `Rt.BigNat.compileLibrary` run it before lowering, so
+no lowering runs on a partial result. The totals the lowerings call (`computeLiveIn`,
+`computeTainted`, `computeParamMutates`) return the same fixpoints, and on that unreachable
+non-convergence the most conservative answer instead (every variable read live everywhere, every
+variable read tainted, every parameter mutated), never a partial one. -/
 
 private def setUnion (a b : Src.NatSet) : Src.NatSet :=
   b.toList.foldl (fun s (k, _) => s.insert k) a
@@ -2055,17 +2083,66 @@ private def liveAtTerm (liveIn : Src.NatMap Src.NatSet) (b : Cfg.Block) : Src.Na
     setUnion s (liveIn.getD e.target .leaf)
   setAddList fromEdges (Cfg.Check.termVars b.term)
 
-/-- Compute backward dataflow `liveIn[b]` (excluding `b`'s own parameters) for every block of `fd`. -/
+/-- Rounds of `step` from `x` until one changes nothing (`same (step y) y`), at most `fuel` of
+them: the fixpoint and the rounds run (`n` plus the rounds here, the last the one that changed
+nothing), or `stuck` when all `fuel` rounds changed something. Structural on `fuel`. -/
+def fixpoint {α : Type} (same : α → α → Bool) (step : α → Except Error α) (stuck : Error) :
+    Nat → α → Nat → Except Error (α × Nat)
+  | 0, _, _ => throw stuck
+  | fuel + 1, x, n => do
+    let y ← step x
+    if same y x then pure (x, n + 1) else fixpoint same step stuck fuel y (n + 1)
+
+/-- A set's elements in the trie's order: equal sets give equal lists, whatever their history. -/
+def setElems (s : Src.NatSet) : List Nat := s.toList.map (·.1)
+
+/-- Equal elements (not equal tries). -/
+def sameSet (a b : Src.NatSet) : Bool := setElems a == setElems b
+
+/-- Equal keys, each with equal elements. -/
+def sameSetMap (a b : Src.NatMap Src.NatSet) : Bool :=
+  a.toList.map (fun (k, s) => (k, setElems s)) == b.toList.map (fun (k, s) => (k, setElems s))
+
+/-- Equal keys, each with equal flags. -/
+def sameFlags (a b : Src.NatMap (List Bool)) : Bool := a.toList == b.toList
+
+/-- The distinct variables `fd` reads (its right-hand sides' and terminators' variables): the
+analyses below add no other variable. -/
+def usedVars (fd : Cfg.Fun) : Src.NatSet := Src.NatSet.ofList (fd.blocks.flatMap blockUses)
+
+/-- One round of `computeLiveIn`: every block's live-in from the previous round's. -/
+def liveInStep (fd : Cfg.Fun) (m : Src.NatMap Src.NatSet) : Src.NatMap Src.NatSet :=
+  fd.blocks.zipIdx.foldl (init := m) fun acc (b, idx) =>
+    let lt := liveAtTerm m b
+    let beforeBody := b.body.reverse.foldl (init := lt) fun s => fun
+      | .bind x r => setAddList (s.erase x) (Cfg.Check.rhsVars r)
+    let li := setDiff beforeBody (b.params.map (·.1))
+    acc.insert idx li
+
+/-- Rounds that suffice for `computeLiveIn` (the section's comment). -/
+def liveInBound (fd : Cfg.Fun) : Nat := fd.blocks.length * (usedVars fd).size + 2
+
+/-- `computeLiveIn`'s fixpoint and its rounds; `rt.internal` (for function `f`) if `fuel` rounds
+do not reach it. -/
+def liveInFix (f : FunId) (fd : Cfg.Fun) (fuel : Nat := liveInBound fd) :
+    Except Error (Src.NatMap Src.NatSet × Nat) :=
+  fixpoint sameSetMap (fun m => pure (liveInStep fd m))
+    (.internal f s!"array liveness did not converge within {fuel} rounds") fuel .leaf 0
+
+/-- Backward dataflow `liveIn[b]` (excluding `b`'s own parameters) for every block of `fd`, to
+its fixpoint, or refused (`rt.internal`). -/
+def computeLiveIn? (f : FunId) (fd : Cfg.Fun) : Except Error (Src.NatMap Src.NatSet) :=
+  (·.1) <$> liveInFix f fd
+
+/-- Compute backward dataflow `liveIn[b]` (excluding `b`'s own parameters) for every block of
+`fd`: `computeLiveIn?`'s fixpoint; were it not reached, every variable `fd` reads, live at every
+block (more protection, never less). -/
 def computeLiveIn (fd : Cfg.Fun) : Src.NatMap Src.NatSet :=
-  let step (m : Src.NatMap Src.NatSet) : Src.NatMap Src.NatSet :=
-    fd.blocks.zipIdx.foldl (init := m) fun acc (b, idx) =>
-      let lt := liveAtTerm m b
-      let beforeBody := b.body.reverse.foldl (init := lt) fun s => fun
-        | .bind x r => setAddList (s.erase x) (Cfg.Check.rhsVars r)
-      let li := setDiff beforeBody (b.params.map (·.1))
-      acc.insert idx li
-  let rounds := min (fd.blocks.length + 2) 32
-  (List.range rounds).foldl (fun m _ => step m) .leaf
+  match computeLiveIn? 0 fd with
+  | .ok m => m
+  | .error _ =>
+    let all := usedVars fd
+    Src.NatMap.ofDense (fd.blocks.map fun _ => all)
 
 /-- Annotate each instruction of `is` with the exact set of variables live immediately after it. -/
 def annotateBody (liveTerm : Src.NatSet) (is : List Cfg.Instr) : List (Cfg.Instr × Src.NatSet) :=
@@ -2097,8 +2174,13 @@ def arrayPrimParamMut (arity : Nat) (spec : Fir.Rep.ArrayPrimSpec) : List Bool :
       | _ => []
   (List.range arity).map fun i => mutIdx.contains i
 
-/-- Compute variables inside `fd` that may flow to a mutating/escaping parameter or return value. -/
-def computeTainted (fd : Cfg.Fun) (paramMut : Src.NatMap (List Bool)) : Src.NatSet :=
+/-- Rounds that suffice for `computeTainted` (the section's comment). -/
+def taintedBound (fd : Cfg.Fun) : Nat := (usedVars fd).size + 1
+
+/-- `computeTainted`'s fixpoint under `paramMut` and its rounds; `rt.internal` (for function `f`)
+if `fuel` rounds do not reach it. -/
+def taintedFix (f : FunId) (fd : Cfg.Fun) (paramMut : Src.NatMap (List Bool))
+    (fuel : Nat := taintedBound fd) : Except Error (Src.NatSet × Nat) :=
   let bParams : Src.NatMap (List VReg) :=
     Src.NatMap.ofDense (fd.blocks.map fun b => b.params.map (·.1))
   let seedFromArgs (t : Src.NatSet) (as : List Fir.Arg) (fs : List Bool) : Src.NatSet :=
@@ -2126,35 +2208,95 @@ def computeTainted (fd : Cfg.Fun) (paramMut : Src.NatMap (List Bool)) : Src.NatS
         | .bind _ (.fir (.call g as)) =>
           seedFromArgs s as (paramMut.getD g (List.replicate as.length true))
         | _ => s
-  let rounds := min (fd.blocks.length + 3) 12
-  (List.range rounds).foldl (fun t _ => step t) .leaf
+  fixpoint sameSet (fun t => pure (step t))
+    (.internal f s!"array taint did not converge within {fuel} rounds") fuel .leaf 0
+
+/-- The variables inside `fd` that may flow to a mutating/escaping parameter or return value, to
+the fixpoint, or refused (`rt.internal`). -/
+def computeTainted? (f : FunId) (fd : Cfg.Fun) (paramMut : Src.NatMap (List Bool)) :
+    Except Error Src.NatSet :=
+  (·.1) <$> taintedFix f fd paramMut
+
+/-- Compute variables inside `fd` that may flow to a mutating/escaping parameter or return value:
+`computeTainted?`'s fixpoint; were it not reached, every variable `fd` reads. -/
+def computeTainted (fd : Cfg.Fun) (paramMut : Src.NatMap (List Bool)) : Src.NatSet :=
+  match computeTainted? 0 fd paramMut with
+  | .ok t => t
+  | .error _ => usedVars fd
+
+/-- `computeParamMutates`' starting flags: a native array primitive's from its spec
+(`arrayPrimParamMut`), every other function's parameters `false`. -/
+def paramMutInit (P : Cfg.Program) (cert : Fir.Rep.Cert) : Src.NatMap (List Bool) :=
+  (List.range P.size).foldl (init := .leaf) fun m f =>
+    match P.fun? f with
+    | some fd =>
+      match cert.arrayPrims.get? f with
+      | some spec => m.insert f (arrayPrimParamMut fd.params.length spec)
+      | none => m.insert f (List.replicate fd.params.length false)
+    | none => m
+
+/-- Rounds that suffice for `computeParamMutates` (the section's comment): one more than the
+parameters of the functions that are not native array primitives. -/
+def paramMutBound (P : Cfg.Program) (cert : Fir.Rep.Cert) : Nat :=
+  (List.range P.size).foldl (init := 1) fun n f =>
+    match P.fun? f with
+    | some fd => if (cert.arrayPrims.get? f).isSome then n else n + fd.params.length
+    | none => n
+
+/-- `computeParamMutates`' fixpoint and its rounds; `rt.internal` if `fuel` rounds do not reach
+it, or if a round's `computeTainted` does not reach its own. -/
+def paramMutFix (P : Cfg.Program) (cert : Fir.Rep.Cert) (fuel : Nat := paramMutBound P cert) :
+    Except Error (Src.NatMap (List Bool) × Nat) :=
+  let refineOnce (pm : Src.NatMap (List Bool)) : Except Error (Src.NatMap (List Bool)) :=
+    (List.range P.size).foldlM (init := pm) fun acc f =>
+      match P.fun? f with
+      | some fd =>
+        if (cert.arrayPrims.get? f).isSome then pure acc
+        else do
+          let tainted ← computeTainted? f fd pm
+          let old := pm.getD f (List.replicate fd.params.length false)
+          let updated := (fd.params.zip old).map fun (v, b) => b || tainted.contains v
+          pure (acc.insert f updated)
+      | none => pure acc
+  fixpoint sameFlags refineOnce
+    (.internal (P.exports.headD 0)
+      s!"array parameter mutability (interprocedural) did not converge within {fuel} rounds")
+    fuel (paramMutInit P cert) 0
+
+/-- `computeParamMutates`, to the fixpoint, or refused (`rt.internal`). -/
+def computeParamMutates? (P : Cfg.Program) (cert : Fir.Rep.Cert) :
+    Except Error (Src.NatMap (List Bool)) :=
+  (·.1) <$> paramMutFix P cert
 
 /-- Interprocedural fixed-point computing `paramMut[f][k]` (`true` = param `k` of `f` may be
 mutated in place or escape via return value). Read-only helpers (`scanRight`, `scanLeft`,
 `isSorted`, `checksum`, `blockWords`, `subtree`, `compress`) infer `false` for read-only array
-params so callers incur zero `fnIncVal` and zero copies. -/
+params so callers incur zero `fnIncVal` and zero copies. `computeParamMutates?`'s fixpoint; were
+it not reached, every parameter of every function but the native array primitives `true`. -/
 def computeParamMutates (P : Cfg.Program) (cert : Fir.Rep.Cert) : Src.NatMap (List Bool) :=
-  let init : Src.NatMap (List Bool) :=
-    (List.range P.size).foldl (init := .leaf) fun m f =>
+  match computeParamMutates? P cert with
+  | .ok pm => pm
+  | .error _ =>
+    (List.range P.size).foldl (init := paramMutInit P cert) fun m f =>
       match P.fun? f with
       | some fd =>
-        match cert.arrayPrims.get? f with
-        | some spec => m.insert f (arrayPrimParamMut fd.params.length spec)
-        | none => m.insert f (List.replicate fd.params.length false)
+        if (cert.arrayPrims.get? f).isSome then m
+        else m.insert f (List.replicate fd.params.length true)
       | none => m
-  let refineOnce (pm : Src.NatMap (List Bool)) : Src.NatMap (List Bool) :=
-    (List.range P.size).foldl (init := pm) fun acc f =>
-      match P.fun? f with
-      | some fd =>
-        if (cert.arrayPrims.get? f).isSome then acc
-        else
-          let tainted := computeTainted fd pm
-          let old := pm.getD f (List.replicate fd.params.length false)
-          let updated := (fd.params.zip old).map fun (v, b) => b || tainted.contains v
-          acc.insert f updated
-      | none => acc
-  let rounds := min (P.size + 1) 16
-  (List.range rounds).foldl (fun pm _ => refineOnce pm) init
+
+/-- Refuse (`rt.internal`) an array program (`cert.hasArrays`) on which an analysis `lowerRep` or
+`Rt.BigNat.lowerRepBig` runs would not reach its fixpoint within its bound: the parameter flags,
+then each function's taint and liveness (every function but the native array primitives, which
+the lowerings generate instead). Run before lowering, so that no lowering uses a partial result.
+A program without arrays runs none of the analyses. -/
+def checkArrayAnalyses (cert : Fir.Rep.Cert) (P : Cfg.Program) : Except Error Unit := do
+  if !cert.hasArrays then return
+  let pm ← computeParamMutates? P cert
+  for f in List.range P.size do
+    if let some fd := P.fun? f then
+      if (cert.arrayPrims.get? f).isNone then
+        let _ ← computeTainted? f fd pm
+        let _ ← computeLiveIn? f fd
 
 /-! ### DR3 Native Array Primitive Wrapper Generator (`arrayPrimFunc`) -/
 

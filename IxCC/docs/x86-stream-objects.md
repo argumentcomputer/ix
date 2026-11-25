@@ -169,6 +169,15 @@ header fields and four-byte padding in ELF64. This convention is explicitly
 supported by [GNU binutils](https://sourceware.org/pipermail/binutils-cvs/2017-November/046965.html);
 it is not a claim of generic ELF64 eight-byte note alignment.
 
+The note's descriptor is the domain `ixcc/x86-object-provenance/1`, a kind byte (0 for an IxIR₁
+root with policy words), the 32-byte root and, for kind 0, two little-endian 32-bit words: the
+lowering version and the pass-policy version. The certified routes write lowering 1 (zero RC) or
+3 (plain RC) and pass policy 1. An object no certificate replay covers (`ixcc compile
+--uncertified`, with `--opt` or `--bignat`) has the top bit of its pass-policy word set
+(`Recheck.uncertifiedPolicyBit`, `Recheck.provenanceCovered`), so a consumer can tell it apart
+from the note alone; the [compiler design](compiler-design.md#the-command-line-fails-closed) lists
+the words of each mode.
+
 [`ELFLink.lean`](../IxCC/X86/ELFLink.lean) applies parsed PC32
 relocations using `S + A - P`, checks signed overflow, and records a concrete
 trace of the actual four-byte patcher. For CALL's displacement field at

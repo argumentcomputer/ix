@@ -9,6 +9,9 @@ committed `fib` closure (`fixtures/ixon-v4/bench-k1`):
 * each kernel limit lowered by its flag and by its variable declines (exit 6) with the message
   naming the limit, its value and source and how to raise it; raised, the object is the default's;
   a malformed value is a usage error (exit 2);
+* the exit statuses through the binary: a decline by a limit removes the stale output it would
+  have replaced (exit 6), `--root` naming nothing and `--opt` without `--uncertified` are usage
+  errors (exit 2), `--uncertified --opt` compiles and says so on standard error;
 * the re-execution is invisible: a success, a decline, a refusal of IxCC's own and a usage error
   give the same exit status, standard output and standard error with it (the default) and without
   it (`IXCC_REEXEC=0` with `LEAN_STACK_SIZE_KB` set by hand), and the closure read from standard
@@ -254,6 +257,21 @@ def suite (dir : FilePath) : IO (Nat × Nat) := do
     let b ← run args direct
     check (a.exitCode == b.exitCode && a.stdout == b.stdout && a.stderr == b.stderr)
       s!"{label}: differs with and without the re-execution ({a.exitCode}/{b.exitCode})\n{a.stderr}\n{b.stderr}"
+    n := n + 1
+  -- the exit statuses through the binary, and a failure removing the stale output it would have
+  -- replaced, with the re-execution (the first process passes the second's status through)
+  IO.FS.writeFile (dir / "stale.o") "stale"
+  let r ← run (compile "stale.o" #["--max-depth", "2"]) plain
+  let left ← (dir / "stale.o").pathExists
+  check (r.exitCode == 6 && !left) s!"a decline by a limit: exit {r.exitCode}, stale output left {left}"
+  n := n + 1
+  let statuses : List (String × Array String × UInt32 × String) :=
+    [("--root naming nothing", #["--root", "nosuch"], 2, "cli.root"),
+     ("--opt without --uncertified", #["--opt"], 2, "--uncertified"),
+     ("--uncertified --opt", #["--uncertified", "--opt"], 0, "ixcc: uncertified (--opt)")]
+  for (label, flags, status, needle) in statuses do
+    let r ← run (compile "status.o" flags) plain
+    check (r.exitCode == status && has r needle) s!"{label}: exit {r.exitCode}, expected {status}\n{r.stderr}"
     n := n + 1
   let viaStdin ← sh s!"{← IO.FS.realPath ixccPath} compile /dev/stdin --equations {eq} -o {dir / "stdin.o"} < {ixe}" plain
   check (viaStdin.exitCode == 0) s!"the closure on standard input: {viaStdin.exitCode}\n{viaStdin.stderr}"

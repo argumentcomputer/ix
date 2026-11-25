@@ -27,9 +27,14 @@ so that a run under a cap can be bounded by `--workers` alone.
 Signals: a terminal's interrupt reaches both processes (they share the process
 group); a signal sent to the first process alone does not reach the second,
 which checks every half second that its parent is still the process that
-started it and stops (exit 1) when it is not. That check is a task that never
+started it and stops (exit 4, `IxCC.Cli.Outcome.internal`) when it is not. That check is a task that never
 ends, and Lean's runtime waits for every task before a process ends, so the
-second process ends by `IO.Process.exit` with `main`'s status. -/
+second process ends by `IO.Process.exit` with `main`'s status.
+
+Outputs: a run that fails writes none of its files and removes the ones it would have written
+(`IxCC.Cli.removeOutputs`); so does the first process when it refuses to start the second (exit
+2), when the second dies by a signal (`128 + n`), and the second when it stops because the first
+is gone. -/
 
 namespace IxCC.Cli.Process
 
@@ -43,8 +48,8 @@ def parentPid : IO (Option Nat) := do
   let fields := (rest.splitOn " ").filter (· ≠ "")
   return fields[1]?.bind String.toNat?
 
-/-- In the second process: stop when the process that started it is gone. -/
-def watchParent : IO Unit := do
+/-- In the second process: stop when the process that started it is gone, after `cleanup`. -/
+def watchParent (cleanup : IO Unit) : IO Unit := do
   let some started ← parentPid | return
   let _ ← IO.asTask (prio := .dedicated) do
     while true do
@@ -53,19 +58,24 @@ def watchParent : IO Unit := do
         -- standard error may be a pipe nobody reads any more: a failed write must not end
         -- this task before the exit (it did: the process then stayed)
         try IO.eprintln "ixcc: the process that started this one ended; stopping" catch _ => pure ()
-        IO.Process.exit 1
+        try cleanup catch _ => pure ()
+        IO.Process.exit IxCC.Cli.Outcome.internal.exitCode.toUInt8
   return
 
 /-- `ixcc`: for `compile` and `check-cert`, run again on the stack the kernel's limits
 need (the module's comment), else `IxCC.Cli.main` here. -/
 def run (args : List String) : IO UInt32 := do
+  -- what a failure removes: the files the command line names as outputs (none if it is malformed)
+  let cleanup : IO Unit := match IxCC.Cli.parse args with
+    | .ok o => IxCC.Cli.removeOutputs o
+    | .error _ => pure ()
   if (← IO.getEnv "IXCC_REEXECED").isSome then
-    watchParent
+    watchParent cleanup
     -- The watcher never ends, and Lean's runtime waits for every task before the process
-    -- ends, so the second process leaves by `IO.Process.exit` once `main` is done (with an
-    -- uncaught error reported as the runtime reports it, exit 1); returning would hang.
+    -- ends, so the second process leaves by `IO.Process.exit` once `main` is done (an
+    -- uncaught error is an internal error, exit 4); returning would hang.
     let code ← try IxCC.Cli.main args catch e => do
-      IO.eprintln s!"uncaught exception: {e}"; pure 1
+      IO.eprintln s!"uncaught exception: {e}"; cleanup; pure IxCC.Cli.Outcome.internal.exitCode
     IO.Process.exit code.toUInt8
   let some o := (IxCC.Cli.parse args).toOption | IxCC.Cli.main args
   unless o.command == "compile" || o.command == "check-cert" || o.command == "verify-exe" do
@@ -86,13 +96,14 @@ def run (args : List String) : IO UInt32 := do
   match ← Ix.Kernel.Host.spaceCheck settings.limits.stackFor settings.limits.workers pool
       s!"--workers or {W}, or --max-depth or {D} (the stack is 16 KiB per level, at least 256 MiB)"
       s!"--workers or {W}, or --max-depth or {D}" with
-  | .refuse why => IO.eprintln s!"ixcc: {why}"; return 2
+  | .refuse why => IO.eprintln s!"ixcc: {why}"; cleanup; return IxCC.Cli.Outcome.usage.exitCode
   | .warn line => IO.eprintln s!"ixcc: {line}"
   | .fits => pure ()
   let fail (why : String) : IO UInt32 := do
     IO.eprintln s!"ixcc: cannot re-run itself on a {kb} KiB stack ({why}); \
 set LEAN_STACK_SIZE_KB={kb} (and IXCC_REEXEC=0) and run again"
-    return 2
+    cleanup
+    return IxCC.Cli.Outcome.usage.exitCode
   let app ← match ← IO.appPath.toBaseIO with
     | .ok p => pure p
     | .error e => return ← fail (toString e)
@@ -106,7 +117,11 @@ set LEAN_STACK_SIZE_KB={kb} (and IXCC_REEXEC=0) and run again"
     stdin := .inherit, stdout := .inherit, stderr := .inherit }
   match ← (IO.Process.spawn spawn).toBaseIO with
   | .error e => fail (toString e)
-  | .ok child => child.wait
+  | .ok child =>
+    let code ← child.wait
+    -- a death by signal (`128 + n`) may have cut the second process short of its own cleanup
+    if code ≥ 128 then cleanup
+    return code
 
 end IxCC.Cli.Process
 

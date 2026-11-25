@@ -38,18 +38,26 @@ namespace IxCC.Exe.Cert
 open IxCC.Recheck
 open IxCC.X86.Exe.Cert
 
-/-- Policy classification for a verified CLI certificate (`immortal`, `zeroRc`, or `plainRc`). -/
+/-- The policy the claim of a certified executable binds, for a certificate `check-cert`'s
+verifier accepted (`certText`, with its artifact `a`): `plainRc` for a plain-RC certificate; for a
+zero-RC one, `zeroRc` when the program selects the zero-RC policy, once the contract recheck that
+claim stands on (`Recheck.runWithContracts`, which `verify-exe` replays for it) has accepted the
+certificate, else `immortal` (a program that selects plain RC, compiled under the immortal
+policy). A refusal by that recheck is an error (`exe.cert.policy`), never a weaker label, and so
+is a certificate that does not parse (its reader's error). -/
 def policyOfArtifact (cfg : Recheck.Config) (inp : Recheck.Input) (a : Recheck.Artifact)
-    (isPlainRc : Bool) (certText : String) : CompilePolicy :=
-  if isPlainRc then .plainRc
-  else
-    match Recheck.Cert.ofText certText with
-    | .ok cert =>
-      if Own.Plain.selectRcPolicyForSrc a.src a.front.fir == .zeroRc &&
-          (Recheck.runWithContracts cfg inp.program cert).isOk then
-        .zeroRc
-      else .immortal
-    | .error _ => .immortal
+    (isPlainRc : Bool) (certText : String) : Except Err CompilePolicy :=
+  if isPlainRc then .ok .plainRc
+  else do
+    let cert ← Recheck.Cert.ofText certText
+    if Own.Plain.selectRcPolicyForSrc a.src a.front.fir == .zeroRc then
+      match Recheck.runWithContracts cfg inp.program cert with
+      | .ok _ => pure .zeroRc
+      | .error e =>
+        throw (Exe.err "exe.cert.policy"
+          s!"the program selects the zero-RC policy, and the contract recheck its claim stands on \
+            refused the certificate ({e.render})")
+    else pure .immortal
 
 /-- Result of building a certified standalone executable. -/
 structure BuiltCertifiedExe where

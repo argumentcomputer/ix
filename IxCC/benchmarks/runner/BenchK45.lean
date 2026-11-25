@@ -10,7 +10,9 @@ Builds unhardened `lean-clang`, `clang-O2`/`clang-O3` (with automatic GMP
 resolution for C+GMP twins), optional `gcc-O2`/`gcc-O3` (`--gcc`), optional
 single-threaded intrusive-RC recycling C++ controls (`--rc-twins`), and
 optional `ixcc` standalone executables (`--closures DIR`, `--rc`, `--opt`,
-`--bignat`, `--bignat-lib`, `--embed-cert`, `--blake3-harness`).
+`--bignat`, `--bignat-lib`, `--embed-cert`, `--blake3-harness`). The `--opt` and
+`--bignat` rows are not covered by certificate replay: they are compiled with
+`ixcc compile --uncertified`, and their reports say so.
 
 Hardened provenance guarantees:
 - Unconditionally unlinks stale binaries, objects, and `.cert` sidecars before
@@ -461,7 +463,10 @@ def buildGccRow (root out : FilePath) (rowName level : String) (srcRel : FilePat
     embedCert := false, compileMs := some wallMs, textBytes := sz
   }
 
+/-- The `ixcc compile` flags of a row. `--opt` and `--bignat` rows are not covered by certificate
+replay, so `ixcc` needs `--uncertified` with them (and marks their objects' provenance notes). -/
 private def ixccModeArgs (o : Options) (spec : IxccRowSpec) : List String :=
+  (if spec.opt || spec.bignat then ["--uncertified"] else []) ++
   (if spec.bignat then
     ["--bignat"] ++ (match o.bignatLib with | some l => ["--bignat-lib", l.toString] | none => [])
    else
@@ -904,10 +909,14 @@ private def rowSemanticLabel (row : String) : String :=
     "Intrusive-RC recycling C++ control (`clang++`, single-threaded non-atomic RC + reuse, zero leaks)"
   else if row == "gcc-O2-rc" || row == "gcc-O3-rc" then
     "Intrusive-RC recycling C++ control (`g++`, single-threaded non-atomic RC + reuse, zero leaks)"
-  else if row == "ixcc-on" || row == "ixcc-on-opt" then
+  else if row == "ixcc-on-opt" then
+    "IxCC plain-RC (`--rc on --uncertified --opt`: not covered by certificate replay; single-threaded RC with cell recycling)"
+  else if row == "ixcc-on" then
     "IxCC plain-RC (`--rc on`, single-threaded RC with cell recycling)"
   else if row == "ixcc-bignat" || row == "ixcc-bignat-opt" then
-    "IxCC BigNat immortal (`--bignat`, arbitrary-precision Nat, bump-allocated region)"
+    "IxCC BigNat immortal (`--uncertified --bignat`: no certificate; arbitrary-precision Nat, bump-allocated region)"
+  else if row == "ixcc-opt" then
+    "IxCC immortal (`--rc off --uncertified --opt`: not covered by certificate replay; bump-allocated region)"
   else if row.startsWith "ixcc" then
     "IxCC immortal (`--rc off`/`auto`, bump-allocated region)"
   else "custom row"

@@ -416,6 +416,8 @@ def compileLibrary (lib : FrozenLibrary) : Except String CompiledBigNatLib := do
     throw "bignat link: Fir.Rep.checkWithArrays failed on compiled BigNat.Entry"
   let own := Own.immortal fir
   let cfg := Cfg.lower own
+  -- the array analyses `lowerRep` runs, each to its fixpoint, or the library is refused
+  (Rt.LowerRep.checkArrayAnalyses cert cfg).mapError (·.render)
   let lowered ← (Rt.lowerRep { names := rootNames } cert cfg).mapError (·.render)
   lowered.program.check
   -- Resolve exact constructor tags & field reps from the compiled closure
