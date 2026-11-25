@@ -1,4 +1,5 @@
 import IxCCAiur.Driver
+import IxCCAiur.ScheduleJson
 
 /-! # `ixcc-aiur`
 
@@ -30,6 +31,7 @@ structure Options where
   out : Option String := none
   execPackage : Bool := false
   typed : Bool := false
+  schedule : Option String := none
   noInline : Bool := false
   pairTable : Bool := false
   stats : Bool := false
@@ -37,7 +39,7 @@ structure Options where
 def usage : String :=
   "usage: ixcc-aiur CLOSURE.ixe [--equations EQUATIONS.json | EQUATIONS.json] \
 [--root NAME|ADDR|NAME=ADDR] [--args N,N,...] [-o PACKAGE.ixa] [--exec] \
-[--typed] [--no-inline] [--pair-table] [--stats]"
+[--typed] [--schedule SCHEDULE.json] [--no-inline] [--pair-table] [--stats]"
 
 def parseNats (s : String) : Except String (List Nat) :=
   (s.splitOn ",").filter (· != "") |>.mapM fun w =>
@@ -53,6 +55,7 @@ def parse : List String → Options → Except String Options
   | "-o" :: path :: rest, o => parse rest { o with out := some path }
   | "--exec" :: rest, o => parse rest { o with execPackage := true }
   | "--typed" :: rest, o => parse rest { o with typed := true }
+  | "--schedule" :: path :: rest, o => parse rest { o with schedule := some path }
   | "--no-inline" :: rest, o => parse rest { o with noInline := true }
   | "--pair-table" :: rest, o => parse rest { o with pairTable := true }
   | "--stats" :: rest, o => parse rest { o with stats := true }
@@ -73,9 +76,15 @@ def printChipStats (chips : List (String × Nat × Nat × Nat)) (ms : Nat) : IO 
 
 def runTyped (o : Options) (front : Driver.Front) : IO UInt32 := do
   let fir := front.levels.fir
+  let baseSched ← match o.schedule with
+    | some schedPath =>
+      let text ← IO.FS.readFile schedPath
+      IO.ofExcept (ScheduleJson.fromJsonString text)
+    | none => pure ({} : Schedule.CircuitSchedule)
   let sched : Schedule.CircuitSchedule := {
-    autoInline := !o.noInline
-    rangeCheck := if o.pairTable then .pairTable else .auto
+    baseSched with
+    autoInline := if o.noInline then false else baseSched.autoInline
+    rangeCheck := if o.pairTable then .pairTable else baseSched.rangeCheck
   }
   let start ← IO.monoMsNow
   let linked ← IO.ofExcept (Driver.linkTyped front.levels.src fir 0 sched)

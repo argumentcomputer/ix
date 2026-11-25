@@ -12,6 +12,7 @@ import IxCCAiur.Gcd
 import IxCCAiur.Roots
 import IxCCAiur.Hints
 import IxCCAiur.Schedule
+import IxCCAiur.ScheduleJson
 import IxCCAiur.TypedRep
 import IxCCAiur.TypedLower
 import IxCCAiur.TypedWorld

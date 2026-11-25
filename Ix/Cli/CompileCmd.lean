@@ -11,6 +11,8 @@ public import Ix.Benchmark.Results
 public import Ix.Cli.ConstsFile
 public import Ix.Cli.ValidateCmd
 public import Ix.Compile.Equations
+public import Ix.Compile.CircuitContract
+public import Ix.SemanticContract
 public import Ix.Cli.KernelLimits
 import Std.Internal.UV.System
 
@@ -263,6 +265,14 @@ def compileWith (p : Cli.Parsed) (settings : Ix.Kernel.Host.Resolved) : IO UInt3
         IO.println "[compile] mode checking: accepted by IxCK.Resource.check, which is uncertified \
           (nothing proves it sound)"
       Ix.RoleBinding.Compile.writeAtomic (FilePath.mk outPath) bytes
+      if let some schedPath := (p.flag? "circuit-schedule-out").map (·.as! String) then
+        let nameToAddr : Std.HashMap Lean.Name String :=
+          out.env.named.fold (init := {}) fun m k named =>
+            m.insert (Ix.SemanticContract.toLeanName k) (toString named.addr)
+        let schedJson ← match Ix.Compile.CircuitContract.exportScheduleJsonChecked leanEnv nameToAddr with
+          | .ok j => pure j
+          | .error e => throw (IO.userError s!"circuit-schedule export failed: {e}")
+        IO.FS.writeFile schedPath (schedJson.pretty ++ "\n")
       pure { status with
         bytes := bytes.size.toUInt64
         named := artifact.named.size.toUInt64
@@ -391,6 +401,7 @@ def compileCmd : Cli.Cmd := `[Cli|
     "word-equations" ;       "Add the stored equation of every fixed-width word operation (`UInt8`…`UInt64`) the compile's roots reach (a dependency walk over the values of definitions and opaques and the rules of recursors that enters no declaration type, no theorem and no word operation; `Ix.Compile.WordEquations`), with the bridges it mentions, as seeds, and name each, with its operation, in the output's `theorems` list. On wherever the equations are; the flag says so explicitly."
     "no-word-equations" ;    "Keep the unfolding theorems but add no word equation."
     "equations-out" : String; "Path for the equations output (JSON, format `ix/compile-equations/2`: `equations` [{definition, equation}] sorted by definition, `theorems` [{kind, subject, theorem}] sorted by subject (kind `word`: a word operation and its stored equation), `failures` [{definition, message}]); defaults to <out>.equations.json."
+    "circuit-schedule-out" : String; "Path for the address-keyed CircuitSchedule sidecar JSON (`ixcc/circuit-schedule/1`) exported from `open scoped Ix.Circuit` annotations without mutating Ixon addresses."
 
   ARGS:
     path : String; "Path to the Lean source file to compile."
