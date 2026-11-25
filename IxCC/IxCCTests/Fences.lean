@@ -31,6 +31,7 @@ import IxCCTests.Fences.CfgProof
 import IxCCTests.Fences.LirProof
 import IxCCTests.Fences.RtProof
 import IxCCTests.Fences.FirProof
+import IxCCTests.Fences.FirShape
 import IxCCTests.Fences.OwnProof
 import IxCCTests.Fences.CfgLower
 import IxCCTests.Fences.Front
