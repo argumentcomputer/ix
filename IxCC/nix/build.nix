@@ -111,9 +111,10 @@
     '';
     postInstall = "";
   };
-  # The grounding library, with its axiom fence, and its suite (`tests-grounding`), reusing the
-  # library's artifacts like the program build; the one build that compiles the kernel's
-  # model (`IxCK.Kernel.Denotes` and its imports, in the «ix-ck» closure the ledger records).
+  # The grounding library and the target statements (`IxCCCorrect`), each with its axiom
+  # fence, and the grounding suite (`tests-grounding`), reusing the library's artifacts like
+  # the program build; the one build that compiles the kernel's model (`IxCK.Kernel.Denotes`
+  # and its imports, in the «ix-ck» closure the ledger records).
   grounding = lake2nix.mkPackage {
     inherit lakeDeps buildInputs;
     src = sources.grounding;
@@ -126,8 +127,8 @@
     '';
     buildPhase = ''
       runHook preBuild
-      lake -KciLeanLibDir=${lean}/lib/lean build IxCCGrounding \
-        ${pkgs.lib.escapeShellArgs sources.groundingTargets}
+      lake -KciLeanLibDir=${lean}/lib/lean build \
+        ${pkgs.lib.escapeShellArgs (sources.groundingLibraries ++ sources.groundingTargets)}
       runHook postBuild
     '';
     installPhase = ''

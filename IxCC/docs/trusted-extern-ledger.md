@@ -120,10 +120,12 @@ rule covers everything that can change what a check builds, runs or compares
 against:
 
 - the Lake and toolchain files (`lakefile.lean`, `lake-manifest.json`,
-  `lean-toolchain`) and the root modules `IxCC.lean`, `IxCCTests.lean` and
-  `IxCCGrounding.lean`;
+  `lean-toolchain`) and the root modules `IxCC.lean`, `IxCCTests.lean`,
+  `IxCCGrounding.lean` and `IxCCCorrect.lean`;
 - every file under `IxCCGrounding/` (the grounding library: its laws,
-  relation, lemmas, check and axiom fence);
+  relation, lemmas, check and axiom fence) and `IxCCCorrect/` (the target
+  statements: the claim, the tiers, the routes, the progress statements and
+  their proofs, and its axiom fence);
 - every file under `IxCC/` (the production library and the repository checkers
   in `IxCC/Tools`), `IxCCTests/` (tests,
   fences, executable scripts such as `Scripts/X86ObjectFixture.lean` and
@@ -448,7 +450,10 @@ interface `IxCK/Kernel/SetTheory/*`, `IxCK/Kernel/SetModel/Ops.lean` and
 not the kernel's proof tree). The model's files are pinned because the
 grounding theorems are stated over them: a change to `Denotes.lean` (the
 certified IxVM work's laws, when they land) fails this audit until reviewed.
-`check-build-graph` refuses an import of the grounding library or of the model
+The target statements (`IxCCCorrect`) import the model too (`IxCK.Kernel.Denotes`,
+no module outside that closure), for the kernel meaning the tiers are stated in.
+`check-build-graph` refuses an import of the grounding library, of the target
+statements or of the model
 from the production library or any program of the shared build, so the
 production binaries' import closures stay within the 84. The codec is the ingress decoder and encoder;
 the tiered admission entry and the executed typing core are the front end

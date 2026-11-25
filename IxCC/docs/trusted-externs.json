@@ -8,6 +8,7 @@
       "IxCC",
       "IxCCTests",
       "IxCCGrounding",
+      "IxCCCorrect",
       "Init",
       "IxCK",
       "Lake",
@@ -622,12 +623,14 @@
         "IxCC.lean",
         "IxCCTests.lean",
         "IxCCGrounding.lean",
+        "IxCCCorrect.lean",
         "lakefile.lean",
         "lake-manifest.json",
         "lean-toolchain",
         "IxCC/**",
         "IxCCTests/**",
         "IxCCGrounding/**",
+        "IxCCCorrect/**",
         "fixtures/**",
         "nix/**",
         "tools/**",
@@ -3556,7 +3559,7 @@
         "its @[csimp] theorems are exactly the reviewed csimp_theorems, each a proved equality; any other csimp theorem in the closure, or a listed one missing, fails the audit",
         "ix proves the kernel's soundness (the model and strong-model theorems of the tiered and logical entries, the simulation of the specification by the cached core, the bridge to the relational judgements and their soundness) and the codec's round trip in the same tree; IxCC imports the executable kernel, not those proofs",
         "Nix packages exactly the closure recorded here (nix/sources.nix) under the same package name and toolchain (nix/build.nix ixC)",
-        "the grounding library (IxCCGrounding, not the production library or any program of the shared build: check-build-graph refuses either importing it or the model) imports the kernel's model, the statement half only: IxCK.Kernel.Denotes and its imports (the set theory interface IxCK/Kernel/SetTheory/*, IxCK/Kernel/SetModel/Ops.lean, IxCK/Kernel/Verify/Level.lean and LevelGeran.lean), 16 files hashed here like the rest, so a change to the model the grounding theorems are stated over fails this audit until reviewed"
+        "the grounding library (IxCCGrounding) and the target statements (IxCCCorrect), not the production library or any program of the shared build (check-build-graph refuses either importing them or the model), import the kernel's model, the statement half only: IxCK.Kernel.Denotes and its imports (the set theory interface IxCK/Kernel/SetTheory/*, IxCK/Kernel/SetModel/Ops.lean, IxCK/Kernel/Verify/Level.lean and LevelGeran.lean), 16 files hashed here like the rest, so a change to the model the grounding theorems are stated over fails this audit until reviewed"
       ],
       "tests": [
         "tests-kernel-front: the kernel accepts every committed closure but three refused for their own reasons (two past the decoder's budgets, one holding sorryAx); ingress and Stage A on every root of the committed closures under 512 KiB; refusals of an unbound envelope, a binding that does not hash to its address, a missing record, a table naming an absent record, an ill-typed record, a non-standard axiom, a block without its recursor, a changed annotation (Stage A) and a program that is not the kernel's reading",
@@ -3564,7 +3567,7 @@
         "census and corpus check: every frozen closure decodes, authenticates and re-reads into the recorded census",
         "tests-src, tests-corpus, tests-own, tests-recheck: every compiled fixture ingested through this codec",
         "check-tools-tests: a listed csimp theorem or implemented_by site dropped from the inventory, an unlisted one added to the closure with its hash re-recorded, a native_decide or a public import outside the closure added to a closure file, each fails the audit",
-        "tests-grounding (ixcc-grounding): the grounding check over the kernel's reading of the committed grounding subjects, conjunct by conjunct, with negative controls; building IxCCGrounding checks its axiom fence"
+        "tests-grounding (ixcc-grounding): the grounding check over the kernel's reading of the committed grounding subjects, conjunct by conjunct, with negative controls; building IxCCGrounding and IxCCCorrect checks their axiom fences"
       ],
       "retirement": {
         "milestone": "done: the kernel front end's switch (IxCC/docs/kernel-front-end-design.md)",

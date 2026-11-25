@@ -100,7 +100,19 @@ def groundingAssertions (root : FilePath) (graph : Json) : IO (List String × Li
   need (modules.contains "IxCCGrounding.Fence") "the grounding library no longer builds its fence"
   return (modules, ← axiomAssertions (← IO.FS.readFile (root / groundingFence)))
 
-/-- The kernel's model, which only the grounding library may import. -/
+/-- The target statements' fence (`IxCCCorrect/Fence.lean`), built with the library by the
+required check `ixcc-grounding` (the build that compiles the kernel's model), not by the
+shared proof aggregate. -/
+def correctFence : String := "IxCCCorrect/Fence.lean"
+
+/-- The target statements' modules and their fence's exact axiom assertions. -/
+def correctAssertions (root : FilePath) (graph : Json) : IO (List String × List String) := do
+  let modules := (← closure graph ["IxCCCorrect"]).filter (·.startsWith "IxCCCorrect")
+  need (modules.contains "IxCCCorrect.Fence") "the target statements no longer build their fence"
+  return (modules, ← axiomAssertions (← IO.FS.readFile (root / correctFence)))
+
+/-- The kernel's model, which only the grounding library and the target statements
+(`IxCCCorrect`) may import. -/
 def modelModule (name : String) : Bool :=
   ["IxCK.Kernel.Denotes", "IxCK.Kernel.SetModel", "IxCK.Kernel.SetTheory", "IxCK.Kernel.Verify"].any
     fun p => name == p || name.startsWith (p ++ ".")
@@ -108,12 +120,15 @@ def modelModule (name : String) : Bool :=
 /-- The executables built by `ixcc-grounding` rather than by the shared program build. -/
 def groundingTargets : List String := ["tests-grounding"]
 
-/-- No module of `names`' closure is the grounding library's or imports the kernel's model. -/
+/-- No module of `names`' closure is the grounding library's or the target statements', or
+imports the kernel's model. -/
 def beside (graph : Json) (what : String) (names : List String) : IO Unit := do
   let modules ← pairs (← field graph "modules")
   for name in ← closure graph names do
     need (!name.startsWith "IxCCGrounding")
       s!"{what} imports the grounding library: {name}"
+    need (!name.startsWith "IxCCCorrect")
+      s!"{what} imports the target statements: {name}"
     if let some (_, entry) := modules.find? (·.1 == name) then
       for imp in ← (← arrField entry "imports").toList.mapM string do
         need (!modelModule imp) s!"{what} imports the kernel's model: {name} imports {imp}"
@@ -138,12 +153,16 @@ def coverage (root : FilePath) (graph : Json) (baseline : String)
   let axioms ← fenceAssertions root proofs
   let failures ← suiteFailures root graph suites
   let (gmodules, gaxioms) ← groundingAssertions root graph
+  let (cmodules, caxioms) ← correctAssertions root graph
   return Json.mkObj [("baseline", toJson baseline),
     ("proof_modules", toJson proofs),
     ("axiom_count", toJson axioms.length), ("axiom_sha256", toJson (← digest axioms)),
     ("grounding_modules", toJson gmodules),
     ("grounding_axiom_count", toJson gaxioms.length),
     ("grounding_axiom_sha256", toJson (← digest gaxioms)),
+    ("correct_modules", toJson cmodules),
+    ("correct_axiom_count", toJson caxioms.length),
+    ("correct_axiom_sha256", toJson (← digest caxioms)),
     ("runtime_suites", toJson suites),
     ("runtime_failure_count", toJson failures.length),
     ("runtime_failure_sha256", toJson (← digest failures))]
@@ -163,6 +182,12 @@ def checkCoverage (root : FilePath) (graph : Json) : IO Unit := do
   need (gaxioms.length == (← nat (← field expected "grounding_axiom_count")) &&
     (← digest gaxioms) == (← strField expected "grounding_axiom_sha256"))
     "grounding axiom assertions or expected messages changed; review the coverage inventory"
+  let (cmodules, caxioms) ← correctAssertions root graph
+  for name in ← (← arrField expected "correct_modules").toList.mapM string do
+    need (cmodules.contains name) s!"the target statements no longer build {name}"
+  need (caxioms.length == (← nat (← field expected "correct_axiom_count")) &&
+    (← digest caxioms) == (← strField expected "correct_axiom_sha256"))
+    "target-statement axiom assertions or expected messages changed; review the coverage inventory"
   let suites ← (← arrField expected "runtime_suites").toList.mapM string
   let failures ← suiteFailures root graph suites
   need (failures.length == (← nat (← field expected "runtime_failure_count")) &&

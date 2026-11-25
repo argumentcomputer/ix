@@ -35,10 +35,11 @@ tree still contains monolithic test and proof modules that need migration.
   the ledger refuses any other import or name under `Blake3`, so no IxCC
   module may import the package's Rust or C backend, and its link audit
   refuses either backend's symbols in every executable the checks build); its grounding
-  library (`IxCCGrounding`, beside the production library) also imports the
+  library (`IxCCGrounding`, beside the production library) and its target
+  statements (`IxCCCorrect`, likewise) also import the
   kernel's model, `IxCK.Kernel.Denotes` (the statement half), which nothing
-  in the production library or the shared program build may import
-  (`check-build-graph`);
+  in the production library or the shared program build may import, nor
+  either library (`check-build-graph`);
   ix's root
   package does not depend on IxCC, and IxCC must not import the root
   package's `Ix.*` modules.

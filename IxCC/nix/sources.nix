@@ -29,6 +29,9 @@
   # The grounding library's suite is built with the library by `ixcc-grounding`, not by the
   # shared program build, so editing the grounding work never rebuilds the programs.
   groundingTargets = ["tests-grounding"];
+  # The libraries built, with their axiom fences, by `ixcc-grounding`: the grounding library
+  # and the target statements (`IxCCCorrect`, which imports its syntax and the kernel's model).
+  groundingLibraries = ["IxCCGrounding" "IxCCCorrect"];
   programTargets =
     builtins.filter (name: !(builtins.elem name groundingTargets))
     (builtins.attrNames
@@ -46,14 +49,15 @@
   ixCFiles = map (path: ixCSourceRoot + "/${path}") (builtins.attrNames ixCEntry.closure);
   repository = root + "/${ledger.policy.repository.root}";
 in {
-  inherit root programTargets groundingTargets;
+  inherit root programTargets groundingTargets groundingLibraries;
   # The production library.
   production = source ["IxCC"];
   # Every executable plus the complete proof and fence collection, built once.
   programs = source (["IxCCTests.Proofs"]
     ++ lib.concatMap (name: graph.targets.${name}.roots) programTargets);
-  # The grounding library (which imports the kernel's model) and its suite.
-  grounding = source (["IxCCGrounding"]
+  # The grounding library and the target statements (the libraries that import the
+  # kernel's model), and the grounding library's suite.
+  grounding = source (groundingLibraries
     ++ lib.concatMap (name: graph.targets.${name}.roots) groundingTargets);
   dependencies = lib.fileset.toSource {
     inherit root;

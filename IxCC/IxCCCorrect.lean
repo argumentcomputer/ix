@@ -7,6 +7,7 @@ import IxCCCorrect.Progress
 import IxCCCorrect.Shape
 import IxCCCorrect.Shape1
 import IxCCCorrect.Shape1Check
+import IxCCCorrect.Fence
 
 /-!
 # `IxCCCorrect`: the target statements of IxCC
@@ -35,11 +36,15 @@ propositions that elaborate, and what the existing theorems establish today.
 * `IxCCCorrect.Shape1`, `IxCCCorrect.Shape1Check`: the second class, first-order
   `Nat` and enumeration programs with irrelevant positions, `case` and recursors,
   with its decision (`certOk`, `neverWrong_of_cert_nat`).
+* `IxCCCorrect.Fence`: the library's axiom fence, an exact `#print axioms`
+  assertion for every theorem above (each within `propext`, `Classical.choice`,
+  `Quot.sound`).
 
 The tiers, the routes and the two progress targets are definitions: nothing here
 proves them. The library
 imports the compiler (`IxCC`), the grounding library's syntax (`IxCCGrounding`) and
 the kernel's model statement (`IxCK.Kernel.Denotes`), so it is outside the
-production import root (`IxCC` must not import the grounding library or the
-kernel's model, `IxCC.Tools.BuildGraph`).
+production import root (`IxCC` must not import the grounding library, the
+kernel's model or this library, `IxCC.Tools.BuildGraph`). It is built, with its
+fence, by the required check `ixcc-grounding`, beside the grounding library.
 -/

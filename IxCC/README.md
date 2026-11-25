@@ -104,7 +104,7 @@ The earlier pipeline, the Ixby backend and their measurements are on branch
 IxCC lives in ix under `IxCC/`, as its own Lake package (`«ix-cc»`). It
 requires the `IxCK` package beside it (`../IxCK`, of which it imports the Ixon
 v5 codec, role vocabulary, executable certified kernel, resource mode checker,
-host limits, and—for `IxCCGrounding` only—the kernel's model statement, 111
+host limits, and—for `IxCCGrounding` and `IxCCCorrect` only—the kernel's model statement, 111
 files total) and `Blake3.Pure`, and nothing of ix's root package. ix's flake
 builds it and exposes its 16 required checks as `ixcc-*`:
 

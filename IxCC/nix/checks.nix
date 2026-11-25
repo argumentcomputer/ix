@@ -198,8 +198,10 @@ in
 
     # The grounding of SrcEval in the kernel's model (`IxCCGrounding`, docs/certification-design.md):
     # building the library checks its axiom fence; `tests-grounding` runs the check its theorems
-    # take on the committed closures, conjunct by conjunct, with its negative controls. Its own
-    # build (`nix/build.nix`), so the kernel's model never enters the shared program build.
+    # take on the committed closures, conjunct by conjunct, with its negative controls. The same
+    # build compiles the target statements (`IxCCCorrect`), which import the grounding library's
+    # syntax and the kernel's model, and so checks their axiom fence. Its own build
+    # (`nix/build.nix`), so the kernel's model never enters the shared program build.
     grounding = mkCheckWith grounding "grounding" [] ''
       ./.lake/build/bin/tests-grounding
     '';

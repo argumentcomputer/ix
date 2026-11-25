@@ -31,7 +31,7 @@ prelude and executed typing core (`IxCK.Kernel.Admission.Tier`,
 kernel (`IxCC.Src.KernelFront`, `docs/kernel-front-end-design.md`). It is the
 package beside this one in the ix workspace; the trust ledger records the
 SHA-256 of every file of the imported closure (including the
-kernel's model statement imported only by `IxCCGrounding`; not the kernel's
+kernel's model statement imported only by `IxCCGrounding` and `IxCCCorrect`; not the kernel's
 proof tree), so a change to it is reviewed here. -/
 require «ix-ck» from "../IxCK"
 
@@ -56,9 +56,10 @@ lean_lib IxCCTests where
 
 /- The grounding of SrcEval in the certified kernel's model
 (docs/certification-design.md, "The grounding library"): soundness of SrcEval
-in every model of the kernel's reading with the laws. It is the one library
-that imports the kernel's model (`IxCK.Kernel.Denotes`); nothing in the
-production library or the shared program build imports it
+in every model of the kernel's reading with the laws. It and the target
+statements (`IxCCCorrect`, below) are the libraries that import the kernel's
+model (`IxCK.Kernel.Denotes`); nothing in the production library or the shared
+program build imports either
 (`check-build-graph`). Built, with its axiom fence, and run on committed
 closures by the required check `ixcc-grounding`. -/
 lean_lib IxCCGrounding where
@@ -69,8 +70,9 @@ lean_lib IxCCGrounding where
 routes to it, and what the existing theorems establish today (`CorrectToday`).
 It imports the compiler, the grounding library's syntax and the kernel's model
 statement, so nothing in the production library, the shared proof aggregate or
-a shared program imports it. Not yet in the import manifest
-(`nix/lean-modules.json`) or behind an axiom fence. -/
+a shared program imports it (`check-build-graph`). Built, with its axiom fence
+(`IxCCCorrect/Fence.lean`), by the required check `ixcc-grounding`, in the
+grounding library's build. -/
 lean_lib IxCCCorrect where
   roots := #[`IxCCCorrect]
 

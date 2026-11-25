@@ -327,6 +327,18 @@ private def buildGraphTests (root : FilePath) : IO Unit := do
   withFile gfence (gsource.replace gassertions.head! "") do
     rejects "removed grounding axiom assertion" "grounding axiom assertions or expected messages changed"
       checkGraph
+  -- the target statements (`IxCCCorrect`) stay beside production and the shared build too
+  offend api "IxCCCorrect.Today" "production imports the target statements"
+    "production imports the target statements"
+  offend (root / "IxCCTests/IxonV3/Main.lean") "IxCCCorrect.Today"
+    "a shared program imports the target statements" "shared program tests-ixon-v3 imports the target statements"
+  let cfence := root / IxCC.Tools.BuildGraph.correctFence
+  let csource ← IO.FS.readFile cfence
+  let cassertions ← IxCC.Tools.BuildGraph.axiomAssertions csource
+  need (!cassertions.isEmpty) "empty target-statement fence"
+  withFile cfence (csource.replace cassertions.head! "") do
+    rejects "removed target-statement axiom assertion"
+      "target-statement axiom assertions or expected messages changed" checkGraph
 
 /-- `ledger` with `relative`'s integrity hash re-recorded from `root`. -/
 private def rehash (ledger : Json) (root : FilePath) (relative : String) : IO Json := do
