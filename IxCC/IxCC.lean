@@ -542,6 +542,9 @@ import IxCC.Rt.Rc.Array.Proof.BasicOps
 import IxCC.Rt.Rc.Array.Proof.MutOps
 import IxCC.Rt.Rc.Array.Proof.Release
 import IxCC.Rt.Rc.Array.Proof.Alloc
+import IxCC.Rt.Rc.Array.Kind
+import IxCC.Rt.Rc.Array.Cell
+import IxCC.Rt.Rc.Array.Proof.DecArr
 import IxCC.Rt.Readback.Array
 import IxCC.Cfg.Rc.Layout
 import IxCC.Cfg.Rc.Inline
