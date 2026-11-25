@@ -357,6 +357,8 @@
   "IxCC.Cfg.Semantics",
   "IxCC.Cfg.Syntax",
   "IxCC.Cfg.WellFormed",
+  "IxCC.Compile",
+  "IxCC.Compile.Proof",
   "IxCC.CompileClaim",
   "IxCC.CompileClaim.Closure",
   "IxCC.CompileClaim.Proof",
@@ -1266,6 +1268,7 @@
   "IxCCTests.Fences.OwnRc",
   "IxCCTests.Fences.OwnReuse",
   "IxCCTests.Fences.P1",
+  "IxCCTests.Fences.PureCompile",
   "IxCCTests.Fences.RcPolicy",
   "IxCCTests.Fences.RcPromotion",
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Bounds",
@@ -1792,7 +1795,12 @@
  "correct_modules":
  ["IxCCCorrect",
   "IxCCCorrect.Claim",
+  "IxCCCorrect.Compile",
+  "IxCCCorrect.Compose",
+  "IxCCCorrect.ComposeExe",
   "IxCCCorrect.Fence",
+  "IxCCCorrect.GroundCheck",
+  "IxCCCorrect.GroundRoot",
   "IxCCCorrect.Process",
   "IxCCCorrect.Progress",
   "IxCCCorrect.Routes",
@@ -1802,13 +1810,14 @@
   "IxCCCorrect.Shape2",
   "IxCCCorrect.Shape2Check",
   "IxCCCorrect.Shape2Produce",
+  "IxCCCorrect.ShapeHook",
   "IxCCCorrect.Tiers",
   "IxCCCorrect.Today"],
  "correct_axiom_sha256":
- "2cd41ccd267bb8755da341087596612c2118992607dc21522affb5904b6eaabd",
- "correct_axiom_count": 147,
+ "f0c18ee25744d54582570fa9965e149f3a2ad60bd3b1358d031a2344a29b28a9",
+ "correct_axiom_count": 230,
  "baseline":
- "ixcc-2-int3: anf-prune (Anf fences +2) and IxCCCorrect M2 (fence 93 -> 147); 7,331 + 556 + 147 = 8,034 fences",
+ "ixcc-2-int4: cli-fail-closed, pure-compile, shapes M3, grounding-compose (IxCCCorrect fence 147 -> 230)",
  "axiom_sha256":
- "0b41e0f8f7799528f4b0ee2f79786b8c8696363a54f33eb877c55a99af68af9f",
- "axiom_count": 7331}
+ "962c1a6be86c93b4b9f84a8a90bd5abcd72335fc12e42c39e3faa4f7ad0ad806",
+ "axiom_count": 7352}

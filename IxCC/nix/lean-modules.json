@@ -17,6 +17,8 @@
   "tests-recheck": {"roots": ["IxCCTests.Recheck.Main"], "kind": "lean_exe"},
   "tests-rc-certificate":
   {"roots": ["IxCCTests.Recheck.Rc.Main"], "kind": "lean_exe"},
+  "tests-pure-compile":
+  {"roots": ["IxCCTests.Compile.Main"], "kind": "lean_exe"},
   "tests-pipeline-rc":
   {"roots": ["IxCCTests.Pipeline.Rc.Main"], "kind": "lean_exe"},
   "tests-pipeline": {"roots": ["IxCCTests.Pipeline.Main"], "kind": "lean_exe"},
@@ -343,7 +345,10 @@
    "imports": ["IxCCTests.Soundness.Run"]},
   "IxCCTests.Shape.Main":
   {"path": "IxCCTests/Shape/Main.lean",
-   "imports": ["IxCC.Recheck.Produce", "IxCCCorrect.Shape2Produce"]},
+   "imports":
+   ["IxCC.Recheck.Produce",
+    "IxCCCorrect.Shape2Produce",
+    "IxCCCorrect.ShapeHook"]},
   "IxCCTests.Sem.Toy.Tick":
   {"path": "IxCCTests/Sem/Toy/Tick.lean", "imports": ["IxCCTests.Sem.Toy.Big"]},
   "IxCCTests.Sem.Toy.Stack":
@@ -1258,6 +1263,12 @@
     "IxCCGrounding.Direct.Check",
     "IxCCTests.Grounding.Oracle",
     "IxCCTests.Src.Support"]},
+  "IxCCTests.Grounding.Pipeline":
+  {"path": "IxCCTests/Grounding/Pipeline.lean",
+   "imports":
+   ["IxCC.Recheck.Produce",
+    "IxCC.Recheck.Proof.Front",
+    "IxCCCorrect.GroundCheck"]},
   "IxCCTests.Grounding.Pc":
   {"path": "IxCCTests/Grounding/Pc.lean",
    "imports": ["IxCCTests.Grounding.LetWit", "IxCCGrounding.PcRoot"]},
@@ -1284,7 +1295,8 @@
     "IxCCTests.Grounding.LetClo",
     "IxCCTests.Grounding.LetWit",
     "IxCCTests.Grounding.Words",
-    "IxCCTests.Grounding.Pc"]},
+    "IxCCTests.Grounding.Pc",
+    "IxCCTests.Grounding.Pipeline"]},
   "IxCCTests.Grounding.LetWit":
   {"path": "IxCCTests/Grounding/LetWit.lean",
    "imports": ["IxCCTests.Grounding.LetClo"]},
@@ -3461,6 +3473,9 @@
   "IxCCTests.Fences.RcPolicy":
   {"path": "IxCCTests/Fences/RcPolicy.lean",
    "imports": ["IxCC.Recheck.Rc.Proof.KeyIndex"]},
+  "IxCCTests.Fences.PureCompile":
+  {"path": "IxCCTests/Fences/PureCompile.lean",
+   "imports": ["IxCC.Compile.Proof"]},
   "IxCCTests.Fences.P1":
   {"path": "IxCCTests/Fences/P1.lean",
    "imports":
@@ -3827,6 +3842,7 @@
     "IxCCTests.Fences.RtRcGen",
     "IxCCTests.Fences.RecheckReadback",
     "IxCCTests.Fences.Compile",
+    "IxCCTests.Fences.PureCompile",
     "IxCCTests.Fences.Erase",
     "IxCCTests.Fences.Anf",
     "IxCCTests.Fences.Defun",
@@ -3972,6 +3988,12 @@
   "IxCCTests.Corpus.Artifacts.EvenOdd":
   {"path": "IxCCTests/Corpus/Artifacts/EvenOdd.lean",
    "imports": ["IxCC.Recheck.Run"]},
+  "IxCCTests.Compile.Run":
+  {"path": "IxCCTests/Compile/Run.lean",
+   "imports":
+   ["IxCC.Compile", "IxCC.Cli", "IxCC.Exe.Cert", "IxCCTests.Corpus.Manifest"]},
+  "IxCCTests.Compile.Main":
+  {"path": "IxCCTests/Compile/Main.lean", "imports": ["IxCCTests.Compile.Run"]},
   "IxCCTests.Cfg.Rc.Scope":
   {"path": "IxCCTests/Cfg/Rc/Scope.lean",
    "imports": ["IxCC.Cfg.Rc.Scoped", "IxCC.Own.Plain.Program"]},
@@ -4242,6 +4264,7 @@
     "IxCCTests.Own.Plain.Suite",
     "IxCCTests.Pipeline.ShrinkSuite",
     "IxCCTests.Recheck.Run",
+    "IxCCTests.Compile.Run",
     "IxCCTests.Recheck.P1Twin.Run",
     "IxCCTests.KernelFront.Run",
     "IxCCTests.Ring0"]},
@@ -4518,6 +4541,9 @@
     "IxCC.Recheck.Produce",
     "IxCCGrounding.Syntax",
     "IxCK.Kernel.Denotes"]},
+  "IxCCCorrect.ShapeHook":
+  {"path": "IxCCCorrect/ShapeHook.lean",
+   "imports": ["IxCCCorrect.Shape2Check"]},
   "IxCCCorrect.Shape2Produce":
   {"path": "IxCCCorrect/Shape2Produce.lean",
    "imports": ["IxCCCorrect.Shape2Check"]},
@@ -4542,6 +4568,16 @@
   {"path": "IxCCCorrect/Process.lean",
    "imports":
    ["IxCC.X86.Exe.Process", "IxCC.X86.Exe.Read", "IxCC.X86.Exe.Cert"]},
+  "IxCCCorrect.GroundRoot":
+  {"path": "IxCCCorrect/GroundRoot.lean", "imports": ["IxCCGrounding.PcProp"]},
+  "IxCCCorrect.GroundCheck":
+  {"path": "IxCCCorrect/GroundCheck.lean",
+   "imports":
+   ["Std.Data.HashSet",
+    "IxCC.Src.Proof.NatMap",
+    "IxCC.Lam.Erase.Proof.Correct",
+    "IxCCCorrect.GroundRoot",
+    "IxCCCorrect.Tiers"]},
   "IxCCCorrect.Fence":
   {"path": "IxCCCorrect/Fence.lean",
    "imports":
@@ -4552,7 +4588,23 @@
     "IxCCCorrect.Shape1",
     "IxCCCorrect.Shape1Check",
     "IxCCCorrect.Shape2",
-    "IxCCCorrect.Shape2Check"]},
+    "IxCCCorrect.Shape2Check",
+    "IxCCCorrect.ShapeHook",
+    "IxCCCorrect.Compile",
+    "IxCCCorrect.GroundRoot",
+    "IxCCCorrect.GroundCheck",
+    "IxCCCorrect.Compose",
+    "IxCCCorrect.ComposeExe"]},
+  "IxCCCorrect.ComposeExe":
+  {"path": "IxCCCorrect/ComposeExe.lean",
+   "imports": ["IxCCCorrect.Compose", "IxCCCorrect.Today"]},
+  "IxCCCorrect.Compose":
+  {"path": "IxCCCorrect/Compose.lean",
+   "imports":
+   ["IxCC.Exe.Plain.Exe", "IxCCCorrect.GroundCheck", "IxCCCorrect.Progress"]},
+  "IxCCCorrect.Compile":
+  {"path": "IxCCCorrect/Compile.lean",
+   "imports": ["IxCC.Compile.Proof", "IxCCCorrect.Today", "IxCCCorrect.Tiers"]},
   "IxCCCorrect.Claim":
   {"path": "IxCCCorrect/Claim.lean",
    "imports":
@@ -4572,6 +4624,12 @@
     "IxCCCorrect.Shape2",
     "IxCCCorrect.Shape2Check",
     "IxCCCorrect.Shape2Produce",
+    "IxCCCorrect.ShapeHook",
+    "IxCCCorrect.Compile",
+    "IxCCCorrect.GroundRoot",
+    "IxCCCorrect.GroundCheck",
+    "IxCCCorrect.Compose",
+    "IxCCCorrect.ComposeExe",
     "IxCCCorrect.Fence"]},
   "IxCC.Xv.XlSemantics":
   {"path": "IxCC/Xv/XlSemantics.lean",
@@ -8041,6 +8099,17 @@
     "IxCC.Recheck.Rc.Bytes",
     "IxCC.Ixon.PureHash",
     "IxCC.CompileClaim.Closure"]},
+  "IxCC.Compile.Proof":
+  {"path": "IxCC/Compile/Proof.lean",
+   "imports": ["IxCC.Compile", "IxCC.Compiler.Proof"]},
+  "IxCC.Compile":
+  {"path": "IxCC/Compile.lean",
+   "imports":
+   ["IxCC.Recheck",
+    "IxCC.Recheck.Rc.Produce",
+    "IxCC.Src.AutoHints",
+    "IxCC.Exe",
+    "IxCC.X86.Exe.Cert"]},
   "IxCC.Cli.Main": {"path": "IxCC/Cli/Main.lean", "imports": ["IxCC.Cli"]},
   "IxCC.Cli":
   {"path": "IxCC/Cli.lean",
@@ -10223,6 +10292,8 @@
     "IxCC.Recheck.Proof.Object",
     "IxCC.Recheck.Proof.Soundness",
     "IxCC.Cli",
+    "IxCC.Compile",
+    "IxCC.Compile.Proof",
     "IxCC.CompileClaim",
     "IxCC.Ring0",
     "IxCC.Exe",
