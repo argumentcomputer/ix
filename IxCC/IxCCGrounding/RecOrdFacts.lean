@@ -112,4 +112,167 @@ theorem recOrdRules_of_check {env : KEnv} {kr : KKey} (h : recOrdRulesB env kr =
     · cases h
   · cases h
 
+/-! ## Recursive rule bodies (W-c step 3)
+
+`List.rec`'s `cons` rule calls `List.rec` (the induction hypothesis, a by-name argument of the minor
+premise). `RecBodies` refuses every constant in a rule body, because the body must run (`Runs`), and
+`Runs.const` asks `Ok` of every constant SrcEval may unfold there. `RecBodiesSelf` allows exactly the
+recursor itself at its own level parameters, in order: SrcEval then unfolds it at the levels it
+fires the rule at, which is the `Ok` instance the F2 site's head records (`HeadAt.recr`), given the
+instance's level count (`OrdLevels`). -/
+
+/-- `us` names the level variables `0, …, n - 1` in order: a constant read at its own levels. -/
+def idUnivsB (n : Nat) (us : List IxCC.Ixon.Univ) : Bool :=
+  us.length == n && (List.range n).all fun k =>
+    match us[k]? with
+    | some (.var i) => i.toNat == k
+    | _ => false
+
+/-- At levels of the right count, a constant at its own level variables is read at those levels. -/
+theorem idUnivs_eval {n : Nat} {us : List IxCC.Ixon.Univ} (h : idUnivsB n us = true)
+    {ls : Levels} (hl : ls.length = n) : us.map (IxCC.Src.evalUniv ls) = ls := by
+  simp only [idUnivsB, Bool.and_eq_true, beq_iff_eq, List.all_eq_true, List.mem_range] at h
+  obtain ⟨hlen, hall⟩ := h
+  apply List.ext_getElem (by simp [hlen, hl])
+  intro k h1 h2
+  have hk := hall k (by simpa [hlen] using h1)
+  rw [List.getElem_map]
+  have h1' : k < us.length := by simpa using h1
+  rw [List.getElem?_eq_getElem h1'] at hk
+  generalize us[k] = u at hk ⊢
+  cases u with
+  | var i =>
+    simp only [beq_iff_eq] at hk
+    simp only [IxCC.Src.evalUniv, hk, List.getD_eq_getElem?_getD, List.getElem?_eq_getElem h2,
+      Option.getD_some]
+  | _ => simp at hk
+
+/-- Every constant node of `t` is `r` at its own level variables (`n` of them); no projection. -/
+def selfCallsB (r : CId) (n : Nat) : Term → Bool
+  | .const c us => c == r && idUnivsB n us
+  | .app f a _ _ => selfCallsB r n f && selfCallsB r n a
+  | .lam _ d b => selfCallsB r n d && selfCallsB r n b
+  | .pi _ d b => selfCallsB r n d && selfCallsB r n b
+  | .letE _ _ _ t v b => selfCallsB r n t && selfCallsB r n v && selfCallsB r n b
+  | .proj .. => false
+  | _ => true
+
+/-- A term of self-calls names only the recursor. -/
+theorem selfCalls_mentions {r : CId} {n : Nat} :
+    ∀ {t : Term} {d : CId}, selfCallsB r n t = true → t.mentions d = true → d = r
+  | .const c us, d, h, hm => by
+    simp only [selfCallsB, Bool.and_eq_true, beq_iff_eq] at h
+    simp only [Term.mentions, beq_iff_eq] at hm
+    rw [hm, h.1]
+  | .app f a _ _, d, h, hm => by
+    simp only [selfCallsB, Bool.and_eq_true] at h
+    simp only [Term.mentions, Bool.or_eq_true] at hm
+    rcases hm with hm | hm
+    · exact selfCalls_mentions h.1 hm
+    · exact selfCalls_mentions h.2 hm
+  | .lam _ dd b, d, h, hm => by
+    simp only [selfCallsB, Bool.and_eq_true] at h
+    simp only [Term.mentions, Bool.or_eq_true] at hm
+    rcases hm with hm | hm
+    · exact selfCalls_mentions h.1 hm
+    · exact selfCalls_mentions h.2 hm
+  | .pi _ dd b, d, h, hm => by
+    simp only [selfCallsB, Bool.and_eq_true] at h
+    simp only [Term.mentions, Bool.or_eq_true] at hm
+    rcases hm with hm | hm
+    · exact selfCalls_mentions h.1 hm
+    · exact selfCalls_mentions h.2 hm
+  | .letE _ _ _ t v b, d, h, hm => by
+    simp only [selfCallsB, Bool.and_eq_true] at h
+    simp only [Term.mentions, Bool.or_eq_true] at hm
+    rcases hm with (hm | hm) | hm
+    · exact selfCalls_mentions h.1.1 hm
+    · exact selfCalls_mentions h.1.2 hm
+    · exact selfCalls_mentions h.2 hm
+  | .proj .., _, h, _ => by simp [selfCallsB] at h
+  | .var _, _, _, hm => by simp [Term.mentions] at hm
+  | .sort _, _, _, hm => by simp [Term.mentions] at hm
+  | .natLit _, _, _, hm => by simp [Term.mentions] at hm
+  | .strLit _, _, _, hm => by simp [Term.mentions] at hm
+
+/-- Every constant SrcEval may unfold in a term of self-calls is the recursor at its own levels. -/
+theorem selfCalls_evalConsts {r : CId} {n : Nat} (ls : Levels) :
+    ∀ {t : Term} {d : CId} {us : List IxCC.Ixon.Univ}, selfCallsB r n t = true →
+      (d, us) ∈ evalConsts ls t → d = r ∧ idUnivsB n us = true
+  | .const c us', d, us, h, hm => by
+    simp only [selfCallsB, Bool.and_eq_true, beq_iff_eq] at h
+    simp only [evalConsts, List.mem_singleton, Prod.mk.injEq] at hm
+    obtain ⟨rfl, rfl⟩ := hm
+    exact h
+  | .app f a _ rr, d, us, h, hm => by
+    simp only [selfCallsB, Bool.and_eq_true] at h
+    simp only [evalConsts, List.mem_append] at hm
+    rcases hm with hm | hm
+    · exact selfCalls_evalConsts ls h.1 hm
+    · split at hm
+      · simp at hm
+      · exact selfCalls_evalConsts ls h.2 hm
+  | .lam _ _ b, d, us, h, hm => by
+    simp only [selfCallsB, Bool.and_eq_true] at h
+    simp only [evalConsts] at hm
+    exact selfCalls_evalConsts ls h.2 hm
+  | .letE _ _ rr _ v b, d, us, h, hm => by
+    simp only [selfCallsB, Bool.and_eq_true] at h
+    simp only [evalConsts, List.mem_append] at hm
+    rcases hm with hm | hm
+    · split at hm
+      · simp at hm
+      · exact selfCalls_evalConsts ls h.1.2 hm
+    · exact selfCalls_evalConsts ls h.2 hm
+  | .proj .., _, _, h, _ => by simp [selfCallsB] at h
+  | .var _, _, _, _, hm => by simp [evalConsts] at hm
+  | .sort _, _, _, _, hm => by simp [evalConsts] at hm
+  | .pi .., _, _, _, hm => by simp [evalConsts] at hm
+  | .natLit _, _, _, _, hm => by simp [evalConsts] at hm
+  | .strLit _, _, _, _, hm => by simp [evalConsts] at hm
+
+/-- **The rule bodies, with self-calls** (W-c step 3; `RecBodies` with the recursor allowed): every
+Src rule's body, peeled of the prefix's and the fields' λs, names only the recursor at its own level
+variables, and the rule's relevance annotations name only the recursor's level variables; every
+stored rule is closed. -/
+def RecBodiesSelf (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
+    (r : CId) : Prop :=
+  ∃ (sf kk : Bool) (lvls np nmot nmin ni : Nat) (ind : CId) (rules : List IxCC.Src.Rule)
+    (ty : Term) (cvr : ConstantVal .anon) (mI rP : Nat) (krules : List (RecRule .anon)),
+    p.decl? r = some (.recr sf kk lvls np nmot nmin ni ind rules ty) ∧
+    env.find? (κ r) = some (.recInfo cvr mI rP krules) ∧
+    (∀ rl ∈ rules, (∃ t', IxCC.Src.peelLams (np + nmot + nmin + rl.fields) rl.rhs = some t' ∧
+        selfCallsB r (lpsOf r).length t' = true) ∧ relsBelow (lpsOf r).length rl.rhs = true) ∧
+    ∀ krl ∈ krules, bvarsLt 0 krl.rhs = true
+
+/-- `RecBodiesSelf`, decided. -/
+def recBodiesSelfB (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
+    (r : CId) : Bool :=
+  match p.decl? r, env.find? (κ r) with
+  | some (.recr _ _ _ np nmot nmin _ _ rules _), some (.recInfo _ _ _ krules) =>
+    rules.all (fun rl =>
+      (match IxCC.Src.peelLams (np + nmot + nmin + rl.fields) rl.rhs with
+        | some t' => selfCallsB r (lpsOf r).length t'
+        | none => false) && relsBelow (lpsOf r).length rl.rhs) &&
+      krules.all fun krl => bvarsLt 0 krl.rhs
+  | _, _ => false
+
+theorem recBodiesSelf_of_check {p : Program} {env : KEnv} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {r : CId} (h : recBodiesSelfB p env κ lpsOf r = true) :
+    RecBodiesSelf p env κ lpsOf r := by
+  unfold recBodiesSelfB at h
+  split at h
+  · rename_i sf kk lvls np nmot nmin ni ind rules ty cvr mI rP krules hd hf
+    simp only [Bool.and_eq_true, List.all_eq_true] at h
+    obtain ⟨hr, hk⟩ := h
+    refine ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, cvr, mI, rP, krules, hd, hf,
+      fun rl hrl => ?_, hk⟩
+    obtain ⟨h1, h2⟩ := hr rl hrl
+    refine ⟨?_, h2⟩
+    split at h1
+    · rename_i t' ht'
+      exact ⟨t', ht', h1⟩
+    · cases h1
+  · cases h
+
 end IxCC.Grounding

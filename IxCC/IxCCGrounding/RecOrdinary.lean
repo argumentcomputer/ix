@@ -198,7 +198,9 @@ private theorem atLevels_ordinaryO (ls : Levels) :
 recursor's inductive (no literal: the pinned `Nat` has no parameter); the rule of its constructor;
 its body (peeled of the prefix's and the fields' λs) evaluated by SrcEval in the slots of the
 arguments before the major and the fields. The body runs (`runs_of_corr`, `runs_peel`) as at
-`noParams`; ι and β by `paramsBlindIotaG` at the constructor's own parameters, the fields bound in
+`noParams`, its recursive calls (`RecBodiesSelf`: the recursor at its own level variables, the
+induction hypothesis of `List.rec`'s `cons` rule) at the head's own `Ok` instance (`HeadAt.recr`,
+at its level count by `OrdLevels`); ι and β by `paramsBlindIotaG` at the constructor's own parameters, the fields bound in
 the rule's λ-domains by the law's spine; the constructor value's image at the major domain's levels
 by `OrdLevels`. Takes `force` and `eval` at the smaller clock (the fundamental lemma's induction
 hypothesis), the class's decided facts, and `OrdLevels`. -/
@@ -213,7 +215,7 @@ theorem fire_ordinaryK (H : FundHypsK M p κ lpsOf S Ok) {k' : Nat}
       ∃ X, Denotes M.cval env φ ρk e X ∧ RelV M p κ lpsOf S Ok v X)
     {r : CId} (hcl : recClassB p env κ r = some .ordinary)
     (hF : RecTele env (κ r) ∧ RecProg p κ S r ∧ RecCtorsRaw p env κ r ∧ RecOrdRules env (κ r) ∧
-      RecBodies p env κ lpsOf r ∧ RecSites p env κ lpsOf r)
+      RecBodiesSelf p env κ lpsOf r ∧ RecSites p env κ lpsOf r)
     (hO : OrdLevels M p κ lpsOf Ok r)
     {ls : Levels} {args : List Slot} {v : Value} {φ : LevelParam → Nat} {T : KExpr}
     {ρ σ : BVarIdx → V} {R : KExpr} {As : List V}
@@ -266,7 +268,7 @@ theorem fire_ordinaryK (H : FundHypsK M p κ lpsOf S Ok) {k' : Nat}
   rw [hpb] at hpb6
   injection hpb6 with e5 e6 e7
   subst e5 e6 e7
-  -- the rule bodies (`RecBodies`)
+  -- the rule bodies, with self-calls (`RecBodiesSelf`)
   obtain ⟨_, _, _, np4, nmot4, nmin4, _, _, rules4, _, cvr4, mI4, rP4, krules4, hd4, hf4, hbodies,
     hclosed⟩ := hBodies
   rw [hd] at hd4
@@ -357,15 +359,16 @@ theorem fire_ordinaryK (H : FundHypsK M p κ lpsOf S Ok) {k' : Nat}
       simp only [List.length_append, List.length_take, List.length_drop]; omega
     have hctx := ctxSat_of_fits (M := M) bs b (Γ0 := []) .nil (hfitsB b) hxsl
     -- the body runs
-    obtain ⟨⟨t', ht', hnoc⟩, hrels⟩ := hbodies rl hrm
+    obtain ⟨⟨t', ht', hself⟩, hrels⟩ := hbodies rl hrm
     have hden : DenotesIn M φ [] krl.rhs := fun ρ' _ => ⟨Hs, den_closed (hclosed krl hkm) hH⟩
     have hsites := ruleSites_ok H.laws hN hlv hrels hpwd hreg hden (hrefs j rl krl hrl hkrl)
+    -- the recursive call: the recursor at its own levels, the head's `Ok` instance
     have hruns : Runs M κ Ok (lpsOf r) ls φ (idσ 0) [] rl.rhs krl.rhs :=
       runs_of_corr (termCorrS_of_termCorr hcorr (hclosed krl hkm)) hden hsites (fun d us hdu => by
         rw [evalConsts_peel ls _ rl.rhs t' ht'] at hdu
-        have hm := evalConsts_mentions ls t' hdu
-        rw [hnoc d] at hm
-        cases hm) (fun A h => by rw [witDoms_of_termCorr hcorr] at h; cases h)
+        obtain ⟨rfl, hid⟩ := selfCalls_evalConsts ls hself hdu
+        rw [idUnivs_eval hid (hO.1 ls hOkr)]
+        exact hOkr) (fun A h => by rw [witDoms_of_termCorr hcorr] at h; cases h)
     rw [hrhs] at hruns
     have hpeel : IxCC.Src.peelLams bs.length rl.rhs = some t' := by
       rw [show bs.length = np + nmot + nmin + rl.fields by omega]; exact ht'
@@ -379,7 +382,7 @@ theorem fire_ordinaryK (H : FundHypsK M p κ lpsOf S Ok) {k' : Nat}
         (idσ (0 + bs.length)) (pushAll (As.take (np + nmot + nmin) ++ ys.drop np) ρ) := by
       rw [Nat.zero_add, ← hslen]
       exact relEnv_pushAll (relSlots_append (relSlots_take (np + nmot + nmin) hargs) hrelF)
-    have hcs : ConstsIn S t' := fun c hc => by rw [hnoc c] at hc; cases hc
+    have hcs : ConstsIn S t' := fun c hc => by rw [selfCalls_mentions hself hc]; exact hSr
     obtain ⟨X', hX', hrelX⟩ := heval (lpsOf r) ls φ _ _ t' b hrunsB _ _ v hcs hlv henv
       (by simpa using hctx) hev'
     rw [heqY]
