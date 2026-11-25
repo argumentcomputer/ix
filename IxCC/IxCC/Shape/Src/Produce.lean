@@ -530,6 +530,21 @@ def rangeShape (m : List (Nat × Nat)) (S : Nat) : Option Nat → Shape → Shap
   | _, .inter a b => .inter (rangeShape m S none a) (rangeShape m S none b)
   | _, σ => σ
 
+/-- The final result of a shape, if a natural, read as a natural below `S`. -/
+def rangeRes (S : Nat) : Shape → Shape
+  | .fn a b => .fn a (rangeRes S b)
+  | .nat => .natLt S
+  | σ => σ
+
+/-- The entries that wrap one natural: a structure with one constructor of one `nat` field
+(`OfNat Nat n`, through which a numeral is read). Their ranged copies carry a literal's range
+through the instance projection. -/
+def natWrappers (datas : List DataDecl) : List Nat :=
+  datas.zipIdx.filterMap fun (D, d) =>
+    match D.struct, D.ctors with
+    | true, [(_, [.nat])] => some d
+    | _, _ => none
+
 /-- Does the shape name one of the entries? -/
 def mentions (ds : List Nat) : Shape → Bool
   | .data d => ds.contains d
@@ -549,12 +564,14 @@ def holdsWord (datas : List DataDecl) (σ : Shape) : Bool :=
 
 /-- The ranged variants of the instances, per width. -/
 def variants (p : Program) (datas : List DataDecl) (words generic : List (Width × Nat × Nat × Nat))
-    (insts : List (CId × Levels × Shape)) : List (CId × Levels × Shape) :=
+    (wraps : List (Width × List (Nat × Nat))) (insts : List (CId × Levels × Shape)) :
+    List (CId × Levels × Shape) :=
   insts.flatMap fun e =>
     (words.zip generic).flatMap fun (r, g) =>
       let w := r.1
-      let gs := [g.2.1, g.2.2.1, g.2.2.2]
-      let m := [(g.2.1, r.2.1), (g.2.2.1, r.2.2.1), (g.2.2.2, r.2.2.2)]
+      let wm := (wraps.lookup w).getD []
+      let gs := [g.2.1, g.2.2.1, g.2.2.2] ++ wm.map (·.1)
+      let m := [(g.2.1, r.2.1), (g.2.2.1, r.2.2.1), (g.2.2.2, r.2.2.2)] ++ wm
       let σ := e.2.2
       let res := resAfter (argsAll σ).length σ
       let isCtor := match p.table.resolveOf e.1, p.decl? e.1 with
@@ -567,13 +584,13 @@ def variants (p : Program) (datas : List DataDecl) (words generic : List (Width 
         if isCtor then
           if res == .word w && p.wordCtor? w == some e.1 then
             [arrows ((argsAll σ).map (rangeShape m 0 none)) res]
-          else if mentions [g.2.2.1, g.2.2.2] res then
+          else if mentions ([g.2.2.1, g.2.2.2] ++ wm.map (·.1)) res then
             [refix p datas e.1 (rangeShape m 0 none σ)]
           else []
         else if isPrim then []
         else if mentions gs σ || ((argsAll σ).contains .nat && holdsWord datas σ) then
           -- the entries renamed, and one variant per `nat` parameter read as below the size
-          rangeShape m 0 none σ ::
+          rangeShape m 0 none σ :: rangeRes w.size (rangeShape m 0 none σ) ::
             ((argsAll σ).zipIdx.filterMap fun (a, i) =>
               if a == .nat then some (rangeShape m w.size (some i) σ) else none)
         else []
@@ -590,7 +607,15 @@ def prune (p : Program) : Nat → Cert → Cert
 def withRanges (p : Program) (s : St) (c : Cert) (doPrune : Bool := true) : Cert :=
   if s.words.isEmpty then c
   else
-    let c' := { c with insts := (c.insts ++ variants p c.datas s.words s.generic c.insts).eraseDups }
+    -- per width, ranged copies of the entries that wrap a natural
+    let wraps := natWrappers c.datas
+    let (datas, wm) := s.words.foldl (fun (acc : List DataDecl × List (Width × List (Nat × Nat))) r =>
+        let copies := wraps.filterMap fun d =>
+          (acc.1[d]?).map fun D => { D with ctors := D.ctors.map fun k => (k.1, [Shape.natLt r.1.size]) }
+        (acc.1 ++ copies, acc.2 ++ [(r.1, wraps.zipIdx.map fun (d, i) => (d, acc.1.length + i))]))
+      (c.datas, [])
+    let insts' := (c.insts ++ variants p datas s.words s.generic wm c.insts).eraseDups
+    let c' : Cert := { insts := insts', enums := c.enums, datas := datas, lets := c.lets, words := c.words }
     if doPrune then prune p 24 c' else c'
 
 /-- **The proposed certificate** for the root constants `roots` of `p`, and, for each
