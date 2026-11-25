@@ -1,12 +1,13 @@
 import IxCC.Own.Plain.Check
+import IxCC.Own.Plain.PrimSig
 import IxCC.Rt.Rc.Classes
 
 /-! # The ownership checker (heap stage 2)
 
 A static judgement over today's `Own.Plain.Code`: any body map it accepts refines the source and
-reclaims (`Own.Plain.Proof.Owned`), whatever placement of `inc`/`dec` it carries. Nothing in
-production calls it yet; the recheck still admits only the canonical map (`checkPlainMap`), which
-this checker also accepts (`checkPlainMap_checkOwned`).
+reclaims (`Own.Plain.Proof.Owned`), whatever placement of `inc`/`dec` it carries. Certificate
+admission (`Certificate.admit`) and the `Cfg.Rc` admission check call it; the canonical map, the
+only one `checkPlainMap` accepts, is among those it accepts (`checkPlainMap_checkOwned`).
 
 A path's context `Ctx` says, for each variable in scope, one of:
 * **immediate** (`imm`): its value is a literal, `□` or a field-less constructor; it needs no
@@ -19,8 +20,12 @@ Rules: `inc x 1` adds a token (a borrowed variable becomes owned with one); `dec
 is a release; a consuming use (a constructor field, a call or tail-call argument, `x := y`, a
 returned or jumped value) takes one token per occurrence; a read (`case`, `proj`, `prim`) needs
 the variable available and takes nothing; a non-tail call is a release (the callee may free);
-after a primitive, the arguments its signature marks (`primImmArgs`) are immediates (it
-succeeded, so they are literals). At `ret`, `tcall` and `jmp` the consumed tokens must be all the
+a primitive is checked under its ownership signature (`primStep` over a `PrimSig`): the consumed
+arguments are taken, the read ones must still be held, the arguments it marks `imm` are immediates
+afterwards (it succeeded, so they are literals), and the result is an immediate, owned or
+borrowed as the signature says. Every primitive of today has the signature `PrimSig.scalar`
+(`lamSig`), under which that step is `bindCtx`'s (`primStep_conservative`). At `ret`, `tcall`
+and `jmp` the consumed tokens must be all the
 path holds (`total = 0`), a jump also consuming one token of each variable the target join
 captures; a `trap` may leak (a trap ends the whole run). A join body starts with one token for
 each captured variable that is not an immediate and each parameter, the immediates of its
@@ -440,6 +445,64 @@ def bindCtx (Γ : Ctx) (x : Var) (r : Rhs) (borrows : BorrowSigs := .leaf)
     Γ.needArgs args
     return (Ctx.immArgs Γ (primImmArgs op args.length) args).setImmUniq x
 
+/-! ## A primitive under its ownership signature
+
+`primStep` is the checker's step at `x := op args` for a signature (`PrimSig.lean`). `bindCtx`'s
+primitive case above is the rule it replaces (every argument and the result an immediate,
+`primImmArgs`): `checkCode` no longer runs it, and it stays as the reference the new step is
+proved equal to on today's primitives (`primStep_conservative`), which the canonical producer's
+acceptance proof and the `Cfg.Rc` bridge still read through `checkCode_bind`. -/
+
+/-- Take the consumed arguments, left to right. -/
+def takeConsumed : Ctx → List ArgUse → List Arg → Except String Ctx
+  | Γ, .consume :: us, .var x :: as => do takeConsumed (← Γ.take x) us as
+  | Γ, _ :: us, _ :: as => takeConsumed Γ us as
+  | Γ, _, _ => .ok Γ
+
+/-- After the consumed arguments are taken, every read argument is still held (owned, a
+caller-backed borrow or an immediate): an argument both consumed and read needs two tokens, so a
+primitive never mutates in place an array it also reads. Checked after the takes, as a call's
+borrowed arguments are (`Ctx.checkCallBorrowed`). -/
+def checkRead (Γ : Ctx) : List ArgUse → List Arg → Except String Unit
+  | .consume :: us, _ :: as => checkRead Γ us as
+  | _ :: us, .var x :: as =>
+    if Γ.borrowable x || Γ.borrowed x then checkRead Γ us as
+    else .error s!"v{x} read by a primitive that consumed its last token"
+  | _ :: us, _ :: as => checkRead Γ us as
+  | _, _ => .ok ()
+
+/-- The arguments a signature marks immediate become immediates (`Ctx.immArgs` over the
+signature's uses: `markImm_eq_immArgs`). -/
+def markImm : Ctx → List ArgUse → List Arg → Ctx
+  | Γ, .imm :: us, .var x :: as => markImm (Γ.setImmUniq x) us as
+  | Γ, _ :: us, _ :: as => markImm Γ us as
+  | Γ, _, _ => Γ
+
+/-- **`x := prim args` under signature `sig`**: every argument available; the consumed ones
+taken; the read ones still held; a release if the primitive may free; then the result bound as
+the signature says. With `PrimSig.scalar` this is `bindCtx`'s primitive case
+(`primStep_conservative`). -/
+def primStep (Γ : Ctx) (sig : PrimSig) (x : Var) (args : List Arg) : Except String Ctx := do
+  Γ.needArgs args
+  let Γ₁ ← takeConsumed Γ sig.args args
+  checkRead Γ₁ sig.args args
+  let Γ₂ := markImm Γ₁ sig.args args
+  let Γ₃ := if sig.release then Γ₂.release else Γ₂
+  match sig.result with
+  | .imm => pure (Γ₃.setImmUniq x)
+  | .fresh true => pure (Γ₃.addUniqOwn x)
+  | .fresh false => pure (Γ₃.addOwn x 1)
+  | .borrowed _ => pure (Γ₃.setBorrow x)
+
+/-- **The checker's step at `x := r`**: a primitive under its ownership signature (`primStep`
+with `lamSig`), every other right-hand side by `bindCtx`. It is `bindCtx` on every right-hand
+side of today (`bindStep_eq_bindCtx`). -/
+def bindStep (Γ : Ctx) (x : Var) (r : Rhs) (borrows : BorrowSigs := .leaf)
+    (uniqs : UniqSigs := .leaf) (ctors : List Lam.CtorInfo := []) : Except String Ctx :=
+  match r with
+  | .prim op args => primStep Γ (lamSig op args.length) x args
+  | r => bindCtx Γ x r borrows uniqs ctors
+
 /-- Join-capture context: join id to the variables whose tokens a jump hands to the body. -/
 abbrev JCtx := Src.NatMap (List Var)
 
@@ -452,7 +515,7 @@ def checkCode (Δ : JCtx) (Γ : Ctx) (c : Code) (borrows : BorrowSigs := .leaf)
   | .act (.dec x) k => do checkCode Δ (← Γ.dec x) k borrows uniqs retUniq ctors known
   | .bind x r k => do
     if Γ.known x then throw s!"v{x} rebound"
-    checkCode Δ (← bindCtx Γ x r borrows uniqs ctors) k borrows uniqs retUniq ctors known
+    checkCode Δ (← bindStep Γ x r borrows uniqs ctors) k borrows uniqs retUniq ctors known
   | .reset s x ctor fields uniq k => do
     checkCode Δ (← Γ.reset ctors s x ctor fields uniq known) k borrows uniqs retUniq ctors known
   | .reuse x s ctor args uniq k => do

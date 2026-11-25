@@ -1,8 +1,11 @@
-import IxCC.Own.Plain.Proof.Owned.Context
+import IxCC.Own.Plain.Proof.Owned.PrimStep
 
 /-! # What the checker's acceptance of each construct says
 
-One lemma per construct of `checkCode`: the facts its `do` block established. -/
+One lemma per construct of `checkCode`: the facts its `do` block established. A binding is
+inverted twice: `checkCode_bindStep` gives the step the checker ran (`bindStep`: a primitive
+under its signature), `checkCode_bind` the same fact through `bindCtx`, which it equals
+(`bindStep_eq_bindCtx`). `primStep_ok` is what an accepted primitive step established. -/
 
 set_option autoImplicit false
 
@@ -32,20 +35,47 @@ theorem checkCode_dec {Δ : JCtx} {Γ : Ctx} {x : Var} {k : Code}
   simp only [checkCode] at h
   exact except_bind_ok' h
 
+/-- The step the checker ran at a binding. -/
+theorem checkCode_bindStep {Δ : JCtx} {Γ : Ctx} {x : Var} {r : Fir.Rhs} {k : Code}
+    {borrows : BorrowSigs} {uniqs : UniqSigs} {retUniq : Bool}
+    {ctors : List Lam.CtorInfo} {known : Lam.Known}
+    (h : checkCode Δ Γ (.bind x r k) borrows uniqs retUniq ctors known = .ok ()) :
+    ∃ Γ', bindStep Γ x r borrows uniqs ctors = .ok Γ' ∧
+      checkCode Δ Γ' k borrows uniqs retUniq ctors known = .ok () := by
+  simp only [checkCode] at h
+  cases hk : Γ.known x
+  · simp only [hk, Bool.false_eq_true, ↓reduceIte] at h
+    cases hb : bindStep Γ x r borrows uniqs ctors with
+    | error e => rw [hb] at h; cases h
+    | ok Γ' => rw [hb] at h; exact ⟨Γ', rfl, h⟩
+  · simp only [hk, ↓reduceIte] at h
+    cases h
+
+/-- The same through `bindCtx`, the rule `bindStep` equals on every right-hand side of today. -/
 theorem checkCode_bind {Δ : JCtx} {Γ : Ctx} {x : Var} {r : Fir.Rhs} {k : Code}
     {borrows : BorrowSigs} {uniqs : UniqSigs} {retUniq : Bool}
     {ctors : List Lam.CtorInfo} {known : Lam.Known}
     (h : checkCode Δ Γ (.bind x r k) borrows uniqs retUniq ctors known = .ok ()) :
     ∃ Γ', bindCtx Γ x r borrows uniqs ctors = .ok Γ' ∧
       checkCode Δ Γ' k borrows uniqs retUniq ctors known = .ok () := by
-  simp only [checkCode] at h
-  cases hk : Γ.known x
-  · simp only [hk, Bool.false_eq_true, ↓reduceIte] at h
-    cases hb : bindCtx Γ x r borrows uniqs ctors with
-    | error e => rw [hb] at h; cases h
-    | ok Γ' => rw [hb] at h; exact ⟨Γ', rfl, h⟩
-  · simp only [hk, ↓reduceIte] at h
-    cases h
+  obtain ⟨Γ', hb, hk⟩ := checkCode_bindStep h
+  exact ⟨Γ', by rw [← bindStep_eq_bindCtx]; exact hb, hk⟩
+
+/-- **What an accepted primitive step established**: every argument available; the consumed
+ones taken (`Γ₁`); the others still held in `Γ₁`; and the context is `Γ₁` with the marked
+arguments immediates, a release if the signature has one, and the result bound. -/
+theorem primStep_ok {Γ Γ' : Ctx} {sig : PrimSig} {x : Var} {args : List Arg}
+    (h : primStep Γ sig x args = .ok Γ') :
+    ∃ Γ₁, Γ.needArgs args = .ok () ∧ takeConsumed Γ sig.args args = .ok Γ₁ ∧
+      checkRead Γ₁ sig.args args = .ok () ∧
+      Γ' = bindResult
+        (if sig.release then (markImm Γ₁ sig.args args).release else markImm Γ₁ sig.args args)
+        x sig.result := by
+  rw [primStep_eq] at h
+  obtain ⟨⟨⟩, h1, h⟩ := except_bind_ok' h
+  obtain ⟨Γ₁, h2, h⟩ := except_bind_ok' h
+  obtain ⟨⟨⟩, h3, h⟩ := except_bind_ok' h
+  exact ⟨Γ₁, h1, h2, h3, (Except.ok.inj h).symm⟩
 
 theorem checkCode_reset {Δ : JCtx} {Γ : Ctx} {s : Nat} {x : Var} {ctor : Fir.CtorInfo}
     {fields : List (Option Var)} {uniq : Bool} {k : Code}

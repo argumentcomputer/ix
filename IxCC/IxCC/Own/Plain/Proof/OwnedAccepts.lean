@@ -51,7 +51,7 @@ theorem checkCode_bind_of {Δ : JCtx} {Γ Γ' : Ctx} {x : Var} {r : Fir.Rhs} {k 
     (hc : checkCode Δ Γ' k .leaf .leaf false ctors known = .ok ()) :
     checkCode Δ Γ (.bind x r k) .leaf .leaf false ctors known = .ok () := by
   simp only [checkCode, hk, Bool.false_eq_true, ↓reduceIte]
-  rw [hb]
+  rw [bindStep_eq_bindCtx, hb]
   exact hc
 
 theorem checkCode_jp_of {Δ : JCtx} {Γ : Ctx} {j : Fir.JoinId} {ps captured : List Var}
