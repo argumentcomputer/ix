@@ -12,6 +12,7 @@ invariant above provides.
 | `set .boxed` | shared | `set_shared_boxed` | `3n + 6` |
 | `push .boxed` | shared | `push_shared_boxed` | `3n + 6` |
 | `pop .boxed` | shared, non-empty | `pop_shared_boxed` | `3n + 3` |
+| `extract .boxed` | live source | `extract_boxed` | `3n + 5` |
 
 `set` returns the element it replaced as its second result (the copy's increment paid for it), to
 be released by the caller. -/
@@ -422,5 +423,147 @@ theorem pop_shared_boxed {P : Program} {fn : FunId} {t : Fns}
     exact (hfr3.mono (fun y hy => by
         rcases hy with hy | hy; exact Or.inl hy; exact Or.inr (Or.inl hy))).trans
       (hfr4.mono (fun y hy => Or.inr (Or.inr (Or.inl hy))))
+
+
+/-- The increments of the elements `s ..< s + n` of `a`. -/
+theorem incs_keep_range {P : Program} {t : Fns} (hf : FnsOk P t .boxed)
+    {mem mem0 : Memory} {ctx base bump limit : Word} {lists : Nat → List Word}
+    (halloc : ArrayAllocator mem ctx base bump limit lists) {a : Word} {refs cls cap : Nat}
+    {xs : List Word} (h : ArrCell mem a refs cls cap .boxed xs) {s n : Nat} (hn : s + n ≤ xs.length)
+    (hincs : IncAll mem ((xs.drop s).take n) mem0)
+    (hptr : ∀ y ∈ (xs.drop s).take n, Cond.holds .tnz .w64 y 1 = false → y.toNat + 8 ≤ 2 ^ 64)
+    (hcw : ∀ y, CountWords ((xs.drop s).take n) y → ¬ AllocBytes ctx lists y ∧ ¬ CellBytes a cls y) :
+    MemFrame mem mem0 (CountWords ((xs.drop s).take n)) ∧ ArrCell mem0 a refs cls cap .boxed xs ∧
+      ArrayAllocator mem0 ctx base bump limit lists ∧
+      Returns0 P t.incs (incsEnv a s (s + n)) mem ctx (2 * n) mem0 := by
+  have hs := h.shell
+  have hfit := hs.fit
+  have hp := hs.payload_le
+  have hm := Nat.mul_le_mul_left ElemKind.boxed.bytes (show s + n ≤ cap by have := hs.size_le; omega)
+  have hb8 : ElemKind.boxed.bytes = 8 := rfl
+  have hlen : ((xs.drop s).take n).length = n := by simp; omega
+  have hfr0 : MemFrame mem mem0 (CountWords ((xs.drop s).take n)) := hincs.frame hptr
+  refine ⟨hfr0, hfr0.arrCell h (fun y y1 y2 hy => (hcw y hy).2 ⟨y1, y2⟩),
+    halloc.frame hfr0 (fun y hy => (hcw y hy).1), ?_⟩
+  have hel : ElemsAt mem a .boxed s ((xs.drop s).take n) := by
+    intro j hj
+    rw [List.getElem_take, List.getElem_drop]
+    exact h.elems (s + j) (by simp at hj; omega)
+  have := incs_returns (ctx := ctx) hf.incs hf.inc (lo := s) (ys := (xs.drop s).take n)
+    (by rw [hlen]; rw [hb8] at hp hm; omega) hel hincs hptr
+    (fun y hy hr => (hcw y hy).2 ⟨by
+        obtain ⟨r1, _⟩ := hr; unfold arrayPayloadOffset at r1; omega, by
+        obtain ⟨_, r2⟩ := hr; rw [hlen] at r2; rw [hb8] at hp hm r2
+        unfold arrayPayloadOffset at hp r2; omega⟩)
+  simpa only [hlen] using this
+
+/-- **`extract`** of a live boxed array: a fresh array of the run, whose elements are incremented
+first; the source is read, not released. -/
+theorem extract_boxed {P : Program} {fn : FunId} {t : Fns}
+    (hfn : P.funcs[fn]? = some (extract t .boxed)) (hf : FnsOk P t .boxed)
+    {mem : Memory} {ctx base bump limit : Word} {lists : Nat → List Word}
+    (halloc : ArrayAllocator mem ctx base bump limit lists) {a : Word} {refs cls cap : Nat}
+    {xs : List Word} (h : ArrCell mem a refs cls cap .boxed xs)
+    (ha : Allocated base bump lists a (classBytes cls)) {start stop : Nat}
+    (hs64 : start < 2 ^ 64) (ht64 : stop < 2 ^ 64)
+    (hroom : AllocRoom bump limit lists .boxed (extractLen xs.length start stop)) {mem0 : Memory}
+    (hincs : IncAll mem (IxCC.Src.ArraySpec.extractList xs start stop) mem0)
+    (hptr : ∀ y ∈ IxCC.Src.ArraySpec.extractList xs start stop, Cond.holds .tnz .w64 y 1 = false →
+      y.toNat + 8 ≤ 2 ^ 64)
+    (hcw : ∀ y, CountWords (IxCC.Src.ArraySpec.extractList xs start stop) y →
+      ¬ AllocBytes ctx lists y ∧ ¬ CellBytes a cls y) :
+    ∃ b mem' bump' lists',
+      Returns1 P fn (extractEnv a start stop) mem ctx (3 * extractLen xs.length start stop + 5) b
+        mem' ∧
+      ArrCell mem' b 1 (allocClass .boxed (extractLen xs.length start stop))
+        (ElemKind.boxed.capOfClass (allocClass .boxed (extractLen xs.length start stop)))
+        .boxed (IxCC.Src.ArraySpec.extractList xs start stop) ∧
+      ArrCell mem' a refs cls cap .boxed xs ∧
+      ArrayAllocator mem' ctx base bump' limit lists' ∧
+      Allocated base bump' lists' b (classBytes (allocClass .boxed (extractLen xs.length start stop))) ∧
+      Allocated base bump' lists' a (classBytes cls) ∧
+      (∀ c m, Allocated base bump lists c m → Allocated base bump' lists' c m) ∧
+      MemFrame mem mem' (fun y => AllocBytes ctx lists y ∨
+        CellBytes b (allocClass .boxed (extractLen xs.length start stop)) y ∨
+        CountWords (IxCC.Src.ArraySpec.extractList xs start stop) y) := by
+  have hlen := h.arrRead.len_lt
+  have hmaxc := h.len_le_maxCap
+  have hle : extractStart xs.length start stop + extractLen xs.length start stop ≤ xs.length := by
+    unfold extractStart extractLen; split <;> omega
+  have hn : extractLen xs.length start stop ≤ ElemKind.boxed.maxCap := by omega
+  rw [extractList_eq] at hincs hptr hcw ⊢
+  obtain ⟨hfr0, h0, halloc0, hincsR⟩ := incs_keep_range hf halloc h hle hincs hptr hcw
+  obtain ⟨hlo, hhi, hcap⟩ := allocClass_spec .boxed hn
+  obtain ⟨b, m1, bump', lists', hret, hd⟩ := alloc_returns hf.alloc hf.classFor hf.classWords
+    halloc0 hn hroom
+  obtain ⟨hdrop, hsb, hdb, hsrc, hfit, hacc, hapart, hafter⟩ :=
+    fresh_copy hd halloc0 hlo hhi h0 ha (off := extractStart xs.length start stop)
+      (n := extractLen xs.length start stop) hle hcap
+  obtain ⟨m2, hcopy, hel2, hfr2⟩ := copy_returns hf.copy hfit hdrop hsb hdb hsrc hacc hapart
+  obtain ⟨hw3, hb3, ha3, hal3, hA3, hsep, hfr3⟩ := hafter m2 hel2 hfr2
+  have hb3e := hb3
+  refine ⟨b, _, bump', lists', ?_, hb3, ha3, hal3, hd.allocated, hA3,
+    fun c m hc => (hd.keeps c m hc).1,
+    (hfr0.mono (fun y hy => Or.inr (Or.inr hy))).trans (hfr3.mono (fun y hy => by
+      rcases hy with hy | hy; exact Or.inl hy; exact Or.inr (Or.inl hy)))⟩
+  -- the arithmetic of block 0
+  have hm : (if Cond.holds .ult .w64 (UInt64.ofNat stop) (UInt64.ofNat xs.length) then
+      UInt64.ofNat stop else UInt64.ofNat xs.length) = UInt64.ofNat (min stop xs.length) := by
+    rw [cond_ult_w64, u64_toNat_ofNat_lt ht64, u64_toNat_ofNat_lt (by omega)]
+    by_cases hc : stop < xs.length
+    · simp only [decide_eq_true_eq, hc, ↓reduceIte, Nat.min_eq_left (Nat.le_of_lt hc)]
+    · simp only [decide_eq_true_eq, hc, ↓reduceIte, Nat.min_eq_right (Nat.le_of_not_lt hc)]
+  have hmlt : min stop xs.length < 2 ^ 64 := by omega
+  have hsub : BinOp.eval .sub .w64 (UInt64.ofNat (min stop xs.length)) (UInt64.ofNat start) =
+      some (UInt64.ofNat (min stop xs.length) - UInt64.ofNat start) := by
+    simp only [BinOp.eval, w64_trunc]
+  have hl : (if Cond.holds .ult .w64 (UInt64.ofNat start) (UInt64.ofNat (min stop xs.length)) then
+      UInt64.ofNat (min stop xs.length) - UInt64.ofNat start else UInt64.ofNat 0) =
+      UInt64.ofNat (extractLen xs.length start stop) := by
+    rw [cond_ult_w64, u64_toNat_ofNat_lt hs64, u64_toNat_ofNat_lt hmlt]
+    unfold extractLen
+    by_cases hc : start < min stop xs.length
+    · simp only [decide_eq_true_eq, hc, ↓reduceIte, u64_sub_ofNat (Nat.le_of_lt hc) hmlt]
+    · simp only [decide_eq_true_eq, hc, ↓reduceIte]
+  have hst : (if Cond.holds .ult .w64 (UInt64.ofNat start) (UInt64.ofNat (min stop xs.length)) then
+      UInt64.ofNat start else UInt64.ofNat 0) = UInt64.ofNat (extractStart xs.length start stop) := by
+    rw [cond_ult_w64, u64_toNat_ofNat_lt hs64, u64_toNat_ofNat_lt hmlt]
+    unfold extractStart
+    by_cases hc : start < min stop xs.length
+    · simp only [decide_eq_true_eq, hc, ↓reduceIte]
+    · simp only [decide_eq_true_eq, hc, ↓reduceIte]
+  refine returns1_of_star (lbl := 2) (env' := ?env) hfn rfl rfl ?ha (fun rest => ?run)
+  case run =>
+    unfold extractEnv
+    refine star_assign hfn rfl (by body_pos) rfl (rhs_load_eval (cellAddr_eval_8 (by env_lookup))
+      h.shell.size_load) ?_
+    refine star_assign (val := UInt64.ofNat (min stop xs.length)) hfn rfl (by body_pos) rfl (by
+      rw [rhs_select_eval (by arg_eval) (by arg_eval) (by arg_eval) (by arg_eval)]
+      exact congrArg some hm) ?_
+    refine star_assign hfn rfl (by body_pos) rfl (rhs_bin_eval (by arg_eval) (by arg_eval) hsub) ?_
+    refine star_assign (val := UInt64.ofNat (extractLen xs.length start stop)) hfn rfl (by body_pos)
+      rfl (by
+      rw [rhs_select_eval (by arg_eval) (by arg_eval) (by arg_eval) (by arg_eval)]
+      exact congrArg some hl) ?_
+    refine star_assign (val := UInt64.ofNat (extractStart xs.length start stop)) hfn rfl
+      (by body_pos) rfl (by
+      rw [rhs_select_eval (by arg_eval) (by arg_eval) (by arg_eval) (by arg_eval)]
+      exact congrArg some hst) ?_
+    refine star_assign hfn rfl (by body_pos) rfl (rhs_bin_eval (by arg_eval) (by arg_eval)
+      (binOp_add64 (extractStart xs.length start stop) (extractLen xs.length start stop)
+        (by omega))) ?_
+    refine star_jump_fwd hfn rfl rfl rfl rfl (evalArgs_nil _) rfl rfl ?_
+    refine star_call0_eq (c' := extractLen xs.length start stop + 4) hfn rfl (by body_pos) rfl
+      (evalArgs3 (by arg_eval) (by arg_eval) (by arg_eval)) hf.incs rfl hincsR ?_ (by omega)
+    refine star_jump_fwd hfn rfl rfl rfl rfl (evalArgs_nil _) rfl rfl ?_
+    refine star_call1_eq (c' := extractLen xs.length start stop + 1) hfn rfl (by body_pos) rfl
+      (evalArgs1 (by arg_eval)) hf.alloc rfl hret ?_ (by omega)
+    refine star_call0_eq (c' := 0) hfn rfl (by body_pos) rfl
+      (evalArgs5 (by arg_eval) (by arg_eval) (by arg_eval) (by arg_eval) (by arg_eval)) hf.copy rfl
+      hcopy ?_ (by omega)
+    refine star_store hfn rfl (by body_pos) rfl (cellAddr_eval_8 (by env_lookup)) (by arg_eval)
+      hw3 ?_
+    exact .refl _
+  case ha => arg_eval
 
 end IxCC.Rt.Rc.Array

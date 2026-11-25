@@ -454,3 +454,9 @@ release on array cells, the procedures' paths -/
 
 /-- info: 'IxCC.Rt.Rc.Array.pop_shared_boxed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Rt.Rc.Array.pop_shared_boxed
+
+/-- info: 'IxCC.Rt.Rc.Array.incs_keep_range' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Rc.Array.incs_keep_range
+
+/-- info: 'IxCC.Rt.Rc.Array.extract_boxed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Rc.Array.extract_boxed
