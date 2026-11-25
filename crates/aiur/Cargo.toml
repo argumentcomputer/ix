@@ -39,6 +39,10 @@ cuda = ["stark", "multi-stark/cuda"]
 native = ["dep:stacker"]
 
 [[example]]
+name = "ixcc_prove"
+required-features = ["stark"]
+
+[[example]]
 name = "prove"
 required-features = ["stark"]
 

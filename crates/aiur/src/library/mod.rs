@@ -3,6 +3,7 @@
 pub mod advice;
 pub mod goldilocks;
 pub mod io;
+pub mod ixcc;
 pub mod u32;
 pub mod u64;
 pub mod u8;
