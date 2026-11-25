@@ -20,6 +20,7 @@ import IxCCCorrect.ComposeExit
 import IxCCCorrect.UniqueIota
 import IxCCCorrect.UniqueNat
 import IxCCCorrect.CanonLaw
+import IxCCCorrect.UniqueEnum
 
 /-! # The target statements' axiom fence: every theorem `IxCCCorrect` proves uses at most the
 three standard axioms. Building the library checks it (`#guard_msgs`), in the required check
@@ -994,3 +995,23 @@ routes and the progress targets are definitions and have no fence. -/
 
 /-- info: 'IxCC.Correct.ctorCanon_selRetype' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.ctorCanon_selRetype
+
+/-! ## `IxCCCorrect.UniqueEnum` -/
+
+/-- info: 'IxCC.Correct.minorDoms_length' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.minorDoms_length
+
+/-- info: 'IxCC.Correct.piDoms_sound' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.piDoms_sound
+
+/-- info: 'IxCC.Correct.enumRecStored_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.enumRecStored_of_check
+
+/-- info: 'IxCC.Correct.fits_minors' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.fits_minors
+
+/-- info: 'IxCC.Correct.enum_ctor_ne' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.enum_ctor_ne
+
+/-- info: 'IxCC.Correct.agrees_unique_enum' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.agrees_unique_enum
