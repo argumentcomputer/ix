@@ -486,14 +486,14 @@ theorem arrAllocCell_free_at_ret {mainFn : FunId}
     (mem := mem) (context := context) (env := e0) hf rfl (by decide) rfl
     (evalArgs_singleton (by simp only [v, Arg.eval, e0, env_get_insert, Nat.reduceEqDiff, ↓reduceIte]; rfl))
     (arrayProgram_func_classFor mainFn) rfl
-  have c0 := arrClassFor_call_star (mainFn := mainFn) (mem := mem) (context := context)
+  have c0 := arrClassFor_call_star (arrayProgram_func_classFor mainFn) (mem := mem) (context := context)
     (caller := { fn := fnAllocCell, label := 0, pos := 1, env := e0, dsts := [2] }) (tail := rest)
     (dst := 2) rfl (by omega) hhi
   have s01 := step_call (p := arrayProgram mainFn) (fn := fnAllocCell) (lbl := 0) (pos := 1) (rest := rest)
     (mem := mem) (context := context) (env := e2) hf rfl (by decide) rfl
     (evalArgs_singleton (by simp only [v, Arg.eval, e2, env_get_insert_self]; rfl))
     (arrayProgram_func_classWords mainFn) rfl
-  have c1 := arrClassWords_call_star (mainFn := mainFn) (mem := mem) (context := context)
+  have c1 := arrClassWords_call_star (arrayProgram_func_classWords mainFn) (mem := mem) (context := context)
     (caller := { fn := fnAllocCell, label := 0, pos := 2, env := e2, dsts := [3] }) (tail := rest)
     (dst := 3) rfl hcls1 hcls_hi
   have s02 := step_assign (p := arrayProgram mainFn) (fn := fnAllocCell) (lbl := 0) (pos := 2) (rest := rest)
@@ -593,14 +593,14 @@ theorem arrAllocCell_bump_at_ret {mainFn : FunId}
     (mem := mem) (context := context) (env := e0) hf rfl (by decide) rfl
     (evalArgs_singleton (by simp only [v, Arg.eval, e0, env_get_insert, Nat.reduceEqDiff, ↓reduceIte]; rfl))
     (arrayProgram_func_classFor mainFn) rfl
-  have c0 := arrClassFor_call_star (mainFn := mainFn) (mem := mem) (context := context)
+  have c0 := arrClassFor_call_star (arrayProgram_func_classFor mainFn) (mem := mem) (context := context)
     (caller := { fn := fnAllocCell, label := 0, pos := 1, env := e0, dsts := [2] }) (tail := rest)
     (dst := 2) rfl (by omega) hhi
   have s01 := step_call (p := arrayProgram mainFn) (fn := fnAllocCell) (lbl := 0) (pos := 1) (rest := rest)
     (mem := mem) (context := context) (env := e2) hf rfl (by decide) rfl
     (evalArgs_singleton (by simp only [v, Arg.eval, e2, env_get_insert_self]; rfl))
     (arrayProgram_func_classWords mainFn) rfl
-  have c1 := arrClassWords_call_star (mainFn := mainFn) (mem := mem) (context := context)
+  have c1 := arrClassWords_call_star (arrayProgram_func_classWords mainFn) (mem := mem) (context := context)
     (caller := { fn := fnAllocCell, label := 0, pos := 2, env := e2, dsts := [3] }) (tail := rest)
     (dst := 3) rfl hcls1 hcls_hi
   have s02 := step_assign (p := arrayProgram mainFn) (fn := fnAllocCell) (lbl := 0) (pos := 2) (rest := rest)
@@ -698,14 +698,14 @@ theorem arrAllocCell_oom_eval {mem : Memory} {context base bump limit : Word}
     (mem := mem) (context := context) (env := e0) hf rfl (by decide) rfl
     (evalArgs_singleton (by simp only [v, Arg.eval, e0, env_get_insert, Nat.reduceEqDiff, ↓reduceIte]; rfl))
     (arrayProgram_func_classFor fnAllocCell) rfl
-  have c0 := arrClassFor_call_star (mainFn := fnAllocCell) (mem := mem) (context := context)
+  have c0 := arrClassFor_call_star (arrayProgram_func_classFor fnAllocCell) (mem := mem) (context := context)
     (caller := { fn := fnAllocCell, label := 0, pos := 1, env := e0, dsts := [2] }) (tail := [])
     (dst := 2) rfl (by omega) hhi
   have s01 := step_call (p := arrayProgram fnAllocCell) (fn := fnAllocCell) (lbl := 0) (pos := 1) (rest := [])
     (mem := mem) (context := context) (env := e2) hf rfl (by decide) rfl
     (evalArgs_singleton (by simp only [v, Arg.eval, e2, env_get_insert_self]; rfl))
     (arrayProgram_func_classWords fnAllocCell) rfl
-  have c1 := arrClassWords_call_star (mainFn := fnAllocCell) (mem := mem) (context := context)
+  have c1 := arrClassWords_call_star (arrayProgram_func_classWords fnAllocCell) (mem := mem) (context := context)
     (caller := { fn := fnAllocCell, label := 0, pos := 2, env := e2, dsts := [3] }) (tail := [])
     (dst := 3) rfl hcls1 hcls_hi
   have s02 := step_assign (p := arrayProgram fnAllocCell) (fn := fnAllocCell) (lbl := 0) (pos := 2) (rest := [])
