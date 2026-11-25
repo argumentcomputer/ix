@@ -550,6 +550,7 @@ import IxCC.Rt.Rc.Array.Proof.Allocator
 import IxCC.Rt.Rc.Array.Proof.DecArrCell
 import IxCC.Rt.Rc.Array.Ops
 import IxCC.Rt.Rc.Array.Proof.OpsAlloc
+import IxCC.Rt.Rc.Array.Proof.OpsCopy
 import IxCC.Rt.Readback.Array
 import IxCC.Cfg.Rc.Layout
 import IxCC.Cfg.Rc.Inline
