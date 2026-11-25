@@ -271,7 +271,9 @@ compare-tree layout matter.
 ### Position in the pipeline
 
 The certificate's schedule ([`Anf/Pipeline.lean`](../IxCC/Anf/Pipeline.lean)) is
-`P1 → P2 → prune → (P3 → P2)* → P4 → P2 → (P3 → P2)* → prune`. The closures
+`P1 → P2⁺ → prune → (P3 → P2⁺)* → P4 → P2⁺ → (P3 → P2⁺)* → prune`, `P2⁺` being a
+shrink step repeated while it still changes the program (limit 4 of
+[Measured limits](#measured-limits-2026-11-11)). The closures
 step follows it (*implemented*), outside the certificate's steps:
 
 ```text
@@ -766,6 +768,37 @@ Three limits, in the order ordinary code meets them:
    no change to P8, its proofs, the certificate or any object; the
    dispatcher's node budget (`maxGlobalNodes`) and the tag space are then the
    limits, the first lifted by splitting a dispatcher by key ranges.
+4. **The shrink step's work budget** (2026-11-25; measured on the stage-2
+   arithmetic library, `IxCC/BigNat`, 17 entry points, the first program to
+   reach it). One shrink step threads one work budget (`Anf.maxStepWork`, 45
+   million) through the globals in id order, and a round on a global costs
+   about its nodes times its depth (the census at each step of the walk reads
+   the rest of the body), so on a program whose roots are 3,000 to 7,700
+   nodes after inlining the first globals use the whole step and the later
+   ones get no round. The schedule ran exactly one shrink step after each
+   inline round, so the library reached P8 with 650 local functions and 1,390
+   unknown applications nobody had shrunk: 704 closure keys (`M` = 3,
+   `dispatchWork` 4.0 times the budget, `defun.budget`). By origin: 402 by-name
+   thunks of `ite`, `dite`, `Bool.and`, `Bool.or` and `cond`, each applied
+   only where it is bound; 180 `fun h => …` branches of a `dite`, returned by
+   their thunk and applied after it; 44 matcher alternatives and 28 recursor
+   minors, applied where bound; 8 other lambdas; and 54 keys of 17 function
+   globals whose value is taken (`decEq` instances, `instHSub`,
+   `instBEqOfDecidableEq`, `instPowNat`, word-operation wrappers), applied in
+   place but for 24 keys passed to a dictionary's consumer. Every one but those
+   24 is a known function, and the shrink rules remove them (β of a local
+   function whose occurrences are all heads, the known call of a function
+   global's value): two more shrink steps on that program leave no local
+   function and 24 keys. The producer now repeats every shrink step while it
+   still changes the program (`Anf.Pipeline.shrinkFixpoint`; producer only,
+   each repetition an ordinary `shrink` step, so the replay and its theorems
+   are unchanged, and a program whose shrink steps reach their fixpoint gets no
+   extra step). On the library: 12 steps, 3 inline rounds (the fourth is past
+   the back end's work budget), 121 local functions passed to `dite` and a
+   12-node matcher that the refused round would have inlined, `K` = 158,
+   `M` = 2, 3 % of the dispatch budget; the closures step passes and the
+   program is first order at 71 % of `Anf.maxBackWork` (19 entry points:
+   `K` = 216, 12 %, 95 %).
 
 ## No code-pointer fallback
 
