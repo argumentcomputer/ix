@@ -1,4 +1,5 @@
 import IxCCAiur.TypedRep
+import IxCCAiur.Peephole
 import Aiur.Library.U32
 
 /-! # Typed / Unboxed `Fir → Formal Aiur` Lowering (`IxCCAiur.TypedLower`)
@@ -282,8 +283,9 @@ private def u32ToFieldE (e : Expr) : Expr :=
   callE "UInt32::compact_field" [callE "UInt32::compact" [e]]
 
 /-- `u32_mul(a b : U32) -> U32`: wraps `a * b mod 2^32` using the fact that
-`(2^32 - 1)^2 < Goldilocks.modulus`, so `compact(a) * compact(b) = compact(lo) + 2^32 * compact(hi)`
-is exact in `Field` with zero wraparound! -/
+`(2^32 - 1)^2 = 1 + 2^32 * (2^32 - 2) < Goldilocks.modulus`. Asserting `hi ≠ 2^32 - 1`
+bounds `lo + 2^32 * hi ≤ 2^64 - 2^32 - 1 < p_G`, preventing Goldilocks wraparound
+forgery (`lo = 1, hi = 2^32 - 1` for `a = b = 0`) with zero extra lookups or hints! -/
 def u32MulFn : Fn :=
   { name := "u32_mul", params := [("a", u32Ty), ("b", u32Ty)], result := u32Ty
     isInline := false
@@ -292,10 +294,15 @@ def u32MulFn : Fn :=
       .letValue (bytePat8 "h") (.hint (.array .field 8) (vE "p") "bytes_le") <|
       letE "lo" (callE "UInt32::from_fields" [.array [vE "h0", vE "h1", vE "h2", vE "h3"]]) <|
       letE "hi" (callE "UInt32::from_fields" [.array [vE "h4", vE "h5", vE "h6", vE "h7"]]) <|
+      letE "hif" (u32ToFieldE (vE "hi")) <|
       seqE (.builtin (.assertEq (assertion "u32_mul: recomposition failed"))
         [addE (u32ToFieldE (vE "lo"))
-          (mulE (litE (2 ^ 32)) (u32ToFieldE (vE "hi"))), vE "p"]) <|
-      vE "lo" }
+          (mulE (litE (2 ^ 32)) (vE "hif")), vE "p"]) <|
+      matchE (vE "hif")
+        [(.literal (2 ^ 32 - 1),
+          seqE (.builtin (.assertEq (assertion "u32_mul: hi = 2^32 - 1 overflow"))
+            [litE 0, litE 1]) (vE "lo")),
+         (.wildcard, vE "lo")] }
 
 def u32ComplementFn : Fn :=
   { name := "u32_complement", params := [("a", u32Ty)], result := u32Ty
@@ -368,6 +375,84 @@ def u32OfFieldFn : Fn :=
           (mulE (litE (2 ^ 32)) (u32ToFieldE (vE "hi"))), vE "x"]) <|
       vE "lo" }
 
+/-- `u64_shr(a b : U64) -> U64`: exact logical shift right by `b % 64` via 32+32 split. -/
+def u64ShrFn : Fn :=
+  { name := "u64_shr", params := [("a", u64Ty), ("b", u64Ty)], result := u64Ty
+    isInline := false
+    body :=
+      letE "s" (callE "UInt8::to_field" [.index (vE "b") 0]) <|
+      .letValue (.tuple [.wildcard, .bind "k"]) (callE "divmod_56" [vE "s", litE 64]) <|
+      matchE (vE "k")
+        [(.literal 0, vE "a"),
+         (.wildcard,
+          letE "alo" (callE "UInt32::from_bytes"
+            [.array [.index (vE "a") 0, .index (vE "a") 1, .index (vE "a") 2, .index (vE "a") 3]]) <|
+          letE "ahi" (callE "UInt32::from_bytes"
+            [.array [.index (vE "a") 4, .index (vE "a") 5, .index (vE "a") 6, .index (vE "a") 7]]) <|
+          letE "lo" (u32ToFieldE (vE "alo")) <|
+          letE "hi" (u32ToFieldE (vE "ahi")) <|
+          .letValue (.tuple [.bind "ksub", .bind "ge32"])
+            (callE "sub_borrow_56" [vE "k", litE 32]) <|
+          matchE (vE "ge32")
+            [(.literal 1,
+              letE "p" (callE "pow_56" [litE 2, vE "ksub"]) <|
+              .letValue (.tuple [.bind "q", .wildcard]) (callE "divmod_56" [vE "hi", vE "p"]) <|
+              letE "bl" (callE "UInt32::to_bytes" [callE "UInt32::from_field" [vE "q"]]) <|
+              .letValue (.tuple [.bind "z0", .wildcard])
+                (callE "UInt8::from_fields" [litE 0, litE 0]) <|
+              .array [.index (vE "bl") 0, .index (vE "bl") 1, .index (vE "bl") 2, .index (vE "bl") 3,
+                      vE "z0", vE "z0", vE "z0", vE "z0"]),
+             (.wildcard,
+              letE "p" (callE "pow_56" [litE 2, vE "k"]) <|
+              letE "pcomp" (callE "pow_56" [litE 2, subE (litE 32) (vE "k")]) <|
+              .letValue (.tuple [.bind "qlo", .wildcard]) (callE "divmod_56" [vE "lo", vE "p"]) <|
+              .letValue (.tuple [.bind "qhi", .bind "rhi"]) (callE "divmod_56" [vE "hi", vE "p"]) <|
+              letE "reslo" (addE (vE "qlo") (callE "mul_56" [vE "rhi", vE "pcomp"])) <|
+              letE "bl" (callE "UInt32::to_bytes" [callE "UInt32::from_field" [vE "reslo"]]) <|
+              letE "bh" (callE "UInt32::to_bytes" [callE "UInt32::from_field" [vE "qhi"]]) <|
+              .array [.index (vE "bl") 0, .index (vE "bl") 1, .index (vE "bl") 2, .index (vE "bl") 3,
+                      .index (vE "bh") 0, .index (vE "bh") 1, .index (vE "bh") 2, .index (vE "bh") 3])])] }
+
+/-- `u64_shl(a b : U64) -> U64`: exact logical shift left by `b % 64` via 32+32 split. -/
+def u64ShlFn : Fn :=
+  { name := "u64_shl", params := [("a", u64Ty), ("b", u64Ty)], result := u64Ty
+    isInline := false
+    body :=
+      letE "s" (callE "UInt8::to_field" [.index (vE "b") 0]) <|
+      .letValue (.tuple [.wildcard, .bind "k"]) (callE "divmod_56" [vE "s", litE 64]) <|
+      matchE (vE "k")
+        [(.literal 0, vE "a"),
+         (.wildcard,
+          letE "alo" (callE "UInt32::from_bytes"
+            [.array [.index (vE "a") 0, .index (vE "a") 1, .index (vE "a") 2, .index (vE "a") 3]]) <|
+          letE "ahi" (callE "UInt32::from_bytes"
+            [.array [.index (vE "a") 4, .index (vE "a") 5, .index (vE "a") 6, .index (vE "a") 7]]) <|
+          letE "lo" (u32ToFieldE (vE "alo")) <|
+          .letValue (.tuple [.bind "ksub", .bind "ge32"])
+            (callE "sub_borrow_56" [vE "k", litE 32]) <|
+          matchE (vE "ge32")
+            [(.literal 1,
+              letE "p" (callE "pow_56" [litE 2, vE "ksub"]) <|
+              letE "bh" (callE "UInt32::to_bytes"
+                [callE "u32_mul" [vE "alo", callE "UInt32::from_field" [vE "p"]]]) <|
+              .letValue (.tuple [.bind "z0", .wildcard])
+                (callE "UInt8::from_fields" [litE 0, litE 0]) <|
+              .array [vE "z0", vE "z0", vE "z0", vE "z0",
+                      .index (vE "bh") 0, .index (vE "bh") 1, .index (vE "bh") 2, .index (vE "bh") 3]),
+             (.wildcard,
+              letE "p" (callE "pow_56" [litE 2, vE "k"]) <|
+              letE "pcomp" (callE "pow_56" [litE 2, subE (litE 32) (vE "k")]) <|
+              .letValue (.tuple [.bind "carry", .wildcard])
+                (callE "divmod_56" [vE "lo", vE "pcomp"]) <|
+              letE "pu" (callE "UInt32::from_field" [vE "p"]) <|
+              letE "reslo" (callE "u32_mul" [vE "alo", vE "pu"]) <|
+              letE "reshi" (callE "UInt32::add"
+                [callE "u32_mul" [vE "ahi", vE "pu"], callE "UInt32::from_field" [vE "carry"]]) <|
+              letE "bl" (callE "UInt32::to_bytes" [vE "reslo"]) <|
+              letE "bh" (callE "UInt32::to_bytes" [vE "reshi"]) <|
+              .array [.index (vE "bl") 0, .index (vE "bl") 1, .index (vE "bl") 2, .index (vE "bl") 3,
+                      .index (vE "bh") 0, .index (vE "bh") 1, .index (vE "bh") 2, .index (vE "bh") 3])])] }
+
 /-! ## Lowering Context, Typed Variable Map & Demand State -/
 
 structure TCx where
@@ -429,6 +514,8 @@ structure Demand where
   needU32Shr : Bool := false
   needU32OfField : Bool := false
   needU64Bitwise : Bool := false
+  needU64Shl : Bool := false
+  needU64Shr : Bool := false
   deriving Repr, Inhabited
 
 structure TState where
@@ -894,6 +981,49 @@ def tPrimE (cx : TCx) (vm : TVarMap) (op : Prim) (as : List Arg) (target : Rep) 
       let xa ← tArgE cx vm a .w64
       let xb ← tArgE cx vm b .w64
       coerceE cx .w64 target (callE "UInt64::xor" [xa, xb])
+    | .shiftRight, [a, b] =>
+      let xa ← tArgE cx vm a .w64
+      match b with
+      | .lit (.nat 32) =>
+        let tmp ← tFreshLocal
+        let z0 ← tFreshLocal
+        let res :=
+          letE tmp xa <|
+          .letValue (.tuple [.bind z0, .wildcard]) (callE "UInt8::from_fields" [litE 0, litE 0]) <|
+          .array [.index (vE tmp) 4, .index (vE tmp) 5, .index (vE tmp) 6, .index (vE tmp) 7,
+                  vE z0, vE z0, vE z0, vE z0]
+        coerceE cx .w64 target res
+      | _ =>
+        let xb ← tArgE cx vm b .w64
+        tMark fun d => { d with needU64Shr := true, needDivMod56 := true, needPow56 := true,
+                                needMul56 := true, needCheckU56 := true, needCheckU24 := true,
+                                needSubBorrow56 := true }
+        coerceE cx .w64 target (callE "u64_shr" [xa, xb])
+    | .shiftLeft, [a, b] =>
+      let xa ← tArgE cx vm a .w64
+      let xb ← tArgE cx vm b .w64
+      tMark fun d => { d with needU64Shl := true, needU32Mul := true, needDivMod56 := true,
+                              needPow56 := true, needMul56 := true, needCheckU56 := true,
+                              needCheckU24 := true, needSubBorrow56 := true }
+      coerceE cx .w64 target (callE "u64_shl" [xa, xb])
+    | .complement, [a] =>
+      let xa ← tArgE cx vm a .w64
+      let tmp ← tFreshLocal
+      let res := letE tmp xa <|
+        callE "UInt64::from_fields"
+          [.array [subE (litE 255) (callE "UInt8::to_field" [.index (vE tmp) 0]),
+                   subE (litE 255) (callE "UInt8::to_field" [.index (vE tmp) 1]),
+                   subE (litE 255) (callE "UInt8::to_field" [.index (vE tmp) 2]),
+                   subE (litE 255) (callE "UInt8::to_field" [.index (vE tmp) 3]),
+                   subE (litE 255) (callE "UInt8::to_field" [.index (vE tmp) 4]),
+                   subE (litE 255) (callE "UInt8::to_field" [.index (vE tmp) 5]),
+                   subE (litE 255) (callE "UInt8::to_field" [.index (vE tmp) 6]),
+                   subE (litE 255) (callE "UInt8::to_field" [.index (vE tmp) 7])]]
+      coerceE cx .w64 target res
+    | .neg, [a] =>
+      let xa ← tArgE cx vm a .w64
+      coerceE cx .w64 target
+        (.project (callE "UInt64::sub_with_borrow" [callE "UInt64::from_field" [litE 0], xa]) 0)
     | .ofNat, [a] =>
       let xa ← tArgE cx vm a (.nat natLimit)
       coerceE cx .w64 target (callE "UInt64::from_field" [xa])
@@ -1457,7 +1587,9 @@ def demandedHelpers (d : Demand) (usePair : Bool) : List Fn :=
   (if d.needU32Mod then [u32ModFn] else []) ++
   (if d.needU32Shl then [u32ShlFn] else []) ++
   (if d.needU32Shr then [u32ShrFn] else []) ++
-  (if d.needU32OfField then [u32OfFieldFn] else [])
+  (if d.needU32OfField then [u32OfFieldFn] else []) ++
+  (if d.needU64Shl then [u64ShlFn] else []) ++
+  (if d.needU64Shr then [u64ShrFn] else [])
 
 /-- Result of typed lowering: the `Prog` generic program, the selected `TableTier`,
 the result `Rep` of each export, and the recorded `Demand`. -/
@@ -1504,6 +1636,7 @@ def lowerProgram (P : Program) (cert : ShapeCert) (sched : CircuitSchedule := {}
     dataDecls cx ++
     (if d.needBytes || d.needObj then [Lower.bytesEnumDecl] else []) ++
     (if d.needObj then [Lower.objEnumDecl P] else [])
+  let fns := fns.map IxCC.AiurBackend.Peephole.rewriteFn
   return {
     program := { functions := entriesWithReps.map Prod.fst ++ fns ++ helpers, enums }
     tier

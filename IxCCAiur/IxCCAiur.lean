@@ -14,8 +14,10 @@ import IxCCAiur.Hints
 import IxCCAiur.Schedule
 import IxCCAiur.ScheduleJson
 import IxCCAiur.TypedRep
+import IxCCAiur.Peephole
 import IxCCAiur.TypedLower
 import IxCCAiur.TypedWorld
+import IxCCAiur.TypedGadgets
 import IxCCAiur.CompiledCert
 import IxCCAiur.Driver
 import IxCCAiur.Audit
