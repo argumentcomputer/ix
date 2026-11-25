@@ -53,8 +53,9 @@ projected CAF field). -/
 example : sizeAfter {} dict = some (2, 21) := by decide +kernel
 
 set_option maxRecDepth 100000 in
-/-- P3: one inline round (the CAF dictionary into the root). -/
-example : sizeAfter { steps := [.inline [(0, [1])]] } dict = some (2, 31) := by decide +kernel
+/-- P3: one inline round (the CAF dictionary into the root, 19 nodes); the
+step drops the dictionary (12 nodes), which the root no longer reaches. -/
+example : sizeAfter { steps := [.inline [(0, [1])]] } dict = some (1, 19) := by decide +kernel
 
 set_option maxRecDepth 100000 in
 /-- P3, then P2's rounds (projection of a known constructor, β, dead
@@ -82,14 +83,24 @@ def specLoop : Anf.Specialize.Cert :=
 
 set_option maxRecDepth 100000 in
 /-- P4: the specialisation of the loop on its step function, created and
-called; the generic loop is kept. -/
-example : sizeAfter { steps := [.shrink [1, 1], .specialize specLoop] } loop = some (3, 42) := by
+called (18 nodes, the root 12); the step drops the generic loop (12 nodes),
+which the root no longer reaches. -/
+example : sizeAfter { steps := [.shrink [1, 1], .specialize specLoop] } loop = some (2, 30) := by
   decide +kernel
 
 set_option maxRecDepth 100000 in
-/-- P4, P2, pruning: `root n = loop' n 0` with `loop'` adding 2 per step. -/
-example : sizeAfter { steps := [.shrink [1, 1], .specialize specLoop, .shrink [2, 1, 3], .prune] }
+/-- P4, P2, pruning: `root n = loop' n 0` with `loop'` adding 2 per step. The
+shrink step's rounds are those of the two globals P4 leaves. -/
+example : sizeAfter { steps := [.shrink [1, 1], .specialize specLoop, .shrink [2, 3], .prune] }
     loop = some (2, 18) := by
+  decide +kernel
+
+set_option maxRecDepth 100000 in
+/-- A shrink step that still lists a round count for the generic loop, as a
+certificate made before P4 pruned would, is refused: it lists more globals
+than the program has. -/
+example : sizeAfter { steps := [.shrink [1, 1], .specialize specLoop, .shrink [2, 1, 3], .prune] }
+    loop = none := by
   decide +kernel
 
 set_option maxRecDepth 100000 in

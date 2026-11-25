@@ -380,6 +380,19 @@ def replaysAlike (c : Config) (inp : Input) : Except String Bool := do
   let P ← Anf.Pipeline.run t.cert lam
   pure (P.beq ((t.stages.getLast?.map (·.2)).getD default))
 
+/-- A producer's own program at configuration `c`, without the checker: its
+middle end's last program through the closures step (as every producer runs
+it, `produceClosures`), and that program lowered to Cfg under the immortal
+policy. -/
+def producerPrograms (c : Config) (inp : Input) :
+    Except String (IxCC.Anf.Program × IxCC.Cfg.Program) := do
+  let ps ← (produceSource c inp).mapError (·.render)
+  let (lam, _) ← (IxCC.Lam.erase ps.src ps.checked).mapError fun _ => "erasure declined"
+  let t ← Anf.Pipeline.produce c.budgets lam
+  let (anf, _) ← (produceClosures ps.src t).mapError (·.render)
+  let fir ← (IxCC.Fir.lower anf).mapError fun e => (Err.ofFir e).render
+  pure (anf, IxCC.Cfg.lower (IxCC.Own.immortal fir))
+
 /-- The `natural` fixture of `phase1-machines`: numeric state machines whose
 library is written in the natural style, which the middle end makes first
 order (the shrink walk's pending join entry and the producer's inline-round
@@ -387,13 +400,20 @@ retry; `docs/closures-design.md`, "Measured limits"). Per root: under `--rc
 auto` (`CompileClaim.produce`) the claim is zero RC and `verifyProgram` accepts
 it; the closures step leaves the program unchanged (no closure keys) and it is
 first order; and with the pending choice forced off (`Shrink.Budgets.pendForce
-:= some false`, a test-only switch of the producer) the root still compiles
-(`compileInputRetry`: the producer, then the checker; `Natural.fibMain` through
-the run without the inline-round retry, the checker refusing the run with it,
-below) and gives the manifest's value on every case after the middle end, at
-Cfg and (with `--native`) natively: the gain is an optimisation, not something
-correctness depends on. The main run covers the decided compile at every
-level.
+:= some false`, a test-only switch of the producer) the program still gives
+the manifest's value on every case: the gain is an optimisation, not something
+correctness depends on. Where that producer's certificate is one the checker
+accepts (`compileInputRetry`: the producer, then the checker;
+`Natural.onMessage`), the values are checked after the middle end, at Cfg and
+(with `--native`) natively. On `Natural.fibMain` the checker refuses it, with
+and without the inline-round retry, as below, so the values are checked on that
+producer's own program (`producerPrograms`), after the middle end and at Cfg.
+(Until inline rounds pruned, `Natural.fibMain` compiled through the run without
+the retry: its second round listed a caller the roots no longer reached, whose
+walk passed the copy budget, so without the retry the rounds ended there, before
+the shrink step on which the two walks differ. A round no longer lists such a
+caller, so that run now takes the round, and the decided compile no longer
+needs the retry.) The main run covers the decided compile at every level.
 
 The choice is not in the certificate (its shrink steps record round counts
 only), so the checker makes its own, and a producer that deviates from it is
@@ -437,9 +457,40 @@ def natural (a : Assert) (native : Option Rt.Native.Tools) : IO (Array String) :
       let unchanged := (Anf.Pipeline.run cert.mid art.lam).toOption.any (·.beq art.anf)
       expect a (unchanged && Anf.firstOrder art.anf)
         s!"{label}: {closuresLine cert art}; expected the program unchanged and first order"
-    -- the pending choice forced off: compiled, and the manifest's values
+    -- the pending choice forced off: the manifest's values, on what the checker accepts where
+    -- it accepts that producer's certificate, on the producer's own program where it does not
     match compileInputRetry off inp with
-    | .error e => expect a false s!"{label}, pending forced off: declined: {e.render}"
+    | .error e =>
+      -- refused only as a producer deviating from the checker is: with and without the
+      -- inline-round retry, the checker's replay of its middle end is another program
+      let another := (replaysAlike off inp matches .ok false) &&
+        (replaysAlike off.noRetry inp matches .ok false)
+      expect a (e.stage.name == "alloc" && e.code == "alloc.shape" && another)
+        s!"{label}, pending forced off: declined: {e.render}"
+      match producerPrograms off inp with
+      | .error msg => expect a false s!"{label}, pending forced off, the producer alone: {msg}"
+      | .ok (anf, cfgP) =>
+        let some g := anf.roots.head? | throw (IO.userError s!"{label}: no Anf root")
+        let some fn := cfgP.exports.head? | throw (IO.userError s!"{label}: no Cfg root")
+        for cs in r.cases do
+          let some want := cs.sourceObs r | continue
+          let ra ← IxCCTests.Anf.runAnf anf Levels.clock g cs.args
+          let oa := match ra with
+            | .ok v => IxCC.Anf.readback anf v
+            | _ => none
+          expect a (Levels.shape ra == "ok" && oa.map Rt.renderObs == some want)
+            s!"{label} {cs.args}, pending forced off, the producer's program after the middle end: \
+              {Levels.shape ra} {oa.map Rt.renderObs}, expected {want}"
+          let rc ← IxCCTests.Fir.runCfg .immortal cfgP Levels.clock fn cs.args
+          let oc := match rc with
+            | .ok (v, H) => H.readback v
+            | _ => none
+          expect a (Levels.shape rc == "ok" && oc.map Rt.renderObs == some want)
+            s!"{label} {cs.args}, pending forced off, the producer's program at Cfg: \
+              {Levels.shape rc} {oc.map Rt.renderObs}, expected {want}"
+        out := out.push s!"{label}: zero RC, claim verified, the closures step has nothing to do; pending forced off: \
+          refused by the checker with and without the inline-round retry (alloc: alloc.shape: its replay is another \
+          program); that producer's own program: {r.cases.length} cases agree after the middle end and at Cfg"
     | .ok (cert, art) =>
       let c ← Levels.assemble s!"{label} (pending off)" cert art
       let levels := ((Levels.levelNames c).filter (·.startsWith "anf")).getLast?.toList ++ ["cfg"]

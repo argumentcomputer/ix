@@ -10,7 +10,10 @@ program far inside them, so this survey replays each program's honest
 certificate step by step and records, over all of them, the largest
 
 * global and program, after P1 and after every step (`maxGlobalNodes`,
-  `maxProgramNodes`);
+  `maxProgramNodes`), and of what an inline round or a specialisation makes
+  before its step drops the globals the roots no longer reach (the program
+  those two budgets are checked on, `Pipeline.checkReachable`; the back end's
+  work is measured after it, as the step does);
 * nodes one walk copies, in an inline step and in a shrink round
   (`Walk.maxCopy`), and rule firings in one walk (`Walk.maxFires`); and it
   checks the walk's step bound on every walk (`Fires.steps` at most the
@@ -223,6 +226,17 @@ def measure (lam : Lam.Program) (cert : Anf.Pipeline.Cert) : Except String Stats
       let (w, n) ← specWork c P
       s := { s with maxSpecWork := max s.maxSpecWork w, maxSpecNodes := max s.maxSpecNodes n }
     | .prune => pure ()
+    -- a P3 or P4 step checks its nodes and depth on everything its pass made,
+    -- before it drops the globals the roots no longer reach
+    -- (`Pipeline.checkReachable`): measure that program too
+    let made ← match step with
+      | .inline r => (Anf.Inline.round P r).map fun x => some x.1
+      | .specialize c => (Anf.Specialize.run c P).map some
+      | _ => pure none
+    if let some R := made then
+      let (g, t) := sizes R
+      s := { s with maxGlobal := max s.maxGlobal g, maxProgram := max s.maxProgram t,
+                    maxDepth := max s.maxDepth (anfDepth R) }
     P ← step.run cert.shrink P
     let (g, t) := sizes P
     s := { s with maxGlobal := max s.maxGlobal g, maxProgram := max s.maxProgram t,

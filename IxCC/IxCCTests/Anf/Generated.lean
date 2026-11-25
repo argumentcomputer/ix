@@ -82,7 +82,11 @@ def one (a : Assert) (seed : Nat) (s : Stats) : IO Stats := do
   for i in [0:6] do
     let (step, g') := (randomStep P i).run g |>.run
     g := g'
-    let before := P.size
+    -- the globals a specialisation adds: counted on the pass's own output, since
+    -- the step then drops the globals the roots no longer reach
+    let added := match step with
+      | .specialize c => ((Anf.Specialize.run c P).toOption.map (·.size - P.size)).getD 0
+      | _ => 0
     match step.run {} P with
     | .error m =>
       -- A random step can ask for more than the replay's budgets (it inlines
@@ -94,7 +98,7 @@ def one (a : Assert) (seed : Nat) (s : Stats) : IO Stats := do
       s := { s with overBudget := s.overBudget + 1 }
     | .ok P' =>
       P := P'
-      if step matches .specialize _ then s := { s with specs := s.specs + (P.size - before) }
+      s := { s with specs := s.specs + added }
       s := { s with steps := s.steps + 1,
                     tally := ← compare a L P s!"seed {seed} step {i} {step.name}" s.tally }
   -- the default pipeline: replay and idempotence

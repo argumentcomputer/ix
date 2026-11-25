@@ -22,8 +22,12 @@ size bounds; P3 inline rounds; P4 its decisions). `run` never searches, so it
 is the function `Recheck.run` evaluates in the kernel.
 
 Pruning the globals unreachable from the roots (an addition to the designed order)
-runs after the first shrink (erasure's unused helpers) and last (inlining
-and specialisation leave the originals behind). A program that still has an
+runs after the first shrink (erasure's unused helpers), inside every P3 and
+P4 step (inlining and specialisation leave the originals behind: the step
+drops them before the back end's work is measured, `checkReachable`, so a
+round or a specialisation is taken or refused on what the roots reach, and
+the steps after it neither walk nor count dead globals) and last (what the
+shrink steps since have cut off). A program that still has an
 `fn`, an `app` or a function-valued `glob` is not `FirstOrder`; the
 Anf → Fir boundary declines it in
 Phase 1 (`residual` reports what remains). -/
@@ -47,7 +51,10 @@ structure Cert where
   deriving Inhabited
 
 /-- A step, then the size check (P2, P3 and P4 can grow the program; pruning
-only removes globals). -/
+only removes globals). P3 and P4 leave behind the globals whose every use they
+replaced, so their check is `checkReachable`: the step's result is what the
+roots reach of the pass's output, and the back end's work is measured on that.
+The ids a later step names are therefore those of the pruned program. -/
 def Step.run (p : Shrink.Params) : Step → Program → Except String Program
   | .shrink c, P =>
     -- one round count per global id
@@ -55,9 +62,9 @@ def Step.run (p : Shrink.Params) : Step → Program → Except String Program
     else .error "shrink: the certificate lists more globals than the program has"
   | .inline r, P =>
     -- a round lists each caller once, so no more callers than the program has globals
-    if r.length ≤ P.size then Inline.round P r >>= fun x => checkGlobalNodes x.1
+    if r.length ≤ P.size then Inline.round P r >>= fun x => checkReachable x.1
     else .error "inline: a round lists more callers than the program has globals"
-  | .specialize c, P => Specialize.run c P >>= checkGlobalNodes
+  | .specialize c, P => Specialize.run c P >>= checkReachable
   | .prune, P => pure (Prune.run P)
 
 def Step.name : Step → String
@@ -215,7 +222,9 @@ accepts: P1 and every shrink step are followed by the re-run's size, depth
 and back-end work check (`checkGlobalNodes`), and a program that fails it is
 refused here, with the re-run's message, before the back end runs; an inline
 round or a specialisation is taken through the re-run's own step
-(`Step.run`), and one it refuses (a walk, step or program past its budgets)
+(`Step.run`: the pass, then `checkReachable`, which measures the back end's
+work on the globals the roots still reach and keeps only those), and one it
+refuses (a walk, step or program past its budgets)
 is not taken: a refused round is retried once without the callers whose walk
 the re-run refuses alone (`Budgets.retryInline`), and ends that invocation's
 rounds if it is still refused or no caller is left; a refused
@@ -240,8 +249,12 @@ def produceOnce (B : Budgets := {}) (L : Lam.Program) : Except String Trace := d
       -- P4, then P2
       if steps.size + 3 > maxSteps then break
       let sc := Specialize.produce B.spec (phase - 1) P
-      let .ok P4 := Step.run B.shrink.params (.specialize sc) P | break
-      if phase > 1 && P4.size == P.size then break
+      -- the re-run's step (`Step.run`) in its two halves: the pass, whose
+      -- output still holds the originals, so that its size says whether it
+      -- added a global; then the step's check, which keeps what the roots reach
+      let .ok S := Specialize.run sc P | break
+      if phase > 1 && S.size == P.size then break
+      let .ok P4 := checkReachable S | break
       P := P4
       steps := steps.push (.specialize sc); stages := stages.push ("P4", P)
       let (c, P2, f) ← Shrink.produce B.shrink P

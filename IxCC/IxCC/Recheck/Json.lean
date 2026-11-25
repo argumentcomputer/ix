@@ -27,6 +27,11 @@ the relevance annotation of a large closure has many entries:
 | allocation | `[numSlots, [[locs, termLocs, [[i, dst, src], …], [[loc, [v, …]], …]], …]]` |
 | frame layout | `[size, [slot offsets], [[register, offset], …], outArgs]` |
 
+An Anf step names globals by their ids in the program the steps before it
+leave. A `P3` or `P4` step ends by dropping the globals the roots no longer
+reach, as a `prune` step does (`Anf.Pipeline.Step.run`), so the steps after it
+name the ids of the pruned program.
+
 `ofJson (toJson c)` gives back `c` (tested by `tests-pipeline`). -/
 
 namespace IxCC.Recheck.CertJson

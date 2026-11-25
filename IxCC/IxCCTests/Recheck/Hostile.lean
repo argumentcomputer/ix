@@ -671,6 +671,31 @@ def budgets (a : Assert) : IO String := do
     match Anf.Pipeline.checkGlobalNodes Q with
     | .ok _ => expect a false s!"{label} accepted"
     | .error m => expect a ((m.splitOn "back end's work budget").length > 1) s!"{label}: {m}"
+  -- an inline step measures the back end's work on what the roots still reach
+  -- (`Pipeline.checkReachable`): four roots each inlining the one call of a
+  -- 7,701-node callee. The round's output still holds the callee, which no root
+  -- reaches any more, and with it is past the budget; the step drops it and is
+  -- within. With a fifth such root what the roots reach is past the budget too.
+  let nb := 3850
+  let rootsOf := fun (k : Nat) => (List.range k).map (· + 1)
+  let roundOf : Nat → Anf.Inline.Round := fun k => (rootsOf k).map fun g => (g, [0])
+  let four : Anf.Program := { callersProgram 4 1 nb with roots := rootsOf 4 }
+  match Anf.Inline.round four (roundOf 4) with
+  | .error m => expect a false s!"the four callers' round: {m}"
+  | .ok (R, _) =>
+    expect a (Anf.backWork R > Anf.maxBackWork && !(Anf.Pipeline.checkGlobalNodes R).isOk &&
+        Anf.backWork (Anf.Prune.run R) ≤ Anf.maxBackWork)
+      s!"the four callers' round: back-end work {Anf.backWork R} with the callee left behind, \
+        {Anf.backWork (Anf.Prune.run R)} without it; expected past {Anf.maxBackWork}, then within"
+  match Anf.Pipeline.Step.run {} (.inline (roundOf 4)) four with
+  | .error m => expect a false s!"an inline step whose reachable work is within the budget was refused: {m}"
+  | .ok Q =>
+    expect a (Q.size == 4 && Q.roots == [0, 1, 2, 3] && (Anf.Pipeline.checkGlobalNodes Q).isOk)
+      s!"the four callers' inline step left {Q.size} globals, roots {Q.roots}; expected the four callers"
+  let five : Anf.Program := { callersProgram 5 1 nb with roots := rootsOf 5 }
+  match Anf.Pipeline.Step.run {} (.inline (roundOf 5)) five with
+  | .ok _ => expect a false "an inline step whose reachable work is past the budget was accepted"
+  | .error m => expect a ((m.splitOn "back end's work budget").length > 1) s!"the five callers' inline step: {m}"
   -- a specialisation whose value tree is exponentially larger than its caller
   let towerProgram : Anf.Program :=
     { globals := Src.NatMap.ofList [(0, { key := .dispatch 0, ps := [.many], body := .ret (.var 0) }),
@@ -686,7 +711,9 @@ def budgets (a : Assert) : IO String := do
     "a specialisation over a 31-node value tree refused"
   return s!"Exp.nodesUpTo agrees with Exp.nodes below its cap; refused: a walk copying {2 * (2 * cb + 1)} \
     nodes, an inline round making {k * (2 * cb + 1)} nodes, a {2 * gb + 17}-node global, a \
-    {kp * (2 * gb - 15)}-node program, a specialisation over a 2^49-node value tree"
+    {kp * (2 * gb - 15)}-node program, an inline step of five roots whose reachable back-end work is \
+    past the budget (four are accepted: only the callee the round leaves behind takes its output past \
+    it), a specialisation over a 2^49-node value tree"
 
 /-- `tower depth` with a binding of a `w`-atom constructor below its chain, so
 that every census in the chain reads those atoms again. -/

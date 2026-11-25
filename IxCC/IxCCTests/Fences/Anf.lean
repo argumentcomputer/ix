@@ -391,13 +391,19 @@ expected messages are preserved verbatim. -/
 /-- info: 'IxCC.Anf.Prune.Proof.run_refines_traced' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Anf.Prune.Proof.run_refines_traced
 
-/-! The middle end (`Anf.Proof.Pass.Pipeline`): P1's output has ids `0 … size - 1`; every P2, P3, P4 and prune step keeps that shape and refines its input; `Pipeline.run` refines the Lam program for every certificate it accepts (and, as before, for certificates without P4 steps without P4's proof); the traced shape. -/
+/-! The middle end (`Anf.Proof.Pass.Pipeline`): P1's output has ids `0 … size - 1`; the check that ends a P3 or P4 step gives the pass's output pruned, and a step that ends with it is correct when its pass is; every P2, P3, P4 and prune step keeps that shape and refines its input; `Pipeline.run` refines the Lam program for every certificate it accepts (and, as before, for certificates without P4 steps without P4's proof); the traced shape. -/
 
 /-- info: 'IxCC.Anf.Pipeline.Proof.convert_unfold' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Anf.Pipeline.Proof.convert_unfold
 
 /-- info: 'IxCC.Anf.Pipeline.Proof.convert_wf' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Anf.Pipeline.Proof.convert_wf
+
+/-- info: 'IxCC.Anf.Pipeline.Proof.checkReachable_ok' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Pipeline.Proof.checkReachable_ok
+
+/-- info: 'IxCC.Anf.Pipeline.Proof.checkReachable_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Pipeline.Proof.checkReachable_correct
 
 /-- info: 'IxCC.Anf.Pipeline.Proof.step_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Anf.Pipeline.Proof.step_correct

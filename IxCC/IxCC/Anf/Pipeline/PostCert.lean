@@ -26,21 +26,44 @@ def programNodesUpTo : List (GlobalId × GDef) → Nat → Nat
     if used > maxProgramNodes then used else programNodesUpTo rest used
 
 /-- Refuse a program holding a global over `maxGlobalNodes` or deeper than
-`maxDepth`, more than `maxProgramNodes` nodes in all, or more back-end work
-than `maxBackWork`. The counts stop early and walk explicit worklists
-(`Exp.nodesUpTo`, `Exp.depthUpTo`), so the check is cheap and shallow whatever
-the program's size and depth. Inlining a callee doubles a mutually recursive
-pair each round with one firing, so the walk's budgets alone do not bound
-certificate rounds. -/
-def checkGlobalNodes (P : Program) : Except String Program :=
+`maxDepth`, or more than `maxProgramNodes` nodes in all. The counts stop early
+and walk explicit worklists (`Exp.nodesUpTo`, `Exp.depthUpTo`), so the check is
+cheap and shallow whatever the program's size and depth. Inlining a callee
+doubles a mutually recursive pair each round with one firing, so the walk's
+budgets alone do not bound certificate rounds. -/
+def checkSizes (P : Program) : Except String Program :=
   if !(P.globalList.all (fun (_, gd) => gd.body.nodesLe maxGlobalNodes) &&
       programNodesUpTo P.globalList 0 ≤ maxProgramNodes) then
     .error "middle end: a global or the program exceeds the node budget"
   else if !(P.globalList.all fun (_, gd) => gd.body.depthUpTo maxDepth maxGlobalNodes ≤ maxDepth) then
     .error "middle end: a global exceeds the depth budget"
-  else if backWork P > maxBackWork then
+  else .ok P
+
+/-- Refuse a program with more back-end work than `maxBackWork`. -/
+def checkBackWork (P : Program) : Except String Program :=
+  if backWork P > maxBackWork then
     .error "middle end: the program exceeds the back end's work budget"
   else .ok P
+
+/-- Refuse a program holding a global over `maxGlobalNodes` or deeper than
+`maxDepth`, more than `maxProgramNodes` nodes in all (`checkSizes`), or more
+back-end work than `maxBackWork` (`checkBackWork`). -/
+def checkGlobalNodes (P : Program) : Except String Program :=
+  checkSizes P >>= checkBackWork
+
+/-- The check after a step that leaves globals behind. An inline round (P3)
+copies a callee into its callers and a specialisation (P4) redirects calls to
+the copies it builds; both keep the originals, which the roots may no longer
+reach, and which the back end then never sees (the schedule's last step prunes
+them). So the node and depth budgets are checked on everything the step made
+(`checkSizes`: the replay holds all of it, and pruning recurses over it), the
+globals the roots do not reach are dropped (`Prune.run`), and the back end's
+work is measured on what is left (`checkBackWork`). The result is the pruned
+program, so the steps after it neither walk nor count the dead globals; it is
+within every budget of `checkGlobalNodes`, since pruning renames references
+and changes no global's nodes or depth. -/
+def checkReachable (P : Program) : Except String Program :=
+  checkSizes P >>= fun P1 => checkBackWork (Prune.run P1)
 
 /-- One certified post-P8 optimization step. -/
 inductive PostStep where

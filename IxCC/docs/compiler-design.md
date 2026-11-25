@@ -457,38 +457,43 @@ soon as it passes one of these fixed budgets
 | `Anf.maxLamDepth` | each Lam global's depth, before P1 | 2,048 | 134 | 15× |
 | `Anf.maxGlobalNodes` | each Anf global, after P1, after every step and after every shrink round | 16,384 | 8,858 | 1.8× |
 | `Anf.maxDepth` | each Anf global's depth, at the same points | 2,048 | 1,543 | 1.3× |
-| `Anf.maxProgramNodes` | the whole program at the same points, and the running total while an inline or shrink step rewrites its globals | 1,048,576 | 25,365 | 41× |
-| `Anf.maxBackWork` | the back end's work (`Anf.backWork`: each global's nodes squared, plus its nodes and its `case`s' squared alternative counts times the constructor table's length), at the same points | 268,435,456 | 154,195,240 | 1.7× |
+| `Anf.maxProgramNodes` | the whole program at the same points, and the running total while an inline or shrink step rewrites its globals | 1,048,576 | 12,624 | 83× |
+| `Anf.maxBackWork` | the back end's work (`Anf.backWork`: each global's nodes squared, plus its nodes and its `case`s' squared alternative counts times the constructor table's length), at the same points; an inline round (P3) or a specialisation (P4) leaves behind the globals whose every use it replaced, so its step first drops what the roots no longer reach and measures the work of the rest (`Pipeline.checkReachable`: the step's result is the pruned program, and the later steps name its ids) | 268,435,456 | 78,664,794 | 3.4× |
 | `Walk.maxCopy` | the nodes one walk walks again: inlined callees, inlined join points, case-of-case alternatives (but the first selection of each alternative of a pending join point, a move) and a local function's second and later β-expansions (its first is a move, `Walk.betaFires`) | 8,192 | 6,955 (inline), 1,375 (shrink) | 1.2×, 6.0× |
 | `Walk.maxWalkDepth` | the walk steps on the native stack at once (`Here.lvl`, which a continuation inherits from the point that calls it) | 3,072 | 1,571 | 1.9× |
 | `Walk.foldBits` | the bits of a literal a fold reads, and of a `natPow` or `natShl` result it writes (`Walk.foldable`); past it the primitive is kept and runs natively, not refused; every folded literal is below `2^(2 · foldBits)` | 1,024 | under 64: no fold of the 12 manifests or `fixtures/rc/budget` reads or writes a value of `2^63` or more (2026-11-13) | 16× or more |
 | `Walk.maxFires` | rule firings in one walk | 8,192 | 801 | 10× |
 | `Walk.maxWalkWork` | the work one walk does (`Fires.work`, charged before every step of the walk) | 10,000,000 | 3,692,411 | 2.7× |
-| `Anf.maxStepWork` | the walk work of one inline or shrink step, over all its walks | 45,000,000 | 28,693,905 | 1.5× |
-| `Specialize.maxWork` | the work charged for the call sites a specialisation step examines | 67,108,864 | 3,179,143 | 21× |
-| `Specialize.maxNodes` | the nodes of the specialisations those sites may build | 1,048,576 | 3,193 | 328× |
+| `Anf.maxStepWork` | the walk work of one inline or shrink step, over all its walks | 45,000,000 | 17,054,513 | 2.6× |
+| `Specialize.maxWork` | the work charged for the call sites a specialisation step examines | 67,108,864 | 5,028,389 | 13× |
+| `Specialize.maxNodes` | the nodes of the specialisations those sites may build | 1,048,576 | 3,316 | 316× |
 | `Anf.maxCapturedWork` | the captured tokens a plain-RC ownership certificate makes the ownership checker take (`Own.Plain.Certificate.capturedWork`: at each jump the target join's captured list, at each join declaration its own), at certificate admission, before the checker runs | 1,048,576 | 1,925 (`Machines.fibMain`, canonical placement; heap stage 2's survey, not `tests-corpus`'s); the test input `fixtures/rc/budget` sits at the boundary: `fanUnder` 1,044,352 (admitted; its plain-RC certificate is within the text limits, nesting 410 and 51,379,451 bytes (54,727,677 before 2026-11-13's `succBle` rule), since its roots call the fan functions in parts of two: in four parts it nested 2,208 deep and `check-cert` refused it), `fanOver` 1,049,600 (refused) | 545× |
 | `Anf.maxParamTotal` | the parameters of a program's functions and of the join points their bodies declare (`Own.Plain.Certificate.paramTotal`), which cost no Anf node, while the source-domain check and the ownership checker walk each one; checked first at plain-RC certificate admission, before the certificate is decoded, and in `Recheck.runWithContracts` before its domain check (one run of the check takes under a second at the limit, the plain-RC verifier's steps from Fir about 4.7 s). Past it, `--rc on`, and `check-cert` or `--cert` with a plain-RC certificate, refuse with `cert: own.plain: own.cert.params: …` (the total and the limit), exit 1, no object; `--rc auto` compiles under the immortal policy and prints that reason on its `rc policy:` line; `--rc off` and a zero-RC certificate are not affected (the immortal route runs no domain check). The producer is not expected to reach it from an artifact (an argument from the code, not a proof: [roadmap, "Hardening"](roadmap.md#hardening)), so only a certificate made by hand, one that skips the `prune` step, gets past the other limits with more. It does not bound the relevance check against the canonical annotator (Stage A, which runs on the source first; linear in the parameters since 2026-11-13, about 2 s at the limit), the plain-RC back end's per-function term (`Xv.Validate`, no pass over the whole state at a call since 2026-11-13; its parameters' distinctness check and the per-edge binding stay superlinear), the layout's function-count term (`Backend.lay`, linear in the functions and call sites since 2026-11-13) or the RC policy selection (linear in the function count since 2026-11-13); each is measured in the roadmap | 1,048,576 | 240 (`Closures.stateLoop`; the benchmark closures 386, `const_fold`; heap stage 2's survey, not `tests-corpus`'s) | 4,369× (2,716× over the benchmark closures) |
 
 The committed values are `tests-corpus`'s survey of every committed program
-(182 measured, 2026-11-13), which also checks every walk against the visit
-bound of the copy count (`steps ≤ nodes + copied`: 5,832 walks). None of these
+(188 measured, 2026-11-25), which also checks every walk against the visit
+bound of the copy count (`steps ≤ nodes + copied`: 4,659 walks). The program
+nodes, the step work, the specialisation charges and the back end's work are
+those of the schedule whose inline and specialisation steps prune
+(`Pipeline.checkReachable`): until then the survey also counted the globals
+those steps had left behind, which later steps walked and the budgets
+measured (25,365 program nodes, 28,693,905 step work and 154,195,240 back-end
+work on the same programs, with 6,181 walks). None of these
 budgets is settable at invocation yet (a mechanism to raise each as `IXCC_<LIMIT>` is being built
 elsewhere).
 
-**Headroom.** Six budgets are within twice the largest committed value. The
+**Headroom.** Four budgets are within twice the largest committed value. The
 survey prints, beside each maximum, the first program that reaches it:
 
 | Budget | Value | Largest committed value | Headroom | Reached by |
 | --- | --- | --- | --- | --- |
 | `Walk.maxCopy`, in an inline walk | 8,192 | 6,955 | 1.18× | `phase1-machines`, `Machines.fibMain` |
 | `Anf.maxDepth` | 2,048 | 1,543 | 1.33× | `phase1-machines`, `Natural.fibMain` |
-| `Anf.maxStepWork` | 45,000,000 | 28,693,905 | 1.57× | `phase1-machines`, `Natural.fibMain` |
-| `Anf.maxBackWork` | 268,435,456 | 154,195,240 | 1.74× | `phase1-machines`, `Machines.fibMainHO` |
 | `Anf.maxGlobalNodes` | 16,384 | 8,858 | 1.85× | `phase1-machines`, `Machines.fibMain` |
 | `Walk.maxWalkDepth` | 3,072 | 1,571 | 1.96× | `phase1-machines`, `Natural.fibMain` |
 
-All six are reached by the numeric state-machine family, the largest
+(`Anf.maxStepWork` is at 2.6×, `Natural.fibMain`, and `Anf.maxBackWork` at
+3.4×, `Machines.fibMain`.) All four are reached by the numeric state-machine family, the largest
 committed programs, so a program somewhat larger meets them first: a walk
 past `maxCopy` is refused (the producer then retries the inline round without
 that caller, see "The producer" below), a shrink round that would take a
@@ -496,10 +501,13 @@ global past `maxDepth`, a walk past `maxWalkDepth` or a step past
 `maxStepWork` is not taken (the global keeps the rounds before it, less
 shrunk), an inline round past any of them is not taken, and a program past
 the node or back-end work budget after a shrink step, or deeper than
-`maxDepth` after P1, is refused. The three that
-`Natural.fibMain` reaches come with the middle end's inline-round retry and
-its pending join entry, which make that program first order: with neither,
-on the same tree, its deepest global is 596 deep, its deepest walk 754 steps
+`maxDepth` after P1, is refused. The two that
+`Natural.fibMain` reaches, and its step work, come with the middle end's
+pending join entry, which makes that program first order. Measured on the
+tree of 2026-11-13, when it also needed the inline-round retry (its second
+round listed a caller the roots no longer reached, whose walk passed
+`maxCopy`; a round no longer lists such a caller): with neither,
+its deepest global was 596 deep, its deepest walk 754 steps
 and its largest step's walk work 7,063,134; with the pending entry forced
 off (the retry kept) 1,187, 1,220 and 15,358,362 (the retry inlines more, and the pending entry moves each
 selected alternative into the `case` arm that jumped to it).

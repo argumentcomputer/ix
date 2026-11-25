@@ -489,15 +489,15 @@ theorem step_known (prm : Anf.Shrink.Params) :
     simp only [Anf.Pipeline.Step.run] at h
     split at h
     · obtain ⟨x, hr, hc⟩ := Lam.ModesOk.bind_ok h
-      rw [Anf.Pipeline.Proof.checkGlobalNodes_ok hc]
-      exact (Anf.Inline.Proof.round_global hr).2.1
+      rw [Anf.Pipeline.Proof.checkReachable_ok hc]
+      exact (Anf.PassProof.prune_tables _).1.trans (Anf.Inline.Proof.round_global hr).2.1
     · cases h
   | .specialize c, P, Q, hw, h => by
     simp only [Anf.Pipeline.Step.run] at h
     obtain ⟨x, hspec, hc⟩ := Lam.ModesOk.bind_ok h
-    rw [Anf.Pipeline.Proof.checkGlobalNodes_ok hc]
+    rw [Anf.Pipeline.Proof.checkReachable_ok hc]
     obtain ⟨st, hi, hQ⟩ := Anf.Specialize.Proof.run_inv hw hspec
-    exact Anf.Specialize.Proof.run_known hw hi hQ
+    exact (Anf.PassProof.prune_tables _).1.trans (Anf.Specialize.Proof.run_known hw hi hQ)
   | .prune, P, Q, _, h => by
     simp only [Anf.Pipeline.Step.run] at h
     cases h
@@ -564,15 +564,15 @@ theorem step_ctors (prm : Anf.Shrink.Params) :
     simp only [Anf.Pipeline.Step.run] at h
     split at h
     · obtain ⟨x, hr, hc⟩ := Lam.ModesOk.bind_ok h
-      rw [Anf.Pipeline.Proof.checkGlobalNodes_ok hc]
-      exact Anf.Inline.Proof.round_ctors hr
+      rw [Anf.Pipeline.Proof.checkReachable_ok hc]
+      exact (Anf.PassProof.prune_tables _).2.trans (Anf.Inline.Proof.round_ctors hr)
     · cases h
   | .specialize c, P, Q, hw, h => by
     simp only [Anf.Pipeline.Step.run] at h
     obtain ⟨x, hspec, hc⟩ := Lam.ModesOk.bind_ok h
-    rw [Anf.Pipeline.Proof.checkGlobalNodes_ok hc]
+    rw [Anf.Pipeline.Proof.checkReachable_ok hc]
     obtain ⟨st, hi, hQ⟩ := Anf.Specialize.Proof.run_inv hw hspec
-    exact Anf.Specialize.Proof.run_ctors hw hi hQ
+    exact (Anf.PassProof.prune_tables _).2.trans (Anf.Specialize.Proof.run_ctors hw hi hQ)
   | .prune, P, Q, _, h => by
     simp only [Anf.Pipeline.Step.run] at h
     cases h

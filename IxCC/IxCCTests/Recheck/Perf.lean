@@ -139,6 +139,8 @@ def middle (rows : Rows) (B : Anf.Pipeline.Budgets) (L : Lam.Program) : IO Anf.P
       let sc ← stage rows "P4 oracle" fun _ => .ok (Anf.Specialize.produce B.spec (phase - 1) Q)
       let P4 ← stage rows "P4 run" fun _ => (Anf.Specialize.run sc Q).mapError anfErr
       if phase > 1 && P4.size == P.size then break
+      -- a P4 step, like a P3 step, ends by dropping what the roots no longer reach
+      let P4 ← stage rows "prune" fun _ => .ok (Anf.Prune.run P4)
       let (_, P2, _) ← stage rows "P2 produce" fun _ => (Anf.Shrink.produce B.shrink P4).mapError anfErr
       P := P2
     for _ in [0:B.inline.rounds] do
@@ -146,6 +148,7 @@ def middle (rows : Rows) (B : Anf.Pipeline.Budgets) (L : Lam.Program) : IO Anf.P
       let r ← stage rows "P3 oracle" fun _ => .ok (Anf.Inline.produce B.inline Q)
       if r.isEmpty then break
       let (P3, _) ← stage rows "P3 round" fun _ => (Anf.Inline.round Q r).mapError anfErr
+      let P3 ← stage rows "prune" fun _ => .ok (Anf.Prune.run P3)
       let (_, P2, _) ← stage rows "P2 produce" fun _ => (Anf.Shrink.produce B.shrink P3).mapError anfErr
       P := P2
   let Q := P

@@ -12,7 +12,8 @@ program whose ids are exactly `0 … size - 1` (`convert_wf`; Lam programs
 with a gap below their size are declined, `convert-dense`), every P2, P3,
 P4 and prune step keeps that shape and refines its input
 (`Shrink.Proof.run_refines`, `Inline.Proof.round_refines`,
-`Specialize.Proof.run_refines`, `Prune.Proof.run_refines`), and refinement
+`Specialize.Proof.run_refines`, `Prune.Proof.run_refines`; a P3 or P4 step
+is its pass followed by pruning, `checkReachable_correct`), and refinement
 composes (`Sem.Refines.trans`): `run_correct` holds for every certificate
 the re-run accepts. The step lemmas still take P4's correctness as a
 premise (`SpecCorrect`, now `spec_correct`); `run_correct_noSpec` states
@@ -87,16 +88,43 @@ theorem convert_wf {L : Lam.Program} {Q : Program} (h : convert L = .ok Q) : Q.W
     obtain ⟨gd, hgd, -⟩ := hgl g gl hgl' hg
     exact ⟨gd, hgd⟩
 
-/-- The size check passes its program through unchanged. -/
-theorem checkGlobalNodes_ok {P Q : Program} (h : checkGlobalNodes P = .ok Q) : Q = P := by
-  unfold checkGlobalNodes at h
+/-- The node and depth check passes its program through unchanged. -/
+theorem checkSizes_ok {P Q : Program} (h : checkSizes P = .ok Q) : Q = P := by
+  unfold checkSizes at h
   split at h
   · cases h
   · split at h
     · cases h
-    · split at h
-      · cases h
-      · cases h; rfl
+    · cases h; rfl
+
+/-- The back-end work check passes its program through unchanged. -/
+theorem checkBackWork_ok {P Q : Program} (h : checkBackWork P = .ok Q) : Q = P := by
+  unfold checkBackWork at h
+  split at h
+  · cases h
+  · cases h; rfl
+
+/-- The size check passes its program through unchanged. -/
+theorem checkGlobalNodes_ok {P Q : Program} (h : checkGlobalNodes P = .ok Q) : Q = P := by
+  unfold checkGlobalNodes at h
+  obtain ⟨P1, h1, h2⟩ := Lam.ModesOk.bind_ok h
+  rw [checkBackWork_ok h2, checkSizes_ok h1]
+
+/-- The check after an inline round or a specialisation gives its program
+pruned: the globals the roots reach, and nothing else of it. -/
+theorem checkReachable_ok {P Q : Program} (h : checkReachable P = .ok Q) : Q = Prune.run P := by
+  unfold checkReachable at h
+  obtain ⟨P1, h1, h2⟩ := Lam.ModesOk.bind_ok h
+  rw [checkBackWork_ok h2, checkSizes_ok h1]
+
+/-- A step that ends with `checkReachable` is correct when its pass is:
+pruning refines the pass's output and keeps its shape
+(`Prune.Proof.run_refines`). -/
+theorem checkReachable_correct {P P1 Q : Program} (h1 : P1.WF ∧ Sem.Refines P P1)
+    (h : checkReachable P1 = .ok Q) : Q.WF ∧ Sem.Refines P Q := by
+  rw [checkReachable_ok h]
+  obtain ⟨hw2, hr2⟩ := Prune.Proof.run_refines h1.1
+  exact ⟨hw2, h1.2.trans hr2⟩
 
 /-- The Lam size check passes its program through unchanged. -/
 theorem checkLamNodes_ok {L L' : Lam.Program} (h : checkLamNodes L = .ok L') : L = L' := by
@@ -133,17 +161,15 @@ theorem step_correct (p : Shrink.Params) :
   | .inline r, P, Q, _, hw, h => by
     simp only [Step.run] at h
     split at h
-    · obtain ⟨x, hr, hc⟩ := Lam.ModesOk.bind_ok h
-      rw [checkGlobalNodes_ok hc]
-      exact Inline.Proof.round_refines hw hr
+    · obtain ⟨⟨P1, f⟩, hr, hc⟩ := Lam.ModesOk.bind_ok h
+      exact checkReachable_correct (Inline.Proof.round_refines hw hr) hc
     · cases h
   | .specialize c, P, Q, hs, hw, h => by
     rcases hs with hs | hs
     · exact hs.elim
     · simp only [Step.run] at h
       obtain ⟨x, hspec, hc⟩ := Lam.ModesOk.bind_ok h
-      rw [checkGlobalNodes_ok hc]
-      exact hs c P x hw hspec
+      exact checkReachable_correct (hs c P x hw hspec) hc
   | .prune, P, Q, _, hw, h => by
     simp only [Step.run] at h
     cases h
