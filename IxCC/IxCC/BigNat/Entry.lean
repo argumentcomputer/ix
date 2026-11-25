@@ -8,6 +8,16 @@ operation in IxCC (`add`, `sub`, `pred`, `mul`, `divMod`, `div`, `mod`, `pow`,
 `shiftLeft?`, `shiftRight`, `shiftRightSlow`, `log2`, `log2Slow`, `toDecimal`,
 `ofDecimal`).
 
+**Retired interface, to be removed with the frozen `--bignat` side path.** The library's
+entries are the functions over `Nat` of `IxCC.BigNat.NatEntry` (design note
+`plans/ONE-PIPELINE.md` 4.3, decision D4), whose contract is an equation with the `Nat`
+operation (`IxCC.BigNat.Proof.NatEntry.spec`). The entries below stay, unchanged, only because
+the side path freezes and compiles them and its native glue (`IxCC.Rt.BigNat.Link`) is written
+against `SlowNat`; their users are `IxCC.BigNat.Bootstrap` (`SlowPathOp.leanName`),
+`IxCC.Rt.BigNat.{Cell, Link, Proof, ProofProcs, LowerBigProof}`, `IxCC.Cli` (`--bignat`, which
+freezes this file) and the tests `IxCCTests.BigNat.SlowPathTest`, `WireTest`. `IxCC.BigNat.Proof.Legacy` proves each of them is
+the entry over `Nat` between `SlowNat.val` and `SlowNat.ofNat`. Write no new code against them.
+
 ## Representation & Canonical Boundary Contract
 
 `SlowNat` is the pure-Lean algebraic mirror of the Phase 4 runtime `Nat` value

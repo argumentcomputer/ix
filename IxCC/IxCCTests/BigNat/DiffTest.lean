@@ -1,4 +1,5 @@
 import IxCC.BigNat
+import IxCC.BigNat.NatEntry
 
 /-! # Differential Fuzz Test Suite for `IxCC.BigNat` (`IxCCTests.BigNat.DiffTest`)
 
@@ -11,6 +12,9 @@ against Lean's GMP-backed `Nat` across 100,000+ randomized and adversarial cases
 - Zero divisors (`n / 0 = 0`, `n % 0 = n`).
 - Large operands up to 1,000 limbs (64,000 bits).
 - Canonical `WF` normal-form check on EVERY output.
+- The entries over `Nat` (`IxCC.BigNat.NatEntry`) and the two representation primitives
+  (`IxCC.NatRep.toLimbs`, `ofLimbs`) against `Nat` itself, including the canonical equation
+  of `toLimbs`, limb arrays that are not canonical, and counts beyond the tagged range.
 
 Run with: `lake env lean --run IxCCTests/BigNat/DiffTest.lean` (or compile via `leanc`).
 -/
@@ -637,25 +641,123 @@ def testStage2 (st : Stats) (r : Rng) : IO (Stats × Rng) := do
       (fun _ => s!"shiftLeft1/shiftRight1 roundtrip i={i}")
   pure (st, r)
 
+/-- One pair through every binary entry over `Nat` (`IxCC.BigNat.NatEntry`), against Lean's
+own `Nat`. -/
+def checkNatEntryPair (st : Stats) (a b : Nat) : IO Stats := do
+  let mut st := st
+  st ← check st (NatEntry.add a b == a + b) (fun _ => s!"NatEntry.add {a} {b}")
+  st ← check st (NatEntry.sub a b == a - b) (fun _ => s!"NatEntry.sub {a} {b}")
+  st ← check st (NatEntry.mul a b == a * b) (fun _ => s!"NatEntry.mul {a} {b}")
+  st ← check st (NatEntry.div a b == a / b) (fun _ => s!"NatEntry.div {a} {b}")
+  st ← check st (NatEntry.mod a b == a % b) (fun _ => s!"NatEntry.mod {a} {b}")
+  st ← check st (NatEntry.gcd a b == Nat.gcd a b) (fun _ => s!"NatEntry.gcd {a} {b}")
+  st ← check st (NatEntry.land a b == (a &&& b)) (fun _ => s!"NatEntry.land {a} {b}")
+  st ← check st (NatEntry.lor a b == (a ||| b)) (fun _ => s!"NatEntry.lor {a} {b}")
+  st ← check st (NatEntry.xor a b == (a ^^^ b)) (fun _ => s!"NatEntry.xor {a} {b}")
+  st ← check st (NatEntry.cmp a b == compare a b) (fun _ => s!"NatEntry.cmp {a} {b}")
+  st ← check st (NatEntry.beq a b == (a == b)) (fun _ => s!"NatEntry.beq {a} {b}")
+  st ← check st (NatEntry.ble a b == decide (a ≤ b)) (fun _ => s!"NatEntry.ble {a} {b}")
+  st ← check st (NatEntry.blt a b == decide (a < b)) (fun _ => s!"NatEntry.blt {a} {b}")
+  pure st
+
+/-- One natural through the two representation primitives (`IxCC.NatRep`), the unary entries
+and the canonical equation of `toLimbs`. -/
+def checkNatRep (st : Stats) (n : Nat) : IO Stats := do
+  let mut st := st
+  let ls := IxCC.NatRep.toLimbs n
+  st ← check st (isWF ls && ls == ofNat n) (fun _ => s!"toLimbs canonical {n}")
+  st ← check st (IxCC.NatRep.ofLimbs ls == n) (fun _ => s!"ofLimbs (toLimbs {n})")
+  st ← check st (IxCC.NatRep.ofLimbs ls == toNat ls) (fun _ => s!"ofLimbs = toNat {n}")
+  -- a limb array that is not canonical denotes the same natural, and comes back canonical
+  let padded := (ls.push 0).push 0
+  st ← check st (IxCC.NatRep.ofLimbs padded == n) (fun _ => s!"ofLimbs padded {n}")
+  st ← check st (IxCC.NatRep.toLimbs (IxCC.NatRep.ofLimbs padded) == ls)
+    (fun _ => s!"toLimbs (ofLimbs padded) {n}")
+  -- the canonical equation: the low limb, then the limbs of the quotient
+  let expected : List UInt64 :=
+    if n == 0 then [] else UInt64.ofNat (n % 2 ^ 64) :: (IxCC.NatRep.toLimbs (n / 2 ^ 64)).toList
+  st ← check st (ls.toList == expected) (fun _ => s!"toLimbs equation {n}")
+  st ← check st (NatEntry.pred n == n - 1) (fun _ => s!"NatEntry.pred {n}")
+  st ← check st (NatEntry.log2 n == Nat.log2 n) (fun _ => s!"NatEntry.log2 {n}")
+  let dec := NatEntry.toDecimal n
+  st ← check st (dec == toString n) (fun _ => s!"NatEntry.toDecimal {n}: got {dec}")
+  st ← check st (NatEntry.ofDecimal dec == some n) (fun _ => s!"NatEntry.ofDecimal {n}")
+  pure st
+
+/-- The entries over `Nat` and the representation primitives: boundary values, then random
+operands up to 200 limbs (past the Karatsuba and Toom-3 thresholds). -/
+def testNatEntry (st : Stats) (r : Rng) : IO (Stats × Rng) := do
+  let mut st := st
+  let mut r := r
+  let vals : Array Nat := #[
+    0, 1, 2, 3, 7, 9, 10, 63, 64, 65,
+    2 ^ 32 - 1, 2 ^ 32,
+    2 ^ 63 - 2, 2 ^ 63 - 1, 2 ^ 63, 2 ^ 63 + 1,
+    10 ^ 19 - 1, 10 ^ 19, 10 ^ 19 + 1,
+    2 ^ 64 - 2, 2 ^ 64 - 1, 2 ^ 64, 2 ^ 64 + 1,
+    2 ^ 127 - 1, 2 ^ 127, 2 ^ 128 - 1, 2 ^ 128, 2 ^ 128 + 1,
+    10 ^ 38, 2 ^ 192, 2 ^ 256 - 1, 2 ^ 256
+  ]
+  for a in vals do
+    st ← checkNatRep st a
+    for b in vals do
+      st ← checkNatEntryPair st a b
+    for sh in #[0, 1, 2, 31, 32, 63, 64, 65, 127, 128, 129, 255, 256, 512] do
+      st ← check st (NatEntry.shiftLeft a sh == a <<< sh) (fun _ => s!"NatEntry.shiftLeft {a} {sh}")
+      st ← check st (NatEntry.shiftRight a sh == a >>> sh)
+        (fun _ => s!"NatEntry.shiftRight {a} {sh}")
+    -- a count that is itself beyond the tagged range: the result is exactly `0`
+    st ← check st (NatEntry.shiftRight a (2 ^ 64 + 3) == 0)
+      (fun _ => s!"NatEntry.shiftRight {a} by 2^64+3")
+    for e in #[0, 1, 2, 3, 5, 17] do
+      st ← check st (NatEntry.pow a e == a ^ e) (fun _ => s!"NatEntry.pow {a} {e}")
+  -- exponents beyond the tagged range, on the bases whose power is small
+  st ← check st (NatEntry.pow 0 (2 ^ 64) == 0) (fun _ => "NatEntry.pow 0 (2^64)")
+  st ← check st (NatEntry.pow 1 (2 ^ 64) == 1) (fun _ => "NatEntry.pow 1 (2^64)")
+  for bad in #["", " ", "12a3", "-5", "+1", "12 34", "1_000"] do
+    st ← check st (NatEntry.ofDecimal bad == none) (fun _ => s!"NatEntry.ofDecimal bad '{bad}'")
+  st ← check st (NatEntry.ofDecimal "000123" == some 123) (fun _ => "NatEntry.ofDecimal 000123")
+  for i in [:1500] do
+    let maxL := if i % 100 == 0 then 200 else if i % 10 == 0 then 40 else 8
+    let (la, r1) := r.nextRange (maxL + 1)
+    let (lb, r2) := r1.nextRange (maxL + 1)
+    let (xa, r3) := r2.nextBigNat la
+    let (xb, r4) := r3.nextBigNat lb
+    let (sh, r5) := r4.nextRange 300
+    let (e, r6) := r5.nextRange 6
+    r := r6
+    let a := toNat xa
+    let b := toNat xb
+    st ← checkNatRep st a
+    st ← checkNatEntryPair st a b
+    st ← check st (NatEntry.shiftLeft a sh == a <<< sh) (fun _ => s!"fuzz NatEntry.shiftLeft {sh}")
+    st ← check st (NatEntry.shiftRight a sh == a >>> sh) (fun _ => s!"fuzz NatEntry.shiftRight {sh}")
+    if la ≤ 8 then
+      st ← check st (NatEntry.pow a e == a ^ e) (fun _ => s!"fuzz NatEntry.pow e={e}")
+  pure (st, r)
+
 def runAll : IO Unit := do
   let mut st : Stats := {}
   let mut r : Rng := { state := 0x123456789abcdef0 }
   let (st1, r1) ← testLimbOps st r 2000
   st := st1; r := r1
-  IO.println s!"[1/6] LimbOps: {st.total} checks, {st.failures} failures"
+  IO.println s!"[1/7] LimbOps: {st.total} checks, {st.failures} failures"
   st ← testBoundaries st
-  IO.println s!"[2/6] Boundaries: {st.total} checks, {st.failures} failures"
+  IO.println s!"[2/7] Boundaries: {st.total} checks, {st.failures} failures"
   st ← testKnuthAddBack st
-  IO.println s!"[3/6] Knuth Add-Back: {st.total} checks, {st.failures} failures, {st.addBackHits} add-back hits"
+  IO.println s!"[3/7] Knuth Add-Back: {st.total} checks, {st.failures} failures, {st.addBackHits} add-back hits"
   let (st4, r4) ← testKaratsubaBoundaries st r
   st := st4; r := r4
-  IO.println s!"[4/6] Karatsuba & 1000-limb: {st.total} checks, {st.failures} failures"
+  IO.println s!"[4/7] Karatsuba & 1000-limb: {st.total} checks, {st.failures} failures"
   let (st5, r5) ← testRandomFuzz st r
   st := st5; r := r5
-  IO.println s!"[5/6] Random Fuzz: {st.total} checks, {st.failures} failures"
-  let (st6, _) ← testStage2 st r
-  st := st6
-  IO.println s!"[6/6] Stage 2 (InvDiv/Toom3/Lehmer/COW): {st.total} checks, {st.failures} failures (lehmerHits={st.lehmerHits}, fallbacks={st.lehmerFallbacks}, divRem21S5={st.divRem21Step5Hits}, divRem21S6={st.divRem21Step6Hits})"
+  IO.println s!"[5/7] Random Fuzz: {st.total} checks, {st.failures} failures"
+  let (st6, r6) ← testStage2 st r
+  st := st6; r := r6
+  IO.println s!"[6/7] Stage 2 (InvDiv/Toom3/Lehmer/COW): {st.total} checks, {st.failures} failures (lehmerHits={st.lehmerHits}, fallbacks={st.lehmerFallbacks}, divRem21S5={st.divRem21Step5Hits}, divRem21S6={st.divRem21Step6Hits})"
+  let (st7, _) ← testNatEntry st r
+  st := st7
+  IO.println s!"[7/7] Entries over Nat and toLimbs/ofLimbs: {st.total} checks, {st.failures} failures"
   if st.failures != 0 then
     throw (IO.userError s!"BigNat DiffTest FAILED with {st.failures} failures out of {st.total} checks")
   IO.println s!"BigNat DiffTest PASS: {st.total} checks, 0 failures ({st.addBackHits} Knuth D add-back triggers, {st.lehmerHits} Lehmer hits, {st.lehmerFallbacks} fallbacks)"

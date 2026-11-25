@@ -39,7 +39,12 @@ Verifies the complete Phase 4 arbitrary-precision `Nat` pipeline natively on x86
    Freezes & compiles `big-fib`, `factorial`, `pi-digits`, `big-mul`, `big-div`, and `big-gcd`
    end-to-end through `lowerRepBig → Backend.compile → TestShell.writeExe`, executes each natively
    on Xeon at BOTH `test_args` and `bench_args`, verifies exact bit-for-bit equality with Lean 4
-   GMP (`expected.txt` / `bench_expected`), and reports raw Xeon wall-clock runtimes. -/
+   GMP (`expected.txt` / `bench_expected`), and reports raw Xeon wall-clock runtimes.
+
+**Work directory.** Every mode writes its artifacts below one directory. By default it is
+unique to the run (`$TMPDIR/ixcc-bignat-wire-<pid>`, `/tmp` without `TMPDIR`) and removed when
+the run ends, so concurrent runs on one machine do not interfere. `IX_BIGNAT_WIRE_DIR` names
+another directory, which is then used as it is and kept. -/
 
 set_option autoImplicit false
 
@@ -61,7 +66,36 @@ open System
 private def dummyProv : ELF.Provenance :=
   .ixir1Policy (Ixon.Address.replicate 0xB4) 1 1
 
-private def workDir : FilePath := "/tmp/ixcc-bignat-wire"
+/-- Environment variable naming the work directory of the wire modes. A directory given here
+is used as it is and is left in place (this is how artifacts are kept for inspection). -/
+private def workDirEnv : String := "IX_BIGNAT_WIRE_DIR"
+
+/-- The directory `IX_BIGNAT_WIRE_DIR` names, if it is set and not empty. -/
+private def workDirOverride : IO (Option FilePath) := do
+  match ← IO.getEnv workDirEnv with
+  | some d => pure (if d.isEmpty then none else some (FilePath.mk d))
+  | none => pure none
+
+/-- **The work directory of this run**: `$IX_BIGNAT_WIRE_DIR`, or by default
+`$TMPDIR/ixcc-bignat-wire-<pid>` (`/tmp` without `TMPDIR`). The default is unique to the process,
+so concurrent runs on one machine never share a file; the process id does not change during a
+run, so every call returns the same path. Each process, including a `--native-batch` child,
+builds everything it reads there itself. -/
+private def workDir : IO FilePath := do
+  if let some d ← workDirOverride then
+    return d
+  let tmp := (← IO.getEnv "TMPDIR").getD ""
+  let root : FilePath := if tmp.isEmpty then "/tmp" else FilePath.mk tmp
+  return root / s!"ixcc-bignat-wire-{← IO.Process.getPID}"
+
+/-- Remove this run's default work directory. Run before the modes (a directory left by a dead
+process that had the same id) and after them, also when they fail. A directory named through
+`IX_BIGNAT_WIRE_DIR` is never removed. -/
+private def cleanWorkDir : IO Unit := do
+  if (← workDirOverride).isNone then
+    let d ← workDir
+    if ← d.pathExists then
+      IO.FS.removeDirAll d
 
 private def resolveIxBin : IO String := do
   if let some envBin ← IO.getEnv "IX_BIN" then
@@ -144,12 +178,12 @@ structure BuiltBigNat where
 /-- Freeze and bootstrap-compile the pure-Lean `IxCC.BigNat.Entry` library (all 17 pure-limb
 numeric entrypoints; zero C, zero GMP). -/
 def compileBigNatLib (ixBin : String) (includeDecimal : Bool := false) : IO CompiledBigNatLib := do
-  IO.FS.createDirAll (workDir / "bootstrap")
+  IO.FS.createDirAll ((← workDir) / "bootstrap")
   let ops := if includeDecimal then SlowPathOp.all else SlowPathOp.numericOps
   let fcfg : FreezeConfig :=
     { ix := ixBin
     , sourceFile := "IxCC/BigNat/Entry.lean"
-    , outDir := workDir / "bootstrap"
+    , outDir := (← workDir) / "bootstrap"
     , includeLimbEqns := false
     , ops }
   let frozen ← freezeClosure fcfg
@@ -159,7 +193,7 @@ def compileBigNatLib (ixBin : String) (includeDecimal : Bool := false) : IO Comp
 compiled `rt_bignat_*` wrapper (all args passed as `.word`, zero `< 2^63` wrapper guard). -/
 def buildStandaloneExe (lib : CompiledBigNatLib) (mem : TestShell.Mem)
     (exeName : String := "bignat-lib-exe") : IO BuiltBigNat := do
-  IO.FS.createDirAll workDir
+  IO.FS.createDirAll (← workDir)
   let (prog0, exports) ← IO.ofExcept ((standaloneLibraryProgram lib).mapError (·.render))
   let prog := prog0.splitCriticalEdges
   match prog.check with
@@ -171,7 +205,7 @@ def buildStandaloneExe (lib : CompiledBigNatLib) (mem : TestShell.Mem)
     { provenance := dummyProv
       reps := fun f => (prog.funcs[f]?).map fun fd => fd.params.map fun _ => .word }
   let art ← IO.ofExcept ((Backend.compile prog bcfg).mapError toString)
-  let exePath := workDir / exeName
+  let exePath := (← workDir) / exeName
   match TestShell.writeExe mem exports art.object with
   | .error err => throw (IO.userError s!"FAIL WireTest writeExe(standalone): {err}")
   | .ok exeBytes =>
@@ -191,11 +225,11 @@ def buildStandaloneExe (lib : CompiledBigNatLib) (mem : TestShell.Mem)
 checking `Lir.Program.check`, and testing every compiled `rt_bignat_*` op natively on Xeon). -/
 def runBootstrap (cnt : IO.Ref Nat) (ixBin : String) : IO BuiltBigNat := do
   -- Also verify full 19-op freeze (including toDecimal/ofDecimal) succeeds cleanly
-  IO.FS.createDirAll (workDir / "bootstrap-19")
+  IO.FS.createDirAll ((← workDir) / "bootstrap-19")
   let f19 ← freezeClosure
     { ix := ixBin
     , sourceFile := "IxCC/BigNat/Entry.lean"
-    , outDir := workDir / "bootstrap-19"
+    , outDir := (← workDir) / "bootstrap-19"
     , includeLimbEqns := false
     , ops := SlowPathOp.all }
   require cnt (f19.entryAddrs.length == 19) s!"freezeClosure(all 19) resolved {f19.entryAddrs.length} entries"
@@ -339,8 +373,8 @@ def runBoundary (cnt : IO.Ref Nat) (lib : CompiledBigNatLib) : IO Nat := do
   let (art, exportNames, tTag, fTag) ←
     compileUserProgram "phase1-boundary" lib ixeBytes eqJson boundaryRoots true
   let mem : TestShell.Mem := { stack := 1024 * 1024, region := 32 * 1024 * 1024 }
-  let exePath := workDir / "phase1-boundary-big"
-  IO.FS.createDirAll workDir
+  let exePath := (← workDir) / "phase1-boundary-big"
+  IO.FS.createDirAll (← workDir)
   match TestShell.writeExe mem exportNames art.object with
   | .error err => throw (IO.userError s!"FAIL WireTest writeExe(boundary): {err}")
   | .ok exeBytes =>
@@ -666,7 +700,7 @@ private def k5Fixtures : List K5Fixture :=
 
 /-- Freeze a standalone K5 fixture Lean file using `ix compile`. -/
 private def freezeK5Fixture (ixBin : String) (fx : K5Fixture) : IO (ByteArray × Lean.Json) := do
-  let dir := workDir / "k5" / fx.name
+  let dir := (← workDir) / "k5" / fx.name
   IO.FS.createDirAll dir
   let ixePath := dir / s!"{fx.name}.ixe"
   let eqPath := dir / s!"{fx.name}.equations.json"
@@ -714,7 +748,7 @@ def runK5 (cnt : IO.Ref Nat) (ixBin : String) (lib : CompiledBigNatLib)
     let (art, exportNames, _, _) ←
       compileUserProgram s!"k5-{fx.name}" lib ixeBytes eqJson ["entry"] false
     let mem : TestShell.Mem := { stack := 8 * 1024 * 1024, region := 16 * 1024 * 1024 * 1024 }
-    let exePath := workDir / "k5" / fx.name / s!"{fx.name}-xeon"
+    let exePath := (← workDir) / "k5" / fx.name / s!"{fx.name}-xeon"
     match TestShell.writeExe mem exportNames art.object with
     | .error err => throw (IO.userError s!"FAIL WireTest writeExe(k5-{fx.name}): {err}")
     | .ok exeBytes =>
@@ -757,7 +791,7 @@ def runK5 (cnt : IO.Ref Nat) (ixBin : String) (lib : CompiledBigNatLib)
 
 /-! ## Top-Level CLI Entrypoint -/
 
-def runCli (args : List String) : IO Unit := do
+private def runModes (args : List String) : IO Unit := do
   let ixBin ← resolveIxBin
   let cnt ← IO.mkRef 0
   match args with
@@ -793,5 +827,14 @@ def runCli (args : List String) : IO Unit := do
     IO.println s!"WireTest(--all): PASS ({← cnt.get} checks)"
   | _ =>
     throw (IO.userError s!"WireTest unknown args: {args}")
+
+/-- Run one wire mode in this run's own work directory (`workDir`), and remove that directory
+afterwards whether the mode passes or fails. -/
+def runCli (args : List String) : IO Unit := do
+  cleanWorkDir
+  try
+    runModes args
+  finally
+    cleanWorkDir
 
 end IxCCTests.BigNat.WireTest

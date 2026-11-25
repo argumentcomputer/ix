@@ -544,6 +544,10 @@ import IxCC.BigNat.Entry
 import IxCC.BigNat.Bootstrap
 import IxCC.BigNat.Proof.Entry
 import IxCC.Nat.Rep
+import IxCC.BigNat.NatEntry
+import IxCC.BigNat.Proof.NatEntry
+import IxCC.BigNat.Proof.NatPrim
+import IxCC.BigNat.Proof.Legacy
 import IxCC.Rt.BigNat.Cell
 import IxCC.Rt.BigNat.Dispatch
 import IxCC.Rt.BigNat.ProofProcs
