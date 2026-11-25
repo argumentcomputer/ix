@@ -3,6 +3,7 @@ import IxCC.Anf.Proof.Rel.ValModel
 import IxCC.Anf.Proof.Defun.Narrow
 import IxCC.Anf.Proof.Defun.ValModel
 import IxCC.Anf.Proof.Convert.ValModel
+import IxCC.Fir.Proof.Lowering
 
 /-! Required axiom fences for the array primitives on the certified pipeline
 (`plans/ONE-PIPELINE.md`, lane `prims-core`): the operations' meaning over a value model
@@ -97,3 +98,8 @@ closure-narrowing proof's array scrutinee case. -/
 
 /-- info: 'IxCC.Anf.Convert.Proof.vr_modelRel' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Anf.Convert.Proof.vr_modelRel
+
+/-! The Anf → Fir lowering declines array primitives (`fir.arrays`) until stage B. -/
+
+/-- info: 'IxCC.Fir.Proof.exp_prim_arr' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.exp_prim_arr

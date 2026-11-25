@@ -246,6 +246,9 @@ theorem exp_prim {c : Ixon.V3.LetMode} {p : Lam.Prim} {as : List Anf.Atom} {e : 
     by_cases hb : (boolPrim p && !boolPinsOk A) = true
     · simp [hb, throw, throwThe, MonadExceptOf.throw] at h
     · simp only [hb, Bool.false_eq_true, ↓reduceIte] at h
+      by_cases hr : p.isArr = true
+      · simp [hr, throw, throwThe, MonadExceptOf.throw] at h
+      simp only [hr, Bool.false_eq_true, ↓reduceIte] at h
       split at h
       · simp at h
       · rename_i q hk
@@ -253,6 +256,21 @@ theorem exp_prim {c : Ixon.V3.LetMode} {p : Lam.Prim} {as : List Anf.Atom} {e : 
         obtain ⟨rfl, rfl⟩ := Prod.mk.inj h.symm
         refine ⟨args, q.1, rfl, fun hp => ?_, by simpa using hk, by simp⟩
         simpa [hp] using hb
+
+/-- The lowering declines an array primitive (`fir.arrays`). -/
+theorem exp_prim_arr {c : Ixon.V3.LetMode} {p : Lam.Prim} {as : List Anf.Atom} {e : Anf.Exp}
+    (h : exp A g ρ J st (.bind c (.prim p as) e) = .ok (code, st')) : p.isArr = false := by
+  simp only [exp, bind, Except.bind, pure, Except.pure] at h
+  cases ha : atoms g ρ as with
+  | error => simp [ha] at h
+  | ok args =>
+    simp only [ha] at h
+    by_cases hb : (boolPrim p && !boolPinsOk A) = true
+    · simp [hb, throw, throwThe, MonadExceptOf.throw] at h
+    · simp only [hb, Bool.false_eq_true, ↓reduceIte] at h
+      cases hr : p.isArr with
+      | false => rfl
+      | true => simp [hr, throw, throwThe, MonadExceptOf.throw] at h
 
 theorem exp_app {c : Ixon.V3.LetMode} {f : Anf.Atom} {as : List Anf.Atom} {e : Anf.Exp}
     (h : exp A g ρ J st (.bind c (.app f as) e) = .ok (code, st')) : False := by

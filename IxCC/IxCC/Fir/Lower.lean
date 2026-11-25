@@ -12,7 +12,10 @@ Anf terms, a threaded name supply, lists and `Src.NatMap`.
 * **Declines closures.** A program with a local closure (`fn`), an unknown
   call (`app`) or the value of a function global (`glob` of a global with
   parameters) is declined with `Error.closures`, naming the globals, until
-  P8 (closed-world defunctionalisation, Phase 2) removes them. Nothing else is declined.
+  P8 (closed-world defunctionalisation, Phase 2) removes them.
+* **Declines array primitives** (`Lam.Prim.arr`) with `fir.arrays` (`Error.arrays`): Anf gives
+  them their meaning (`Src.ArrOp.eval`), Fir does not yet (`plans/ONE-PIPELINE.md`, lane
+  prims-core, stage B). Nothing else is declined.
 * **Rejects what the correctness proof excludes** (`Fir.Proof`), with
   `fir.malformed`, `fir.missing` or `fir.pins`: a root, call or CAF
   reference to a global id beyond the program's size, a constructor or
@@ -62,6 +65,9 @@ inductive Error where
   listed with the wrong field count, or a Boolean primitive whose `Bool`
   pins are not listed. -/
   | pins
+  /-- An array primitive (`Lam.Prim.arr`) in global `g`: declined until Fir gives the array
+  primitives their meaning (`plans/ONE-PIPELINE.md`, lane prims-core, stage B). -/
+  | arrays (g : Anf.GlobalId)
   deriving Repr, Inhabited
 
 def Error.render : Error → String
@@ -73,6 +79,9 @@ def Error.render : Error → String
   | .pins =>
     "fir.pins: a pinned constructor has the wrong field count in the table, " ++
     "or a Boolean primitive's pinned Bool constructors are not in the table"
+  | .arrays g =>
+    s!"fir.arrays: global {g}: an array primitive; declined until Fir gives the array " ++
+    "primitives their meaning"
 
 /-! ## The decline set -/
 
@@ -291,6 +300,7 @@ def exp (A : Anf.Program) (g : Anf.GlobalId) (ρ : List Var) (J : List JoinId) (
     | .prim p as =>
       let args ← atoms g ρ as
       if boolPrim p && !boolPinsOk A then throw .pins
+      if p.isArr then throw (.arrays g)
       let (x, st) := st.bindFresh c
       let (k, st) ← exp A g (x :: ρ) J st e
       pure (.bind x (.prim p args) k, st)
