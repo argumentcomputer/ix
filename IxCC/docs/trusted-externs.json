@@ -4185,6 +4185,7 @@
     "build",
     "build-graph",
     "census",
+    "compile-certified",
     "grounding",
     "ixon-v3",
     "proofs",

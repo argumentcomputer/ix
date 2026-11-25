@@ -271,7 +271,8 @@ lean_exe «tests-pure-compile» where
 producer and the shape decision) on every root of the corpus families: twice in one process,
 again in another process under another environment, against `compile`, with accept and decline
 counts per family. It imports the target statements (`IxCCCorrect`), so it is built with them by
-`ixcc-grounding` (`groundingTargets`), not by the shared program build, and run there. -/
+the grounding build (`groundingTargets`), not by the shared program build, and run by its own
+required check, `ixcc-compile-certified` (it alone takes about half an hour). -/
 lean_exe «tests-compile-certified» where
   root := `IxCCTests.Compile.CertifiedMain
 
@@ -316,12 +317,11 @@ nothing. Both built and run by `ixcc-grounding`, not by the shared program build
 lean_exe «tests-grounding» where
   root := `IxCCTests.Grounding.Main
 
-/- The shape producer and the shape decision (`IxCCCorrect.Shape2Produce`,
-`IxCCCorrect.Shape2Check`) on every committed family's closures, root by root: accept, or the
-first instance the decision refuses. It reports and asserts nothing (a closure that does not
-load is listed; it fails only if it crashes). It imports the target
-statements, so like `tests-grounding` it is built and run by `ixcc-grounding`, not by the
-shared program build (`nix/sources.nix`). -/
+/- The shape producer and the shape decision (`IxCC.Shape.Src.Produce`, the decision of
+`IxCC.Shape.Src`, in production) on every committed family's closures, root by root: accept, or
+the first instance the decision refuses. It reports and asserts nothing (a closure that does not
+load is listed; it fails only if it crashes). It imports production only, so it is a program of
+the shared build, run by the `suites` check. -/
 lean_exe «tests-shape» where
   root := `IxCCTests.Shape.Main
 

@@ -26,11 +26,11 @@
         lib.fileset.unions
         (common ++ map (item: root + "/${modules.${item.key}.path}") (closure roots));
     };
-  # The grounding library's suite, and the suites that import the target statements
-  # (`IxCCCorrect`: the shape suite, the certified compiler's suite), are built with the
-  # libraries by `ixcc-grounding`, not by the shared program build, so editing the grounding
-  # work never rebuilds the programs.
-  groundingTargets = ["tests-grounding" "tests-shape" "tests-compile-certified"];
+  # The grounding library's suite, and the suite that imports the target statements
+  # (`IxCCCorrect`: the certified compiler's suite), are built with the libraries by the
+  # grounding build, not by the shared program build, so editing the grounding work never
+  # rebuilds the programs.
+  groundingTargets = ["tests-grounding" "tests-compile-certified"];
   # The libraries built, with their axiom fences, by `ixcc-grounding`: the grounding library
   # and the target statements (`IxCCCorrect`, which imports its syntax and the kernel's model).
   groundingLibraries = ["IxCCGrounding" "IxCCCorrect"];

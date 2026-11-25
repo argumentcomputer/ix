@@ -117,10 +117,10 @@ def modelModule (name : String) : Bool :=
   ["IxCK.Kernel.Denotes", "IxCK.Kernel.SetModel", "IxCK.Kernel.SetTheory", "IxCK.Kernel.Verify"].any
     fun p => name == p || name.startsWith (p ++ ".")
 
-/-- The executables built by `ixcc-grounding` rather than by the shared program build: the
-grounding suite and the suites that import the target statements (`tests-shape`,
-`tests-compile-certified`). -/
-def groundingTargets : List String := ["tests-grounding", "tests-shape", "tests-compile-certified"]
+/-- The executables built by the grounding build rather than by the shared program build: the
+grounding suite and the suite that imports the target statements (`tests-compile-certified`).
+`tests-shape` imports production only since the shape discipline moved there. -/
+def groundingTargets : List String := ["tests-grounding", "tests-compile-certified"]
 
 /-- No module of `names`' closure is the grounding library's or the target statements', or
 imports the kernel's model. -/
