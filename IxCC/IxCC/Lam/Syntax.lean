@@ -130,6 +130,15 @@ def mayTrap : Prim → Bool
 
 @[simp] theorem sem_arr (op : Src.ArrOp) (ns : List Nat) : sem (.arr op) ns = none := rfl
 
+theorem isArr_eq_true {p : Prim} (h : p.isArr = true) : ∃ op, p = .arr op := by
+  cases p
+  case arr op => exact ⟨op, rfl⟩
+  all_goals cases h
+
+/-- A primitive that is not an array operation cannot trap. -/
+theorem mayTrap_of_not_arr {p : Prim} (h : p.isArr = false) : p.mayTrap = false := by
+  cases p <;> first | rfl | cases h
+
 end Prim
 
 /-- Evaluation mode of an application and the static mode of a λ binder. -/

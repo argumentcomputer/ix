@@ -150,15 +150,17 @@ theorem sem_bool {p : Lam.Prim} {ns : List Nat} {b : Bool} (h : p.sem ns = some 
   all_goals ((try rfl) <;> (unfold Lam.Prim.sem at h; split at h <;>
     simp_all [Src.PrimOp.eval2, Lam.Prim.sem.srcOp]))
 
-/-- A primitive on related arguments: a related value, or Anf is stuck. -/
+/-- A scalar primitive on related arguments: a related value, or Anf is stuck (the lowering
+declines array primitives, `exp_prim_arr`, so `op.isArr = false`). -/
 theorem primResult_rel {F : Program} (hk : F.known = A.known) (hc : F.ctors = A.ctors)
     {op : Lam.Prim} (hb : Lower.boolPrim op = true → Lower.boolPinsOk A = true)
-    {vs : List Anf.Val} {ws : List Val} (h : VRs A vs ws) :
+    (hna : op.isArr = false) {vs : List Anf.Val} {ws : List Val} (h : VRs A vs ws) :
     (∀ v, Anf.primResult A.known op vs = .ok v → ∃ w, Fir.primResult F op ws = .ok w ∧ VR A v w) ∧
       (Anf.primResult A.known op vs = .stuck ∨ ∃ v, Anf.primResult A.known op vs = .ok v) := by
   constructor
   · intro v hv
     unfold Anf.primResult at hv
+    rw [Anf.arrResult_of_not_arr hna] at hv
     unfold Fir.primResult
     rw [← natArgs_rel h]
     split at hv
@@ -183,6 +185,7 @@ theorem primResult_rel {F : Program} (hk : F.known = A.known) (hc : F.ctors = A.
       · cases hv
     · cases hv
   · unfold Anf.primResult
+    rw [Anf.arrResult_of_not_arr hna]
     split
     · split
       · exact .inr ⟨_, rfl⟩

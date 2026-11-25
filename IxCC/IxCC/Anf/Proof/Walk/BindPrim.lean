@@ -27,6 +27,17 @@ theorem NoDead.fn_body {live : List Bool} {ps : List Ixon.V3.BinderMode} {fb : E
     rw [getElem?_replicate_append] at hi
     simpa [Bind.occ] using h i' hi
 
+/-- A refinement strengthened by any fact about the target's value. -/
+private theorem refines_and_tgt {α β : Type} {R : α → β → Prop} {F : β → Prop} {s : Result α}
+    {t : Result β} (h : Result.Refines R s t) (hF : ∀ w, t = .ok w → F w) :
+    Result.Refines (fun v w => R v w ∧ F w) s t := by
+  cases h with
+  | ok hvw => exact .ok ⟨hvw, hF _ rfl⟩
+  | timeout => exact .timeout
+  | trap => exact .trap
+  | stuck => exact .stuck
+  | resource failure => exact .resource failure
+
 private theorem knownPrim_sound {facts : Src.NatMap Fact} {ρ' : List Val}
     (hf : FactsOk Q Valid facts ρ') {p : Lam.Prim} {os : List Opd} {ws : List Val}
     (hws : os.mapM (·.val ρ') = some ws) :
@@ -96,10 +107,13 @@ theorem succBle_sound {facts : Src.NatMap Fact} {ρ' : List Val}
           case nat b =>
             have hsem : Lam.Prim.sem .natBlt [n, b] = Lam.Prim.sem .natBle [n + 1, b] := by
               simp [Lam.Prim.sem, Lam.Prim.sem.srcOp, Src.PrimOp.eval2, Nat.lt_iff_add_one_le]
-            simp only [primResult, natArgs, Option.map_some]
+            simp only [primResult, natArgs, Option.map_some, arrResult_of_not_arr (p := .natBlt) rfl,
+              arrResult_of_not_arr (p := .natBle) rfl]
             rw [hsem]
-          all_goals simp [primResult, natArgs]
-        all_goals simp [primResult, natArgs]
+          all_goals simp [primResult, natArgs, arrResult_of_not_arr (p := .natBlt) rfl,
+            arrResult_of_not_arr (p := .natBle) rfl]
+        all_goals simp [primResult, natArgs, arrResult_of_not_arr (p := .natBlt) rfl,
+          arrResult_of_not_arr (p := .natBle) rfl]
     · cases h
   · cases h
 
@@ -118,19 +132,78 @@ theorem walkBind_prim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
   have hK : C.prog.known = P.known := hctx.vknown hV
   have hsrc : ∀ k, evalBind P k ρ (.prim p as) = primResult P.known p vs := fun k => by
     rw [evalBind_prim, hvs]; rfl
+  cases hpa : p.isArr
+  case true =>
+    -- an array primitive: never folded; kept when dead and trapping; its result on the walk's
+    -- related arguments is related by parametricity (`Src.ArrOp.eval_refines` at `WV`)
+    obtain ⟨op, rfl⟩ := Lam.Prim.isArr_eq_true hpa
+    have hR := Src.ArrOp.eval_refines structural.toBase.modelRel op (pw_of hvws).toForall2
+    have hsrcA : ∀ k, evalBind P k ρ (.prim (.arr op) as) = op.eval model vs := fun k => by
+      rw [hsrc, primResult_arr]
+    have htgtA : ∀ k, evalBind Q k ρ' (.prim (.arr op) (Walk.atoms here.d os)) = op.eval model ws := by
+      intro k
+      rw [evalBind_prim, hd, Walk.atoms, opds_eval hws]
+      simp only [Result.ofOption, Result.bind_ok, primResult_arr]
+    split at h2
+    · next m0 hfold =>
+      exfalso
+      split at hfold
+      · obtain ⟨_, _, hsem⟩ := fold_some hfold; simp at hsem
+      · cases hfold
+    · next bv hfold =>
+      exfalso
+      split at hfold
+      · obtain ⟨_, _, hsem⟩ := fold_some hfold; simp at hsem
+      · cases hfold
+    · split at h2
+      · next o hkp =>
+        have hkp' : Walk.knownPrim here.facts (.arr op) os here.d = some o := by
+          split at hkp
+          · exact hkp
+          · cases hkp
+        obtain ⟨w, hw, hpr⟩ := knownPrim_sound hf hws hkp'
+        rw [primResult_arr] at hpr
+        rw [hpr] at hR
+        refine skip_sim hW (run_fire_then h2) (hctx.push hV) henv hJ hd hdj hf hnd hk ?_
+        generalize hs : op.eval model vs = s at hR
+        cases hR with
+        | ok hvw => exact .inr ⟨_, fun k => by rw [hsrcA, hs], .inl (.opd hw hvw)⟩
+        | stuck => exact .inl fun k => by rw [hsrcA, hs]
+      · split at h2
+        · next hc =>
+          simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at hc
+          refine skip_sim hW (run_fire_then h2) (hctx.push hV) henv hJ hd hdj hf hnd hk ?_
+          rcases Src.ArrOp.eval_pure hc.2 model vs with hst | ⟨u, hu⟩
+          · exact .inl fun k => by rw [hsrcA, hst]
+          · exact .inr ⟨u, fun k => by rw [hsrcA, hu], .inr ⟨rfl, hc.1.2⟩⟩
+        · split at h2
+          · next os' hsb =>
+            exfalso
+            split at hsb
+            · simp [Walk.succBle] at hsb
+            · cases hsb
+          · obtain ⟨e, s2, h3, h4⟩ := Walk.run_bind_ok h2
+            obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h4
+            refine emit_sim hctx hW h3 hV henv hJ hd hdj hnd hk ?_
+            have hpf : Walk.primFact (.arr op) os = .prim (.arr op) os := rfl
+            refine (SimUpTo.of_refines (refines_and_tgt hR fun w hw => ?_)
+              (Src.ArrOp.eval_ne_timeout _ _ _)).congr (fun k => hsrcA k) (fun k => htgtA k)
+            rw [hpf]
+            exact hf.insert' hd ⟨w, ws, lvl_top hd w, opds_suffix (List.suffix_cons _ _) hws, by
+              rw [primResult_arr]; exact hw⟩
   have hnat : natArgs ws = natArgs vs := Rel.natArgs_rel structural.toBase (pw_of hvws)
   have htgt : ∀ k, evalBind Q k ρ' (.prim p (Walk.atoms here.d os)) = primResult P.known p vs := by
     intro k
     rw [evalBind_prim, hd, Walk.atoms, opds_eval hws]
     simp only [Result.ofOption, Result.bind_ok]
-    rw [hctx.known]; unfold primResult; rw [hnat]
+    rw [hctx.known]; unfold primResult; simp only [arrResult_of_not_arr hpa]; rw [hnat]
   have hdead : ∀ {e : Exp} {s0 s0' : Fires}, body.occ 0 = 0 →
       (Walk.walk C fuel { σ := .opd .box :: env.σ, jσ := env.jσ } here body k).run s0 = .ok (e, s0') →
       SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J (.bind c (.prim p as) body)).bind (SK · k))
         (fun k => eval Q k ρ' J' e) := by
     intro e s0 s0' hocc he
     refine skip_sim hW he (hctx.push hV) henv hJ hd hdj hf hnd hk ?_
-    rcases primResult_cases P.known p vs with hst | ⟨u, hu, _⟩
+    rcases primResult_cases P.known p hpa vs with hst | ⟨u, hu, _⟩
     · exact .inl fun k => by rw [hsrc, hst]
     · exact .inr ⟨u, fun k => by rw [hsrc, hu], .inr ⟨rfl, hocc⟩⟩
   have hemit : ∀ {e : Exp} {s0 s0' : Fires} {facts' : Src.NatMap Fact},
@@ -141,7 +214,7 @@ theorem walkBind_prim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
         (fun k => eval Q k ρ' J' (.bind c (.prim p (Walk.atoms here.d os)) e)) := by
     intro e s0 s0' facts' he hfacts
     refine emit_sim hctx hW he hV henv hJ hd hdj hnd hk ?_
-    rcases primResult_cases P.known p vs with hst | ⟨u, hu, hlu⟩
+    rcases primResult_cases P.known p hpa vs with hst | ⟨u, hu, hlu⟩
     · exact (SimUpTo.stuck _).congr (fun k => by rw [hsrc, hst]) (fun _ => rfl)
     · exact (SimUpTo.ok ⟨WV.lit_or_con hlu, hfacts u hu⟩).congr (fun k => by rw [hsrc, hu])
         (fun k => by rw [htgt, hu])
@@ -160,9 +233,9 @@ theorem walkBind_prim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
       intro k
       rw [evalBind_prim, hd, Walk.atoms, opds_eval hws']
       simp only [Result.ofOption, Result.bind_ok]
-      rw [hpr, hctx.known]; unfold primResult; rw [hnat]
+      rw [hpr, hctx.known]; unfold primResult; simp only [arrResult_of_not_arr hpa]; rw [hnat]
     refine emit_sim hctx hW he hV henv hJ hd hdj hnd hk ?_
-    rcases primResult_cases P.known p vs with hst | ⟨u, hu, hlu⟩
+    rcases primResult_cases P.known p hpa vs with hst | ⟨u, hu, hlu⟩
     · exact (SimUpTo.stuck _).congr (fun k => by rw [hsrc, hst]) (fun _ => rfl)
     · exact (SimUpTo.ok ⟨WV.lit_or_con hlu, hfacts u hu⟩).congr (fun k => by rw [hsrc, hu])
         (fun k => by rw [htgt', hu])
@@ -183,6 +256,7 @@ theorem walkBind_prim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
         | cons h2 hrest2 => cases hrest2; exact ⟨_, _, rfl, h1, h2⟩
     cases hv1
     unfold primResult at hu
+    simp only [arrResult_of_not_arr hpa] at hu
     cases vy with
     | lit l =>
       cases l with
@@ -204,7 +278,8 @@ theorem walkBind_prim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
       fun y hp hos => hsucc y u hp hos hu
     have hprim : FactOk Q Valid (u :: ρ') here.d (.prim p os) :=
       ⟨u, ws, lvl_top hd u, opds_suffix (List.suffix_cons _ _) hws, by
-        rw [hctx.known]; unfold primResult; rw [hnat]; exact hu⟩
+        rw [hctx.known]; unfold primResult at hu ⊢; simp only [arrResult_of_not_arr hpa] at hu ⊢
+        rw [hnat]; exact hu⟩
     revert hsucc' hprim
     unfold Walk.primFact
     generalize p = p', os = os'
@@ -260,16 +335,17 @@ theorem walkBind_prim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
         · cases hkp
       obtain ⟨w, hw, hpr⟩ := knownPrim_sound hf hws hkp'
       have hprP : primResult P.known p vs = .ok w := by
-        rw [← hctx.known]; unfold primResult; rw [← hnat]; exact hpr
-      rcases primResult_cases P.known p vs with hst | ⟨u, hu, hlu⟩
+        rw [← hctx.known]; unfold primResult; simp only [arrResult_of_not_arr hpa]; rw [← hnat]
+        unfold primResult at hpr; simp only [arrResult_of_not_arr hpa] at hpr; exact hpr
+      rcases primResult_cases P.known p hpa vs with hst | ⟨u, hu, hlu⟩
       · rw [hprP] at hst; cases hst
       · rw [hprP] at hu; cases hu
         exact skip_sim hW (run_fire_then h2) (hctx.push hV) henv hJ hd hdj hf hnd hk
           (.inr ⟨w, fun k => by rw [hsrc, hprP], .inl (.opd hw (WV.lit_or_con hlu))⟩)
     · split at h2
       · next hc =>
-        simp only [Bool.and_eq_true, beq_iff_eq] at hc
-        exact hdead hc.2 (run_fire_then h2)
+        simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at hc
+        exact hdead hc.1.2 (run_fire_then h2)
       · split at h2
         · next os' hsb =>
           have hsb' : Walk.succBle here.facts p os = some os' := by

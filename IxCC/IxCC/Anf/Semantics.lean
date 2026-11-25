@@ -27,8 +27,10 @@ at `k - 1`, and sequenced computations each run at `k`.
   under-saturated case is what lets a Lam application, which always
   charges, map to one `app` (charging only at saturation would need
   extra ticks).
-* `proj`, `case`, `prim` and application of □ (or of any non-closure) are
-  stuck; `trap` traps; scope and arity errors are stuck.
+* `prim`: a scalar primitive needs literals; an array primitive is
+  `Src.ArrOp.eval` at `model` (as in Lam; `get` and `set` out of range trap).
+* `proj`, `case`, a scalar `prim` and application of □ (or of any
+  non-closure) are stuck; `trap` traps; scope and arity errors are stuck.
 
 Anf never returns `resource` (`Nat` is exact). The semantics is never
 evaluated on the recheck path (D17), so it recurses well-founded on the
@@ -116,7 +118,14 @@ def natArgs : List Val → Option (List Nat)
   | .lit (.nat n) :: vs => (natArgs vs).map (n :: ·)
   | _ => none
 
-/-- A saturated primitive on evaluated arguments (as Lam's `primResult`). -/
+/-- An array primitive on evaluated arguments: `Src.ArrOp.eval` at Anf's value model (as Lam's
+`arrResult`). Any other primitive is stuck here. -/
+def arrResult : Lam.Prim → List Val → Result Val
+  | .arr op, vs => op.eval model vs
+  | _, _ => .stuck
+
+/-- A saturated primitive on evaluated arguments (as Lam's `primResult`): a scalar primitive's
+meaning on literals, else an array primitive's (`arrResult`). -/
 def primResult (K : Lam.Known) (p : Lam.Prim) (vs : List Val) : Result Val :=
   match natArgs vs with
   | some ns =>
@@ -126,8 +135,18 @@ def primResult (K : Lam.Known) (p : Lam.Prim) (vs : List Val) : Result Val :=
       match (if b then K.boolTrue else K.boolFalse) with
       | some c => .ok (.con c [])
       | none => .stuck
-    | none => .stuck
-  | none => .stuck
+    | none => arrResult p vs
+  | none => arrResult p vs
+
+theorem arrResult_of_not_arr {p : Lam.Prim} (hp : p.isArr = false) (vs : List Val) :
+    arrResult p vs = .stuck := by
+  cases p <;> first | rfl | cases hp
+
+/-- An array primitive's meaning is `Src.ArrOp.eval` at Anf's value model. -/
+theorem primResult_arr (K : Lam.Known) (op : Src.ArrOp) (vs : List Val) :
+    primResult K (.arr op) vs = op.eval model vs := by
+  unfold primResult
+  split <;> rfl
 
 mutual
 

@@ -725,7 +725,7 @@ other public theorem of the module. -/
 /-- info: 'IxCC.Anf.Defun.Proof.natArgs_dv' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Anf.Defun.Proof.natArgs_dv
 
-/-- info: 'IxCC.Anf.Defun.Proof.prim_dv' depends on axioms: [propext] -/
+/-- info: 'IxCC.Anf.Defun.Proof.prim_dv' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Anf.Defun.Proof.prim_dv
 
 /-- info: 'IxCC.Anf.Defun.Proof.proj_dv' depends on axioms: [propext, Quot.sound] -/

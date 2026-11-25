@@ -23,9 +23,9 @@ while copying a source term into a target term:
 **Rules** (`Cfg.shrink`), each preserving every clock charge or
 replacing it by a `tick` (tick dominance):
 * copy propagation of an atom binding; dead pure bindings (`con`, `proj`,
-  `prim`, `fn`, function `glob`), dead join points; `call`, `app` and CAF
-  `glob` bindings are kept, except that a dead known partial application
-  becomes a `tick`;
+  a `prim` that cannot trap (`Prim.mayTrap`), `fn`, function `glob`), dead
+  join points; `call`, `app`, CAF `glob` and trapping `prim` bindings are
+  kept, except that a dead known partial application becomes a `tick`;
 * projection of a known constructor; literal folding by `Prim.sem`, within
   `foldable`'s size bound (`foldBits`); `case` of a known constructor or
   `Nat` literal (or `y + 1`);
@@ -864,7 +864,7 @@ def walkBind (C : Cfg) : Nat → Env → Here → V3.LetMode → Bind → Exp �
         match (if C.shrink then knownPrim here.facts p os here.d else none) with
         | some o => do fire fun f => { f with fold := f.fold + 1 }; skip (.opd o)
         | none =>
-          if dead then do fire fun f => { f with dead := f.dead + 1 }; skip (.opd .box)
+          if dead && !p.mayTrap then do fire fun f => { f with dead := f.dead + 1 }; skip (.opd .box)
           else
             match (if C.shrink then succBle here.facts p os else none) with
             | some os' => do

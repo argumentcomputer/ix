@@ -181,7 +181,6 @@ import IxCC.Anf.Proof.Convert.Correct
 import IxCC.Anf.Proof.Rel.Basic
 import IxCC.Anf.Proof.Rel.Fund
 import IxCC.Anf.Proof.Rel.Ident
-import IxCC.Anf.Proof.Rel.ValModel
 import IxCC.Anf.Proof.Defun.ValModel
 import IxCC.Anf.Proof.Convert.ValModel
 import IxCC.Anf.Proof.Walk.Beq

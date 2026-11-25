@@ -1,9 +1,10 @@
 import IxCC.Sem.ValModel
-import IxCC.Anf.Proof.Rel.ValModel
 import IxCC.Anf.Proof.Defun.Narrow
 import IxCC.Anf.Proof.Defun.ValModel
 import IxCC.Anf.Proof.Convert.ValModel
 import IxCC.Fir.Proof.Lowering
+import IxCC.Anf.Props
+import IxCC.Lam.Props
 
 /-! Required axiom fences for the array primitives on the certified pipeline
 (`plans/ONE-PIPELINE.md`, lane `prims-core`): the operations' meaning over a value model
@@ -103,3 +104,24 @@ closure-narrowing proof's array scrutinee case. -/
 
 /-- info: 'IxCC.Fir.Proof.exp_prim_arr' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Fir.Proof.exp_prim_arr
+
+/-! The Lam and Anf evaluators give the array primitives their meaning (`Src.ArrOp.eval` at the
+level's value model) in `primResult`. -/
+
+/-- info: 'IxCC.Lam.Prim.isArr_eq_true' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Lam.Prim.isArr_eq_true
+
+/-- info: 'IxCC.Lam.Prim.mayTrap_of_not_arr' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Lam.Prim.mayTrap_of_not_arr
+
+/-- info: 'IxCC.Lam.arrResult_of_not_arr' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Lam.arrResult_of_not_arr
+
+/-- info: 'IxCC.Lam.primResult_arr' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Lam.primResult_arr
+
+/-- info: 'IxCC.Anf.arrResult_of_not_arr' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.arrResult_of_not_arr
+
+/-- info: 'IxCC.Anf.primResult_arr' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.primResult_arr

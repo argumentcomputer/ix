@@ -314,10 +314,11 @@ theorem asCtor_ok {K : Lam.Known} {dc : DecCert} (hk : knownClosure K = false)
           simp [closureKey] at this
 
 theorem primResult_ok {K : Lam.Known} {dc : DecCert} (hk : knownClosure K = false)
-    {p : Lam.Prim} {vs : List Val} {v : Val} (h : primResult K p vs = .ok v) :
+    {p : Lam.Prim} {vs : List Val} {v : Val} (hpa : p.isArr = false) (h : primResult K p vs = .ok v) :
     ValOk dc v ∧ ClosOk (some []) v := by
   obtain ⟨_, _, hF, hT⟩ := knownClosure_false hk
   unfold primResult at h
+  rw [arrResult_of_not_arr hpa] at h
   cases hn : natArgs vs with
   | none => rw [hn] at h; cases h
   | some ns =>
@@ -1501,7 +1502,10 @@ theorem checkBindPlain_sim {P Q : Program} {dc : DecCert} {S : GlobalId → Prop
         refine (SimUpTo.stuck _).congr (fun k => ?_) (fun _ => rfl)
         rw [evalBind_proj, hx]; rfl
   | prim p as =>
-    simp only [checkBindPlain, Option.some.injEq, Prod.mk.injEq] at hck
+    simp only [checkBindPlain] at hck
+    cases hpa : p.isArr
+    case true => simp [hpa] at hck
+    simp only [hpa, Bool.false_eq_true, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at hck
     obtain ⟨rfl, rfl⟩ := hck
     cases hvs : evalAtoms ρ as with
     | none =>
@@ -1510,7 +1514,7 @@ theorem checkBindPlain_sim {P Q : Program} {dc : DecCert} {S : GlobalId → Prop
     | some vs =>
       cases hpr : primResult P.known p vs with
       | ok v =>
-        obtain ⟨hv, hc⟩ := primResult_ok hcl.knownOk hpr
+        obtain ⟨hv, hc⟩ := primResult_ok hcl.knownOk hpa hpr
         refine (SimUpTo.ok ⟨rfl, hv, hc⟩).congr (fun k => ?_) (fun k => ?_)
         · rw [evalBind_prim, hvs]; simp [Result.ofOption, hpr]
         · rw [evalBind_prim, hvs, hcl.known]; simp [Result.ofOption, hpr]
@@ -1523,6 +1527,7 @@ theorem checkBindPlain_sim {P Q : Program} {dc : DecCert} {S : GlobalId → Prop
         · rw [evalBind_prim, hvs, hcl.known]; simp [Result.ofOption, hpr]
       | timeout =>
         unfold primResult at hpr
+        rw [arrResult_of_not_arr hpa] at hpr
         cases hna : natArgs vs with
         | none => rw [hna] at hpr; cases hpr
         | some ns =>
@@ -1536,6 +1541,7 @@ theorem checkBindPlain_sim {P Q : Program} {dc : DecCert} {S : GlobalId → Prop
             | bool b => cases b <;> (simp only at hpr; cases hbt : P.known.boolTrue <;> cases hbf : P.known.boolFalse <;> simp [hbt, hbf] at hpr)
       | resource _ =>
         unfold primResult at hpr
+        rw [arrResult_of_not_arr hpa] at hpr
         cases hna : natArgs vs with
         | none => rw [hna] at hpr; cases hpr
         | some ns =>

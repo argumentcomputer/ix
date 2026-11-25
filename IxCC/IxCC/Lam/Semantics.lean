@@ -20,9 +20,12 @@ bound**, charged at a `name`-slot read, a `glob` (δ), closure entry (β) and
   alternative whose key **and** arity match, else the default, else stuck.
 * `proj c i` of `con c fs` is `fs[i]`; any other value (another key, □) is
   stuck.
-* `prim` evaluates its arguments left to right, then needs literals.
+* `prim` evaluates its arguments left to right. A scalar primitive then needs
+  literals; an array primitive is `Src.ArrOp.eval` at `model` (an array is
+  `con Key.CtorKey.arr elems`, decision D1; an element may be any value, □
+  included; `get` and `set` out of range trap).
 * `tick t` charges one unit; `box` is □; `trap` traps.
-* **□ is stuck** under `apply`, `proj`, `case` and `prim`: no
+* **□ is stuck** under `apply`, `proj`, `case` and a scalar `prim`: no
   absorption, as in SrcEval.
 
 Lam never returns `resource`: `Nat` is exact. The semantics is
@@ -100,7 +103,15 @@ def natArgs : List Val → Option (List Nat)
   | .lit (.nat n) :: vs => (natArgs vs).map (n :: ·)
   | _ => none
 
-/-- A saturated primitive on evaluated arguments. -/
+/-- An array primitive on evaluated arguments: `Src.ArrOp.eval` at Lam's value model. Any other
+primitive is stuck here (its meaning is on literals, `Prim.sem`). -/
+def arrResult : Prim → List Val → Result Val
+  | .arr op, vs => op.eval model vs
+  | _, _ => .stuck
+
+/-- A saturated primitive on evaluated arguments: a scalar primitive's meaning on literals
+(`Prim.sem`, which is `none` for an array primitive), else an array primitive's
+(`arrResult`). -/
 def primResult (K : Known) (p : Prim) (vs : List Val) : Result Val :=
   match natArgs vs with
   | some ns =>
@@ -110,8 +121,18 @@ def primResult (K : Known) (p : Prim) (vs : List Val) : Result Val :=
       match (if b then K.boolTrue else K.boolFalse) with
       | some c => .ok (.con c [])
       | none => .stuck
-    | none => .stuck
-  | none => .stuck
+    | none => arrResult p vs
+  | none => arrResult p vs
+
+theorem arrResult_of_not_arr {p : Prim} (hp : p.isArr = false) (vs : List Val) :
+    arrResult p vs = .stuck := by
+  cases p <;> first | rfl | cases hp
+
+/-- An array primitive's meaning is `Src.ArrOp.eval` at Lam's value model. -/
+theorem primResult_arr (K : Known) (op : Src.ArrOp) (vs : List Val) :
+    primResult K (.arr op) vs = op.eval model vs := by
+  unfold primResult
+  split <;> rfl
 
 mutual
 

@@ -253,7 +253,7 @@ def checkBindPlain (P : Program) (dc : DecCert) (env : List KAbs) (b : Bind) :
       | .arr => none
     else none
   | .proj c i _ => some (fieldFlow dc c i, [])
-  | .prim _ _ => some (some [], [])
+  | .prim p _ => if p.isArr then none else some (some [], [])
   | .glob g =>
     match P.global? g with
     | some gd => if gd.ps.isEmpty then some (retFlow dc g, [g]) else none
