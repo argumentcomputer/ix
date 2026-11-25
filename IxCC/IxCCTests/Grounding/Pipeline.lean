@@ -122,21 +122,20 @@ def bump (key : String) : List (String × Nat) → List (String × Nat)
   | [] => [(key, 1)]
   | (k, n) :: rest => if k == key then (k, n + 1) :: rest else (k, n) :: bump key rest
 
-/-- The shape side of the escape-free check (`IxCC.Correct.groundShapeCheck`) at root `root`:
-the untrusted producer's certificate, `certOk`, and `shapeRootB` at the root's first-order type.
-The producer runs at most 4000 steps and a certificate of 4000 instances or more is not checked
-(as `tests-shape` does at the shapes lane's tip: `Closures.polyRec` does not converge, and the
-producer's instance list is quadratic). -/
-def shapeOf (p : Program) (root : CId) : Bool × String :=
-  match resTy p root with
-  | none => (false, "no first-order result type")
-  | some res =>
-    let sc := Shape2.Produce.produce p root 400 4000
-    if sc.insts.length ≥ 4000 then (false, "the producer did not converge (4000 instances)")
-    else if !Shape2.certOk p sc then (false, "certOk refused the produced certificate")
-    else if !shapeRootB p sc root (arityOf p root) res then
-      (false, "the certificate does not list the root at its first-order type")
-    else (true, "shape ok")
+/-- **The exact check, per root**: ingress with this root alone (the program a claim on this root
+compiles), the compiler, and `groundShapeCheckP` on what it produced, at root 0's address: the
+function `recheck_agrees_shaped`, `plain_exe_tier1Stdout_shaped` and `tier1Check_sound` are about
+(with the producer's certificate). -/
+def exactOf (bytes : ByteArray) (json : Lean.Json) (name : String) : Except String Abi :=
+  match Recheck.ingress bytes json [name] with
+  | .error e => .error s!"ingress: {e.render}"
+  | .ok k =>
+    match Recheck.compileInputRetry {} k with
+    | .error e => .error s!"compiler: {e.code}"
+    | .ok (c, a) =>
+      match a.src.roots.head? with
+      | none => .error "noRoot"
+      | some (addr, _) => groundShapeCheckP k c a addr
 
 /-- A stored constant of type `Bool.true = Bool.false → False` (the witness `numeralBasisB` asks
 for), if the environment has one. -/
@@ -180,6 +179,8 @@ def run : IO Bool := do
       match loaded with
       | none => unloadable := unloadable ++ [label]
       | some ld =>
+        let bytes ← IO.FS.readBinFile ixe
+        let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile eqs))
         let env := ld.kernel.acc.env
         let ne := neKey? env
         let sep := match ne with
@@ -196,14 +197,15 @@ def run : IO Bool := do
           match groundCheck ld.kernel srcI ld.checked ld.ann (ld.view i) r.1 with
           | .ok abi =>
             accepted := accepted + 1
-            let (sok, sreason) := shapeOf srcI r.2
-            let compiled := ld.mode == "compiled"
-            let ef := sok && compiled
-            if ef then escapeFree := escapeFree + 1
-            else shapeHist := bump (if sok then "source only (the compiler declined)" else sreason) shapeHist
             let natRes := abi.result == ResTy.nat
             if sep && natRes then separated := separated + 1
-            let efS := if ef then "escape-free" else if sok then "shape ok, source only" else s!"shape: {sreason}"
+            let efS ← match exactOf bytes json name with
+              | .ok _ =>
+                escapeFree := escapeFree + 1
+                pure "escape-free"
+              | .error reason =>
+                shapeHist := bump (reason.take 80).toString shapeHist
+                pure s!"not escape-free: {reason.take 200}"
             IO.println s!"{label} {name}: accept, {showAbi abi}; {efS} ({(← IO.monoMsNow) - t0} ms)"
           | .error reason =>
             hist := bump reason hist
