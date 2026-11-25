@@ -47,7 +47,8 @@ def primEntry : Lam.Prim → List Nat → Option PrimResult
   | .natPred, [a] => some (.nat (pred a))
   | _, _ => none
 
-/-- The Lean constant that is the slow path of each `Nat` primitive (`none` for a word). -/
+/-- The Lean constant that is the slow path of each `Nat` primitive (`none` for a word or an
+array operation). -/
 def primEntryName : Lam.Prim → Option String
   | .natAdd => some "IxCC.BigNat.NatEntry.add"
   | .natSub => some "IxCC.BigNat.NatEntry.sub"
@@ -66,6 +67,7 @@ def primEntryName : Lam.Prim → Option String
   | .natShr => some "IxCC.BigNat.NatEntry.shiftRight"
   | .natPred => some "IxCC.BigNat.NatEntry.pred"
   | .word _ _ => none
+  | .arr _ => none
 
 /-- Division as the evaluators write it. -/
 theorem div_eq_sem (a b : Nat) : div a b = if b == 0 then 0 else a / b := by
@@ -167,6 +169,9 @@ theorem primEntry_eq_sem (op : Lam.Prim) (ns : List Nat) (hop : op.isWord = fals
     match ns with
     | [] | _ :: _ :: _ => rfl
     | [a] => exact congrArg (fun t => some (PrimResult.nat t)) (pred_eq a)
+  | arr o =>
+    rw [Lam.Prim.sem_arr]
+    rcases ns with _ | ⟨a, _ | ⟨b, _ | ⟨c, rest⟩⟩⟩ <;> rfl
 
 /-- **`NatLib.Spec` for the library's Lean functions**: whatever a `Nat` primitive means on
 literals, the library's entry returns. -/
@@ -180,8 +185,9 @@ theorem primEntry_isSome (op : Lam.Prim) (ns : List Nat) (hop : op.isWord = fals
     (primEntry op ns).isSome = (op.sem ns).isSome := by
   rw [primEntry_eq_sem op ns hop]
 
-/-- Every `Nat` primitive has an entry, and no word primitive has one. -/
-theorem primEntryName_isSome (op : Lam.Prim) : (primEntryName op).isSome = !op.isWord := by
+/-- Every `Nat` primitive has an entry, and no word primitive or array operation has one. -/
+theorem primEntryName_isSome (op : Lam.Prim) :
+    (primEntryName op).isSome = (!op.isWord && !op.isArr) := by
   cases op <;> rfl
 
 end IxCC.BigNat.NatEntry
