@@ -13,6 +13,7 @@ import IxCCCorrect.Shape2Produce
 import IxCCCorrect.ShapeHook
 import IxCCCorrect.ShapeTree
 import IxCCCorrect.Compile
+import IxCCCorrect.CompileCertified
 import IxCCCorrect.GroundRoot
 import IxCCCorrect.GroundCheck
 import IxCCCorrect.Compose
@@ -63,6 +64,10 @@ propositions that elaborate, and what the existing theorems establish today.
   (`IxCC.Compile.compile`), with the proof that every output meets it
   (`compile_today`, `compile_route`), and `compileWith`, the compiler with the two
   further checks of the route between its stages.
+* `IxCCCorrect.CompileCertified`: the certified route's compiler, `compile`
+  followed by the untrusted shape producer and the hook's shape decision
+  (`compileCertified`, declining with a typed reason), and its theorem with no
+  "source goes wrong" escape (`CompiledSound`, `compileCertified_sound`).
 * `IxCCCorrect.GroundRoot`: the grounding library's root theorem restated at a canonical
   result, in existence form, as the composition with the compiler needs it.
 * `IxCCCorrect.GroundCheck`: `groundCheck`, the pipeline's grounding check (run on every

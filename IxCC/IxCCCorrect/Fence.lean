@@ -8,6 +8,7 @@ import IxCCCorrect.Shape2
 import IxCCCorrect.Shape2Check
 import IxCCCorrect.ShapeHook
 import IxCCCorrect.Compile
+import IxCCCorrect.CompileCertified
 import IxCCCorrect.GroundRoot
 import IxCCCorrect.GroundCheck
 import IxCCCorrect.Compose
@@ -603,6 +604,58 @@ routes and the progress targets are definitions and have no fence. -/
 /-- info: 'IxCC.Correct.compileWith_route' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.compileWith_route
 
+/-- info: 'IxCC.Correct.compiledAs_of_stages' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.compiledAs_of_stages
+
+/-! ## `IxCCCorrect.CompileCertified` -/
+
+/-- info: 'IxCC.Correct.except_bind_ok' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Correct.except_bind_ok
+
+/-- info: 'IxCC.Correct.except_mapError_ok' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Correct.except_mapError_ok
+
+/-- info: 'IxCC.Correct.compileCertified_parts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.compileCertified_parts
+
+/-- info: 'IxCC.Correct.compileCertified_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.compileCertified_refines
+
+/-- info: 'IxCC.Correct.compileCertified_today' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.compileCertified_today
+
+/-- info: 'IxCC.Correct.shapeZero_checks' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.shapeZero_checks
+
+/-- info: 'IxCC.Correct.shapeRc_checks' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.shapeRc_checks
+
+/-- info: 'IxCC.Correct.shapeZero_notWrong' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.shapeZero_notWrong
+
+/-- info: 'IxCC.Correct.shapeRc_notWrong' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.shapeRc_notWrong
+
+/-- info: 'IxCC.Correct.runShaped_of_shapeZero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.runShaped_of_shapeZero
+
+/-- info: 'IxCC.Correct.rcRunShaped_of_shapeRc' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.rcRunShaped_of_shapeRc
+
+/-- info: 'IxCC.Correct.outcome_noWrong' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.outcome_noWrong
+
+/-- info: 'IxCC.Correct.executable_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.executable_sound
+
+/-- info: 'IxCC.Correct.compileCertified_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.compileCertified_sound
+
+/-- info: 'IxCC.Correct.compileCertified_route' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.compileCertified_route
+
+/-- info: 'IxCC.Correct.compileCertified_seedClosure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.compileCertified_seedClosure
 /-! ## `IxCCCorrect.GroundRoot` -/
 
 /-- info: 'IxCC.Correct.foArgs_nats' depends on axioms: [propext] -/

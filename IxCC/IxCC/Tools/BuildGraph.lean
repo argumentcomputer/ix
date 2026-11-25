@@ -118,8 +118,9 @@ def modelModule (name : String) : Bool :=
     fun p => name == p || name.startsWith (p ++ ".")
 
 /-- The executables built by `ixcc-grounding` rather than by the shared program build: the
-grounding suite and the shape suite (`tests-shape`, which imports the target statements). -/
-def groundingTargets : List String := ["tests-grounding", "tests-shape"]
+grounding suite and the suites that import the target statements (`tests-shape`,
+`tests-compile-certified`). -/
+def groundingTargets : List String := ["tests-grounding", "tests-shape", "tests-compile-certified"]
 
 /-- No module of `names`' closure is the grounding library's or the target statements', or
 imports the kernel's model. -/

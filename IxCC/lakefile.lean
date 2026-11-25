@@ -265,6 +265,14 @@ another process under another environment, and compared byte for byte with `ixcc
 lean_exe «tests-pure-compile» where
   root := `IxCCTests.Compile.Main
 
+/- The certified route's compiler (`IxCC.Correct.compileCertified`: `compile`, the untrusted shape
+producer and the shape decision) on every root of the corpus families: twice in one process,
+again in another process under another environment, against `compile`, with accept and decline
+counts per family. It imports the target statements (`IxCCCorrect`), so it is built with them by
+`ixcc-grounding` (`groundingTargets`), not by the shared program build. -/
+lean_exe «tests-compile-certified» where
+  root := `IxCCTests.Compile.CertifiedMain
+
 /- Ground first-order readback discovery: source instances, emitted layouts,
 independent signature validation and malformed candidate rejection. -/
 lean_exe «tests-recheck-readback» where
