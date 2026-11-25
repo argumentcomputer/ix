@@ -170,8 +170,20 @@ inductive HeadOk (p : Program) (sig : Sig) : Head → Levels → List Shape → 
       (ty : Term) :
       p.table.resolveOf c = some (.case r) →
       p.decl? r = some (.recr s kk lv ps.length nmot flds.length 0 ind rules ty) →
-      p.table.recKindOf r = some .ordinary → ScrutOk p sig σ ind ps.length flds →
+      (p.table.recKindOf r).map (·.atLevels ls) = some .ordinary → ScrutOk p sig σ ind ps.length flds →
       HeadOk p sig (.cases c) ls (ps ++ (.irr :: σ :: flds.map fun fl => arrows fl τ)) τ
+  /-- F3 at a `case` entry over a subsingleton recursor at these levels: the major is
+  not looked at; the one minor is applied to fields taken from the index slots, or
+  irrelevant -/
+  | casesSub (c r : CId) (ls : Levels) (ps idx : List Shape) (maj τ : Shape) (s kk : Bool)
+      (lv nmot : Nat) (ind : CId) (rules : List Rule) (ty : Term) (w : PropWhen)
+      (srcs : List FieldSrc) :
+      p.table.resolveOf c = some (.case r) →
+      p.decl? r = some (.recr s kk lv ps.length nmot 1 idx.length ind rules ty) →
+      (p.table.recKindOf r).map (·.atLevels ls) = some (.subsingleton w srcs) →
+      (∀ (i : Nat), FieldSrc.index i ∈ srcs → i < idx.length) →
+      HeadOk p sig (.cases c) ls
+        (ps ++ (.irr :: (idx ++ [maj, arrows (srcs.map (srcShape idx)) τ]))) τ
   /-- F1 at a constructor of a data entry: its parameter slots, then its fields -/
   | ctor (c : CId) (ls : Levels) (d : Nat) (D : DataDecl) (j : Nat) (ps fl : List Shape) :
       sig.datas d = some D → D.ctors[j]? = some (c, fl) → ps.length = D.params.length →
@@ -183,7 +195,7 @@ inductive HeadOk (p : Program) (sig : Sig) : Head → Levels → List Shape → 
       (flds : List (List Shape)) (ms : List Shape) (τ : Shape) (s kk : Bool) (lv : Nat)
       (rules : List Rule) (ty : Term) :
       p.decl? r = some (.recr s kk lv ps.length 1 ms.length 0 ind rules ty) →
-      p.table.recKindOf r = some .ordinary → ScrutOk p sig σ ind ps.length flds →
+      (p.table.recKindOf r).map (·.atLevels ls) = some .ordinary → ScrutOk p sig σ ind ps.length flds →
       (∀ (j : Nat) (fl : List Shape), flds[j]? = some fl → ∃ (rule : Rule) (body : Term),
         rules[j]? = some rule ∧
         peelLams ((ps ++ .irr :: ms).length + fl.length) rule.rhs = some body ∧
@@ -362,7 +374,7 @@ theorem fire_cases_ord (p : Program) (k : Nat) (ls : Levels) (c r : CId) (args :
     {s kk : Bool} {lv np nmot nmin : Nat} {ind : CId} {rules : List Rule} {ty : Term}
     (hres : p.table.resolveOf c = some (.case r))
     (hdecl : p.decl? r = some (.recr s kk lv np nmot nmin 0 ind rules ty))
-    (hkind : p.table.recKindOf r = some .ordinary) :
+    (hkind : (p.table.recKindOf r).map (·.atLevels ls) = some .ordinary) :
     fire p k (.cases c) ls args = later k fun k =>
       ((force p k (args.getD (np + 1) default)).bind fun major =>
           Result.ofOption (p.selectRule ind np major)).bind fun (j, fields) =>
@@ -371,11 +383,29 @@ theorem fire_cases_ord (p : Program) (k : Nat) (ls : Levels) (c r : CId) (args :
   rw [fire_cases]
   simp only [hres, hdecl, hkind, Option.map_some] <;> rfl
 
+/-- F3 at a `case` entry: the minor, on fields from the slots after the motive. -/
+theorem fire_cases_sub (p : Program) (k : Nat) (ls : Levels) (c r : CId) (args : List Slot)
+    {s kk : Bool} {lv np nmot nmin ni : Nat} {ind : CId} {rules : List Rule} {ty : Term}
+    {w : PropWhen} {srcs : List FieldSrc}
+    (hres : p.table.resolveOf c = some (.case r))
+    (hdecl : p.decl? r = some (.recr s kk lv np nmot nmin ni ind rules ty))
+    (hkind : (p.table.recKindOf r).map (·.atLevels ls) = some (.subsingleton w srcs)) :
+    fire p k (.cases c) ls args = later k fun k =>
+      (force p k (args.getD (np + 1 + ni + 1 + 0) default)).bind fun minor =>
+        applyAll p k minor (srcs.map (fieldSlot ls (args.drop (np + 1)))) := by
+  have e : (fun (x : FieldSrc) => match x with
+      | .index i => (args.drop (np + 1)).getD i (Slot.irrNone ls)
+      | .proof => Slot.irrNone ls) = fieldSlot ls (args.drop (np + 1)) := by
+    funext x
+    cases x <;> rfl
+  rw [fire_cases]
+  simp only [hres, hdecl, hkind, recChosen, e] <;> rfl
+
 /-- F2 at an ordinary recursor with one motive, `np` parameters and no index. -/
 theorem fire_recr_ord (p : Program) (k : Nat) (ls : Levels) (r : CId) (args : List Slot)
     {s kk : Bool} {lv np nmin : Nat} {ind : CId} {rules : List Rule} {ty : Term}
     (hdecl : p.decl? r = some (.recr s kk lv np 1 nmin 0 ind rules ty))
-    (hkind : p.table.recKindOf r = some .ordinary) :
+    (hkind : (p.table.recKindOf r).map (·.atLevels ls) = some .ordinary) :
     fire p k (.recr r) ls args = later k fun k =>
       ((force p k (args.getD (np + 1 + nmin) default)).bind fun major =>
           Result.ofOption (p.selectRule ind np major)).bind fun (j, fields) =>
@@ -501,6 +531,32 @@ theorem envOk_fields {ls : Levels} {indices : List Slot} {idx : List Shape}
         rfl
       rw [e1, e2]
       exact slotOk_irrNone ls
+
+/-- The fields F3 hands a minor at a `case` entry: taken from slots that go on past the
+indices, so each index named must be one. -/
+theorem envOk_fields_lt {ls : Levels} {indices : List Slot} {idx rest : List Shape}
+    (h : EnvOk p sig indices (idx ++ rest)) : ∀ srcs : List FieldSrc,
+    (∀ (i : Nat), FieldSrc.index i ∈ srcs → i < idx.length) →
+    EnvOk p sig (srcs.map (fieldSlot ls indices)) (srcs.map (srcShape idx))
+  | [], _ => .nil
+  | .proof :: rest', hlt =>
+    .cons (slotOk_irrNone ls)
+      (envOk_fields_lt h rest' fun i hi => hlt i (List.mem_cons_of_mem _ hi))
+  | .index i :: rest', hlt => by
+    refine .cons ?_ (envOk_fields_lt h rest' fun i hi => hlt i (List.mem_cons_of_mem _ hi))
+    show SlotOk p sig (indices.getD i (Slot.irrNone ls)) (idx.getD i .irr)
+    have hi : i < idx.length := hlt i List.mem_cons_self
+    have hσ : (idx ++ rest)[i]? = some idx[i] := by
+      rw [List.getElem?_append_left hi, List.getElem?_eq_getElem hi]
+    obtain ⟨s, hs, hok⟩ := EnvOk.get indices _ h i _ hσ
+    have e1 : indices.getD i (Slot.irrNone ls) = s := by
+      rw [List.getD_eq_getElem?_getD, hs]
+      rfl
+    have e2 : idx.getD i Shape.irr = idx[i] := by
+      rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi]
+      rfl
+    rw [e1, e2]
+    exact hok
 
 theorem EnvOk.take : ∀ (Γ₁ : List Shape) (ρ : List Slot) {Γ₂ : List Shape},
     EnvOk p sig ρ (Γ₁ ++ Γ₂) → EnvOk p sig (ρ.take Γ₁.length) Γ₁
@@ -655,6 +711,8 @@ theorem HeadOk.arity (hsig : SigOk p sig) {h : Head} {ls : Levels} {σs : List S
     obtain ⟨s, lv, ty, hdecl, -, -⟩ := hsig.datas _ _ hD j c fl hc
     simp [Program.headArity, hdecl, hps]
   | cases c r ls ps σ ind flds τ s kk lv nmot rules ty hres hdecl hkind hscrut =>
+    simp [Program.headArity, hres, hdecl] <;> omega
+  | casesSub c r ls ps idx maj τ s kk lv nmot ind rules ty w srcs hres hdecl hkind hlt =>
     simp [Program.headArity, hres, hdecl] <;> omega
   | recr r ls ps σ ind flds ms τ s kk lv rules ty hdecl hkind hscrut hrules =>
     simp [Program.headArity, hdecl, Decl.recArity] <;> omega
@@ -867,6 +925,37 @@ theorem allOk (hsig : SigOk p sig) : ∀ k, AllOk p sig k := by
             exact .inl rfl
           · rw [hmn]
             exact applyAll_ok A.app fs fl mv hfs hmv
+    | casesSub c r ls ps idx maj τ s kk lv nmot ind rules ty w srcs hres hdecl hkind hlt =>
+      rw [fire_cases_sub p k ls c r slots hres hdecl hkind]
+      cases k with
+      | zero => exact .inl rfl
+      | succ k =>
+        have A := ih k (Nat.lt_succ_self k)
+        simp only [later_succ]
+        have hD : EnvOk p sig (slots.drop (ps.length + 1))
+            (idx ++ [maj, arrows (srcs.map (srcShape idx)) τ]) := by
+          have h1 : EnvOk p sig slots
+              ((ps ++ [Shape.irr]) ++ (idx ++ [maj, arrows (srcs.map (srcShape idx)) τ])) := by
+            rw [List.append_assoc]
+            exact hslots
+          have e : ps.length + 1 = (ps ++ [Shape.irr]).length := by
+            rw [List.length_append]
+            rfl
+          rw [e]
+          exact EnvOk.drop _ _ h1
+        have hminor : SlotOk p sig (slots.getD (ps.length + 1 + idx.length + 1 + 0) default)
+            (arrows (srcs.map (srcShape idx)) τ) := by
+          refine EnvOk.getD hslots ?_
+          have e : ps.length + 1 + idx.length + 1 + 0 = ps.length + (1 + (idx.length + 1)) := by
+            omega
+          rw [e, getElem?_append_add, Nat.add_comm 1, List.getElem?_cons_succ,
+            getElem?_append_add]
+          rfl
+        rcases A.slot _ _ hminor with hmn | ⟨mv, hmn, hmv⟩
+        · rw [hmn]
+          exact .inl rfl
+        · rw [hmn]
+          exact applyAll_ok A.app _ _ mv (envOk_fields_lt (ls := ls) hD srcs hlt) hmv
     | recr r ls ps σ ind flds ms τ s kk lv rules ty hdecl hkind hscrut hrules =>
       rw [fire_recr_ord p k ls r slots hdecl hkind]
       cases k with

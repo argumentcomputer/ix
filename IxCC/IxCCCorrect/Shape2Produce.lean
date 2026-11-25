@@ -48,6 +48,8 @@ inductive TV where
   | prop
   /-- a type-level function: a λ with its environment and levels -/
   | clo (ls : Levels) (env : List TV) (lam : Term)
+  /-- an inductive type applied to fewer arguments than it takes (`Except ε` as a monad) -/
+  | papc (ls : Levels) (c : CId) (args : List TV)
   /-- a value, or a type the producer does not understand -/
   | opaque
   deriving Inhabited
@@ -63,6 +65,7 @@ inductive Atom where
   | prop
   | opaque
   | clo (ls : Levels) (lam : Term) (n : Nat)
+  | papc (ls : Levels) (c : CId) (n : Nat)
   deriving BEq
 
 def TV.atoms : Nat → TV → List Atom
@@ -71,6 +74,7 @@ def TV.atoms : Nat → TV → List Atom
   | _ + 1, .prop => [.opaque]
   | _ + 1, .opaque => [.opaque]
   | n + 1, .clo ls env t => .clo ls t env.length :: env.flatMap (TV.atoms n)
+  | n + 1, .papc ls c args => .papc ls c args.length :: args.flatMap (TV.atoms n)
 
 structure St where
   insts : List (CId × Levels × Shape) := []
@@ -90,6 +94,8 @@ structure St where
   sites : List (Nat × Nat × Levels × List TV × Term) := []
   /-- walks still to do: a site's argument at the type arguments of a use -/
   later : List (Levels × List TV × List TV × Term) := []
+  /-- the shapes of `let`-bound λs, read off the types the `let`s state -/
+  lets : List Shape := []
 
 abbrev M := StateM St
 
@@ -145,6 +151,9 @@ def tyApply (p : Program) : Nat → TV → List TV → M TV
   | fuel + 1, .clo ls env (.lam _ _ body), a :: rest => do
     let r ← tyEval p fuel ls (a :: env) body
     tyApply p fuel r rest
+  | fuel + 1, .papc ls c args, a :: rest => do
+    let r ← tyConst p fuel ls c (args ++ [a])
+    tyApply p fuel r rest
   | _ + 1, _, _ => pure .opaque
 
 /-- A constant as a type: `Nat`, an inductive at its parameters, or a definition
@@ -159,7 +168,8 @@ def tyConst (p : Program) : Nat → Levels → CId → List TV → M TV
         let isProp := match finalSort ty with
           | some u => evalUniv ls u == 0
           | none => false
-        if isProp then pure .prop
+        if args.length < np + ni then pure (.papc ls c args)
+        else if isProp then pure .prop
         else if np == 0 && ni == 0 && ctors.all (fun k =>
             match p.decl? k with
             | some (.ctor _ _ _ _ _ nf _) => nf == 0
@@ -347,6 +357,9 @@ def walk (p : Program) : Nat → Levels → List TV → List TV → Term → M U
       | [] => walk p fuel ls (.opaque :: env) [] body
     | .letE _ _ r ty v body => do
       if !r.irrAt ls then walk p fuel ls env [] v
+      if !r.irrAt ls && isLam v then
+        let σ := (← tyEval p fuel ls env ty).shape
+        modify fun s => if s.lets.contains σ then s else { s with lets := s.lets ++ [σ] }
       let tv ← match ty with
         | .sort _ => tyEval p fuel ls env v
         | _ => pure TV.opaque
@@ -422,7 +435,7 @@ def produceWith (p : Program) (root : CId) (fuel : Nat := 400) (steps : Nat := 2
         (k.1, k.2.zipIdx.map fun f =>
           if s.polys.contains (e.2, f.2) then interOf (usesOf e.2 f.2) else f.1) }
   let insts := (s.insts.map fun e => (e.1, e.2.1, refix p datas e.1 e.2.2)).eraseDups
-  ({ insts, enums := s.enums, datas }, s.polys.map fun x => (x.1, x.2, (usesOf x.1 x.2).length))
+  ({ insts, enums := s.enums, datas, lets := s.lets }, s.polys.map fun x => (x.1, x.2, (usesOf x.1 x.2).length))
 
 /-- **The proposed certificate** for root constant `root` of `p`. -/
 def produce (p : Program) (root : CId) (fuel : Nat := 400) (steps : Nat := 20000) : Cert :=

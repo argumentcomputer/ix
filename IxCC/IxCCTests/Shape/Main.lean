@@ -150,13 +150,13 @@ def why (p : Src.Program) (cert : Cert) (ls : Levels) :
   | _, .strLit _, _ => some ("string literal", "")
   | Γ, .app f a _ r, _ =>
     let irrArg := r.irrAt ls
-    let argShapes := if irrArg then [Shape.irr] else synth cert.insts cert.datas ls Γ a .none
+    let argShapes := if irrArg then [Shape.irr] else synth cert.insts cert.datas cert.lets ls Γ a .none
     let isLam := match f with
       | .lam _ _ _ => true
       | _ => false
     let fShapes :=
-      if isLam then argShapes.flatMap fun σ => synth cert.insts cert.datas ls Γ f (.dom σ)
-      else synth cert.insts cert.datas ls Γ f .none
+      if isLam then argShapes.flatMap fun σ => synth cert.insts cert.datas cert.lets ls Γ f (.dom σ)
+      else synth cert.insts cert.datas cert.lets ls Γ f .none
     match fShapes with
     | [] =>
       if isLam then
@@ -171,20 +171,20 @@ def why (p : Src.Program) (cert : Cert) (ls : Levels) :
         if irrArg then
           if σ = .irr then none
           else some ("irrelevant argument at a relevant domain", showShape σ)
-        else if σ ∈ synth cert.insts cert.datas ls Γ a (.full σ) then none
+        else if σ ∈ synth cert.insts cert.datas cert.lets ls Γ a (.full σ) then none
         else (why p cert ls Γ a (.full σ)).orElse fun _ =>
           some ("argument shape mismatch", s!"expected {showShape σ}, has \
-            {(synth cert.insts cert.datas ls Γ a .none).map showShape}")
+            {(synth cert.insts cert.datas cert.lets ls Γ a .none).map showShape}")
       | .irr => some ("applies a value of unknown shape", "")
       | s => some ("applies a value that is not a function", showShape s)
   | Γ, .lam b _ body, e =>
     match e with
     | .full (.fn σ τ) =>
       if !b.propWhen.allowsBeta ls then some ("λ whose binder forbids β at these levels", "")
-      else if τ ∈ synth cert.insts cert.datas ls (σ :: Γ) body (.full τ) then none
+      else if τ ∈ synth cert.insts cert.datas cert.lets ls (σ :: Γ) body (.full τ) then none
       else (why p cert ls (σ :: Γ) body (.full τ)).orElse fun _ =>
         some ("result shape mismatch", s!"expected {showShape τ}, has \
-          {(synth cert.insts cert.datas ls (σ :: Γ) body .none).map showShape}")
+          {(synth cert.insts cert.datas cert.lets ls (σ :: Γ) body .none).map showShape}")
     | .full s => some ("λ where a value that is not a function is expected", showShape s)
     | .dom σ =>
       if !b.propWhen.allowsBeta ls then some ("λ whose binder forbids β at these levels", "")
@@ -193,11 +193,11 @@ def why (p : Src.Program) (cert : Cert) (ls : Levels) :
   | Γ, .letE _ _ r _ v body, e =>
     if r.irrAt ls then why p cert ls (.irr :: Γ) body e
     else
-      match synth cert.insts cert.datas ls Γ v .none with
+      match synth cert.insts cert.datas cert.lets ls Γ v .none with
       | [] => (why p cert ls Γ v .none).orElse fun _ => some ("let value has no shape", "")
       | σ :: _ => why p cert ls (σ :: Γ) body e
   | Γ, .proj s i e', _ =>
-    match synth cert.insts cert.datas ls Γ e' .none with
+    match synth cert.insts cert.datas cert.lets ls Γ e' .none with
     | [] => (why p cert ls Γ e' .none).orElse fun _ => some ("projection subject has no shape", "")
     | σ :: _ =>
       if (projRes cert.datas s i σ).isEmpty then
@@ -212,7 +212,7 @@ def reason (p : Src.Program) (cert : Cert) (d : CId) (ls : Levels) (σ : Shape) 
     match why p cert ls [] t (.full σ) with
     | some r => r
     | none => ("result shape mismatch", s!"expected {showShape σ}, has \
-        {(synth cert.insts cert.datas ls [] t .none).map showShape}")
+        {(synth cert.insts cert.datas cert.lets ls [] t .none).map showShape}")
   | none => (s!"refused instance of a {kindClass p d}", showShape σ)
 
 /-- Is this the shape of a root the immortal path's corollaries cover: `Nat` parameters,
