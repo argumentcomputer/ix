@@ -22,16 +22,17 @@ open IxCC.Xv
 open IxCC.Lir (Word)
 open IxCC.X86.ObjectEval (Lifted exec exec_mono)
 
-private theorem sim_comp_eq {α β : Type} {R : α → β → Prop} {f : Nat → Nat}
+private theorem sim_comp_eq {α β : Type} {R : α → β → Prop} {f₁ f₂ : Nat → Nat}
     {c₁ c₂ : Nat → Sem.Result α} {c₃ : Nat → Sem.Result β}
     (h₃ : Sem.ClockMono c₃)
-    (h1 : Sem.Sim Eq id c₁ c₂) (h2 : Sem.Sim R f c₂ c₃) :
-    Sem.Sim R f c₁ c₃ :=
+    (h1 : Sem.Sim Eq f₁ c₁ c₂) (h2 : Sem.Sim R f₂ c₂ c₃) :
+    Sem.Sim R (fun k => f₁ (f₂ k)) c₁ c₃ :=
   (h1.comp h₃ h2).mono fun _ _ ⟨_, heq, hr⟩ => heq ▸ hr
 
 /-- **End-to-end Lir-to-ELF simulation for `Backend.compileOpt`**: the emitted
 ELF object simulates the *unoptimized* source `Lir` program `p` with the exact
-same value relation (`Lifted StackFinal`) and clock map `k ↦ (B + 1)(k + 1)`. -/
+same value relation (`Lifted StackFinal`) and composed clock map
+`k ↦ Lir.Opt.runClock ((B + 1)(k + 1))`. -/
 theorem compileOpt_sim_main {p : Lir.Program} {cfg : Config} {art : Artifact}
     (h : compileOpt p cfg = .ok art) :
     ∃ q fired r,
@@ -42,7 +43,8 @@ theorem compileOpt_sim_main {p : Lir.Program} {cfg : Config} {art : Artifact}
         (base retAddr : Word) (flags : X86.ByteEval.Flags),
         Stacking.Proof.EntryInv r.program cfg.reps core₀ retAddr args mem ctx →
         art.encoded.text.size ≤ (retAddr - base).toNat →
-        Sem.Sim (Lifted StackFinal) (fun k => (art.stacked.program.blocks.size + 1) * (k + 1))
+        Sem.Sim (Lifted StackFinal)
+          (fun k => Lir.Opt.runClock ((art.stacked.program.blocks.size + 1) * (k + 1)))
           (fun k => Lir.eval p k args mem ctx)
           (exec art.object art.exportName base core₀ flags) := by
   obtain ⟨q, fired, r, hs, ha, he, hsim⟩ := compile_sim_main h
@@ -83,7 +85,7 @@ theorem compileOpt_tsim_main {Env E : Type} {p : Lir.Program} {cfg : Config} {ar
         Stacking.Proof.EntryInv r.program cfg.reps core₀ retAddr args mem ctx →
         art.encoded.text.size ≤ (retAddr - base).toNat →
         Sem.TSim (Env := Env) (E := E) (Lifted StackFinal)
-          (fun k => (art.stacked.program.blocks.size + 1) * (k + 1))
+          (fun k => Lir.Opt.runClock ((art.stacked.program.blocks.size + 1) * (k + 1)))
           (fun _ k => Sem.Traced.lift (Lir.eval p k args mem ctx))
           (fun _ k => Sem.Traced.lift (exec art.object art.exportName base core₀ flags k)) := by
   obtain ⟨q, fired, r, hs, ha, he, hsim⟩ := compileOpt_sim_main h
@@ -112,7 +114,7 @@ theorem compileWithOptCert_sim_main {cert p : Lir.Program} {cfg : Config} {art :
       simp only [hv, Except.mapError, bind, Except.bind] at h
       obtain ⟨q, fired, r, hs, ha, he, hsim⟩ := compile_sim_main h
       refine ⟨pOpt, q, fired, r, rfl, hs, ha, he, fun args mem ctx core₀ base retAddr flags inv hout => ?_⟩
-      exact sim_comp_eq (exec_mono art.object art.exportName base core₀ flags)
+      exact sim_comp_eq (f₁ := id) (exec_mono art.object art.exportName base core₀ flags)
         (Lir.Opt.validateCert_sim hv args mem ctx)
         (hsim args mem ctx core₀ base retAddr flags inv hout)
 

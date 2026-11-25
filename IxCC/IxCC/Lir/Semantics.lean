@@ -54,6 +54,20 @@ def sext : Width → Word → Word
 def sarWord (w : Width) (a c : Word) : Word :=
   w.truncate ((sext w a).toInt64 >>> c.toInt64).toUInt64
 
+/-- Left rotation of the low `w` bits by `c` (effective count `c % w.bits`). -/
+def rolWord (w : Width) (a c : Word) : Word :=
+  let r := c.toNat % w.bits
+  let a' := w.truncate a
+  if r == 0 then a'
+  else w.truncate ((a' <<< UInt64.ofNat r) ||| (a' >>> UInt64.ofNat (w.bits - r)))
+
+/-- Right rotation of the low `w` bits by `c` (effective count `c % w.bits`). -/
+def rorWord (w : Width) (a c : Word) : Word :=
+  let r := c.toNat % w.bits
+  let a' := w.truncate a
+  if r == 0 then a'
+  else w.truncate ((a' >>> UInt64.ofNat r) ||| (a' <<< UInt64.ofNat (w.bits - r)))
+
 /-- `none` is a division by zero. -/
 def BinOp.eval (o : BinOp) (w : Width) (a b : Word) : Option Word :=
   match o with
@@ -66,6 +80,8 @@ def BinOp.eval (o : BinOp) (w : Width) (a b : Word) : Option Word :=
   | .shl => some (w.truncate (a <<< (b &&& shiftMask w)))
   | .shr => some (w.truncate (w.truncate a >>> (b &&& shiftMask w)))
   | .sar => some (sarWord w a (b &&& shiftMask w))
+  | .rol => some (rolWord w a (b &&& shiftMask w))
+  | .ror => some (rorWord w a (b &&& shiftMask w))
   | .udiv =>
       let d := w.truncate b
       if d == 0 then none else some (w.truncate a / d)

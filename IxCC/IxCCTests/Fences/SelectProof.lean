@@ -224,6 +224,12 @@ proof modules' public theorems; expected messages are preserved verbatim. -/
 /-- info: 'IxCC.Xv.exec_shiftC' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Xv.exec_shiftC
 
+/-- info: 'IxCC.Xv.exec_rotateI' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.exec_rotateI
+
+/-- info: 'IxCC.Xv.exec_rotateC' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.exec_rotateC
+
 /-- info: 'IxCC.Xv.exec_div' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Xv.exec_div
 
@@ -322,6 +328,15 @@ proof modules' public theorems; expected messages are preserved verbatim. -/
 
 /-- info: 'IxCC.Xv.Select.Proof.shiftResult_wide' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Xv.Select.Proof.shiftResult_wide
+
+/-- info: 'IxCC.Xv.Select.Proof.rol_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Select.Proof.rol_eq
+
+/-- info: 'IxCC.Xv.Select.Proof.ror_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Select.Proof.ror_eq
+
+/-- info: 'IxCC.Xv.Select.Proof.rotateResult_wide' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Select.Proof.rotateResult_wide
 
 /-- info: 'IxCC.Xv.Select.Proof.xor_two_pow_of_lt' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Xv.Select.Proof.xor_two_pow_of_lt
@@ -997,6 +1012,30 @@ proof modules' public theorems; expected messages are preserved verbatim. -/
 
 /-- info: 'IxCC.Xv.Select.Proof.selectShift_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Xv.Select.Proof.selectShift_ok
+
+/-- info: 'IxCC.Xv.Select.Proof.rotateOf_mnemonic' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Xv.Select.Proof.rotateOf_mnemonic
+
+/-- info: 'IxCC.Xv.Select.Proof.rotate_lir' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Select.Proof.rotate_lir
+
+/-- info: 'IxCC.Xv.Select.Proof.rotateResult_mod' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Select.Proof.rotateResult_mod
+
+/-- info: 'IxCC.Xv.Select.Proof.rotateCount_mod' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Select.Proof.rotateCount_mod
+
+/-- info: 'IxCC.Xv.Select.Proof.rotateResult_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Select.Proof.rotateResult_zero
+
+/-- info: 'IxCC.Xv.Select.Proof.rotate_close' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Select.Proof.rotate_close
+
+/-- info: 'IxCC.Xv.Select.Proof.rotateRow_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Select.Proof.rotateRow_ok
+
+/-- info: 'IxCC.Xv.Select.Proof.selectRotate_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Xv.Select.Proof.selectRotate_ok
 
 /-- info: 'IxCC.Xv.Select.Proof.divLo_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Xv.Select.Proof.divLo_spec

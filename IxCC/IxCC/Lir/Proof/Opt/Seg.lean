@@ -53,10 +53,10 @@ theorem SymExpr.eval_isMemFree {ρ : Env} {ctx : Word} {snaps1 snaps2 : MemSnaps
 theorem PFact.holds_snaps_congr {ρ : Env} {ctx : Word} {snaps1 snaps2 : MemSnaps} {f : PFact}
     (hm : f.isMemFree = true) (h : f.Holds ρ ctx snaps1) : f.Holds ρ ctx snaps2 := by
   simp only [PFact.isMemFree, Bool.and_eq_true] at hm
-  intro v1 v2 h1 h2
-  rw [SymExpr.eval_isMemFree (snaps2 := snaps1) hm.1] at h1
-  rw [SymExpr.eval_isMemFree (snaps2 := snaps1) hm.2] at h2
-  exact h h1 h2
+  obtain ⟨v1, v2, h1, h2, hc⟩ := h
+  rw [SymExpr.eval_isMemFree (snaps2 := snaps2) hm.1] at h1
+  rw [SymExpr.eval_isMemFree (snaps2 := snaps2) hm.2] at h2
+  exact ⟨v1, v2, h1, h2, hc⟩
 
 theorem SymExpr.eval_isTotal {ρ : Env} {ctx : Word} {snaps : MemSnaps} :
     ∀ {e : SymExpr}, e.isTotal = true → (∀ x ∈ e.vars, ρ[x]?.isSome = true) →
@@ -238,21 +238,98 @@ theorem SymExpr.eval_subst_vars {ρ₁ ρ₀ : Env} {ctx : Word} {snaps : MemSna
 
 /-! ## `snapsLt` preservation across `mkBin` and `SymExpr.norm` -/
 
+theorem matchAddShlSelf_snapsLt {bound : Nat} {a b r : SymExpr}
+    (hm : matchAddShlSelf a b = some r)
+    (ha : a.snapsLt bound) (hb : b.snapsLt bound) : r.snapsLt bound := by
+  unfold matchAddShlSelf at hm
+  split at hm
+  · split at hm <;> (try cases hm); exact ⟨ha, trivial⟩
+  · split at hm <;> (try cases hm); exact ⟨hb, trivial⟩
+  · split at hm <;> (try cases hm); exact ⟨ha, trivial⟩
+  · split at hm <;> (try cases hm); exact ⟨hb, trivial⟩
+  · split at hm <;> (try cases hm); exact ⟨ha, trivial⟩
+  · split at hm <;> (try cases hm); exact ⟨hb, trivial⟩
+  · cases hm
+
+theorem mkAdd64Core_snapsLt {bound : Nat} {a b : SymExpr}
+    (ha : a.snapsLt bound) (hb : b.snapsLt bound) : (mkAdd64Core a b).snapsLt bound := by
+  unfold mkAdd64Core
+  split
+  · exact ⟨ha, trivial⟩
+  · cases hm : matchAddShlSelf a b with
+    | some r => dsimp only; exact matchAddShlSelf_snapsLt hm ha hb
+    | none => dsimp only; split <;> first | exact ⟨hb, ha⟩ | exact ⟨ha, hb⟩
+
 theorem mkAdd64_snapsLt {bound : Nat} {a b : SymExpr}
     (ha : a.snapsLt bound) (hb : b.snapsLt bound) : (mkAdd64 a b).snapsLt bound := by
   unfold mkAdd64
   split
   · trivial
   · exact ha
+  · exact hb
   · dsimp only; split
     · exact ha.1
     · exact ⟨ha.1, trivial⟩
-  · split
-    · exact ⟨⟨ha.1, trivial⟩, trivial⟩
-    · exact ⟨ha, hb⟩
-  · split
-    · exact ⟨ha, trivial⟩
-    · exact ⟨ha, hb⟩
+  · dsimp only; split
+    · exact hb.1
+    · exact ⟨hb.1, trivial⟩
+  · dsimp only; split
+    · exact mkAdd64Core_snapsLt ha.1 hb.1
+    · exact ⟨mkAdd64Core_snapsLt ha.1 hb.1, trivial⟩
+  · exact ⟨mkAdd64Core_snapsLt ha.1 hb, trivial⟩
+  · exact ⟨mkAdd64Core_snapsLt ha hb.1, trivial⟩
+  · exact mkAdd64Core_snapsLt ha hb
+
+theorem matchRotateShrShl_snapsLt {bound : Nat} {w rw : Width} {s1 s2 x : SymExpr} {r : Word}
+    (hm : matchRotateShrShl w s1 s2 = some (rw, x, r))
+    (h1 : s1.snapsLt bound) (h2 : s2.snapsLt bound) : x.snapsLt bound := by
+  unfold matchRotateShrShl at hm
+  split at hm
+  · split at hm
+    · dsimp only at hm; split at hm
+      · cases hm; exact h1.1
+      · cases hm
+    · split at hm
+      · dsimp only at hm; split at hm
+        · cases hm; exact h1.1
+        · cases hm
+      · cases hm
+  · split at hm
+    · dsimp only at hm; split at hm
+      · cases hm; exact h1.1.1
+      · cases hm
+    · cases hm
+  · cases hm
+
+theorem matchRotateOr_snapsLt {bound : Nat} {w rw : Width} {a b x : SymExpr} {r : Word}
+    (hm : matchRotateOr w a b = some (rw, x, r))
+    (ha : a.snapsLt bound) (hb : b.snapsLt bound) : x.snapsLt bound := by
+  unfold matchRotateOr at hm
+  cases h1 : matchRotateShrShl w a b with
+  | some res => rw [h1] at hm; cases hm; exact matchRotateShrShl_snapsLt h1 ha hb
+  | none => rw [h1] at hm; exact matchRotateShrShl_snapsLt hm hb ha
+
+theorem matchRotateMasked32Pair_snapsLt {bound : Nat} {s1 s2 x : SymExpr} {r : Word}
+    (hm : matchRotateMasked32Pair s1 s2 = some (x, r))
+    (h1 : s1.snapsLt bound) (h2 : s2.snapsLt bound) : x.snapsLt bound := by
+  unfold matchRotateMasked32Pair at hm
+  split at hm
+  · split at hm
+    · dsimp only at hm; split at hm
+      · cases hm; exact h1.1.1
+      · cases hm
+    · cases hm
+  · cases hm
+
+theorem matchRotateMasked32_snapsLt {bound : Nat} {a x : SymExpr} {r : Word}
+    (hm : matchRotateMasked32 a = some (x, r))
+    (ha : a.snapsLt bound) : x.snapsLt bound := by
+  unfold matchRotateMasked32 at hm
+  split at hm
+  · cases h1 : matchRotateMasked32Pair _ _ with
+    | some res => rw [h1] at hm; cases hm; exact matchRotateMasked32Pair_snapsLt h1 ha.1 ha.2
+    | none => rw [h1] at hm; exact matchRotateMasked32Pair_snapsLt hm ha.2 ha.1
+  · cases hm
 
 theorem mkBinOrdered_snapsLt {bound : Nat} {o : BinOp} {w : Width} {a b : SymExpr}
     (ha : a.snapsLt bound) (hb : b.snapsLt bound) : (mkBinOrdered o w a b).snapsLt bound := by
@@ -290,7 +367,11 @@ theorem mkBinOrdered_snapsLt {bound : Nat} {o : BinOp} {w : Width} {a b : SymExp
         · trivial
         · split
           · exact ha
-          · exact ⟨ha, trivial⟩
+          · split
+            · cases hm : matchRotateMasked32 a with
+              | none => exact ⟨ha, trivial⟩
+              | some xr => exact ⟨matchRotateMasked32_snapsLt hm ha, trivial⟩
+            · exact ⟨ha, trivial⟩
         · split
           · exact ha
           · exact ⟨ha, hb⟩
@@ -301,17 +382,25 @@ theorem mkBinOrdered_snapsLt {bound : Nat} {o : BinOp} {w : Width} {a b : SymExp
           · exact ⟨ha, trivial⟩
         · split
           · trivial
-          · exact ⟨ha, trivial⟩
+          · split
+            · split
+              · split
+                · exact mkAdd64_snapsLt ha trivial
+                · exact ⟨ha, trivial⟩
+              · exact ⟨ha, trivial⟩
+            · exact ⟨ha, trivial⟩
         · split
           · exact ha
-          · exact ⟨ha, hb⟩
+          · cases hm : matchRotateOr w a b with
+            | none => exact ⟨ha, hb⟩
+            | some res => exact ⟨matchRotateOr_snapsLt hm ha hb, trivial⟩
     | xor =>
         dsimp only; split
         · trivial
         · split
           · exact ha
           · exact ⟨ha, hb⟩
-    | shl | shr | sar =>
+    | shl | shr | sar | rol | ror =>
         dsimp only; split
         · trivial
         · split
@@ -1207,9 +1296,9 @@ theorem segInv_ofInv {inv : BlockInv} {ρ₁₀ ρ₂₀ : Env} {mem₀ : X86.Me
       factsHold := fun f hf => by
         simp only [SegState.ofInv, List.mem_map] at hf
         obtain ⟨f0, hf0, rfl⟩ := hf
-        intro v1 v2 h1 h2
-        rw [SymExpr.eval_subst_eq hsub_exact] at h1 h2
-        exact PFact.holds_snaps_congr (hmfFacts f0 hf0) (hfacts f0 hf0) h1 h2
+        obtain ⟨v1, v2, h1, h2, hc⟩ := PFact.holds_snaps_congr (hmfFacts f0 hf0) (hfacts f0 hf0)
+        exact ⟨v1, v2, by rw [SymExpr.eval_subst_eq hsub_exact]; exact h1,
+          by rw [SymExpr.eval_subst_eq hsub_exact]; exact h2, hc⟩
       factsMemFree := fun f hf => by
         simp only [SegState.ofInv, List.mem_map] at hf
         obtain ⟨f0, hf0, rfl⟩ := hf
@@ -1756,7 +1845,7 @@ theorem stepTgtStmt_sound {st st' : SegState} {ρ₁₀ ρ₁ ρ₂ : Env} {mem�
                       have hnz := isSafeDiv_sound h hsafe (SymExpr.norm_sound hevb)
                       have hnzb : (w.truncate vb == 0) = false := beq_false_of_ne hnz
                       exact ⟨_, by simp [BinOp.eval, hnzb]; rfl⟩
-              | add | sub | and | or | xor | mul | shl | shr | sar =>
+              | add | sub | and | or | xor | mul | shl | shr | sar | rol | ror =>
                   exact ⟨_, by simp [BinOp.eval]; rfl⟩
             obtain ⟨v, hv⟩ := heval_bin
             exact ⟨ρ₂.insert y v, mem₂, snaps, by simp [Stmt.exec, Rhs.eval, hva, hvb, hv],
@@ -2199,7 +2288,7 @@ theorem checkArgEquiv_sound {st : SegState} {ρ₁₀ ρ₁ ρ₂ : Env} {mem₀
       rw [hg] at hchk
       obtain ⟨v2, hv2, hev2⟩ := evalTgtArg_sound h.tgtEnvEval hg
       have hev1 := argToSym_eval h.srcEnvEval ha1
-      have heq := exprEquiv_sound hchk hev1 hev2
+      have heq := exprEquivFacts_sound h.factsHold hchk hev1 hev2
       rw [← heq] at hv2; exact hv2
 
 theorem checkArgsEquiv_sound {st : SegState} {ρ₁₀ ρ₁ ρ₂ : Env} {mem₀ mem₁ mem₂ : X86.Memory}
@@ -2242,7 +2331,7 @@ theorem checkEntails_sound {ρ₁₀ ρ₁ ρ₂ : Env} {ctx : Word} {snaps : Me
         obtain ⟨v2, hv2, hty⟩ := htgt y ty hg
         obtain ⟨v1, hv1⟩ := SymExpr.eval_isTotal (snaps := snaps) htot (fun v hv => hdef v (hvars v hv))
         have hsub := SymExpr.eval_subst hsrc hv1
-        have heq := exprEquiv_sound hmatch hsub hty
+        have heq := exprEquivFacts_sound hfacts hmatch hsub hty
         rw [SymExpr.eval_isMemFree (snaps2 := fun _ => emptyMem) (hmfTgt (y, expr) hmem)] at hv1
         exact ⟨v2, hv2, by rw [← heq]; exact hv1⟩
   · intro ⟨x, expr⟩ hmem
@@ -2254,17 +2343,21 @@ theorem checkEntails_sound {ρ₁₀ ρ₁ ρ₂ : Env} {ctx : Word} {snaps : Me
     | some vx =>
         obtain ⟨v1, hv1⟩ := SymExpr.eval_isTotal (snaps := snaps) htot (fun v hv => hdef v (hvars v hv))
         have hsub := SymExpr.eval_subst hsrc hv1
-        have heq := exprEquiv_sound heqChk (hsrc x vx hrx) hsub
+        have heq := exprEquivFacts_sound hfacts heqChk (hsrc x vx hrx) hsub
         rw [SymExpr.eval_isMemFree (snaps2 := fun _ => emptyMem) (hmfSrc (x, expr) hmem)] at hv1
         exact ⟨vx, rfl, by rw [heq]; exact hv1⟩
-  · intro f hf v1 v2 hl hr
+  · intro f hf
     have hck := hfactsChk f hf
-    simp only [beq_iff_eq] at hck
+    obtain ⟨⟨⟨⟨hl_tot, hr_tot⟩, hl_vars⟩, hr_vars⟩, hcf⟩ := hck
+    rw [beq_iff_eq] at hcf
     have hmf_f := hmfFacts f hf
     simp only [PFact.isMemFree, Bool.and_eq_true] at hmf_f
-    rw [SymExpr.eval_isMemFree (snaps2 := snaps) hmf_f.1] at hl
-    rw [SymExpr.eval_isMemFree (snaps2 := snaps) hmf_f.2] at hr
-    exact condFromFacts_sound hfacts hck (SymExpr.eval_subst hsrc hl) (SymExpr.eval_subst hsrc hr)
+    obtain ⟨v1, hl⟩ := SymExpr.eval_isTotal (snaps := snaps) hl_tot (fun v hv => hdef v (hl_vars v hv))
+    obtain ⟨v2, hr⟩ := SymExpr.eval_isTotal (snaps := snaps) hr_tot (fun v hv => hdef v (hr_vars v hv))
+    have hc := condFromFacts_sound hfacts hcf (SymExpr.eval_subst hsrc hl) (SymExpr.eval_subst hsrc hr)
+    rw [SymExpr.eval_isMemFree (snaps2 := fun _ => emptyMem) hmf_f.1] at hl
+    rw [SymExpr.eval_isMemFree (snaps2 := fun _ => emptyMem) hmf_f.2] at hr
+    exact ⟨v1, v2, hl, hr, hc⟩
 
 theorem checkAfterCall_sound {st : SegState} {ρ₁₀ ρ₁ ρ₂ ρ₁' ρ₂' : Env}
     {mem₀ mem₁ mem₂ : X86.Memory} {ctx : Word} {snaps : MemSnaps}
@@ -2317,7 +2410,7 @@ theorem checkAfterCall_sound {st : SegState} {ρ₁₀ ρ₁ ρ₂ ρ₁' ρ₂'
               have hc := hvars v hv
               rw [bindParams_not_mem hb1 v (by simpa using hc.1)] at hvv
               exact h.srcEnvEval v vv hvv) hv1
-          have heq := exprEquiv_sound hmatch hsub hty
+          have heq := exprEquivFacts_sound h.factsHold hmatch hsub hty
           rw [SymExpr.eval_isMemFree (snaps2 := fun _ => emptyMem) (hmfTgt (y, expr) hmem)] at hv1
           rw [bindParams_not_mem hb2 y hynr']
           exact ⟨v2, hv2, by rw [← heq]; exact hv1⟩
@@ -2338,29 +2431,36 @@ theorem checkAfterCall_sound {st : SegState} {ρ₁₀ ρ₁ ρ₂ ρ₁' ρ₂'
             have hc := hvars v hv
             rw [bindParams_not_mem hb1 v (by simpa using hc.1)] at hvv
             exact h.srcEnvEval v vv hvv) hv1
-        have heq := exprEquiv_sound heqChk (h.srcEnvEval x vx hrx) hsub
+        have heq := exprEquivFacts_sound h.factsHold heqChk (h.srcEnvEval x vx hrx) hsub
         rw [SymExpr.eval_isMemFree (snaps2 := fun _ => emptyMem) (hmfSrc (x, expr) hmem)] at hv1
         rw [bindParams_not_mem hb1 x hxnr']
         exact ⟨vx, hrx, by rw [heq]; exact hv1⟩
-  · intro f hf v1 v2 hl hr
+  · intro f hf
     have hck := hfactsChk f hf
-    simp only [beq_iff_eq] at hck
-    obtain ⟨hvnr, hcf⟩ := hck
+    obtain ⟨⟨⟨hl_tot, hr_tot⟩, hvnr⟩, hcf⟩ := hck
+    rw [beq_iff_eq] at hcf
     have hmf_f := hmfFacts f hf
     simp only [PFact.isMemFree, Bool.and_eq_true] at hmf_f
-    rw [SymExpr.eval_isMemFree (snaps2 := snaps) hmf_f.1] at hl
-    rw [SymExpr.eval_isMemFree (snaps2 := snaps) hmf_f.2] at hr
+    obtain ⟨v1, hl⟩ := SymExpr.eval_isTotal (snaps := snaps) hl_tot (fun v hv => by
+      have hc := hvnr v (by simp [PFact.vars, hv])
+      exact hdef' v (by simpa using hc.1) hc.2)
+    obtain ⟨v2, hr⟩ := SymExpr.eval_isTotal (snaps := snaps) hr_tot (fun v hv => by
+      have hc := hvnr v (by simp [PFact.vars, hv])
+      exact hdef' v (by simpa using hc.1) hc.2)
     have hl' : (f.lhs.subst (srcLookup st.srcEnv)).eval ρ₁₀ ctx snaps = some v1 :=
       SymExpr.eval_subst_vars (fun v hv vv hvv => by
-        have hnr : v ∉ rs := by simpa using hvnr v (by simp [PFact.vars, hv])
-        rw [bindParams_not_mem hb1 v hnr] at hvv
+        have hc := hvnr v (by simp [PFact.vars, hv])
+        rw [bindParams_not_mem hb1 v (by simpa using hc.1)] at hvv
         exact h.srcEnvEval v vv hvv) hl
     have hr' : (f.rhs.subst (srcLookup st.srcEnv)).eval ρ₁₀ ctx snaps = some v2 :=
       SymExpr.eval_subst_vars (fun v hv vv hvv => by
-        have hnr : v ∉ rs := by simpa using hvnr v (by simp [PFact.vars, hv])
-        rw [bindParams_not_mem hb1 v hnr] at hvv
+        have hc := hvnr v (by simp [PFact.vars, hv])
+        rw [bindParams_not_mem hb1 v (by simpa using hc.1)] at hvv
         exact h.srcEnvEval v vv hvv) hr
-    exact condFromFacts_sound h.factsHold hcf hl' hr'
+    have hc := condFromFacts_sound h.factsHold hcf hl' hr'
+    rw [SymExpr.eval_isMemFree (snaps2 := fun _ => emptyMem) hmf_f.1] at hl
+    rw [SymExpr.eval_isMemFree (snaps2 := fun _ => emptyMem) hmf_f.2] at hr
+    exact ⟨v1, v2, hl, hr, hc⟩
 
 theorem checkEntryInv_sound {params : List VReg} {vals : List Word} {ρ : Env} {ctx : Word}
     {inv : BlockInv}

@@ -57,6 +57,7 @@ def Cond.text : Cond → String
 def BinOp.text : BinOp → String
   | .add => "add" | .sub => "sub" | .and => "and" | .or => "or" | .xor => "xor"
   | .mul => "mul" | .shl => "shl" | .shr => "shr" | .sar => "sar"
+  | .rol => "rol" | .ror => "ror"
   | .udiv => "udiv" | .urem => "urem"
 
 def Rhs.text : Rhs → String

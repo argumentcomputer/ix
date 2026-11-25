@@ -14,6 +14,10 @@ def main (args : List String) : IO UInt32 := do
   IO.println "  [ok] constant unsigned div/mod strength reduction (pow2 + w64/w32 Granlund-Montgomery)"
   unitMemory
   IO.println "  [ok] store-to-load forwarding, load CSE across disjoint stores, intra-block DSE"
+  unitRotateLeaParity
+  IO.println "  [ok] ror32/ror64 peephole, 3-address lea .addr folding, parity & even-addC tag cancellation"
+  unitStructural
+  IO.println "  [ok] helper/self inlining (with .tail in callee), odd-loop versioning, 4x unrolling, diamond if-conversion"
 
   IO.println "=== Lir.Opt Negative-Control Mutant Suite ==="
   let nMut ← negativeControls

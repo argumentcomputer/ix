@@ -300,11 +300,11 @@ macro "row_simp" "[" xs:Lean.Parser.Tactic.simpLemma,* "]" : tactic => `(tactic|
   simp [execRow, X86.Op.exec, X86.Op.run, X86.Op.inputs, X86.readSlots, X86.Arg.load, X86.Arg.address,
     X86.Op.stage, X86.writeSlots, X86.Arg.store, X86.readImplicits, X86.writeImplicits, X86.desc,
     X86.Table.arithDesc, X86.Table.movDesc, X86.Table.movzxDesc, X86.Table.leaDesc, X86.Table.imulDesc,
-    X86.Table.testDesc, X86.Table.shiftDesc, X86.Table.divDesc, X86.Table.cmovDesc, X86.Table.setccDesc,
+    X86.Table.testDesc, X86.Table.shiftDesc, X86.Table.rotateDesc, X86.Table.divDesc, X86.Table.cmovDesc, X86.Table.setccDesc,
     X86.Table.cmovSem, X86.Table.setccSem, X86.Table.rmSlot, X86.Table.regSlot,
     X86.Table.immSlot, X86.Table.Arith.sem, X86.Table.Arith.role, X86.Table.aluSem, X86.Table.cmpSem,
     X86.Table.moveSem, X86.Table.zeroExtendSem, X86.Table.mulSem, X86.Table.testSem, X86.Table.shiftSem,
-    X86.Table.divSem, X86.Table.addArith, X86.Table.orArith, X86.Table.andArith, X86.Table.subArith,
+    X86.Table.rotateSem, X86.Table.divSem, X86.Table.addArith, X86.Table.orArith, X86.Table.andArith, X86.Table.subArith,
     X86.Table.xorArith, X86.Table.cmpArith, X86.AluOp.mnemonic, bind, Except.bind, Except.mapError,
     Functor.map, Except.map, pure, Except.pure, merge_allSet,
     readReg_writeReg, readReg_setReg, X86.Encode.truncate64, readBack, Bound.defs, mergeWrite, X86.Role.reads,
@@ -321,8 +321,8 @@ theorem exec_zero (ρ : Env) (mem : X86.Memory) (ctx : Word) (x : VReg) :
   simp [Inst.exec, execRows, execRow, X86.Op.exec, X86.Op.run, X86.Op.inputs, X86.readSlots, X86.Arg.load,
     X86.Op.stage, X86.writeSlots, X86.Arg.store, X86.writeImplicits, X86.readImplicits, X86.desc, zeroRow,
     X86.Table.arithDesc, X86.Table.xorArith, X86.Table.rmSlot, X86.Table.regSlot, X86.Table.Arith.sem,
-    X86.Table.Arith.role, X86.Table.aluSem, X86.AluOp.eval, bind, Except.bind, Except.mapError, Functor.map,
-    Except.map, pure, Except.pure, X86.Core.readReg, X86.Core.writeReg, X86.Core.setReg, X86.Width.truncate,
+    X86.Table.Arith.role, X86.Table.aluSem, X86.AluOp.eval, bind, Except.bind, Except.mapError,
+    pure, Except.pure, X86.Core.readReg, X86.Core.writeReg, X86.Core.setReg, X86.Width.truncate,
     X86.Registers.set]
 
 theorem exec_move {ρ : Env} {mem : X86.Memory} {ctx : Word} {x a : VReg} {v : Word} (ha : ρ[a]? = some v) :
@@ -715,14 +715,14 @@ theorem exec_shiftC (op : X86.ShiftOp) (w : X86.Width) {ρ : Env} {mem : X86.Mem
     cases op <;> rfl
   obtain ⟨bR, margs, core, hmap, hass, hsl, hmem, hctx, htk, htkm, huse, -, hrun⟩ :=
     op_run (ρ := ρ) (mem := mem) (ctx := ctx) hb
-      (by simp [Bound.need, Bound.fixed?, XArg.regs, scratch]) (by simp [Bound.uses, XArg.regs, ha, hc])
+      (by simp [Bound.need, Bound.fixed?, scratch]) (by simp [Bound.uses, ha, hc])
       (by exact (by decide : [GPR.rcx].Nodup)) (by simp [Bound.fixed?])
   simp only [List.map_eq_cons_iff, List.map_eq_nil_iff, Bound.map_fst_eq_tied, Bound.map_fst_eq_fixedUse] at hmap
   obtain ⟨_, _, rfl, ⟨ra, rx, rfl⟩, _, _, rfl, ⟨rc, rfl⟩, rfl⟩ := hmap
   have hrx : ra = rx := hass (.tied _ (a, ra) (x, rx)) List.mem_cons_self
   have hrc : rc = .rcx := hass (.fixedUse ⟨.rcx, .w8, .read⟩ (c, rc)) (by simp)
   subst hrx hrc
-  simp [slotArgs, Bound.isSlot, Bound.map, Bound.machine, XArg.map, List.filter_cons, List.mapM_cons] at hsl
+  simp [slotArgs, Bound.isSlot, Bound.map, Bound.machine, List.filter_cons, List.mapM_cons] at hsl
   subst hsl
   have hra := huse (a, ra) (by simp [Bound.uses])
   have hrc := huse (c, .rcx) (by simp [Bound.uses])
@@ -730,6 +730,55 @@ theorem exec_shiftC (op : X86.ShiftOp) (w : X86.Width) {ρ : Env} {mem : X86.Mem
   simp only [Option.some.injEq] at hra hrc
   rw [hrun]
   cases op <;> cases w <;> row_simp [hmem, ← hra, ← hrc, shiftResult, X86.ShiftOp.mnemonic]
+
+/-- The mnemonic of a rotation. -/
+def _root_.IxCC.X86.RotateOp.mnemonic : X86.RotateOp → X86.Mnemonic
+  | .rol => .rol
+  | .ror => .ror
+
+/-- The value a rotation leaves in its register: the rotated low `w` bits,
+merged as a `w`-bit register write over `a`. -/
+def rotateResult (op : X86.RotateOp) (w : X86.Width) (va count : Word) : Word :=
+  mergeWrite w va ⟨(op.apply w va (X86.shiftCount w count)).setWidth 64⟩
+
+/-- `rol/ror r/m, imm8` (tied): `x := a rotated by s`. -/
+theorem exec_rotateI (op : X86.RotateOp) (w : X86.Width) {ρ : Env} {mem : X86.Memory} {ctx : Word}
+    {x a : VReg} {va : Word} (s : Word) (ha : ρ[a]? = some va) :
+    Inst.exec ρ mem ctx (.op { mn := op.mnemonic, w, form := .MI } [x] [.r a, .i s]) =
+      some (ρ.insert x (rotateResult op w va s), mem) := by
+  have hb : bindRow { mn := op.mnemonic, w, form := .MI } [x] [.r a, .i s] =
+      some [.tied (X86.Table.rmSlot w .readWrite) a x, .input (X86.Table.immSlot .imm8 w) (.i s)] := by
+    cases op <;> rfl
+  obtain ⟨ra, arg, core, hmem, hra, -, hi, h⟩ := tied_in (ctx := ctx) (mem := mem) hb ha (by simp) (by simp [XArg.regs])
+  rw [hi s rfl] at h
+  rw [h]
+  cases op <;> cases w <;> row_simp [hmem, hra, rotateResult, X86.RotateOp.mnemonic]
+
+/-- `rol/ror r/m, cl` (tied, the count in `rcx`): `x := a rotated by c`. -/
+theorem exec_rotateC (op : X86.RotateOp) (w : X86.Width) {ρ : Env} {mem : X86.Memory} {ctx : Word}
+    {x a c : VReg} {va vc : Word} (ha : ρ[a]? = some va) (hc : ρ[c]? = some vc) :
+    Inst.exec ρ mem ctx (.op { mn := op.mnemonic, w, form := .MC } [x] [.r a, .r c]) =
+      some (ρ.insert x (rotateResult op w va vc), mem) := by
+  have hb : bindRow { mn := op.mnemonic, w, form := .MC } [x] [.r a, .r c] =
+      some [.tied (X86.Table.rmSlot w .readWrite) a x, .fixedUse ⟨.rcx, .w8, .read⟩ c] := by
+    cases op <;> rfl
+  obtain ⟨bR, margs, core, hmap, hass, hsl, hmem, hctx, htk, htkm, huse, -, hrun⟩ :=
+    op_run (ρ := ρ) (mem := mem) (ctx := ctx) hb
+      (by simp [Bound.need, Bound.fixed?, scratch]) (by simp [Bound.uses, ha, hc])
+      (by exact (by decide : [GPR.rcx].Nodup)) (by simp [Bound.fixed?])
+  simp only [List.map_eq_cons_iff, List.map_eq_nil_iff, Bound.map_fst_eq_tied, Bound.map_fst_eq_fixedUse] at hmap
+  obtain ⟨_, _, rfl, ⟨ra, rx, rfl⟩, _, _, rfl, ⟨rc, rfl⟩, rfl⟩ := hmap
+  have hrx : ra = rx := hass (.tied _ (a, ra) (x, rx)) List.mem_cons_self
+  have hrc : rc = .rcx := hass (.fixedUse ⟨.rcx, .w8, .read⟩ (c, rc)) (by simp)
+  subst hrx hrc
+  simp [slotArgs, Bound.isSlot, Bound.map, Bound.machine, List.filter_cons, List.mapM_cons] at hsl
+  subst hsl
+  have hra := huse (a, ra) (by simp [Bound.uses])
+  have hrc := huse (c, .rcx) (by simp [Bound.uses])
+  rw [ha] at hra; rw [hc] at hrc
+  simp only [Option.some.injEq] at hra hrc
+  rw [hrun]
+  cases op <;> cases w <;> row_simp [hmem, ← hra, ← hrc, rotateResult, X86.RotateOp.mnemonic]
 
 /-- The quotient and remainder `div` at width `w` leaves for divisor `d` and
 dividend `hi:lo`. -/
@@ -838,7 +887,7 @@ theorem mem_store {ρ : Env} {mem : X86.Memory} {ctx : Word} {o : X86.Op} {am : 
   cases htm : (amR.map Prod.snd).toMem some with
   | none =>
     cases b <;> simp_all [slotArgs, Bound.isSlot, Bound.map, Bound.machine, XArg.map, List.filter_cons,
-      List.mapM_cons, htm]
+      List.mapM_cons]
   | some m =>
     have he := Amode.evalV_toMem htm hctx (fun q hq => huse q (by simp [Bound.uses, hq]))
     rw [hm] at he
@@ -1076,7 +1125,7 @@ theorem parts2_run {ρ : Env} {mem : X86.Memory} {ctx : Word} {p c : X86.Op} {pb
 theorem slotArgs_two {b₁ b₂ : Bound GPR} {margs : List X86.Arg} (h₁ : b₁.isSlot = true) (h₂ : b₂.isSlot = true)
     (h : slotArgs some some [b₁, b₂] = some margs) :
     ∃ a₁ a₂, margs = [a₁, a₂] ∧ b₁.machine some some = some a₁ ∧ b₂.machine some some = some a₂ := by
-  rw [slotArgs_cons, if_pos h₁, slotArgs_cons, if_pos h₂] at h
+  simp only [slotArgs_cons, h₁, h₂, ↓reduceIte] at h
   cases e₁ : b₁.machine some some <;> cases e₂ : b₂.machine some some <;> simp_all [slotArgs]
 
 /-- An ALU row (width 32 or 64, tied to `a`, second operand a register, an
@@ -1238,7 +1287,7 @@ theorem exec_fusedCmov (k : Prod) {w : X86.Width} {form : X86.OpEn} (hf : k.Form
         have hd₁ := XArg.valIn_defined h₁; have hd₂ := XArg.valIn_defined h₂; have hdt := XArg.valIn_defined htv
         intro y hy
         simp only [Bound.uses, List.cons_append, List.nil_append, List.flatMap_cons, List.flatMap_nil,
-          List.append_nil, List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hy
+          List.append_nil, List.mem_append, List.mem_cons] at hy
         rcases hy with hy | hy | rfl | hy
         · exact hd₁ y hy
         · exact hd₂ y hy
@@ -1289,7 +1338,7 @@ theorem exec_fusedSetcc (k : Prod) {w : X86.Width} {form : X86.OpEn} (hf : k.For
         have hd₁ := XArg.valIn_defined h₁; have hd₂ := XArg.valIn_defined h₂
         intro y hy
         simp only [Bound.uses, List.cons_append, List.nil_append, List.flatMap_cons, List.flatMap_nil,
-          List.append_nil, List.mem_append, List.not_mem_nil, or_false] at hy
+          List.append_nil, List.mem_append] at hy
         rcases hy with hy | hy
         · exact hd₁ y hy
         · exact hd₂ y hy)

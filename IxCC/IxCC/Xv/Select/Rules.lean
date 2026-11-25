@@ -51,6 +51,10 @@ def shiftMnemonic : Lir.BinOp → X86.Mnemonic
   | .shr => .shr
   | _ => .sar
 
+def rotateMnemonic : Lir.BinOp → X86.Mnemonic
+  | .rol => .rol
+  | _ => .ror
+
 def narrowWidth (w : X86.Width) : Bool := w == .w8 || w == .w16
 
 /-- The width a Lir operation at `w` runs at: 32 for narrow widths. -/
@@ -214,6 +218,25 @@ def selectShift (x : VReg) (o : Lir.BinOp) (w : X86.Width) (a b : Lir.Arg) : Sel
       fire "shift.cl"
       return pre ++ (← narrowed w x dst [.op (row mn w .MC) [dst] [.r a, .r c]])
 
+/-- `x := a rotate b` (rule 12): by a constant count (masked modulo `w.bits`)
+or by a register in `cl`. -/
+def selectRotate (x : VReg) (o : Lir.BinOp) (w : X86.Width) (a b : Lir.Arg) : SelM (List (Inst VReg)) := do
+  let (a, pre) ← argReg a
+  let mn := rotateMnemonic o
+  match b with
+  | .imm k =>
+      let r := (k &&& Lir.shiftMask w).toNat % w.bits
+      if r == 0 then
+        fire "rotate.zero"
+        return pre ++ truncTo w x a
+      let dst ← if narrowWidth w then fresh else pure x
+      fire "rotate.imm"
+      return pre ++ (← narrowed w x dst [.op (row mn w .MI) [dst] [.r a, .i (UInt64.ofNat r)]])
+  | .v c =>
+      let dst ← if narrowWidth w then fresh else pure x
+      fire "rotate.cl"
+      return pre ++ (← narrowed w x dst [.op (row mn w .MC) [dst] [.r a, .r c]])
+
 /-- `x := a udiv b` (`rem`: `urem`) at statement `i` (rule 12): `div` on
 `rdx:rax` with the high half zeroed, so it never overflows; a zero divisor
 is Lir's `stuck` and the row's `#DE` alike. Narrow widths divide the
@@ -249,6 +272,7 @@ def selectBin (i : Nat) (x : VReg) (o : Lir.BinOp) (w : X86.Width) (a b : Lir.Ar
   | .add | .sub | .and | .or | .xor => selectAlu i x o w a b
   | .mul => selectMul i x w a b
   | .shl | .shr | .sar => selectShift x o w a b
+  | .rol | .ror => selectRotate x o w a b
   | .udiv => selectDiv i x false w a b
   | .urem => selectDiv i x true w a b
 

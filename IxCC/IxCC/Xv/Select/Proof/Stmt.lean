@@ -80,6 +80,8 @@ theorem selectBin_ok {i : Nat} {x : VReg} {o : Lir.BinOp} {w : Width} {a b : Lir
   · exact selectShift_ok (.inl rfl) h
   · exact selectShift_ok (.inr (.inl rfl)) h
   · exact selectShift_ok (.inr (.inr rfl)) h
+  · exact selectRotate_ok (.inl rfl) h
+  · exact selectRotate_ok (.inr rfl) h
   · exact selectDiv_ok (rem := false) hi h
   · exact selectDiv_ok (rem := true) hi h
 
@@ -297,8 +299,7 @@ private theorem addCarry_cout (va vb vc : Word) :
   simp only [UInt64.size] at ha hb
   rcases hcin with h0 | h1
   · simp only [h0, show UInt64.ofNat 0 = (0 : Word) from rfl]
-    have hlt : ¬ (va + vb + (0 : Word) < va + vb) := by simp
-    simp only [hlt, ↓reduceIte, UInt64.zero_add, UInt64.add_zero]
+    simp only [UInt64.zero_add, UInt64.add_zero]
     by_cases hov : 2 ^ 64 ≤ va.toNat + vb.toNat
     · have h1 : va + vb < va := by
         simp only [UInt64.lt_iff_toNat_lt, UInt64.toNat_add]; omega

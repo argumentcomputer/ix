@@ -64,6 +64,7 @@ inductive Cond where
 inductive BinOp where
   | add | sub | and | or | xor | mul
   | shl | shr | sar
+  | rol | ror
   | udiv | urem
   deriving DecidableEq, Repr, Inhabited
 

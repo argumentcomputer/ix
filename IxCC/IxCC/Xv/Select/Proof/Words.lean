@@ -146,6 +146,84 @@ theorem shiftResult_wide {w : Width} (hw : w = .w32 ∨ w = .w64) (op : X86.Shif
     w.truncate (shiftResult op w a s) = shiftResult op w a s := by
   rw [shiftResult, mergeWrite_wide hw, X86.Encode.truncate_truncate]
 
+/-- `rol` at width `w` (the row, then the low bits) is Lir's `rol`. -/
+theorem rol_eq (w : Width) (a s : Word) :
+    w.truncate (rotateResult .rol w a s) = Lir.rolWord w a (s &&& Lir.shiftMask w) := by
+  rw [rotateResult, truncate_mergeWrite, shiftCount_eq, Lir.rolWord, X86.RotateOp.apply]
+  have hw := X86.Encode.width_bound w
+  have hwpos : 0 < w.bits := by cases w <;> decide
+  have hrlt : (s &&& Lir.shiftMask w).toNat % w.bits < w.bits := Nat.mod_lt _ hwpos
+  generalize (s &&& Lir.shiftMask w).toNat % w.bits = r at hrlt ⊢
+  by_cases hr0 : r = 0
+  · have hrt : (r == 0) = true := by simp [hr0]
+    simp only [hrt, ↓reduceIte]
+    apply UInt64.toBitVec_inj.mp
+    apply BitVec.eq_of_getLsbD_eq
+    intro i hi
+    simp [X86.Encode.truncate_bits, BitVec.getLsbD_setWidth, hi]
+  · have hrf : (r == 0) = false := beq_false_of_ne hr0
+    have hrm : r % 64 = r := Nat.mod_eq_of_lt (by omega)
+    have hwrm : (w.bits - r) % 64 = w.bits - r := Nat.mod_eq_of_lt (by omega)
+    simp only [hrf, Bool.false_eq_true, ↓reduceIte]
+    apply UInt64.toBitVec_inj.mp
+    apply BitVec.eq_of_getLsbD_eq
+    intro i hi
+    simp only [X86.Encode.truncate_bits, BitVec.getLsbD_setWidth, UInt64.toBitVec_or,
+      BitVec.getLsbD_or, UInt64.toBitVec_shiftLeft, UInt64.toBitVec_shiftRight,
+      BitVec.shiftLeft_eq', BitVec.ushiftRight_eq', BitVec.getLsbD_shiftLeft,
+      BitVec.getLsbD_ushiftRight]
+    by_cases h₁ : i < w.bits
+    · have h1 : i - r < w.bits := by omega
+      have h1' : i - r < 64 := by omega
+      by_cases h₂ : i < r
+      · have h3 : w.bits - r + i < w.bits := by omega
+        have h4 : w.bits - r + i < 64 := by omega
+        simp [h₁, hi, h₂, h3, h4, hrm, hwrm]
+      · have h3 : ¬ (w.bits - r + i < w.bits) := by omega
+        simp [h₁, hi, h₂, h3, h1, h1', hrm, hwrm]
+    · simp [h₁]
+
+/-- `ror` at width `w` (the row, then the low bits) is Lir's `ror`. -/
+theorem ror_eq (w : Width) (a s : Word) :
+    w.truncate (rotateResult .ror w a s) = Lir.rorWord w a (s &&& Lir.shiftMask w) := by
+  rw [rotateResult, truncate_mergeWrite, shiftCount_eq, Lir.rorWord, X86.RotateOp.apply]
+  have hw := X86.Encode.width_bound w
+  have hwpos : 0 < w.bits := by cases w <;> decide
+  have hrlt : (s &&& Lir.shiftMask w).toNat % w.bits < w.bits := Nat.mod_lt _ hwpos
+  generalize (s &&& Lir.shiftMask w).toNat % w.bits = r at hrlt ⊢
+  by_cases hr0 : r = 0
+  · have hrt : (r == 0) = true := by simp [hr0]
+    simp only [hrt, ↓reduceIte]
+    apply UInt64.toBitVec_inj.mp
+    apply BitVec.eq_of_getLsbD_eq
+    intro i hi
+    simp [X86.Encode.truncate_bits, BitVec.getLsbD_setWidth, hi]
+  · have hrf : (r == 0) = false := beq_false_of_ne hr0
+    have hrm : r % 64 = r := Nat.mod_eq_of_lt (by omega)
+    have hwrm : (w.bits - r) % 64 = w.bits - r := Nat.mod_eq_of_lt (by omega)
+    simp only [hrf, Bool.false_eq_true, ↓reduceIte]
+    apply UInt64.toBitVec_inj.mp
+    apply BitVec.eq_of_getLsbD_eq
+    intro i hi
+    simp only [X86.Encode.truncate_bits, BitVec.getLsbD_setWidth, UInt64.toBitVec_or,
+      BitVec.getLsbD_or, UInt64.toBitVec_shiftLeft, UInt64.toBitVec_shiftRight,
+      BitVec.shiftLeft_eq', BitVec.ushiftRight_eq', BitVec.getLsbD_shiftLeft,
+      BitVec.getLsbD_ushiftRight]
+    by_cases h₁ : i < w.bits
+    · have h1 : i - (w.bits - r) < w.bits := by omega
+      have h1' : i - (w.bits - r) < 64 := by omega
+      by_cases h₂ : i < w.bits - r
+      · have h3 : r + i < w.bits := by omega
+        have h4 : r + i < 64 := by omega
+        simp [h₁, hi, h₂, h3, h4, hrm, hwrm]
+      · have h3 : ¬ (r + i < w.bits) := by omega
+        simp [h₁, hi, h₂, h3, h1, h1', hrm, hwrm]
+    · simp [h₁]
+
+theorem rotateResult_wide {w : Width} (hw : w = .w32 ∨ w = .w64) (op : X86.RotateOp) (a s : Word) :
+    w.truncate (rotateResult op w a s) = rotateResult op w a s := by
+  rw [rotateResult, mergeWrite_wide hw, X86.Encode.truncate_truncate]
+
 
 /-! ## Sign extension by `xor` and `add` -/
 

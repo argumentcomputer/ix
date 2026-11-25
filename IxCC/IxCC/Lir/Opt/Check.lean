@@ -63,9 +63,9 @@ structure FuncPlan where
   blocks : Array (Option BlockPlan)
   deriving DecidableEq, Repr, Inhabited
 
-/-- Verification plan for a whole program `p → q`. -/
+/-- Verification plan for a whole program `p → q` (`none` means the function is identical). -/
 structure ProgPlan where
-  funcs : Array FuncPlan
+  funcs : Array (Option FuncPlan)
   deriving DecidableEq, Repr, Inhabited
 
 /-! ## Splitting a block body into call-free segments -/
@@ -433,7 +433,7 @@ def checkSeg (inv : BlockInv) (seg1 seg2 : List Stmt) : Option SegState := do
 def checkArgEquiv (st : SegState) (a1 a2 : Arg) : Bool :=
   match evalTgtArg st.tgtEnv a2 with
   | none => false
-  | some e2 => exprEquiv (argToSym (srcLookup st.srcEnv) a1) e2
+  | some e2 => exprEquivFacts st.facts (argToSym (srcLookup st.srcEnv) a1) e2
 
 /-- Check pairwise equivalence of argument lists. -/
 def checkArgsEquiv (st : SegState) : List Arg → List Arg → Bool
@@ -462,13 +462,15 @@ def checkEntails (srcEnv1 : Src.NatMap SymExpr) (srcDef1 : Src.NatSet)
     expr.vars.all srcDef1.contains &&
     match tgtEnv1.get? y with
     | none => false
-    | some ty => exprEquiv (expr.subst (srcLookup srcEnv1)) ty) &&
+    | some ty => exprEquivFacts allFacts (expr.subst (srcLookup srcEnv1)) ty) &&
   tgtInv.srcEq.all (fun (x, expr) =>
     expr.isTotal &&
     srcDef1.contains x &&
     expr.vars.all srcDef1.contains &&
-    exprEquiv (srcLookup srcEnv1 x) (expr.subst (srcLookup srcEnv1))) &&
+    exprEquivFacts allFacts (srcLookup srcEnv1 x) (expr.subst (srcLookup srcEnv1))) &&
   tgtInv.facts.all (fun f =>
+    f.lhs.isTotal && f.rhs.isTotal &&
+    f.lhs.vars.all srcDef1.contains && f.rhs.vars.all srcDef1.contains &&
     let lhs' := f.lhs.subst (srcLookup srcEnv1)
     let rhs' := f.rhs.subst (srcLookup srcEnv1)
     condFromFacts allFacts f.cond f.width lhs' rhs' == some f.result)
@@ -486,15 +488,16 @@ def checkAfterCall (st : SegState) (rs : List VReg) (postInv : BlockInv) : Bool 
       expr.vars.all (fun v => !rs.contains v && st.srcDef.contains v) &&
       match st.tgtEnv.get? y with
       | none => false
-      | some ty => exprEquiv (expr.subst (srcLookup st.srcEnv)) ty) &&
+      | some ty => exprEquivFacts st.facts (expr.subst (srcLookup st.srcEnv)) ty) &&
   postInv.srcEq.all (fun (x, expr) =>
     !rs.contains x &&
     expr.isTotal &&
     st.srcDef.contains x &&
     expr.vars.all (fun v => !rs.contains v && st.srcDef.contains v) &&
-    exprEquiv (srcLookup st.srcEnv x) (expr.subst (srcLookup st.srcEnv))) &&
+    exprEquivFacts st.facts (srcLookup st.srcEnv x) (expr.subst (srcLookup st.srcEnv))) &&
   postInv.facts.all (fun f =>
-    f.vars.all (fun v => !rs.contains v) &&
+    f.lhs.isTotal && f.rhs.isTotal &&
+    f.vars.all (fun v => !rs.contains v && st.srcDef.contains v) &&
     let lhs' := f.lhs.subst (srcLookup st.srcEnv)
     let rhs' := f.rhs.subst (srcLookup st.srcEnv)
     condFromFacts st.facts f.cond f.width lhs' rhs' == some f.result)
@@ -569,20 +572,48 @@ def checkEdge (F G : Func) (plan : FuncPlan) (srcEnv : Src.NatMap SymExpr) (srcD
 /-- Maximum preheader/guard hop depth allowed on an edge. -/
 def maxEdgeHops : Nat := 8
 
-/-- Check whether two branch conditions `(c1, w1, a1, b1)` and `(c2, w2, a2, b2)` are
-equivalent (returning `some false` if identical, `some true` if negated). -/
-def checkCondRelation (c1 : Cond) (w1 : Width) (a1 b1 : SymExpr)
+/-- Direct equivalence check between two branch conditions modulo `facts` (same, negated, or swapped). -/
+def checkCondRelationDirect (facts : List PFact) (c1 : Cond) (w1 : Width) (a1 b1 : SymExpr)
     (c2 : Cond) (w2 : Width) (a2 b2 : SymExpr) : Option Bool :=
   if w1 != w2 then none
-  else if exprEquiv a1 a2 && exprEquiv b1 b2 then
+  else if exprEquivFacts facts a1 a2 && exprEquivFacts facts b1 b2 then
     if c1 == c2 then some false
     else if c1 == condNegate c2 then some true
     else none
-  else if exprEquiv a1 b2 && exprEquiv b1 a2 then
+  else if exprEquivFacts facts a1 b2 && exprEquivFacts facts b1 a2 then
     if c1 == condSwap c2 then some false
     else if c1 == condNegate (condSwap c2) then some true
     else none
   else none
+
+/-- Check whether two branch conditions `(c1, w1, a1, b1)` and `(c2, w2, a2, b2)` are
+equivalent under `facts` (returning `some false` if identical, `some true` if negated),
+covering `select`/`test` unwrapping and odd `(x & 3) == 1 ↔ tz x 2`. -/
+def checkCondRelation (facts : List PFact) (c1 : Cond) (w1 : Width) (a1 b1 : SymExpr)
+    (c2 : Cond) (w2 : Width) (a2 b2 : SymExpr) : Option Bool :=
+  let tryStep (c1' : Cond) (w1' : Width) (a1' b1' : SymExpr) : Option Bool :=
+    match checkCondRelationDirect facts c1' w1' a1' b1' c2 w2 a2 b2 with
+    | some neg => some neg
+    | none =>
+        match unwrapOddBit2 facts c1' w1' a1' b1' with
+        | some (co, wo, ao, bo) => checkCondRelationDirect facts co wo ao bo c2 w2 a2 b2
+        | none => none
+  match tryStep c1 w1 a1 b1 with
+  | some neg => some neg
+  | none =>
+      match unwrapSelectCond c1 w1 a1 b1 with
+      | some (cs, ws, as_, bs) => tryStep cs ws as_ bs
+      | none => none
+
+/-- Check whether two `brOvf` operations have identical overflow behaviour under `facts`
+(either equivalent operands, or even-operand tagged `addC`: `(ea1 + 1) + eb1` vs `ea1 + eb1`). -/
+def checkOvfCondEquiv (facts : List PFact) (o1 : Ovf) (ea1 eb1 : SymExpr)
+    (o2 : Ovf) (ea2 eb2 : SymExpr) : Bool :=
+  o1 == o2 &&
+  ((exprEquivFacts facts ea1 ea2 && exprEquivFacts facts eb1 eb2) ||
+   (o1 == .addC && parityOf facts ea1 == .even && parityOf facts eb1 == .even &&
+    ((exprEquivFacts facts (mkAdd64 ea1 (.imm 1)) ea2 && exprEquivFacts facts eb1 eb2) ||
+     (exprEquivFacts facts ea1 ea2 && exprEquivFacts facts (mkAdd64 eb1 (.imm 1)) eb2))))
 
 /-- Helper: add a pure branch fact if both sides are memory-free. -/
 def addFact (facts : List PFact) (c : Cond) (w : Width) (a b : SymExpr) (res : Bool) : List PFact :=
@@ -618,15 +649,15 @@ def checkTerm (F G : Func) (plan : FuncPlan) (L L' : Label) (st : SegState)
       | some ea2, some eb2 =>
           let ea1 := (argToSym (srcLookup st.srcEnv) a1).norm
           let eb1 := (argToSym (srcLookup st.srcEnv) b1).norm
-          match checkCondRelation c1 w1 ea1 eb1 c2 w2 ea2 eb2 with
+          match checkCondRelation st.facts c1 w1 ea1 eb1 c2 w2 ea2 eb2 with
           | some false =>
-              let fsT := addFact st.facts c1 w1 ea1 eb1 true
-              let fsF := addFact st.facts c1 w1 ea1 eb1 false
+              let fsT := addFact (addFact st.facts c1 w1 ea1 eb1 true) c2 w2 ea2 eb2 true
+              let fsF := addFact (addFact st.facts c1 w1 ea1 eb1 false) c2 w2 ea2 eb2 false
               checkEdge F G plan st.srcEnv st.srcDef st.tgtEnv fsT L' (decide (t1.target ≤ L)) t1 t2 maxEdgeHops &&
               checkEdge F G plan st.srcEnv st.srcDef st.tgtEnv fsF L' (decide (f1.target ≤ L)) f1 f2 maxEdgeHops
           | some true =>
-              let fsT := addFact st.facts c1 w1 ea1 eb1 true
-              let fsF := addFact st.facts c1 w1 ea1 eb1 false
+              let fsT := addFact (addFact st.facts c1 w1 ea1 eb1 true) c2 w2 ea2 eb2 false
+              let fsF := addFact (addFact st.facts c1 w1 ea1 eb1 false) c2 w2 ea2 eb2 true
               checkEdge F G plan st.srcEnv st.srcDef st.tgtEnv fsT L' (decide (t1.target ≤ L)) t1 f2 maxEdgeHops &&
               checkEdge F G plan st.srcEnv st.srcDef st.tgtEnv fsF L' (decide (f1.target ≤ L)) f1 t2 maxEdgeHops
           | none => false
@@ -648,8 +679,7 @@ def checkTerm (F G : Func) (plan : FuncPlan) (L L' : Label) (st : SegState)
       | some ea2, some eb2 =>
           let ea1 := (argToSym (srcLookup st.srcEnv) a1).norm
           let eb1 := (argToSym (srcLookup st.srcEnv) b1).norm
-          o1 == o2 &&
-          exprEquiv ea1 ea2 && exprEquiv eb1 eb2 &&
+          checkOvfCondEquiv st.facts o1 ea1 eb1 o2 ea2 eb2 &&
           let r1 := ovfToSym o1 ea1 eb1
           let r2 := ovfToSym o2 ea2.norm eb2.norm
           let srcEnv' := st.srcEnv.insert x1 r1
@@ -733,7 +763,8 @@ def checkProgramWithPlan (p q : Program) (plan : ProgPlan) : Bool :=
   plan.funcs.size == p.funcs.size &&
   (List.range p.funcs.size).all fun fi =>
     match p.funcs[fi]?, q.funcs[fi]?, plan.funcs[fi]? with
-    | some F, some G, some fplan => checkFuncWithPlan F G fplan
+    | some F, some G, some none => F == G
+    | some F, some G, some (some fplan) => checkFuncWithPlan F G fplan
     | _, _, _ => false
 
 /-! ## Untrusted plan inference (outside the TCB) -/
@@ -866,17 +897,29 @@ private def buildEdgeInv (F : Func) (domDefs : Array Src.NatSet) (L : Label)
               | _ => none
   -- Build `tgtOf`: for every target register `(y, ty)` in `tgtEnv1`:
   -- 1. prefer `(y, .reg y)` if `y ∈ srcDef1` and `srcEnv1[y] == ty` (even for loaded/partial values!),
-  -- 2. else if `ty` is total, memory-free, and refers only to fixed dominating registers, keep `ty`,
-  -- 3. else rewrite `ty` into post-edge source registers (mapping loaded subexpressions via `exprToSrc`!).
+  -- 2. if `y ∉ srcDef1` and `ty == srcEnv1[x] + 1` for a non-fixed even `x ∈ defList`
+  --    (from even-operand `brOvf .addC` tag cancellation), map `(y, x + 1)`,
+  -- 3. else if `ty` is total, memory-free, and refers only to fixed dominating registers, keep `ty`,
+  -- 4. else rewrite `ty` into post-edge source registers (mapping loaded subexpressions via `exprToSrc`!).
   let tgtOf := tgtEnv1.toList.filterMap fun (y, ty) =>
-    if srcDef1.contains y && exprEquiv (srcLookup srcEnv1 y) ty then
+    if srcDef1.contains y && exprEquivFacts facts (srcLookup srcEnv1 y) ty then
       some (y, SymExpr.reg y)
-    else if ty.isTotal && ty.isMemFree && ty.vars.all isFixed then
-      some (y, ty)
     else
-      match rewriteExpr 6 ty with
-      | some e => if e.isTotal && e.isMemFree && e.vars.all srcDef1.contains then some (y, e) else none
-      | none => none
+      let tagCancel? : Option VReg :=
+        if srcDef1.contains y then none
+        else defList.find? fun x =>
+          !isFixed x &&
+          parityOf facts (srcLookup srcEnv1 x) == .even &&
+          exprEquivFacts facts (mkAdd64 (srcLookup srcEnv1 x) (.imm 1)) ty
+      match tagCancel? with
+      | some x => some (y, mkAdd64 (.reg x) (.imm 1))
+      | none =>
+          if ty.isTotal && ty.isMemFree && ty.vars.all isFixed then
+            some (y, ty)
+          else
+            match rewriteExpr 6 ty with
+            | some e => if e.isTotal && e.isMemFree && e.vars.all srcDef1.contains then some (y, e) else none
+            | none => none
   -- Build `srcEq`: capture constants, copies, and invariant block params using a strict
   -- total order (`nonParams` ascending < `onlyParams` ascending) so `srcEq` is 1-step flat & acyclic!
   let ltOrder (a b : VReg) : Bool :=
@@ -892,17 +935,28 @@ private def buildEdgeInv (F : Func) (domDefs : Array Src.NatSet) (L : Label)
         match defList.find? fun x0 => ltOrder x0 x && (srcLookup srcEnv1 x0).norm == sx with
         | some x0 => some (x, SymExpr.reg x0)
         | none => none
-  -- Build `facts`: rewrite each fact into post-edge registers and keep only facts
-  -- entailed by `condFromFacts facts` (avoiding impossible dead-branch contradictions).
-  let newFacts := dedupList <| facts.filterMap fun f =>
+  -- Build `facts`: rewrite each fact into post-edge registers and keep only total facts
+  -- entailed by `condFromFacts facts`, plus inductive LSB parity facts for `defList`.
+  let carriedFacts := facts.filterMap fun f =>
     match rewriteExpr 4 f.lhs, rewriteExpr 4 f.rhs with
     | some l', some r' =>
         let ln := l'.norm; let rn := r'.norm
-        if ln.isMemFree && rn.isMemFree && ln.vars.all srcDef1.contains && rn.vars.all srcDef1.contains &&
+        if ln.isMemFree && rn.isMemFree && ln.isTotal && rn.isTotal &&
+           ln.vars.all srcDef1.contains && rn.vars.all srcDef1.contains &&
            condFromFacts facts f.cond f.width (ln.subst (srcLookup srcEnv1)) (rn.subst (srcLookup srcEnv1)) == some f.result then
           some { f with lhs := ln, rhs := rn }
         else none
     | _, _ => none
+  let parityFacts := defList.filterMap fun x =>
+    let sx := (srcLookup srcEnv1 x).norm
+    let cand? : Option PFact := match parityOf facts sx with
+      | .odd => some { cond := .tnz, width := .w64, lhs := .reg x, rhs := .imm 1, result := true }
+      | .even => some { cond := .tz, width := .w64, lhs := .reg x, rhs := .imm 1, result := true }
+      | .unknown => none
+    match cand? with
+    | some f => if condFromFacts facts f.cond f.width sx (.imm 1) == some true then some f else none
+    | none => none
+  let newFacts := dedupList (carriedFacts ++ parityFacts)
   { srcDef := defList, tgtOf, srcEq, facts := newFacts }
 
 /-- Build a post-call `BlockInv` right after `.call rs g as` from `st`. -/
@@ -944,7 +998,7 @@ private def buildAfterCallInv (st : SegState) (rs : List VReg) : BlockInv :=
               | _ => none
   let keptTgt := st.tgtEnv.toList.filterMap fun (y, ty) =>
     if rs.contains y then none
-    else if st.srcDef.contains y && exprEquiv (srcLookup st.srcEnv y) ty then
+    else if st.srcDef.contains y && exprEquivFacts st.facts (srcLookup st.srcEnv y) ty then
       some (y, SymExpr.reg y)
     else
       match rewriteExpr 6 ty with
@@ -963,7 +1017,7 @@ private def buildAfterCallInv (st : SegState) (rs : List VReg) : BlockInv :=
     match rewriteExpr 4 f.lhs, rewriteExpr 4 f.rhs with
     | some l', some r' =>
         let ln := l'.norm; let rn := r'.norm
-        if ln.isMemFree && rn.isMemFree &&
+        if ln.isMemFree && rn.isMemFree && ln.isTotal && rn.isTotal &&
            ln.vars.all (fun v => !rs.contains v && st.srcDef.contains v) &&
            rn.vars.all (fun v => !rs.contains v && st.srcDef.contains v) &&
            condFromFacts st.facts f.cond f.width (ln.subst (srcLookup st.srcEnv)) (rn.subst (srcLookup st.srcEnv)) == some f.result then
@@ -1035,13 +1089,15 @@ private def inferTermEdges (F G : Func) (domDefs : Array Src.NatSet) (st : SegSt
       | some ea2, some eb2 =>
           let ea1 := (argToSym (srcLookup st.srcEnv) a1).norm
           let eb1 := (argToSym (srcLookup st.srcEnv) b1).norm
-          let fsT := addFact st.facts c1 w1 ea1 eb1 true
-          let fsF := addFact st.facts c1 w1 ea1 eb1 false
-          match checkCondRelation c1 w1 ea1 eb1 c2 w2 ea2 eb2 with
+          match checkCondRelation st.facts c1 w1 ea1 eb1 c2 w2 ea2 eb2 with
           | some false =>
+              let fsT := addFact (addFact st.facts c1 w1 ea1 eb1 true) c2 w2 ea2 eb2 true
+              let fsF := addFact (addFact st.facts c1 w1 ea1 eb1 false) c2 w2 ea2 eb2 false
               go st.srcEnv st.srcDef st.tgtEnv fsT t1 t2 ++
               go st.srcEnv st.srcDef st.tgtEnv fsF f1 f2
           | some true =>
+              let fsT := addFact (addFact st.facts c1 w1 ea1 eb1 true) c2 w2 ea2 eb2 false
+              let fsF := addFact (addFact st.facts c1 w1 ea1 eb1 false) c2 w2 ea2 eb2 true
               go st.srcEnv st.srcDef st.tgtEnv fsT t1 f2 ++
               go st.srcEnv st.srcDef st.tgtEnv fsF f1 t2
           | none => []
@@ -1156,12 +1212,12 @@ def inferFuncPlan (F G : Func) : FuncPlan :=
     -- Bound iterations: each meet shrinks finite invariant sets; 8 * n + 8 is plenty and fast
     { blocks := fix (8 * n + 8) initBlocks initInEdges }
 
-/-- Infer a `ProgPlan` for `(p, q)`. -/
+/-- Infer a `ProgPlan` for `(p, q)` (skipping unchanged functions in O(1)). -/
 def inferProgPlan (p q : Program) : ProgPlan :=
   { funcs := (List.range p.funcs.size).toArray.map fun fi =>
       match p.funcs[fi]?, q.funcs[fi]? with
-      | some F, some G => inferFuncPlan F G
-      | _, _ => { blocks := #[] } }
+      | some F, some G => if F == G then none else some (inferFuncPlan F G)
+      | _, _ => none }
 
 /-- **The formally validated Lir optimization checker.**
 Accepts `(p, q)` only when the trusted validator `checkProgramWithPlan` accepts the

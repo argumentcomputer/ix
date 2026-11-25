@@ -1,5 +1,8 @@
 import IxCC.Lir.Opt.Driver
 import IxCC.Lir.Proof.Opt.Seg
+import IxCC.Lir.Proof.Opt.Inline
+import IxCC.Lir.Proof.Opt.Unroll
+import IxCC.Lir.Proof.Opt.IfConv
 import IxCC.Lir.Proof.Run
 import IxCC.Sem.Forward
 import IxCC.Sem.Simulation
@@ -133,8 +136,9 @@ theorem execList_snoc {ρ ρ₁ ρ₂ : Env} {mem mem₁ mem₂ : X86.Memory} {c
 private theorem checkProgramWithPlan_func {p q : Program} {plan : ProgPlan}
     (hp : checkProgramWithPlan p q plan = true) {fi : FunId} {F : Func}
     (hF : p.funcs[fi]? = some F) :
-    ∃ G fplan, q.funcs[fi]? = some G ∧ plan.funcs[fi]? = some fplan ∧
-      checkFuncWithPlan F G fplan = true := by
+    (q.funcs[fi]? = some F ∧ plan.funcs[fi]? = some none) ∨
+    (∃ G fplan, q.funcs[fi]? = some G ∧ plan.funcs[fi]? = some (some fplan) ∧
+      checkFuncWithPlan F G fplan = true) := by
   unfold checkProgramWithPlan at hp
   simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at hp
   obtain ⟨⟨⟨_, hszq⟩, hszp⟩, hall⟩ := hp
@@ -144,7 +148,14 @@ private theorem checkProgramWithPlan_func {p q : Program} {plan : ProgPlan}
   have hltq : fi < q.funcs.size := by rw [hszq]; exact hlt
   have hltp : fi < plan.funcs.size := by rw [hszp]; exact hlt
   rw [hF, Array.getElem?_eq_getElem hltq, Array.getElem?_eq_getElem hltp] at hfi
-  exact ⟨q.funcs[fi], plan.funcs[fi], Array.getElem?_eq_getElem hltq, Array.getElem?_eq_getElem hltp, hfi⟩
+  cases hpf : plan.funcs[fi] with
+  | none =>
+      rw [hpf] at hfi; simp only [beq_iff_eq] at hfi
+      exact .inl ⟨by rw [Array.getElem?_eq_getElem hltq, ← hfi], by rw [Array.getElem?_eq_getElem hltp, hpf]⟩
+  | some fplan =>
+      rw [hpf] at hfi
+      exact .inr ⟨q.funcs[fi], fplan, Array.getElem?_eq_getElem hltq,
+        by rw [Array.getElem?_eq_getElem hltp, hpf], hfi⟩
 
 private theorem checkFuncWithPlan_block {F G : Func} {fplan : FuncPlan}
     (hfp : checkFuncWithPlan F G fplan = true) {L : Label} {bp : BlockPlan}
@@ -204,7 +215,7 @@ structure TopFrameData (p q : Program) (plan : ProgPlan) (ctx : Word)
   B₂ : Block
   hF : p.funcs[fr₁.fn]? = some F
   hG : q.funcs[fr₁.fn]? = some G
-  hFP : plan.funcs[fr₁.fn]? = some fplan
+  hFP : plan.funcs[fr₁.fn]? = some (some fplan)
   hBP : fplan.blocks[fr₁.label]? = some (some bp)
   hL' : fr₂.label = bp.target
   hB₁ : F.blocks[fr₁.label]? = some B₁
@@ -233,10 +244,11 @@ structure TopFrameData (p q : Program) (plan : ProgPlan) (ctx : Word)
   hCheckSeg : checkSeg inv (done₁ ++ rem₁) seg₂ = some st
   hCheckRest : checkCallsAndTerm F G fplan fr₁.label bp.target B₁.term B₂.term st calls₁ calls₂ afterInvs = true
 
-/-- Prop-level active frame relation (`Nonempty TopFrameData`). -/
+/-- Prop-level active frame relation (`Nonempty TopFrameData` or identical unchanged function). -/
 def TopFrameRel (p q : Program) (plan : ProgPlan) (ctx : Word)
     (mem₁ : X86.Memory) (fr₁ : Frame) (mem₂ : X86.Memory) (fr₂ : Frame) : Prop :=
-  Nonempty (TopFrameData p q plan ctx mem₁ fr₁ mem₂ fr₂)
+  Nonempty (TopFrameData p q plan ctx mem₁ fr₁ mem₂ fr₂) ∨
+  (mem₁ = mem₂ ∧ fr₁ = fr₂ ∧ p.funcs[fr₁.fn]? = q.funcs[fr₁.fn]?)
 
 /-- Memory-independent witness data for a suspended caller frame waiting for a callee to return. -/
 structure CallerFrameData (p q : Program) (plan : ProgPlan) (ctx : Word)
@@ -251,7 +263,7 @@ structure CallerFrameData (p q : Program) (plan : ProgPlan) (ctx : Word)
   B₂ : Block
   hF : p.funcs[fr₁.fn]? = some F
   hG : q.funcs[fr₁.fn]? = some G
-  hFP : plan.funcs[fr₁.fn]? = some fplan
+  hFP : plan.funcs[fr₁.fn]? = some (some fplan)
   hBP : fplan.blocks[fr₁.label]? = some (some bp)
   hL' : fr₂.label = bp.target
   hB₁ : F.blocks[fr₁.label]? = some B₁
@@ -280,10 +292,11 @@ structure CallerFrameData (p q : Program) (plan : ProgPlan) (ctx : Word)
   hCheckSeg : checkSeg postInv seg₁ seg₂ = some st
   hCheckRest : checkCallsAndTerm F G fplan fr₁.label bp.target B₁.term B₂.term st calls₁ calls₂ afterInvs = true
 
-/-- Prop-level caller frame relation (`Nonempty CallerFrameData`). -/
+/-- Prop-level caller frame relation (`Nonempty CallerFrameData` or identical unchanged function). -/
 def CallerFrameRel (p q : Program) (plan : ProgPlan) (ctx : Word)
     (fr₁ fr₂ : Frame) : Prop :=
-  Nonempty (CallerFrameData p q plan ctx fr₁ fr₂)
+  Nonempty (CallerFrameData p q plan ctx fr₁ fr₂) ∨
+  (fr₁ = fr₂ ∧ p.funcs[fr₁.fn]? = q.funcs[fr₁.fn]?)
 
 /-- Whole-state simulation relation between `s₁` (in `p`) and `s₂` (in `q`). -/
 def StateRel (p q : Program) (plan : ProgPlan) (s₁ s₂ : State) : Prop :=
@@ -301,11 +314,12 @@ private theorem topFrameRel_atBlock {p q : Program} {plan : ProgPlan}
     {fn L : Nat} {F G : Func} {fplan : FuncPlan} {bp : BlockPlan}
     {ρ₁ ρ₂ : Env} {mem : X86.Memory} {ctx : Word}
     (hF : p.funcs[fn]? = some F) (hG : q.funcs[fn]? = some G)
-    (hFP : plan.funcs[fn]? = some fplan) (hBP : fplan.blocks[L]? = some (some bp))
+    (hFP : plan.funcs[fn]? = some (some fplan)) (hBP : fplan.blocks[L]? = some (some bp))
     (hInv : bp.entryInv.Holds ρ₁ ρ₂ ctx) :
     TopFrameRel p q plan ctx mem { fn, label := L, pos := 0, env := ρ₁, dsts := [] }
       mem { fn, label := bp.target, pos := 0, env := ρ₂, dsts := [] } := by
-  obtain ⟨G', fplan', hG', hFP', hfunc⟩ := checkProgramWithPlan_func hp hF
+  rcases checkProgramWithPlan_func hp hF with ⟨_, hNone⟩ | ⟨G', fplan', hG', hFP', hfunc⟩
+  · rw [hFP] at hNone; cases hNone
   rw [hG] at hG'; cases hG'
   rw [hFP] at hFP'; cases hFP'
   have hblk := checkFuncWithPlan_block hfunc hBP
@@ -331,7 +345,7 @@ private theorem topFrameRel_atBlock {p q : Program} {plan : ProgPlan}
           | none => rw [hcs] at hchk; cases hchk
           | some st =>
               rw [hcs] at hchk
-              exact
+              exact .inl
                 ⟨{ fnEq := rfl, dsts1 := rfl, dsts2 := rfl
                    F, G, fplan, bp, B₁, B₂, hF, hG, hFP, hBP, hL' := rfl, hB₁, hB₂
                    pre₁ := [], done₁ := [], rem₁ := seg1, calls₁ := calls1
@@ -429,12 +443,7 @@ private theorem addFact_holds {ρ₁₀ : Env} {ctx : Word} {snaps : MemSnaps}
   · intro f hf
     simp only [List.mem_cons] at hf
     rcases hf with rfl | hf
-    · intro v1 v2 h1 h2
-      have ha' := SymExpr.norm_sound ha
-      have hb' := SymExpr.norm_sound hb
-      rw [ha'] at h1; cases h1
-      rw [hb'] at h2; cases h2
-      exact hc
+    · exact ⟨va, vb, SymExpr.norm_sound ha, SymExpr.norm_sound hb, hc⟩
     · exact hfacts f hf
   · exact hfacts
 
@@ -444,7 +453,7 @@ on a hoisted `.fail` guard (`Sem.Fails`). -/
 private theorem checkEdge_sound {p q : Program} {plan : ProgPlan}
     (hp : checkProgramWithPlan p q plan = true)
     {fn : FunId} {F G : Func} {fplan : FuncPlan}
-    (hF : p.funcs[fn]? = some F) (hG : q.funcs[fn]? = some G) (hFP : plan.funcs[fn]? = some fplan)
+    (hF : p.funcs[fn]? = some F) (hG : q.funcs[fn]? = some G) (hFP : plan.funcs[fn]? = some (some fplan))
     {ρ₁₀ ρ₁ ρ₁' : Env} {mem : X86.Memory} {ctx : Word} {snaps : MemSnaps} {rest₂ : List Frame}
     {srcEnv : Src.NatMap SymExpr} {srcDef : Src.NatSet}
     {e : Edge} {fTgt : Block} {vals₁ : List Word}
@@ -627,23 +636,24 @@ private theorem checkEdge_sound {p q : Program} {plan : ProgPlan}
                                             · simp [hgt] at hck
                               | _ => rw [hterm] at hck; cases hck
 
-private theorem checkCondRelation_sound {ρ₁₀ : Env} {ctx : Word} {snaps : MemSnaps}
+private theorem checkCondRelationDirect_sound {ρ₁₀ : Env} {ctx : Word} {snaps : MemSnaps}
+    {facts : List PFact} (hfacts : FactsHold ρ₁₀ ctx snaps facts)
     {c1 c2 : Cond} {w1 w2 : Width} {a1 b1 a2 b2 : SymExpr} {va1 vb1 va2 vb2 : Word} {neg : Bool}
-    (hrel : checkCondRelation c1 w1 a1 b1 c2 w2 a2 b2 = some neg)
+    (hrel : checkCondRelationDirect facts c1 w1 a1 b1 c2 w2 a2 b2 = some neg)
     (ha1 : a1.eval ρ₁₀ ctx snaps = some va1) (hb1 : b1.eval ρ₁₀ ctx snaps = some vb1)
     (ha2 : a2.eval ρ₁₀ ctx snaps = some va2) (hb2 : b2.eval ρ₁₀ ctx snaps = some vb2) :
     c2.holds w2 va2 vb2 = if neg then !(c1.holds w1 va1 vb1) else c1.holds w1 va1 vb1 := by
-  unfold checkCondRelation at hrel
+  unfold checkCondRelationDirect at hrel
   by_cases hw : (w1 != w2) = true
   · simp [hw] at hrel
   · have hweq : w1 = w2 := by simpa [bne] using hw
     subst hweq
     simp only [hw, Bool.false_eq_true, ↓reduceIte] at hrel
-    by_cases h1 : (exprEquiv a1 a2 && exprEquiv b1 b2) = true
+    by_cases h1 : (exprEquivFacts facts a1 a2 && exprEquivFacts facts b1 b2) = true
     · simp only [h1, ↓reduceIte] at hrel
       simp only [Bool.and_eq_true] at h1
-      have ha_eq := exprEquiv_sound h1.1 ha1 ha2
-      have hb_eq := exprEquiv_sound h1.2 hb1 hb2
+      have ha_eq := exprEquivFacts_sound hfacts h1.1 ha1 ha2
+      have hb_eq := exprEquivFacts_sound hfacts h1.2 hb1 hb2
       subst ha_eq hb_eq
       by_cases hc : (c1 == c2) = true
       · have hc' : c1 = c2 := by simpa using hc
@@ -655,11 +665,11 @@ private theorem checkCondRelation_sound {ρ₁₀ : Env} {ctx : Word} {snaps : M
           simp [condNegate_holds]
         · simp [hcn] at hrel
     · simp only [h1, Bool.false_eq_true, ↓reduceIte] at hrel
-      by_cases h2 : (exprEquiv a1 b2 && exprEquiv b1 a2) = true
+      by_cases h2 : (exprEquivFacts facts a1 b2 && exprEquivFacts facts b1 a2) = true
       · simp only [h2, ↓reduceIte] at hrel
         simp only [Bool.and_eq_true] at h2
-        have ha_eq := exprEquiv_sound h2.1 ha1 hb2
-        have hb_eq := exprEquiv_sound h2.2 hb1 ha2
+        have ha_eq := exprEquivFacts_sound hfacts h2.1 ha1 hb2
+        have hb_eq := exprEquivFacts_sound hfacts h2.2 hb1 ha2
         subst ha_eq hb_eq
         by_cases hc : (c1 == condSwap c2) = true
         · have hc' : c1 = condSwap c2 := by simpa using hc
@@ -673,6 +683,90 @@ private theorem checkCondRelation_sound {ρ₁₀ : Env} {ctx : Word} {snaps : M
           · simp [hcn] at hrel
       · simp [h2] at hrel
 
+private theorem checkCondRelation_sound {ρ₁₀ : Env} {ctx : Word} {snaps : MemSnaps}
+    {facts : List PFact} (hfacts : FactsHold ρ₁₀ ctx snaps facts)
+    {c1 c2 : Cond} {w1 w2 : Width} {a1 b1 a2 b2 : SymExpr} {va1 vb1 va2 vb2 : Word} {neg : Bool}
+    (hrel : checkCondRelation facts c1 w1 a1 b1 c2 w2 a2 b2 = some neg)
+    (ha1 : a1.eval ρ₁₀ ctx snaps = some va1) (hb1 : b1.eval ρ₁₀ ctx snaps = some vb1)
+    (ha2 : a2.eval ρ₁₀ ctx snaps = some va2) (hb2 : b2.eval ρ₁₀ ctx snaps = some vb2) :
+    c2.holds w2 va2 vb2 = if neg then !(c1.holds w1 va1 vb1) else c1.holds w1 va1 vb1 := by
+  have hstep : ∀ {c1' : Cond} {w1' : Width} {a1' b1' : SymExpr} {va1' vb1' : Word},
+      a1'.eval ρ₁₀ ctx snaps = some va1' → b1'.eval ρ₁₀ ctx snaps = some vb1' →
+      (match checkCondRelationDirect facts c1' w1' a1' b1' c2 w2 a2 b2 with
+       | some neg => some neg
+       | none =>
+           match unwrapOddBit2 facts c1' w1' a1' b1' with
+           | some (co, wo, ao, bo) => checkCondRelationDirect facts co wo ao bo c2 w2 a2 b2
+           | none => none) = some neg →
+      c2.holds w2 va2 vb2 = if neg then !(c1'.holds w1' va1' vb1') else c1'.holds w1' va1' vb1' := by
+    intro c1' w1' a1' b1' va1' vb1' ha1' hb1' hs
+    cases hd : checkCondRelationDirect facts c1' w1' a1' b1' c2 w2 a2 b2 with
+    | some n =>
+        rw [hd] at hs; cases hs
+        exact checkCondRelationDirect_sound hfacts hd ha1' hb1' ha2 hb2
+    | none =>
+        rw [hd] at hs
+        cases hu : unwrapOddBit2 facts c1' w1' a1' b1' with
+        | none => rw [hu] at hs; cases hs
+        | some res =>
+            rcases res with ⟨co, wo, ao, bo⟩
+            rw [hu] at hs
+            obtain ⟨vao, vbo, hao, hbo, heq⟩ := unwrapOddBit2_sound hfacts hu ha1' hb1'
+            have hdir := checkCondRelationDirect_sound hfacts hs hao hbo ha2 hb2
+            rw [heq] at hdir; exact hdir
+  unfold checkCondRelation at hrel
+  dsimp only at hrel
+  split at hrel
+  · rename_i n hn; cases hrel
+    exact hstep ha1 hb1 hn
+  · cases hu : unwrapSelectCond c1 w1 a1 b1 with
+    | none => rw [hu] at hrel; cases hrel
+    | some res =>
+        rcases res with ⟨cs, ws, as_, bs⟩
+        rw [hu] at hrel
+        obtain ⟨vas, vbs, has, hbs, heq⟩ := unwrapSelectCond_sound hu ha1 hb1
+        have hst := hstep has hbs hrel
+        rw [heq] at hst; exact hst
+
+private theorem checkOvfCondEquiv_sound {ρ₁₀ : Env} {ctx : Word} {snaps : MemSnaps}
+    {facts : List PFact} (hfacts : FactsHold ρ₁₀ ctx snaps facts)
+    {o1 o2 : Ovf} {ea1 eb1 ea2 eb2 : SymExpr} {va1 vb1 va2 vb2 : Word}
+    (hck : checkOvfCondEquiv facts o1 ea1 eb1 o2 ea2 eb2 = true)
+    (ha1 : ea1.eval ρ₁₀ ctx snaps = some va1) (hb1 : eb1.eval ρ₁₀ ctx snaps = some vb1)
+    (ha2 : ea2.eval ρ₁₀ ctx snaps = some va2) (hb2 : eb2.eval ρ₁₀ ctx snaps = some vb2) :
+    o1 = o2 ∧ (o1.eval va1 vb1).2 = (o2.eval va2 vb2).2 := by
+  unfold checkOvfCondEquiv at hck
+  simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hck
+  obtain ⟨rfl, hcases⟩ := hck
+  refine ⟨rfl, ?_⟩
+  rcases hcases with ⟨heqa, heqb⟩ | ⟨⟨⟨rfl, hpa⟩, hpb⟩, hpair⟩
+  · have ha_eq := exprEquivFacts_sound hfacts heqa ha1 ha2
+    have hb_eq := exprEquivFacts_sound hfacts heqb hb1 hb2
+    rw [ha_eq, hb_eq]
+  · have hev1 : va1 &&& 1 = 0 := by have h := parityOf_sound hfacts ha1; rw [hpa] at h; exact h
+    have hev2 : vb1 &&& 1 = 0 := by have h := parityOf_sound hfacts hb1; rw [hpb] at h; exact h
+    rcases hpair with ⟨heqa, heqb⟩ | ⟨heqa, heqb⟩
+    · have ha_eq := exprEquivFacts_sound hfacts heqa (mkAdd64_sound ha1 rfl) ha2
+      have hb_eq := exprEquivFacts_sound hfacts heqb hb1 hb2
+      rw [← ha_eq, ← hb_eq]
+      exact (addC_even_ovf_eq hev1 hev2).symm
+    · have ha_eq := exprEquivFacts_sound hfacts heqa ha1 ha2
+      have hb_eq := exprEquivFacts_sound hfacts heqb (mkAdd64_sound hb1 rfl) hb2
+      rw [← ha_eq, ← hb_eq]
+      have hcomm : ∀ x y : Word, (Ovf.addC.eval x y).2 = (Ovf.addC.eval y x).2 := by
+        intro x y; simp only [Ovf.eval, UInt64.lt_iff_toNat_lt, UInt64.toNat_add]
+        have hx : x.toNat < 2 ^ 64 := x.toNat_lt_size
+        have hy : y.toNat < 2 ^ 64 := y.toNat_lt_size
+        by_cases h : x.toNat + y.toNat < 2 ^ 64
+        · rw [Nat.mod_eq_of_lt h, Nat.mod_eq_of_lt (by omega)]
+          simp only [decide_eq_decide]; omega
+        · have hm1 : (x.toNat + y.toNat) % 2 ^ 64 = x.toNat + y.toNat - 2 ^ 64 := by
+            rw [Nat.mod_eq_sub_mod (by omega), Nat.mod_eq_of_lt (by omega)]
+          have hm2 : (y.toNat + x.toNat) % 2 ^ 64 = y.toNat + x.toNat - 2 ^ 64 := by
+            rw [Nat.mod_eq_sub_mod (by omega), Nat.mod_eq_of_lt (by omega)]
+          rw [hm1, hm2]; simp only [decide_eq_decide]; omega
+      rw [hcomm va1 (vb1 + 1), addC_even_ovf_eq hev2 hev1, hcomm vb1 va1]
+
 /-! ## Helper: entering a callee function preserves `TopFrameRel` -/
 
 private theorem enter_rel {p q : Program} {plan : ProgPlan}
@@ -683,14 +777,16 @@ private theorem enter_rel {p q : Program} {plan : ProgPlan}
       TopFrameRel p q plan ctx mem callee₁ mem callee₂ := by
   simp only [enter, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.some.injEq] at he₁
   obtain ⟨F, hF, ρ, hbp, rfl⟩ := he₁
-  obtain ⟨G, fplan, hG, hFP, hfunc⟩ := checkProgramWithPlan_func hp hF
-  obtain ⟨hpar, _, fb0, gb0, bp0, hfb0, hgb0, hbp0, htgt0, hentry⟩ := checkFuncWithPlan_entry hfunc
-  have hbp2 : bindParams {} G.params vals = some ρ := by rw [hpar]; exact hbp
-  have hinv := checkEntryInv_sound (ctx := ctx) hentry hbp
-  have htop := topFrameRel_atBlock (mem := mem) hp hF hG hFP hbp0 hinv
-  rw [htgt0] at htop
-  exact ⟨{ fn := g, label := 0, pos := 0, env := ρ, dsts := [] },
-    by simp [enter, hG, hbp2], htop⟩
+  rcases checkProgramWithPlan_func hp hF with ⟨hG, _⟩ | ⟨G, fplan, hG, hFP, hfunc⟩
+  · exact ⟨{ fn := g, label := 0, pos := 0, env := ρ, dsts := [] },
+      by simp [enter, hG, hbp], .inr ⟨rfl, rfl, by rw [hF, hG]⟩⟩
+  · obtain ⟨hpar, _, fb0, gb0, bp0, hfb0, hgb0, hbp0, htgt0, hentry⟩ := checkFuncWithPlan_entry hfunc
+    have hbp2 : bindParams {} G.params vals = some ρ := by rw [hpar]; exact hbp
+    have hinv := checkEntryInv_sound (ctx := ctx) hentry hbp
+    have htop := topFrameRel_atBlock (mem := mem) hp hF hG hFP hbp0 hinv
+    rw [htgt0] at htop
+    exact ⟨{ fn := g, label := 0, pos := 0, env := ρ, dsts := [] },
+      by simp [enter, hG, hbp2], htop⟩
 
 /-! ## Master forward simulation theorem (`checkProgramWithPlan_forward`) -/
 
@@ -733,6 +829,116 @@ private theorem takeEdge_not_nonstuck {F : Func} {s : State} {fr : Frame} {rest 
           | none => rw [hbp] at hfin; dsimp only [Step.toSem] at hfin; cases hfin; exact absurd rfl hne
           | some ρ' => rw [hbp] at hfin; dsimp only [Step.toSem] at hfin; cases hfin
 
+private theorem resumeCaller_rel {p q : Program} {plan : ProgPlan}
+    {mem : X86.Memory} {ctx : Word} {caller₁ caller₂ : Frame} {vals : List Word} {ρc₁ : Env}
+    (hcal : CallerFrameRel p q plan ctx caller₁ caller₂)
+    (hbp1 : bindParams caller₁.env caller₁.dsts vals = some ρc₁) :
+    ∃ ρc₂, bindParams caller₂.env caller₂.dsts vals = some ρc₂ ∧
+      TopFrameRel p q plan ctx mem
+        { fn := caller₁.fn, label := caller₁.label, pos := caller₁.pos, env := ρc₁, dsts := [] }
+        mem
+        { fn := caller₂.fn, label := caller₂.label, pos := caller₂.pos, env := ρc₂, dsts := [] } := by
+  rcases hcal with ⟨⟨hcal⟩⟩ | ⟨rfl, hfnSame⟩
+  · have hlen_v := bindParams_length_eq hbp1
+    obtain ⟨ρc₂, hbp2⟩ := bindParams_exists (ρ := caller₂.env) (ps := caller₂.dsts) (vs := vals)
+      (by rw [hcal.dstsEq]; exact hlen_v)
+    have hinv_res := hcal.hResume vals ρc₁ ρc₂ hbp1 hbp2
+    exact ⟨ρc₂, hbp2, .inl
+      ⟨{ fnEq := hcal.fnEq, dsts1 := rfl, dsts2 := rfl
+         F := hcal.F, G := hcal.G, fplan := hcal.fplan, bp := hcal.bp
+         B₁ := hcal.B₁, B₂ := hcal.B₂
+         hF := hcal.hF, hG := hcal.hG, hFP := hcal.hFP, hBP := hcal.hBP
+         hL' := hcal.hL', hB₁ := hcal.hB₁, hB₂ := hcal.hB₂
+         pre₁ := hcal.pre₁, done₁ := [], rem₁ := hcal.seg₁, calls₁ := hcal.calls₁
+         pre₂ := hcal.pre₂, seg₂ := hcal.seg₂, calls₂ := hcal.calls₂
+         inv := hcal.postInv, afterInvs := hcal.afterInvs
+         hBody₁ := by simpa using hcal.hBody₁
+         hBody₂ := hcal.hBody₂
+         hNoCall₁ := by simpa using hcal.hNoCall₁
+         hNoCall₂ := hcal.hNoCall₂
+         hCallsNoCall₁ := hcal.hCallsNoCall₁
+         hCallsNoCall₂ := hcal.hCallsNoCall₂
+         hPos₁ := by simpa using hcal.hPos₁
+         hPos₂ := hcal.hPos₂
+         ρ₁₀ := ρc₁, hInv := hinv_res, hDone₁ := rfl
+         st := hcal.st, hCheckSeg := by simpa using hcal.hCheckSeg
+         hCheckRest := hcal.hCheckRest }⟩⟩
+  · exact ⟨ρc₁, hbp1, .inr ⟨rfl, rfl, hfnSame⟩⟩
+
+private theorem takeEdge_same_rest {F : Func} {mem : X86.Memory} {ctx : Word} {fr : Frame}
+    {rest₁ rest₂ : List Frame} {ρ : Env} {e : Edge} {s₁' : State} {b : Bool}
+    (hte : takeEdge F { mem, ctx, stack := fr :: rest₁ } fr rest₁ ρ e = .next s₁' b) :
+    ∃ nextFr, s₁' = { mem, ctx, stack := nextFr :: rest₁ } ∧ nextFr.fn = fr.fn ∧
+      takeEdge F { mem, ctx, stack := fr :: rest₂ } fr rest₂ ρ e =
+        .next { mem, ctx, stack := nextFr :: rest₂ } b := by
+  unfold takeEdge at hte ⊢
+  cases hev : evalArgs ρ e.args with
+  | none => rw [hev] at hte; cases hte
+  | some vs =>
+      cases hblk : F.blocks[e.target]? with
+      | none => rw [hev, hblk] at hte; cases hte
+      | some tgt =>
+          rw [hev, hblk] at hte; dsimp only at hte
+          cases hbp : bindParams ρ tgt.params vs with
+          | none => rw [hbp] at hte; cases hte
+          | some ρ' =>
+              rw [hbp] at hte; simp only [Step.next.injEq] at hte
+              obtain ⟨rfl, rfl⟩ := hte
+              exact ⟨{ fn := fr.fn, label := e.target, pos := 0, env := ρ', dsts := fr.dsts },
+                rfl, rfl, by simp [hbp]⟩
+
+/-- `step` at a block terminator (`fr.pos` past the body), as a `match` on `B.term`. -/
+private theorem step_at_term' {p : Program} {F : Func} {B : Block} {mem : X86.Memory} {ctx : Word}
+    {fr : Frame} {rest : List Frame}
+    (hF : p.funcs[fr.fn]? = some F) (hB : F.blocks[fr.label]? = some B)
+    (hlt : ¬ fr.pos < B.body.size) :
+    step p { mem, ctx, stack := fr :: rest } =
+      match B.term with
+      | .jump e => takeEdge F { mem, ctx, stack := fr :: rest } fr rest fr.env e
+      | .br c w a b' t f =>
+          match a.eval fr.env, b'.eval fr.env with
+          | some va, some vb =>
+              takeEdge F { mem, ctx, stack := fr :: rest } fr rest fr.env
+                (if c.holds w va vb then t else f)
+          | _, _ => .stuck
+      | .brOvf o x a b' ok ovf =>
+          match a.eval fr.env, b'.eval fr.env with
+          | some va, some vb =>
+              let (r, carry) := o.eval va vb
+              takeEdge F { mem, ctx, stack := fr :: rest } fr rest
+                (fr.env.insert x r) (if carry then ovf else ok)
+          | _, _ => .stuck
+      | .ret ras =>
+          match evalArgs fr.env ras with
+          | none => .stuck
+          | some vals =>
+              match rest with
+              | [] => .done vals mem
+              | c :: rest' =>
+                  match bindParams c.env c.dsts vals with
+                  | some ρ => .next { mem, ctx, stack := { c with env := ρ, dsts := [] } :: rest' } false
+                  | none => .stuck
+      | .tail g tas =>
+          match evalArgs fr.env tas >>= enter p g with
+          | some calleeF => .next { mem, ctx, stack := calleeF :: rest } true
+          | none => .stuck
+      | .fail r => .fail r
+      | .trap => .trap := by
+  unfold step; dsimp only; rw [hF]; dsimp only; rw [hB]; simp only [hlt, ↓reduceDIte]
+  cases B.term with
+  | jump _ | fail _ | trap => rfl
+  | br _ _ a b' _ _ | brOvf _ _ a b' _ _ =>
+      cases a.eval fr.env <;> cases b'.eval fr.env <;> rfl
+  | ret ras =>
+      cases evalArgs fr.env ras with
+      | none => rfl
+      | some vals =>
+          cases rest with
+          | nil => rfl
+          | cons c rest' => cases bindParams c.env c.dsts vals <;> rfl
+  | tail g tas =>
+      cases evalArgs fr.env tas >>= enter p g <;> rfl
+
 /-- **Forward diagram for `checkProgramWithPlan`**: every `next` step and non-stuck
 `final` step of `p` is matched by `q` (or `q` fails with a resource error). -/
 theorem checkProgramWithPlan_forward {p q : Program} {plan : ProgPlan}
@@ -748,13 +954,130 @@ theorem checkProgramWithPlan_forward {p q : Program} {plan : ProgPlan}
         | nil => rw [hs1, hs2] at hstack; cases hstack
         | cons fr₂ rest₂ =>
             rw [hs1, hs2] at hstack
-            obtain ⟨⟨htop⟩, hcallers⟩ := hstack
+            obtain ⟨htopRel, hcallers⟩ := hstack
             have hstep1 : step p s₁ = .next s₁' b := semStep_next.1 hstep
             have hs1_eq : s₁ = { mem := s₁.mem, ctx := s₁.ctx, stack := fr₁ :: rest₁ } := by
               cases s₁; cases hs1; rfl
             have hs2_eq : s₂ = { mem := s₂.mem, ctx := s₁.ctx, stack := fr₂ :: rest₂ } := by
               cases s₂; cases hs2; cases hctx; rfl
-            -- Case split on remaining statements in current segment of `fr₁`
+            rcases htopRel with ⟨⟨htop⟩⟩ | ⟨hmemEq, hfrEq, hfnSame⟩
+            rotate_left
+            · -- Identical unchanged function (`p.funcs[fr₁.fn]? = q.funcs[fr₁.fn]?`)
+              rw [hs1_eq] at hstep1
+              have hs2_eq' : s₂ = { mem := s₁.mem, ctx := s₁.ctx, stack := fr₁ :: rest₂ } := by
+                rw [hs2_eq, ← hmemEq, ← hfrEq]
+              unfold step at hstep1; dsimp only at hstep1
+              cases hF : p.funcs[fr₁.fn]? with
+              | none => rw [hF] at hstep1; cases hstep1
+              | some F =>
+                  have hG : q.funcs[fr₁.fn]? = some F := hfnSame.symm.trans hF
+                  rw [hF] at hstep1; dsimp only at hstep1
+                  cases hB : F.blocks[fr₁.label]? with
+                  | none => rw [hB] at hstep1; cases hstep1
+                  | some B =>
+                      rw [hB] at hstep1; dsimp only at hstep1
+                      by_cases hlt : fr₁.pos < B.body.size
+                      · simp only [hlt, ↓reduceDIte] at hstep1
+                        cases hst : B.body[fr₁.pos] with
+                        | assign x r | limb r1 r2 op | store w m a =>
+                            rw [hst] at hstep1; dsimp only at hstep1; rw [← hst] at hstep1
+                            cases hex : (B.body[fr₁.pos]).exec fr₁.env s₁.mem s₁.ctx with
+                            | none => rw [hex] at hstep1; cases hstep1
+                            | some res =>
+                                obtain ⟨ρ', mem'⟩ := res
+                                rw [hex] at hstep1; simp only [Step.next.injEq] at hstep1
+                                obtain ⟨rfl, rfl⟩ := hstep1
+                                have hstep2 : step q s₂ = .next { mem := mem', ctx := s₁.ctx, stack := { fr₁ with pos := fr₁.pos + 1, env := ρ' } :: rest₂ } false := by
+                                  rw [hs2_eq']; unfold step; simp only [hG, hB, hlt, ↓reduceDIte]
+                                  rw [hst]; dsimp only; rw [← hst, hex]
+                                exact .inl ⟨0, _, star_of_step hstep2, Nat.le_refl _, rfl, .inr ⟨rfl, rfl, hfnSame⟩, hcallers⟩
+                        | call rs g as =>
+                            rw [hst] at hstep1; dsimp only at hstep1
+                            cases hev : evalArgs fr₁.env as with
+                            | none => rw [hev] at hstep1; cases hstep1
+                            | some vals =>
+                                rw [hev] at hstep1; simp only [Option.bind_eq_bind, Option.bind_some] at hstep1
+                                cases hent1 : enter p g vals with
+                                | none => rw [hent1] at hstep1; cases hstep1
+                                | some callee₁ =>
+                                    rw [hent1] at hstep1; simp only [Step.next.injEq] at hstep1
+                                    obtain ⟨rfl, rfl⟩ := hstep1
+                                    obtain ⟨callee₂, hent2, htop_c⟩ := enter_rel hp (mem := s₁.mem) (ctx := s₁.ctx) hent1
+                                    have hstep2 : step q s₂ = .next { mem := s₁.mem, ctx := s₁.ctx, stack := callee₂ :: { fr₁ with pos := fr₁.pos + 1, dsts := rs } :: rest₂ } true := by
+                                      rw [hs2_eq']; unfold step; simp only [hG, hB, hlt, ↓reduceDIte, hst, hev, Option.bind_eq_bind, Option.bind_some, hent2]
+                                    exact .inl ⟨1, _, star_of_step hstep2, Nat.le_refl _, rfl, htop_c, .cons (.inr ⟨rfl, hfnSame⟩) hcallers⟩
+                      · simp only [hlt, ↓reduceDIte] at hstep1
+                        have hstep2_term := (congrArg (step q) hs2_eq').trans
+                          (step_at_term' (p := q) (F := F) (B := B) (mem := s₁.mem) (ctx := s₁.ctx)
+                            (fr := fr₁) (rest := rest₂) hG hB hlt)
+                        cases ht : B.term with
+                        | jump e =>
+                            rw [ht] at hstep1 hstep2_term; dsimp only at hstep1 hstep2_term
+                            obtain ⟨nFr, rfl, hfnN, hte2⟩ := takeEdge_same_rest (rest₂ := rest₂) hstep1
+                            exact .inl ⟨b.toNat, _, star_of_step (hstep2_term.trans hte2), Nat.le_refl _, rfl,
+                              .inr ⟨rfl, rfl, by rw [hfnN]; exact hfnSame⟩, hcallers⟩
+                        | br cond w a b' t f =>
+                            rw [ht] at hstep1 hstep2_term; dsimp only at hstep1 hstep2_term
+                            cases ha : a.eval fr₁.env with
+                            | none => rw [ha] at hstep1; cases hstep1
+                            | some va =>
+                                cases hb : b'.eval fr₁.env with
+                                | none => rw [ha, hb] at hstep1; cases hstep1
+                                | some vb =>
+                                    rw [ha, hb] at hstep1 hstep2_term; dsimp only at hstep1 hstep2_term
+                                    obtain ⟨nFr, rfl, hfnN, hte2⟩ := takeEdge_same_rest (rest₂ := rest₂) hstep1
+                                    exact .inl ⟨b.toNat, _, star_of_step (hstep2_term.trans hte2), Nat.le_refl _, rfl,
+                                      .inr ⟨rfl, rfl, by rw [hfnN]; exact hfnSame⟩, hcallers⟩
+                        | brOvf op dst a b' ok ovf =>
+                            rw [ht] at hstep1 hstep2_term; dsimp only at hstep1 hstep2_term
+                            cases ha : a.eval fr₁.env with
+                            | none => rw [ha] at hstep1; cases hstep1
+                            | some va =>
+                                cases hb : b'.eval fr₁.env with
+                                | none => rw [ha, hb] at hstep1; cases hstep1
+                                | some vb =>
+                                    rw [ha, hb] at hstep1 hstep2_term; dsimp only at hstep1 hstep2_term
+                                    obtain ⟨nFr, rfl, hfnN, hte2⟩ := takeEdge_same_rest (rest₂ := rest₂) hstep1
+                                    exact .inl ⟨b.toNat, _, star_of_step (hstep2_term.trans hte2), Nat.le_refl _, rfl,
+                                      .inr ⟨rfl, rfl, by rw [hfnN]; exact hfnSame⟩, hcallers⟩
+                        | ret args =>
+                            rw [ht] at hstep1 hstep2_term; dsimp only at hstep1 hstep2_term
+                            cases hev : evalArgs fr₁.env args with
+                            | none => rw [hev] at hstep1; cases hstep1
+                            | some vs =>
+                                rw [hev] at hstep1 hstep2_term; dsimp only at hstep1 hstep2_term
+                                cases rest₁ with
+                                | nil => cases hstep1
+                                | cons c₁ r₁ =>
+                                    cases hcallers with
+                                    | cons hcal hcallers' =>
+                                        rename_i c₂ r₂
+                                        dsimp only at hstep1 hstep2_term
+                                        cases hbp1 : bindParams c₁.env c₁.dsts vs with
+                                        | none => rw [hbp1] at hstep1; cases hstep1
+                                        | some ρc₁ =>
+                                            rw [hbp1] at hstep1; simp only [Step.next.injEq] at hstep1
+                                            obtain ⟨rfl, rfl⟩ := hstep1
+                                            obtain ⟨ρc₂, hbp2, htop_res⟩ := resumeCaller_rel (mem := s₁.mem) hcal hbp1
+                                            rw [hbp2] at hstep2_term
+                                            exact .inl ⟨0, _, star_of_step hstep2_term, Nat.le_refl _, rfl, htop_res, hcallers'⟩
+                        | tail g args =>
+                            rw [ht] at hstep1 hstep2_term; dsimp only at hstep1 hstep2_term
+                            cases hev : evalArgs fr₁.env args with
+                            | none => rw [hev] at hstep1; cases hstep1
+                            | some vs =>
+                                rw [hev] at hstep1 hstep2_term; simp only [Option.bind_eq_bind, Option.bind_some] at hstep1 hstep2_term
+                                cases hent1 : enter p g vs with
+                                | none => rw [hent1] at hstep1; cases hstep1
+                                | some callee₁ =>
+                                    rw [hent1] at hstep1; simp only [Step.next.injEq] at hstep1
+                                    obtain ⟨rfl, rfl⟩ := hstep1
+                                    obtain ⟨callee₂, hent2, htop_c⟩ := enter_rel hp (mem := s₁.mem) (ctx := s₁.ctx) hent1
+                                    rw [hent2] at hstep2_term
+                                    exact .inl ⟨1, _, star_of_step hstep2_term, Nat.le_refl _, rfl, htop_c, hcallers⟩
+                        | fail _ => rw [ht] at hstep1; cases hstep1
+                        | trap => rw [ht] at hstep1; cases hstep1
+            -- Planned function (`htop : TopFrameData`): case split on remaining statements
             cases hrem : htop.rem₁ with
             | cons s rem₁' =>
                 -- Case A: `fr₁` steps a local non-call statement; `fr₂` takes 0 steps!
@@ -790,7 +1113,7 @@ theorem checkProgramWithPlan_forward {p q : Program} {plan : ProgPlan}
                         refine .inl ⟨0, s₂, .refl _, Nat.le_refl _, hctx, ?_⟩
                         rw [hs2]
                         refine ⟨?_, hcallers⟩
-                        exact
+                        exact .inl
                           ⟨{ htop with
                              done₁ := htop.done₁ ++ [s]
                              rem₁ := rem₁'
@@ -871,7 +1194,7 @@ theorem checkProgramWithPlan_forward {p q : Program} {plan : ProgPlan}
                                             { fr₁ with pos := fr₁.pos + 1, dsts := c₁.rs }
                                             { fn := fr₁.fn, label := htop.bp.target,
                                               pos := htop.pre₂.length + htop.seg₂.length + 1,
-                                              env := ρ₂', dsts := c₂.rs } :=
+                                              env := ρ₂', dsts := c₂.rs } := .inl
                                           ⟨{ fnEq := rfl, dstsEq := hrs_eq.symm
                                              F := htop.F, G := htop.G, fplan := htop.fplan, bp := htop.bp
                                              B₁ := htop.B₁, B₂ := htop.B₂
@@ -1084,42 +1407,46 @@ theorem checkProgramWithPlan_forward {p q : Program} {plan : ProgPlan}
                                               have hst2 := step_br (p := q) (F := htop.G) (B := htop.B₂)
                                                 (fr := { fn := fr₁.fn, label := htop.bp.target, pos := htop.B₂.body.size, env := ρ₂', dsts := [] })
                                                 (rest := rest₂) (mem := s₁.mem) (ctx := s₁.ctx) htop.hG htop.hB₂ rfl ht2 hva2 hvb2
-                                              cases hcrel : checkCondRelation c1 w1
+                                              cases hcrel : checkCondRelation htop.st.facts c1 w1
                                                   (argToSym (srcLookup htop.st.srcEnv) a1).norm
                                                   (argToSym (srcLookup htop.st.srcEnv) b1).norm c2 w2 ea2 eb2 with
                                               | none => rw [hcrel] at hrest_chk; cases hrest_chk
                                               | some neg =>
                                                   rw [hcrel] at hrest_chk
-                                                  have hc2_eq := checkCondRelation_sound hcrel hea1 heb1 heva2 hevb2
+                                                  have hc2_eq := checkCondRelation_sound hseg.factsHold hcrel hea1 heb1 heva2 hevb2
                                                   cases neg <;> simp only [Bool.and_eq_true] at hrest_chk
                                                   · -- same polarity
                                                     cases hcond : c1.holds w1 va1 vb1 with
                                                     | true =>
                                                         rw [hcond] at hstep1 hc2_eq; simp only [Bool.false_eq_true, ↓reduceIte] at hc2_eq; rw [hc2_eq] at hst2
                                                         exact finishEdge t1 fr₁.env htop.st.srcEnv htop.st.srcDef htop.st.tgtEnv
-                                                          (addFact htop.st.facts c1 w1 _ _ true) t2 ρ₂'
+                                                          (addFact (addFact htop.st.facts c1 w1 _ _ true) c2 w2 ea2 eb2 true) t2 ρ₂'
                                                           hseg.srcEnvEval hseg.srcDefOk hseg.tgtEnvEval
-                                                          (addFact_holds hseg.factsHold hea1 heb1 hcond) hstep1 hst2 hrest_chk.1
+                                                          (addFact_holds (addFact_holds hseg.factsHold hea1 heb1 hcond) heva2 hevb2 hc2_eq)
+                                                          hstep1 hst2 hrest_chk.1
                                                     | false =>
                                                         rw [hcond] at hstep1 hc2_eq; simp only [Bool.false_eq_true, ↓reduceIte] at hc2_eq; rw [hc2_eq] at hst2
                                                         exact finishEdge f1 fr₁.env htop.st.srcEnv htop.st.srcDef htop.st.tgtEnv
-                                                          (addFact htop.st.facts c1 w1 _ _ false) f2 ρ₂'
+                                                          (addFact (addFact htop.st.facts c1 w1 _ _ false) c2 w2 ea2 eb2 false) f2 ρ₂'
                                                           hseg.srcEnvEval hseg.srcDefOk hseg.tgtEnvEval
-                                                          (addFact_holds hseg.factsHold hea1 heb1 hcond) hstep1 hst2 hrest_chk.2
+                                                          (addFact_holds (addFact_holds hseg.factsHold hea1 heb1 hcond) heva2 hevb2 hc2_eq)
+                                                          hstep1 hst2 hrest_chk.2
                                                   · -- negated polarity
                                                     cases hcond : c1.holds w1 va1 vb1 with
                                                     | true =>
                                                         rw [hcond] at hstep1 hc2_eq; simp only [↓reduceIte, Bool.not_true] at hc2_eq; rw [hc2_eq] at hst2
                                                         exact finishEdge t1 fr₁.env htop.st.srcEnv htop.st.srcDef htop.st.tgtEnv
-                                                          (addFact htop.st.facts c1 w1 _ _ true) f2 ρ₂'
+                                                          (addFact (addFact htop.st.facts c1 w1 _ _ true) c2 w2 ea2 eb2 false) f2 ρ₂'
                                                           hseg.srcEnvEval hseg.srcDefOk hseg.tgtEnvEval
-                                                          (addFact_holds hseg.factsHold hea1 heb1 hcond) hstep1 hst2 hrest_chk.1
+                                                          (addFact_holds (addFact_holds hseg.factsHold hea1 heb1 hcond) heva2 hevb2 hc2_eq)
+                                                          hstep1 hst2 hrest_chk.1
                                                     | false =>
                                                         rw [hcond] at hstep1 hc2_eq; simp only [↓reduceIte, Bool.not_false] at hc2_eq; rw [hc2_eq] at hst2
                                                         exact finishEdge f1 fr₁.env htop.st.srcEnv htop.st.srcDef htop.st.tgtEnv
-                                                          (addFact htop.st.facts c1 w1 _ _ false) t2 ρ₂'
+                                                          (addFact (addFact htop.st.facts c1 w1 _ _ false) c2 w2 ea2 eb2 true) t2 ρ₂'
                                                           hseg.srcEnvEval hseg.srcDefOk hseg.tgtEnvEval
-                                                          (addFact_holds hseg.factsHold hea1 heb1 hcond) hstep1 hst2 hrest_chk.2
+                                                          (addFact_holds (addFact_holds hseg.factsHold hea1 heb1 hcond) heva2 hevb2 hc2_eq)
+                                                          hstep1 hst2 hrest_chk.2
                             · -- brOvf vs jump (folded overflow check)
                               rename_i o1 x1 a1 b1 ok1 ovf1 e2
                               simp only [ht1] at hstep1
@@ -1199,15 +1526,13 @@ theorem checkProgramWithPlan_forward {p q : Program} {plan : ProgPlan}
                                           | none => rw [hea2, heb2] at hrest_chk; cases hrest_chk
                                           | some eb2 =>
                                               rw [hea2, heb2] at hrest_chk; dsimp only at hrest_chk
-                                              simp only [Bool.and_eq_true, beq_iff_eq] at hrest_chk
-                                              obtain ⟨⟨⟨rfl, heqa⟩, heqb⟩, hok_chk, hovf_chk⟩ := hrest_chk
+                                              simp only [Bool.and_eq_true] at hrest_chk
+                                              obtain ⟨hovf_eq, hok_chk, hovf_chk⟩ := hrest_chk
                                               obtain ⟨va2, hva2, heva2⟩ := evalTgtArg_sound hseg.tgtEnvEval hea2
                                               obtain ⟨vb2, hvb2, hevb2⟩ := evalTgtArg_sound hseg.tgtEnvEval heb2
                                               have hea1 := SymExpr.norm_sound (argToSym_eval hseg.srcEnvEval hva1)
                                               have heb1 := SymExpr.norm_sound (argToSym_eval hseg.srcEnvEval hvb1)
-                                              have hva_eq := exprEquiv_sound heqa hea1 heva2
-                                              have hvb_eq := exprEquiv_sound heqb heb1 hevb2
-                                              subst hva_eq hvb_eq
+                                              obtain ⟨rfl, hcarry_eq⟩ := checkOvfCondEquiv_sound hseg.factsHold hovf_eq hea1 heb1 heva2 hevb2
                                               have hres1 := ovfToSym_eval (o := o1) hea1 heb1
                                               have hres2 := ovfToSym_eval (o := o1) (SymExpr.norm_sound heva2) (SymExpr.norm_sound hevb2)
                                               have hsrc' : ∀ x v, (fr₁.env.insert x1 (o1.eval va1 vb1).1)[x]? = some v →
@@ -1233,7 +1558,7 @@ theorem checkProgramWithPlan_forward {p q : Program} {plan : ProgPlan}
                                                   · rfl
                                                   · exact hseg.srcDefOk x hx
                                               have htgt' : ∀ y ey, (htop.st.tgtEnv.insert x2 (ovfToSym o1 ea2.norm eb2.norm)).get? y = some ey →
-                                                  ∃ v, (ρ₂'.insert x2 (o1.eval va1 vb1).1)[y]? = some v ∧ ey.eval htop.ρ₁₀ s₁.ctx snaps = some v := by
+                                                  ∃ v, (ρ₂'.insert x2 (o1.eval va2 vb2).1)[y]? = some v ∧ ey.eval htop.ρ₁₀ s₁.ctx snaps = some v := by
                                                 intro y ey hy
                                                 rw [Src.NatMap.get?_insert] at hy; rw [env_insert_get]
                                                 by_cases hyx : y = x2
@@ -1245,6 +1570,7 @@ theorem checkProgramWithPlan_forward {p q : Program} {plan : ProgPlan}
                                               have hst2 := step_brOvf (p := q) (F := htop.G) (B := htop.B₂)
                                                 (fr := { fn := fr₁.fn, label := htop.bp.target, pos := htop.B₂.body.size, env := ρ₂', dsts := [] })
                                                 (rest := rest₂) (mem := s₁.mem) (ctx := s₁.ctx) htop.hG htop.hB₂ rfl ht2 hva2 hvb2
+                                              rw [← hcarry_eq] at hst2
                                               cases hcarry : (o1.eval va1 vb1).2 with
                                               | false =>
                                                   rw [hcarry] at hstep1 hst2
@@ -1268,7 +1594,6 @@ theorem checkProgramWithPlan_forward {p q : Program} {plan : ProgPlan}
                                       cases hcallers with
                                       | cons hcal hcallers' =>
                                           rename_i caller₂ rest₂'
-                                          obtain ⟨hcal⟩ := hcal
                                           dsimp only at hstep1
                                           cases hbp1 : bindParams caller₁.env caller₁.dsts vals with
                                           | none => rw [hbp1] at hstep1; cases hstep1
@@ -1277,36 +1602,13 @@ theorem checkProgramWithPlan_forward {p q : Program} {plan : ProgPlan}
                                               simp only [Step.next.injEq] at hstep1
                                               obtain ⟨rfl, rfl⟩ := hstep1
                                               have hev2 := checkArgsEquiv_sound hseg hrest_chk hev1
-                                              have hlen_v := bindParams_length_eq hbp1
-                                              obtain ⟨ρc₂, hbp2⟩ := bindParams_exists (ρ := caller₂.env) (ps := caller₂.dsts) (vs := vals)
-                                                (by rw [hcal.dstsEq]; exact hlen_v)
+                                              obtain ⟨ρc₂, hbp2, htop_res⟩ := resumeCaller_rel (mem := s₁.mem) hcal hbp1
                                               have hst_ret := step_ret_caller (p := q) (F := htop.G) (B := htop.B₂)
                                                 (fr := { fn := fr₁.fn, label := htop.bp.target, pos := htop.B₂.body.size, env := ρ₂', dsts := [] })
                                                 (caller := caller₂) (rest' := rest₂') (mem := s₁.mem) (ctx := s₁.ctx)
                                                 htop.hG htop.hB₂ rfl ht2 hev2 hbp2
                                               have hstar_all := hstar_seg'.trans (star_of_step hst_ret)
-                                              have hinv_res := hcal.hResume vals ρc₁ ρc₂ hbp1 hbp2
-                                              refine .inl ⟨0 + 0, _, hstar_all, Nat.le_refl _, rfl, ?_, hcallers'⟩
-                                              exact
-                                                ⟨{ fnEq := hcal.fnEq, dsts1 := rfl, dsts2 := rfl
-                                                   F := hcal.F, G := hcal.G, fplan := hcal.fplan, bp := hcal.bp
-                                                   B₁ := hcal.B₁, B₂ := hcal.B₂
-                                                   hF := hcal.hF, hG := hcal.hG, hFP := hcal.hFP, hBP := hcal.hBP
-                                                   hL' := hcal.hL', hB₁ := hcal.hB₁, hB₂ := hcal.hB₂
-                                                   pre₁ := hcal.pre₁, done₁ := [], rem₁ := hcal.seg₁, calls₁ := hcal.calls₁
-                                                   pre₂ := hcal.pre₂, seg₂ := hcal.seg₂, calls₂ := hcal.calls₂
-                                                   inv := hcal.postInv, afterInvs := hcal.afterInvs
-                                                   hBody₁ := by simpa using hcal.hBody₁
-                                                   hBody₂ := hcal.hBody₂
-                                                   hNoCall₁ := by simpa using hcal.hNoCall₁
-                                                   hNoCall₂ := hcal.hNoCall₂
-                                                   hCallsNoCall₁ := hcal.hCallsNoCall₁
-                                                   hCallsNoCall₂ := hcal.hCallsNoCall₂
-                                                   hPos₁ := by simpa using hcal.hPos₁
-                                                   hPos₂ := hcal.hPos₂
-                                                   ρ₁₀ := ρc₁, hInv := hinv_res, hDone₁ := rfl
-                                                   st := hcal.st, hCheckSeg := by simpa using hcal.hCheckSeg
-                                                   hCheckRest := hcal.hCheckRest }⟩
+                                              exact .inl ⟨0 + 0, _, hstar_all, Nat.le_refl _, rfl, htop_res, hcallers'⟩
                             · -- tail vs tail
                               rename_i g1 as1 g2 as2
                               simp only [ht1] at hstep1
@@ -1345,12 +1647,98 @@ theorem checkProgramWithPlan_forward {p q : Program} {plan : ProgPlan}
         | nil => rw [hs1, hs2] at hstack; cases hstack
         | cons fr₂ rest₂ =>
             rw [hs1, hs2] at hstack
-            obtain ⟨⟨htop⟩, hcallers⟩ := hstack
+            obtain ⟨htopRel, hcallers⟩ := hstack
             have hs1_eq : s₁ = { mem := s₁.mem, ctx := s₁.ctx, stack := fr₁ :: rest₁ } := by
               cases s₁; cases hs1; rfl
             have hs2_eq : s₂ = { mem := s₂.mem, ctx := s₁.ctx, stack := fr₂ :: rest₂ } := by
               cases s₂; cases hs2; cases hctx; rfl
-            -- A non-stuck final step of `p` CANNOT happen while `fr₁.pos < B₁.body.size`!
+            rcases htopRel with ⟨⟨htop⟩⟩ | ⟨hmemEq, hfrEq, hfnSame⟩
+            rotate_left
+            · -- Identical unchanged function final step
+              have hst1 : semStep p s₁ = (step p { mem := s₁.mem, ctx := s₁.ctx, stack := fr₁ :: rest₁ }).toSem := by
+                rw [← hs1_eq]; rfl
+              have hs2_eq' : s₂ = { mem := s₁.mem, ctx := s₁.ctx, stack := fr₁ :: rest₂ } := by
+                rw [hs2_eq, ← hmemEq, ← hfrEq]
+              unfold step at hst1; dsimp only at hst1
+              cases hF : p.funcs[fr₁.fn]? with
+              | none => rw [hF] at hst1; rw [hst1] at hfin; cases hfin; exact absurd rfl hne_stuck
+              | some F =>
+                  have hG : q.funcs[fr₁.fn]? = some F := hfnSame.symm.trans hF
+                  rw [hF] at hst1; dsimp only at hst1
+                  cases hB : F.blocks[fr₁.label]? with
+                  | none => rw [hB] at hst1; rw [hst1] at hfin; cases hfin; exact absurd rfl hne_stuck
+                  | some B =>
+                      rw [hB] at hst1; dsimp only at hst1
+                      by_cases hlt : fr₁.pos < B.body.size
+                      · simp only [hlt, ↓reduceDIte] at hst1
+                        cases hst : B.body[fr₁.pos] with
+                        | assign _ _ | limb _ _ _ | store _ _ _ =>
+                            rw [hst] at hst1; dsimp only at hst1; rw [← hst] at hst1
+                            cases hex : (B.body[fr₁.pos]).exec fr₁.env s₁.mem s₁.ctx with
+                            | some _ => rw [hex] at hst1; rw [hst1] at hfin; cases hfin
+                            | none => rw [hex] at hst1; rw [hst1] at hfin; cases hfin; exact absurd rfl hne_stuck
+                        | call _ g as =>
+                            rw [hst] at hst1; dsimp only at hst1
+                            cases hbind : (evalArgs fr₁.env as >>= enter p g) with
+                            | some _ => rw [hbind] at hst1; rw [hst1] at hfin; cases hfin
+                            | none => rw [hbind] at hst1; rw [hst1] at hfin; cases hfin; exact absurd rfl hne_stuck
+                      · simp only [hlt, ↓reduceDIte] at hst1
+                        have hst2 : semStep q s₂ = IxCC.Lir.Step.toSem _ :=
+                          congrArg IxCC.Lir.Step.toSem ((congrArg (step q) hs2_eq').trans
+                            (step_at_term' (p := q) (F := F) (B := B) (mem := s₁.mem) (ctx := s₁.ctx)
+                              (fr := fr₁) (rest := rest₂) hG hB hlt))
+                        cases ht : B.term with
+                        | ret args =>
+                            rw [ht] at hst1 hst2; dsimp only at hst1 hst2
+                            cases hev : evalArgs fr₁.env args with
+                            | none => rw [hev] at hst1; rw [hst1] at hfin; cases hfin; exact absurd rfl hne_stuck
+                            | some vs =>
+                                rw [hev] at hst1 hst2; dsimp only at hst1 hst2
+                                cases rest₁ with
+                                | cons c₁ r₁ =>
+                                    dsimp only at hst1
+                                    cases hbp : bindParams c₁.env c₁.dsts vs with
+                                    | some _ => rw [hbp] at hst1; rw [hst1] at hfin; cases hfin
+                                    | none => rw [hbp] at hst1; rw [hst1] at hfin; cases hfin; exact absurd rfl hne_stuck
+                                | nil =>
+                                    cases hcallers
+                                    rw [hst1] at hfin; cases hfin
+                                    exact .inl ⟨0, s₂, .ok (vs, s₁.mem), .refl _, by rw [hst2]; exact .done, .ok rfl⟩
+                        | fail res =>
+                            rw [ht] at hst1 hst2; rw [hst1] at hfin; cases hfin
+                            exact .inl ⟨0, s₂, .resource res, .refl _, by rw [hst2]; exact .fail, .resource res⟩
+                        | trap =>
+                            rw [ht] at hst1 hst2; rw [hst1] at hfin; cases hfin
+                            exact .inl ⟨0, s₂, .trap, .refl _, by rw [hst2]; exact .trap, .trap⟩
+                        | jump e =>
+                            rw [ht] at hst1; dsimp only at hst1; rw [hst1] at hfin
+                            exact absurd hfin (fun h => takeEdge_not_nonstuck h hne_stuck)
+                        | br _ _ a b' _ _ =>
+                            rw [ht] at hst1; dsimp only at hst1
+                            cases ha : a.eval fr₁.env with
+                            | none => rw [ha] at hst1; rw [hst1] at hfin; cases hfin; exact absurd rfl hne_stuck
+                            | some _ =>
+                                cases hb : b'.eval fr₁.env with
+                                | none => rw [ha, hb] at hst1; rw [hst1] at hfin; cases hfin; exact absurd rfl hne_stuck
+                                | some _ =>
+                                    rw [ha, hb] at hst1; dsimp only at hst1; rw [hst1] at hfin
+                                    exact absurd hfin (fun h => takeEdge_not_nonstuck h hne_stuck)
+                        | brOvf _ _ a b' _ _ =>
+                            rw [ht] at hst1; dsimp only at hst1
+                            cases ha : a.eval fr₁.env with
+                            | none => rw [ha] at hst1; rw [hst1] at hfin; cases hfin; exact absurd rfl hne_stuck
+                            | some _ =>
+                                cases hb : b'.eval fr₁.env with
+                                | none => rw [ha, hb] at hst1; rw [hst1] at hfin; cases hfin; exact absurd rfl hne_stuck
+                                | some _ =>
+                                    rw [ha, hb] at hst1; dsimp only at hst1; rw [hst1] at hfin
+                                    exact absurd hfin (fun h => takeEdge_not_nonstuck h hne_stuck)
+                        | tail g as =>
+                            rw [ht] at hst1; dsimp only at hst1
+                            cases hbind : (evalArgs fr₁.env as >>= enter p g) with
+                            | some _ => rw [hbind] at hst1; rw [hst1] at hfin; cases hfin
+                            | none => rw [hbind] at hst1; rw [hst1] at hfin; cases hfin; exact absurd rfl hne_stuck
+            -- Planned function (`htop : TopFrameData`): a non-stuck final step CANNOT happen while `fr₁.pos < B₁.body.size`!
             have hrem_nil : htop.rem₁ = [] := by
               cases hrem : htop.rem₁ with
               | nil => rfl
@@ -1546,10 +1934,10 @@ theorem check_refines {p q : Program} (h : check p q = true)
       (Sem.behaviour fun k => eval q k args mem ctx) :=
   (check_sim h args mem ctx).refines (eval_mono p args mem ctx) (eval_mono q args mem ctx)
 
-/-- `Lir.Opt.run` preserves `Lir.Program.wellFormed`. -/
-theorem run_wellFormed {p : Program} (hwf : p.wellFormed = true) :
-    (Lir.Opt.run p).wellFormed = true := by
-  unfold Lir.Opt.run
+/-- `Lir.Opt.runLocal` preserves `Lir.Program.wellFormed`. -/
+theorem runLocal_wellFormed {p : Program} (hwf : p.wellFormed = true) :
+    (Lir.Opt.runLocal p).wellFormed = true := by
+  unfold Lir.Opt.runLocal
   dsimp only
   split
   · rename_i hcond
@@ -1559,16 +1947,353 @@ theorem run_wellFormed {p : Program} (hwf : p.wellFormed = true) :
     · exact h
   · exact hwf
 
-/-- **End-to-end clocked simulation for `Lir.Opt.run`.** -/
-theorem run_sim (p : Program) (args : List Word) (mem : X86.Memory) (ctx : Word) :
-    Sem.Sim Eq id (fun k => eval p k args mem ctx) (fun k => eval (Lir.Opt.run p) k args mem ctx) := by
-  unfold Lir.Opt.run
+/-- **Clocked simulation for `Lir.Opt.runLocal`** (`Sem.Sim Eq id`). -/
+theorem runLocal_sim (p : Program) (args : List Word) (mem : X86.Memory) (ctx : Word) :
+    Sem.Sim Eq id (fun k => eval p k args mem ctx) (fun k => eval (Lir.Opt.runLocal p) k args mem ctx) := by
+  unfold Lir.Opt.runLocal
   dsimp only
   split
   · rename_i hcond
     rw [Bool.and_eq_true] at hcond
     exact check_sim hcond.1 args mem ctx
   · exact ⟨fun k _ => ⟨k, Sem.Result.Refines.refl (fun _ => rfl)⟩, fun k hk => .inl hk⟩
+
+/-- `Lir.Opt.runLocalAt` preserves `Lir.Program.wellFormed`. -/
+theorem runLocalAt_wellFormed {p : Program} {fi : FunId} (hwf : p.wellFormed = true) :
+    (Lir.Opt.runLocalAt p fi).wellFormed = true := by
+  unfold Lir.Opt.runLocalAt
+  cases p.funcs[fi]? with
+  | none => exact hwf
+  | some F =>
+      dsimp only
+      split
+      · exact hwf
+      · split
+        · rename_i hcond
+          rw [Bool.and_eq_true, Bool.or_eq_true, hwf] at hcond
+          rcases hcond.2 with h | h
+          · cases h
+          · exact h
+        · exact hwf
+
+/-- **Clocked simulation for `Lir.Opt.runLocalAt`** (`Sem.Sim Eq id`). -/
+theorem runLocalAt_sim (p : Program) (fi : FunId)
+    (args : List Word) (mem : X86.Memory) (ctx : Word) :
+    Sem.Sim Eq id (fun k => eval p k args mem ctx)
+      (fun k => eval (Lir.Opt.runLocalAt p fi) k args mem ctx) := by
+  unfold Lir.Opt.runLocalAt
+  cases p.funcs[fi]? with
+  | none => exact Sem.Sim.refl (fun _ => rfl) _
+  | some F =>
+      dsimp only
+      split
+      · exact Sem.Sim.refl (fun _ => rfl) _
+      · split
+        · rename_i hcond
+          rw [Bool.and_eq_true] at hcond
+          exact checkProgramWithPlan_sim hcond.1 args mem ctx
+        · exact Sem.Sim.refl (fun _ => rfl) _
+
+/-! ## Composing structural passes (`Inline`, `Unroll`, `IfConv`) with `runLocalAt` -/
+
+private theorem sim_clock_le {α : Type} {f g : Nat → Nat}
+    {c₁ c₂ : Nat → Sem.Result α}
+    (h₁ : Sem.ClockMono c₁) (hfg : ∀ k, f k ≤ g k)
+    (h : Sem.Sim Eq f c₁ c₂) : Sem.Sim Eq g c₁ c₂ where
+  forward := h.forward
+  timeout k hk := by
+    apply h.timeout k
+    cases hfk : c₁ (f k) with
+    | timeout => rfl
+    | _ =>
+        have hne : c₁ (f k) ≠ .timeout := by rw [hfk]; intro hc; cases hc
+        have heq := h₁ (hfg k) hne
+        rw [hk] at heq
+        exact absurd heq.symm hne
+
+private theorem sim_refl_clock {α : Type} {f : Nat → Nat} {c : Nat → Sem.Result α}
+    (h : Sem.ClockMono c) (hf : ∀ k, k ≤ f k) : Sem.Sim Eq f c c :=
+  sim_clock_le h hf (Sem.Sim.refl (fun _ => rfl) c)
+
+private theorem inlineClock_ge : ∀ n k, k ≤ inlineClock n k
+  | 0, _ => Nat.le_refl _
+  | n + 1, k => by simp only [inlineClock]; have := inlineClock_ge n k; omega
+
+private theorem unrollClock_ge : ∀ n k, k ≤ unrollClock n k
+  | 0, _ => Nat.le_refl _
+  | n + 1, k => by simp only [unrollClock]; have := unrollClock_ge n k; omega
+
+theorem inlineTailLoop_wellFormed : ∀ (fuel : Nat) {p : Program},
+    p.wellFormed = true → (inlineTailLoop fuel p).wellFormed = true
+  | 0, _, hwf => hwf
+  | fuel + 1, p, hwf => by
+      unfold inlineTailLoop
+      split
+      · exact hwf
+      · rename_i fi blk _
+        dsimp only
+        split
+        · exact inlineTailLoop_wellFormed fuel (runLocalAt_wellFormed (inlineTailSiteChecked_wellFormed hwf))
+        · exact hwf
+
+theorem inlineTailLoop_sim : ∀ (fuel : Nat) (p : Program)
+    (args : List Word) (mem : X86.Memory) (ctx : Word),
+    Sem.Sim Eq (inlineClock fuel)
+      (fun k => eval p k args mem ctx)
+      (fun k => eval (inlineTailLoop fuel p) k args mem ctx)
+  | 0, p, args, mem, ctx => Sem.Sim.refl (fun _ => rfl) _
+  | fuel + 1, p, args, mem, ctx => by
+      unfold inlineTailLoop
+      split
+      · exact sim_refl_clock (eval_mono p args mem ctx) (inlineClock_ge (fuel + 1))
+      · rename_i fi blk _
+        dsimp only
+        split
+        · have h1 := inlineTailSiteChecked_sim p fi blk args mem ctx
+          have h2 := runLocalAt_sim (inlineTailSiteChecked p fi blk).1 fi args mem ctx
+          have h3 := inlineTailLoop_sim fuel (runLocalAt (inlineTailSiteChecked p fi blk).1 fi) args mem ctx
+          exact sim_clock_le (eval_mono p args mem ctx) (fun k => by simp only [inlineClock, id]; exact Nat.le_refl _)
+            (sim_eq_comp (eval_mono _ args mem ctx) h1 (sim_eq_comp (eval_mono _ args mem ctx) h2 h3))
+        · exact sim_refl_clock (eval_mono p args mem ctx) (inlineClock_ge (fuel + 1))
+
+theorem inlineHelpersLoop_wellFormed : ∀ (fuel : Nat) {p : Program},
+    p.wellFormed = true → (inlineHelpersLoop fuel p).wellFormed = true
+  | 0, _, hwf => hwf
+  | fuel + 1, p, hwf => by
+      unfold inlineHelpersLoop
+      split
+      · exact hwf
+      · rename_i fi blk pos _
+        dsimp only
+        split
+        · exact inlineHelpersLoop_wellFormed fuel (runLocalAt_wellFormed (inlineCallSiteChecked_wellFormed hwf))
+        · exact hwf
+
+theorem inlineHelpersLoop_sim : ∀ (fuel : Nat) (p : Program)
+    (args : List Word) (mem : X86.Memory) (ctx : Word),
+    Sem.Sim Eq (inlineClock fuel)
+      (fun k => eval p k args mem ctx)
+      (fun k => eval (inlineHelpersLoop fuel p) k args mem ctx)
+  | 0, p, args, mem, ctx => Sem.Sim.refl (fun _ => rfl) _
+  | fuel + 1, p, args, mem, ctx => by
+      unfold inlineHelpersLoop
+      split
+      · exact sim_refl_clock (eval_mono p args mem ctx) (inlineClock_ge (fuel + 1))
+      · rename_i fi blk pos _
+        dsimp only
+        split
+        · have h1 := inlineCallSiteChecked_sim p fi blk pos args mem ctx
+          have h2 := runLocalAt_sim (inlineCallSiteChecked p fi blk pos).1 fi args mem ctx
+          have h3 := inlineHelpersLoop_sim fuel (runLocalAt (inlineCallSiteChecked p fi blk pos).1 fi) args mem ctx
+          exact sim_clock_le (eval_mono p args mem ctx) (fun k => by simp only [inlineClock, id]; exact Nat.le_refl _)
+            (sim_eq_comp (eval_mono _ args mem ctx) h1 (sim_eq_comp (eval_mono _ args mem ctx) h2 h3))
+        · exact sim_refl_clock (eval_mono p args mem ctx) (inlineClock_ge (fuel + 1))
+
+theorem versionOddLoop_wellFormed : ∀ (fuel : Nat) (doneFns : Src.NatSet) {p : Program},
+    p.wellFormed = true → (versionOddLoop fuel doneFns p).wellFormed = true
+  | 0, _, _, hwf => hwf
+  | fuel + 1, doneFns, p, hwf => by
+      unfold versionOddLoop
+      split
+      · exact hwf
+      · rename_i fi h idxs outers _
+        dsimp only
+        split
+        · exact versionOddLoop_wellFormed fuel (doneFns.insert fi)
+            (runLocalAt_wellFormed (versionOddLoopSiteChecked_wellFormed hwf))
+        · exact hwf
+
+theorem versionOddLoop_sim : ∀ (fuel : Nat) (doneFns : Src.NatSet) (p : Program)
+    (args : List Word) (mem : X86.Memory) (ctx : Word),
+    Sem.Sim Eq id
+      (fun k => eval p k args mem ctx)
+      (fun k => eval (versionOddLoop fuel doneFns p) k args mem ctx)
+  | 0, _, p, args, mem, ctx => Sem.Sim.refl (fun _ => rfl) _
+  | fuel + 1, doneFns, p, args, mem, ctx => by
+      unfold versionOddLoop
+      split
+      · exact Sem.Sim.refl (fun _ => rfl) _
+      · rename_i fi h idxs outers _
+        dsimp only
+        split
+        · have h1 := versionOddLoopSiteChecked_sim p fi h idxs outers args mem ctx
+          have h2 := runLocalAt_sim (versionOddLoopSiteChecked p fi h idxs outers).1 fi args mem ctx
+          have h3 := versionOddLoop_sim fuel (doneFns.insert fi)
+            (runLocalAt (versionOddLoopSiteChecked p fi h idxs outers).1 fi) args mem ctx
+          exact sim_eq_comp (eval_mono _ args mem ctx) h1
+            (sim_eq_comp (eval_mono _ args mem ctx) h2 h3)
+        · exact Sem.Sim.refl (fun _ => rfl) _
+
+theorem ifConvDiamondStep_wellFormed {p : Program} {fi : FunId} {b : Label}
+    (hwf : p.wellFormed = true) : (ifConvDiamondStep p fi b).1.wellFormed = true := by
+  unfold ifConvDiamondStep
+  cases h : ifConvDiamondSite p fi b with
+  | none => exact hwf
+  | some q0 =>
+      dsimp only
+      split
+      · rename_i hcond; simp only [hwf, Bool.not_true, Bool.false_or] at hcond; exact hcond
+      · exact hwf
+
+theorem ifConvDiamondStep_sim (p : Program) (fi : FunId) (b : Label)
+    (args : List Word) (mem : X86.Memory) (ctx : Word) :
+    Sem.Sim Eq id
+      (fun k => eval p k args mem ctx)
+      (fun k => eval (ifConvDiamondStep p fi b).1 k args mem ctx) := by
+  unfold ifConvDiamondStep
+  cases h : ifConvDiamondSite p fi b with
+  | none => exact Sem.Sim.refl (fun _ => rfl) _
+  | some q0 =>
+      dsimp only
+      split
+      · exact sim_eq_comp (eval_mono _ args mem ctx)
+          (ifConvDiamondSite_sim h args mem ctx) (runLocalAt_sim q0 fi args mem ctx)
+      · exact Sem.Sim.refl (fun _ => rfl) _
+
+theorem ifConvLoop_wellFormed : ∀ (fuel : Nat) {p : Program},
+    p.wellFormed = true → (ifConvLoop fuel p).wellFormed = true
+  | 0, _, hwf => hwf
+  | fuel + 1, p, hwf => by
+      unfold ifConvLoop
+      split
+      · exact hwf
+      · rename_i fi b _
+        dsimp only
+        split
+        · exact ifConvLoop_wellFormed fuel (ifConvDiamondStep_wellFormed hwf)
+        · exact hwf
+
+theorem ifConvLoop_sim : ∀ (fuel : Nat) (p : Program)
+    (args : List Word) (mem : X86.Memory) (ctx : Word),
+    Sem.Sim Eq id
+      (fun k => eval p k args mem ctx)
+      (fun k => eval (ifConvLoop fuel p) k args mem ctx)
+  | 0, p, args, mem, ctx => Sem.Sim.refl (fun _ => rfl) _
+  | fuel + 1, p, args, mem, ctx => by
+      unfold ifConvLoop
+      split
+      · exact Sem.Sim.refl (fun _ => rfl) _
+      · rename_i fi b _
+        dsimp only
+        split
+        · have h1 := ifConvDiamondStep_sim p fi b args mem ctx
+          have h2 := ifConvLoop_sim fuel (ifConvDiamondStep p fi b).1 args mem ctx
+          exact sim_eq_comp (eval_mono _ args mem ctx) h1 h2
+        · exact Sem.Sim.refl (fun _ => rfl) _
+
+theorem inlineSelfLoop_wellFormed : ∀ (fuel : Nat) {p : Program},
+    p.wellFormed = true → (inlineSelfLoop fuel p).wellFormed = true
+  | 0, _, hwf => hwf
+  | fuel + 1, p, hwf => by
+      unfold inlineSelfLoop
+      split
+      · exact hwf
+      · rename_i fi blk pos _
+        dsimp only
+        split
+        · exact inlineSelfLoop_wellFormed fuel (runLocalAt_wellFormed (inlineCallSiteChecked_wellFormed hwf))
+        · exact hwf
+
+theorem inlineSelfLoop_sim : ∀ (fuel : Nat) (p : Program)
+    (args : List Word) (mem : X86.Memory) (ctx : Word),
+    Sem.Sim Eq (inlineClock fuel)
+      (fun k => eval p k args mem ctx)
+      (fun k => eval (inlineSelfLoop fuel p) k args mem ctx)
+  | 0, p, args, mem, ctx => Sem.Sim.refl (fun _ => rfl) _
+  | fuel + 1, p, args, mem, ctx => by
+      unfold inlineSelfLoop
+      split
+      · exact sim_refl_clock (eval_mono p args mem ctx) (inlineClock_ge (fuel + 1))
+      · rename_i fi blk pos _
+        dsimp only
+        split
+        · have h1 := inlineCallSiteChecked_sim p fi blk pos args mem ctx
+          have h2 := runLocalAt_sim (inlineCallSiteChecked p fi blk pos).1 fi args mem ctx
+          have h3 := inlineSelfLoop_sim fuel (runLocalAt (inlineCallSiteChecked p fi blk pos).1 fi) args mem ctx
+          exact sim_clock_le (eval_mono p args mem ctx) (fun k => by simp only [inlineClock, id]; exact Nat.le_refl _)
+            (sim_eq_comp (eval_mono _ args mem ctx) h1 (sim_eq_comp (eval_mono _ args mem ctx) h2 h3))
+        · exact sim_refl_clock (eval_mono p args mem ctx) (inlineClock_ge (fuel + 1))
+
+theorem unrollLoop_wellFormed : ∀ (fuel : Nat) (doneFns : Src.NatSet) {p : Program},
+    p.wellFormed = true → (unrollLoop fuel doneFns p).wellFormed = true
+  | 0, _, _, hwf => hwf
+  | fuel + 1, doneFns, p, hwf => by
+      unfold unrollLoop
+      split
+      · exact hwf
+      · rename_i fi h U _
+        split
+        · dsimp only
+          split
+          · exact unrollLoop_wellFormed fuel (doneFns.insert fi)
+              (runLocalAt_wellFormed (unrollLoopSiteChecked_wellFormed hwf))
+          · exact hwf
+        · exact hwf
+
+theorem unrollLoop_sim : ∀ (fuel : Nat) (doneFns : Src.NatSet) (p : Program)
+    (args : List Word) (mem : X86.Memory) (ctx : Word),
+    Sem.Sim Eq (unrollClock fuel)
+      (fun k => eval p k args mem ctx)
+      (fun k => eval (unrollLoop fuel doneFns p) k args mem ctx)
+  | 0, _, p, args, mem, ctx => Sem.Sim.refl (fun _ => rfl) _
+  | fuel + 1, doneFns, p, args, mem, ctx => by
+      unfold unrollLoop
+      split
+      · exact sim_refl_clock (eval_mono p args mem ctx) (unrollClock_ge (fuel + 1))
+      · rename_i fi h U _
+        split
+        · rename_i hU
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at hU
+          obtain ⟨hU1, hU4⟩ := hU
+          dsimp only
+          split
+          · have h1' := unrollLoopSiteChecked_sim p fi h U hU1 args mem ctx
+            have h1 : Sem.Sim Eq (fun k => 4 * k + 3)
+                (fun k => eval p k args mem ctx)
+                (fun k => eval (unrollLoopSiteChecked p fi h U).1 k args mem ctx) :=
+              sim_clock_le (eval_mono p args mem ctx)
+                (fun k => by have := Nat.mul_le_mul_right k hU4; omega) h1'
+            have h2 := runLocalAt_sim (unrollLoopSiteChecked p fi h U).1 fi args mem ctx
+            have h3 := unrollLoop_sim fuel (doneFns.insert fi)
+              (runLocalAt (unrollLoopSiteChecked p fi h U).1 fi) args mem ctx
+            exact sim_clock_le (eval_mono p args mem ctx) (fun k => by simp only [unrollClock, id]; exact Nat.le_refl _)
+              (sim_eq_comp (eval_mono _ args mem ctx) h1 (sim_eq_comp (eval_mono _ args mem ctx) h2 h3))
+          · exact sim_refl_clock (eval_mono p args mem ctx) (unrollClock_ge (fuel + 1))
+        · exact sim_refl_clock (eval_mono p args mem ctx) (unrollClock_ge (fuel + 1))
+
+/-- `Lir.Opt.run` preserves `Lir.Program.wellFormed`. -/
+theorem run_wellFormed {p : Program} (hwf : p.wellFormed = true) :
+    (Lir.Opt.run p).wellFormed = true := by
+  unfold Lir.Opt.run
+  exact unrollLoop_wellFormed _ _ (inlineSelfLoop_wellFormed _
+    (ifConvLoop_wellFormed _ (versionOddLoop_wellFormed _ _
+      (inlineHelpersLoop_wellFormed _ (inlineTailLoop_wellFormed _ (runLocal_wellFormed hwf))))))
+
+/-- **End-to-end clocked simulation for `Lir.Opt.run`** (with composed clock map `runClock`). -/
+theorem run_sim (p : Program) (args : List Word) (mem : X86.Memory) (ctx : Word) :
+    Sem.Sim Eq runClock (fun k => eval p k args mem ctx) (fun k => eval (Lir.Opt.run p) k args mem ctx) := by
+  unfold Lir.Opt.run
+  dsimp only
+  let p1 := runLocal p
+  let p2 := inlineTailLoop tailInlineFuel p1
+  let p3 := inlineHelpersLoop helperInlineFuel p2
+  let p4 := versionOddLoop versionOddFuel .leaf p3
+  let p5 := ifConvLoop ifConvFuel p4
+  let p6 := inlineSelfLoop selfInlineFuel p5
+  have h1 := runLocal_sim p args mem ctx
+  have h2 := inlineTailLoop_sim tailInlineFuel p1 args mem ctx
+  have h3 := inlineHelpersLoop_sim helperInlineFuel p2 args mem ctx
+  have h4 := versionOddLoop_sim versionOddFuel .leaf p3 args mem ctx
+  have h5 := ifConvLoop_sim ifConvFuel p4 args mem ctx
+  have h6 := inlineSelfLoop_sim selfInlineFuel p5 args mem ctx
+  have h7 := unrollLoop_sim unrollFuel .leaf p6 args mem ctx
+  exact sim_clock_le (eval_mono p args mem ctx) (fun k => by simp only [runClock, id]; exact Nat.le_refl _)
+    (sim_eq_comp (eval_mono _ args mem ctx) h1
+      (sim_eq_comp (eval_mono _ args mem ctx) h2
+        (sim_eq_comp (eval_mono _ args mem ctx) h3
+          (sim_eq_comp (eval_mono _ args mem ctx) h4
+            (sim_eq_comp (eval_mono _ args mem ctx) h5
+              (sim_eq_comp (eval_mono _ args mem ctx) h6 h7))))))
 
 /-- **End-to-end behaviour refinement for `Lir.Opt.run`.** -/
 theorem run_refines (p : Program) (args : List Word) (mem : X86.Memory) (ctx : Word) :

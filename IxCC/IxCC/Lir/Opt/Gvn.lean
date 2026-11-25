@@ -163,12 +163,30 @@ private def lookupGvn (sc : GvnScope) (e : SymExpr) : Option VReg :=
 private def lookupLoad (sg : SegOpt) (e : SymExpr) : Option VReg :=
   (sg.loadMap.find? fun (se, _) => se == e).map (·.2)
 
+/-- Materialize a normalized `SymExpr` as a live dominating `Arg` if available. -/
+private def symAsArg (sc : GvnScope) (sg : SegOpt) (e : SymExpr) : Option Arg :=
+  match e with
+  | .reg r => some (substArg sc.copyMap (.v r))
+  | .imm k => some (.imm k)
+  | _ =>
+      match lookupGvn sc e with
+      | some r => some (.v r)
+      | none => (lookupLoad sg e).map .v
+
 private def lookupDivCache (sg : SegOpt) (w : Width) (ea : SymExpr) (d : Word) : Option VReg :=
   (sg.divCache.find? fun (w', e', d', _) => w' == w && e' == ea && d' == d).map (·.2.2.2)
 
+/-- Map a shift amount `k ∈ {1, 2, 3}` to its x86 SIB scale. -/
+private def scaleOfShift? : Word → Option X86.Scale
+  | 1 => some .two
+  | 2 => some .four
+  | 3 => some .eight
+  | _ => none
+
 /-- Simplify a binary operation into a single `Rhs` (algebraic identities, constant folding,
-power-of-2 shift/mask, `addr` displacement folding). Does NOT emit multi-stmt magic division. -/
-private def simplifyBinRhs (sc : GvnScope) (o : BinOp) (w : Width) (a b : Arg) : Rhs :=
+power-of-2 shift/mask, 3-address `lea` `*3/*5/*9` & `addr` base/index/disp folding).
+Does NOT emit multi-stmt magic division. -/
+private def simplifyBinRhs (sc : GvnScope) (sg : SegOpt) (o : BinOp) (w : Width) (a b : Arg) : Rhs :=
   match a, b with
   | .imm va, .imm vb =>
       match o.eval w va vb with
@@ -190,6 +208,25 @@ private def simplifyBinRhs (sc : GvnScope) (o : BinOp) (w : Width) (a b : Arg) :
                   if fitsI32 d' then .addr { m with disp := d' }
                   else .bin .add .w64 a b
               | _, _ => .bin .add .w64 a b
+          | .w64, .v r1, .v r2 =>
+              -- Fold `(base + disp) + r2` or `r1 + (r2 << k)` into a single 3-address `lea`!
+              let foldAddr (ra rb : VReg) : Option Rhs :=
+                match sc.addrMap.get? ra with
+                | some m =>
+                    if m.index.isNone && fitsI32 m.disp then
+                      some (.addr { m with index := some (rb, .one) })
+                    else none
+                | none =>
+                    match symOf sc ra with
+                    | .bin .shl .w64 rx (.imm sh) =>
+                        match scaleOfShift? (sh &&& 63), symAsArg sc sg rx with
+                        | some scale, some (.v ri) =>
+                            some (.addr { base := some (.v rb), index := some (ri, scale), disp := 0 })
+                        | _, _ => none
+                    | _ => none
+              match foldAddr r1 r2 with
+              | some rhs => rhs
+              | none => (foldAddr r2 r1).getD (.bin .add .w64 a b)
           | _, _, _ => .bin .add w a b
       | .sub =>
           if a == b then .arg (.imm 0)
@@ -207,6 +244,15 @@ private def simplifyBinRhs (sc : GvnScope) (o : BinOp) (w : Width) (a b : Arg) :
           match a, b with
           | _, .imm 0 => .arg (.imm 0)
           | a, .imm 1 => if w == .w64 then .arg a else .bin .mul w a (.imm 1)
+          | .v r, .imm 3 =>
+              if w == .w64 then .addr { base := some (.v r), index := some (r, .two), disp := 0 }
+              else .bin .mul w a b
+          | .v r, .imm 5 =>
+              if w == .w64 then .addr { base := some (.v r), index := some (r, .four), disp := 0 }
+              else .bin .mul w a b
+          | .v r, .imm 9 =>
+              if w == .w64 then .addr { base := some (.v r), index := some (r, .eight), disp := 0 }
+              else .bin .mul w a b
           | a, .imm k =>
               match findPow2 w k with
               | some sh => .bin .shl w a (.imm (UInt64.ofNat sh))
@@ -248,6 +294,20 @@ private def simplifyBinRhs (sc : GvnScope) (o : BinOp) (w : Width) (a b : Arg) :
               if w == .w64 && (k &&& Lir.shiftMask .w64) == 0 then .arg a
               else .bin .sar w a (.imm (k &&& Lir.shiftMask w))
           | _, _ => .bin .sar w a b
+      | .rol =>
+          match a, b with
+          | .imm 0, _ => .arg (.imm 0)
+          | a, .imm k =>
+              if w == .w64 && (k &&& Lir.shiftMask .w64) == 0 then .arg a
+              else .bin .rol w a (.imm (k &&& Lir.shiftMask w))
+          | _, _ => .bin .rol w a b
+      | .ror =>
+          match a, b with
+          | .imm 0, _ => .arg (.imm 0)
+          | a, .imm k =>
+              if w == .w64 && (k &&& Lir.shiftMask .w64) == 0 then .arg a
+              else .bin .ror w a (.imm (k &&& Lir.shiftMask w))
+          | _, _ => .bin .ror w a b
       | .udiv =>
           match a, b with
           | a, .imm k =>
@@ -400,19 +460,99 @@ private def optStmt (sc : GvnScope) (sg : SegOpt) (fresh : VReg) (s : Stmt) :
       | .bin o w a b =>
           let ea := (argToSym (symOf sc) a).norm
           let eb := (argToSym (symOf sc) b).norm
-          let e := mkBin o w ea eb
-          -- First check constant result or GVN hit!
+          let eRaw := mkBin o w ea eb
+          let e := eRaw.normFacts sc.facts
+          -- First check constant result or GVN hit (modulo `normFacts`)!
           match e with
           | .imm k =>
               let sc' := { sc with copyMap := sc.copyMap.insert x (.imm k), symMap := sc.symMap.insert x e }
               ([.assign x (.arg (.imm k))], sc', sg, fresh)
           | _ =>
-              match lookupGvn sc e with
+              match (lookupGvn sc e).orElse (fun _ => lookupGvn sc eRaw) with
               | some prev =>
                   let sc' := { sc with copyMap := sc.copyMap.insert x (.v prev), symMap := sc.symMap.insert x e }
                   ([.assign x (.arg (.v prev))], sc', sg, fresh)
               | none =>
-                  let rSimp := simplifyBinRhs sc o w a b
+                  -- Emit `sfib` tagged polynomial `(x >>> 1) * (x + 1) + c` when `normFacts` simplified it!
+                  let sfibEmit? : Option (List Stmt × VReg) :=
+                    if e != eRaw then
+                      let matchMul (m : SymExpr) (disp : Int) : Option (List Stmt × VReg) :=
+                        if !fitsI32 disp then none
+                        else match m with
+                        | .bin .mul .w64 p1 p2 =>
+                            let tryPair (qa pb : SymExpr) : Option (List Stmt × VReg) :=
+                              match qa, pb with
+                              | .bin .shr .w64 rx (.imm 1), .bin .add .w64 rx2 (.imm 1) =>
+                                  if rx == rx2 then
+                                    match symAsArg sc sg rx with
+                                    | some (.v xr) =>
+                                        let (qReg, preQ, fr1) : VReg × List Stmt × VReg :=
+                                          match symAsArg sc sg qa with
+                                          | some (.v qr) => (qr, [], fresh)
+                                          | _ => (fresh, [.assign fresh (.bin .shr .w64 (.v xr) (.imm 1))], fresh + 1)
+                                        let tP1 := fr1
+                                        let tMul := fr1 + 1
+                                        let stmts : List Stmt :=
+                                          if disp == 0 then
+                                            preQ ++
+                                            [.assign tP1 (.addr { base := some (.v xr), index := none, disp := 1 }),
+                                             .assign x (.bin .mul .w64 (.v qReg) (.v tP1))]
+                                          else
+                                            preQ ++
+                                            [.assign tP1 (.addr { base := some (.v xr), index := none, disp := 1 }),
+                                             .assign tMul (.bin .mul .w64 (.v qReg) (.v tP1)),
+                                             .assign x (.addr { base := some (.v tMul), index := none, disp })]
+                                        some (stmts, fr1 + 2)
+                                    | _ => none
+                                  else none
+                              | _, _ => none
+                            (tryPair p1 p2).orElse fun _ => tryPair p2 p1
+                        | _ => none
+                      match e with
+                      | .bin .add .w64 m (.imm c) =>
+                          match immAsSmallInt? c with
+                          | some ci => matchMul m ci
+                          | none => none
+                      | m => matchMul m 0
+                    else none
+                  match sfibEmit? with
+                  | some (stmts, fresh') =>
+                      let sc' := { sc with symMap := sc.symMap.insert x e, gvnMap := (e, x) :: sc.gvnMap }
+                      (stmts, sc', sg, fresh')
+                  | none =>
+                  let special? : Option Rhs :=
+                    -- 1. Rotate peephole `(x >>> r) ||| (x <<< (w - r))` → `ror`
+                    let rot? : Option Rhs :=
+                      if o != .ror then
+                        match eRaw with
+                        | .bin .ror rw rx (.imm rc) =>
+                            (symAsArg sc sg rx).map fun ax => .bin .ror rw ax (.imm rc)
+                        | _ => none
+                      else none
+                    -- 2. Tagged retag `(x << 1) | 1` → `lea [x + x + 1]`
+                    let retag? : Option Rhs :=
+                      if o == .or && w == .w64 then
+                        match e with
+                        | .bin .add .w64 (.bin .shl .w64 rx (.imm 1)) (.imm 1) =>
+                            match symAsArg sc sg rx with
+                            | some (.v r) =>
+                                some (.addr { base := some (.v r), index := some (r, .one), disp := 1 })
+                            | _ => none
+                        | _ =>
+                            -- 3. `even | 1` → `lea [m + disp + 1]` or `lea [r + 1]`
+                            match a, b with
+                            | .v r, .imm 1 | .imm 1, .v r =>
+                                if parityOf sc.facts (symOf sc r) == .even then
+                                  match sc.addrMap.get? r with
+                                  | some m =>
+                                      if fitsI32 (m.disp + 1) then some (.addr { m with disp := m.disp + 1 })
+                                      else some (.addr { base := some (.v r), index := none, disp := 1 })
+                                  | none => some (.addr { base := some (.v r), index := none, disp := 1 })
+                                else none
+                            | _, _ => none
+                      else none
+                    rot?.orElse fun _ => retag?
+                  let rSimp := special?.getD (simplifyBinRhs sc sg o w a b)
                   match rSimp with
                   | .arg aRes =>
                       let sc' := { sc with copyMap := sc.copyMap.insert x aRes, symMap := sc.symMap.insert x e }
@@ -554,11 +694,151 @@ private def optStmt (sc : GvnScope) (sg : SegOpt) (fresh : VReg) (s : Stmt) :
       -- Reset per-segment memory state across `.call`!
       ([.call rs f as'], sc, {}, fresh)
 
+/-- Registers whose ONLY uses in `F` are inside `.assign _ (.bin .or .w64 (.v x) (.imm 1))`
+or `.assign _ (.bin .or .w64 (.imm 1) (.v x))` (eligible for even-`brOvf .addC` tag cancellation). -/
+private def or1OnlyUses (F : Func) : Src.NatSet :=
+  let (hasOr1, hasOther) := F.blocks.foldl (init := ((Src.NatMap.leaf : Src.NatSet), (Src.NatMap.leaf : Src.NatSet)))
+    fun (o1, oth) blk =>
+      let oth := (blk.term.uses ++ blk.term.edgeUses).foldl (fun s x => Src.NatSet.insert s x) oth
+      blk.body.foldl (init := (o1, oth)) fun (s1, s2) st =>
+        match st with
+        | .assign _ (.bin .or .w64 (.v r) (.imm 1))
+        | .assign _ (.bin .or .w64 (.imm 1) (.v r)) => (Src.NatSet.insert s1 r, s2)
+        | _ => (s1, st.uses.foldl (fun s x => Src.NatSet.insert s x) s2)
+  hasOr1.toList.foldl (init := (Src.NatMap.leaf : Src.NatSet)) fun acc (x, _) =>
+    if hasOther.contains x then acc else Src.NatSet.insert acc x
+
+/-- Forward parity dataflow over `F.rpo` to discover inductive LSB parity facts at loop
+headers and merge points (e.g., odd tagged `Nat` accumulators and counters). -/
+private def inferBlockParities (F : Func) : Array (List PFact) :=
+  let n := F.blocks.size
+  if n == 0 then #[]
+  else
+    let order := F.rpo.toList
+    let pArg (pm : Src.NatMap Parity) : Arg → Parity
+      | .imm k => if k &&& 1 == 0 then .even else .odd
+      | .v x => pm.getD x .unknown
+    let stepStmt (pm : Src.NatMap Parity) : Stmt → Src.NatMap Parity
+      | .assign x r =>
+          let p : Parity := match r with
+            | .arg a => pArg pm a
+            | .bin .add .w64 a b | .bin .sub .w64 a b | .bin .xor .w64 a b =>
+                (pArg pm a).xor (pArg pm b)
+            | .bin .mul .w64 a b => (pArg pm a).mul (pArg pm b)
+            | .bin .or .w64 a b => (pArg pm a).or (pArg pm b)
+            | .bin .and .w64 a b => (pArg pm a).and (pArg pm b)
+            | .bin .shl .w64 a (.imm k) =>
+                if (k &&& 63) != 0 then .even else pArg pm a
+            | .select _ _ _ _ t f => (pArg pm t).join (pArg pm f)
+            | .addr m =>
+                let pb := match m.base with
+                  | none => Parity.even
+                  | some (.v r) => pm.getD r .unknown
+                  | some .ctx => .unknown
+                let pi := match m.index with
+                  | none => Parity.even
+                  | some (r, .one) => pm.getD r .unknown
+                  | some (_, _) => .even
+                let pd := if dispWord m.disp &&& 1 == 0 then Parity.even else .odd
+                (pb.xor pi).xor pd
+            | _ => .unknown
+          if p == .unknown then pm else pm.insert x p
+      | .limb r1 r2 _ => (pm.insert r1 .unknown).insert r2 .unknown
+      | .call rs _ _ => rs.foldl (fun m r => m.insert r .unknown) pm
+      | .store .. => pm
+    let meetMap (a b : Src.NatMap Parity) : Src.NatMap Parity :=
+      a.toList.foldl (init := .leaf) fun acc (x, pa) =>
+        let p := pa.join (b.getD x .unknown)
+        if p == .unknown then acc else acc.insert x p
+    let rec upsert (xs : List ((Label × Nat) × Src.NatMap Parity)) (k : Label × Nat)
+        (v : Src.NatMap Parity) : List ((Label × Nat) × Src.NatMap Parity) :=
+      match xs with
+      | [] => [(k, v)]
+      | (k', v') :: rest => if k' == k then (k, v) :: rest else (k', v') :: upsert rest k v
+    let mergeIn : List ((Label × Nat) × Src.NatMap Parity) → Src.NatMap Parity
+      | [] => .leaf
+      | (_, m) :: rest => rest.foldl (fun acc (_, m') => meetMap acc m') m
+    let refineBr (pm : Src.NatMap Parity) (andPairs : Src.NatMap (VReg × VReg))
+        (c : Cond) (w : Width) (a b : Arg) (res : Bool) : Src.NatMap Parity :=
+      let applySide (x : VReg) (c' : Cond) (k : Word) : Src.NatMap Parity :=
+        let p := parityFromCondImm w c' k res
+        let pm1 := if p == .unknown then pm else pm.insert x ((pm.getD x .unknown).meet p)
+        if w == .w64 && k == 1 && ((if res then c' else condNegate c') == .tnz) then
+          match andPairs.get? x with
+          | some (x1, x2) =>
+              (pm1.insert x1 ((pm1.getD x1 .unknown).meet .odd)).insert x2
+                ((pm1.getD x2 .unknown).meet .odd)
+          | none => pm1
+        else pm1
+      match a, b with
+      | .v x, .imm k => applySide x c k
+      | .imm k, .v x => applySide x (condSwap c) k
+      | _, _ => pm
+    let initBlocks : Array (Option (Src.NatMap Parity)) := (Array.replicate n none).set! 0 (some .leaf)
+    let initEdges : Array (List ((Label × Nat) × Src.NatMap Parity)) := Array.replicate n []
+    let pass (bs : Array (Option (Src.NatMap Parity)))
+        (es : Array (List ((Label × Nat) × Src.NatMap Parity))) :
+        Array (Option (Src.NatMap Parity)) × Array (List ((Label × Nat) × Src.NatMap Parity)) × Bool :=
+      order.foldl (init := (bs, es, false)) fun (cur, edges, ch) L =>
+        match cur[L]?, F.blocks[L]? with
+        | some (some pm0), some blk =>
+            let (pm1, andPairs) := blk.body.foldl (init := (pm0, (Src.NatMap.leaf : Src.NatMap (VReg × VReg))))
+              fun (pm, ap) s =>
+                let ap' := match s with
+                  | .assign x (.bin .and .w64 (.v r1) (.v r2)) => ap.insert x (r1, r2)
+                  | _ => ap
+                (stepStmt pm s, ap')
+            let outs : List (Edge × Src.NatMap Parity) := match blk.term with
+              | .jump e => [(e, pm1)]
+              | .br c w a b t f =>
+                  [(t, refineBr pm1 andPairs c w a b true), (f, refineBr pm1 andPairs c w a b false)]
+              | .brOvf o x a b ok ovf =>
+                  let px := match o with
+                    | .addC | .subB => (pArg pm1 a).xor (pArg pm1 b)
+                    | .mulOvf => (pArg pm1 a).mul (pArg pm1 b)
+                  let pm2 := if px == .unknown then pm1 else pm1.insert x px
+                  [(ok, pm2), (ovf, pm2)]
+              | _ => []
+            outs.zipIdx.foldl (init := (cur, edges, ch)) fun (cAcc, eAcc, chAcc) ((e, pmEdge), eIdx) =>
+              match F.blocks[e.target]? with
+              | none => (cAcc, eAcc, chAcc)
+              | some tBlk =>
+                  if e.target < cAcc.size then
+                    let pVals := e.args.map (pArg pmEdge)
+                    let pmTgt := (tBlk.params.zip pVals).foldl (init := pmEdge) fun m (p, pv) =>
+                      if pv == .unknown then m.insert p .unknown else m.insert p pv
+                    let esTgt := upsert eAcc[e.target]! (L, eIdx) pmTgt
+                    let eAcc' := eAcc.set! e.target esTgt
+                    let merged := mergeIn esTgt
+                    match cAcc[e.target]! with
+                    | none => (cAcc.set! e.target (some merged), eAcc', true)
+                    | some old =>
+                        if merged.toList == old.toList then (cAcc, eAcc', chAcc)
+                        else (cAcc.set! e.target (some merged), eAcc', true)
+                  else (cAcc, eAcc, chAcc)
+        | _, _ => (cur, edges, ch)
+    let rec fix : Nat → Array (Option (Src.NatMap Parity)) →
+        Array (List ((Label × Nat) × Src.NatMap Parity)) → Array (Option (Src.NatMap Parity))
+      | 0, bs, _ => bs
+      | fuel + 1, bs, es =>
+          let (bs', es', ch) := pass bs es
+          if !ch then bs' else fix fuel bs' es'
+    let finalMaps := fix (4 * n + 4) initBlocks initEdges
+    (List.range n).toArray.map fun b =>
+      match finalMaps[b]?, F.blocks[b]? with
+      | some (some pm), some blk =>
+          blk.params.filterMap fun p =>
+            match pm.getD p .unknown with
+            | .odd => some { cond := .tnz, width := .w64, lhs := .reg p, rhs := .imm 1, result := true }
+            | .even => some { cond := .tz, width := .w64, lhs := .reg p, rhs := .imm 1, result := true }
+            | .unknown => none
+      | _, _ => []
+
 /-- Optimize one block's body and terminator, returning the updated block, updated `fresh`,
 and per-successor `(targetLabel, extraFacts, edgeArgs)` refinements for dominated children. -/
-private def optBlock (sc : GvnScope) (fresh : VReg) (blk : Block) :
-    Block × GvnScope × List (Label × Option PFact × List Arg) × VReg :=
-  let (revStmts, sc1, _, fresh1) := blk.body.foldl
+private def optBlock (or1Set : Src.NatSet) (sc : GvnScope) (fresh : VReg) (blk : Block) :
+    Block × GvnScope × List (Label × List PFact × List Arg) × VReg :=
+  let (revStmts, sc1, sg1, fresh1) := blk.body.foldl
     (init := ([], sc, ({} : SegOpt), fresh)) fun (acc, scc, sgg, fr) stmt =>
       let (out, scc', sgg', fr') := optStmt scc sgg fr stmt
       (out.reverse ++ acc, scc', sgg', fr')
@@ -567,30 +847,47 @@ private def optBlock (sc : GvnScope) (fresh : VReg) (blk : Block) :
   let term0 := substTerm sc1.copyMap blk.term
   match term0 with
   | .jump e =>
-      ({ blk with body := body1.toArray, term := .jump e }, sc1, [(e.target, none, e.args)], fresh1)
+      ({ blk with body := body1.toArray, term := .jump e }, sc1, [(e.target, [], e.args)], fresh1)
   | .br c w a b t f =>
       let ea := (argToSym (symOf sc1) a).norm
       let eb := (argToSym (symOf sc1) b).norm
       match condFromFacts sc1.facts c w ea eb with
       | some true =>
-          ({ blk with body := body1.toArray, term := .jump t }, sc1, [(t.target, none, t.args)], fresh1)
+          ({ blk with body := body1.toArray, term := .jump t }, sc1, [(t.target, [], t.args)], fresh1)
       | some false =>
-          ({ blk with body := body1.toArray, term := .jump f }, sc1, [(f.target, none, f.args)], fresh1)
+          ({ blk with body := body1.toArray, term := .jump f }, sc1, [(f.target, [], f.args)], fresh1)
       | none =>
           if t == f then
-            ({ blk with body := body1.toArray, term := .jump t }, sc1, [(t.target, none, t.args)], fresh1)
+            ({ blk with body := body1.toArray, term := .jump t }, sc1, [(t.target, [], t.args)], fresh1)
           else
-            let fT : Option PFact := if ea.isMemFree && eb.isMemFree then
-              some { cond := c, width := w, lhs := ea, rhs := eb, result := true } else none
-            let fF : Option PFact := if ea.isMemFree && eb.isMemFree then
-              some { cond := c, width := w, lhs := ea, rhs := eb, result := false } else none
-            ({ blk with body := body1.toArray, term := .br c w a b t f }, sc1,
-             [(t.target, fT, t.args), (f.target, fF, f.args)], fresh1)
+            -- Unwrap `br eq/ne (select/test ...)` and odd `(x & 3) == 1 → tz x 2`!
+            let (c1, w1, a1, b1, ea1, eb1) :=
+              match unwrapSelectCond c w ea eb with
+              | some (cs, ws, eas, ebs) =>
+                  match symAsArg sc1 sg1 eas, symAsArg sc1 sg1 ebs with
+                  | some as_, some bs => (cs, ws, as_, bs, eas.norm, ebs.norm)
+                  | _, _ => (c, w, a, b, ea, eb)
+              | none => (c, w, a, b, ea, eb)
+            let (c2, w2, a2, b2, ea2, eb2) :=
+              match unwrapOddBit2 sc1.facts c1 w1 ea1 eb1 with
+              | some (co, wo, eao, ebo) =>
+                  match symAsArg sc1 sg1 eao, symAsArg sc1 sg1 ebo with
+                  | some ao, some bo => (co, wo, ao, bo, eao.norm, ebo.norm)
+                  | _, _ => (c1, w1, a1, b1, ea1, eb1)
+              | none => (c1, w1, a1, b1, ea1, eb1)
+            let mkF (cc : Cond) (ww : Width) (l r : SymExpr) (res : Bool) : List PFact :=
+              if l.isMemFree && r.isMemFree then
+                [{ cond := cc, width := ww, lhs := l, rhs := r, result := res }]
+              else []
+            let fsT := mkF c2 w2 ea2 eb2 true ++ (if (c2, w2, ea2, eb2) != (c, w, ea, eb) then mkF c w ea eb true else [])
+            let fsF := mkF c2 w2 ea2 eb2 false ++ (if (c2, w2, ea2, eb2) != (c, w, ea, eb) then mkF c w ea eb false else [])
+            ({ blk with body := body1.toArray, term := .br c2 w2 a2 b2 t f }, sc1,
+             [(t.target, fsT, t.args), (f.target, fsF, f.args)], fresh1)
   | .brOvf o x a b ok ovf =>
       let ea := (argToSym (symOf sc1) a).norm
       let eb := (argToSym (symOf sc1) b).norm
       let resSym := ovfToSym o ea eb
-      let emitFolded (edge : Edge) : Block × GvnScope × List (Label × Option PFact × List Arg) × VReg :=
+      let emitFolded (edge : Edge) : Block × GvnScope × List (Label × List PFact × List Arg) × VReg :=
         -- Choose best instruction to compute `x` (constant, GVN hit, `addr` disp-fold, or wrapping binop)
         let (xStmt, sc2) : Stmt × GvnScope :=
           match resSym with
@@ -603,7 +900,7 @@ private def optBlock (sc : GvnScope) (fresh : VReg) (blk : Block) :
                   (Stmt.assign x (.arg (.v prev)),
                    { sc1 with copyMap := sc1.copyMap.insert x (.v prev), symMap := sc1.symMap.insert x resSym })
               | none =>
-                  let rhs := simplifyBinRhs sc1 (ovfBinOp o) .w64 a b
+                  let rhs := simplifyBinRhs sc1 sg1 (ovfBinOp o) .w64 a b
                   match rhs with
                   | .arg aRes =>
                       (Stmt.assign x (.arg aRes),
@@ -617,16 +914,43 @@ private def optBlock (sc : GvnScope) (fresh : VReg) (blk : Block) :
                        { sc1 with symMap := sc1.symMap.insert x resSym, gvnMap := (resSym, x) :: sc1.gvnMap })
         let edge' := substEdge sc2.copyMap edge
         ({ blk with body := (body1 ++ [xStmt]).toArray, term := .jump edge' }, sc2,
-         [(edge'.target, none, edge'.args)], fresh1)
+         [(edge'.target, [], edge'.args)], fresh1)
       match ovfFromFacts sc1.facts o ea eb with
       | some false => emitFolded ok
       | some true => emitFolded ovf
       | none =>
           if ok == ovf then emitFolded ok
           else
-            let sc2 := { sc1 with symMap := sc1.symMap.insert x resSym, gvnMap := (resSym, x) :: sc1.gvnMap }
-            ({ blk with body := body1.toArray, term := .brOvf o x a b ok ovf }, sc2,
-             [(ok.target, none, ok.args), (ovf.target, none, ovf.args)], fresh1)
+            -- Even-operand tagged `addC` cancellation: `brOvf .addC x (a-1) (b-1)` where `x`
+            -- is only used in `x | 1` becomes `brOvf .addC x' a (b-1)` (`x' = x + 1 = x | 1`)!
+            let cancel? : Option (Arg × Arg) :=
+              if o == .addC && or1Set.contains x &&
+                 parityOf sc1.facts ea == .even && parityOf sc1.facts eb == .even then
+                let unSub1 (e : SymExpr) : Option Arg :=
+                  match e with
+                  | .bin .add .w64 base (.imm 0xffffffffffffffff) => symAsArg sc1 sg1 base
+                  | _ => none
+                match unSub1 ea with
+                | some aBase => some (aBase, b)
+                | none =>
+                    match unSub1 eb with
+                    | some bBase => some (a, bBase)
+                    | none => none
+              else none
+            match cancel? with
+            | some (a', b') =>
+                let x' := fresh1
+                let taggedSym := mkAdd64 resSym (.imm 1)
+                let sc2 :=
+                  { sc1 with
+                    symMap := (sc1.symMap.insert x resSym).insert x' taggedSym
+                    gvnMap := (taggedSym, x') :: sc1.gvnMap }
+                ({ blk with body := body1.toArray, term := .brOvf .addC x' a' b' ok ovf }, sc2,
+                 [(ok.target, [], ok.args), (ovf.target, [], ovf.args)], fresh1 + 1)
+            | none =>
+                let sc2 := { sc1 with symMap := sc1.symMap.insert x resSym, gvnMap := (resSym, x) :: sc1.gvnMap }
+                ({ blk with body := body1.toArray, term := .brOvf o x a b ok ovf }, sc2,
+                 [(ok.target, [], ok.args), (ovf.target, [], ovf.args)], fresh1)
   | t => ({ blk with body := body1.toArray, term := t }, sc1, [], fresh1)
 
 /-- Dominator-tree preorder GVN + algebraic simplification + div strength reduction +
@@ -638,6 +962,8 @@ def gvnPassFunc (F : Func) : Func :=
     let children := domTreeChildren F
     let preds := F.predCounts
     let fresh0 := nextFreshVReg F
+    let or1Set := or1OnlyUses F
+    let blockParities := inferBlockParities F
     let rec dfs (fuel : Nat) (b : Label) (sc : GvnScope) (bs : Array Block) (fresh : VReg) :
         Array Block × VReg :=
       match fuel with
@@ -646,7 +972,9 @@ def gvnPassFunc (F : Func) : Func :=
           match bs[b]? with
           | none => (bs, fresh)
           | some blk =>
-              let (blk', sc1, edgeInfos, fresh1) := optBlock sc fresh blk
+              let extraP := blockParities[b]?.getD []
+              let scIn := if extraP.isEmpty then sc else { sc with facts := extraP ++ sc.facts }
+              let (blk', sc1, edgeInfos, fresh1) := optBlock or1Set scIn fresh blk
               let bs1 := bs.set! b blk'
               let kids := children[b]?.getD []
               kids.foldl (init := (bs1, fresh1)) fun (bsAcc, frAcc) ch =>
@@ -654,10 +982,8 @@ def gvnPassFunc (F : Func) : Func :=
                 let scChild :=
                   if preds[ch]?.getD 0 == 1 then
                     match edgeInfos.filter (fun (t, _, _) => t == ch) with
-                    | [(_, fact?, eArgs)] =>
-                        let scF := match fact? with
-                          | some pf => { sc1 with facts := pf :: sc1.facts }
-                          | none => sc1
+                    | [(_, pfs, eArgs)] =>
+                        let scF := if pfs.isEmpty then sc1 else { sc1 with facts := pfs ++ sc1.facts }
                         match bsAcc[ch]? with
                         | some chBlk =>
                             if chBlk.params.length == eArgs.length then

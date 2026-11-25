@@ -279,24 +279,67 @@ theorem toConstAddr_eval {ρ : Env} {ctx : Word} {snaps : MemSnaps} {lookup : VR
                   have hni : ∀ k, e ≠ .imm k := fun k hk => by rw [hk] at he; cases he
                   have hcm : (SymExpr.cmp (.imm d) e == .lt) = false := by
                     cases h : e with | imm k => exact absurd h (hni k) | _ => rfl
+                  have hcore : (mkAdd64Core e (.imm d)).eval ρ ctx snaps = none := by
+                    have hne : (e == .imm d) = false := by
+                      cases h : e with | imm k => exact absurd h (hni k) | _ => rfl
+                    have hmas : matchAddShlSelf e (.imm d) = none := by
+                      cases e with
+                      | bin o w y z =>
+                          cases o <;> cases w <;> cases z <;> try rfl
+                          rename_i k
+                          unfold matchAddShlSelf
+                          by_cases h1 : k = 1
+                          · subst h1
+                            by_cases hy : (y == .imm d) = true
+                            · have hy' : y = .imm d := by simpa using hy
+                              subst hy'; simp [SymExpr.eval, BinOp.eval] at he
+                            · simp; intro h; exact hy (by simp [h])
+                          · by_cases h2 : k = 2
+                            · subst h2
+                              by_cases hy : (y == .imm d) = true
+                              · have hy' : y = .imm d := by simpa using hy
+                                subst hy'; simp [SymExpr.eval, BinOp.eval] at he
+                              · simp; intro h; exact hy (by simp [h])
+                            · by_cases h3 : k = 3
+                              · subst h3
+                                by_cases hy : (y == .imm d) = true
+                                · have hy' : y = .imm d := by simpa using hy
+                                  subst hy'; simp [SymExpr.eval, BinOp.eval] at he
+                                · simp; intro h; exact hy (by simp [h])
+                              · simp [h1, h2, h3]
+                      | _ => rfl
+                    unfold mkAdd64Core
+                    rw [hne, hmas, hcm]
+                    simp [SymExpr.eval, he]
                   unfold mkBin mkBinOrdered
                   simp only [binOpIsComm, hcm, Bool.and_false, Bool.false_eq_true, ↓reduceIte]
-                  split
-                  · exact absurd rfl (hni _)
-                  · unfold mkAdd64; split
-                    · exact absurd rfl (hni _)
-                    · exact he
-                    · rw [SymExpr.eval] at he
-                      simp only [Option.bind_eq_bind, SymExpr.eval, BinOp.eval, Option.bind_some,
-                        Option.bind_eq_none_iff, reduceCtorEq, imp_false] at he
-                      dsimp only; split
-                      · exact Option.eq_none_iff_forall_ne_some.mpr he
-                      · rw [SymExpr.eval]
-                        simp only [Option.bind_eq_bind, Option.eq_none_iff_forall_ne_some.mpr he, Option.bind_none]
-                    · rename_i hne; exact absurd rfl (hne d)
-                    · split
-                      · rename_i hed; exact absurd (by simpa using hed) (hni d)
-                      · rw [SymExpr.eval]; simp only [Option.bind_eq_bind, he, Option.bind_none]
+                  cases e with
+                  | imm k => exact absurd rfl (hni k)
+                  | bin o w a b =>
+                      by_cases hd0 : d = 0
+                      · subst hd0
+                        cases o <;> cases w <;> cases b <;> exact he
+                      · cases o with
+                        | add =>
+                            cases w with
+                            | w64 =>
+                                cases b with
+                                | imm c1 =>
+                                    have ha_none : a.eval ρ ctx snaps = none := by
+                                      cases hav : a.eval ρ ctx snaps with
+                                      | none => rfl
+                                      | some va => simp [SymExpr.eval, BinOp.eval, hav] at he
+                                    simp only [mkAdd64]
+                                    split
+                                    · exact ha_none
+                                    · simp [SymExpr.eval, ha_none]
+                                | _ => simp [mkAdd64, hd0, hcore]
+                            | _ => simp [mkAdd64, hd0, hcore]
+                        | _ => simp [mkAdd64, hd0, hcore]
+                  | _ =>
+                      by_cases hd0 : d = 0
+                      · subst hd0; exact he
+                      · simp [mkAdd64, hd0, hcore]
                 rw [hmk_none (lookup x) (dispWord m.disp) hx] at haddr
                 cases haddr
             | some vx =>

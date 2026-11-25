@@ -63,20 +63,30 @@ private def evalEqual (p q : Program) (argss : List (List Word)) (clock : Nat :=
       throw s!"eval mismatch on args {args.map (·.toNat)}: orig={repr d1}, opt={repr d2}"
 
 private def expectOk (label : String) (p : Program) (argss : List (List Word))
-    (extraCheck : Program → Except String Unit := fun _ => .ok ()) : IO Unit := do
+    (extraCheck : Program → Except String Unit := fun _ => .ok ())
+    (localCheck : Program → Except String Unit := fun _ => .ok ()) : IO Unit := do
   match p.check with
   | .error e => throw (IO.userError s!"[{label}] source not wellFormed: {e}")
   | .ok () => pure ()
-  let q := Lir.Opt.run p
-  unless q.wellFormed do
-    throw (IO.userError s!"[{label}] optimized program failed wellFormed: {q.check}")
-  unless Lir.Opt.check p q do
-    throw (IO.userError s!"[{label}] Lir.Opt.check rejected Lir.Opt.run output")
-  match Lir.Opt.validateCert p q with
+  let qLocal := Lir.Opt.runLocal p
+  unless qLocal.wellFormed do
+    throw (IO.userError s!"[{label}] runLocal failed wellFormed: {qLocal.check}")
+  unless Lir.Opt.check p qLocal do
+    throw (IO.userError s!"[{label}] Lir.Opt.check rejected Lir.Opt.runLocal output")
+  match Lir.Opt.validateCert p qLocal with
   | .error e => throw (IO.userError s!"[{label}] validateCert failed: {e}")
   | .ok _ => pure ()
-  match evalEqual p q argss with
-  | .error e => throw (IO.userError s!"[{label}] {e}")
+  match evalEqual p qLocal argss with
+  | .error e => throw (IO.userError s!"[{label}] runLocal {e}")
+  | .ok () => pure ()
+  match localCheck qLocal with
+  | .error e => throw (IO.userError s!"[{label}] local property check failed: {e}")
+  | .ok () => pure ()
+  let q := Lir.Opt.run p
+  unless q.wellFormed do
+    throw (IO.userError s!"[{label}] Lir.Opt.run failed wellFormed: {q.check}")
+  match evalEqual p q argss (clock := 20000) with
+  | .error e => throw (IO.userError s!"[{label}] run {e}")
   | .ok () => pure ()
   match extraCheck q with
   | .error e => throw (IO.userError s!"[{label}] property check failed: {e}")
@@ -179,10 +189,10 @@ def unitLicm : IO Unit := do
     { params := [], body := #[], term := .ret [.v 4] }
   ]
   expectOk "licm-inv-param-hoist" pLicm1 [[100, 0], [100, 5], [777, 20]]
-    fun q => do
+    (localCheck := fun q => do
       -- `shr` should be hoisted into block 0 (`b0.body.size ≥ 1`)!
       let b0sz := q.funcs[0]!.blocks[0]!.body.size
-      unless b0sz ≥ 1 do throw s!"expected hoisted stmt in preheader b0, got size {b0sz}"
+      unless b0sz ≥ 1 do throw s!"expected hoisted stmt in preheader b0, got size {b0sz}")
 
   -- 2b. Multi-entry loop requiring inserted preheader
   let pMulti := mkProg <| mkFunc [0, 1] 1 #[
@@ -201,10 +211,10 @@ def unitLicm : IO Unit := do
     { params := [], body := #[], term := .ret [.v 3] }
   ]
   expectOk "licm-multi-entry-preheader" pMulti [[0, 4], [5, 0], [5, 7]]
-    fun q => do
+    (localCheck := fun q => do
       -- Preheader inserted before header so loop body shrunk!
       unless q.funcs[0]!.blocks.size ≥ 7 do
-        throw s!"expected inserted preheader (≥ 7 blocks), got {q.funcs[0]!.blocks.size}"
+        throw s!"expected inserted preheader (≥ 7 blocks), got {q.funcs[0]!.blocks.size}")
 
   -- 2c. Invariant `.fail` guard hoisting (with trampoline hop, zero critical edges!)
   let pGuard := mkProg <| mkFunc [0, 1] 1 #[
@@ -225,11 +235,11 @@ def unitLicm : IO Unit := do
     { params := [], body := #[], term := .ret [.v 3] }
   ]
   expectOk "licm-fail-guard-hoist" pGuard [[10, 0], [10, 5], [1000, 3], [1001, 0], [1001, 5]]
-    fun q => do
+    (localCheck := fun q => do
       -- Block 0 should now carry the hoisted `.br` guard!
       match q.funcs[0]!.blocks[0]!.term with
       | .br .. => pure ()
-      | t => throw s!"expected hoisted .br guard in preheader b0, got {repr t}"
+      | t => throw s!"expected hoisted .br guard in preheader b0, got {repr t}")
 
 /-- Constant unsigned division & modulo strength reduction (pow2 + 64-bit & 32-bit magic). -/
 def unitDivMagic : IO Unit := do
@@ -337,6 +347,277 @@ def unitMemory : IO Unit := do
       -- Originally 4 stores & 3 loads; after forwarding + load CSE + DSE: 3 stores & 1 load!
       unless stores == 3 && loads == 1 do
         throw s!"expected 3 stores & 1 load after fwd+cse+dse, got {stores} stores & {loads} loads"
+
+/-- Rotate peephole (`ror32`/`ror64`), 3-address `lea` folding, and parity/`brOvf` tag cancellation. -/
+def unitRotateLeaParity : IO Unit := do
+  let hasRor (p : Program) : Bool :=
+    p.funcs.any fun f => f.blocks.any fun b => b.body.any fun
+      | .assign _ (.bin .ror ..) => true | _ => false
+  let hasAddr (p : Program) : Bool :=
+    p.funcs.any fun f => f.blocks.any fun b => b.body.any fun
+      | .assign _ (.addr ..) => true | _ => false
+  -- 4a. Blake3 masked 32-bit rotate patterns (`16, 12, 8, 7`) + dirty upper 32 bits!
+  for r in ([16, 12, 8, 7] : List Nat) do
+    let pRot := mkProg <| mkFunc [0] 1 #[
+      { params := []
+        body := #[
+          .assign 1 (.bin .and .w64 (.v 0) (.imm 0xffffffff)),
+          .assign 2 (.bin .shr .w64 (.v 1) (.imm (UInt64.ofNat r))),
+          .assign 3 (.bin .shl .w64 (.v 1) (.imm (UInt64.ofNat (32 - r)))),
+          .assign 4 (.bin .and .w64 (.v 3) (.imm 0xffffffff)),
+          .assign 5 (.bin .or .w64 (.v 2) (.v 4))
+        ]
+        term := .ret [.v 5] }
+    ]
+    expectOk s!"blake3-ror32-{r}" pRot
+      [[0], [1], [0x12345678], [0xdeadbeef87654321], [0xffffffffffffffff]]
+      fun q => do
+        unless hasRor q do throw s!"expected ror.32 to be emitted for rotate by {r}"
+        unless countStmts q ≤ 2 do throw s!"expected ≤ 2 stmts after ror32 peephole, got {countStmts q}"
+
+  -- 4b. Direct w32 and w64 rotate peepholes
+  let pRot64 := mkProg <| mkFunc [0] 1 #[
+    { params := []
+      body := #[
+        .assign 1 (.bin .shr .w64 (.v 0) (.imm 13)),
+        .assign 2 (.bin .shl .w64 (.v 0) (.imm 51)),
+        .assign 3 (.bin .or .w64 (.v 1) (.v 2))
+      ]
+      term := .ret [.v 3] }
+  ]
+  expectOk "ror64-13" pRot64 [[0], [1], [0x0123456789abcdef], [0xffffffffffffffff]]
+    fun q => do
+      unless hasRor q do throw "expected ror.64 to be emitted"
+
+  -- 4c. 3-address `lea` `.addr` folding: `*3`, `*5`, `*9`, `(x << 1) | 1 -> lea [x+x+1]`
+  let pLea := mkProg <| mkFunc [0, 1] 4 #[
+    { params := []
+      body := #[
+        .assign 2 (.bin .mul .w64 (.v 0) (.imm 3)),
+        .assign 3 (.bin .mul .w64 (.v 0) (.imm 5)),
+        .assign 4 (.bin .mul .w64 (.v 0) (.imm 9)),
+        .assign 5 (.bin .shl .w64 (.v 1) (.imm 1)),
+        .assign 6 (.bin .or .w64 (.v 5) (.imm 1))
+      ]
+      term := .ret [.v 2, .v 3, .v 4, .v 6] }
+  ]
+  expectOk "lea-scale-and-retag" pLea [[0, 0], [7, 13], [0x12345678, 0x7fffffffffffffff]]
+    fun q => do
+      unless hasAddr q do throw "expected .addr (lea) to be emitted"
+      let hasMul := q.funcs[0]!.blocks[0]!.body.any fun
+        | .assign _ (.bin .mul ..) => true | _ => false
+      if hasMul then throw "expected *3/*5/*9 multiplies to fold into lea .addr"
+
+  -- 4d. Parity propagation (`(v0 & v1) & 1 != 0 -> v0, v1 odd`) + even-`addC` tag cancellation
+  let pPar := mkProg <| mkFunc [0, 1] 1 #[
+    -- b0: check `(v0 & v1) & 1 != 0`
+    { params := []
+      body := #[.assign 2 (.bin .and .w64 (.v 0) (.v 1))]
+      term := .br .tnz .w64 (.v 2) (.imm 1) ⟨1, []⟩ ⟨4, []⟩ },
+    -- b1: redundant check `v0 & 1 != 0` (must fold away using parity fact!)
+    { params := [], body := #[], term := .br .tnz .w64 (.v 0) (.imm 1) ⟨2, []⟩ ⟨5, []⟩ },
+    -- b2: `v3 = v0 - 1` (even); `v4 = v1 - 1` (even); `brOvf addC v5 = v3 + v4 -> b3, b6`
+    { params := []
+      body := #[
+        .assign 3 (.bin .sub .w64 (.v 0) (.imm 1)),
+        .assign 4 (.bin .sub .w64 (.v 1) (.imm 1))
+      ]
+      term := .brOvf .addC 5 (.v 3) (.v 4) ⟨3, []⟩ ⟨6, []⟩ },
+    { params := []
+      body := #[.assign 6 (.bin .or .w64 (.v 5) (.imm 1))]
+      term := .ret [.v 6] },
+    { params := [], body := #[], term := .fail .natOverflow },
+    { params := [], body := #[], term := .fail .natOverflow },
+    { params := [], body := #[], term := .fail .natOverflow }
+  ]
+  expectOk "parity-and-tag-cancel" pPar
+    [[1, 1], [3, 5], [2, 3], [5, 4], [0xffffffffffffffff, 3], [0x7fffffffffffffff, 0x7fffffffffffffff]]
+    fun q => do
+      -- Redundant tag check in b1 should be folded away!
+      let brCount := q.funcs[0]!.blocks.foldl (fun n b => match b.term with | .br .. => n + 1 | _ => n) 0
+      unless brCount == 1 do throw s!"expected redundant tag branch to fold (1 .br left), got {brCount}"
+
+/-- Structural passes: helper/self inlining (with `.tail` in callee), odd versioning, unrolling, if-conversion. -/
+def unitStructural : IO Unit := do
+  -- 5a. Helper inlining where callee ends in `.tail`!
+  let pInlineTail : Program :=
+    { main := 0
+      funcs := #[
+        -- f0(x): y = f1(x); ret y + 1
+        mkFunc [0] 1 #[
+          { params := []
+            body := #[
+              .call [1] 1 [.v 0],
+              .assign 2 (.bin .add .w64 (.v 1) (.imm 1))
+            ]
+            term := .ret [.v 2] }
+        ] "main",
+        -- f1(a): if a == 0 then ret 10 else tail f2(a + 2)
+        mkFunc [0] 1 #[
+          { params := [], body := #[], term := .br .eq .w64 (.v 0) (.imm 0) ⟨1, []⟩ ⟨2, []⟩ },
+          { params := [], body := #[], term := .ret [.imm 10] },
+          { params := [], body := #[.assign 1 (.bin .add .w64 (.v 0) (.imm 2))], term := .tail 2 [.v 1] }
+        ] "helper",
+        -- f2(b): ret b * 3
+        mkFunc [0] 1 #[
+          { params := [], body := #[.assign 1 (.bin .mul .w64 (.v 0) (.imm 3))], term := .ret [.v 1] }
+        ] "leaf"
+      ] }
+  match inlineCallSite pInlineTail 0 0 0 with
+  | none => throw (IO.userError "[inline-tail-callee] inlineCallSite returned none!")
+  | some q =>
+      unless q.wellFormed do throw (IO.userError s!"[inline-tail-callee] ill-formed: {q.check}")
+      match evalEqual pInlineTail q [[0], [1], [5], [42]] with
+      | .error e => throw (IO.userError s!"[inline-tail-callee] {e}")
+      | .ok () => pure ()
+  expectOk "inline-tail-callee-full" pInlineTail [[0], [1], [5], [42]]
+
+  -- 5b. Self-recursive peeling (`fib`-shaped function)
+  let pSelfFib := mkProg <| mkFunc [0] 1 #[
+    { params := [], body := #[], term := .br .ult .w64 (.v 0) (.imm 2) ⟨1, []⟩ ⟨2, []⟩ },
+    { params := [], body := #[], term := .ret [.v 0] },
+    { params := []
+      body := #[
+        .assign 1 (.bin .sub .w64 (.v 0) (.imm 1)),
+        .call [2] 0 [.v 1],
+        .assign 3 (.bin .sub .w64 (.v 0) (.imm 2)),
+        .call [4] 0 [.v 3],
+        .assign 5 (.bin .add .w64 (.v 2) (.v 4))
+      ]
+      term := .ret [.v 5] }
+  ] "fib"
+  expectOk "self-inline-fib" pSelfFib [[0], [1], [2], [5], [10]]
+    fun q => do
+      -- Self-inlining should expand `fib` beyond its original 3 blocks!
+      unless q.funcs[0]!.blocks.size > 3 do
+        throw s!"expected self-inlining to expand fib, got {q.funcs[0]!.blocks.size} blocks"
+
+  -- 5c. Odd-fixnum loop versioning (`versionOddLoopSite` + `runLocal`)
+  let pOddLoop := mkProg <| mkFunc [0] 1 #[
+    { params := [], body := #[], term := .jump ⟨1, [.v 0, .imm 1]⟩ },
+    -- b1: loop(n, acc); if n == 1 then exit else check tag(n)
+    { params := [1, 2], body := #[], term := .br .eq .w64 (.v 1) (.imm 1) ⟨5, []⟩ ⟨2, []⟩ },
+    -- b2: if (n & 1) != 0 then fast step else slow step
+    { params := [], body := #[], term := .br .tnz .w64 (.v 1) (.imm 1) ⟨3, []⟩ ⟨4, []⟩ },
+    -- b3: n' = n - 2; acc' = acc + 2; jump b1(n', acc')
+    { params := []
+      body := #[
+        .assign 3 (.bin .sub .w64 (.v 1) (.imm 2)),
+        .assign 4 (.bin .add .w64 (.v 2) (.imm 2))
+      ]
+      term := .jump ⟨1, [.v 3, .v 4]⟩ },
+    -- b4 (even fallback): ret 999
+    { params := [], body := #[], term := .ret [.imm 999] },
+    -- b5: ret acc
+    { params := [], body := #[], term := .ret [.v 2] }
+  ]
+  match versionOddLoopSite pOddLoop 0 1 [0] [] with
+  | none => throw (IO.userError "[version-odd-loop] versionOddLoopSite returned none!")
+  | some q =>
+      unless q.wellFormed do throw (IO.userError s!"[version-odd-loop] ill-formed: {q.check}")
+      match evalEqual pOddLoop q [[1], [3], [11], [21], [2], [8]] with
+      | .error e => throw (IO.userError s!"[version-odd-loop] {e}")
+      | .ok () => pure ()
+  expectOk "version-odd-loop-full" pOddLoop [[1], [3], [11], [21], [2], [8]]
+
+  -- 5c2. Entry tail-call inlining (`inlineTailSite`) exposing odd constants to a loop
+  let pTailWrap : Program :=
+    { funcs := #[
+        mkFunc [0] 1 #[
+          { params := [], body := #[], term := .tail 1 [.v 0, .imm 1, .imm 1] }
+        ],
+        mkFunc [0, 1, 2] 1 #[
+          { params := [], body := #[], term := .jump ⟨1, [.v 1, .v 2]⟩ },
+          { params := [3, 4], body := #[], term := .br .uge .w64 (.v 3) (.v 0) ⟨3, []⟩ ⟨2, []⟩ },
+          { params := []
+            body := #[
+              .assign 5 (.bin .add .w64 (.v 4) (.v 3)),
+              .assign 6 (.bin .add .w64 (.v 3) (.imm 2))
+            ]
+            term := .jump ⟨1, [.v 6, .v 5]⟩ },
+          { params := [], body := #[], term := .ret [.v 4] }
+        ]
+      ]
+      main := 0 }
+  match inlineTailSite pTailWrap 0 0 with
+  | none => throw (IO.userError "[inline-tail-wrap] inlineTailSite returned none!")
+  | some q =>
+      unless q.wellFormed do throw (IO.userError s!"[inline-tail-wrap] ill-formed: {q.check}")
+      match evalEqual pTailWrap q [[1], [5], [11], [21]] (clock := 2000) with
+      | .error e => throw (IO.userError s!"[inline-tail-wrap] {e}")
+      | .ok () => pure ()
+  expectOk "inline-tail-wrap-full" pTailWrap [[1], [5], [11], [21]]
+
+  -- 5d. 4x loop unrolling (`unrollLoopSite`)
+  let pUnroll := mkProg <| mkFunc [0] 1 #[
+    { params := [], body := #[], term := .jump ⟨1, [.v 0, .imm 0]⟩ },
+    { params := [1, 2], body := #[], term := .br .eq .w64 (.v 1) (.imm 0) ⟨3, []⟩ ⟨2, []⟩ },
+    { params := []
+      body := #[
+        .assign 3 (.bin .add .w64 (.v 2) (.v 1)),
+        .assign 4 (.bin .sub .w64 (.v 1) (.imm 1))
+      ]
+      term := .jump ⟨1, [.v 4, .v 3]⟩ },
+    { params := [], body := #[], term := .ret [.v 2] }
+  ]
+  match unrollLoopSite pUnroll 0 1 4 with
+  | none => throw (IO.userError "[unroll-4x] unrollLoopSite returned none!")
+  | some q =>
+      unless q.wellFormed do throw (IO.userError s!"[unroll-4x] ill-formed: {q.check}")
+      match evalEqual pUnroll q [[0], [1], [2], [3], [4], [5], [17], [100]] (clock := 5000) with
+      | .error e => throw (IO.userError s!"[unroll-4x] {e}")
+      | .ok () => pure ()
+  expectOk "unroll-4x-full" pUnroll [[0], [1], [2], [3], [4], [5], [17], [100]]
+    fun q => do
+      unless q.funcs[0]!.blocks.size > 4 do
+        throw s!"expected loop unrolling to expand blocks, got {q.funcs[0]!.blocks.size}"
+
+  -- 5e. Branchless diamond if-conversion: Shape 1 (pure) & Shape 2 (`brOvf`-guarded Collatz step!)
+  let pIfPure := mkProg <| mkFunc [0] 1 #[
+    { params := [], body := #[], term := .jump ⟨1, [.v 0, .imm 0]⟩ },
+    { params := [1, 2], body := #[], term := .br .ule .w64 (.v 1) (.imm 1) ⟨6, []⟩ ⟨2, []⟩ },
+    { params := [], body := #[], term := .br .tz .w64 (.v 1) (.imm 1) ⟨3, []⟩ ⟨4, []⟩ },
+    { params := [], body := #[.assign 3 (.bin .shr .w64 (.v 1) (.imm 1))], term := .jump ⟨5, [.v 3]⟩ },
+    { params := []
+      body := #[
+        .assign 4 (.bin .mul .w64 (.v 1) (.imm 3)),
+        .assign 5 (.bin .add .w64 (.v 4) (.imm 1))
+      ]
+      term := .jump ⟨5, [.v 5]⟩ },
+    { params := [6], body := #[.assign 7 (.bin .add .w64 (.v 2) (.imm 1))], term := .jump ⟨1, [.v 6, .v 7]⟩ },
+    { params := [], body := #[], term := .ret [.v 2] }
+  ]
+  match ifConvDiamondStep pIfPure 0 2 with
+  | (_, false) => throw (IO.userError "[ifconv-pure] ifConvDiamondStep failed!")
+  | (q, true) =>
+      unless q.wellFormed do throw (IO.userError s!"[ifconv-pure] ill-formed: {q.check}")
+      match evalEqual pIfPure q [[1], [2], [6], [27]] (clock := 5000) with
+      | .error e => throw (IO.userError s!"[ifconv-pure] {e}")
+      | .ok () => pure ()
+  expectOk "ifconv-pure-full" pIfPure [[1], [2], [6], [27]]
+
+  -- Strictly ascending forward arms with zero critical edges (`b4 -> b5 -> b6 -> b7`)
+  let pIfOvfAsc := mkProg <| mkFunc [0] 1 #[
+    { params := [], body := #[], term := .jump ⟨1, [.v 0, .imm 0]⟩ },
+    { params := [1, 2], body := #[], term := .br .ule .w64 (.v 1) (.imm 1) ⟨8, []⟩ ⟨2, []⟩ },
+    { params := [], body := #[], term := .br .tz .w64 (.v 1) (.imm 1) ⟨3, []⟩ ⟨4, []⟩ },
+    { params := [], body := #[.assign 3 (.bin .shr .w64 (.v 1) (.imm 1))], term := .jump ⟨7, [.v 3]⟩ },
+    { params := [], body := #[], term := .brOvf .mulOvf 4 (.v 1) (.imm 3) ⟨5, []⟩ ⟨9, []⟩ },
+    { params := [], body := #[], term := .brOvf .addC 5 (.v 4) (.imm 1) ⟨6, []⟩ ⟨10, []⟩ },
+    { params := [], body := #[], term := .jump ⟨7, [.v 5]⟩ },
+    { params := [6], body := #[.assign 7 (.bin .add .w64 (.v 2) (.imm 1))], term := .jump ⟨1, [.v 6, .v 7]⟩ },
+    { params := [], body := #[], term := .ret [.v 2] },
+    { params := [], body := #[], term := .fail .natOverflow },
+    { params := [], body := #[], term := .fail .natOverflow }
+  ]
+  match ifConvDiamondStep pIfOvfAsc 0 2 with
+  | (_, false) => throw (IO.userError "[ifconv-ovf] ifConvDiamondStep failed!")
+  | (q, true) =>
+      unless q.wellFormed do throw (IO.userError s!"[ifconv-ovf] ill-formed: {q.check}")
+      match evalEqual pIfOvfAsc q [[1], [2], [6], [27], [0x7fffffffffffffff]] (clock := 5000) with
+      | .error e => throw (IO.userError s!"[ifconv-ovf] {e}")
+      | .ok () => pure ()
+  expectOk "ifconv-ovf-full" pIfOvfAsc [[1], [2], [6], [27], [0x7fffffffffffffff]]
 
 /-! ## 2. Negative-control unsound mutant suite -/
 
@@ -551,6 +832,85 @@ def negativeControls : IO Nat := do
   let m15 := mkProg <| mkFunc [0] 1 #[{ params := [], body := #[], term := .ret [.imm 0] }]
   checkMut "wrong-ret-val" pRet m15; count := count + 1
 
+  -- M16: Invalid rotate shift sum (`12 + 19 = 31 ≠ 32`)
+  let pBadRot := mkProg <| mkFunc [0] 1 #[
+    { params := []
+      body := #[
+        .assign 1 (.bin .shr .w32 (.v 0) (.imm 12)),
+        .assign 2 (.bin .shl .w32 (.v 0) (.imm 19)),
+        .assign 3 (.bin .or .w32 (.v 1) (.v 2))
+      ]
+      term := .ret [.v 3] }
+  ]
+  let m16 := mkProg <| mkFunc [0] 1 #[
+    { params := [], body := #[.assign 3 (.bin .ror .w32 (.v 0) (.imm 12))], term := .ret [.v 3] }
+  ]
+  checkMut "bad-rotate-sum" pBadRot m16; count := count + 1
+
+  -- M17: Unsound even-`addC` tag cancellation on unconstrained (possibly odd) operands!
+  let pBadTagAdd := mkProg <| mkFunc [0, 1] 1 #[
+    { params := []
+      body := #[
+        .assign 2 (.bin .sub .w64 (.v 0) (.imm 1)),
+        .assign 3 (.bin .sub .w64 (.v 1) (.imm 1))
+      ]
+      term := .brOvf .addC 4 (.v 2) (.v 3) ⟨1, []⟩ ⟨2, []⟩ },
+    { params := [], body := #[.assign 5 (.bin .add .w64 (.v 4) (.imm 1))], term := .ret [.v 5] },
+    { params := [], body := #[], term := .fail .natOverflow }
+  ]
+  let m17 := mkProg <| mkFunc [0, 1] 1 #[
+    { params := []
+      body := #[.assign 2 (.bin .sub .w64 (.v 0) (.imm 1))]
+      term := .brOvf .addC 5 (.v 2) (.v 1) ⟨1, []⟩ ⟨2, []⟩ },
+    { params := [], body := #[], term := .ret [.v 5] },
+    { params := [], body := #[], term := .fail .natOverflow }
+  ]
+  checkMut "unfounded-even-addC-cancel" pBadTagAdd m17; count := count + 1
+
+  -- M18: Unsound odd-bit-2 unwrap (`(x & 3) == 1 -> tz x 2`) without oddness fact!
+  let pBadBit2 := mkProg <| mkFunc [0] 1 #[
+    { params := [], body := #[.assign 1 (.bin .and .w64 (.v 0) (.imm 3))],
+      term := .br .eq .w64 (.v 1) (.imm 1) ⟨1, []⟩ ⟨2, []⟩ },
+    { params := [], body := #[], term := .ret [.imm 1] },
+    { params := [], body := #[], term := .ret [.imm 0] }
+  ]
+  let m18 := mkProg <| mkFunc [0] 1 #[
+    { params := [], body := #[], term := .br .tz .w64 (.v 0) (.imm 2) ⟨1, []⟩ ⟨2, []⟩ },
+    { params := [], body := #[], term := .ret [.imm 1] },
+    { params := [], body := #[], term := .ret [.imm 0] }
+  ]
+  checkMut "unfounded-odd-bit2-unwrap" pBadBit2 m18; count := count + 1
+
+  -- M19: Structural precondition rejection — `inlineCallSite` rejects callee with non-empty entry params
+  let pBadInline : Program :=
+    { main := 0
+      funcs := #[
+        mkFunc [0] 1 #[{ params := [], body := #[.call [1] 1 [.v 0]], term := .ret [.v 1] }] "c",
+        mkFunc [0] 1 #[{ params := [1], body := #[], term := .ret [.v 0] }] "badCallee"
+      ] }
+  if (inlineCallSite pBadInline 0 0 0).isSome then
+    throw (IO.userError "[NEGATIVE CONTROL FAILED: bad-inline-entry-params] inlineCallSite accepted!")
+  count := count + 1
+
+  -- M20: Structural precondition rejection — `unrollLoopSite` rejects entry block `h = 0`
+  let pBadUnroll := mkProg <| mkFunc [0] 1 #[
+    { params := [], body := #[], term := .jump ⟨0, []⟩ }
+  ]
+  if (unrollLoopSite pBadUnroll 0 0 2).isSome then
+    throw (IO.userError "[NEGATIVE CONTROL FAILED: bad-unroll-h0] unrollLoopSite accepted h=0!")
+  count := count + 1
+
+  -- M21: Structural precondition rejection — `ifConvDiamondSite` rejects impure arm with `.store`!
+  let pBadIfConv := mkProg <| mkFunc [0, 1] 1 #[
+    { params := [], body := #[], term := .br .eq .w64 (.v 0) (.imm 0) ⟨1, []⟩ ⟨2, []⟩ },
+    { params := [], body := #[.store .w64 { base := some (.v 1), disp := 0 } (.imm 1)], term := .jump ⟨3, [.imm 1]⟩ },
+    { params := [], body := #[], term := .jump ⟨3, [.imm 2]⟩ },
+    { params := [2], body := #[], term := .ret [.v 2] }
+  ]
+  if (ifConvDiamondSite pBadIfConv 0 0).isSome then
+    throw (IO.userError "[NEGATIVE CONTROL FAILED: bad-ifconv-store] ifConvDiamondSite accepted impure store!")
+  count := count + 1
+
   pure count
 
 /-! ## 3. `Lir.Gen` property-based fuzz testing -/
@@ -563,42 +923,27 @@ def fuzzSuite (numPrograms : Nat := 100) : IO (Nat × Nat) := do
     let raw := (IxCCTests.Lir.Gen.program {} seed).1
     let p := raw.splitCriticalEdges
     if p.wellFormed then
+      let qLocal := Lir.Opt.runLocal p
+      unless qLocal.wellFormed do
+        throw (IO.userError s!"[fuzz #{i}] Lir.Opt.runLocal produced ill-formed program: {qLocal.check}")
+      unless Lir.Opt.check p qLocal do
+        throw (IO.userError s!"[fuzz #{i}] Lir.Opt.check rejected Lir.Opt.runLocal output")
       let q := Lir.Opt.run p
       unless q.wellFormed do
         throw (IO.userError s!"[fuzz #{i}] Lir.Opt.run produced ill-formed program: {q.check}")
-      unless Lir.Opt.check p q do
-        let plan := inferProgPlan p q
-        let mut diag := ""
-        for fi in [:p.funcs.size] do
-          let F := p.funcs[fi]!; let G := q.funcs[fi]!; let fp := plan.funcs[fi]!
-          unless checkFuncWithPlan F G fp do
-            let badBlks := (List.range F.blocks.size).filter fun L =>
-              match fp.blocks[L]? with
-              | some (some bp) => !checkBlock F G fp L bp
-              | some none => false
-              | none => true
-            let detail := match badBlks.head? with
-              | some L =>
-                  match fp.blocks[L]?, F.blocks[L]? with
-                  | some (some bp), some b1 =>
-                      let (seg1, calls1) := splitByCalls b1.body.toList
-                      let segOk := (checkSeg bp.entryInv seg1 seg1).isSome
-                      s!" blk{L}(segOk={segOk},calls={calls1.length},afterCalls={bp.afterCalls.length},params={b1.params},term={repr b1.term},srcDef={bp.entryInv.srcDef.length},tgtOf={bp.entryInv.tgtOf.length},srcEq={bp.entryInv.srcEq.length},facts={bp.entryInv.facts.length})"
-                  | _, _ => s!" blk{L}(missing)"
-              | none => " entryFail"
-            diag := diag ++ s!" fn{fi}(same={F==G},blks={F.blocks.size},bad={badBlks.take 5},{detail})"
-        throw (IO.userError s!"[fuzz #{i}] Lir.Opt.check rejected Lir.Opt.run output:{diag}")
       if q != p then changed := changed + 1
       let mainF := p.funcs[p.main]!
       let args := (List.range mainF.params.length).map fun j => UInt64.ofNat ((i * 17 + j * 31 + 3) % 97)
       for clk in [0, 5, 50, 200] do
         let d1 := digest (Lir.eval p clk args flatMem testCtx)
-        let d2 := digest (Lir.eval q clk args flatMem testCtx)
-        -- Allow target resource failure only if source didn't succeed? Actually our optimizer only hoists
-        -- unconditional fail guards, and `Lir.Gen` has exact agreement unless stuck!
+        let dLoc := digest (Lir.eval qLocal clk args flatMem testCtx)
         if d1 != .stuck then
-          unless d1 == d2 do
-            throw (IO.userError s!"[fuzz #{i} clk={clk}] eval mismatch: orig={repr d1}, opt={repr d2}")
+          unless d1 == dLoc do
+            throw (IO.userError s!"[fuzz #{i} clk={clk}] runLocal eval mismatch: orig={repr d1}, local={repr dLoc}")
+          if d1 != .timeout then
+            let dFull := digest (Lir.eval q (clk * 16 + 200) args flatMem testCtx)
+            unless d1 == dFull do
+              throw (IO.userError s!"[fuzz #{i} clk={clk}] run eval mismatch: orig={repr d1}, opt={repr dFull}")
       checked := checked + 1
   pure (checked, changed)
 
@@ -617,11 +962,12 @@ private def compileLoweredOpt (l : IxCC.Rt.Lowered) : Except String IxCCTests.Rt
 private def measureOne (name : String) (l : IxCC.Rt.Lowered) (sym : String) (args : List Nat)
     (fuel : Nat := 1 <<< 30) : IO String := do
   let pOrig := l.program
+  let pLocal := Lir.Opt.runLocal pOrig
+  unless pLocal.wellFormed && Lir.Opt.check pOrig pLocal do
+    throw (IO.userError s!"[{name}] Lir.Opt.check rejected runLocal Lir!")
   let pOpt := Lir.Opt.run pOrig
   unless pOpt.wellFormed do
     throw (IO.userError s!"[{name}] optimized Lir not wellFormed: {pOpt.check}")
-  unless Lir.Opt.check pOrig pOpt do
-    throw (IO.userError s!"[{name}] Lir.Opt.check rejected optimized Lir!")
   let ccOrig ← IO.ofExcept (IxCCTests.Rt.Machine.compile l)
   let ccOpt ← IO.ofExcept (compileLoweredOpt l)
   let msOrig ← IO.ofExcept (IxCCTests.Rt.Machine.initMachines ccOrig)

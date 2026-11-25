@@ -19,7 +19,7 @@ set_option autoImplicit false
 namespace IxCC.Lir.Opt
 
 open IxCC.Lir (VReg Width Ext Base Addr Arg Cond BinOp Ovf LimbOp Rhs Word Env
-  sext sarWord shiftMask dispWord loadWord)
+  sext sarWord rolWord rorWord shiftMask dispWord loadWord)
 
 /-! ## Condition helpers -/
 
@@ -228,7 +228,7 @@ private def extTag : Ext → Nat
 
 private def binOpTag : BinOp → Nat
   | .add => 0 | .sub => 1 | .and => 2 | .or => 3 | .xor => 4 | .mul => 5
-  | .shl => 6 | .shr => 7 | .sar => 8 | .udiv => 9 | .urem => 10
+  | .shl => 6 | .shr => 7 | .sar => 8 | .rol => 9 | .ror => 10 | .udiv => 11 | .urem => 12
 
 private def condTag : Cond → Nat
   | .eq => 0 | .ne => 1 | .ult => 2 | .ule => 3 | .ugt => 4 | .uge => 5
@@ -276,21 +276,117 @@ def condStatic (c : Cond) (w : Width) (a b : SymExpr) : Option Bool :=
   | .imm va, .imm vb => some (c.holds w va vb)
   | _, _ => if a == b then condReflVal c else none
 
-/-- Non-recursive helper for 64-bit addition canonicalization (constant reassociation,
-identity elimination, `x + x → x << 1`). Assumes `a, b` are already commutatively ordered. -/
+/-- Match `x + (x << k)` or `(x << k) + x` for `k ∈ {1, 2, 3}` and canonicalize to
+`x * 3`, `x * 5`, `x * 9` (aligning `lea [x + x*scale]` with `mul`). -/
+def matchAddShlSelf (a b : SymExpr) : Option SymExpr :=
+  match a, b with
+  | x, .bin .shl .w64 y (.imm 1) =>
+      if x == y then some (.bin .mul .w64 x (.imm 3)) else none
+  | .bin .shl .w64 y (.imm 1), x =>
+      if x == y then some (.bin .mul .w64 x (.imm 3)) else none
+  | x, .bin .shl .w64 y (.imm 2) =>
+      if x == y then some (.bin .mul .w64 x (.imm 5)) else none
+  | .bin .shl .w64 y (.imm 2), x =>
+      if x == y then some (.bin .mul .w64 x (.imm 5)) else none
+  | x, .bin .shl .w64 y (.imm 3) =>
+      if x == y then some (.bin .mul .w64 x (.imm 9)) else none
+  | .bin .shl .w64 y (.imm 3), x =>
+      if x == y then some (.bin .mul .w64 x (.imm 9)) else none
+  | _, _ => none
+
+/-- Non-recursive helper combining two 64-bit addends: `x + x → x << 1`,
+`x + (x << k) → x * (1 + 2^k)` (`k ∈ {1, 2, 3}`), else commutatively ordered `+`. -/
+def mkAdd64Core (a b : SymExpr) : SymExpr :=
+  if a == b then .bin .shl .w64 a (.imm 1)
+  else match matchAddShlSelf a b with
+  | some r => r
+  | none =>
+      if SymExpr.cmp b a == .lt then .bin .add .w64 b a
+      else .bin .add .w64 a b
+
+/-- Non-recursive helper for 64-bit addition canonicalization (constant folding/pulling,
+identity elimination, `x + x → x << 1`, and `lea` scale `*3/*5/*9` normalization). -/
 def mkAdd64 (a b : SymExpr) : SymExpr :=
   match a, b with
   | .imm va, .imm vb => .imm (va + vb)
   | a, .imm 0 => a
+  | .imm 0, b => b
   | .bin .add .w64 x (.imm c1), .imm c2 =>
       let c := c1 + c2
       if c == 0 then x else .bin .add .w64 x (.imm c)
+  | .imm c1, .bin .add .w64 y (.imm c2) =>
+      let c := c1 + c2
+      if c == 0 then y else .bin .add .w64 y (.imm c)
+  | .bin .add .w64 x (.imm c1), .bin .add .w64 y (.imm c2) =>
+      let core := mkAdd64Core x y
+      let c := c1 + c2
+      if c == 0 then core else .bin .add .w64 core (.imm c)
   | .bin .add .w64 x (.imm c1), y =>
-      if x == y then .bin .add .w64 (.bin .shl .w64 x (.imm 1)) (.imm c1)
-      else .bin .add .w64 (.bin .add .w64 x (.imm c1)) y
-  | a, b =>
-      if a == b then .bin .shl .w64 a (.imm 1)
-      else .bin .add .w64 a b
+      .bin .add .w64 (mkAdd64Core x y) (.imm c1)
+  | x, .bin .add .w64 y (.imm c2) =>
+      .bin .add .w64 (mkAdd64Core x y) (.imm c2)
+  | a, b => mkAdd64Core a b
+
+/-- Match a single-width or masked-32-bit `(x >>> r1) ||| (x <<< r2)` rotate-right pair
+in `(shr, shl)` order, returning `(rotWidth, x, r1)` when `0 < r1 < rotWidth.bits` and
+`r1 + r2 = rotWidth.bits`. -/
+def matchRotateShrShl (w : Width) (s1 s2 : SymExpr) : Option (Width × SymExpr × Word) :=
+  match s1, s2 with
+  | .bin .shr w1 x1 (.imm c1), .bin .shl w2 x2 (.imm c2) =>
+      if w1 == w && w2 == w && x1 == x2 then
+        let r1 := (c1 &&& shiftMask w).toNat
+        let r2 := (c2 &&& shiftMask w).toNat
+        if 0 < r1 && r1 < w.bits && r1 + r2 == w.bits then
+          some (w, x1, UInt64.ofNat r1)
+        else none
+      else if w == .w64 && w1 == .w32 && w2 == .w32 && x1 == x2 then
+        let r1 := (c1 &&& shiftMask .w32).toNat
+        let r2 := (c2 &&& shiftMask .w32).toNat
+        if 0 < r1 && r1 < 32 && r1 + r2 == 32 then
+          some (.w32, x1, UInt64.ofNat r1)
+        else none
+      else none
+  | .bin .shr .w64 (.bin .and .w64 x1 (.imm m1)) (.imm c1),
+    .bin .and .w64 (.bin .shl .w64 x2 (.imm c2)) (.imm m2) =>
+      if w == .w64 && m1 == 0xffffffff && m2 == 0xffffffff &&
+         (x2 == x1 || x2 == .bin .and .w64 x1 (.imm 0xffffffff)) then
+        let r1 := (c1 &&& 63).toNat
+        let r2 := (c2 &&& 63).toNat
+        if 0 < r1 && r1 < 32 && r1 + r2 == 32 then
+          some (.w32, x1, UInt64.ofNat r1)
+        else none
+      else none
+  | _, _ => none
+
+/-- Match a rotate-right pair in either operand order of `.or`. -/
+def matchRotateOr (w : Width) (a b : SymExpr) : Option (Width × SymExpr × Word) :=
+  match matchRotateShrShl w a b with
+  | some res => some res
+  | none => matchRotateShrShl w b a
+
+/-- Match `((x & 0xffffffff) >>> r1) ||| (x <<< r2)` (in `(shr, shl)` order) under an
+outer `& 0xffffffff` mask as 32-bit `ror`. -/
+def matchRotateMasked32Pair (s1 s2 : SymExpr) : Option (SymExpr × Word) :=
+  match s1, s2 with
+  | .bin .shr .w64 (.bin .and .w64 x1 (.imm m1)) (.imm c1),
+    .bin .shl .w64 x2 (.imm c2) =>
+      if m1 == 0xffffffff && (x2 == x1 || x2 == .bin .and .w64 x1 (.imm 0xffffffff)) then
+        let r1 := (c1 &&& 63).toNat
+        let r2 := (c2 &&& 63).toNat
+        if 0 < r1 && r1 < 32 && r1 + r2 == 32 then
+          some (x1, UInt64.ofNat r1)
+        else none
+      else none
+  | _, _ => none
+
+/-- Match `(((x & 0xffffffff) >>> r1) ||| (x <<< r2)) & 0xffffffff` in either order. -/
+def matchRotateMasked32 (e : SymExpr) : Option (SymExpr × Word) :=
+  match e with
+  | .bin .or .w64 a b =>
+      match matchRotateMasked32Pair a b with
+      | some res => some res
+      | none => matchRotateMasked32Pair b a
+  | _ => none
 
 /-- Single-step normalizer for `.bin o w a b` on already ordered, normalized operands `a, b`. -/
 def mkBinOrdered (o : BinOp) (w : Width) (a b : SymExpr) : SymExpr :=
@@ -329,6 +425,10 @@ def mkBinOrdered (o : BinOp) (w : Width) (a b : SymExpr) : SymExpr :=
         | _, .imm 0 => .imm 0
         | a, .imm k =>
             if w == .w64 && k == w.mask then a
+            else if w == .w64 && k == 0xffffffff then
+              match matchRotateMasked32 a with
+              | some (x, r) => .bin .ror .w32 x (.imm r)
+              | none => .bin .and w a (.imm k)
             else .bin .and w a (.imm k)
         | _, _ =>
             if w == .w64 && a == b then a else .bin .and w a b
@@ -337,9 +437,18 @@ def mkBinOrdered (o : BinOp) (w : Width) (a b : SymExpr) : SymExpr :=
         | a, .imm 0 => if w == .w64 then a else .bin .or w a (.imm 0)
         | _, .imm k =>
             if w.truncate k == w.mask then .imm w.mask
+            else if w == .w64 && k == 1 then
+              match a with
+              | .bin .shl .w64 _ (.imm s) =>
+                  if (s &&& 63) != 0 then mkAdd64 a (.imm 1)
+                  else .bin .or w a (.imm k)
+              | _ => .bin .or w a (.imm k)
             else .bin .or w a (.imm k)
         | _, _ =>
-            if w == .w64 && a == b then a else .bin .or w a b
+            if w == .w64 && a == b then a
+            else match matchRotateOr w a b with
+            | some (rw, x, r) => .bin .ror rw x (.imm r)
+            | none => .bin .or w a b
     | .xor =>
         if a == b then .imm 0
         else match w, a, b with
@@ -366,6 +475,20 @@ def mkBinOrdered (o : BinOp) (w : Width) (a b : SymExpr) : SymExpr :=
             if w == .w64 && (k &&& shiftMask .w64) == 0 then a
             else .bin .sar w a (.imm (k &&& shiftMask w))
         | _, _ => .bin .sar w a b
+    | .rol =>
+        match a, b with
+        | .imm 0, _ => .imm 0
+        | a, .imm k =>
+            if w == .w64 && (k &&& shiftMask .w64) == 0 then a
+            else .bin .rol w a (.imm (k &&& shiftMask w))
+        | _, _ => .bin .rol w a b
+    | .ror =>
+        match a, b with
+        | .imm 0, _ => .imm 0
+        | a, .imm k =>
+            if w == .w64 && (k &&& shiftMask .w64) == 0 then a
+            else .bin .ror w a (.imm (k &&& shiftMask w))
+        | _, _ => .bin .ror w a b
     | .udiv =>
         match a, b with
         | a, .imm k =>
@@ -683,6 +806,207 @@ def PFact.vars (f : PFact) : List VReg := f.lhs.vars ++ f.rhs.vars
 def PFact.subst (s : VReg → SymExpr) (f : PFact) : PFact :=
   { f with lhs := (f.lhs.subst s).norm, rhs := (f.rhs.subst s).norm }
 
+/-! ## Exact LSB parity domain (`Parity`, `parityOf`) -/
+
+/-- Exact least-significant-bit parity (`v &&& 1`) of a 64-bit word. -/
+inductive Parity where
+  | unknown
+  | even
+  | odd
+  deriving DecidableEq, Repr, Inhabited
+
+def Parity.xor : Parity → Parity → Parity
+  | .even, p | p, .even => p
+  | .odd, .odd => .even
+  | _, _ => .unknown
+
+def Parity.mul : Parity → Parity → Parity
+  | .even, _ | _, .even => .even
+  | .odd, .odd => .odd
+  | _, _ => .unknown
+
+def Parity.or : Parity → Parity → Parity
+  | .odd, _ | _, .odd => .odd
+  | .even, .even => .even
+  | _, _ => .unknown
+
+def Parity.and : Parity → Parity → Parity
+  | .even, _ | _, .even => .even
+  | .odd, .odd => .odd
+  | _, _ => .unknown
+
+def Parity.join : Parity → Parity → Parity
+  | .even, .even => .even
+  | .odd, .odd => .odd
+  | _, _ => .unknown
+
+def Parity.meet : Parity → Parity → Parity
+  | .unknown, p | p, .unknown => p
+  | .even, .even => .even
+  | .odd, .odd => .odd
+  | _, _ => .unknown
+
+/-- Parity of `v` implied by `c.holds w v k = res`. -/
+def parityFromCondImm (w : Width) (c : Cond) (k : Word) (res : Bool) : Parity :=
+  let c' := if res then c else condNegate c
+  let kt := w.truncate k
+  match c' with
+  | .tz => if kt &&& 1 == 1 then .even else .unknown
+  | .tnz => if kt == 1 then .odd else .unknown
+  | .eq => if kt &&& 1 == 0 then .even else .odd
+  | _ => .unknown
+
+/-- Whether `e0` appears as an operand anywhere inside a tree of 64-bit bitwise-ANDs. -/
+def andContains (e0 : SymExpr) : SymExpr → Bool
+  | .bin .and .w64 x y => x == e0 || y == e0 || andContains e0 x || andContains e0 y
+  | _ => false
+
+/-- Parity of `e0` implied by a single dominating `PFact` (including `--bignat`
+combined fixnum checks `tnz (a &&& b &&& ...) 1 = true` and `(x &&& m) == k` with odd `m`). -/
+def parityFromFact (e0 : SymExpr) (f : PFact) : Parity :=
+  let fromSide (side : SymExpr) (c : Cond) (k : Word) : Parity :=
+    if side == e0 then parityFromCondImm f.width c k f.result
+    else match side with
+    | .bin .and .w64 x (.imm m) =>
+        if x == e0 && f.width == .w64 && (m &&& 1 == 1) then
+          let c' := if f.result then c else condNegate c
+          if c' == .eq then (if k &&& 1 == 0 then .even else .odd) else .unknown
+        else .unknown
+    | .bin .and .w64 x y =>
+        if andContains e0 (.bin .and .w64 x y) && f.width == .w64 && k == 1 then
+          let c' := if f.result then c else condNegate c
+          if c' == .tnz then .odd else .unknown
+        else .unknown
+    | _ => .unknown
+  match f.lhs, f.rhs with
+  | l, .imm k => fromSide l f.cond k
+  | .imm k, r => fromSide r (condSwap f.cond) k
+  | _, _ => .unknown
+
+/-- Compute a sound LSB parity for `e` from its structure and dominating `facts`. -/
+def parityOf (facts : List PFact) (e : SymExpr) : Parity :=
+  let base : Parity := match e with
+    | .imm w => if w &&& 1 == 0 then .even else .odd
+    | .bin .add .w64 a b | .bin .sub .w64 a b | .bin .xor .w64 a b =>
+        (parityOf facts a).xor (parityOf facts b)
+    | .bin .mul .w64 a b => (parityOf facts a).mul (parityOf facts b)
+    | .bin .or .w64 a b => (parityOf facts a).or (parityOf facts b)
+    | .bin .and .w64 a b => (parityOf facts a).and (parityOf facts b)
+    | .bin .shl .w64 a (.imm k) =>
+        if (k &&& 63) != 0 then .even else parityOf facts a
+    | .select _ _ _ _ t f => (parityOf facts t).join (parityOf facts f)
+    | _ => .unknown
+  facts.foldl (init := base) fun acc f => acc.meet (parityFromFact e f)
+
+/-! ## Fact-aware algebraic normalization (`normFacts`, `exprEquivFacts`) -/
+
+/-- Match the tagged-polynomial identity `((x >>> 1) * (x - 1)) + x = (x >>> 1) * (x + 1) + 1`
+(exact mod 2^64 for every odd 64-bit word `x`, used in `sfib`). -/
+def matchSfibStep (facts : List PFact) (a b : SymExpr) : Option SymExpr :=
+  let check (prod x : SymExpr) : Option SymExpr :=
+    if parityOf facts x != .odd then none
+    else
+      let q := SymExpr.bin .shr .w64 x (.imm 1)
+      let xm1 := mkAdd64 x (.imm (0 - 1))
+      match prod with
+      | .bin .mul .w64 p1 p2 =>
+          if (p1 == q && p2 == xm1) || (p1 == xm1 && p2 == q) then
+            some (mkAdd64 (mkBin .mul .w64 q (mkAdd64 x (.imm 1))) (.imm 1))
+          else none
+      | _ => none
+  match check a b with
+  | some r => some r
+  | none => check b a
+
+/-- Bottom-up fact-aware normalizer: performs `SymExpr.norm` plus parity-justified
+rewrites (`even ||| 1 → even + 1` and odd `((x >>> 1) * (x - 1)) + x → (x >>> 1) * (x + 1) + 1`). -/
+def SymExpr.normFacts (facts : List PFact) : SymExpr → SymExpr
+  | .reg x => .reg x
+  | .imm w => .imm w
+  | .ctx => .ctx
+  | .bin o w a b =>
+      let a' := a.normFacts facts
+      let b' := b.normFacts facts
+      let res := mkBin o w a' b'
+      match res with
+      | .bin .or .w64 x (.imm 1) =>
+          if parityOf facts x == .even then mkAdd64 x (.imm 1) else res
+      | .bin .add .w64 (.bin .add .w64 p q) (.imm c) =>
+          match matchSfibStep facts p q with
+          | some r => mkAdd64 r (.imm c)
+          | none => res
+      | .bin .add .w64 p q =>
+          (matchSfibStep facts p q).getD res
+      | _ => res
+  | .select c w a b t f =>
+      SymExpr.norm (.select c w (a.normFacts facts) (b.normFacts facts)
+        (t.normFacts facts) (f.normFacts facts))
+  | .test c w a b =>
+      SymExpr.norm (.test c w (a.normFacts facts) (b.normFacts facts))
+  | .bsr64 a => SymExpr.norm (.bsr64 (a.normFacts facts))
+  | .mulHi a b => SymExpr.norm (.mulHi (a.normFacts facts) (b.normFacts facts))
+  | .divQ hi lo d => SymExpr.norm (.divQ (hi.normFacts facts) (lo.normFacts facts) (d.normFacts facts))
+  | .divR hi lo d => SymExpr.norm (.divR (hi.normFacts facts) (lo.normFacts facts) (d.normFacts facts))
+  | .addCLo a b c => SymExpr.norm (.addCLo (a.normFacts facts) (b.normFacts facts) (c.normFacts facts))
+  | .addCHi a b c => SymExpr.norm (.addCHi (a.normFacts facts) (b.normFacts facts) (c.normFacts facts))
+  | .subBLo a b c => SymExpr.norm (.subBLo (a.normFacts facts) (b.normFacts facts) (c.normFacts facts))
+  | .subBHi a b c => SymExpr.norm (.subBHi (a.normFacts facts) (b.normFacts facts) (c.normFacts facts))
+  | .load s w e a => .load s w e (a.normFacts facts)
+
+/-- Fact-aware semantic equivalence check between two `SymExpr`s. -/
+def exprEquivFacts (facts : List PFact) (e1 e2 : SymExpr) : Bool :=
+  if exprEquiv e1 e2 then true
+  else exprEquiv (e1.normFacts facts) (e2.normFacts facts)
+
+/-! ## Condition unwrapping (`select`/`test` and odd `(x & 3) == 1`) -/
+
+/-- Unwrap `eq/ne (select sc sw sa sb kt kf) k` or `eq/ne (test sc sw sa sb) k` into
+an equivalent direct comparison `(sc', sw, sa, sb)`. -/
+def unwrapSelectCond (c : Cond) (w : Width) (a b : SymExpr) :
+    Option (Cond × Width × SymExpr × SymExpr) :=
+  if w != .w64 || (c != .eq && c != .ne) then none
+  else
+    let check (e : SymExpr) (k : Word) : Option (Cond × Width × SymExpr × SymExpr) :=
+      match e with
+      | .select sc sw sa sb (.imm kt) (.imm kf) =>
+          if kt == k && kf != k then
+            some (if c == .eq then sc else condNegate sc, sw, sa, sb)
+          else if kf == k && kt != k then
+            some (if c == .eq then condNegate sc else sc, sw, sa, sb)
+          else none
+      | .test sc sw sa sb =>
+          if k == 1 then
+            some (if c == .eq then sc else condNegate sc, sw, sa, sb)
+          else if k == 0 then
+            some (if c == .eq then condNegate sc else sc, sw, sa, sb)
+          else none
+      | _ => none
+    match a, b with
+    | e, .imm k => check e k
+    | .imm k, e => check e k
+    | _, _ => none
+
+/-- For provably odd `x`, rewrite `(x &&& 3) == 1` / `!= 3` to `tz x 2` and
+`(x &&& 3) != 1` / `== 3` to `tnz x 2`. -/
+def unwrapOddBit2 (facts : List PFact) (c : Cond) (w : Width) (a b : SymExpr) :
+    Option (Cond × Width × SymExpr × SymExpr) :=
+  if w != .w64 || (c != .eq && c != .ne) then none
+  else
+    let check (e : SymExpr) (k : Word) : Option (Cond × Width × SymExpr × SymExpr) :=
+      match e with
+      | .bin .and .w64 x (.imm 3) =>
+          if (k == 1 || k == 3) && parityOf facts x == .odd then
+            let isTz := (c == .eq && k == 1) || (c == .ne && k == 3)
+            some (if isTz then .tz else .tnz, .w64, x, .imm 2)
+          else none
+      | _ => none
+    match a, b with
+    | e, .imm k => check e k
+    | .imm k, e => check e k
+    | _, _ => none
+
+/-! ## Unsigned 64-bit interval bounds -/
+
 /-- Unsigned 64-bit inclusive range `[lo, hi]` with `lo ≤ hi < 2^64` (empty if `hi < lo`). -/
 structure URange where
   lo : Nat := 0
@@ -691,17 +1015,58 @@ structure URange where
 
 def URange.inter (a b : URange) : URange := ⟨max a.lo b.lo, min a.hi b.hi⟩
 
-/-- Narrow a range of `x` given `c.holds .w64 x k = res`. -/
+/-- Narrow a range of `x` given `c.holds .w64 x k = res` (including endpoint tightening for `.ne`). -/
 def URange.refineRight (r : URange) (c : Cond) (k : Word) (res : Bool) : URange :=
   let c' := if res then c else condNegate c
   let kn := k.toNat
   match c' with
   | .eq => r.inter ⟨kn, kn⟩
+  | .ne =>
+      if r.lo == kn && kn + 1 < 2 ^ 64 then r.inter ⟨kn + 1, 2 ^ 64 - 1⟩
+      else if r.hi == kn && kn > 0 then r.inter ⟨0, kn - 1⟩
+      else r
   | .ult => if kn == 0 then ⟨1, 0⟩ else r.inter ⟨0, kn - 1⟩
   | .ule => r.inter ⟨0, kn⟩
   | .ugt => if kn + 1 ≥ 2 ^ 64 then ⟨1, 0⟩ else r.inter ⟨kn + 1, 2 ^ 64 - 1⟩
   | .uge => r.inter ⟨kn, 2 ^ 64 - 1⟩
   | _ => r
+
+/-- Narrow a range of `x` given a non-immediate comparison `c.holds .w64 x y = res`. -/
+def URange.refineNonImm (r : URange) (c : Cond) (res : Bool) : URange :=
+  let c' := if res then c else condNegate c
+  match c' with
+  | .ult => r.inter ⟨0, 2 ^ 64 - 2⟩
+  | .ugt => r.inter ⟨1, 2 ^ 64 - 1⟩
+  | _ => r
+
+/-- Narrow range endpoints `[lo, hi]` to agree with known LSB parity `p`. -/
+def URange.refineParity (r : URange) (p : Parity) : URange :=
+  if r.hi < r.lo then r
+  else match p with
+  | .unknown => r
+  | .even =>
+      let lo' := if r.lo % 2 == 1 then r.lo + 1 else r.lo
+      let hi' := if r.hi % 2 == 1 then r.hi - 1 else r.hi
+      ⟨lo', hi'⟩
+  | .odd =>
+      if r.hi == 0 then ⟨1, 0⟩
+      else
+        let lo' := if r.lo % 2 == 0 then r.lo + 1 else r.lo
+        let hi' := if r.hi % 2 == 0 then r.hi - 1 else r.hi
+        ⟨lo', hi'⟩
+
+/-- Single pass refining `r0` for expression `e` against all w64 facts and parity `p`. -/
+def refineRangeOnce (facts : List PFact) (e : SymExpr) (p : Parity) (r0 : URange) : URange :=
+  facts.foldl (init := r0.refineParity p) fun acc f =>
+    if f.width == .w64 then
+      let acc1 := match f.lhs, f.rhs with
+        | l, .imm k => if l == e then acc.refineRight f.cond k f.result else acc
+        | .imm k, r => if r == e then acc.refineRight (condSwap f.cond) k f.result else acc
+        | l, r =>
+            let a1 := if l == e then acc.refineNonImm f.cond f.result else acc
+            if r == e then a1.refineNonImm (condSwap f.cond) f.result else a1
+      acc1.refineParity p
+    else acc
 
 /-- Compute a sound unsigned 64-bit interval `[lo, hi]` for `e` from `facts`
 (with structural recursion on `e`). -/
@@ -739,15 +1104,17 @@ def rangeOf (facts : List PFact) (e : SymExpr) : URange :=
     | .bin .and .w64 a (.imm k) =>
         let ra := rangeOf facts a
         ⟨0, min ra.hi k.toNat⟩
+    | .bin .or .w64 a (.imm k) =>
+        let ra := rangeOf facts a
+        ⟨max ra.lo k.toNat, min (2 ^ 64 - 1) (ra.hi + k.toNat)⟩
+    | .select _ _ _ _ t f =>
+        let rt := rangeOf facts t
+        let rf := rangeOf facts f
+        ⟨min rt.lo rf.lo, max rt.hi rf.hi⟩
     | _ => {}
-  -- Refine `base` with all direct w64 comparison facts mentioning `e` and an immediate
-  facts.foldl (init := base) fun acc f =>
-    if f.width == .w64 then
-      match f.lhs, f.rhs with
-      | l, .imm k => if l == e then acc.refineRight f.cond k f.result else acc
-      | .imm k, r => if r == e then acc.refineRight (condSwap f.cond) k f.result else acc
-      | _, _ => acc
-    else acc
+  let p := parityOf facts e
+  let r1 := refineRangeOnce facts e p base
+  refineRangeOnce facts e p r1
 
 /-- Check whether `c.holds w a b` is directly implied by a single fact `f`. -/
 def factMatches (f : PFact) (c : Cond) (w : Width) (a b : SymExpr) : Option Bool :=
@@ -780,17 +1147,42 @@ def condFromRanges (c : Cond) (ra rb : URange) : Option Bool :=
       else none
   | _ => none
 
-/-- Decide `c.holds w a b` from static identities, direct facts, and 64-bit interval bounds. -/
-def condFromFacts (facts : List PFact) (c : Cond) (w : Width) (a b : SymExpr) : Option Bool :=
-  let a' := a.norm; let b' := b.norm
+/-- Core decision procedure for `c.holds w a' b'` (on already-normalized `a', b'`). -/
+def condFromFactsCore (facts : List PFact) (c : Cond) (w : Width) (a' b' : SymExpr) : Option Bool :=
   match condStatic c w a' b' with
   | some r => some r
   | none =>
     match facts.findSome? (fun f => factMatches f c w a' b') with
     | some r => some r
     | none =>
-      if w == .w64 then condFromRanges c (rangeOf facts a') (rangeOf facts b')
-      else none
+      let fromParity : Option Bool :=
+        if c == .tz || c == .tnz then
+          let x? : Option SymExpr :=
+            if b' == .imm 1 then some a' else if a' == .imm 1 then some b' else none
+          match x? with
+          | some x =>
+              match parityOf facts x with
+              | .even => some (c == .tz)
+              | .odd => some (c == .tnz)
+              | .unknown => none
+          | none => none
+        else none
+      match fromParity with
+      | some r => some r
+      | none =>
+          if w == .w64 then condFromRanges c (rangeOf facts a') (rangeOf facts b')
+          else none
+
+/-- Decide `c.holds w a b` from static identities, direct facts, parity, interval bounds,
+and `select`/`test` unwrapping. -/
+def condFromFacts (facts : List PFact) (c : Cond) (w : Width) (a b : SymExpr) : Option Bool :=
+  let a' := a.norm; let b' := b.norm
+  match condFromFactsCore facts c w a' b' with
+  | some r => some r
+  | none =>
+      match unwrapSelectCond c w a' b' with
+      | some (c1, w1, a1, b1) => condFromFactsCore facts c1 w1 a1.norm b1.norm
+      | none => none
 
 /-- Decide whether `o.eval a b` is guaranteed not to overflow (`some false`) from `facts`. -/
 def ovfFromFacts (facts : List PFact) (o : Ovf) (a b : SymExpr) : Option Bool :=

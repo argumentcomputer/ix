@@ -280,6 +280,188 @@ theorem selectShift_ok {x : VReg} {o : Lir.BinOp} (ho : IsShift o) {w : Width} {
     exact shiftBody_ok ho (fun _ _ => rfl) h
 
 
+/-! ## `rol/ror` -/
+
+/-- The x86 rotation of a Lir rotation. -/
+def rotateOf : Lir.BinOp → X86.RotateOp
+  | .rol => .rol
+  | _ => .ror
+
+def IsRotate (o : Lir.BinOp) : Prop := o = .rol ∨ o = .ror
+
+theorem rotateOf_mnemonic {o : Lir.BinOp} (h : IsRotate o) :
+    rotateMnemonic o = (rotateOf o).mnemonic := by
+  rcases h with rfl | rfl <;> rfl
+
+/-- A Lir rotation is the machine's, read at its width. -/
+theorem rotate_lir {o : Lir.BinOp} (h : IsRotate o) (w : Width) (a b : Word) :
+    o.eval w a b = some (w.truncate (rotateResult (rotateOf o) w a b)) := by
+  rcases h with rfl | rfl
+  · simp [Lir.BinOp.eval, rotateOf, rol_eq]
+  · simp [Lir.BinOp.eval, rotateOf, ror_eq]
+
+theorem rotateResult_mod {op : X86.RotateOp} {w : Width} {a k k' : Word}
+    (h : X86.shiftCount w k % w.bits = X86.shiftCount w k' % w.bits) :
+    rotateResult op w a k = rotateResult op w a k' := by
+  simp only [rotateResult, X86.RotateOp.apply, h]
+
+theorem rotateCount_mod (w : Width) (k : Word) :
+    X86.shiftCount w (UInt64.ofNat ((k &&& Lir.shiftMask w).toNat % w.bits)) % w.bits =
+      X86.shiftCount w k % w.bits := by
+  rw [shiftCount_eq, shiftCount_eq]
+  have hwpos : 0 < w.bits := by cases w <;> decide
+  have hrlt : (k &&& Lir.shiftMask w).toNat % w.bits < w.bits := Nat.mod_lt _ hwpos
+  generalize (k &&& Lir.shiftMask w).toNat % w.bits = r at hrlt ⊢
+  have hmask : (UInt64.ofNat r &&& Lir.shiftMask w).toNat = r := by
+    rw [UInt64.toNat_and, UInt64.toNat_ofNat']
+    cases w <;> simp only [Width.bits, Lir.shiftMask] at hrlt ⊢
+    · have : r % UInt64.size = r := Nat.mod_eq_of_lt (by simp [UInt64.size]; omega)
+      rw [this]; change r &&& 31 = r
+      rw [show (31 : Nat) = 2 ^ 5 - 1 from rfl, Nat.and_two_pow_sub_one_eq_mod]
+      exact Nat.mod_eq_of_lt (by omega)
+    · have : r % UInt64.size = r := Nat.mod_eq_of_lt (by simp [UInt64.size]; omega)
+      rw [this]; change r &&& 31 = r
+      rw [show (31 : Nat) = 2 ^ 5 - 1 from rfl, Nat.and_two_pow_sub_one_eq_mod]
+      exact Nat.mod_eq_of_lt (by omega)
+    · have : r % UInt64.size = r := Nat.mod_eq_of_lt (by simp [UInt64.size]; omega)
+      rw [this]; change r &&& 31 = r
+      rw [show (31 : Nat) = 2 ^ 5 - 1 from rfl, Nat.and_two_pow_sub_one_eq_mod]
+      exact Nat.mod_eq_of_lt (by omega)
+    · have : r % UInt64.size = r := Nat.mod_eq_of_lt (by simp [UInt64.size]; omega)
+      rw [this]; change r &&& 63 = r
+      rw [show (63 : Nat) = 2 ^ 6 - 1 from rfl, Nat.and_two_pow_sub_one_eq_mod]
+      exact Nat.mod_eq_of_lt (by omega)
+  rw [hmask, Nat.mod_eq_of_lt hrlt]
+
+theorem rotateResult_zero (op : X86.RotateOp) (w : Width) (a : Word) :
+    w.truncate (rotateResult op w a 0) = w.truncate a := by
+  rw [rotateResult, truncate_mergeWrite]
+  have h0 : X86.shiftCount w 0 = 0 := by cases w <;> rfl
+  rw [h0, X86.RotateOp.apply_zero]
+  apply UInt64.toBitVec_inj.mp
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  simp [X86.Encode.truncate_bits, BitVec.getLsbD_setWidth, hi]
+
+theorem rotate_close (w : Width) (op : X86.RotateOp) (a k : Word) :
+    (if narrowWidth w then w.truncate (rotateResult op w a k) else rotateResult op w a k) =
+      w.truncate (rotateResult op w a k) := by
+  by_cases hn : narrowWidth w = true
+  · simp [hn]
+  · simp only [Bool.not_eq_true] at hn
+    simp only [hn, Bool.false_eq_true, ↓reduceIte]
+    refine (rotateResult_wide ?_ op a k).symm
+    cases w <;> simp_all [narrowWidth]
+
+theorem rotateRow_ok (op : X86.RotateOp) {form : X86.OpEn} {x : VReg} {w : Width} {b : XArg VReg}
+    {pre : List (Inst VReg)} {c : Ctx} {st st' : St} {is : List (Inst VReg)} {name : String}
+    (h : (do
+      let dst ← if narrowWidth w then fresh else pure x
+      fire name
+      return pre ++ (← narrowed w x dst [.op (row op.mnemonic w form) [dst] [.r a, b]])) c st = .ok (is, st'))
+    (hrow : ∀ (σ : Env) mem ctx dst va vk, σ[a]? = some va → b.valIn σ mem ctx w = some vk →
+      Inst.exec σ mem ctx (.op (row op.mnemonic w form) [dst] [.r a, b]) = some (σ.insert dst (rotateResult op w va vk), mem)) :
+    st.next ≤ st'.next ∧ st'.consumed = st.consumed ∧ ∃ js, is = pre ++ js ∧ a ∈ readsOf js ∧
+      (∀ u ∈ b.regs, u ∈ readsOf js) ∧
+      ∀ σ mem ctx va vk, σ[a]? = some va → b.valIn σ mem ctx w = some vk → x < st.next →
+        Computes js σ mem ctx st.next x (w.truncate (rotateResult op w va vk)) := by
+  by_cases hn : narrowWidth w = true
+  · sel_simp [hn] at h
+    rw [bind_ok] at h
+    obtain ⟨js, st₁, h₁, h⟩ := h
+    sel_simp [Option.some.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    obtain ⟨hn₁, hc₁, hr₁, hv₁⟩ := narrowed_spec h₁
+    refine ⟨by simp [hn₁], by simp [hc₁], js, rfl, hr₁ a (by simp [Inst.uses, xargsRegs, XArg.regs]),
+      fun u hu => hr₁ u (by simp [Inst.uses, xargsRegs, hu]), fun σ mem ctx va vk ha hb hx => ?_⟩
+    have := hv₁ σ mem ctx st.next _ (fun h' => by simp [hn] at h') (fun _ => ⟨Nat.le_refl _, hx⟩)
+      (Computes.single (hrow σ mem ctx st.next va vk ha hb))
+    rwa [rotate_close] at this
+  · sel_simp [hn] at h
+    rw [bind_ok] at h
+    obtain ⟨js, st₁, h₁, h⟩ := h
+    sel_simp [Option.some.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    obtain ⟨hn₁, hc₁, hr₁, hv₁⟩ := narrowed_spec h₁
+    refine ⟨by simp [hn₁], by simp [hc₁], js, rfl, hr₁ a (by simp [Inst.uses, xargsRegs, XArg.regs]),
+      fun u hu => hr₁ u (by simp [Inst.uses, xargsRegs, hu]), fun σ mem ctx va vk ha hb hx => ?_⟩
+    have := hv₁ σ mem ctx st.next _ (fun _ => rfl) (fun h' => absurd h' hn)
+      (Computes.single (hrow σ mem ctx x va vk ha hb))
+    rwa [rotate_close] at this
+
+theorem selectRotate_ok {x : VReg} {o : Lir.BinOp} (ho : IsRotate o) {w : Width} {a b : Lir.Arg}
+    {c : Ctx} {st st' : St} {is : List (Inst VReg)} (h : selectRotate x o w a b c st = .ok (is, st')) :
+    AssignOk c st st' x (.bin o w a b) is := by
+  have hmn := rotateOf_mnemonic ho
+  unfold selectRotate at h
+  rw [bind_ok] at h
+  obtain ⟨⟨a', pre⟩, st₁, h₁, h⟩ := h
+  obtain ⟨hn₁, hc₁, hr₁, hu₁, hl₁, hv₁⟩ := argReg_spec h₁
+  simp only [hmn] at h
+  have lir : ∀ (ρ : Env) mem ctx v, (Lir.Rhs.bin o w a b).eval ρ mem ctx = some v →
+      ∃ va vb, a.eval ρ = some va ∧ b.eval ρ = some vb ∧ v = w.truncate (rotateResult (rotateOf o) w va vb) := by
+    intro ρ mem ctx v hv
+    simp only [Lir.Rhs.eval, Option.bind_eq_bind, Option.bind_eq_some_iff] at hv
+    obtain ⟨va, ha, vb, hb, hv⟩ := hv
+    rw [rotate_lir ho] at hv
+    exact ⟨va, vb, ha, hb, (Option.some.inj hv).symm⟩
+  have opnd : ∀ N (ρ σ : Env) mem ctx va (is : List (Inst VReg)), N ≤ st.next → (∀ u ∈ a.uses, u < N) →
+      a.eval ρ = some va → a' ∈ readsOf is → Agree N (readsOf is) ρ σ →
+      ∃ σ₁, execSeq σ mem ctx pre = some (σ₁, mem) ∧ σ₁[a']? = some va ∧ ∀ u, u < st.next → σ₁[u]? = σ[u]? :=
+    fun N ρ σ mem ctx va is hN hu ha hr hag =>
+      hv₁ σ mem ctx va (hag.arg (fun u hu' => by rw [hu₁ u hu']; exact hr) hu ha)
+  cases b with
+  | imm k =>
+    simp only at h
+    by_cases hz : ((k &&& Lir.shiftMask w).toNat % w.bits == 0) = true
+    · sel_simp [hz] at h
+      obtain ⟨rfl, rfl⟩ := h
+      refine ⟨(Ext.of_le hn₁ hc₁).trans (Ext.fire c _ _), fun N ρ σ mem ctx v hcl hN hx hu hev hp hag => ?_⟩
+      obtain ⟨va, vb, ha, hb, rfl⟩ := lir ρ mem ctx v hev
+      simp only [Lir.Arg.eval, Option.some.injEq] at hb
+      subst hb
+      obtain ⟨σ₁, he₁, ha₁, hab₁⟩ := opnd N ρ σ mem ctx va _ hN (bin_uses_left hu) ha
+        (by simp [readsOf_truncTo, hr₁]) hag
+      refine ⟨σ₁.insert x (w.truncate va), by rw [execSeq_append he₁, exec_truncTo w ha₁], ?_, ?_⟩
+      · simp only [Std.HashMap.getElem?_insert_self, Option.some.injEq]
+        have h0 : X86.shiftCount w k % w.bits = X86.shiftCount w 0 % w.bits := by
+          rw [shiftCount_eq, shiftCount_eq]; simp only [beq_iff_eq] at hz; rw [hz]; simp
+        rw [rotateResult_mod h0, rotateResult_zero]
+      · intro u hu' hne
+        rw [insert_ne (Ne.symm hne), hab₁ u hu']
+    · sel_simp [hz] at h
+      obtain ⟨hn₂, hc₂, js, rfl, hra, -, hv₂⟩ := rotateRow_ok (rotateOf o) h
+        (fun σ mem ctx dst va vk ha hb => by
+          simp only [XArg.valIn, Option.some.injEq] at hb
+          subst hb
+          exact exec_rotateI (rotateOf o) w _ ha)
+      refine ⟨Ext.of_le (Nat.le_trans hn₁ hn₂) (by rw [hc₂, hc₁]), fun N ρ σ mem ctx v hcl hN hx hu hev hp hag => ?_⟩
+      obtain ⟨va, vb, ha, hb, rfl⟩ := lir ρ mem ctx v hev
+      simp only [Lir.Arg.eval, Option.some.injEq] at hb
+      subst hb
+      obtain ⟨σ₁, he₁, ha₁, hab₁⟩ := opnd N ρ σ mem ctx va _ hN (bin_uses_left hu) ha
+        (by simp [hr₁, hra]) hag
+      refine Computes.append he₁ hab₁ ?_
+      have := (hv₂ σ₁ mem ctx va _ ha₁ rfl (Nat.lt_of_lt_of_le hx (Nat.le_trans hN hn₁))).mono hn₁
+      rwa [rotateResult_mod (rotateCount_mod w k)] at this
+  | v c' =>
+    sel_simp [Option.some.injEq] at h
+    obtain ⟨hn₂, hc₂, js, rfl, hra, hrc, hv₂⟩ := rotateRow_ok (rotateOf o) h
+      (fun σ mem ctx dst va vk ha hb => by
+        simp only [XArg.valIn] at hb
+        exact exec_rotateC (rotateOf o) w ha hb)
+    refine ⟨Ext.of_le (Nat.le_trans hn₁ hn₂) (by rw [hc₂, hc₁]), fun N ρ σ mem ctx v hcl hN hx hu hev hp hag => ?_⟩
+    obtain ⟨va, vb, ha, hb, rfl⟩ := lir ρ mem ctx v hev
+    obtain ⟨σ₁, he₁, ha₁, hab₁⟩ := opnd N ρ σ mem ctx va _ hN (bin_uses_left hu) ha
+      (by simp [hr₁, hra]) hag
+    have hcN : c' < N := bin_uses_right hu c' (by simp [Lir.Arg.uses, Lir.Arg.vreg?])
+    have hc₁' : σ₁[c']? = some vb := by
+      rw [hab₁ c' (Nat.lt_of_lt_of_le hcN hN)]
+      exact hag.get (by simp [hr₁]; exact hrc c' (by simp [XArg.regs])) hcN hb
+    refine Computes.append he₁ hab₁ ?_
+    exact (hv₂ σ₁ mem ctx va vb ha₁ hc₁' (Nat.lt_of_lt_of_le hx (Nat.le_trans hN hn₁))).mono hn₁
+
+
 /-! ## `div` -/
 
 /-- The dividend's register (zero-extended at narrow widths). -/
