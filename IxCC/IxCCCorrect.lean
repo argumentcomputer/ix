@@ -19,6 +19,7 @@ import IxCCCorrect.GroundCheck
 import IxCCCorrect.Compose
 import IxCCCorrect.ComposeExe
 import IxCCCorrect.GroundShape
+import IxCCCorrect.ComposeExit
 import IxCCCorrect.Unique
 import IxCCCorrect.Fence
 
@@ -81,6 +82,9 @@ propositions that elaborate, and what the existing theorems establish today.
   (`groundShapeCheck_sound`, `recheck_agrees_shaped`, `plain_exe_tier1Stdout_shaped`), and the
   check a `compile` calls (`tier1Check`, `tier1Check_sound`: `Admits` and the first clause of
   `Tier1` for the checked core).
+* `IxCCCorrect.ComposeExit`: the second clause of `Tier1` (a trace that exits with status 0 wrote
+  the whole rendering of an agreeing answer), and `tier1Check_sound_core`: `Admits` and both
+  clauses for the checked core (`Tier1Core`), all but the shipped-file link of `Tier1`.
 * `IxCCCorrect.Unique`: two answers that agree are equal, at a `Nat` result, where a set theory
   exists and the environment stores what separates numerals (`agrees_unique`).
 * `IxCCCorrect.Fence`: the library's axiom fence, an exact `#print axioms`

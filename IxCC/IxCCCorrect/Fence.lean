@@ -16,6 +16,7 @@ import IxCCCorrect.Compose
 import IxCCCorrect.ComposeExe
 import IxCCCorrect.GroundShape
 import IxCCCorrect.Unique
+import IxCCCorrect.ComposeExit
 
 /-! # The target statements' axiom fence: every theorem `IxCCCorrect` proves uses at most the
 three standard axioms. Building the library checks it (`#guard_msgs`), in the required check
@@ -898,3 +899,47 @@ routes and the progress targets are definitions and have no fence. -/
 
 /-- info: 'IxCC.Correct.tier1Check_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.tier1Check_sound
+
+/-! ## `IxCCCorrect.ComposeExit` -/
+
+/-- info: 'IxCC.Correct.getLast?_append_of_ne_nil' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.getLast?_append_of_ne_nil
+
+/-- info: 'IxCC.Correct.exitStatus_cons_cons' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.exitStatus_cons_cons
+
+/-- info: 'IxCC.Correct.exitStatus_append' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.exitStatus_append
+
+/-- info: 'IxCC.Correct.writeSeq_prefix_exit' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.writeSeq_prefix_exit
+
+/-- info: 'IxCC.Correct.writeSeq_written_full' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.writeSeq_written_full
+
+/-- info: 'IxCC.Correct.message_status_ne_zero' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Correct.message_status_ne_zero
+
+/-- info: 'IxCC.Correct.writeFailed_ne_zero' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Correct.writeFailed_ne_zero
+
+/-- info: 'IxCC.Correct.reportsMsg_prefix_exit' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.reportsMsg_prefix_exit
+
+/-- info: 'IxCC.Correct.cons_prefix_exit' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.cons_prefix_exit
+
+/-- info: 'IxCC.Correct.nil_prefix_exit' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.nil_prefix_exit
+
+/-- info: 'IxCC.Correct.exit_of_outcome' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.exit_of_outcome
+
+/-- info: 'IxCC.Correct.tier1Exit_of_outcome' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.tier1Exit_of_outcome
+
+/-- info: 'IxCC.Correct.plain_exe_tier1Core_shaped' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.plain_exe_tier1Core_shaped
+
+/-- info: 'IxCC.Correct.tier1Check_sound_core' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.tier1Check_sound_core
