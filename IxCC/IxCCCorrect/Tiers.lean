@@ -61,24 +61,28 @@ open IxCC.Grounding (KEnv KKey KExpr litE)
 
 /-! ## Kernel meaning -/
 
+/-- The key the kernel's reader gives the constant at an address
+(`Ix.Kernel.Reader.Ctx.keyAt`): its role's key where the table binds it,
+otherwise the key of the address. -/
+def keyOf (acc : Src.KernelFront.Accepted) (a : Ixon.Address) : Option KKey :=
+  (acc.ctx.keyAt (Src.KernelFront.kaddr a)).toOption
+
 /-- **The certified kernel admits the committed environment.** `envBytes` decodes
 (every constant and blob under its address, the root the canonical Merkle root of
 the constants: `Ixon.V3.decodeAnonymousEnv`), has the claim's root and role table,
 and the kernel's tiered entry accepts it at the claim's limits, with result `acc`
 (`Src.KernelFront.accept`, a function of the decoded environment). `acc.env` is
 the logical environment the kernel installed; it has a model in every set theory
-(`Ix.Kernel.Admission.checkBytesTiered_has_model`). -/
+(`Ix.Kernel.Admission.checkBytesTiered_has_model`). The claim's target resolves:
+the kernel's reader keys a constant at it (`keyOf`; owner-approved P4: a target the
+reader cannot key, a block member whose projection record the bytes omit, is refused
+here rather than making `Agrees` unsatisfiable). -/
 def Admits (claim : Claim) (envBytes : ByteArray) (acc : Src.KernelFront.Accepted) : Prop :=
   ∃ env, Ixon.V3.decodeAnonymousEnv envBytes = .ok env ∧
     env.root = claim.env ∧
     env.bindingAddress = some claim.roleTable ∧
-    Src.KernelFront.accept env claim.kernelLimits = .ok acc
-
-/-- The key the kernel's reader gives the constant at an address
-(`Ix.Kernel.Reader.Ctx.keyAt`): its role's key where the table binds it,
-otherwise the key of the address. -/
-def keyOf (acc : Src.KernelFront.Accepted) (a : Ixon.Address) : Option KKey :=
-  (acc.ctx.keyAt (Src.KernelFront.kaddr a)).toOption
+    Src.KernelFront.accept env claim.kernelLimits = .ok acc ∧
+    keyOf acc claim.target ≠ none
 
 /-- **Two kernel terms denote the same set in every model** of `kenv`, over every
 set theory, at every level assignment and variable environment; and they do

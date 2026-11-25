@@ -317,6 +317,7 @@ theorem tier1Check_sound_core {claim : Claim} {envBytes : ByteArray} {equations 
     rw [hgs] at hg
     have habi : abi = claim.abi := of_decide_eq_true hg
     subst habi
-    exact ⟨inp.kernel.acc, admits_of_ingress hin henv hrole, plain_exe_tier1Core_shaped h hb hgs⟩
+    exact ⟨inp.kernel.acc, admits_of_ingress hin henv hrole (groundShapeCheck_sound hgs).ground.target_key,
+      plain_exe_tier1Core_shaped h hb hgs⟩
 
 end IxCC.Correct

@@ -895,6 +895,9 @@ routes and the progress targets are definitions and have no fence. -/
 /-- info: 'IxCC.Correct.groundShapeCheckP_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.groundShapeCheckP_sound
 
+/-- info: 'IxCC.Correct.GroundOk.target_key' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.GroundOk.target_key
+
 /-- info: 'IxCC.Correct.recheck_agrees_shaped' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.recheck_agrees_shaped
 

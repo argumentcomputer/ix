@@ -72,11 +72,12 @@ theorem admits_of_ingress {claim : Claim} {envBytes : ByteArray} {equations : Le
     {roots : List String} {inp : Recheck.Input}
     (h : Recheck.ingress envBytes equations roots claim.kernelLimits = .ok inp)
     (henv : inp.env.root = claim.env)
-    (hrole : inp.env.bindingAddress = some claim.roleTable) :
+    (hrole : inp.env.bindingAddress = some claim.roleTable)
+    (hkey : keyOf inp.kernel.acc claim.target ≠ none) :
     Admits claim envBytes inp.kernel.acc := by
   obtain ⟨hdec, hacc, -⟩ := Recheck.ingress_parts h
   unfold Admits
-  exact ⟨inp.env, hdec, henv, hrole, hacc⟩
+  exact ⟨inp.env, hdec, henv, hrole, hacc, hkey⟩
 
 /-! ## G1: the observation bridge, at canonical forms -/
 

@@ -300,6 +300,14 @@ theorem plain_exe_tier1Stdout_shaped {cfg : Recheck.Config} {P : Src.Program} {c
     (fun ns hns => hs.neverWrong ns (hns.trans harity.symm))
     (fun ns hns => hs.canon ns (hns.trans harity.symm))
 
+/-- What `groundCheck` accepted resolves at the reader: the target has a key (`Admits`, P4). -/
+theorem GroundOk.target_key {acc : Src.KernelFront.Accepted} {src : Program} {I : Lam.Erase.Input}
+    {view : View} {target : Ixon.Address} {abi : Abi} (h : GroundOk acc src I view target abi) :
+    keyOf acc target ≠ none := by
+  obtain ⟨κ, -, -, -, -, root, -, -, -, hk, -⟩ := h
+  rw [hk]
+  exact Option.some_ne_none _
+
 /-! ## The check a `compile` calls, and the theorem about it -/
 
 /-- **The tier-1 check**: the committed environment the checker ingested has the claim's root and
@@ -333,6 +341,7 @@ theorem tier1Check_sound {claim : Claim} {envBytes : ByteArray} {equations : Lea
     rw [hgs] at hg
     have habi : abi = claim.abi := of_decide_eq_true hg
     subst habi
-    exact ⟨inp.kernel.acc, admits_of_ingress hin henv hrole, plain_exe_tier1Stdout_shaped h hb hgs⟩
+    exact ⟨inp.kernel.acc, admits_of_ingress hin henv hrole (groundShapeCheck_sound hgs).ground.target_key,
+      plain_exe_tier1Stdout_shaped h hb hgs⟩
 
 end IxCC.Correct
