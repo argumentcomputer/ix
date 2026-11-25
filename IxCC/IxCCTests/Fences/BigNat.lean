@@ -1,8 +1,8 @@
 import IxCC.BigNat.Proof
 
 /-! Exact Layer-1 axiom fences for the pure-Lean formally verified `IxCC.BigNat`
-library (90 theorems across `LimbOps`, `Basic`, `Linear`, `Mul`, `Div`, and
-`GcdConv`). Every theorem depends strictly on subsets of
+library (166 theorems across `LimbOps`, `Basic`, `Linear`, `Toom3`, `Mul`, `InvDiv`,
+`Div`, `Lehmer`, and `GcdConv`). Every theorem depends strictly on subsets of
 `[propext, Classical.choice, Quot.sound]` — zero `sorryAx`, zero
 `Lean.ofReduceBool` / `Lean.trustCompiler`, zero custom axioms.
 Expected messages are preserved verbatim. -/
@@ -83,7 +83,7 @@ Expected messages are preserved verbatim. -/
 /-- info: 'IxCC.BigNat.testBit_toNat' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.BigNat.testBit_toNat
 
-/-! ### Linear (27 fences) -/
+/-! ### Linear (66 fences) -/
 
 /-- info: 'IxCC.BigNat.cmp_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.BigNat.cmp_spec
@@ -166,7 +166,165 @@ Expected messages are preserved verbatim. -/
 /-- info: 'IxCC.BigNat.log2_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.BigNat.log2_spec
 
-/-! ### Mul (14 fences) -/
+/-- info: 'IxCC.BigNat.size_copyAppendLoop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.size_copyAppendLoop
+
+/-- info: 'IxCC.BigNat.size_copyIntoZeros' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.size_copyIntoZeros
+
+/-- info: 'IxCC.BigNat.getLimb_copyIntoZeros' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.getLimb_copyIntoZeros
+
+/-- info: 'IxCC.BigNat.toNat_copyIntoZeros' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_copyIntoZeros
+
+/-- info: 'IxCC.BigNat.size_shiftLeft1Loop_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.size_shiftLeft1Loop_le
+
+/-- info: 'IxCC.BigNat.toNat_shiftLeft1Loop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_shiftLeft1Loop
+
+/-- info: 'IxCC.BigNat.size_shiftLeft1_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.size_shiftLeft1_le
+
+/-- info: 'IxCC.BigNat.wf_shiftLeft1' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.wf_shiftLeft1
+
+/-- info: 'IxCC.BigNat.toNat_shiftLeft1' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_shiftLeft1
+
+/-- info: 'IxCC.BigNat.size_shiftRight1Loop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.size_shiftRight1Loop
+
+/-- info: 'IxCC.BigNat.getLimb_shiftRight1Loop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.getLimb_shiftRight1Loop
+
+/-- info: 'IxCC.BigNat.size_shiftRight1_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.size_shiftRight1_le
+
+/-- info: 'IxCC.BigNat.wf_shiftRight1' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.wf_shiftRight1
+
+/-- info: 'IxCC.BigNat.toNat_shiftRight1' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_shiftRight1
+
+/-- info: 'IxCC.BigNat.wf_shiftLeftSmall' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.wf_shiftLeftSmall
+
+/-- info: 'IxCC.BigNat.toNat_shiftLeftSmall' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_shiftLeftSmall
+
+/-- info: 'IxCC.BigNat.wf_shiftRightSmall' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.wf_shiftRightSmall
+
+/-- info: 'IxCC.BigNat.toNat_shiftRightSmall' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_shiftRightSmall
+
+/-- info: 'IxCC.BigNat.size_addCarryAtLoop_ge' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.BigNat.size_addCarryAtLoop_ge
+
+/-- info: 'IxCC.BigNat.toNat_addCarryAtLoop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_addCarryAtLoop
+
+/-- info: 'IxCC.BigNat.toNat_addAtLoop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_addAtLoop
+
+/-- info: 'IxCC.BigNat.toNat_addAtInPlace' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_addAtInPlace
+
+/-- info: 'IxCC.BigNat.toNat_addInPlace' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_addInPlace
+
+/-- info: 'IxCC.BigNat.size_subBorrowAtLoop' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.BigNat.size_subBorrowAtLoop
+
+/-- info: 'IxCC.BigNat.toNat_subBorrowAtLoop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_subBorrowAtLoop
+
+/-- info: 'IxCC.BigNat.size_subAtLoop' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.BigNat.size_subAtLoop
+
+/-- info: 'IxCC.BigNat.toNat_subAtLoop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_subAtLoop
+
+/-- info: 'IxCC.BigNat.subAtInPlace_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.subAtInPlace_spec
+
+/-- info: 'IxCC.BigNat.toNat_subAtInPlace_of_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_subAtInPlace_of_le
+
+/-- info: 'IxCC.BigNat.wf_subInPlace' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.wf_subInPlace
+
+/-- info: 'IxCC.BigNat.toNat_subInPlace' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_subInPlace
+
+/-- info: 'IxCC.BigNat.subMulCarry64_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.subMulCarry64_spec
+
+/-- info: 'IxCC.BigNat.toNat_addMul1AtLoop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_addMul1AtLoop
+
+/-- info: 'IxCC.BigNat.toNat_addMul1AtInPlace' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_addMul1AtInPlace
+
+/-- info: 'IxCC.BigNat.toNat_addMul1InPlace' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_addMul1InPlace
+
+/-- info: 'IxCC.BigNat.size_subMul1AtLoop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.size_subMul1AtLoop
+
+/-- info: 'IxCC.BigNat.toNat_subMul1AtLoop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_subMul1AtLoop
+
+/-- info: 'IxCC.BigNat.subMul1AtInPlace_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.subMul1AtInPlace_spec
+
+/-- info: 'IxCC.BigNat.subMul1InPlace_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.subMul1InPlace_spec
+
+/-! ### Toom3 (13 fences) -/
+
+/-- info: 'IxCC.BigNat.inv3_64_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.inv3_64_toNat
+
+/-- info: 'IxCC.BigNat.inv3_64_mul_three' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.inv3_64_mul_three
+
+/-- info: 'IxCC.BigNat.wf_divExact3' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.wf_divExact3
+
+/-- info: 'IxCC.BigNat.divExact3_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.divExact3_spec
+
+/-- info: 'IxCC.BigNat.wf_signedSub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.wf_signedSub
+
+/-- info: 'IxCC.BigNat.signedSub_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.signedSub_spec
+
+/-- info: 'IxCC.BigNat.wf_karatsubaCombine' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.wf_karatsubaCombine
+
+/-- info: 'IxCC.BigNat.toNat_karatsubaCombine' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_karatsubaCombine
+
+/-- info: 'IxCC.BigNat.toom3EvalLoop_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toom3EvalLoop_eq
+
+/-- info: 'IxCC.BigNat.wf_toom3Interp' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.wf_toom3Interp
+
+/-- info: 'IxCC.BigNat.toom3Interp_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toom3Interp_spec
+
+/-- info: 'IxCC.BigNat.wf_toom3Combine' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.wf_toom3Combine
+
+/-- info: 'IxCC.BigNat.toNat_toom3Combine' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_toom3Combine
+
+/-! ### Mul (18 fences) -/
 
 /-- info: 'IxCC.BigNat.wf_mulSchoolbook' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.BigNat.wf_mulSchoolbook
@@ -210,7 +368,45 @@ Expected messages are preserved verbatim. -/
 /-- info: 'IxCC.BigNat.toNat_pow' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.BigNat.toNat_pow
 
-/-! ### Div (11 fences) -/
+/-- info: 'IxCC.BigNat.wf_mulToom3' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.wf_mulToom3
+
+/-- info: 'IxCC.BigNat.toNat_mulToom3' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_mulToom3
+
+/-- info: 'IxCC.BigNat.wf_sqrToom3' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.wf_sqrToom3
+
+/-- info: 'IxCC.BigNat.toNat_sqrToom3' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_sqrToom3
+
+/-! ### InvDiv (8 fences) -/
+
+/-- info: 'IxCC.BigNat.shift_or_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.shift_or_toNat
+
+/-- info: 'IxCC.BigNat.invert21_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.invert21_spec
+
+/-- info: 'IxCC.BigNat.invert21_eq_div' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.invert21_eq_div
+
+/-- info: 'IxCC.BigNat.divRem21_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.divRem21_spec
+
+/-- info: 'IxCC.BigNat.divRem21_eq_divWide64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.divRem21_eq_divWide64
+
+/-- info: 'IxCC.BigNat.shiftLeft_clz64_ge' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.shiftLeft_clz64_ge
+
+/-- info: 'IxCC.BigNat.wf_divMod1Inv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.wf_divMod1Inv
+
+/-- info: 'IxCC.BigNat.divMod1Inv_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.divMod1Inv_spec
+
+/-! ### Div (16 fences) -/
 
 /-- info: 'IxCC.BigNat.wf_divMod1' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.BigNat.wf_divMod1
@@ -245,6 +441,44 @@ Expected messages are preserved verbatim. -/
 /-- info: 'IxCC.BigNat.toNat_mod_lt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.BigNat.toNat_mod_lt
 
+/-- info: 'IxCC.BigNat.ge_two_pow_63_of_shr63_ne_zero' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.BigNat.ge_two_pow_63_of_shr63_ne_zero
+
+/-- info: 'IxCC.BigNat.trialQhatInv_eq_trialQhat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.trialQhatInv_eq_trialQhat
+
+/-- info: 'IxCC.BigNat.divModKnuth_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.divModKnuth_spec
+
+/-- info: 'IxCC.BigNat.divQuick1_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.divQuick1_spec
+
+/-- info: 'IxCC.BigNat.div_eq_divMod_fst' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.div_eq_divMod_fst
+
+/-! ### Lehmer (7 fences) -/
+
+/-- info: 'IxCC.BigNat.gcdWord64_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.gcdWord64_spec
+
+/-- info: 'IxCC.BigNat.wf_linCombSub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.wf_linCombSub
+
+/-- info: 'IxCC.BigNat.linCombSub_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.linCombSub_spec
+
+/-- info: 'IxCC.BigNat.lehmerStep_gcd' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.lehmerStep_gcd
+
+/-- info: 'IxCC.BigNat.lehmerStep_decrease' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.lehmerStep_decrease
+
+/-- info: 'IxCC.BigNat.wf_gcdLehmer' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.wf_gcdLehmer
+
+/-- info: 'IxCC.BigNat.toNat_gcdLehmer' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_gcdLehmer
+
 /-! ### GcdConv (14 fences) -/
 
 /-- info: 'IxCC.BigNat.wf_gcd' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -256,7 +490,7 @@ Expected messages are preserved verbatim. -/
 /-- info: 'IxCC.BigNat.wf_mulAdd1' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.BigNat.wf_mulAdd1
 
-/-- info: 'IxCC.BigNat.toNat_mulAdd1' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'IxCC.BigNat.toNat_mulAdd1' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.BigNat.toNat_mulAdd1
 
 /-- info: 'IxCC.BigNat.toDecimalChunks_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/

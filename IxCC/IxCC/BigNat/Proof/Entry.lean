@@ -697,16 +697,12 @@ theorem canonical_divMod (a b : SlowNat) :
       · exact ⟨canonical_small_zero, canonical_fromUInt64 _⟩
       · exact ⟨canonical_fromUInt64 _, canonical_fromUInt64 _⟩
     | big lb =>
-      exact ⟨canonical_fromLimbs _, canonical_fromLimbs _⟩
-  | big la =>
-    cases b with
-    | small vb =>
       simp only [divMod]
       split
-      · exact ⟨canonical_small_zero, canonical_fromLimbs _⟩
-      · exact ⟨canonical_fromLimbs _, canonical_fromUInt64 _⟩
-    | big lb =>
-      exact ⟨canonical_fromLimbs _, canonical_fromLimbs _⟩
+      · exact ⟨canonical_fromUInt64 _, canonical_fromUInt64 _⟩
+      · exact ⟨canonical_small_zero, canonical_fromUInt64 _⟩
+  | big la =>
+    exact ⟨canonical_fromLimbs _, canonical_fromLimbs _⟩
 
 theorem divMod_spec (a b : SlowNat) :
     (divMod a b).1.val = a.val / b.val ∧ (divMod a b).2.val = a.val % b.val := by
@@ -723,32 +719,127 @@ theorem divMod_spec (a b : SlowNat) :
         rw [val_fromUInt64, val_fromUInt64, UInt64.toNat_div, UInt64.toNat_mod]
         exact ⟨rfl, rfl⟩
     | big lb =>
-      have hspec := BigNat.divMod_spec (ofUInt64 va) lb
-      simp only [divMod, toLimbs, val_small, val_big]
-      rw [val_fromLimbs, val_fromLimbs, hspec.2.2.1, hspec.2.2.2, toNat_ofUInt64]
-      exact ⟨rfl, rfl⟩
+      simp only [divMod, val_small, val_big]
+      have hwf := wf_normalize lb
+      have htn := toNat_normalize lb
+      by_cases h1 : (normalize lb).size = 1
+      · have h1b : ((normalize lb).size == 1) = true := beq_iff_eq.mpr h1
+        simp only [h1b, ↓reduceIte]
+        have hlb : BigNat.toNat lb = (getLimb (normalize lb) 0).toNat := by
+          rw [← htn, BigNat.toNat, h1, toNatPrefix_succ, toNatPrefix_zero]
+          simp only [Nat.pow_zero, Nat.mul_one, Nat.zero_add]
+        rw [val_fromUInt64, val_fromUInt64, UInt64.toNat_div, UInt64.toNat_mod, hlb]
+        exact ⟨rfl, rfl⟩
+      · have h1b : ((normalize lb).size == 1) = false := beq_false_of_ne h1
+        simp only [h1b, Bool.false_eq_true, ↓reduceIte]
+        rw [val_small, val_fromUInt64]
+        by_cases h0 : (normalize lb).size = 0
+        · have hlb0 : BigNat.toNat lb = 0 := by rw [← htn, BigNat.toNat, h0]; rfl
+          rw [hlb0, Nat.div_zero, Nat.mod_zero]; exact ⟨rfl, rfl⟩
+        · have hge := toNat_ge_2_64_of_size_ge_2 hwf (by omega)
+          have hlt : va.toNat < BigNat.toNat lb := Nat.lt_of_lt_of_le (uint64_toNat_lt va) (by omega)
+          rw [Nat.div_eq_of_lt hlt, Nat.mod_eq_of_lt hlt]; exact ⟨rfl, rfl⟩
   | big la =>
+    have hspec := BigNat.divMod_spec la (toLimbs b)
+    simp only [divMod, val_big]
+    rw [val_fromLimbs, val_fromLimbs, hspec.2.2.1, hspec.2.2.2, toNat_toLimbs]
+    exact ⟨rfl, rfl⟩
+
+theorem canonical_div (a b : SlowNat) : (div a b).Canonical := by
+  cases a with
+  | small va =>
     cases b with
     | small vb =>
-      simp only [divMod, val_small, val_big]
+      simp only [div]
+      split
+      · exact canonical_small_zero
+      · exact canonical_fromUInt64 _
+    | big lb =>
+      simp only [div]
+      split
+      · exact canonical_fromUInt64 _
+      · exact canonical_small_zero
+  | big la => exact canonical_fromLimbs _
+
+theorem val_div (a b : SlowNat) : (div a b).val = a.val / b.val := by
+  cases a with
+  | small va =>
+    cases b with
+    | small vb =>
+      simp only [div, val_small]
       by_cases h0 : vb = 0
-      · subst h0
-        simp [val_fromLimbs]
+      · subst h0; simp
       · have h0b : (vb == 0) = false := beq_false_of_ne h0
         simp only [h0b, Bool.false_eq_true, ↓reduceIte]
-        rw [val_fromLimbs, val_fromUInt64]
-        have hspec := divMod1_spec la vb h0
-        exact ⟨hspec.2.1, hspec.2.2.1⟩
+        rw [val_fromUInt64, UInt64.toNat_div]
     | big lb =>
-      have hspec := BigNat.divMod_spec la lb
-      simp only [divMod, toLimbs, val_big]
-      rw [val_fromLimbs, val_fromLimbs]
-      exact ⟨hspec.2.2.1, hspec.2.2.2⟩
+      simp only [div, val_small, val_big]
+      have hwf := wf_normalize lb
+      have htn := toNat_normalize lb
+      by_cases h1 : (normalize lb).size = 1
+      · have h1b : ((normalize lb).size == 1) = true := beq_iff_eq.mpr h1
+        simp only [h1b, ↓reduceIte]
+        have hlb : BigNat.toNat lb = (getLimb (normalize lb) 0).toNat := by
+          rw [← htn, BigNat.toNat, h1, toNatPrefix_succ, toNatPrefix_zero]
+          simp only [Nat.pow_zero, Nat.mul_one, Nat.zero_add]
+        rw [val_fromUInt64, UInt64.toNat_div, hlb]
+      · have h1b : ((normalize lb).size == 1) = false := beq_false_of_ne h1
+        simp only [h1b, Bool.false_eq_true, ↓reduceIte, val_small]
+        by_cases h0 : (normalize lb).size = 0
+        · have hlb0 : BigNat.toNat lb = 0 := by rw [← htn, BigNat.toNat, h0]; rfl
+          rw [hlb0, Nat.div_zero]; rfl
+        · have hge := toNat_ge_2_64_of_size_ge_2 hwf (by omega)
+          have hlt : va.toNat < BigNat.toNat lb := Nat.lt_of_lt_of_le (uint64_toNat_lt va) (by omega)
+          rw [Nat.div_eq_of_lt hlt]; rfl
+  | big la =>
+    simp only [div, val_big]
+    rw [val_fromLimbs, toNat_div, toNat_toLimbs]
 
-theorem canonical_div (a b : SlowNat) : (div a b).Canonical := (canonical_divMod a b).1
-theorem val_div (a b : SlowNat) : (div a b).val = a.val / b.val := (divMod_spec a b).1
-theorem canonical_mod (a b : SlowNat) : (mod a b).Canonical := (canonical_divMod a b).2
-theorem val_mod (a b : SlowNat) : (mod a b).val = a.val % b.val := (divMod_spec a b).2
+theorem canonical_mod (a b : SlowNat) : (mod a b).Canonical := by
+  cases a with
+  | small va =>
+    cases b with
+    | small vb =>
+      simp only [mod]
+      split <;> exact canonical_fromUInt64 _
+    | big lb =>
+      simp only [mod]
+      split <;> exact canonical_fromUInt64 _
+  | big la => exact canonical_fromLimbs _
+
+theorem val_mod (a b : SlowNat) : (mod a b).val = a.val % b.val := by
+  cases a with
+  | small va =>
+    cases b with
+    | small vb =>
+      simp only [mod, val_small]
+      by_cases h0 : vb = 0
+      · subst h0; simp [val_fromUInt64]
+      · have h0b : (vb == 0) = false := beq_false_of_ne h0
+        simp only [h0b, Bool.false_eq_true, ↓reduceIte]
+        rw [val_fromUInt64, UInt64.toNat_mod]
+    | big lb =>
+      simp only [mod, val_small, val_big]
+      have hwf := wf_normalize lb
+      have htn := toNat_normalize lb
+      by_cases h1 : (normalize lb).size = 1
+      · have h1b : ((normalize lb).size == 1) = true := beq_iff_eq.mpr h1
+        simp only [h1b, ↓reduceIte]
+        have hlb : BigNat.toNat lb = (getLimb (normalize lb) 0).toNat := by
+          rw [← htn, BigNat.toNat, h1, toNatPrefix_succ, toNatPrefix_zero]
+          simp only [Nat.pow_zero, Nat.mul_one, Nat.zero_add]
+        rw [val_fromUInt64, UInt64.toNat_mod, hlb]
+      · have h1b : ((normalize lb).size == 1) = false := beq_false_of_ne h1
+        simp only [h1b, Bool.false_eq_true, ↓reduceIte, val_fromUInt64]
+        by_cases h0 : (normalize lb).size = 0
+        · have hlb0 : BigNat.toNat lb = 0 := by rw [← htn, BigNat.toNat, h0]; rfl
+          rw [hlb0, Nat.mod_zero]
+        · have hge := toNat_ge_2_64_of_size_ge_2 hwf (by omega)
+          have hlt : va.toNat < BigNat.toNat lb := Nat.lt_of_lt_of_le (uint64_toNat_lt va) (by omega)
+          rw [Nat.mod_eq_of_lt hlt]
+  | big la =>
+    simp only [mod, val_big]
+    rw [val_fromLimbs, toNat_mod, toNat_toLimbs]
 
 /-! ## Greatest Common Divisor (`gcdU64`, `gcd`) -/
 
@@ -776,23 +867,8 @@ theorem canonical_gcd (a b : SlowNat) : (gcd a b).Canonical := by
   | small va =>
     cases b with
     | small vb => exact canonical_fromUInt64 _
-    | big lb =>
-      simp only [gcd]
-      split
-      · exact canonical_fromLimbs _
-      · exact canonical_fromUInt64 _
-  | big la =>
-    cases b with
-    | small vb =>
-      simp only [gcd]
-      split
-      · exact canonical_fromLimbs _
-      · exact canonical_fromUInt64 _
     | big lb => exact canonical_fromLimbs _
-
-private theorem divMod1_snd_eq_mod (la : Array UInt64) {v : UInt64} (hv : v ≠ 0) :
-    (divMod1 la v).2.toNat = BigNat.toNat la % v.toNat :=
-  (divMod1_spec la v hv).2.2.1
+  | big la => exact canonical_fromLimbs _
 
 theorem val_gcd (a b : SlowNat) : (gcd a b).val = Nat.gcd a.val b.val := by
   cases a with
@@ -803,27 +879,10 @@ theorem val_gcd (a b : SlowNat) : (gcd a b).val = Nat.gcd a.val b.val := by
       rw [val_fromUInt64, gcdU64_toNat]
     | big lb =>
       simp only [gcd, val_small, val_big]
-      by_cases h0 : va = 0
-      · subst h0
-        simp [val_fromLimbs]
-      · have h0b : (va == 0) = false := beq_false_of_ne h0
-        simp only [h0b, Bool.false_eq_true, ↓reduceIte]
-        rw [val_fromUInt64, gcdU64_toNat, divMod1_snd_eq_mod lb h0,
-          Nat.gcd_comm va.toNat, ← Nat.gcd_rec]
+      rw [val_fromLimbs, toNat_gcd, toNat_ofUInt64]
   | big la =>
-    cases b with
-    | small vb =>
-      simp only [gcd, val_small, val_big]
-      by_cases h0 : vb = 0
-      · subst h0
-        simp [val_fromLimbs]
-      · have h0b : (vb == 0) = false := beq_false_of_ne h0
-        simp only [h0b, Bool.false_eq_true, ↓reduceIte]
-        rw [val_fromUInt64, gcdU64_toNat, divMod1_snd_eq_mod la h0,
-          Nat.gcd_comm vb.toNat, ← Nat.gcd_rec, Nat.gcd_comm]
-    | big lb =>
-      simp only [gcd, val_big]
-      rw [val_fromLimbs, toNat_gcd]
+    simp only [gcd, val_big]
+    rw [val_fromLimbs, toNat_gcd, toNat_toLimbs]
 
 /-! ## Bitwise Operations (`land`, `lor`, `xor`) -/
 

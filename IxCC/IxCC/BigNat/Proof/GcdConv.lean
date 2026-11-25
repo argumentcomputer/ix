@@ -1,5 +1,6 @@
 import IxCC.BigNat.GcdConv
 import IxCC.BigNat.Proof.Div
+import IxCC.BigNat.Proof.Lehmer
 
 /-! # Layer-1 Proofs for `IxCC.BigNat.GcdConv` (`IxCC.BigNat.Proof.GcdConv`)
 
@@ -15,86 +16,147 @@ All theorems depend strictly on `[propext, Classical.choice, Quot.sound]`.
 
 namespace IxCC.BigNat
 
-/-! ### Euclidean GCD (`gcd`) -/
+/-! ### Constants and Lehmer GCD (`gcd`) -/
 
-private theorem gcdLoop_spec (a b : Array UInt64) (ha : WF a) (hb : WF b) :
-    WF (gcdLoop a b hb) ∧ toNat (gcdLoop a b hb) = Nat.gcd (toNat a) (toNat b) := by
-  induction hn : toNat b using Nat.strongRecOn generalizing a b with
-  | ind n ih =>
-    unfold gcdLoop
-    split
-    · rename_i hz
-      have hb0 : toNat b = 0 := by rw [toNat, hz]; rfl
-      rw [← hn, hb0, Nat.gcd_zero_right]
-      exact ⟨ha, rfl⟩
-    · rename_i hne
-      have hlt : toNat (mod a b) < n := by rw [← hn]; exact toNat_mod_lt a b hb hne
-      have ⟨hwf, hto⟩ := ih (toNat (mod a b)) hlt b (mod a b) hb (wf_mod a b) rfl
-      refine ⟨hwf, ?_⟩
-      rw [hto, toNat_mod, ← hn]
-      rw [Nat.gcd_comm (toNat a) (toNat b), Nat.gcd_rec (toNat b) (toNat a), Nat.gcd_comm]
+theorem ten19_toNat : ten19.toNat = 10 ^ 19 := by
+  unfold ten19
+  rw [UInt64.toNat_mul]
+  rfl
+
+theorem ten19_gt_one : 1 < ten19.toNat := by
+  rw [ten19_toNat]
+  omega
+
+theorem ten19_ne_zero : ten19 ≠ 0 := by
+  intro h
+  have := congrArg UInt64.toNat h
+  rw [ten19_toNat] at this
+  have hpos : 0 < 10 ^ 19 := Nat.pow_pos (by decide)
+  have h0 : (0 : UInt64).toNat = 0 := rfl
+  omega
 
 theorem wf_gcd (a b : Array UInt64) : WF (gcd a b) :=
-  (gcdLoop_spec (normalize a) (normalize b) (wf_normalize a) (wf_normalize b)).1
+  wf_gcdLehmer a b
 
-theorem toNat_gcd (a b : Array UInt64) : toNat (gcd a b) = Nat.gcd (toNat a) (toNat b) := by
-  unfold gcd
-  have h := (gcdLoop_spec (normalize a) (normalize b) (wf_normalize a) (wf_normalize b)).2
-  rw [toNat_normalize, toNat_normalize] at h
-  exact h
+theorem toNat_gcd (a b : Array UInt64) : toNat (gcd a b) = Nat.gcd (toNat a) (toNat b) :=
+  toNat_gcdLehmer a b
 
 /-! ### Single-Limb Multiply-Add (`mulAdd1`) -/
 
-private theorem toNat_mulAdd1Loop (a : Array UInt64) (m : UInt64) (i : Nat)
-    (carry : UInt64) (acc : Array UInt64) (hi : i ≤ a.size) (hsz : acc.size = i) :
-    toNat (mulAdd1Loop a m i carry acc) + toNatPrefix a i * m.toNat =
-      toNat acc + carry.toNat * (2 ^ 64) ^ i + toNat a * m.toNat := by
-  induction hd : a.size - i generalizing i carry acc with
+private theorem toNat_mulAdd1Loop (a : Array UInt64) (m : UInt64) (i rem : Nat)
+    (carry : UInt64) (acc : Array UInt64) (hsz : acc.size = i) :
+    toNat (mulAdd1Loop a m i carry acc rem) + toNatPrefix a i * m.toNat =
+      toNat acc + carry.toNat * (2 ^ 64) ^ i + toNatPrefix a (i + rem) * m.toNat := by
+  induction rem generalizing i carry acc with
   | zero =>
-    have hia : i = a.size := by omega
-    subst hia
     unfold mulAdd1Loop
-    simp only [Nat.lt_irrefl, ↓reduceDIte]
-    have hto : toNatPrefix a a.size = toNat a := rfl
-    rw [hto]
+    simp only [Nat.add_zero]
     split
     · rename_i hc0
       have hc : carry = 0 := eq_of_beq hc0
       subst hc
       rw [UInt64.toNat_zero, Nat.zero_mul, Nat.add_zero]
     · rw [toNat_push, hsz]
-  | succ d ih =>
-    have hlt : i < a.size := by omega
+  | succ rem ih =>
     unfold mulAdd1Loop
-    simp only [hlt, ↓reduceDIte]
-    have hspec := mulAddCarry64_spec a[i] m 0 carry
-    rcases hm : mulAddCarry64 a[i] m 0 carry with ⟨lo, carry'⟩
-    rw [hm] at hspec
-    dsimp only at hspec ⊢
-    have h0N : (0 : UInt64).toNat = 0 := rfl
-    rw [h0N, Nat.add_zero] at hspec
-    have hih := ih (i + 1) carry' (acc.push lo) (by omega) (by simp [hsz]) (by omega)
-    rw [toNat_push, hsz, toNatPrefix_succ a i, getLimb_lt hlt, Nat.pow_succ (2 ^ 64), Nat.add_mul] at hih
+    dsimp only
+    have hmul := mulWide64_spec (getLimb a i) m
+    rcases hm : mulWide64 (getLimb a i) m with ⟨pLo, pHi⟩
+    rw [hm] at hmul
+    have hadd := addCarry64_spec pLo carry false
+    rcases ha : addCarry64 pLo carry false with ⟨lo, c⟩
+    rw [ha] at hadd
+    dsimp only at hmul hadd ⊢
+    have hf : false.toNat = 0 := rfl
+    rw [hf, Nat.add_zero] at hadd
+    have hcar_lt : pHi.toNat + c.toNat < 2 ^ 64 := by
+      have ha_lt : (getLimb a i).toNat < 2 ^ 64 := uint64_toNat_lt _
+      have hm_lt : m.toNat < 2 ^ 64 := uint64_toNat_lt m
+      have hc_lt : carry.toNat < 2 ^ 64 := uint64_toNat_lt carry
+      have hprod : (getLimb a i).toNat * m.toNat ≤ (2 ^ 64 - 1) * (2 ^ 64 - 1) :=
+        Nat.mul_le_mul (by omega) (by omega)
+      have htot : lo.toNat + (pHi.toNat + c.toNat) * 2 ^ 64 = (getLimb a i).toNat * m.toNat + carry.toNat := by
+        calc lo.toNat + (pHi.toNat + c.toNat) * 2 ^ 64
+            = lo.toNat + (pHi.toNat * 2 ^ 64 + c.toNat * 2 ^ 64) := by rw [Nat.add_mul]
+          _ = (lo.toNat + c.toNat * 2 ^ 64) + pHi.toNat * 2 ^ 64 := by ac_rfl
+          _ = (pLo.toNat + carry.toNat) + pHi.toNat * 2 ^ 64 := by rw [hadd]
+          _ = (pLo.toNat + pHi.toNat * 2 ^ 64) + carry.toNat := by ac_rfl
+          _ = (getLimb a i).toNat * m.toNat + carry.toNat := by rw [hmul]
+      have hbound : (2 ^ 64 - 1) * (2 ^ 64 - 1) + (2 ^ 64 - 1) < 2 ^ 64 * 2 ^ 64 := by decide
+      have hlt2 : (pHi.toNat + c.toNat) * 2 ^ 64 < 2 ^ 64 * 2 ^ 64 := by
+        have h1 : (pHi.toNat + c.toNat) * 2 ^ 64 ≤ (getLimb a i).toNat * m.toNat + carry.toNat := by
+          rw [← htot]; exact Nat.le_add_left _ _
+        have h2 : (getLimb a i).toNat * m.toNat + carry.toNat ≤ (2 ^ 64 - 1) * (2 ^ 64 - 1) + (2 ^ 64 - 1) :=
+          Nat.add_le_add hprod (by omega)
+        exact Nat.lt_of_le_of_lt (Nat.le_trans h1 h2) hbound
+      exact Nat.lt_of_mul_lt_mul_right hlt2
+    let carry' : UInt64 := if c then pHi + 1 else pHi
+    have hcar'_toNat : carry'.toNat = pHi.toNat + c.toNat := by
+      dsimp only [carry']
+      cases c
+      · simp
+      · simp only [↓reduceIte, Bool.toNat_true]
+        rw [UInt64.toNat_add]
+        have h1 : (1 : UInt64).toNat = 1 := rfl
+        rw [h1, Nat.mod_eq_of_lt (by simpa using hcar_lt)]
+    have hspec : lo.toNat + carry'.toNat * 2 ^ 64 = (getLimb a i).toNat * m.toNat + carry.toNat := by
+      calc lo.toNat + carry'.toNat * 2 ^ 64
+          = lo.toNat + (pHi.toNat + c.toNat) * 2 ^ 64 := by rw [hcar'_toNat]
+        _ = (lo.toNat + c.toNat * 2 ^ 64) + pHi.toNat * 2 ^ 64 := by rw [Nat.add_mul]; ac_rfl
+        _ = (pLo.toNat + carry.toNat) + pHi.toNat * 2 ^ 64 := by rw [hadd]
+        _ = (pLo.toNat + pHi.toNat * 2 ^ 64) + carry.toNat := by ac_rfl
+        _ = (getLimb a i).toNat * m.toNat + carry.toNat := by rw [hmul]
+    have hih := ih (i + 1) carry' (acc.push lo) (by simp [hsz])
+    have hidx : i + 1 + rem = i + (rem + 1) := by omega
+    rw [hidx, toNat_push, hsz, toNatPrefix_succ a i, Nat.pow_succ (2 ^ 64), Nat.add_mul] at hih
     have hstep := congrArg (· * (2 ^ 64) ^ i) hspec
     rw [Nat.add_mul, Nat.add_mul] at hstep
     have hr1 : carry'.toNat * ((2 ^ 64) ^ i * 2 ^ 64) = carry'.toNat * 2 ^ 64 * (2 ^ 64) ^ i := by
       rw [Nat.mul_comm ((2 ^ 64) ^ i) (2 ^ 64), ← Nat.mul_assoc]
-    have hr2 : a[i].toNat * (2 ^ 64) ^ i * m.toNat = a[i].toNat * m.toNat * (2 ^ 64) ^ i := by
+    have hr2 : (getLimb a i).toNat * (2 ^ 64) ^ i * m.toNat = (getLimb a i).toNat * m.toNat * (2 ^ 64) ^ i := by
       rw [Nat.mul_assoc, Nat.mul_comm ((2 ^ 64) ^ i) m.toNat, ← Nat.mul_assoc]
     rw [hr1, hr2] at hih
+    dsimp only [carry'] at hih hstep
+    clear hm ha hmul hadd hcar_lt hcar'_toNat hspec hr1 hr2
     omega
 
-theorem wf_mulAdd1 (a : Array UInt64) (m c : UInt64) : WF (mulAdd1 a m c) :=
-  wf_normalize _
+theorem wf_mulAdd1 (a : Array UInt64) (m c : UInt64) : WF (mulAdd1 a m c) := by
+  unfold mulAdd1
+  split
+  · exact wf_ofUInt64 c
+  · split
+    · exact wf_normalize a
+    · split
+      · exact wf_shiftLeft1 a
+      · exact wf_normalize _
 
 theorem toNat_mulAdd1 (a : Array UInt64) (m c : UInt64) :
     toNat (mulAdd1 a m c) = toNat a * m.toNat + c.toNat := by
   unfold mulAdd1
-  rw [toNat_normalize]
-  have h := toNat_mulAdd1Loop a m 0 c (Array.mkEmpty (a.size + 1)) (Nat.zero_le _) (by simp)
-  simp only [toNatPrefix_zero, toNat_mkEmpty, Nat.zero_mul, Nat.add_zero, Nat.zero_add,
-    Nat.pow_zero, Nat.mul_one] at h
-  omega
+  split
+  · rename_i hm0
+    have hm : m = 0 := eq_of_beq hm0
+    subst hm; simp [toNat_ofUInt64]
+  · split
+    · rename_i _ h10
+      have ⟨hm1, hc0⟩ := Bool.and_eq_true _ _ |>.mp h10
+      have hm : m = 1 := eq_of_beq hm1
+      have hc : c = 0 := eq_of_beq hc0
+      subst hm; subst hc
+      rw [toNat_normalize]; simp
+    · split
+      · rename_i _ _ h20
+        have ⟨hm2, hc0⟩ := Bool.and_eq_true _ _ |>.mp h20
+        have hm : m = 2 := eq_of_beq hm2
+        have hc : c = 0 := eq_of_beq hc0
+        subst hm; subst hc
+        rw [toNat_shiftLeft1]; simp
+      · rw [toNat_normalize]
+        have h := toNat_mulAdd1Loop a m 0 a.size c (Array.mkEmpty (a.size + 1)) (by simp)
+        simp only [toNatPrefix_zero, toNat_mkEmpty, Nat.zero_mul, Nat.add_zero, Nat.zero_add,
+          Nat.pow_zero, Nat.mul_one] at h
+        rw [h, Nat.add_comm]
+        rfl
 
 /-! ### Base-`10^19` Chunk Conversion Specifications -/
 
@@ -134,25 +196,31 @@ private theorem chunksToNat_append_singleton (cs : List UInt64) (c : UInt64) :
   | nil => simp [chunksToNatAux]
   | cons h t ih => simp only [List.cons_append, chunksToNatAux]; exact ih _
 
-private theorem toDecimalChunksLoop_val (a : Array UInt64) (ha : WF a) (acc : List UInt64) :
-    chunksToNat (toDecimalChunksLoop a ha acc) =
+private theorem toDecimalChunksLoop_val (a : Array UInt64) (acc : List UInt64) (fuel : Nat)
+    (hfuel : toNat a < (10 ^ 19) ^ fuel) :
+    chunksToNat (toDecimalChunksLoop a acc fuel) =
       toNat a * (10 ^ 19) ^ acc.length + chunksToNat acc := by
-  induction hn : toNat a using Nat.strongRecOn generalizing a acc with
-  | ind n ih =>
+  induction fuel generalizing a acc with
+  | zero =>
+    unfold toDecimalChunksLoop
+    simp only [Nat.pow_zero] at hfuel
+    have ha0 : toNat a = 0 := by omega
+    rw [ha0, Nat.zero_mul, Nat.zero_add]
+  | succ fuel ih =>
     unfold toDecimalChunksLoop
     split
     · rename_i hz
-      have ha0 : toNat a = 0 := by rw [toNat, hz]; rfl
-      rw [← hn, ha0, Nat.zero_mul, Nat.zero_add]
-    · rename_i hne
-      dsimp only
-      have ⟨hq_wf, hdiv, hmod, _⟩ := divMod1_spec a ten19 ten19_ne_zero
-      have hlt : toNat (divMod1 a ten19).1 < n := by
-        rw [← hn]
-        exact toNat_divMod1_lt a ten19 ha hne ten19_gt_one
-      rw [ih (toNat (divMod1 a ten19).1) hlt (divMod1 a ten19).1 hq_wf
-          ((divMod1 a ten19).2 :: acc) rfl]
-      rw [List.length_cons, chunksToNat_cons, hdiv, hmod, ten19_toNat, Nat.pow_succ (10 ^ 19), ← hn]
+      have hsz0 : a.size = 0 := eq_of_beq hz
+      have ha0 : toNat a = 0 := by rw [toNat, hsz0]; rfl
+      rw [ha0, Nat.zero_mul, Nat.zero_add]
+    · dsimp only
+      have ⟨_, hdiv, hmod, _⟩ := divMod1_spec a ten19 ten19_ne_zero
+      have hfuel' : toNat (divMod1 a ten19).1 < (10 ^ 19) ^ fuel := by
+        rw [hdiv, ten19_toNat]
+        rw [Nat.div_lt_iff_lt_mul (by decide)]
+        simpa [Nat.pow_succ] using hfuel
+      rw [ih (divMod1 a ten19).1 ((divMod1 a ten19).2 :: acc) hfuel']
+      rw [List.length_cons, chunksToNat_cons, hdiv, hmod, ten19_toNat, Nat.pow_succ (10 ^ 19)]
       have hdm := Nat.div_add_mod (toNat a) (10 ^ 19)
       have h1 : toNat a / 10 ^ 19 * ((10 ^ 19) ^ acc.length * 10 ^ 19) +
           toNat a % 10 ^ 19 * (10 ^ 19) ^ acc.length =
@@ -161,22 +229,18 @@ private theorem toDecimalChunksLoop_val (a : Array UInt64) (ha : WF a) (acc : Li
             Nat.mul_comm (toNat a / 10 ^ 19) (10 ^ 19)]
       rw [← Nat.add_assoc, h1, hdm]
 
-private theorem toDecimalChunksLoop_lt (a : Array UInt64) (ha : WF a) (acc : List UInt64)
+private theorem toDecimalChunksLoop_lt (a : Array UInt64) (acc : List UInt64) (fuel : Nat)
     (hacc : ∀ c ∈ acc, c.toNat < 10 ^ 19) :
-    ∀ c ∈ toDecimalChunksLoop a ha acc, c.toNat < 10 ^ 19 := by
-  induction hn : toNat a using Nat.strongRecOn generalizing a acc with
-  | ind n ih =>
+    ∀ c ∈ toDecimalChunksLoop a acc fuel, c.toNat < 10 ^ 19 := by
+  induction fuel generalizing a acc with
+  | zero => exact hacc
+  | succ fuel ih =>
     unfold toDecimalChunksLoop
     split
     · exact hacc
-    · rename_i hne
-      dsimp only
-      have ⟨hq_wf, _, hmod, _⟩ := divMod1_spec a ten19 ten19_ne_zero
-      have hlt : toNat (divMod1 a ten19).1 < n := by
-        rw [← hn]
-        exact toNat_divMod1_lt a ten19 ha hne ten19_gt_one
-      apply ih (toNat (divMod1 a ten19).1) hlt (divMod1 a ten19).1 hq_wf
-        ((divMod1 a ten19).2 :: acc) _ rfl
+    · dsimp only
+      have ⟨_, _, hmod, _⟩ := divMod1_spec a ten19 ten19_ne_zero
+      apply ih (divMod1 a ten19).1 ((divMod1 a ten19).2 :: acc)
       intro c hc
       rcases List.mem_cons.mp hc with rfl | hmem
       · rw [hmod, ten19_toNat]
@@ -187,12 +251,22 @@ theorem toDecimalChunks_spec (a : Array UInt64) :
     chunksToNat (toDecimalChunks a) = toNat a ∧
     ∀ c ∈ toDecimalChunks a, c.toNat < 10 ^ 19 := by
   unfold toDecimalChunks
+  dsimp only
+  have hfuel : toNat (normalize a) < (10 ^ 19) ^ ((normalize a).size * 2 + 1) := by
+    have hlt := toNat_lt (normalize a)
+    have hbase : 2 ^ 64 ≤ (10 ^ 19) ^ 2 := by decide
+    have hpow1 : (2 ^ 64) ^ (normalize a).size ≤ (10 ^ 19) ^ ((normalize a).size * 2) := by
+      rw [Nat.mul_comm, Nat.pow_mul]
+      exact Nat.pow_le_pow_left hbase _
+    have hpow2 : (10 ^ 19) ^ ((normalize a).size * 2) ≤ (10 ^ 19) ^ ((normalize a).size * 2 + 1) :=
+      Nat.pow_le_pow_right (by decide) (Nat.le_succ _)
+    exact Nat.lt_of_lt_of_le hlt (Nat.le_trans hpow1 hpow2)
   constructor
-  · have h := toDecimalChunksLoop_val (normalize a) (wf_normalize a) []
+  · have h := toDecimalChunksLoop_val (normalize a) [] ((normalize a).size * 2 + 1) hfuel
     simp only [List.length_nil, Nat.pow_zero, Nat.mul_one, chunksToNat, chunksToNatAux,
       Nat.add_zero, toNat_normalize] at h
     exact h
-  · exact toDecimalChunksLoop_lt (normalize a) (wf_normalize a) [] (fun _ h => nomatch h)
+  · exact toDecimalChunksLoop_lt (normalize a) [] ((normalize a).size * 2 + 1) (fun _ h => nomatch h)
 
 private theorem ofDecimalChunksLoop_spec (cs : List UInt64) (acc : Array UInt64) (hacc : WF acc) :
     WF (ofDecimalChunksLoop cs acc) ∧
@@ -288,65 +362,70 @@ private theorem u64ToDigitsPad_spec (x : UInt64) (k : Nat) (acc : List UInt8)
     rw [hr]
     omega
 
-private theorem u64ToDigitsMinimal_spec (x : UInt64) (acc : List UInt8)
-    (hacc : ∀ d ∈ acc, d.toNat < 10) :
-    digitsToNat (u64ToDigitsMinimal x acc) = x.toNat * 10 ^ acc.length + digitsToNat acc ∧
-    (x ≠ 0 → u64ToDigitsMinimal x acc ≠ []) ∧
-    ∀ d ∈ u64ToDigitsMinimal x acc, d.toNat < 10 := by
-  induction hn : x.toNat using Nat.strongRecOn generalizing x acc with
-  | ind n ih =>
-    unfold u64ToDigitsMinimal
+private theorem u64ToDigitsMinimalLoop_len_ge (y : UInt64) (l : List UInt8) (fuel : Nat) :
+    l.length ≤ (u64ToDigitsMinimalLoop y l fuel).length := by
+  induction fuel generalizing y l with
+  | zero => exact Nat.le_refl _
+  | succ fuel ih =>
+    unfold u64ToDigitsMinimalLoop
     split
-    · rename_i hx0
+    · exact Nat.le_refl _
+    · dsimp only
+      have h := ih (y / (10 : UInt64)) ((y % (10 : UInt64)).toUInt8 :: l)
+      simp only [List.length_cons] at h
+      omega
+
+private theorem u64ToDigitsMinimalLoop_spec (x : UInt64) (acc : List UInt8) (fuel : Nat)
+    (hfuel : x.toNat < 10 ^ fuel)
+    (hacc : ∀ d ∈ acc, d.toNat < 10) :
+    digitsToNat (u64ToDigitsMinimalLoop x acc fuel) = x.toNat * 10 ^ acc.length + digitsToNat acc ∧
+    (x ≠ 0 → u64ToDigitsMinimalLoop x acc fuel ≠ []) ∧
+    ∀ d ∈ u64ToDigitsMinimalLoop x acc fuel, d.toNat < 10 := by
+  induction fuel generalizing x acc with
+  | zero =>
+    unfold u64ToDigitsMinimalLoop
+    simp only [Nat.pow_zero] at hfuel
+    have hx0 : x = 0 := UInt64.toNat_inj.mp (by rw [UInt64.toNat_zero]; omega)
+    subst hx0
+    exact ⟨by simp, fun h => absurd rfl h, hacc⟩
+  | succ fuel ih =>
+    unfold u64ToDigitsMinimalLoop
+    split
+    · rename_i hx0_beq
+      have hx0 : x = 0 := eq_of_beq hx0_beq
       subst hx0
-      rw [← hn]
       exact ⟨by simp, fun h => absurd rfl h, hacc⟩
-    · rename_i hxne
-      dsimp only
+    · dsimp only
       let d := (x % (10 : UInt64)).toUInt8
       have hd : d.toNat = x.toNat % 10 := uint64_mod10_toUInt8_toNat x
-      have hxpos : 0 < x.toNat := by
-        have : x.toNat ≠ 0 := fun h0 => hxne (UInt64.toNat_inj.mp (by simpa using h0))
-        omega
-      have hltDiv : (x / (10 : UInt64)).toNat < n := by
-        rw [uint64_div10_toNat, ← hn]
-        exact Nat.div_lt_self hxpos (by decide)
+      have hfuel' : (x / (10 : UInt64)).toNat < 10 ^ fuel := by
+        rw [uint64_div10_toNat, Nat.div_lt_iff_lt_mul (by decide)]
+        simpa [Nat.pow_succ] using hfuel
       have hacc' : ∀ e ∈ d :: acc, e.toNat < 10 := by
         intro e he
         rcases List.mem_cons.mp he with rfl | hm
         · rw [hd]; exact Nat.mod_lt _ (by decide)
         · exact hacc e hm
-      have ⟨hval, _, hlt⟩ := ih (x / (10 : UInt64)).toNat hltDiv (x / (10 : UInt64)) (d :: acc) hacc' rfl
+      have ⟨hval, _, hlt⟩ := ih (x / (10 : UInt64)) (d :: acc) hfuel' hacc'
       refine ⟨?_, ?_, hlt⟩
-      · rw [hval, List.length_cons, digitsToNat_cons, hd, uint64_div10_toNat, Nat.pow_succ, ← hn]
+      · rw [hval, List.length_cons, digitsToNat_cons, hd, uint64_div10_toNat, Nat.pow_succ]
         have hdm := Nat.div_add_mod x.toNat 10
         have hr : x.toNat / 10 * (10 ^ acc.length * 10) = 10 * (x.toNat / 10) * 10 ^ acc.length := by
           rw [Nat.mul_comm (10 ^ acc.length) 10, ← Nat.mul_assoc, Nat.mul_comm (x.toNat / 10) 10]
         rw [← Nat.add_assoc, hr, ← Nat.add_mul, hdm]
-      · intro _
-        -- Output contains at least d (or length > 0): prove length ≥ acc.length + 1
-        have hlen_ge : ∀ (y : UInt64) (l : List UInt8), l.length ≤ (u64ToDigitsMinimal y l).length := by
-          intro y l
-          induction hm : y.toNat using Nat.strongRecOn generalizing y l with
-          | ind m ihm =>
-            unfold u64ToDigitsMinimal
-            split
-            · exact Nat.le_refl _
-            · rename_i hyne
-              dsimp only
-              have hypos : 0 < y.toNat := by
-                have : y.toNat ≠ 0 := fun h0 => hyne (UInt64.toNat_inj.mp (by simpa using h0))
-                omega
-              have hdivlt : (y / (10 : UInt64)).toNat < m := by
-                rw [uint64_div10_toNat, ← hm]; exact Nat.div_lt_self hypos (by decide)
-              have hrec := ihm _ hdivlt (y / (10 : UInt64)) ((y % (10 : UInt64)).toUInt8 :: l) rfl
-              simp only [List.length_cons] at hrec
-              omega
-        have hge := hlen_ge (x / (10 : UInt64)) (d :: acc)
+      · intro _ hempty
+        have hge := u64ToDigitsMinimalLoop_len_ge (x / (10 : UInt64)) (d :: acc) fuel
         simp only [List.length_cons] at hge
-        intro hempty
         rw [hempty] at hge
         simp at hge
+
+private theorem u64ToDigitsMinimal_spec (x : UInt64) (acc : List UInt8)
+    (hacc : ∀ d ∈ acc, d.toNat < 10) :
+    digitsToNat (u64ToDigitsMinimal x acc) = x.toNat * 10 ^ acc.length + digitsToNat acc ∧
+    (x ≠ 0 → u64ToDigitsMinimal x acc ≠ []) ∧
+    ∀ d ∈ u64ToDigitsMinimal x acc, d.toNat < 10 := by
+  have hx : x.toNat < 10 ^ 20 := Nat.lt_trans (uint64_toNat_lt x) (by decide)
+  exact u64ToDigitsMinimalLoop_spec x acc 20 hx hacc
 
 private theorem chunksRevToDigits_spec (revChunks : List UInt64) (acc : List UInt8)
     (hlt : ∀ c ∈ revChunks, c.toNat < 10 ^ 19)

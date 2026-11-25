@@ -1,4 +1,5 @@
 import IxCC.BigNat.Linear
+import IxCC.BigNat.Toom3
 
 /-! # BigNat Multiplication, Squaring, Karatsuba, and Exponentiation (`IxCC.BigNat.Mul`)
 
@@ -45,6 +46,10 @@ namespace IxCC.BigNat
 /-- Karatsuba limb threshold (`K = 32` limbs = 2048 bits). Any value `≥ 5` is valid
 and proved unconditionally correct. -/
 def karatsubaThreshold : Nat := 32
+
+/-- Toom-Cook 3-way limb threshold (`T = 96` limbs = 6144 bits). Any value `≥ 12` is
+valid and proved unconditionally correct. -/
+def toom3Threshold : Nat := 96
 
 /-! ### Schoolbook Multiplication (`mulSchoolbook`) -/
 
@@ -133,89 +138,119 @@ def sqrSchoolbook (a : Array UInt64) : Array UInt64 :=
 
 /-! ### Karatsuba Multiplication & Squaring (`K = 32` limbs) -/
 
+/-- Karatsuba multiplication loop with structural recursion on `fuel`
+(threshold `karatsubaThreshold = 32` limbs; `@borrowed a`, `@borrowed b`). -/
+def mulKaratsubaLoop (a b : Array UInt64) : Nat → Array UInt64
+  | 0 => mulSchoolbook a b
+  | fuel + 1 =>
+    if a.size < karatsubaThreshold || b.size < karatsubaThreshold then
+      mulSchoolbook a b
+    else
+      let n := if a.size ≤ b.size then b.size else a.size
+      let m := n / 2
+      let a0 := normalize (slice a 0 m)
+      let a1 := normalize (slice a m a.size)
+      let b0 := normalize (slice b 0 m)
+      let b1 := normalize (slice b m b.size)
+      let sA := add a0 a1
+      let sB := add b0 b1
+      let z0 := mulKaratsubaLoop a0 b0 fuel
+      let z2 := mulKaratsubaLoop a1 b1 fuel
+      let z1Full := mulKaratsubaLoop sA sB fuel
+      karatsubaCombine z0 z2 z1Full m (a.size + b.size)
+
 /-- Karatsuba multiplication with threshold `karatsubaThreshold = 32` limbs (`@borrowed a`, `@borrowed b`). -/
 def mulKaratsuba (a b : Array UInt64) : Array UInt64 :=
-  if hbase : a.size < karatsubaThreshold ∨ b.size < karatsubaThreshold then
-    mulSchoolbook a b
-  else
-    let n := max a.size b.size
-    let m := n / 2
-    let a0 := normalize (slice a 0 m)
-    let a1 := normalize (slice a m a.size)
-    let b0 := normalize (slice b 0 m)
-    let b1 := normalize (slice b m b.size)
-    let sA := add a0 a1
-    let sB := add b0 b1
-    have hge : karatsubaThreshold ≤ a.size ∧ karatsubaThreshold ≤ b.size := by
-      exact ⟨Nat.not_lt.mp (fun h => hbase (Or.inl h)),
-             Nat.not_lt.mp (fun h => hbase (Or.inr h))⟩
-    have ha0 : a0.size ≤ m := by
-      have h1 := size_normalize_le (slice a 0 m)
-      have h2 := size_slice a 0 m
-      change (normalize (slice a 0 m)).size ≤ m; omega
-    have ha1 : a1.size ≤ n - m := by
-      have h1 := size_normalize_le (slice a m a.size)
-      have h2 := size_slice a m a.size
-      change (normalize (slice a m a.size)).size ≤ n - m; omega
-    have hb0 : b0.size ≤ m := by
-      have h1 := size_normalize_le (slice b 0 m)
-      have h2 := size_slice b 0 m
-      change (normalize (slice b 0 m)).size ≤ m; omega
-    have hb1 : b1.size ≤ n - m := by
-      have h1 := size_normalize_le (slice b m b.size)
-      have h2 := size_slice b m b.size
-      change (normalize (slice b m b.size)).size ≤ n - m; omega
-    have hsA : sA.size ≤ max a0.size a1.size + 1 := size_add_le a0 a1
-    have hsB : sB.size ≤ max b0.size b1.size + 1 := size_add_le b0 b1
-    have hlt0 : max a0.size b0.size < max a.size b.size := by
-      unfold karatsubaThreshold at hge; omega
-    have hlt1 : max a1.size b1.size < max a.size b.size := by
-      unfold karatsubaThreshold at hge; omega
-    have hltS : max sA.size sB.size < max a.size b.size := by
-      unfold karatsubaThreshold at hge; omega
-    let z0 := mulKaratsuba a0 b0
-    let z2 := mulKaratsuba a1 b1
-    let z1Full := mulKaratsuba sA sB
-    let z1 := subRaw z1Full (add z0 z2)
-    add (add z0 (shiftLimbs z1 m)) (shiftLimbs z2 (2 * m))
-termination_by max a.size b.size
+  mulKaratsubaLoop a b (if a.size ≤ b.size then b.size else a.size)
 
-/-- Primary multi-precision multiplication: schoolbook below 32 limbs, Karatsuba at `≥ 32` limbs. -/
-@[inline] def mul (a b : Array UInt64) : Array UInt64 :=
-  mulKaratsuba a b
+/-- Karatsuba squaring loop with structural recursion on `fuel` (`@borrowed a`). -/
+def sqrKaratsubaLoop (a : Array UInt64) : Nat → Array UInt64
+  | 0 => sqrSchoolbook a
+  | fuel + 1 =>
+    if a.size < karatsubaThreshold then
+      sqrSchoolbook a
+    else
+      let m := a.size / 2
+      let a0 := normalize (slice a 0 m)
+      let a1 := normalize (slice a m a.size)
+      let sA := add a0 a1
+      let z0 := sqrKaratsubaLoop a0 fuel
+      let z2 := sqrKaratsubaLoop a1 fuel
+      let z1Full := sqrKaratsubaLoop sA fuel
+      karatsubaCombine z0 z2 z1Full m (2 * a.size)
 
 /-- Karatsuba squaring with threshold `karatsubaThreshold = 32` limbs (`@borrowed a`). -/
 def sqrKaratsuba (a : Array UInt64) : Array UInt64 :=
-  if hbase : a.size < karatsubaThreshold then
-    sqrSchoolbook a
-  else
-    let m := a.size / 2
-    let a0 := normalize (slice a 0 m)
-    let a1 := normalize (slice a m a.size)
-    let sA := add a0 a1
-    have hge : karatsubaThreshold ≤ a.size := Nat.not_lt.mp hbase
-    have ha0 : a0.size ≤ m := by
-      have h1 := size_normalize_le (slice a 0 m)
-      have h2 := size_slice a 0 m
-      change (normalize (slice a 0 m)).size ≤ m; omega
-    have ha1 : a1.size ≤ a.size - m := by
-      have h1 := size_normalize_le (slice a m a.size)
-      have h2 := size_slice a m a.size
-      change (normalize (slice a m a.size)).size ≤ a.size - m; omega
-    have hsA : sA.size ≤ max a0.size a1.size + 1 := size_add_le a0 a1
-    have hlt0 : a0.size < a.size := by unfold karatsubaThreshold at hge; omega
-    have hlt1 : a1.size < a.size := by unfold karatsubaThreshold at hge; omega
-    have hltS : sA.size < a.size := by unfold karatsubaThreshold at hge; omega
-    let z0 := sqrKaratsuba a0
-    let z2 := sqrKaratsuba a1
-    let z1Full := sqrKaratsuba sA
-    let z1 := subRaw z1Full (add z0 z2)
-    add (add z0 (shiftLimbs z1 m)) (shiftLimbs z2 (2 * m))
-termination_by a.size
+  sqrKaratsubaLoop a a.size
 
-/-- Primary multi-precision squaring: dedicated schoolbook below 32 limbs, Karatsuba at `≥ 32` limbs. -/
+/-! ### Toom-Cook 3-Way Multiplication & Squaring (`T = 96` limbs) -/
+
+/-- Balanced Toom-Cook 3-way multiplication loop (`O(n^1.465)`) over `{0, 1, -1, 2, ∞}`
+with structural recursion on `fuel` and unbalanced 2-way splitting, delegating below
+`toom3Threshold` to recursive `mulKaratsubaLoop` (keeping ANF globals lean). -/
+def mulToom3Loop (a b : Array UInt64) : Nat → Array UInt64
+  | 0 => mulKaratsuba a b
+  | fuel + 1 =>
+    if a.size < toom3Threshold || b.size < toom3Threshold then
+      mulKaratsuba a b
+    else
+      let (x, y) := if a.size < b.size then (b, a) else (a, b)
+      let n := x.size
+      let m := n / 2
+      if y.size ≤ m then
+        let x0 := normalize (slice x 0 m)
+        let x1 := normalize (slice x m n)
+        let z0 := mulToom3Loop x0 y fuel
+        let z1 := mulToom3Loop x1 y fuel
+        let acc0 := copyIntoZeros z0 (n + y.size)
+        normalize (addAtInPlace acc0 z1 m)
+      else
+        let k := (n + 2) / 3
+        let (x0, x2, p1, pm1Neg, pm1, p2) := toom3EvalLoop x k #[] #[] #[] 3
+        let (y0, y2, q1, qm1Neg, qm1, q2) := toom3EvalLoop y k #[] #[] #[] 3
+        let r0   := mulToom3Loop x0 y0 fuel
+        let r1   := mulToom3Loop p1 q1 fuel
+        let rm1  := mulToom3Loop pm1 qm1 fuel
+        let r2   := mulToom3Loop p2 q2 fuel
+        let rInf := mulToom3Loop x2 y2 fuel
+        toom3Interp r0 r1 rm1 r2 rInf (pm1Neg != qm1Neg) k (n + y.size)
+
+/-- Balanced Toom-Cook 3-way multiplication (`O(n^1.465)`), falling back to `mulKaratsuba`
+below `toom3Threshold` (`@borrowed a`, `@borrowed b`). -/
+def mulToom3 (a b : Array UInt64) : Array UInt64 :=
+  mulToom3Loop a b (if a.size ≤ b.size then b.size else a.size)
+
+/-- Dedicated Toom-Cook 3-way squaring loop (`O(n^1.465)`) with structural recursion on
+`fuel`, delegating below `toom3Threshold` to recursive `sqrKaratsubaLoop` (`@borrowed a`). -/
+def sqrToom3Loop (a : Array UInt64) : Nat → Array UInt64
+  | 0 => sqrKaratsuba a
+  | fuel + 1 =>
+    if a.size < toom3Threshold then
+      sqrKaratsuba a
+    else
+      let k := (a.size + 2) / 3
+      let (a0, a2, p1, _, pm1, p2) := toom3EvalLoop a k #[] #[] #[] 3
+      let r0   := sqrToom3Loop a0 fuel
+      let r1   := sqrToom3Loop p1 fuel
+      let rm1  := sqrToom3Loop pm1 fuel
+      let r2   := sqrToom3Loop p2 fuel
+      let rInf := sqrToom3Loop a2 fuel
+      toom3Interp r0 r1 rm1 r2 rInf false k (2 * a.size)
+
+/-- Dedicated Toom-Cook 3-way squaring (`O(n^1.465)`), falling back to `sqrKaratsuba`
+below `toom3Threshold` (`@borrowed a`). -/
+def sqrToom3 (a : Array UInt64) : Array UInt64 :=
+  sqrToom3Loop a a.size
+
+/-- Primary multi-precision multiplication: routes `a == b` (`≥ 16` limbs) to dedicated
+`sqrToom3`, otherwise schoolbook → Karatsuba (`≥ 32`) → Toom-3 (`≥ 96`). -/
+def mul (a b : Array UInt64) : Array UInt64 :=
+  if a.size == b.size && a.size ≥ 16 && beq a b then sqrToom3 a
+  else mulToom3 a b
+
+/-- Primary multi-precision squaring: schoolbook → Karatsuba (`≥ 32`) → Toom-3 (`≥ 96`). -/
 @[inline] def sqr (a : Array UInt64) : Array UInt64 :=
-  sqrKaratsuba a
+  sqrToom3 a
 
 /-! ### Left-to-Right Binary Exponentiation (`pow`) -/
 

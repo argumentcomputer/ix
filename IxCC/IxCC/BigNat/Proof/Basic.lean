@@ -99,8 +99,12 @@ theorem getLimb_padZerosLoop (rem : Nat) (xs : Array UInt64) (i : Nat) :
     getLimb (padZeros xs target) i = getLimb xs i := by
   unfold padZeros
   split
-  · exact getLimb_padZerosLoop _ _ _
-  · rfl
+  · rename_i h0
+    have hz : xs.size = 0 := eq_of_beq h0
+    rw [getLimb_mkZeros, getLimb_ge (by omega)]
+  · split
+    · exact getLimb_padZerosLoop _ _ _
+    · rfl
 
 theorem getLimb_sliceLoop (xs : Array UInt64) (idx rem : Nat) (acc : Array UInt64) (i : Nat) :
     getLimb (sliceLoop xs idx rem acc) i =

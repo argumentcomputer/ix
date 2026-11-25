@@ -61,6 +61,10 @@ structure Stats where
   total : Nat := 0
   failures : Nat := 0
   addBackHits : Nat := 0
+  lehmerHits : Nat := 0
+  lehmerFallbacks : Nat := 0
+  divRem21Step5Hits : Nat := 0
+  divRem21Step6Hits : Nat := 0
 
 def check (st : Stats) (cond : Bool) (msg : Unit → String) : IO Stats := do
   if cond then
@@ -429,25 +433,232 @@ def testRandomFuzz (st : Stats) (r : Rng) : IO (Stats × Rng) := do
     st ← check st (ofDecimal dec == some a) (fun _ => s!"fuzz ofDecimal")
   pure (st, r)
 
+/-- Stage 2 targeted differential suite: Möller–Granlund `invert21`/`divRem21`,
+`divExact3`, Toom-3 thresholds `95..1000` limbs + squaring + unbalanced, Lehmer GCD
+multi-step + huge-quotient fallback + 512-limb shared factors, `divQuick1`, and in-place COW ops. -/
+def testStage2 (st : Stats) (r : Rng) : IO (Stats × Rng) := do
+  let mut st := st
+  let mut r := r
+  let half : UInt64 := (1 : UInt64) <<< 63
+  -- 1. Möller–Granlund invert21 & divRem21 edge cases (adversarial + 5,000 random)
+  let edgeDivisors : Array UInt64 := #[
+    half, half + 1, half + 2, half + 3,
+    half + ((1 : UInt64) <<< 32), half + ((1 : UInt64) <<< 62),
+    ((0xAAAAAAAA : UInt64) <<< 32) ||| (0xAAAAAAAA : UInt64),
+    ((0xCCCCCCCC : UInt64) <<< 32) ||| (0xCCCCCCCC : UInt64),
+    ((0xF0000000 : UInt64) <<< 32) ||| (0x00000001 : UInt64),
+    maxWord64 - 2, maxWord64 - 1, maxWord64
+  ]
+  for d in edgeDivisors do
+    if hd : 2 ^ 63 ≤ d.toNat then
+      let v := invert21 d hd
+      let expectedV := (2 ^ 128 - 1) / d.toNat - 2 ^ 64
+      st ← check st (v.toNat == expectedV)
+        (fun _ => s!"invert21 edge d={d}: got {v}, expected {expectedV}")
+      let u1s : Array UInt64 := #[0, 1, 2, d / 2, d - 3, d - 2, d - 1]
+      let u0s : Array UInt64 := #[0, 1, 2, half - 1, half, d - 1, d, maxWord64 - 1, maxWord64]
+      for u1 in u1s do
+        for u0 in u0s do
+          if hu1 : u1 < d then
+            let (q, rem) := divRem21 u1 u0 d v
+            let (qw, remW) := divWide64 u1 u0 d hu1
+            st ← check st (q == qw && rem == remW)
+              (fun _ => s!"divRem21 edge u1={u1} u0={u0} d={d}: got ({q},{rem}), exp ({qw},{remW})")
+            -- Track Step 5 (r > q0) & Step 6 (r ≥ d) coverage
+            let (pLo, pHi) := mulWide64 v u1
+            let (q0, c0) := addCarry64 pLo u0 false
+            let (q1i, _) := addCarry64 pHi u1 c0
+            let q1 := q1i + 1
+            let r0 := u0 - q1 * d
+            let r1 := if r0 > q0 then r0 + d else r0
+            if r0 > q0 then st := { st with divRem21Step5Hits := st.divRem21Step5Hits + 1 }
+            if r1 ≥ d then st := { st with divRem21Step6Hits := st.divRem21Step6Hits + 1 }
+  for _ in [:5000] do
+    let (dRaw, r1) := r.next
+    let (u1Raw, r2) := r1.next
+    let (u0, r3) := r2.next
+    r := r3
+    let d := dRaw ||| half
+    if hd : 2 ^ 63 ≤ d.toNat then
+      let v := invert21 d hd
+      let u1 := u1Raw % d
+      if hu1 : u1 < d then
+        let (q, rem) := divRem21 u1 u0 d v
+        let (qw, remW) := divWide64 u1 u0 d hu1
+        st ← check st (q == qw && rem == remW)
+          (fun _ => s!"divRem21 fuzz u1={u1} u0={u0} d={d}")
+  st ← check st (st.divRem21Step5Hits > 0 && st.divRem21Step6Hits > 0)
+    (fun _ => s!"divRem21 coverage: step5={st.divRem21Step5Hits} step6={st.divRem21Step6Hits}")
+
+  -- 2. divExact3 (edge cases + 1,000 random multiples of 3 up to 150 limbs)
+  let exact3Edges : Array (Array UInt64) := #[
+    #[], #[0], #[3], #[6], #[2, 1], #[1, 2], #[1, 1, 1],
+    #[maxWord64, maxWord64], #[maxWord64, maxWord64, maxWord64, maxWord64]
+  ]
+  for x in exact3Edges do
+    let x3 := mulAdd1 x 3 0
+    let q := divExact3 x3
+    st ← check st (isWF q && q == normalize x)
+      (fun _ => s!"divExact3 edge {toNat x}")
+  for i in [:1000] do
+    let (sz, r1) := r.nextRange (if i % 10 == 0 then 150 else 20)
+    let (x, r2) := r1.nextBigNat sz
+    r := r2
+    let x3 := mulAdd1 x 3 0
+    let q := divExact3 x3
+    st ← check st (isWF q && q == x)
+      (fun _ => s!"divExact3 fuzz sz={sz}")
+
+  -- 3. Toom-3 thresholds (95..1000 limbs, balanced + unbalanced + squaring + mul a a fast path)
+  let toomSizes : Array Nat := #[
+    94, 95, 96, 97, 98, 99, 100, 127, 128, 129, 150, 192, 200, 255, 256, 257, 300, 384, 512, 750, 1000
+  ]
+  for sa in toomSizes do
+    let sbList := if sa ≤ 260 then #[sa, sa - 1, sa + 1, sa / 2, (2 * sa) / 3] else #[sa, sa / 2]
+    for sb in sbList do
+      let (a, r1) := r.nextBigNat sa
+      let (b, r2) := r1.nextBigNat sb
+      r := r2
+      let na := toNat a
+      let nb := toNat b
+      let mt := mulToom3 a b
+      st ← check st (isWF mt && toNat mt == na * nb)
+        (fun _ => s!"mulToom3 ({sa}, {sb})")
+      if sa ≤ 160 && sb ≤ 160 then
+        let mk := mulKaratsuba a b
+        st ← check st (mt == mk)
+          (fun _ => s!"mulToom3 != mulKaratsuba ({sa}, {sb})")
+    let (a, r1) := r.nextBigNat sa
+    r := r1
+    let na := toNat a
+    let sqt := sqrToom3 a
+    st ← check st (isWF sqt && toNat sqt == na * na)
+      (fun _ => s!"sqrToom3 {sa}")
+    let maa := mul a a
+    st ← check st (maa == sqt)
+      (fun _ => s!"mul a a != sqrToom3 a ({sa})")
+
+  -- 4. Lehmer GCD: multi-step, Fibonacci-like, huge-quotient fallback, 512-limb shared factors
+  -- 4a. Explicit Fibonacci-like pair (128 limbs) exercising maximum Lehmer steps
+  let mut fa := one
+  let mut fb := ofUInt64 2
+  for _ in [:2000] do
+    let fc := add fa fb
+    fa := fb
+    fb := fc
+  match lehmerStep fb fa with
+  | some _ => st := { st with lehmerHits := st.lehmerHits + 1 }
+  | none => st := { st with lehmerFallbacks := st.lehmerFallbacks + 1 }
+  let gFib := gcd fb fa
+  st ← check st (isWF gFib && gFib == one) (fun _ => s!"Lehmer Fib gcd != 1")
+  -- 4b. Huge-quotient fallback trigger (a = (2^192 + 1) * b + r)
+  let (bSmall, r1) := r.nextBigNat 8
+  let (rSmall, r2) := r1.nextBigNat 4
+  r := r2
+  let bigQ := add (shiftLimbs one 3) one
+  let aHuge := add (mul bigQ bSmall) rSmall
+  match lehmerStep aHuge bSmall with
+  | some _ => st := { st with lehmerHits := st.lehmerHits + 1 }
+  | none => st := { st with lehmerFallbacks := st.lehmerFallbacks + 1 }
+  let gHuge := gcd aHuge bSmall
+  st ← check st (isWF gHuge && toNat gHuge == Nat.gcd (toNat aHuge) (toNat bSmall))
+    (fun _ => s!"Lehmer huge-quotient fallback")
+  -- 4c. Shared-factor large GCDs (64, 128, 256, 512 limbs!)
+  for gSz in #[64, 128, 256, 512] do
+    let (a0, r1) := r.nextBigNat (gSz / 2)
+    let (b0, r2) := r1.nextBigNat (gSz / 2)
+    let (g0, r3) := r2.nextBigNat (gSz / 2)
+    r := r3
+    let a := mul a0 g0
+    let b := mul b0 g0
+    let (hi, lo) := if blt a b then (b, a) else (a, b)
+    if hi.size ≥ 2 && hi.size - lo.size ≤ 1 then
+      match lehmerStep hi lo with
+      | some _ => st := { st with lehmerHits := st.lehmerHits + 1 }
+      | none => st := { st with lehmerFallbacks := st.lehmerFallbacks + 1 }
+    let g := gcd a b
+    st ← check st (isWF g && toNat g == Nat.gcd (toNat a) (toNat b))
+      (fun _ => s!"Lehmer large shared-factor {gSz} limbs")
+  -- 4d. 1,500 random multi-limb Lehmer GCD pairs (2..48 limbs)
+  for i in [:1500] do
+    let maxL := if i % 25 == 0 then 48 else 12
+    let (la, r1) := r.nextRange maxL
+    let (lb, r2) := r1.nextRange maxL
+    let (a0, r3) := r2.nextBigNat (la + 2)
+    let (b0, r4) := r3.nextBigNat (lb + 2)
+    r := r4
+    let (hi, lo) := if blt a0 b0 then (b0, a0) else (a0, b0)
+    if hi.size ≥ 2 && hi.size - lo.size ≤ 1 then
+      match lehmerStep hi lo with
+      | some _ => st := { st with lehmerHits := st.lehmerHits + 1 }
+      | none => st := { st with lehmerFallbacks := st.lehmerFallbacks + 1 }
+    let g := gcd a0 b0
+    st ← check st (isWF g && toNat g == Nat.gcd (toNat a0) (toNat b0))
+      (fun _ => s!"Lehmer fuzz gcd i={i}")
+  st ← check st (st.lehmerHits ≥ 50 && st.lehmerFallbacks ≥ 1)
+    (fun _ => s!"Lehmer coverage: hits={st.lehmerHits} fallbacks={st.lehmerFallbacks}")
+
+  -- 5. divQuick1, BigNat.div, and Stage 2 in-place COW ops (2,000 cases)
+  for i in [:2000] do
+    let maxL := if i % 40 == 0 then 120 else 16
+    let (lv, r1) := r.nextRange maxL
+    let (v, r2) := r1.nextBigNat (lv + 2)
+    let (qSmall, r3) := r2.nextRange 20
+    let (remRaw, r4) := r3.nextBigNat (lv + 2)
+    r := r4
+    let rem := if blt remRaw v then remRaw else mod remRaw v
+    let u := add (mulAdd1 v (UInt64.ofNat qSmall) 0) rem
+    let nu := toNat u
+    let nv := toNat v
+    let qDiv := IxCC.BigNat.div u v
+    st ← check st (isWF qDiv && toNat qDiv == nu / nv)
+      (fun _ => s!"BigNat.div small-q i={i}")
+    match divQuick1 u v with
+    | some qq =>
+      st ← check st (isWF qq && toNat qq == nu / nv)
+        (fun _ => s!"divQuick1 mismatch i={i}")
+    | none => pure ()
+    -- Exercise in-place COW ops on freshly copied accumulators
+    let (off, r5) := r.nextRange 5
+    let (mWord, r6) := r5.next
+    r := r6
+    let accAdd := normalize (addAtInPlace (copyIntoZeros u (u.size + off + v.size)) v off)
+    st ← check st (isWF accAdd && toNat accAdd == nu + nv * (2 ^ 64) ^ off)
+      (fun _ => s!"addAtInPlace i={i}")
+    let accMul := normalize (addMul1InPlace (copyIntoZeros u (u.size + v.size + 1)) v mWord)
+    st ← check st (isWF accMul && toNat accMul == nu + mWord.toNat * nv)
+      (fun _ => s!"addMul1InPlace i={i}")
+    let (subRes, borrowW) := subMul1InPlace (copyIntoZeros accMul accMul.size) v mWord
+    st ← check st (borrowW == 0 && normalize subRes == u)
+      (fun _ => s!"subMul1InPlace roundtrip i={i}")
+    let shl1 := shiftLeft1 u
+    let shr1 := shiftRight1 shl1
+    st ← check st (isWF shl1 && toNat shl1 == nu * 2 && shr1 == u)
+      (fun _ => s!"shiftLeft1/shiftRight1 roundtrip i={i}")
+  pure (st, r)
+
 def runAll : IO Unit := do
   let mut st : Stats := {}
   let mut r : Rng := { state := 0x123456789abcdef0 }
   let (st1, r1) ← testLimbOps st r 2000
   st := st1; r := r1
-  IO.println s!"[1/5] LimbOps: {st.total} checks, {st.failures} failures"
+  IO.println s!"[1/6] LimbOps: {st.total} checks, {st.failures} failures"
   st ← testBoundaries st
-  IO.println s!"[2/5] Boundaries: {st.total} checks, {st.failures} failures"
+  IO.println s!"[2/6] Boundaries: {st.total} checks, {st.failures} failures"
   st ← testKnuthAddBack st
-  IO.println s!"[3/5] Knuth Add-Back: {st.total} checks, {st.failures} failures, {st.addBackHits} add-back hits"
+  IO.println s!"[3/6] Knuth Add-Back: {st.total} checks, {st.failures} failures, {st.addBackHits} add-back hits"
   let (st4, r4) ← testKaratsubaBoundaries st r
   st := st4; r := r4
-  IO.println s!"[4/5] Karatsuba & 1000-limb: {st.total} checks, {st.failures} failures"
-  let (st5, _) ← testRandomFuzz st r
-  st := st5
-  IO.println s!"[5/5] Random Fuzz: {st.total} checks, {st.failures} failures"
+  IO.println s!"[4/6] Karatsuba & 1000-limb: {st.total} checks, {st.failures} failures"
+  let (st5, r5) ← testRandomFuzz st r
+  st := st5; r := r5
+  IO.println s!"[5/6] Random Fuzz: {st.total} checks, {st.failures} failures"
+  let (st6, _) ← testStage2 st r
+  st := st6
+  IO.println s!"[6/6] Stage 2 (InvDiv/Toom3/Lehmer/COW): {st.total} checks, {st.failures} failures (lehmerHits={st.lehmerHits}, fallbacks={st.lehmerFallbacks}, divRem21S5={st.divRem21Step5Hits}, divRem21S6={st.divRem21Step6Hits})"
   if st.failures != 0 then
     throw (IO.userError s!"BigNat DiffTest FAILED with {st.failures} failures out of {st.total} checks")
-  IO.println s!"BigNat DiffTest PASS: {st.total} checks, 0 failures ({st.addBackHits} Knuth D add-back triggers exercised)"
+  IO.println s!"BigNat DiffTest PASS: {st.total} checks, 0 failures ({st.addBackHits} Knuth D add-back triggers, {st.lehmerHits} Lehmer hits, {st.lehmerFallbacks} fallbacks)"
 
 end IxCCTests.BigNat.DiffTest
 
