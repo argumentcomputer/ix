@@ -272,6 +272,52 @@ theorem resultOk_sound {p : Program} {I : Lam.Erase.Input} {view : View}
         simp only [Bool.and_eq_true, decide_eq_true_eq] at ht
         exact ⟨hl, t, viewTag_some htag, ht.1, ht.2⟩
 
+/-! ## The budget
+
+The checks below walk the kernel's stored terms as trees. A stored value has no `let` (the
+kernel stores the ζ-reduct), so a chain of `let`s that each use the last twice is stored as a
+term whose tree is exponential in the chain (shared in memory, not in a walk):
+`fixtures/fold`'s `mulChain32` drove the unbudgeted check past 300 GB. The check is total either way; the budget makes
+it fail closed in bounded time and space. -/
+
+/-- Whether the kernel terms in `todo` hold at most `fuel` nodes, counted as trees (a shared
+subterm at each use). A tail call over the worklist. -/
+def kWithin : Nat → List KExpr → Bool
+  | _, [] => true
+  | 0, _ :: _ => false
+  | fuel + 1, e :: todo =>
+    match e with
+    | .app f a => kWithin fuel (f :: a :: todo)
+    | .lam d b _ | .forallE d b _ => kWithin fuel (d :: b :: todo)
+    | .letE t v b _ => kWithin fuel (t :: v :: b :: todo)
+    | .proj _ _ e => kWithin fuel (e :: todo)
+    | .fvar _ t => kWithin fuel (t :: todo)
+    | _ => kWithin fuel todo
+
+/-- The tree nodes the checks may walk: `2 ^ 24`. -/
+def kBudget : Nat := 1 <<< 24
+
+/-- The stored terms the checks read at a constant of the closure: its type, its value, its
+recursor rules, and the statement of the theorem its table entry cites. -/
+def storedTerms (p : Program) (env : KEnv) (κ : CId → KKey) (c : CId) : List KExpr :=
+  let own := match env.find? (κ c) with
+    | some (.defnInfo cv v _) => [cv.type, v]
+    | some (.thmInfo cv v) => [cv.type, v]
+    | some (.recInfo cv _ _ rules) => cv.type :: rules.map (·.rhs)
+    | some ci => [ci.toConstantVal.type]
+    | none => []
+  let thm := match p.table.resolveOf c with
+    | some (.eqn thm _) | some (.csimp _ _ thm) | some (.word _ _ thm) =>
+      match env.find? (κ thm) with
+      | some ci => [ci.toConstantVal.type]
+      | none => []
+    | _ => []
+  own ++ thm
+
+/-- **The budget**: the stored terms of the closure are within `kBudget` tree nodes. -/
+def budgetB (p : Program) (env : KEnv) (κ : CId → KKey) (Sl : List CId) : Bool :=
+  kWithin kBudget (Sl.flatMap (storedTerms p env κ))
+
 /-! ## The decision -/
 
 /-- **The pipeline's grounding decision** on root `root` of `src`, at the closure `Sl`, the
@@ -348,20 +394,23 @@ def groundCheck (k : Src.KernelFront.Kernel) (src : Program) (checked : Src.Rele
     | none => .error "resultType: the root's declared type does not end in a constant"
     | some res =>
       let κ := keyMap k.rd
-      let lpsOf := lpsMap k.acc.env κ
       let Sl := closureOf src root
-      let env' := selEnv src k.acc.env κ Sl
-      let walk := instWalk src [root] instFuel
-      let Inst := walk.getD []
-      let cx := k.acc.ctx
-      let key : Ixon.Address → Option KKey :=
-        fun a => (cx.keyAt (Src.KernelFront.kaddr a)).toOption
-      let I := Lam.Erase.Input.ofProgram src checked
-      if groundOkB src ann I view key target addr root res κ lpsOf Sl env' Inst then
-        .ok (abiOf src I view root res)
+      if budgetB src k.acc.env κ Sl then
+        let lpsOf := lpsMap k.acc.env κ
+        let env' := selEnv src k.acc.env κ Sl
+        let walk := instWalk src [root] instFuel
+        let Inst := walk.getD []
+        let cx := k.acc.ctx
+        let key : Ixon.Address → Option KKey :=
+          fun a => (cx.keyAt (Src.KernelFront.kaddr a)).toOption
+        let I := Lam.Erase.Input.ofProgram src checked
+        if groundOkB src ann I view key target addr root res κ lpsOf Sl env' Inst then
+          .ok (abiOf src I view root res)
+        else
+          .error (groundRefusal src ann I view key target addr root res κ lpsOf Sl env' Inst
+            walk.isSome)
       else
-        .error (groundRefusal src ann I view key target addr root res κ lpsOf Sl env' Inst
-          walk.isSome)
+        .error "budget: the kernel's stored terms of the root's closure exceed 2^24 tree nodes"
 
 /-! ## What the check establishes -/
 
@@ -404,14 +453,16 @@ theorem groundCheck_sound {k : Src.KernelFront.Kernel} {src : Program}
       rw [hres] at h
       dsimp only at h
       split at h
-      · rename_i hok
-        obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9⟩ := groundOkB_sound hok
-        simp only [Except.ok.injEq] at h
-        subst h
-        subst h7
-        exact ⟨keyMap k.rd, lpsMap k.acc.env (keyMap k.rd), ann, closureOf src root,
-          (instWalk src [root] instFuel).getD [], root, res, rfl, hres, h8, rfl,
-          ⟨h2, h3, h4, h5, h6, rootFacts_of_check h1⟩, resultOk_sound h9⟩
+      · split at h
+        · rename_i hbud hok
+          obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9⟩ := groundOkB_sound hok
+          simp only [Except.ok.injEq] at h
+          subst h
+          subst h7
+          exact ⟨keyMap k.rd, lpsMap k.acc.env (keyMap k.rd), ann, closureOf src root,
+            (instWalk src [root] instFuel).getD [], root, res, rfl, hres, h8, rfl,
+            ⟨h2, h3, h4, h5, h6, rootFacts_of_check h1⟩, resultOk_sound h9⟩
+        · cases h
       · cases h
 
 end IxCC.Correct
