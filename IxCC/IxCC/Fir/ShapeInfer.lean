@@ -90,6 +90,7 @@ def render : Shape → String
   | .irr => "irr"
   | .nat => "nat"
   | .natLt b => s!"nat<{b}"
+  | .word w => s!"word{w.bits}"
   | .enum i => s!"enum#{i}"
   | .data d => s!"data{d}"
   | .fn a b => s!"({render a} -> {render b})"

@@ -95,6 +95,9 @@ inductive ValOk (cert : ShapeCert) (enc : ArrEnc) : Shape → Val → Prop
   | irr : ValOk cert enc .irr .erased
   | nat (n : Nat) : ValOk cert enc .nat (.lit (.nat n))
   | natLt {b n : Nat} : n < b → ValOk cert enc (.natLt b) (.lit (.nat n))
+  /-- a word: below erasure its tower is its number, a literal below the width's size (the
+  values of `natLt (2 ^ w)`) -/
+  | word {w : Src.Width} {n : Nat} : n < w.size → ValOk cert enc (.word w) (.lit (.nat n))
   | enum {ind : Src.CId} {ks : List Key.CtorKey} {c : CtorInfo} :
       cert.enum? ind = some ks → c.key ∈ ks → ValOk cert enc (.enum ind) (.ctor c [])
   /-- a constructor of the entry, its fields at the entry's shapes -/
@@ -157,9 +160,11 @@ def natPrimResult : Lam.Prim → Shape
 on an operand that is not what it reads is stuck, which asks nothing). -/
 inductive PrimOk : Lam.Prim → List Shape → Shape → Prop
   /-- A word operation returns a word of its result width whatever came in
-  (`Src.WordOp.eval_word_lt`, `eval3_word_lt`; an operand out of range is stuck). -/
+  (`Src.WordOp.eval_word_lt`, `eval3_word_lt`; an operand out of range is stuck), stated as
+  `natLt (2 ^ w)`, so the range rules read its bound; the same values as `word w`
+  (`ValOk.word`), into which it weakens (`Shape.le`). -/
   | word {w : Src.Width} {op : Src.WordOp} {σs : List Shape} :
-      PrimOk (.word w op) σs (Shape.word (op.resultWidth w))
+      PrimOk (.word w op) σs (.natLt (op.resultWidth w).size)
   | natAny {op : Lam.Prim} {σs : List Shape} : op.isWord = false → PrimOk op σs (natPrimResult op)
   /-- the range rules: validated bounds -/
   | add {a b : Nat} {σ τ : Shape} : σ.le (.natLt a) = true → τ.le (.natLt b) = true →
@@ -348,7 +353,7 @@ def bound1 : List Shape → Option Nat
 (`primShape_ok`: `PrimOk op σs (primShape op σs)`). -/
 def primShape (op : Lam.Prim) (σs : List Shape) : Shape :=
   match op with
-  | .word w wop => Shape.word (wop.resultWidth w)
+  | .word w wop => .natLt (wop.resultWidth w).size
   | .natAdd =>
     match bound2 σs with
     | some (a, b) => .natLt (a + b)

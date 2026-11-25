@@ -28,6 +28,12 @@ verbatim. -/
 /-- info: 'IxCC.Shape.Shape.word_rep' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Shape.Shape.word_rep
 
+/-- info: 'IxCC.Shape.Shape.word_le_natLt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Shape.Shape.word_le_natLt
+
+/-- info: 'IxCC.Shape.Shape.natLt_le_word' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Shape.Shape.natLt_le_word
+
 /-! The checker's soundness: `CheckSound`, `CodeSound`, the evaluator invariant with a join stack,
 the lemmas (`LeSound`, `PrimOkSound`, right-hand sides), and the Boolean checker. -/
 
@@ -42,6 +48,9 @@ the lemmas (`LeSound`, `PrimOkSound`, right-hand sides), and the Boolean checker
 
 /-- info: 'IxCC.Fir.Proof.Shape.leSound' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Fir.Proof.Shape.leSound
+
+/-- info: 'IxCC.Fir.Proof.Shape.valOk_word_inv' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.Shape.valOk_word_inv
 
 /-- info: 'IxCC.Fir.Proof.Shape.primOkSound' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Fir.Proof.Shape.primOkSound

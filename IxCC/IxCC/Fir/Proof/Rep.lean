@@ -820,6 +820,11 @@ theorem ofShapes_valOk {sc : ShapeCert} {enc : ArrEnc} {σ : IxCC.Shape.Shape} {
       exact ⟨n, Nat.lt_of_lt_of_le hn hb, rfl⟩
     · simp only [IxCC.Shape.Shape.rep, hb, ↓reduceIte, ValOk]
       exact ctorValOk_ofShapes sc _
+  | word w =>
+    obtain ⟨n, rfl, hn⟩ := IxCC.Fir.Proof.Shape.valOk_word_inv h
+    have hw : w.size ≤ 2 ^ 64 := by cases w <;> decide
+    simp only [IxCC.Shape.Shape.rep, ValOk]
+    exact ⟨n, Nat.lt_of_lt_of_le hn hw, rfl⟩
   | _ => exact ctorValOk_ofShapes sc v
 
 theorem ofShapes_funCert (sc : ShapeCert) (f : FunId) :
