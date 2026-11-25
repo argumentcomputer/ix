@@ -1,0 +1,24 @@
+name = "ix-cc-aiur"
+defaultTargets = ["IxCCAiur"]
+# The lowering from the compiler's first-order IR (`IxCC.Fir`) to Formal Aiur,
+# with its backward simulation. It is a package of its own because it needs
+# both sides: `ix-cc` (which must not depend on Mathlib) and `aiur` (which
+# does). Nothing in `IxCC` or in the root package imports it.
+#
+# Shares the root package's packages directory, so the Mathlib and Blake3
+# checkouts and builds that the root package (through `aiur`) uses serve this
+# package too. Build from the repository root with
+# `lake -d IxCCAiur build`, after the root package's dependencies are in
+# place; this package fetches nothing of its own.
+packagesDir = "../.lake/packages"
+
+[[require]]
+name = "ix-cc"
+path = "../IxCC"
+
+[[require]]
+name = "aiur"
+path = "../Aiur"
+
+[[lean_lib]]
+name = "IxCCAiur"

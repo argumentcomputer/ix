@@ -1,47 +1,55 @@
-import Ix.Cert.IxccAiur.Backward
+import IxCCAiur.Backward
+import IxCCAiur.Compose
 
 /-! # Direct `IxCC Fir → Formal Aiur` Certified Compiler Audit Surface
 
-Verifies that every headline theorem in `Ix.Cert.IxccAiur` depends ONLY on
-Lean's three standard axioms (`[propext, Classical.choice, Quot.sound]`, or a
-subset thereof) — zero `sorry`, zero `native_decide`, zero `bv_decide`, zero
-custom axioms — and exercises a concrete end-to-end `Fir.Program` covering
-`.src` and `.clo` constructors, `Lit.str` byte lists, non-recursive & recursive
-join points (`.jp`/`.jmp`), `Nat` primitives, and `.trap`. -/
+Verifies that every headline theorem of the package `IxCCAiur` (namespace
+`IxCC.AiurBackend`) depends ONLY on Lean's three standard axioms
+(`[propext, Classical.choice, Quot.sound]`, or a subset thereof) — zero `sorry`,
+zero `native_decide`, zero `bv_decide`, zero custom axioms — and exercises a
+concrete `IxCC.Fir.Program` covering `.src` and `.clo` constructors, `Lit.str`
+byte lists, non-recursive & recursive join points (`.jp`/`.jmp`), `Nat`
+primitives, and `.trap`. The Fir program, its evaluator and its values are the
+compiler's own (`IxCC.Fir`); section 5 pins the composition with the compiler's
+front half (`IxCCAiur.Compose`).
 
-namespace Ix.Cert.IxccAiur.Audit
+Not audited here because nothing proves it yet: `Backward.LoweredWorld` for any
+lowered program (the fixture is lowered and run in Fir only). -/
 
-open Ix.Cert.IxccAiur.Fir Ix.Cert.IxccAiur.Lower Ix.Cert.IxccAiur.Gadgets
-open Ix.Cert.IxccAiur.Backward
+namespace IxCC.AiurBackend.Audit
+
+open IxCC.Fir IxCC.Key IxCC.AiurBackend.Lower IxCC.AiurBackend.Gadgets
+open IxCC.Lam (Lit Prim)
+open IxCC.AiurBackend.Backward
 
 /-! ## 1. Fir Operational Semantics & Monotonicity -/
 
 /--
-info: eval_mono : ∀ (P : Program) {k k' : ℕ} {ρ : Env} {J : List JEntry} {c : Code} {v : Val},
-  eval P k ρ J c = Result.ok v → k ≤ k' → eval P k' ρ J c = Result.ok v
+info: FirFacts.eval_mono : ∀ (P : Program) {k k' : ℕ} {ρ : Env} {J : List JEntry} {c : Code} {v : Val},
+  eval P k ρ J c = Sem.Result.ok v → k ≤ k' → eval P k' ρ J c = Sem.Result.ok v
 -/
 #guard_msgs (whitespace := lax) in
-#check @Fir.eval_mono
+#check @FirFacts.eval_mono
 
 /--
-info: evalCall_mono : ∀ (P : Program) {k k' : ℕ} {f : FunId} {vs : List Val} {v : Val},
-  evalCall P k f vs = Result.ok v → k ≤ k' → evalCall P k' f vs = Result.ok v
+info: FirFacts.evalCall_mono : ∀ (P : Program) {k k' : ℕ} {f : FunId} {vs : List Val} {v : Val},
+  evalCall P k f vs = Sem.Result.ok v → k ≤ k' → evalCall P k' f vs = Sem.Result.ok v
 -/
 #guard_msgs (whitespace := lax) in
-#check @Fir.evalCall_mono
+#check @FirFacts.evalCall_mono
 
 /--
-info: run_mono : ∀ (P : Program) {k k' : ℕ} {f : FunId} {vs : List Val} {v : Val},
-  run P k f vs = Result.ok v → k ≤ k' → run P k' f vs = Result.ok v
+info: FirFacts.run_mono : ∀ (P : Program) {k k' : ℕ} {f : FunId} {vs : List Val} {v : Val},
+  run P k f vs = Sem.Result.ok v → k ≤ k' → run P k' f vs = Sem.Result.ok v
 -/
 #guard_msgs (whitespace := lax) in
-#check @Fir.run_mono
+#check @FirFacts.run_mono
 
-/-- info: 'Ix.Cert.IxccAiur.Fir.eval_mono' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs (whitespace := lax) in #print axioms Fir.eval_mono
+/-- info: 'IxCC.AiurBackend.FirFacts.eval_mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms FirFacts.eval_mono
 
-/-- info: 'Ix.Cert.IxccAiur.Fir.run_mono' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs (whitespace := lax) in #print axioms Fir.run_mono
+/-- info: 'IxCC.AiurBackend.FirFacts.run_mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms FirFacts.run_mono
 
 /-! ## 2. `UInt8` / `UInt64` & Primitive Helper Gadget Contracts -/
 
@@ -272,28 +280,28 @@ info: @pBlt_sound : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F] {P 
 #guard_msgs (whitespace := lax) in
 #check @Gadgets.pBlt_sound
 
-/-- info: 'Ix.Cert.IxccAiur.Gadgets.goldilocks_fieldCompatible' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.AiurBackend.Gadgets.goldilocks_fieldCompatible' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Gadgets.goldilocks_fieldCompatible
 
-/-- info: 'Ix.Cert.IxccAiur.Gadgets.U64Contracts.ofLibraryWorld' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.AiurBackend.Gadgets.U64Contracts.ofLibraryWorld' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Gadgets.U64Contracts.ofLibraryWorld
 
-/-- info: 'Ix.Cert.IxccAiur.Gadgets.pAdd_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.AiurBackend.Gadgets.pAdd_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Gadgets.pAdd_sound
 
-/-- info: 'Ix.Cert.IxccAiur.Gadgets.pMul_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.AiurBackend.Gadgets.pMul_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Gadgets.pMul_sound
 
-/-- info: 'Ix.Cert.IxccAiur.Gadgets.pDiv_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.AiurBackend.Gadgets.pDiv_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Gadgets.pDiv_sound
 
-/-- info: 'Ix.Cert.IxccAiur.Gadgets.pMod_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.AiurBackend.Gadgets.pMod_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Gadgets.pMod_sound
 
-/-- info: 'Ix.Cert.IxccAiur.Gadgets.pXor_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.AiurBackend.Gadgets.pXor_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Gadgets.pXor_sound
 
-/-- info: 'Ix.Cert.IxccAiur.Gadgets.pBlt_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.AiurBackend.Gadgets.pBlt_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Gadgets.pBlt_sound
 
 /-! ## 3. Full Backward Simulation & End-to-End Certified Circuit Soundness -/
@@ -349,7 +357,7 @@ info: @backward_sound : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
             ∀ {vs : List Val} {ws : List (Aiur.SourceValue F)} {h h' : Aiur.Heap F} {r : Aiur.SourceValue F},
               List.Forall₂ (VR P objQName bytesQName h) vs ws →
                 Aiur.Generic.SourceSemantics.EvalFn world (qualified (funName f)) ws h r h' →
-                  ∃ k v, run P k f vs = Result.ok v ∧ VR P objQName bytesQName h' v r
+                  ∃ k v, run P k f vs = Sem.Result.ok v ∧ VR P objQName bytesQName h' v r
 -/
 #guard_msgs (whitespace := lax) in
 #check @Backward.backward_sound
@@ -366,7 +374,7 @@ info: @entry_backward_sound : ∀ {F : Type} [inst : Field F] [inst_1 : Decidabl
               ∃ ns k v,
                 (∀ n ∈ ns, n < natLimit) ∧
                   args = List.map (fun n => Aiur.Value.field ↑n) ns ∧
-                    run P k f (List.map (fun n => Val.lit (Lit.nat n)) ns) = Result.ok v ∧
+                    run P k f (List.map (fun n => Val.lit (Lit.nat n)) ns) = Sem.Result.ok v ∧
                       VR P objQName bytesQName h' v r
 -/
 #guard_msgs (whitespace := lax) in
@@ -414,7 +422,7 @@ info: @lowered_circuit_sound : ∀ {F : Type} [inst : Field F] [inst_1 : Decidab
                                                       (∀ n ∈ ns, n < natLimit) ∧
                                                         args = List.map (fun n => Aiur.Value.field ↑n) ns ∧
                                                           run P k f (List.map (fun n => Val.lit (Lit.nat n)) ns) =
-                                                              Result.ok v ∧
+                                                              Sem.Result.ok v ∧
                                                             VR P objQName bytesQName heap v value ∧
                                                               Aiur.Represents
                                                                 (Aiur.WireROM.decode compiled.specialized.program.enums
@@ -465,7 +473,7 @@ info: @lowered_circuit_sound_goldilocks : ∀ {P : Program} {prog : Aiur.Generic
                                                   (∀ n ∈ ns, n < natLimit) ∧
                                                     args = List.map (fun n => Aiur.Value.field ↑n) ns ∧
                                                       run P k f (List.map (fun n => Val.lit (Lit.nat n)) ns) =
-                                                          Result.ok v ∧
+                                                          Sem.Result.ok v ∧
                                                         VR P objQName bytesQName heap v value ∧
                                                           Aiur.Represents
                                                             (Aiur.WireROM.decode compiled.specialized.program.enums
@@ -476,22 +484,22 @@ info: @lowered_circuit_sound_goldilocks : ∀ {P : Program} {prog : Aiur.Generic
 #guard_msgs (whitespace := lax) in
 #check @Backward.lowered_circuit_sound_goldilocks
 
-/-- info: 'Ix.Cert.IxccAiur.Backward.VR.extend' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'IxCC.AiurBackend.Backward.VR.extend' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Backward.VR.extend
 
-/-- info: 'Ix.Cert.IxccAiur.Backward.trap_no_derivation' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.AiurBackend.Backward.trap_no_derivation' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Backward.trap_no_derivation
 
-/-- info: 'Ix.Cert.IxccAiur.Backward.backward_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.AiurBackend.Backward.backward_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Backward.backward_sound
 
-/-- info: 'Ix.Cert.IxccAiur.Backward.entry_backward_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.AiurBackend.Backward.entry_backward_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Backward.entry_backward_sound
 
-/-- info: 'Ix.Cert.IxccAiur.Backward.lowered_circuit_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.AiurBackend.Backward.lowered_circuit_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Backward.lowered_circuit_sound
 
-/-- info: 'Ix.Cert.IxccAiur.Backward.lowered_circuit_sound_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.AiurBackend.Backward.lowered_circuit_sound_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Backward.lowered_circuit_sound_goldilocks
 
 /-! ## 4. Concrete End-to-End Lowering & Execution Fixture -/
@@ -542,7 +550,7 @@ private def demoFun0 : Fir.Fun := {
 - `.trap` on unreachable branch. -/
 def demoProgram : Fir.Program :=
   {
-    funs := NatMap.empty.insert 0 demoFun0
+    funs := Src.NatMap.empty.insert 0 demoFun0
     size := 1
     exports := [0]
     ctors := [
@@ -608,29 +616,29 @@ theorem demoProgram_runs :
   have hbf : Fir.boolVal demoProgram false = some (.ctor ⟨kBoolFalse, 0, 0, 0, []⟩ []) := rfl
   have hbt : Fir.boolVal demoProgram true = some (.ctor ⟨kBoolTrue, 1, 0, 0, []⟩ []) := rfl
   rw [Fir.run_eq, Fir.evalCall_of demoProgram 20 (f := 0) (by rfl)]
-  simp only [demoFun0, Fir.callFun, Fir.later, Fir.bindAll, List.length_cons, List.length_nil,
+  simp only [demoFun0, Fir.callFun, Sem.later, Fir.bindAll, List.length_cons, List.length_nil,
     ↓reduceIte, List.map_cons, List.map_nil]
   -- Bind closure `(4, "ix")`, match `kCloBox`, project field 0, enter `j1` and recursive `j0`
   rw [Fir.eval_bindRhs (hr := by intro _ _ h; cases h)]
-  simp only [Fir.evalRhs, Fir.evalArgs, Fir.Arg.eval, NatMap.get?_insert_self, hcloAr,
-    List.length_cons, List.length_nil, ↓reduceIte, Fir.Result.bind_ok]
+  simp only [Fir.evalRhs, Fir.evalArgs, Fir.Arg.eval, Src.NatMap.get?_insert_self, hcloAr,
+    List.length_cons, List.length_nil, ↓reduceIte, Sem.Result.bind_ok]
   rw [Fir.eval_case]
-  simp only [NatMap.get?_insert_self, Fir.Result.ofOption, Fir.Result.bind_ok, Fir.Val.asCtor,
+  simp only [Src.NatMap.get?_insert_self, Sem.Result.ofOption, Sem.Result.bind_ok, Fir.Val.asCtor,
     cloBoxInfo, Fir.evalAlts_cons, ↓reduceIte]
   rw [Fir.eval_bindRhs (hr := by intro _ _ h; cases h)]
-  simp only [Fir.evalRhs, NatMap.get?_insert_self, Fir.projVal, Fir.Val.asCtor, ↓reduceIte,
-    List.getElem?_cons_zero, Fir.Result.ofOption, Fir.Result.bind_ok]
+  simp only [Fir.evalRhs, Src.NatMap.get?_insert_self, Fir.Val.asCtor, ↓reduceIte,
+    List.getElem?_cons_zero, Sem.Result.ofOption, Sem.Result.bind_ok]
   rw [Fir.eval_jp, Fir.eval_jmp]
-  simp only [Fir.lookupJ, ↓reduceIte, Fir.evalArgs, Fir.Arg.eval, NatMap.get?_insert_self,
-    Fir.Result.ofOption, Fir.Result.bind_ok, Fir.jumpTo, List.length_cons, List.length_nil,
+  simp only [Fir.lookupJ, ↓reduceIte, Fir.evalArgs, Fir.Arg.eval, Src.NatMap.get?_insert_self,
+    Sem.Result.ofOption, Sem.Result.bind_ok, Fir.jumpTo, List.length_cons, List.length_nil,
     Bool.false_eq_true, Fir.JEntry.after, Fir.bindAll]
   rw [Fir.eval_jp, Fir.eval_jmp]
-  simp only [Fir.lookupJ, ↓reduceIte, Fir.evalArgs, Fir.Arg.eval, NatMap.get?_insert_self,
-    Fir.Result.ofOption, Fir.Result.bind_ok, Fir.jumpTo, List.length_cons, List.length_nil,
+  simp only [Fir.lookupJ, ↓reduceIte, Fir.evalArgs, Fir.Arg.eval, Src.NatMap.get?_insert_self,
+    Sem.Result.ofOption, Sem.Result.bind_ok, Fir.jumpTo, List.length_cons, List.length_nil,
     Bool.false_eq_true, Fir.JEntry.after, Fir.bindAll]
   -- 4 recursive iterations of `j0`: (4,0) → (3,4) → (2,7) → (1,9) → (0,10)
   let baseEnv : Fir.Env :=
-    NatMap.insert (NatMap.insert (NatMap.insert (NatMap.insert .leaf 0 (.lit (.nat 4)))
+    Src.NatMap.insert (Src.NatMap.insert (Src.NatMap.insert (Src.NatMap.insert .leaf 0 (.lit (.nat 4)))
       1 (.ctor cloBoxInfo [.lit (.nat 4), .lit (.str "ix")])) 2 (.lit (.nat 4))) 3 (.lit (.nat 4))
   let loopBody : Fir.Code :=
     .bind 6 (.prim .natBeq [.var 4, .lit (.nat 0)]) <|
@@ -654,31 +662,31 @@ theorem demoProgram_runs :
     dsimp only [loopBody]
     rw [Fir.eval_bindRhs (hr := by intro _ _ h; cases h)]
     simp only [Fir.evalRhs, Fir.evalArgs, Fir.Arg.eval,
-      NatMap.get?_insert_ne _ _ (by decide : 5 ≠ 4), NatMap.get?_insert_self,
-      Fir.primResult, Fir.natArgs, Option.map_some, Fir.Prim.sem, hbeq, hbf,
-      Fir.Result.ofOption, Fir.Result.bind_ok]
+      FirFacts.get?_insert_ne _ _ (by decide : 5 ≠ 4), Src.NatMap.get?_insert_self,
+      Fir.primResult, Fir.natArgs, Option.map_some, FirFacts.sem_natBeq, hbeq, hbf,
+      Sem.Result.ofOption, Sem.Result.bind_ok]
     rw [Fir.eval_case]
-    simp only [NatMap.get?_insert_self, Fir.Result.ofOption, Fir.Result.bind_ok, Fir.Val.asCtor,
+    simp only [Src.NatMap.get?_insert_self, Sem.Result.ofOption, Sem.Result.bind_ok, Fir.Val.asCtor,
       Fir.evalAlts_cons, hneTF, ↓reduceIte]
     rw [Fir.eval_bindRhs (hr := by intro _ _ h; cases h)]
     simp only [Fir.evalRhs, Fir.evalArgs, Fir.Arg.eval,
-      NatMap.get?_insert_ne _ _ (by decide : 6 ≠ 5),
-      NatMap.get?_insert_ne _ _ (by decide : 6 ≠ 4),
-      NatMap.get?_insert_ne _ _ (by decide : 5 ≠ 4),
-      NatMap.get?_insert_self, Fir.primResult, Fir.natArgs, Option.map_some, Fir.Prim.sem,
-      Fir.Result.bind_ok]
+      FirFacts.get?_insert_ne _ _ (by decide : 6 ≠ 5),
+      FirFacts.get?_insert_ne _ _ (by decide : 6 ≠ 4),
+      FirFacts.get?_insert_ne _ _ (by decide : 5 ≠ 4),
+      Src.NatMap.get?_insert_self, Fir.primResult, Fir.natArgs, Option.map_some, FirFacts.sem_natAdd,
+      Sem.Result.bind_ok]
     rw [Fir.eval_bindRhs (hr := by intro _ _ h; cases h)]
     simp only [Fir.evalRhs, Fir.evalArgs, Fir.Arg.eval,
-      NatMap.get?_insert_ne _ _ (by decide : 7 ≠ 4),
-      NatMap.get?_insert_ne _ _ (by decide : 6 ≠ 4),
-      NatMap.get?_insert_ne _ _ (by decide : 5 ≠ 4),
-      NatMap.get?_insert_self, Fir.primResult, Fir.natArgs, Option.map_some, Fir.Prim.sem,
-      Fir.Result.bind_ok]
+      FirFacts.get?_insert_ne _ _ (by decide : 7 ≠ 4),
+      FirFacts.get?_insert_ne _ _ (by decide : 6 ≠ 4),
+      FirFacts.get?_insert_ne _ _ (by decide : 5 ≠ 4),
+      Src.NatMap.get?_insert_self, Fir.primResult, Fir.natArgs, Option.map_some, FirFacts.sem_natPred,
+      Sem.Result.bind_ok]
     rw [Fir.eval_jmp]
     simp only [loopJ, Fir.lookupJ, ↓reduceIte, Fir.evalArgs, Fir.Arg.eval,
-      NatMap.get?_insert_self, NatMap.get?_insert_ne _ _ (by decide : 8 ≠ 7),
-      Fir.Result.ofOption, Fir.Result.bind_ok, Fir.jumpTo, List.length_cons, List.length_nil,
-      Fir.later, Fir.JEntry.after, Fir.bindAll]
+      Src.NatMap.get?_insert_self, FirFacts.get?_insert_ne _ _ (by decide : 8 ≠ 7),
+      Sem.Result.ofOption, Sem.Result.bind_ok, Fir.jumpTo, List.length_cons, List.length_nil,
+      Sem.later, Fir.JEntry.after, Fir.bindAll]
     rfl
   change Fir.eval demoProgram 19 ((baseEnv.insert 4 (.lit (.nat 4))).insert 5 (.lit (.nat 0)))
     loopJ loopBody = .ok (.lit (.nat 10))
@@ -690,20 +698,195 @@ theorem demoProgram_runs :
   dsimp only [loopBody]
   rw [Fir.eval_bindRhs (hr := by intro _ _ h; cases h)]
   simp only [Fir.evalRhs, Fir.evalArgs, Fir.Arg.eval,
-    NatMap.get?_insert_ne _ _ (by decide : 5 ≠ 4), NatMap.get?_insert_self,
-    Fir.primResult, Fir.natArgs, Option.map_some, Fir.Prim.sem, beq_self_eq_true, hbt,
-    Fir.Result.ofOption, Fir.Result.bind_ok]
+    FirFacts.get?_insert_ne _ _ (by decide : 5 ≠ 4), Src.NatMap.get?_insert_self,
+    Fir.primResult, Fir.natArgs, Option.map_some, FirFacts.sem_natBeq, beq_self_eq_true, hbt,
+    Sem.Result.ofOption, Sem.Result.bind_ok]
   rw [Fir.eval_case]
-  simp only [NatMap.get?_insert_self, Fir.Result.ofOption, Fir.Result.bind_ok, Fir.Val.asCtor,
+  simp only [Src.NatMap.get?_insert_self, Sem.Result.ofOption, Sem.Result.bind_ok, Fir.Val.asCtor,
     Fir.evalAlts_cons, ↓reduceIte]
   rw [Fir.eval_ret]
-  simp [Fir.Arg.eval, NatMap.get?_insert_ne _ _ (by decide : 6 ≠ 5), NatMap.get?_insert_self,
-    Fir.Result.ofOption]
+  simp [Fir.Arg.eval, FirFacts.get?_insert_ne _ _ (by decide : 6 ≠ 5), Src.NatMap.get?_insert_self,
+    Sem.Result.ofOption]
 
-/-- info: 'Ix.Cert.IxccAiur.Audit.demoProgram_lowers' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.AiurBackend.Audit.demoProgram_lowers' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms demoProgram_lowers
 
-/-- info: 'Ix.Cert.IxccAiur.Audit.demoProgram_runs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.AiurBackend.Audit.demoProgram_runs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms demoProgram_runs
 
-end Ix.Cert.IxccAiur.Audit
+/-! ## 5. Composition with the Compiler's Front Half (`IxCCAiur.Compose`)
+
+The lowered program is the Fir program `Recheck.runFir` makes. `Recheck.front_fir`
+is the front half's refinement down to Fir; `Compose.entry_source_backward` and
+`Compose.circuit_source_backward_goldilocks` read an accepted run at the source
+evaluator **with the stuck-source disjunct**; the `…_sound` forms take source
+progress on the input (`Compose.NeverStuck`) as a hypothesis. -/
+
+/--
+info: @Recheck.front_fir : ∀ {cfg : Recheck.Config} {P : Src.Program} {c : Recheck.Cert} {f : Recheck.FrontFir},
+  Recheck.runFir cfg P c = Except.ok f → Sem.RefinesOn (f.Covered c) { p := f.src, ch := f.checked } f.fir
+-/
+#guard_msgs (whitespace := lax) in
+#check @Recheck.front_fir
+
+/--
+info: @Recheck.runLir_runFir : ∀ {cfg : Recheck.Config} {P : Src.Program} {c : Recheck.Cert} {f : Recheck.Front},
+  Recheck.runLir cfg P c = Except.ok f →
+    Recheck.runFir cfg P c = Except.ok { src := f.src, checked := f.checked, lam := f.lam, anf := f.anf, fir := f.fir }
+-/
+#guard_msgs (whitespace := lax) in
+#check @Recheck.runLir_runFir
+
+/--
+info: @Compose.source_of_fir_run : ∀ {cfg : Recheck.Config} {P : Src.Program} {c : Recheck.Cert} {f : Recheck.FrontFir},
+  Recheck.runFir cfg P c = Except.ok f →
+    ∀ {i : ℕ} {g : FunId},
+      f.fir.exports[i]? = some g →
+        ∀ {ns : List ℕ} {k : ℕ} {w : Val},
+          run f.fir k g (List.map (fun n => Val.lit (Lit.nat n)) ns) = Sem.Result.ok w →
+            f.Covered c (i, ns) →
+              (∃ k' v, Sem.Lang.run { p := f.src, ch := f.checked } (i, ns) k' = Sem.Result.ok v ∧ Sem.Lang.ObsEq v w) ∨
+                ∃ k', Sem.Lang.run { p := f.src, ch := f.checked } (i, ns) k' = Sem.Result.stuck
+-/
+#guard_msgs (whitespace := lax) in
+#check @Compose.source_of_fir_run
+
+/--
+info: @Compose.entry_source_backward : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F] {cfg : Recheck.Config}
+  {P : Src.Program} {c : Recheck.Cert} {f : Recheck.FrontFir},
+  Recheck.runFir cfg P c = Except.ok f →
+    ∀ {prog : Aiur.Generic.Program ℕ} {world : Aiur.Generic.SourceSemantics.World F},
+      FieldCompatible F →
+        LoweredWorld f.fir prog world →
+          ∀ {i : ℕ} {g : FunId},
+            f.fir.exports[i]? = some g →
+              ∀ {args : List (Aiur.SourceValue F)} {h' : Aiur.Heap F} {r : Aiur.SourceValue F},
+                Aiur.Generic.SourceSemantics.EvalFn world (qualified (entryName i)) args [] r h' →
+                  ∃ ns w,
+                    (∀ n ∈ ns, n < natLimit) ∧
+                      args = List.map (fun n => Aiur.Value.field ↑n) ns ∧
+                        VR f.fir objQName bytesQName h' w r ∧
+                          (f.Covered c (i, ns) →
+                            (∃ k v,
+                                Sem.Lang.run { p := f.src, ch := f.checked } (i, ns) k = Sem.Result.ok v ∧
+                                  Sem.Lang.ObsEq v w) ∨
+                              ∃ k, Sem.Lang.run { p := f.src, ch := f.checked } (i, ns) k = Sem.Result.stuck)
+-/
+#guard_msgs (whitespace := lax) in
+#check @Compose.entry_source_backward
+
+/--
+info: @Compose.entry_source_sound : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F] {cfg : Recheck.Config}
+  {P : Src.Program} {c : Recheck.Cert} {f : Recheck.FrontFir},
+  Recheck.runFir cfg P c = Except.ok f →
+    ∀ {prog : Aiur.Generic.Program ℕ} {world : Aiur.Generic.SourceSemantics.World F},
+      FieldCompatible F →
+        LoweredWorld f.fir prog world →
+          ∀ {i : ℕ} {g : FunId},
+            f.fir.exports[i]? = some g →
+              ∀ {args : List (Aiur.SourceValue F)} {h' : Aiur.Heap F} {r : Aiur.SourceValue F},
+                Aiur.Generic.SourceSemantics.EvalFn world (qualified (entryName i)) args [] r h' →
+                  (∀ (ns : List ℕ),
+                      args = List.map (fun n => Aiur.Value.field ↑n) ns →
+                        Compose.NeverStuck { p := f.src, ch := f.checked } (i, ns)) →
+                    ∃ ns w,
+                      (∀ n ∈ ns, n < natLimit) ∧
+                        args = List.map (fun n => Aiur.Value.field ↑n) ns ∧
+                          VR f.fir objQName bytesQName h' w r ∧
+                            (f.Covered c (i, ns) →
+                              ∃ k v,
+                                Sem.Lang.run { p := f.src, ch := f.checked } (i, ns) k = Sem.Result.ok v ∧
+                                  Sem.Lang.ObsEq v w)
+-/
+#guard_msgs (whitespace := lax) in
+#check @Compose.entry_source_sound
+
+/--
+info: @Compose.circuit_source_backward_goldilocks : ∀ {cfg : Recheck.Config} {P : Src.Program} {c : Recheck.Cert}
+  {f : Recheck.FrontFir},
+  Recheck.runFir cfg P c = Except.ok f →
+    ∀ {prog : Aiur.Generic.Program ℕ} {moduleProg : Aiur.Modules.Program Aiur.Library.U32.Goldilocks.F}
+      {id : String → Except String ℕ} (prepared : Aiur.Modules.Prepared moduleProg),
+      LoweredWorld f.fir prog prepared.environment.source.world →
+        ∀ (compiled : Aiur.Optimized.ModulesArtifact prepared)
+          (physical : Aiur.Optimized.Physical.Prepared compiled.circuit.artifact) {dcfg : Aiur.Optimized.Depth.Config},
+          Aiur.Optimized.Physical.Prepared.DepthCertified compiled.circuit physical dcfg →
+            dcfg.bits ≤ 24 →
+              ∀ (plan : Aiur.Optimized.Grouping.Plan (Aiur.Optimized.Depth.system dcfg physical.system) id),
+                plan.WellFormedActivation →
+                  ∀ {external : String}
+                    {entry : Aiur.Modules.Selection moduleProg prepared.environment.assembly.instances},
+                    prepared.find? external = some entry →
+                      ∀ {i : ℕ} {g : FunId},
+                        entry.resolved.name = qualified (entryName i) →
+                          f.fir.exports[i]? = some g →
+                            ∀ {rom : Aiur.WidthROM Aiur.Library.U32.Goldilocks.F},
+                              rom.Valid →
+                                ∀ {args : List (Aiur.SourceValue Aiur.Library.U32.Goldilocks.F)}
+                                  {result : Aiur.Value Aiur.Library.U32.Goldilocks.F}
+                                  {wires : List (Aiur.WireValue Aiur.Library.U32.Goldilocks.F)}
+                                  {output : Aiur.WireValue Aiur.Library.U32.Goldilocks.F},
+                                  Aiur.Circuit.Erasure.Signed compiled.circuit.system
+                                      { channel := entry.resolved.name, args := wires, result := output } →
+                                    ∀ {root : Aiur.Circuit.Message Aiur.Library.U32.Goldilocks.F},
+                                      Aiur.Optimized.Depth.erase dcfg root =
+                                          Aiur.Circuit.Erasure.message compiled.circuit.system
+                                            { channel := entry.resolved.name, args := wires, result := output } →
+                                        root.channel ∉ dcfg.names →
+                                          ∀ {rows : List (Aiur.Circuit.WeightedRow Aiur.Library.U32.Goldilocks.F)},
+                                            rows.length ≤ 2 ^ 39 →
+                                              plan.checkMemo (Aiur.Circuit.Erasure.rawROM rom) root rows =
+                                                  Except.ok () →
+                                                Aiur.DecodesValues compiled.specialized.program.enums wires
+                                                    (Aiur.entryValues args) →
+                                                  Aiur.WireValue.decode compiled.specialized.program.enums output =
+                                                      some result →
+                                                    ∃ value heap ns w,
+                                                      (∀ n ∈ ns, n < natLimit) ∧
+                                                        args = List.map (fun n => Aiur.Value.field ↑n) ns ∧
+                                                          VR f.fir objQName bytesQName heap w value ∧
+                                                            Aiur.Represents
+                                                                (Aiur.WireROM.decode compiled.specialized.program.enums
+                                                                  (Aiur.Circuit.Erasure.typedROM compiled.circuit.system
+                                                                    rom))
+                                                                heap value result ∧
+                                                              (f.Covered c (i, ns) →
+                                                                (∃ k v,
+                                                                    Sem.Lang.run { p := f.src, ch := f.checked } (i, ns)
+                                                                        k =
+                                                                      Sem.Result.ok v ∧
+                                                                    Sem.Lang.ObsEq v w) ∨
+                                                                  ∃ k,
+                                                                    Sem.Lang.run { p := f.src, ch := f.checked } (i, ns)
+                                                                        k =
+                                                                      Sem.Result.stuck)
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @Compose.circuit_source_backward_goldilocks
+
+/-- info: 'IxCC.Recheck.front_fir' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Recheck.front_fir
+
+/-- info: 'IxCC.Recheck.runLir_runFir' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Recheck.runLir_runFir
+
+/-- info: 'IxCC.AiurBackend.Compose.lang_run_of_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Compose.lang_run_of_run
+
+/-- info: 'IxCC.AiurBackend.Compose.source_of_fir_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Compose.source_of_fir_run
+
+/-- info: 'IxCC.AiurBackend.Compose.entry_source_backward' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Compose.entry_source_backward
+
+/-- info: 'IxCC.AiurBackend.Compose.entry_source_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Compose.entry_source_sound
+
+/-- info: 'IxCC.AiurBackend.Compose.circuit_source_backward_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Compose.circuit_source_backward_goldilocks
+
+/-- info: 'IxCC.AiurBackend.Compose.circuit_source_sound_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Compose.circuit_source_sound_goldilocks
+
+end IxCC.AiurBackend.Audit

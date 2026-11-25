@@ -671,7 +671,6 @@ def isFormalOnlyModule (m : Lean.Name) : Bool :=
   s.startsWith "Ix.Cert.MultiStarkRefinement." ||
   s.startsWith "Ix.Cert.Aggr." ||
   s.startsWith "Ix.Cert.Compression." ||
-  s.startsWith "Ix.Cert.IxccAiur." ||
   m == `Ix.Cert.Security128ClosureManifest ||
   m == `Ix.Cert.RecordSectionsBridge ||
   m == `Tests.FormalPackageMain ||

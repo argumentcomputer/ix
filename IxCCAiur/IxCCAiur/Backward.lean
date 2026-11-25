@@ -1,4 +1,4 @@
-import Ix.Cert.IxccAiur.Gadgets
+import IxCCAiur.Gadgets
 import Aiur.HeapMono
 import Aiur.Optimized.Depth.Grouped
 
@@ -14,10 +14,11 @@ accepted Aiur circuit rows to `Fir.run`.
 
 Zero `sorry`, zero `native_decide`, zero `bv_decide`, standard axioms only. -/
 
-namespace Ix.Cert.IxccAiur.Backward
+namespace IxCC.AiurBackend.Backward
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics Aiur.Library
-open Ix.Cert.IxccAiur.Fir Ix.Cert.IxccAiur.Lower Ix.Cert.IxccAiur.Gadgets
+open IxCC.Fir IxCC.Key IxCC.AiurBackend.Lower IxCC.AiurBackend.Gadgets
+open IxCC.Lam (Lit Prim)
 
 /-! ## Section 1: Value Relations (`BytesRep`, `VR`, `VRs`) -/
 
@@ -61,7 +62,7 @@ inductive VR (P : Fir.Program) (e be : String) (h : Heap F) :
       VR P e be h .erased (.construct e "E" [])
   | str {s : String} {bw : SourceValue F} (bytes : BytesRep be h s.toUTF8.toList bw) :
       VR P e be h (.lit (.str s)) (.construct e "S" [bw])
-  | ctor {c : CtorInfo} {idx : Nat} {entry : CtorTableEntry}
+  | ctor {c : CtorInfo} {idx : Nat} {entry : Lam.CtorInfo}
       {fs : List Fir.Val} {ps : List (SourceValue F)}
       (atIdx : P.ctors[idx]? = some entry) (keyEq : entry.key = c.key)
       (arityEq : fs.length = entry.arity) (fields : VRs P e be h fs ps) :
@@ -174,7 +175,7 @@ theorem VR_S_inv {P : Fir.Program} {e be : String} {h : Heap F} {v : Fir.Val}
 
 theorem VR_ctor_inv {P : Fir.Program} {e be : String} {h : Heap F}
     (hnd : (objCtorNames P).Nodup)
-    {idx : Nat} {entry : CtorTableEntry} (hget : P.ctors[idx]? = some entry)
+    {idx : Nat} {entry : Lam.CtorInfo} (hget : P.ctors[idx]? = some entry)
     {v : Fir.Val} {ps : List (SourceValue F)}
     (hr : VR P e be h v (.construct e (ctorNameOf idx entry.key) ps)) :
     ∃ c fs, v = .ctor c fs ∧ c.key = entry.key ∧ fs.length = entry.arity ∧ VRs P e be h fs ps := by
@@ -1072,13 +1073,13 @@ theorem EnvRel.cons_fresh {P : Fir.Program} {h : Heap F} {vm : VarMap} {ρ : Fir
     · subst hyx
       simp only [List.lookup, beq_self_eq_true, Option.some.injEq] at hlook
       subst hlook
-      exact ⟨v, w, NatMap.get?_insert_self ρ y v, by simp, hvr⟩
+      exact ⟨v, w, Src.NatMap.get?_insert_self ρ y v, by simp, hvr⟩
     · have hbeq : (y == x) = false := beq_false_of_ne hyx
       simp only [List.lookup, hbeq] at hlook
       obtain ⟨vy, wy, hρ, hloc, hvry⟩ := hr.rel y ny hlook
       have hne : nx ≠ ny := fun heq => hfresh (heq ▸ lookup_mem_map_snd hlook)
       have hneB : (nx == ny) = false := beq_false_of_ne hne
-      exact ⟨vy, wy, by rw [NatMap.get?_insert_ne ρ v (Ne.symm hyx)]; exact hρ,
+      exact ⟨vy, wy, by rw [FirFacts.get?_insert_ne ρ v (Ne.symm hyx)]; exact hρ,
         by simp [hneB, hloc], hvry⟩
   bound nm hmem := by
     simp only [List.map_cons, List.mem_cons] at hmem
@@ -1257,12 +1258,12 @@ theorem EnvRel.bindAll_append {P : Fir.Program} {h : Heap F} :
               · subst hyx
                 simp only [List.lookup, beq_self_eq_true, Option.some.injEq] at hlook
                 subst hlook
-                exact ⟨v, w, NatMap.get?_insert_self ρ y v,
+                exact ⟨v, w, Src.NatMap.get?_insert_self ρ y v,
                   by rw [List.find?_append, hnoneBase]; simp, hvr⟩
               · have hbeq : (y == x) = false := beq_false_of_ne hyx
                 simp only [List.lookup, hbeq] at hlook
                 obtain ⟨vy, wy, hρ, hloc, hvry⟩ := henv.rel y ny hlook
-                exact ⟨vy, wy, by rw [NatMap.get?_insert_ne ρ v (Ne.symm hyx)]; exact hρ,
+                exact ⟨vy, wy, by rw [FirFacts.get?_insert_ne ρ v (Ne.symm hyx)]; exact hρ,
                   by rw [List.find?_append, hloc]; rfl, hvry⟩
             bound := fun nm hmem => by
               simp only [List.map_cons, List.mem_cons] at hmem
@@ -1908,7 +1909,7 @@ theorem eval_projE {P : Fir.Program} {world : World F} {d : Nat}
                 simp [loadValue, hatAddr, hvrWi.type_eq] at hload
                 subst hload
                 refine ⟨vi, ?_, hvrWi, Heap.Extends.refl _⟩
-                simp [projVal, Val.asCtor, hckey, hkey, hfsi, Result.ofOption]
+                simp [projVal, Val.asCtor, hckey, hkey, hfsi, Sem.Result.ofOption]
           · simp [hi, SourceSemantics.selectArm] at h1
       · -- Matched `natArm`
         dsimp only [natArm] at h2
@@ -1977,7 +1978,7 @@ theorem eval_projE {P : Fir.Program} {world : World F} {d : Nat}
                       Except.ok.injEq] at hsub
                     subst hsub
                     refine ⟨.lit (.nat m), ?_, .nat (by omega), Heap.Extends.refl _⟩
-                    simp [projVal, Val.asCtor, hsucc, Result.ofOption]
+                    simp [projVal, Val.asCtor, hsucc, Sem.Result.ofOption]
         · simp [hns, SourceSemantics.selectArm] at h2
   · simp only [hemp, ↓reduceIte] at ev
     exact False.elim (evalExprN_trap_elim ev)
@@ -2080,7 +2081,7 @@ theorem eval_prim {P : Fir.Program} {prog : Aiur.Generic.Program Nat} {world : W
         obtain ⟨n1, hn1, rfl, rfl⟩ := VR_N_inv hvr1
         obtain ⟨n2, hn2, rfl, rfl⟩ := VR_N_inv hvr2
         obtain ⟨hsum, rfl, rfl⟩ := pAdd_sound fc pw hn1 hn2 evFn
-        exact ⟨.lit (.nat (n1 + n2)), by simp [evalRhs, hvs, primResult, natArgs, Prim.sem],
+        exact ⟨.lit (.nat (n1 + n2)), by simp [evalRhs, hvs, primResult, natArgs],
           .nat hsum, ext1⟩
   | natSub =>
     simp only [primFun, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hprim
@@ -2095,7 +2096,7 @@ theorem eval_prim {P : Fir.Program} {prog : Aiur.Generic.Program Nat} {world : W
         obtain ⟨n1, hn1, rfl, rfl⟩ := VR_N_inv hvr1
         obtain ⟨n2, hn2, rfl, rfl⟩ := VR_N_inv hvr2
         obtain ⟨hres, rfl, rfl⟩ := pSub_sound fc pw hn1 hn2 evFn
-        exact ⟨.lit (.nat (n1 - n2)), by simp [evalRhs, hvs, primResult, natArgs, Prim.sem],
+        exact ⟨.lit (.nat (n1 - n2)), by simp [evalRhs, hvs, primResult, natArgs],
           .nat hres, ext1⟩
   | natMul =>
     simp only [primFun, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hprim
@@ -2110,7 +2111,7 @@ theorem eval_prim {P : Fir.Program} {prog : Aiur.Generic.Program Nat} {world : W
         obtain ⟨n1, hn1, rfl, rfl⟩ := VR_N_inv hvr1
         obtain ⟨n2, hn2, rfl, rfl⟩ := VR_N_inv hvr2
         obtain ⟨hres, rfl, rfl⟩ := pMul_sound fc pw hn1 hn2 evFn
-        exact ⟨.lit (.nat (n1 * n2)), by simp [evalRhs, hvs, primResult, natArgs, Prim.sem],
+        exact ⟨.lit (.nat (n1 * n2)), by simp [evalRhs, hvs, primResult, natArgs],
           .nat hres, ext1⟩
   | natDiv =>
     simp only [primFun, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hprim
@@ -2126,7 +2127,7 @@ theorem eval_prim {P : Fir.Program} {prog : Aiur.Generic.Program Nat} {world : W
         obtain ⟨n2, hn2, rfl, rfl⟩ := VR_N_inv hvr2
         obtain ⟨hres, rfl, rfl⟩ := pDiv_sound fc pw hn1 hn2 evFn
         exact ⟨.lit (.nat (if n2 == 0 then 0 else n1 / n2)),
-          by simp [evalRhs, hvs, primResult, natArgs, Prim.sem], .nat hres, ext1⟩
+          by simp [evalRhs, hvs, primResult, natArgs], .nat hres, ext1⟩
   | natMod =>
     simp only [primFun, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hprim
     obtain ⟨rfl, rfl⟩ := hprim
@@ -2141,7 +2142,7 @@ theorem eval_prim {P : Fir.Program} {prog : Aiur.Generic.Program Nat} {world : W
         obtain ⟨n2, hn2, rfl, rfl⟩ := VR_N_inv hvr2
         obtain ⟨hres, rfl, rfl⟩ := pMod_sound fc pw hn1 hn2 evFn
         exact ⟨.lit (.nat (if n2 == 0 then n1 else n1 % n2)),
-          by simp [evalRhs, hvs, primResult, natArgs, Prim.sem], .nat hres, ext1⟩
+          by simp [evalRhs, hvs, primResult, natArgs], .nat hres, ext1⟩
   | natPred =>
     simp only [primFun, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hprim
     obtain ⟨rfl, rfl⟩ := hprim
@@ -2152,7 +2153,7 @@ theorem eval_prim {P : Fir.Program} {prog : Aiur.Generic.Program Nat} {world : W
       obtain ⟨x1, rfl⟩ := pPred_only_nat pw evFn
       obtain ⟨n1, hn1, rfl, rfl⟩ := VR_N_inv hvr1
       obtain ⟨hres, rfl, rfl⟩ := pPred_sound fc pw hn1 evFn
-      exact ⟨.lit (.nat (n1 - 1)), by simp [evalRhs, hvs, primResult, natArgs, Prim.sem],
+      exact ⟨.lit (.nat (n1 - 1)), by simp [evalRhs, hvs, primResult, natArgs],
         .nat hres, ext1⟩
   | natLand =>
     simp only [primFun, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hprim
@@ -2167,7 +2168,7 @@ theorem eval_prim {P : Fir.Program} {prog : Aiur.Generic.Program Nat} {world : W
         obtain ⟨n1, hn1, rfl, rfl⟩ := VR_N_inv hvr1
         obtain ⟨n2, hn2, rfl, rfl⟩ := VR_N_inv hvr2
         obtain ⟨hres, rfl, rfl⟩ := pLand_sound fc pw hn1 hn2 evFn
-        exact ⟨.lit (.nat (n1 &&& n2)), by simp [evalRhs, hvs, primResult, natArgs, Prim.sem],
+        exact ⟨.lit (.nat (n1 &&& n2)), by simp [evalRhs, hvs, primResult, natArgs],
           .nat hres, ext1⟩
   | natLor =>
     simp only [primFun, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hprim
@@ -2182,7 +2183,7 @@ theorem eval_prim {P : Fir.Program} {prog : Aiur.Generic.Program Nat} {world : W
         obtain ⟨n1, hn1, rfl, rfl⟩ := VR_N_inv hvr1
         obtain ⟨n2, hn2, rfl, rfl⟩ := VR_N_inv hvr2
         obtain ⟨hres, rfl, rfl⟩ := pLor_sound fc pw hn1 hn2 evFn
-        exact ⟨.lit (.nat (n1 ||| n2)), by simp [evalRhs, hvs, primResult, natArgs, Prim.sem],
+        exact ⟨.lit (.nat (n1 ||| n2)), by simp [evalRhs, hvs, primResult, natArgs],
           .nat hres, ext1⟩
   | natXor =>
     simp only [primFun, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hprim
@@ -2197,7 +2198,7 @@ theorem eval_prim {P : Fir.Program} {prog : Aiur.Generic.Program Nat} {world : W
         obtain ⟨n1, hn1, rfl, rfl⟩ := VR_N_inv hvr1
         obtain ⟨n2, hn2, rfl, rfl⟩ := VR_N_inv hvr2
         obtain ⟨hres, rfl, rfl⟩ := pXor_sound fc pw hn1 hn2 evFn
-        exact ⟨.lit (.nat (n1 ^^^ n2)), by simp [evalRhs, hvs, primResult, natArgs, Prim.sem],
+        exact ⟨.lit (.nat (n1 ^^^ n2)), by simp [evalRhs, hvs, primResult, natArgs],
           .nat hres, ext1⟩
   | natBeq =>
     simp only [primFun, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hprim
@@ -2218,7 +2219,7 @@ theorem eval_prim {P : Fir.Program} {prog : Aiur.Generic.Program Nat} {world : W
           obtain ⟨n2, hn2, rfl, rfl⟩ := VR_N_inv hvr2
           obtain ⟨rfl, rfl⟩ := pBeq_sound fc pw hb hn1 hn2 evFn
           obtain ⟨vb, hvb, hvrB⟩ := eval_boolPrim_vr lw.ctors_keys_nodup hb (n1 == n2) h'
-          exact ⟨vb, by simp [evalRhs, hvs, primResult, natArgs, Prim.sem, hvb, Result.ofOption],
+          exact ⟨vb, by simp [evalRhs, hvs, primResult, natArgs, hvb, Sem.Result.ofOption],
             hvrB, ext1⟩
   | natBle =>
     simp only [primFun, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hprim
@@ -2239,7 +2240,7 @@ theorem eval_prim {P : Fir.Program} {prog : Aiur.Generic.Program Nat} {world : W
           obtain ⟨n2, hn2, rfl, rfl⟩ := VR_N_inv hvr2
           obtain ⟨rfl, rfl⟩ := pBle_sound fc pw hb hn1 hn2 evFn
           obtain ⟨vb, hvb, hvrB⟩ := eval_boolPrim_vr lw.ctors_keys_nodup hb (decide (n1 ≤ n2)) h'
-          exact ⟨vb, by simp [evalRhs, hvs, primResult, natArgs, Prim.sem, hvb, Result.ofOption],
+          exact ⟨vb, by simp [evalRhs, hvs, primResult, natArgs, hvb, Sem.Result.ofOption],
             hvrB, ext1⟩
   | natBlt =>
     simp only [primFun, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hprim
@@ -2260,9 +2261,9 @@ theorem eval_prim {P : Fir.Program} {prog : Aiur.Generic.Program Nat} {world : W
           obtain ⟨n2, hn2, rfl, rfl⟩ := VR_N_inv hvr2
           obtain ⟨rfl, rfl⟩ := pBlt_sound fc pw hb hn1 hn2 evFn
           obtain ⟨vb, hvb, hvrB⟩ := eval_boolPrim_vr lw.ctors_keys_nodup hb (decide (n1 < n2)) h'
-          exact ⟨vb, by simp [evalRhs, hvs, primResult, natArgs, Prim.sem, hvb, Result.ofOption],
+          exact ⟨vb, by simp [evalRhs, hvs, primResult, natArgs, hvb, Sem.Result.ofOption],
             hvrB, ext1⟩
-  | natPow | natGcd | natShl | natShr =>
+  | natPow | natGcd | natShl | natShr | word _ _ =>
     simp [primFun, throw, throwThe, MonadExceptOf.throw] at hprim
 
 end ExprSound
@@ -2332,7 +2333,7 @@ private theorem selectArm_ctorArms_miss {P : Fir.Program} {world : World F} {h :
 
 private theorem selectArm_ctorArms_ctor {P : Fir.Program} {world : World F} {h : Heap F}
     (hnd : (objCtorNames P).Nodup) (hkeys : (P.ctors.map (·.key)).Nodup)
-    {idx : Nat} {entry : CtorTableEntry} {ps : List (SourceValue F)}
+    {idx : Nat} {entry : Lam.CtorInfo} {ps : List (SourceValue F)}
     (atIdx : P.ctors[idx]? = some entry) (hlen : ps.length = entry.arity) :
     ∀ (xs : List (CtorKey × Lower.Expr)),
       SourceSemantics.selectArm world [] h (.construct objQName (ctorNameOf idx entry.key) ps)
@@ -2367,7 +2368,7 @@ private theorem selectArm_ctorArms_ctor {P : Fir.Program} {world : World F} {h :
         have hneName : ctorNameOf idx entry.key ≠ ctorNameOf idx' entry'.key := by
           intro heq
           obtain ⟨_, hentryEq⟩ := ctorNameOf_inj_of_nodup hnd atIdx hget' heq
-          exact hk (hkey'.symm.trans (congrArg CtorTableEntry.key hentryEq.symm))
+          exact hk (hkey'.symm.trans (congrArg Lam.CtorInfo.key hentryEq.symm))
         have hbne : (ctorNameOf idx entry.key != ctorNameOf idx' entry'.key) = true :=
           bne_iff_ne.mpr hneName
         simp only [List.map_cons, pC, SourceSemantics.selectArm, qualifyPatF, qualifyPat,
@@ -2490,7 +2491,7 @@ theorem eval_caseE {P : Fir.Program} {world : World F} {dDepth : Nat}
         fun g hg => hlifAlts g (hlifB g hg), henv', hjenv', evBe, ?_⟩
       intro kc
       rw [Fir.eval_case, hρx]
-      simp only [Result.ofOption, Result.bind_ok, hasCtor]
+      simp only [Sem.Result.ofOption, Sem.Result.bind_ok, hasCtor]
       exact hevAlts kc ρ J d
     | none =>
       rw [hf] at hbe
@@ -2509,7 +2510,7 @@ theorem eval_caseE {P : Fir.Program} {world : World F} {dDepth : Nat}
           hcodeD, hle1, fun _ hg => hg, henv', hjenv', evBe, ?_⟩
         intro kc
         rw [Fir.eval_case, hρx]
-        simp only [Result.ofOption, Result.bind_ok, hasCtor]
+        simp only [Sem.Result.ofOption, Sem.Result.bind_ok, hasCtor]
         exact hNone hf kc ρ J (some dc)
   -- Unfold `caseE` and invert outer `matchValue`
   unfold caseE at ev
@@ -2904,7 +2905,7 @@ theorem funSoundN_of_codeSound {P : Fir.Program} {prog : Aiur.Generic.Program Na
     hcode hlocVm hlocJ hwfLifted henv .nil evBody
   refine ⟨k + 1, v, ?_, hvr⟩
   rw [Fir.run_eq, Fir.evalCall_of P (k + 1) hfun]
-  simp [Fir.callFun, hvslen, Fir.later, heval]
+  simp [Fir.callFun, hvslen, Sem.later, heval]
 
 /-- Master induction: `CodeSoundAt P world d` holds for every call depth `d : Nat`. -/
 theorem eval_codeE_sound_N {P : Fir.Program} {prog : Aiur.Generic.Program Nat}
@@ -2980,10 +2981,10 @@ theorem eval_codeE_sound_N {P : Fir.Program} {prog : Aiur.Generic.Program Nat}
                       hk hlocVm' hlocJ' hLifted henv' hjenv' evK
                     refine ⟨max k1 k2, v2, ?_, hvr2⟩
                     rw [Fir.eval_bindCall, hvs]
-                    simp only [Result.ofOption, Result.bind_ok]
-                    rw [Fir.evalCall_mono P hrun1 (Nat.le_max_left k1 k2)]
-                    simp only [Result.bind_ok]
-                    exact Fir.eval_mono P heval2 (Nat.le_max_right k1 k2)
+                    simp only [Sem.Result.ofOption, Sem.Result.bind_ok]
+                    rw [FirFacts.evalCall_mono P hrun1 (Nat.le_max_left k1 k2)]
+                    simp only [Sem.Result.bind_ok]
+                    exact FirFacts.eval_mono P heval2 (Nat.le_max_right k1 k2)
                 · have hbeq : (as.length == fd.params.length) = false := beq_false_of_ne hlen
                   simp [hbeq, bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at hrhs
               · simp [hsz, bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at hrhs
@@ -2996,7 +2997,7 @@ theorem eval_codeE_sound_N {P : Fir.Program} {prog : Aiur.Generic.Program Nat}
               hk hlocVm' hlocJ' hLifted henv' hjenv' evK
             refine ⟨k2, v2, ?_, hvr2⟩
             rw [Fir.eval_bindRhs P k2 ρ J x (.arg a) k (by intro _ _ h; cases h)]
-            simp [Fir.evalRhs, hv1, Result.ofOption, heval2]
+            simp [Fir.evalRhs, hv1, Sem.Result.ofOption, heval2]
           | ctor ci as =>
             unfold rhsE at hrhs
             cases hc : (Cx.mk P).ctorEntry? ci.key with
@@ -3069,7 +3070,7 @@ theorem eval_codeE_sound_N {P : Fir.Program} {prog : Aiur.Generic.Program Nat}
                 hk hlocVm' hlocJ' hLifted henv' hjenv' evK
               refine ⟨k2, v2, ?_, hvr2⟩
               rw [Fir.eval_bindRhs P k2 ρ J x (.proj y ck idx) k (by intro _ _ h; cases h)]
-              simp [Fir.evalRhs, hρy, hproj, heval2]
+              simp [Fir.evalRhs_proj, Sem.Result.ofOption, hρy, hproj, heval2]
           | prim op as =>
             unfold rhsE at hrhs
             cases hpf : primFun op with
@@ -3250,11 +3251,11 @@ theorem eval_codeE_sound_N {P : Fir.Program} {prog : Aiur.Generic.Program Nat}
             hjsound d' hd' hm ext1 vs argWs r h' hrel hvslen hcal
           refine ⟨k1 + 1, v1, ?_, hvr1⟩
           rw [Fir.eval_jmp, hlookJ, hvs]
-          simp only [Result.ofOption, Result.bind_ok, Fir.jumpTo, hvslen, ↓reduceIte]
+          simp only [Sem.Result.ofOption, Sem.Result.bind_ok, Fir.jumpTo, hvslen, ↓reduceIte]
           cases je.charged
           · simp only [Bool.false_eq_true, ↓reduceIte]
-            exact Fir.eval_mono P heval1 (Nat.le_succ k1)
-          · simp [Fir.later, heval1]
+            exact FirFacts.eval_mono P heval1 (Nat.le_succ k1)
+          · simp [Sem.later, heval1]
         | case x alts dOpt =>
           obtain ⟨nx, altEs, st1, dE, hlook, halts, hdOpt, rfl⟩ := codeE_case_inv hcode
           obtain ⟨b, stA, stB, be, locals', hbSize, hbCode, hleA, hlifB, henv', hjenv', evBe, hcaseEq⟩ :=
@@ -3268,7 +3269,7 @@ theorem eval_codeE_sound_N {P : Fir.Program} {prog : Aiur.Generic.Program Nat}
         | ret a =>
           obtain ⟨ha, rfl⟩ := codeE_ret_inv hcode
           obtain ⟨v1, hv1, hvr1, _⟩ := eval_argE ha henv ev
-          exact ⟨0, v1, by simp [Fir.eval_ret, hv1, Result.ofOption], hvr1⟩
+          exact ⟨0, v1, by simp [Fir.eval_ret, hv1, Sem.Result.ofOption], hvr1⟩
         | tcall f as =>
           obtain ⟨fd, argEs, hfun, hsz, hlen, hargs, rfl, rfl⟩ := codeE_tcall_inv hcode
           simp only [callE, qualifyExprF, qualifyExpr, qualifyName_funName, Option.map_some,
@@ -3547,4 +3548,4 @@ theorem lowered_circuit_sound_goldilocks {P : Fir.Program} {prog : Aiur.Generic.
 
 end Headline
 
-end Ix.Cert.IxccAiur.Backward
+end IxCC.AiurBackend.Backward

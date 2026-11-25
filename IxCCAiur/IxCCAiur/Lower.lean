@@ -1,14 +1,15 @@
-import Ix.Cert.IxccAiur.Fir
+import IxCCAiur.FirFacts
 import Aiur.Modules
 import Aiur.Library.U64
 import Aiur.HeapMono
 
 /-! # `Fir → Formal Aiur` Lowering
 
-Lowers a `Fir.Program` (standalone formal model of IxCC's first-order IR; not yet
-wired to the production `Ix.Compile` / `ixcc` emitter or `Aiur.Modules.prepare`)
-to a Formal Aiur module (`Prog`) linking with `Aiur.Library.U64.source`. Extends
-the Phase-1 spike with:
+Lowers the compiler's own `IxCC.Fir.Program` (the program `Fir.lower` makes, before
+ownership and reference counting; `IxCC.Recheck.runFir`) to a Formal Aiur module
+(`Prog`) linking with `Aiur.Library.U64.source`. Not yet run through
+`Aiur.Modules.prepare`: the world hypothesis `Backward.LoweredWorld` is still to
+be discharged for a lowered program. Covers:
 - **Closure constructors (`CtorKey.clo`)** alongside source constructors
   (`CtorKey.src`), indexed injectively into `Obj` (`C<idx>` / `K<idx>`).
 - **String / UTF-8 byte literals (`Lit.str`)** via a linked `Bytes` enum
@@ -18,17 +19,21 @@ the Phase-1 spike with:
   to top-level Aiur functions `j<fid>_<uid>` in `Prog`.
 - **12 of 16 `Nat` primitive helpers** (`p_add`, `p_sub`, `p_mul`, `divmod`,
   `p_div`, `p_mod`, `p_pred`, `p_land`, `p_lor`, `p_xor`, `p_beq`, `p_ble`,
-  `p_blt`); the remaining 4 `Fir.Prim` operations (`natPow`, `natGcd`,
-  `natShl`, `natShr`) are not yet lowered and return `.error` (`primFun` throws
-  `"not supported"`).
+  `p_blt`); the remaining 4 `Nat` operations (`natPow`, `natGcd`, `natShl`,
+  `natShr`) and every fixed-width word operation (`Lam.Prim.word`) are not yet
+  lowered and return `.error` (`primFun` throws `"not supported"`).
+- `Fir.Fun`'s modes (`result`, `contracts`, `letContracts`) and the parameters'
+  `Rep` are not read: `Fir.eval` does not read them either.
 - **Explicit linked/elaborated image (`qualifyExprF`)** and structural plainness
   + freshness invariants consumed by `Gadgets.lean` and `Backward.lean`.
 
 Zero `sorry`, zero `native_decide`, zero `bv_decide`. -/
 
-namespace Ix.Cert.IxccAiur.Lower
+namespace IxCC.AiurBackend.Lower
 
-open Fir
+open IxCC.Fir
+open IxCC.Key
+open IxCC.Lam (Lit Prim)
 
 abbrev Ty := Aiur.Generic.Ty
 abbrev Expr := Aiur.Generic.Expr Nat
@@ -153,11 +158,11 @@ theorem localName_ne_q (n : Nat) : localName n ≠ "q" := by
 
 /-! ## Constructor Table Lookups and Distinctness -/
 
-def ctorEntryAux : Nat → List CtorTableEntry → CtorKey → Option (Nat × CtorTableEntry)
+def ctorEntryAux : Nat → List Lam.CtorInfo → CtorKey → Option (Nat × Lam.CtorInfo)
   | _, [], _ => none
   | idx, e :: rest, k => if e.key == k then some (idx, e) else ctorEntryAux (idx + 1) rest k
 
-def ctorEntry? (P : Program) (k : CtorKey) : Option (Nat × CtorTableEntry) :=
+def ctorEntry? (P : Program) (k : CtorKey) : Option (Nat × Lam.CtorInfo) :=
   ctorEntryAux 0 P.ctors k
 
 /-- Constructor names generated for `P.ctors`, in table order. -/
@@ -177,7 +182,7 @@ theorem allDistinct_iff_nodup [DecidableEq α] : ∀ (l : List α), allDistinct 
       List.nodup_cons, allDistinct_iff_nodup xs]
 
 theorem ctorEntryAux_sound :
-    ∀ (base : Nat) (l : List CtorTableEntry) (k : CtorKey) (idx : Nat) (e : CtorTableEntry),
+    ∀ (base : Nat) (l : List Lam.CtorInfo) (k : CtorKey) (idx : Nat) (e : Lam.CtorInfo),
       ctorEntryAux base l k = some (idx, e) →
       base ≤ idx ∧ l[idx - base]? = some e ∧ e.key = k
   | _, [], _, _, _, h => by simp [ctorEntryAux] at h
@@ -194,14 +199,14 @@ theorem ctorEntryAux_sound :
       rw [hsub]
       simpa using hget
 
-theorem ctorEntry?_sound {P : Program} {k : CtorKey} {idx : Nat} {e : CtorTableEntry}
+theorem ctorEntry?_sound {P : Program} {k : CtorKey} {idx : Nat} {e : Lam.CtorInfo}
     (h : ctorEntry? P k = some (idx, e)) :
     P.ctors[idx]? = some e ∧ e.key = k := by
   obtain ⟨_, hget, heq⟩ := ctorEntryAux_sound 0 P.ctors k idx e h
   simpa using ⟨hget, heq⟩
 
 theorem ctorEntryAux_complete :
-    ∀ (base : Nat) (l : List CtorTableEntry) (k : CtorKey) (j : Nat) (e : CtorTableEntry),
+    ∀ (base : Nat) (l : List Lam.CtorInfo) (k : CtorKey) (j : Nat) (e : Lam.CtorInfo),
       (l.map (·.key)).Nodup → l[j]? = some e → e.key = k →
       ctorEntryAux base l k = some (base + j, e)
   | _, [], _, _, _, _, hget, _ => by simp at hget
@@ -223,17 +228,17 @@ theorem ctorEntryAux_complete :
     have ih := ctorEntryAux_complete (base + 1) xs k j e hnd.2 hget hk
     simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using ih
 
-theorem ctorEntry?_complete {P : Program} {idx : Nat} {e : CtorTableEntry}
+theorem ctorEntry?_complete {P : Program} {idx : Nat} {e : Lam.CtorInfo}
     (hnd : (P.ctors.map (·.key)).Nodup) (hget : P.ctors[idx]? = some e) :
     ctorEntry? P e.key = some (idx, e) := by
   simpa [ctorEntry?] using ctorEntryAux_complete 0 P.ctors e.key idx e hnd hget rfl
 
-theorem ctorEntry?_find? {P : Program} {k : CtorKey} {idx : Nat} {e : CtorTableEntry}
+theorem ctorEntry?_find? {P : Program} {k : CtorKey} {idx : Nat} {e : Lam.CtorInfo}
     (hnd : (P.ctors.map (·.key)).Nodup) (h : ctorEntry? P k = some (idx, e)) :
     P.ctors.find? (·.key == k) = some e := by
   obtain ⟨hget, hk⟩ := ctorEntry?_sound h
-  have aux : ∀ (l : List CtorTableEntry), (l.map (·.key)).Nodup →
-      ∀ (j : Nat) (e : CtorTableEntry), l[j]? = some e → e.key = k →
+  have aux : ∀ (l : List Lam.CtorInfo), (l.map (·.key)).Nodup →
+      ∀ (j : Nat) (e : Lam.CtorInfo), l[j]? = some e → e.key = k →
       l.find? (·.key == k) = some e := by
     intro l
     induction l with
@@ -258,7 +263,7 @@ theorem ctorEntry?_find? {P : Program} {k : CtorKey} {idx : Nat} {e : CtorTableE
         exact ih hnd.2 j' e hget hk
   exact aux P.ctors hnd idx e hget hk
 
-theorem objCtorNames_getElem? (P : Program) {idx : Nat} {e : CtorTableEntry}
+theorem objCtorNames_getElem? (P : Program) {idx : Nat} {e : Lam.CtorInfo}
     (hget : P.ctors[idx]? = some e) :
     (objCtorNames P)[idx]? = some (ctorNameOf idx e.key) := by
   have hlt : idx < P.ctors.length := (List.getElem?_eq_some_iff.mp hget).1
@@ -268,7 +273,7 @@ theorem objCtorNames_getElem? (P : Program) {idx : Nat} {e : CtorTableEntry}
   simp [hlt, heq]
 
 theorem ctorNameOf_inj_of_nodup {P : Program} (hnd : (objCtorNames P).Nodup)
-    {i j : Nat} {ei ej : CtorTableEntry}
+    {i j : Nat} {ei ej : Lam.CtorInfo}
     (hi : P.ctors[i]? = some ei) (hj : P.ctors[j]? = some ej)
     (heq : ctorNameOf i ei.key = ctorNameOf j ej.key) :
     i = j ∧ ei = ej := by
@@ -409,7 +414,7 @@ def isBoolPrim : Prim → Bool
 structure Cx where
   P : Program
 
-def Cx.ctorEntry? (cx : Cx) (k : CtorKey) : Option (Nat × CtorTableEntry) :=
+def Cx.ctorEntry? (cx : Cx) (k : CtorKey) : Option (Nat × Lam.CtorInfo) :=
   Lower.ctorEntry? cx.P k
 
 def Cx.arity? (cx : Cx) (k : CtorKey) : Option Nat :=
@@ -1708,4 +1713,4 @@ theorem isPlainExpr_funE {cx : Cx} {fid : FunId} {fd : Fun} {fns : List Fn}
   · exact hbp
   · exact hlif g hmem
 
-end Ix.Cert.IxccAiur.Lower
+end IxCC.AiurBackend.Lower

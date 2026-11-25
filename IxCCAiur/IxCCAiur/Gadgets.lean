@@ -1,4 +1,4 @@
-import Ix.Cert.IxccAiur.Lower
+import IxCCAiur.Lower
 import Aiur.Library.U64.Correctness
 import Aiur.Library.U32.Goldilocks
 import Aiur.Generic.SourceSemantics
@@ -22,10 +22,11 @@ for:
 
 Zero `sorry`, zero `native_decide`, zero `bv_decide`. -/
 
-namespace Ix.Cert.IxccAiur.Gadgets
+namespace IxCC.AiurBackend.Gadgets
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics Aiur.Library
-open Ix.Cert.IxccAiur.Fir Ix.Cert.IxccAiur.Lower
+open IxCC.Fir IxCC.Key IxCC.AiurBackend.Lower
+open IxCC.Lam (Lit Prim)
 
 /-! ## Field Compatibility (`< 2^57`) -/
 
@@ -2897,4 +2898,4 @@ theorem PrimHelpersWorld.ofFunctions (u64 : U64Contracts world)
 
 end PrimHelpers
 
-end Ix.Cert.IxccAiur.Gadgets
+end IxCC.AiurBackend.Gadgets

@@ -359,14 +359,14 @@ def runSelfTests : IO Unit := do
   let sample1 :=
     "import IxC.Kernel.Core\n\
      import IxCC.Src.Syntax\n\
-     import Ix.Cert.IxccAiur.Fir\n\
+     import IxCCAiur.Lower\n\
      def opSIxC_sim := opSIxC + genIxConstantVal + IxCompileVerify + IxCertified\n\
      let x := \"foo.ixc\" ++ \"IXC\" ++ \"IxC/Kernel/Core.lean\"\n\
      IO.println s!\"IV\\tLean={a}\\tIxC={b}\\tIxVM={c}\"\n"
   let want1 :=
     "import IxCK.Kernel.Core\n\
      import IxCC.Src.Syntax\n\
-     import Ix.Cert.IxccAiur.Fir\n\
+     import IxCCAiur.Lower\n\
      def opSIxC_sim := opSIxC + genIxConstantVal + IxCompileVerify + IxCertified\n\
      let x := \"foo.ixc\" ++ \"IXC\" ++ \"IxCK/Kernel/Core.lean\"\n\
      IO.println s!\"IV\\tLean={a}\\tIxCK={b}\\tIxVM={c}\"\n"

@@ -500,6 +500,7 @@ import IxCC.Src.Table.Cert
 import IxCC.Recheck
 import IxCC.Recheck.RootArity
 import IxCC.Recheck.Proof.Front
+import IxCC.Recheck.Proof.RunFir
 import IxCC.Recheck.Proof.Sound
 import IxCC.Recheck.Linked
 import IxCC.Recheck.Rc.Produce

@@ -1225,7 +1225,6 @@ jobs:
             Ix.Cert.MultiStark.Audit Ix.Cert.MultiStarkRefinement.Audit \
             Ix.Cert.Aggr.Audit Ix.Cert.Aggr.MonolithicRom Ix.Cert.Compression.Audit \
             Ix.Cert.Compression.Bls12381.Audit Ix.Cert.Compression.StarkShrinkerAudit \
-            Ix.Cert.IxccAiur.Audit \
             Ix.Cert.MultiStark.Security128Audit Ix.Cert.Aggr.Security128Audit \
             Ix.Cert.Compression.Security128Audit Ix.Cert.Security128ClosureManifest \
             Ix.Cert.RecordSectionsBridge
@@ -1255,7 +1254,6 @@ jobs:
               Ix.Cert.Compression.Audit \
               Ix.Cert.Compression.Bls12381.Audit \
               Ix.Cert.Compression.StarkShrinkerAudit \
-              Ix.Cert.IxccAiur.Audit \
               Ix.Cert.MultiStark.Security128Audit \
               Ix.Cert.Aggr.Security128Audit \
               Ix.Cert.Compression.Security128Audit \
