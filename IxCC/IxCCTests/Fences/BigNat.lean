@@ -5,11 +5,11 @@ import IxCC.BigNat.Proof.NatPrim
 import IxCC.BigNat.Proof.Legacy
 
 /-! Exact Layer-1 axiom fences for the pure-Lean formally verified `IxCC.BigNat`
-library (166 theorems across `LimbOps`, `Basic`, `Linear`, `Toom3`, `Mul`, `InvDiv`,
-`Div`, `Lehmer`, and `GcdConv`), for the two representation primitives of
-arbitrary-precision `Nat` (`IxCC.Nat.Rep`, 53 theorems: the specification over limb lists,
+library (168 theorems across `LimbOps`, `Basic`, `Linear`, `Toom3`, `Mul`, `InvDiv`,
+`Div`, `Lehmer`, `GcdConv` and `Decimal`), for the two representation primitives of
+arbitrary-precision `Nat` (`IxCC.Nat.Rep`, 54 theorems: the specification over limb lists,
 `limbsBijection`, `toLimbs`, `ofLimbs` and their canonical equations), for the library's
-entries over `Nat` (`IxCC.BigNat.Proof.NatEntry`, 36 theorems: the adapter layer, one
+entries over `Nat` (`IxCC.BigNat.Proof.NatEntry`, 38 theorems: the adapter layer, one
 equation per entry, `spec`), for the contract indexed by the evaluators' primitives
 (`IxCC.BigNat.Proof.NatPrim`, 7 theorems) and for the `SlowNat` entries as wrappers of the
 entries over `Nat` (`IxCC.BigNat.Proof.Legacy`, 29 theorems, to be removed with them).
@@ -534,7 +534,15 @@ Expected messages are preserved verbatim. -/
 /-- info: 'IxCC.BigNat.ofDecimal_toDecimal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.BigNat.ofDecimal_toDecimal
 
-/-! ### Representation primitives `toLimbs` / `ofLimbs` (`IxCC.Nat.Rep`, 53 fences) -/
+/-! ### Decimal conversion as `Nat.repr` and `Nat.ofDigitChars` (`IxCC.BigNat.Proof.Decimal`, 2 fences) -/
+
+/-- info: 'IxCC.BigNat.toDecimal_eq_repr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toDecimal_eq_repr
+
+/-- info: 'IxCC.BigNat.toNat_ofDecimal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.toNat_ofDecimal
+
+/-! ### Representation primitives `toLimbs` / `ofLimbs` (`IxCC.Nat.Rep`, 54 fences) -/
 
 /-- info: 'IxCC.NatRep.limbBase_eq' does not depend on any axioms -/
 #guard_msgs in #print axioms IxCC.NatRep.limbBase_eq
@@ -686,6 +694,9 @@ Expected messages are preserved verbatim. -/
 /-- info: 'IxCC.NatRep.pow_size_toLimbs_le' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.NatRep.pow_size_toLimbs_le
 
+/-- info: 'IxCC.NatRep.size_toLimbs_le_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.NatRep.size_toLimbs_le_iff
+
 /-- info: 'IxCC.NatRep.toLimbs_eqn' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.NatRep.toLimbs_eqn
 
@@ -695,7 +706,7 @@ Expected messages are preserved verbatim. -/
 /-- info: 'IxCC.NatRep.ofLimbs_cons_eqn' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.NatRep.ofLimbs_cons_eqn
 
-/-! ### Entries over `Nat` (`IxCC.BigNat.Proof.NatEntry`, 36 fences) -/
+/-! ### Entries over `Nat` (`IxCC.BigNat.Proof.NatEntry`, 38 fences) -/
 
 /-- info: 'IxCC.BigNat.NatEntry.getLimb_mk_cons_zero' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.BigNat.NatEntry.getLimb_mk_cons_zero
@@ -798,6 +809,12 @@ Expected messages are preserved verbatim. -/
 
 /-- info: 'IxCC.BigNat.NatEntry.log2_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.BigNat.NatEntry.log2_eq
+
+/-- info: 'IxCC.BigNat.NatEntry.toDecimal_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.NatEntry.toDecimal_eq
+
+/-- info: 'IxCC.BigNat.NatEntry.ofDecimal_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.BigNat.NatEntry.ofDecimal_eq
 
 /-- info: 'IxCC.BigNat.NatEntry.ofDecimal_toDecimal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.BigNat.NatEntry.ofDecimal_toDecimal

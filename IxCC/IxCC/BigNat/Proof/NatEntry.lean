@@ -10,8 +10,11 @@ Design note: `plans/ONE-PIPELINE.md`, sections 4.3 and 4.6.
    `BigNat.toNat (toLimbs n) = n`, `BigNat.WF (toLimbs n)`, and the library's normal form `WF`
    is the specification's `CanonicalLimbs`.
 2. **One equation per entry**: the entry is the `Nat` operation, for all arguments, with no
-   side condition (`add_eq`, ..., `log2_eq`). Each is a corollary of the limb-level theorem of
-   the library (`toNat_add`, ...), whose statement is unchanged, and of the adapter layer.
+   side condition (`add_eq`, ..., `log2_eq`, `toDecimal_eq` with `toString`). Each is a
+   corollary of the limb-level theorem of the library (`toNat_add`, ..., `toDecimal_eq_repr`),
+   whose statement is unchanged, and of the adapter layer. The one partial entry, `ofDecimal`,
+   is `Nat.ofDigitChars` under its side condition (a non-empty string of ASCII digits) and
+   `none` otherwise (`ofDecimal_eq`).
 3. **The equations collected** (`Spec`, proved by `spec`): the contract of the library as a
    proposition about Lean functions over `Nat`. The design's `NatLib.Spec` is this contract
    about the compiled image of these same functions at `Fir`'s evaluator; it stays a named
@@ -217,6 +220,23 @@ theorem log2_eq (a : Nat) : log2 a = Nat.log2 a := by
   unfold log2
   rw [log2_spec (wf_toLimbs a), toNat_toLimbs]
 
+/-- **`toDecimal` is `toString`** (`Nat.repr`): the decimal digits, most significant first, with
+no leading zero, `"0"` for `0`. -/
+theorem toDecimal_eq (a : Nat) : toDecimal a = toString a :=
+  (IxCC.BigNat.toDecimal_eq_repr (toLimbs a)).trans (congrArg Nat.repr (toNat_toLimbs a))
+
+/-- **`ofDecimal` is `Nat.ofDigitChars`** on a non-empty string of ASCII digits, the side
+condition under which it answers; on any other string it is `none`. (`String.toNat?` differs:
+it also accepts `_` separators.) -/
+theorem ofDecimal_eq (s : String) :
+    ofDecimal s =
+      if (s.toList.all Char.isDigit && !s.toList.isEmpty) then
+        some (Nat.ofDigitChars 10 s.toList 0)
+      else none := by
+  unfold ofDecimal
+  rw [show ofLimbs = toNat from funext ofLimbs_eq_toNat]
+  exact IxCC.BigNat.toNat_ofDecimal s
+
 /-- Parsing the digits of a natural gives the natural back. -/
 theorem ofDecimal_toDecimal (a : Nat) : ofDecimal (toDecimal a) = some a := by
   unfold ofDecimal toDecimal
@@ -226,7 +246,8 @@ theorem ofDecimal_toDecimal (a : Nat) : ofDecimal (toDecimal a) = some a := by
 /-! ## The equations, collected -/
 
 /-- **The contract of the `Nat` library, about its Lean functions**: every entry is the `Nat`
-operation it is the slow path of, on all arguments. No limb, cell or tag occurs in it. -/
+operation it is the slow path of, on all arguments (`ofDecimal`: on the strings where it
+answers, and it answers exactly on those). No limb, cell or tag occurs in it. -/
 structure Spec : Prop where
   add : ∀ a b : Nat, NatEntry.add a b = a + b
   sub : ∀ a b : Nat, NatEntry.sub a b = a - b
@@ -246,6 +267,11 @@ structure Spec : Prop where
   shiftLeft : ∀ a s : Nat, NatEntry.shiftLeft a s = a <<< s
   shiftRight : ∀ a s : Nat, NatEntry.shiftRight a s = a >>> s
   log2 : ∀ a : Nat, NatEntry.log2 a = Nat.log2 a
+  toDecimal : ∀ a : Nat, NatEntry.toDecimal a = toString a
+  ofDecimal : ∀ s : String, NatEntry.ofDecimal s =
+    if (s.toList.all Char.isDigit && !s.toList.isEmpty) then
+      some (Nat.ofDigitChars 10 s.toList 0)
+    else none
   decimal : ∀ a : Nat, NatEntry.ofDecimal (NatEntry.toDecimal a) = some a
 
 /-- **The contract holds.** -/
@@ -268,6 +294,8 @@ theorem spec : Spec where
   shiftLeft := shiftLeft_eq
   shiftRight := shiftRight_eq
   log2 := log2_eq
+  toDecimal := toDecimal_eq
+  ofDecimal := ofDecimal_eq
   decimal := ofDecimal_toDecimal
 
 end IxCC.BigNat.NatEntry

@@ -431,6 +431,25 @@ theorem pow_size_toLimbs_le {n : Nat} (h : n ≠ 0) : limbBase ^ ((toLimbs n).si
   rw [← ofLimbs_spec, ofLimbs_toLimbs, List.length_map] at h1
   exact h1
 
+/-- **The limb count of a natural, from its value**: `toLimbs n` has at most `k` limbs exactly
+when `n < 2^(64 k)`. So a bound on the value of an operand or a result is a bound on the size of
+its limb array (and of the loops over it). -/
+theorem size_toLimbs_le_iff (n k : Nat) : (toLimbs n).size ≤ k ↔ n < limbBase ^ k := by
+  constructor
+  · intro h
+    exact Nat.lt_of_lt_of_le (lt_pow_size_toLimbs n) (Nat.pow_le_pow_right limbBase_pos h)
+  · intro h
+    apply Nat.le_of_not_lt
+    intro hlt
+    have hn : n ≠ 0 := by
+      intro h0
+      rw [h0, toLimbs_zero] at hlt
+      exact Nat.not_lt_zero k hlt
+    have h1 := pow_size_toLimbs_le hn
+    have h2 : limbBase ^ k ≤ limbBase ^ ((toLimbs n).size - 1) :=
+      Nat.pow_le_pow_right limbBase_pos (by omega)
+    omega
+
 /-! ## The canonical equations
 
 The statements a table entry for each primitive checks, written as the table writes them
