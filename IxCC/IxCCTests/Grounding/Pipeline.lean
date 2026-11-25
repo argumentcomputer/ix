@@ -4,6 +4,7 @@ import IxCCCorrect.GroundCheck
 import IxCCCorrect.GroundShape
 import IxCCCorrect.Unique
 import IxCCCorrect.UniqueIota
+import IxCCCorrect.UniqueNat
 
 /-! # `tests-grounding pipeline`: the pipeline's grounding check on every committed root
 
@@ -215,8 +216,8 @@ def run : IO Bool := do
         let sepW := match ne with
           | some kNe => numeralBasisB env kNe
           | none => false
-        let sep := sepW || numeralBasisIB env
-        let parts := s!"nat {IxCC.Grounding.natBasisB env}, bool {IxCC.Grounding.boolBasisB env}, Nat.beq {IxCC.Grounding.natBeqStoredB env}, litDefs {IxCC.Grounding.litDefsB env}, Bool.rec {boolRecB env}"
+        let sep := sepW || numeralBasisIB env || numeralBasisNB env
+        let parts := s!"nat {IxCC.Grounding.natBasisB env}, bool {IxCC.Grounding.boolBasisB env}, Nat.beq {IxCC.Grounding.natBeqStoredB env}, litDefs {IxCC.Grounding.litDefsB env}, Bool.rec {boolRecB env}, Nat.rec {natRecB env}"
         if ne.isSome || (neKeyRev? env).isSome then
           witnessed := witnessed ++ [s!"{label} (true≠false: {ne.isSome}, false≠true: {(neKeyRev? env).isSome})"]
         IO.println s!"{label}: {ld.src.roots.length} roots, {ld.mode}, numerals separated: {sep} ({parts})"
