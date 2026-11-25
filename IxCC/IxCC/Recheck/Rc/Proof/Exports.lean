@@ -33,7 +33,7 @@ private theorem assembled_function {original : Rt.Lowered} {layout : Layout}
       some function.splitCriticalEdges := by
   have actual : original.program.funcs[f]? = some function.splitCriticalEdges := by
     rw [program]
-    simp [Lir.Program.splitCriticalEdges, lookup]
+    simp [Lir.Program.splitCriticalEdges_eq, lookup]
   exact (Cfg.Rc.Public.Spec.assemble_existing original layout
     (Array.getElem?_eq_some_iff.mp actual).1).trans actual
 
@@ -99,7 +99,7 @@ theorem public_root {config : Rt.Config} {F : Fir.Program}
   · change fn ≠ original.program.funcs.size
     have splitLookup : original.program.funcs[fn]? =
         some (Cfg.Rc.Inline.inlineFunc (layoutOf P) function).splitCriticalEdges := by
-      rw [program]; simp [Lir.Program.splitCriticalEdges, inlFn]
+      rw [program]; simp [Lir.Program.splitCriticalEdges_eq, inlFn]
     exact Nat.ne_of_lt (Array.getElem?_eq_some_iff.mp splitLookup).1
 
 theorem public_init {config : Rt.Config} {F : Fir.Program}
@@ -137,7 +137,7 @@ theorem public_init {config : Rt.Config} {F : Fir.Program}
   · exact congrArg List.length (Rt.Proof.split_params_conv Rt.Procs.cxInit).1
   · change original.init ≠ original.program.funcs.size
     have splitLookup : original.program.funcs[(layoutOf P).init]? = some Rt.Procs.cxInit.splitCriticalEdges := by
-      rw [program]; simp [Lir.Program.splitCriticalEdges, inlInit]
+      rw [program]; simp [Lir.Program.splitCriticalEdges_eq, inlInit]
     rw [init]
     exact Nat.ne_of_lt (Array.getElem?_eq_some_iff.mp splitLookup).1
 

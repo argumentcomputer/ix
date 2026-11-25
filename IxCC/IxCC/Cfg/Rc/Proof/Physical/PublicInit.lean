@@ -31,7 +31,7 @@ theorem accepted_init {config : Rt.Config} {F : Fir.Program}
         FastDec.install_get_ne _ _ hneDec, InlineWrappers.inlineProgram_get_le hle,
         Prune.pruneUnusedReuse_get_le hle, Inline.inlineProgram_get_ge _ _ hge]
       exact raw_init (l := layoutOf P) (funcs := funcs) length main
-    simp only [Lir.Program.splitCriticalEdges, Array.getElem?_map, hinl, Option.map_some, cxInit_split]
+    simp only [Lir.Program.splitCriticalEdges_eq, Array.getElem?_map, hinl, Option.map_some, cxInit_split]
   exact (assemble_existing original (layoutOf P) (Array.getElem?_eq_some_iff.mp lookup).1).trans lookup
 
 theorem initialize_heap {config : Rt.Config} {F : Fir.Program}

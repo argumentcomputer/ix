@@ -2666,7 +2666,7 @@ private theorem list_sum_map_le {α : Type} (f g : α → Nat) (h : ∀ x, f x �
 
 theorem program_size_le_split (p : Lir.Program) : p.size ≤ p.splitCriticalEdges.size := by
   rw [program_size_eq_sum, program_size_eq_sum]
-  simp only [Lir.Program.splitCriticalEdges, Array.toList_map, List.map_map]
+  simp only [Lir.Program.splitCriticalEdges_eq, Array.toList_map, List.map_map]
   exact list_sum_map_le Lir.Func.size (Lir.Func.size ∘ Lir.Func.splitCriticalEdges)
     func_size_le_split p.funcs.toList
 

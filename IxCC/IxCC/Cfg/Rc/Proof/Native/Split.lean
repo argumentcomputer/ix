@@ -23,7 +23,7 @@ theorem program_split (p : Lir.Program) :
   funcs := by
     intro g F hf
     refine ⟨F.splitCriticalEdges, ?_, ?_⟩
-    · simp [Lir.Program.splitCriticalEdges, hf]
+    · simp [Lir.Program.splitCriticalEdges_eq, hf]
     · simpa [labels, hf] using Lir.split_sim F
 
 theorem drop_split (callee : Nat) :
@@ -42,7 +42,7 @@ theorem assemble_split {original : Rt.Lowered} {l : Native.Layout}
     {funcs : List Lir.Func} {main : Nat}
     (hp : original.program = (inlinedProgram l funcs main).splitCriticalEdges) :
     (assemble original l).runtime.program = (inlinedPublicProgram l funcs main).splitCriticalEdges := by
-  simp [assemble, inlinedPublicProgram, hp, Lir.Program.splitCriticalEdges, Array.map_push, drop_split]
+  simp [assemble, inlinedPublicProgram, hp, Lir.Program.splitCriticalEdges_eq, Array.map_push, drop_split]
 
 def postDecPublicProgram (l : Native.Layout) (funcs : List Lir.Func) (main : Nat) : Lir.Program :=
   FastDec.install l (InlineWrappers.inlineProgram l

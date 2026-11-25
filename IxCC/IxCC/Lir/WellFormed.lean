@@ -100,6 +100,23 @@ def checkShape (p : Program) (fi : FunId) (f : Func) : Except String Unit := do
               throw s!"{site fi f b}: tail call to {g} returns {callee.results} values of {f.results}"
     | _ => pure ()
 
+/-- The largest register a function defines (its parameters, block parameters,
+statement and terminator definitions), plus one; `0` if it defines none. -/
+def defBound (f : Func) : Nat :=
+  let top (m : Nat) (xs : List VReg) : Nat := xs.foldl (fun m x => max m (x + 1)) m
+  f.blocks.toList.foldl (init := top 0 f.params) fun m block =>
+    let m := top m block.params
+    let m := block.body.toList.foldl (fun m s => top m s.defs) m
+    top m block.term.defs
+
+/-- The definition sites of registers, by register: a dense array of
+`Option (Label × position)` indexed by register (`VReg` is a `Nat`), sized by
+`defBound`. Kernel-evaluable (no hash map): `RcReplay.run` reaches `checkSsa`. -/
+abbrev DefSites := Array (Option (Label × Nat))
+
+def DefSites.get? (defs : DefSites) (x : VReg) : Option (Label × Nat) :=
+  if h : x < defs.size then defs[x] else none
+
 /-- Unique definitions dominating their uses (conditions 4 and 5). -/
 def checkSsa (fi : FunId) (f : Func) : Except String Unit := do
   let n := f.blocks.size
@@ -108,10 +125,10 @@ def checkSsa (fi : FunId) (f : Func) : Except String Unit := do
     let reachable := f.rpoIndex
     let missing := (List.range n).filter fun b => (reachable[b]!).isNone
     throw s!"function {fi}: unreachable blocks {missing}"
-  let mut defs : Std.HashMap VReg (Label × Nat) := {}
-  let define (defs : Std.HashMap VReg (Label × Nat)) (x : VReg) (b pos : Nat) :
-      Except String (Std.HashMap VReg (Label × Nat)) :=
-    if defs.contains x then throw s!"{site fi f b}: v{x} is defined twice" else pure (defs.insert x (b, pos))
+  let mut defs : DefSites := Array.replicate f.defBound none
+  let define (defs : DefSites) (x : VReg) (b pos : Nat) : Except String DefSites :=
+    if (defs.get? x).isSome then throw s!"{site fi f b}: v{x} is defined twice"
+    else pure (defs.set! x (some (b, pos)))
   for x in f.params do defs ← define defs x 0 paramPos
   for h : b in [:n] do
     let block := f.blocks[b]
@@ -121,7 +138,7 @@ def checkSsa (fi : FunId) (f : Func) : Except String Unit := do
     for x in block.term.defs do defs ← define defs x b (termDefPos block)
   let doms := f.dominators
   let check (b pos : Nat) (x : VReg) : Except String Unit :=
-    match defs[x]? with
+    match defs.get? x with
     | none => throw s!"{site fi f b}: v{x} is used but never defined"
     | some (db, dpos) =>
         if (db == b && dpos < pos) || (db != b && dominates doms db b) then pure ()
