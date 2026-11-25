@@ -861,20 +861,20 @@ theorem ofShapes_word {sc : ShapeCert} {enc : ArrEnc} {fs : FunShapes} {ρ : Env
 /-- **The derived layout holds of every run** of a program whose shape certificate checks:
 called on arguments of its parameters' shapes, a function returns a value of its result's
 representation. From `checkSound` alone; no representation checker is involved. -/
-theorem ofShapes_runSound (enc : ArrEnc) {P : Program} {sc : ShapeCert}
+theorem ofShapes_runSound {P : Program} {sc : ShapeCert}
     (hchk : Fir.Shape.Checked P sc) {f : FunId} {k : Nat} {args : List Val} {v : Val}
-    (hf : f < P.size) (hargs : Fir.Shape.ValsOk sc enc (sc.fn f).params args)
+    (hf : f < P.size) (hargs : Fir.Shape.ValsOk sc Fir.Shape.arrEnc (sc.fn f).params args)
     (hrun : Fir.run P k f args = .ok v) :
     ValOk (ofShapes sc) ((ofShapes sc).funCert f).ret v := by
   rw [ofShapes_funCert, funCertOf_ret]
-  exact ofShapes_valOk (IxCC.Fir.Proof.Shape.checkSound enc P sc hchk f k args v hf hargs hrun)
+  exact ofShapes_valOk (IxCC.Fir.Proof.Shape.checkSound P sc hchk f k args v hf hargs hrun)
 
 /-- The same from inside a body, the form a back end's simulation carries. -/
-theorem ofShapes_codeSound (enc : ArrEnc) {P : Program} {sc : ShapeCert}
+theorem ofShapes_codeSound {P : Program} {sc : ShapeCert}
     (hchk : Fir.Shape.Checked P sc) {fs : FunShapes} {k : Nat} {ρ : Env} {c : Code} {v : Val}
-    (hρ : Fir.Shape.EnvOk sc enc fs ρ) (hc : Fir.Shape.CodeOk P sc fs c)
+    (hρ : Fir.Shape.EnvOk sc Fir.Shape.arrEnc fs ρ) (hc : Fir.Shape.CodeOk P sc fs c)
     (heval : Fir.eval P k ρ [] c = .ok v) : ValOk (ofShapes sc) (funCertOf fs).ret v :=
-  ofShapes_valOk (IxCC.Fir.Proof.Shape.codeSound enc P sc hchk fs k ρ c v hρ hc heval)
+  ofShapes_valOk (IxCC.Fir.Proof.Shape.codeSound P sc hchk fs k ρ c v hρ hc heval)
 
 end Shapes
 

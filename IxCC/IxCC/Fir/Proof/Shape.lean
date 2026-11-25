@@ -18,9 +18,10 @@ Design note: `plans/ONE-PIPELINE.md`, section 2.3.
 * `arrOk_sound`, `arrOkSound_fir`: the array rules `ArrOk` are sound in a model whose arrays the
   reader reads back, in particular at Fir's (`arrEnc`).
 
-Every theorem but `arrOkSound_fir` and `primResult_arrOk` holds for every array reader
-(`ArrEnc`): the rules give an array primitive's result only `any` until `ArrOk` is a rule of
-`RhsOk` (`IxCC.Fir.Shape`).
+`rhsSound`, `evalSound`, `codeSound`, `checkSound` and the `check_*` forms are stated at Fir's
+array reader `arrEnc`, the one Fir's values use (the array rules read arrays as Fir holds them);
+`leSound`, `primOkSound`, `callSound`, `arrOk_sound` and the lemmas that read no right-hand side
+hold at every reader.
 -/
 
 set_option autoImplicit false
@@ -840,9 +841,9 @@ theorem asCtor_succ (K : Lam.Known) (n : Nat) :
 
 /-- **A checked right-hand side yields a value of its shape** (a call is not a right-hand side
 of `evalRhs`: it is stuck there, and `evalSound` treats it). -/
-theorem rhsSound {P : Program} {cert : ShapeCert} {enc : ArrEnc} {fs : FunShapes} {ρ : Env}
-    (hwf : cert.WF) (hρ : EnvOk cert enc fs ρ) {r : Rhs} {σ : Shape} (h : RhsOk P cert fs r σ)
-    {v : Val} (hv : evalRhs P ρ r = .ok v) : ValOk cert enc σ v := by
+theorem rhsSound {P : Program} {cert : ShapeCert} {fs : FunShapes} {ρ : Env}
+    (hwf : cert.WF) (hρ : EnvOk cert arrEnc fs ρ) {r : Rhs} {σ : Shape}
+    (h : RhsOk P cert fs r σ) {v : Val} (hv : evalRhs P ρ r = .ok v) : ValOk cert arrEnc σ v := by
   induction h generalizing v with
   | arg ha => exact argSound hρ ha (ofOption_ok hv)
   | ctorData hD hmem hargs =>
@@ -873,7 +874,7 @@ theorem rhsSound {P : Program} {cert : ShapeCert} {enc : ArrEnc} {fs : FunShapes
       exact valsOk_get _ _ hfields _ _ _ hi hfi
   | projNat _ hle =>
     obtain ⟨vx, c', fields, hget, hctor, _, hfi⟩ := evalRhs_proj_ok hv
-    obtain ⟨n, rfl⟩ := valOk_nat_inv (leSound enc cert _ _ _ hle (hρ _ _ hget))
+    obtain ⟨n, rfl⟩ := valOk_nat_inv (leSound arrEnc cert _ _ _ hle (hρ _ _ hget))
     cases n with
     | zero =>
       rw [asCtor_zero] at hctor
@@ -896,10 +897,10 @@ theorem rhsSound {P : Program} {cert : ShapeCert} {enc : ArrEnc} {fs : FunShapes
   | projAny => exact .any v
   | prim hargs hprim =>
     obtain ⟨vs, hvs, hres⟩ := evalRhs_prim_ok hv
-    exact primOkSound cert enc P _ _ _ _ _ hprim (argsSound hρ _ _ _ hargs hvs) hres
+    exact primOkSound cert arrEnc P _ _ _ _ _ hprim (argsSound hρ _ _ _ hargs hvs) hres
   | primAny => exact .any v
   | call _ => cases hv
-  | weaken _ hle ih => exact leSound enc cert _ _ _ hle (ih hv)
+  | weaken _ hle ih => exact leSound arrEnc cert _ _ _ hle (ih hv)
 
 /-- What a checked call says: its arguments have the callee's parameter shapes, and the
 callee's result has the binder's shape. -/
@@ -962,21 +963,21 @@ theorem callSound {enc : ArrEnc} {P : Program} {cert : ShapeCert} (hchk : Checke
   · rw [ite_eq_right hlen] at hcall
     cases hcall
 
-private theorem evalSound_aux (enc : ArrEnc) (P : Program) (cert : ShapeCert)
+private theorem evalSound_aux (P : Program) (cert : ShapeCert)
     (hchk : Checked P cert) :
     ∀ (k : Nat) (w : Nat) (fs : FunShapes) (ρ : Env) (J : List JEntry) (c : Code) (v : Val),
       c.size + jweight J ≤ w →
-      EnvOk cert enc fs ρ →
-      JStackOk P cert enc fs J →
+      EnvOk cert arrEnc fs ρ →
+      JStackOk P cert arrEnc fs J →
       CodeOk P cert fs c →
       eval P k ρ J c = .ok v →
-      ValOk cert enc fs.ret v := by
+      ValOk cert arrEnc fs.ret v := by
   intro k
   induction k using Nat.strongRecOn with
   | ind k ihk =>
     have ihc : ∀ m, m < k → ∀ (fs : FunShapes) (ρ : Env) (c : Code) (v : Val),
-        EnvOk cert enc fs ρ → CodeOk P cert fs c → eval P m ρ [] c = .ok v →
-        ValOk cert enc fs.ret v := fun m hm fs ρ c v hρ hc he =>
+        EnvOk cert arrEnc fs ρ → CodeOk P cert fs c → eval P m ρ [] c = .ok v →
+        ValOk cert arrEnc fs.ret v := fun m hm fs ρ c v hρ hc he =>
       ihk m hm (c.size + jweight []) fs ρ [] c v (Nat.le_refl _) hρ .nil hc he
     intro w
     induction w using Nat.strongRecOn with
@@ -1002,7 +1003,7 @@ private theorem evalSound_aux (enc : ArrEnc) (P : Program) (cert : ShapeCert)
             obtain ⟨vs, hvs, heval⟩ := bind_ok heval
             have hvs := ofOption_ok hvs
             obtain ⟨rv, hcallv, heval⟩ := bind_ok heval
-            obtain ⟨hargs, hret⟩ := rhsOk_call_inv enc hrhs
+            obtain ⟨hargs, hret⟩ := rhsOk_call_inv arrEnc hrhs
             have hrv := callSound hchk ihc (argsSound hρ _ _ _ hargs hvs) hcallv
             exact ihw _ hlt fs (ρ.insert x rv) J k' v (Nat.le_refl _)
               (envOk_insert hρ (hret rv hrv)) hJ hk' heval
@@ -1032,7 +1033,7 @@ private theorem evalSound_aux (enc : ArrEnc) (P : Program) (cert : ShapeCert)
           have hvs := ofOption_ok hvs
           obtain ⟨hid, henv, hparams, hbody, hrest⟩ := lookupJ_ok hJ hlu
           have hρ' := envOk_bindAll _ _ _ e.env henv hparams (argsSound hρ _ _ _ hargs hvs)
-          have hJ' : JStackOk P cert enc fs (e.after rest) := by
+          have hJ' : JStackOk P cert arrEnc fs (e.after rest) := by
             unfold JEntry.after
             split
             · exact .cons henv (by rw [hid]; exact hparams) hbody hrest
@@ -1071,7 +1072,7 @@ private theorem evalSound_aux (enc : ArrEnc) (P : Program) (cert : ShapeCert)
             simp only [hasc] at heval
             have hwalk : ∀ (as' : List Alt), AltsOk P cert fs as' →
                 Code.altsSize as' + Code.optSize d + 2 + jweight J ≤ w →
-                evalAlts P k ρ J key as' d = .ok v → ValOk cert enc fs.ret v := by
+                evalAlts P k ρ J key as' d = .ok v → ValOk cert arrEnc fs.ret v := by
               intro as'
               induction as' with
               | nil =>
@@ -1110,26 +1111,26 @@ private theorem evalSound_aux (enc : ArrEnc) (P : Program) (cert : ShapeCert)
         | tcall hargs hret =>
           obtain ⟨vs, hvs, heval⟩ := bind_ok heval
           have hvs := ofOption_ok hvs
-          exact leSound enc cert _ _ _ hret
+          exact leSound arrEnc cert _ _ _ hret
             (callSound hchk ihc (argsSound hρ _ _ _ hargs hvs) heval)
 
 /-- **Checked code is sound from any point of a body**: run in an environment and under a join
 stack that have their shapes, it returns a value of the function's result shape. This is the
 form a back end's simulation carries. -/
-theorem evalSound {enc : ArrEnc} {P : Program} {cert : ShapeCert} (hchk : Checked P cert)
+theorem evalSound {P : Program} {cert : ShapeCert} (hchk : Checked P cert)
     {fs : FunShapes} {k : Nat} {ρ : Env} {J : List JEntry} {c : Code} {v : Val}
-    (hρ : EnvOk cert enc fs ρ) (hJ : JStackOk P cert enc fs J) (hc : CodeOk P cert fs c)
-    (heval : eval P k ρ J c = .ok v) : ValOk cert enc fs.ret v :=
-  evalSound_aux enc P cert hchk k (c.size + jweight J) fs ρ J c v (Nat.le_refl _) hρ hJ hc heval
+    (hρ : EnvOk cert arrEnc fs ρ) (hJ : JStackOk P cert arrEnc fs J) (hc : CodeOk P cert fs c)
+    (heval : eval P k ρ J c = .ok v) : ValOk cert arrEnc fs.ret v :=
+  evalSound_aux P cert hchk k (c.size + jweight J) fs ρ J c v (Nat.le_refl _) hρ hJ hc heval
 
 /-- **`CodeSound`**: the instance at a function's entry. -/
-theorem codeSound (enc : ArrEnc) : CodeSound enc :=
+theorem codeSound : CodeSound arrEnc :=
   fun _ _ hchk _ _ _ _ _ hρ hc heval => evalSound hchk hρ .nil hc heval
 
 /-- **`CheckSound`: soundness of the shape rules.** A checked program, run from arguments that
 have a function's parameter shapes, returns a value that has its result shape, at every
 clock. -/
-theorem checkSound (enc : ArrEnc) : CheckSound enc := by
+theorem checkSound : CheckSound arrEnc := by
   intro P cert hchk f k args v _ hargs hrun
   rw [run_eq] at hrun
   exact callSound hchk (fun _ _ _ _ _ _ hρ hc he => evalSound hchk hρ .nil hc he) hargs hrun
@@ -1478,16 +1479,16 @@ theorem check_checked {P : Program} {cert : ShapeCert} (h : check P cert = true)
   exact ⟨paramsOk_sound _ _ hf.1, codeOk_sound P cert _ _ hf.2⟩
 
 /-- **The checker is sound**: an accepted certificate states true facts of every run of every
-function, for every array reader. -/
-theorem check_sound (enc : ArrEnc) {P : Program} {cert : ShapeCert} (h : check P cert = true) :
-    ShapeSound P cert enc :=
-  checkSound enc P cert (check_checked h)
+function, at Fir's array reader (`arrEnc`). -/
+theorem check_sound {P : Program} {cert : ShapeCert} (h : check P cert = true) :
+    ShapeSound P cert arrEnc :=
+  checkSound P cert (check_checked h)
 
 /-- The checker is sound from inside a body. -/
-theorem check_codeSound (enc : ArrEnc) {P : Program} {cert : ShapeCert}
+theorem check_codeSound {P : Program} {cert : ShapeCert}
     (h : check P cert = true) {fs : FunShapes} {k : Nat} {ρ : Env} {c : Code} {v : Val}
-    (hρ : EnvOk cert enc fs ρ) (hc : CodeOk P cert fs c) (heval : eval P k ρ [] c = .ok v) :
-    ValOk cert enc fs.ret v :=
-  codeSound enc P cert (check_checked h) fs k ρ c v hρ hc heval
+    (hρ : EnvOk cert arrEnc fs ρ) (hc : CodeOk P cert fs c) (heval : eval P k ρ [] c = .ok v) :
+    ValOk cert arrEnc fs.ret v :=
+  codeSound P cert (check_checked h) fs k ρ c v hρ hc heval
 
 end IxCC.Fir.Proof.Shape

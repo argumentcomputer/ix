@@ -22,11 +22,11 @@ collected in `Checked`. `check` implies `Checked` (`Fir.Proof.Shape.check_checke
 **Range facts are shapes.** The rules for `Nat` primitives carry bounds
 (`natLt a + natLt b` is `natLt (a + b)`), so a checked `natLt b` is a validated range.
 
-**Array primitives.** `Fir.primResult` evaluates them (`Src.ArrOp.eval` at `Fir.model`), and
-today's rules give their results only `any` (`natPrimResult`, `primAny`), so soundness holds for
-every array reader. Their typed rules (`ArrOk`) are stated below and sound at Fir's reader
-(`arrEnc`, `Fir.Proof.Shape.arrOkSound_fir`); they are not yet a rule of `RhsOk`, which would
-make soundness hold at that reader only. The value judgment reads arrays through `ArrEnc`.
+**Array primitives.** `Fir.primResult` evaluates them (`Src.ArrOp.eval` at `Fir.model`). Their
+typed rules (`ArrOk`) are stated below and sound at Fir's reader (`arrEnc`,
+`Fir.Proof.Shape.arrOkSound_fir`). The value judgment reads arrays through an `ArrEnc`; the
+checker's soundness (`Fir.Proof.Shape.checkSound`, `codeSound`) is stated at `arrEnc`, the reader
+of Fir's own values.
 
 The checker (`check` and everything it calls) recurses structurally and uses lists and
 `Src.NatMap` only, so the kernel can evaluate it (the style `IxCCTests.Recheck.Audit` checks).
@@ -82,8 +82,8 @@ end ShapeCert
 
 /-- How `Fir.Val` holds an array: the one reader the value judgment needs. (Recommended
 encoding, design note 1.4: a constructor value under a reserved key with one field per element,
-so no `Val` constructor is added.) Soundness holds for every reader while no rule gives an
-array primitive's result a shape other than `any`. -/
+so no `Val` constructor is added.) The checker's soundness is stated at Fir's reader, `arrEnc`.
+-/
 structure ArrEnc where
   asArr : Val → Option (List Val)
 
@@ -192,10 +192,9 @@ untyped fallback. It is sound at Fir's reader (`Fir.Proof.Shape.arrOkSound_fir`,
   RhsOk P cert fs (.prim (.arr op) args) τ`, and its case in `rhsSound`;
 * `arrShape : ArrOp → List Shape → Shape` beside `primShape`, and its case in `rhsOk`.
 
-The rule makes `rhsSound`, `evalSound`, `codeSound` and `checkSound` hold at `arrEnc` only (an
-empty array has shape `arr e (some 0)` only for a reader that reads it), a statement change that
-waits for the orchestrator. Until then `natPrimResult` and `primShape` answer `any` for an
-array primitive, so today's rules are sound for every reader. -/
+The soundness theorems are stated at `arrEnc` (an empty array has shape `arr e (some 0)` only for
+a reader that reads it). Until the rule lands `natPrimResult` and `primShape` answer `any` for an
+array primitive. -/
 
 /-- **An array primitive on operands of shapes `σs` returns a `τ`.** The typed rules keep the
 element shape and track a static length; each has an untyped fallback, so generic code checks. -/
