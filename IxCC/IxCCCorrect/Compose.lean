@@ -152,6 +152,38 @@ theorem srcRun_ok {src : Program} {checked : Src.Relevance.Checked} {ns : List N
   cases hval
   exact ⟨v, hv, rfl⟩
 
+/-! ## `FunctionalProgress`'s canonical forms are `ReturnsCanon` (P1) -/
+
+/-- `CanonValue` (the statement's canonical form, `IxCCCorrect.Progress`) is the grounding
+check's `CanonResult`. -/
+theorem canonResult_of_canonValue {src : Program} {c : CId} {v : Value}
+    (h : CanonValue src c v) : CanonResult src c v := by
+  unfold CanonValue at h
+  cases hd : src.decl? c with
+  | none => rw [hd] at h; exact h.elim
+  | some d =>
+    rw [hd] at h
+    dsimp only at h
+    split at h
+    · rename_i r hr
+      have hrc : resConst src c = some r := by simp [resConst, hd, hr]
+      by_cases hn : some r = src.known.nat
+      · rw [ite_eq_left_of_eq_true _ _ (eq_true hn)] at h
+        refine ⟨.nat, ?_, h⟩
+        simp only [resTy, hrc, Option.map_some, Option.some.injEq]
+        exact ite_eq_left_of_eq_true _ _ (eq_true hn)
+      · simp only [hn, ↓reduceIte] at h
+        refine ⟨.enum r, ?_, h⟩
+        simp [resTy, hrc, hn]
+    · exact h.elim
+
+/-- **`FunctionalProgress`'s second conjunct at root 0 is the composed theorems' `ReturnsCanon`.** -/
+theorem returnsCanon_of_at {src : Program} {ns : List Nat} (h : ReturnsCanonAt src (0, ns)) :
+    ReturnsCanon src ns := by
+  intro addr root k v hroot hrun
+  exact canonResult_of_canonValue
+    (h addr root k v (by rw [← List.head?_eq_getElem?]; exact hroot) hrun)
+
 /-! ## The composed statement, at the source -/
 
 /-- The observation an answer is returned as: its number at a `Nat` result, the constructor at

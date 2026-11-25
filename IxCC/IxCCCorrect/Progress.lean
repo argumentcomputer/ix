@@ -462,9 +462,32 @@ an erased proof (F6w, a word's range). -/
 def SafetyProgressGiven.{w} (ok : Recheck.Input → Recheck.Front → Bool) : Prop :=
   (∃ V : Type w, Nonempty (Ix.Kernel.SetTheory V)) → SafetyProgress ok
 
+/-- **A canonical form of a root's declared result type**: at a root declared to return the
+pinned `Nat`, a literal; at a root declared to return another constant `D`, a value of a
+constructor of `D` without parameters and fields. What `Tier1` needs SrcEval to return, beyond
+not going wrong: the compiler's view also accepts values that are not of the root's type
+(`IxCCCorrect.Compose`, link G1). -/
+def CanonValue (src : Src.Program) (c : Src.CId) (v : Src.Value) : Prop :=
+  match src.decl? c with
+  | some d =>
+    match (Src.Term.pis d.type).2 with
+    | .const r [] =>
+      if some r = src.known.nat then ∃ n : Nat, v = .lit n
+      else ∃ (c' : Src.CId) (ls : Src.Levels) (ps : List Src.Slot) (s : Bool) (lv i : Nat)
+          (ty : Src.Term), v = .con c' ls ps [] ∧ src.decl? c' = some (.ctor s lv r i 0 0 ty)
+    | _ => False
+  | none => False
+
+/-- **SrcEval returns canonical forms at root `i.1`** on the literals `i.2`. -/
+def ReturnsCanonAt (src : Src.Program) (i : Nat × List Nat) : Prop :=
+  ∀ (addr : Ixon.Address) (c : Src.CId) (k : Nat) (v : Src.Value),
+    src.roots[i.1]? = some (addr, c) → Src.run src k c (i.2.map Src.Value.lit) = .ok v →
+      CanonValue src c v
+
 /-- **Source progress, functional strength, for a checker decision `ok`** (target, not
-proved): as `SafetyProgress`, with "never traps" added. A trap is an empty recursor
-reached with a relevant major premise, so excluding it is the statement that no
+proved): as `SafetyProgress`, with "never traps" added, and SrcEval returning canonical forms
+(owner-approved P1: `NeverWrong` alone does not give `Tier1`, the view being lossy). A trap is an
+empty recursor reached with a relevant major premise, so excluding it is the statement that no
 member of an empty family's denotation exists, which a proof through the model can
 conclude only if a model exists: the hypothesis that some set theory with the
 kernel's universes exists is explicit here (it is `VSet.OmegaUniverses` for the
@@ -473,12 +496,12 @@ def FunctionalProgress.{w} (ok : Recheck.Input → Recheck.Front → Bool) : Pro
   (∃ V : Type w, Nonempty (Ix.Kernel.SetTheory V)) →
   ∀ (limits : Ix.Kernel.Admission.Limits) (inp : Recheck.Input) (f : Recheck.Front),
     Accepted limits inp f → ok inp f = true →
-    ∀ i, NatInput f.src i → NeverWrong f.source i
+    ∀ i, NatInput f.src i → NeverWrong f.source i ∧ ReturnsCanonAt f.src i
 
 /-- The functional strength gives the safety strength, where a set theory exists. -/
 theorem FunctionalProgress.safety.{w} {ok : Recheck.Input → Recheck.Front → Bool}
     (h : FunctionalProgress.{w} ok) : SafetyProgressGiven.{w} ok :=
-  fun hV limits inp f hacc hok i hi => (h hV limits inp f hacc hok i hi).neverStuck
+  fun hV limits inp f hacc hok i hi => (h hV limits inp f hacc hok i hi).1.neverStuck
 
 /-- A decision that needs no model has the conditional form too. -/
 theorem SafetyProgress.given.{w} {ok : Recheck.Input → Recheck.Front → Bool}

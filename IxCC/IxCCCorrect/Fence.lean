@@ -790,6 +790,12 @@ routes and the progress targets are definitions and have no fence. -/
 /-- info: 'IxCC.Correct.srcRun_ok' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.srcRun_ok
 
+/-- info: 'IxCC.Correct.canonResult_of_canonValue' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Correct.canonResult_of_canonValue
+
+/-- info: 'IxCC.Correct.returnsCanon_of_at' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.returnsCanon_of_at
+
 /-- info: 'IxCC.Correct.agrees_of_srcPlainEval' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.agrees_of_srcPlainEval
 
