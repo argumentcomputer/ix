@@ -21,6 +21,7 @@ import IxCCTests.Fences.RcPromotion
 import IxCCTests.Fences.RtRcGen
 import IxCCTests.Fences.RecheckReadback
 import IxCCTests.Fences.Compile
+import IxCCTests.Fences.PureCompile
 import IxCCTests.Fences.Erase
 import IxCCTests.Fences.Anf
 import IxCCTests.Fences.Defun

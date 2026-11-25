@@ -501,6 +501,8 @@ import IxCC.Recheck.Proof.Back
 import IxCC.Recheck.Proof.Object
 import IxCC.Recheck.Proof.Soundness
 import IxCC.Cli
+import IxCC.Compile
+import IxCC.Compile.Proof
 import IxCC.CompileClaim
 import IxCC.Ring0
 import IxCC.Exe

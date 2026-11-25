@@ -6,6 +6,7 @@ import IxCCCorrect.Shape1
 import IxCCCorrect.Shape1Check
 import IxCCCorrect.Shape2
 import IxCCCorrect.Shape2Check
+import IxCCCorrect.Compile
 
 /-! # The target statements' axiom fence: every theorem `IxCCCorrect` proves uses at most the
 three standard axioms. Building the library checks it (`#guard_msgs`), in the required check
@@ -469,3 +470,49 @@ routes and the progress targets are definitions and have no fence. -/
 
 /-- info: 'IxCC.Correct.Shape2.neverWrong_of_cert_enum' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.Shape2.neverWrong_of_cert_enum
+/-! ## `IxCCCorrect.Compile` -/
+
+/-- info: 'IxCC.Correct.extract_all' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.extract_all
+
+/-- info: 'IxCC.Correct.execImage_checked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.execImage_checked
+
+/-- info: 'IxCC.Correct.machine_of_build' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.machine_of_build
+
+/-- info: 'IxCC.Correct.plain_file_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.plain_file_sound
+
+/-- info: 'IxCC.Correct.plain_file_sound_rc' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.plain_file_sound_rc
+
+/-- info: 'IxCC.Correct.machine_file_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.machine_file_sound
+
+/-- info: 'IxCC.Correct.machine_file_sound_rc' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.machine_file_sound_rc
+
+/-- info: 'IxCC.Correct.executable_today' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.executable_today
+
+/-- info: 'IxCC.Correct.compile_today' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.compile_today
+
+/-- info: 'IxCC.Correct.compile_route' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.compile_route
+
+/-- info: 'IxCC.Correct.compile_admits' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.compile_admits
+
+/-- info: 'IxCC.Correct.binds_packaged' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.binds_packaged
+
+/-- info: 'IxCC.Correct.compileWith_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.compileWith_refines
+
+/-- info: 'IxCC.Correct.compileWith_route' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.compileWith_route
+
+/-- info: 'IxCC.Correct.compiledAs_of_stages' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.compiledAs_of_stages

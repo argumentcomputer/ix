@@ -250,6 +250,14 @@ line. -/
 lean_exe «tests-cert-text» where
   root := `IxCCTests.Recheck.CertTextMain
 
+/- The pure compiler (`IxCC.Compile.compile`: environment bytes, target address and options to an
+executable and its claim) is a function of its three arguments and is the compiler the command
+line runs: every K1 root and a sample of the corpus compiled twice in one process, again in
+another process under another environment, and compared byte for byte with `ixcc compile`
+(`--exe`, `-o`, `--emit-cert`, `--embed-cert`) and through `verify-exe`. -/
+lean_exe «tests-pure-compile» where
+  root := `IxCCTests.Compile.Main
+
 /- Ground first-order readback discovery: source instances, emitted layouts,
 independent signature validation and malformed candidate rejection. -/
 lean_exe «tests-recheck-readback» where
