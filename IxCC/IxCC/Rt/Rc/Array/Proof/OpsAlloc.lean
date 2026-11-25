@@ -154,7 +154,7 @@ private theorem init_cell {mem : Memory} {ctx base bump limit : Word} {lists : N
 
 /-- Blocks 0 and 1: the class of the request and the head of its free list, after the two class
 calls. -/
-private theorem alloc_prefix {P : Program} {fn : FunId} {t : Fns} {k : ElemKind}
+theorem alloc_prefix {P : Program} {fn : FunId} {t : Fns} {k : ElemKind}
     (hfn : P.funcs[fn]? = some (alloc t k)) (hcf : P.funcs[t.classFor]? = some arrClassFor)
     (hcw : P.funcs[t.classWords]? = some arrClassWords) {mem : Memory} {ctx : Word}
     {n : Nat} (hn : n ≤ k.maxCap) {head : Word}

@@ -559,6 +559,7 @@ import IxCC.Rt.Rc.Array.Proof.OpsCopying
 import IxCC.Rt.Rc.Array.Proof.OpsExtract
 import IxCC.Rt.Rc.Array.Proof.OpsIncs
 import IxCC.Rt.Rc.Array.Proof.OpsBoxed
+import IxCC.Rt.Rc.Array.Proof.OpsRefuse
 import IxCC.Rt.Readback.Array
 import IxCC.Cfg.Rc.Layout
 import IxCC.Cfg.Rc.Inline

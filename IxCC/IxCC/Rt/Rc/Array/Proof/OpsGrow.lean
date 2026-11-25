@@ -52,7 +52,7 @@ theorem growCap_spec (k : ElemKind) {n : Nat} (hn : n < k.maxCap) :
   unfold growCap; split <;> omega
 
 /-- The capacity `push`'s growth computes. -/
-private theorem growCap_eval {k : ElemKind} {n : Nat} (hn : n < k.maxCap) (hmc : k.maxCap < 2 ^ 62) :
+theorem growCap_eval {k : ElemKind} {n : Nat} (hn : n ≤ k.maxCap) (hmc : k.maxCap < 2 ^ 62) :
     (if Cond.holds .ult .w64 (UInt64.ofNat k.maxCap) (UInt64.ofNat (n <<< 1)) then
       UInt64.ofNat (n + 1) else
       (if Cond.holds .ugt .w64 (UInt64.ofNat (n <<< 1)) (UInt64.ofNat (n + 1)) then
@@ -193,7 +193,7 @@ theorem push_grow {P : Program} {fn : FunId} {t : Fns} {k : ElemKind}
     have hshl : BinOp.eval .shl .w64 (UInt64.ofNat xs.length) (UInt64.ofNat 1) =
         some (UInt64.ofNat (xs.length <<< 1)) :=
       binOp_shl64 _ 1 (by decide) (by omega) (by rw [Nat.shiftLeft_eq]; omega)
-    have hgc := growCap_eval (k := k) hlt hmc
+    have hgc := growCap_eval (k := k) (Nat.le_of_lt hlt) hmc
     have hcl1 : loadWord m5 .w8 .zero (a + 1) = some (UInt64.ofNat cls) := has.class_load
     have hhead : loadWord m5 .w64 .zero (freeHeadAddress ctx (UInt64.ofNat cls)) =
         some ((lists' cls).headD 0) := wordAt_load64 (hal5.free_heads cls hc1 has.cls_hi)
