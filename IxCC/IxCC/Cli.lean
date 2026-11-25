@@ -28,13 +28,33 @@ when no `--root` is given) and `cx_init` (`IxCC.X86.Driver` models how they are
 called; `--exe` writes an executable that calls them). With `--cert`, the
 given certificate replaces `produce`'s (so the recheck needs nothing from the
 producer). `check-cert` runs its verifier (`checkText`: the text read with every
-text and decode limit, Stage A, `Recheck.run` or `RcReplay.run`) on a certificate's
-text and reports acceptance or the rejection. `compile` runs the same verifier on
-the text it writes: the producer's certificate file text, which the producer has
-already read back through the same reader (`Cert.readBack`), or the given file's
-text; the object comes from that verdict, and `--emit-cert` writes exactly that
-text, so a certificate `compile` writes is one `check-cert` accepts. A
-certificate past a text or decode limit declines the compile with the limit's
+text and decode limit, Stage A, `Recheck.run` or `RcReplay.run`, and `DefAsserts`)
+on a certificate's text and reports acceptance or the rejection. `compile`
+(without `--bignat`) runs the same verifier on the text it writes: the producer's
+certificate file text, which the producer has already read back through the same
+reader (`Cert.readBack`), or the given file's text; the object comes from that
+verdict, and `--emit-cert` writes exactly that text, so a certificate `compile`
+writes is one `check-cert` accepts.
+
+**Certification boundary by mode:**
+- **Certified replay path** (default, `--rc off|on|auto`, `--exe`, `--machine`,
+  `--embed-cert`, `check-cert`, `verify-exe`): covered by `Recheck.sound` /
+  `Recheck.RcReplay.sound`, `DefAsserts`, and `Exe.{Plain,Machine}` over bounded
+  `< 2^63` `Nat` (larger values fail with `.natOverflow`).
+- **Validated LIR SSA optimization (`--opt`)**: replays the front-end certificate
+  (`checkTextWith true`) and then compiles the lowered LIR through `Backend.compileOpt`
+  (proved in `IxCC.Lir.Proof.Opt.Backend` on standard axioms); `--cert`/`--emit-cert`/
+  `--embed-cert` currently forbid `--opt` because the certificate schema and `verify-exe`
+  replay `checkTextWith false`.
+- **Experimental BigNat / DR1–DR4 path (`--bignat`)**: routes through `compileBigNat`
+  (`Lam.Erase.Array` → `Rt.BigNat.lowerRepBig` → `Backend.emit`), which **bypasses
+  certificate replay and `DefAsserts`** and is **not yet covered by an end-to-end
+  composition theorem** (`SlowPathEnv`/`BigNatLitEnv` hypotheses, internal library
+  `rawNatOverflowCount` blocks, and Layer-3 `SrcEval` array/limb firing remain open;
+  see `docs/trusted-externs.json` and `docs/bignum-design.md`). Consequently `--bignat`
+  rejects `--cert`, `--emit-cert`, `--embed-cert`, `--machine`, and `--rc != off`.
+
+A certificate past a text or decode limit declines the compile with the limit's
 reason (`cert: cert.parse: …`); under `--rc auto` a plain-RC one falls back to
 the immortal policy, as any plain-RC refusal does. A certificate's format fixes its RC policy, so `--rc` with `--cert` (and so with
 `check-cert`) is a usage error.
@@ -138,7 +158,8 @@ structure Options where
   rcExplicit : Bool := false
   /-- `--opt`: run the formally validated Lir SSA optimizer (`Backend.compileOpt`, default OFF). -/
   opt : Bool := false
-  /-- `--bignat`: compile via DR3/DR4 + Phase 4 arbitrary-precision `Nat` (`Rt.BigNat.lowerRepBig`, default OFF). -/
+  /-- `--bignat`: experimental, uncertified DR1–DR4 + Phase 4 arbitrary-precision `Nat` path
+  (`compileBigNat` / `Rt.BigNat.lowerRepBig`; default OFF; bypasses certificate replay and `DefAsserts`). -/
   bignat : Bool := false
   /-- `--bignat-lib FILE`: pre-frozen `ixcc/bignat-bootstrap/1` JSON for `--bignat`. -/
   bignatLib : Option FilePath := none
@@ -168,6 +189,8 @@ def usage : String :=
     "      [-o OUT.o] [--signatures FILE] [--stats]",
     "  ixcc verify-exe FILE [--closure CLOSURE.ixe] [--equations EQ.json] [--stats]",
     "dump levels: lam anf fir cfg lir xv xl all",
+    "modes: default/--rc/--embed-cert use certified replay; --opt adds validated Lir.Opt (no cert emission);",
+    "      --bignat is experimental/uncertified (bypasses certificate replay and DefAsserts)",
     "kernel limits (compile, check-cert, verify-exe): --max-records N --max-blobs N --max-total-bytes N",
     "      --max-record-bytes N --max-record-univ-nodes N --max-depth N --workers N --level-budget N",
     "      (else IX_KERNEL_MAX_RECORDS, ..., IX_KERNEL_LEVEL_BUDGET); a decline by one exits 6",
@@ -520,9 +543,11 @@ def loadBigNatLib (o : Options) : ExceptT Err IO Rt.BigNat.CompiledBigNatLib := 
   | .ok lib => pure lib
   | .error e => throw (cliErr "cli.bignat" e)
 
-/-- Compile `inp` via the DR1/DR2/DR3/DR4 + Phase 4 arbitrary-precision `Nat` pipeline
+/-- Experimental, uncertified DR1/DR2/DR3/DR4 + Phase 4 arbitrary-precision `Nat` pipeline
 (`Lam.Erase.Array → Anf → Fir → Fir.Rep → Own → Cfg → Rt.BigNat.lowerRepBig → Backend`),
-optionally running the validated `Lir.Opt` SSA optimizer when `opt = true`. -/
+optionally running the validated `Lir.Opt` SSA optimizer when `opt = true`.
+Note: bypasses certificate replay (`checkText`) and `DefAsserts`; see `docs/trusted-externs.json`
+(`bignat-experimental-pipeline`) for remaining proof obligations. -/
 def compileBigNat (opt : Bool) (lib : Rt.BigNat.CompiledBigNatLib) (cfg : Config) (inp : Input) :
     Except Err (Artifact × List Xv.Alloc.Outcome × Array Src.Diag) := do
   let ps ← produceSource cfg inp
@@ -679,7 +704,7 @@ def execute (o : Options) (limits : Ix.Kernel.Admission.Limits := Src.KernelFron
     | _, _ =>
       IO.println s!"time: read {tRead} ms, ingress {tIngress} ms (the kernel's acceptance included), \
         bignat-lib {tProduce} ms, compile {tRun} ms"
-      IO.println "bignat: enabled (DR1/DR2/DR3/DR4 + Phase 4 arbitrary-precision Nat, zero C/GMP)"
+      IO.println "bignat: enabled [experimental, uncertified: bypasses certificate replay & DefAsserts; DR1-DR4 + Phase 4 arbitrary-precision Nat, zero C/GMP]"
     if o.opt then IO.println "lir.opt: enabled (validated Backend.compileOpt)"
     for l in statsLines a outcomes do IO.println l
     for d in hints do IO.println s!"hint: {d.message}"

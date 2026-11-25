@@ -197,12 +197,25 @@ soundness and progress.
 
 ### x86: the proved pipeline
 
-**Implemented.** Src → Lam → Anf → Fir → Own → Cfg → Lir → Xv → Xl → typed
+**Implemented (certified replay path).** Src → Lam → Anf → Fir → Own → Cfg → Lir → Xv → Xl → typed
 x86 → E1 → E2/ELF, each stage proved; `Recheck.sound`
-([`Recheck/Proof/Soundness.lean`](../IxCC/Recheck/Proof/Soundness.lean)) and
-the byte-level `verifyBytes_*_sound`
+([`Recheck/Proof/Soundness.lean`](../IxCC/Recheck/Proof/Soundness.lean)),
+`Recheck.RcReplay.sound`, and the byte-level `verifyBytes_*_sound`
 ([`CompileClaim/Proof.lean`](../IxCC/CompileClaim/Proof.lean)) compose them
-from claim bytes to the modelled object, relative to SrcEval on `a.src`.
+from claim bytes to the modelled object, relative to SrcEval on `a.src`
+(with `DefAsserts` enforced and bounded `< 2^63` `Nat`). Adding `--opt` runs
+`checkTextWith true` and then the formally validated LIR SSA optimizer
+`Backend.compileOpt` (`IxCC.Lir.Proof.Opt.Backend`, standard axioms only),
+though certificate emission/embedding currently requires `--opt` off.
+
+**Separate experimental path (`--bignat`, uncertified).** `ixcc compile --bignat`
+runs `Cli.compileBigNat` (`Lam.Erase.Array` → `Rt.BigNat.lowerRepBig` → `Backend.emit`)
+for arbitrary-precision `Nat`, native arrays, and static strings (zero C/GMP).
+This path is **outside** the certified replay guarantee above: it produces no
+certificate, bypasses `checkText` and `DefAsserts`, and has un-discharged
+`SlowPathEnv`/`BigNatLitEnv` hypotheses and open Layer-3 `SrcEval` wiring
+(`bignat-experimental-pipeline` and `bignat-layer3-src-array-fire` in
+[`trusted-externs.json`](trusted-externs.json)).
 
 > **x86, grounded (planned).** Let a compile claim verify
 > (`CompileClaim.verifyBytes`), naming environment root `H`, role table `ρ`,

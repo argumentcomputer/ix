@@ -1,9 +1,26 @@
 # Bignums: a limb library compiled by IxCC
 
-Written 2026-11-09. **Status: planned (Phase 4).** Nothing here is
-implemented. The [roadmap](roadmap.md) owns scheduling; the
-[data design](data-and-roots-design.md) owns the fixed-width words and arrays
-this design builds on.
+Written 2026-11-09; updated 2026-11-25. **Status: experimental implementation
+(`ixcc compile --bignat`); not yet on the certified certificate-replay path.**
+The pure-Lean limb library (`IxCC/BigNat/*`), bootstrap linker (`Rt/BigNat/Link.lean`),
+Phase 4 lowering (`Rt/BigNat/{Cell,Dispatch,LowerBig}.lean`), and CLI `--bignat`
+mode are implemented (zero C, zero GMP). However, `--bignat` routes through
+`Cli.compileBigNat`, bypassing certificate replay (`checkText`) and `DefAsserts`;
+see [Certification boundary](#certification-boundary-current-vs-remaining) below
+and `bignat-experimental-pipeline` / `bignat-layer3-src-array-fire` in
+[trusted-externs.json](trusted-externs.json). The [roadmap](roadmap.md) owns
+scheduling; the [data design](data-and-roots-design.md) owns the fixed-width
+words and arrays this design builds on.
+
+### Certification boundary (current vs. remaining)
+
+| Layer / obligation | Current status |
+| --- | --- |
+| Layer 1: pure-Lean limb algorithms (`IxCC.BigNat.Proof.*`) | **Proved** on `[propext, Classical.choice, Quot.sound]`, zero `sorry`. |
+| Layer 2: `Nat` primitive & `Nat.succ` peel simulations (`Rt.BigNat.{Proof,LowerBigProof}`) | **Proved conditionally** under hypotheses `SlowPathEnv` and `BigNatLitEnv` (not yet constructed for `Link.compileLibrary` + `buildCoreWrappers`). |
+| Structural zero `.fail .natOverflow` (`lowerBig_noNatOverflow`, `lowerRepBig_noNatOverflow`) | **Proved** for user functions, runtime procs, literal procs, and ABI wrappers; `Link.compileLibrary` compiles `IxCC.BigNat.Entry` via `Rt.lowerRep`, which retains internal `.fail .natOverflow` blocks (`rawNatOverflowCount`). |
+| Whole-program `Cfg → Lir` & `Recheck.sound` / `DefAsserts` replay | **Open**: `Cli.compileBigNat` bypasses `checkText` and `DefAsserts`; `--bignat` cannot be combined with `--cert`, `--emit-cert`, `--embed-cert`, `--machine`, or `--rc != off`. |
+| Layer 3: `SrcEval` → `Ix.Kernel.Model` adequacy for `Resolve.array` / `Resolve.limb` | **Model lemmas proved** (`IxCCGrounding.{LimbWord,BigNatBridge}`); head-firing wiring in `SrcEval/Fundamental.lean` remains open (`bignat-layer3-src-array-fire`). |
 
 **Decision (owner, 2026-11-09).** Arbitrary-precision `Nat` is implemented
 as new Lean code: the standard multi-precision algorithms, each proved in

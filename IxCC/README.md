@@ -43,23 +43,45 @@ the Pc family). The plan to complete the
 *spine* shared by the two back ends is in the
 [certification design](docs/certification-design.md).
 
-**What compiles today.** First-order and closed-world higher-order (via P8
-defunctionalisation, inlining and specialisation) Lean programs over `Nat`
-(below 2^63 at run time; a larger value is a resource failure), fixed-width
-words (`UInt8`–`UInt64`, `USize`), and inductive types, with recursion through
-equation theorems. Memory is immortal or general plain reference counting
-(constructors of up to 254 scanned fields). Roots
-take at most five `Nat` arguments and return a `Nat`, an enumeration or a
-first-order constructor tree. Arrays, byte arrays, strings, bignums and IO are
-not supported.
+**What compiles today (two distinct paths).**
+- **Certified replay path** (`ixcc compile`, `--rc off|on|auto`, `--exe`,
+  `--machine`, `--embed-cert`, `check-cert`, `verify-exe`): first-order and
+  closed-world higher-order (via P8 defunctionalisation, inlining and
+  specialisation) Lean programs over bounded `Nat` (below 2^63 at run time; a
+  larger value is a `.natOverflow` resource failure), fixed-width words
+  (`UInt8`–`UInt64`, `USize`), and inductive types, with recursion through
+  equation theorems. Memory is immortal or general plain reference counting
+  (constructors of up to 254 scanned fields, with verified FBIP reset/reuse and
+  `@borrowed` inference). Roots take at most five `Nat` arguments and return a
+  `Nat`, an enumeration, or a first-order constructor tree. Adding `--opt`
+  replays the front-end certificate and then runs the formally validated LIR
+  SSA optimizer (`Backend.compileOpt`, proved in `IxCC.Lir.Proof.Opt.Backend`
+  on standard axioms); `--emit-cert`/`--embed-cert` currently require `--opt`
+  off.
+- **Experimental `--bignat` / DR1–DR4 path (uncertified):** `ixcc compile
+  --bignat` (optionally with `--opt` and `--bignat-lib`) adds arbitrary-precision
+  `Nat` (pure-Lean bootstrap-compiled `IxCC.BigNat.Entry`, zero C/GMP),
+  native `Array` / `ByteArray` / `Array UInt64`, and static `String` literals.
+  This path routes through `Cli.compileBigNat`, **bypasses certificate replay
+  and `DefAsserts`**, and is **not yet covered by an end-to-end composition
+  theorem** (`SlowPathEnv`/`BigNatLitEnv` hypotheses, internal library
+  `rawNatOverflowCount` blocks, and Layer-3 `SrcEval` array/limb firing remain
+  open; see [trusted-externs.json](docs/trusted-externs.json) and
+  [bignum-design.md](docs/bignum-design.md)). IO is not supported.
 
-**What is proved.** An accepted object refines the source evaluator on the
-checked source program, unless that source goes wrong (gets stuck, traps or
-returns a value its type does not read back), under the x86, loader and
-driver assumptions of the [trust ledger](docs/trusted-extern-ledger.md). That
-the checked source, which the front end builds from the certificate, is
-semantically faithful to the ingested program is not proved, and neither is
-that it means the Lean definition.
+**What is proved.** On the **certified replay path**, an accepted object refines
+the source evaluator on the checked source program (and satisfies `DefAsserts`),
+unless that source goes wrong (gets stuck, traps or returns a value its type
+does not read back), under the x86, loader and driver/platform assumptions of
+the [trust ledger](docs/trusted-extern-ledger.md); standalone `--exe` and
+`--machine` shells are proved from `Process.{Loaded,Syscall,Step}` and verified
+by `verify-exe` for `.ix.cert` v1 trailers. On the **experimental `--bignat`
+path**, Layer-1 algorithm correctness, Layer-2 primitive simulations
+(parameterized by `SlowPathEnv`/`BigNatLitEnv`), structural zero-`natOverflow`
+on user/wrapper code, and Layer-3 model lemmas are proved on standard axioms,
+but end-to-end certificate replay and composition are not yet established.
+Across both paths, full grounded faithfulness from arbitrary Ixon bytes to
+IxCK's model remains in progress (`IxCCGrounding`).
 
 **Running a compiled program.** `ixcc compile --exe` writes a standalone static
 Linux executable, with no C compiler, C library, linker or driver: IxCC lays

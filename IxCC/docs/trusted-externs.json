@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "last_reviewed": "2026-11-21",
+  "last_reviewed": "2026-11-25",
   "policy": {
     "owner": "IxCC maintainers",
     "platform_baseline": "x86_64-linux",
@@ -525,11 +525,11 @@
       "status": "active-specification",
       "owner": "IxCC maintainers",
       "scope": "SrcEval-to-Ix.Kernel.Model RelV firing on frozen IxCC.BigNat.Entry calls when Resolve.array/Resolve.limb fire (zero C, zero GMP)",
-      "assumption": "Until Resolve.array and Resolve.limb head firing are wired into SrcEval/Fundamental.lean (connecting already-proved IxCCGrounding.BigNatBridge ArraySpec acceleration and IxCCGrounding.LimbWord 5-LimbOp adequacy theorems on the frozen IxCC.BigNat.Entry closure), only the SrcEval-to-Ix.Kernel.Model relation (RelV) on frozen IxCC.BigNat.Entry calls when Resolve.array/Resolve.limb fire is assumed; zero C code, zero GMP runtime calls, and zero arithmetic, array-extensionality, limb-op, or toNat axioms are trusted.",
-      "proof_effect": "Layer 1 (IxCC.BigNat.Proof.{Basic,Linear,Mul,Div,Bitwise,Gcd,Decimal,Entry}), Layer 2 (IxCC.Rt.BigNat.{Cell,Dispatch,ProofProcs,Proof,LowerBigProof}: structural zero-natOverflow lowerBig_noNatOverflow / lowerRepBig_noNatOverflow / lirEval_ne_natOverflow, static .rodata buildBigNatRodata_natVal, NatVal.readbackBig, primitiveBig_sim_readback_noOvf, projBig_natSucc_sim_readback_noOvf under FailsNoOvf), and Layer 3 model theorems (IxCCGrounding.{LimbWord,PcProp,StrLit,BigNatBridge}: all 5 LimbOps word equations, Array structure eta/extensionality from M.proj_law, ArraySpec model adequacy, litSet_inj, bool_true_ne_false, toNat adequacy, and Layer-1 x Layer-3 composition over Ix.Kernel.Model) are proved strictly within [propext, Classical.choice, Quot.sound] with 135 exact fences in IxCCTests/Fences/BigNatWire.lean plus IxCCTests/Fences/BigNat.lean and IxCCGrounding/Fence.lean.",
+      "assumption": "Until Resolve.array and Resolve.limb head firing are wired into SrcEval/Fundamental.lean (connecting already-proved IxCCGrounding.BigNatBridge ArraySpec acceleration and IxCCGrounding.LimbWord 5-LimbOp adequacy theorems on the frozen IxCC.BigNat.Entry closure), the SrcEval-to-Ix.Kernel.Model relation (RelV) on frozen IxCC.BigNat.Entry calls when Resolve.array/Resolve.limb fire remains unproved. Separate pipeline-level certification gaps for the experimental `--bignat` CLI mode are recorded in bignat-experimental-pipeline. Zero C code, zero GMP runtime calls, and zero arithmetic, array-extensionality, limb-op, or toNat axioms are trusted.",
+      "proof_effect": "Layer 1 (IxCC.BigNat.Proof.{Basic,Linear,Mul,Div,Bitwise,Gcd,Decimal,Entry}), Layer 2 (IxCC.Rt.BigNat.{Cell,Dispatch,ProofProcs,Proof,LowerBigProof}: structural zero-natOverflow lowerBig_noNatOverflow / lowerRepBig_noNatOverflow / lirEval_ne_natOverflow on user/wrapper/runtime functions, static .rodata buildBigNatRodata_natVal, NatVal.readbackBig, primitiveBig_sim_readback_noOvf, projBig_natSucc_sim_readback_noOvf parameterized by SlowPathEnv/BigNatLitEnv under FailsNoOvf), and Layer 3 model theorems (IxCCGrounding.{LimbWord,PcProp,StrLit,BigNatBridge}: all 5 LimbOps word equations, Array structure eta/extensionality from M.proj_law, ArraySpec model adequacy, litSet_inj, bool_true_ne_false, toNat adequacy, and Layer-1 x Layer-3 composition over Ix.Kernel.Model) are proved strictly within [propext, Classical.choice, Quot.sound] with 135 exact fences in IxCCTests/Fences/BigNatWire.lean plus IxCCTests/Fences/BigNat.lean and IxCCGrounding/Fence.lean.",
       "trust_basis": [
         "All 19 IxCC.BigNat.Entry slow-path routines are pure Lean 4 bootstrap-compiled through IxCC's own DR2+DR3 pipeline (zero C, zero GMP, fused hardware LimbOps, unboxed Array UInt64 tag 0x7F03)",
-        "IxCC.Rt.BigNat.LowerBigProof proves structural zero .fail .natOverflow in all user functions, cxInit, natPowBig, natGcdBig, extendedArrayRuntimeFuncs, literal procs, and ABI wrappers, and proves simulation and readback under FailsNoOvf",
+        "IxCC.Rt.BigNat.LowerBigProof proves structural zero .fail .natOverflow in all user functions, cxInit, natPowBig, natGcdBig, extendedArrayRuntimeFuncs, literal procs, and ABI wrappers, and proves primitive simulation and readback parameterized by SlowPathEnv/BigNatLitEnv under FailsNoOvf",
         "IxCCGrounding.BigNatBridge and IxCCGrounding.LimbWord prove all pure Ix.Kernel.Model adequacy theorems (Array eta/extensionality, ArraySpec acceleration, 5 LimbOps word equations, litSet_inj, toNat adequacy) with zero new axioms",
         "tests-bignat (157,911 checks), tests-bignat-slowpath (18,271 checks), tests-bignat-nativediff --self-test (100,049 checks), and native Xeon tests-bignat-nativediff --all (111/111 phase1-boundary 2^63 cases with 0 natOverflow, 105,000 native Xeon differential checks vs Lean 4 GMP with 81 Knuth D add-back triggers, and all 6/6 K5 benchmarks at test_args and bench_args) verify bit-for-bit agreement"
       ],
@@ -553,6 +553,35 @@
           "Wire Resolve.array and LimbOps head firing into IxCC/Src and IxCCGrounding/{Hyps,WordFire,Fundamental}",
           "Freeze IxCC.BigNat.Entry with its Layer-1 theorem proofs and ArraySpec/LimbOps equation seeds in Ixon",
           "Run IxCCGrounding.BigNatBridge decidable basis/equation checks on the frozen IxCC.BigNat.Entry closure in tests-grounding"
+        ]
+      }
+    },
+    {
+      "id": "bignat-experimental-pipeline",
+      "status": "active-specification",
+      "owner": "IxCC maintainers",
+      "scope": "Experimental `ixcc compile --bignat` pipeline (IxCC/Cli.lean: compileBigNat, IxCC/Rt/BigNat/{Link,LowerBig,Proof,LowerBigProof}.lean)",
+      "assumption": "The `--bignat` execution path is NOT covered by the certified certificate-replay guarantee (`Recheck.sound`, `Recheck.RcReplay.sound`, `Exe.Plain.*`). Specifically: (1) `Cli.compileBigNat` bypasses certificate production/replay (`checkText`) and `DefAsserts` checking, and the CLI forbids combining `--bignat` with `--cert`, `--emit-cert`, `--embed-cert`, `--machine`, or `--rc != off`; (2) `SlowPathEnv` (`IxCC/Rt/BigNat/Proof.lean`) and `BigNatLitEnv` (`IxCC/Rt/BigNat/LowerBigProof.lean`) are taken as theorem hypotheses in `primitiveBig_core`, `primitiveBig_sim_readback_noOvf`, and `operandBig_nat_sim` and are not yet discharged for the linked `CompiledBigNatLib` (`Link.compileLibrary` + `buildCoreWrappers`); (3) no whole-program `Cfg -> Lir` composition theorem connects `compileLibrary`, `buildCoreWrappers`, and `lowerRepBig` to `Backend.compile_sim_main` / `Recheck.sound`; and (4) `Link.compileLibrary` compiles `IxCC.BigNat.Entry` through `Rt.lowerRep`, which retains internal `.fail .natOverflow` blocks (`CompiledBigNatLib.rawNatOverflowCount`), so `lowerRepBig_noNatOverflow` covers user functions, runtime procs, and ABI wrappers rather than the bootstrap-compiled library body itself.",
+      "proof_effect": "Zero new Lean axioms or native FFI symbols are introduced, and every individual BigNat theorem is fenced at [propext, Classical.choice, Quot.sound]. However, standard-axiom fences do not discharge the `SlowPathEnv`/`BigNatLitEnv` theorem hypotheses or substitute for certificate replay; end-to-end certification claims apply only to the non-`--bignat` certified replay path until this entry is retired.",
+      "trust_basis": [
+        "CLI explicitly segregates `--bignat` from `--cert`, `--emit-cert`, `--embed-cert`, `--machine`, and `--rc != off`, and labels `--bignat` as experimental/uncertified in `--help` and `--stats`",
+        "Layer-1 mathematical correctness of `IxCC.BigNat`, Layer-2 primitive/wrapper/no-overflow theorems, and Layer-3 model lemmas are proved with zero sorry on standard axioms",
+        "100k+ native differential checks (`tests-bignat-nativediff --all`), `tests-bignat`, `tests-bignat-slowpath`, and `tests-array` validate runtime agreement against Lean 4 GMP"
+      ],
+      "tests": [
+        "tests-bignat",
+        "tests-bignat-slowpath",
+        "tests-bignat-nativediff --self-test",
+        "tests-array",
+        "tests-pipeline"
+      ],
+      "retirement": {
+        "milestone": "Certified BigNat replay & SlowPathEnv/BigNatLitEnv composition theorem",
+        "replacement": "Discharge `SlowPathEnv` and `BigNatLitEnv` for `Link.compileLibrary` + `buildCoreWrappers`, prove whole-program `lowerRepBig` simulation into `Backend.compile_sim_main`, prove internal library index bounds eliminate `rawNatOverflowCount` reachability, and integrate DR1-DR4/BigNat into certificate replay (`checkText`) and `DefAsserts`",
+        "exit_criteria": [
+          "Construct `SlowPathEnv` and `BigNatLitEnv` instances for `CompiledBigNatLib` + `buildCoreWrappers` with no unproven hypotheses",
+          "Prove whole-program `Src -> ELF` simulation for the BigNat/DR1-DR4 pipeline composing with `Recheck.sound` and `DefAsserts`",
+          "Integrate `--bignat` with certificate production, replay (`check-cert`), and `.ix.cert` embedding (`verify-exe`)"
         ]
       }
     }
@@ -1807,7 +1836,7 @@
       "IxCC/Cfg/Semantics.lean": "fe14c72ca586a32fe1177c62d44fa3e98c9524fdc07324ee05e2a266287adbbf",
       "IxCC/Cfg/Syntax.lean": "e32dc1ec49d2eeb431abfb67e53cf29a783a505899e9bec66ff1ab15e25f9038",
       "IxCC/Cfg/WellFormed.lean": "8ab908e8034a0924e727f2df6b97f87cf84a105787ffb5a736a1cdf0bab9a7a2",
-      "IxCC/Cli.lean": "8d90645b47fcceca4e02dde2b4f572c17fca560201052ffd545254515a205b74",
+      "IxCC/Cli.lean": "25467be708fd1b3b3e4deaef211f66873ec07a0295ba33e9e01bb2bb5de2a9b8",
       "IxCC/Cli/Main.lean": "691611f8277cb6801ba7915f1d131ab27abadef4ca43a649ef4e94220642579a",
       "IxCC/CompileClaim.lean": "2c154f36c99e92a3689828c8222df002c6ee4054a583552bbfc3467803cc0c5d",
       "IxCC/Compiler/Proof.lean": "a8dcb2b7e95d4e12a6e05a65d84f6445825ef60ea3a5c795a3c4e4d5a86ce5aa",
