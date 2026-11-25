@@ -11,7 +11,8 @@ name is re-exported here under `IxCC.Correct.Shape2.Produce`.
 namespace IxCC.Correct.Shape2.Produce
 
 export IxCC.SrcShape.Produce (
-  TV TV.shape Atom TV.atoms St M finalSort sortish polyTy wordOf recordWord tyEval tyApply
+  TV TV.shape Atom TV.atoms St M finalSort sortish polyTy predParams piDom? wordOf recordWord
+  tyEval tyApply
   tyConst mkData fieldShapes piShape refix bodyOf peel projFn addInst addSite ctorSites
   walk step loop interOf produceAllWith produceWith produce produceAll Limits Declined
   Declined.render loopCapped propose)

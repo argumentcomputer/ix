@@ -101,6 +101,8 @@ structure St where
   ninsts : Nat := 0
   /-- per width met, the entries of its tower: `UIntN`, `BitVec`, `Fin` -/
   words : List (Width × Nat × Nat × Nat) := []
+  /-- the types of string literals met as arguments (found by a first run): their shape is `any` -/
+  strTys : List CId := []
 
 abbrev M := StateM St
 
@@ -119,6 +121,23 @@ def sortish : Term → Bool
 def polyTy : Term → Bool
   | .pi _ d c => sortish d || polyTy c
   | _ => false
+
+/-- Which of an inductive's first `n` binders are predicates (their type ends in `Prop`). A
+predicate changes only the types of proof fields, which are irrelevant, so it does not tell two
+instances of the inductive apart: `{m : Nat // k ≤ m}` is one entry wherever it is written. -/
+def predParams (ls : Levels) : Nat → Term → List Bool
+  | 0, _ => []
+  | n + 1, .pi _ d c =>
+    (sortish d && (match finalSort d with
+      | some u => evalUniv ls u == 0
+      | none => false)) :: predParams ls n c
+  | _, _ => []
+
+/-- The `i`-th binder's domain of a type. -/
+def piDom? : Nat → Term → Option Term
+  | 0, .pi _ d _ => some d
+  | n + 1, .pi _ _ c => piDom? n c
+  | _, _ => none
 
 /-- The width whose pinned `UIntN.ofBitVec` is the inductive's one constructor. -/
 def wordOf (p : Program) (ctors : List CId) : Option Width :=
@@ -193,7 +212,8 @@ def tyApply (p : Program) : Nat → TV → List TV → M TV
 unfolded. -/
 def tyConst (p : Program) : Nat → Levels → CId → List TV → M TV
   | 0, _, _, _ => pure .opaque
-  | fuel + 1, ls, c, args =>
+  | fuel + 1, ls, c, args => do
+    if (← get).strTys.contains c then return .sh .any
     if some c == p.known.nat then pure (.sh .nat)
     else
       match p.decl? c with
@@ -212,10 +232,10 @@ def tyConst (p : Program) : Nat → Levels → CId → List TV → M TV
           pure (.sh (.enum c))
         else match wordOf p ctors with
           | some w => do
-            let tv ← mkData p fuel ls c np ctors (args.take np)
+            let tv ← mkData p fuel ls c np ctors (args.take np) (predParams ls np ty)
             recordWord w tv
             pure (.sh (.word w))
-          | none => mkData p fuel ls c np ctors (args.take np)
+          | none => mkData p fuel ls c np ctors (args.take np) (predParams ls np ty)
       | some (.defn _ _ _ _ v) => do
         let f ← tyEval p fuel ls [] v
         tyApply p fuel f args
@@ -223,10 +243,11 @@ def tyConst (p : Program) : Nat → Levels → CId → List TV → M TV
 
 /-- The table entry of an inductive at parameters, created on first use. A structure's
 field whose type quantifies over types is entered as `any` and listed in `polys`. -/
-def mkData (p : Program) : Nat → Levels → CId → Nat → List CId → List TV → M TV
-  | 0, _, _, _, _, _ => pure .opaque
-  | fuel + 1, ls, ind, np, ctors, params => do
-    let key := (ind, ls, params.flatMap (TV.atoms 4))
+def mkData (p : Program) : Nat → Levels → CId → Nat → List CId → List TV → List Bool → M TV
+  | 0, _, _, _, _, _, _ => pure .opaque
+  | fuel + 1, ls, ind, np, ctors, params, preds => do
+    let key := (ind, ls, params.zipIdx.flatMap fun (tv, i) =>
+      if preds.getD i false then [Atom.prop] else TV.atoms 4 tv)
     let s ← get
     match s.keys.lookup key with
     | some d => pure (.sh (.data d))
@@ -409,6 +430,14 @@ def walk (p : Program) : Nat → Levels → List TV → List TV → Term → M U
       let infos ← args.mapM fun a => do
         let tv ← if a.2.2 == Rel.type then tyEval p fuel ls env a.1 else pure TV.opaque
         pure (some (a.2.2.irrAt ls), tv)
+      if let .const c _ := h then
+        match p.decl? c with
+        | some d =>
+          args.zipIdx.forM fun (a, i) => do
+            if let .strLit _ := a.1 then
+              if let some (.const S _) := piDom? i d.type then
+                modify fun s => if s.strTys.contains S then s else { s with strTys := s.strTys ++ [S] }
+        | none => pure ()
       let skip ← match h with
         | .const c us => do
           let σ ← addInst p fuel (us.map (evalUniv ls)) c
@@ -467,7 +496,9 @@ def produceAllWith (p : Program) (roots : List CId) (fuel : Nat := 400) (steps :
     roots.forM fun root => do
       let _ ← addInst p fuel [] root []
     loop p fuel steps
-  let s := (m.run {}).2
+  -- a second run when the first met string literals: their types are `any` from the start
+  let s0 := (m.run {}).2
+  let s := if s0.strTys.isEmpty then s0 else (m.run { strTys := s0.strTys }).2
   let usesOf := fun (d j : Nat) => (s.uses.filter fun u => u.1 == d && u.2.1 == j).map fun u => u.2.2.1
   let datas := s.datas.zipIdx.map fun e =>
     { e.1 with ctors := e.1.ctors.map fun k =>
@@ -537,7 +568,9 @@ def propose (p : Program) (roots : List CId) (lim : Limits := {}) : Except Decli
     roots.forM fun root => do
       let _ ← addInst p lim.fuel [] root []
     loopCapped p lim.fuel lim.maxInsts lim.steps
-  let (r, s) := m.run {}
+  -- a second run when the first met string literals: their types are `any` from the start
+  let (r0, s0) := m.run {}
+  let (r, s) := if s0.strTys.isEmpty then (r0, s0) else m.run { strTys := s0.strTys }
   match r with
   | none => .error (.tooMany s.ninsts)
   | some false => .error (.diverged lim.steps s.ninsts)
