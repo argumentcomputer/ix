@@ -19,7 +19,8 @@ theorem consume_user_call {P : Program} {x f : Nat} {args : List Fir.Arg}
 
 /-- A non-tail call spends exactly one charge before its callee body.
 Unrepresentable literal operands instead follow the actual emitted failure
-branch. This proof does not assume a native call or native entry succeeds. -/
+branch. This proof does not assume a native call or native entry succeeds. Arguments reach the
+callee's parameters at their raw or tagged positions (`fits`, from the flow check). -/
 theorem consumed_user_call_entry {config : Rt.Config} {P : Program}
     {pairs : List (Nat × Cfg.Fun)} {funcs : List Lir.Func}
     (consuming : consumeAll P = .ok pairs)
@@ -33,9 +34,11 @@ theorem consumed_user_call_entry {config : Rt.Config} {P : Program}
     {callerFunction : Cfg.Fun}
     (callerLookup : (consumed P pairs).fun? source.fn = some callerFunction)
     {addresses : AddressMap} {bound : Nat} {sourceEnv : Own.Env}
-    (tagged : Rt.Proof.Tagged (tablesOf P pairs))
-    (registers : FusedWords addresses (Rt.Proof.Fused (tablesOf P pairs) callerFunction)
+    (registers : FusedWords addresses (Omit (tablesOf P pairs) source.fn callerFunction)
       bound sourceEnv target.env)
+    (raws : RawWords ((tablesOf P pairs).rawVar source.fn) sourceEnv target.env)
+    (fits : Raw.argsFit ((tablesOf P pairs).rawVar source.fn) ((tablesOf P pairs).rawParams f 0)
+      args = true)
     {values : List Own.RVal} (arguments : Own.evalArgs sourceEnv args = some values)
     (range : f < P.base.size) {fd : Cfg.Fun} {block : Cfg.Block}
     (lookup : P.base.fun? f = some fd) (blockLookup : fd.blocks[0]? = some block)
@@ -52,29 +55,31 @@ theorem consumed_user_call_entry {config : Rt.Config} {P : Program}
         (Lir.atState mem context f offset 0 targetEnv (suspended :: callers)) ∧
       ConsumedCursor P pairs lp {fn := f, blk := 0, rest := block.body, env := calleeEnv}
         {fn := f, label := offset, pos := 0, env := targetEnv} ∧
-      FusedWords addresses (Rt.Proof.Fused (tablesOf P pairs) consumedFd)
+      FusedWords addresses (Omit (tablesOf P pairs) f consumedFd)
         calleeBound calleeEnv targetEnv ∧
+      RawWords ((tablesOf P pairs).rawVar f) calleeEnv targetEnv ∧
       ConsumedCursor P pairs lp {source with rest := tail} suspended ∧
-      FusedWords addresses (Rt.Proof.Fused (tablesOf P pairs) callerFunction)
-        bound sourceEnv suspended.env) ∨
+      FusedWords addresses (Omit (tablesOf P pairs) source.fn callerFunction)
+        bound sourceEnv suspended.env ∧
+      RawWords ((tablesOf P pairs).rawVar source.fn) sourceEnv suspended.env) ∨
     Sem.Fails (Lir.semStep lp) {mem, ctx := context, stack := target :: callers} := by
   dsimp only
   have decision := consume_user_call (x := x) (args := args) range
   rcases cursor.call head decision mem context callers with success | failed
   · obtain ⟨operands, function, output, operandsLowered, functionLookup,
       outputLookup, position, statement, continuation⟩ := success
-    rw [tagged.operandsAt_params] at operandsLowered
     have live := consumed_call_live cursor head decision callerLookup
     obtain ⟨words, evaluated, represented, _⟩ :=
-      fused_operands_words registers operandsLowered live arguments
+      slot_operands_words registers raws operandsLowered fits live arguments
+    rw [rawParams_consumed consuming range lookup blockLookup] at represented
     obtain ⟨consumedFd, callee, targetEnv, offset, consumedLookup, entered,
-      entryTrace, entryCursor, entryWords⟩ := consumed_entry_words consuming lowered main
+      entryTrace, entryCursor, entryWords, entryRaws⟩ := consumed_entry_words consuming lowered main
         range lookup blockLookup represented arity real mem context
           ({target with pos := target.pos + 1, dsts := [x]} :: callers)
     have called := Lir.step_call (mem := mem) (ctx := context) (rest := callers)
       functionLookup outputLookup position statement evaluated entered
     refine .inl ⟨consumedFd, targetEnv, offset, consumedLookup,
-      ?_, entryCursor, entryWords, ?_, registers⟩
+      ?_, entryCursor, entryWords, entryRaws, ?_, registers, raws⟩
     · simpa using (Lir.star_of_step called).trans entryTrace
     · exact continuation.withEnvs source.env target.env [x]
   · right

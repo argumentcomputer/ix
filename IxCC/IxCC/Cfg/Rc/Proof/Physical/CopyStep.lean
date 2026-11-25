@@ -1,3 +1,4 @@
+import IxCC.Cfg.Rc.Proof.Native.RawFacts
 import IxCC.Cfg.Rc.Proof.Physical.ConsumedMarkers
 import IxCC.Cfg.Rc.Proof.Physical.Bridge.FusedFreshInstructions
 
@@ -14,7 +15,7 @@ liveness, and the raw-source layout supplies both runtime procedure entries.
 Dummy absence is a fact about the source map, not the consumed supply. -/
 theorem copy_marker_step
     {P : Program} {pairs : List (Nat × Cfg.Fun)} (functions : Nat → Lir.Func) (main : Nat)
-    (tagged : Rt.Proof.Tagged (tablesOf P pairs))
+    (consumingAll : consumeAll P = .ok pairs)
     {source : Cfg.Frame} {target : Lir.Frame}
     (cursor : ConsumedCursor P pairs (Public.Spec.sourceStage P functions main) source target)
     {dummy x : Nat} {tail : List Cfg.Instr}
@@ -55,7 +56,7 @@ theorem copy_marker_step
       position, statement, continuation⟩ := success
     have operandsKnown : Rt.Lower.operands source.fn [.var x, .lit (.nat 1)] =
         .ok (some [.v x, .imm 3]) := rfl
-    rw [tagged.operandsAt_params, operandsKnown] at lowered
+    rw [operandsAt_runtime consumingAll (Nat.le_refl _), operandsKnown] at lowered
     cases lowered
     obtain ⟨value, logical, lookup, _, _⟩ := before.den x member
     have permission : CanDup H value := Own.Plain.canDup_member before.balance

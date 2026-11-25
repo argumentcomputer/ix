@@ -26,7 +26,7 @@ theorem projection_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Wo
     H' = H ∧ ∃ after, Sem.Star (Lir.semStep lp)
       (Lir.atState mem ctx fn (off + st.cur) st.acc.length ρl rest) 0
       (Lir.atState mem ctx fn (off + st'.cur) st'.acc.length after rest) ∧
-      EnvRel T P D sup (ρ.insert x v) after := by
+      EnvRel T P D sup (ρ.insert x v) after ∧ ∀ z, z ≠ x → after[z]? = ρl[z]? := by
   rcases proj_run hrun with ⟨hs, rfl, rfl⟩ | ⟨hs, hz, info, hk, hi, rfl⟩
   · obtain ⟨rfl, u, fs, hu, hac, hv⟩ := evalRhs_proj hr
     obtain ⟨w, hw, hrel⟩ := hρ.val hu hy
@@ -70,7 +70,7 @@ theorem projection_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Wo
       simp at this
     simp only [Nat.add_sub_cancel, hw1, ↓reduceIte] at hpred
     exact ⟨rfl, ρl.insert x (w - 2), straight_star hF hH hC ho (by simp [Lir.Stmt.isCall])
-      (by simp only [lir_eval, hw]), hρ.insert hx hpred⟩
+      (by simp only [lir_eval, hw]), hρ.insert hx hpred, fun z ne => Lir.env_insert_ne _ _ (Ne.symm ne)⟩
   · obtain ⟨hHe, u, fs, hu, hac, hv⟩ := evalRhs_proj hr
     subst H'
     obtain ⟨w, hw, hrel⟩ := hρ.val hu hy
@@ -119,7 +119,7 @@ theorem projection_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Wo
       simp only [Lir.Rhs.eval, addressEval, Option.bind_eq_bind, Option.bind_some, Lir.loadWord, bytes.read64]
     exact ⟨rfl, ρl.insert x w', straight_star hF hH hC ho (by simp [Lir.Stmt.isCall])
       (by simp only [Lir.execList, Lir.Stmt.exec, hload, Option.bind_eq_bind, Option.bind_some]),
-      hρ.insert hx hv'⟩
+      hρ.insert hx hv', fun z ne => Lir.env_insert_ne _ _ (Ne.symm ne)⟩
 
 
 

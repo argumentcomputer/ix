@@ -6,20 +6,23 @@ namespace IxCC.Cfg.Rc.Native.Spec
 open IxCC.Cfg.Rc.Proof.Physical.Bridge IxCC.Rt.Rc.Procs IxCC.Rt.Proof IxCC.Rt.Lower
 
 /-- A real finished raw cursor yields the actual tail-call terminator and
-dynamic argument words, or follows the emitted Nat-overflow failure. -/
-theorem Cursor.tail_receipt {T : Tables} (tagged : Rt.Proof.Tagged T) {P : Cfg.Program} {lp : Lir.Program}
+dynamic argument words, or follows the emitted Nat-overflow failure. Each argument reaches the
+callee's parameter at its raw or tagged position (`fits`, from the flow check). -/
+theorem Cursor.tail_receipt {T : Tables} {P : Cfg.Program} {lp : Lir.Program}
     {source : Cfg.Frame} {target : Lir.Frame} (cursor : Cursor T P lp source target)
     {fd : Cfg.Fun} {block : Cfg.Block}
     (sourceLookup : P.fun? source.fn = some fd) (blockLookup : fd.blocks[source.blk]? = some block)
     (finished : source.rest = []) {f : Nat} {args : List Fir.Arg}
     (terminal : block.term = .tcall f args)
     {addresses : AddressMap} {bound : Nat}
-    (registers : FusedWords addresses (Fused T fd) bound source.env target.env)
+    (registers : FusedWords addresses (Omit T source.fn fd) bound source.env target.env)
+    (raws : RawWords (T.rawVar source.fn) source.env target.env)
+    (fits : Cfg.Rc.Raw.argsFit (T.rawVar source.fn) (T.rawParams f 0) args = true)
     {values : List Own.RVal} (arguments : Own.evalArgs source.env args = some values)
     (running : target.dsts = []) (mem : X86.Memory) (context : Lir.Word)
     (callers : List Lir.Frame) :
     (∃ words function output operands,
-      ListRel (fun value word => valueWord addresses value = some word) values words ∧
+      SlotsRel addresses (T.rawParams f 0) values words ∧
       lp.funcs[target.fn]? = some function ∧ function.blocks[target.label]? = some output ∧
       target.pos = output.body.size ∧ output.term = .tail f operands ∧
       Lir.evalArgs target.env operands = some words) ∨
@@ -47,8 +50,8 @@ theorem Cursor.tail_receipt {T : Tables} (tagged : Rt.Proof.Tagged T) {P : Cfg.P
       term_live blockLookup (fun y member => by
         simp only [otherUses, terminal, List.mem_append]
         exact .inr (by simpa [Cfg.Check.termVars] using argVars_of_mem member))
-    rw [tagged.operandsAt_params] at lowered
-    obtain ⟨words, evaluated, represented, _⟩ := fused_operands_words registers lowered live arguments
+    obtain ⟨words, evaluated, represented, _⟩ :=
+      slot_operands_words registers raws lowered fits live arguments
     obtain ⟨output, outputLookup, size, term⟩ :=
       closedAt_of held (Grows.refl _) extension (t := .tail f operands) rfl
     refine .inl ⟨words, function, output, operands, represented, ?_, ?_, ?_, term, evaluated⟩
@@ -64,12 +67,25 @@ theorem Cursor.tail_receipt {T : Tables} (tagged : Rt.Proof.Tagged T) {P : Cfg.P
       simp_all [Lir.atState]
     exact .inr (same ▸ failed)
 
+/-- A tail call's arguments fit the callee's parameters, read off the accepted flow check. -/
+theorem tcall_fits {P : Program} {pairs : List (Nat × Cfg.Fun)}
+    (consuming : consumeAll P = .ok pairs) (rawChecked : Raw.rawOk P.raw (consumed P pairs) = true)
+    {g b : Nat} (range : g < P.base.size) {fd : Cfg.Fun} {block : Cfg.Block}
+    (lookup : P.base.fun? g = some fd) (blockLookup : fd.blocks[b]? = some block)
+    {f : Nat} {args : List Fir.Arg} (terminal : block.term = .tcall f args) :
+    Raw.argsFit ((tablesOf P pairs).rawVar g) ((tablesOf P pairs).rawParams f 0) args = true := by
+  have flows := termOk_source consuming rawChecked range lookup blockLookup
+  rw [terminal] at flows
+  simp only [Raw.termOk, Bool.and_eq_true] at flows
+  exact flows.1
+
 /-- Tail entry replaces the active native frame and retains every older
 caller literally. Entry and the optional forward trampoline are executed,
 so a successful native enter is not a caller-supplied premise. -/
 theorem FrameState.tail {config : Rt.Config} {P : Program}
     {pairs : List (Nat × Cfg.Fun)} {funcs : List Lir.Func}
-    (consuming : consumeAll P = .ok pairs) (tagged : Rt.Proof.Tagged (tablesOf P pairs))
+    (consuming : consumeAll P = .ok pairs)
+    (rawChecked : Raw.rawOk P.raw (consumed P pairs) = true)
     (lowered : Rt.Lower.functions (tablesOf P pairs) (consumed P pairs) (rootsOf config P)
       (List.range P.base.size) = .ok funcs)
     (main : Nat) {addresses : AddressMap} {heapSize bound : Nat} {function : Cfg.Fun}
@@ -98,6 +114,7 @@ theorem FrameState.tail {config : Rt.Config} {P : Program}
         {fn := f, label := offset, pos := 0, env := targetEnv}) ∨
     Sem.Fails (Lir.semStep lp) {mem, ctx := context, stack := target :: callers} := by
   dsimp only
+  have fits := tcall_fits consuming rawChecked sourceRange sourceLookup sourceBlockLookup terminal
   obtain ⟨original, actual, originalLookup, receipt, actualLookup⟩ := consumed_entry consuming sourceRange
   have sameSource : original = sourceFd := Option.some.inj (originalLookup.symm.trans sourceLookup)
   subst original
@@ -114,21 +131,20 @@ theorem FrameState.tail {config : Rt.Config} {P : Program}
       exact .inr (by simpa [Cfg.Check.termVars] using argVars_of_mem member))
   have compatible := before.compatible.args live arguments
   have bounded := before.bounded.args args arguments
-  rcases position.tail_receipt tagged before.lookup actualBlock rfl terminal before.words arguments
-      running mem context callers with success | failed
+  rcases position.tail_receipt before.lookup actualBlock rfl terminal before.words before.raws fits
+      arguments running mem context callers with success | failed
   · obtain ⟨words, lirFunction, output, operands, represented, functionLookup,
       outputLookup, pos, term, evaluated⟩ := success
+    rw [rawParams_consumed consuming range lookup blockLookup] at represented
     obtain ⟨consumedFd, callee, targetEnv, offset, consumedLookup, entered, entryTrace,
-      entryCursor, entryWords⟩ := consumed_entry_words consuming lowered main range lookup
+      entryCursor, entryWords, entryRaws⟩ := consumed_entry_words consuming lowered main range lookup
       blockLookup represented arity real mem context callers
     have called := Lir.step_tail (mem := mem) (ctx := context) (rest := callers)
       functionLookup outputLookup pos term evaluated entered
     refine .inl ⟨consumedFd, targetEnv, offset, ?_, consumedLookup, entryCursor, entryWords,
-      (Own.Plain.envBounded_empty heapSize).bindAll _ bounded,
+      entryRaws, (Own.Plain.envBounded_empty heapSize).bindAll _ bounded,
       FusedCtorOk.empty.bindAll _ _ compatible⟩
     simpa using (Lir.star_of_step called).trans entryTrace
   · exact .inr failed
-
-
 
 end IxCC.Cfg.Rc.Native.Spec

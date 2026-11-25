@@ -64,9 +64,10 @@ theorem Activation.lexical {F : Fir.Program} {P : Program} {pairs : List (Nat ×
       lex sourceJoins ownedJoins code bound function source target borrows uniqs retUniq priv
       rslots slotVals) :
     EnvSub ownedEnv source.env ∧
-    FusedWords addresses (Rt.Proof.Fused (tablesOf P pairs) function) bound ownedEnv target.env ∧
+    FusedWords addresses (Omit (tablesOf P pairs) source.fn function) bound ownedEnv target.env ∧
     Own.Plain.EnvBounded H.size ownedEnv ∧
-    FusedCtorOk (tablesOf P pairs) (Rt.Proof.Fused (tablesOf P pairs) function) ownedEnv := by
+    FusedCtorOk (tablesOf P pairs) (Rt.Proof.Fused (tablesOf P pairs) function) ownedEnv ∧
+    RawWords ((tablesOf P pairs).rawVar source.fn) ownedEnv target.env := by
   obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, sub, _⟩ := before.layout
   exact ⟨sub, before.frame.lexical sub⟩
 

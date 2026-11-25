@@ -26,7 +26,7 @@ theorem dynamic_switch {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {fn : Nat
     (hdis : Dispatches T H (.loc ℓ) alts) :
     ∃ pe le ρl', EdgeOk C f T e pe ∧ e.back = decide (e.target ≤ src) ∧ resolveEdge f off starts pe = .ok le ∧
       ReachesEdge lp fn F mem ctx rest (off + st.cur) (Lir.atState mem ctx fn (off + st.cur) st.acc.length ρl rest)
-        le ρl' ∧ FusedWords addresses D sup ρ ρl' := by
+        le ρl' ∧ FusedWords addresses D sup ρ ρl' ∧ ∀ y, y < sup → ρl'[y]? = ρl[y]? := by
   obtain ⟨wx, hrel, hwx⟩ := hρ.word hv hxD
   unfold switch at hrun
   obtain ⟨es, st₁, h₁, h₂⟩ := run_bind hrun
@@ -154,8 +154,9 @@ theorem dynamic_switch {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {fn : Nat
         ho₂' hg hC hwx heven htag hpick
       refine ⟨pe, le, ρl', hok, hb, hle, hr, ?_⟩
       rcases hρl' with rfl | rfl
-      · exact hρ
-      · exact hρ.marker (hfresh ▸ hsup) _
+      · exact ⟨hρ, fun _ _ => rfl⟩
+      · exact ⟨hρ.marker (hfresh ▸ hsup) _, fun y hy =>
+          Lir.env_insert_ne _ _ (Nat.ne_of_gt (Nat.lt_of_lt_of_le hy (hfresh ▸ hsup)))⟩
     · cases hac
 
 
@@ -173,7 +174,7 @@ theorem dynamic_switch_checked {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {
     (pins : pinsApart T.known = true) (accepted : switchOk T alts d = true) :
     ∃ pe le ρl', EdgeOk C f T e pe ∧ e.back = decide (e.target ≤ src) ∧ resolveEdge f off starts pe = .ok le ∧
       ReachesEdge lp fn F mem ctx rest (off + st.cur) (Lir.atState mem ctx fn (off + st.cur) st.acc.length ρl rest)
-        le ρl' ∧ FusedWords addresses D sup ρ ρl' := by
+        le ρl' ∧ FusedWords addresses D sup ρ ρl' ∧ ∀ y, y < sup → ρl'[y]? = ρl[y]? := by
   exact dynamic_switch hF hH hrun hl ho hg hC hheap hρ hsup hxD hv hac hsel
     (compatible_dispatches pins accepted (by trivial) compatible hac hsel)
 

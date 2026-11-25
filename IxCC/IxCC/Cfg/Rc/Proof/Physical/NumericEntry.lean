@@ -23,6 +23,7 @@ theorem numeric_entry {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P 
     {f : Nat} {sourceFunction : Fir.Fun} (sourceLookup : F.fun? f = some sourceFunction)
     {numbers : List Nat} {words : List Lir.Word} (encoded : Rt.natWords numbers = some words)
     (arity : numbers.length = sourceFunction.params.length)
+    (exported : f ∈ P.base.exports)
     {size budget context : Lir.Word} {memory : X86.Memory}
     (region : Rt.Proof.RegionOk context size) (readable : Rt.Proof.LirRegion memory context size) :
     ∃ pairs functions left initialized base limit,
@@ -50,7 +51,8 @@ theorem numeric_entry {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P 
     (numeric_selectOwned_balance _ numbers balance)
     (fun v hv => numeric_selectBorrowed_reachable {} _ _ numbers v hv)
     (fun v hv => numeric_selectUnique_uniq F.ctors {} _ _ _ _ numbers v hv)
-    represented compatible (by simpa only [Own.litArgs, List.length_map] using arity)
+    represented (entry_of_export admission.rawOk exported) compatible
+    (by simpa only [Own.litArgs, List.length_map] using arity)
     (heap.numeric_selectOwned _ numbers)
 
 /-- Unrepresentable driver inputs take the actual driver's resource branch

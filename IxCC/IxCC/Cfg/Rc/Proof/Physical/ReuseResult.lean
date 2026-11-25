@@ -410,10 +410,13 @@ theorem physical_dropSlot (admission : CodeAdmission F bodies P config pairs fun
   have consuming : consume P (layoutOf P) (marker P.base.size first (.dec (slotBase + s))) =
       .ok (.bind first (.fir (.call (P.base.size + 1) [.var (slotBase + s)]))) :=
     IxCC.Cfg.Rc.Proof.Physical.Bridge.consume_decrement P (layoutOf P) first (slotBase + s)
+  have outside : P.base.size ≤ P.base.size + 1 := Nat.le_add_right _ 1
+  have noRaw := before.frame.cursor.noRaw head consuming admission.rawOk
+    (consumed_lookup_lt admission.consuming before.frame.lookup) (rawFnInstr_runtime outside)
   have liveOperand : ¬ Rt.Proof.Fused (tablesOf P pairs) function (slotBase + s) :=
     consumed_call_live before.frame.cursor head consuming before.frame.lookup (.var (slotBase + s))
       (by simp) (slotBase + s) rfl
-  obtain ⟨svWord, hsvWord, hreg⟩ := before.frame.words.word frameLookup liveOperand
+  obtain ⟨svWord, hsvWord, hreg⟩ := (before.frame.fused noRaw).word frameLookup liveOperand
   -- Lower the call instruction via `cursor.call`.
   let lp := Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main
   rcases before.frame.cursor.call head consuming memory context callers with success | failure
@@ -421,7 +424,7 @@ theorem physical_dropSlot (admission : CodeAdmission F bodies P config pairs fun
       position, statement, continuation⟩ := success
     have operandsKnown : Rt.Lower.operands source.fn [.var (slotBase + s)] =
         .ok (some [.v (slotBase + s)]) := rfl
-    rw [admission.tagged.operandsAt_params, operandsKnown] at lowered
+    rw [operandsAt_runtime admission.consuming outside, operandsKnown] at lowered
     cases lowered
     obtain ⟨wrapLookup, decLookup⟩ :=
       source_stage_decrement_runtime P (Public.Spec.rawSource config P pairs) main
@@ -497,7 +500,7 @@ theorem physical_dropSlot (admission : CodeAdmission F bodies P config pairs fun
         borrows uniqs retUniq priv (rslots.erase s) slotVals' :=
       ⟨state, typed, afterLayout,
         ⟨before.frame.lookup, continuation.withEnvs source.env (target.env.insert first 1) [],
-          before.frame.words.marker markerBound 1, by rw [hsize]; exact before.frame.bounded,
+          ((before.frame.fused noRaw).marker markerBound 1).ofFused, RawWords.of_noRaw noRaw, by rw [hsize]; exact before.frame.bounded,
           before.frame.compatible⟩,
         before.scope, rfl,
         consumed_call_done before.frame.lookup before.frame.cursor head consuming source.env⟩
@@ -591,6 +594,11 @@ theorem physical_reuse (admission : CodeAdmission F bodies P config pairs functi
   let callee := if uniq then (layoutOf P).reuseUWrapper ci else (layoutOf P).reuseWrapper ci
   have consuming : consume P (layoutOf P) ins =
       .ok (.bind x (.fir (.call callee (.var (slotBase + s) :: args)))) := hcons0
+  have outside : P.base.size ≤ callee := by
+    cases uniq <;> simp only [callee, ↓reduceIte, Bool.false_eq_true, Layout.reuseUWrapper,
+      Layout.reuseWrapper, Layout.init, Layout.incProc, layoutOf] <;> omega
+  have noRaw := before.frame.cursor.noRaw head consuming admission.rawOk
+    (consumed_lookup_lt admission.consuming before.frame.lookup) (rawFnInstr_runtime outside)
   have liveArgs := consumed_call_live before.frame.cursor head consuming before.frame.lookup
   -- Evaluate `.var (slotBase + s) :: args` in `source.env`.
   have hframeArgs : Own.evalArgs source.env (.var (slotBase + s) :: args) = some (sv :: vs) := by
@@ -608,9 +616,9 @@ theorem physical_reuse (admission : CodeAdmission F bodies P config pairs functi
   rcases before.frame.cursor.call head consuming memory context callers with success | failure
   · obtain ⟨operands, nativeFunction, block, lowered, functionLookup, blockLookupLir,
       position, statement, continuation⟩ := success
-    rw [admission.tagged.operandsAt_params] at lowered
+    rw [operandsAt_runtime admission.consuming outside] at lowered
     obtain ⟨words, hevalWords, hrelWords, _⟩ :=
-      fused_operands_words before.frame.words lowered liveArgs hframeArgs
+      fused_operands_words (before.frame.fused noRaw) lowered liveArgs hframeArgs
     obtain ⟨hwlen, hgetWord⟩ := listRel_getElem hrelWords
     have hwsLen : words.length = ctor.arity + 1 := by simp at hwlen; omega
     obtain ⟨wrapEnv, hbindWrap, hwrapGet⟩ := bindParams_range (ctor.arity + 1) words hwsLen
@@ -743,7 +751,7 @@ theorem physical_reuse (admission : CodeAdmission F bodies P config pairs functi
             borrows uniqs retUniq priv (rslots.erase s) slotVals' :=
           ⟨state, typed, afterLayout,
             ⟨before.frame.lookup, continuation.withEnvs _ _ [],
-              before.frame.words.publish xReal before.frame.bounded address, hbounds',
+              ((before.frame.fused noRaw).publish xReal before.frame.bounded address).ofFused, RawWords.of_noRaw noRaw, hbounds',
               before.frame.compatible.bind x (by show ValueCtorOk (tablesOf P pairs) (.loc H.size); trivial)⟩,
             bodyScope, rfl, consumed_call_done before.frame.lookup before.frame.cursor head consuming _⟩
         have history := HeapHistory.allocate H { ctor, fields := vs } addresses address
@@ -833,7 +841,7 @@ theorem physical_reuse (admission : CodeAdmission F bodies P config pairs functi
           borrows uniqs retUniq priv (rslots.erase s) slotVals' :=
         ⟨state, typed, afterLayout,
           ⟨before.frame.lookup, continuation.withEnvs _ _ [],
-            before.frame.words.publish xReal before.frame.bounded (words[0]'(by omega)), hbounds',
+            ((before.frame.fused noRaw).publish xReal before.frame.bounded (words[0]'(by omega))).ofFused, RawWords.of_noRaw noRaw, hbounds',
             before.frame.compatible.bind x (by show ValueCtorOk (tablesOf P pairs) (.loc H.size); trivial)⟩,
           bodyScope, rfl, consumed_call_done before.frame.lookup before.frame.cursor head consuming _⟩
       exact ResultAt.prefix htrace hreach hpriv history (by omega)
@@ -903,9 +911,14 @@ theorem physical_reset (admission : CodeAdmission F bodies P config pairs functi
   have consuming : consume P (layoutOf P) ins =
       .ok (.bind (slotBase + s) (.fir (.call callee [.var x, .lit (.nat mask)]))) :=
     consume_reset_of hrow (by omega) (by omega)
+  have outside : P.base.size ≤ callee := by
+    cases uniq <;> simp only [callee, ↓reduceIte, Bool.false_eq_true, Layout.resetUWrapper,
+      Layout.resetWrapper, Layout.init, Layout.incProc, layoutOf] <;> omega
+  have noRaw := before.frame.cursor.noRaw head consuming admission.rawOk
+    (consumed_lookup_lt admission.consuming before.frame.lookup) (rawFnInstr_runtime outside)
   have liveX : ¬ Rt.Proof.Fused (tablesOf P pairs) function x :=
     consumed_call_live before.frame.cursor head consuming before.frame.lookup (.var x) (by simp) x rfl
-  obtain ⟨vxWord, hvxWord, hregX⟩ := before.frame.words.word (sub x vx hvx) liveX
+  obtain ⟨vxWord, hvxWord, hregX⟩ := (before.frame.fused noRaw).word (sub x vx hvx) liveX
   have hmaskLt : mask < 2 ^ 61 :=
     Nat.lt_of_lt_of_le (fieldsMask_lt fields) (Nat.pow_le_pow_right (by omega) (by omega))
   have hmaskNat := natWord_fieldsMask (fs := fields) (by omega)
@@ -945,7 +958,7 @@ theorem physical_reset (admission : CodeAdmission F bodies P config pairs functi
         .ok (some [.v x, .imm (UInt64.ofNat (2 * mask + 1))]) := by
       simp only [Rt.Lower.operands, Rt.Lower.operand, mask, hmaskNat, Option.map_some,
         pure, Except.pure, bind, Except.bind]
-    rw [admission.tagged.operandsAt_params, hop] at lowered
+    rw [operandsAt_runtime admission.consuming outside, hop] at lowered
     cases lowered
     let wrapEnv : Lir.Env := (({} : Lir.Env).insert 0 vxWord).insert 1 (UInt64.ofNat (2 * mask + 1))
     have henter : Lir.enter lp callee [vxWord, UInt64.ofNat (2 * mask + 1)] =
@@ -1018,7 +1031,7 @@ theorem physical_reset (admission : CodeAdmission F bodies P config pairs functi
           borrows uniqs retUniq priv (rslots.insert s .erased) slotVals' :=
         ⟨state, typed, mkAfterLayout .erased,
           ⟨before.frame.lookup, continuation.withEnvs _ _ [],
-            before.frame.words.bind slotReal (show valueWord addresses .erased = some 1 from rfl),
+            ((before.frame.fused noRaw).bind slotReal (show valueWord addresses .erased = some 1 from rfl)).ofFused, RawWords.of_noRaw noRaw,
             envBounded_insert before.frame.bounded (show Own.Plain.Bounded H.size .erased from trivial),
             before.frame.compatible.bind (slotBase + s) trivial⟩,
           before.scope, rfl, consumed_call_done before.frame.lookup before.frame.cursor head consuming _⟩
@@ -1139,7 +1152,7 @@ theorem physical_reset (admission : CodeAdmission F bodies P config pairs functi
                 borrows uniqs retUniq priv (rslots.insert s (.loc H.size)) slotVals' :=
               ⟨state, typed, mkAfterLayout (.loc H.size),
                 ⟨before.frame.lookup, continuation.withEnvs _ _ [],
-                  before.frame.words.publish slotReal before.frame.bounded vxWord, hbounds',
+                  ((before.frame.fused noRaw).publish slotReal before.frame.bounded vxWord).ofFused, RawWords.of_noRaw noRaw, hbounds',
                   before.frame.compatible.bind (slotBase + s)
                     (by show ValueCtorOk (tablesOf P pairs) (.loc H.size); trivial)⟩,
                 before.scope, rfl, consumed_call_done before.frame.lookup before.frame.cursor head consuming _⟩
@@ -1234,7 +1247,7 @@ theorem physical_reset (admission : CodeAdmission F bodies P config pairs functi
                   borrows uniqs retUniq priv (rslots.insert s .erased) slotVals' :=
                 ⟨state, typed, mkAfterLayout .erased,
                   ⟨before.frame.lookup, continuation.withEnvs _ _ [],
-                    before.frame.words.bind slotReal (show valueWord addresses .erased = some 1 from rfl),
+                    ((before.frame.fused noRaw).bind slotReal (show valueWord addresses .erased = some 1 from rfl)).ofFused, RawWords.of_noRaw noRaw,
                     hbounds', before.frame.compatible.bind (slotBase + s) trivial⟩,
                   before.scope, rfl, consumed_call_done before.frame.lookup before.frame.cursor head consuming _⟩
               have history : HeapHistory H.size addresses H₂.size addresses :=

@@ -9,6 +9,7 @@ open IxCC.Rt.Rc.Procs
 
 theorem ConsumedCursor.switch_reaches {P : Program} {pairs : List (Nat × Cfg.Fun)}
     (consuming : consumeAll P = .ok pairs) (switches : Rt.checkSwitches P.base = .ok ())
+    (rawChecked : Raw.rawOk P.raw (consumed P pairs) = true)
     {lp : Lir.Program} {source : Cfg.Frame} {target : Lir.Frame}
     {addresses : AddressMap} {heap : Own.Heap} {bound : Nat} {actual fd : Cfg.Fun}
     (frame : FrameState P pairs lp addresses heap.size bound actual source target)
@@ -32,7 +33,8 @@ theorem ConsumedCursor.switch_reaches {P : Program} {pairs : List (Nat × Cfg.Fu
       resolveEdge source.fn off starts pe = .ok le ∧
       ReachesEdge lp source.fn F mem context callers low
         (Lir.atState mem context target.fn target.label target.pos target.env callers) le targetEnv ∧
-      FusedWords addresses (Fused (tablesOf P pairs) actual) bound source.env targetEnv) ∨
+      FusedWords addresses (Omit (tablesOf P pairs) source.fn actual) bound source.env targetEnv ∧
+      RawWords ((tablesOf P pairs).rawVar source.fn) source.env targetEnv) ∨
     Sem.Fails (Lir.semStep lp)
       (Lir.atState mem context target.fn target.label target.pos target.env callers) := by
   obtain ⟨original, consumedFd, originalLookup, receipt, consumedLookup⟩ := consumed_entry consuming range
@@ -50,8 +52,15 @@ theorem ConsumedCursor.switch_reaches {P : Program} {pairs : List (Nat × Cfg.Fu
     rw [equal] at position
     exact position
   have admitted := admitted_switch_checks pairs switches sourceLookup blockLookup terminal
+  have scrutinee : (tablesOf P pairs).rawVar source.fn x = false := by
+    have flows := termOk_source consuming rawChecked range sourceLookup blockLookup
+    rw [terminal] at flows
+    simp only [Raw.termOk, Bool.and_eq_true, Bool.not_eq_true'] at flows
+    exact flows.1
   exact cursor.switch_reaches frame.lookup actualBlock finished terminal liveHeap compatibleHeap
-    frame.words frame.compatible real (done _ actualBlock) admitted.1 admitted.2 lookup constructor selected context callers
+    frame.words frame.raws scrutinee
+    (fun row fused => fusable_noRaw (rawOk_funOk rawChecked range frame.lookup) actualBlock row fused)
+    frame.compatible real (done _ actualBlock) admitted.1 admitted.2 lookup constructor selected context callers
 
 
 end IxCC.Cfg.Rc.Native.Spec

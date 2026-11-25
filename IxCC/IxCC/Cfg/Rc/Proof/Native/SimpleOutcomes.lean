@@ -25,7 +25,7 @@ theorem physical_return (admission : CodeAdmission F bodies P config pairs funct
   intro H addresses external retUniq priv rslots slotVals live Γ Δ sourceEnv ownedEnv roots lex
     ownedJoins sourceFunction function source target memory context base bump limit regionBytes
     slots lists callers sourceLookup before heap
-  rcases before.return_value admission.scopedProgram admission.consuming admission.tagged
+  rcases before.return_value admission.scopedProgram admission.consuming admission.rawOk
       (Public.Spec.rawSource config P pairs) main sourceLookup heap callers with success | failure
   · obtain ⟨value, logical, word, _, sourceValue, den, balance, afterState, ret, represented,
       bounded, compatible, retNoPriv, uniqRet⟩ := success

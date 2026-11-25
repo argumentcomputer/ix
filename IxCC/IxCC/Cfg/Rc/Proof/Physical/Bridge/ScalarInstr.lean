@@ -39,7 +39,19 @@ theorem pure_effect {T : Tables} {rhs : Own.Rhs} (pureRhs : PureRhs rhs)
   | .fir (.call ..), impossible | .fir (.ctor ..), impossible | .fir (.proj ..), impossible
   | .proj .., impossible => exact False.elim impossible
 
-theorem instr_sim {T : Tables} (hT : BoolsOk T) (tagged : Rt.Proof.Tagged T) {f : Fir.FunId}
+/-- No register of the function is raw: no primitive binding takes the raw path. -/
+theorem rawPrim_of_noRaw {T : Tables} {f : Fir.FunId} (noRaw : ∀ y, T.rawVar f y = false)
+    (x : Nat) (op : Lam.Prim) (as : List Fir.Arg) : rawPrim T f x op as = false := by
+  unfold rawPrim
+  split
+  · simp only [noRaw, Bool.false_or, List.any_eq_false]
+    intro a _
+    split <;> simp [noRaw]
+  · rfl
+
+/-- **A pure binding of a function with no raw register simulates it** (its lowering is the
+tagged one). -/
+theorem instr_sim {T : Tables} (hT : BoolsOk T) {f : Fir.FunId} (noRaw : ∀ y, T.rawVar f y = false)
     {lp : Lir.Program} {ctx : Word}
     {D : Nat → Prop} {sup : Nat} {fn : Nat} {F : Lir.Func} {off : Nat} {starts : NatMap Nat} {C : List PBlock}
     (hF : lp.funcs[fn]? = some F) (hH : Holds f F off starts C)
@@ -51,14 +63,15 @@ theorem instr_sim {T : Tables} (hT : BoolsOk T) (tagged : Rt.Proof.Tagged T) {f 
   match r, pureRhs, hrun, hlive with
   | .fir (.arg a), _, hrun, hlive =>
     rcases withOperandsAt_run hrun with ⟨las, hops, _, hk⟩ | ⟨_, impossible, _⟩
-    · rw [tagged.operandsAt_var] at hops
+    · rw [show operandsAt f [T.rawVar f x] [a] = operands f [a] from
+        operandsAt_tagged (by simp [noRaw])] at hops
       obtain ⟨la, rfl, hop⟩ := operands_one hops
       simp only [assign_run, Except.ok.injEq, Prod.mk.injEq, true_and] at hk
       subst hk
       exact arg_sim hF hH hC ho hx hop (liveArgs_of hlive a (by simp))
     · cases impossible
   | .fir (.prim op args), _, hrun, hlive =>
-    rw [tagged.instr_prim] at hrun
+    rw [instr_prim_tagged (rawPrim_of_noRaw noRaw x op args)] at hrun
     rcases withOperands_run hrun with ⟨las, hops, _, hk⟩ | ⟨_, impossible, _⟩
     · exact primitive_sim hT hF hH hpow hgcd hk hC hl ho hsup hx hops (liveArgs_of hlive)
     · cases impossible

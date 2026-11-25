@@ -22,7 +22,11 @@ theorem Cursor.switch_reaches {T : Tables} {P : Cfg.Program} {lp : Lir.Program}
     {default : Option Cfg.Edge} (terminal : block.term = .switch x alts default)
     {heap : Own.Heap} {addresses : AddressMap} {mem : X86.Memory} {bound : Nat}
     (liveHeap : Gen.HeapLive heap addresses mem) (compatibleHeap : HeapCtorOk T heap)
-    (registers : FusedWords addresses (Fused T fd) bound source.env target.env)
+    (registers : FusedWords addresses (Omit T source.fn fd) bound source.env target.env)
+    (raws : RawWords (T.rawVar source.fn) source.env target.env)
+    (scrutinee : T.rawVar source.fn x = false)
+    (fusedNoRaw : ∀ row, fusable T (useCounts fd) block = some row →
+      ∀ y, T.rawVar source.fn y = false)
     (compatibleEnv : FusedCtorOk T (Fused T fd) source.env)
     (real : bound ≤ supOf fd) (done : FusedDone T fd block source)
     (pins : pinsApart T.known = true) (accepted : switchOk T alts default = true)
@@ -38,7 +42,8 @@ theorem Cursor.switch_reaches {T : Tables} {P : Cfg.Program} {lp : Lir.Program}
       resolveEdge source.fn off starts pe = .ok le ∧
       ReachesEdge lp source.fn F mem context callers low
         (Lir.atState mem context target.fn target.label target.pos target.env callers) le targetEnv ∧
-      FusedWords addresses (Fused T fd) bound source.env targetEnv) ∨
+      FusedWords addresses (Omit T source.fn fd) bound source.env targetEnv ∧
+      RawWords (T.rawVar source.fn) source.env targetEnv) ∨
     Sem.Fails (Lir.semStep lp)
       (Lir.atState mem context target.fn target.label target.pos target.env callers) := by
   obtain ⟨fd', block', F, starts, off, C, state, final, hfd, hb, hF, layout, start,
@@ -51,13 +56,16 @@ theorem Cursor.switch_reaches {T : Tables} {P : Cfg.Program} {lp : Lir.Program}
   have code := rest_nil lowering
   cases fused : fusable T (useCounts fd) block with
   | some row =>
+    have noRaw := fusedNoRaw row fused
     obtain ⟨init, condition, left, right⟩ := row
     simp only [fused] at code
     rcases fused_switch hF held blockLookup fused finished done code labels opened
-        (Grows.refl _) extension registers terminal lookup constructor selected with success | failure
+        (Grows.refl _) extension (registers.toFused noRaw) terminal lookup constructor selected
+        with success | failure
     · obtain ⟨pe, le, targetEnv, edgeOk, back, resolved, reached, words⟩ := success
       refine .inl ⟨F, starts, off, C, off+state.cur, pe, le, targetEnv, hF, layout,
-        start, held, Nat.le_add_right _ _, edgeOk, back, resolved, ?_, words⟩
+        start, held, Nat.le_add_right _ _, edgeOk, back, resolved, ?_, words.ofFused,
+        RawWords.of_noRaw noRaw⟩
       simpa only [fn, label, pos] using reached
     · exact .inr (by simpa only [fn, label, pos] using failure)
   | none =>
@@ -67,23 +75,29 @@ theorem Cursor.switch_reaches {T : Tables} {P : Cfg.Program} {lp : Lir.Program}
       have impossible := (fused_once omitted blockLookup).2 alts default terminal
       rw [fused] at impossible
       cases impossible
+    have kept : ¬ Omit T source.fn fd x := by
+      rintro (omitted | raw)
+      · exact materialized omitted
+      · rw [scrutinee] at raw; cases raw
     have fresh : bound ≤ state.fresh := Nat.le_trans real supply
     have reaches : ∃ pe le targetEnv,
         EdgeOk C source.fn T edge pe ∧ edge.back = decide (edge.target ≤ source.blk) ∧
         resolveEdge source.fn off starts pe = .ok le ∧
         ReachesEdge lp source.fn F mem context callers (off+state.cur)
           (Lir.atState mem context source.fn (off+state.cur) state.acc.length target.env callers)
-          le targetEnv ∧ FusedWords addresses (Fused T fd) bound source.env targetEnv := by
+          le targetEnv ∧ FusedWords addresses (Omit T source.fn fd) bound source.env targetEnv ∧
+          ∀ y, y < bound → targetEnv[y]? = target.env[y]? := by
       by_cases cell : ∃ location, value = .loc location
       · obtain ⟨location, rfl⟩ := cell
         exact dynamic_switch_checked hF held code labels opened (Grows.refl _) extension
-          liveHeap registers fresh materialized lookup constructor selected compatibleHeap pins accepted
+          liveHeap registers fresh kept lookup constructor selected compatibleHeap pins accepted
       · exact scalar_switch_checked hF held code labels opened (Grows.refl _) extension
-          registers fresh materialized lookup constructor selected compatibleHeap pins accepted
+          registers fresh kept lookup constructor selected compatibleHeap pins accepted
           (compatibleEnv x value lookup materialized) (fun location equal => cell ⟨location, equal⟩)
-    obtain ⟨pe, le, targetEnv, edgeOk, back, resolved, reached, words⟩ := reaches
+    obtain ⟨pe, le, targetEnv, edgeOk, back, resolved, reached, words, same⟩ := reaches
     refine .inl ⟨F, starts, off, C, off+state.cur, pe, le, targetEnv, hF, layout,
-      start, held, Nat.le_add_right _ _, edgeOk, back, resolved, ?_, words⟩
+      start, held, Nat.le_add_right _ _, edgeOk, back, resolved, ?_, words,
+      raws.agree fun found _ => same _ (registers.dom found)⟩
     simpa only [fn, label, pos] using reached
 
 

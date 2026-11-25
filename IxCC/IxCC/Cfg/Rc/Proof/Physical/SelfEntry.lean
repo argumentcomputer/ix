@@ -17,7 +17,7 @@ theorem self_entry_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.C
     {P : Program} {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
     (checked : checkScopedProgram F bodies P borrows uniqs = true)
     {pairs : List (Nat × Cfg.Fun)} (consuming : consumeAll P = .ok pairs)
-    (tagged : Rt.Proof.Tagged (tablesOf P pairs)) {lp : Lir.Program}
+    (rawChecked : Raw.rawOk P.raw (consumed P pairs) = true) {lp : Lir.Program}
     {H : Heap} {addresses : AddressMap} {external : Nat → Nat} {priv : Nat → Prop}
     {source : Cfg.Frame} {target : Lir.Frame} {ρ : Own.Env} {saved : List Own.Plain.JEntry}
     {rslots : Src.NatMap Own.RVal}
@@ -84,8 +84,10 @@ theorem self_entry_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.C
       nativeLower, edgeOk, back, resolved, reached⟩ :=
     frame.cursor.jump_reaches consuming nativeRange lookup frame.lookup blockLookup finished rfl mem context callers
   have length : entryBlock.params.length = fields.length := entryLength.trans arity.symm
-  rcases consumed_take_edge tagged receipt frame.lookup blockLookup nativeLookup lowering start held nativeLower
-      member entryBlockLookup edgeOk resolved sub (Cfg.Proof.sub_leaf source.env) frame.words arguments
+  have fits := termOk_edge (termOk_source consuming rawChecked nativeRange lookup blockLookup) member
+  rcases consumed_take_edge receipt frame.lookup blockLookup nativeLookup lowering start held nativeLower
+      member entryBlockLookup edgeOk resolved sub (Cfg.Proof.sub_leaf source.env) frame.words frame.raws
+      fits arguments
       length (functionBounds_params bounds entryBlockLookup) reached with failure | success
   · right
     have same : Lir.atState mem context target.fn target.label target.pos target.env callers =
@@ -95,7 +97,8 @@ theorem self_entry_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.C
     rw [same] at failure
     exact failure
   · obtain ⟨offset, charges, label, argumentWords, targetEnv, targetStart, labelLower, represented,
-      binding, trace, actualBack, costBound, charged, entered, savedSub, registers, lexicalWords⟩ := success
+      binding, trace, actualBack, costBound, charged, entered, savedSub, registers, raws,
+      lexicalWords, lexicalRaws⟩ := success
     have frameArgs := Cfg.Proof.evalArgs_sub sub arguments
     obtain ⟨blockBody, _, actualBlock⟩ := (consumeFunction_parts receipt).2.2.2.2.2 blockLookup
     have compatible := frame.compatible.args (edge_live actualBlock member) frameArgs
@@ -103,7 +106,7 @@ theorem self_entry_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.C
       lookup entryBlockLookup fields arity sourceCallers H
     have entryAt' := entryAt.extend (Cfg.Proof.Sub.bindAll (Cfg.Proof.sub_leaf source.env)
       (sourceFunction.params.map Prod.fst) fields)
-    rw [entryParams] at entered registers savedSub lexicalWords
+    rw [entryParams] at entered registers raws savedSub lexicalWords lexicalRaws
     let after : Cfg.Frame := {
       fn := source.fn
       blk := 0
@@ -122,7 +125,7 @@ theorem self_entry_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.C
           (by simpa using arity) fresh balance hbrw borrows uniqs
           (uniqs.getD source.fn ([], false)).2 F.ctors F.known priv
           huniq hprivB hprivE hprivArgs,
-        typed, entryAt', ⟨frame.lookup, entered, registers,
+        typed, entryAt', ⟨frame.lookup, entered, registers, raws,
           frame.bounded.bindAll _ (Own.Plain.dens_bounded den),
           frame.compatible.bindAll _ _ compatible⟩, sourceScope, rfl, ?_⟩
       intro consumedTarget foundTarget

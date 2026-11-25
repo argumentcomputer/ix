@@ -21,6 +21,15 @@ structure CodeAdmission (F : Fir.Program) (bodies : Src.NatMap Own.Plain.Code)
   switches : Rt.checkSwitches P.base = .ok ()
   rawChecked : (Raw.rawOk P.raw (consumed P pairs) && Raw.emptyLayout P.raw) = true
 
+theorem CodeAdmission.rawOk {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
+    {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (admission : CodeAdmission F bodies P config pairs functions borrows uniqs) :
+    Raw.rawOk P.raw (consumed P pairs) = true := by
+  have checked := admission.rawChecked
+  simp only [Bool.and_eq_true] at checked
+  exact checked.1
+
 theorem CodeAdmission.tagged {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
     {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
     {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}

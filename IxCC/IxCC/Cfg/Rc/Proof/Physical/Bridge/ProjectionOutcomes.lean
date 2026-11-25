@@ -143,7 +143,7 @@ theorem fieldless_result (admission : CodeAdmission F bodies P config pairs func
     obtain ⟨supply, real⟩ := checked_binding_bounds admission.scopedProgram admission.consuming
       sourceLookup before.frame.lookup before.layout pureRhs
     obtain ⟨pow, gcd⟩ := source_stage_scalar_runtime P pairs (Public.Spec.rawSource config P pairs) main
-    rcases (frame_step admission.tagged pow gcd before.frame supply head pureRhs real effect before.running
+    rcases (frame_step admission.consuming admission.rawOk pow gcd before.frame supply head pureRhs real effect before.running
         memory context callers).2 with scalar | failed
     · obtain ⟨charge, after, running, trace, frame, fused⟩ := scalar
       have activation : Activation F P pairs
@@ -253,7 +253,8 @@ theorem projection_result (admission : CodeAdmission F bodies P config pairs fun
               exact (before.owned.pre.bindBorrow fresh den
                 (Own.Plain.BorrowVal.asCtor_field hview hm) before.owned.counts).setProj
                 hxlive hylive' hvy' hview hget hvx'
-        rcases projection_frame before.frame heap.ready.idle.live heap.compatible heap.ordered head real
+        rcases projection_frame admission.consuming admission.rawOk before.frame heap.ready.idle.live
+            heap.compatible heap.ordered head real
             fullEffect before.running context callers with projected | failed
         · obtain ⟨after, running, trace, frame, fused⟩ := projected
           have activation : Activation F P pairs

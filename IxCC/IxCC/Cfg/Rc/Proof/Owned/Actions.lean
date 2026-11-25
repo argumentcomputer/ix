@@ -31,7 +31,7 @@ open IxCC.Own.Plain (Ctx JCtx checkCode)
 projection's, an immediate), not only a lexical token's. -/
 theorem copy_marker_step_of
     {P : Program} {pairs : List (Nat × Cfg.Fun)} (functions : Nat → Lir.Func) (main : Nat)
-    (tagged : Rt.Proof.Tagged (tablesOf P pairs))
+    (consumingAll : consumeAll P = .ok pairs)
     {source : Cfg.Frame} {target : Lir.Frame}
     (cursor : ConsumedCursor P pairs (Public.Spec.sourceStage P functions main) source target)
     {dummy x : Nat} {tail : List Cfg.Instr}
@@ -73,7 +73,7 @@ theorem copy_marker_step_of
       position, statement, continuation⟩ := success
     have operandsKnown : Rt.Lower.operands source.fn [.var x, .lit (.nat 1)] =
         .ok (some [.v x, .imm 3]) := rfl
-    rw [tagged.operandsAt_params, operandsKnown] at lowered
+    rw [operandsAt_runtime consumingAll (Nat.le_refl _), operandsKnown] at lowered
     cases lowered
     obtain ⟨wrapperLookup, procedureLookup⟩ := source_stage_increment_runtime P functions main
     obtain ⟨H', action, tokens, values, outcome⟩ :=
@@ -139,8 +139,12 @@ theorem physical_inc (admission : CodeAdmission F bodies P config pairs function
       List.nodup_nil⟩
   have ready : Gen.AllocatorReady maxClass H addresses memory (holdRoots external ([] ++ (roots ++ slotVals)))
       context base bump limit slots lists := by simpa using heap.ready
-  rcases copy_marker_step_of (Public.Spec.rawSource config P pairs) main admission.tagged before.frame.cursor head'
-      before.frame.lookup tokens frameLookup permission ready before.frame.words
+  have noRaw := before.frame.cursor.noRaw head'
+    (IxCC.Cfg.Rc.Proof.Physical.Bridge.consume_increment P (layoutOf P) first x) admission.rawOk
+    (consumed_lookup_lt admission.consuming before.frame.lookup) (rawFnInstr_runtime (Nat.le_refl _))
+  rcases copy_marker_step_of (Public.Spec.rawSource config P pairs) main admission.consuming
+      before.frame.cursor head'
+      before.frame.lookup tokens frameLookup permission ready (before.frame.fused noRaw)
       (absent first (Nat.le_refl _)) before.running callers with stepped | failed
   · obtain ⟨H₂, mem', action, _, ready', trace, cursor', words', values⟩ := stepped
     have same : Own.Plain.evalAction source.env H (.inc x 1) =
@@ -170,8 +174,9 @@ theorem physical_inc (admission : CodeAdmission F bodies P config pairs function
         {target with pos := target.pos+1, env := target.env.insert first 1, dsts := []}
         borrows uniqs retUniq priv rslots slotVals :=
       ⟨state, typed, after,
-        ⟨before.frame.lookup, cursor', words', by rw [size]; exact before.frame.bounded,
-          before.frame.compatible⟩,
+        FrameState.ofFused before.frame.lookup cursor' words' noRaw
+          (by rw [size]; exact before.frame.bounded)
+          before.frame.compatible,
         before.scope, rfl,
         consumed_call_done before.frame.lookup before.frame.cursor head' consuming source.env⟩
     have history : HeapHistory H.size addresses H'.size addresses := ⟨by omega, fun _ _ => rfl⟩
@@ -225,8 +230,12 @@ theorem physical_dec (admission : CodeAdmission F bodies P config pairs function
   have ready : Gen.AllocatorReady maxClass H addresses memory (holdRoots external ([value] ++ (owned' ++ slotVals)))
       context base bump limit slots lists := by
     rw [List.singleton_append, ← holdRoots_sameRefs refsAll]; exact heap.ready
+  have noRaw := before.frame.cursor.noRaw head'
+    (IxCC.Cfg.Rc.Proof.Physical.Bridge.consume_decrement P (layoutOf P) first x) admission.rawOk
+    (consumed_lookup_lt admission.consuming before.frame.lookup)
+    (rawFnInstr_runtime (Nat.le_add_right _ 1))
   rcases drop_marker_step (Public.Spec.rawSource config P pairs) main before.frame.cursor head'
-      before.frame.lookup tokens ready before.frame.words
+      before.frame.lookup tokens ready (before.frame.fused noRaw)
       (absent first (Nat.le_refl _)) before.running callers with stepped | failed
   · obtain ⟨value', remaining, H₂, mem', slots', lists', charges, lookup', equal, action, _,
       ready', trace, cursor', words', _⟩ := stepped
@@ -256,8 +265,9 @@ theorem physical_dec (admission : CodeAdmission F bodies P config pairs function
         {target with pos := target.pos+1, env := target.env.insert first 1, dsts := []}
         borrows uniqs retUniq priv rslots slotVals :=
       ⟨state, typed, after,
-        ⟨before.frame.lookup, cursor', words', by rw [size]; exact before.frame.bounded,
-          before.frame.compatible⟩,
+        FrameState.ofFused before.frame.lookup cursor' words' noRaw
+          (by rw [size]; exact before.frame.bounded)
+          before.frame.compatible,
         before.scope, rfl,
         consumed_call_done before.frame.lookup before.frame.cursor head' consuming source.env⟩
     have history : HeapHistory H.size addresses H'.size addresses := ⟨by omega, fun _ _ => rfl⟩
