@@ -76,10 +76,22 @@ def reach (p : Program) (seeds : List CId) : List CId :=
   (reachGo p (p.size + seeds.length + 1) seeds
     (seeds.foldl (fun (s : Std.HashSet CId) c => s.insert c) {}) seeds.toArray).toList
 
-/-- **The closure the check runs on**, for one root: what SrcEval may reach from the root and the
-pinned `Bool` constructors, and the runtime references of the word entries among them. -/
+/-- The constructors of the enumeration the root's declared type ends in (none at any other
+result type). `enumStoredB` wants every one of them in the closure; SrcEval need not reach them
+(`Abi.tri0 : Tri := .hi` reaches only `Tri.hi`). -/
+def resultCtors (p : Program) (root : CId) : List CId :=
+  match p.decl? root with
+  | some d =>
+    match (Src.Term.pis d.type).2 with
+    | .const r [] => (enumCtors p r).getD []
+    | _ => []
+  | none => []
+
+/-- **The closure the check runs on**, for one root: what SrcEval may reach from the root, the
+pinned `Bool` constructors and the result enumeration's constructors, and the runtime references
+of the word entries among them. -/
 def closureOf (p : Program) (root : CId) : List CId :=
-  let pins := [p.known.boolTrue, p.known.boolFalse].filterMap id
+  let pins := [p.known.boolTrue, p.known.boolFalse].filterMap id ++ resultCtors p root
   let sl := reach p (root :: pins.filter (· != root))
   let refs := (sl.flatMap fun c => match p.table.resolveOf c with
     | some (.word ..) => (p.runtimeRefs c).map (·.1)
