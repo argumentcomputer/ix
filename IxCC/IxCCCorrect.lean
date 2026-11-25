@@ -21,6 +21,7 @@ import IxCCCorrect.ComposeExe
 import IxCCCorrect.GroundShape
 import IxCCCorrect.ComposeExit
 import IxCCCorrect.UniqueIota
+import IxCCCorrect.UniqueNat
 import IxCCCorrect.Unique
 import IxCCCorrect.Fence
 
@@ -90,6 +91,8 @@ propositions that elaborate, and what the existing theorems establish today.
   exists and the environment stores what separates numerals (`agrees_unique`).
 * `IxCCCorrect.UniqueIota`: the same with `Bool.true ≠ Bool.false` from the `Bool` recursor's
   ι-law, so no stored witness theorem is needed (`agrees_unique_iota`).
+* `IxCCCorrect.UniqueNat`: the same through `Nat.rec`'s ι-law (zero is no successor, the
+  successor is injective), with neither `Nat.beq` nor `Bool` read (`agrees_unique_rec`).
 * `IxCCCorrect.Fence`: the library's axiom fence, an exact `#print axioms`
   assertion for every theorem above (each within `propext`, `Classical.choice`,
   `Quot.sound`).

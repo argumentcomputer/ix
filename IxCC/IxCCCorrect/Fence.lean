@@ -18,6 +18,7 @@ import IxCCCorrect.GroundShape
 import IxCCCorrect.Unique
 import IxCCCorrect.ComposeExit
 import IxCCCorrect.UniqueIota
+import IxCCCorrect.UniqueNat
 
 /-! # The target statements' axiom fence: every theorem `IxCCCorrect` proves uses at most the
 three standard axioms. Building the library checks it (`#guard_msgs`), in the required check
@@ -964,3 +965,23 @@ routes and the progress targets are definitions and have no fence. -/
 
 /-- info: 'IxCC.Correct.agrees_unique_iota' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Correct.agrees_unique_iota
+
+/-! ## `IxCCCorrect.UniqueNat` -/
+
+/-- info: 'IxCC.Correct.natRecStored_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.natRecStored_of_check
+
+/-- info: 'IxCC.Correct.natRec_sep' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.natRec_sep
+
+/-- info: 'IxCC.Correct.litSet_inj_rec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.litSet_inj_rec
+
+/-- info: 'IxCC.Correct.numeralBasisN_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.numeralBasisN_of_check
+
+/-- info: 'IxCC.Correct.sameDenotation_lit_unique_rec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.sameDenotation_lit_unique_rec
+
+/-- info: 'IxCC.Correct.agrees_unique_rec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Correct.agrees_unique_rec
