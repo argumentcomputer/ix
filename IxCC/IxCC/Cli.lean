@@ -1,4 +1,5 @@
 import IxCC.Recheck
+import IxCC.Compile
 import IxCC.Recheck.Rc.Produce
 import IxCC.Src.AutoHints
 import IxCC.Anf.Print
@@ -25,6 +26,20 @@ ixcc check-cert CLOSURE.ixe [--equations EQ.json] [--root NAME|ADDR|NAME=ADDR]..
 ixcc verify-exe FILE [--closure CLOSURE.ixe] [--equations EQ.json]
     [--expect-target ADDR] [--expect-env ADDR] [--stats]
 ```
+
+**The default path is the pure compiler.** `ixcc compile CLOSURE.ixe [--root R]` with no
+`--equations` sidecar, no `--cert` and no `--uncertified` mode, naming one root, is an IO
+wrapper around `IxCC.Compile.compile` (`defaultPlan?`): it reads the closure, resolves `--root`
+(`NAME`, `<64-hex>`, `NAME=<64-hex>`, or the default `entry`/`main`) to an address and a name, and
+calls `Compile.check` then, when `--exe` is given, `Compile.build`, with the options `--rc`,
+`--machine`, `--stack`/`--region`, the kernel's limits and the root's name. Everything it writes
+is what they return (`-o` the checked artifact's object, `--exe` the executable, `--emit-cert` the
+certificate text, `--embed-cert` that executable with the trailer made from the returned claim),
+so the command line and `compile` agree byte for byte by construction (`tests-pure-compile`).
+The hints are derived inside `compile`, the seed-closure check runs on every compile, and a
+program that selects zero RC and whose contract recheck refuses is rejected (exit 3), never
+compiled as immortal. Without `--exe` only `check` runs. Several `--root`s, a sidecar, a given
+certificate or an uncertified mode take the paths below, which are not `compile`.
 
 `compile` runs ingress, `produce` and `Recheck.run` and writes the ELF
 object: `cx_<root>` for each root (the sidecar's names; every sidecar root
@@ -106,7 +121,11 @@ and exits with what kind of failure it is:
 | 6 | declined by a kernel limit | below |
 
 A step's errors take its outcome, except where the code decides (`classify`: `cli.*` usage,
-`rt.internal` internal, `assert.*` declined).
+`rt.internal` internal, `assert.*` declined). On the default path a refusal of `compile` is a
+decline (1), except the policy recheck (`exe.cert.policy`), the seed-closure check (`kf4`) and
+the certificate's relevance annotation (`relevance-canonical`), which are rejections (3)
+(`compileOutcome`); `compile` checks its own producer's certificate, so a replay failure there is
+a decline of the program, not a rejected input.
 
 The kernel's acceptance runs under the
 kernel's limits, IxCC's decoder caps (`Src.KernelFront.defaultLimits`) unless a flag
@@ -896,6 +915,148 @@ def embedCertified (cfg : Config) (inp : Input) (rootSelection : List String) (c
       "the executable verifier returned another claim than the one built")
   pure built
 
+/-! ## The default path: the pure compiler -/
+
+/-- Whether a run takes the default path (`compile` with no `--equations` sidecar, no
+given certificate and no uncertified mode): its one root is compiled by
+`IxCC.Compile.compile`. -/
+def Options.defaultPath (o : Options) : Bool :=
+  o.command == "compile" && o.equations.isNone && o.cert.isNone && !o.uncertified && !o.opt &&
+    !o.bignat
+
+/-- The pure compiler's policy request for `--rc`. -/
+def RcMode.toCompile : RcMode → Compile.Rc
+  | .off => .off
+  | .on => .on
+  | .auto => .auto
+
+/-- The outcome of a refusal of `Compile.check` or `Compile.build`: the policy recheck
+(`exe.cert.policy`), the seed-closure check (`kf4`) and the certificate checker's Stage A
+(`relevance-canonical`) are rejections (an artifact failed a check); anything else is a
+decline (`classify`: `cli.*` usage, `rt.internal` internal, `assert.*` declined; a kernel
+limit exits 6, `main`). -/
+def compileOutcome (e : Err) : Outcome :=
+  if e.code == "exe.cert.policy" || e.code == "kf4" || e.code == "relevance-canonical" then .rejected
+  else classify .declined e
+
+/-- A pure step of the compiler, its refusal classified by `compileOutcome`. -/
+def compileStep {α : Type} (x : Unit → Except Err α) : ExceptT Failure IO α :=
+  ExceptT.adapt (fun e => { outcome := compileOutcome e, err := e }) (lift x)
+
+/-- The policy line `--rc auto` prints: the reason plain RC was refused (`Checked.note`), or the
+policy compiled under. -/
+def policyLine (c : Compile.Checked) : String :=
+  match c.note with
+  | some n => n
+  | none =>
+    match c.policy with
+    | .zeroRc => "zero-rc"
+    | .plainRc => "plain-rc"
+    | .immortal => "immortal"
+
+/-- The certificate `check` accepted, in the zero-RC format's shape (its base). -/
+def checkedCert (c : Compile.Checked) : Cert :=
+  match c.replay with
+  | .zero cert _ => cert
+  | .plain cert _ _ => cert.base
+
+/-- **`--embed-cert` on the default path**: the returned executable with the `.ix.cert` v1
+trailer made from what `compile` returned (the claim's six-field projection
+`Compile.Claim.legacy`, the certificate text, the environment's bytes, the derived hints as a
+sidecar, the root's name), once the executable verifier (`Exe.Cert.verifyExeBytes`, what
+`verify-exe` runs, under the run's kernel limits) has accepted these very bytes and returned
+that claim (else rejected, and nothing is written). The core under the trailer is the returned
+executable, byte for byte. -/
+def embedOutput (envBytes : ByteArray) (opts : Compile.Options) (c : Compile.Checked)
+    (out : Compile.Output) (limits : Ix.Kernel.Admission.Limits)
+    (verify : ByteArray → Except Err Exe.Cert.VerifiedExe :=
+      fun b => Exe.Cert.verifyExeBytes b none none limits) :
+    ExceptT Failure IO (ByteArray × Nat × CompileClaim) := do
+  let payload : X86.Exe.Cert.Payload := {
+    exeKind := opts.kind
+    stack := opts.layout.stack
+    region := opts.layout.region
+    rootNames := c.inp.names
+    claimBytes := out.claim.legacy.toClaimBytes
+    certBytes := out.cert.toUTF8
+    envBytes
+    eqBytes := (Src.Hints.toK1Json c.inp.hints).compress.toUTF8 }
+  let encoded := payload.encode
+  let file ← phase .declined (lift fun _ => (X86.Exe.Cert.attachTrailer out.exe encoded).mapError fun e =>
+    Exe.err "exe.cert.attach" e.render)
+  let v ← phase .rejected (lift fun _ => verify file)
+  unless v.claim == out.claim.legacy do
+    failure .rejected (Exe.err "exe.cert.claim"
+      "the executable verifier returned another claim than the one compiled")
+  pure (file, encoded.size, out.claim.legacy)
+
+/-- **The default path** (`Options.defaultPath`): read the closure, resolve `--root` to one
+address and name (`Src.AutoHints.resolveRoots`, a pure step; the name is an option of
+`compile`), then `Compile.check` and, when an executable is asked for, `Compile.build`:
+`compile` exactly. Everything written comes from what they return: `-o` the object `check`'s
+artifact holds, `--exe` the executable `build` returned (with `--embed-cert` its trailer),
+`--emit-cert` the certificate text `check` accepted, `--signatures` and `--dump-ir` the
+artifact. Without `--exe` only `check` runs (the object needs no executable). `none` when
+`--root` names several roots: that run takes the sidecar-free multi-root path below. -/
+def defaultPlan? (o : Options) (limits : Ix.Kernel.Admission.Limits) :
+    ExceptT Failure IO (Option Plan) := do
+  let some closure := o.closure | failure .usage (cliErr "cli.args" "no closure")
+  let (bytes, tRead) ← phase .usage (timed (readBin closure))
+  let env ← phase .declined (lift fun _ =>
+    (Ixon.V3.decodeAnonymousEnv bytes).mapError fun m => { stage := .ingress, code := "decode", message := m })
+  let chosen ← phase .usage (lift fun _ =>
+    (Src.AutoHints.resolveRoots env o.roots).mapError fun m => cliErr "cli.root" m)
+  let #[(target, name)] := chosen | return none
+  let opts : Compile.Options :=
+    { rc := o.rc.toCompile, kind := if o.machine then .machine else .plain, layout := o.layout
+      kernelLimits := limits, name }
+  let t0 ← IO.monoMsNow
+  let c ← compileStep fun _ => Compile.check bytes target opts
+  let tCheck := (← IO.monoMsNow) - t0
+  if let some l := Src.Table.wordHintLine c.wordHints then IO.eprintln l
+  let a := c.replay.artifact
+  let mut outputs : Array Output := #[]
+  let mut stdout : Array String := #[]
+  if let some f := o.out then outputs := outputs.push { path := f, bytes := a.object }
+  if let some f := o.exe then
+    let out ← compileStep fun _ => Compile.build target opts c
+    let (exeBytes, certInfo?) ← if o.embedCert then do
+        let (file, paySz, claim) ← embedOutput bytes opts c out limits
+        pure (file, some (paySz, claim))
+      else pure (out.exe, none)
+    outputs := outputs.push { path := f, bytes := exeBytes, executable := true }
+    if let some (_, claim) := certInfo? then stdout := stdout.push (claimLine claim)
+    if o.stats then
+      let sizes := match certInfo? with
+        | some (paySz, _) => s!"core {out.exe.size}, .ix.cert {paySz}, "
+        | none => ""
+      stdout := stdout.push s!"executable: {exeBytes.size} bytes ({sizes}object text \
+        {a.backend.encoded.text.size}), stack {o.layout.stack} bytes, region {o.layout.region} bytes"
+  if let some f := o.emitCert then outputs := outputs.push { path := f, bytes := c.cert.toUTF8 }
+  if let some f := o.signatures then
+    outputs := outputs.push { path := f, bytes := ((signaturesJson a).pretty ++ "\n").toUTF8 }
+  for l in o.dumps do
+    stdout := stdout.push s!"== {l} =="
+    stdout := stdout.push (dump a l)
+  if o.rc == .auto then stdout := stdout.push s!"rc policy: {policyLine c}"
+  if o.stats then
+    stdout := stdout.push (envelopeLine c.inp)
+    stdout := stdout.push s!"kernel: accepted {c.inp.kernel.acc.records.length} records, \
+      {c.inp.kernel.acc.decls.size} logical declarations and {c.inp.kernel.acc.tier.length} tier constants, \
+      within ingress"
+    stdout := stdout.push s!"auto-hints: {c.inp.hints.proposals.size} proposals (derived by compile)"
+    let cert := checkedCert c
+    let certBytes := if c.cert.endsWith "\n" then c.cert.utf8ByteSize - 1 else c.cert.utf8ByteSize
+    stdout := stdout.push s!"time: read {tRead} ms, compile {tCheck} ms (ingress with the kernel's \
+      acceptance, the producer, the certificate checker and the seed-closure check)"
+    stdout := stdout.push s!"certificate: {certBytes} bytes of JSON; {cert.table.resolve.length} table entries, \
+      {cert.relevance.nodes.length} annotated terms, {cert.mid.steps.length} middle-end steps, \
+      {cert.alloc.length} allocations, {cert.frames.length} frame layouts"
+    stdout := stdout.push s!"claim: policy {repr c.policy}, role table {c.roleTable}, target {target}"
+    for l in statsLines a (some c.alloc) do stdout := stdout.push l
+    for d in c.wordHints do stdout := stdout.push s!"hint: {d.message}"
+  pure (some { outputs, stdout })
+
 /-- `verify-exe`, the kernel under `limits`. -/
 def verifyPlan (o : Options) (limits : Ix.Kernel.Admission.Limits) : ExceptT Failure IO Plan := do
   let some f := o.verifyExe | failure .usage (cliErr "cli.args" "no executable given")
@@ -931,6 +1092,9 @@ def verifyPlan (o : Options) (limits : Ix.Kernel.Admission.Limits) : ExceptT Fai
 
 /-- `compile` and `check-cert`, the kernel under `limits`: everything they write and print. -/
 def compilePlan (o : Options) (limits : Ix.Kernel.Admission.Limits) : ExceptT Failure IO Plan := do
+  -- the default path: `Compile.check` and `Compile.build`, exactly (`defaultPlan?`)
+  if o.defaultPath then
+    if let some plan ← defaultPlan? o limits then return plan
   let (bytes, eqBytes, inp, tRead, tIngress, autoStats?, certRoots) ← phase .declined do
     match o.equations with
     | some _ =>
