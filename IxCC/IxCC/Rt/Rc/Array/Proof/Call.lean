@@ -75,6 +75,39 @@ theorem star_call1 {p : Program} {fn lbl pos : Nat} {f gFunc : Func} {blk : Bloc
   star_call hf hb hpos hst hargs hg hbind
     ((hcall { fn, label := lbl, pos := pos + 1, env, dsts := [dst] } rest dst rfl).trans hk)
 
+/-- `star_call0` with the total charge an equation, for goal-directed chains. -/
+theorem star_call0_eq {p : Program} {fn lbl pos : Nat} {f gFunc : Func} {blk : Block}
+    {g : FunId} {args : List Arg} {vals : List Word} {env calleeEnv : Env} {mem mem' : Memory}
+    {context : Word} {rest : List Frame} {c c' c'' : Nat} {s : State}
+    (hf : p.funcs[fn]? = some f) (hb : f.blocks[lbl]? = some blk)
+    (hpos : pos < blk.body.size) (hst : blk.body[pos]'hpos = .call [] g args)
+    (hargs : evalArgs env args = some vals)
+    (hg : p.funcs[g]? = some gFunc)
+    (hbind : bindParams {} gFunc.params vals = some calleeEnv)
+    (hcall : Returns0 p g calleeEnv mem context c mem')
+    (hk : Sem.Star (semStep p)
+      (State.mk mem' context ({ fn, label := lbl, pos := pos + 1, env } :: rest)) c' s)
+    (hc : c + c' + 1 = c'') :
+    Sem.Star (semStep p) (State.mk mem context ({ fn, label := lbl, pos, env } :: rest)) c'' s :=
+  hc ▸ star_call0 hf hb hpos hst hargs hg hbind hcall hk
+
+/-- `star_call1` with the total charge an equation, for goal-directed chains. -/
+theorem star_call1_eq {p : Program} {fn lbl pos : Nat} {f gFunc : Func} {blk : Block}
+    {dst : VReg} {g : FunId} {args : List Arg} {vals : List Word} {env calleeEnv : Env}
+    {mem mem' : Memory} {context res : Word} {rest : List Frame} {c c' c'' : Nat} {s : State}
+    (hf : p.funcs[fn]? = some f) (hb : f.blocks[lbl]? = some blk)
+    (hpos : pos < blk.body.size) (hst : blk.body[pos]'hpos = .call [dst] g args)
+    (hargs : evalArgs env args = some vals)
+    (hg : p.funcs[g]? = some gFunc)
+    (hbind : bindParams {} gFunc.params vals = some calleeEnv)
+    (hcall : Returns1 p g calleeEnv mem context c res mem')
+    (hk : Sem.Star (semStep p)
+      (State.mk mem' context ({ fn, label := lbl, pos := pos + 1, env := env.insert dst res } :: rest))
+        c' s)
+    (hc : c + c' + 1 = c'') :
+    Sem.Star (semStep p) (State.mk mem context ({ fn, label := lbl, pos, env } :: rest)) c'' s :=
+  hc ▸ star_call1 hf hb hpos hst hargs hg hbind hcall hk
+
 /-- A `ret []` is a return. -/
 theorem returns0_of_star {P : Program} {fn : FunId} {f : Func} {blk : Block} {lbl : Nat}
     {env env' : Env} {mem mem' : Memory} {ctx : Word} {c : Nat}

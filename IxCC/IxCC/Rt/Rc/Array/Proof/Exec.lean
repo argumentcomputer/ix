@@ -25,6 +25,10 @@ open IxCC.X86 (Memory)
 
 /-! ## Registers and arguments -/
 
+/-- A statement position inside a block whose body is a literal array (possibly with free
+variables in its statements): the size computes. -/
+macro "body_pos" : tactic => `(tactic| exact Nat.le_of_ble_eq_true rfl)
+
 theorem env_get_insert_ne' {ρ : Env} {k k' : VReg} {val : Word} {r : Option Word}
     (hne : (k == k') = false) (h : ρ[k']? = r) : (ρ.insert k val)[k']? = r := by
   rw [← h]
