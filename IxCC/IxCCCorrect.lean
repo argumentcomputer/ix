@@ -10,6 +10,7 @@ import IxCCCorrect.Shape1Check
 import IxCCCorrect.Shape2
 import IxCCCorrect.Shape2Check
 import IxCCCorrect.Shape2Produce
+import IxCCCorrect.ShapeHook
 import IxCCCorrect.Compile
 import IxCCCorrect.Fence
 
@@ -45,6 +46,9 @@ propositions that elaborate, and what the existing theorems establish today.
   and `run_ok_vals`, the unviewed statement at any shaped argument values.
 * `IxCCCorrect.Shape2Produce`: an untrusted producer of shape certificates from a
   checked source program (run on the committed closures by `tests-shape`).
+* `IxCCCorrect.ShapeHook`: the shape check beside the recheck path (`runShaped`), and
+  `Recheck.sound` with no "source goes wrong" case from its acceptance alone
+  (`runShaped_sound`); `neverStuck_checked`, the unviewed statement.
 * `IxCCCorrect.Compile`: the certified route as it stands. `CompiledToday`, the
   proposition of `CorrectToday`'s strength about the pure compiler's output
   (`IxCC.Compile.compile`), with the proof that every output meets it

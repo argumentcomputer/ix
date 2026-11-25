@@ -114,6 +114,8 @@ theorem mem_appRes {irrArg : Bool} {argOk : Shape → Bool} {s τ : Shape}
   | enum _ => simp [appRes] at h
   | data _ => simp [appRes] at h
   | irr => simp [appRes] at h
+  | inter _ _ => simp [appRes] at h
+  | any => simp [appRes] at h
 
 /-- What a projection returns, per shape of its subject: field `i` of a structure's
 entry of the projected inductive. -/
@@ -156,6 +158,8 @@ theorem mem_projRes {datas : List DataDecl} {s : CId} {i : Nat} {σ τ : Shape}
   | enum _ => simp [projRes] at h
   | irr => simp [projRes] at h
   | fn _ _ => simp [projRes] at h
+  | inter _ _ => simp [projRes] at h
+  | any => simp [projRes] at h
 
 /-- What is known of the shape of a term being synthesized: nothing, all of it, or
 (for a λ in function position) its domain. -/
@@ -164,29 +168,96 @@ inductive Exp where
   | full (σ : Shape)
   | dom (σ : Shape)
 
-/-- **Shape synthesis at levels `ls`**: the shapes of a term in a context. Only a λ
-reads what is expected: the whole shape (a λ passed as an argument, a body checked
-against an instance), or the domain (a λ applied on the spot: the domain is the
-argument's shape). -/
+/-- A shape and, at an intersection, its parts. -/
+def parts : Shape → List Shape
+  | .inter a b => .inter a b :: (parts a ++ parts b)
+  | σ => [σ]
+
+theorem hasShape_parts {sig : Sig} {ls : Levels} {Γ : List Shape} {e : Term} :
+    ∀ (σ τ : Shape), τ ∈ parts σ → HasShape sig ls Γ e σ → HasShape sig ls Γ e τ
+  | .inter a b, τ, h, he => by
+    simp only [parts, List.mem_cons, List.mem_append] at h
+    rcases h with h | h | h
+    · subst h
+      exact he
+    · exact hasShape_parts a τ h (.interL he)
+    · exact hasShape_parts b τ h (.interR he)
+  | .nat, τ, h, he => by simp [parts] at h; subst h; exact he
+  | .enum _, τ, h, he => by simp [parts] at h; subst h; exact he
+  | .data _, τ, h, he => by simp [parts] at h; subst h; exact he
+  | .irr, τ, h, he => by simp [parts] at h; subst h; exact he
+  | .fn _ _, τ, h, he => by simp [parts] at h; subst h; exact he
+  | .any, τ, h, he => by simp [parts] at h; subst h; exact he
+
+/-- Is the term a λ? -/
+def isLam : Term → Bool
+  | .lam _ _ _ => true
+  | _ => false
+
+theorem isLam_eq {t : Term} (h : isLam t = true) : ∃ b d body, t = .lam b d body := by
+  cases t with
+  | lam b d body => exact ⟨b, d, body, rfl⟩
+  | _ => simp [isLam] at h
+
+/-- **Checking a term against a shape**, from its synthesis `f`: at an intersection,
+against both parts; at `any`, a λ (nothing to check) or a term with some shape;
+otherwise the shape is among those synthesized when it is expected. -/
+def chkWith (f : Exp → List Shape) (lam : Bool) : Shape → Bool
+  | .inter a b => chkWith f lam a && chkWith f lam b
+  | .any => lam || !(f .none).isEmpty
+  | .nat => decide (Shape.nat ∈ f (.full .nat))
+  | .enum I => decide (Shape.enum I ∈ f (.full (.enum I)))
+  | .data d => decide (Shape.data d ∈ f (.full (.data d)))
+  | .irr => decide (Shape.irr ∈ f (.full .irr))
+  | .fn σ τ => decide (Shape.fn σ τ ∈ f (.full (.fn σ τ)))
+
+theorem chkWith_sound {sig : Sig} {ls : Levels} {Γ : List Shape} {t : Term}
+    (f : Exp → List Shape) (hf : ∀ e σ, σ ∈ f e → HasShape sig ls Γ t σ) (lam : Bool)
+    (hl : lam = true → ∃ b d body, t = .lam b d body) :
+    ∀ σ, chkWith f lam σ = true → HasShape sig ls Γ t σ
+  | .inter a b, h => by
+    simp only [chkWith, Bool.and_eq_true] at h
+    exact .inter (chkWith_sound f hf lam hl a h.1) (chkWith_sound f hf lam hl b h.2)
+  | .any, h => by
+    simp only [chkWith, Bool.or_eq_true] at h
+    rcases h with h | h
+    · obtain ⟨b, d, body, rfl⟩ := hl h
+      exact .lamAny
+    · cases hfn : f .none with
+      | nil => simp [hfn] at h
+      | cons σ rest => exact .toAny (hf .none σ (by rw [hfn]; exact List.mem_cons_self))
+  | .nat, h => hf _ _ (of_decide_eq_true h)
+  | .enum _, h => hf _ _ (of_decide_eq_true h)
+  | .data _, h => hf _ _ (of_decide_eq_true h)
+  | .irr, h => hf _ _ (of_decide_eq_true h)
+  | .fn _ _, h => hf _ _ (of_decide_eq_true h)
+
+/-- **Shape synthesis at levels `ls`**: the shapes of a term in a context, an
+intersection with its parts. Only a λ reads what is expected: the whole shape (a λ
+passed as an argument, a body checked against an instance), or the domain (a λ applied
+on the spot: the domain is the argument's shape). An argument and a body are checked
+against the shape they must have (`chkWith`). -/
 def synth (insts : List (CId × Levels × Shape)) (datas : List DataDecl) (ls : Levels) :
     List Shape → Term → Exp → List Shape
-  | Γ, .var i, _ => (Γ[i]?).toList
+  | Γ, .var i, _ => ((Γ[i]?).toList).flatMap parts
   | _, .natLit _, _ => [.nat]
   | _, .sort _, _ => [.irr]
   | _, .pi _ _ _, _ => [.irr]
-  | _, .const c us, _ => instsOf insts c (us.map (evalUniv ls))
+  | _, .const c us, _ => (instsOf insts c (us.map (evalUniv ls))).flatMap parts
   | Γ, .app f a _ r, _ =>
-    (match f with
+    ((match f with
       | .lam _ _ _ =>
         (if r.irrAt ls then [Shape.irr] else synth insts datas ls Γ a .none).flatMap fun σ =>
           synth insts datas ls Γ f (.dom σ)
       | _ => synth insts datas ls Γ f .none).flatMap fun s =>
-      appRes (r.irrAt ls) (fun σ => decide (σ ∈ synth insts datas ls Γ a (.full σ))) s
+      appRes (r.irrAt ls) (fun σ => chkWith (fun e => synth insts datas ls Γ a e) (isLam a) σ)
+        s).flatMap parts
   | Γ, .lam b _ body, e =>
     match e with
     | .full (.fn σ τ) =>
       if b.propWhen.allowsBeta ls then
-        if τ ∈ synth insts datas ls (σ :: Γ) body (.full τ) then [.fn σ τ] else []
+        if chkWith (fun e => synth insts datas ls (σ :: Γ) body e) (isLam body) τ then [.fn σ τ]
+        else []
       else []
     | .dom σ =>
       if b.propWhen.allowsBeta ls then
@@ -196,7 +267,8 @@ def synth (insts : List (CId × Levels × Shape)) (datas : List DataDecl) (ls : 
   | Γ, .letE _ _ r _ v body, e =>
     if r.irrAt ls then synth insts datas ls (.irr :: Γ) body e
     else (synth insts datas ls Γ v .none).flatMap fun σ => synth insts datas ls (σ :: Γ) body e
-  | Γ, .proj s i e', _ => (synth insts datas ls Γ e' .none).flatMap fun σ => projRes datas s i σ
+  | Γ, .proj s i e', _ =>
+    ((synth insts datas ls Γ e' .none).flatMap fun σ => projRes datas s i σ).flatMap parts
   | _, _, _ => []
 
 /-- A synthesized shape is a derivation. -/
@@ -206,8 +278,9 @@ theorem synth_sound (cert : Cert) (ls : Levels) : ∀ (t : Term) (Γ : List Shap
   induction t with
   | var i =>
     intro Γ e σ h
-    simp [synth] at h
-    exact .var h
+    simp only [synth] at h
+    obtain ⟨s, hs, hp⟩ := List.mem_flatMap.1 h
+    exact hasShape_parts _ _ hp (.var (by simpa using hs))
   | sort u =>
     intro Γ e σ h
     simp [synth] at h
@@ -216,10 +289,13 @@ theorem synth_sound (cert : Cert) (ls : Levels) : ∀ (t : Term) (Γ : List Shap
   | const c us =>
     intro Γ e σ h
     simp only [synth] at h
-    exact .const (mem_instsOf _ _ _ _ h)
+    obtain ⟨s, hs, hp⟩ := List.mem_flatMap.1 h
+    exact hasShape_parts _ _ hp (.const (mem_instsOf _ _ _ _ hs))
   | app f a m r ihf iha =>
     intro Γ e σ h
     simp only [synth] at h
+    obtain ⟨τ₀, h, hp⟩ := List.mem_flatMap.1 h
+    refine hasShape_parts _ _ hp ?_
     obtain ⟨s, hs, hτ⟩ := List.mem_flatMap.1 h
     have hf : HasShape cert.sig ls Γ f s := by
       cases f with
@@ -238,7 +314,7 @@ theorem synth_sound (cert : Cert) (ls : Levels) : ∀ (t : Term) (Γ : List Shap
     obtain ⟨σ', rfl, hc⟩ := mem_appRes hτ
     rcases hc with ⟨hr, rfl⟩ | ⟨hr, ha⟩
     · exact .appIrr hr hf
-    · exact .app hr hf (iha _ _ _ (of_decide_eq_true ha))
+    · exact .app hr hf (chkWith_sound _ (fun e σ h => iha _ _ _ h) _ isLam_eq _ ha)
   | lam b d body _ ihb =>
     intro Γ e σ h
     cases e with
@@ -260,13 +336,15 @@ theorem synth_sound (cert : Cert) (ls : Levels) : ∀ (t : Term) (Γ : List Shap
           · rename_i hbody
             simp only [List.mem_singleton] at h
             subst h
-            exact .lam hb (ihb _ _ _ hbody)
+            exact .lam hb (chkWith_sound _ (fun e σ h => ihb _ _ _ h) _ isLam_eq _ hbody)
           · simp at h
         · simp at h
       | nat => simp [synth] at h
       | data _ => simp [synth] at h
       | enum _ => simp [synth] at h
       | irr => simp [synth] at h
+      | inter _ _ => simp [synth] at h
+      | any => simp [synth] at h
   | pi b d c _ _ =>
     intro Γ e σ h
     simp [synth] at h
@@ -284,6 +362,8 @@ theorem synth_sound (cert : Cert) (ls : Levels) : ∀ (t : Term) (Γ : List Shap
   | proj s i e' ihe =>
     intro Γ e σ h
     simp only [synth] at h
+    obtain ⟨τ₀, h, hp⟩ := List.mem_flatMap.1 h
+    refine hasShape_parts _ _ hp ?_
     obtain ⟨σ', hs, hτ⟩ := List.mem_flatMap.1 h
     obtain ⟨d, D, c, fl, rfl, hD, hst, hind, hct, hi⟩ := mem_projRes hτ
     exact .proj (ihe _ _ _ hs) hD hst hind hct hi
@@ -367,6 +447,8 @@ theorem fldsOf_sound {p : Program} {cert : Cert} {ind : CId} {σ : Shape} {np : 
       · cases h
   | irr => simp [fldsOf] at h
   | fn _ _ => simp [fldsOf] at h
+  | inter _ _ => simp [fldsOf] at h
+  | any => simp [fldsOf] at h
 
 def isOrdinary : Option RecKind → Bool
   | some .ordinary => true
@@ -430,26 +512,27 @@ theorem casesOk_sound {p : Program} {cert : Cert} {ls : Levels} {σ : Shape} {c 
       hkind hsc, hσ⟩
 
 /-- Each rule of a recursor peels its λs and its body has the result shape in the
-environment F2 builds, from rule `j` on. -/
+environment F2 builds (`pre`: the parameters, the motive and the minors; then the
+fields), from rule `j` on. -/
 def rulesOk (insts : List (CId × Levels × Shape)) (datas : List DataDecl) (ls : Levels)
     (rules : List Rule)
-    (ms : List Shape) (τ : Shape) : Nat → List (List Shape) → Bool
+    (pre : List Shape) (τ : Shape) : Nat → List (List Shape) → Bool
   | _, [] => true
   | j, fl :: rest =>
     (match rules[j]? with
       | some rule =>
-        match peelLams (1 + ms.length + fl.length) rule.rhs with
+        match peelLams (pre.length + fl.length) rule.rhs with
         | some body =>
-          decide (τ ∈ synth insts datas ls (fl.reverse ++ (ms.reverse ++ [.irr])) body (.full τ))
+          decide (τ ∈ synth insts datas ls (fl.reverse ++ pre.reverse) body (.full τ))
         | none => false
-      | none => false) && rulesOk insts datas ls rules ms τ (j + 1) rest
+      | none => false) && rulesOk insts datas ls rules pre τ (j + 1) rest
 
-theorem rulesOk_sound {cert : Cert} {ls : Levels} {rules : List Rule} {ms : List Shape}
+theorem rulesOk_sound {cert : Cert} {ls : Levels} {rules : List Rule} {pre : List Shape}
     {τ : Shape} : ∀ (flds : List (List Shape)) (j0 : Nat),
-    rulesOk cert.insts cert.datas ls rules ms τ j0 flds = true →
+    rulesOk cert.insts cert.datas ls rules pre τ j0 flds = true →
     ∀ (i : Nat) (fl : List Shape), flds[i]? = some fl → ∃ (rule : Rule) (body : Term),
-      rules[j0 + i]? = some rule ∧ peelLams (1 + ms.length + fl.length) rule.rhs = some body ∧
-      HasShape cert.sig ls (fl.reverse ++ (ms.reverse ++ [.irr])) body τ
+      rules[j0 + i]? = some rule ∧ peelLams (pre.length + fl.length) rule.rhs = some body ∧
+      HasShape cert.sig ls (fl.reverse ++ pre.reverse) body τ
   | [], _, _, i, fl, hi => by simp at hi
   | fl0 :: rest, j0, h, i, fl, hi => by
     simp only [rulesOk, Bool.and_eq_true] at h
@@ -461,7 +544,7 @@ theorem rulesOk_sound {cert : Cert} {ls : Levels} {rules : List Rule} {ms : List
       cases hr : rules[j0]? with
       | none => simp [hr] at h1
       | some rule =>
-        cases hp : peelLams (1 + ms.length + fl0.length) rule.rhs with
+        cases hp : peelLams (pre.length + fl0.length) rule.rhs with
         | none => simp [hr, hp] at h1
         | some body =>
           simp only [hr, hp, decide_eq_true_eq] at h1
@@ -473,41 +556,96 @@ theorem rulesOk_sound {cert : Cert} {ls : Levels} {rules : List Rule} {ms : List
       rw [e]
       exact ⟨rule, body, hr, hp, hb⟩
 
-/-- A recursor at an instance `irr → minors → σ₁ → τ`. -/
+/-- An ordinary recursor at `params → irr → minors → major → τ`, the pieces given. -/
+def recrOkAt (p : Program) (cert : Cert) (ls : Levels) (σ : Shape) (ind : CId)
+    (np nmot nmin ni : Nat) (rules : List Rule) (ps ms : List Shape) (maj τ : Shape) : Bool :=
+  match fldsOf p cert ind maj with
+  | some (np', flds) =>
+    decide (np' = np) && decide (nmot = 1) && decide (ni = 0) && decide (ps.length = np) &&
+      decide (ms.length = nmin) && decide (σ = arrows ((ps ++ .irr :: ms) ++ [maj]) τ) &&
+      rulesOk cert.insts cert.datas ls rules (ps ++ .irr :: ms) τ 0 flds
+  | none => false
+
+/-- An ordinary recursor at an instance `params → irr → minors → major → τ`. -/
 def recrOk (p : Program) (cert : Cert) (ls : Levels) (σ : Shape) (ind : CId)
     (np nmot nmin ni : Nat) (rules : List Rule) : Bool :=
-  match fldsOf p cert ind (argAt (1 + nmin) σ) with
-  | some (np', flds) =>
-    decide (np' = 0) && decide (np = 0) && decide (nmot = 1) && decide (ni = 0) &&
-      decide ((argsUpTo nmin (resAfter 1 σ)).length = nmin) &&
-      decide (σ = arrows (.irr :: (argsUpTo nmin (resAfter 1 σ) ++ [argAt (1 + nmin) σ]))
-        (resAfter (2 + nmin) σ)) &&
-      rulesOk cert.insts cert.datas ls rules (argsUpTo nmin (resAfter 1 σ))
-        (resAfter (2 + nmin) σ) 0 flds
-  | none => false
+  recrOkAt p cert ls σ ind np nmot nmin ni rules (argsUpTo np σ)
+    (argsUpTo nmin (resAfter (np + 1) σ)) (argAt (np + 1 + nmin) σ) (resAfter (np + 2 + nmin) σ)
+
+theorem recrOkAt_sound {p : Program} {cert : Cert} {ls : Levels} {σ : Shape} {r : CId}
+    {s kk : Bool} {lv np nmot nmin ni : Nat} {ind : CId} {rules : List Rule} {ty : Term}
+    {ps ms : List Shape} {maj τ : Shape}
+    (hdecl : p.decl? r = some (.recr s kk lv np nmot nmin ni ind rules ty))
+    (hkind : p.table.recKindOf r = some .ordinary)
+    (h : recrOkAt p cert ls σ ind np nmot nmin ni rules ps ms maj τ = true) :
+    ∃ σs τ, HeadOk p cert.sig (.recr r) ls σs τ ∧ σ = arrows σs τ := by
+  unfold recrOkAt at h
+  cases hf : fldsOf p cert ind maj with
+  | none => simp [hf] at h
+  | some pr =>
+    obtain ⟨np', flds⟩ := pr
+    simp only [hf, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨⟨⟨⟨⟨hnp', hnm⟩, hni⟩, hps⟩, hms⟩, hσ⟩, hrules⟩ := h
+    have hsc := fldsOf_sound hf
+    rw [hnp', ← hps] at hsc
+    rw [hnm, hni, ← hps, ← hms] at hdecl
+    refine ⟨_, _, .recr r ls ps maj ind flds ms τ s kk lv rules ty hdecl hkind hsc ?_, hσ⟩
+    intro j fl hfl
+    obtain ⟨rule, body, hr, hp, hb⟩ := rulesOk_sound flds 0 hrules j fl hfl
+    rw [Nat.zero_add] at hr
+    exact ⟨rule, body, hr, hp, hb⟩
 
 theorem recrOk_sound {p : Program} {cert : Cert} {ls : Levels} {σ : Shape} {r : CId}
     {s kk : Bool} {lv np nmot nmin ni : Nat} {ind : CId} {rules : List Rule} {ty : Term}
     (hdecl : p.decl? r = some (.recr s kk lv np nmot nmin ni ind rules ty))
     (hkind : p.table.recKindOf r = some .ordinary)
     (h : recrOk p cert ls σ ind np nmot nmin ni rules = true) :
+    ∃ σs τ, HeadOk p cert.sig (.recr r) ls σs τ ∧ σ = arrows σs τ :=
+  recrOkAt_sound hdecl hkind h
+
+/-- A subsingleton recursor at `pre → indices → major → τ`, the pieces given: rule 0's
+body has the result shape on `pre` and the fields F3 takes from the index slots. -/
+def recrSubOkAt (cert : Cert) (ls : Levels) (σ : Shape) (np nmot nmin ni : Nat)
+    (rules : List Rule) (srcs : List FieldSrc) (pre idx : List Shape) (maj τ : Shape) : Bool :=
+  decide (pre.length = np + nmot + nmin) && decide (idx.length = ni) &&
+    decide (σ = arrows (pre ++ (idx ++ [maj])) τ) &&
+    match rules[0]? with
+    | some rule =>
+      match peelLams (pre.length + srcs.length) rule.rhs with
+      | some body =>
+        chkWith (fun e => synth cert.insts cert.datas ls
+          ((srcs.map (srcShape idx)).reverse ++ pre.reverse) body e) (isLam body) τ
+      | none => false
+    | none => false
+
+/-- A subsingleton recursor at an instance. -/
+def recrSubOk (cert : Cert) (ls : Levels) (σ : Shape) (np nmot nmin ni : Nat)
+    (rules : List Rule) (srcs : List FieldSrc) : Bool :=
+  recrSubOkAt cert ls σ np nmot nmin ni rules srcs (argsUpTo (np + nmot + nmin) σ)
+    (argsUpTo ni (resAfter (np + nmot + nmin) σ)) (argAt (np + nmot + nmin + ni) σ)
+    (resAfter (np + nmot + nmin + ni + 1) σ)
+
+theorem recrSubOkAt_sound {p : Program} {cert : Cert} {ls : Levels} {σ : Shape} {r : CId}
+    {s kk : Bool} {lv np nmot nmin ni : Nat} {ind : CId} {rules : List Rule} {ty : Term}
+    {w : PropWhen} {srcs : List FieldSrc} {pre idx : List Shape} {maj τ : Shape}
+    (hdecl : p.decl? r = some (.recr s kk lv np nmot nmin ni ind rules ty))
+    (hkind : (p.table.recKindOf r).map (·.atLevels ls) = some (.subsingleton w srcs))
+    (h : recrSubOkAt cert ls σ np nmot nmin ni rules srcs pre idx maj τ = true) :
     ∃ σs τ, HeadOk p cert.sig (.recr r) ls σs τ ∧ σ = arrows σs τ := by
-  unfold recrOk at h
-  cases hf : fldsOf p cert ind (argAt (1 + nmin) σ) with
-  | none => simp [hf] at h
-  | some pr =>
-    obtain ⟨np', flds⟩ := pr
-    simp only [hf, Bool.and_eq_true, decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨⟨⟨hnp', hnp⟩, hnm⟩, hni⟩, hlen⟩, hσ⟩, hrules⟩ := h
-    have hsc := fldsOf_sound hf
-    rw [hnp'] at hsc
-    rw [hnp, hnm, hni, ← hlen] at hdecl
-    refine ⟨_, _, .recr r ls _ ind flds (argsUpTo nmin (resAfter 1 σ)) _ s kk lv rules ty hdecl
-      hkind hsc ?_, hσ⟩
-    intro j fl hfl
-    obtain ⟨rule, body, hr, hp, hb⟩ := rulesOk_sound flds 0 hrules j fl hfl
-    rw [Nat.zero_add] at hr
-    exact ⟨rule, body, hr, hp, hb⟩
+  unfold recrSubOkAt at h
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+  obtain ⟨⟨⟨hpre, hidx⟩, hσ⟩, hrule⟩ := h
+  cases hr : rules[0]? with
+  | none => simp [hr] at hrule
+  | some rule =>
+    cases hp : peelLams (pre.length + srcs.length) rule.rhs with
+    | none => simp [hr, hp] at hrule
+    | some body =>
+      simp only [hr, hp] at hrule
+      rw [← hidx] at hdecl
+      exact ⟨_, _, .recrSub r ls pre idx maj τ s kk lv np nmot nmin ind rules ty w srcs rule body
+        hdecl hkind hpre hr hp
+        (chkWith_sound _ (fun e σ h => synth_sound cert ls _ _ _ _ h) _ isLam_eq _ hrule), hσ⟩
 
 /-! ## Constructors -/
 
@@ -660,7 +798,8 @@ def entryOk (p : Program) (cert : Cert) (c : CId) (ls : Levels) (σ : Shape) : B
   | some (.prim op) =>
     if op.isPredicate then predOk p cert op σ
     else decide (σ = arrows (List.replicate op.arity .nat) .nat)
-  | some (.eqn _ body) => decide (σ ∈ synth cert.insts cert.datas ls [] body (.full σ))
+  | some (.eqn _ body) =>
+    chkWith (fun e => synth cert.insts cert.datas ls [] body e) (isLam body) σ
   | some (.csimp g us _) => decide ((g, us.map (evalUniv ls), σ) ∈ cert.insts)
   | some (.case r) =>
     match p.decl? r with
@@ -670,11 +809,15 @@ def entryOk (p : Program) (cert : Cert) (c : CId) (ls : Levels) (σ : Shape) : B
   | some (.word _ _ _) => false
   | none =>
     match p.decl? c with
-    | some (.defn .defn .safe _ _ v) => decide (σ ∈ synth cert.insts cert.datas ls [] v (.full σ))
+    | some (.defn .defn .safe _ _ v) =>
+      chkWith (fun e => synth cert.insts cert.datas ls [] v e) (isLam v) σ
     | some (.ctor _ _ _ _ np nf _) =>
       zeroOk p c np nf σ || succOk p c np nf σ || enumCtorOk cert c σ || dataCtorOk cert c σ
     | some (.recr _ _ _ np nmot nmin ni ind rules _) =>
-      isOrdinary (p.table.recKindOf c) && recrOk p cert ls σ ind np nmot nmin ni rules
+      (isOrdinary (p.table.recKindOf c) && recrOk p cert ls σ ind np nmot nmin ni rules) ||
+        (match (p.table.recKindOf c).map (fun (x : RecKind) => x.atLevels ls) with
+          | some (RecKind.subsingleton _ srcs) => recrSubOk cert ls σ np nmot nmin ni rules srcs
+          | _ => false)
     | _ => false
 
 theorem entryOk_sound {p : Program} {cert : Cert} {c : CId} {ls : Levels} {σ : Shape}
@@ -697,8 +840,9 @@ theorem entryOk_sound {p : Program} {cert : Cert} {c : CId} {ls : Levels} {σ : 
       simp only [hres, decide_eq_true_eq] at h
       exact .body (.csimp hres) (.const h)
     | eqn thm body =>
-      simp only [hres, decide_eq_true_eq] at h
-      exact .body (.eqn hres) (synth_sound cert ls _ _ _ _ h)
+      simp only [hres] at h
+      exact .body (.eqn hres)
+        (chkWith_sound _ (fun e σ h => synth_sound cert ls _ _ _ _ h) _ isLam_eq _ h)
     | case r =>
       simp only [hres] at h
       cases hd : p.decl? r with
@@ -721,8 +865,9 @@ theorem entryOk_sound {p : Program} {cert : Cert} {c : CId} {ls : Levels} {σ : 
       cases d with
       | defn kind safety lvls ty v =>
         cases kind <;> cases safety <;>
-          simp only [hd, Bool.false_eq_true, decide_eq_true_eq] at h
-        exact .body (.defn hres hd) (synth_sound cert ls _ _ _ _ h)
+          simp only [hd, Bool.false_eq_true] at h
+        exact .body (.defn hres hd)
+          (chkWith_sound _ (fun e σ h => synth_sound cert ls _ _ _ _ h) _ isLam_eq _ h)
       | ctor s lv ind cidx np nf ty =>
         simp only [hd, Bool.or_eq_true] at h
         rcases h with ((hz | hs) | he) | hdt
@@ -744,10 +889,25 @@ theorem entryOk_sound {p : Program} {cert : Cert} {c : CId} {ls : Levels} {σ : 
         · obtain ⟨σs, τ, hh, rfl⟩ := dataCtorOk_sound (p := p) (ls := ls) hdt
           exact .head (.ctor hres hd) hh
       | recr s kk lv np nmot nmin ni ind rules ty =>
-        simp only [hd, Bool.and_eq_true] at h
-        obtain ⟨hk, hr⟩ := h
-        obtain ⟨σs, τ, hh, rfl⟩ := recrOk_sound (ls := ls) hd (isOrdinary_sound hk) hr
-        exact .head (.recr hres hd) hh
+        simp only [hd, Bool.or_eq_true, Bool.and_eq_true] at h
+        rcases h with ⟨hk, hr⟩ | hsub
+        · obtain ⟨σs, τ, hh, rfl⟩ := recrOk_sound (ls := ls) hd (isOrdinary_sound hk) hr
+          exact .head (.recr hres hd) hh
+        · cases hkind : (p.table.recKindOf c).map (·.atLevels ls) with
+          | none => simp [hkind] at hsub
+          | some kind =>
+            cases kind with
+            | subsingleton w srcs =>
+              rw [hkind] at hsub
+              have hsub' : recrSubOkAt cert ls σ np nmot nmin ni rules srcs _ _ _ _ = true := hsub
+              obtain ⟨σs, τ, hh, rfl⟩ := recrSubOkAt_sound (p := p) hd hkind hsub'
+              exact .head (.recr hres hd) hh
+            | ordinary =>
+              rw [hkind] at hsub
+              exact Bool.noConfusion hsub
+            | empty =>
+              rw [hkind] at hsub
+              exact Bool.noConfusion hsub
       | _ => simp [hd] at h
 
 /-- **The check**: every instance resolves as its shape says, and every enumeration's

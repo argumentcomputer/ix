@@ -82,6 +82,8 @@ def showShape : Shape → String
   | .enum i => s!"E{i}"
   | .data d => s!"D{d}"
   | .irr => "_"
+  | .any => "*"
+  | .inter a b => s!"({showShape a} & {showShape b})"
   | .fn a b => s!"({showShape a} -> {showShape b})"
 
 /-- A term on one line: `#i` a variable, `cN` a constant, `~a` an argument irrelevant at `ls`,
@@ -221,6 +223,13 @@ def viewedShape : Shape → Bool
   | .fn .nat τ => viewedShape τ
   | _ => false
 
+/-- For the fields of a certificate taken from their uses: how many have 0, 1, 2, … use shapes. -/
+def useCounts (fields : List (Nat × Nat × Nat)) : List (Nat × Nat) :=
+  let m := fields.foldl (fun m f => max m f.2.2) 0
+  (List.range (m + 1)).filterMap fun k =>
+    let n := (fields.filter fun f => f.2.2 == k).length
+    if n == 0 then none else some (k, n)
+
 /-- The outcome on one root. -/
 inductive Outcome where
   /-- `certOk`, at a root shape `neverWrong_of_cert_nat` or `_enum` reads -/
@@ -239,7 +248,7 @@ def runRoot (label : String) (p : Src.Program) (i : Nat) (name : String) : IO Ou
   IO.print s!"{label} {name}: "
   out.flush
   let t0 ← IO.monoMsNow
-  let cert := Produce.produce p c
+  let (cert, fields) := Produce.produceWith p c
   let n := cert.insts.length
   IO.print s!"produced {n}"
   out.flush
@@ -250,7 +259,15 @@ def runRoot (label : String) (p : Src.Program) (i : Nat) (name : String) : IO Ou
     IO.println s!"reject [the producer did not converge: {n} instances, not checked]"
     return .refused "the producer did not converge (more than 4000 instances)"
   let size := s!"{cert.insts.length} instances, {cert.enums.length} enumerations, \
-    {cert.datas.length} data entries"
+    {cert.datas.length} data entries, fields by uses {useCounts fields}"
+  if (← IO.getEnv "SHAPE_DUMP").isSome then
+    IO.println ""
+    for (D, d) in cert.datas.zipIdx do
+      IO.println s!"  D{d} = #{D.ind} {(hex (p.addr D.ind)).take 8} struct={D.struct} \
+        {D.ctors.map fun e => (e.1, e.2.map showShape)}"
+    for (d, ls, σ) in cert.insts do
+      IO.println s!"  #{d} {kindOf p d} {(hex (p.addr d)).take 8} {ls} : {showShape σ}\n      \
+        {match bodyOf p d with | some t => (showTerm ls t).take 700 | none => ""}"
   let ok := certOk p cert
   let t1 ← IO.monoMsNow
   if ok then
@@ -316,6 +333,7 @@ def bump (key : String) : List (String × Nat) → List (String × Nat)
 
 def run : IO UInt32 := do
   let only ← IO.getEnv "SHAPE_ONLY"
+  let rootOnly ← IO.getEnv "SHAPE_ROOT"
   let mut rows : List (String × Nat × Nat × Nat × Nat) := []
   let mut hist : List (String × Nat) := []
   let mut unloadable : List String := []
@@ -341,6 +359,8 @@ def run : IO UInt32 := do
       | none => unloadable := unloadable ++ [label]
       | some (p, names) =>
         for (name, i) in names.zipIdx do
+          if let some want := rootOnly then
+            if name != want then continue
           total := total + 1
           match ← runRoot label p i name with
           | .viewed => viewed := viewed + 1

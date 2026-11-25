@@ -50,6 +50,10 @@ inductive Shape where
   | data (d : Nat)
   | irr
   | fn (dom cod : Shape)
+  /-- both shapes at once: a method of a dictionary used at several types -/
+  | inter (a b : Shape)
+  /-- any value, never looked at: a method nobody uses -/
+  | any
   deriving DecidableEq, Repr
 
 /-- `σ₁ → … → σₙ → τ`. -/
@@ -107,8 +111,30 @@ inductive HasShape (sig : Sig) (ls : Levels) : List Shape → Term → Shape →
       {fl : List Shape} {σ : Shape} :
       HasShape sig ls Γ e (.data d) → sig.datas d = some D → D.struct = true → D.ind = s →
       D.ctors = [(c, fl)] → fl[i]? = some σ → HasShape sig ls Γ (.proj s i e) σ
+  /-- a term at two shapes -/
+  | inter {Γ : List Shape} {e : Term} {a b : Shape} :
+      HasShape sig ls Γ e a → HasShape sig ls Γ e b → HasShape sig ls Γ e (.inter a b)
+  | interL {Γ : List Shape} {e : Term} {a b : Shape} :
+      HasShape sig ls Γ e (.inter a b) → HasShape sig ls Γ e a
+  | interR {Γ : List Shape} {e : Term} {a b : Shape} :
+      HasShape sig ls Γ e (.inter a b) → HasShape sig ls Γ e b
+  /-- a λ nobody applies: E4 makes a closure of it and its body never runs -/
+  | lamAny {Γ : List Shape} {b : Binder} {d body : Term} : HasShape sig ls Γ (.lam b d body) .any
+  /-- a value nobody looks at -/
+  | toAny {Γ : List Shape} {e : Term} {σ : Shape} :
+      HasShape sig ls Γ e σ → HasShape sig ls Γ e .any
 
 /-! ## Special heads -/
+
+/-- The shape of a field F3 hands a rule: an index slot's, or irrelevant. -/
+def srcShape (idx : List Shape) : FieldSrc → Shape
+  | .index i => idx.getD i .irr
+  | .proof => .irr
+
+/-- The slot F3 hands a rule for a field. -/
+def fieldSlot (ls : Levels) (indices : List Slot) : FieldSrc → Slot
+  | .index i => indices.getD i (Slot.irrNone ls)
+  | .proof => Slot.irrNone ls
 
 /-- **What F2 and F5 scrutinise**: a shape, the inductive whose recursor reads it, and
 the shapes of each constructor's fields, in constructor order. An enumeration's
@@ -150,18 +176,31 @@ inductive HeadOk (p : Program) (sig : Sig) : Head → Levels → List Shape → 
   | ctor (c : CId) (ls : Levels) (d : Nat) (D : DataDecl) (j : Nat) (ps fl : List Shape) :
       sig.datas d = some D → D.ctors[j]? = some (c, fl) → ps.length = D.params.length →
       HeadOk p sig (.ctor c) ls (ps ++ fl) (.data d)
-  /-- F2: an ordinary recursor without parameters or indices, at minors of any
-  shapes `ms` under which each rule's body, in the environment F2 builds, has the
-  result shape -/
-  | recr (r : CId) (ls : Levels) (σ : Shape) (ind : CId) (flds : List (List Shape))
-      (ms : List Shape) (τ : Shape) (s kk : Bool) (lv : Nat) (rules : List Rule) (ty : Term) :
-      p.decl? r = some (.recr s kk lv 0 1 ms.length 0 ind rules ty) →
-      p.table.recKindOf r = some .ordinary → ScrutOk p sig σ ind 0 flds →
+  /-- F2: an ordinary recursor with parameters and no index, at minors of any shapes
+  `ms` under which each rule's body, in the environment F2 builds (the parameters, the
+  motive, the minors, the fields), has the result shape -/
+  | recr (r : CId) (ls : Levels) (ps : List Shape) (σ : Shape) (ind : CId)
+      (flds : List (List Shape)) (ms : List Shape) (τ : Shape) (s kk : Bool) (lv : Nat)
+      (rules : List Rule) (ty : Term) :
+      p.decl? r = some (.recr s kk lv ps.length 1 ms.length 0 ind rules ty) →
+      p.table.recKindOf r = some .ordinary → ScrutOk p sig σ ind ps.length flds →
       (∀ (j : Nat) (fl : List Shape), flds[j]? = some fl → ∃ (rule : Rule) (body : Term),
         rules[j]? = some rule ∧
-        peelLams (1 + ms.length + fl.length) rule.rhs = some body ∧
-        HasShape sig ls (fl.reverse ++ (ms.reverse ++ [.irr])) body τ) →
-      HeadOk p sig (.recr r) ls (.irr :: (ms ++ [σ])) τ
+        peelLams ((ps ++ .irr :: ms).length + fl.length) rule.rhs = some body ∧
+        HasShape sig ls (fl.reverse ++ (ps ++ .irr :: ms).reverse) body τ) →
+      HeadOk p sig (.recr r) ls ((ps ++ .irr :: ms) ++ [σ]) τ
+  /-- F3: a subsingleton recursor at these levels. The major is not looked at; rule 0
+  runs on the parameters, motives and minors (`pre`) and on fields taken from the index
+  slots, or irrelevant -/
+  | recrSub (r : CId) (ls : Levels) (pre idx : List Shape) (maj τ : Shape) (s kk : Bool)
+      (lv np nmot nmin : Nat) (ind : CId) (rules : List Rule) (ty : Term) (w : PropWhen)
+      (srcs : List FieldSrc) (rule : Rule) (body : Term) :
+      p.decl? r = some (.recr s kk lv np nmot nmin idx.length ind rules ty) →
+      (p.table.recKindOf r).map (·.atLevels ls) = some (.subsingleton w srcs) →
+      pre.length = np + nmot + nmin → rules[0]? = some rule →
+      peelLams (pre.length + srcs.length) rule.rhs = some body →
+      HasShape sig ls ((srcs.map (srcShape idx)).reverse ++ pre.reverse) body τ →
+      HeadOk p sig (.recr r) ls (pre ++ (idx ++ [maj])) τ
 
 /-! ## The value judgment -/
 
@@ -179,6 +218,10 @@ inductive ValOk (p : Program) (sig : Sig) : Value → Shape → Prop
       sig.datas d = some D → D.ctors[j]? = some (c, fl) → ps.length = D.params.length →
       ValsOk p sig fs fl → ValOk p sig (.con c ls ps fs) (.data d)
   | irr {t : Option Term} {ρ : List Slot} {ls : Levels} : ValOk p sig (.irr t ρ ls) .irr
+  /-- a value of two shapes -/
+  | inter {v : Value} {a b : Shape} : ValOk p sig v a → ValOk p sig v b → ValOk p sig v (.inter a b)
+  /-- every value has the shape nobody looks at -/
+  | any {v : Value} : ValOk p sig v .any
   /-- a closure, by its code, at its own levels -/
   | clo {b : Binder} {d body : Term} {ρ : List Slot} {ls : Levels} {Γ : List Shape}
       {σ τ : Shape} :
@@ -328,22 +371,45 @@ theorem fire_cases_ord (p : Program) (k : Nat) (ls : Levels) (c r : CId) (args :
   rw [fire_cases]
   simp only [hres, hdecl, hkind, Option.map_some] <;> rfl
 
-/-- F2 at an ordinary recursor with one motive and no parameters or indices. -/
+/-- F2 at an ordinary recursor with one motive, `np` parameters and no index. -/
 theorem fire_recr_ord (p : Program) (k : Nat) (ls : Levels) (r : CId) (args : List Slot)
-    {s kk : Bool} {lv nmin : Nat} {ind : CId} {rules : List Rule} {ty : Term}
-    (hdecl : p.decl? r = some (.recr s kk lv 0 1 nmin 0 ind rules ty))
+    {s kk : Bool} {lv np nmin : Nat} {ind : CId} {rules : List Rule} {ty : Term}
+    (hdecl : p.decl? r = some (.recr s kk lv np 1 nmin 0 ind rules ty))
     (hkind : p.table.recKindOf r = some .ordinary) :
     fire p k (.recr r) ls args = later k fun k =>
-      ((force p k (args.getD (1 + nmin) default)).bind fun major =>
-          Result.ofOption (p.selectRule ind 0 major)).bind fun (j, fields) =>
+      ((force p k (args.getD (np + 1 + nmin) default)).bind fun major =>
+          Result.ofOption (p.selectRule ind np major)).bind fun (j, fields) =>
         match rules[j]? with
         | some rule =>
-          match peelLams (args.take (1 + nmin) ++ fields).length rule.rhs with
-          | some body => eval p k ls (args.take (1 + nmin) ++ fields).reverse body
+          match peelLams (args.take (np + 1 + nmin) ++ fields).length rule.rhs with
+          | some body => eval p k ls (args.take (np + 1 + nmin) ++ fields).reverse body
           | none => .stuck
         | none => .stuck := by
   rw [fire_recr]
   simp only [hdecl, hkind, Option.map_some] <;> rfl
+
+/-- F3 at a subsingleton recursor: rule 0, on fields from the index slots. -/
+theorem fire_recr_sub (p : Program) (k : Nat) (ls : Levels) (r : CId) (args : List Slot)
+    {s kk : Bool} {lv np nmot nmin ni : Nat} {ind : CId} {rules : List Rule} {ty : Term}
+    {w : PropWhen} {srcs : List FieldSrc}
+    (hdecl : p.decl? r = some (.recr s kk lv np nmot nmin ni ind rules ty))
+    (hkind : (p.table.recKindOf r).map (·.atLevels ls) = some (.subsingleton w srcs)) :
+    fire p k (.recr r) ls args = later k fun k =>
+      match rules[0]? with
+      | some rule =>
+        match peelLams (args.take (np + nmot + nmin) ++
+            srcs.map (fieldSlot ls ((args.drop (np + nmot + nmin)).take ni))).length rule.rhs with
+        | some body => eval p k ls (args.take (np + nmot + nmin) ++
+            srcs.map (fieldSlot ls ((args.drop (np + nmot + nmin)).take ni))).reverse body
+        | none => .stuck
+      | none => .stuck := by
+  have e : (fun (x : FieldSrc) => match x with
+      | .index i => ((args.drop (np + nmot + nmin)).take ni).getD i (Slot.irrNone ls)
+      | .proof => Slot.irrNone ls) = fieldSlot ls ((args.drop (np + nmot + nmin)).take ni) := by
+    funext x
+    cases x <;> rfl
+  rw [fire_recr]
+  simp only [hdecl, hkind, recChosen, e] <;> rfl
 
 variable {p : Program} {sig : Sig}
 
@@ -400,6 +466,41 @@ theorem EnvOk.reverse : ∀ (ρ : List Slot) (Γ : List Shape), EnvOk p sig ρ �
     | cons hs hρ =>
       rw [List.reverse_cons, List.reverse_cons]
       exact EnvOk.append _ _ (EnvOk.reverse ρ _ hρ) (.cons hs .nil)
+
+theorem slotOk_irrNone (ls : Levels) : SlotOk p sig (Slot.irrNone ls) .irr := .val .irr
+
+/-- The fields F3 hands a rule have the shapes `srcShape` says. -/
+theorem envOk_fields {ls : Levels} {indices : List Slot} {idx : List Shape}
+    (h : EnvOk p sig indices idx) : ∀ srcs : List FieldSrc,
+    EnvOk p sig (srcs.map (fieldSlot ls indices)) (srcs.map (srcShape idx))
+  | [] => .nil
+  | .proof :: rest => .cons (slotOk_irrNone ls) (envOk_fields h rest)
+  | .index i :: rest => by
+    refine .cons ?_ (envOk_fields h rest)
+    show SlotOk p sig (indices.getD i (Slot.irrNone ls)) (idx.getD i .irr)
+    cases hi : idx[i]? with
+    | some σ =>
+      obtain ⟨s, hs, hok⟩ := EnvOk.get indices idx h i σ hi
+      have e1 : indices.getD i (Slot.irrNone ls) = s := by
+        rw [List.getD_eq_getElem?_getD, hs]
+        rfl
+      have e2 : idx.getD i Shape.irr = σ := by
+        rw [List.getD_eq_getElem?_getD, hi]
+        rfl
+      rw [e1, e2]
+      exact hok
+    | none =>
+      have hlen := EnvOk.length _ _ h
+      have hi' : idx.length ≤ i := List.getElem?_eq_none_iff.1 hi
+      have hn : indices[i]? = none := List.getElem?_eq_none_iff.2 (by omega)
+      have e1 : indices.getD i (Slot.irrNone ls) = Slot.irrNone ls := by
+        rw [List.getD_eq_getElem?_getD, hn]
+        rfl
+      have e2 : idx.getD i Shape.irr = Shape.irr := by
+        rw [List.getD_eq_getElem?_getD, hi]
+        rfl
+      rw [e1, e2]
+      exact slotOk_irrNone ls
 
 theorem EnvOk.take : ∀ (Γ₁ : List Shape) (ρ : List Slot) {Γ₂ : List Shape},
     EnvOk p sig ρ (Γ₁ ++ Γ₂) → EnvOk p sig (ρ.take Γ₁.length) Γ₁
@@ -500,6 +601,16 @@ theorem ValOk.data_inv {v : Value} {d : Nat} (h : ValOk p sig v (.data d)) :
     | nil => exact absurd rfl hrest
     | cons a r => simp [arrows] at hσ
 
+/-- A value of an intersection has both shapes. -/
+theorem ValOk.inter_inv {v : Value} {a b : Shape} (h : ValOk p sig v (.inter a b)) :
+    ValOk p sig v a ∧ ValOk p sig v b := by
+  cases h with
+  | inter ha hb => exact ⟨ha, hb⟩
+  | pap h ls args σs done rest τ σ hh hσs hargs hrest hσ =>
+    cases rest with
+    | nil => exact absurd rfl hrest
+    | cons a r => simp [arrows] at hσ
+
 /-- **F2 and F5 select a rule** on a value of the scrutinised shape, and the fields
 they hand on have the constructor's field shapes. -/
 theorem selectRule_ok (hsig : SigOk p sig) {σ : Shape} {ind : CId} {np : Nat}
@@ -545,8 +656,11 @@ theorem HeadOk.arity (hsig : SigOk p sig) {h : Head} {ls : Levels} {σs : List S
     simp [Program.headArity, hdecl, hps]
   | cases c r ls ps σ ind flds τ s kk lv nmot rules ty hres hdecl hkind hscrut =>
     simp [Program.headArity, hres, hdecl] <;> omega
-  | recr r ls σ ind flds ms τ s kk lv rules ty hdecl hkind hscrut hrules =>
+  | recr r ls ps σ ind flds ms τ s kk lv rules ty hdecl hkind hscrut hrules =>
     simp [Program.headArity, hdecl, Decl.recArity] <;> omega
+  | recrSub r ls pre idx maj τ s kk lv np nmot nmin ind rules ty w srcs rule body hdecl hkind
+      hpre hrule hpeel hbody =>
+    simp [Program.headArity, hdecl, Decl.recArity, hpre] <;> omega
 
 /-- Forcing slots of shape `nat` times out or returns literals. -/
 theorem forceAll_nat {k : Nat}
@@ -753,16 +867,19 @@ theorem allOk (hsig : SigOk p sig) : ∀ k, AllOk p sig k := by
             exact .inl rfl
           · rw [hmn]
             exact applyAll_ok A.app fs fl mv hfs hmv
-    | recr r ls σ ind flds ms τ s kk lv rules ty hdecl hkind hscrut hrules =>
+    | recr r ls ps σ ind flds ms τ s kk lv rules ty hdecl hkind hscrut hrules =>
       rw [fire_recr_ord p k ls r slots hdecl hkind]
       cases k with
       | zero => exact .inl rfl
       | succ k =>
         have A := ih k (Nat.lt_succ_self k)
         simp only [later_succ]
-        have hmajor : SlotOk p sig (slots.getD (1 + ms.length) default) σ := by
+        have e1 : ps.length + 1 + ms.length = (ps ++ Shape.irr :: ms).length := by
+          rw [List.length_append, List.length_cons]
+          omega
+        have hmajor : SlotOk p sig (slots.getD (ps.length + 1 + ms.length) default) σ := by
           refine EnvOk.getD hslots ?_
-          rw [Nat.add_comm]
+          rw [e1]
           simp
         rcases A.slot _ _ hmajor with hm | ⟨v, hm, hv⟩
         · rw [hm]
@@ -770,36 +887,68 @@ theorem allOk (hsig : SigOk p sig) : ∀ k, AllOk p sig k := by
         · rw [hm]
           obtain ⟨j, fs, fl, hsel, hfl, hfs⟩ := selectRule_ok hsig hscrut hv
           obtain ⟨rule, body, hrule, hpeel, hbody⟩ := hrules j fl hfl
-          have e1 : 1 + ms.length = (Shape.irr :: ms).length := by
-            rw [List.length_cons, Nat.add_comm]
-          have hpre : EnvOk p sig (slots.take (1 + ms.length)) (Shape.irr :: ms) := by
+          have hpre : EnvOk p sig (slots.take (ps.length + 1 + ms.length)) (ps ++ Shape.irr :: ms) := by
             rw [e1]
-            have hslots' : EnvOk p sig slots ((Shape.irr :: ms) ++ [σ]) := hslots
-            exact EnvOk.take _ _ hslots'
+            exact EnvOk.take _ _ hslots
           have hall := EnvOk.append _ _ hpre hfs
-          have hlen : (slots.take (1 + ms.length) ++ fs).length = 1 + ms.length + fl.length := by
-            rw [EnvOk.length _ _ hall, List.length_append, List.length_cons]
-            omega
+          have hlen : (slots.take (ps.length + 1 + ms.length) ++ fs).length =
+              (ps ++ Shape.irr :: ms).length + fl.length := by
+            rw [EnvOk.length _ _ hall, List.length_append]
           have henv := EnvOk.reverse _ _ hall
-          have e2 : ((Shape.irr :: ms) ++ fl).reverse = fl.reverse ++ (ms.reverse ++ [Shape.irr]) := by
-            simp
+          have e2 : ((ps ++ Shape.irr :: ms) ++ fl).reverse =
+              fl.reverse ++ (ps ++ Shape.irr :: ms).reverse := List.reverse_append
           rw [e2] at henv
-          show ResOk p sig τ ((Result.ofOption (p.selectRule ind 0 v)).bind _)
+          show ResOk p sig τ ((Result.ofOption (p.selectRule ind ps.length v)).bind _)
           rw [hsel]
           show ResOk p sig τ
             (match rules[j]? with
             | some rule =>
-              match peelLams (slots.take (1 + ms.length) ++ fs).length rule.rhs with
-              | some body => eval p k ls (slots.take (1 + ms.length) ++ fs).reverse body
+              match peelLams (slots.take (ps.length + 1 + ms.length) ++ fs).length rule.rhs with
+              | some body => eval p k ls (slots.take (ps.length + 1 + ms.length) ++ fs).reverse body
               | none => .stuck
             | none => .stuck)
           rw [hrule]
           show ResOk p sig τ
-            (match peelLams (slots.take (1 + ms.length) ++ fs).length rule.rhs with
-            | some body => eval p k ls (slots.take (1 + ms.length) ++ fs).reverse body
+            (match peelLams (slots.take (ps.length + 1 + ms.length) ++ fs).length rule.rhs with
+            | some body => eval p k ls (slots.take (ps.length + 1 + ms.length) ++ fs).reverse body
             | none => .stuck)
           rw [hlen, hpeel]
           exact A.term ls _ _ body τ hbody henv
+    | recrSub r ls pre idx maj τ s kk lv np nmot nmin ind rules ty w srcs rule body hdecl hkind
+        hpre hrule hpeel hbody =>
+      rw [fire_recr_sub p k ls r slots hdecl hkind]
+      cases k with
+      | zero => exact .inl rfl
+      | succ k =>
+        have A := ih k (Nat.lt_succ_self k)
+        simp only [later_succ]
+        have hP : EnvOk p sig (slots.take (np + nmot + nmin)) pre := by
+          rw [← hpre]
+          exact EnvOk.take _ _ hslots
+        have hD : EnvOk p sig (slots.drop (np + nmot + nmin)) (idx ++ [maj]) := by
+          rw [← hpre]
+          exact EnvOk.drop _ _ hslots
+        have hI : EnvOk p sig ((slots.drop (np + nmot + nmin)).take idx.length) idx :=
+          EnvOk.take _ _ hD
+        have hall := EnvOk.append _ _ hP (envOk_fields (ls := ls) hI srcs)
+        have hlen : (slots.take (np + nmot + nmin) ++
+            srcs.map (fieldSlot ls ((slots.drop (np + nmot + nmin)).take idx.length))).length =
+            pre.length + srcs.length := by
+          rw [EnvOk.length _ _ hall, List.length_append, List.length_map]
+        have henv := EnvOk.reverse _ _ hall
+        have e2 : (pre ++ srcs.map (srcShape idx)).reverse =
+            (srcs.map (srcShape idx)).reverse ++ pre.reverse := List.reverse_append
+        rw [e2] at henv
+        rw [hrule]
+        show ResOk p sig τ
+          (match peelLams (slots.take (np + nmot + nmin) ++
+              srcs.map (fieldSlot ls ((slots.drop (np + nmot + nmin)).take idx.length))).length
+              rule.rhs with
+          | some body => eval p k ls (slots.take (np + nmot + nmin) ++
+              srcs.map (fieldSlot ls ((slots.drop (np + nmot + nmin)).take idx.length))).reverse body
+          | none => .stuck)
+        rw [hlen, hpeel]
+        exact A.term ls _ _ body τ hbody henv
   -- E8 (δ)
   have hconst : ∀ (ls : Levels) (c : CId) (σ : Shape), sig.inst c ls σ →
       ResOk p sig σ (evalConst p k ls c) := by
@@ -979,6 +1128,34 @@ theorem allOk (hsig : SigOk p sig) : ∀ k, AllOk p sig k := by
           obtain ⟨v', hv', hvok⟩ := ValsOk.get _ _ hfs i σ hi
           refine .inr ⟨v', ?_, hvok⟩
           simp [Program.projectField, hdecl, hv', Result.ofOption]
+    | inter _ _ iha ihb =>
+      intro hρ
+      rcases iha ρ hρ with h1 | ⟨v, h1, hv1⟩
+      · exact .inl h1
+      · rcases ihb ρ hρ with h2 | ⟨v', h2, hv2⟩
+        · exact .inl h2
+        · rw [h1] at h2
+          cases h2
+          exact .inr ⟨v, h1, .inter hv1 hv2⟩
+    | interL _ ih =>
+      intro hρ
+      rcases ih ρ hρ with h1 | ⟨v, h1, hv⟩
+      · exact .inl h1
+      · exact .inr ⟨v, h1, hv.inter_inv.1⟩
+    | interR _ ih =>
+      intro hρ
+      rcases ih ρ hρ with h1 | ⟨v, h1, hv⟩
+      · exact .inl h1
+      · exact .inr ⟨v, h1, hv.inter_inv.2⟩
+    | lamAny =>
+      intro _
+      rw [eval_lam]
+      exact .inr ⟨_, rfl, .any⟩
+    | toAny _ ih =>
+      intro hρ
+      rcases ih ρ hρ with h1 | ⟨v, h1, _⟩
+      · exact .inl h1
+      · exact .inr ⟨v, h1, .any⟩
   exact ⟨hterm, hconst, happ, hslot⟩
 
 /-- **A shaped root on shaped argument values times out or returns a value of its
