@@ -64,6 +64,16 @@ closures by the required check `ixcc-grounding`. -/
 lean_lib IxCCGrounding where
   roots := #[`IxCCGrounding]
 
+/- The target statements (`IxCCCorrect`): the public claim, the proposition
+`Correct` an accepted argument has to establish about a shipped file, the two
+routes to it, and what the existing theorems establish today (`CorrectToday`).
+It imports the compiler, the grounding library's syntax and the kernel's model
+statement, so nothing in the production library, the shared proof aggregate or
+a shared program imports it. Not yet in the import manifest
+(`nix/lean-modules.json`) or behind an axiom fence. -/
+lean_lib IxCCCorrect where
+  roots := #[`IxCCCorrect]
+
 /- Src: rules, the K1 table and runs, the native differential, pins,
 diagnostics and the bench-k1 entries. -/
 lean_exe «tests-src» where
