@@ -380,6 +380,19 @@ def replaysAlike (c : Config) (inp : Input) : Except String Bool := do
   let P ← Anf.Pipeline.run t.cert lam
   pure (P.beq ((t.stages.getLast?.map (·.2)).getD default))
 
+/-- Whether the checker's closures step on the replay of `c`'s certificate
+(the middle end, `Anf.Pipeline.run`, then `closuresOf` with the certificate's
+post-P8 steps) gives the producer's own program after that step
+(`produceClosures`). -/
+def closuresAlike (c : Config) (inp : Input) : Except String Bool := do
+  let ps ← (produceSource c inp).mapError (·.render)
+  let (lam, _) ← (IxCC.Lam.erase ps.src ps.checked).mapError fun _ => "erasure declined"
+  let t ← Anf.Pipeline.produce c.budgets lam
+  let (mine, _) ← (produceClosures ps.src t).mapError (·.render)
+  let P ← Anf.Pipeline.run t.cert lam
+  let theirs ← (closuresOf ps.src P t.cert.post).mapError (·.render)
+  pure (mine.beq theirs)
+
 /-- A producer's own program at configuration `c`, without the checker: its
 middle end's last program through the closures step (as every producer runs
 it, `produceClosures`), and that program lowered to Cfg under the immortal
@@ -421,10 +434,13 @@ judged by what the checker's walk derives from its certificate:
 
 * **Refused** where that is another program: on `Natural.fibMain` the producer
   with the choice forced off makes a certificate whose middle end, replayed by
-  the checker, is not the producer's program; the checker refuses it at
-  allocation (`alloc: alloc.shape`: the allocation certificate made for the
-  producer's program does not fit the checker's), and `verifyProgram` refuses
-  a claim carrying it, while the honest claim verifies.
+  the checker, is not the producer's program (without the inline-round retry),
+  or whose closures step is not (with it: the closure round makes the two
+  middle ends agree, and the post-P8 shrink steps still deviate,
+  `closuresAlike`); the checker refuses it at allocation (`alloc:
+  alloc.shape`: the allocation certificate made for the producer's program
+  does not fit the checker's), and `verifyProgram` refuses a claim carrying
+  it, while the honest claim verifies.
 * **Accepted, less optimised**, where it is the same program: on
   `Natural.onMessage` the walk without the pending entry refuses the rounds the
   entry gains, so that producer only counts fewer rounds, which the checker
@@ -462,9 +478,12 @@ def natural (a : Assert) (native : Option Rt.Native.Tools) : IO (Array String) :
     match compileInputRetry off inp with
     | .error e =>
       -- refused only as a producer deviating from the checker is: with and without the
-      -- inline-round retry, the checker's replay of its middle end is another program
-      let another := (replaysAlike off inp matches .ok false) &&
-        (replaysAlike off.noRetry inp matches .ok false)
+      -- inline-round retry, the checker's replay of its middle end is another program, or
+      -- that of its closures step is (with the retry, whose closure round makes the two
+      -- middle ends agree, the post-P8 shrink steps still deviate)
+      let deviates := fun (c : Config) =>
+        (replaysAlike c inp matches .ok false) || (closuresAlike c inp matches .ok false)
+      let another := deviates off && deviates off.noRetry
       expect a (e.stage.name == "alloc" && e.code == "alloc.shape" && another)
         s!"{label}, pending forced off: declined: {e.render}"
       match producerPrograms off inp with
@@ -521,8 +540,11 @@ def natural (a : Assert) (native : Option Rt.Native.Tools) : IO (Array String) :
     let label := s!"natural/{r.name}, a producer with the pending choice forced off"
     let inp ← IO.ofExcept ((ingress bytes json [r.name]).mapError (·.render))
     let cfg : Config := { names := [r.name] }
-    expect a (replaysAlike (dev r.name) inp matches .ok false)
-      s!"{label}: the checker's replay of its middle end gives its program"
+    -- the checker derives another program: from its middle end, or (since the closure
+    -- round makes the two middle ends agree) from its closures step's post-P8 shrink steps
+    expect a ((replaysAlike (dev r.name) inp matches .ok false) ||
+        (closuresAlike (dev r.name) inp matches .ok false))
+      s!"{label}: the checker's replay of its middle end and of its closures step give its program"
     match CompileClaim.produce cfg inp, produceWith (dev r.name) inp with
     | .ok (claim, cert, _), .ok p =>
       expect a (CompileClaim.verifyProgram cfg inp.program claim cert) s!"{label}: the honest claim is refused"
@@ -533,8 +555,8 @@ def natural (a : Assert) (native : Option Rt.Native.Tools) : IO (Array String) :
           s!"{label}: refused at {e.stage.name}: {e.code}, expected alloc: alloc.shape"
       expect a (!CompileClaim.verifyProgram cfg inp.program { claim with policy := .immortal } p.cert.toText)
         s!"{label}: verifyProgram accepts a claim carrying its certificate"
-      out := out.push s!"{label}: its middle end, replayed by the checker, is another program; refused \
-        (alloc: alloc.shape), and the claim carrying it too; the honest claim verified"
+      out := out.push s!"{label}: its middle end or its closures step, replayed by the checker, is another \
+        program; refused (alloc: alloc.shape), and the claim carrying it too; the honest claim verified"
     | .error e, _ | _, .error e => expect a false s!"{label}: {e.render}"
   if let some r := f.roots.find? (·.name == "Natural.onMessage") then
     let label := s!"natural/{r.name}, a producer with the pending choice forced off"

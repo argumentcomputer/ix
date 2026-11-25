@@ -107,6 +107,13 @@ structure Budgets where
   /-- Retry an inline round the re-run refuses, without the callers whose
   walk it refuses alone (`produce`). Producer only. -/
   retryInline : Bool := true
+  /-- With `retryInline`: when the re-run refuses the default oracle's round
+  even after the retry, take the part of it that removes closures instead
+  (`closurePart`, `Inline.produceClosureRound`: per caller, the callees it
+  passes a known closure to). Like the retry it gives the steps after it a
+  larger program, which may fail a budget checked later, so the run without
+  the retry (`withRetryFallback`) takes neither. Producer only. -/
+  closureRound : Bool := true
   deriving Inhabited
 
 /-- What `produce` did: the certificate, the program after each step (for
@@ -254,6 +261,30 @@ def shrinkFixpoint (B : Budgets) (reserve : Nat) :
             shrinkFixpoint B reserve fuel P2 (steps.push (.shrink c)) (stages.push ("P2", P2))
               (fires.add f)
 
+/-- An inline round through the re-run's own step (`Step.run`), and the
+program it makes; a round the re-run refuses is retried once without the
+callers whose walk the re-run refuses alone (each caller's walk is independent
+of the others': at most one re-run per caller and one of the rest), when
+`Budgets.retryInline`. -/
+def takeRound (B : Budgets) (P : Program) (r : Inline.Round) : Option (Inline.Round × Program) :=
+  match Step.run B.shrink.params (.inline r) P with
+  | .ok P3 => some (r, P3)
+  | .error _ =>
+    if !B.retryInline then none else
+    let r := r.filter fun e => (Step.run B.shrink.params (.inline [e]) P).isOk
+    if r.isEmpty then none
+    else (Step.run B.shrink.params (.inline r) P).toOption.map (r, ·)
+
+/-- The part of round `r` that removes closures: per caller, the callees of `r`
+that the closure round `rc` lists for it (`Inline.produceClosureRound`), in
+`rc`'s order. -/
+def closurePart (r rc : Inline.Round) : Inline.Round :=
+  let m := Inline.calleeMap r
+  rc.filterMap fun (f, cs) =>
+    let ok := (m.get? f).getD []
+    let cs := cs.filter (ok.contains ·)
+    if cs.isEmpty then none else some (f, cs)
+
 /-- The Phase 1 schedule with the default oracles, within what the re-run
 accepts: P1 and every shrink step are followed by the re-run's size, depth
 and back-end work check (`checkGlobalNodes`), and a program that fails it is
@@ -263,8 +294,11 @@ round or a specialisation is taken through the re-run's own step
 work on the globals the roots still reach and keeps only those), and one it
 refuses (a walk, step or program past its budgets)
 is not taken: a refused round is retried once without the callers whose walk
-the re-run refuses alone (`Budgets.retryInline`), and ends that invocation's
-rounds if it is still refused or no caller is left; a refused
+the re-run refuses alone (`Budgets.retryInline`, `takeRound`); if it is still
+refused, the part of it that removes closures is taken instead, through the
+same retry and in the run with the retry only (`closurePart`: the callees each
+caller passes a known closure to, `Budgets.closureRound`), and the invocation's
+rounds end when that is refused or empty too; a refused
 specialisation ends the schedule's phases, as one that adds no global does;
 and a round or specialisation is only begun while the certificate has room
 for its two steps and the final prune (`maxSteps`). Every shrink step is
@@ -307,16 +341,13 @@ def produceOnce (B : Budgets := {}) (L : Lam.Program) : Except String Trace := d
       if steps.size + 3 > maxSteps then break
       let r := Inline.produce B.inline P
       if r.isEmpty then break
-      -- a round the re-run refuses is retried once without the callers whose
-      -- walk the re-run refuses alone (each caller's walk is independent of
-      -- the others'): at most one re-run per caller and one of the rest
-      let some (r, P3) := (match Step.run B.shrink.params (.inline r) P with
-          | .ok P3 => some (r, P3)
-          | .error _ =>
-            if !B.retryInline then none else
-            let r := r.filter fun e => (Step.run B.shrink.params (.inline [e]) P).isOk
-            if r.isEmpty then none
-            else (Step.run B.shrink.params (.inline r) P).toOption.map (r, ·)) | break
+      -- the default oracle's round (retried without the callers the re-run
+      -- refuses alone), else the part of it that removes closures: the
+      -- callees each caller passes a known closure to
+      let some (r, P3) := (takeRound B P r).orElse (fun _ =>
+          if !B.retryInline || !B.closureRound then none else
+          let rc := closurePart r (Inline.produceClosureRound B.inline P)
+          if rc.isEmpty then none else takeRound B P rc) | break
       steps := steps.push (.inline r); stages := stages.push ("P3", P3)
       let (c, P2, f) ← Shrink.produce B.shrink P3
       P ← checkGlobalNodes P2; fires := fires.add f

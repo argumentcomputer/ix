@@ -798,7 +798,22 @@ Three limits, in the order ordinary code meets them:
    12-node matcher that the refused round would have inlined, `K` = 158,
    `M` = 2, 3 % of the dispatch budget; the closures step passes and the
    program is first order at 71 % of `Anf.maxBackWork` (19 entry points:
-   `K` = 216, 12 %, 95 %).
+   `K` = 216, 12 %, 95 %). That fourth round is past the back end's work
+   budget even after its shrink steps (120 %): it inlines 38 small callees
+   into 64 callers, the roots among them. So when the default oracle's round
+   is refused even after the retry, the producer now takes the part of it
+   that removes closures, the callees each caller passes a known closure to (a
+   local function, a function global's value, a partial application:
+   `Inline.produceClosureRound`, `Pipeline.closurePart`, `Budgets.closureRound`;
+   producer only, and like the retry only in the run with it, so the fallback
+   run without the retry is unchanged). On the library two such rounds follow the three default
+   ones: no local function is left, `K` = 6 (three function globals passed to
+   a dictionary's consumer), and after the closures step the program is at
+   62 % (19 entry points: `K` = 42, 72 %). The library still does not compile:
+   the next stage's representation certificate (`Fir.Rep.inferWithArrays`,
+   `Rt/BigNat/Link.lean`) is refused on nine of its loops, for reasons
+   unrelated to closures (`Nat` parameters inferred `.obj`, and word-operation
+   wrappers called with tagged arguments).
 
 ## No code-pointer fallback
 

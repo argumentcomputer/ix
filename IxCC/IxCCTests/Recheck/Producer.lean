@@ -168,13 +168,44 @@ def lamGlobals (n k : Nat) : Lam.Program :=
     ctors := [{ key := .src 0, tag := 0, arity := 1 }, { key := .src 1, tag := 1, arity := 0 }],
     known := default }
 
+/-- `t₁ := fn _ => x₀; r₁ := t₁ □; …; tₘ := fn _ => rₘ₋₁; rₘ := tₘ □; ret rₘ` over
+parameter `x₀`: `m` thunks, each applied once where it is bound (what an `if`
+chain's by-name branches are once its combinators are inlined). -/
+def thunks : Nat → Anf.Exp
+  | 0 => .ret (.var 0)
+  | k + 1 => .bind Anf.freshLet (.fn [.many] (.ret (.var 1)))
+      (.bind Anf.freshLet (.app (.var 0) [.box]) (thunks k))
+
+/-- `n` roots, each `thunks m` over one parameter. -/
+def thunkProgram (n m : Nat) : Anf.Program :=
+  { globals := Src.NatMap.ofList ((List.range n).map fun i =>
+      (i, ({ key := .const i [], ps := [.many], body := thunks m } : Anf.GDef)))
+    size := n, roots := List.range n, ctors := [], known := {} }
+
+/-- Global 0 applies its parameter, global 1 does and calls itself, and global 2
+passes one thunk to each and a box to global 0. -/
+def closureProgram : Anf.Program :=
+  let apply : Anf.Exp := .bind Anf.freshLet (.app (.var 0) [.box]) (.ret (.var 0))
+  let loop : Anf.Exp :=
+    .bind Anf.freshLet (.app (.var 0) [.box]) (.bind Anf.freshLet (.call 1 [.var 1]) (.ret (.var 0)))
+  let caller : Anf.Exp :=
+    .bind Anf.freshLet (.call 0 [.box])
+      (.bind Anf.freshLet (.fn [.many] (.ret .box))
+        (.bind Anf.freshLet (.call 0 [.var 0]) (.bind Anf.freshLet (.call 1 [.var 1]) (.ret (.var 0)))))
+  { globals := Src.NatMap.ofList [(0, { key := .const 0 [], ps := [.many], body := apply }),
+      (1, { key := .const 1 [], ps := [.many], body := loop }),
+      (2, { key := .const 2 [], ps := [.many], body := caller })]
+    size := 3, roots := [2], ctors := [], known := {} }
+
 /-- The producer stays within the re-run's budgets: on an input whose P1 is
 past the back end's work budget (twenty globals of 2,000 nested
 constructors) it refuses at P1 with the re-run's message, where it used to
 shrink every global and run its back end for a certificate the re-run
 refuses; on the shapes whose first shrink round passes a walk's work budget
-it records fewer rounds, and the certificate is accepted; and its step count
-stays within the certificate's cap. -/
+it records fewer rounds, and the certificate is accepted; its step count
+stays within the certificate's cap; a shrink step that the step's work budget
+stops is repeated until no rule fires, and replayed alike; and the closure
+round lists what it should. -/
 def budgets (a : Assert) : IO (Array String) := do
   let mut lines := #[]
   let L := lamGlobals 2000 20
@@ -207,6 +238,29 @@ def budgets (a : Assert) : IO (Array String) := do
       | .error e => expect a false s!"{shape} {n}: the checker refuses the producer's certificate: {e.render}"
   expect a (Recheck.checkMidCert { steps := List.replicate Anf.Pipeline.maxSteps .prune }).isOk
     "Pipeline.maxSteps is past the certificate's step cap"
+  -- a shrink step that the step's work budget stops: 24 globals of 600 thunks each
+  -- applied where it is bound (a round on one costs about 2.2 million units of
+  -- work, so one step's `maxStepWork` reaches 20 of them). The producer repeats
+  -- the step while it changes the program (`Pipeline.shrinkFixpoint`), and the
+  -- re-run replays the extra steps to the same program.
+  let T := thunkProgram 24 600
+  let left := match Anf.Shrink.produce {} T with
+    | .ok (_, T1, _) => (Anf.Pipeline.residual T1).fns.length
+    | .error _ => 0
+  expect a (left > 0) "one shrink step left no global with a local function: the step's budget did not stop it"
+  let (T2, steps, _, _) := Anf.Pipeline.shrinkFixpoint {} 2 Anf.Pipeline.maxSteps T #[] #[] {}
+  expect a (steps.size ≥ 2 && (Anf.Pipeline.residual T2).fns.isEmpty)
+    s!"the repeated shrink step: {steps.size} steps, {(Anf.Pipeline.residual T2).fns.length} globals with a local function"
+  match steps.toList.foldlM (fun R s => s.run {} R) T with
+  | .ok R => expect a (R.beq T2) "the re-run of the repeated shrink steps makes another program"
+  | .error e => expect a false s!"the re-run refuses the repeated shrink steps: {e}"
+  lines := lines.push s!"24 globals of 600 thunks: one shrink step leaves {left} globals with local functions, {steps.size} steps none, replayed alike"
+  -- the closure round lists, per caller, the non-recursive callees it passes a known closure to
+  let C := closureProgram
+  let rc := Anf.Inline.produceClosureRound {} C
+  expect a (rc == [(2, [0])]) s!"the closure round: {rc}"
+  expect a (Anf.Pipeline.closurePart [(2, [1])] rc).isEmpty "the closure part of a round without its callee"
+  expect a (Anf.Pipeline.closurePart [(2, [1, 0])] rc == [(2, [0])]) "the closure part of a round"
   return lines
 
 /-- Allocations of a pure computation and a measure of its result, both
