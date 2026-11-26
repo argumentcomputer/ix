@@ -1,4 +1,5 @@
 import Aiur.Tiling
+import Aiur.Tiling.SingleCircuit
 import Aiur.Library.Field.BN254.Prime
 import Aiur.Library.U32.Goldilocks
 import Aiur.Tiling.Ixa
@@ -49,8 +50,18 @@ order; the exit status is nonzero, and the layout file is not written, unless
 every check accepts. The fixed path may be `/dev/stdout`, so that a consumer
 reads the matrix from a pipe instead of a file.
 
-Usage: `tiling_export2 [--goldilocks | --bn254] input.json output.json (fixed.bin | /dev/stdout | -) [tables.bin]`.
+Usage: `tiling_export2 [--goldilocks | --bn254] [--single-circuit [--pow2-rows] [--min-rows N] [--packed-rows N]] input.json output.json (fixed.bin | /dev/stdout | -) [tables.bin]`.
 The fixed file is in the `IXTLFX01` format of `TilingExport.lean`.
+
+With `--single-circuit` (non-mixed compact mode only, requiring `tables.bin`),
+all shards and compact tables are horizontally packed via
+`Aiur.Tiling.SingleCircuit.pack (SingleCircuit.compactSystemAirs S H compact HT) packedRows`
+into one single circuit (`num_circuits == 1`, backed by
+`SingleCircuit.narrow_compact_single_circuit_sound_goldilocks`). `output.json`
+gains a `"single_circuit"` object with geometry, per-constituent offsets /
+optional `active_col`, and serialized `packCircuit` graph, and `fixed.bin`
+receives ONE `IXTLFX01` block for the packed fixed matrix (`packedRows ×
+fixed_width`).
 
 Field selection defaults to BN254 (`Aiur.Library.Field.BN254.modulus`) for
 backwards compatibility. Pass `--goldilocks` (or `--field goldilocks`, or set
@@ -107,34 +118,102 @@ def FieldChoice.maxBound : FieldChoice → Nat
   | .bn254 => Aiur.Library.Field.BN254.modulus
   | .goldilocks => 2 ^ 63
 
-def parseArgsAux (field : Option FieldChoice) (pos : Array String) : List String →
-    Except String (Option FieldChoice × Array String)
-  | [] => pure (field, pos)
+/-- Parsed CLI options for `tiling_export2`. -/
+structure CliOptions where
+  field : Option FieldChoice := none
+  singleCircuit : Bool := false
+  pow2Rows : Bool := false
+  minRows : Option Nat := none
+  packedRows : Option Nat := none
+
+def parseNatOpt (flag s : String) : Except String Nat :=
+  match s.toNat? with
+  | some n => pure n
+  | none => throw s!"{flag} expects a natural number, got {s}"
+
+def parseArgsAux (opts : CliOptions) (pos : Array String) : List String →
+    Except String (CliOptions × Array String)
+  | [] => pure (opts, pos)
   | "--goldilocks" :: rest => do
-      if field == some .bn254 then throw "cannot pass both --bn254 and --goldilocks"
-      parseArgsAux (some .goldilocks) pos rest
+      if opts.field == some .bn254 then throw "cannot pass both --bn254 and --goldilocks"
+      parseArgsAux { opts with field := some .goldilocks } pos rest
   | "--bn254" :: rest => do
-      if field == some .goldilocks then throw "cannot pass both --bn254 and --goldilocks"
-      parseArgsAux (some .bn254) pos rest
+      if opts.field == some .goldilocks then throw "cannot pass both --bn254 and --goldilocks"
+      parseArgsAux { opts with field := some .bn254 } pos rest
   | "--field" :: f :: rest => do
       let fc ← match f with
         | "bn254" => pure FieldChoice.bn254
         | "goldilocks" => pure FieldChoice.goldilocks
         | _ => throw s!"unknown field {f} (expected bn254 or goldilocks)"
-      if field.isSome && field != some fc then throw "conflicting field flags"
-      parseArgsAux (some fc) pos rest
+      if opts.field.isSome && opts.field != some fc then throw "conflicting field flags"
+      parseArgsAux { opts with field := some fc } pos rest
   | ["--field"] => throw "--field expects bn254 or goldilocks"
+  | "--single-circuit" :: rest =>
+      parseArgsAux { opts with singleCircuit := true } pos rest
+  | "--pow2-rows" :: rest =>
+      parseArgsAux { opts with pow2Rows := true } pos rest
+  | "--min-rows" :: n :: rest => do
+      if opts.minRows.isSome then throw "duplicate --min-rows"
+      let v ← parseNatOpt "--min-rows" n
+      parseArgsAux { opts with minRows := some v } pos rest
+  | ["--min-rows"] => throw "--min-rows expects a natural number"
+  | "--packed-rows" :: n :: rest => do
+      if opts.packedRows.isSome then throw "duplicate --packed-rows"
+      let v ← parseNatOpt "--packed-rows" n
+      parseArgsAux { opts with packedRows := some v } pos rest
+  | ["--packed-rows"] => throw "--packed-rows expects a natural number"
   | a :: rest => do
       if a.startsWith "--" then throw s!"unknown option {a}"
-      parseArgsAux field (pos.push a) rest
+      parseArgsAux opts (pos.push a) rest
 
 def parseArgs (args : List String) :
-    Except String (Option FieldChoice × String × String × String × Option String) := do
-  let (field, pos) ← parseArgsAux none #[] args
+    Except String (CliOptions × String × String × String × Option String) := do
+  let (opts, pos) ← parseArgsAux {} #[] args
+  if !opts.singleCircuit && (opts.pow2Rows || opts.minRows.isSome || opts.packedRows.isSome) then
+    throw "--pow2-rows, --min-rows, and --packed-rows require --single-circuit"
   match pos.toList with
-  | [a, b, c] => pure (field, a, b, c, none)
-  | [a, b, c, d] => pure (field, a, b, c, some d)
-  | _ => throw "usage: tiling_export2 [--goldilocks | --bn254] input.json output.json (fixed.bin | -) [tables.bin]"
+  | [a, b, c] => pure (opts, a, b, c, none)
+  | [a, b, c, d] => pure (opts, a, b, c, some d)
+  | _ => throw "usage: tiling_export2 [--goldilocks | --bn254] [--single-circuit [--pow2-rows] [--min-rows N] [--packed-rows N]] input.json output.json (fixed.bin | -) [tables.bin]"
+
+/-- Row indices checked directly against `SingleCircuit.packFixed`: row 0,
+each constituent's last active row and first inactive row, and the final packed row. -/
+def boundaryRows {F : Type} (airs : List (WideStage.Air F)) (packedRows : Nat) : List Nat :=
+  let raw : List Nat :=
+    [0] ++
+    (airs.flatMap fun a =>
+      (if a.rows > 0 then [a.rows - 1] else []) ++
+      (if a.rows < packedRows then [a.rows] else [])) ++
+    (if packedRows > 0 then [packedRows - 1] else [])
+  (raw.filter (· < packedRows)).dedup
+
+/-- Resolve and validate the uniform packed height `packedRows` from constituent
+heights and CLI sizing options. Fails closed on zero height, height > `2^39`,
+any constituent exceeding `packedRows`, or incompatible `--packed-rows` options. -/
+def resolvePackedRows {F : Type} (opts : CliOptions) (airs : List (WideStage.Air F)) :
+    Except String Nat := do
+  let maxH := (airs.map (·.rows)).foldl max 0
+  let packedRows ← match opts.packedRows with
+    | some r =>
+        if r == 0 then throw "single-circuit packedRows must be positive"
+        if let some m := opts.minRows then
+          if r < m then throw s!"--packed-rows {r} is smaller than --min-rows {m}"
+        if opts.pow2Rows && r.nextPowerOfTwo != r then
+          throw s!"--packed-rows {r} is not a power of two (required by --pow2-rows)"
+        pure r
+    | none =>
+        let base := max maxH (opts.minRows.getD 0)
+        if base == 0 && !opts.pow2Rows then
+          throw "single-circuit packedRows must be positive"
+        pure (if opts.pow2Rows then (max 1 base).nextPowerOfTwo else base)
+  if packedRows == 0 then
+    throw "single-circuit packedRows must be positive"
+  if packedRows > 2 ^ 39 then
+    throw s!"single-circuit packedRows {packedRows} exceeds bound 2^39"
+  for (a, idx) in airs.zipIdx do
+    if a.rows > packedRows then
+      throw s!"single-circuit constituent {idx} height {a.rows} exceeds packedRows {packedRows}"
+  pure packedRows
 
 def pushNat (out : ByteArray) (n : Nat) : ByteArray := Id.run do
   let mut len := 0
@@ -438,14 +517,21 @@ def chooseCarriers (W : Nat) (pkg : Ixa.Package Fp) (wideUnits : List (IWideUnit
       out := out.push (i, C, T, C')
   throw "carrier selection did not terminate"
 
-def run (field : FieldChoice) (t0 : Nat) (j : Json) (base : System.FilePath)
+def run (field : FieldChoice) (opts : CliOptions) (t0 : Nat) (j : Json) (base : System.FilePath)
     (output fixedPath : String) (tablesPath : Option String) : IO UInt32 := do
+  if opts.singleCircuit then
+    if tablesPath.isNone then
+      IO.eprintln "--single-circuit requires compact mode (pass tables.bin)"; return 1
+    if fixedPath != "-" && tablesPath == some fixedPath then
+      IO.eprintln "fixed.bin and tables.bin must be distinct paths"; return 1
   let fmt ← IO.ofExcept ((← IO.ofExcept (j.getObjVal? "format")).getStr?)
   let src ← match fmt with
     | "ix-tiling-v2-input-1" => readInput1 p j
     | "ix-tiling-v2-input-2" => readInput2 p j base
     | _ => do IO.eprintln s!"unexpected input format {fmt}"; return 1
   let { W, shards, units, caps, tuples, roms, request, chips, callables, pkg, wide, entry } := src
+  if opts.singleCircuit && !wide.isEmpty then
+    IO.eprintln "--single-circuit does not support mixed \"wide\" units"; return 1
   if field == .goldilocks then
     if let some pkg := pkg then
       unless pkg.limbs.sum ≤ 24 do
@@ -592,18 +678,33 @@ def run (field : FieldChoice) (t0 : Nat) (j : Json) (base : System.FilePath)
     -- limbs are package maps; `entryPlain` (`Ixa.recursive_of_column`).
     unless pkg.checkRanges do IO.eprintln "a depth range map is not a package map"; return 1
     unless pkg.checkEntryPlain entry do IO.eprintln s!"the entry {entry} is recursive or has no chip"; return 1
-  -- The fixed matrix.
-  let mut written := 0
-  if fixedPath != "-" then
-    let h ← IO.FS.Handle.mk fixedPath .write
-    h.write (pushU64 (pushU64 "IXTLFX01".toUTF8 places) fw)
-    let mut buf : ByteArray := ByteArray.empty
+  -- The fixed matrix (default multi-circuit or packed `--single-circuit`).
+  let mut t5 := t4
+  let mut t6 := t3
+  let mut singleCircuitFields : List (String × Json) := []
+  if opts.singleCircuit then
+    unless checked.get do IO.eprintln "Sharded.check rejected the layout"; return 1
+    t6 := ← IO.monoMsNow
+    progress s!"Sharded.check accepted {t6 - t3} ms after it started"
+    unless compactChecked.get do IO.eprintln "checkTables rejected the compact tables"; return 1
+    progress s!"compact tables accepted: {compact.map (·.rows)} rows"
+    let H : Nat → Nat := fun _ => places
+    let HT : Nat → Nat := fun t => (compact[t]?.map (·.rows)).getD 0
+    let airs : List (WideStage.Air Fp) := SingleCircuit.compactSystemAirs S H compact HT
+    let packedRows ← match resolvePackedRows opts airs with
+      | .ok r => pure r
+      | .error e => IO.eprintln e; return 1
+    unless SingleCircuit.allInBounds airs do
+      IO.eprintln "SingleCircuit.allInBounds rejected a constituent circuit"; return 1
+    let packed : WideStage.Air Fp := SingleCircuit.pack airs packedRows
+    unless SingleCircuit.Circuit.inBounds packed.circuit do
+      IO.eprintln "packed single circuit failed Circuit.inBounds"; return 1
+    -- Build per-row fixed bytes for one shard layout (shared by all shards).
+    let mut shardRows : Array ByteArray := Array.mkEmpty places
     let mut kb := 0
     let mut idb := 0
-    let mut pending : Array (Task ByteArray) := #[]
     for (T, cap) in ts.zip caps.toList do
       let table := Sharded.multTable T
-      -- Per row: the bytes of the instance-independent segments of `emit`.
       let mut parts : Array (RowParts Fp) := #[]
       for (row, r) in T.rows.zipIdx do
         let cells := T.rowCells row
@@ -626,43 +727,197 @@ def run (field : FieldChoice) (t0 : Nat) (j : Json) (base : System.FilePath)
         unless fast.data == full.data do
           IO.eprintln "the byte writer differs from Sharded.emit"; return 1
         parts := parts.push (bytesOf p pre, rm, row.keyFlag T, cellsA, bytesOf p mults)
-      -- Blocks of about 2^16 rows; at most 64 blocks are in flight.
-      let rows := max 1 T.rows.length
-      let per := max 1 ((1 <<< 16) / rows)
-      let rowBytes := (parts.toList.map fun (pre, _, _, _, mults) => pre.size + mults.size + 6 * 5 + 6 * W).sum
-      let mut i := 0
-      while i < cap do
-        let j := min cap (i + per)
-        let (ps, sl, k0, d0, a, b) := (parts, T.slots.length, kb, idb, i, j)
-        pending := pending.push (Task.spawn fun _ => emitBlock p ps sl k0 d0 a b ((b - a) * rowBytes))
-        written := written + (j - i) * T.rows.length
-        if pending.size ≥ 64 then
-          h.write pending[0]!.get
-          pending := pending.extract 1 pending.size
-        i := j
+      for i in [0:cap] do
+        let lb := kb + i * T.slots.length
+        let id : Fp := ((idb + i : Nat) : Fp)
+        for (pre, rm, kf, cells, mults) in parts do
+          let mut rowBuf := pre
+          for k in [0:5] do
+            rowBuf := pushField p rowBuf (if k = 3 then (if kf then id else 0) else rm.getD k 0)
+          for c in cells do
+            rowBuf := match c with
+              | some s => pushNat rowBuf (lb + s + 1)
+              | none => pushNat rowBuf 0
+          rowBuf := rowBuf ++ mults
+          shardRows := shardRows.push rowBuf
       kb := kb + cap * T.slots.length
       idb := idb + cap
-    for t in pending do
-      h.write t.get
-    h.write buf
-    h.flush
-    if written != places then IO.eprintln s!"wrote {written} rows for {places} places"; return 1
-  let t5 ← IO.monoMsNow
-  progress s!"fixed matrix of {written} rows × {fw} columns in {t5 - t4} ms"
-  unless checked.get do IO.eprintln "Sharded.check rejected the layout"; return 1
-  let t6 ← IO.monoMsNow
-  progress s!"Sharded.check accepted {t6 - t3} ms after it started"
-  if let some path := tablesPath then
-    let h ← IO.FS.Handle.mk path .write
+    if shardRows.size != places then
+      IO.eprintln s!"built {shardRows.size} shard rows for {places} places"; return 1
+    -- Build per-row fixed bytes for each compact table.
+    let mut compactRowTables : Array (Array ByteArray × ByteArray × Nat × Nat) := #[]
     for T in compact do
-      let fw := 3 + T.nFixed
-      h.write (pushU64 (pushU64 "IXTLFX01".toUTF8 T.rows) fw)
+      let cfw := 3 + T.nFixed
+      let mut cRows : Array ByteArray := Array.mkEmpty T.rows
       for q in T.parts do
         for c in List.range q.nrows do
-          h.write (bytesOf p ((List.range fw).map (Compact.rowFixed S.buses q c)))
-    h.flush
-    unless compactChecked.get do IO.eprintln "checkTables rejected the compact tables"; return 1
-    progress s!"compact tables accepted: {compact.map (·.rows)} rows"
+          cRows := cRows.push (bytesOf p ((List.range cfw).map (Compact.rowFixed S.buses q c)))
+      if cRows.size != T.rows then
+        IO.eprintln s!"built {cRows.size} compact rows for {T.rows}"; return 1
+      compactRowTables := compactRowTables.push (cRows, bytesOf p (List.replicate cfw 0), T.rows, cfw)
+    let zeroShardRow := bytesOf p (List.replicate fw 0)
+    let oneBytes := pushField p ByteArray.empty 1
+    let zeroBytes := pushField p ByteArray.empty 0
+    let fastRowBytes (i : Nat) : ByteArray := Id.run do
+      let mut row := ByteArray.empty
+      let sRow := shardRows.getD i zeroShardRow
+      for _ in [0:shards] do
+        row := row ++ sRow
+        if places < packedRows then
+          row := row ++ (if i < places then oneBytes else zeroBytes)
+      for (cRows, zeroCRow, tRows, _) in compactRowTables do
+        row := row ++ cRows.getD i zeroCRow
+        if tRows < packedRows then
+          row := row ++ (if i < tRows then oneBytes else zeroBytes)
+      return row
+    -- Validate `packed.fixed` matches `SingleCircuit.packFixed` and the fast byte
+    -- writer on row 0, every constituent's boundary rows, and the final packed row.
+    let packedFw := packed.circuit.fixedWidth
+    for i in boundaryRows airs packedRows do
+      let mut specVals : Array Fp := Array.mkEmpty packedFw
+      for c in [0:packedFw] do
+        let v1 := packed.fixed i c
+        let v2 := SingleCircuit.packFixed packedRows airs i c
+        unless v1 == v2 do
+          IO.eprintln s!"packed.fixed differs from SingleCircuit.packFixed at ({i}, {c})"; return 1
+        specVals := specVals.push v1
+      let specBytes := bytesOf p specVals.toList
+      let fastBytes := fastRowBytes i
+      unless fastBytes.data == specBytes.data do
+        IO.eprintln s!"single-circuit fixed writer differs from SingleCircuit.packFixed at row {i}"; return 1
+    if fixedPath != "-" then
+      let h ← IO.FS.Handle.mk fixedPath .write
+      h.write (pushU64 (pushU64 "IXTLFX01".toUTF8 packedRows) packedFw)
+      let mut chunk := ByteArray.empty
+      for i in [0:packedRows] do
+        chunk := chunk ++ fastRowBytes i
+        if chunk.size ≥ 1 <<< 20 then
+          h.write chunk
+          chunk := ByteArray.empty
+      if chunk.size > 0 then
+        h.write chunk
+      h.flush
+    if let some path := tablesPath then
+      if path != "-" then
+        let h ← IO.FS.Handle.mk path .write
+        for (cRows, _, tRows, cfw) in compactRowTables do
+          h.write (pushU64 (pushU64 "IXTLFX01".toUTF8 tRows) cfw)
+          let mut chunk := ByteArray.empty
+          for row in cRows do
+            chunk := chunk ++ row
+            if chunk.size ≥ 1 <<< 20 then
+              h.write chunk
+              chunk := ByteArray.empty
+          if chunk.size > 0 then
+            h.write chunk
+        h.flush
+    t5 := ← IO.monoMsNow
+    progress s!"single-circuit fixed matrix of {packedRows} rows × {packedFw} columns in {t5 - t4} ms"
+    let constituentJson (kind : String) (index idx : Nat) (a : WideStage.Air Fp)
+        (extra : List (String × Json) := []) : Json :=
+      let mOff := SingleCircuit.mainOffset airs idx
+      let fOff := SingleCircuit.fixedOffset airs packedRows idx
+      let baseFields : List (String × Json) := [
+        ("kind", Json.str kind),
+        ("index", Json.num index),
+        ("rows", Json.num a.rows),
+        ("main_offset", Json.num mOff),
+        ("main_width", Json.num a.circuit.width),
+        ("fixed_offset", Json.num fOff),
+        ("fixed_width", Json.num a.circuit.fixedWidth)]
+      let actFields : List (String × Json) :=
+        if SingleCircuit.needsAct packedRows a then
+          [("active_col", Json.num (fOff + a.circuit.fixedWidth))]
+        else []
+      Json.mkObj (baseFields ++ actFields ++ extra)
+    let shardConstituents : Array Json := ((List.range shards).map fun k =>
+      constituentJson "shard" k k (SingleCircuit.shardAir S k places)).toArray
+    let compactConstituents : Array Json := (compact.zipIdx.map fun (T, t) =>
+      let ckind := if t == 0 then "maps" else "roms"
+      constituentJson "compact" t (shards + t) (SingleCircuit.compactAir S T T.rows)
+        [("compact_kind", Json.str ckind)]).toArray
+    let packedCircuit := SingleCircuit.packCircuit airs packedRows
+    singleCircuitFields := [("single_circuit", Json.mkObj [
+      ("num_circuits", Json.num 1),
+      ("rows", Json.num packedRows),
+      ("main_width", Json.num packedCircuit.width),
+      ("fixed_width", Json.num packedCircuit.fixedWidth),
+      ("num_constraints", Json.num packedCircuit.constraints.length),
+      ("num_lookups", Json.num packedCircuit.lookups.length),
+      ("constituents", Json.arr (shardConstituents ++ compactConstituents)),
+      ("circuit", circuitJson p packedCircuit)])]
+    progress s!"single-circuit packed {airs.length} constituents -> 1 circuit ({packedRows} rows × {packedCircuit.width} main, {packedCircuit.fixedWidth} fixed, {packedCircuit.constraints.length} constraints, {packedCircuit.lookups.length} lookups)"
+  else
+    let mut written := 0
+    if fixedPath != "-" then
+      let h ← IO.FS.Handle.mk fixedPath .write
+      h.write (pushU64 (pushU64 "IXTLFX01".toUTF8 places) fw)
+      let mut buf : ByteArray := ByteArray.empty
+      let mut kb := 0
+      let mut idb := 0
+      let mut pending : Array (Task ByteArray) := #[]
+      for (T, cap) in ts.zip caps.toList do
+        let table := Sharded.multTable T
+        -- Per row: the bytes of the instance-independent segments of `emit`.
+        let mut parts : Array (RowParts Fp) := #[]
+        for (row, r) in T.rows.zipIdx do
+          let cells := T.rowCells row
+          unless cells.all (fun c => c.all (· < T.slots.length)) do
+            IO.eprintln "a physical cell is outside the slots"; return 1
+          let pre := S.staticCols T row
+          let rm := (List.range 5).map (row.rowMsg T S.buses 0)
+          let mults := (List.range W).map (Sharded.multOf T table r)
+          let full := bytesOf p (S.emit pre rm (row.keyFlag T) cells mults kb ((idb : Nat) : Fp))
+          let cellsA := ((List.range W).map fun j => cells.getD j none).toArray
+          let fast := Id.run do
+            let mut out := bytesOf p pre
+            for k in [0:5] do
+              out := pushField p out (if k = 3 then (if row.keyFlag T then ((idb : Nat) : Fp) else 0) else rm.getD k 0)
+            for c in cellsA do
+              out := match c with
+                | some s => pushNat out (kb + s + 1)
+                | none => pushNat out 0
+            return out ++ bytesOf p mults
+          unless fast.data == full.data do
+            IO.eprintln "the byte writer differs from Sharded.emit"; return 1
+          parts := parts.push (bytesOf p pre, rm, row.keyFlag T, cellsA, bytesOf p mults)
+        -- Blocks of about 2^16 rows; at most 64 blocks are in flight.
+        let rows := max 1 T.rows.length
+        let per := max 1 ((1 <<< 16) / rows)
+        let rowBytes := (parts.toList.map fun (pre, _, _, _, mults) => pre.size + mults.size + 6 * 5 + 6 * W).sum
+        let mut i := 0
+        while i < cap do
+          let j := min cap (i + per)
+          let (ps, sl, k0, d0, a, b) := (parts, T.slots.length, kb, idb, i, j)
+          pending := pending.push (Task.spawn fun _ => emitBlock p ps sl k0 d0 a b ((b - a) * rowBytes))
+          written := written + (j - i) * T.rows.length
+          if pending.size ≥ 64 then
+            h.write pending[0]!.get
+            pending := pending.extract 1 pending.size
+          i := j
+        kb := kb + cap * T.slots.length
+        idb := idb + cap
+      for t in pending do
+        h.write t.get
+      h.write buf
+      h.flush
+      if written != places then IO.eprintln s!"wrote {written} rows for {places} places"; return 1
+    t5 := ← IO.monoMsNow
+    progress s!"fixed matrix of {written} rows × {fw} columns in {t5 - t4} ms"
+    unless checked.get do IO.eprintln "Sharded.check rejected the layout"; return 1
+    t6 := ← IO.monoMsNow
+    progress s!"Sharded.check accepted {t6 - t3} ms after it started"
+    if let some path := tablesPath then
+      let h ← IO.FS.Handle.mk path .write
+      for T in compact do
+        let fw := 3 + T.nFixed
+        h.write (pushU64 (pushU64 "IXTLFX01".toUTF8 T.rows) fw)
+        for q in T.parts do
+          for c in List.range q.nrows do
+            h.write (bytesOf p ((List.range fw).map (Compact.rowFixed S.buses q c)))
+      h.flush
+      unless compactChecked.get do IO.eprintln "checkTables rejected the compact tables"; return 1
+      progress s!"compact tables accepted: {compact.map (·.rows)} rows"
   let (rejected, distinct) := tablesChecked.get
   if let some (tag, sub) := rejected.head? then
     IO.eprintln s!"stacked table ({tag}, {sub}) rejected"; return 1
@@ -705,14 +960,15 @@ def run (field : FieldChoice) (t0 : Nat) (j : Json) (base : System.FilePath)
     ("ms", Json.mkObj [("parse", Json.num (t1 - t0)), ("lower", Json.num (t2 - t1)),
       ("check", Json.num (t6 - t3)), ("tables", Json.num (t7 - t3)), ("fixed", Json.num (t5 - t4)),
       ("total", Json.num (t7 - t0))])] ++
-    if wideUnits.isEmpty then [] else
+    (if wideUnits.isEmpty then [] else
       let idOf := (pkg.map (·.idOf)).getD fun _ => 0
       [("wide_units", Json.arr (wideUnits.toArray.zip wide |>.map fun (u, (i, _)) => Json.mkObj [
           ("chip", Json.str u.chip.name), ("chip_index", Json.num i), ("key_base", Json.num u.keyBase),
           ("cap", Json.num u.rows), ("circuit", circuitJson p (u.circuit idOf S.buses W))])),
         ("mixed", Json.mkObj [("rows", Json.num ((wideUnits.map (·.rows)).sum : Nat)),
           ("lookups", Json.num (mixedLookupsI wideUnits)), ("parts", Json.num (mixedPartCountI wideUnits)),
-          ("carriers", Json.arr (carrierAt.map fun (c : Nat) => Json.num c))])])
+          ("carriers", Json.arr (carrierAt.map fun (c : Nat) => Json.num c))])]) ++
+    singleCircuitFields)
   IO.FS.writeFile output out.compress
   progress s!"total {t7 - t0} ms"
   return 0
@@ -720,7 +976,7 @@ def run (field : FieldChoice) (t0 : Nat) (j : Json) (base : System.FilePath)
 end
 
 def main (args : List String) : IO UInt32 := do
-  let (cliField, input, output, fixedPath, tablesPath) ← match parseArgs args with
+  let (opts, input, output, fixedPath, tablesPath) ← match parseArgs args with
     | .ok parsed => pure parsed
     | .error e => do IO.eprintln e; return 2
   let t0 ← IO.monoMsNow
@@ -731,7 +987,7 @@ def main (args : List String) : IO UInt32 := do
         | .ok "bn254" => pure (some .bn254)
         | .ok "goldilocks" => pure (some .goldilocks)
         | _ => do IO.eprintln "field must be bn254 or goldilocks"; return 1
-  let field : FieldChoice ← match cliField, jsonField with
+  let field : FieldChoice ← match opts.field, jsonField with
     | some c, some f =>
         if c == f then pure c
         else do IO.eprintln s!"CLI field {c.name} conflicts with input field {f.name}"; return 1
@@ -743,10 +999,10 @@ def main (args : List String) : IO UInt32 := do
   | .bn254 =>
       have : Fact (Nat.Prime Aiur.Library.Field.BN254.modulus) :=
         ⟨Aiur.Library.Field.BN254.modulus_prime⟩
-      run Aiur.Library.Field.BN254.modulus .bn254 t0 j base output fixedPath tablesPath
+      run Aiur.Library.Field.BN254.modulus .bn254 opts t0 j base output fixedPath tablesPath
   | .goldilocks =>
       have : Fact (Nat.Prime Aiur.Library.U32.Goldilocks.modulus) :=
         ⟨Aiur.Library.U32.Goldilocks.modulus_prime⟩
-      run Aiur.Library.U32.Goldilocks.modulus .goldilocks t0 j base output fixedPath tablesPath
+      run Aiur.Library.U32.Goldilocks.modulus .goldilocks opts t0 j base output fixedPath tablesPath
 
 end Aiur.Tiling.TilingExport2
