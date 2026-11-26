@@ -135,9 +135,8 @@ private def check : IO Nat := do
     {report.constants} direct source comparisons and visible expected declines"
   return 12
 
-def suite : List TestSeq := [
-  .individualIO "validate-lean source fidelity keeps coverage, declines, failures and lazy/eager reports" none (do
-    let n ← check
-    return (true, n, 0, none)) .done]
+def suite : LSpec.Spec := do
+  it "validate-lean source fidelity keeps coverage, declines, failures and lazy/eager reports" do
+    let _ ← check
 
 end Tests.Ix.Kernel.ValidateReaderCli

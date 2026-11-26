@@ -65,12 +65,11 @@ private def memberLabels (ixc : String) : IO (Except String (List String)) := do
     through the core: member set complete, roots well-formed, verify
     green over a non-empty union. -/
 private def driverBuild (mini : Bool) (ixc : System.FilePath)
-    (expectMembers : Nat) : IO (Bool × Nat × Nat × Option String) := do
+    (expectMembers : Nat) : AssertM Unit := do
   unless (← ixExe.pathExists) do
-    return (false, 0, 0, some s!"{ixExe} missing — run `lake build ix` first")
+    fail s!"{ixExe} missing — run `lake build ix` first"
   unless (← driverExe.pathExists) do
-    return (false, 0, 0,
-      some s!"{driverExe} missing — run `lake build truthmines` first")
+    fail s!"{driverExe} missing — run `lake build truthmines` first"
   let exe ← IO.FS.realPath driverExe
   let mut args := #["build", "--out", ixc.toString]
   if mini then
@@ -78,38 +77,30 @@ private def driverBuild (mini : Bool) (ixc : System.FilePath)
   let child ← IO.Process.spawn { cmd := exe.toString, args }
   let exit ← child.wait
   if exit != 0 then
-    return (false, 0, 0, some s!"truthmines build failed ({exit})")
+    fail s!"truthmines build failed ({exit})"
   unless (← (ixc / "manifest").pathExists) do
-    return (false, 0, 0, some s!"driver exited 0 but {ixc} has no manifest")
-  let labels ← match ← memberLabels ixc.toString with
-    | .ok ls => pure ls
-    | .error e => return (false, 0, 0, some s!"manifest: {e}")
+    fail s!"driver exited 0 but {ixc} has no manifest"
+  let labels ← expectOk ((← memberLabels ixc.toString).mapError (s!"manifest: {·}"))
   unless labels.length == expectMembers do
-    return (false, labels.length, expectMembers,
-      some s!"manifest carries {labels.length} members, the spec has \
-{expectMembers}")
+    fail s!"manifest carries {labels.length} members, the spec has {expectMembers}"
   -- Independent re-verify through the core (the driver already
   -- verified; this pins the suite's own read of the artifact).
   let verifyContent ← Ix.Cli.CatalogCmd.rsCatalogVerifyFFI ixc.toString false
   let union : Except String Nat := do
     let json ← Lean.Json.parse verifyContent
     (← json.getObjVal? "unionConsts").getNat?
-  match union with
-  | .ok n =>
-    if n == 0 then
-      return (false, 0, 0, some "catalog verify reports an empty union")
-    return (true, labels.length, n, none)
-  | .error e => return (false, 0, 0, some s!"verify: {e}")
+  let n ← expectOk (union.mapError (s!"verify: {·}"))
+  if n == 0 then
+    fail "catalog verify reports an empty union"
 
 /-- Drive `truthmines check [--mini]`: the per-piece `ix check-lean
     --anon` sweep over the tier's `.ixc` — the fat-profile checking
     rung lives in the driver (bounded pool, output captured per piece,
     tails + solo repro surfaced on rejection); the suite is exit-code
     gated. -/
-private def driverCheck (mini : Bool) : IO (Bool × Nat × Nat × Option String) := do
+private def driverCheck (mini : Bool) : AssertM Unit := do
   unless (← driverExe.pathExists) do
-    return (false, 0, 0,
-      some s!"{driverExe} missing — run `lake build truthmines` first")
+    fail s!"{driverExe} missing — run `lake build truthmines` first"
   let exe ← IO.FS.realPath driverExe
   let mut args := #["check"]
   if mini then
@@ -117,24 +108,20 @@ private def driverCheck (mini : Bool) : IO (Bool × Nat × Nat × Option String)
   let child ← IO.Process.spawn { cmd := exe.toString, args }
   let exit ← child.wait
   if exit != 0 then
-    return (false, 0, 0, some s!"truthmines check failed ({exit})")
-  return (true, 0, 0, none)
+    fail s!"truthmines check failed ({exit})"
 
-def buildSuite : List TestSeq := [
-  .individualIO
-    "truthmines: full corpus pieces + self-contained .ixc via the driver"
-    none (driverBuild false "truthmines.ixc" catalogSpec.libs.size) .done ]
+def buildSuite : LSpec.Spec := do
+  it "truthmines: full corpus pieces + self-contained .ixc via the driver"
+    (driverBuild false "truthmines.ixc" catalogSpec.libs.size)
 
-def checkSuite : List TestSeq := [
-  .individualIO "truthmines: per-piece kernel check sweep (fat rung 1)"
-    none (driverCheck false) .done ]
+def checkSuite : LSpec.Spec := do
+  it "truthmines: per-piece kernel check sweep (fat rung 1)"
+    (driverCheck false)
 
-def miniSuite : List TestSeq := [
-  .individualIO
-    "truthmines-mini: fixtures + spine + Mathlib + FLT → .ixc directory"
-    none (driverBuild true "truthmines-mini.ixc"
-      catalogMiniSpec.libs.size) .done,
-  .individualIO "truthmines-mini: per-piece kernel check sweep"
-    none (driverCheck true) .done ]
+def miniSuite : LSpec.Spec := do
+  it "truthmines-mini: fixtures + spine + Mathlib + FLT → .ixc directory"
+    (driverBuild true "truthmines-mini.ixc" catalogMiniSpec.libs.size)
+  it "truthmines-mini: per-piece kernel check sweep"
+    (driverCheck true)
 
 end Tests.Ix.TruthMines

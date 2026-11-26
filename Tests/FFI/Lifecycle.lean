@@ -12,7 +12,7 @@ public import Ix.Ixon
 public import Tests.Gen.Ixon
 public import Tests.FFI.Ixon
 
-open LSpec SlimCheck Gen Ixon
+open LSpec LSpec.Prop Gen Ixon
 open Tests.Gen.Ixon
 open Tests.FFI.Ixon (rawEnvEq)
 
@@ -21,121 +21,114 @@ namespace Tests.FFI.Lifecycle
 /-! ## Keccak external object lifecycle tests -/
 
 /-- Basic hash lifecycle: init → update → finalize -/
-def keccakBasicTests : TestSeq :=
+def keccakBasicTests : LSpec.Spec := do
   -- Known test vector: SHA3-256 of [0]
   let input : ByteArray := ⟨#[0]⟩
   let expected : ByteArray := ⟨#[
     188, 54, 120, 158, 122, 30, 40, 20, 54, 70, 66, 41, 130, 143, 129, 125,
     102, 18, 247, 180, 119, 214, 101, 145, 255, 150, 169, 224, 100, 188, 201, 138
   ]⟩
-  let result := Keccak.hash input
-  test "Keccak basic hash [0]" (result == expected) ++
+  itBool "Keccak basic hash [0]" (Keccak.hash input == expected)
   -- Empty input
-  let emptyResult := Keccak.hash ByteArray.empty
-  test "Keccak empty input produces 32 bytes" (emptyResult.size == 32) ++
+  itBool "Keccak empty input produces 32 bytes" ((Keccak.hash ByteArray.empty).size == 32)
   -- Determinism: same input twice
-  let result2 := Keccak.hash input
-  test "Keccak deterministic" (result == result2)
+  itBool "Keccak deterministic" (Keccak.hash input == Keccak.hash input)
 
 /-- Multi-update lifecycle: init → update × N → finalize
     Creates N+1 external Hasher objects, exercising the destructor path. -/
-def keccakMultiUpdateTests : TestSeq :=
+def keccakMultiUpdateTests : LSpec.Spec := do
   -- Multi-update should produce same result as single update of concatenated input
   let chunk1 : ByteArray := ⟨#[1, 2, 3]⟩
   let chunk2 : ByteArray := ⟨#[4, 5, 6]⟩
   let chunk3 : ByteArray := ⟨#[7, 8, 9]⟩
   let combined : ByteArray := ⟨#[1, 2, 3, 4, 5, 6, 7, 8, 9]⟩
-  let singleHash := Keccak.hash combined
-  let multiHash :=
-    let h := Keccak.Hasher.init ()
-    let h := h.update chunk1
-    let h := h.update chunk2
-    let h := h.update chunk3
-    h.finalize
-  test "Keccak multi-update == single" (singleHash == multiHash) ++
+  itBool "Keccak multi-update == single" (
+    let singleHash := Keccak.hash combined
+    let multiHash :=
+      let h := Keccak.Hasher.init ()
+      let h := h.update chunk1
+      let h := h.update chunk2
+      let h := h.update chunk3
+      h.finalize
+    singleHash == multiHash)
   -- Many updates to stress the external object destructor
-  let manyHash := Id.run do
-    let mut h := Keccak.Hasher.init ()
-    for i in [:20] do
-      h := h.update ⟨#[i.toUInt8]⟩
-    return h.finalize
-  test "Keccak 20 updates produces 32 bytes" (manyHash.size == 32)
+  itBool "Keccak 20 updates produces 32 bytes" (
+    let manyHash := Id.run do
+      let mut h := Keccak.Hasher.init ()
+      for i in [:20] do
+        h := h.update ⟨#[i.toUInt8]⟩
+      return h.finalize
+    manyHash.size == 32)
 
 /-- Large input to exercise large ByteArray across FFI boundary -/
-def keccakLargeInputTests : TestSeq :=
+def keccakLargeInputTests : LSpec.Spec := do
   let large : ByteArray := ⟨Array.range 4096 |>.map Nat.toUInt8⟩
-  let result := Keccak.hash large
-  test "Keccak large input (4096 bytes)" (result.size == 32) ++
+  itBool "Keccak large input (4096 bytes)" ((Keccak.hash large).size == 32)
   -- Verify determinism on large input
-  let result2 := Keccak.hash large
-  test "Keccak large input deterministic" (result == result2)
+  itBool "Keccak large input deterministic" (Keccak.hash large == Keccak.hash large)
 
 /-! ## Blake3 external object lifecycle tests -/
 
 /-- Basic hash lifecycle against the official BLAKE3 empty-input test vector. -/
-def blake3BasicTests : TestSeq :=
+def blake3BasicTests : LSpec.Spec := do
   -- Official BLAKE3 vector: blake3("") = af1349b9f5f9a1a6…cae41f3262.
   let expected : ByteArray := ⟨#[
     175, 19, 73, 185, 245, 249, 161, 166, 160, 64, 77, 234, 54, 220, 201, 73,
     155, 203, 37, 201, 173, 193, 18, 183, 204, 154, 147, 202, 228, 31, 50, 98
   ]⟩
-  let emptyResult := (Blake3.Rust.hash ByteArray.empty).val
-  test "Blake3 empty matches official vector" (emptyResult == expected) ++
-  test "Blake3 empty produces 32 bytes" (emptyResult.size == 32) ++
+  itBool "Blake3 empty matches official vector" ((Blake3.Rust.hash ByteArray.empty).val == expected)
+  itBool "Blake3 empty produces 32 bytes" ((Blake3.Rust.hash ByteArray.empty).val.size == 32)
   -- Determinism: same input twice.
   let input : ByteArray := ⟨#[1, 2, 3]⟩
-  test "Blake3 deterministic" ((Blake3.Rust.hash input).val == (Blake3.Rust.hash input).val)
+  itBool "Blake3 deterministic" ((Blake3.Rust.hash input).val == (Blake3.Rust.hash input).val)
 
 /-- Multi-update lifecycle: init → update × N → finalize. Creates N+1 external
     `Hasher` objects (exercising the destructor path); must equal the one-shot hash. -/
-def blake3MultiUpdateTests : TestSeq :=
+def blake3MultiUpdateTests : LSpec.Spec := do
   let combined : ByteArray := ⟨#[1, 2, 3, 4, 5, 6, 7, 8, 9]⟩
-  let singleHash := (Blake3.Rust.hash combined).val
-  let multiHash := Id.run do
-    let mut h := Blake3.Rust.Hasher.init ()
-    h := h.update ⟨#[1, 2, 3]⟩
-    h := h.update ⟨#[4, 5, 6]⟩
-    h := h.update ⟨#[7, 8, 9]⟩
-    return (h.finalizeWithLength 32).val
-  test "Blake3 multi-update == single" (singleHash == multiHash) ++
+  itBool "Blake3 multi-update == single" (
+    let singleHash := (Blake3.Rust.hash combined).val
+    let multiHash := Id.run do
+      let mut h := Blake3.Rust.Hasher.init ()
+      h := h.update ⟨#[1, 2, 3]⟩
+      h := h.update ⟨#[4, 5, 6]⟩
+      h := h.update ⟨#[7, 8, 9]⟩
+      return (h.finalizeWithLength 32).val
+    singleHash == multiHash)
   -- Many updates to stress the external object destructor.
-  let manyHash := Id.run do
-    let mut h := Blake3.Rust.Hasher.init ()
-    for i in [:20] do
-      h := h.update ⟨#[i.toUInt8]⟩
-    return (h.finalizeWithLength 32).val
-  let manyExpected := (Blake3.Rust.hash ⟨Array.range 20 |>.map Nat.toUInt8⟩).val
-  test "Blake3 many-update == single" (manyHash == manyExpected)
+  itBool "Blake3 many-update == single" (
+    let manyHash := Id.run do
+      let mut h := Blake3.Rust.Hasher.init ()
+      for i in [:20] do
+        h := h.update ⟨#[i.toUInt8]⟩
+      return (h.finalizeWithLength 32).val
+    let manyExpected := (Blake3.Rust.hash ⟨Array.range 20 |>.map Nat.toUInt8⟩).val
+    manyHash == manyExpected)
 
 /-- Large-input determinism, mirroring the Keccak large-input test. -/
-def blake3LargeInputTests : TestSeq :=
+def blake3LargeInputTests : LSpec.Spec := do
   let large : ByteArray := ⟨Array.range 4096 |>.map Nat.toUInt8⟩
-  let result := (Blake3.Rust.hash large).val
-  test "Blake3 large input (4096 bytes)" (result.size == 32) ++
-  test "Blake3 large input deterministic" (result == (Blake3.Rust.hash large).val)
+  itBool "Blake3 large input (4096 bytes)" ((Blake3.Rust.hash large).val.size == 32)
+  itBool "Blake3 large input deterministic" ((Blake3.Rust.hash large).val == (Blake3.Rust.hash large).val)
 
 /-! ## SHA256 hashing tests -/
 
-def sha256Tests : TestSeq :=
+def sha256Tests : LSpec.Spec := do
   -- Empty input: SHA-256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-  let emptyHash := Sha256.hash ByteArray.empty
   let expectedEmpty : ByteArray := ⟨#[
     0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,
     0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55
   ]⟩
-  test "SHA256 empty" (emptyHash == expectedEmpty) ++
+  itBool "SHA256 empty" (Sha256.hash ByteArray.empty == expectedEmpty)
   -- "abc": SHA-256("abc") = ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
-  let abcHash := Sha256.hash ⟨#[0x61, 0x62, 0x63]⟩
   let expectedAbc : ByteArray := ⟨#[
     0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23,
     0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad
   ]⟩
-  test "SHA256 abc" (abcHash == expectedAbc) ++
+  itBool "SHA256 abc" (Sha256.hash ⟨#[0x61, 0x62, 0x63]⟩ == expectedAbc)
   -- Determinism: hash same input twice
-  let hash1 := Sha256.hash ⟨#[1, 2, 3]⟩
-  let hash2 := Sha256.hash ⟨#[1, 2, 3]⟩
-  test "SHA256 deterministic" (hash1 == hash2) ++
-  test "SHA256 produces 32 bytes" (hash1.size == 32)
+  itBool "SHA256 deterministic" (Sha256.hash ⟨#[1, 2, 3]⟩ == Sha256.hash ⟨#[1, 2, 3]⟩)
+  itBool "SHA256 produces 32 bytes" ((Sha256.hash ⟨#[1, 2, 3]⟩).size == 32)
 
 /-! ## Ixon serialization roundtrip tests (ser_env → de_env) -/
 
@@ -153,34 +146,15 @@ private def serdeEnvEq (a b : RawEnv) : Bool :=
       rc.const.refs.size == rc'.const.refs.size &&
       rc.const.univs.size == rc'.const.univs.size
 
-/-- Wrap a pure computation in an IO action that only executes when the
-    IO value is run — not when it is constructed. Lean normally evaluates
-    pure `let` bindings strictly even inside `do` blocks, so `rsSerEnvFFI`
-    would otherwise fire at `TestSeq` construction time. Placing the
-    computation inside `fun s => ...` puts it under a lambda, which Lean
-    does not evaluate until the outer closure is applied — i.e., until the
-    IO action actually runs. See `EST.pure`/`EST.bind` in
-    `refs/lean4/src/Init/System/ST.lean`; this is hand-rolled `pure` that
-    cannot accidentally beta-reduce eagerly. -/
-@[inline] private def deferIO (f : Unit → α) : IO α := fun s =>
-  EST.Out.ok (f ()) s
-
 /-- Build a single serde roundtrip test that defers all FFI calls to
-    execution time. Constructing the returned `TestSeq` does no FFI work —
-    the `rsSerEnvFFI` / `rsDeEnvFFI` pair fires only when LSpec actually
-    runs the test. -/
-private def mkSerdeRoundtripTest (descr : String) (env : RawEnv) : TestSeq :=
-  .individualIO descr none (deferIO fun () =>
-    match rsSerEnvFFI env >>= rsDeEnvFFI with
-    | .ok decoded =>
-      let ok := serdeEnvEq decoded env
-      (ok, 0, 0, if ok then none else some "mismatch")
-    | .error e =>
-      (false, 0, 0, some s!"serialization/deserialization failed: {e}")) .done
+    execution time via `it`. -/
+private def mkSerdeRoundtripTest (descr : String) (env : RawEnv) : Spec :=
+  it descr do
+    let decoded ← expectOk (rsSerEnvFFI env >>= rsDeEnvFFI)
+    expect (serdeEnvEq decoded env) "mismatch"
 
-def serdeTests : TestSeq :=
-  -- Empty RawEnv. Only data construction happens eagerly; FFI is deferred
-  -- inside `mkSerdeRoundtripTest`.
+def serdeTests : LSpec.Spec := do
+  -- Empty RawEnv. FFI is deferred inside `mkSerdeRoundtripTest`.
   let empty : RawEnv := { consts := #[], named := #[], blobs := #[], comms := #[] }
   -- RawEnv with data. Consts AND blobs must be content-addressed — the
   -- Rust loader verifies `Address::hash(bytes) == addr` per entry for
@@ -215,7 +189,7 @@ def serdeTests : TestSeq :=
     comms := #[testRawComm],
     names := #[testNameEntry, testConstNameEntry]
   }
-  mkSerdeRoundtripTest "serde empty RawEnv" empty ++
+  mkSerdeRoundtripTest "serde empty RawEnv" empty
   mkSerdeRoundtripTest "serde RawEnv with data" withData
 
 /-- Generate a ConstantInfo without embedded Address fields.
@@ -234,19 +208,19 @@ private def genSimpleConstantInfo : Gen ConstantInfo :=
     name table; random RawEnvs almost always violate this. -/
 private def genSerdeRawEnv : Gen RawEnv := do
   -- Build a pool of (address, name) pairs; all addresses used below come from here
-  let poolSize ← Gen.choose Nat 2 8
+  let poolSize ← Gen.chooseNat 2 8
   let mut pool : Array (Address × Ix.Name) := #[]
   for i in [:poolSize] do
     let addr ← genAddress
     pool := pool.push (addr, Ix.Name.mkNat Ix.Name.mkAnon i)
   let pickAddr : Gen Address := do
-    let idx ← Gen.choose Nat 0 (pool.size - 1)
+    let idx ← Gen.chooseNat 0 (pool.size - 1)
     pure pool[idx]!.1
   -- Consts: derive addr from content (`Env::get` verifies
   -- `Address::hash(bytes) == addr` on load). Each canonical address
   -- gets its own name entry appended to the names table so the serde
   -- pipeline can resolve it.
-  let numConsts ← Gen.choose Nat 0 3
+  let numConsts ← Gen.chooseNat 0 3
   let mut consts : Array RawConst := #[]
   let mut constNames : Array RawNameEntry := #[]
   for i in [:numConsts] do
@@ -262,23 +236,23 @@ private def genSerdeRawEnv : Gen RawEnv := do
   -- Named: pool names over stored const addresses with empty metadata —
   -- §5 keys each entry's constant by §2 rank, so the writers reject
   -- named entries referencing anything outside `consts`.
-  let numNamed ← Gen.choose Nat 0 3
+  let numNamed ← Gen.chooseNat 0 3
   let mut named : Array RawNamed := #[]
   if consts.size > 0 then
     for _ in [:numNamed] do
-      let idx ← Gen.choose Nat 0 (pool.size - 1)
+      let idx ← Gen.chooseNat 0 (pool.size - 1)
       let (_, name) := pool[idx]!
-      let cidx ← Gen.choose Nat 0 (consts.size - 1)
+      let cidx ← Gen.chooseNat 0 (consts.size - 1)
       named := named.push
         { name, addr := (consts[cidx]!).addr, constMeta := .empty }
   -- Blobs: content-addressed (the loaders verify blake3(bytes) == addr)
-  let numBlobs ← Gen.choose Nat 0 3
+  let numBlobs ← Gen.chooseNat 0 3
   let mut blobs : Array RawBlob := #[]
   for _ in [:numBlobs] do
     let bytes ← Tests.Gen.Ixon.genByteArray
     blobs := blobs.push { addr := Address.blake3 bytes, bytes }
   -- Comms: pool addresses
-  let numComms ← Gen.choose Nat 0 2
+  let numComms ← Gen.chooseNat 0 2
   let mut comms : Array RawComm := #[]
   for _ in [:numComms] do
     let addr ← pickAddr
@@ -296,7 +270,7 @@ private def genSerdeRawEnv : Gen RawEnv := do
     if acc.any (·.addr == x.addr) then acc else acc.push x
   pure { consts := consts', named := named', blobs := blobs', comms := comms', names }
 
-/-- Wrapper so we can give well-formed RawEnvs their own SampleableExt instance. -/
+/-- Wrapper so we can give well-formed RawEnvs their own Sampleable instance. -/
 private structure serdeRawEnv where
   env : RawEnv
 
@@ -306,8 +280,8 @@ private instance : Repr serdeRawEnv where
 private instance : Shrinkable serdeRawEnv where
   shrink _ := []
 
-private instance : SampleableExt serdeRawEnv :=
-  SampleableExt.mkSelfContained (serdeRawEnv.mk <$> genSerdeRawEnv)
+private instance : Sampleable serdeRawEnv :=
+  ⟨serdeRawEnv.mk <$> genSerdeRawEnv⟩
 
 /-- Check that serialize → deserialize roundtrips for a well-formed RawEnv. -/
 def serdeRoundtripOk (env : RawEnv) : Bool :=
@@ -315,24 +289,25 @@ def serdeRoundtripOk (env : RawEnv) : Bool :=
   | .ok decoded => serdeEnvEq decoded env
   | .error _ => false
 
+set_option compiler.extract_closed false in
 /-- Property test: random well-formed RawEnv → serialize → deserialize → compare -/
-def serdePropertyTest (cfg : SlimCheck.Configuration := {}) : TestSeq :=
-  checkIO "serde RawEnv roundtrip" (∀ e : serdeRawEnv, serdeRoundtripOk e.env) .done cfg
+def serdePropertyTest (cfg : LSpec.Prop.PropertyConfig := {}) : Spec :=
+  propWith "serde RawEnv roundtrip" cfg fun (e : serdeRawEnv) => serdeRoundtripOk e.env
 
 /-! ## Test Suite -/
 
-public def suiteWith (cfg : SlimCheck.Configuration := {}) : List TestSeq := [
-  keccakBasicTests,
-  keccakMultiUpdateTests,
-  keccakLargeInputTests,
-  blake3BasicTests,
-  blake3MultiUpdateTests,
-  blake3LargeInputTests,
-  sha256Tests,
-  serdeTests,
-  serdePropertyTest cfg,
-]
+set_option compiler.extract_closed false in
+public def suiteWith (cfg : LSpec.Prop.PropertyConfig := {}) : Spec := do
+  keccakBasicTests
+  keccakMultiUpdateTests
+  keccakLargeInputTests
+  blake3BasicTests
+  blake3MultiUpdateTests
+  blake3LargeInputTests
+  sha256Tests
+  serdeTests
+  serdePropertyTest cfg
 
-public def suite : List TestSeq := suiteWith {}
+public def suite : Spec := suiteWith {}
 
 end Tests.FFI.Lifecycle

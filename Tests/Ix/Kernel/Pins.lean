@@ -55,22 +55,22 @@ def pins : List Pin := [
 /-- Check a fresh supporting closure over shared authenticated preparation.
 The existing per-subject budget measures its actual producer's checker time;
 input, preparation, reading and support checking are reported separately. -/
-public def checkPin (prepared : Ix.Cli.CheckLeanCmd.PreparedInput) (pin : Pin) : IO TestSeq := do
+public def checkPin (prepared : Ix.Cli.CheckLeanCmd.PreparedInput) (pin : Pin) : IO Spec := do
   let expected ← match Ix.Cli.CheckLeanTargets.findCandidate prepared.inventory pin.label with
     | .ok c => pure c
-    | .error _ => return test s!"{pin.label}: resolves unambiguously in the input" false
+    | .error _ => return itBool s!"{pin.label}: resolves unambiguously in the input" false
   let cfg : Ix.Cli.CheckLeanCmd.CheckCfg :=
     { workers := 1, silent := true, progressMs := 0, slowMs := 0 }
   match ← Ix.Cli.CheckLeanCmd.runPrepared prepared cfg (.only #[pin.label]) with
-  | .error e => return test s!"{pin.label}: driver failed: {e.message}" false
+  | .error e => return itBool s!"{pin.label}: driver failed: {e.message}" false
   | .ok report =>
     if report.targets.size != 1 || report.targets.any (fun r => r.target.label != expected.label || r.target.address != expected.address || r.outcome != "accept") then
-      return test s!"{pin.label}: exact accepted coverage (got {report.failures})" false
+      return itBool s!"{pin.label}: exact accepted coverage (got {report.failures})" false
     let subjectMs := report.subjectMicros / 1000
     IO.println s!"tc-pins: {pin.label}: selected checker {subjectMs}ms; preparation {report.prepareMs}ms; \
       reading {report.readMicros / 1000}ms; support checker {report.supportMicros / 1000}ms; run {report.elapsedMs}ms"
-    return test s!"{pin.label}: producer checked in {subjectMs}ms (budget {pin.budgetMs}ms)"
-      (report.subjectMicros ≤ pin.budgetMs * 1000)
+    return itBool s!"{pin.label}: producer checked in {subjectMs}ms (budget {pin.budgetMs}ms)"
+      (decide (report.subjectMicros ≤ pin.budgetMs * 1000))
 
 public def run : IO UInt32 := do
   IO.println "tc-pins"
@@ -89,11 +89,13 @@ public def run : IO UInt32 := do
         activePins := activePins.push pin
     let tasks ← activePins.mapM fun pin =>
       IO.asTask (prio := .dedicated) (checkPin prepared pin)
-    let mut seq : TestSeq := .done
+    let mut specs : Array Spec := #[]
     for task in tasks do
       match ← IO.wait task with
-      | .ok s => seq := seq ++ s
+      | .ok s => specs := specs.push s
       | .error e => throw e
-    lspecIO (.ofList [("tc-pins", [seq])]) []
+    lspecMain (describe "tc-pins" do
+      for s in specs do
+        s) []
 
 end Tests.Tc.Pins

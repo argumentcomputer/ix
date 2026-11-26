@@ -75,7 +75,7 @@ partial def parse (a : Args) : List String → Except String Args
 
 def main (args : List String) : IO UInt32 := do
   if args == ["--fixture"] then
-    return ← LSpec.lspecIO (.ofList [("kernel-source-ingress", Tests.Ix.Kernel.SourceIngress.suite)]) []
+    return ← LSpec.lspecMain (LSpec.describe "kernel-source-ingress" Tests.Ix.Kernel.SourceIngress.suite) []
   let a ← IO.ofExcept (parse {} args)
   let modules := if a.modules.isEmpty then #[`Init] else a.modules
   let t0 ← IO.monoMsNow

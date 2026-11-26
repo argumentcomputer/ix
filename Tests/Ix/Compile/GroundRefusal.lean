@@ -109,8 +109,8 @@ private def compileEnvBytes (cs : List (Lean.Name × Lean.ConstantInfo))
   Ix.RoleBinding.Compile.writeAtomic (System.FilePath.mk path) bytes
   return { status with bytes := bytes.size.toUInt64 }
 
-def failClosedStatusTest : TestSeq :=
-  .individualIO "compileEnvBytes fail-closed: ungrounded ⇒ no artifact" none (do
+def failClosedStatusTest : LSpec.Spec := do
+  it "compileEnvBytes fail-closed: ungrounded ⇒ no artifact" do
     let dir ← IO.FS.createTempDir
     let out := dir / "fail-closed.ixe"
     let status ← compileEnvBytes statusConsts out.toString false
@@ -125,13 +125,11 @@ def failClosedStatusTest : TestSeq :=
       , ("ungrounded names the bad axiom",
           status.ungrounded[0]?.map (·.1) == some statusBadName.toString)
       , ("root is 64 hex chars", status.root.length == 64) ]
-    match checks.find? (!·.2) with
-    | some (what, _) => return (false, 0, 0, some s!"failed: {what}")
-    | none => return (true, 0, 0, none)
-  ) .done
+    if let some (what, _) := checks.find? (!·.2) then
+      fail s!"failed: {what}"
 
-def allowPartialStatusTest : TestSeq :=
-  .individualIO "compileEnvBytes allow-partial: grounded subset reloads" none (do
+def allowPartialStatusTest : LSpec.Spec := do
+  it "compileEnvBytes allow-partial: grounded subset reloads" do
     let dir ← IO.FS.createTempDir
     let out := dir / "partial.ixe"
     let status ← compileEnvBytes statusConsts out.toString true
@@ -139,7 +137,7 @@ def allowPartialStatusTest : TestSeq :=
     IO.FS.removeDirAll dir
     let env ← match Ixon.deEnv bytes with
       | .ok env => pure env
-      | .error e => return (false, 0, 0, some s!"reload failed: {e}")
+      | .error e => fail s!"reload failed: {e}"
     let checks : List (String × Bool) :=
       [ ("bytes matches file size", status.bytes.toNat == bytes.size)
       , ("one ungrounded entry", status.ungrounded.size == 1)
@@ -147,31 +145,27 @@ def allowPartialStatusTest : TestSeq :=
           env.named.size == status.named.toNat && status.named ≥ 1)
       , ("bad axiom is absent from the reloaded env",
           env.named.size < statusConsts.length + 1) ]
-    match checks.find? (!·.2) with
-    | some (what, _) => return (false, 0, 0, some s!"failed: {what}")
-    | none => return (true, 0, 0, none)
-  ) .done
+    if let some (what, _) := checks.find? (!·.2) then
+      fail s!"failed: {what}"
 
-def suite : List TestSeq := [
-  .individualIO "ground refusal: the closed input compiles with no failure, certified IO and pure compile" none (do
+def suite : LSpec.Spec := do
+  it "ground refusal: the closed input compiles with no failure, certified IO and pure compile" do
     let env ← get_env!
     let cs := closure env fun _ => false
     let cert ← certifiedFailures env cs
     let pure ← pureFailures env cs
     let complete ← completeError? env cs
     let ok := cert.isEmpty && pure.isEmpty && complete.isNone
-    return (ok, if ok then 1 else 0, 1,
-      if ok then none else some s!"certified {cert.toList.take 4}; \
-        pure {pure.toList.take 4}; compileComplete {complete}")) .done,
-  .individualIO "ground refusal: an omitted dependency is refused by name, certified IO and pure compile" none (do
+    expect ok s!"certified {cert.toList.take 4}; \
+      pure {pure.toList.take 4}; compileComplete {complete}"
+  it "ground refusal: an omitted dependency is refused by name, certified IO and pure compile" do
     let env ← get_env!
     let cs := closure env (· == ``Nat.add)
     let cert ← certifiedFailures env cs
     let pure ← pureFailures env cs
     let ok := cert == expected && pure == expected
-    return (ok, if ok then 1 else 0, 1,
-      if ok then none else some s!"certified {cert}; pure {pure}; expected {expected}")) .done,
-  .individualIO "ground refusal: the pure compile's report keeps the grounded rest, and compileComplete refuses" none (do
+    expect ok s!"certified {cert}; pure {pure}; expected {expected}"
+  it "ground refusal: the pure compile's report keeps the grounded rest, and compileComplete refuses" do
     let env ← get_env!
     let cs := closure env (· == ``Nat.add)
     let (ixe, failures) ← pureReport env cs
@@ -185,10 +179,9 @@ def suite : List TestSeq := [
       then f else k
     let ok := failures.blocks.isEmpty && failures.ungrounded.size == 2 && missing.isEmpty &&
       complete == some s!"2 constant(s) failed to compile; {least.1}: {least.2}"
-    return (ok, if ok then 1 else 0, 1,
-      if ok then none else some s!"blocks {failures.blocks.toList.take 4}; \
-        unpublished {(missing.map (·.1)).take 4}; compileComplete {complete}")) .done,
-  failClosedStatusTest,
-  allowPartialStatusTest]
+    expect ok s!"blocks {failures.blocks.toList.take 4}; \
+      unpublished {(missing.map (·.1)).take 4}; compileComplete {complete}"
+  failClosedStatusTest
+  allowPartialStatusTest
 
 end Tests.Ix.Compile.GroundRefusal

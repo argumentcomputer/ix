@@ -14,7 +14,7 @@ public import Ix.CondenseM
 
 public section
 
-open LSpec SlimCheck Gen
+open LSpec LSpec.Prop Gen
 
 namespace Tests.Gen.Ix
 
@@ -27,13 +27,13 @@ def genIxName : Nat → Gen Ix.Name
       (1, pure Ix.Name.mkAnon),
       (4, do
         let parent ← genIxName fuel
-        let len ← choose Nat 1 12
-        let chars ← Gen.listOf (choose Nat 97 122 >>= fun n => pure (Char.ofNat n))
+        let len ← Gen.chooseNat 1 12
+        let chars ← Gen.listOf (Gen.chooseNat 97 122 >>= fun n => pure (Char.ofNat n))
         let s := String.ofList (chars.take len)
         pure (Ix.Name.mkStr parent s)),
       (3, do
         let parent ← genIxName fuel
-        let n ← choose Nat 0 1000
+        let n ← Gen.chooseNat 0 1000
         pure (Ix.Name.mkNat parent n))
     ] (pure Ix.Name.mkAnon)
 
@@ -76,27 +76,27 @@ def genBinderInfo : Gen Lean.BinderInfo :=
 /-- Generate a Literal -/
 def genLiteral : Gen Lean.Literal :=
   frequency [
-    (5, Lean.Literal.natVal <$> choose Nat 0 1000),
-    (5, Lean.Literal.strVal <$> Gen.elements #["hello", "world", "foo", "bar", "test", "literal"]),
+    (5, Lean.Literal.natVal <$> Gen.chooseNat 0 1000),
+    (5, Lean.Literal.strVal <$> Gen.elements! #["hello", "world", "foo", "bar", "test", "literal"]),
   ]
 
 /-- Generate an Ix.Int for DataValue -/
 def genIxInt : Gen Ix.Int :=
   frequency [
-    (5, Ix.Int.ofNat <$> choose Nat 0 100),
-    (5, Ix.Int.negSucc <$> choose Nat 0 50),
+    (5, Ix.Int.ofNat <$> Gen.chooseNat 0 100),
+    (5, Ix.Int.negSucc <$> Gen.chooseNat 0 50),
   ]
 
 /-- Generate a random string from a list of options -/
 def genIxString : Gen String :=
-  Gen.elements #["foo", "bar", "test", "x", "y", "value", "item", "data", "node", "leaf"]
+  Gen.elements! #["foo", "bar", "test", "x", "y", "value", "item", "data", "node", "leaf"]
 
 /-- Generate Ix.Substring -/
 def genIxSubstring : Gen Ix.Substring := do
-  let s ← Gen.elements #["hello world", "test string", "foo bar baz", "quick brown fox", "lorem ipsum"]
+  let s ← Gen.elements! #["hello world", "test string", "foo bar baz", "quick brown fox", "lorem ipsum"]
   let maxLen := s.length
-  let startPos ← choose Nat 0 (maxLen / 2)
-  let stopPos ← choose Nat startPos maxLen
+  let startPos ← Gen.chooseNat 0 (maxLen / 2)
+  let stopPos ← Gen.chooseNat startPos maxLen
   pure (Ix.Substring.mk s startPos stopPos)
 
 instance : Shrinkable Ix.Name where
@@ -109,7 +109,7 @@ instance : Shrinkable Ix.Substring where
   shrink ss :=
     (if ss.str.length > 0 then [{ ss with str := "", startPos := 0, stopPos := 0 }] else []) ++
     (if ss.stopPos > ss.startPos then [{ ss with stopPos := ss.startPos }] else [])
-instance : SampleableExt Ix.Substring := SampleableExt.mkSelfContained genIxSubstring
+instance : Sampleable Ix.Substring := ⟨genIxSubstring⟩
 
 /-- Generate Ix.SourceInfo with all variants -/
 def genIxSourceInfo : Gen Ix.SourceInfo :=
@@ -117,13 +117,13 @@ def genIxSourceInfo : Gen Ix.SourceInfo :=
     (5, pure Ix.SourceInfo.none),
     (3, do
       let leading ← genIxSubstring
-      let leadingPos ← choose Nat 0 100
+      let leadingPos ← Gen.chooseNat 0 100
       let trailing ← genIxSubstring
-      let trailingPos ← choose Nat 0 100
+      let trailingPos ← Gen.chooseNat 0 100
       pure (Ix.SourceInfo.original leading leadingPos trailing trailingPos)),
     (2, do
-      let start ← choose Nat 0 100
-      let stop ← choose Nat 100 200
+      let start ← Gen.chooseNat 0 100
+      let stop ← Gen.chooseNat 100 200
       let canonical ← frequency [(1, pure true), (1, pure false)]
       pure (Ix.SourceInfo.synthetic start stop canonical)),
   ]
@@ -133,7 +133,7 @@ instance : Shrinkable Ix.SourceInfo where
     | .none => []
     | _ => [.none]
 
-instance : SampleableExt Ix.SourceInfo := SampleableExt.mkSelfContained genIxSourceInfo
+instance : Sampleable Ix.SourceInfo := ⟨genIxSourceInfo⟩
 
 /-- Generate Ix.SyntaxPreresolved with all variants -/
 def genIxSyntaxPreresolved : Gen Ix.SyntaxPreresolved :=
@@ -141,7 +141,7 @@ def genIxSyntaxPreresolved : Gen Ix.SyntaxPreresolved :=
     (1, Ix.SyntaxPreresolved.namespace <$> genIxName 3),
     (1, do
       let name ← genIxName 3
-      let numAliases ← Gen.choose Nat 0 3
+      let numAliases ← Gen.chooseNat 0 3
       let mut aliases : Array String := #[]
       for _ in [:numAliases] do
         aliases := aliases.push (← genIxString)
@@ -155,7 +155,7 @@ instance : Shrinkable Ix.SyntaxPreresolved where
       [.namespace n] ++
       (if aliases.size > 0 then [.decl n aliases.pop] else []) ++
       ((.decl · aliases) <$> Shrinkable.shrink n)
-instance : SampleableExt Ix.SyntaxPreresolved := SampleableExt.mkSelfContained genIxSyntaxPreresolved
+instance : Sampleable Ix.SyntaxPreresolved := ⟨genIxSyntaxPreresolved⟩
 
 /-- Generate Ix.Syntax with all variants including node -/
 def genIxSyntaxAux : Nat → Gen Ix.Syntax
@@ -166,7 +166,7 @@ def genIxSyntaxAux : Nat → Gen Ix.Syntax
         let info ← genIxSourceInfo
         let rawVal ← genIxSubstring
         let name ← genIxName 2
-        let numPreresolved ← Gen.choose Nat 0 2
+        let numPreresolved ← Gen.chooseNat 0 2
         let mut preresolved : Array Ix.SyntaxPreresolved := #[]
         for _ in [:numPreresolved] do
           preresolved := preresolved.push (← genIxSyntaxPreresolved)
@@ -179,7 +179,7 @@ def genIxSyntaxAux : Nat → Gen Ix.Syntax
         let info ← genIxSourceInfo
         let rawVal ← genIxSubstring
         let name ← genIxName 2
-        let numPreresolved ← Gen.choose Nat 0 2
+        let numPreresolved ← Gen.chooseNat 0 2
         let mut preresolved : Array Ix.SyntaxPreresolved := #[]
         for _ in [:numPreresolved] do
           preresolved := preresolved.push (← genIxSyntaxPreresolved)
@@ -187,7 +187,7 @@ def genIxSyntaxAux : Nat → Gen Ix.Syntax
       (3, do
         let info ← genIxSourceInfo
         let kind ← genIxName 2
-        let numChildren ← Gen.choose Nat 0 3
+        let numChildren ← Gen.chooseNat 0 3
         let mut children : Array Ix.Syntax := #[]
         for _ in [:numChildren] do
           children := children.push (← genIxSyntaxAux (fuel / 2))
@@ -202,7 +202,7 @@ def genIxDataValue : Gen Ix.DataValue :=
     (10, Ix.DataValue.ofString <$> genIxString),
     (10, Ix.DataValue.ofBool <$> frequency [(1, pure true), (1, pure false)]),
     (10, Ix.DataValue.ofName <$> genIxName 3),
-    (10, Ix.DataValue.ofNat <$> choose Nat 0 1000),
+    (10, Ix.DataValue.ofNat <$> Gen.chooseNat 0 1000),
     (10, Ix.DataValue.ofInt <$> genIxInt),
     (5, Ix.DataValue.ofSyntax <$> genIxSyntax),
   ]
@@ -210,14 +210,14 @@ def genIxDataValue : Gen Ix.DataValue :=
 /-- Generate Ix.Expr with all variants and deeper nesting -/
 def genIxExpr : Nat → Gen Ix.Expr
   | 0 => Gen.frequency #[
-      (3, do let idx ← choose Nat 0 20; pure (Ix.Expr.mkBVar idx)),
+      (3, do let idx ← Gen.chooseNat 0 20; pure (Ix.Expr.mkBVar idx)),
       (2, do let u ← genIxLevel 3; pure (Ix.Expr.mkSort u)),
       (2, do let n ← genIxName 3; pure (Ix.Expr.mkFVar n)),
       (1, Ix.Expr.mkLit <$> genLiteral)
     ] (pure (Ix.Expr.mkBVar 0))
   | fuel + 1 => Gen.frequency #[
       -- Base cases (weighted higher to ensure termination)
-      (4, do let idx ← choose Nat 0 20; pure (Ix.Expr.mkBVar idx)),
+      (4, do let idx ← Gen.chooseNat 0 20; pure (Ix.Expr.mkBVar idx)),
       (2, do let u ← genIxLevel 4; pure (Ix.Expr.mkSort u)),
       (2, do let n ← genIxName 4; pure (Ix.Expr.mkFVar n)),
       (1, do let n ← genIxName 4; pure (Ix.Expr.mkMVar n)),
@@ -225,7 +225,7 @@ def genIxExpr : Nat → Gen Ix.Expr
       -- Const with universe levels
       (4, do
         let n ← genIxName 4
-        let numLevels ← choose Nat 0 4
+        let numLevels ← Gen.chooseNat 0 4
         let mut levels : Array Ix.Level := #[]
         for _ in [:numLevels] do
           levels := levels.push (← genIxLevel 4)
@@ -259,7 +259,7 @@ def genIxExpr : Nat → Gen Ix.Expr
         pure (Ix.Expr.mkLetE n ty val body nonDep)),
       -- MData with metadata
       (2, do
-        let numEntries ← choose Nat 1 4
+        let numEntries ← Gen.chooseNat 1 4
         let mut entries : Array (Ix.Name × Ix.DataValue) := #[]
         for _ in [:numEntries] do
           let key ← genIxName 2
@@ -270,12 +270,12 @@ def genIxExpr : Nat → Gen Ix.Expr
       -- Proj
       (2, do
         let typeName ← genIxName 4
-        let idx ← choose Nat 0 10
+        let idx ← Gen.chooseNat 0 10
         let struct ← genIxExpr (fuel / 2)
         pure (Ix.Expr.mkProj typeName idx struct))
     ] (pure (Ix.Expr.mkBVar 0))
 
-instance : SampleableExt Ix.Name := SampleableExt.mkSelfContained (genIxName 5)
+instance : Sampleable Ix.Name := ⟨(genIxName 5)⟩
 
 instance : Shrinkable Ix.Level where
   shrink l := match l with
@@ -286,7 +286,7 @@ instance : Shrinkable Ix.Level where
     | .param _ _ => [Ix.Level.mkZero]
     | .mvar _ _ => [Ix.Level.mkZero]
 
-instance : SampleableExt Ix.Level := SampleableExt.mkSelfContained (genIxLevel 5)
+instance : Sampleable Ix.Level := ⟨(genIxLevel 5)⟩
 
 instance : Shrinkable Ix.Expr where
   shrink e := match e with
@@ -303,11 +303,11 @@ instance : Shrinkable Ix.Expr where
     | .mdata _ e _ => [e]
     | .proj _ _ e _ => [e]
 
-instance : SampleableExt Ix.Expr := SampleableExt.mkSelfContained (genIxExpr 5)
+instance : Sampleable Ix.Expr := ⟨(genIxExpr 5)⟩
 
 /-- Generate an array of level parameter names with varied sizes -/
 def genLevelParams : Gen (Array Ix.Name) := do
-  let numParams ← choose Nat 0 5
+  let numParams ← Gen.chooseNat 0 5
   let mut params : Array Ix.Name := #[]
   for i in [:numParams] do
     -- Use varied names, not just u, v, w
@@ -347,7 +347,7 @@ def genDefinitionSafety : Gen Lean.DefinitionSafety :=
 
 /-- Generate an array of mutually recursive names -/
 def genMutualNames (baseName : Ix.Name) : Gen (Array Ix.Name) := do
-  let numMutual ← choose Nat 1 4
+  let numMutual ← Gen.chooseNat 1 4
   let mut names : Array Ix.Name := #[baseName]
   for i in [1:numMutual] do
     names := names.push (Ix.Name.mkStr baseName s!"_mutual_{i}")
@@ -392,7 +392,7 @@ def genIxQuotVal : Gen Ix.QuotVal :=
 
 /-- Generate constructor names for an inductive -/
 def genConstructorNames (inductName : Ix.Name) : Gen (Array Ix.Name) := do
-  let numCtors ← choose Nat 1 5
+  let numCtors ← Gen.chooseNat 1 5
   let mut ctors : Array Ix.Name := #[]
   let ctorNames := #["mk", "nil", "cons", "zero", "succ", "inl", "inr", "intro", "refl"]
   for i in [:numCtors] do
@@ -403,12 +403,12 @@ def genConstructorNames (inductName : Ix.Name) : Gen (Array Ix.Name) := do
 /-- Generate a random Ix.InductiveVal -/
 def genIxInductiveVal : Gen Ix.InductiveVal := do
   let cnst ← genIxConstantVal
-  let numParams ← choose Nat 0 5
-  let numIndices ← choose Nat 0 3
+  let numParams ← Gen.chooseNat 0 5
+  let numIndices ← Gen.chooseNat 0 3
   let isRec ← frequency [(6, pure false), (4, pure true)]
   let isUnsafe ← frequency [(9, pure false), (1, pure true)]
   let isReflexive ← frequency [(7, pure false), (3, pure true)]
-  let numNested ← choose Nat 0 3
+  let numNested ← Gen.chooseNat 0 3
   let all ← genMutualNames cnst.name
   let ctors ← genConstructorNames cnst.name
   pure {
@@ -427,16 +427,16 @@ def genIxInductiveVal : Gen Ix.InductiveVal := do
 def genIxConstructorVal : Gen Ix.ConstructorVal := do
   let cnst ← genIxConstantVal
   let induct ← genIxName 5
-  let cidx ← choose Nat 0 10
-  let numParams ← choose Nat 0 5
-  let numFields ← choose Nat 0 8
+  let cidx ← Gen.chooseNat 0 10
+  let numParams ← Gen.chooseNat 0 5
+  let numFields ← Gen.chooseNat 0 8
   let isUnsafe ← frequency [(9, pure false), (1, pure true)]
   pure { cnst, induct, cidx, numParams, numFields, isUnsafe }
 
 /-- Generate a random Ix.RecursorRule -/
 def genIxRecursorRule : Gen Ix.RecursorRule := do
   let ctor ← genIxName 5
-  let nfields ← choose Nat 0 8
+  let nfields ← Gen.chooseNat 0 8
   let rhs ← genIxExpr 5
   pure { ctor, nfields, rhs }
 
@@ -444,11 +444,11 @@ def genIxRecursorRule : Gen Ix.RecursorRule := do
 def genIxRecursorVal : Gen Ix.RecursorVal := do
   let cnst ← genIxConstantVal
   let all ← genMutualNames cnst.name
-  let numParams ← choose Nat 0 5
-  let numIndices ← choose Nat 0 3
-  let numMotives ← choose Nat 1 4
-  let numMinors ← choose Nat 0 6
-  let numRules ← choose Nat 1 5
+  let numParams ← Gen.chooseNat 0 5
+  let numIndices ← Gen.chooseNat 0 3
+  let numMotives ← Gen.chooseNat 1 4
+  let numMinors ← Gen.chooseNat 0 6
+  let numRules ← Gen.chooseNat 1 5
   let mut rules : Array Ix.RecursorRule := #[]
   for _ in [:numRules] do
     rules := rules.push (← genIxRecursorRule)
@@ -482,14 +482,14 @@ instance : Shrinkable Ix.ConstantInfo where
     | .axiomInfo _ => []
     | _ => [.axiomInfo { cnst := simpleCnst, isUnsafe := false }]
 
-instance : SampleableExt Ix.ConstantInfo := SampleableExt.mkSelfContained genIxConstantInfo
+instance : Sampleable Ix.ConstantInfo := ⟨genIxConstantInfo⟩
 
 /-! ## Generators for Additional Ix Types -/
 
 def genAddress : Gen Address := Tests.Gen.Ixon.genAddress
 
 instance : Shrinkable Address where shrink _ := []
-instance : SampleableExt Address := SampleableExt.mkSelfContained genAddress
+instance : Sampleable Address := ⟨genAddress⟩
 
 -- Ix.Int already has genIxInt defined earlier
 instance : Shrinkable Ix.Int where
@@ -497,7 +497,7 @@ instance : Shrinkable Ix.Int where
     | .ofNat n => if n > 0 then [.ofNat (n / 2)] else []
     | .negSucc n => [.ofNat 0] ++ if n > 0 then [.negSucc (n / 2)] else []
 
-instance : SampleableExt Ix.Int := SampleableExt.mkSelfContained genIxInt
+instance : Sampleable Ix.Int := ⟨genIxInt⟩
 
 -- Ix.Syntax already has genIxSyntax defined earlier
 instance : Shrinkable Ix.Syntax where
@@ -505,7 +505,7 @@ instance : Shrinkable Ix.Syntax where
     | .missing => []
     | _ => [.missing]
 
-instance : SampleableExt Ix.Syntax := SampleableExt.mkSelfContained genIxSyntax
+instance : Sampleable Ix.Syntax := ⟨genIxSyntax⟩
 
 -- Ix.DataValue already has genIxDataValue defined earlier
 instance : Shrinkable Ix.DataValue where
@@ -513,7 +513,7 @@ instance : Shrinkable Ix.DataValue where
     | .ofBool _ => []
     | _ => [.ofBool true]
 
-instance : SampleableExt Ix.DataValue := SampleableExt.mkSelfContained genIxDataValue
+instance : Sampleable Ix.DataValue := ⟨genIxDataValue⟩
 
 end Tests.Gen.Ix
 

@@ -11,7 +11,7 @@ public import Ix.Address
 
 public section
 
-open LSpec SlimCheck Gen Ixon
+open LSpec LSpec.Prop Gen Ixon
 open Ix (DefKind DefinitionSafety QuotKind)
 
 namespace Tests.Gen.Ixon
@@ -22,7 +22,7 @@ namespace Tests.Gen.Ixon
 def genAddress : Gen Address := do
   let mut bytes : ByteArray := ByteArray.empty
   for _ in [:32] do
-    let b ← Gen.choose Nat 0 255
+    let b ← Gen.chooseNat 0 255
     bytes := bytes.push b.toUInt8
   pure ⟨(Blake3.Rust.hash bytes).val⟩
 
@@ -35,19 +35,19 @@ def genList (n: Gen α) : Gen (List α) :=
 def genUInt64Small : Gen UInt64 := USize.toUInt64 <$> genUSize
 
 def genDefKind : Gen DefKind :=
-  elements #[.defn, .opaq, .thm]
+  Gen.elements! #[.defn, .opaq, .thm]
 
 def genDefinitionSafety : Gen DefinitionSafety :=
-  elements #[.unsaf, .safe, .part]
+  Gen.elements! #[.unsaf, .safe, .part]
 
 def genQuotKindNew : Gen QuotKind :=
-  elements #[.type, .ctor, .lift, .ind]
+  Gen.elements! #[.type, .ctor, .lift, .ind]
 
 def genBinderMode : Gen BinderMode :=
-  elements #[.many, .borrowed, .unique, .uniqueBorrowed, .once, .onceBorrowed, .erased]
+  Gen.elements! #[.many, .borrowed, .unique, .uniqueBorrowed, .once, .onceBorrowed, .erased]
 
 def genResultMode : Gen ResultMode :=
-  elements #[.shared, .borrowed, .unique, .uniqueBorrowed]
+  Gen.elements! #[.shared, .borrowed, .unique, .uniqueBorrowed]
 
 /-- A binder node's mode, the default most of the time. -/
 def genAllMode : Gen AllMode :=
@@ -65,10 +65,10 @@ def genLetMode : Gen LetMode :=
   ]
 
 def genDefAsserts : Gen DefAsserts :=
-  DefAsserts.mk <$> elements #[AllocAssert.unrestricted, .noRc, .noAlloc] <*> genBool
+  DefAsserts.mk <$> Gen.elements! #[AllocAssert.unrestricted, .noRc, .noAlloc] <*> genBool
 
 def genFieldMode : Gen FieldMode :=
-  elements #[.inherited, .shared]
+  Gen.elements! #[.inherited, .shared]
 
 /-- Field modes for a constructor with `n` fields: listed (one of them
 `shared`) for a few fields, otherwise inherited. -/
@@ -78,7 +78,7 @@ def genFieldModes (n : Nat) : Gen (FieldModes n) := do
   let mut modes : Array FieldMode := #[]
   for _ in [:n] do
     modes := modes.push (← genFieldMode)
-  let i ← Gen.choose Nat 0 (n - 1)
+  let i ← Gen.chooseNat 0 (n - 1)
   return FieldModes.ofArray (modes.set! i .shared)
 
 def genArray (g: Gen α) : Gen (Array α) :=
@@ -239,7 +239,7 @@ def genAxiom : Gen Axiom :=
   .mk <$> genBool <*> genUInt64Small <*> genExpr
 
 def genQuotKind : Gen Lean.QuotKind :=
-  elements #[.type, .ctor, .lift, .ind]
+  Gen.elements! #[.type, .ctor, .lift, .ind]
 
 def genQuotient : Gen Quotient :=
   .mk <$> genQuotKindNew <*> genUInt64Small <*> genExpr
@@ -278,7 +278,7 @@ def genInductive : Gen Inductive :=
 
 
 def genBinderInfo : Gen Lean.BinderInfo :=
-  elements #[.default, .implicit, .strictImplicit, .instImplicit]
+  Gen.elements! #[.default, .implicit, .strictImplicit, .instImplicit]
 
 def genReducibilityHints : Gen Lean.ReducibilityHints :=
   frequency [
@@ -455,27 +455,27 @@ instance : Shrinkable DataValue where
     | .ofBool _ => []
     | _ => [.ofBool true]
 
-/-! ## SampleableExt instances -/
+/-! ## Sampleable instances -/
 
-instance : SampleableExt DefKind := SampleableExt.mkSelfContained genDefKind
-instance : SampleableExt DefinitionSafety := SampleableExt.mkSelfContained genDefinitionSafety
-instance : SampleableExt QuotKind := SampleableExt.mkSelfContained genQuotKindNew
-instance : SampleableExt Univ := SampleableExt.mkSelfContained genUniv
-instance : SampleableExt Expr := SampleableExt.mkSelfContained genExpr
-instance : SampleableExt Definition := SampleableExt.mkSelfContained genDefinition
-instance : SampleableExt Axiom := SampleableExt.mkSelfContained genAxiom
-instance : SampleableExt Quotient := SampleableExt.mkSelfContained genQuotient
-instance : SampleableExt RecursorRule := SampleableExt.mkSelfContained genRecursorRule
-instance : SampleableExt Recursor := SampleableExt.mkSelfContained genRecursor
-instance : SampleableExt Constructor := SampleableExt.mkSelfContained genConstructor
-instance : SampleableExt Inductive := SampleableExt.mkSelfContained genInductive
-instance : SampleableExt InductiveProj := SampleableExt.mkSelfContained genInductiveProj
-instance : SampleableExt ConstructorProj := SampleableExt.mkSelfContained genConstructorProj
-instance : SampleableExt RecursorProj := SampleableExt.mkSelfContained genRecursorProj
-instance : SampleableExt DefinitionProj := SampleableExt.mkSelfContained genDefinitionProj
-instance : SampleableExt MutConst := SampleableExt.mkSelfContained genMutConst
-instance : SampleableExt ConstantInfo := SampleableExt.mkSelfContained genConstantInfo
-instance : SampleableExt Constant := SampleableExt.mkSelfContained genConstant
+instance : Sampleable DefKind := ⟨genDefKind⟩
+instance : Sampleable DefinitionSafety := ⟨genDefinitionSafety⟩
+instance : Sampleable QuotKind := ⟨genQuotKindNew⟩
+instance : Sampleable Univ := ⟨genUniv⟩
+instance : Sampleable Expr := ⟨genExpr⟩
+instance : Sampleable Definition := ⟨genDefinition⟩
+instance : Sampleable Axiom := ⟨genAxiom⟩
+instance : Sampleable Quotient := ⟨genQuotient⟩
+instance : Sampleable RecursorRule := ⟨genRecursorRule⟩
+instance : Sampleable Recursor := ⟨genRecursor⟩
+instance : Sampleable Constructor := ⟨genConstructor⟩
+instance : Sampleable Inductive := ⟨genInductive⟩
+instance : Sampleable InductiveProj := ⟨genInductiveProj⟩
+instance : Sampleable ConstructorProj := ⟨genConstructorProj⟩
+instance : Sampleable RecursorProj := ⟨genRecursorProj⟩
+instance : Sampleable DefinitionProj := ⟨genDefinitionProj⟩
+instance : Sampleable MutConst := ⟨genMutConst⟩
+instance : Sampleable ConstantInfo := ⟨genConstantInfo⟩
+instance : Sampleable Constant := ⟨genConstant⟩
 
 /-! ## Generators for Metadata Types -/
 
@@ -490,7 +490,7 @@ def genDataValueNew : Gen DataValue :=
     (10, .ofSyntax <$> genAddress),
   ]
 
-instance : SampleableExt DataValue := SampleableExt.mkSelfContained genDataValueNew
+instance : Sampleable DataValue := ⟨genDataValueNew⟩
 
 /-! ## Generators for Constant Metadata Types -/
 
@@ -515,7 +515,7 @@ def genAuxLayout? : Gen (Option AuxLayout) :=
       let c ← genSmallArray genUInt64Small
       let mut e : Array UInt64 := #[]
       for _ in [0:p.size] do
-        e := e.push (UInt64.ofNat (← Gen.choose Nat 0 1))
+        e := e.push (UInt64.ofNat (← Gen.chooseNat 0 1))
       pure (some { perm := p, sourceCtorCounts := c, evaporated := e })),
   ]
 
@@ -526,7 +526,7 @@ def genExprMetaData (arenaSize : Nat := 0) (genAddr : Gen Address := genAddress)
     : Gen ExprMetaData :=
   let genIdx : Gen UInt64 :=
     if arenaSize == 0 then pure 0
-    else UInt64.ofNat <$> Gen.choose Nat 0 (arenaSize - 1)
+    else UInt64.ofNat <$> Gen.chooseNat 0 (arenaSize - 1)
   frequency [
     (20, pure .leaf),
     (15, ExprMetaData.app <$> genIdx <*> genIdx),
@@ -552,7 +552,7 @@ where
 /-- Generate a valid ExprMetaArena by building nodes bottom-up
     so child indices always reference earlier entries. -/
 def genExprMetaArena (genAddr : Gen Address := genAddress) : Gen ExprMetaArena := do
-  let numNodes ← Gen.choose Nat 0 6
+  let numNodes ← Gen.chooseNat 0 6
   let mut arena : ExprMetaArena := {}
   for _ in [:numNodes] do
     let node ← genExprMetaData arena.nodes.size genAddr
@@ -564,7 +564,7 @@ def genConstantMetaInfo (genAddr : Gen Address := genAddress) : Gen ConstantMeta
   let arena ← genExprMetaArena genAddr
   let genRoot : Gen UInt64 :=
     if arena.nodes.size == 0 then pure 0
-    else UInt64.ofNat <$> Gen.choose Nat 0 (arena.nodes.size - 1)
+    else UInt64.ofNat <$> Gen.chooseNat 0 (arena.nodes.size - 1)
   frequency [
     (10, pure .empty),
     (15, ConstantMetaInfo.defn <$> genAddr <*> genSmallArray genAddr
@@ -627,14 +627,15 @@ instance : Shrinkable ConstantMeta where
       else []
     | _ => [{ m with info := .empty }]
 
-instance : SampleableExt AuxLayout := SampleableExt.mkSelfContained do
+instance : Sampleable AuxLayout where
+  sample := do
   match ← genAuxLayout? with
   | some l => pure l
   | none => pure {}
-instance : SampleableExt ExprMetaData := SampleableExt.mkSelfContained (genExprMetaData 5)
-instance : SampleableExt ExprMetaArena := SampleableExt.mkSelfContained (genExprMetaArena)
-instance : SampleableExt ConstantMetaInfo := SampleableExt.mkSelfContained (genConstantMetaInfo)
-instance : SampleableExt ConstantMeta := SampleableExt.mkSelfContained (genConstantMeta)
+instance : Sampleable ExprMetaData := ⟨(genExprMetaData 5)⟩
+instance : Sampleable ExprMetaArena := ⟨(genExprMetaArena)⟩
+instance : Sampleable ConstantMetaInfo := ⟨(genConstantMetaInfo)⟩
+instance : Sampleable ConstantMeta := ⟨(genConstantMeta)⟩
 
 /-- Generate a Named entry with proper metadata.
     Exercises both `none` and `some (addr, meta)` for the `original` field
@@ -664,17 +665,17 @@ instance : Shrinkable Named where
 instance : Shrinkable Comm where
   shrink _ := []
 
-instance : SampleableExt Named := SampleableExt.mkSelfContained genNamed
-instance : SampleableExt Comm := SampleableExt.mkSelfContained genCommNew
+instance : Sampleable Named := ⟨genNamed⟩
+instance : Sampleable Comm := ⟨genCommNew⟩
 
 /-! ## Generators for RawEnv Types -/
 
 /-- Generate a ByteArray for blobs -/
 def genByteArray : Gen ByteArray := do
-  let len ← Gen.choose Nat 0 32
+  let len ← Gen.chooseNat 0 32
   let mut bytes : Array UInt8 := #[]
   for _ in [:len] do
-    let b ← Gen.choose Nat 0 255
+    let b ← Gen.chooseNat 0 255
     bytes := bytes.push b.toUInt8
   pure (ByteArray.mk bytes)
 
@@ -685,11 +686,11 @@ def genIxName : Nat → Gen Ix.Name
       (3, pure Ix.Name.mkAnon),
       (5, do
         let parent ← genIxName fuel
-        let s ← Gen.elements #["a", "b", "test", "foo", "bar"]
+        let s ← Gen.elements! #["a", "b", "test", "foo", "bar"]
         pure (Ix.Name.mkStr parent s)),
       (2, do
         let parent ← genIxName fuel
-        let n ← Gen.choose Nat 0 100
+        let n ← Gen.chooseNat 0 100
         pure (Ix.Name.mkNat parent n))
     ] (pure Ix.Name.mkAnon)
 
@@ -782,10 +783,10 @@ def genRawEnv : Gen RawEnv := do
     pool := nameComponentAddrs e.name pool
   for n in namedNames do
     pool := nameComponentAddrs n pool
-  let genPoolAddr : Gen Address := SlimCheck.Gen.elements pool
+  let genPoolAddr : Gen Address := Gen.elements! pool
   let mut named : Array RawNamed := #[]
   for name in namedNames do
-    let i ← Gen.choose Nat 0 (consts.size - 1)
+    let i ← Gen.chooseNat 0 (consts.size - 1)
     let addr := (consts[i % consts.size]!).addr
     let constMeta ← genConstantMeta genPoolAddr
     -- `original` stays a raw address on the wire (may reference an
@@ -815,7 +816,7 @@ def genRawEnv : Gen RawEnv := do
       frequency [
         (1, pure none),
         (1, do
-          let i ← Gen.choose Nat 0 (consts.size - 1)
+          let i ← Gen.chooseNat 0 (consts.size - 1)
           pure (consts[i % consts.size]?.map (·.addr))),
       ]
     else pure none
@@ -824,7 +825,7 @@ def genRawEnv : Gen RawEnv := do
   let anonHints ←
     if consts.size > 0 then do
       let hintList ← genList do
-        let i ← Gen.choose Nat 0 (consts.size - 1)
+        let i ← Gen.chooseNat 0 (consts.size - 1)
         let h ← genReducibilityHints
         pure ((consts[i % consts.size]!).addr, h)
       pure (hintList.toArray.qsort fun a b => (compare a.1 b.1).isLT)
@@ -875,11 +876,11 @@ instance : Shrinkable RawEnv where
       | some _ => [{ env with main := none }]
       | none => [])
 
-instance : SampleableExt RawConst := SampleableExt.mkSelfContained genRawConst
-instance : SampleableExt RawNamed := SampleableExt.mkSelfContained genRawNamed
-instance : SampleableExt RawBlob := SampleableExt.mkSelfContained genRawBlob
-instance : SampleableExt RawComm := SampleableExt.mkSelfContained genRawComm
-instance : SampleableExt RawEnv := SampleableExt.mkSelfContained genRawEnv
+instance : Sampleable RawConst := ⟨genRawConst⟩
+instance : Sampleable RawNamed := ⟨genRawNamed⟩
+instance : Sampleable RawBlob := ⟨genRawBlob⟩
+instance : Sampleable RawComm := ⟨genRawComm⟩
+instance : Sampleable RawEnv := ⟨genRawEnv⟩
 
 end Tests.Gen.Ixon
 

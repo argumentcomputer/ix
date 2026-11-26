@@ -161,7 +161,9 @@ def tail (out : IO.Process.Output) : String :=
   s!"{(out.stdout.takeEnd 2000).toString}\n{(out.stderr.takeEnd 2000).toString}"
 
 def reportChecks (name : String) (checks : Array (String × Bool)) : IO UInt32 :=
-  LSpec.lspecIO (.ofList [(name, checks.toList.map fun (label, ok) => LSpec.test label ok)]) []
+  LSpec.lspecMain (LSpec.describe name do
+    for (label, ok) in checks do
+      LSpec.itCheck label (fun () => ok)) []
 
 /-- `initstd-reference`. -/
 def reference : IO UInt32 := do
@@ -262,7 +264,7 @@ def fidelity : IO UInt32 := do
     reportChecks "fidelity-initstd" #[
       ("ix validate-lean on Init+Std exits 0", out.exitCode == 0),
       ("its report has the five phases, every one passed",
-        match verdict with | .ok n => n ≥ 5 | .error _ => false)]
+        match verdict with | .ok n => decide (n ≥ 5) | .error _ => false)]
   finally
     IO.FS.removeDirAll dir
 

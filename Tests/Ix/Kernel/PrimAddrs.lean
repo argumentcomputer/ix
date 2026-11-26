@@ -104,15 +104,15 @@ def problems (fns : Array Tests.Ix.IxVM.Sources.Function) : Array String := Id.r
       out := out.push s!"{f.name} reads the default role binding"
   return out
 
-def literalGuard : TestSeq :=
-  .individualIO "the IxVM program's only address literals are the specification digest, \
-      the debug entry points' default binding and the basis pin's default bindings" none (do
+def literalGuard : Spec :=
+  it "the IxVM program's only address literals are the specification digest, \
+      the debug entry points' default binding and the basis pin's default bindings" do
     let found := problems (Tests.Ix.IxVM.Sources.functions (← Tests.Ix.IxVM.programSources))
-    let ok := found.isEmpty
-    return (ok, if ok then 1 else 0, 1,
-      if ok then none else some ("; ".intercalate found.toList))) .done
+    expect found.isEmpty ("; ".intercalate found.toList)
 
-def suite : List TestSeq := [literalGuard] ++ Tests.Ix.Kernel.PrimitiveTable.suite
+def suite : LSpec.Spec := do
+  literalGuard
+  Tests.Ix.Kernel.PrimitiveTable.suite
 
 /-- A dotted Lean name as an `Ix.Name` (string components only). -/
 private def ixNameOf (s : String) : Ix.Name :=

@@ -12,7 +12,9 @@ slip conditions, bounds and rule vectors retain their original definitions.
 namespace Tests.Ix.IxonUniverse
 open LSpec
 
-def canonUnivSweep :
+set_option compiler.extract_closed false
+
+def canonUnivSweep (_ : Unit) :
     Bool × Bool × Bool × Bool × Bool := Id.run do
   let mut p0 := true
   let mut p1 := true
@@ -94,72 +96,94 @@ def checkCanon (params : Nat) (strict : Bool) (acc : CanonCheck)
   return acc
 
 /-- A `checkCanon` run as a test: no failures (the first three shown). -/
-def canonCheckTest (name : String) (r : CanonCheck) : TestSeq :=
-  test s!"{name} ({r.count} levels, {r.slips} slip-skipped){
-    if r.failures.isEmpty then "" else s!": {r.failures.toList.take 3}"}"
-    r.failures.isEmpty
+def canonCheckTest (name : String) (getRes : IO CanonCheck) : Spec :=
+  it name do
+    let r ← getRes
+    expect r.failures.isEmpty
+      s!"{name} ({r.count} levels, {r.slips} slip-skipped): {r.failures.toList.take 3}"
 
 /-- P0 on the smallest value-change witness and its family (strict),
     with the witness's representative pinned (`canon_univ.rs::tests::p0_witness`
     pins the same term), and on the biased random family. -/
-def canonUnivValueTests : TestSeq :=
-  let (u, v, w) : Ixon.Univ × Ixon.Univ × Ixon.Univ := (.var 0, .var 1, .var 2)
-  let l : Ixon.Univ := .imax (.imax (.succ (.imax u w)) u) v
-  let σ : Nat → Nat := fun i => [0, 1, 2].getD i 0
-  let witness := Tests.Gen.Ixon.univWitnessFamily.foldl (checkCanon 4 true) {}
-  let random :=
-    (Tests.Gen.Ixon.biasedUnivFamily 3 10 4000 41).foldl (checkCanon 3 false) {}
-  let random4 :=
-    (Tests.Gen.Ixon.biasedUnivFamily 4 12 1000 43).foldl (checkCanon 4 false) {}
-  test "canonUniv P0: imax (imax (imax u w + 1) u) v keeps its value 1 at (0, 1, 2)"
-    (Tests.Gen.Ixon.univEval σ l == 1 && Tests.Gen.Ixon.univEval σ (Ixon.canonUniv l) == 1)
-  ++ test "canonUniv: the witness's representative is pinned (Rust pins the same)"
-    (Ixon.canonUniv l == .max (.imax (.imax (.succ w) u) v)
+def canonUnivValueTests : LSpec.Spec := do
+  it "canonUniv P0: imax (imax (imax u w + 1) u) v keeps its value 1 at (0, 1, 2)" do
+    let (u, v, w) : Ixon.Univ × Ixon.Univ × Ixon.Univ := (.var 0, .var 1, .var 2)
+    let l : Ixon.Univ := .imax (.imax (.succ (.imax u w)) u) v
+    let σ : Nat → Nat := fun i => [0, 1, 2].getD i 0
+    expect (Tests.Gen.Ixon.univEval σ l == 1 && Tests.Gen.Ixon.univEval σ (Ixon.canonUniv l) == 1)
+  it "canonUniv: the witness's representative is pinned (Rust pins the same)" do
+    let (u, v, w) : Ixon.Univ × Ixon.Univ × Ixon.Univ := (.var 0, .var 1, .var 2)
+    let l : Ixon.Univ := .imax (.imax (.succ (.imax u w)) u) v
+    expect (Ixon.canonUniv l == .max (.imax (.imax (.succ w) u) v)
       (.imax (.imax (.imax (.succ u) w) u) v))
-  ++ test "canonUniv: complete witness and seeded context counts"
-    (witness.count == 121 && random.count == 20000 && random4.count == 5000)
-  ++ canonCheckTest "canonUniv P0/P1/P2/P3/P6: the witness family" witness
-  ++ canonCheckTest "canonUniv P0/P1/P2/P3/P6: biased random, 3 params" random
-  ++ canonCheckTest "canonUniv P0/P1/P2/P3/P6: biased random, 4 params" random4
-  -- The slip is rare; a jump here means the normal forms changed.
-  ++ test "canonUniv: subsumption slips stay rare (< 1 in 200)"
-    ((random.slips + random4.slips) * 200 < random.count + random4.count)
+  withResource {
+    description := "canonUniv witness and biased random families"
+    acquire := IO.lazyPure fun () =>
+      let witness := Tests.Gen.Ixon.univWitnessFamily.foldl (checkCanon 4 true) {}
+      let random :=
+        (Tests.Gen.Ixon.biasedUnivFamily 3 10 4000 41).foldl (checkCanon 3 false) {}
+      let random4 :=
+        (Tests.Gen.Ixon.biasedUnivFamily 4 12 1000 43).foldl (checkCanon 4 false) {}
+      (witness, random, random4)
+  } fun getFamilies => do
+    it "canonUniv: complete witness and seeded context counts" do
+      let (witness, random, random4) ← getFamilies
+      expect (witness.count == 121 && random.count == 20000 && random4.count == 5000)
+    canonCheckTest "canonUniv P0/P1/P2/P3/P6: the witness family" (Prod.fst <$> getFamilies)
+    canonCheckTest "canonUniv P0/P1/P2/P3/P6: biased random, 3 params" ((·.2.1) <$> getFamilies)
+    canonCheckTest "canonUniv P0/P1/P2/P3/P6: biased random, 4 params" ((·.2.2) <$> getFamilies)
+    -- The slip is rare; a jump here means the normal forms changed.
+    it "canonUniv: subsumption slips stay rare (< 1 in 200)" do
+      let (_, random, random4) ← getFamilies
+      expect (decide ((random.slips + random4.slips) * 200 < random.count + random4.count))
 
-def canonUnivVectors : TestSeq :=
+def canonUnivVectors : LSpec.Spec := do
   let v : UInt64 → Ixon.Univ := .var
   let s : Ixon.Univ → Ixon.Univ := .succ
   let z : Ixon.Univ := .zero
-  test "canonUniv: commutative twins converge"
+  itBool "canonUniv: commutative twins converge"
     (Ixon.canonUniv (.max (v 1) (v 0)) == .max (v 0) (v 1))
-  ++ test "canonUniv: reassociation converges"
+  itBool "canonUniv: reassociation converges"
     (Ixon.canonUniv (.max (.max (v 0) (v 1)) (v 2))
       == .max (v 0) (.max (v 1) (v 2)))
-  ++ test "canonUniv: succ distributes over max"
+  itBool "canonUniv: succ distributes over max"
     (Ixon.canonUniv (s (.max (v 0) (v 1))) == .max (s (v 0)) (s (v 1)))
-  ++ test "canonUniv: WF eq_def shape reduces"
+  itBool "canonUniv: WF eq_def shape reduces"
     (Ixon.canonUniv (.imax (.imax (s z) (v 0)) (v 0)) == v 0)
-  ++ test "canonUniv: common spellings are fixpoints"
+  itBool "canonUniv: common spellings are fixpoints"
     ([z, s z, v 0, s (v 0), .max (v 0) (v 1), .imax (v 0) (v 1),
       .imax (s (v 1)) (v 0),
       .imax (.imax (s (v 0)) (v 1)) (v 2)].all fun u =>
       Ixon.canonUniv u == u)
-  ++ test "reduceUniv: rule table (M1/M4/M7/I2/I4 spot checks)"
+  itBool "reduceUniv: rule table (M1/M4/M7/I2/I4 spot checks)"
     (Ixon.reduceUniv (.max (s z) (s (s z))) == s (s z)
       && Ixon.reduceUniv (.max (v 0) z) == v 0
       && Ixon.reduceUniv (.max (s (v 0)) (s (s (v 0)))) == s (s (v 0))
       && Ixon.reduceUniv (.imax (v 0) z) == z
       && Ixon.reduceUniv (.imax (s z) (v 0)) == v 0)
 
-def canonUnivTests : TestSeq :=
-  let (p0, p1, p2, p3, p6) := canonUnivSweep
+def canonUnivTests : LSpec.Spec := do
   canonUnivVectors
-  ++ canonUnivValueTests
-  ++ test "canonUniv P0: value-preserving (exhaustive ≤6)" p0
-  ++ test "canonUniv P1: idempotent (exhaustive ≤6)" p1
-  ++ test "canonUniv P2: linearize∘normalize fixpoint (exhaustive ≤6)" p2
-  ++ test "canonUniv P3: canonical forms are mk* fixpoints (exhaustive ≤6)"
-    p3
-  ++ test "canonUniv P6: mk* rebuild absorbed (exhaustive ≤6)" p6
+  canonUnivValueTests
+  withResource {
+    description := "canonUniv exhaustive sweep (size ≤ 6)"
+    acquire := IO.lazyPure fun () => canonUnivSweep ()
+  } fun getSweep => do
+    it "canonUniv P0: value-preserving (exhaustive ≤6)" do
+      let (p0, _, _, _, _) ← getSweep
+      expect p0
+    it "canonUniv P1: idempotent (exhaustive ≤6)" do
+      let (_, p1, _, _, _) ← getSweep
+      expect p1
+    it "canonUniv P2: linearize∘normalize fixpoint (exhaustive ≤6)" do
+      let (_, _, p2, _, _) ← getSweep
+      expect p2
+    it "canonUniv P3: canonical forms are mk* fixpoints (exhaustive ≤6)" do
+      let (_, _, _, p3, _) ← getSweep
+      expect p3
+    it "canonUniv P6: mk* rebuild absorbed (exhaustive ≤6)" do
+      let (_, _, _, _, p6) ← getSweep
+      expect p6
 
 /-! ## Long `imax` chains (canonUniv's normalizer memo) -/
 
@@ -182,36 +206,37 @@ def mixedChain (n : Nat) : Ixon.Univ := imaxChain
     of the normalizer (`2ⁿ` calls on these chains); the normalizer skips a
     repeated call (`CanonUniv.NState`), so chains of 64 finish.
     Checked by value (P0), idempotence (P1) and the `mk*` fixpoint (P3). -/
-def canonUnivChainTests : TestSeq :=
+def canonUnivChainTests : LSpec.Spec := do
   let ok (u : Ixon.Univ) : Bool :=
     let c := Ixon.canonUniv u
     (Tests.Gen.Ixon.univDifferAt? 2 u c).isNone && Ixon.canonUniv c == c &&
       Ixon.reduceUniv c == c
-  test "canonUniv: the Cutsat-shaped chain of 64 imax is `u` (0 at u = 0, else u)"
+  itBool "canonUniv: the Cutsat-shaped chain of 64 imax is `u` (0 at u = 0, else u)"
     (Ixon.canonUniv (cutsatChain 64) == .var 0)
-  ++ test "canonUniv P0, P1 and P3: imax chains of 0–10, 24, 40 and 64 links"
+  itBool "canonUniv P0, P1 and P3: imax chains of 0–10, 24, 40 and 64 links"
     (((List.range 11) ++ [24, 40, 64]).all fun n => ok (cutsatChain n) && ok (mixedChain n))
 
 /-- `canonUniv` accumulates successor offsets in `Nat`: in `UInt64` an
     accumulator at `2^64 - 1` plus one successor wrapped to `0`, and the level
     lost its value. -/
-def canonUnivOffsetTests : TestSeq :=
-  let init : Ixon.CanonUniv.NState := { acc := (∅ : Ixon.CanonUniv.CNorm).insert [] {} }
-  test "canonUniv offset past 2^64 is kept, not wrapped"
-    (((Ixon.CanonUniv.normalizeAux (.succ .zero) [] (2 ^ 64 - 1) init).acc.findD [] {}).constant
+def canonUnivOffsetTests : LSpec.Spec := do
+  it "canonUniv offset past 2^64 is kept, not wrapped" do
+    let init : Ixon.CanonUniv.NState := { acc := (∅ : Ixon.CanonUniv.CNorm).insert [] {} }
+    expect (((Ixon.CanonUniv.normalizeAux (.succ .zero) [] (2 ^ 64 - 1) init).acc.findD [] {}).constant
       == 2 ^ 64)
-  ++ test "canonUniv offset past 2^64 on a variable is kept"
-    (((Ixon.CanonUniv.normalizeAux (.succ (.var 0)) [] (2 ^ 64 - 1) init).acc.findD [0] {}).vars
+  it "canonUniv offset past 2^64 on a variable is kept" do
+    let init : Ixon.CanonUniv.NState := { acc := (∅ : Ixon.CanonUniv.CNorm).insert [] {} }
+    expect (((Ixon.CanonUniv.normalizeAux (.succ (.var 0)) [] (2 ^ 64 - 1) init).acc.findD [0] {}).vars
       == #[(0, 2 ^ 64)])
 
-public def suite : List TestSeq := [
-  test "canonUniv: exhaustive size classes 1–6 and total 3736"
+public def suite : LSpec.Spec := do
+  itBool "canonUniv: exhaustive size classes 1–6 and total 3736"
     ((List.range 6).map (fun i =>
       (Tests.Gen.Ixon.enumerateUniv (i + 1)).length -
         (Tests.Gen.Ixon.enumerateUniv i).length) == [4, 4, 36, 100, 708, 2884] &&
-      (Tests.Gen.Ixon.enumerateUniv 6).length == 3736),
-  canonUnivTests,
-  canonUnivChainTests,
-  canonUnivOffsetTests]
+      (Tests.Gen.Ixon.enumerateUniv 6).length == 3736)
+  canonUnivTests
+  canonUnivChainTests
+  canonUnivOffsetTests
 
 end Tests.Ix.IxonUniverse

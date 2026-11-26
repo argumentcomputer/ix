@@ -23,17 +23,16 @@ def focusConsts : Array Lean.Name := #[
   `Tests.Ix.Kernel.TauCetiReduction.composedSymmApply
 ]
 
-def testLeanCheckTauCetiReduction : TestSeq :=
-  .individualIO s!"IxC check {focusConsts.size} inlined TauCeti reductions" none (do
+def testLeanCheckTauCetiReduction : Spec :=
+  it s!"IxC check {focusConsts.size} inlined TauCeti reductions" do
     let leanEnv ← get_env!
     IO.println s!"[check-tauceti-reduction/lean] compiling \
       selected IxC closure for {focusConsts.size} subject(s)"
-    Tests.Ix.Kernel.FocusedLeanCheck.checkClosure
+    let (ok, _, _, msg) ← Tests.Ix.Kernel.FocusedLeanCheck.checkClosure
       "check-tauceti-reduction/lean" "tauceti-reduction" leanEnv focusConsts
-  ) .done
+    expect ok (msg.getD "TauCeti reduction check failed")
 
-def suite : List TestSeq := [
+def suite : LSpec.Spec := do
   testLeanCheckTauCetiReduction
-]
 
 end Tests.Ix.Kernel.CheckTauCetiReduction

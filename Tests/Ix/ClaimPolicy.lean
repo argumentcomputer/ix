@@ -31,13 +31,15 @@ namespace Tests.ClaimPolicy
 
 open LSpec Ix.Cli.ClaimPolicy Ix.Cli.TableAdmission
 
+set_option compiler.extract_closed false
+
 private def addr (s : String) : Address := Address.blake3 s.toUTF8
 
 /-- This build's specification digest. -/
-private def spec : Address := Ix.SpecDigest.specDigest.toOption.getD default
+private def mkSpec (_ : Unit) : Address := Ix.SpecDigest.specDigest.toOption.getD default
 
-private def ctx : Ix.ClaimContext :=
-  { spec, binding := Ix.Kernel.Reader.defaultTableAddress.toOption.getD default,
+private def mkCtx (_ : Unit) : Ix.ClaimContext :=
+  { spec := mkSpec (), binding := Ix.Kernel.Reader.defaultTableAddress.toOption.getD default,
     axioms := none }
 
 /-- Whether `pol` admits `claim`. -/
@@ -66,36 +68,36 @@ private def allBut (except : String) : Policy :=
     binding := except != "binding" }
 
 /-- A claim of each kind that states no typing, with its kind and its flag. -/
-private def untyped : List (String × Ix.Claim × Policy) := [
-  ("reveal", .reveal (addr "comm") (.axio none none none) none, { reveal := true }),
-  ("contains", .contains (addr "tree") (addr "const"), { contains := true }),
-  ("binding", .binding spec (addr "binding"), { binding := true })]
+private def mkUntyped (_ : Unit) : List (String × (Unit → Ix.Claim) × Policy) := [
+  ("reveal", fun () => .reveal (addr "comm") (.axio none none none) none, { reveal := true }),
+  ("contains", fun () => .contains (addr "tree") (addr "const"), { contains := true }),
+  ("binding", fun () => .binding (mkSpec ()) (addr "binding"), { binding := true })]
 
 /-- Refusals by kind and by specification set. -/
-def kindTests : TestSeq :=
-  let catalog : Ix.Claim := .catalog (addr "members")
-  let otherSpec := addr "another specification set"
-  untyped.foldl (init := TestSeq.done) (fun acc (kind, claim, flag) =>
-    acc ++ test s!"a {kind} claim is refused by default, naming --allow-{kind}-claim"
-        (refusesSaying {} claim s!"--allow-{kind}-claim")
-      ++ test s!"  accepted under --allow-{kind}-claim" (admits flag claim)
-      ++ test s!"  and refused under every other flag" (!admits (allBut kind) claim))
-  ++ test "a catalog is refused by default, naming --ixc" (refusesSaying {} catalog "--ixc")
-  ++ test "  and under every flag" (!admits everyFlag catalog)
-  ++ test "a typing claim under another specification set is refused"
-      (refusesSaying {} (.checkEnv { ctx with spec := otherSpec } (addr "root") none)
-        "specification set")
-  ++ test "  under every flag" (!admits everyFlag (.check { ctx with spec := otherSpec } (addr "c") none))
-  ++ test "  and under a table the kernel admits"
-      (!admits everyFlag (.checkEnv { ctx with spec := otherSpec, binding := addr "table" }
-        (addr "root") none) (tableAdmitted := true))
-  ++ test "  and as an evaluation" (!admits everyFlag (.eval { ctx with spec := otherSpec }
-        (addr "in") (addr "out") none))
-  ++ test "a binding claim under another specification set is refused under its flag"
-      (!admits { binding := true } (.binding otherSpec (addr "binding")))
-  ++ test "the kind flags accept no conditional typing claim"
-      (!admits { reveal := true, contains := true, binding := true }
-        (.checkEnv { ctx with axioms := some (addr "axioms") } (addr "root") none))
+def kindTests : LSpec.Spec := do
+  let mkCatalog (_ : Unit) : Ix.Claim := .catalog (addr "members")
+  let mkOtherSpec := fun () => addr "another specification set"
+  for (kind, mkClaim, flag) in mkUntyped () do
+    itBool s!"a {kind} claim is refused by default, naming --allow-{kind}-claim"
+      (refusesSaying {} (mkClaim ()) s!"--allow-{kind}-claim")
+    itBool s!"  accepted under --allow-{kind}-claim" (admits flag (mkClaim ()))
+    itBool s!"  and refused under every other flag" (!admits (allBut kind) (mkClaim ()))
+  itBool "a catalog is refused by default, naming --ixc" (refusesSaying {} (mkCatalog ()) "--ixc")
+  itBool "  and under every flag" (!admits everyFlag (mkCatalog ()))
+  itBool "a typing claim under another specification set is refused"
+    (refusesSaying {} (.checkEnv { mkCtx () with spec := mkOtherSpec () } (addr "root") none)
+      "specification set")
+  itBool "  under every flag" (!admits everyFlag (.check { mkCtx () with spec := mkOtherSpec () } (addr "c") none))
+  itBool "  and under a table the kernel admits"
+    (!admits everyFlag (.checkEnv { mkCtx () with spec := mkOtherSpec (), binding := addr "table" }
+      (addr "root") none) (tableAdmitted := true))
+  itBool "  and as an evaluation" (!admits everyFlag (.eval { mkCtx () with spec := mkOtherSpec () }
+    (addr "in") (addr "out") none))
+  itBool "a binding claim under another specification set is refused under its flag"
+    (!admits { binding := true } (.binding (mkOtherSpec ()) (addr "binding")))
+  itBool "the kind flags accept no conditional typing claim"
+    (!admits { reveal := true, contains := true, binding := true }
+      (.checkEnv { mkCtx () with axioms := some (addr "axioms") } (addr "root") none))
 
 /-- Whether `claim`'s statement says every one of `texts`. -/
 private def statementSays (claim : Ix.Claim) (texts : List String)
@@ -105,81 +107,83 @@ private def statementSays (claim : Ix.Claim) (texts : List String)
   | .error _ => false
 
 /-- The verifier's report of each kind. -/
-def statementTests : TestSeq :=
-  let defaultTable := ctx.binding
-  test "an unconditional check-env names its kind, subject and conditions"
-    (statementSays (.checkEnv ctx (addr "root") none)
+def statementTests : LSpec.Spec := do
+  it "an unconditional check-env names its kind, subject and conditions" do
+    let ctx := mkCtx ()
+    let spec := mkSpec ()
+    let defaultTable := ctx.binding
+    expect (statementSays (.checkEnv ctx (addr "root") none)
       ["kind: check-env", s!"subject: the constants of the canonical tree with root {addr "root"}",
        "conditions:", s!"specification set: {spec}, this build's",
        s!"role table: {defaultTable}, the default role table", "axioms: the standard three only",
        "role binding: validated in the proof", "typing assumptions: none"])
-  ++ test "a check names its constant" (statementSays (.check ctx (addr "c") none)
-      ["kind: check", s!"subject: the constant {addr "c"}"])
-  ++ test "an eval names its input and output"
-      (statementSays (.eval ctx (addr "in") (addr "out") none)
-        ["kind: eval", s!"the constant {addr "in"}, evaluating to the constant {addr "out"}"])
-  ++ test "an eval says what it asserts and that the consistency theorem does not state it"
-      (statementSays (.eval ctx (addr "in") (addr "out") none)
-        ["the output is the input's normal form as IxVM's evaluator computes it",
-         "scope: not covered by the IxVM consistency theorem"])
-  ++ test "no other kind carries the eval scope line"
-      (!statementSays (.check ctx (addr "c") none) ["scope: not covered"])
-  ++ test "each open condition names the flag that accepted it"
-      (statementSays (.checkEnv
-          { ctx with binding := addr "table", axioms := some (addr "ax"), bindingAssumed := true }
-          (addr "root") (some (addr "leaves")))
-        ["not admitted here (open; accepted under --allow-custom-binding)",
-         s!"user axioms {addr "ax"} (open; accepted under --allow-axioms)",
-         "(open; accepted under --allow-assumed-binding)",
-         s!"the leaves under {addr "leaves"} (open; accepted under --allow-assumptions)"])
-  ++ test "  and each discharged one what discharges it"
-      (statementSays (.checkEnv { ctx with binding := addr "table", bindingAssumed := true }
-          (addr "root") (some (addr "leaves"))) (bindingDischarged := true)
-          (assumptionsDischarged := true) (tableAdmitted := true)
-        [s!"role table: {addr "table"}, admitted by the kernel",
-         "discharged by the verified binding proof", "owned by the partition verified with it"])
-  ++ test "a literal class is open" (statementSays (.checkEnv { ctx with literalClass := true }
-      (addr "root") none) ["any with the literal class", "--allow-custom-binding"])
-  ++ test "a claim that states no typing says so"
-      (statementSays (.contains (addr "tree") (addr "const"))
-          ["kind: contains", s!"the leaf {addr "const"} of the tree with root {addr "tree"}",
-           "none; the claim states no typing"]
-        && statementSays (.reveal (addr "comm") (.axio none none none) none)
-          ["kind: reveal", s!"the constant committed as {addr "comm"}"])
-  ++ test "a binding claim names its table and specification set"
-      (statementSays (.binding spec (addr "binding"))
-        ["kind: binding", s!"the role table {addr "binding"}", s!"specification set: {spec}, this build's"])
-  ++ test "a catalog names its subjects"
-      (statementSays (.catalog (addr "members"))
-          ["kind: catalog", s!"root {addr "members"}", "each member's own"])
+  itBool "a check names its constant" (statementSays (.check (mkCtx ()) (addr "c") none)
+    ["kind: check", s!"subject: the constant {addr "c"}"])
+  itBool "an eval names its input and output"
+    (statementSays (.eval (mkCtx ()) (addr "in") (addr "out") none)
+      ["kind: eval", s!"the constant {addr "in"}, evaluating to the constant {addr "out"}"])
+  itBool "an eval says what it asserts and that the consistency theorem does not state it"
+    (statementSays (.eval (mkCtx ()) (addr "in") (addr "out") none)
+      ["the output is the input's normal form as IxVM's evaluator computes it",
+       "scope: not covered by the IxVM consistency theorem"])
+  itBool "no other kind carries the eval scope line"
+    (!statementSays (.check (mkCtx ()) (addr "c") none) ["scope: not covered"])
+  itBool "each open condition names the flag that accepted it"
+    (statementSays (.checkEnv
+        { mkCtx () with binding := addr "table", axioms := some (addr "ax"), bindingAssumed := true }
+        (addr "root") (some (addr "leaves")))
+      ["not admitted here (open; accepted under --allow-custom-binding)",
+       s!"user axioms {addr "ax"} (open; accepted under --allow-axioms)",
+       "(open; accepted under --allow-assumed-binding)",
+       s!"the leaves under {addr "leaves"} (open; accepted under --allow-assumptions)"])
+  itBool "  and each discharged one what discharges it"
+    (statementSays (.checkEnv { mkCtx () with binding := addr "table", bindingAssumed := true }
+        (addr "root") (some (addr "leaves"))) (bindingDischarged := true)
+        (assumptionsDischarged := true) (tableAdmitted := true)
+      [s!"role table: {addr "table"}, admitted by the kernel",
+       "discharged by the verified binding proof", "owned by the partition verified with it"])
+  itBool "a literal class is open" (statementSays (.checkEnv { mkCtx () with literalClass := true }
+    (addr "root") none) ["any with the literal class", "--allow-custom-binding"])
+  itBool "a claim that states no typing says so"
+    (statementSays (.contains (addr "tree") (addr "const"))
+        ["kind: contains", s!"the leaf {addr "const"} of the tree with root {addr "tree"}",
+         "none; the claim states no typing"]
+      && statementSays (.reveal (addr "comm") (.axio none none none) none)
+        ["kind: reveal", s!"the constant committed as {addr "comm"}"])
+  itBool "a binding claim names its table and specification set"
+    (statementSays (.binding (mkSpec ()) (addr "binding"))
+      ["kind: binding", s!"the role table {addr "binding"}", s!"specification set: {mkSpec ()}, this build's"])
+  itBool "a catalog names its subjects"
+    (statementSays (.catalog (addr "members"))
+      ["kind: catalog", s!"root {addr "members"}", "each member's own"])
 
-def unitTests : TestSeq :=
-  let unconditional : Ix.Claim := .checkEnv ctx (addr "root") none
-  let assumed : Ix.Claim := .check ctx (addr "const") (some (addr "leaves"))
-  let axioms : Ix.Claim := .checkEnv { ctx with axioms := some (addr "axioms") } (addr "root") none
-  let bound : Ix.Claim := .checkEnv { ctx with bindingAssumed := true } (addr "root") none
-  let other : Ix.Claim := .checkEnv { ctx with binding := addr "table" } (addr "root") none
-  let literal : Ix.Claim := .checkEnv { ctx with literalClass := true } (addr "root") none
-  test "an unconditional typing claim is admitted" (admits {} unconditional)
-  ++ test "a claim with assumed leaves is refused" (!admits {} assumed)
-  ++ test "  unless --allow-assumptions" (admits { assumptions := true } assumed)
-  ++ test "  or a whole partition discharges them" (admits {} assumed false true)
-  ++ test "an evaluation with assumed leaves is refused"
-      (!admits {} (.eval ctx (addr "in") (addr "out") (some (addr "leaves"))))
-  ++ test "a claim with user axioms is refused" (!admits {} axioms)
-  ++ test "  even when its assumptions are discharged" (!admits {} axioms true true)
-  ++ test "  unless --allow-axioms" (admits { axioms := true } axioms)
-  ++ test "a claim that assumes its binding is refused" (!admits {} bound)
-  ++ test "  unless a binding proof discharges it" (admits {} bound true)
-  ++ test "  or --allow-assumed-binding" (admits { assumedBinding := true } bound)
-  ++ test "a claim under another role table is refused" (!admits {} other)
-  ++ test "  and one under a literal class" (!admits {} literal)
-  ++ test "  unless --allow-custom-binding" (admits { customBinding := true } other)
-  ++ test "  or the kernel admits the table" (admits {} other (tableAdmitted := true))
-  ++ test "  which a literal class never is" (!admits {} literal (tableAdmitted := true))
-  ++ test "  and the admission relaxes no other condition"
-      (!admits {} (.checkEnv { ctx with binding := addr "table", axioms := some (addr "axioms") }
-        (addr "root") none) (tableAdmitted := true))
+def unitTests : LSpec.Spec := do
+  let mkUnconditional (_ : Unit) : Ix.Claim := .checkEnv (mkCtx ()) (addr "root") none
+  let mkAssumed (_ : Unit) : Ix.Claim := .check (mkCtx ()) (addr "const") (some (addr "leaves"))
+  let mkAxioms (_ : Unit) : Ix.Claim := .checkEnv { mkCtx () with axioms := some (addr "axioms") } (addr "root") none
+  let mkBound (_ : Unit) : Ix.Claim := .checkEnv { mkCtx () with bindingAssumed := true } (addr "root") none
+  let mkOther (_ : Unit) : Ix.Claim := .checkEnv { mkCtx () with binding := addr "table" } (addr "root") none
+  let mkLiteral (_ : Unit) : Ix.Claim := .checkEnv { mkCtx () with literalClass := true } (addr "root") none
+  itBool "an unconditional typing claim is admitted" (admits {} (mkUnconditional ()))
+  itBool "a claim with assumed leaves is refused" (!admits {} (mkAssumed ()))
+  itBool "  unless --allow-assumptions" (admits { assumptions := true } (mkAssumed ()))
+  itBool "  or a whole partition discharges them" (admits {} (mkAssumed ()) false true)
+  itBool "an evaluation with assumed leaves is refused"
+    (!admits {} (.eval (mkCtx ()) (addr "in") (addr "out") (some (addr "leaves"))))
+  itBool "a claim with user axioms is refused" (!admits {} (mkAxioms ()))
+  itBool "  even when its assumptions are discharged" (!admits {} (mkAxioms ()) true true)
+  itBool "  unless --allow-axioms" (admits { axioms := true } (mkAxioms ()))
+  itBool "a claim that assumes its binding is refused" (!admits {} (mkBound ()))
+  itBool "  unless a binding proof discharges it" (admits {} (mkBound ()) true)
+  itBool "  or --allow-assumed-binding" (admits { assumedBinding := true } (mkBound ()))
+  itBool "a claim under another role table is refused" (!admits {} (mkOther ()))
+  itBool "  and one under a literal class" (!admits {} (mkLiteral ()))
+  itBool "  unless --allow-custom-binding" (admits { customBinding := true } (mkOther ()))
+  itBool "  or the kernel admits the table" (admits {} (mkOther ()) (tableAdmitted := true))
+  itBool "  which a literal class never is" (!admits {} (mkLiteral ()) (tableAdmitted := true))
+  itBool "  and the admission relaxes no other condition"
+    (!admits {} (.checkEnv { mkCtx () with binding := addr "table", axioms := some (addr "axioms") }
+      (addr "root") none) (tableAdmitted := true))
 
 /-- A standing's shape, for the tests. -/
 private def shape : Standing → String
@@ -194,7 +198,7 @@ private def says (s : Standing) (text : String) : Bool :=
   | _ => false
 
 /-- `standing`'s cases over a temporary cache root. -/
-def standingTests : IO TestSeq := do
+def standingTests : IO Spec := do
   let spec ← IO.ofExcept Ix.SpecDigest.specDigest
   let defaultTable ← IO.ofExcept Ix.Kernel.Reader.defaultTableAddress
   let table := addr "a custom table"
@@ -224,27 +228,34 @@ def standingTests : IO TestSeq := do
     -- an entry written by another checker version is a miss
     IO.FS.writeFile (dir / toString spec / toString table) "table-admission/0\n"
     let stale ← cached dir spec table
-    return test "the default table needs no admission and reads no environment" (shape s0 == "default")
-      ++ test "a literal class is not admitted" (shape s1 == "unestablished")
-      ++ test "a claim under another specification set is not admitted" (shape s2 == "unestablished")
-      ++ test "a table no supplied environment carries is not admitted" (shape s3 == "unestablished")
-      ++ test "  nor one only another table's environment carries" (shape s4 == "unestablished")
-      ++ test "a build with no admission run admits no table" (shape s5 == "unestablished")
-      ++ test "a table the kernel refuses is not admitted, nor recorded"
-          (shape s6 == "unestablished" && !recordedEarly)
-      ++ test "  and the refusal gives the refusing stage" (says s6 "the test checker refuses")
-      ++ test "a table the kernel admits is admitted and recorded"
-          (shape s7 == "admitted false" && recorded)
-      ++ test "  and the record answers the next claim without an environment or a run"
-          (shape s8 == "admitted true")
-      ++ test "  under its specification set only" (!otherSpec)
-      ++ test "  and this checker version only" (!stale)
-      ++ test "the environments were read only where the table needed them" ((← reads.get) == 5)
+    let readCount ← reads.get
+    return do
+      itBool "the default table needs no admission and reads no environment" (shape s0 == "default")
+      itBool "a literal class is not admitted" (shape s1 == "unestablished")
+      itBool "a claim under another specification set is not admitted" (shape s2 == "unestablished")
+      itBool "a table no supplied environment carries is not admitted" (shape s3 == "unestablished")
+      itBool "  nor one only another table's environment carries" (shape s4 == "unestablished")
+      itBool "a build with no admission run admits no table" (shape s5 == "unestablished")
+      itBool "a table the kernel refuses is not admitted, nor recorded"
+        (shape s6 == "unestablished" && !recordedEarly)
+      itBool "  and the refusal gives the refusing stage" (says s6 "the test checker refuses")
+      itBool "a table the kernel admits is admitted and recorded"
+        (shape s7 == "admitted false" && recorded)
+      itBool "  and the record answers the next claim without an environment or a run"
+        (shape s8 == "admitted true")
+      itBool "  under its specification set only" (!otherSpec)
+      itBool "  and this checker version only" (!stale)
+      itBool "the environments were read only where the table needed them" (readCount == 5)
   finally
     IO.FS.removeDirAll dir
 
-def suite : IO (List TestSeq) := do
-  return [unitTests, kindTests, statementTests, ← standingTests]
+def suite : IO Spec := do
+  let standing ← standingTests
+  return do
+    unitTests
+    kindTests
+    statementTests
+    standing
 
 end Tests.ClaimPolicy
 

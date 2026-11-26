@@ -207,12 +207,9 @@ private def checks (operation : Role) : Except String Unit := do
   need "certificate support cannot change an original reducibility hint"
     (!(strongerHint.emit limits originalHint).isOk)
 
-public def units (operation : Role) : LSpec.TestSeq :=
-  .individualIO "role generation: actual proof records, source bindings, emission and refusals" none (do
-    let result ← IO.lazyPure fun _ => checks operation
-    return match result with
-      | .ok _ => (true, 0, 0, none)
-      | .error message => (false, 0, 0, some message)) .done
+public def units (operation : Role) : LSpec.Spec :=
+  it "role generation: actual proof records, source bindings, emission and refusals" do
+    LSpec.expectOk (checks operation)
 
 private def artifactChecks (operation : Role) : Except String Unit := do
   let limits := Ix.Typing.typingLimits
@@ -303,11 +300,8 @@ private def artifactChecks (operation : Role) : Except String Unit := do
   need "authenticated replacement proof fails the actual certified consumer"
     (!(Ix.RoleBinding.Artifact.check changedArtifact limits).isOk)
 
-public def artifactUnits (operation : Role) : LSpec.TestSeq :=
-  .individualIO "artifact consumer: real fold, exact binding, no fallback and evidence refusals" none (do
-    let result ← IO.lazyPure fun _ => artifactChecks operation
-    return match result with
-      | .ok _ => (true, 0, 0, none)
-      | .error message => (false, 0, 0, some message)) .done
+public def artifactUnits (operation : Role) : LSpec.Spec :=
+  it "artifact consumer: real fold, exact binding, no fallback and evidence refusals" do
+    LSpec.expectOk (artifactChecks operation)
 
 end Tests.Ix.RoleGeneration

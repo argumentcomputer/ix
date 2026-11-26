@@ -113,12 +113,11 @@ private def componentControls (count : Nat) (wild : Bool) : IO Nat := do
   return tested
 
 /-- The comparison over `count` generated inputs. -/
-def suiteOf (count : Nat) (wild : Bool) : List TestSeq := [
-  .individualIO s!"uncertain components match the original hashed grouping ({count} inputs)" none (do
-    let tested ← componentControls count wild
-    return (true, tested, 0, none)) .done]
+def suiteOf (count : Nat) (wild : Bool) : Spec :=
+  it s!"uncertain components match the original hashed grouping ({count} inputs)" do
+    let _ ← componentControls count wild
 
 /-- The primary run: 15 generated inputs and parent arrays within range. -/
-def suite : List TestSeq := suiteOf 15 false
+def suite : Spec := suiteOf 15 false
 
 end Tests.SharingComponents

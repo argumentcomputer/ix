@@ -7,16 +7,21 @@ namespace Tests.ProofHelpers
 open LSpec
 
 /-- A passing test iff `e` is `.ok`; on `.error` the message is surfaced. -/
-def expectOk [ToString ε] (descr : String) (e : Except ε α) : TestSeq :=
-  match e with
-  | .ok _ => test descr true
-  | .error msg => test s!"{descr} — unexpected error: {msg}" false
+def checkOk [ToString ε] (descr : String) (e : Except ε α) : Spec :=
+  it descr do
+    let _ ← LSpec.expectOk e
 
 /-- A passing test iff the verifier rejected the input. -/
-def expectErr (descr : String) (e : Except ε α) : TestSeq :=
-  match e with
-  | .error _ => test descr true
-  | .ok _ => test s!"{descr} — expected a rejection but it was accepted" false
+def checkErr [Repr α] (descr : String) (e : Except ε α) : Spec :=
+  it descr do
+    let _ ← LSpec.expectErr e
+
+/-- A passing test iff `e` is `.error` (no `Repr` needed on `α`). -/
+def checkErrAny (descr : String) (e : Except ε α) : Spec :=
+  it descr do
+    match e with
+    | .error _ => pure ()
+    | .ok _ => fail s!"{descr} — expected a rejection but it was accepted"
 
 /-- Inner-proof commitment/FRI parameters. -/
 def recCommitParams : Aiur.CommitmentParameters :=

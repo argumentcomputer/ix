@@ -148,7 +148,7 @@ def nm (s : String) : Ix.Name := .mkStr anon s
 /-- The numbering of a constant with no level parameters. -/
 def noParams : Numbering := ⟨#[], false⟩
 
-def refusals : TestSeq :=
+def refusals : LSpec.Spec := do
   let fv := Ix.Expr.mkFVar (nm "x")
   let mv := Ix.Expr.mkMVar (nm "m")
   let lv := Ix.Expr.mkSort (Ix.Level.mkMvar (nm "u"))
@@ -156,9 +156,9 @@ def refusals : TestSeq :=
     match ingressExprs noParams.pos [Ix.Expr.mkApp (Ix.Expr.mkBVar 0) e] with
     | .error err => k err
     | .ok _ => false
-  test "free variable refused" (refused fv fun | .fvar _ => true | _ => false) ++
-  test "metavariable refused" (refused mv fun | .mvar _ => true | _ => false) ++
-  test "level metavariable refused" (refused lv fun | .levelMVar _ => true | _ => false)
+  itBool "free variable refused" (refused fv fun | .fvar _ => true | _ => false)
+  itBool "metavariable refused" (refused mv fun | .mvar _ => true | _ => false)
+  itBool "level metavariable refused" (refused lv fun | .levelMVar _ => true | _ => false)
 
 def sameResult : Except ExprError (List KExpr) → Except ExprError (List KExpr) → Bool
   | .ok a, .ok b => a == b
@@ -168,13 +168,13 @@ def lamDropped : Except ExprError (List KExpr) → Bool
   | .ok [.lam (.const n []) (.bvar 0) m] => n == Ix.Kernel.roleKey .nat && m == { pw := .never }
   | _ => false
 
-def erasure : TestSeq :=
+def erasure : LSpec.Spec := do
   let body := Ix.Expr.mkConst (nm "Nat") #[]
   let withData := Ix.Expr.mkMData #[(nm "k", .ofBool true)] body
   let lam := Ix.Expr.mkLam (nm "x") body (.mkBVar 0) .implicit
-  test "mdata erased"
-    (sameResult (ingressExprs noParams.pos [withData]) (ingressExprs noParams.pos [body])) ++
-  test "binder name and info dropped, pw never" (lamDropped (ingressExprs noParams.pos [lam]))
+  itBool "mdata erased"
+    (sameResult (ingressExprs noParams.pos [withData]) (ingressExprs noParams.pos [body]))
+  itBool "binder name and info dropped, pw never" (lamDropped (ingressExprs noParams.pos [lam]))
 
 /-- `e` under the contract frame of `c`, as `Ix.Compile.CompileInput.prepare`
 writes it and `Ix.CanonM` keeps it. -/
@@ -206,7 +206,7 @@ def refusedWith (message : String) : Except ExprError (List KExpr) → Bool
 the binder it wraps, as the compiler lowers it; an unsupported contract mode,
 a frame not directly around a binder of its kind, or a malformed frame is
 refused. -/
-def contractFrames : TestSeq :=
+def contractFrames : LSpec.Spec := do
   let nat := Ix.Expr.mkConst (nm "Nat") #[]
   let lam := Ix.Expr.mkLam (nm "x") nat (.mkBVar 0) .default
   let pi := Ix.Expr.mkForallE (nm "x") nat nat .default
@@ -226,33 +226,33 @@ def contractFrames : TestSeq :=
   let misplaced := "semantic contract is not attached to its original binder"
   let key := Ix.Name.mkStr (nm "ix") "contract"
   let dag := Ix.Expr.mkApp (framed allC pi) (plain (framed lamC lam))
-  test "a plain binder carries the never datum"
-    (binderOf (conv lam) == some { pw := .never }) ++
-  test "an ordinary lam frame lowers to the plain binder"
-    (binderOf (conv (framed lamO lam)) == some { pw := .never }) ++
-  test "an ordinary all frame lowers to the plain binder"
-    (binderOf (conv (framed allO pi)) == some { pw := .never }) ++
-  test "a plain let carries Lean's nonDep"
-    (letOf (conv letE) == some { nonDep := false }) ++
-  test "an ordinary let frame lowers to the plain let"
-    (letOf (conv (framed letO letE)) == some { nonDep := false }) ++
-  test "plain metadata around an ordinary frame is erased"
-    (binderOf (conv (plain (framed lamO lam))) == some { pw := .never }) ++
-  test "a valid annotated lam, all or let frame lowers to the kernel binder or let"
+  itBool "a plain binder carries the never datum"
+    (binderOf (conv lam) == some { pw := .never })
+  itBool "an ordinary lam frame lowers to the plain binder"
+    (binderOf (conv (framed lamO lam)) == some { pw := .never })
+  itBool "an ordinary all frame lowers to the plain binder"
+    (binderOf (conv (framed allO pi)) == some { pw := .never })
+  itBool "a plain let carries Lean's nonDep"
+    (letOf (conv letE) == some { nonDep := false })
+  itBool "an ordinary let frame lowers to the plain let"
+    (letOf (conv (framed letO letE)) == some { nonDep := false })
+  itBool "plain metadata around an ordinary frame is erased"
+    (binderOf (conv (plain (framed lamO lam))) == some { pw := .never })
+  itBool "a valid annotated lam, all or let frame lowers to the kernel binder or let"
     (binderOf (conv (framed lamC lam)) == some { pw := .never } &&
       binderOf (conv (framed allC pi)) == some { pw := .never } &&
       letOf (conv (framed letC letE)) == some { nonDep := false } &&
-      binderOf (conv (plain (framed lamC lam))) == some { pw := .never }) ++
-  test "an unsupported semantic contract mode is refused"
-    (refusedWith unsupported (conv (framed badMode lam))) ++
-  test "a frame not directly around a binder of its kind is refused"
+      binderOf (conv (plain (framed lamC lam))) == some { pw := .never })
+  itBool "an unsupported semantic contract mode is refused"
+    (refusedWith unsupported (conv (framed badMode lam)))
+  itBool "a frame not directly around a binder of its kind is refused"
     (refusedWith misplaced (conv (framed lamO (plain lam))) &&
-      refusedWith misplaced (conv (framed lamC pi)) && refusedWith misplaced (conv (framed allC nat))) ++
-  test "a malformed frame is refused"
+      refusedWith misplaced (conv (framed lamC pi)) && refusedWith misplaced (conv (framed allC nat)))
+  itBool "a malformed frame is refused"
     (frameRefused (conv (Ix.Expr.mkMData #[(key, .ofNat 3)] lam)) &&
       frameRefused (conv (Ix.Expr.mkMData #[(key, .ofNat 2), (Ix.Name.mkStr key "kind", .ofNat 0),
-        (Ix.Name.mkStr key "code", .ofNat 1)] lam))) ++
-  test "the DAG walk is the tree walk on frames"
+        (Ix.Name.mkStr key "code", .ofNat 1)] lam)))
+  itBool "the DAG walk is the tree walk on frames"
     (sameTree (ingressExprsShared noParams.pos [dag]) (ingressExpr noParams.pos dag))
 
 def sortOf : Except ExprError (List KExpr) → Option Ix.Kernel.Level
@@ -261,15 +261,15 @@ def sortOf : Except ExprError (List KExpr) → Option Ix.Kernel.Level
 
 /-- Level parameters are positions: a constant's `i`-th is `i`, and a large
 eliminator's first, its elimination level, follows its block's. -/
-def numbering : TestSeq :=
+def numbering : LSpec.Spec := do
   let u := nm "u"
   let v := nm "v"
   let ty := Ix.Expr.mkSort (Ix.Level.mkMax (Ix.Level.mkParam u) (Ix.Level.mkParam v))
   let large : Numbering := ⟨#[v, u], true⟩
-  test "the i-th level parameter is position i"
+  itBool "the i-th level parameter is position i"
     (sortOf (ingressExprs (Numbering.mk #[u, v] false).pos [ty]) ==
-      some (.max (.param 0) (.param 1))) ++
-  test "a large eliminator's elimination level follows its block's parameters"
+      some (.max (.param 0) (.param 1)))
+  itBool "a large eliminator's elimination level follows its block's parameters"
     (sortOf (ingressExprs large.pos [ty]) == some (.max (.param 0) (.param 1)) &&
       large.params == [1, 0])
 
@@ -278,7 +278,7 @@ reader reads a compiled universe: `Ixon.canonUniv` over the Lean index order
 (variable `i` is the constant's `i`-th Lean level parameter), back through
 `Reader.convUniv` (at a large eliminator through `Reader.recParam`, the
 elimination level first). -/
-def canonical : TestSeq :=
+def canonical : LSpec.Spec := do
   let u := nm "u"
   let v := nm "v"
   let plain : Numbering := ⟨#[u, v], false⟩
@@ -293,17 +293,17 @@ def canonical : TestSeq :=
     (.max (.param 0) (.succ (.param 0)), .max (.var 0) (.succ (.var 0))),
     (.imax (.param 1) (.max (.param 0) (.param 1)), .imax (.var 1) (.max (.var 0) (.var 1))),
     (.succ (.max (.zero) (.param 1)), .succ (.max .zero (.var 1)))]
-  test "a member's level is the reader's reading of its compiled universe"
-    (cases.all fun (l, w) => canonLevel plain l == read (fun i => i) w) ++
-  test "at a large eliminator the index order puts the elimination level first"
+  itBool "a member's level is the reader's reading of its compiled universe"
+    (cases.all fun (l, w) => canonLevel plain l == read (fun i => i) w)
+  itBool "at a large eliminator the index order puts the elimination level first"
     -- Source `max u v` is positions `max 0 1`; compiled, `u` is variable 1
     (canonLevel large (.max (.param 0) (.param 1)) == read recP (.max (.var 1) (.var 0)) &&
-      canonLevel large (.imax (.param 1) (.param 0)) == read recP (.imax (.var 0) (.var 1))) ++
-  test "canonical forms do not depend on the order of a max"
-    (canonLevel plain (.max (.param 0) (.param 1)) == canonLevel plain (.max (.param 1) (.param 0))) ++
-  test "canonicalizing is idempotent"
-    (cases.all fun (l, _) => canonLevel plain (canonLevel plain l) == canonLevel plain l) ++
-  test "mapLevels' executed walk is the structural map"
+      canonLevel large (.imax (.param 1) (.param 0)) == read recP (.imax (.var 0) (.var 1)))
+  itBool "canonical forms do not depend on the order of a max"
+    (canonLevel plain (.max (.param 0) (.param 1)) == canonLevel plain (.max (.param 1) (.param 0)))
+  itBool "canonicalizing is idempotent"
+    (cases.all fun (l, _) => canonLevel plain (canonLevel plain l) == canonLevel plain l)
+  itBool "mapLevels' executed walk is the structural map"
     (let e : KExpr := .app (.sort (.max (.param 1) (.param 0)))
         (.const (ingressKey (nm "f")) [.max (.param 1) (.param 0)])
      mapLevelsList (canonLevel plain) [e, e] ==
@@ -325,9 +325,9 @@ def agrees : Except ExprError (List KExpr) → Except ExprError KExpr → Bool
   | .ok [a], .ok b => decide (a = b) && treeSize b == 2 ^ 13 - 1
   | _, _ => false
 
-def sharing : TestSeq :=
-  test "a 2^64-leaf DAG converts" ((ingressExprs noParams.pos [sharedDag 64]).isOk) ++
-  test "the DAG walk is the tree walk at depth 12"
+def sharing : LSpec.Spec := do
+  itBool "a 2^64-leaf DAG converts" ((ingressExprs noParams.pos [sharedDag 64]).isOk)
+  itBool "the DAG walk is the tree walk at depth 12"
     (agrees (ingressExprsShared noParams.pos [sharedDag 12]) (ingressExpr noParams.pos (sharedDag 12)))
 
 /-! ## The fixtures -/
@@ -397,12 +397,11 @@ def evaluate : IO (Array String × Array String) := do
   | .error e => errors := errors.push s!"checkSourceTiered on the accepted closure and spin: {e}"
   return (errors, lines)
 
-def fixtures : TestSeq :=
-  .individualIO "source mode: fixture closure, group by group and all at once" none (do
+def fixtures : Spec :=
+  it "source mode: fixture closure, group by group and all at once" do
     let (errors, lines) ← evaluate
     for l in lines do IO.println l
-    let msg := if errors.isEmpty then none else some ("\n".intercalate errors.toList)
-    return (errors.isEmpty, expected.length, 0, msg)) .done
+    expect errors.isEmpty ("\n".intercalate errors.toList)
 
 /-! ## Quotient Source
 
@@ -582,12 +581,11 @@ def evaluateQuotient : IO (Array String × Array String) := do
     | .error e, _ => errors := errors.push s!"quotient: prelude check: {what}: {e}"
   return (errors, lines)
 
-def quotient : TestSeq :=
-  .individualIO "quotient source: alias fibers collapsed, mismatches refused, role aliases, canonical levels" none (do
+def quotient : Spec :=
+  it "quotient source: alias fibers collapsed, mismatches refused, role aliases, canonical levels" do
     let (errors, lines) ← evaluateQuotient
     for l in lines do IO.println l
-    let msg := if errors.isEmpty then none else some ("\n".intercalate errors.toList)
-    return (errors.isEmpty, 6, 0, msg)) .done
+    expect errors.isEmpty ("\n".intercalate errors.toList)
 
 
 /-! ## The `.indDecl` shape guard
@@ -621,24 +619,24 @@ def withU : Ix.Kernel.Key .source → Option (Ix.Kernel.ConstantInfo .source) :=
 
 def noneEnv : Ix.Kernel.Key .source → Option (Ix.Kernel.ConstantInfo .source) := fun _ => none
 
-def shapeUnits : TestSeq :=
-  test "a block naming only its formers passes"
-    (Ix.Kernel.indShapeOk noneEnv [sind "T" sty, sctor "T.a" (sconst "T"), sctor "T.b" (.app (sconst "T") (sconst "T"))]) $
-  test "a mutual block's constructor may name another former"
-    (Ix.Kernel.indShapeOk noneEnv [sind "A" sty, sind "B" sty, sctor "A.a" (.app (sconst "A") (sconst "B"))]) $
-  test "a constructor naming an earlier constructor is refused"
-    (!Ix.Kernel.indShapeOk noneEnv [sind "T" sty, sctor "T.a" (sconst "T"), sctor "T.b" (.app (sconst "T") (sconst "T.a"))]) $
-  test "a constructor naming a later constructor is refused"
-    (!Ix.Kernel.indShapeOk noneEnv [sind "T" sty, sctor "T.a" (.app (sconst "T") (sconst "T.b")), sctor "T.b" (sconst "T")]) $
-  test "a former naming an unknown constant is refused, and passes once it is declared"
-    (!Ix.Kernel.indShapeOk noneEnv [sind "T" (sconst "U")] && Ix.Kernel.indShapeOk withU [sind "T" (sconst "U")]) $
-  test "a constructor name already declared is refused"
-    (!Ix.Kernel.indShapeOk withU [sind "T" sty, sctor "U" (sconst "T")]) $
-  test "a constructor named as a former is refused"
-    (!Ix.Kernel.indShapeOk noneEnv [sind "T" sty, sctor "T" (sconst "T")]) $
-  test "a constructor name declared twice is refused"
-    (!Ix.Kernel.indShapeOk noneEnv [sind "T" sty, sctor "T.a" (sconst "T"), sctor "T.a" (sconst "T")]) $
-  test "a literal needs its support"
+def shapeUnits : LSpec.Spec := do
+  itBool "a block naming only its formers passes"
+    (Ix.Kernel.indShapeOk noneEnv [sind "T" sty, sctor "T.a" (sconst "T"), sctor "T.b" (.app (sconst "T") (sconst "T"))])
+  itBool "a mutual block's constructor may name another former"
+    (Ix.Kernel.indShapeOk noneEnv [sind "A" sty, sind "B" sty, sctor "A.a" (.app (sconst "A") (sconst "B"))])
+  itBool "a constructor naming an earlier constructor is refused"
+    (!Ix.Kernel.indShapeOk noneEnv [sind "T" sty, sctor "T.a" (sconst "T"), sctor "T.b" (.app (sconst "T") (sconst "T.a"))])
+  itBool "a constructor naming a later constructor is refused"
+    (!Ix.Kernel.indShapeOk noneEnv [sind "T" sty, sctor "T.a" (.app (sconst "T") (sconst "T.b")), sctor "T.b" (sconst "T")])
+  itBool "a former naming an unknown constant is refused, and passes once it is declared"
+    (!Ix.Kernel.indShapeOk noneEnv [sind "T" (sconst "U")] && Ix.Kernel.indShapeOk withU [sind "T" (sconst "U")])
+  itBool "a constructor name already declared is refused"
+    (!Ix.Kernel.indShapeOk withU [sind "T" sty, sctor "U" (sconst "T")])
+  itBool "a constructor named as a former is refused"
+    (!Ix.Kernel.indShapeOk noneEnv [sind "T" sty, sctor "T" (sconst "T")])
+  itBool "a constructor name declared twice is refused"
+    (!Ix.Kernel.indShapeOk noneEnv [sind "T" sty, sctor "T.a" (sconst "T"), sctor "T.a" (sconst "T")])
+  itBool "a literal needs its support"
     (!Ix.Kernel.indShapeOk noneEnv [sind "T" sty, sctor "T.a" (.app (sconst "T") (.lit (.natVal 0)))])
 
 /-! ## Repeated names in a lowered block
@@ -665,12 +663,12 @@ def lowersTo (rb : Ix.Kernel.Reader.BlockRead .source) (ks : List String) : Bool
   | .ok r => r.decls.size == 1 && r.decls.toList.flatMap (·.names) == ks.map skey
   | .error _ => false
 
-def repeatedNames : TestSeq :=
-  test "a block with distinct names lowers to its declaration"
-    (lowersTo (blockWith ["T.a", "T.b"]) ["T", "T.a", "T.b"]) $
-  test "a block declaring a constructor name twice is declined"
-    (declinesRepeat (blockWith ["T.a", "T.b", "T.a"]) "T.a") $
-  test "a block naming a constructor as its type is declined"
+def repeatedNames : LSpec.Spec := do
+  itBool "a block with distinct names lowers to its declaration"
+    (lowersTo (blockWith ["T.a", "T.b"]) ["T", "T.a", "T.b"])
+  itBool "a block declaring a constructor name twice is declined"
+    (declinesRepeat (blockWith ["T.a", "T.b", "T.a"]) "T.a")
+  itBool "a block naming a constructor as its type is declined"
     (declinesRepeat (blockWith ["T"]) "T")
 
 /-- The lowered declarations with `Args.cons`'s declared type naming `Tm.var`. -/
@@ -708,14 +706,23 @@ def evaluateShape : IO (Array String × Array String) := do
         errors := errors.push s!"shape: refused, but not by the shape guard: {msg}"
   return (errors, lines)
 
-def shapeGuard : TestSeq :=
-  .individualIO "the shape guard refuses a modeled block's constructor naming an earlier one" none (do
+def shapeGuard : Spec :=
+  it "the shape guard refuses a modeled block's constructor naming an earlier one" do
     let (errors, lines) ← evaluateShape
     for l in lines do IO.println l
-    let msg := if errors.isEmpty then none else some ("\n".intercalate errors.toList)
-    return (errors.isEmpty, 2, 0, msg)) .done
+    expect errors.isEmpty ("\n".intercalate errors.toList)
 
-def suite : List TestSeq := [refusals, erasure, contractFrames, numbering, canonical, sharing, fixtures,
-  quotient, shapeUnits, repeatedNames, shapeGuard]
+def suite : LSpec.Spec := do
+  refusals
+  erasure
+  contractFrames
+  numbering
+  canonical
+  sharing
+  fixtures
+  quotient
+  shapeUnits
+  repeatedNames
+  shapeGuard
 
 end Tests.Ix.Kernel.SourceIngress

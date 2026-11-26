@@ -37,6 +37,9 @@ public section
 namespace Tests.Ix.LeanExport
 
 open _root_.Ix.LeanExport (importString environment)
+open LSpec
+
+set_option compiler.extract_closed false
 
 private def require (ok : Bool) (message : String) : IO Unit :=
   unless ok do throw (IO.userError message)
@@ -62,43 +65,43 @@ private def withMData (data : String) : String :=
   export_ ["{\"ie\":1,\"mdata\":{\"data\":" ++ data ++ ",\"expr\":0}}"]
     "{\"axiom\":{\"isUnsafe\":false,\"levelParams\":[],\"name\":1,\"type\":1}}"
 
-def readerTests : LSpec.TestSeq :=
+def readerTests : LSpec.Spec := do
   let dropped (text : String) : Option Nat := (importString text).toOption.map (·.droppedSyntaxMData)
-  LSpec.test "a well-formed export is read" ((importString (export_ [])).toOption.any fun im =>
-    im.constants.size == 1 && im.exportMeta.leanVersion == "4.34.1") ++
-  LSpec.test "another format version is refused" (refuses ((export_ []).replace metaLine (metaLine "3.0.0"))) ++
-  LSpec.test "an export without its meta record is refused"
-    (refuses ("\n".intercalate ((export_ []).splitOn "\n" |>.drop 1))) ++
-  LSpec.test "a second meta record is refused" (refuses (export_ [metaLine])) ++
-  LSpec.test "a name index out of sequence is refused"
-    (refuses (export_ ["{\"in\":3,\"str\":{\"pre\":0,\"str\":\"U\"}}"])) ++
-  LSpec.test "a reference to an expression not yet defined is refused"
-    (refuses (export_ [] "{\"axiom\":{\"isUnsafe\":false,\"levelParams\":[],\"name\":1,\"type\":7}}")) ++
-  LSpec.test "an extra field is refused"
-    (refuses (export_ [] "{\"axiom\":{\"isUnsafe\":false,\"levelParams\":[],\"name\":1,\"type\":0,\"x\":1}}")) ++
-  LSpec.test "a missing field is refused"
-    (refuses (export_ [] "{\"axiom\":{\"levelParams\":[],\"name\":1,\"type\":0}}")) ++
-  LSpec.test "a name declared twice is refused"
-    (refuses (export_ ["{\"axiom\":{\"isUnsafe\":false,\"levelParams\":[],\"name\":1,\"type\":0}}"])) ++
-  LSpec.test "an unknown record is refused" (refuses (export_ ["{\"universe\":0}"])) ++
-  LSpec.test "an unknown binder info is refused"
-    (refuses (export_ ["{\"ie\":1,\"lam\":{\"binderInfo\":\"auto\",\"body\":0,\"name\":1,\"type\":0}}"])) ++
-  LSpec.test "a canonical numeral is read"
-    (accepts (export_ ["{\"ie\":1,\"natVal\":\"120\"}"])) ++
-  LSpec.test "a numeral that is not canonical is refused"
-    (refuses (export_ ["{\"ie\":1,\"natVal\":\"0120\"}"])) ++
-  LSpec.test "a metadata value that reads back is kept"
-    (dropped (withMData "{\"noImplicitLambda\":\"Lean.DataValue.ofBool true\"}") == some 0) ++
-  LSpec.test "a name-valued metadata entry is kept"
-    (dropped (withMData "{\"k\":\"Lean.DataValue.ofName `Nat.add\"}") == some 0) ++
-  LSpec.test "a name written in constructor form is kept"
+  itBool "a well-formed export is read" ((importString (export_ [])).toOption.any fun im =>
+    im.constants.size == 1 && im.exportMeta.leanVersion == "4.34.1")
+  itBool "another format version is refused" (refuses ((export_ []).replace metaLine (metaLine "3.0.0")))
+  itBool "an export without its meta record is refused"
+    (refuses ("\n".intercalate ((export_ []).splitOn "\n" |>.drop 1)))
+  itBool "a second meta record is refused" (refuses (export_ [metaLine]))
+  itBool "a name index out of sequence is refused"
+    (refuses (export_ ["{\"in\":3,\"str\":{\"pre\":0,\"str\":\"U\"}}"]))
+  itBool "a reference to an expression not yet defined is refused"
+    (refuses (export_ [] "{\"axiom\":{\"isUnsafe\":false,\"levelParams\":[],\"name\":1,\"type\":7}}"))
+  itBool "an extra field is refused"
+    (refuses (export_ [] "{\"axiom\":{\"isUnsafe\":false,\"levelParams\":[],\"name\":1,\"type\":0,\"x\":1}}"))
+  itBool "a missing field is refused"
+    (refuses (export_ [] "{\"axiom\":{\"levelParams\":[],\"name\":1,\"type\":0}}"))
+  itBool "a name declared twice is refused"
+    (refuses (export_ ["{\"axiom\":{\"isUnsafe\":false,\"levelParams\":[],\"name\":1,\"type\":0}}"]))
+  itBool "an unknown record is refused" (refuses (export_ ["{\"universe\":0}"]))
+  itBool "an unknown binder info is refused"
+    (refuses (export_ ["{\"ie\":1,\"lam\":{\"binderInfo\":\"auto\",\"body\":0,\"name\":1,\"type\":0}}"]))
+  itBool "a canonical numeral is read"
+    (accepts (export_ ["{\"ie\":1,\"natVal\":\"120\"}"]))
+  itBool "a numeral that is not canonical is refused"
+    (refuses (export_ ["{\"ie\":1,\"natVal\":\"0120\"}"]))
+  itBool "a metadata value that reads back is kept"
+    (dropped (withMData "{\"noImplicitLambda\":\"Lean.DataValue.ofBool true\"}") == some 0)
+  itBool "a name-valued metadata entry is kept"
+    (dropped (withMData "{\"k\":\"Lean.DataValue.ofName `Nat.add\"}") == some 0)
+  itBool "a name written in constructor form is kept"
     (dropped (withMData ("{\"k\":" ++ (Lean.Json.str (reprStr (Lean.DataValue.ofName
-      (.num (.str (.num `h 4) "_hyg") 17)))).compress ++ "}")) == some 0) ++
-  LSpec.test "a syntax-valued metadata entry is dropped and counted"
-    (dropped (withMData "{\"_recApp\":\"Lean.DataValue.ofSyntax\\n  (Lean.Syntax.missing)\"}") == some 1) ++
-  LSpec.test "a metadata value that does not read back is refused"
-    (refuses (withMData "{\"k\":\"Lean.DataValue.ofBool maybe\"}")) ++
-  LSpec.test "a metadata value in another form is refused"
+      (.num (.str (.num `h 4) "_hyg") 17)))).compress ++ "}")) == some 0)
+  itBool "a syntax-valued metadata entry is dropped and counted"
+    (dropped (withMData "{\"_recApp\":\"Lean.DataValue.ofSyntax\\n  (Lean.Syntax.missing)\"}") == some 1)
+  itBool "a metadata value that does not read back is refused"
+    (refuses (withMData "{\"k\":\"Lean.DataValue.ofBool maybe\"}"))
+  itBool "a metadata value in another form is refused"
     (refuses (withMData "{\"k\":\"Lean.DataValue.ofNat  3\"}"))
 
 /-! ## Fidelity on ix's own toolchain -/
@@ -164,17 +167,17 @@ def compileBound (env : Lean.Environment) : IO Ixon.Env := do
   Ix.RoleBinding.Compile.finalize (Ix.RoleBinding.Compile.certifiedBackend 8) env (pure env) input
     out.env Ix.Typing.typingLimits out.existing?
 
-def fidelity : IO (Bool × Nat × Nat × Option String) := do
-  let exported ← IO.ofExcept (importString (← readFixture Lean.versionString))
-  require (exported.exportMeta.leanVersion == Lean.versionString)
+def fidelity : AssertM Unit := do
+  let exported ← expectOk (importString (← readFixture Lean.versionString))
+  expect (exported.exportMeta.leanVersion == Lean.versionString)
     s!"the fixture comes from Lean {exported.exportMeta.leanVersion}, the test runs on {Lean.versionString}"
   let native ← getCompileEnv #[`IxC.Kernel.PinGen.Certs, `Tests.Fixtures.toolchains.Primitives]
   let mut nativeDecls : Array (Lean.Name × Lean.ConstantInfo) := #[]
   let mut binderDiffs := 0
   for (name, ci) in exported.constants do
     let some nci := native.find? name
-      | throw (IO.userError s!"{name} is exported but not in the native environment")
-    require (sameDeclaration ci nci) s!"{name}: the exported declaration differs from the native one"
+      | fail s!"{name} is exported but not in the native environment"
+    expect (sameDeclaration ci nci) s!"{name}: the exported declaration differs from the native one"
     unless sameBinders ci nci do binderDiffs := binderDiffs + 1
     nativeDecls := nativeDecls.push (name, nci)
   let fromNative ← compileBound (← environment nativeDecls)
@@ -184,9 +187,8 @@ def fidelity : IO (Bool × Nat × Nat × Option String) := do
   IO.println s!"[lean-export] {exported.constants.size} declarations; {binderDiffs} differ from the \
 native ones in binder names or info; {exported.droppedSyntaxMData} syntax-valued metadata entries dropped"
   for line in report do IO.println s!"[lean-export]   {line}"
-  require fromNative.roleBinding.isSome "the native compile has no role binding"
-  require c.contentExact s!"the export's compile differs in content: {report}"
-  return (true, 0, 0, none)
+  expect fromNative.roleBinding.isSome "the native compile has no role binding"
+  expect c.contentExact s!"the export's compile differs in content: {report}"
 
 /-! ## Another toolchain's roles -/
 
@@ -201,45 +203,43 @@ its `Nat.xor` does too.
   is finalized. Its binding binds the role at the address the export publishes
   it at, which is not the default table's. `finalize`'s own check of the
   published role names against that binding passed. -/
-def foreignRoles (version : String) (role : _root_.Ix.Kernel.Role) :
-    IO (Bool × Nat × Nat × Option String) := do
-  let exported ← IO.ofExcept (importString (← readFixture version))
+def foreignRoles (version : String) (role : _root_.Ix.Kernel.Role) : AssertM Unit := do
+  let exported ← expectOk (importString (← readFixture version))
   let env ← environment exported.constants
   let constants := env.constants.toList
   match ← Ix.CompileM.compileCertified env constants 8 with
   | .ok _ =>
-    throw (IO.userError s!"{version}: the compile at the default role table accepted {repr role}")
+    fail s!"{version}: the compile at the default role table accepted {repr role}"
   | .error e =>
-    require (e.startsWith "role check failed") s!"{version}: refused for another reason: {e}"
+    expect (e.startsWith "role check failed") s!"{version}: refused for another reason: {e}"
   let artifact ← match ← Ix.CompileM.compileAndFinalize env constants 8 (allowPartial := false)
       (certSource := pure env) (defaultRoles := false) with
     | .ok (_, .done artifact _) => pure artifact
     | .ok (out, .refused) =>
-      throw (IO.userError s!"{version}: {out.failures.toMap.size} constants failed to compile")
-    | .ok (_, .failed e) => throw (IO.userError s!"{version}: finalization failed: {e}")
-    | .error e => throw (IO.userError s!"{version}: the compile failed: {e}")
+      fail s!"{version}: {out.failures.toMap.size} constants failed to compile"
+    | .ok (_, .failed e) => fail s!"{version}: finalization failed: {e}"
+    | .error e => fail s!"{version}: the compile failed: {e}"
   let some binding := artifact.roleBinding
-    | throw (IO.userError s!"{version}: the artifact carries no role binding")
+    | fail s!"{version}: the artifact carries no role binding"
   let some table := _root_.Ix.Kernel.RoleTable.ofBytes binding.bytes
-    | throw (IO.userError s!"{version}: the role binding does not decode")
-  let published := (← IO.ofExcept (_root_.Ix.RoleBinding.sourceAddresses artifact))[role.leanName]?
+    | fail s!"{version}: the role binding does not decode"
+  let published := (← expectOk (_root_.Ix.RoleBinding.sourceAddresses artifact))[role.leanName]?
   let atDefault := (_root_.Ix.Cert.roleTableBound.find? (·.1 == role)).map (·.2)
-  require (published.isSome && table.addressOf? role == published)
+  expect (published.isSome && table.addressOf? role == published)
     s!"{version}: {repr role} is published at {published}, bound at {table.addressOf? role}"
-  require (published != atDefault)
+  expect (published != atDefault)
     s!"{version}: {repr role} is published at the default table's address {atDefault}"
   IO.println s!"[lean-export] {version}: {repr role} bound at {published}; the default table \
 binds it at {atDefault}"
-  return (true, 0, 0, none)
 
-def suite : List LSpec.TestSeq := [
-  readerTests,
-  .individualIO "a 4.34.1 export compiles to exactly the native content, role binding included" none
-    fidelity .done,
-  .individualIO "a 4.35.0 export binds its own Int.decLt, which the default role table refuses"
-    none (foreignRoles "4.35.0" .intDecLt) .done,
-  .individualIO "a 4.33.1 export binds its own Nat.xor, which the default role table refuses"
-    none (foreignRoles "4.33.1" .natXor) .done]
+def suite : LSpec.Spec := do
+  readerTests
+  it "a 4.34.1 export compiles to exactly the native content, role binding included"
+    fidelity
+  it "a 4.35.0 export binds its own Int.decLt, which the default role table refuses"
+    (foreignRoles "4.35.0" .intDecLt)
+  it "a 4.33.1 export binds its own Nat.xor, which the default role table refuses"
+    (foreignRoles "4.33.1" .natXor)
 
 end Tests.Ix.LeanExport
 

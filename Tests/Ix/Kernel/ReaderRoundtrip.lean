@@ -243,14 +243,14 @@ def evaluate : IO (Report × Array String × Array String) := do
   let (lines, egressErrors) ← evaluateEgress inp
   return (report, lines, readerErrors ++ egressErrors)
 
-def suiteIO : TestSeq :=
-  .individualIO "reader fidelity and egress: compiled fixture closure against Lean" none (do
+def suiteIO : Spec :=
+  it "reader fidelity and egress: compiled fixture closure against Lean" do
     let (report, lines, errors) ← evaluate
     IO.println report.summary
     for l in lines do IO.println l
-    let msg := if errors.isEmpty then none else some ("\n".intercalate errors.toList)
-    return (errors.isEmpty, report.constants, 0, msg)) .done
+    expect errors.isEmpty ("\n".intercalate errors.toList)
 
-def suite : List TestSeq := [suiteIO]
+def suite : LSpec.Spec := do
+  suiteIO
 
 end Tests.Ix.Kernel.ReaderRoundtrip

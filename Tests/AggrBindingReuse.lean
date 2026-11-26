@@ -35,6 +35,8 @@ public section
 
 namespace Tests.Aggr.BindingReuse
 
+open LSpec
+
 /-- The closures of `names` and of the constants the kernel fabricates
     during reduction, with every inductive's recursors
     (`IxVM.ClaimHarness.collectCertifiedClosure`: the binder-data annotator
@@ -180,8 +182,9 @@ def runWith (name : String) (aggregate : Bool) : IO UInt32 := do
       bindingProof aggregate
     let right ← claimSet exe home dir "right"
       rightEnv 2 bindingProof aggregate (traceShards := true)
-    LSpec.lspecIO (.ofList [(name,
-      (left ++ right).toList.map fun (label, ok) => LSpec.test label ok)]) []
+    LSpec.lspecMain (describe name do
+      for (label, ok) in left ++ right do
+        itBool label ok) []
   finally
     IO.FS.removeDirAll home
     IO.FS.removeDirAll dir

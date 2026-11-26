@@ -51,12 +51,12 @@ private def compilePiece (exe : System.FilePath) (driver out : String) :
 {r.stderr.take 300} … {(r.stdout.takeEnd 300).toString}"
   return .ok ()
 
-private def dedupTest : IO (Bool × Nat × Nat × Option String) := do
+private def dedupTest : AssertM Unit := do
   unless (← ixExe.pathExists) do
-    return (false, 0, 0, some s!"{ixExe} missing — run `lake build ix` first")
+    fail s!"{ixExe} missing — run `lake build ix` first"
   for fixture in [fixtureA, fixtureB] do
     unless (← fixture.pathExists) do
-      return (false, 0, 0, some s!"fixture source missing: {fixture}")
+      fail s!"fixture source missing: {fixture}"
   let exe ← IO.FS.realPath ixExe
   let dir ← IO.FS.createTempDir
   try
@@ -67,10 +67,8 @@ private def dedupTest : IO (Bool × Nat × Nat × Option String) := do
     let taskB ← IO.asTask (prio := .dedicated) (compilePiece exe fixtureB.toString pieceB)
     let resA ← IO.wait taskA
     let resB ← IO.wait taskB
-    if let .error e ← IO.ofExcept resA then
-      return (false, 0, 0, some e)
-    if let .error e ← IO.ofExcept resB then
-      return (false, 0, 0, some e)
+    discard <| expectOk (← IO.ofExcept resA)
+    discard <| expectOk (← IO.ofExcept resB)
     -- Assemble the self-contained .ixc dir via the CLI, then gate on
     -- the manifest through the in-process core (info/verify FFI) — no
     -- report artifacts anywhere in this flow.
@@ -80,8 +78,7 @@ private def dedupTest : IO (Bool × Nat × Nat × Option String) := do
       args := #["catalog", "assemble", ixc, pieceA, pieceB,
         "--labels", "A,B"] }
     if r.exitCode != 0 then
-      return (false, 0, 0, some s!"assemble failed ({r.exitCode}): \
-{r.stderr.take 300}")
+      fail s!"assemble failed ({r.exitCode}): {r.stderr.take 300}"
     let infoContent ← Ix.Cli.CatalogCmd.rsCatalogInfoFFI ixc
     let verifyContent ← Ix.Cli.CatalogCmd.rsCatalogVerifyFFI ixc false
     let checks : Except String (Nat × Nat) := do
@@ -100,15 +97,11 @@ content got different addresses across processes"
         throw s!"union {union} not larger than both pieces ({a}, {b}) — \
 the collision pair's distinct content collapsed"
       return (union, a + b)
-    match checks with
-    | .ok (union, sum) => return (true, union, sum, none)
-    | .error m => return (false, 0, 0, some m)
+    discard <| expectOk checks
   finally
     IO.FS.removeDirAll dir
 
-def suite : List TestSeq := [
-  .individualIO
-    "catalog-dedup: cross-process pieces share addresses, collisions coexist"
-    none dedupTest .done ]
+def suite : LSpec.Spec := do
+  it "catalog-dedup: cross-process pieces share addresses, collisions coexist" dedupTest
 
 end Tests.Ix.CatalogDedup

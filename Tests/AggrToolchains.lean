@@ -41,6 +41,8 @@ public section
 
 namespace Tests.Aggr.Toolchains
 
+open LSpec
+
 private def isAddressHex (s : String) : Bool :=
   s.length == 64 && s.all fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')
 
@@ -204,8 +206,9 @@ def run : IO UInt32 := do
       #["--max-ram", toString maxRam])
     checks := checks.push ("the join refuses a catalog with a member root missing",
       refusedJoin.exitCode != 0)
-    LSpec.lspecIO (.ofList [("aggregate-toolchains",
-      checks.toList.map fun (label, ok) => LSpec.test label ok)]) []
+    LSpec.lspecMain (describe "aggregate-toolchains" do
+      for (label, ok) in checks do
+        itBool label ok) []
   finally
     IO.FS.removeDirAll home
     IO.FS.removeDirAll dir

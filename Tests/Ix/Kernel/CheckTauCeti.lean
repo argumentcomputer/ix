@@ -87,11 +87,11 @@ private def filterFocusConsts (names : Array Lean.Name) : IO (Array Lean.Name) :
     IO.println s!"[check-tauceti] IX_KERNEL_FOCUS_CONST={filter} matched {filtered.size}/{names.size}"
     pure filtered
 
-def testRustCheckTauCetiConsts (names : Array Lean.Name := focusConsts) : TestSeq :=
-  .individualIO s!"kernel check {names.size} TauCeti focus consts" none (do
+def testRustCheckTauCetiConsts (names : Array Lean.Name := focusConsts) : Spec :=
+  it s!"kernel check {names.size} TauCeti focus consts" do
     unless (← ixePath.pathExists) do
-      return (false, 0, names.size, some s!"{ixePath} missing — build it \
-        with `ix compile Benchmarks/Compile/TauCeti.lean` (see module docstring)")
+      fail s!"{ixePath} missing — build it \
+        with `ix compile Benchmarks/Compile/TauCeti.lean` (see module docstring)"
     let names ← filterFocusConsts names
     let expectPass : Array Bool := names.map expectedPass
     let start ← IO.monoMsNow
@@ -129,14 +129,9 @@ def testRustCheckTauCetiConsts (names : Array Lean.Name := focusConsts) : TestSe
       for (name, msg) in failures do
         IO.println s!"  ✗ {name}: {msg}"
 
-    let total := passed + failures.size
-    if failures.isEmpty then
-      return (true, passed, total, none)
-    else
-      return (false, passed, total,
-        some s!"TauCeti focus check failed with {failures.size} failure(s)")
-  ) .done
+    expect failures.isEmpty s!"TauCeti focus check failed with {failures.size} failure(s)"
 
-def suite : List TestSeq := [testRustCheckTauCetiConsts]
+def suite : LSpec.Spec := do
+  testRustCheckTauCetiConsts
 
 end Tests.Ix.Kernel.CheckTauCeti

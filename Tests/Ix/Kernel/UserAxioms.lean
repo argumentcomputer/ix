@@ -146,16 +146,12 @@ def gateChecks : Except String Unit := do
       (env.consts.length == env'.consts.length)
   | _, _ => throw "the prelude through the entry does not accept under both policies"
 
-private def unit (label : String) (check : Unit → Except String Unit) : LSpec.TestSeq :=
-  .individualIO label none (do
-    let result ← IO.lazyPure check
-    return match result with
-      | .ok _ => (true, 0, 0, none)
-      | .error message => (false, 0, 0, some message)) .done
+private def unit (label : String) (check : Unit → Except String Unit) : LSpec.Spec :=
+  it label do
+    let _ ← LSpec.expectOk (check ())
 
-def suite : List LSpec.TestSeq := [
-  unit "the fold under each axiom policy: user axioms, axiom role specifications, T1" (fun _ => foldChecks),
+def suite : LSpec.Spec := do
+  unit "the fold under each axiom policy: user axioms, axiom role specifications, T1" (fun _ => foldChecks)
   unit "the role table's admission under each axiom policy" (fun _ => gateChecks)
-]
 
 end Tests.Ix.Kernel.UserAxioms

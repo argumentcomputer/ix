@@ -5,6 +5,7 @@ public import Lean.Expr
 public import Lean.Declaration
 public import Lean.Environment
 public import Lean.Elab.Frontend
+import Std.Sync.Mutex
 
 public section
 
@@ -322,14 +323,24 @@ def checkToolchain : IO Unit := do
     if version != expectedVersion then
       IO.println s!"Warning: expected toolchain '{expectedVersion}' but got '{version}'"
 
+private initialize leanImportMutex : Std.Mutex Unit ← Std.Mutex.new ()
+
+/-- Serialize `Lean.enableInitializersExecution` + `importModules` / `processHeader`
+    across concurrent threads: `enableInitializersExecution` sets a process-global
+    flag that `importModules` resets on completion, and `initSearchPath` mutates
+    process-global `Lean.searchPathRef`. -/
+def _root_.Ix.withImportLock (action : IO α) : IO α :=
+  leanImportMutex.atomically action
+
 open Elab in
 open System (FilePath) in
 def runFrontend (input : String) (filePath : FilePath) : IO Environment := do
   checkToolchain
   let inputCtx := Parser.mkInputContext input filePath.toString
   let (header, parserState, messages) ← Parser.parseHeader inputCtx
-  unsafe enableInitializersExecution  -- required for `processHeader`'s `loadExts := true` import
-  let (env, messages) ← processHeader header default messages inputCtx 0
+  let (env, messages) ← _root_.Ix.withImportLock do
+    unsafe enableInitializersExecution  -- required for `processHeader`'s `loadExts := true` import
+    processHeader header default messages inputCtx 0
   let env := env.setMainModule default
   let commandState := Command.mkState env messages default
   let s ← IO.processCommands inputCtx parserState commandState

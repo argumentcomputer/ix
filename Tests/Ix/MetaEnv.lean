@@ -40,21 +40,20 @@ private def constKind : Lean.ConstantInfo → String
   | .inductInfo _ => "an inductive" | .ctorInfo _ => "a constructor"
   | .recInfo _ => "a recursor" | .quotInfo _ => "a quotient primitive"
 
-/-- Load a tmpdir fixture with `getFileEnvCore` and run `check` on the result
-(the fixture file is gone by the time the TestSeq is folded, so checks run
-eagerly here). -/
+/-- Load a tmpdir fixture with `getFileEnvCore` and run `check` on the result. -/
 private def withFixture (name source : String)
-    (check : FilePath → FileEnv → IO (Bool × Option String))
-    : IO (Bool × Nat × Nat × Option String) := do
+    (check : FilePath → FileEnv → AssertM Unit) : AssertM Unit := do
   let dir ← IO.FS.createTempDir
   let path := dir / name
   IO.FS.writeFile path source
   try
-    let fe ← getFileEnvCore path
-    let (ok, err?) ← check path fe
-    return (ok, 0, 0, err?)
-  catch e =>
-    return (false, 0, 0, some s!"getFileEnvCore failed: {e}")
+    let feRes : Except String FileEnv ← liftM (m := IO) do
+      try
+        pure (.ok (← getFileEnvCore path))
+      catch e =>
+        pure (.error s!"getFileEnvCore failed: {e}")
+    let fe ← expectOk feRes
+    check path fe
   finally
     IO.FS.removeDirAll dir
 
@@ -82,56 +81,51 @@ private def checkFullContent (env : Lean.Environment) (marker : Lean.Name)
   | some ci => some s!"Nat.add_comm is {constKind ci}, expected a theorem with a proof"
   | none => some "Nat.add_comm missing from env"
 
-def moduleFileTest : TestSeq :=
-  .individualIO "module header: full content + isModule flag" none
-    (withFixture "ModFixture.lean" moduleSource fun _ fe => do
-      if !fe.isModule then
-        return (false, some "isModule = false for a `module` header")
+def moduleFileTest : LSpec.Spec := do
+  it "module header: full content + isModule flag" do
+    withFixture "ModFixture.lean" moduleSource fun _ fe => do
+      expect fe.isModule "isModule = false for a `module` header"
       -- The env must also carry private transitive imports (absent entirely
       -- at exported level).
       let privCount := fe.env.constants.toList.countP fun (n, _) => isPrivateName n
-      if privCount == 0 then
-        return (false, some "no _private.* constants — exported-level trim suspected")
-      match checkFullContent fe.env `TestsMetaEnv.modMarker with
-      | some e => return (false, some e)
-      | none => return (true, none)) .done
+      expect (privCount != 0) "no _private.* constants — exported-level trim suspected"
+      if let some e := checkFullContent fe.env `TestsMetaEnv.modMarker then
+        fail e
 
-def classicFileTest : TestSeq :=
-  .individualIO "classic header: full content + isModule flag" none
-    (withFixture "ClassicFixture.lean" classicSource fun _ fe => do
-      if fe.isModule then
-        return (false, some "isModule = true for a classic header")
-      match checkFullContent fe.env `TestsMetaEnv.classicMarker with
-      | some e => return (false, some e)
-      | none => return (true, none)) .done
+def classicFileTest : LSpec.Spec := do
+  it "classic header: full content + isModule flag" do
+    withFixture "ClassicFixture.lean" classicSource fun _ fe => do
+      expectFalse fe.isModule "isModule = true for a classic header"
+      if let some e := checkFullContent fe.env `TestsMetaEnv.classicMarker then
+        fail e
 
 /-- Scoping: `defaultConstList` on a module-mode file must (a) keep the file's
 own definitions, (b) keep module-visible imports, (c) pull in referenced
 `_private.*` proof auxiliaries through the closure — with their full-content
 `ConstantInfo`s (theorems stay theorems) — and (d) still exclude some of the
 full env (the unreferenced foreign privates the `module` header conceals). -/
-def scopedListTest : TestSeq :=
-  .individualIO "module header: defaultConstList scopes names, not content" none
-    (withFixture "ScopeFixture.lean" moduleSource fun path fe => do
+def scopedListTest : LSpec.Spec := do
+  it "module header: defaultConstList scopes names, not content" do
+    withFixture "ScopeFixture.lean" moduleSource fun path fe => do
       let closed ← defaultConstList fe path.toString
       let full := fe.env.constants.toList.length
       let names : Std.HashSet Lean.Name := .ofList (closed.map (·.1))
-      if !names.contains `TestsMetaEnv.modMarker then
-        return (false, some "local definition missing from scoped list")
+      expect (names.contains `TestsMetaEnv.modMarker)
+        "local definition missing from scoped list"
       let addComm := closed.find? fun (n, _) => n == `Nat.add_comm
       match addComm with
       | some (_, .thmInfo _) => pure ()
       | some (_, ci) =>
-        return (false, some s!"scoped Nat.add_comm is {constKind ci}, expected a theorem")
-      | none => return (false, some "Nat.add_comm missing from scoped list")
+        fail s!"scoped Nat.add_comm is {constKind ci}, expected a theorem"
+      | none => fail "Nat.add_comm missing from scoped list"
       let privCount := closed.countP fun (n, _) => isPrivateName n
-      if privCount == 0 then
-        return (false, some "closure pulled in no _private.* proof auxiliaries")
-      if closed.length ≥ full then
-        return (false, some s!"scoped list ({closed.length}) does not exclude \
-anything from the full env ({full})")
-      return (true, none)) .done
+      expect (privCount != 0) "closure pulled in no _private.* proof auxiliaries"
+      expect (decide (closed.length < full))
+        s!"scoped list ({closed.length}) does not exclude anything from the full env ({full})"
 
-def suite : List TestSeq := [moduleFileTest, classicFileTest, scopedListTest]
+def suite : LSpec.Spec := do
+  moduleFileTest
+  classicFileTest
+  scopedListTest
 
 end Tests.Ix.MetaEnv

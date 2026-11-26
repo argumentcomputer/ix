@@ -439,8 +439,8 @@ def runLeg (env : Lean.Environment) (dir : System.FilePath) (ref : Ixon.Env)
     ({classes.size} distinct closures, {(← IO.monoMsNow) - t0} ms)"
   return failed
 
-def suite : List TestSeq := [
-  .individualIO "aux addresses are closure-invariant" none (do
+def suite : LSpec.Spec := do
+  it "aux addresses are closure-invariant" do
     let env ← get_env!
     let fx := `Tests.Ix.Compile.AuxiliaryClosureCanon.Fx
     let seeds := (env.constants.toList.filterMap fun (n, _) =>
@@ -455,7 +455,7 @@ def suite : List TestSeq := [
     let ref ← match ← compileClosure env dir "ref"
         (Ix.EnvScope.collectSelectedDepsWith env units seeds.toList) (bind := true) with
       | .ok e => pure e
-      | .error e => throw (IO.userError s!"reference compile: {e}")
+      | .error e => fail s!"reference compile: {e}"
     IO.println s!"[canon-closure-aux] reference: {seeds.size} seeds, {ref.named.size} names, \
       bound ({(← IO.monoMsNow) - t0} ms); files in {dir}"
     -- Leg 1, the closure producers (`collectDeps`): every address is the
@@ -508,12 +508,8 @@ def suite : List TestSeq := [
     let twinErrors := twinRecursorCheck env
     for e in twinErrors do IO.println s!"[canon-closure-aux] FAIL {e}"
     IO.println s!"[canon-closure-aux] twin: {if twinErrors.isEmpty then "ok" else "FAIL"}"
-    let n := 3 * seeds.size + auxSeeds.size + 1
     let failed := f1 + f2 + f3 + f4 + (if twinErrors.isEmpty then 0 else 1)
     if failed == 0 then IO.FS.removeDirAll dir
-    return (failed == 0, n - failed, n,
-      if failed == 0 then none else some s!"{failed} seed check(s) failed"))
-    .done
-]
+    expect (failed == 0) s!"{failed} seed check(s) failed"
 
 end Tests.Ix.Compile.AuxiliaryClosureCanon

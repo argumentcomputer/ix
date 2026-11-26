@@ -36,15 +36,15 @@ private def filterFocusConsts (names : Array Lean.Name) : IO (Array Lean.Name) :
       {filtered.size}/{names.size}"
     pure filtered
 
-def testRustCheckCompPoly : TestSeq :=
-  .individualIO s!"kernel check {focusConsts.size} CompPoly focus const(s)" none (do
+def testRustCheckCompPoly : Spec :=
+  it s!"kernel check {focusConsts.size} CompPoly focus const(s)" do
     unless (← ixePath.pathExists) do
-      return (false, 0, focusConsts.size, some s!"{ixePath} missing — build it with \
+      fail s!"{ixePath} missing — build it with \
         `lake exe ix compile Benchmarks/Compile/CompPoly.lean \
-          --out comppoly.ixe --verbose`")
+          --out comppoly.ixe --verbose`"
     let names ← filterFocusConsts focusConsts
     if names.isEmpty then
-      return (false, 0, 0, some "IX_KERNEL_FOCUS_CONST matched no CompPoly canary")
+      fail "IX_KERNEL_FOCUS_CONST matched no CompPoly canary"
     let start ← IO.monoMsNow
     let expected := names.map fun _ => true
     let results ← rsCheckIxonFFI ixePath.toString names expected false ""
@@ -57,12 +57,9 @@ def testRustCheckCompPoly : TestSeq :=
       passed in {elapsed}ms"
     for (name, msg) in failures do
       IO.println s!"  ✗ {name}: {msg}"
-    if failures.isEmpty then
-      return (true, names.size, names.size, none)
-    return (false, names.size - failures.size, names.size,
-      some s!"CompPoly focus check failed with {failures.size} failure(s)")
-  ) .done
+    expect failures.isEmpty s!"CompPoly focus check failed with {failures.size} failure(s)"
 
-def suite : List TestSeq := [testRustCheckCompPoly]
+def suite : LSpec.Spec := do
+  testRustCheckCompPoly
 
 end Tests.Ix.Kernel.CheckCompPoly

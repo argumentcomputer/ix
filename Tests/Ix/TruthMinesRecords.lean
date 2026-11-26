@@ -30,32 +30,24 @@ open TruthMinesSpec
 
 namespace Tests.Ix.TruthMinesRecords
 
-private def check (ok : Bool) (message : String) :
-    Bool × Nat × Nat × Option String :=
-  (ok, 0, 0, if ok then none else some message)
-
-private def validationTest : IO (Bool × Nat × Nat × Option String) := do
+private def validationTest : AssertM Unit := do
   let errors := catalogValidationErrors
-  return check errors.isEmpty
+  expect errors.isEmpty
     s!"catalog validation errors:\n{String.intercalate "\n" errors.toList}"
 
-private def toolchainTest : IO (Bool × Nat × Nat × Option String) := do
+private def toolchainTest : AssertM Unit := do
   let repo := (← IO.FS.readFile "lean-toolchain").trimAscii.toString
   let workspace := (← IO.FS.readFile workspaceToolchainPath).trimAscii.toString
   let compileWorkspace :=
     (← IO.FS.readFile compileWorkspaceToolchainPath).trimAscii.toString
-  if repo != expectedToolchain then
-    return check false
-      s!"repo lean-toolchain `{repo}` != derived `{expectedToolchain}`"
-  if workspace != expectedToolchain then
-    return check false
-      s!"workspace lean-toolchain `{workspace}` != derived `{expectedToolchain}`"
-  if compileWorkspace != expectedToolchain then
-    return check false
-      s!"compile workspace lean-toolchain `{compileWorkspace}` != derived `{expectedToolchain}`"
-  return check true ""
+  expect (repo == expectedToolchain)
+    s!"repo lean-toolchain `{repo}` != derived `{expectedToolchain}`"
+  expect (workspace == expectedToolchain)
+    s!"workspace lean-toolchain `{workspace}` != derived `{expectedToolchain}`"
+  expect (compileWorkspace == expectedToolchain)
+    s!"compile workspace lean-toolchain `{compileWorkspace}` != derived `{expectedToolchain}`"
 
-private def projectionTest : IO (Bool × Nat × Nat × Option String) := do
+private def projectionTest : AssertM Unit := do
   let mut expected := [
     (workspaceLakefilePath, renderWorkspaceLakefile),
     (workspaceToolchainPath, renderWorkspaceToolchain),
@@ -68,10 +60,9 @@ private def projectionTest : IO (Bool × Nat × Nat × Option String) := do
       (compileMemberModulePath lib.qualifier, renderCompileMemberModule lib)]
   for (path, content) in expected do
     unless (← path.pathExists) do
-      return check false s!"{path} missing — run `lake exe truthmines gen`"
+      fail s!"{path} missing — run `lake exe truthmines gen`"
     unless (← IO.FS.readFile path) == content do
-      return check false s!"{path} is stale — run `lake exe truthmines gen`"
-  return check true ""
+      fail s!"{path} is stale — run `lake exe truthmines gen`"
 
 /-- Lake stores non-identifier package names guillemet-quoted in the
 lockfile (`«lean-grpc»`); the records carry them bare. -/
@@ -119,13 +110,11 @@ private def manifestErrors (content : String) : Except String (Array String) := 
           s!"lockfile places `{fixture}` at `{lockDir}`, expected `{dir}`"
   return errors
 
-private def manifestTest : IO (Bool × Nat × Nat × Option String) := do
+private def manifestTest : AssertM Unit := do
   let content ← IO.FS.readFile workspaceManifestPath
-  match manifestErrors content with
-  | .error error => return check false s!"lockfile walk failed: {error}"
-  | .ok errors =>
-    return check errors.isEmpty
-      s!"lockfile/record drift:\n{String.intercalate "\n" errors.toList}"
+  let errors ← expectOk ((manifestErrors content).mapError (s!"lockfile walk failed: {·}"))
+  expect errors.isEmpty
+    s!"lockfile/record drift:\n{String.intercalate "\n" errors.toList}"
 
 /-- The independent fidelity workspace shares the canonical package store and
     adds exactly one authored source pin: the aggregate Palomar.ix library. -/
@@ -162,52 +151,42 @@ private def compileManifestErrors (content : String) : Except String (Array Stri
     errors := errors.push "compile lockfile is missing canonical TruthMines path"
   return errors
 
-private def compileManifestTest : IO (Bool × Nat × Nat × Option String) := do
+private def compileManifestTest : AssertM Unit := do
   let content ← IO.FS.readFile compileWorkspaceManifestPath
-  match compileManifestErrors content with
-  | .error error => return check false s!"compile lockfile walk failed: {error}"
-  | .ok errors =>
-    return check errors.isEmpty
-      s!"compile lockfile drift:\n{String.intercalate "\n" errors.toList}"
+  let errors ← expectOk ((compileManifestErrors content).mapError (s!"compile lockfile walk failed: {·}"))
+  expect errors.isEmpty
+    s!"compile lockfile drift:\n{String.intercalate "\n" errors.toList}"
 
 /-- The positional member vector is what `ix catalog` receives: one
 `Qualifier=Root[,Root…]` entry per member, parseable by the same
 splitting the CLI does (`=` once, roots comma-joined, no whitespace or
 empty components anywhere). -/
-private def specArgvTest : IO (Bool × Nat × Nat × Option String) := do
+private def specArgvTest : AssertM Unit := do
   for (label, spec) in [("full", catalogSpec), ("mini", catalogMiniSpec)] do
     let rendered := commandArguments spec
     if rendered.size != spec.libs.size then
-      return check false
-        s!"{label}: {rendered.size} argv entries for {spec.libs.size} members"
+      fail s!"{label}: {rendered.size} argv entries for {spec.libs.size} members"
     for (entry, lib) in rendered.zip spec.libs do
       let parts := entry.splitOn "="
       match parts with
       | [qualifier, roots] =>
         if qualifier.isEmpty || qualifier != lib.qualifier.toString (escape := false) then
-          return check false s!"{label}: qualifier drift in `{entry}`"
+          fail s!"{label}: qualifier drift in `{entry}`"
         let rootParts := roots.splitOn ","
         if rootParts.length != lib.roots.size ||
             rootParts.any (·.isEmpty) then
-          return check false s!"{label}: root list drift in `{entry}`"
+          fail s!"{label}: root list drift in `{entry}`"
         if entry.any (fun c => c == ' ' || c == '\n') then
-          return check false s!"{label}: whitespace in argv entry `{entry}`"
+          fail s!"{label}: whitespace in argv entry `{entry}`"
       | _ =>
-        return check false s!"{label}: entry `{entry}` is not `Qualifier=Roots`"
-  return check true ""
+        fail s!"{label}: entry `{entry}` is not `Qualifier=Roots`"
 
-def suite : List TestSeq := [
-  .individualIO "truthmines records: catalog validation clean"
-    none validationTest .done,
-  .individualIO "truthmines records: one toolchain by construction"
-    none toolchainTest .done,
-  .individualIO "truthmines records: workspace projections byte-identical"
-    none projectionTest .done,
-  .individualIO "truthmines records: lockfile pins match the records"
-    none manifestTest .done,
-  .individualIO "truthmines records: compile workspace pins are coherent"
-    none compileManifestTest .done,
-  .individualIO "truthmines records: positional spec argv is well-formed"
-    none specArgvTest .done ]
+def suite : LSpec.Spec := do
+  it "truthmines records: catalog validation clean" validationTest
+  it "truthmines records: one toolchain by construction" toolchainTest
+  it "truthmines records: workspace projections byte-identical" projectionTest
+  it "truthmines records: lockfile pins match the records" manifestTest
+  it "truthmines records: compile workspace pins are coherent" compileManifestTest
+  it "truthmines records: positional spec argv is well-formed" specArgvTest
 
 end Tests.Ix.TruthMinesRecords

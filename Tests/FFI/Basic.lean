@@ -8,7 +8,7 @@ public import LSpec
 public import Tests.Gen.Basic
 public import Std.Data.HashMap
 
-open LSpec SlimCheck Gen
+open LSpec LSpec.Prop Gen
 
 namespace Tests.FFI.Basic
 
@@ -42,25 +42,25 @@ def assocListEq (l1 l2 : AssocList Nat (fun _ => Nat)) : Bool :=
     l.toList.map fun ⟨k, v⟩ => (k, v)
   toSimpleList l1 == toSimpleList l2
 
-def assocListTests : TestSeq :=
+def assocListTests : LSpec.Spec := do
   let emptyList : AssocList Nat (fun _ => Nat) := .nil
   let single : AssocList Nat (fun _ => Nat) := .cons 1 42 .nil
   let double : AssocList Nat (fun _ => Nat) := .cons 2 99 (.cons 1 42 .nil)
-  test "AssocList nil" (assocListEq (roundtripAssocListNatNat emptyList) emptyList) ++
-  test "AssocList single" (assocListEq (roundtripAssocListNatNat single) single) ++
-  test "AssocList double" (assocListEq (roundtripAssocListNatNat double) double)
+  itBool "AssocList nil" (assocListEq (roundtripAssocListNatNat emptyList) emptyList)
+  itBool "AssocList single" (assocListEq (roundtripAssocListNatNat single) single)
+  itBool "AssocList double" (assocListEq (roundtripAssocListNatNat double) double)
 
-def hashMapTests : TestSeq :=
-  test "HashMap empty" (hashMapEq (roundtripHashMapNatNat {}) {}) ++
-  test "HashMap single" (hashMapEq (roundtripHashMapNatNat (({} : Std.HashMap Nat Nat).insert 1 42)) (({} : Std.HashMap Nat Nat).insert 1 42))
+def hashMapTests : LSpec.Spec := do
+  itBool "HashMap empty" (hashMapEq (roundtripHashMapNatNat {}) {})
+  itBool "HashMap single" (hashMapEq (roundtripHashMapNatNat (({} : Std.HashMap Nat Nat).insert 1 42)) (({} : Std.HashMap Nat Nat).insert 1 42))
 
-def dHashMapRawTests : TestSeq :=
+def dHashMapRawTests : LSpec.Spec := do
   let emptyMap : DHashMapRaw Nat (fun _ => Nat) := {}
   let single : DHashMapRaw Nat (fun _ => Nat) := ({} : DHashMapRaw Nat (fun _ => Nat)).insert 1 42
   let double : DHashMapRaw Nat (fun _ => Nat) := (({} : DHashMapRaw Nat (fun _ => Nat)).insert 1 42).insert 2 99
-  test "DHashMapRaw empty" (dHashMapRawEq (roundtripDHashMapRawNatNat emptyMap) emptyMap) ++
-  test "DHashMapRaw single" (dHashMapRawEq (roundtripDHashMapRawNatNat single) single) ++
-  test "DHashMapRaw double" (dHashMapRawEq (roundtripDHashMapRawNatNat double) double)
+  itBool "DHashMapRaw empty" (dHashMapRawEq (roundtripDHashMapRawNatNat emptyMap) emptyMap)
+  itBool "DHashMapRaw single" (dHashMapRawEq (roundtripDHashMapRawNatNat single) single)
+  itBool "DHashMapRaw double" (dHashMapRawEq (roundtripDHashMapRawNatNat double) double)
 
 /-! ## Mixed-width scalar records
 
@@ -86,30 +86,31 @@ opaque mixedScalarsFields : @& MixedScalars → String × Array Nat
 @[extern "rs_roundtrip_mixed_scalars"]
 opaque roundtripMixedScalars : @& MixedScalars → MixedScalars
 
-def mixedScalarsTests : TestSeq :=
+def mixedScalarsTests : LSpec.Spec := do
   let m : MixedScalars :=
     ⟨true, 0x0102030405060708, "mixed", 0xab, 0xcdef, 0x89abcdef, 12345, 678⟩
   let z : MixedScalars := ⟨false, 0, "", 0, 0, 0, 0, 0⟩
-  test "MixedScalars fields read from Lean" (mixedScalarsFields m ==
-    ("mixed", #[1, 0x0102030405060708, 0xab, 0xcdef, 0x89abcdef, 12345, 678])) ++
-  test "MixedScalars zero fields read from Lean" (mixedScalarsFields z ==
-    ("", #[0, 0, 0, 0, 0, 0, 0])) ++
-  test "MixedScalars roundtrip" (roundtripMixedScalars m == m) ++
-  test "MixedScalars zero roundtrip" (roundtripMixedScalars z == z)
+  itBool "MixedScalars fields read from Lean" (mixedScalarsFields m ==
+    ("mixed", #[1, 0x0102030405060708, 0xab, 0xcdef, 0x89abcdef, 12345, 678]))
+  itBool "MixedScalars zero fields read from Lean" (mixedScalarsFields z ==
+    ("", #[0, 0, 0, 0, 0, 0, 0]))
+  itBool "MixedScalars roundtrip" (roundtripMixedScalars m == m)
+  itBool "MixedScalars zero roundtrip" (roundtripMixedScalars z == z)
 
 /-! ## Test Suite -/
 
-public def suiteWith (cfg : SlimCheck.Configuration := {}) : List TestSeq := [
-  assocListTests,
-  hashMapTests,
-  dHashMapRawTests,
-  mixedScalarsTests,
-  checkIO "HashMap Nat Nat roundtrip" (∀ m : Std.HashMap Nat Nat, hashMapEq (roundtripHashMapNatNat m) m) .done cfg,
-  checkIO "DHashMapRaw Nat Nat roundtrip" (∀ m : Std.HashMap Nat Nat,
-    let raw := m.toList.foldl (init := ({} : DHashMapRaw Nat (fun _ => Nat))) fun acc (k, v) => acc.insert k v
-    dHashMapRawEq (roundtripDHashMapRawNatNat raw) raw) .done cfg,
-]
+set_option compiler.extract_closed false in
+public def suiteWith (cfg : LSpec.Prop.PropertyConfig := {}) : Spec := do
+  assocListTests
+  hashMapTests
+  dHashMapRawTests
+  mixedScalarsTests
+  propWith "HashMap Nat Nat roundtrip" cfg fun (m : Std.HashMap Nat Nat) =>
+    hashMapEq (roundtripHashMapNatNat m) m
+  propWith "DHashMapRaw Nat Nat roundtrip" cfg fun (m : Std.HashMap Nat Nat) =>
+    let raw := m.toList.foldl (init := ({} : DHashMapRaw Nat (fun _ => Nat))) fun (acc : DHashMapRaw Nat (fun _ => Nat)) (k, v) => acc.insert k v
+    dHashMapRawEq (roundtripDHashMapRawNatNat raw) raw
 
-public def suite : List TestSeq := suiteWith {}
+public def suite : Spec := suiteWith {}
 
 end Tests.FFI.Basic

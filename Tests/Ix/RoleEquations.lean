@@ -108,16 +108,11 @@ def roleChecks : Except String Unit := do
   let missing ← checked #[.indDecl eqBasis 2, .indDecl natBasis 0]
   need "an absent operation is refused" (!(checkRole missing .intSub evidence).isOk)
 
-private def unit (label : String) (check : Unit → Except String Unit) : LSpec.TestSeq :=
-  .individualIO label none (do
-    let result ← IO.lazyPure check
-    return match result with
-      | .ok _ => (true, 0, 0, none)
-      | .error message => (false, 0, 0, some message)) .done
+private def unit (label : String) (check : Unit → Except String Unit) : LSpec.Spec :=
+  LSpec.itThunk label fun () => LSpec.expectOk (check ())
 
-public def suite : List LSpec.TestSeq := [
-  unit "dependent equation terms and proof evidence pass the real checker" (fun _ => equationChecks),
+public def suite : LSpec.Spec := do
+  unit "dependent equation terms and proof evidence pass the real checker" (fun _ => equationChecks)
   unit "definition behavior and evidence count satisfy the role specification" (fun _ => roleChecks)
-]
 
 end Tests.Ix.RoleEquations

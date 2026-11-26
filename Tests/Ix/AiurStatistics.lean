@@ -6,6 +6,8 @@ public section
 namespace Tests.Ix.AiurStatistics
 open Aiur LSpec Lean
 
+set_option compiler.extract_closed false
+
 private def shape : CircuitShape :=
   { mainWidth := 3, stage2Width := 3, quotientDegree := 2,
     preprocessedWidth := 100, preprocessedHeight := 0 }
@@ -23,37 +25,41 @@ private def raw (c : Json) (degree : Nat := 3) : Json := Json.mkObj [
   ("log_blowup", toJson (2 : Nat)), ("extension_degree", toJson degree),
   ("circuits", .arr #[c])]
 
-def suite : List TestSeq := [
-  AiurTests.Cost.tests,
-  let stats := computeStats { logBlowup := 2, circuits := #[measurement "small" 1 3, measurement "large" 4 0] }
-  test "cached and uncached totals use the same model"
-    (stats.roundedFftCost == 780 && stats.totalUncachedFftCost == 1392.0 && stats.totalCacheHits == 3)
-  ++ test "display ranks circuits by cost" (stats.circuits[0]!.name == "large"),
-  test "decode real host field names"
+def suite : LSpec.Spec := do
+  AiurTests.Cost.tests
+  it "cached and uncached totals use the same model" do
+    let stats := computeStats { logBlowup := 2, circuits := #[measurement "small" 1 3, measurement "large" 4 0] }
+    expect (stats.roundedFftCost == 780 && stats.totalUncachedFftCost == 1392.0 && stats.totalCacheHits == 3)
+  it "display ranks circuits by cost" do
+    let stats := computeStats { logBlowup := 2, circuits := #[measurement "small" 1 3, measurement "large" 4 0] }
+    expect (stats.circuits[0]!.name == "large")
+  itBool "decode real host field names"
     ((ExecutionMeasurements.fromJson (raw (rawCircuit 3 2 0))).toOption.any fun m =>
       m.circuits.size == 1 && m.circuits[0]!.height == 3 && m.circuits[0]!.cacheHits == 2)
-  ++ test "fixed tables keep their full height"
+  itBool "fixed tables keep their full height"
     ((ExecutionMeasurements.fromJson (raw (rawCircuit 4 0 4))).isOk)
-  ++ test "reject truncated fixed tables"
+  itBool "reject truncated fixed tables"
     ((ExecutionMeasurements.fromJson (raw (rawCircuit 3 0 4))).toOption.isNone)
-  ++ test "reject cache savings on fixed tables"
+  itBool "reject cache savings on fixed tables"
     ((ExecutionMeasurements.fromJson (raw (rawCircuit 4 1 4))).toOption.isNone)
-  ++ test "reject missing counts"
+  itBool "reject missing counts"
     ((ExecutionMeasurements.fromJson (raw (Json.mkObj []))).toOption.isNone)
-  ++ test "reject an incompatible extension degree"
-    ((ExecutionMeasurements.fromJson (raw (rawCircuit 4 0 0) 2)).toOption.isNone),
-  let report := Json.mkObj [("execution_statistics", raw (rawCircuit 4 0 0)),
-    ("verified", toJson true)]
-  let enriched := enrichExecutionReport report
-  test "benchmark reports contain Lean-computed FFT costs"
-    ((enriched >>= (·.getObjValAs? Nat "fft-cost")).toOption == some 696)
-  ++ test "keep existing report fields"
-    ((enriched >>= (·.getObjValAs? Bool "verified")).toOption == some true)
-  ++ test "a missing execution does not fabricate zero cost"
+  itBool "reject an incompatible extension degree"
+    ((ExecutionMeasurements.fromJson (raw (rawCircuit 4 0 0) 2)).toOption.isNone)
+  it "benchmark reports contain Lean-computed FFT costs" do
+    let report := Json.mkObj [("execution_statistics", raw (rawCircuit 4 0 0)),
+      ("verified", toJson true)]
+    let enriched := enrichExecutionReport report
+    expect ((enriched >>= (·.getObjValAs? Nat "fft-cost")).toOption == some 696)
+  it "keep existing report fields" do
+    let report := Json.mkObj [("execution_statistics", raw (rawCircuit 4 0 0)),
+      ("verified", toJson true)]
+    let enriched := enrichExecutionReport report
+    expect ((enriched >>= (·.getObjValAs? Bool "verified")).toOption == some true)
+  itBool "a missing execution does not fabricate zero cost"
     (((enrichExecutionReport (Json.mkObj [])) >>= (·.getObjVal? "fft-cost")).toOption.isNone)
-  ++ test "malformed measurements fail the report"
+  itBool "malformed measurements fail the report"
     ((enrichExecutionReport (Json.mkObj [("execution_statistics", .null)])).toOption.isNone)
-]
 
 end Tests.Ix.AiurStatistics
 end

@@ -12,14 +12,13 @@ public import Tests.FFI.Refcount
 
 namespace Tests.FFI
 
-public def suiteWith (cfg : SlimCheck.Configuration := {}) (valgrind : Bool := false) :
-    List LSpec.TestSeq := List.foldr (· ++ ·) []
-  [ Tests.FFI.Basic.suiteWith cfg
-  , Tests.FFI.Ixon.suiteWith cfg
-  , Tests.FFI.Lifecycle.suiteWith cfg
-  , Tests.FFI.Refcount.suiteWith cfg valgrind
-  ]
+public def suiteWith (cfg : LSpec.Prop.PropertyConfig := {}) (valgrind : Bool := false) :
+    LSpec.Spec := do
+  Tests.FFI.Basic.suiteWith cfg
+  Tests.FFI.Ixon.suiteWith cfg
+  Tests.FFI.Lifecycle.suiteWith cfg
+  Tests.FFI.Refcount.suiteWith cfg valgrind
 
-public def suite : List LSpec.TestSeq := suiteWith {} false
+public def suite : LSpec.Spec := suiteWith {} false
 
 end Tests.FFI

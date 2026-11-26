@@ -210,25 +210,24 @@ def fieldOfWidth (f : Nat) : Field := if f == 0 then .lvls else if f == 2 then .
 /-- The host writes the expected bytes, and `Canonical.deConstant` accepts every
 valid rewritten constant in `expectedVectors` and `boundaryCases` (rejecting
 only level counts `≥ Ixon.maxLevelCount`). -/
-def expectedHostTests : TestSeq :=
-  let encodingTests := expectedVectors.foldl (init := .done) fun acc (f, flag, v, bytes) =>
+def expectedHostTests : LSpec.Spec := do
+  for (f, flag, v, bytes) in expectedVectors do
     let field := fieldOfWidth f
     let effFlag := if field == .type && !(flags .type v).contains flag then 0x1 else flag
     let enc : ByteArray := if field == .type then tagNBytes 4 effFlag v else ⟨bytes⟩
     let rewritten := rewrite field enc
     let expectOk := field != .lvls || v < Ixon.maxLevelCount
-    acc ++ test s!"host TagN f={f} flag={flag} writes {v} as {bytes}"
+    itBool s!"host TagN f={f} flag={flag} writes {v} as {bytes}"
       (tagNBytes f flag v == ⟨bytes⟩)
-      ++ test s!"host Canonical.deConstant accepts={expectOk} expected f={f} value={v}"
-        ((Ixon.Canonical.deConstant rewritten.size Ixon.loadMaxUnivNodes rewritten).isOk == expectOk)
-  let boundaryDecodeTests := fields.foldl (init := .done) fun acc field =>
-    (boundaries field.width).foldl (init := acc) fun acc v =>
-      (flags field v).foldl (init := acc) fun acc flag =>
+    itBool s!"host Canonical.deConstant accepts={expectOk} expected f={f} value={v}"
+      ((Ixon.Canonical.deConstant rewritten.size Ixon.loadMaxUnivNodes rewritten).isOk == expectOk)
+  for field in fields do
+    for v in boundaries field.width do
+      for flag in flags field v do
         let rewritten := rewrite field (encodingOf field flag v)
         let expectOk := field != .lvls || v < Ixon.maxLevelCount
-        acc ++ test s!"host Canonical.deConstant accepts={expectOk} boundary f={field.width} flag={flag} value={v}"
+        itBool s!"host Canonical.deConstant accepts={expectOk} boundary f={field.width} flag={flag} value={v}"
           ((Ixon.Canonical.deConstant rewritten.size Ixon.loadMaxUnivNodes rewritten).isOk == expectOk)
-  encodingTests ++ boundaryDecodeTests
 
 /-- The expected encodings in their field. A flag the field gives no free value
 (an expression of another kind) is read under the field's own flag. -/
@@ -387,7 +386,7 @@ def invalidCodeSample (_ : Unit) : Array Builder := Id.run do
 /-- PR fast suite: host checks, all expected/rejected/boundary/level-count/parity/
 universe-variable cases, and a boundary sample of invalid codes. -/
 def run : IO UInt32 := do
-  let host ← lspecIO (.ofList [("ixvm-tagn host", [expectedHostTests])]) []
+  let host ← lspecMain (describe "ixvm-tagn host" expectedHostTests) []
   let cases := expectedCases () ++ rejectedCases () ++ boundaryCases () ++ invalidCodeSample ()
     ++ levelCountCases () ++ levelCountParityCases () ++ universeVariableCases ()
   -- The universe-variable cases are decided by the circuit's range check, so

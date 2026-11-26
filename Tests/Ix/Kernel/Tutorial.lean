@@ -164,8 +164,8 @@ def rsCheckMalformedRecRuleIxonFFI
   | some (outcome, reason) => return some (.kernelException s!"{outcome}: {reason}")
   | none => return some (.kernelException s!"missing verdict for {recName}")
 
-def testTutorialConsts : TestSeq :=
-  .individualIO "kernel tutorial checks" none (do
+def testTutorialConsts : Spec :=
+  it "kernel tutorial checks" do
     let leanEnv ← get_env!
     let testCases := TutorialMeta.getTestCases leanEnv
 
@@ -500,12 +500,9 @@ def testTutorialConsts : TestSeq :=
       IO.println e
 
     IO.println s!"[kernel-tutorial] {passed} passed, {failed} failed"
-    if failed == 0 then
-      return (true, passed, 0, none)
-    else
-      return (false, passed, passed + failed, some s!"{failed} checks failed")
-  ) .done
+    expect (failed == 0) s!"{failed} checks failed"
 
-def suite : List TestSeq := [testTutorialConsts]
+def suite : LSpec.Spec := do
+  testTutorialConsts
 
 end Tests.Ix.Kernel.Tutorial

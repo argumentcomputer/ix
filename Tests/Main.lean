@@ -104,8 +104,7 @@ def registry : List Entry := [
   .suite "import-ixe" .primary Tests.Ix.ImportIxe.suite,
   .suite "lean-export" .primary Tests.Ix.LeanExport.suite,
   .suite "truthmines-spec" .primary Tests.Ix.TruthMinesRecords.suite,
-  -- `concurrently`: the long role and admission checks run at once
-  .suiteIO "ixon" .primary (concurrently (Tests.Ixon.suite ++ Tests.Ix.IxonUniverse.suite)),
+  .suite "ixon" .primary (do Tests.Ixon.suite; Tests.Ix.IxonUniverse.suite),
   .suiteIO "ixon-reject-parity" .primary Tests.Ix.IxonRejectParity.suite,
   .suiteIO "ixon-rust-parity" .primary Tests.Ix.IxonRustParity.suite,
   .suite "role-equations" .primary Tests.Ix.RoleEquations.suite,
@@ -114,9 +113,9 @@ def registry : List Entry := [
   .suite "merkle" .primary Tests.Merkle.suite,
   .suite "assumption-tree" .primary Tests.AssumptionTree.suite,
   .suite "commit" .primary Tests.Commit.suite,
-  .suiteIO "exact-sharing" .primary (concurrently (Tests.SharingExact.suite ++ Tests.SharingUniform.suite ++ Tests.SharingTiered.suite)),
+  .suite "exact-sharing" .primary (do Tests.SharingExact.suite; Tests.SharingUniform.suite; Tests.SharingTiered.suite),
   .suite "sharing-components" .primary Tests.SharingComponents.suite,
-  .suite "source-contract" .primary (Tests.Ix.SourceContract.suite ++ Tests.Ix.SourceContract.Driver.suite),
+  .suite "source-contract" .primary (do Tests.Ix.SourceContract.suite; Tests.Ix.SourceContract.Driver.suite),
   .suite "aiur-statistics" .primary Tests.Ix.AiurStatistics.suite,
   .suite "bench-measures" .primary Tests.Ix.BenchMeasures.suite,
   -- the compile's named refusal of ungrounded input (the IO pipeline and the pure compile)
@@ -162,7 +161,7 @@ def registry : List Entry := [
   .suite "primitive-address-parity" .primary Tests.Ix.Kernel.BuildPrimitives.paritySuite,
   .suite "decompile-unit" .primary Tests.Decompile.unitSuite,
   -- getFileEnv body-inclusion regression guard (IO: loads a fixture file)
-  .suiteIO "getfileenv-body" .primary (do return [← Tests.Ix.EnvBody.suite]),
+  .suiteIO "getfileenv-body" .primary Tests.Ix.EnvBody.suite,
   -- Reductions no kernel may make beyond Lean's (class methods reduced
   -- without their instance, `numBits ≡ 64`, the `Fin.val` commute): every
   -- probe's closure through IxC.
@@ -249,8 +248,8 @@ def registry : List Entry := [
   .runner "admission-hash-diff-initstd" (.ci .nightly) Tests.Ix.Kernel.AdmissionHashDiff.runInitStd,
   -- Full brute-force exact-sharing oracle (`witness2` 3M-candidate sweep,
   -- 13.7k tied-minima tables, and 400/600-input uniform search sweeps).
-  .suiteIO "exact-sharing-full" (.ci .nightly)
-    (concurrently (Tests.SharingExact.nightlySuite ++ Tests.SharingUniform.nightlySuite))
+  .suite "exact-sharing-full" (.ci .nightly)
+    (do Tests.SharingExact.nightlySuite; Tests.SharingUniform.nightlySuite)
 ]
 
 /-- The host entries that must stay registered once, in their tier

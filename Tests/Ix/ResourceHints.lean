@@ -89,16 +89,15 @@ def compiledVerdicts : IO (Array String × Array String) := do
     lines := lines ++ ls
   return (errors, lines)
 
-def report (name : String) (action : IO (Array String × Array String)) : TestSeq :=
-  .individualIO name none (do
+def report (name : String) (action : IO (Array String × Array String)) : Spec :=
+  it name do
     let (errors, lines) ← action
     for l in lines do IO.println l
-    let msg := if errors.isEmpty then none else some ("\n".intercalate (errors.toList.take 20))
-    return (errors.isEmpty, 1, 0, msg)) .done
+    expect errors.isEmpty ("\n".intercalate (errors.toList.take 20))
 
-def suite : List TestSeq := [
-  report "the typing half's verdict on the compiled fixtures" fixtureVerdict,
+def suite : LSpec.Spec := do
+  report "the typing half's verdict on the compiled fixtures" fixtureVerdict
   report "actual typing verdicts: an ordinary contract input, an assumption axiom, unsafe inductives"
-    compiledVerdicts]
+    compiledVerdicts
 
 end Tests.ResourceHints

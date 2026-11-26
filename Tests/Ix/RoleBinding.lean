@@ -103,12 +103,9 @@ private def checks (_fixture : Constant) : Except String Unit := do
       need "every header reader rejects bad framing or hash" (!parsed.isOk)
 
 /-- The parameter keeps foreign calls out of module initialization. -/
-public def units (fixture : Constant) : LSpec.TestSeq :=
-  .individualIO "role binding: exact v4/v5 bytes, all loaders, FFI and admission boundary" none (do
-    let result ← IO.lazyPure fun _ => checks fixture
-    return match result with
-      | .ok _ => (true, 0, 0, none)
-      | .error message => (false, 0, 0, some message)) .done
+public def units (fixture : Constant) : LSpec.Spec :=
+  it "role binding: exact v4/v5 bytes, all loaders, FFI and admission boundary" do
+    LSpec.expectOk (checks fixture)
 
 end Tests.Ix.RoleBinding
 

@@ -15,9 +15,6 @@ namespace Tests.Ix.SourceContract
 open Lean LSpec
 open Ix.Compile
 
-private def test (description : String) (condition : Bool) : TestSeq :=
-  LSpec.test description (condition = true)
-
 private def natType : Expr := .const `Nat []
 
 private def definition (name : Name) (type value : Expr) : ConstantInfo :=
@@ -49,34 +46,34 @@ private def resolvedModes (actual : Except SourceContractError ResolvedSourceCon
   | .error _ => #[]
   | .ok contract => contract.binders.map fun binder => (binder.site, binder.uses, binder.result)
 
-def telescopeTests : TestSeq :=
-  test "identity resolves linear/unique type and linear body at independent sites"
+public def telescopeTests : LSpec.Spec := do
+  itBool "identity resolves linear/unique type and linear body at independent sites"
     (resolvedModes (resolveTelescope (identity) #[{ binder := .position 0, uses := .linear, result := some .unique }]) ==
-      #[(⟨.type, []⟩, .linear, some .unique), (⟨.body, []⟩, .linear, none)]) ++
-  test "all four usage modes are accepted without inferring resource validity"
+      #[(⟨.type, []⟩, .linear, some .unique), (⟨.body, []⟩, .linear, none)])
+  itBool "all four usage modes are accepted without inferring resource validity"
     ([Ixon.Uses.erased, .linear, .affine, .many].all fun uses =>
-      (resolveTelescope (identity) #[{ binder := .position 0, uses, result := some .shared }]).isOk) ++
-  test "ownership shorthand affects only the selected curried arrow"
+      (resolveTelescope (identity) #[{ binder := .position 0, uses, result := some .shared }]).isOk)
+  itBool "ownership shorthand affects only the selected curried arrow"
     (resolvedModes (resolveTelescope curried #[{ binder := .name `y, uses := .linear, result := some .unique }]) ==
       #[(⟨.type, [.binderBody]⟩, .linear, some .unique),
-        (⟨.body, [.binderBody]⟩, .linear, none)]) ++
-  test "implicit argument retains its position and does not imply erasure"
+        (⟨.body, [.binderBody]⟩, .linear, none)])
+  itBool "implicit argument retains its position and does not imply erasure"
     (match resolveTelescope curried #[{ binder := .position 0, uses := .many }] with
       | .ok result => result.binders.all fun binder =>
         binder.binderInfo == .implicit && binder.uses == .many
-      | .error _ => false) ++
-  test "out-of-range elaborated positions are rejected"
+      | .error _ => false)
+  itBool "out-of-range elaborated positions are rejected"
     (expectError (resolveTelescope curried #[{ binder := .position 2, uses := .linear }])
-      (.argumentOutOfRange `curried 2)) ++
-  test "missing binder names are rejected"
+      (.argumentOutOfRange `curried 2))
+  itBool "missing binder names are rejected"
     (expectError (resolveTelescope curried #[{ binder := .name `missing, uses := .linear }])
-      (.unknownBinder `curried `missing)) ++
-  test "name and position annotations cannot silently overwrite the same site"
+      (.unknownBinder `curried `missing))
+  itBool "name and position annotations cannot silently overwrite the same site"
     (expectError (resolveTelescope curried #[{ binder := .name `y, uses := .linear },
       { binder := .position 1, uses := .affine }])
       (.duplicateSite `curried ⟨.type, [.binderBody]⟩))
 
-def occurrenceTests : TestSeq := Id.run do
+public def occurrenceTests : LSpec.Spec := do
   let lam := Expr.lam `shadow natType (.bvar 0) .default
   let nested := definition `nested (.forallE `x natType natType .default)
     (.lam `x natType (.app lam (.app lam (.bvar 0))) .default)
@@ -91,28 +88,28 @@ def occurrenceTests : TestSeq := Id.run do
   let wrapped := definition `wrapped
     (.mdata {} (.forallE `x natType natType .default))
     (.mdata {} (.lam `x natType (.bvar 0) .default))
-  return test "equal nested lambdas can carry different occurrence contracts"
-      (resolvedModes (distinct.resolve nested) == #[(left, .linear, none), (right, .affine, none)]) ++
-    test "annotation order has a canonical resolved order"
-      (resolvedModes (({ distinct with binders := distinct.binders.reverse }).resolve nested) ==
-        resolvedModes (distinct.resolve nested)) ++
-    test "shadowed declaration binders require an explicit position"
-      (expectError (resolveTelescope shadowed #[{ binder := .name `x, uses := .linear }])
-        (.ambiguousBinder `shadowed `x)) ++
-    test "position disambiguates shadowed declaration binders"
-      ((resolveTelescope shadowed #[{ binder := .position 1, uses := .linear }]).isOk) ++
-    test "metadata wrappers appear in resolved telescope paths"
-      (resolvedModes (resolveTelescope wrapped #[{ binder := .position 0, uses := .linear, result := some .unique }]) ==
-        #[(⟨.type, [.metadata]⟩, .linear, some .unique),
-          (⟨.body, [.metadata]⟩, .linear, none)]) ++
-    test "invalid structural edges fail before canonicalization"
-      (expectError (({ source := identity, binders := #[{ site := ⟨.body, [.appArg]⟩, uses := .linear }] } : SourceContract).resolve identity)
-        (.invalidSite `identity ⟨.body, [.appArg]⟩)) ++
-    test "an expression occurrence must actually be a binder"
-      (expectError (({ source := identity, binders := #[{ site := ⟨.body, [.binderBody]⟩, uses := .linear }] } : SourceContract).resolve identity)
-        (.expectedBinder `identity ⟨.body, [.binderBody]⟩))
+  itBool "equal nested lambdas can carry different occurrence contracts"
+    (resolvedModes (distinct.resolve nested) == #[(left, .linear, none), (right, .affine, none)])
+  itBool "annotation order has a canonical resolved order"
+    (resolvedModes (({ distinct with binders := distinct.binders.reverse }).resolve nested) ==
+      resolvedModes (distinct.resolve nested))
+  itBool "shadowed declaration binders require an explicit position"
+    (expectError (resolveTelescope shadowed #[{ binder := .name `x, uses := .linear }])
+      (.ambiguousBinder `shadowed `x))
+  itBool "position disambiguates shadowed declaration binders"
+    ((resolveTelescope shadowed #[{ binder := .position 1, uses := .linear }]).isOk)
+  itBool "metadata wrappers appear in resolved telescope paths"
+    (resolvedModes (resolveTelescope wrapped #[{ binder := .position 0, uses := .linear, result := some .unique }]) ==
+      #[(⟨.type, [.metadata]⟩, .linear, some .unique),
+        (⟨.body, [.metadata]⟩, .linear, none)])
+  itBool "invalid structural edges fail before canonicalization"
+    (expectError (({ source := identity, binders := #[{ site := ⟨.body, [.appArg]⟩, uses := .linear }] } : SourceContract).resolve identity)
+      (.invalidSite `identity ⟨.body, [.appArg]⟩))
+  itBool "an expression occurrence must actually be a binder"
+    (expectError (({ source := identity, binders := #[{ site := ⟨.body, [.binderBody]⟩, uses := .linear }] } : SourceContract).resolve identity)
+      (.expectedBinder `identity ⟨.body, [.binderBody]⟩))
 
-def rejectionTests : TestSeq := Id.run do
+public def rejectionTests : LSpec.Spec := do
   let bodySite : BinderSite := ⟨.body, []⟩
   let typeSite : BinderSite := ⟨.type, []⟩
   let contract : SourceContract := {
@@ -125,23 +122,23 @@ def rejectionTests : TestSeq := Id.run do
   let changedMetadata := definition `identity (.forallE `x natType natType .default)
     (.mdata {} (.lam `x natType (.bvar 0) .default))
   let alias := definition `alias (.forallE `x natType natType .default) (.const `identity [])
-  return test "type/body usage disagreement is rejected"
-      (expectError (({ source := identity, binders := #[{ site := typeSite, uses := .linear }] } : SourceContract).resolve identity)
-        (.inconsistentTelescope `identity 0 .linear .many)) ++
-    test "a lambda has no independent result-ownership field"
-      (expectError (({ source := identity, binders := #[{ site := bodySite, uses := .many, result := some .shared }] } : SourceContract).resolve identity)
-        (.resultOnNonArrow `identity bodySite)) ++
-    test "source binder spelling is part of the occurrence fingerprint"
-      (expectError (contract.resolve renamed) (.staleSource `identity)) ++
-    test "source BinderInfo drift invalidates a previously resolved contract"
-      (expectError (contract.resolve changedInfo) (.staleSource `identity)) ++
-    test "source metadata shape drift invalidates structural paths"
-      (expectError (contract.resolve changedMetadata) (.staleSource `identity)) ++
-    test "unsupported body telescope normalization gets a diagnostic"
-      (expectError (resolveTelescope alias #[{ binder := .position 0, uses := .linear }])
-        (.missingBodyBinder `alias 0))
+  itBool "type/body usage disagreement is rejected"
+    (expectError (({ source := identity, binders := #[{ site := typeSite, uses := .linear }] } : SourceContract).resolve identity)
+      (.inconsistentTelescope `identity 0 .linear .many))
+  itBool "a lambda has no independent result-ownership field"
+    (expectError (({ source := identity, binders := #[{ site := bodySite, uses := .many, result := some .shared }] } : SourceContract).resolve identity)
+      (.resultOnNonArrow `identity bodySite))
+  itBool "source binder spelling is part of the occurrence fingerprint"
+    (expectError (contract.resolve renamed) (.staleSource `identity))
+  itBool "source BinderInfo drift invalidates a previously resolved contract"
+    (expectError (contract.resolve changedInfo) (.staleSource `identity))
+  itBool "source metadata shape drift invalidates structural paths"
+    (expectError (contract.resolve changedMetadata) (.staleSource `identity))
+  itBool "unsupported body telescope normalization gets a diagnostic"
+    (expectError (resolveTelescope alias #[{ binder := .position 0, uses := .linear }])
+      (.missingBodyBinder `alias 0))
 
-def inputTests : TestSeq := Id.run do
+public def inputTests : LSpec.Spec := do
   let source := identity
   let constants := [(source.name, source)]
   let first : SourceContract := {
@@ -155,42 +152,42 @@ def inputTests : TestSeq := Id.run do
     { constants := constants ++ [(second.name, second)], contracts := #[first, secondContract] }
   let hinted : CompileInput :=
     { constants, contracts := #[], measureHints := #[⟨source, .name `x, some 1⟩] }
-  return test "plain input preserves selected source and has no semantic contracts"
-      (match (CompileInput.plain constants).resolve with
-        | .ok result => result.constants == constants && result.contracts.isEmpty
-        | .error _ => false) ++
-    test "equal declaration bodies retain their distinct semantic contracts"
-      (match sameBody.resolve with
-        | .ok result => result.contracts.size == 2 &&
-          result.contracts[0]!.usesAt ⟨.body, []⟩ == .linear &&
-          result.contracts[1]!.usesAt ⟨.body, []⟩ == .affine
-        | .error _ => false) ++
-    test "duplicate selected declarations are rejected"
-      (expectError ((CompileInput.plain (constants ++ constants)).resolve)
-        (.duplicateDeclaration `identity)) ++
-    test "selected names must match their declaration"
-      (expectError ((CompileInput.plain [(`wrong, source)]).resolve)
-        (.declarationNameMismatch `wrong `identity)) ++
-    test "a dangling registry entry cannot be silently dropped"
-      (expectError (({ constants := [], contracts := #[first] } : CompileInput).resolve)
-        (.missingDeclaration `identity)) ++
-    test "duplicate declaration contracts cannot overwrite each other"
-      (expectError (({ constants, contracts := #[first, first] } : CompileInput).resolve)
-        (.duplicateContract `identity)) ++
-    test "measure hints resolve to positions without changing source or modes"
-      (match hinted.resolve with
-        | .ok result => result.constants == constants && result.contracts.isEmpty &&
-          result.measureHints.size == 1 && result.measureHints[0]!.argument == 0 &&
-          result.measureHints[0]!.site == ⟨.type, []⟩
-        | .error _ => false) ++
-    test "zero-step proposals receive a diagnostic"
-      (expectError (({ hinted with measureHints := #[⟨source, .position 0, some 0⟩] }).resolve)
-        (.zeroFixedStep `identity)) ++
-    test "multiple measure proposals for one declaration are rejected"
-      (expectError (({ hinted with measureHints := hinted.measureHints ++ hinted.measureHints }).resolve)
-        (.duplicateMeasure `identity))
+  itBool "plain input preserves selected source and has no semantic contracts"
+    (match (CompileInput.plain constants).resolve with
+      | .ok result => result.constants == constants && result.contracts.isEmpty
+      | .error _ => false)
+  itBool "equal declaration bodies retain their distinct semantic contracts"
+    (match sameBody.resolve with
+      | .ok result => result.contracts.size == 2 &&
+        result.contracts[0]!.usesAt ⟨.body, []⟩ == .linear &&
+        result.contracts[1]!.usesAt ⟨.body, []⟩ == .affine
+      | .error _ => false)
+  itBool "duplicate selected declarations are rejected"
+    (expectError ((CompileInput.plain (constants ++ constants)).resolve)
+      (.duplicateDeclaration `identity))
+  itBool "selected names must match their declaration"
+    (expectError ((CompileInput.plain [(`wrong, source)]).resolve)
+      (.declarationNameMismatch `wrong `identity))
+  itBool "a dangling registry entry cannot be silently dropped"
+    (expectError (({ constants := [], contracts := #[first] } : CompileInput).resolve)
+      (.missingDeclaration `identity))
+  itBool "duplicate declaration contracts cannot overwrite each other"
+    (expectError (({ constants, contracts := #[first, first] } : CompileInput).resolve)
+      (.duplicateContract `identity))
+  itBool "measure hints resolve to positions without changing source or modes"
+    (match hinted.resolve with
+      | .ok result => result.constants == constants && result.contracts.isEmpty &&
+        result.measureHints.size == 1 && result.measureHints[0]!.argument == 0 &&
+        result.measureHints[0]!.site == ⟨.type, []⟩
+      | .error _ => false)
+  itBool "zero-step proposals receive a diagnostic"
+    (expectError (({ hinted with measureHints := #[⟨source, .position 0, some 0⟩] }).resolve)
+      (.zeroFixedStep `identity))
+  itBool "multiple measure proposals for one declaration are rejected"
+    (expectError (({ hinted with measureHints := hinted.measureHints ++ hinted.measureHints }).resolve)
+      (.duplicateMeasure `identity))
 
-def valueContractTests : TestSeq := Id.run do
+public def valueContractTests : LSpec.Spec := do
   let source := identity
   let typeSite : BinderSite := ⟨.type, []⟩
   let bodySite : BinderSite := ⟨.body, []⟩
@@ -205,38 +202,38 @@ def valueContractTests : TestSeq := Id.run do
   let borrow : SourceContract := {
     source := binding
     binders := #[{ site := bodySite, uses := .affine, value := .localShared, letKind := .borrowShared }] }
-  return test "unique input is independent of the arrow result"
-      (match resolveTelescope source #[unique] with
-        | .ok result => result.valueAt typeSite == .unique && result.valueAt bodySite == .unique &&
-          result.usesAt typeSite == .many &&
-          (result.binders.find? (·.site == typeSite)).bind (·.result) == some .shared
-        | .error _ => false) ++
-    test "all 64 arrow contracts preserve input, result, and matching lambda fields"
-      (modes.all fun uses => values.all fun value => values.all fun output =>
-        match resolveTelescope source #[{ binder := .position 0, uses, value, result := some output }] with
-        | .ok c => c.valueAt typeSite == value && c.valueAt bodySite == value &&
-          c.usesAt typeSite == uses && c.usesAt bodySite == uses &&
-          (c.binders.find? (·.site == typeSite)).bind (·.result) == some output
-        | .error _ => false) ++
-    test "type and body must agree on ownership"
-      (expectError (ownershipMismatch.resolve source)
-        (.inconsistentValue `identity 0 .unique .shared)) ++
-    test "type and body must agree on locality"
-      (expectError (localityMismatch.resolve source)
-        (.inconsistentValue `identity 0 .localShared .shared)) ++
-    test "borrow let retains its explicit kind and shared local view"
-      (match borrow.resolve binding with
-        | .ok c => c.binders[0]!.kind == .letE && c.binders[0]!.letKind == .borrowShared &&
-          c.binders[0]!.value == .localShared && c.binders[0]!.result.isNone
-        | .error _ => false) ++
-    test "a shared borrow cannot manufacture unique ownership"
-      (expectError (({ borrow with binders := borrow.binders.map fun (b : BinderContract) => { b with value := .localUnique } }).resolve binding)
-        (.invalidBorrowView `binding bodySite)) ++
-    test "a borrow flag cannot annotate a function binder"
-      (expectError (resolveTelescope source #[{ unique with letKind := .borrowShared }])
-        (.borrowOnNonLet `identity typeSite))
+  itBool "unique input is independent of the arrow result"
+    (match resolveTelescope source #[unique] with
+      | .ok result => result.valueAt typeSite == .unique && result.valueAt bodySite == .unique &&
+        result.usesAt typeSite == .many &&
+        (result.binders.find? (·.site == typeSite)).bind (·.result) == some .shared
+      | .error _ => false)
+  itBool "all 64 arrow contracts preserve input, result, and matching lambda fields"
+    (modes.all fun uses => values.all fun value => values.all fun output =>
+      match resolveTelescope source #[{ binder := .position 0, uses, value, result := some output }] with
+      | .ok c => c.valueAt typeSite == value && c.valueAt bodySite == value &&
+        c.usesAt typeSite == uses && c.usesAt bodySite == uses &&
+        (c.binders.find? (·.site == typeSite)).bind (·.result) == some output
+      | .error _ => false)
+  itBool "type and body must agree on ownership"
+    (expectError (ownershipMismatch.resolve source)
+      (.inconsistentValue `identity 0 .unique .shared))
+  itBool "type and body must agree on locality"
+    (expectError (localityMismatch.resolve source)
+      (.inconsistentValue `identity 0 .localShared .shared))
+  itBool "borrow let retains its explicit kind and shared local view"
+    (match borrow.resolve binding with
+      | .ok c => c.binders[0]!.kind == .letE && c.binders[0]!.letKind == .borrowShared &&
+        c.binders[0]!.value == .localShared && c.binders[0]!.result.isNone
+      | .error _ => false)
+  itBool "a shared borrow cannot manufacture unique ownership"
+    (expectError (({ borrow with binders := borrow.binders.map fun (b : BinderContract) => { b with value := .localUnique } }).resolve binding)
+      (.invalidBorrowView `binding bodySite))
+  itBool "a borrow flag cannot annotate a function binder"
+    (expectError (resolveTelescope source #[{ unique with letKind := .borrowShared }])
+      (.borrowOnNonLet `identity typeSite))
 
-def markerTests : TestSeq := Id.run do
+public def markerTests : LSpec.Spec := do
   let annotation : BinderAnnotation := {
     origin := 0, binder := `x, uses := .affine, value := .localUnique }
   let data := annotation.toMetadata
@@ -253,41 +250,41 @@ def markerTests : TestSeq := Id.run do
     rules := [⟨`constructor, 0, .mdata missingVersion natType⟩]
     k := false, isUnsafe := false }
   let shared := (List.range 28).foldl (fun expr _ => Expr.app expr expr) natType
-  return test "source annotation metadata roundtrips ownership, usage, locality, and origin"
-      (match BinderAnnotation.ofMetadata? data with
+  itBool "source annotation metadata roundtrips ownership, usage, locality, and origin"
+    (match BinderAnnotation.ofMetadata? data with
+      | .ok decoded => decoded == some annotation
+      | .error _ => false)
+  itBool "adding source markers preserves Lean's singleton native borrow wrapper"
+    (match annotation.attach borrowed with
+      | .ok type => Lean.isMarkedBorrowed type &&
+        match binderAnnotation? type with
         | .ok decoded => decoded == some annotation
-        | .error _ => false) ++
-    test "adding source markers preserves Lean's singleton native borrow wrapper"
-      (match annotation.attach borrowed with
-        | .ok type => Lean.isMarkedBorrowed type &&
-          match binderAnnotation? type with
-          | .ok decoded => decoded == some annotation
-          | .error _ => false
-        | .error _ => false) ++
-    test "strict source metadata rejects unknown keys, duplicates, versions, and overflowing modes"
-      ([data.setNat `ix.source.binder.future 0, duplicate, missingVersion,
-        data.setNat sourceAnnotationKey 2, data.setNat `ix.source.binder.uses 256,
-        data.setNat `ix.source.binder.owned 256].all fun malformed =>
-          !(BinderAnnotation.ofMetadata? malformed).isOk) ++
-    test "malformed reserved metadata is still detected by the preflight"
-      (exprHasSourceAnnotations (.mdata missingVersion natType)) ++
-    test "source markers in raw recursor rules are detected and explicitly unsupported"
-      (sourceHasAnnotations recursor &&
-        expectError (SourceContract.fromAnnotations recursor) (.annotatedRecursorRule recursor.name)) ++
-    test "annotation scan handles heavily shared ordinary source and nearby markers"
-      (!exprHasSourceAnnotations shared &&
-        exprHasSourceAnnotations (.app shared (.mdata data natType))) ++
-    test "source markers require explicit matching records and cannot be overridden"
-      (expectError input.resolve (.missingContract marked.name) &&
-        match SourceContract.fromAnnotations marked with
-        | .ok contract =>
-          let changed : SourceContract := { contract with
-            binders := contract.binders.map fun binder => { binder with value := .shared } }
-          contract.binders.size == 2 && (contract.resolve marked).isOk &&
-          !(changed.resolve marked).isOk
-        | .error _ => false)
+        | .error _ => false
+      | .error _ => false)
+  itBool "strict source metadata rejects unknown keys, duplicates, versions, and overflowing modes"
+    ([data.setNat `ix.source.binder.future 0, duplicate, missingVersion,
+      data.setNat sourceAnnotationKey 2, data.setNat `ix.source.binder.uses 256,
+      data.setNat `ix.source.binder.owned 256].all fun malformed =>
+        !(BinderAnnotation.ofMetadata? malformed).isOk)
+  itBool "malformed reserved metadata is still detected by the preflight"
+    (exprHasSourceAnnotations (.mdata missingVersion natType))
+  itBool "source markers in raw recursor rules are detected and explicitly unsupported"
+    (sourceHasAnnotations recursor &&
+      expectError (SourceContract.fromAnnotations recursor) (.annotatedRecursorRule recursor.name))
+  itBool "annotation scan handles heavily shared ordinary source and nearby markers"
+    (!exprHasSourceAnnotations shared &&
+      exprHasSourceAnnotations (.app shared (.mdata data natType)))
+  itBool "source markers require explicit matching records and cannot be overridden"
+    (expectError input.resolve (.missingContract marked.name) &&
+      match SourceContract.fromAnnotations marked with
+      | .ok contract =>
+        let changed : SourceContract := { contract with
+          binders := contract.binders.map fun binder => { binder with value := .shared } }
+        contract.binders.size == 2 && (contract.resolve marked).isOk &&
+        !(changed.resolve marked).isOk
+      | .error _ => false)
 
-def arityProducerTests : TestSeq := Id.run do
+public def arityProducerTests : LSpec.Spec := do
   let canonical := fun source => (Id.run ((_root_.Ix.CanonM.canonConst source).run {})).1
   let frame := fun (kind : _root_.Ix.SemanticContract.Kind) (e : _root_.Ix.Expr) => match e with
     | .mdata data _ _ => data.size == 3 && ((_root_.Ix.SemanticContract.read data).toOption).any (·.kind == kind)
@@ -296,62 +293,65 @@ def arityProducerTests : TestSeq := Id.run do
   let refusedUnsupported := fun e => match _root_.Ix.LeanIngress.ingressExpr (fun _ => 0) e with
     | .error (.contract m) => m.startsWith "unsupported semantic contract mode"
     | _ => false
-  let linear := resolveTelescope identity #[{ binder := .position 0, uses := .linear, result := some .unique }]
-  let pair := linear.toOption.bind (fun c => c.decorate.toOption)
-  let pairOK := pair.any fun out => match canonical out with
-    | .defnInfo v => frame .all v.cnst.type && frame .lam v.value && readable v.cnst.type && readable v.value
-    | _ => false
-  let binding := definition `arityLet natType (.letE `view natType (.lit (.natVal 0)) (.bvar 0) false)
-  let borrow : SourceContract := {
-    source := binding
-    binders := #[{ site := ⟨.body, []⟩, uses := .affine, value := .localShared, letKind := .borrowShared }] }
-  let letOK := ((borrow.resolve binding).toOption.bind (fun c => c.decorate.toOption)).any fun out =>
-    match canonical out with | .defnInfo v => frame .letE v.value && readable v.value | _ => false
-  let badErasedContract : _root_.Ix.SemanticContract.Contract :=
-    { kind := .lam, binder := ⟨.erased, .localShared⟩ }
-  let badErasedIx := (Id.run ((_root_.Ix.CanonM.canonExpr
-    (badErasedContract.attach (.lam `x natType (.bvar 0) .default))).run {})).1
-  let thmId : ConstantInfo := .thmInfo {
-    name := `arityThmId, levelParams := []
-    type := .forallE `p (.sort .zero) (.bvar 0) .default
-    value := .lam `p (.sort .zero) (.bvar 0) .default
-    all := [`arityThmId] }
-  let thmStripped := ((resolveTelescope thmId #[{ binder := .position 0, uses := .erased }]).toOption.bind
-    (fun c => c.decorate.toOption)).any fun out =>
-      !exprHasSemanticContracts out.type && match out with
-        | .thmInfo v => !exprHasSemanticContracts v.value
-        | _ => false
-  let theoremSource : ConstantInfo := .thmInfo {
-    name := `arityTheorem, levelParams := [], type := .const `True [], value := .const `True.intro [], all := [`arityTheorem] }
-  let opaqueSource : ConstantInfo := .opaqueInfo {
-    name := `arityOpaque, levelParams := [], type := natType, value := .lit (.natVal 0), isUnsafe := false, all := [`arityOpaque] }
-  let axiomSource : ConstantInfo := .axiomInfo {
-    name := `arityAxiom, levelParams := [], type := natType, isUnsafe := false }
-  let kinds := [(theoremSource, 0), (opaqueSource, 1), (axiomSource, 2)].all fun (source, expected) =>
-    ((resolveTelescope source #[]).toOption.bind (fun c => c.decorate.toOption)).any fun out =>
-      out.name == source.name && match canonical out, expected with
-      | .thmInfo v, 0 => readable v.cnst.type && readable v.value
-      | .opaqueInfo v, 1 => readable v.cnst.type && readable v.value
-      | .axiomInfo v, 2 => readable v.cnst.type && (sourceBody? out).isNone
-      | _, _ => false
-  let body := (sourceBody? identity).getD natType
-  let plain := ({} : MData).setNat `native.hint 7
-  let marker := ({ origin := 0, binder := `x, uses := .linear, value := .shared } : BinderAnnotation).toMetadata
-  let semantic : _root_.Ix.SemanticContract.Contract := { kind := .lam, binder := ⟨.linear, .shared⟩ }
-  let metadata := (resolveTelescope identity #[]).toOption.any fun c =>
-    let kept := (decorateExpr c .body [] (.mdata plain body)).toOption
-    let stripped := (decorateExpr c .body [] (.mdata marker body)).toOption
-    (match kept with | some (.mdata data inner) => data.entries == plain.entries && inner == body | _ => false) &&
-    (match stripped with | some (.lam ..) => stripped == some body | _ => false) &&
-    (match decorateExpr c .body [] (semantic.attach body) with
-      | .error "source transport: reserved semantic metadata in unprocessed source" => true | _ => false)
-  return test "actual decorator and CanonM keep distinct type/value semantic frames and ingress accepts valid modes"
-      (pairOK && refusedUnsupported badErasedIx && thmStripped) ++
-    test "actual borrow-let decoration has a three-field semantic frame accepted by the ingress" letOK ++
-    test "actual theorem/opaque/axiom outputs preserve kind and optional-value boundaries" kinds ++
-    test "decorator preserves plain metadata, removes source markers and refuses original semantic frames" metadata
+  it "actual decorator and CanonM keep distinct type/value semantic frames and ingress accepts valid modes" do
+    let linear := resolveTelescope identity #[{ binder := .position 0, uses := .linear, result := some .unique }]
+    let pair := linear.toOption.bind (fun c => c.decorate.toOption)
+    let pairOK := pair.any fun out => match canonical out with
+      | .defnInfo v => frame .all v.cnst.type && frame .lam v.value && readable v.cnst.type && readable v.value
+      | _ => false
+    let badErasedContract : _root_.Ix.SemanticContract.Contract :=
+      { kind := .lam, binder := ⟨.erased, .localShared⟩ }
+    let badErasedIx := (Id.run ((_root_.Ix.CanonM.canonExpr
+      (badErasedContract.attach (.lam `x natType (.bvar 0) .default))).run {})).1
+    let thmId : ConstantInfo := .thmInfo {
+      name := `arityThmId, levelParams := []
+      type := .forallE `p (.sort .zero) (.bvar 0) .default
+      value := .lam `p (.sort .zero) (.bvar 0) .default
+      all := [`arityThmId] }
+    let thmStripped := ((resolveTelescope thmId #[{ binder := .position 0, uses := .erased }]).toOption.bind
+      (fun c => c.decorate.toOption)).any fun out =>
+        !exprHasSemanticContracts out.type && match out with
+          | .thmInfo v => !exprHasSemanticContracts v.value
+          | _ => false
+    expect (pairOK && refusedUnsupported badErasedIx && thmStripped)
+  it "actual borrow-let decoration has a three-field semantic frame accepted by the ingress" do
+    let binding := definition `arityLet natType (.letE `view natType (.lit (.natVal 0)) (.bvar 0) false)
+    let borrow : SourceContract := {
+      source := binding
+      binders := #[{ site := ⟨.body, []⟩, uses := .affine, value := .localShared, letKind := .borrowShared }] }
+    let letOK := ((borrow.resolve binding).toOption.bind (fun c => c.decorate.toOption)).any fun out =>
+      match canonical out with | .defnInfo v => frame .letE v.value && readable v.value | _ => false
+    expect letOK
+  it "actual theorem/opaque/axiom outputs preserve kind and optional-value boundaries" do
+    let theoremSource : ConstantInfo := .thmInfo {
+      name := `arityTheorem, levelParams := [], type := .const `True [], value := .const `True.intro [], all := [`arityTheorem] }
+    let opaqueSource : ConstantInfo := .opaqueInfo {
+      name := `arityOpaque, levelParams := [], type := natType, value := .lit (.natVal 0), isUnsafe := false, all := [`arityOpaque] }
+    let axiomSource : ConstantInfo := .axiomInfo {
+      name := `arityAxiom, levelParams := [], type := natType, isUnsafe := false }
+    let kinds := [(theoremSource, 0), (opaqueSource, 1), (axiomSource, 2)].all fun (source, expected) =>
+      ((resolveTelescope source #[]).toOption.bind (fun c => c.decorate.toOption)).any fun out =>
+        out.name == source.name && match canonical out, expected with
+        | .thmInfo v, 0 => readable v.cnst.type && readable v.value
+        | .opaqueInfo v, 1 => readable v.cnst.type && readable v.value
+        | .axiomInfo v, 2 => readable v.cnst.type && (sourceBody? out).isNone
+        | _, _ => false
+    expect kinds
+  it "decorator preserves plain metadata, removes source markers and refuses original semantic frames" do
+    let body := (sourceBody? identity).getD natType
+    let plain := ({} : MData).setNat `native.hint 7
+    let marker := ({ origin := 0, binder := `x, uses := .linear, value := .shared } : BinderAnnotation).toMetadata
+    let semantic : _root_.Ix.SemanticContract.Contract := { kind := .lam, binder := ⟨.linear, .shared⟩ }
+    let metadata := (resolveTelescope identity #[]).toOption.any fun c =>
+      let kept := (decorateExpr c .body [] (.mdata plain body)).toOption
+      let stripped := (decorateExpr c .body [] (.mdata marker body)).toOption
+      (match kept with | some (.mdata data inner) => data.entries == plain.entries && inner == body | _ => false) &&
+      (match stripped with | some (.lam ..) => stripped == some body | _ => false) &&
+      (match decorateExpr c .body [] (semantic.attach body) with
+        | .error "source transport: reserved semantic metadata in unprocessed source" => true | _ => false)
+    expect metadata
 
-def inspectionTests : TestSeq := Id.run do
+public def inspectionTests : LSpec.Spec := do
   let digest := fun (n : UInt8) => Address.mk (ByteArray.mk (Array.replicate 32 n))
   let scalar := _root_.Ix.Expr.lit (.natVal 0) (digest 3)
   let lam := _root_.Ix.Expr.lam _root_.Ix.Name.mkAnon scalar
@@ -373,44 +373,51 @@ def inspectionTests : TestSeq := Id.run do
     ("aliased metadata-key hash", data.set! 2 (unknown, .ofNat 1), "unknown or duplicate semantic contract field")]
   let inspect := _root_.Ix.SemanticContract.inspect
   let eq := _root_.Ix.Compile.ExactKey.exprEq
-  let mut tests := TestSeq.done
   for (label, md, message) in cases do
-    let bad := frame md
-    let refused := [bad, .app bad good (digest 1), .app good bad (digest 1)].all fun e =>
-      match inspect e with | .error actual => actual == message | _ => false
-    tests := tests ++ test s!"exact inspection rejects {label} despite equal digests in either visitation order"
-      (bad.getHash == good.getHash && !eq bad good && refused)
+    itBool s!"exact inspection rejects {label} despite equal digests in either visitation order"
+      (let bad := frame md
+       let refused := [bad, .app bad good (digest 1), .app good bad (digest 1)].all fun e =>
+         match inspect e with | .error actual => actual == message | _ => false
+       bad.getHash == good.getHash && !eq bad good && refused)
   let twin := _root_.Ix.Expr.mdata contract.ixMetadata
     (.lam _root_.Ix.Name.mkAnon scalar (.bvar 0 (digest 4)) .default (digest 2)) (digest 0)
   let plain := _root_.Ix.Expr.mdata #[(_root_.Ix.Name.fromLeanName `native.hint, .ofNat 7)] lam (digest 0)
-  return tests ++ test "exact inspection accepts plain, equal and shared valid nodes"
+  itBool "exact inspection accepts plain, equal and shared valid nodes"
     ((inspect scalar).toOption == some false && (inspect plain).toOption == some false && eq good twin &&
       (inspect (.app good good (digest 1))).toOption == some true &&
       (inspect (.app good twin (digest 1))).toOption == some true)
 
-def presenceMemoTests : TestSeq := Id.run do
+public def presenceMemoTests : LSpec.Spec := do
   let plain := Expr.lit (.natVal 0)
   let binder := Expr.lam `x natType (.bvar 0) .default
   let contract : _root_.Ix.SemanticContract.Contract := { kind := .lam, binder := ⟨.linear, .shared⟩ }
   let marked := contract.attach binder
   let hinted := Expr.mdata (({} : MData).setNat `native.hint 7) binder
   let bucket := fun (_ : Expr) => (0 : USize)
-  let mut memo : SemanticPresence.Memo := {}
-  let mut valid := true
-  for e in [plain, marked, hinted, plain, marked, marked] do
-    let (result, after) := Id.run ((SemanticPresence.go bucket e).run memo)
-    valid := valid && result.1 == SemanticPresence.spec e
-    memo := after
-  let seeded : SemanticPresence.Memo := ({} : SemanticPresence.Memo).insert 0
-    ⟨plain, SemanticPresence.spec plain, rfl⟩
-  return test "presence memo preserves real results through constant-bucket collisions, overwrites and warm hits" valid ++
-    test "presence memo confirms retained source and computes both positive and negative answers"
-      ((SemanticPresence.probe seeded 0 marked).isNone &&
-        SemanticPresence.runWith bucket marked && !SemanticPresence.runWith bucket hinted)
+  it "presence memo preserves real results through constant-bucket collisions, overwrites and warm hits" do
+    let mut memo : SemanticPresence.Memo := {}
+    let mut valid := true
+    for e in [plain, marked, hinted, plain, marked, marked] do
+      let (result, after) := Id.run ((SemanticPresence.go bucket e).run memo)
+      valid := valid && result.1 == SemanticPresence.spec e
+      memo := after
+    expect valid
+  itBool "presence memo confirms retained source and computes both positive and negative answers"
+    (let seeded : SemanticPresence.Memo := ({} : SemanticPresence.Memo).insert 0
+       ⟨plain, SemanticPresence.spec plain, rfl⟩
+     (SemanticPresence.probe seeded 0 marked).isNone &&
+       SemanticPresence.runWith bucket marked && !SemanticPresence.runWith bucket hinted)
 
-def suite : List TestSeq :=
-  [telescopeTests, occurrenceTests, rejectionTests, inputTests, valueContractTests, markerTests,
-    arityProducerTests, inspectionTests, presenceMemoTests]
+public def suite : LSpec.Spec := do
+  telescopeTests
+  occurrenceTests
+  rejectionTests
+  inputTests
+  valueContractTests
+  markerTests
+  arityProducerTests
+  inspectionTests
+  presenceMemoTests
 
 end Tests.Ix.SourceContract
 

@@ -301,15 +301,11 @@ evaluated when the module initializes. -/
 
 end StoreRefusals
 
-def suite : List TestSeq := [
-  .individualIO "actual anon/meta outcomes, rollback, tiers and worker replay" none (do
-    let n ← check
-    return (true, n, 0, none)) .done,
+def suite : LSpec.Spec := do
+  it "actual anon/meta outcomes, rollback, tiers and worker replay" do
+    let _ ← check
   -- 769 records: at 256 tasks the parallel decoder's chunks are four records long
-  .individualIO "record store: orphan, noncanonical and oversized records, phase precedence, cache"
-    none (do
-      return match StoreRefusals.checks (← StoreRefusals.atRunTime Nat 769) with
-        | .ok n => (true, n, 0, none)
-        | .error message => (false, 0, 0, some message)) .done]
+  it "record store: orphan, noncanonical and oversized records, phase precedence, cache" do
+    let _ ← expectOk (StoreRefusals.checks (← StoreRefusals.atRunTime Nat 769))
 
 end Tests.Ix.Kernel.RecordCheck

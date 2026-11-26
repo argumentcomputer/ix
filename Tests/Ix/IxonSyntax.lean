@@ -20,7 +20,9 @@ public import LSpec
 public import Ix.IxonSyntax
 public import Tests.Gen.IxonSyntax
 
-open LSpec Ixon.Syntax
+open LSpec LSpec.Prop Ixon.Syntax
+
+set_option compiler.extract_closed false
 
 namespace Tests.IxonSyntax
 
@@ -43,10 +45,10 @@ def roundtripFile (src : String) : Except String String := do
   else if f1.decls.size != f2.decls.size then throw "decl count changed"
   else return p1
 
-/-- Render an `Except String` check as a test. -/
-def checkExcept (name : String) : Except String α → TestSeq
-  | .ok _ => test name true
-  | .error e => test s!"{name}: {e}" false
+/-- Render an `Except String` check as a deferred test. -/
+def checkExcept (name : String) (f : Unit → Except String α) : Spec :=
+  it name do
+    discard <| expectOk (f ())
 
 /-- Does the result satisfy the predicate? (`test` needs applied Bool
     functions, not literal `match` bodies, for `Testable`.) -/
@@ -123,9 +125,9 @@ def termCorpus : List String := [
   "x!? y"
 ]
 
-def termRoundtrips : TestSeq :=
-  termCorpus.foldl (init := .done) fun acc src =>
-    acc ++ checkExcept s!"roundtrip {repr src}" (roundtripTerm src)
+def termRoundtrips : LSpec.Spec := do
+  for src in termCorpus do
+    checkExcept s!"roundtrip {repr src}" fun () => roundtripTerm src
 
 def isPinnedRef : Term → Bool
   | .ref r => r.hash.isSome
@@ -139,46 +141,42 @@ def isLet (nonDep : Bool) : Term → Bool
   | .letE contract .. => contract.nonDep == nonDep
   | _ => false
 
-def adjacencyIsSignificant : TestSeq :=
-  let pinned := parseTerm "f#abcd"
-  let applied := parseTerm "f #abcd"
-  test "f#abcd is a pinned ref" (isOk pinned isPinnedRef)
-  ++ test "f #abcd is an application" (isOk applied isUnaryApp)
-  ++ test "pinned prints f#abcd" (printsTo pinned "f#abcd")
-  ++ test "applied prints f #abcd" (printsTo applied "f #abcd")
+def adjacencyIsSignificant : LSpec.Spec := do
+  itBool "f#abcd is a pinned ref" (isOk (parseTerm "f#abcd") isPinnedRef)
+  itBool "f #abcd is an application" (isOk (parseTerm "f #abcd") isUnaryApp)
+  itBool "pinned prints f#abcd" (printsTo (parseTerm "f#abcd") "f#abcd")
+  itBool "applied prints f #abcd" (printsTo (parseTerm "f #abcd") "f #abcd")
 
-def typeArgumentIsGreedy : TestSeq :=
-  test "f Type 1 takes 1 as universe arg"
+def typeArgumentIsGreedy : LSpec.Spec := do
+  itBool "f Type 1 takes 1 as universe arg"
     (isOk (parseTerm "f Type 1") isUnaryApp)
-  ++ test "f (Type) 1 canonical" (rtEq "f (Type) 1" "f (Type) 1")
-  ++ test "f Type 1 canonical" (rtEq "f Type 1" "f (Type 1)")
+  itBool "f (Type) 1 canonical" (rtEq "f (Type) 1" "f (Type) 1")
+  itBool "f Type 1 canonical" (rtEq "f Type 1" "f (Type 1)")
 
-def letVsHave : TestSeq :=
-  test "let is dependent"
+def letVsHave : LSpec.Spec := do
+  itBool "let is dependent"
     (isOk (parseTerm "let x : N := v; x") (isLet false))
-  ++ test "have is non-dependent"
+  itBool "have is non-dependent"
     (isOk (parseTerm "have x : N := v; x") (isLet true))
 
 /-- The acceptance fixture: hand-formatted input normalizes to the
     SAME canonical bytes the Rust printer emits (shared golden). -/
-def acceptanceFixture : TestSeq :=
-  let src := "ixon 3\n"
-    ++ "import #9c41aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9c41\n"
-    ++ "\n"
-    ++ "def : String → Except PatchError String :=\n"
-    ++ "  fun (s : String) => Except.ok PatchError String s\n"
-  let canonical :=
-    "ixon 3\n\nimport #9c41aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9c41\n"
-    ++ "\n"
-    ++ "def : String → Except PatchError String := "
-    ++ "fun (s : String) => Except.ok PatchError String s\n"
-  match roundtripFile src with
-  | .error e => test s!"acceptance fixture: {e}" false
-  | .ok printed =>
-    test "acceptance fixture prints the shared canonical golden"
-      (printed == canonical)
+def acceptanceFixture : LSpec.Spec := do
+  it "acceptance fixture prints the shared canonical golden" do
+    let src := "ixon 3\n"
+      ++ "import #9c41aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9c41\n"
+      ++ "\n"
+      ++ "def : String → Except PatchError String :=\n"
+      ++ "  fun (s : String) => Except.ok PatchError String s\n"
+    let canonical :=
+      "ixon 3\n\nimport #9c41aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9c41\n"
+      ++ "\n"
+      ++ "def : String → Except PatchError String := "
+      ++ "fun (s : String) => Except.ok PatchError String s\n"
+    let printed ← expectOk (roundtripFile src)
+    shouldBe printed canonical
 
-def kitchenSink : TestSeq :=
+def kitchenSink : LSpec.Spec := do
   let src := "ixon 3
 
 import #aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -216,8 +214,8 @@ cprj Nat'.succ := #dddd 0 1
 
 ⊢ even (succ zero) : Bool
 "
-  checkExcept "kitchen sink roundtrip" (roundtripFile src)
-  ++ test "kitchen sink has a main expression"
+  checkExcept "kitchen sink roundtrip" fun () => roundtripFile src
+  itBool "kitchen sink has a main expression"
     (isOk (parseFile src) (·.main.isSome))
 
 def rtFileEq (src expect : String) : Bool :=
@@ -225,7 +223,7 @@ def rtFileEq (src expect : String) : Bool :=
   | .ok p => p == expect
   | .error _ => false
 
-def mainExpression : TestSeq :=
+def mainExpression : LSpec.Spec := do
   let cases : List (String × String) := [
     ("⊢ 1 : Nat\n", "⊢ 1 : Nat\n"),
     ("|- 1 : Nat\n", "⊢ 1 : Nat\n"),
@@ -236,96 +234,95 @@ def mainExpression : TestSeq :=
       "⊢ (fun (s : String) => Except.ok PatchError String s) : String → Except PatchError String\n"),
     ("import #aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nfun (x : Nat) => x : Nat → Nat\n",
       "import #aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\n⊢ (fun (x : Nat) => x) : Nat → Nat\n")]
-  let formats := cases.foldl (init := .done) fun tests (src, expected) =>
-    tests ++ test s!"v3 main {repr src}"
+  for (src, expected) in cases do
+    itBool s!"v3 main {repr src}"
       (rtFileEq ("ixon 3\n" ++ src) ("ixon 3\n\n" ++ expected))
-  formats
-  ++ test "the annotation is mandatory"
+  itBool "the annotation is mandatory"
     (errKind (parseFile "ixon 3\n⊢ 1\n") fun k =>
       match k with | .unexpectedToken .. => true | _ => false)
-  ++ test "after a declaration the turnstile is required"
+  itBool "after a declaration the turnstile is required"
     (errKind (parseFile "ixon 3\ndef x : N := v\n1 : Nat\n") fun k =>
       match k with | .unexpectedToken .. => true | _ => false)
-  ++ test "at most one main expression"
+  itBool "at most one main expression"
     (errKind (parseFile "ixon 3\n⊢ 1 : Nat ⊢ 2 : Nat\n") (· == .mainExprNotLast))
-  ++ test "main expression must be last"
+  itBool "main expression must be last"
     (errKind (parseFile "ixon 3\n⊢ 1 : Nat def x : A := b\n") (· == .mainExprNotLast))
 
-def mainAfterTermFinalDecl : TestSeq :=
+def mainAfterTermFinalDecl : LSpec.Spec := do
   -- Regression (found by quickcheck on the Rust side): the turnstile
   -- stops the preceding declaration's application spine.
-  checkExcept "main after where-less inductive"
-    (roundtripFile
-      "ixon 3\ninductive N (params := 0) (indices := 0) : Prop\n\n⊢ Prop : Prop\n")
-  ++ checkExcept "|- after a ctor block is not eaten by the bar"
-    (roundtripFile
+  checkExcept "main after where-less inductive" fun () =>
+    roundtripFile
+      "ixon 3\ninductive N (params := 0) (indices := 0) : Prop\n\n⊢ Prop : Prop\n"
+  checkExcept "|- after a ctor block is not eaten by the bar" fun () =>
+    roundtripFile
       ("ixon 3\ninductive N (params := 0) (indices := 0) : Prop where\n"
-        ++ "  | c (params := 0) (fields := 0) : N\n|- c : N\n"))
+        ++ "  | c (params := 0) (fields := 0) : N\n|- c : N\n")
 
-def versionGate : TestSeq :=
-  ([1, 2, 4] : List Nat).foldl (init :=
-      test "version header required" (errKind (parseFile "⊢ 1 : Nat\n") (fun _ => true)))
-    fun tests version => tests ++ test s!"ixon {version} rejected"
+def versionGate : LSpec.Spec := do
+  itBool "version header required" (errKind (parseFile "⊢ 1 : Nat\n") (fun _ => true))
+  for version in ([1, 2, 4] : List Nat) do
+    itBool s!"ixon {version} rejected"
       (errKind (parseFile s!"ixon {version}\n") (· == .unknownVersion version 3))
 
-def importHashLength : TestSeq :=
-  test "short import hash rejected"
+def importHashLength : LSpec.Spec := do
+  itBool "short import hash rejected"
     (errKind (parseFile "ixon 3\nimport #abcd\n")
       fun k => k == .importHashLength 4)
 
-def errorShapes : TestSeq :=
-  test "missing => positioned"
+def errorShapes : LSpec.Spec := do
+  itBool "missing => positioned"
     (errKind (parseTerm "fun (x : Nat) x") fun k =>
       match k with
       | .unexpectedToken expected _ => (expected.splitOn "=>").length > 1
       | _ => false)
-  ++ test "uppercase hash rejected"
+  itBool "uppercase hash rejected"
     (errKind (parseTerm "#DEAD") fun k =>
       match k with
       | .invalidHash _ => true
       | _ => false)
-  ++ test "placeholder is not a term"
+  itBool "placeholder is not a term"
     (errKind (parseTerm "f _") (· == .placeholder))
-  ++ test "(x : Nat) without arrow is committed"
+  itBool "(x : Nat) without arrow is committed"
     (errKind (parseTerm "(x : Nat)") fun k =>
       match k with
       | .unexpectedToken expected _ => (expected.splitOn "→").length > 1
       | _ => false)
-  ++ test "empty levels"
+  itBool "empty levels"
     (errKind (parseTerm "Nat.{}") (· == .emptyLevels))
-  ++ test "line/col are 1-based"
+  itBool "line/col are 1-based"
     (errLine (parseFile "ixon 3\ndef x : Nat :=\n") 3)
 
-def depthCap : TestSeq :=
-  let limits : Limits := { maxDepth := 16 }
-  let deep := "".pushn '(' 64 ++ "x" ++ "".pushn ')' 64
-  test "depth cap is a structured error"
-    (errKind (parseTerm deep limits) fun k =>
+def depthCap : LSpec.Spec := do
+  it "depth cap is a structured error" do
+    let limits : Limits := { maxDepth := 16 }
+    let deep := "".pushn '(' 64 ++ "x" ++ "".pushn ')' 64
+    expect (errKind (parseTerm deep limits) fun k =>
       match k with
       | .capExceeded .depth _ => true
       | _ => false)
 
-def byteCap : TestSeq :=
-  let limits : Limits := { maxBytes := 8 }
-  test "byte cap is a structured error"
-    (errKind (parseTerm "f x y z w" limits) fun k =>
+def byteCap : LSpec.Spec := do
+  it "byte cap is a structured error" do
+    let limits : Limits := { maxBytes := 8 }
+    expect (errKind (parseTerm "f x y z w" limits) fun k =>
       match k with
       | .capExceeded .bytes _ => true
       | _ => false)
 
-def commentsAndWhitespace : TestSeq :=
-  test "comments are skipped"
+def commentsAndWhitespace : LSpec.Spec := do
+  itBool "comments are skipped"
     (printsTo (parseTerm "f -- line comment\n  /- block /- nested -/ -/ x")
       "f x")
-  ++ test "unterminated block comment"
+  itBool "unterminated block comment"
     (errKind (parseTerm "f /- open") (· == .unterminatedComment))
 
-def reservedComponentsEscape : TestSeq :=
-  test "Nat.«def» roundtrips"
+def reservedComponentsEscape : LSpec.Spec := do
+  itBool "Nat.«def» roundtrips"
     (printsTo (parseTerm "Nat.«def»") "Nat.«def»")
-  ++ test "«123» stays Str"
+  itBool "«123» stays Str"
     (printsTo (parseTerm "Foo.«123»") "Foo.«123»")
-  ++ test "bare 123 is Num"
+  itBool "bare 123 is Num"
     (printsTo (parseTerm "Foo.123") "Foo.123")
 
 /-! ## Properties (mirror `props.rs`) -/
@@ -383,28 +380,26 @@ def mutatedTotal (t : Term) (m : Muts) : Bool :=
 
 end Tests.IxonSyntax
 
-open Tests.IxonSyntax Tests.Gen.IxonSyntax in
-public def Tests.IxonSyntax.suite : List LSpec.TestSeq := [
-  termRoundtrips,
-  adjacencyIsSignificant,
-  typeArgumentIsGreedy,
-  letVsHave,
-  acceptanceFixture,
-  kitchenSink,
-  mainExpression,
-  mainAfterTermFinalDecl,
-  versionGate,
-  importHashLength,
-  errorShapes,
-  depthCap,
-  byteCap,
-  commentsAndWhitespace,
-  reservedComponentsEscape,
-  checkIO "term print∘parse∘print fixpoint" (∀ t : Term, termFixpoint t),
-  checkIO "file print∘parse∘print fixpoint" (∀ f : File, fileFixpoint f),
-  checkIO "node count ≤ printed bytes" (∀ t : Term, nodeCountBounded t),
-  checkIO "parse total on fuzz strings" (∀ f : Fuzz, parseTotal f),
-  checkIO "parse total under tiny limits" (∀ f : Fuzz, tinyLimitsTotal f),
-  checkIO "mutated canonical text total"
-    (∀ (t : Term) (m : Muts), mutatedTotal t m)
-]
+open Tests.IxonSyntax Tests.Gen.IxonSyntax LSpec LSpec.Prop in
+public def Tests.IxonSyntax.suite : LSpec.Spec := do
+  termRoundtrips
+  adjacencyIsSignificant
+  typeArgumentIsGreedy
+  letVsHave
+  acceptanceFixture
+  kitchenSink
+  mainExpression
+  mainAfterTermFinalDecl
+  versionGate
+  importHashLength
+  errorShapes
+  depthCap
+  byteCap
+  commentsAndWhitespace
+  reservedComponentsEscape
+  prop "term print∘parse∘print fixpoint" fun (t : Term) => termFixpoint t
+  prop "file print∘parse∘print fixpoint" fun (f : File) => fileFixpoint f
+  prop "node count ≤ printed bytes" fun (t : Term) => nodeCountBounded t
+  prop "parse total on fuzz strings" fun (f : Fuzz) => parseTotal f
+  prop "parse total under tiny limits" fun (f : Fuzz) => tinyLimitsTotal f
+  prop "mutated canonical text total" fun (t : Term) (m : Muts) => mutatedTotal t m

@@ -90,9 +90,8 @@ private def checks : IO Nat := do
     return 6
   return 3
 
-public def units : LSpec.TestSeq :=
-  .individualIO "bound packing: all production pruners preserve actual reader/consumer support" none (do
-    let count ← checks
-    return (true, count, 0, none)) .done
+public def units : LSpec.Spec :=
+  it "bound packing: all production pruners preserve actual reader/consumer support" do
+    let _ ← checks
 
 end Tests.Ix.RolePacking

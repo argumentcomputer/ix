@@ -32,7 +32,7 @@ def operations : Array Lean.Name :=
 
 /-- The bundle's evidence: no reason, the structural operations' entries, and
 each well-founded operation's theorems, in order, under their names. -/
-def shape : TestSeq :=
+def shape : LSpec.Spec := do
   let (ev, why) := Ix.RoleEvidence.bundleEvidenceReport ()
   let structural := Ix.RoleEvidence.defeqRoles.all fun r =>
     ev.any fun (r', es) => r' == r && es.length == (Ix.RoleEvidence.defeqEvidence (K := Unit) r).length &&
@@ -42,9 +42,9 @@ def shape : TestSeq :=
       (es.zip thms).all fun (e, t) => match e with
         | .proof (k, _) => k == Ix.RoleEvidence.ofLeanName t
         | .defeq => false
-  test s!"the committed bundle reads ({why})" why.isEmpty $
-  test "the structural operations: their defeq entries" structural $
-  test "the well-founded operations: their certificate theorems, in order, by name" proved
+  itBool s!"the committed bundle reads ({why})" why.isEmpty
+  itBool "the structural operations: their defeq entries" structural
+  itBool "the well-founded operations: their certificate theorems, in order, by name" proved
 
 /-- The operations' closure in `Init` (no certificate theorem), checked group
 by group at the input's own evidence and at the bundle's, and all at once at
@@ -75,13 +75,14 @@ def evaluate : IO (Array String × Array String) := do
   | .error e => errors := errors.push s!"checkSourceWith at the bundle's evidence: {e}"
   return (errors, lines)
 
-def closureCheck : TestSeq :=
-  .individualIO "the operations' Init closure, without certificates, at the bundle's evidence" none (do
+def closureCheck : Spec :=
+  it "the operations' Init closure, without certificates, at the bundle's evidence" do
     let (errors, lines) ← evaluate
     for l in lines do IO.println l
-    let msg := if errors.isEmpty then none else some ("\n".intercalate errors.toList)
-    return (errors.isEmpty, operations.size, 0, msg)) .done
+    expect errors.isEmpty ("\n".intercalate errors.toList)
 
-def suite : List TestSeq := [shape, closureCheck]
+def suite : LSpec.Spec := do
+  shape
+  closureCheck
 
 end Tests.Ix.Kernel.BundleEvidence

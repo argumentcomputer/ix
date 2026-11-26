@@ -100,16 +100,15 @@ isolation the mode exists for (TruthMines' `module-header-v1` patch) without
 corrupting stored content. See `Ix.EnvScope.defaultConstList`. -/
 def getFileEnvCore (path : FilePath) : IO FileEnv := do
   let path ← IO.FS.realPath path
-  initLeanSearchPathFor path
   let source ← IO.FS.readFile path
   let inputCtx := Parser.mkInputContext source path.toString
   let (header, parserState, messages) ← Parser.parseHeader inputCtx
-  -- Required for `processHeaderCore`'s `loadExts := true` import; a completed
-  -- import resets the flag, so it is re-armed before every import.
-  unsafe enableInitializersExecution
-  let (env, messages) ← processHeaderCore
-    (HeaderSyntax.startPos header) (HeaderSyntax.imports header)
-    (isModule := false) default messages inputCtx 0
+  let (env, messages) ← Ix.withImportLock do
+    initLeanSearchPathFor path
+    unsafe enableInitializersExecution
+    processHeaderCore
+      (HeaderSyntax.startPos header) (HeaderSyntax.imports header)
+      (isModule := false) default messages inputCtx 0
   if messages.hasErrors then
     throw $ IO.userError $ "\n\n".intercalate $
       (← messages.toList.mapM (·.toString)).map (String.trimAscii · |>.toString)
@@ -139,15 +138,16 @@ callers union locally-elaborated names (`getModuleIdxFor? · |>.isNone`) from
 the full-content env. -/
 def moduleVisibleNames (path : FilePath) : IO (Option NameSet) := do
   let path ← IO.FS.realPath path
-  initLeanSearchPathFor path
   let source ← IO.FS.readFile path
   let inputCtx := Parser.mkInputContext source path.toString
   let (header, _, messages) ← Parser.parseHeader inputCtx
   if !HeaderSyntax.isModule header then return none
-  unsafe enableInitializersExecution  -- re-armed per import; see `getFileEnvCore`
-  let (env, messages) ← processHeaderCore
-    (HeaderSyntax.startPos header) (HeaderSyntax.imports header)
-    (isModule := true) default messages inputCtx 0
+  let (env, messages) ← Ix.withImportLock do
+    initLeanSearchPathFor path
+    unsafe enableInitializersExecution  -- re-armed per import; see `getFileEnvCore`
+    processHeaderCore
+      (HeaderSyntax.startPos header) (HeaderSyntax.imports header)
+      (isModule := true) default messages inputCtx 0
   if messages.hasErrors then
     throw $ IO.userError $ "\n\n".intercalate $
       (← messages.toList.mapM (·.toString)).map (String.trimAscii · |>.toString)
@@ -171,10 +171,11 @@ initial value — all imported entries sit in raw form but the computed state
 σ is empty, which silently breaks any test that reads extension state via
 `get_env!`. Matches `Lean.Elab.processHeaderCore`'s import path (used by
 `getFileEnv`) and Lake's own `importModulesUsingCache`. -/
-def getCompileEnv (imports : Array Name) : IO Environment := do
-  initLeanSearchPath
-  unsafe enableInitializersExecution  -- required for `loadExts := true`
-  importModules (imports.map ({ module := · : Import })) default (loadExts := true)
+def getCompileEnv (imports : Array Name) : IO Environment :=
+  Ix.withImportLock do
+    initLeanSearchPath
+    unsafe enableInitializersExecution  -- required for `loadExts := true`
+    importModules (imports.map ({ module := · : Import })) default (loadExts := true)
 
 macro "get_env!" : term =>
   `(getCompileEnv this_file!)

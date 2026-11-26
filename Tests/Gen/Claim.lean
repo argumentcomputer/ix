@@ -9,7 +9,7 @@ public import Ix.Claim
 
 public section
 
-open LSpec SlimCheck Gen
+open LSpec LSpec.Prop Gen
 open Ix (RevealConstructorInfo RevealRecursorRule RevealMutConstInfo RevealConstantInfo Claim
          DefKind DefinitionSafety QuotKind)
 open Tests.Gen.Ixon (genAddress genUInt64Small genDefKind genDefinitionSafety genQuotKindNew
@@ -156,13 +156,13 @@ instance : Shrinkable Claim where
     | .catalog m => [.checkEnv default m none]
     | .binding _ _ => []
 
-/-! ## SampleableExt instances -/
+/-! ## Sampleable instances -/
 
-instance : SampleableExt RevealConstructorInfo := SampleableExt.mkSelfContained genRevealConstructorInfo
-instance : SampleableExt RevealRecursorRule := SampleableExt.mkSelfContained genRevealRecursorRule
-instance : SampleableExt RevealMutConstInfo := SampleableExt.mkSelfContained genRevealMutConstInfo
-instance : SampleableExt RevealConstantInfo := SampleableExt.mkSelfContained genRevealConstantInfo
-instance : SampleableExt Claim := SampleableExt.mkSelfContained genClaim
+instance : Sampleable RevealConstructorInfo := ⟨genRevealConstructorInfo⟩
+instance : Sampleable RevealRecursorRule := ⟨genRevealRecursorRule⟩
+instance : Sampleable RevealMutConstInfo := ⟨genRevealMutConstInfo⟩
+instance : Sampleable RevealConstantInfo := ⟨genRevealConstantInfo⟩
+instance : Sampleable Claim := ⟨genClaim⟩
 
 end Tests.Gen.Claim
 
