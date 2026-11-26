@@ -24,15 +24,13 @@ theorem Lane.poly_denote_gate (idv : Nat) (lane : Lane F) {a b c : Nat}
     (hid : lane.qid = 0) (val : Nat → F) :
     (Lane.poly idv lane).denote val =
       lane.qm * (val a * val b) + lane.q0 * val a + lane.q1 * val b + lane.q2 * val c + lane.qc := by
-  simp only [Lane.poly, h0, h1, h2, h3, hid, if_true, Tiling.cellPoly, Poly.denote, List.map_append,
-    List.sum_append, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, Mono.eval,
-    Mono.eval_insert]
+  simp only [Lane.poly, h0, h1, h2, h3, hid, ite_true, Tiling.cellPoly, Poly.denote, List.map_append,
+    List.sum_append, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, Mono.eval]
   have hm : ((Mono.insert a [b]).map val).prod = val a * val b := by
     have := Mono.eval_insert val a [b]
     simp only [Mono.eval, List.map_cons, List.map_nil, List.prod_cons, List.prod_nil, mul_one] at this
     exact this
-  simp [Mono.eval, hm]
-  try ring
+  simp [hm]
 
 theorem Lane.toGate_holds_iff (wire : Nat → Nat) (w : Nat → F) (idv : Nat) (lane : Lane F) {a b c : Nat}
     (h0 : lane.c0 = some a) (h1 : lane.c1 = some b) (h2 : lane.c2 = some c) (h3 : lane.c3 = none)

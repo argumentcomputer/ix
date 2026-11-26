@@ -21,9 +21,13 @@ namespace Aiur.Plonk
 
 open Aiur.Tiling (Template SlotDef Row Term)
 open Aiur.Tiling.WideStage (Air)
-open Lower (Fr LGate Ref)
+open Lower (LGate Ref)
 
-def realisedIdx (T : Template Fr) (sr : Nat → Ref) (idx : Array Nat) (G : Nat → Option LGate) : Bool :=
+section Generic
+
+variable {F : Type} [Field F] [DecidableEq F]
+
+def realisedIdx (T : Template F) (sr : Nat → Ref) (idx : Array Nat) (G : Nat → Option (LGate F)) : Bool :=
   T.rows.zipIdx.all fun (row, i) =>
     match row with
     | .gate [lane] false _ =>
@@ -32,11 +36,12 @@ def realisedIdx (T : Template Fr) (sr : Nat → Ref) (idx : Array Nat) (G : Nat 
         | none => false
     | _ => false
 
+omit [Field F] [DecidableEq F] in
 /-- The gates `G` names, instantiated. -/
-def instOf (G : Nat → Option LGate) (wireOf : Ref → Nat) (h : Gate Fr) : Prop :=
+def instOf (G : Nat → Option (LGate F)) (wireOf : Ref → Nat) (h : Gate F) : Prop :=
   ∃ i g, G i = some g ∧ g.inst wireOf = h
 
-theorem realised_of_realisedIdx {T : Template Fr} {sr : Nat → Ref} {idx : Array Nat} {G : Nat → Option LGate}
+theorem realised_of_realisedIdx {T : Template F} {sr : Nat → Ref} {idx : Array Nat} {G : Nat → Option (LGate F)}
     (h : realisedIdx T sr idx G = true) (wireOf : Ref → Nat) :
     Realised T (wireOf ∘ sr) (instOf G wireOf) := by
   intro row hrow
@@ -54,8 +59,9 @@ theorem realised_of_realisedIdx {T : Template Fr} {sr : Nat → Ref} {idx : Arra
 
 namespace AirIn
 
+omit [Field F] [DecidableEq F] in
 /-- The column a reference stands for in lookup `k`'s message circuit. -/
-def msgCol (a : Air Fr) (qRef sIn sOut : Ref) (x : Ref) : Option Nat :=
+def msgCol (a : Air F) (qRef sIn sOut : Ref) (x : Ref) : Option Nat :=
   if x % 4 == 0 then some (x / 8)
   else if x == Lower.gammaRef then some (gammaCol a)
   else if x == Lower.betaRef then some (betaCol a)
@@ -65,8 +71,9 @@ def msgCol (a : Air Fr) (qRef sIn sOut : Ref) (x : Ref) : Option Nat :=
   else if x == Lower.sumIn then some (spareCol a)
   else none
 
+omit [Field F] [DecidableEq F] in
 /-- Each column slot reads the reference its column stands for. -/
-def msgColsB (a : Air Fr) (T : Template Fr) (sr : Nat → Ref) (qRef sIn sOut : Ref) : Bool :=
+def msgColsB (a : Air F) (T : Template F) (sr : Nat → Ref) (qRef sIn sOut : Ref) : Bool :=
   T.slots.zipIdx.all fun (d, s) =>
     match d with
     | .column c =>
@@ -79,27 +86,30 @@ def msgColsB (a : Air Fr) (T : Template Fr) (sr : Nat → Ref) (qRef sIn sOut : 
         else c == spareCol a && sr s == Lower.sumIn
     | _ => true
 
+omit [DecidableEq F] in
 /-- The cone of `roots` (indices into `G`) through `defOf` (indices into
 `G`), pool wires first, each group in creation order. -/
-def coneIdxOf (G : Nat → Option LGate) (defOf : Ref → Option Nat) (roots : Array Nat) : Array Nat := Id.run do
+def coneIdxOf (G : Nat → Option (LGate F)) (defOf : Ref → Option Nat) (roots : Array Nat) : Array Nat := Id.run do
   let mut need : Std.HashMap Ref Nat := {}
-  let mut stack : List Ref := roots.toList.flatMap fun i => let g := (G i).getD default; [g.a, g.b, g.c]
+  let mut stack : List Ref := roots.toList.flatMap fun i =>
+    let g := (G i).getD Lower.LGate.empty; [g.a, g.b, g.c]
   while !stack.isEmpty do
     let r := stack.head!
     stack := stack.tail!
     if need.contains r then continue
     if let some i := defOf r then
       need := need.insert r i
-      let g := (G i).getD default
+      let g := (G i).getD Lower.LGate.empty
       stack := g.a :: g.b :: stack
   let refs := need.toArray.map (·.1)
   let group (r : Ref) : Nat := if r % 4 == 2 then 0 else 1
   let sorted := refs.qsort fun x y => group x < group y || (group x == group y && x < y)
   return sorted.filterMap (need[·]?)
 
+omit [Field F] [DecidableEq F] in
 /-- The slot references `toTemplateG defs roots col` assigns: columns in
 order of first use, then each defining gate's output. -/
-def slotRefsG (defs roots : Array LGate) (col : Ref → Option Nat) : Array Ref := Id.run do
+def slotRefsG (defs roots : Array (LGate F)) (col : Ref → Option Nat) : Array Ref := Id.run do
   let mut seen : Std.HashMap Ref Unit := {}
   let mut out : Array Ref := #[]
   for g in defs ++ roots do
@@ -110,8 +120,8 @@ def slotRefsG (defs roots : Array LGate) (col : Ref → Option Nat) : Array Ref 
   for g in defs do out := out.push g.c
   return out
 
-structure MsgCert where
-  T : Template Fr
+structure MsgCert (F : Type) where
+  T : Template F
   sr : Array Ref
   idx : Array Nat
   count : Bool
@@ -120,51 +130,52 @@ structure MsgCert where
   sOut : Ref
 
 /-- The certificate of lookup `k` whose gates are `gk` (indices into `G`). -/
-def msgCert (a : Air Fr) (G : Nat → Option LGate) (defOf : Ref → Option Nat) (gk : Array Nat) :
-    Except String (Option MsgCert) := do
+def msgCert (a : Air F) (G : Nat → Option (LGate F)) (defOf : Ref → Option Nat) (gk : Array Nat) :
+    Except String (Option (MsgCert F)) := do
   if gk.isEmpty then return none
-  let counts := gk.filter fun i => ((G i).getD default).tag == .count
-  let logups := gk.filter fun i => ((G i).getD default).tag == .logup
+  let counts := gk.filter fun i => ((G i).getD Lower.LGate.empty).tag == .count
+  let logups := gk.filter fun i => ((G i).getD Lower.LGate.empty).tag == .logup
   unless logups.size == 2 && counts.size ≤ 1 do throw "malformed message gates"
-  let qg := (G logups[0]!).getD default
-  let sg := (G logups[1]!).getD default
+  let qg := (G logups[0]!).getD Lower.LGate.empty
+  let sg := (G logups[1]!).getD Lower.LGate.empty
   let col := msgCol a qg.a sg.a sg.c
   let rootsI := #[logups[0]!, logups[1]!] ++ counts
   let defsI := coneIdxOf G defOf rootsI
-  let defs := defsI.map fun i => (G i).getD default
-  let roots := rootsI.map fun i => (G i).getD default
+  let defs := defsI.map fun i => (G i).getD Lower.LGate.empty
+  let roots := rootsI.map fun i => (G i).getD Lower.LGate.empty
   let T ← Lower.toTemplateG defs roots col
   return some ⟨T, slotRefsG defs roots col, defsI ++ rootsI, !counts.isEmpty, qg.a, sg.a, sg.c⟩
 
 /-- The checks of a message certificate: its template passes
 `Template.check` against `msgCircuit`, covers its variables, is realised by
 the gates `G` names, and its column slots read their references. -/
-def certSomeOk (a : Air Fr) (r k : Nat) (G : Nat → Option LGate) (c : MsgCert) : Bool :=
+def certSomeOk (a : Air F) (r k : Nat) (G : Nat → Option (LGate F)) (c : MsgCert F) : Bool :=
   let sr (s : Nat) : Ref := c.sr.getD s 0
   c.T.check (msgCircuit a r k c.count) && coversVars c.T (a.circuit.width + 6) (msgCircuit a r k c.count) &&
     realisedIdx c.T sr c.idx G && msgColsB a c.T sr c.qRef c.sIn c.sOut
 
 /-- A lookup without gates is checked when its multiplicity normalises to 0. -/
-def certNoneOk (a : Air Fr) (r k : Nat) : Bool :=
+def certNoneOk (a : Air F) (r k : Nat) : Bool :=
   (Tiling.Poly.norm (Tiling.Poly.ofExpr (multExpr a r k))).isEmpty
 
-def msgCertOk (a : Air Fr) (r k : Nat) (G : Nat → Option LGate) (defOf : Ref → Option Nat) (gk : Array Nat) : Bool :=
+def msgCertOk (a : Air F) (r k : Nat) (G : Nat → Option (LGate F)) (defOf : Ref → Option Nat)
+    (gk : Array Nat) : Bool :=
   match msgCert a G defOf gk with
   | .ok none => certNoneOk a r k
   | .ok (some c) => certSomeOk a r k G c
   | .error _ => false
 
-theorem mult_zero_of_certNoneOk {a : Air Fr} {r k : Nat} (ok : certNoneOk a r k = true)
-    (main : Nat → Nat → Fr) : (lookupAt a k).multiplicity.denote (a.assign main r) = 0 := by
+theorem mult_zero_of_certNoneOk {a : Air F} {r k : Nat} (ok : certNoneOk a r k = true)
+    (main : Nat → Nat → F) : (lookupAt a k).multiplicity.denote (a.assign main r) = 0 := by
   have h0 := Tiling.Poly.denote_eq_zero_of_norm _ ok (a.assign main r)
   rw [Tiling.Poly.denote_ofExpr] at h0
   simpa [multExpr, fixRow_denote] using h0
 
-theorem message_of_certSomeOk {a : Air Fr} {r k : Nat} {G : Nat → Option LGate} {c : MsgCert}
+theorem message_of_certSomeOk {a : Air F} {r k : Nat} {G : Nat → Option (LGate F)} {c : MsgCert F}
     (ok : certSomeOk a r k G c = true)
     (wireOf : Ref → Nat) (cellWire : Nat → Nat) (hcell : ∀ x, x % 4 = 0 → wireOf x = cellWire (x / 8))
-    (w : Nat → Fr) (hold : ∀ i g, G i = some g → (g.inst wireOf).Holds w)
-    (main : Nat → Nat → Fr) (hmain : ∀ v, main r v = w (cellWire v)) :
+    (w : Nat → F) (hold : ∀ i g, G i = some g → (g.inst wireOf).Holds w)
+    (main : Nat → Nat → F) (hmain : ∀ v, main r v = w (cellWire v)) :
     w (wireOf c.qRef) * fp (w (wireOf Lower.gammaRef)) (w (wireOf Lower.betaRef))
         ((lookupAt a k).tuple (a.assign main r)) = (lookupAt a k).multiplicity.denote (a.assign main r) ∧
       w (wireOf c.sOut) = w (wireOf c.sIn) + w (wireOf c.qRef) := by
@@ -181,20 +192,20 @@ theorem message_of_certSomeOk {a : Air Fr} {r k : Nat} {G : Nat → Option LGate
   simp only at hc'
   simp only [Function.comp, msgView]
   by_cases h1 : v < a.circuit.width
-  · simp only [h1, if_true, Bool.and_eq_true, beq_iff_eq] at hc' ⊢
+  · simp only [h1, ↓reduceIte, Bool.and_eq_true, beq_iff_eq] at hc' ⊢
     rw [hcell _ hc'.1, hc'.2, hmain]
   · obtain ⟨d, rfl⟩ : ∃ d, v = a.circuit.width + d := ⟨v - a.circuit.width, by omega⟩
     have hd : d < 6 := by omega
     interval_cases d <;>
       simp [gammaCol, betaCol, qCol, sInCol, sOutCol, spareCol] at hc' ⊢ <;> simp [hc']
 
-theorem message_of_gates {a : Air Fr} {r k : Nat} {G : Nat → Option LGate} {defOf : Ref → Option Nat}
+theorem message_of_gates {a : Air F} {r k : Nat} {G : Nat → Option (LGate F)} {defOf : Ref → Option Nat}
     {gk : Array Nat} (ok : msgCertOk a r k G defOf gk = true)
     (wireOf : Ref → Nat) (cellWire : Nat → Nat) (hcell : ∀ x, x % 4 = 0 → wireOf x = cellWire (x / 8))
-    (w : Nat → Fr) (hold : ∀ i g, G i = some g → (g.inst wireOf).Holds w)
-    (main : Nat → Nat → Fr) (hmain : ∀ v, main r v = w (cellWire v)) :
+    (w : Nat → F) (hold : ∀ i g, G i = some g → (g.inst wireOf).Holds w)
+    (main : Nat → Nat → F) (hmain : ∀ v, main r v = w (cellWire v)) :
     (lookupAt a k).multiplicity.denote (a.assign main r) = 0 ∨
-      ∃ c : MsgCert, msgCert a G defOf gk = .ok (some c) ∧
+      ∃ c : MsgCert F, msgCert a G defOf gk = .ok (some c) ∧
         w (wireOf c.qRef) * fp (w (wireOf Lower.gammaRef)) (w (wireOf Lower.betaRef))
             ((lookupAt a k).tuple (a.assign main r)) = (lookupAt a k).multiplicity.denote (a.assign main r) ∧
           w (wireOf c.sOut) = w (wireOf c.sIn) + w (wireOf c.qRef) := by
@@ -205,13 +216,14 @@ theorem message_of_gates {a : Air Fr} {r k : Nat} {G : Nat → Option LGate} {de
     exact .inr ⟨c, hc, message_of_certSomeOk ok wireOf cellWire hcell w hold main hmain⟩
   · exact absurd ok (by simp)
 
+omit [Field F] [DecidableEq F] in
 /-- A row's gates followed by the pool's. -/
-def rowPoolGates (s : Lower.St) (i : Nat) : Option LGate :=
+def rowPoolGates (s : Lower.St F) (i : Nat) : Option (LGate F) :=
   if i < s.gates.size then s.gates[i]? else s.pool.gates[i - s.gates.size]?
 
 /-- Check every lookup of row `r` by `msgCertOk`; `poolIdx` gives the index
 in `s.pool.gates` of each pool wire's defining gate. -/
-def checkMessagesR (name : String) (a : Air Fr) (r : Nat) (s : Lower.St)
+def checkMessagesR (name : String) (a : Air F) (r : Nat) (s : Lower.St F)
     (poolIdx : Ref → Option Nat) : Except String Unit := do
   let mut localDef : Std.HashMap Ref Nat := {}
   let mut byMsg : Std.HashMap Nat (Array Nat) := {}
@@ -228,5 +240,7 @@ def checkMessagesR (name : String) (a : Air Fr) (r : Nat) (s : Lower.St)
       throw s!"{name}: lookup {k} is not realised by its gates"
 
 end AirIn
+
+end Generic
 
 end Aiur.Plonk

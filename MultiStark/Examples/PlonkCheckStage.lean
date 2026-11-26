@@ -1,3 +1,5 @@
+import Aiur.Library.Field.BN254
+import Aiur.Library.Field.BLS12381.Prime
 import Aiur.Tiling.IxaTrace
 import Aiur.Tiling.WideIxa
 import Aiur.Tiling.GroupedIxa
@@ -9,7 +11,7 @@ import Aiur.Plonk.Stage
 /-!
 # PLONK checker over a wide stage
 
-`plonk_check_stage terminal.ixa schema.json [only] [maxRows] [selector-maps]`
+`plonk_check_stage terminal.ixa schema.json [only] [maxRows] [selector-maps] [--bn254|--bls12-381]`
 builds the stage with `WideIxa.stageOf` (every map kept, power-of-two rows)
 at the schema's capacities and decides `Plonk.stageOk airs P poolIdx`, the
 hypothesis of `stage_sound`, table by table. The map tables are the
@@ -35,18 +37,18 @@ namespace Aiur.Plonk.CheckStage
 open Aiur.Plonk Aiur.Tiling Aiur.Tiling.WideStage
 
 /-- For `SharedTable.checkFast`, which equals `check` under any instance. -/
-instance : Hashable Aiur.Plonk.Lower.Fr := ⟨fun x => hash x.val⟩
+local instance {p : Nat} : Hashable (ZMod p) := ⟨fun x => hash x.val⟩
 def say (s : String) : IO Unit := do IO.println s; (← IO.getStdout).flush
 
-def run (args : List String) : IO UInt32 := do
+def runFor (p : Nat) [Fact (Nat.Prime p)] (posArgs : List String) : IO UInt32 := do
   let t0 ← IO.monoMsNow
-  let pkg ← IO.ofExcept (Ixa.decodeChecked (F := Lower.Fr) Aiur.Library.Field.BN254.modulus ZMod.val
-    (← IO.FS.readBinFile args[0]!))
-  let j ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile args[1]!))
-  let src ← IO.ofExcept (Schema.source j)
-  let only := args[2]?.getD ""
-  let maxRows := (args[3]?.getD "0").toNat!
-  let sharedMaps := args[4]? != some "selector-maps"
+  let pkg ← IO.ofExcept (Ixa.decodeChecked (F := ZMod p) p ZMod.val
+    (← IO.FS.readBinFile posArgs[0]!))
+  let j ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile posArgs[1]!))
+  let src ← IO.ofExcept (Schema.source (F := ZMod p) j)
+  let only := posArgs[2]?.getD ""
+  let maxRows := (posArgs[3]?.getD "0").toNat!
+  let sharedMaps := posArgs[4]? != some "selector-maps"
   let circuits := src.tables.filterMap fun t =>
     if pkg.chips.any (·.name == t.name) then some (t.name, t.rows) else none
   let rom := src.tables.filterMap fun t =>
@@ -55,8 +57,8 @@ def run (args : List String) : IO UInt32 := do
   say s!"decoded: {circuits.length} chips, ROM {rom}, {(← IO.monoMsNow) - t0} ms"
   let entry ← IO.ofExcept (Schema.entryOf pkg circuits j)
   let st ← IO.ofExcept (WideIxa.stageOf pkg { circuits, rom, entry := some entry, allMaps := true, pow2 := true })
-  unless st.request.length ≥ 2 && st.request[0]! == (Bridge.CALL : Lower.Fr) &&
-      st.request[1]! == (pkg.idOf entry : Lower.Fr) do
+  unless st.request.length ≥ 2 && st.request[0]! == (Bridge.CALL : ZMod p) &&
+      st.request[1]! == (pkg.idOf entry : ZMod p) do
     say s!"the root message is not a call of {entry}"; return 1
   let claims := st.claims
   let digest := claims.foldl (fun h c => c.foldl (fun h x => mixHash h (hash x.val)) (mixHash h 7)) (0 : UInt64)
@@ -81,7 +83,7 @@ def run (args : List String) : IO UInt32 := do
   say s!"stage: {units.length} units, {maps.length} maps {maps.map (·.rows)}, {roms.length} ROMs"
   let only' (name : String) := only != "" && name != only
   -- pass 1: the final pool
-  let mut pool : Lower.Pool := {}
+  let mut pool : Lower.Pool (ZMod p) := {}
   let mut census : Lower.Census := {}
   for (a, name) in airs.zip labels do
     if only' name then continue
@@ -181,12 +183,23 @@ def run (args : List String) : IO UInt32 := do
         let f := frs[i.1]!.getD 0 Lower.sumIn
         if i.2 == 0 || f == Lower.sumIn then ss.getD 0 0 else locBase (i.1, i.2 - 1) + f / 4
       else ss.getD i.2 0
-    let L : Layout := ⟨(fun t => cellBases[t]!), (fun t => (airsA.getD t defaultAir).circuit.width), poolBase, locBase, sumIn, spare⟩
+    let L : Layout := ⟨(fun t => cellBases[t]!), (fun t => (airsA.getD t (defaultAir (F := ZMod p))).circuit.width), poolBase, locBase, sumIn, spare⟩
     let fOk := Layout.finalOk airs P fr
     let lOk := L.linkOkF airs fr init last
     say s!"layout: {spare + 1} wires ({nRoot} root cells, pool at {poolBase}, locals at {locStarts[0]!}), linkErr {linkErr}, finalOk {fOk}, linkOkF {lOk}, {(← IO.monoMsNow) - t0} ms"
     if !(fOk && lOk) then bad := bad + 1
   return if bad == 0 then 0 else 1
+
+def run (args : List String) : IO UInt32 := do
+  let useBls := args.contains "--bls12-381"
+  let useBn := args.contains "--bn254"
+  if useBls && useBn then
+    throw (IO.userError "cannot specify both --bn254 and --bls12-381")
+  let posArgs := args.filter fun a => a != "--bn254" && a != "--bls12-381"
+  if useBls then
+    runFor Aiur.Library.Field.BLS12381.modulus posArgs
+  else
+    runFor Aiur.Library.Field.BN254.modulus posArgs
 
 end Aiur.Plonk.CheckStage
 

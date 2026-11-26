@@ -11,20 +11,20 @@ is `Table.Holds`.
 
 namespace Aiur.Plonk
 
-open Lower (Fr)
-
 /-- Cell atom `2c + n` on row `r`: column `c` of row `r` (`n = 0`) or of the
 cyclically next row (`n = 1`). -/
-def cellView (rows : Nat) (main : Nat → Nat → Fr) (r : Nat) (k : Nat) : Fr :=
+def cellView {F : Type} (rows : Nat) (main : Nat → Nat → F) (r : Nat) (k : Nat) : F :=
   main (if k % 2 = 1 then (r + 1) % rows else r) (k / 2)
 
-def Node.readsRow : Node Fr → Prop
+def Node.readsRow {F : Type} : Node F → Prop
   | .fixed .. | .first | .last | .transition => False
   | _ => True
 
-def Table.NoFixed (t : Table Fr) : Prop := ∀ (i : Nat) (n : Node Fr), t.nodes[i]? = some n → Node.readsRow n
+def Table.NoFixed {F : Type} (t : Table F) : Prop :=
+  ∀ (i : Nat) (n : Node F), t.nodes[i]? = some n → Node.readsRow n
 
-theorem Table.expr_denote (t : Table Fr) (nf : t.NoFixed) (main : Nat → Nat → Fr) (r : Nat) :
+theorem Table.expr_denote {F : Type} [Field F] (t : Table F) (nf : t.NoFixed)
+    (main : Nat → Nat → F) (r : Nat) :
     ∀ i, (t.expr i).denote (cellView t.rows main r) = t.value main r i := by
   intro i
   induction i using Nat.strong_induction_on with
@@ -37,8 +37,7 @@ theorem Table.expr_denote (t : Table Fr) (nf : t.NoFixed) (main : Nat → Nat �
       cases n with
       | const v => simp [Scalar.Circuit.ArithExpr.denote]
       | main c n =>
-          cases n <;> simp [Scalar.Circuit.ArithExpr.denote, cellView, Nat.mul_add_mod,
-            Nat.mul_add_div]
+          cases n <;> simp [Scalar.Circuit.ArithExpr.denote, cellView, Nat.mul_add_div]
       | fixed => exact hi.elim
       | first => exact hi.elim
       | last => exact hi.elim
@@ -55,7 +54,8 @@ theorem Table.expr_denote (t : Table Fr) (nf : t.NoFixed) (main : Nat → Nat �
       | neg a =>
           by_cases ha : a < i <;> simp [ha, Scalar.Circuit.ArithExpr.denote, ih]
 
-theorem Table.holds_of_wide (t : Table Fr) (nf : t.NoFixed) (main : Nat → Nat → Fr) (r : Nat)
+theorem Table.holds_of_wide {F : Type} [Field F] (t : Table F) (nf : t.NoFixed)
+    (main : Nat → Nat → F) (r : Nat)
     (h : t.wideCircuit.Holds (cellView t.rows main r)) : t.Holds main r := by
   intro j hj
   have := h _ (List.mem_map.mpr ⟨j, hj, rfl⟩)

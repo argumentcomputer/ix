@@ -18,11 +18,11 @@ namespace Aiur.Plonk
 
 open Aiur.Tiling (Template SlotDef Lane Row Role Term)
 open Aiur.Scalar.Circuit (ArithExpr)
-open Lower (Fr LGate Ref)
+open Lower (LGate Ref)
 
 /-- Constraint polynomials of a table over cell atoms `2c + next`; fixed and
 selector reads (absent in uniform tables) read as zero. -/
-def Table.expr (t : Table Fr) (i : Nat) : ArithExpr Fr :=
+def Table.expr {F : Type} [Zero F] (t : Table F) (i : Nat) : ArithExpr F :=
   match t.nodes[i]? with
   | some (.const v) => .const v
   | some (.main c n) => .var (2 * c + if n then 1 else 0)
@@ -33,7 +33,7 @@ def Table.expr (t : Table Fr) (i : Nat) : ArithExpr Fr :=
   | _ => .const 0
 termination_by i
 
-def Table.wideCircuit (t : Table Fr) : Tiling.Circuit Fr where
+def Table.wideCircuit {F : Type} [Zero F] (t : Table F) : Tiling.Circuit F where
   width := 2 * t.width
   constraints := t.constraints.map t.expr
   lookups := []
@@ -42,16 +42,17 @@ namespace Lower
 
 /-- The template of a row's constraint gates, or an error naming a gate the
 template form cannot hold. Cell reference `r` is wide column `col r`. -/
-def toTemplate (gates : Array LGate) (col : Ref → Nat := (· / 4)) : Except String (Template Fr) := do
+def toTemplate {F : Type} [Ring F] [BEq F] (gates : Array (LGate F)) (col : Ref → Nat := (· / 4)) :
+    Except String (Template F) := do
   let gs := gates.filter (·.tag == .constraint)
   let isCell (r : Ref) := r % 4 == 0
   let cells := (gs.toList.flatMap fun g => [g.a, g.b, g.c].filter isCell).eraseDups.mergeSort (· ≤ ·)
   let mut slotOf : Std.HashMap Ref Nat := {}
-  let mut slots : Array (SlotDef Fr) := #[]
+  let mut slots : Array (SlotDef F) := #[]
   for r in cells do
     slotOf := slotOf.insert r slots.size
     slots := slots.push (.column (col r))
-  let mut rows : Array (Row Fr) := #[]
+  let mut rows : Array (Row F) := #[]
   for g in gs do
     let get (r : Ref) : Except String Nat :=
       match slotOf[r]? with
@@ -68,7 +69,7 @@ def toTemplate (gates : Array LGate) (col : Ref → Nat := (· / 4)) : Except St
           throw "a non-root gate must define a fresh internal wire"
         let s := slots.size
         slotOf := slotOf.insert g.c s
-        let terms : List (Term Fr) :=
+        let terms : List (Term F) :=
           (if g.L == 0 then [] else [.linear g.L sa]) ++ (if g.R == 0 then [] else [.linear g.R sb]) ++
             (if g.M == 0 then [] else [.product g.M sa sb])
         slots := slots.push (.sum terms g.C)
@@ -77,7 +78,7 @@ def toTemplate (gates : Array LGate) (col : Ref → Nat := (· / 4)) : Except St
 
 /-- The constraint gates `root` depends on: the root and the defining gates of
 the internal wires it reaches, in emission order. -/
-def cone (gs : Array LGate) (root : Nat) : Array LGate := Id.run do
+def cone {F : Type} [Zero F] (gs : Array (LGate F)) (root : Nat) : Array (LGate F) := Id.run do
   let mut defOf : Std.HashMap Ref Nat := {}
   for h : i in [0:gs.size] do
     if gs[i].root.isNone then defOf := defOf.insert gs[i].c i
@@ -88,7 +89,7 @@ def cone (gs : Array LGate) (root : Nat) : Array LGate := Id.run do
     stack := stack.tail!
     if need.contains i then continue
     need := need.insert i ()
-    let g := gs[i]!
+    let g := gs.getD i LGate.empty
     for r in [g.a, g.b, g.c] do
       if let some d := defOf[r]? then
         if d != i then stack := d :: stack
@@ -97,16 +98,16 @@ def cone (gs : Array LGate) (root : Nat) : Array LGate := Id.run do
 /-- Check a uniform table's constraints one at a time: constraint `j` against
 the template of its gate cone. A constraint without a gate must normalize to
 the zero polynomial. -/
-def checkUniform (t : Table Fr) : Except String Unit := do
+def checkUniform {p : Nat} [Fact (Nat.Prime p)] (t : Table (ZMod p)) : Except String Unit := do
   let ((), s) := (lowerRow t (sharedNodes t) 0).run {}
   let gs := s.gates.filter (·.tag == .constraint)
   let C := t.wideCircuit
   for h : j in [0:C.constraints.length] do
-    let Cj : Tiling.Circuit Fr := { C with constraints := [C.constraints[j]] }
+    let Cj : Tiling.Circuit (ZMod p) := { C with constraints := [C.constraints[j]] }
     let roots := (Array.range gs.size).filter fun i => gs[i]!.root == some j
     match roots.toList with
     | [] =>
-        let T : Template Fr := { width := 4, slots := [], rows := [] }
+        let T : Template (ZMod p) := { width := 4, slots := [], rows := [] }
         unless T.check Cj do throw s!"{t.name}: constraint {j} has no gate and is not identically zero"
     | [i] =>
         let cg := (cone gs i).map fun g => if g.root.isSome then { g with root := some 0 } else g

@@ -1,5 +1,5 @@
 import Aiur.Plonk.Scs
-import Aiur.Library.Field.BN254
+import Mathlib.Algebra.Field.ZMod
 import Std.Data.HashMap
 import Std.Data.HashSet
 import Mathlib.Tactic.LinearCombination
@@ -11,7 +11,7 @@ import Mathlib.Tactic.Ring
 The second lookup challenge `β` is computed in-circuit from the commitment
 challenge `γ` (BLAKE3, `BetaGadget.lean`). Soundness needs only that the
 emitted gates leave no freedom: every satisfying assignment has
-`w β = B (w γ)` for one function `B : Fr → Fr`. The gadget is a list of
+`w β = B (w γ)` for one function `B : ZMod p → ZMod p`. The gadget is a list of
 `Step`s, each contributing gates:
 
 * `lin g`: the gate `g` with `qO ≠ 0` and operands `a`, `b` already
@@ -19,10 +19,10 @@ emitted gates leave no freedom: every satisfying assignment has
 * `bits x bs accs canon`: the bit wires `bs` (most significant first) of the
   determined wire `x`: one booleanity gate per bit, a Horner chain
   `acc' = 2·acc + b` ending at `x`, and, when `canon = some ps`, a comparison
-  chain forcing `Σ 2^i·bᵢ ≤ r − 1` as natural numbers. With `2^n ≤ r`, or
+  chain forcing `Σ 2^i·bᵢ ≤ p − 1` as natural numbers. With `2^n ≤ p`, or
   with the comparison, the decomposition is the canonical one: each bit is
   `natBits n (w x).val` (`bits_canonical`). Without it a prover could choose
-  the bits of `w x + r` when that is below `2^n`.
+  the bits of `w x + p` when that is below `2^n`.
 
 `checkAll` decides the structural conditions (which wires are determined,
 `qO ≠ 0`, the bit-width side conditions) without looking at values;
@@ -32,10 +32,6 @@ emitted gates leave no freedom: every satisfying assignment has
 -/
 
 namespace Aiur.Plonk.Beta
-
-open Aiur.Library.Field.BN254 (modulus)
-
-abbrev Fr := Aiur.Library.Field.BN254.F
 
 /-! ## Bits as natural numbers -/
 
@@ -47,7 +43,7 @@ def hN : List Nat → Nat
   | [] => 0
   | x :: t => x * 2 ^ t.length + hN t
 
-def hF : List Fr → Fr
+def hF {F : Type} [CommRing F] : List F → F
   | [] => 0
   | x :: t => x * 2 ^ t.length + hF t
 
@@ -103,11 +99,12 @@ theorem natBits_hN : ∀ {l : List Nat}, IsBits l → natBits l.length (hN l) = 
       · rw [Nat.add_comm, natBits_congr (B := hN t) fun j hj => div_pow_mod_two_add _ _ _ _ hj]
         exact natBits_hN ht'
 
-theorem hN_cast : ∀ l : List Nat, ((hN l : Nat) : Fr) = hF (l.map (Nat.cast : Nat → Fr))
+theorem hN_cast {F : Type} [CommRing F] :
+    ∀ l : List Nat, ((hN l : Nat) : F) = hF (l.map (Nat.cast : Nat → F))
   | [] => by simp [hN, hF]
   | x :: t => by simp [hN, hF, hN_cast t]
 
-theorem foldl_horner : ∀ (vs : List Fr) (a : Fr),
+theorem foldl_horner {F : Type} [CommRing F] : ∀ (vs : List F) (a : F),
     vs.foldl (fun a v => 2 * a + v) a = a * 2 ^ vs.length + hF vs
   | [], a => by simp [hF]
   | v :: vs, a => by
@@ -116,11 +113,11 @@ theorem foldl_horner : ∀ (vs : List Fr) (a : Fr),
 
 /-! ## The gates of a bit decomposition -/
 
-def boolGate (b : Nat) : Gate Fr := ⟨b, b, b, -1, 0, 0, 1, 0⟩
+def boolGate {F : Type} [Ring F] (b : Nat) : Gate F := ⟨b, b, b, -1, 0, 0, 1, 0⟩
 
 /-- `x = Σ` of the bits `prev :: rest` (most significant first) by
 `acc' = 2·acc + b`; the intermediate wires are taken from `accs`. -/
-def hornerGates (x : Nat) : Nat → List Nat → List Nat → List (Gate Fr)
+def hornerGates {F : Type} [Ring F] (x : Nat) : Nat → List Nat → List Nat → List (Gate F)
   | prev, [], _ => [⟨prev, prev, x, 1, 0, -1, 0, 0⟩]
   | prev, [b], _ => [⟨prev, b, x, 2, 1, -1, 0, 0⟩]
   | prev, b :: b' :: rest, accs =>
@@ -131,7 +128,7 @@ significant first). `p` is the wire holding "every earlier bit equals the
 constant's", `none` while that is the constant `1`. Where `k = 1` the flag
 becomes `p·b` (a fresh wire from `ps`); where `k = 0` the gate `p·b = 0`
 forbids a `1` while the prefix is equal. -/
-def canonGates : Option Nat → List Nat → List Nat → List Nat → List (Gate Fr)
+def canonGates {F : Type} [Ring F] : Option Nat → List Nat → List Nat → List Nat → List (Gate F)
   | p, b :: bs, k :: ks, ps =>
       if k = 1 then
         match p with
@@ -139,35 +136,39 @@ def canonGates : Option Nat → List Nat → List Nat → List Nat → List (Gat
         | some pw => ⟨pw, b, ps.headD 0, 0, 0, -1, 1, 0⟩ :: canonGates (some (ps.headD 0)) bs ks ps.tail
       else
         (match p with
-          | none => (⟨b, b, b, 1, 0, 0, 0, 0⟩ : Gate Fr)
+          | none => (⟨b, b, b, 1, 0, 0, 0, 0⟩ : Gate F)
           | some pw => ⟨pw, b, b, 0, 0, 0, 1, 0⟩) :: canonGates p bs ks ps
   | _, _, _, _ => []
 
-variable (w : Nat → Fr)
+section FieldLemmas
 
-theorem bool_of_boolGate {b : Nat} (h : (boolGate b).Holds w) : w b = 0 ∨ w b = 1 := by
+variable {F : Type} [Field F] [DecidableEq F]
+
+omit [DecidableEq F] in
+theorem bool_of_boolGate (w : Nat → F) {b : Nat} (h : (boolGate b).Holds w) : w b = 0 ∨ w b = 1 := by
   simp only [boolGate, Gate.Holds] at h
   have : w b * (w b - 1) = 0 := by linear_combination h
   rcases mul_eq_zero.mp this with h0 | h1
   · exact .inl h0
   · exact .inr (sub_eq_zero.mp h1)
 
-theorem horner_sound {x : Nat} : ∀ (rest : List Nat) (prev : Nat) (accs : List Nat),
+omit [DecidableEq F] in
+theorem horner_sound (w : Nat → F) {x : Nat} : ∀ (rest : List Nat) (prev : Nat) (accs : List Nat),
     (∀ g ∈ hornerGates x prev rest accs, g.Holds w) →
       w x = (rest.map w).foldl (fun a v => 2 * a + v) (w prev)
-  | [], prev, accs, h => by
+  | [], prev, _, h => by
       have := h ⟨prev, prev, x, 1, 0, -1, 0, 0⟩ (by simp [hornerGates])
       simp only [Gate.Holds] at this
       simp only [List.map_nil, List.foldl_nil]
       linear_combination -this
-  | [b], prev, accs, h => by
+  | [b], prev, _, h => by
       have := h ⟨prev, b, x, 2, 1, -1, 0, 0⟩ (by simp [hornerGates])
       simp only [Gate.Holds] at this
       simp only [List.map_cons, List.map_nil, List.foldl_cons, List.foldl_nil]
       linear_combination -this
   | b :: b' :: rest, prev, accs, h => by
       have h0 := h ⟨prev, b, accs.headD 0, 2, 1, -1, 0, 0⟩ (by simp [hornerGates])
-      have ih := horner_sound (b' :: rest) (accs.headD 0) accs.tail fun g hg =>
+      have ih := horner_sound w (b' :: rest) (accs.headD 0) accs.tail fun g hg =>
         h g (by simp only [hornerGates, List.mem_cons]; exact .inr hg)
       simp only [Gate.Holds] at h0
       have e : w (accs.headD 0) = 2 * w prev + w b := by linear_combination -h0
@@ -175,22 +176,23 @@ theorem horner_sound {x : Nat} : ∀ (rest : List Nat) (prev : Nat) (accs : List
       simp only [List.map_cons, List.foldl_cons]
 
 /-- `1` when `x = 1`, else `0`: the bit a boolean wire holds. -/
-def bitOf (x : Fr) : Nat := if x = 1 then 1 else 0
+def bitOf (x : F) : Nat := if x = 1 then 1 else 0
 
-theorem bitOf_cast {x : Fr} (h : x = 0 ∨ x = 1) : ((bitOf x : Nat) : Fr) = x := by
+theorem bitOf_cast {x : F} (h : x = 0 ∨ x = 1) : ((bitOf x : Nat) : F) = x := by
   rcases h with rfl | rfl <;> simp [bitOf]
 
-theorem isBits_bitOf (l : List Nat) : IsBits (l.map fun b => bitOf (w b)) := by
+theorem isBits_bitOf (w : Nat → F) (l : List Nat) : IsBits (l.map fun b => bitOf (w b)) := by
   intro y hy
   simp only [List.mem_map] at hy
   obtain ⟨_, _, rfl⟩ := hy
   unfold bitOf; split <;> omega
 
-def flagVal (p : Option Nat) : Fr := match p with
+omit [DecidableEq F] in
+def flagVal (w : Nat → F) (p : Option Nat) : F := match p with
   | none => 1
   | some pw => w pw
 
-theorem canon_le : ∀ (bs ks : List Nat) (p : Option Nat) (ps : List Nat), ks.length = bs.length →
+theorem canon_le (w : Nat → F) : ∀ (bs ks : List Nat) (p : Option Nat) (ps : List Nat), ks.length = bs.length →
     (∀ k ∈ ks, k ≤ 1) → (∀ b ∈ bs, w b = 0 ∨ w b = 1) →
     (∀ g ∈ canonGates p bs ks ps, g.Holds w) → flagVal w p = 1 →
       hN (bs.map fun b => bitOf (w b)) ≤ hN ks
@@ -198,7 +200,7 @@ theorem canon_le : ∀ (bs ks : List Nat) (p : Option Nat) (ps : List Nat), ks.l
       cases ks with
       | nil => simp [hN]
       | cons _ _ => simp at hl
-  | b :: bs, [], _, _, hl, _, _, _, _ => by simp at hl
+  | _ :: _, [], _, _, hl, _, _, _, _ => by simp at hl
   | b :: bs, k :: ks, p, ps, hl, hk, hb, h, hp => by
       simp only [List.length_cons, Nat.add_right_cancel_iff] at hl
       have hk' : ∀ k ∈ ks, k ≤ 1 := fun k' hk' => hk k' (List.mem_cons_of_mem _ hk')
@@ -217,7 +219,7 @@ theorem canon_le : ∀ (bs ks : List Nat) (p : Option Nat) (ps : List Nat), ks.l
           · have e : bitOf (w b) = 0 := by simp [bitOf, h0]
             rw [e]; omega
           · have e : bitOf (w b) = 1 := by simp [bitOf, h1]
-            have ih := canon_le bs ks p' ps' hl hk' hb' hg' (hv.trans h1)
+            have ih := canon_le w bs ks p' ps' hl hk' hb' hg' (hv.trans h1)
             rw [e]; omega
         cases p with
         | none => exact finish (some b) ps (fun g hg => h g hg) rfl
@@ -240,17 +242,23 @@ theorem canon_le : ∀ (bs ks : List Nat) (p : Option Nat) (ps : List Nat), ks.l
               simp only [Gate.Holds, flagVal] at h0 hp
               rw [hp] at h0
               linear_combination h0
-        have ih := canon_le bs ks p ps hl hk' hb' (fun g hg => h g (List.mem_cons_of_mem _ hg)) hp
+        have ih := canon_le w bs ks p ps hl hk' hb' (fun g hg => h g (List.mem_cons_of_mem _ hg)) hp
         have e : bitOf (w b) = 0 := by simp [bitOf, hz]
         rw [e]; omega
 
+end FieldLemmas
+
 /-! ## Steps, the structural check and the evaluator -/
 
-inductive Step where
-  | lin (g : Gate Fr)
+inductive Step (F : Type) where
+  | lin (g : Gate F)
   | bits (x : Nat) (bs accs : List Nat) (canon : Option (List Nat))
 
-def Step.gates : Step → List (Gate Fr)
+def bitsWidthOk (p n : Nat) : Option (List Nat) → Bool
+  | none => decide (2 ^ n ≤ p)
+  | some _ => decide (p ≤ 2 ^ n)
+
+def Step.gates {p : Nat} : Step (ZMod p) → List (Gate (ZMod p))
   | .lin g => [g]
   | .bits x bs accs canon =>
       bs.map boolGate ++
@@ -259,45 +267,54 @@ def Step.gates : Step → List (Gate Fr)
           | b :: rest => hornerGates x b rest accs) ++
         (match canon with
           | none => []
-          | some ps => canonGates none bs (natBits bs.length (modulus - 1)) ps)
-
-def bitsWidthOk (n : Nat) : Option (List Nat) → Bool
-  | none => decide (2 ^ n ≤ modulus)
-  | some _ => decide (modulus ≤ 2 ^ n)
+          | some ps => canonGates none bs (natBits bs.length (p - 1)) ps)
 
 /-- The structural conditions of a step; `D` is the set of determined wires. -/
-def Step.check (D : Std.HashSet Nat) : Step → Option (Std.HashSet Nat)
+def Step.check {p : Nat} (D : Std.HashSet Nat) : Step (ZMod p) → Option (Std.HashSet Nat)
   | .lin g => if D.contains g.a && D.contains g.b && g.qO != 0 then some (D.insert g.c) else none
   | .bits x bs _ canon =>
-      if D.contains x && !bs.isEmpty && bitsWidthOk bs.length canon then
+      if D.contains x && !bs.isEmpty && bitsWidthOk p bs.length canon then
         some (bs.foldl (fun D b => D.insert b) D)
       else none
 
-def Step.eval (env : Std.HashMap Nat Fr) : Step → Std.HashMap Nat Fr
-  | .lin g =>
-      let va := env.getD g.a 0
-      let vb := env.getD g.b 0
-      env.insert g.c (-(g.qL * va + g.qR * vb + g.qM * (va * vb) + g.qC) / g.qO)
-  | .bits x bs _ _ =>
-      (bs.zip ((natBits bs.length (env.getD x 0).val).map (Nat.cast : Nat → Fr))).foldl
-        (fun e p => e.insert p.1 p.2) env
-
-def checkAll : Std.HashSet Nat → List Step → Option (Std.HashSet Nat)
+def checkAll {p : Nat} : Std.HashSet Nat → List (Step (ZMod p)) → Option (Std.HashSet Nat)
   | D, [] => some D
   | D, s :: ss =>
       match s.check D with
       | none => none
       | some D' => checkAll D' ss
 
-def evalAll : Std.HashMap Nat Fr → List Step → Std.HashMap Nat Fr
+def gadgetGates {p : Nat} (ss : List (Step (ZMod p))) : List (Gate (ZMod p)) :=
+  ss.flatMap Step.gates
+
+def betaOk {p : Nat} (ss : List (Step (ZMod p))) (γw βw : Nat) : Bool :=
+  match checkAll (({} : Std.HashSet Nat).insert γw) ss with
+  | some D => D.contains βw
+  | none => false
+
+section Prime
+
+variable {p : Nat} [Fact (Nat.Prime p)]
+
+def Step.eval (env : Std.HashMap Nat (ZMod p)) : Step (ZMod p) → Std.HashMap Nat (ZMod p)
+  | .lin g =>
+      let va := env.getD g.a 0
+      let vb := env.getD g.b 0
+      env.insert g.c (-(g.qL * va + g.qR * vb + g.qM * (va * vb) + g.qC) / g.qO)
+  | .bits x bs _ _ =>
+      (bs.zip ((natBits bs.length (env.getD x 0).val).map (Nat.cast : Nat → ZMod p))).foldl
+        (fun e pair => e.insert pair.1 pair.2) env
+
+def evalAll : Std.HashMap Nat (ZMod p) → List (Step (ZMod p)) → Std.HashMap Nat (ZMod p)
   | e, [] => e
   | e, s :: ss => evalAll (s.eval e) ss
 
-def Agree (D : Std.HashSet Nat) (env : Std.HashMap Nat Fr) : Prop :=
+def Agree (w : Nat → ZMod p) (D : Std.HashSet Nat) (env : Std.HashMap Nat (ZMod p)) : Prop :=
   ∀ x, D.contains x = true → w x = env.getD x 0
 
-theorem agree_insert {D : Std.HashSet Nat} {env : Std.HashMap Nat Fr} (h : Agree w D env) {k : Nat} {v : Fr}
-    (hk : w k = v) : Agree w (D.insert k) (env.insert k v) := by
+theorem agree_insert (w : Nat → ZMod p) {D : Std.HashSet Nat} {env : Std.HashMap Nat (ZMod p)}
+    (h : Agree w D env) {k : Nat} {v : ZMod p} (hk : w k = v) :
+    Agree w (D.insert k) (env.insert k v) := by
   intro x hx
   rw [Std.HashSet.contains_insert] at hx
   rw [Std.HashMap.getD_insert]
@@ -305,30 +322,32 @@ theorem agree_insert {D : Std.HashSet Nat} {env : Std.HashMap Nat Fr} (h : Agree
   · subst e; simp [hk]
   · have : (k == x) = false := by simp [e]
     rw [this, Bool.false_or] at hx
-    rw [this, if_neg (by simp)]
+    simp only [this, Bool.false_eq_true, ↓reduceIte]
     exact h x hx
 
-theorem agree_fold : ∀ (ps : List (Nat × Fr)) (D : Std.HashSet Nat) (env : Std.HashMap Nat Fr),
-    Agree w D env → (∀ p ∈ ps, w p.1 = p.2) →
-      Agree w (ps.foldl (fun D p => D.insert p.1) D) (ps.foldl (fun e p => e.insert p.1 p.2) env)
+theorem agree_fold (w : Nat → ZMod p) :
+    ∀ (ps : List (Nat × ZMod p)) (D : Std.HashSet Nat) (env : Std.HashMap Nat (ZMod p)),
+    Agree w D env → (∀ pair ∈ ps, w pair.1 = pair.2) →
+      Agree w (ps.foldl (fun D pair => D.insert pair.1) D) (ps.foldl (fun e pair => e.insert pair.1 pair.2) env)
   | [], _, _, h, _ => h
-  | p :: ps, D, env, h, hp => by
+  | pair :: ps, D, env, h, hp => by
       simp only [List.foldl_cons]
-      exact agree_fold ps _ _ (agree_insert w h (hp p List.mem_cons_self))
+      exact agree_fold w ps _ _ (agree_insert w h (hp pair List.mem_cons_self))
         fun q hq => hp q (List.mem_cons_of_mem _ hq)
 
-theorem mem_zip_map_self {α β : Type} (f : α → β) : ∀ (l : List α) (p : α × β), p ∈ l.zip (l.map f) → p.2 = f p.1
+theorem mem_zip_map_self {α β : Type} (f : α → β) : ∀ (l : List α) (pair : α × β),
+    pair ∈ l.zip (l.map f) → pair.2 = f pair.1
   | [], _, h => by simp at h
-  | a :: l, p, h => by
+  | _ :: l, pair, h => by
       simp only [List.map_cons, List.zip_cons_cons, List.mem_cons] at h
       rcases h with rfl | h
       · rfl
-      · exact mem_zip_map_self f l p h
+      · exact mem_zip_map_self f l pair h
 
 /-- A checked decomposition step holds exactly the canonical bits of `w x`. -/
-theorem bits_canonical {x : Nat} {bs accs : List Nat} {canon : Option (List Nat)}
-    (hw : bitsWidthOk bs.length canon = true) (hne : bs ≠ [])
-    (h : ∀ g ∈ (Step.bits x bs accs canon).gates, g.Holds w) :
+theorem bits_canonical (w : Nat → ZMod p) {x : Nat} {bs accs : List Nat} {canon : Option (List Nat)}
+    (hw : bitsWidthOk p bs.length canon = true) (hne : bs ≠ [])
+    (h : ∀ g ∈ (Step.bits (F := ZMod p) x bs accs canon).gates, g.Holds w) :
     natBits bs.length (w x).val = bs.map fun b => bitOf (w b) := by
   have hb : ∀ b ∈ bs, w b = 0 ∨ w b = 1 := fun b hb =>
     bool_of_boolGate w (h _ (List.mem_append_left _ (List.mem_append_left _ (List.mem_map_of_mem hb))))
@@ -340,37 +359,38 @@ theorem bits_canonical {x : Nat} {bs accs : List Nat} {canon : Option (List Nat)
     h g (List.mem_append_left _ (List.mem_append_right _ hg))
   rw [foldl_horner, List.length_map] at hx
   set bv := (b0 :: rest).map fun b => bitOf (w b) with hbv
-  have hcast : w x = ((hN bv : Nat) : Fr) := by
+  have hcast : w x = ((hN bv : Nat) : ZMod p) := by
     rw [hN_cast, hbv, List.map_map, hx]
-    have : ((b0 :: rest).map ((Nat.cast : Nat → Fr) ∘ fun b => bitOf (w b))) = (b0 :: rest).map w :=
+    have : ((b0 :: rest).map ((Nat.cast : Nat → ZMod p) ∘ fun b => bitOf (w b))) = (b0 :: rest).map w :=
       List.map_congr_left fun b hb' => bitOf_cast (hb b hb')
     rw [this]
     simp [hF]
   have hbits : IsBits bv := isBits_bitOf w _
   have hlen : bv.length = (b0 :: rest).length := by simp [hbv]
-  have hlt : hN bv < modulus := by
+  have hlt : hN bv < p := by
     cases canon with
     | none =>
-        have h2 : 2 ^ (b0 :: rest).length ≤ modulus := of_decide_eq_true hw
+        have h2 : 2 ^ (b0 :: rest).length ≤ p := of_decide_eq_true hw
         have := hN_lt hbits
         rw [hlen] at this
         omega
     | some ps =>
-        have h2 : modulus ≤ 2 ^ (b0 :: rest).length := of_decide_eq_true hw
-        have hle := canon_le w (b0 :: rest) (natBits (b0 :: rest).length (modulus - 1)) none ps
+        have h2 : p ≤ 2 ^ (b0 :: rest).length := of_decide_eq_true hw
+        have hle := canon_le w (b0 :: rest) (natBits (b0 :: rest).length (p - 1)) none ps
           (length_natBits _ _)
           (fun k hk => by
             simp only [natBits, List.mem_map] at hk
             obtain ⟨_, _, rfl⟩ := hk
             omega)
           hb (fun g hg => h g (List.mem_append_right _ hg)) rfl
-        rw [← hbv, hN_natBits, Nat.mod_eq_of_lt (by have : 0 < modulus := (by decide); omega)] at hle
-        have : 0 < modulus := by decide
+        have hp : 0 < p := (Fact.out : Nat.Prime p).pos
+        rw [← hbv, hN_natBits, Nat.mod_eq_of_lt (by omega)] at hle
         omega
   rw [hcast, ZMod.val_natCast, Nat.mod_eq_of_lt hlt, ← hlen]
   exact natBits_hN hbits
 
-theorem step_sound {s : Step} {D D' : Std.HashSet Nat} {env : Std.HashMap Nat Fr}
+theorem step_sound (w : Nat → ZMod p) {s : Step (ZMod p)} {D D' : Std.HashSet Nat}
+    {env : Std.HashMap Nat (ZMod p)}
     (hc : s.check D = some D') (h : ∀ g ∈ s.gates, g.Holds w) (ha : Agree w D env) :
     Agree w D' (s.eval env) := by
   cases s with
@@ -396,55 +416,52 @@ theorem step_sound {s : Step} {D D' : Std.HashSet Nat} {env : Std.HashMap Nat Fr
         simp only [Step.eval]
         rw [← ha _ hX, can, List.map_map]
         have hfold : bs.foldl (fun D b => D.insert b) D =
-            (bs.zip (bs.map ((Nat.cast : Nat → Fr) ∘ fun b => bitOf (w b)))).foldl (fun D p => D.insert p.1) D := by
-          rw [show (bs.zip (bs.map ((Nat.cast : Nat → Fr) ∘ fun b => bitOf (w b)))).foldl
-              (fun D p => D.insert p.1) D =
-              ((bs.zip (bs.map ((Nat.cast : Nat → Fr) ∘ fun b => bitOf (w b)))).map Prod.fst).foldl
+            (bs.zip (bs.map ((Nat.cast : Nat → ZMod p) ∘ fun b => bitOf (w b)))).foldl (fun D pair => D.insert pair.1) D := by
+          rw [show (bs.zip (bs.map ((Nat.cast : Nat → ZMod p) ∘ fun b => bitOf (w b)))).foldl
+              (fun D pair => D.insert pair.1) D =
+              ((bs.zip (bs.map ((Nat.cast : Nat → ZMod p) ∘ fun b => bitOf (w b)))).map Prod.fst).foldl
               (fun D b => D.insert b) D from List.foldl_map.symm, List.map_fst_zip (by simp)]
         rw [hfold]
         apply agree_fold w _ _ _ ha
-        intro p hp
-        rw [mem_zip_map_self _ bs p hp]
+        intro pair hp
+        rw [mem_zip_map_self _ bs pair hp]
         have hb : ∀ b ∈ bs, w b = 0 ∨ w b = 1 := fun b hb =>
           bool_of_boolGate w (h _ (List.mem_append_left _ (List.mem_append_left _ (List.mem_map_of_mem hb))))
-        have hp1 : p.1 ∈ bs := (List.of_mem_zip hp).1
+        have hp1 : pair.1 ∈ bs := (List.of_mem_zip hp).1
         exact (bitOf_cast (hb _ hp1)).symm
       · cases hc
 
-def gadgetGates (ss : List Step) : List (Gate Fr) := ss.flatMap Step.gates
-
-theorem checkAll_sound : ∀ (ss : List Step) (D D' : Std.HashSet Nat) (env : Std.HashMap Nat Fr),
+theorem checkAll_sound (w : Nat → ZMod p) :
+    ∀ (ss : List (Step (ZMod p))) (D D' : Std.HashSet Nat) (env : Std.HashMap Nat (ZMod p)),
     checkAll D ss = some D' → (∀ g ∈ gadgetGates ss, g.Holds w) → Agree w D env → Agree w D' (evalAll env ss)
-  | [], D, D', env, hc, _, ha => by cases hc; exact ha
+  | [], _, _, _, hc, _, ha => by cases hc; exact ha
   | s :: ss, D, D', env, hc, h, ha => by
       simp only [checkAll] at hc
       split at hc
       · cases hc
       · rename_i D1 h1
-        exact checkAll_sound ss D1 D' _ hc (fun g hg => h g (by
+        exact checkAll_sound w ss D1 D' _ hc (fun g hg => h g (by
             simp only [gadgetGates, List.flatMap_cons, List.mem_append]; exact .inr hg))
           (step_sound w h1 (fun g hg => h g (by
             simp only [gadgetGates, List.flatMap_cons, List.mem_append]; exact .inl hg)) ha)
 
 /-! ## The gadget's function -/
 
-def betaOk (ss : List Step) (γw βw : Nat) : Bool :=
-  match checkAll (({} : Std.HashSet Nat).insert γw) ss with
-  | some D => D.contains βw
-  | none => false
-
 /-- The value the checked gadget forces on `βw` when `γw` holds `γ`. -/
-def betaFn (ss : List Step) (γw βw : Nat) (γ : Fr) : Fr :=
-  (evalAll (({} : Std.HashMap Nat Fr).insert γw γ) ss).getD βw 0
+def betaFn (ss : List (Step (ZMod p))) (γw βw : Nat) (γ : ZMod p) : ZMod p :=
+  (evalAll (({} : Std.HashMap Nat (ZMod p)).insert γw γ) ss).getD βw 0
 
-theorem beta_functional {ss : List Step} {γw βw : Nat} (ok : betaOk ss γw βw = true)
-    (sat : ∀ g ∈ gadgetGates ss, g.Holds w) : w βw = betaFn ss γw βw (w γw) := by
+theorem beta_functional (w : Nat → ZMod p) {ss : List (Step (ZMod p))} {γw βw : Nat}
+    (ok : betaOk ss γw βw = true) (sat : ∀ g ∈ gadgetGates ss, g.Holds w) :
+    w βw = betaFn ss γw βw (w γw) := by
   unfold betaOk at ok
   split at ok
   · rename_i D hD
-    have h0 : Agree w (({} : Std.HashSet Nat).insert γw) (({} : Std.HashMap Nat Fr).insert γw (w γw)) :=
-      agree_insert w (fun x hx => by simp at hx) rfl
+    have h0 : Agree w (({} : Std.HashSet Nat).insert γw) (({} : Std.HashMap Nat (ZMod p)).insert γw (w γw)) :=
+      agree_insert w (fun _ hx => by simp at hx) rfl
     exact checkAll_sound w ss _ D _ hD sat h0 βw ok
   · cases ok
+
+end Prime
 
 end Aiur.Plonk.Beta

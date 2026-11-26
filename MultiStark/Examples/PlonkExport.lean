@@ -1,3 +1,5 @@
+import Aiur.Library.Field.BN254
+import Aiur.Library.Field.BLS12381.Prime
 import Aiur.Tiling.IxaTrace
 import Aiur.Tiling.WideIxa
 import Aiur.Tiling.GroupedIxa
@@ -11,7 +13,7 @@ import Aiur.Plonk.BetaGadget
 /-!
 # `plonk_export`: the terminal's sparse R1CS as an `ix-aiur-scs-v1` file
 
-`plonk_export terminal.ixa schema.json out.ixscs [nocheck] [selector-maps]`
+`plonk_export terminal.ixa schema.json out.ixscs [nocheck] [selector-maps] [--bn254|--bls12-381]`
 builds the stage as `plonk_check_stage` does (`WideIxa.stageOf` at the
 entry `Schema.entryOf` resolves from the schema's `callable`, the root table
 last: `rootAir k n` with `CALL` and the entry id `k` as circuit constants, its
@@ -61,10 +63,10 @@ name length, the name, `cellBase : u64`, `rows : u32`, `width : u32`.
 namespace Aiur.Plonk.Export
 
 open Aiur.Plonk Aiur.Tiling Aiur.Tiling.WideStage
-open Aiur.Plonk.Lower (Fr LGate Ref)
+open Aiur.Plonk.Lower (LGate Ref)
 
 /-- For `SharedTable.checkFast`, which equals `check` under any instance. -/
-instance : Hashable Aiur.Plonk.Lower.Fr := ⟨fun x => hash x.val⟩
+local instance {p : Nat} : Hashable (ZMod p) := ⟨fun x => hash x.val⟩
 
 def say (s : String) : IO Unit := do IO.println s; (← IO.getStdout).flush
 
@@ -75,7 +77,7 @@ def pushU32 (b : ByteArray) (x : Nat) : ByteArray :=
 
 def pushU64 (b : ByteArray) (x : Nat) : ByteArray := pushU32 (pushU32 b (x % 2 ^ 32)) (x >>> 32)
 
-def pushFr (b : ByteArray) (x : Fr) : ByteArray := Id.run do
+def pushFr {p : Nat} (b : ByteArray) (x : ZMod p) : ByteArray := Id.run do
   let mut b := b
   let v := x.val
   for i in [0:32] do b := b.push (v >>> (8 * i)).toUInt8
@@ -92,18 +94,18 @@ structure Conv where
   ω : Nat
   qC : Int
 
-structure Coeffs where
+structure Coeffs (p : Nat) where
   idx : Std.HashMap Nat Nat := {}
-  vals : Array Fr := #[]
+  vals : Array (ZMod p) := #[]
 
-def Coeffs.id (c : Coeffs) (x : Fr) : Coeffs × Nat :=
+def Coeffs.id {p : Nat} (c : Coeffs p) (x : ZMod p) : Coeffs p × Nat :=
   match c.idx[x.val]? with
   | some i => (c, i)
   | none => ({ idx := c.idx.insert x.val c.vals.size, vals := c.vals.push x }, c.vals.size)
 
 /-- `exportGate` of the coefficients, with ids; `none` when the gate has no
 `GGate` form or an operand coefficient is zero. -/
-def convert (c : Coeffs) (L R O M C : Fr) : Coeffs × Option Conv :=
+def convert {p : Nat} [Fact (Nat.Prime p)] (c : Coeffs p) (L R O M C : ZMod p) : Coeffs p × Option Conv :=
   match exportGate ⟨0, 0, 0, L, R, O, M, C⟩ with
   | none => (c, none)
   | some g =>
@@ -122,21 +124,16 @@ def writeGate (b : ByteArray) (a bb c : Nat) (v : Conv) : ByteArray :=
   pushU8 b (if v.qC < 0 then (256 + v.qC).toNat else v.qC.toNat)
 
 /-- Pre-commitment: a constraint or count gate over cells and row locals. -/
-def isPre (g : LGate) : Bool :=
+def isPre {F : Type} (g : LGate F) : Bool :=
   (match g.tag with | .constraint | .count => true | _ => false) &&
     [g.a, g.b, g.c].all fun x => x % 4 == 0 || x % 4 == 1
 
-def run (args : List String) : IO UInt32 := do
+def runFor (p : Nat) [Fact (Nat.Prime p)] (args : List String) (check sharedMaps : Bool) : IO UInt32 := do
   let t0 ← IO.monoMsNow
-  let opts := args.drop 3
-  for o in opts do
-    unless o == "nocheck" || o == "selector-maps" do throw (IO.userError s!"unknown option {o}")
-  let check := !opts.contains "nocheck"
-  let sharedMaps := !opts.contains "selector-maps"
-  let pkg ← IO.ofExcept (Ixa.decodeChecked (F := Aiur.Plonk.Lower.Fr) Aiur.Library.Field.BN254.modulus ZMod.val
+  let pkg ← IO.ofExcept (Ixa.decodeChecked (F := ZMod p) p ZMod.val
     (← IO.FS.readBinFile args[0]!))
   let j ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile args[1]!))
-  let src ← IO.ofExcept (Schema.source j)
+  let src ← IO.ofExcept (Schema.source (F := ZMod p) j)
   let nPublicInputs ← IO.ofExcept (j.getObjValAs? Nat "public_inputs")
   let nOutputs ← IO.ofExcept (j.getObjValAs? Nat "private_outputs")
   let circuits := src.tables.filterMap fun t =>
@@ -160,17 +157,17 @@ def run (args : List String) : IO UInt32 := do
   say s!"maps: {maps.length} tables ({if sharedMaps then "shared" else "selector"}), {(maps.map (·.rows)).sum} rows"
   -- `request = CALL :: idOf entry :: words`: the two constants are folded
   -- into the root message, the words are the root cells.
-  let entryId : Fr := st.request[1]!
+  let entryId : ZMod p := st.request[1]!
   let nRoot := st.request.length - 2
   let airs := st.units ++ maps ++ st.roms ++ [rootAir entryId nRoot]
   let labels := st.chips.map (·.1.name) ++ mapLabels ++
     st.roms.map (fun a => s!"rom/{a.circuit.width - 1}") ++ ["root"]
   let publics := nPublicInputs
-  unless st.request.length ≥ 2 && st.request[0]! == (Bridge.CALL : Fr) &&
-      entryId == (pkg.idOf entry : Fr) && nRoot == publics + nOutputs do
+  unless st.request.length ≥ 2 && st.request[0]! == (Bridge.CALL : ZMod p) &&
+      entryId == (pkg.idOf entry : ZMod p) && nRoot == publics + nOutputs do
     throw (IO.userError s!"root message has {nRoot} cells, expected {publics} + {nOutputs}")
   -- the final pool
-  let mut pool : Aiur.Plonk.Lower.Pool := {}
+  let mut pool : Aiur.Plonk.Lower.Pool (ZMod p) := {}
   for a in airs do
     let rows := if AirIn.uniformB a then 1 else a.rows
     for r in [0:rows] do
@@ -241,7 +238,7 @@ def run (args : List String) : IO UInt32 := do
       let f := frs[i.1]!.getD 0 Aiur.Plonk.Lower.sumIn
       if i.2 == 0 || f == Aiur.Plonk.Lower.sumIn then ss.getD 0 0 else locBase (i.1, i.2 - 1) + f / 4
     else ss.getD i.2 0
-  let L : Layout := ⟨(fun t => cellBases[t]!), (fun t => (airsA.getD t defaultAir).circuit.width), poolBase, locBase, sumIn, spare⟩
+  let L : Layout := ⟨(fun t => cellBases[t]!), (fun t => (airsA.getD t (defaultAir (F := ZMod p))).circuit.width), poolBase, locBase, sumIn, spare⟩
   if check then
     let fOk := Layout.finalOk airs P fr
     let lOk := L.linkOkF airs fr init last
@@ -250,7 +247,7 @@ def run (args : List String) : IO UInt32 := do
   -- the `β` gadget
   let γw := L.poolWire Aiur.Plonk.Lower.gammaRef
   let βw := L.poolWire Aiur.Plonk.Lower.betaRef
-  let (steps, nWires) := Beta.betaSteps γw βw (spare + 1)
+  let (steps, nWires) := Beta.betaSteps p γw βw (spare + 1)
   let bOk := Beta.betaOk steps γw βw
   say s!"β gadget: {(Beta.gadgetGates steps).length} gates, betaOk {bOk}, wires {nWires}"
   unless bOk do bad := bad + 1
@@ -258,17 +255,17 @@ def run (args : List String) : IO UInt32 := do
     say "checks failed; nothing written"
     return 1
   -- gates
-  let mut co : Coeffs := {}
+  let mut co : Coeffs p := {}
   let mut pre : ByteArray := ByteArray.emptyWithCapacity (1 <<< 30)
   let mut post : ByteArray := ByteArray.emptyWithCapacity (1 <<< 30)
   let mut npre := 0
   let mut npost := 0
   let mut failed := 0
-  let emitPost (co : Coeffs) (post : ByteArray) (g : Gate Fr) : Coeffs × ByteArray × Bool :=
+  let emitPost (co : Coeffs p) (post : ByteArray) (g : Gate (ZMod p)) : Coeffs p × ByteArray × Bool :=
     match convert co g.qL g.qR g.qO g.qM g.qC with
     | (co, some v) => (co, writeGate post g.a g.b g.c v, true)
     | (co, none) => (co, post, false)
-  let bInit : Gate Fr := ⟨init, init, init, 1, 0, 0, 0, 0⟩
+  let bInit : Gate (ZMod p) := ⟨init, init, init, 1, 0, 0, 0, 0⟩
   let (co1, post1, ok1) := emitPost co post bInit
   co := co1; post := post1; npost := npost + 1; unless ok1 do failed := failed + 1
   for g in Beta.gadgetGates steps do
@@ -291,7 +288,7 @@ def run (args : List String) : IO UInt32 := do
     msgColsTotal := msgColsTotal + a.rows * mc.length
     let uniform := AirIn.uniformB a
     let mut convs : Array (Option Conv × Bool) := #[]
-    let mut gates0 : Array LGate := #[]
+    let mut gates0 : Array (LGate (ZMod p)) := #[]
     if uniform then
       gates0 := (AirIn.lowerRowState a 0 P).gates
       for g in gates0 do
@@ -304,7 +301,7 @@ def run (args : List String) : IO UInt32 := do
       let gs := if uniform then gates0 else (AirIn.lowerRowState a r P).gates
       for h : k in [0:gs.size] do
         let g := gs[k]
-        let (v, p) ← if uniform then pure convs[k]! else do
+        let (v, pr) ← if uniform then pure convs[k]! else do
           let (co1, v) := convert co g.L g.R g.O g.M g.C
           co := co1
           pure (v, isPre g)
@@ -314,9 +311,9 @@ def run (args : List String) : IO UInt32 := do
             let wa := L.wireOf i g.a
             let wb := L.wireOf i g.b
             let wc := L.wireOf i g.c
-            if p then pre := writeGate pre wa wb wc v; npre := npre + 1
+            if pr then pre := writeGate pre wa wb wc v; npre := npre + 1
             else post := writeGate post wa wb wc v; npost := npost + 1
-  let bLast : Gate Fr := ⟨last, last, last, 1, 0, 0, 0, 0⟩
+  let bLast : Gate (ZMod p) := ⟨last, last, last, 1, 0, 0, 0, 0⟩
   let (co1, post1, ok1) := emitPost co post bLast
   co := co1; post := post1; npost := npost + 1; unless ok1 do failed := failed + 1
   let nGates := npre + npost
@@ -395,6 +392,20 @@ def run (args : List String) : IO UInt32 := do
   let size := hdr.size + cb.size + pre.size + post.size + commits.size + wt.size + tb.size
   say s!"wrote {path}: {size} bytes; root constants CALL {Bridge.CALL}, entry id {entryId.val}; publics {publics} (root cells 0..{publics - 1}), outputs {nOutputs}, wires {nWires}, gates {nGates}, commits {ncommit}, γ {γw}, β {βw}; SCS constraints with the commitment rows: {nGates + ncommit + 1}; {(← IO.monoMsNow) - t0} ms"
   return 0
+
+def run (args : List String) : IO UInt32 := do
+  let opts := args.drop 3
+  for o in opts do
+    unless o == "nocheck" || o == "selector-maps" || o == "--bn254" || o == "--bls12-381" do
+      throw (IO.userError s!"unknown option {o}")
+  if opts.contains "--bn254" && opts.contains "--bls12-381" then
+    throw (IO.userError "cannot specify both --bn254 and --bls12-381")
+  let check := !opts.contains "nocheck"
+  let sharedMaps := !opts.contains "selector-maps"
+  if opts.contains "--bls12-381" then
+    runFor Aiur.Library.Field.BLS12381.modulus args check sharedMaps
+  else
+    runFor Aiur.Library.Field.BN254.modulus args check sharedMaps
 
 end Aiur.Plonk.Export
 
