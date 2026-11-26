@@ -109,6 +109,7 @@ import IxCC.Src.Ingress
 import IxCC.Src.Pinned
 import IxCC.Src.Hints
 import IxCC.Src.Table.Check
+import IxCC.Src.Table.Guess
 import IxCC.Src.Table.Build
 import IxCC.Src.Runtime
 import IxCC.Src.Relevance.Syntax
@@ -124,6 +125,7 @@ import IxCC.Src.Value
 import IxCC.Src.Prim
 import IxCC.Src.Word
 import IxCC.Src.Semantics
+import IxCC.Src.EvalG
 import IxCC.Src.Readback
 import IxCC.Src.Load
 import IxCC.Src.Proof.Unfold

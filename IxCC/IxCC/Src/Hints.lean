@@ -22,16 +22,22 @@ inductive ProposalKind where
   /-- A fixed-width word operation and its stored equation (stage W1, the sidecar's `theorems`
   list, kind `word`). -/
   | word
+  /-- A Phase 2.2 Tier-2 guess-and-verify proposal (`guess f c θ [θc]`). -/
+  | guess
   deriving BEq, DecidableEq, Repr, Inhabited
 
 /-- One untrusted table proposal: `eqn f thm`, `csimp f g thm`, `lazy f a`,
-`inline f`, `case f` or `word f thm`. -/
+`inline f`, `case f`, `word f thm` or `guess f c thm [comp?]`. -/
 structure Proposal where
   kind : ProposalKind
   subject : Ixon.Address
   theorem? : Option Ixon.Address := none
   target? : Option Ixon.Address := none
   arity? : Option Nat := none
+  /-- Checker constant address for a `guess` proposal (`c` in `guess f c θ [θc]`). -/
+  checker? : Option Ixon.Address := none
+  /-- Optional completeness theorem address for a `guess` proposal (`θc` in `guess f c θ [θc]`). -/
+  comp? : Option Ixon.Address := none
   /-- Untrusted name from the sidecar, for diagnostics only. -/
   name? : Option String := none
   deriving Repr, Inhabited
@@ -60,9 +66,10 @@ def theoremKind : String → Except String ProposalKind
   | k => throw s!"hints: unknown theorem kind {k}"
 
 /-- Read an `ixcc/k1-equations/1` file: the roots, one `eqn`
-proposal per `(definition_address, equation_address)` pair, and, from the optional
-`theorems` list, one proposal of the entry's kind per
-`(subject_address, theorem_address)` pair. -/
+proposal per `(definition_address, equation_address)` pair, from the optional
+`theorems` list one proposal of the entry's kind per `(subject_address, theorem_address)` pair,
+and from the optional `guesses` list one `guess` proposal per
+`(subject_address, checker_address, theorem_address, [completeness_address])` entry. -/
 def ofK1Json (j : Json) : Except String Hints := do
   let format ← str j "format"
   unless format == "ixcc/k1-equations/1" do
@@ -83,6 +90,21 @@ def ofK1Json (j : Json) : Except String Hints := do
     proposals := proposals.push {
       kind := ← theoremKind (← str e "kind"), subject := ← address e "subject_address"
       theorem? := some (← address e "theorem_address")
+      name? := (str e "subject").toOption }
+  let guesses ← match j.getObjVal? "guesses" with
+    | .ok g => g.getArr?
+    | .error _ => pure #[]
+  for e in guesses do
+    let comp? ← match e.getObjVal? "completeness_address" with
+      | .ok .null => pure none
+      | .ok _ => some <$> address e "completeness_address"
+      | .error _ => pure none
+    proposals := proposals.push {
+      kind := .guess
+      subject := ← address e "subject_address"
+      checker? := some (← address e "checker_address")
+      theorem? := some (← address e "theorem_address")
+      comp?
       name? := (str e "subject").toOption }
   return { roots, proposals }
 
@@ -150,8 +172,8 @@ def ofK1String (text : String) : Except String Hints := do
   checkJsonText text
   ofK1Json (← Json.parse text)
 
-/-- Serialize `Hints` (roots, `.eqn` equations, and `.word` theorems) into canonical
-`ixcc/k1-equations/1` JSON that round-trips through `ofK1Json`. -/
+/-- Serialize `Hints` (roots, `.eqn` equations, `.word` theorems, and `.guess` entries) into
+canonical `ixcc/k1-equations/1` JSON that round-trips through `ofK1Json`. -/
 def toK1Json (h : Hints) (source : String := "<auto-hints>") : Json :=
   let rootRows := h.roots.map fun (addr, name?) =>
     let base := [("address", Json.str (toString addr))]
@@ -175,12 +197,27 @@ def toK1Json (h : Hints) (source : String := "<auto-hints>") : Json :=
         ]
         Json.mkObj (match p.name? with | some n => ("subject", Json.str n) :: base | none => base)
     else none
+  let guessRows := h.proposals.filterMap fun p =>
+    if p.kind == .guess then
+      match p.checker?, p.theorem? with
+      | some chk, some thm =>
+        let base := [
+          ("subject_address", Json.str (toString p.subject)),
+          ("checker_address", Json.str (toString chk)),
+          ("theorem_address", Json.str (toString thm))
+        ] ++ (match p.comp? with
+          | some comp => [("completeness_address", Json.str (toString comp))]
+          | none => [])
+        some (Json.mkObj (match p.name? with | some n => ("subject", Json.str n) :: base | none => base))
+      | _, _ => none
+    else none
   let fields : List (String × Json) :=
     [ ("format", Json.str "ixcc/k1-equations/1")
     , ("source", Json.str source)
     , ("roots", Json.arr rootRows)
     , ("equations", Json.arr eqRows) ] ++
     (if thmRows.isEmpty then [] else [("theorems", Json.arr thmRows)]) ++
+    (if guessRows.isEmpty then [] else [("guesses", Json.arr guessRows)]) ++
     [ ("failures", Json.arr #[]) ]
   Json.mkObj fields
 

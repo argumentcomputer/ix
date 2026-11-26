@@ -609,11 +609,15 @@ kernel's admitted role table): every root the sidecar names (not only the roots
 a compile chooses, so that the program's numbering does not depend on the
 choice); the pinned identities, so that `Src.Known` and the table's `prim`
 entries resolve as they would on the whole artifact; and every proposal's
-theorem, read with its proof once the proposal's subject is reached. -/
+theorem (and optional `guess` checker and completeness theorem), read with its
+proof once the proposal's subject is reached. -/
 def Seeds.of (h : Hints) (pins : Pins) : Seeds :=
   { statement := h.roots.map (·.1) ++ pinnedAddresses pins
     proofs := #[]
-    eqns := h.proposals.filterMap fun p => p.theorem?.map (p.subject, ·) }
+    eqns := h.proposals.foldl (init := #[]) fun acc p =>
+      let acc := match p.theorem? with | some t => acc.push (p.subject, t) | none => acc
+      let acc := match p.checker? with | some c => acc.push (p.subject, c) | none => acc
+      match p.comp? with | some cp => acc.push (p.subject, cp) | none => acc }
 
 /-- Every record of an environment, read with proofs: the whole artifact, as
 ingress read it before it read only what the seeds reach (for tools and

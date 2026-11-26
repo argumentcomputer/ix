@@ -259,6 +259,17 @@ def allowsIrrMajor : RecKind → Bool
 
 end RecKind
 
+/-- A checked guess-and-verify entry for a subject function `f` (Phase 2.2 Tier-2
+`guess f c θ [θc]`): its verified boolean checker `checker` (`c`), checked argument arity
+`arity` (`k`), soundness/uniqueness theorem `thm` (`c xs y = true → y = f xs`), and optional
+completeness theorem `comp?` (`c xs (f xs) = true`). -/
+structure GuessEntry where
+  checker : CId
+  arity : Nat
+  thm : CId
+  comp? : Option CId := none
+  deriving BEq, DecidableEq, Repr, Inhabited
+
 /-- The checked unfolding table, keyed by `CId` (D17). -/
 structure Table where
   resolve : NatMap Resolve := .leaf
@@ -269,6 +280,8 @@ structure Table where
   inline : NatSet := .leaf
   /-- D12 allowlist: opaques evaluated through their value (`Lean.opaqueId`). -/
   opaqueByValue : NatSet := .leaf
+  /-- Phase 2.2 Tier-2 guess-and-verify entries (`guess f c θ [θc]`). -/
+  guess : NatMap GuessEntry := .leaf
   deriving Repr, Inhabited
 
 namespace Table
@@ -278,6 +291,7 @@ def recKindOf (t : Table) (c : CId) : Option RecKind := t.recKind.get? c
 def lazyOf (t : Table) (c : CId) : Option Nat := t.lazy.get? c
 def isInline (t : Table) (c : CId) : Bool := t.inline.contains c
 def isOpaqueByValue (t : Table) (c : CId) : Bool := t.opaqueByValue.contains c
+def guessOf (t : Table) (c : CId) : Option GuessEntry := t.guess.get? c
 
 end Table
 

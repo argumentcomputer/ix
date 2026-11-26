@@ -511,6 +511,7 @@ private def kindRank : ProposalKind → Nat
   | .case => 3
   | .lazy => 4
   | .inline => 5
+  | .guess => 6
 
 private def cmpProposal (a b : Proposal) : Ordering :=
   match compare (kindRank a.kind) (kindRank b.kind) with

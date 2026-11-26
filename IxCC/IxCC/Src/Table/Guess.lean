@@ -35,22 +35,15 @@ open IxCC.Ixon
 open IxCC.Src
 open IxCC.Src.Table
 
-/-- A checked guess-and-verify entry for a subject function `f`: its verified boolean checker `c`,
-the checked argument arity `k`, the soundness/uniqueness theorem `thm` (`c xs y = true → y = f xs`),
-and an optional completeness theorem `comp?` (`c xs (f xs) = true`). -/
-structure GuessEntry where
-  checker : CId
-  arity : Nat
-  thm : CId
-  comp? : Option CId := none
-  deriving BEq, DecidableEq, Repr, Inhabited
+/-- A checked guess-and-verify entry for a subject function `f`: re-export of `IxCC.Src.GuessEntry`. -/
+abbrev GuessEntry := IxCC.Src.GuessEntry
 
 theorem guessEntry_beq_eq_true_iff (a b : GuessEntry) : (a == b) = true ↔ a = b := by
   cases a with
   | mk c1 a1 t1 o1 =>
     cases b with
     | mk c2 a2 t2 o2 =>
-      cases o1 <;> cases o2 <;> simp [BEq.beq, instBEqGuessEntry.beq, Option.instBEq.beq]
+      cases o1 <;> cases o2 <;> simp [BEq.beq, IxCC.Src.instBEqGuessEntry.beq, Option.instBEq.beq]
 
 /-! ## Term helpers -/
 
@@ -720,5 +713,153 @@ theorem validateGuess_ok_props {p : Program} {f : CId} {g : GuessEntry}
     (h : validateGuess p f g = .ok ()) :
     GuessOkProps p f g.checker g.thm g.comp? g :=
   checkGuess_ok_props (validateGuess_iff.mp h)
+
+/-! ## Table-independence of `checkGuess` / `validateGuess` -/
+
+private theorem stripWrappers_with_table (p : Program) (t0 : Table) :
+    ∀ (t : Term), stripWrappers { p with table := t0 } t = stripWrappers p t
+  | .var _ | .sort _ | .const _ _ | .natLit _ | .strLit _ => rfl
+  | .app f a m r => by
+    simp only [stripWrappers, stripWrappers_with_table p t0 f, stripWrappers_with_table p t0 a]
+    rfl
+  | .lam b d body => by
+    simp only [stripWrappers, stripWrappers_with_table p t0 d, stripWrappers_with_table p t0 body]
+  | .pi b d cod => by
+    simp only [stripWrappers, stripWrappers_with_table p t0 d, stripWrappers_with_table p t0 cod]
+  | .letE nd m r ty v body => by
+    simp only [stripWrappers, stripWrappers_with_table p t0 ty, stripWrappers_with_table p t0 v,
+      stripWrappers_with_table p t0 body]
+  | .proj s i e => by
+    simp only [stripWrappers, stripWrappers_with_table p t0 e]
+
+private theorem domainEqv_with_table (p : Program) (t0 : Table) (a b : Term) :
+    domainEqv { p with table := t0 } a b = domainEqv p a b := by
+  simp only [domainEqv, stripWrappers_with_table]
+
+private theorem checkAxiomWalk_with_table (p : Program) (t0 : Table) :
+    ∀ (fuel : Nat) (todo seen : List CId),
+      checkAxiomWalk { p with table := t0 } fuel todo seen = checkAxiomWalk p fuel todo seen
+  | 0, [], _ => rfl
+  | 0, _ :: _, _ => rfl
+  | _ + 1, [], _ => rfl
+  | fuel + 1, c :: todo, seen => by
+    unfold checkAxiomWalk
+    by_cases hs : seen.contains c
+    · simp only [hs, ↓reduceIte]
+      exact checkAxiomWalk_with_table p t0 fuel todo seen
+    · simp only [hs, Bool.false_eq_true, ↓reduceIte]
+      change (match p.decl? c with
+        | none => false
+        | some d =>
+          if !declAxiomOk { p with table := t0 } c d then false
+          else
+            match collectTermsConsts (declTerms d) maxBodyNodes (declExtraConsts d) with
+            | none => false
+            | some (_, refs) =>
+              let newRefs := refs.filter (fun r => !seen.contains r && !todo.contains r)
+              checkAxiomWalk { p with table := t0 } fuel (newRefs ++ todo) (c :: seen)) = _
+      cases hd : p.decl? c with
+      | none => rfl
+      | some d =>
+        have hok : declAxiomOk { p with table := t0 } c d = declAxiomOk p c d := by
+          cases d <;> rfl
+        simp only [hok]
+        by_cases hdo : (!declAxiomOk p c d) = true
+        · simp [hdo]
+        · simp only [hdo, Bool.false_eq_true, ↓reduceIte]
+          cases hcol : collectTermsConsts (declTerms d) maxBodyNodes (declExtraConsts d) with
+          | none => rfl
+          | some pair =>
+            exact checkAxiomWalk_with_table p t0 fuel _ (c :: seen)
+
+private theorem checkAxiomClosure_with_table (p : Program) (t0 : Table) (thm : CId) :
+    checkAxiomClosure { p with table := t0 } thm = checkAxiomClosure p thm := by
+  unfold checkAxiomClosure
+  rw [checkAxiomWalk_with_table]
+  rfl
+
+private theorem checkDoesNotReachWalk_with_table (p : Program) (t0 : Table) (target : CId) :
+    ∀ (fuel : Nat) (todo seen : List CId),
+      checkDoesNotReachWalk { p with table := t0 } target fuel todo seen =
+        checkDoesNotReachWalk p target fuel todo seen
+  | 0, [], _ => rfl
+  | 0, _ :: _, _ => rfl
+  | _ + 1, [], _ => rfl
+  | fuel + 1, cur :: todo, seen => by
+    unfold checkDoesNotReachWalk
+    by_cases ht : (cur == target) = true
+    · simp [ht]
+    · simp only [ht, Bool.false_eq_true, ↓reduceIte]
+      by_cases hs : seen.contains cur
+      · simp only [hs, ↓reduceIte]
+        exact checkDoesNotReachWalk_with_table p t0 target fuel todo seen
+      · simp only [hs, Bool.false_eq_true, ↓reduceIte]
+        change (match p.decl? cur with
+          | none => false
+          | some d =>
+            match collectTermsConsts (declTerms d) maxBodyNodes (declExtraConsts d) with
+            | none => false
+            | some (_, refs) =>
+              let newRefs := refs.filter (fun r => !seen.contains r && !todo.contains r)
+              checkDoesNotReachWalk { p with table := t0 } target fuel (newRefs ++ todo) (cur :: seen)) = _
+        cases hd : p.decl? cur with
+        | none => rfl
+        | some d =>
+          dsimp only
+          cases hcol : collectTermsConsts (declTerms d) maxBodyNodes (declExtraConsts d) with
+          | none => rfl
+          | some pair =>
+            dsimp only
+            exact checkDoesNotReachWalk_with_table p t0 target fuel _ (cur :: seen)
+
+private theorem checkDoesNotReach_with_table (p : Program) (t0 : Table) (src target : CId) :
+    checkDoesNotReach { p with table := t0 } src target = checkDoesNotReach p src target := by
+  unfold checkDoesNotReach
+  have h : checkDoesNotReachWalk { p with table := t0 } target ({ p with table := t0 }.size * 2 + 16)
+      [src] [] = checkDoesNotReachWalk p target (p.size * 2 + 16) [src] [] :=
+    checkDoesNotReachWalk_with_table p t0 target (p.size * 2 + 16) [src] []
+  rw [h]
+
+private theorem checkGuessDecls_with_table (p : Program) (t0 : Table) (f c thm : CId) :
+    checkGuessDecls { p with table := t0 } f c thm = checkGuessDecls p f c thm := by
+  unfold checkGuessDecls
+  simp only [checkAxiomClosure_with_table]
+  rfl
+
+private theorem checkGuessBinders_with_table (p : Program) (t0 : Table) (tf tc tθ : Term)
+    (boolC : CId) :
+    checkGuessBinders { p with table := t0 } tf tc tθ boolC =
+      checkGuessBinders p tf tc tθ boolC := by
+  unfold checkGuessBinders
+  simp only [domainEqv_with_table]
+
+private theorem checkGuessBody_with_table (p : Program) (t0 : Table) (f c : CId) (n k : Nat)
+    (fBody hDom θBody : Term) (eqC boolC boolTrueC : CId) :
+    checkGuessBody { p with table := t0 } f c n k fBody hDom θBody eqC boolC boolTrueC =
+      checkGuessBody p f c n k fBody hDom θBody eqC boolC boolTrueC := by
+  unfold checkGuessBody
+  simp only [domainEqv_with_table]
+  rfl
+
+private theorem checkComp_with_table (p : Program) (t0 : Table) (f c comp : CId) (n k : Nat)
+    (fBinders : List (Binder × Term)) (eqC boolC boolTrueC : CId) :
+    checkComp { p with table := t0 } f c comp n k fBinders eqC boolC boolTrueC =
+      checkComp p f c comp n k fBinders eqC boolC boolTrueC := by
+  unfold checkComp
+  simp only [checkAxiomClosure_with_table, domainEqv_with_table]
+  rfl
+
+/-- `checkGuess` depends only on declarations, pins, and `byStatement` — never on `p.table`. -/
+theorem checkGuess_with_table (p : Program) (t0 : Table) (f c thm : CId) (comp? : Option CId) :
+    checkGuess { p with table := t0 } f c thm comp? = checkGuess p f c thm comp? := by
+  unfold checkGuess
+  simp only [checkGuessDecls_with_table, checkGuessBinders_with_table, checkGuessBody_with_table,
+    checkComp_with_table, checkDoesNotReach_with_table]
+
+/-- `validateGuess` depends only on declarations, pins, and `byStatement` — never on `p.table`. -/
+theorem validateGuess_with_table (p : Program) (t0 : Table) (f : CId) (g : GuessEntry) :
+    validateGuess { p with table := t0 } f g = validateGuess p f g := by
+  unfold validateGuess
+  rw [checkGuess_with_table]
 
 end IxCC.Src.Table.Guess

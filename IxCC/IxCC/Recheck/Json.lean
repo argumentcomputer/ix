@@ -188,20 +188,41 @@ def entry? (j : Json) : Dec Src.Table.Entry := do
   | [.str "case"] => pure .case
   | _ => throw s!"bad table entry {j.compress}"
 
+def guessEntry (g : Src.GuessEntry) : Json :=
+  match g.comp? with
+  | none => arr [nat g.checker, nat g.arity, nat g.thm]
+  | some comp => arr [nat g.checker, nat g.arity, nat g.thm, nat comp]
+
+def guessEntry? (j : Json) : Dec Src.GuessEntry := do
+  match ← getArr j with
+  | [checker, arity, thm] =>
+    return { checker := ← natKey? checker, arity := ← natKey? arity, thm := ← natKey? thm,
+             comp? := none }
+  | [checker, arity, thm, comp] =>
+    return { checker := ← natKey? checker, arity := ← natKey? arity, thm := ← natKey? thm,
+             comp? := some (← natKey? comp) }
+  | _ => throw s!"bad guess entry {j.compress}"
+
 def table (t : Src.Table.TableCert) : Json :=
-  Json.mkObj [
+  let base : List (String × Json) := [
     ("resolve", arr (t.resolve.map fun (c, e) => arr [nat c, entry e])),
     ("recKind", arr (t.recKind.map nat)),
     ("lazy", arr (t.lazy.map fun (c, a) => arr [nat c, nat a])),
     ("inline", arr (t.inline.map nat)),
     ("opaqueByValue", arr (t.opaqueByValue.map nat))]
+  Json.mkObj (if t.guess.isEmpty then base else
+    base ++ [("guess", arr (t.guess.map fun (c, g) => arr [nat c, guessEntry g]))])
 
 def table? (j : Json) : Dec Src.Table.TableCert := do
+  let guess ← match j.getObjVal? "guess" with
+    | .ok gj => listOf (pair natKey? guessEntry?) gj
+    | .error _ => pure []
   return { resolve := ← listOf (pair natKey? entry?) (← field j "resolve")
            recKind := ← listOf natKey? (← field j "recKind")
            lazy := ← listOf (pair natKey? natKey?) (← field j "lazy")
            inline := ← listOf natKey? (← field j "inline")
-           opaqueByValue := ← listOf natKey? (← field j "opaqueByValue") }
+           opaqueByValue := ← listOf natKey? (← field j "opaqueByValue")
+           guess }
 
 /-! ## The middle end -/
 
@@ -451,5 +472,17 @@ def Cert.readBack (c : Cert) : Except Err Cert.Read :=
 #guard (CertJson.fieldClass? (CertJson.arr [CertJson.str "p", CertJson.str "n"])).isOk == false
 #guard (CertJson.output? (CertJson.arr [CertJson.nat 4097, CertJson.arr []])).isOk == false
 #guard (CertJson.output? (CertJson.arr [CertJson.nat 4096, CertJson.arr []])).isOk == true
+#guard
+  let tc : Src.Table.TableCert :=
+    { guess := [(3, { checker := 4, arity := 1, thm := 5, comp? := none }),
+                (6, { checker := 7, arity := 2, thm := 8, comp? := some 9 })] }
+  (CertJson.table? (CertJson.table tc)).toOption == some tc
+#guard
+  let legacy : Lean.Json := Lean.Json.mkObj [
+    ("resolve", CertJson.arr []), ("recKind", CertJson.arr []), ("lazy", CertJson.arr []),
+    ("inline", CertJson.arr []), ("opaqueByValue", CertJson.arr [])]
+  (CertJson.table? legacy).toOption == some ({} : Src.Table.TableCert) &&
+    CertJson.table ({} : Src.Table.TableCert) == legacy
+#guard (CertJson.guessEntry? (CertJson.arr [CertJson.nat 1, CertJson.nat 2])).isOk == false
 
 end IxCC.Recheck

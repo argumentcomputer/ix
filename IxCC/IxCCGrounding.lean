@@ -51,4 +51,5 @@ import IxCCGrounding.LimbWord
 import IxCCGrounding.PcProp
 import IxCCGrounding.StrLit
 import IxCCGrounding.BigNatBridge
+import IxCCGrounding.Guess
 import IxCCGrounding.Fence

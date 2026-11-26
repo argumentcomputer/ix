@@ -1,4 +1,5 @@
 import IxCC.Src.Table.Word
+import IxCC.Src.Table.Guess
 
 /-! # Revalidating the unfolding table
 
@@ -130,5 +131,100 @@ def validate (cfg : Config) (p : Program) : Except String Unit := do
   pinnedLazyRequired p p.table.lazy
   validateEach (fun c (_ : Unit) => checkInline p c cfg.inlineCap) p.table.inline.toList
   validateEach (validateOpaque p) p.table.opaqueByValue.toList
+  validateEach (Guess.validateGuess p) p.table.guess.toList
+
+theorem validateEach_ok_mem {α : Type} {check : CId → α → Except String Unit} :
+    ∀ {xs : List (CId × α)},
+      validateEach check xs = .ok () →
+      ∀ c x, (c, x) ∈ xs → check c x = .ok ()
+  | [], _, _, _, hmem => by cases hmem
+  | (c₀, x₀) :: rest, h, c, x, hmem => by
+    unfold validateEach at h
+    cases hc : check c₀ x₀ with
+    | error _ => rw [hc] at h; cases h
+    | ok u =>
+      cases u
+      rw [hc] at h
+      rcases List.mem_cons.1 hmem with hhead | htail
+      · cases hhead
+        exact hc
+      · exact validateEach_ok_mem h c x htail
+
+private theorem natMap_entriesAux_mem_acc {α : Type} :
+    ∀ (m : NatMap α) (base w : Nat) (acc : List (Nat × α)) (kv : Nat × α),
+      kv ∈ acc → kv ∈ m.entriesAux base w acc
+  | .leaf, _, _, _, _, hp => hp
+  | .node v z o, base, w, acc, kv, hp => by
+    have h1 := natMap_entriesAux_mem_acc o (base + w) (2 * w) acc kv hp
+    have h2 := natMap_entriesAux_mem_acc z base (2 * w) _ kv h1
+    cases v <;> simp [NatMap.entriesAux, h2]
+
+private theorem natMap_entriesAux_of_get? {α : Type} :
+    ∀ (m : NatMap α) (k base w : Nat) (acc : List (Nat × α)) (x : α),
+      m.get? k = some x → (base + w * k, x) ∈ m.entriesAux base w acc
+  | .leaf, _, _, _, _, _, h => by simp [NatMap.get?] at h
+  | .node v z o, k, base, w, acc, x, h => by
+    simp only [NatMap.get?] at h
+    by_cases hk0 : k = 0
+    · subst hk0
+      simp only [BEq.rfl, ↓reduceIte] at h
+      subst h
+      simp [NatMap.entriesAux]
+    · have hk0b : (k == 0) = false := beq_false_of_ne hk0
+      simp only [hk0b, Bool.false_eq_true, ↓reduceIte] at h
+      by_cases he : k % 2 = 0
+      · have heb : (k % 2 == 0) = true := decide_eq_true he
+        simp only [heb, ↓reduceIte] at h
+        have hz := natMap_entriesAux_of_get? z (k / 2) base (2 * w)
+          (o.entriesAux (base + w) (2 * w) acc) x h
+        have hkey : base + 2 * w * (k / 2) = base + w * k := by
+          have hdiv : 2 * (k / 2) = k := by omega
+          calc base + 2 * w * (k / 2) = base + w * (2 * (k / 2)) := by
+                rw [Nat.mul_comm 2 w, Nat.mul_assoc]
+            _ = base + w * k := by rw [hdiv]
+        rw [hkey] at hz
+        cases v <;> simp [NatMap.entriesAux, hz]
+      · have heb : (k % 2 == 0) = false := decide_eq_false he
+        simp only [heb, Bool.false_eq_true, ↓reduceIte] at h
+        have ho := natMap_entriesAux_of_get? o (k / 2) (base + w) (2 * w) acc x h
+        have hkey : base + w + 2 * w * (k / 2) = base + w * k := by
+          have hdiv : 2 * (k / 2) + 1 = k := by omega
+          calc base + w + 2 * w * (k / 2)
+              = base + (w * (2 * (k / 2)) + w * 1) := by
+                rw [Nat.mul_one, Nat.mul_comm 2 w, Nat.mul_assoc, Nat.add_assoc, Nat.add_comm w]
+            _ = base + w * (2 * (k / 2) + 1) := by rw [← Nat.mul_add]
+            _ = base + w * k := by rw [hdiv]
+        rw [hkey] at ho
+        have hz := natMap_entriesAux_mem_acc z base (2 * w)
+          (o.entriesAux (base + w) (2 * w) acc) _ ho
+        cases v <;> simp [NatMap.entriesAux, hz]
+
+theorem natMap_mem_toList_of_get? {α : Type} {m : NatMap α} {k : Nat} {x : α}
+    (h : m.get? k = some x) : (k, x) ∈ m.toList := by
+  simpa [NatMap.toList] using natMap_entriesAux_of_get? m k 0 1 [] x h
+
+private theorem except_bind_ok {α β : Type} {x : Except String α} {f : α → Except String β} {b : β}
+    (h : (x >>= f) = .ok b) : ∃ a, x = .ok a ∧ f a = .ok b := by
+  cases x with
+  | error _ => cases h
+  | ok a => exact ⟨a, rfl, h⟩
+
+/-- Every `guess` entry in a validated table satisfies `Guess.validateGuess`. -/
+theorem validate_guess_ok {cfg : Config} {p : Program} (h : validate cfg p = .ok ()) :
+    ∀ f g, p.table.guessOf f = some g → Guess.validateGuess p f g = .ok () := by
+  unfold validate at h
+  cases hk : Pinned.knownOk p with
+  | false => simp [hk, throw, MonadExcept.throw, bind, Except.bind] at h
+  | true =>
+    simp only [hk, ↓reduceIte] at h
+    obtain ⟨_, _, h⟩ := except_bind_ok h
+    obtain ⟨_, _, h⟩ := except_bind_ok h
+    obtain ⟨_, _, h⟩ := except_bind_ok h
+    obtain ⟨_, _, h⟩ := except_bind_ok h
+    obtain ⟨_, _, h⟩ := except_bind_ok h
+    obtain ⟨_, _, h⟩ := except_bind_ok h
+    obtain ⟨_, _, h⟩ := except_bind_ok h
+    intro f g hg
+    exact validateEach_ok_mem h f g (natMap_mem_toList_of_get? hg)
 
 end IxCC.Src.Table

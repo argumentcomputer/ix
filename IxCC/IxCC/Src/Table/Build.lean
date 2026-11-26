@@ -1,4 +1,5 @@
 import IxCC.Src.Table.Word
+import IxCC.Src.Table.Guess
 import IxCC.Src.Hints
 import Std.Data.HashMap
 
@@ -30,6 +31,9 @@ structure Stats where
   /-- Sparse casesOn given a `lazy` row by shape (`checkSparseCases`). -/
   sparseAccepted : Array CId := #[]
   opaqueByValue : Array CId := #[]
+  /-- Phase 2.2 Tier-2 `guess` proposals accepted (`Guess.checkGuess`). -/
+  guessAccepted : Array CId := #[]
+  guessRefused : Array (CId × String) := #[]
   deriving Inhabited
 
 /-- The address index of a program (the producer's inverse of `consts`;
@@ -77,6 +81,20 @@ def wordProposal (cfg : Config) (p : Program) (index : Std.HashMap Ixon.Address 
     | throw "word: the subject is not a pinned word operation"
   checkWord cfg p f w op thm
   return (f, .word w op thm)
+
+/-- A Phase 2.2 Tier-2 `guess` proposal (`guess f c θ [θc]`): resolves subject, checker,
+soundness theorem, and optional completeness theorem, checking them via `Guess.checkGuess`. -/
+def guessProposal (p : Program) (index : Std.HashMap Ixon.Address CId) (prop : Proposal) :
+    Except String (CId × GuessEntry) := do
+  let f ← resolveHint index prop.subject "subject"
+  let some ca := prop.checker? | throw "guess: missing checker"
+  let some ta := prop.theorem? | throw "guess: missing soundness theorem"
+  let c ← resolveHint index ca "checker"
+  let thm ← resolveHint index ta "soundness theorem"
+  let comp? ← match prop.comp? with
+    | none => pure none
+    | some cpa => some <$> resolveHint index cpa "completeness theorem"
+  return (f, ← Guess.checkGuess p f c thm comp?)
 
 /-- Candidate `case` keys: safe definitions whose body, under its λs, is a
 spine headed by a single-motive recursor. -/
@@ -225,7 +243,20 @@ def build (cfg : Config) (p : Program) (hints : Array Proposal) :
     | none => diags := diags.push (hintDiag prop s!"inline: subject {notRead}")
   -- Derived recursor kinds.
   let recKind := NatMap.ofOptions ((List.range n).map (deriveRecKind p))
-  return ({ resolve, recKind, lazy, inline, opaqueByValue }, diags, stats)
+  -- Phase 2.2 Tier-2 guess-and-verify hints (`guess f c θ [θc]`).
+  let mut guess : NatMap GuessEntry := .leaf
+  for prop in hints do
+    if prop.kind != .guess then continue
+    match guessProposal p index prop with
+    | .ok (f, entry) =>
+      if (guess.get? f).isNone then
+        guess := guess.insert f entry
+        stats := { stats with guessAccepted := stats.guessAccepted.push f }
+    | .error msg =>
+      if let some f := lookup prop.subject then
+        stats := { stats with guessRefused := stats.guessRefused.push (f, msg) }
+      diags := diags.push (hintDiag prop msg)
+  return ({ resolve, recKind, lazy, inline, opaqueByValue, guess }, diags, stats)
 
 /-- How a program gets its word entries, named once for every word hint (`wordHints`,
 `wordHintLine`) and the tests: `ix compile` adds the word equations by default for a selected

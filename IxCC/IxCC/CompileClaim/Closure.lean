@@ -43,19 +43,176 @@ def entryTheorem? : Src.Table.Entry → Option Src.CId
   | .word _ _ thm => some thm
   | .prim _ | .case => none
 
-/-- The kernel addresses of all theorem constants named by a `TableCert`,
-failing closed if any referenced `CId` is absent from `P`. -/
+/-- Append a single theorem constant's kernel address to `out` (deduplicated),
+failing closed if `thm` is absent from `P`. -/
+def pushThmAddr (P : Src.Program) (out : Array KAddr) (thm : Src.CId) :
+    Except String (Array KAddr) :=
+  match P.entry? thm with
+  | none => .error s!"KF-4: table theorem CId {thm} missing from program"
+  | some entry =>
+    let a := kaddr entry.addr
+    .ok (if out.contains a then out else out.push a)
+
+/-- Append all theorem addresses named by `resolve` entries to `out`. -/
+def appendResolveThmAddrs (P : Src.Program) :
+    List (Src.CId × Src.Table.Entry) → Array KAddr → Except String (Array KAddr)
+  | [], out => .ok out
+  | (_, e) :: rest, out =>
+    match entryTheorem? e with
+    | none => appendResolveThmAddrs P rest out
+    | some thm =>
+      match pushThmAddr P out thm with
+      | .error msg => .error msg
+      | .ok out' => appendResolveThmAddrs P rest out'
+
+/-- Append all theorem addresses (`thm` and optional `comp?`) named by `guess` entries to `out`. -/
+def appendGuessThmAddrs (P : Src.Program) :
+    List (Src.CId × Src.GuessEntry) → Array KAddr → Except String (Array KAddr)
+  | [], out => .ok out
+  | (_, g) :: rest, out =>
+    match pushThmAddr P out g.thm with
+    | .error msg => .error msg
+    | .ok out1 =>
+      match g.comp? with
+      | none => appendGuessThmAddrs P rest out1
+      | some comp =>
+        match pushThmAddr P out1 comp with
+        | .error msg => .error msg
+        | .ok out2 => appendGuessThmAddrs P rest out2
+
+/-- The kernel addresses of all theorem constants named by a `TableCert`
+(`.eqn`, `.csimp`, `.word` entries in `tc.resolve`, plus `thm` and optional `comp?`
+in `tc.guess`), failing closed if any referenced `CId` is absent from `P`. -/
 def tableTheoremAddrs (P : Src.Program) (tc : Src.Table.TableCert) :
-    Except String (Array KAddr) := do
-  let mut out : Array KAddr := #[]
-  for (_, e) in tc.resolve do
-    if let some thm := entryTheorem? e then
-      let some entry := P.entry? thm
-        | throw s!"KF-4: table theorem CId {thm} missing from program"
-      let a := kaddr entry.addr
-      if !out.contains a then
-        out := out.push a
-  pure out
+    Except String (Array KAddr) :=
+  match appendResolveThmAddrs P tc.resolve #[] with
+  | .error msg => .error msg
+  | .ok out1 => appendGuessThmAddrs P tc.guess out1
+
+private theorem pushThmAddr_preserves {P : Src.Program} {out out' : Array KAddr} {thm : Src.CId}
+    (h : pushThmAddr P out thm = .ok out') :
+    ∀ a ∈ out, a ∈ out' := by
+  unfold pushThmAddr at h
+  cases hent : P.entry? thm with
+  | none => rw [hent] at h; cases h
+  | some entry =>
+    rw [hent] at h
+    dsimp only at h
+    cases h
+    intro a ha
+    split
+    · exact ha
+    · exact Array.mem_push_of_mem _ ha
+
+private theorem pushThmAddr_mem {P : Src.Program} {out out' : Array KAddr} {thm : Src.CId}
+    (h : pushThmAddr P out thm = .ok out') :
+    ∃ entry, P.entry? thm = some entry ∧ kaddr entry.addr ∈ out' := by
+  unfold pushThmAddr at h
+  cases hent : P.entry? thm with
+  | none => rw [hent] at h; cases h
+  | some entry =>
+    rw [hent] at h
+    dsimp only at h
+    cases h
+    refine ⟨entry, rfl, ?_⟩
+    cases hc : out.contains (kaddr entry.addr) with
+    | true =>
+      simp only [↓reduceIte]
+      exact Array.contains_iff_mem.mp hc
+    | false =>
+      simp only [Bool.false_eq_true, ↓reduceIte]
+      exact Array.mem_push_self
+
+private theorem appendGuessThmAddrs_preserves {P : Src.Program} :
+    ∀ (gs : List (Src.CId × Src.GuessEntry)) (out res : Array KAddr),
+      appendGuessThmAddrs P gs out = .ok res →
+      ∀ a ∈ out, a ∈ res
+  | [], out, res, h, a, ha => by
+    unfold appendGuessThmAddrs at h
+    cases h
+    exact ha
+  | (_, g) :: rest, out, res, h, a, ha => by
+    unfold appendGuessThmAddrs at h
+    cases h1 : pushThmAddr P out g.thm with
+    | error _ => rw [h1] at h; cases h
+    | ok out1 =>
+      rw [h1] at h
+      dsimp only at h
+      have ha1 := pushThmAddr_preserves h1 a ha
+      cases hc : g.comp? with
+      | none =>
+        rw [hc] at h
+        dsimp only at h
+        exact appendGuessThmAddrs_preserves rest out1 res h a ha1
+      | some comp =>
+        rw [hc] at h
+        dsimp only at h
+        cases h2 : pushThmAddr P out1 comp with
+        | error _ => rw [h2] at h; cases h
+        | ok out2 =>
+          rw [h2] at h
+          dsimp only at h
+          exact appendGuessThmAddrs_preserves rest out2 res h a (pushThmAddr_preserves h2 a ha1)
+
+private theorem appendGuessThmAddrs_mem {P : Src.Program} :
+    ∀ (gs : List (Src.CId × Src.GuessEntry)) (out res : Array KAddr),
+      appendGuessThmAddrs P gs out = .ok res →
+      ∀ f g, (f, g) ∈ gs →
+        (∃ entry, P.entry? g.thm = some entry ∧ kaddr entry.addr ∈ res) ∧
+        (∀ comp, g.comp? = some comp →
+          ∃ entry, P.entry? comp = some entry ∧ kaddr entry.addr ∈ res)
+  | [], _, _, _, _, _, hmem => by cases hmem
+  | (f₀, g₀) :: rest, out, res, h, f, g, hmem => by
+    unfold appendGuessThmAddrs at h
+    cases h1 : pushThmAddr P out g₀.thm with
+    | error _ => rw [h1] at h; cases h
+    | ok out1 =>
+      rw [h1] at h
+      dsimp only at h
+      cases hc : g₀.comp? with
+      | none =>
+        rw [hc] at h
+        dsimp only at h
+        rcases List.mem_cons.1 hmem with hhead | htail
+        · cases hhead
+          obtain ⟨e1, he1, hm1⟩ := pushThmAddr_mem h1
+          refine ⟨⟨e1, he1, appendGuessThmAddrs_preserves rest out1 res h _ hm1⟩,
+            fun comp hcomp => by rw [hc] at hcomp; cases hcomp⟩
+        · exact appendGuessThmAddrs_mem rest out1 res h f g htail
+      | some comp₀ =>
+        rw [hc] at h
+        dsimp only at h
+        cases h2 : pushThmAddr P out1 comp₀ with
+        | error _ => rw [h2] at h; cases h
+        | ok out2 =>
+          rw [h2] at h
+          dsimp only at h
+          rcases List.mem_cons.1 hmem with hhead | htail
+          · cases hhead
+            obtain ⟨e1, he1, hm1⟩ := pushThmAddr_mem h1
+            obtain ⟨e2, he2, hm2⟩ := pushThmAddr_mem h2
+            refine ⟨⟨e1, he1, appendGuessThmAddrs_preserves rest out2 res h _
+              (pushThmAddr_preserves h2 _ hm1)⟩, fun comp hcomp => ?_⟩
+            rw [hc, Option.some.injEq] at hcomp
+            subst hcomp
+            exact ⟨e2, he2, appendGuessThmAddrs_preserves rest out2 res h _ hm2⟩
+          · exact appendGuessThmAddrs_mem rest out2 res h f g htail
+
+/-- Every `guess` entry's soundness theorem `thm` and optional completeness theorem `comp?`
+are included in `tableTheoremAddrs` for pure logical kernel seed-closure admission (`KF-4`). -/
+theorem tableTheoremAddrs_guess_mem {P : Src.Program} {tc : Src.Table.TableCert}
+    {addrs : Array KAddr} (h : tableTheoremAddrs P tc = .ok addrs)
+    {f : Src.CId} {g : Src.GuessEntry} (hmem : (f, g) ∈ tc.guess) :
+    (∃ entry, P.entry? g.thm = some entry ∧ kaddr entry.addr ∈ addrs) ∧
+    (∀ comp, g.comp? = some comp →
+      ∃ entry, P.entry? comp = some entry ∧ kaddr entry.addr ∈ addrs) := by
+  unfold tableTheoremAddrs at h
+  cases hr : appendResolveThmAddrs P tc.resolve #[] with
+  | error _ => rw [hr] at h; cases h
+  | ok out1 =>
+    rw [hr] at h
+    dsimp only at h
+    exact appendGuessThmAddrs_mem tc.guess out1 addrs h f g hmem
 
 /-- Structural equality on kernel role-table `Evidence` entries. -/
 def evidenceEq : Ix.Kernel.Evidence KAddr → Ix.Kernel.Evidence KAddr → Bool

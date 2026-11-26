@@ -14,6 +14,7 @@ import IxCCGrounding.LimbWord
 import IxCCGrounding.PcProp
 import IxCCGrounding.StrLit
 import IxCCGrounding.BigNatBridge
+import IxCCGrounding.Guess
 
 /-! # The grounding library's axiom fence: every theorem presented as proved uses at most
 the three standard axioms. Building the library checks it (`#guard_msgs`). -/
@@ -2214,3 +2215,62 @@ example {p : Program} {κ : CId → KKey}
   rootSound_678AGpStrWPP_of_check hchk hnc hld hsb hinst hhr hR hA hrun hrb hRT hO φ ρ X hX
 
 end ConclusionsW3
+
+/-! ## Phase 2.2 Tier-2 `guess f c θ [θc]` verification, zero-TCB grounding, and `SrcG` (`S2`) -/
+
+/-- info: 'IxCC.Src.Table.Guess.checkDoesNotReach_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Table.Guess.checkDoesNotReach_sound
+
+/-- info: 'IxCC.Src.Table.Guess.checkGuess_ok_props' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Table.Guess.checkGuess_ok_props
+
+/-- info: 'IxCC.Src.Table.Guess.validateGuess_ok_props' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Table.Guess.validateGuess_ok_props
+
+/-- info: 'IxCC.Src.Table.Guess.validateGuess_with_table' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Table.Guess.validateGuess_with_table
+
+/-- info: 'IxCC.Src.Table.validate_guess_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Table.validate_guess_ok
+
+/-- info: 'IxCC.Src.runG_iff_src_of_empty' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.runG_iff_src_of_empty
+
+/-- info: 'IxCC.Src.evalG_iff_eval_of_empty' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.evalG_iff_eval_of_empty
+
+/-- info: 'IxCC.Grounding.Guess.guessBoolBasis_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.Guess.guessBoolBasis_of_check
+
+/-- info: 'IxCC.Grounding.Guess.guessShape_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.Guess.guessShape_of_check
+
+/-- info: 'IxCC.Grounding.Guess.guessCompShape_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.Guess.guessCompShape_of_check
+
+/-- info: 'IxCC.Grounding.Guess.guess_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.Guess.guess_sound
+
+/-- info: 'IxCC.Grounding.Guess.guess_complete' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.Guess.guess_complete
+
+/-- info: 'IxCC.Grounding.Guess.guess_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.Guess.guess_iff
+
+/-- info: 'IxCC.Grounding.Guess.checkGuess_ground' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.Guess.checkGuess_ground
+
+/-- info: 'IxCC.Grounding.Guess.runG_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.Guess.runG_sound
+
+/-- info: 'IxCC.Grounding.Guess.runG_guess_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.Guess.runG_guess_eq
+
+/-- info: 'IxCC.Grounding.Guess.runG_sound_of_cert' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.Guess.runG_sound_of_cert
+
+/-- info: 'IxCC.Grounding.Guess.runG_sound_of_validate' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.Guess.runG_sound_of_validate
+
+/-- info: 'IxCC.Grounding.Guess.evalG_guess_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.Guess.evalG_guess_eq

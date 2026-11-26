@@ -40,6 +40,8 @@ structure TableCert where
   lazy : List (CId × Nat) := []
   inline : List CId := []
   opaqueByValue : List CId := []
+  /-- Phase 2.2 Tier-2 guess-and-verify entries (`guess f c θ [θc]`). -/
+  guess : List (CId × GuessEntry) := []
   deriving BEq, DecidableEq, Repr, Inhabited
 
 /-- The certificate form of a `resolve` entry. -/
@@ -56,7 +58,8 @@ def TableCert.ofTable (t : Table) : TableCert :=
     recKind := t.recKind.toList.map (·.1)
     lazy := t.lazy.toList
     inline := t.inline.toList.map (·.1)
-    opaqueByValue := t.opaqueByValue.toList.map (·.1) }
+    opaqueByValue := t.opaqueByValue.toList.map (·.1)
+    guess := t.guess.toList }
 
 /-- Constants of a program of `size` constants, none named twice (`seen`
 holds those passed). A loop. -/
@@ -70,7 +73,7 @@ entry's check runs twice. -/
 def TableCert.keysOk (size : Nat) (t : TableCert) : Bool :=
   idsDistinct size (t.resolve.map (·.1)) .leaf && idsDistinct size t.recKind .leaf &&
     idsDistinct size (t.lazy.map (·.1)) .leaf && idsDistinct size t.inline .leaf &&
-    idsDistinct size t.opaqueByValue .leaf
+    idsDistinct size t.opaqueByValue .leaf && idsDistinct size (t.guess.map (·.1)) .leaf
 
 /-- The entry a certificate line names, produced by its check. -/
 def entryOf (cfg : Config) (p : Program) (f : CId) : Entry → Except String Resolve
@@ -135,7 +138,8 @@ def ofCert (cfg : Config) (p : Program) (c : TableCert) : Except String Table :=
   let inline ← columnOfCert (fun f (_ : Unit) => checkInline p f cfg.inlineCap) id
     (c.inline.map (·, ())) .leaf
   let opaqueByValue ← columnOfCert (validateOpaque p) id (c.opaqueByValue.map (·, ())) .leaf
-  pure { resolve, recKind, lazy, inline, opaqueByValue }
+  let guess ← columnOfCert (Guess.validateGuess p) id c.guess .leaf
+  pure { resolve, recKind, lazy, inline, opaqueByValue, guess }
 
 /-! ## Soundness of `ofCert` -/
 
@@ -406,7 +410,9 @@ theorem ofCert_ok_props {cfg : Config} {p : Program} {cert : TableCert} {t : Tab
     (∀ c ∈ cert.inline, checkInline p c cfg.inlineCap = .ok () ∧ t.isInline c = true) ∧
     (∀ c, t.isInline c = true → c ∈ cert.inline ∧ checkInline p c cfg.inlineCap = .ok ()) ∧
     (∀ c ∈ cert.opaqueByValue, validateOpaque p c () = .ok () ∧ t.isOpaqueByValue c = true) ∧
-    (∀ c, t.isOpaqueByValue c = true → c ∈ cert.opaqueByValue ∧ validateOpaque p c () = .ok ()) := by
+    (∀ c, t.isOpaqueByValue c = true → c ∈ cert.opaqueByValue ∧ validateOpaque p c () = .ok ()) ∧
+    (∀ p_guess ∈ cert.guess, Guess.validateGuess p p_guess.1 p_guess.2 = .ok ()) ∧
+    (∀ c g, t.guessOf c = some g → (c, g) ∈ cert.guess ∧ Guess.validateGuess p c g = .ok ()) := by
   unfold ofCert at h
   cases hkn : Pinned.knownOk p with
   | false =>
@@ -469,57 +475,69 @@ theorem ofCert_ok_props {cfg : Config} {p : Program} {cert : TableCert} {t : Tab
                     | ok opaqueByValue =>
                       rw [hopq] at h
                       dsimp only at h
-                      injection h with ht
-                      subst ht
-                      refine ⟨rfl,
-                        resolveOfCert_mem_ok cert.resolve .leaf resolve hres,
-                        fun c r hget => ?_,
-                        recKindOfCert_mem_ok cert.recKind .leaf recKind hrk,
-                        fun c rk hget => ?_,
-                        fun pl hpl => columnOfCert_mem_ok cert.lazy .leaf lazy hlz pl.1 pl.2 hpl,
-                        fun c a hget => ?_,
-                        fun c hc => ?_,
-                        fun c hget => ?_,
-                        fun c hc => ?_,
-                        fun c hget => ?_⟩
-                      · rcases resolveOfCert_get?_ok cert.resolve .leaf resolve hres c r hget with hm | hex
-                        · simp [NatMap.get?] at hm
-                        · exact hex
-                      · rcases recKindOfCert_get?_ok cert.recKind .leaf recKind hrk c rk hget with hm | hex
-                        · simp [NatMap.get?] at hm
-                        · exact hex
-                      · rcases columnOfCert_get?_ok cert.lazy .leaf lazy hlz c a hget with hm | ⟨x, hmem, hchk, rfl⟩
-                        · simp [NatMap.get?] at hm
-                        · exact ⟨hmem, hchk⟩
-                      · have hmem : (c, ()) ∈ cert.inline.map (·, ()) := List.mem_map.2 ⟨c, hc, rfl⟩
-                        obtain ⟨h1, h2⟩ := columnOfCert_unit_mem_ok _ .leaf inline hinl c hmem
-                        exact ⟨h1, by simp [Table.isInline, NatMap.contains, h2]⟩
-                      · simp only [Table.isInline, NatMap.contains, Option.isSome_iff_exists] at hget
-                        obtain ⟨u, hu⟩ := hget
-                        cases u
-                        rcases columnOfCert_get?_ok _ .leaf inline hinl c () hu with hm | ⟨_, hmem, hchk, _⟩
-                        · simp [NatMap.get?] at hm
-                        · obtain ⟨c', hc', heq⟩ := List.mem_map.1 hmem
-                          cases heq
-                          exact ⟨hc', hchk⟩
-                      · have hmem : (c, ()) ∈ cert.opaqueByValue.map (·, ()) := List.mem_map.2 ⟨c, hc, rfl⟩
-                        obtain ⟨h1, h2⟩ := columnOfCert_unit_mem_ok _ .leaf opaqueByValue hopq c hmem
-                        exact ⟨h1, by simp [Table.isOpaqueByValue, NatMap.contains, h2]⟩
-                      · simp only [Table.isOpaqueByValue, NatMap.contains, Option.isSome_iff_exists] at hget
-                        obtain ⟨u, hu⟩ := hget
-                        cases u
-                        rcases columnOfCert_get?_ok _ .leaf opaqueByValue hopq c () hu with hm | ⟨_, hmem, hchk, _⟩
-                        · simp [NatMap.get?] at hm
-                        · obtain ⟨c', hc', heq⟩ := List.mem_map.1 hmem
-                          cases heq
-                          exact ⟨hc', hchk⟩
+                      cases hguess : columnOfCert (Guess.validateGuess p) id cert.guess .leaf with
+                      | error _ => rw [hguess] at h; cases h
+                      | ok guess =>
+                        rw [hguess] at h
+                        dsimp only at h
+                        injection h with ht
+                        subst ht
+                        refine ⟨rfl,
+                          resolveOfCert_mem_ok cert.resolve .leaf resolve hres,
+                          fun c r hget => ?_,
+                          recKindOfCert_mem_ok cert.recKind .leaf recKind hrk,
+                          fun c rk hget => ?_,
+                          fun pl hpl => columnOfCert_mem_ok cert.lazy .leaf lazy hlz pl.1 pl.2 hpl,
+                          fun c a hget => ?_,
+                          fun c hc => ?_,
+                          fun c hget => ?_,
+                          fun c hc => ?_,
+                          fun c hget => ?_,
+                          fun pg hpg => columnOfCert_mem_ok cert.guess .leaf guess hguess pg.1 pg.2 hpg,
+                          fun c g hget => ?_⟩
+                        · rcases resolveOfCert_get?_ok cert.resolve .leaf resolve hres c r hget with hm | hex
+                          · simp [NatMap.get?] at hm
+                          · exact hex
+                        · rcases recKindOfCert_get?_ok cert.recKind .leaf recKind hrk c rk hget with hm | hex
+                          · simp [NatMap.get?] at hm
+                          · exact hex
+                        · rcases columnOfCert_get?_ok cert.lazy .leaf lazy hlz c a hget with hm | ⟨x, hmem, hchk, rfl⟩
+                          · simp [NatMap.get?] at hm
+                          · exact ⟨hmem, hchk⟩
+                        · have hmem : (c, ()) ∈ cert.inline.map (·, ()) := List.mem_map.2 ⟨c, hc, rfl⟩
+                          obtain ⟨h1, h2⟩ := columnOfCert_unit_mem_ok _ .leaf inline hinl c hmem
+                          exact ⟨h1, by simp [Table.isInline, NatMap.contains, h2]⟩
+                        · simp only [Table.isInline, NatMap.contains, Option.isSome_iff_exists] at hget
+                          obtain ⟨u, hu⟩ := hget
+                          cases u
+                          rcases columnOfCert_get?_ok _ .leaf inline hinl c () hu with hm | ⟨_, hmem, hchk, _⟩
+                          · simp [NatMap.get?] at hm
+                          · obtain ⟨c', hc', heq⟩ := List.mem_map.1 hmem
+                            cases heq
+                            exact ⟨hc', hchk⟩
+                        · have hmem : (c, ()) ∈ cert.opaqueByValue.map (·, ()) := List.mem_map.2 ⟨c, hc, rfl⟩
+                          obtain ⟨h1, h2⟩ := columnOfCert_unit_mem_ok _ .leaf opaqueByValue hopq c hmem
+                          exact ⟨h1, by simp [Table.isOpaqueByValue, NatMap.contains, h2]⟩
+                        · simp only [Table.isOpaqueByValue, NatMap.contains, Option.isSome_iff_exists] at hget
+                          obtain ⟨u, hu⟩ := hget
+                          cases u
+                          rcases columnOfCert_get?_ok _ .leaf opaqueByValue hopq c () hu with hm | ⟨_, hmem, hchk, _⟩
+                          · simp [NatMap.get?] at hm
+                          · obtain ⟨c', hc', heq⟩ := List.mem_map.1 hmem
+                            cases heq
+                            exact ⟨hc', hchk⟩
+                        · rcases columnOfCert_get?_ok cert.guess .leaf guess hguess c g hget with hm | ⟨x, hmem, hchk, rfl⟩
+                          · simp [NatMap.get?] at hm
+                          · exact ⟨hmem, hchk⟩
 
-/-- `ofCert` enforces `FE-3` (acyclic unconditional `.eqn` unfolding) and
-`FE-6` (mandatory deterministic `Pinned.lazyPins` lazification). -/
+/-- `ofCert` enforces `FE-3` (acyclic unconditional `.eqn` unfolding),
+`FE-6` (mandatory deterministic `Pinned.lazyPins` lazification), and
+Phase 2.2 Tier-2 `Guess.validateGuess` on every rebuilt `guess` entry. -/
 theorem ofCert_hardened {cfg : Config} {p : Program} {cert : TableCert} {t : Table}
     (h : ofCert cfg p cert = .ok t) :
     eqnTargetsAcyclic p t.resolve t.resolve.toList = .ok () ∧
-    pinnedLazyRequired p t.lazy = .ok () := by
+    pinnedLazyRequired p t.lazy = .ok () ∧
+    (∀ c g, t.guessOf c = some g → Guess.validateGuess p c g = .ok ()) := by
   unfold ofCert at h
   cases hkn : Pinned.knownOk p with
   | false => rw [hkn] at h; cases h
@@ -566,8 +584,15 @@ theorem ofCert_hardened {cfg : Config} {p : Program} {cert : TableCert} {t : Tab
                       | error _ => rw [hopq] at h; cases h
                       | ok opaqueByValue =>
                         rw [hopq] at h; dsimp only at h
-                        injection h with ht; subst ht
-                        exact ⟨heqn, hpl⟩
+                        cases hguess : columnOfCert (Guess.validateGuess p) id cert.guess .leaf with
+                        | error _ => rw [hguess] at h; cases h
+                        | ok guess =>
+                          rw [hguess] at h; dsimp only at h
+                          injection h with ht; subst ht
+                          refine ⟨heqn, hpl, fun c g hget => ?_⟩
+                          rcases columnOfCert_get?_ok cert.guess .leaf guess hguess c g hget with hm | ⟨_, _, hchk, rfl⟩
+                          · simp [NatMap.get?] at hm
+                          · exact hchk
 
 theorem buildResolve_sound {cfg : Config} {p : Program} {cert : TableCert} {t : Table}
     (h : ofCert cfg p cert = .ok t) :

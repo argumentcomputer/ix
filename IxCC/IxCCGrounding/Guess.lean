@@ -1,5 +1,9 @@
 import IxCC.Src.Table.Guess
+import IxCC.Src.Table.Cert
+import IxCC.Src.EvalG
 import IxCCGrounding.Eqn
+import IxCCGrounding.Fundamental
+import IxCCGrounding.Tele
 
 /-!
 # Zero-TCB Grounding of `guess f c θ [θc]` (`IxCCGrounding.Guess`)
@@ -1019,5 +1023,497 @@ theorem checkGuess_ground (M : Model V env) {p : Program} {κ : CId → KKey} {l
 end EndToEnd
 
 end SrcBridge
+
+/-! ## Thin Relational `SrcG` Soundness (`S2`) -/
+
+section SrcGSoundness
+
+open IxCC.Src (Value Slot Levels)
+open IxCC.Src.Table (domainEqv)
+
+variable {V : Type w} [Ix.Kernel.SetTheory V] {env : KEnv}
+
+/-- Pointwise relation between `Src.Value` list and model-element list `V` (Mathlib-free). -/
+inductive ValDenList (R : Value → V → Prop) : List Value → List V → Prop where
+  | nil : ValDenList R [] []
+  | cons {v : Value} {vs : List Value} {X : V} {Xs : List V} :
+      R v X → ValDenList R vs Xs → ValDenList R (v :: vs) (X :: Xs)
+
+omit [Ix.Kernel.SetTheory V] in
+theorem valDenList_length {R : Value → V → Prop} :
+    ∀ {vs : List Value} {Xs : List V}, ValDenList R vs Xs → Xs.length = vs.length
+  | [], _, .nil => rfl
+  | _ :: _, _, .cons _ h => by simp [valDenList_length h]
+
+omit [Ix.Kernel.SetTheory V] in
+theorem valDenList_snoc {R : Value → V → Prop} :
+    ∀ {vs : List Value} {Xs : List V} {v : Value} {X : V},
+      ValDenList R vs Xs → R v X → ValDenList R (vs ++ [v]) (Xs ++ [X])
+  | [], _, _, _, .nil, hv => .cons hv .nil
+  | _ :: _, _, _, _, .cons h1 h', hv => .cons h1 (valDenList_snoc h' hv)
+
+theorem valDenList_of_relVs {M : Model V env} {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {S : CId → Prop} {Ok : CId → Levels → Prop} :
+    ∀ {vs : List Value} {Xs : List V},
+      RelVs M p κ lpsOf S Ok vs Xs → ValDenList (RelV M p κ lpsOf S Ok) vs Xs
+  | [], _, h => by cases h; exact .nil
+  | _ :: _, _, h => by cases h with | cons h1 h' => exact .cons h1 (valDenList_of_relVs h')
+
+theorem relVs_of_valDenList {M : Model V env} {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {S : CId → Prop} {Ok : CId → Levels → Prop} :
+    ∀ {vs : List Value} {Xs : List V},
+      ValDenList (RelV M p κ lpsOf S Ok) vs Xs → RelVs M p κ lpsOf S Ok vs Xs
+  | [], _, .nil => .nil
+  | _ :: _, _, .cons h1 h' => .cons h1 (relVs_of_valDenList h')
+
+theorem relSlots_of_relVs {M : Model V env} {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {S : CId → Prop} {Ok : CId → Levels → Prop} :
+    ∀ {vs : List Value} {Xs : List V},
+      RelVs M p κ lpsOf S Ok vs Xs → RelSlots M p κ lpsOf S Ok (vs.map .val) Xs
+  | [], _, h => by cases h; exact .nil
+  | _ :: _, _, h => by cases h with | cons h1 h' => exact .cons (.val h1) (relSlots_of_relVs h')
+
+/-! ### `Bool.true` adequacy and telescope transport helpers -/
+
+/-- Under `GuessBoolBasis`, `M.cval boolTrueName φ` lies in `M.cval boolKey φ`. -/
+theorem boolTrue_mem_bool (M : Model V env) (hBool : GuessBoolBasis env)
+    (φ : LevelParam → Nat) :
+    M.cval boolTrueName φ ∈ˢ M.cval boolKey φ := by
+  obtain ⟨cvB, _, hfB, hlB, _⟩ := hBool.bool
+  obtain ⟨cvBT, hfBT, _, htBT⟩ := hBool.bTrue
+  obtain ⟨TBT, hTBT, hmBT⟩ := mem_key M hfBT φ (fun _ => empty)
+  simp only [ConstantInfo.toConstantVal, htBT] at hTBT
+  rwa [(den_const0 hfB hlB).mp hTBT] at hmBT
+
+/-- Any model element `Z` related by `RelV` to the pinned `Bool.true` constructor equals
+`M.cval boolTrueName φ` (uses only `GuessBoolBasis` and `Model.cval_params`). -/
+theorem relV_boolTrue_eq (M : Model V env) {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {S : CId → Prop} {Ok : CId → Levels → Prop}
+    {boolTrueC : CId} (hBool : GuessBoolBasis env) (hbtPin : κ boolTrueC = boolTrueName)
+    {Z : V} (h : RelV M p κ lpsOf S Ok (.con boolTrueC [] [] []) Z)
+    (φ : LevelParam → Nat) :
+    Z = M.cval boolTrueName φ := by
+  cases h with
+  | con _ _ _ _ _ hPs hFs _ _ =>
+    cases hPs
+    cases hFs
+    obtain ⟨cvBT, hfBT, hlBT, _⟩ := hBool.bTrue
+    simp only [List.append_nil, List.foldl_nil, hbtPin]
+    exact M.cval_params boolTrueName (.ctorInfo cvBT 0 0) hfBT _ φ fun q hq => by
+      simp [ConstantInfo.toConstantVal, hlBT] at hq
+
+/-- The pinned `Bool.true` constructor relates to `M.cval boolTrueName φ` under `RelV`. -/
+theorem relV_boolTrue_intro (M : Model V env) {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {S : CId → Prop} {Ok : CId → Levels → Prop}
+    {boolTrueC : CId} (hBool : GuessBoolBasis env) (hS : S boolTrueC)
+    (hlps : lpsOf boolTrueC = []) (hbtPin : κ boolTrueC = boolTrueName)
+    (φ : LevelParam → Nat) :
+    RelV M p κ lpsOf S Ok (.con boolTrueC [] [] []) (M.cval boolTrueName φ) := by
+  obtain ⟨cvBT, hfBT, _, _⟩ := hBool.bTrue
+  have hlv : LvAt φ (lpsOf boolTrueC) [] := by
+    rw [hlps]; intro i q h; simp at h
+  have hcon := RelV.con (M := M) (p := p) (κ := κ) (lpsOf := lpsOf) (S := S) (Ok := Ok)
+    (c := boolTrueC) (ls := []) (ps := []) (fs := []) (φ := φ)
+    (cvC := cvBT) (np := 0) (nf := 0) (Ps := []) (Fs := [])
+    (ρ := fun _ => empty) hS hlv (by rwa [hbtPin]) rfl rfl .nil .nil .nil (.inl hlps)
+  simpa [hbtPin] using hcon
+
+private theorem piTele_inj :
+    ∀ (bs1 bs2 : List (KExpr × BinderMeta)) (C1 C2 : KExpr),
+      piTele bs1 C1 = piTele bs2 C2 → bs1.length = bs2.length → bs1 = bs2 ∧ C1 = C2
+  | [], [], C1, C2, h, _ => ⟨rfl, h⟩
+  | [], _ :: _, _, _, _, hl => by simp at hl
+  | _ :: _, [], _, _, _, hl => by simp at hl
+  | (A1, m1) :: bs1, (A2, m2) :: bs2, C1, C2, h, hl => by
+    simp only [piTele, Expr.forallE.injEq] at h
+    obtain ⟨rfl, hbody, rfl⟩ := h
+    obtain ⟨hbs, hC⟩ := piTele_inj bs1 bs2 C1 C2 hbody (by simpa using hl)
+    exact ⟨congrArg _ hbs, hC⟩
+
+theorem fits_piTele_sigma {cval : KKey → (LevelParam → Nat) → V} {φ : LevelParam → Nat} :
+    ∀ (bs : List (KExpr × BinderMeta)) (C : KExpr) {ρ σ : BVarIdx → V} {R : KExpr} {xs : List V},
+      Fits cval env φ ρ (piTele bs C) xs σ R →
+      xs.length = bs.length →
+      σ = pushAll xs ρ ∧ R = C
+  | [], C, ρ, _, _, [], h, _ => by
+    cases h with
+    | nil => exact ⟨(pushAll_nil ρ).symm, rfl⟩
+  | [], _, _, _, _, _ :: _, _, hl => by simp at hl
+  | _ :: _, _, _, _, _, [], _, hl => by simp at hl
+  | (A, m) :: bs, C, ρ, σ, R, x :: xs, h, hl => by
+    have h0 : Fits cval env φ ρ (.forallE A (piTele bs C) m) (x :: xs) σ R := h
+    cases h0 with
+    | cons _ _ h' =>
+      obtain ⟨hσ, hR⟩ := fits_piTele_sigma bs C h' (by simpa using hl)
+      rw [pushAll_cons]
+      exact ⟨hσ, hR⟩
+
+theorem fits_piTele_retarget_den {cval : KKey → (LevelParam → Nat) → V} {φ : LevelParam → Nat} :
+    ∀ (bs bs' : List (KExpr × BinderMeta)) (C C' : KExpr) {ρ σ : BVarIdx → V} {R : KExpr}
+      {xs : List V},
+      Fits cval env φ ρ (piTele bs C) xs σ R →
+      xs.length = bs.length →
+      bs.length = bs'.length →
+      (∀ (i : Nat) (b b' : KExpr × BinderMeta), bs[i]? = some b → bs'[i]? = some b' →
+        ∀ (ρ' : BVarIdx → V) (X : V),
+          Denotes cval env φ ρ' b.1 X → Denotes cval env φ ρ' b'.1 X) →
+      Fits cval env φ ρ (piTele bs' C') xs (pushAll xs ρ) C'
+  | [], [], _, C', ρ, _, _, [], h, _, _, _ => by
+    cases h with
+    | nil => rw [pushAll_nil]; exact .nil
+  | [], _ :: _, _, _, _, _, _, _, _, _, hl, _ => by simp at hl
+  | _ :: _, [], _, _, _, _, _, _, _, _, hl, _ => by simp at hl
+  | _ :: _, _ :: _, _, _, _, _, _, [], _, hl, _, _ => by simp at hl
+  | [], [], _, _, _, _, _, _ :: _, _, hl, _, _ => by simp at hl
+  | (A, m) :: bs, (A', m') :: bs', C, C', ρ, σ, R, x :: xs, h, hl, hlB, hdom => by
+    have h0 : Fits cval env φ ρ (.forallE A (piTele bs C) m) (x :: xs) σ R := h
+    cases h0 with
+    | cons hA hx h' =>
+      have hA' := hdom 0 (A, m) (A', m') rfl rfl ρ _ hA
+      have hrest := fits_piTele_retarget_den bs bs' C C' h' (by simpa using hl)
+        (by simpa using hlB) (fun i b b' hb hb' =>
+          hdom (i + 1) b b' (by simpa using hb) (by simpa using hb'))
+      rw [pushAll_cons]
+      exact .cons hA' hx hrest
+
+/-- Domain denotation preservation for `Src.Table.domainEqv`: two `Src` domains accepted by
+`domainEqv` that correspond via `TermCorr` to kernel expressions denote the same set in `M`. -/
+def DomDenEq (M : Model V env) (p : Program) (κ : CId → KKey) (lps : List Nat) : Prop :=
+  ∀ (a b : Term) (a' b' : KExpr) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (X : V),
+    domainEqv p a b = true → TermCorr κ lps a a' → TermCorr κ lps b b' →
+    Denotes M.cval env φ ρ a' X → Denotes M.cval env φ ρ b' X
+
+/-- Arguments `Xs` fit the stored kernel type of `κ f` at `(φ, ρ0)`, with result domain `TR`. -/
+def CallFits (M : Model V env) (κ : CId → KKey) (f : CId) (φ : LevelParam → Nat)
+    (ρ0 : BVarIdx → V) (Xs : List V) (TR : V) : Prop :=
+  ∃ (ciF : ConstantInfo .anon) (σ : BVarIdx → V) (R : KExpr),
+    env.find? (κ f) = some ciF ∧
+    Fits M.cval env φ ρ0 ciF.toConstantVal.type Xs σ R ∧
+    Denotes M.cval env φ σ R TR
+
+/-- Transport a well-typed call `(f, Xs, Y)` across a checked `guess` entry `g = (c, k, thm, comp?)`:
+1. Produces `GuessData` `d` with `GuessShape env κ f c thm d` where `Xs` fits `d.Ds` and `Y ∈ d.B(Xs)`.
+2. Produces `CallFits M κ c φ ρ0 (Xs ++ [Y]) (M.cval boolKey φ)` for the checker call. -/
+theorem checkGuess_transfer_call (M : Model V env) {p : Program} {κ : CId → KKey}
+    {lps : List Nat} {f c thm : CId} {comp? : Option CId} {g : GuessEntry}
+    (hcheck : checkGuess p f c thm comp? = .ok g)
+    (hcorr : GuessEnvCorr p env κ lps f c thm comp?)
+    (hdom : DomDenEq M p κ lps)
+    {φ : LevelParam → Nat} {ρ0 : BVarIdx → V} {Xs : List V} {TR Y : V}
+    (hlen : Xs.length = g.arity)
+    (hfit : CallFits M κ f φ ρ0 Xs TR) (hy : Y ∈ˢ TR) :
+    (∃ d : GuessData, d.Ds.length = g.arity ∧ GuessShape env κ f c thm d ∧
+      Fits M.cval env φ ρ0 (piTele d.Ds (.sort .zero)) Xs (pushAll Xs ρ0) (.sort .zero) ∧
+      Denotes M.cval env φ (pushAll Xs ρ0) d.B TR) ∧
+    CallFits M κ c φ ρ0 (Xs ++ [Y]) (M.cval boolKey φ) := by
+  obtain ⟨-, -, -, n, tf, vf, tc, vc, tθ, vθ, eqC, boolC, boolTrueC,
+    fBinders, fBody, cArgs, bCY, cYDom, cBody, θArgs, bY, yDom, bH, hDom, θBody,
+    _, _, _, _, _, hsf, hsc, hthm, _, _, _, _, _, _, _,
+    _, hboolC, _,
+    hpeelF, hpeelC, hcD, hcYD, hcB, hpeelθ, hθD, hyD,
+    _, _, _, _, _, _⟩ := checkGuess_ok_props hcheck
+  obtain ⟨ciF, hfF, _, _, hcorrF⟩ := hcorr.fStored n tf vf hsf
+  obtain ⟨ciC, hfC, _, hcorrC⟩ := hcorr.cStored n tc vc hsc
+  obtain ⟨cvT, pfT, hfT, _, hcorrθ⟩ := hcorr.thmStored n tθ vθ hthm
+  obtain ⟨ciF', σ, R, hfF', hfitsF, hdenR⟩ := hfit
+  rw [hfF] at hfF'; cases hfF'
+  obtain ⟨kfDs, kfB, hlenKf, htfEq, hcorrFB, hdomsF⟩ :=
+    termCorr_peelPis g.arity tf ciF.toConstantVal.type fBinders fBody hcorrF hpeelF
+  have hlenFB : fBinders.length = g.arity := peelPis_length g.arity tf fBinders fBody hpeelF
+  rw [htfEq] at hfitsF
+  obtain ⟨rfl, rfl⟩ := fits_piTele_sigma kfDs kfB hfitsF (by omega)
+  -- 1. Build `GuessShape` and transfer `Fits` + `d.B` from `tf` to `tθ`.
+  obtain ⟨d, hlenD, hShape⟩ := guessShape_of_checkGuess hcheck hcorr
+  obtain ⟨kθDs, kθRest, hlenKθ, htθEq, hcorrθRest, hdomsθ⟩ :=
+    termCorr_peelPis g.arity tθ cvT.type θArgs (.pi bY yDom (.pi bH hDom θBody)) hcorrθ hpeelθ
+  have hlenθB : θArgs.length = g.arity := peelPis_length g.arity tθ θArgs _ hpeelθ
+  cases hcorrθRest with
+  | @pi _ _ _ kθB kθRest2 mY' hcorrYDom _ =>
+    have hShape0 := hShape
+    obtain ⟨_, _, _, _, cvT', _, _, _, hfT', _, _, htθShape⟩ := hShape0
+    rw [hfT] at hfT'; cases hfT'
+    unfold GuessData.thmType at htθShape
+    rw [htθShape] at htθEq
+    obtain ⟨hDsEq, hRestEq⟩ := piTele_inj d.Ds kθDs _ _ htθEq (by omega)
+    subst hDsEq
+    injection hRestEq with hBEq _ _
+    subst hBEq
+    have hfitθ : Fits M.cval env φ ρ0 (piTele d.Ds (.sort .zero)) Xs (pushAll Xs ρ0) (.sort .zero) := by
+      refine fits_piTele_retarget_den kfDs d.Ds R (.sort .zero) hfitsF (by omega) (by omega)
+        fun i bF bθ hbF hbθ ρ' X hX => ?_
+      have hi : i < g.arity := by
+        have := (List.getElem?_eq_some_iff.1 hbF).1; omega
+      have hbf : fBinders[i]? = some fBinders[i] := List.getElem?_eq_getElem (by omega)
+      have hbθ' : θArgs[i]? = some θArgs[i] := List.getElem?_eq_getElem (by omega)
+      have hzip : (fBinders[i], θArgs[i]) ∈ fBinders.zip θArgs :=
+        List.mem_of_getElem? (List.getElem?_zip_eq_some.mpr ⟨hbf, hbθ'⟩)
+      have hdeqv : domainEqv p fBinders[i].2 θArgs[i].2 = true := List.all_eq_true.mp hθD _ hzip
+      exact hdom _ _ _ _ φ ρ' X hdeqv (hdomsF i _ _ hbf hbF) (hdomsθ i _ _ hbθ' hbθ) hX
+    have hdenB : Denotes M.cval env φ (pushAll Xs ρ0) d.B TR :=
+      hdom _ _ _ _ φ (pushAll Xs ρ0) TR hyD hcorrFB hcorrYDom hdenR
+    -- 2. Transfer `Fits` from `tf` to `tc` and extend by witness `Y ∈ˢ TR`.
+    obtain ⟨kcDs, kcRest, hlenKc, htcEq, hcorrCRest, hdomsC⟩ :=
+      termCorr_peelPis g.arity tc ciC.toConstantVal.type cArgs (.pi bCY cYDom cBody) hcorrC hpeelC
+    have hlenCB : cArgs.length = g.arity := peelPis_length g.arity tc cArgs _ hpeelC
+    cases hcorrCRest with
+    | @pi _ _ _ kcYDom kcBody mCY hcorrCYDom hcorrCBody =>
+      have hkcBody : kcBody = .const boolKey [] := by
+        rw [termCorr_const_nil (termCorr_eqv_congr hcorrCBody hcB), hcorr.boolPin boolC hboolC]
+      subst hkcBody
+      have hfitC0 : Fits M.cval env φ ρ0
+          (piTele kcDs (.forallE kcYDom (.const boolKey []) mCY)) Xs (pushAll Xs ρ0)
+          (.forallE kcYDom (.const boolKey []) mCY) := by
+        refine fits_piTele_retarget_den kfDs kcDs R (.forallE kcYDom (.const boolKey []) mCY)
+          hfitsF (by omega) (by omega) fun i bF bC hbF hbC ρ' X hX => ?_
+        have hi : i < g.arity := by
+          have := (List.getElem?_eq_some_iff.1 hbF).1; omega
+        have hbf : fBinders[i]? = some fBinders[i] := List.getElem?_eq_getElem (by omega)
+        have hbc : cArgs[i]? = some cArgs[i] := List.getElem?_eq_getElem (by omega)
+        have hzip : (fBinders[i], cArgs[i]) ∈ fBinders.zip cArgs :=
+          List.mem_of_getElem? (List.getElem?_zip_eq_some.mpr ⟨hbf, hbc⟩)
+        have hdeqv : domainEqv p fBinders[i].2 cArgs[i].2 = true := List.all_eq_true.mp hcD _ hzip
+        exact hdom _ _ _ _ φ ρ' X hdeqv (hdomsF i _ _ hbf hbF) (hdomsC i _ _ hbc hbC) hX
+      have hdenCY : Denotes M.cval env φ (pushAll Xs ρ0) kcYDom TR :=
+        hdom _ _ _ _ φ (pushAll Xs ρ0) TR hcYD hcorrFB hcorrCYDom hdenR
+      have hfitC := fits_snoc hfitC0 rfl hdenCY hy
+      rw [← htcEq] at hfitC
+      obtain ⟨cvB, _, hfB, hlB, _⟩ := hcorr.boolBasis.bool
+      have hdenBool : Denotes M.cval env φ (push Y (pushAll Xs ρ0)) (.const boolKey [])
+          (M.cval boolKey φ) := (den_const0 hfB hlB).mpr rfl
+      exact ⟨⟨d, hlenD, hShape, hfitθ, hdenB⟩,
+        ⟨ciC, push Y (pushAll Xs ρ0), .const boolKey [], hfC, hfitC, hdenBool⟩⟩
+
+/-- Grounding hypotheses for a program `p` with a validated `table.guess` over `M : Model V env`
+and a value-to-set relation `ValDen : Value → V → Prop` (instantiated below with `RelV`). -/
+structure GuessTableGround (M : Model V env) (p : Program) (κ : CId → KKey)
+    (lpsOf : CId → List Nat) (ValDen : Value → V → Prop) : Prop where
+  /-- Every `guess` entry in `p.table` passes `Table.Guess.validateGuess`
+  (discharged by `Table.ofCert_hardened` or `Table.validate_guess_ok`). -/
+  valid : ∀ f g, p.table.guessOf f = some g → validateGuess p f g = .ok ()
+  /-- Every `guess` entry in `p.table` satisfies `GuessEnvCorr` at `lpsOf f` with matching
+  level parameters for `f` and `g.checker`. -/
+  envCorr : ∀ f g, p.table.guessOf f = some g →
+    GuessEnvCorr p env κ (lpsOf f) f g.checker g.thm g.comp? ∧
+    lpsOf g.checker = lpsOf f
+  /-- Domain denotation preservation for `domainEqv` at every `guess` entry. -/
+  domDen : ∀ f g, p.table.guessOf f = some g → DomDenEq M p κ (lpsOf f)
+  /-- `Bool.true` adequacy of `ValDen` at the pinned `Bool.true` constructor. -/
+  boolTrueDen : ∀ boolTrueC Z φ, p.known.boolTrue = some boolTrueC →
+    GuessBoolBasis env → κ boolTrueC = boolTrueName →
+    ValDen (.con boolTrueC [] [] []) Z → Z = M.cval boolTrueName φ
+  boolTrueVal : ∀ boolTrueC φ, p.known.boolTrue = some boolTrueC →
+    GuessBoolBasis env → κ boolTrueC = boolTrueName →
+    ValDen (.con boolTrueC [] [] []) (M.cval boolTrueName φ)
+  /-- Standard `SrcEval` (`runAt`) soundness on calls fitting the stored type. -/
+  srcSound : ∀ (k : Nat) (ls : Levels) (f : CId) (xs : List Value) (y : Value)
+      (φ : LevelParam → Nat) (ρ0 : BVarIdx → V) (Xs : List V) (TR : V),
+    IxCC.Src.runAt p k ls f xs = .ok y →
+    LvAt φ (lpsOf f) ls →
+    ValDenList ValDen xs Xs →
+    CallFits M κ f φ ρ0 Xs TR →
+    ValDen y (Xs.foldl app (M.cval (κ f) φ))
+
+/-- **Soundness (`S2`) of the thin relational `SrcG` layer (`RunG`)**:
+every `RunG p ls f xs y` derivation (of arbitrary `guess` nesting depth) over a validated
+`table.guess` (`GuessTableGround`) relates `y` to `f xs` in `M` (`ValDen y (f xs)`), composing
+directly with `checkGuess_ground` / `guess_sound`. -/
+theorem runG_sound {M : Model V env} {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ValDen : Value → V → Prop}
+    (hG : GuessTableGround M p κ lpsOf ValDen)
+    {ls : Levels} {f : CId} {xs : List Value} {y : Value}
+    (hRun : IxCC.Src.RunG p ls f xs y) :
+    ∀ (φ : LevelParam → Nat) (ρ0 : BVarIdx → V) (Xs : List V) (TR : V),
+      LvAt φ (lpsOf f) ls →
+      ValDenList ValDen xs Xs →
+      CallFits M κ f φ ρ0 Xs TR →
+      (p.table.guessOf f ≠ none → ∃ Y, ValDen y Y ∧ Y ∈ˢ TR) →
+      ValDen y (Xs.foldl app (M.cval (κ f) φ)) := by
+  induction hRun with
+  | src hk =>
+    intro φ ρ0 Xs TR hlv hxs hfit _
+    exact hG.srcSound _ _ _ _ _ φ ρ0 Xs TR hk hlv hxs hfit
+  | guess hg hlen hbt hchk ih =>
+    rename_i ls' f' g xs' y' boolTrueC
+    intro φ ρ0 Xs TR hlv hxs hfit hwit
+    obtain ⟨Y, hyV, hyM⟩ := hwit (by rw [hg]; simp)
+    have hcheck : checkGuess p f' g.checker g.thm g.comp? = .ok g :=
+      validateGuess_iff.mp (hG.valid f' g hg)
+    obtain ⟨hcorr, hlpsC⟩ := hG.envCorr f' g hg
+    have hlenXs : Xs.length = g.arity := by rw [valDenList_length hxs, hlen]
+    obtain ⟨⟨d, hlenD, hShape, hfitθ, hdenB⟩, hfitC⟩ :=
+      checkGuess_transfer_call M hcheck hcorr (hG.domDen f' g hg) hlenXs hfit hyM
+    have hbtPin : κ boolTrueC = boolTrueName := hcorr.boolTruePin boolTrueC hbt
+    have hchkDen : ValDen (.con boolTrueC [] [] [])
+        ((Xs ++ [Y]).foldl app (M.cval (κ g.checker) φ)) :=
+      ih φ ρ0 (Xs ++ [Y]) (M.cval boolKey φ) (by rwa [hlpsC])
+        (valDenList_snoc hxs hyV) hfitC (fun _ =>
+          ⟨M.cval boolTrueName φ,
+            hG.boolTrueVal boolTrueC φ hbt hcorr.boolBasis hbtPin,
+            boolTrue_mem_bool M hcorr.boolBasis φ⟩)
+    have hchkEq : (Xs ++ [Y]).foldl app (M.cval (κ g.checker) φ) = M.cval boolTrueName φ :=
+      hG.boolTrueDen boolTrueC _ φ hbt hcorr.boolBasis hbtPin hchkDen
+    have hYeq : Y = Xs.foldl app (M.cval (κ f') φ) :=
+      guess_sound M hShape φ ρ0 hfitθ (by omega) hdenB hyM hchkEq
+    rwa [← hYeq]
+
+/-- **Exact denotational equality (`S2`, `y = f xs`)** at any `guess` step: composing directly
+with `checkGuess_ground` and `runG_sound`, any witness `Y ∈ˢ TR` validated by `RunG` on
+`g.checker (xs ++ [y])` satisfies exact model equality `Y = Xs.foldl app (M.cval (κ f) φ)`. -/
+theorem runG_guess_eq {M : Model V env} {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ValDen : Value → V → Prop}
+    (hG : GuessTableGround M p κ lpsOf ValDen)
+    {ls : Levels} {f : CId} {g : GuessEntry} {xs : List Value} {y : Value} {boolTrueC : CId}
+    (hg : p.table.guessOf f = some g)
+    (hlen : xs.length = g.arity)
+    (hbt : p.known.boolTrue = some boolTrueC)
+    (hchk : IxCC.Src.RunG p ls g.checker (xs ++ [y]) (.con boolTrueC [] [] []))
+    {φ : LevelParam → Nat} {ρ0 : BVarIdx → V} {Xs : List V} {TR Y : V}
+    (hlv : LvAt φ (lpsOf f) ls)
+    (hxs : ValDenList ValDen xs Xs)
+    (hfit : CallFits M κ f φ ρ0 Xs TR)
+    (hyV : ValDen y Y) (hyM : Y ∈ˢ TR) :
+    Y = Xs.foldl app (M.cval (κ f) φ) := by
+  have hcheck : checkGuess p f g.checker g.thm g.comp? = .ok g :=
+    validateGuess_iff.mp (hG.valid f g hg)
+  obtain ⟨hcorr, hlpsC⟩ := hG.envCorr f g hg
+  have hlenXs : Xs.length = g.arity := by rw [valDenList_length hxs, hlen]
+  obtain ⟨⟨d, hlenD, hShape, hfitθ, hdenB⟩, hfitC⟩ :=
+    checkGuess_transfer_call M hcheck hcorr (hG.domDen f g hg) hlenXs hfit hyM
+  have hbtPin : κ boolTrueC = boolTrueName := hcorr.boolTruePin boolTrueC hbt
+  have hchkDen : ValDen (.con boolTrueC [] [] [])
+      ((Xs ++ [Y]).foldl app (M.cval (κ g.checker) φ)) :=
+    runG_sound hG hchk φ ρ0 (Xs ++ [Y]) (M.cval boolKey φ) (by rwa [hlpsC])
+      (valDenList_snoc hxs hyV) hfitC (fun _ =>
+        ⟨M.cval boolTrueName φ,
+          hG.boolTrueVal boolTrueC φ hbt hcorr.boolBasis hbtPin,
+          boolTrue_mem_bool M hcorr.boolBasis φ⟩)
+  have hchkEq : (Xs ++ [Y]).foldl app (M.cval (κ g.checker) φ) = M.cval boolTrueName φ :=
+    hG.boolTrueDen boolTrueC _ φ hbt hcorr.boolBasis hbtPin hchkDen
+  exact guess_sound M hShape φ ρ0 hfitθ (by omega) hdenB hyM hchkEq
+
+/-! ### Concrete `IxCCGrounding.AllP` + `Table.ofCert` / `Table.validate` Composition -/
+
+/-- Build `GuessTableGround` for `RelV M p κ lpsOf S Ok` from `AllP` and any table-validity proof
+(`Table.ofCert_hardened` or `Table.validate_guess_ok`). -/
+theorem guessTableGround_of_allP {M : Model V env} {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {S : CId → Prop} {Ok : CId → Levels → Prop}
+    (hAll : ∀ k, AllP M p κ lpsOf S Ok k)
+    (hValid : ∀ f g, p.table.guessOf f = some g → validateGuess p f g = .ok ())
+    (hEnvCorr : ∀ f g, p.table.guessOf f = some g →
+      GuessEnvCorr p env κ (lpsOf f) f g.checker g.thm g.comp? ∧
+      lpsOf g.checker = lpsOf f)
+    (hDom : ∀ f g, p.table.guessOf f = some g → DomDenEq M p κ (lpsOf f))
+    (hBtS : ∀ boolTrueC, p.known.boolTrue = some boolTrueC → S boolTrueC ∧ lpsOf boolTrueC = [])
+    (hSrcOk : ∀ (f : CId) (ls : Levels) (φ : LevelParam → Nat) (ρ0 : BVarIdx → V)
+        (Xs : List V) (TR : V),
+      LvAt φ (lpsOf f) ls → CallFits M κ f φ ρ0 Xs TR →
+      S f ∧ Ok f ls ∧ AppChain (M.cval (κ f) φ) Xs) :
+    GuessTableGround M p κ lpsOf (RelV M p κ lpsOf S Ok) where
+  valid := hValid
+  envCorr := hEnvCorr
+  domDen := hDom
+  boolTrueDen := fun _ _ φ _ hBool hbtPin hRel => relV_boolTrue_eq M hBool hbtPin hRel φ
+  boolTrueVal := fun boolTrueC φ hbt hBool hbtPin =>
+    let ⟨hS, hlps⟩ := hBtS boolTrueC hbt
+    relV_boolTrue_intro M hBool hS hlps hbtPin φ
+  srcSound := fun k ls f xs y φ ρ0 Xs TR hrun hlv hxs hfit => by
+    obtain ⟨hSf, hOk, hchain⟩ := hSrcOk f ls φ ρ0 Xs TR hlv hfit
+    unfold IxCC.Src.runAt at hrun
+    cases hev : IxCC.Src.evalConst p k ls f with
+    | ok fv =>
+      rw [hev] at hrun
+      have hfv := (hAll k).evalConst ls f fv φ hev hSf hOk hlv
+      exact (hAll k).applyAll fv (xs.map .val) y (M.cval (κ f) φ) Xs hrun hfv
+        (relSlots_of_relVs (relVs_of_valDenList hxs)) hchain
+    | timeout => rw [hev] at hrun; cases hrun
+    | resource _ => rw [hev] at hrun; cases hrun
+    | trap => rw [hev] at hrun; cases hrun
+    | stuck => rw [hev] at hrun; cases hrun
+
+/-- **End-to-end `S2` Soundness over `Table.ofCert`**: any table rebuilt by `Table.ofCert`
+automatically discharges `validateGuess` via `Table.ofCert_hardened`, so every `RunG`
+derivation over `{ p0 with table := t }` agrees with standard `RelV` denotation in `M`. -/
+theorem runG_sound_of_cert {M : Model V env} {cfg : IxCC.Src.Table.Config} {p0 : Program}
+    {cert : IxCC.Src.Table.TableCert} {t : IxCC.Src.Table}
+    (hCert : IxCC.Src.Table.ofCert cfg p0 cert = .ok t)
+    {κ : CId → KKey} {lpsOf : CId → List Nat} {S : CId → Prop} {Ok : CId → Levels → Prop}
+    (hAll : ∀ k, AllP M { p0 with table := t } κ lpsOf S Ok k)
+    (hEnvCorr : ∀ f g, t.guessOf f = some g →
+      GuessEnvCorr { p0 with table := t } env κ (lpsOf f) f g.checker g.thm g.comp? ∧
+      lpsOf g.checker = lpsOf f)
+    (hDom : ∀ f g, t.guessOf f = some g → DomDenEq M { p0 with table := t } κ (lpsOf f))
+    (hBtS : ∀ boolTrueC, p0.known.boolTrue = some boolTrueC → S boolTrueC ∧ lpsOf boolTrueC = [])
+    (hSrcOk : ∀ (f : CId) (ls : Levels) (φ : LevelParam → Nat) (ρ0 : BVarIdx → V)
+        (Xs : List V) (TR : V),
+      LvAt φ (lpsOf f) ls → CallFits M κ f φ ρ0 Xs TR →
+      S f ∧ Ok f ls ∧ AppChain (M.cval (κ f) φ) Xs)
+    {ls : Levels} {f : CId} {xs : List Value} {y : Value}
+    (hRun : IxCC.Src.RunG { p0 with table := t } ls f xs y)
+    {φ : LevelParam → Nat} {ρ0 : BVarIdx → V} {Xs : List V} {TR : V}
+    (hlv : LvAt φ (lpsOf f) ls)
+    (hxs : RelVs M { p0 with table := t } κ lpsOf S Ok xs Xs)
+    (hfit : CallFits M κ f φ ρ0 Xs TR)
+    (hwit : t.guessOf f ≠ none → ∃ Y, RelV M { p0 with table := t } κ lpsOf S Ok y Y ∧ Y ∈ˢ TR) :
+    RelV M { p0 with table := t } κ lpsOf S Ok y (Xs.foldl app (M.cval (κ f) φ)) := by
+  have hVal0 := (IxCC.Src.Table.ofCert_hardened hCert).2.2
+  have hVal : ∀ c g, ({ p0 with table := t } : Program).table.guessOf c = some g →
+      validateGuess { p0 with table := t } c g = .ok () := by
+    intro c g hg
+    rw [validateGuess_with_table]
+    exact hVal0 c g hg
+  have hG := guessTableGround_of_allP hAll hVal hEnvCorr hDom hBtS hSrcOk
+  exact runG_sound hG hRun φ ρ0 Xs TR hlv (valDenList_of_relVs hxs) hfit hwit
+
+/-- **End-to-end `S2` Soundness over `Table.validate`**: any program whose table passes
+`Table.validate` automatically discharges `validateGuess` via `Table.validate_guess_ok`. -/
+theorem runG_sound_of_validate {M : Model V env} {cfg : IxCC.Src.Table.Config} {p : Program}
+    (hVal : IxCC.Src.Table.validate cfg p = .ok ())
+    {κ : CId → KKey} {lpsOf : CId → List Nat} {S : CId → Prop} {Ok : CId → Levels → Prop}
+    (hAll : ∀ k, AllP M p κ lpsOf S Ok k)
+    (hEnvCorr : ∀ f g, p.table.guessOf f = some g →
+      GuessEnvCorr p env κ (lpsOf f) f g.checker g.thm g.comp? ∧
+      lpsOf g.checker = lpsOf f)
+    (hDom : ∀ f g, p.table.guessOf f = some g → DomDenEq M p κ (lpsOf f))
+    (hBtS : ∀ boolTrueC, p.known.boolTrue = some boolTrueC → S boolTrueC ∧ lpsOf boolTrueC = [])
+    (hSrcOk : ∀ (f : CId) (ls : Levels) (φ : LevelParam → Nat) (ρ0 : BVarIdx → V)
+        (Xs : List V) (TR : V),
+      LvAt φ (lpsOf f) ls → CallFits M κ f φ ρ0 Xs TR →
+      S f ∧ Ok f ls ∧ AppChain (M.cval (κ f) φ) Xs)
+    {ls : Levels} {f : CId} {xs : List Value} {y : Value}
+    (hRun : IxCC.Src.RunG p ls f xs y)
+    {φ : LevelParam → Nat} {ρ0 : BVarIdx → V} {Xs : List V} {TR : V}
+    (hlv : LvAt φ (lpsOf f) ls)
+    (hxs : RelVs M p κ lpsOf S Ok xs Xs)
+    (hfit : CallFits M κ f φ ρ0 Xs TR)
+    (hwit : p.table.guessOf f ≠ none → ∃ Y, RelV M p κ lpsOf S Ok y Y ∧ Y ∈ˢ TR) :
+    RelV M p κ lpsOf S Ok y (Xs.foldl app (M.cval (κ f) φ)) := by
+  have hG := guessTableGround_of_allP hAll (IxCC.Src.Table.validate_guess_ok hVal)
+    hEnvCorr hDom hBtS hSrcOk
+  exact runG_sound hG hRun φ ρ0 Xs TR hlv (valDenList_of_relVs hxs) hfit hwit
+
+/-- **Term-level `EvalG.guess` Soundness (`S2`)**: whenever a saturated call
+`Term.mkApps (.const f us) args` derives `y` via `EvalG.guess` over a validated table
+(`GuessTableGround`), any well-typed witness `Y ∈ˢ TR` satisfying `ValDen y Y` equals
+`Xs.foldl app (M.cval (κ f) φ)` in `M`. -/
+theorem evalG_guess_eq {M : Model V env} {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ValDen : Value → V → Prop}
+    (hG : GuessTableGround M p κ lpsOf ValDen)
+    {ls : Levels} {ρ : IxCC.Src.Env} {f : CId} {us : List IxCC.Ixon.Univ}
+    {args : List Term.Arg} {xs : List Value} {y : Value} {g : GuessEntry} {boolTrueC : CId}
+    (hg : p.table.guessOf f = some g)
+    (hlen : args.length = g.arity)
+    (hargs : IxCC.Src.EvalGArgs p ls ρ args xs)
+    (hbt : p.known.boolTrue = some boolTrueC)
+    (hchk : IxCC.Src.RunG p (us.map (IxCC.Src.evalUniv ls)) g.checker (xs ++ [y])
+      (.con boolTrueC [] [] []))
+    {φ : LevelParam → Nat} {ρ0 : BVarIdx → V} {Xs : List V} {TR Y : V}
+    (hlv : LvAt φ (lpsOf f) (us.map (IxCC.Src.evalUniv ls)))
+    (hxs : ValDenList ValDen xs Xs)
+    (hfit : CallFits M κ f φ ρ0 Xs TR)
+    (hyV : ValDen y Y) (hyM : Y ∈ˢ TR) :
+    Y = Xs.foldl app (M.cval (κ f) φ) :=
+  runG_guess_eq hG hg (by rw [IxCC.Src.evalGArgs_length hargs, hlen]) hbt hchk hlv hxs hfit hyV hyM
+
+end SrcGSoundness
 
 end IxCC.Grounding.Guess
