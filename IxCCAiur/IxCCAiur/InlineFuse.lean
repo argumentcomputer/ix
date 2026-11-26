@@ -114,6 +114,29 @@ def hasFreeVarArms (v : String) : List (Pat × Expr) → Bool
 
 end
 
+mutual
+
+/-- Whether local variable `v` is bound by any `let` or `match` pattern inside `e`. -/
+def hasBoundVar (v : String) : Expr → Bool
+  | .letValue p x b => (patBoundVars p).contains v || hasBoundVar v x || hasBoundVar v b
+  | .matchValue x arms => hasBoundVar v x || hasBoundVarArms v arms
+  | .tuple xs | .array xs | .construct _ _ _ xs | .constructAs _ _ _ xs
+  | .record _ xs | .update _ xs | .builtin _ xs | .call _ _ xs => hasBoundVarList v xs
+  | .repeat x _ | .index x _ | .slice x _ _ | .member x _ | .project x _
+  | .store x | .load x | .hint _ x _ | .neg x => hasBoundVar v x
+  | .binary _ x y => hasBoundVar v x || hasBoundVar v y
+  | .literal _ | .var _ | .global _ _ | .control _ _ => false
+
+def hasBoundVarList (v : String) : List Expr → Bool
+  | [] => false
+  | x :: xs => hasBoundVar v x || hasBoundVarList v xs
+
+def hasBoundVarArms (v : String) : List (Pat × Expr) → Bool
+  | [] => false
+  | (p, b) :: rest => (patBoundVars p).contains v || hasBoundVar v b || hasBoundVarArms v rest
+
+end
+
 /-! ## Alpha-Safe Variable Prefixing for Inlined Callees -/
 
 mutual
@@ -179,13 +202,13 @@ end
 /-! ## Step 1: Inline Small Non-Recursive `isInline = true` Functions -/
 
 /-- Wrap `body` in `let (pfx ++ p_i) := arg_i` bindings for all parameters. -/
-private def bindParams (pfx : String) : List (String × Expr) → Expr → Expr
+def bindParams (pfx : String) : List (String × Expr) → Expr → Expr
   | [], body => body
   | (p, arg) :: rest, body => .letValue (.bind (pfx ++ p)) arg (bindParams pfx rest body)
 
 mutual
 
-private def inlineCallsM (imap : List (String × Fn)) : Expr → StateM Nat Expr
+def inlineCallsM (imap : List (String × Fn)) : Expr → StateM Nat Expr
   | .call nm targs xs => do
     let xs' ← inlineCallsListM imap xs
     match targs, imap.lookup nm with
@@ -226,11 +249,11 @@ private def inlineCallsM (imap : List (String × Fn)) : Expr → StateM Nat Expr
   | .matchValue x arms =>
     return .matchValue (← inlineCallsM imap x) (← inlineCallsArmsM imap arms)
 
-private def inlineCallsListM (imap : List (String × Fn)) : List Expr → StateM Nat (List Expr)
+def inlineCallsListM (imap : List (String × Fn)) : List Expr → StateM Nat (List Expr)
   | [] => pure []
   | x :: xs => return (← inlineCallsM imap x) :: (← inlineCallsListM imap xs)
 
-private def inlineCallsArmsM (imap : List (String × Fn)) :
+def inlineCallsArmsM (imap : List (String × Fn)) :
     List (Pat × Expr) → StateM Nat (List (Pat × Expr))
   | [] => pure []
   | (p, b) :: rest => return (p, ← inlineCallsM imap b) :: (← inlineCallsArmsM imap rest)
@@ -240,50 +263,50 @@ end
 /-! ## Step 2: Copy Propagation & Known-Constructor `matchValue` Folding -/
 
 abbrev AliasMap := List (String × String)
-abbrev CtorMap := List (String × (String × List String))
+abbrev CtorMap := List (String × (String × String × List String))
 
-private def resolveAlias (aliases : AliasMap) (x : String) : String :=
+def resolveAlias (aliases : AliasMap) (x : String) : String :=
   (aliases.lookup x).getD x
 
-private def allVarNames : List Expr → Option (List String)
+def allVarNames : List Expr → Option (List String)
   | [] => some []
   | .var v :: rest => (allVarNames rest).map (v :: ·)
   | _ => none
 
-private def matchCtorPats : List Pat → List String → Option AliasMap
+def matchCtorPats : List Pat → List String → Option AliasMap
   | [], [] => some []
   | .bind v :: ps, fv :: fvs => (matchCtorPats ps fvs).map ((v, fv) :: ·)
   | .wildcard :: ps, _ :: fvs => matchCtorPats ps fvs
   | _, _ => none
 
-private def pickCtorArm (nm : String) (fvs : List String) :
+def pickCtorArm (enumTy nm : String) (fvs : List String) :
     List (Pat × Expr) → Option (AliasMap × Expr)
   | [] => none
-  | (.construct _ nm' pats, body) :: rest =>
-    if nm' == nm then
-      match matchCtorPats pats fvs with
-      | some binds => some (binds, body)
-      | none => pickCtorArm nm fvs rest
-    else pickCtorArm nm fvs rest
+  | (.construct (.named ty' []) nm' pats, body) :: rest =>
+    if ty' == enumTy && nm' == nm && pats.length == fvs.length then
+      (matchCtorPats pats fvs).map (·, body)
+    else pickCtorArm enumTy nm fvs rest
   | (.wildcard, body) :: _ => some ([], body)
-  | (.bind _, _) :: _ => none
-  | _ :: rest => pickCtorArm nm fvs rest
+  | (.literal _, _) :: rest | (.tuple _, _) :: rest
+  | (.array _, _) :: rest | (.repeat _ _, _) :: rest =>
+    pickCtorArm enumTy nm fvs rest
+  | _ :: _ => none
 
-private def shadowMaps (bs : List String) (aliases : AliasMap) (ctors : CtorMap)
+def shadowMaps (bs : List String) (aliases : AliasMap) (ctors : CtorMap)
     (compacts : AliasMap) : AliasMap × CtorMap × AliasMap :=
   (aliases.filter fun p => !bs.contains p.1 && !bs.contains p.2,
-   ctors.filter fun p => !bs.contains p.1 && p.2.2.all fun v => !bs.contains v,
+   ctors.filter fun p => !bs.contains p.1 && p.2.2.2.all fun v => !bs.contains v,
    compacts.filter fun p => !bs.contains p.1 && !bs.contains p.2)
 
 /-- Match `UInt32::compact_field (UInt32::compact inner)` (pure linear byte
 recomposition of a checked `UInt32::U32` into `< 2^32`). -/
-private def matchCompactU32 : Expr → Option Expr
+def matchCompactU32 : Expr → Option Expr
   | .call "UInt32::compact_field" (some []) [.call "UInt32::compact" (some []) [inner]] => some inner
   | _ => none
 
 /-- Whether an expression is pure (has no `assertEq`, `hint`, `call`, or `store`),
 so a dead `let` binding of it can be eliminated without changing semantics! -/
-private def isPureCtorOrVar : Expr → Bool
+def isPureCtorOrVar : Expr → Bool
   | .var _ | .literal _ => true
   | .construct _ _ _ xs => xs.all fun e => match e with | .var _ | .literal _ => true | _ => false
   | e => match matchCompactU32 e with
@@ -341,19 +364,22 @@ def simpExpr (fuel : Nat) (aliases : AliasMap) (ctors : CtorMap)
     let (aliases0, ctors0, compacts0) := shadowMaps bs aliases ctors compacts
     match p, x' with
     | .bind v, .var y =>
-      -- Copy propagation: replace all free occurrences of `v` with `y` and drop the copy!
-      let aliases1 := (v, y) :: aliases0
-      let ctors1 := match ctors0.lookup y with
-        | some info => (v, info) :: ctors0
-        | none => ctors0
-      let compacts1 := match compacts0.lookup y with
-        | some u => (v, u) :: compacts0
-        | none => compacts0
-      simpExpr fuel aliases1 ctors1 compacts1 b
-    | .bind v, .construct _ _ nm args =>
-      let ctors1 := match allVarNames args with
-        | some fvs => (v, (nm, fvs)) :: ctors0
-        | none => ctors0
+      -- Copy propagation: replace all free occurrences of `v` with `y` and drop the copy
+      -- whenever `y` is never rebound inside `b` (preserving alias target stability).
+      if !hasBoundVar y b then
+        let aliases1 := (v, y) :: aliases.filter (fun q => q.1 != v)
+        simpExpr fuel aliases1 ctors compacts b
+      else
+        let b' := simpExpr fuel aliases0 ctors0 compacts0 b
+        match b' with
+        | .var w => if w == v then x' else .letValue p x' b'
+        | _ =>
+          if !hasFreeVar v b' then b'
+          else .letValue p x' b'
+    | .bind v, .construct ty targs nm args =>
+      let ctors1 := match targs, allVarNames args with
+        | some [], some fvs => if !fvs.contains v then (v, (ty, nm, fvs)) :: ctors0 else ctors0
+        | _, _ => ctors0
       let b' := simpExpr fuel aliases0 ctors1 compacts0 b
       if isPureCtorOrVar x' && !hasFreeVar v b' then b'
       else match b' with
@@ -361,7 +387,7 @@ def simpExpr (fuel : Nat) (aliases : AliasMap) (ctors : CtorMap)
         | _ => .letValue p x' b'
     | .bind v, _ =>
       let compacts1 := match matchCompactU32 x' with
-        | some (.var u) => (v, u) :: compacts0
+        | some (.var u) => if u != v then (v, u) :: compacts0 else compacts0
         | _ => compacts0
       let b' := simpExpr fuel aliases0 ctors0 compacts1 b
       match b' with
@@ -373,28 +399,23 @@ def simpExpr (fuel : Nat) (aliases : AliasMap) (ctors : CtorMap)
       .letValue p x' (simpExpr fuel aliases0 ctors0 compacts0 b)
   | .matchValue scrut arms =>
     let scrut' := simpExpr fuel aliases ctors compacts scrut
-    let known? : Option (String × List String) := match scrut' with
+    let known? : Option (String × String × List String) := match scrut' with
       | .var v => ctors.lookup v
-      | .construct _ _ nm args => (allVarNames args).map (nm, ·)
+      | .construct ty (some []) nm args => (allVarNames args).map (ty, nm, ·)
       | _ => none
     match fuel with
     | 0 => .matchValue scrut' (simpArms 0 aliases ctors compacts arms)
     | fuel' + 1 =>
       match known? with
-      | some (nm, fvs) =>
-        match pickCtorArm nm fvs arms with
+      | some (enumTy, nm, fvs) =>
+        match pickCtorArm enumTy nm fvs arms with
         | some (binds, armBody) =>
-          let (aliases0, ctors0, compacts0) := shadowMaps (binds.map Prod.fst) aliases ctors compacts
-          let aliases1 := binds ++ aliases0
-          let ctors1 := binds.foldl (init := ctors0) fun acc (v, fv) =>
-            match ctors0.lookup fv with
-            | some info => (v, info) :: acc
-            | none => acc
-          let compacts1 := binds.foldl (init := compacts0) fun acc (v, fv) =>
-            match compacts0.lookup fv with
-            | some u => (v, u) :: acc
-            | none => acc
-          simpExpr fuel' aliases1 ctors1 compacts1 armBody
+          let bnames := binds.map Prod.fst
+          if Lower.allDistinct bnames && binds.all (fun q => !hasBoundVar q.2 armBody) then
+            let aliases1 := binds ++ aliases.filter (fun q => !bnames.contains q.1)
+            simpExpr fuel' aliases1 ctors compacts armBody
+          else
+            .matchValue scrut' (simpArms (fuel' + 1) aliases ctors compacts arms)
         | none => .matchValue scrut' (simpArms (fuel' + 1) aliases ctors compacts arms)
       | none => .matchValue scrut' (simpArms (fuel' + 1) aliases ctors compacts arms)
 termination_by e => (fuel, sizeOf e)
@@ -424,7 +445,10 @@ def buildInlineMap (fns : List Fn) (maxInlineNodes : Nat := 256) : List (String 
   fns.filterMap fun f =>
     -- Only inline lowered user functions (`f*`, `jp*`), never arithmetic helpers like
     -- `u32_of_field` (whose constant calls are matched directly by `Peephole.rewriteExpr`).
-    if f.isInline && (f.name.startsWith "f" || f.name.startsWith "jp") &&
+    if f.isInline && f.typeParams.isEmpty &&
+        (f.name.startsWith "f" || f.name.startsWith "jp") &&
+        !Lower.hasDoubleColon f.name.toList &&
+        Lower.allDistinct (f.params.map Prod.fst) &&
         !callsAny [f.name] f.body && exprNodes f.body ≤ maxInlineNodes then
       some (f.name, f)
     else none
@@ -496,18 +520,21 @@ end
 
 mutual
 
-/-- Post-peephole constant folding: replaces `u32_of_field(lit n)` (`n < 2^32`) with direct
-`UInt32::from_fields [n%256, (n/256)%256, (n/65536)%256, (n/16777216)%256]`, eliminating
-`bytes_le` hints, top-byte assertions, and recomposition constraints on constant `UInt32`s
+/-- Post-peephole constant folding: replaces `u32_of_field(lit n)` (`n < 2^56`) with direct
+`UInt32::from_fields [m%256, (m/256)%256, (m/65536)%256, (m/16777216)%256]` (where `m = n % 2^32`),
+eliminating `bytes_le` hints, top-byte assertions, and recomposition constraints on constant `UInt32`s
 (e.g. BLAKE3 IV words and zero-padded block words). -/
 def foldConstU32OfField : Expr → Expr
   | .call nm targs xs =>
     match nm, targs, xs with
     | "u32_of_field", some [], [.literal n] =>
-      let m := n % 4294967296
-      .call "UInt32::from_fields" (some [])
-        [.array [.literal (m % 256), .literal ((m / 256) % 256),
-                 .literal ((m / 65536) % 256), .literal ((m / 16777216) % 256)]]
+      if n < Lower.natLimit then
+        let m := n % 4294967296
+        .call "UInt32::from_fields" (some [])
+          [.array [.literal (m % 256), .literal ((m / 256) % 256),
+                   .literal ((m / 65536) % 256), .literal ((m / 16777216) % 256)]]
+      else
+        .call nm targs (foldConstU32OfFieldList xs)
     | _, _, _ => .call nm targs (foldConstU32OfFieldList xs)
   | .tuple xs => .tuple (foldConstU32OfFieldList xs)
   | .array xs => .array (foldConstU32OfFieldList xs)
@@ -624,7 +651,9 @@ theorem isPlainExpr_foldConstU32OfField :
   | .call nm targs xs => by
     simp only [foldConstU32OfField]
     split
-    · rfl
+    · split
+      · rfl
+      · exact isPlainList_foldConstU32OfFieldList _
     · exact isPlainList_foldConstU32OfFieldList xs
   | .literal _ | .var _ | .global _ _ | .control _ _ => rfl
   | .tuple xs | .array xs | .construct _ _ _ xs | .constructAs _ _ _ xs
