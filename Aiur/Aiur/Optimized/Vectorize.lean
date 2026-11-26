@@ -1855,26 +1855,29 @@ private theorem VectorizedSystem.inspectRow_lift {sys : VectorizedSystem F}
           simp only [hfind] at hinsp
           by_cases hlen : (laneActive.length != e.lanes) = true
           · simp [hlen, bind, Except.bind] at hinsp
-          · simp only [hlen, Bool.false_eq_true, ↓reduceIte] at hinsp
-            obtain ⟨_, hchk, hret⟩ := except_bind_ok.mp hinsp
-            obtain rfl := except_pure_ok.mp hret
-            have heMem := List.mem_of_find?_eq_some hfind
-            have heValid := hvalid'.1.2 e heMem
-            have hsrcFind : sys.source.findChip? e.orig.name = some e.orig := heValid.1
-            have hvecChk : checkVectorize e.orig e.vec e.lanes = true :=
-              ((Bool.and_eq_true _ _).mp heValid.2).1
-            obtain ⟨hval, _⟩ := Chip.checkRow_iff.mp hchk
-            obtain ⟨_, hrowsVal, hrulesEq, _⟩ :=
-              vectorize_chip_sound hvecChk rom hval laneActive
-            simp only [VectorizedSystem.liftTraceRowToSource, hfind]
-            rw [hrulesEq]
-            unfold System.inspectRows
-            apply mapM_ok_iff.mpr
-            rw [List.forall₂_map_right_iff]
-            apply List.forall₂_same.mpr
-            intro r hr
-            obtain ⟨hchip, hrVal⟩ := hrowsVal r hr
-            exact System.inspectRow_iff.mpr ⟨e.orig, by simpa [hchip] using hsrcFind, hrVal, rfl⟩
+          · simp only [hlen, Bool.false_eq_true, ↓reduceIte, bind, Except.bind, pure, Except.pure] at hinsp
+            cases hchk : e.vec.checkRow rom row with
+            | error err => simp [hchk] at hinsp
+            | ok claim =>
+                simp only [hchk, Except.ok.injEq] at hinsp
+                subst hinsp
+                have heMem := List.mem_of_find?_eq_some hfind
+                have heValid := hvalid'.1.2 e heMem
+                have hsrcFind : sys.source.findChip? e.orig.name = some e.orig := heValid.1
+                have hvecChk : checkVectorize e.orig e.vec e.lanes = true :=
+                  ((Bool.and_eq_true _ _).mp heValid.2).1
+                obtain ⟨hval, _⟩ := Chip.checkRow_iff.mp hchk
+                obtain ⟨_, hrowsVal, hrulesEq, _⟩ :=
+                  vectorize_chip_sound hvecChk rom hval laneActive
+                simp only [VectorizedSystem.liftTraceRowToSource, hfind]
+                rw [hrulesEq]
+                unfold System.inspectRows
+                apply mapM_ok_iff.mpr
+                rw [List.forall₂_map_right_iff]
+                apply List.forall₂_same.mpr
+                intro r hr
+                obtain ⟨hchip, hrVal⟩ := hrowsVal r hr
+                exact System.inspectRow_iff.mpr ⟨e.orig, by simpa [hchip] using hsrcFind, hrVal, rfl⟩
 
 private theorem VectorizedSystem.inspectWeightedRow_lift {sys : VectorizedSystem F}
     (hvalid : sys.checkValid = true) {rom : WireROM F} {trow : WeightedVecTraceRow F}
@@ -1914,29 +1917,32 @@ private theorem VectorizedSystem.inspectWeightedRow_lift {sys : VectorizedSystem
           simp only [hfind] at hinsp
           by_cases hlen : (laneMults.length != e.lanes) = true
           · simp [hlen, bind, Except.bind] at hinsp
-          · simp only [hlen, Bool.false_eq_true, ↓reduceIte] at hinsp
-            obtain ⟨_, hchk, hret⟩ := except_bind_ok.mp hinsp
-            obtain rfl := except_pure_ok.mp hret
-            have heMem := List.mem_of_find?_eq_some hfind
-            have heValid := hvalid'.1.2 e heMem
-            have hsrcFind : sys.source.findChip? e.orig.name = some e.orig := heValid.1
-            have hvecChk : checkVectorize e.orig e.vec e.lanes = true :=
-              ((Bool.and_eq_true _ _).mp heValid.2).1
-            obtain ⟨hval, _⟩ := Chip.checkRow_iff.mp hchk
-            obtain ⟨_, hrowsVal, hrulesEq, _, _⟩ :=
-              vectorize_chip_weighted_sound hvecChk rom hval laneMults
-            simp only [VectorizedSystem.liftWeightedTraceRowToSource, hfind]
-            rw [hrulesEq]
-            unfold System.inspectWeightedRows
-            apply mapM_ok_iff.mpr
-            rw [List.forall₂_map_right_iff]
-            apply List.forall₂_same.mpr
-            intro w hw
-            obtain ⟨hchip, hwVal⟩ := hrowsVal w hw
-            have h1 : sys.source.inspectRow rom w.row =
-                .ok (e.orig.receive w.row, e.orig.premises w.row) :=
-              System.inspectRow_iff.mpr ⟨e.orig, by simpa [hchip] using hsrcFind, hwVal, rfl⟩
-            simp [h1, bind, Except.bind, pure, Except.pure]
+          · simp only [hlen, Bool.false_eq_true, ↓reduceIte, bind, Except.bind, pure, Except.pure] at hinsp
+            cases hchk : e.vec.checkRow rom row with
+            | error err => simp [hchk] at hinsp
+            | ok claim =>
+                simp only [hchk, Except.ok.injEq] at hinsp
+                subst hinsp
+                have heMem := List.mem_of_find?_eq_some hfind
+                have heValid := hvalid'.1.2 e heMem
+                have hsrcFind : sys.source.findChip? e.orig.name = some e.orig := heValid.1
+                have hvecChk : checkVectorize e.orig e.vec e.lanes = true :=
+                  ((Bool.and_eq_true _ _).mp heValid.2).1
+                obtain ⟨hval, _⟩ := Chip.checkRow_iff.mp hchk
+                obtain ⟨_, hrowsVal, hrulesEq, _, _⟩ :=
+                  vectorize_chip_weighted_sound hvecChk rom hval laneMults
+                simp only [VectorizedSystem.liftWeightedTraceRowToSource, hfind]
+                rw [hrulesEq]
+                unfold System.inspectWeightedRows
+                apply mapM_ok_iff.mpr
+                rw [List.forall₂_map_right_iff]
+                apply List.forall₂_same.mpr
+                intro w hw
+                obtain ⟨hchip, hwVal⟩ := hrowsVal w hw
+                have h1 : sys.source.inspectRow rom w.row =
+                    .ok (e.orig.receive w.row, e.orig.premises w.row) :=
+                  System.inspectRow_iff.mpr ⟨e.orig, by simpa [hchip] using hsrcFind, hwVal, rfl⟩
+                simp [h1, bind, Except.bind, pure, Except.pure]
 
 private theorem mapM_append_ok {α β ε : Type} {f : α → Except ε β}
     {xs ys : List α} {rx ry : List β}

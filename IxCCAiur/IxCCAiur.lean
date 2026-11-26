@@ -23,6 +23,12 @@ import IxCCAiur.Blake3Spec
 import IxCCAiur.InlineFuseProof
 import IxCCAiur.TypedBackward
 import IxCCAiur.TypedClaim
+import IxCCAiur.GuessLower
+import IxCCAiur.GuessLowerProof
+import IxCCAiur.PartialEval
+import IxCCAiur.PartialEvalProof
+import IxCCAiur.FieldLower
+import IxCCAiur.FieldLowerProof
 import IxCCAiur.CompiledCert
 import IxCCAiur.Driver
 import IxCCAiur.Audit
