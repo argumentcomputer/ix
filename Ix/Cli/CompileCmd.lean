@@ -42,6 +42,38 @@ def Ix.Cli.publishedEnvelopeVersion (published : Bool) (path : FilePath) : IO (O
   | some 0xE5 => return some 5
   | _ => throw <| IO.userError s!"compile report: invalid published envelope header in {path}"
 
+/-- Close `constList` over the companion declarations (`checkDecl`, `uniqueThm`, optional
+`compThm`) of every `@[circuit_guess]` / `checked def` subject in `constList`, re-running
+`collectSelectedDepsWith` until fixpoint without mutating any `ConstantInfo`. -/
+private def closeCircuitGuesses (env : Lean.Environment)
+    (constList : List (Lean.Name × Lean.ConstantInfo)) :
+    List (Lean.Name × Lean.ConstantInfo) × Nat :=
+  let regSize := (Ix.Compile.CircuitContract.circuitAttrExtension.getState env).size
+  if regSize == 0 then
+    (constList, 0)
+  else
+    let present0 : Std.HashSet Lean.Name := constList.foldl (init := {}) fun s (n, _) => s.insert n
+    let extra0 := Ix.Compile.CircuitContract.guessCompanionNames env present0
+    if extra0.isEmpty then
+      (constList, 0)
+    else
+      let units := unitIndex env.constants
+      let next0 := collectSelectedDepsWith env units (constList.map (·.1) ++ extra0.toList)
+      go units regSize next0 extra0.size
+where
+  go (units : UnitIndex) : Nat → List (Lean.Name × Lean.ConstantInfo) → Nat →
+      List (Lean.Name × Lean.ConstantInfo) × Nat
+    | 0, cur, added => (cur, added)
+    | fuel + 1, cur, added =>
+      let present : Std.HashSet Lean.Name := cur.foldl (init := {}) fun s (n, _) => s.insert n
+      let extra := Ix.Compile.CircuitContract.guessCompanionNames env present
+      if extra.isEmpty then
+        (cur, added)
+      else
+        let seeds := cur.map (·.1) ++ extra.toList
+        let next := collectSelectedDepsWith env units seeds
+        go units fuel next (added + extra.size)
+
 /-- The compile, on the thread `runCompileCmd` sized for it. `--workers` is the compiler's
 worker count (default 32) and, given, also the bound on the tasks of the typing entry's phase
 B, whose limits are `settings`. -/
@@ -205,10 +237,26 @@ def compileWith (p : Cli.Parsed) (settings : Ix.Kernel.Host.Resolved) : IO UInt3
   if p.hasFlag "word-equations" && !equations then
     p.printError "error: --word-equations needs equations (the default for a selected closure, or --equations)"
     return 1
+  let wantCircuitSchedule := (p.flag? "circuit-schedule-out").isSome
+  let wantCircuitGuesses := (p.flag? "circuit-guesses-out").isSome
+  let includeCircuitGuesses := wantCircuitSchedule || wantCircuitGuesses
+  let (constList, guessWordRoots) ← if includeCircuitGuesses then do
+      let (closed, added) := closeCircuitGuesses leanEnv constList
+      if added > 0 then
+        IO.println s!"[compile] circuit-guesses: added {added} companion declaration(s); {closed.length} constants"
+      let present : Std.HashSet Lean.Name := closed.foldl (init := {}) fun s (n, _) => s.insert n
+      let checkers := Ix.Compile.CircuitContract.guessCheckerNames leanEnv present
+      pure (closed, checkers.toList)
+    else pure (constList, [])
+
   let (leanEnv, constList) ← if equations then do
       let (env, closed, found, failed) ←
         Ix.Compile.Equations.close leanEnv (constList.map (·.1))
-          (words := !p.hasFlag "no-word-equations") (roots := roots)
+          (words := !p.hasFlag "no-word-equations") (roots := roots ++ guessWordRoots)
+      let (closed, postAdded) :=
+        if includeCircuitGuesses then closeCircuitGuesses env closed else (closed, 0)
+      if postAdded > 0 then
+        IO.println s!"[compile] circuit-guesses (post-equations): added {postAdded} companion declaration(s); {closed.length} constants"
       IO.println s!"[compile] equations: {found.size} unfolding theorem(s), {failed.size} failure(s); {closed.length} constants"
       let sidecar := (p.flag? "equations-out").map (·.as! String)
         |>.getD (outPath ++ ".equations.json")
@@ -265,14 +313,34 @@ def compileWith (p : Cli.Parsed) (settings : Ix.Kernel.Host.Resolved) : IO UInt3
         IO.println "[compile] mode checking: accepted by IxCK.Resource.check, which is uncertified \
           (nothing proves it sound)"
       Ix.RoleBinding.Compile.writeAtomic (FilePath.mk outPath) bytes
-      if let some schedPath := (p.flag? "circuit-schedule-out").map (·.as! String) then
-        let nameToAddr : Std.HashMap Lean.Name String :=
+      let nameToAddr : Std.HashMap Lean.Name String :=
+        if wantCircuitSchedule || wantCircuitGuesses then
           out.env.named.fold (init := {}) fun m k named =>
             m.insert (Ix.SemanticContract.toLeanName k) (toString named.addr)
+        else {}
+      if let some schedPath := (p.flag? "circuit-schedule-out").map (·.as! String) then
         let schedJson ← match Ix.Compile.CircuitContract.exportScheduleJsonChecked leanEnv nameToAddr with
           | .ok j => pure j
           | .error e => throw (IO.userError s!"circuit-schedule export failed: {e}")
         IO.FS.writeFile schedPath (schedJson.pretty ++ "\n")
+      if let some guessesPath := (p.flag? "circuit-guesses-out").map (·.as! String) then
+        let guessRoots : List Lean.Name :=
+          if !constsSeeds.isEmpty then
+            roots.reverse
+          else
+            let lookupEnv := leanEnv.setExporting false
+            let defRoots := roots.filter fun n =>
+              (unitAuxOwner? leanEnv.constants n).isNone &&
+              match lookupEnv.find? n with
+              | some (.defnInfo d) => d.safety == .safe
+              | _ => false
+            let chosen := if defRoots.isEmpty then roots else defRoots
+            (chosen.toArray.qsort fun a b => a.toString < b.toString).toList
+        let guessesJson ← match Ix.Compile.CircuitContract.emitK1HintsWithGuessesJson
+            leanEnv nameToAddr guessRoots pathStr with
+          | .ok j => pure j
+          | .error e => throw (IO.userError s!"circuit-guesses export failed: {e}")
+        IO.FS.writeFile guessesPath (guessesJson.pretty ++ "\n")
       pure { status with
         bytes := bytes.size.toUInt64
         named := artifact.named.size.toUInt64
@@ -402,6 +470,7 @@ def compileCmd : Cli.Cmd := `[Cli|
     "no-word-equations" ;    "Keep the unfolding theorems but add no word equation."
     "equations-out" : String; "Path for the equations output (JSON, format `ix/compile-equations/2`: `equations` [{definition, equation}] sorted by definition, `theorems` [{kind, subject, theorem}] sorted by subject (kind `word`: a word operation and its stored equation), `failures` [{definition, message}]); defaults to <out>.equations.json."
     "circuit-schedule-out" : String; "Path for the address-keyed CircuitSchedule sidecar JSON (`ixcc/circuit-schedule/1`) exported from `open scoped Ix.Circuit` annotations without mutating Ixon addresses."
+    "circuit-guesses-out"  : String; "Path for the address-keyed Tier-2 guess hints sidecar JSON (`ixcc/k1-equations/1`) exported from `open scoped Ix.Circuit` (`@[circuit_guess]` / `checked def`) annotations; compiles companion checkers and proofs into the `.ixe` without mutating Ixon addresses."
 
   ARGS:
     path : String; "Path to the Lean source file to compile."

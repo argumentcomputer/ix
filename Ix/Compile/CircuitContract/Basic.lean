@@ -2,6 +2,7 @@ module
 
 public import Lean.EnvExtension
 public import Lean.Data.Name
+public import Std.Data.HashSet
 
 /-!
 # Persistent circuit-schedule sidecar registration (`Ix.Compile.CircuitContract.Basic`)
@@ -47,13 +48,18 @@ structure CircuitBudget where
   maxTotalColumns : Option Nat := none
   deriving BEq, DecidableEq, Repr, Inhabited
 
-/-- Sidecar linkage for a `checked def` Tier-2 non-deterministic `guess` definition:
-records the ordinary Lean checker predicate `foo.check` and kernel-checked uniqueness
-theorem `foo.check_unique` without touching `foo`'s `ConstantInfo`. -/
+/-- Sidecar linkage for a Tier-2 non-deterministic `guess f c θ [θc]` definition
+(registered via `checked def` or `@[circuit_guess c θ [θc]]`): records the ordinary Lean
+checker predicate `checkDecl`, kernel-checked soundness/uniqueness theorem `uniqueThm`,
+and optional completeness theorem `compThm` without touching `f`'s `ConstantInfo`. -/
 structure CircuitCheckedMeta where
   checkDecl : Lean.Name
   uniqueThm : Lean.Name
+  compThm : Option Lean.Name := none
   deriving BEq, DecidableEq, Repr, Inhabited
+
+/-- Alias for `CircuitCheckedMeta` matching `IxCC.Src.Table.Guess`'s `guess f c θ [θc]` model. -/
+abbrev CircuitGuessSpec := CircuitCheckedMeta
 
 /-- A single registered attribute patch on a Lean declaration `declName`.
 Multiple disjoint attributes on the same declaration accumulate in
@@ -82,8 +88,10 @@ inductive CircuitContractError where
   | duplicateBudget (name : Lean.Name)
   | conflictingRangeCheck (name : Lean.Name) (prev next : CircuitRangeCheckMode)
   | duplicateChecked (name : Lean.Name)
+  | missingGuessTarget (subject target : Lean.Name) (role : String)
   | invalidAddress (name : Lean.Name) (addr : String)
   | conflictingAddressSchedule (addr : String) (detail : String)
+  | conflictingAddressGuess (addr : String) (detail : String)
   | conflictingClosureRangeCheck (prev next : CircuitRangeCheckMode)
   deriving BEq, DecidableEq, Repr
 
@@ -110,11 +118,15 @@ instance : ToString CircuitContractError where
     | .conflictingRangeCheck name prev next =>
       s!"circuit contract: conflicting @[circuit_range_table] on '{name}' ({repr prev} vs {repr next})"
     | .duplicateChecked name =>
-      s!"circuit contract: duplicate checked-def witness registration on '{name}'"
+      s!"circuit contract: duplicate guess/checked-def witness registration on '{name}'"
+    | .missingGuessTarget subject target role =>
+      s!"circuit contract: guess {role} '{target}' for '{subject}' is missing from the compiled closure or environment"
     | .invalidAddress name addr =>
       s!"circuit contract: invalid 64-hex Ixon address '{addr}' for declaration '{name}'"
     | .conflictingAddressSchedule addr detail =>
       s!"circuit contract: conflicting directives at shared address '{addr}': {detail}"
+    | .conflictingAddressGuess addr detail =>
+      s!"circuit contract: conflicting guess specifications at shared address '{addr}': {detail}"
     | .conflictingClosureRangeCheck prev next =>
       s!"circuit contract: conflicting closure-wide rangeCheck modes ({repr prev} vs {repr next})"
 
@@ -210,14 +222,23 @@ initialize circuitAttrExtension :
     addImportedFn := Lean.mkStateFromImportedEntries addCircuitAttr {} }
 
 /-- Register a checked `CircuitAttrEntry` in `circuitAttrExtension`.
-Verifies that `entry.declName` exists in `env`, validates bounds, and checks
-compatibility with prior patches without modifying any `ConstantInfo`. -/
+Verifies that `entry.declName` (and any `checked` guess companion declarations) exist in
+`env`, validates bounds, and checks compatibility with prior patches without modifying
+any `ConstantInfo`. -/
 def registerCircuitAttr (env : Lean.Environment) (entry : CircuitAttrEntry) :
     Except CircuitContractError Lean.Environment := do
   let name := entry.declName
   let lookupEnv := env.setExporting false
   if (lookupEnv.find? name).isNone then
     throw (.missingDeclaration name)
+  if let some g := entry.checked then
+    if (lookupEnv.find? g.checkDecl).isNone then
+      throw (.missingGuessTarget name g.checkDecl "checker")
+    if (lookupEnv.find? g.uniqueThm).isNone then
+      throw (.missingGuessTarget name g.uniqueThm "soundness theorem")
+    if let some comp := g.compThm then
+      if (lookupEnv.find? comp).isNone then
+        throw (.missingGuessTarget name comp "completeness theorem")
   validateAttrEntry entry
   let previous := (circuitAttrExtension.getState env)[name]?.getD #[]
   let _ ← mergeAttrEntries name (previous.push entry)
@@ -238,6 +259,39 @@ def hasCircuitAttrs (env : Lean.Environment) (name : Lean.Name) : Bool :=
 def registeredEntries (env : Lean.Environment) : Array (Lean.Name × Array CircuitAttrEntry) :=
   (circuitAttrExtension.getState env).toArray.qsort fun a b =>
     a.1.toString < b.1.toString
+
+/-- Companion declarations (`checkDecl`, `uniqueThm`, optional `compThm`) of every
+`@[circuit_guess]` / `checked def` subject in `present` that are not yet in `present`,
+sorted deterministically by `Name.toString`. -/
+def guessCompanionNames (env : Lean.Environment) (present : Std.HashSet Lean.Name) :
+    Array Lean.Name := Id.run do
+  let reg := circuitAttrExtension.getState env
+  let mut extra : Std.HashSet Lean.Name := {}
+  for (name, patches) in reg do
+    if present.contains name then
+      for p in patches do
+        if let some g := p.checked then
+          if !present.contains g.checkDecl then
+            extra := extra.insert g.checkDecl
+          if !present.contains g.uniqueThm then
+            extra := extra.insert g.uniqueThm
+          if let some comp := g.compThm then
+            if !present.contains comp then
+              extra := extra.insert comp
+  return extra.toArray.qsort fun a b => a.toString < b.toString
+
+/-- Checker declaration names (`checkDecl`) of all `@[circuit_guess]` / `checked def`
+subjects in `present`, sorted deterministically by `Name.toString`. -/
+def guessCheckerNames (env : Lean.Environment) (present : Std.HashSet Lean.Name) :
+    Array Lean.Name := Id.run do
+  let reg := circuitAttrExtension.getState env
+  let mut checkers : Std.HashSet Lean.Name := {}
+  for (name, patches) in reg do
+    if present.contains name then
+      for p in patches do
+        if let some g := p.checked then
+          checkers := checkers.insert g.checkDecl
+  return checkers.toArray.qsort fun a b => a.toString < b.toString
 
 end Ix.Compile.CircuitContract
 

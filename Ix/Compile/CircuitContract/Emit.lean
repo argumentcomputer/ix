@@ -31,6 +31,9 @@ open Lean (Json)
 /-- Wire format tag matching `IxCC.AiurBackend.ScheduleJson.formatVersion`. -/
 def scheduleFormatVersion : String := "ixcc/circuit-schedule/1"
 
+/-- Wire format tag matching `IxCC.Src.Hints.ofK1Json`. -/
+def k1HintsFormatVersion : String := "ixcc/k1-equations/1"
+
 /-- Mirror of `Aiur.Optimized.Config` for sidecar emission without depending on `Aiur`. -/
 structure AiurOptimizerOptions where
   maxDegree : Nat := 3
@@ -305,7 +308,7 @@ def exportScheduleJsonString (env : Lean.Environment)
 def nameAddrMapOfList (pairs : List (Lean.Name × String)) : Std.HashMap Lean.Name String :=
   pairs.foldl (init := {}) fun m (n, a) => m.insert n a
 
-/-- List all Tier-2 `checked def` registrations in the selected closure as
+/-- List all Tier-2 `checked def` / `@[circuit_guess]` registrations in the selected closure as
 `(hexAddr, declName, CircuitCheckedMeta)` sorted deterministically by `(hexAddr, declName)`. -/
 def exportCheckedDefs (env : Lean.Environment)
     (nameToAddr : Std.HashMap Lean.Name String) :
@@ -317,6 +320,186 @@ def exportCheckedDefs (env : Lean.Environment)
     if let some metaInfo := merged.checked then
       out := out.push (addr, name, metaInfo)
   return out.toList
+
+/-! ## Tier-2 `guess` sidecar export (`ixcc/k1-equations/1`) -/
+
+/-- One address-keyed Tier-2 `guess f c θ [θc]` entry ready for `IxCC.Src.Hints.ofK1Json`. -/
+structure EmittedGuess where
+  subject : Lean.Name
+  subjectAddress : String
+  checker : Lean.Name
+  checkerAddress : String
+  theoremName : Lean.Name
+  theoremAddress : String
+  compName? : Option Lean.Name := none
+  compAddress? : Option String := none
+  deriving BEq, DecidableEq, Repr, Inhabited
+
+private def lookupValidGuessAddr (nameToAddr : Std.HashMap Lean.Name String)
+    (subject target : Lean.Name) (role : String) : Except CircuitContractError String := do
+  let some raw := nameToAddr[target]?
+    | throw (.missingGuessTarget subject target role)
+  let norm := normalizeHexAddress raw
+  if !isValidHexAddress norm then
+    throw (.invalidAddress target raw)
+  return norm
+
+/-- Strict fail-closed collection of all Tier-2 `@[circuit_guess]` / `checked def`
+declarations in the closure described by `nameToAddr`, keyed and deterministically sorted
+by lowercase 64-hex Ixon content address.
+
+Validates that:
+* every selected subject, checker, soundness theorem, and optional completeness theorem
+  is present in `nameToAddr` with a valid 64-hex address,
+* per-declaration attribute patches do not conflict,
+* alpha-equivalent subjects sharing an Ixon address do not register conflicting guess
+  specifications (identical specifications deduplicate deterministically). -/
+def exportGuessesChecked (env : Lean.Environment)
+    (nameToAddr : Std.HashMap Lean.Name String) :
+    Except CircuitContractError (Array EmittedGuess) := do
+  let selected := selectSorted env nameToAddr
+  let mut byAddr : Std.HashMap String EmittedGuess := {}
+  for (addr, name, patches) in selected do
+    if !isValidHexAddress addr then
+      throw (.invalidAddress name addr)
+    let merged ← mergeAttrEntries name patches
+    if let some spec := merged.checked then
+      let checkerAddress ← lookupValidGuessAddr nameToAddr name spec.checkDecl "checker"
+      let theoremAddress ← lookupValidGuessAddr nameToAddr name spec.uniqueThm "soundness theorem"
+      let compAddress? ← match spec.compThm with
+        | none => pure none
+        | some comp => some <$> lookupValidGuessAddr nameToAddr name comp "completeness theorem"
+      let cur : EmittedGuess := {
+        subject := name
+        subjectAddress := addr
+        checker := spec.checkDecl
+        checkerAddress
+        theoremName := spec.uniqueThm
+        theoremAddress
+        compName? := spec.compThm
+        compAddress?
+      }
+      match byAddr[addr]? with
+      | none => byAddr := byAddr.insert addr cur
+      | some prev =>
+        if prev.checkerAddress != cur.checkerAddress ||
+           prev.theoremAddress != cur.theoremAddress ||
+           prev.compAddress? != cur.compAddress? then
+          throw (.conflictingAddressGuess addr
+            s!"'{prev.subject}' vs '{cur.subject}' disagree on checker/theorem/completeness addresses")
+  let out := byAddr.toArray.map (·.2)
+  return out.qsort fun a b =>
+    if a.subjectAddress != b.subjectAddress then a.subjectAddress < b.subjectAddress
+    else a.subject.toString < b.subject.toString
+
+/-- Encode one `EmittedGuess` into the JSON object schema parsed by `IxCC.Src.Hints.ofK1Json`. -/
+def guessToJson (g : EmittedGuess) : Json :=
+  let fields : List (String × Json) :=
+    [ ("subject", .str g.subject.toString)
+    , ("subject_address", .str g.subjectAddress)
+    , ("checker", .str g.checker.toString)
+    , ("checker_address", .str g.checkerAddress)
+    , ("theorem", .str g.theoremName.toString)
+    , ("theorem_address", .str g.theoremAddress) ] ++
+    (match g.compName?, g.compAddress? with
+      | some cn, some ca =>
+        [ ("completeness", .str cn.toString)
+        , ("completeness_address", .str ca) ]
+      | _, _ => [])
+  Json.mkObj fields
+
+/-- Emit the canonical deterministic JSON array (`"guesses"`) keyed by 64-hex Ixon addresses
+for every `@[circuit_guess]` / `checked def` declaration in the compiled closure `nameToAddr`. -/
+def emitGuessesJson (env : Lean.Environment)
+    (nameToAddr : Std.HashMap Lean.Name String) : Except CircuitContractError Json := do
+  let guesses ← exportGuessesChecked env nameToAddr
+  return Json.arr (guesses.map guessToJson)
+
+/-- Emit a canonical `"ixcc/k1-equations/1"` JSON sidecar directly consumable by
+`IxCC.Src.Hints.ofK1Json`, carrying resolved `"roots"`, `"equations"` (empty by default,
+or address-resolved pairs), optional `"theorems"`, `"guesses"`, and `"failures": []`.
+
+Deterministic, closure-scoped, and zero content-address mutation. -/
+def emitK1HintsWithGuessesJson (env : Lean.Environment)
+    (nameToAddr : Std.HashMap Lean.Name String)
+    (roots : List Lean.Name)
+    (source : String := "")
+    (equations : Array (Lean.Name × Lean.Name) := #[])
+    (wordTheorems : Array (String × Lean.Name × Lean.Name) := #[]) :
+    Except CircuitContractError Json := do
+  let guesses ← exportGuessesChecked env nameToAddr
+  let mut seenRoots : Std.HashSet String := {}
+  let mut rootEntries : Array (String × String) := #[]
+  for r in roots do
+    if let some raw := nameToAddr[r]? then
+      let norm := normalizeHexAddress raw
+      if !isValidHexAddress norm then
+        throw (.invalidAddress r raw)
+      let rName := r.toString
+      if !seenRoots.contains rName then
+        seenRoots := seenRoots.insert rName
+        rootEntries := rootEntries.push (rName, norm)
+  let rootRows : Array Json := rootEntries.map fun (rName, addr) =>
+    Json.mkObj [
+      ("name", .str rName),
+      ("address", .str addr)
+    ]
+  let mut eqEntries : Array (String × String × String × String) := #[]
+  for (defName, eqName) in equations do
+    if let (some rawDef, some rawEq) := (nameToAddr[defName]?, nameToAddr[eqName]?) then
+      let normDef := normalizeHexAddress rawDef
+      let normEq := normalizeHexAddress rawEq
+      if !isValidHexAddress normDef then throw (.invalidAddress defName rawDef)
+      if !isValidHexAddress normEq then throw (.invalidAddress eqName rawEq)
+      eqEntries := eqEntries.push (normDef, normEq, defName.toString, eqName.toString)
+  let sortedEqs := eqEntries.qsort fun a b =>
+    if a.1 != b.1 then a.1 < b.1
+    else if a.2.1 != b.2.1 then a.2.1 < b.2.1
+    else a.2.2.1 < b.2.2.1
+  let eqRows : Array Json := sortedEqs.map fun (defAddr, eqAddr, defStr, eqStr) =>
+    Json.mkObj [
+      ("definition", .str defStr),
+      ("definition_address", .str defAddr),
+      ("equation", .str eqStr),
+      ("equation_address", .str eqAddr)
+    ]
+  let mut thmEntries : Array (String × String × String × String × String) := #[]
+  for (kind, subjName, thmName) in wordTheorems do
+    if let (some rawSubj, some rawThm) := (nameToAddr[subjName]?, nameToAddr[thmName]?) then
+      let normSubj := normalizeHexAddress rawSubj
+      let normThm := normalizeHexAddress rawThm
+      if !isValidHexAddress normSubj then throw (.invalidAddress subjName rawSubj)
+      if !isValidHexAddress normThm then throw (.invalidAddress thmName rawThm)
+      thmEntries := thmEntries.push (kind, normSubj, normThm, subjName.toString, thmName.toString)
+  let sortedThms := thmEntries.qsort fun a b =>
+    if a.1 != b.1 then a.1 < b.1
+    else if a.2.1 != b.2.1 then a.2.1 < b.2.1
+    else a.2.2.1 < b.2.2.1
+  let thmRows : Array Json := sortedThms.map fun (kind, subjAddr, thmAddr, subjStr, thmStr) =>
+    Json.mkObj [
+      ("kind", .str kind),
+      ("subject", .str subjStr),
+      ("subject_address", .str subjAddr),
+      ("theorem", .str thmStr),
+      ("theorem_address", .str thmAddr)
+    ]
+  let guessRows : Array Json := guesses.map guessToJson
+  let fields : List (String × Json) :=
+    [ ("format", .str k1HintsFormatVersion) ] ++
+    (if source.isEmpty then [] else [("source", .str source)]) ++
+    [ ("roots", Json.arr rootRows)
+    , ("equations", Json.arr eqRows) ] ++
+    (if thmRows.isEmpty then [] else [("theorems", Json.arr thmRows)]) ++
+    [ ("guesses", Json.arr guessRows)
+    , ("failures", Json.arr #[]) ]
+  return Json.mkObj fields
+
+/-- Pretty-printed `"ixcc/k1-equations/1"` JSON text with trailing newline. -/
+def emitK1HintsWithGuessesJsonString (env : Lean.Environment)
+    (nameToAddr : Std.HashMap Lean.Name String)
+    (roots : List Lean.Name)
+    (source : String := "") : Except CircuitContractError String :=
+  (·.pretty ++ "\n") <$> emitK1HintsWithGuessesJson env nameToAddr roots source
 
 end Ix.Compile.CircuitContract
 

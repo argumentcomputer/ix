@@ -12,16 +12,18 @@ Activates strictly under `open scoped Ix.Circuit`.
 ## Zero `TokenTable` pollution & zero Ixon address mutation
 
 * All new attribute names (`circuit_inline`, `circuit_noinline`, `circuit_group`,
-  `circuit_unroll`, `circuit_lanes`, `circuit_budget`, `circuit_range_table`) and
-  `checked def` keywords (`checked`, `hint`, `check`) use `nonReservedSymbol`,
-  adding **zero** tokens to Lean's global `TokenTable`.
+  `circuit_unroll`, `circuit_lanes`, `circuit_budget`, `circuit_range_table`,
+  `circuit_guess`) and `checked def` keywords (`checked`, `hint`, `check`,
+  `complete`) use `nonReservedSymbol`, adding **zero** tokens to Lean's global
+  `TokenTable`.
 * Every `@[circuit_*]` attribute registers metadata exclusively in
   `Ix.Compile.CircuitContract.circuitAttrExtension` (`SimplePersistentEnvExtension`)
   without touching the elaborated `Lean.ConstantInfo`. Consequently, annotating a
   definition with `@[circuit_*]` never mutates its Ixon content address.
 * `checked def` desugars to ordinary Lean declarations (`def foo`, `def foo.check`,
-  `theorem foo.check_unique`) plus a sidecar `CircuitCheckedMeta` record in
-  `circuitAttrExtension` for Tier-2 non-deterministic `guess` witnesses.
+  `theorem foo.check_unique`, and optional `theorem foo.check_complete`) plus a
+  sidecar `CircuitGuessSpec` record in `circuitAttrExtension` for Tier-2
+  non-deterministic `guess` witnesses matching `IxCC.Src.Table.Guess.checkGuess`.
 -/
 
 set_option autoImplicit false
@@ -70,6 +72,17 @@ Any position may be `_` to leave that ceiling unchecked. -/
 @[expose] def ix_circuit_range_table := leading_parser
   nonReservedSymbol "circuit_range_table" >> ppSpace >> circuitRangeMode
 
+/-- `@[circuit_guess checker soundThm]` or `@[circuit_guess checker soundThm completeThm]`.
+Registers a Tier-2 non-deterministic `guess f c θ [θc]` sidecar linkage on `f`
+without mutating any `ConstantInfo` or Ixon content address.
+Apply post-hoc via `attribute [circuit_guess c θ] f` or
+`attribute [circuit_guess c θ θc] f` once `c`, `θ`, and optional `θc` are declared. -/
+@[expose] def ix_circuit_guess := leading_parser
+  nonReservedSymbol "circuit_guess" >>
+  ppSpace >> ident >>
+  ppSpace >> ident >>
+  optional (ppSpace >> ident)
+
 /-! ### Scoped `checked def` command parser for Tier-2 `guess` witnesses -/
 
 /-- Scoped syntax for Tier-2 verified non-deterministic witness definitions:
@@ -80,12 +93,16 @@ checked def isqrt (x : Nat) : Nat :=
   by
     intro r hr
     ...
+  complete by
+    ...
 ```
 Desugars to:
 1. `def isqrt (x : Nat) : Nat := Nat.sqrt x` (ordinary Lean `def`; unchanged Ixon address),
 2. `def isqrt.check (x : Nat) : Nat → Bool := fun r => ...`,
 3. `theorem isqrt.check_unique (x : Nat) : ∀ (res : Nat), isqrt.check x res = true → res = isqrt x := by ...`,
-plus a sidecar `CircuitCheckedMeta` registration in `circuitAttrExtension`. -/
+4. optional `theorem isqrt.check_complete (x : Nat) : isqrt.check x (isqrt x) = true := by ...`,
+plus a sidecar `CircuitGuessSpec` registration in `circuitAttrExtension` matching
+`IxCC.Src.Table.Guess.checkGuess`. -/
 @[expose] def checkedDefCmd := leading_parser
   Command.declModifiers false >>
   atomic (nonReservedSymbol "checked" (includeIdent := true) >> "def ") >>
@@ -95,7 +112,8 @@ plus a sidecar `CircuitCheckedMeta` registration in `circuitAttrExtension`. -/
   " := " >>
   nonReservedSymbol "hint" >> termParser >>
   " where " >> optional (nonReservedSymbol "check") >> termParser >>
-  " by " >> Tactic.tacticSeq
+  " by " >> Tactic.tacticSeq >>
+  optional (nonReservedSymbol "complete" >> " by " >> Tactic.tacticSeq)
 
 -- Register syntax node kinds locally without exporting any global parser.
 section
@@ -107,6 +125,7 @@ attribute [local attr_parser]
   ix_circuit_lanes
   ix_circuit_budget
   ix_circuit_range_table
+  ix_circuit_guess
 attribute [local command_parser] checkedDefCmd
 end
 
@@ -231,11 +250,65 @@ meta initialize registerBuiltinAttribute {
     addAttrEntry "circuit_range_table" decl { declName := decl, rangeCheck := some mode }
 }
 
+meta initialize registerBuiltinAttribute {
+  name := `ix_circuit_guess
+  descr := "Register a Tier-2 guess-and-verify checker and soundness theorem (with optional completeness theorem) on a definition."
+  add := fun decl stx kind => do
+    unless kind == AttributeKind.global do
+      throwError "@[circuit_guess] cannot be local or scoped"
+    let checkId : Ident := ⟨stx[1]⟩
+    let uniqueId : Ident := ⟨stx[2]⟩
+    let fullCheckName ← realizeGlobalConstNoOverloadWithInfo checkId
+    let fullUniqueName ← realizeGlobalConstNoOverloadWithInfo uniqueId
+    let fullCompName? ←
+      if stx[3].isNone then
+        pure none
+      else
+        let compId : Ident := ⟨stx[3][0]⟩
+        some <$> realizeGlobalConstNoOverloadWithInfo compId
+    let env ← getEnv
+    let lookupEnv := env.setExporting false
+    match lookupEnv.find? decl with
+    | some (.defnInfo d) =>
+      unless d.safety == .safe do
+        throwError "@[circuit_guess] subject '{decl}' must be a safe definition"
+    | some _ =>
+      throwError "@[circuit_guess] can only be applied to a safe definition, got '{decl}'"
+    | none => throwUnknownConstant decl
+    match lookupEnv.find? fullCheckName with
+    | some (.defnInfo d) =>
+      unless d.safety == .safe do
+        throwErrorAt checkId "@[circuit_guess] checker '{fullCheckName}' must be a safe definition"
+    | some _ =>
+      throwErrorAt checkId "@[circuit_guess] checker '{fullCheckName}' must be a safe definition"
+    | none => throwUnknownConstant fullCheckName
+    match lookupEnv.find? fullUniqueName with
+    | some (.thmInfo _) => pure ()
+    | some _ =>
+      throwErrorAt uniqueId "@[circuit_guess] soundness proof '{fullUniqueName}' must be a theorem"
+    | none => throwUnknownConstant fullUniqueName
+    if let some fullCompName := fullCompName? then
+      let compStx := stx[3][0]
+      match lookupEnv.find? fullCompName with
+      | some (.thmInfo _) => pure ()
+      | some _ =>
+        throwErrorAt compStx "@[circuit_guess] completeness proof '{fullCompName}' must be a theorem"
+      | none => throwUnknownConstant fullCompName
+    addAttrEntry "circuit_guess" decl {
+      declName := decl
+      checked := some {
+        checkDecl := fullCheckName
+        uniqueThm := fullUniqueName
+        compThm := fullCompName?
+      }
+    }
+}
+
 /-! ### Elaborator for `checked def` -/
 
 /-- Build a `declModifiers` keeping only visibility (e.g. `private`/`protected`) so
-companion `.check` and `.check_unique` declarations inherit visibility without
-duplicating docstrings or `@[circuit_*]` attributes. -/
+companion `.check`, `.check_unique`, and `.check_complete` declarations inherit visibility
+without duplicating docstrings or `@[circuit_*]` attributes. -/
 private meta def visibilityOnlyModifiers (mods : Syntax) : TSyntax ``Parser.Command.declModifiers :=
   let empty := mkNullNode #[]
   let vis := if mods.getNumArgs >= 3 then mods[2] else empty
@@ -265,6 +338,7 @@ meta def elabCheckedDef : CommandElab := fun stx => do
   let hintTerm : TSyntax `term := ⟨stx[9]⟩
   let checkTerm : TSyntax `term := ⟨stx[12]⟩
   let tacticSeq : TSyntax ``Parser.Tactic.tacticSeq := ⟨stx[14]⟩
+  let compOpt := stx[15]
   let args ← collectExplicitBinderArgs rawBinders
   let checkId : Ident := mkIdentFrom nameId (nameId.getId ++ `check)
   let uniqueId : Ident := mkIdentFrom nameId (nameId.getId ++ `check_unique)
@@ -287,14 +361,30 @@ meta def elabCheckedDef : CommandElab := fun stx => do
   elabCommand defCmd
   elabCommand checkCmd
   elabCommand uniqueCmd
-  -- 4. Record sidecar linkage in `circuitAttrExtension` without mutating any ConstantInfo
+  -- 4. Optional kernel-checked completeness theorem `c xs (f xs) = true`
+  let fullCompleteName? ←
+    if compOpt.isNone then
+      pure none
+    else
+      let compTacticSeq : TSyntax ``Parser.Tactic.tacticSeq := ⟨compOpt[2]⟩
+      let completeId : Ident := mkIdentFrom nameId (nameId.getId ++ `check_complete)
+      let completeCmd ←
+        `($visMods:declModifiers theorem $completeId $binders:bracketedBinder* :
+            $checkApp ($fooApp) = true := by $compTacticSeq)
+      elabCommand completeCmd
+      some <$> liftCoreM (realizeGlobalConstNoOverload completeId)
+  -- 5. Record sidecar linkage in `circuitAttrExtension` without mutating any ConstantInfo
   let fullFooName ← liftCoreM (realizeGlobalConstNoOverload nameId)
   let fullCheckName ← liftCoreM (realizeGlobalConstNoOverload checkId)
   let fullUniqueName ← liftCoreM (realizeGlobalConstNoOverload uniqueId)
   let env ← getEnv
   let entry : CircuitAttrEntry := {
     declName := fullFooName
-    checked := some { checkDecl := fullCheckName, uniqueThm := fullUniqueName }
+    checked := some {
+      checkDecl := fullCheckName
+      uniqueThm := fullUniqueName
+      compThm := fullCompleteName?
+    }
   }
   match registerCircuitAttr env entry with
   | .ok env' => setEnv env'
@@ -314,6 +404,7 @@ attribute [scoped attr_parser 2000]
   Ix.Compile.CircuitContract.AttrSyntax.ix_circuit_lanes
   Ix.Compile.CircuitContract.AttrSyntax.ix_circuit_budget
   Ix.Compile.CircuitContract.AttrSyntax.ix_circuit_range_table
+  Ix.Compile.CircuitContract.AttrSyntax.ix_circuit_guess
 
 attribute [scoped command_parser 2000]
   Ix.Compile.CircuitContract.AttrSyntax.checkedDefCmd
