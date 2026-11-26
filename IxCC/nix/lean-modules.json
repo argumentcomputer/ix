@@ -307,6 +307,16 @@
   "IxCCTests.Src.Main":
   {"path": "IxCCTests/Src/Main.lean",
    "imports": ["IxCCTests.Src.Run", "IxCCTests.Src.AutoHints"]},
+  "IxCCTests.Src.GuessWiring":
+  {"path": "IxCCTests/Src/GuessWiring.lean",
+   "imports":
+   ["IxCC.Src.Table.Build",
+    "IxCC.Src.Table.Validate",
+    "IxCC.Src.Table.Cert",
+    "IxCC.Src.EvalG",
+    "IxCC.Src.Proof.Unfold",
+    "IxCC.Recheck.Json",
+    "IxCC.CompileClaim.Closure"]},
   "IxCCTests.Src.Differential":
   {"path": "IxCCTests/Src/Differential.lean",
    "imports":
@@ -4464,6 +4474,15 @@
   "IxCCGrounding.Heads":
   {"path": "IxCCGrounding/Heads.lean",
    "imports": ["IxCCGrounding.Apply", "IxCCGrounding.Lits"]},
+  "IxCCGrounding.Guess":
+  {"path": "IxCCGrounding/Guess.lean",
+   "imports":
+   ["IxCC.Src.Table.Guess",
+    "IxCC.Src.Table.Cert",
+    "IxCC.Src.EvalG",
+    "IxCCGrounding.Eqn",
+    "IxCCGrounding.Fundamental",
+    "IxCCGrounding.Tele"]},
   "IxCCGrounding.Ground":
   {"path": "IxCCGrounding/Ground.lean",
    "imports":
@@ -4506,7 +4525,8 @@
     "IxCCGrounding.LimbWord",
     "IxCCGrounding.PcProp",
     "IxCCGrounding.StrLit",
-    "IxCCGrounding.BigNatBridge"]},
+    "IxCCGrounding.BigNatBridge",
+    "IxCCGrounding.Guess"]},
   "IxCCGrounding.Facts":
   {"path": "IxCCGrounding/Facts.lean",
    "imports": ["IxCCGrounding.Direct.Check", "IxCCGrounding.RecOrdFacts"]},
@@ -4627,6 +4647,7 @@
     "IxCCGrounding.PcProp",
     "IxCCGrounding.StrLit",
     "IxCCGrounding.BigNatBridge",
+    "IxCCGrounding.Guess",
     "IxCCGrounding.Fence"]},
   "IxCCCorrect.UniqueNat":
   {"path": "IxCCCorrect/UniqueNat.lean",
@@ -5565,16 +5586,23 @@
   "IxCC.Src.Table.Word":
   {"path": "IxCC/Src/Table/Word.lean", "imports": ["IxCC.Src.Table.Check"]},
   "IxCC.Src.Table.Validate":
-  {"path": "IxCC/Src/Table/Validate.lean", "imports": ["IxCC.Src.Table.Word"]},
+  {"path": "IxCC/Src/Table/Validate.lean",
+   "imports": ["IxCC.Src.Table.Word", "IxCC.Src.Table.Guess"]},
   "IxCC.Src.Table.Shape":
   {"path": "IxCC/Src/Table/Shape.lean", "imports": ["IxCC.Src.Pinned"]},
+  "IxCC.Src.Table.Guess":
+  {"path": "IxCC/Src/Table/Guess.lean", "imports": ["IxCC.Src.Table.Check"]},
   "IxCC.Src.Table.Check":
   {"path": "IxCC/Src/Table/Check.lean", "imports": ["IxCC.Src.Table.Shape"]},
   "IxCC.Src.Table.Cert":
   {"path": "IxCC/Src/Table/Cert.lean", "imports": ["IxCC.Src.Table.Validate"]},
   "IxCC.Src.Table.Build":
   {"path": "IxCC/Src/Table/Build.lean",
-   "imports": ["IxCC.Src.Table.Word", "IxCC.Src.Hints", "Std.Data.HashMap"]},
+   "imports":
+   ["IxCC.Src.Table.Word",
+    "IxCC.Src.Table.Guess",
+    "IxCC.Src.Hints",
+    "Std.Data.HashMap"]},
   "IxCC.Src.Table.Array":
   {"path": "IxCC/Src/Table/Array.lean",
    "imports": ["IxCC.Src.Table.Check", "IxCC.Src.ArraySpec"]},
@@ -5765,6 +5793,9 @@
     "IxCC.Ixon.V3.Support",
     "Lean.Data.Json.Basic",
     "Lean.Data.Json.Parser"]},
+  "IxCC.Src.EvalG":
+  {"path": "IxCC/Src/EvalG.lean",
+   "imports": ["IxCC.Src.Semantics", "IxCC.Src.Table.Guess"]},
   "IxCC.Src.AutoHints":
   {"path": "IxCC/Src/AutoHints.lean",
    "imports":
@@ -7227,6 +7258,8 @@
     "IxCC.X86.StreamSpec",
     "IxCC.X86.Table.Op",
     "IxCC.X86.Table.Index"]},
+  "IxCC.Recheck.RunFir":
+  {"path": "IxCC/Recheck/RunFir.lean", "imports": ["IxCC.Recheck.Run"]},
   "IxCC.Recheck.Run":
   {"path": "IxCC/Recheck/Run.lean",
    "imports":
@@ -7396,6 +7429,10 @@
   "IxCC.Recheck.Proof.Sound":
   {"path": "IxCC/Recheck/Proof/Sound.lean",
    "imports": ["IxCC.Recheck.Proof.Front"]},
+  "IxCC.Recheck.Proof.RunFir":
+  {"path": "IxCC/Recheck/Proof/RunFir.lean",
+   "imports":
+   ["IxCC.Recheck.RunFir", "IxCC.Recheck.Proof.Front", "IxCC.Fir.Proof.Lang"]},
   "IxCC.Recheck.Proof.RootShape":
   {"path": "IxCC/Recheck/Proof/RootShape.lean",
    "imports":
@@ -10298,6 +10335,7 @@
     "IxCC.Src.Pinned",
     "IxCC.Src.Hints",
     "IxCC.Src.Table.Check",
+    "IxCC.Src.Table.Guess",
     "IxCC.Src.Table.Build",
     "IxCC.Src.Runtime",
     "IxCC.Src.Relevance.Syntax",
@@ -10313,6 +10351,7 @@
     "IxCC.Src.Prim",
     "IxCC.Src.Word",
     "IxCC.Src.Semantics",
+    "IxCC.Src.EvalG",
     "IxCC.Src.Readback",
     "IxCC.Src.Load",
     "IxCC.Src.Proof.Unfold",
@@ -10693,6 +10732,7 @@
     "IxCC.Recheck",
     "IxCC.Recheck.RootArity",
     "IxCC.Recheck.Proof.Front",
+    "IxCC.Recheck.Proof.RunFir",
     "IxCC.Recheck.Proof.Sound",
     "IxCC.Recheck.Linked",
     "IxCC.Recheck.Rc.Produce",

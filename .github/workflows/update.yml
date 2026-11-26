@@ -40,14 +40,15 @@ jobs:
           # kernel-bridge model (path dependencies on IxCK and IxCC, Blake3
           # inherited from IxCC); the certified compiler's package (its Blake3
           # pin is a commit, so it is reported and left alone) and its optional
-          # benchmark runner (no dependencies); and the Aiur, IxVM and
-          # MultiStark packages (Aiur pins Mathlib the same way; each has its
-          # own lean-toolchain, which CI diffs against the root's). The pin
-          # tables and frozen audit counts are not regenerated here: see "On a
-          # toolchain bump" in docs/kernel.md; IxCC's trust ledger records the
-          # toolchain and flake.lock and fails until they are reviewed into it
-          # ("Routine updates" in IxCC/docs/trusted-extern-ledger.md).
-          lake_package_directory: ". Benchmarks/** IxCK IxCC IxCC/benchmarks/runner Models/SetTheory Models/KernelBridge Aiur IxVM MultiStark"
+          # benchmark runner (no dependencies); `IxCCAiur` (the Fir-to-Aiur
+          # lowering package); and the Aiur, IxVM and MultiStark packages (Aiur
+          # pins Mathlib the same way; each has its own lean-toolchain, which CI
+          # diffs against the root's). The pin tables and frozen audit counts are
+          # not regenerated here: see "On a toolchain bump" in docs/kernel.md;
+          # IxCC's trust ledger records the toolchain and flake.lock and fails
+          # until they are reviewed into it ("Routine updates" in
+          # IxCC/docs/trusted-extern-ledger.md).
+          lake_package_directory: ". Benchmarks/** IxCK IxCC IxCC/benchmarks/runner IxCCAiur Models/SetTheory Models/KernelBridge Aiur IxVM MultiStark"
           bump_mode: pinned-tags
           pr: true
           update_lean4_nix: true

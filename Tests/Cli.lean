@@ -495,7 +495,7 @@ private def Tests.Cli.testKernelLimits : IO Unit := do
       #[art.toString, rows.toString] #[("IX_KERNEL_MAX_DEPTH", some "2")]) 6
       ["declined by the depth limit (2, IX_KERNEL_MAX_DEPTH)"]
     Tests.Cli.expect "kernel-check-ixe --entry authenticated level-budget lowered" (← Tests.Cli.runEnv kci.toString
-      #["--entry", "authenticated", art.toString] #[("IX_KERNEL_LEVEL_BUDGET", some "1")]) 6
+      #["--entry", "--allow-dropped", "authenticated", art.toString] #[("IX_KERNEL_LEVEL_BUDGET", some "1")]) 6
       ["declined by the level comparison budget limit (1, IX_KERNEL_LEVEL_BUDGET)"]
     Tests.Cli.expect "kernel-check-ixe malformed" (← Tests.Cli.runEnv kci.toString
       #[art.toString, rows.toString] #[("IX_KERNEL_MAX_DEPTH", some "0")]) 2

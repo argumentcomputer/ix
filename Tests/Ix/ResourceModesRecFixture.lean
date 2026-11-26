@@ -17,6 +17,7 @@ def mainL : E := headOr E.c₀ (.cons E.c₁ .nil)
 def lenL : L → Nat
   | .nil => 0
   | .cons _ t => lenL t + 1
+set_option linter.defProp false in
 def lenLEqDef := @lenL.eq_def
 def mainLenL : Nat := lenL (.cons E.c₁ (.cons E.c₀ .nil))
 

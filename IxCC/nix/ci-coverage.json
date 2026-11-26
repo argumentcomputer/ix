@@ -1040,6 +1040,7 @@
   "IxCC.Src.Table.Build",
   "IxCC.Src.Table.Cert",
   "IxCC.Src.Table.Check",
+  "IxCC.Src.Table.Guess",
   "IxCC.Src.Table.Shape",
   "IxCC.Src.Table.Validate",
   "IxCC.Src.Table.Word",
@@ -1816,6 +1817,7 @@
   "IxCCGrounding.Graded",
   "IxCCGrounding.GradedHead",
   "IxCCGrounding.Ground",
+  "IxCCGrounding.Guess",
   "IxCCGrounding.Heads",
   "IxCCGrounding.Hyps",
   "IxCCGrounding.Laws",
@@ -1852,8 +1854,8 @@
   "IxCCGrounding.WordLe",
   "IxCCGrounding.WordRoot"],
  "grounding_axiom_sha256":
- "3d8a8b6f01f009e98fd9d9b733888c7e365b636dda4d9e14aff2df87e45f5a78",
- "grounding_axiom_count": 571,
+ "644ee887be389929c06744385f15f45d0b1dd36c128395954c51a2e58eb93c16",
+ "grounding_axiom_count": 590,
  "correct_modules":
  ["IxCCCorrect",
   "IxCCCorrect.AdmitsKernel",
@@ -1891,7 +1893,7 @@
  "c5e62e6be493ae4798b92fcb5152e154ce3a049201a4108bdf0ce6fac9b0a10c",
  "correct_axiom_count": 212,
  "baseline":
- "ixcc-2-int6: proof-only ledger category ix-kernel-proofs; grounding-compose to the Admits restatement, prims-core, nat-lib, source-progress shapes production move, pure-compile, anf-defun-scale, vs0 raw words, rt-array-procs (IxCCCorrect fence 269 -> 212)",
+ "ixcc-aiur-w3: convergence of jcb/ixcc-2 + jcb/ixcc-aiur (Tier-2 guess EvalG/Table.Guess/Table.Validate/IxCCGrounding.Guess, Recheck.RunFir, Fir.Proof.Shape array-compat)",
  "axiom_sha256":
  "f0f5ab33870914225f21b9ace5279128cf0085d19415e8b460e734ba1cf824e5",
  "axiom_count": 7934}

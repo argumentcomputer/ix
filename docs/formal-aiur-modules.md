@@ -16,6 +16,7 @@ There are no new AST operations, native arithmetic primitives, or proof axioms.
 | `Option.lean`, `Bytes.lean` | Shared option layout, byte streams, 32-byte addresses, and structural address equality. |
 | `Blake3.lean` | Shared compression, hashing, address conversion, and digest packing. Uses the byte, word, and list libraries. |
 | `Field/Goldilocks.lean` | Canonical field encoding, checked inverse advice, and quadratic extension arithmetic with nonresidue 7. This implementation is specifically selected for Goldilocks, unlike the bounded U32 implementation. |
+| `Field/BLS12381/Prime.lean` | Pure Lean Lucas primality certificates for the BLS12-381 scalar field modulus `r`, providing `Aiur.Library.Field.BLS12381.F := ZMod modulus` without primality oracles or extra axioms. |
 
 The library modules are written as Lean syntax, as the applications are (see
 "Writing modules in Lean" below): `aiur_library% deps ⟦ … ⟧` checks a fragment
@@ -226,3 +227,21 @@ dishonest-hint proof rejections, and U64/Blake3 proofs. Application proof
 checks, the controller gate, and the three-workload CPU proof/key parity gate
 passed. CUDA runtime validation was not repeated for this refactor; the
 measuring machine had no GPU.
+
+## Compiler backends, tiling, and IxCCAiur
+
+Additional certified backend passes, field instantiations, and the `IxCCAiur`
+compiler bridge extend the formal Aiur stack:
+
+| Module / package | Role |
+| --- | --- |
+| `Aiur/Aiur/Library/Field/BLS12381/Prime.lean` | Pure Lean Lucas primality certificates for the BLS12-381 scalar field prime `r` and field instance `ZMod modulus`. |
+| `Aiur/Aiur/Plonk/BLS12381.lean` | Generic `Aiur.Plonk` SCS soundness corollaries instantiated over the BLS12-381 scalar field. |
+| `Aiur/Aiur/Tiling/SingleCircuit.lean` | Certified horizontal single-circuit packing (`pack airs rows`) merging multiple row-local `WideStage.Air` circuits into one uniform-height packed circuit with zero overhead on full-height tables. |
+| `Aiur/Aiur/Tiling/BLS12381.lean` | End-to-end tiling and horizontal single-circuit packing soundness corollaries instantiated over BLS12-381. |
+| `Aiur/Aiur/Tiling/VectorRom.lean` | Certified vectorized ROM packing `K` consecutive entries per physical row to reduce ROM height and preprocessed address storage by `K×`. |
+| `Aiur/Aiur/Optimized/DegreeBudget.lean` | Quotient-aware degree budgeting matching `Aiur.MultiStarkSpec.retune`, proving free degree slack whenever LogUp lookup groups determine quotient degree. |
+| `Aiur/Aiur/Optimized/Split.lean` | Certified fast-path / cold-path chip splitting across mutually exclusive boolean selectors sharing a single logical LogUp channel. |
+| `Aiur/Aiur/Optimized/Vectorize.lean` | Certified `K`-lane horizontal chip vectorization reducing physical row count by `K×` with exact polynomial constraint-degree invariance. |
+| `Ix/Compile/CircuitContract/{Basic,Attr,Emit}.lean` | Scoped `Ix.Circuit` operational attributes (`@[circuit_*]`, `checked def`) stored in a persistent sidecar environment extension that leaves `ConstantInfo` and Ixon content addresses unchanged, and deterministic `"ixcc/circuit-schedule/1"` JSON export. |
+| `IxCCAiur/` (`IxCCAiur.lean`, `IxCCAiur/*.lean`, `Examples/*.lean`) | Certified lowering from `IxCC` FIR to `Aiur.Program` (base and typed lowering, inline fusion, guess/field lowering, partial evaluation, schedule JSON ingestion, compiled-certificate composition, `IxCCAiur.Audit`, and the `ixcc-aiur` CLI). |

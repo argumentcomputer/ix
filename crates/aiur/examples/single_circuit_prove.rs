@@ -139,8 +139,7 @@ fn parse_cli() -> Result<Cli, String> {
         lookup_group = Some(parse_usize_flag("--lookup-group", &mut raw)?);
       },
       "--proof-out" => {
-        proof_out =
-          Some(raw.next().ok_or("--proof-out expects a file path")?);
+        proof_out = Some(raw.next().ok_or("--proof-out expects a file path")?);
       },
       "--report-out" => {
         report_out =
@@ -250,18 +249,8 @@ enum V2Slot {
 #[derive(Clone, Debug)]
 enum V2Lane {
   Empty,
-  Gate {
-    qm: Val,
-    q: [Val; 4],
-    qc: Val,
-    cells: [Option<usize>; 4],
-  },
-  Msg {
-    ts: u64,
-    mk: Val,
-    mc: Val,
-    cells: [Option<usize>; 4],
-  },
+  Gate { qm: Val, q: [Val; 4], qc: Val, cells: [Option<usize>; 4] },
+  Msg { ts: u64, mk: Val, mc: Val, cells: [Option<usize>; 4] },
 }
 
 #[derive(Clone, Debug)]
@@ -373,16 +362,17 @@ fn parse_graph(
     .ok_or("single_circuit.circuit missing nodes array")?;
   let mut nodes: Vec<Expr<Val>> = Vec::with_capacity(raw_nodes.len());
   for (i, n) in raw_nodes.iter().enumerate() {
-    let arr = n.as_array().ok_or_else(|| format!("graph node {i} not array"))?;
+    let arr =
+      n.as_array().ok_or_else(|| format!("graph node {i} not array"))?;
     let op = arr
       .first()
       .and_then(Value::as_str)
       .ok_or_else(|| format!("graph node {i} missing op"))?;
     let child = |k: usize| -> Result<Expr<Val>, String> {
       let idx = natural(
-        arr
-          .get(k)
-          .ok_or_else(|| format!("graph node {i} ({op}) missing operand {k}"))?,
+        arr.get(k).ok_or_else(|| {
+          format!("graph node {i} ({op}) missing operand {k}")
+        })?,
         "graph operand",
       )?;
       if idx >= i {
@@ -553,7 +543,8 @@ fn parse_v2_wide_graph(v: &Value) -> Result<V2WideGraph, String> {
 
 fn parse_v2_template(v: &Value, width: usize) -> Result<V2Template, String> {
   let lanes_per_row = width / 4;
-  let raw_slots = v["slots"].as_array().ok_or("template missing slots array")?;
+  let raw_slots =
+    v["slots"].as_array().ok_or("template missing slots array")?;
   let mut slots: Vec<V2Slot> = Vec::with_capacity(raw_slots.len());
   for (idx, s) in raw_slots.iter().enumerate() {
     let obj = s.as_object().ok_or_else(|| format!("slot {idx} not object"))?;
@@ -565,29 +556,39 @@ fn parse_v2_template(v: &Value, width: usize) -> Result<V2Template, String> {
         .as_array()
         .ok_or_else(|| format!("slot {idx} sum missing terms"))?;
       let mut terms = Vec::with_capacity(raw_terms.len());
-      let check_ref = |s_idx: usize, cur_slots: &[V2Slot]| -> Result<(), String> {
-        if s_idx >= idx {
-          return Err(format!("slot {idx} references non-topological slot {s_idx}"));
-        }
-        if matches!(cur_slots[s_idx], V2Slot::Key | V2Slot::Invocation) {
-          return Err(format!("slot {idx} sum references key/invocation slot {s_idx}"));
-        }
-        Ok(())
-      };
+      let check_ref =
+        |s_idx: usize, cur_slots: &[V2Slot]| -> Result<(), String> {
+          if s_idx >= idx {
+            return Err(format!(
+              "slot {idx} references non-topological slot {s_idx}"
+            ));
+          }
+          if matches!(cur_slots[s_idx], V2Slot::Key | V2Slot::Invocation) {
+            return Err(format!(
+              "slot {idx} sum references key/invocation slot {s_idx}"
+            ));
+          }
+          Ok(())
+        };
       for t in raw_terms {
         let arr = t.as_array().ok_or("sum term not array")?;
-        let kind = arr.first().and_then(Value::as_str).ok_or("sum term missing op")?;
+        let kind =
+          arr.first().and_then(Value::as_str).ok_or("sum term missing op")?;
         match kind {
           "lin" => {
-            let c = scalar(arr.get(1).ok_or("lin missing coeff")?, "lin.coeff")?;
+            let c =
+              scalar(arr.get(1).ok_or("lin missing coeff")?, "lin.coeff")?;
             let a = natural(arr.get(2).ok_or("lin missing slot")?, "lin.slot")?;
             check_ref(a, &slots)?;
             terms.push(V2Term::Lin(c, a));
           },
           "prod" => {
-            let c = scalar(arr.get(1).ok_or("prod missing coeff")?, "prod.coeff")?;
-            let a = natural(arr.get(2).ok_or("prod missing slot a")?, "prod.a")?;
-            let b = natural(arr.get(3).ok_or("prod missing slot b")?, "prod.b")?;
+            let c =
+              scalar(arr.get(1).ok_or("prod missing coeff")?, "prod.coeff")?;
+            let a =
+              natural(arr.get(2).ok_or("prod missing slot a")?, "prod.a")?;
+            let b =
+              natural(arr.get(3).ok_or("prod missing slot b")?, "prod.b")?;
             check_ref(a, &slots)?;
             check_ref(b, &slots)?;
             terms.push(V2Term::Prod(c, a, b));
@@ -637,7 +638,8 @@ fn parse_v2_template(v: &Value, width: usize) -> Result<V2Template, String> {
             scalar(&q_arr[2], "lane.gate.q[2]")?,
             scalar(&q_arr[3], "lane.gate.q[3]")?,
           ];
-          let c_arr = gl["cells"].as_array().ok_or("lane.gate missing cells")?;
+          let c_arr =
+            gl["cells"].as_array().ok_or("lane.gate missing cells")?;
           if c_arr.len() != 4 {
             return Err("lane.gate cells must have 4 entries".into());
           }
@@ -679,7 +681,9 @@ fn parse_v2_template(v: &Value, width: usize) -> Result<V2Template, String> {
         let start = natural(&arr[0], "span.start")?;
         let len = natural(&arr[1], "span.len")?;
         if start + len > lanes_per_row {
-          return Err(format!("span ({start}, {len}) exceeds {lanes_per_row} lanes"));
+          return Err(format!(
+            "span ({start}, {len}) exceeds {lanes_per_row} lanes"
+          ));
         }
         spans.push((start, len));
       }
@@ -711,9 +715,8 @@ fn parse_v2_template(v: &Value, width: usize) -> Result<V2Template, String> {
 fn parse_layout(bytes: &[u8]) -> Result<SingleCircuitLayout, String> {
   let root: Value = serde_json::from_slice(bytes)
     .map_err(|e| format!("failed to parse layout JSON: {e}"))?;
-  let fmt = root["format"]
-    .as_str()
-    .ok_or("layout JSON missing string \"format\"")?;
+  let fmt =
+    root["format"].as_str().ok_or("layout JSON missing string \"format\"")?;
   if fmt != WIDE_LAYOUT_FORMAT && fmt != TILING_V2_LAYOUT_FORMAT {
     return Err(format!(
       "unexpected layout format {fmt:?} (expected {WIDE_LAYOUT_FORMAT:?} or {TILING_V2_LAYOUT_FORMAT:?})"
@@ -729,22 +732,16 @@ fn parse_layout(bytes: &[u8]) -> Result<SingleCircuitLayout, String> {
   if let Some(field_val) = root.get("field")
     && field_val.as_str() != Some("goldilocks")
   {
-    return Err(format!(
-      "layout field {field_val} is not \"goldilocks\""
-    ));
+    return Err(format!("layout field {field_val} is not \"goldilocks\""));
   }
-  let bound = root["bound"]
-    .as_u64()
-    .ok_or("layout missing u64 bound")?;
+  let bound = root["bound"].as_u64().ok_or("layout missing u64 bound")?;
 
-  let sc = root
-    .get("single_circuit")
-    .filter(|v| v.is_object())
-    .ok_or(
-      "layout missing \"single_circuit\" object \
+  let sc = root.get("single_circuit").filter(|v| v.is_object()).ok_or(
+    "layout missing \"single_circuit\" object \
        (re-export with `--single-circuit --pow2-rows`)",
-    )?;
-  let num_circuits = natural(&sc["num_circuits"], "single_circuit.num_circuits")?;
+  )?;
+  let num_circuits =
+    natural(&sc["num_circuits"], "single_circuit.num_circuits")?;
   if num_circuits != 1 {
     return Err(format!(
       "single_circuit.num_circuits must be 1, got {num_circuits}"
@@ -846,9 +843,8 @@ fn parse_layout(bytes: &[u8]) -> Result<SingleCircuitLayout, String> {
           ));
         },
       };
-      expected_m_off = expected_m_off
-        .checked_add(m_w)
-        .ok_or("packed main width overflow")?;
+      expected_m_off =
+        expected_m_off.checked_add(m_w).ok_or("packed main width overflow")?;
       expected_f_off = expected_f_off
         .checked_add(f_w + usize::from(needs_act))
         .ok_or("packed fixed width overflow")?;
@@ -893,8 +889,10 @@ fn parse_layout(bytes: &[u8]) -> Result<SingleCircuitLayout, String> {
       .map(|x| natural(x, "caps"))
       .collect::<Result<_, _>>()?;
 
-    let mut code_to_bus: FxHashMap<u64, (u64, u64, bool)> = FxHashMap::default();
-    let mut bus_to_code: FxHashMap<(u64, u64), (u64, bool)> = FxHashMap::default();
+    let mut code_to_bus: FxHashMap<u64, (u64, u64, bool)> =
+      FxHashMap::default();
+    let mut bus_to_code: FxHashMap<(u64, u64), (u64, bool)> =
+      FxHashMap::default();
     for (bi, b) in root["buses"]
       .as_array()
       .ok_or("tiling-v2 layout missing buses array")?
@@ -903,12 +901,16 @@ fn parse_layout(bytes: &[u8]) -> Result<SingleCircuitLayout, String> {
     {
       let arr = b.as_array().ok_or_else(|| format!("bus {bi} not array"))?;
       if arr.len() != 4 {
-        return Err(format!("bus {bi} must have 4 elements [tag, sub, code, lane]"));
+        return Err(format!(
+          "bus {bi} must have 4 elements [tag, sub, code, lane]"
+        ));
       }
       let tag = scalar(&arr[0], "bus.tag")?.as_canonical_u64();
       let sub = scalar(&arr[1], "bus.sub")?.as_canonical_u64();
       let code = scalar(&arr[2], "bus.code")?.as_canonical_u64();
-      let lane = arr[3].as_bool().ok_or_else(|| format!("bus {bi} missing bool lane"))?;
+      let lane = arr[3]
+        .as_bool()
+        .ok_or_else(|| format!("bus {bi} missing bool lane"))?;
       if code_to_bus.insert(code, (tag, sub, lane)).is_some() {
         return Err(format!("duplicate bus code {code}"));
       }
@@ -966,11 +968,8 @@ fn parse_layout(bytes: &[u8]) -> Result<SingleCircuitLayout, String> {
         None
       };
       let wide_width = natural(&c["wide"]["width"], "circuit.wide.width")?;
-      let wide_graph = if unroll {
-        Some(parse_v2_wide_graph(&c["wide"])?)
-      } else {
-        None
-      };
+      let wide_graph =
+        if unroll { Some(parse_v2_wide_graph(&c["wide"])?) } else { None };
       circuits.push(V2CircuitMeta {
         chip,
         unroll_stages,
@@ -981,10 +980,10 @@ fn parse_layout(bytes: &[u8]) -> Result<SingleCircuitLayout, String> {
 
     let mut templates = Vec::with_capacity(raw_templates.len());
     for (ti, t) in raw_templates.iter().enumerate() {
-      templates.push(
-        parse_v2_template(t, shard_width)
-          .map_err(|e| format!("template {ti} ({}): {e}", circuits[ti].chip))?,
-      );
+      templates
+        .push(parse_v2_template(t, shard_width).map_err(|e| {
+          format!("template {ti} ({}): {e}", circuits[ti].chip)
+        })?);
     }
 
     let sum_places: usize = templates
@@ -1055,7 +1054,8 @@ fn parse_layout(bytes: &[u8]) -> Result<SingleCircuitLayout, String> {
               "shard constituent {idx} has index {shard_index}, expected {expected_shard}"
             ));
           }
-          if c_rows != places || m_w != shard_width || f_w != shard_fixed_width {
+          if c_rows != places || m_w != shard_width || f_w != shard_fixed_width
+          {
             return Err(format!(
               "shard constituent {idx} shape ({c_rows} x {m_w} main, {f_w} fixed) \
                disagrees with layout ({places} x {shard_width} main, {shard_fixed_width} fixed)"
@@ -1073,7 +1073,8 @@ fn parse_layout(bytes: &[u8]) -> Result<SingleCircuitLayout, String> {
           let d_mw = natural(&desc["main_width"], "compact.main_width")?;
           let d_fw = natural(&desc["fixed_width"], "compact.fixed_width")?;
           let d_nf = natural(&desc["n_fixed"], "compact.n_fixed")?;
-          if c_rows != d_rows || m_w != d_mw || f_w != d_fw || d_fw != d_nf + 3 {
+          if c_rows != d_rows || m_w != d_mw || f_w != d_fw || d_fw != d_nf + 3
+          {
             return Err(format!(
               "compact constituent {idx} disagrees with compact[{ci}] metadata"
             ));
@@ -1108,9 +1109,8 @@ fn parse_layout(bytes: &[u8]) -> Result<SingleCircuitLayout, String> {
           ));
         },
       };
-      expected_m_off = expected_m_off
-        .checked_add(m_w)
-        .ok_or("packed main width overflow")?;
+      expected_m_off =
+        expected_m_off.checked_add(m_w).ok_or("packed main width overflow")?;
       expected_f_off = expected_f_off
         .checked_add(f_w + usize::from(needs_act))
         .ok_or("packed fixed width overflow")?;
@@ -1286,7 +1286,8 @@ fn validate_fixed_matrix(
               "FIXED.bin compact constituent {idx} row {r} has unknown bus code {code}"
             )
           })?;
-          let want_sel = if lane { (Val::ONE, Val::ZERO) } else { (Val::ZERO, Val::ONE) };
+          let want_sel =
+            if lane { (Val::ONE, Val::ZERO) } else { (Val::ZERO, Val::ONE) };
           if (sel_l, sel_w) != want_sel {
             return Err(format!(
               "FIXED.bin compact constituent {idx} row {r} selectors ({}, {}) \
@@ -1374,8 +1375,8 @@ fn choose_lookup_group(
     }
     let s2 = stage2_width(graph.lookups.len(), g, ext_degree) as u128;
     let q128 = q as u128;
-    let cost = (b + 1) * s2 * fft(h)
-      + ext * (fft(q128 * h) + q128 * fft(b * h));
+    let cost =
+      (b + 1) * s2 * fft(h) + ext * (fft(q128 * h) + q128 * fft(b * h));
     if cost < best_cost {
       best_cost = cost;
       best_g = g;
@@ -1547,9 +1548,8 @@ fn pack_main_matrix(
     let mi = global_callable
       .checked_sub(n_funcs)
       .ok_or("depth range callable index precedes maps")?;
-    let counts = map_counts
-      .get_mut(mi)
-      .ok_or("depth range map index out of range")?;
+    let counts =
+      map_counts.get_mut(mi).ok_or("depth range map index out of range")?;
     if uses.len() > counts.len() {
       return Err("depth range counts exceed static map table".into());
     }
@@ -1575,7 +1575,9 @@ fn pack_main_matrix(
         continue;
       }
       if count >= Val::ORDER_U64 {
-        return Err("map multiplicity reaches Goldilocks characteristic".into());
+        return Err(
+          "map multiplicity reaches Goldilocks characteristic".into(),
+        );
       }
       let in_row = &in_rows[row_idx];
       let out_row = &out_rows[row_idx];
@@ -1595,9 +1597,8 @@ fn pack_main_matrix(
   let rom_counts: FxHashMap<usize, usize> =
     record.memory.width_counts().collect();
 
-  let total_cells = packed_rows
-    .checked_mul(main_w)
-    .ok_or("packed main trace size overflow")?;
+  let total_cells =
+    packed_rows.checked_mul(main_w).ok_or("packed main trace size overflow")?;
   let mut packed = Val::zero_vec(total_cells);
 
   let mut packed_chips: FxHashSet<usize> = FxHashSet::default();
@@ -1630,8 +1631,8 @@ fn pack_main_matrix(
               "unit {chip} row {r}: multiplicity reaches field characteristic"
             ));
           }
-          let dst =
-            &mut packed[r * main_w + c.main_offset..r * main_w + c.main_offset + c.main_width];
+          let dst = &mut packed[r * main_w + c.main_offset
+            ..r * main_w + c.main_offset + c.main_width];
           dst[..matrix.width].copy_from_slice(matrix.row(r));
           dst[matrix.width] = Val::from_u64(mult);
         }
@@ -1672,8 +1673,8 @@ fn pack_main_matrix(
               "ROM cell ({words}, {addr}) multiplicity reaches field characteristic"
             ));
           }
-          let dst = &mut packed
-            [addr * main_w + c.main_offset..addr * main_w + c.main_offset + c.main_width];
+          let dst = &mut packed[addr * main_w + c.main_offset
+            ..addr * main_w + c.main_offset + c.main_width];
           dst[0] = Val::from_u64(entry.multiplicity);
           dst[1..].copy_from_slice(entry.cell.value);
         }
@@ -1775,7 +1776,10 @@ fn v2_msg_mult(mk: Val, mc: Val, mult_slot: Option<usize>, v: &[Val]) -> Val {
   mk + mult_slot.map_or(Val::ZERO, |s| mc * v[s])
 }
 
-fn v2_zero_instance_ok(t: &V2Template, wide_width: usize) -> Result<bool, String> {
+fn v2_zero_instance_ok(
+  t: &V2Template,
+  wide_width: usize,
+) -> Result<bool, String> {
   let v = v2_eval_slots(t, &[], wide_width, true)?;
   for row in &t.rows {
     match row {
@@ -1855,16 +1859,13 @@ fn v2_unroll_instances(
   let Some(stages) = meta.unroll_stages else {
     return Ok((0..wide_rows.len()).map(|r| vec![r]).collect());
   };
-  let g = meta
-    .wide_graph
-    .as_ref()
-    .ok_or_else(|| format!("unrolled circuit {} missing wide graph", meta.chip))?;
+  let g = meta.wide_graph.as_ref().ok_or_else(|| {
+    format!("unrolled circuit {} missing wide graph", meta.chip)
+  })?;
   let var_of = |idx: usize| -> Option<usize> {
     match g.nodes[idx] {
       V2WideNode::Var(c) => Some(c),
-      V2WideNode::Sub(z, x)
-        if matches!(g.nodes[z], V2WideNode::Const(k) if k == Val::ZERO) =>
-      {
+      V2WideNode::Sub(z, x) if matches!(g.nodes[z], V2WideNode::Const(k) if k == Val::ZERO) => {
         match g.nodes[x] {
           V2WideNode::Var(c) => Some(c),
           _ => None,
@@ -1934,7 +1935,10 @@ fn v2_unroll_instances(
         if s + 1 < stages {
           let next_payload = eval_v2_wide_nodes(g, &wide_rows[r], call_nodes);
           let &next_r = by_payload.get(&next_payload).ok_or_else(|| {
-            format!("{}: unrolled stage {s} self-call has no callee row", meta.chip)
+            format!(
+              "{}: unrolled stage {s} self-call has no callee row",
+              meta.chip
+            )
           })?;
           chain.push(next_r);
         }
@@ -2065,9 +2069,9 @@ fn extract_v2_template_info(
         }
       },
       V2Row::Message { ts, mk, mc, receive_key, cells } => {
-        let &(tag, sub, is_lane) = code_to_bus.get(ts).ok_or_else(|| {
-          format!("{chip} row {ri}: unknown bus code {ts}")
-        })?;
+        let &(tag, sub, is_lane) = code_to_bus
+          .get(ts)
+          .ok_or_else(|| format!("{chip} row {ri}: unknown bus code {ts}"))?;
         if is_lane {
           return Err(format!(
             "{chip} row {ri}: full-row message uses lane bus {ts}"
@@ -2125,14 +2129,10 @@ fn extract_v2_template_info(
           let chunk_idx = usize::try_from(sub / CHUNK_STRIDE - 1)
             .map_err(|e| format!("chunk index overflows usize: {e}"))?;
           let part = extract_contiguous_payload(&cells[2..], "chunked send")?;
-          keyed_sends.entry(ks).or_default().push((
-            chunk_idx,
-            base_sub,
-            *mk,
-            *mc,
-            cells[0],
-            part,
-          ));
+          keyed_sends
+            .entry(ks)
+            .or_default()
+            .push((chunk_idx, base_sub, *mk, *mc, cells[0], part));
         }
         // Record call/map/rom emit specs.
         if tag == CALL_TAG && base_sub < n_funcs {
@@ -2223,15 +2223,12 @@ fn extract_v2_template_info(
   }
   chunked_sends.sort_by_key(|s| s.key_slot);
 
-  Ok(V2TemplateInfo {
-    receive,
-    chunked_sends,
-    emits,
-    call_or_rom_mults,
-  })
+  Ok(V2TemplateInfo { receive, chunked_sends, emits, call_or_rom_mults })
 }
 
-fn resolve_entry_callable(layout: &SingleCircuitLayout) -> Result<usize, String> {
+fn resolve_entry_callable(
+  layout: &SingleCircuitLayout,
+) -> Result<usize, String> {
   match &layout.kind {
     LayoutKind::Wide { request } => {
       if request.len() < 2
@@ -2246,17 +2243,16 @@ fn resolve_entry_callable(layout: &SingleCircuitLayout) -> Result<usize, String>
         .map_err(|e| format!("request callable overflows usize: {e}"))
     },
     LayoutKind::TilingV2(v2) => {
-      let first = v2
-        .request
-        .first()
-        .ok_or("tiling-v2 request array is empty")?;
+      let first =
+        v2.request.first().ok_or("tiling-v2 request array is empty")?;
       if first.is_empty() {
         return Err("tiling-v2 request row 0 is empty".into());
       }
       let code0 = first[0].as_canonical_u64();
-      let &(tag0, sub0, _lane0) = v2.code_to_bus.get(&code0).ok_or_else(|| {
-        format!("tiling-v2 request[0] has unknown bus code {code0}")
-      })?;
+      let &(tag0, sub0, _lane0) =
+        v2.code_to_bus.get(&code0).ok_or_else(|| {
+          format!("tiling-v2 request[0] has unknown bus code {code0}")
+        })?;
       if tag0 != CALL_TAG {
         return Err(format!(
           "tiling-v2 request[0] tag {tag0} is not CALL ({CALL_TAG})"
@@ -2264,7 +2260,9 @@ fn resolve_entry_callable(layout: &SingleCircuitLayout) -> Result<usize, String>
       }
       if v2.request.len() == 1 && sub0 < CHUNK_STRIDE {
         if first[1..].iter().any(|&v| v != Val::ZERO) {
-          return Err("tiling-v2 unchunked request template has nonzero payload".into());
+          return Err(
+            "tiling-v2 unchunked request template has nonzero payload".into(),
+          );
         }
         usize::try_from(sub0)
           .map_err(|e| format!("request callable overflows usize: {e}"))
@@ -2288,7 +2286,8 @@ fn resolve_entry_callable(layout: &SingleCircuitLayout) -> Result<usize, String>
             })?;
           let want_sub = base
             .checked_add(
-              (u64::try_from(c).map_err(|e| format!("chunk idx overflow: {e}"))?
+              (u64::try_from(c)
+                .map_err(|e| format!("chunk idx overflow: {e}"))?
                 + 1)
                 * CHUNK_STRIDE,
             )
@@ -2324,10 +2323,10 @@ fn encode_v2_claims(
   let callable = wide_claim[1].as_canonical_u64();
   let payload = &wide_claim[2..];
   let rows = if payload.len() < w {
-    let &(code, is_lane) =
-      v2.bus_to_code.get(&(CALL_TAG, callable)).ok_or_else(|| {
-        format!("no v2 bus for entry callable {callable}")
-      })?;
+    let &(code, is_lane) = v2
+      .bus_to_code
+      .get(&(CALL_TAG, callable))
+      .ok_or_else(|| format!("no v2 bus for entry callable {callable}"))?;
     let pad_len = if is_lane { 4 } else { w };
     let mut row = Vec::with_capacity(pad_len);
     row.push(Val::from_u64(code));
@@ -2471,11 +2470,13 @@ fn pack_tiling_v2_main_matrix(
   let mut cur_row = 0usize;
 
   for k in 0..num_circuits {
-    let inst =
-      v2_unroll_instances(&v2.circuits[k], circuit_callables[k], &wide_rows_by_circuit[k])?;
-    let total_cap = v2.caps[k]
-      .checked_mul(v2.shards)
-      .ok_or("tiling-v2 capacity overflow")?;
+    let inst = v2_unroll_instances(
+      &v2.circuits[k],
+      circuit_callables[k],
+      &wide_rows_by_circuit[k],
+    )?;
+    let total_cap =
+      v2.caps[k].checked_mul(v2.shards).ok_or("tiling-v2 capacity overflow")?;
     if inst.len() > total_cap {
       return Err(format!(
         "chip {}: execution needs {} instance(s), exceeding layout capacity {} ({} per shard x {} shards)",
@@ -2500,7 +2501,8 @@ fn pack_tiling_v2_main_matrix(
     row_bases.push(cur_row);
     cur_id = cur_id
       .checked_add(
-        u64::try_from(v2.caps[k]).map_err(|e| format!("cap overflows u64: {e}"))?,
+        u64::try_from(v2.caps[k])
+          .map_err(|e| format!("cap overflows u64: {e}"))?,
       )
       .ok_or("id_base overflow")?;
     cur_row = cur_row
@@ -2514,8 +2516,10 @@ fn pack_tiling_v2_main_matrix(
 
   let global_id = |k: usize, n: usize| -> Result<Val, String> {
     let per = v2.caps[k];
-    let shard = u64::try_from(n / per).map_err(|e| format!("shard overflow: {e}"))?;
-    let local = u64::try_from(n % per).map_err(|e| format!("local idx overflow: {e}"))?;
+    let shard =
+      u64::try_from(n / per).map_err(|e| format!("shard overflow: {e}"))?;
+    let local =
+      u64::try_from(n % per).map_err(|e| format!("local idx overflow: {e}"))?;
     let id = shard
       .checked_mul(v2.ids_per_shard)
       .and_then(|x| x.checked_add(id_bases[k]))
@@ -2539,8 +2543,12 @@ fn pack_tiling_v2_main_matrix(
   let mut root_pos = None;
   for (n, row_idxs) in instances[entry_k].iter().enumerate() {
     let refs = row_refs_of(entry_k, row_idxs);
-    let vals =
-      v2_eval_slots(&v2.templates[entry_k], &refs, v2.circuits[entry_k].wide_width, false)?;
+    let vals = v2_eval_slots(
+      &v2.templates[entry_k],
+      &refs,
+      v2.circuits[entry_k].wide_width,
+      false,
+    )?;
     if v2_msg_mult(entry_recv.mk, entry_recv.mc, entry_recv.mult_slot, &vals)
       != Val::ZERO
       && entry_recv.payload_slots.len() == wide_claim.len() - 2
@@ -2554,8 +2562,8 @@ fn pack_tiling_v2_main_matrix(
       break;
     }
   }
-  let root_pos =
-    root_pos.ok_or("no instance of the entry chip receives the public claim")?;
+  let root_pos = root_pos
+    .ok_or("no instance of the entry chip receives the public claim")?;
   instances[entry_k].swap(0, root_pos);
   let root_key = global_id(entry_k, 0)?;
   let narrow_claims = encode_v2_claims(v2, wide_claim, root_key)?;
@@ -2571,8 +2579,12 @@ fn pack_tiling_v2_main_matrix(
     let mut map: FxHashMap<Vec<Val>, Val> = FxHashMap::default();
     for (n, row_idxs) in instances[k].iter().enumerate() {
       let refs = row_refs_of(k, row_idxs);
-      let vals =
-        v2_eval_slots(&v2.templates[k], &refs, v2.circuits[k].wide_width, false)?;
+      let vals = v2_eval_slots(
+        &v2.templates[k],
+        &refs,
+        v2.circuits[k].wide_width,
+        false,
+      )?;
       if v2_msg_mult(recv.mk, recv.mc, recv.mult_slot, &vals) != Val::ZERO {
         let payload: Vec<Val> =
           recv.payload_slots.iter().map(|&s| vals[s]).collect();
@@ -2598,9 +2610,10 @@ fn pack_tiling_v2_main_matrix(
       for r in 0..c.rows {
         let base = r * fixed_w + c.fixed_offset;
         let code = fixed.values[base + 2].as_canonical_u64();
-        let &(tag, sub, _lane) = v2.code_to_bus.get(&code).ok_or_else(|| {
-          format!("compact map row {r} unknown bus code {code}")
-        })?;
+        let &(tag, sub, _lane) =
+          v2.code_to_bus.get(&code).ok_or_else(|| {
+            format!("compact map row {r} unknown bus code {code}")
+          })?;
         if tag == CALL_TAG && sub >= CHUNK_STRIDE {
           let base_sub = usize::try_from(sub % CHUNK_STRIDE)
             .map_err(|e| format!("map sub overflow: {e}"))?;
@@ -2623,14 +2636,10 @@ fn pack_tiling_v2_main_matrix(
           .maps
           .get(mi)
           .ok_or_else(|| format!("chunked map index {mi} out of range"))?;
-        let in_len = prog.tables[map_def.input]
-          .rows
-          .first()
-          .map_or(0, Vec::len);
-        let out_len = prog.tables[map_def.output]
-          .rows
-          .first()
-          .map_or(0, Vec::len);
+        let in_len =
+          prog.tables[map_def.input].rows.first().map_or(0, Vec::len);
+        let out_len =
+          prog.tables[map_def.output].rows.first().map_or(0, Vec::len);
         let plen = in_len + out_len;
         let mut payload = Vec::with_capacity(plen);
         for (_, chunk) in parts {
@@ -2642,9 +2651,8 @@ fn pack_tiling_v2_main_matrix(
     }
   }
 
-  let total_cells = packed_rows
-    .checked_mul(main_w)
-    .ok_or("packed main trace size overflow")?;
+  let total_cells =
+    packed_rows.checked_mul(main_w).ok_or("packed main trace size overflow")?;
   let mut packed = Val::zero_vec(total_cells);
 
   let mut map_tuple_demand: FxHashMap<Vec<Val>, Val> = FxHashMap::default();
@@ -2714,15 +2722,14 @@ fn pack_tiling_v2_main_matrix(
                   v2.circuits[k].chip, send.base_sub
                 )
               })?;
-            *call_keys
-              .get(&callee_k)
-              .and_then(|m| m.get(&payload))
-              .ok_or_else(|| {
+            *call_keys.get(&callee_k).and_then(|m| m.get(&payload)).ok_or_else(
+              || {
                 format!(
                   "{}: chunked call to {} has no matching callee instance",
                   v2.circuits[k].chip, v2.circuits[callee_k].chip
                 )
-              })?
+              },
+            )?
           } else {
             *chunked_map_keys
               .get(&(send.base_sub, payload))
@@ -2779,7 +2786,8 @@ fn pack_tiling_v2_main_matrix(
                 .flatten()
                 .map_or(Val::ZERO, |s| v[s])
                 .as_canonical_u64();
-              let acc = rom_row_demand.entry((emit.ts, addr)).or_insert(Val::ZERO);
+              let acc =
+                rom_row_demand.entry((emit.ts, addr)).or_insert(Val::ZERO);
               *acc += mult;
             },
           }
@@ -2806,7 +2814,8 @@ fn pack_tiling_v2_main_matrix(
           };
           let mut tuple = Vec::with_capacity(1 + arity);
           tuple.push(code);
-          tuple.extend_from_slice(&fixed.values[f_base + 3..f_base + 3 + arity]);
+          tuple
+            .extend_from_slice(&fixed.values[f_base + 3..f_base + 3 + arity]);
           trim_trailing_zeros(&mut tuple);
           if let Some(count) = map_tuple_demand.remove(&tuple) {
             packed[r * main_w + c.main_offset] = count;
@@ -2823,9 +2832,10 @@ fn pack_tiling_v2_main_matrix(
           }
           let code = fixed.values[f_base + 2].as_canonical_u64();
           let addr_u64 = fixed.values[f_base + 3].as_canonical_u64();
-          let &(tag, sub, _lane) = v2.code_to_bus.get(&code).ok_or_else(|| {
-            format!("compact ROM row {r}: unknown bus code {code}")
-          })?;
+          let &(tag, sub, _lane) =
+            v2.code_to_bus.get(&code).ok_or_else(|| {
+              format!("compact ROM row {r}: unknown bus code {code}")
+            })?;
           if tag != ROM_TAG {
             return Err(format!("compact ROM row {r}: non-ROM tag {tag}"));
           }
@@ -2835,11 +2845,10 @@ fn pack_tiling_v2_main_matrix(
             .map_err(|e| format!("ROM chunk idx overflow: {e}"))?;
           let addr = usize::try_from(addr_u64)
             .map_err(|e| format!("ROM addr overflow: {e}"))?;
-          let count = rom_row_demand
-            .remove(&(code, addr_u64))
-            .unwrap_or(Val::ZERO);
-          let dst = &mut packed
-            [r * main_w + c.main_offset..r * main_w + c.main_offset + c.main_width];
+          let count =
+            rom_row_demand.remove(&(code, addr_u64)).unwrap_or(Val::ZERO);
+          let dst = &mut packed[r * main_w + c.main_offset
+            ..r * main_w + c.main_offset + c.main_width];
           dst[0] = count;
           if let Some(entry) = record.memory.get_by_width(width, addr) {
             if entry.address != addr || entry.cell.value.len() != width {
@@ -2877,10 +2886,8 @@ fn pack_tiling_v2_main_matrix(
     }
   }
 
-  let unmatched_maps = map_tuple_demand
-    .iter()
-    .filter(|(_, v)| **v != Val::ZERO)
-    .count();
+  let unmatched_maps =
+    map_tuple_demand.iter().filter(|(_, v)| **v != Val::ZERO).count();
   if unmatched_maps > 0 {
     let sample = map_tuple_demand
       .iter()
@@ -2891,15 +2898,11 @@ fn pack_tiling_v2_main_matrix(
       "{unmatched_maps} demanded narrow map tuple(s) missing from compact map table (first: {sample:?})"
     ));
   }
-  let unmatched_roms = rom_row_demand
-    .iter()
-    .filter(|(_, v)| **v != Val::ZERO)
-    .count();
+  let unmatched_roms =
+    rom_row_demand.iter().filter(|(_, v)| **v != Val::ZERO).count();
   if unmatched_roms > 0 {
-    let sample = rom_row_demand
-      .iter()
-      .find(|(_, v)| **v != Val::ZERO)
-      .map(|(&k, _)| k);
+    let sample =
+      rom_row_demand.iter().find(|(_, v)| **v != Val::ZERO).map(|(&k, _)| k);
     return Err(format!(
       "{unmatched_roms} demanded narrow ROM row(s) missing from compact ROM table (first: {sample:?})"
     ));
@@ -2971,12 +2974,7 @@ fn find_tamper_main_cell(
       }
     }
   }
-  (
-    0,
-    0,
-    main.values[0] + Val::ONE,
-    "packed_main(0, 0) (+1)".to_owned(),
-  )
+  (0, 0, main.values[0] + Val::ONE, "packed_main(0, 0) (+1)".to_owned())
 }
 
 fn find_tamper_fixed_cell(
@@ -3011,7 +3009,9 @@ fn find_tamper_fixed_cell(
               r,
               col,
               new_val,
-              format!("compact map constituent {idx} row {r} fixed col {col} (+1)"),
+              format!(
+                "compact map constituent {idx} row {r} fixed col {col} (+1)"
+              ),
             );
           }
         }
@@ -3044,7 +3044,9 @@ fn find_tamper_fixed_cell(
               r,
               col,
               new_val,
-              format!("compact rom constituent {idx} row {r} addr col {col} (+1)"),
+              format!(
+                "compact rom constituent {idx} row {r} addr col {col} (+1)"
+              ),
             );
           }
         }
@@ -3063,7 +3065,9 @@ fn find_tamper_fixed_cell(
             0,
             col,
             fixed.values[col] + Val::ONE,
-            format!("shard {shard_index} constituent {idx} row 0 fixed col {col} (+1)"),
+            format!(
+              "shard {shard_index} constituent {idx} row 0 fixed col {col} (+1)"
+            ),
           );
         }
       }
@@ -3081,12 +3085,7 @@ fn find_tamper_fixed_cell(
       );
     }
   }
-  (
-    0,
-    0,
-    fixed.values[0] + Val::ONE,
-    "fixed(0, 0) (+1)".to_owned(),
-  )
+  (0, 0, fixed.values[0] + Val::ONE, "fixed(0, 0) (+1)".to_owned())
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -3106,18 +3105,22 @@ fn main() -> Result<(), Box<dyn Error>> {
 
   let log_height = usize::try_from(layout.rows.ilog2())?;
   if log_height + cli.log_blowup > 32 {
-    return Err(format!(
-      "domain 2^({log_height} + {}) exceeds Goldilocks 2-adicity 32",
-      cli.log_blowup
-    )
-    .into());
+    return Err(
+      format!(
+        "domain 2^({log_height} + {}) exceeds Goldilocks 2-adicity 32",
+        cli.log_blowup
+      )
+      .into(),
+    );
   }
   if cli.fri_lfp > log_height {
-    return Err(format!(
-      "--fri-lfp {} exceeds trace log_height {log_height}",
-      cli.fri_lfp
-    )
-    .into());
+    return Err(
+      format!(
+        "--fri-lfp {} exceeds trace log_height {log_height}",
+        cli.fri_lfp
+      )
+      .into(),
+    );
   }
 
   // Step 2a: Load PACKAGE.ixa and register host hint channels.
@@ -3160,7 +3163,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     .entries
     .iter()
     .find(|e| {
-      let chip_name = &plan.artifact().chips[plan.function_chips()[e.function]].name;
+      let chip_name =
+        &plan.artifact().chips[plan.function_chips()[e.function]].name;
       plan.callable_id(chip_name) == Some(req_callable)
     })
     .or_else(|| program.program().entries.first())
@@ -3207,26 +3211,29 @@ fn main() -> Result<(), Box<dyn Error>> {
   let wide_claim = plan.public_claim(&entry, &public_args, &record.output)?;
   let trace = plan.generate(&record, &entry, &address, false)?;
 
-  let (packed_main, proof_claims, root_key_opt, trim_zeros) = match &layout.kind {
+  let (packed_main, proof_claims, root_key_opt, trim_zeros) = match &layout.kind
+  {
     LayoutKind::Wide { request } => {
       if wide_claim.len() != request.len() || wide_claim[..2] != request[..2] {
-        return Err(format!(
-          "public claim header/length (len={}, head={:?}) disagrees with \
+        return Err(
+          format!(
+            "public claim header/length (len={}, head={:?}) disagrees with \
            LAYOUT.json request (len={}, head={:?})",
-          wide_claim.len(),
-          wide_claim
-            .iter()
-            .take(2)
-            .map(|v| v.as_canonical_u64())
-            .collect::<Vec<_>>(),
-          request.len(),
-          request
-            .iter()
-            .take(2)
-            .map(|v| v.as_canonical_u64())
-            .collect::<Vec<_>>(),
-        )
-        .into());
+            wide_claim.len(),
+            wide_claim
+              .iter()
+              .take(2)
+              .map(|v| v.as_canonical_u64())
+              .collect::<Vec<_>>(),
+            request.len(),
+            request
+              .iter()
+              .take(2)
+              .map(|v| v.as_canonical_u64())
+              .collect::<Vec<_>>(),
+          )
+          .into(),
+        );
       }
       let main = pack_main_matrix(&layout, &fixed, &plan, &record, &trace)?;
       (main, vec![wide_claim.clone()], None, false)
@@ -3244,7 +3251,8 @@ fn main() -> Result<(), Box<dyn Error>> {
       (main, narrow_claims, Some(root_key), true)
     },
   };
-  let claim_refs: Vec<&[Val]> = proof_claims.iter().map(Vec::as_slice).collect();
+  let claim_refs: Vec<&[Val]> =
+    proof_claims.iter().map(Vec::as_slice).collect();
   let output_words: Vec<u64> =
     record.output.iter().map(|v| v.as_canonical_u64()).collect();
   let arg_words: Vec<u64> =
@@ -3301,11 +3309,13 @@ fn main() -> Result<(), Box<dyn Error>> {
   let decoded = Proof::from_bytes(&proof_bytes)?;
   let expected_log_deg = u8::try_from(log_height)?;
   if decoded.active != [true] || decoded.log_degrees != [expected_log_deg] {
-    return Err(format!(
-      "unexpected proof shape: active={:?} log_degrees={:?}",
-      decoded.active, decoded.log_degrees
-    )
-    .into());
+    return Err(
+      format!(
+        "unexpected proof shape: active={:?} log_degrees={:?}",
+        decoded.active, decoded.log_degrees
+      )
+      .into(),
+    );
   }
 
   let verify_start = Instant::now();
@@ -3340,7 +3350,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
   // Step 5: Mandatory negative controls (--controls).
   let controls_report = if cli.controls {
-    eprintln!("Running negative controls (forged output, tampered main, tampered fixed)...");
+    eprintln!(
+      "Running negative controls (forged output, tampered main, tampered fixed)..."
+    );
 
     // Control 1: Forged output claim (flip LSB of last wide output word and re-encode).
     let mut forged_wide = wide_claim.clone();
@@ -3355,25 +3367,27 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     let forged_refs: Vec<&[Val]> =
       forged_claims.iter().map(Vec::as_slice).collect();
-    let forged_verify_err =
-      match system.verify_multiple_claims(&forged_refs, &decoded) {
-        Ok(()) => {
-          return Err("CONTROL FAILED: verifier accepted honest proof under forged output claim".into());
-        },
-        Err(e) => format!("{e:?}"),
-      };
+    let forged_verify_err = match system
+      .verify_multiple_claims(&forged_refs, &decoded)
+    {
+      Ok(()) => {
+        return Err("CONTROL FAILED: verifier accepted honest proof under forged output claim".into());
+      },
+      Err(e) => format!("{e:?}"),
+    };
     let forged_proof = system.prove_multiple_claims_streaming(
       &key,
       &forged_refs,
       vec![packed_main.clone()],
     );
-    let forged_reprove_err =
-      match system.verify_multiple_claims(&forged_refs, &forged_proof) {
-        Ok(()) => {
-          return Err("CONTROL FAILED: verifier accepted forged proof for wrong output claim".into());
-        },
-        Err(e) => format!("{e:?}"),
-      };
+    let forged_reprove_err = match system
+      .verify_multiple_claims(&forged_refs, &forged_proof)
+    {
+      Ok(()) => {
+        return Err("CONTROL FAILED: verifier accepted forged proof for wrong output claim".into());
+      },
+      Err(e) => format!("{e:?}"),
+    };
 
     // Control 2: Tampered main trace cell.
     let mut tampered_main = packed_main.clone();
@@ -3405,34 +3419,32 @@ fn main() -> Result<(), Box<dyn Error>> {
       };
 
     // Control 3: Tampered fixed matrix cell.
-    let (
-      tf_desc,
-      tampered_fixed_honest_vk_err,
-      tampered_fixed_self_err,
-    ) = if layout.fixed_width > 0 {
-      let mut tampered_fixed = fixed.clone();
-      let (tf_r, tf_c, tf_val, tf_desc) =
-        find_tamper_fixed_cell(&layout, &packed_main, &fixed);
-      tampered_fixed.values[tf_r * tampered_fixed.width + tf_c] = tf_val;
-      let tampered_input = CircuitInputs {
-        main_width: layout.main_width,
-        preprocessed: Some(tampered_fixed),
-        constraints: layout.constraints.clone(),
-        lookups: layout.lookups.clone(),
-        lookup_group_size,
-        ..Default::default()
-      };
-      let (_, _, tampered_cfg) = make_config(&cli);
-      let (tampered_system, tampered_key) =
-        System::new(tampered_cfg, vec![tampered_input]);
-      let tampered_fixed_proof = tampered_system
-        .prove_multiple_claims_streaming(
-          &tampered_key,
-          &claim_refs,
-          vec![packed_main],
-        );
-      let honest_vk_err =
-        match system.verify_multiple_claims(&claim_refs, &tampered_fixed_proof) {
+    let (tf_desc, tampered_fixed_honest_vk_err, tampered_fixed_self_err) =
+      if layout.fixed_width > 0 {
+        let mut tampered_fixed = fixed.clone();
+        let (tf_r, tf_c, tf_val, tf_desc) =
+          find_tamper_fixed_cell(&layout, &packed_main, &fixed);
+        tampered_fixed.values[tf_r * tampered_fixed.width + tf_c] = tf_val;
+        let tampered_input = CircuitInputs {
+          main_width: layout.main_width,
+          preprocessed: Some(tampered_fixed),
+          constraints: layout.constraints.clone(),
+          lookups: layout.lookups.clone(),
+          lookup_group_size,
+          ..Default::default()
+        };
+        let (_, _, tampered_cfg) = make_config(&cli);
+        let (tampered_system, tampered_key) =
+          System::new(tampered_cfg, vec![tampered_input]);
+        let tampered_fixed_proof = tampered_system
+          .prove_multiple_claims_streaming(
+            &tampered_key,
+            &claim_refs,
+            vec![packed_main],
+          );
+        let honest_vk_err = match system
+          .verify_multiple_claims(&claim_refs, &tampered_fixed_proof)
+        {
           Ok(()) => {
             return Err(format!(
               "CONTROL FAILED: honest verifier accepted proof with tampered fixed matrix ({tf_desc})"
@@ -3441,24 +3453,24 @@ fn main() -> Result<(), Box<dyn Error>> {
           },
           Err(e) => format!("{e:?}"),
         };
-      let self_err = match tampered_system
-        .verify_multiple_claims(&claim_refs, &tampered_fixed_proof)
-      {
-        Ok(()) => {
-          return Err(format!(
+        let self_err = match tampered_system
+          .verify_multiple_claims(&claim_refs, &tampered_fixed_proof)
+        {
+          Ok(()) => {
+            return Err(format!(
             "CONTROL FAILED: tampered-fixed system accepted broken relation ({tf_desc})"
           )
           .into());
-        },
-        Err(e) => format!("{e:?}"),
+          },
+          Err(e) => format!("{e:?}"),
+        };
+        (tf_desc, honest_vk_err, self_err)
+      } else {
+        return Err(
+          "CONTROL FAILED: cannot tamper fixed matrix because fixed_width == 0"
+            .into(),
+        );
       };
-      (tf_desc, honest_vk_err, self_err)
-    } else {
-      return Err(
-        "CONTROL FAILED: cannot tamper fixed matrix because fixed_width == 0"
-          .into(),
-      );
-    };
 
     eprintln!(
       "Negative controls PASSED: forged_output=REJECTED, tampered_main({tm_desc})=REJECTED, \
