@@ -1,6 +1,7 @@
 import IxCCAiur.Progress
 import IxCCAiur.CompiledCert
 import IxCCAiur.TypedWorld
+import IxCCAiur.InlineFuse
 import IxCCAiur.Hints
 import IxCC.Compile
 import IxCC.Recheck.RunFir
@@ -230,6 +231,56 @@ def package (l : Linked) (args : List Nat) (config : Aiur.Optimized.Config := {}
 
 /-! ## Typed / Unboxed Lowering Path (`TypedLower` + `CircuitSchedule`) -/
 
+/-- Extract the originating source constant id of a `Fir` global key, following
+specialization (`spec`), dead-parameter worker (`worker`), and root entry
+(`entry`) wrappers back to the annotated source definition. -/
+def gkeySourceCId? : IxCC.Key.GKey → Option IxCC.Src.CId
+  | .const c _ | .byName c _ => some c
+  | .spec g _ | .worker g _ | .entry g _ => gkeySourceCId? g
+  | .recStar _ _ | .wrapper _ _ | .lam _ _ | .dispatch _ => none
+
+/-- Look up the `Ixon.Address` of a `Fir` function's originating source
+declaration in `src`, if any. -/
+def funAddress? (src : Src.Program) (fd : Fir.Fun) : Option Ixon.Address :=
+  (gkeySourceCId? fd.key).bind fun cid => (src.entry? cid).map (·.addr)
+
+private def addToGroup (groups : List (String × List String)) (groupName chipName : String) :
+    List (String × List String) :=
+  match groups with
+  | [] => [(groupName, [chipName])]
+  | (g, chips) :: rest =>
+    if g == groupName then
+      if chips.contains chipName then (g, chips) :: rest
+      else (g, chips ++ [chipName]) :: rest
+    else
+      (g, chips) :: addToGroup rest groupName chipName
+
+/-- Resolve address-keyed `sched.byAddress` directives against `(src, P)`:
+1. Any `Fir.FunId` not already overridden in `sched.byFun` whose source address
+   appears in `sched.byAddress` gets its `FnSchedule` added to `byFun` so
+   `TypedLower` honors `@[circuit_inline]` / `@[circuit_noinline]`.
+2. Any resolved `FnSchedule` (from `byFun` or `byAddress`) with `group := some g`
+   registers its non-inlined chip `Prog::f<fid>` under group `g`. -/
+def resolveSchedule (src : Src.Program) (P : Fir.Program)
+    (sched : Schedule.CircuitSchedule) : Schedule.CircuitSchedule :=
+  let resolvedByFun :=
+    P.funList.foldl (init := sched.byFun) fun acc (fid, fd) =>
+      if acc.any (·.1 == fid) then acc
+      else
+        match (funAddress? src fd).bind (fun a => sched.byAddress.find? (·.1 == a)) with
+        | some (_, fs) => acc ++ [(fid, fs)]
+        | none => acc
+  let sched1 : Schedule.CircuitSchedule := { sched with byFun := resolvedByFun }
+  let resolvedGroups :=
+    P.funList.foldl (init := sched.groups) fun acc (fid, fd) =>
+      let fs := sched1.forFun fid (funAddress? src fd)
+      match fs.group with
+      | some grp =>
+        if TypedRep.shouldInlineFun P sched1 fid fd then acc
+        else addToGroup acc grp (qualified (funName fid))
+      | none => acc
+  { sched1 with groups := resolvedGroups }
+
 /-- A typed/unboxed lowered program, demand-linked and prepared for `Prog::main<i>`. -/
 structure TypedLinked where
   lowered : TypedLower.LoweredProgram
@@ -238,18 +289,30 @@ structure TypedLinked where
   entry : String
   exportRep : TypedRep.Rep
   prepared : Aiur.Modules.Prepared program
+  resolvedGroups : List (String × List String) := []
 
-/-- Infer & check `Fir.Shape.ShapeCert`, lower with `TypedLower`, demand-link,
-and prepare `Prog::main<i>`. -/
+/-- Infer & check `Fir.Shape.ShapeCert`, resolve `Schedule.byAddress`, lower with
+`TypedLower`, optionally run `InlineFuse.optimizeFns` + `pruneUnreachable`,
+demand-link, and prepare `Prog::main<i>`. -/
 def linkTyped (src : Src.Program) (P : Fir.Program) (i : Nat)
-    (sched : Schedule.CircuitSchedule := {}) : Except String TypedLinked := do
+    (sched : Schedule.CircuitSchedule := {})
+    (inlineFuse : Bool := false) : Except String TypedLinked := do
+  let resolvedSched := resolveSchedule src P sched
   let (cert, shapeAccepted) := TypedRep.inferCheckedShapes src P
-  let lowered ← TypedLower.lowerProgram P cert sched
+  let lowered0 ← TypedLower.lowerProgram P cert resolvedSched
+  let lowered :=
+    if inlineFuse then
+      let optFns := InlineFuse.optimizeFns lowered0.program.functions
+      let pruned := InlineFuse.pruneUnreachable [entryName i] optFns
+      { lowered0 with program := { lowered0.program with functions := pruned } }
+    else
+      lowered0
   let program := TypedLower.linkedProgram F lowered
   let entry := qualified (entryName i)
   let exportRep := lowered.exportReps[i]?.getD .obj
   let prepared ← Aiur.Modules.prepare program [entry]
-  return { lowered, shapeAccepted, program, entry, exportRep, prepared }
+  return { lowered, shapeAccepted, program, entry, exportRep, prepared,
+           resolvedGroups := resolvedSched.groups }
 
 /-- Evaluate the tier-aware world check on a typed prepared source. -/
 def typedWorldReport (l : TypedLinked) : WorldReport :=
@@ -330,8 +393,10 @@ def compileTypedPackage (l : TypedLinked)
   let summary : Schedule.CircuitSummary :=
     { chips := chips.map fun (name, columns, calls, memory) => { name, columns, calls, memory } }
   summary.checkBudget sched.budget
+  let mergedGroups := sched.groups.foldl (init := l.resolvedGroups) fun acc (g, cs) =>
+    cs.foldl (fun acc' c => addToGroup acc' g c) acc
   let (execution, trace) ← Aiur.Trace.exportPlanPar modulus ZMod.val
-    compiled.circuit.inlined.program compiled.circuit.artifact execution sched.groups
+    compiled.circuit.inlined.program compiled.circuit.artifact execution mergedGroups
   let bytes ← match kind with
     | .program => Aiur.Artifact.package execution modulus ZMod.val (some trace)
     | .execution => Aiur.Artifact.execution execution modulus ZMod.val (some trace) args [] #[]

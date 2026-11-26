@@ -269,49 +269,76 @@ private def pickCtorArm (nm : String) (fvs : List String) :
   | (.bind _, _) :: _ => none
   | _ :: rest => pickCtorArm nm fvs rest
 
-private def shadowMaps (bs : List String) (aliases : AliasMap) (ctors : CtorMap) :
-    AliasMap × CtorMap :=
-  (aliases.filter fun p => !bs.contains p.1, ctors.filter fun p => !bs.contains p.1)
+private def shadowMaps (bs : List String) (aliases : AliasMap) (ctors : CtorMap)
+    (compacts : AliasMap) : AliasMap × CtorMap × AliasMap :=
+  (aliases.filter fun p => !bs.contains p.1 && !bs.contains p.2,
+   ctors.filter fun p => !bs.contains p.1 && p.2.2.all fun v => !bs.contains v,
+   compacts.filter fun p => !bs.contains p.1 && !bs.contains p.2)
+
+/-- Match `UInt32::compact_field (UInt32::compact inner)` (pure linear byte
+recomposition of a checked `UInt32::U32` into `< 2^32`). -/
+private def matchCompactU32 : Expr → Option Expr
+  | .call "UInt32::compact_field" (some []) [.call "UInt32::compact" (some []) [inner]] => some inner
+  | _ => none
 
 /-- Whether an expression is pure (has no `assertEq`, `hint`, `call`, or `store`),
 so a dead `let` binding of it can be eliminated without changing semantics! -/
 private def isPureCtorOrVar : Expr → Bool
   | .var _ | .literal _ => true
   | .construct _ _ _ xs => xs.all fun e => match e with | .var _ | .literal _ => true | _ => false
-  | _ => false
+  | e => match matchCompactU32 e with
+    | some (.var _) => true
+    | _ => false
 
 mutual
 
-/-- Bounded-fuel known-constructor folding + copy propagation.
+/-- Bounded-fuel known-constructor folding + copy propagation + `u32_of_field (compact_field (compact x)) → x`
+identity round-trip cancellation.
 Fuel decreases only when a `matchValue` unfolds an arm body (at most the number
 of `matchValue` nodes in the expression), guaranteeing total termination! -/
-def simpExpr (fuel : Nat) (aliases : AliasMap) (ctors : CtorMap) : Expr → Expr
+def simpExpr (fuel : Nat) (aliases : AliasMap) (ctors : CtorMap)
+    (compacts : AliasMap) : Expr → Expr
   | .var x => .var (resolveAlias aliases x)
   | .literal n => .literal n
   | .global nm targs => .global nm targs
   | .control c e => .control c e
-  | .tuple xs => .tuple (simpExprList fuel aliases ctors xs)
-  | .array xs => .array (simpExprList fuel aliases ctors xs)
-  | .construct ty targs nm xs => .construct ty targs nm (simpExprList fuel aliases ctors xs)
-  | .constructAs ty targs nm xs => .constructAs ty targs nm (simpExprList fuel aliases ctors xs)
-  | .record ty fs => .record ty (simpExprList fuel aliases ctors fs)
-  | .update ty fs => .update ty (simpExprList fuel aliases ctors fs)
-  | .builtin op xs => .builtin op (simpExprList fuel aliases ctors xs)
-  | .call nm targs xs => .call nm targs (simpExprList fuel aliases ctors xs)
-  | .repeat x n => .repeat (simpExpr fuel aliases ctors x) n
-  | .index x i => .index (simpExpr fuel aliases ctors x) i
-  | .slice x a b => .slice (simpExpr fuel aliases ctors x) a b
-  | .member x f => .member (simpExpr fuel aliases ctors x) f
-  | .project x i => .project (simpExpr fuel aliases ctors x) i
-  | .store x => .store (simpExpr fuel aliases ctors x)
-  | .load x => .load (simpExpr fuel aliases ctors x)
-  | .hint ty x ch => .hint ty (simpExpr fuel aliases ctors x) ch
-  | .neg x => .neg (simpExpr fuel aliases ctors x)
-  | .binary op x y => .binary op (simpExpr fuel aliases ctors x) (simpExpr fuel aliases ctors y)
+  | .tuple xs => .tuple (simpExprList fuel aliases ctors compacts xs)
+  | .array xs => .array (simpExprList fuel aliases ctors compacts xs)
+  | .construct ty targs nm xs => .construct ty targs nm (simpExprList fuel aliases ctors compacts xs)
+  | .constructAs ty targs nm xs => .constructAs ty targs nm (simpExprList fuel aliases ctors compacts xs)
+  | .record ty fs => .record ty (simpExprList fuel aliases ctors compacts fs)
+  | .update ty fs => .update ty (simpExprList fuel aliases ctors compacts fs)
+  | .builtin op xs => .builtin op (simpExprList fuel aliases ctors compacts xs)
+  | .call nm targs xs =>
+    let xs' := simpExprList fuel aliases ctors compacts xs
+    if (nm == "u32_of_field" || nm == "UInt32::from_field") && targs == some [] then
+      match xs' with
+      | [.var t] =>
+        match compacts.lookup t with
+        | some u => .var u
+        | none => .call nm targs xs'
+      | [arg] =>
+        match matchCompactU32 arg with
+        | some inner => inner
+        | none => .call nm targs xs'
+      | _ => .call nm targs xs'
+    else
+      .call nm targs xs'
+  | .repeat x n => .repeat (simpExpr fuel aliases ctors compacts x) n
+  | .index x i => .index (simpExpr fuel aliases ctors compacts x) i
+  | .slice x a b => .slice (simpExpr fuel aliases ctors compacts x) a b
+  | .member x f => .member (simpExpr fuel aliases ctors compacts x) f
+  | .project x i => .project (simpExpr fuel aliases ctors compacts x) i
+  | .store x => .store (simpExpr fuel aliases ctors compacts x)
+  | .load x => .load (simpExpr fuel aliases ctors compacts x)
+  | .hint ty x ch => .hint ty (simpExpr fuel aliases ctors compacts x) ch
+  | .neg x => .neg (simpExpr fuel aliases ctors compacts x)
+  | .binary op x y =>
+    .binary op (simpExpr fuel aliases ctors compacts x) (simpExpr fuel aliases ctors compacts y)
   | .letValue p x b =>
-    let x' := simpExpr fuel aliases ctors x
+    let x' := simpExpr fuel aliases ctors compacts x
     let bs := patBoundVars p
-    let (aliases0, ctors0) := shadowMaps bs aliases ctors
+    let (aliases0, ctors0, compacts0) := shadowMaps bs aliases ctors compacts
     match p, x' with
     | .bind v, .var y =>
       -- Copy propagation: replace all free occurrences of `v` with `y` and drop the copy!
@@ -319,60 +346,71 @@ def simpExpr (fuel : Nat) (aliases : AliasMap) (ctors : CtorMap) : Expr → Expr
       let ctors1 := match ctors0.lookup y with
         | some info => (v, info) :: ctors0
         | none => ctors0
-      simpExpr fuel aliases1 ctors1 b
+      let compacts1 := match compacts0.lookup y with
+        | some u => (v, u) :: compacts0
+        | none => compacts0
+      simpExpr fuel aliases1 ctors1 compacts1 b
     | .bind v, .construct _ _ nm args =>
       let ctors1 := match allVarNames args with
         | some fvs => (v, (nm, fvs)) :: ctors0
         | none => ctors0
-      let b' := simpExpr fuel aliases0 ctors1 b
+      let b' := simpExpr fuel aliases0 ctors1 compacts0 b
       if isPureCtorOrVar x' && !hasFreeVar v b' then b'
       else match b' with
         | .var w => if w == v then x' else .letValue p x' b'
         | _ => .letValue p x' b'
     | .bind v, _ =>
-      let b' := simpExpr fuel aliases0 ctors0 b
+      let compacts1 := match matchCompactU32 x' with
+        | some (.var u) => (v, u) :: compacts0
+        | _ => compacts0
+      let b' := simpExpr fuel aliases0 ctors0 compacts1 b
       match b' with
       | .var w => if w == v then x' else .letValue p x' b'
       | _ =>
         if isPureCtorOrVar x' && !hasFreeVar v b' then b'
         else .letValue p x' b'
     | _, _ =>
-      .letValue p x' (simpExpr fuel aliases0 ctors0 b)
+      .letValue p x' (simpExpr fuel aliases0 ctors0 compacts0 b)
   | .matchValue scrut arms =>
-    let scrut' := simpExpr fuel aliases ctors scrut
+    let scrut' := simpExpr fuel aliases ctors compacts scrut
     let known? : Option (String × List String) := match scrut' with
       | .var v => ctors.lookup v
       | .construct _ _ nm args => (allVarNames args).map (nm, ·)
       | _ => none
     match fuel with
-    | 0 => .matchValue scrut' (simpArms 0 aliases ctors arms)
+    | 0 => .matchValue scrut' (simpArms 0 aliases ctors compacts arms)
     | fuel' + 1 =>
       match known? with
       | some (nm, fvs) =>
         match pickCtorArm nm fvs arms with
         | some (binds, armBody) =>
-          let (aliases0, ctors0) := shadowMaps (binds.map Prod.fst) aliases ctors
+          let (aliases0, ctors0, compacts0) := shadowMaps (binds.map Prod.fst) aliases ctors compacts
           let aliases1 := binds ++ aliases0
           let ctors1 := binds.foldl (init := ctors0) fun acc (v, fv) =>
             match ctors0.lookup fv with
             | some info => (v, info) :: acc
             | none => acc
-          simpExpr fuel' aliases1 ctors1 armBody
-        | none => .matchValue scrut' (simpArms (fuel' + 1) aliases ctors arms)
-      | none => .matchValue scrut' (simpArms (fuel' + 1) aliases ctors arms)
+          let compacts1 := binds.foldl (init := compacts0) fun acc (v, fv) =>
+            match compacts0.lookup fv with
+            | some u => (v, u) :: acc
+            | none => acc
+          simpExpr fuel' aliases1 ctors1 compacts1 armBody
+        | none => .matchValue scrut' (simpArms (fuel' + 1) aliases ctors compacts arms)
+      | none => .matchValue scrut' (simpArms (fuel' + 1) aliases ctors compacts arms)
 termination_by e => (fuel, sizeOf e)
 
-def simpExprList (fuel : Nat) (aliases : AliasMap) (ctors : CtorMap) : List Expr → List Expr
+def simpExprList (fuel : Nat) (aliases : AliasMap) (ctors : CtorMap) (compacts : AliasMap) :
+    List Expr → List Expr
   | [] => []
-  | x :: xs => simpExpr fuel aliases ctors x :: simpExprList fuel aliases ctors xs
+  | x :: xs => simpExpr fuel aliases ctors compacts x :: simpExprList fuel aliases ctors compacts xs
 termination_by xs => (fuel, sizeOf xs)
 
-def simpArms (fuel : Nat) (aliases : AliasMap) (ctors : CtorMap) :
+def simpArms (fuel : Nat) (aliases : AliasMap) (ctors : CtorMap) (compacts : AliasMap) :
     List (Pat × Expr) → List (Pat × Expr)
   | [] => []
   | (p, b) :: rest =>
-    let (aliases0, ctors0) := shadowMaps (patBoundVars p) aliases ctors
-    (p, simpExpr fuel aliases0 ctors0 b) :: simpArms fuel aliases ctors rest
+    let (aliases0, ctors0, compacts0) := shadowMaps (patBoundVars p) aliases ctors compacts
+    (p, simpExpr fuel aliases0 ctors0 compacts0 b) :: simpArms fuel aliases ctors compacts rest
 termination_by arms => (fuel, sizeOf arms)
 
 end
@@ -395,13 +433,13 @@ def buildInlineMap (fns : List Fn) (maxInlineNodes : Nat := 256) : List (String 
 def inlineAndFoldOnce (fns : List Fn) (counter : Nat) : List Fn × Nat :=
   let imap := buildInlineMap fns
   if imap.isEmpty then
-    (fns.map fun f => { f with body := simpExpr 16 [] [] f.body }, counter)
+    (fns.map fun f => { f with body := simpExpr 16 [] [] [] f.body }, counter)
   else
     let (fns', counter') := fns.foldl (init := ([], counter)) fun (acc, c) f =>
       -- Avoid mutually recursive expansion by excluding `f.name` from its own inline map.
       let imapHere := imap.filter fun p => p.1 != f.name
       let (inlined, c') := (inlineCallsM imapHere f.body).run c
-      let folded := simpExpr 32 [] [] inlined
+      let folded := simpExpr 32 [] [] [] inlined
       (acc ++ [{ f with body := folded }], c')
     (fns', counter')
 
@@ -509,8 +547,8 @@ def optimizeFns (fns : List Fn) : List Fn :=
   let (r2, c2) := inlineAndFoldOnce r1 c1
   let (r3, _) := inlineAndFoldOnce r2 c2
   r3.map fun f =>
-    let flat := flattenLets 256 (simpExpr 32 [] [] f.body)
-    { f with body := foldConstU32OfField (rewriteExpr (simpExpr 32 [] [] flat)) }
+    let flat := flattenLets 4096 (simpExpr 32 [] [] [] f.body)
+    { f with body := foldConstU32OfField (rewriteExpr (simpExpr 32 [] [] [] flat)) }
 
 /-- Keep only functions transitively reachable from `roots` (plus `roots` themselves).
 Eliminates dead inlined helpers (`f2`..`f8`, `u32_shr`, `u32_shl`, `divmod_56`, etc.)

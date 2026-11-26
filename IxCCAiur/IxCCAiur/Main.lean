@@ -31,6 +31,8 @@ structure Options where
   out : Option String := none
   execPackage : Bool := false
   typed : Bool := false
+  inlineFuse : Bool := false
+  skipAiurEval : Bool := false
   schedule : Option String := none
   noInline : Bool := false
   pairTable : Bool := false
@@ -39,7 +41,8 @@ structure Options where
 def usage : String :=
   "usage: ixcc-aiur CLOSURE.ixe [--equations EQUATIONS.json | EQUATIONS.json] \
 [--root NAME|ADDR|NAME=ADDR] [--args N,N,...] [-o PACKAGE.ixa] [--exec] \
-[--typed] [--schedule SCHEDULE.json] [--no-inline] [--pair-table] [--stats]"
+[--typed] [--inline-fuse] [--skip-aiur-eval] [--schedule SCHEDULE.json] \
+[--no-inline] [--pair-table] [--stats]"
 
 def parseNats (s : String) : Except String (List Nat) :=
   (s.splitOn ",").filter (· != "") |>.mapM fun w =>
@@ -55,6 +58,8 @@ def parse : List String → Options → Except String Options
   | "-o" :: path :: rest, o => parse rest { o with out := some path }
   | "--exec" :: rest, o => parse rest { o with execPackage := true }
   | "--typed" :: rest, o => parse rest { o with typed := true }
+  | "--inline-fuse" :: rest, o => parse rest { o with inlineFuse := true }
+  | "--skip-aiur-eval" :: rest, o => parse rest { o with skipAiurEval := true }
   | "--schedule" :: path :: rest, o => parse rest { o with schedule := some path }
   | "--no-inline" :: rest, o => parse rest { o with noInline := true }
   | "--pair-table" :: rest, o => parse rest { o with pairTable := true }
@@ -87,9 +92,10 @@ def runTyped (o : Options) (front : Driver.Front) : IO UInt32 := do
     rangeCheck := if o.pairTable then .pairTable else baseSched.rangeCheck
   }
   let start ← IO.monoMsNow
-  let linked ← IO.ofExcept (Driver.linkTyped front.levels.src fir 0 sched)
-  IO.println s!"lowered (typed, tier {reprStr linked.lowered.tier}, fir-shapes {linked.shapeAccepted}, \
-    ret {reprStr linked.exportRep}): {linked.lowered.program.functions.length} functions, \
+  let linked ← IO.ofExcept (Driver.linkTyped front.levels.src fir 0 sched o.inlineFuse)
+  IO.println s!"lowered (typed, inline-fuse {o.inlineFuse}, tier {reprStr linked.lowered.tier}, \
+    fir-shapes {linked.shapeAccepted}, ret {reprStr linked.exportRep}): \
+    {linked.lowered.program.functions.length} functions, \
     entry {linked.entry} ({(← IO.monoMsNow) - start} ms)"
   let world := Driver.typedWorldReport linked
   IO.println s!"world: tables {world.tables}, library {world.library}, functions {world.functions}, \
@@ -109,15 +115,19 @@ def runTyped (o : Options) (front : Driver.Front) : IO UInt32 := do
     let start ← IO.monoMsNow
     let expected := Driver.firRun fir 0 args
     IO.println s!"fir: {reprStr expected} ({(← IO.monoMsNow) - start} ms)"
-    let start ← IO.monoMsNow
-    let actual := Driver.typedAiurRun fir linked args
-    match actual with
-    | .ok (value, obs) =>
-      IO.println s!"aiur: value {reprStr value}, observation {showObs obs} ({(← IO.monoMsNow) - start} ms)"
-    | .error e => IO.println s!"aiur: no derivation found: {e} ({(← IO.monoMsNow) - start} ms)"
-    agree := match expected, actual with
-      | .ok (some a), .ok (_, some b) => a == b
-      | _, _ => false
+    if o.skipAiurEval then
+      IO.println "aiur: skipped (--skip-aiur-eval)"
+      agree := expected matches .ok (some _)
+    else
+      let start ← IO.monoMsNow
+      let actual := Driver.typedAiurRun fir linked args
+      match actual with
+      | .ok (value, obs) =>
+        IO.println s!"aiur: value {reprStr value}, observation {showObs obs} ({(← IO.monoMsNow) - start} ms)"
+      | .error e => IO.println s!"aiur: no derivation found: {e} ({(← IO.monoMsNow) - start} ms)"
+      agree := match expected, actual with
+        | .ok (some a), .ok (_, some b) => a == b
+        | _, _ => false
     IO.println s!"agree: {agree}"
   if let some path := o.out then
     unless world.ok do
@@ -180,15 +190,19 @@ def run (o : Options) : IO UInt32 := do
     let start ← IO.monoMsNow
     let expected := Driver.firRun fir 0 args
     IO.println s!"fir: {reprStr expected} ({(← IO.monoMsNow) - start} ms)"
-    let start ← IO.monoMsNow
-    let actual := Driver.aiurRun fir linked args
-    match actual with
-    | .ok (value, obs) =>
-      IO.println s!"aiur: value {reprStr value}, observation {showObs obs} ({(← IO.monoMsNow) - start} ms)"
-    | .error e => IO.println s!"aiur: no derivation found: {e} ({(← IO.monoMsNow) - start} ms)"
-    agree := match expected, actual with
-      | .ok (some a), .ok (_, some b) => a == b
-      | _, _ => false
+    if o.skipAiurEval then
+      IO.println "aiur: skipped (--skip-aiur-eval)"
+      agree := expected matches .ok (some _)
+    else
+      let start ← IO.monoMsNow
+      let actual := Driver.aiurRun fir linked args
+      match actual with
+      | .ok (value, obs) =>
+        IO.println s!"aiur: value {reprStr value}, observation {showObs obs} ({(← IO.monoMsNow) - start} ms)"
+      | .error e => IO.println s!"aiur: no derivation found: {e} ({(← IO.monoMsNow) - start} ms)"
+      agree := match expected, actual with
+        | .ok (some a), .ok (_, some b) => a == b
+        | _, _ => false
     IO.println s!"agree: {agree}"
   if let some path := o.out then
     unless world.ok do
