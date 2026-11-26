@@ -1,11 +1,15 @@
 //! Prove and verify a Lean-exported formally certified single-circuit Goldilocks
-//! STARK (`wide_export --single-circuit --pow2-rows`, backed by
-//! `Aiur.Tiling.SingleCircuit.wide_single_circuit_sound_goldilocks`) end-to-end
-//! in `multi-stark`.
+//! STARK end-to-end in `multi-stark`.
+//!
+//! Auto-detects both certified single-circuit layout formats from `LAYOUT.json`:
+//! - `ix-wide-layout-1` (`wide_export --single-circuit --pow2-rows`, backed by
+//!   `Aiur.Tiling.SingleCircuit.wide_single_circuit_sound_goldilocks`)
+//! - `ix-tiling-v2-layout-1` (`tiling_export2 --goldilocks --single-circuit --pow2-rows`,
+//!   backed by `Aiur.Tiling.SingleCircuit.narrow_compact_single_circuit_sound_goldilocks`)
 //!
 //! Usage:
 //!   single_circuit_prove PACKAGE.ixa LAYOUT.json FIXED.bin
-//!     [--args N,N,...] [--controls] [--fri-mla K] [--fri-lfp K]
+//!     [--args N,N,...] [--controls] [--stark-128] [--fri-mla K] [--fri-lfp K]
 //!     [--log-blowup K] [--num-queries K] [--query-pow K] [--commit-pow K]
 //!     [--lookup-group K] [--no-check] [--proof-out PATH] [--report-out PATH]
 
@@ -38,12 +42,15 @@ use std::error::Error;
 use std::path::Path;
 use std::time::Instant;
 
-const LAYOUT_FORMAT: &str = "ix-wide-layout-1";
+const WIDE_LAYOUT_FORMAT: &str = "ix-wide-layout-1";
+const TILING_V2_LAYOUT_FORMAT: &str = "ix-tiling-v2-layout-1";
 const FIXED_MAGIC: &[u8; 8] = b"IXTLFX01";
 const CALL_TAG: u64 = 1;
+const ROM_TAG: u64 = 2;
+const CHUNK_STRIDE: u64 = 1u64 << 32;
 
 const USAGE: &str = "usage: single_circuit_prove PACKAGE.ixa LAYOUT.json FIXED.bin \
-  [--args N,N,...] [--controls] [--fri-mla K] [--fri-lfp K] \
+  [--args N,N,...] [--controls] [--stark-128] [--fri-mla K] [--fri-lfp K] \
   [--log-blowup K] [--num-queries K] [--query-pow K] [--commit-pow K] \
   [--lookup-group K] [--no-check] [--proof-out PATH] [--report-out PATH]";
 
@@ -110,6 +117,11 @@ fn parse_cli() -> Result<Cli, String> {
         );
       },
       "--controls" => controls = true,
+      "--stark-128" => {
+        log_blowup = 3;
+        num_queries = 78;
+        query_pow = 20;
+      },
       "--no-check" => check = false,
       "--fri-mla" => fri_mla = parse_usize_flag("--fri-mla", &mut raw)?,
       "--fri-lfp" => fri_lfp = parse_usize_flag("--fri-lfp", &mut raw)?,
@@ -205,6 +217,9 @@ enum ConstituentKind {
   Unit { chip: String },
   Map { length: usize },
   Rom { words: usize },
+  Shard { shard_index: usize },
+  CompactMap,
+  CompactRom,
 }
 
 #[derive(Clone, Debug)]
@@ -214,17 +229,124 @@ struct Constituent {
   main_offset: usize,
   main_width: usize,
   fixed_offset: usize,
+  fixed_width: usize,
   active_col: Option<usize>,
 }
 
+#[derive(Clone, Copy, Debug)]
+enum V2Term {
+  Lin(Val, usize),
+  Prod(Val, usize, usize),
+}
+
+#[derive(Clone, Debug)]
+enum V2Slot {
+  Column(usize),
+  Sum { k: Val, terms: Vec<V2Term> },
+  Key,
+  Invocation,
+}
+
+#[derive(Clone, Debug)]
+enum V2Lane {
+  Empty,
+  Gate {
+    qm: Val,
+    q: [Val; 4],
+    qc: Val,
+    cells: [Option<usize>; 4],
+  },
+  Msg {
+    ts: u64,
+    mk: Val,
+    mc: Val,
+    cells: [Option<usize>; 4],
+  },
+}
+
+#[derive(Clone, Debug)]
+enum V2Row {
+  Gate {
+    lanes: Vec<V2Lane>,
+    spans: Vec<(usize, usize)>,
+  },
+  Message {
+    ts: u64,
+    mk: Val,
+    mc: Val,
+    receive_key: bool,
+    cells: Vec<Option<usize>>,
+  },
+}
+
+impl V2Row {
+  fn cell(&self, j: usize) -> Option<usize> {
+    match self {
+      Self::Gate { lanes, .. } => match &lanes[j / 4] {
+        V2Lane::Empty => None,
+        V2Lane::Gate { cells, .. } | V2Lane::Msg { cells, .. } => cells[j % 4],
+      },
+      Self::Message { cells, .. } => cells[j],
+    }
+  }
+}
+
+#[derive(Clone, Debug)]
+struct V2Template {
+  slots: Vec<V2Slot>,
+  rows: Vec<V2Row>,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum V2WideNode {
+  Const(Val),
+  Var(usize),
+  Add(usize, usize),
+  Sub(usize, usize),
+  Mul(usize, usize),
+  Neg(usize),
+}
+
+#[derive(Clone, Debug)]
+struct V2WideGraph {
+  nodes: Vec<V2WideNode>,
+  lookups: Vec<(usize, Vec<usize>)>,
+}
+
+#[derive(Clone, Debug)]
+struct V2CircuitMeta {
+  chip: String,
+  unroll_stages: Option<usize>,
+  wide_width: usize,
+  wide_graph: Option<V2WideGraph>,
+}
+
+struct TilingV2Data {
+  shard_width: usize,
+  shards: usize,
+  caps: Vec<usize>,
+  places: usize,
+  ids_per_shard: u64,
+  request: Vec<Vec<Val>>,
+  code_to_bus: FxHashMap<u64, (u64, u64, bool)>,
+  bus_to_code: FxHashMap<(u64, u64), (u64, bool)>,
+  circuits: Vec<V2CircuitMeta>,
+  templates: Vec<V2Template>,
+}
+
+enum LayoutKind {
+  Wide { request: Vec<Val> },
+  TilingV2(Box<TilingV2Data>),
+}
+
 struct SingleCircuitLayout {
+  kind: LayoutKind,
   rows: usize,
   main_width: usize,
   fixed_width: usize,
   num_constraints: usize,
   num_lookups: usize,
   bound: u64,
-  request: Vec<Val>,
   constituents: Vec<Constituent>,
   constraints: Vec<Expr<Val>>,
   lookups: Vec<Lookup<Expr<Val>>>,
@@ -336,13 +458,265 @@ fn parse_graph(
   Ok((constraints, lookups))
 }
 
+fn parse_opt_cell(
+  v: &Value,
+  slots: &[V2Slot],
+  ctx: &str,
+) -> Result<Option<usize>, String> {
+  if v.is_null() {
+    return Ok(None);
+  }
+  let s = natural(v, ctx)?;
+  let slot = slots
+    .get(s)
+    .ok_or_else(|| format!("{ctx}: slot index {s} out of range"))?;
+  if matches!(slot, V2Slot::Invocation) {
+    return Err(format!("{ctx}: physical cell references invocation slot {s}"));
+  }
+  Ok(Some(s))
+}
+
+fn parse_v2_wide_graph(v: &Value) -> Result<V2WideGraph, String> {
+  let width = natural(&v["width"], "wide.width")?;
+  let raw_nodes = v["nodes"].as_array().ok_or("wide graph missing nodes")?;
+  let mut nodes = Vec::with_capacity(raw_nodes.len());
+  for (i, n) in raw_nodes.iter().enumerate() {
+    let arr = n.as_array().ok_or_else(|| format!("wide node {i} not array"))?;
+    let op = arr
+      .first()
+      .and_then(Value::as_str)
+      .ok_or_else(|| format!("wide node {i} missing op"))?;
+    let child = |k: usize| -> Result<usize, String> {
+      let idx = natural(
+        arr
+          .get(k)
+          .ok_or_else(|| format!("wide node {i} ({op}) missing operand {k}"))?,
+        "wide operand",
+      )?;
+      if idx >= i {
+        return Err(format!("wide node {i} non-topological operand {idx}"));
+      }
+      Ok(idx)
+    };
+    let node = match op {
+      "const" => V2WideNode::Const(scalar(
+        arr.get(1).ok_or_else(|| format!("wide const {i} missing value"))?,
+        "wide const",
+      )?),
+      "var" => {
+        let x = natural(
+          arr.get(1).ok_or_else(|| format!("wide var {i} missing index"))?,
+          "wide var",
+        )?;
+        if x >= width {
+          return Err(format!("wide var {x} exceeds width {width}"));
+        }
+        V2WideNode::Var(x)
+      },
+      "add" => V2WideNode::Add(child(1)?, child(2)?),
+      "sub" => V2WideNode::Sub(child(1)?, child(2)?),
+      "mul" => V2WideNode::Mul(child(1)?, child(2)?),
+      "neg" => V2WideNode::Neg(child(1)?),
+      other => return Err(format!("unknown wide node op {other:?}")),
+    };
+    nodes.push(node);
+  }
+  let check_node = |x: &Value, ctx: &str| -> Result<usize, String> {
+    let idx = natural(x, ctx)?;
+    if idx >= nodes.len() {
+      return Err(format!("{ctx}: node index {idx} out of range"));
+    }
+    Ok(idx)
+  };
+  let lookups = v["lookups"]
+    .as_array()
+    .ok_or("wide graph missing lookups")?
+    .iter()
+    .map(|l| {
+      let arr = l.as_array().ok_or("wide lookup not array")?;
+      let m = check_node(
+        arr.first().ok_or("wide lookup missing mult")?,
+        "wide lookup.mult",
+      )?;
+      let args = arr
+        .get(1)
+        .and_then(Value::as_array)
+        .ok_or("wide lookup missing args")?
+        .iter()
+        .map(|a| check_node(a, "wide lookup.arg"))
+        .collect::<Result<Vec<_>, _>>()?;
+      Ok((m, args))
+    })
+    .collect::<Result<Vec<_>, String>>()?;
+  Ok(V2WideGraph { nodes, lookups })
+}
+
+fn parse_v2_template(v: &Value, width: usize) -> Result<V2Template, String> {
+  let lanes_per_row = width / 4;
+  let raw_slots = v["slots"].as_array().ok_or("template missing slots array")?;
+  let mut slots: Vec<V2Slot> = Vec::with_capacity(raw_slots.len());
+  for (idx, s) in raw_slots.iter().enumerate() {
+    let obj = s.as_object().ok_or_else(|| format!("slot {idx} not object"))?;
+    let slot = if let Some(col_v) = obj.get("column") {
+      V2Slot::Column(natural(col_v, "slot.column")?)
+    } else if let Some(sum_v) = obj.get("sum") {
+      let k = scalar(&sum_v["k"], "slot.sum.k")?;
+      let raw_terms = sum_v["terms"]
+        .as_array()
+        .ok_or_else(|| format!("slot {idx} sum missing terms"))?;
+      let mut terms = Vec::with_capacity(raw_terms.len());
+      let check_ref = |s_idx: usize, cur_slots: &[V2Slot]| -> Result<(), String> {
+        if s_idx >= idx {
+          return Err(format!("slot {idx} references non-topological slot {s_idx}"));
+        }
+        if matches!(cur_slots[s_idx], V2Slot::Key | V2Slot::Invocation) {
+          return Err(format!("slot {idx} sum references key/invocation slot {s_idx}"));
+        }
+        Ok(())
+      };
+      for t in raw_terms {
+        let arr = t.as_array().ok_or("sum term not array")?;
+        let kind = arr.first().and_then(Value::as_str).ok_or("sum term missing op")?;
+        match kind {
+          "lin" => {
+            let c = scalar(arr.get(1).ok_or("lin missing coeff")?, "lin.coeff")?;
+            let a = natural(arr.get(2).ok_or("lin missing slot")?, "lin.slot")?;
+            check_ref(a, &slots)?;
+            terms.push(V2Term::Lin(c, a));
+          },
+          "prod" => {
+            let c = scalar(arr.get(1).ok_or("prod missing coeff")?, "prod.coeff")?;
+            let a = natural(arr.get(2).ok_or("prod missing slot a")?, "prod.a")?;
+            let b = natural(arr.get(3).ok_or("prod missing slot b")?, "prod.b")?;
+            check_ref(a, &slots)?;
+            check_ref(b, &slots)?;
+            terms.push(V2Term::Prod(c, a, b));
+          },
+          other => return Err(format!("unknown sum term kind {other:?}")),
+        }
+      }
+      V2Slot::Sum { k, terms }
+    } else if obj.contains_key("key") {
+      V2Slot::Key
+    } else if obj.get("invocation").and_then(Value::as_bool) == Some(true) {
+      V2Slot::Invocation
+    } else {
+      return Err(format!("slot {idx} has unrecognized shape: {s}"));
+    };
+    slots.push(slot);
+  }
+
+  let raw_rows = v["rows"].as_array().ok_or("template missing rows array")?;
+  let mut rows = Vec::with_capacity(raw_rows.len());
+  for (ri, r) in raw_rows.iter().enumerate() {
+    let obj = r.as_object().ok_or_else(|| format!("row {ri} not object"))?;
+    if let Some(g) = obj.get("gate") {
+      let raw_lanes = g["lanes"]
+        .as_array()
+        .ok_or_else(|| format!("gate row {ri} missing lanes"))?;
+      if raw_lanes.len() != lanes_per_row {
+        return Err(format!(
+          "gate row {ri} has {} lanes, expected {lanes_per_row}",
+          raw_lanes.len()
+        ));
+      }
+      let mut lanes = Vec::with_capacity(lanes_per_row);
+      for (li, l) in raw_lanes.iter().enumerate() {
+        if l.as_str() == Some("empty") {
+          lanes.push(V2Lane::Empty);
+        } else if let Some(gl) = l.get("gate") {
+          let qm = scalar(&gl["qm"], "lane.gate.qm")?;
+          let qc = scalar(&gl["qc"], "lane.gate.qc")?;
+          let q_arr = gl["q"].as_array().ok_or("lane.gate missing q")?;
+          if q_arr.len() != 4 {
+            return Err("lane.gate q must have 4 entries".into());
+          }
+          let q = [
+            scalar(&q_arr[0], "lane.gate.q[0]")?,
+            scalar(&q_arr[1], "lane.gate.q[1]")?,
+            scalar(&q_arr[2], "lane.gate.q[2]")?,
+            scalar(&q_arr[3], "lane.gate.q[3]")?,
+          ];
+          let c_arr = gl["cells"].as_array().ok_or("lane.gate missing cells")?;
+          if c_arr.len() != 4 {
+            return Err("lane.gate cells must have 4 entries".into());
+          }
+          let cells = [
+            parse_opt_cell(&c_arr[0], &slots, "lane.gate.cells[0]")?,
+            parse_opt_cell(&c_arr[1], &slots, "lane.gate.cells[1]")?,
+            parse_opt_cell(&c_arr[2], &slots, "lane.gate.cells[2]")?,
+            parse_opt_cell(&c_arr[3], &slots, "lane.gate.cells[3]")?,
+          ];
+          lanes.push(V2Lane::Gate { qm, q, qc, cells });
+        } else if let Some(ml) = l.get("msg") {
+          let ts = scalar(&ml["ts"], "lane.msg.ts")?.as_canonical_u64();
+          let mk = scalar(&ml["mk"], "lane.msg.mk")?;
+          let mc = scalar(&ml["mc"], "lane.msg.mc")?;
+          let c_arr = ml["cells"].as_array().ok_or("lane.msg missing cells")?;
+          if c_arr.len() != 4 {
+            return Err("lane.msg cells must have 4 entries".into());
+          }
+          let cells = [
+            parse_opt_cell(&c_arr[0], &slots, "lane.msg.cells[0]")?,
+            parse_opt_cell(&c_arr[1], &slots, "lane.msg.cells[1]")?,
+            parse_opt_cell(&c_arr[2], &slots, "lane.msg.cells[2]")?,
+            parse_opt_cell(&c_arr[3], &slots, "lane.msg.cells[3]")?,
+          ];
+          lanes.push(V2Lane::Msg { ts, mk, mc, cells });
+        } else {
+          return Err(format!("gate row {ri} lane {li} unrecognized: {l}"));
+        }
+      }
+      let raw_spans = g["spans"]
+        .as_array()
+        .ok_or_else(|| format!("gate row {ri} missing spans"))?;
+      let mut spans = Vec::with_capacity(raw_spans.len());
+      for sp in raw_spans {
+        let arr = sp.as_array().ok_or("span not array")?;
+        if arr.len() != 2 {
+          return Err("span must have 2 elements".into());
+        }
+        let start = natural(&arr[0], "span.start")?;
+        let len = natural(&arr[1], "span.len")?;
+        if start + len > lanes_per_row {
+          return Err(format!("span ({start}, {len}) exceeds {lanes_per_row} lanes"));
+        }
+        spans.push((start, len));
+      }
+      rows.push(V2Row::Gate { lanes, spans });
+    } else if let Some(m) = obj.get("message") {
+      let ts = scalar(&m["ts"], "row.msg.ts")?.as_canonical_u64();
+      let mk = scalar(&m["mk"], "row.msg.mk")?;
+      let mc = scalar(&m["mc"], "row.msg.mc")?;
+      let receive_key = m["key"].as_bool().ok_or("row.msg missing bool key")?;
+      let raw_cells = m["cells"].as_array().ok_or("row.msg missing cells")?;
+      if raw_cells.len() != width {
+        return Err(format!(
+          "message row {ri} has {} cells, expected {width}",
+          raw_cells.len()
+        ));
+      }
+      let cells = raw_cells
+        .iter()
+        .map(|c| parse_opt_cell(c, &slots, "row.msg.cell"))
+        .collect::<Result<Vec<_>, _>>()?;
+      rows.push(V2Row::Message { ts, mk, mc, receive_key, cells });
+    } else {
+      return Err(format!("template row {ri} unrecognized: {r}"));
+    }
+  }
+  Ok(V2Template { slots, rows })
+}
+
 fn parse_layout(bytes: &[u8]) -> Result<SingleCircuitLayout, String> {
   let root: Value = serde_json::from_slice(bytes)
     .map_err(|e| format!("failed to parse layout JSON: {e}"))?;
-  if root["format"].as_str() != Some(LAYOUT_FORMAT) {
+  let fmt = root["format"]
+    .as_str()
+    .ok_or("layout JSON missing string \"format\"")?;
+  if fmt != WIDE_LAYOUT_FORMAT && fmt != TILING_V2_LAYOUT_FORMAT {
     return Err(format!(
-      "unexpected layout format {:?} (expected {LAYOUT_FORMAT:?})",
-      root["format"]
+      "unexpected layout format {fmt:?} (expected {WIDE_LAYOUT_FORMAT:?} or {TILING_V2_LAYOUT_FORMAT:?})"
     ));
   }
   let expected_modulus = Val::ORDER_U64.to_string();
@@ -359,12 +733,6 @@ fn parse_layout(bytes: &[u8]) -> Result<SingleCircuitLayout, String> {
       "layout field {field_val} is not \"goldilocks\""
     ));
   }
-  let request = root["request"]
-    .as_array()
-    .ok_or("layout missing request array")?
-    .iter()
-    .map(|x| scalar(x, "request"))
-    .collect::<Result<Vec<_>, _>>()?;
   let bound = root["bound"]
     .as_u64()
     .ok_or("layout missing u64 bound")?;
@@ -374,7 +742,7 @@ fn parse_layout(bytes: &[u8]) -> Result<SingleCircuitLayout, String> {
     .filter(|v| v.is_object())
     .ok_or(
       "layout missing \"single_circuit\" object \
-       (re-export with `wide_export --single-circuit --pow2-rows`)",
+       (re-export with `--single-circuit --pow2-rows`)",
     )?;
   let num_circuits = natural(&sc["num_circuits"], "single_circuit.num_circuits")?;
   if num_circuits != 1 {
@@ -403,96 +771,386 @@ fn parse_layout(bytes: &[u8]) -> Result<SingleCircuitLayout, String> {
   let raw_constituents = sc["constituents"]
     .as_array()
     .ok_or("single_circuit missing constituents array")?;
-  let mut constituents = Vec::with_capacity(raw_constituents.len());
-  let mut expected_m_off = 0usize;
-  let mut expected_f_off = 0usize;
-  for (idx, c) in raw_constituents.iter().enumerate() {
-    let c_rows = natural(&c["rows"], "constituent.rows")?;
-    let m_off = natural(&c["main_offset"], "constituent.main_offset")?;
-    let m_w = natural(&c["main_width"], "constituent.main_width")?;
-    let f_off = natural(&c["fixed_offset"], "constituent.fixed_offset")?;
-    let f_w = natural(&c["fixed_width"], "constituent.fixed_width")?;
-    let active_col = match c.get("active_col") {
-      Some(v) if !v.is_null() => {
-        Some(natural(v, "constituent.active_col")?)
-      },
-      _ => None,
-    };
-    if c_rows > rows {
+
+  let (kind, constituents) = if fmt == WIDE_LAYOUT_FORMAT {
+    let request = root["request"]
+      .as_array()
+      .ok_or("layout missing request array")?
+      .iter()
+      .map(|x| scalar(x, "request"))
+      .collect::<Result<Vec<_>, _>>()?;
+    let mut constituents = Vec::with_capacity(raw_constituents.len());
+    let mut expected_m_off = 0usize;
+    let mut expected_f_off = 0usize;
+    for (idx, c) in raw_constituents.iter().enumerate() {
+      let c_rows = natural(&c["rows"], "constituent.rows")?;
+      let m_off = natural(&c["main_offset"], "constituent.main_offset")?;
+      let m_w = natural(&c["main_width"], "constituent.main_width")?;
+      let f_off = natural(&c["fixed_offset"], "constituent.fixed_offset")?;
+      let f_w = natural(&c["fixed_width"], "constituent.fixed_width")?;
+      let active_col = match c.get("active_col") {
+        Some(v) if !v.is_null() => Some(natural(v, "constituent.active_col")?),
+        _ => None,
+      };
+      if c_rows > rows {
+        return Err(format!(
+          "constituent {idx} rows ({c_rows}) exceeds packed rows ({rows})"
+        ));
+      }
+      if m_off != expected_m_off || f_off != expected_f_off {
+        return Err(format!(
+          "constituent {idx} offset mismatch: got (m={m_off}, f={f_off}), \
+           expected (m={expected_m_off}, f={expected_f_off})"
+        ));
+      }
+      let needs_act = c_rows < rows;
+      match (needs_act, active_col) {
+        (true, Some(ac)) if ac == f_off + f_w => {},
+        (false, None) => {},
+        _ => {
+          return Err(format!(
+            "constituent {idx} active_col {active_col:?} disagrees with \
+             rows={c_rows} vs packed_rows={rows} (f_off={f_off}, f_w={f_w})"
+          ));
+        },
+      }
+      let c_kind = match c["kind"].as_str() {
+        Some("unit") => {
+          let chip = c["chip"]
+            .as_str()
+            .ok_or_else(|| format!("unit constituent {idx} missing chip name"))?
+            .to_owned();
+          ConstituentKind::Unit { chip }
+        },
+        Some("map") => {
+          let length = natural(&c["length"], "map constituent.length")?;
+          if m_w != 1 || f_w != length + 1 {
+            return Err(format!(
+              "map constituent {idx} shape mismatch: m_w={m_w}, f_w={f_w}, length={length}"
+            ));
+          }
+          ConstituentKind::Map { length }
+        },
+        Some("rom") => {
+          let words = natural(&c["words"], "rom constituent.words")?;
+          if m_w != words + 1 || f_w != 1 {
+            return Err(format!(
+              "rom constituent {idx} shape mismatch: m_w={m_w}, f_w={f_w}, words={words}"
+            ));
+          }
+          ConstituentKind::Rom { words }
+        },
+        other => {
+          return Err(format!(
+            "constituent {idx} has unsupported kind {other:?}"
+          ));
+        },
+      };
+      expected_m_off = expected_m_off
+        .checked_add(m_w)
+        .ok_or("packed main width overflow")?;
+      expected_f_off = expected_f_off
+        .checked_add(f_w + usize::from(needs_act))
+        .ok_or("packed fixed width overflow")?;
+      constituents.push(Constituent {
+        kind: c_kind,
+        rows: c_rows,
+        main_offset: m_off,
+        main_width: m_w,
+        fixed_offset: f_off,
+        fixed_width: f_w,
+        active_col,
+      });
+    }
+    if expected_m_off != main_width || expected_f_off != fixed_width {
       return Err(format!(
-        "constituent {idx} rows ({c_rows}) exceeds packed rows ({rows})"
+        "constituent widths sum to ({expected_m_off} main, {expected_f_off} fixed), \
+         expected ({main_width} main, {fixed_width} fixed)"
       ));
     }
-    if m_off != expected_m_off || f_off != expected_f_off {
+    (LayoutKind::Wide { request }, constituents)
+  } else {
+    let shard_width = natural(&root["width"], "layout.width")?;
+    if shard_width < 8 || !shard_width.is_multiple_of(4) {
       return Err(format!(
-        "constituent {idx} offset mismatch: got (m={m_off}, f={f_off}), \
-         expected (m={expected_m_off}, f={expected_f_off})"
+        "tiling-v2 shard width {shard_width} must be a multiple of 4 and >= 8"
       ));
     }
-    let needs_act = c_rows < rows;
-    match (needs_act, active_col) {
-      (true, Some(ac)) if ac == f_off + f_w => {},
-      (false, None) => {},
-      _ => {
-        return Err(format!(
-          "constituent {idx} active_col {active_col:?} disagrees with \
-           rows={c_rows} vs packed_rows={rows} (f_off={f_off}, f_w={f_w})"
-        ));
-      },
+    let shards = natural(&root["shards"], "layout.shards")?;
+    if shards == 0 {
+      return Err("tiling-v2 shards must be positive".into());
     }
-    let kind = match c["kind"].as_str() {
-      Some("unit") => {
-        let chip = c["chip"]
-          .as_str()
-          .ok_or_else(|| format!("unit constituent {idx} missing chip name"))?
-          .to_owned();
-        ConstituentKind::Unit { chip }
-      },
-      Some("map") => {
-        let length = natural(&c["length"], "map constituent.length")?;
-        if m_w != 1 || f_w != length + 1 {
-          return Err(format!(
-            "map constituent {idx} shape mismatch: m_w={m_w}, f_w={f_w}, length={length}"
-          ));
+    let shard_fixed_width =
+      natural(&root["fixed_width"], "layout.fixed_width")?;
+    let places = natural(&root["places"], "layout.places")?;
+    let ids_per_shard = root["ids_per_shard"]
+      .as_u64()
+      .ok_or("tiling-v2 layout missing u64 ids_per_shard")?;
+    let caps: Vec<usize> = root["caps"]
+      .as_array()
+      .ok_or("tiling-v2 layout missing caps array")?
+      .iter()
+      .map(|x| natural(x, "caps"))
+      .collect::<Result<_, _>>()?;
+
+    let mut code_to_bus: FxHashMap<u64, (u64, u64, bool)> = FxHashMap::default();
+    let mut bus_to_code: FxHashMap<(u64, u64), (u64, bool)> = FxHashMap::default();
+    for (bi, b) in root["buses"]
+      .as_array()
+      .ok_or("tiling-v2 layout missing buses array")?
+      .iter()
+      .enumerate()
+    {
+      let arr = b.as_array().ok_or_else(|| format!("bus {bi} not array"))?;
+      if arr.len() != 4 {
+        return Err(format!("bus {bi} must have 4 elements [tag, sub, code, lane]"));
+      }
+      let tag = scalar(&arr[0], "bus.tag")?.as_canonical_u64();
+      let sub = scalar(&arr[1], "bus.sub")?.as_canonical_u64();
+      let code = scalar(&arr[2], "bus.code")?.as_canonical_u64();
+      let lane = arr[3].as_bool().ok_or_else(|| format!("bus {bi} missing bool lane"))?;
+      if code_to_bus.insert(code, (tag, sub, lane)).is_some() {
+        return Err(format!("duplicate bus code {code}"));
+      }
+      if bus_to_code.insert((tag, sub), (code, lane)).is_some() {
+        return Err(format!("duplicate bus ({tag}, {sub})"));
+      }
+    }
+
+    let request: Vec<Vec<Val>> = root["request"]
+      .as_array()
+      .ok_or("tiling-v2 layout missing request array")?
+      .iter()
+      .map(|row| {
+        row
+          .as_array()
+          .ok_or("tiling-v2 request entry not array")?
+          .iter()
+          .map(|x| scalar(x, "request"))
+          .collect::<Result<Vec<_>, _>>()
+      })
+      .collect::<Result<Vec<_>, _>>()?;
+    if request.is_empty() {
+      return Err("tiling-v2 request array must be non-empty".into());
+    }
+
+    let raw_circuits = root["circuits"]
+      .as_array()
+      .ok_or("tiling-v2 layout missing circuits array")?;
+    let raw_templates = root["templates"]
+      .as_array()
+      .ok_or("tiling-v2 layout missing templates array")?;
+    if raw_circuits.len() != caps.len() || raw_templates.len() != caps.len() {
+      return Err(format!(
+        "tiling-v2 mismatch: {} circuits, {} templates, {} caps",
+        raw_circuits.len(),
+        raw_templates.len(),
+        caps.len()
+      ));
+    }
+
+    let mut circuits = Vec::with_capacity(raw_circuits.len());
+    for (ci, c) in raw_circuits.iter().enumerate() {
+      let chip = c["chip"]
+        .as_str()
+        .ok_or_else(|| format!("tiling-v2 circuit {ci} missing chip name"))?
+        .to_owned();
+      let unroll = c["unroll"].as_bool().unwrap_or(false);
+      let unroll_stages = if unroll {
+        let s = natural(&c["stages"], "circuit.stages")?;
+        if s == 0 {
+          return Err(format!("unrolled circuit {chip} has 0 stages"));
         }
-        ConstituentKind::Map { length }
-      },
-      Some("rom") => {
-        let words = natural(&c["words"], "rom constituent.words")?;
-        if m_w != words + 1 || f_w != 1 {
-          return Err(format!(
-            "rom constituent {idx} shape mismatch: m_w={m_w}, f_w={f_w}, words={words}"
-          ));
-        }
-        ConstituentKind::Rom { words }
-      },
-      other => {
+        Some(s)
+      } else {
+        None
+      };
+      let wide_width = natural(&c["wide"]["width"], "circuit.wide.width")?;
+      let wide_graph = if unroll {
+        Some(parse_v2_wide_graph(&c["wide"])?)
+      } else {
+        None
+      };
+      circuits.push(V2CircuitMeta {
+        chip,
+        unroll_stages,
+        wide_width,
+        wide_graph,
+      });
+    }
+
+    let mut templates = Vec::with_capacity(raw_templates.len());
+    for (ti, t) in raw_templates.iter().enumerate() {
+      templates.push(
+        parse_v2_template(t, shard_width)
+          .map_err(|e| format!("template {ti} ({}): {e}", circuits[ti].chip))?,
+      );
+    }
+
+    let sum_places: usize = templates
+      .iter()
+      .zip(&caps)
+      .try_fold(0usize, |acc, (t, &cap)| {
+        acc.checked_add(cap.checked_mul(t.rows.len())?)
+      })
+      .ok_or("tiling-v2 places overflow")?;
+    if sum_places != places {
+      return Err(format!(
+        "tiling-v2 places mismatch: sum(cap * template.rows)={sum_places} != places={places}"
+      ));
+    }
+    let sum_caps: u64 = u64::try_from(caps.iter().sum::<usize>())
+      .map_err(|e| format!("caps sum overflow: {e}"))?;
+    if sum_caps != ids_per_shard {
+      return Err(format!(
+        "tiling-v2 ids_per_shard mismatch: sum(caps)={sum_caps} != ids_per_shard={ids_per_shard}"
+      ));
+    }
+
+    let raw_compact = root["compact"]
+      .as_array()
+      .ok_or("tiling-v2 single_circuit requires compact tables metadata")?;
+
+    let mut constituents = Vec::with_capacity(raw_constituents.len());
+    let mut expected_m_off = 0usize;
+    let mut expected_f_off = 0usize;
+    let mut expected_shard = 0usize;
+    for (idx, c) in raw_constituents.iter().enumerate() {
+      let c_rows = natural(&c["rows"], "constituent.rows")?;
+      let m_off = natural(&c["main_offset"], "constituent.main_offset")?;
+      let m_w = natural(&c["main_width"], "constituent.main_width")?;
+      let f_off = natural(&c["fixed_offset"], "constituent.fixed_offset")?;
+      let f_w = natural(&c["fixed_width"], "constituent.fixed_width")?;
+      let active_col = match c.get("active_col") {
+        Some(v) if !v.is_null() => Some(natural(v, "constituent.active_col")?),
+        _ => None,
+      };
+      if c_rows > rows {
         return Err(format!(
-          "constituent {idx} has unsupported kind {other:?}"
+          "constituent {idx} rows ({c_rows}) exceeds packed rows ({rows})"
         ));
-      },
-    };
-    expected_m_off = expected_m_off
-      .checked_add(m_w)
-      .ok_or("packed main width overflow")?;
-    expected_f_off = expected_f_off
-      .checked_add(f_w + usize::from(needs_act))
-      .ok_or("packed fixed width overflow")?;
-    constituents.push(Constituent {
-      kind,
-      rows: c_rows,
-      main_offset: m_off,
-      main_width: m_w,
-      fixed_offset: f_off,
-      active_col,
-    });
-  }
-  if expected_m_off != main_width || expected_f_off != fixed_width {
-    return Err(format!(
-      "constituent widths sum to ({expected_m_off} main, {expected_f_off} fixed), \
-       expected ({main_width} main, {fixed_width} fixed)"
-    ));
-  }
+      }
+      if m_off != expected_m_off || f_off != expected_f_off {
+        return Err(format!(
+          "constituent {idx} offset mismatch: got (m={m_off}, f={f_off}), \
+           expected (m={expected_m_off}, f={expected_f_off})"
+        ));
+      }
+      let needs_act = c_rows < rows;
+      match (needs_act, active_col) {
+        (true, Some(ac)) if ac == f_off + f_w => {},
+        (false, None) => {},
+        _ => {
+          return Err(format!(
+            "constituent {idx} active_col {active_col:?} disagrees with \
+             rows={c_rows} vs packed_rows={rows} (f_off={f_off}, f_w={f_w})"
+          ));
+        },
+      }
+      let c_kind = match c["kind"].as_str() {
+        Some("shard") => {
+          let shard_index = natural(&c["index"], "shard constituent.index")?;
+          if shard_index != expected_shard {
+            return Err(format!(
+              "shard constituent {idx} has index {shard_index}, expected {expected_shard}"
+            ));
+          }
+          if c_rows != places || m_w != shard_width || f_w != shard_fixed_width {
+            return Err(format!(
+              "shard constituent {idx} shape ({c_rows} x {m_w} main, {f_w} fixed) \
+               disagrees with layout ({places} x {shard_width} main, {shard_fixed_width} fixed)"
+            ));
+          }
+          expected_shard += 1;
+          ConstituentKind::Shard { shard_index }
+        },
+        Some("compact") => {
+          let ci = natural(&c["index"], "compact constituent.index")?;
+          let desc = raw_compact.get(ci).ok_or_else(|| {
+            format!("compact constituent {idx} index {ci} out of range")
+          })?;
+          let d_rows = natural(&desc["rows"], "compact.rows")?;
+          let d_mw = natural(&desc["main_width"], "compact.main_width")?;
+          let d_fw = natural(&desc["fixed_width"], "compact.fixed_width")?;
+          let d_nf = natural(&desc["n_fixed"], "compact.n_fixed")?;
+          if c_rows != d_rows || m_w != d_mw || f_w != d_fw || d_fw != d_nf + 3 {
+            return Err(format!(
+              "compact constituent {idx} disagrees with compact[{ci}] metadata"
+            ));
+          }
+          match c["compact_kind"].as_str() {
+            Some("maps") => {
+              if d_nf != shard_width - 1 || m_w != 1 {
+                return Err(format!(
+                  "compact maps constituent {idx} shape mismatch (n_fixed={d_nf}, m_w={m_w}, W={shard_width})"
+                ));
+              }
+              ConstituentKind::CompactMap
+            },
+            Some("roms") => {
+              if d_nf != 1 || m_w != shard_width - 1 {
+                return Err(format!(
+                  "compact roms constituent {idx} shape mismatch (n_fixed={d_nf}, m_w={m_w}, W={shard_width})"
+                ));
+              }
+              ConstituentKind::CompactRom
+            },
+            other => {
+              return Err(format!(
+                "compact constituent {idx} has unsupported compact_kind {other:?}"
+              ));
+            },
+          }
+        },
+        other => {
+          return Err(format!(
+            "tiling-v2 constituent {idx} has unsupported kind {other:?}"
+          ));
+        },
+      };
+      expected_m_off = expected_m_off
+        .checked_add(m_w)
+        .ok_or("packed main width overflow")?;
+      expected_f_off = expected_f_off
+        .checked_add(f_w + usize::from(needs_act))
+        .ok_or("packed fixed width overflow")?;
+      constituents.push(Constituent {
+        kind: c_kind,
+        rows: c_rows,
+        main_offset: m_off,
+        main_width: m_w,
+        fixed_offset: f_off,
+        fixed_width: f_w,
+        active_col,
+      });
+    }
+    if expected_shard != shards {
+      return Err(format!(
+        "tiling-v2 single_circuit has {expected_shard} shard constituents, expected {shards}"
+      ));
+    }
+    if expected_m_off != main_width || expected_f_off != fixed_width {
+      return Err(format!(
+        "constituent widths sum to ({expected_m_off} main, {expected_f_off} fixed), \
+         expected ({main_width} main, {fixed_width} fixed)"
+      ));
+    }
+    (
+      LayoutKind::TilingV2(Box::new(TilingV2Data {
+        shard_width,
+        shards,
+        caps,
+        places,
+        ids_per_shard,
+        request,
+        code_to_bus,
+        bus_to_code,
+        circuits,
+        templates,
+      })),
+      constituents,
+    )
+  };
 
   let (constraints, lookups) =
     parse_graph(&sc["circuit"], main_width, fixed_width)?;
@@ -509,13 +1167,13 @@ fn parse_layout(bytes: &[u8]) -> Result<SingleCircuitLayout, String> {
     ));
   }
   Ok(SingleCircuitLayout {
+    kind,
     rows,
     main_width,
     fixed_width,
     num_constraints,
     num_lookups,
     bound,
-    request,
     constituents,
     constraints,
     lookups,
@@ -578,7 +1236,7 @@ fn read_single_fixed_block(
   Ok(RowMajorMatrix::new(values, width))
 }
 
-/// Validate `active_col` selectors and ROM row-index addresses in `fixed`.
+/// Validate `active_col` selectors, ROM addresses, and compact table descriptors in `fixed`.
 fn validate_fixed_matrix(
   layout: &SingleCircuitLayout,
   fixed: &RowMajorMatrix<Val>,
@@ -599,18 +1257,63 @@ fn validate_fixed_matrix(
         }
       }
     }
-    if matches!(c.kind, ConstituentKind::Rom { .. }) {
-      for r in 0..c.rows {
-        let got = fixed.values[r * fw + c.fixed_offset];
-        let want = Val::from_usize(r);
-        if got != want {
-          return Err(format!(
-            "FIXED.bin ROM addr mismatch at constituent {idx} row {r}: \
-             got {}, expected {r}",
-            got.as_canonical_u64()
-          ));
+    match c.kind {
+      ConstituentKind::Rom { .. } => {
+        for r in 0..c.rows {
+          let got = fixed.values[r * fw + c.fixed_offset];
+          let want = Val::from_usize(r);
+          if got != want {
+            return Err(format!(
+              "FIXED.bin ROM addr mismatch at constituent {idx} row {r}: \
+               got {}, expected {r}",
+              got.as_canonical_u64()
+            ));
+          }
         }
-      }
+      },
+      ConstituentKind::CompactMap | ConstituentKind::CompactRom => {
+        let LayoutKind::TilingV2(v2) = &layout.kind else {
+          return Err("compact constituent outside tiling-v2 layout".into());
+        };
+        let is_rom = matches!(c.kind, ConstituentKind::CompactRom);
+        for r in 0..c.rows {
+          let base = r * fw + c.fixed_offset;
+          let sel_l = fixed.values[base];
+          let sel_w = fixed.values[base + 1];
+          let code = fixed.values[base + 2].as_canonical_u64();
+          let &(tag, _sub, lane) = v2.code_to_bus.get(&code).ok_or_else(|| {
+            format!(
+              "FIXED.bin compact constituent {idx} row {r} has unknown bus code {code}"
+            )
+          })?;
+          let want_sel = if lane { (Val::ONE, Val::ZERO) } else { (Val::ZERO, Val::ONE) };
+          if (sel_l, sel_w) != want_sel {
+            return Err(format!(
+              "FIXED.bin compact constituent {idx} row {r} selectors ({}, {}) \
+               disagree with bus lane={lane}",
+              sel_l.as_canonical_u64(),
+              sel_w.as_canonical_u64()
+            ));
+          }
+          if is_rom && tag != ROM_TAG {
+            return Err(format!(
+              "FIXED.bin compact ROM constituent {idx} row {r} has non-ROM tag {tag}"
+            ));
+          }
+        }
+        for r in c.rows..layout.rows {
+          let base = r * fw + c.fixed_offset;
+          if fixed.values[base..base + c.fixed_width]
+            .iter()
+            .any(|&v| v != Val::ZERO)
+          {
+            return Err(format!(
+              "FIXED.bin compact constituent {idx} inactive row {r} is nonzero"
+            ));
+          }
+        }
+      },
+      _ => {},
     }
   }
   Ok(())
@@ -681,13 +1384,20 @@ fn choose_lookup_group(
   Ok(best_g)
 }
 
+fn trim_trailing_zeros(v: &mut Vec<Val>) {
+  while v.last() == Some(&Val::ZERO) {
+    v.pop();
+  }
+}
+
 /// Directly evaluate EVERY constraint on EVERY row and exact LogUp ledger
 /// balance on the compiled certified `ConstraintGraph`.
 fn check_packed_circuit(
   graph: &ConstraintGraph<Val>,
   main: &RowMajorMatrix<Val>,
   fixed: Option<&RowMajorMatrix<Val>>,
-  claim: &[Val],
+  claims: &[&[Val]],
+  trim_zeros: bool,
 ) -> Result<(), String> {
   let rows = main.height();
   let main_w = main.width;
@@ -729,7 +1439,11 @@ fn check_packed_circuit(
     for l in &graph.lookups {
       let mult = buf[l.multiplicity.index()];
       if mult != Val::ZERO {
-        let tuple: Vec<Val> = l.args.iter().map(|&a| buf[a.index()]).collect();
+        let mut tuple: Vec<Val> =
+          l.args.iter().map(|&a| buf[a.index()]).collect();
+        if trim_zeros {
+          trim_trailing_zeros(&mut tuple);
+        }
         let acc = ledger.entry(tuple).or_insert(Val::ZERO);
         *acc += mult;
       }
@@ -769,9 +1483,15 @@ fn check_packed_circuit(
     acc
   };
 
-  // Public claim contributes +1 to the LogUp balance.
-  let entry = ledger.entry(claim.to_vec()).or_insert(Val::ZERO);
-  *entry += Val::ONE;
+  // Each public claim tuple contributes +1 to the LogUp balance.
+  for &claim in claims {
+    let mut key = claim.to_vec();
+    if trim_zeros {
+      trim_trailing_zeros(&mut key);
+    }
+    let entry = ledger.entry(key).or_insert(Val::ZERO);
+    *entry += Val::ONE;
+  }
 
   let mut unbalanced = 0usize;
   let mut sample = String::new();
@@ -959,6 +1679,13 @@ fn pack_main_matrix(
         }
         packed_roms.insert(*words);
       },
+      ConstituentKind::Shard { .. }
+      | ConstituentKind::CompactMap
+      | ConstituentKind::CompactRom => {
+        return Err(format!(
+          "constituent {idx}: unexpected tiling-v2 constituent in wide layout"
+        ));
+      },
     }
   }
 
@@ -990,6 +1717,1195 @@ fn pack_main_matrix(
   }
 
   Ok(RowMajorMatrix::new(packed, main_w))
+}
+
+fn eval_v2_sum(k: Val, terms: &[V2Term], values: &[Val]) -> Val {
+  terms.iter().fold(k, |acc, t| match *t {
+    V2Term::Lin(c, s) => acc + c * values[s],
+    V2Term::Prod(c, a, b) => acc + c * values[a] * values[b],
+  })
+}
+
+fn v2_lane_value(lane: &V2Lane, v: &[Val]) -> Val {
+  match lane {
+    V2Lane::Gate { qm, q, qc, cells } => {
+      let x = |i: usize| cells[i].map_or(Val::ZERO, |s| v[s]);
+      *qm * x(0) * x(1)
+        + q[0] * x(0)
+        + q[1] * x(1)
+        + q[2] * x(2)
+        + q[3] * x(3)
+        + *qc
+    },
+    V2Lane::Empty | V2Lane::Msg { .. } => Val::ZERO,
+  }
+}
+
+fn v2_eval_slots(
+  t: &V2Template,
+  rows: &[&[Val]],
+  wide_width: usize,
+  zero: bool,
+) -> Result<Vec<Val>, String> {
+  let mut v = vec![Val::ZERO; t.slots.len()];
+  for (s, def) in t.slots.iter().enumerate() {
+    v[s] = match def {
+      V2Slot::Column(c) => {
+        if zero {
+          Val::ZERO
+        } else {
+          let body = *c / wide_width;
+          let col = *c % wide_width;
+          let row = rows.get(body).ok_or_else(|| {
+            format!("slot {s} column {c} references missing body {body}")
+          })?;
+          *row.get(col).ok_or_else(|| {
+            format!("slot {s} column {c} out of range for width {wide_width}")
+          })?
+        }
+      },
+      V2Slot::Sum { k, terms } => eval_v2_sum(*k, terms, &v),
+      V2Slot::Key | V2Slot::Invocation => Val::ZERO,
+    };
+  }
+  Ok(v)
+}
+
+fn v2_msg_mult(mk: Val, mc: Val, mult_slot: Option<usize>, v: &[Val]) -> Val {
+  mk + mult_slot.map_or(Val::ZERO, |s| mc * v[s])
+}
+
+fn v2_zero_instance_ok(t: &V2Template, wide_width: usize) -> Result<bool, String> {
+  let v = v2_eval_slots(t, &[], wide_width, true)?;
+  for row in &t.rows {
+    match row {
+      V2Row::Gate { lanes, spans } => {
+        for &(start, len) in spans {
+          let sum = lanes[start..start + len]
+            .iter()
+            .fold(Val::ZERO, |acc, l| acc + v2_lane_value(l, &v));
+          if sum != Val::ZERO {
+            return Ok(false);
+          }
+        }
+        for lane in lanes {
+          if let V2Lane::Msg { mk, mc, cells, .. } = lane
+            && v2_msg_mult(*mk, *mc, cells[0], &v) != Val::ZERO
+          {
+            return Ok(false);
+          }
+        }
+      },
+      V2Row::Message { mk, mc, cells, .. } => {
+        if v2_msg_mult(*mk, *mc, cells[0], &v) != Val::ZERO {
+          return Ok(false);
+        }
+      },
+    }
+  }
+  Ok(true)
+}
+
+fn extract_contiguous_payload(
+  cells: &[Option<usize>],
+  ctx: &str,
+) -> Result<Vec<usize>, String> {
+  let mut out = Vec::with_capacity(cells.len());
+  let mut seen_none = false;
+  for &c in cells {
+    match c {
+      Some(s) => {
+        if seen_none {
+          return Err(format!("{ctx}: non-contiguous payload cells"));
+        }
+        out.push(s);
+      },
+      None => seen_none = true,
+    }
+  }
+  Ok(out)
+}
+
+fn eval_v2_wide_nodes(
+  g: &V2WideGraph,
+  row: &[Val],
+  targets: &[usize],
+) -> Vec<Val> {
+  let last = targets.iter().copied().max().unwrap_or(0);
+  let mut vals: Vec<Val> = Vec::with_capacity(last + 1);
+  for node in &g.nodes[..=last] {
+    let x = match *node {
+      V2WideNode::Const(k) => k,
+      V2WideNode::Var(c) => row[c],
+      V2WideNode::Add(a, b) => vals[a] + vals[b],
+      V2WideNode::Sub(a, b) => vals[a] - vals[b],
+      V2WideNode::Mul(a, b) => vals[a] * vals[b],
+      V2WideNode::Neg(a) => -vals[a],
+    };
+    vals.push(x);
+  }
+  targets.iter().map(|&idx| vals[idx]).collect()
+}
+
+fn v2_unroll_instances(
+  meta: &V2CircuitMeta,
+  callable_id: usize,
+  wide_rows: &[Vec<Val>],
+) -> Result<Vec<Vec<usize>>, String> {
+  let Some(stages) = meta.unroll_stages else {
+    return Ok((0..wide_rows.len()).map(|r| vec![r]).collect());
+  };
+  let g = meta
+    .wide_graph
+    .as_ref()
+    .ok_or_else(|| format!("unrolled circuit {} missing wide graph", meta.chip))?;
+  let var_of = |idx: usize| -> Option<usize> {
+    match g.nodes[idx] {
+      V2WideNode::Var(c) => Some(c),
+      V2WideNode::Sub(z, x)
+        if matches!(g.nodes[z], V2WideNode::Const(k) if k == Val::ZERO) =>
+      {
+        match g.nodes[x] {
+          V2WideNode::Var(c) => Some(c),
+          _ => None,
+        }
+      },
+      V2WideNode::Neg(x) => match g.nodes[x] {
+        V2WideNode::Var(c) => Some(c),
+        _ => None,
+      },
+      _ => None,
+    }
+  };
+  let const_of = |idx: usize| -> Option<u64> {
+    match g.nodes[idx] {
+      V2WideNode::Const(k) => Some(k.as_canonical_u64()),
+      _ => None,
+    }
+  };
+  let cid_u64 = u64::try_from(callable_id)
+    .map_err(|e| format!("callable id overflows u64: {e}"))?;
+  let selfcalls: Vec<usize> = (1..g.lookups.len())
+    .filter(|&j| {
+      g.lookups[j].1.get(1).and_then(|&a| const_of(a)) == Some(cid_u64)
+    })
+    .collect();
+  let [selfcall] = selfcalls[..] else {
+    return Err(format!(
+      "unrolled circuit {}: expected 1 self-call, found {}",
+      meta.chip,
+      selfcalls.len()
+    ));
+  };
+  let sel_col = var_of(g.lookups[selfcall].0)
+    .ok_or_else(|| format!("{}: self-call mult not a column", meta.chip))?;
+  let stage_col = var_of(g.lookups[0].1[2])
+    .ok_or_else(|| format!("{}: stage arg not a column", meta.chip))?;
+  let recv_mult_col = var_of(g.lookups[0].0)
+    .ok_or_else(|| format!("{}: receive mult not a column", meta.chip))?;
+  let act_col = meta
+    .wide_width
+    .checked_sub(2)
+    .ok_or_else(|| format!("{}: wide width < 2", meta.chip))?;
+
+  let recv_nodes = &g.lookups[0].1[2..];
+  let call_nodes = &g.lookups[selfcall].1[2..];
+  let mut by_payload: FxHashMap<Vec<Val>, usize> = FxHashMap::default();
+  for (r, row) in wide_rows.iter().enumerate() {
+    by_payload.insert(eval_v2_wide_nodes(g, row, recv_nodes), r);
+  }
+  let mut chains = Vec::new();
+  for (r0, row) in wide_rows.iter().enumerate() {
+    if row[stage_col] == Val::ZERO && row[act_col] == Val::ONE {
+      let mut chain = Vec::with_capacity(stages);
+      chain.push(r0);
+      for s in 0..stages {
+        let r = *chain.last().expect("non-empty chain");
+        let want_sel = if s + 1 < stages { Val::ONE } else { Val::ZERO };
+        if wide_rows[r][sel_col] != want_sel
+          || wide_rows[r][act_col] != Val::ONE
+          || (s > 0 && wide_rows[r][recv_mult_col] != Val::ONE)
+        {
+          return Err(format!(
+            "{}: unrolled stage {s} row {r} does not match expected body flags",
+            meta.chip
+          ));
+        }
+        if s + 1 < stages {
+          let next_payload = eval_v2_wide_nodes(g, &wide_rows[r], call_nodes);
+          let &next_r = by_payload.get(&next_payload).ok_or_else(|| {
+            format!("{}: unrolled stage {s} self-call has no callee row", meta.chip)
+          })?;
+          chain.push(next_r);
+        }
+      }
+      chains.push(chain);
+    }
+  }
+  Ok(chains)
+}
+
+struct V2ExtractedReceive {
+  chunked: bool,
+  mk: Val,
+  mc: Val,
+  mult_slot: Option<usize>,
+  payload_slots: Vec<usize>,
+}
+
+struct V2ChunkedSend {
+  key_slot: usize,
+  base_sub: usize,
+  mk: Val,
+  mc: Val,
+  mult_slot: Option<usize>,
+  payload_slots: Vec<usize>,
+}
+
+#[derive(Clone, Copy)]
+enum V2EmitKind {
+  Map,
+  Rom,
+}
+
+struct V2EmitSpec {
+  kind: V2EmitKind,
+  ts: u64,
+  mk: Val,
+  mc: Val,
+  mult_slot: Option<usize>,
+  is_lane: bool,
+  cells: Vec<Option<usize>>,
+}
+
+struct V2TemplateInfo {
+  receive: V2ExtractedReceive,
+  chunked_sends: Vec<V2ChunkedSend>,
+  emits: Vec<V2EmitSpec>,
+  call_or_rom_mults: Vec<(Val, Val, Option<usize>)>,
+}
+
+fn extract_v2_template_info(
+  chip: &str,
+  callable_id: usize,
+  n_funcs: usize,
+  t: &V2Template,
+  code_to_bus: &FxHashMap<u64, (u64, u64, bool)>,
+) -> Result<V2TemplateInfo, String> {
+  let mut recv_chunks: Vec<(usize, Val, Val, Option<usize>, Vec<usize>)> =
+    Vec::new();
+  let mut unchunked_recv: Option<V2ExtractedReceive> = None;
+  let mut keyed_sends: FxHashMap<
+    usize,
+    Vec<(usize, usize, Val, Val, Option<usize>, Vec<usize>)>,
+  > = FxHashMap::default();
+  let mut emits: Vec<V2EmitSpec> = Vec::new();
+  let mut call_or_rom_mults: Vec<(Val, Val, Option<usize>)> = Vec::new();
+
+  let neg_one = -Val::ONE;
+
+  for (ri, row) in t.rows.iter().enumerate() {
+    match row {
+      V2Row::Gate { lanes, .. } => {
+        for (li, lane) in lanes.iter().enumerate() {
+          let V2Lane::Msg { ts, mk, mc, cells } = lane else { continue };
+          let &(tag, sub, is_lane) = code_to_bus.get(ts).ok_or_else(|| {
+            format!("{chip} row {ri} lane {li}: unknown bus code {ts}")
+          })?;
+          if !is_lane {
+            return Err(format!(
+              "{chip} row {ri} lane {li}: lane msg uses non-lane bus {ts}"
+            ));
+          }
+          let base_sub = usize::try_from(sub % CHUNK_STRIDE)
+            .map_err(|e| format!("bus sub overflows usize: {e}"))?;
+          if tag == CALL_TAG
+            && sub == u64::try_from(callable_id).unwrap_or(u64::MAX)
+            && *mk == Val::ZERO
+            && *mc == neg_one
+          {
+            let payload_slots =
+              extract_contiguous_payload(&cells[1..], "lane receive")?;
+            if unchunked_recv.is_some() {
+              return Err(format!("{chip}: duplicate unchunked receive"));
+            }
+            unchunked_recv = Some(V2ExtractedReceive {
+              chunked: false,
+              mk: *mk,
+              mc: *mc,
+              mult_slot: cells[0],
+              payload_slots,
+            });
+          } else if tag == CALL_TAG && base_sub < n_funcs {
+            call_or_rom_mults.push((*mk, *mc, cells[0]));
+          } else if tag == CALL_TAG {
+            emits.push(V2EmitSpec {
+              kind: V2EmitKind::Map,
+              ts: *ts,
+              mk: *mk,
+              mc: *mc,
+              mult_slot: cells[0],
+              is_lane: true,
+              cells: cells.to_vec(),
+            });
+          } else if tag == ROM_TAG {
+            call_or_rom_mults.push((*mk, *mc, cells[0]));
+            emits.push(V2EmitSpec {
+              kind: V2EmitKind::Rom,
+              ts: *ts,
+              mk: *mk,
+              mc: *mc,
+              mult_slot: cells[0],
+              is_lane: true,
+              cells: cells.to_vec(),
+            });
+          } else {
+            return Err(format!("{chip}: unsupported bus tag {tag}"));
+          }
+        }
+      },
+      V2Row::Message { ts, mk, mc, receive_key, cells } => {
+        let &(tag, sub, is_lane) = code_to_bus.get(ts).ok_or_else(|| {
+          format!("{chip} row {ri}: unknown bus code {ts}")
+        })?;
+        if is_lane {
+          return Err(format!(
+            "{chip} row {ri}: full-row message uses lane bus {ts}"
+          ));
+        }
+        let base_sub = usize::try_from(sub % CHUNK_STRIDE)
+          .map_err(|e| format!("bus sub overflows usize: {e}"))?;
+        if *receive_key {
+          if tag != CALL_TAG || base_sub != callable_id || sub < CHUNK_STRIDE {
+            return Err(format!(
+              "{chip} row {ri}: malformed chunked receive bus ({tag}, {sub})"
+            ));
+          }
+          if cells[1].is_some() {
+            return Err(format!(
+              "{chip} row {ri}: chunked receive has non-null key cell"
+            ));
+          }
+          let chunk_idx = usize::try_from(sub / CHUNK_STRIDE - 1)
+            .map_err(|e| format!("chunk index overflows usize: {e}"))?;
+          let payload_part =
+            extract_contiguous_payload(&cells[2..], "chunked receive")?;
+          recv_chunks.push((chunk_idx, *mk, *mc, cells[0], payload_part));
+          continue;
+        }
+        // Check if this is an unchunked receive on a row bus.
+        if tag == CALL_TAG
+          && sub == u64::try_from(callable_id).unwrap_or(u64::MAX)
+          && *mk == Val::ZERO
+          && *mc == neg_one
+        {
+          let payload_slots =
+            extract_contiguous_payload(&cells[1..], "row receive")?;
+          if unchunked_recv.is_some() {
+            return Err(format!("{chip}: duplicate unchunked receive"));
+          }
+          unchunked_recv = Some(V2ExtractedReceive {
+            chunked: false,
+            mk: *mk,
+            mc: *mc,
+            mult_slot: cells[0],
+            payload_slots,
+          });
+          continue;
+        }
+        // Check if this is a chunked call/map send (cells[1] is a V2Slot::Key).
+        if let Some(ks) = cells[1]
+          && matches!(t.slots[ks], V2Slot::Key)
+        {
+          if tag != CALL_TAG || sub < CHUNK_STRIDE {
+            return Err(format!(
+              "{chip} row {ri}: key slot {ks} on non-chunked-call bus ({tag}, {sub})"
+            ));
+          }
+          let chunk_idx = usize::try_from(sub / CHUNK_STRIDE - 1)
+            .map_err(|e| format!("chunk index overflows usize: {e}"))?;
+          let part = extract_contiguous_payload(&cells[2..], "chunked send")?;
+          keyed_sends.entry(ks).or_default().push((
+            chunk_idx,
+            base_sub,
+            *mk,
+            *mc,
+            cells[0],
+            part,
+          ));
+        }
+        // Record call/map/rom emit specs.
+        if tag == CALL_TAG && base_sub < n_funcs {
+          call_or_rom_mults.push((*mk, *mc, cells[0]));
+        } else if tag == CALL_TAG {
+          emits.push(V2EmitSpec {
+            kind: V2EmitKind::Map,
+            ts: *ts,
+            mk: *mk,
+            mc: *mc,
+            mult_slot: cells[0],
+            is_lane: false,
+            cells: cells.clone(),
+          });
+        } else if tag == ROM_TAG {
+          call_or_rom_mults.push((*mk, *mc, cells[0]));
+          emits.push(V2EmitSpec {
+            kind: V2EmitKind::Rom,
+            ts: *ts,
+            mk: *mk,
+            mc: *mc,
+            mult_slot: cells[0],
+            is_lane: false,
+            cells: cells.clone(),
+          });
+        } else {
+          return Err(format!("{chip}: unsupported bus tag {tag}"));
+        }
+      },
+    }
+  }
+
+  let receive = if !recv_chunks.is_empty() {
+    if unchunked_recv.is_some() {
+      return Err(format!("{chip}: has both chunked and unchunked receive"));
+    }
+    recv_chunks.sort_by_key(|x| x.0);
+    let (_, mk0, mc0, ms0, _) = recv_chunks[0];
+    let mut payload_slots = Vec::new();
+    for (expected_idx, (c_idx, mk, mc, ms, part)) in
+      recv_chunks.into_iter().enumerate()
+    {
+      if c_idx != expected_idx || mk != mk0 || mc != mc0 || ms != ms0 {
+        return Err(format!("{chip}: inconsistent chunked receive rows"));
+      }
+      payload_slots.extend(part);
+    }
+    V2ExtractedReceive {
+      chunked: true,
+      mk: mk0,
+      mc: mc0,
+      mult_slot: ms0,
+      payload_slots,
+    }
+  } else {
+    unchunked_recv
+      .ok_or_else(|| format!("{chip}: template has no receive message"))?
+  };
+
+  let mut chunked_sends = Vec::with_capacity(keyed_sends.len());
+  for (key_slot, mut parts) in keyed_sends {
+    parts.sort_by_key(|x| x.0);
+    let (_, base_sub0, mk0, mc0, ms0, _) = parts[0];
+    let mut payload_slots = Vec::new();
+    for (expected_idx, (c_idx, base_sub, mk, mc, ms, part)) in
+      parts.into_iter().enumerate()
+    {
+      if c_idx != expected_idx
+        || base_sub != base_sub0
+        || mk != mk0
+        || mc != mc0
+        || ms != ms0
+      {
+        return Err(format!(
+          "{chip}: inconsistent chunked send rows for key slot {key_slot}"
+        ));
+      }
+      payload_slots.extend(part);
+    }
+    chunked_sends.push(V2ChunkedSend {
+      key_slot,
+      base_sub: base_sub0,
+      mk: mk0,
+      mc: mc0,
+      mult_slot: ms0,
+      payload_slots,
+    });
+  }
+  chunked_sends.sort_by_key(|s| s.key_slot);
+
+  Ok(V2TemplateInfo {
+    receive,
+    chunked_sends,
+    emits,
+    call_or_rom_mults,
+  })
+}
+
+fn resolve_entry_callable(layout: &SingleCircuitLayout) -> Result<usize, String> {
+  match &layout.kind {
+    LayoutKind::Wide { request } => {
+      if request.len() < 2
+        || request[0] != Val::from_u64(CALL_TAG)
+        || request[2..].iter().any(|&v| v != Val::ZERO)
+      {
+        return Err(
+          "LAYOUT.json request is not a valid [CALL, id, 0..] template".into(),
+        );
+      }
+      usize::try_from(request[1].as_canonical_u64())
+        .map_err(|e| format!("request callable overflows usize: {e}"))
+    },
+    LayoutKind::TilingV2(v2) => {
+      let first = v2
+        .request
+        .first()
+        .ok_or("tiling-v2 request array is empty")?;
+      if first.is_empty() {
+        return Err("tiling-v2 request row 0 is empty".into());
+      }
+      let code0 = first[0].as_canonical_u64();
+      let &(tag0, sub0, _lane0) = v2.code_to_bus.get(&code0).ok_or_else(|| {
+        format!("tiling-v2 request[0] has unknown bus code {code0}")
+      })?;
+      if tag0 != CALL_TAG {
+        return Err(format!(
+          "tiling-v2 request[0] tag {tag0} is not CALL ({CALL_TAG})"
+        ));
+      }
+      if v2.request.len() == 1 && sub0 < CHUNK_STRIDE {
+        if first[1..].iter().any(|&v| v != Val::ZERO) {
+          return Err("tiling-v2 unchunked request template has nonzero payload".into());
+        }
+        usize::try_from(sub0)
+          .map_err(|e| format!("request callable overflows usize: {e}"))
+      } else {
+        if sub0 < CHUNK_STRIDE {
+          return Err("tiling-v2 multi-row request lacks chunk stride".into());
+        }
+        let base = sub0 - CHUNK_STRIDE;
+        for (c, row) in v2.request.iter().enumerate() {
+          if row.len() != v2.shard_width {
+            return Err(format!(
+              "tiling-v2 chunked request[{c}] len {} != shard width {}",
+              row.len(),
+              v2.shard_width
+            ));
+          }
+          let code_c = row[0].as_canonical_u64();
+          let &(tag_c, sub_c, lane_c) =
+            v2.code_to_bus.get(&code_c).ok_or_else(|| {
+              format!("tiling-v2 request[{c}] unknown bus code {code_c}")
+            })?;
+          let want_sub = base
+            .checked_add(
+              (u64::try_from(c).map_err(|e| format!("chunk idx overflow: {e}"))?
+                + 1)
+                * CHUNK_STRIDE,
+            )
+            .ok_or("request chunk sub overflow")?;
+          if tag_c != CALL_TAG || sub_c != want_sub || lane_c {
+            return Err(format!(
+              "tiling-v2 request[{c}] bus ({tag_c}, {sub_c}, lane={lane_c}) \
+               does not match chunk {c} of callable {base}"
+            ));
+          }
+          if row[1..].iter().any(|&v| v != Val::ZERO) {
+            return Err(format!(
+              "tiling-v2 chunked request[{c}] template has nonzero key/payload"
+            ));
+          }
+        }
+        usize::try_from(base)
+          .map_err(|e| format!("request callable overflows usize: {e}"))
+      }
+    },
+  }
+}
+
+fn encode_v2_claims(
+  v2: &TilingV2Data,
+  wide_claim: &[Val],
+  root_key: Val,
+) -> Result<Vec<Vec<Val>>, String> {
+  if wide_claim.len() < 2 || wide_claim[0] != Val::from_u64(CALL_TAG) {
+    return Err("wide claim does not start with [CALL, callable, ...]".into());
+  }
+  let w = v2.shard_width;
+  let callable = wide_claim[1].as_canonical_u64();
+  let payload = &wide_claim[2..];
+  let rows = if payload.len() < w {
+    let &(code, is_lane) =
+      v2.bus_to_code.get(&(CALL_TAG, callable)).ok_or_else(|| {
+        format!("no v2 bus for entry callable {callable}")
+      })?;
+    let pad_len = if is_lane { 4 } else { w };
+    let mut row = Vec::with_capacity(pad_len);
+    row.push(Val::from_u64(code));
+    row.extend_from_slice(payload);
+    row.resize(pad_len, Val::ZERO);
+    vec![row]
+  } else {
+    let per = w - 2;
+    let mut out = Vec::new();
+    for (c, chunk) in payload.chunks(per).enumerate() {
+      let sub = callable
+        + (u64::try_from(c).map_err(|e| format!("chunk idx overflow: {e}"))?
+          + 1)
+          * CHUNK_STRIDE;
+      let &(code, is_lane) =
+        v2.bus_to_code.get(&(CALL_TAG, sub)).ok_or_else(|| {
+          format!("no v2 bus for entry callable {callable} chunk {c}")
+        })?;
+      if is_lane {
+        return Err(format!(
+          "chunked entry callable {callable} chunk {c} mapped to lane bus"
+        ));
+      }
+      let mut row = Vec::with_capacity(w);
+      row.push(Val::from_u64(code));
+      row.push(root_key);
+      row.extend_from_slice(chunk);
+      row.resize(w, Val::ZERO);
+      out.push(row);
+    }
+    out
+  };
+  if rows.len() != v2.request.len() {
+    return Err(format!(
+      "encoded narrow claim count ({}) disagrees with LAYOUT.json request ({})",
+      rows.len(),
+      v2.request.len()
+    ));
+  }
+  let is_chunked = payload.len() >= w;
+  for (c, (got, tmpl)) in rows.iter().zip(&v2.request).enumerate() {
+    if got.len() != tmpl.len() || got[0] != tmpl[0] {
+      return Err(format!(
+        "encoded narrow claim[{c}] header/len disagrees with LAYOUT.json request"
+      ));
+    }
+    if is_chunked && got[1] != tmpl[1] {
+      return Err(format!(
+        "encoded narrow claim[{c}] root key {} disagrees with LAYOUT.json request key {}",
+        got[1].as_canonical_u64(),
+        tmpl[1].as_canonical_u64()
+      ));
+    }
+  }
+  Ok(rows)
+}
+
+/// Horizontally pack all `ix-tiling-v2-layout-1` constituent main traces
+/// (periodic narrow shards + compact map/ROM tables) into one `rows x main_width`
+/// matrix matching `SingleCircuit.packMain`.
+fn pack_tiling_v2_main_matrix(
+  layout: &SingleCircuitLayout,
+  v2: &TilingV2Data,
+  fixed: &RowMajorMatrix<Val>,
+  plan: &TracePlan<'_, aiur::field::NativeField<Val>>,
+  record: &aiur::Execution<aiur::field::NativeField<Val>>,
+  trace: &aiur::trace::Trace<Val>,
+  wide_claim: &[Val],
+) -> Result<(RowMajorMatrix<Val>, Vec<Vec<Val>>, Val), String> {
+  let packed_rows = layout.rows;
+  let main_w = layout.main_width;
+  let fixed_w = layout.fixed_width;
+  let w = v2.shard_width;
+  let num_circuits = v2.circuits.len();
+  let prog = plan.program().program();
+  let n_funcs = prog.functions.len();
+
+  let mut chip_index: FxHashMap<&str, usize> = FxHashMap::default();
+  for (i, m) in trace.matrices.iter().enumerate() {
+    chip_index.insert(m.chip.as_str(), i);
+  }
+
+  let mut circuit_callables = Vec::with_capacity(num_circuits);
+  let mut callable_to_circuit: FxHashMap<usize, usize> = FxHashMap::default();
+  let mut packed_chips: FxHashSet<usize> = FxHashSet::default();
+  let mut wide_rows_by_circuit: Vec<Vec<Vec<Val>>> =
+    Vec::with_capacity(num_circuits);
+
+  for (k, meta) in v2.circuits.iter().enumerate() {
+    let &mi = chip_index.get(meta.chip.as_str()).ok_or_else(|| {
+      format!("tiling-v2 circuit {k}: unknown chip {:?} in package", meta.chip)
+    })?;
+    let matrix = &trace.matrices[mi];
+    if matrix.width + 1 != meta.wide_width {
+      return Err(format!(
+        "chip {}: wide trace width + 1 ({}) != exported wide width ({})",
+        meta.chip,
+        matrix.width + 1,
+        meta.wide_width
+      ));
+    }
+    let cid = plan.callable_id(&meta.chip).ok_or_else(|| {
+      format!("chip {} has no callable id in package", meta.chip)
+    })?;
+    circuit_callables.push(cid);
+    callable_to_circuit.insert(cid, k);
+    packed_chips.insert(mi);
+
+    let mut rows_vec = Vec::with_capacity(matrix.unpadded_height);
+    for r in 0..matrix.unpadded_height {
+      let mult = matrix.multiplicities[r];
+      if mult >= Val::ORDER_U64 {
+        return Err(format!(
+          "chip {} row {r}: multiplicity reaches field characteristic",
+          meta.chip
+        ));
+      }
+      let mut row = Vec::with_capacity(meta.wide_width);
+      row.extend_from_slice(matrix.row(r));
+      row.push(Val::from_u64(mult));
+      rows_vec.push(row);
+    }
+    wide_rows_by_circuit.push(rows_vec);
+  }
+
+  for (i, m) in trace.matrices.iter().enumerate() {
+    if m.unpadded_height > 0 && !packed_chips.contains(&i) {
+      return Err(format!(
+        "active chip {} ({} rows) is missing from tiling-v2 layout circuits",
+        m.chip, m.unpadded_height
+      ));
+    }
+  }
+
+  let mut instances: Vec<Vec<Vec<usize>>> = Vec::with_capacity(num_circuits);
+  let mut infos: Vec<V2TemplateInfo> = Vec::with_capacity(num_circuits);
+  let mut copy_padding: Vec<bool> = Vec::with_capacity(num_circuits);
+  let mut id_bases: Vec<u64> = Vec::with_capacity(num_circuits);
+  let mut row_bases: Vec<usize> = Vec::with_capacity(num_circuits);
+  let mut cur_id = 0u64;
+  let mut cur_row = 0usize;
+
+  for k in 0..num_circuits {
+    let inst =
+      v2_unroll_instances(&v2.circuits[k], circuit_callables[k], &wide_rows_by_circuit[k])?;
+    let total_cap = v2.caps[k]
+      .checked_mul(v2.shards)
+      .ok_or("tiling-v2 capacity overflow")?;
+    if inst.len() > total_cap {
+      return Err(format!(
+        "chip {}: execution needs {} instance(s), exceeding layout capacity {} ({} per shard x {} shards)",
+        v2.circuits[k].chip,
+        inst.len(),
+        total_cap,
+        v2.caps[k],
+        v2.shards
+      ));
+    }
+    instances.push(inst);
+    infos.push(extract_v2_template_info(
+      &v2.circuits[k].chip,
+      circuit_callables[k],
+      n_funcs,
+      &v2.templates[k],
+      &v2.code_to_bus,
+    )?);
+    copy_padding
+      .push(!v2_zero_instance_ok(&v2.templates[k], v2.circuits[k].wide_width)?);
+    id_bases.push(cur_id);
+    row_bases.push(cur_row);
+    cur_id = cur_id
+      .checked_add(
+        u64::try_from(v2.caps[k]).map_err(|e| format!("cap overflows u64: {e}"))?,
+      )
+      .ok_or("id_base overflow")?;
+    cur_row = cur_row
+      .checked_add(
+        v2.caps[k]
+          .checked_mul(v2.templates[k].rows.len())
+          .ok_or("row_base overflow")?,
+      )
+      .ok_or("row_base overflow")?;
+  }
+
+  let global_id = |k: usize, n: usize| -> Result<Val, String> {
+    let per = v2.caps[k];
+    let shard = u64::try_from(n / per).map_err(|e| format!("shard overflow: {e}"))?;
+    let local = u64::try_from(n % per).map_err(|e| format!("local idx overflow: {e}"))?;
+    let id = shard
+      .checked_mul(v2.ids_per_shard)
+      .and_then(|x| x.checked_add(id_bases[k]))
+      .and_then(|x| x.checked_add(local))
+      .filter(|&x| x < Val::ORDER_U64)
+      .ok_or("global invocation id overflow")?;
+    Ok(Val::from_u64(id))
+  };
+
+  let row_refs_of = |k: usize, idxs: &[usize]| -> Vec<&[Val]> {
+    idxs.iter().map(|&r| wide_rows_by_circuit[k][r].as_slice()).collect()
+  };
+
+  // Swap root entry instance to index 0 so its invocation id is 0 (matching Part.request).
+  let entry_callable = usize::try_from(wide_claim[1].as_canonical_u64())
+    .map_err(|e| format!("entry callable overflow: {e}"))?;
+  let &entry_k = callable_to_circuit.get(&entry_callable).ok_or_else(|| {
+    format!("entry callable {entry_callable} not found in layout circuits")
+  })?;
+  let entry_recv = &infos[entry_k].receive;
+  let mut root_pos = None;
+  for (n, row_idxs) in instances[entry_k].iter().enumerate() {
+    let refs = row_refs_of(entry_k, row_idxs);
+    let vals =
+      v2_eval_slots(&v2.templates[entry_k], &refs, v2.circuits[entry_k].wide_width, false)?;
+    if v2_msg_mult(entry_recv.mk, entry_recv.mc, entry_recv.mult_slot, &vals)
+      != Val::ZERO
+      && entry_recv.payload_slots.len() == wide_claim.len() - 2
+      && entry_recv
+        .payload_slots
+        .iter()
+        .map(|&s| vals[s])
+        .eq(wide_claim[2..].iter().copied())
+    {
+      root_pos = Some(n);
+      break;
+    }
+  }
+  let root_pos =
+    root_pos.ok_or("no instance of the entry chip receives the public claim")?;
+  instances[entry_k].swap(0, root_pos);
+  let root_key = global_id(entry_k, 0)?;
+  let narrow_claims = encode_v2_claims(v2, wide_claim, root_key)?;
+
+  // Build receive payload -> global invocation id map for every chunked callee.
+  let mut call_keys: FxHashMap<usize, FxHashMap<Vec<Val>, Val>> =
+    FxHashMap::default();
+  for k in 0..num_circuits {
+    let recv = &infos[k].receive;
+    if !recv.chunked {
+      continue;
+    }
+    let mut map: FxHashMap<Vec<Val>, Val> = FxHashMap::default();
+    for (n, row_idxs) in instances[k].iter().enumerate() {
+      let refs = row_refs_of(k, row_idxs);
+      let vals =
+        v2_eval_slots(&v2.templates[k], &refs, v2.circuits[k].wide_width, false)?;
+      if v2_msg_mult(recv.mk, recv.mc, recv.mult_slot, &vals) != Val::ZERO {
+        let payload: Vec<Val> =
+          recv.payload_slots.iter().map(|&s| vals[s]).collect();
+        map.insert(payload, global_id(k, n)?);
+      }
+    }
+    call_keys.insert(k, map);
+  }
+
+  // If any template has a chunked map send, reconstruct (map_callable, payload) -> key from FIXED.bin.
+  let has_chunked_map_send = infos
+    .iter()
+    .any(|info| info.chunked_sends.iter().any(|s| s.base_sub >= n_funcs));
+  let mut chunked_map_keys: FxHashMap<(usize, Vec<Val>), Val> =
+    FxHashMap::default();
+  if has_chunked_map_send {
+    for c in &layout.constituents {
+      if !matches!(c.kind, ConstituentKind::CompactMap) {
+        continue;
+      }
+      let mut grouped: FxHashMap<(usize, u64), Vec<(usize, Vec<Val>)>> =
+        FxHashMap::default();
+      for r in 0..c.rows {
+        let base = r * fixed_w + c.fixed_offset;
+        let code = fixed.values[base + 2].as_canonical_u64();
+        let &(tag, sub, _lane) = v2.code_to_bus.get(&code).ok_or_else(|| {
+          format!("compact map row {r} unknown bus code {code}")
+        })?;
+        if tag == CALL_TAG && sub >= CHUNK_STRIDE {
+          let base_sub = usize::try_from(sub % CHUNK_STRIDE)
+            .map_err(|e| format!("map sub overflow: {e}"))?;
+          let chunk_idx = usize::try_from(sub / CHUNK_STRIDE - 1)
+            .map_err(|e| format!("map chunk idx overflow: {e}"))?;
+          let key_u64 = fixed.values[base + 3].as_canonical_u64();
+          let chunk_vals = fixed.values[base + 4..base + 3 + (w - 1)].to_vec();
+          grouped
+            .entry((base_sub, key_u64))
+            .or_default()
+            .push((chunk_idx, chunk_vals));
+        }
+      }
+      for ((base_sub, key_u64), mut parts) in grouped {
+        parts.sort_by_key(|x| x.0);
+        let mi = base_sub
+          .checked_sub(n_funcs)
+          .ok_or("chunked map base_sub precedes maps")?;
+        let map_def = prog
+          .maps
+          .get(mi)
+          .ok_or_else(|| format!("chunked map index {mi} out of range"))?;
+        let in_len = prog.tables[map_def.input]
+          .rows
+          .first()
+          .map_or(0, Vec::len);
+        let out_len = prog.tables[map_def.output]
+          .rows
+          .first()
+          .map_or(0, Vec::len);
+        let plen = in_len + out_len;
+        let mut payload = Vec::with_capacity(plen);
+        for (_, chunk) in parts {
+          payload.extend(chunk);
+        }
+        payload.truncate(plen);
+        chunked_map_keys.insert((base_sub, payload), Val::from_u64(key_u64));
+      }
+    }
+  }
+
+  let total_cells = packed_rows
+    .checked_mul(main_w)
+    .ok_or("packed main trace size overflow")?;
+  let mut packed = Val::zero_vec(total_cells);
+
+  let mut map_tuple_demand: FxHashMap<Vec<Val>, Val> = FxHashMap::default();
+  let mut rom_row_demand: FxHashMap<(u64, u64), Val> = FxHashMap::default();
+
+  // Fill every shard constituent and tally narrow map/ROM demands.
+  for c in &layout.constituents {
+    let ConstituentKind::Shard { shard_index } = c.kind else { continue };
+    for k in 0..num_circuits {
+      let t = &v2.templates[k];
+      let tr = t.rows.len();
+      let per = v2.caps[k];
+      let rbase = row_bases[k];
+      let info = &infos[k];
+      let wide_w = v2.circuits[k].wide_width;
+
+      for i in 0..per {
+        let n = shard_index * per + i;
+        let mut v = if n < instances[k].len() {
+          let refs = row_refs_of(k, &instances[k][n]);
+          v2_eval_slots(t, &refs, wide_w, false)?
+        } else if copy_padding[k] {
+          let first_inst = instances[k].first().ok_or_else(|| {
+            format!(
+              "{}: copy padding requires at least one real instance",
+              v2.circuits[k].chip
+            )
+          })?;
+          let refs = row_refs_of(k, first_inst);
+          let mut vals = v2_eval_slots(t, &refs, wide_w, false)?;
+          if let Some(m_slot) = info.receive.mult_slot {
+            vals[m_slot] = Val::ZERO;
+            for (s, def) in t.slots.iter().enumerate() {
+              if let V2Slot::Sum { k: sk, terms } = def {
+                vals[s] = eval_v2_sum(*sk, terms, &vals);
+              }
+            }
+          }
+          if info
+            .call_or_rom_mults
+            .iter()
+            .any(|&(mk, mc, ms)| v2_msg_mult(mk, mc, ms, &vals) != Val::ZERO)
+          {
+            return Err(format!(
+              "{}: copy padding would emit call/ROM sends",
+              v2.circuits[k].chip
+            ));
+          }
+          vals
+        } else {
+          v2_eval_slots(t, &[], wide_w, true)?
+        };
+
+        // Populate key slots for chunked sends.
+        for send in &info.chunked_sends {
+          if v2_msg_mult(send.mk, send.mc, send.mult_slot, &v) == Val::ZERO {
+            v[send.key_slot] = Val::ZERO;
+            continue;
+          }
+          let payload: Vec<Val> =
+            send.payload_slots.iter().map(|&s| v[s]).collect();
+          v[send.key_slot] = if send.base_sub < n_funcs {
+            let &callee_k =
+              callable_to_circuit.get(&send.base_sub).ok_or_else(|| {
+                format!(
+                  "{}: chunked call target callable {} not in layout",
+                  v2.circuits[k].chip, send.base_sub
+                )
+              })?;
+            *call_keys
+              .get(&callee_k)
+              .and_then(|m| m.get(&payload))
+              .ok_or_else(|| {
+                format!(
+                  "{}: chunked call to {} has no matching callee instance",
+                  v2.circuits[k].chip, v2.circuits[callee_k].chip
+                )
+              })?
+          } else {
+            *chunked_map_keys
+              .get(&(send.base_sub, payload))
+              .ok_or_else(|| {
+                format!(
+                  "{}: chunked map call to callable {} missing from compact map table",
+                  v2.circuits[k].chip, send.base_sub
+                )
+              })?
+          };
+        }
+
+        // Write physical template rows into packed shard slice.
+        for (r, row) in t.rows.iter().enumerate() {
+          let dst_row = rbase + i * tr + r;
+          let dst = &mut packed[dst_row * main_w + c.main_offset
+            ..dst_row * main_w + c.main_offset + w];
+          for (j, cell_out) in dst.iter_mut().enumerate() {
+            if let Some(slot) = row.cell(j) {
+              *cell_out = v[slot];
+            }
+          }
+        }
+
+        // Tally emitted map and ROM lookup tuples for compact tables.
+        for emit in &info.emits {
+          let mult = v2_msg_mult(emit.mk, emit.mc, emit.mult_slot, &v);
+          if mult == Val::ZERO {
+            continue;
+          }
+          match emit.kind {
+            V2EmitKind::Map => {
+              let arity = if emit.is_lane { 3 } else { w - 1 };
+              let mut tuple = Vec::with_capacity(1 + arity);
+              tuple.push(Val::from_u64(emit.ts));
+              for j in 0..arity {
+                let val = emit
+                  .cells
+                  .get(1 + j)
+                  .copied()
+                  .flatten()
+                  .map_or(Val::ZERO, |s| v[s]);
+                tuple.push(val);
+              }
+              trim_trailing_zeros(&mut tuple);
+              let acc = map_tuple_demand.entry(tuple).or_insert(Val::ZERO);
+              *acc += mult;
+            },
+            V2EmitKind::Rom => {
+              let addr = emit
+                .cells
+                .get(1)
+                .copied()
+                .flatten()
+                .map_or(Val::ZERO, |s| v[s])
+                .as_canonical_u64();
+              let acc = rom_row_demand.entry((emit.ts, addr)).or_insert(Val::ZERO);
+              *acc += mult;
+            },
+          }
+        }
+      }
+    }
+  }
+
+  // Fill compact map & ROM table constituents from FIXED.bin descriptors.
+  for c in &layout.constituents {
+    match c.kind {
+      ConstituentKind::CompactMap => {
+        for r in 0..c.rows {
+          let f_base = r * fixed_w + c.fixed_offset;
+          let sel_l = fixed.values[f_base];
+          let sel_w = fixed.values[f_base + 1];
+          let code = fixed.values[f_base + 2];
+          let arity = if sel_l == Val::ONE {
+            3
+          } else if sel_w == Val::ONE {
+            w - 1
+          } else {
+            continue;
+          };
+          let mut tuple = Vec::with_capacity(1 + arity);
+          tuple.push(code);
+          tuple.extend_from_slice(&fixed.values[f_base + 3..f_base + 3 + arity]);
+          trim_trailing_zeros(&mut tuple);
+          if let Some(count) = map_tuple_demand.remove(&tuple) {
+            packed[r * main_w + c.main_offset] = count;
+          }
+        }
+      },
+      ConstituentKind::CompactRom => {
+        for r in 0..c.rows {
+          let f_base = r * fixed_w + c.fixed_offset;
+          let sel_l = fixed.values[f_base];
+          let sel_w = fixed.values[f_base + 1];
+          if sel_l == Val::ZERO && sel_w == Val::ZERO {
+            continue;
+          }
+          let code = fixed.values[f_base + 2].as_canonical_u64();
+          let addr_u64 = fixed.values[f_base + 3].as_canonical_u64();
+          let &(tag, sub, _lane) = v2.code_to_bus.get(&code).ok_or_else(|| {
+            format!("compact ROM row {r}: unknown bus code {code}")
+          })?;
+          if tag != ROM_TAG {
+            return Err(format!("compact ROM row {r}: non-ROM tag {tag}"));
+          }
+          let width = usize::try_from(sub % CHUNK_STRIDE)
+            .map_err(|e| format!("ROM width overflow: {e}"))?;
+          let chunk_idx = usize::try_from(sub / CHUNK_STRIDE)
+            .map_err(|e| format!("ROM chunk idx overflow: {e}"))?;
+          let addr = usize::try_from(addr_u64)
+            .map_err(|e| format!("ROM addr overflow: {e}"))?;
+          let count = rom_row_demand
+            .remove(&(code, addr_u64))
+            .unwrap_or(Val::ZERO);
+          let dst = &mut packed
+            [r * main_w + c.main_offset..r * main_w + c.main_offset + c.main_width];
+          dst[0] = count;
+          if let Some(entry) = record.memory.get_by_width(width, addr) {
+            if entry.address != addr || entry.cell.value.len() != width {
+              return Err(format!(
+                "ROM cell ({width}, {addr}) address/width mismatch"
+              ));
+            }
+            if width + 2 <= w {
+              if chunk_idx != 0 {
+                return Err(format!(
+                  "unchunked ROM width {width} has nonzero chunk index {chunk_idx}"
+                ));
+              }
+              dst[1..1 + width].copy_from_slice(entry.cell.value);
+            } else {
+              let per = w - 2;
+              let start = chunk_idx * per;
+              let end = (start + per).min(width);
+              if start >= width {
+                return Err(format!(
+                  "ROM width {width} chunk {chunk_idx} starts past width"
+                ));
+              }
+              dst[1..1 + (end - start)]
+                .copy_from_slice(&entry.cell.value[start..end]);
+            }
+          } else if count != Val::ZERO {
+            return Err(format!(
+              "compact ROM row {r} references unallocated cell ({width}, {addr})"
+            ));
+          }
+        }
+      },
+      _ => {},
+    }
+  }
+
+  let unmatched_maps = map_tuple_demand
+    .iter()
+    .filter(|(_, v)| **v != Val::ZERO)
+    .count();
+  if unmatched_maps > 0 {
+    let sample = map_tuple_demand
+      .iter()
+      .find(|(_, v)| **v != Val::ZERO)
+      .map(|(k, _)| k.iter().map(|x| x.as_canonical_u64()).collect::<Vec<_>>())
+      .unwrap_or_default();
+    return Err(format!(
+      "{unmatched_maps} demanded narrow map tuple(s) missing from compact map table (first: {sample:?})"
+    ));
+  }
+  let unmatched_roms = rom_row_demand
+    .iter()
+    .filter(|(_, v)| **v != Val::ZERO)
+    .count();
+  if unmatched_roms > 0 {
+    let sample = rom_row_demand
+      .iter()
+      .find(|(_, v)| **v != Val::ZERO)
+      .map(|(&k, _)| k);
+    return Err(format!(
+      "{unmatched_roms} demanded narrow ROM row(s) missing from compact ROM table (first: {sample:?})"
+    ));
+  }
+
+  Ok((RowMajorMatrix::new(packed, main_w), narrow_claims, root_key))
 }
 
 fn make_config(
@@ -1038,6 +2954,23 @@ fn find_tamper_main_cell(
       }
     }
   }
+  for c in &layout.constituents {
+    if let ConstituentKind::Shard { shard_index } = c.kind {
+      for r in 0..c.rows {
+        for j in 0..c.main_width {
+          let col = c.main_offset + j;
+          if main.values[r * w + col] != Val::ZERO {
+            return (
+              r,
+              col,
+              main.values[r * w + col] + Val::ONE,
+              format!("shard {shard_index} row {r} col {col} (+1)"),
+            );
+          }
+        }
+      }
+    }
+  }
   (
     0,
     0,
@@ -1054,32 +2987,83 @@ fn find_tamper_fixed_cell(
   let mw = main.width;
   let fw = fixed.width;
   for (idx, c) in layout.constituents.iter().enumerate() {
-    if matches!(c.kind, ConstituentKind::Map { .. }) {
-      for r in 0..c.rows {
-        if main.values[r * mw + c.main_offset] != Val::ZERO {
-          let col = c.fixed_offset + 1;
-          let new_val = fixed.values[r * fw + col] + Val::ONE;
-          return (
-            r,
-            col,
-            new_val,
-            format!("map constituent {idx} row {r} fixed col {col} (+1)"),
-          );
+    match c.kind {
+      ConstituentKind::Map { .. } => {
+        for r in 0..c.rows {
+          if main.values[r * mw + c.main_offset] != Val::ZERO {
+            let col = c.fixed_offset + 1;
+            let new_val = fixed.values[r * fw + col] + Val::ONE;
+            return (
+              r,
+              col,
+              new_val,
+              format!("map constituent {idx} row {r} fixed col {col} (+1)"),
+            );
+          }
         }
-      }
+      },
+      ConstituentKind::CompactMap => {
+        for r in 0..c.rows {
+          if main.values[r * mw + c.main_offset] != Val::ZERO {
+            let col = c.fixed_offset + 3;
+            let new_val = fixed.values[r * fw + col] + Val::ONE;
+            return (
+              r,
+              col,
+              new_val,
+              format!("compact map constituent {idx} row {r} fixed col {col} (+1)"),
+            );
+          }
+        }
+      },
+      _ => {},
     }
   }
   for (idx, c) in layout.constituents.iter().enumerate() {
-    if matches!(c.kind, ConstituentKind::Rom { .. }) {
-      for r in 0..c.rows {
-        if main.values[r * mw + c.main_offset] != Val::ZERO {
-          let col = c.fixed_offset;
-          let new_val = fixed.values[r * fw + col] + Val::ONE;
+    match c.kind {
+      ConstituentKind::Rom { .. } => {
+        for r in 0..c.rows {
+          if main.values[r * mw + c.main_offset] != Val::ZERO {
+            let col = c.fixed_offset;
+            let new_val = fixed.values[r * fw + col] + Val::ONE;
+            return (
+              r,
+              col,
+              new_val,
+              format!("rom constituent {idx} row {r} addr col {col} (+1)"),
+            );
+          }
+        }
+      },
+      ConstituentKind::CompactRom => {
+        for r in 0..c.rows {
+          if main.values[r * mw + c.main_offset] != Val::ZERO {
+            let col = c.fixed_offset + 3;
+            let new_val = fixed.values[r * fw + col] + Val::ONE;
+            return (
+              r,
+              col,
+              new_val,
+              format!("compact rom constituent {idx} row {r} addr col {col} (+1)"),
+            );
+          }
+        }
+      },
+      _ => {},
+    }
+  }
+  for (idx, c) in layout.constituents.iter().enumerate() {
+    if let ConstituentKind::Shard { shard_index } = c.kind
+      && c.rows > 0
+    {
+      for j in 0..c.fixed_width {
+        let col = c.fixed_offset + j;
+        if fixed.values[col] != Val::ZERO {
           return (
-            r,
+            0,
             col,
-            new_val,
-            format!("rom constituent {idx} row {r} addr col {col} (+1)"),
+            fixed.values[col] + Val::ONE,
+            format!("shard {shard_index} constituent {idx} row 0 fixed col {col} (+1)"),
           );
         }
       }
@@ -1170,14 +3154,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   let hints = program.prepare_hint_channels(&embedded_hints, &channels)?;
   let plan = TracePlan::new(&program, trace_artifact)?;
 
-  // Match entry to LAYOUT.json's request callable ID (request = [CALL, id, 0..]).
-  if layout.request.len() < 2
-    || layout.request[0] != Val::from_u64(CALL_TAG)
-    || layout.request[2..].iter().any(|&v| v != Val::ZERO)
-  {
-    return Err("LAYOUT.json request is not a valid [CALL, id, 0..] template".into());
-  }
-  let req_callable = usize::try_from(layout.request[1].as_canonical_u64())?;
+  let req_callable = resolve_entry_callable(&layout)?;
   let entry = program
     .program()
     .entries
@@ -1227,26 +3204,53 @@ fn main() -> Result<(), Box<dyn Error>> {
 
   let pack_start = Instant::now();
   let public_args = plan.public_args(&record, &entry, &address)?;
-  let claim = plan.public_claim(&entry, &public_args, &record.output)?;
-  if claim.len() != layout.request.len() || claim[..2] != layout.request[..2] {
-    return Err(format!(
-      "public claim header/length (len={}, head={:?}) disagrees with \
-       LAYOUT.json request (len={}, head={:?})",
-      claim.len(),
-      claim.iter().take(2).map(|v| v.as_canonical_u64()).collect::<Vec<_>>(),
-      layout.request.len(),
-      layout.request.iter().take(2).map(|v| v.as_canonical_u64()).collect::<Vec<_>>(),
-    )
-    .into());
-  }
+  let wide_claim = plan.public_claim(&entry, &public_args, &record.output)?;
   let trace = plan.generate(&record, &entry, &address, false)?;
-  let packed_main = pack_main_matrix(&layout, &fixed, &plan, &record, &trace)?;
+
+  let (packed_main, proof_claims, root_key_opt, trim_zeros) = match &layout.kind {
+    LayoutKind::Wide { request } => {
+      if wide_claim.len() != request.len() || wide_claim[..2] != request[..2] {
+        return Err(format!(
+          "public claim header/length (len={}, head={:?}) disagrees with \
+           LAYOUT.json request (len={}, head={:?})",
+          wide_claim.len(),
+          wide_claim
+            .iter()
+            .take(2)
+            .map(|v| v.as_canonical_u64())
+            .collect::<Vec<_>>(),
+          request.len(),
+          request
+            .iter()
+            .take(2)
+            .map(|v| v.as_canonical_u64())
+            .collect::<Vec<_>>(),
+        )
+        .into());
+      }
+      let main = pack_main_matrix(&layout, &fixed, &plan, &record, &trace)?;
+      (main, vec![wide_claim.clone()], None, false)
+    },
+    LayoutKind::TilingV2(v2) => {
+      let (main, narrow_claims, root_key) = pack_tiling_v2_main_matrix(
+        &layout,
+        v2,
+        &fixed,
+        &plan,
+        &record,
+        &trace,
+        &wide_claim,
+      )?;
+      (main, narrow_claims, Some(root_key), true)
+    },
+  };
+  let claim_refs: Vec<&[Val]> = proof_claims.iter().map(Vec::as_slice).collect();
   let output_words: Vec<u64> =
     record.output.iter().map(|v| v.as_canonical_u64()).collect();
   let arg_words: Vec<u64> =
     address.iter().map(|v| v.as_canonical_u64()).collect();
   let claim_words: Vec<u64> =
-    claim.iter().map(|v| v.as_canonical_u64()).collect();
+    wide_claim.iter().map(|v| v.as_canonical_u64()).collect();
   let pack_ms = pack_start.elapsed().as_secs_f64() * 1000.0;
 
   // Step 3b: Verify every constraint and exact LogUp balance on certified graph.
@@ -1256,15 +3260,21 @@ fn main() -> Result<(), Box<dyn Error>> {
       &circuit.graph,
       &packed_main,
       circuit.preprocessed.as_ref(),
-      &claim,
+      &claim_refs,
+      trim_zeros,
     )?;
   }
   let check_ms = check_start.elapsed().as_secs_f64() * 1000.0;
 
+  let layout_format = match &layout.kind {
+    LayoutKind::Wide { .. } => WIDE_LAYOUT_FORMAT,
+    LayoutKind::TilingV2(_) => TILING_V2_LAYOUT_FORMAT,
+  };
+
   // Step 3c: Prove and verify 1-circuit STARK.
   eprintln!(
-    "Proving certified 1-circuit STARK: rows={} main_w={} fixed_w={} s2_w={} \
-     q_deg={} lg={} constraints={} lookups={} fri(mla={}, lfp={})...",
+    "Proving certified 1-circuit STARK ({layout_format}): rows={} main_w={} fixed_w={} s2_w={} \
+     q_deg={} lg={} constraints={} lookups={} claims={} fri(b={}, q={}, mla={}, lfp={})...",
     layout.rows,
     layout.main_width,
     layout.fixed_width,
@@ -1273,11 +3283,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     circuit.lookup_group_size,
     layout.num_constraints,
     layout.num_lookups,
+    claim_refs.len(),
+    commitment.log_blowup,
+    fri.num_queries,
     fri.max_log_arity,
     fri.log_final_poly_len,
   );
   let prove_start = Instant::now();
-  let proof = system.prove_streaming(&key, &claim, vec![packed_main.clone()]);
+  let proof = system.prove_multiple_claims_streaming(
+    &key,
+    &claim_refs,
+    vec![packed_main.clone()],
+  );
   let prove_ms = prove_start.elapsed().as_secs_f64() * 1000.0;
 
   let proof_bytes = proof.to_bytes()?;
@@ -1293,16 +3310,16 @@ fn main() -> Result<(), Box<dyn Error>> {
 
   let verify_start = Instant::now();
   system
-    .verify(&claim, &decoded)
+    .verify_multiple_claims(&claim_refs, &decoded)
     .map_err(|e| format!("1-circuit STARK verification failed: {e:?}"))?;
   let verify_ms = verify_start.elapsed().as_secs_f64() * 1000.0;
   let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
   let rss_kb = peak_rss_kb();
 
   eprintln!(
-    "single_circuit_prove: num_circuits=1 rows={} main_width={} fixed_width={} \
-     stage2_width={} quotient_degree={} lookup_group={} constraints={} lookups={} \
-     fri_mla={} fri_lfp={} proof_bytes={} prove_ms={:.2} verify_ms={:.2}",
+    "single_circuit_prove: format={layout_format} num_circuits=1 rows={} main_width={} fixed_width={} \
+     stage2_width={} quotient_degree={} lookup_group={} constraints={} lookups={} claims={} \
+     log_blowup={} num_queries={} fri_mla={} fri_lfp={} proof_bytes={} prove_ms={:.2} verify_ms={:.2}",
     layout.rows,
     layout.main_width,
     layout.fixed_width,
@@ -1311,6 +3328,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     circuit.lookup_group_size,
     layout.num_constraints,
     layout.num_lookups,
+    claim_refs.len(),
+    commitment.log_blowup,
+    fri.num_queries,
     fri.max_log_arity,
     fri.log_final_poly_len,
     proof_bytes.len(),
@@ -1322,25 +3342,38 @@ fn main() -> Result<(), Box<dyn Error>> {
   let controls_report = if cli.controls {
     eprintln!("Running negative controls (forged output, tampered main, tampered fixed)...");
 
-    // Control 1: Forged output claim (flip LSB of last claim word).
-    let mut forged_claim = claim.clone();
-    let last_idx = forged_claim.len() - 1;
-    forged_claim[last_idx] =
-      Val::from_u64(forged_claim[last_idx].as_canonical_u64() ^ 1);
-    let forged_verify_err = match system.verify(&forged_claim, &decoded) {
-      Ok(()) => {
-        return Err("CONTROL FAILED: verifier accepted honest proof under forged output claim".into());
+    // Control 1: Forged output claim (flip LSB of last wide output word and re-encode).
+    let mut forged_wide = wide_claim.clone();
+    let last_idx = forged_wide.len() - 1;
+    forged_wide[last_idx] =
+      Val::from_u64(forged_wide[last_idx].as_canonical_u64() ^ 1);
+    let forged_claims: Vec<Vec<Val>> = match &layout.kind {
+      LayoutKind::Wide { .. } => vec![forged_wide],
+      LayoutKind::TilingV2(v2) => {
+        encode_v2_claims(v2, &forged_wide, root_key_opt.unwrap_or(Val::ZERO))?
       },
-      Err(e) => format!("{e:?}"),
     };
-    let forged_proof =
-      system.prove_streaming(&key, &forged_claim, vec![packed_main.clone()]);
-    let forged_reprove_err = match system.verify(&forged_claim, &forged_proof) {
-      Ok(()) => {
-        return Err("CONTROL FAILED: verifier accepted forged proof for wrong output claim".into());
-      },
-      Err(e) => format!("{e:?}"),
-    };
+    let forged_refs: Vec<&[Val]> =
+      forged_claims.iter().map(Vec::as_slice).collect();
+    let forged_verify_err =
+      match system.verify_multiple_claims(&forged_refs, &decoded) {
+        Ok(()) => {
+          return Err("CONTROL FAILED: verifier accepted honest proof under forged output claim".into());
+        },
+        Err(e) => format!("{e:?}"),
+      };
+    let forged_proof = system.prove_multiple_claims_streaming(
+      &key,
+      &forged_refs,
+      vec![packed_main.clone()],
+    );
+    let forged_reprove_err =
+      match system.verify_multiple_claims(&forged_refs, &forged_proof) {
+        Ok(()) => {
+          return Err("CONTROL FAILED: verifier accepted forged proof for wrong output claim".into());
+        },
+        Err(e) => format!("{e:?}"),
+      };
 
     // Control 2: Tampered main trace cell.
     let mut tampered_main = packed_main.clone();
@@ -1351,20 +3384,25 @@ fn main() -> Result<(), Box<dyn Error>> {
       &circuit.graph,
       &tampered_main,
       circuit.preprocessed.as_ref(),
-      &claim,
+      &claim_refs,
+      trim_zeros,
     )
     .is_err();
-    let tampered_main_proof =
-      system.prove_streaming(&key, &claim, vec![tampered_main]);
-    let tampered_main_err = match system.verify(&claim, &tampered_main_proof) {
-      Ok(()) => {
-        return Err(format!(
-          "CONTROL FAILED: verifier accepted tampered main trace ({tm_desc})"
-        )
-        .into());
-      },
-      Err(e) => format!("{e:?}"),
-    };
+    let tampered_main_proof = system.prove_multiple_claims_streaming(
+      &key,
+      &claim_refs,
+      vec![tampered_main],
+    );
+    let tampered_main_err =
+      match system.verify_multiple_claims(&claim_refs, &tampered_main_proof) {
+        Ok(()) => {
+          return Err(format!(
+            "CONTROL FAILED: verifier accepted tampered main trace ({tm_desc})"
+          )
+          .into());
+        },
+        Err(e) => format!("{e:?}"),
+      };
 
     // Control 3: Tampered fixed matrix cell.
     let (
@@ -1387,21 +3425,24 @@ fn main() -> Result<(), Box<dyn Error>> {
       let (_, _, tampered_cfg) = make_config(&cli);
       let (tampered_system, tampered_key) =
         System::new(tampered_cfg, vec![tampered_input]);
-      let tampered_fixed_proof = tampered_system.prove_streaming(
-        &tampered_key,
-        &claim,
-        vec![packed_main],
-      );
-      let honest_vk_err = match system.verify(&claim, &tampered_fixed_proof) {
-        Ok(()) => {
-          return Err(format!(
-            "CONTROL FAILED: honest verifier accepted proof with tampered fixed matrix ({tf_desc})"
-          )
-          .into());
-        },
-        Err(e) => format!("{e:?}"),
-      };
-      let self_err = match tampered_system.verify(&claim, &tampered_fixed_proof)
+      let tampered_fixed_proof = tampered_system
+        .prove_multiple_claims_streaming(
+          &tampered_key,
+          &claim_refs,
+          vec![packed_main],
+        );
+      let honest_vk_err =
+        match system.verify_multiple_claims(&claim_refs, &tampered_fixed_proof) {
+          Ok(()) => {
+            return Err(format!(
+              "CONTROL FAILED: honest verifier accepted proof with tampered fixed matrix ({tf_desc})"
+            )
+            .into());
+          },
+          Err(e) => format!("{e:?}"),
+        };
+      let self_err = match tampered_system
+        .verify_multiple_claims(&claim_refs, &tampered_fixed_proof)
       {
         Ok(()) => {
           return Err(format!(
@@ -1448,12 +3489,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     std::fs::write(path, &proof_bytes)?;
   }
 
-  let report = json!({
+  let mut report = json!({
+    "layout_format": layout_format,
     "artifact_blake3": digest.to_string(),
     "entry": entry,
     "args": arg_words,
     "output": output_words,
     "claim": claim_words,
+    "num_claims": proof_claims.len(),
     "bound": layout.bound,
     "num_circuits": 1,
     "rows": layout.rows,
@@ -1488,6 +3531,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     "verified": true,
     "controls": controls_report,
   });
+  if let LayoutKind::TilingV2(v2) = &layout.kind
+    && let Some(obj) = report.as_object_mut()
+  {
+    let narrow_words: Vec<Vec<u64>> = proof_claims
+      .iter()
+      .map(|c| c.iter().map(|v| v.as_canonical_u64()).collect())
+      .collect();
+    obj.insert("shard_width".to_owned(), json!(v2.shard_width));
+    obj.insert("shards".to_owned(), json!(v2.shards));
+    obj.insert("places".to_owned(), json!(v2.places));
+    obj.insert("narrow_claims".to_owned(), json!(narrow_words));
+  }
 
   if let Some(path) = &cli.report_out {
     serde_json::to_writer_pretty(
