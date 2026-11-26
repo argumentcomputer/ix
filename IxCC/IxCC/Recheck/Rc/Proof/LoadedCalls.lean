@@ -30,6 +30,7 @@ theorem loaded_call_sim {cfg : Config} {P : Src.Program} {cert : Cert} {f : Fron
     (readable : Rt.Proof.LirRegion model.mem model.ctx model.size)
     (root fn : Nat) {sourceFunction : Fir.Fun}
     (sourceLookup : f.fir.fun? fn = some sourceFunction)
+    (exported : fn ∈ f.fir.exports)
     (numbers : List Nat) (arity : numbers.length = sourceFunction.params.length) :
     Sim (ViewedFirRel f root) (Cfg.Rc.Inline.inlineEntryClock f.lowered.program)
       (fun clock => Fir.run f.fir clock fn (Fir.litArgs numbers))
@@ -44,15 +45,18 @@ theorem loaded_call_sim {cfg : Config} {P : Src.Program} {cert : Cert} {f : Fron
   | some words =>
     have checked := (runFront_spec accepted).2.2.2.2.2.2
     have native := (runFront_native accepted).2
+    have exported' : fn ∈ f.cfg.base.exports := by
+      rw [Cfg.Rc.generate_exports (runFront_spec accepted).2.2.2.2.2.1]; exact exported
     obtain ⟨pairs, functions, left, initialized, base, limit, admission, init, post, heap, _⟩ :=
-      numeric_entry checked native sourceLookup encoded arity region readable
+      numeric_entry checked native sourceLookup encoded arity exported' region readable
     obtain ⟨den, balance, represented, compatible⟩ :=
       numeric_inputs (P := f.cfg) pairs encoded
     have simulation := public_entry_eval_sim admission native sourceLookup den
       (numeric_selectOwned_balance _ numbers balance)
       (fun v hv => numeric_selectBorrowed_reachable {} _ _ numbers v hv)
       (fun v hv => numeric_selectUnique_uniq f.fir.ctors {} _ _ _ _ numbers v hv)
-      represented compatible (by simpa only [Own.litArgs, List.length_map] using arity)
+      represented (entry_of_export admission.rawOk exported') compatible
+      (by simpa only [Own.litArgs, List.length_map] using arity)
       (heap.numeric_selectOwned _ numbers)
     have observed := simulation.map_right fun output =>
       entry.observe model.fuel output.1 output.2

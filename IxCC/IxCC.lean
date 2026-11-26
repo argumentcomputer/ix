@@ -183,6 +183,8 @@ import IxCC.Anf.Proof.Convert.Correct
 import IxCC.Anf.Proof.Rel.Basic
 import IxCC.Anf.Proof.Rel.Fund
 import IxCC.Anf.Proof.Rel.Ident
+import IxCC.Anf.Proof.Defun.ValModel
+import IxCC.Anf.Proof.Convert.ValModel
 import IxCC.Anf.Proof.Walk.Beq
 import IxCC.Anf.Proof.Walk.Monad
 import IxCC.Anf.Proof.Walk.Rel
@@ -242,9 +244,11 @@ import IxCC.Own.Plain.Check
 import IxCC.Own.Plain.Semantics
 import IxCC.Fir.Proof.Unfold
 import IxCC.Sem.Forall2
+import IxCC.Sem.ValModel
 import IxCC.Fir.Proof.Mono
 import IxCC.Fir.Proof.Rel
 import IxCC.Fir.Proof.Lowering
+import IxCC.Fir.Proof.ArrFree
 import IxCC.Fir.Proof.Env
 import IxCC.Fir.Proof.Corr
 import IxCC.Fir.Proof.Sim
@@ -530,6 +534,7 @@ import IxCC.Fir.Proof.Rep
 import IxCC.Rt.Proof.LowerRep
 import IxCC.X86.ELFRodata
 import IxCC.Src.ArraySpec
+import IxCC.Src.ArrayOp
 import IxCC.Src.Table.Array
 import IxCC.Rt.Rc.Array.Layout
 import IxCC.Rt.Rc.Array.Invariant
@@ -540,6 +545,24 @@ import IxCC.Rt.Rc.Array.Proof.BasicOps
 import IxCC.Rt.Rc.Array.Proof.MutOps
 import IxCC.Rt.Rc.Array.Proof.Release
 import IxCC.Rt.Rc.Array.Proof.Alloc
+import IxCC.Rt.Rc.Array.Kind
+import IxCC.Rt.Rc.Array.Cell
+import IxCC.Rt.Rc.Array.Proof.DecArr
+import IxCC.Rt.Rc.Array.Proof.Call
+import IxCC.Rt.Rc.Array.Proof.Allocator
+import IxCC.Rt.Rc.Array.Proof.DecArrCell
+import IxCC.Rt.Rc.Array.Ops
+import IxCC.Rt.Rc.Array.Proof.OpsAlloc
+import IxCC.Rt.Rc.Array.Proof.OpsCopy
+import IxCC.Rt.Rc.Array.Proof.OpsInPlace
+import IxCC.Rt.Rc.Array.Proof.OpsFresh
+import IxCC.Rt.Rc.Array.Proof.OpsShared
+import IxCC.Rt.Rc.Array.Proof.OpsGrow
+import IxCC.Rt.Rc.Array.Proof.OpsCopying
+import IxCC.Rt.Rc.Array.Proof.OpsExtract
+import IxCC.Rt.Rc.Array.Proof.OpsIncs
+import IxCC.Rt.Rc.Array.Proof.OpsBoxed
+import IxCC.Rt.Rc.Array.Proof.OpsRefuse
 import IxCC.Rt.Readback.Array
 import IxCC.Cfg.Rc.Layout
 import IxCC.Cfg.Rc.Inline
@@ -547,6 +570,11 @@ import IxCC.Cfg.Rc.Prune
 import IxCC.BigNat.Entry
 import IxCC.BigNat.Bootstrap
 import IxCC.BigNat.Proof.Entry
+import IxCC.Nat.Rep
+import IxCC.BigNat.NatEntry
+import IxCC.BigNat.Proof.NatEntry
+import IxCC.BigNat.Proof.NatPrim
+import IxCC.BigNat.Proof.Legacy
 import IxCC.Rt.BigNat.Cell
 import IxCC.Rt.BigNat.Dispatch
 import IxCC.Rt.BigNat.ProofProcs
@@ -581,6 +609,8 @@ import IxCC.Lir.Proof.Opt.Backend
 import IxCC.Rt.BigNat.Link
 import IxCC.Rt.BigNat.LowerBig
 import IxCC.Rt.BigNat.LowerBigProof
+import IxCC.Cfg.Rc.Raw
+import IxCC.Cfg.Rc.Proof.Native.RawFacts
 
 /-! Production API: Ixon v3 ingress, the shared semantic vocabulary, the Src
 front end (ingress, the checked unfolding table, SrcEval, relevance), global and

@@ -1,6 +1,7 @@
 import IxCC.Anf.Proof.Defun.Translate
 import IxCC.Anf.Proof.Defun.Dispatch
 import IxCC.Anf.Proof.Rel.Basic
+import IxCC.Anf.Proof.Defun.ValModel
 
 /-! # P8's fundamental lemma
 
@@ -69,7 +70,13 @@ theorem natArgs_dv : ∀ {vs ws : List Val}, Pw (DV X) vs ws → natArgs ws = na
 
 theorem prim_dv {n : Nat} (K : Lam.Known) (p : Lam.Prim) {vs ws : List Val} (h : Pw (DV X) vs ws) :
     SimUpTo (DV X) n (fun _ => primResult K p vs) (fun _ => primResult K p ws) := by
+  cases hp : p.isArr
+  case true =>
+    obtain ⟨op, rfl⟩ := Lam.Prim.isArr_eq_true hp
+    simp only [primResult_arr]
+    exact Src.ArrOp.sim dv_modelRel op h.toForall2
   unfold primResult
+  simp only [arrResult_of_not_arr hp]
   rw [natArgs_dv h]
   cases natArgs vs with
   | none => exact SimUpTo.stuck _

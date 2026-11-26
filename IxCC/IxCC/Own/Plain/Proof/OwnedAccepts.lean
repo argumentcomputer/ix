@@ -48,10 +48,11 @@ theorem checkCode_inc_of {Δ : JCtx} {Γ Γ' : Ctx} {x : Var} {k : Code}
 theorem checkCode_bind_of {Δ : JCtx} {Γ Γ' : Ctx} {x : Var} {r : Fir.Rhs} {k : Code}
     {ctors : List Lam.CtorInfo} {known : Lam.Known}
     (hk : Γ.known x = false) (hb : bindCtx Γ x r .leaf .leaf ctors = .ok Γ')
-    (hc : checkCode Δ Γ' k .leaf .leaf false ctors known = .ok ()) :
+    (hc : checkCode Δ Γ' k .leaf .leaf false ctors known = .ok ())
+    (hr : r.isArrPrim = false := by rfl) :
     checkCode Δ Γ (.bind x r k) .leaf .leaf false ctors known = .ok () := by
   simp only [checkCode, hk, Bool.false_eq_true, ↓reduceIte]
-  rw [bindStep_eq_bindCtx, hb]
+  rw [bindStep_eq_bindCtx _ _ _ _ _ _ hr, hb]
   exact hc
 
 theorem checkCode_jp_of {Δ : JCtx} {Γ : Ctx} {j : Fir.JoinId} {ps captured : List Var}
@@ -537,11 +538,14 @@ theorem lowerCode_checks (functions : Signatures) {ctors : List Lam.CtorInfo} {k
       have hknown := shape_unknown h.shape hx' hxi
       have hneed : Γ.needArgs args = .ok () :=
         needArgs_ok (fun z hz => h.avail (all_argIn_var hall z hz))
+      have hna : op.isArr = false := by
+        simp only [rhsIn, Bool.and_eq_true, Bool.not_eq_true'] at hr
+        exact hr.1.2
       have hb : bindCtx Γ x (.prim op args) .leaf .leaf ctors =
           .ok ((Ctx.immArgs Γ (List.replicate args.length true) args).setImmUniq x) := by
         simp only [bindCtx, hneed, primImmArgs_eq] <;> rfl
       simp only [lowerCode]
-      refine checkCode_bind_of hknown hb ?_
+      refine checkCode_bind_of hknown hb ?_ hna
       have hs₂' : Shape (Ctx.immArgs Γ (List.replicate args.length true) args)
           (fun y => decide (y ∈ argVars args) || Γ.isImm y)
           (fun z => if z ∈ live ∧ (decide (z ∈ argVars args) || Γ.isImm z) = false then 1 else 0)

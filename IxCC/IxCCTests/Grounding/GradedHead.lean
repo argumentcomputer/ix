@@ -49,10 +49,10 @@ Step Ap (`IxCCGrounding.SelRetype`), in the same pass over the 51: `selEnv` rety
 to true), nothing on the other 45; on each of the six, three planted controls are refused by
 `eqnShape` on `selEnv` (the selector's value made `λ α s. α → α`, its first λ's datum made a
 proposition, the selected argument made `Nat`); the family over six fields read on `selEnv`
-(`groundCheck`, `noCanonAB`, `litDefsB`, `instCheckB`, `headRegimeSB`) holds on 44: the 37 the check
+(`groundCheck`, `noCanonAB`, `litDefsB`, `instCheckB`, `headRegimeSB`) holds on 45: the 37 the check
 accepted when step Ap landed, the six (`resource` since step E0, which admits its `Empty.casesOn`
 entry, of kind `empty`: `IxCCTests.Grounding.CaseEmpty`) and `arity` (since step C's closure-capture
-case: `IxCCTests.Grounding.LetClo`).
+case: `IxCCTests.Grounding.LetClo`), and `sparse` (since W-c admits `List.rec`, `Option.rec`).
 
 The word subject `grounding/words` (fixed-width word arithmetic only, stage W1: 30 word entries) is
 refused by that family by `noWord` alone: on `selEnv` every other conjunct of `groundCheck` and
@@ -61,7 +61,7 @@ constructors, which no run term names) added to its closure.
 
 The word family (step W: `groundCheckW`, `noWord` replaced by the decided word conjunct, and the other
 decided hypotheses of `rootSound_678AGpW_of_check`, on `selEnv` of the closure with the word
-entries' runtime references) holds on 45: exactly the 44 of the family over six fields and
+entries' runtime references) holds on 46: exactly the 45 of the family over six fields and
 `grounding/words` (`IxCCTests.Grounding.Words`: its roots, `src-words`, the planted controls).
 
 The witness shape (`IxCCTests.Grounding.LetWit`), in the same pass over the 51: the conjunct
@@ -127,8 +127,9 @@ plants' refusals are not attributable to them, so not counted as passes (GA: unt
 plants on `diag`, refused unplanted for its projection heads, were counted among the 75). -/
 def deltaUnattributedExpected : List String := ["diag"]
 
-/-- The closures with a bound-variable head of a `∀` context type (one plant each). -/
-def bvExpected : Nat := 32
+/-- The closures with a bound-variable head of a `∀` context type (one plant each); 33 since the
+VS0 fixture (`phase1-boundary/vs0`, vs0-raw-words) joined the committed closures. -/
+def bvExpected : Nat := 33
 
 /-- Of those, the closures whose unplanted reading is false (per spine or per site), where the
 plant's refusal is not attributable to it, so not counted as a pass of the control (GR21: the
@@ -167,6 +168,10 @@ def gB (i : Input) : Bool := headRegimeGB i.src i.env i.κ i.lpsOf i.ann i.Sl
 
 /-- The word subject (fixed-width word arithmetic, stage W1; `fixtures/corpus/grounding/words`). -/
 def wordsLabel : String := "grounding/words"
+
+/-- The VS0 fixture (vs0-raw-words), a `UInt64` program: in the word family, not in the family over
+six fields. -/
+def vs0Label : String := "phase1-boundary/vs0"
 
 /-- `Sl` with each word entry's runtime references (`Program.runtimeRefs`: the tower's
 constructors, which no run term names) added. -/
@@ -275,7 +280,8 @@ def run : IO Bool := do
         catch _ => pure false
       expect a (!r) s!"graded1b: {label} loads; it was refused before the check"
     let js := js0.filter (!notLoaded.contains ·.1)
-    expect a (js.length == 49) s!"graded1b: {js.length} closures found, expected 49"
+    -- 50 since the VS0 fixture (`phase1-boundary/vs0`, vs0-raw-words) joined the committed closures
+    expect a (js.length == 50) s!"graded1b: {js.length} closures found, expected 50"
     let mut nAcc := 0
     let mut sFalse : List String := []
     let mut gap := 0
@@ -571,20 +577,23 @@ def run : IO Bool := do
       {famAGp.filter (!accepted.contains ·)} beyond the {accepted.length} the check accepts"
     expect a (nAp == forLoops.length && nApPlants == 3 * forLoops.length)
       s!"Ap: {nAp} for-loop closures retyped, {nApPlants} plants"
-    expect a (famAGp.length == 42 && accepted.all famAGp.contains &&
-        famAGp.filter (!accepted.contains ·) == forLoops ++ ["phase2-arity/arity"])
+    expect a (famAGp.length == 43 && accepted.all famAGp.contains &&
+        famAGp.filter (!accepted.contains ·) ==
+          forLoops ++ ["phase2-closures/sparse", "phase2-arity/arity"])
       s!"Ap: the family over six fields on selEnv holds on {famAGp}"
     expect a (nWords == 1 && !famAGp.contains wordsLabel) s!"words: {wordsLabel} seen {nWords} times"
-    expect a (famW.length == famAGp.length + 1 && famAGp.all famW.contains &&
-        famW.filter (!famAGp.contains ·) == [wordsLabel])
-      s!"words: the word family holds on {famW}, expected the family over six fields' and {wordsLabel}"
+    -- the VS0 fixture (`phase1-boundary/vs0`, vs0-raw-words), a `UInt64` program, is in the word family
+    -- and, like `grounding/words`, not in the family over six fields
+    expect a (famW.length == famAGp.length + 2 && famAGp.all famW.contains &&
+        famW.filter (!famAGp.contains ·) == [wordsLabel, vs0Label])
+      s!"words: the word family holds on {famW}, expected the family over six fields', {wordsLabel} and {vs0Label}"
     IO.println s!"words: {wordsLabel} (30 word entries) is refused by the family over six fields on \
       selEnv by noWord alone, every other conjunct and part true, also with the tower's constructors \
       (the word entries' runtime references, 6 constants) added to its closure"
     IO.println s!"words: the word family (step W: groundCheckW and the other decided hypotheses of \
       rootSound_678AGpW_of_check, on selEnv with the word entries' runtime references) holds on \
-      {famW.length}: the {famAGp.length} of the family over six fields and {wordsLabel}"
-    expect a (nWit == 49) s!"letWit: {nWit} closures checked, expected 49"
+      {famW.length}: the {famAGp.length} of the family over six fields, {wordsLabel} and {vs0Label}"
+    expect a (nWit == 50) s!"letWit: {nWit} closures checked, expected 50"
     IO.println s!"letWit: on all {nWit}: the conjunct letWit true, nothing accepted with step C \
       refused, the witness case alone accepting {wcAll}"
     IO.println s!"tests-grounding (graded1b): {← a.get} assertions passed"

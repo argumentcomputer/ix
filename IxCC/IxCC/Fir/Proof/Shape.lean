@@ -15,9 +15,14 @@ Design note: `plans/ONE-PIPELINE.md`, section 2.3.
 * `checkSound`, `codeSound`: the statements of `IxCC.Fir.Shape`, from the rules (`Checked`).
 * `check_checked`: the Boolean checker implies the rules; `check_sound`, `check_codeSound`:
   the two together, the form a back end reads.
+* `arrOk_sound`, `arrOkSound_fir`: the array rules `ArrOk` are sound in a model whose arrays the
+  reader reads back, in particular at Fir's (`arrEnc`); `rhsSound` reads them through `RhsOk.arr`,
+  and the checker decides them (`arrOk`: `arrShape_ok`, `arrOk_rhsOk`).
 
-Every theorem holds for every array reader (`ArrEnc`): no primitive makes an array at this
-commit. The marked place for the array rules is in `IxCC.Fir.Shape`.
+`rhsSound`, `evalSound`, `codeSound`, `checkSound` and the `check_*` forms are stated at Fir's
+array reader `arrEnc`, the one Fir's values use (the array rules read arrays as Fir holds them);
+`leSound`, `primOkSound`, `callSound`, `arrOk_sound` and the lemmas that read no right-hand side
+hold at every reader.
 -/
 
 set_option autoImplicit false
@@ -270,13 +275,14 @@ theorem argsSound {cert : ShapeCert} {enc : ArrEnc} {fs : FunShapes} {ρ : Env}
 
 /-! ## Primitives -/
 
-/-- A successful primitive read literals and returned what `Lam.Prim.sem` says: a literal, or
-a Boolean. -/
+/-- A successful scalar primitive (`op.isArr = false`) read literals and returned what
+`Lam.Prim.sem` says: a literal, or a Boolean. -/
 theorem primResult_ok_inv {P : Program} {op : Lam.Prim} {vs : List Val} {v : Val}
-    (h : primResult P op vs = .ok v) :
+    (hp : op.isArr = false) (h : primResult P op vs = .ok v) :
     ∃ ns, natArgs vs = some ns ∧
       ((∃ n, op.sem ns = some (.nat n) ∧ v = .lit (.nat n)) ∨ ∃ b, op.sem ns = some (.bool b)) := by
   simp only [primResult] at h
+  rw [arrResult_of_not_arr hp] at h
   cases hns : natArgs vs with
   | none => simp [hns] at h
   | some ns =>
@@ -462,8 +468,9 @@ theorem valsOk_both {cert : ShapeCert} {enc : ArrEnc} {σ τ : Shape} {a b : Nat
 
 /-- A primitive that returned on a literal on the left returned on two literals. -/
 theorem prim_right_lit {P : Program} {op : Lam.Prim} {n1 : Nat} {v2 v : Val}
-    (h : primResult P op [.lit (.nat n1), v2] = .ok v) : ∃ n2, v2 = .lit (.nat n2) := by
-  obtain ⟨ns, hns, _⟩ := primResult_ok_inv h
+    (hp : op.isArr = false) (h : primResult P op [.lit (.nat n1), v2] = .ok v) :
+    ∃ n2, v2 = .lit (.nat n2) := by
+  obtain ⟨ns, hns, _⟩ := primResult_ok_inv hp h
   cases v2 with
   | lit l =>
     cases l with
@@ -481,7 +488,7 @@ theorem primOkSound (cert : ShapeCert) (enc : ArrEnc) : PrimOkSound cert enc := 
   intro P op σs τ vs v hok hvs hres
   cases hok with
   | word =>
-    obtain ⟨ns, _, hsem | hsem⟩ := primResult_ok_inv hres
+    obtain ⟨ns, _, hsem | hsem⟩ := primResult_ok_inv rfl hres
     · obtain ⟨n, hsem, rfl⟩ := hsem
       rw [sem_word] at hsem
       obtain ⟨m, hm, hlt⟩ := wordSem_lt ns _ hsem
@@ -492,7 +499,11 @@ theorem primOkSound (cert : ShapeCert) (enc : ArrEnc) : PrimOkSound cert enc := 
       obtain ⟨m, hm, _⟩ := wordSem_lt ns _ hsem
       cases hm
   | natAny _ =>
-    obtain ⟨ns, _, hsem | hsem⟩ := primResult_ok_inv hres
+    cases hpa : op.isArr
+    case true =>
+      obtain ⟨aop, rfl⟩ := Lam.Prim.isArr_eq_true hpa
+      exact .any v
+    obtain ⟨ns, _, hsem | hsem⟩ := primResult_ok_inv hpa hres
     · obtain ⟨n, _, rfl⟩ := hsem
       exact natPrimResult_lit cert enc _ n
     · obtain ⟨b, hsem⟩ := hsem
@@ -510,13 +521,13 @@ theorem primOkSound (cert : ShapeCert) (enc : ArrEnc) : PrimOkSound cert enc := 
     exact .natLt (mul_lt_mul_of_lt hn1 hn2)
   | sub hσ =>
     obtain ⟨n1, v2, rfl, hn1, _⟩ := valsOk_left hσ hvs
-    obtain ⟨n2, rfl⟩ := prim_right_lit hres
+    obtain ⟨n2, rfl⟩ := prim_right_lit rfl hres
     have hv := prim2_inv hres (r := n1 - n2) rfl
     subst hv
     exact .natLt (Nat.lt_of_le_of_lt (Nat.sub_le _ _) hn1)
   | div hσ =>
     obtain ⟨n1, v2, rfl, hn1, _⟩ := valsOk_left hσ hvs
-    obtain ⟨n2, rfl⟩ := prim_right_lit hres
+    obtain ⟨n2, rfl⟩ := prim_right_lit rfl hres
     have hv := prim2_inv hres (r := if n2 == 0 then 0 else n1 / n2) rfl
     subst hv
     refine .natLt (Nat.lt_of_le_of_lt ?_ hn1)
@@ -525,7 +536,7 @@ theorem primOkSound (cert : ShapeCert) (enc : ArrEnc) : PrimOkSound cert enc := 
     · exact Nat.div_le_self _ _
   | mod hσ =>
     obtain ⟨n1, v2, rfl, hn1, _⟩ := valsOk_left hσ hvs
-    obtain ⟨n2, rfl⟩ := prim_right_lit hres
+    obtain ⟨n2, rfl⟩ := prim_right_lit rfl hres
     have hv := prim2_inv hres (r := if n2 == 0 then n1 else n1 % n2) rfl
     subst hv
     refine .natLt (Nat.lt_of_le_of_lt ?_ hn1)
@@ -534,7 +545,7 @@ theorem primOkSound (cert : ShapeCert) (enc : ArrEnc) : PrimOkSound cert enc := 
     · exact Nat.mod_le _ _
   | modBound _ hσ _ =>
     obtain ⟨n1, v2, rfl, hn1, _⟩ := valsOk_left hσ hvs
-    obtain ⟨n2, rfl⟩ := prim_right_lit hres
+    obtain ⟨n2, rfl⟩ := prim_right_lit rfl hres
     have hv := prim2_inv hres (r := if n2 == 0 then n1 else n1 % n2) rfl
     subst hv
     refine .natLt (Nat.lt_of_le_of_lt ?_ hn1)
@@ -543,13 +554,13 @@ theorem primOkSound (cert : ShapeCert) (enc : ArrEnc) : PrimOkSound cert enc := 
     · exact Nat.mod_le _ _
   | land hσ =>
     obtain ⟨n1, v2, rfl, hn1, _⟩ := valsOk_left hσ hvs
-    obtain ⟨n2, rfl⟩ := prim_right_lit hres
+    obtain ⟨n2, rfl⟩ := prim_right_lit rfl hres
     have hv := prim2_inv hres (r := n1 &&& n2) rfl
     subst hv
     exact .natLt (Nat.lt_of_le_of_lt Nat.and_le_left hn1)
   | shr hσ =>
     obtain ⟨n1, v2, rfl, hn1, _⟩ := valsOk_left hσ hvs
-    obtain ⟨n2, rfl⟩ := prim_right_lit hres
+    obtain ⟨n2, rfl⟩ := prim_right_lit rfl hres
     have hv := prim2_inv hres (r := if n1.log2 < n2 then 0 else n1 / 2 ^ n2) rfl
     subst hv
     refine .natLt (Nat.lt_of_le_of_lt ?_ hn1)
@@ -564,6 +575,241 @@ theorem primOkSound (cert : ShapeCert) (enc : ArrEnc) : PrimOkSound cert enc := 
       have hv := prim1_inv hres (r := n1 - 1) rfl
       subst hv
       exact .natLt (Nat.lt_of_le_of_lt (Nat.sub_le _ _) hn1)
+
+/-! ## Array primitives
+
+The typed rules `ArrOk` are sound in any value model whose numbers are literals and whose arrays
+the reader reads back (`arrOk_sound`), so at Fir's model and reader (`arrOkSound_fir`). Elements
+are opaque to every operation: a result's elements are among its operands' (`mem_extractList`,
+`mem_copySliceList`). -/
+
+theorem valsOk_cons_inv {cert : ShapeCert} {enc : ArrEnc} {σ : Shape} {σs : List Shape}
+    {vs : List Val} (h : ValsOk cert enc (σ :: σs) vs) :
+    ∃ v vs', vs = v :: vs' ∧ ValOk cert enc σ v ∧ ValsOk cert enc σs vs' := by
+  cases h with
+  | cons h1 h2 => exact ⟨_, _, rfl, h1, h2⟩
+
+theorem valsOk_nil_inv {cert : ShapeCert} {enc : ArrEnc} {vs : List Val}
+    (h : ValsOk cert enc [] vs) : vs = [] := by
+  cases h
+  rfl
+
+theorem valOk_arr_inv {cert : ShapeCert} {enc : ArrEnc} {e : Shape} {len : Option Nat} {v : Val}
+    (h : ValOk cert enc (.arr e len) v) :
+    ∃ xs, enc.asArr v = some xs ∧ (∀ x, x ∈ xs → ValOk cert enc e x) ∧
+      (∀ n, len = some n → xs.length = n) := by
+  cases h with
+  | arr ha he hl => exact ⟨_, ha, he, hl⟩
+
+theorem mem_extractList {α : Type} {xs : List α} {start stop : Nat} {x : α}
+    (h : x ∈ Src.ArraySpec.extractList xs start stop) : x ∈ xs := by
+  unfold Src.ArraySpec.extractList at h
+  exact List.mem_of_mem_drop (List.mem_of_mem_take h)
+
+theorem mem_copySliceList {α : Type} {xs ys : List α} {srcOff destOff len : Nat} {x : α}
+    (h : x ∈ Src.ArraySpec.copySliceList xs srcOff ys destOff len) : x ∈ xs ∨ x ∈ ys := by
+  simp only [Src.ArraySpec.copySliceList, List.mem_append] at h
+  rcases h with (h | h) | h
+  · exact .inr (mem_extractList h)
+  · exact .inl (mem_extractList h)
+  · exact .inr (mem_extractList h)
+
+/-- An operation other than `size`, `get` and `toList` that returns, returns an array. -/
+theorem eval_ok_arr {M : Sem.ValModel Val} {op : Src.ArrOp} {vs : List Val} {v : Val}
+    (h1 : op ≠ .size) (h2 : op ≠ .get) (h3 : op ≠ .toList) (h : op.eval M vs = .ok v) :
+    ∃ ys, v = M.arr ys := by
+  cases op <;> first | exact absurd rfl h1 | exact absurd rfl h2 | exact absurd rfl h3 | skip
+  all_goals
+    unfold Src.ArrOp.eval at h
+    repeat' split at h
+    all_goals first | contradiction | exact ⟨_, (Result.ok.inj h).symm⟩
+
+/-- **The array rules are sound** in a value model whose numbers are literals and whose arrays
+`enc` reads back. (`ArrOkSound` asks a `Lawful` model; `List` values are not read here.) -/
+theorem arrOk_sound (cert : ShapeCert) (enc : ArrEnc) (M : Sem.ValModel Val)
+    (harr : ∀ xs, M.asArr (M.arr xs) = some xs) (henc : M.asArr = enc.asArr)
+    (hnat : M.nat = fun n => .lit (.nat n)) :
+    ∀ (op : Src.ArrOp) (σs : List Shape) (τ : Shape) (vs : List Val) (v : Val),
+      ArrOk op σs τ → ValsOk cert enc σs vs → op.eval M vs = .ok v → ValOk cert enc τ v := by
+  have mk : ∀ {e : Shape} {len : Option Nat} (ys : List Val),
+      (∀ y, y ∈ ys → ValOk cert enc e y) → (∀ n, len = some n → ys.length = n) →
+      ValOk cert enc (.arr e len) (M.arr ys) :=
+    fun ys he hl => .arr (by rw [← henc]; exact harr ys) he hl
+  intro op σs τ vs v hok hvs hev
+  cases hok with
+  | empty =>
+    obtain ⟨c, vs, rfl, -, hvs⟩ := valsOk_cons_inv hvs
+    obtain rfl := valsOk_nil_inv hvs
+    cases hc : M.asNat c with
+    | none => simp [Src.ArrOp.eval, hc] at hev
+    | some _ =>
+      simp only [Src.ArrOp.eval, hc, Result.ok.injEq] at hev
+      subst hev
+      exact mk [] (fun _ h => by simp at h) (fun _ h => by cases h; rfl)
+  | replicate hle =>
+    obtain ⟨c, vs, rfl, -, hvs⟩ := valsOk_cons_inv hvs
+    obtain ⟨x, vs, rfl, hx, hvs⟩ := valsOk_cons_inv hvs
+    obtain rfl := valsOk_nil_inv hvs
+    cases hc : M.asNat c with
+    | none => simp [Src.ArrOp.eval, hc] at hev
+    | some _ =>
+      simp only [Src.ArrOp.eval, hc, Result.ok.injEq] at hev
+      subst hev
+      refine mk _ (fun y hy => ?_) (fun _ h => by cases h)
+      rw [List.eq_of_mem_replicate hy]
+      exact leSound enc cert _ _ _ hle hx
+  | sizeKnown =>
+    obtain ⟨a, vs, rfl, ha, hvs⟩ := valsOk_cons_inv hvs
+    obtain rfl := valsOk_nil_inv hvs
+    obtain ⟨xs, hxs, -, hl⟩ := valOk_arr_inv ha
+    simp only [Src.ArrOp.eval, henc, hxs, hnat, Result.ok.injEq] at hev
+    subst hev
+    have := hl _ rfl
+    exact .natLt (by omega)
+  | size =>
+    obtain ⟨a, vs, rfl, -, hvs⟩ := valsOk_cons_inv hvs
+    obtain rfl := valsOk_nil_inv hvs
+    cases ha : M.asArr a with
+    | none => simp [Src.ArrOp.eval, ha] at hev
+    | some _ =>
+      simp only [Src.ArrOp.eval, ha, hnat, Result.ok.injEq] at hev
+      subst hev
+      exact .nat _
+  | get =>
+    obtain ⟨a, vs, rfl, ha, hvs⟩ := valsOk_cons_inv hvs
+    obtain ⟨i, vs, rfl, -, hvs⟩ := valsOk_cons_inv hvs
+    obtain rfl := valsOk_nil_inv hvs
+    obtain ⟨xs, hxs, he, -⟩ := valOk_arr_inv ha
+    cases hi : M.asNat i with
+    | none => simp [Src.ArrOp.eval, henc, hxs, hi] at hev
+    | some j =>
+      cases hj : xs[j]? with
+      | none => simp [Src.ArrOp.eval, henc, hxs, hi, hj] at hev
+      | some x =>
+        simp only [Src.ArrOp.eval, henc, hxs, hi, hj, Result.ok.injEq] at hev
+        subst hev
+        exact he x (List.mem_of_getElem? hj)
+  | set hle =>
+    obtain ⟨a, vs, rfl, ha, hvs⟩ := valsOk_cons_inv hvs
+    obtain ⟨i, vs, rfl, -, hvs⟩ := valsOk_cons_inv hvs
+    obtain ⟨x, vs, rfl, hx, hvs⟩ := valsOk_cons_inv hvs
+    obtain rfl := valsOk_nil_inv hvs
+    obtain ⟨xs, hxs, he, hl⟩ := valOk_arr_inv ha
+    cases hi : M.asNat i with
+    | none => simp [Src.ArrOp.eval, henc, hxs, hi] at hev
+    | some j =>
+      simp only [Src.ArrOp.eval, henc, hxs, hi] at hev
+      split at hev
+      · simp only [Result.ok.injEq] at hev
+        subst hev
+        refine mk _ (fun y hy => ?_) (fun n h => by rw [List.length_set]; exact hl n h)
+        rcases List.mem_or_eq_of_mem_set hy with hy | rfl
+        · exact he y hy
+        · exact leSound enc cert _ _ _ hle hx
+      · cases hev
+  | push hle =>
+    obtain ⟨a, vs, rfl, ha, hvs⟩ := valsOk_cons_inv hvs
+    obtain ⟨x, vs, rfl, hx, hvs⟩ := valsOk_cons_inv hvs
+    obtain rfl := valsOk_nil_inv hvs
+    obtain ⟨xs, hxs, he, hl⟩ := valOk_arr_inv ha
+    simp only [Src.ArrOp.eval, henc, hxs, Result.ok.injEq] at hev
+    subst hev
+    refine mk _ (fun y hy => ?_) (fun m h => ?_)
+    · rcases List.mem_append.1 hy with hy | hy
+      · exact he y hy
+      · rw [List.mem_singleton.1 hy]
+        exact leSound enc cert _ _ _ hle hx
+    · obtain ⟨k, hk, rfl⟩ := Option.map_eq_some_iff.1 h
+      simp [hl k hk]
+  | pop =>
+    obtain ⟨a, vs, rfl, ha, hvs⟩ := valsOk_cons_inv hvs
+    obtain rfl := valsOk_nil_inv hvs
+    obtain ⟨xs, hxs, he, hl⟩ := valOk_arr_inv ha
+    simp only [Src.ArrOp.eval, henc, hxs, Result.ok.injEq] at hev
+    subst hev
+    refine mk _ (fun y hy => he y ?_) (fun m h => ?_)
+    · rw [List.dropLast_eq_take] at hy
+      exact List.mem_of_mem_take hy
+    · obtain ⟨k, hk, rfl⟩ := Option.map_eq_some_iff.1 h
+      simp [List.length_dropLast, hl k hk]
+  | append =>
+    obtain ⟨a, vs, rfl, ha, hvs⟩ := valsOk_cons_inv hvs
+    obtain ⟨b, vs, rfl, hb, hvs⟩ := valsOk_cons_inv hvs
+    obtain rfl := valsOk_nil_inv hvs
+    obtain ⟨xs, hxs, he, -⟩ := valOk_arr_inv ha
+    obtain ⟨ys, hys, he', -⟩ := valOk_arr_inv hb
+    simp only [Src.ArrOp.eval, henc, hxs, hys, Result.ok.injEq] at hev
+    subst hev
+    refine mk _ (fun y hy => ?_) (fun _ h => by cases h)
+    rcases List.mem_append.1 hy with hy | hy
+    · exact he y hy
+    · exact he' y hy
+  | extract =>
+    obtain ⟨a, vs, rfl, ha, hvs⟩ := valsOk_cons_inv hvs
+    obtain ⟨s, vs, rfl, -, hvs⟩ := valsOk_cons_inv hvs
+    obtain ⟨t, vs, rfl, -, hvs⟩ := valsOk_cons_inv hvs
+    obtain rfl := valsOk_nil_inv hvs
+    obtain ⟨xs, hxs, he, -⟩ := valOk_arr_inv ha
+    cases hs : M.asNat s with
+    | none => simp [Src.ArrOp.eval, henc, hxs, hs] at hev
+    | some _ =>
+      cases ht : M.asNat t with
+      | none => simp [Src.ArrOp.eval, henc, hxs, hs, ht] at hev
+      | some _ =>
+        simp only [Src.ArrOp.eval, henc, hxs, hs, ht, Result.ok.injEq] at hev
+        subst hev
+        exact mk _ (fun y hy => he y (mem_extractList hy)) (fun _ h => by cases h)
+  | copySlice =>
+    obtain ⟨a, vs, rfl, ha, hvs⟩ := valsOk_cons_inv hvs
+    obtain ⟨o1, vs, rfl, -, hvs⟩ := valsOk_cons_inv hvs
+    obtain ⟨b, vs, rfl, hb, hvs⟩ := valsOk_cons_inv hvs
+    obtain ⟨o2, vs, rfl, -, hvs⟩ := valsOk_cons_inv hvs
+    obtain ⟨ln, vs, rfl, -, hvs⟩ := valsOk_cons_inv hvs
+    obtain rfl := valsOk_nil_inv hvs
+    obtain ⟨xs, hxs, he, -⟩ := valOk_arr_inv ha
+    obtain ⟨ys, hys, he', -⟩ := valOk_arr_inv hb
+    cases h1 : M.asNat o1 with
+    | none => simp [Src.ArrOp.eval, henc, hxs, hys, h1] at hev
+    | some _ =>
+      cases h2 : M.asNat o2 with
+      | none => simp [Src.ArrOp.eval, henc, hxs, hys, h1, h2] at hev
+      | some _ =>
+        cases h3 : M.asNat ln with
+        | none => simp [Src.ArrOp.eval, henc, hxs, hys, h1, h2, h3] at hev
+        | some _ =>
+          simp only [Src.ArrOp.eval, henc, hxs, hys, h1, h2, h3, Result.ok.injEq] at hev
+          subst hev
+          refine mk _ (fun y hy => ?_) (fun _ h => by cases h)
+          rcases mem_copySliceList hy with hy | hy
+          · exact he y hy
+          · exact he' y hy
+  | arrAny h1 h2 h3 =>
+    obtain ⟨ys, rfl⟩ := eval_ok_arr h1 h2 h3 hev
+    exact mk ys (fun y _ => .any y) (fun _ h => by cases h)
+  | any => exact .any v
+
+/-- `ArrOkSound` as the statement module states it (a `Lawful` model). -/
+theorem arrOkSound (cert : ShapeCert) (enc : ArrEnc) (M : Sem.ValModel Val) :
+    ArrOkSound cert enc M :=
+  fun hM henc hnat => arrOk_sound cert enc M hM.asArr_arr henc hnat
+
+theorem model_asArr_arr (xs : List Val) : Fir.model.asArr (Fir.model.arr xs) = some xs := by
+  simp [Fir.model, Val.asArr, arrInfo]
+
+/-- **The array rules are sound at Fir's model and reader.** -/
+theorem arrOkSound_fir (cert : ShapeCert) :
+    ∀ (op : Src.ArrOp) (σs : List Shape) (τ : Shape) (vs : List Val) (v : Val),
+      ArrOk op σs τ → ValsOk cert arrEnc σs vs → op.eval Fir.model vs = .ok v →
+      ValOk cert arrEnc τ v :=
+  arrOk_sound cert arrEnc Fir.model model_asArr_arr rfl rfl
+
+/-- An array primitive that returns, returns a value of its rule's shape at Fir's reader: the
+fact the `arr` case of `rhsSound` will read. -/
+theorem primResult_arrOk (P : Program) (cert : ShapeCert) {op : Src.ArrOp} {σs : List Shape}
+    {τ : Shape} {vs : List Val} {v : Val} (hok : ArrOk op σs τ) (hvs : ValsOk cert arrEnc σs vs)
+    (h : primResult P (.arr op) vs = .ok v) : ValOk cert arrEnc τ v := by
+  rw [primResult_arr] at h
+  exact arrOkSound_fir cert op σs τ vs v hok hvs h
 
 /-! ## Right-hand sides -/
 
@@ -682,9 +928,9 @@ theorem boolVal_ok_inv {P : Program} {b : Bool} {v : Val}
 
 /-- **A checked right-hand side yields a value of its shape** (a call is not a right-hand side
 of `evalRhs`: it is stuck there, and `evalSound` treats it). -/
-theorem rhsSound {P : Program} {cert : ShapeCert} {enc : ArrEnc} {fs : FunShapes} {ρ : Env}
-    (hwf : cert.WF) (hρ : EnvOk cert enc fs ρ) {r : Rhs} {σ : Shape} (h : RhsOk P cert fs r σ)
-    {v : Val} (hv : evalRhs P ρ r = .ok v) : ValOk cert enc σ v := by
+theorem rhsSound {P : Program} {cert : ShapeCert} {fs : FunShapes} {ρ : Env}
+    (hwf : cert.WF) (hρ : EnvOk cert arrEnc fs ρ) {r : Rhs} {σ : Shape}
+    (h : RhsOk P cert fs r σ) {v : Val} (hv : evalRhs P ρ r = .ok v) : ValOk cert arrEnc σ v := by
   induction h generalizing v with
   | arg ha => exact argSound hρ ha (ofOption_ok hv)
   | ctorData hD hmem hargs =>
@@ -737,7 +983,7 @@ theorem rhsSound {P : Program} {cert : ShapeCert} {enc : ArrEnc} {fs : FunShapes
         exact .natLt (Nat.lt_of_succ_lt hn)
   | projNat _ hle =>
     obtain ⟨vx, c', fields, hget, hctor, _, hfi⟩ := evalRhs_proj_ok hv
-    obtain ⟨n, rfl⟩ := valOk_nat_inv (leSound enc cert _ _ _ hle (hρ _ _ hget))
+    obtain ⟨n, rfl⟩ := valOk_nat_inv (leSound arrEnc cert _ _ _ hle (hρ _ _ hget))
     cases n with
     | zero =>
       rw [asCtor_zero] at hctor
@@ -760,27 +1006,33 @@ theorem rhsSound {P : Program} {cert : ShapeCert} {enc : ArrEnc} {fs : FunShapes
   | projAny => exact .any v
   | prim hargs hprim =>
     obtain ⟨vs, hvs, hres⟩ := evalRhs_prim_ok hv
-    exact primOkSound cert enc P _ _ _ _ _ hprim (argsSound hρ _ _ _ hargs hvs) hres
+    exact primOkSound cert arrEnc P _ _ _ _ _ hprim (argsSound hρ _ _ _ hargs hvs) hres
   | @primBool op _ _ _ _ _ hbp hE htt hff httm hffm =>
     obtain ⟨vs, _, hres⟩ := evalRhs_prim_ok hv
-    simp only [primResult] at hres
-    cases hns : natArgs vs with
-    | none => simp [hns] at hres
-    | some ns =>
-      simp only [hns] at hres
-      cases hsem : op.sem ns with
-      | none => simp [hsem] at hres
-      | some res =>
-        obtain ⟨b, rfl⟩ := boolPrim_sem_bool hbp hsem
-        simp only [hsem] at hres
-        obtain ⟨ci, rfl, ⟨rfl, hkt⟩ | ⟨rfl, hkf⟩⟩ := boolVal_ok_inv (ofOption_ok hres)
-        · rw [htt, Option.some.injEq] at hkt
-          exact .enum hE (hkt ▸ httm)
-        · rw [hff, Option.some.injEq] at hkf
-          exact .enum hE (hkf ▸ hffm)
+    cases op with
+    | natBeq | natBle | natBlt =>
+      simp only [primResult] at hres
+      cases hns : natArgs vs with
+      | none => simp [hns] at hres
+      | some ns =>
+        simp only [hns] at hres
+        cases hsem : Lam.Prim.sem _ ns with
+        | none => simp [hsem] at hres
+        | some res =>
+          obtain ⟨b, rfl⟩ := boolPrim_sem_bool hbp hsem
+          simp only [hsem] at hres
+          obtain ⟨ci, rfl, ⟨rfl, hkt⟩ | ⟨rfl, hkf⟩⟩ := boolVal_ok_inv (ofOption_ok hres)
+          · rw [htt, Option.some.injEq] at hkt
+            exact .enum hE (hkt ▸ httm)
+          · rw [hff, Option.some.injEq] at hkf
+            exact .enum hE (hkf ▸ hffm)
+    | _ => simp [isBoolPrim] at hbp
   | primAny => exact .any v
+  | arr hargs harr =>
+    obtain ⟨vs, hvs, hres⟩ := evalRhs_prim_ok hv
+    exact primResult_arrOk P cert harr (argsSound hρ _ _ _ hargs hvs) hres
   | call _ => cases hv
-  | weaken _ hle ih => exact leSound enc cert _ _ _ hle (ih hv)
+  | weaken _ hle ih => exact leSound arrEnc cert _ _ _ hle (ih hv)
 
 /-- What a checked call says: its arguments have the callee's parameter shapes, and the
 callee's result has the binder's shape. -/
@@ -843,21 +1095,21 @@ theorem callSound {enc : ArrEnc} {P : Program} {cert : ShapeCert} (hchk : Checke
   · rw [ite_eq_right hlen] at hcall
     cases hcall
 
-private theorem evalSound_aux (enc : ArrEnc) (P : Program) (cert : ShapeCert)
+private theorem evalSound_aux (P : Program) (cert : ShapeCert)
     (hchk : Checked P cert) :
     ∀ (k : Nat) (w : Nat) (fs : FunShapes) (ρ : Env) (J : List JEntry) (c : Code) (v : Val),
       c.size + jweight J ≤ w →
-      EnvOk cert enc fs ρ →
-      JStackOk P cert enc fs J →
+      EnvOk cert arrEnc fs ρ →
+      JStackOk P cert arrEnc fs J →
       CodeOk P cert fs c →
       eval P k ρ J c = .ok v →
-      ValOk cert enc fs.ret v := by
+      ValOk cert arrEnc fs.ret v := by
   intro k
   induction k using Nat.strongRecOn with
   | ind k ihk =>
     have ihc : ∀ m, m < k → ∀ (fs : FunShapes) (ρ : Env) (c : Code) (v : Val),
-        EnvOk cert enc fs ρ → CodeOk P cert fs c → eval P m ρ [] c = .ok v →
-        ValOk cert enc fs.ret v := fun m hm fs ρ c v hρ hc he =>
+        EnvOk cert arrEnc fs ρ → CodeOk P cert fs c → eval P m ρ [] c = .ok v →
+        ValOk cert arrEnc fs.ret v := fun m hm fs ρ c v hρ hc he =>
       ihk m hm (c.size + jweight []) fs ρ [] c v (Nat.le_refl _) hρ .nil hc he
     intro w
     induction w using Nat.strongRecOn with
@@ -883,7 +1135,7 @@ private theorem evalSound_aux (enc : ArrEnc) (P : Program) (cert : ShapeCert)
             obtain ⟨vs, hvs, heval⟩ := bind_ok heval
             have hvs := ofOption_ok hvs
             obtain ⟨rv, hcallv, heval⟩ := bind_ok heval
-            obtain ⟨hargs, hret⟩ := rhsOk_call_inv enc hrhs
+            obtain ⟨hargs, hret⟩ := rhsOk_call_inv arrEnc hrhs
             have hrv := callSound hchk ihc (argsSound hρ _ _ _ hargs hvs) hcallv
             exact ihw _ hlt fs (ρ.insert x rv) J k' v (Nat.le_refl _)
               (envOk_insert hρ (hret rv hrv)) hJ hk' heval
@@ -913,7 +1165,7 @@ private theorem evalSound_aux (enc : ArrEnc) (P : Program) (cert : ShapeCert)
           have hvs := ofOption_ok hvs
           obtain ⟨hid, henv, hparams, hbody, hrest⟩ := lookupJ_ok hJ hlu
           have hρ' := envOk_bindAll _ _ _ e.env henv hparams (argsSound hρ _ _ _ hargs hvs)
-          have hJ' : JStackOk P cert enc fs (e.after rest) := by
+          have hJ' : JStackOk P cert arrEnc fs (e.after rest) := by
             unfold JEntry.after
             split
             · exact .cons henv (by rw [hid]; exact hparams) hbody hrest
@@ -952,7 +1204,7 @@ private theorem evalSound_aux (enc : ArrEnc) (P : Program) (cert : ShapeCert)
             simp only [hasc] at heval
             have hwalk : ∀ (as' : List Alt), AltsOk P cert fs as' →
                 Code.altsSize as' + Code.optSize d + 2 + jweight J ≤ w →
-                evalAlts P k ρ J key as' d = .ok v → ValOk cert enc fs.ret v := by
+                evalAlts P k ρ J key as' d = .ok v → ValOk cert arrEnc fs.ret v := by
               intro as'
               induction as' with
               | nil =>
@@ -991,26 +1243,26 @@ private theorem evalSound_aux (enc : ArrEnc) (P : Program) (cert : ShapeCert)
         | tcall hargs hret =>
           obtain ⟨vs, hvs, heval⟩ := bind_ok heval
           have hvs := ofOption_ok hvs
-          exact leSound enc cert _ _ _ hret
+          exact leSound arrEnc cert _ _ _ hret
             (callSound hchk ihc (argsSound hρ _ _ _ hargs hvs) heval)
 
 /-- **Checked code is sound from any point of a body**: run in an environment and under a join
 stack that have their shapes, it returns a value of the function's result shape. This is the
 form a back end's simulation carries. -/
-theorem evalSound {enc : ArrEnc} {P : Program} {cert : ShapeCert} (hchk : Checked P cert)
+theorem evalSound {P : Program} {cert : ShapeCert} (hchk : Checked P cert)
     {fs : FunShapes} {k : Nat} {ρ : Env} {J : List JEntry} {c : Code} {v : Val}
-    (hρ : EnvOk cert enc fs ρ) (hJ : JStackOk P cert enc fs J) (hc : CodeOk P cert fs c)
-    (heval : eval P k ρ J c = .ok v) : ValOk cert enc fs.ret v :=
-  evalSound_aux enc P cert hchk k (c.size + jweight J) fs ρ J c v (Nat.le_refl _) hρ hJ hc heval
+    (hρ : EnvOk cert arrEnc fs ρ) (hJ : JStackOk P cert arrEnc fs J) (hc : CodeOk P cert fs c)
+    (heval : eval P k ρ J c = .ok v) : ValOk cert arrEnc fs.ret v :=
+  evalSound_aux P cert hchk k (c.size + jweight J) fs ρ J c v (Nat.le_refl _) hρ hJ hc heval
 
 /-- **`CodeSound`**: the instance at a function's entry. -/
-theorem codeSound (enc : ArrEnc) : CodeSound enc :=
+theorem codeSound : CodeSound arrEnc :=
   fun _ _ hchk _ _ _ _ _ hρ hc heval => evalSound hchk hρ .nil hc heval
 
 /-- **`CheckSound`: soundness of the shape rules.** A checked program, run from arguments that
 have a function's parameter shapes, returns a value that has its result shape, at every
 clock. -/
-theorem checkSound (enc : ArrEnc) : CheckSound enc := by
+theorem checkSound : CheckSound arrEnc := by
   intro P cert hchk f k args v _ hargs hrun
   rw [run_eq] at hrun
   exact callSound hchk (fun _ _ _ _ _ _ hρ hc he => evalSound hchk hρ .nil hc he) hargs hrun
@@ -1192,6 +1444,7 @@ theorem isClo_inv {k : Key.CtorKey} (h : isClo k = true) : ∃ g n, k = .clo g n
   cases k with
   | src c => cases h
   | clo g n => exact ⟨g, n, rfl⟩
+  | arr => cases h
 
 theorem ctorOk_sound {P : Program} {cert : ShapeCert} {fs : FunShapes} {c : CtorInfo}
     {args : List Arg} {τ : Shape} (h : ctorOk cert fs c args τ = true) :
@@ -1267,6 +1520,85 @@ theorem projShape_ok {P : Program} {cert : ShapeCert} {fs : FunShapes} {x : Var}
       exact .projNat hs hle
     · cases h
 
+/-- The shape `arrShape` computes is one the array rules give. -/
+theorem arrShape_ok (op : Src.ArrOp) (σs : List Shape) : ArrOk op σs (arrShape op σs) := by
+  have fb : ∀ {o : Src.ArrOp}, o ≠ .size → o ≠ .get → o ≠ .toList → ArrOk o σs (.arr .any none) :=
+    fun h1 h2 h3 => .arrAny h1 h2 h3
+  cases op <;> dsimp only [arrShape]
+  case empty =>
+    split
+    · exact .empty
+    · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+  case replicate =>
+    split
+    · exact .replicate (Shape.le_refl _)
+    · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+  case size =>
+    split
+    · exact .sizeKnown
+    · exact .size
+    · exact .any
+  case get =>
+    split
+    · exact .get
+    · exact .any
+  case set =>
+    split
+    · split
+      · exact .set ‹_›
+      · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+    · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+  case push =>
+    split
+    · split
+      · exact .push ‹_›
+      · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+    · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+  case pop =>
+    split
+    · exact .pop
+    · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+  case append =>
+    split
+    · split
+      · subst_vars
+        exact .append
+      · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+    · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+  case extract =>
+    split
+    · exact .extract
+    · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+  case copySlice =>
+    split
+    · split
+      · subst_vars
+        exact .copySlice
+      · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+    · exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+  case ofList => exact fb (nomatch ·) (nomatch ·) (nomatch ·)
+  case toList => exact .any
+
+/-- What `arrOk` accepts is a right-hand side the rules give. -/
+theorem arrOk_rhsOk {P : Program} {cert : ShapeCert} {fs : FunShapes} {op : Src.ArrOp}
+    {args : List Arg} {σs : List Shape} {τ : Shape} (hargs : ArgsOk fs args σs)
+    (h : arrOk op σs τ = true) : RhsOk P cert fs (.prim (.arr op) args) τ := by
+  have hw : ∀ e : Shape, (Shape.arr e (some 0)).le (.arr e none) = true := fun e => by
+    simp [Shape.le, Shape.le_refl]
+  unfold arrOk at h
+  simp only [Bool.or_eq_true] at h
+  rcases h with h | h
+  · exact .weaken (.arr hargs (arrShape_ok op σs)) h
+  · split at h
+    · exact .arr hargs .empty
+    · exact .weaken (.arr hargs .empty) (hw _)
+    · exact .arr hargs (.replicate h)
+    · cases h
+
+theorem primRhsOk_of_not_arr {op : Lam.Prim} (hp : op.isArr = false) (σs : List Shape)
+    (τ : Shape) : primRhsOk op σs τ = (primShape op σs).le τ := by
+  cases op <;> first | rfl | cases hp
+
 /-- `rhsOk` decides a rule. -/
 theorem rhsOk_sound {P : Program} {cert : ShapeCert} {fs : FunShapes} {r : Rhs} {τ : Shape}
     (h : rhsOk P cert fs r τ = true) : RhsOk P cert fs r τ := by
@@ -1305,7 +1637,11 @@ theorem rhsOk_sound {P : Program} {cert : ShapeCert} {fs : FunShapes} {r : Rhs} 
               simp only [hE, htt, hff, Bool.and_eq_true] at hbo
               exact .primBool hbp hE htt hff (by simpa using hbo.1) (by simpa using hbo.2)
       | _ => simp at h
-    · exact .weaken (.prim (argShapes_ok fs args) (primShape_ok op _)) h
+    · cases hp : op.isArr
+      · rw [primRhsOk_of_not_arr hp] at h
+        exact .weaken (.prim (argShapes_ok fs args) (primShape_ok op _)) h
+      · obtain ⟨aop, rfl⟩ := Lam.Prim.isArr_eq_true hp
+        exact arrOk_rhsOk (argShapes_ok fs args) h
   | call g args =>
     simp only [rhsOk, Bool.and_eq_true] at h
     exact .weaken (.call (argsOk_sound _ _ h.1)) h.2
@@ -1393,16 +1729,16 @@ theorem check_checked {P : Program} {cert : ShapeCert} (h : check P cert = true)
   exact ⟨paramsOk_sound _ _ hf.1, codeOk_sound P cert _ _ hf.2⟩
 
 /-- **The checker is sound**: an accepted certificate states true facts of every run of every
-function, for every array reader. -/
-theorem check_sound (enc : ArrEnc) {P : Program} {cert : ShapeCert} (h : check P cert = true) :
-    ShapeSound P cert enc :=
-  checkSound enc P cert (check_checked h)
+function, at Fir's array reader (`arrEnc`). -/
+theorem check_sound {P : Program} {cert : ShapeCert} (h : check P cert = true) :
+    ShapeSound P cert arrEnc :=
+  checkSound P cert (check_checked h)
 
 /-- The checker is sound from inside a body. -/
-theorem check_codeSound (enc : ArrEnc) {P : Program} {cert : ShapeCert}
+theorem check_codeSound {P : Program} {cert : ShapeCert}
     (h : check P cert = true) {fs : FunShapes} {k : Nat} {ρ : Env} {c : Code} {v : Val}
-    (hρ : EnvOk cert enc fs ρ) (hc : CodeOk P cert fs c) (heval : eval P k ρ [] c = .ok v) :
-    ValOk cert enc fs.ret v :=
-  codeSound enc P cert (check_checked h) fs k ρ c v hρ hc heval
+    (hρ : EnvOk cert arrEnc fs ρ) (hc : CodeOk P cert fs c) (heval : eval P k ρ [] c = .ok v) :
+    ValOk cert arrEnc fs.ret v :=
+  codeSound P cert (check_checked h) fs k ρ c v hρ hc heval
 
 end IxCC.Fir.Proof.Shape

@@ -14,7 +14,7 @@ import Lean.Compiler.IR.EmitUtil
 
 Two complementary build-time audits over the certified verification stack:
 
-1. **Kernel-evaluable style audit (`violations`)** over `Recheck.run`, covering
+1. **Kernel-evaluable style audit (`violations`)** over `Recheck.run` and `RcReplay.run`, covering
    **all** project and dependency namespaces (`IxCC.*`, `IxCK.*`, `Blake3.*`,
    NOT just `IxCC.*`): no constant on the path may use well-founded recursion,
    hash maps, `implemented_by`/`extern`, library `Array` loops, or `ByteArray`
@@ -117,12 +117,21 @@ run_cmd do
   unless found.isEmpty do
     throwError "Recheck.run's path is not in kernel-evaluable style: {found.toList}"
 
+/-! The plain-RC replay too: `RcReplay.run`'s path (its own lowering, the Lir graph and
+well-formedness checks, critical-edge splitting) is in kernel-evaluable style. -/
+
+run_cmd do
+  let env ← getEnv
+  let found := violations env ``IxCC.Recheck.RcReplay.run
+  unless found.isEmpty do
+    throwError "RcReplay.run's path is not in kernel-evaluable style: {found.toList}"
+
 /-! Sanity: the style audit sees what it looks for off the path. -/
 
 run_cmd do
   let env ← getEnv
-  unless (violations env ``IxCC.Lir.Func.predCounts).any (·.2 == "Array loop") do
-    throwError "the audit missed Lir.Func.predCounts' Array.foldl"
+  unless (violations env ``IxCC.Lir.Func.idoms).any (·.2 == "Array loop") do
+    throwError "the audit missed Lir.Func.idoms' Array.map"
   unless (violations env ``IxCC.Anf.eval).any (·.2 == "well-founded recursion") do
     throwError "the audit missed Anf.eval's well-founded recursion"
   unless (violations env ``IxCC.X86.ELF.write).any (·.2 == "ByteArray copy") do

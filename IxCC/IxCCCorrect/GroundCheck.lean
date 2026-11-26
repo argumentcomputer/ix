@@ -76,10 +76,22 @@ def reach (p : Program) (seeds : List CId) : List CId :=
   (reachGo p (p.size + seeds.length + 1) seeds
     (seeds.foldl (fun (s : Std.HashSet CId) c => s.insert c) {}) seeds.toArray).toList
 
-/-- **The closure the check runs on**, for one root: what SrcEval may reach from the root and the
-pinned `Bool` constructors, and the runtime references of the word entries among them. -/
+/-- The constructors of the enumeration the root's declared type ends in (none at any other
+result type). `enumStoredB` wants every one of them in the closure; SrcEval need not reach them
+(`Abi.tri0 : Tri := .hi` reaches only `Tri.hi`). -/
+def resultCtors (p : Program) (root : CId) : List CId :=
+  match p.decl? root with
+  | some d =>
+    match (Src.Term.pis d.type).2 with
+    | .const r [] => (enumCtors p r).getD []
+    | _ => []
+  | none => []
+
+/-- **The closure the check runs on**, for one root: what SrcEval may reach from the root, the
+pinned `Bool` constructors and the result enumeration's constructors, and the runtime references
+of the word entries among them. -/
 def closureOf (p : Program) (root : CId) : List CId :=
-  let pins := [p.known.boolTrue, p.known.boolFalse].filterMap id
+  let pins := [p.known.boolTrue, p.known.boolFalse].filterMap id ++ resultCtors p root
   let sl := reach p (root :: pins.filter (· != root))
   let refs := (sl.flatMap fun c => match p.table.resolveOf c with
     | some (.word ..) => (p.runtimeRefs c).map (·.1)
@@ -432,6 +444,40 @@ def GroundOk (acc : Src.KernelFront.Accepted) (src : Program) (I : Lam.Erase.Inp
       (List.replicate (arityOf src root) FoTy.nat) res ∧
     ResultOk src I view (keyOf acc) κ res abi.result
 
+/-- What `groundCheck` validates is a `Nat` or an enumeration result, never a word (P5: word results
+are not grounded yet). -/
+theorem GroundOk.result_not_word {acc : Src.KernelFront.Accepted} {src : Program}
+    {I : Lam.Erase.Input} {view : View} {target : Ixon.Address} {abi : Abi}
+    (h : GroundOk acc src I view target abi) (bits : Nat) (a : Ixon.Address) :
+    abi.result ≠ ResTy.word bits a := by
+  obtain ⟨κ, lpsOf, ann, Sl, Inst, root, res, -, -, -, -, -, hRes⟩ := h
+  intro hw
+  cases res with
+  | nat =>
+    have h1 : abi.result = ResTy.nat := hRes
+    rw [h1] at hw
+    cases hw
+  | enum D =>
+    obtain ⟨addrs, h1, -⟩ := hRes
+    rw [h1] at hw
+    cases hw
+
+/-- What `groundCheck` validates is never a data result (P2: data results are not grounded yet). -/
+theorem GroundOk.result_not_data {acc : Src.KernelFront.Accepted} {src : Program}
+    {I : Lam.Erase.Input} {view : View} {target : Ixon.Address} {abi : Abi}
+    (h : GroundOk acc src I view target abi) (ty : DataTy) : abi.result ≠ ResTy.data ty := by
+  obtain ⟨κ, lpsOf, ann, Sl, Inst, root, res, -, -, -, -, -, hRes⟩ := h
+  intro hw
+  cases res with
+  | nat =>
+    have h1 : abi.result = ResTy.nat := hRes
+    rw [h1] at hw
+    cases hw
+  | enum D =>
+    obtain ⟨addrs, h1, -⟩ := hRes
+    rw [h1] at hw
+    cases hw
+
 /-- **The check is sound**: an accepting `groundCheck` gives the hypotheses of the composed
 theorems. -/
 theorem groundCheck_sound {k : Src.KernelFront.Kernel} {src : Program}
@@ -459,6 +505,7 @@ theorem groundCheck_sound {k : Src.KernelFront.Kernel} {src : Program}
           simp only [Except.ok.injEq] at h
           subst h
           subst h7
+          rw [keyOf_eq]
           exact ⟨keyMap k.rd, lpsMap k.acc.env (keyMap k.rd), ann, closureOf src root,
             (instWalk src [root] instFuel).getD [], root, res, rfl, hres, h8, rfl,
             ⟨h2, h3, h4, h5, h6, rootFacts_of_check h1⟩, resultOk_sound h9⟩

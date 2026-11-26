@@ -1,5 +1,6 @@
 import IxCC.BigNat.Mul
 import IxCC.BigNat.Proof.Linear
+import IxCC.BigNat.Proof.Toom3
 
 /-! # Layer-1 Proofs for `IxCC.BigNat.Mul` (`IxCC.BigNat.Proof.Mul`)
 
@@ -642,181 +643,480 @@ theorem toNat_sqrSchoolbook (a : Array UInt64) :
     rw [h3, hsq]
     rfl
 
-/-! ### Karatsuba Multiplication and Squaring (`mulKaratsuba`, `mul`, `sqrKaratsuba`, `sqr`) -/
+/-! ### Karatsuba & Toom-Cook 3-Way Multiplication and Squaring -/
 
-theorem wf_mulKaratsuba (a b : Array UInt64) : WF (mulKaratsuba a b) := by
-  induction hn : max a.size b.size using Nat.strongRecOn generalizing a b with
-  | ind n ih =>
-    unfold mulKaratsuba
+private theorem wf_mulKaratsubaLoop (a b : Array UInt64) (fuel : Nat) :
+    WF (mulKaratsubaLoop a b fuel) := by
+  cases fuel with
+  | zero => exact wf_mulSchoolbook a b
+  | succ fuel =>
+    unfold mulKaratsubaLoop
     split
     · exact wf_mulSchoolbook a b
-    · exact wf_add _ _
+    · exact wf_karatsubaCombine _ _ _ _ _
 
-theorem toNat_mulKaratsuba (a b : Array UInt64) :
-    toNat (mulKaratsuba a b) = toNat a * toNat b := by
-  induction hn : max a.size b.size using Nat.strongRecOn generalizing a b with
-  | ind n ih =>
-    unfold mulKaratsuba
+theorem wf_mulKaratsuba (a b : Array UInt64) : WF (mulKaratsuba a b) :=
+  wf_mulKaratsubaLoop a b _
+
+private theorem toNat_mulKaratsubaLoop (a b : Array UInt64) (fuel : Nat) :
+    toNat (mulKaratsubaLoop a b fuel) = toNat a * toNat b := by
+  induction fuel generalizing a b with
+  | zero => exact toNat_mulSchoolbook a b
+  | succ fuel ih =>
+    unfold mulKaratsubaLoop
     split
     · exact toNat_mulSchoolbook a b
-    · rename_i hnotbase
-      dsimp only
-      have hge : karatsubaThreshold ≤ a.size ∧ karatsubaThreshold ≤ b.size :=
-        ⟨Nat.not_lt.mp (fun h => hnotbase (Or.inl h)),
-         Nat.not_lt.mp (fun h => hnotbase (Or.inr h))⟩
-      let m := max a.size b.size / 2
+    · dsimp only
+      let n := if a.size ≤ b.size then b.size else a.size
+      let m := n / 2
       let a0 := normalize (slice a 0 m)
       let a1 := normalize (slice a m a.size)
       let b0 := normalize (slice b 0 m)
       let b1 := normalize (slice b m b.size)
       let sA := add a0 a1
       let sB := add b0 b1
-      have ha0 : a0.size ≤ m := by
-        have h1 := size_normalize_le (slice a 0 m)
-        have h2 := size_slice a 0 m
-        change (normalize (slice a 0 m)).size ≤ m; omega
-      have ha1 : a1.size ≤ max a.size b.size - m := by
-        have h1 := size_normalize_le (slice a m a.size)
-        have h2 := size_slice a m a.size
-        change (normalize (slice a m a.size)).size ≤ max a.size b.size - m; omega
-      have hb0 : b0.size ≤ m := by
-        have h1 := size_normalize_le (slice b 0 m)
-        have h2 := size_slice b 0 m
-        change (normalize (slice b 0 m)).size ≤ m; omega
-      have hb1 : b1.size ≤ max a.size b.size - m := by
-        have h1 := size_normalize_le (slice b m b.size)
-        have h2 := size_slice b m b.size
-        change (normalize (slice b m b.size)).size ≤ max a.size b.size - m; omega
-      have hsA : sA.size ≤ max a0.size a1.size + 1 := size_add_le a0 a1
-      have hsB : sB.size ≤ max b0.size b1.size + 1 := size_add_le b0 b1
-      have hlt0 : max a0.size b0.size < n := by unfold karatsubaThreshold at hge; omega
-      have hlt1 : max a1.size b1.size < n := by unfold karatsubaThreshold at hge; omega
-      have hltS : max sA.size sB.size < n := by unfold karatsubaThreshold at hge; omega
-      have hz0 : toNat (mulKaratsuba a0 b0) = toNat a0 * toNat b0 := ih _ hlt0 a0 b0 rfl
-      have hz2 : toNat (mulKaratsuba a1 b1) = toNat a1 * toNat b1 := ih _ hlt1 a1 b1 rfl
-      have hzS : toNat (mulKaratsuba sA sB) = toNat sA * toNat sB := ih _ hltS sA sB rfl
+      have hz0 : toNat (mulKaratsubaLoop a0 b0 fuel) = toNat a0 * toNat b0 := ih a0 b0
+      have hz2 : toNat (mulKaratsubaLoop a1 b1 fuel) = toNat a1 * toNat b1 := ih a1 b1
+      have hzS : toNat (mulKaratsubaLoop sA sB fuel) = (toNat a0 + toNat a1) * (toNat b0 + toNat b1) := by
+        rw [ih sA sB, toNat_add, toNat_add]
       have haSplit : toNat a = toNat a0 + toNat a1 * (2 ^ 64) ^ m := by
         simpa [a0, a1, toNat_normalize] using toNat_slice_split a m
       have hbSplit : toNat b = toNat b0 + toNat b1 * (2 ^ 64) ^ m := by
         simpa [b0, b1, toNat_normalize] using toNat_slice_split b m
-      rw [toNat_add, toNat_add, toNat_shiftLimbs, toNat_shiftLimbs, toNat_subRaw, toNat_add,
-          hz0, hz2, hzS, toNat_add, toNat_add, haSplit, hbSplit]
-      have hmid : (toNat a0 + toNat a1) * (toNat b0 + toNat b1) -
-          (toNat a0 * toNat b0 + toNat a1 * toNat b1) =
-          toNat a0 * toNat b1 + toNat a1 * toNat b0 := by
-        have hexp : (toNat a0 + toNat a1) * (toNat b0 + toNat b1) =
-            toNat a0 * toNat b0 + toNat a0 * toNat b1 + toNat a1 * toNat b0 + toNat a1 * toNat b1 := by
-          rw [Nat.add_mul, Nat.mul_add, Nat.mul_add]; omega
-        omega
-      rw [hmid]
-      have hpow2 : (2 ^ 64) ^ (2 * m) = (2 ^ 64) ^ m * (2 ^ 64) ^ m := by
-        rw [← Nat.pow_add]; congr 1; omega
-      rw [hpow2]
-      calc toNat a0 * toNat b0 + (toNat a0 * toNat b1 + toNat a1 * toNat b0) * (2 ^ 64) ^ m +
-            toNat a1 * toNat b1 * ((2 ^ 64) ^ m * (2 ^ 64) ^ m)
-          = toNat a0 * toNat b0 + toNat a0 * (toNat b1 * (2 ^ 64) ^ m) +
-            (toNat a1 * (2 ^ 64) ^ m * toNat b0 +
-             toNat a1 * (2 ^ 64) ^ m * (toNat b1 * (2 ^ 64) ^ m)) := by
-            rw [Nat.add_mul]
-            have t1 : toNat a0 * toNat b1 * (2 ^ 64) ^ m = toNat a0 * (toNat b1 * (2 ^ 64) ^ m) :=
-              Nat.mul_assoc _ _ _
-            have t2 : toNat a1 * toNat b0 * (2 ^ 64) ^ m = toNat a1 * (2 ^ 64) ^ m * toNat b0 := by
-              rw [Nat.mul_assoc, Nat.mul_comm (toNat b0) ((2 ^ 64) ^ m), ← Nat.mul_assoc]
-            have t3 : toNat a1 * toNat b1 * ((2 ^ 64) ^ m * (2 ^ 64) ^ m) =
-                toNat a1 * (2 ^ 64) ^ m * (toNat b1 * (2 ^ 64) ^ m) := by
-              calc toNat a1 * toNat b1 * ((2 ^ 64) ^ m * (2 ^ 64) ^ m)
-                  = toNat a1 * toNat b1 * (2 ^ 64) ^ m * (2 ^ 64) ^ m := (Nat.mul_assoc _ _ _).symm
-                _ = toNat a1 * (toNat b1 * (2 ^ 64) ^ m) * (2 ^ 64) ^ m := by
-                    rw [Nat.mul_assoc (toNat a1)]
-                _ = toNat a1 * (2 ^ 64) ^ m * (toNat b1 * (2 ^ 64) ^ m) := by
-                    rw [Nat.mul_assoc, Nat.mul_comm (toNat b1 * (2 ^ 64) ^ m) ((2 ^ 64) ^ m),
-                        ← Nat.mul_assoc]
-            rw [t1, t2, t3]; omega
-        _ = (toNat a0 + toNat a1 * (2 ^ 64) ^ m) * (toNat b0 + toNat b1 * (2 ^ 64) ^ m) := by
-            rw [Nat.add_mul, Nat.mul_add, Nat.mul_add]
+      rw [haSplit, hbSplit]
+      exact toNat_karatsubaCombine (mulKaratsubaLoop a0 b0 fuel) (mulKaratsubaLoop a1 b1 fuel)
+        (mulKaratsubaLoop sA sB fuel) (toNat a0) (toNat a1) (toNat b0) (toNat b1)
+        m (a.size + b.size) hz0 hz2 hzS
 
-theorem wf_mul (a b : Array UInt64) : WF (mul a b) := wf_mulKaratsuba a b
+theorem toNat_mulKaratsuba (a b : Array UInt64) :
+    toNat (mulKaratsuba a b) = toNat a * toNat b :=
+  toNat_mulKaratsubaLoop a b _
 
-theorem toNat_mul (a b : Array UInt64) : toNat (mul a b) = toNat a * toNat b :=
-  toNat_mulKaratsuba a b
+private theorem wf_sqrKaratsubaLoop (a : Array UInt64) (fuel : Nat) :
+    WF (sqrKaratsubaLoop a fuel) := by
+  cases fuel with
+  | zero => exact wf_sqrSchoolbook a
+  | succ fuel =>
+    unfold sqrKaratsubaLoop
+    split
+    · exact wf_sqrSchoolbook a
+    · exact wf_karatsubaCombine _ _ _ _ _
 
-theorem wf_sqrKaratsuba (a : Array UInt64) : WF (sqrKaratsuba a) := by
-  unfold sqrKaratsuba
-  split
-  · exact wf_sqrSchoolbook a
-  · exact wf_add _ _
+theorem wf_sqrKaratsuba (a : Array UInt64) : WF (sqrKaratsuba a) :=
+  wf_sqrKaratsubaLoop a a.size
 
-theorem toNat_sqrKaratsuba (a : Array UInt64) :
-    toNat (sqrKaratsuba a) = toNat a * toNat a := by
-  induction hn : a.size using Nat.strongRecOn generalizing a with
-  | ind n ih =>
-    unfold sqrKaratsuba
+private theorem toNat_sqrKaratsubaLoop (a : Array UInt64) (fuel : Nat) :
+    toNat (sqrKaratsubaLoop a fuel) = toNat a * toNat a := by
+  induction fuel generalizing a with
+  | zero => exact toNat_sqrSchoolbook a
+  | succ fuel ih =>
+    unfold sqrKaratsubaLoop
     split
     · exact toNat_sqrSchoolbook a
-    · rename_i hnotbase
-      dsimp only
-      have hge : karatsubaThreshold ≤ a.size := Nat.not_lt.mp hnotbase
+    · dsimp only
       let m := a.size / 2
       let a0 := normalize (slice a 0 m)
       let a1 := normalize (slice a m a.size)
       let sA := add a0 a1
-      have ha0 : a0.size ≤ m := by
-        have h1 := size_normalize_le (slice a 0 m)
-        have h2 := size_slice a 0 m
-        change (normalize (slice a 0 m)).size ≤ m; omega
-      have ha1 : a1.size ≤ a.size - m := by
-        have h1 := size_normalize_le (slice a m a.size)
-        have h2 := size_slice a m a.size
-        change (normalize (slice a m a.size)).size ≤ a.size - m; omega
-      have hsA : sA.size ≤ max a0.size a1.size + 1 := size_add_le a0 a1
-      have hlt0 : a0.size < n := by unfold karatsubaThreshold at hge; omega
-      have hlt1 : a1.size < n := by unfold karatsubaThreshold at hge; omega
-      have hltS : sA.size < n := by unfold karatsubaThreshold at hge; omega
-      have hz0 : toNat (sqrKaratsuba a0) = toNat a0 * toNat a0 := ih _ hlt0 a0 rfl
-      have hz2 : toNat (sqrKaratsuba a1) = toNat a1 * toNat a1 := ih _ hlt1 a1 rfl
-      have hzS : toNat (sqrKaratsuba sA) = toNat sA * toNat sA := ih _ hltS sA rfl
+      have hz0 : toNat (sqrKaratsubaLoop a0 fuel) = toNat a0 * toNat a0 := ih a0
+      have hz2 : toNat (sqrKaratsubaLoop a1 fuel) = toNat a1 * toNat a1 := ih a1
+      have hzS : toNat (sqrKaratsubaLoop sA fuel) = (toNat a0 + toNat a1) * (toNat a0 + toNat a1) := by
+        rw [ih sA, toNat_add]
       have haSplit : toNat a = toNat a0 + toNat a1 * (2 ^ 64) ^ m := by
         simpa [a0, a1, toNat_normalize] using toNat_slice_split a m
-      rw [toNat_add, toNat_add, toNat_shiftLimbs, toNat_shiftLimbs, toNat_subRaw, toNat_add,
-          hz0, hz2, hzS, toNat_add, haSplit]
-      have hmid : (toNat a0 + toNat a1) * (toNat a0 + toNat a1) -
-          (toNat a0 * toNat a0 + toNat a1 * toNat a1) =
-          toNat a0 * toNat a1 + toNat a1 * toNat a0 := by
-        have hexp : (toNat a0 + toNat a1) * (toNat a0 + toNat a1) =
-            toNat a0 * toNat a0 + toNat a0 * toNat a1 + toNat a1 * toNat a0 + toNat a1 * toNat a1 := by
-          rw [Nat.add_mul, Nat.mul_add, Nat.mul_add]; omega
-        omega
-      rw [hmid]
-      have hpow2 : (2 ^ 64) ^ (2 * m) = (2 ^ 64) ^ m * (2 ^ 64) ^ m := by
-        rw [← Nat.pow_add]; congr 1; omega
-      rw [hpow2]
-      calc toNat a0 * toNat a0 + (toNat a0 * toNat a1 + toNat a1 * toNat a0) * (2 ^ 64) ^ m +
-            toNat a1 * toNat a1 * ((2 ^ 64) ^ m * (2 ^ 64) ^ m)
-          = toNat a0 * toNat a0 + toNat a0 * (toNat a1 * (2 ^ 64) ^ m) +
-            (toNat a1 * (2 ^ 64) ^ m * toNat a0 +
-             toNat a1 * (2 ^ 64) ^ m * (toNat a1 * (2 ^ 64) ^ m)) := by
-            rw [Nat.add_mul]
-            have t1 : toNat a0 * toNat a1 * (2 ^ 64) ^ m = toNat a0 * (toNat a1 * (2 ^ 64) ^ m) :=
-              Nat.mul_assoc _ _ _
-            have t2 : toNat a1 * toNat a0 * (2 ^ 64) ^ m = toNat a1 * (2 ^ 64) ^ m * toNat a0 := by
-              rw [Nat.mul_assoc, Nat.mul_comm (toNat a0) ((2 ^ 64) ^ m), ← Nat.mul_assoc]
-            have t3 : toNat a1 * toNat a1 * ((2 ^ 64) ^ m * (2 ^ 64) ^ m) =
-                toNat a1 * (2 ^ 64) ^ m * (toNat a1 * (2 ^ 64) ^ m) := by
-              calc toNat a1 * toNat a1 * ((2 ^ 64) ^ m * (2 ^ 64) ^ m)
-                  = toNat a1 * toNat a1 * (2 ^ 64) ^ m * (2 ^ 64) ^ m := (Nat.mul_assoc _ _ _).symm
-                _ = toNat a1 * (toNat a1 * (2 ^ 64) ^ m) * (2 ^ 64) ^ m := by
-                    rw [Nat.mul_assoc (toNat a1)]
-                _ = toNat a1 * (2 ^ 64) ^ m * (toNat a1 * (2 ^ 64) ^ m) := by
-                    rw [Nat.mul_assoc, Nat.mul_comm (toNat a1 * (2 ^ 64) ^ m) ((2 ^ 64) ^ m),
-                        ← Nat.mul_assoc]
-            rw [t1, t2, t3]; omega
-        _ = (toNat a0 + toNat a1 * (2 ^ 64) ^ m) * (toNat a0 + toNat a1 * (2 ^ 64) ^ m) := by
-            rw [Nat.add_mul, Nat.mul_add, Nat.mul_add]
+      rw [haSplit]
+      exact toNat_karatsubaCombine (sqrKaratsubaLoop a0 fuel) (sqrKaratsubaLoop a1 fuel)
+        (sqrKaratsubaLoop sA fuel) (toNat a0) (toNat a1) (toNat a0) (toNat a1)
+        m (2 * a.size) hz0 hz2 hzS
 
-theorem wf_sqr (a : Array UInt64) : WF (sqr a) := wf_sqrKaratsuba a
+theorem toNat_sqrKaratsuba (a : Array UInt64) :
+    toNat (sqrKaratsuba a) = toNat a * toNat a :=
+  toNat_sqrKaratsubaLoop a a.size
+
+/-! ### Toom-Cook 3-Way Multiplication & Squaring (`mulToom3`, `sqrToom3`, `mul`, `sqr`) -/
+
+private theorem toNat_slice_split3 (a : Array UInt64) (k : Nat) :
+    toNat a = toNat (normalize (slice a 0 k)) +
+      toNat (normalize (slice a k (2 * k))) * (2 ^ 64) ^ k +
+      toNat (normalize (slice a (2 * k) a.size)) * (2 ^ 64) ^ (2 * k) := by
+  simp only [toNat_normalize]
+  have h1 := toNat_slice_split a k
+  have h2 := toNat_slice_split (slice a k a.size) k
+  have hmid : toNat (slice (slice a k a.size) 0 k) = toNat (slice a k (2 * k)) := by
+    apply toNat_eq_of_getLimb
+    intro i
+    simp only [getLimb_slice, size_slice, Nat.min_self, Nat.zero_add]
+    by_cases hi : i < min k (a.size - k)
+    · have hlt1 : k + i < min (2 * k) a.size := by omega
+      have hlt2 : k + i < a.size := by omega
+      simp only [hi, hlt1, ↓reduceIte, hlt2]
+    · have hge1 : ¬ k + i < min (2 * k) a.size := by omega
+      simp only [hi, hge1, ↓reduceIte]
+  have hhi : toNat (slice (slice a k a.size) k (slice a k a.size).size) =
+      toNat (slice a (2 * k) a.size) := by
+    apply toNat_eq_of_getLimb
+    intro i
+    simp only [getLimb_slice, size_slice, Nat.min_self]
+    by_cases hi : k + i < a.size - k
+    · have hlt3 : 2 * k + i < a.size := by omega
+      have heq : k + (k + i) = 2 * k + i := by omega
+      simp only [hi, hlt3, ↓reduceIte, heq]
+    · have hge3 : ¬ 2 * k + i < a.size := by omega
+      simp only [hi, hge3, ↓reduceIte]
+  rw [hmid, hhi] at h2
+  rw [h1, h2, Nat.add_mul, Nat.mul_assoc]
+  have hpow2 : (2 ^ 64) ^ k * (2 ^ 64) ^ k = (2 ^ 64) ^ (2 * k) := by
+    rw [← Nat.pow_add]; congr 1; omega
+  rw [hpow2, Nat.add_assoc]
+
+private theorem toom3_eval_1 (a0 a1 a2 b0 b1 b2 : Nat) :
+    (a0 + a2 + a1) * (b0 + b2 + b1) =
+      a0 * b0 + (a0 * b1 + a1 * b0) + (a0 * b2 + a1 * b1 + a2 * b0) +
+      (a1 * b2 + a2 * b1) + a2 * b2 := by
+  repeat rw [Nat.add_mul]
+  repeat rw [Nat.mul_add]
+  omega
+
+private theorem toom3_eval_2 (a0 a1 a2 b0 b1 b2 : Nat) :
+    ((a2 * 2 + a1) * 2 + a0) * ((b2 * 2 + b1) * 2 + b0) =
+      a0 * b0 + 2 * (a0 * b1 + a1 * b0) + 4 * (a0 * b2 + a1 * b1 + a2 * b0) +
+      8 * (a1 * b2 + a2 * b1) + 16 * (a2 * b2) := by
+  have ha : (a2 * 2 + a1) * 2 + a0 = a0 + 2 * a1 + 4 * a2 := by omega
+  have hb : (b2 * 2 + b1) * 2 + b0 = b0 + 2 * b1 + 4 * b2 := by omega
+  rw [ha, hb]
+  repeat rw [Nat.add_mul]
+  repeat rw [Nat.mul_add]
+  have t1 : a0 * (2 * b1) = 2 * (a0 * b1) := by ac_rfl
+  have t2 : a0 * (4 * b2) = 4 * (a0 * b2) := by ac_rfl
+  have t3 : 2 * a1 * b0 = 2 * (a1 * b0) := by ac_rfl
+  have t4 : 2 * a1 * (2 * b1) = 4 * (a1 * b1) := by
+    calc 2 * a1 * (2 * b1) = (2 * 2) * (a1 * b1) := by ac_rfl
+      _ = 4 * (a1 * b1) := rfl
+  have t5 : 2 * a1 * (4 * b2) = 8 * (a1 * b2) := by
+    calc 2 * a1 * (4 * b2) = (2 * 4) * (a1 * b2) := by ac_rfl
+      _ = 8 * (a1 * b2) := rfl
+  have t6 : 4 * a2 * b0 = 4 * (a2 * b0) := by ac_rfl
+  have t7 : 4 * a2 * (2 * b1) = 8 * (a2 * b1) := by
+    calc 4 * a2 * (2 * b1) = (4 * 2) * (a2 * b1) := by ac_rfl
+      _ = 8 * (a2 * b1) := rfl
+  have t8 : 4 * a2 * (4 * b2) = 16 * (a2 * b2) := by
+    calc 4 * a2 * (4 * b2) = (4 * 4) * (a2 * b2) := by ac_rfl
+      _ = 16 * (a2 * b2) := rfl
+  rw [t1, t2, t3, t4, t5, t6, t7, t8]
+  omega
+
+private theorem toom3_eval_m1 {a0 a1 a2 b0 b1 b2 pm1 qm1 : Nat} {pa pb : Bool}
+    (hpa : if pa then a0 + a2 + pm1 = a1 else a1 + pm1 = a0 + a2)
+    (hpb : if pb then b0 + b2 + qm1 = b1 else b1 + qm1 = b0 + b2) :
+    if (pa != pb) then
+      pm1 * qm1 + (a0 * b0 + (a0 * b2 + a1 * b1 + a2 * b0) + a2 * b2) =
+        (a0 * b1 + a1 * b0) + (a1 * b2 + a2 * b1)
+    else
+      pm1 * qm1 + ((a0 * b1 + a1 * b0) + (a1 * b2 + a2 * b1)) =
+        a0 * b0 + (a0 * b2 + a1 * b1 + a2 * b0) + a2 * b2 := by
+  have heven : a0 * b0 + (a0 * b2 + a1 * b1 + a2 * b0) + a2 * b2 =
+      (a0 + a2) * (b0 + b2) + a1 * b1 := by
+    rw [Nat.add_mul, Nat.mul_add, Nat.mul_add]; omega
+  have hodd : (a0 * b1 + a1 * b0) + (a1 * b2 + a2 * b1) =
+      (a0 + a2) * b1 + a1 * (b0 + b2) := by
+    rw [Nat.add_mul, Nat.mul_add]; omega
+  rw [heven, hodd]
+  cases pa <;> cases pb <;> simp only [Bool.false_eq_true, ↓reduceIte, bne_self_eq_false, bne_iff_ne,
+      ne_eq, Bool.false_eq_true, not_false_eq_true, Bool.true_eq_false] at hpa hpb ⊢
+  · -- false, false: a0+a2 = a1+pm1, b0+b2 = b1+qm1
+    rw [← hpa, ← hpb]
+    repeat rw [Nat.add_mul]
+    repeat rw [Nat.mul_add]
+    omega
+  · -- false, true: a0+a2 = a1+pm1, b1 = b0+b2+qm1
+    rw [← hpa, ← hpb]
+    repeat rw [Nat.add_mul]
+    repeat rw [Nat.mul_add]
+    omega
+  · -- true, false: a1 = a0+a2+pm1, b0+b2 = b1+qm1
+    rw [← hpa, ← hpb]
+    repeat rw [Nat.add_mul]
+    repeat rw [Nat.mul_add]
+    omega
+  · -- true, true: a1 = a0+a2+pm1, b1 = b0+b2+qm1
+    rw [← hpa, ← hpb]
+    repeat rw [Nat.add_mul]
+    repeat rw [Nat.mul_add]
+    omega
+
+private theorem toom3_poly_ident (a0 a1 a2 b0 b1 b2 k : Nat) :
+    a0 * b0 + (a0 * b1 + a1 * b0) * (2 ^ 64) ^ k +
+      (a0 * b2 + a1 * b1 + a2 * b0) * (2 ^ 64) ^ (2 * k) +
+      (a1 * b2 + a2 * b1) * (2 ^ 64) ^ (3 * k) +
+      a2 * b2 * (2 ^ 64) ^ (4 * k) =
+    (a0 + a1 * (2 ^ 64) ^ k + a2 * (2 ^ 64) ^ (2 * k)) *
+      (b0 + b1 * (2 ^ 64) ^ k + b2 * (2 ^ 64) ^ (2 * k)) := by
+  let X := (2 ^ 64) ^ k
+  have h2 : (2 ^ 64) ^ (2 * k) = X * X := by
+    show (2 ^ 64) ^ (2 * k) = (2 ^ 64) ^ k * (2 ^ 64) ^ k
+    rw [← Nat.pow_add]; congr 1; omega
+  have h3 : (2 ^ 64) ^ (3 * k) = X * (X * X) := by
+    show (2 ^ 64) ^ (3 * k) = (2 ^ 64) ^ k * ((2 ^ 64) ^ k * (2 ^ 64) ^ k)
+    rw [← Nat.pow_add, ← Nat.pow_add]; congr 1; omega
+  have h4 : (2 ^ 64) ^ (4 * k) = (X * X) * (X * X) := by
+    show (2 ^ 64) ^ (4 * k) = ((2 ^ 64) ^ k * (2 ^ 64) ^ k) * ((2 ^ 64) ^ k * (2 ^ 64) ^ k)
+    rw [← Nat.pow_add, ← Nat.pow_add]; congr 1; omega
+  rw [h2, h3, h4]
+  show a0 * b0 + (a0 * b1 + a1 * b0) * X + (a0 * b2 + a1 * b1 + a2 * b0) * (X * X) +
+      (a1 * b2 + a2 * b1) * (X * (X * X)) + a2 * b2 * ((X * X) * (X * X)) =
+    (a0 + a1 * X + a2 * (X * X)) * (b0 + b1 * X + b2 * (X * X))
+  repeat rw [Nat.add_mul]
+  repeat rw [Nat.mul_add]
+  have t01 : a0 * (b1 * X) = a0 * b1 * X := (Nat.mul_assoc _ _ _).symm
+  have t02 : a0 * (b2 * (X * X)) = a0 * b2 * (X * X) := (Nat.mul_assoc _ _ _).symm
+  have t10 : a1 * X * b0 = a1 * b0 * X := by ac_rfl
+  have t11 : a1 * X * (b1 * X) = a1 * b1 * (X * X) := by ac_rfl
+  have t12 : a1 * X * (b2 * (X * X)) = a1 * b2 * (X * (X * X)) := by ac_rfl
+  have t20 : a2 * (X * X) * b0 = a2 * b0 * (X * X) := by ac_rfl
+  have t21 : a2 * (X * X) * (b1 * X) = a2 * b1 * (X * (X * X)) := by ac_rfl
+  have t22 : a2 * (X * X) * (b2 * (X * X)) = a2 * b2 * ((X * X) * (X * X)) := by ac_rfl
+  rw [t01, t02, t10, t11, t12, t20, t21, t22]
+  omega
+
+private theorem wf_mulToom3Loop (a b : Array UInt64) (fuel : Nat) :
+    WF (mulToom3Loop a b fuel) := by
+  cases fuel with
+  | zero => exact wf_mulKaratsuba a b
+  | succ fuel =>
+    unfold mulToom3Loop
+    split
+    · exact wf_mulKaratsuba a b
+    · dsimp only
+      rcases hxy : (if a.size < b.size then (b, a) else (a, b)) with ⟨x, y⟩
+      dsimp only
+      split
+      · exact wf_normalize _
+      · exact wf_toom3Interp _ _ _ _ _ _ _ _
+
+theorem wf_mulToom3 (a b : Array UInt64) : WF (mulToom3 a b) :=
+  wf_mulToom3Loop a b _
+
+private theorem toNat_mulToom3Loop (a b : Array UInt64) (fuel : Nat) :
+    toNat (mulToom3Loop a b fuel) = toNat a * toNat b := by
+  induction fuel generalizing a b with
+  | zero => exact toNat_mulKaratsuba a b
+  | succ fuel ih =>
+    unfold mulToom3Loop
+    split
+    · exact toNat_mulKaratsuba a b
+    · dsimp only
+      have hxy_mul : ∀ (x y : Array UInt64), (if a.size < b.size then (b, a) else (a, b)) = (x, y) →
+          toNat x * toNat y = toNat a * toNat b := by
+        intro x y h
+        split at h
+        · cases h; exact Nat.mul_comm _ _
+        · cases h; rfl
+      rcases hxy : (if a.size < b.size then (b, a) else (a, b)) with ⟨x, y⟩
+      have hprod_eq := hxy_mul x y hxy
+      dsimp only
+      let n := x.size
+      let m := n / 2
+      split
+      · let x0 := normalize (slice x 0 m)
+        let x1 := normalize (slice x m n)
+        have hz0 := ih x0 y
+        have hz1 := ih x1 y
+        rw [toNat_normalize, toNat_addAtInPlace, toNat_copyIntoZeros, hz0, hz1, ← hprod_eq]
+        have hxSplit : toNat x = toNat x0 + toNat x1 * (2 ^ 64) ^ m := by
+          simpa [x0, x1, n, toNat_normalize] using toNat_slice_split x m
+        rw [hxSplit, Nat.add_mul]
+        have hcomm : toNat x1 * (2 ^ 64) ^ m * toNat y = toNat x1 * toNat y * (2 ^ 64) ^ m := by ac_rfl
+        rw [hcomm]
+      · let k := (n + 2) / 3
+        rw [toom3EvalLoop_eq x k, toom3EvalLoop_eq y k]
+        dsimp only
+        let x0 := normalize (slice x 0 k)
+        let x1 := normalize (slice x k (2 * k))
+        let x2 := normalize (slice x (2 * k) n)
+        let y0 := normalize (slice y 0 k)
+        let y1 := normalize (slice y k (2 * k))
+        let y2 := normalize (slice y (2 * k) y.size)
+        let p02 := add x0 x2
+        let p1  := add p02 x1
+        let pm1Pair := signedSub p02 x1
+        let p2  := add (shiftLeft1 (add (shiftLeft1 x2) x1)) x0
+        let q02 := add y0 y2
+        let q1  := add q02 y1
+        let qm1Pair := signedSub q02 y1
+        let q2  := add (shiftLeft1 (add (shiftLeft1 y2) y1)) y0
+        have hr0 : toNat (mulToom3Loop x0 y0 fuel) = toNat x0 * toNat y0 := ih x0 y0
+        have hrInf : toNat (mulToom3Loop x2 y2 fuel) = toNat x2 * toNat y2 := ih x2 y2
+        have hr1 : toNat (mulToom3Loop p1 q1 fuel) =
+            toNat x0 * toNat y0 + (toNat x0 * toNat y1 + toNat x1 * toNat y0) +
+            (toNat x0 * toNat y2 + toNat x1 * toNat y1 + toNat x2 * toNat y0) +
+            (toNat x1 * toNat y2 + toNat x2 * toNat y1) + toNat x2 * toNat y2 := by
+          rw [ih p1 q1]
+          simp only [p1, p02, q1, q02, toNat_add]
+          exact toom3_eval_1 (toNat x0) (toNat x1) (toNat x2) (toNat y0) (toNat y1) (toNat y2)
+        have hr2 : toNat (mulToom3Loop p2 q2 fuel) =
+            toNat x0 * toNat y0 + 2 * (toNat x0 * toNat y1 + toNat x1 * toNat y0) +
+            4 * (toNat x0 * toNat y2 + toNat x1 * toNat y1 + toNat x2 * toNat y0) +
+            8 * (toNat x1 * toNat y2 + toNat x2 * toNat y1) + 16 * (toNat x2 * toNat y2) := by
+          rw [ih p2 q2]
+          simp only [p2, q2, toNat_add, toNat_shiftLeft1]
+          exact toom3_eval_2 (toNat x0) (toNat x1) (toNat x2) (toNat y0) (toNat y1) (toNat y2)
+        have hpa := (signedSub_spec (wf_add x0 x2) (wf_normalize (slice x k (2 * k)))).2
+        have hpb := (signedSub_spec (wf_add y0 y2) (wf_normalize (slice y k (2 * k)))).2
+        simp only [toNat_add] at hpa hpb
+        have hrm1 : if (pm1Pair.1 != qm1Pair.1) then
+              toNat (mulToom3Loop pm1Pair.2 qm1Pair.2 fuel) +
+                (toNat x0 * toNat y0 + (toNat x0 * toNat y2 + toNat x1 * toNat y1 + toNat x2 * toNat y0) +
+                  toNat x2 * toNat y2) =
+                (toNat x0 * toNat y1 + toNat x1 * toNat y0) + (toNat x1 * toNat y2 + toNat x2 * toNat y1)
+            else
+              toNat (mulToom3Loop pm1Pair.2 qm1Pair.2 fuel) +
+                ((toNat x0 * toNat y1 + toNat x1 * toNat y0) + (toNat x1 * toNat y2 + toNat x2 * toNat y1)) =
+                toNat x0 * toNat y0 + (toNat x0 * toNat y2 + toNat x1 * toNat y1 + toNat x2 * toNat y0) +
+                  toNat x2 * toNat y2 := by
+          rw [ih pm1Pair.2 qm1Pair.2]
+          exact toom3_eval_m1 hpa hpb
+        have hinterp := (toom3Interp_spec (mulToom3Loop x0 y0 fuel) (mulToom3Loop p1 q1 fuel)
+          (mulToom3Loop pm1Pair.2 qm1Pair.2 fuel) (mulToom3Loop p2 q2 fuel) (mulToom3Loop x2 y2 fuel)
+          (pm1Pair.1 != qm1Pair.1) k (n + y.size)
+          (toNat x0 * toNat y0)
+          (toNat x0 * toNat y1 + toNat x1 * toNat y0)
+          (toNat x0 * toNat y2 + toNat x1 * toNat y1 + toNat x2 * toNat y0)
+          (toNat x1 * toNat y2 + toNat x2 * toNat y1)
+          (toNat x2 * toNat y2) hr0 hrInf hr1 hrm1 hr2).2
+        rw [hinterp, toom3_poly_ident, ← toNat_slice_split3 x k, ← toNat_slice_split3 y k, hprod_eq]
+
+theorem toNat_mulToom3 (a b : Array UInt64) :
+    toNat (mulToom3 a b) = toNat a * toNat b :=
+  toNat_mulToom3Loop a b _
+
+private theorem wf_sqrToom3Loop (a : Array UInt64) (fuel : Nat) :
+    WF (sqrToom3Loop a fuel) := by
+  cases fuel with
+  | zero => exact wf_sqrKaratsuba a
+  | succ fuel =>
+    unfold sqrToom3Loop
+    split
+    · exact wf_sqrKaratsuba a
+    · exact wf_toom3Interp _ _ _ _ _ _ _ _
+
+theorem wf_sqrToom3 (a : Array UInt64) : WF (sqrToom3 a) :=
+  wf_sqrToom3Loop a a.size
+
+private theorem toNat_sqrToom3Loop (a : Array UInt64) (fuel : Nat) :
+    toNat (sqrToom3Loop a fuel) = toNat a * toNat a := by
+  induction fuel generalizing a with
+  | zero => exact toNat_sqrKaratsuba a
+  | succ fuel ih =>
+    unfold sqrToom3Loop
+    split
+    · exact toNat_sqrKaratsuba a
+    · dsimp only
+      let k := (a.size + 2) / 3
+      rw [toom3EvalLoop_eq a k]
+      dsimp only
+      let a0 := normalize (slice a 0 k)
+      let a1 := normalize (slice a k (2 * k))
+      let a2 := normalize (slice a (2 * k) a.size)
+      let p02 := add a0 a2
+      let p1  := add p02 a1
+      let pm1Pair := signedSub p02 a1
+      let p2  := add (shiftLeft1 (add (shiftLeft1 a2) a1)) a0
+      have hr0 : toNat (sqrToom3Loop a0 fuel) = toNat a0 * toNat a0 := ih a0
+      have hrInf : toNat (sqrToom3Loop a2 fuel) = toNat a2 * toNat a2 := ih a2
+      have hr1 : toNat (sqrToom3Loop p1 fuel) =
+          toNat a0 * toNat a0 + (toNat a0 * toNat a1 + toNat a1 * toNat a0) +
+          (toNat a0 * toNat a2 + toNat a1 * toNat a1 + toNat a2 * toNat a0) +
+          (toNat a1 * toNat a2 + toNat a2 * toNat a1) + toNat a2 * toNat a2 := by
+        rw [ih p1]
+        simp only [p1, p02, toNat_add]
+        exact toom3_eval_1 (toNat a0) (toNat a1) (toNat a2) (toNat a0) (toNat a1) (toNat a2)
+      have hr2 : toNat (sqrToom3Loop p2 fuel) =
+          toNat a0 * toNat a0 + 2 * (toNat a0 * toNat a1 + toNat a1 * toNat a0) +
+          4 * (toNat a0 * toNat a2 + toNat a1 * toNat a1 + toNat a2 * toNat a0) +
+          8 * (toNat a1 * toNat a2 + toNat a2 * toNat a1) + 16 * (toNat a2 * toNat a2) := by
+        rw [ih p2]
+        simp only [p2, toNat_add, toNat_shiftLeft1]
+        exact toom3_eval_2 (toNat a0) (toNat a1) (toNat a2) (toNat a0) (toNat a1) (toNat a2)
+      have hpa := (signedSub_spec (wf_add a0 a2) (wf_normalize (slice a k (2 * k)))).2
+      simp only [toNat_add] at hpa
+      have hrm1 : if false then
+            toNat (sqrToom3Loop pm1Pair.2 fuel) +
+              (toNat a0 * toNat a0 + (toNat a0 * toNat a2 + toNat a1 * toNat a1 + toNat a2 * toNat a0) +
+                toNat a2 * toNat a2) =
+              (toNat a0 * toNat a1 + toNat a1 * toNat a0) + (toNat a1 * toNat a2 + toNat a2 * toNat a1)
+          else
+            toNat (sqrToom3Loop pm1Pair.2 fuel) +
+              ((toNat a0 * toNat a1 + toNat a1 * toNat a0) + (toNat a1 * toNat a2 + toNat a2 * toNat a1)) =
+              toNat a0 * toNat a0 + (toNat a0 * toNat a2 + toNat a1 * toNat a1 + toNat a2 * toNat a0) +
+                toNat a2 * toNat a2 := by
+        rw [ih pm1Pair.2]
+        have hm := toom3_eval_m1 hpa hpa
+        simpa [bne_self_eq_false] using hm
+      have hinterp := (toom3Interp_spec (sqrToom3Loop a0 fuel) (sqrToom3Loop p1 fuel)
+        (sqrToom3Loop pm1Pair.2 fuel) (sqrToom3Loop p2 fuel) (sqrToom3Loop a2 fuel)
+        false k (2 * a.size)
+        (toNat a0 * toNat a0)
+        (toNat a0 * toNat a1 + toNat a1 * toNat a0)
+        (toNat a0 * toNat a2 + toNat a1 * toNat a1 + toNat a2 * toNat a0)
+        (toNat a1 * toNat a2 + toNat a2 * toNat a1)
+        (toNat a2 * toNat a2) hr0 hrInf hr1 hrm1 hr2).2
+      rw [hinterp, toom3_poly_ident, ← toNat_slice_split3 a k]
+
+theorem toNat_sqrToom3 (a : Array UInt64) :
+    toNat (sqrToom3 a) = toNat a * toNat a :=
+  toNat_sqrToom3Loop a a.size
+
+private theorem cmpLoop_eq_toNatPrefix (a b : Array UInt64) (k : Nat)
+    (h : cmpLoop a b k = .eq) : toNatPrefix a k = toNatPrefix b k := by
+  induction k with
+  | zero => rfl
+  | succ k ih =>
+    unfold cmpLoop at h
+    dsimp only at h
+    split at h
+    · cases h
+    · split at h
+      · cases h
+      · rename_i hnotlt hnotgt
+        have hle1 : (getLimb b k).toNat ≤ (getLimb a k).toNat :=
+          Nat.le_of_not_lt (fun hlt => hnotlt (UInt64.lt_iff_toNat_lt.mpr hlt))
+        have hle2 : (getLimb a k).toNat ≤ (getLimb b k).toNat :=
+          Nat.le_of_not_lt (fun hgt => hnotgt (UInt64.lt_iff_toNat_lt.mpr hgt))
+        rw [toNatPrefix_succ, toNatPrefix_succ, ih h, Nat.le_antisymm hle2 hle1]
+
+private theorem toNat_eq_of_beq_same_size {a b : Array UInt64}
+    (hsz : a.size = b.size) (hbeq : beq a b = true) : toNat a = toNat b := by
+  unfold beq cmp at hbeq
+  rw [hsz] at hbeq
+  simp only [Nat.lt_irrefl, ↓reduceIte] at hbeq
+  cases hc : cmpLoop a b b.size with
+  | lt => rw [hc] at hbeq; simp at hbeq
+  | gt => rw [hc] at hbeq; simp at hbeq
+  | eq =>
+    unfold toNat
+    rw [hsz]
+    exact cmpLoop_eq_toNatPrefix a b b.size hc
+
+theorem wf_mul (a b : Array UInt64) : WF (mul a b) := by
+  unfold mul
+  split
+  · exact wf_sqrToom3 a
+  · exact wf_mulToom3 a b
+
+theorem toNat_mul (a b : Array UInt64) : toNat (mul a b) = toNat a * toNat b := by
+  unfold mul
+  split
+  · rename_i hcond
+    have ⟨h12, hbeq⟩ := Bool.and_eq_true _ _ |>.mp hcond
+    have ⟨hszb, _⟩ := Bool.and_eq_true _ _ |>.mp h12
+    have hsz : a.size = b.size := eq_of_beq hszb
+    rw [toNat_sqrToom3, toNat_eq_of_beq_same_size hsz hbeq]
+  · exact toNat_mulToom3 a b
+
+theorem wf_sqr (a : Array UInt64) : WF (sqr a) := wf_sqrToom3 a
 
 theorem toNat_sqr (a : Array UInt64) : toNat (sqr a) = toNat a * toNat a :=
-  toNat_sqrKaratsuba a
+  toNat_sqrToom3 a
 
 /-! ### Left-to-Right Binary Exponentiation (`pow`) -/
 

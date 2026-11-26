@@ -278,7 +278,7 @@ theorem step_exp (g : Anf.GlobalId) (e : Anf.Exp) (ρ : List Var) (J : List Join
       rw [Anf.evalBind_prim, Result.bind_assoc]
       refine Corr.ofOption fun vs hvs => ?_
       obtain ⟨ws, hws, hvws⟩ := atoms_rel henv hargs (fun i hi => by simp only [Anf.Exp.occ, Anf.Bind.occ]; fir_omega) hvs
-      obtain ⟨hpv, hcases⟩ := primResult_rel S.known S.ctors hb hvws
+      obtain ⟨hpv, hcases⟩ := primResult_rel S.known S.ctors hb (exp_prim_arr hlow) hvws
       rcases hcases with hst | ⟨v, hv⟩
       · rw [hst]; exact Corr.stuck _
       · rw [hv, Result.bind_ok]

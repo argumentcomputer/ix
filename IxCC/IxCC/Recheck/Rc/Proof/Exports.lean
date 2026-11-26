@@ -33,7 +33,7 @@ private theorem assembled_function {original : Rt.Lowered} {layout : Layout}
       some function.splitCriticalEdges := by
   have actual : original.program.funcs[f]? = some function.splitCriticalEdges := by
     rw [program]
-    simp [Lir.Program.splitCriticalEdges, lookup]
+    simp [Lir.Program.splitCriticalEdges_eq, lookup]
   exact (Cfg.Rc.Public.Spec.assemble_existing original layout
     (Array.getElem?_eq_some_iff.mp actual).1).trans actual
 
@@ -50,7 +50,7 @@ theorem public_root {config : Rt.Config} {F : Fir.Program}
       function.conv = .sysvExport symbol ∧ function.params.length = fd.params.length ∧
       fn ≠ lowered.runtime.init ∧ fn ≠ lowered.drop := by
   obtain ⟨original, native, rfl, _⟩ := Cfg.Rc.Public.Spec.lower_parts accepted
-  obtain ⟨main, pairs, functions, _, _, _, _, consuming, lowering, length, program,
+  obtain ⟨main, pairs, functions, _, _, _, _, consuming, _, lowering, length, program,
     init, _, _, roots, _⟩ := Cfg.Rc.Native.Spec.lower_parts native
   obtain ⟨fd, actual, fdLookup, consumed, actualLookup⟩ := consumed_entry consuming range
   obtain ⟨actual', function, actualLookup', loweredFunction, functionLookup⟩ :=
@@ -99,7 +99,7 @@ theorem public_root {config : Rt.Config} {F : Fir.Program}
   · change fn ≠ original.program.funcs.size
     have splitLookup : original.program.funcs[fn]? =
         some (Cfg.Rc.Inline.inlineFunc (layoutOf P) function).splitCriticalEdges := by
-      rw [program]; simp [Lir.Program.splitCriticalEdges, inlFn]
+      rw [program]; simp [Lir.Program.splitCriticalEdges_eq, inlFn]
     exact Nat.ne_of_lt (Array.getElem?_eq_some_iff.mp splitLookup).1
 
 theorem public_init {config : Rt.Config} {F : Fir.Program}
@@ -110,7 +110,7 @@ theorem public_init {config : Rt.Config} {F : Fir.Program}
       function.conv = .sysvExport Rt.Procs.initSymbol ∧ function.params.length = 2 ∧
       lowered.runtime.init ≠ lowered.drop := by
   obtain ⟨original, native, rfl, _⟩ := Cfg.Rc.Public.Spec.lower_parts accepted
-  obtain ⟨main, pairs, functions, _, _, _, _, _, _, length, program,
+  obtain ⟨main, pairs, functions, _, _, _, _, _, _, _, length, program,
     init, _⟩ := Cfg.Rc.Native.Spec.lower_parts native
   have raw := raw_init (l := layoutOf P) length main
   have hge : (layoutOf P).sourceCount ≤ (layoutOf P).init := by
@@ -137,7 +137,7 @@ theorem public_init {config : Rt.Config} {F : Fir.Program}
   · exact congrArg List.length (Rt.Proof.split_params_conv Rt.Procs.cxInit).1
   · change original.init ≠ original.program.funcs.size
     have splitLookup : original.program.funcs[(layoutOf P).init]? = some Rt.Procs.cxInit.splitCriticalEdges := by
-      rw [program]; simp [Lir.Program.splitCriticalEdges, inlInit]
+      rw [program]; simp [Lir.Program.splitCriticalEdges_eq, inlInit]
     rw [init]
     exact Nat.ne_of_lt (Array.getElem?_eq_some_iff.mp splitLookup).1
 
@@ -147,7 +147,7 @@ theorem public_roots {config : Rt.Config} {F : Fir.Program}
     (accepted : Cfg.Rc.Public.lower config F bodies P borrows uniqs = .ok lowered) :
     lowered.runtime.roots.map Prod.fst = P.base.exports := by
   obtain ⟨original, native, rfl, _⟩ := Cfg.Rc.Public.Spec.lower_parts accepted
-  obtain ⟨main, pairs, functions, _, _, _, _, _, _, _, _, _, _, _, roots, _⟩ :=
+  obtain ⟨main, pairs, functions, _, _, _, _, _, _, _, _, _, _, _, _, roots, _⟩ :=
     Cfg.Rc.Native.Spec.lower_parts native
   change original.roots.map Prod.fst = _
   rw [roots]

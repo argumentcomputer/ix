@@ -43,7 +43,8 @@ theorem recycled_entry {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
       context base bump limit regionBytes slots lists)
     {root : Nat} {source : Fir.Fun} (sourceLookup : F.fun? root = some source)
     {numbers : List Nat} {words : List Lir.Word} (encoded : Rt.natWords numbers = some words)
-    (arity : numbers.length = source.params.length) :
+    (arity : numbers.length = source.params.length)
+    (entry : ∀ r ∈ (tablesOf P pairs).rawParams root 0, r = false) :
     let raw := Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) root
     Sem.Sim (ReturnedOutput P pairs raw H addresses external context base limit regionBytes)
       (Inline.inlineEntryClock lowered.runtime.program)
@@ -54,7 +55,7 @@ theorem recycled_entry {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     (numeric_selectOwned_balance _ numbers balance)
     (fun v hv => numeric_selectBorrowed_reachable H _ _ numbers v hv)
     (fun v hv => numeric_selectUnique_uniq F.ctors H _ _ _ _ numbers v hv)
-    (numeric_words encoded) (numeric_compatible _ numbers)
+    (numeric_words encoded) entry (numeric_compatible _ numbers)
     (by simpa only [Own.litArgs, List.length_map] using arity)
     (ready.numeric_selectOwned _ numbers)
 
@@ -75,6 +76,7 @@ theorem recycled_call_and_release {F : Fir.Program} {bodies : Src.NatMap Own.Pla
     {root : Nat} {source : Fir.Fun} (sourceLookup : F.fun? root = some source)
     {numbers : List Nat} {words : List Lir.Word} (encoded : Rt.natWords numbers = some words)
     (arity : numbers.length = source.params.length)
+    (entry : ∀ r ∈ (tablesOf P pairs).rawParams root 0, r = false)
     {sourceClock : Nat} {logical : Fir.Val}
     (success : Fir.run F sourceClock root (Fir.litArgs numbers) = .ok logical) :
     let raw := Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) root
@@ -94,7 +96,7 @@ theorem recycled_call_and_release {F : Fir.Program} {bodies : Src.NatMap Own.Pla
       Lir.eval {lowered.runtime.program with main := root} callClock words memory context =
         .resource resource := by
   dsimp only
-  have sim := recycled_entry admission accepted heap sourceLookup encoded arity
+  have sim := recycled_entry admission accepted heap sourceLookup encoded arity entry
   obtain ⟨callClock, refined⟩ := sim.forward sourceClock (by rw [success]; intro h; cases h)
   rw [success] at refined
   cases hcall : Lir.eval {lowered.runtime.program with main := root} callClock words memory context with
@@ -128,6 +130,7 @@ theorem recycled_call_and_release_idle {F : Fir.Program} {bodies : Src.NatMap Ow
     {root : Nat} {source : Fir.Fun} (sourceLookup : F.fun? root = some source)
     {numbers : List Nat} {words : List Lir.Word} (encoded : Rt.natWords numbers = some words)
     (arity : numbers.length = source.params.length)
+    (entry : ∀ r ∈ (tablesOf P pairs).rawParams root 0, r = false)
     {sourceClock : Nat} {logical : Fir.Val}
     (success : Fir.run F sourceClock root (Fir.litArgs numbers) = .ok logical) :
     let raw := Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) root
@@ -146,7 +149,7 @@ theorem recycled_call_and_release_idle {F : Fir.Program} {bodies : Src.NatMap Ow
     ∃ callClock resource,
       Lir.eval {lowered.runtime.program with main := root} callClock words memory context =
         .resource resource :=
-  recycled_call_and_release admission accepted heap sourceLookup encoded arity success
+  recycled_call_and_release admission accepted heap sourceLookup encoded arity entry success
 
 /-- A public root call `(root, numbers)` with valid arity, word encoding, and a
 successful source `Fir.run` evaluation. -/
@@ -255,13 +258,14 @@ theorem RecycledPrefix.next_entry {F : Fir.Program} {bodies : Src.NatMap Own.Pla
       H addresses memory bump slots lists H' addresses' memory' bump' slots' lists')
     {root : Nat} {source : Fir.Fun} (sourceLookup : F.fun? root = some source)
     {numbers : List Nat} {words : List Lir.Word} (encoded : Rt.natWords numbers = some words)
-    (arity : numbers.length = source.params.length) :
+    (arity : numbers.length = source.params.length)
+    (entry : ∀ r ∈ (tablesOf P pairs).rawParams root 0, r = false) :
     let raw := Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) root
     Sem.Sim (ReturnedOutput P pairs raw H' addresses' external context base limit regionBytes)
       (Inline.inlineEntryClock lowered.runtime.program)
       (fun clock => Fir.run F clock root (Fir.litArgs numbers))
       (fun clock => Lir.eval {lowered.runtime.program with main := root} clock words memory' context) :=
-  recycled_entry admission accepted trace.final_heapState sourceLookup encoded arity
+  recycled_entry admission accepted trace.final_heapState sourceLookup encoded arity entry
 
 /-- Outcome of executing an arbitrary session `calls : List (Nat × List Nat)` of
 public root calls and `lowered.drop` releases from an idle heap state: either
@@ -328,6 +332,7 @@ theorem recycled_session {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     {external : Nat → Nat} {context base limit : Lir.Word} {regionBytes : Nat}
     (calls : List (Nat × List Nat))
     (valid : ∀ call ∈ calls, ValidSessionCall F call)
+    (entries : ∀ call ∈ calls, ∀ r ∈ (tablesOf P pairs).rawParams call.1 0, r = false)
     {H : Heap} {addresses : AddressMap} {memory : X86.Memory} {bump : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
     (heap : HeapState P pairs H addresses memory external []
@@ -341,12 +346,13 @@ theorem recycled_session {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     obtain ⟨source, words, sourceClock, logical, lookup, encoded, arity, run⟩ := hcall
     have hrest : ∀ c ∈ rest, ValidSessionCall F c :=
       fun c hc => valid c (List.mem_cons_of_mem call hc)
-    rcases recycled_call_and_release admission accepted heap lookup encoded arity run with
+    rcases recycled_call_and_release admission accepted heap lookup encoded arity
+        (entries call List.mem_cons_self) run with
       ⟨callClock, returned, H', memory', slots', lists', dropClock,
         callEval, released, ready, frame, dropEval⟩ |
       ⟨callClock, res, resEval⟩
     · exact .step heap lookup encoded arity run callEval released ready frame dropEval
-        (ih hrest ready)
+        (ih hrest (fun c hc => entries c (List.mem_cons_of_mem call hc)) ready)
     · exact .resource heap lookup encoded arity resEval
 
 /-- Top-level specialization of `recycled_session` starting from an idle
@@ -359,12 +365,13 @@ theorem recycled_session_idle {F : Fir.Program} {bodies : Src.NatMap Own.Plain.C
     {context base limit : Lir.Word} {regionBytes : Nat}
     (calls : List (Nat × List Nat))
     (valid : ∀ call ∈ calls, ValidSessionCall F call)
+    (entries : ∀ call ∈ calls, ∀ r ∈ (tablesOf P pairs).rawParams call.1 0, r = false)
     {H : Heap} {addresses : AddressMap} {memory : X86.Memory} {bump : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
     (heap : HeapState P pairs H addresses memory (fun _ => 0) []
       context base bump limit regionBytes slots lists) :
     RecycledSession F P config pairs lowered (fun _ => 0) context base limit regionBytes calls
       H addresses memory bump slots lists :=
-  recycled_session admission accepted calls valid heap
+  recycled_session admission accepted calls valid entries heap
 
 end IxCC.Cfg.Rc.Native.Spec

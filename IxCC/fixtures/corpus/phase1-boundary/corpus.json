@@ -5538,6 +5538,102 @@
           ]
         }
       ]
+    },
+    {
+      "name": "vs0",
+      "source": {
+        "path": "Vs0.lean",
+        "sha256": "da19b68ead81396f9b6aadce11986562e2ce7fd2cd80b20333325ec90d2dd068",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Vs0.vs0"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "vs0.ixe",
+        "sha256": "86a371a45c2c4dbaa8b0d6432430abc979fdb16f112952eed2134595cffc5724",
+        "bytes": 578177
+      },
+      "equations": {
+        "path": "vs0.equations.json",
+        "sha256": "2dfcde51c1b6998dc8d3a0cdbaea96b62e71049baa48d9fd1b5239803a067e27",
+        "equations": 15,
+        "failures": 0
+      },
+      "named_env_sha256": "d9b6be68aefa8daaca8c0869a4b44b1e7e9d95a38c23994e4ab7c9ba555800e3",
+      "census": {
+        "path": "vs0.census.json",
+        "sha256": "7df45b05cbb24b31be448f957657f4d5fb9df6b3d4660721a703053e632506d5"
+      },
+      "roots": [
+        {
+          "name": "Vs0.vs0",
+          "address": "3c4c9d28c3ba0ce4fcd4aff31b69182af8f9f2c585aa5ad9e89e393c44a14dd4",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "VS0: a UInt64 loop whose value has its top bit set on most iterations; raw 64-bit registers on the RC route, so no status 3",
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "5700357409661599242",
+              "machine": true,
+              "allow": [
+                "natOverflow"
+              ],
+              "note": "the loop's UInt64 has its top bit set: no tagged word on the immortal route (DR2: a UInt64 is native only below 2^63); the RC route holds it in a raw 64-bit register and gives the value (tests-pipeline-rc, raw words)"
+            },
+            {
+              "args": [
+                5
+              ],
+              "value": "4534217853761136988",
+              "machine": true,
+              "allow": [
+                "natOverflow"
+              ],
+              "note": "the loop's UInt64 has its top bit set: no tagged word on the immortal route (DR2: a UInt64 is native only below 2^63); the RC route holds it in a raw 64-bit register and gives the value (tests-pipeline-rc, raw words)"
+            },
+            {
+              "args": [
+                100
+              ],
+              "value": "6003660798864633857",
+              "machine": true,
+              "allow": [
+                "natOverflow"
+              ],
+              "note": "the loop's UInt64 has its top bit set: no tagged word on the immortal route (DR2: a UInt64 is native only below 2^63); the RC route holds it in a raw 64-bit register and gives the value (tests-pipeline-rc, raw words)"
+            },
+            {
+              "args": [
+                1000
+              ],
+              "value": "3519181292577463013",
+              "machine": true,
+              "allow": [
+                "natOverflow"
+              ],
+              "note": "the loop's UInt64 has its top bit set: no tagged word on the immortal route (DR2: a UInt64 is native only below 2^63); the RC route holds it in a raw 64-bit register and gives the value (tests-pipeline-rc, raw words)"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

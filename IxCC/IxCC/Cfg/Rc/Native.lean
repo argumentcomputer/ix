@@ -1,4 +1,5 @@
 import IxCC.Cfg.Rc.Check
+import IxCC.Cfg.Rc.Raw
 import IxCC.Cfg.Rc.Inline
 import IxCC.Cfg.Rc.Prune
 import IxCC.Cfg.Rc.InlineWrappers
@@ -71,10 +72,12 @@ def lower (config : Rt.Config) (F : Fir.Program) (bodies : Src.NatMap Own.Plain.
     let lowered ← consumeFunction P l fd
     pure (f, lowered)
   let consumed : Cfg.Program := { P.base with funs := Src.NatMap.ofList pairs }
+  unless Raw.rawOk P.raw consumed do
+    throw "the raw word layout fails the native flow check"
   let named := P.base.exports.zipIdx.map fun (f, i) =>
     (f, Rt.Lower.symbolOf ((config.names[i]?).getD s!"root{i}"))
   let roots := named.map fun (f, symbol) => (f, (named.lookup f).getD symbol)
-  let tables := { Rt.Lower.tables consumed with natPow := l.init + 1, natGcd := l.init + 2 }
+  let tables := Raw.rawTables P.raw consumed { Rt.Lower.tables consumed with natPow := l.init + 1, natGcd := l.init + 2 }
   let funcs ← (Rt.Lower.functions tables consumed roots (List.range P.base.size)).mapError Rt.Error.render
   let wrappers := [incrementWrapper l.incProc, decrementWrapper l.decProc] ++
     l.ctors.zipIdx.map (fun (c, i) => allocationWrapper (l.allocProc i) c.arity)

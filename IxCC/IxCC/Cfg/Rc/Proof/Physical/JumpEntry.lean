@@ -14,7 +14,7 @@ layout reconstructs all source join environments. Register coverage remains
 over the entire actual Cfg map. -/
 theorem jump_entry
     {F : Fir.Program} {P : Program} {pairs : List (Nat × Cfg.Fun)} {lp : Lir.Program}
-    (consuming : consumeAll P = .ok pairs)
+    (consuming : consumeAll P = .ok pairs) (rawChecked : Raw.rawOk P.raw (consumed P pairs) = true)
     {source : Cfg.Frame} {target : Lir.Frame} {ρ : Own.Env} {saved rest : List Own.Plain.JEntry}
     {j : Fir.JoinId} {args : List Fir.Arg} {entry : Own.Plain.JEntry} {rslots : Src.NatMap Own.RVal}
     (sourceState : At F P source ρ saved (.jmp j args) rslots)
@@ -70,8 +70,10 @@ theorem jump_entry
     rw [arity, paramsEq]
     simp
   have real := paramsReal fd lookup bj targetBlock targetLookup'
+  have fits := termOk_edge (termOk_source consuming rawChecked range lookup blockLookup) member
   rcases consumed_take_edge receipt frame.lookup blockLookup nativeLookup layout start held nativeLower
-      member targetLookup' edgeOk resolved sub savedSub frame.words arguments length real reached with failure | success
+      member targetLookup' edgeOk resolved sub savedSub frame.words frame.raws fits arguments length real
+      reached with failure | success
   · right
     have same : Lir.atState mem context target.fn target.label target.pos target.env callers =
         ({mem, ctx := context, stack := target :: callers} : Lir.State) := by
@@ -80,7 +82,8 @@ theorem jump_entry
     rw [same] at failure
     exact failure
   · obtain ⟨offset, charges, currentLabel, words, targetEnv, targetStart, labelLower, represented,
-      binding, trace, actualBack, costBound, charged, entered, savedEnv, registers, lexicalRegisters⟩ := success
+      binding, trace, actualBack, costBound, charged, entered, savedEnv, registers, raws,
+      lexicalRegisters, lexicalRaws⟩ := success
     let after : Cfg.Frame := { source with
       blk := bj
       rest := targetBlock.body
@@ -126,7 +129,7 @@ theorem jump_entry
       simp_all [Lir.atState]
     rw [same] at trace
     refine .inl ⟨after, final, charges + (decide (offset ≤ currentLabel)).toNat, restored,
-      ⟨frame.lookup, entered, registers, frame.bounded.bindAll _ bounded,
+      ⟨frame.lookup, entered, registers, raws, frame.bounded.bindAll _ bounded,
         frame.compatible.bindAll _ _ compatible⟩,
       trace, costBound, rfl, rfl, ?_⟩
     intro consumedTarget foundTarget

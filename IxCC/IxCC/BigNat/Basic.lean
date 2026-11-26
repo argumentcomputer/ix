@@ -81,9 +81,11 @@ def padZerosLoop (rem : Nat) (xs : Array UInt64) : Array UInt64 :=
   | 0 => xs
   | k + 1 => padZerosLoop k (xs.push 0)
 
-/-- Extend `xs` with trailing zeros until `xs.size ≥ target` (`@unique xs`). -/
+/-- Extend `xs` with trailing zeros until `xs.size ≥ target` (`@unique xs`).
+Allocates a fresh zero array when `xs` is empty so empty constants are never mutated. -/
 def padZeros (xs : Array UInt64) (target : Nat) : Array UInt64 :=
-  if xs.size < target then padZerosLoop (target - xs.size) xs else xs
+  if xs.size == 0 then mkZeros target
+  else if xs.size < target then padZerosLoop (target - xs.size) xs else xs
 
 /-- Tail-recursive helper copying `rem` limbs starting at `idx` (`@borrowed xs`, `@unique acc`). -/
 def sliceLoop (xs : Array UInt64) (idx rem : Nat) (acc : Array UInt64) : Array UInt64 :=
@@ -175,8 +177,12 @@ theorem size_padZeros (xs : Array UInt64) (target : Nat) :
     (padZeros xs target).size = max xs.size target := by
   unfold padZeros
   split
-  · rw [size_padZerosLoop]; omega
-  · omega
+  · rename_i h0
+    have hz : xs.size = 0 := eq_of_beq h0
+    rw [size_mkZeros]; omega
+  · split
+    · rw [size_padZerosLoop]; omega
+    · omega
 
 theorem size_sliceLoop (xs : Array UInt64) (idx rem : Nat) (acc : Array UInt64) :
     (sliceLoop xs idx rem acc).size = acc.size + rem := by

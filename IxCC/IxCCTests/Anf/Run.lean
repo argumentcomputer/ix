@@ -8,6 +8,7 @@ import IxCCTests.Anf.Defun
 import IxCCTests.Anf.ClosuresOpt
 import IxCCTests.Anf.SuccBle
 import IxCCTests.Anf.FoldGuard
+import IxCCTests.Anf.ArrayPrims
 
 /-! The `tests-anf` suite: the shrink walk's bound on literal folding
 (`IxCCTests.Anf.FoldGuard`, first, so that its memory bound reads the part's
@@ -85,6 +86,8 @@ def main (args : List String) : IO UInt32 := do
       for line in ← Differential.sortpoly a stages do IO.println s!"    {line}"
     part a "the shrink walk's succBle rule: where it applies, exactness at the boundary, mutants" do
       for line in ← SuccBle.run a do IO.println s!"    {line}"
+    part a "the array primitives end to end: the list model at Lam, Lam against Anf after every step, Fir declines" do
+      for line in ← ArrayPrims.run a do IO.println s!"    {line}"
     part a "K1 shapes after the pipeline (02 §13.4), replay, idempotence, least clocks" do
       for line in ← Shapes.run a do IO.println s!"    {line}"
     part a "bench-k1 entries through the pipeline's output" do

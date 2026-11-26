@@ -26,11 +26,11 @@
         lib.fileset.unions
         (common ++ map (item: root + "/${modules.${item.key}.path}") (closure roots));
     };
-  # The grounding library's suite, and the suites that import the target statements
-  # (`IxCCCorrect`: the shape suite, the certified compiler's suite), are built with the
-  # libraries by `ixcc-grounding`, not by the shared program build, so editing the grounding
-  # work never rebuilds the programs.
-  groundingTargets = ["tests-grounding" "tests-shape" "tests-compile-certified"];
+  # The grounding library's suite, and the suite that imports the target statements
+  # (`IxCCCorrect`: the certified compiler's suite), are built with the libraries by the
+  # grounding build, not by the shared program build, so editing the grounding work never
+  # rebuilds the programs.
+  groundingTargets = ["tests-grounding" "tests-compile-certified"];
   # The libraries built, with their axiom fences, by `ixcc-grounding`: the grounding library
   # and the target statements (`IxCCCorrect`, which imports its syntax and the kernel's model).
   groundingLibraries = ["IxCCGrounding" "IxCCCorrect"];
@@ -49,6 +49,14 @@
   ixCRoot = root + "/${ixCEntry.pins.workspace_path}";
   ixCSourceRoot = ixCRoot + "/${ixCEntry.source_dir}";
   ixCFiles = map (path: ixCSourceRoot + "/${path}") (builtins.attrNames ixCEntry.closure);
+  # The kernel's proof tree the target statements cite: the ledger's proof-only dependency
+  # of «ix-ck», every file of its closure outside the closure above.
+  ixCProofEntry = let
+    entries = builtins.filter (entry: entry.lake_package == "«ix-ck»") (ledger.proof_only_dependencies or []);
+  in
+    assert builtins.length entries == 1; builtins.head entries;
+  ixCProofFiles = map (path: ixCSourceRoot + "/${path}") ixCProofEntry.closure_files;
+  moduleNamesOf = paths: map (path: lib.replaceStrings ["/"] ["."] (lib.removeSuffix ".lean" path)) paths;
   repository = root + "/${ledger.policy.repository.root}";
 in {
   inherit root programTargets groundingTargets groundingLibraries;
@@ -75,9 +83,16 @@ in {
     };
     toolchain = ixCRoot + "/lean-toolchain";
     manifest = ixCRoot + "/lake-manifest.json";
-    moduleNames =
-      map (path: lib.replaceStrings ["/"] ["."] (lib.removeSuffix ".lean" path))
-      (builtins.attrNames ixCEntry.closure);
+    moduleNames = moduleNamesOf (builtins.attrNames ixCEntry.closure);
+  };
+  # The proof-only closure the ledger records (`proof_only_dependencies`), for the grounding
+  # build's «ix-ck» only: the production library and the shared program build never see it.
+  ixCProof = {
+    modules = lib.fileset.toSource {
+      root = ixCSourceRoot;
+      fileset = lib.fileset.unions ixCProofFiles;
+    };
+    moduleNames = moduleNamesOf ixCProofEntry.closure_files;
   };
   # The complete tracked IxCC tree, which the checks run against.
   audit = lib.fileset.toSource {
@@ -85,9 +100,9 @@ in {
     fileset = root;
   };
   # The workspace as the trust ledger audits it, with IxCC at its path: the
-  # IxCC tree, «ix-ck»'s lakefile and recorded closure, the repository's
-  # flake.lock and lean-toolchain, the workflows the ledger scopes, the
-  # repository files it pins and the repository-local actions they may use.
+  # IxCC tree, «ix-ck»'s lakefile, recorded closure and proof-only closure, the
+  # repository's flake.lock and lean-toolchain, the workflows the ledger scopes,
+  # the repository files it pins and the repository-local actions they may use.
   ledgerWorkspace = lib.fileset.toSource {
     root = workspace;
     fileset = lib.fileset.unions ([
@@ -98,6 +113,7 @@ in {
         (lib.fileset.maybeMissing (repository + "/.github/actions"))
       ]
       ++ ixCFiles
+      ++ ixCProofFiles
       ++ map (path: repository + "/${path}") (ledger.policy.repository.workflows or [])
       ++ map (path: repository + "/${path}")
       (builtins.attrNames (ledger.integrity.repository_files or {})));

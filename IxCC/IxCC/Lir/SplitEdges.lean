@@ -72,7 +72,18 @@ def splitCriticalEdges (f : Func) : Func :=
 
 end Func
 
+/-- Split every function's critical edges. The functions are mapped as a list (no
+library `Array` loop: `RcReplay.run` reaches this); `splitCriticalEdges_eq` is the
+`Array.map` form. -/
 def Program.splitCriticalEdges (p : Program) : Program :=
-  { p with funcs := p.funcs.map Func.splitCriticalEdges }
+  { p with funcs := ⟨p.funcs.toList.map Func.splitCriticalEdges⟩ }
+
+/-- `Program.splitCriticalEdges` as an `Array.map`. -/
+theorem Program.splitCriticalEdges_eq (p : Program) :
+    p.splitCriticalEdges = { p with funcs := p.funcs.map Func.splitCriticalEdges } := by
+  unfold Program.splitCriticalEdges
+  congr 1
+  apply Array.toList_inj.mp
+  simp
 
 end IxCC.Lir

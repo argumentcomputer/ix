@@ -18,10 +18,10 @@ theorem accepted_drop_index {config : Rt.Config} {F : Fir.Program}
     (accepted : Public.lower config F bodies P borrows uniqs = .ok lowered) :
     lowered.drop = (layoutOf P).init + 3 + (reuseProcs (layoutOf P)).length := by
   obtain ⟨original, native, rfl, _⟩ := Public.Spec.lower_parts accepted
-  obtain ⟨main, pairs, functions, _, _, _, _, _, _, length, program, _⟩ := Native.Spec.lower_parts native
+  obtain ⟨main, pairs, functions, _, _, _, _, _, _, _, length, program, _⟩ := Native.Spec.lower_parts native
   change original.program.funcs.size = _
   rw [program]
-  simp only [Lir.Program.splitCriticalEdges, Array.size_map, inlinedProgram,
+  simp only [Lir.Program.splitCriticalEdges_eq, Array.size_map, inlinedProgram,
     Prune.pruneDeadRuntime, FastDec.install, InlineWrappers.inlineProgram, Prune.pruneUnusedReuse,
     Inline.inlineProgram, Array.size_mapIdx, rawProgram, List.size_toArray,
     List.length_append, List.length_cons, List.length_nil, length, wrappers_length, procedures_length]
@@ -65,7 +65,7 @@ theorem Returned.release_public {F : Fir.Program} {bodies : Src.NatMap Own.Plain
       Lir.eval {lowered.runtime.program with main := lowered.drop} clock
         [returned.word] returned.memory context = .ok ([1], memory') := by
   obtain ⟨original, native, equal, _⟩ := Public.Spec.lower_parts accepted
-  obtain ⟨main, pairs', functions', _, _, _, _, _, _, length, program, _⟩ := Native.Spec.lower_parts native
+  obtain ⟨main, pairs', functions', _, _, _, _, _, _, _, length, program, _⟩ := Native.Spec.lower_parts native
   have splitEq : lowered.runtime.program =
       (Public.Spec.inlinedPublicProgram (layoutOf P) functions' main).splitCriticalEdges := by
     rw [equal]
@@ -91,7 +91,7 @@ theorem Returned.release_public {F : Fir.Program} {bodies : Src.NatMap Own.Plain
     rw [equal]
     change original.program.funcs.size = _
     rw [program]
-    simp [arr, Lir.Program.splitCriticalEdges, inlinedProgram, Prune.pruneDeadRuntime,
+    simp [arr, Lir.Program.splitCriticalEdges_eq, inlinedProgram, Prune.pruneDeadRuntime,
       FastDec.install, InlineWrappers.inlineProgram, Prune.pruneUnusedReuse, Inline.inlineProgram,
       rawProgram]
   have hneDrop : lowered.drop ≠ (layoutOf P).decProc := by

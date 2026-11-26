@@ -29,6 +29,7 @@ theorem treeView_of_vr {A : Anf.Program} {sig : Sig} :
     have keyEq := Fir.Proof.ofKey_key row
     cases key with
     | clo _ _ => simp [Fir.obsV, keyEq] at hs
+    | arr => simp [Fir.obsV, keyEq] at hs
     | src cid =>
       simp only [Fir.obsV, keyEq] at hs
       obtain ⟨sourceFields, sourceRead, sourceEq⟩ := Option.map_eq_some_iff.mp hs

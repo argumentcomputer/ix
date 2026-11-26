@@ -1,5 +1,6 @@
 import IxCC.Key
 import IxCC.Src.Prim
+import IxCC.Src.ArrayOp
 import IxCC.Src.NatMap
 import IxCC.Ixon.V3.Contracts
 
@@ -55,12 +56,16 @@ def wordSem (w : Src.Width) (op : Src.WordOp) : List Nat → Option Src.PrimResu
 
 /-- Src's `PrimOp`, one to one, plus operations only proved rewrites
 introduce (`natBlt`, from `Nat.decLt`'s `natBle (x + 1) y` by the shrink walk's
-`succBle`), plus the fixed-width word operations (`word`, stage W1). -/
+`succBle`), plus the fixed-width word operations (`word`, stage W1), plus the array operations
+(`arr`, `Src.ArrOp`: arrays, byte arrays and strings are one value, a list). An array operation
+reads values, not only literals, so it has no meaning in `sem`; each evaluator gives it
+`Src.ArrOp.eval` at its own value model. -/
 inductive Prim where
   | natAdd | natSub | natMul | natDiv | natMod | natPow | natGcd | natBeq | natBle
   | natLand | natLor | natXor | natShl | natShr | natPred
   | natBlt
   | word (w : Src.Width) (op : Src.WordOp)
+  | arr (op : Src.ArrOp)
   deriving DecidableEq, Repr, Inhabited
 
 namespace Prim
@@ -74,6 +79,7 @@ def ofSrc : Src.PrimOp → Prim
 def arity : Prim → Nat
   | .natPred => 1
   | .word _ op => op.arity
+  | .arr op => op.arity
   | _ => 2
 
 def name : Prim → String
@@ -82,13 +88,16 @@ def name : Prim → String
   | .natBle => "natBle" | .natLand => "natLand" | .natLor => "natLor" | .natXor => "natXor"
   | .natShl => "natShl" | .natShr => "natShr" | .natPred => "natPred" | .natBlt => "natBlt"
   | .word w op => op.leanName w
+  | .arr op => op.name
 
 /-- The exact meaning on literals (Src's `PrimOp.eval2` for the shared
 operations, so both levels agree by definition; `wordSem` for a word);
-`none` on an arity mismatch. -/
+`none` on an arity mismatch, and for an array operation, whose meaning is not a function of
+literals (`Src.ArrOp.eval`). -/
 def sem (p : Prim) (ns : List Nat) : Option Src.PrimResult :=
   match p, ns with
   | .word w op, ns => wordSem w op ns
+  | .arr _, _ => none
   | .natBlt, [a, b] => some (.bool (decide (a < b)))
   | .natBlt, _ => none
   | .natPred, [a] => some (Src.PrimOp.pred.eval2 a 0)
@@ -100,12 +109,35 @@ where
     | .natAdd => .add | .natSub => .sub | .natMul => .mul | .natDiv => .div | .natMod => .mod
     | .natPow => .pow | .natGcd => .gcd | .natBeq => .beq | .natBle => .ble | .natLand => .land
     | .natLor => .lor | .natXor => .xor | .natShl => .shiftLeft | .natShr => .shiftRight
-    | .natPred | .natBlt | .word .. => .add
+    | .natPred | .natBlt | .word .. | .arr .. => .add
 
 /-- Whether the primitive is a fixed-width word operation. -/
 def isWord : Prim → Bool
   | .word .. => true
   | _ => false
+
+/-- Whether the primitive is an array operation. -/
+def isArr : Prim → Bool
+  | .arr .. => true
+  | _ => false
+
+/-- Whether the primitive can trap (an out-of-range array access, decision D2). A primitive that
+cannot is pure: it returns a value or is stuck, so a pass may delete it when its result is
+unused. One that can trap must be kept. -/
+def mayTrap : Prim → Bool
+  | .arr op => op.mayTrap
+  | _ => false
+
+@[simp] theorem sem_arr (op : Src.ArrOp) (ns : List Nat) : sem (.arr op) ns = none := rfl
+
+theorem isArr_eq_true {p : Prim} (h : p.isArr = true) : ∃ op, p = .arr op := by
+  cases p
+  case arr op => exact ⟨op, rfl⟩
+  all_goals cases h
+
+/-- A primitive that is not an array operation cannot trap. -/
+theorem mayTrap_of_not_arr {p : Prim} (h : p.isArr = false) : p.mayTrap = false := by
+  cases p <;> first | rfl | cases h
 
 end Prim
 

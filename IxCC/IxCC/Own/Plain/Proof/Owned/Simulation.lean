@@ -663,7 +663,7 @@ theorem owned_eval {H : Heap} {external : Nat → Nat} {priv : Nat → Prop} {re
         (Fir.eval F k ρf Jf (.bind x r (eraseCode c'))) _
       rw [Fir.eval_bindRhs F k ρf Jf x r (eraseCode c') hn,
         eval_bindRhs _ k ρo Jo H x r c' hn]
-      rcases fir_rhs_pure F ρf r with hstuck | ⟨w, hw⟩
+      rcases fir_rhs_pure F ρf r (bindStep_isArrPrim hbs) with hstuck | ⟨w, hw⟩
       · rw [hstuck]; exact .stuck
       · obtain ⟨v, H', owned', hev, st', hreach, hpriv⟩ := rhs_step pins st hx hn hbs hw
         rw [hw, Result.bind_ok]

@@ -1,5 +1,6 @@
 import IxCCGrounding.Facts
 import IxCCGrounding.Support
+import IxCCGrounding.RecLevels
 
 /-!
 # What the fundamental lemma assumes (`IxCCGrounding.Hyps`)
@@ -87,6 +88,10 @@ structure FundHyps (M : Model V env) (p : Program) (κ : CId → KKey) (lpsOf : 
   canon : CtorCanon M ∨ ∀ r, S r →
     (recClassB p env κ r = some .flat ∨ recClassB p env κ r = some .noParams) →
       RecNoLevels env (κ r)
+  /-- at every `ordinary` recursor of `S` (W-c): its `Ok` instances at its level count, and the
+  constructor image at the major domain's levels from canonicity, from no level parameter, or from
+  level agreement at the `Ok` instances (`OrdLevels`) -/
+  ordinary : ∀ r, S r → recClassB p env κ r = some .ordinary → OrdLevels M p κ lpsOf Ok r
   /-- the `Nat` basis the literal reading uses is stored as the kernel's reading stores it -/
   natBasis : NatBasis env
   /-- the stored-shape and program facts (the word clause apart: `words`) -/
@@ -139,6 +144,10 @@ structure FundHypsK (M : Model V env) (p : Program) (κ : CId → KKey) (lpsOf :
   canon : CtorCanon M ∨ ∀ r, S r →
     (recClassB p env κ r = some .flat ∨ recClassB p env κ r = some .noParams) →
       RecNoLevels env (κ r)
+  /-- at every `ordinary` recursor of `S` (W-c): its `Ok` instances at its level count, and the
+  constructor image at the major domain's levels from canonicity, from no level parameter, or from
+  level agreement at the `Ok` instances (`OrdLevels`) -/
+  ordinary : ∀ r, S r → recClassB p env κ r = some .ordinary → OrdLevels M p κ lpsOf Ok r
   natBasis : NatBasis env
   faith : FaithWithK (RecFacts p env κ lpsOf S) True (fun _ => True) p env κ lpsOf S
   words : WordFires M p κ lpsOf S Ok
@@ -170,6 +179,7 @@ theorem FundHyps.toK {M : Model V env} {p : Program} {κ : CId → KKey} {lpsOf 
     FundHypsK M p κ lpsOf S Ok where
   laws := H.laws
   canon := H.canon
+  ordinary := H.ordinary
   natBasis := H.natBasis
   faith := FaithWithK.monoK (fun _ _ => trivial) H.faith
   words := H.words

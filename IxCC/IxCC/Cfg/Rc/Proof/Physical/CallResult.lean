@@ -270,8 +270,14 @@ theorem call_result (admission : CodeAdmission F bodies P config pairs functions
       outputLookup, position, statement, continuation⟩ := called
     have liveArgs := consumed_call_live before.frame.cursor head (consume_user_call range)
       before.frame.lookup
+    have flows := before.frame.cursor.instrOk head (consume_user_call range) admission.rawOk
+      (consumed_lookup_lt admission.consuming before.frame.lookup)
+    simp only [Raw.instrOk, Bool.and_eq_true, beq_iff_eq] at flows
+    have notRawX : (tablesOf P pairs).rawVar source.fn x = false := by
+      rw [tablesOf_rawVar, flows.2]
+      exact rawOk_retRaw admission.rawOk f
     obtain ⟨argumentWords, evaluated, represented, _⟩ :=
-      fused_operands_words before.frame.words operandsLowered liveArgs frameArgs
+      slot_operands_words before.frame.words before.frame.raws operandsLowered flows.1 liveArgs frameArgs
     have compatible := before.frame.compatible.args liveArgs frameArgs
     have fieldsArity : fields.length = calleeSource.params.length :=
       (Own.evalArgs_length ownedEnv ownArgs).trans calleeArity.symm
@@ -292,6 +298,7 @@ theorem call_result (admission : CodeAdmission F bodies P config pairs functions
         addresses H.size (funcFirst bodies source.fn sourceFunction) function
         {source with rest := sourceTail} saved :=
       ⟨before.frame.lookup, continuation.withEnvs source.env target.env [x], before.frame.words,
+        before.frame.raws,
         before.frame.bounded, before.frame.compatible⟩
     have fused : ∀ value block, function.blocks[source.blk]? = some block →
         Rt.Proof.FusedDone (tablesOf P pairs) function block
@@ -344,7 +351,7 @@ theorem call_result (admission : CodeAdmission F bodies P config pairs functions
             have hr' := Own.Plain.balance_resume returned.balance
             refine Own.Plain.SameRefs.balance ?_ hr'
             intro l; simp only [List.cons_append, refsIn_append, refsIn]; omega
-          obtain ⟨returnStep, resumedFrame⟩ := returned.history.resume savedFrame rfl destination
+          obtain ⟨returnStep, resumedFrame⟩ := returned.history.resume savedFrame rfl destination notRawX
             returned.represented returned.bounded returned.compatible returned.terminator
             returned.memory context callers
           let finalSource : Cfg.Frame :=

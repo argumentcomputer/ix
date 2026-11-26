@@ -4,7 +4,7 @@ import IxCC.Lam.Semantics
 
 Determinism holds by construction (`eval` is a function; stated below).
 The rules below are the ones erasure's proof reads off directly: □ is stuck
-under application, projection, `case` and primitives, a key
+under application, projection, `case` and scalar primitives, a key
 mismatch in `proj` is stuck, and `tick`, `glob` and closure entry charge
 exactly one unit. Clock monotonicity (`eval k ρ t = r → r ≠ timeout → k ≤ k'
 → eval k' ρ t = r`) is proved (`Lam.eval_mono`); `tests-lam` also checks it
@@ -79,9 +79,10 @@ theorem natArgs_box (vs : List Val) (h : Val.box ∈ vs) : natArgs vs = none := 
       | .lit (.nat n) => simp [natArgs, ih h']
       | .lit (.str _) | .box | .clos .. | .con .. => rfl
 
-/-- □ is stuck as a primitive argument. -/
-theorem primResult_box (K : Known) (p : Prim) (vs : List Val) (h : Val.box ∈ vs) :
-    primResult K p vs = .stuck := by
-  simp [primResult, natArgs_box vs h]
+/-- □ is stuck as an argument of a scalar primitive (an array primitive stores any value, □
+included, so `p.isArr = false`). -/
+theorem primResult_box (K : Known) (p : Prim) (hp : p.isArr = false) (vs : List Val)
+    (h : Val.box ∈ vs) : primResult K p vs = .stuck := by
+  simp [primResult, natArgs_box vs h, arrResult_of_not_arr hp]
 
 end IxCC.Lam

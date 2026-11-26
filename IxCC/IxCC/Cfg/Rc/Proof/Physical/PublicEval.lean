@@ -180,7 +180,7 @@ theorem accepted_eval_stages {config : Rt.Config} {F : Fir.Program}
             clock words memory context)
           (fun clock => Lir.eval lowered.runtime.program clock words memory context) := by
   obtain ⟨original, native, equal, _⟩ := Public.Spec.lower_parts accepted
-  obtain ⟨main, pairs, functions, _, switches, entry, hok, consuming, lowering, length, program, _⟩ :=
+  obtain ⟨main, pairs, functions, _, switches, entry, hok, consuming, rawChecked, lowering, length, program, _⟩ :=
     Native.Spec.lower_parts native
   have splitEq : lowered.runtime.program =
       (Public.Spec.inlinedPublicProgram (layoutOf P) functions main).splitCriticalEdges := by
@@ -191,7 +191,7 @@ theorem accepted_eval_stages {config : Rt.Config} {F : Fir.Program}
       (Public.Spec.labels (Public.Spec.inlinedPublicProgram (layoutOf P) functions main)) :=
     splitEq ▸ Public.Spec.program_split _
   have hmainLt : main < (layoutOf P).sourceCount := hmain main entry
-  refine ⟨main, pairs, functions, ⟨checked, consuming, lowering, switches⟩, entry, ?_⟩
+  refine ⟨main, pairs, functions, ⟨checked, consuming, lowering, switches, rawChecked⟩, entry, ?_⟩
   intro words memory context
   have stage12 : ∀ clock,
       Lir.eval (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main)

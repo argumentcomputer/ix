@@ -1,4 +1,5 @@
 import IxCCGrounding.Direct.Check
+import IxCCGrounding.RecOrdFacts
 
 /-!
 # The checked facts the theorems consume (`IxCCGrounding.Facts`)
@@ -68,6 +69,12 @@ structure RecFacts (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId �
   noParams : ∀ r, S r → recClassB p env κ r = some .noParams →
     RecTele env (κ r) ∧ RecProg p κ S r ∧ RecCtorsRaw p env κ r ∧ RecFields env (κ r) ∧
       RecBodies p env κ lpsOf r ∧ RecSites p env κ lpsOf r
+  /-- where it is of class `ordinary` (W-c), the flat facts, its rules as ι with parameters reads
+  them (`RecOrdRules`), its rule bodies with self-calls (`RecBodiesSelf`), and its rule bodies'
+  sites typed by the direct route -/
+  ordinary : ∀ r, S r → recClassB p env κ r = some .ordinary →
+    RecTele env (κ r) ∧ RecProg p κ S r ∧ RecCtorsRaw p env κ r ∧ RecOrdRules env (κ r) ∧
+      RecBodiesSelf p env κ lpsOf r ∧ RecSites p env κ lpsOf r
 
 /-- **The landed clause implies the new one**: with no recursor in `S`, `RecFacts` holds. -/
 theorem recFacts_of_noRecr {p : Program} {env : KEnv} {κ : CId → KKey} {lpsOf : CId → List Nat}
@@ -86,6 +93,9 @@ theorem recFacts_of_noRecr {p : Program} {env : KEnv} {κ : CId → KKey} {lpsOf
     obtain ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, hd⟩ := recClassB_recr hk
     exact absurd hd (h r hr sf kk lvls np nmot nmin ni ind rules ty)
   noParams r hr hk := by
+    obtain ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, hd⟩ := recClassB_recr hk
+    exact absurd hd (h r hr sf kk lvls np nmot nmin ni ind rules ty)
+  ordinary r hr hk := by
     obtain ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, hd⟩ := recClassB_recr hk
     exact absurd hd (h r hr sf kk lvls np nmot nmin ni ind rules ty)
 
@@ -133,6 +143,13 @@ theorem recFacts_of_emptyOnly {p : Program} {env : KEnv} {κ : CId → KKey}
     subst hm
     rw [hk] at hk'
     cases hk'
+  ordinary r hr hk := by
+    obtain ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, hd⟩ := recClassB_recr hk
+    obtain ⟨k, hk', hm⟩ := hcls r hr sf kk lvls np nmot nmin ni ind rules ty hd
+    simp only [List.mem_singleton] at hm
+    subst hm
+    rw [hk] at hk'
+    cases hk'
 
 /-- **The recursor facts as part C landed them imply today's** (G3, part D): there every recursor
 of `S` was of class `empty` or `eqRec`, the classes then admitted, with the checked shape and, at
@@ -169,6 +186,12 @@ theorem recFacts_of_eqRecOnly {p : Program} {env : KEnv} {κ : CId → KKey}
     rw [hk] at hk'
     cases hk'
     simp at hm
+  ordinary r hr hk := by
+    obtain ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, hd⟩ := recClassB_recr hk
+    obtain ⟨k, hk', hm⟩ := hcls r hr sf kk lvls np nmot nmin ni ind rules ty hd
+    rw [hk] at hk'
+    cases hk'
+    simp at hm
 
 /-- **The recursor facts as part D's first step landed them imply today's** (G3, part E): there every
 recursor of `S` was of class `empty`, `eqRec` or `flat`, the classes then admitted, with the checked
@@ -198,6 +221,12 @@ theorem recFacts_of_flatOnly {p : Program} {env : KEnv} {κ : CId → KKey}
   eqRec := hB
   flat := hF
   noParams r hr hk := by
+    obtain ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, hd⟩ := recClassB_recr hk
+    obtain ⟨k, hk', hm⟩ := hcls r hr sf kk lvls np nmot nmin ni ind rules ty hd
+    rw [hk] at hk'
+    cases hk'
+    simp at hm
+  ordinary r hr hk := by
     obtain ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, hd⟩ := recClassB_recr hk
     obtain ⟨k, hk', hm⟩ := hcls r hr sf kk lvls np nmot nmin ni ind rules ty hd
     rw [hk] at hk'
@@ -253,11 +282,12 @@ def RecNoLevels (env : KEnv) (kr : KKey) : Prop :=
 /-- **Canonicity is not needed on `S`** (the decided fact of the canonicity-free family):
 `ctor_canon` is read at exactly three places (`caseFires_of_shape`, at every `case` entry;
 `ctorImage_canon` and `ctorFields_canon`, at a `flat` or `noParams` rule over a constructor with level
-parameters), and this excludes all three. Classes `empty` and `eqRec` read no canonicity; `ordinary`
-is not admitted. -/
+parameters; and `ctorFields_canonP` at an `ordinary` one, W-c), and this excludes all of them.
+Classes `empty` and `eqRec` read no canonicity. -/
 structure NoCanon (p : Program) (env : KEnv) (κ : CId → KKey) (S : CId → Prop) : Prop where
   cases : ∀ c r, S c → p.table.resolveOf c = some (.case r) → CaseNoCanon env (κ r)
-  recs : ∀ r, S r → (recClassB p env κ r = some .flat ∨ recClassB p env κ r = some .noParams) →
+  recs : ∀ r, S r → (recClassB p env κ r = some .flat ∨ recClassB p env κ r = some .noParams ∨
+      recClassB p env κ r = some .ordinary) →
     RecNoLevels env (κ r)
 
 /-- Every rule's constructor stored without level parameters (looked up in the indexed reading). -/
@@ -280,7 +310,7 @@ def noCanonB (p : Program) (env : KEnv) (κ : CId → KKey) (Sl : List CId) : Bo
         | _ => false
       | _ => true) &&
     (match recClassB p env κ c with
-      | some .flat | some .noParams =>
+      | some .flat | some .noParams | some .ordinary =>
         match tab[κ c]? with
         | some (.recInfo _ _ _ rules) => ctorsNoLevelsB tab rules
         | _ => false

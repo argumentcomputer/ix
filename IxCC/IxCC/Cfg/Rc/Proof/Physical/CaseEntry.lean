@@ -9,6 +9,7 @@ open IxCC.Rt.Rc.Procs
 
 theorem case_entry {F : Fir.Program} {P : Program} {pairs : List (Nat × Cfg.Fun)} {lp : Lir.Program}
     (consuming : consumeAll P = .ok pairs) (switches : Rt.checkSwitches P.base = .ok ())
+    (rawChecked : Raw.rawOk P.raw (consumed P pairs) = true)
     {source : Cfg.Frame} {target : Lir.Frame} {ρ : Own.Env} {saved : List Own.Plain.JEntry}
     {x : Fir.Var} {alts : List Own.Plain.Alt} {default : Option Own.Plain.Code}
     {key : Key.CtorKey} {body : Own.Plain.Code} {rslots : Src.NatMap Own.RVal}
@@ -57,24 +58,26 @@ theorem case_entry {F : Fir.Program} {P : Program} {pairs : List (Nat × Cfg.Fun
       ({mem, ctx := context, stack := target :: callers} : Lir.State) := by
     cases target
     simp_all [Lir.atState]
-  rcases ConsumedCursor.switch_reaches consuming switches frame range sourceLookup blockLookup
+  rcases ConsumedCursor.switch_reaches consuming switches rawChecked frame range sourceLookup blockLookup
       finished terminal liveHeap compatibleHeap real done (lexical x value lookup) constructor choice
       context callers with reached | failure
   · obtain ⟨native, starts, off, chunks, low, pe, le, targetEnv, nativeLookup, layout, start,
-      held, lower, edgeOk, back, resolved, reached, words⟩ := reached
+      held, lower, edgeOk, back, resolved, reached, words, wordsRaws⟩ := reached
+    have fits := termOk_edge (termOk_source consuming rawChecked range sourceLookup blockLookup) member
     have arguments : Own.evalArgs ρ edge.args = some [] := by simp [noArgs, Own.evalArgs]
     rcases consumed_take_edge receipt frame.lookup blockLookup nativeLookup layout start held lower
-        member targetLookup edgeOk resolved lexical lexical words arguments
+        member targetLookup edgeOk resolved lexical lexical words wordsRaws fits arguments
         (by simp [noParams]) (by simp [noParams]) reached with failure | success
     · exact .inr (same ▸ failure)
     · obtain ⟨offset, charges, currentLabel, values, finalEnv, targetStart, labelLower, represented,
-        binding, trace, actualBack, costBound, charged, entered, savedEnv, registers, lexicalRegisters⟩ := success
-      simp only [noParams, List.map_nil, Own.bindAll] at entered registers
+        binding, trace, actualBack, costBound, charged, entered, savedEnv, registers, raws,
+        lexicalRegisters, lexicalRaws⟩ := success
+      simp only [noParams, List.map_nil, Own.bindAll] at entered registers raws
       let after : Cfg.Frame := {source with blk := edge.target, rest := targetBlock.body}
       let final : Lir.Frame := {fn := source.fn, label := offset, pos := 0, env := finalEnv}
       rw [same] at trace
       refine .inl ⟨after, final, charges + (decide (offset ≤ currentLabel)).toNat, enteredLayout,
-        ⟨frame.lookup, entered, registers, frame.bounded, frame.compatible⟩,
+        ⟨frame.lookup, entered, registers, raws, frame.bounded, frame.compatible⟩,
         trace, rfl, rfl, ?_⟩
       intro consumedTarget foundTarget
       obtain ⟨targetBody, mapping, actualTarget⟩ := (consumeFunction_parts receipt).2.2.2.2.2 targetLookup

@@ -34,9 +34,12 @@ theorem WV.lit_or_con {u : Val} (h : (∃ l, u = .lit l) ∨ ∃ key, u = .con k
   · exact .lit
   · exact .con .nil
 
-theorem primResult_cases (K : Lam.Known) (p : Lam.Prim) (vs : List Val) :
+/-- A scalar primitive (`p.isArr = false`; an array primitive returns any element, or traps) is
+stuck or returns a literal or a field-free constructor. -/
+theorem primResult_cases (K : Lam.Known) (p : Lam.Prim) (hp : p.isArr = false) (vs : List Val) :
     primResult K p vs = .stuck ∨ ∃ u, primResult K p vs = .ok u ∧ ((∃ l, u = .lit l) ∨ ∃ key, u = .con key []) := by
   unfold primResult
+  rw [arrResult_of_not_arr hp]
   split
   · split
     · exact .inr ⟨_, rfl, .inl ⟨_, rfl⟩⟩

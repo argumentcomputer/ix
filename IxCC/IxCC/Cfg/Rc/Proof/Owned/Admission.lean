@@ -47,6 +47,13 @@ theorem checkScopedProgram_owned {F : Fir.Program} {bodies : Src.NatMap Own.Plai
   obtain ⟨⟨⟨plain, gen⟩, names⟩, dense⟩ := h
   refine ⟨⟨⟨Own.Plain.checkPlainMap_checkOwned plain, ?_⟩, names⟩, dense⟩
   revert gen
-  cases generate F bodies <;> exact id
+  cases hg : generate F bodies with
+  | none => intro h; simp at h
+  | some expected =>
+    intro equal
+    have same : expected = P := (programEq_iff _ _).mp equal
+    have empty : P.raw = {} := by rw [← same]; exact generate_raw hg
+    simp only [empty, hg]
+    exact equal
 
 end IxCC.Cfg.Rc

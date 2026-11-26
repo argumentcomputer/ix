@@ -20,9 +20,11 @@ theorem consume_increment_two_refused (P : Cfg.Rc.Program) (layout : Cfg.Rc.Nati
 
 /-- Actual literal1 encoding, rather than a raw untagged count operand. -/
 theorem lower_increment (f : Fir.FunId) (tables : Rt.Lower.Tables)
-    (limit dummy x : Nat) (state : Rt.Lower.St) :
+    (limit dummy x : Nat) (state : Rt.Lower.St) (tagged : tables.rawParams limit 0 = []) :
     (Rt.Lower.instr f tables (Cfg.Rc.marker limit dummy (.inc x 1))).run state =
-      .ok (true, {state with acc := Lir.Stmt.call [dummy] limit [.v x, .imm 3] :: state.acc}) := rfl
+      .ok (true, {state with acc := Lir.Stmt.call [dummy] limit [.v x, .imm 3] :: state.acc}) := by
+  simp only [Cfg.Rc.marker, Cfg.Rc.markerRhs, Rt.Lower.instr, tagged]
+  rfl
 
 theorem increment_cursor {f off : Nat} {function : Lir.Func}
     {starts : Src.NatMap Nat} {blocks : List Rt.Lower.PBlock}

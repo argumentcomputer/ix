@@ -174,7 +174,7 @@ def refusedTable : List (String × List String) :=
    ("phase2-closures/closures", ["caseRec", "caseShape"]),
    ("phase2-arity/arity", []),
    ("fixtures/ixon-v4/src-diag/diag",
-     ["declOk", "recShape", "notOpaque", "proj", "caseShape", "caseProg"])]
+     ["recShape", "notOpaque", "proj", "caseShape", "caseProg"])]
 
 def familyFiles : List String :=
   ["fixtures/ixon-v4/bench-k1/corpus.json", "fixtures/corpus/phase1-scalar/corpus.json",

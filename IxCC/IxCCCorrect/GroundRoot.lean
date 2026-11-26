@@ -237,7 +237,7 @@ theorem Grounded.canon_sound (h : Grounded p env κ lpsOf ann Sl Inst root args 
   have hT := sitesOk_of_headRegime M'.defn_value M'.graded hH
   have hLN := lawsNoCanon_of_model M' hLD
   have hres := rootCanon_coreWK (M := M') hLN.core hG h.root
-    (allPK (fundHypsK_of_instWPP hLN.core (.inr hNC.recs) hG hT hI
+    (allPK (fundHypsK_of_instWPP hLN.core (.inr hNC.recs) hG hT hI hU
       (caseFires_of_instWP hLN.defn_value hLN.iota_rule hLN.cval_params hG.faith hG.natBasis hC
         hNC hU)
       (caseSubFires_of_instWPP hLN.defn_value hLN.iota_rule hLN.cval_params hG.faith hC hNC hPU)

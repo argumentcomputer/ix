@@ -15,7 +15,7 @@ theorem accepted_init {config : Rt.Config} {F : Fir.Program}
     (accepted : Public.lower config F bodies P borrows uniqs = .ok lowered) :
     lowered.runtime.program.funcs[lowered.runtime.init]? = some Rt.Procs.cxInit := by
   obtain ⟨original, native, rfl, _⟩ := lower_parts accepted
-  obtain ⟨main, pairs, funcs, _, _, _, _, _, _, length, program, init, _⟩ := Native.Spec.lower_parts native
+  obtain ⟨main, pairs, funcs, _, _, _, _, _, _, _, length, program, init, _⟩ := Native.Spec.lower_parts native
   have lookup : original.program.funcs[original.init]? = some Rt.Procs.cxInit := by
     rw [program, init]
     have hge : (layoutOf P).sourceCount ≤ (layoutOf P).init := by
@@ -31,7 +31,7 @@ theorem accepted_init {config : Rt.Config} {F : Fir.Program}
         FastDec.install_get_ne _ _ hneDec, InlineWrappers.inlineProgram_get_le hle,
         Prune.pruneUnusedReuse_get_le hle, Inline.inlineProgram_get_ge _ _ hge]
       exact raw_init (l := layoutOf P) (funcs := funcs) length main
-    simp only [Lir.Program.splitCriticalEdges, Array.getElem?_map, hinl, Option.map_some, cxInit_split]
+    simp only [Lir.Program.splitCriticalEdges_eq, Array.getElem?_map, hinl, Option.map_some, cxInit_split]
   exact (assemble_existing original (layoutOf P) (Array.getElem?_eq_some_iff.mp lookup).1).trans lookup
 
 theorem initialize_heap {config : Rt.Config} {F : Fir.Program}

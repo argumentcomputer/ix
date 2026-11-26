@@ -11,6 +11,10 @@ the allocator will use them for liveness and ordering.
 Dominator sets are bitsets (`Nat`) computed by the iterative data-flow
 equations in reverse postorder. Each pass that changes something removes at
 least one bit, so `n² + 2` passes always reach the fixpoint.
+
+Kernel-evaluable style (`IxCCTests/Recheck/Audit.lean`, on the path of `RcReplay.run`):
+the blocks are folded as a list, arrays are built from lists, and no library `Array`
+loop (`Array.foldl`, `Array.map`, `for … in` over an array) or hash map is used.
 -/
 
 namespace IxCC.Lir
@@ -25,11 +29,11 @@ def succs (f : Func) (b : Label) : List Label :=
 /-- The number of edges leaving each block. -/
 def succCount (f : Func) (b : Label) : Nat := (f.succs b).length
 
-def edgeCount (f : Func) : Nat := f.blocks.foldl (fun n b => n + b.term.edges.length) 0
+def edgeCount (f : Func) : Nat := f.blocks.toList.foldl (fun n b => n + b.term.edges.length) 0
 
 /-- The number of edges entering each block (targets out of range ignored). -/
 def predCounts (f : Func) : Array Nat :=
-  f.blocks.foldl (init := Array.replicate f.blocks.size 0) fun counts b =>
+  f.blocks.toList.foldl (init := Array.replicate f.blocks.size 0) fun counts b =>
     b.term.succs.foldl (init := counts) fun counts s =>
       if s < counts.size then counts.modify s (· + 1) else counts
 
@@ -39,7 +43,7 @@ def preds (f : Func) : Array (List Label) := Id.run do
   for h : b in [:f.blocks.size] do
     for s in f.blocks[b].term.succs do
       if s < preds.size then preds := preds.modify s (b :: ·)
-  return preds.map List.reverse
+  return ⟨preds.toList.map List.reverse⟩
 
 /-- Depth-first postorder of the blocks reachable from the entry. -/
 def postorder (f : Func) : Array Label :=
@@ -75,19 +79,18 @@ def dominators (f : Func) : Array Nat :=
   let n := f.blocks.size
   if n == 0 then #[] else
   let order := f.rpo
-  let reachable := f.rpoIndex.map Option.isSome
+  let reachable : Array Bool := ⟨f.rpoIndex.toList.map Option.isSome⟩
   let preds := f.preds
   let full := 2 ^ n - 1
-  let init := (Array.range n).map fun b =>
-    if b == 0 then 1 else if reachable[b]! then full else 0
-  let pass (doms : Array Nat) : Array Nat := Id.run do
-    let mut doms := doms
-    for b in order do
+  let init : Array Nat := ⟨(List.range n).map fun b =>
+    if b == 0 then 1 else if reachable[b]! then full else 0⟩
+  let pass (doms : Array Nat) : Array Nat :=
+    order.toList.foldl (init := doms) fun doms b =>
       if b != 0 then
         let meet := preds[b]!.foldl (init := full) fun acc p =>
           if reachable[p]! then acc &&& doms[p]! else acc
-        doms := doms.set! b (meet ||| (1 <<< b))
-    return doms
+        doms.set! b (meet ||| (1 <<< b))
+      else doms
   let rec fix (fuel : Nat) (doms : Array Nat) : Array Nat :=
     match fuel with
     | 0 => doms

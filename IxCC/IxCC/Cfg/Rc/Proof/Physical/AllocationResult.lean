@@ -120,9 +120,17 @@ theorem allocation_result (admission : CodeAdmission F bodies P config pairs fun
   have head : source.rest = .bind x (.alloc ctor args .shared) :: tail := bindingHead
   have real := checked_binding_real admission.scopedProgram before.layout sourceLookup
     (by simp [Own.immRhs, reserved]) (by simp [Own.immRhs, isReuseOp])
-  rcases allocation_step_of (Public.Spec.rawSource config P pairs) main before.frame.cursor
+  have noRaw : ∀ y, (tablesOf P pairs).rawVar source.fn y = false := by
+    obtain ⟨actual, _, consuming, _, _⟩ := before.frame.cursor.next head
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, index, _, shape⟩ := consume_allocation positive consuming
+    rw [shape] at consuming
+    exact before.frame.cursor.noRaw head consuming admission.rawOk
+      (consumed_lookup_lt admission.consuming before.frame.lookup)
+      (rawFnInstr_runtime (by show P.base.size ≤ P.base.size + 2 + index; omega))
+  rcases allocation_step_of (Public.Spec.rawSource config P pairs) main admission.consuming
+      before.frame.cursor
       {ctors := F.ctors, known := F.known} ctor args x head before.frame.lookup frameArgs den balance
-      positive ready before.frame.words real before.frame.bounded before.running callers with
+      positive ready (before.frame.fused noRaw) real before.frame.bounded before.running callers with
       success | failure
   · obtain ⟨address, bump', memory', slots', lists', _, result, counts, preserve, restored, trace,
       cursor', words'⟩ := success
@@ -143,8 +151,8 @@ theorem allocation_result (admission : CodeAdmission F bodies P config pairs fun
         (funcFirst bodies source.fn sourceFunction) function
         {source with rest := tail, env := source.env.insert x allocated.1}
         {target with pos := target.pos+1, env := target.env.insert x address, dsts := []} :=
-      ⟨before.frame.lookup, cursor', words', bounds,
-        before.frame.compatible.bind x (show ValueCtorOk (tablesOf P pairs) allocated.1 by trivial)⟩
+      FrameState.ofFused before.frame.lookup cursor' words' noRaw bounds
+        (before.frame.compatible.bind x (show ValueCtorOk (tablesOf P pairs) allocated.1 by trivial))
     have fused := consumed_call_done before.frame.lookup before.frame.cursor head consuming
       (source.env.insert x allocated.1)
     have hreach := Own.Plain.ReachablePreserved.alloc H external {ctor, fields}

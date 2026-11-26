@@ -1,5 +1,6 @@
 import IxCC.Anf.Proof.Mono
 import IxCC.Sem.Dominance
+import IxCC.Sem.ValModel
 
 /-! # The Anf-to-Anf relation: interface and compatibility
 
@@ -167,9 +168,59 @@ theorem natArgs_rel (hS : Base R) : ∀ {vs ws : List Val}, Pw R vs ws → natAr
     | con c fs => obtain ⟨ws', rfl, _⟩ := hS.invCon c fs w hvw; simp [natArgs]
     | clos ρ n b got => obtain ⟨_, _, _, _, rfl⟩ := hS.invClos ρ n b got w hvw; simp [natArgs]
 
+theorem Pw.toForall2 {α β : Type} {R : α → β → Prop} :
+    ∀ {as : List α} {bs : List β}, Pw R as bs → Sem.Forall2 R as bs
+  | _, _, .nil => .nil
+  | _, _, .cons h hs => .cons h (Pw.toForall2 hs)
+
+theorem Pw.ofForall2 {α β : Type} {R : α → β → Prop} :
+    ∀ {as : List α} {bs : List β}, Sem.Forall2 R as bs → Pw R as bs
+  | _, _, .nil => .nil
+  | _, _, .cons h hs => .cons h (Pw.ofForall2 hs)
+
+/-- **Every `Base` relation respects Anf's value model** (decision D1: an array is a constructor
+value under the reserved key `Key.CtorKey.arr`, which `Base` already relates pointwise), so the
+array primitives are parametric in it (`Src.ArrOp.parametric`). -/
+theorem Base.modelRel (hS : Base R) : Sem.ModelRel model model R where
+  nat _ := hS.lit _
+  asNat {v w n} h hv := by
+    cases v with
+    | lit l =>
+      cases l with
+      | nat m => rw [hS.invLit _ w h]; exact hv
+      | str _ => simp [model, Val.asNat] at hv
+    | clos => simp [model, Val.asNat] at hv
+    | con => simp [model, Val.asNat] at hv
+    | box => simp [model, Val.asNat] at hv
+  arr h := hS.con _ _ _ (Pw.ofForall2 h)
+  asArr {v w xs} h hv := by
+    cases v with
+    | con c fs =>
+      cases c with
+      | arr =>
+        simp only [model, Val.asArr, Option.some.injEq] at hv
+        subst hv
+        obtain ⟨ws, rfl, hws⟩ := hS.invCon _ _ w h
+        exact ⟨ws, rfl, Pw.toForall2 hws⟩
+      | src _ => simp [model, Val.asArr] at hv
+      | clo _ _ => simp [model, Val.asArr] at hv
+    | clos => simp [model, Val.asArr] at hv
+    | lit => simp [model, Val.asArr] at hv
+    | box => simp [model, Val.asArr] at hv
+  list _ := hS.box
+  asList _ hv := by simp [model] at hv
+
+/-- A primitive on related arguments: a scalar primitive's meaning is on equal literals, an
+array primitive's is `Src.ArrOp.sim` at `R` (`Base.modelRel`). -/
 theorem prim_rel (hS : Base R) {n : Nat} (K : Lam.Known) (p : Lam.Prim) {vs ws : List Val}
     (h : Pw R vs ws) : SimUpTo R n (fun _ => primResult K p vs) (fun _ => primResult K p ws) := by
+  cases hp : p.isArr
+  case true =>
+    obtain ⟨op, rfl⟩ := Lam.Prim.isArr_eq_true hp
+    simp only [primResult_arr]
+    exact Src.ArrOp.sim hS.modelRel op (Pw.toForall2 h)
   unfold primResult
+  simp only [arrResult_of_not_arr hp]
   rw [natArgs_rel hS h]
   cases natArgs vs with
   | none => exact SimUpTo.stuck _

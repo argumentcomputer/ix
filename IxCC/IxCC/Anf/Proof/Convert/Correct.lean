@@ -38,6 +38,7 @@ theorem vr_obs : ∀ {v : Lam.Val} {w : Val}, VR A G v w → Lam.Erase.Proof.obs
     cases c with
     | src c => simp only [Lam.Erase.Proof.obsV, obsV, vrs_obs hfs]
     | clo f j => rfl
+    | arr => rfl
   | _, _, .clo hc _ => by
     cases hc with
     | mk _ _ _ _ _ _ _ _ hv hw => subst hv hw; rfl

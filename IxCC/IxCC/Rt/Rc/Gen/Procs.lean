@@ -118,6 +118,99 @@ def dec : Func where
         .store .w64 (cellAddr 1 8) (v 2), .store .w32 (cellAddr 1 4) (v 7)]
       term := .jump (to 1 [v 6, v 1]) }]
 
+/-- The scan byte of a boxed array cell (`Rt.maxFields + 1`): its element count is its size word,
+not the scan byte. -/
+def arrayScan : Nat := 0xFF
+
+/-- The release for a program that has boxed array cells: `dec` with the boxed-array case. A program
+has exactly one release, `dec` when it allocates no boxed array and `decArr` when it does, so the
+code of a program without arrays is `dec`'s, unchanged.
+
+A boxed array cell is `header | size | capacity | elements`, its scan byte `arrayScan`. Releasing its
+last reference visits its `size` elements from the last to the first:
+* the countdown of elements still to visit is kept in the dead cell's 32-bit count word, as for a
+  constructor; the next element's index is `remaining − 1`;
+* the parent link is kept in the size word, which is at the offset of a constructor's first field,
+  so a finished array is recycled by the block that recycles a finished constructor (block 9);
+* an empty array is recycled at once (block 11).
+
+Blocks `0 … 7`, `9`, `10`, `11` are `dec`'s; `dec`'s blocks 12 and 8 are blocks 13 and 14; blocks 12
+and 8 are the two new tests of a scan byte against `arrayScan`. On a heap without boxed arrays this
+executes `dec`'s statements in `dec`'s order, with one more forward branch for each dead scanned cell
+and for each field visited, and spends the same clock: every new edge on those paths is forward. -/
+def decArr : Func where
+  name := "rt_rc_dec"
+  params := [0]
+  results := 0
+  blocks := #[
+    -- 0: the current value, and no suspended parent
+    { term := .jump (to 1 [v 0, i 0]) },
+    -- 1: dispatch the current value v1; v2 is the parent chain
+    { params := [1, 2]
+      term := .br .tnz .w64 (v 1) (i 1) (to 6 [v 2]) (to 2) },
+    -- 2: a static cell needs no write
+    { body := #[.assign 3 (.load .w32 .zero (cellAddr 1 4))]
+      term := .br .slt .w32 (v 3) (i 0) (to 6 [v 2]) (to 3) },
+    { term := .br .eq .w32 (v 3) (i 0) (to 5) (to 4) },
+    -- 4: a shared cell stays live
+    { body := #[.assign 4 (.bin .sub .w32 (v 3) (i 1)),
+        .store .w32 (cellAddr 1 4) (v 4)]
+      term := .jump (to 6 [v 2]) },
+    -- 5: the last reference: a cell without scanned fields is recycled at once
+    { body := #[.assign 5 (.load .w8 .zero (cellAddr 1))]
+      term := .br .eq .w64 (v 5) (i 0) (to 11) (to 12) },
+    -- 6: advance the continuation, or finish
+    { params := [8]
+      term := .br .eq .w64 (v 8) (i 0) (to 10) (to 7) },
+    -- 7: the parent's remaining fields or elements (count word) and scan byte
+    { body := #[.assign 9 (.load .w32 .zero (cellAddr 8 4)),
+        .assign 10 (.load .w8 .zero (cellAddr 8))]
+      term := .br .eq .w64 (v 9) (i 0) (to 9) (to 8) },
+    -- 8: the suspended parent is a boxed array or a constructor
+    { term := .br .eq .w64 (v 10) (i arrayScan) (to 16) (to 14) },
+    -- 9: recycle the finished parent onto its class's list; resume its predecessor
+    { body := #[.assign 11 (.load .w8 .zero (cellAddr 8 1)),
+        .assign 15 (.load .w64 .zero (cellAddr 8 8)),
+        .assign 16 (.load .w64 .zero { base := some .ctx, index := some (11, .eight) }),
+        .store .w64 (cellAddr 8) (v 16),
+        .store .w64 { base := some .ctx, index := some (11, .eight) } (v 8)]
+      term := .jump (to 6 [v 15]) },
+    -- 10: done
+    { term := .ret [] },
+    -- 11: recycle a cell with nothing to scan; continue with the parent chain
+    { body := #[.assign 17 (.load .w8 .zero (cellAddr 1 1)),
+        .assign 18 (.load .w64 .zero { base := some .ctx, index := some (17, .eight) }),
+        .store .w64 (cellAddr 1) (v 18),
+        .store .w64 { base := some .ctx, index := some (17, .eight) } (v 1)]
+      term := .jump (to 6 [v 2]) },
+    -- 12: the dead cell is a boxed array or a constructor
+    { term := .br .eq .w64 (v 5) (i arrayScan) (to 15) (to 13) },
+    -- 13: a constructor: detach the first field; the parent link goes in its place, `scan − 1` in
+    -- the count word
+    { body := #[.assign 6 (.load .w64 .zero (cellAddr 1 8)),
+        .assign 7 (.bin .sub .w64 (v 5) (i 1)),
+        .store .w64 (cellAddr 1 8) (v 2), .store .w32 (cellAddr 1 4) (v 7)]
+      term := .jump (to 1 [v 6, v 1]) },
+    -- 14: a constructor's next field is `scan − remaining`
+    { body := #[.assign 12 (.bin .sub .w64 (v 10) (v 9)),
+        .assign 13 (.load .w64 .zero { base := some (.v 8), index := some (12, .eight), disp := 8 }),
+        .assign 14 (.bin .sub .w64 (v 9) (i 1)), .store .w32 (cellAddr 8 4) (v 14)]
+      term := .jump (to 1 [v 13, v 8]) },
+    -- 15: a dead boxed array: its size; an empty one is recycled at once
+    { body := #[.assign 19 (.load .w64 .zero (cellAddr 1 8))]
+      term := .br .eq .w64 (v 19) (i 0) (to 11) (to 17) },
+    -- 16: an array's next element is `remaining − 1`
+    { body := #[.assign 20 (.bin .sub .w64 (v 9) (i 1)),
+        .assign 21 (.load .w64 .zero { base := some (.v 8), index := some (20, .eight), disp := 24 }),
+        .store .w32 (cellAddr 8 4) (v 20)]
+      term := .jump (to 1 [v 21, v 8]) },
+    -- 17: detach the last element; the parent link goes in the size word, `size − 1` in the count
+    -- word
+    { body := #[.assign 22 (.bin .sub .w64 (v 19) (i 1)),
+        .assign 23 (.load .w64 .zero { base := some (.v 1), index := some (22, .eight), disp := 24 }),
+        .store .w64 (cellAddr 1 8) (v 2), .store .w32 (cellAddr 1 4) (v 22)]
+      term := .jump (to 1 [v 23, v 1]) }]
+
 /-- The uniqueness test: `1` for a dynamic cell whose count word is `0` (one reference), `0` for an
 immediate, a shared cell or a static cell (whose count word is negative). Reads one word; writes
 nothing. -/

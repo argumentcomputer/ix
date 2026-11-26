@@ -91,6 +91,11 @@ private def cloneWorkspace (source target : FilePath) : IO FilePath := do
     copy (source / directory / "lakefile.lean")
     for (relative, _) in ← pairs (← field entry "closure") do
       copy (source / directory / sourceDir / relative)
+    -- the proof-only closure of the same package
+    for proof in ← proofOnlyDependencies ledger do
+      if (← strField proof "lake_package") != (← strField entry "lake_package") then continue
+      for relative in ← (← arrField proof "closure_files").toList.mapM string do
+        copy (source / directory / sourceDir / relative)
   copy repo.flakeLock
   copy (repo.root / "lean-toolchain")
   let github := repo.root / ".github"
@@ -657,6 +662,53 @@ private def linkAuditTests : IO Unit := do
   rejects "a symbol table without main" "nm lists no main symbol" do
     discard (checked (auditLinked "stripped" "lp_Blake3_Blake3_Pure_hash T 1000 10\n"))
 
+/-- The proof-only dependency (the kernel's proof tree, which only the target
+statements may import): an import of its modules from production, an importer
+removed from the entry, the entry removed, a module recorded that nothing
+imports, a closure file dropped from the record, a changed closure file, and a
+closure file holding `sorry`, `admit`, `partial`, `unsafe`, an `axiom`
+declaration, `native_decide`, an extern, an `implemented_by` or an import from
+outside the package are each refused. `sources` is the dependency's source
+directory in the copy, `check` the audit of the copy. -/
+private def proofOnlyTests (root sources : FilePath) (ledger : Json) (check : IO Unit) : IO Unit := do
+  let entries ← proofOnlyDependencies ledger
+  need (entries.size == 1) "test fixture: the ledger records no proof-only dependency"
+  let entry := entries[0]!
+  let ledgerPath := root / "docs/trusted-externs.json"
+  let withEntry (change : Json → IO Json) (action : IO Unit) : IO Unit := do
+    let changed ← replaceField ledger "proof_only_dependencies" (Json.arr #[← change entry])
+    withFile ledgerPath changed.compress action
+  let imported ← (← arrField entry "imported_modules").toList.mapM string
+  let files ← (← arrField entry "closure_files").toList.mapM string
+  need (!imported.isEmpty && !files.isEmpty) "test fixture: an empty proof-only entry"
+  withFile (root / "IxCC/AuditRegression.lean") s!"import {imported.head!}\n" do
+    rejects "production imports a proof-only module" "a proof-only module that only" check
+  withEntry (replaceField · "importers" (toJson ["IxCCGrounding"])) do
+    rejects "an importer removed" "a proof-only module that only" check
+  withFile ledgerPath (← replaceField ledger "proof_only_dependencies" (Json.arr #[])).compress do
+    rejects "the proof-only entry removed" "imports of pure Lean dependencies drifted" check
+  let unimported := ((FilePath.mk files.head!).withExtension "").toString.replace "/" "."
+  withEntry (replaceField · "imported_modules" (toJson (imported ++ [unimported]))) do
+    rejects "a recorded module nothing imports" "is imported by none of" check
+  withEntry (replaceField · "closure_files" (toJson files.tail!)) do
+    rejects "a closure file dropped from the record" "proof-only closure files drifted" check
+  let file := sources / files.head!
+  withFile file ((← IO.FS.readFile file) ++ "\n") do
+    rejects "a changed proof-only file" "proof-only closure changed" check
+  for (label, text, fragment) in [
+      ("sorry", "theorem rogue : False := sorry", "sorry is not allowed"),
+      ("admit", "theorem rogue : False := by admit", "admit is not allowed"),
+      ("partial", "partial def rogue : Nat → Nat := rogue", "partial is not allowed"),
+      ("unsafe", "unsafe def rogue : Nat := 0", "unsafe is not allowed"),
+      ("axiom", "axiom rogue : False", "axiom is not allowed"),
+      ("native_decide", "theorem rogue : 1 = 1 := by native_decide", "native_decide is not allowed"),
+      ("extern", "@[extern \"rogue\"] opaque rogue : Nat", "declares native symbols"),
+      ("implemented_by", "@[implemented_by rogueImpl] def rogue : Nat := 0",
+        "declares an implemented_by substitution"),
+      ("an outside import", "import UnreviewedPackage.Module", "outside the package and the toolchain")] do
+    withFile file ((← IO.FS.readFile file) ++ "\n" ++ text ++ "\n") do
+      rejects s!"{label} in a proof-only file" fragment check
+
 private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.withTempDir fun temporary => do
   let repositoryRoot := temporary / "repository"
   let root ← cloneWorkspace source repositoryRoot
@@ -741,6 +793,7 @@ private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.w
       rejects "unlisted dependency implemented_by" "implemented_by inventory drifted" check
     withFile ledgerPath (← rehashedSites #[siteRecord ixClosure.head!]).compress do
       check
+  proofOnlyTests root ixCSources originalLedger check
   buildGraphTests root
   let regression := root / "IxCC/AuditRegression.lean"
   -- the project's own csimp theorems are inventoried the same way
@@ -851,4 +904,4 @@ def main (args : List String) : IO UInt32 := cli "Lean check regressions failed"
   disassemblyTests
   linkAuditTests
   regressionTests root blake
-  IO.println "Lean check regressions ok: source lexing (including native evaluation, every import spelling and native_decide sites), root/native/csimp inventories, Nix check inventory, build graph, proof/runtime coverage, integrity pins and rule, CI, repository, workspace and git dependency rejection paths, the native-dependency audit on its fixture entry (Cargo included), and the link audit"
+  IO.println "Lean check regressions ok: source lexing (including native evaluation, every import spelling and native_decide sites), root/native/csimp inventories, Nix check inventory, build graph, proof/runtime coverage, integrity pins and rule, CI, repository, workspace, proof-only and git dependency rejection paths, the native-dependency audit on its fixture entry (Cargo included), and the link audit"

@@ -50,6 +50,7 @@ def reservedKey : Key.GKey → Bool
 def closureKey : Key.CtorKey → Bool
   | .clo .. => true
   | .src _ => false
+  | .arr => false
 
 /-- Whether a pinned constructor (`Nat`'s and `Bool`'s) has a closure key:
 the closure keys P8 adds to the table would then give it their arity. -/
@@ -109,6 +110,7 @@ def gkeyCode : Key.GKey → List Nat
 def ctorKeyCode : Key.CtorKey → List Nat
   | .src c => [0, c]
   | .clo f n => 1 :: (gkeyCode f ++ [n])
+  | .arr => [2]
   termination_by structural k => k
 
 def argKeyCode : Key.ArgKey → List Nat

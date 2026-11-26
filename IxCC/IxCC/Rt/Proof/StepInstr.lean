@@ -130,7 +130,7 @@ theorem step_instr {P : Cfg.Program} {lp : Lir.Program} {ctx : Word} (ht : Targe
     obtain ⟨b₁, st₁, h₁, ⟨rfl, hrest⟩ | ⟨rfl, rfl⟩⟩ := rest_cons hrun hfused
     · obtain ⟨hg₁, hl₁, ho₁⟩ := instr_mono h₁ hl ho
       have hC₁ : Ext C st₁ := (rest_grows hrest hl₁ ho₁).ext hC
-      have hsim := instr_sim (tables_boolsOk P) hF hH ht.pow ht.gcd hnc h₁ hC₁ hl ho hsup hx hlive
+      have hsim := instr_sim (tables_boolsOk P) (noRaw_tables P) hF hH ht.pow ht.gcd hnc h₁ hC₁ hl ho hsup hx hlive
         (ctx := s₂.ctx) (D := Fused (tables P) fd)
       rcases hsim Pw H fr.env lfr.env s₂.mem lrest v H' (hctx ▸ hheap) hρ hev with
         ⟨c, ρl', mem', Pw', hstar, hheap', hPw, hρ'⟩ | hfail
@@ -170,8 +170,9 @@ theorem step_call_instr {P : Cfg.Program} {lp : Lir.Program} {ctx : Word} {fr : 
   obtain ⟨b₁, st₁, h₁, ⟨rfl, hrest⟩ | ⟨rfl, rfl⟩⟩ := rest_cons hrun hfused
   · obtain ⟨hg₁, hl₁, ho₁⟩ := instr_mono h₁ hl ho
     have hC₁ : Ext C st₁ := (rest_grows hrest hl₁ ho₁).ext hC
-    rcases withOperands_run h₁ with ⟨las, hops, -, hk⟩ | ⟨-, hb₁, -⟩
-    · rw [emit_run] at hk
+    rcases withOperandsAt_run h₁ with ⟨las, hops, -, hk⟩ | ⟨-, hb₁, -⟩
+    · rw [operandsAt_noRaw (noRaw_tables P)] at hops
+      rw [emit_run] at hk
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hk
       subst hk
       obtain ⟨ws, hws, hrel, -⟩ := operands_rel hρ hops

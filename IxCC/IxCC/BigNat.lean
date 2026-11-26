@@ -1,8 +1,11 @@
 import IxCC.BigNat.LimbOps
 import IxCC.BigNat.Basic
 import IxCC.BigNat.Linear
+import IxCC.BigNat.Toom3
 import IxCC.BigNat.Mul
+import IxCC.BigNat.InvDiv
 import IxCC.BigNat.Div
+import IxCC.BigNat.Lehmer
 import IxCC.BigNat.GcdConv
 
 /-! # Pure-Lean Formally Verified Multi-Precision Arithmetic (`IxCC.BigNat`)
@@ -16,9 +19,15 @@ over canonical little-endian `Array UInt64` (`docs/bignum-design.md`):
   `ofUInt64`, `ofSmall`, `ofNat`, `toSmall?`.
 - `IxCC.BigNat.Linear`: `cmp`, `beq`, `ble`, `blt`, `add`, `subRaw`, `sub`,
   `pred`, `land`, `lor`, `xor`, `shiftLimbs`, `shiftLeft`, `shiftRight`, `log2`.
+- `IxCC.BigNat.Toom3`: Toom-3 evaluation and interpolation (`divExact3`, `signedSub`,
+  `toom3EvalLoop`, `toom3Interp`, `toom3Combine`, `karatsubaCombine`).
 - `IxCC.BigNat.Mul`: `mulSchoolbook`, `sqrSchoolbook`, Karatsuba (`mulKaratsuba`,
-  `sqrKaratsuba`, `K = 32`), `mul`, `sqr`, `pow` (left-to-right binary squaring).
+  `sqrKaratsuba`, `K = 32`), Toom-3 (`mulToom3`, `sqrToom3`, from 96 limbs), `mul`,
+  `sqr`, `pow` (left-to-right binary squaring).
+- `IxCC.BigNat.InvDiv`: Möller–Granlund 2-by-1 reciprocal division (`invert21`,
+  `divRem21`, `divMod1Inv`).
 - `IxCC.BigNat.Div`: `divMod1`, Knuth Algorithm D `divMod`, `div`, `mod`.
+- `IxCC.BigNat.Lehmer`: 128-bit Lehmer–Jebelean GCD (`gcdLehmer`).
 - `IxCC.BigNat.GcdConv`: `gcd`, `mulAdd1`, `10^19`-chunked `toDecimalChunks`,
   `ofDecimalChunks`, `toDecimalDigits`, `ofDecimalDigits`, `toDecimal`, `ofDecimal`.
 

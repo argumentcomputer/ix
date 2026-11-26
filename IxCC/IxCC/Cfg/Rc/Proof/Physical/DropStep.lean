@@ -61,7 +61,8 @@ theorem drop_marker_step
   rcases cursor.call head consuming mem context callers with success | failure
   · obtain ⟨operands, nativeFunction, block, lowered, functionLookup, blockLookup,
       position, statement, continuation⟩ := success
-    have operandsKnown : Rt.Lower.operands source.fn [.var x] = .ok (some [.v x]) := rfl
+    have operandsKnown : Rt.Lower.operandsAt source.fn ((tablesOf P pairs).rawParams (P.base.size + 1) 0)
+        [.var x] = .ok (some [.v x]) := rfl
     rw [operandsKnown] at lowered
     cases lowered
     obtain ⟨wrapperLookup, procedureLookup⟩ := source_stage_decrement_runtime P functions main

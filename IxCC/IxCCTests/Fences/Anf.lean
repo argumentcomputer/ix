@@ -951,7 +951,7 @@ expected messages are preserved verbatim. -/
 /-- info: 'IxCC.Anf.Convert.Proof.Setting.opds_suffix' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Anf.Convert.Proof.Setting.opds_suffix
 
-/-- info: 'IxCC.Anf.Convert.Proof.Setting.prim_sim' depends on axioms: [propext] -/
+/-- info: 'IxCC.Anf.Convert.Proof.Setting.prim_sim' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Anf.Convert.Proof.Setting.prim_sim
 
 /-- info: 'IxCC.Anf.Convert.Proof.Setting.proj_sim' depends on axioms: [propext, Quot.sound] -/
@@ -1194,7 +1194,7 @@ expected messages are preserved verbatim. -/
 /-- info: 'IxCC.Anf.Rel.natArgs_rel' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Anf.Rel.natArgs_rel
 
-/-- info: 'IxCC.Anf.Rel.prim_rel' depends on axioms: [propext] -/
+/-- info: 'IxCC.Anf.Rel.prim_rel' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Anf.Rel.prim_rel
 
 /-- info: 'IxCC.Anf.Rel.proj_rel' depends on axioms: [propext, Quot.sound] -/

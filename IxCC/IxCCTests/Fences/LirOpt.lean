@@ -135,7 +135,7 @@ Every theorem depends strictly on a subset of `[propext, Classical.choice, Quot.
 /-- info: 'IxCC.Lir.Opt.inlineCallSite_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.inlineCallSite_sim
 
-/-- info: 'IxCC.Lir.Opt.inlineCallSiteChecked_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Lir.Opt.inlineCallSiteChecked_wellFormed' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.inlineCallSiteChecked_wellFormed
 
 /-- info: 'IxCC.Lir.Opt.inlineCallSiteChecked_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -147,7 +147,7 @@ Every theorem depends strictly on a subset of `[propext, Classical.choice, Quot.
 /-- info: 'IxCC.Lir.Opt.inlineTailSite_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.inlineTailSite_sim
 
-/-- info: 'IxCC.Lir.Opt.inlineTailSiteChecked_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Lir.Opt.inlineTailSiteChecked_wellFormed' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.inlineTailSiteChecked_wellFormed
 
 /-- info: 'IxCC.Lir.Opt.inlineTailSiteChecked_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -159,7 +159,7 @@ Every theorem depends strictly on a subset of `[propext, Classical.choice, Quot.
 /-- info: 'IxCC.Lir.Opt.unrollLoopSite_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.unrollLoopSite_sim
 
-/-- info: 'IxCC.Lir.Opt.unrollLoopSiteChecked_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Lir.Opt.unrollLoopSiteChecked_wellFormed' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.unrollLoopSiteChecked_wellFormed
 
 /-- info: 'IxCC.Lir.Opt.unrollLoopSiteChecked_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -171,7 +171,7 @@ Every theorem depends strictly on a subset of `[propext, Classical.choice, Quot.
 /-- info: 'IxCC.Lir.Opt.versionOddLoopSite_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.versionOddLoopSite_sim
 
-/-- info: 'IxCC.Lir.Opt.versionOddLoopSiteChecked_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Lir.Opt.versionOddLoopSiteChecked_wellFormed' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.versionOddLoopSiteChecked_wellFormed
 
 /-- info: 'IxCC.Lir.Opt.versionOddLoopSiteChecked_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -180,7 +180,7 @@ Every theorem depends strictly on a subset of `[propext, Classical.choice, Quot.
 /-- info: 'IxCC.Lir.Opt.ifConvDiamondSite_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.ifConvDiamondSite_sim
 
-/-- info: 'IxCC.Lir.Opt.ifConvDiamondSiteChecked_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Lir.Opt.ifConvDiamondSiteChecked_wellFormed' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.ifConvDiamondSiteChecked_wellFormed
 
 /-- info: 'IxCC.Lir.Opt.ifConvDiamondSiteChecked_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -200,61 +200,61 @@ Every theorem depends strictly on a subset of `[propext, Classical.choice, Quot.
 /-- info: 'IxCC.Lir.Opt.check_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.check_refines
 
-/-- info: 'IxCC.Lir.Opt.runLocal_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Lir.Opt.runLocal_wellFormed' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.runLocal_wellFormed
 
 /-- info: 'IxCC.Lir.Opt.runLocal_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.runLocal_sim
 
-/-- info: 'IxCC.Lir.Opt.runLocalAt_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Lir.Opt.runLocalAt_wellFormed' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.runLocalAt_wellFormed
 
 /-- info: 'IxCC.Lir.Opt.runLocalAt_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.runLocalAt_sim
 
-/-- info: 'IxCC.Lir.Opt.inlineTailLoop_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Lir.Opt.inlineTailLoop_wellFormed' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.inlineTailLoop_wellFormed
 
 /-- info: 'IxCC.Lir.Opt.inlineTailLoop_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.inlineTailLoop_sim
 
-/-- info: 'IxCC.Lir.Opt.inlineHelpersLoop_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Lir.Opt.inlineHelpersLoop_wellFormed' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.inlineHelpersLoop_wellFormed
 
 /-- info: 'IxCC.Lir.Opt.inlineHelpersLoop_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.inlineHelpersLoop_sim
 
-/-- info: 'IxCC.Lir.Opt.versionOddLoop_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Lir.Opt.versionOddLoop_wellFormed' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.versionOddLoop_wellFormed
 
 /-- info: 'IxCC.Lir.Opt.versionOddLoop_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.versionOddLoop_sim
 
-/-- info: 'IxCC.Lir.Opt.ifConvDiamondStep_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Lir.Opt.ifConvDiamondStep_wellFormed' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.ifConvDiamondStep_wellFormed
 
 /-- info: 'IxCC.Lir.Opt.ifConvDiamondStep_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.ifConvDiamondStep_sim
 
-/-- info: 'IxCC.Lir.Opt.ifConvLoop_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Lir.Opt.ifConvLoop_wellFormed' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.ifConvLoop_wellFormed
 
 /-- info: 'IxCC.Lir.Opt.ifConvLoop_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.ifConvLoop_sim
 
-/-- info: 'IxCC.Lir.Opt.inlineSelfLoop_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Lir.Opt.inlineSelfLoop_wellFormed' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.inlineSelfLoop_wellFormed
 
 /-- info: 'IxCC.Lir.Opt.inlineSelfLoop_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.inlineSelfLoop_sim
 
-/-- info: 'IxCC.Lir.Opt.unrollLoop_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Lir.Opt.unrollLoop_wellFormed' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.unrollLoop_wellFormed
 
 /-- info: 'IxCC.Lir.Opt.unrollLoop_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.unrollLoop_sim
 
-/-- info: 'IxCC.Lir.Opt.run_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Lir.Opt.run_wellFormed' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.run_wellFormed
 
 /-- info: 'IxCC.Lir.Opt.run_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -263,7 +263,7 @@ Every theorem depends strictly on a subset of `[propext, Classical.choice, Quot.
 /-- info: 'IxCC.Lir.Opt.run_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.run_refines
 
-/-- info: 'IxCC.Lir.Opt.validateCert_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Lir.Opt.validateCert_wellFormed' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lir.Opt.validateCert_wellFormed
 
 /-- info: 'IxCC.Lir.Opt.validateCert_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/

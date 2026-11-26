@@ -59,7 +59,7 @@ theorem checkCode_bind {Δ : JCtx} {Γ : Ctx} {x : Var} {r : Fir.Rhs} {k : Code}
     ∃ Γ', bindCtx Γ x r borrows uniqs ctors = .ok Γ' ∧
       checkCode Δ Γ' k borrows uniqs retUniq ctors known = .ok () := by
   obtain ⟨Γ', hb, hk⟩ := checkCode_bindStep h
-  exact ⟨Γ', by rw [← bindStep_eq_bindCtx]; exact hb, hk⟩
+  exact ⟨Γ', by rw [← bindStep_eq_bindCtx _ _ _ _ _ _ (bindStep_isArrPrim hb)]; exact hb, hk⟩
 
 /-- **What an accepted primitive step established**: every argument available; the consumed
 ones taken (`Γ₁`); the others still held in `Γ₁`; and the context is `Γ₁` with the marked

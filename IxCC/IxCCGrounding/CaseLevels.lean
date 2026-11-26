@@ -337,10 +337,12 @@ def InstClosed (p : Program) (Inst : List (CId × Levels)) : Prop :=
 
 /-- **Level uniformity on `Inst`**: at every instance of a `case` entry whose shape the check
 reads, every instance of a constructor of the entry's family is at the shape's `indLevels` read at
-the entry's levels. -/
+the entry's levels; and at every instance of an `ordinary` recursor, every instance of a
+constructor of its inductive is at the levels its major premise's domain names, read at the
+recursor's levels (`InstUniformRec`, W-c). -/
 def InstUniform (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
     (Inst : List (CId × Levels)) : Prop :=
-  ∀ c r ls, (c, ls) ∈ Inst → p.table.resolveOf c = some (.case r) →
+  (∀ c r ls, (c, ls) ∈ Inst → p.table.resolveOf c = some (.case r) →
     ∀ sh, caseShape? env (κ c) (κ r) = some sh →
     ∀ (sf kk : Bool) (lvls np nmot nmin ni : Nat) (ind : CId) (rules : List IxCC.Src.Rule)
       (ty : Term), p.decl? r = some (.recr sf kk lvls np nmot nmin ni ind rules ty) →
@@ -348,7 +350,8 @@ def InstUniform (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → 
     ∀ (c' : CId) (ls' : Levels) (sf' : Bool) (lv cidx np' nf : Nat) (ty' : Term),
       p.decl? c' = some (.ctor sf' lv ind cidx np' nf ty') → (c', ls') ∈ Inst →
       ls'.length = sh.indLevels.length ∧
-        ∀ (k : Nat) l, sh.indLevels[k]? = some l → ls'[k]? = some (Level.eval φ l)
+        ∀ (k : Nat) l, sh.indLevels[k]? = some l → ls'[k]? = some (Level.eval φ l)) ∧
+    InstUniformRec p env κ lpsOf Inst
 
 /-- The position of `q` in `l`. -/
 def posIn (q : Nat) : List Nat → Option Nat
@@ -382,7 +385,8 @@ theorem eval_φAt {φ : LevelParam → Nat} {lps : List Nat} {ls : Levels} (hlv 
 
 /-- **The restriction, decided on a given `Inst`** (computed by the instance walk; the check
 verifies, so the walk is not trusted): the seeds at no level in `Inst`; `Inst` closed; and uniform
-at every `case` entry whose shape is read, each `indLevels` over the entry's level parameters. Its
+at every `case` entry whose shape is read, each `indLevels` over the entry's level parameters, and at
+every `ordinary` recursor (`instRecB`, W-c). Its
 cost is quadratic in `|Inst|` (list membership, and every constructor instance against every
 `case` instance): 170 ms interpreted on `phase1-decline/strings` (138 instances); an index is open
 (`docs/roadmap.md`). -/
@@ -391,7 +395,7 @@ def instCheckB (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → L
   seeds.all (fun c => decide ((c, ([] : Levels)) ∈ Inst)) &&
   Inst.all (fun x => (runTerms p x.1 ++ ruleBodies p x.1).all fun t =>
     (evalConsts x.2 t).all fun y => decide ((y.1, y.2.map (IxCC.Src.evalUniv x.2)) ∈ Inst)) &&
-  Inst.all fun x =>
+  (Inst.all fun x =>
     match p.table.resolveOf x.1 with
     | some (.case r) =>
       match caseShape? env (κ x.1) (κ r), p.decl? r with
@@ -403,7 +407,8 @@ def instCheckB (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → L
             ind' != ind || y.2 == sh.indLevels.map (Level.eval (φAt (lpsOf x.1) x.2))
           | _ => true
       | _, _ => true
-    | _ => true
+    | _ => true) &&
+  instRecB p env κ lpsOf Inst
 
 
 /-- **The instance walk** (a producer, not trusted: `instCheckB` verifies what it returns): from
@@ -429,8 +434,9 @@ theorem instFacts_of_check {p : Program} {env : KEnv} {κ : CId → KKey} {lpsOf
     (∀ c ∈ seeds, (c, ([] : Levels)) ∈ Inst) ∧ InstClosed p Inst ∧
       InstUniform p env κ lpsOf Inst := by
   simp only [instCheckB, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at h
-  obtain ⟨⟨h1, h2⟩, h3⟩ := h
-  refine ⟨h1, fun c ls hm t ht d us hd => h2 (c, ls) hm t ht (d, us) hd, ?_⟩
+  obtain ⟨⟨⟨h1, h2⟩, h3⟩, h6⟩ := h
+  refine ⟨h1, fun c ls hm t ht d us hd => h2 (c, ls) hm t ht (d, us) hd,
+    ⟨?_, instUniformRec_of_check h6⟩⟩
   intro c r ls hm hres sh hsh sf kk lvls np nmot nmin ni ind rules ty hd φ hlv c' ls' sf' lv cidx
     np' nf ty' hd' hm'
   have h4 := h3 (c, ls) hm
@@ -452,7 +458,7 @@ theorem caseLevelAgree_of_inst {p : Program} {env : KEnv} {κ : CId → KKey}
     (hd : p.decl? r = some (.recr sf kk lvls np nmot nmin ni ind rules ty)) :
     CaseLevelAgree p lpsOf (OkIn p ann Inst) c sh ind :=
   fun ls φ hOk hlv c' ls' sf' lv cidx np' nf ty' hd' hOk' =>
-    hU c r ls hOk.2 hres sh hsh sf kk lvls np nmot nmin ni ind rules ty hd φ hlv c' ls' sf' lv cidx
+    hU.1 c r ls hOk.2 hres sh hsh sf kk lvls np nmot nmin ni ind rules ty hd φ hlv c' ls' sf' lv cidx
       np' nf ty' hd' hOk'.2
 
 /-! ## The family's decided facts -/
@@ -517,7 +523,8 @@ theorem noCanonA_of_noCanon {p : Program} {env : KEnv} {κ : CId → KKey} {S : 
     (h : NoCanon p env κ S) : NoCanonA p env κ S :=
   ⟨fun c r hc hr => by
     obtain ⟨cvr, mI, rP, rules, hf, hall⟩ := h.cases c r hc hr
-    exact ⟨cvr, mI, rP, rules, hf, fun rl hrl => (hall rl hrl).1⟩, h.recs⟩
+    exact ⟨cvr, mI, rP, rules, hf, fun rl hrl => (hall rl hrl).1⟩,
+    fun r hr hk => h.recs r hr (hk.elim .inl fun h => .inr (.inl h))⟩
 
 /-- **`noCanonAB` is sound** (as `noCanon_of_check`). -/
 theorem noCanonA_of_check {p : Program} {env : KEnv} {κ : CId → KKey} {Sl : List CId}

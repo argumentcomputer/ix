@@ -1,6 +1,7 @@
 import IxCC.Exe.Plain.Exe
 import IxCCCorrect.GroundCheck
 import IxCCCorrect.Progress
+import IxCCCorrect.AdmitsKernel
 
 /-!
 # The compiled object computes the kernel meaning (`IxCCCorrect.Compose`)
@@ -47,9 +48,9 @@ Lean's typing excludes all three at a root of type `Nat` or of an enumeration, b
 nor `NeverWrong` carries typing, and no law of `Ix.Kernel.Model` separates a structure's value from
 a numeral. So the bridge needs the canonical form as a fact about SrcEval: `ReturnsCanon`. The
 shape discipline proves it on the way to `NeverWrong` and then drops it (`Shape1.run_ok` concludes
-`ValOk`, `neverWrong_of_shape` keeps only the view's acceptance); `returnsCanon_of_shape1` below
-recovers it for milestone M1. **`FunctionalProgress` as defined delivers `NeverWrong` only: for
-tier 1 it has to deliver `ReturnsCanon` as well.**
+`ValOk`, `neverWrong_of_shape` keeps only the view's acceptance); `returnsCanon_of_shape`
+(`IxCCCorrect.GroundShape`) recovers it for milestone M2. **`FunctionalProgress` as defined
+delivers `NeverWrong` only: for tier 1 it has to deliver `ReturnsCanon` as well.**
 -/
 
 set_option autoImplicit false
@@ -67,16 +68,17 @@ universe u
 
 /-- **`Admits` from ingress at the claim's limits**: ingress decodes the bytes and runs the
 kernel's tiered entry over the whole environment (`Recheck.ingress_parts`); the root and the role
-table are compared by the checker. -/
+table are compared by the checker. Since the owner-approved restatement, through IxCK's acceptance
+(`admits_of_accept`: the reading of the accepted environment, and its model). -/
 theorem admits_of_ingress {claim : Claim} {envBytes : ByteArray} {equations : Lean.Json}
     {roots : List String} {inp : Recheck.Input}
     (h : Recheck.ingress envBytes equations roots claim.kernelLimits = .ok inp)
     (henv : inp.env.root = claim.env)
-    (hrole : inp.env.bindingAddress = some claim.roleTable) :
-    Admits claim envBytes inp.kernel.acc := by
+    (hrole : inp.env.bindingAddress = some claim.roleTable)
+    (hkey : keyOf inp.kernel.acc claim.target ≠ none) :
+    Admits.{u} claim envBytes inp.kernel.acc := by
   obtain ⟨hdec, hacc, -⟩ := Recheck.ingress_parts h
-  unfold Admits
-  exact ⟨inp.env, hdec, henv, hrole, hacc⟩
+  exact admits_of_accept ⟨inp.env, hdec, henv, hrole, hacc, hkey⟩
 
 /-! ## G1: the observation bridge, at canonical forms -/
 
@@ -151,14 +153,45 @@ theorem srcRun_ok {src : Program} {checked : Src.Relevance.Checked} {ns : List N
   cases hval
   exact ⟨v, hv, rfl⟩
 
+/-! ## `FunctionalProgress`'s canonical forms are `ReturnsCanon` (P1) -/
+
+/-- `CanonValue` (the statement's canonical form, `IxCCCorrect.Progress`) is the grounding
+check's `CanonResult`. -/
+theorem canonResult_of_canonValue {src : Program} {c : CId} {v : Value}
+    (h : CanonValue src c v) : CanonResult src c v := by
+  unfold CanonValue at h
+  cases hd : src.decl? c with
+  | none => rw [hd] at h; exact h.elim
+  | some d =>
+    rw [hd] at h
+    dsimp only at h
+    split at h
+    · rename_i r hr
+      have hrc : resConst src c = some r := by simp [resConst, hd, hr]
+      by_cases hn : some r = src.known.nat
+      · rw [ite_eq_left_of_eq_true _ _ (eq_true hn)] at h
+        refine ⟨.nat, ?_, h⟩
+        simp only [resTy, hrc, Option.map_some, Option.some.injEq]
+        exact ite_eq_left_of_eq_true _ _ (eq_true hn)
+      · simp only [hn, ↓reduceIte] at h
+        refine ⟨.enum r, ?_, h⟩
+        simp [resTy, hrc, hn]
+    · exact h.elim
+
+/-- **`FunctionalProgress`'s second conjunct at root 0 is the composed theorems' `ReturnsCanon`.** -/
+theorem returnsCanon_of_at {src : Program} {ns : List Nat} (h : ReturnsCanonAt src (0, ns)) :
+    ReturnsCanon src ns := by
+  intro addr root k v hroot hrun
+  exact canonResult_of_canonValue
+    (h addr root k v (by rw [← List.head?_eq_getElem?]; exact hroot) hrun)
+
 /-! ## The composed statement, at the source -/
 
 /-- The observation an answer is returned as: its number at a `Nat` result, the constructor at
 its index at an enumeration. -/
-def abiObs (abi : Abi) (answer : Nat) : Obs :=
-  match abi.result with
-  | .nat => .nat answer
-  | .enum _ => .ctor answer []
+def abiObs (_ : Abi) : Answer → Obs
+  | .nat n => .nat n
+  | .node t _ => .ctor t []
 
 /-- **Where the checked source evaluates to an observation, that observation is an answer that
 agrees with the kernel meaning of the target.** `GroundOk` is what `groundCheck` established;
@@ -183,15 +216,19 @@ theorem agrees_of_srcPlainEval {claim : Claim} {acc : Src.KernelFront.Accepted} 
     rw [hlen]
     simp [Abi.arity, hparams]
   rw [harity] at hG
+  have hargT : argTerms claim.abi.params ns = ns.map fun n => (litE n : KExpr) := by
+    rw [hparams, harity, argTerms_replicate]
   have hcan0 := hcan
   cases res with
   | nat =>
     obtain ⟨n, rfl⟩ := hcan
     have ho : o = .nat n := hnat n o (by rw [obsOf_lit] at hview'; exact hview')
     have hr : claim.abi.result = ResTy.nat := hRes
-    refine ⟨n, by rw [ho]; simp only [abiObs, hr], ?_⟩
+    refine ⟨.nat n, by rw [ho]; rfl, ?_⟩
     unfold Agrees
+    simp only
     refine ⟨κ root, litE n, hkey, by simp only [answerTerm, hr], ?_⟩
+    rw [hargT]
     unfold SameDenotation
     intro V _ M φ ρ
     exact hG.same M hsrc hcan0 φ ρ
@@ -203,10 +240,12 @@ theorem agrees_of_srcPlainEval {claim : Claim} {acc : Src.KernelFront.Accepted} 
       rw [obsOf_con hl, hvt] at hview'
       cases hview'
       rfl
-    refine ⟨t, by rw [ho]; simp only [abiObs, hr], ?_⟩
+    refine ⟨.node t [], by rw [ho]; rfl, ?_⟩
     unfold Agrees
+    simp only
     refine ⟨κ root, .const (κ c) [], hkey,
       by simp only [answerTerm, hr, haddr, Option.bind_some, hk, Option.map_some], ?_⟩
+    rw [hargT]
     unfold SameDenotation
     intro V _ M φ ρ
     exact hG.same M hsrc hcan0 φ ρ

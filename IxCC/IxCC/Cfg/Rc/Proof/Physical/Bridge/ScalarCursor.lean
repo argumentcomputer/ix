@@ -1,28 +1,34 @@
 import IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarInstr
+import IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarRaw
 import IxCC.Cfg.Rc.Proof.Native.Cursor
 
 /-! Execute the actual lowering receipt at the current source instruction.
 The dynamic environment covers the full source map; fusion may omit the last
-comparison. No emitted-code or successful-operand hypothesis is required. -/
+comparison. No emitted-code or successful-operand hypothesis is required. A function with a raw
+register holds only pure bindings on the raw path (`RawPure`, from the accepted flow check); a
+function without one takes the tagged lowering. -/
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar
 open IxCC IxCC.Rt IxCC.Rt.Proof IxCC.Rt.Lower
 open IxCC.Rt.Rc.Procs IxCC.Cfg.Rc.Native.Spec
 open IxCC.Lir (Word)
 
-theorem cursor_step {T : Tables} (bools : BoolsOk T) {P : Cfg.Program} {lp : Lir.Program}
+theorem cursor_step {T : Tables} (bools : BoolsOk T) {P : Cfg.Program}
+    {lp : Lir.Program}
     (pow : lp.funcs[T.natPow]? = some Procs.natPow)
     (gcd : lp.funcs[T.natGcd]? = some Procs.natGcd)
     {source : Cfg.Frame} {target : Lir.Frame} {fd : Cfg.Fun}
     (lookup : P.fun? source.fn = some fd)
     (cursor : Cursor T P lp source target)
     {addresses : AddressMap} {bound size : Nat}
-    (words : FusedWords addresses (Fused T fd) bound source.env target.env)
+    (words : FusedWords addresses (Omit T source.fn fd) bound source.env target.env)
+    (raws : RawWords (T.rawVar source.fn) source.env target.env)
     (ctors : FusedCtorOk T (Fused T fd) source.env)
     (bounded : Own.Plain.EnvBounded size source.env)
     (supply : bound ≤ supOf fd)
     {x : Nat} {rhs : Own.Rhs} {tail : List Cfg.Instr}
     (head : source.rest = .bind x rhs :: tail) (pureRhs : PureRhs rhs) (real : x < bound)
+    (flows : (∀ y, T.rawVar source.fn y = false) ∨ RawPure T source.fn x rhs)
     {H H' : Own.Heap} {value : Own.RVal}
     (effect : Own.evalRhs .rc (ownTables T) source.env H rhs = .ok (value, H'))
     (mem : X86.Memory) (context : Word) (callers : List Lir.Frame) :
@@ -32,7 +38,8 @@ theorem cursor_step {T : Tables} (bools : BoolsOk T) {P : Cfg.Program} {lp : Lir
         (Lir.atState mem context target.fn target.label target.pos target.env callers) charge
         (Lir.atState mem context after.fn after.label after.pos after.env callers) ∧
       Cursor T P lp {source with rest := tail, env := source.env.insert x value} after ∧
-      FusedWords addresses (Fused T fd) bound (source.env.insert x value) after.env ∧
+      FusedWords addresses (Omit T source.fn fd) bound (source.env.insert x value) after.env ∧
+      RawWords (T.rawVar source.fn) (source.env.insert x value) after.env ∧
       FusedCtorOk T (Fused T fd) (source.env.insert x value) ∧
       Own.Plain.EnvBounded size (source.env.insert x value) ∧
       ∀ block, fd.blocks[source.blk]? = some block →
@@ -47,7 +54,6 @@ theorem cursor_step {T : Tables} (bools : BoolsOk T) {P : Cfg.Program} {lp : Lir
   rw [lookup] at sourceLookup
   cases sourceLookup
   rw [head] at lowering body
-  have related := EnvRel.of_fused words ctors
   have live := instr_live (T := T) blockLookup body
   by_cases last : (fusable T (useCounts fd) block).isSome = true ∧ tail = []
   · obtain ⟨someFused, rfl⟩ := last
@@ -55,6 +61,12 @@ theorem cursor_step {T : Tables} (bools : BoolsOk T) {P : Cfg.Program} {lp : Lir
     obtain ⟨y, op, alts, default, equal, rfl, comparison, term⟩ := fused_last fused body
     simp only [Cfg.Instr.bind.injEq] at equal
     obtain ⟨rfl, rfl⟩ := equal
+    have noRaw : ∀ y, T.rawVar source.fn y = false := by
+      rcases flows with noRaw | rawPure
+      · exact noRaw
+      · obtain ⟨o, rfl⟩ := rawPrim_word rawPure
+        simp [compareOf] at comparison
+    have related := EnvRel.of_fused (words.toFused noRaw) ctors
     have omitted : Fused T fd x :=
       ⟨source.blk, block, pre, cond, a, b, alts, default, blockLookup, fused, term⟩
     obtain ⟨_, values, args, result⟩ := evalRhs_prim effect
@@ -65,8 +77,8 @@ theorem cursor_step {T : Tables} (bools : BoolsOk T) {P : Cfg.Program} {lp : Lir
       exact live x (by simpa [Cfg.Check.rhsVars] using member) omitted
     let after : Lir.Frame := { target with dsts := [] }
     obtain ⟨afterWords, afterCtors⟩ := (related.insert_dead real omitted (v := value)).to_fused
-    refine .inl ⟨0, after, rfl, .refl _, ?_, afterWords, afterCtors,
-      bounded.insert x valueBound, ?_⟩
+    refine .inl ⟨0, after, rfl, .refl _, ?_, afterWords.ofFused, RawWords.of_noRaw noRaw,
+      afterCtors, bounded.insert x valueBound, ?_⟩
     · refine ⟨fd, block, function, starts, off, chunk, state, final,
         lookup, blockLookup, targetLookup, layout, start, held, ?_, extension, labeled, opened, fresh,
         ⟨pre ++ [.bind x (.fir (.prim op [a, b]))], by simpa using body⟩, fn, label, pos⟩
@@ -87,14 +99,34 @@ theorem cursor_step {T : Tables} (bools : BoolsOk T) {P : Cfg.Program} {lp : Lir
     obtain ⟨continues, next, lowered, ⟨rfl, rest⟩ | ⟨rfl, rfl⟩⟩ := rest_cons lowering unfused
     · obtain ⟨grows, labeled', opened'⟩ := instr_mono lowered labeled opened
       have nextExt : Ext chunk next := (rest_grows rest labeled' opened').ext extension
-      have simulate := instr_sim bools targetLookup held pow gcd pureRhs lowered nextExt labeled opened
-        (Nat.le_trans supply fresh) real live (ctx := context)
-      rcases simulate addresses H source.env target.env mem callers value H' related effect with
-        ⟨charge, registers, trace, afterRelated⟩ | failed
+      have simulate : (∃ charge registers, Sem.Star (Lir.semStep lp)
+            (Lir.atState mem context source.fn (off + state.cur) state.acc.length target.env callers)
+            charge
+            (Lir.atState mem context source.fn (off + next.cur) next.acc.length registers callers) ∧
+          FusedWords addresses (Omit T source.fn fd) bound (source.env.insert x value) registers ∧
+          RawWords (T.rawVar source.fn) (source.env.insert x value) registers ∧
+          FusedCtorOk T (Fused T fd) (source.env.insert x value)) ∨
+          Sem.Fails (Lir.semStep lp)
+            (Lir.atState mem context source.fn (off + state.cur) state.acc.length target.env callers) := by
+        rcases flows with noRaw | rawPure
+        · have related := EnvRel.of_fused (words.toFused noRaw) ctors
+          have simulation := instr_sim bools noRaw targetLookup held pow gcd pureRhs lowered nextExt
+            labeled opened (Nat.le_trans supply fresh) real live (ctx := context)
+          rcases simulation addresses H source.env target.env mem callers value H' related effect with
+            ⟨charge, registers, trace, afterRelated⟩ | failed
+          · obtain ⟨afterWords, afterCtors⟩ := afterRelated.to_fused
+            exact .inl ⟨charge, registers, trace, afterWords.ofFused, RawWords.of_noRaw noRaw,
+              afterCtors⟩
+          · exact .inr failed
+        · rcases raw_pure_sim targetLookup held rawPure lowered nextExt labeled opened
+              (Nat.le_trans supply fresh) real live words raws effect with
+            ⟨charge, registers, trace, afterWords, afterRaws, compatible⟩ | failed
+          · exact .inl ⟨charge, registers, trace, afterWords, afterRaws, ctors.bind x compatible⟩
+          · exact .inr failed
+      rcases simulate with ⟨charge, registers, trace, afterWords, afterRaws, afterCtors⟩ | failed
       · let after : Lir.Frame :=
           {fn := source.fn, label := off + next.cur, pos := next.acc.length, env := registers}
-        obtain ⟨afterWords, afterCtors⟩ := afterRelated.to_fused
-        refine .inl ⟨charge, after, rfl, ?_, ?_, afterWords, afterCtors,
+        refine .inl ⟨charge, after, rfl, ?_, ?_, afterWords, afterRaws, afterCtors,
           bounded.insert x valueBound, ?_⟩
         · simpa only [fn, label, pos] using trace
         · exact ⟨fd, block, function, starts, off, chunk, next, final,

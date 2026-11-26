@@ -43,9 +43,9 @@ theorem scalar_switch {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {fn : Nat}
     (hac : v.asCtor T.known H = some (c, fs)) {e : Cfg.Edge} (hsel : Cfg.selectEdge c alts d = some e)
     (hdis : Dispatches T H v alts)
     (compatible : ValueCtorOk T v) (noncell : ∀ l, v ≠ .loc l) :
-    ∃ pe le ρl', EdgeOk C f e pe ∧ e.back = decide (e.target ≤ src) ∧ resolveEdge f off starts pe = .ok le ∧
+    ∃ pe le ρl', EdgeOk C f T e pe ∧ e.back = decide (e.target ≤ src) ∧ resolveEdge f off starts pe = .ok le ∧
       ReachesEdge lp fn F mem ctx rest (off + st.cur) (Lir.atState mem ctx fn (off + st.cur) st.acc.length ρl rest)
-        le ρl' ∧ FusedWords addresses D sup ρ ρl' := by
+        le ρl' ∧ FusedWords addresses D sup ρ ρl' ∧ ∀ y, y < sup → ρl'[y]? = ρl[y]? := by
   obtain ⟨wx, represented, hwx⟩ := hρ.word hv hxD
   have hrel := scalar_valRel compatible represented noncell
   unfold switch at hrun
@@ -58,7 +58,7 @@ theorem scalar_switch {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {fn : Nat}
   have hacc : st₂.acc = st.acc := ha₂.trans ha₁
   have hfresh : st₂.fresh = st.fresh := hf₂.trans hf₁
   rw [← hcur, ← hacc]
-  have hR : ∀ p q, AltIn C f T src alts es p q → EdgeOk C f p.2 q.2 ∧ p.2.back = decide (p.2.target ≤ src) :=
+  have hR : ∀ p q, AltIn C f T src alts es p q → EdgeOk C f T p.2 q.2 ∧ p.2.back = decide (p.2.target ≤ src) :=
     fun p q h => ⟨h.1.2.1, h.1.2.2⟩
   dsimp only at h₄
   split at h₄
@@ -103,7 +103,7 @@ theorem scalar_switch {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {fn : Nat}
       obtain ⟨pe, hpick, hok, hb⟩ := pick_nat hR hlink hddF hsel (other := succEdge es)
       obtain ⟨le, hle, hr⟩ := natSwitch_reaches (mem := mem) (ctx := ctx) (rest := rest) hF hH h₆ hg hC hwx
         (pe := pe) (by simp only [natPick, hw1, ↓reduceIte]; exact hpick)
-      exact ⟨pe, le, ρl, hok, hb, hle, hr, hρ⟩
+      exact ⟨pe, le, ρl, hok, hb, hle, hr, hρ, fun _ _ => rfl⟩
     | succ m =>
       have hw1 : wx ≠ 1 := by intro h; subst h; simp at hwx'
       have hc : T.known.natSucc = some c := by
@@ -132,7 +132,7 @@ theorem scalar_switch {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {fn : Nat}
       obtain ⟨pe, hpick, hok, hb⟩ := pick_nat hR hlink hddF hsel (other := zeroEdge es)
       obtain ⟨le, hle, hr⟩ := natSwitch_reaches (mem := mem) (ctx := ctx) (rest := rest) hF hH h₆ hg hC hwx
         (pe := pe) (by simp only [natPick, hw1, ↓reduceIte]; exact hpick)
-      exact ⟨pe, le, ρl, hok, hb, hle, hr, hρ⟩
+      exact ⟨pe, le, ρl, hok, hb, hle, hr, hρ, fun _ _ => rfl⟩
   · -- other keys
     rename_i hnats
     have hnone : ∀ q ∈ es, q.1.isNat = false := by
@@ -206,7 +206,7 @@ theorem scalar_switch {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {fn : Nat}
             · exact .inr (.inl hie)
         obtain ⟨le, hle, hr⟩ := tagSwitch_odd (mem := mem) (ctx := ctx) (rest := rest) hF hH h₄ hl₂ ho₂' hg hC hwx
           hodd' hshape hpick
-        exact ⟨pe, le, ρl, hok, hb, hle, hr, hρ⟩
+        exact ⟨pe, le, ρl, hok, hb, hle, hr, hρ, fun _ _ => rfl⟩
 
 
 
@@ -224,9 +224,9 @@ theorem scalar_switch_checked {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {f
     (compatibleHeap : HeapCtorOk T H)
     (pins : pinsApart T.known = true) (accepted : switchOk T alts d = true)
     (compatible : ValueCtorOk T v) (noncell : ∀ l, v ≠ .loc l) :
-    ∃ pe le ρl', EdgeOk C f e pe ∧ e.back = decide (e.target ≤ src) ∧ resolveEdge f off starts pe = .ok le ∧
+    ∃ pe le ρl', EdgeOk C f T e pe ∧ e.back = decide (e.target ≤ src) ∧ resolveEdge f off starts pe = .ok le ∧
       ReachesEdge lp fn F mem ctx rest (off + st.cur) (Lir.atState mem ctx fn (off + st.cur) st.acc.length ρl rest)
-        le ρl' ∧ FusedWords addresses D sup ρ ρl' := by
+        le ρl' ∧ FusedWords addresses D sup ρ ρl' ∧ ∀ y, y < sup → ρl'[y]? = ρl[y]? := by
   exact scalar_switch hF hH hrun hl ho hg hC hρ hsup hxD hv hac hsel
     (compatible_dispatches pins accepted compatible compatibleHeap hac hsel) compatible noncell
 

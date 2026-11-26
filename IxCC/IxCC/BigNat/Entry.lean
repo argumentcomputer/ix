@@ -8,6 +8,16 @@ operation in IxCC (`add`, `sub`, `pred`, `mul`, `divMod`, `div`, `mod`, `pow`,
 `shiftLeft?`, `shiftRight`, `shiftRightSlow`, `log2`, `log2Slow`, `toDecimal`,
 `ofDecimal`).
 
+**Retired interface, to be removed with the frozen `--bignat` side path.** The library's
+entries are the functions over `Nat` of `IxCC.BigNat.NatEntry` (design note
+`plans/ONE-PIPELINE.md` 4.3, decision D4), whose contract is an equation with the `Nat`
+operation (`IxCC.BigNat.Proof.NatEntry.spec`). The entries below stay, unchanged, only because
+the side path freezes and compiles them and its native glue (`IxCC.Rt.BigNat.Link`) is written
+against `SlowNat`; their users are `IxCC.BigNat.Bootstrap` (`SlowPathOp.leanName`),
+`IxCC.Rt.BigNat.{Cell, Link, Proof, ProofProcs, LowerBigProof}`, `IxCC.Cli` (`--bignat`, which
+freezes this file) and the tests `IxCCTests.BigNat.SlowPathTest`, `WireTest`. `IxCC.BigNat.Proof.Legacy` proves each of them is
+the entry over `Nat` between `SlowNat.val` and `SlowNat.ofNat`. Write no new code against them.
+
 ## Representation & Canonical Boundary Contract
 
 `SlowNat` is the pure-Lean algebraic mirror of the Phase 4 runtime `Nat` value
@@ -251,28 +261,55 @@ def pow? (base exp : SlowNat) : Option SlowNat :=
 /-! ## Euclidean Division and Remainder (`divMod`, `div`, `mod`) -/
 
 /-- Arbitrary-precision Euclidean division and remainder matching Lean's `Nat.div`/`Nat.mod`
-(`a / 0 = 0`, `a % 0 = a`). Fast-paths `big / small` via linear `divMod1`. -/
+(`a / 0 = 0`, `a % 0 = a`). Delegates `.big` dividends to `BigNat.divMod`, which fast-paths
+1-limb divisors via Möller–Granlund `divMod1`. -/
 def divMod (a b : SlowNat) : SlowNat × SlowNat :=
-  match a, b with
-  | .small va, .small vb =>
-    if vb == 0 then (.small 0, fromUInt64 va)
-    else (fromUInt64 (va / vb), fromUInt64 (va % vb))
-  | .big la, .small vb =>
-    if vb == 0 then (.small 0, fromLimbs la)
-    else
-      let (q, r) := divMod1 la vb
-      (fromLimbs q, fromUInt64 r)
-  | _, _ =>
-    let (q, r) := BigNat.divMod (toLimbs a) (toLimbs b)
+  match a with
+  | .small va =>
+    match b with
+    | .small vb =>
+      if vb == 0 then (.small 0, fromUInt64 va)
+      else (fromUInt64 (va / vb), fromUInt64 (va % vb))
+    | .big lb =>
+      let lb' := normalize lb
+      if lb'.size == 1 then
+        let vb := getLimb lb' 0
+        (fromUInt64 (va / vb), fromUInt64 (va % vb))
+      else (.small 0, fromUInt64 va)
+  | .big la =>
+    let (q, r) := BigNat.divMod la (toLimbs b)
     (fromLimbs q, fromLimbs r)
 
-/-- Arbitrary-precision `Nat.div` slow-path entrypoint. -/
-@[inline] def div (a b : SlowNat) : SlowNat :=
-  (divMod a b).1
+/-- Arbitrary-precision `Nat.div` slow-path entrypoint.
+Routes `.big` dividends directly through `BigNat.div` (activating 1-limb `divMod1`,
+the O(1) `divQuick1` fast path, and skipping remainder unnormalization). -/
+def div (a b : SlowNat) : SlowNat :=
+  match a with
+  | .small va =>
+    match b with
+    | .small vb =>
+      if vb == 0 then .small 0 else fromUInt64 (va / vb)
+    | .big lb =>
+      let lb' := normalize lb
+      if lb'.size == 1 then fromUInt64 (va / getLimb lb' 0)
+      else .small 0
+  | .big la =>
+    fromLimbs (BigNat.div la (toLimbs b))
 
-/-- Arbitrary-precision `Nat.mod` slow-path entrypoint. -/
-@[inline] def mod (a b : SlowNat) : SlowNat :=
-  (divMod a b).2
+/-- Arbitrary-precision `Nat.mod` slow-path entrypoint.
+Implemented directly (avoiding duplicating `Entry.divMod` in the compiled closure). -/
+def mod (a b : SlowNat) : SlowNat :=
+  match a with
+  | .small va =>
+    match b with
+    | .small vb =>
+      if vb == 0 then fromUInt64 va else fromUInt64 (va % vb)
+    | .big lb =>
+      let lb' := normalize lb
+      if lb'.size == 1 then fromUInt64 (va % getLimb lb' 0)
+      else fromUInt64 va
+  | .big la =>
+    fromLimbs (BigNat.mod la (toLimbs b))
 
 /-! ## Greatest Common Divisor (`gcd`) -/
 
@@ -290,17 +327,17 @@ def gcdU64 (a b : UInt64) : UInt64 :=
 termination_by b.toNat
 
 /-- Arbitrary-precision `Nat.gcd` slow-path entrypoint.
-Reduces `big-small` / `small-big` via one O(n) `divMod1` pass into `gcdU64`. -/
+Fast-paths `small-small` via `gcdU64`; delegates mixed/big pairs to `BigNat.gcd`
+(which reduces 1-limb operands via `divMod1` + `gcdWord64` and multi-limb pairs via Lehmer).
+Matches on `a` first, so no match alternative is shared between branches (a shared
+alternative is copied into each branch, with the `BigNat.gcd` call it holds). -/
 def gcd (a b : SlowNat) : SlowNat :=
-  match a, b with
-  | .small va, .small vb => fromUInt64 (gcdU64 va vb)
-  | .small va, .big lb =>
-    if va == 0 then fromLimbs lb
-    else fromUInt64 (gcdU64 va (divMod1 lb va).2)
-  | .big la, .small vb =>
-    if vb == 0 then fromLimbs la
-    else fromUInt64 (gcdU64 vb (divMod1 la vb).2)
-  | .big la, .big lb => fromLimbs (BigNat.gcd la lb)
+  match a with
+  | .small va =>
+    match b with
+    | .small vb => fromUInt64 (gcdU64 va vb)
+    | .big lb => fromLimbs (BigNat.gcd (ofUInt64 va) lb)
+  | .big la => fromLimbs (BigNat.gcd la (toLimbs b))
 
 /-! ## Bitwise Operations (`land`, `lor`, `xor`) -/
 

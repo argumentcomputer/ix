@@ -72,8 +72,26 @@ theorem ingressRoots_parts {env : Ixon.V3.Env} {chosen : Array (Ixon.Address × 
   cases h
   exact ⟨rfl, mapError_ok hacc, mapError_ok hmode, rfl, mapError_ok hrd, rfl⟩
 
-/-- **What `ingress` computed**: the bytes decode to the input's environment, the
+/-- **What `ingressAs` computed**: the bytes decode to the input's environment, the
 target is a constant of it, and the rest is `ingressRoots_parts`. -/
+theorem ingressAs_parts {envBytes : ByteArray} {target : Ixon.Address} {name : Option String}
+    {limits : Ix.Kernel.Admission.Limits} {inp : Input}
+    (h : ingressAs envBytes target name limits = .ok inp) :
+    Ixon.V3.decodeAnonymousEnv envBytes = .ok inp.env ∧
+    inp.env.consts.contains target = true ∧
+    Src.KernelFront.accept inp.env limits = .ok inp.kernel.acc ∧
+    Src.KernelFront.defaultModeCheck inp.kernel.acc = .ok () ∧
+    inp.hints.proposals =
+      Src.AutoHints.discover inp.env (Src.KernelFront.pinsOfTable inp.kernel.acc.table) ∧
+    Src.KernelFront.Reading.build inp.kernel.acc inp.program = .ok inp.kernel.rd := by
+  unfold ingressAs at h
+  obtain ⟨env, henv, h⟩ := bind_ok h
+  obtain ⟨_, hmem, h⟩ := bind_ok h
+  obtain ⟨he, hacc, hmode, hprop, hrd, -⟩ := ingressRoots_parts h
+  subst he
+  exact ⟨mapError_ok henv, require_ok hmem, hacc, hmode, hprop, hrd⟩
+
+/-- **What `ingress` computed** (`ingressAs` with the root unnamed). -/
 theorem ingress_parts {envBytes : ByteArray} {target : Ixon.Address}
     {limits : Ix.Kernel.Admission.Limits} {inp : Input}
     (h : ingress envBytes target limits = .ok inp) :
@@ -83,27 +101,23 @@ theorem ingress_parts {envBytes : ByteArray} {target : Ixon.Address}
     Src.KernelFront.defaultModeCheck inp.kernel.acc = .ok () ∧
     inp.hints.proposals =
       Src.AutoHints.discover inp.env (Src.KernelFront.pinsOfTable inp.kernel.acc.table) ∧
-    Src.KernelFront.Reading.build inp.kernel.acc inp.program = .ok inp.kernel.rd := by
-  unfold ingress at h
-  obtain ⟨env, henv, h⟩ := bind_ok h
-  obtain ⟨_, hmem, h⟩ := bind_ok h
-  obtain ⟨he, hacc, hmode, hprop, hrd, -⟩ := ingressRoots_parts h
-  subst he
-  exact ⟨mapError_ok henv, require_ok hmem, hacc, hmode, hprop, hrd⟩
+    Src.KernelFront.Reading.build inp.kernel.acc inp.program = .ok inp.kernel.rd :=
+  ingressAs_parts h
 
 /-! ## The certificate checker -/
 
 /-- **What the checker accepted, as a proposition.** The certificate is what the
 verifier's reader reads from the certificate's file text; its replay at `cfg`
 accepted the program `P` and made the artifact; and the policy is one the artifact
-supports: a zero-RC-format certificate is claimed `.immortal`, or `.zeroRc` when
-the checked program selects zero RC and passes the contract-aware ownership check
-(`zeroRcOk`); a plain-RC certificate is claimed `.plainRc`. -/
+supports: a zero-RC-format certificate is claimed `.immortal` when the checked program
+does not select zero RC, and `.zeroRc` when it selects zero RC and passes the contract
+recheck (`zeroRcOk`): never `.immortal` for a program that selects zero RC; a plain-RC
+certificate is claimed `.plainRc`. -/
 def Replay.Accepted (cfg : Config) (P : Src.Program) (text : String) (policy : CompilePolicy) :
     Replay → Prop
   | .zero cert a =>
     Recheck.Cert.ofText text = .ok cert ∧ Recheck.run cfg P cert = .ok a ∧
-      (policy = .immortal ∨ policy = .zeroRc ∧ zeroRcOk a = true)
+      (policy = .immortal ∧ selectsZeroRc a = false ∨ policy = .zeroRc ∧ zeroRcOk a = true)
   | .plain cert rc a =>
     RcReplay.Cert.ofText text = .ok cert ∧ RcReplay.run cfg P cert = .ok rc ∧
       rc.toRecheckArtifact cert = .ok a ∧ policy = .plainRc
@@ -137,18 +151,44 @@ theorem checkPlain_ok {cfg : Config} {inp : Input} {cert : RcReplay.Cert}
   obtain ⟨hr, hd⟩ := DefAsserts.runRcWithReading_ok hrun
   exact ⟨require_ok hrel, hr, hd, hto⟩
 
+/-- **The policy `zeroPolicy` gives**: `.immortal` only for a program that does not
+select zero RC; `.zeroRc` only when the contract recheck accepts. -/
+theorem zeroPolicy_ok {a : Recheck.Artifact} {policy : CompilePolicy}
+    (h : zeroPolicy a = .ok policy) :
+    policy = .immortal ∧ selectsZeroRc a = false ∨ policy = .zeroRc ∧ zeroRcOk a = true := by
+  unfold zeroPolicy at h
+  cases hs : selectsZeroRc a with
+  | false =>
+    rw [hs] at h
+    cases h
+    exact .inl ⟨rfl, rfl⟩
+  | true =>
+    rw [hs] at h
+    cases hc : zeroRcContractsOk a with
+    | false =>
+      rw [hc] at h
+      cases h
+    | true =>
+      rw [hc] at h
+      cases h
+      exact .inr ⟨rfl, by unfold zeroRcOk; rw [hs, hc]; rfl⟩
+
+/-- **A program that selects zero RC and whose contract recheck refuses is declined**
+(`exe.cert.policy`), never labelled `.immortal`. -/
+theorem zeroPolicy_refuses {a : Recheck.Artifact} (hs : selectsZeroRc a = true)
+    (hc : zeroRcContractsOk a = false) : zeroPolicy a = .error policyErr := by
+  unfold zeroPolicy
+  rw [hs, hc]
+  rfl
+
 theorem certifyZero_sound {cfg : Config} {inp : Input} {p : Recheck.Produced}
     {note : Option String} {c : Certified} (h : certifyZero cfg inp p note = .ok c) :
     c.Sound cfg inp := by
   unfold certifyZero at h
   obtain ⟨a, ha, h⟩ := bind_ok h
+  obtain ⟨policy, hpol, h⟩ := bind_ok h
   cases h
-  refine ⟨rfl, p.read, (checkZero_ok ha).2.1, ?_⟩
-  show (if zeroRcOk a then CompilePolicy.zeroRc else CompilePolicy.immortal) = .immortal ∨
-    (if zeroRcOk a then CompilePolicy.zeroRc else CompilePolicy.immortal) = .zeroRc ∧ zeroRcOk a = true
-  cases hz : zeroRcOk a with
-  | false => exact .inl rfl
-  | true => exact .inr ⟨rfl, rfl⟩
+  exact ⟨rfl, p.read, (checkZero_ok ha).2.1, zeroPolicy_ok hpol⟩
 
 theorem certifyPlain_sound {cfg : Config} {inp : Input} {p : RcReplay.Produced}
     {rc : RcReplay.Artifact} {c : Certified}
@@ -226,7 +266,7 @@ configuration or that without the inline-round retry (which differ in the
 producer's budgets only), under the returned policy. -/
 theorem check_sound {envBytes : ByteArray} {target : Ixon.Address} {opts : Options} {c : Checked}
     (h : check envBytes target opts = .ok c) :
-    ingress envBytes target opts.kernelLimits = .ok c.inp ∧
+    ingressAs envBytes target opts.name opts.kernelLimits = .ok c.inp ∧
     (∃ rootId, c.inp.program.roots.head? = some (target, rootId)) ∧
     c.inp.env.bindingAddress = some c.roleTable ∧
     (c.cfg = Config.forInput {} c.inp ∨ c.cfg = (Config.forInput {} c.inp).noRetry) ∧

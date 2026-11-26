@@ -59,14 +59,14 @@ theorem mapM_run {α β : Type} {g : α → M β} :
 
 theorem switchAlt_run {f : Fir.FunId} {T : Tables} {src : Nat} {ke : Key.CtorKey × Cfg.Edge}
     {kp : KeyKind × PEdge} {st st' : St} (h : (switchAlt f T src ke).run st = .ok (kp, st')) :
-    keyKind T ke.1 = some kp.1 ∧ (edge f src ke.2).run st = .ok (kp.2, st') := by
+    keyKind T ke.1 = some kp.1 ∧ (edge f T src ke.2).run st = .ok (kp.2, st') := by
   unfold switchAlt at h
   cases hk : keyKind T ke.1 with
   | none =>
     simp [hk, throw, throwThe, MonadExceptOf.throw, StateT.lift, Except.bind, bind, StateT.bind, StateT.run] at h
   | some kind =>
     simp only [hk, StateT.run, bind, StateT.bind, Except.bind, pure, StateT.pure, Except.pure] at h
-    cases he : edge f src ke.2 st with
+    cases he : edge f T src ke.2 st with
     | error e => simp [he] at h
     | ok p =>
       simp only [he, Except.ok.injEq, Prod.mk.injEq] at h
@@ -76,7 +76,7 @@ theorem switchAlt_run {f : Fir.FunId} {T : Tables} {src : Nat} {ke : Key.CtorKey
 /-- What a lowered alternative is in the final chunk. -/
 def AltRel (C : List PBlock) (f : Fir.FunId) (T : Tables) (src : Nat) (ke : Key.CtorKey × Cfg.Edge)
     (kp : KeyKind × PEdge) : Prop :=
-  keyKind T ke.1 = some kp.1 ∧ EdgeOk C f ke.2 kp.2 ∧ ke.2.back = decide (ke.2.target ≤ src)
+  keyKind T ke.1 = some kp.1 ∧ EdgeOk C f T ke.2 kp.2 ∧ ke.2.back = decide (ke.2.target ≤ src)
 
 /-- What the edges of a switch leave: the block still open with its code,
 the cold blocks added, and each alternative's lowered edge. -/
@@ -95,13 +95,13 @@ theorem alts_run {f : Fir.FunId} {T : Tables} {src : Nat} :
       fun hg hC => .cons ⟨hk, hok (hg₂.trans hg) hC, hb⟩ (hrel hg hC)⟩
 
 /-- The default's lowered edge. -/
-theorem dflt_run {f : Fir.FunId} {src : Nat} {d : Option Cfg.Edge} {st st' : St} {dd : Option PEdge}
-    (h : (d.mapM (edge f src)).run st = .ok (dd, st')) (hl : Labels st) :
+theorem dflt_run {f : Fir.FunId} {T : Tables} {src : Nat} {d : Option Cfg.Edge} {st st' : St} {dd : Option PEdge}
+    (h : (d.mapM (edge f T src)).run st = .ok (dd, st')) (hl : Labels st) :
     Grows st st' ∧ Labels st' ∧ st'.cur = st.cur ∧ st'.acc = st.acc ∧ st'.params = st.params ∧
       st'.fresh = st.fresh ∧ (Open st → Open st') ∧
       ∀ {C : List PBlock} {stF : St}, Grows st' stF → Ext C stF →
         ((d = none ∧ dd = none) ∨
-         ∃ e pe, d = some e ∧ dd = some pe ∧ EdgeOk C f e pe ∧ e.back = decide (e.target ≤ src)) := by
+         ∃ e pe, d = some e ∧ dd = some pe ∧ EdgeOk C f T e pe ∧ e.back = decide (e.target ≤ src)) := by
   cases d with
   | none =>
     simp only [Option.mapM_none, StateT.run, pure, StateT.pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
@@ -110,7 +110,7 @@ theorem dflt_run {f : Fir.FunId} {src : Nat} {d : Option Cfg.Edge} {st st' : St}
   | some e =>
     simp only [Option.mapM_some, StateT.run, Functor.map, StateT.map, bind, StateT.bind, Except.bind, pure,
       StateT.pure, Except.pure] at h
-    cases he : edge f src e st with
+    cases he : edge f T src e st with
     | error err => simp [he] at h
     | ok p =>
       obtain ⟨pe, st₁⟩ := p

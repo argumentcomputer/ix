@@ -47,6 +47,7 @@ theorem primitive_sim {T : Tables} (hT : BoolsOk T) {f : Fir.FunId} {lp : Lir.Pr
     case natShl => exact prim_natShl hF hH hrun hC hl ho hsup hx hops hlive
     case natShr => exact prim_natShr hF hH hrun hC ho hsup hx hops hlive
     case natPred => bad_shape
+    case arr => bad_shape
   · cases op
     case word w o => exact prim_word hF hH hrun hC hl ho hsup hx hops hlive
     all_goals bad_shape

@@ -241,7 +241,7 @@ def checkRhs (P : Program) (cert : Cert) (fc : FunCert) (x : Var) (rhs : Fir.Rhs
   | .prim (.word _ _) as =>
     as.all (wordPrimArgOk fc)
   | .prim op as =>
-    (rx == .tobj || rx == .obj) &&
+    !op.isArr && ((rx == .tobj || rx == .obj) &&
     if isCmpPrim op then
       match as with
       | [a, b] =>
@@ -249,7 +249,7 @@ def checkRhs (P : Program) (cert : Cert) (fc : FunCert) (x : Var) (rhs : Fir.Rhs
         (argCompat fc a .tobj && argCompat fc b .tobj)
       | _ => false
     else
-      as.all (argCompat fc · .tobj)
+      as.all (argCompat fc · .tobj))
   | .call g as =>
     decide (g < P.size) &&
     let gc := cert.funCert g

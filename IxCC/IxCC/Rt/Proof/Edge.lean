@@ -44,17 +44,17 @@ theorem bind_rel {T : Tables} {P : List Word} {D : Nat → Prop} {sup : Nat} :
 def coldSt (st : St) (t : PTerm) : St :=
   { st with done := st.done.insert st.next { term := t, cold := true }, next := st.next + 1 }
 
-theorem edge_run {f : Fir.FunId} {src : Nat} {e : Cfg.Edge} {st st' : St} {pe : PEdge}
-    (h : (edge f src e).run st = .ok (pe, st')) :
+theorem edge_run {f : Fir.FunId} {T : Tables} {src : Nat} {e : Cfg.Edge} {st st' : St} {pe : PEdge}
+    (h : (edge f T src e).run st = .ok (pe, st')) :
     e.back = decide (e.target ≤ src) ∧
-      ((∃ las, operands f e.args = .ok (some las) ∧ pe = ⟨.blk e.target, las⟩ ∧ st' = st) ∨
-       (operands f e.args = .ok none ∧ pe = loc st.next ∧ st' = coldSt st (.fail .natOverflow))) := by
+      ((∃ las, operandsAt f (T.rawParams f e.target) e.args = .ok (some las) ∧ pe = ⟨.blk e.target, las⟩ ∧ st' = st) ∨
+       (operandsAt f (T.rawParams f e.target) e.args = .ok none ∧ pe = loc st.next ∧ st' = coldSt st (.fail .natOverflow))) := by
   unfold edge at h
   by_cases hb : (e.back == decide (e.target ≤ src)) = true
   · have hb' : e.back = decide (e.target ≤ src) := by simpa using hb
     refine ⟨hb', ?_⟩
     simp only [hb, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
-    cases hop : operands f e.args with
+    cases hop : operandsAt f (T.rawParams f e.target) e.args with
     | error err =>
       simp [hop, bind, StateT.bind, StateT.run, MonadLift.monadLift, liftM, monadLift, StateT.lift, Except.bind,
         pure, StateT.pure, Except.pure] at h
@@ -73,9 +73,9 @@ theorem edge_run {f : Fir.FunId} {src : Nat} {e : Cfg.Edge} {st st' : St} {pe : 
     simp [hb, throw, throwThe, MonadExceptOf.throw, StateT.lift, Except.bind, bind, StateT.bind, StateT.run] at h
 
 /-- What the lowered edge `pe` of `e` is in the final chunk `C`. -/
-def EdgeOk (C : List PBlock) (f : Fir.FunId) (e : Cfg.Edge) (pe : PEdge) : Prop :=
-  (∃ las, operands f e.args = .ok (some las) ∧ pe = ⟨.blk e.target, las⟩) ∨
-  (∃ l, operands f e.args = .ok none ∧ pe = loc l ∧ C[l]? = some { term := .fail .natOverflow, cold := true })
+def EdgeOk (C : List PBlock) (f : Fir.FunId) (T : Tables) (e : Cfg.Edge) (pe : PEdge) : Prop :=
+  (∃ las, operandsAt f (T.rawParams f e.target) e.args = .ok (some las) ∧ pe = ⟨.blk e.target, las⟩) ∨
+  (∃ l, operandsAt f (T.rawParams f e.target) e.args = .ok none ∧ pe = loc l ∧ C[l]? = some { term := .fail .natOverflow, cold := true })
 
 theorem grows_cold {st : St} (hl : Labels st) (t : PTerm) : Grows st (coldSt st t) where
   next := by simp [coldSt]
@@ -100,11 +100,11 @@ theorem labels_cold {st : St} (hl : Labels st) (t : PTerm) : Labels (coldSt st t
     · have := hl.done h; omega
 
 /-- A lowered edge: the facts later steps need. -/
-theorem edge_facts {f : Fir.FunId} {src : Nat} {e : Cfg.Edge} {st st' : St} {pe : PEdge}
-    (h : (edge f src e).run st = .ok (pe, st')) (hl : Labels st) :
+theorem edge_facts {f : Fir.FunId} {T : Tables} {src : Nat} {e : Cfg.Edge} {st st' : St} {pe : PEdge}
+    (h : (edge f T src e).run st = .ok (pe, st')) (hl : Labels st) :
     e.back = decide (e.target ≤ src) ∧ Grows st st' ∧ Labels st' ∧ st'.cur = st.cur ∧ st'.acc = st.acc ∧
       st'.params = st.params ∧ st'.fresh = st.fresh ∧ (Open st → Open st') ∧
-      ∀ {C : List PBlock} {stF : St}, Grows st' stF → Ext C stF → EdgeOk C f e pe := by
+      ∀ {C : List PBlock} {stF : St}, Grows st' stF → Ext C stF → EdgeOk C f T e pe := by
   obtain ⟨hb, ⟨las, hop, rfl, rfl⟩ | ⟨hop, rfl, rfl⟩⟩ := edge_run h
   · exact ⟨hb, Grows.refl _, hl, rfl, rfl, rfl, rfl, id, fun _ _ => .inl ⟨las, hop, rfl⟩⟩
   · have hg := grows_cold hl (.fail .natOverflow)
@@ -174,11 +174,11 @@ theorem ReachesEdge.prepend {lp : Lir.Program} {fn : Nat} {F : Lir.Func} {mem : 
 /-- **A lowered edge enters the target's chunk** with the target block's
 parameters bound to related words (charging the clock on a Cfg back edge),
 or Lir fails. -/
-theorem edge_complete {T : Tables} {P : List Word} {D : Nat → Prop} {sup : Nat} {f : Fir.FunId}
+theorem edge_complete {T : Tables} (hR : NoRaw T) {P : List Word} {D : Nat → Prop} {sup : Nat} {f : Fir.FunId}
     {lp : Lir.Program} {fn : Nat} {F : Lir.Func} {off : Nat} {starts : NatMap Nat} {C : List PBlock}
     {mem : X86.Memory} {ctx : Word} {rest : List Lir.Frame} {low : Nat} {s : Lir.State}
     (hF : lp.funcs[fn]? = some F) (hH : Holds f F off starts C) {e : Cfg.Edge} {pe : PEdge} {le : Lir.Edge}
-    (hok : EdgeOk C f e pe) (hres : resolveEdge f off starts pe = .ok le) {ρ : Own.Env} {ρl : Lir.Env}
+    (hok : EdgeOk C f T e pe) (hres : resolveEdge f off starts pe = .ok le) {ρ : Own.Env} {ρl : Lir.Env}
     (hreach : ReachesEdge lp fn F mem ctx rest low s le ρl) (hρ : EnvRel T P D sup ρ ρl)
     (hlive : ∀ a ∈ e.args, LiveArg D a) {vs : List Own.RVal} (hvs : Own.evalArgs ρ e.args = some vs)
     {ps : List Nat} (hlen : ps.length = vs.length) (hps : ∀ y ∈ ps, y < sup) {ot : Nat} {tb : Lir.Block}
@@ -191,6 +191,7 @@ theorem edge_complete {T : Tables} {P : List Word} {D : Nat → Prop} {sup : Nat
   rcases hok with ⟨las, hop, rfl⟩ | ⟨l, hop, rfl, hcold⟩
   · simp only [resolveEdge, resolveTgt, ht, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at hres
     subst hres
+    rw [operandsAt_tagged (by simp [hR.params])] at hop
     obtain ⟨ws, hws, hrel, -⟩ := operands_rel hρ hop hlive hvs
     obtain ⟨ρt, hbind, hρt⟩ := bind_rel hρ hrel hlen hps
     have h1 := hstep ws tb ρt hws htb (htp ▸ hbind)

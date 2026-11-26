@@ -30,17 +30,17 @@ def AltIn (C : List PBlock) (f : Fir.FunId) (T : Tables) (src : Nat) (alts : Lis
   AltRel C f T src p q ∧ p ∈ alts ∧ q ∈ es
 
 /-- The edge a chain with a default takes, from where the tests match. -/
-theorem pick_tests {C : List PBlock} {f : Fir.FunId} {src : Nat}
+theorem pick_tests {C : List PBlock} {f : Fir.FunId} {T : Tables} {src : Nat}
     {R : Key.CtorKey × Cfg.Edge → KeyKind × PEdge → Prop}
-    (hR : ∀ p q, R p q → EdgeOk C f p.2 q.2 ∧ p.2.back = decide (p.2.target ≤ src))
+    (hR : ∀ p q, R p q → EdgeOk C f T p.2 q.2 ∧ p.2.back = decide (p.2.target ≤ src))
     {alts : List (Key.CtorKey × Cfg.Edge)} {c : Key.CtorKey} {wx : Word} {tests : List (Lir.Arg × PEdge)}
     (hlink : (∀ e, Cfg.selectEdge c alts none = some e → ∃ p q, R p q ∧ p.2 = e ∧ firstMatch wx tests = some q.2) ∧
       (Cfg.selectEdge c alts none = none → firstMatch wx tests = none))
     {d : Option Cfg.Edge} {dd : Option PEdge}
     (hdd : (d = none ∧ dd = none) ∨
-      ∃ e pe, d = some e ∧ dd = some pe ∧ EdgeOk C f e pe ∧ e.back = decide (e.target ≤ src))
+      ∃ e pe, d = some e ∧ dd = some pe ∧ EdgeOk C f T e pe ∧ e.back = decide (e.target ≤ src))
     {e : Cfg.Edge} (hsel : Cfg.selectEdge c alts d = some e) :
-    ∃ pe, chainOrPick wx tests dd = some pe ∧ EdgeOk C f e pe ∧ e.back = decide (e.target ≤ src) := by
+    ∃ pe, chainOrPick wx tests dd = some pe ∧ EdgeOk C f T e pe ∧ e.back = decide (e.target ≤ src) := by
   rw [selectEdge_dflt] at hsel
   cases hs : Cfg.selectEdge c alts none with
   | some e' =>
@@ -56,17 +56,17 @@ theorem pick_tests {C : List PBlock} {f : Fir.FunId} {src : Nat}
       exact ⟨pe, chainOrPick_dflt (hlink.2 hs) pe, hok, hb⟩
 
 /-- The edge a `Nat` switch takes, from where the kinds match. -/
-theorem pick_nat {C : List PBlock} {f : Fir.FunId} {src : Nat}
+theorem pick_nat {C : List PBlock} {f : Fir.FunId} {T : Tables} {src : Nat}
     {R : Key.CtorKey × Cfg.Edge → KeyKind × PEdge → Prop}
-    (hR : ∀ p q, R p q → EdgeOk C f p.2 q.2 ∧ p.2.back = decide (p.2.target ≤ src))
+    (hR : ∀ p q, R p q → EdgeOk C f T p.2 q.2 ∧ p.2.back = decide (p.2.target ≤ src))
     {alts : List (Key.CtorKey × Cfg.Edge)} {c : Key.CtorKey} {first other : Option PEdge}
     (hlink : (∀ e, Cfg.selectEdge c alts none = some e → ∃ p q, R p q ∧ p.2 = e ∧ first = some q.2) ∧
       (Cfg.selectEdge c alts none = none → first = none))
     {d : Option Cfg.Edge} {dd : Option PEdge}
     (hdd : (d = none ∧ dd = none) ∨
-      ∃ e pe, d = some e ∧ dd = some pe ∧ EdgeOk C f e pe ∧ e.back = decide (e.target ≤ src))
+      ∃ e pe, d = some e ∧ dd = some pe ∧ EdgeOk C f T e pe ∧ e.back = decide (e.target ≤ src))
     {e : Cfg.Edge} (hsel : Cfg.selectEdge c alts d = some e) :
-    ∃ pe, pick3 first dd other = some pe ∧ EdgeOk C f e pe ∧ e.back = decide (e.target ≤ src) := by
+    ∃ pe, pick3 first dd other = some pe ∧ EdgeOk C f T e pe ∧ e.back = decide (e.target ≤ src) := by
   rw [selectEdge_dflt] at hsel
   cases hs : Cfg.selectEdge c alts none with
   | some e' =>
@@ -149,7 +149,7 @@ theorem switch_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {fn : Nat} {F
     {v : Own.RVal} (hv : ρ.get? x = some v) {c : Key.CtorKey} {fs : List Own.RVal}
     (hac : v.asCtor T.known H = some (c, fs)) {e : Cfg.Edge} (hsel : Cfg.selectEdge c alts d = some e)
     (hdis : Dispatches T H v alts) :
-    ∃ pe le ρl', EdgeOk C f e pe ∧ e.back = decide (e.target ≤ src) ∧ resolveEdge f off starts pe = .ok le ∧
+    ∃ pe le ρl', EdgeOk C f T e pe ∧ e.back = decide (e.target ≤ src) ∧ resolveEdge f off starts pe = .ok le ∧
       ReachesEdge lp fn F mem ctx rest (off + st.cur) (Lir.atState mem ctx fn (off + st.cur) st.acc.length ρl rest)
         le ρl' ∧ EnvRel T P D sup ρ ρl' := by
   obtain ⟨wx, hwx, hrel⟩ := hρ.val hv hxD
@@ -163,7 +163,7 @@ theorem switch_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {fn : Nat} {F
   have hacc : st₂.acc = st.acc := ha₂.trans ha₁
   have hfresh : st₂.fresh = st.fresh := hf₂.trans hf₁
   rw [← hcur, ← hacc]
-  have hR : ∀ p q, AltIn C f T src alts es p q → EdgeOk C f p.2 q.2 ∧ p.2.back = decide (p.2.target ≤ src) :=
+  have hR : ∀ p q, AltIn C f T src alts es p q → EdgeOk C f T p.2 q.2 ∧ p.2.back = decide (p.2.target ≤ src) :=
     fun p q h => ⟨h.1.2.1, h.1.2.2⟩
   dsimp only at h₄
   split at h₄
@@ -267,7 +267,7 @@ theorem switch_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {fn : Nat} {F
         have heven : wx &&& 1 = 0 := even_and (by have := hcellAt.aligned; omega)
         have htag := tag_mem hcellAt (by simp only [cellSize] at hhi; omega)
         obtain ⟨pe, hpick, hok, hb⟩ : ∃ pe, (if cellTests es = [] then chainOrPick wx (immTests es) dd
-            else chainOrPick (UInt64.ofNat b.ctor.tag) (cellTests es) dd) = some pe ∧ EdgeOk C f e pe ∧
+            else chainOrPick (UInt64.ofNat b.ctor.tag) (cellTests es) dd) = some pe ∧ EdgeOk C f T e pe ∧
             e.back = decide (e.target ≤ src) := by
           by_cases hce : cellTests es = []
           · simp only [hce, ↓reduceIte]

@@ -1,12 +1,13 @@
 import IxCC.BigNat.Div
-import IxCC.BigNat.Proof.Linear
+import IxCC.BigNat.Proof.InvDiv
 
 /-! # Layer-1 Proofs for `IxCC.BigNat.Div` (`IxCC.BigNat.Proof.Div`)
 
 Formal correctness and canonical normal-form preservation for:
-- Single-limb division (`divMod1`)
+- Single-limb division (`divMod1` via Möller–Granlund `divMod1Inv`)
 - Knuth's Algorithm D multi-limb division (`divMod`, `div`, `mod`), including
-  the full formal proof of Knuth's Theorem B (`q_true ≤ q̂ ≤ q_true + 1`) and
+  Möller–Granlund `trialQhatInv` / `knuthLoopInv`, fused 1-carry `subMulCarryLoop`,
+  O(1) `divQuick1` fast path, Knuth's Theorem B (`q_true ≤ q̂ ≤ q_true + 1`), and
   exact correctness of the rare `q̂ - 1` add-back step.
 
 All theorems depend strictly on `[propext, Classical.choice, Quot.sound]`.
@@ -16,94 +17,15 @@ namespace IxCC.BigNat
 
 /-! ### Fast Single-Limb Division (`divMod1`) -/
 
-private theorem divMod1Loop_spec (a : Array UInt64) (d : UInt64) (k : Nat)
-    (rem : UInt64) (hrem : rem < d) (q : Array UInt64)
-    (hk : k ≤ a.size) (hsz : k ≤ q.size) (hlo : ∀ j < k, getLimb q j = 0) :
-    let res := divMod1Loop a d k rem hrem q
-    WF res.1 ∧ res.2 < d ∧
-    toNat res.1 * d.toNat + res.2.toNat =
-      toNat q * d.toNat + rem.toNat * (2 ^ 64) ^ k + toNatPrefix a k := by
-  induction k generalizing rem q with
-  | zero =>
-    unfold divMod1Loop
-    simp only [toNat_normalize, Nat.pow_zero, Nat.mul_one, toNatPrefix_zero, Nat.add_zero]
-    exact ⟨wf_normalize q, hrem, trivial⟩
-  | succ k ih =>
-    unfold divMod1Loop
-    dsimp only
-    have hspec := divWide64_spec rem (getLimb a k) d hrem
-    have hrem' := divWide64_snd_lt rem (getLimb a k) d hrem
-    let resW := divWide64 rem (getLimb a k) d hrem
-    have hklt : k < q.size := by omega
-    have hq0 : getLimb q k = 0 := hlo k (by omega)
-    have hlo' : ∀ j < k, getLimb (setLimb q k resW.1) j = 0 := by
-      intro j hj
-      rw [getLimb_setLimb q k resW.1 hklt j]
-      simp [Nat.ne_of_lt hj, hlo j (by omega)]
-    have ⟨hwf, hlt, heq⟩ := ih resW.2 hrem' (setLimb q k resW.1) (by omega)
-      (by rw [size_setLimb]; omega) hlo'
-    refine ⟨hwf, hlt, ?_⟩
-    rw [heq, toNat_setLimb_of_zero q k resW.1 hklt hq0, toNatPrefix_succ a k, Nat.pow_succ (2 ^ 64) k]
-    have hmul : (resW.1.toNat * d.toNat + resW.2.toNat) * (2 ^ 64) ^ k =
-        (rem.toNat * 2 ^ 64 + (getLimb a k).toNat) * (2 ^ 64) ^ k := by
-      rw [hspec.1]
-    rw [Nat.add_mul, Nat.add_mul] at hmul
-    rw [Nat.add_mul]
-    have ha1 : resW.1.toNat * (2 ^ 64) ^ k * d.toNat = resW.1.toNat * d.toNat * (2 ^ 64) ^ k := by
-      rw [Nat.mul_assoc, Nat.mul_comm ((2 ^ 64) ^ k) d.toNat, ← Nat.mul_assoc]
-    have ha2 : rem.toNat * ((2 ^ 64) ^ k * 2 ^ 64) = rem.toNat * 2 ^ 64 * (2 ^ 64) ^ k := by
-      rw [Nat.mul_comm ((2 ^ 64) ^ k) (2 ^ 64), ← Nat.mul_assoc]
-    rw [ha1, ha2]
-    omega
-
-theorem wf_divMod1 (a : Array UInt64) (d : UInt64) : WF (divMod1 a d).1 := by
-  unfold divMod1
-  split
-  · exact Or.inl rfl
-  · rename_i hd
-    have h0 : (0 : UInt64) < d := by
-      rw [UInt64.lt_iff_toNat_lt]
-      have hdN : d.toNat ≠ 0 := fun hz => hd (UInt64.toNat_inj.mp (by simpa using hz))
-      have : (0 : UInt64).toNat = 0 := rfl
-      omega
-    exact (divMod1Loop_spec a d a.size 0 h0 (mkZeros a.size) (Nat.le_refl _)
-      (by simp) (fun j _ => getLimb_mkZeros _ j)).1
+theorem wf_divMod1 (a : Array UInt64) (d : UInt64) : WF (divMod1 a d).1 :=
+  wf_divMod1Inv a d
 
 theorem divMod1_spec (a : Array UInt64) (d : UInt64) (hd : d ≠ 0) :
     WF (divMod1 a d).1 ∧
     toNat (divMod1 a d).1 = toNat a / d.toNat ∧
     (divMod1 a d).2.toNat = toNat a % d.toNat ∧
-    (divMod1 a d).2 < d := by
-  unfold divMod1
-  simp only [hd, ↓reduceDIte]
-  have h0 : (0 : UInt64) < d := by
-    rw [UInt64.lt_iff_toNat_lt]
-    have hdN : d.toNat ≠ 0 := fun hz => hd (UInt64.toNat_inj.mp (by simpa using hz))
-    have : (0 : UInt64).toNat = 0 := rfl
-    omega
-  have ⟨hwf, hlt, heq⟩ := divMod1Loop_spec a d a.size 0 h0 (mkZeros a.size) (Nat.le_refl _)
-    (by simp) (fun j _ => getLimb_mkZeros _ j)
-  have h0N : (0 : UInt64).toNat = 0 := rfl
-  rw [toNat_mkZeros, h0N] at heq
-  simp only [Nat.zero_mul, Nat.zero_add] at heq
-  have hltN : (divMod1Loop a d a.size 0 h0 (mkZeros a.size)).2.toNat < d.toNat :=
-    UInt64.lt_iff_toNat_lt.mp hlt
-  have hdpos : 0 < d.toNat := by omega
-  have hdiv : toNat (divMod1Loop a d a.size 0 h0 (mkZeros a.size)).1 = toNat a / d.toNat := by
-    have h1 : (toNat (divMod1Loop a d a.size 0 h0 (mkZeros a.size)).1 * d.toNat +
-        (divMod1Loop a d a.size 0 h0 (mkZeros a.size)).2.toNat) / d.toNat =
-        toNat (divMod1Loop a d a.size 0 h0 (mkZeros a.size)).1 := by
-      rw [Nat.add_comm, Nat.add_mul_div_right _ _ hdpos, Nat.div_eq_of_lt hltN, Nat.zero_add]
-    rw [← h1, heq]
-    rfl
-  have hmod : (divMod1Loop a d a.size 0 h0 (mkZeros a.size)).2.toNat = toNat a % d.toNat := by
-    have h1 : (toNat (divMod1Loop a d a.size 0 h0 (mkZeros a.size)).1 * d.toNat +
-        (divMod1Loop a d a.size 0 h0 (mkZeros a.size)).2.toNat) % d.toNat =
-        (divMod1Loop a d a.size 0 h0 (mkZeros a.size)).2.toNat := by
-      rw [Nat.add_comm, Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt hltN]
-    rw [← h1, heq]
-    rfl
-  exact ⟨hwf, hdiv, hmod, hlt⟩
+    (divMod1 a d).2 < d :=
+  divMod1Inv_spec a d hd
 
 theorem toNat_divMod1_lt (a : Array UInt64) (d : UInt64) (ha : WF a) (hsz : a.size ≠ 0)
     (hd : 1 < d.toNat) :
@@ -817,6 +739,108 @@ private theorem toNat_lt_of_upper_zero (xs : Array UInt64) (p : Nat)
   rw [heq]
   exact toNatPrefix_lt xs p
 
+/-! ### Knuth Algorithm D: Fused 1-Carry Multiply-Subtract (`subMulCarryLoop`) & Möller–Granlund Bridge -/
+
+theorem trialQhatInv_eq_trialQhat (u2 u1 u0 vn1 vn2 : UInt64) (hvn1 : 2 ^ 63 ≤ vn1.toNat) :
+    trialQhatInv u2 u1 u0 vn1 vn2 (invert21 vn1 hvn1) = trialQhat u2 u1 u0 vn1 vn2 := by
+  unfold trialQhatInv trialQhat
+  split
+  · rename_i hlt
+    rw [divRem21_eq_divWide64 u2 u1 vn1 hvn1 hlt]
+  · rfl
+
+private theorem subMulCarryLoop_props (rem vn : Array UInt64) (j k count : Nat)
+    (qhat carry : UInt64)
+    (hsz : j + k + count < rem.size) :
+    let res := subMulCarryLoop rem vn j k qhat carry count
+    res.1.size = rem.size ∧
+    (∀ idx, j + k + count < idx → getLimb res.1 idx = getLimb rem idx) ∧
+    toNat res.1 + qhat.toNat * toNatPrefix vn (k + count) * (2 ^ 64) ^ j +
+      carry.toNat * (2 ^ 64) ^ (j + k) =
+      toNat rem + qhat.toNat * toNatPrefix vn k * (2 ^ 64) ^ j +
+      res.2.toNat * (2 ^ 64) ^ (j + k + count + 1) := by
+  induction count generalizing rem k carry with
+  | zero =>
+    unfold subMulCarryLoop
+    simp only [Nat.add_zero]
+    have hsb := subBorrow64_spec (getLimb rem (j + k)) carry false
+    rcases hs : subBorrow64 (getLimb rem (j + k)) carry false with ⟨diffTop, finalBorrow⟩
+    rw [hs] at hsb
+    dsimp only at hsb ⊢
+    have hf : false.toNat = 0 := rfl
+    rw [hf, Nat.add_zero] at hsb
+    refine ⟨size_setLimb _ _ _, ?_, ?_⟩
+    · intro idx hidx
+      rw [getLimb_setLimb rem (j + k) diffTop hsz idx]
+      have hne : idx ≠ j + k := by omega
+      simp [hne]
+    · have hto := toNat_setLimb rem (j + k) diffTop hsz
+      rw [Nat.pow_succ (2 ^ 64)]
+      have hmul := congrArg (· * (2 ^ 64) ^ (j + k)) hsb
+      repeat rw [Nat.add_mul] at hmul
+      have hpow : finalBorrow.toNat * ((2 ^ 64) ^ (j + k) * 2 ^ 64) =
+          finalBorrow.toNat * 2 ^ 64 * (2 ^ 64) ^ (j + k) := by
+        rw [Nat.mul_comm ((2 ^ 64) ^ (j + k)) (2 ^ 64), ← Nat.mul_assoc]
+      rw [hpow]
+      omega
+  | succ count ih =>
+    unfold subMulCarryLoop
+    dsimp only
+    have hspec := subMulCarry64_spec (getLimb rem (j + k)) (getLimb vn k) qhat carry
+    rcases hm : subMulCarry64 (getLimb rem (j + k)) (getLimb vn k) qhat carry with ⟨diff, carry'⟩
+    rw [hm] at hspec
+    dsimp only at hspec ⊢
+    have hlt : j + k < rem.size := by omega
+    have hih := ih (setLimb rem (j + k) diff) (k + 1) carry' (by rw [size_setLimb]; omega)
+    rw [size_setLimb] at hih
+    have ⟨hsz', hhi', heq'⟩ := hih
+    have hidx1 : j + (k + 1) + count = j + k + (count + 1) := by omega
+    have hidx2 : k + 1 + count = k + (count + 1) := by omega
+    rw [hidx1] at hhi' heq'
+    rw [hidx2] at heq'
+    refine ⟨hsz', ?_, ?_⟩
+    · intro idx hidx
+      rw [hhi' idx hidx, getLimb_setLimb rem (j + k) diff hlt idx]
+      have hne : idx ≠ j + k := by omega
+      simp [hne]
+    · have hset := toNat_setLimb rem (j + k) diff hlt
+      rw [toNatPrefix_succ vn k, Nat.mul_add, Nat.add_mul] at heq'
+      have hpow1 : (2 ^ 64) ^ (j + (k + 1)) = 2 ^ 64 * (2 ^ 64) ^ (j + k) := by
+        rw [← Nat.add_assoc, Nat.pow_succ (2 ^ 64), Nat.mul_comm]
+      have hpow2 : (2 ^ 64) ^ k * (2 ^ 64) ^ j = (2 ^ 64) ^ (j + k) := by
+        rw [← Nat.pow_add, Nat.add_comm]
+      have hmul := congrArg (· * (2 ^ 64) ^ (j + k)) hspec
+      rw [Nat.add_mul, Nat.add_mul, Nat.add_mul] at hmul
+      have hr1 : carry'.toNat * (2 ^ 64) ^ (j + (k + 1)) = carry'.toNat * 2 ^ 64 * (2 ^ 64) ^ (j + k) := by
+        rw [hpow1, Nat.mul_assoc]
+      have hr2 : qhat.toNat * ((getLimb vn k).toNat * (2 ^ 64) ^ k) * (2 ^ 64) ^ j =
+          qhat.toNat * (getLimb vn k).toNat * (2 ^ 64) ^ (j + k) := by
+        calc qhat.toNat * ((getLimb vn k).toNat * (2 ^ 64) ^ k) * (2 ^ 64) ^ j
+            = (qhat.toNat * (getLimb vn k).toNat) * ((2 ^ 64) ^ k * (2 ^ 64) ^ j) := by ac_rfl
+          _ = qhat.toNat * (getLimb vn k).toNat * (2 ^ 64) ^ (j + k) := by rw [hpow2]
+      rw [hr1, hr2] at heq'
+      omega
+
+private theorem knuthStepInv_eq_knuthStep (rem vn q : Array UInt64) (j n : Nat)
+    (vn1 vn2 : UInt64) (hvn1 : 2 ^ 63 ≤ vn1.toNat) :
+    knuthStepInv rem vn q j n vn1 vn2 (invert21 vn1 hvn1) =
+      knuthStep rem vn q j n vn1 vn2 := by
+  unfold knuthStepInv knuthStep
+  dsimp only
+  rw [trialQhatInv_eq_trialQhat _ _ _ vn1 vn2 hvn1]
+
+private theorem knuthLoopInv_eq_knuthLoop (rem vn q : Array UInt64)
+    (vn1 vn2 : UInt64) (hvn1 : 2 ^ 63 ≤ vn1.toNat) (steps : Nat) :
+    knuthLoopInv rem vn q vn1 vn2 (invert21 vn1 hvn1) steps =
+      knuthLoop rem vn q vn.size vn1 vn2 steps := by
+  induction steps generalizing rem q with
+  | zero => rfl
+  | succ j ih =>
+    unfold knuthLoopInv knuthLoop
+    dsimp only
+    rw [knuthStepInv_eq_knuthStep rem vn q j vn.size vn1 vn2 hvn1]
+    exact ih _ _
+
 /-! ### Knuth Algorithm D: Main Loop and Top-Level `divMod` -/
 
 private theorem knuthStep_spec (rem vn q : Array UInt64) (j n : Nat)
@@ -836,123 +860,127 @@ private theorem knuthStep_spec (rem vn q : Array UInt64) (j n : Nat)
   have ⟨hthB_hi, hthB_lo⟩ := trialQhat_theorem_B rem vn j n hn hvn_sz hnorm hrem_lt
   generalize trialQhat (getLimb rem (j + n)) (getLimb rem (j + n - 1)) (getLimb rem (j + n - 2))
       (getLimb vn (n - 1)) (getLimb vn (n - 2)) = qhat at hthB_hi hthB_lo ⊢
-  have hvn_lt : toNat vn < (2 ^ 64) ^ n := by rw [← hvn_sz]; exact toNat_lt vn
-  have hrem_pow : toNat rem < (2 ^ 64) ^ (j + n + 1) := by
-    have h1 : toNat vn * (2 ^ 64) ^ (j + 1) ≤ (2 ^ 64) ^ n * (2 ^ 64) ^ (j + 1) :=
-      Nat.mul_le_mul_right _ (Nat.le_of_lt hvn_lt)
-    have h2 : (2 ^ 64) ^ n * (2 ^ 64) ^ (j + 1) = (2 ^ 64) ^ (j + n + 1) := by
-      rw [← Nat.pow_add]; congr 1; omega
-    rw [h2] at h1
-    exact Nat.lt_of_lt_of_le hrem_lt h1
-  have hrem_zero_hi : ∀ idx, j + n < idx → getLimb rem idx = 0 := by
-    intro idx hidx
-    apply Classical.byContradiction; intro hne
-    have hpos : 1 ≤ (getLimb rem idx).toNat := by
-      have : (getLimb rem idx).toNat ≠ 0 := fun h0 => hne (UInt64.toNat_inj.mp (by simpa using h0))
-      omega
-    have hge := toNat_ge_limb rem idx
-    have hpow : (2 ^ 64) ^ (j + n + 1) ≤ (2 ^ 64) ^ idx :=
-      Nat.pow_le_pow_right (Nat.two_pow_pos 64) (by omega)
-    have h1 : (2 ^ 64) ^ idx ≤ (getLimb rem idx).toNat * (2 ^ 64) ^ idx :=
-      Nat.le_mul_of_pos_left _ hpos
-    exact Nat.not_lt_of_ge (Nat.le_trans hpow (Nat.le_trans h1 hge)) hrem_pow
-  have ⟨hsub_sz, hsub_hi, hsub_eq⟩ := subMulShiftLoop_props rem vn j n 0 qhat 0 false
-    (Nat.zero_le n) hrem_sz hvn_sz
-  rcases hsub : subMulShiftLoop rem vn j n 0 qhat 0 false with ⟨rem1, borrow⟩
-  rw [hsub] at hsub_sz hsub_hi hsub_eq
-  dsimp only at hsub_sz hsub_hi hsub_eq ⊢
-  have h0N : (0 : UInt64).toNat = 0 := rfl
-  have hfN : false.toNat = 0 := rfl
-  rw [h0N, hfN, toNatPrefix_zero, Nat.mul_zero, Nat.zero_mul, Nat.zero_mul,
-      Nat.add_zero, Nat.add_zero, Nat.add_zero] at hsub_eq
-  have hrem1_lt_pow : toNat rem1 < (2 ^ 64) ^ (j + n + 1) :=
-    toNat_lt_of_upper_zero rem1 (j + n + 1) (fun idx hidx => by
-      rw [hsub_hi idx hidx, hrem_zero_hi idx hidx])
-  have hq0 : getLimb q j = 0 := hq_lo j (Nat.le_refl j)
-  cases borrow
-  · -- No borrow: q[j] = qhat, rem' = rem1
-    simp only [Bool.false_eq_true, ↓reduceIte]
-    simp only [Bool.toNat_false, Nat.zero_mul, Nat.add_zero] at hsub_eq
-    refine ⟨size_setLimb _ _ _, hsub_sz, ?_, ?_, ?_⟩
-    · rw [toNat_setLimb_of_zero q j qhat hq_sz hq0, Nat.add_mul]
-      have hcomm : qhat.toNat * (2 ^ 64) ^ j * toNat vn = qhat.toNat * toNat vn * (2 ^ 64) ^ j := by
-        rw [Nat.mul_assoc, Nat.mul_comm ((2 ^ 64) ^ j) (toNat vn), ← Nat.mul_assoc]
-      rw [hcomm, Nat.add_assoc, Nat.add_comm (qhat.toNat * toNat vn * (2 ^ 64) ^ j), hsub_eq]
-    · rw [Nat.add_mul, Nat.one_mul, Nat.add_mul] at hthB_hi
-      rw [← hsub_eq, Nat.add_comm (toNat rem1)] at hthB_hi
-      exact Nat.lt_of_add_lt_add_left hthB_hi
-    · intro k hk
-      rw [getLimb_setLimb q j qhat hq_sz k]
-      simp [Nat.ne_of_lt hk, hq_lo k (Nat.le_of_lt hk)]
-  · -- Rare borrow (add-back step!): q[j] = qhat - 1, rem' = addShiftLoop rem1 vn j n 0 false
-    simp only [↓reduceIte]
-    simp only [Bool.toNat_true, Nat.one_mul] at hsub_eq
-    have hqpos : 1 ≤ qhat.toNat := by
-      apply Classical.byContradiction; intro h0
-      have hz : qhat.toNat = 0 := Nat.eq_zero_of_not_pos (fun hp => h0 hp)
-      rw [hz, Nat.zero_mul, Nat.zero_mul, Nat.add_zero] at hsub_eq
-      have hge : (2 ^ 64) ^ (j + n + 1) ≤ toNat rem1 := by
-        rw [hsub_eq]; exact Nat.le_add_left _ _
-      exact Nat.not_lt_of_ge hge hrem1_lt_pow
-    have hqdec : (qhat - 1).toNat = qhat.toNat - 1 := by
-      rw [UInt64.toNat_sub_of_le _ _ (by rw [UInt64.le_iff_toNat_le]; exact hqpos)]
-      rfl
-    have hrem_lt_qhat : toNat rem < qhat.toNat * toNat vn * (2 ^ 64) ^ j := by
-      have hlt : toNat rem1 + qhat.toNat * toNat vn * (2 ^ 64) ^ j >
-          toNat rem1 + toNat rem := by
-        rw [hsub_eq, Nat.add_comm (toNat rem1)]
-        exact Nat.add_lt_add_left hrem1_lt_pow _
-      exact Nat.lt_of_add_lt_add_left hlt
-    have ⟨hadd_sz, hadd_hi, cOut, hadd_eq⟩ := addShiftLoop_props rem1 vn j n 0 false
-      (Nat.zero_le n) (hsub_sz.symm ▸ hrem_sz) hvn_sz
-    rw [toNatPrefix_zero, Nat.zero_mul, Nat.add_zero, Bool.toNat_false, Nat.zero_mul,
-        Nat.add_zero (toNat rem1)] at hadd_eq
-    generalize addShiftLoop rem1 vn j n 0 false = rem2 at hadd_sz hadd_hi hadd_eq ⊢
-    have hrem2_lt_pow : toNat rem2 < (2 ^ 64) ^ (j + n + 1) :=
-      toNat_lt_of_upper_zero rem2 (j + n + 1) (fun idx hidx => by
-        rw [hadd_hi idx hidx, hsub_hi idx hidx, hrem_zero_hi idx hidx])
-    have hsplit_q : qhat.toNat * toNat vn * (2 ^ 64) ^ j =
-        (qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j + toNat vn * (2 ^ 64) ^ j := by
-      calc qhat.toNat * toNat vn * (2 ^ 64) ^ j
-          = ((qhat.toNat - 1) + 1) * (toNat vn * (2 ^ 64) ^ j) := by
-            rw [Nat.sub_add_cancel hqpos, Nat.mul_assoc]
-        _ = (qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j + toNat vn * (2 ^ 64) ^ j := by
-            rw [Nat.add_mul, Nat.one_mul, Nat.mul_assoc]
-    have hsum : toNat rem2 + cOut.toNat * (2 ^ 64) ^ (j + n + 1) +
-        (qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j =
-        toNat rem + (2 ^ 64) ^ (j + n + 1) := by
-      have h1 : toNat rem2 + cOut.toNat * (2 ^ 64) ^ (j + n + 1) +
+  by_cases hq0_case : qhat == 0
+  · simp only [hq0_case, ↓reduceIte]
+    have hqz : qhat = 0 := eq_of_beq hq0_case
+    subst hqz
+    simp only [UInt64.toNat_zero, Nat.zero_add, Nat.one_mul] at hthB_hi
+    exact ⟨trivial, trivial, trivial, hthB_hi, fun k hk => hq_lo k (Nat.le_of_lt hk)⟩
+  · simp only [hq0_case, Bool.false_eq_true, ↓reduceIte]
+    have hvn_lt : toNat vn < (2 ^ 64) ^ n := by rw [← hvn_sz]; exact toNat_lt vn
+    have hrem_pow : toNat rem < (2 ^ 64) ^ (j + n + 1) := by
+      have h1 : toNat vn * (2 ^ 64) ^ (j + 1) ≤ (2 ^ 64) ^ n * (2 ^ 64) ^ (j + 1) :=
+        Nat.mul_le_mul_right _ (Nat.le_of_lt hvn_lt)
+      have h2 : (2 ^ 64) ^ n * (2 ^ 64) ^ (j + 1) = (2 ^ 64) ^ (j + n + 1) := by
+        rw [← Nat.pow_add]; congr 1; omega
+      rw [h2] at h1
+      exact Nat.lt_of_lt_of_le hrem_lt h1
+    have hrem_zero_hi : ∀ idx, j + n < idx → getLimb rem idx = 0 := by
+      intro idx hidx
+      apply Classical.byContradiction; intro hne
+      have hpos : 1 ≤ (getLimb rem idx).toNat := by
+        have : (getLimb rem idx).toNat ≠ 0 := fun h0 => hne (UInt64.toNat_inj.mp (by simpa using h0))
+        omega
+      have hge := toNat_ge_limb rem idx
+      have hpow : (2 ^ 64) ^ (j + n + 1) ≤ (2 ^ 64) ^ idx :=
+        Nat.pow_le_pow_right (Nat.two_pow_pos 64) (by omega)
+      have h1 : (2 ^ 64) ^ idx ≤ (getLimb rem idx).toNat * (2 ^ 64) ^ idx :=
+        Nat.le_mul_of_pos_left _ hpos
+      exact Nat.not_lt_of_ge (Nat.le_trans hpow (Nat.le_trans h1 hge)) hrem_pow
+    have ⟨hsub_sz, hsub_hi, hsub_eq⟩ := subMulCarryLoop_props rem vn j 0 n qhat 0 (by omega)
+    rcases hsub : subMulCarryLoop rem vn j 0 qhat 0 n with ⟨rem1, borrow⟩
+    rw [hsub] at hsub_sz hsub_hi hsub_eq
+    dsimp only at hsub_sz hsub_hi hsub_eq ⊢
+    have hvn_to : toNatPrefix vn n = toNat vn := by unfold toNat; rw [hvn_sz]
+    simp only [Nat.add_zero, Nat.zero_add, toNatPrefix_zero, UInt64.toNat_zero,
+      Nat.mul_zero, Nat.zero_mul, Nat.add_zero] at hsub_hi hsub_eq
+    rw [hvn_to] at hsub_eq
+    have hrem1_lt_pow : toNat rem1 < (2 ^ 64) ^ (j + n + 1) :=
+      toNat_lt_of_upper_zero rem1 (j + n + 1) (fun idx hidx => by
+        rw [hsub_hi idx hidx, hrem_zero_hi idx hidx])
+    have hq0 : getLimb q j = 0 := hq_lo j (Nat.le_refl j)
+    cases borrow
+    · simp only [Bool.false_eq_true, ↓reduceIte]
+      simp only [Bool.toNat_false, Nat.zero_mul, Nat.add_zero] at hsub_eq
+      refine ⟨size_setLimb _ _ _, hsub_sz, ?_, ?_, ?_⟩
+      · rw [toNat_setLimb_of_zero q j qhat hq_sz hq0, Nat.add_mul]
+        have hcomm : qhat.toNat * (2 ^ 64) ^ j * toNat vn = qhat.toNat * toNat vn * (2 ^ 64) ^ j := by
+          rw [Nat.mul_assoc, Nat.mul_comm ((2 ^ 64) ^ j) (toNat vn), ← Nat.mul_assoc]
+        rw [hcomm, Nat.add_assoc, Nat.add_comm (qhat.toNat * toNat vn * (2 ^ 64) ^ j), hsub_eq]
+      · rw [Nat.add_mul, Nat.one_mul, Nat.add_mul] at hthB_hi
+        rw [← hsub_eq, Nat.add_comm (toNat rem1)] at hthB_hi
+        exact Nat.lt_of_add_lt_add_left hthB_hi
+      · intro k hk
+        rw [getLimb_setLimb q j qhat hq_sz k]
+        simp [Nat.ne_of_lt hk, hq_lo k (Nat.le_of_lt hk)]
+    · simp only [↓reduceIte]
+      simp only [Bool.toNat_true, Nat.one_mul] at hsub_eq
+      have hqpos : 1 ≤ qhat.toNat := by
+        apply Classical.byContradiction; intro h0
+        have hz : qhat.toNat = 0 := Nat.eq_zero_of_not_pos (fun hp => h0 hp)
+        rw [hz, Nat.zero_mul, Nat.zero_mul, Nat.add_zero] at hsub_eq
+        have hge : (2 ^ 64) ^ (j + n + 1) ≤ toNat rem1 := by
+          rw [hsub_eq]; exact Nat.le_add_left _ _
+        exact Nat.not_lt_of_ge hge hrem1_lt_pow
+      have hqdec : (qhat - 1).toNat = qhat.toNat - 1 := by
+        rw [UInt64.toNat_sub_of_le _ _ (by rw [UInt64.le_iff_toNat_le]; exact hqpos)]
+        rfl
+      have hrem_lt_qhat : toNat rem < qhat.toNat * toNat vn * (2 ^ 64) ^ j := by
+        have hlt : toNat rem1 + qhat.toNat * toNat vn * (2 ^ 64) ^ j >
+            toNat rem1 + toNat rem := by
+          rw [hsub_eq, Nat.add_comm (toNat rem1)]
+          exact Nat.add_lt_add_left hrem1_lt_pow _
+        exact Nat.lt_of_add_lt_add_left hlt
+      have ⟨hadd_sz, hadd_hi, cOut, hadd_eq⟩ := addShiftLoop_props rem1 vn j n 0 false
+        (Nat.zero_le n) (hsub_sz.symm ▸ hrem_sz) hvn_sz
+      rw [toNatPrefix_zero, Nat.zero_mul, Nat.add_zero, Bool.toNat_false, Nat.zero_mul,
+          Nat.add_zero (toNat rem1)] at hadd_eq
+      generalize addShiftLoop rem1 vn j n 0 false = rem2 at hadd_sz hadd_hi hadd_eq ⊢
+      have hrem2_lt_pow : toNat rem2 < (2 ^ 64) ^ (j + n + 1) :=
+        toNat_lt_of_upper_zero rem2 (j + n + 1) (fun idx hidx => by
+          rw [hadd_hi idx hidx, hsub_hi idx hidx, hrem_zero_hi idx hidx])
+      have hsplit_q : qhat.toNat * toNat vn * (2 ^ 64) ^ j =
+          (qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j + toNat vn * (2 ^ 64) ^ j := by
+        calc qhat.toNat * toNat vn * (2 ^ 64) ^ j
+            = ((qhat.toNat - 1) + 1) * (toNat vn * (2 ^ 64) ^ j) := by
+              rw [Nat.sub_add_cancel hqpos, Nat.mul_assoc]
+          _ = (qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j + toNat vn * (2 ^ 64) ^ j := by
+              rw [Nat.add_mul, Nat.one_mul, Nat.mul_assoc]
+      have hsum : toNat rem2 + cOut.toNat * (2 ^ 64) ^ (j + n + 1) +
           (qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j =
-          toNat rem1 + (toNat vn * (2 ^ 64) ^ j + (qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j) := by
-        rw [hadd_eq, Nat.add_assoc]
-      rw [h1, Nat.add_comm (toNat vn * (2 ^ 64) ^ j), ← hsplit_q, hsub_eq]
-    have hcOut : cOut.toNat = 1 := by
-      cases cOut
-      · simp only [Bool.toNat_false, Nat.zero_mul, Nat.add_zero] at hsum
-        have hlt : toNat rem2 + (qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j <
-            (2 ^ 64) ^ (j + n + 1) + toNat rem :=
-          Nat.add_lt_add_of_lt_of_le hrem2_lt_pow hthB_lo
-        rw [hsum, Nat.add_comm] at hlt
-        exact absurd hlt (Nat.lt_irrefl _)
-      · rfl
-    rw [hcOut, Nat.one_mul] at hsum
-    have hrem2_eq : toNat rem2 + (qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j = toNat rem := by
-      apply Nat.add_right_cancel (m := (2 ^ 64) ^ (j + n + 1))
-      calc toNat rem2 + (qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j + (2 ^ 64) ^ (j + n + 1)
-          = toNat rem2 + (2 ^ 64) ^ (j + n + 1) + (qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j := by
-            rw [Nat.add_assoc, Nat.add_comm ((qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j), ← Nat.add_assoc]
-        _ = toNat rem + (2 ^ 64) ^ (j + n + 1) := hsum
-    refine ⟨size_setLimb _ _ _, by rw [hadd_sz, hsub_sz], ?_, ?_, ?_⟩
-    · rw [toNat_setLimb_of_zero q j (qhat - 1) hq_sz hq0, hqdec, Nat.add_mul]
-      have hcomm : (qhat.toNat - 1) * (2 ^ 64) ^ j * toNat vn =
-          (qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j := by
-        rw [Nat.mul_assoc, Nat.mul_comm ((2 ^ 64) ^ j) (toNat vn), ← Nat.mul_assoc]
-      rw [hcomm, Nat.add_assoc, Nat.add_comm ((qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j), hrem2_eq]
-    · rw [← hrem2_eq, hsplit_q, Nat.add_comm (toNat rem2)] at hrem_lt_qhat
-      exact Nat.lt_of_add_lt_add_left hrem_lt_qhat
-    · intro k hk
-      rw [getLimb_setLimb q j (qhat - 1) hq_sz k]
-      simp [Nat.ne_of_lt hk, hq_lo k (Nat.le_of_lt hk)]
+          toNat rem + (2 ^ 64) ^ (j + n + 1) := by
+        have h1 : toNat rem2 + cOut.toNat * (2 ^ 64) ^ (j + n + 1) +
+            (qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j =
+            toNat rem1 + (toNat vn * (2 ^ 64) ^ j + (qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j) := by
+          rw [hadd_eq, Nat.add_assoc]
+        rw [h1, Nat.add_comm (toNat vn * (2 ^ 64) ^ j), ← hsplit_q, hsub_eq]
+      have hcOut : cOut.toNat = 1 := by
+        cases cOut
+        · simp only [Bool.toNat_false, Nat.zero_mul, Nat.add_zero] at hsum
+          have hlt : toNat rem2 + (qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j <
+              (2 ^ 64) ^ (j + n + 1) + toNat rem :=
+            Nat.add_lt_add_of_lt_of_le hrem2_lt_pow hthB_lo
+          rw [hsum, Nat.add_comm] at hlt
+          exact absurd hlt (Nat.lt_irrefl _)
+        · rfl
+      rw [hcOut, Nat.one_mul] at hsum
+      have hrem2_eq : toNat rem2 + (qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j = toNat rem := by
+        apply Nat.add_right_cancel (m := (2 ^ 64) ^ (j + n + 1))
+        calc toNat rem2 + (qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j + (2 ^ 64) ^ (j + n + 1)
+            = toNat rem2 + (2 ^ 64) ^ (j + n + 1) + (qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j := by
+              rw [Nat.add_assoc, Nat.add_comm ((qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j), ← Nat.add_assoc]
+          _ = toNat rem + (2 ^ 64) ^ (j + n + 1) := hsum
+      refine ⟨size_setLimb _ _ _, by rw [hadd_sz, hsub_sz], ?_, ?_, ?_⟩
+      · rw [toNat_setLimb_of_zero q j (qhat - 1) hq_sz hq0, hqdec, Nat.add_mul]
+        have hcomm : (qhat.toNat - 1) * (2 ^ 64) ^ j * toNat vn =
+            (qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j := by
+          rw [Nat.mul_assoc, Nat.mul_comm ((2 ^ 64) ^ j) (toNat vn), ← Nat.mul_assoc]
+        rw [hcomm, Nat.add_assoc, Nat.add_comm ((qhat.toNat - 1) * toNat vn * (2 ^ 64) ^ j), hrem2_eq]
+      · rw [← hrem2_eq, hsplit_q, Nat.add_comm (toNat rem2)] at hrem_lt_qhat
+        exact Nat.lt_of_add_lt_add_left hrem_lt_qhat
+      · intro k hk
+        rw [getLimb_setLimb q j (qhat - 1) hq_sz k]
+        simp [Nat.ne_of_lt hk, hq_lo k (Nat.le_of_lt hk)]
 
 private theorem knuthLoop_spec (rem vn q : Array UInt64) (n steps : Nat)
     (hn : 2 ≤ n) (hvn_sz : vn.size = n)
@@ -980,14 +1008,42 @@ private theorem knuthLoop_spec (rem vn q : Array UInt64) (n steps : Nat)
     have ⟨hloop_eq, hloop_lt⟩ := ih rem' q' (by omega) (by omega) hrem'_lt hq'_lo
     exact ⟨by omega, hloop_lt⟩
 
-private theorem divModKnuth_spec (u v : Array UInt64)
+private theorem divModKnuthRaw_eq_knuthLoop (u v : Array UInt64)
+    (hvn_sz : (shiftLeftSmall v (clz64 (getLimb v (v.size - 1))).toNat).size = v.size)
+    (hnorm : 2 ^ 63 ≤ (getLimb (shiftLeftSmall v (clz64 (getLimb v (v.size - 1))).toNat) (v.size - 1)).toNat) :
+    let n := v.size
+    let m := u.size - n
+    let s := (clz64 (getLimb v (n - 1))).toNat
+    let vn := shiftLeftSmall v s
+    let un := padZeros (shiftLeftSmall u s) (m + n + 1)
+    let vn1 := getLimb vn (n - 1)
+    let vn2 := getLimb vn (n - 2)
+    let raw := divModKnuthRaw u v
+    (raw.1, raw.2.1) = knuthLoop un vn (mkZeros (m + 1)) n vn1 vn2 (m + 1) ∧
+    raw.2.2 = s := by
+  unfold divModKnuthRaw
+  dsimp only
+  have hshr_ne : (getLimb (shiftLeftSmall v (clz64 (getLimb v (v.size - 1))).toNat) (v.size - 1) >>> (63 : UInt64)) ≠ 0 := by
+    intro h0
+    have hto := congrArg UInt64.toNat h0
+    rw [UInt64.toNat_shiftRight, show (63 : UInt64).toNat % 64 = 63 from rfl,
+        Nat.shiftRight_eq_div_pow, UInt64.toNat_zero] at hto
+    have : 1 ≤ (getLimb (shiftLeftSmall v (clz64 (getLimb v (v.size - 1))).toNat) (v.size - 1)).toNat / 2 ^ 63 :=
+      (Nat.le_div_iff_mul_le (Nat.two_pow_pos 63)).mpr (by omega)
+    omega
+  split
+  · refine ⟨?_, rfl⟩
+    rw [knuthLoopInv_eq_knuthLoop, hvn_sz]
+  · rename_i hnot
+    exact absurd hshr_ne hnot
+
+theorem divModKnuth_spec (u v : Array UInt64)
     (_hu : WF u) (hv : WF v) (hge2 : 2 ≤ v.size) (hle : v.size ≤ u.size) :
     let res := divModKnuth u v
     WF res.1 ∧ WF res.2 ∧
     toNat res.1 = toNat u / toNat v ∧
     toNat res.2 = toNat u % toNat v := by
   unfold divModKnuth
-  dsimp only
   let n := v.size
   let m := u.size - n
   let vTop := getLimb v (n - 1)
@@ -998,12 +1054,12 @@ private theorem divModKnuth_spec (u v : Array UInt64)
   let s := (clz64 vTop).toNat
   have hs_lt : s < 64 := clz64_lt_64 vTop hvTop_ne
   have ⟨hnorm_lo, hnorm_hi⟩ := clz64_shift_norm vTop hvTop_ne
-  let vn := shiftLeft v s
-  let un := padZeros (shiftLeft u s) (m + n + 1)
-  have hvn_wf : WF vn := wf_shiftLeft v s
-  have hvn_toNat : toNat vn = toNat v * 2 ^ s := toNat_shiftLeft_mul v s
+  let vn := shiftLeftSmall v s
+  let un := padZeros (shiftLeftSmall u s) (m + n + 1)
+  have hvn_wf : WF vn := wf_shiftLeftSmall v s
+  have hvn_toNat : toNat vn = toNat v * 2 ^ s := toNat_shiftLeftSmall v s hs_lt
   have hun_toNat : toNat un = toNat u * 2 ^ s := by
-    rw [toNat_padZeros, toNat_shiftLeft_mul]
+    rw [toNat_padZeros, toNat_shiftLeftSmall u s hs_lt]
   -- Prove vn.size = n and 2^63 ≤ (getLimb vn (n - 1)).toNat
   have hv_decomp : toNat v = toNatPrefix v (n - 1) + vTop.toNat * (2 ^ 64) ^ (n - 1) := by
     have hn1 : n = (n - 1) + 1 := by omega
@@ -1065,6 +1121,12 @@ private theorem divModKnuth_spec (u v : Array UInt64)
     have hlt := Nat.lt_of_le_of_lt hvn_ge hvn_top
     have hlt' := Nat.lt_of_mul_lt_mul_right hlt
     omega
+  have ⟨hraw_eq, hraw_s⟩ := divModKnuthRaw_eq_knuthLoop u v hvn_sz hnorm
+  dsimp only at hraw_eq hraw_s ⊢
+  rcases hraw : divModKnuthRaw u v with ⟨q, rem, sRaw⟩
+  rw [hraw] at hraw_eq hraw_s
+  dsimp only at hraw_eq hraw_s ⊢
+  subst hraw_s
   have hun_lt : toNat un < toNat vn * (2 ^ 64) ^ (m + 1) := by
     rw [hun_toNat, hvn_toNat]
     have hu_lt : toNat u < (2 ^ 64) ^ u.size := toNat_lt u
@@ -1083,9 +1145,7 @@ private theorem divModKnuth_spec (u v : Array UInt64)
     rw [size_padZeros]; omega
   have ⟨hloop_eq, hloop_lt⟩ := knuthLoop_spec un vn (mkZeros (m + 1)) n (m + 1)
     hge2 hvn_sz hnorm hun_sz (by rw [size_mkZeros]; exact Nat.le_refl _) hun_lt (fun k _ => getLimb_mkZeros _ k)
-  rcases hl : knuthLoop un vn (mkZeros (m + 1)) n (getLimb vn (n - 1)) (getLimb vn (n - 2)) (m + 1)
-    with ⟨q, rem⟩
-  rw [hl] at hloop_eq hloop_lt
+  rw [← hraw_eq] at hloop_eq hloop_lt
   dsimp only at hloop_eq hloop_lt ⊢
   rw [toNat_mkZeros, Nat.zero_mul, Nat.zero_add, hun_toNat, hvn_toNat] at hloop_eq
   rw [hvn_toNat] at hloop_lt
@@ -1110,12 +1170,12 @@ private theorem divModKnuth_spec (u v : Array UInt64)
       exact hloop_eq
     exact Nat.eq_of_mul_eq_mul_right h2s_pos h1
   have hv_pos : 0 < toNat v := toNat_pos_of_ne_zero v hv (by omega)
-  refine ⟨wf_normalize q, wf_shiftRight rem s, ?_, ?_⟩
+  refine ⟨wf_normalize q, wf_shiftRightSmall rem s, ?_, ?_⟩
   · rw [toNat_normalize]
     have h1 : (toNat q * toNat v + toNat rem / 2 ^ s) / toNat v = toNat q := by
       rw [Nat.add_comm, Nat.add_mul_div_right _ _ hv_pos, Nat.div_eq_of_lt hrem_div_lt, Nat.zero_add]
     rw [← h1, hdecomp]
-  · rw [toNat_shiftRight_div]
+  · rw [toNat_shiftRightSmall rem s hs_lt]
     have h1 : (toNat q * toNat v + toNat rem / 2 ^ s) % toNat v = toNat rem / 2 ^ s := by
       rw [Nat.add_comm, Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt hrem_div_lt]
     rw [← h1, hdecomp]
@@ -1216,10 +1276,348 @@ theorem divMod_spec (u v : Array UInt64) :
         rw [htu, htv] at h3 h4
         exact ⟨h1, h2, h3, h4⟩
 
-theorem wf_div (u v : Array UInt64) : WF (div u v) := (divMod_spec u v).1
+/-! ### O(1) Single-Limb Quotient Fast Path (`divQuick1`) and `div` / `mod` -/
+
+private theorem div_eq_of_bracket {U V q : Nat} (hV : 0 < V)
+    (hlo : q * V ≤ U) (hhi : U < (q + 1) * V) : U / V = q := by
+  have h1 : q ≤ U / V := (Nat.le_div_iff_mul_le hV).mpr hlo
+  have h2 : U / V < q + 1 := (Nat.div_lt_iff_lt_mul hV).mpr hhi
+  omega
+
+private theorem divQuick1_bracket {U V Utop Vtop P qh rh : Nat}
+    (hP : 0 < P) (hVtop : 0 < Vtop)
+    (hUlo : Utop * P ≤ U) (hUhi : U < (Utop + 1) * P)
+    (hVlo : Vtop * P ≤ V) (hVhi : V < (Vtop + 1) * P)
+    (hdm : qh * Vtop + rh = Utop) (hrh : rh < Vtop) (hqle : qh ≤ rh) :
+    U / V = qh := by
+  have hVpos : 0 < V := by
+    have : 0 < Vtop * P := Nat.mul_pos hVtop hP
+    omega
+  apply div_eq_of_bracket hVpos
+  · have hq1 : qh * (Vtop + 1) ≤ Utop := by rw [Nat.mul_add, Nat.mul_one]; omega
+    have h1 : qh * V ≤ qh * ((Vtop + 1) * P) := Nat.mul_le_mul_left qh (Nat.le_of_lt hVhi)
+    have h2 : qh * ((Vtop + 1) * P) = (qh * (Vtop + 1)) * P := (Nat.mul_assoc _ _ _).symm
+    have h3 : (qh * (Vtop + 1)) * P ≤ Utop * P := Nat.mul_le_mul_right P hq1
+    omega
+  · have hq2 : Utop + 1 ≤ (qh + 1) * Vtop := by rw [Nat.add_mul, Nat.one_mul]; omega
+    have h1 : (Utop + 1) * P ≤ ((qh + 1) * Vtop) * P := Nat.mul_le_mul_right P hq2
+    have h2 : ((qh + 1) * Vtop) * P = (qh + 1) * (Vtop * P) := Nat.mul_assoc _ _ _
+    have h3 : (qh + 1) * (Vtop * P) ≤ (qh + 1) * V := Nat.mul_le_mul_left _ hVlo
+    omega
+
+theorem divQuick1_spec (u v q : Array UInt64) (hq : divQuick1 u v = some q) :
+    WF q ∧ toNat q = toNat u / toNat v := by
+  unfold divQuick1 at hq
+  dsimp only at hq
+  split at hq
+  · cases hq
+  · rename_i hguard
+    have hbounds : 2 ≤ v.size ∧ v.size ≤ u.size ∧ u.size ≤ v.size + 1 := by
+      have h1 : ¬ v.size < 2 := fun h => hguard (by simp [h])
+      have h2 : ¬ u.size < v.size := fun h => hguard (by simp [h])
+      have h3 : ¬ v.size + 1 < u.size := fun h => hguard (by simp [h])
+      omega
+    let n := v.size
+    let vTop := getLimb v (n - 1)
+    split at hq
+    · cases hq
+    · rename_i hvTop0
+      have hvTop_ne : vTop ≠ 0 := fun h => hvTop0 (by simp [vTop, n, h])
+      have hvTop_pos : 0 < vTop.toNat := by
+        have : vTop.toNat ≠ 0 := fun h0 => hvTop_ne (UInt64.toNat_inj.mp (by simpa using h0))
+        omega
+      let s := clz64 vTop
+      have hs_lt : s.toNat < 64 := clz64_lt_64 vTop hvTop_ne
+      have hP_pos : 0 < (2 ^ 64) ^ (n - 1) := Nat.pow_pos (Nat.two_pow_pos 64)
+      have hu_decomp : toNat u = ((getLimb u n).toNat * 2 ^ 64 + (getLimb u (n - 1)).toNat) * (2 ^ 64) ^ (n - 1) +
+          toNatPrefix u (n - 1) := by
+        have hle : u.size ≤ n + 1 := hbounds.2.2
+        have hto : toNat u = toNatPrefix u (n + 1) := (toNatPrefix_eq_toNat_of_le u hle).symm
+        rw [hto, toNatPrefix_succ u n]
+        have hn1 : n = (n - 1) + 1 := by omega
+        conv => lhs; rw [show toNatPrefix u n = toNatPrefix u ((n - 1) + 1) by rw [← hn1]]
+        rw [toNatPrefix_succ u (n - 1)]
+        have hpow : (2 ^ 64) ^ n = 2 ^ 64 * (2 ^ 64) ^ (n - 1) := by
+          conv => lhs; rw [hn1]
+          rw [Nat.pow_succ (2 ^ 64), Nat.mul_comm]
+        rw [hpow, Nat.add_mul, Nat.mul_assoc]
+        omega
+      have hv_decomp : toNat v = vTop.toNat * (2 ^ 64) ^ (n - 1) + toNatPrefix v (n - 1) := by
+        have hn1 : n = (n - 1) + 1 := by omega
+        unfold toNat
+        conv => lhs; rw [show v.size = (n - 1) + 1 from hn1]
+        rw [toNatPrefix_succ, Nat.add_comm]
+      split at hq
+      · cases hq
+      · rename_i hnoOv
+        by_cases hs0 : (clz64 (getLimb v (v.size - 1)) == 0) = true
+        · -- s == 0: already normalized
+          simp only [hs0, ↓reduceIte] at hq
+          split at hq
+          · rename_i hlt
+            split at hq
+            · rename_i hqle
+              cases hq
+              have ⟨hdm, hrh⟩ := divWide64_spec (getLimb u n) (getLimb u (n - 1)) vTop hlt
+              refine ⟨wf_ofUInt64 _, ?_⟩
+              rw [toNat_ofUInt64]
+              have hupref := toNatPrefix_lt u (n - 1)
+              have hvpref := toNatPrefix_lt v (n - 1)
+              exact (divQuick1_bracket hP_pos hvTop_pos
+                (by omega) (by rw [Nat.add_mul, Nat.one_mul]; omega)
+                (by omega) (by rw [Nat.add_mul, Nat.one_mul]; omega)
+                hdm hrh (UInt64.le_iff_toNat_le.mp hqle)).symm
+            · cases hq
+          · cases hq
+        · -- s > 0: shift top 3 limbs of u and top 2 limbs of v by s in O(1)
+          have hs0f : (clz64 (getLimb v (v.size - 1)) == 0) = false := Bool.eq_false_iff.mpr hs0
+          simp only [hs0f, Bool.false_eq_true, ↓reduceIte] at hq
+          have hsne : s ≠ 0 := fun h => hs0 (by dsimp only [s, vTop, n] at h; simp [h])
+          have hs_pos : 0 < s.toNat := by
+            have : s.toNat ≠ 0 := fun h0 => hsne (UInt64.toNat_inj.mp (by simpa using h0))
+            omega
+          have hinv_val : ((64 : UInt64) - s).toNat = 64 - s.toNat := by
+            rw [UInt64.toNat_sub_of_le _ _ (by rw [UInt64.le_iff_toNat_le]; exact Nat.le_of_lt hs_lt)]
+            rfl
+          have huTop_shr0 : getLimb u n >>> ((64 : UInt64) - s) = 0 := by
+            apply Classical.byContradiction; intro hne
+            have h1 : (s != 0) = true := bne_iff_ne.mpr hsne
+            have h2 : (getLimb u n >>> ((64 : UInt64) - s) != 0) = true := bne_iff_ne.mpr hne
+            exact hnoOv (by dsimp only [s, vTop, n] at h1 h2; simp [h1, h2])
+          have huTop_mul_lt : (getLimb u n).toNat * 2 ^ s.toNat < 2 ^ 64 := by
+            have h0 := congrArg UInt64.toNat huTop_shr0
+            rw [UInt64.toNat_shiftRight, hinv_val, Nat.mod_eq_of_lt (by omega),
+                Nat.shiftRight_eq_div_pow, UInt64.toNat_zero] at h0
+            have hlt_inv : (getLimb u n).toNat < 2 ^ (64 - s.toNat) :=
+              Nat.lt_of_not_ge fun hge => by
+                have : 1 ≤ (getLimb u n).toNat / 2 ^ (64 - s.toNat) :=
+                  (Nat.le_div_iff_mul_le (Nat.two_pow_pos _)).mpr (by omega)
+                omega
+            have hpow : 2 ^ (64 - s.toNat) * 2 ^ s.toNat = 2 ^ 64 := by
+              rw [← Nat.pow_add, Nat.sub_add_cancel (Nat.le_of_lt hs_lt)]
+            rw [← hpow]
+            exact Nat.mul_lt_mul_of_pos_right hlt_inv (Nat.two_pow_pos _)
+          have hvTop_mul_lt : vTop.toNat * 2 ^ s.toNat < 2 ^ 64 := (clz64_shift_norm vTop hvTop_ne).2
+          have hpow64 : 2 ^ 64 = 2 ^ (64 - s.toNat) * 2 ^ s.toNat := by
+            rw [← Nat.pow_add, Nat.sub_add_cancel (Nat.le_of_lt hs_lt)]
+          -- Helper: x * 2^s = (x / 2^(64-s)) * 2^64 + (x * 2^s) % 2^64
+          have hsplit_word : ∀ x : UInt64,
+              x.toNat * 2 ^ s.toNat = (x.toNat / 2 ^ (64 - s.toNat)) * 2 ^ 64 + (x.toNat * 2 ^ s.toNat) % 2 ^ 64 := by
+            intro x
+            have hdm := Nat.div_add_mod x.toNat (2 ^ (64 - s.toNat))
+            have hltm : x.toNat % 2 ^ (64 - s.toNat) < 2 ^ (64 - s.toNat) :=
+              Nat.mod_lt _ (Nat.two_pow_pos _)
+            have hmul_lt : (x.toNat % 2 ^ (64 - s.toNat)) * 2 ^ s.toNat < 2 ^ 64 := by
+              rw [hpow64]; exact Nat.mul_lt_mul_of_pos_right hltm (Nat.two_pow_pos _)
+            have hdecomp : x.toNat * 2 ^ s.toNat =
+                (x.toNat / 2 ^ (64 - s.toNat)) * 2 ^ 64 + (x.toNat % 2 ^ (64 - s.toNat)) * 2 ^ s.toNat := by
+              calc x.toNat * 2 ^ s.toNat
+                  = (2 ^ (64 - s.toNat) * (x.toNat / 2 ^ (64 - s.toNat)) + x.toNat % 2 ^ (64 - s.toNat)) * 2 ^ s.toNat := by
+                    rw [hdm]
+                _ = 2 ^ (64 - s.toNat) * (x.toNat / 2 ^ (64 - s.toNat)) * 2 ^ s.toNat +
+                    x.toNat % 2 ^ (64 - s.toNat) * 2 ^ s.toNat := by rw [Nat.add_mul]
+                _ = (x.toNat / 2 ^ (64 - s.toNat)) * (2 ^ (64 - s.toNat) * 2 ^ s.toNat) +
+                    x.toNat % 2 ^ (64 - s.toNat) * 2 ^ s.toNat := by
+                    rw [Nat.mul_comm (2 ^ (64 - s.toNat)) (x.toNat / 2 ^ (64 - s.toNat)), Nat.mul_assoc]
+                _ = (x.toNat / 2 ^ (64 - s.toNat)) * 2 ^ 64 + x.toNat % 2 ^ (64 - s.toNat) * 2 ^ s.toNat := by
+                    rw [← hpow64]
+            have hmod : (x.toNat * 2 ^ s.toNat) % 2 ^ 64 = (x.toNat % 2 ^ (64 - s.toNat)) * 2 ^ s.toNat := by
+              rw [hdecomp, Nat.add_comm, Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt hmul_lt]
+            rw [hmod]; exact hdecomp
+          have hmod_le_top : ∀ x : UInt64, (x.toNat * 2 ^ s.toNat) % 2 ^ 64 + 2 ^ s.toNat ≤ 2 ^ 64 := by
+            intro x
+            have hdm := Nat.div_add_mod x.toNat (2 ^ (64 - s.toNat))
+            have hltm : x.toNat % 2 ^ (64 - s.toNat) < 2 ^ (64 - s.toNat) :=
+              Nat.mod_lt _ (Nat.two_pow_pos _)
+            have hle1 : (x.toNat % 2 ^ (64 - s.toNat) + 1) * 2 ^ s.toNat ≤ 2 ^ 64 := by
+              rw [hpow64]; exact Nat.mul_le_mul_right _ hltm
+            rw [Nat.add_mul, Nat.one_mul] at hle1
+            have hmul_lt : (x.toNat % 2 ^ (64 - s.toNat)) * 2 ^ s.toNat < 2 ^ 64 := by
+              have : 0 < 2 ^ s.toNat := Nat.two_pow_pos _; omega
+            have h1 : (x.toNat * 2 ^ s.toNat) % 2 ^ 64 = (x.toNat % 2 ^ (64 - s.toNat)) * 2 ^ s.toNat := by
+              have hdec : x.toNat * 2 ^ s.toNat =
+                  (x.toNat / 2 ^ (64 - s.toNat)) * 2 ^ 64 + (x.toNat % 2 ^ (64 - s.toNat)) * 2 ^ s.toNat := by
+                calc x.toNat * 2 ^ s.toNat
+                    = (2 ^ (64 - s.toNat) * (x.toNat / 2 ^ (64 - s.toNat)) + x.toNat % 2 ^ (64 - s.toNat)) * 2 ^ s.toNat := by
+                      rw [hdm]
+                  _ = 2 ^ (64 - s.toNat) * (x.toNat / 2 ^ (64 - s.toNat)) * 2 ^ s.toNat +
+                      x.toNat % 2 ^ (64 - s.toNat) * 2 ^ s.toNat := by rw [Nat.add_mul]
+                  _ = (x.toNat / 2 ^ (64 - s.toNat)) * (2 ^ (64 - s.toNat) * 2 ^ s.toNat) +
+                      x.toNat % 2 ^ (64 - s.toNat) * 2 ^ s.toNat := by
+                      rw [Nat.mul_comm (2 ^ (64 - s.toNat)) (x.toNat / 2 ^ (64 - s.toNat)), Nat.mul_assoc]
+                  _ = (x.toNat / 2 ^ (64 - s.toNat)) * 2 ^ 64 + x.toNat % 2 ^ (64 - s.toNat) * 2 ^ s.toNat := by
+                      rw [← hpow64]
+              rw [hdec, Nat.add_comm, Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt hmul_lt]
+            rw [h1]; exact hle1
+          split at hq
+          · rename_i hlt
+            split at hq
+            · rename_i hqle
+              cases hq
+              let vn1 := (vTop <<< s) ||| (getLimb v (n - 2) >>> ((64 : UInt64) - s))
+              let u2 := (getLimb u n <<< s) ||| (getLimb u (n - 1) >>> ((64 : UInt64) - s))
+              let u1 := (getLimb u (n - 1) <<< s) ||| (getLimb u (n - 2) >>> ((64 : UInt64) - s))
+              have hvn1_val : vn1.toNat = vTop.toNat * 2 ^ s.toNat + (getLimb v (n - 2)).toNat / 2 ^ (64 - s.toNat) := by
+                rw [shift_or_toNat vTop (getLimb v (n - 2)) s hs_pos hs_lt, Nat.mod_eq_of_lt hvTop_mul_lt]
+              have hu2_val : u2.toNat = (getLimb u n).toNat * 2 ^ s.toNat + (getLimb u (n - 1)).toNat / 2 ^ (64 - s.toNat) := by
+                rw [shift_or_toNat (getLimb u n) (getLimb u (n - 1)) s hs_pos hs_lt, Nat.mod_eq_of_lt huTop_mul_lt]
+              have hu1_val : u1.toNat = ((getLimb u (n - 1)).toNat * 2 ^ s.toNat) % 2 ^ 64 +
+                  (getLimb u (n - 2)).toNat / 2 ^ (64 - s.toNat) :=
+                shift_or_toNat (getLimb u (n - 1)) (getLimb u (n - 2)) s hs_pos hs_lt
+              have hvn1_pos : 0 < vn1.toNat := by
+                have h1 : 2 ^ 63 ≤ vTop.toNat * 2 ^ s.toNat := (clz64_shift_norm vTop hvTop_ne).1
+                rw [hvn1_val]
+                exact Nat.lt_of_lt_of_le (Nat.two_pow_pos 63) (Nat.le_trans h1 (Nat.le_add_right _ _))
+              -- Decompose toNatPrefix _ (n - 1) = toNatPrefix _ (n - 2) + limb (n - 2) * B^(n - 2)
+              have hn2 : n - 1 = (n - 2) + 1 := by omega
+              have hpow_n1 : (2 ^ 64) ^ (n - 1) = 2 ^ 64 * (2 ^ 64) ^ (n - 2) := by
+                conv => lhs; rw [hn2]
+                rw [Nat.pow_succ (2 ^ 64), Nat.mul_comm]
+              have hu_pref : toNatPrefix u (n - 1) =
+                  toNatPrefix u (n - 2) + (getLimb u (n - 2)).toNat * (2 ^ 64) ^ (n - 2) := by
+                conv => lhs; rw [hn2]
+                rw [toNatPrefix_succ]
+              have hv_pref : toNatPrefix v (n - 1) =
+                  toNatPrefix v (n - 2) + (getLimb v (n - 2)).toNat * (2 ^ 64) ^ (n - 2) := by
+                conv => lhs; rw [hn2]
+                rw [toNatPrefix_succ]
+              -- Bracket toNat u * 2^s and toNat v * 2^s by (u2 * B + u1) * B^(n - 1) and vn1 * B^(n - 1)
+              have hu_shift_eq : toNat u * 2 ^ s.toNat =
+                  (u2.toNat * 2 ^ 64 + u1.toNat) * (2 ^ 64) ^ (n - 1) +
+                  (((getLimb u (n - 2)).toNat * 2 ^ s.toNat) % 2 ^ 64 * (2 ^ 64) ^ (n - 2) +
+                    toNatPrefix u (n - 2) * 2 ^ s.toNat) := by
+                have hs1 := hsplit_word (getLimb u (n - 1))
+                have hs2 := hsplit_word (getLimb u (n - 2))
+                rw [hu_decomp, hu_pref, Nat.add_mul]
+                rw [hu2_val, hu1_val]
+                have ha : ((getLimb u n).toNat * 2 ^ 64 + (getLimb u (n - 1)).toNat) * (2 ^ 64) ^ (n - 1) * 2 ^ s.toNat =
+                    ((getLimb u n).toNat * 2 ^ s.toNat * 2 ^ 64 + (getLimb u (n - 1)).toNat * 2 ^ s.toNat) * (2 ^ 64) ^ (n - 1) := by
+                  rw [Nat.add_mul, Nat.add_mul, Nat.add_mul]
+                  congr 1 <;> ac_rfl
+                have hb : (getLimb u (n - 2)).toNat * (2 ^ 64) ^ (n - 2) * 2 ^ s.toNat =
+                    ((getLimb u (n - 2)).toNat * 2 ^ s.toNat) * (2 ^ 64) ^ (n - 2) := by ac_rfl
+                conv => lhs; rw [ha, Nat.add_mul, Nat.add_mul, hb, hs1, hs2]
+                rw [hpow_n1]
+                repeat rw [Nat.add_mul]
+                repeat rw [Nat.mul_assoc]
+                ac_rfl
+              have hv_shift_eq : toNat v * 2 ^ s.toNat =
+                  vn1.toNat * (2 ^ 64) ^ (n - 1) +
+                  (((getLimb v (n - 2)).toNat * 2 ^ s.toNat) % 2 ^ 64 * (2 ^ 64) ^ (n - 2) +
+                    toNatPrefix v (n - 2) * 2 ^ s.toNat) := by
+                have hs2 := hsplit_word (getLimb v (n - 2))
+                rw [hv_decomp, hv_pref, Nat.add_mul, Nat.add_mul, hvn1_val]
+                have ha : vTop.toNat * (2 ^ 64) ^ (n - 1) * 2 ^ s.toNat =
+                    vTop.toNat * 2 ^ s.toNat * (2 ^ 64) ^ (n - 1) := by ac_rfl
+                have hb : (getLimb v (n - 2)).toNat * (2 ^ 64) ^ (n - 2) * 2 ^ s.toNat =
+                    ((getLimb v (n - 2)).toNat * 2 ^ s.toNat) * (2 ^ 64) ^ (n - 2) := by ac_rfl
+                conv => lhs; rw [ha, hb, hs2]
+                rw [hpow_n1]
+                repeat rw [Nat.add_mul]
+                repeat rw [Nat.mul_assoc]
+                ac_rfl
+              have hremU_lt : ((getLimb u (n - 2)).toNat * 2 ^ s.toNat) % 2 ^ 64 * (2 ^ 64) ^ (n - 2) +
+                  toNatPrefix u (n - 2) * 2 ^ s.toNat < (2 ^ 64) ^ (n - 1) := by
+                have hp := toNatPrefix_lt u (n - 2)
+                have h1 : toNatPrefix u (n - 2) * 2 ^ s.toNat < (2 ^ 64) ^ (n - 2) * 2 ^ s.toNat :=
+                  Nat.mul_lt_mul_of_pos_right hp (Nat.two_pow_pos _)
+                have h2 := Nat.mul_le_mul_right ((2 ^ 64) ^ (n - 2)) (hmod_le_top (getLimb u (n - 2)))
+                rw [Nat.add_mul, ← hpow_n1, Nat.mul_comm (2 ^ s.toNat)] at h2
+                omega
+              have hremV_lt : ((getLimb v (n - 2)).toNat * 2 ^ s.toNat) % 2 ^ 64 * (2 ^ 64) ^ (n - 2) +
+                  toNatPrefix v (n - 2) * 2 ^ s.toNat < (2 ^ 64) ^ (n - 1) := by
+                have hp := toNatPrefix_lt v (n - 2)
+                have h1 : toNatPrefix v (n - 2) * 2 ^ s.toNat < (2 ^ 64) ^ (n - 2) * 2 ^ s.toNat :=
+                  Nat.mul_lt_mul_of_pos_right hp (Nat.two_pow_pos _)
+                have h2 := Nat.mul_le_mul_right ((2 ^ 64) ^ (n - 2)) (hmod_le_top (getLimb v (n - 2)))
+                rw [Nat.add_mul, ← hpow_n1, Nat.mul_comm (2 ^ s.toNat)] at h2
+                omega
+              have ⟨hdm, hrh⟩ := divWide64_spec u2 u1 vn1 hlt
+              have hdivS : (toNat u * 2 ^ s.toNat) / (toNat v * 2 ^ s.toNat) =
+                  (divWide64 u2 u1 vn1 hlt).1.toNat :=
+                divQuick1_bracket hP_pos hvn1_pos
+                  (by omega) (by rw [Nat.add_mul, Nat.one_mul]; omega)
+                  (by omega) (by rw [Nat.add_mul, Nat.one_mul]; omega)
+                  hdm hrh (UInt64.le_iff_toNat_le.mp hqle)
+              rw [Nat.mul_div_mul_right _ _ (Nat.two_pow_pos _)] at hdivS
+              refine ⟨wf_ofUInt64 _, ?_⟩
+              rw [toNat_ofUInt64, hdivS]
+            · cases hq
+          · cases hq
+
+theorem div_eq_divMod_fst (u v : Array UInt64) :
+    WF (div u v) ∧ toNat (div u v) = toNat u / toNat v := by
+  unfold div
+  dsimp only
+  have hu := wf_normalize u
+  have hv := wf_normalize v
+  have htu : toNat (normalize u) = toNat u := toNat_normalize u
+  have htv : toNat (normalize v) = toNat v := toNat_normalize v
+  split
+  · rename_i hv0
+    have hsz0 : (normalize v).size = 0 := eq_of_beq hv0
+    have hvz : toNat v = 0 := by rw [← htv, toNat, hsz0]; rfl
+    rw [hvz, Nat.div_zero]
+    exact ⟨Or.inl rfl, rfl⟩
+  · rename_i hvne0
+    split
+    · rename_i hcmp
+      have hlt : cmp (normalize u) (normalize v) = .lt := eq_of_beq hcmp
+      rw [cmp_spec hu hv, htu, htv] at hlt
+      have hnat : toNat u < toNat v := by
+        simp only [compare, compareOfLessAndEq] at hlt
+        split at hlt
+        · assumption
+        · split at hlt <;> simp at hlt
+      exact ⟨Or.inl rfl, by simp [Nat.div_eq_of_lt hnat]⟩
+    · rename_i hnotlt
+      split
+      · rename_i hv1
+        have hsz1 : (normalize v).size = 1 := eq_of_beq hv1
+        have hd_ne : getLimb (normalize v) 0 ≠ 0 := by
+          rcases hv with h0 | hne
+          · omega
+          · rw [hsz1] at hne; simpa using hne
+        have htv1 : toNat v = (getLimb (normalize v) 0).toNat := by
+          rw [← htv, toNat, hsz1, toNatPrefix_succ, toNatPrefix_zero]
+          simp only [Nat.pow_zero, Nat.mul_one, Nat.zero_add]
+        have ⟨hwf1, hdiv1, _, _⟩ := divMod1_spec (normalize u) (getLimb (normalize v) 0) hd_ne
+        rw [htu, ← htv1] at hdiv1
+        exact ⟨hwf1, hdiv1⟩
+      · rename_i hvne1
+        match hq : divQuick1 (normalize u) (normalize v) with
+        | some q =>
+          have ⟨hwf, hdiv⟩ := divQuick1_spec (normalize u) (normalize v) q hq
+          rw [htu, htv] at hdiv
+          exact ⟨hwf, hdiv⟩
+        | none =>
+          have hge2 : 2 ≤ (normalize v).size := by
+            have h0 : (normalize v).size ≠ 0 := fun h => hvne0 (by simp [h])
+            have h1 : (normalize v).size ≠ 1 := fun h => hvne1 (by simp [h])
+            omega
+          have hle : (normalize v).size ≤ (normalize u).size := by
+            apply Classical.byContradiction; intro hlt
+            have hltNat : toNat (normalize u) < toNat (normalize v) := by
+              have h1 : toNat (normalize u) < (2 ^ 64) ^ (normalize u).size := toNat_lt _
+              have h2 : (2 ^ 64) ^ ((normalize v).size - 1) ≤ toNat (normalize v) :=
+                toNat_ge_top _ hv (by omega)
+              have h3 : (2 ^ 64) ^ (normalize u).size ≤ (2 ^ 64) ^ ((normalize v).size - 1) :=
+                Nat.pow_le_pow_right (Nat.two_pow_pos 64) (by omega)
+              omega
+            have hcmp := cmp_spec hu hv
+            rw [show compare (toNat (normalize u)) (toNat (normalize v)) = .lt by
+              simp [compare, compareOfLessAndEq, hltNat]] at hcmp
+            exact hnotlt (by rw [hcmp]; rfl)
+          have ⟨h1, _, h3, _⟩ := divModKnuth_spec (normalize u) (normalize v) hu hv hge2 hle
+          unfold divModKnuth at h1 h3
+          dsimp only at h1 h3
+          rw [htu, htv] at h3
+          exact ⟨h1, h3⟩
+
+theorem wf_div (u v : Array UInt64) : WF (div u v) := (div_eq_divMod_fst u v).1
 
 theorem toNat_div (u v : Array UInt64) : toNat (div u v) = toNat u / toNat v :=
-  (divMod_spec u v).2.2.1
+  (div_eq_divMod_fst u v).2
 
 theorem wf_mod (u v : Array UInt64) : WF (mod u v) := (divMod_spec u v).2.1
 

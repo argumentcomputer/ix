@@ -27,6 +27,7 @@ theorem entry_eval_sim
     (huniq : ∀ v, v ∈ Own.Plain.selectUniqueVals (borrows.getD main []) (uniqs.getD main ([], false)).1 values →
       Own.Plain.UniqVal F.ctors H external (Own.Plain.selectOwnedVals (borrows.getD main []) values) v)
     (represented : Rt.Proof.ListRel (fun value word => valueWord addresses value = some word) values words)
+    (entry : ∀ r ∈ (tablesOf P pairs).rawParams main 0, r = false)
     (compatible : ∀ value ∈ values, ValueCtorOk (tablesOf P pairs) value)
     (arity : values.length = sourceFunction.params.length)
     (heap : HeapState P pairs H addresses memory external
@@ -43,7 +44,7 @@ theorem entry_eval_sim
     rfl
   · intro clock
     obtain ⟨callee, initialized, execution⟩ := main_entry_result admission
-      (checked_physical admission main clock) sourceLookup den balance hbrw huniq represented compatible
+      (checked_physical admission main clock) sourceLookup den balance hbrw huniq represented entry compatible
       arity heap
     exact ⟨_, initialized, execution⟩
 
@@ -59,6 +60,7 @@ theorem entry_eval_refines
     (huniq : ∀ v, v ∈ Own.Plain.selectUniqueVals (borrows.getD main []) (uniqs.getD main ([], false)).1 values →
       Own.Plain.UniqVal F.ctors H external (Own.Plain.selectOwnedVals (borrows.getD main []) values) v)
     (represented : Rt.Proof.ListRel (fun value word => valueWord addresses value = some word) values words)
+    (entry : ∀ r ∈ (tablesOf P pairs).rawParams main 0, r = false)
     (compatible : ∀ value ∈ values, ValueCtorOk (tablesOf P pairs) value)
     (arity : values.length = sourceFunction.params.length)
     (heap : HeapState P pairs H addresses memory external
@@ -69,7 +71,7 @@ theorem entry_eval_refines
       (Sem.behaviour (fun clock => Fir.run F clock main logical))
       (Sem.behaviour (fun clock => Lir.eval lp clock words memory context)) :=
   Sem.Sim.refines (Fir.run_mono F main logical) (Lir.eval_mono _ words memory context)
-    (entry_eval_sim admission sourceLookup den balance hbrw huniq represented compatible arity heap)
+    (entry_eval_sim admission sourceLookup den balance hbrw huniq represented entry compatible arity heap)
 
 
 

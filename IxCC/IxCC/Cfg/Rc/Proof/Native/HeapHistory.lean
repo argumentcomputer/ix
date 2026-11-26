@@ -60,7 +60,7 @@ theorem HeapHistory.frame {P : Program} {pairs : List (Nat × Cfg.Fun)} {lp : Li
     {function : Cfg.Fun} {source : Cfg.Frame} {target : Lir.Frame}
     (before : FrameState P pairs lp oldAddresses oldSize bound function source target) :
     FrameState P pairs lp newAddresses newSize bound function source target :=
-  ⟨before.lookup, before.cursor, history.words before.words before.bounded,
+  ⟨before.lookup, before.cursor, history.words before.words before.bounded, before.raws,
     before.bounded.mono history.growth, before.compatible⟩
 
 /-- The actual return instruction restores a saved caller after any composed
@@ -71,6 +71,7 @@ theorem HeapHistory.resume {P : Program} {pairs : List (Nat × Cfg.Fun)} {lp : L
     {function : Cfg.Fun} {source : Cfg.Frame} {caller returning : Lir.Frame}
     (before : FrameState P pairs lp oldAddresses oldSize bound function source caller)
     {x : Nat} (destination : caller.dsts = [x]) (real : x < bound)
+    (notRaw : (tablesOf P pairs).rawVar source.fn x = false)
     {value : Own.RVal} {word : Lir.Word} (represented : valueWord newAddresses value = some word)
     (bounded : Own.Plain.Bounded newSize value) (compatible : ValueCtorOk (tablesOf P pairs) value)
     (returned : Rt.Proof.RetAt lp returning word)
@@ -80,7 +81,7 @@ theorem HeapHistory.resume {P : Program} {pairs : List (Nat × Cfg.Fun)} {lp : L
       .next {mem := memory, ctx := context, stack := resumed :: callers} false ∧
     FrameState P pairs lp newAddresses newSize bound function
       {source with env := source.env.insert x value} resumed :=
-  (history.frame before).resume destination real represented bounded compatible returned memory context callers
+  (history.frame before).resume destination real notRaw represented bounded compatible returned memory context callers
 
 
 

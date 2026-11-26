@@ -6,7 +6,7 @@ open IxCC.Sem (Result)
 open Cfg.Proof (Below Impl spine)
 
 theorem generate_tables {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
-    {P : Program} (h : generate F bodies = some P) :
+    {raw : RawLayout} {P : Program} (h : generate F bodies raw = some P) :
     P.base.tables = ({ ctors := F.ctors, known := F.known } : Own.Tables) := by
   unfold generate at h
   cases he : entries F bodies (List.range F.size) with

@@ -101,8 +101,9 @@ theorem eval_case_box {x : Atom} {alts : List Alt} {d : Option Exp} (h : x.eval 
     eval P k ρ J (.case x alts d) = .stuck := by
   rw [eval]; simp [h, Val.asCtor]
 
-/-- A primitive with a □ argument is stuck. -/
-theorem primResult_box (K : Lam.Known) (p : Lam.Prim) (vs₁ vs₂ : List Val) :
+/-- A scalar primitive with a □ argument is stuck (an array primitive stores any value, □
+included, so `p.isArr = false`). -/
+theorem primResult_box (K : Lam.Known) (p : Lam.Prim) (hp : p.isArr = false) (vs₁ vs₂ : List Val) :
     primResult K p (vs₁ ++ .box :: vs₂) = .stuck := by
   have : natArgs (vs₁ ++ .box :: vs₂) = none := by
     induction vs₁ with
@@ -111,6 +112,6 @@ theorem primResult_box (K : Lam.Known) (p : Lam.Prim) (vs₁ vs₂ : List Val) :
       cases v with
       | lit l => cases l <;> simp [natArgs, ih]
       | _ => simp [natArgs]
-  simp [primResult, this]
+  simp [primResult, this, arrResult_of_not_arr hp]
 
 end IxCC.Anf

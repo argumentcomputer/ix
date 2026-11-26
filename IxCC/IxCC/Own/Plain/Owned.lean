@@ -257,6 +257,10 @@ def primImmArgs (op : Lam.Prim) (arity : Nat) : List Bool :=
   | .natAdd | .natSub | .natMul | .natDiv | .natMod | .natPow | .natGcd | .natBeq | .natBle
   | .natLand | .natLor | .natXor | .natShl | .natShr | .natPred | .natBlt => List.replicate arity true
   | .word .. => List.replicate arity true
+  -- Placeholder (lane prims-core): sound only while Own's `primResult` is stuck on `.arr`, so this
+  -- mask is never read on a successful run. Array arguments are heap values, not immediates:
+  -- lane own-sigs replaces this arm by the primitive's signature (`PrimSig`).
+  | .arr .. => List.replicate arity true
 
 namespace Ctx
 
@@ -496,11 +500,16 @@ def primStep (Γ : Ctx) (sig : PrimSig) (x : Var) (args : List Arg) : Except Str
 
 /-- **The checker's step at `x := r`**: a primitive under its ownership signature (`primStep`
 with `lamSig`), every other right-hand side by `bindCtx`. It is `bindCtx` on every right-hand
-side of today (`bindStep_eq_bindCtx`). -/
+side but an array primitive (`bindStep_eq_bindCtx`), which it declines (`own.arrays`): the
+reference-counted semantics has no array case yet (`Own.evalRhs`); Fir and Own's code evaluator
+do. -/
 def bindStep (Γ : Ctx) (x : Var) (r : Rhs) (borrows : BorrowSigs := .leaf)
     (uniqs : UniqSigs := .leaf) (ctors : List Lam.CtorInfo := []) : Except String Ctx :=
   match r with
-  | .prim op args => primStep Γ (lamSig op args.length) x args
+  | .prim op args =>
+    if op.isArr then
+      throw "own.arrays: array primitives are declined until the RC route gives them a meaning"
+    else primStep Γ (lamSig op args.length) x args
   | r => bindCtx Γ x r borrows uniqs ctors
 
 /-- Join-capture context: join id to the variables whose tokens a jump hands to the body. -/

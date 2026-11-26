@@ -103,7 +103,7 @@ theorem case_result (admission : CodeAdmission F bodies P config pairs functions
           Option.some.inj (actualLookup.symm.trans before.frame.lookup)
         subst actual
         have real := checked_consumed_sup admission.scopedProgram range sourceLookup fdLookup receipt
-        rcases case_entry admission.consuming admission.switches before.layout chosen before.frame
+        rcases case_entry admission.consuming admission.switches admission.rawOk before.layout chosen before.frame
             nativeRange real before.fused ownedLookup ctor heap.ready.idle.live heap.compatible
             before.running context callers with success | failure
         · obtain ⟨after, final, cost, layout, frame, trace, running, sameFn, fused⟩ := success

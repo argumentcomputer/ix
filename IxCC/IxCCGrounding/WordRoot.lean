@@ -98,7 +98,7 @@ theorem rootSound_678ASW {p : Program}
     Denotes M.cval env φ ρ eo X :=
   have hLN := lawsNoCanon_of_model M hLD
   rootSound_coreW hLN.core hG hR
-    (allP (fundHyps_of_instW hLN.core (.inr hNC.recs) hG hT hI
+    (allP (fundHyps_of_instW hLN.core (.inr hNC.recs) hG hT hI hU
       (caseFires_of_instW hLN.defn_value hLN.iota_rule hLN.cval_params hG.faith hG.natBasis hC hNC
         hU)
       (wordFires_of_facts hLN.core M.proj_law M.graded hG.natBasis hG.faith.words)))

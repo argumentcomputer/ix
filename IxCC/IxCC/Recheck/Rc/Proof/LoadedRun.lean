@@ -9,7 +9,7 @@ theorem loaded_root_shape {cfg : Config} {P : Src.Program} {cert : Cert} {f : Fr
     f.lowered.roots.map Prod.fst = f.fir.exports := by
   obtain ⟨_, _, _, _, _, generated, _⟩ := runFront_spec accepted
   obtain ⟨original, native, equal, _⟩ := Cfg.Rc.Public.Spec.lower_parts (runFront_native accepted).2
-  obtain ⟨main, pairs, functions, _, _, _, _, _, _, _, _, _, _, _, roots, _⟩ :=
+  obtain ⟨main, pairs, functions, _, _, _, _, _, _, _, _, _, _, _, _, roots, _⟩ :=
     Cfg.Rc.Native.Spec.lower_parts native
   have shape : f.lowered.roots.map Prod.fst = f.cfg.base.exports := by
     have lowered := congrArg (fun value : Cfg.Rc.Public.Lowered => value.runtime.roots.map Prod.fst) equal
@@ -60,7 +60,8 @@ theorem loaded_run_sim {cfg : Config} {P : Src.Program} {cert : Cert} {f : Front
       simp only [Rt.Loaded.run, entry]
       by_cases exactArity : numbers.length = source.params.length
       · simp only [Sem.entryRun, exactArity, ↓reduceIte]
-        exact loaded_call_sim accepted region readable root fn sourceLookup numbers exactArity
+        exact loaded_call_sim accepted region readable root fn sourceLookup (List.mem_of_getElem? rootLookup)
+          numbers exactArity
       · by_cases underapplied : numbers.length < source.params.length
         · simp only [Sem.entryRun, exactArity, underapplied, ↓reduceIte]
           by_cases empty : numbers = []
@@ -71,7 +72,7 @@ theorem loaded_run_sim {cfg : Config} {P : Src.Program} {cert : Cert} {f : Front
               (erased_view f root) (fun _ h => by simp [Cfg.Rc.Inline.inlineEntryClock] at h)
         · simp only [Sem.entryRun, exactArity, underapplied, ↓reduceIte]
           exact Sim.bindStuck (g := fun _ _ => .stuck)
-            (loaded_call_sim accepted region readable root fn sourceLookup
+            (loaded_call_sim accepted region readable root fn sourceLookup (List.mem_of_getElem? rootLookup)
               (numbers.take source.params.length) (by simp only [List.length_take]; omega))
             (fun _ _ _ => rfl)
 

@@ -123,10 +123,11 @@ private theorem ofKey_key_eq {ctors : List Lam.CtorInfo} {key : Key.CtorKey} {in
 theorem primResult_immUniq {F : Fir.Program} {H : Heap}
     {op : Lam.Prim} {vs : List RVal} {ws : List Fir.Val} {w : Fir.Val}
     (hpins : BoolPinsOk F) (hargs : Sem.Forall2 (Proof.Den H) vs ws)
-    (hresult : Fir.primResult F op ws = .ok w) :
+    (hp : op.isArr = false) (hresult : Fir.primResult F op ws = .ok w) :
     ∃ v, Own.primResult { ctors := F.ctors, known := F.known } op vs = .ok v ∧
       Proof.Den H v w ∧ ImmUniq F.ctors v := by
   unfold Fir.primResult at hresult
+  rw [Fir.arrResult_of_not_arr hp] at hresult
   unfold Own.primResult
   rw [Values.natArgs_den hargs]
   cases hn : Fir.natArgs ws with
@@ -178,9 +179,11 @@ theorem natArgs_immUniq {ctors : List Lam.CtorInfo} : ∀ {vs : List RVal} {ns :
 
 theorem primResult_args_immUniq {F : Fir.Program} {H : Heap}
     {op : Lam.Prim} {vs : List RVal} {ws : List Fir.Val} {w : Fir.Val}
-    (hargs : Sem.Forall2 (Proof.Den H) vs ws) (hresult : Fir.primResult F op ws = .ok w) :
+    (hargs : Sem.Forall2 (Proof.Den H) vs ws) (hp : op.isArr = false)
+    (hresult : Fir.primResult F op ws = .ok w) :
     ∀ v ∈ vs, ImmUniq F.ctors v := by
   unfold Fir.primResult at hresult
+  rw [Fir.arrResult_of_not_arr hp] at hresult
   have hnat := Values.natArgs_den hargs
   cases hn : Fir.natArgs ws with
   | none => simp [hn] at hresult
@@ -217,12 +220,12 @@ arguments `lamSig` marks `imm` are immediates and so is the result. The fact com
 primitive's semantics, per signature, and not from a rule about primitives in general. -/
 theorem lamSig_pureSound {F : Fir.Program} {H : Heap}
     {op : Lam.Prim} {vs : List RVal} {ws : List Fir.Val} {w : Fir.Val}
-    (hpins : BoolPinsOk F) (hargs : Sem.Forall2 (Proof.Den H) vs ws)
+    (hpins : BoolPinsOk F) (hargs : Sem.Forall2 (Proof.Den H) vs ws) (hp : op.isArr = false)
     (hresult : Fir.primResult F op ws = .ok w) (arity : Nat) :
     ∃ v, Own.primResult { ctors := F.ctors, known := F.known } op vs = .ok v ∧
       Proof.Den H v w ∧ (lamSig op arity).PureSound F.ctors vs v := by
-  obtain ⟨v, hres, hden, himm⟩ := primResult_immUniq hpins hargs hresult
-  have hall := primResult_args_immUniq hargs hresult
+  obtain ⟨v, hres, hden, himm⟩ := primResult_immUniq hpins hargs hp hresult
+  have hall := primResult_args_immUniq hargs hp hresult
   refine ⟨v, hres, hden, fun i u _ hu => hall u (List.mem_of_getElem? hu), fun i u hi _ => ?_,
     himm⟩
   have hm : ArgUse.consume ∈ List.replicate arity ArgUse.imm := List.mem_of_getElem? hi
@@ -678,11 +681,11 @@ theorem rhs_step {F : Fir.Program} (pins : BoolPinsOk F)
       · simp only [hk, ↓reduceIte] at hw; cases hw
   | prim op args =>
     -- under the primitive's signature: the step is `primStep`, the facts are its contract's
-    replace hc : primStep Γ (lamSig op args.length) x args = .ok Γ' := hc
+    obtain ⟨hpa, hc⟩ := bindStep_prim hc
     obtain ⟨_, hneed, _, _, _⟩ := primStep_ok hc
     obtain ⟨vs, ws, hvs, hws, hds⟩ := needArgs_sem st.den (Ctx.needArgs_avail hneed)
     simp only [Fir.evalRhs, hws] at hw
-    obtain ⟨v, hres, hden, sound⟩ := lamSig_pureSound pins hds hw args.length
+    obtain ⟨v, hres, hden, sound⟩ := lamSig_pureSound pins hds hpa hw args.length
     have hev : evalRhs { ctors := F.ctors, known := F.known } ρo H (.prim op args) = .ok (v, H) := by
       simp [evalRhs, Own.evalRhs, hvs, hres, Result.map]
     obtain ⟨owned', st', _⟩ := prim_step_pure st hx hc hvs hden sound

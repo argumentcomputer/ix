@@ -87,6 +87,7 @@ theorem obs : ∀ {v w : Val}, RV X v w → obsV v = obsV w
     cases c with
     | src c => simp only [obsV, obsList_eq h]
     | clo f j => rfl
+    | arr => rfl
   | _, _, .clos _ _ _ => rfl
 
 theorem obsList_eq : ∀ {vs ws : List Val}, RVs X vs ws → obsList vs = obsList ws

@@ -17,6 +17,8 @@ Merges the mechanical pins printed by `check-trusted-externs --record` into
 * `ci_actions`: each entry keeps its key order and fields (`version`, `use`, …)
   and updates `commit` when its `repository` appears in `pins.ci_actions`; new
   action repositories are not added here so the audit names them.
+* `proof_only_dependencies[].closure_files` and `.closure_blake3`: replaced in
+  place for each entry whose `id` `pins.proof_only` names (absent: unchanged).
 * Everything else (`schema_version`, `last_reviewed`, `seed_and_build_trust`,
   `specification_assumptions`, `lean_dependencies`, `csimp_theorems`,
   `required_checks`, …) is preserved verbatim.
@@ -430,6 +432,21 @@ def mergePins (ledger pins : OrdJson) : Except String OrdJson := do
     setKeyInPlace
       (setKeyInPlace ledgerKvs "integrity" (.obj newIntegrity))
       "ci_actions" (.arr newCiActions)
+  -- each proof-only dependency the pins name: its closure files and digest, in place
+  let updated ← match findKey? pinsKvs "proof_only", findKey? ledgerKvs "proof_only_dependencies" with
+    | some pinsProof, some entries => do
+      let proofKvs ← asObj "pins.proof_only" pinsProof
+      let entries ← asArr "ledger.proof_only_dependencies" entries
+      let newEntries ← entries.mapM fun entry => do
+        let kvs ← asObj "ledger.proof_only_dependencies[]" entry
+        let some (.str id) := findKey? kvs "id" | return entry
+        let some pin := findKey? proofKvs id | return entry
+        let pinKvs ← asObj s!"pins.proof_only.{id}" pin
+        let files ← requireField pinKvs "closure_files" s!"pins.proof_only.{id}"
+        let digest ← requireField pinKvs "closure_blake3" s!"pins.proof_only.{id}"
+        return OrdJson.obj (setKeyInPlace (setKeyInPlace kvs "closure_files" files) "closure_blake3" digest)
+      pure (setKeyInPlace updated "proof_only_dependencies" (.arr newEntries))
+    | _, _ => pure updated
   return .obj updated
 
 /-- Update `.lean_dependencies[lake_package == pkg].closure` hashes in place while
@@ -625,7 +642,25 @@ def runSelfTests : IO Unit := do
     unless s == "a\"b\\c/d\ne\tf\rg\x08\x0c\x01«–¬»" do
       throw <| IO.userError s!"selftest FAILED [escape decode]: got {repr s}"
 
-  IO.println "[record-ledger-pins] selftest passed (all 6 assertions)"
+  -- 6. Proof-only closures: files and digest replaced in place, other fields and entries kept
+  let proofLedger (entries : String) : String :=
+    "{\"integrity\": {\"tracked_files\": {}, \"flake_nodes\": {}}, \"ci_actions\": [], " ++
+    "\"proof_only_dependencies\": [" ++ entries ++ "]}"
+  let before := proofLedger ("{\"id\": \"p\", \"closure_files\": [\"x.lean\"], " ++
+    "\"closure_blake3\": \"old\", \"tests\": []}, {\"id\": \"q\", \"closure_blake3\": \"keep\"}")
+  let after := proofLedger ("{\"id\": \"p\", \"closure_files\": [\"x.lean\", \"y.lean\"], " ++
+    "\"closure_blake3\": \"new\", \"tests\": []}, {\"id\": \"q\", \"closure_blake3\": \"keep\"}")
+  let proofPins ← IO.ofExcept (Parser.parse ("{\"tracked_files\": {}, \"repository_files\": {}, " ++
+    "\"flake_nodes\": {}, \"ci_actions\": {}, \"proof_only\": {\"p\": {\"closure_files\": " ++
+    "[\"x.lean\", \"y.lean\"], \"closure_blake3\": \"new\"}}}"))
+  let mergedProof ← IO.ofExcept (mergePins (← IO.ofExcept (Parser.parse before)) proofPins)
+  let wantProof ← IO.ofExcept (mergePins (← IO.ofExcept (Parser.parse after)) proofPins)
+  assertEq "mergePins proof_only" (pretty mergedProof) (pretty wantProof)
+  unless ((pretty mergedProof).splitOn "\"closure_blake3\": \"new\"").length == 2 &&
+      ((pretty mergedProof).splitOn "\"y.lean\"").length == 2 do
+    throw <| IO.userError s!"selftest FAILED [mergePins proof_only]: unexpected output:\n{pretty mergedProof}"
+
+  IO.println "[record-ledger-pins] selftest passed (all 7 assertions)"
 
 /-! ## CLI entry point -/
 

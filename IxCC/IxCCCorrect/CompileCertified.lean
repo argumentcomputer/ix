@@ -1,6 +1,5 @@
 import IxCCCorrect.Compile
 import IxCCCorrect.ShapeHook
-import IxCCCorrect.ShapeTree
 import IxCCCorrect.Shape2Produce
 
 /-!
@@ -254,17 +253,15 @@ theorem runShaped_of_shapeZero {cfg : Recheck.Config} {P : Src.Program} {c : Rec
   rw [hrun]
   simp only [hb, ↓reduceIte]
 
-/-- **The decision is the hook's acceptance** (plain-RC path), under any entry map: the
-decision admits `Nat` roots only, which the hook's root check accepts whatever the map
-(`rcRootOk`'s first disjunct, `natRootOk`). -/
+/-- **The decision is the hook's acceptance** (plain-RC path). -/
 theorem rcRunShaped_of_shapeRc {cfg : Recheck.Config} {P : Src.Program}
     {c : Recheck.RcReplay.Cert} {a : Recheck.RcReplay.Artifact}
-    (hrun : Recheck.RcReplay.run cfg P c = .ok a) {n : Nat} (h : shapeRc a n = .ok ())
-    (ms : List (List (Nat × Nat))) :
-    rcRunShaped cfg P c (shapeCertOf a.front.src) ms [n] = .ok a := by
+    (hrun : Recheck.RcReplay.run cfg P c = .ok a) {n : Nat} (h : shapeRc a n = .ok ()) :
+    rcRunShaped cfg P c (shapeCertOf a.front.src) [n] = .ok a := by
   obtain ⟨hc, hr⟩ := shapeRc_checks h
-  have hb : rcCheckShaped a (shapeCertOf a.front.src) ms [n] = true := by
-    simp only [rcCheckShaped, rcRootsOk, rcRootOk, hc, hr, Bool.true_or, Bool.and_self]
+  have hb : (certOk a.front.src (shapeCertOf a.front.src) &&
+      rootsOk a.front.src (shapeCertOf a.front.src) 0 [n]) = true := by
+    simp only [rootsOk, hc, hr, Bool.and_self]
   unfold rcRunShaped
   rw [hrun]
   simp only [hb, ↓reduceIte]

@@ -3,6 +3,7 @@ import IxCCGrounding.Heads
 import IxCCGrounding.EqRec
 import IxCCGrounding.RecFlat
 import IxCCGrounding.RecRun
+import IxCCGrounding.RecOrdinary
 
 /-!
 # The fundamental lemma (`IxCCGrounding.Fundamental`), step (f)
@@ -142,7 +143,7 @@ theorem head_teleK (H : FundHypsK M p κ lpsOf S Ok) {h : IxCC.Src.Head} {ls : L
         cases hf'
         exact hle
       | _ => simp [Program.headArity, hres]
-  | @recr r _ _ ci hSr _ hfind =>
+  | @recr r _ _ ci hSr _ hfind _ =>
     -- the arity fact of the checked shape (`RecStored`)
     cases hd : p.decl? r with
     | none => simp [Program.headArity, hd]
@@ -235,7 +236,7 @@ theorem fire_noParamsK (H : FundHypsK M p κ lpsOf S Ok) {k' : Nat}
     RelV M p κ lpsOf S Ok v (As.foldl app (M.cval (κ r) φ)) := by
   have hN := H.natBasis
   cases hh with
-  | @recr _ _ _ ci hSr hlv hfind =>
+  | @recr _ _ _ ci hSr hlv hfind _ =>
   rw [IxCC.Src.fire_recr, later_succ] at hrun
   obtain ⟨hkind, sf, kk', lvls, nmot, nmin, ind, rules, ty, hd, hnp⟩ := recClassB_noParams hcl
   obtain ⟨hTele, hProg, hCtors, hFields, hBodies, hSites⟩ := H.faith.recs.noParams r hSr hcl
@@ -690,7 +691,7 @@ theorem fire_stepK (H : FundHypsK M p κ lpsOf S Ok) {k : Nat}
                 exact (ih k' (Nat.lt_succ_self k')).force _ _ _ hmin hrelm
             | _ => simp [hd] at hrun
         | _ => rw [hres] at hrun; exact absurd hrun (by simp)
-  | @recr r _ _ ci hSr hlv hfind =>
+  | @recr r _ _ ci hSr hlv hfind hOkr =>
     -- F2–F4: the recursor's class is admitted (`RecFacts`); at `empty`, F4 traps
     cases k with
     | zero => rw [IxCC.Src.fire_recr, later_zero] at hrun; exact absurd hrun (by simp)
@@ -705,7 +706,7 @@ theorem fire_stepK (H : FundHypsK M p κ lpsOf S Ok) {k : Nat}
           obtain ⟨cl, hcl, hadm⟩ :=
             H.faith.recs.cls r hSr sf kk' lvls np nmot nmin ni ind rules ty hd
           simp only [admittedClasses, List.mem_cons, List.not_mem_nil, or_false] at hadm
-          rcases hadm with rfl | rfl | rfl | rfl
+          rcases hadm with rfl | rfl | rfl | rfl | rfl
           · -- `empty`: the table's kind is `empty`, at every level, and F4 traps
             have hkind := recClassB_empty hcl
             simp [hd, hkind, IxCC.Src.RecKind.atLevels, IxCC.Src.recChosen, Result.bind] at hrun
@@ -937,7 +938,11 @@ theorem fire_stepK (H : FundHypsK M p κ lpsOf S Ok) {k : Nat}
             | _ => simp at hsel2
           · -- `noParams` (part E): F2, the rule body evaluated; `fire_noParams`
             exact fire_noParamsK H (ih k' (Nat.lt_succ_self k')) hcl hrun0 hargs
-              (.recr hSr hlv hfind) hfit hlen hlast
+              (.recr hSr hlv hfind hOkr) hfit hlen hlast
+          · -- `ordinary` (W-c): F2 at a recursor with parameters; `fire_ordinaryK`
+            exact fire_ordinaryK H (ih k' (Nat.lt_succ_self k')).force
+              (ih k' (Nat.lt_succ_self k')).eval hcl (H.faith.recs.ordinary r hSr hcl)
+              (H.ordinary r hSr hcl) hrun0 hargs (.recr hSr hlv hfind hOkr) hfit hlen hlast
         | _ => simp [hd] at hrun
   | @prim op _ _ ci hfind hlp _ =>
     -- F6
@@ -1131,7 +1136,7 @@ theorem evalConst_stepK (H : FundHypsK M p κ lpsOf S Ok) {k : Nat}
       cases d with
       | ctor sf lvls ind cidx np nf ty => exact hhv _ _ _ φ _ _ hrun (.ctor hSc hlv hfind hOk)
       | recr sf kk lvls np nmot nmin ni ind rules ty =>
-        exact hhv _ _ _ φ _ _ hrun (.recr hSc hlv hfind)
+        exact hhv _ _ _ φ _ _ hrun (.recr hSc hlv hfind hOk)
       | quot qk lvls ty => exact absurd hd (H.faith.noQuot c hSc qk lvls ty)
       | defn kind safety lvls ty v' =>
         cases kind with

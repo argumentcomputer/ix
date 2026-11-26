@@ -25,6 +25,7 @@ theorem entry_result {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P :
     (huniq : ∀ v, v ∈ Own.Plain.selectUniqueVals (borrows.getD f []) (uniqs.getD f ([], false)).1 values →
       Own.Plain.UniqVal F.ctors H external (Own.Plain.selectOwnedVals (borrows.getD f []) values) v)
     (represented : Rt.Proof.ListRel (fun value word => valueWord addresses value = some word) values words)
+    (entry : ∀ r ∈ (tablesOf P pairs).rawParams f 0, r = false)
     (compatible : ∀ value ∈ values, ValueCtorOk (tablesOf P pairs) value)
     (arity : values.length = sourceFunction.params.length)
     {memory : X86.Memory} {context base bump limit : Lir.Word} {regionBytes : Nat}
@@ -43,7 +44,7 @@ theorem entry_result {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P :
     entered, trace, sourceStep, activation⟩ := entry_activation admission.scopedProgram
       admission.consuming admission.lowering main sourceLookup den balance hbrw huniq
       (fun _ h => False.elim h) (fun _ h => False.elim h) (fun _ h => False.elim h)
-      represented compatible arity [] memory context callers
+      (SlotsRel.of_tagged entry represented) compatible arity [] memory context callers
   have body := complete [] code H addresses external (uniqs.getD f ([], false)).2 (fun _ => False)
     .leaf [] (sourceFunction.params.map Prod.fst)
     (Ctx.entryWith (sourceFunction.params.map Prod.fst) (borrows.getD f []) (uniqs.getD f ([], false)).1) .leaf
@@ -80,6 +81,7 @@ theorem main_entry_result {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     (huniq : ∀ v, v ∈ Own.Plain.selectUniqueVals (borrows.getD main []) (uniqs.getD main ([], false)).1 values →
       Own.Plain.UniqVal F.ctors H external (Own.Plain.selectOwnedVals (borrows.getD main []) values) v)
     (represented : Rt.Proof.ListRel (fun value word => valueWord addresses value = some word) values words)
+    (entry : ∀ r ∈ (tablesOf P pairs).rawParams main 0, r = false)
     (compatible : ∀ value ∈ values, ValueCtorOk (tablesOf P pairs) value)
     (arity : values.length = sourceFunction.params.length)
     {memory : X86.Memory} {context base bump limit : Lir.Word} {regionBytes : Nat}
@@ -94,7 +96,7 @@ theorem main_entry_result {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
         {mem := memory, ctx := context, stack := [callee]} [] (Fir.run F (clock+1) main logical) := by
   dsimp only
   obtain ⟨callee, entered, execution⟩ := entry_result admission complete sourceLookup den balance
-    hbrw huniq represented compatible arity heap []
+    hbrw huniq represented entry compatible arity heap []
   refine ⟨callee, ?_, execution⟩
   change (Lir.enter (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main) main words).bind
     (fun frame => some ({mem := memory, ctx := context, stack := [frame]} : Lir.State)) = _

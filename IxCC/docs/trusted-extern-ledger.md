@@ -212,9 +212,11 @@ request:
 | A Blake3.lean revision (`lakefile.lean`, `lake-manifest.json` and the flake's `blake3-lean` input moved together) | the package's revision and possibly its two closure files | `lean_dependencies` `blake3-pure`: `pins.lake_rev`, the closure hashes and `native_decide_sites` by hand, after reviewing the two files' diff (`integrity.flake_nodes` and the hash of `lake-manifest.json` by `--record`) |
 | Dependabot `github-actions` bump of `ixcc.yml` | an action commit in `ixcc.yml` | `ci_actions[].commit` (and `.version` by hand, from the `# vX` comment); `integrity.repository_files` for `ixcc.yml` |
 | Any edit of a covered IxCC file or of `ixcc.yml` | its hash | `integrity.tracked_files` or `integrity.repository_files` |
+| A change to the kernel's proof tree that the target statements import (a file of `ix-kernel-proofs`' closure, or which files it holds) | the closure's digest, possibly its file list | `proof_only_dependencies` `closure_files` and `closure_blake3`, by `--record`, after reading the diff of those files (the audit has already refused any hygiene or import violation) |
 
-The mechanical fields (every integrity hash, the flake node revisions and the
-`ci_actions` commits) are re-recorded by the checker itself, which prints them
+The mechanical fields (every integrity hash, the flake node revisions, the
+`ci_actions` commits and each proof-only dependency's closure files and digest)
+are re-recorded by the checker itself, which prints them
 as the tree stands (it never edits the ledger), and a Lean script
 (`tools/RecordLedgerPins.lean`) that merges them while keeping each object's
 order. From `IxCC/`, in ix's development shell:
@@ -236,7 +238,8 @@ closure and the two of Blake3's) alone: a change to them is a dependency
 review, edited by hand, not a routine update.
 
 All repository check scripts are Lean executables. The trust auditor uses
-the pinned Lake TOML parser, GNU `sha256sum` and, for the link audit, GNU
+the pinned Lake TOML parser, GNU `sha256sum`, IxCC's own `Blake3.Pure` (for the
+proof-only digests) and, for the link audit, GNU
 `nm`; the independent encoder
 and object checks invoke GNU binutils
 and, on x86-64 Linux, the C test harnesses of `fixtures/x86` and the system
@@ -269,7 +272,10 @@ repository's toolchain, CI action drift (including scoped repository workflows
 and their local actions), an overriding `flake.lock`, the workspace-pinned and
 the git-pinned pure Lean dependency (revisions, closure files, imports and
 names under the root, `native_decide` sites unlisted, stale or outside a
-declaration), the native-dependency audit on its planted fixture entry
+declaration), the proof-only dependency (an import from production, an
+importer or the entry removed, a module nothing imports, a closure file
+dropped from the record or changed, and each forbidden spelling, declaration
+or import planted in a closure file), the native-dependency audit on its planted fixture entry
 (sibling externs, reachability, entry points, malformed/duplicate Cargo
 metadata, upstream pins), the link audit on planted symbol tables, and
 unlisted, dropped, malformed or attribute-only `@[csimp]` theorems. The Nix
@@ -491,9 +497,71 @@ theorems are proved in its own package on Lean's standard axioms; IxCC imports
 the executable kernel, not those proofs.
 Nix packages exactly the closure this entry records (`nix/sources.nix`) under
 the same package name with a library of exactly those modules
-(`nix/build.nix`), so the kernel's proof tree is never built; the
+(`nix/build.nix`), so the production library and the shared program build
+never build the kernel's proof tree; the
 `trusted-extern-ledger` check reads the same files at `../IxCK` in its copy of
 the workspace.
+
+### Proof-only dependencies
+
+`proof_only_dependencies` records modules of a workspace dependency, outside
+the closure its `lean_dependencies` entry records, that only non-production
+libraries may import: proofs the target statements cite, which nothing that
+runs in the compiler or in a program of the shared build reaches. Each entry
+names the package (its `lean_dependencies` entry gives the directory), the
+libraries allowed to import from it (`importers`), the modules they import
+(`imported_modules`), every file of those modules' import closure outside the
+recorded closure (`closure_files`), and one digest over those files
+(`closure_blake3`). The audit (`validateProofOnly`):
+
+- requires `imported_modules` to be none of a `lean_dependencies` entry's
+  modules, each imported by some project source, and imported only by sources
+  of the `importers` (a source's library is the first component of its path:
+  `IxCCCorrect` for `IxCCCorrect.lean` and `IxCCCorrect/**`); with the
+  `lean_dependencies` modules they must account for every import of the
+  package's modules, as above;
+- recomputes the closure from the imports and requires it to be exactly
+  `closure_files`, each file passing a stricter hygiene than the recorded
+  closure, with nothing admitted by a ruling: no `axiom` declaration, `sorry`,
+  `admit`, `native_decide`, `bv_decide`, native-evaluation spelling, `unsafe`
+  or `partial` (outside comments and literals), no extern, no
+  `implemented_by`, no `@[csimp]` theorem, and no import outside the package's
+  module roots and the toolchain;
+- requires `closure_blake3` to be the BLAKE3 (`Blake3.Pure`) of the files'
+  `b3sum` listing, one line `<BLAKE3 of the file>  <path>` per file in path
+  order, the paths relative to the package's source directory. From that
+  directory (the ix checkout for «ix-ck»), the files listed in the entry give
+  the same digest with `LC_ALL=C sort | xargs b3sum | b3sum`.
+
+The files are pinned together rather than one by one: a change to the
+dependency's proofs, or to which files the closure holds, fails the audit
+until `check-trusted-externs --record` re-records the entry's `closure_files`
+and `closure_blake3` (`tools/RecordLedgerPins.lean` merges them), one entry
+however many files changed. The hygiene and import checks make that re-pin
+mechanical; what the reviewer reads is the diff of the dependency's proofs.
+
+There is one entry, `ix-kernel-proofs`: the kernel's proof tree under
+«ix-ck», for the target statements (`IxCCCorrect`) only. It records one
+module, `IxCK.Kernel.Admission.TierTheorems` (the tiered entry's theorems:
+an accept is `checkConstantsWith`'s accept of the logical records,
+`checkConstantsTiered_ok`, and that environment has a model in every set
+theory, `checkConstantsWith_has_model`), which `IxCCCorrect/Unique.lean` and
+`IxCCCorrect/AdmitsKernel.lean` cite where a statement needs the kernel's
+acceptance to give a model. Its closure is 434 files (about 193,000 lines) of
+the kernel's admission theorems, model, semantics and verification trees, beside
+the 102 of its 536 modules already in `ix-kernel`'s closure. None of them is
+admitted anything by a ruling. The target statements' exact axiom fences
+(`IxCCCorrect/Fence.lean`) cover the theorems that use them, so an axiom in
+those files would show there as well; and `check-build-graph` keeps the
+target statements out of production and the shared program build, so
+production's import closure is still `ix-kernel`'s recorded closure. Nix
+builds the files for the grounding build only (`nix/build.nix` `ixCProof`: the
+same package with `ixC`'s artifacts, `ix-kernel`'s closure as the library
+`IxCK`, unchanged, and these files as the library `IxCKProofs`); a change to
+them rebuilds that package and the grounding build, not the production library
+or the shared program build. The entry retires when the target statements no
+longer import the kernel's proofs (for instance when `Admits` is discharged by
+an IxVM certificate and IxVM's consistency theorem, in `IxCCArgument`).
 
 ## Legacy Aiur logical-trace boundary (retired)
 

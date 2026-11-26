@@ -28,6 +28,7 @@ theorem public_entry_eval_sim
     (huniq : ∀ v, v ∈ Own.Plain.selectUniqueVals (borrows.getD root []) (uniqs.getD root ([], false)).1 values →
       Own.Plain.UniqVal F.ctors H external (Own.Plain.selectOwnedVals (borrows.getD root []) values) v)
     (represented : Rt.Proof.ListRel (fun value word => valueWord addresses value = some word) values words)
+    (entry : ∀ r ∈ (tablesOf P pairs).rawParams root 0, r = false)
     (compatible : ∀ value ∈ values, ValueCtorOk (tablesOf P pairs) value)
     (arity : values.length = sourceFunction.params.length)
     (heap : HeapState P pairs H addresses memory external
@@ -41,7 +42,7 @@ theorem public_entry_eval_sim
   have hroot : root < P.base.size := by
     rw [generate_size (checkProgram_parts (checkScopedProgram_parts admission.scopedProgram).1).2]
     exact checked_source_dense admission.scopedProgram sourceLookup
-  have h1 := entry_eval_sim admission sourceLookup den balance hbrw huniq represented compatible arity heap
+  have h1 := entry_eval_sim admission sourceLookup den balance hbrw huniq represented entry compatible arity heap
   have h2 := admitted_root_eval_stages admission accepted root hroot words memory context
   exact (Sem.Sim.comp (Lir.eval_mono _ words memory context) h1 h2).mono (by rintro a c ⟨b, hr, rfl⟩; exact hr)
 
@@ -56,6 +57,7 @@ theorem public_entry_eval_refines
     (huniq : ∀ v, v ∈ Own.Plain.selectUniqueVals (borrows.getD root []) (uniqs.getD root ([], false)).1 values →
       Own.Plain.UniqVal F.ctors H external (Own.Plain.selectOwnedVals (borrows.getD root []) values) v)
     (represented : Rt.Proof.ListRel (fun value word => valueWord addresses value = some word) values words)
+    (entry : ∀ r ∈ (tablesOf P pairs).rawParams root 0, r = false)
     (compatible : ∀ value ∈ values, ValueCtorOk (tablesOf P pairs) value)
     (arity : values.length = sourceFunction.params.length)
     (heap : HeapState P pairs H addresses memory external
@@ -66,7 +68,7 @@ theorem public_entry_eval_refines
       (Sem.behaviour (fun clock => Fir.run F clock root logical))
       (Sem.behaviour (fun clock => Lir.eval {lowered.runtime.program with main := root} clock words memory context)) :=
   Sem.Sim.refines (Fir.run_mono F root logical) (Lir.eval_mono _ words memory context)
-    (public_entry_eval_sim admission accepted sourceLookup den balance hbrw huniq represented compatible arity heap)
+    (public_entry_eval_sim admission accepted sourceLookup den balance hbrw huniq represented entry compatible arity heap)
 
 
 

@@ -1,3 +1,4 @@
+import IxCC.Cfg.Rc.Proof.Native.RawFacts
 import IxCC.Cfg.Rc.Proof.Native.CtorBinding
 import IxCC.Cfg.Rc.Proof.Physical.ConsumedMarkers
 import IxCC.Cfg.Rc.Proof.Physical.AllocationArguments
@@ -169,6 +170,7 @@ theorem fused_allocation_instruction_of
 /-- `allocation_step` with the fields' tokens given directly. -/
 theorem allocation_step_of
     {P : Program} {pairs : List (Nat × Cfg.Fun)} (functions : Nat → Lir.Func) (main : Nat)
+    (consumingAll : consumeAll P = .ok pairs)
     {source : Cfg.Frame} {target : Lir.Frame}
     (cursor : ConsumedCursor P pairs (Public.Spec.sourceStage P functions main) source target)
     (tables : Own.Tables) (ctor : Fir.CtorInfo) (args : List Fir.Arg) (x : Fir.Var)
@@ -232,6 +234,8 @@ theorem allocation_step_of
   · obtain ⟨operands, nativeFunction, nativeBlock, lowered, nativeLookup, nativeBlockLookup,
       nativePosition, statement, continuation⟩ := success
     have lowered' : Rt.Lower.operands target.fn args = .ok (some operands) := by
+      rw [operandsAt_runtime consumingAll (by show P.base.size ≤ P.base.size + 2 + index; omega)]
+        at lowered
       simpa only [fn] using lowered
     obtain ⟨effect, result, counts, preserve, outcome⟩ :=
       fused_allocation_instruction_of tables ctor args x arguments den balance arity positive

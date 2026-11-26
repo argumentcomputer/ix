@@ -169,14 +169,17 @@ verbatim. -/
 
 /-! Every other public theorem of `IxCC.Cfg.Proof.Sim`. -/
 
-/-- info: 'IxCC.Cfg.Proof.Good.dense' does not depend on any axioms -/
+/-- info: 'IxCC.Cfg.Proof.Good.dense' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Cfg.Proof.Good.dense
 
-/-- info: 'IxCC.Cfg.Proof.Good.names' does not depend on any axioms -/
+/-- info: 'IxCC.Cfg.Proof.Good.names' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Cfg.Proof.Good.names
 
-/-- info: 'IxCC.Cfg.Proof.Good.sigLen' does not depend on any axioms -/
+/-- info: 'IxCC.Cfg.Proof.Good.sigLen' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Cfg.Proof.Good.sigLen
+
+/-- info: 'IxCC.Cfg.Proof.Good.arrFree' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Cfg.Proof.Good.arrFree
 
 /-- info: 'IxCC.Cfg.Proof.JC.agree' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Cfg.Proof.JC.agree

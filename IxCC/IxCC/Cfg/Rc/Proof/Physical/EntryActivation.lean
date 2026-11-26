@@ -59,7 +59,7 @@ theorem entry_activation {config : Rt.Config} {F : Fir.Program}
     (hprivB : ∀ l, priv l → l < H.size)
     (hprivE : ∀ l, priv l → Own.Rc.edgeCount H l = 0)
     (hprivArgs : ∀ l, priv l → ∀ v, v ∈ values → v ≠ .loc l)
-    (represented : Rt.Proof.ListRel (fun value word => valueWord addresses value = some word) values words)
+    (represented : SlotsRel addresses ((tablesOf P pairs).rawParams f 0) values words)
     (compatible : ∀ value ∈ values, ValueCtorOk (tablesOf P pairs) value)
     (arity : values.length = source.params.length)
     (sourceCallers : List (Cfg.Frame × Fir.Var)) (mem : X86.Memory) (context : Lir.Word)
@@ -96,10 +96,12 @@ theorem entry_activation {config : Rt.Config} {F : Fir.Program}
   obtain ⟨fd, block, lookup, blockLookup, params, length, _, bounds⟩ :=
     checked_entry_block checked range sourceLookup bodyLookup
   have real := functionBounds_params bounds blockLookup
-  obtain ⟨consumedFd, callee, targetEnv, offset, consumedLookup, entered, trace, cursor, registers⟩ :=
+  rw [rawParams_consumed consuming rangeP lookup blockLookup] at represented
+  obtain ⟨consumedFd, callee, targetEnv, offset, consumedLookup, entered, trace, cursor, registers,
+    raws⟩ :=
     consumed_entry_words consuming lowered main rangeP lookup blockLookup represented
       (length.trans arity.symm) real mem context callers
-  rw [params] at cursor registers
+  rw [params] at cursor registers raws
   obtain ⟨sourceStep, atEntry⟩ := checked_entry_at checked range sourceLookup bodyLookup
     lookup blockLookup values arity sourceCallers H
   refine ⟨fd, block, consumedFd, callee, targetEnv, offset, body, lookup, blockLookup, erased,
@@ -108,7 +110,7 @@ theorem entry_activation {config : Rt.Config} {F : Fir.Program}
       (borrows.getD f []) (uniqs.getD f ([], false)).1 values logical den (by simpa using arity)
       fresh balance hbrw borrows uniqs (uniqs.getD f ([], false)).2 F.ctors F.known priv
       huniq hprivB hprivE hprivArgs,
-    typed, atEntry, ⟨consumedLookup, cursor, registers,
+    typed, atEntry, ⟨consumedLookup, cursor, registers, raws,
       (Own.Plain.envBounded_empty H.size).bindAll _ (Own.Plain.dens_bounded den),
       FusedCtorOk.empty.bindAll _ _ compatible⟩,
     scope, rfl, ?_⟩

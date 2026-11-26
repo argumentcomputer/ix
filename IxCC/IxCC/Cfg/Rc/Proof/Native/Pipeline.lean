@@ -26,8 +26,9 @@ def rootsOf (config : Rt.Config) (P : Program) : List (Nat × String) :=
   named.map fun (f, symbol) => (f, (named.lookup f).getD symbol)
 
 def tablesOf (P : Program) (pairs : List (Nat × Cfg.Fun)) : Rt.Lower.Tables :=
-  { Rt.Lower.tables (consumed P pairs) with
-    natPow := (layoutOf P).init + 1, natGcd := (layoutOf P).init + 2 }
+  Raw.rawTables P.raw (consumed P pairs)
+    { Rt.Lower.tables (consumed P pairs) with
+      natPow := (layoutOf P).init + 1, natGcd := (layoutOf P).init + 2 }
 
 def wrappers (l : Layout) : List Lir.Func :=
   [incrementWrapper l.incProc, decrementWrapper l.decProc] ++
@@ -78,7 +79,7 @@ theorem lower_parts {config : Rt.Config} {F : Fir.Program}
       Rt.checkSwitches P.base = .ok () ∧
       P.base.exports.head? = some main ∧
       (layoutOf P).ctors.all (fun c => (Rt.Rc.CellLayout.ofFields c.arity c.tag).ok) = true ∧
-      consumeAll P = .ok pairs ∧
+      consumeAll P = .ok pairs ∧ (Raw.rawOk P.raw (consumed P pairs)) = true ∧
       Rt.Lower.functions (tablesOf P pairs) (consumed P pairs) (rootsOf config P)
         (List.range P.base.size) = .ok funcs ∧
       funcs.length = P.base.size ∧
@@ -94,6 +95,8 @@ theorem lower_parts {config : Rt.Config} {F : Fir.Program}
     unless (layoutOf P).ctors.all (fun c => (Rt.Rc.CellLayout.ofFields c.arity c.tag).ok) do
       throw "constructor table has a layout the counted heap does not allocate"
     let pairs ← consumeAll P
+    unless Raw.rawOk P.raw (consumed P pairs) do
+      throw "the raw word layout fails the native flow check"
     let funcs ← (Rt.Lower.functions (tablesOf P pairs) (consumed P pairs)
       (rootsOf config P) (List.range P.base.size)).mapError Rt.Error.render
     let program := (inlinedProgram (layoutOf P) funcs main).splitCriticalEdges
@@ -128,6 +131,11 @@ theorem lower_parts {config : Rt.Config} {F : Fir.Program}
           | error e => rw [hp] at accepted; cases accepted
           | ok pairs =>
             simp only [hp, bind, Except.bind] at accepted
+            cases hraw : Raw.rawOk P.raw (consumed P pairs)
+            · simp only [hraw, Bool.false_eq_true, ↓reduceIte, throw, throwThe,
+                MonadExceptOf.throw, bind, Except.bind] at accepted
+              cases accepted
+            simp only [hraw, Bool.true_eq_false, ↓reduceIte, pure, Except.pure, bind, Except.bind] at accepted
             cases hf : Rt.Lower.functions (tablesOf P pairs) (consumed P pairs)
                 (rootsOf config P) (List.range P.base.size) with
             | error e => rw [hf] at accepted; cases accepted
@@ -139,7 +147,7 @@ theorem lower_parts {config : Rt.Config} {F : Fir.Program}
                 cases u
                 simp only [hcheck, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at accepted
                 subst lowered
-                exact ⟨main, pairs, funcs, rfl, rfl, rfl, rfl, rfl, hf,
+                exact ⟨main, pairs, funcs, rfl, rfl, rfl, rfl, rfl, hraw, hf,
                   by simpa using (Rt.Proof.functions_spec hf).1, rfl, rfl, rfl, rfl, rfl, hcheck⟩
 
 

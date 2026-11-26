@@ -89,12 +89,26 @@ theorem eval_bindCall (x : Var) (f : FunId) (as : List Arg) (c : Code) :
   | none => rfl
   | some vs => simp only [Result.ofOption, Result.bind_ok]; cases evalCall pol P k f vs H <;> rfl
 
-theorem eval_bindRhs (x : Var) (r : Rhs) (c : Code) (hr : ∀ f as, r ≠ .fir (.call f as)) :
+/-- A binding that is neither a call nor an array primitive (`eval_bindArr`) runs its right-hand
+side (`evalRhs`). -/
+theorem eval_bindRhs (x : Var) (r : Rhs) (c : Code) (hr : ∀ f as, r ≠ .fir (.call f as))
+    (ha : r.isArrPrim = false) :
     eval pol P k ρ J H (.bind x r c) =
       (evalRhs pol P.tables ρ H r).bind fun p => eval pol P k (ρ.insert x p.1) J p.2 c := by
   rw [eval]
   · cases evalRhs pol P.tables ρ H r <;> rfl
   · intro f as h; exact hr f as h
+  · intro op as h; subst h; cases ha
+
+/-- A binding of an array primitive: `arrStep`, then the rest. -/
+theorem eval_bindArr (x : Var) (op : Src.ArrOp) (as : List Arg) (c : Code) :
+    eval pol P k ρ J H (.bind x (.fir (.prim (.arr op) as)) c) =
+      (Result.ofOption (evalArgs ρ as)).bind fun vs =>
+        (arrStep pol H op vs).bind fun p => eval pol P k (ρ.insert x p.1) J p.2 c := by
+  rw [eval]
+  cases evalArgs ρ as with
+  | none => rfl
+  | some vs => simp only [Result.ofOption, Result.bind_ok]; cases arrStep pol H op vs <;> rfl
 
 theorem eval_jp (j : JoinId) (ps : List (Var × PSig)) (φ : List (Var × Nat)) (r : Bool) (b c : Code) :
     eval pol P k ρ J H (.jp j ps φ r b c) =

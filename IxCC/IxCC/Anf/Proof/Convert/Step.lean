@@ -1,4 +1,5 @@
 import IxCC.Anf.Proof.Convert.Force
+import IxCC.Anf.Proof.Convert.ValModel
 
 /-! # ANF conversion: the simulation at one fuel level
 
@@ -222,7 +223,13 @@ theorem natArgs_rel : ∀ {vs : List Lam.Val} {ws : List Val}, VRs S.A S.G vs ws
 theorem prim_sim {n : Nat} {K : Lam.Known} (p : Lam.Prim) {vs : List Lam.Val} {ws : List Val}
     (h : VRs S.A S.G vs ws) :
     SimUpTo S.V n (fun _ => Lam.primResult K p vs) (fun _ => Anf.primResult K p ws) := by
+  cases hp : p.isArr
+  case true =>
+    obtain ⟨op, rfl⟩ := Lam.Prim.isArr_eq_true hp
+    simp only [Lam.primResult_arr, Anf.primResult_arr]
+    exact Src.ArrOp.sim vr_modelRel op (VRs.toForall2 h)
   unfold Lam.primResult Anf.primResult
+  simp only [Lam.arrResult_of_not_arr hp, Anf.arrResult_of_not_arr hp]
   rw [natArgs_rel h]
   cases Lam.natArgs vs with
   | none => exact SimUpTo.stuck _
