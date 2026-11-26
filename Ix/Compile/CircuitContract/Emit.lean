@@ -58,12 +58,19 @@ structure ScheduleExportOptions where
   baseBudget : CircuitBudget := {}
   deriving BEq, DecidableEq, Repr, Inhabited
 
-/-- Internal per-address aggregated function schedule. -/
+/-- Internal per-address aggregated function schedule.
+Extended fields (`isStatic`, `repr`, `intrinsic`, `splitFastpath`) are omitted from
+emitted JSON when default/none so legacy `"ixcc/circuit-schedule/1"` output stays
+byte-identical. -/
 structure EmittedFnSchedule where
   inline : CircuitInlinePolicy := .auto
   group : Option String := none
   unroll : Option Nat := none
   lanes : Option Nat := none
+  isStatic : Bool := false
+  repr : Option CircuitRepr := none
+  intrinsic : Option String := none
+  splitFastpath : Bool := false
   deriving BEq, DecidableEq, Repr, Inhabited
 
 /-! ## Hex address validation and normalization -/
@@ -94,12 +101,26 @@ def inlinePolicyToJson : CircuitInlinePolicy → Json
   | .always => .str "always"
   | .never => .str "never"
 
+def circuitReprToJson : CircuitRepr → Json
+  | .field => .str "field"
+  | .u32 => .str "u32"
+  | .u64 => .str "u64"
+  | .limbs k b =>
+    Json.mkObj [("kind", .str "limbs"), ("count", Json.num k), ("bits", Json.num b)]
+  | .flatArray n =>
+    Json.mkObj [("kind", .str "flat_array"), ("len", Json.num n)]
+  | .wordStream => .str "word_stream"
+
 def fnScheduleToJson (fs : EmittedFnSchedule) : Json :=
   let fields : List (String × Json) :=
     [("inline", inlinePolicyToJson fs.inline)] ++
     (match fs.group with | some g => [("group", .str g)] | none => []) ++
     (match fs.unroll with | some u => [("unroll", Json.num u)] | none => []) ++
-    (match fs.lanes with | some l => [("lanes", Json.num l)] | none => [])
+    (match fs.lanes with | some l => [("lanes", Json.num l)] | none => []) ++
+    (if fs.isStatic then [("static", .bool true)] else []) ++
+    (match fs.repr with | some r => [("repr", circuitReprToJson r)] | none => []) ++
+    (match fs.intrinsic with | some i => [("intrinsic", .str i)] | none => []) ++
+    (if fs.splitFastpath then [("splitFastpath", .bool true)] else [])
   Json.mkObj fields
 
 def budgetToJson (b : CircuitBudget) : Json :=
@@ -132,7 +153,11 @@ private def fnScheduleOfEntry (e : CircuitAttrEntry) : EmittedFnSchedule :=
   { inline := e.inline.getD .auto
     group := e.group
     unroll := e.unroll
-    lanes := e.lanes }
+    lanes := e.lanes
+    isStatic := e.isStatic.getD false
+    repr := e.repr
+    intrinsic := e.intrinsic
+    splitFastpath := e.splitFastpath.getD false }
 
 /-- Strict merge of two per-address function schedules (used when two alpha-equivalent
 Lean declarations share one Ixon content address). -/
@@ -160,14 +185,32 @@ private def mergeFnScheduleChecked (addr : String) (a b : EmittedFnSchedule) :
     | some x, some y =>
       if x == y then pure (some x)
       else throw (.conflictingAddressSchedule addr s!"lanes {x} vs {y}")
-  return { inline, group, unroll, lanes }
+  let isStatic := a.isStatic || b.isStatic
+  let repr ← match a.repr, b.repr with
+    | none, v => pure v
+    | v, none => pure v
+    | some x, some y =>
+      if x == y then pure (some x)
+      else throw (.conflictingAddressSchedule addr s!"repr {repr x} vs {repr y}")
+  let intrinsic ← match a.intrinsic, b.intrinsic with
+    | none, v => pure v
+    | v, none => pure v
+    | some x, some y =>
+      if x == y then pure (some x)
+      else throw (.conflictingAddressSchedule addr s!"intrinsic \"{x}\" vs \"{y}\"")
+  let splitFastpath := a.splitFastpath || b.splitFastpath
+  return { inline, group, unroll, lanes, isStatic, repr, intrinsic, splitFastpath }
 
 /-- Total deterministic merge of two per-address function schedules. -/
 private def mergeFnScheduleTotal (a b : EmittedFnSchedule) : EmittedFnSchedule :=
   { inline := if a.inline != .auto then a.inline else b.inline
     group := a.group.orElse fun _ => b.group
     unroll := a.unroll.orElse fun _ => b.unroll
-    lanes := a.lanes.orElse fun _ => b.lanes }
+    lanes := a.lanes.orElse fun _ => b.lanes
+    isStatic := a.isStatic || b.isStatic
+    repr := a.repr.orElse fun _ => b.repr
+    intrinsic := a.intrinsic.orElse fun _ => b.intrinsic
+    splitFastpath := a.splitFastpath || b.splitFastpath }
 
 /-- Strict closure-wide merge of `@[circuit_range_table]` directives. -/
 private def mergeRangeCheckChecked (acc next : CircuitRangeCheckMode) :
@@ -204,7 +247,11 @@ private def foldEntriesTotal (name : Lean.Name) (entries : Array CircuitAttrEntr
         | some a, some b => some (mergeRangeCheckTotal a b)
         | some a, none => some a
         | none, b => b
-      checked := acc.checked.orElse fun _ => e.checked }
+      checked := acc.checked.orElse fun _ => e.checked
+      isStatic := acc.isStatic.orElse fun _ => e.isStatic
+      repr := acc.repr.orElse fun _ => e.repr
+      intrinsic := acc.intrinsic.orElse fun _ => e.intrinsic
+      splitFastpath := acc.splitFastpath.orElse fun _ => e.splitFastpath }
 
 private def assembleScheduleJson (opts : ScheduleExportOptions)
     (rangeCheck : CircuitRangeCheckMode) (byAddr : List (String × EmittedFnSchedule))

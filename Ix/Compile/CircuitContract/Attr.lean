@@ -13,9 +13,11 @@ Activates strictly under `open scoped Ix.Circuit`.
 
 * All new attribute names (`circuit_inline`, `circuit_noinline`, `circuit_group`,
   `circuit_unroll`, `circuit_lanes`, `circuit_budget`, `circuit_range_table`,
-  `circuit_guess`) and `checked def` keywords (`checked`, `hint`, `check`,
-  `complete`) use `nonReservedSymbol`, adding **zero** tokens to Lean's global
-  `TokenTable`.
+  `circuit_guess`, `circuit_static`, `circuit_repr`, `circuit_intrinsic`,
+  `circuit_split_fastpath`), repr specifiers (`field`, `u32`, `u64`, `limbs`,
+  `flat_array`, `word_stream`), and `checked def` keywords (`checked`, `hint`,
+  `check`, `complete`) use `nonReservedSymbol`, adding **zero** tokens to Lean's
+  global `TokenTable`.
 * Every `@[circuit_*]` attribute registers metadata exclusively in
   `Ix.Compile.CircuitContract.circuitAttrExtension` (`SimplePersistentEnvExtension`)
   without touching the elaborated `Lean.ConstantInfo`. Consequently, annotating a
@@ -83,6 +85,46 @@ Apply post-hoc via `attribute [circuit_guess c θ] f` or
   ppSpace >> ident >>
   optional (ppSpace >> ident)
 
+/-- `@[circuit_static]`: marks a definition for Level-3 compile-time partial evaluation. -/
+@[expose] def ix_circuit_static := leading_parser
+  nonReservedSymbol "circuit_static"
+
+/-- Advisory representation specifiers for `@[circuit_repr(...)]` (zero `TokenTable` entries). -/
+@[expose] def circuitReprField := leading_parser
+  nonReservedSymbol "field"
+
+@[expose] def circuitReprU32 := leading_parser
+  nonReservedSymbol "u32"
+
+@[expose] def circuitReprU64 := leading_parser
+  nonReservedSymbol "u64"
+
+@[expose] def circuitReprLimbs := leading_parser
+  nonReservedSymbol "limbs" >> ppSpace >> numLit >> ppSpace >> numLit
+
+@[expose] def circuitReprFlatArray := leading_parser
+  nonReservedSymbol "flat_array" >> ppSpace >> numLit
+
+@[expose] def circuitReprWordStream := leading_parser
+  nonReservedSymbol "word_stream"
+
+@[expose] def circuitReprSpec := leading_parser
+  circuitReprField <|> circuitReprU32 <|> circuitReprU64 <|>
+  circuitReprLimbs <|> circuitReprFlatArray <|> circuitReprWordStream
+
+/-- `@[circuit_repr(field | u32 | u64 | limbs k b | flat_array n | word_stream)]`. -/
+@[expose] def ix_circuit_repr := leading_parser
+  nonReservedSymbol "circuit_repr" >> "(" >> circuitReprSpec >> ")"
+
+/-- `@[circuit_intrinsic "name"]`: binds a definition to a backend intrinsic
+(e.g. `"blake3.hash"`, `"field.add"`, `"field.mul"`, `"field.inv"`, `"ptr_eq"`). -/
+@[expose] def ix_circuit_intrinsic := leading_parser
+  nonReservedSymbol "circuit_intrinsic" >> ppSpace >> strLit
+
+/-- `@[circuit_split_fastpath]`: marks a definition for `C3` fast-path / cold-path chip splitting. -/
+@[expose] def ix_circuit_split_fastpath := leading_parser
+  nonReservedSymbol "circuit_split_fastpath"
+
 /-! ### Scoped `checked def` command parser for Tier-2 `guess` witnesses -/
 
 /-- Scoped syntax for Tier-2 verified non-deterministic witness definitions:
@@ -126,6 +168,10 @@ attribute [local attr_parser]
   ix_circuit_budget
   ix_circuit_range_table
   ix_circuit_guess
+  ix_circuit_static
+  ix_circuit_repr
+  ix_circuit_intrinsic
+  ix_circuit_split_fastpath
 attribute [local command_parser] checkedDefCmd
 end
 
@@ -304,6 +350,70 @@ meta initialize registerBuiltinAttribute {
     }
 }
 
+private meta def parseCircuitRepr (stx : Syntax) : AttrM CircuitRepr := do
+  let inner := stx[0]
+  let kind := inner.getKind
+  if kind == ``AttrSyntax.circuitReprField then
+    return .field
+  else if kind == ``AttrSyntax.circuitReprU32 then
+    return .u32
+  else if kind == ``AttrSyntax.circuitReprU64 then
+    return .u64
+  else if kind == ``AttrSyntax.circuitReprLimbs then
+    let some k := inner[1].isNatLit?
+      | throwErrorAt inner "expected positive natural number limb count in @[circuit_repr(limbs k b)]"
+    let some b := inner[2].isNatLit?
+      | throwErrorAt inner "expected positive natural number limb bit-width in @[circuit_repr(limbs k b)]"
+    return .limbs k b
+  else if kind == ``AttrSyntax.circuitReprFlatArray then
+    let some n := inner[1].isNatLit?
+      | throwErrorAt inner "expected positive natural number length in @[circuit_repr(flat_array n)]"
+    return .flatArray n
+  else if kind == ``AttrSyntax.circuitReprWordStream then
+    return .wordStream
+  else
+    throwErrorAt stx
+      "invalid @[circuit_repr(...)] specifier (expected field, u32, u64, limbs k b, flat_array n, or word_stream)"
+
+meta initialize registerBuiltinAttribute {
+  name := `ix_circuit_static
+  descr := "Mark a definition for Level-3 compile-time partial evaluation."
+  add := fun decl _ kind => do
+    unless kind == AttributeKind.global do
+      throwError "@[circuit_static] cannot be local or scoped"
+    addAttrEntry "circuit_static" decl { declName := decl, isStatic := some true }
+}
+
+meta initialize registerBuiltinAttribute {
+  name := `ix_circuit_repr
+  descr := "Attach an advisory circuit representation tag (field | u32 | u64 | limbs k b | flat_array n | word_stream)."
+  add := fun decl stx kind => do
+    unless kind == AttributeKind.global do
+      throwError "@[circuit_repr] cannot be local or scoped"
+    let reprSpec ← parseCircuitRepr stx[2]
+    addAttrEntry "circuit_repr" decl { declName := decl, repr := some reprSpec }
+}
+
+meta initialize registerBuiltinAttribute {
+  name := `ix_circuit_intrinsic
+  descr := "Bind a definition to a named backend circuit intrinsic (e.g. \"field.add\", \"field.mul\", \"blake3.hash\")."
+  add := fun decl stx kind => do
+    unless kind == AttributeKind.global do
+      throwError "@[circuit_intrinsic] cannot be local or scoped"
+    let some intrinsicName := stx[1].isStrLit?
+      | throwErrorAt stx "expected string literal intrinsic name in @[circuit_intrinsic \"name\"]"
+    addAttrEntry "circuit_intrinsic" decl { declName := decl, intrinsic := some intrinsicName }
+}
+
+meta initialize registerBuiltinAttribute {
+  name := `ix_circuit_split_fastpath
+  descr := "Mark a definition for C3 fast-path/cold-path chip splitting."
+  add := fun decl _ kind => do
+    unless kind == AttributeKind.global do
+      throwError "@[circuit_split_fastpath] cannot be local or scoped"
+    addAttrEntry "circuit_split_fastpath" decl { declName := decl, splitFastpath := some true }
+}
+
 /-! ### Elaborator for `checked def` -/
 
 /-- Build a `declModifiers` keeping only visibility (e.g. `private`/`protected`) so
@@ -405,6 +515,10 @@ attribute [scoped attr_parser 2000]
   Ix.Compile.CircuitContract.AttrSyntax.ix_circuit_budget
   Ix.Compile.CircuitContract.AttrSyntax.ix_circuit_range_table
   Ix.Compile.CircuitContract.AttrSyntax.ix_circuit_guess
+  Ix.Compile.CircuitContract.AttrSyntax.ix_circuit_static
+  Ix.Compile.CircuitContract.AttrSyntax.ix_circuit_repr
+  Ix.Compile.CircuitContract.AttrSyntax.ix_circuit_intrinsic
+  Ix.Compile.CircuitContract.AttrSyntax.ix_circuit_split_fastpath
 
 attribute [scoped command_parser 2000]
   Ix.Compile.CircuitContract.AttrSyntax.checkedDefCmd

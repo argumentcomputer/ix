@@ -61,6 +61,18 @@ structure CircuitCheckedMeta where
 /-- Alias for `CircuitCheckedMeta` matching `IxCC.Src.Table.Guess`'s `guess f c θ [θc]` model. -/
 abbrev CircuitGuessSpec := CircuitCheckedMeta
 
+/-- Advisory circuit representation tag (`@[circuit_repr(...)]`).
+Purely operational metadata recorded in the sidecar schedule without
+mutating any Lean `ConstantInfo` or Ixon content address. -/
+inductive CircuitRepr where
+  | field
+  | u32
+  | u64
+  | limbs (count bits : Nat)
+  | flatArray (len : Nat)
+  | wordStream
+  deriving BEq, DecidableEq, Repr, Inhabited
+
 /-- A single registered attribute patch on a Lean declaration `declName`.
 Multiple disjoint attributes on the same declaration accumulate in
 `circuitAttrExtension` and are merged deterministically on export. -/
@@ -73,6 +85,10 @@ structure CircuitAttrEntry where
   budget : Option CircuitBudget := none
   rangeCheck : Option CircuitRangeCheckMode := none
   checked : Option CircuitCheckedMeta := none
+  isStatic : Option Bool := none
+  repr : Option CircuitRepr := none
+  intrinsic : Option String := none
+  splitFastpath : Option Bool := none
   deriving BEq, DecidableEq, Repr, Inhabited
 
 /-- Errors raised when registering or exporting conflicting circuit schedule directives. -/
@@ -88,6 +104,12 @@ inductive CircuitContractError where
   | duplicateBudget (name : Lean.Name)
   | conflictingRangeCheck (name : Lean.Name) (prev next : CircuitRangeCheckMode)
   | duplicateChecked (name : Lean.Name)
+  | duplicateStatic (name : Lean.Name)
+  | conflictingRepr (name : Lean.Name) (prev next : CircuitRepr)
+  | invalidRepr (name : Lean.Name) (detail : String)
+  | duplicateIntrinsic (name : Lean.Name) (prev next : String)
+  | emptyIntrinsicName (name : Lean.Name)
+  | duplicateSplitFastpath (name : Lean.Name)
   | missingGuessTarget (subject target : Lean.Name) (role : String)
   | invalidAddress (name : Lean.Name) (addr : String)
   | conflictingAddressSchedule (addr : String) (detail : String)
@@ -119,6 +141,18 @@ instance : ToString CircuitContractError where
       s!"circuit contract: conflicting @[circuit_range_table] on '{name}' ({repr prev} vs {repr next})"
     | .duplicateChecked name =>
       s!"circuit contract: duplicate guess/checked-def witness registration on '{name}'"
+    | .duplicateStatic name =>
+      s!"circuit contract: duplicate @[circuit_static] on '{name}'"
+    | .conflictingRepr name prev next =>
+      s!"circuit contract: conflicting @[circuit_repr] on '{name}' ({repr prev} vs {repr next})"
+    | .invalidRepr name detail =>
+      s!"circuit contract: invalid @[circuit_repr] on '{name}': {detail}"
+    | .duplicateIntrinsic name prev next =>
+      s!"circuit contract: duplicate @[circuit_intrinsic] on '{name}' (\"{prev}\" vs \"{next}\")"
+    | .emptyIntrinsicName name =>
+      s!"circuit contract: @[circuit_intrinsic] on '{name}' requires a non-empty intrinsic name"
+    | .duplicateSplitFastpath name =>
+      s!"circuit contract: duplicate @[circuit_split_fastpath] on '{name}'"
     | .missingGuessTarget subject target role =>
       s!"circuit contract: guess {role} '{target}' for '{subject}' is missing from the compiled closure or environment"
     | .invalidAddress name addr =>
@@ -153,7 +187,8 @@ def mergeBudget (a b : CircuitBudget) : CircuitBudget :=
 
 /-- True iff `e` sets at least one per-function scheduling directive emitted under `byAddress`. -/
 def CircuitAttrEntry.hasFnDirective (e : CircuitAttrEntry) : Bool :=
-  e.inline.isSome || e.group.isSome || e.unroll.isSome || e.lanes.isSome
+  e.inline.isSome || e.group.isSome || e.unroll.isSome || e.lanes.isSome ||
+  e.isStatic.getD false || e.repr.isSome || e.intrinsic.isSome || e.splitFastpath.getD false
 
 /-- Validate a single attribute patch before adding it to the extension. -/
 def validateAttrEntry (entry : CircuitAttrEntry) : Except CircuitContractError Unit := do
@@ -163,6 +198,18 @@ def validateAttrEntry (entry : CircuitAttrEntry) : Except CircuitContractError U
     if u == 0 then throw (.invalidUnroll entry.declName)
   if let some l := entry.lanes then
     if l == 0 then throw (.invalidLanes entry.declName)
+  if let some r := entry.repr then
+    match r with
+    | .limbs k b =>
+      if k == 0 || b == 0 then
+        throw (.invalidRepr entry.declName
+          s!"limbs count ({k}) and bit-width ({b}) must both be positive (>= 1)")
+    | .flatArray n =>
+      if n == 0 then
+        throw (.invalidRepr entry.declName "flat_array length must be positive (>= 1)")
+    | _ => pure ()
+  if let some intr := entry.intrinsic then
+    if intr.isEmpty then throw (.emptyIntrinsicName entry.declName)
 
 /-- Merge two disjoint attribute patches targeting the same declaration, rejecting
 duplicate or conflicting directives. -/
@@ -196,7 +243,26 @@ def mergeAttrEntry (name : Lean.Name) (acc next : CircuitAttrEntry) :
     | none, v => pure v
     | v, none => pure v
     | some _, some _ => throw (.duplicateChecked name)
-  return { declName := name, inline, group, unroll, lanes, budget, rangeCheck, checked }
+  let isStatic ← match acc.isStatic, next.isStatic with
+    | none, v => pure v
+    | v, none => pure v
+    | some _, some _ => throw (.duplicateStatic name)
+  let repr ← match acc.repr, next.repr with
+    | none, v => pure v
+    | v, none => pure v
+    | some prev, some cur => throw (.conflictingRepr name prev cur)
+  let intrinsic ← match acc.intrinsic, next.intrinsic with
+    | none, v => pure v
+    | v, none => pure v
+    | some prev, some cur => throw (.duplicateIntrinsic name prev cur)
+  let splitFastpath ← match acc.splitFastpath, next.splitFastpath with
+    | none, v => pure v
+    | v, none => pure v
+    | some _, some _ => throw (.duplicateSplitFastpath name)
+  return {
+    declName := name, inline, group, unroll, lanes, budget, rangeCheck, checked,
+    isStatic, repr, intrinsic, splitFastpath
+  }
 
 /-- Fold and validate all accumulated patches for declaration `name`. -/
 def mergeAttrEntries (name : Lean.Name) (entries : Array CircuitAttrEntry) :
