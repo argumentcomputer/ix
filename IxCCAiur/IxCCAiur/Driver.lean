@@ -2,6 +2,7 @@ import IxCCAiur.Progress
 import IxCCAiur.CompiledCert
 import IxCCAiur.TypedWorld
 import IxCCAiur.InlineFuse
+import IxCCAiur.GuessLower
 import IxCCAiur.Hints
 import IxCC.Compile
 import IxCC.Recheck.RunFir
@@ -407,5 +408,187 @@ def typedChipStats (l : TypedLinked) (sched : Schedule.CircuitSchedule := {}) :
     Except String (List (String × Nat × Nat × Nat)) := do
   let compiled ← l.prepared.compileOptimized sched.aiurConfig
   return chipSummaryOf compiled
+
+/-! ## Phase 2.2d Tier-2 `guess` Front-End, Lowering & Universal Advice Package -/
+
+/-- Front-end ingress + `produceFir` + `runFir` with Tier-2 `guess` support:
+1. Parses `equations` (`ixcc/k1-equations/1`) containing `"guesses"` (and optional `"equations"`).
+2. If `"equations"` / `"theorems"` has no `.eqn`/`.word` proposals (as in `ix compile
+   --circuit-guesses-out`), automatically merges `Src.AutoHints.discover env pins` so
+   recursive functions (e.g. `egcdStep`) still unfold cleanly in the companion advice program.
+3. Adds every `guess` checker address as a temporary root and adds both guess subjects and
+   checkers to `budgets.«inline».noInline` so `Lam.erase`, `Anf.Inline`, and `Fir.lower` keep
+   both `f` and `c` intact as distinct `Fir` functions.
+4. Strips the extra checker exports back to the original user root count after `runFir`. -/
+def frontWithGuesses (bytes : ByteArray) (equations : Lean.Json) (roots : List String)
+    (limits : Ix.Kernel.Admission.Limits := Src.KernelFront.defaultLimits) : Except String Front := do
+  let env ← (Ixon.V3.decodeAnonymousEnv bytes).mapError fun m => s!"ingress: decode: {m}"
+  let sidecar ← Src.Hints.ofK1Json equations
+  let acc ← (Src.KernelFront.accept env limits).mapError fun r =>
+    s!"ingress: kernel: {r.report}"
+  let () ← (Src.KernelFront.defaultModeCheck acc).mapError fun r =>
+    s!"ingress: mode-check: {r.report}"
+  let pins := Src.KernelFront.pinsOfTable acc.table
+  let chosen : Array (Ixon.Address × Option String) ←
+    if !roots.isEmpty then
+      (Src.AutoHints.resolveRoots env roots).mapError fun m => s!"cli: cli.root: {m}"
+    else if !sidecar.roots.isEmpty then
+      pure sidecar.roots
+    else
+      (Src.AutoHints.resolveRoots env []).mapError fun m => s!"cli: cli.root: {m}"
+  let hasEqn := sidecar.proposals.any fun p => p.kind == .eqn || p.kind == .word
+  let proposals :=
+    if hasEqn then sidecar.proposals
+    else Src.AutoHints.discover env pins ++ sidecar.proposals
+  let origRootCount := chosen.size
+  let checkerRoots : Array (Ixon.Address × Option String) :=
+    proposals.foldl (init := #[]) fun acc p =>
+      if p.kind == .guess then
+        match p.checker? with
+        | some chkAddr =>
+          if chosen.any (·.1 == chkAddr) || acc.any (·.1 == chkAddr) then acc
+          else acc.push (chkAddr, some s!"__guess_checker_{acc.size}")
+        | none => acc
+      else acc
+  let allRoots := chosen ++ checkerRoots
+  let names := allRoots.toList.zipIdx.map fun ((_, n), i) => n.getD s!"root{i}"
+  let namedRoots := allRoots.zipIdx.map fun ((a, n), i) => (a, some (n.getD s!"root{i}"))
+  let hints : Src.Hints := { roots := namedRoots, proposals }
+  let records ← (Src.Ingress.reach env (Src.Ingress.Seeds.of hints pins)).mapError fun m =>
+    s!"ingress: decode: {m}"
+  let p ← (Src.Ingress.readConsts env records (namedRoots.map (·.1))).mapError fun m =>
+    s!"ingress: ingress: {m}"
+  let p := { p with known := { pins } }
+  let p := { p with known := Src.Pinned.known p }
+  let rd ← (Src.KernelFront.Reading.build acc p).mapError fun m =>
+    s!"ingress: faithful: {m}"
+  let input : Recheck.Input :=
+    { env, hints, program := p, names, kernel := { acc, rd, fe := Ix.Kernel.mkFEnv acc.env } }
+  let guessNoInline : List Key.GKey :=
+    proposals.toList.flatMap fun pr =>
+      if pr.kind == .guess then
+        let sKeys := match p.lookup pr.subject with
+          | some cid => [Key.GKey.const cid []]
+          | none => []
+        let cKeys := match pr.checker?.bind p.lookup with
+          | some cid => [Key.GKey.const cid []]
+          | none => []
+        sKeys ++ cKeys
+      else []
+  let baseCfg0 := Recheck.Config.forInput {} input
+  let baseCfg : Recheck.Config := {
+    baseCfg0 with
+    budgets := {
+      baseCfg0.budgets with
+      «inline» := {
+        baseCfg0.budgets.«inline» with
+        noInline := baseCfg0.budgets.«inline».noInline ++ guessNoInline
+      }
+    }
+  }
+  let attempt (cfg : Recheck.Config) : Except Recheck.Err Front := do
+    let cert ← Recheck.produceFir cfg input
+    unless Recheck.checkCanonicalRelevance cfg input cert.table cert.relevance do
+      throw { stage := .relevance, code := "relevance-canonical"
+              message := "certificate relevance annotation does not match canonical annotator output" }
+    let levels ← Recheck.runFir cfg input.program cert
+    let fir' := { levels.fir with exports := levels.fir.exports.take origRootCount }
+    let levels' := { levels with fir := fir' }
+    let input' := { input with names := input.names.take origRootCount }
+    return { input := input', cfg, cert, levels := levels' }
+  (Compile.withRetry baseCfg attempt).mapError (·.render)
+
+/-- Unmodified pre-guess prepared program exposing every resolved guess subject as a
+callable entrypoint for both Lean (`Hints.dispatcherWithAdvice`) and Rust
+(`aiur::library::ixcc::register_advice_program`). -/
+structure AdviceLinked where
+  lowered : TypedLower.LoweredProgram
+  program : Aiur.Modules.Program F
+  entries : List String
+  prepared : Aiur.Modules.Prepared program
+
+/-- Serialize a bytecode-only `IXAIURP\0` package (no STARK trace section) for host advice
+execution in `ixcc_prove --advice ADVICE.ixa`. -/
+def compileAdvicePackage (adv : AdviceLinked) : Except String ByteArray := do
+  let execution ← adv.prepared.exportExecution
+  Aiur.Artifact.package execution modulus ZMod.val none
+
+/-- Result of typed lowering with Phase 2.2d Tier-2 `guess` rewriting enabled. -/
+structure TypedLinkedWithGuesses where
+  linked : TypedLinked
+  advice : Option AdviceLinked
+  resolved : List GuessLower.ResolvedGuess
+  skipped : List (Src.CId × String)
+  manifest : GuessLower.AdviceManifest
+  foldedFir : Fir.Program
+
+/-- Typed lowering with Phase 2.2d Tier-2 `guess` rewriting:
+1. Seeds `ShapeCert` so checkers receive exact unboxed parameter shapes (`seedGuessShapes`).
+2. Runs the certified `foldOversizedNatCmp` pre-pass (for curve prime bounds like `2^384`).
+3. Lowers the unmodified program (`lowered0`) and builds the companion `AdviceLinked`
+   program exposing every resolved guess subject for zero-hardcoding host advice.
+4. Rewrites resolved guess subjects via `GuessLower.applyGuesses` (keeping `isInline := false`
+   on every guess wrapper per the Aiur cost law), optionally runs `InlineFuse.optimizeFns`,
+   prunes unreachable functions (e.g. `egcdStep`), links, and prepares `Prog::main<i>`. -/
+def linkTypedWithGuesses (src : Src.Program) (P : Fir.Program) (i : Nat)
+    (sched : Schedule.CircuitSchedule := {})
+    (inlineFuse : Bool := false) : Except String TypedLinkedWithGuesses := do
+  let resolvedSched := resolveSchedule src P sched
+  let (cert, shapeAccepted0) := GuessLower.seedGuessShapes src P
+  let folded := GuessLower.foldOversizedNatCmp P cert
+  let (PWork, shapeAccepted) :=
+    if shapeAccepted0 && Fir.Shape.check folded cert then
+      (folded, true)
+    else
+      (P, shapeAccepted0)
+  let lowered0 ← TypedLower.lowerProgram PWork cert resolvedSched
+  let gl := GuessLower.applyGuesses src PWork lowered0
+  let entry := qualified (entryName i)
+  let advice ←
+    if gl.resolved.isEmpty then pure none
+    else do
+      let (advLowered, advEntries) := GuessLower.prepareAdviceProgram lowered0 gl.resolved
+      let advProgram := TypedLower.linkedProgram F advLowered
+      let allAdvEntries := entry :: advEntries.filter (· != entry)
+      let advPrepared ← Aiur.Modules.prepare advProgram allAdvEntries
+      pure (some {
+        lowered := advLowered
+        program := advProgram
+        entries := allAdvEntries
+        prepared := advPrepared
+      })
+  let lowered :=
+    if inlineFuse then
+      let optFns := InlineFuse.optimizeFns gl.lowered.program.functions
+      let pruned := InlineFuse.pruneUnreachable [entryName i] optFns
+      { gl.lowered with program := { gl.lowered.program with functions := pruned } }
+    else if !gl.resolved.isEmpty then
+      let pruned := InlineFuse.pruneUnreachable [entryName i] gl.lowered.program.functions
+      { gl.lowered with program := { gl.lowered.program with functions := pruned } }
+    else
+      gl.lowered
+  let program := TypedLower.linkedProgram F lowered
+  let exportRep := lowered.exportReps[i]?.getD .obj
+  let prepared ← Aiur.Modules.prepare program [entry]
+  let linked : TypedLinked := {
+    lowered, shapeAccepted, program, entry, exportRep, prepared
+    resolvedGroups := resolvedSched.groups
+  }
+  return {
+    linked, advice, resolved := gl.resolved, skipped := gl.skipped
+    manifest := gl.manifest, foldedFir := PWork
+  }
+
+/-- Evaluate a guess-lowered typed entry on `Nat` inputs via Formal Aiur's fuelled evaluator,
+answering `"ixcc.guess.<fn>"` channels automatically via `Hints.dispatcherWithAdvice`. -/
+def typedAiurRunWithAdvice (P : Fir.Program) (l : TypedLinked)
+    (advice : Option AdviceLinked) (args : List Nat) (fuel : Nat := 100000000) :
+    Except String (Aiur.SourceValue F × Option Sem.Obs) := do
+  let advicePair := advice.map fun a => (⟨a.program, a.prepared⟩ : Σ p : Aiur.Modules.Program F, Aiur.Modules.Prepared p)
+  let hints := l.prepared.environment.source.checkedHints
+    (Hints.dispatcherWithAdvice (fun (x : F) => x.val) advicePair)
+  let (value, heap) ← l.prepared.run l.entry (args.map fun n => .field (n : F)) fuel hints
+  let feat := TypedRep.scanFeatures P
+  return (value, typedReadback P l.lowered.cert feat heap 10000 l.exportRep value)
 
 end IxCC.AiurBackend.Driver

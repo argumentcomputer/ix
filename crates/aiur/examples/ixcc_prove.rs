@@ -9,14 +9,19 @@
 //! reads the compiled circuits and the public call alone.
 //!
 //! `--args N,N,...` replaces the package's arguments (one compiled program,
-//! several invocations). `--no-controls` skips the reference trace check and
-//! the negative controls, for measurements: the report's times, rows and peak
-//! memory are then of executing, proving and verifying alone.
+//! several invocations). `--advice ADVICE.ixa` loads the unmodified pre-guess
+//! bytecode package (`ixcc-aiur --advice-out ADVICE.ixa`) to automatically
+//! answer every `"ixcc.guess.<fn>"` channel with zero per-function hardcoding.
+//! `--tamper-hint CHANNEL` intentionally corrupts the advice for `CHANNEL` to
+//! verify wrong-hint rejection directly. `--no-controls` skips the reference
+//! trace check and the negative controls, for measurements: the report's times,
+//! rows and peak memory are then of executing, proving and verifying alone.
 use aiur::field::FieldBackend;
 use aiur::{
   artifact::{
     self, EXECUTION_MAGIC, ExecutionPackage, PACKAGE_MAGIC, Package,
   },
+  bytecode::Program,
   hints::HintChannels,
   trace::{
     TracePlan,
@@ -25,10 +30,33 @@ use aiur::{
 };
 use multi_stark::p3_matrix::Matrix;
 use serde_json::json;
-use std::{error::Error, time::Instant};
+use std::{
+  error::Error,
+  sync::atomic::Ordering,
+  time::Instant,
+};
 
 const USAGE: &str = "usage: ixcc_prove PACKAGE.ixa [PROOF.bin] [REPORT.json] \
-                     [--args N,N,...] [--no-controls]";
+                     [--args N,N,...] [--advice ADVICE.ixa] \
+                     [--tamper-hint CHANNEL] [--no-controls]";
+
+fn load_advice_program(path: &str) -> Result<(Program, artifact::Digest), Box<dyn Error>> {
+  let (raw_bytes, digest) = artifact::read(path.as_ref())?;
+  let package = if raw_bytes.starts_with(PACKAGE_MAGIC) {
+    Package::decode(&raw_bytes)
+      .map_err(|e| format!("invalid advice package {path}: {e}"))?
+  } else if raw_bytes.starts_with(EXECUTION_MAGIC) {
+    ExecutionPackage::decode(&raw_bytes)
+      .map_err(|e| format!("invalid advice execution package {path}: {e}"))?
+      .package
+  } else {
+    return Err(format!(
+      "unrecognized advice artifact magic in {path} (expected IXAIURP\\0 or IXAIURX\\0)"
+    )
+    .into());
+  };
+  Ok((package.program, digest))
+}
 
 /// Peak resident set size of this process in kilobytes, where the platform
 /// reports it.
@@ -41,6 +69,8 @@ fn peak_rss_kb() -> Option<u64> {
 fn main() -> Result<(), Box<dyn Error>> {
   let mut args = Vec::new();
   let mut override_args: Option<Vec<u64>> = None;
+  let mut advice_path: Option<String> = None;
+  let mut tamper_hint: Option<String> = None;
   let mut controls = true;
   let mut raw = std::env::args();
   while let Some(arg) = raw.next() {
@@ -54,6 +84,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             .map(str::parse)
             .collect::<Result<_, _>>()?,
         );
+      },
+      "--advice" => {
+        advice_path = Some(raw.next().ok_or("--advice needs a path")?);
+      },
+      "--tamper-hint" => {
+        tamper_hint =
+          Some(raw.next().ok_or("--tamper-hint needs a channel name")?);
       },
       "--no-controls" => controls = false,
       _ => args.push(arg),
@@ -89,6 +126,36 @@ fn main() -> Result<(), Box<dyn Error>> {
   aiur::library::u32::register(&mut channels, field)?;
   aiur::library::u64::register(&mut channels, field)?;
   aiur::library::ixcc::register(&mut channels, field)?;
+  let mut advice_digest: Option<artifact::Digest> = None;
+  let mut advice_raw_program: Option<Program> = None;
+  let mut guess_channels: Vec<String> = Vec::new();
+  if let Some(adv_path) = &advice_path {
+    let (adv_prog, adv_dig) = load_advice_program(adv_path)?;
+    eprintln!("advice {adv_path}: blake3 {adv_dig}");
+    advice_digest = Some(adv_dig);
+    advice_raw_program = Some(adv_prog.clone());
+    let checked_adv = adv_prog.check_field::<multi_stark::types::Val>()?;
+    guess_channels = if let Some(ch) = &tamper_hint {
+      let (regs, _) = aiur::library::ixcc::register_tampered_advice_program(
+        &mut channels,
+        &program,
+        checked_adv,
+        ch,
+      )?;
+      regs
+    } else {
+      aiur::library::ixcc::register_advice_program(
+        &mut channels,
+        &program,
+        checked_adv,
+      )?
+    };
+    if !guess_channels.is_empty() {
+      eprintln!("registered guess channels: {guess_channels:?}");
+    }
+  } else if tamper_hint.is_some() {
+    return Err("--tamper-hint requires --advice ADVICE.ixa".into());
+  }
   let hints = program.prepare_hint_channels(&embedded_hints, &channels)?;
   let plan = TracePlan::new(&program, trace)?;
   let entry =
@@ -220,11 +287,109 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
   }
 
+  // Wrong-hint negative controls: for every registered `"ixcc.guess.*"`
+  // channel, perturb its host advice (+1 mod p on the last word) and verify
+  // that every invoked channel is rejected by the circuit's verified checker
+  // (or constraint / STARK verifier if assertions are deferred).
+  let mut wrong_hint_controls = Vec::new();
+  if controls
+    && tamper_hint.is_none()
+    && let Some(adv_raw) = &advice_raw_program
+  {
+    for ch in &guess_channels {
+      let mut bad_channels = HintChannels::new();
+      aiur::library::u32::register(&mut bad_channels, field)?;
+      aiur::library::u64::register(&mut bad_channels, field)?;
+      aiur::library::ixcc::register(&mut bad_channels, field)?;
+      let checked_adv =
+        adv_raw.clone().check_field::<multi_stark::types::Val>()?;
+      let (_, hits) = aiur::library::ixcc::register_tampered_advice_program(
+        &mut bad_channels,
+        &program,
+        checked_adv,
+        ch,
+      )?;
+      let bad_hints =
+        program.prepare_hint_channels(&embedded_hints, &bad_channels)?;
+      match bad_hints.execute(entry, address.clone()) {
+        Err(error) => {
+          wrong_hint_controls.push(json!({
+            "tampered_channel": ch,
+            "invocations": hits.load(Ordering::Relaxed),
+            "rejected": true,
+            "stage": "execute",
+            "error": error.to_string(),
+          }));
+        },
+        Ok(bad_record) => {
+          let invoked = hits.load(Ordering::Relaxed);
+          if invoked == 0 {
+            wrong_hint_controls.push(json!({
+              "tampered_channel": ch,
+              "invocations": 0,
+              "rejected": false,
+              "stage": "not_invoked",
+            }));
+          } else {
+            let bad_out = bad_record.output.clone();
+            let check_err = plan
+              .generate_reference(&bad_record, entry, &address, true)
+              .and_then(|reference| {
+                plan.check(&bad_record, &reference, entry, &address)
+              });
+            match check_err {
+              Err(error) => {
+                wrong_hint_controls.push(json!({
+                  "tampered_channel": ch,
+                  "invocations": invoked,
+                  "rejected": true,
+                  "stage": "trace_check",
+                  "error": error,
+                }));
+              },
+              Ok(()) => {
+                let bad_witness =
+                  backend.generate(&bad_record, entry, &address)?;
+                match backend
+                  .prove(entry, &address, &bad_out, bad_witness)
+                  .and_then(|p| backend.verify(entry, &address, &bad_out, &p))
+                {
+                  Err(error) => {
+                    wrong_hint_controls.push(json!({
+                      "tampered_channel": ch,
+                      "invocations": invoked,
+                      "rejected": true,
+                      "stage": "stark_verify",
+                      "error": error,
+                    }));
+                  },
+                  Ok(()) => {
+                    return Err(format!(
+                      "circuit accepted a tampered hint on channel {ch:?} \
+                       ({invoked} invocations)!"
+                    )
+                    .into());
+                  },
+                }
+              },
+            }
+          }
+        },
+      }
+    }
+  }
+  let rejected_wrong_hints = wrong_hint_controls
+    .iter()
+    .filter(|entry| entry["rejected"].as_bool() == Some(true))
+    .count();
+
   if let Some(path) = args.get(2) {
     std::fs::write(path, &bytes)?;
   }
   let report = json!({
       "artifact_blake3": digest.to_string(),
+      "advice_blake3": advice_digest.map(|d| d.to_string()),
+      "guess_channels": guess_channels,
       "entry": entry, "args": address, "output": output, "parameters": parameters,
       "prepare_seconds": prepare_seconds, "setup_seconds": setup_seconds,
       "execution_seconds": execution_seconds, "witness_seconds": witness_seconds,
@@ -237,7 +402,10 @@ fn main() -> Result<(), Box<dyn Error>> {
       "rom_rows": rom_rows, "controls": controls,
       "stage1_words": stage1_words,
       "verified": true, "rejected_wrong_claims": rejections.len(),
-      "rejections": rejections, "circuits": circuits,
+      "rejections": rejections,
+      "rejected_wrong_hints": rejected_wrong_hints,
+      "wrong_hint_controls": wrong_hint_controls,
+      "circuits": circuits,
   });
   if let Some(path) = args.get(3) {
     serde_json::to_writer_pretty(

@@ -29,9 +29,11 @@ structure Options where
   root : Option String := none
   args : Option (List Nat) := none
   out : Option String := none
+  adviceOut : Option String := none
   execPackage : Bool := false
   typed : Bool := false
   inlineFuse : Bool := false
+  enableGuesses : Bool := false
   skipAiurEval : Bool := false
   schedule : Option String := none
   noInline : Bool := false
@@ -40,9 +42,9 @@ structure Options where
 
 def usage : String :=
   "usage: ixcc-aiur CLOSURE.ixe [--equations EQUATIONS.json | EQUATIONS.json] \
-[--root NAME|ADDR|NAME=ADDR] [--args N,N,...] [-o PACKAGE.ixa] [--exec] \
-[--typed] [--inline-fuse] [--skip-aiur-eval] [--schedule SCHEDULE.json] \
-[--no-inline] [--pair-table] [--stats]"
+[--root NAME|ADDR|NAME=ADDR] [--args N,N,...] [-o PACKAGE.ixa] [--advice-out ADVICE.ixa] \
+[--exec] [--typed] [--inline-fuse] [--enable-guesses] [--skip-aiur-eval] \
+[--schedule SCHEDULE.json] [--no-inline] [--pair-table] [--stats]"
 
 def parseNats (s : String) : Except String (List Nat) :=
   (s.splitOn ",").filter (· != "") |>.mapM fun w =>
@@ -56,9 +58,11 @@ def parse : List String → Options → Except String Options
   | "--root" :: name :: rest, o => parse rest { o with root := some name }
   | "--args" :: ns :: rest, o => do parse rest { o with args := some (← parseNats ns) }
   | "-o" :: path :: rest, o => parse rest { o with out := some path }
+  | "--advice-out" :: path :: rest, o => parse rest { o with adviceOut := some path }
   | "--exec" :: rest, o => parse rest { o with execPackage := true }
   | "--typed" :: rest, o => parse rest { o with typed := true }
   | "--inline-fuse" :: rest, o => parse rest { o with inlineFuse := true }
+  | "--enable-guesses" :: rest, o => parse rest { o with enableGuesses := true }
   | "--skip-aiur-eval" :: rest, o => parse rest { o with skipAiurEval := true }
   | "--schedule" :: path :: rest, o => parse rest { o with schedule := some path }
   | "--no-inline" :: rest, o => parse rest { o with noInline := true }
@@ -92,8 +96,19 @@ def runTyped (o : Options) (front : Driver.Front) : IO UInt32 := do
     rangeCheck := if o.pairTable then .pairTable else baseSched.rangeCheck
   }
   let start ← IO.monoMsNow
-  let linked ← IO.ofExcept (Driver.linkTyped front.levels.src fir 0 sched o.inlineFuse)
-  IO.println s!"lowered (typed, inline-fuse {o.inlineFuse}, tier {reprStr linked.lowered.tier}, \
+  let (linked, advice?, firWork) ←
+    if o.enableGuesses then
+      let res ← IO.ofExcept (Driver.linkTypedWithGuesses front.levels.src fir 0 sched o.inlineFuse)
+      let chs := res.manifest.channels.map (·.channel)
+      IO.println s!"guesses: rewritten {res.resolved.length} ({chs}), skipped {res.skipped.length}"
+      for (cid, reason) in res.skipped do
+        IO.println s!"guesses: skipped cid={cid}: {reason}"
+      pure (res.linked, res.advice, res.foldedFir)
+    else
+      let linked ← IO.ofExcept (Driver.linkTyped front.levels.src fir 0 sched o.inlineFuse)
+      pure (linked, none, fir)
+  IO.println s!"lowered (typed, inline-fuse {o.inlineFuse}, guesses {o.enableGuesses}, \
+    tier {reprStr linked.lowered.tier}, \
     fir-shapes {linked.shapeAccepted}, ret {reprStr linked.exportRep}): \
     {linked.lowered.program.functions.length} functions, \
     entry {linked.entry} ({(← IO.monoMsNow) - start} ms)"
@@ -120,7 +135,11 @@ def runTyped (o : Options) (front : Driver.Front) : IO UInt32 := do
       agree := expected matches .ok (some _)
     else
       let start ← IO.monoMsNow
-      let actual := Driver.typedAiurRun fir linked args
+      let actual :=
+        if o.enableGuesses then
+          Driver.typedAiurRunWithAdvice firWork linked advice? args
+        else
+          Driver.typedAiurRun fir linked args
       match actual with
       | .ok (value, obs) =>
         IO.println s!"aiur: value {reprStr value}, observation {showObs obs} ({(← IO.monoMsNow) - start} ms)"
@@ -129,6 +148,16 @@ def runTyped (o : Options) (front : Driver.Front) : IO UInt32 := do
         | .ok (some a), .ok (_, some b) => a == b
         | _, _ => false
     IO.println s!"agree: {agree}"
+  if let some advPath := o.adviceOut then
+    match advice? with
+    | some adv =>
+      let advStart ← IO.monoMsNow
+      let advBytes ← IO.ofExcept (Driver.compileAdvicePackage adv)
+      Aiur.Artifact.write advPath advBytes
+      IO.println s!"advice: {advPath}, {advBytes.size} bytes, entries {adv.entries} \
+        ({(← IO.monoMsNow) - advStart} ms)"
+    | none =>
+      IO.println s!"advice: skipped writing {advPath} (no guesses rewritten)"
   if let some path := o.out then
     unless world.ok do
       IO.eprintln "ixcc-aiur: the world check failed; no package written"
@@ -160,13 +189,16 @@ def run (o : Options) : IO UInt32 := do
     | some eqPath =>
       let text ← IO.FS.readFile eqPath
       let json ← IO.ofExcept (Src.Hints.checkJsonText text >>= fun () => Lean.Json.parse text)
-      IO.ofExcept (Driver.front bytes json o.root.toList)
+      if o.enableGuesses then
+        IO.ofExcept (Driver.frontWithGuesses bytes json o.root.toList)
+      else
+        IO.ofExcept (Driver.front bytes json o.root.toList)
     | none =>
       IO.ofExcept (Driver.frontAuto bytes o.root.toList)
   let fir := front.levels.fir
   IO.println s!"front: roots {front.input.names}, fir functions {fir.funList.length}, \
     constructors {fir.ctors.length}, exports {fir.exports.length} ({(← IO.monoMsNow) - start} ms)"
-  if o.typed then
+  if o.typed || o.enableGuesses then
     return ← runTyped o front
   let start ← IO.monoMsNow
   let linked ← IO.ofExcept (Driver.link fir 0)
