@@ -68,12 +68,12 @@ theorem checked_of_inferCheckedShapes {src : Src.Program} {P : Fir.Program}
   Fir.Proof.Shape.check_checked (check_of_inferCheckedShapes h)
 
 /-- Whenever `TypedRep.inferCheckedShapes src P = (cert, true)`, every run of `P`
-respects `cert` (`Fir.Shape.ShapeSound P cert enc`). -/
-theorem shapeSound_of_inferCheckedShapes {enc : Fir.Shape.ArrEnc}
+respects `cert` (`Fir.Shape.ShapeSound P cert Fir.Shape.arrEnc`). -/
+theorem shapeSound_of_inferCheckedShapes
     {src : Src.Program} {P : Fir.Program} {cert : Fir.Shape.ShapeCert}
     (h : TypedRep.inferCheckedShapes src P = (cert, true)) :
-    Fir.Shape.ShapeSound P cert enc :=
-  Fir.Proof.Shape.checkSound enc P cert (checked_of_inferCheckedShapes h)
+    Fir.Shape.ShapeSound P cert Fir.Shape.arrEnc :=
+  Fir.Proof.Shape.checkSound P cert (checked_of_inferCheckedShapes h)
 
 /-! ## 2. Reading Typed Public Results -/
 

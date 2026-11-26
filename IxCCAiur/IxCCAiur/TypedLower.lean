@@ -1110,6 +1110,7 @@ def tPrimE (cx : TCx) (vm : TVarMap) (op : Prim) (as : List Arg) (target : Rep) 
       | .w32 => coerceE cx .w16 .w32 xa >>= coerceE cx .w32 target
       | .w64 => coerceE cx .w16 .w64 xa >>= coerceE cx .w64 target
     | _, _ => tLift (throw s!"UInt16 primitive {wop.leanName .w16}: unsupported")
+  | .arr aop => tLift (throw s!"array primitive {(Prim.arr aop).name}: unsupported")
 
 /-! ## Lowering Typed RHS, Case, and Code -/
 

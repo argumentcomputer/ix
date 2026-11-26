@@ -1009,24 +1009,22 @@ theorem rhsSound {P : Program} {cert : ShapeCert} {fs : FunShapes} {ρ : Env}
     exact primOkSound cert arrEnc P _ _ _ _ _ hprim (argsSound hρ _ _ _ hargs hvs) hres
   | @primBool op _ _ _ _ _ hbp hE htt hff httm hffm =>
     obtain ⟨vs, _, hres⟩ := evalRhs_prim_ok hv
-    cases op with
-    | natBeq | natBle | natBlt =>
-      simp only [primResult] at hres
-      cases hns : natArgs vs with
-      | none => simp [hns] at hres
-      | some ns =>
-        simp only [hns] at hres
-        cases hsem : Lam.Prim.sem _ ns with
-        | none => simp [hsem] at hres
-        | some res =>
-          obtain ⟨b, rfl⟩ := boolPrim_sem_bool hbp hsem
-          simp only [hsem] at hres
-          obtain ⟨ci, rfl, ⟨rfl, hkt⟩ | ⟨rfl, hkf⟩⟩ := boolVal_ok_inv (ofOption_ok hres)
-          · rw [htt, Option.some.injEq] at hkt
-            exact .enum hE (hkt ▸ httm)
-          · rw [hff, Option.some.injEq] at hkf
-            exact .enum hE (hkf ▸ hffm)
-    | _ => simp [isBoolPrim] at hbp
+    have hna : arrResult op vs = .stuck := by cases op <;> simp [isBoolPrim, arrResult] at hbp ⊢
+    simp only [primResult] at hres
+    cases hns : natArgs vs with
+    | none => simp [hns, hna] at hres
+    | some ns =>
+      simp only [hns] at hres
+      cases hsem : op.sem ns with
+      | none => simp [hsem, hna] at hres
+      | some res =>
+        obtain ⟨b, rfl⟩ := boolPrim_sem_bool hbp hsem
+        simp only [hsem] at hres
+        obtain ⟨ci, rfl, ⟨rfl, hkt⟩ | ⟨rfl, hkf⟩⟩ := boolVal_ok_inv (ofOption_ok hres)
+        · rw [htt, Option.some.injEq] at hkt
+          exact .enum hE (hkt ▸ httm)
+        · rw [hff, Option.some.injEq] at hkf
+          exact .enum hE (hkf ▸ hffm)
   | primAny => exact .any v
   | arr hargs harr =>
     obtain ⟨vs, hvs, hres⟩ := evalRhs_prim_ok hv

@@ -2263,7 +2263,7 @@ theorem eval_prim {P : Fir.Program} {prog : Aiur.Generic.Program Nat} {world : W
           obtain ⟨vb, hvb, hvrB⟩ := eval_boolPrim_vr lw.ctors_keys_nodup hb (decide (n1 < n2)) h'
           exact ⟨vb, by simp [evalRhs, hvs, primResult, natArgs, hvb, Sem.Result.ofOption],
             hvrB, ext1⟩
-  | natPow | natGcd | natShl | natShr | word _ _ =>
+  | natPow | natGcd | natShl | natShr | word _ _ | arr _ =>
     simp [primFun, throw, throwThe, MonadExceptOf.throw] at hprim
 
 end ExprSound

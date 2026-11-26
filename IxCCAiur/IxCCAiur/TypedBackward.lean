@@ -2125,9 +2125,8 @@ end PeepholeSim
 
 section NatCoreAndInversions
 
-/-- Empty array reader used when invoking `Fir.Proof.Shape` soundness on the
-array-free core fragment. -/
-def dummyEnc : Fir.Shape.ArrEnc := ⟨fun _ => none⟩
+/-- Canonical array reader used when invoking `Fir.Proof.Shape` soundness. -/
+abbrev dummyEnc : Fir.Shape.ArrEnc := Fir.Shape.arrEnc
 
 /-- Representations belonging to the certified `Nat`/enum/data/obj core fragment
 (everything except multi-limb `.w32` and `.w64` words). -/
@@ -4088,6 +4087,10 @@ theorem tPrimE_spec {cx : TCx} {vm : TVarMap} {op : Prim} {as : List Arg} {targe
   cases op with
   | word w wop =>
     exact ⟨tPrimE_word_le cx vm w wop as target st e st' h, fun hnw => by simp [Lam.Prim.isWord] at hnw⟩
+  | arr _ =>
+    unfold tPrimE at h
+    dsimp only at h
+    exact False.elim (tLift_throw_elim h (fun _ _ => rfl))
   | natPred =>
     unfold tPrimE at h
     rcases as with _ | ⟨a, _ | ⟨_, _⟩⟩ <;> dsimp only at h
@@ -4989,7 +4992,7 @@ theorem tRhsE_spec {cx : TCx} {vm : TVarMap} {nz : List Var} {offs : OffMap}
           | erased => simp only [] at h; exact hPrimFallback _ _ h
         · simp only [] at h; exact hPrimFallback _ _ h
     | natMul | natDiv | natMod | natPow | natGcd | natShl | natShr
-    | natBeq | natBle | natBlt | natLand | natLor | natXor | word _ _ =>
+    | natBeq | natBle | natBlt | natLand | natLor | natXor | word _ _ | arr _ =>
       exact hPrimFallback _ _ h
   | call f as =>
     unfold tRhsE at h
@@ -9426,6 +9429,10 @@ theorem eval_tPrimE {P : Program} {cert : ShapeCert} {sched : CircuitSchedule}
   set cx : TCx := { P, cert, feat := scanFeatures P, sched }
   cases op with
   | word _ _ => simp [Lam.Prim.isWord] at hnoW
+  | arr _ =>
+    unfold tPrimE at hprim
+    dsimp only at hprim
+    exact False.elim (tLift_throw_elim hprim (fun _ _ => rfl))
   | natPred =>
     unfold tPrimE at hprim
     rcases as with _ | ⟨a, _ | ⟨_, _⟩⟩ <;> dsimp only at hprim
@@ -11077,8 +11084,8 @@ theorem eval_tRhsE_noncall {P : Program} {cert : ShapeCert} {sched : CircuitSche
                       simp only [evalRhs, evalArgs, Arg.eval, hx, primResult, natArgs, Option.map_some,
                         Lam.Prim.sem, Lam.Prim.sem.srcOp, Src.PrimOp.eval2] at hv ⊢
                       rw [Nat.add_comm]; exact hv
-                    | str _ => simp [evalRhs, evalArgs, Arg.eval, hx, primResult, natArgs] at hv
-                  | ctor _ _ | erased => simp [evalRhs, evalArgs, Arg.eval, hx, primResult, natArgs] at hv
+                    | str _ => simp [evalRhs, evalArgs, Arg.eval, hx, primResult, natArgs, Fir.arrResult] at hv
+                  | ctor _ _ | erased => simp [evalRhs, evalArgs, Arg.eval, hx, primResult, natArgs, Fir.arrResult] at hv
               | lit _ | erased => exact hfallbackStep htg (by simpa [htg] using hrhs)
             | str _ => exact hfallbackStep htg (by simpa [htg] using hrhs)
           | erased => exact hfallbackStep htg (by simpa [htg] using hrhs)
@@ -11086,7 +11093,7 @@ theorem eval_tRhsE_noncall {P : Program} {cert : ShapeCert} {sched : CircuitSche
       | irr | w8 | w16 | w32 | w64 | «enum» _ | data _ | obj =>
         exact hfallbackStep htg (by simpa [htg] using hrhs)
     | natMul | natDiv | natMod | natPow | natGcd | natShl | natShr
-    | natBeq | natBle | natBlt | natLand | natLor | natXor =>
+    | natBeq | natBle | natBlt | natLand | natLor | natXor | arr _ =>
       exact hfallbackStep rfl hrhs
     | word _ _ => simp [Lam.Prim.isWord] at hopNoW
 
@@ -11876,7 +11883,7 @@ private theorem evalCall_valOk {P : Program} {cert : ShapeCert} (hchk : Checked 
     (hsz : f < P.size) (hvs : ValsOk cert dummyEnc (cert.fn f).params vs)
     (hcall : Fir.evalCall P k f vs = .ok v) :
     ValOk cert dummyEnc (cert.fn f).ret v :=
-  Fir.Proof.Shape.checkSound dummyEnc P cert hchk f k vs v hsz hvs (by rw [Fir.run_eq]; exact hcall)
+  Fir.Proof.Shape.checkSound P cert hchk f k vs v hsz hvs (by rw [Fir.run_eq]; exact hcall)
 
 omit [Field F] [DecidableEq F] in
 private theorem AllLocalLt_bindTVm {n m : Nat} {vm : TVarMap} {ps : List Var}

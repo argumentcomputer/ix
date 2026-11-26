@@ -138,10 +138,12 @@ theorem entryParamName_inj {i j : Nat} (h : entryParamName i = entryParamName j)
   exact natDigits_inj h1
 
 /-- Constructor name in `Obj` for table entry at index `idx`:
-source constructors use `C<idx>`, closure constructors use `K<idx>`. -/
+source constructors use `C<idx>`, closure constructors use `K<idx>`,
+array constructors use `A<idx>`. -/
 def ctorNameOf (idx : Nat) : CtorKey → String
   | .src _ => String.ofList ('C' :: natDigits idx)
   | .clo _ _ => String.ofList ('K' :: natDigits idx)
+  | .arr => String.ofList ('A' :: natDigits idx)
 
 theorem ctorNameOf_ne_N (idx : Nat) (k : CtorKey) : ctorNameOf idx k ≠ "N" := by
   cases k <;> intro h <;> have h' := congrArg String.toList h <;> simp [ctorNameOf] at h'
