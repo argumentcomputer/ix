@@ -180,16 +180,71 @@ def inlinePolicyFromJson : Json → Except String InlinePolicy
   | .str "never" => .ok .never
   | j => .error s!"circuit-schedule: invalid inline policy '{j.compress}' (expected \"auto\", \"always\", or \"never\")"
 
+def circuitReprToJson : CircuitRepr → Json
+  | .field => .str "field"
+  | .u32 => .str "u32"
+  | .u64 => .str "u64"
+  | .limbs k b =>
+    Json.mkObj [("kind", .str "limbs"), ("count", Json.num k), ("bits", Json.num b)]
+  | .flatArray n =>
+    Json.mkObj [("kind", .str "flat_array"), ("len", Json.num n)]
+  | .wordStream => .str "word_stream"
+
+private def limbsReprAllowedKeys : List String :=
+  ["kind", "count", "bits"]
+
+private def flatArrayReprAllowedKeys : List String :=
+  ["kind", "len"]
+
+def circuitReprFromJson : Json → Except String CircuitRepr
+  | .str "field" => .ok .field
+  | .str "u32" => .ok .u32
+  | .str "u64" => .ok .u64
+  | .str "word_stream" => .ok .wordStream
+  | .obj m => do
+    let entries := m.toList
+    let some kindJson := lookup? entries "kind"
+      | throw "circuit-schedule: CircuitRepr object missing required 'kind' field"
+    let kind ← expectStr "CircuitRepr.kind" kindJson
+    match kind with
+    | "limbs" =>
+      checkAllowedKeys "CircuitRepr.limbs" limbsReprAllowedKeys entries
+      let some countJson := lookup? entries "count"
+        | throw "circuit-schedule: CircuitRepr.limbs missing required 'count' field"
+      let some bitsJson := lookup? entries "bits"
+        | throw "circuit-schedule: CircuitRepr.limbs missing required 'bits' field"
+      let count ← expectNat "CircuitRepr.limbs.count" countJson
+      let bits ← expectNat "CircuitRepr.limbs.bits" bitsJson
+      if count == 0 || bits == 0 then
+        throw s!"circuit-schedule: CircuitRepr.limbs count ({count}) and bits ({bits}) must be positive"
+      return .limbs count bits
+    | "flat_array" =>
+      checkAllowedKeys "CircuitRepr.flat_array" flatArrayReprAllowedKeys entries
+      let some lenJson := lookup? entries "len"
+        | throw "circuit-schedule: CircuitRepr.flat_array missing required 'len' field"
+      let len ← expectNat "CircuitRepr.flat_array.len" lenJson
+      if len == 0 then
+        throw "circuit-schedule: CircuitRepr.flat_array len must be positive"
+      return .flatArray len
+    | other =>
+      throw s!"circuit-schedule: invalid CircuitRepr kind '{other}' (expected \"limbs\" or \"flat_array\")"
+  | j =>
+    .error s!"circuit-schedule: invalid CircuitRepr '{j.compress}'"
+
 def fnScheduleToJson (fs : FnSchedule) : Json :=
   let fields : List (String × Json) :=
     [("inline", inlinePolicyToJson fs.inline)] ++
     (match fs.group with | some g => [("group", .str g)] | none => []) ++
     (match fs.unroll with | some u => [("unroll", Json.num u)] | none => []) ++
-    (match fs.lanes with | some l => [("lanes", Json.num l)] | none => [])
+    (match fs.lanes with | some l => [("lanes", Json.num l)] | none => []) ++
+    (if fs.isStatic then [("static", .bool true)] else []) ++
+    (match fs.repr with | some r => [("repr", circuitReprToJson r)] | none => []) ++
+    (match fs.intrinsic with | some i => [("intrinsic", .str i)] | none => []) ++
+    (if fs.splitFastpath then [("splitFastpath", .bool true)] else [])
   Json.mkObj fields
 
 private def fnScheduleAllowedKeys : List String :=
-  ["inline", "group", "unroll", "lanes"]
+  ["inline", "group", "unroll", "lanes", "static", "repr", "intrinsic", "splitFastpath"]
 
 def fnScheduleFromJson (j : Json) : Except String FnSchedule := do
   let entries ← expectObjEntries "FnSchedule" j
@@ -198,7 +253,15 @@ def fnScheduleFromJson (j : Json) : Except String FnSchedule := do
   let group ← optNullableField entries "group" (expectStr "FnSchedule.group")
   let unroll ← optNullableField entries "unroll" (expectNat "FnSchedule.unroll")
   let lanes ← optNullableField entries "lanes" (expectNat "FnSchedule.lanes")
-  return { inline, group, unroll, lanes }
+  let isStatic ← optField entries "static" false (expectBool "FnSchedule.static")
+  let repr ← optNullableField entries "repr" circuitReprFromJson
+  let intrinsic ← optNullableField entries "intrinsic" fun v => do
+    let s ← expectStr "FnSchedule.intrinsic" v
+    if s.isEmpty then
+      throw "circuit-schedule: FnSchedule.intrinsic must be non-empty"
+    return s
+  let splitFastpath ← optField entries "splitFastpath" false (expectBool "FnSchedule.splitFastpath")
+  return { inline, group, unroll, lanes, isStatic, repr, intrinsic, splitFastpath }
 
 def budgetToJson (b : Budget) : Json :=
   let fields : List (String × Json) :=
@@ -445,6 +508,99 @@ theorem unknownBudgetKey_rejected :
       ("format", .str formatVersion),
       ("budget", Json.mkObj [("maxColums", Json.num 10)])
     ])).isOk = false := by
+  decide
+
+/-- Concrete extended schedule exercising all 4 Wave-2 `Ix.Circuit` attributes
+(`static`, `repr` across all 6 `CircuitRepr` constructors, `intrinsic`, and
+`splitFastpath`) in canonical sorted key order. -/
+def sampleExtendedSchedule : CircuitSchedule :=
+  { rangeCheck := .smallTable
+    autoInline := true
+    inlineMaxNodes := 48
+    filterJpCaptures := true
+    demandLink := true
+    byAddress :=
+      [ (Address.replicate 0x01,
+          { inline := .always, isStatic := true, repr := some .field })
+      , (Address.replicate 0x02,
+          { inline := .never, repr := some .u32, intrinsic := some "field.add" })
+      , (Address.replicate 0x03,
+          { inline := .auto, repr := some .u64, splitFastpath := true })
+      , (Address.replicate 0x04,
+          { inline := .never, repr := some (.limbs 4 64), intrinsic := some "field.mul" })
+      , (Address.replicate 0x05,
+          { inline := .auto, repr := some (.flatArray 16), isStatic := true, splitFastpath := true })
+      , (Address.replicate 0x06,
+          { inline := .never, group := some "stream", repr := some .wordStream,
+            intrinsic := some "field.inv" }) ]
+    byFun :=
+      [ (0, { inline := .never, isStatic := true, repr := some .field })
+      , (1, { inline := .always, intrinsic := some "field.sub", splitFastpath := true }) ]
+    groups := [("stream", ["Prog::f2"])]
+    aiurConfig := { maxDegree := 5 }
+    budget := { maxChips := some 8 } }
+
+/-- Kernel-checked round-trip of `sampleExtendedSchedule` covering all 4 Wave-2
+attributes and all 6 `CircuitRepr` constructors. -/
+theorem sampleExtendedSchedule_roundTrip : roundTrips sampleExtendedSchedule = true := by
+  decide
+
+/-- Legacy `FnSchedule` omits all 4 extended keys when set to defaults, keeping
+encoded JSON identical to pre-Wave-2 output. -/
+theorem legacyFnSchedule_omitsExtendedKeys :
+    fnScheduleToJson { inline := .always, group := some "g", unroll := some 4, lanes := some 2 } =
+      Json.mkObj [
+        ("inline", .str "always"),
+        ("group", .str "g"),
+        ("unroll", Json.num 4),
+        ("lanes", Json.num 2)
+      ] :=
+  rfl
+
+/-- Unknown key in `FnSchedule` is rejected fail-closed. -/
+theorem unknownFnScheduleKey_rejected :
+    (fnScheduleFromJson (Json.mkObj [("statik", .bool true)])).isOk = false := by
+  decide
+
+/-- Non-boolean `"static"` field is rejected fail-closed. -/
+theorem badStaticType_rejected :
+    (fnScheduleFromJson (Json.mkObj [("static", Json.num 1)])).isOk = false := by
+  decide
+
+/-- Non-boolean `"splitFastpath"` field is rejected fail-closed. -/
+theorem badSplitFastpathType_rejected :
+    (fnScheduleFromJson (Json.mkObj [("splitFastpath", .str "yes")])).isOk = false := by
+  decide
+
+/-- Empty `"intrinsic"` string is rejected fail-closed. -/
+theorem emptyIntrinsic_rejected :
+    (fnScheduleFromJson (Json.mkObj [("intrinsic", .str "")])).isOk = false := by
+  decide
+
+/-- Invalid string `"repr"` tag is rejected fail-closed. -/
+theorem badReprString_rejected :
+    (circuitReprFromJson (.str "float")).isOk = false := by
+  decide
+
+/-- Unknown `"kind"` in structured `"repr"` object is rejected fail-closed. -/
+theorem badReprKind_rejected :
+    (circuitReprFromJson (Json.mkObj [("kind", .str "matrix")])).isOk = false := by
+  decide
+
+/-- Zero `count` or `bits` in `"limbs"` `CircuitRepr` is rejected fail-closed. -/
+theorem zeroLimbsRepr_rejected :
+    (circuitReprFromJson (Json.mkObj [("kind", .str "limbs"), ("count", Json.num 0), ("bits", Json.num 64)])).isOk = false ∧
+    (circuitReprFromJson (Json.mkObj [("kind", .str "limbs"), ("count", Json.num 4), ("bits", Json.num 0)])).isOk = false := by
+  decide
+
+/-- Zero `len` in `"flat_array"` `CircuitRepr` is rejected fail-closed. -/
+theorem zeroFlatArrayRepr_rejected :
+    (circuitReprFromJson (Json.mkObj [("kind", .str "flat_array"), ("len", Json.num 0)])).isOk = false := by
+  decide
+
+/-- Unknown extra key inside structured `"repr"` object is rejected fail-closed. -/
+theorem unknownReprKey_rejected :
+    (circuitReprFromJson (Json.mkObj [("kind", .str "flat_array"), ("len", Json.num 4), ("extra", Json.num 1)])).isOk = false := by
   decide
 
 end IxCC.AiurBackend.ScheduleJson

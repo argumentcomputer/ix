@@ -3,12 +3,15 @@ import IxCCAiur.CompiledCert
 import IxCCAiur.TypedWorld
 import IxCCAiur.InlineFuse
 import IxCCAiur.GuessLower
+import IxCCAiur.PartialEval
+import IxCCAiur.FieldLower
 import IxCCAiur.Hints
 import IxCC.Compile
 import IxCC.Recheck.RunFir
 import IxCC.Recheck.Produce
 import IxCC.Src.AutoHints
 import IxCC.Fir.Proof.Lang
+import Aiur.Optimized.DegreeBudget
 import Aiur.Trace.Export
 import Aiur.Artifact
 
@@ -47,6 +50,38 @@ abbrev F := Aiur.Library.U32.Goldilocks.F
 
 def modulus : Nat := Aiur.Library.U32.Goldilocks.modulus
 
+/-- Target prime field for typed compilation and `.ixa` export. -/
+inductive FieldTarget where
+  | goldilocks
+  | bn254
+  | bls12381
+  deriving BEq, DecidableEq, Repr, Inhabited
+
+def FieldTarget.label : FieldTarget → String
+  | .goldilocks => "goldilocks"
+  | .bn254 => "bn254"
+  | .bls12381 => "bls12-381"
+
+def FieldTarget.modulus : FieldTarget → Nat
+  | .goldilocks => FieldLower.goldilocksModulus
+  | .bn254 => FieldLower.bn254Modulus
+  | .bls12381 => FieldLower.bls12381Modulus
+
+def FieldTarget.isWide : FieldTarget → Bool
+  | .goldilocks => false
+  | .bn254 | .bls12381 => true
+
+def FieldTarget.parse? : String → Option FieldTarget
+  | "goldilocks" => some .goldilocks
+  | "bn254" => some .bn254
+  | "bls12-381" | "bls12381" => some .bls12381
+  | _ => none
+
+/-- Extract Ixon addresses carrying an explicit `@[circuit_intrinsic "..."]`
+directive so ANF inlining preserves their function boundaries for `FieldLower`. -/
+def intrinsicAddresses (sched : Schedule.CircuitSchedule) : List Ixon.Address :=
+  (sched.byAddress.filter fun (_, fs) => fs.intrinsic.isSome).map Prod.fst
+
 /-- What the front half makes of a closure: the ingested program, the
 producer's certificate, and the levels down to Fir. -/
 structure Front where
@@ -55,10 +90,29 @@ structure Front where
   cert : Recheck.Cert
   levels : Recheck.FrontFir
 
+private def addNoInlineAddrs (cfg : Recheck.Config) (p : Src.Program)
+    (addrs : List Ixon.Address) : Recheck.Config :=
+  if addrs.isEmpty then cfg
+  else
+    let extra : List Key.GKey := addrs.filterMap fun a =>
+      (p.lookup a).map fun cid => Key.GKey.const cid []
+    if extra.isEmpty then cfg
+    else {
+      cfg with
+      budgets := {
+        cfg.budgets with
+        «inline» := {
+          cfg.budgets.«inline» with
+          noInline := cfg.budgets.«inline».noInline ++ extra
+        }
+      }
+    }
+
 /-- Run `produceFir`, Stage A canonical relevance check, and `Recheck.runFir` on an ingested
 input, retrying without `retryInline` on failure when `retryInline` is enabled. -/
-def frontOfInput (input : Recheck.Input) : Except String Front := do
-  let baseCfg := Recheck.Config.forInput {} input
+def frontOfInput (input : Recheck.Input)
+    (noInlineAddrs : List Ixon.Address := []) : Except String Front := do
+  let baseCfg := addNoInlineAddrs (Recheck.Config.forInput {} input) input.program noInlineAddrs
   let attempt (cfg : Recheck.Config) : Except Recheck.Err Front := do
     let cert ← Recheck.produceFir cfg input
     unless Recheck.checkCanonicalRelevance cfg input cert.table cert.relevance do
@@ -69,18 +123,20 @@ def frontOfInput (input : Recheck.Input) : Except String Front := do
   (Compile.withRetry baseCfg attempt).mapError (·.render)
 
 /-- Ingress with an explicit `ixcc/k1-equations/1` JSON sidecar, `produceFir`, and `runFir`. -/
-def front (bytes : ByteArray) (equations : Lean.Json) (roots : List String) : Except String Front := do
+def front (bytes : ByteArray) (equations : Lean.Json) (roots : List String)
+    (noInlineAddrs : List Ixon.Address := []) : Except String Front := do
   let input ← (Recheck.ingress bytes equations roots).mapError (·.render)
-  frontOfInput input
+  frontOfInput input noInlineAddrs
 
 /-- Auto-discovered ingress (`Src.AutoHints.resolveRoots` + `Compile.ingressRoots`),
 `produceFir`, and `runFir`, requiring no external `EQUATIONS.json` sidecar. -/
 def frontAuto (bytes : ByteArray) (roots : List String := [])
-    (limits : Ix.Kernel.Admission.Limits := Src.KernelFront.defaultLimits) : Except String Front := do
+    (limits : Ix.Kernel.Admission.Limits := Src.KernelFront.defaultLimits)
+    (noInlineAddrs : List Ixon.Address := []) : Except String Front := do
   let env ← (Ixon.V3.decodeAnonymousEnv bytes).mapError fun m => s!"ingress: decode: {m}"
   let chosen ← (Src.AutoHints.resolveRoots env roots).mapError fun m => s!"cli: cli.root: {m}"
   let input ← (Compile.ingressRoots env chosen limits).mapError (·.render)
-  frontOfInput input
+  frontOfInput input noInlineAddrs
 
 /-- A lowered program, linked with the `UInt64` library and prepared for the
 one entry `Prog::main<i>`. -/
@@ -143,21 +199,26 @@ def shapeCheck (f : Recheck.FrontFir) (n : Nat) : Bool :=
 
 /-! ## The two evaluators -/
 
-/-- Read an `Obj` back through the heap as an observation: `N` is a `Nat`, a
-source constructor its identity with its loaded fields; an erased value, a
-string and a closure have none here. -/
-def readback (P : Fir.Program) (heap : Aiur.Heap F) : Nat → Aiur.SourceValue F → Option Sem.Obs
+/-- Read an `Obj` back through the heap as an observation over any prime field `ZMod p`:
+`N` is a `Nat`, a source constructor its identity with its loaded fields; an erased value,
+a string and a closure have none here. -/
+def readbackP {p : Nat} [Fact (Nat.Prime p)] (P : Fir.Program) (heap : Aiur.Heap (ZMod p)) :
+    Nat → Aiur.SourceValue (ZMod p) → Option Sem.Obs
   | 0, _ => none
   | _ + 1, .construct _ "N" [.field x] => some (.nat x.val)
   | fuel + 1, .construct _ name ps => do
     let idx ← (objCtorNames P).idxOf? name
     let entry ← P.ctors[idx]?
     let .src cid := entry.key | none
-    let fs ← ps.mapM fun p => match p with
-      | .ptr _ a => heap[a]? >>= readback P heap fuel
+    let fs ← ps.mapM fun q => match q with
+      | .ptr _ a => heap[a]? >>= readbackP P heap fuel
       | _ => none
     return .ctor cid fs
   | _ + 1, _ => none
+
+/-- Read an `Obj` back through the heap as an observation (Goldilocks specialization). -/
+def readback (P : Fir.Program) (heap : Aiur.Heap F) : Nat → Aiur.SourceValue F → Option Sem.Obs :=
+  readbackP P heap
 
 /-- The Aiur evaluator's outcome for the linked entry on `Nat` inputs: an
 observation, or why it found no derivation. -/
@@ -173,49 +234,114 @@ def firRun (P : Fir.Program) (i : Nat) (args : List Nat) (clock : Nat := 1000000
     Sem.Result (Option Sem.Obs) :=
   (Fir.firRun P (i, args) clock).map Fir.obsV
 
-/-! ## Circuits and the package -/
+/-! ## Circuits, packages, and BLAKE3 pins -/
 
 /-- Per-chip summary `(name, columns, call lookups, memory lookups)` from an
 optimized circuit artifact (before grouping and the depth pass). -/
-def chipSummaryOf {moduleProg : Aiur.Modules.Program F}
+def chipSummaryOfP {FieldTy : Type} [Field FieldTy] [DecidableEq FieldTy]
+    {moduleProg : Aiur.Modules.Program FieldTy}
     {prepared : Aiur.Modules.Prepared moduleProg}
     (compiled : Aiur.Optimized.ModulesArtifact prepared) :
     List (String × Nat × Nat × Nat) :=
   compiled.circuit.artifact.system.chips.map fun c =>
     (c.name, c.numVars, c.sends.length, c.memory.length)
 
+/-- Per-chip summary `(name, columns, call lookups, memory lookups)` from an
+optimized Goldilocks circuit artifact (before grouping and the depth pass). -/
+def chipSummaryOf {moduleProg : Aiur.Modules.Program F}
+    {prepared : Aiur.Modules.Prepared moduleProg}
+    (compiled : Aiur.Optimized.ModulesArtifact prepared) :
+    List (String × Nat × Nat × Nat) :=
+  chipSummaryOfP compiled
+
 /-- Result of a single compilation + trace export: carries chip stats, the
 serialized `.ixa` artifact (`IXAIURP\0` program package or `IXAIURX\0` execution
-package), and its pure-Lean BLAKE3 digest. -/
+package), its pure-Lean BLAKE3 digest, the program-only package (`none` trace)
+and digest for `PACKAGE.ixa.pin.json`, the artifact format version, and the
+effective optimizer `maxDegree`. -/
 structure Compiled where
   chips : List (String × Nat × Nat × Nat)
   kind : CompiledCert.ArtifactKind
   bytes : ByteArray
   digest : Ixon.Address
+  programBytes : ByteArray := ByteArray.empty
+  programDigest : Ixon.Address := Ixon.Address.blake3Pure ByteArray.empty
+  artifactFormatVersion : Nat := Aiur.Artifact.formatVersion
+  chosenMaxDegree : Nat := 3
 
-/-- Compile `l` once (`compileOptimized` + parallel `Trace.exportPlanPar`),
-returning chip stats and the serialized `.ixa` artifact with its BLAKE3 digest.
+/-- Lowercase hexadecimal BLAKE3 (`Ixon.Address.blake3Pure`). -/
+def blake3Hex (bytes : ByteArray) : String :=
+  (Ixon.Address.blake3Pure bytes).toHex
+
+/-- JSON pin (`PACKAGE.ixa.pin.json`, format `"ixcc-aiur-pin/1"`) recording the
+closure/equations digests, roots, export index, entry, arguments, program-only
+digest (`program_blake3`), and full package digest (`package_blake3`) checked by
+`ixcc_prove --pin`. -/
+def pinJson (closure : ByteArray) (equations? : Option ByteArray) (roots : List String)
+    (exportIdx : Nat) (entry : String) (args : List Nat) (c : Compiled) : Lean.Json :=
+  Lean.Json.mkObj [
+    ("format", "ixcc-aiur-pin/1"),
+    ("closure_blake3", blake3Hex closure),
+    ("equations_blake3", match equations? with
+      | some eq => .str (blake3Hex eq)
+      | none => .null),
+    ("roots", Lean.toJson roots),
+    ("export", exportIdx),
+    ("entry", entry),
+    ("args", Lean.toJson args),
+    ("artifact_format_version", c.artifactFormatVersion),
+    ("program_bytes", c.programBytes.size),
+    ("program_blake3", c.programDigest.toHex),
+    ("package_bytes", c.bytes.size),
+    ("package_blake3", c.digest.toHex)]
+
+/-- Compile `l` once (`compileOptimized` or quotient-aware `DegreeBudget.compileQuotientAware`
++ parallel `Trace.exportPlanPar`), returning chip stats, the serialized `.ixa` artifact,
+and the program-only package bytes with their BLAKE3 digests.
 Defaults to a reusable `IXAIURP\0` program package (`ArtifactKind.program`). -/
 def compilePackage (l : Linked)
     (kind : CompiledCert.ArtifactKind := .program)
     (args : List Nat := [])
     (config : Aiur.Optimized.Config := {})
-    (groups : List (String × List String) := []) : Except String Compiled := do
+    (groups : List (String × List String) := [])
+    (degreeBudget : Bool := false)
+    (logBlowup : Nat := 2) : Except String Compiled := do
   let execution ← l.prepared.exportExecution
-  let compiled ← l.prepared.compileOptimized config
+  let (compiled, chosenMaxDegree) ←
+    if degreeBudget then
+      let res ← Aiur.Optimized.DegreeBudget.compileQuotientAware l.prepared logBlowup config
+        Aiur.Optimized.DegreeBudget.v6ExtDegree false
+      pure (res.artifact, res.chosenConfig.maxDegree)
+    else
+      let c ← l.prepared.compileOptimized config
+      pure (c, config.maxDegree)
   let chips := chipSummaryOf compiled
   let (execution, trace) ← Aiur.Trace.exportPlanPar modulus ZMod.val
     compiled.circuit.inlined.program compiled.circuit.artifact execution groups
+  let programBytes ← Aiur.Artifact.package execution modulus ZMod.val none
   let bytes ← match kind with
     | .program => Aiur.Artifact.package execution modulus ZMod.val (some trace)
     | .execution => Aiur.Artifact.execution execution modulus ZMod.val (some trace) args [] #[]
-  return { chips, kind, bytes, digest := Ixon.Address.blake3Pure bytes }
+  return {
+    chips, kind, bytes
+    digest := Ixon.Address.blake3Pure bytes
+    programBytes
+    programDigest := Ixon.Address.blake3Pure programBytes
+    artifactFormatVersion := Aiur.Artifact.formatVersion
+    chosenMaxDegree
+  }
 
 /-- Per chip of the compiled circuits: name, columns, call lookups, memory
 lookups (before grouping and the depth pass). -/
-def chipStats (l : Linked) (config : Aiur.Optimized.Config := {}) :
+def chipStats (l : Linked) (config : Aiur.Optimized.Config := {})
+    (degreeBudget : Bool := false) (logBlowup : Nat := 2) :
     Except String (List (String × Nat × Nat × Nat)) := do
-  let compiled ← l.prepared.compileOptimized config
+  let compiled ←
+    if degreeBudget then
+      (·.artifact) <$> Aiur.Optimized.DegreeBudget.compileQuotientAware l.prepared logBlowup config
+        Aiur.Optimized.DegreeBudget.v6ExtDegree false
+    else
+      l.prepared.compileOptimized config
   return chipSummaryOf compiled
 
 /-- The reusable program package (`IXAIURP\0`) for the linked entry: compiled
@@ -230,7 +356,7 @@ def package (l : Linked) (args : List Nat) (config : Aiur.Optimized.Config := {}
     (groups : List (String × List String) := []) : Except String ByteArray :=
   (·.bytes) <$> compilePackage l .execution args config groups
 
-/-! ## Typed / Unboxed Lowering Path (`TypedLower` + `CircuitSchedule`) -/
+/-! ## Typed / Unboxed Lowering Path (`TypedLower` + `CircuitSchedule` + Wave 2 Passes) -/
 
 /-- Extract the originating source constant id of a `Fir` global key, following
 specialization (`spec`), dead-parameter worker (`worker`), and root entry
@@ -259,7 +385,7 @@ private def addToGroup (groups : List (String × List String)) (groupName chipNa
 /-- Resolve address-keyed `sched.byAddress` directives against `(src, P)`:
 1. Any `Fir.FunId` not already overridden in `sched.byFun` whose source address
    appears in `sched.byAddress` gets its `FnSchedule` added to `byFun` so
-   `TypedLower` honors `@[circuit_inline]` / `@[circuit_noinline]`.
+   `TypedLower`, `PartialEval`, and `FieldLower` honor all per-function attributes.
 2. Any resolved `FnSchedule` (from `byFun` or `byAddress`) with `group := some g`
    registers its non-inlined chip `Prog::f<fid>` under group `g`. -/
 def resolveSchedule (src : Src.Program) (P : Fir.Program)
@@ -282,7 +408,126 @@ def resolveSchedule (src : Src.Program) (P : Fir.Program)
       | none => acc
   { sched1 with groups := resolvedGroups }
 
-/-- A typed/unboxed lowered program, demand-linked and prepared for `Prog::main<i>`. -/
+/-- Collect lowered `Prog` function names marked `FnSchedule.isStatic == true`
+via `sched.byFun` / `sched.byAddress` for `PartialEval.PEConfig.staticFns`. -/
+def resolveStaticFns (src : Src.Program) (P : Fir.Program)
+    (resolvedSched : Schedule.CircuitSchedule) : List String :=
+  P.funList.filterMap fun (fid, fd) =>
+    let fs := resolvedSched.forFun fid (funAddress? src fd)
+    if fs.isStatic then some (funName fid) else none
+
+/-- Resolve `FnSchedule.intrinsic` (`"field.{add,sub,mul,neg,inv,div,is_zero,eq}"`)
+directives from `resolvedSched` (`byFun` / `byAddress`) into concrete
+`FieldLower.FieldBinding`s against the lowered `Prog` functions `fns`. -/
+def resolveIntrinsicBindings (src : Src.Program) (P : Fir.Program)
+    (resolvedSched : Schedule.CircuitSchedule) (fns : List Lower.Fn) :
+    List FieldLower.FieldBinding :=
+  P.funList.filterMap fun (fid, fd) => do
+    let fs := resolvedSched.forFun fid (funAddress? src fd)
+    let intrName ← fs.intrinsic
+    let op ← FieldLower.FieldOp.ofIntrinsicName? intrName
+    let nm := funName fid
+    let fnDef ← fns.find? (·.name == nm)
+    if !FieldLower.allFieldParams fnDef then none
+    else if fnDef.params.length == op.arity then
+      some { fnName := nm, op, dropFirstParam := false }
+    else if fnDef.params.length == op.arity + 1 then
+      some { fnName := nm, op, dropFirstParam := true }
+    else none
+
+/-- Apply optional Wave-2 passes (`InlineFuse`, `PartialEval`, `FieldLower`) in
+composable sequence on a `TypedLower.LoweredProgram`:
+1. When `fieldLower = true`, run an initial `FieldLower.lowerProgram` pass before
+   `InlineFuse`/`PartialEval` so explicit `FnSchedule.intrinsic` (`"field.*"`)
+   bindings, constant-modulus helpers, and entry `check_u56` wrappers are lowered
+   to native `Field` ops before inlining can obscure function boundaries;
+2. Optional `InlineFuse.optimizeFns` + `pruneUnreachable`;
+3. Optional `PartialEval.partialEvalProg` (populating `PEConfig.staticFns` from
+   `FnSchedule.isStatic == true`, defaulting to auto-specialization when empty,
+   collapsing static VK DAGs / constant lists over native field ops);
+4. When `fieldLower = true`, run a final `FieldLower.lowerProgram` cleanup pass
+   to fold constants exposed by `PartialEval`, prune all dead helpers, and
+   auto-downgrade `TableTier` to `.none` when zero byte/word helpers remain. -/
+def applyTypedOpts (src : Src.Program) (P : Fir.Program) (i : Nat)
+    (resolvedSched : Schedule.CircuitSchedule)
+    (lowered0 : TypedLower.LoweredProgram)
+    (inlineFuse : Bool := false)
+    (partialEval : Bool := false)
+    (fieldLower : Bool := false)
+    (fieldTarget : FieldTarget := .goldilocks)
+    (forcePrune : Bool := false) : TypedLower.LoweredProgram :=
+  let entryRoot := entryName i
+  let lp0 : TypedLower.LoweredProgram :=
+    if fieldLower then
+      let explicit := resolveIntrinsicBindings src P resolvedSched lowered0.program.functions
+      let flCfgPre : FieldLower.Config :=
+        { ambientModulus := fieldTarget.modulus
+          bindings := explicit
+          pruneRoots := if inlineFuse || partialEval then none else some [entryRoot] }
+      FieldLower.lowerProgram flCfgPre lowered0
+    else
+      lowered0
+  let lp1 : TypedLower.LoweredProgram :=
+    if inlineFuse then
+      let optFns := InlineFuse.optimizeFns lp0.program.functions
+      let pruned := InlineFuse.pruneUnreachable [entryRoot] optFns
+      { lp0 with program := { lp0.program with functions := pruned } }
+    else if forcePrune then
+      let pruned := InlineFuse.pruneUnreachable [entryRoot] lp0.program.functions
+      { lp0 with program := { lp0.program with functions := pruned } }
+    else
+      lp0
+  let lp2 : TypedLower.LoweredProgram :=
+    if partialEval then
+      let staticFns := resolveStaticFns src P resolvedSched
+      let peCfg : PartialEval.PEConfig :=
+        { staticFns := staticFns
+          noSpecFns := PartialEval.defaultNoSpecFns
+          prune := true }
+      let prog' := PartialEval.partialEvalProg peCfg [entryRoot] lp1.program
+      let tier' := FieldLower.computeTier prog'.functions
+      { lp1 with program := prog', tier := tier' }
+    else
+      lp1
+  let lp3 : TypedLower.LoweredProgram :=
+    if fieldLower && (inlineFuse || partialEval) then
+      let explicit := resolveIntrinsicBindings src P resolvedSched lp2.program.functions
+      let flCfgPost : FieldLower.Config :=
+        { ambientModulus := fieldTarget.modulus
+          bindings := explicit
+          pruneRoots := some [entryRoot] }
+      FieldLower.lowerProgram flCfgPost lp2
+    else
+      lp2
+  lp3
+
+/-- Field-agnostic result of typed lowering + Wave-2 passes (before field linking). -/
+structure TypedLoweredResult where
+  lowered : TypedLower.LoweredProgram
+  shapeAccepted : Bool
+  entry : String
+  exportRep : TypedRep.Rep
+  resolvedGroups : List (String × List String) := []
+
+/-- Infer & check `Fir.Shape.ShapeCert`, resolve `Schedule.byAddress`, lower with
+`TypedLower`, and apply optional `InlineFuse`, `PartialEval`, and `FieldLower`. -/
+def lowerTyped (src : Src.Program) (P : Fir.Program) (i : Nat)
+    (sched : Schedule.CircuitSchedule := {})
+    (inlineFuse : Bool := false)
+    (partialEval : Bool := false)
+    (fieldLower : Bool := false)
+    (fieldTarget : FieldTarget := .goldilocks) : Except String TypedLoweredResult := do
+  let resolvedSched := resolveSchedule src P sched
+  let (cert, shapeAccepted) := TypedRep.inferCheckedShapes src P
+  let lowered0 ← TypedLower.lowerProgram P cert resolvedSched
+  let lowered := applyTypedOpts src P i resolvedSched lowered0
+    inlineFuse partialEval fieldLower fieldTarget
+  let entry := qualified (entryName i)
+  let exportRep := lowered.exportReps[i]?.getD .obj
+  return { lowered, shapeAccepted, entry, exportRep, resolvedGroups := resolvedSched.groups }
+
+/-- A typed/unboxed lowered program, demand-linked and prepared over Goldilocks
+for `Prog::main<i>`. -/
 structure TypedLinked where
   lowered : TypedLower.LoweredProgram
   shapeAccepted : Bool
@@ -293,54 +538,73 @@ structure TypedLinked where
   resolvedGroups : List (String × List String) := []
 
 /-- Infer & check `Fir.Shape.ShapeCert`, resolve `Schedule.byAddress`, lower with
-`TypedLower`, optionally run `InlineFuse.optimizeFns` + `pruneUnreachable`,
-demand-link, and prepare `Prog::main<i>`. -/
+`TypedLower`, optionally run `InlineFuse`, `PartialEval`, and `FieldLower`,
+demand-link (including `Fields::is_zero` when referenced), and prepare `Prog::main<i>`
+over Goldilocks. -/
 def linkTyped (src : Src.Program) (P : Fir.Program) (i : Nat)
     (sched : Schedule.CircuitSchedule := {})
-    (inlineFuse : Bool := false) : Except String TypedLinked := do
-  let resolvedSched := resolveSchedule src P sched
-  let (cert, shapeAccepted) := TypedRep.inferCheckedShapes src P
-  let lowered0 ← TypedLower.lowerProgram P cert resolvedSched
-  let lowered :=
-    if inlineFuse then
-      let optFns := InlineFuse.optimizeFns lowered0.program.functions
-      let pruned := InlineFuse.pruneUnreachable [entryName i] optFns
-      { lowered0 with program := { lowered0.program with functions := pruned } }
-    else
-      lowered0
-  let program := TypedLower.linkedProgram F lowered
-  let entry := qualified (entryName i)
-  let exportRep := lowered.exportReps[i]?.getD .obj
-  let prepared ← Aiur.Modules.prepare program [entry]
-  return { lowered, shapeAccepted, program, entry, exportRep, prepared,
-           resolvedGroups := resolvedSched.groups }
+    (inlineFuse : Bool := false)
+    (partialEval : Bool := false)
+    (fieldLower : Bool := false) : Except String TypedLinked := do
+  let res ← lowerTyped src P i sched inlineFuse partialEval fieldLower .goldilocks
+  let program := FieldLower.linkedProgramFor F res.lowered
+  let prepared ← Aiur.Modules.prepare program [res.entry]
+  return {
+    lowered := res.lowered
+    shapeAccepted := res.shapeAccepted
+    program
+    entry := res.entry
+    exportRep := res.exportRep
+    prepared
+    resolvedGroups := res.resolvedGroups
+  }
 
-/-- Evaluate the tier-aware world check on a typed prepared source. -/
-def typedWorldReport (l : TypedLinked) : WorldReport :=
-  let s := l.prepared.environment.source
+/-- Evaluate the tier-aware world check (including `Fields::is_zero` when used)
+on any prime field `ZMod p` prepared source. -/
+def typedWorldReportOfSource {p : Nat} [Fact (Nat.Prime p)]
+    (s : Aiur.Generic.Source (ZMod p)) (lp : TypedLower.LoweredProgram) : WorldReport :=
   let changed : Aiur.Generic.Program Nat :=
-    { l.lowered.program with
-      functions := l.lowered.program.functions.map fun g => { g with body := .tuple [] } }
-  let tablesOk := match l.lowered.tier with
+    { lp.program with
+      functions := lp.program.functions.map fun g => { g with body := .tuple [] } }
+  let tablesOk := match lp.tier with
     | .none => true
     | .byte256 => TypedWorld.checkU8ByteTable s
     | .u32 | .u64 => World.checkTables s
-  let libOk := match l.lowered.tier with
+  let u32Ok := match lp.tier with
+    | .u32 | .u64 => TypedWorld.checkU32Functions s
+    | _ => true
+  let u64Ok := match lp.tier with
     | .u64 => checkU64Functions s
     | _ => true
-  let fnsOk := World.checkFunctions s l.lowered.program
+  let fieldsOk := !FieldLower.usesFieldsLibrary lp.program.functions ||
+    FieldLower.checkFieldsIsZero s
+  let libOk := u32Ok && u64Ok && fieldsOk
+  let fnsOk := World.checkFunctions s lp.program
   let refuses :=
     !World.checkFunctions s changed &&
-    (match l.lowered.tier with
+    (match lp.tier with
      | .byte256 => !World.checkTable s "U8Byte::byte_units" []
      | .u32 | .u64 => !World.checkTable s "UInt8::pair_units" []
      | .none => true)
   { tables := tablesOk, library := libOk, functions := fnsOk
-    failing := World.failing s l.lowered.program, refuses }
+    failing := World.failing s lp.program, refuses }
 
-/-- Read an unboxed typed Aiur `SourceValue` back as an observation. -/
-def typedReadback (P : Fir.Program) (cert : Fir.Shape.ShapeCert) (feat : TypedRep.Features)
-    (heap : Aiur.Heap F) : Nat → TypedRep.Rep → Aiur.SourceValue F → Option Sem.Obs
+/-- Evaluate the tier-aware world check on a Goldilocks typed prepared source. -/
+def typedWorldReport (l : TypedLinked) : WorldReport :=
+  typedWorldReportOfSource l.prepared.environment.source l.lowered
+
+/-- Prepare `lp` over `ZMod p` and evaluate the tier-aware world check. -/
+def typedWorldReportForPrime (p : Nat) [Fact (Nat.Prime p)]
+    (lp : TypedLower.LoweredProgram) (entryIdx : Nat := 0) : Except String WorldReport := do
+  let prog := FieldLower.linkedProgramFor (ZMod p) lp
+  let entry := qualified (entryName entryIdx)
+  let prepared ← Aiur.Modules.prepare prog [entry]
+  return typedWorldReportOfSource prepared.environment.source lp
+
+/-- Read an unboxed typed Aiur `SourceValue (ZMod p)` back as an observation. -/
+def typedReadbackP {p : Nat} [Fact (Nat.Prime p)]
+    (P : Fir.Program) (cert : Fir.Shape.ShapeCert) (feat : TypedRep.Features)
+    (heap : Aiur.Heap (ZMod p)) : Nat → TypedRep.Rep → Aiur.SourceValue (ZMod p) → Option Sem.Obs
   | 0, _, _ => none
   | _ + 1, .nat _, .field x => some (.nat x.val)
   | _ + 1, .w8, .field x => some (.nat x.val)
@@ -368,12 +632,17 @@ def typedReadback (P : Fir.Program) (cert : Fir.Shape.ShapeCert) (feat : TypedRe
         | .ptr _ a => heap[a]?
         | _ => none
       else some pv
-      typedReadback P cert feat heap fuel fr val
+      typedReadbackP P cert feat heap fuel fr val
     return .ctor cid fs
-  | fuel + 1, .obj, v => readback P heap (fuel + 1) v
+  | fuel + 1, .obj, v => readbackP P heap (fuel + 1) v
   | _ + 1, _, _ => none
 
-/-- Evaluate a typed linked entry on `Nat` inputs via Formal Aiur's fuelled evaluator. -/
+/-- Read an unboxed typed Goldilocks Aiur `SourceValue` back as an observation. -/
+def typedReadback (P : Fir.Program) (cert : Fir.Shape.ShapeCert) (feat : TypedRep.Features)
+    (heap : Aiur.Heap F) : Nat → TypedRep.Rep → Aiur.SourceValue F → Option Sem.Obs :=
+  typedReadbackP P cert feat heap
+
+/-- Evaluate a typed linked Goldilocks entry on `Nat` inputs via Formal Aiur's fuelled evaluator. -/
 def typedAiurRun (P : Fir.Program) (l : TypedLinked) (args : List Nat) (fuel : Nat := 100000000) :
     Except String (Aiur.SourceValue F × Option Sem.Obs) := do
   let hints := l.prepared.environment.source.checkedHints
@@ -382,14 +651,40 @@ def typedAiurRun (P : Fir.Program) (l : TypedLinked) (args : List Nat) (fuel : N
   let feat := TypedRep.scanFeatures P
   return (value, typedReadback P l.lowered.cert feat heap 10000 l.exportRep value)
 
-/-- Compile a typed linked program once (`compileOptimized` + budget check + parallel
-`Trace.exportPlanPar`), returning chip stats, serialized `.ixa`, and its BLAKE3 digest. -/
+/-- Evaluate a typed `LoweredProgram` over an arbitrary prime field `ZMod p` via
+Formal Aiur's fuelled evaluator, returning `(reprStr value, observation)`. -/
+def typedAiurRunForPrime (p : Nat) [Fact (Nat.Prime p)]
+    (P : Fir.Program) (lp : TypedLower.LoweredProgram) (exportRep : TypedRep.Rep)
+    (args : List Nat) (entryIdx : Nat := 0) (fuel : Nat := 100000000) :
+    Except String (String × Option Sem.Obs) := do
+  let prog := FieldLower.linkedProgramFor (ZMod p) lp
+  let entry := qualified (entryName entryIdx)
+  let prepared ← Aiur.Modules.prepare prog [entry]
+  let hints := prepared.environment.source.checkedHints
+    (Hints.dispatcher (fun (x : ZMod p) => x.val))
+  let (value, heap) ← prepared.run entry (args.map fun n => .field (n : ZMod p)) fuel hints
+  let feat := TypedRep.scanFeatures P
+  let obs := typedReadbackP P lp.cert feat heap 10000 exportRep value
+  return (reprStr value, obs)
+
+/-- Compile a typed linked Goldilocks program once (`compileOptimized` or
+`DegreeBudget.compileQuotientAware` + budget check + parallel `Trace.exportPlanPar`),
+returning chip stats, serialized `.ixa`, program-only package bytes, and BLAKE3 digests. -/
 def compileTypedPackage (l : TypedLinked)
     (sched : Schedule.CircuitSchedule := {})
     (kind : CompiledCert.ArtifactKind := .program)
-    (args : List Nat := []) : Except String Compiled := do
+    (args : List Nat := [])
+    (degreeBudget : Bool := false)
+    (logBlowup : Nat := 2) : Except String Compiled := do
   let execution ← l.prepared.exportExecution
-  let compiled ← l.prepared.compileOptimized sched.aiurConfig
+  let (compiled, chosenMaxDegree) ←
+    if degreeBudget then
+      let res ← Aiur.Optimized.DegreeBudget.compileQuotientAware l.prepared logBlowup sched.aiurConfig
+        Aiur.Optimized.DegreeBudget.v6ExtDegree false
+      pure (res.artifact, res.chosenConfig.maxDegree)
+    else
+      let c ← l.prepared.compileOptimized sched.aiurConfig
+      pure (c, sched.aiurConfig.maxDegree)
   let chips := chipSummaryOf compiled
   let summary : Schedule.CircuitSummary :=
     { chips := chips.map fun (name, columns, calls, memory) => { name, columns, calls, memory } }
@@ -398,16 +693,154 @@ def compileTypedPackage (l : TypedLinked)
     cs.foldl (fun acc' c => addToGroup acc' g c) acc
   let (execution, trace) ← Aiur.Trace.exportPlanPar modulus ZMod.val
     compiled.circuit.inlined.program compiled.circuit.artifact execution mergedGroups
+  let programBytes ← Aiur.Artifact.package execution modulus ZMod.val none
   let bytes ← match kind with
     | .program => Aiur.Artifact.package execution modulus ZMod.val (some trace)
     | .execution => Aiur.Artifact.execution execution modulus ZMod.val (some trace) args [] #[]
-  return { chips, kind, bytes, digest := Ixon.Address.blake3Pure bytes }
+  return {
+    chips, kind, bytes
+    digest := Ixon.Address.blake3Pure bytes
+    programBytes
+    programDigest := Ixon.Address.blake3Pure programBytes
+    artifactFormatVersion := Aiur.Artifact.formatVersion
+    chosenMaxDegree
+  }
 
-/-- Per-chip stats for a typed linked program. -/
-def typedChipStats (l : TypedLinked) (sched : Schedule.CircuitSchedule := {}) :
+/-- Prepare, check world, optimize (with optional `DegreeBudget`), check budget,
+export trace plan (`exportPlanWide` for 256-bit primes, `exportPlanPar` for 64-bit),
+and serialize both the full `.ixa` artifact and program-only package over **any**
+prime field `ZMod p` (`Goldilocks`, `BN254` `Fr`, `BLS12-381` `Fr`). -/
+def compileTypedForPrime (p : Nat) [Fact (Nat.Prime p)]
+    (lp : TypedLower.LoweredProgram)
+    (entryIdx : Nat := 0)
+    (sched : Schedule.CircuitSchedule := {})
+    (resolvedGroups : List (String × List String) := [])
+    (kind : CompiledCert.ArtifactKind := .program)
+    (args : List Nat := [])
+    (degreeBudget : Bool := false)
+    (logBlowup : Nat := 2) : Except String Compiled := do
+  let prog := FieldLower.linkedProgramFor (ZMod p) lp
+  let entry := qualified (entryName entryIdx)
+  let prepared ← Aiur.Modules.prepare prog [entry]
+  let world := typedWorldReportOfSource prepared.environment.source lp
+  unless world.ok do
+    throw s!"world check failed for entry {entry} over prime modulus {p}"
+  let execution ← prepared.exportExecution
+  let isWide := p ≥ 2 ^ 64
+  let (compiled, chosenMaxDegree) ←
+    if degreeBudget then
+      let extDeg := if isWide then 1 else Aiur.Optimized.DegreeBudget.v6ExtDegree
+      let res ← Aiur.Optimized.DegreeBudget.compileQuotientAware prepared logBlowup sched.aiurConfig
+        extDeg false
+      pure (res.artifact, res.chosenConfig.maxDegree)
+    else
+      let c ← prepared.compileOptimized sched.aiurConfig
+      pure (c, sched.aiurConfig.maxDegree)
+  let chips := chipSummaryOfP compiled
+  let summary : Schedule.CircuitSummary :=
+    { chips := chips.map fun (name, columns, calls, memory) => { name, columns, calls, memory } }
+  summary.checkBudget sched.budget
+  let mergedGroups := sched.groups.foldl (init := resolvedGroups) fun acc (g, cs) =>
+    cs.foldl (fun acc' c => addToGroup acc' g c) acc
+  let (execution, trace) ←
+    if isWide then
+      Aiur.Trace.exportPlanWide p ZMod.val
+        compiled.circuit.inlined.program compiled.circuit.artifact execution mergedGroups
+    else
+      Aiur.Trace.exportPlanPar p ZMod.val
+        compiled.circuit.inlined.program compiled.circuit.artifact execution mergedGroups
+  let programBytes ←
+    if isWide then
+      Aiur.Artifact.packageWide execution p ZMod.val none
+    else
+      Aiur.Artifact.package execution p ZMod.val none
+  let bytes ← match kind with
+    | .program =>
+      if isWide then
+        Aiur.Artifact.packageWide execution p ZMod.val (some trace)
+      else
+        Aiur.Artifact.package execution p ZMod.val (some trace)
+    | .execution =>
+      if isWide then
+        throw s!"execution packages (--exec) require a 64-bit prime; omit --exec for wide v3 package over modulus {p}"
+      else
+        Aiur.Artifact.execution execution p ZMod.val (some trace) args [] #[]
+  let fmtVer := if isWide then Aiur.Artifact.wideFormatVersion else Aiur.Artifact.formatVersion
+  return {
+    chips, kind, bytes
+    digest := Ixon.Address.blake3Pure bytes
+    programBytes
+    programDigest := Ixon.Address.blake3Pure programBytes
+    artifactFormatVersion := fmtVer
+    chosenMaxDegree
+  }
+
+/-- Compile a typed `LoweredProgram` for any of the 3 target fields
+(`goldilocks`, `bn254`, `bls12-381`). -/
+def compileTypedForField (target : FieldTarget)
+    (lp : TypedLower.LoweredProgram)
+    (entryIdx : Nat := 0)
+    (sched : Schedule.CircuitSchedule := {})
+    (resolvedGroups : List (String × List String) := [])
+    (kind : CompiledCert.ArtifactKind := .program)
+    (args : List Nat := [])
+    (degreeBudget : Bool := false)
+    (logBlowup : Nat := 2) : Except String Compiled :=
+  match target with
+  | .goldilocks =>
+    compileTypedForPrime FieldLower.goldilocksModulus lp entryIdx sched resolvedGroups
+      kind args degreeBudget logBlowup
+  | .bn254 =>
+    compileTypedForPrime FieldLower.bn254Modulus lp entryIdx sched resolvedGroups
+      kind args degreeBudget logBlowup
+  | .bls12381 =>
+    compileTypedForPrime FieldLower.bls12381Modulus lp entryIdx sched resolvedGroups
+      kind args degreeBudget logBlowup
+
+/-- Per-chip stats for a typed linked Goldilocks program (with optional `DegreeBudget`). -/
+def typedChipStats (l : TypedLinked) (sched : Schedule.CircuitSchedule := {})
+    (degreeBudget : Bool := false) (logBlowup : Nat := 2) :
     Except String (List (String × Nat × Nat × Nat)) := do
-  let compiled ← l.prepared.compileOptimized sched.aiurConfig
+  let compiled ←
+    if degreeBudget then
+      (·.artifact) <$> Aiur.Optimized.DegreeBudget.compileQuotientAware l.prepared logBlowup
+        sched.aiurConfig Aiur.Optimized.DegreeBudget.v6ExtDegree false
+    else
+      l.prepared.compileOptimized sched.aiurConfig
   return chipSummaryOf compiled
+
+/-- Per-chip stats (and chosen `maxDegree`) for a typed `LoweredProgram` over `ZMod p`. -/
+def typedChipStatsForPrime (p : Nat) [Fact (Nat.Prime p)]
+    (lp : TypedLower.LoweredProgram) (entryIdx : Nat := 0)
+    (sched : Schedule.CircuitSchedule := {})
+    (degreeBudget : Bool := false) (logBlowup : Nat := 2) :
+    Except String (List (String × Nat × Nat × Nat) × Nat) := do
+  let prog := FieldLower.linkedProgramFor (ZMod p) lp
+  let entry := qualified (entryName entryIdx)
+  let prepared ← Aiur.Modules.prepare prog [entry]
+  let isWide := p ≥ 2 ^ 64
+  if degreeBudget then
+    let extDeg := if isWide then 1 else Aiur.Optimized.DegreeBudget.v6ExtDegree
+    let res ← Aiur.Optimized.DegreeBudget.compileQuotientAware prepared logBlowup
+      sched.aiurConfig extDeg false
+    return (chipSummaryOfP res.artifact, res.chosenConfig.maxDegree)
+  else
+    let compiled ← prepared.compileOptimized sched.aiurConfig
+    return (chipSummaryOfP compiled, sched.aiurConfig.maxDegree)
+
+/-- Per-chip stats (and chosen `maxDegree`) for a typed `LoweredProgram` over any `FieldTarget`. -/
+def typedChipStatsForField (target : FieldTarget)
+    (lp : TypedLower.LoweredProgram) (entryIdx : Nat := 0)
+    (sched : Schedule.CircuitSchedule := {})
+    (degreeBudget : Bool := false) (logBlowup : Nat := 2) :
+    Except String (List (String × Nat × Nat × Nat) × Nat) :=
+  match target with
+  | .goldilocks =>
+    typedChipStatsForPrime FieldLower.goldilocksModulus lp entryIdx sched degreeBudget logBlowup
+  | .bn254 =>
+    typedChipStatsForPrime FieldLower.bn254Modulus lp entryIdx sched degreeBudget logBlowup
+  | .bls12381 =>
+    typedChipStatsForPrime FieldLower.bls12381Modulus lp entryIdx sched degreeBudget logBlowup
 
 /-! ## Phase 2.2d Tier-2 `guess` Front-End, Lowering & Universal Advice Package -/
 
@@ -421,7 +854,8 @@ def typedChipStats (l : TypedLinked) (sched : Schedule.CircuitSchedule := {}) :
    both `f` and `c` intact as distinct `Fir` functions.
 4. Strips the extra checker exports back to the original user root count after `runFir`. -/
 def frontWithGuesses (bytes : ByteArray) (equations : Lean.Json) (roots : List String)
-    (limits : Ix.Kernel.Admission.Limits := Src.KernelFront.defaultLimits) : Except String Front := do
+    (limits : Ix.Kernel.Admission.Limits := Src.KernelFront.defaultLimits)
+    (noInlineAddrs : List Ixon.Address := []) : Except String Front := do
   let env ← (Ixon.V3.decodeAnonymousEnv bytes).mapError fun m => s!"ingress: decode: {m}"
   let sidecar ← Src.Hints.ofK1Json equations
   let acc ← (Src.KernelFront.accept env limits).mapError fun r =>
@@ -475,7 +909,7 @@ def frontWithGuesses (bytes : ByteArray) (equations : Lean.Json) (roots : List S
           | none => []
         sKeys ++ cKeys
       else []
-  let baseCfg0 := Recheck.Config.forInput {} input
+  let baseCfg0 := addNoInlineAddrs (Recheck.Config.forInput {} input) p noInlineAddrs
   let baseCfg : Recheck.Config := {
     baseCfg0 with
     budgets := {
@@ -528,11 +962,15 @@ structure TypedLinkedWithGuesses where
 3. Lowers the unmodified program (`lowered0`) and builds the companion `AdviceLinked`
    program exposing every resolved guess subject for zero-hardcoding host advice.
 4. Rewrites resolved guess subjects via `GuessLower.applyGuesses` (keeping `isInline := false`
-   on every guess wrapper per the Aiur cost law), optionally runs `InlineFuse.optimizeFns`,
-   prunes unreachable functions (e.g. `egcdStep`), links, and prepares `Prog::main<i>`. -/
+   on every guess wrapper per the Aiur cost law), optionally runs `InlineFuse`,
+   `PartialEval`, and `FieldLower`, prunes unreachable functions (e.g. `egcdStep`),
+   links, and prepares `Prog::main<i>`. -/
 def linkTypedWithGuesses (src : Src.Program) (P : Fir.Program) (i : Nat)
     (sched : Schedule.CircuitSchedule := {})
-    (inlineFuse : Bool := false) : Except String TypedLinkedWithGuesses := do
+    (inlineFuse : Bool := false)
+    (partialEval : Bool := false)
+    (fieldLower : Bool := false)
+    (fieldTarget : FieldTarget := .goldilocks) : Except String TypedLinkedWithGuesses := do
   let resolvedSched := resolveSchedule src P sched
   let (cert, shapeAccepted0) := GuessLower.seedGuessShapes src P
   let folded := GuessLower.foldOversizedNatCmp P cert
@@ -557,17 +995,9 @@ def linkTypedWithGuesses (src : Src.Program) (P : Fir.Program) (i : Nat)
         entries := allAdvEntries
         prepared := advPrepared
       })
-  let lowered :=
-    if inlineFuse then
-      let optFns := InlineFuse.optimizeFns gl.lowered.program.functions
-      let pruned := InlineFuse.pruneUnreachable [entryName i] optFns
-      { gl.lowered with program := { gl.lowered.program with functions := pruned } }
-    else if !gl.resolved.isEmpty then
-      let pruned := InlineFuse.pruneUnreachable [entryName i] gl.lowered.program.functions
-      { gl.lowered with program := { gl.lowered.program with functions := pruned } }
-    else
-      gl.lowered
-  let program := TypedLower.linkedProgram F lowered
+  let lowered := applyTypedOpts src PWork i resolvedSched gl.lowered
+    inlineFuse partialEval fieldLower fieldTarget (!gl.resolved.isEmpty)
+  let program := FieldLower.linkedProgramFor F lowered
   let exportRep := lowered.exportReps[i]?.getD .obj
   let prepared ← Aiur.Modules.prepare program [entry]
   let linked : TypedLinked := {

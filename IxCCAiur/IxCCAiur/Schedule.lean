@@ -51,6 +51,24 @@ inductive InlinePolicy where
   | never
   deriving DecidableEq, Repr, Inhabited
 
+/-- Advisory circuit representation tag (`@[circuit_repr(...)]`), matching
+`Ix.Compile.CircuitContract.CircuitRepr`. -/
+inductive CircuitRepr where
+  | field
+  | u32
+  | u64
+  | limbs (count bits : Nat)
+  | flatArray (len : Nat)
+  | wordStream
+  deriving DecidableEq, Repr, Inhabited
+
+/-- True iff `r` satisfies the positive-dimension invariants enforced by
+`Ix.Compile.CircuitContract.validateAttrEntry` and `ScheduleJson.circuitReprFromJson`. -/
+def CircuitRepr.isValid : CircuitRepr → Bool
+  | .limbs k b => k != 0 && b != 0
+  | .flatArray n => n != 0
+  | _ => true
+
 /-- Per-function scheduling directives. -/
 structure FnSchedule where
   inline : InlinePolicy := .auto
@@ -60,6 +78,14 @@ structure FnSchedule where
   unroll : Option Nat := none
   /-- Optional horizontal vectorization width `K` (Phase 3). -/
   lanes : Option Nat := none
+  /-- Mark function for compile-time partial evaluation (`@[circuit_static]`). -/
+  isStatic : Bool := false
+  /-- Advisory circuit value representation tag (`@[circuit_repr(...)]`). -/
+  repr : Option CircuitRepr := none
+  /-- Native circuit intrinsic binding name (`@[circuit_intrinsic "..."]`). -/
+  intrinsic : Option String := none
+  /-- Enable split fast-path chip lowering (`@[circuit_split_fastpath]`). -/
+  splitFastpath : Bool := false
   deriving DecidableEq, Repr, Inhabited
 
 /-- Fail-closed circuit compilation budget. `none` leaves a bound unchecked. -/
