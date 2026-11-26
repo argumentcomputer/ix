@@ -1,7 +1,7 @@
 import IxVMRefinement.Nat.Basic
 import IxVMRefinement.Core.Open
 import IxVMRefinement.Core.RomBound
-import IxVMRefinement.Obs.KernelNatPrim
+import IxVM.Obs.KernelNatPrim
 
 /-! # `KernelNatPrim`: reading `Nat` values, folding operations, the stuck offset forms
 

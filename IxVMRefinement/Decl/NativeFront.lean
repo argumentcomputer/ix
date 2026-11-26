@@ -3,9 +3,9 @@ import IxVMRefinement.Core.RawRecords
 import IxVMRefinement.Decl.NativeEnv
 import IxVMRefinement.Callees.ProjAddr
 import IxVMRefinement.Subst.Spine
-import IxVMRefinement.Obs.KernelCheck
-import IxVMRefinement.Obs.KernelDefEq3
-import IxVMRefinement.Obs.KernelTypes0
+import IxVM.Obs.KernelCheck
+import IxVM.Obs.KernelDefEq
+import IxVM.Obs.KernelTypes
 import IxCK.Kernel.Verify.PropWhen
 
 /-! # Native one-type inductive front stages and recursor-less route

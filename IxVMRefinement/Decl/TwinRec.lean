@@ -1,5 +1,5 @@
 import IxVMRefinement.Decl.NativeFront
-import IxVMRefinement.Obs.KernelClaim
+import IxVM.Obs.KernelClaim
 import IxCK.Kernel.Model.Annot.BitLevels
 import IxCK.Kernel.Verify.InferLeaves
 import IxCK.Kernel.Verify.Level

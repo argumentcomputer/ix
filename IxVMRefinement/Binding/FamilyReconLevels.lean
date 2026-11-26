@@ -4,14 +4,8 @@ import IxVMRefinement.Assembly.ProjSafe
 import IxVMRefinement.Binding.PayloadClosed
 import IxVMRefinement.Binding.StoreLogic
 import IxVMRefinement.FamilyAlias.CallLists
-import IxVMRefinement.Obs.KernelCheck1
-import IxVMRefinement.Obs.KernelCheck2
-import IxVMRefinement.Obs.KernelCheck12
-import IxVMRefinement.Obs.KernelCheck13
-import IxVMRefinement.Obs.KernelModeled2
-import IxVMRefinement.Obs.KernelModeled3
-import IxVMRefinement.Obs.KernelModeled4
-import IxVMRefinement.Obs.KernelModeled5
+import IxVM.Obs.KernelCheck
+import IxVM.Obs.KernelModeled
 
 /-! # Level-parameter well-scopedness and inductive parameter coherence over run stores
 

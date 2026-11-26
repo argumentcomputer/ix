@@ -1,6 +1,5 @@
 import IxVMRefinement.Callees.TagN
-import IxVMRefinement.Obs.IxonSerialize1
-import IxVMRefinement.Obs.IxonSerialize2
+import IxVM.Obs.IxonSerialize
 
 /-! # `IxonSerialize::put_constant` on projection records
 

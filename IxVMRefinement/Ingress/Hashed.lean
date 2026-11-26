@@ -1,6 +1,6 @@
 import IxVMRefinement.Ingress.AddressHash
 import IxVMRefinement.Ingress.ByteStream
-import IxVMRefinement.Obs.Ingress
+import IxVM.Obs.Ingress
 
 /-! # What the loaders hashed
 

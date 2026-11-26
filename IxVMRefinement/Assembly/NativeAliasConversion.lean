@@ -1,5 +1,5 @@
 import IxVMRefinement.Core.Rep
-import IxVMRefinement.Obs.KernelCheck
+import IxVM.Obs.KernelCheck
 
 /-! # Actual conversion evidence for the alias former telescope
 

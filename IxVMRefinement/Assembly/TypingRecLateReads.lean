@@ -1,6 +1,6 @@
 import IxVMRefinement.Assembly.TypingRecLateElim
 import IxVMRefinement.StatementRel.LoadedReadsWalked
-import IxVMRefinement.Obs.KernelModeled0
+import IxVM.Obs.KernelModeled
 
 /-! # The parent of a late recursor in the run's store
 

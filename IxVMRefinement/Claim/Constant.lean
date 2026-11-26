@@ -1,6 +1,6 @@
 import IxVMRefinement.Core.Seams
 import IxVMRefinement.Ingress.Hashed
-import IxVMRefinement.Obs.IxonDeserialize
+import IxVM.Obs.IxonDeserialize
 import Ix.IxVM.Refinement.DeserializeBinders
 import IxCK.Ixon.Verify.ConstantBounds
 import IxCK.Ixon.Verify.ConstantTables

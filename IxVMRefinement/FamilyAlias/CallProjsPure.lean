@@ -3,11 +3,8 @@ import IxVMRefinement.FamilyAlias.CallAdvice
 import IxVMRefinement.FamilyAlias.CallLists
 import IxVMRefinement.FamilyAlias.CallMembers
 import IxVMRefinement.Decl.NativeFront
-import IxVMRefinement.Obs.KernelModeled0
-import IxVMRefinement.Obs.KernelModeled7
-import IxVMRefinement.Obs.KernelModeled8
-import IxVMRefinement.Obs.KernelModeled9
-import IxVMRefinement.Obs.KernelRoleSpec0
+import IxVM.Obs.KernelModeled
+import IxVM.Obs.KernelRoleSpec
 import IxVMRefinement.Ingress.TraceRecords
 import IxVMRefinement.Assembly.PointUseSites
 import IxVMRefinement.FamilyGraph.ProducersRefs

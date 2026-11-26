@@ -3,7 +3,7 @@ import IxVMRefinement.FamilyGraph.ProducersAcyclic
 import IxVMRefinement.FamilyGraph.ProducersInnerRefs
 import IxVMRefinement.FamilyGraph.CompositionFam
 import IxVMRefinement.Claim.RefSafetyExcept
-import IxVMRefinement.Obs.KernelModeled2
+import IxVM.Obs.KernelModeled
 
 /-! # The records a family check checks, at the graph producer's choices
 

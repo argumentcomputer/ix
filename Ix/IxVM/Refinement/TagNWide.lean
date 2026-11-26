@@ -5,7 +5,7 @@ import IxCK.Ixon.Verify.TagN
 
 The multi-byte rungs of IxVM's TagN decoders (`get_tagn_tail`'s wide branch,
 `get_tagn_wide`: three, four, five and nine bytes) against IxCK's
-`getTagNWide`, on the generated mirrors (`Ix.IxVM.Refinement.Mirrors.TagN`),
+`getTagNWide`, on the generated mirrors (`IxVM.Mirrors.TagN`),
 and the refinements of `Ixon.getTagN 0`, `2` and `4` on every header. -/
 
 namespace IxVM.Refinement.TagN

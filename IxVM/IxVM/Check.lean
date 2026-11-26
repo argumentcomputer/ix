@@ -1,6 +1,5 @@
 import Aiur.Execution.Interface
 import IxVM.Source
-import IxVM.ProofGen
 
 /-! Native parity checks against full module preparation. The input is read from
 Lean's imported declaration metadata, without another set of function constants. -/
@@ -19,15 +18,6 @@ def checkDefinitions (env : Lean.Environment) : IO Bool := do
   let assembled := program.value!.getUsedConstants.contains ``IxVM.functions
   IO.println s!"[ixvm-source] named definitions {named}, program references {assembled}"
   return named && assembled
-
-def checkFiles : IO Bool := do
-  let mut ok := true
-  for (path, text) in IxVM.ProofGen.render do
-    let existing ← try pure (some (← IO.FS.readFile path)) catch _ => pure none
-    unless existing == some text do
-      IO.eprintln s!"[ixvm-source] {path} is stale: run `lake exe ixvm/ixvm-proof-gen`"
-      ok := false
-  return ok
 
 def checkPreparation (env : Lean.Environment) : IO Bool := do
   let input ← IO.ofExcept (IxVM.Elab.moduleProgram env)

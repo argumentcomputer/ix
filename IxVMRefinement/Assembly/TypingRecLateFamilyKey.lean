@@ -1,6 +1,6 @@
 import IxVMRefinement.Assembly.TypingRecLateMajorKey
 import IxVMRefinement.StatementRel.ReaderReads
-import IxVMRefinement.Obs.KernelCheck
+import IxVM.Obs.KernelCheck
 import IxCK.Kernel.Semantics.Inductives.WrapRelFacts
 import IxCK.Kernel.Verify.Inductives.FixRec
 

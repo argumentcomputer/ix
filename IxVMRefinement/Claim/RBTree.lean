@@ -1,4 +1,4 @@
-import IxVMRefinement.Obs.RBTreeMap
+import IxVM.Obs.RBTreeMap
 import IxVMRefinement.Lib.Bytes
 import IxVMRefinement.Lib.Words
 import IxVMRefinement.Core.Ctx

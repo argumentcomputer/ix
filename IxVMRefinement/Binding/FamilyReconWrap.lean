@@ -1,8 +1,7 @@
 import IxVMRefinement.Core.SpineChain
 import IxVMRefinement.Binding.FamilyReconBuilders
 import IxVMRefinement.Binding.FamilyReconCons
-import IxVMRefinement.Obs.KernelCheck7
-import IxVMRefinement.Obs.KernelCheck8
+import IxVM.Obs.KernelCheck
 
 /-! # Wrapper consumption, rule comparison, flat search, and raw-carrier bridges on `TmOExact`
 

@@ -1,8 +1,7 @@
 import IxVMRefinement.Assembly.NativeBlockReads
 import IxVMRefinement.Decl.ModeledRules
 import IxVMRefinement.Ingress.ByteStream
-import IxVMRefinement.Obs.KernelModeled1
-import IxVMRefinement.Obs.KernelModeled2
+import IxVM.Obs.KernelModeled
 
 /-! # The family check a modeled block's own arm runs
 

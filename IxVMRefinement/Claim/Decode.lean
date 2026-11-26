@@ -1,7 +1,7 @@
 import IxVMRefinement.Claim.RoleTable
-import IxVMRefinement.Obs.IxVM0
-import IxVMRefinement.Obs.KernelClaim
-import IxVMRefinement.Obs.IxonSerialize1
+import IxVM.Obs.IxVM
+import IxVM.Obs.KernelClaim
+import IxVM.Obs.IxonSerialize
 import IxCK.Ixon.Verify.ConstantTables
 
 /-! # Claim decoding, assumption-tree verification, and entry dispatch

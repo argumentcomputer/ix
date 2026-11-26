@@ -1,5 +1,5 @@
 import IxVMRefinement.Ingress.Decode
-import IxVMRefinement.Obs.Convert
+import IxVM.Obs.Convert
 import IxVMRefinement.Lib.Words
 
 /-! # Serialized binder data and its heap operations

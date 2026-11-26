@@ -1,10 +1,6 @@
-import IxVMRefinement.Obs.KernelModeled5
-import IxVMRefinement.Obs.KernelModeled6
-import IxVMRefinement.Obs.KernelModeled7
-import IxVMRefinement.Obs.KernelModeled8
-import IxVMRefinement.Obs.KernelModeled9
-import IxVMRefinement.Obs.KernelWhnf
-import IxVMRefinement.Obs.KernelCheck
+import IxVM.Obs.KernelModeled
+import IxVM.Obs.KernelWhnf
+import IxVM.Obs.KernelCheck
 import IxVMRefinement.FamilyAlias.CallIotaRule
 import IxVMRefinement.FamilyAlias.CheckFamilyReads
 import IxVMRefinement.FamilyAlias.ProjFacts

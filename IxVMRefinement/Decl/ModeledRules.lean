@@ -4,7 +4,7 @@ import IxVMRefinement.Decl.Value
 import IxVMRefinement.Ingress.ByteStream
 import IxVMRefinement.Ingress.Stream
 import IxVMRefinement.Core.Specs.Callees
-import IxVMRefinement.Obs.KernelClaim
+import IxVM.Obs.KernelClaim
 /-! # Modeled Recursor Rule Verification Helpers
 
 Helpers and rule records (`RawIotaRuleVmRun`, `RawIotaRulesVmRun`) used by the modeled recursor

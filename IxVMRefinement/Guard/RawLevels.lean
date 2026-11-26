@@ -1,5 +1,5 @@
 import IxVMRefinement.Nat.Levels
-import IxVMRefinement.Obs.KernelGuard
+import IxVM.Obs.KernelGuard
 
 /-! # Exact raw universe substitution for the guard classifier
 

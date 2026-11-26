@@ -3,8 +3,7 @@ import IxVMRefinement.Binding.ClosureFold
 import IxVMRefinement.Binding.StoreOpOrder
 import IxVMRefinement.RoleVal.BoundSafety
 import IxVMRefinement.FamilyGraph.ProducersModeled
-import IxVMRefinement.Obs.KernelModeled2
-import IxVMRefinement.Obs.KernelModeled3
+import IxVM.Obs.KernelModeled
 import IxVMRefinement.Binding.BasisAt
 import IxVMRefinement.Assembly.TypingBasisInv
 import IxVMRefinement.StatementRel.StoreInhabit

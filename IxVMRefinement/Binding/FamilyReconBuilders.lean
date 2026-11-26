@@ -1,11 +1,6 @@
 import IxVMRefinement.Binding.FamilyFlatObs
 import IxVMRefinement.Claim.TopProj
-import IxVMRefinement.Obs.KernelCheck4
-import IxVMRefinement.Obs.KernelCheck5
-import IxVMRefinement.Obs.KernelCheck9
-import IxVMRefinement.Obs.KernelCheck10
-import IxVMRefinement.Obs.KernelCheck11
-import IxVMRefinement.Obs.KernelCheck12
+import IxVM.Obs.KernelCheck
 
 /-! # Reconstruction builders on `TmOExact`
 

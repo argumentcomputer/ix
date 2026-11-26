@@ -5,7 +5,7 @@ import IxVMRefinement.Core.Open
 import IxVMRefinement.Infer.Close
 import IxVMRefinement.Nat.Levels
 import IxVMRefinement.Infer.Leaves
-import IxVMRefinement.Obs.KernelCheck
+import IxVM.Obs.KernelCheck
 import IxVMRefinement.Lib.Bytes
 import IxCK.Kernel.Model.JudgeRules
 import IxCK.Kernel.Model.StoreCompanions

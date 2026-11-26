@@ -1,7 +1,7 @@
 import IxVMRefinement.Subst.Ctx
 import IxVMRefinement.Levels.Smart
 import IxVMRefinement.Core.SpineChain
-import IxVMRefinement.Obs.KernelLevels
+import IxVM.Obs.KernelLevels
 
 /-! # Spines and level instantiation: `collect_spine`, `expr_inst_levels(_walk)`
 

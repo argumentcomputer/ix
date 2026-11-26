@@ -2,9 +2,7 @@ import IxVMRefinement.Iota.Rescue
 import IxVMRefinement.Ingress.HashedBlock
 import IxVMRefinement.Whnf.Heads
 import IxVMRefinement.Whnf.Proj
-import IxVMRefinement.Obs.KernelWhnf2
-import IxVMRefinement.Obs.KernelWhnf4
-import IxVMRefinement.Obs.KernelWhnf5
+import IxVM.Obs.KernelWhnf
 import IxVMRefinement.Core.SpineChain
 
 /-! # Step lemmas of `KernelWhnf`: the structure-η rescue and recursor dispatch

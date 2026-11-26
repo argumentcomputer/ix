@@ -2,7 +2,7 @@ import IxVMRefinement.Binding.FamilyReconModel
 import IxVMRefinement.Core.LoadedExact
 import IxVMRefinement.Core.RomBound
 import IxVMRefinement.Subst.Steps
-import IxVMRefinement.Obs.KernelCheck
+import IxVM.Obs.KernelCheck
 
 /-! # Open exact terms, builders, and level instantiation for family reconstruction
 

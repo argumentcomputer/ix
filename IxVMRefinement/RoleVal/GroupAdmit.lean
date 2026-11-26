@@ -1,5 +1,5 @@
 import IxVMRefinement.Core.CallHeaps
-import IxVMRefinement.Obs.KernelRoles
+import IxVM.Obs.KernelRoles
 import IxVMRefinement.RoleVal.LookupSpec
 import IxVMRefinement.Claim.RoleTable
 import IxVMRefinement.Claim.Walk

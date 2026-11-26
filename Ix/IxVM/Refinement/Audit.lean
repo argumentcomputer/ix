@@ -28,8 +28,7 @@ Three guards keep the statement about the deployed object:
 * the prepared source is the deployed preparation's: that is the native test
   suite `ixvm-source` (`IxVM.Check`), which prepares
   the imported DSL declarations for `verify_claim` and compares the result with
-  `IxVM.source`, and `lake exe ixvm/ixvm-proof-gen --check`, which
-  compares the derived proof scripts with their rendering. These are checks, not proofs;
+  `IxVM.source`. This is a check, not a proof;
 * it is not vacuous, and its escape names a real function: in the checked
   source, `verify_claim` is an entry, its world prepares a call on a digest
   argument, and the program has the function `Blake3::hash` the escape
@@ -1290,10 +1289,10 @@ example (l r : Ix.AssumptionTree) : IxVM.Refinement.treeImages (.node l r) =
 The first refinement: every derivation of `IxonDeserialize::get_tagn0` agrees
 with IxCK's `Ixon.getTagN 0` on the same bytes, on every header
 (`getTagN0_refines`; `getTagN2_refines` and `getTagN4_refines` for the two- and
-four-bit flags), proved from the prepared source through its generated lookup
-facts (`IxVM.Lookup`), the generated mirrors and their lemmas
-(`Ix.IxVM.Refinement.Mirrors.TagN`, over the helper library
-`Ix.IxVM.Refinement.Mirror`) and the hand-written creative layer
+four-bit flags), proved from the prepared source through its derived lookup
+facts (`IxVM.Lookup`), the derived mirrors and their lemmas
+(`IxVM.Mirrors.TagN`, over the helper library
+`Aiur.Generic.Refinement.Mirror`) and the hand-written creative layer
 (`Ix.IxVM.Refinement.TagN`, `Ix.IxVM.Refinement.TagNWide`). Deterministic runs and their
 completeness for worlds without control syntax: `EvalFn.exec`. -/
 
@@ -1868,7 +1867,9 @@ info: @Ix.Kernel.nfGo_of_whnf_sort : ∀ {md : Ix.Kernel.Mode} {mode : Ix.Kernel
 
 #guard_module_axioms Aiur.Generic.Observe Ix.IxVM.Refinement.Claim Ix.IxVM.Refinement.Statement
   Ix.Cert.AcceptsUnder IxCK.Kernel.Verify.Cached.ReferenceUnder IxCK.Kernel.Verify.Cached.NormalizeRef
-  IxVM.Source IxVM.Static IxVM.Program IxVM.Tables IxVM.Lookup
-  Aiur.Generic.LookupFacts Ix.IxVM.Refinement.Exec Ix.IxVM.Refinement.Mirror Ix.IxVM.Refinement.Mirrors.TagN
-  Ix.IxVM.Refinement.Mirrors.Deserialize Ix.IxVM.Refinement.TagN Ix.IxVM.Refinement.TagNWide
+  IxVM.Source IxVM.Static IxVM.Program IxVM.Tables
+  IxVM.Lookup.Part1 IxVM.Lookup.Part2 IxVM.Lookup.Part3 IxVM.Lookup.Part4
+  IxVM.Lookup.Part5 IxVM.Lookup.Part6 IxVM.Lookup.Part7 IxVM.Lookup.Part8
+  Aiur.Generic.LookupFacts Aiur.Generic.Refinement.Exec Aiur.Generic.Refinement.Mirror IxVM.Mirrors.TagN
+  IxVM.Mirrors.Deserialize Ix.IxVM.Refinement.TagN Ix.IxVM.Refinement.TagNWide
   Ix.IxVM.Refinement.Deserialize Ix.IxVM.Refinement.DeserializeBinders

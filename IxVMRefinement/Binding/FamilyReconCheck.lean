@@ -5,18 +5,10 @@ import IxVMRefinement.Binding.PayloadCoreSpecs
 import IxVMRefinement.Binding.PayloadRefSpecs
 import IxVMRefinement.FamilyAlias.CallLists
 import IxVMRefinement.Callees.Modeled
-import IxVMRefinement.Obs.KernelModeled0
-import IxVMRefinement.Obs.KernelModeled3
-import IxVMRefinement.Obs.KernelModeled4
-import IxVMRefinement.Obs.KernelModeled5
-import IxVMRefinement.Obs.KernelRoles2
-import IxVMRefinement.Obs.KernelCheck4
-import IxVMRefinement.Obs.KernelCheck5
-import IxVMRefinement.Obs.KernelCheck8
-import IxVMRefinement.Obs.KernelCheck9
-import IxVMRefinement.Obs.KernelCheck11
-import IxVMRefinement.Obs.KernelCheck12
-import IxVMRefinement.Obs.KernelSubst0
+import IxVM.Obs.KernelModeled
+import IxVM.Obs.KernelRoles
+import IxVM.Obs.KernelCheck
+import IxVM.Obs.KernelSubst
 
 /-! # Family-check reconstruction: flattened families, canonical forms, and group stores
 

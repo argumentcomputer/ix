@@ -1,5 +1,5 @@
 import IxVMRefinement.Ingress.Prim
-import IxVMRefinement.Obs.Blake3
+import IxVM.Obs.Blake3
 
 /-! # BLAKE3's compression function at source level
 

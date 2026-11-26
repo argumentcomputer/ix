@@ -2,7 +2,7 @@ import IxVMRefinement.Ingress.Decode
 import IxVMRefinement.StatementRel.LoadedReads
 import IxVMRefinement.Lib.Lists
 import IxVMRefinement.Lib.Words
-import IxVMRefinement.Obs.KernelModeled
+import IxVM.Obs.KernelModeled
 
 /-! # A family check whose family record is a standalone recursor record fails
 

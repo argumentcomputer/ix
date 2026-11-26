@@ -1,4 +1,4 @@
-import IxVMRefinement.Obs.KernelRoles
+import IxVM.Obs.KernelRoles
 import IxVMRefinement.RoleVal.CommittedBase
 import IxVMRefinement.Roles.Tables
 import IxVMRefinement.Core.Seams

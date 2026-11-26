@@ -1,6 +1,6 @@
 import IxVMRefinement.FamilyAlias.CallLists
-import IxVMRefinement.Obs.KernelModeled1
-import IxVMRefinement.Obs.IxonDeserialize0
+import IxVM.Obs.KernelModeled
+import IxVM.Obs.IxonDeserialize
 import IxVMRefinement.Ingress.Stream
 import Ix.IxVM.Refinement.TagNWide
 

@@ -1,7 +1,7 @@
 import IxVMRefinement.Nat.PrimStr
 import IxVMRefinement.Nat.PrimInt
 import IxVMRefinement.Nat.Utf8
-import IxVMRefinement.Obs.KernelRoleSpec0
+import IxVM.Obs.KernelRoleSpec
 
 /-! # `KernelNatPrim`: `String` and `Char` native acceleration step lemmas
 

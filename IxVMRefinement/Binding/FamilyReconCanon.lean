@@ -8,9 +8,9 @@ import IxVMRefinement.StatementRel.LoadedReadsWalked
 import IxVMRefinement.Assembly.GuardRawExact
 import IxVMRefinement.Binding.RunStepStores
 import IxVMRefinement.Binding.RouteModeledRun
-import IxVMRefinement.Obs.KernelGuard0
-import IxVMRefinement.Obs.KernelCheck0
-import IxVMRefinement.Obs.KernelModeled3
+import IxVM.Obs.KernelGuard
+import IxVM.Obs.KernelCheck
+import IxVM.Obs.KernelModeled
 
 /-! # Store-level bridge to `TmOExact` and `BlockElim`
 

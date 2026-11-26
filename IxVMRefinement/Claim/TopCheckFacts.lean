@@ -2,7 +2,7 @@ import IxVMRefinement.Claim.TopWalk
 import IxVMRefinement.Assembly.ProjSafe
 import IxVMRefinement.Ingress.Ingress
 import IxVMRefinement.Ingress.Stream
-import IxVMRefinement.Obs
+import IxVM.Obs
 
 /-! # What `check_const` gives of a top walk's records
 

@@ -1,10 +1,10 @@
 import IxVMRefinement.Core.Registry
 import IxVMRefinement.Core.Open
 import IxVMRefinement.Ingress.Ingress
-import IxVMRefinement.Obs.KernelWhnf
-import IxVMRefinement.Obs.KernelTypes
-import IxVMRefinement.Obs.KernelLevels
-import IxVMRefinement.Obs.KernelRoles1
+import IxVM.Obs.KernelWhnf
+import IxVM.Obs.KernelTypes
+import IxVM.Obs.KernelLevels
+import IxVM.Obs.KernelRoles
 import IxCK.Kernel.Verify.InstLevels
 import IxVMRefinement.Lib.Lists
 import IxCK.Kernel.Verify.InstList

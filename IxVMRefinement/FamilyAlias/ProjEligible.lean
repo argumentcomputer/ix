@@ -1,6 +1,6 @@
-import IxVMRefinement.Obs.KernelModeled9
-import IxVMRefinement.Obs.KernelWhnf
-import IxVMRefinement.Obs.KernelCheck
+import IxVM.Obs.KernelModeled
+import IxVM.Obs.KernelWhnf
+import IxVM.Obs.KernelCheck
 import IxVMRefinement.Assembly.GuardRawInst
 import IxVMRefinement.Ingress.CanonicalRawAnnotation
 import IxVMRefinement.Ingress.HashedBlock

@@ -1,8 +1,7 @@
 import IxVMRefinement.Binding.PayloadDirectLoads
-import IxVMRefinement.Obs.Convert1
-import IxVMRefinement.Obs.Ingress0
-import IxVMRefinement.Obs.KernelModeled1
-import IxVMRefinement.Obs.KernelModeled2
+import IxVM.Obs.Convert
+import IxVM.Obs.Ingress
+import IxVM.Obs.KernelModeled
 
 /-! # Closing the direct payload facts: advice projection members and container recursor logic
 

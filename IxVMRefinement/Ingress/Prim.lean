@@ -1,8 +1,8 @@
-import IxVMRefinement.Obs.UInt8
-import IxVMRefinement.Obs.UInt32
-import IxVMRefinement.Obs.UInt64
-import IxVMRefinement.Obs.Fields
-import IxVMRefinement.Obs.Lists
+import IxVM.Obs.UInt8
+import IxVM.Obs.UInt32
+import IxVM.Obs.UInt64
+import IxVM.Obs.Fields
+import IxVM.Obs.Lists
 import Aiur.Library.Blake3.BlockLoop
 
 /-! # Bytes and words at source level

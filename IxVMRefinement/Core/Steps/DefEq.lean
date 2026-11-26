@@ -1,7 +1,7 @@
 import IxVMRefinement.Core.Steps.Whnf
 import IxVMRefinement.Core.Det
 import IxVMRefinement.Lib.Bytes
-import IxVMRefinement.Obs.KernelDefEq
+import IxVM.Obs.KernelDefEq
 
 /-! # Step lemmas of `KernelDefEq`, on the registry: the ordered tiers' entry and spine
 congruence -/

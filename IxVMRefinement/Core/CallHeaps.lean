@@ -1,4 +1,4 @@
-import IxVMRefinement.Core.Obs
+import Aiur.Generic.Refinement.Obs
 
 /-! # Heap bounds for observed subcalls
 

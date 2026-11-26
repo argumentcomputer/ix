@@ -1,6 +1,6 @@
 import IxVMRefinement.Claim.Walk
 import IxVMRefinement.Ingress.Ingress
-import IxVMRefinement.Obs.KernelClaim
+import IxVM.Obs.KernelClaim
 
 /-! # Observed record-owner and safety queries
 

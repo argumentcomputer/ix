@@ -1,6 +1,5 @@
-import IxVMRefinement.Obs.KernelCheck
-import IxVMRefinement.Obs.KernelModeled
-import IxVMRefinement.Obs.KernelModeled0
+import IxVM.Obs.KernelCheck
+import IxVM.Obs.KernelModeled
 
 /-! # Syntactic recursor guards from actual Source observations
 

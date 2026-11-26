@@ -4,9 +4,7 @@ import IxVMRefinement.Nat.Levels
 import IxVMRefinement.Nat.Basic
 import IxVMRefinement.Nat.Utf8
 import IxVMRefinement.Lib.Bytes
-import IxVMRefinement.Obs.KernelCheck3
-import IxVMRefinement.Obs.KernelCheck13
-import IxVMRefinement.Obs.KernelCheck14
+import IxVM.Obs.KernelCheck
 
 /-! # Zeta-transparent heads, telescopes, spines, and exact structural equality
 

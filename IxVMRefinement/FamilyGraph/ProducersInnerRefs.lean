@@ -2,11 +2,10 @@ import IxVMRefinement.FamilyGraph.ProducersGraph
 import IxVMRefinement.FamilyGraph.ProducersCallTree
 import IxVMRefinement.Claim.RefSafety
 import IxVMRefinement.Claim.TopRefs
-import IxVMRefinement.Obs.Convert1
-import IxVMRefinement.Obs.Ingress0
-import IxVMRefinement.Obs.KernelClaim0
-import IxVMRefinement.Obs.KernelModeled1
-import IxVMRefinement.Obs.KernelModeled2
+import IxVM.Obs.Convert
+import IxVM.Obs.Ingress
+import IxVM.Obs.KernelClaim
+import IxVM.Obs.KernelModeled
 
 /-! # Reference safety of inner records checked inside a family check
 

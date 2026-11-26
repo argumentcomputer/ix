@@ -1,6 +1,5 @@
 import IxVMRefinement.FamilyAlias.CallStreams
-import IxVMRefinement.Obs.KernelModeled2
-import IxVMRefinement.Obs.KernelModeled4
+import IxVM.Obs.KernelModeled
 import IxVMRefinement.Assembly.FamilyArm
 
 /-! # The tables `check_family` renames over

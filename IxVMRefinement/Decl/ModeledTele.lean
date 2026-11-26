@@ -1,11 +1,8 @@
 import IxVMRefinement.Decl.ModeledLevels
 import IxVMRefinement.Subst.Steps
-import IxVMRefinement.Obs.KernelModeled
-import IxVMRefinement.Obs.KernelModeled0
-import IxVMRefinement.Obs.KernelModeled1
-import IxVMRefinement.Obs.KernelModeled4
-import IxVMRefinement.Obs.KernelCheck
-import IxVMRefinement.Obs.KernelWhnf0
+import IxVM.Obs.KernelModeled
+import IxVM.Obs.KernelCheck
+import IxVM.Obs.KernelWhnf
 import IxCK.Kernel.Verify.InstLevels
 
 /-! # Telescope, spine, renaming, and major-pin helpers for modeled declarations

@@ -1,6 +1,6 @@
 import IxVMRefinement.Binding.RenderedSpecs
 import IxVMRefinement.RoleVal.GroupAdmit
-import IxVMRefinement.Obs.Names
+import IxVM.Obs.Names
 import IxVMRefinement.Binding.TermCells
 
 /-! # Reading a rendered specification off the function's syntax tree

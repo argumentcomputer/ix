@@ -1,7 +1,7 @@
 import IxVMRefinement.Core.Open
 import IxVMRefinement.Lib.Bytes
-import IxVMRefinement.Obs.KernelSubst1
-import IxVMRefinement.Obs.KernelRoles
+import IxVM.Obs.KernelSubst
+import IxVM.Obs.KernelRoles
 import IxCK.Kernel.Verify.BridgeWfImp
 import IxVMRefinement.Decl.ModeledRules
 
