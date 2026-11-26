@@ -1,6 +1,8 @@
 import Aiur.Tiling
 import Aiur.Tiling.SingleCircuit
+import Aiur.Tiling.BLS12381
 import Aiur.Library.Field.BN254.Prime
+import Aiur.Library.Field.BLS12381.Prime
 import Aiur.Library.U32.Goldilocks
 import Aiur.Tiling.Ixa
 
@@ -50,27 +52,34 @@ order; the exit status is nonzero, and the layout file is not written, unless
 every check accepts. The fixed path may be `/dev/stdout`, so that a consumer
 reads the matrix from a pipe instead of a file.
 
-Usage: `tiling_export2 [--goldilocks | --bn254] [--single-circuit [--pow2-rows] [--min-rows N] [--packed-rows N]] input.json output.json (fixed.bin | /dev/stdout | -) [tables.bin]`.
+Usage: `tiling_export2 [--goldilocks | --bls12-381 | --bn254 | --field <name>] [--single-circuit [--pow2-rows] [--min-rows N] [--packed-rows N]] input.json output.json (fixed.bin | /dev/stdout | -) [tables.bin]`.
 The fixed file is in the `IXTLFX01` format of `TilingExport.lean`.
 
 With `--single-circuit` (non-mixed compact mode only, requiring `tables.bin`),
 all shards and compact tables are horizontally packed via
 `Aiur.Tiling.SingleCircuit.pack (SingleCircuit.compactSystemAirs S H compact HT) packedRows`
 into one single circuit (`num_circuits == 1`, backed by
-`SingleCircuit.narrow_compact_single_circuit_sound_goldilocks`). `output.json`
-gains a `"single_circuit"` object with geometry, per-constituent offsets /
-optional `active_col`, and serialized `packCircuit` graph, and `fixed.bin`
-receives ONE `IXTLFX01` block for the packed fixed matrix (`packedRows ×
-fixed_width`).
+`SingleCircuit.narrow_compact_single_circuit_sound_goldilocks` over Goldilocks
+and `Aiur.Tiling.BLS12381.narrow_compact_single_circuit_sound_bls12381` over
+BLS12-381). `output.json` gains a `"single_circuit"` object with geometry,
+per-constituent offsets / optional `active_col`, and serialized `packCircuit`
+graph, and `fixed.bin` receives ONE `IXTLFX01` block for the packed fixed
+matrix (`packedRows × fixed_width`).
 
 Field selection defaults to BN254 (`Aiur.Library.Field.BN254.modulus`) for
-backwards compatibility. Pass `--goldilocks` (or `--field goldilocks`, or set
-`"field": "goldilocks"` in the input JSON) to run over Goldilocks
-(`2^64 − 2^32 + 1`, `Aiur.Library.U32.Goldilocks.modulus`): the exporter decodes
-`.ixa` packages against the Goldilocks modulus and enforces the soundness
-preconditions of `Aiur.Tiling.Goldilocks.{narrow_heap_sound_compact_goldilocks,
-mixed_heap_sound_goldilocks}` (`bound ≤ 2^63`, `3 < bound`, `capacityRows ≤ 2^39`,
-and for artifact inputs `pkg.limbs.sum ≤ 24`).
+backwards compatibility:
+* Pass `--goldilocks` (or `--field goldilocks`, or `"field": "goldilocks"`) to
+  run over Goldilocks (`2^64 − 2^32 + 1`, `Aiur.Library.U32.Goldilocks.modulus`),
+  enforcing `Aiur.Tiling.Goldilocks.{narrow_heap_sound_compact_goldilocks,
+  mixed_heap_sound_goldilocks}` (`bound ≤ 2^63`, `3 < bound`, `capacityRows ≤ 2^39`,
+  and for artifact inputs `pkg.limbs.sum ≤ 24`).
+* Pass `--bls12-381` (or `--field bls12-381`, alias `bls12381`, or
+  `"field": "bls12-381"` — normalized to `"bls12-381"` in output JSON) to run
+  over the BLS12-381 scalar field (`Aiur.Library.Field.BLS12381.modulus`),
+  enforcing `Aiur.Tiling.BLS12381.{narrow_heap_sound_compact_bls12381,
+  mixed_heap_sound_bls12381, narrow_compact_single_circuit_sound_bls12381}`
+  (`bound ≤ 2^254`, `3 < bound`, `capacityRows ≤ 2^39`, and for artifact inputs
+  `pkg.limbs.sum ≤ 214`).
 
 With `tables.bin`, the tables are the compact tables of
 `narrow_heap_sound_compact` instead of the stacked ones: one map table
@@ -106,17 +115,35 @@ open Aiur.Tiling.Periodic
 inductive FieldChoice where
   | bn254
   | goldilocks
+  | bls12381
   deriving BEq, DecidableEq
 
 def FieldChoice.name : FieldChoice → String
   | .bn254 => "bn254"
   | .goldilocks => "goldilocks"
+  | .bls12381 => "bls12-381"
+
+def FieldChoice.parse (s : String) : Except String FieldChoice :=
+  match s with
+  | "bn254" => pure .bn254
+  | "goldilocks" => pure .goldilocks
+  | "bls12-381" | "bls12381" => pure .bls12381
+  | _ => throw s!"unknown field {s} (expected bn254, goldilocks, or bls12-381)"
 
 /-- Maximum `bound` allowed by the field's tiling soundness theorem
-(`2^63` for `Aiur.Tiling.Goldilocks`, `BN254.modulus` for BN254). -/
+(`2^63` for `Aiur.Tiling.Goldilocks`, `2^254` for `Aiur.Tiling.BLS12381`,
+`BN254.modulus` for BN254). -/
 def FieldChoice.maxBound : FieldChoice → Nat
   | .bn254 => Aiur.Library.Field.BN254.modulus
   | .goldilocks => 2 ^ 63
+  | .bls12381 => 2 ^ 254
+
+/-- Maximum depth-limb bit width (`cfg.bits`) allowed by the field's tiling
+soundness theorem (`24` for Goldilocks, `214` for BLS12-381). -/
+def FieldChoice.maxDepthBits : FieldChoice → Option Nat
+  | .bn254 => none
+  | .goldilocks => some 24
+  | .bls12381 => some 214
 
 /-- Parsed CLI options for `tiling_export2`. -/
 structure CliOptions where
@@ -131,23 +158,23 @@ def parseNatOpt (flag s : String) : Except String Nat :=
   | some n => pure n
   | none => throw s!"{flag} expects a natural number, got {s}"
 
+def setFieldOpt (opts : CliOptions) (fc : FieldChoice) : Except String CliOptions := do
+  if opts.field.isSome && opts.field != some fc then throw "conflicting field flags"
+  pure { opts with field := some fc }
+
 def parseArgsAux (opts : CliOptions) (pos : Array String) : List String →
     Except String (CliOptions × Array String)
   | [] => pure (opts, pos)
   | "--goldilocks" :: rest => do
-      if opts.field == some .bn254 then throw "cannot pass both --bn254 and --goldilocks"
-      parseArgsAux { opts with field := some .goldilocks } pos rest
+      parseArgsAux (← setFieldOpt opts .goldilocks) pos rest
   | "--bn254" :: rest => do
-      if opts.field == some .goldilocks then throw "cannot pass both --bn254 and --goldilocks"
-      parseArgsAux { opts with field := some .bn254 } pos rest
+      parseArgsAux (← setFieldOpt opts .bn254) pos rest
+  | "--bls12-381" :: rest | "--bls12381" :: rest => do
+      parseArgsAux (← setFieldOpt opts .bls12381) pos rest
   | "--field" :: f :: rest => do
-      let fc ← match f with
-        | "bn254" => pure FieldChoice.bn254
-        | "goldilocks" => pure FieldChoice.goldilocks
-        | _ => throw s!"unknown field {f} (expected bn254 or goldilocks)"
-      if opts.field.isSome && opts.field != some fc then throw "conflicting field flags"
-      parseArgsAux { opts with field := some fc } pos rest
-  | ["--field"] => throw "--field expects bn254 or goldilocks"
+      let fc ← FieldChoice.parse f
+      parseArgsAux (← setFieldOpt opts fc) pos rest
+  | ["--field"] => throw "--field expects bn254, goldilocks, or bls12-381"
   | "--single-circuit" :: rest =>
       parseArgsAux { opts with singleCircuit := true } pos rest
   | "--pow2-rows" :: rest =>
@@ -174,7 +201,7 @@ def parseArgs (args : List String) :
   match pos.toList with
   | [a, b, c] => pure (opts, a, b, c, none)
   | [a, b, c, d] => pure (opts, a, b, c, some d)
-  | _ => throw "usage: tiling_export2 [--goldilocks | --bn254] [--single-circuit [--pow2-rows] [--min-rows N] [--packed-rows N]] input.json output.json (fixed.bin | -) [tables.bin]"
+  | _ => throw "usage: tiling_export2 [--goldilocks | --bls12-381 | --bn254 | --field <name>] [--single-circuit [--pow2-rows] [--min-rows N] [--packed-rows N]] input.json output.json (fixed.bin | -) [tables.bin]"
 
 /-- Row indices checked directly against `SingleCircuit.packFixed`: row 0,
 each constituent's last active row and first inactive row, and the final packed row. -/
@@ -532,10 +559,10 @@ def run (field : FieldChoice) (opts : CliOptions) (t0 : Nat) (j : Json) (base : 
   let { W, shards, units, caps, tuples, roms, request, chips, callables, pkg, wide, entry } := src
   if opts.singleCircuit && !wide.isEmpty then
     IO.eprintln "--single-circuit does not support mixed \"wide\" units"; return 1
-  if field == .goldilocks then
+  if let some maxBits := field.maxDepthBits then
     if let some pkg := pkg then
-      unless pkg.limbs.sum ≤ 24 do
-        IO.eprintln s!"depth limbs sum to {pkg.limbs.sum} bits, exceeding Goldilocks limit 24"; return 1
+      unless pkg.limbs.sum ≤ maxBits do
+        IO.eprintln s!"depth limbs sum to {pkg.limbs.sum} bits, exceeding {field.name} limit {maxBits}"; return 1
   let mut units := units
   let mut caps := caps
   let mut tuples := tuples
@@ -984,9 +1011,10 @@ def main (args : List String) : IO UInt32 := do
   let jsonField : Option FieldChoice ← match j.getObjVal? "field" with
     | .error _ => pure none
     | .ok fj => match fj.getStr? with
-        | .ok "bn254" => pure (some .bn254)
-        | .ok "goldilocks" => pure (some .goldilocks)
-        | _ => do IO.eprintln "field must be bn254 or goldilocks"; return 1
+        | .ok s => match FieldChoice.parse s with
+            | .ok fc => pure (some fc)
+            | .error _ => do IO.eprintln "field must be bn254, goldilocks, or bls12-381"; return 1
+        | .error _ => do IO.eprintln "field must be bn254, goldilocks, or bls12-381"; return 1
   let field : FieldChoice ← match opts.field, jsonField with
     | some c, some f =>
         if c == f then pure c
@@ -1004,5 +1032,7 @@ def main (args : List String) : IO UInt32 := do
       have : Fact (Nat.Prime Aiur.Library.U32.Goldilocks.modulus) :=
         ⟨Aiur.Library.U32.Goldilocks.modulus_prime⟩
       run Aiur.Library.U32.Goldilocks.modulus .goldilocks opts t0 j base output fixedPath tablesPath
+  | .bls12381 =>
+      run Aiur.Library.Field.BLS12381.modulus .bls12381 opts t0 j base output fixedPath tablesPath
 
 end Aiur.Tiling.TilingExport2

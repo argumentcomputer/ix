@@ -5,7 +5,9 @@ import Aiur.Tiling.WideIxa
 import Aiur.Tiling.IxaTrace
 import Aiur.Tiling.GroupedIxa
 import Aiur.Tiling.SingleCircuit
+import Aiur.Tiling.BLS12381
 import Aiur.Library.Field.BN254.Prime
+import Aiur.Library.Field.BLS12381.Prime
 import Aiur.Library.U32.Goldilocks
 
 /-!
@@ -30,26 +32,36 @@ re-encode to the file's bytes (`Ixa.checkTrace`). The export fails unless
 width of the chips has one ROM table, the ROM widths are distinct and each
 capacity is at most `bound`.
 
-Usage: `wide_export [--single-circuit [--pow2-rows] [--min-rows N] [--packed-rows N]] input.json layout.json fixed.bin`. Input
-(`ix-wide-input-1`): `field` (`"bn254"` or `"goldilocks"`), `artifact`
+Usage: `wide_export [--goldilocks | --bls12-381 | --bn254 | --field <name>] [--single-circuit [--pow2-rows] [--min-rows N] [--packed-rows N]] input.json layout.json fixed.bin`. Input
+(`ix-wide-input-1`): `field` (`"bn254"`, `"goldilocks"`, or `"bls12-381"`, alias
+`"bls12381"`, normalized to `"bls12-381"` in output JSON; may also be supplied on
+the CLI and fails closed on mismatch), `artifact`
 (path, relative to the input's directory unless absolute), `circuits`
 (`[{"chip": name | "chip_index": i, "cap": rows}]`), `rom` (`[[words, cap]]`)
 and `entry` (a chip name; default the first circuit's); optional `all_maps` (keep the claims of every map), `pow2` (require power-of-two row counts) and `map_padding`: `"repeat"` writes the selector-free map tables `mapAirsD` of `wide_heap_sound_dup` (main `mult`, fixed cells only, lookup `push(−mult, cells)`, padding rows repeating the last claim), otherwise `mapAirs`. The tables are `WideIxa.stageOf`'s. Output
-(`ix-wide-layout-1`): `tables`, in the order of `stageLedger`'s sum (units,
+(`ix-wide-layout-1`): `field`, `modulus`, `tables`, in the order of `stageLedger`'s sum (units,
 then map tables, then ROM tables), each with `kind`, `rows` and `circuit` (the
 graph format of `TilingExport2.graphJson`, variables `width …` fixed); the
 request tuple; `bound`. `fixed.bin` holds one `IXTLFX01` block per map and ROM
 table, in table order (`mapFixed`, and the row index for ROM tables).
+
+In both normal and `--single-circuit` modes, the exporter enforces the field's
+soundness preconditions: `2 < bound`, stage rows `≤ 2^39`, `bound ≤ 2^63` and
+`pkg.limbs.sum ≤ 24` for Goldilocks (`Aiur.Tiling.Goldilocks`), `bound ≤ 2^254`
+and `pkg.limbs.sum ≤ 214` for BLS12-381 (`Aiur.Tiling.BLS12381`), and
+`bound ≤ BN254.modulus` for BN254.
 
 With `--single-circuit` (standard unit + `mapAirs` + `romAirs` layout, no groups /
 shared / repeat map layout), all tables (`st.units ++ st.maps ++ st.roms`, the
 `Ixa` realization of `SingleCircuit.wideAirs` by `WideIxa.units_ofChip` and
 `WideIxa.stageOf_spec`) are horizontally packed via `Aiur.Tiling.SingleCircuit.pack`
 into one single circuit (`num_circuits == 1`, backed by
-`SingleCircuit.wide_single_circuit_sound_goldilocks`). `layout.json` gains a
-`"single_circuit"` object with geometry, per-constituent offsets / optional
-`active_col`, and serialized `packCircuit` graph, and `fixed.bin` receives ONE
-`IXTLFX01` block for the packed fixed matrix (`packedRows × fixed_width`).
+`SingleCircuit.wide_single_circuit_sound_goldilocks` over Goldilocks and
+`Aiur.Tiling.BLS12381.wide_single_circuit_sound_bls12381` over BLS12-381).
+`layout.json` gains a `"single_circuit"` object with geometry, per-constituent
+offsets / optional `active_col`, and serialized `packCircuit` graph, and
+`fixed.bin` receives ONE `IXTLFX01` block for the packed fixed matrix
+(`packedRows × fixed_width`).
 -/
 
 namespace Aiur.Tiling.WideExport
@@ -57,8 +69,41 @@ namespace Aiur.Tiling.WideExport
 open Lean (Json)
 open Aiur.Tiling.WideStage
 
+/-- The prime field the exporter runs over. -/
+inductive FieldChoice where
+  | bn254
+  | goldilocks
+  | bls12381
+  deriving BEq, DecidableEq
+
+def FieldChoice.name : FieldChoice → String
+  | .bn254 => "bn254"
+  | .goldilocks => "goldilocks"
+  | .bls12381 => "bls12-381"
+
+def FieldChoice.parse (s : String) : Except String FieldChoice :=
+  match s with
+  | "bn254" => pure .bn254
+  | "goldilocks" => pure .goldilocks
+  | "bls12-381" | "bls12381" => pure .bls12381
+  | _ => throw s!"unknown field {s} (expected bn254, goldilocks, or bls12-381)"
+
+/-- Maximum `bound` allowed by the field's wide soundness theorem. -/
+def FieldChoice.maxBound : FieldChoice → Nat
+  | .bn254 => Aiur.Library.Field.BN254.modulus
+  | .goldilocks => 2 ^ 63
+  | .bls12381 => 2 ^ 254
+
+/-- Maximum depth-limb bit width (`cfg.bits`) allowed by the field's wide
+soundness theorem (`24` for Goldilocks, `214` for BLS12-381). -/
+def FieldChoice.maxDepthBits : FieldChoice → Option Nat
+  | .bn254 => none
+  | .goldilocks => some 24
+  | .bls12381 => some 214
+
 /-- Parsed CLI options for `wide_export`. -/
 structure CliOptions where
+  field : Option FieldChoice := none
   singleCircuit : Bool := false
   pow2Rows : Bool := false
   minRows : Option Nat := none
@@ -69,9 +114,23 @@ def parseNatOpt (flag s : String) : Except String Nat :=
   | some n => pure n
   | none => throw s!"{flag} expects a natural number, got {s}"
 
+def setFieldOpt (opts : CliOptions) (fc : FieldChoice) : Except String CliOptions := do
+  if opts.field.isSome && opts.field != some fc then throw "conflicting field flags"
+  pure { opts with field := some fc }
+
 def parseArgsAux (opts : CliOptions) (pos : Array String) : List String →
     Except String (CliOptions × Array String)
   | [] => pure (opts, pos)
+  | "--goldilocks" :: rest => do
+      parseArgsAux (← setFieldOpt opts .goldilocks) pos rest
+  | "--bn254" :: rest => do
+      parseArgsAux (← setFieldOpt opts .bn254) pos rest
+  | "--bls12-381" :: rest | "--bls12381" :: rest => do
+      parseArgsAux (← setFieldOpt opts .bls12381) pos rest
+  | "--field" :: f :: rest => do
+      let fc ← FieldChoice.parse f
+      parseArgsAux (← setFieldOpt opts fc) pos rest
+  | ["--field"] => throw "--field expects bn254, goldilocks, or bls12-381"
   | "--single-circuit" :: rest =>
       parseArgsAux { opts with singleCircuit := true } pos rest
   | "--pow2-rows" :: rest =>
@@ -97,7 +156,7 @@ def parseArgs (args : List String) :
     throw "--pow2-rows, --min-rows, and --packed-rows require --single-circuit"
   match pos.toList with
   | [a, b, c] => pure (opts, a, b, c)
-  | _ => throw "usage: wide_export [--single-circuit [--pow2-rows] [--min-rows N] [--packed-rows N]] input.json layout.json fixed.bin"
+  | _ => throw "usage: wide_export [--goldilocks | --bls12-381 | --bn254 | --field <name>] [--single-circuit [--pow2-rows] [--min-rows N] [--packed-rows N]] input.json layout.json fixed.bin"
 
 /-- Row indices validated directly against `SingleCircuit.packFixed`. -/
 def boundaryRows {F : Type} (airs : List (Air F)) (packedRows : Nat) : List Nat :=
@@ -190,12 +249,12 @@ def block (rows width : Nat) (f : Nat → Nat → ZMod p) : ByteArray := Id.run 
       out := pushNat out (f i k).val
   return out
 
-def run (isGoldilocks : Bool) (opts : CliOptions) (j : Json) (base output fixedPath : System.FilePath) : IO UInt32 := do
+def run (fieldChoice : FieldChoice) (opts : CliOptions) (j : Json) (base output fixedPath : System.FilePath) : IO UInt32 := do
   let get (k : String) : IO Json := IO.ofExcept (j.getObjVal? k)
   let path : System.FilePath := ← IO.ofExcept (← get "artifact").getStr?
   let path := if path.isAbsolute then path else base / path
   let pkg ← IO.ofExcept (Ixa.decodeChecked (F := Fp) p ZMod.val (← IO.FS.readBinFile path))
-  IO.eprintln s!"wide_export: decoded {path}: {pkg.chips.size} chips"
+  IO.eprintln s!"wide_export: decoded {path}: {pkg.chips.size} chips ({fieldChoice.name})"
   let mut circuits : List (String × Nat) := []
   for cj in ← IO.ofExcept (← get "circuits").getArr? do
     let name ← match cj.getObjValAs? String "chip", cj.getObjValAs? Nat "chip_index" with
@@ -231,6 +290,13 @@ def run (isGoldilocks : Bool) (opts : CliOptions) (j : Json) (base output fixedP
   unless pkg.checkRanges do IO.eprintln "wide_export: a depth range map is not a package map"; return 1
   unless pkg.checkEntryPlain entryName do
     IO.eprintln s!"wide_export: the entry {entryName} is recursive or has no chip"; return 1
+  unless 2 < st.bound do
+    IO.eprintln s!"wide_export: bound {st.bound} does not exceed 2"; return 1
+  unless st.bound ≤ fieldChoice.maxBound do
+    IO.eprintln s!"wide_export: bound {st.bound} exceeds {fieldChoice.name} limit {fieldChoice.maxBound}"; return 1
+  if let some maxBits := fieldChoice.maxDepthBits then
+    unless pkg.limbs.sum ≤ maxBits do
+      IO.eprintln s!"wide_export: depth limbs sum to {pkg.limbs.sum} bits, exceeding {fieldChoice.name} limit {maxBits}"; return 1
   -- `mapFixed` reads claims by list index; the writer reads an array and is
   -- compared with `Air.fixed` on the first rows of every table.
   -- With `"map_padding": "repeat"` the map tables are `mapAirsD`
@@ -252,16 +318,6 @@ def run (isGoldilocks : Bool) (opts : CliOptions) (j : Json) (base output fixedP
       IO.eprintln "wide_export: --single-circuit does not support \"map_padding\": \"repeat\""; return 1
     unless st.groups.isEmpty do
       IO.eprintln "wide_export: --single-circuit does not support \"groups\""; return 1
-    unless 2 < st.bound do
-      IO.eprintln s!"wide_export: bound {st.bound} does not exceed 2"; return 1
-    if isGoldilocks then
-      unless pkg.limbs.sum ≤ 24 do
-        IO.eprintln s!"wide_export: depth limbs sum to {pkg.limbs.sum} bits, exceeding Goldilocks limit 24"; return 1
-      unless st.bound ≤ 2 ^ 63 do
-        IO.eprintln s!"wide_export: bound {st.bound} exceeds Goldilocks limit 2^63"; return 1
-    else
-      unless st.bound ≤ Aiur.Library.Field.BN254.modulus do
-        IO.eprintln s!"wide_export: bound {st.bound} exceeds BN254 modulus"; return 1
     -- `st.units ++ st.maps ++ st.roms` is the `Ixa` realization of
     -- `SingleCircuit.wideAirs` (by `WideIxa.units_ofChip` and `WideIxa.stageOf_spec`).
     let airs : List (Air Fp) := st.units ++ st.maps ++ st.roms
@@ -403,7 +459,8 @@ def run (isGoldilocks : Bool) (opts : CliOptions) (j : Json) (base output fixedP
     ("circuit", circuitJson p a.circuit)]
   let romsJ := (roms.zip romsA).map fun ((w, cap), a) => Json.mkObj [("kind", Json.str "rom"),
     ("words", Json.num w), ("rows", Json.num cap), ("circuit", circuitJson p a.circuit)]
-  let out := Json.mkObj ([("format", Json.str "ix-wide-layout-1"), ("modulus", Json.str (toString p)),
+  let out := Json.mkObj ([("format", Json.str "ix-wide-layout-1"),
+    ("field", Json.str fieldChoice.name), ("modulus", Json.str (toString p)),
     ("artifact", Json.str path.toString),
     ("tables", Json.arr (units ++ groupsJ ++ mapsJ ++ romsJ).toArray),
     ("request", Json.arr (request.map (field p)).toArray),
@@ -422,14 +479,29 @@ def main (args : List String) : IO UInt32 := do
   let j ← IO.ofExcept (Json.parse (← IO.FS.readFile input))
   unless (j.getObjValAs? String "format").toOption == some "ix-wide-input-1" do
     IO.eprintln "unexpected input format"; return 1
+  let jsonField : Option FieldChoice ← match j.getObjVal? "field" with
+    | .error _ => pure none
+    | .ok fj => match fj.getStr? with
+        | .ok s => match FieldChoice.parse s with
+            | .ok fc => pure (some fc)
+            | .error _ => do IO.eprintln "field must be bn254, goldilocks, or bls12-381"; return 1
+        | .error _ => do IO.eprintln "field must be bn254, goldilocks, or bls12-381"; return 1
+  let fieldChoice : FieldChoice ← match opts.field, jsonField with
+    | some c, some f =>
+        if c == f then pure c
+        else do IO.eprintln s!"CLI field {c.name} conflicts with input field {f.name}"; return 1
+    | some c, none => pure c
+    | none, some f => pure f
+    | none, none => do IO.eprintln "field must be bn254, goldilocks, or bls12-381"; return 1
   let base := (System.FilePath.mk input).parent.getD "."
-  match (j.getObjValAs? String "field").toOption with
-  | some "bn254" =>
+  match fieldChoice with
+  | .bn254 =>
       have : Fact (Nat.Prime Aiur.Library.Field.BN254.modulus) := ⟨Aiur.Library.Field.BN254.modulus_prime⟩
-      run Aiur.Library.Field.BN254.modulus false opts j base output fixed
-  | some "goldilocks" =>
+      run Aiur.Library.Field.BN254.modulus .bn254 opts j base output fixed
+  | .goldilocks =>
       have : Fact (Nat.Prime Aiur.Library.U32.Goldilocks.modulus) := ⟨Aiur.Library.U32.Goldilocks.modulus_prime⟩
-      run Aiur.Library.U32.Goldilocks.modulus true opts j base output fixed
-  | _ => do IO.eprintln "field must be bn254 or goldilocks"; return 1
+      run Aiur.Library.U32.Goldilocks.modulus .goldilocks opts j base output fixed
+  | .bls12381 =>
+      run Aiur.Library.Field.BLS12381.modulus .bls12381 opts j base output fixed
 
 end Aiur.Tiling.WideExport
