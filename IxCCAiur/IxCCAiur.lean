@@ -19,6 +19,10 @@ import IxCCAiur.InlineFuse
 import IxCCAiur.TypedLower
 import IxCCAiur.TypedWorld
 import IxCCAiur.TypedGadgets
+import IxCCAiur.Blake3Spec
+import IxCCAiur.InlineFuseProof
+import IxCCAiur.TypedBackward
+import IxCCAiur.TypedClaim
 import IxCCAiur.CompiledCert
 import IxCCAiur.Driver
 import IxCCAiur.Audit
