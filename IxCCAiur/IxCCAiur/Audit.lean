@@ -4,6 +4,7 @@ import IxCCAiur.CompiledCert
 import IxCCAiur.Fib
 import IxCCAiur.Gcd
 import IxCCAiur.Roots
+import IxCCAiur.TypedClaim
 
 /-! # Direct `IxCC Fir → Formal Aiur` Certified Compiler Audit Surface
 
@@ -1266,5 +1267,297 @@ info: 'IxCC.AiurBackend.CompiledCert.Cert.accepted_nat_backward' depends on axio
 info: 'IxCC.AiurBackend.CompiledCert.Cert.accepted_nat' depends on axioms: [propext, Classical.choice, Quot.sound]
 -/
 #guard_msgs (whitespace := lax) in #print axioms CompiledCert.Cert.accepted_nat
+
+/-! ## 9. Typed / Unboxed Lowering, Peephole, and Claim Audit (`TypedWorld`, `TypedGadgets`, `Peephole`, `TypedBackward`, `TypedClaim`) -/
+
+/--
+info: 'IxCC.AiurBackend.TypedWorld.u8ByteSpec_of_check' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedWorld.u8ByteSpec_of_check
+
+/--
+info: 'IxCC.AiurBackend.TypedGadgets.fieldCompatible64_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedGadgets.fieldCompatible64_goldilocks
+
+/--
+info: 'IxCC.AiurBackend.TypedGadgets.eval_check_u8' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedGadgets.eval_check_u8
+
+/--
+info: 'IxCC.AiurBackend.TypedGadgets.eval_check_u16' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedGadgets.eval_check_u16
+
+/--
+info: 'IxCC.AiurBackend.TypedGadgets.eval_check_u24' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedGadgets.eval_check_u24
+
+/--
+info: 'IxCC.AiurBackend.TypedGadgets.eval_check_u56' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedGadgets.eval_check_u56
+
+/--
+info: 'IxCC.AiurBackend.TypedGadgets.eval_sub_borrow_56' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedGadgets.eval_sub_borrow_56
+
+/--
+info: 'IxCC.AiurBackend.TypedGadgets.eval_mul_56' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedGadgets.eval_mul_56
+
+/--
+info: 'IxCC.AiurBackend.TypedGadgets.eval_divmod_56' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedGadgets.eval_divmod_56
+
+/--
+info: 'IxCC.AiurBackend.TypedGadgets.eval_pow_56' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedGadgets.eval_pow_56
+
+/--
+info: 'IxCC.AiurBackend.TypedGadgets.eval_gcd_56' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedGadgets.eval_gcd_56
+
+/--
+info: 'IxCC.AiurBackend.TypedGadgets.eval_shl_56' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedGadgets.eval_shl_56
+
+/--
+info: 'IxCC.AiurBackend.TypedGadgets.eval_shr_56' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedGadgets.eval_shr_56
+
+/--
+info: 'IxCC.AiurBackend.TypedGadgets.eval_u32_of_field' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedGadgets.eval_u32_of_field
+
+/--
+info: 'IxCC.AiurBackend.TypedGadgets.eval_u32_complement' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedGadgets.eval_u32_complement
+
+/--
+info: 'IxCC.AiurBackend.TypedGadgets.eval_u32_div' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedGadgets.eval_u32_div
+
+/--
+info: 'IxCC.AiurBackend.TypedGadgets.eval_u32_mod' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedGadgets.eval_u32_mod
+
+/--
+info: 'IxCC.AiurBackend.TypedGadgets.eval_u32_shr' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedGadgets.eval_u32_shr
+
+/--
+info: 'IxCC.AiurBackend.Peephole.isPlainExpr_rewriteExpr' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Peephole.isPlainExpr_rewriteExpr
+
+/--
+info: 'IxCC.AiurBackend.Peephole.evalExpr_add3_left_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Peephole.evalExpr_add3_left_sound
+
+/--
+info: 'IxCC.AiurBackend.Peephole.evalExpr_add3_right_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Peephole.evalExpr_add3_right_sound
+
+/--
+info: 'IxCC.AiurBackend.Peephole.evalExpr_rotr16_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Peephole.evalExpr_rotr16_sound
+
+/--
+info: 'IxCC.AiurBackend.Peephole.evalExpr_rotr8_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Peephole.evalExpr_rotr8_sound
+
+/--
+info: 'IxCC.AiurBackend.Peephole.evalExpr_xor_rotr12_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Peephole.evalExpr_xor_rotr12_sound
+
+/--
+info: 'IxCC.AiurBackend.Peephole.evalExpr_xor_rotr7_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Peephole.evalExpr_xor_rotr7_sound
+
+/--
+info: 'IxCC.AiurBackend.Peephole.evalExpr_byteShr_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Peephole.evalExpr_byteShr_sound
+
+/--
+info: 'IxCC.AiurBackend.Peephole.evalExpr_byteShl_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Peephole.evalExpr_byteShl_sound
+
+/--
+info: 'IxCC.AiurBackend.Peephole.u32Rotr8_contract_of_body' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Peephole.u32Rotr8_contract_of_body
+
+/--
+info: 'IxCC.AiurBackend.Peephole.u32Rotr16_contract_of_body' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Peephole.u32Rotr16_contract_of_body
+
+/--
+info: 'IxCC.AiurBackend.Peephole.u32XorRotr7_contract_of_body' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Peephole.u32XorRotr7_contract_of_body
+
+/--
+info: 'IxCC.AiurBackend.Peephole.u32XorRotr12_contract_of_body' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Peephole.u32XorRotr12_contract_of_body
+
+/--
+info: 'IxCC.AiurBackend.Peephole.u32Add3_check_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Peephole.u32Add3_check_sound
+
+/--
+info: 'IxCC.AiurBackend.TypedBackward.eval_u32_mul' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedBackward.eval_u32_mul
+
+/--
+info: 'IxCC.AiurBackend.TypedBackward.eval_u32_shl' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedBackward.eval_u32_shl
+
+/--
+info: 'IxCC.AiurBackend.TypedBackward.typedLoweredWorld_of_check' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedBackward.typedLoweredWorld_of_check
+
+/--
+info: 'IxCC.AiurBackend.TypedBackward.typedLoweredWorld_of_natCore' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedBackward.typedLoweredWorld_of_natCore
+
+/--
+info: 'IxCC.AiurBackend.TypedBackward.evalExprN_of_rewriteExpr_clean' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedBackward.evalExprN_of_rewriteExpr_clean
+
+/--
+info: 'IxCC.AiurBackend.TypedBackward.eval_tCodeE_sound_N' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedBackward.eval_tCodeE_sound_N
+
+/--
+info: 'IxCC.AiurBackend.TypedBackward.typed_backward_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedBackward.typed_backward_sound
+
+/--
+info: 'IxCC.AiurBackend.TypedBackward.typed_entry_backward_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedBackward.typed_entry_backward_sound
+
+/--
+info: 'IxCC.AiurBackend.TypedBackward.typed_circuit_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedBackward.typed_circuit_sound
+
+/--
+info: 'IxCC.AiurBackend.TypedBackward.typed_circuit_sound_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedBackward.typed_circuit_sound_goldilocks
+
+/--
+info: 'IxCC.AiurBackend.TypedClaim.check_of_inferCheckedShapes' depends on axioms: [propext]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedClaim.check_of_inferCheckedShapes
+
+/--
+info: 'IxCC.AiurBackend.TypedClaim.shapeSound_of_inferCheckedShapes' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedClaim.shapeSound_of_inferCheckedShapes
+
+/--
+info: 'IxCC.AiurBackend.TypedClaim.result_fieldNat' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedClaim.result_fieldNat
+
+/--
+info: 'IxCC.AiurBackend.TypedClaim.result_typed_enum' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedClaim.result_typed_enum
+
+/--
+info: 'IxCC.AiurBackend.TypedClaim.typed_entry_source_backward_checked' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedClaim.typed_entry_source_backward_checked
+
+/--
+info: 'IxCC.AiurBackend.TypedClaim.typed_entry_source_sound_checked' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedClaim.typed_entry_source_sound_checked
+
+/--
+info: 'IxCC.AiurBackend.TypedClaim.typed_circuit_source_backward_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedClaim.typed_circuit_source_backward_goldilocks
+
+/--
+info: 'IxCC.AiurBackend.TypedClaim.typed_circuit_source_sound_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedClaim.typed_circuit_source_sound_goldilocks
+
+/--
+info: 'IxCC.AiurBackend.TypedClaim.typed_accepted_source_backward' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedClaim.typed_accepted_source_backward
+
+/--
+info: 'IxCC.AiurBackend.TypedClaim.typed_accepted_nat_backward' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedClaim.typed_accepted_nat_backward
+
+/--
+info: 'IxCC.AiurBackend.TypedClaim.typed_accepted_nat_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedClaim.typed_accepted_nat_sound
+
+/--
+info: 'IxCC.AiurBackend.TypedClaim.typed_accepted_nat' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedClaim.typed_accepted_nat
+
+/--
+info: 'IxCC.AiurBackend.TypedClaim.typed_accepted_enum_backward' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedClaim.typed_accepted_enum_backward
+
+/--
+info: 'IxCC.AiurBackend.TypedClaim.typed_accepted_enum' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedClaim.typed_accepted_enum
+
+/--
+info: 'IxCC.AiurBackend.TypedClaim.typed_accepted_obj_nat' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedClaim.typed_accepted_obj_nat
+
+/--
+info: 'IxCC.AiurBackend.TypedClaim.typed_accepted_obj_enum' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedClaim.typed_accepted_obj_enum
 
 end IxCC.AiurBackend.Audit
