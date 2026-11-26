@@ -6,6 +6,7 @@ import Aiur.Tiling.IxaTrace
 import Aiur.Tiling.GroupedIxa
 import Aiur.Tiling.SingleCircuit
 import Aiur.Tiling.BLS12381
+import Aiur.Tiling.VectorRom
 import Aiur.Library.Field.BN254.Prime
 import Aiur.Library.Field.BLS12381.Prime
 import Aiur.Library.U32.Goldilocks
@@ -32,13 +33,15 @@ re-encode to the file's bytes (`Ixa.checkTrace`). The export fails unless
 width of the chips has one ROM table, the ROM widths are distinct and each
 capacity is at most `bound`.
 
-Usage: `wide_export [--goldilocks | --bls12-381 | --bn254 | --field <name>] [--single-circuit [--pow2-rows] [--min-rows N] [--packed-rows N]] input.json layout.json fixed.bin`. Input
+Usage: `wide_export [--goldilocks | --bls12-381 | --bn254 | --field <name>] [--vector-rom K] [--single-circuit [--pow2-rows] [--min-rows N] [--packed-rows N]] input.json layout.json fixed.bin`. Input
 (`ix-wide-input-1`): `field` (`"bn254"`, `"goldilocks"`, or `"bls12-381"`, alias
 `"bls12381"`, normalized to `"bls12-381"` in output JSON; may also be supplied on
 the CLI and fails closed on mismatch), `artifact`
 (path, relative to the input's directory unless absolute), `circuits`
-(`[{"chip": name | "chip_index": i, "cap": rows}]`), `rom` (`[[words, cap]]`)
-and `entry` (a chip name; default the first circuit's); optional `all_maps` (keep the claims of every map), `pow2` (require power-of-two row counts) and `map_padding`: `"repeat"` writes the selector-free map tables `mapAirsD` of `wide_heap_sound_dup` (main `mult`, fixed cells only, lookup `push(−mult, cells)`, padding rows repeating the last claim), otherwise `mapAirs`. The tables are `WideIxa.stageOf`'s. Output
+(`[{"chip": name | "chip_index": i, "cap": rows}]`), `rom` (`[[words, cap]]`),
+optional `rom_vector` (`K ≥ 1`, default `1`; may also be supplied via `--vector-rom K`
+and fails closed on `0` or CLI/JSON mismatch),
+and `entry` (a chip name; default the first circuit's); optional `all_maps` (keep the claims of every map), `pow2` (require power-of-two row counts) and `map_padding`: `"repeat"` writes the selector-free map tables `mapAirsD` of `wide_heap_sound_dup` (main `mult`, fixed cells only, lookup `push(−mult, cells)`, padding rows repeating the last claim), otherwise `mapAirs`. The tables are `WideIxa.stageOf`'s. When `K ≥ 2`, ROM tables use `VectorRom.vectorRomAir w K cap` (`rows = (cap + K - 1) / K`, `fixed_width = 1`, `addr_base = K * r`, enforcing `K * rows ≤ bound`), recording `"rom_vector": K` in `layout.json` across both normal and `--single-circuit` modes. Output
 (`ix-wide-layout-1`): `field`, `modulus`, `tables`, in the order of `stageLedger`'s sum (units,
 then map tables, then ROM tables), each with `kind`, `rows` and `circuit` (the
 graph format of `TilingExport2.graphJson`, variables `width …` fixed); the
@@ -108,6 +111,7 @@ structure CliOptions where
   pow2Rows : Bool := false
   minRows : Option Nat := none
   packedRows : Option Nat := none
+  vectorRom : Option Nat := none
 
 def parseNatOpt (flag s : String) : Except String Nat :=
   match s.toNat? with
@@ -131,6 +135,12 @@ def parseArgsAux (opts : CliOptions) (pos : Array String) : List String →
       let fc ← FieldChoice.parse f
       parseArgsAux (← setFieldOpt opts fc) pos rest
   | ["--field"] => throw "--field expects bn254, goldilocks, or bls12-381"
+  | "--vector-rom" :: n :: rest => do
+      if opts.vectorRom.isSome then throw "duplicate --vector-rom"
+      let v ← parseNatOpt "--vector-rom" n
+      if v == 0 then throw "--vector-rom must be at least 1"
+      parseArgsAux { opts with vectorRom := some v } pos rest
+  | ["--vector-rom"] => throw "--vector-rom expects a positive natural number"
   | "--single-circuit" :: rest =>
       parseArgsAux { opts with singleCircuit := true } pos rest
   | "--pow2-rows" :: rest =>
@@ -156,7 +166,27 @@ def parseArgs (args : List String) :
     throw "--pow2-rows, --min-rows, and --packed-rows require --single-circuit"
   match pos.toList with
   | [a, b, c] => pure (opts, a, b, c)
-  | _ => throw "usage: wide_export [--goldilocks | --bls12-381 | --bn254 | --field <name>] [--single-circuit [--pow2-rows] [--min-rows N] [--packed-rows N]] input.json layout.json fixed.bin"
+  | _ => throw "usage: wide_export [--goldilocks | --bls12-381 | --bn254 | --field <name>] [--vector-rom K] [--single-circuit [--pow2-rows] [--min-rows N] [--packed-rows N]] input.json layout.json fixed.bin"
+
+/-- Resolve and validate the ROM vectorization factor `K ≥ 1` from CLI `--vector-rom`
+and JSON `"rom_vector"`, failing closed on `0`, invalid types, or CLI/JSON conflict. -/
+def resolveVectorRom (opts : CliOptions) (j : Json) : Except String Nat := do
+  if let some c := opts.vectorRom then
+    if c == 0 then throw "--vector-rom must be at least 1"
+  let jsonK : Option Nat ← match j.getObjVal? "rom_vector" with
+    | .error _ => pure none
+    | .ok vj => match vj.getNat? with
+        | .ok k =>
+            if k == 0 then throw "\"rom_vector\" must be at least 1"
+            pure (some k)
+        | .error _ => throw "\"rom_vector\" must be a positive natural number"
+  match opts.vectorRom, jsonK with
+  | some c, some f =>
+      if c == f then pure c
+      else throw s!"CLI --vector-rom {c} conflicts with input \"rom_vector\" {f}"
+  | some c, none => pure c
+  | none, some f => pure f
+  | none, none => pure 1
 
 /-- Row indices validated directly against `SingleCircuit.packFixed`. -/
 def boundaryRows {F : Type} (airs : List (Air F)) (packedRows : Nat) : List Nat :=
@@ -250,6 +280,9 @@ def block (rows width : Nat) (f : Nat → Nat → ZMod p) : ByteArray := Id.run 
   return out
 
 def run (fieldChoice : FieldChoice) (opts : CliOptions) (j : Json) (base output fixedPath : System.FilePath) : IO UInt32 := do
+  let vectorRom ← match resolveVectorRom opts j with
+    | .ok k => pure k
+    | .error e => do IO.eprintln s!"wide_export: {e}"; return 1
   let get (k : String) : IO Json := IO.ofExcept (j.getObjVal? k)
   let path : System.FilePath := ← IO.ofExcept (← get "artifact").getStr?
   let path := if path.isAbsolute then path else base / path
@@ -279,7 +312,13 @@ def run (fieldChoice : FieldChoice) (opts : CliOptions) (j : Json) (base output 
           | none => throw (IO.userError s!"no group {i} in the artifact")
       | .error _, .error _ => throw (IO.userError "a group entry names no group")
     groups := groups ++ [(name, ← IO.ofExcept (gj.getObjValAs? Nat "cap"))]
-  let cfg : WideIxa.Config := { circuits, rom, entry, allMaps, pow2, groups }
+  let stageRom : List (Nat × Nat) :=
+    if vectorRom > 1 then VectorRom.expandedRoms vectorRom rom else rom
+  let cfg : WideIxa.Config := {
+    circuits, rom := stageRom, entry, allMaps,
+    pow2 := if vectorRom > 1 then false else pow2,
+    groups
+  }
   let st ← match WideIxa.stageOf pkg cfg with
     | .ok st => pure st
     | .error e => do IO.eprintln s!"wide_export: {e}"; return 1
@@ -297,6 +336,16 @@ def run (fieldChoice : FieldChoice) (opts : CliOptions) (j : Json) (base output 
   if let some maxBits := fieldChoice.maxDepthBits then
     unless pkg.limbs.sum ≤ maxBits do
       IO.eprintln s!"wide_export: depth limbs sum to {pkg.limbs.sum} bits, exceeding {fieldChoice.name} limit {maxBits}"; return 1
+  let romsA : List (Air Fp) :=
+    if vectorRom > 1 then VectorRom.vectorRomAirs vectorRom rom else st.roms
+  if vectorRom > 1 then
+    if pow2 then
+      unless (st.chips.map (·.2) ++ st.groups.map (·.2.2) ++ romsA.map (·.rows)).all
+          (fun n => 0 < n && n.nextPowerOfTwo == n) do
+        IO.eprintln "wide_export: a row count is not a power of two"; return 1
+    for ((w, cap), a) in rom.zip romsA do
+      unless cap ≤ vectorRom * a.rows && vectorRom * a.rows ≤ st.bound do
+        IO.eprintln s!"wide_export: vectorized ROM (w={w}, cap={cap}, K={vectorRom}) effective capacity {vectorRom * a.rows} violates bound {st.bound}"; return 1
   -- `mapFixed` reads claims by list index; the writer reads an array and is
   -- compared with `Air.fixed` on the first rows of every table.
   -- With `"map_padding": "repeat"` the map tables are `mapAirsD`
@@ -318,9 +367,9 @@ def run (fieldChoice : FieldChoice) (opts : CliOptions) (j : Json) (base output 
       IO.eprintln "wide_export: --single-circuit does not support \"map_padding\": \"repeat\""; return 1
     unless st.groups.isEmpty do
       IO.eprintln "wide_export: --single-circuit does not support \"groups\""; return 1
-    -- `st.units ++ st.maps ++ st.roms` is the `Ixa` realization of
-    -- `SingleCircuit.wideAirs` (by `WideIxa.units_ofChip` and `WideIxa.stageOf_spec`).
-    let airs : List (Air Fp) := st.units ++ st.maps ++ st.roms
+    -- `st.units ++ st.maps ++ romsA` is the `Ixa` realization of
+    -- `SingleCircuit.wideAirs` (for `K = 1`) or `VectorRom.wideVectorAirs` (for `K ≥ 2`).
+    let airs : List (Air Fp) := st.units ++ st.maps ++ romsA
     let packedRows ← match resolvePackedRows opts airs with
       | .ok r => pure r
       | .error e => IO.eprintln s!"wide_export: {e}"; return 1
@@ -346,8 +395,8 @@ def run (fieldChoice : FieldChoice) (opts : CliOptions) (j : Json) (base output 
           row := pushNat row (claim.getD k 0).val
         if mRows < packedRows then
           row := row ++ (if i < mRows then oneBytes else zeroBytes)
-      let addrBytes := pushNat ByteArray.empty (i : Fp).val
-      for r in st.roms do
+      let addrBytes := pushNat ByteArray.empty ((vectorRom * i : Nat) : Fp).val
+      for r in romsA do
         row := row ++ addrBytes
         if r.rows < packedRows then
           row := row ++ (if i < r.rows then oneBytes else zeroBytes)
@@ -400,8 +449,12 @@ def run (fieldChoice : FieldChoice) (opts : CliOptions) (j : Json) (base output 
       constituentJson "unit" j j a [("chip", Json.str x.name)]).toArray
     let mapConstituents : Array Json := ((((mapLengths st.claims).zip st.maps).zipIdx).map fun ((L, a), j) =>
       constituentJson "map" j (nUnits + j) a [("length", Json.num L)]).toArray
-    let romConstituents : Array Json := (((rom.zip st.roms).zipIdx).map fun (((w, _), a), j) =>
-      constituentJson "rom" j (nUnits + nMaps + j) a [("words", Json.num w)]).toArray
+    let romConstituents : Array Json := (((rom.zip romsA).zipIdx).map fun (((w, _), a), j) =>
+      let extra := [("words", Json.num w)] ++
+        if vectorRom > 1 then
+          [("rom_vector", Json.num vectorRom), ("capacity", Json.num (vectorRom * a.rows))]
+        else []
+      constituentJson "rom" j (nUnits + nMaps + j) a extra).toArray
     let packedCircuit := SingleCircuit.packCircuit airs packedRows
     singleCircuitFields := [("single_circuit", Json.mkObj [
       ("num_circuits", Json.num 1),
@@ -428,7 +481,7 @@ def run (fieldChoice : FieldChoice) (opts : CliOptions) (j : Json) (base output 
         for k in [0:a.circuit.fixedWidth] do
           unless f i k == a.fixed i k do IO.eprintln "the map writer differs from the map table's fixed matrix"; return 1
       h.write (block p a.rows a.circuit.fixedWidth f)
-    for a in st.roms do
+    for a in romsA do
       h.write (block p a.rows a.circuit.fixedWidth a.fixed)
     h.flush
   let index : Std.HashMap String Nat := pkg.chips.zipIdx.foldl (fun m (x, i) => m.insert x.name i) {}
@@ -442,7 +495,6 @@ def run (fieldChoice : FieldChoice) (opts : CliOptions) (j : Json) (base output 
     ("members", Json.arr (g.members.map (Json.str ·.name)).toArray), ("rows", Json.num rows),
     ("circuit", circuitJson p g.lower)]
   let claims := st.claims
-  let romsA := st.roms
   let roms := rom
   let request := st.request
   let bound := st.bound
@@ -457,17 +509,26 @@ def run (fieldChoice : FieldChoice) (opts : CliOptions) (j : Json) (base output 
     ("length", Json.num L), ("claims", Json.num (claimsOf claims L).length), ("rows", Json.num a.rows),
     ("padding", Json.str (if repeatPad then "repeat" else "selector")),
     ("circuit", circuitJson p a.circuit)]
-  let romsJ := (roms.zip romsA).map fun ((w, cap), a) => Json.mkObj [("kind", Json.str "rom"),
-    ("words", Json.num w), ("rows", Json.num cap), ("circuit", circuitJson p a.circuit)]
+  let romsJ := (roms.zip romsA).map fun ((w, _), a) =>
+    let base := [("kind", Json.str "rom"), ("words", Json.num w), ("rows", Json.num a.rows)]
+    let extra := if vectorRom > 1 then
+      [("rom_vector", Json.num vectorRom), ("capacity", Json.num (vectorRom * a.rows))]
+    else []
+    Json.mkObj (base ++ extra ++ [("circuit", circuitJson p a.circuit)])
+  let romVectorFields : List (String × Json) :=
+    if vectorRom > 1 then [("rom_vector", Json.num vectorRom)] else []
   let out := Json.mkObj ([("format", Json.str "ix-wide-layout-1"),
     ("field", Json.str fieldChoice.name), ("modulus", Json.str (toString p)),
     ("artifact", Json.str path.toString),
     ("tables", Json.arr (units ++ groupsJ ++ mapsJ ++ romsJ).toArray),
     ("request", Json.arr (request.map (field p)).toArray),
     ("bound", Json.num bound), ("bounds", Json.mkObj (bounds.map fun (k, v) => (k, Json.num v)))] ++
-    singleCircuitFields)
+    romVectorFields ++ singleCircuitFields)
   IO.FS.writeFile output out.compress
-  IO.eprintln s!"wide_export: {laid.length} unit, {st.groups.length} group, {maps.length} map and {romsA.length} ROM tables"
+  if vectorRom > 1 then
+    IO.eprintln s!"wide_export: {laid.length} unit, {st.groups.length} group, {maps.length} map and {romsA.length} vectorized ROM tables (K={vectorRom})"
+  else
+    IO.eprintln s!"wide_export: {laid.length} unit, {st.groups.length} group, {maps.length} map and {romsA.length} ROM tables"
   return 0
 
 end
