@@ -53,3 +53,7 @@ required-features = ["stark"]
 [[example]]
 name = "library_check"
 required-features = ["stark"]
+
+[[example]]
+name = "single_circuit_prove"
+required-features = ["stark"]
