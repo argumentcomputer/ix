@@ -400,6 +400,57 @@ def pBlt (tt ff : String) : Fn := helper "p_blt" binParams <| natPair <|
 def boolHelpers (tt ff : String) : List Fn :=
   [pBeq tt ff, pBle tt ff, pBlt tt ff]
 
+/-! ## 64-Bit Word Helpers (`w_add`, `w_divmod`) -/
+
+/-- A checked 64-bit word, as the `UInt64` library has it: eight `UInt8` bytes.
+Named `wU64Ty` (rather than `u64Ty`) to avoid colliding with `TypedRep.u64Ty`. -/
+def wU64Ty : Ty := .array (.named "UInt8::U8" []) 8
+
+/-- `w_add(x, y) = (x + y) % 2^64`, as `x - (0 - y)` with two borrowing subtractions. -/
+def wAdd : Fn :=
+  { name := "w_add", params := [("x", wU64Ty), ("y", wU64Ty)], result := wU64Ty
+    body :=
+      letE "z" (wordE (litE 0)) <|
+      matchE (callE "UInt64::sub_with_borrow" [vE "z", vE "y"])
+        [(.tuple [.bind "n", .wildcard],
+          matchE (callE "UInt64::sub_with_borrow" [vE "x", vE "n"])
+            [(.tuple [.bind "s", .wildcard], vE "s")])] }
+
+/-- The word `hi · 2^32 + lo` (modulo `2^64`) from the fields bound to `lo` and `hi`, each
+below `2^56` (`UInt64::from_field` checks it): a hinted word, given as its two halves. -/
+def joinE (lo hi : String) : Expr :=
+  matchE (callE "UInt64::mul" [wordE (vE hi), wordE (litE 4294967296)])
+    [(.tuple [.bind "u", .wildcard], callE "w_add" [wordE (vE lo), vE "u"])]
+
+/-- `w_divmod(x, y) = (x / y, x % y)` on 64-bit words, `y ≠ 0`. The host hints the
+quotient and the remainder as 32-bit halves (channel `ixcc.divmod64`); the helper
+joins them into words `q`, `r` (any words: nothing assumes the halves below `2^32`)
+and checks, with the `UInt64` library's proved operations, that `q · y` does not
+overflow (`mul`'s high word is zero), that `x - q · y` does not borrow and equals
+`r`, and that `r < y`. Then `q · y + r = x` and `r < y`, so `q = x / y` and
+`r = x % y` (`Gadgets.wDivmod_sound`). A wrong hint has no derivation. -/
+def wDivmod : Fn :=
+  { name := "w_divmod", params := [("x", wU64Ty), ("y", wU64Ty)], result := .tuple [wU64Ty, wU64Ty]
+    body :=
+      .letValue (.tuple [.bind "ql", .bind "qh", .bind "rl", .bind "rh"])
+        (.hint (.tuple [.field, .field, .field, .field]) (.tuple [vE "x", vE "y"])
+          "ixcc.divmod64") <|
+      letE "q" (joinE "ql" "qh") <|
+      letE "r" (joinE "rl" "rh") <|
+      matchE (callE "UInt64::mul" [vE "q", vE "y"])
+        [(.tuple [.bind "lo", .bind "hi"],
+          matchE (callE "UInt64::is_zero" [vE "hi"])
+            [(.literal 1,
+              matchE (callE "UInt64::sub_with_borrow" [vE "x", vE "lo"])
+                [(.tuple [.bind "d", .literal 0],
+                  matchE (callE "UInt64::sub_with_borrow" [vE "d", vE "r"])
+                    [(.tuple [.bind "e", .wildcard],
+                      matchE (callE "UInt64::is_zero" [vE "e"])
+                        [(.literal 1,
+                          matchE (callE "UInt64::sub_with_borrow" [vE "r", vE "y"])
+                            [(.tuple [.wildcard, .literal 1],
+                              .tuple [vE "q", vE "r"])])])])])])] }
+
 def primFun : Prim → Except String (String × Nat)
   | .natAdd => pure ("p_add", 2) | .natSub => pure ("p_sub", 2) | .natMul => pure ("p_mul", 2)
   | .natDiv => pure ("p_div", 2) | .natMod => pure ("p_mod", 2)
@@ -690,7 +741,8 @@ def objEnumDecl (P : Program) : Aiur.Generic.EnumDecl :=
 
 def helpers (cx : Cx) : List Fn :=
   [pAdd, pSub, pMul, divmod, pDiv, pMod, pPred,
-   pBitwise "p_land" "UInt64::and", pBitwise "p_lor" "UInt64::or", pBitwise "p_xor" "UInt64::xor"] ++
+   pBitwise "p_land" "UInt64::and", pBitwise "p_lor" "UInt64::or", pBitwise "p_xor" "UInt64::xor",
+   wAdd, wDivmod] ++
   (match cx.boolNames with
    | some (t, f) => boolHelpers t f
    | none => [])
@@ -806,6 +858,8 @@ theorem qualifyName_primFun {op : Prim} {nm : String} {ar : Nat}
 @[simp] theorem qualifyName_obj : qualifyName objName = objQName := rfl
 @[simp] theorem qualifyName_bytes : qualifyName bytesName = bytesQName := rfl
 @[simp] theorem qualifyName_divmod : qualifyName "divmod" = qualified "divmod" := rfl
+@[simp] theorem qualifyName_w_add : qualifyName "w_add" = qualified "w_add" := rfl
+@[simp] theorem qualifyName_w_divmod : qualifyName "w_divmod" = qualified "w_divmod" := rfl
 @[simp] theorem qualifyName_u64_from_field :
     qualifyName "UInt64::from_field" = "UInt64::from_field" := rfl
 @[simp] theorem qualifyName_u64_to_field :
@@ -1655,9 +1709,9 @@ theorem isPlainExpr_helpers (cx : Cx) :
   unfold helpers at hg
   rcases List.mem_append.mp hg with h1 | h2
   · simp only [List.mem_cons, List.not_mem_nil, or_false] at h1
-    rcases h1 with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-      simp [pAdd, pSub, pMul, divmod, pDiv, pMod, pPred, pBitwise, helper, natPair,
-        matchE, letE, seqE, callE, wordE, natE, mk, addE, subE, vE, litE,
+    rcases h1 with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+      simp [pAdd, pSub, pMul, divmod, pDiv, pMod, pPred, pBitwise, wAdd, wDivmod, joinE,
+        helper, natPair, matchE, letE, seqE, callE, wordE, natE, mk, addE, subE, vE, litE,
         isPlainExpr, isPlainList, isPlainArms]
   · cases hbool : cx.boolNames with
     | none => simp [hbool] at h2

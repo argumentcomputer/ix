@@ -4,9 +4,16 @@
 //! the same proof under a changed claim, and a proof made for a changed output.
 //!
 //! This is `prove.rs` with the host advice a lowered program reads: the
-//! `UInt64` library's byte decompositions and `ixcc.divmod`. The package
+//! `UInt32` and `UInt64` libraries' byte decompositions, `ixcc.divmod`,
+//! `ixcc.divmod64`, and universal Tier-2 `ixcc.guess.<fn>` advice. The package
 //! carries no hint data. Nothing here is on the verifier's side: the verifier
 //! reads the compiled circuits and the public call alone.
+//!
+//! When the run asked for `ixcc.divmod64`, the controls also re-execute the
+//! invocation under three wrong answers on that channel (a quotient one too
+//! large with the true remainder; one too small with the remainder plus the
+//! divisor; one too large with the remainder minus the divisor, wrapping),
+//! and require each execution to fail.
 //!
 //! `--args N,N,...` replaces the package's arguments (one compiled program,
 //! several invocations). `--advice ADVICE.ixa` loads the unmodified pre-guess
@@ -16,13 +23,17 @@
 //! verify wrong-hint rejection directly. `--no-controls` skips the reference
 //! trace check and the negative controls, for measurements: the report's times,
 //! rows and peak memory are then of executing, proving and verifying alone.
+//! `--pin PIN.json` checks the pin `ixcc-aiur` wrote beside the package (the
+//! BLAKE3 of the file, and of the compiled program alone) before anything else,
+//! and refuses the package on a mismatch.
 use aiur::field::FieldBackend;
 use aiur::{
   artifact::{
-    self, EXECUTION_MAGIC, ExecutionPackage, PACKAGE_MAGIC, Package,
+    self, Digest, EXECUTION_MAGIC, ExecutionPackage, PACKAGE_MAGIC, Package,
   },
   bytecode::Program,
   hints::HintChannels,
+  library::ixcc::{DIVMOD64, divmod_u64},
   trace::{
     TracePlan,
     stark::{Backend, Parameters, Proof},
@@ -32,15 +43,37 @@ use multi_stark::p3_matrix::Matrix;
 use serde_json::json;
 use std::{
   error::Error,
-  sync::atomic::Ordering,
+  sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+  },
   time::Instant,
 };
 
+/// Wrong `ixcc.divmod64` answers, each from the true quotient and remainder.
+type Lie = fn(u64, u64) -> (u64, u64);
+const LIES: [(&str, Lie); 3] = [
+  ("q+1, r", |x, y| {
+    let (q, r) = divmod_u64(x, y);
+    (q.wrapping_add(1), r)
+  }),
+  ("q-1, r+y", |x, y| {
+    let (q, r) = divmod_u64(x, y);
+    (q.wrapping_sub(1), r.wrapping_add(y))
+  }),
+  ("q+1, r-y", |x, y| {
+    let (q, r) = divmod_u64(x, y);
+    (q.wrapping_add(1), r.wrapping_sub(y))
+  }),
+];
+
 const USAGE: &str = "usage: ixcc_prove PACKAGE.ixa [PROOF.bin] [REPORT.json] \
                      [--args N,N,...] [--advice ADVICE.ixa] \
-                     [--tamper-hint CHANNEL] [--no-controls]";
+                     [--tamper-hint CHANNEL] [--no-controls] [--pin PIN.json]";
 
-fn load_advice_program(path: &str) -> Result<(Program, artifact::Digest), Box<dyn Error>> {
+fn load_advice_program(
+  path: &str,
+) -> Result<(Program, Digest), Box<dyn Error>> {
   let (raw_bytes, digest) = artifact::read(path.as_ref())?;
   let package = if raw_bytes.starts_with(PACKAGE_MAGIC) {
     Package::decode(&raw_bytes)
@@ -66,12 +99,96 @@ fn peak_rss_kb() -> Option<u64> {
   line.split_whitespace().nth(1)?.parse().ok()
 }
 
+/// The compiled program alone, as `ixcc-aiur` hashes it for the pin: a
+/// package with the file's program and no trace section.
+fn program_only(program: &Program) -> Vec<u8> {
+  Package { program: program.clone(), trace: None }.encode()
+}
+
+/// Whether `program` (a package without a trace section) is, up to its last
+/// byte (the trace option's tag), the embedded package's prefix in `file`.
+fn embedded(file: &[u8], program: &[u8]) -> bool {
+  let Some((_, prefix)) = program.split_last() else { return false };
+  let Some(start) =
+    file.windows(PACKAGE_MAGIC.len()).take(32).position(|w| w == PACKAGE_MAGIC)
+  else {
+    return false;
+  };
+  file.get(start..start + prefix.len()) == Some(prefix)
+}
+
+/// Check the pin `ixcc-aiur` wrote beside a package (`PACKAGE.ixa.pin.json`)
+/// against the file's bytes, before anything is decoded for proving: the
+/// BLAKE3 of the whole file (`package_blake3`), and the BLAKE3 of the
+/// compiled program alone (`program_blake3`), recomputed from the decoded
+/// program, whose bytes must also be the file's own. Any mismatch refuses.
+fn check_pin(
+  pin_path: &str,
+  file: &[u8],
+  digest: Digest,
+) -> Result<serde_json::Value, Box<dyn Error>> {
+  let pin: serde_json::Value =
+    serde_json::from_slice(&std::fs::read(pin_path)?)?;
+  let pinned = |key: &str| -> Result<Digest, String> {
+    let hex =
+      pin[key].as_str().ok_or_else(|| format!("pin {pin_path}: no {key}"))?;
+    Digest::from_hex(hex)
+  };
+  let package_pin = pinned("package_blake3")?;
+  let program_pin = pinned("program_blake3")?;
+  let mut mismatches = Vec::new();
+  if digest != package_pin {
+    mismatches
+      .push(format!("package_blake3: file {digest}, pin {package_pin}"));
+  }
+  // The program check also runs when the file's digest already differs, so
+  // that the refusal says which parts differ.
+  let decoded_program = if file.starts_with(PACKAGE_MAGIC) {
+    Package::decode(file).map(|pkg| pkg.program)
+  } else if file.starts_with(EXECUTION_MAGIC) {
+    ExecutionPackage::decode(file).map(|exec| exec.package.program)
+  } else {
+    Err(
+      "unrecognized artifact magic (expected IXAIURP\\0 or IXAIURX\\0)".into(),
+    )
+  };
+  match decoded_program {
+    Ok(prog) => {
+      let program = program_only(&prog);
+      let program_digest = Digest::of(&program);
+      if program_digest != program_pin {
+        mismatches.push(format!(
+          "program_blake3: file {program_digest}, pin {program_pin}"
+        ));
+      }
+      if !embedded(file, &program) {
+        mismatches.push(
+          "program_blake3: the re-encoded program is not the file's bytes"
+            .into(),
+        );
+      }
+    },
+    Err(error) => mismatches
+      .push(format!("program_blake3: the file does not decode ({error})")),
+  }
+  if !mismatches.is_empty() {
+    return Err(
+      format!("pin {pin_path} refused: {}", mismatches.join("; ")).into(),
+    );
+  }
+  Ok(json!({
+    "pin": pin_path, "package_blake3": package_pin.to_string(),
+    "program_blake3": program_pin.to_string(), "checked": true,
+  }))
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
   let mut args = Vec::new();
   let mut override_args: Option<Vec<u64>> = None;
   let mut advice_path: Option<String> = None;
   let mut tamper_hint: Option<String> = None;
   let mut controls = true;
+  let mut pin_path: Option<String> = None;
   let mut raw = std::env::args();
   while let Some(arg) = raw.next() {
     match arg.as_str() {
@@ -93,6 +210,7 @@ fn main() -> Result<(), Box<dyn Error>> {
           Some(raw.next().ok_or("--tamper-hint needs a channel name")?);
       },
       "--no-controls" => controls = false,
+      "--pin" => pin_path = Some(raw.next().ok_or("--pin needs a file")?),
       _ => args.push(arg),
     }
   }
@@ -100,21 +218,27 @@ fn main() -> Result<(), Box<dyn Error>> {
   let total = Instant::now();
   let start = Instant::now();
   let (raw_bytes, digest) = artifact::read(path.as_ref())?;
-  let (package, embedded_args, embedded_hints, kind) =
-    if raw_bytes.starts_with(PACKAGE_MAGIC) {
-      let pkg = Package::decode(&raw_bytes)
-        .map_err(|e| format!("invalid program package {path}: {e}"))?;
-      (pkg, Vec::new(), Vec::new(), "program")
-    } else if raw_bytes.starts_with(EXECUTION_MAGIC) {
-      let exec = ExecutionPackage::decode(&raw_bytes)
-        .map_err(|e| format!("invalid execution package {path}: {e}"))?;
-      (exec.package, exec.args, exec.hints, "execution")
-    } else {
-      return Err(format!(
+  let pin = match &pin_path {
+    Some(pin_path) => check_pin(pin_path, &raw_bytes, digest)?,
+    None => serde_json::Value::Null,
+  };
+  let (package, embedded_args, embedded_hints, kind) = if raw_bytes
+    .starts_with(PACKAGE_MAGIC)
+  {
+    let pkg = Package::decode(&raw_bytes)
+      .map_err(|e| format!("invalid program package {path}: {e}"))?;
+    (pkg, Vec::new(), Vec::new(), "program")
+  } else if raw_bytes.starts_with(EXECUTION_MAGIC) {
+    let exec = ExecutionPackage::decode(&raw_bytes)
+      .map_err(|e| format!("invalid execution package {path}: {e}"))?;
+    (exec.package, exec.args, exec.hints, "execution")
+  } else {
+    return Err(format!(
         "unrecognized artifact magic in {path} (expected IXAIURP\\0 or IXAIURX\\0)"
       )
       .into());
-    };
+  };
+  drop(raw_bytes);
   eprintln!("artifact {path} ({kind}): blake3 {digest}");
   let (program, trace) = package.traced()?;
   let mut program = program.check_field::<multi_stark::types::Val>()?;
@@ -122,11 +246,21 @@ fn main() -> Result<(), Box<dyn Error>> {
   let field = program.field();
   let address =
     field.decode(override_args.as_deref().unwrap_or(&embedded_args))?;
+  let divmod64_counter = Arc::new(AtomicUsize::new(0));
+  let counter = divmod64_counter.clone();
   let mut channels = HintChannels::new();
   aiur::library::u32::register(&mut channels, field)?;
   aiur::library::u64::register(&mut channels, field)?;
-  aiur::library::ixcc::register(&mut channels, field)?;
-  let mut advice_digest: Option<artifact::Digest> = None;
+  aiur::library::ixcc::register_divmod(&mut channels, field)?;
+  aiur::library::ixcc::register_divmod64_with(
+    &mut channels,
+    field,
+    move |x, y| {
+      counter.fetch_add(1, Ordering::Relaxed);
+      divmod_u64(x, y)
+    },
+  )?;
+  let mut advice_digest: Option<Digest> = None;
   let mut advice_raw_program: Option<Program> = None;
   let mut guess_channels: Vec<String> = Vec::new();
   if let Some(adv_path) = &advice_path {
@@ -171,6 +305,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   let start = Instant::now();
   let record = hints.execute(entry, address.clone())?;
   let execution_seconds = start.elapsed().as_secs_f64();
+  let divmod64_calls = divmod64_counter.load(Ordering::Relaxed);
 
   let start = Instant::now();
   let witness = backend.generate(&record, entry, &address)?;
@@ -287,6 +422,45 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
   }
 
+  // Wrong `ixcc.divmod64` advice: the lowered program checks `q * y + r = x`
+  // without overflow and `r < y` on the words, so each wrong answer must lose
+  // the execution. Only when the honest run asked the channel at all.
+  let mut advice_rejections = Vec::new();
+  if controls && divmod64_calls > 0 {
+    for (name, lie) in LIES {
+      let mut bad_channels = HintChannels::new();
+      aiur::library::u32::register(&mut bad_channels, field)?;
+      aiur::library::u64::register(&mut bad_channels, field)?;
+      aiur::library::ixcc::register_divmod(&mut bad_channels, field)?;
+      aiur::library::ixcc::register_divmod64_with(
+        &mut bad_channels,
+        field,
+        lie,
+      )?;
+      if let Some(adv_raw) = &advice_raw_program {
+        let checked_adv =
+          adv_raw.clone().check_field::<multi_stark::types::Val>()?;
+        aiur::library::ixcc::register_advice_program(
+          &mut bad_channels,
+          &program,
+          checked_adv,
+        )?;
+      }
+      let lying =
+        program.prepare_hint_channels(&embedded_hints, &bad_channels)?;
+      match lying.execute(entry, address.clone()) {
+        Ok(_) => {
+          return Err(
+            format!("execution accepted a wrong {DIVMOD64} answer ({name})")
+              .into(),
+          );
+        },
+        Err(error) => advice_rejections
+          .push(json!({ "advice": name, "error": error.to_string() })),
+      }
+    }
+  }
+
   // Wrong-hint negative controls: for every registered `"ixcc.guess.*"`
   // channel, perturb its host advice (+1 mod p on the last word) and verify
   // that every invoked channel is rejected by the circuit's verified checker
@@ -364,11 +538,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }));
                   },
                   Ok(()) => {
-                    return Err(format!(
-                      "circuit accepted a tampered hint on channel {ch:?} \
+                    return Err(
+                      format!(
+                        "circuit accepted a tampered hint on channel {ch:?} \
                        ({invoked} invocations)!"
-                    )
-                    .into());
+                      )
+                      .into(),
+                    );
                   },
                 }
               },
@@ -388,6 +564,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   }
   let report = json!({
       "artifact_blake3": digest.to_string(),
+      "pin": pin,
       "advice_blake3": advice_digest.map(|d| d.to_string()),
       "guess_channels": guess_channels,
       "entry": entry, "args": address, "output": output, "parameters": parameters,
@@ -403,6 +580,9 @@ fn main() -> Result<(), Box<dyn Error>> {
       "stage1_words": stage1_words,
       "verified": true, "rejected_wrong_claims": rejections.len(),
       "rejections": rejections,
+      "divmod64_calls": divmod64_calls,
+      "rejected_wrong_advice": advice_rejections.len(),
+      "advice_rejections": advice_rejections,
       "rejected_wrong_hints": rejected_wrong_hints,
       "wrong_hint_controls": wrong_hint_controls,
       "circuits": circuits,

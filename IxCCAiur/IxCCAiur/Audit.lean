@@ -312,6 +312,48 @@ info: @pBlt_sound : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F] {P 
 /-- info: 'IxCC.AiurBackend.Gadgets.pBlt_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Gadgets.pBlt_sound
 
+/-! 64-bit word addition (`w_add`) and division (`w_divmod`): the host hints the quotient and
+the remainder on `ixcc.divmod64`; whatever it hints, a derivation returns `a / b` and `a % b`,
+and there is none for `b = 0`. -/
+
+/--
+info: @wAdd_sound : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F] {P : Program}
+  {world : Aiur.Generic.SourceSemantics.World F},
+  FieldCompatible F →
+    PrimHelpersWorld P world →
+      ∀ {a b : ℕ} {xw yw r : Aiur.SourceValue F} {h h' : Aiur.Heap F},
+        isU64Val a xw →
+          isU64Val b yw →
+            Aiur.Generic.SourceSemantics.EvalFn world (qualified "w_add") [xw, yw] h r h' →
+              isU64Val ((a + b) % Aiur.Library.U64.base) r ∧ h' = h
+-/
+#guard_msgs (whitespace := lax) in
+#check @Gadgets.wAdd_sound
+
+/--
+info: 'IxCC.AiurBackend.Gadgets.wAdd_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Gadgets.wAdd_sound
+
+/--
+info: @wDivmod_sound : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F] {P : Program}
+  {world : Aiur.Generic.SourceSemantics.World F},
+  FieldCompatible F →
+    PrimHelpersWorld P world →
+      ∀ {a b : ℕ} {xw yw r : Aiur.SourceValue F} {h h' : Aiur.Heap F},
+        isU64Val a xw →
+          isU64Val b yw →
+            Aiur.Generic.SourceSemantics.EvalFn world (qualified "w_divmod") [xw, yw] h r h' →
+              0 < b ∧ ∃ qw rw, isU64Val (a / b) qw ∧ isU64Val (a % b) rw ∧ r = Aiur.Value.tuple [qw, rw] ∧ h' = h
+-/
+#guard_msgs (whitespace := lax) in
+#check @Gadgets.wDivmod_sound
+
+/--
+info: 'IxCC.AiurBackend.Gadgets.wDivmod_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms Gadgets.wDivmod_sound
+
 /-! ## 3. Full Backward Simulation & End-to-End Certified Circuit Soundness -/
 
 /--
@@ -1276,6 +1318,16 @@ info: 'IxCC.AiurBackend.TypedWorld.u8ByteSpec_of_check' depends on axioms: [prop
 #guard_msgs (whitespace := lax) in #print axioms TypedWorld.u8ByteSpec_of_check
 
 /--
+info: 'IxCC.AiurBackend.TypedWorld.u32Contracts_of_check' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedWorld.u32Contracts_of_check
+
+/--
+info: 'IxCC.AiurBackend.TypedGadgets.U32Contracts.ofCheck' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedGadgets.U32Contracts.ofCheck
+
+/--
 info: 'IxCC.AiurBackend.TypedGadgets.fieldCompatible64_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound]
 -/
 #guard_msgs (whitespace := lax) in #print axioms TypedGadgets.fieldCompatible64_goldilocks
@@ -1444,6 +1496,11 @@ info: 'IxCC.AiurBackend.TypedBackward.eval_u32_shl' depends on axioms: [propext,
 info: 'IxCC.AiurBackend.TypedBackward.typedLoweredWorld_of_check' depends on axioms: [propext, Classical.choice, Quot.sound]
 -/
 #guard_msgs (whitespace := lax) in #print axioms TypedBackward.typedLoweredWorld_of_check
+
+/--
+info: 'IxCC.AiurBackend.TypedBackward.typedLoweredWorld_of_check_all' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms TypedBackward.typedLoweredWorld_of_check_all
 
 /--
 info: 'IxCC.AiurBackend.TypedBackward.typedLoweredWorld_of_natCore' depends on axioms: [propext, Classical.choice, Quot.sound]

@@ -485,6 +485,25 @@ theorem evalExpr_let_array8_inv {world : World F} {types : Types} {locals : Envi
       exact ⟨v0, v1, v2, v3, v4, v5, v6, v7, _, hv, hb⟩
     | field _ | ptr _ _ | construct _ _ _ => simp [World.matchPattern, matchPatternWith] at hm
 
+theorem evalExpr_let_tuple4_inv {world : World F} {types : Types} {locals : Environment F Nat}
+    {x0 x1 x2 x3 : String} {e b : Aiur.Generic.Expr F}
+    {h h' : Heap F} {r : SourceValue F}
+    (ev : EvalExpr world types locals
+      (.letValue (.tuple [.bind x0, .bind x1, .bind x2, .bind x3]) e b) h r h') :
+    ∃ v0 v1 v2 v3 hm,
+      EvalExpr world types locals e h (.tuple [v0, v1, v2, v3]) hm ∧
+      EvalExpr world types ([(x0, v0), (x1, v1), (x2, v2), (x3, v3)] ++ locals) b hm r h' := by
+  cases ev with
+  | letValue hv hm hb =>
+    rename_i inp _ bindings
+    cases inp with
+    | tuple vs =>
+      rcases vs with _ | ⟨v0, _ | ⟨v1, _ | ⟨v2, _ | ⟨v3, _ | ⟨v4, _⟩⟩⟩⟩⟩ <;>
+        simp [World.matchPattern, matchPatternWith, matchListWith] at hm
+      subst hm
+      exact ⟨v0, v1, v2, v3, _, hv, hb⟩
+    | field _ | ptr _ _ | construct _ _ _ => simp [World.matchPattern, matchPatternWith] at hm
+
 theorem evalExpr_assertEq_inv {world : World F} {types : Types} {locals : Environment F Nat}
     {a : Aiur.Assertion} {lhs rhs : Aiur.Generic.Expr F} {h h' : Heap F} {r : SourceValue F}
     (ev : EvalExpr world types locals (.builtin (.assertEq a) [lhs, rhs]) h r h') :
@@ -552,6 +571,11 @@ def isU64Val (n : Nat) (v : SourceValue F) : Prop :=
     n = U64.pack b0 b1 b2 b3 b4 b5 b6 b7 ∧
     v = .tuple [.field (b0 : F), .field (b1 : F), .field (b2 : F), .field (b3 : F),
                 .field (b4 : F), .field (b5 : F), .field (b6 : F), .field (b7 : F)]
+
+omit [DecidableEq F] in
+theorem isU64Val_lt {n : Nat} {v : SourceValue F} (hv : isU64Val n v) : n < U64.base := by
+  obtain ⟨b0, b1, b2, b3, b4, b5, b6, b7, h0, h1, h2, h3, h4, h5, h6, h7, rfl, _⟩ := hv
+  exact U64.pack_lt h0 h1 h2 h3 h4 h5 h6 h7
 
 /-- Contracts for the three `UInt8` lookup maps used by `UInt64`. -/
 structure U8MapSpec (world : World F) : Prop where
@@ -2132,6 +2156,8 @@ structure PrimHelpersWorld (P : Fir.Program) (world : World F) : Prop where
     (qualifyExprF F (pBitwise "p_lor" "UInt64::or").body)
   p_xor : WorldHasFn world (qualified "p_xor") ["a", "b"]
     (qualifyExprF F (pBitwise "p_xor" "UInt64::xor").body)
+  w_add : WorldHasFn world (qualified "w_add") ["x", "y"] (qualifyExprF F wAdd.body)
+  w_divmod : WorldHasFn world (qualified "w_divmod") ["x", "y"] (qualifyExprF F wDivmod.body)
   p_bool : ∀ tt ff, (Cx.mk P).boolNames = some (tt, ff) →
     WorldHasFn world (qualified "p_beq") ["a", "b"] (qualifyExprF F (pBeq tt ff).body) ∧
     WorldHasFn world (qualified "p_ble") ["a", "b"] (qualifyExprF F (pBle tt ff).body) ∧
@@ -2873,6 +2899,239 @@ theorem pBlt_only_nat (pw : PrimHelpersWorld P world)
   obtain ⟨vx, vy, hwa, hwb, _⟩ := eval_natPair_inv body
   exact ⟨⟨vx, hwa⟩, ⟨vy, hwb⟩⟩
 
+/-! ### 64-Bit Word Helpers (`w_add`, `w_divmod`) -/
+
+/-- `(x + (2^64 - y) % 2^64)`-style addition by two borrowing subtractions. -/
+theorem add_via_sub {a b : Nat} (ha : a < U64.base) (hb : b < U64.base) :
+    (a + U64.base - (0 + U64.base - b) % U64.base) % U64.base = (a + b) % U64.base := by
+  unfold U64.base at *
+  rcases Nat.eq_zero_or_pos b with rfl | hpos
+  · simp
+  · rw [Nat.mod_eq_of_lt (by omega : 0 + 18446744073709551616 - b < 18446744073709551616)]
+    congr 1
+    omega
+
+/-- `UInt64::from_field` of a literal below `2^56`. -/
+theorem eval_wordE_lit {world : World F} (fc : FieldCompatible F) (u64 : U64Contracts world)
+    {locals : Environment F Nat} {n : Nat} (hn : n < natLimit) {h h' : Heap F} {r : SourceValue F}
+    (ev : EvalExpr world [] locals (qualifyExprF F (wordE (litE n))) h r h') :
+    isU64Val n r ∧ h' = h := by
+  simp only [wordE, callE, litE, qualifyExprF, qualifyExpr, qualifyName_u64_from_field,
+    Option.map_some, Aiur.Generic.Expr.map, List.map] at ev
+  obtain ⟨va, _, eva, hcal⟩ := evalExpr_call1_inv ev
+  obtain ⟨rfl, rfl⟩ := evalExpr_literal_inv eva
+  obtain ⟨m, hm, heq, hu, rfl⟩ := u64.from_field _ _ _ _ hcal
+  have : n = m := fc.natCast_inj56 hn hm (Value.field.inj heq)
+  subst this
+  exact ⟨hu, rfl⟩
+
+/-- A variable's value, from a lookup. -/
+private theorem eval_var_of_find {world : World F} {locals : Environment F Nat} {nm : String}
+    {v : SourceValue F} (hl : locals.find? (·.1 == nm) = some (nm, v))
+    {h h' : Heap F} {r : SourceValue F}
+    (ev : EvalExpr world [] locals (.var nm) h r h') : r = v ∧ h' = h := by
+  obtain ⟨l, rfl⟩ := evalExpr_var_inv ev
+  rw [hl] at l
+  simp only [Option.some.injEq, Prod.mk.injEq, true_and] at l
+  exact ⟨l.symm, rfl⟩
+
+omit [DecidableEq F] in
+private theorem plain_wAdd : isPlainExpr (qualifyExprF F wAdd.body) = true := by
+  rw [isPlainExpr_qualifyExprF]
+  simp [wAdd, letE, matchE, callE, wordE, vE, litE, isPlainExpr, isPlainList, isPlainArms]
+
+omit [DecidableEq F] in
+private theorem plain_wDivmod : isPlainExpr (qualifyExprF F wDivmod.body) = true := by
+  rw [isPlainExpr_qualifyExprF]
+  simp [wDivmod, joinE, letE, matchE, callE, wordE, vE, litE, isPlainExpr, isPlainList, isPlainArms]
+
+theorem wAdd_sound (fc : FieldCompatible F) (pw : PrimHelpersWorld P world)
+    {a b : Nat} {xw yw r : SourceValue F} {h h' : Heap F}
+    (hxa : isU64Val a xw) (hyb : isU64Val b yw)
+    (ev : EvalFn world (qualified "w_add") [xw, yw] h r h') :
+    isU64Val ((a + b) % U64.base) r ∧ h' = h := by
+  obtain ⟨_, body⟩ := evalFn_plain_inv pw.w_add plain_wAdd ev
+  simp only [wAdd, letE, matchE, callE, vE, qualifyExprF, qualifyExpr, qualifyPat,
+    qualifyName_u64_sub_with_borrow, Option.map_some, Aiur.Generic.Expr.map,
+    Aiur.Generic.Pattern.map, List.map] at body
+  obtain ⟨zw, _, evz, k1⟩ := evalExpr_let_bind_inv body
+  obtain ⟨hzw, rfl⟩ := eval_wordE_lit fc pw.u64 (by unfold natLimit; omega) evz
+  cases k1 with
+  | matchValue ev1 hsel1 hbr1 =>
+    obtain ⟨v1, v2, _, _, ev1a, ev1b, c1⟩ := evalExpr_call2_inv ev1
+    obtain ⟨l1, rfl⟩ := evalExpr_var_inv ev1a
+    obtain ⟨l2, rfl⟩ := evalExpr_var_inv ev1b
+    simp at l1 l2; subst l1 l2
+    obtain ⟨nw, hnw, rfl, rfl⟩ := pw.u64.sub_with_borrow _ _ _ _ _ _ _ hzw hyb c1
+    simp [SourceSemantics.selectArm, World.matchPattern, matchPatternWith, matchListWith] at hsel1
+    obtain ⟨rfl, rfl⟩ := hsel1
+    cases hbr1 with
+    | matchValue ev2 hsel2 hbr2 =>
+      obtain ⟨v3, v4, _, _, ev2a, ev2b, c2⟩ := evalExpr_call2_inv ev2
+      obtain ⟨l3, rfl⟩ := evalExpr_var_inv ev2a
+      obtain ⟨l4, rfl⟩ := evalExpr_var_inv ev2b
+      simp at l3 l4; subst l3 l4
+      obtain ⟨sw, hsw, rfl, rfl⟩ := pw.u64.sub_with_borrow _ _ _ _ _ _ _ hxa hnw c2
+      simp [SourceSemantics.selectArm, World.matchPattern, matchPatternWith, matchListWith] at hsel2
+      obtain ⟨rfl, rfl⟩ := hsel2
+      obtain ⟨ls, rfl⟩ := evalExpr_var_inv hbr2
+      simp at ls; subst ls
+      rw [← add_via_sub (isU64Val_lt hxa) (isU64Val_lt hyb)]
+      exact ⟨hsw, rfl⟩
+
+/-- `joinE lo hi`: some 64-bit word (the hinted halves are fields below `2^56`, which
+`UInt64::from_field` checks; nothing more is needed of them). -/
+private theorem eval_joinE (fc : FieldCompatible F) (pw : PrimHelpersWorld P world)
+    {locals : Environment F Nat} {lo hi : String} {vlo vhi : SourceValue F}
+    (hlo : locals.find? (·.1 == lo) = some (lo, vlo))
+    (hhi : locals.find? (·.1 == hi) = some (hi, vhi)) (hlou : lo ≠ "u")
+    {h h' : Heap F} {r : SourceValue F}
+    (ev : EvalExpr world [] locals (qualifyExprF F (joinE lo hi)) h r h') :
+    ∃ n, isU64Val n r ∧ h' = h := by
+  have hlo' : ∀ v : SourceValue F, (("u", v) :: locals).find? (·.1 == lo) = some (lo, vlo) := by
+    intro v
+    rw [List.find?_cons_of_neg (by simpa using Ne.symm hlou)]
+    exact hlo
+  simp only [joinE, matchE, qualifyExprF, qualifyExpr, qualifyPat, Aiur.Generic.Expr.map,
+    Aiur.Generic.Pattern.map, List.map] at ev
+  cases ev with
+  | matchValue evm hsel hbr =>
+    simp only [callE, qualifyExpr, qualifyName_u64_mul, Option.map_some, Aiur.Generic.Expr.map,
+      List.map] at evm
+    obtain ⟨whi, wt, _, _, evwhi, evwt, cmul⟩ := evalExpr_call2_inv evm
+    obtain ⟨n1, _, rfl, hw1, rfl⟩ := eval_wordE_any pw.u64 hhi evwhi
+    obtain ⟨hwt, rfl⟩ := eval_wordE_lit (n := 4294967296) fc pw.u64 (by unfold natLimit; omega) evwt
+    obtain ⟨wlo, _, hwlo, _, rfl, rfl⟩ := pw.u64.mul _ _ _ _ _ _ _ hw1 hwt cmul
+    simp [SourceSemantics.selectArm, World.matchPattern, matchPatternWith, matchListWith] at hsel
+    obtain ⟨rfl, rfl⟩ := hsel
+    simp only [callE, vE, qualifyExpr, qualifyName_w_add, Option.map_some, Aiur.Generic.Expr.map,
+      List.map] at hbr
+    obtain ⟨v1, v2, _, _, ev1, ev2, cadd⟩ := evalExpr_call2_inv hbr
+    obtain ⟨n2, _, rfl, hw2, rfl⟩ := eval_wordE_any pw.u64 (hlo' wlo) ev1
+    obtain ⟨rfl, rfl⟩ := eval_var_of_find (v := wlo) (by simp) ev2
+    obtain ⟨hres, rfl⟩ := wAdd_sound fc pw hw2 hwlo cadd
+    exact ⟨_, hres, rfl⟩
+
+/-- `w_divmod(x, y)` on words `a`, `b`: a derivation exists only for `b ≠ 0`, and then it
+returns the words `a / b` and `a % b`, whatever the host hinted (`q·y` does not overflow,
+`x - q·y` does not borrow and equals `r`, `r < y`). -/
+theorem wDivmod_sound (fc : FieldCompatible F) (pw : PrimHelpersWorld P world)
+    {a b : Nat} {xw yw r : SourceValue F} {h h' : Heap F}
+    (hxa : isU64Val a xw) (hyb : isU64Val b yw)
+    (ev : EvalFn world (qualified "w_divmod") [xw, yw] h r h') :
+    0 < b ∧ ∃ qw rw, isU64Val (a / b) qw ∧ isU64Val (a % b) rw ∧ r = .tuple [qw, rw] ∧ h' = h := by
+  obtain ⟨_, body⟩ := evalFn_plain_inv pw.w_divmod plain_wDivmod ev
+  simp only [wDivmod, letE, matchE, callE, vE, qualifyExprF, qualifyExpr, qualifyPat, qualifyTy,
+    qualifyName_u64_mul, qualifyName_u64_is_zero, qualifyName_u64_sub_with_borrow,
+    Option.map_some, Aiur.Generic.Expr.map, Aiur.Generic.Pattern.map, List.map] at body
+  obtain ⟨v0, v1, v2, v3, _, evhint, k1⟩ := evalExpr_let_tuple4_inv body
+  obtain ⟨_, evkey⟩ := evalExpr_hint_inv evhint
+  obtain ⟨_, _, _, ekx, eky, _⟩ := evalExpr_tuple2_inv evkey
+  obtain ⟨_, rfl⟩ := evalExpr_var_inv ekx
+  obtain ⟨_, rfl⟩ := evalExpr_var_inv eky
+  obtain ⟨wq, _, evq, k2⟩ := evalExpr_let_bind_inv k1
+  obtain ⟨qn, hwq, rfl⟩ := eval_joinE (vlo := v0) (vhi := v1) fc pw (by simp) (by simp)
+    (by decide) evq
+  obtain ⟨wr, _, evr, k3⟩ := evalExpr_let_bind_inv k2
+  obtain ⟨rn, hwr, rfl⟩ := eval_joinE (vlo := v2) (vhi := v3) fc pw (by simp) (by simp)
+    (by decide) evr
+  have hqb := isU64Val_lt hwq
+  have hrb := isU64Val_lt hwr
+  have hab := isU64Val_lt hxa
+  cases k3 with
+  | matchValue evmul hsel1 hbr1 =>
+    obtain ⟨vq, vy, _, _, evq', evy, cmul⟩ := evalExpr_call2_inv evmul
+    obtain ⟨hv, rfl⟩ := eval_var_of_find (v := wq) (by simp) evq'
+    subst vq
+    obtain ⟨hv, rfl⟩ := eval_var_of_find (v := yw) (by simp) evy
+    subst vy
+    obtain ⟨wlo, whi, hwlo, hwhi, rfl, rfl⟩ := pw.u64.mul _ _ _ _ _ _ _ hwq hyb cmul
+    simp [SourceSemantics.selectArm, World.matchPattern, matchPatternWith, matchListWith] at hsel1
+    obtain ⟨rfl, rfl⟩ := hsel1
+    cases hbr1 with
+    | matchValue eviz hsel2 hbr2 =>
+      obtain ⟨vhi, _, evhi, ciz⟩ := evalExpr_call1_inv eviz
+      obtain ⟨hv, rfl⟩ := eval_var_of_find (v := whi) (by simp) evhi
+      subst vhi
+      obtain ⟨rfl, rfl⟩ := pw.u64.is_zero _ _ _ _ _ hwhi ciz
+      by_cases hhi0 : qn * b / U64.base = 0
+      · simp [hhi0, SourceSemantics.selectArm, World.matchPattern, matchPatternWith,
+          Aiur.Pattern.bindings] at hsel2
+        obtain ⟨rfl, rfl⟩ := hsel2
+        cases hbr2 with
+        | matchValue evs1 hsel3 hbr3 =>
+          obtain ⟨vx, vlo, _, _, evx, evlo, cs1⟩ := evalExpr_call2_inv evs1
+          obtain ⟨hv, rfl⟩ := eval_var_of_find (v := xw) (by simp) evx
+          subst vx
+          obtain ⟨hv, rfl⟩ := eval_var_of_find (v := wlo) (by simp) evlo
+          subst vlo
+          obtain ⟨wd, hwd, rfl, rfl⟩ := pw.u64.sub_with_borrow _ _ _ _ _ _ _ hxa hwlo cs1
+          generalize hdn : (a + U64.base - qn * b % U64.base) % U64.base = dn at hwd
+          by_cases hlt1 : a < qn * b % U64.base
+          · simp [hlt1, SourceSemantics.selectArm, World.matchPattern, matchPatternWith,
+              matchListWith, Aiur.Pattern.bindings] at hsel3
+          · simp [hlt1, SourceSemantics.selectArm, World.matchPattern, matchPatternWith,
+              matchListWith, Aiur.Pattern.bindings] at hsel3
+            obtain ⟨rfl, rfl⟩ := hsel3
+            cases hbr3 with
+            | matchValue evs2 hsel4 hbr4 =>
+              obtain ⟨vd, vr, _, _, evd, evr', cs2⟩ := evalExpr_call2_inv evs2
+              obtain ⟨hv, rfl⟩ := eval_var_of_find (v := wd) (by simp) evd
+              subst vd
+              obtain ⟨hv, rfl⟩ := eval_var_of_find (v := wr) (by simp) evr'
+              subst vr
+              obtain ⟨we, hwe, rfl, rfl⟩ := pw.u64.sub_with_borrow _ _ _ _ _ _ _ hwd hwr cs2
+              generalize hen : (dn + U64.base - rn) % U64.base = en at hwe
+              simp [SourceSemantics.selectArm, World.matchPattern, matchPatternWith,
+                matchListWith] at hsel4
+              obtain ⟨rfl, rfl⟩ := hsel4
+              cases hbr4 with
+              | matchValue eviz2 hsel5 hbr5 =>
+                obtain ⟨ve, _, eve, ciz2⟩ := evalExpr_call1_inv eviz2
+                obtain ⟨hv, rfl⟩ := eval_var_of_find (v := we) (by simp) eve
+                subst ve
+                obtain ⟨rfl, rfl⟩ := pw.u64.is_zero _ _ _ _ _ hwe ciz2
+                by_cases he0 : en = 0
+                · simp [he0, SourceSemantics.selectArm, World.matchPattern, matchPatternWith,
+                    Aiur.Pattern.bindings] at hsel5
+                  obtain ⟨rfl, rfl⟩ := hsel5
+                  cases hbr5 with
+                  | matchValue evs3 hsel6 hbr6 =>
+                    obtain ⟨vr2, vy2, _, _, evr2, evy2, cs3⟩ := evalExpr_call2_inv evs3
+                    obtain ⟨hv, rfl⟩ := eval_var_of_find (v := wr) (by simp) evr2
+                    subst vr2
+                    obtain ⟨hv, rfl⟩ := eval_var_of_find (v := yw) (by simp) evy2
+                    subst vy2
+                    obtain ⟨_, _, rfl, rfl⟩ := pw.u64.sub_with_borrow _ _ _ _ _ _ _ hwr hyb cs3
+                    by_cases hlt : rn < b
+                    · simp [hlt, SourceSemantics.selectArm, World.matchPattern, matchPatternWith,
+                        matchListWith, Aiur.Pattern.bindings] at hsel6
+                      obtain ⟨rfl, rfl⟩ := hsel6
+                      obtain ⟨vq', vr', _, evq'', evr'', rfl⟩ := evalExpr_tuple2_inv hbr6
+                      obtain ⟨hv, rfl⟩ := eval_var_of_find (v := wq) (by simp) evq''
+                      subst vq'
+                      obtain ⟨hv, rfl⟩ := eval_var_of_find (v := wr) (by simp) evr''
+                      subst vr'
+                      have hsum : qn * b + rn = a := by
+                        unfold U64.base at hhi0 hlt1 hdn hen hqb hrb hab
+                        subst he0
+                        generalize qn * b = p at hhi0 hlt1 hdn ⊢
+                        omega
+                      have hb0 : 0 < b := by omega
+                      have hqEq : a / b = qn := by
+                        rw [← hsum, Nat.mul_comm qn b, Nat.mul_add_div hb0,
+                          Nat.div_eq_of_lt hlt, Nat.add_zero]
+                      have hrEq : a % b = rn := by
+                        rw [← hsum, Nat.mul_comm qn b, Nat.mul_add_mod, Nat.mod_eq_of_lt hlt]
+                      rw [hqEq, hrEq]
+                      exact ⟨hb0, _, _, hwq, hwr, rfl, rfl⟩
+                    · simp [hlt, SourceSemantics.selectArm, World.matchPattern, matchPatternWith,
+                        matchListWith, Aiur.Pattern.bindings] at hsel6
+                · simp [he0, SourceSemantics.selectArm, World.matchPattern, matchPatternWith,
+                    Aiur.Pattern.bindings] at hsel5
+      · simp [hhi0, SourceSemantics.selectArm, World.matchPattern, matchPatternWith,
+          Aiur.Pattern.bindings] at hsel2
+
 /-- Build `PrimHelpersWorld` whenever every function in `Lower.helpers ⟨P⟩` is installed in `world`. -/
 theorem PrimHelpersWorld.ofFunctions (u64 : U64Contracts world)
     (hmem : ∀ g ∈ helpers ⟨P⟩,
@@ -2889,6 +3148,8 @@ theorem PrimHelpersWorld.ofFunctions (u64 : U64Contracts world)
   p_land := hmem (pBitwise "p_land" "UInt64::and") (by simp [helpers])
   p_lor := hmem (pBitwise "p_lor" "UInt64::or") (by simp [helpers])
   p_xor := hmem (pBitwise "p_xor" "UInt64::xor") (by simp [helpers])
+  w_add := hmem wAdd (by simp [helpers])
+  w_divmod := hmem wDivmod (by simp [helpers])
   p_bool := by
     intro tt ff hb
     refine ⟨?_, ?_, ?_⟩

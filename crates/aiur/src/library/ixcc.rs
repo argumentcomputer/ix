@@ -1,9 +1,14 @@
 //! Advice for programs lowered from IxCC's first-order IR (Lean package
 //! `IxCCAiur`, `IxCCAiur/IxCCAiur/Lower.lean` and `GuessLower.lean`):
 //!
-//! 1. `ixcc.divmod`: quotient and remainder `(x / y, x % y)`. The lowered
-//!    program range-checks both words and asserts `q * y + r = x` and `r < y`.
-//! 2. `ixcc.guess.<fn>`: universal Tier-2 `guess` host advice channel. Given
+//! 1. `ixcc.divmod`: quotient and remainder `(x / y, x % y)` on fields below
+//!    `2^56`. The lowered program range-checks both words and asserts
+//!    `q * y + r = x` and `r < y`.
+//! 2. `ixcc.divmod64`: quotient and remainder `(x / y, x % y)` on 64-bit words
+//!    passed as little-endian bytes (`([U8; 8], [U8; 8])`) and returned as
+//!    32-bit halves `(q_lo, q_hi, r_lo, r_hi)`. The lowered program checks
+//!    `q * y + r = x` without overflow and `r < y` on the words.
+//! 3. `ixcc.guess.<fn>`: universal Tier-2 `guess` host advice channel. Given
 //!    the unmodified pre-guess advice package (`--advice ADVICE.ixa`),
 //!    [`register_advice_program`] automatically scans every `"ixcc.guess.*"`
 //!    hint site in the circuit program and binds each channel to the matching
@@ -25,14 +30,31 @@ use std::{
 };
 
 pub const DIVMOD: &str = "ixcc.divmod";
+pub const DIVMOD64: &str = "ixcc.divmod64";
 
 /// Channel prefix for Tier-2 `guess` advice (`IxCCAiur.GuessLower`).
 pub const GUESS_PREFIX: &str = "ixcc.guess.";
 
-/// `(x, y) -> (x / y, x % y)` on canonical values that fit in a `u64`, with
-/// Lean's conventions at `y = 0` (quotient `0`, remainder `x`), as the Lean
-/// provider answers (`IxCC.AiurBackend.Hints.dispatcher`).
+/// Both division channels (`ixcc.divmod` and `ixcc.divmod64`), with the
+/// honest answers.
 pub fn register<B: FieldBackend>(
+  channels: &mut HintChannels<B::Element>,
+  field: B,
+) -> Result<(), String> {
+  register_divmod(channels, field)?;
+  register_divmod64_with(channels, field, divmod_u64)
+}
+
+/// `(x / y, x % y)` with Lean's conventions at `y = 0` (quotient `0`,
+/// remainder `x`), as the Lean provider answers
+/// (`IxCC.AiurBackend.Hints.dispatcher`).
+pub fn divmod_u64(x: u64, y: u64) -> (u64, u64) {
+  (x.checked_div(y).unwrap_or(0), x.checked_rem(y).unwrap_or(x))
+}
+
+/// `ixcc.divmod`: `(x, y) -> (x / y, x % y)` on canonical values that fit in a
+/// `u64`.
+pub fn register_divmod<B: FieldBackend>(
   channels: &mut HintChannels<B::Element>,
   field: B,
 ) -> Result<(), String> {
@@ -40,10 +62,50 @@ pub fn register<B: FieldBackend>(
   channels.insert_fixed::<2, 2>(DIVMOD, pair.clone(), pair, move |input| {
     let x = field.try_to_u64(input[0])?;
     let y = field.try_to_u64(input[1])?;
-    let q = x.checked_div(y).unwrap_or(0);
-    let r = x.checked_rem(y).unwrap_or(x);
+    let (q, r) = divmod_u64(x, y);
     Ok([field.from_u64(q), field.from_u64(r)])
   })
+}
+
+/// `ixcc.divmod64` with the answer `answer(x, y) = (q, r)`: the key is the two
+/// words' little-endian bytes (`([U8; 8], [U8; 8])`), the output `q` and `r`
+/// as 32-bit halves, low half first. `answer` is `divmod_u64` for the honest
+/// provider; a test can register a wrong one.
+pub fn register_divmod64_with<B: FieldBackend>(
+  channels: &mut HintChannels<B::Element>,
+  field: B,
+  answer: impl Fn(u64, u64) -> (u64, u64) + Send + Sync + 'static,
+) -> Result<(), String> {
+  let word = Type::Tuple { items: vec![Type::Field; 8] };
+  let key = Type::Tuple { items: vec![word.clone(), word] };
+  let output = Type::Tuple { items: vec![Type::Field; 4] };
+  channels.insert_fixed::<16, 4>(DIVMOD64, key, output, move |input| {
+    let x = word_le(field, &input[..8])?;
+    let y = word_le(field, &input[8..])?;
+    let (q, r) = answer(x, y);
+    Ok(
+      [q & 0xffff_ffff, q >> 32, r & 0xffff_ffff, r >> 32]
+        .map(|half| field.from_u64(half)),
+    )
+  })
+}
+
+/// The word whose little-endian bytes are `bytes`, each below `256`.
+fn word_le<B: FieldBackend>(
+  field: B,
+  bytes: &[B::Element],
+) -> Result<u64, String> {
+  let mut word = 0u64;
+  for (index, byte) in bytes.iter().enumerate() {
+    let byte = field.try_to_u64(*byte)?;
+    if byte >= 256 {
+      return Err(format!(
+        "{DIVMOD64}: key byte {index} is {byte}, not below 256"
+      ));
+    }
+    word |= byte << (8 * index);
+  }
+  Ok(word)
 }
 
 /// Scan `main_program` for all distinct `"ixcc.guess.*"` hint channels and
@@ -158,8 +220,7 @@ fn register_advice_program_inner<B: FieldBackend>(
           return Ok(());
         }
 
-        let prepared =
-          advice.prepare_hint_channels(&[], &advice_channels)?;
+        let prepared = advice.prepare_hint_channels(&[], &advice_channels)?;
         let record = prepared
           .execute(&entry_name, key.to_vec())
           .map_err(|e| e.to_string())?;
@@ -171,9 +232,7 @@ fn register_advice_program_inner<B: FieldBackend>(
             output.len()
           ));
         }
-        if should_tamper
-          && let Some(word) = answer.last_mut()
-        {
+        if should_tamper && let Some(word) = answer.last_mut() {
           // Perturb the last payload word (+1 mod p) so enum tags remain valid
           // while the mathematical witness fails the circuit's verified checker.
           *word = field.add(*word, field.one());
@@ -236,7 +295,8 @@ mod tests {
 
   const GOLDILOCKS: u64 = 0xffff_ffff_0000_0001;
 
-  fn sample_guess_and_advice() -> (CheckedProgram<PrimeField>, CheckedProgram<PrimeField>) {
+  fn sample_guess_and_advice()
+  -> (CheckedProgram<PrimeField>, CheckedProgram<PrimeField>) {
     // Main circuit: hints y = x + 7 on "ixcc.guess.f1", checks y == x + 7, returns y.
     let main_prog = Program {
       version: VERSION,
@@ -336,11 +396,114 @@ mod tests {
     .unwrap();
     let bad_hints =
       main_prog2.prepare_hint_channels(&[], &bad_channels).unwrap();
-    let err = bad_hints.execute("Prog::main0", vec![35]).unwrap_err().to_string();
+    let err =
+      bad_hints.execute("Prog::main0", vec![35]).unwrap_err().to_string();
     assert!(hits.load(Ordering::Relaxed) > 0);
     assert!(
       err.contains("guess checker mismatch") || err.contains("assert"),
       "unexpected error: {err}"
     );
+  }
+
+  fn sample_divmod64_program() -> CheckedProgram<PrimeField> {
+    let word = Type::Tuple { items: vec![Type::Field; 8] };
+    let key_type = Type::Tuple { items: vec![word.clone(), word] };
+    let out_type = Type::Tuple { items: vec![Type::Field; 4] };
+    let prog = Program {
+      version: VERSION,
+      modulus: GOLDILOCKS,
+      functions: vec![Function {
+        name: "Prog::dm64".into(),
+        params: vec![key_type.clone()],
+        result: out_type.clone(),
+        registers: 20,
+        code: vec![
+          Instruction::Hint {
+            channel: DIVMOD64.into(),
+            r#type: out_type,
+            key_type,
+            key: (0..16).collect(),
+            dest: vec![16, 17, 18, 19],
+          },
+          Instruction::Ret { value: vec![16, 17, 18, 19] },
+        ],
+      }],
+      enums: vec![],
+      tables: vec![],
+      maps: vec![],
+      entries: vec![Entry {
+        name: "Prog::dm64".into(),
+        function: 0,
+        inputs: vec![IoType::Tuple {
+          items: vec![
+            IoType::Array { element: Box::new(IoType::Field), length: 8 },
+            IoType::Array { element: Box::new(IoType::Field), length: 8 },
+          ],
+        }],
+        output: Some(IoType::Tuple { items: vec![IoType::Field; 4] }),
+      }],
+    };
+    prog.check().unwrap()
+  }
+
+  fn u64_le_fields(x: u64) -> Vec<u64> {
+    x.to_le_bytes().into_iter().map(u64::from).collect()
+  }
+
+  #[test]
+  fn divmod64_honest_full_64bit_zero_divisor_and_custom_lie() {
+    let prog = sample_divmod64_program();
+    let field = prog.field();
+    let mut channels = HintChannels::new();
+    register(&mut channels, field).unwrap();
+    let hints = prog.prepare_hint_channels(&[], &channels).unwrap();
+
+    // Full 64-bit operands (>= 2^56): u64::MAX / 0x0001_0000_0000_0003
+    let x: u64 = u64::MAX;
+    let y: u64 = 0x0001_0000_0000_0003;
+    let mut args = u64_le_fields(x);
+    args.extend(u64_le_fields(y));
+    let rec = hints.execute("Prog::dm64", args.clone()).unwrap();
+    let (q, r) = (x / y, x % y);
+    assert_eq!(
+      rec.output,
+      vec![q & 0xffff_ffff, q >> 32, r & 0xffff_ffff, r >> 32]
+    );
+
+    // Lean convention at y = 0: quotient 0, remainder x.
+    let mut args_zero = u64_le_fields(x);
+    args_zero.extend(u64_le_fields(0));
+    let rec0 = hints.execute("Prog::dm64", args_zero).unwrap();
+    assert_eq!(rec0.output, vec![0, 0, x & 0xffff_ffff, x >> 32]);
+
+    // Custom answer callback via register_divmod64_with.
+    let mut lie_channels = HintChannels::new();
+    register_divmod64_with(&mut lie_channels, field, |a, b| {
+      let (q, r) = divmod_u64(a, b);
+      (q.wrapping_add(1), r)
+    })
+    .unwrap();
+    let lie_hints = prog.prepare_hint_channels(&[], &lie_channels).unwrap();
+    let lie_rec = lie_hints.execute("Prog::dm64", args).unwrap();
+    let q_lie = q.wrapping_add(1);
+    assert_eq!(
+      lie_rec.output,
+      vec![q_lie & 0xffff_ffff, q_lie >> 32, r & 0xffff_ffff, r >> 32]
+    );
+  }
+
+  #[test]
+  fn divmod64_rejects_non_byte_key() {
+    let prog = sample_divmod64_program();
+    let field = prog.field();
+    let mut channels = HintChannels::new();
+    register(&mut channels, field).unwrap();
+    let hints = prog.prepare_hint_channels(&[], &channels).unwrap();
+
+    let mut bad_args = u64_le_fields(42);
+    bad_args[3] = 256;
+    bad_args.extend(u64_le_fields(7));
+    let err = hints.execute("Prog::dm64", bad_args).unwrap_err().to_string();
+    assert!(err.contains("not below 256"), "unexpected error: {err}");
   }
 }

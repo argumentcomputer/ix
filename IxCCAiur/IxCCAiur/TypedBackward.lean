@@ -732,17 +732,59 @@ theorem typedLoweredWorld_of_check (fc : FieldCompatible64 F)
       exact byteCheckSpec_false_of_check htables
     | u32 =>
       rw [ht] at htables
-      exact byteCheckSpec_true_of_check htables (hu8f ht)
+      simp only [Bool.and_eq_true] at htables
+      exact byteCheckSpec_true_of_check htables.1 (hu8f ht)
     | u64 =>
       rw [ht] at htables
       simp only [Bool.and_eq_true] at htables
       exact byteCheckSpec_true_of_u64LibraryWorld
-        (u64LibraryWorld_of_check s (u8TablesMatch_of_check htables.1) htables.2)
+        (u64LibraryWorld_of_check s (u8TablesMatch_of_check htables.1.1) htables.2)
   · intro hu64
     rw [hu64] at htables
     simp only [Bool.and_eq_true] at htables
     exact U64Contracts.ofLibraryWorld
-      (u64LibraryWorld_of_check s (u8TablesMatch_of_check htables.1) htables.2)
+      (u64LibraryWorld_of_check s (u8TablesMatch_of_check htables.1.1) htables.2)
+      fc.toFieldCompatible
+  · intro g hg
+    obtain ⟨f, hfind, htp, hparams, hbody⟩ := checkFunction_sound (hall g hg)
+    have hnoDollar : (Lower.qualified g.name).toList.head? ≠ some '$' := by
+      simp [Lower.qualified, moduleName]
+    have hwf := worldHasFn_of_findFunction? s hnoDollar hfind htp
+    rwa [hparams, hbody] at hwf
+
+/-- Discharge `TypedLoweredWorld` purely from `TypedWorld.checkTypedWorld` across
+ALL tiers (`.none`, `.byte256`, `.u32`, `.u64`), with no extra `.u32` hypothesis. -/
+theorem typedLoweredWorld_of_check_all (fc : FieldCompatible64 F)
+    {P : Program} {cert : ShapeCert} {sched : CircuitSchedule} {lp : LoweredProgram}
+    (hlow : TypedLower.lowerProgram P cert sched = .ok lp)
+    (s : Generic.Source F)
+    (hchk : checkTypedWorld s lp = true) :
+    TypedLoweredWorld P cert sched lp s.world := by
+  unfold checkTypedWorld at hchk
+  simp only [Bool.and_eq_true] at hchk
+  obtain ⟨htables, hfuncs⟩ := hchk
+  have hall : ∀ g ∈ lp.program.functions, checkFunction s g = true := List.all_eq_true.mp hfuncs
+  refine ⟨hlow, ?_, ?_, ?_⟩
+  · intro hne
+    cases ht : lp.tier with
+    | none => exact False.elim (hne ht)
+    | byte256 =>
+      rw [ht] at htables
+      exact byteCheckSpec_false_of_check htables
+    | u32 =>
+      rw [ht] at htables
+      simp only [Bool.and_eq_true] at htables
+      exact (TypedWorld.u32Contracts_of_check fc.toU32Compatible htables.1 htables.2).u8_from_fields
+    | u64 =>
+      rw [ht] at htables
+      simp only [Bool.and_eq_true] at htables
+      exact byteCheckSpec_true_of_u64LibraryWorld
+        (u64LibraryWorld_of_check s (u8TablesMatch_of_check htables.1.1) htables.2)
+  · intro hu64
+    rw [hu64] at htables
+    simp only [Bool.and_eq_true] at htables
+    exact U64Contracts.ofLibraryWorld
+      (u64LibraryWorld_of_check s (u8TablesMatch_of_check htables.1.1) htables.2)
       fc.toFieldCompatible
   · intro g hg
     obtain ⟨f, hfind, htp, hparams, hbody⟩ := checkFunction_sound (hall g hg)

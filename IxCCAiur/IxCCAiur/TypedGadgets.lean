@@ -2053,6 +2053,19 @@ structure U32Contracts (world : World F) : Prop where
     EvalFn world "UInt32::from_field" [v] h r h' →
     ∃ n, n < U32.base ∧ v = .field (n : F) ∧ isU32Val n r ∧ h' = h
 
+/-- Close `TypedGadgets.U32Contracts s.world` directly from `World.checkTables` and
+`TypedWorld.checkU32Functions` under `FieldCompatible64 F`. -/
+theorem U32Contracts.ofCheck {s : Generic.Source F}
+    (fc : FieldCompatible64 F) (ht : checkTables s = true) (h : checkU32Functions s = true) :
+    U32Contracts s.world :=
+  let c := TypedWorld.u32Contracts_of_check fc.toU32Compatible ht h
+  { u8_to_field := c.u8_to_field
+    to_bytes := c.to_bytes
+    compact := c.compact
+    compact_field := c.compact_field
+    from_fields := c.from_fields
+    from_field := c.from_field }
+
 private theorem eval_u32ToField_var {world : World F} (u32 : U32Contracts world)
     {locals : Environment F Nat} {nm : String} {n : Nat} {w r : SourceValue F}
     {h h' : Heap F} (hw : isU32Val n w)
