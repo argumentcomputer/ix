@@ -24,7 +24,7 @@ def manifestPath : System.FilePath := "Tests/Fixtures/compile-correct-closure-ma
 
 /-- The SHA-256 digest of the manifest's text (its lines, each followed by a newline).
 Regenerate with `IX_CERT_CLOSURE_MANIFEST_WRITE=Tests/Fixtures/compile-correct-closure-manifest.txt`. -/
-def pinnedDigest : String := "799faee38f4e85ff381b2160db30dc5b98cd92210a695962f6a789af041b614e"
+def pinnedDigest : String := "f51b0d5519a48355ee05d62a0c579f55a15975d75820b1ff151eedd2b8b53f44"
 
 open Lean Elab Command in
 elab "#check_closure_manifest" : command =>

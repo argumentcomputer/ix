@@ -61,7 +61,7 @@ def manifestPath : System.FilePath := "Tests/Fixtures/aiur-compression-closure-m
 
 /-- The SHA-256 digest of the manifest's text (its lines, each followed by a newline).
 Regenerate with `IX_AIUR_COMPRESSION_CLOSURE_MANIFEST_WRITE=Tests/Fixtures/aiur-compression-closure-manifest.txt`. -/
-def pinnedDigest : String := "68a30d1f8e320e4b8e40380f8e10def874f2551ac6f07c0cf0a65b6d5fde2b8a"
+def pinnedDigest : String := "c8b8b68c798b2d7de7ceceb26e42f2bd0823f7f60a1bb0c518bffb89f9393e24"
 
 open Lean Elab Command in
 elab "#check_closure_manifest" : command =>
