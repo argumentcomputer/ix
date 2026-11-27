@@ -1021,11 +1021,14 @@ def obsLogArities (input : ByteList) (steps : CommitPhaseMultiStepList) : ByteLi
     obsLogArities (snocU64 input (u64BytesOfU32 st.logArity)) rest
 termination_by structural steps
 
-/-- Exact `Pcs::pcs_check_witness` PoW grinding check (verifies `< p_GL` and `bits` leading zero bits). -/
+/-- Exact `Pcs::pcs_check_witness` PoW grinding check (verifies `< p_GL`, canonical zero witness when
+`bits == 0`, and `bits` leading zero bits when `bits > 0`). -/
 @[circuit_noinline]
 def pcsCheckWitness (input : ByteList) (witness : U64Bytes) (bits : Nat) : PowCheckOut :=
   if glLtPBytes witness == 0 then { ok := 0, state := { input := .nil, output := .nil } }
-  else if bits == 0 then { ok := 1, state := { input := input, output := .nil } }
+  else if bits == 0 then
+    if u64BytesEq witness u64Zero == 0 then { ok := 0, state := { input := .nil, output := .nil } }
+    else { ok := 1, state := { input := input, output := .nil } }
   else
     let s := chSampleBits { input := snocU64 input witness, output := .nil } bits
     let ok := if bitsToNum s.bits == 0 then 1 else 0
@@ -2210,14 +2213,41 @@ def optCommitCap (oc : OptCommit) : DigestBytesList :=
   | .noCommit => .nil
   | .someCommit c => c
 
-/-- Exact `StarkVerifier::verify_shard`. -/
+/-- Production Aiur security floor matching `MultiStark/Modules/StarkVerifier.lean`:
+1. `1 ≤ logBlowup ≤ 4`, `numQueries ≥ 1`,
+2. `commitPowBits ≤ 32`, `queryPowBits ≤ 32`,
+3. Conjectured query soundness: `logBlowup * numQueries + queryPowBits ≥ 220`,
+4. Provable unique-decoding soundness: `udMillibits(logBlowup) * numQueries + 1000 * queryPowBits ≥ 80000`,
+5. Finite-`m` Johnson soundness: `(500 * logBlowup - 45) * numQueries + 1000 * queryPowBits ≥ 128000`. -/
 @[circuit_noinline]
-def verifyShard (sys : SysKey) (header : ShardHeader) (shard : Nat) (proof : ShardProof)
-    (input : ByteList) (lch fch : ExtGl) : VerifyShardOut :=
+def checkSecurityFloor (p : SysParams) : Nat :=
+  if p.logBlowup < 1 || p.logBlowup > 4 then 0
+  else if p.numQueries < 1 then 0
+  else if p.commitPowBits > 32 || p.queryPowBits > 32 then 0
+  else if p.logBlowup * p.numQueries + p.queryPowBits < 220 then 0
+  else
+    let udMillibits :=
+      if p.logBlowup == 1 then 415
+      else if p.logBlowup == 2 then 678
+      else if p.logBlowup == 3 then 830
+      else 912
+    if udMillibits * p.numQueries + 1000 * p.queryPowBits < 80000 then 0
+    else
+      let johnsonMillibits := 500 * p.logBlowup - 45
+      if johnsonMillibits * p.numQueries + 1000 * p.queryPowBits < 128000 then 0
+      else 1
+
+/-- Exact `StarkVerifier::verify_shard` with configurable security-floor toggle
+(`enforceFloor = 1` for production; `enforceFloor = 0` strictly for tiny synthetic test harnesses). -/
+@[circuit_noinline]
+def verifyShardWithFloor (enforceFloor : Nat) (sys : SysKey) (header : ShardHeader) (shard : Nat)
+    (proof : ShardProof) (input : ByteList) (lch fch : ExtGl) : VerifyShardOut :=
   let bad : VerifyShardOut := { ok := 0, lastAcc := extZero }
   let p := sys.params
   if p.capHeight != 0 then bad
   else if p.maxLogArity == 0 || p.maxLogArity > 3 then bad
+  else if p.logBlowup < 1 || p.numQueries < 1 || p.commitPowBits > 32 || p.queryPowBits > 32 then bad
+  else if enforceFloor != 0 && checkSecurityFloor p == 0 then bad
   else
     let numCircuits := extGlListLen proof.intermediateAccs
     if numCircuits == 0 then bad
@@ -2259,9 +2289,16 @@ def verifyShard (sys : SysKey) (header : ShardHeader) (shard : Nat) (proof : Sha
               p.commitPowBits p.queryPowBits == 0 then bad
             else { ok := 1, lastAcc := lastAcc proof.intermediateAccs }
 
+/-- Exact production `StarkVerifier::verify_shard` (always enforces `checkSecurityFloor`). -/
+@[circuit_inline]
+def verifyShard (sys : SysKey) (header : ShardHeader) (shard : Nat) (proof : ShardProof)
+    (input : ByteList) (lch fch : ExtGl) : VerifyShardOut :=
+  verifyShardWithFloor 1 sys header shard proof input lch fch
+
 @[circuit_noinline]
-def verifyShards (sys : SysKey) (headers : ShardHeaderList) (proofs : ShardProofList)
-    (shard : Nat) (input : ByteList) (lch fch acc : ExtGl) : VerifyShardOut :=
+def verifyShardsWithFloor (enforceFloor : Nat) (sys : SysKey) (headers : ShardHeaderList)
+    (proofs : ShardProofList) (shard : Nat) (input : ByteList) (lch fch acc : ExtGl) :
+    VerifyShardOut :=
   match headers with
   | .nil =>
     match proofs with
@@ -2271,10 +2308,15 @@ def verifyShards (sys : SysKey) (headers : ShardHeaderList) (proofs : ShardProof
     match proofs with
     | .nil => { ok := 0, lastAcc := extZero }
     | .cons p prest =>
-      let r := verifyShard sys h shard p input lch fch
+      let r := verifyShardWithFloor enforceFloor sys h shard p input lch fch
       if r.ok == 0 then { ok := 0, lastAcc := extZero }
-      else verifyShards sys hrest prest (shard + 1) input lch fch (extAdd acc r.lastAcc)
+      else verifyShardsWithFloor enforceFloor sys hrest prest (shard + 1) input lch fch (extAdd acc r.lastAcc)
 termination_by structural headers
+
+@[circuit_inline]
+def verifyShards (sys : SysKey) (headers : ShardHeaderList) (proofs : ShardProofList)
+    (shard : Nat) (input : ByteList) (lch fch acc : ExtGl) : VerifyShardOut :=
+  verifyShardsWithFloor 1 sys headers proofs shard input lch fch acc
 
 @[circuit_noinline]
 def batchClaims (headers : ShardHeaderList) : U64ListList :=
@@ -2283,9 +2325,10 @@ def batchClaims (headers : ShardHeaderList) : U64ListList :=
   | .cons h rest => u64ListListAppend h.claims (batchClaims rest)
 termination_by structural headers
 
-/-- Exact `StarkVerifier::verify_batch`. -/
+/-- Exact `StarkVerifier::verify_batch` with configurable security-floor toggle
+(`enforceFloor = 1` for production; `enforceFloor = 0` strictly for synthetic test harnesses). -/
 @[circuit_noinline]
-def verifyBatch (sys : SysKey) (batch : BatchProof) : VerifyBatchOut :=
+def verifyBatchWithFloor (enforceFloor : Nat) (sys : SysKey) (batch : BatchProof) : VerifyBatchOut :=
   let bad : VerifyBatchOut := { ok := 0, claims := .nil }
   let numShards := shardHeaderListLen batch.headers
   if numShards == 0 || numShards > 65536 then bad
@@ -2305,22 +2348,22 @@ def verifyBatch (sys : SysKey) (batch : BatchProof) : VerifyBatchOut :=
         let mAcc := messagesAcc extZero batch.messages bfs.lch bfs.fch
         if mAcc.ok == 0 then bad
         else
-          let total := verifyShards sys batch.headers batch.proofs 0 bfs.input bfs.lch bfs.fch mAcc.lastAcc
+          let total := verifyShardsWithFloor enforceFloor sys batch.headers batch.proofs 0
+            bfs.input bfs.lch bfs.fch mAcc.lastAcc
           if total.ok == 0 || extIsZero total.lastAcc == 0 then bad
           else { ok := 1, claims := batchClaims batch.headers }
 
+/-- Exact production `StarkVerifier::verify_batch` (always enforces `checkSecurityFloor`). -/
+@[circuit_inline]
+def verifyBatch (sys : SysKey) (batch : BatchProof) : VerifyBatchOut :=
+  verifyBatchWithFloor 1 sys batch
+
 /-! ## Section 5: Production `CompressWrap.verifyRootBytes` -/
 
-/-- **Full Production `CompressWrap` / `CompressGL` Verifier (`CompressWrap::verify_root`)**:
-Returns `1` iff:
-1. All 8 reserved public words `r0..r7` are zero,
-2. `s0..s7 == packDigest (BLAKE3("ix/compress-wrap/v1\0" ‖ BLAKE3(keyBytes) ‖ BLAKE3(claimsBytes)))`,
-3. `keyBytes`, `claimsBytes`, and `proofBytes` decode canonically (`readSystem`, `readClaims`,
-   `readBatchProof`) with zero trailing bytes and all field words `< p_GL`,
-4. `verifyBatch` succeeds over full Goldilocks $p_{\mathrm{GL}} = 2^{64} - 2^{32} + 1$ and
-   extracts claims identical to `claimsBytes`. -/
+/-- Test-harness variant of `verifyRootBytes` allowing `enforceFloor = 0` for tiny synthetic
+fixtures (`enforceFloor = 1` is the production path). Never use `enforceFloor = 0` in production. -/
 @[circuit_noinline]
-def verifyRootBytes
+def verifyRootBytesWithFloor (enforceFloor : Nat)
     (r0 r1 r2 r3 r4 r5 r6 r7 : Nat)
     (s0 s1 s2 s3 s4 s5 s6 s7 : Nat)
     (keyBytes claimsBytes proofBytes : ByteList) : Nat :=
@@ -2340,9 +2383,25 @@ def verifyRootBytes
           let pBatch := readBatchProof proofBytes
           if pBatch.ok == 0 then 0
           else
-            let vb := verifyBatch pSys.val pBatch.val
+            let vb := verifyBatchWithFloor enforceFloor pSys.val pBatch.val
             if vb.ok == 0 then 0
             else assertSameClaims vb.claims pClaims.val
+
+/-- **Full Production `CompressWrap` / `CompressGL` Verifier (`CompressWrap::verify_root`)**:
+Returns `1` iff:
+1. All 8 reserved public words `r0..r7` are zero,
+2. `s0..s7 == packDigest (BLAKE3("ix/compress-wrap/v1\0" ‖ BLAKE3(keyBytes) ‖ BLAKE3(claimsBytes)))`,
+3. `keyBytes`, `claimsBytes`, and `proofBytes` decode canonically (`readSystem`, `readClaims`,
+   `readBatchProof`) with zero trailing bytes, structural preprocessed checks, and all field words `< p_GL`,
+4. `verifyBatch` succeeds over full Goldilocks $p_{\mathrm{GL}} = 2^{64} - 2^{32} + 1$ enforcing
+   the production Aiur security floor and zero-PoW witness canonicalization, and extracts claims
+   identical to `claimsBytes`. -/
+@[circuit_inline]
+def verifyRootBytes
+    (r0 r1 r2 r3 r4 r5 r6 r7 : Nat)
+    (s0 s1 s2 s3 s4 s5 s6 s7 : Nat)
+    (keyBytes claimsBytes proofBytes : ByteList) : Nat :=
+  verifyRootBytesWithFloor 1 r0 r1 r2 r3 r4 r5 r6 r7 s0 s1 s2 s3 s4 s5 s6 s7 keyBytes claimsBytes proofBytes
 
 /-! ## Section 6: Live-Provable Goldilocks Benchmark Entrypoint (`entryCompressWrapSmoke`)
 
@@ -2912,23 +2971,44 @@ private def fxArity4 : RealFixture := buildRealFixture 1
 private def fxDeg1FinalPoly : RealFixture := buildRealFixture 2
 
 private def runVerifyFixture (fx : RealFixture) : Nat :=
-  verifyRootBytes 0 0 0 0 0 0 0 0
+  verifyRootBytesWithFloor 0 0 0 0 0 0 0 0 0
     fx.stmt.w0 fx.stmt.w1 fx.stmt.w2 fx.stmt.w3 fx.stmt.w4 fx.stmt.w5 fx.stmt.w6 fx.stmt.w7
     fx.keyBytes fx.claimsBytes fx.proofBytes
 
 -- 1. Full end-to-end binary round-trip & acceptance over real Goldilocks $p_{\mathrm{GL}}$
+--    (using explicit test-only floor waiver `enforceFloor = 0` for 1-query mini-prover fixtures)
 #guard runVerifyFixture fxBinary == 1
 #guard runVerifyFixture fxArity4 == 1
 #guard runVerifyFixture fxDeg1FinalPoly == 1
 
+-- 1b. Production `verifyRootBytes` (enforceFloor = 1) REJECTS below-floor synthetic fixtures!
+#guard verifyRootBytes 0 0 0 0 0 0 0 0
+  fxBinary.stmt.w0 fxBinary.stmt.w1 fxBinary.stmt.w2 fxBinary.stmt.w3
+  fxBinary.stmt.w4 fxBinary.stmt.w5 fxBinary.stmt.w6 fxBinary.stmt.w7
+  fxBinary.keyBytes fxBinary.claimsBytes fxBinary.proofBytes == 0
+
+-- 1c. `checkSecurityFloor` positive & boundary negative tests across all 8 floor bounds
+#guard checkSecurityFloor { logBlowup := 1, capHeight := 0, logFinalPolyLen := 0, maxLogArity := 1, numQueries := 282, commitPowBits := 0, queryPowBits := 0 } == 1
+#guard checkSecurityFloor { logBlowup := 2, capHeight := 0, logFinalPolyLen := 0, maxLogArity := 1, numQueries := 118, commitPowBits := 16, queryPowBits := 16 } == 1
+#guard checkSecurityFloor { logBlowup := 3, capHeight := 0, logFinalPolyLen := 0, maxLogArity := 1, numQueries := 78, commitPowBits := 16, queryPowBits := 16 } == 1
+#guard checkSecurityFloor { logBlowup := 4, capHeight := 0, logFinalPolyLen := 0, maxLogArity := 1, numQueries := 71, commitPowBits := 16, queryPowBits := 16 } == 1
+#guard checkSecurityFloor { logBlowup := 0, capHeight := 0, logFinalPolyLen := 0, maxLogArity := 1, numQueries := 300, commitPowBits := 0, queryPowBits := 32 } == 0
+#guard checkSecurityFloor { logBlowup := 5, capHeight := 0, logFinalPolyLen := 0, maxLogArity := 1, numQueries := 100, commitPowBits := 0, queryPowBits := 16 } == 0
+#guard checkSecurityFloor { logBlowup := 3, capHeight := 0, logFinalPolyLen := 0, maxLogArity := 1, numQueries := 0, commitPowBits := 0, queryPowBits := 32 } == 0
+#guard checkSecurityFloor { logBlowup := 3, capHeight := 0, logFinalPolyLen := 0, maxLogArity := 1, numQueries := 80, commitPowBits := 33, queryPowBits := 16 } == 0
+#guard checkSecurityFloor { logBlowup := 3, capHeight := 0, logFinalPolyLen := 0, maxLogArity := 1, numQueries := 80, commitPowBits := 16, queryPowBits := 33 } == 0
+#guard checkSecurityFloor { logBlowup := 3, capHeight := 0, logFinalPolyLen := 0, maxLogArity := 1, numQueries := 67, commitPowBits := 0, queryPowBits := 18 } == 0 -- conjectured 219 < 220
+#guard checkSecurityFloor { logBlowup := 4, capHeight := 0, logFinalPolyLen := 0, maxLogArity := 1, numQueries := 65, commitPowBits := 0, queryPowBits := 20 } == 0 -- UD 79280 < 80000
+#guard checkSecurityFloor { logBlowup := 1, capHeight := 0, logFinalPolyLen := 0, maxLogArity := 1, numQueries := 281, commitPowBits := 0, queryPowBits := 0 } == 0 -- Johnson 127855 < 128000
+
 -- 2. Reserved words non-zero rejected
-#guard verifyRootBytes 1 0 0 0 0 0 0 0
+#guard verifyRootBytesWithFloor 0 1 0 0 0 0 0 0 0
   fxBinary.stmt.w0 fxBinary.stmt.w1 fxBinary.stmt.w2 fxBinary.stmt.w3
   fxBinary.stmt.w4 fxBinary.stmt.w5 fxBinary.stmt.w6 fxBinary.stmt.w7
   fxBinary.keyBytes fxBinary.claimsBytes fxBinary.proofBytes == 0
 
 -- 3. Wrong `"ix/compress-wrap/v1\0"` statement digest rejected
-#guard verifyRootBytes 0 0 0 0 0 0 0 0
+#guard verifyRootBytesWithFloor 0 0 0 0 0 0 0 0 0
   (fxBinary.stmt.w0 + 1) fxBinary.stmt.w1 fxBinary.stmt.w2 fxBinary.stmt.w3
   fxBinary.stmt.w4 fxBinary.stmt.w5 fxBinary.stmt.w6 fxBinary.stmt.w7
   fxBinary.keyBytes fxBinary.claimsBytes fxBinary.proofBytes == 0
@@ -2937,7 +3017,7 @@ private def runVerifyFixture (fx : RealFixture) : Nat :=
 private def badMagicKey : ByteList :=
   match fxBinary.keyBytes with | .nil => .nil | .cons _ rest => .cons 7 rest
 private def badMagicStmt : Digest32Words := computeStatementDigest badMagicKey fxBinary.claimsBytes
-#guard verifyRootBytes 0 0 0 0 0 0 0 0
+#guard verifyRootBytesWithFloor 0 0 0 0 0 0 0 0 0
   badMagicStmt.w0 badMagicStmt.w1 badMagicStmt.w2 badMagicStmt.w3
   badMagicStmt.w4 badMagicStmt.w5 badMagicStmt.w6 badMagicStmt.w7
   badMagicKey fxBinary.claimsBytes fxBinary.proofBytes == 0
@@ -2945,20 +3025,20 @@ private def badMagicStmt : Digest32Words := computeStatementDigest badMagicKey f
 -- 5. Non-canonical `≥ p_GL` field element in claims rejected
 private def badCanonClaims : ByteList := encodeClaims (.cons (.cons (u64BytesOfNat glPrime) .nil) .nil)
 private def badCanonStmt : Digest32Words := computeStatementDigest fxBinary.keyBytes badCanonClaims
-#guard verifyRootBytes 0 0 0 0 0 0 0 0
+#guard verifyRootBytesWithFloor 0 0 0 0 0 0 0 0 0
   badCanonStmt.w0 badCanonStmt.w1 badCanonStmt.w2 badCanonStmt.w3
   badCanonStmt.w4 badCanonStmt.w5 badCanonStmt.w6 badCanonStmt.w7
   fxBinary.keyBytes badCanonClaims fxBinary.proofBytes == 0
 
 -- 6. Trailing byte in proof / key / claims rejected
-#guard verifyRootBytes 0 0 0 0 0 0 0 0
+#guard verifyRootBytesWithFloor 0 0 0 0 0 0 0 0 0
   fxBinary.stmt.w0 fxBinary.stmt.w1 fxBinary.stmt.w2 fxBinary.stmt.w3
   fxBinary.stmt.w4 fxBinary.stmt.w5 fxBinary.stmt.w6 fxBinary.stmt.w7
   fxBinary.keyBytes fxBinary.claimsBytes (byteListAppend fxBinary.proofBytes (.cons 0 .nil)) == 0
 
 private def trailingKey : ByteList := byteListAppend fxBinary.keyBytes (.cons 0 .nil)
 private def trailingKeyStmt : Digest32Words := computeStatementDigest trailingKey fxBinary.claimsBytes
-#guard verifyRootBytes 0 0 0 0 0 0 0 0
+#guard verifyRootBytesWithFloor 0 0 0 0 0 0 0 0 0
   trailingKeyStmt.w0 trailingKeyStmt.w1 trailingKeyStmt.w2 trailingKeyStmt.w3
   trailingKeyStmt.w4 trailingKeyStmt.w5 trailingKeyStmt.w6 trailingKeyStmt.w7
   trailingKey fxBinary.claimsBytes fxBinary.proofBytes == 0
@@ -2979,7 +3059,7 @@ private def tamperMmcsProof : ByteList :=
     encodeBatchProof { fxBinary.batch with proofs := .cons sp' rest }
   | .nil => .nil
 
-#guard verifyRootBytes 0 0 0 0 0 0 0 0
+#guard verifyRootBytesWithFloor 0 0 0 0 0 0 0 0 0
   fxBinary.stmt.w0 fxBinary.stmt.w1 fxBinary.stmt.w2 fxBinary.stmt.w3
   fxBinary.stmt.w4 fxBinary.stmt.w5 fxBinary.stmt.w6 fxBinary.stmt.w7
   fxBinary.keyBytes fxBinary.claimsBytes tamperMmcsProof == 0
@@ -2993,12 +3073,13 @@ private def tamperOodProof : ByteList :=
     encodeBatchProof { fxBinary.batch with proofs := .cons sp' rest }
   | .nil => .nil
 
-#guard verifyRootBytes 0 0 0 0 0 0 0 0
+#guard verifyRootBytesWithFloor 0 0 0 0 0 0 0 0 0
   fxBinary.stmt.w0 fxBinary.stmt.w1 fxBinary.stmt.w2 fxBinary.stmt.w3
   fxBinary.stmt.w4 fxBinary.stmt.w5 fxBinary.stmt.w6 fxBinary.stmt.w7
   fxBinary.keyBytes fxBinary.claimsBytes tamperOodProof == 0
 
--- 9. Tampered PoW grinding witness rejected (both canonical bad-grinding AND non-canonical `≥ p_GL`)
+-- 9. Tampered PoW grinding witness rejected (both canonical bad-grinding AND non-canonical `≥ p_GL`,
+--    AND nonzero witness when `powBits == 0`)
 private def findBadPowWitness (input : ByteList) (fuel w : Nat) : U64Bytes :=
   match fuel with
   | 0 => u64BytesOfU32 w
@@ -3013,6 +3094,17 @@ private def tamperPowNonCanonProof : ByteList :=
   | .cons sp rest =>
     let op := sp.openingProof
     let sp' := { sp with openingProof := { op with queryPowWitness := u64BytesOfNat glPrime } }
+    encodeBatchProof { fxBinary.batch with proofs := .cons sp' rest }
+  | .nil => .nil
+
+private def tamperNonzeroCommitPowProof : ByteList :=
+  match fxBinary.batch.proofs with
+  | .cons sp rest =>
+    let op := sp.openingProof
+    let cpw' := match op.commitPowWitnesses with
+      | .cons _ cpwRest => U64List.cons (u64BytesOfU32 1) cpwRest
+      | .nil => .nil
+    let sp' := { sp with openingProof := { op with commitPowWitnesses := cpw' } }
     encodeBatchProof { fxBinary.batch with proofs := .cons sp' rest }
   | .nil => .nil
 
@@ -3034,15 +3126,23 @@ private def tamperPowCanonBadProof : ByteList :=
     encodeBatchProof { fxBinary.batch with proofs := .cons sp' rest }
   | .nil => .nil
 
-#guard verifyRootBytes 0 0 0 0 0 0 0 0
+#guard verifyRootBytesWithFloor 0 0 0 0 0 0 0 0 0
   fxBinary.stmt.w0 fxBinary.stmt.w1 fxBinary.stmt.w2 fxBinary.stmt.w3
   fxBinary.stmt.w4 fxBinary.stmt.w5 fxBinary.stmt.w6 fxBinary.stmt.w7
   fxBinary.keyBytes fxBinary.claimsBytes tamperPowNonCanonProof == 0
 
-#guard verifyRootBytes 0 0 0 0 0 0 0 0
+#guard verifyRootBytesWithFloor 0 0 0 0 0 0 0 0 0
   fxBinary.stmt.w0 fxBinary.stmt.w1 fxBinary.stmt.w2 fxBinary.stmt.w3
   fxBinary.stmt.w4 fxBinary.stmt.w5 fxBinary.stmt.w6 fxBinary.stmt.w7
   fxBinary.keyBytes fxBinary.claimsBytes tamperPowCanonBadProof == 0
+
+#guard verifyRootBytesWithFloor 0 0 0 0 0 0 0 0 0
+  fxBinary.stmt.w0 fxBinary.stmt.w1 fxBinary.stmt.w2 fxBinary.stmt.w3
+  fxBinary.stmt.w4 fxBinary.stmt.w5 fxBinary.stmt.w6 fxBinary.stmt.w7
+  fxBinary.keyBytes fxBinary.claimsBytes tamperNonzeroCommitPowProof == 0
+
+#guard (pcsCheckWitness .nil u64Zero 0).ok == 1
+#guard (pcsCheckWitness .nil (u64BytesOfU32 1) 0).ok == 0
 
 -- 10. Tampered FRI sibling value (bad FRI fold) rejected
 private def tamperFriFoldProof : ByteList :=
@@ -3061,7 +3161,7 @@ private def tamperFriFoldProof : ByteList :=
     encodeBatchProof { fxBinary.batch with proofs := .cons sp' rest }
   | .nil => .nil
 
-#guard verifyRootBytes 0 0 0 0 0 0 0 0
+#guard verifyRootBytesWithFloor 0 0 0 0 0 0 0 0 0
   fxBinary.stmt.w0 fxBinary.stmt.w1 fxBinary.stmt.w2 fxBinary.stmt.w3
   fxBinary.stmt.w4 fxBinary.stmt.w5 fxBinary.stmt.w6 fxBinary.stmt.w7
   fxBinary.keyBytes fxBinary.claimsBytes tamperFriFoldProof == 0
@@ -3078,7 +3178,7 @@ private def tamperFinalPolyProof : ByteList :=
     encodeBatchProof { fxBinary.batch with proofs := .cons sp' rest }
   | .nil => .nil
 
-#guard verifyRootBytes 0 0 0 0 0 0 0 0
+#guard verifyRootBytesWithFloor 0 0 0 0 0 0 0 0 0
   fxBinary.stmt.w0 fxBinary.stmt.w1 fxBinary.stmt.w2 fxBinary.stmt.w3
   fxBinary.stmt.w4 fxBinary.stmt.w5 fxBinary.stmt.w6 fxBinary.stmt.w7
   fxBinary.keyBytes fxBinary.claimsBytes tamperFinalPolyProof == 0
