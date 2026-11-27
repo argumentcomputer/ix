@@ -2,22 +2,29 @@
 //! STARK end-to-end in `multi-stark`.
 //!
 //! Auto-detects both certified single-circuit layout formats from `LAYOUT.json`:
-//! - `ix-wide-layout-1` (`wide_export --single-circuit --pow2-rows`, backed by
-//!   `Aiur.Tiling.SingleCircuit.wide_single_circuit_sound_goldilocks`)
+//! - `ix-wide-layout-1` (`wide_export --single-circuit --pow2-rows [--vector-rom K]`,
+//!   backed by `Aiur.Tiling.SingleCircuit.wide_single_circuit_sound_goldilocks`
+//!   and `Aiur.Tiling.VectorRom.wide_vector_rom_single_circuit_sound_goldilocks`)
 //! - `ix-tiling-v2-layout-1` (`tiling_export2 --goldilocks --single-circuit --pow2-rows`,
 //!   backed by `Aiur.Tiling.SingleCircuit.narrow_compact_single_circuit_sound_goldilocks`)
 //!
 //! Usage:
 //!   single_circuit_prove PACKAGE.ixa LAYOUT.json FIXED.bin
-//!     [--args N,N,...] [--controls] [--stark-128] [--fri-mla K] [--fri-lfp K]
+//!     [--args N,N,...] [--advice ADVICE.ixa] [--tamper-hint CHANNEL]
+//!     [--pin PIN.json] [--stark-io KEY.bin CLAIMS.bin PROOF.bin]
+//!     [--controls] [--stark-128] [--fri-mla K] [--fri-lfp K]
 //!     [--log-blowup K] [--num-queries K] [--query-pow K] [--commit-pow K]
 //!     [--lookup-group K] [--no-check] [--proof-out PATH] [--report-out PATH]
 
 use aiur::artifact::{
-  self, EXECUTION_MAGIC, ExecutionPackage, PACKAGE_MAGIC, Package,
+  self, Digest, EXECUTION_MAGIC, ExecutionPackage, PACKAGE_MAGIC, Package,
 };
-use aiur::field::FieldBackend;
-use aiur::hints::HintChannels;
+use aiur::bytecode::{CheckedProgram, Program, Type};
+use aiur::field::{FieldBackend, NativeField};
+use aiur::hints::{HintChannels, HintEntry, PreparedHints};
+use aiur::library::advice::{Advice, Entry as AdviceEntry, Payload};
+use aiur::library::io::StreamAdvice;
+use aiur::maps::MapOverrides;
 use aiur::trace::TracePlan;
 use aiur::trace::stark::{MAX_BATCH_ROWS, Parameters, Proof};
 use multi_stark::eval::VarValues;
@@ -40,6 +47,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use serde_json::{Value, json};
 use std::error::Error;
 use std::path::Path;
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 const WIDE_LAYOUT_FORMAT: &str = "ix-wide-layout-1";
@@ -48,9 +56,14 @@ const FIXED_MAGIC: &[u8; 8] = b"IXTLFX01";
 const CALL_TAG: u64 = 1;
 const ROM_TAG: u64 = 2;
 const CHUNK_STRIDE: u64 = 1u64 << 32;
+const COMPRESS_WRAP_ENTRY: &str = "CompressWrap::verify_root";
+const MULTI_STARK_ENTRY: &str = "MultiStark::verify_multi_stark_proof";
+const COMPRESS_WRAP_STATEMENT_DOMAIN: &[u8; 20] = b"ix/compress-wrap/v1\0";
 
 const USAGE: &str = "usage: single_circuit_prove PACKAGE.ixa LAYOUT.json FIXED.bin \
-  [--args N,N,...] [--controls] [--stark-128] [--fri-mla K] [--fri-lfp K] \
+  [--args N,N,...] [--advice ADVICE.ixa] [--tamper-hint CHANNEL] \
+  [--pin PIN.json] [--stark-io KEY.bin CLAIMS.bin PROOF.bin] \
+  [--controls] [--stark-128] [--fri-mla K] [--fri-lfp K] \
   [--log-blowup K] [--num-queries K] [--query-pow K] [--commit-pow K] \
   [--lookup-group K] [--no-check] [--proof-out PATH] [--report-out PATH]";
 
@@ -59,6 +72,10 @@ struct Cli {
   layout: String,
   fixed: String,
   override_args: Option<Vec<u64>>,
+  advice: Option<String>,
+  tamper_hint: Option<String>,
+  pin: Option<String>,
+  stark_io: Option<(String, String, String)>,
   controls: bool,
   check: bool,
   log_blowup: usize,
@@ -86,6 +103,10 @@ fn parse_cli() -> Result<Cli, String> {
   let defaults = Parameters::DEFAULT;
   let mut pos = Vec::new();
   let mut override_args: Option<Vec<u64>> = None;
+  let mut advice: Option<String> = None;
+  let mut tamper_hint: Option<String> = None;
+  let mut pin: Option<String> = None;
+  let mut stark_io: Option<(String, String, String)> = None;
   let mut controls = false;
   let mut check = true;
   let mut log_blowup = defaults.log_blowup;
@@ -115,6 +136,28 @@ fn parse_cli() -> Result<Cli, String> {
             })
             .collect::<Result<_, _>>()?,
         );
+      },
+      "--advice" => {
+        advice = Some(raw.next().ok_or("--advice expects a file path")?);
+      },
+      "--tamper-hint" => {
+        tamper_hint =
+          Some(raw.next().ok_or("--tamper-hint expects a channel name")?);
+      },
+      "--pin" => {
+        pin = Some(raw.next().ok_or("--pin expects a file path")?);
+      },
+      "--stark-io" => {
+        let key = raw
+          .next()
+          .ok_or("--stark-io expects KEY.bin CLAIMS.bin PROOF.bin")?;
+        let claims = raw
+          .next()
+          .ok_or("--stark-io expects KEY.bin CLAIMS.bin PROOF.bin")?;
+        let proof = raw
+          .next()
+          .ok_or("--stark-io expects KEY.bin CLAIMS.bin PROOF.bin")?;
+        stark_io = Some((key, claims, proof));
       },
       "--controls" => controls = true,
       "--stark-128" => {
@@ -155,6 +198,9 @@ fn parse_cli() -> Result<Cli, String> {
   if pos.len() != 3 {
     return Err(USAGE.into());
   }
+  if tamper_hint.is_some() && advice.is_none() {
+    return Err("--tamper-hint requires --advice ADVICE.ixa".into());
+  }
   if !(1..=10).contains(&fri_mla) {
     return Err(format!("--fri-mla must be in 1..=10, got {fri_mla}"));
   }
@@ -170,6 +216,10 @@ fn parse_cli() -> Result<Cli, String> {
     layout: iter.next().unwrap(),
     fixed: iter.next().unwrap(),
     override_args,
+    advice,
+    tamper_hint,
+    pin,
+    stark_io,
     controls,
     check,
     log_blowup,
@@ -188,6 +238,285 @@ fn peak_rss_kb() -> Option<u64> {
   let status = std::fs::read_to_string("/proc/self/status").ok()?;
   let line = status.lines().find(|line| line.starts_with("VmHWM:"))?;
   line.split_whitespace().nth(1)?.parse().ok()
+}
+
+fn load_advice_program(
+  path: &str,
+) -> Result<(Program, Digest), Box<dyn Error>> {
+  let (raw_bytes, digest) = artifact::read(Path::new(path))?;
+  let package = if raw_bytes.starts_with(PACKAGE_MAGIC) {
+    Package::decode(&raw_bytes)
+      .map_err(|e| format!("invalid advice package {path}: {e}"))?
+  } else if raw_bytes.starts_with(EXECUTION_MAGIC) {
+    ExecutionPackage::decode(&raw_bytes)
+      .map_err(|e| format!("invalid advice execution package {path}: {e}"))?
+      .package
+  } else {
+    return Err(format!(
+      "unrecognized advice artifact magic in {path} (expected IXAIURP\\0 or IXAIURX\\0)"
+    )
+    .into());
+  };
+  Ok((package.program, digest))
+}
+
+/// The compiled program alone, as `ixcc-aiur` hashes it for the pin: a
+/// package with the file's program and no trace section.
+fn program_only(program: &Program) -> Vec<u8> {
+  Package { program: program.clone(), trace: None }.encode()
+}
+
+/// Whether `program` (a package without a trace section) is, up to its last
+/// byte (the trace option's tag), the embedded package's prefix in `file`.
+fn embedded(file: &[u8], program: &[u8]) -> bool {
+  let Some((_, prefix)) = program.split_last() else { return false };
+  let Some(start) =
+    file.windows(PACKAGE_MAGIC.len()).take(32).position(|w| w == PACKAGE_MAGIC)
+  else {
+    return false;
+  };
+  file.get(start..start + prefix.len()) == Some(prefix)
+}
+
+/// Check the pin `ixcc-aiur` wrote beside a package (`PACKAGE.ixa.pin.json`)
+/// against the file's bytes, before anything is decoded for proving: the
+/// BLAKE3 of the whole file (`package_blake3`), and the BLAKE3 of the
+/// compiled program alone (`program_blake3`), recomputed from the decoded
+/// program, whose bytes must also be the file's own. Any mismatch refuses.
+fn check_pin(
+  pin_path: &str,
+  file: &[u8],
+  digest: Digest,
+) -> Result<Value, Box<dyn Error>> {
+  let pin: Value = serde_json::from_slice(&std::fs::read(pin_path)?)?;
+  let pinned = |key: &str| -> Result<Digest, String> {
+    let hex =
+      pin[key].as_str().ok_or_else(|| format!("pin {pin_path}: no {key}"))?;
+    Digest::from_hex(hex)
+  };
+  let package_pin = pinned("package_blake3")?;
+  let program_pin = pinned("program_blake3")?;
+  let mut mismatches = Vec::new();
+  if digest != package_pin {
+    mismatches
+      .push(format!("package_blake3: file {digest}, pin {package_pin}"));
+  }
+  let decoded_program = if file.starts_with(PACKAGE_MAGIC) {
+    Package::decode(file).map(|pkg| pkg.program)
+  } else if file.starts_with(EXECUTION_MAGIC) {
+    ExecutionPackage::decode(file).map(|exec| exec.package.program)
+  } else {
+    Err(
+      "unrecognized artifact magic (expected IXAIURP\\0 or IXAIURX\\0)".into(),
+    )
+  };
+  match decoded_program {
+    Ok(prog) => {
+      let program = program_only(&prog);
+      let program_digest = Digest::of(&program);
+      if program_digest != program_pin {
+        mismatches.push(format!(
+          "program_blake3: file {program_digest}, pin {program_pin}"
+        ));
+      }
+      if !embedded(file, &program) {
+        mismatches.push(
+          "program_blake3: the re-encoded program is not the file's bytes"
+            .into(),
+        );
+      }
+    },
+    Err(error) => mismatches
+      .push(format!("program_blake3: the file does not decode ({error})")),
+  }
+  if !mismatches.is_empty() {
+    return Err(
+      format!("pin {pin_path} refused: {}", mismatches.join("; ")).into(),
+    );
+  }
+  Ok(json!({
+    "pin": pin_path,
+    "package_blake3": package_pin.to_string(),
+    "program_blake3": program_pin.to_string(),
+    "checked": true,
+  }))
+}
+
+struct StarkIoFiles {
+  key: Vec<u8>,
+  claims: Vec<u8>,
+  proof: Vec<u8>,
+  key_blake3: String,
+  claims_blake3: String,
+  proof_blake3: String,
+}
+
+fn load_stark_io(
+  key_path: &str,
+  claims_path: &str,
+  proof_path: &str,
+) -> Result<StarkIoFiles, String> {
+  let key = std::fs::read(key_path)
+    .map_err(|e| format!("failed to read --stark-io key {key_path}: {e}"))?;
+  let claims = std::fs::read(claims_path).map_err(|e| {
+    format!("failed to read --stark-io claims {claims_path}: {e}")
+  })?;
+  let proof = std::fs::read(proof_path).map_err(|e| {
+    format!("failed to read --stark-io proof {proof_path}: {e}")
+  })?;
+  let key_blake3 = blake3::hash(&key).to_hex().to_string();
+  let claims_blake3 = blake3::hash(&claims).to_hex().to_string();
+  let proof_blake3 = blake3::hash(&proof).to_hex().to_string();
+  Ok(StarkIoFiles {
+    key,
+    claims,
+    proof,
+    key_blake3,
+    claims_blake3,
+    proof_blake3,
+  })
+}
+
+fn digest_words(bytes: &[u8]) -> Vec<u64> {
+  blake3::hash(bytes)
+    .as_bytes()
+    .as_chunks::<4>()
+    .0
+    .iter()
+    .map(|b| u64::from(u32::from_le_bytes(*b)))
+    .collect()
+}
+
+fn stark_io_default_args(entry: &str, io: &StarkIoFiles) -> Vec<u64> {
+  if entry == COMPRESS_WRAP_ENTRY {
+    let mut preimage = [0u8; COMPRESS_WRAP_STATEMENT_DOMAIN.len() + 64];
+    preimage[..COMPRESS_WRAP_STATEMENT_DOMAIN.len()]
+      .copy_from_slice(COMPRESS_WRAP_STATEMENT_DOMAIN);
+    preimage[COMPRESS_WRAP_STATEMENT_DOMAIN.len()
+      ..COMPRESS_WRAP_STATEMENT_DOMAIN.len() + 32]
+      .copy_from_slice(blake3::hash(&io.key).as_bytes());
+    preimage[COMPRESS_WRAP_STATEMENT_DOMAIN.len() + 32..]
+      .copy_from_slice(blake3::hash(&io.claims).as_bytes());
+    let mut args = vec![0u64; 8];
+    args.extend(digest_words(&preimage));
+    args
+  } else if entry == MULTI_STARK_ENTRY {
+    let mut args = digest_words(&io.key);
+    args.extend(digest_words(&io.claims));
+    args
+  } else {
+    Vec::new()
+  }
+}
+
+fn register_stark_io(
+  channels: &mut HintChannels<Val>,
+  field: NativeField<Val>,
+  io: &StarkIoFiles,
+) -> Result<(), String> {
+  channels.insert_fixed::<1, 1>(
+    "goldilocks.inverse",
+    Type::Field,
+    Type::Field,
+    move |[x]| Ok([field.inverse(x).unwrap_or_else(|| field.zero())]),
+  )?;
+  let advice = Advice::from_entries(
+    field,
+    [&io.proof, &io.key, &io.claims].into_iter().enumerate().map(
+      |(channel, bytes)| AdviceEntry {
+        channel: channel as u64,
+        key: &[0],
+        payload: Payload::Bytes(bytes),
+      },
+    ),
+  )?;
+  let pair = Type::Tuple { items: vec![Type::Field; 2] };
+  let lens = [
+    u64::try_from(io.proof.len())
+      .map_err(|e| format!("PROOF.bin length overflow: {e}"))?,
+    u64::try_from(io.key.len())
+      .map_err(|e| format!("KEY.bin length overflow: {e}"))?,
+    u64::try_from(io.claims.len())
+      .map_err(|e| format!("CLAIMS.bin length overflow: {e}"))?,
+  ];
+  channels.insert_fixed::<2, 2>(
+    "stark.io.info",
+    pair.clone(),
+    pair,
+    move |[channel, subkey]| {
+      let ch = field
+        .try_to_u64(channel)
+        .map_err(|e| format!("stark.io.info channel: {e}"))?;
+      let sub = field
+        .try_to_u64(subkey)
+        .map_err(|e| format!("stark.io.info key: {e}"))?;
+      if sub != 0 {
+        return Err(format!(
+          "stark.io.info: unexpected stream key ({ch}, {sub})"
+        ));
+      }
+      let idx = usize::try_from(ch)
+        .map_err(|e| format!("stark.io.info channel {ch} overflow: {e}"))?;
+      let len = *lens
+        .get(idx)
+        .ok_or_else(|| format!("stark.io.info: unknown channel {ch}"))?;
+      Ok([field.zero(), field.from_u64(len)])
+    },
+  )?;
+  advice.register_read::<1>("stark.io.read1", false, channels)?;
+  advice.register_read::<8>("stark.io.read8", false, channels)?;
+  advice.register_read::<64>("stark.io.read64", false, channels)?;
+  Ok(())
+}
+
+fn build_hints<'a>(
+  program: &'a CheckedProgram<NativeField<Val>>,
+  embedded_hints: &[HintEntry],
+  stark_io: Option<&StarkIoFiles>,
+  advice_raw: Option<&Program>,
+  tamper_channel: Option<&str>,
+) -> Result<
+  (
+    PreparedHints<'a, NativeField<Val>>,
+    Vec<String>,
+    Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
+  ),
+  String,
+> {
+  let field = program.field();
+  let mut channels = HintChannels::new();
+  aiur::library::u32::register(&mut channels, field)?;
+  aiur::library::u64::register(&mut channels, field)?;
+  aiur::library::ixcc::register(&mut channels, field)?;
+  if let Some(io) = stark_io {
+    register_stark_io(&mut channels, field, io)?;
+  }
+  let mut guess_channels = Vec::new();
+  let mut tamper_hits = None;
+  if let Some(adv_raw) = advice_raw {
+    let checked_adv = adv_raw.clone().check_field::<Val>()?;
+    if let Some(ch) = tamper_channel {
+      let (regs, hits) = aiur::library::ixcc::register_tampered_advice_program(
+        &mut channels,
+        program,
+        checked_adv,
+        ch,
+      )?;
+      guess_channels = regs;
+      tamper_hits = Some(hits);
+    } else {
+      guess_channels = aiur::library::ixcc::register_advice_program(
+        &mut channels,
+        program,
+        checked_adv,
+      )?;
+    }
+  }
+  let prepared = program.prepare_hint_channels(embedded_hints, &channels)?;
+  let mut maps = MapOverrides::new();
+  aiur::library::u8::register_maps(program, &mut maps)?;
+  let hints = prepared.with_map_overrides(&maps)?;
+  Ok((hints, guess_channels, tamper_hits))
 }
 
 fn natural(v: &Value, ctx: &str) -> Result<usize, String> {
@@ -215,7 +544,7 @@ fn scalar(v: &Value, ctx: &str) -> Result<Val, String> {
 enum ConstituentKind {
   Unit { chip: String },
   Map { length: usize },
-  Rom { words: usize },
+  Rom { words: usize, rom_vector: usize },
   Shard { shard_index: usize },
   CompactMap,
   CompactRom,
@@ -324,7 +653,7 @@ struct TilingV2Data {
 }
 
 enum LayoutKind {
-  Wide { request: Vec<Val> },
+  Wide { request: Vec<Val>, rom_vector: usize },
   TilingV2(Box<TilingV2Data>),
 }
 
@@ -776,6 +1105,16 @@ fn parse_layout(bytes: &[u8]) -> Result<SingleCircuitLayout, String> {
       .iter()
       .map(|x| scalar(x, "request"))
       .collect::<Result<Vec<_>, _>>()?;
+    let top_rom_vector = match root.get("rom_vector") {
+      Some(v) if !v.is_null() => {
+        let k = natural(v, "layout.rom_vector")?;
+        if k == 0 {
+          return Err("layout.rom_vector must be at least 1".into());
+        }
+        k
+      },
+      _ => 1,
+    };
     let mut constituents = Vec::with_capacity(raw_constituents.len());
     let mut expected_m_off = 0usize;
     let mut expected_f_off = 0usize;
@@ -830,12 +1169,54 @@ fn parse_layout(bytes: &[u8]) -> Result<SingleCircuitLayout, String> {
         },
         Some("rom") => {
           let words = natural(&c["words"], "rom constituent.words")?;
-          if m_w != words + 1 || f_w != 1 {
+          let rom_vector = match c.get("rom_vector") {
+            Some(v) if !v.is_null() => {
+              let k = natural(v, "rom constituent.rom_vector")?;
+              if k == 0 {
+                return Err(format!(
+                  "rom constituent {idx} rom_vector must be at least 1"
+                ));
+              }
+              k
+            },
+            _ => 1,
+          };
+          if rom_vector != top_rom_vector {
             return Err(format!(
-              "rom constituent {idx} shape mismatch: m_w={m_w}, f_w={f_w}, words={words}"
+              "rom constituent {idx} rom_vector ({rom_vector}) disagrees with \
+               layout rom_vector ({top_rom_vector})"
             ));
           }
-          ConstituentKind::Rom { words }
+          let expected_m_w = words
+            .checked_add(1)
+            .and_then(|w| w.checked_mul(rom_vector))
+            .ok_or("rom constituent main_width overflow")?;
+          if m_w != expected_m_w || f_w != 1 {
+            return Err(format!(
+              "rom constituent {idx} shape mismatch: m_w={m_w}, f_w={f_w}, \
+               words={words}, rom_vector={rom_vector} \
+               (expected m_w={expected_m_w}, f_w=1)"
+            ));
+          }
+          let eff_cap = rom_vector
+            .checked_mul(c_rows)
+            .ok_or("rom constituent effective capacity overflow")?;
+          if let Some(cap_v) = c.get("capacity")
+            && !cap_v.is_null()
+          {
+            let cap = natural(cap_v, "rom constituent.capacity")?;
+            if cap != eff_cap {
+              return Err(format!(
+                "rom constituent {idx} capacity ({cap}) != rom_vector * rows ({eff_cap})"
+              ));
+            }
+          }
+          if !u64::try_from(eff_cap).is_ok_and(|cap| cap <= bound) {
+            return Err(format!(
+              "rom constituent {idx} effective capacity ({eff_cap}) exceeds bound ({bound})"
+            ));
+          }
+          ConstituentKind::Rom { words, rom_vector }
         },
         other => {
           return Err(format!(
@@ -864,7 +1245,7 @@ fn parse_layout(bytes: &[u8]) -> Result<SingleCircuitLayout, String> {
          expected ({main_width} main, {fixed_width} fixed)"
       ));
     }
-    (LayoutKind::Wide { request }, constituents)
+    (LayoutKind::Wide { request, rom_vector: top_rom_vector }, constituents)
   } else {
     let shard_width = natural(&root["width"], "layout.width")?;
     if shard_width < 8 || !shard_width.is_multiple_of(4) {
@@ -1258,14 +1639,18 @@ fn validate_fixed_matrix(
       }
     }
     match c.kind {
-      ConstituentKind::Rom { .. } => {
+      ConstituentKind::Rom { rom_vector, .. } => {
         for r in 0..c.rows {
           let got = fixed.values[r * fw + c.fixed_offset];
-          let want = Val::from_usize(r);
+          let expected_addr = rom_vector
+            .checked_mul(r)
+            .and_then(|a| u64::try_from(a).ok())
+            .ok_or("FIXED.bin ROM base address overflow")?;
+          let want = Val::from_u64(expected_addr);
           if got != want {
             return Err(format!(
               "FIXED.bin ROM addr mismatch at constituent {idx} row {r}: \
-               got {}, expected {r}",
+               got {}, expected {expected_addr} (rom_vector={rom_vector})",
               got.as_canonical_u64()
             ));
           }
@@ -1519,8 +1904,8 @@ fn check_packed_circuit(
 fn pack_main_matrix(
   layout: &SingleCircuitLayout,
   fixed: &RowMajorMatrix<Val>,
-  plan: &TracePlan<'_, aiur::field::NativeField<Val>>,
-  record: &aiur::Execution<aiur::field::NativeField<Val>>,
+  plan: &TracePlan<'_, NativeField<Val>>,
+  record: &aiur::Execution<NativeField<Val>>,
   trace: &aiur::trace::Trace<Val>,
 ) -> Result<RowMajorMatrix<Val>, String> {
   let packed_rows = layout.rows;
@@ -1649,15 +2034,18 @@ fn pack_main_matrix(
           }
         }
       },
-      ConstituentKind::Rom { words } => {
+      ConstituentKind::Rom { words, rom_vector } => {
         let count = rom_counts.get(words).copied().unwrap_or(0);
-        if count > c.rows {
+        let capacity =
+          c.rows.checked_mul(*rom_vector).ok_or("ROM capacity overflow")?;
+        if count > capacity {
           return Err(format!(
             "ROM width {words}: execution uses {count} cells, \
-             exceeding layout capacity {}",
+             exceeding layout capacity {capacity} ({} rows x K={rom_vector})",
             c.rows
           ));
         }
+        let lane_w = words + 1;
         for addr in 0..count {
           let entry = record
             .memory
@@ -1673,8 +2061,11 @@ fn pack_main_matrix(
               "ROM cell ({words}, {addr}) multiplicity reaches field characteristic"
             ));
           }
-          let dst = &mut packed[addr * main_w + c.main_offset
-            ..addr * main_w + c.main_offset + c.main_width];
+          let r = addr / *rom_vector;
+          let lane = addr % *rom_vector;
+          let col_off = c.main_offset + lane * lane_w;
+          let dst =
+            &mut packed[r * main_w + col_off..r * main_w + col_off + lane_w];
           dst[0] = Val::from_u64(entry.multiplicity);
           dst[1..].copy_from_slice(entry.cell.value);
         }
@@ -2230,7 +2621,7 @@ fn resolve_entry_callable(
   layout: &SingleCircuitLayout,
 ) -> Result<usize, String> {
   match &layout.kind {
-    LayoutKind::Wide { request } => {
+    LayoutKind::Wide { request, .. } => {
       if request.len() < 2
         || request[0] != Val::from_u64(CALL_TAG)
         || request[2..].iter().any(|&v| v != Val::ZERO)
@@ -2391,8 +2782,8 @@ fn pack_tiling_v2_main_matrix(
   layout: &SingleCircuitLayout,
   v2: &TilingV2Data,
   fixed: &RowMajorMatrix<Val>,
-  plan: &TracePlan<'_, aiur::field::NativeField<Val>>,
-  record: &aiur::Execution<aiur::field::NativeField<Val>>,
+  plan: &TracePlan<'_, NativeField<Val>>,
+  record: &aiur::Execution<NativeField<Val>>,
   trace: &aiur::trace::Trace<Val>,
   wide_claim: &[Val],
 ) -> Result<(RowMajorMatrix<Val>, Vec<Vec<Val>>, Val), String> {
@@ -3021,16 +3412,22 @@ fn find_tamper_fixed_cell(
   }
   for (idx, c) in layout.constituents.iter().enumerate() {
     match c.kind {
-      ConstituentKind::Rom { .. } => {
+      ConstituentKind::Rom { words, rom_vector } => {
+        let lane_w = words + 1;
         for r in 0..c.rows {
-          if main.values[r * mw + c.main_offset] != Val::ZERO {
+          let has_active_lane = (0..rom_vector).any(|j| {
+            main.values[r * mw + c.main_offset + j * lane_w] != Val::ZERO
+          });
+          if has_active_lane {
             let col = c.fixed_offset;
             let new_val = fixed.values[r * fw + col] + Val::ONE;
             return (
               r,
               col,
               new_val,
-              format!("rom constituent {idx} row {r} addr col {col} (+1)"),
+              format!(
+                "rom constituent {idx} row {r} addr col {col} (K={rom_vector}, +1)"
+              ),
             );
           }
         }
@@ -3088,12 +3485,73 @@ fn find_tamper_fixed_cell(
   (0, 0, fixed.values[0] + Val::ONE, "fixed(0, 0) (+1)".to_owned())
 }
 
+fn pack_single_circuit(
+  layout: &SingleCircuitLayout,
+  fixed: &RowMajorMatrix<Val>,
+  plan: &TracePlan<'_, NativeField<Val>>,
+  record: &aiur::Execution<NativeField<Val>>,
+  entry: &str,
+  address: &[Val],
+) -> Result<
+  (RowMajorMatrix<Val>, Vec<Val>, Vec<Vec<Val>>, Option<Val>, bool),
+  String,
+> {
+  let public_args = plan.public_args(record, entry, address)?;
+  let wide_claim = plan.public_claim(entry, &public_args, &record.output)?;
+  let trace = plan.generate(record, entry, address, false)?;
+  let (packed_main, proof_claims, root_key_opt, trim_zeros) = match &layout.kind
+  {
+    LayoutKind::Wide { request, .. } => {
+      if wide_claim.len() != request.len() || wide_claim[..2] != request[..2] {
+        return Err(format!(
+          "public claim header/length (len={}, head={:?}) disagrees with \
+           LAYOUT.json request (len={}, head={:?})",
+          wide_claim.len(),
+          wide_claim
+            .iter()
+            .take(2)
+            .map(|v| v.as_canonical_u64())
+            .collect::<Vec<_>>(),
+          request.len(),
+          request
+            .iter()
+            .take(2)
+            .map(|v| v.as_canonical_u64())
+            .collect::<Vec<_>>(),
+        ));
+      }
+      let main = pack_main_matrix(layout, fixed, plan, record, &trace)?;
+      (main, vec![wide_claim.clone()], None, false)
+    },
+    LayoutKind::TilingV2(v2) => {
+      let (main, narrow_claims, root_key) = pack_tiling_v2_main_matrix(
+        layout,
+        v2,
+        fixed,
+        plan,
+        record,
+        &trace,
+        &wide_claim,
+      )?;
+      (main, narrow_claims, Some(root_key), true)
+    },
+  };
+  Ok((packed_main, wide_claim, proof_claims, root_key_opt, trim_zeros))
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
   let cli = parse_cli().map_err(std::io::Error::other)?;
   let total_start = Instant::now();
 
-  // Step 1: Parse LAYOUT.json and FIXED.bin.
+  // Step 1: Read PACKAGE.ixa and verify optional BLAKE3 pin BEFORE decoding.
   let prep_start = Instant::now();
+  let (raw_bytes, digest) = artifact::read(Path::new(&cli.package))?;
+  let pin_report = match &cli.pin {
+    Some(pin_path) => check_pin(pin_path, &raw_bytes, digest)?,
+    None => Value::Null,
+  };
+
+  // Step 1b: Parse LAYOUT.json and FIXED.bin.
   let layout_bytes = std::fs::read(&cli.layout)
     .map_err(|e| format!("failed to read {}: {e}", cli.layout))?;
   let layout = parse_layout(&layout_bytes)?;
@@ -3123,8 +3581,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
   }
 
-  // Step 2a: Load PACKAGE.ixa and register host hint channels.
-  let (raw_bytes, digest) = artifact::read(Path::new(&cli.package))?;
+  // Step 2a: Decode PACKAGE.ixa, optional --advice & --stark-io, and bind hints.
   let (package, embedded_args, embedded_hints, kind) =
     if raw_bytes.starts_with(PACKAGE_MAGIC) {
       let pkg = Package::decode(&raw_bytes)
@@ -3142,19 +3599,13 @@ fn main() -> Result<(), Box<dyn Error>> {
       )
       .into());
     };
+  drop(raw_bytes);
   eprintln!("artifact {} ({kind}): blake3 {digest}", cli.package);
 
   let (program, trace_artifact) = package.traced()?;
   let mut program = program.check_field::<Val>()?;
   program.track_depth(&trace_artifact)?;
   let field = program.field();
-  let address =
-    field.decode(cli.override_args.as_deref().unwrap_or(&embedded_args))?;
-  let mut channels = HintChannels::new();
-  aiur::library::u32::register(&mut channels, field)?;
-  aiur::library::u64::register(&mut channels, field)?;
-  aiur::library::ixcc::register(&mut channels, field)?;
-  let hints = program.prepare_hint_channels(&embedded_hints, &channels)?;
   let plan = TracePlan::new(&program, trace_artifact)?;
 
   let req_callable = resolve_entry_callable(&layout)?;
@@ -3171,6 +3622,54 @@ fn main() -> Result<(), Box<dyn Error>> {
     .ok_or("no selected entrypoint in package")?
     .name
     .clone();
+
+  let (advice_raw_program, advice_digest) = match &cli.advice {
+    Some(adv_path) => {
+      let (adv_prog, adv_dig) = load_advice_program(adv_path)?;
+      eprintln!("advice {adv_path}: blake3 {adv_dig}");
+      (Some(adv_prog), Some(adv_dig))
+    },
+    None => (None, None),
+  };
+
+  let stark_io = match &cli.stark_io {
+    Some((key_path, claims_path, proof_path)) => {
+      let io = load_stark_io(key_path, claims_path, proof_path)?;
+      eprintln!(
+        "stark-io: key={} ({} B) claims={} ({} B) proof={} ({} B)",
+        io.key_blake3,
+        io.key.len(),
+        io.claims_blake3,
+        io.claims.len(),
+        io.proof_blake3,
+        io.proof.len(),
+      );
+      Some(io)
+    },
+    None => None,
+  };
+
+  let resolved_args = if let Some(args) = &cli.override_args {
+    args.clone()
+  } else if !embedded_args.is_empty() {
+    embedded_args.clone()
+  } else if let Some(io) = &stark_io {
+    stark_io_default_args(&entry, io)
+  } else {
+    Vec::new()
+  };
+  let address = field.decode(&resolved_args)?;
+
+  let (hints, guess_channels, _tamper_hits) = build_hints(
+    &program,
+    &embedded_hints,
+    stark_io.as_ref(),
+    advice_raw_program.as_ref(),
+    cli.tamper_hint.as_deref(),
+  )?;
+  if !guess_channels.is_empty() {
+    eprintln!("registered guess channels: {guess_channels:?}");
+  }
   let prepare_ms = prep_start.elapsed().as_secs_f64() * 1000.0;
 
   // Step 3a: Build 1-circuit System directly from certified single_circuit.circuit.
@@ -3207,50 +3706,8 @@ fn main() -> Result<(), Box<dyn Error>> {
   let execution_ms = exec_start.elapsed().as_secs_f64() * 1000.0;
 
   let pack_start = Instant::now();
-  let public_args = plan.public_args(&record, &entry, &address)?;
-  let wide_claim = plan.public_claim(&entry, &public_args, &record.output)?;
-  let trace = plan.generate(&record, &entry, &address, false)?;
-
-  let (packed_main, proof_claims, root_key_opt, trim_zeros) = match &layout.kind
-  {
-    LayoutKind::Wide { request } => {
-      if wide_claim.len() != request.len() || wide_claim[..2] != request[..2] {
-        return Err(
-          format!(
-            "public claim header/length (len={}, head={:?}) disagrees with \
-           LAYOUT.json request (len={}, head={:?})",
-            wide_claim.len(),
-            wide_claim
-              .iter()
-              .take(2)
-              .map(|v| v.as_canonical_u64())
-              .collect::<Vec<_>>(),
-            request.len(),
-            request
-              .iter()
-              .take(2)
-              .map(|v| v.as_canonical_u64())
-              .collect::<Vec<_>>(),
-          )
-          .into(),
-        );
-      }
-      let main = pack_main_matrix(&layout, &fixed, &plan, &record, &trace)?;
-      (main, vec![wide_claim.clone()], None, false)
-    },
-    LayoutKind::TilingV2(v2) => {
-      let (main, narrow_claims, root_key) = pack_tiling_v2_main_matrix(
-        &layout,
-        v2,
-        &fixed,
-        &plan,
-        &record,
-        &trace,
-        &wide_claim,
-      )?;
-      (main, narrow_claims, Some(root_key), true)
-    },
-  };
+  let (packed_main, wide_claim, proof_claims, root_key_opt, trim_zeros) =
+    pack_single_circuit(&layout, &fixed, &plan, &record, &entry, &address)?;
   let claim_refs: Vec<&[Val]> =
     proof_claims.iter().map(Vec::as_slice).collect();
   let output_words: Vec<u64> =
@@ -3349,9 +3806,15 @@ fn main() -> Result<(), Box<dyn Error>> {
   );
 
   // Step 5: Mandatory negative controls (--controls).
+  let mut wrong_hint_controls = Vec::new();
   let controls_report = if cli.controls {
     eprintln!(
-      "Running negative controls (forged output, tampered main, tampered fixed)..."
+      "Running negative controls (forged output, tampered main, tampered fixed{})...",
+      if advice_raw_program.is_some() && !guess_channels.is_empty() {
+        ", wrong hints"
+      } else {
+        ""
+      }
     );
 
     // Control 1: Forged output claim (flip LSB of last wide output word and re-encode).
@@ -3472,9 +3935,118 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
       };
 
+    // Control 4: Wrong-hint rejection for every active `"ixcc.guess.*"` channel.
+    if cli.tamper_hint.is_none()
+      && let Some(adv_raw) = &advice_raw_program
+    {
+      for ch in &guess_channels {
+        let (bad_hints, _, hits_opt) = build_hints(
+          &program,
+          &embedded_hints,
+          stark_io.as_ref(),
+          Some(adv_raw),
+          Some(ch),
+        )?;
+        let hits = hits_opt.expect("tamper counter present");
+        match bad_hints.execute(&entry, address.clone()) {
+          Err(error) => {
+            wrong_hint_controls.push(json!({
+              "tampered_channel": ch,
+              "invocations": hits.load(Ordering::Relaxed),
+              "rejected": true,
+              "stage": "execute",
+              "error": error.to_string(),
+            }));
+          },
+          Ok(bad_record) => {
+            let invoked = hits.load(Ordering::Relaxed);
+            if invoked == 0 {
+              wrong_hint_controls.push(json!({
+                "tampered_channel": ch,
+                "invocations": 0,
+                "rejected": false,
+                "stage": "not_invoked",
+              }));
+            } else {
+              match pack_single_circuit(
+                &layout,
+                &fixed,
+                &plan,
+                &bad_record,
+                &entry,
+                &address,
+              ) {
+                Err(error) => {
+                  wrong_hint_controls.push(json!({
+                    "tampered_channel": ch,
+                    "invocations": invoked,
+                    "rejected": true,
+                    "stage": "pack",
+                    "error": error,
+                  }));
+                },
+                Ok((bad_main, _, bad_claims, _, bad_trim)) => {
+                  let bad_refs: Vec<&[Val]> =
+                    bad_claims.iter().map(Vec::as_slice).collect();
+                  match check_packed_circuit(
+                    &circuit.graph,
+                    &bad_main,
+                    circuit.preprocessed.as_ref(),
+                    &bad_refs,
+                    bad_trim,
+                  ) {
+                    Err(error) => {
+                      wrong_hint_controls.push(json!({
+                        "tampered_channel": ch,
+                        "invocations": invoked,
+                        "rejected": true,
+                        "stage": "trace_check",
+                        "error": error,
+                      }));
+                    },
+                    Ok(()) => {
+                      let bad_proof = system.prove_multiple_claims_streaming(
+                        &key,
+                        &bad_refs,
+                        vec![bad_main],
+                      );
+                      match system.verify_multiple_claims(&bad_refs, &bad_proof)
+                      {
+                        Err(error) => {
+                          wrong_hint_controls.push(json!({
+                            "tampered_channel": ch,
+                            "invocations": invoked,
+                            "rejected": true,
+                            "stage": "stark_verify",
+                            "error": format!("{error:?}"),
+                          }));
+                        },
+                        Ok(()) => {
+                          return Err(format!(
+                            "CONTROL FAILED: single-circuit accepted tampered hint on \
+                             channel {ch:?} ({invoked} invocations)"
+                          )
+                          .into());
+                        },
+                      }
+                    },
+                  }
+                },
+              }
+            }
+          },
+        }
+      }
+    }
+
+    let rejected_wrong_hints = wrong_hint_controls
+      .iter()
+      .filter(|entry| entry["rejected"].as_bool() == Some(true))
+      .count();
+
     eprintln!(
       "Negative controls PASSED: forged_output=REJECTED, tampered_main({tm_desc})=REJECTED, \
-       tampered_fixed({tf_desc})=REJECTED (honest VK & self)"
+       tampered_fixed({tf_desc})=REJECTED (honest VK & self), rejected_wrong_hints={rejected_wrong_hints}"
     );
     json!({
       "enabled": true,
@@ -3492,18 +4064,40 @@ fn main() -> Result<(), Box<dyn Error>> {
       "tampered_fixed_honest_vk_error": tampered_fixed_honest_vk_err,
       "tampered_fixed_self_rejected": true,
       "tampered_fixed_self_error": tampered_fixed_self_err,
+      "rejected_wrong_hints": rejected_wrong_hints,
+      "wrong_hint_controls": wrong_hint_controls,
     })
   } else {
     json!({ "enabled": false })
   };
 
+  let rejected_wrong_hints = wrong_hint_controls
+    .iter()
+    .filter(|entry| entry["rejected"].as_bool() == Some(true))
+    .count();
+
   if let Some(path) = &cli.proof_out {
     std::fs::write(path, &proof_bytes)?;
   }
 
+  let stark_io_report = stark_io.as_ref().map(|io| {
+    json!({
+      "key_blake3": io.key_blake3,
+      "key_bytes": io.key.len(),
+      "claims_blake3": io.claims_blake3,
+      "claims_bytes": io.claims.len(),
+      "proof_blake3": io.proof_blake3,
+      "proof_bytes": io.proof.len(),
+    })
+  });
+
   let mut report = json!({
     "layout_format": layout_format,
     "artifact_blake3": digest.to_string(),
+    "pin": pin_report,
+    "advice_blake3": advice_digest.map(|d| d.to_string()),
+    "guess_channels": guess_channels,
+    "stark_io": stark_io_report,
     "entry": entry,
     "args": arg_words,
     "output": output_words,
@@ -3541,19 +4135,28 @@ fn main() -> Result<(), Box<dyn Error>> {
     "total_ms": total_ms,
     "peak_rss_kb": rss_kb,
     "verified": true,
+    "rejected_wrong_hints": rejected_wrong_hints,
+    "wrong_hint_controls": wrong_hint_controls,
     "controls": controls_report,
   });
-  if let LayoutKind::TilingV2(v2) = &layout.kind
-    && let Some(obj) = report.as_object_mut()
-  {
-    let narrow_words: Vec<Vec<u64>> = proof_claims
-      .iter()
-      .map(|c| c.iter().map(|v| v.as_canonical_u64()).collect())
-      .collect();
-    obj.insert("shard_width".to_owned(), json!(v2.shard_width));
-    obj.insert("shards".to_owned(), json!(v2.shards));
-    obj.insert("places".to_owned(), json!(v2.places));
-    obj.insert("narrow_claims".to_owned(), json!(narrow_words));
+  match &layout.kind {
+    LayoutKind::Wide { rom_vector, .. } => {
+      if let Some(obj) = report.as_object_mut() {
+        obj.insert("rom_vector".to_owned(), json!(rom_vector));
+      }
+    },
+    LayoutKind::TilingV2(v2) => {
+      if let Some(obj) = report.as_object_mut() {
+        let narrow_words: Vec<Vec<u64>> = proof_claims
+          .iter()
+          .map(|c| c.iter().map(|v| v.as_canonical_u64()).collect())
+          .collect();
+        obj.insert("shard_width".to_owned(), json!(v2.shard_width));
+        obj.insert("shards".to_owned(), json!(v2.shards));
+        obj.insert("places".to_owned(), json!(v2.places));
+        obj.insert("narrow_claims".to_owned(), json!(narrow_words));
+      }
+    },
   }
 
   if let Some(path) = &cli.report_out {
@@ -3564,4 +4167,186 @@ fn main() -> Result<(), Box<dyn Error>> {
   }
   println!("{}", serde_json::to_string_pretty(&report)?);
   Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use aiur::bytecode::{Entry, Function, Instruction, VERSION};
+  use aiur::value::IoType;
+
+  #[test]
+  fn stark_io_channels_serve_info_reads_and_goldilocks_inverse() {
+    let key: Vec<u8> = (10u8..26u8).collect();
+    let claims: Vec<u8> = (100u8..112u8).collect();
+    let proof: Vec<u8> = (0u8..70u8).collect();
+    let io = StarkIoFiles {
+      key_blake3: blake3::hash(&key).to_hex().to_string(),
+      claims_blake3: blake3::hash(&claims).to_hex().to_string(),
+      proof_blake3: blake3::hash(&proof).to_hex().to_string(),
+      key: key.clone(),
+      claims: claims.clone(),
+      proof: proof.clone(),
+    };
+
+    let pair = Type::Tuple { items: vec![Type::Field; 2] };
+    let arr1 = Type::Tuple { items: vec![Type::Field; 1] };
+    let arr8 = Type::Tuple { items: vec![Type::Field; 8] };
+    let out_ty = Type::Tuple { items: vec![Type::Field; 12] };
+    let prog = Program {
+      version: VERSION,
+      modulus: Val::ORDER_U64,
+      functions: vec![Function {
+        name: "Test::io".into(),
+        params: vec![Type::Field],
+        result: out_ty.clone(),
+        registers: 18,
+        code: vec![
+          // reg 0: input x (invert via goldilocks.inverse -> reg 17)
+          Instruction::Hint {
+            channel: "goldilocks.inverse".into(),
+            key_type: Type::Field,
+            r#type: Type::Field,
+            key: vec![0],
+            dest: vec![17],
+          },
+          // reg 1 = 1 (key channel), reg 2 = 0 (subkey) -> info into (3, 4)
+          Instruction::Literal { dest: 1, value: 1 },
+          Instruction::Literal { dest: 2, value: 0 },
+          Instruction::Hint {
+            channel: "stark.io.info".into(),
+            key_type: pair.clone(),
+            r#type: pair.clone(),
+            key: vec![1, 2],
+            dest: vec![3, 4],
+          },
+          // read1 from channel 2 (claims) at offset 3 -> reg 7
+          Instruction::Literal { dest: 5, value: 2 },
+          Instruction::Literal { dest: 6, value: 3 },
+          Instruction::Hint {
+            channel: "stark.io.read1".into(),
+            key_type: pair.clone(),
+            r#type: arr1,
+            key: vec![5, 6],
+            dest: vec![7],
+          },
+          // read8 from channel 0 (proof) at offset 5 -> regs 9..17
+          Instruction::Literal { dest: 8, value: 5 },
+          Instruction::Hint {
+            channel: "stark.io.read8".into(),
+            key_type: pair,
+            r#type: arr8,
+            key: vec![2, 8],
+            dest: (9..17).collect(),
+          },
+          // Return [info_off, info_len, read1_byte, read8_bytes(8), inv_x]
+          Instruction::Ret {
+            value: vec![3, 4, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+          },
+        ],
+      }],
+      enums: vec![],
+      tables: vec![],
+      maps: vec![],
+      entries: vec![Entry {
+        name: "Test::io".into(),
+        function: 0,
+        inputs: vec![IoType::Field],
+        output: Some(IoType::Tuple { items: vec![IoType::Field; 12] }),
+      }],
+    };
+    let checked = prog.check_field::<Val>().unwrap();
+    let (hints, _, _) =
+      build_hints(&checked, &[], Some(&io), None, None).unwrap();
+    let rec = hints.execute("Test::io", vec![Val::from_u64(7)]).unwrap();
+    assert_eq!(rec.output[0], Val::ZERO);
+    assert_eq!(rec.output[1], Val::from_usize(key.len()));
+    assert_eq!(rec.output[2], Val::from_u64(u64::from(claims[3])));
+    for i in 0..8 {
+      assert_eq!(rec.output[3 + i], Val::from_u64(u64::from(proof[5 + i])));
+    }
+    assert_eq!(rec.output[11] * Val::from_u64(7), Val::ONE);
+
+    // Default statement args match CompressWrap and MultiStark conventions.
+    let cw_args = stark_io_default_args(COMPRESS_WRAP_ENTRY, &io);
+    assert_eq!(cw_args.len(), 16);
+    assert_eq!(&cw_args[..8], &[0u64; 8]);
+    let ms_args = stark_io_default_args(MULTI_STARK_ENTRY, &io);
+    assert_eq!(ms_args.len(), 16);
+    assert_eq!(&ms_args[..8], digest_words(&key).as_slice());
+    assert_eq!(&ms_args[8..], digest_words(&claims).as_slice());
+  }
+
+  #[test]
+  fn parse_and_validate_vector_rom_layout_and_reject_mismatches() {
+    let valid_json = json!({
+      "format": WIDE_LAYOUT_FORMAT,
+      "field": "goldilocks",
+      "modulus": Val::ORDER_U64.to_string(),
+      "bound": 1000,
+      "rom_vector": 4,
+      "request": ["1", "0"],
+      "single_circuit": {
+        "num_circuits": 1,
+        "rows": 4,
+        "main_width": 12,
+        "fixed_width": 2,
+        "num_constraints": 0,
+        "num_lookups": 0,
+        "constituents": [{
+          "kind": "rom",
+          "index": 0,
+          "rows": 2,
+          "main_offset": 0,
+          "main_width": 12,
+          "fixed_offset": 0,
+          "fixed_width": 1,
+          "active_col": 1,
+          "words": 2,
+          "rom_vector": 4,
+          "capacity": 8
+        }],
+        "circuit": {
+          "width": 12,
+          "fixed_width": 2,
+          "nodes": [],
+          "zeros": [],
+          "lookups": []
+        }
+      }
+    });
+    let layout =
+      parse_layout(&serde_json::to_vec(&valid_json).unwrap()).unwrap();
+    assert!(matches!(layout.kind, LayoutKind::Wide { rom_vector: 4, .. }));
+
+    // Fixed matrix has [addr_base = 4*r, active_col = (r < 2)]
+    let good_fixed = RowMajorMatrix::new(
+      vec![
+        Val::from_u64(0),
+        Val::ONE,
+        Val::from_u64(4),
+        Val::ONE,
+        Val::from_u64(8),
+        Val::ZERO,
+        Val::from_u64(12),
+        Val::ZERO,
+      ],
+      2,
+    );
+    validate_fixed_matrix(&layout, &good_fixed).unwrap();
+
+    // Scalar fixed address (1 instead of 4) on row 1 must be rejected!
+    let mut bad_fixed = good_fixed;
+    bad_fixed.values[2] = Val::from_u64(1);
+    assert!(validate_fixed_matrix(&layout, &bad_fixed).is_err());
+
+    // Mismatched constituent rom_vector or wrong capacity must fail closed!
+    let mut bad_cap = valid_json.clone();
+    bad_cap["single_circuit"]["constituents"][0]["capacity"] = json!(7);
+    assert!(parse_layout(&serde_json::to_vec(&bad_cap).unwrap()).is_err());
+
+    let mut zero_k = valid_json;
+    zero_k["rom_vector"] = json!(0);
+    assert!(parse_layout(&serde_json::to_vec(&zero_k).unwrap()).is_err());
+  }
 }
