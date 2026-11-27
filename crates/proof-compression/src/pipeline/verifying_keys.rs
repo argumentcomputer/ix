@@ -55,33 +55,33 @@ pub(super) const FIRST_PLAN_ID: &str =
 pub(super) const RECURSIVE_FRONTEND_ID: &str =
   "d82bb2ffb899fa22c711582b8dc4a92b01224d7d3e6f4851465980f0f41838e7";
 
-#[cfg(any(feature = "plonk", test))]
-pub(super) const PLONK_VK: &[u8] =
+#[cfg(test)]
+const PLONK_VK: &[u8] =
   include_bytes!("../../verifying-keys/0.5/plonk-verifying-key.bin");
-/// SHA-256 of the gnark PLONK verifying key, which a PLONK packet begins with.
-#[cfg(any(feature = "plonk", test))]
-pub(super) const PLONK_VK_SHA256: &str =
+/// SHA-256 of the archived legacy PLONK verifying key.
+#[cfg(test)]
+const PLONK_VK_SHA256: &str =
   "ae9638f047b26990e810bf46dc664d2cc1fd502e8f09e01fc9fb3b192bca2c25";
 
-/// SHA-256 of the exported recursive verifier description that both final
-/// circuits prove.
+/// SHA-256 of the exported recursive verifier description.
+#[cfg(all(test, feature = "plonk"))]
 pub(super) const FINAL_SCHEMA_SHA256: &str =
   "cf4a1ba84d81563a5c42b71562071727795f6df298befbf94be515f81da80139";
 
-/// The release Groth16 key comes from a development setup: whoever ran it can
-/// forge proofs, so it verifies only when development setups are accepted.
-#[cfg(any(feature = "groth16", test))]
-pub(super) const GROTH16_VK: &[u8] = include_bytes!(
+/// Archived legacy Groth16 development verifying key.
+#[cfg(test)]
+const GROTH16_VK: &[u8] = include_bytes!(
   "../../verifying-keys/0.5/groth16-development-verifying-key.bin"
 );
-/// SHA-256 of the gnark Groth16 verifying key, which a Groth16 packet begins with.
-pub(super) const GROTH16_VK_SHA256: &str =
+/// SHA-256 of the archived legacy Groth16 verifying key.
+#[cfg(test)]
+const GROTH16_VK_SHA256: &str =
   "3e6bb1fffcb17910c573c95459344f6161d6f17357dbd79fbca7476b1bafbed9";
-pub(super) const GROTH16_CIRCUIT_SHA256: &str =
-  "2301c077a77064c77bb87f807397d0d2f8765b03aba10772050729c334bf4161";
 
-/// The setup class of the release Groth16 key, if `allow_development` admits it.
-pub(super) fn groth16_setup(allow_development: bool) -> Result<SetupClass> {
+/// The setup class of the archived Groth16 development key, if
+/// `allow_development` admits it.
+#[cfg(test)]
+fn groth16_setup(allow_development: bool) -> Result<SetupClass> {
   if !allow_development {
     return Err("the release Groth16 key uses a development setup; use --dev-final-srs for compression or --dev-srs for verification (not production-secure)".into());
   }

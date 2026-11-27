@@ -25,8 +25,6 @@ pub use development::verify_with_development_verifier;
 mod final_proof;
 mod first;
 mod fixed_cache;
-#[cfg(any(feature = "plonk", feature = "groth16"))]
-pub mod gnark;
 pub mod groth16;
 mod init_fri;
 pub mod plonk;
@@ -97,8 +95,8 @@ pub fn setup_description_for_curve(
   let setup = SetupConfig::from_env_for_curve(curve, development_kzg)?;
   let zk_note = match final_proof.system {
     FinalSystem::None => "final-kzg (non-ZK)",
-    FinalSystem::Plonk => "gnark PLONK (ZK)",
-    FinalSystem::Groth16 => "gnark Groth16 (ZK)",
+    FinalSystem::Plonk => "PLONK (ZK)",
+    FinalSystem::Groth16 => "Groth16 (ZK)",
   };
   Ok(format!(
     "{} [{}]; {}: {}",
@@ -289,19 +287,22 @@ mod tests {
   }
 
   #[test]
-  fn final_proofs_without_their_feature_name_the_build_switch() {
+  fn legacy_final_proofs_report_retirement() {
     let mut plonk = plonk::PROOF_TAG.to_vec();
     plonk.extend([0; 64]);
     let mut groth16 = groth16::PROOF_TAG.to_vec();
     groth16.extend([0; 196 + 32]);
-    if !cfg!(feature = "plonk") {
-      let error = verify(&plonk, b"claim", false).unwrap_err().to_string();
-      assert!(error.contains("IX_PLONK=1"), "{error}");
-    }
-    if !cfg!(feature = "groth16") {
-      let error = verify(&groth16, b"claim", false).unwrap_err().to_string();
-      assert!(error.contains("IX_GROTH16=1"), "{error}");
-    }
+    let error = verify(&plonk, b"claim", false).unwrap_err().to_string();
+    assert!(
+      error.contains("retired")
+        && error.contains("aiur_backend::plonk::native"),
+      "{error}"
+    );
+    let error = verify(&groth16, b"claim", false).unwrap_err().to_string();
+    assert!(
+      error.contains("retired") && error.contains("aiur_backend::groth16"),
+      "{error}"
+    );
     let mut bls_recursive = BLS12_381_PROOF_TAG.to_vec();
     bls_recursive.extend([0; 32]);
     assert!(
@@ -312,10 +313,19 @@ mod tests {
     );
     let mut bls_plonk = plonk::BLS12_381_PROOF_TAG.to_vec();
     bls_plonk.extend([0; 64]);
-    assert!(verify(&bls_plonk, b"claim", false).is_err());
+    let error = verify(&bls_plonk, b"claim", false).unwrap_err().to_string();
+    assert!(
+      error.contains("retired")
+        && error.contains("aiur_backend::plonk::native"),
+      "{error}"
+    );
     let mut bls_groth16 = groth16::BLS12_381_PROOF_TAG.to_vec();
     bls_groth16.extend([0; 292 + 32]);
-    assert!(verify(&bls_groth16, b"claim", false).is_err());
+    let error = verify(&bls_groth16, b"claim", false).unwrap_err().to_string();
+    assert!(
+      error.contains("retired") && error.contains("aiur_backend::groth16"),
+      "{error}"
+    );
   }
 
   #[test]
@@ -340,6 +350,6 @@ mod tests {
     assert!(bls.contains("~126–128b classical / 0b PQ"));
     assert!(bls.contains("EIP-2537"));
     assert!(bls.contains("Filecoin challenge_19"));
-    assert!(bls.contains("gnark PLONK (ZK)"));
+    assert!(bls.contains("PLONK (ZK)"));
   }
 }

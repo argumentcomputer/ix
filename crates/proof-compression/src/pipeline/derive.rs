@@ -156,25 +156,4 @@ mod tests {
       verifying_keys::decode(verifying_keys::FINAL_SCHEMA_SHA256).unwrap()
     );
   }
-
-  #[cfg(feature = "plonk")]
-  #[test]
-  #[ignore = "needs the pinned Ignition release under IX_PARAMS_DIR and \
-              compiles and sets up the PLONK circuit into a new directory \
-              under the temporary directory (minutes on a GPU-backed gnark, \
-              longer on CPU)"]
-  fn release_plonk_key_derives_without_a_proof() {
-    use sha2::{Digest, Sha256};
-    let scratch = crate::test_support::TempDir::new("plonk-derive");
-    let cache = scratch.join("cache");
-    let derived = super::super::plonk::derive_verifying_key(
-      RECURSIVE_VK,
-      &verifying_keys::STATEMENT_PREFIX,
-      &ignition(),
-      &cache,
-    )
-    .unwrap();
-    eprintln!("derived PLONK key SHA-256 {:x}", Sha256::digest(&derived));
-    assert!(derived == verifying_keys::PLONK_VK, "derived PLONK key differs");
-  }
 }

@@ -1,27 +1,24 @@
 //! `plonk`: the terminal relation proved over Lean's formally checked
 //! constraint system (`ix-aiur-scs-v1`).
 //!
-//! By default, the stage runs the pure-Rust (+ optional Ix-CUDA) native PLONK +
-//! BSB22 backend (`ix-aiur-native-plonk-v1`) on both BN254 and BLS12-381 with
-//! zero Go, CGo, or `bindgen` dependencies. Legacy gnark
-//! (`ix-aiur-scs-artifacts-v1`) remains available opt-in behind
-//! `--features plonk`.
+//! The stage runs the pure-Rust (+ optional Ix-CUDA) native PLONK + BSB22
+//! backend (`ix-aiur-native-plonk-v1`) on both BN254 and BLS12-381 with zero
+//! Go, CGo, or `bindgen` dependencies. Legacy gnark manifests
+//! (`ix-aiur-scs-artifacts-v1`) are retired and rejected with a clear error
+//! pointing to `ix-aiur-native-plonk-v1`.
 //!
 //! Manifest fields: `artifact`, `prepared_manifest` (the prepared directory's
 //! `manifest.json`), `scs` (`path` and `sha256`), optional `policy` (product,
-//! required for gnark BN254 and for native BN254 circuits consuming narrow KZG
-//! proof advice), optional `backend` (`"native"` or `"gnark"`; auto-detected
-//! from `prepared_manifest`'s format when omitted), optional `cuda` (boolean;
-//! native defaults to `cfg!(feature = "cuda")` and supports Ix-CUDA on both
-//! BN254 and BLS12-381; gnark defaults to `true` on BN254 and `false` on
-//! BLS12-381), optional `entry` (overrides
+//! required for native BN254 circuits consuming narrow KZG proof advice),
+//! optional `backend` (must be `"native"` when present), optional `cuda`
+//! (boolean; defaults to `cfg!(feature = "cuda")` and supports Ix-CUDA on both
+//! BN254 and BLS12-381), optional `entry` (overrides
 //! `CompressFinalNarrow::verify_accumulator_v1`), optional `advice` (product
 //! `.ixa` bound via `ixcc::register_advice_program`), optional `field`
 //! (`"bn254"` default or `"bls12-381"`).
 //!
 //! The prepared directory is reused, never rebuilt: its manifest must pin this
-//! SCS file's digest (and, for legacy gnark, the terminal's pairing
-//! configuration digest).
+//! SCS file's digest.
 
 use super::{
   Error, Handoff, Product, Stage,
@@ -46,14 +43,6 @@ use crate::{
   },
   pipeline::SetupConfig,
 };
-#[cfg(feature = "plonk")]
-use crate::{
-  aiur_backend::{
-    pairing::final_program::{ACCUMULATOR_ENTRY, Configuration},
-    plonk::{self, gnark},
-  },
-  kzg::{VerifierParams, srs::filecoin::filecoin_anchors},
-};
 use aiur::{
   Execution, FieldWord, artifact::WidePackage, field::FieldBackend,
   hints::HintChannels, maps::MapOverrides, trace::TracePlan,
@@ -68,53 +57,31 @@ use std::{
   time::Instant,
 };
 
-const GNARK_MANIFEST_FORMAT: &str = "ix-aiur-scs-artifacts-v1";
+const LEGACY_GNARK_MANIFEST_FORMAT: &str = "ix-aiur-scs-artifacts-v1";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PlonkBackend {
-  Native,
-  Gnark,
-}
-
-impl PlonkBackend {
-  const fn name(self) -> &'static str {
-    match self {
-      Self::Native => "native",
-      Self::Gnark => "gnark",
-    }
-  }
-}
-
-#[cfg(not(feature = "plonk"))]
-fn gnark_unavailable_error() -> Error {
+fn retired_gnark_error() -> Error {
   format!(
-    "legacy gnark PLONK backend ({GNARK_MANIFEST_FORMAT}) requires compiling \
-     with `--features plonk`; native PLONK ({}) runs under default features \
-     without Go",
+    "legacy gnark PLONK backend ({LEGACY_GNARK_MANIFEST_FORMAT}) has been \
+     retired and removed; prepare native PLONK artifacts with format {:?}",
     native::NATIVE_MANIFEST_FORMAT,
   )
 }
 
-fn parse_optional_backend(spec: &Value) -> Result<Option<PlonkBackend>, Error> {
+fn validate_optional_backend(spec: &Value) -> Result<(), Error> {
   match &spec["backend"] {
-    Value::Null => Ok(None),
+    Value::Null => Ok(()),
     Value::String(name) => match name.as_str() {
-      "native" => Ok(Some(PlonkBackend::Native)),
-      "gnark" => Ok(Some(PlonkBackend::Gnark)),
+      "native" => Ok(()),
+      "gnark" => Err(retired_gnark_error()),
       other => Err(format!(
-        "unknown plonk stage backend {other:?}; expected \"native\" or \"gnark\""
+        "unknown plonk stage backend {other:?}; expected \"native\""
       )),
     },
-    _ => Err(
-      "manifest plonk backend must be a string (\"native\" or \"gnark\")"
-        .into(),
-    ),
+    _ => Err("manifest plonk backend must be a string (\"native\")".into()),
   }
 }
 
-fn detect_manifest_backend(
-  manifest_bytes: &[u8],
-) -> Result<PlonkBackend, Error> {
+fn validate_manifest_format(manifest_bytes: &[u8]) -> Result<(), Error> {
   let value: Value = serde_json::from_slice(manifest_bytes)
     .map_err(|e| format!("prepared_manifest JSON: {e}"))?;
   let fmt = value
@@ -123,37 +90,18 @@ fn detect_manifest_backend(
     .or_else(|| value.get("Format").and_then(Value::as_str))
     .ok_or("prepared_manifest missing string \"format\" / \"Format\" field")?;
   match fmt {
-    native::NATIVE_MANIFEST_FORMAT => Ok(PlonkBackend::Native),
-    GNARK_MANIFEST_FORMAT => Ok(PlonkBackend::Gnark),
+    native::NATIVE_MANIFEST_FORMAT => Ok(()),
+    LEGACY_GNARK_MANIFEST_FORMAT => Err(retired_gnark_error()),
     other => Err(format!(
-      "unsupported prepared_manifest format {other:?}; expected {:?} (native) \
-       or {GNARK_MANIFEST_FORMAT:?} (gnark)",
+      "unsupported prepared_manifest format {other:?}; expected {:?}",
       native::NATIVE_MANIFEST_FORMAT,
     )),
   }
 }
 
-fn select_backend(
-  spec: &Value,
-  manifest_bytes: &[u8],
-) -> Result<PlonkBackend, Error> {
-  let explicit = parse_optional_backend(spec)?;
-  let detected = detect_manifest_backend(manifest_bytes)?;
-  if let Some(requested) = explicit
-    && requested != detected
-  {
-    return Err(format!(
-      "stage backend {:?} conflicts with prepared_manifest backend {:?}",
-      requested.name(),
-      detected.name(),
-    ));
-  }
-  let chosen = explicit.unwrap_or(detected);
-  #[cfg(not(feature = "plonk"))]
-  if chosen == PlonkBackend::Gnark {
-    return Err(gnark_unavailable_error());
-  }
-  Ok(chosen)
+fn validate_backend(spec: &Value, manifest_bytes: &[u8]) -> Result<(), Error> {
+  validate_optional_backend(spec)?;
+  validate_manifest_format(manifest_bytes)
 }
 
 fn parse_native_cuda(spec: &Value) -> Result<bool, Error> {
@@ -181,43 +129,6 @@ fn resolve_native_prepared_dir(manifest_path: &Path) -> Result<PathBuf, Error> {
       Ok(parent.to_path_buf())
     }
   }
-}
-
-#[cfg(feature = "plonk")]
-fn sha256_file(path: &Path) -> Result<String, String> {
-  let mut hash = Sha256::new();
-  std::io::copy(
-    &mut fs::File::open(path)
-      .map_err(|e| format!("{}: {e}", path.display()))?,
-    &mut hash,
-  )
-  .map_err(|e| e.to_string())?;
-  Ok(format!("{:x}", hash.finalize()))
-}
-
-/// Reads the files gnark's open loads from `prepared` once, outside the GPU
-/// lock, so the open finds them in the page cache. Read cold from disk the
-/// 5 GB take tens of seconds; inside the lock that delay would hold back the
-/// narrow stage's fixed-slot commitment and, through the memory budget,
-/// CompressGL's trace phase, both on the critical path.
-#[cfg(feature = "plonk")]
-fn prefetch(prepared: &Path) -> Result<(), String> {
-  use std::io::Read;
-  let raw = prepared.join("proving-key.raw");
-  let key = if raw.exists() { raw } else { prepared.join("proving-key.bin") };
-  let mut buffer = vec![0u8; 8 << 20];
-  for path in
-    [prepared.join("circuit.bin"), prepared.join("verifying-key.bin"), key]
-  {
-    let mut file =
-      fs::File::open(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    while file
-      .read(&mut buffer)
-      .map_err(|e| format!("{}: {e}", path.display()))?
-      != 0
-    {}
-  }
-  Ok(())
 }
 
 struct Phases(serde_json::Map<String, Value>);
@@ -822,490 +733,11 @@ fn run_native_bls12_381(
   })
 }
 
-#[cfg(feature = "plonk")]
-#[allow(clippy::too_many_lines)]
-fn run_gnark_bls12_381(
-  stage: &Stage<'_>,
-  entry: &str,
-  advice_bytes: Option<&[u8]>,
-  manifest_file: &Product,
-) -> Result<Handoff, Error> {
-  let spec = &stage.spec.spec;
-  if spec["cuda"].as_bool() == Some(true) {
-    return Err(
-      "CUDA backend is not available for legacy gnark BLS12-381 PLONK; \
-       use the native backend or set cuda: false"
-        .into(),
-    );
-  }
-  let backend = gnark::Backend::Cpu;
-  let scs_path = stage.stages.manifest.path(&spec["scs"]["path"])?;
-  let scs_pin = spec["scs"]["sha256"].as_str().ok_or("scs.sha256")?.to_owned();
-  let scs_hash = {
-    let path = scs_path.clone();
-    std::thread::spawn(move || sha256_file(&path))
-  };
-  let mut phases = Phases(serde_json::Map::new());
-
-  let started = Instant::now();
-  let artifact = stage.product("artifact")?;
-  let pin = blake3::hash(&artifact.bytes);
-  let plan = bls12_381::load_trace_plan(&artifact.bytes)?;
-  plan.program().entry(entry)?;
-  let advice_program = match advice_bytes {
-    Some(bytes) => Some(bls12_381::load_program(bytes)?),
-    None => None,
-  };
-  let bls_params =
-    VerifierParams::<Bls12381Curve>::from_srs(&filecoin_anchors());
-  let manifest: gnark::Manifest =
-    serde_json::from_slice(&manifest_file.bytes).map_err(|e| e.to_string())?;
-  let prepared_root =
-    manifest_file.path.parent().ok_or("prepared manifest path")?.to_path_buf();
-  let prepared = prepared_root.join("prepared");
-  phases.record("setup", started);
-  let started = Instant::now();
-  prefetch(&prepared)?;
-  phases.record("prefetch", started);
-  let started = Instant::now();
-  let mut prover = Some(
-    stage
-      .gpu(|| gnark::Prover::open(&prepared, &manifest, backend))
-      .map_err(|e| e.to_string())?,
-  );
-  phases.record("load", started);
-  stage.reserve(1);
-
-  let started = Instant::now();
-  let (narrow, _) = stage.input()?;
-  phases.record("wait", started);
-  stage.cancelled()?;
-  stage.reserve(2);
-  let started = Instant::now();
-  let statement_bytes =
-    narrow.statement.ok_or("the narrow stage passed no statement")?;
-  let mut hints = HintChannels::new();
-  bls12_381::register_standard_hints(&mut hints)?;
-  if let Some(advice_program) = advice_program {
-    aiur::library::ixcc::register_advice_program(
-      &mut hints,
-      plan.program(),
-      advice_program,
-    )?;
-  }
-  let mut maps = MapOverrides::new();
-  aiur::library::u8::register_maps(plan.program(), &mut maps)?;
-  let arguments = bls12_381::statement_arguments(&statement_bytes).to_vec();
-  let record = plan
-    .program()
-    .prepare_hint_channels(&[], &hints)?
-    .with_map_overrides(&maps)?
-    .execute(entry, arguments.clone())
-    .map_err(|e| e.to_string())?;
-  bls12_381::check_pairing(&record.output, [bls_params.g2, bls_params.tau_g2])?;
-  phases.record("execute", started);
-
-  let pairing =
-    serde_json::to_vec(&scs::bls12_381_pairing_from_params(&bls_params)?)
-      .map_err(|e| e.to_string())?;
-
-  let started = Instant::now();
-  let scs_sha256 = scs_hash
-    .join()
-    .map_err(|_error| "SCS digest thread panicked".to_string())??;
-  if scs_sha256 != scs_pin {
-    return Err(format!(
-      "SCS SHA-256 {scs_sha256} differs from the pinned {scs_pin}"
-    ));
-  }
-  let pairing_sha256 = format!("{:x}", Sha256::digest(&pairing));
-  if manifest.scs_sha256 != scs_sha256
-    || manifest.pairing_sha256 != pairing_sha256
-  {
-    return Err(
-      "the prepared circuit is not this SCS file's and pairing configuration's"
-        .into(),
-    );
-  }
-  phases.record("scs_digest", started);
-  let started = Instant::now();
-  let layout =
-    fs::read(prepared.join("inputs.json")).map_err(|e| e.to_string())?;
-  let pinned =
-    manifest.files.get("inputs.json").ok_or("manifest without inputs.json")?;
-  if format!("{:x}", Sha256::digest(&layout)) != pinned.sha256 {
-    return Err("prepared inputs.json differs from its manifest".into());
-  }
-  let witness = scs::Bls12381Witness::new(
-    &plan,
-    entry,
-    serde_json::from_slice(&layout).map_err(|e| e.to_string())?,
-  )?
-  .binary(&record, &arguments)?;
-  phases.record("witness", started);
-
-  let started = Instant::now();
-  let mut open = prover.take().ok_or("the PLONK prover is gone")?;
-  let proof = stage
-    .gpu(|| open.prove_bls12_381(&witness, &arguments))
-    .map_err(|e| e.to_string())?;
-  phases.record("prove", started);
-  let mut wrong = arguments.clone();
-  wrong[0] += Bls12381.one();
-  let refused = stage.gpu(|| open.prove_bls12_381(&witness, &wrong)).is_err();
-  open.close().map_err(|e| e.to_string())?;
-  stage.stages.checks.set("plonk_wrong_statement_refused_by_prover", refused);
-
-  let started = Instant::now();
-  let key =
-    fs::read(prepared.join("verifying-key.bin")).map_err(|e| e.to_string())?;
-  let key_sha256 = format!("{:x}", Sha256::digest(&key));
-  let key_pin: [u8; 32] = Sha256::digest(&key).into();
-  let anchor_bytes = gnark::bls12_381_anchors(&bls_params);
-  gnark::verify_bls12_381(
-    &key,
-    &key_pin,
-    &proof.native,
-    &arguments,
-    &anchor_bytes,
-  )
-  .map_err(|e| e.to_string())?;
-  phases.record("verify", started);
-  let rejected = gnark::verify_bls12_381(
-    &key,
-    &key_pin,
-    &proof.native,
-    &wrong,
-    &anchor_bytes,
-  )
-  .is_err();
-  stage
-    .stages
-    .checks
-    .set("plonk_wrong_statement_rejected_by_verifier", rejected);
-  let prepared_key = manifest
-    .files
-    .get("verifying-key.bin")
-    .is_some_and(|file| file.sha256 == key_sha256);
-  stage.stages.checks.set("plonk_verifying_key_is_prepared", prepared_key);
-  if !rejected {
-    return Err("BLS12-381 PLONK verifier accepted a changed statement".into());
-  }
-  if !prepared_key {
-    return Err(
-      "the verifying key differs from the prepared manifest's".into(),
-    );
-  }
-  stage.write("proof.bin", &proof.native)?;
-  stage.write("proof.solidity.bin", &proof.solidity)?;
-  let info = &manifest.info;
-  let summary = json!({
-    "format": "ix-aiur-narrow-terminal-plonk-v1",
-    "curve": "bls12-381",
-    "circuit": "ix-aiur-scs-v1", "scs": scs_path, "scs_sha256": scs_sha256, "pairing_sha256": pairing_sha256,
-    "entry": entry,
-    "artifact": artifact.path, "artifact_blake3": pin.to_hex().as_str(),
-    "statement": super::hex(&statement_bytes),
-    "backend": "cpu",
-    "constraints": info.constraints, "domain": info.domain, "public_inputs": info.public_inputs,
-    "commitments": info.commitments,
-    "witness_bytes": witness.len(), "witness_sha256": format!("{:x}", Sha256::digest(&witness)),
-    "srs_blake3": manifest.srs_blake3,
-    "verifying_key_sha256": key_sha256,
-    "proof_bytes": proof.native.len(), "solidity_proof_bytes": proof.solidity.len(),
-    "public_inputs_decimal": arguments.iter().map(|v| v.0.to_string()).collect::<Vec<_>>(),
-    "outputs_decimal": record.output.iter().map(|v| v.0.to_string()).collect::<Vec<_>>(),
-    "wrong_statement_refused_by_prover": refused,
-    "wrong_statement_rejected_by_verifier": rejected,
-    "phases": phases.0,
-    "peak_rss_gb": super::peak_rss_gb(),
-  });
-  stage.write_json("summary.json", &summary)?;
-  Ok(Handoff {
-    key,
-    claims: Vec::new(),
-    proof: proof.native,
-    stage: narrow.stage + 1,
-    statement: Some(statement_bytes),
-    solidity: proof.solidity,
-  })
-}
-
-#[cfg(feature = "plonk")]
-#[allow(clippy::too_many_lines)]
-fn run_gnark_bn254(
-  stage: &Stage<'_>,
-  entry: &str,
-  has_entry_override: bool,
-  advice_bytes: Option<&[u8]>,
-  manifest_file: &Product,
-) -> Result<Handoff, Error> {
-  let spec = &stage.spec.spec;
-  let backend = if spec["cuda"].as_bool().unwrap_or(true) {
-    let gib: u64 = std::env::var("IX_PLONK_CUDA_MEMORY_GIB")
-      .unwrap_or_else(|_| "64".into())
-      .parse()
-      .map_err(|e| format!("IX_PLONK_CUDA_MEMORY_GIB: {e}"))?;
-    gnark::Backend::Cuda { device: 0, memory_bytes: gib << 30, mask_msm: false }
-  } else {
-    gnark::Backend::Cpu
-  };
-  let scs_path = stage.stages.manifest.path(&spec["scs"]["path"])?;
-  let scs_pin = spec["scs"]["sha256"].as_str().ok_or("scs.sha256")?.to_owned();
-  // The 0.8 GB file's digest is computed while the terminal prepares.
-  let scs_hash = {
-    let path = scs_path.clone();
-    std::thread::spawn(move || sha256_file(&path))
-  };
-  let mut phases = Phases(serde_json::Map::new());
-
-  let started = Instant::now();
-  let artifact = stage.product("artifact")?;
-  let pin = blake3::hash(&artifact.bytes);
-  let package = WidePackage::decode(&artifact.bytes)?;
-  let trace = package.trace.ok_or("missing trace")?;
-  let mut program = package.program.check_with(Bn254)?;
-  program.track_depth(&trace)?;
-  program.entry(entry)?;
-  let plan = TracePlan::new(Arc::new(program), trace)?;
-  let advice_program = match advice_bytes {
-    Some(bytes) => {
-      let pkg = WidePackage::decode(bytes)?;
-      let mut prog = pkg.program.check_with(Bn254)?;
-      if let Some(t) = &pkg.trace {
-        prog.track_depth(t)?;
-      }
-      Some(prog)
-    },
-    None => None,
-  };
-  let setup = SetupConfig::from_env(false).map_err(|e| e.to_string())?;
-  let capacity = PackedCapacity {
-    log_cap: 1,
-    quotient_degree: 1,
-    lookup_quotient_budget: None,
-  };
-  let config = capacity.config(&setup)?;
-  let parameters = multi_stark::config::ProofConfig::pcs(&config).parameters();
-  let policy_file = stage.product("policy")?;
-  let policy = PackedPolicy::from_chain_bytes(parameters, &policy_file.bytes)?;
-  let manifest: gnark::Manifest =
-    serde_json::from_slice(&manifest_file.bytes).map_err(|e| e.to_string())?;
-  let prepared_root =
-    manifest_file.path.parent().ok_or("prepared manifest path")?.to_path_buf();
-  let prepared = prepared_root.join("prepared");
-  phases.record("setup", started);
-  let started = Instant::now();
-  prefetch(&prepared)?;
-  phases.record("prefetch", started);
-  let started = Instant::now();
-  let mut prover = Some(
-    stage
-      .gpu(|| gnark::Prover::open(&prepared, &manifest, backend))
-      .map_err(|e| e.to_string())?,
-  );
-  phases.record("load", started);
-  stage.reserve(1);
-
-  let started = Instant::now();
-  let (narrow, _) = stage.input()?;
-  phases.record("wait", started);
-  stage.cancelled()?;
-  stage.reserve(2);
-  let started = Instant::now();
-  let statement_bytes =
-    narrow.statement.ok_or("the narrow stage passed no statement")?;
-  let configuration =
-    Configuration::narrow(&policy, parameters, narrow.stage + 1)?;
-  let mut hints = HintChannels::new();
-  aiur::library::u32::register(&mut hints, Bn254)?;
-  aiur::library::u64::register(&mut hints, Bn254)?;
-  fq::register(&mut hints)?;
-  g1::register(&mut hints)?;
-  wire::register(&mut hints)?;
-  wire::Inputs::new(
-    narrow.key.clone(),
-    narrow.claims.clone(),
-    narrow.proof.clone(),
-    policy_file.bytes.clone(),
-  )?
-  .register(&mut hints)?;
-  if has_entry_override || advice_program.is_some() {
-    aiur::library::ixcc::register(&mut hints, Bn254)?;
-  }
-  if let Some(advice_program) = advice_program {
-    aiur::library::ixcc::register_advice_program(
-      &mut hints,
-      plan.program(),
-      advice_program,
-    )?;
-  }
-  let mut maps = MapOverrides::new();
-  aiur::library::u8::register_maps(plan.program(), &mut maps)?;
-  let arguments = statement_arguments(&statement_bytes).to_vec();
-  let record = plan
-    .program()
-    .prepare_hint_channels(&[], &hints)?
-    .with_map_overrides(&maps)?
-    .execute(entry, arguments.clone())
-    .map_err(|e| e.to_string())?;
-  let pair =
-    [g1::decode(&record.output[..9])?, g1::decode(&record.output[9..])?];
-  let (_, anchors) = crate::aiur_backend::pairing::verifier_anchors(parameters);
-  if ark_bn254::Bn254::multi_pairing(pair, [anchors[0], anchors[1]]).0
-    != <ark_bn254::Bn254 as Pairing>::TargetField::from(1u8)
-  {
-    return Err("terminal accumulator fails the Ignition pairing check".into());
-  }
-  phases.record("execute", started);
-
-  let compiler = Compiler::new(&plan)?;
-  let capacities: Vec<usize> =
-    compiler.row_counts(&record)?.into_iter().map(|rows| rows.max(1)).collect();
-  let pairing_config =
-    if entry == NARROW_ACCUMULATOR_ENTRY || entry == ACCUMULATOR_ENTRY {
-      scs::pairing(&plan, entry, &configuration)?
-    } else {
-      plonk::Pairing {
-        curve: "bn254",
-        encoding: "affine-u80-v1",
-        g2: anchors.map(|point| {
-          [
-            point.x.c0.to_string(),
-            point.x.c1.to_string(),
-            point.y.c0.to_string(),
-            point.y.c1.to_string(),
-          ]
-        }),
-      }
-    };
-  let pairing =
-    serde_json::to_vec(&pairing_config).map_err(|e| e.to_string())?;
-
-  let started = Instant::now();
-  let scs_sha256 = scs_hash
-    .join()
-    .map_err(|_error| "SCS digest thread panicked".to_string())??;
-  if scs_sha256 != scs_pin {
-    return Err(format!(
-      "SCS SHA-256 {scs_sha256} differs from the pinned {scs_pin}"
-    ));
-  }
-  let pairing_sha256 = format!("{:x}", Sha256::digest(&pairing));
-  if manifest.scs_sha256 != scs_sha256
-    || manifest.pairing_sha256 != pairing_sha256
-  {
-    return Err(
-      "the prepared circuit is not this SCS file's and pairing configuration's"
-        .into(),
-    );
-  }
-  phases.record("scs_digest", started);
-  let started = Instant::now();
-  let layout =
-    fs::read(prepared.join("inputs.json")).map_err(|e| e.to_string())?;
-  let pinned =
-    manifest.files.get("inputs.json").ok_or("manifest without inputs.json")?;
-  if format!("{:x}", Sha256::digest(&layout)) != pinned.sha256 {
-    return Err("prepared inputs.json differs from its manifest".into());
-  }
-  let witness = scs::Witness::new(
-    &plan,
-    compiler,
-    &capacities,
-    entry,
-    serde_json::from_slice(&layout).map_err(|e| e.to_string())?,
-  )?
-  .binary(&record, &arguments)?;
-  phases.record("witness", started);
-
-  let started = Instant::now();
-  let mut open = prover.take().ok_or("the PLONK prover is gone")?;
-  let proof = stage
-    .gpu(|| open.prove(&witness, &arguments))
-    .map_err(|e| e.to_string())?;
-  phases.record("prove", started);
-  let mut wrong = arguments.clone();
-  wrong[0] += Bn254.one();
-  let refused = stage.gpu(|| open.prove(&witness, &wrong)).is_err();
-  open.close().map_err(|e| e.to_string())?;
-  stage.stages.checks.set("plonk_wrong_statement_refused_by_prover", refused);
-
-  let started = Instant::now();
-  let key =
-    fs::read(prepared.join("verifying-key.bin")).map_err(|e| e.to_string())?;
-  let key_sha256 = format!("{:x}", Sha256::digest(&key));
-  let key_pin: [u8; 32] = Sha256::digest(&key).into();
-  let anchor_bytes = gnark::anchors(parameters);
-  gnark::verify(&key, &key_pin, &proof.native, &arguments, &anchor_bytes)
-    .map_err(|e| e.to_string())?;
-  phases.record("verify", started);
-  let rejected =
-    gnark::verify(&key, &key_pin, &proof.native, &wrong, &anchor_bytes)
-      .is_err();
-  stage
-    .stages
-    .checks
-    .set("plonk_wrong_statement_rejected_by_verifier", rejected);
-  let prepared_key = manifest
-    .files
-    .get("verifying-key.bin")
-    .is_some_and(|file| file.sha256 == key_sha256);
-  stage.stages.checks.set("plonk_verifying_key_is_prepared", prepared_key);
-  if !rejected {
-    return Err("PLONK verifier accepted a changed statement".into());
-  }
-  if !prepared_key {
-    return Err(
-      "the verifying key differs from the prepared manifest's".into(),
-    );
-  }
-  stage.write("proof.bin", &proof.native)?;
-  stage.write("proof.solidity.bin", &proof.solidity)?;
-  let info = &manifest.info;
-  let summary = json!({
-    "format": "ix-aiur-narrow-terminal-plonk-v1",
-    "circuit": "ix-aiur-scs-v1", "scs": scs_path, "scs_sha256": scs_sha256, "pairing_sha256": pairing_sha256,
-    "entry": entry,
-    "artifact": artifact.path, "artifact_blake3": pin.to_hex().as_str(),
-    "statement": super::hex(&statement_bytes),
-    "backend": if matches!(backend, gnark::Backend::Cpu) { "cpu" } else { "cuda" },
-    "constraints": info.constraints, "domain": info.domain, "public_inputs": info.public_inputs,
-    "commitments": info.commitments,
-    "witness_bytes": witness.len(), "witness_sha256": format!("{:x}", Sha256::digest(&witness)),
-    "srs_blake3": manifest.srs_blake3,
-    "verifying_key_sha256": key_sha256,
-    "proof_bytes": proof.native.len(), "solidity_proof_bytes": proof.solidity.len(),
-    "public_inputs_decimal": arguments.iter().map(|v| v.0.to_string()).collect::<Vec<_>>(),
-    "outputs_decimal": record.output.iter().map(|v| v.0.to_string()).collect::<Vec<_>>(),
-    "wrong_statement_refused_by_prover": refused,
-    "wrong_statement_rejected_by_verifier": rejected,
-    "phases": phases.0,
-    "peak_rss_gb": super::peak_rss_gb(),
-  });
-  stage.write_json("summary.json", &summary)?;
-  Ok(Handoff {
-    key,
-    claims: Vec::new(),
-    proof: proof.native,
-    stage: narrow.stage + 1,
-    statement: Some(statement_bytes),
-    solidity: proof.solidity,
-  })
-}
-
 pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
   let spec = &stage.spec.spec;
   let field = parse_stage_field(spec)?;
   let entry_override = parse_optional_entry(spec)?;
-  let explicit_backend = parse_optional_backend(spec)?;
-  #[cfg(not(feature = "plonk"))]
-  if explicit_backend == Some(PlonkBackend::Gnark)
-    && spec["prepared_manifest"].is_null()
-  {
-    return Err(gnark_unavailable_error());
-  }
-  let _ = explicit_backend;
+  validate_optional_backend(spec)?;
   let advice_file = if spec["advice"].is_null() {
     None
   } else {
@@ -1314,30 +746,16 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
   let advice_bytes = advice_file.as_ref().map(|p| p.bytes.as_slice());
   let entry = entry_override.unwrap_or(NARROW_ACCUMULATOR_ENTRY);
   let manifest_file = stage.product("prepared_manifest")?;
-  let backend = select_backend(spec, &manifest_file.bytes)?;
+  validate_backend(spec, &manifest_file.bytes)?;
 
-  match (backend, field) {
-    (PlonkBackend::Native, Field::Bn254) => {
+  match field {
+    Field::Bn254 => {
       run_native_bn254(stage, entry, advice_bytes, &manifest_file)
     },
-    (PlonkBackend::Native, Field::Bls12381) => {
+    Field::Bls12381 => {
       run_native_bls12_381(stage, entry, advice_bytes, &manifest_file)
     },
-    #[cfg(feature = "plonk")]
-    (PlonkBackend::Gnark, Field::Bls12381) => {
-      run_gnark_bls12_381(stage, entry, advice_bytes, &manifest_file)
-    },
-    #[cfg(feature = "plonk")]
-    (PlonkBackend::Gnark, Field::Bn254) => run_gnark_bn254(
-      stage,
-      entry,
-      entry_override.is_some(),
-      advice_bytes,
-      &manifest_file,
-    ),
-    #[cfg(not(feature = "plonk"))]
-    (PlonkBackend::Gnark, _) => Err(gnark_unavailable_error()),
-    (_, Field::Goldilocks) => {
+    Field::Goldilocks => {
       Err("plonk stage field must be \"bn254\" or \"bls12-381\"".into())
     },
   }
@@ -1786,84 +1204,55 @@ mod tests {
     let gnark_manifest_pascal = br#"{"Format":"ix-aiur-scs-artifacts-v1"}"#;
     let gnark_manifest_lower = br#"{"format":"ix-aiur-scs-artifacts-v1"}"#;
 
-    assert_eq!(parse_optional_backend(&json!({})).unwrap(), None);
-    assert_eq!(
-      parse_optional_backend(&json!({"backend": "native"})).unwrap(),
-      Some(PlonkBackend::Native)
+    validate_optional_backend(&json!({})).unwrap();
+    validate_optional_backend(&json!({"backend": "native"})).unwrap();
+    let err_gnark_opt =
+      validate_optional_backend(&json!({"backend": "gnark"})).unwrap_err();
+    assert!(
+      err_gnark_opt.contains("retired")
+        && err_gnark_opt.contains(native::NATIVE_MANIFEST_FORMAT),
+      "unexpected error: {err_gnark_opt}"
     );
-    assert_eq!(
-      parse_optional_backend(&json!({"backend": "gnark"})).unwrap(),
-      Some(PlonkBackend::Gnark)
-    );
-    assert!(parse_optional_backend(&json!({"backend": "halo2"})).is_err());
-    assert!(parse_optional_backend(&json!({"backend": 1})).is_err());
+    assert!(validate_optional_backend(&json!({"backend": "halo2"})).is_err());
+    assert!(validate_optional_backend(&json!({"backend": 1})).is_err());
 
-    assert_eq!(
-      detect_manifest_backend(native_manifest).unwrap(),
-      PlonkBackend::Native
-    );
-    assert_eq!(
-      detect_manifest_backend(gnark_manifest_pascal).unwrap(),
-      PlonkBackend::Gnark
-    );
-    assert_eq!(
-      detect_manifest_backend(gnark_manifest_lower).unwrap(),
-      PlonkBackend::Gnark
-    );
-    assert!(detect_manifest_backend(br#"{"format":"unknown-v1"}"#).is_err());
-    assert!(detect_manifest_backend(br#"{}"#).is_err());
-    assert!(detect_manifest_backend(b"not-json").is_err());
+    validate_manifest_format(native_manifest).unwrap();
+    for legacy in
+      [gnark_manifest_pascal.as_slice(), gnark_manifest_lower.as_slice()]
+    {
+      let err = validate_manifest_format(legacy).unwrap_err();
+      assert!(
+        err.contains("retired")
+          && err.contains(LEGACY_GNARK_MANIFEST_FORMAT)
+          && err.contains(native::NATIVE_MANIFEST_FORMAT),
+        "unexpected error: {err}"
+      );
+    }
+    assert!(validate_manifest_format(br#"{"format":"unknown-v1"}"#).is_err());
+    assert!(validate_manifest_format(br#"{}"#).is_err());
+    assert!(validate_manifest_format(b"not-json").is_err());
 
     // Native auto-detect and explicit selection work under all feature sets.
-    assert_eq!(
-      select_backend(&json!({}), native_manifest).unwrap(),
-      PlonkBackend::Native
-    );
-    assert_eq!(
-      select_backend(&json!({"backend": "native"}), native_manifest).unwrap(),
-      PlonkBackend::Native
-    );
+    validate_backend(&json!({}), native_manifest).unwrap();
+    validate_backend(&json!({"backend": "native"}), native_manifest).unwrap();
 
-    // Mismatched explicit backend and manifest always fail closed.
-    assert!(
-      select_backend(&json!({"backend": "native"}), gnark_manifest_pascal)
-        .is_err()
-    );
-    assert!(
-      select_backend(&json!({"backend": "gnark"}), native_manifest).is_err()
-    );
-
-    // Gnark dispatch depends cleanly on `feature = "plonk"`.
-    #[cfg(not(feature = "plonk"))]
+    // Legacy gnark manifests and explicit `"gnark"` backend always fail closed
+    // with a clear error pointing to `ix-aiur-native-plonk-v1`.
+    for spec in
+      [json!({}), json!({"backend": "native"}), json!({"backend": "gnark"})]
     {
-      let err_auto =
-        select_backend(&json!({}), gnark_manifest_pascal).unwrap_err();
+      let err = validate_backend(&spec, gnark_manifest_pascal).unwrap_err();
       assert!(
-        err_auto.contains("--features plonk")
-          && err_auto.contains(native::NATIVE_MANIFEST_FORMAT),
-        "unexpected error: {err_auto}"
-      );
-      let err_explicit =
-        select_backend(&json!({"backend": "gnark"}), gnark_manifest_pascal)
-          .unwrap_err();
-      assert!(
-        err_explicit.contains("--features plonk")
-          && err_explicit.contains(native::NATIVE_MANIFEST_FORMAT),
-        "unexpected error: {err_explicit}"
+        err.contains("retired") && err.contains(native::NATIVE_MANIFEST_FORMAT),
+        "unexpected error for spec {spec}: {err}"
       );
     }
-    #[cfg(feature = "plonk")]
-    {
-      assert_eq!(
-        select_backend(&json!({}), gnark_manifest_pascal).unwrap(),
-        PlonkBackend::Gnark
-      );
-      assert_eq!(
-        select_backend(&json!({"backend": "gnark"}), gnark_manifest_pascal)
-          .unwrap(),
-        PlonkBackend::Gnark
-      );
-    }
+    let err = validate_backend(&json!({"backend": "gnark"}), native_manifest)
+      .unwrap_err();
+    assert!(
+      err.contains("retired") && err.contains(native::NATIVE_MANIFEST_FORMAT),
+      "unexpected error: {err}"
+    );
 
     // Native CUDA flag parsing.
     assert_eq!(parse_native_cuda(&json!({})).unwrap(), cfg!(feature = "cuda"));
@@ -1993,14 +1382,8 @@ mod tests {
       prep_dir.join("manifest.json")
     };
     let manifest_bytes = fs::read(&manifest_path).unwrap();
-    assert_eq!(
-      select_backend(&json!({}), &manifest_bytes).unwrap(),
-      PlonkBackend::Native
-    );
-    assert_eq!(
-      select_backend(&json!({"backend": "native"}), &manifest_bytes).unwrap(),
-      PlonkBackend::Native
-    );
+    validate_backend(&json!({}), &manifest_bytes).unwrap();
+    validate_backend(&json!({"backend": "native"}), &manifest_bytes).unwrap();
     let resolved = resolve_native_prepared_dir(&manifest_path).unwrap();
     assert_eq!(resolved, prep_dir);
 

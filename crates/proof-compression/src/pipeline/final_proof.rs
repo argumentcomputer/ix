@@ -1,15 +1,12 @@
 //! Shared transport and artifact checks for final proof backends.
 use super::Result;
-#[cfg(any(feature = "plonk", feature = "groth16"))]
-use super::statement;
 use serde::{Deserialize, Serialize};
-#[cfg(any(feature = "plonk", feature = "groth16"))]
-use sha2::{Digest, Sha256};
+#[cfg(all(test, feature = "plonk"))]
 use std::{fs, io::Read, path::Path};
 
 // TODO: Decide between SHA-256 and BLAKE3 for artifact/cache metadata.
-// Coordinate Rust/Go encodings and any catalog or envelope key-ID changes;
-// proof-protocol hashes have separate compatibility requirements.
+// Coordinate any catalog or envelope key-ID changes; proof-protocol hashes
+// have separate compatibility requirements.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct Artifact {
@@ -81,29 +78,6 @@ impl FinalOptions {
   }
 }
 
-/// Reconstruct the final circuit from the authenticated inner key and expected
-/// program prefix, independently of any saved final proof or witness.
-#[cfg(any(feature = "plonk", feature = "groth16"))]
-pub(super) fn description_for<C: crate::kzg::curve::KzgCurve>(
-  verifier: &Path,
-  expected: &statement::Statement,
-  setup: &super::SetupConfig,
-) -> Result<Vec<u8>> {
-  let vk = super::wrap::VerifyingKey::<C>::from_bytes(&fs::read(verifier)?)?;
-  vk.check_setup_class(setup.class())?;
-  super::wrap::final_description(&vk, &expected[..10])
-}
-
-#[cfg(any(feature = "plonk", feature = "groth16"))]
-pub(super) fn hex(bytes: &[u8]) -> String {
-  use std::fmt::Write as _;
-  let mut output = String::with_capacity(bytes.len() * 2);
-  for byte in bytes {
-    write!(output, "{byte:02x}").unwrap();
-  }
-  output
-}
-
 pub(super) fn decode_hex(text: &str) -> Result<Vec<u8>> {
   let text = text.strip_prefix("0x").unwrap_or(text);
   if !text.is_ascii() || !text.len().is_multiple_of(2) {
@@ -121,22 +95,8 @@ pub(super) fn digest(text: &str) -> Result<[u8; 32]> {
     .map_err(|_bytes| "expected a 32-byte hexadecimal digest".into())
 }
 
-#[cfg(any(feature = "plonk", feature = "groth16"))]
-pub(super) fn sha256(path: &Path) -> Result<[u8; 32]> {
-  let mut file = fs::File::open(path)?;
-  let mut hash = Sha256::new();
-  let mut buffer = vec![0; 65536];
-  loop {
-    let count = file.read(&mut buffer)?;
-    if count == 0 {
-      break;
-    }
-    hash.update(&buffer[..count]);
-  }
-  Ok(hash.finalize().into())
-}
-
-pub(super) fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>> {
+#[cfg(all(test, feature = "plonk"))]
+fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>> {
   let mut bytes = Vec::new();
   fs::File::open(path)?.take((limit + 1) as u64).read_to_end(&mut bytes)?;
   if bytes.len() > limit {
@@ -145,23 +105,11 @@ pub(super) fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>> {
   Ok(bytes)
 }
 
+#[cfg(all(test, feature = "plonk"))]
 pub(super) fn load_json<T: serde::de::DeserializeOwned>(
   path: &Path,
 ) -> Result<T> {
   Ok(serde_json::from_slice(&read_bounded(path, 1 << 20)?)?)
-}
-
-#[cfg(any(feature = "plonk", feature = "groth16"))]
-pub(super) fn claim_digest(
-  expected: &statement::Statement,
-) -> Result<[u8; 32]> {
-  let mut result = [0; 32];
-  for (chunk, value) in
-    result.as_chunks_mut::<4>().0.iter_mut().zip(&expected[10..])
-  {
-    *chunk = u32::try_from(*value)?.to_le_bytes();
-  }
-  Ok(result)
 }
 
 #[cfg(test)]

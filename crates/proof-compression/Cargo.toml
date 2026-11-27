@@ -39,10 +39,6 @@ p3-maybe-rayon = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89
 p3-symmetric = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
 p3-util = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
 
-[build-dependencies]
-bindgen = { version = "=0.72.1", optional = true }
-blake3 = { workspace = true }
-
 [dev-dependencies]
 rayon = { workspace = true }
 
@@ -57,13 +53,12 @@ optional = true
 features = ["cuda"]
 
 [features]
-plonk = ["dep:bindgen"]
-groth16 = ["dep:bindgen"]
+plonk = []
+groth16 = []
 default = ["parallel"]
 # GPU proving: multi-stark's Goldilocks backend for FRI compression and the
-# KZG kernels here, plus acceleration for the enabled gnark backends. Needs
-# the CUDA toolkit at build time and a visible GPU at runtime; CPU-only
-# builds neither compile sppark nor link CUDA.
+# KZG and PLONK kernels here. Needs the CUDA toolkit at build time and a
+# visible GPU at runtime; CPU-only builds neither compile sppark nor link CUDA.
 cuda = ["multi-stark/cuda", "dep:rayon", "dep:sppark", "dep:blst"]
 parallel = ["multi-stark/parallel", "aiur/parallel", "p3-maybe-rayon/parallel", "dep:rayon", "ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel"]
 # Shared fixed slots (`System::new_shared`), which exist only in the

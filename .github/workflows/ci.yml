@@ -39,7 +39,6 @@ jobs:
       run_lints: ${{ steps.plan.outputs.run_lints }}
       run_rust: ${{ steps.plan.outputs.run_rust }}
       run_cuda: ${{ steps.plan.outputs.run_cuda }}
-      run_gnark: ${{ steps.plan.outputs.run_gnark }}
       run_contracts: ${{ steps.plan.outputs.run_contracts }}
       run_host_build: ${{ steps.plan.outputs.run_host_build }}
       run_host_fast: ${{ steps.plan.outputs.run_host_fast }}
@@ -82,11 +81,6 @@ jobs:
               - 'rustfmt.toml'
               - '.github/valgrind.supp'
               - 'Tests/Fixtures/**'
-              - 'tools/gnark/**'
-            gnark:
-              - 'tools/gnark/**'
-              - 'crates/proof-compression/src/pipeline/wrap/outer/**'
-              - 'crates/proof-compression/verifying-keys/**'
             contracts:
               - 'contracts/**'
               - 'crates/proof-compression/verifying-keys/**'
@@ -379,7 +373,6 @@ jobs:
           F_GLOBAL: ${{ steps.filter.outputs.global }}
           F_RUST: ${{ steps.filter.outputs.rust }}
           F_CUDA: ${{ steps.filter.outputs.cuda }}
-          F_GNARK: ${{ steps.filter.outputs.gnark }}
           F_CONTRACTS: ${{ steps.filter.outputs.contracts }}
           F_HOST: ${{ steps.filter.outputs.host }}
           F_KERNEL: ${{ steps.filter.outputs.kernel }}
@@ -398,12 +391,11 @@ jobs:
           fi
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            rust=true; cuda=true; gnark=true; contracts=true; host=true; kernel=true; refinement=true; formal=true; ixcc=true; ixcc_aiur=true; kernel_bridge=true
+            rust=true; cuda=true; contracts=true; host=true; kernel=true; refinement=true; formal=true; ixcc=true; ixcc_aiur=true; kernel_bridge=true
           else
-            rust=false; cuda=false; gnark=false; contracts=false; host=false; kernel=false; refinement=false; formal=false; ixcc=false; ixcc_aiur=false; kernel_bridge=false
+            rust=false; cuda=false; contracts=false; host=false; kernel=false; refinement=false; formal=false; ixcc=false; ixcc_aiur=false; kernel_bridge=false
             [ "$F_GLOBAL" = "true" ] || [ "$F_RUST" = "true" ] && rust=true
             [ "$F_GLOBAL" = "true" ] || [ "$F_CUDA" = "true" ] && cuda=true
-            [ "$F_GLOBAL" = "true" ] || [ "$F_GNARK" = "true" ] && gnark=true
             [ "$F_GLOBAL" = "true" ] || [ "$F_CONTRACTS" = "true" ] && contracts=true
             [ "$F_GLOBAL" = "true" ] || [ "$F_HOST" = "true" ] || [ "$F_RUST" = "true" ] && host=true
             [ "$F_GLOBAL" = "true" ] || [ "$F_KERNEL" = "true" ] && kernel=true
@@ -418,7 +410,6 @@ jobs:
           run_lints=false
           run_rust=false
           run_cuda=false
-          run_gnark=false
           run_contracts=false
           run_host_build=false
           run_host_fast=false
@@ -450,7 +441,6 @@ jobs:
             run_lints=true
             [ "$rust" = "true" ] && run_rust=true
             [ "$cuda" = "true" ] && run_cuda=true
-            [ "$gnark" = "true" ] && run_gnark=true
             [ "$contracts" = "true" ] && run_contracts=true
             if [ "$host" = "true" ] || { [ "$is_draft" = "false" ] && [ "$formal" = "true" ]; }; then
               run_host_build=true
@@ -481,7 +471,6 @@ jobs:
             echo "run_lints=$run_lints"
             echo "run_rust=$run_rust"
             echo "run_cuda=$run_cuda"
-            echo "run_gnark=$run_gnark"
             echo "run_contracts=$run_contracts"
             echo "run_host_build=$run_host_build"
             echo "run_host_fast=$run_host_fast"
@@ -644,23 +633,6 @@ jobs:
         with:
           path: .lake
           key: lake-cuda-13.3.1-ubuntu26-x86-64-v4-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'rust-toolchain.toml') }}-${{ github.sha }}
-
-  gnark-test:
-    name: Go gnark verifier tests
-    needs: changes
-    if: needs.changes.outputs.run_gnark == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
-        with:
-          go-version-file: tools/gnark/go.mod
-          cache-dependency-path: tools/gnark/go.sum
-      - name: Run gnark Go tests (PLONK + Groth16)
-        working-directory: tools/gnark
-        run: go test -tags plonk,groth16 ./...
 
   contracts-test:
     name: Solidity verifier contract tests
@@ -1526,7 +1498,6 @@ jobs:
       - quick-checks
       - rust-test
       - cuda-compile
-      - gnark-test
       - contracts-test
       - host-build
       - host-test-primary
@@ -1559,8 +1530,6 @@ jobs:
           R_RUST: ${{ needs.rust-test.result }}
           E_CUDA: ${{ needs.changes.outputs.run_cuda }}
           R_CUDA: ${{ needs.cuda-compile.result }}
-          E_GNARK: ${{ needs.changes.outputs.run_gnark }}
-          R_GNARK: ${{ needs.gnark-test.result }}
           E_CONTRACTS: ${{ needs.changes.outputs.run_contracts }}
           R_CONTRACTS: ${{ needs.contracts-test.result }}
           E_HOST_BUILD: ${{ needs.changes.outputs.run_host_build }}
@@ -1616,7 +1585,6 @@ jobs:
           check_job quick-checks "$E_QUICK" "$R_QUICK"
           check_job rust-test "$E_RUST" "$R_RUST"
           check_job cuda-compile "$E_CUDA" "$R_CUDA"
-          check_job gnark-test "$E_GNARK" "$R_GNARK"
           check_job contracts-test "$E_CONTRACTS" "$R_CONTRACTS"
           check_job host-build "$E_HOST_BUILD" "$R_HOST_BUILD"
           check_job host-test-primary "$E_HOST_FAST" "$R_HOST_PRIMARY"

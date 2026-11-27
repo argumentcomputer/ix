@@ -51,7 +51,7 @@ native-executors = ["ix-prover/native"]
 # and sources generated for a CUDA build.
 formal-compiled-trace = ["cuda", "native-executors", "ix-prover/compiled-trace"]
 cuda-trace-codegen = ["cuda"]
-# Final proof systems, which link the gnark Go archive.
+# Pure-Rust final proof feature markers (Go/gnark has been retired).
 plonk = ["ix-proof-compression/plonk"]
 groth16 = ["ix-proof-compression/groth16"]
 test-ffi = []

@@ -1,7 +1,7 @@
 //! Native proving backends.
 //!
 //! Without the `cuda` feature the crate needs neither nvcc nor the CUDA
-//! toolkit. With it, the BN254 KZG kernels (plus, with `plonk`, gnark's BN254
+//! toolkit. With it, the BN254 KZG kernels (plus, with `plonk`, the BN254
 //! PLONK kernels) are linked against sppark into `libix_bn254_cuda.so`, and
 //! the BLS12-381 KZG kernels are linked into `libix_bls12_381_cuda.so`.
 //! Each library carries a private C++ runtime, unwinder and CUDA runtime and
@@ -13,8 +13,7 @@
 //! this crate must ship beside itself, as a JSON array of
 //! `{"source": <absolute path>, "path": <path relative to lib/>, "link": <bool>}`.
 //! A Rust static archive does not carry its shared-library dependencies, so a
-//! final link of one must also link each `"link": true` library. The others,
-//! ICICLE's CUDA backend plugins, are only loaded at runtime.
+//! final link of one must also link each `"link": true` library.
 
 use std::env;
 use std::ffi::OsString;
@@ -56,10 +55,6 @@ struct RuntimeArtifact {
   link: bool,
 }
 
-#[cfg(any(feature = "plonk", feature = "groth16"))]
-#[path = "build/gnark.rs"]
-mod gnark;
-
 fn main() {
   println!("cargo:rerun-if-changed=build.rs");
   for source in SOURCES {
@@ -98,9 +93,6 @@ fn main() {
       link: true,
     });
   }
-  // cgo links the PLONK entry points against the library built above.
-  #[cfg(any(feature = "plonk", feature = "groth16"))]
-  artifacts.extend(gnark::build());
   println!("cargo:rustc-env=IX_RUNTIME_ARTIFACTS={}", manifest(&artifacts));
 }
 

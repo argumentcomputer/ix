@@ -356,8 +356,6 @@ def requiredFilterCoverage : Array (String × String) := #[
   ("rustfmt.toml", "rust"),
   ("crates/stark-shrinker/Cargo.toml", "rust"),
   ("crates/stark-shrinker/Cargo.toml", "cuda"),
-  ("tools/gnark/circuit.go", "gnark"),
-  ("tools/gnark/circuit.go", "rust"),
   ("contracts/plonk/src/PlonkVerifier.sol", "contracts"),
   ("contracts/groth16/src/IxGroth16Verifier.sol", "contracts"),
   ("c/common.h", "rust"),
@@ -496,7 +494,7 @@ def run : IO UInt32 := do
         unless matchesAny kernelGlobs p do
           IO.eprintln s!"[ci-filters] MISSING from 'kernel:' filter (required trust-surface file): {p}"
           failures := failures + 1
-    -- Required non-Lean security-critical files (Go gnark, Solidity contracts, C headers)
+    -- Required non-Lean security-critical files (Solidity contracts, C headers, Cargo/Rust configs)
     for (p, filterName) in requiredFilterCoverage do
       checkedFiles := checkedFiles + 1
       match filters[filterName]? with

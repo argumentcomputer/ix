@@ -8,16 +8,16 @@
 //!        release_keys --finals IXVM_KEY_DIR AGGR_KEY_DIR RECURSIVE_VK OUT_DIR
 //!          CACHE_ROOT
 //!
-//! Writes `root-layout.ixl` and `recursive-vk.bin` to `OUT_DIR`, and with the
-//! `plonk` and `groth16` features `plonk-verifying-key.bin` and
-//! `groth16-development-verifying-key.bin`, then prints every pin of
-//! `pipeline/verifying_keys.rs`. `--finals` starts from an existing recursive
-//! key and derives only the final keys. `CACHE_ROOT` is the cache root `ix
-//! compress` reads (`~/.ix/compression/cache`): both stages' fixed
-//! preprocessing is published to its `fixed-preprocessing` (or
-//! `IX_KZG_FIXED_CACHE`) and the PLONK circuit and keys to its `plonk`, where
-//! a later compression finds them. The Groth16 key comes from a fresh
-//! development setup, so it differs on every run.
+//! Writes `root-layout.ixl` and `recursive-vk.bin` to `OUT_DIR`, then prints
+//! every pin of `pipeline/verifying_keys.rs`. With `--features plonk` or
+//! `--features groth16`, also prints `FINAL_SCHEMA_SHA256` (legacy Go/gnark
+//! final key derivation has been retired in favor of
+//! `aiur_backend::plonk::native` and `aiur_backend::groth16`). `--finals`
+//! starts from an existing recursive key and prints only the final schema pin.
+//! `CACHE_ROOT` is the cache root `ix compress` reads
+//! (`~/.ix/compression/cache`): both stages' fixed preprocessing is published
+//! to its `fixed-preprocessing` (or `IX_KZG_FIXED_CACHE`), where a later
+//! compression finds them.
 use ix_proof_compression::pipeline::{
   CompressConfig, FinalOptions, FixedRoot, backend_prefix, derive_release,
 };
@@ -85,53 +85,23 @@ fn main() -> Result<()> {
   };
   println!("RECURSIVE_VK_BLAKE3 = {}", blake3::hash(&recursive_vk).to_hex());
   #[cfg(any(feature = "plonk", feature = "groth16"))]
-  finals(&recursive_vk, &prefix, &config, out)?;
+  finals(&recursive_vk, &prefix, out)?;
   #[cfg(not(any(feature = "plonk", feature = "groth16")))]
-  eprintln!("built without plonk or groth16: no final keys derived");
+  eprintln!("built without plonk or groth16: no final schema derived");
   Ok(())
 }
 
 #[cfg(any(feature = "plonk", feature = "groth16"))]
-fn finals(
-  recursive_vk: &[u8],
-  prefix: &[u64; 10],
-  config: &CompressConfig,
-  out: &Path,
-) -> Result<()> {
+fn finals(recursive_vk: &[u8], prefix: &[u64; 10], out: &Path) -> Result<()> {
   use sha2::{Digest, Sha256};
   let schema =
     ix_proof_compression::pipeline::final_schema(recursive_vk, prefix)?;
+  let schema_path = out.join("final-schema.json");
+  fs::write(&schema_path, &schema)?;
   println!("FINAL_SCHEMA_SHA256 = {}", hex(&Sha256::digest(&schema)));
-  #[cfg(feature = "plonk")]
-  {
-    let start = Instant::now();
-    let key = ix_proof_compression::pipeline::plonk::derive_verifying_key(
-      recursive_vk,
-      prefix,
-      &config.setup,
-      &config.plonk_cache,
-    )?;
-    eprintln!("PLONK key derived in {:?}", start.elapsed());
-    fs::write(out.join("plonk-verifying-key.bin"), &key)?;
-    println!("PLONK_VK_SHA256 = {}", hex(&Sha256::digest(&key)));
-  }
-  #[cfg(feature = "groth16")]
-  {
-    let start = Instant::now();
-    let schema_path = out.join("final-schema.json");
-    fs::write(&schema_path, &schema)?;
-    let dir = out.join("groth16");
-    ix_proof_compression::pipeline::groth16::compile(&schema_path, &dir)?;
-    ix_proof_compression::pipeline::groth16::setup_development(&dir)?;
-    eprintln!("Groth16 development key set up in {:?}", start.elapsed());
-    let key = fs::read(dir.join("verifying-key.bin"))?;
-    fs::write(out.join("groth16-development-verifying-key.bin"), &key)?;
-    println!("GROTH16_VK_SHA256 = {}", hex(&Sha256::digest(&key)));
-    println!(
-      "GROTH16_CIRCUIT_SHA256 = {}",
-      hex(&Sha256::digest(fs::read(dir.join("circuit.bin"))?))
-    );
-  }
-  let _ = config;
+  eprintln!(
+    "legacy Go/gnark final key derivation has been retired; use \
+     aiur_backend::plonk::native or aiur_backend::groth16 for final keys"
+  );
   Ok(())
 }

@@ -1,6 +1,7 @@
 //! The terminal PLONK circuit: the Lean-checked constraint system
-//! (`plonk_export`, `ix-aiur-scs-v1`) compiled by gnark ([`gnark`]), and the
-//! witness of its input wires ([`scs`]).
+//! (`plonk_export`, `ix-aiur-scs-v1`) proved by the pure-Rust (+ optional
+//! Ix-CUDA) native backend ([`native`]), and the witness of its input wires
+//! ([`scs`]).
 
 use super::Bn254;
 use crate::kzg::Scalar;
@@ -9,8 +10,6 @@ use p3_matrix::Matrix;
 use p3_matrix::dense::RowMajorMatrix;
 use serde::Serialize;
 
-#[cfg(feature = "plonk")]
-pub mod gnark;
 pub mod native;
 pub mod scs;
 
@@ -39,7 +38,7 @@ fn put_scalar(out: &mut Vec<u8>, value: Scalar) {
   }
 }
 
-/// The terminal's pairing configuration: gnark's `PairingCheck` of the two
+/// The terminal's pairing configuration: external pairing check of the two
 /// private output points against these G2 anchors.
 #[derive(Clone, Debug, Serialize)]
 pub struct Pairing {

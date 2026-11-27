@@ -1,17 +1,16 @@
 //! Explicitly pinned, portable verifiers for locally generated final keys.
+//!
+//! Legacy Go/gnark final verification has been retired; this module validates
+//! bundle pins, formats, tags, and key hashes before returning a crisp pure-Rust
+//! retirement error pointing to `aiur_backend::plonk::native` or
+//! `aiur_backend::groth16`.
+
 use super::final_proof::{decode_hex, digest};
 use super::{FinalSystem, Result, SetupClass};
 use crate::kzg::curve::{Bls12381, Bn254, Curve, KzgCurve};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-#[cfg(any(feature = "plonk", feature = "groth16"))]
-use super::{SetupConfig, final_proof::hex, statement, storage};
-#[cfg(any(feature = "plonk", feature = "groth16"))]
-use std::{fs, path::Path};
-
-#[cfg(any(feature = "plonk", feature = "groth16"))]
-pub(super) const FILE: &str = "development-verifier.json";
 const FORMAT: &str = "ix-development-verifier-v1";
 const MAX_BYTES: usize = 4 << 20;
 
@@ -23,7 +22,7 @@ fn default_bn254() -> String {
 /// embedded key identifier is never sufficient to authorize another circuit.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(super) struct Verifier {
+struct Verifier {
   format: String,
   #[serde(default = "default_bn254")]
   curve: String,
@@ -38,34 +37,6 @@ pub(super) struct Verifier {
 }
 
 impl Verifier {
-  #[cfg(any(feature = "plonk", feature = "groth16"))]
-  #[allow(clippy::too_many_arguments)]
-  pub(super) fn new_for(
-    curve: Curve,
-    system: FinalSystem,
-    inner_vk: &Path,
-    schema: &[u8],
-    expected: &statement::Statement,
-    inner_setup: &SetupConfig,
-    key: &[u8],
-    anchors: Option<&[u8]>,
-  ) -> Result<Self> {
-    let value = Self {
-      format: FORMAT.into(),
-      curve: curve.as_str().into(),
-      system,
-      inner_setup: inner_setup.class().label().into(),
-      inner_vk_blake3: blake3::hash(&fs::read(inner_vk)?).to_hex().to_string(),
-      schema_sha256: hex(&Sha256::digest(schema)),
-      statement_prefix: expected[..10].try_into()?,
-      verifying_key_sha256: hex(&Sha256::digest(key)),
-      verifying_key: hex(key),
-      plonk_srs_anchors: anchors.map(hex),
-    };
-    value.validate()?;
-    Ok(value)
-  }
-
   fn validate(&self) -> Result<Curve> {
     let curve = Curve::parse(&self.curve)?;
     if self.format != FORMAT
@@ -98,45 +69,13 @@ impl Verifier {
     }
     Ok(curve)
   }
-
-  #[cfg(any(feature = "plonk", feature = "groth16"))]
-  pub(super) fn write(&self, dir: &Path) -> Result<()> {
-    self.validate()?;
-    let bytes = serde_json::to_vec_pretty(self)?;
-    let pin = blake3::hash(&bytes).to_hex().to_string();
-    storage::write_atomic(&dir.join(FILE), &bytes)?;
-    storage::write_atomic(
-      &dir.join("development-verifier.blake3"),
-      format!("{pin}\n").as_bytes(),
-    )?;
-    eprintln!(
-      "development verifier: {} (BLAKE3 {pin})",
-      dir.join(FILE).display()
-    );
-    Ok(())
-  }
-
-  #[cfg(any(feature = "plonk", feature = "groth16"))]
-  pub(super) fn check_saved(&self, dir: &Path) -> Result<()> {
-    let bytes = super::final_proof::read_bounded(&dir.join(FILE), MAX_BYTES)?;
-    let saved: Self = serde_json::from_slice(&bytes)?;
-    saved.validate()?;
-    if saved != *self {
-      return Err("saved development verifier differs from the prepared circuit and setup".into());
-    }
-    let pin = fs::read_to_string(dir.join("development-verifier.blake3"))?;
-    if digest(pin.trim())? != *blake3::hash(&bytes).as_bytes() {
-      return Err("saved development verifier pin differs".into());
-    }
-    Ok(())
-  }
 }
 
 /// Verify a final proof under an independently pinned development verifier.
 /// The pin must be supplied by the caller, not read from the proof or bundle.
 pub fn verify_with_development_verifier(
   proof: &[u8],
-  claim: &[u8],
+  _claim: &[u8],
   bundle: &[u8],
   trusted_digest: &[u8; 32],
   allow_development: bool,
@@ -174,49 +113,13 @@ pub fn verify_with_development_verifier(
   if packet.get(..32) != Some(key_hash.as_slice()) {
     return Err("proof key differs from development verifier".into());
   }
-  #[cfg(any(feature = "plonk", feature = "groth16"))]
-  let key = decode_hex(&verifier.verifying_key)?;
-  #[cfg(any(feature = "plonk", feature = "groth16"))]
-  let claim_hash = blake3::hash(claim);
-  #[cfg(not(any(feature = "plonk", feature = "groth16")))]
-  let _ = claim;
-  let checked: Result<()> = match verifier.system {
-    #[cfg(feature = "plonk")]
-    FinalSystem::Plonk => super::gnark::verify_for(
-      curve,
-      &key,
-      &key_hash,
-      &packet[32..],
-      claim_hash.as_bytes(),
-      &decode_hex(
-        verifier
-          .plonk_srs_anchors
-          .as_deref()
-          .ok_or("missing PLONK setup anchors")?,
-      )?,
-    ),
-    #[cfg(not(feature = "plonk"))]
-    FinalSystem::Plonk => {
-      Err("this ix was built without PLONK; rebuild with IX_PLONK=1".into())
-    },
-    #[cfg(feature = "groth16")]
-    FinalSystem::Groth16 => super::gnark::verify_groth16_for(
-      curve,
-      &key,
-      &key_hash,
-      &packet[32..],
-      claim_hash.as_bytes(),
-    ),
-    #[cfg(not(feature = "groth16"))]
-    FinalSystem::Groth16 => {
-      Err("this ix was built without Groth16; rebuild with IX_GROTH16=1".into())
-    },
+  match verifier.system {
+    FinalSystem::Plonk => Err(super::plonk::retired_error()),
+    FinalSystem::Groth16 => Err(super::groth16::retired_error()),
     FinalSystem::None => {
       Err("development verifier has no final proof system".into())
     },
-  };
-  checked?;
-  Ok(SetupClass::Development)
+  }
 }
 
 #[cfg(test)]
@@ -236,129 +139,37 @@ mod tests {
     assert!(error.to_string().contains("independent pin"));
   }
 
-  #[cfg(any(feature = "plonk", feature = "groth16"))]
-  fn fixture_bundle(
-    system: FinalSystem,
-    key: &[u8],
-    anchors: Option<String>,
-  ) -> Verifier {
-    let schema: serde_json::Value = serde_json::from_slice(include_bytes!(
-      "../../../../tools/gnark/testdata/bn254/vk.json"
-    ))
-    .unwrap();
-    Verifier {
+  #[test]
+  fn valid_bundle_reports_retirement_after_pin_and_key_checks() -> Result<()> {
+    let key = b"sample-vk";
+    let key_hash: [u8; 32] = Sha256::digest(key).into();
+    let hex_bytes =
+      |bs: &[u8]| -> String { bs.iter().map(|b| format!("{b:02x}")).collect() };
+    let verifier = Verifier {
       format: FORMAT.into(),
       curve: Bn254::NAME.into(),
-      system,
-      inner_setup: "ignition".into(),
+      system: FinalSystem::Groth16,
+      inner_setup: "development".into(),
       inner_vk_blake3: "00".repeat(32),
-      schema_sha256: hex(&Sha256::digest(include_bytes!(
-        "../../../../tools/gnark/testdata/bn254/vk.json"
-      ))),
-      statement_prefix: serde_json::from_value(schema["prefix"].clone())
-        .unwrap(),
-      verifying_key_sha256: hex(&Sha256::digest(key)),
-      verifying_key: hex(key),
-      plonk_srs_anchors: anchors,
-    }
-  }
-
-  #[cfg(any(feature = "plonk", feature = "groth16"))]
-  fn check_fixture(verifier: Verifier, tag: &[u8], proof: &[u8]) -> Result<()> {
-    let mut envelope = tag.to_vec();
-    envelope.extend(digest(&verifier.verifying_key_sha256)?);
-    envelope.extend(proof);
+      schema_sha256: "11".repeat(32),
+      statement_prefix: [0; 10],
+      verifying_key_sha256: hex_bytes(&key_hash),
+      verifying_key: hex_bytes(key),
+      plonk_srs_anchors: None,
+    };
     let bytes = serde_json::to_vec(&verifier)?;
     let pin = *blake3::hash(&bytes).as_bytes();
-    let claim = include_bytes!("../../tests/fixtures/init-fri/claim.bin");
-    assert_eq!(
-      verify_with_development_verifier(&envelope, claim, &bytes, &pin, true)?,
-      SetupClass::Development
-    );
+    let mut envelope = super::super::groth16::PROOF_TAG.to_vec();
+    envelope.extend(key_hash);
+    envelope.extend([0u8; 196]);
+    let err =
+      verify_with_development_verifier(&envelope, b"claim", &bytes, &pin, true)
+        .unwrap_err()
+        .to_string();
     assert!(
-      verify_with_development_verifier(&envelope, claim, &bytes, &pin, false)
-        .is_err()
-    );
-    assert!(
-      verify_with_development_verifier(
-        &envelope,
-        b"another claim",
-        &bytes,
-        &pin,
-        true
-      )
-      .is_err()
-    );
-    let mut wrong_key = envelope.clone();
-    wrong_key[8] ^= 1;
-    assert!(
-      verify_with_development_verifier(&wrong_key, claim, &bytes, &pin, true)
-        .is_err()
-    );
-    let mut wrong_system = envelope.clone();
-    wrong_system[7] ^= 1;
-    assert!(
-      verify_with_development_verifier(
-        &wrong_system,
-        claim,
-        &bytes,
-        &pin,
-        true
-      )
-      .is_err()
-    );
-    let mut corrupted = envelope.clone();
-    *corrupted.last_mut().unwrap() ^= 1;
-    assert!(
-      verify_with_development_verifier(&corrupted, claim, &bytes, &pin, true)
-        .is_err()
-    );
-    assert!(super::super::verify(&envelope, claim, true).is_err());
-    let mut tampered = verifier;
-    tampered.statement_prefix[0] ^= 1;
-    assert!(
-      verify_with_development_verifier(
-        &envelope,
-        claim,
-        &serde_json::to_vec(&tampered)?,
-        &pin,
-        true
-      )
-      .is_err()
+      err.contains("retired") && err.contains("aiur_backend::groth16"),
+      "{err}"
     );
     Ok(())
-  }
-
-  #[test]
-  #[cfg(feature = "groth16")]
-  fn pinned_groth16_fixture_checks_claim_and_rejects_default_trust()
-  -> Result<()> {
-    check_fixture(
-      fixture_bundle(
-        FinalSystem::Groth16,
-        include_bytes!("../../tests/fixtures/groth16/verifying-key.bin"),
-        None,
-      ),
-      super::super::groth16::PROOF_TAG,
-      include_bytes!("../../tests/fixtures/groth16/proof.bin"),
-    )
-  }
-
-  #[test]
-  #[cfg(feature = "plonk")]
-  fn pinned_plonk_fixture_checks_claim_and_rejects_default_trust() -> Result<()>
-  {
-    let provenance: serde_json::Value = serde_json::from_slice(
-      include_bytes!("../../tests/fixtures/plonk/provenance.json"),
-    )?;
-    check_fixture(
-      fixture_bundle(
-        FinalSystem::Plonk,
-        include_bytes!("../../tests/fixtures/plonk/verifying-key.bin"),
-        Some(provenance["anchors"].as_str().unwrap().to_string()),
-      ),
-      super::super::plonk::PROOF_TAG,
-      include_bytes!("../../tests/fixtures/plonk/proof.bin"),
-    )
   }
 }

@@ -192,8 +192,8 @@ def isRustBuildInput (path : FilePath) : Bool :=
      | _ => false)
 
 /-- Input trace for `buildRustStatic`: Rust sources, manifests, CUDA/C sources,
-embedded fixtures, optional gnark sources, and build-affecting environment
-variables. When none of these change, Lake skips invoking Cargo altogether. -/
+embedded fixtures, and build-affecting environment variables. When none of these
+change, Lake skips invoking Cargo altogether. -/
 def rustInputDeps (pkg : Package) (features : Array String) : FetchM (Job Unit) := do
   -- Sandboxed Nix builds omit Rust sources and symlink Crane's prebuilt
   -- `target/release/libix_ffi.a`; trace the prebuilt archive directly.
@@ -209,15 +209,7 @@ def rustInputDeps (pkg : Package) (features : Array String) : FetchM (Job Unit) 
   if ← (pkg.dir / ".cargo" / "config.toml").pathExists then
     manifestJobs := manifestJobs.push (← inputTextFile (pkg.dir / ".cargo" / "config.toml"))
   let manifests := Job.collectArray manifestJobs
-  let mut deps := crates.zipWith (fun _ _ => ()) manifests
-  if (features.contains "plonk" || features.contains "groth16") &&
-      (← (pkg.dir / "tools" / "gnark").pathExists) then
-    let gnark ← inputDir (pkg.dir / "tools" / "gnark") false fun path =>
-      path.fileName == some "go.mod" || path.fileName == some "go.sum" ||
-      match path.extension with
-      | some "go" | some "h" | some "json" | some "bin" => true
-      | _ => false
-    deps := deps.zipWith (fun _ _ => ()) gnark
+  let deps := crates.zipWith (fun _ _ => ()) manifests
   let envVars := #["RUSTFLAGS", "CARGO_BUILD_RUSTFLAGS", "MULTI_STARK_CUDA_ARCHS",
     "LEAN_SYSROOT", "LIBCLANG_PATH", "CLANG_PATH", "IX_CUDA", "IX_NO_PAR",
     "IX_PLONK", "IX_GROTH16", "IX_FORMAL_COMPILED_TRACE"]

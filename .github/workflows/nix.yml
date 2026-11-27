@@ -62,7 +62,6 @@ jobs:
               - 'Aiur/Aiur/Ixon/**'
               - 'IxVM/IxVM/Fixture.lean'
               - 'crates/**'
-              - 'tools/gnark/**'
               - 'Tests/Fixtures/ixon/**'
               - 'Tests/Fixtures/host-admission-v1/**'
               - 'Tests/Fixtures/role-binding-v2/**'

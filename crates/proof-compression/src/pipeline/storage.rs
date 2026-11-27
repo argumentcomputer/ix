@@ -100,9 +100,9 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
 }
 
 /// Publish a complete cache directory without exposing partially prepared
-/// keys. Concurrent writers retain the first complete directory, including its
-/// randomly generated Groth16 key, instead of replacing it with another key.
-#[cfg(feature = "groth16")]
+/// keys. Concurrent writers retain the first complete directory instead of
+/// replacing it with another key.
+#[cfg(all(test, feature = "groth16"))]
 pub(crate) fn prepare_cached_directory(
   path: &Path,
   prepare: impl FnOnce(&Path) -> Result<()>,
