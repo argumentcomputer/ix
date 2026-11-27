@@ -20,6 +20,7 @@ import IxCCAiur.TypedLower
 import IxCCAiur.TypedWorld
 import IxCCAiur.TypedGadgets
 import IxCCAiur.Blake3Spec
+import IxCCAiur.Blake3KeyedSpec
 import IxCCAiur.InlineFuseProof
 import IxCCAiur.TypedBackward
 import IxCCAiur.TypedClaim
@@ -31,6 +32,7 @@ import IxCCAiur.FieldLower
 import IxCCAiur.FieldLowerProof
 import IxCCAiur.WitnessIO
 import IxCCAiur.CompressionIntrinsics
+import IxCCAiur.CompressionIntrinsicsProof
 import IxCCAiur.CompiledCert
 import IxCCAiur.Driver
 import IxCCAiur.Audit

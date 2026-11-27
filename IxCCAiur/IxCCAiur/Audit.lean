@@ -7,6 +7,8 @@ import IxCCAiur.Roots
 import IxCCAiur.TypedClaim
 import IxCCAiur.WitnessIO
 import IxCCAiur.CompressionIntrinsics
+import IxCCAiur.Blake3KeyedSpec
+import IxCCAiur.CompressionIntrinsicsProof
 
 /-! # Direct `IxCC Fir → Formal Aiur` Certified Compiler Audit Surface
 
