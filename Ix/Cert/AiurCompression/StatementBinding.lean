@@ -4,36 +4,30 @@ import Ix.Cert.Compression.Foreign
 import Ix.Cert.Compression.NativeField
 import Ix.Cert.Compression.OuterRelation
 import Ix.Cert.Compression.Bls12381.Field
-import Ix.Cert.Compression.Bls12381.EndToEnd
-import Ix.Cert.Compression.Security128Audit
 
-/-! # Statement-Digest Propagation, `PackedPolicy` (`IXAUKG01`), and Stage Manifest Binding
+/-! # Statement-Digest Propagation, `StatementPolicy`, `PackedPolicy` (`IXAUKG01`), and Manifest Binding
 
-Formalizes the exact binary codecs, domain separators, statement-digest propagation,
-`PackedPolicy` (`IXAUKG01`) key/anchor pinning, and `ix-aiur-stages-v1` manifest binding
-connecting all stages of the Lean-compiled Aiur compression pipeline:
+Formalizes the exact binary codecs, domain separators, single- and two-layer statement-digest
+propagation (`StatementPolicy`), `PackedPolicy` (`IXAUKG01`) key/anchor pinning, and
+`ix-aiur-stages-v1` manifest binding for the Lean-compiled L3 BN254 Aiur compression pipeline:
 
-`ix_aggr` root `(rootKeyBytes, rootClaimsBytes)` →
-`CompressWrap::verify_root([0;8], stmtWords)` →
-`CompressGL::verify_root([0;8], stmtWords)` →
-`CompressNarrowFixed::step_v1(policyDigest, 1, stmtWords)` →
-`CompressFinalNarrow::verify_accumulator_v1(stmtLow, stmtHigh)` →
-outer PLONK/Groth16 public inputs.
+- **Deployed two-layer `--aiur-stages` policy (`StatementPolicy.twoLayerWrap wp`):**
+  1. `ix_aggr` root `(rootKeyBytes, rootClaimsBytes)` →
+     `S_root = H("ix/compress-wrap/v1\0" ‖ H(rootKey) ‖ H(rootClaims))` (`CompressWrap`);
+  2. `WrapPolicy::claims_for` / `WrapPolicy::statement_for` (`compress_gl.rs:550-568`) and
+     `IxL3PlonkVerifier.sol` / `l3_verifier.rs` →
+     `S_gl = H("ix/compress-wrap/v1\0" ‖ wp.wrapKeyDigest ‖ H(claims_bytes([[prefix0, prefix1, 0×8, S_root]])))`
+     (`CompressGL`);
+  3. `CompressNarrowFixed::step_v1(policyDigest, 1, S_gl)` →
+     `CompressFinalNarrow::verify_accumulator_v1(stmtLow, stmtHigh)` →
+     outer `ix-aiur-scs-v1` native Rust PLONK (`aiur_backend::plonk::native` /
+     `IxL3PlonkVerifier.sol`) public inputs `(stmtLow, stmtHigh)`.
+- **Single-layer direct fixed-wrapper policy (`StatementPolicy.singleLayerDirect`):**
+  `CompressGLFixed` / direct wrapper publishes `S_gl = S_root` directly to
+  `CompressNarrowFixed` → `CompressFinalNarrow` → outer PLONK.
 
-Key proved guarantees:
-1. Exact injectivity of `"ix/compress-wrap/v1\0"` preimage encoding, 8-word little-endian
-   `u32` packing (`Blake3::pack_digest`), and 2×128-bit terminal limb packing
-   (`CompressFinalNarrow::statement`), with zero modular wrap-around in both `BN254Fr`
-   and `BLS12381Fr`.
-2. Zero ambient wrap-around for emulated Goldilocks arithmetic over both `BN254Fr`
-   and `BLS12381Fr`.
-3. Exact 208-byte `IXAUKG01` `PackedPolicy` injectivity and BLAKE3 digest binding (with
-   explicit collision escape).
-4. `ix-aiur-stages-v1` manifest pinning requiring at least one digest pin per setup
-   product and binding root key, GL key, narrow key, policy digest, and 128-byte pairing
-   anchors end-to-end.
-5. `AiurCompression128Ok` security profile pairing `v6` 128-bit post-quantum Multi-STARK (`Fp^3`,
-   64-byte RFC 7693 `BLAKE2b-512`) with 128-bit-class BLS12-381 (`PairingCurve128Ok`).
+Also retains standalone BLS12-381 arithmetic/embedding lemmas (`limbs_embed_bls12381_injective`,
+`goldilocks_emulation_no_wrap_bls12381`, `statementChain_unique_bls12381_or_collision`).
 
 Zero `sorry`, zero custom `axiom`, zero `native_decide`, zero `bv_decide`.
 -/
@@ -44,10 +38,8 @@ open Ix.Cert.Compression.Foreign
 open Ix.Cert.Compression.NativeField
 open Ix.Cert.Compression.OuterRelation
 open Ix.Cert.Compression.Bls12381.Field
-open Ix.Cert.Compression.Bls12381.EndToEnd
-open Ix.Cert.MultiStark.Security128
 
-/-! ## 1. Domain Separators & `"ix/compress-wrap/v1\0"` Preimage Binding -/
+/-! ## 1. Domain Separators, Collision Predicates & `"ix/compress-wrap/v1\0"` Preimage Binding -/
 
 /-- Exact 20-byte ASCII domain separator `"ix/compress-wrap/v1\0"` matching
 `CompressWrap::statement_bytes` (`MultiStark/MultiStark/Modules/CompressWrap.lean`) and
@@ -78,6 +70,10 @@ def compressWrapStatementDigest (keyDigest claimsDigest : List UInt8) : Vector U
 def Blake3Collision (a b : List UInt8) : Prop :=
   a ≠ b ∧ Blake3.Pure.digest a = Blake3.Pure.digest b
 
+/-- Explicit SHA-256 collision predicate on two distinct byte lists under a hash function `sha256`. -/
+def Sha256Collision (sha256 : List UInt8 → List UInt8) (a b : List UInt8) : Prop :=
+  a ≠ b ∧ sha256 a = sha256 b
+
 theorem compressWrapPreimage_length {k c : List UInt8} (hk : k.length = 32) (hc : c.length = 32) :
     (compressWrapPreimage k c).length = 84 := by
   simp [compressWrapPreimage, compressWrapDomain, hk, hc]
@@ -102,7 +98,7 @@ theorem compressWrap_statement_binds_root_or_collision {k₁ c₁ k₂ c₂ : Li
   · exact Or.inr (compressWrapPreimage_injective hk₁ hk₂ heq)
   · exact Or.inl ⟨heq, hdig⟩
 
-/-! ## 2. Little-Endian `u32` Packing, 2×`u128` Terminal Limbs & Zero-Wrap Embeddings -/
+/-! ## 2. Little-Endian `u32`/`u64` Packing, 2×`u128` Terminal Limbs & Zero-Wrap Embeddings -/
 
 /-- Pack four canonical bytes into one little-endian `u32` natural number. -/
 def u32leOf4 (b0 b1 b2 b3 : UInt8) : Nat :=
@@ -182,6 +178,75 @@ theorem packBytes32ToU32Words_injective {a b : List UInt8}
     exact hget k hk32 hdj
   · have hdj : a.getD k 0 = b.getD k 0 := by rw [show k = 4 * (k / 4) + 3 by omega]; exact h3
     exact hget k hk32 hdj
+
+/-- Little-endian 8-byte encoding of a `u64` natural number (`u64::to_le_bytes`), matching
+`stark_verifier::claims_bytes` (`crates/stark-verifier/src/lib.rs:133-143`). -/
+def encodeU64LE (n : Nat) : List UInt8 :=
+  encodeU32LE (n % 2 ^ 32) ++ encodeU32LE (n / 2 ^ 32)
+
+theorem encodeU64LE_length (n : Nat) : (encodeU64LE n).length = 8 := rfl
+
+private theorem encodeU32LE_length (n : Nat) : (encodeU32LE n).length = 4 := rfl
+
+private theorem encodeU32LE_injective {a b : Nat} (ha : a < 2 ^ 32) (hb : b < 2 ^ 32)
+    (heq : encodeU32LE a = encodeU32LE b) : a = b := by
+  unfold encodeU32LE at heq
+  simp only [List.cons.injEq, and_true] at heq
+  obtain ⟨h0, h1, h2, h3⟩ := heq
+  have c0 := congrArg UInt8.toNat h0
+  have c1 := congrArg UInt8.toNat h1
+  have c2 := congrArg UInt8.toNat h2
+  have c3 := congrArg UInt8.toNat h3
+  simp only [UInt8.toNat, UInt8.ofNat, BitVec.toNat_ofNat, Nat.reducePow] at c0 c1 c2 c3
+  omega
+
+theorem encodeU64LE_injective {a b : Nat} (ha : a < 2 ^ 64) (hb : b < 2 ^ 64)
+    (heq : encodeU64LE a = encodeU64LE b) : a = b := by
+  unfold encodeU64LE at heq
+  have ⟨hlo, hhi⟩ := List.append_inj heq (by simp [encodeU32LE_length])
+  have elo := encodeU32LE_injective (Nat.mod_lt a (by decide)) (Nat.mod_lt b (by decide)) hlo
+  have ehi := encodeU32LE_injective (by omega) (by omega) hhi
+  omega
+
+/-- Canonical `stark_verifier::claims_bytes(&[claim])` wire encoding of a single Goldilocks
+claim row (`crates/stark-verifier/src/lib.rs:133-143`):
+`1u64.to_le_bytes() ‖ (claim.len() as u64).to_le_bytes() ‖ flatMap u64::to_le_bytes claim`. -/
+def encodeSingleClaimBytes (row : List Nat) : List UInt8 :=
+  encodeU64LE 1 ++ encodeU64LE row.length ++ row.flatMap encodeU64LE
+
+private theorem flatMap_encodeU64LE_injective :
+    ∀ {xs ys : List Nat},
+      xs.length = ys.length →
+      (∀ x ∈ xs, x < 2 ^ 64) →
+      (∀ y ∈ ys, y < 2 ^ 64) →
+      xs.flatMap encodeU64LE = ys.flatMap encodeU64LE →
+      xs = ys
+  | [], [], _, _, _, _ => rfl
+  | x :: xs, y :: ys, hlen, hxs, hys, heq => by
+      simp only [List.flatMap_cons] at heq
+      have ⟨hhd, htl⟩ := List.append_inj heq (by simp [encodeU64LE_length])
+      have hxy := encodeU64LE_injective
+        (hxs x List.mem_cons_self) (hys y List.mem_cons_self) hhd
+      have hrest := flatMap_encodeU64LE_injective
+        (by simpa using hlen)
+        (fun a ha => hxs a (List.mem_cons_of_mem _ ha))
+        (fun b hb => hys b (List.mem_cons_of_mem _ hb)) htl
+      rw [hxy, hrest]
+  | [], _ :: _, hlen, _, _, _ => by simp at hlen
+  | _ :: _, [], hlen, _, _, _ => by simp at hlen
+
+/-- Strict injectivity of `encodeSingleClaimBytes` on rows whose length and words fit in `u64`. -/
+theorem encodeSingleClaimBytes_injective {r₁ r₂ : List Nat}
+    (hl₁ : r₁.length < 2 ^ 64) (hl₂ : r₂.length < 2 ^ 64)
+    (hw₁ : ∀ x ∈ r₁, x < 2 ^ 64) (hw₂ : ∀ x ∈ r₂, x < 2 ^ 64)
+    (heq : encodeSingleClaimBytes r₁ = encodeSingleClaimBytes r₂) :
+    r₁ = r₂ := by
+  unfold encodeSingleClaimBytes at heq
+  rw [List.append_assoc, List.append_assoc] at heq
+  have h1 := List.append_cancel_left heq
+  have ⟨hlenBytes, hbody⟩ := List.append_inj h1 (by simp [encodeU64LE_length])
+  have hlen : r₁.length = r₂.length := encodeU64LE_injective hl₁ hl₂ hlenBytes
+  exact flatMap_encodeU64LE_injective hlen hw₁ hw₂ hbody
 
 /-- Pack four little-endian `u32` words into one 128-bit limb (`< 2^128`), matching
 `statement_arguments` in `final_program.rs`. -/
@@ -292,8 +357,8 @@ theorem goldilocks_emulation_no_wrap_bn254 :
   ⟨Aiur.Library.Field.Goldilocks.Emulated.product_bound,
    Aiur.Library.Field.Goldilocks.Emulated.reduction_bound⟩
 
-/-- Emulated Goldilocks multiplication and reduction equations also cannot wrap in `BLS12381Fr`
-(for the BLS12-381 `CompressGL` port). -/
+/-- Emulated Goldilocks multiplication and reduction equations cannot wrap in `BLS12381Fr`
+(standalone arithmetic lemma). -/
 theorem goldilocks_emulation_no_wrap_bls12381 :
     (goldilocksP - 1) ^ 2 < bls12381FrModulus ∧
     (2 ^ 64 - 1) * goldilocksP + (goldilocksP - 1) < bls12381FrModulus := by
@@ -338,20 +403,6 @@ def PackedPolicy.encode (p : PackedPolicy) : List UInt8 :=
 /-- Canonical 32-byte BLAKE3 digest of `p.encode`. -/
 def PackedPolicy.digest (p : PackedPolicy) : Vector UInt8 32 :=
   Blake3.Pure.digest p.encode
-
-private theorem encodeU32LE_length (n : Nat) : (encodeU32LE n).length = 4 := rfl
-
-private theorem encodeU32LE_injective {a b : Nat} (ha : a < 2 ^ 32) (hb : b < 2 ^ 32)
-    (heq : encodeU32LE a = encodeU32LE b) : a = b := by
-  unfold encodeU32LE at heq
-  simp only [List.cons.injEq, and_true] at heq
-  obtain ⟨h0, h1, h2, h3⟩ := heq
-  have c0 := congrArg UInt8.toNat h0
-  have c1 := congrArg UInt8.toNat h1
-  have c2 := congrArg UInt8.toNat h2
-  have c3 := congrArg UInt8.toNat h3
-  simp only [UInt8.toNat, UInt8.ofNat, BitVec.toNat_ofNat, Nat.reducePow] at c0 c1 c2 c3
-  omega
 
 theorem PackedPolicy.encode_length {p : PackedPolicy} (hp : p.WellFormed) :
     p.encode.length = 208 := by
@@ -410,7 +461,7 @@ def ProductPin.Pinned (sha256 : List UInt8 → List UInt8) (p : ProductPin) : Pr
   (∀ h, p.blake3Pin = some h → Blake3.Pure.digest p.bytes = h) ∧
   (∀ h, p.sha256Pin = some h → sha256 p.bytes = h)
 
-/-- Full manifest state for an L3 / BLS12-381 Lean-compiled Aiur compression pipeline. -/
+/-- Full manifest state for an L3 BN254 Lean-compiled Aiur compression pipeline. -/
 structure StageManifest where
   format : String
   manifestBytes : List UInt8
@@ -476,12 +527,219 @@ theorem manifestPinned_chain_integrity {sha256 : List UInt8 → List UInt8} {m :
    hm.final_anchors_match.trans hm.outer_anchors_match.symm,
    hm.policy_binds_glKey, hm.policy_binds_narrowKey, hm.final_binds_policy⟩
 
-/-! ## 5. End-to-End Stage Statement-Digest Propagation Chain -/
+/-! ## 5. Deployed `WrapPolicy` & Parameterized `StatementPolicy` Propagation Chain -/
+
+theorem encodeSingleClaimBytes_length (row : List Nat) :
+    (encodeSingleClaimBytes row).length = 16 + 8 * row.length := by
+  unfold encodeSingleClaimBytes
+  have hfm : ∀ xs : List Nat, (xs.flatMap encodeU64LE).length = 8 * xs.length := by
+    intro xs
+    induction xs with
+    | nil => rfl
+    | cons x xs ih =>
+      simp only [List.flatMap_cons, List.length_append, encodeU64LE_length, ih, List.length_cons]
+      omega
+  simp only [List.length_append, encodeU64LE_length, hfm]
+
+/-- Exact encoding of `root_claims_bytes` from a 10-word root statement prefix and arbitrary
+`claimBytes` (`u64le(1) || u64le(18) || rootPrefix[0..10] || pack_u32_le(BLAKE3(claimBytes))[0..8]`,
+160 bytes = 20 LE u64s), matching `crates/proof-compression/src/aiur_backend/l3_verifier.rs` and
+`contracts/plonk/src/IxL3PlonkVerifier.sol`. -/
+def rootClaimsBytesOfClaim (rootPrefix : List Nat) (claimBytes : List UInt8) : List UInt8 :=
+  encodeSingleClaimBytes (rootPrefix ++ packBytes32ToU32Words (Blake3.Pure.digest claimBytes).toList)
+
+theorem rootClaimsBytesOfClaim_length {rootPrefix : List Nat} (hp : rootPrefix.length = 10)
+    (claimBytes : List UInt8) :
+    (rootClaimsBytesOfClaim rootPrefix claimBytes).length = 160 := by
+  simp [rootClaimsBytesOfClaim, encodeSingleClaimBytes_length, hp, packBytes32ToU32Words_length]
+
+/-- Equal `rootClaimsBytesOfClaim` under canonical 10-word Goldilocks prefixes imply identical
+prefixes and identical `claimBytes` up to a concrete BLAKE3 collision. -/
+theorem rootClaimsBytesOfClaim_binds_or_collision {p₁ p₂ : List Nat} {c₁ c₂ : List UInt8}
+    (hl₁ : p₁.length = 10) (hl₂ : p₂.length = 10)
+    (hu₁ : ∀ w ∈ p₁, w < goldilocksP) (hu₂ : ∀ w ∈ p₂, w < goldilocksP)
+    (heq : rootClaimsBytesOfClaim p₁ c₁ = rootClaimsBytesOfClaim p₂ c₂) :
+    Blake3Collision c₁ c₂ ∨ (p₁ = p₂ ∧ c₁ = c₂) := by
+  have hgp : goldilocksP < 2 ^ 64 := by decide
+  have h232 : 2 ^ 32 < 2 ^ 64 := by decide
+  have hlen1 : (p₁ ++ packBytes32ToU32Words (Blake3.Pure.digest c₁).toList).length < 2 ^ 64 := by
+    simp [hl₁, packBytes32ToU32Words_length]
+  have hlen2 : (p₂ ++ packBytes32ToU32Words (Blake3.Pure.digest c₂).toList).length < 2 ^ 64 := by
+    simp [hl₂, packBytes32ToU32Words_length]
+  have hw1 : ∀ x ∈ p₁ ++ packBytes32ToU32Words (Blake3.Pure.digest c₁).toList, x < 2 ^ 64 := by
+    intro x hx
+    rcases List.mem_append.mp hx with h | h
+    · exact Nat.lt_trans (hu₁ x h) hgp
+    · exact Nat.lt_trans (packBytes32ToU32Words_lt _ x h) h232
+  have hw2 : ∀ x ∈ p₂ ++ packBytes32ToU32Words (Blake3.Pure.digest c₂).toList, x < 2 ^ 64 := by
+    intro x hx
+    rcases List.mem_append.mp hx with h | h
+    · exact Nat.lt_trans (hu₂ x h) hgp
+    · exact Nat.lt_trans (packBytes32ToU32Words_lt _ x h) h232
+  have hrow := encodeSingleClaimBytes_injective hlen1 hlen2 hw1 hw2 heq
+  obtain ⟨hpEq, hwEq⟩ := List.append_inj hrow (hl₁.trans hl₂.symm)
+  have hdigList := packBytes32ToU32Words_injective (by simp) (by simp) hwEq
+  have hdig : Blake3.Pure.digest c₁ = Blake3.Pure.digest c₂ :=
+    Vector.ext fun i hi => by
+      have := congrArg (fun l => l[i]?) hdigList
+      simpa [Vector.getElem?_toList, hi] using this
+  by_cases hc : c₁ = c₂
+  · exact Or.inr ⟨hpEq, hc⟩
+  · exact Or.inl ⟨hc, hdig⟩
+
+/-- Exact Lean specification of `compress_gl::WrapPolicy` (`compress_gl.rs:518-568`):
+pins the `CompressWrap` verifying key digest `wrapKeyDigest` and the two-word Goldilocks
+claim prefix `[claimPrefix0, claimPrefix1]` (`[call_tag, callable_id]`). -/
+structure WrapPolicySpec where
+  wrapKeyDigest : Vector UInt8 32
+  claimPrefix0 : Nat
+  claimPrefix1 : Nat
+  prefix0_lt : claimPrefix0 < goldilocksP
+  prefix1_lt : claimPrefix1 < goldilocksP
+  deriving DecidableEq
+
+/-- Exact `WrapPolicy::claims_for` (`compress_gl.rs:550-558`):
+encodes the single 18-word Goldilocks wrapper claim `[prefix0, prefix1, 0×8, rootStmtWords]`
+using `stark_verifier::claims_bytes` (160 bytes = 20 LE u64s). -/
+def WrapPolicySpec.claimsBytes (wp : WrapPolicySpec) (rootStmtWords : List Nat) : List UInt8 :=
+  encodeSingleClaimBytes ([wp.claimPrefix0, wp.claimPrefix1] ++ List.replicate 8 0 ++ rootStmtWords)
+
+theorem WrapPolicySpec.claimsBytes_length (wp : WrapPolicySpec) {rootStmtWords : List Nat}
+    (hr : rootStmtWords.length = 8) :
+    (wp.claimsBytes rootStmtWords).length = 160 := by
+  simp [WrapPolicySpec.claimsBytes, encodeSingleClaimBytes_length, hr]
+
+/-- Exact `WrapPolicy::statement_for` (`compress_gl.rs:561-568`):
+computes the 32-byte `CompressGL` statement digest
+`H("ix/compress-wrap/v1\0" ‖ wp.wrapKeyDigest ‖ H(wp.claimsBytes rootStmtWords))`. -/
+def WrapPolicySpec.glStatementDigest (wp : WrapPolicySpec) (rootStmtWords : List Nat) :
+    Vector UInt8 32 :=
+  compressWrapStatementDigest wp.wrapKeyDigest.toList
+    (Blake3.Pure.digest (wp.claimsBytes rootStmtWords)).toList
+
+/-- Packed 8-word `u32` representation of `wp.glStatementDigest rootStmtWords`. -/
+def WrapPolicySpec.glStatementWords (wp : WrapPolicySpec) (rootStmtWords : List Nat) : List Nat :=
+  packBytes32ToU32Words (wp.glStatementDigest rootStmtWords).toList
+
+theorem WrapPolicySpec.claimsBytes_injective {wp₁ wp₂ : WrapPolicySpec}
+    {r₁ r₂ : List Nat} (hr₁ : r₁.length = 8) (hr₂ : r₂.length = 8)
+    (hu₁ : ∀ w ∈ r₁, w < 2 ^ 32) (hu₂ : ∀ w ∈ r₂, w < 2 ^ 32)
+    (hKey : wp₁.wrapKeyDigest = wp₂.wrapKeyDigest)
+    (heq : wp₁.claimsBytes r₁ = wp₂.claimsBytes r₂) :
+    wp₁ = wp₂ ∧ r₁ = r₂ := by
+  have hgp : goldilocksP < 2 ^ 64 := by decide
+  have h232 : 2 ^ 32 < 2 ^ 64 := by decide
+  have hlen1 : ([wp₁.claimPrefix0, wp₁.claimPrefix1] ++ List.replicate 8 0 ++ r₁).length < 2 ^ 64 := by
+    simp [hr₁]
+  have hlen2 : ([wp₂.claimPrefix0, wp₂.claimPrefix1] ++ List.replicate 8 0 ++ r₂).length < 2 ^ 64 := by
+    simp [hr₂]
+  have hw1 : ∀ x ∈ ([wp₁.claimPrefix0, wp₁.claimPrefix1] ++ List.replicate 8 0 ++ r₁), x < 2 ^ 64 := by
+    intro x hx
+    simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false, List.mem_replicate] at hx
+    rcases hx with ((rfl | rfl) | ⟨_, rfl⟩) | hmem
+    · exact Nat.lt_trans wp₁.prefix0_lt hgp
+    · exact Nat.lt_trans wp₁.prefix1_lt hgp
+    · omega
+    · exact Nat.lt_trans (hu₁ x hmem) h232
+  have hw2 : ∀ x ∈ ([wp₂.claimPrefix0, wp₂.claimPrefix1] ++ List.replicate 8 0 ++ r₂), x < 2 ^ 64 := by
+    intro x hx
+    simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false, List.mem_replicate] at hx
+    rcases hx with ((rfl | rfl) | ⟨_, rfl⟩) | hmem
+    · exact Nat.lt_trans wp₂.prefix0_lt hgp
+    · exact Nat.lt_trans wp₂.prefix1_lt hgp
+    · omega
+    · exact Nat.lt_trans (hu₂ x hmem) h232
+  have hrow := encodeSingleClaimBytes_injective hlen1 hlen2 hw1 hw2 heq
+  simp only [List.cons_append, List.nil_append, List.cons.injEq] at hrow
+  obtain ⟨hp0, hp1, htail⟩ := hrow
+  have hr : r₁ = r₂ := List.append_cancel_left htail
+  cases wp₁; cases wp₂
+  simp only at hKey hp0 hp1
+  subst hKey; subst hp0; subst hp1
+  exact ⟨rfl, hr⟩
+
+/-- Statement propagation policy connecting the root `(rootKeyPin, rootClaimsBytes)` to the
+`CompressGL` / `CompressNarrowFixed` / `CompressFinalNarrow` public statement:
+- `twoLayerWrap wp`: deployed `--aiur-stages` chain where `CompressGL` verifies `CompressWrap`
+  under `wp : WrapPolicySpec` (`WrapPolicy::statement_for`), producing a two-layer hash;
+- `singleLayerDirect`: single-layer fixed-wrapper chain (`CompressGLFixed` verifying the root
+  directly), where `CompressGL` publishes the root statement digest directly. -/
+inductive StatementPolicy where
+  | twoLayerWrap (wp : WrapPolicySpec)
+  | singleLayerDirect
+  deriving DecidableEq
+
+/-- Canonical 32-byte root statement digest `H("ix/compress-wrap/v1\0" ‖ rootKeyPin ‖ H(rootClaimsBytes))`. -/
+def rootStatementDigest (rootKeyPin : Vector UInt8 32) (rootClaimsBytes : List UInt8) :
+    Vector UInt8 32 :=
+  compressWrapStatementDigest rootKeyPin.toList (Blake3.Pure.digest rootClaimsBytes).toList
+
+/-- Packed 8-word `u32` root statement digest. -/
+def rootStatementWords (rootKeyPin : Vector UInt8 32) (rootClaimsBytes : List UInt8) : List Nat :=
+  packBytes32ToU32Words (rootStatementDigest rootKeyPin rootClaimsBytes).toList
+
+theorem rootStatementWords_length (rootKeyPin : Vector UInt8 32) (rootClaimsBytes : List UInt8) :
+    (rootStatementWords rootKeyPin rootClaimsBytes).length = 8 :=
+  packBytes32ToU32Words_length _
+
+theorem rootStatementWords_lt (rootKeyPin : Vector UInt8 32) (rootClaimsBytes : List UInt8) :
+    ∀ w ∈ rootStatementWords rootKeyPin rootClaimsBytes, w < 2 ^ 32 :=
+  packBytes32ToU32Words_lt _
+
+/-- Map the 8-word root statement digest to the 8-word `CompressGL` / `CompressNarrowFixed`
+statement digest according to `pol : StatementPolicy`. -/
+def StatementPolicy.glStatementWords : StatementPolicy → List Nat → List Nat
+  | .twoLayerWrap wp, rootWords => wp.glStatementWords rootWords
+  | .singleLayerDirect, rootWords => rootWords
+
+/-- The 8-word terminal statement digest published to `CompressGL` / `CompressNarrowFixed` /
+`CompressFinalNarrow` for `(pol, rootKeyPin, rootClaimsBytes)`. -/
+def StatementPolicy.terminalStatementWords (pol : StatementPolicy)
+    (rootKeyPin : Vector UInt8 32) (rootClaimsBytes : List UInt8) : List Nat :=
+  pol.glStatementWords (rootStatementWords rootKeyPin rootClaimsBytes)
+
+theorem StatementPolicy.terminalStatementWords_length (pol : StatementPolicy)
+    (rootKeyPin : Vector UInt8 32) (rootClaimsBytes : List UInt8) :
+    (pol.terminalStatementWords rootKeyPin rootClaimsBytes).length = 8 := by
+  cases pol <;> simp [StatementPolicy.terminalStatementWords, StatementPolicy.glStatementWords,
+    WrapPolicySpec.glStatementWords, rootStatementWords, packBytes32ToU32Words_length]
+
+theorem StatementPolicy.terminalStatementWords_lt (pol : StatementPolicy)
+    (rootKeyPin : Vector UInt8 32) (rootClaimsBytes : List UInt8) :
+    ∀ w ∈ pol.terminalStatementWords rootKeyPin rootClaimsBytes, w < 2 ^ 32 := by
+  cases pol with
+  | twoLayerWrap wp => exact packBytes32ToU32Words_lt _
+  | singleLayerDirect => exact packBytes32ToU32Words_lt _
+
+/-- The two 128-bit outer public statement limbs `(stmtLow, stmtHigh)` published to
+`CompressFinalNarrow::verify_accumulator_v1` and the `ix-aiur-scs-v1` outer PLONK circuit. -/
+def StatementPolicy.terminalLimbs (pol : StatementPolicy)
+    (rootKeyPin : Vector UInt8 32) (rootClaimsBytes : List UInt8) : Nat × Nat :=
+  packU32WordsToLimbs (pol.terminalStatementWords rootKeyPin rootClaimsBytes)
+
+theorem StatementPolicy.terminalLimbs_lt (pol : StatementPolicy)
+    (rootKeyPin : Vector UInt8 32) (rootClaimsBytes : List UInt8) :
+    (pol.terminalLimbs rootKeyPin rootClaimsBytes).1 < 2 ^ 128 ∧
+    (pol.terminalLimbs rootKeyPin rootClaimsBytes).2 < 2 ^ 128 :=
+  packU32WordsToLimbs_lt
+    (pol.terminalStatementWords_length rootKeyPin rootClaimsBytes)
+    (pol.terminalStatementWords_lt rootKeyPin rootClaimsBytes)
+
+theorem StatementPolicy.unpack_terminalLimbs (pol : StatementPolicy)
+    (rootKeyPin : Vector UInt8 32) (rootClaimsBytes : List UInt8) :
+    unpackLimbsToU32Words
+      (pol.terminalLimbs rootKeyPin rootClaimsBytes).1
+      (pol.terminalLimbs rootKeyPin rootClaimsBytes).2 =
+    pol.terminalStatementWords rootKeyPin rootClaimsBytes :=
+  unpack_pack_u32Words_roundtrip
+    (pol.terminalStatementWords_length rootKeyPin rootClaimsBytes)
+    (pol.terminalStatementWords_lt rootKeyPin rootClaimsBytes)
 
 /-- Exact statement propagation record tying the root `ix_aggr` `(rootKeyBytes, rootClaimsBytes)`
-through `CompressWrap → CompressGL → CompressNarrowFixed → CompressFinalNarrow` to the two
-128-bit terminal public limbs `(terminalLow, terminalHigh)`. -/
-structure AiurStageStatementChain (rootKeyPin : Vector UInt8 32) where
+through `CompressWrap` (when `twoLayerWrap`) → `CompressGL` → `CompressNarrowFixed` →
+`CompressFinalNarrow` to the two 128-bit terminal public limbs `(terminalLow, terminalHigh)`,
+parameterized cleanly over `pol : StatementPolicy`. -/
+structure AiurStageStatementChain (pol : StatementPolicy) (rootKeyPin : Vector UInt8 32) where
   rootKeyBytes : List UInt8
   rootClaimsBytes : List UInt8
   rootKey_pinned : Blake3.Pure.digest rootKeyBytes = rootKeyPin
@@ -490,160 +748,194 @@ structure AiurStageStatementChain (rootKeyPin : Vector UInt8 32) where
     (compressWrapStatementDigest (Blake3.Pure.digest rootKeyBytes).toList
       (Blake3.Pure.digest rootClaimsBytes).toList).toList
   glStatementWords : List Nat
-  gl_eq : glStatementWords = wrapStatementWords
+  gl_eq : glStatementWords = pol.glStatementWords wrapStatementWords
   narrowStatementWords : List Nat
   narrow_eq : narrowStatementWords = glStatementWords
   terminalLow : Nat
   terminalHigh : Nat
   terminal_eq : (terminalLow, terminalHigh) = packU32WordsToLimbs narrowStatementWords
 
-theorem AiurStageStatementChain.terminal_bounds {pin : Vector UInt8 32}
-    (c : AiurStageStatementChain pin) :
+theorem AiurStageStatementChain.narrowWords_eq {pol : StatementPolicy} {pin : Vector UInt8 32}
+    (c : AiurStageStatementChain pol pin) :
+    c.narrowStatementWords = pol.terminalStatementWords pin c.rootClaimsBytes := by
+  rw [c.narrow_eq, c.gl_eq, c.wrap_eq, c.rootKey_pinned]
+  rfl
+
+theorem AiurStageStatementChain.terminal_bounds {pol : StatementPolicy} {pin : Vector UInt8 32}
+    (c : AiurStageStatementChain pol pin) :
     c.terminalLow < 2 ^ 128 ∧ c.terminalHigh < 2 ^ 128 := by
-  have hw : c.narrowStatementWords = packBytes32ToU32Words
-      (compressWrapStatementDigest (Blake3.Pure.digest c.rootKeyBytes).toList
-        (Blake3.Pure.digest c.rootClaimsBytes).toList).toList :=
-    c.narrow_eq.trans (c.gl_eq.trans c.wrap_eq)
-  have hlen : c.narrowStatementWords.length = 8 := by
-    rw [hw]; exact packBytes32ToU32Words_length _
-  have hu32 : ∀ w ∈ c.narrowStatementWords, w < 2 ^ 32 := by
-    rw [hw]; exact packBytes32ToU32Words_lt _
-  have hlt := packU32WordsToLimbs_lt hlen hu32
-  rw [← c.terminal_eq] at hlt
+  have hlt := pol.terminalLimbs_lt pin c.rootClaimsBytes
+  have hEq : (c.terminalLow, c.terminalHigh) = pol.terminalLimbs pin c.rootClaimsBytes := by
+    rw [c.terminal_eq, c.narrowWords_eq]; rfl
+  rw [← hEq] at hlt
   exact hlt
 
-theorem AiurStageStatementChain.unpack_recovers_root_statement {pin : Vector UInt8 32}
-    (c : AiurStageStatementChain pin) :
+theorem AiurStageStatementChain.unpack_recovers_terminal_statement
+    {pol : StatementPolicy} {pin : Vector UInt8 32} (c : AiurStageStatementChain pol pin) :
     unpackLimbsToU32Words c.terminalLow c.terminalHigh =
-      packBytes32ToU32Words
-        (compressWrapStatementDigest pin.toList (Blake3.Pure.digest c.rootClaimsBytes).toList).toList := by
-  have hw : c.narrowStatementWords = packBytes32ToU32Words
-      (compressWrapStatementDigest pin.toList (Blake3.Pure.digest c.rootClaimsBytes).toList).toList := by
-    rw [c.narrow_eq, c.gl_eq, c.wrap_eq, c.rootKey_pinned]
-  have hlen : c.narrowStatementWords.length = 8 := by
-    rw [hw]; exact packBytes32ToU32Words_length _
-  have hu32 : ∀ w ∈ c.narrowStatementWords, w < 2 ^ 32 := by
-    rw [hw]; exact packBytes32ToU32Words_lt _
-  have hlow : c.terminalLow = (packU32WordsToLimbs c.narrowStatementWords).1 :=
-    congrArg Prod.fst c.terminal_eq
-  have hhigh : c.terminalHigh = (packU32WordsToLimbs c.narrowStatementWords).2 :=
-    congrArg Prod.snd c.terminal_eq
-  rw [hlow, hhigh, unpack_pack_u32Words_roundtrip hlen hu32, hw]
+      pol.terminalStatementWords pin c.rootClaimsBytes := by
+  have hEq : (c.terminalLow, c.terminalHigh) = pol.terminalLimbs pin c.rootClaimsBytes := by
+    rw [c.terminal_eq, c.narrowWords_eq]; rfl
+  have hlow : c.terminalLow = (pol.terminalLimbs pin c.rootClaimsBytes).1 := congrArg Prod.fst hEq
+  have hhigh : c.terminalHigh = (pol.terminalLimbs pin c.rootClaimsBytes).2 := congrArg Prod.snd hEq
+  rw [hlow, hhigh, pol.unpack_terminalLimbs]
 
-/-- **End-to-End Statement Uniqueness (Up to Explicit BLAKE3 Collision):**
-If two `AiurStageStatementChain`s (even under potentially different root key pins `pin₁, pin₂`)
-produce equal outer terminal limbs `(low, high)` in `Nat` (and hence in `BN254Fr` or `BLS12381Fr`),
-then EITHER a concrete BLAKE3 collision occurred (on `ix/compress-wrap/v1\0`, `rootKeyBytes`,
-or `rootClaimsBytes`) OR both chains bind the exact same `rootKeyPin`, `rootKeyBytes`, and
-`rootClaimsBytes`! -/
-theorem statementChain_unique_or_collision {pin₁ pin₂ : Vector UInt8 32}
-    (c₁ : AiurStageStatementChain pin₁) (c₂ : AiurStageStatementChain pin₂)
-    (hLow : c₁.terminalLow = c₂.terminalLow) (hHigh : c₁.terminalHigh = c₂.terminalHigh) :
+/-- Explicit finite disjunction of the exact BLAKE3 collisions that could cause two
+`AiurStageStatementChain`s (under policies `pol₁, pol₂`) to share equal terminal limbs. -/
+def StatementChainCollision {pol₁ pol₂ : StatementPolicy} {pin₁ pin₂ : Vector UInt8 32}
+    (c₁ : AiurStageStatementChain pol₁ pin₁) (c₂ : AiurStageStatementChain pol₂ pin₂) : Prop :=
+  (match pol₁, pol₂ with
+   | .twoLayerWrap wp₁, .twoLayerWrap wp₂ =>
+     Blake3Collision
+       (compressWrapPreimage wp₁.wrapKeyDigest.toList
+         (Blake3.Pure.digest (wp₁.claimsBytes (rootStatementWords pin₁ c₁.rootClaimsBytes))).toList)
+       (compressWrapPreimage wp₂.wrapKeyDigest.toList
+         (Blake3.Pure.digest (wp₂.claimsBytes (rootStatementWords pin₂ c₂.rootClaimsBytes))).toList) ∨
+     Blake3Collision
+       (wp₁.claimsBytes (rootStatementWords pin₁ c₁.rootClaimsBytes))
+       (wp₂.claimsBytes (rootStatementWords pin₂ c₂.rootClaimsBytes))
+   | .twoLayerWrap wp₁, .singleLayerDirect =>
+     Blake3Collision
+       (compressWrapPreimage wp₁.wrapKeyDigest.toList
+         (Blake3.Pure.digest (wp₁.claimsBytes (rootStatementWords pin₁ c₁.rootClaimsBytes))).toList)
+       (compressWrapPreimage pin₂.toList (Blake3.Pure.digest c₂.rootClaimsBytes).toList)
+   | .singleLayerDirect, .twoLayerWrap wp₂ =>
+     Blake3Collision
+       (compressWrapPreimage pin₁.toList (Blake3.Pure.digest c₁.rootClaimsBytes).toList)
+       (compressWrapPreimage wp₂.wrapKeyDigest.toList
+         (Blake3.Pure.digest (wp₂.claimsBytes (rootStatementWords pin₂ c₂.rootClaimsBytes))).toList)
+   | .singleLayerDirect, .singleLayerDirect => False) ∨
+  Blake3Collision
+    (compressWrapPreimage pin₁.toList (Blake3.Pure.digest c₁.rootClaimsBytes).toList)
+    (compressWrapPreimage pin₂.toList (Blake3.Pure.digest c₂.rootClaimsBytes).toList) ∨
+  Blake3Collision c₁.rootKeyBytes c₂.rootKeyBytes ∨
+  Blake3Collision c₁.rootClaimsBytes c₂.rootClaimsBytes
+
+private theorem vector32_eq_of_toList_eq {v₁ v₂ : Vector UInt8 32} (h : v₁.toList = v₂.toList) :
+    v₁ = v₂ :=
+  Vector.ext fun i hi => by
+    have := congrArg (fun l => l[i]?) h
+    simpa [Vector.getElem?_toList, hi] using this
+
+/-- Core uniqueness lemma on root statement words: equal `rootStatementWords` either produce a
+concrete BLAKE3 collision or bind the exact same `(pin, rootKeyBytes, rootClaimsBytes)`. -/
+theorem rootStatementWords_unique_or_collision {pin₁ pin₂ : Vector UInt8 32}
+    {k₁ c₁ k₂ c₂ : List UInt8}
+    (hk₁ : Blake3.Pure.digest k₁ = pin₁) (hk₂ : Blake3.Pure.digest k₂ = pin₂)
+    (hWords : rootStatementWords pin₁ c₁ = rootStatementWords pin₂ c₂) :
     Blake3Collision
-        (compressWrapPreimage pin₁.toList (Blake3.Pure.digest c₁.rootClaimsBytes).toList)
-        (compressWrapPreimage pin₂.toList (Blake3.Pure.digest c₂.rootClaimsBytes).toList) ∨
-      Blake3Collision c₁.rootKeyBytes c₂.rootKeyBytes ∨
-      Blake3Collision c₁.rootClaimsBytes c₂.rootClaimsBytes ∨
-      (pin₁ = pin₂ ∧ c₁.rootKeyBytes = c₂.rootKeyBytes ∧ c₁.rootClaimsBytes = c₂.rootClaimsBytes) := by
-  have hunpack :
-      packBytes32ToU32Words
-        (compressWrapStatementDigest pin₁.toList (Blake3.Pure.digest c₁.rootClaimsBytes).toList).toList =
-      packBytes32ToU32Words
-        (compressWrapStatementDigest pin₂.toList (Blake3.Pure.digest c₂.rootClaimsBytes).toList).toList := by
-    rw [← c₁.unpack_recovers_root_statement, ← c₂.unpack_recovers_root_statement, hLow, hHigh]
+        (compressWrapPreimage pin₁.toList (Blake3.Pure.digest c₁).toList)
+        (compressWrapPreimage pin₂.toList (Blake3.Pure.digest c₂).toList) ∨
+      Blake3Collision k₁ k₂ ∨
+      Blake3Collision c₁ c₂ ∨
+      (pin₁ = pin₂ ∧ k₁ = k₂ ∧ c₁ = c₂) := by
   have hdigList :
-      (compressWrapStatementDigest pin₁.toList (Blake3.Pure.digest c₁.rootClaimsBytes).toList).toList =
-      (compressWrapStatementDigest pin₂.toList (Blake3.Pure.digest c₂.rootClaimsBytes).toList).toList :=
-    packBytes32ToU32Words_injective (by simp) (by simp) hunpack
-  have hdig :
-      compressWrapStatementDigest pin₁.toList (Blake3.Pure.digest c₁.rootClaimsBytes).toList =
-      compressWrapStatementDigest pin₂.toList (Blake3.Pure.digest c₂.rootClaimsBytes).toList :=
-    Vector.ext fun i hi => by
-      have := congrArg (fun l => l[i]?) hdigList
-      simpa [Vector.getElem?_toList, hi] using this
-  rcases compressWrap_statement_binds_root_or_collision (by simp) (by simp) hdig with hcol | ⟨hpinList, hclList⟩
+      (rootStatementDigest pin₁ c₁).toList = (rootStatementDigest pin₂ c₂).toList :=
+    packBytes32ToU32Words_injective (by simp) (by simp) hWords
+  have hdig : rootStatementDigest pin₁ c₁ = rootStatementDigest pin₂ c₂ :=
+    vector32_eq_of_toList_eq hdigList
+  rcases compressWrap_statement_binds_root_or_collision (by simp) (by simp) hdig with
+    hcol | ⟨hpinList, hclList⟩
   · exact Or.inl hcol
-  · have hpin : pin₁ = pin₂ := Vector.ext fun i hi => by
-      have := congrArg (fun l => l[i]?) hpinList
-      simpa [Vector.getElem?_toList, hi] using this
-    have hclDig : Blake3.Pure.digest c₁.rootClaimsBytes = Blake3.Pure.digest c₂.rootClaimsBytes :=
-      Vector.ext fun i hi => by
-        have := congrArg (fun l => l[i]?) hclList
-        simpa [Vector.getElem?_toList, hi] using this
-    have hkDig : Blake3.Pure.digest c₁.rootKeyBytes = Blake3.Pure.digest c₂.rootKeyBytes :=
-      c₁.rootKey_pinned.trans (hpin.trans c₂.rootKey_pinned.symm)
-    by_cases hk : c₁.rootKeyBytes = c₂.rootKeyBytes
-    · by_cases hcl : c₁.rootClaimsBytes = c₂.rootClaimsBytes
+  · have hpin : pin₁ = pin₂ := vector32_eq_of_toList_eq hpinList
+    have hclDig : Blake3.Pure.digest c₁ = Blake3.Pure.digest c₂ := vector32_eq_of_toList_eq hclList
+    have hkDig : Blake3.Pure.digest k₁ = Blake3.Pure.digest k₂ := hk₁.trans (hpin.trans hk₂.symm)
+    by_cases hk : k₁ = k₂
+    · by_cases hcl : c₁ = c₂
       · exact Or.inr (Or.inr (Or.inr ⟨hpin, hk, hcl⟩))
       · exact Or.inr (Or.inr (Or.inl ⟨hcl, hclDig⟩))
     · exact Or.inr (Or.inl ⟨hk, hkDig⟩)
 
-/-- Same uniqueness lifted directly from `BN254Fr` terminal public inputs. -/
-theorem statementChain_unique_bn254_or_collision {pin₁ pin₂ : Vector UInt8 32}
-    (c₁ : AiurStageStatementChain pin₁) (c₂ : AiurStageStatementChain pin₂)
+/-- **End-to-End Statement Uniqueness for Both Two-Layer (`WrapPolicy`) and Single-Layer Policies:**
+If two `AiurStageStatementChain`s using the same policy family (either both `.twoLayerWrap`,
+possibly with distinct `wp₁, wp₂`, or both `.singleLayerDirect`) produce equal outer terminal
+limbs `(low, high)` in `Nat`, then EITHER a concrete BLAKE3 collision occurred (in
+`StatementChainCollision c₁ c₂`) OR both chains bind the exact same `StatementPolicy`
+(including `wp₁ = wp₂`), `rootKeyPin`, `rootKeyBytes`, and `rootClaimsBytes`! -/
+theorem statementChain_unique_or_collision {pol₁ pol₂ : StatementPolicy} {pin₁ pin₂ : Vector UInt8 32}
+    (c₁ : AiurStageStatementChain pol₁ pin₁) (c₂ : AiurStageStatementChain pol₂ pin₂)
+    (hSameKind : (pol₁ = .singleLayerDirect ↔ pol₂ = .singleLayerDirect))
+    (hLow : c₁.terminalLow = c₂.terminalLow) (hHigh : c₁.terminalHigh = c₂.terminalHigh) :
+    StatementChainCollision c₁ c₂ ∨
+      (pol₁ = pol₂ ∧ pin₁ = pin₂ ∧
+       c₁.rootKeyBytes = c₂.rootKeyBytes ∧ c₁.rootClaimsBytes = c₂.rootClaimsBytes) := by
+  have hunpack :
+      pol₁.terminalStatementWords pin₁ c₁.rootClaimsBytes =
+      pol₂.terminalStatementWords pin₂ c₂.rootClaimsBytes := by
+    rw [← c₁.unpack_recovers_terminal_statement, ← c₂.unpack_recovers_terminal_statement, hLow, hHigh]
+  cases pol₁ with
+  | singleLayerDirect =>
+    cases pol₂ with
+    | twoLayerWrap wp₂ => exact absurd (hSameKind.mp rfl) (by simp)
+    | singleLayerDirect =>
+      rcases rootStatementWords_unique_or_collision c₁.rootKey_pinned c₂.rootKey_pinned hunpack with
+        hcol | hcol | hcol | ⟨hpin, hk, hc⟩
+      · exact Or.inl (Or.inr (Or.inl hcol))
+      · exact Or.inl (Or.inr (Or.inr (Or.inl hcol)))
+      · exact Or.inl (Or.inr (Or.inr (Or.inr hcol)))
+      · exact Or.inr ⟨rfl, hpin, hk, hc⟩
+  | twoLayerWrap wp₁ =>
+    cases pol₂ with
+    | singleLayerDirect => exact absurd (hSameKind.mpr rfl) (by simp)
+    | twoLayerWrap wp₂ =>
+      have hOuterDigList :
+          (wp₁.glStatementDigest (rootStatementWords pin₁ c₁.rootClaimsBytes)).toList =
+          (wp₂.glStatementDigest (rootStatementWords pin₂ c₂.rootClaimsBytes)).toList :=
+        packBytes32ToU32Words_injective (by simp) (by simp) hunpack
+      have hOuterDig :
+          wp₁.glStatementDigest (rootStatementWords pin₁ c₁.rootClaimsBytes) =
+          wp₂.glStatementDigest (rootStatementWords pin₂ c₂.rootClaimsBytes) :=
+        vector32_eq_of_toList_eq hOuterDigList
+      rcases compressWrap_statement_binds_root_or_collision (by simp) (by simp) hOuterDig with
+        hOuterCol | ⟨hWrapKeyList, hWrapClaimsDigList⟩
+      · exact Or.inl (Or.inl (Or.inl hOuterCol))
+      · have hWrapKey : wp₁.wrapKeyDigest = wp₂.wrapKeyDigest :=
+          vector32_eq_of_toList_eq hWrapKeyList
+        have hWrapClaimsDig :
+            Blake3.Pure.digest (wp₁.claimsBytes (rootStatementWords pin₁ c₁.rootClaimsBytes)) =
+            Blake3.Pure.digest (wp₂.claimsBytes (rootStatementWords pin₂ c₂.rootClaimsBytes)) :=
+          vector32_eq_of_toList_eq hWrapClaimsDigList
+        by_cases hClaimsEq :
+            wp₁.claimsBytes (rootStatementWords pin₁ c₁.rootClaimsBytes) =
+            wp₂.claimsBytes (rootStatementWords pin₂ c₂.rootClaimsBytes)
+        · obtain ⟨hWpEq, hRootWordsEq⟩ := WrapPolicySpec.claimsBytes_injective
+            (rootStatementWords_length _ _) (rootStatementWords_length _ _)
+            (rootStatementWords_lt _ _) (rootStatementWords_lt _ _) hWrapKey hClaimsEq
+          rcases rootStatementWords_unique_or_collision c₁.rootKey_pinned c₂.rootKey_pinned hRootWordsEq with
+            hcol | hcol | hcol | ⟨hpin, hk, hc⟩
+          · exact Or.inl (Or.inr (Or.inl hcol))
+          · exact Or.inl (Or.inr (Or.inr (Or.inl hcol)))
+          · exact Or.inl (Or.inr (Or.inr (Or.inr hcol)))
+          · exact Or.inr ⟨congrArg StatementPolicy.twoLayerWrap hWpEq, hpin, hk, hc⟩
+        · exact Or.inl (Or.inl (Or.inr ⟨hClaimsEq, hWrapClaimsDig⟩))
+
+/-- Statement uniqueness lifted directly from `BN254Fr` terminal public inputs. -/
+theorem statementChain_unique_bn254_or_collision {pol₁ pol₂ : StatementPolicy}
+    {pin₁ pin₂ : Vector UInt8 32}
+    (c₁ : AiurStageStatementChain pol₁ pin₁) (c₂ : AiurStageStatementChain pol₂ pin₂)
+    (hSameKind : (pol₁ = .singleLayerDirect ↔ pol₂ = .singleLayerDirect))
     (hLow : (c₁.terminalLow : BN254Fr) = (c₂.terminalLow : BN254Fr))
     (hHigh : (c₁.terminalHigh : BN254Fr) = (c₂.terminalHigh : BN254Fr)) :
-    Blake3Collision
-        (compressWrapPreimage pin₁.toList (Blake3.Pure.digest c₁.rootClaimsBytes).toList)
-        (compressWrapPreimage pin₂.toList (Blake3.Pure.digest c₂.rootClaimsBytes).toList) ∨
-      Blake3Collision c₁.rootKeyBytes c₂.rootKeyBytes ∨
-      Blake3Collision c₁.rootClaimsBytes c₂.rootClaimsBytes ∨
-      (pin₁ = pin₂ ∧ c₁.rootKeyBytes = c₂.rootKeyBytes ∧ c₁.rootClaimsBytes = c₂.rootClaimsBytes) := by
+    StatementChainCollision c₁ c₂ ∨
+      (pol₁ = pol₂ ∧ pin₁ = pin₂ ∧
+       c₁.rootKeyBytes = c₂.rootKeyBytes ∧ c₁.rootClaimsBytes = c₂.rootClaimsBytes) := by
   have ⟨hl, hh⟩ := limbs_embed_bn254_injective c₁.terminal_bounds.1 c₁.terminal_bounds.2
     c₂.terminal_bounds.1 c₂.terminal_bounds.2 hLow hHigh
-  exact statementChain_unique_or_collision c₁ c₂ hl hh
+  exact statementChain_unique_or_collision c₁ c₂ hSameKind hl hh
 
-/-- Same uniqueness lifted directly from `BLS12381Fr` terminal public inputs. -/
-theorem statementChain_unique_bls12381_or_collision {pin₁ pin₂ : Vector UInt8 32}
-    (c₁ : AiurStageStatementChain pin₁) (c₂ : AiurStageStatementChain pin₂)
+/-- Statement uniqueness lifted directly from `BLS12381Fr` terminal public inputs
+(standalone arithmetic lemma). -/
+theorem statementChain_unique_bls12381_or_collision {pol₁ pol₂ : StatementPolicy}
+    {pin₁ pin₂ : Vector UInt8 32}
+    (c₁ : AiurStageStatementChain pol₁ pin₁) (c₂ : AiurStageStatementChain pol₂ pin₂)
+    (hSameKind : (pol₁ = .singleLayerDirect ↔ pol₂ = .singleLayerDirect))
     (hLow : (c₁.terminalLow : BLS12381Fr) = (c₂.terminalLow : BLS12381Fr))
     (hHigh : (c₁.terminalHigh : BLS12381Fr) = (c₂.terminalHigh : BLS12381Fr)) :
-    Blake3Collision
-        (compressWrapPreimage pin₁.toList (Blake3.Pure.digest c₁.rootClaimsBytes).toList)
-        (compressWrapPreimage pin₂.toList (Blake3.Pure.digest c₂.rootClaimsBytes).toList) ∨
-      Blake3Collision c₁.rootKeyBytes c₂.rootKeyBytes ∨
-      Blake3Collision c₁.rootClaimsBytes c₂.rootClaimsBytes ∨
-      (pin₁ = pin₂ ∧ c₁.rootKeyBytes = c₂.rootKeyBytes ∧ c₁.rootClaimsBytes = c₂.rootClaimsBytes) := by
+    StatementChainCollision c₁ c₂ ∨
+      (pol₁ = pol₂ ∧ pin₁ = pin₂ ∧
+       c₁.rootKeyBytes = c₂.rootKeyBytes ∧ c₁.rootClaimsBytes = c₂.rootClaimsBytes) := by
   have ⟨hl, hh⟩ := limbs_embed_bls12381_injective c₁.terminal_bounds.1 c₁.terminal_bounds.2
     c₂.terminal_bounds.1 c₂.terminal_bounds.2 hLow hHigh
-  exact statementChain_unique_or_collision c₁ c₂ hl hh
-
-/-! ## 6. 128-Bit Aiur Compression Security Profile (`v6` STARK + BLS12-381 Outer Curve) -/
-
-/-- Supported outer pairing curve targets for the Aiur compression pipeline. -/
-inductive OuterPairingCurve where
-  | bls12381
-  | bn254
-  deriving DecidableEq, Repr
-
-/-- 128-bit Aiur compression security profile:
-1. Root & wrap Multi-STARK stages satisfy `Security128Profile` (`v6`, `Fp^3`, 64-byte RFC 7693
-   `BLAKE2b-512`, 128-bit UD or Johnson FRI parameters);
-2. Outer pairing curve satisfies `PairingCurve128Ok` (`|Fq| ≥ 2^380`, `|Fr| ≥ 2^254`,
-   mandatory `G1` prime-order subgroup check when `h1 > 1`). -/
-def AiurCompression128Ok (extDeg protoVer digestBytes : Nat)
-    (starkParams : Ix.Cert.MultiStark.StarkParams) (requireUd : Bool)
-    (outerCurve : OuterPairingCurve)
-    (curveSpec : Ix.Cert.Compression.Security128.PairingCurveSpec) : Prop :=
-  Security128Profile extDeg protoVer digestBytes starkParams requireUd ∧
-  Ix.Cert.Compression.Security128.PairingCurve128Ok curveSpec ∧
-  (match outerCurve with
-   | .bls12381 => curveSpec.fqModulus = bls12381FqModulus ∧ curveSpec.frModulus = bls12381FrModulus ∧
-       curveSpec.g1Cofactor = bls12381G1Cofactor
-   | .bn254 => curveSpec.fqModulus = bn254FqModulus ∧ curveSpec.frModulus = bn254FrModulus)
-
-/-- Positive 128-bit Aiur compression profile: `v6` UD `(2, 160, 0, 20)` + `BLAKE2b-512` + BLS12-381. -/
-theorem aiurCompression128_v6_ud_bls12381_ok :
-    AiurCompression128Ok 3 6 64 v6Ud160Params true .bls12381
-      Ix.Cert.Compression.Security128.bls12381CurveSpec :=
-  ⟨Ix.Cert.Compression.Security128.stark128Blake2b512_profile_ok,
-   Ix.Cert.Compression.Security128.bls12381Plonk_profile_ok, ⟨rfl, rfl, rfl⟩⟩
-
-/-- Positive 128-bit Aiur compression profile: `v6` Johnson `(2, 128, 0, 20)` + `BLAKE2b-512` + BLS12-381. -/
-theorem aiurCompression128_v6_johnson128_bls12381_ok :
-    AiurCompression128Ok 3 6 64 v6Johnson128Params false .bls12381
-      Ix.Cert.Compression.Security128.bls12381CurveSpec :=
-  ⟨v6_positive_128_profiles.2.2,
-   Ix.Cert.Compression.Security128.bls12381Plonk_profile_ok, ⟨rfl, rfl, rfl⟩⟩
+  exact statementChain_unique_or_collision c₁ c₂ hSameKind hl hh
 
 end Ix.Cert.AiurCompression
