@@ -91,6 +91,17 @@ structure CurveParams where
   limbRadix : Nat
   g1ByteLen : Nat
   affineWords : Nat
+  /-- `1` for curves with cofactor `h1 > 1` requiring prime-order `G1` subgroup checks (BLS12-381),
+  `0` for cofactor-1 curves (BN254) and compact circuit-benchmark curves. -/
+  hasCofactor : Nat := 0
+  /-- GLV endomorphism cube root of unity `β ∈ Fq` for `[x²]P = -ψ(P)` (when `hasCofactor = 1`). -/
+  endoBeta : Nat := 0
+  /-- Unsigned BLS seed `|x|` for `[x²]P = -ψ(P)` (when `hasCofactor = 1`). -/
+  subgroupSeed : Nat := 0
+  /-- Bit length of `subgroupSeed` (when `hasCofactor = 1`). -/
+  subgroupBits : Nat := 0
+  /-- `2^(subgroupBits - 1)` (when `hasCofactor = 1`). -/
+  subgroupTopPow2 : Nat := 0
   deriving BEq, DecidableEq, Repr
 
 /-- Canonical affine `G1` point over `Fq`:
@@ -638,7 +649,12 @@ def bls12381CurveParams : CurveParams :=
     fqLimbCount := 5
     limbRadix := radix80
     g1ByteLen := 48
-    affineWords := 22 }
+    affineWords := 22
+    hasCofactor := 1
+    endoBeta := 793479390729215512621379701633421447060886740281060493010456487427281649075476305620758731620350
+    subgroupSeed := 15132376222941642752
+    subgroupBits := 64
+    subgroupTopPow2 := 9223372036854775808 }
 
 /-- Compact `< 2^56` BN254-layout curve descriptor for live `TypedLower` + `FieldLower` +
 `tiling_export2 --bn254` / `wide_export --bn254` compilation (`4` limbs, **18** affine words,
@@ -1177,6 +1193,103 @@ def g1OnCurve (c : CurveParams) (P : G1Point) : Bool :=
     else false
   else false
 
+/-- Internal Jacobian projective `G1` point `(x : y : z)` for inversion-free cofactor
+curve prime-order subgroup checks (`[x²]P = -ψ(P)`). -/
+private structure SubgroupJac where
+  x : Nat
+  y : Nat
+  z : Nat
+
+private def subgroupJacInf : SubgroupJac :=
+  { x := 1, y := 1, z := 0 }
+
+private def subgroupJacDouble (q : Nat) (R : SubgroupJac) : SubgroupJac :=
+  let a := fqMulMod q R.x R.x
+  let b := fqMulMod q R.y R.y
+  let c := fqMulMod q b b
+  let xb := fqAddMod q R.x b
+  let d0 := fqSubMod q (fqSubMod q (fqMulMod q xb xb) a) c
+  let d := fqAddMod q d0 d0
+  let e := fqAddMod q (fqAddMod q a a) a
+  let f := fqMulMod q e e
+  let d2 := fqAddMod q d d
+  let x3 := fqSubMod q f d2
+  let c2 := fqAddMod q c c
+  let c4 := fqAddMod q c2 c2
+  let c8 := fqAddMod q c4 c4
+  let y3 := fqSubMod q (fqMulMod q e (fqSubMod q d x3)) c8
+  let yz := fqMulMod q R.y R.z
+  let z3 := fqAddMod q yz yz
+  { x := x3, y := y3, z := z3 }
+
+private def subgroupJacAdd (q : Nat) (R1 R2 : SubgroupJac) : SubgroupJac :=
+  if R1.z == 0 then R2
+  else if R2.z == 0 then R1
+  else
+    let z1z1 := fqMulMod q R1.z R1.z
+    let z2z2 := fqMulMod q R2.z R2.z
+    let u1 := fqMulMod q R1.x z2z2
+    let u2 := fqMulMod q R2.x z1z1
+    let s1 := fqMulMod q R1.y (fqMulMod q R2.z z2z2)
+    let s2 := fqMulMod q R2.y (fqMulMod q R1.z z1z1)
+    let h := fqSubMod q u2 u1
+    let r := fqSubMod q s2 s1
+    if h == 0 then
+      if r == 0 then subgroupJacDouble q R1 else subgroupJacInf
+    else
+      let hh := fqMulMod q h h
+      let hhh := fqMulMod q h hh
+      let v := fqMulMod q u1 hh
+      let x3 := fqSubMod q (fqSubMod q (fqMulMod q r r) hhh) (fqAddMod q v v)
+      let y3 := fqSubMod q (fqMulMod q r (fqSubMod q v x3)) (fqMulMod q s1 hhh)
+      let z3 := fqMulMod q (fqMulMod q R1.z R2.z) h
+      { x := x3, y := y3, z := z3 }
+
+private def subgroupJacScalarMulMsb (q k : Nat) : Nat → Nat → SubgroupJac → SubgroupJac → SubgroupJac
+  | 0, _, _, acc => acc
+  | fuel + 1, bitMask, base, acc =>
+    let dbl := subgroupJacDouble q acc
+    let bit := (k / bitMask) % 2
+    if bit == 1 then
+      subgroupJacScalarMulMsb q k fuel (bitMask / 2) base (subgroupJacAdd q dbl base)
+    else
+      subgroupJacScalarMulMsb q k fuel (bitMask / 2) base dbl
+termination_by structural fuel => fuel
+
+/-- Prime-order `G1` subgroup membership check (inversion-free Bowe endomorphism criterion):
+* When `c.hasCofactor == 0` (e.g. BN254 where `h1 = 1`), every on-curve point is in `G1`.
+* When `c.hasCofactor == 1` (BLS12-381), verifies `[x²]P = -ψ(P)` in Jacobian coordinates
+  (`Z ≠ 0`, `X ≡ β·x·Z² (mod q)`, `Y ≡ (-y)·Z³ (mod q)`), rejecting every torsion point
+  outside the prime-order subgroup `G1`. -/
+@[circuit_noinline]
+def g1SubgroupCheck (c : CurveParams) (P : G1Point) : Bool :=
+  if P.isInf == 1 then true
+  else if c.hasCofactor == 0 then true
+  else
+    let q := c.fqMod
+    let pJac : SubgroupJac := { x := P.x, y := P.y, z := 1 }
+    let xP := subgroupJacScalarMulMsb q c.subgroupSeed (c.subgroupBits - 1) (c.subgroupTopPow2 / 2) pJac pJac
+    let x2P := subgroupJacScalarMulMsb q c.subgroupSeed (c.subgroupBits - 1) (c.subgroupTopPow2 / 2) xP xP
+    if x2P.z == 0 then false
+    else
+      let z2 := fqMulMod q x2P.z x2P.z
+      let z3 := fqMulMod q z2 x2P.z
+      let psiX := fqMulMod q (fqMulMod q c.endoBeta P.x) z2
+      let negY := fqMulMod q (fqNegMod q P.y) z3
+      x2P.x == psiX && x2P.y == negY
+
+/-- Full `G1` point validation: canonical coordinates, on-curve equation, and prime-order
+`G1` subgroup membership (enforcing `[x²]P = -ψ(P)` on BLS12-381). -/
+@[circuit_inline]
+def g1ValidPoint (c : CurveParams) (P : G1Point) : Bool :=
+  g1OnCurve c P && g1SubgroupCheck c P
+
+/-- Validate every `G1` point in a `G1PointList` (`g1ValidPoint`). -/
+def g1PointListValid (c : CurveParams) : G1PointList → Bool
+  | .nil => true
+  | .cons pt rest => g1ValidPoint c pt && g1PointListValid c rest
+termination_by structural pts => pts
+
 /-- Affine negation `-P = (x, -y mod fqMod)` with `-O = O`. -/
 @[circuit_inline]
 def g1Neg (c : CurveParams) (P : G1Point) : G1Point :=
@@ -1599,7 +1712,7 @@ def g1FromBytes (c : CurveParams) (bs : ByteList) : ParsePoint :=
         let y0 := fqPowMod c.fqMod rhs ((c.fqMod + 1) / 4)
         let y := if g1YSign c y0 == ySign then y0 else fqNegMod c.fqMod y0
         let pt : G1Point := { x, y, isInf := 0 }
-        if g1OnCurve c pt then
+        if g1ValidPoint c pt then
           if byteListEq (g1ToBytes c pt) bs == 1 then
             { ok := 1, point := pt, rest := .nil }
           else { ok := 0, point := g1Inf, rest := .nil }
@@ -1818,73 +1931,90 @@ def blake3Join (a b : Digest32) : Block16 :=
 
 /-- Process one BLAKE3 chunk (at most 16 blocks = 1024 bytes), stopping before its final
 block (`KzgBlake3::chunk`), returning `(rootInputWithoutRootFlag, remainingBytes)`. -/
-private def blake3ChunkAux (counterLo counterHi : UInt32) :
+private def blake3ChunkAux (domainFlag counterLo counterHi : UInt32) :
     Nat → Nat → Digest32 → ByteList → Blake3RootInput × ByteList
   | 0, _, cv, bs =>
     let (blk, len, rest) := bytesToBlock16 bs
-    ({ cv, block := blk, blockLen := UInt32.ofNat len, flags := 2 }, rest)
+    ({ cv, block := blk, blockLen := UInt32.ofNat len, flags := 2 + domainFlag }, rest)
   | rem + 1, idx, cv, bs =>
     let (blk, len, rest) := bytesToBlock16 bs
     let startFlag : UInt32 := if idx == 0 then 1 else 0
     let isLast := match rest with | .nil => true | .cons _ _ => idx == 15
     if isLast then
-      ({ cv, block := blk, blockLen := UInt32.ofNat len, flags := startFlag + 2 }, rest)
+      ({ cv, block := blk, blockLen := UInt32.ofNat len, flags := startFlag + 2 + domainFlag }, rest)
     else
-      let nextCv := blake3Compress8 cv blk counterLo counterHi (UInt32.ofNat len) startFlag
-      blake3ChunkAux counterLo counterHi rem (idx + 1) nextCv rest
+      let nextCv :=
+        blake3Compress8 cv blk counterLo counterHi (UInt32.ofNat len) (startFlag + domainFlag)
+      blake3ChunkAux domainFlag counterLo counterHi rem (idx + 1) nextCv rest
 termination_by structural rem => rem
 
 /-- Collect all chunk CVs for a multi-chunk message (`KzgBlake3::chunks`). -/
-private def blake3ChunksFuel : Nat → Nat → ByteList → Digest32List
+private def blake3ChunksFuel (initCv : Digest32) (domainFlag : UInt32) :
+    Nat → Nat → ByteList → Digest32List
   | 0, _, _ => .nil
   | fuel + 1, counter, bs =>
     let lo := UInt32.ofNat (counter % 4294967296)
     let hi := UInt32.ofNat (counter / 4294967296)
-    let (ri, rest) := blake3ChunkAux lo hi 16 0 blake3Iv bs
+    let (ri, rest) := blake3ChunkAux domainFlag lo hi 16 0 initCv bs
     let cv := blake3Compress8 ri.cv ri.block lo hi ri.blockLen ri.flags
     match rest with
     | .nil => .cons cv .nil
-    | .cons _ _ => .cons cv (blake3ChunksFuel fuel (counter + 1) rest)
+    | .cons _ _ => .cons cv (blake3ChunksFuel initCv domainFlag fuel (counter + 1) rest)
 termination_by structural fuel => fuel
 
 /-- Fold one BLAKE3 Merkle-tree layer (`KzgBlake3::next_layer`). -/
-private def blake3NextLayer : Digest32List → Digest32List
+private def blake3NextLayer (initCv : Digest32) (domainFlag : UInt32) : Digest32List → Digest32List
   | .nil => .nil
   | .cons a .nil => .cons a .nil
   | .cons a (.cons b tail) =>
-    let parentCv := blake3Compress8 blake3Iv (blake3Join a b) 0 0 64 4
-    .cons parentCv (blake3NextLayer tail)
+    let parentCv := blake3Compress8 initCv (blake3Join a b) 0 0 64 (4 + domainFlag)
+    .cons parentCv (blake3NextLayer initCv domainFlag tail)
 termination_by structural layer => layer
 
 /-- Reduce a multi-chunk CV list to its root `(left, right)` pair (`KzgBlake3::root`). -/
-private def blake3ReduceTree : Nat → Digest32List → Digest32 × Digest32
+private def blake3ReduceTree (initCv : Digest32) (domainFlag : UInt32) :
+    Nat → Digest32List → Digest32 × Digest32
   | 0, layer =>
     match layer with
     | .cons a (.cons b _) => (a, b)
-    | .cons a .nil => (a, blake3Iv)
-    | .nil => (blake3Iv, blake3Iv)
+    | .cons a .nil => (a, initCv)
+    | .nil => (initCv, initCv)
   | fuel + 1, layer =>
     match layer with
     | .cons a (.cons b .nil) => (a, b)
-    | _ => blake3ReduceTree fuel (blake3NextLayer layer)
+    | _ => blake3ReduceTree initCv domainFlag fuel (blake3NextLayer initCv domainFlag layer)
 termination_by structural fuel => fuel
 
-/-- Compute the BLAKE3 root compression input (without the `ROOT = 8` flag) for any message. -/
-def blake3Root (bs : ByteList) : Blake3RootInput :=
-  let (firstRi, rest) := blake3ChunkAux 0 0 16 0 blake3Iv bs
+/-- Compute the BLAKE3 root compression input (without the `ROOT = 8` flag) under custom
+chaining value `initCv` and domain flags `domainFlag`. -/
+def blake3RootWith (initCv : Digest32) (domainFlag : UInt32) (bs : ByteList) : Blake3RootInput :=
+  let (firstRi, rest) := blake3ChunkAux domainFlag 0 0 16 0 initCv bs
   match rest with
   | .nil => firstRi
   | .cons _ _ =>
     let firstCv := blake3Compress8 firstRi.cv firstRi.block 0 0 firstRi.blockLen firstRi.flags
     let chunkFuel := byteLen rest + 1
-    let cvs := Digest32List.cons firstCv (blake3ChunksFuel chunkFuel 1 rest)
-    let (left, right) := blake3ReduceTree 64 cvs
-    { cv := blake3Iv, block := blake3Join left right, blockLen := 64, flags := 4 }
+    let cvs := Digest32List.cons firstCv (blake3ChunksFuel initCv domainFlag chunkFuel 1 rest)
+    let (left, right) := blake3ReduceTree initCv domainFlag 64 cvs
+    { cv := initCv, block := blake3Join left right, blockLen := 64, flags := 4 + domainFlag }
+
+/-- Compute the BLAKE3 root compression input (without the `ROOT = 8` flag) for any message. -/
+def blake3Root (bs : ByteList) : Blake3RootInput :=
+  blake3RootWith blake3Iv 0 bs
+
+/-- Exact BLAKE3 32-byte hash under custom chaining value `initCv` and domain flags `domainFlag`. -/
+def blake3HashWith (initCv : Digest32) (domainFlag : UInt32) (bs : ByteList) : Digest32 :=
+  let ri := blake3RootWith initCv domainFlag bs
+  blake3Compress8 ri.cv ri.block 0 0 ri.blockLen (ri.flags + 8)
+
+/-- Exact BLAKE3 `derive_key(ctx, msg)` (`DERIVE_KEY_CONTEXT = 32`, `DERIVE_KEY_MATERIAL = 64`). -/
+def blake3DeriveKey (ctx msg : ByteList) : Digest32 :=
+  let keyCv := blake3HashWith blake3Iv 32 ctx
+  blake3HashWith keyCv 64 msg
 
 /-- Exact standard BLAKE3 32-byte hash as 8 little-endian `UInt32` words. -/
 def blake3Hash (bs : ByteList) : Digest32 :=
-  let ri := blake3Root bs
-  blake3Compress8 ri.cv ri.block 0 0 ri.blockLen (ri.flags + 8)
+  blake3HashWith blake3Iv 0 bs
 
 /-- Convert `Digest32` (`UInt32` words) to `DigestWords` (`Nat` words `< 2^32`). -/
 def digest32ToWords (d : Digest32) : DigestWords :=
@@ -2501,8 +2631,9 @@ def readPackedCircuits (c : CurveParams) (bs : ByteList) (budget : Nat) : Nat �
         { m0 := r0.val, m1 := r1.val, m2 := r2.val, m3 := r3.val
           m4 := r4.val, m5 := r5.val, m6 := r6.val, m7 := r7.val }
       let fixedZeroOk := (sh.m2 == 0) == (sh.m3 == 0)
+      let fixedHeightOk := sh.m2 == 0 || isSupportedPower sh.m2 1 c.maxLog == 1
       if 0 < sh.m6 && sh.m6 < 9 && sh.m1 < budget + 2 &&
-          sh.m7 == quotientDegreeFuel sh.m1 1 32 && fixedZeroOk then
+          sh.m7 == quotientDegreeFuel sh.m1 1 32 && fixedZeroOk && fixedHeightOk then
         let nc := readU32 r7.rest
         if nc.ok == 1 then
           let ns := readNodes c nc.rest 0 sh nc.val
@@ -2566,8 +2697,296 @@ def readPackedFixed (c : CurveParams) (bs : ByteList) (numCircuits : Nat) : Pars
     else { ok := 0, fixed := .none }
   | _ => { ok := 0, fixed := .none }
 
+def matrixShapeListLen : MatrixShapeList → Nat
+  | .nil => 0
+  | .cons _ t => matrixShapeListLen t + 1
+termination_by structural xs => xs
+
+def g1PointListLen : G1PointList → Nat
+  | .nil => 0
+  | .cons _ t => g1PointListLen t + 1
+termination_by structural xs => xs
+
+def nodeListLen : NodeList → Nat
+  | .nil => 0
+  | .cons _ t => nodeListLen t + 1
+termination_by structural ns => ns
+
+def lookupListLen : LookupList → Nat
+  | .nil => 0
+  | .cons _ t => lookupListLen t + 1
+termination_by structural ls => ls
+
+/-! ### Canonical Packed Verifying-Key Digest & Transcript Seed Binding
+
+Matches `crates/proof-compression/src/kzg/packed_shplonk/config.rs::bind_packed_system_key`,
+`crates/proof-compression/src/kzg/config.rs::with_key_digest`, and
+`multi_stark::system::compute_vk_digest::<CurveScalar<C>, CurveScalar<C>>`:
+1. `vkDigest = BLAKE3_derive_key("multi-stark/v6/vk", vkDigestPreimage(circuits))`
+2. `keyDigest = BLAKE3("ix/packed-shplonk/system-key/v1\0" ‖ vkDigest ‖ preprocessedIndices ‖ preprocessedCommit)`
+3. Canonical bound transcript seed suffix:
+   `"ix/aiur/kzg-key/v1\0" ‖ keyDigest ‖ "ix/multi-stark/packed-shplonk/v1\0"`. -/
+
+/-- Exact `"multi-stark/v6/vk"` (17 bytes, `Blake3Domain::VerifyingKey`). -/
+def v6VkDomainBytes : ByteList :=
+  .cons 109 (.cons 117 (.cons 108 (.cons 116 (.cons 105 (.cons 45
+  (.cons 115 (.cons 116 (.cons 97 (.cons 114 (.cons 107 (.cons 47
+  (.cons 118 (.cons 54 (.cons 47 (.cons 118 (.cons 107 .nil))))))))))))))))
+
+/-- Exact `"ix/packed-shplonk/system-key/v1\0"` (32 bytes, `bind_packed_system_key`). -/
+def packedSystemKeyDomainBytes : ByteList :=
+  .cons 105 (.cons 120 (.cons 47 (.cons 112 (.cons 97 (.cons 99 (.cons 107 (.cons 101 (.cons 100 (.cons 45
+  (.cons 115 (.cons 104 (.cons 112 (.cons 108 (.cons 111 (.cons 110 (.cons 107 (.cons 47
+  (.cons 115 (.cons 121 (.cons 115 (.cons 116 (.cons 101 (.cons 109 (.cons 45
+  (.cons 107 (.cons 101 (.cons 121 (.cons 47 (.cons 118 (.cons 49 (.cons 0 .nil)))))))))))))))))))))))))))))))
+
+/-- Exact `"ix/aiur/kzg-key/v1\0"` (19 bytes, `KzgConfig::with_key_digest`). -/
+def kzgKeySeedDomainBytes : ByteList :=
+  .cons 105 (.cons 120 (.cons 47 (.cons 97 (.cons 105 (.cons 117 (.cons 114 (.cons 47
+  (.cons 107 (.cons 122 (.cons 103 (.cons 45 (.cons 107 (.cons 101 (.cons 121 (.cons 47
+  (.cons 118 (.cons 49 (.cons 0 .nil))))))))))))))))))
+
+/-- Exact `"ix/multi-stark/packed-shplonk/v1\0"` (33 bytes, `PackedShplonkConfig::reseed`). -/
+def packedShplonkSeedTagBytes : ByteList :=
+  .cons 105 (.cons 120 (.cons 47 (.cons 109 (.cons 117 (.cons 108 (.cons 116 (.cons 105 (.cons 45
+  (.cons 115 (.cons 116 (.cons 97 (.cons 114 (.cons 107 (.cons 47
+  (.cons 112 (.cons 97 (.cons 99 (.cons 107 (.cons 101 (.cons 100 (.cons 45
+  (.cons 115 (.cons 104 (.cons 112 (.cons 108 (.cons 111 (.cons 110 (.cons 107 (.cons 47
+  (.cons 118 (.cons 49 (.cons 0 .nil))))))))))))))))))))))))))))))))
+
+private def natMax (a b : Nat) : Nat :=
+  if a < b then b else a
+
+private def fListGetRev (rev : FList) (len idx : Nat) : Nat :=
+  let rec go : FList → Nat → Nat
+    | .nil, _ => 0
+    | .cons x _, 0 => x
+    | .cons _ rest, k + 1 => go rest k
+  if idx < len then go rev (len - 1 - idx) else 0
+
+/-- Sweep topological node degrees matching `multi_stark::graph::Interner::degree_of`:
+`Const | Public | IsTransition => 0`, `Var | IsFirstRow | IsLastRow => 1`,
+`Add | Sub => max`, `Mul => sum`, `Neg => inner`. Returns reversed degree list & length. -/
+private def sweepNodeDegreesRev (nodes : NodeList) (revAcc : FList) (len : Nat) : FList × Nat :=
+  match nodes with
+  | .nil => (revAcc, len)
+  | .cons nd rest =>
+    let d := match nd with
+      | .const _ => 0
+      | .var _ _ _ => 1
+      | .pub _ => 0
+      | .first => 1
+      | .last => 1
+      | .transition => 0
+      | .add a b => natMax (fListGetRev revAcc len a) (fListGetRev revAcc len b)
+      | .sub a b => natMax (fListGetRev revAcc len a) (fListGetRev revAcc len b)
+      | .mul a b => fListGetRev revAcc len a + fListGetRev revAcc len b
+      | .neg a => fListGetRev revAcc len a
+    sweepNodeDegreesRev rest (.cons d revAcc) (len + 1)
+termination_by structural nodes
+
+private def maxRootDegree (degRev : FList) (len : Nat) (roots : FList) (acc : Nat) : Nat :=
+  match roots with
+  | .nil => acc
+  | .cons r rest => maxRootDegree degRev len rest (natMax acc (fListGetRev degRev len r))
+termination_by structural roots
+
+private def maxFListVal (xs : FList) (acc : Nat) : Nat :=
+  match xs with
+  | .nil => acc
+  | .cons v rest => maxFListVal rest (natMax acc v)
+termination_by structural xs
+
+private def maxLookupNodeIdAux (lks : LookupList) (acc : Nat) : Nat :=
+  match lks with
+  | .nil => acc
+  | .cons lk rest =>
+    let acc1 := natMax acc lk.multiplicity
+    let acc2 := maxFListVal lk.args acc1
+    maxLookupNodeIdAux rest acc2
+termination_by structural lks
+
+/-- Infer `graph.lookup_prefix_len` matching `multi_stark::graph::compile` (lookup nodes
+are compiled first into a contiguous prefix `[0 .. lookup_prefix_len)`). -/
+private def inferLookupPrefixLen : LookupList → Nat
+  | .nil => 0
+  | lks => maxLookupNodeIdAux lks 0 + 1
+
+private def vkU32Onto (v : Nat) (tail : ByteList) : ByteList :=
+  byteAppend (natToLeBytes 4 v) tail
+
+private def vkU64Onto (v : Nat) (tail : ByteList) : ByteList :=
+  byteAppend (natToLeBytes 8 v) tail
+
+private def vkNodeOnto (nd : Node) (tail : ByteList) : ByteList :=
+  match nd with
+  | .const v => .cons 0 (byteAppend (natToLeBytes 32 v) tail)
+  | .var src off col => .cons 1 (.cons src (.cons off (vkU32Onto col tail)))
+  | .pub idx => .cons 2 (vkU32Onto idx tail)
+  | .first => .cons 3 tail
+  | .last => .cons 4 tail
+  | .transition => .cons 5 tail
+  | .add a b => .cons 6 (vkU32Onto a (vkU32Onto b tail))
+  | .sub a b => .cons 7 (vkU32Onto a (vkU32Onto b tail))
+  | .mul a b => .cons 8 (vkU32Onto a (vkU32Onto b tail))
+  | .neg a => .cons 9 (vkU32Onto a tail)
+
+private def vkNodesOnto (ns : NodeList) (tail : ByteList) : ByteList :=
+  match ns with
+  | .nil => tail
+  | .cons nd rest => vkNodeOnto nd (vkNodesOnto rest tail)
+termination_by structural ns
+
+private def vkU32ListOnto (xs : FList) (tail : ByteList) : ByteList :=
+  match xs with
+  | .nil => tail
+  | .cons v rest => vkU32Onto v (vkU32ListOnto rest tail)
+termination_by structural xs
+
+private def vkLookupsOnto (lks : LookupList) (tail : ByteList) : ByteList :=
+  match lks with
+  | .nil => tail
+  | .cons lk rest =>
+    vkU32Onto lk.multiplicity (vkU64Onto (fListLen lk.args) (vkU32ListOnto lk.args (vkLookupsOnto rest tail)))
+termination_by structural lks
+
+private def vkCircuitOnto (circ : Circuit) (tail : ByteList) : ByteList :=
+  let (degRev, degLen) := sweepNodeDegreesRev circ.nodes .nil 0
+  let userMaxDeg := maxRootDegree degRev degLen circ.roots 0
+  let lookupPrefixLen := inferLookupPrefixLen circ.lookups
+  let s := circ.shape
+  vkU64Onto s.m4
+  (vkU64Onto s.m3
+  (vkU64Onto s.m2
+  (vkU64Onto (lookupListLen circ.lookups)
+  (vkU64Onto s.m5
+  (vkU64Onto 4
+  (vkU64Onto s.m6
+  (vkU64Onto s.m0
+  (vkU64Onto s.m1
+  (vkU64Onto lookupPrefixLen
+  (vkU32Onto userMaxDeg
+  (vkU64Onto (nodeListLen circ.nodes)
+  (vkNodesOnto circ.nodes
+  (vkU64Onto (fListLen circ.roots)
+  (vkU32ListOnto circ.roots
+  (vkU64Onto (lookupListLen circ.lookups)
+  (vkLookupsOnto circ.lookups tail))))))))))))))))
+
+private def vkCircuitsOnto (cs : CircuitList) (tail : ByteList) : ByteList :=
+  match cs with
+  | .nil => tail
+  | .cons circ rest => vkCircuitOnto circ (vkCircuitsOnto rest tail)
+termination_by structural cs
+
+/-- Canonical byte preimage for `multi_stark::system::compute_vk_digest::<CurveScalar<C>, CurveScalar<C>>`:
+`EF::D = 1`, `ExtensionModulus::Base = 0`, circuit count, and each circuit's full metadata,
+DAG nodes, roots, and lookups. -/
+def vkDigestPreimage (circuits : CircuitList) : ByteList :=
+  vkU64Onto 1 (.cons 0 (vkU64Onto (circuitListLen circuits) (vkCircuitsOnto circuits .nil)))
+
+/-- Canonical verifying-key digest under `BLAKE3_derive_key("multi-stark/v6/vk", ...)`,
+matching `multi_stark::system::compute_vk_digest::<CurveScalar<C>, CurveScalar<C>>`. -/
+def computeVkDigest (circuits : CircuitList) : Digest32 :=
+  blake3DeriveKey v6VkDomainBytes (vkDigestPreimage circuits)
+
+private def prepIndicesNoneOnto (n : Nat) (tail : ByteList) : ByteList :=
+  match n with
+  | 0 => tail
+  | n' + 1 => .cons 0 (prepIndicesNoneOnto n' tail)
+termination_by structural n
+
+private def prepIndicesSomeOnto (cnt : Nat) (cs : CircuitList) (tail : ByteList) : ByteList :=
+  match cs with
+  | .nil => tail
+  | .cons circ rest =>
+    if circ.shape.m3 != 0 then
+      .cons 1 (vkU64Onto cnt (prepIndicesSomeOnto (cnt + 1) rest tail))
+    else
+      .cons 0 (prepIndicesSomeOnto cnt rest tail)
+termination_by structural cs
+
+private def prepIndicesSharedOnto (slots : FList) (tail : ByteList) : ByteList :=
+  match slots with
+  | .nil => tail
+  | .cons slot rest =>
+    if slot == 0 then
+      .cons 0 (prepIndicesSharedOnto rest tail)
+    else
+      .cons 1 (vkU64Onto (slot - 1) (prepIndicesSharedOnto rest tail))
+termination_by structural slots
+
+private def packedCommitShapesOnto (shs : MatrixShapeList) (tail : ByteList) : ByteList :=
+  match shs with
+  | .nil => tail
+  | .cons sh rest =>
+    .cons sh.log (.cons sh.hasNext (vkU32Onto sh.width (packedCommitShapesOnto rest tail)))
+termination_by structural shs
+
+private def packedCommitPointsOnto (c : CurveParams) (pts : G1PointList) (tail : ByteList) : ByteList :=
+  match pts with
+  | .nil => tail
+  | .cons pt rest => byteAppend (g1ToBytes c pt) (packedCommitPointsOnto c rest tail)
+termination_by structural pts
+
+private def packedCommitKeyPartOnto (c : CurveParams) (comm : PackedCommitment) (tail : ByteList) : ByteList :=
+  .cons 1
+  (vkU64Onto (matrixShapeListLen comm.shapes)
+  (packedCommitShapesOnto comm.shapes
+  (vkU64Onto (g1PointListLen comm.points)
+  (packedCommitPointsOnto c comm.points tail))))
+
+/-- Canonical packed-SHPLONK system key digest matching
+`crates/proof-compression/src/kzg/packed_shplonk/config.rs::bind_packed_system_key`:
+`BLAKE3("ix/packed-shplonk/system-key/v1\0" ‖ vkDigest ‖ preprocessedIndices ‖ preprocessedCommit)`. -/
+def computePackedKeyDigest (c : CurveParams) (circuits : CircuitList) (fixed : PackedFixed) : Digest32 :=
+  let vkDigBytes := digest32ToBytes (computeVkDigest circuits)
+  let nCircs := circuitListLen circuits
+  let fixedTail : ByteList := match fixed with
+    | .none =>
+      vkU64Onto nCircs (prepIndicesNoneOnto nCircs (.cons 0 .nil))
+    | .some comm =>
+      vkU64Onto nCircs (prepIndicesSomeOnto 0 circuits (packedCommitKeyPartOnto c comm .nil))
+    | .shared comm slots =>
+      vkU64Onto nCircs (prepIndicesSharedOnto slots (packedCommitKeyPartOnto c comm .nil))
+  blake3Hash (byteAppend packedSystemKeyDomainBytes (byteAppend vkDigBytes fixedTail))
+
+/-- Canonical transcript-seed suffix binding `vkDigest`, `preprocessedIndices`, and
+`preprocessedCommit` into the packed-SHPLONK Fiat-Shamir transcript, matching
+`KzgConfig::with_key_digest` + `PackedShplonkConfig::reseed`:
+`"ix/aiur/kzg-key/v1\0" ‖ keyDigest ‖ "ix/multi-stark/packed-shplonk/v1\0"`. -/
+def packedKeySeedSuffix (c : CurveParams) (circuits : CircuitList) (fixed : PackedFixed) : ByteList :=
+  byteAppend kzgKeySeedDomainBytes
+    (byteAppend (digest32ToBytes (computePackedKeyDigest c circuits fixed)) packedShplonkSeedTagBytes)
+
+/-- Append the canonical key-binding suffix to a base KZG transcript seed. -/
+def bindPackedSeed (c : CurveParams) (baseSeed : ByteList) (circuits : CircuitList)
+    (fixed : PackedFixed) : ByteList :=
+  byteAppend baseSeed (packedKeySeedSuffix c circuits fixed)
+
+private def byteListDrop (bs : ByteList) (n : Nat) : ByteList :=
+  match n, bs with
+  | 0, bs => bs
+  | _ + 1, .nil => .nil
+  | n' + 1, .cons _ rest => byteListDrop rest n'
+termination_by structural n
+
+/-- Returns `1` iff `bs` ends with exact byte sequence `suffix`. -/
+def byteListEndsWith (bs suffix : ByteList) : Nat :=
+  let bl := byteLen bs
+  let sl := byteLen suffix
+  if bl < sl then 0
+  else byteListEq (byteListDrop bs (bl - sl)) suffix
+
+/-- Returns `1` iff `seed` binds the canonical `vkDigest`, `preprocessedIndices`, and
+`preprocessedCommit` of `(circuits, fixed)` via `packedKeySeedSuffix`. -/
+def seedBindsPackedKey (c : CurveParams) (seed : ByteList) (circuits : CircuitList)
+    (fixed : PackedFixed) : Nat :=
+  byteListEndsWith seed (packedKeySeedSuffix c circuits fixed)
+
 /-- Parse an `IXAUSK02` packed verifying key (`KzgPackedDeserialize::key`)
-with exact canonicality, metadata, and trailing-byte checks. -/
+with exact canonicality, metadata, canonical key-digest transcript-seed binding,
+and trailing-byte checks. -/
 def readPackedKey (c : CurveParams) (bs : ByteList) : ParseKey :=
   let emptyK : PackedKey :=
     { seed := .nil, maxLog := 0, budget := 0, generator := g1Inf
@@ -2587,7 +3006,7 @@ def readPackedKey (c : CurveParams) (bs : ByteList) : ParseKey :=
         let cs := readPackedCircuits c cnt.rest bg.val cnt.val
         if cs.ok == 1 then
           let fx := readPackedFixed c cs.rest (circuitListLen cs.circuits)
-          if fx.ok == 1 then
+          if fx.ok == 1 && seedBindsPackedKey c sd.bytes cs.circuits fx.fixed == 1 then
             { ok := 1
               key := { seed := sd.bytes, maxLog := ml.val, budget := bg.val
                        generator := gen.point, anchors := anc.bytes
@@ -2718,16 +3137,6 @@ def encodeChainPolicy (pol : ChainPolicy) : ByteList :=
     (byteAppend (encodeU32 pol.glEntry)
     (byteAppend (digestWordsToBytes pol.bnDigest) (encodeU32 pol.bnEntry)))))
 
-def matrixShapeListLen : MatrixShapeList → Nat
-  | .nil => 0
-  | .cons _ t => matrixShapeListLen t + 1
-termination_by structural xs => xs
-
-def g1PointListLen : G1PointList → Nat
-  | .nil => 0
-  | .cons _ t => g1PointListLen t + 1
-termination_by structural xs => xs
-
 def encodeMatrixShapes : MatrixShapeList → ByteList
   | .nil => .nil
   | .cons sh rest =>
@@ -2751,16 +3160,6 @@ def encodePackedCommitment (c : CurveParams) (shapes : MatrixShapeList) (points 
 def mkPackedCommitment (c : CurveParams) (shapes : MatrixShapeList) (points : G1PointList) :
     PackedCommitment :=
   { rawBytes := encodePackedCommitment c shapes points, shapes, points }
-
-def nodeListLen : NodeList → Nat
-  | .nil => 0
-  | .cons _ t => nodeListLen t + 1
-termination_by structural ns => ns
-
-def lookupListLen : LookupList → Nat
-  | .nil => 0
-  | .cons _ t => lookupListLen t + 1
-termination_by structural ls => ls
 
 def encodeNode : Node → ByteList
   | .const v => .cons 0 (natToLeBytes 32 v)
@@ -2982,5 +3381,70 @@ private def bls3G : G1Point := g1Add bls12381CurveParams bls2G blsG
   (readPackedCommitment bn254CurveParams commBn.rawBytes).ok == 1 &&
     (readPackedCommitment bls12381CurveParams commBls.rawBytes).ok == 1 &&
     (readPackedCommitment bn254CurveParams (byteAppend commBn.rawBytes (.cons 1 .nil))).ok == 0
+
+-- 9. BLAKE3 derive_key vector parity + domain tag lengths
+private def testV6MerkleLeafCtx : ByteList :=
+  .cons 109 (.cons 117 (.cons 108 (.cons 116 (.cons 105 (.cons 45
+  (.cons 115 (.cons 116 (.cons 97 (.cons 114 (.cons 107 (.cons 47
+  (.cons 118 (.cons 54 (.cons 47 (.cons 109 (.cons 101 (.cons 114
+  (.cons 107 (.cons 108 (.cons 101 (.cons 47 (.cons 108 (.cons 101
+  (.cons 97 (.cons 102 .nil)))))))))))))))))))))))))
+
+#guard blake3HashWith blake3Iv 32 testV6MerkleLeafCtx ==
+  { w0 := 0x77042819, w1 := 0x5A1DD04F, w2 := 0x2F8D0BB8, w3 := 0x39D27832
+    w4 := 0x552A30F6, w5 := 0x546C9899, w6 := 0x8510A8EF, w7 := 0x83ECCD66 }
+#guard byteLen v6VkDomainBytes == 17
+#guard byteLen packedSystemKeyDomainBytes == 32
+#guard byteLen kzgKeySeedDomainBytes == 19
+#guard byteLen packedShplonkSeedTagBytes == 33
+
+-- 10. BLS12-381 prime-order G1 subgroup membership enforcement (`[x²]P = -ψ(P)`)
+private def blsTorsionPt : G1Point :=
+  { x := 4
+    y := 1630892974828014537729259858097113969650871260980656934049590190201941782487224876496582135785777461178964897591404
+    isInf := 0 }
+
+#guard g1OnCurve bls12381CurveParams blsTorsionPt == true
+#guard g1SubgroupCheck bls12381CurveParams blsTorsionPt == false
+#guard g1SubgroupCheck bls12381CurveParams blsG == true
+#guard g1SubgroupCheck bls12381CurveParams bls3G == true
+#guard (g1FromBytes bls12381CurveParams (g1ToBytes bls12381CurveParams blsTorsionPt)).ok == 0
+#guard
+  let badCh := packAccumulator6 bls12381CurveParams blsTorsionPt bls2G
+  (unpackAccumulator6 bls12381CurveParams badCh).1 == 0
+#guard
+  let shs : MatrixShapeList := .cons { log := 1, width := 1, hasNext := 0 } .nil
+  let badComm := mkPackedCommitment bls12381CurveParams shs (.cons blsTorsionPt .nil)
+  (readPackedCommitment bls12381CurveParams badComm.rawBytes).ok == 0
+
+-- 11. Key-binding transcript seed & structural preprocessed-height enforcement in `readPackedKey`
+#guard
+  let c := bn254CurveParams
+  let anchors := natToLeBytes 128 7
+  let mkCirc (constVal prepH : Nat) : Circuit :=
+    { shape := { m0 := 2, m1 := 2, m2 := prepH, m3 := 1, m4 := 1, m5 := 1, m6 := 1, m7 := 1 }
+      nodes := .cons (.var 1 0 0) (.cons (.const constVal) (.cons (.sub 0 1) .nil))
+      roots := .cons 2 .nil
+      lookups := .nil
+      mainNext := 0
+      fixedNext := 0 }
+  let fx1 := PackedFixed.some (mkPackedCommitment c (.cons { log := 1, width := 1, hasNext := 0 } .nil) (.cons bnG .nil))
+  let fx2 := PackedFixed.some (mkPackedCommitment c (.cons { log := 1, width := 1, hasNext := 0 } .nil) (.cons bn2G .nil))
+  let cs1 := CircuitList.cons (mkCirc 42 2) .nil
+  let csMut := CircuitList.cons (mkCirc 43 2) .nil
+  let csBadH := CircuitList.cons (mkCirc 42 3) .nil
+  let boundSeed := bindPackedSeed c (.cons 1 .nil) cs1 fx1
+  let goodKey : PackedKey :=
+    { seed := boundSeed, maxLog := 2, budget := 2, generator := bnG, anchors, circuits := cs1, fixed := fx1 }
+  let unboundKey : PackedKey := { goodKey with seed := .cons 1 .nil }
+  let mutConstKey : PackedKey := { goodKey with circuits := csMut }
+  let mutFixedKey : PackedKey := { goodKey with fixed := fx2 }
+  let badHeightKey : PackedKey :=
+    { goodKey with seed := bindPackedSeed c (.cons 1 .nil) csBadH fx1, circuits := csBadH }
+  (readPackedKey c (encodePackedKey c goodKey)).ok == 1 &&
+    (readPackedKey c (encodePackedKey c unboundKey)).ok == 0 &&
+    (readPackedKey c (encodePackedKey c mutConstKey)).ok == 0 &&
+    (readPackedKey c (encodePackedKey c mutFixedKey)).ok == 0 &&
+    (readPackedKey c (encodePackedKey c badHeightKey)).ok == 0
 
 end KzgWire

@@ -1115,38 +1115,53 @@ def observeKey (seed : ByteList) (circuits : CircuitList) (active : FList)
     transcriptObserveBytes
       (transcriptObserveFields (transcriptObserveFields tr1 slots) active) fx.rawBytes
 
+/-- Validate all `G1` points in a `PackedFixed` commitment (on-curve + BLS12-381 subgroup check). -/
+def fixedPointsValid (c : CurveParams) : PackedFixed → Bool
+  | .none => true
+  | .some comm => g1PointListValid c comm.points
+  | .shared comm _ => g1PointListValid c comm.points
+
 /-- Full native-`Fr` packed-SHPLONK multi-stark verifier (`KzgPackedVerifier::verify`),
-returning the final transcript (ready for `CompressBNPacked.foldAccumulator`) and `(A, B)`. -/
+enforcing canonical verifying-key/fixed-commitment transcript-seed binding (`seedBindsPackedKey`)
+and prime-order `G1` subgroup membership on all key and proof points, returning the final
+transcript (ready for `CompressBNPacked.foldAccumulator`) and `(A, B)`. -/
 def verifyPacked (c : CurveParams) (key : PackedKey) (proof : PackedProof)
     (claims : FListList) : DeferredVerifyResult :=
-  let bf := buildFrames c key proof
-  if bf.ok == 0 then { ok := 0, transcript := transcriptStart .nil, a := g1Inf, b := g1Inf }
+  let fail : DeferredVerifyResult := { ok := 0, transcript := transcriptStart .nil, a := g1Inf, b := g1Inf }
+  if seedBindsPackedKey c key.seed key.circuits key.fixed == 0 then fail
+  else if !g1ValidPoint c key.generator || !fixedPointsValid c key.fixed ||
+      !g1PointListValid c proof.main.points || !g1PointListValid c proof.stage2.points ||
+      !g1PointListValid c proof.quotient.points || !g1ValidPoint c proof.w1.point ||
+      !g1ValidPoint c proof.w2.point then fail
   else
-    let tr0 := observeKey key.seed key.circuits proof.active key.fixed
-    let tr1 := transcriptObserveBytes tr0 proof.main.rawBytes
-    let tr2 := transcriptObserveFields tr1 proof.logs
-    let tr3 := transcriptObserveClaims tr2 claims
-    let sBeta := transcriptSampleFr c tr3
-    let tr4 := transcriptObserveField sBeta.transcript sBeta.challenge
-    let sGamma := transcriptSampleFr c tr4
-    let tr5 := transcriptObserveField sGamma.transcript sGamma.challenge
-    let initial := claimsAccumulator c.frMod claims sBeta.challenge sGamma.challenge
-    let tr6 := transcriptObserveBytes tr5 proof.stage2.rawBytes
-    let tr7 := transcriptObserveFields tr6 proof.accumulators
-    let sAlpha := transcriptSampleFr c tr7
-    let tr8 := transcriptObserveBytes sAlpha.transcript proof.quotient.rawBytes
-    let sZeta := transcriptSampleFr c tr8
-    if frIsZero sZeta.challenge == 1 then
-      { ok := 0, transcript := sZeta.transcript, a := g1Inf, b := g1Inf }
+    let bf := buildFrames c key proof
+    if bf.ok == 0 then fail
     else
-      let framesOk := verifyFrames c bf.frames
-        sBeta.challenge sGamma.challenge sAlpha.challenge sZeta.challenge initial
-      if framesOk == 0 then
+      let tr0 := observeKey key.seed key.circuits proof.active key.fixed
+      let tr1 := transcriptObserveBytes tr0 proof.main.rawBytes
+      let tr2 := transcriptObserveFields tr1 proof.logs
+      let tr3 := transcriptObserveClaims tr2 claims
+      let sBeta := transcriptSampleFr c tr3
+      let tr4 := transcriptObserveField sBeta.transcript sBeta.challenge
+      let sGamma := transcriptSampleFr c tr4
+      let tr5 := transcriptObserveField sGamma.transcript sGamma.challenge
+      let initial := claimsAccumulator c.frMod claims sBeta.challenge sGamma.challenge
+      let tr6 := transcriptObserveBytes tr5 proof.stage2.rawBytes
+      let tr7 := transcriptObserveFields tr6 proof.accumulators
+      let sAlpha := transcriptSampleFr c tr7
+      let tr8 := transcriptObserveBytes sAlpha.transcript proof.quotient.rawBytes
+      let sZeta := transcriptSampleFr c tr8
+      if frIsZero sZeta.challenge == 1 then
         { ok := 0, transcript := sZeta.transcript, a := g1Inf, b := g1Inf }
       else
-        let rounds := buildPcsRounds bf.frames proof.main proof.stage2 proof.quotient key.fixed
-        reducePcs c sZeta.transcript rounds proof.extras proof.w1 proof.w2
-          sZeta.challenge key.generator key.maxLog
+        let framesOk := verifyFrames c bf.frames
+          sBeta.challenge sGamma.challenge sAlpha.challenge sZeta.challenge initial
+        if framesOk == 0 then
+          { ok := 0, transcript := sZeta.transcript, a := g1Inf, b := g1Inf }
+        else
+          let rounds := buildPcsRounds bf.frames proof.main proof.stage2 proof.quotient key.fixed
+          reducePcs c sZeta.transcript rounds proof.extras proof.w1 proof.w2
+            sZeta.challenge key.generator key.maxLog
 
 /-- Squeeze the accumulator fold weight from the predecessor verifier's final transcript
 after absorbing `"ix/aiur/kzg/fold-transcript/v1\0"`, `policyDigest`, `statementDigest`,
@@ -1628,13 +1643,16 @@ private def buildRealKey (c : CurveParams) (tau : Nat) (anchors : ByteList)
   let fixedCommPt := g1ScalarMul c fixedEvalTau gen
   let fixedShapes : MatrixShapeList := .cons { log := 1, width := 1, hasNext := 0 } .nil
   let fixedComm := mkPackedCommitment c fixedShapes (.cons fixedCommPt .nil)
-  { seed := .cons 105 (.cons 120 (.cons 49 .nil)) -- "ix1"
+  let circuits : CircuitList := .cons circ .nil
+  let fixed : PackedFixed := .some fixedComm
+  let baseSeed : ByteList := .cons 105 (.cons 120 (.cons 49 .nil)) -- "ix1"
+  { seed := bindPackedSeed c baseSeed circuits fixed
     maxLog := 2
     budget := 2
     generator := gen
     anchors
-    circuits := .cons circ .nil
-    fixed := .some fixedComm }
+    circuits
+    fixed }
 
 /-- Honest packed-SHPLONK prover for `buildRealKey` over any `CurveParams` (real BN254 or BLS12-381),
 returning canonical `IXAUSP01` proof bytes whose deferred pairing satisfies `A + τ·B == O`! -/
@@ -1819,10 +1837,13 @@ private def buildAndProveStage2 (c : CurveParams) (tau : Nat) (anchors : ByteLis
   let fixedEvalTau := frAdd p 1 (frMul p 7 (frSub p tau2 1))
   let fixedComm := mkPackedCommitment c (.cons { log := 1, width := 1, hasNext := 0 } .nil)
     (.cons (g1ScalarMul c fixedEvalTau gen) .nil)
+  let circuits : CircuitList := .cons circ .nil
+  let fixed : PackedFixed := .some fixedComm
+  let baseSeed : ByteList := .cons 105 (.cons 120 (.cons 50 .nil)) -- "ix2"
   let key : PackedKey :=
-    { seed := .cons 105 (.cons 120 (.cons 50 .nil)) -- "ix2"
+    { seed := bindPackedSeed c baseSeed circuits fixed
       maxLog := 2, budget := 2, generator := gen, anchors
-      circuits := .cons circ .nil, fixed := .some fixedComm }
+      circuits, fixed }
   let claims : FListList := .cons row0 (.cons row1 .nil)
   let main0Tau2 := frSub p (frMul p 11 inv2) (frMul p inv2 tau2)
   let main1Tau2 := frMul p (frAdd p 1 tau2) inv2
@@ -2137,13 +2158,57 @@ private def bnCfg := bn254Run.2.2.2.2.2.2.2
   let circ := buildRealCircuit (.cons 99 .nil)
   let fixedComm := mkPackedCommitment c (.cons { log := 1, width := 1, hasNext := 0 } .nil)
     (.cons (g1Gen c) .nil)
+  let circuits : CircuitList := .cons circ (.cons circ .nil)
+  let fixed : PackedFixed := .shared fixedComm (.cons 1 (.cons 1 .nil))
   let sharedKey : PackedKey :=
-    { seed := .cons 1 .nil, maxLog := 2, budget := 2, generator := g1Gen c, anchors
-      circuits := .cons circ (.cons circ .nil)
-      fixed := .shared fixedComm (.cons 1 (.cons 1 .nil)) }
+    { seed := bindPackedSeed c (.cons 1 .nil) circuits fixed
+      maxLog := 2, budget := 2, generator := g1Gen c, anchors
+      circuits, fixed }
   let raw := encodePackedKey c sharedKey
   let pk := readPackedKey c raw
   pk.ok == 1 && pk.key.fixed == sharedKey.fixed
+
+-- 4b. Key-binding transcript seed & BLS12-381 prime-order G1 subgroup rejection in `verifyPacked`!
+#guard
+  let pr := readPackedProof bn254CurveParams bnProofBytes
+  let pc := readClaims bn254CurveParams bnClaimsBytes
+  let unboundKey : PackedKey := { bnS2Key with seed := .cons 105 (.cons 120 (.cons 50 .nil)) }
+  let badFixedComm := mkPackedCommitment bn254CurveParams
+    (.cons { log := 1, width := 1, hasNext := 0 } .nil) (.cons (g1Gen bn254CurveParams) .nil)
+  let mutFixedKey : PackedKey := { bnS2Key with fixed := .some badFixedComm }
+  let mutCircs := match bnS2Key.circuits with
+    | .cons c0 rest =>
+      let rec bumpFirstConst : NodeList → NodeList
+        | .nil => .nil
+        | .cons (.const v) ns => .cons (.const (v + 1)) ns
+        | .cons nd ns => .cons nd (bumpFirstConst ns)
+      CircuitList.cons { c0 with nodes := bumpFirstConst c0.nodes } rest
+    | .nil => .nil
+  let mutConstKey : PackedKey := { bnS2Key with circuits := mutCircs }
+  (verifyPacked bn254CurveParams bnS2Key pr.proof pc.claims).ok == 1 &&
+    (verifyPacked bn254CurveParams unboundKey pr.proof pc.claims).ok == 0 &&
+    (verifyPacked bn254CurveParams mutFixedKey pr.proof pc.claims).ok == 0 &&
+    (verifyPacked bn254CurveParams mutConstKey pr.proof pc.claims).ok == 0
+
+private def blsTorsionPoint : G1Point :=
+  { x := 4
+    y := 1630892974828014537729259858097113969650871260980656934049590190201941782487224876496582135785777461178964897591404
+    isInf := 0 }
+
+#guard
+  let blsClaimsBytes := bls12381Run.2.2.2.2.1
+  let blsProofBytes := bls12381Run.2.2.2.2.2.1
+  let blsS2Key := bls12381Run.2.2.2.2.2.2.1
+  let pr := readPackedProof bls12381CurveParams blsProofBytes
+  let pc := readClaims bls12381CurveParams blsClaimsBytes
+  let torsionW1 : PackedWitness :=
+    { point := blsTorsionPoint, rawBytes := g1ToBytes bls12381CurveParams blsTorsionPoint }
+  let torsionProof := { pr.proof with w1 := torsionW1 }
+  let torsionProofBytes := encodePackedProof torsionProof
+  let torsionKey := { blsS2Key with generator := blsTorsionPoint }
+  (readPackedProof bls12381CurveParams torsionProofBytes).ok == 0 &&
+    (verifyPacked bls12381CurveParams blsS2Key torsionProof pc.claims).ok == 0 &&
+    (verifyPacked bls12381CurveParams torsionKey pr.proof pc.claims).ok == 0
 
 -- 5. Live-exportable dual-curve & Goldilocks entrypoints `#guard` self-checks!
 #guard entryAlgebraStaticBN254 7 11 42 11215 == 1

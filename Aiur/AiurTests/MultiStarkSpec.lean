@@ -4,7 +4,7 @@ import Aiur.Modules.Frontend
 import Aiur.Trace.Export
 
 /-!
-# Parity & Certificate Tests for `Aiur.MultiStarkSpec` (`WS 2B-2`) and `WS 2B-1`
+# Parity & Certificate Tests for `Aiur.MultiStarkSpec` and Depth/Activation Plans
 
 Cross-checks:
 1. Exact agreement between `Aiur.MultiStarkSpec.retune` and
@@ -15,7 +15,7 @@ Cross-checks:
    `circuit.constraint_count` + `circuit.max_constraint_degree`) on the
    `crates/aiur/tests/fixtures/depth.ixa` program (verified symmetrically in
    `crates/aiur/src/trace/stark/tests/spec_parity.rs`).
-3. Executable `WS 2B-1` checkers (`Trace.depthConfig`, `Physical.Prepared.checkDepthPlan`,
+3. Executable depth/activation checkers (`Trace.depthConfig`, `Physical.Prepared.checkDepthPlan`,
    `Grouping.checkPlanCertificate`, `Plan.checkWellFormedActivation`).
 -/
 
@@ -32,7 +32,7 @@ private def quadPush (col : Nat) : AirLookup GF :=
   AirLookup.push (.main 0) [.mul (.main col) (.main col)]
 
 private def retuneSummary (mainWidth : Nat) (lookups : List (AirLookup GF))
-    (blowup : Nat := 4) (extDeg : Nat := 2) : CompiledCircuit GF :=
+    (blowup : Nat := 4) (extDeg : Nat := goldilocksExtDegree) : CompiledCircuit GF :=
   let inp : CircuitInput GF := {
     name := "synthetic"
     mainWidth := mainWidth
@@ -41,25 +41,27 @@ private def retuneSummary (mainWidth : Nat) (lookups : List (AirLookup GF))
     lookupGroupSize := 1 }
   retune (compileCircuit inp extDeg) blowup extDeg
 
-/-- Mirror of `lookup_groups.rs:336-383`:
-- 14 quadratic lookups at `blowup = 4` -> `group = 2, q = 4, s2 = 14`.
+/-- Mirror of `lookup_groups.rs` (`retune_allows_quotient_four_and_balances_mixed_degree_lookups`
+and the 11/28-linear-lookup test), at the shipped cubic extension (`D = 3`):
+- 14 quadratic lookups at `blowup = 4` -> `group = 2, q = 4, s2 = 21`.
 - `[lin, quad, lin]` at `blowup = 4` -> balanced packing puts `quad` in the
-  trailing remainder chunk -> `group = 2, q = 2, s2 = 4` with reordered degrees
-  `[(1, 1), (1, 1), (1, 2)]`. -/
+  trailing remainder chunk -> `group = 2, q = 2, s2 = 6` with reordered degrees
+  `[(1, 1), (1, 1), (1, 2)]`.
+- 11 linear lookups -> `group = 2, q = 2, s2 = 18`; 28 linear lookups -> `group = 4, q = 4, s2 = 21`. -/
 private def checkMixedDegreeRetune : Bool :=
-  let c0 := retuneSummary 4 ((List.range 14).map fun i => quadPush (1 + i % 3)) 4 2
-  let c1 := retuneSummary 4 [linPush 1, quadPush 2, linPush 3] 4 2
-  let c2 := retuneSummary 2 (List.replicate 11 (linPush 1)) 4 2
-  let c3 := retuneSummary 2 (List.replicate 28 (linPush 1)) 4 2
-  c0.lookupGroupSize == 2 && c0.quotientDegree == 4 && c0.stage2Width == 14 &&
-    c0.constraintCount == 14 && c0.maxConstraintDegree == 5 &&
-  c1.lookupGroupSize == 2 && c1.quotientDegree == 2 && c1.stage2Width == 4 &&
-    c1.constraintCount == 4 && c1.maxConstraintDegree == 3 &&
+  let c0 := retuneSummary 4 ((List.range 14).map fun i => quadPush (1 + i % 3)) 4 3
+  let c1 := retuneSummary 4 [linPush 1, quadPush 2, linPush 3] 4 3
+  let c2 := retuneSummary 2 (List.replicate 11 (linPush 1)) 4 3
+  let c3 := retuneSummary 2 (List.replicate 28 (linPush 1)) 4 3
+  c0.lookupGroupSize == 2 && c0.quotientDegree == 4 && c0.stage2Width == 21 &&
+    c0.constraintCount == 21 && c0.maxConstraintDegree == 5 &&
+  c1.lookupGroupSize == 2 && c1.quotientDegree == 2 && c1.stage2Width == 6 &&
+    c1.constraintCount == 6 && c1.maxConstraintDegree == 3 &&
     lookupDegrees c1.lookups == [(1, 1), (1, 1), (1, 2)] &&
-  c2.lookupGroupSize == 2 && c2.quotientDegree == 2 && c2.stage2Width == 12 &&
-    c2.constraintCount == 12 && c2.maxConstraintDegree == 3 &&
-  c3.lookupGroupSize == 4 && c3.quotientDegree == 4 && c3.stage2Width == 14 &&
-    c3.constraintCount == 14 && c3.maxConstraintDegree == 5
+  c2.lookupGroupSize == 2 && c2.quotientDegree == 2 && c2.stage2Width == 18 &&
+    c2.constraintCount == 18 && c2.maxConstraintDegree == 3 &&
+  c3.lookupGroupSize == 4 && c3.quotientDegree == 4 && c3.stage2Width == 21 &&
+    c3.constraintCount == 21 && c3.maxConstraintDegree == 5
 
 #guard checkMixedDegreeRetune
 
@@ -171,50 +173,41 @@ private def fixedMapsOfBytecode [Field F] (bc : Execution.Bytecode F) : List Fix
       inputWidth := inWidth
       outputWidth := outWidth }
 
-/-- Expected `CircuitSummary` table for `depth.ixa` at `logBlowup = 1`, `segmented = true`.
-Mirrored identically in `crates/aiur/src/trace/stark/tests/spec_parity.rs`. -/
-def expectedDepthFixtureSummaries : List CircuitSummary := [
-  { name := "Depth::run", stage1Width := 7, stage2Width := 6,
-    preprocessedWidth := 0, preprocessedHeight := 0,
-    lookups := 3, lookupGroupSize := 1, quotientDegree := 1,
-    constraintCount := 9, maxConstraintDegree := 2 },
-  { name := "Depth::even", stage1Width := 7, stage2Width := 2,
-    preprocessedWidth := 0, preprocessedHeight := 0,
-    lookups := 2, lookupGroupSize := 2, quotientDegree := 2,
-    constraintCount := 11, maxConstraintDegree := 3 },
-  { name := "Depth::odd", stage1Width := 7, stage2Width := 2,
-    preprocessedWidth := 0, preprocessedHeight := 0,
-    lookups := 2, lookupGroupSize := 2, quotientDegree := 2,
-    constraintCount := 11, maxConstraintDegree := 3 },
-  { name := "Depth::fib", stage1Width := 14, stage2Width := 8,
-    preprocessedWidth := 0, preprocessedHeight := 0,
-    lookups := 7, lookupGroupSize := 2, quotientDegree := 2,
-    constraintCount := 24, maxConstraintDegree := 3 },
-  { name := "Depth::loop", stage1Width := 5, stage2Width := 4,
-    preprocessedWidth := 0, preprocessedHeight := 0,
-    lookups := 2, lookupGroupSize := 1, quotientDegree := 1,
-    constraintCount := 7, maxConstraintDegree := 2 },
-  { name := "Depth::top", stage1Width := 4, stage2Width := 4,
-    preprocessedWidth := 0, preprocessedHeight := 0,
-    lookups := 2, lookupGroupSize := 1, quotientDegree := 1,
-    constraintCount := 7, maxConstraintDegree := 2 },
-  { name := "Depth::owned", stage1Width := 6, stage2Width := 2,
-    preprocessedWidth := 0, preprocessedHeight := 0,
-    lookups := 2, lookupGroupSize := 2, quotientDegree := 2,
-    constraintCount := 10, maxConstraintDegree := 3 },
-  { name := "Depth::link", stage1Width := 4, stage2Width := 4,
-    preprocessedWidth := 0, preprocessedHeight := 0,
-    lookups := 2, lookupGroupSize := 1, quotientDegree := 1,
-    constraintCount := 7, maxConstraintDegree := 2 },
-  { name := "<table:Depth::range16_inputs>", stage1Width := 1, stage2Width := 2,
-    preprocessedWidth := 2, preprocessedHeight := 65536,
-    lookups := 1, lookupGroupSize := 1, quotientDegree := 1,
-    constraintCount := 2, maxConstraintDegree := 2 },
-  { name := "<table:Depth::range8_inputs>", stage1Width := 1, stage2Width := 2,
-    preprocessedWidth := 2, preprocessedHeight := 256,
-    lookups := 1, lookupGroupSize := 1, quotientDegree := 1,
-    constraintCount := 2, maxConstraintDegree := 2 }
-]
+/-- Read a shared Lean/Rust parity table: `#` comment lines, then one
+tab-separated row of ten fields per circuit. The same file is read by
+`crates/aiur/src/trace/stark/tests/spec_parity.rs`, so neither side keeps its own copy. The test
+binary runs from the repository root (CI) or from `Aiur/`. -/
+def readParityTable (file : String) : IO (List CircuitSummary) := do
+  let candidates : List System.FilePath :=
+    [("crates/aiur/tests/fixtures" : System.FilePath) / file,
+     ("../crates/aiur/tests/fixtures" : System.FilePath) / file]
+  let some path ← candidates.findM? (·.pathExists)
+    | throw (IO.userError s!"parity table {file} not found (run from the repository root)")
+  let text ← IO.FS.readFile path
+  let rows := (text.splitOn "\n").filter fun l => !l.trimAscii.toString.isEmpty && !l.startsWith "#"
+  rows.mapM fun l => do
+    let num (s : String) : IO Nat := match s.trimAscii.toString.toNat? with
+      | some v => pure v
+      | none => throw (IO.userError s!"bad field '{s}' in parity row: {l}")
+    match l.splitOn "\t" with
+    | [name, s1, s2, pw, ph, lk, gs, qd, cc, md] =>
+      match ← [s1, s2, pw, ph, lk, gs, qd, cc, md].mapM num with
+      | [a1, a2, a3, a4, a5, a6, a7, a8, a9] =>
+        let summary : CircuitSummary :=
+          { name := name, stage1Width := a1, stage2Width := a2, preprocessedWidth := a3,
+            preprocessedHeight := a4, lookups := a5, lookupGroupSize := a6, quotientDegree := a7,
+            constraintCount := a8, maxConstraintDegree := a9 }
+        return summary
+      | _ => throw (IO.userError s!"malformed parity row: {l}")
+    | _ => throw (IO.userError s!"malformed parity row: {l}")
+
+/-- File holding the expected `CircuitSummary` table for `depth.ixa` at `logBlowup = 1`,
+`segmented = true`, Protocol v6 (`goldilocksExtDegree = 3`). -/
+def depthParityTable : String := "depth_spec_parity.tsv"
+
+/-- File holding the exact vectorized ROM circuit summaries for widths `[1, 3, 5, 13]` at
+`blowup = 4`, `segmented = true`, Protocol v6. -/
+def vectorizedRomParityTable : String := "vectorized_rom_spec_parity.tsv"
 
 /-- Real Aiur module exercising `C2` cross-channel intra-chip compaction:
 - `dispatch3`: 3 mutually-exclusive calls to distinct channels (`f1`, `f2`, `f3`)
@@ -357,39 +350,24 @@ private def testC7AndC2 : IO Unit := do
   | .error _ => pure ()
   IO.println s!"MultiStarkSpec C7+C2: C7a deg2 2→1, C7b width {cap3.layout.width}→{autoQ4.layout.width} (maxDeg={maxDegAuto}), C2 dispatch3 3→1, dispatch2 guard=2, dispatch2_quad 2→1, negative checks rejected"
 
-/-- Exact `C6` vectorized ROM circuit summaries for widths `[1, 3, 5, 13]` at
-`blowup = 4`, `segmented = true`, mirrored in
-`crates/aiur/src/trace/stark/tests/spec_parity.rs`. -/
-def expectedVectorizedRomSummaries : List CircuitSummary := [
-  { name := "<ROM:1>", stage1Width := 25, stage2Width := 10, preprocessedWidth := 0,
-    preprocessedHeight := 0, lookups := 10, lookupGroupSize := 2, quotientDegree := 2,
-    constraintCount := 35, maxConstraintDegree := 3 },
-  { name := "<ROM:3>", stage1Width := 41, stage2Width := 10, preprocessedWidth := 0,
-    preprocessedHeight := 0, lookups := 10, lookupGroupSize := 2, quotientDegree := 2,
-    constraintCount := 35, maxConstraintDegree := 3 },
-  { name := "<ROM:5>", stage1Width := 29, stage2Width := 6, preprocessedWidth := 0,
-    preprocessedHeight := 0, lookups := 6, lookupGroupSize := 2, quotientDegree := 2,
-    constraintCount := 19, maxConstraintDegree := 3 },
-  { name := "<ROM:13>", stage1Width := 16, stage2Width := 6, preprocessedWidth := 0,
-    preprocessedHeight := 0, lookups := 3, lookupGroupSize := 1, quotientDegree := 1,
-    constraintCount := 10, maxConstraintDegree := 2 }
-]
-
 def testVectorizedRom : IO Unit := do
   let widths := [1, 3, 5, 13]
   let vecSummaries :=
     (lowerVectorizedRomCircuits (F := GF) widths true).map fun inp =>
       (retune (compileCircuit inp) 4).summary
-  unless vecSummaries == expectedVectorizedRomSummaries do
-    throw (IO.userError s!"C6 vectorized ROM parity mismatch!\nactual:\n{reprStr vecSummaries}\nexpected:\n{reprStr expectedVectorizedRomSummaries}")
+  let expectedRom ← readParityTable vectorizedRomParityTable
+  unless vecSummaries == expectedRom do
+    throw (IO.userError s!"vectorized ROM parity mismatch!\nactual:\n{reprStr vecSummaries}\nexpected:\n{reprStr expectedRom}")
   let scalarRom3 := (retune (compileCircuit (lowerScalarRomCircuit (F := GF) 3 true)) 4).summary
   let vecRom3 := (retune (compileCircuit (lowerVectorizedRomCircuit (F := GF) 3 true)) 4).summary
   -- Compare total committed cells per 8 `<ROM:3>` entries (main + stage2 + quotient*ext).
-  let scalarCells8 := (scalarRom3.stage1Width + scalarRom3.stage2Width + scalarRom3.quotientDegree * 2) * 8
-  let vecCells8 := (vecRom3.stage1Width + vecRom3.stage2Width + vecRom3.quotientDegree * 2) * 1
-  unless scalarCells8 == 112 && vecCells8 == 55 do
-    throw (IO.userError s!"C6 <ROM:3> cell delta mismatch: scalar={scalarCells8}, vec={vecCells8}")
-  IO.println s!"MultiStarkSpec C6: vectorized ROM [1,3,5,13] matches spec, <ROM:3> cells/8-entries {scalarCells8}→{vecCells8} (-50.9%, -3 max_log)"
+  let ext := goldilocksExtDegree
+  let scalarCells8 := (scalarRom3.stage1Width + scalarRom3.stage2Width + scalarRom3.quotientDegree * ext) * 8
+  let vecCells8 := (vecRom3.stage1Width + vecRom3.stage2Width + vecRom3.quotientDegree * ext) * 1
+  -- Same counts as `vectorized_rom_matches_lean_multistark_spec_and_cuts_rom3_cells` (Rust).
+  unless scalarCells8 == 144 && vecCells8 == 62 do
+    throw (IO.userError s!"<ROM:3> cell delta mismatch: scalar={scalarCells8}, vec={vecCells8}")
+  IO.println s!"MultiStarkSpec: vectorized ROM [1,3,5,13] matches spec, <ROM:3> cells/8-entries {scalarCells8}→{vecCells8} (-3 max_log)"
 
 def run : IO Unit := do
   testC7AndC2
@@ -412,36 +390,38 @@ def run : IO Unit := do
     else throw s!"unknown callable {name}"
   let plan ← IO.ofExcept (Grouping.preparePlan depthSys idFn [])
   unless physical.checkDepthPlan program cfg measures plan do
-    throw (IO.userError "WS 2B-1: Physical.Prepared.checkDepthPlan rejected depth fixture plan")
+    throw (IO.userError "Physical.Prepared.checkDepthPlan rejected depth fixture plan")
   unless plan.checkWellFormedActivation do
-    throw (IO.userError "WS 2B-1: Plan.checkWellFormedActivation rejected depth fixture plan")
+    throw (IO.userError "Plan.checkWellFormedActivation rejected depth fixture plan")
   let callableId (name : String) : Nat := callableNames.idxOf name
   let fixedMaps := fixedMapsOfBytecode bytecode
   let lowered := lowerFullSystem callableId plan fixedMaps [] 1 true
   let summaries := lowered.map CompiledCircuit.summary
-  unless summaries == expectedDepthFixtureSummaries do
-    throw (IO.userError s!"WS 2B-2 depth.ixa parity mismatch!\nactual:\n{reprStr summaries}\nexpected:\n{reprStr expectedDepthFixtureSummaries}")
+  let expectedDepth ← readParityTable depthParityTable
+  unless summaries == expectedDepth do
+    throw (IO.userError s!"depth.ixa parity mismatch!\nactual:\n{reprStr summaries}\nexpected:\n{reprStr expectedDepth}")
   -- Also test a grouped layout (`even` + `odd`) through `lowerFullSystem` and `checkDepthPlan`.
   let groupChips := depthSys.chips.filter fun c => c.name == "Depth::even" || c.name == "Depth::odd"
   let checkedGroup ← IO.ofExcept (Grouping.compile "even_odd" idFn groupChips)
   let groupedPlan ← IO.ofExcept (Grouping.preparePlan depthSys idFn [⟨groupChips, checkedGroup⟩])
   unless physical.checkDepthPlan program cfg measures groupedPlan do
-    throw (IO.userError "WS 2B-1: Physical.Prepared.checkDepthPlan rejected grouped plan")
+    throw (IO.userError "Physical.Prepared.checkDepthPlan rejected grouped plan")
   let groupedLowered := lowerFullSystem callableId groupedPlan fixedMaps [] 1 true
   let some eo := groupedLowered.find? (·.name == "even_odd")
-    | throw (IO.userError "WS 2B-2: missing grouped even_odd circuit")
+    | throw (IO.userError "missing grouped even_odd circuit")
   unless eo.mainWidth == checkedGroup.layout.width + 1 && eo.lookups.length == 1 + checkedGroup.layout.sends.length do
-    throw (IO.userError "WS 2B-2: grouped even_odd width/lookup count mismatch")
+    throw (IO.userError "grouped even_odd width/lookup count mismatch")
   -- Verify `lowerFullSystem` defaults to `RomLayout.vectorized` and supports `.scalar` explicitly.
   let romWidths := [1, 3, 5, 13]
   let vecFull := lowerFullSystem callableId plan fixedMaps romWidths 2 true
   let vecRomTail := (vecFull.drop (vecFull.length - romWidths.length)).map CompiledCircuit.summary
-  unless vecRomTail == expectedVectorizedRomSummaries do
-    throw (IO.userError s!"lowerFullSystem default RomLayout.vectorized mismatch:\nactual:\n{reprStr vecRomTail}\nexpected:\n{reprStr expectedVectorizedRomSummaries}")
+  let expectedRom ← readParityTable vectorizedRomParityTable
+  unless vecRomTail == expectedRom do
+    throw (IO.userError s!"lowerFullSystem default RomLayout.vectorized mismatch:\nactual:\n{reprStr vecRomTail}\nexpected:\n{reprStr expectedRom}")
   let scalarFull := lowerFullSystem callableId plan fixedMaps romWidths 2 true (romLayout := .scalar)
   let scalarRomTail := scalarFull.drop (scalarFull.length - romWidths.length)
   unless scalarRomTail.map (·.mainWidth) == romWidths.map (· + 3) do
     throw (IO.userError s!"lowerFullSystem RomLayout.scalar width mismatch: {reprStr (scalarRomTail.map (·.mainWidth))}")
-  IO.println s!"MultiStarkSpec: verified retune + depth.ixa ({summaries.length} circuits) + grouped plan + vectorized/scalar ROM lowering + WS 2B-1 certificates"
+  IO.println s!"MultiStarkSpec: verified retune + depth.ixa ({summaries.length} circuits) + grouped plan + vectorized/scalar ROM lowering + depth/activation certificates"
 
 end AiurMultiStarkSpecTests

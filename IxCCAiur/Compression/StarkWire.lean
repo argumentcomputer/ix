@@ -2388,6 +2388,18 @@ def lookupGroupsCount : Nat → Nat → Nat → Nat
   | n + 1, rem + 1, k => lookupGroupsCount n rem k
 termination_by structural n => n
 
+/-- Bit popcount of a byte (`0..255`), matching `SystemDeserialize::byte_popcount`. -/
+@[circuit_inline]
+def bytePopcount (b : Nat) : Nat :=
+  let b0 := b % 2; let q1 := b / 2
+  let b1 := q1 % 2; let q2 := q1 / 2
+  let b2 := q2 % 2; let q3 := q2 / 2
+  let b3 := q3 % 2; let q4 := q3 / 2
+  let b4 := q4 % 2; let q5 := q4 / 2
+  let b5 := q5 % 2; let q6 := q5 / 2
+  let b6 := q6 % 2; let b7 := (q6 / 2) % 2
+  b0 + b1 + b2 + b3 + b4 + b5 + b6 + b7
+
 /-- Exact `SystemDeserialize::read_sys_circuit` (branchless `ok` chaining -> O(1) join points). -/
 @[circuit_noinline]
 def readSysCircuit (s : ByteList) : ParseCircuit :=
@@ -2400,7 +2412,12 @@ def readSysCircuit (s : ByteList) : ParseCircuit :=
   let rnc := readU16LE rk.rest
   let rlp := readU16LE rnc.rest
   let hdrOk := rmw.ok * rpw.ok * rph.ok * rmd.ok * rk.ok * rnc.ok * rlp.ok
-  if hdrOk == 0 || rk.val == 0 || rk.val ≥ 9 || rlp.val > rnc.val then bad
+  let prepZeroMatch := (rpw.val == 0) == (rph.val == 0)
+  let phPop :=
+    bytePopcount rph.limb.b0 + bytePopcount rph.limb.b1 +
+    bytePopcount rph.limb.b2 + bytePopcount rph.limb.b3
+  if hdrOk == 0 || rk.val == 0 || rk.val ≥ 9 || rlp.val > rnc.val ||
+      !prepZeroMatch || phPop > 1 then bad
   else
     let rnodes := readSysNodesN rlp.rest rnc.val 0
     let rzc := readU16LE rnodes.rest
@@ -2458,16 +2475,16 @@ def readOptCommit (s : ByteList) : ParseOptCommit :=
     { ok := 0, val := .noCommit, rest := .nil }
 
 @[circuit_noinline]
-def readOptIdxN (s : ByteList) : Nat → Nat → ParseOptIdxs
+def readOptIdxN (s : ByteList) (hasCommit : Nat) : Nat → Nat → ParseOptIdxs
   | 0, _ => { ok := 1, val := .nil, rest := s }
   | n + 1, cnt =>
     let rv := readU16LE s
     if rv.ok == 0 then { ok := 0, val := .nil, rest := .nil }
     else if rv.val == 65535 then
-      let t := readOptIdxN rv.rest n cnt
+      let t := readOptIdxN rv.rest hasCommit n cnt
       { ok := t.ok, val := .cons .noIdx t.val, rest := t.rest }
-    else if rv.val == cnt then
-      let t := readOptIdxN rv.rest n (cnt + 1)
+    else if hasCommit == 1 && rv.val == cnt then
+      let t := readOptIdxN rv.rest hasCommit n (cnt + 1)
       { ok := t.ok, val := .cons (.someIdx rv.val) t.val, rest := t.rest }
     else
       { ok := 0, val := .nil, rest := .nil }
@@ -2513,7 +2530,10 @@ def readSystem (s : ByteList) : ParseSysKey :=
   else
     let rCircs := readSysCircuitsN rn.rest rn.val
     let rCommit := readOptCommit rCircs.rest
-    let rIdxs := readOptIdxN rCommit.rest rn.val 0
+    let hasCommit := match rCommit.val with
+      | .noCommit => 0
+      | .someCommit _ => 1
+    let rIdxs := readOptIdxN rCommit.rest hasCommit rn.val 0
     if rCircs.ok * rCommit.ok * rIdxs.ok == 0 then bad
     else
       -- Reject any trailing bytes!
@@ -3393,6 +3413,31 @@ private def sampleSysBytes : ByteList :=
 #guard (readSystem sampleSysBytes).ok == 1
 #guard (readSystem (.cons 5 (match sampleSysBytes with | .nil => .nil | .cons _ t => t))).ok == 0  -- bad proto_ver
 #guard (readSystem (byteListAppend sampleSysBytes (.cons 0 .nil))).ok == 0                          -- trailing byte
+
+-- Structural preprocessed invariants (`prepWidth == 0 <=> prepHeight == 0`, power-of-two `prepHeight`,
+-- and `NoCommit => NoIdx`)
+private def mkPrepTestSysBytes (pw ph : Nat) (oc : OptCommit) (oi : OptIdx) : ByteList :=
+  let vk : DigestBytes :=
+    { d0 := u64BytesOfU32 11, d1 := u64BytesOfU32 22, d2 := u64BytesOfU32 33, d3 := u64BytesOfU32 44 }
+  let params : SysParams :=
+    { logBlowup := 1, capHeight := 0, logFinalPolyLen := 0, maxLogArity := 1
+      numQueries := 1, commitPowBits := 0, queryPowBits := 0 }
+  let nodes : SysNodeList :=
+    .cons (.var 1 0 0) (.cons (.const (glPrime - 7)) (.cons (.sub 0 1) .nil))
+  let circ : SysCircuit :=
+    { nodes := nodes, nodeCount := 3, zeros := .cons 2 .nil, maxDegree := 2
+      lookups := .nil, lookupGroupSize := 1, mainWidth := 1, prepWidth := pw
+      prepHeight := ph, stage2Width := 3 }
+  encodeSystem vk params (.cons circ .nil) oc (.cons oi .nil)
+
+private def samplePrepCap : DigestBytesList :=
+  .cons { d0 := u64BytesOfU32 1, d1 := u64BytesOfU32 2, d2 := u64BytesOfU32 3, d3 := u64BytesOfU32 4 } .nil
+
+#guard (readSystem (mkPrepTestSysBytes 1 0 .noCommit .noIdx)).ok == 0                     -- prepWidth > 0, prepHeight = 0
+#guard (readSystem (mkPrepTestSysBytes 0 4 .noCommit .noIdx)).ok == 0                     -- prepWidth = 0, prepHeight > 0
+#guard (readSystem (mkPrepTestSysBytes 1 3 (.someCommit samplePrepCap) (.someIdx 0))).ok == 0 -- non-pow2 prepHeight
+#guard (readSystem (mkPrepTestSysBytes 1 4 .noCommit (.someIdx 0))).ok == 0               -- SomeIdx without commit
+#guard (readSystem (mkPrepTestSysBytes 1 4 (.someCommit samplePrepCap) (.someIdx 0))).ok == 1 -- valid preprocessed key
 
 private def sampleClaimsBytes : ByteList :=
   encodeClaims (.cons (.cons (u64BytesOfNat 42) (.cons (u64BytesOfNat (glPrime - 1)) .nil)) .nil)

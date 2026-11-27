@@ -10,6 +10,7 @@ import Aiur.Tiling.VectorRom
 import Aiur.Library.Field.BN254.Prime
 import Aiur.Library.Field.BLS12381.Prime
 import Aiur.Library.U32.Goldilocks
+import Blake3.Rust
 
 /-!
 # Wide stage export
@@ -279,14 +280,37 @@ def block (rows width : Nat) (f : Nat → Nat → ZMod p) : ByteArray := Id.run 
       out := pushNat out (f i k).val
   return out
 
+private def blake3Hex (bytes : ByteArray) : String :=
+  String.join ((Blake3.Rust.hash bytes).val.toList.map fun b =>
+    let digits := Nat.toDigits 16 b.toNat
+    if digits.length == 1 then s!"0{String.ofList digits}" else String.ofList digits)
+
+private def isHexDigest (s : String) : Bool :=
+  s.length == 64 && s.all fun c => ('0' ≤ c && c ≤ '9') || ('a' ≤ c && c ≤ 'f')
+
+private def readCheckedArtifact (j : Json) (base : System.FilePath) :
+    IO (System.FilePath × String × ByteArray) := do
+  let path : System.FilePath := ← IO.ofExcept do (← j.getObjVal? "artifact").getStr?
+  let path := if path.isAbsolute then path else base / path
+  let expected := (← IO.ofExcept do
+    match j.getObjVal? "artifact_blake3" with
+    | .ok v => v.getStr?
+    | .error _ => .error "wide_export: missing required artifact_blake3 pin").toLower
+  unless isHexDigest expected do
+    throw (IO.userError s!"wide_export: invalid artifact_blake3 pin {expected}")
+  let bytes ← IO.FS.readBinFile path
+  let actual := blake3Hex bytes
+  unless actual == expected do
+    throw (IO.userError s!"wide_export: artifact {path} BLAKE3 {actual} differs from pinned {expected}")
+  return (path, expected, bytes)
+
 def run (fieldChoice : FieldChoice) (opts : CliOptions) (j : Json) (base output fixedPath : System.FilePath) : IO UInt32 := do
   let vectorRom ← match resolveVectorRom opts j with
     | .ok k => pure k
     | .error e => do IO.eprintln s!"wide_export: {e}"; return 1
   let get (k : String) : IO Json := IO.ofExcept (j.getObjVal? k)
-  let path : System.FilePath := ← IO.ofExcept (← get "artifact").getStr?
-  let path := if path.isAbsolute then path else base / path
-  let pkg ← IO.ofExcept (Ixa.decodeChecked (F := Fp) p ZMod.val (← IO.FS.readBinFile path))
+  let (path, artifactDigest, artifactBytes) ← readCheckedArtifact j base
+  let pkg ← IO.ofExcept (Ixa.decodeChecked (F := Fp) p ZMod.val artifactBytes)
   IO.eprintln s!"wide_export: decoded {path}: {pkg.chips.size} chips ({fieldChoice.name})"
   let mut circuits : List (String × Nat) := []
   for cj in ← IO.ofExcept (← get "circuits").getArr? do
@@ -519,7 +543,7 @@ def run (fieldChoice : FieldChoice) (opts : CliOptions) (j : Json) (base output 
     if vectorRom > 1 then [("rom_vector", Json.num vectorRom)] else []
   let out := Json.mkObj ([("format", Json.str "ix-wide-layout-1"),
     ("field", Json.str fieldChoice.name), ("modulus", Json.str (toString p)),
-    ("artifact", Json.str path.toString),
+    ("artifact", Json.str path.toString), ("artifact_blake3", Json.str artifactDigest),
     ("tables", Json.arr (units ++ groupsJ ++ mapsJ ++ romsJ).toArray),
     ("request", Json.arr (request.map (field p)).toArray),
     ("bound", Json.num bound), ("bounds", Json.mkObj (bounds.map fun (k, v) => (k, Json.num v)))] ++
