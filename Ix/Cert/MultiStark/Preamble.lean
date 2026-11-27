@@ -1,4 +1,5 @@
 import Ix.Cert.MultiStark.Types
+import Ix.Cert.MultiStark.Wire
 import Ix.Aiur.Parameters
 
 /-! # Multi-STARK Batch Preamble & Security-Envelope Validator (`Ix.Cert.MultiStark.Preamble`)
@@ -49,22 +50,44 @@ def checkParams (p : StarkParams) : Bool :=
   checkParamsWithFloor p false
 
 /-- Check static system invariants: parameter checks (with optional test-harness floor waiver),
-matching `preprocessedIndices`, lookup count `< 2^24`, valid `preprocessedCommit` cap length (`1` if `some`). -/
+full structural verifying-key parity (`validateStarkSystemStructural`: canonical `vk_digest`,
+preprocessed width/height & trailer consistency, `1 ≤ lookupGroupSize ≤ MAX_LOOKUP_GROUP`,
+topological order & `u32` degree bounds, column/public bounds, `checkCompilerContexts` /
+`checkLookupsPlain`, derived `maxConstraintDegree` & blowup budget, PoW ceiling `≤ 32`),
+and lookup count `< 2^24`. -/
 def checkSystemWithFloor (sys : StarkSystem) (allowBelowFloor : Bool := false) : Bool :=
   checkParamsWithFloor sys.params allowBelowFloor
-    && sys.preprocessedIndices.size == sys.circuits.size
-    && (match sys.preprocessedCommit with
-        | none => sys.preprocessedIndices.all (·.isNone)
-        | some cap => cap.size == 1)
-    && sys.circuits.all fun c =>
-        c.lookups.size < MAX_CIRCUIT_LOOKUPS
-          && c.lookupGroupSize ≥ 1
-          && (c.preprocessedHeight == 0 ||
-              (c.preprocessedHeight > 0 && c.preprocessedHeight &&& (c.preprocessedHeight - 1) == 0))
+    && (validateStarkSystemStructural sys).isOk
+    && sys.circuits.all fun c => c.lookups.size < MAX_CIRCUIT_LOOKUPS
 
-/-- Production static system check (enforcing the full Aiur security floor). -/
+/-- Production static system check (enforcing the full Aiur security floor and all structural
+verifying-key invariants). -/
 def checkSystem (sys : StarkSystem) : Bool :=
   checkSystemWithFloor sys false
+
+/-- Any system accepted by `checkSystemWithFloor` has a verified canonical `vk_digest` and every
+circuit in it satisfies `Topological`, `checkLookupsPlain`, `LookupsPlain`, and the PCS blowup
+degree budget. -/
+theorem checkSystemWithFloor_sound {sys : StarkSystem} {allowBelowFloor : Bool}
+    (h : checkSystemWithFloor sys allowBelowFloor = true) :
+    sys.vkDigest = computeVkDigest sys.circuits ∧
+      ∀ c ∈ sys.circuits,
+        c.Topological ∧ checkLookupsPlain c = true ∧ c.LookupsPlain ∧
+          c.quotientDegree ≤ 2 ^ sys.params.logBlowup := by
+  unfold checkSystemWithFloor at h
+  simp only [Bool.and_eq_true] at h
+  have hv : (validateStarkSystemStructural sys).isOk = true := h.1.2
+  cases hres : validateStarkSystemStructural sys with
+  | error e => simp [hres, Except.isOk, Except.toBool] at hv
+  | ok u => exact validateStarkSystemStructural_sound hres
+
+/-- Production specialization of `checkSystemWithFloor_sound`. -/
+theorem checkSystem_sound {sys : StarkSystem} (h : checkSystem sys = true) :
+    sys.vkDigest = computeVkDigest sys.circuits ∧
+      ∀ c ∈ sys.circuits,
+        c.Topological ∧ checkLookupsPlain c = true ∧ c.LookupsPlain ∧
+          c.quotientDegree ≤ 2 ^ sys.params.logBlowup :=
+  checkSystemWithFloor_sound h
 
 /-- `C6` vectorized ROM lane schedule (`crates/aiur/src/trace/stark/rom.rs`):
 `8` lanes for `w ≤ 4`, `4` lanes for `5 ≤ w ≤ 12`, `1` lane otherwise. -/

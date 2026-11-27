@@ -6,7 +6,19 @@ import Mathlib.Algebra.Polynomial.Degree.Operations
 Models and certifies the 1-circuit fixed-layout Native `Fp^3` `v6-zk` hiding STARK Shrinker
 matching `multi-stark/src/p3_adapter/{domain_blake3,zk}.rs` and `CertiFriProofs/Exec/SoundnessZk.lean`
 byte-for-byte, in the **same pure Random Oracle Model** (ZERO elliptic curves, ZERO SRS,
-ZERO `gnark` assumptions):
+ZERO `gnark` assumptions).
+
+Scope: no hiding (zero-knowledge) property is defined or proved here — the results below are
+soundness-side (binding, blinding algebra, guardrail predicates) — and
+`starkShrinker_v6zk_sound_128` is a schema that assumes round-by-round soundness
+(`MultiRbrSound`), extraction and a 64-byte digest; it is not instantiated at the shipped
+verifier, which uses 32-byte BLAKE3. The items:
+
+**Zero knowledge is not stated or proved here.** `v6-zk` is designed to be hiding, but no
+simulator, view or indistinguishability statement is defined in this module (or in CertiFRI):
+the theorems below are soundness-side and completeness-side facts (salted Merkle binding,
+blinding preserves trace values and degree bounds, quotient slices recombine, the tensor span
+bound) and Boolean guardrail predicates.
 
 1. **16-Byte BLAKE3-CTR Leaf Salting & Strict `v6-zk` Domain Separation:**
    - `ZK_LEAF_SALT_BYTES = 16`, `PREPROCESSED_SALT_CONTEXT = "multi-stark/v6-zk/preprocessed-salt"`,
@@ -26,7 +38,7 @@ ZERO `gnark` assumptions):
    - Guardrail 1: `N ≥ next_pow2(2Q + 2D)` (`minZkLogDegree`) & `logN + 1 + lb ≤ 32`,
    - Guardrail 2: `W_R ≥ 4` (`ZK_RANDOMIZER_WIDTH`),
    - Guardrail 3: `1 ≤ logBlowup ∧ zkQuotientDegree d ≤ 2 ^ logBlowup` (implies `d ≤ 2^logBlowup`),
-   - Guardrail 4: Blinded interior `intermediate_accumulators`, 1-circuit zero-leakage layout,
+   - Guardrail 4: Blinded interior `intermediate_accumulators`, 1-circuit layout,
      16B leaf salting, 2× odd-coset blinding, and strict `v6-zk` BLAKE3 `derive_key` domains.
    - `starkShrinker_v6zk_sound_128` & `starkShrinker_v6zk_concrete_prob_128`.
 5. **5 Constructive Negative Controls:**
@@ -1036,10 +1048,10 @@ structure StarkShrinkerZkConfig where
    enforces `maxConstraintDegree ≤ 2 ^ logBlowup`).
 4. **Guardrail 4 (Zero-Leakage Blinded Interior Accumulators, 1-Circuit Fixed Layout,
    16B BLAKE3-CTR Leaf Salting, 2× Odd-Coset Blinding, & Strict `v6-zk` Domain Separation):**
-   `version = .v6Zk`, `extDegree = 3`, `digestBytes = 48`, `pinnedVkDigest.length = 48`,
-   `batching = .tensor`, `v6QueryFloorOk`, `leafSaltBytes = 16`, `oddCosetBlinding = true`,
-   `interiorAccumulatorsBlinded = true`, `numCircuits = 1`, and all 4 BLAKE3 `derive_key`
-   domains strictly in `v6-zk`. -/
+   `version = .v6Zk`, `extDegree = 3`, `digestBytes = 64` (RFC 7693 `BLAKE2b-512`),
+   `pinnedVkDigest.length = 64`, `batching = .tensor`, `v6QueryFloorOk`, `leafSaltBytes = 16`,
+   `oddCosetBlinding = true`, `interiorAccumulatorsBlinded = true`, `numCircuits = 1`, and all 4
+   `v6-zk` domains strictly separated from non-ZK modes. -/
 def StarkShrinkerZkGuardrailsOk (cfg : StarkShrinkerZkConfig) : Prop :=
   -- Guardrail 1: N ≥ next_pow2(2Q + 2D) and 2× LDE fits in 2^32
   minZkLogDegree cfg.numQueries cfg.extDegree ≤ cfg.logTraceHeight ∧
@@ -1052,8 +1064,8 @@ def StarkShrinkerZkGuardrailsOk (cfg : StarkShrinkerZkConfig) : Prop :=
   -- Guardrail 4: zero-leakage blinded interior accumulators, 1-circuit, 16B salt, 2× odd-coset, v6-zk domains
   cfg.version = .v6Zk ∧
   cfg.extDegree = 3 ∧
-  cfg.digestBytes = 48 ∧
-  cfg.pinnedVkDigest.length = 48 ∧
+  cfg.digestBytes = 64 ∧
+  cfg.pinnedVkDigest.length = 64 ∧
   cfg.batching = .tensor ∧
   v6QueryFloorOk cfg.regime cfg.logBlowup cfg.numQueries cfg.queryPowBits ∧
   cfg.leafSaltBytes = ZK_LEAF_SALT_BYTES ∧
@@ -1103,12 +1115,12 @@ theorem zkShrinkerGuardrails_domains_disjoint_from_nonZk {cfg : StarkShrinkerZkC
 
 /-! ### Canonical Endpoint 1b (`v6-zk`) Shrinker Profiles (Positive Certificates) -/
 
-def canonicalV6ZkVkDigest : List UInt8 := List.replicate 48 0x7B
+def canonicalV6ZkVkDigest : List UInt8 := List.replicate 64 0x7B
 
 def zkShrinkerUd128 : StarkShrinkerZkConfig where
   version                     := .v6Zk
   extDegree                   := 3
-  digestBytes                 := 48
+  digestBytes                 := 64
   batching                    := .tensor
   regime                      := .uniqueDecoding
   logTraceHeight              := 9
@@ -1163,9 +1175,9 @@ theorem zkShrinkerJohnsonLb4_ok : StarkShrinkerZkGuardrailsOk zkShrinkerJohnsonL
 /-! ## 5. Endpoint 1b (`v6-zk`) Public-Input Binding & Pure-ROM 128-Bit Soundness -/
 
 /-- Public-input binding for the `v6-zk` hiding STARK Shrinker:
-binds the pinned 48-byte `zkVerifyingKey` digest and 8-word Goldilocks claim digest while
-enforcing that interior `intermediate_accumulators` are blinded (`interiorAccumulatorsBlinded = true`,
-1-circuit fixed layout with zero unblinded public leakage). -/
+binds the pinned 64-byte `zkVerifyingKey` digest (RFC 7693 `BLAKE2b-512`) and 8-word Goldilocks
+claim digest while enforcing that interior `intermediate_accumulators` are blinded
+(`interiorAccumulatorsBlinded = true`, 1-circuit fixed layout with zero unblinded public leakage). -/
 structure StarkShrinkerZkPublicBinding (cfg : StarkShrinkerZkConfig)
     (stmt : StarkShrinkerPublicStatement)
     (friPub : List GoldilocksF)
@@ -1180,7 +1192,7 @@ Composes:
 - All 4 `v6-zk` guardrails + blinded interior `intermediate_accumulators` (`StarkShrinkerZkGuardrailsOk`),
 - Monolithic single-oracle pure-ROM extraction (`monolithic_multiNode_rom_sound`) over ALL
   `1 + t.verificationCount` verifications (outer `v6-zk` shrinker + inner `v6` aggregation root)
-  with 16-byte salted Merkle leaves, 48-byte BLAKE3 XOF (`|D| = 2^384`), and `c = 3/2`,
+  with 16-byte salted Merkle leaves, 64-byte RFC 7693 `BLAKE2b-512` (`|D| = 2^512`), and `c = 3/2`,
 - 2× odd-coset randomizer `W_R ≥ 4` tensor span failure bound `≤ 2 / p^2 < 1 / 2^126`,
 - In-circuit Goldilocks FRI verifier (`FriVerifier.friVerifierCircuit_sound`),
 - 19-shape inner aggregation tree (`AcceptedAggrTree` → `AggrNodeHolds sem rootStmt`),
@@ -1255,11 +1267,11 @@ theorem starkShrinker_v6zk_sound_128
         Ix.Cert.MultiStark.verifyBatchBytes vp.vkBytes vp.claimsBytes proofBytes = true) := by
   have hProbRaw := monolithic_multiNode_rom_sound (D := D) (c := 3 / 2)
     hsound hε h0 (by norm_num) hashBad hHashBad adv hadv verifyAll hver NodeForges hExtract
-  have hDigest48 : cfg.digestBytes = 48 := hCfg.2.2.2.2.2.2.2.1
-  have hD384 : (Fintype.card D : ℝ) = (2 : ℝ) ^ 384 := by
-    rw [hDigestCard, hDigest48, show 8 * 48 = 384 by decide, Nat.cast_pow, Nat.cast_ofNat]
-  rw [hD384] at hProbRaw
-  have hRate := monolithic_goldilocksExt3_xof48_rate_128 Q M_verif hM20 hN128 hε128
+  have hDigest64 : cfg.digestBytes = 64 := hCfg.2.2.2.2.2.2.2.1
+  have hD512 : (Fintype.card D : ℝ) = (2 : ℝ) ^ 512 := by
+    rw [hDigestCard, hDigest64, show 8 * 64 = 512 by decide, Nat.cast_pow, Nat.cast_ofNat]
+  rw [hD512] at hProbRaw
+  have hRate := monolithic_goldilocksExt3_blake2b512_rate_128 Q M_verif hM20 hN128 hε128
   unfold monolithicRomBound at hRate
   have hProb := hProbRaw.trans hRate
   have hQuery := starkShrinker_query_soundness_128 hCfg.2.2.2.2.2.2.2.2.2.2.1
@@ -1316,10 +1328,10 @@ theorem starkShrinker_v6zk_concrete_prob_128
       1 / (2 : ℝ) ^ 128 := by
   have hProbRaw := monolithic_multiNode_rom_sound (D := D) (c := 3 / 2)
     hsound hε h0 (by norm_num) hashBad hHashBad adv hadv verifyAll hver NodeForges hExtract
-  have hD384 : (Fintype.card D : ℝ) = (2 : ℝ) ^ 384 := by
-    rw [hDigestCard, hCfg.2.2.2.2.2.2.2.1, show 8 * 48 = 384 by decide, Nat.cast_pow, Nat.cast_ofNat]
-  rw [hD384] at hProbRaw
-  exact hProbRaw.trans (monolithic_goldilocksExt3_xof48_concrete_prob_128 Q M_verif hM20 hN127 hBudget)
+  have hD512 : (Fintype.card D : ℝ) = (2 : ℝ) ^ 512 := by
+    rw [hDigestCard, hCfg.2.2.2.2.2.2.2.1, show 8 * 64 = 512 by decide, Nat.cast_pow, Nat.cast_ofNat]
+  rw [hD512] at hProbRaw
+  exact hProbRaw.trans (monolithic_goldilocksExt3_blake2b512_concrete_prob_128 Q M_verif hM20 hN127 hBudget)
 
 /-! ## 6. Constructive Negative Controls (All 4 ZK Guardrails + Zero-Leakage) -/
 

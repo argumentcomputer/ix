@@ -30,7 +30,7 @@ unpruned `merkleMmcs` (one full path per query) to Plonky3's `CertiFri.P3.pruned
    `Exec.run_model_of_accepts`, and `Compiled.Params.soundness_grind_view_of_accepts`,
    pruned acceptance implies model acceptance with the exact unique-decoding ROM bound.
 
-3. **Base-Field Descent (`basePoly_of_eval_c1_zero`):**
+3. **Base-Field Descent (`basePoly_of_eval_c1_c2_zero`):**
    Any polynomial `P : K[X]` of degree `< d + 1` whose evaluations at `≥ d + 1` points
    in the base field `Fp ⊆ K` all have `c1 = 0` has EVERY coefficient in `Fp`
    (`P = Polynomial.map K.embedHom P₀`). Hence every extracted preprocessed/main/quotient

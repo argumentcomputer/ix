@@ -13,9 +13,10 @@ outer shrinker and the inner aggregation tree live in the **same pure Random Ora
    context keys matching `multi-stark/src/p3_adapter/domain_blake3.rs` byte-for-byte, proving
    `Blake3Domain.keyWords_injective` and strict pairwise separation across `plain` (`v5`),
    `v6`, and `v6-zk`.
-2. **128-Bit Native `Fp^3` `v6` Shrinker Profile (`StarkShrinkerV6Config`, `StarkShrinkerV6ProfileOk`):**
+2. **128-Bit Post-Quantum Native `Fp^3` `v6` Shrinker Profile (`StarkShrinkerV6Config`, `StarkShrinkerV6ProfileOk`):**
    - `GoldilocksExt3` (`extDegree = 3`, `|F| = p^3 ≥ 2^191`),
-   - 48-byte BLAKE3 XOF (`digestBytes = 48`, `|D| = 2^384`, incremental sponge `c = 3/2`),
+   - 64-byte RFC 7693 `BLAKE2b-512` (`digestBytes = 64`, `|D| = 2^512`, true 512-bit internal state,
+     incremental sponge `c = 3/2`), while production 128-bit classical deployments retain 32-byte `BLAKE3-256`,
    - `FriBatching::Tensor`, 1-circuit fixed layout (`numCircuits = 1`), `queryPowBits ≥ 20`,
    - Query floors: `lb = 2, q ≥ 160` (UD) or `lb ∈ {2, 3, 4}` with `q ≥ {118, 78, 58}` (Johnson),
    - Exact kernel-verified real-number query soundness bounds (`starkShrinker_query_soundness_128`).
@@ -28,8 +29,8 @@ outer shrinker and the inner aggregation tree live in the **same pure Random Ora
    Composes `MonolithicRom.monolithic_multiNode_rom_sound` + `FriVerifier.friVerifierCircuit_sound`
    + `Aggr.acceptedAggrTree_refines_derivation19` with ZERO curve/SRS/pairing hypotheses.
 5. **Constructive Negative Controls:**
-   Rejects `v5` / `plain` BLAKE3, `Fp^2`, 32-byte digests, `FriBatching::Powers`, under-queried
-   profiles, and mismatched VK / claim digests.
+   Rejects `v5` / `plain` BLAKE3, `Fp^2`, 32-byte and retired 48-byte digests for concrete 128-bit PQ,
+   `FriBatching::Powers`, under-queried profiles, and mismatched VK / claim digests.
 
 Zero `sorry`, zero custom `axiom`, zero `native_decide`, zero `bv_decide`,
 strictly `[propext, Classical.choice, Quot.sound]`.
@@ -225,16 +226,17 @@ def v6QueryFloorOk (regime : SoundnessRegime) (logBlowup numQueries queryPowBits
 Enforces:
 1. Protocol version `v6`,
 2. Cubic Goldilocks extension `Fp^3` (`extDegree = 3`, `|F| ≥ 2^191`),
-3. 48-byte BLAKE3 XOF (`digestBytes = 48`, `|D| = 2^384`, `pinnedVkDigest.length = 48`),
+3. 64-byte RFC 7693 `BLAKE2b-512` (`digestBytes = 64`, `|D| = 2^512`, `pinnedVkDigest.length = 64`,
+   true 512-bit internal state for concrete 128-bit PQ),
 4. `FriBatching::Tensor`,
 5. 1-circuit fixed-layout shrinker (`numCircuits = 1`),
 6. 128-bit query floor (`v6QueryFloorOk`),
-7. Strict `v6` BLAKE3 `derive_key` domain separation. -/
+7. Strict `v6` domain separation. -/
 def StarkShrinkerV6ProfileOk (cfg : StarkShrinkerV6Config) : Prop :=
   cfg.version = .v6 ∧
   cfg.extDegree = 3 ∧
-  cfg.digestBytes = 48 ∧
-  cfg.pinnedVkDigest.length = 48 ∧
+  cfg.digestBytes = 64 ∧
+  cfg.pinnedVkDigest.length = 64 ∧
   cfg.batching = .tensor ∧
   cfg.numCircuits = 1 ∧
   v6QueryFloorOk cfg.regime cfg.logBlowup cfg.numQueries cfg.queryPowBits ∧
@@ -311,12 +313,12 @@ theorem starkShrinker_query_soundness_128 {regime : SoundnessRegime}
 
 /-! ### Canonical Endpoint 1a (`v6`) Shrinker Profiles (Positive Certificates) -/
 
-def canonicalV6VkDigest : List UInt8 := List.replicate 48 0x6A
+def canonicalV6VkDigest : List UInt8 := List.replicate 64 0x6A
 
 def v6ShrinkerUd128 : StarkShrinkerV6Config where
   version          := .v6
   extDegree        := 3
-  digestBytes      := 48
+  digestBytes      := 64
   batching         := .tensor
   regime           := .uniqueDecoding
   logBlowup        := 2
@@ -353,7 +355,7 @@ theorem v6ShrinkerJohnsonLb4_ok : StarkShrinkerV6ProfileOk v6ShrinkerJohnsonLb4 
 /-! ## 3. Public-Input Digest Binding (`shrinkerVkDigest` + `shrinkerClaimDigest`) -/
 
 /-- Public statement exposed by the 1-circuit STARK Shrinker verifier:
-1. `vkDigest`: pinned 48-byte BLAKE3 `derive_key("multi-stark/v6/vk")` verifying-key digest,
+1. `vkDigest`: pinned 64-byte RFC 7693 `BLAKE2b-512` (`"ix/v6/b2b/vk"`) verifying-key digest,
 2. `claimDigest`: 8-word Goldilocks claim digest matching the inner aggregated root. -/
 structure StarkShrinkerPublicStatement where
   vkDigest    : List UInt8
@@ -395,11 +397,11 @@ theorem starkShrinker_publicBinding_injective {cfg : StarkShrinkerV6Config}
 /-- **Endpoint 1a Pure-ROM 128-Bit Soundness (`starkShrinker_v6_sound_128`):**
 Composes:
 - Valid Endpoint 1a `v6` shrinker profile (`StarkShrinkerV6ProfileOk cfg`: `GoldilocksExt3`,
-  48B BLAKE3 XOF, `FriBatching::Tensor`, 1-circuit fixed layout, `v6` `derive_key` domains,
+  64B RFC 7693 `BLAKE2b-512`, `FriBatching::Tensor`, 1-circuit fixed layout, `v6` domain separation,
   128-bit UD or Johnson query floor),
 - Single shared random-oracle monolithic extraction (`monolithic_multiNode_rom_sound`) over
   ALL `1 + t.verificationCount` verifications (outer shrinker + inner `v6` aggregation tree)
-  using 48-byte BLAKE3 XOF (`Fintype.card D = 2 ^ 384`) and incremental sponge `c = 3 / 2`,
+  using 64-byte RFC 7693 `BLAKE2b-512` (`Fintype.card D = 2 ^ 512`) and incremental sponge `c = 3 / 2`,
 - In-circuit Goldilocks FRI verifier (`FriVerifier.friVerifierCircuit_sound`),
 - 19-shape inner aggregation tree (`AcceptedAggrTree` → `AggrNodeHolds sem rootStmt`),
 - Explicit public-input digest binding (`StarkShrinkerPublicBinding`).
@@ -474,10 +476,10 @@ theorem starkShrinker_v6_sound_128
         Ix.Cert.MultiStark.verifyBatchBytes vp.vkBytes vp.claimsBytes proofBytes = true) := by
   have hProbRaw := monolithic_multiNode_rom_sound (D := D) (c := 3 / 2)
     hsound hε h0 (by norm_num) hashBad hHashBad adv hadv verifyAll hver NodeForges hExtract
-  have hD384 : (Fintype.card D : ℝ) = (2 : ℝ) ^ 384 := by
-    rw [hDigestCard, hCfg.2.2.1, show 8 * 48 = 384 by decide, Nat.cast_pow, Nat.cast_ofNat]
-  rw [hD384] at hProbRaw
-  have hRate := monolithic_goldilocksExt3_xof48_rate_128 Q M_verif hM20 hN128 hε128
+  have hD512 : (Fintype.card D : ℝ) = (2 : ℝ) ^ 512 := by
+    rw [hDigestCard, hCfg.2.2.1, show 8 * 64 = 512 by decide, Nat.cast_pow, Nat.cast_ofNat]
+  rw [hD512] at hProbRaw
+  have hRate := monolithic_goldilocksExt3_blake2b512_rate_128 Q M_verif hM20 hN128 hε128
   unfold monolithicRomBound at hRate
   have hProb : prob (fun b l' => ∃ k : Fin (1 + t.verificationCount), NodeForges b k l')
       (adv.bind verifyAll) [] ≤ ((Q + M_verif : ℕ) : ℝ) / (2 : ℝ) ^ 128 :=
@@ -530,12 +532,12 @@ theorem starkShrinker_v6_concrete_prob_128
       1 / (2 : ℝ) ^ 128 := by
   have hProbRaw := monolithic_multiNode_rom_sound (D := D) (c := 3 / 2)
     hsound hε h0 (by norm_num) hashBad hHashBad adv hadv verifyAll hver NodeForges hExtract
-  have hD384 : (Fintype.card D : ℝ) = (2 : ℝ) ^ 384 := by
-    rw [hDigestCard, hCfg.2.2.1, show 8 * 48 = 384 by decide, Nat.cast_pow, Nat.cast_ofNat]
-  rw [hD384] at hProbRaw
-  exact hProbRaw.trans (monolithic_goldilocksExt3_xof48_concrete_prob_128 Q M_verif hM20 hN127 hBudget)
+  have hD512 : (Fintype.card D : ℝ) = (2 : ℝ) ^ 512 := by
+    rw [hDigestCard, hCfg.2.2.1, show 8 * 64 = 512 by decide, Nat.cast_pow, Nat.cast_ofNat]
+  rw [hD512] at hProbRaw
+  exact hProbRaw.trans (monolithic_goldilocksExt3_blake2b512_concrete_prob_128 Q M_verif hM20 hN127 hBudget)
 
-/-! ## 5. Constructive Negative Controls (`v5`, `Fp^2`, 32B Digest, `Powers`, Under-Queried, Mismatched Digests) -/
+/-! ## 5. Constructive Negative Controls (`v5`, `Fp^2`, 32B & 48B Digests, `Powers`, Under-Queried, Mismatched Digests) -/
 
 /-- Rejects legacy `v5` protocol version AND plain unkeyed BLAKE3 domain. -/
 theorem negControl_shrinker_v6_rejects_v5 :
@@ -551,14 +553,17 @@ theorem negControl_shrinker_v6_rejects_fp2 :
     CertiFri.P3.Goldilocks.order ^ 2 < 2 ^ 128 :=
   ⟨fun h => by have := h.2.1; simp at this, negControl_fp2_below_128.1⟩
 
-/-- Rejects 32-byte digest (`digestBytes = 32`), `FriBatching::Powers`, and under-queried
+/-- Rejects 32-byte `BLAKE3-256` (classical-only) and retired 48-byte `BLAKE3-XOF48`
+digests (`digestBytes = 32`, `digestBytes = 48`), `FriBatching::Powers`, and under-queried
 profiles (`q = 159` UD, `q = 117` Johnson at `lb = 2`). -/
 theorem negControl_shrinker_v6_rejects_weak_params :
     ¬ StarkShrinkerV6ProfileOk { v6ShrinkerUd128 with digestBytes := 32 } ∧
+    ¬ StarkShrinkerV6ProfileOk { v6ShrinkerUd128 with digestBytes := 48 } ∧
     ¬ StarkShrinkerV6ProfileOk { v6ShrinkerUd128 with batching := .powers } ∧
     ¬ StarkShrinkerV6ProfileOk { v6ShrinkerUd128 with numQueries := 159 } ∧
     ¬ StarkShrinkerV6ProfileOk { v6ShrinkerJohnsonLb2 with numQueries := 117 } := by
-  refine ⟨?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · intro h; have := h.2.2.1; simp at this
   · intro h; have := h.2.2.1; simp at this
   · intro h; cases h.2.2.2.2.1
   · intro h; have := h.2.2.2.2.2.2.1; simp [v6QueryFloorOk, v6ShrinkerUd128] at this

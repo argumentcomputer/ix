@@ -3,33 +3,42 @@ import Ix.Cert.MultiStark.DynamicRom
 import Ix.Cert.MultiStark.PlanBridge
 import Ix.IxVM.Refinement.Statement
 
-/-! # Multi-STARK Formal Soundness Components & Trace-to-IxVM Bridge (Workstream 1A-i)
+/-! # Multi-STARK Formal Soundness Components & Trace-to-IxVM Bridge
 
 Assembles the five independently proved formal soundness components of the Multi-STARK
 certification stack alongside the Mathlib-free executable verifier
 (`Ix.Cert.MultiStark.{Preamble, Verifier}`):
 
-1. **Gap 1 (`FieldModel`, `Blake3Parity`):** Concrete Goldilocks (`p = 2^64 - 2^32 + 1`)
-   quadratic-extension `Exec.FieldModel`, `WellFormed`, and byte-for-byte parity
-   of `CertiFri.P3.Blake3` against `Blake3.Pure.hash`.
-2. **Gap 2 (`DynamicRom`):** Shape-independent `DynChal`, exact uniform dynamic-height
+1. **Field Model & BLAKE3 Parity (`FieldModel`, `Blake3Parity`):** Concrete Goldilocks
+   (`p = 2^64 - 2^32 + 1`) quadratic-extension `Exec.FieldModel`, `WellFormed`, and byte-for-byte
+   parity of plain (unkeyed) `CertiFri.P3.Blake3` against `Blake3.Pure.hash` (not the keyed
+   `derive_key` hashers every v6 verifier uses).
+2. **Dynamic ROM (`DynamicRom`):** Shape-independent `DynChal`, exact uniform dynamic-height
    projection `fractionLE_projectQueryIndex`, dynamic Merkle `Settles`, adaptive batch ROM
    soundness `soundness_dynamic_rom`, and per-round `FractionLE` bounds (including
    `fractionLE_logup_pair_or_zero_denom` covering disabled/padding zero-denominator events).
-3. **Gap 3 (`PrunedSoundness`):** Unconditional ROM unique-decoding soundness of
+3. **Pruned MMCS Soundness (`PrunedSoundness`):** Unconditional ROM unique-decoding soundness of
    Plonky3's pruned MMCS (`CertiFri.P3.prunedMmcs`) via `soundness_pruned_uniqueDecoding`
-   and base-field polynomial descent `basePoly_of_eval_c1_zero`.
-4. **Gap 4 (`SmallHeight`, `AirSoundness`):** Tight off-domain decoding at all trace
-   heights including `ℓ = 0, 1` (`DecodeMarginOff`, `decodeMarginOff_blowup2_all_heights`),
-   trace-domain selectors `isFirst`/`isLast`/`isTrans`, and Horner constraint batching
-   `card_horner_bad_le`.
-5. **Gap 5 (`LogUpSoundness`, `PlanBridge`):** Linear LogUp soundness including zero-denominator
-   exclusion (`card_logup_pair_bad_or_zero_denom_le`), sharded `MEMSEG = 16` interval
-   uniqueness → `Aiur.WidthROM.Valid` (including `C6` vectorized ROM `vectorized_rom_widthROM_valid`),
-   field-level LogUp balance → integer `Aiur.Optimized.Grouping.Plan.checkMemo`, and composition
-   with `IxVM.Refinement.CircuitSound` (`ixvm_circuit_sound_of_extracted_trace`).
+   and base-field polynomial descent `basePoly_of_eval_c1_c2_zero`.
+4. **Small-Height Decoding & AIR Soundness (`SmallHeight`, `AirSoundness`):** Tight off-domain
+   decoding at all trace heights including `ℓ = 0, 1` (`DecodeMarginOff`,
+   `decodeMarginOff_blowup2_all_heights`), trace-domain selectors `isFirst`/`isLast`/`isTrans`,
+   and Horner constraint batching `card_horner_bad_le`.
+5. **LogUp & Plan Bridge (`LogUpSoundness`, `PlanBridge`):** Linear LogUp soundness including
+   zero-denominator exclusion (`card_logup_pair_bad_or_zero_denom_le`), sharded `MEMSEG = 16`
+   interval uniqueness → `Aiur.WidthROM.Valid` (including vectorized ROM
+   `vectorized_rom_widthROM_valid`), field-level LogUp balance → integer
+   `Aiur.Optimized.Grouping.Plan.checkMemo`, and composition with `IxVM.Refinement.CircuitSound`
+   (`ixvm_circuit_sound_of_extracted_trace`).
 
 ## Current Scope & Remaining Inter-Stage Bridges
+- **Horner-vs-tensor batching & shipped `v6` verifier gap:** `CertiFRI`'s proved
+  `Fri.verify` soundness theorems (`goldilocks_pruned_fri_soundness`, `CertiFriProofs.Audit128`)
+  cover Horner-batched, binary-folding FRI over a 64-byte `Digest64` type (or plain unkeyed
+  BLAKE3 in the quadratic-extension model), whereas the shipped Protocol `v6` verifier uses
+  multilinear tensor batching (`FriBatching::Tensor`), cubic extension `Fp^3`, and 32-byte
+  `BLAKE3 derive_key` digests. No soundness theorem covers the shipped tensor-batched `v6`
+  verifier.
 - **Executable verifier ↔ ROM model gap:** No theorem here yet bridges the executable
   `Ix.Cert.MultiStark.{verifyBatch, verifyBatchBytes}` / `shardFriChallenges` BLAKE3 transcript
   (which omits observing `points`) to `goldilocks_pruned_fri_soundness` (which uses CertiFRI's
@@ -48,8 +57,10 @@ open Aiur Aiur.Circuit Aiur.Optimized Aiur.Optimized.Grouping
 
 /-- **End-to-End Multi-STARK → `IxVM.Refinement.CircuitSound` Composition:**
 
-Given `IxVM.Refinement.CircuitSound P` (satisfied unconditionally by
-`IxVM.Refinement.Endpoint` for `IxVMClaimSpecIn`) and an extracted Multi-STARK
+Given `IxVM.Refinement.CircuitSound P` (a hypothesis: the endpoint proves it only
+for the nested two-run property of `CircuitComposed`, via
+`IxVM.Refinement.Endpoint.circuitComposed`, not for `IxVMClaimSpecIn`, whose target
+`VerifyClaimSoundIn` is unproved) and an extracted Multi-STARK
 trace `(rom, rows)` satisfying:
 - sharded `MEMSEG = 16` interval balance against sorted disjoint preamble intervals
   (proving `rom.Valid` via `memseg_balance_implies_unique`),

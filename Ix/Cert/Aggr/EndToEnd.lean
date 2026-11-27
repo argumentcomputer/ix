@@ -3,7 +3,7 @@ import Ix.Cert.Aggr.Shapes
 import Ix.Cert.MultiStarkRefinement.EndToEnd
 import Ix.Cert.MultiStark.EndToEnd
 
-/-! # Stage-Isolated Aggregated Root Soundness (`Ix.Cert.Aggr.EndToEnd`, Workstreams `1B` + `5A`/`5B`)
+/-! # Stage-Isolated Aggregated Root Soundness (`Ix.Cert.Aggr.EndToEnd`)
 
 Composes the stage-isolated certification stack from an accepted outer `MultiStark.aggregateProgram`
 trace (`MultiStark::ix_aggr`) spanning ALL 19 aggregation shapes (`0..18`) together with an
@@ -12,15 +12,18 @@ explicit `AcceptedAggrTree` witness tree down to:
 - Observed trace extraction (`prepared_obs_of_extracted_trace` via
   `Aiur.Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks_observed`),
 - Recursive `MultiStark.recursionProgram` verification (`recursion_obs_refines_verifyBatch`),
+  including every Shape `10` (`aggr_range_leaf`) shard verification,
 - Multi-node ROM tree error union bound (`tree_rom_error_bound`),
 - Inductive 19-shape soundness (`Aggr.aggrDerivation19_checkEnv_sound`,
   `aggrDerivation19_linked_checkEnv_sound`, `catalog_sound`, `dynamicLink_sound`),
 - Tier 1 & Tier 2 dynamic linking (`Ix.DynamicLink.Soundness`): Mode 2 (`@Eq` `Claim.check`)
-  discharges unconditionally (`10 → 3` / `11 → 4`, zero external circuits), whereas Mode 3a
+  discharges into distinct validators `14`/`15` (`10 → 14` / `11 → 15`, zero external circuits,
+  never aliasing direct validators `3`/`4`), whereas Mode 3a
   (`DynamicLinkStatement`) explicitly records every `LinkedCircuitEntry` into validators `12`/`13`
   (never erasing into validators `3`/`4`),
 - Conditional shards `CheckEnv(S, A)` with `A7` axiom merging and Shape 18 eval discharge, and
-- Unconditional set-theoretic models via frozen `IxVM.Consistency.ComposedSpec` (`CircuitComposed`).
+- Unconditional set-theoretic models via both single-run `IxVM.Consistency.ComposedSpec` and
+  closed conditional-shard partition composition `ShardedComposedSpec` (`CircuitShardedComposed`).
 
 **Scope Honesty Note:** `aggregated_root_sound` is a **stage-isolated** composition theorem:
 `t : AcceptedAggrTree` and `nodeProbs` are passed as explicit witnesses alongside the extracted
@@ -31,7 +34,7 @@ Also includes five constructive negative controls verifying rejection of:
 1. Weak Shape 17 security envelopes (`< 220` conjectured security bits),
 2. Deceptive high-blowup Shape 17 envelopes (`(4, 55, 0)` — 220 conjectured yet 50.2-bit UD),
 3. `A7` dropped user axioms during pair/discharge merge,
-4. Shape 18 premature full discharge (`10 → 3` / `11 → 4`) with an undischarged `EvalAssumption`,
+4. Shape 18 premature full discharge (`10 → 14` / `11 → 15`) with an undischarged `EvalAssumption`,
 5. Shape 18 Mode 3a erasure of `LinkedCircuitEntry` or emission of validator `3`/`4`.
 
 Zero `sorry`, zero `native_decide`, zero `bv_decide`, standard axioms only.
@@ -209,19 +212,19 @@ theorem aggregated_root_linked_checkEnv_sound
   obtain ⟨hDeriv, hChildOk⟩ := acceptedAggrTree_refines_derivation19 t
   exact ⟨aggrDerivation19_linked_checkEnv_sound hWf hStep hDeriv, hChildOk⟩
 
-/-- **Zero-Axiom Zero-Link Set-Theoretic Model Corollary (`aggregated_root_checkEnv_no_axioms_model`):**
-When an accepted 19-shape aggregation tree closes to an unconditional, unlinked `CheckEnv` root
-with `Ax = ∅`, `A = ∅`, `EvalA = ∅`, `Linked = ∅`, and `validator = 3` (`.validated b` — a concrete
-role binding `b`, excluding validator-5 literal classes which have no `.binding` claim), and its
-subject set `S` is linked (`hS : ∀ x, S x ↔ x ∈ seeds`) to the `ClaimSeeds` of an in-scope claim
-`cA` witnessed by frozen `IxVM.Consistency.ComposedSpec` paired with its verified binding proof
-`.binding spec b`, then in every set theory `W`, `t.dynamicLinkDischarges = 0`, and EITHER a
-BLAKE3 collision occurred OR the claimed environment is consistent with a model
-`Ix.Kernel.Model W (claimedEnv env)` and no subject `x` with `S x` has type `False`!
+/-- **Conjunction of Accepted Tree Invariants and Single-Run `ComposedSpec` Model
+(`aggregated_root_checkEnv_no_axioms_model`):**
+Conjoins the tree-level invariants of an accepted 19-shape aggregation tree `t` (with
+`Ax = ∅`, `A = ∅`, `EvalA = ∅`, `Linked = ∅`, `validator = 3` / `.validated b`) with the
+set-theoretic model conclusion of a single unconditional in-scope typing run `cA`
+(`hsc : InScopeTyping cA`, requiring `asm = none`) paired with its `.binding spec b` run under
+`hComp : ComposedSpec`, linked by `hba : ctx.binding = b` and `hS : ∀ x, S x ↔ x ∈ seeds`.
 
-**Scope note:** This is a stage-isolated composition connecting `t : AcceptedAggrTree` and
-`hComp : ComposedSpec` through shared validated role binding `b`, `hba : ctx.binding = b`, and
-exact subject-seed correspondence `hS : ∀ x, S x ↔ x ∈ seeds`. -/
+**Scope note:** The model conclusion (`SeedsNotFalse` / `ComposedWith`) for this single-run
+theorem comes from `hComp`, not from `t`, and requires `asm = none`. For roots aggregated from
+multiple conditional shards carrying non-empty assumption trees, see
+`aggregated_root_sharded_checkEnv_no_axioms_model` below (discharged unconditionally in
+`IxVMRefinement.Endpoint.ConditionalShards.aggregated_root_sharded_checkEnv_model_unconditional`). -/
 theorem aggregated_root_checkEnv_no_axioms_model (W : Type u) [Ix.Kernel.SetTheory W]
     {sem : AggrSemantics Address Address EvalAssumption Address K DynamicLinkStatement LinkedCircuitEntry}
     {batchClaim : Nat → ValidatorMode Address → (Address → Prop) → (Address → Prop) →
@@ -257,6 +260,111 @@ theorem aggregated_root_checkEnv_no_axioms_model (W : Type u) [Ix.Kernel.SetTheo
   exact ⟨hChk trivial, fun x y hx hDep => (hCl x y hx hDep).elim id False.elim,
     hS, acceptedAggrTree_unlinked_zero_dynamicLinkDischarges rfl t,
     hChildOk, composedModelConclusion_no_false W hMod⟩
+
+/-- **Sharded Aggregated Root Set-Theoretic Model & No-`False` Theorem
+(`aggregated_root_sharded_checkEnv_no_axioms_model`):**
+Generalizes `aggregated_root_checkEnv_no_axioms_model` to sharded roots aggregated from a finite
+closed DAG partition (`ClosedShardPartition`) of conditional shard runs (`check` / `checkEnv`
+with arbitrary assumption trees `asm : Option Address` discharged by earlier shards in the
+partition, no user axioms, no literal class, uniform validation mode under binding `b`), backed
+by `ShardedComposedSpec` (discharged unconditionally at the circuit level by
+`IxVM.Refinement.Endpoint.circuitShardedComposed`):
+1. Every root subject `x ∈ S` satisfies `sem.Checked` and `S` is `sem.Dep`-closed;
+2. `S` coincides with the union `ShardClaimEntry.allSeeds entries` across all shards;
+3. **Zero** Shape 18 Mode 3a external dynamic-circuit discharges occurred (`t.dynamicLinkDischarges = 0`);
+4. Either a child verification in `t` (including every Shape `10` range-leaf shard verification)
+   hashed a concrete BLAKE3 collision, or every child proof in `t.childProofs` passes
+   `verifyBatchBytes = true`; AND
+5. Either the shard runs and binding run exhibited a BLAKE3 collision, OR the binding table `tRole`
+   admits and validates on all 77 groups and the union of all shards' claimed environments satisfies
+   BOTH `ConsistentReadOver` (has an `Ix.Kernel.Model W` in every `SetTheory W`) AND
+   `SeedsNotFalse` (no claimed constant across any shard has type `False`)! -/
+theorem aggregated_root_sharded_checkEnv_no_axioms_model (W : Type u) [Ix.Kernel.SetTheory W]
+    {sem : AggrSemantics Address Address EvalAssumption Address K DynamicLinkStatement LinkedCircuitEntry}
+    {batchClaim : Nat → ValidatorMode Address → (Address → Prop) → (Address → Prop) →
+      (Address → Prop) → (EvalAssumption → Prop) → Prop}
+    {b : Address} {S : Address → Prop}
+    {shardCalls : List (List (Aiur.Generic.SourceSemantics.Call IxVM.F))}
+    {callsB : List (Aiur.Generic.SourceSemantics.Call IxVM.F)}
+    {ds : List IxVM.Refinement.Digest} {dB : IxVM.Refinement.Digest}
+    (hComp : ShardedComposedSpec.{u} shardCalls callsB ds dB)
+    {bytesB : ByteArray} {spec : Address}
+    (hdeB : Ix.Claim.de bytesB = .ok (.binding spec b))
+    (hdB : packDigest (Address.blake3Pure bytesB) = dB)
+    {assumed : Bool} {V : View} {entries : List ShardClaimEntry}
+    (hPart : ClosedShardPartition ds b assumed V entries)
+    (hNoBlk : NoBlockAssumedRef shardCalls.flatten (ShardClaimEntry.allAsms entries))
+    (hS : ∀ x, S x ↔ x ∈ ShardClaimEntry.allSeeds entries)
+    (t : AcceptedAggrTree sem batchClaim
+      (.checkEnv (.validated b) S (fun _ => False) (fun _ => False) (fun _ => False) (fun _ => False))) :
+    (∀ x, S x → sem.Checked b (fun _ => False) (fun _ => False) (fun _ => False) x) ∧
+    (∀ x y, S x → sem.Dep x y → S y) ∧
+    (∀ x, S x ↔ x ∈ ShardClaimEntry.allSeeds entries) ∧
+    t.dynamicLinkDischarges = 0 ∧
+    (t.HasTreeCollision ∨
+      ∀ vp ∈ t.childProofs, ∃ proofBytes,
+        verifyBatchBytes vp.vkBytes vp.claimsBytes proofBytes = true) ∧
+    (V.HashedCollision (ShardClaimEntry.allBytes entries ++ bytesB :: committedFootprint)
+        (shardCalls.flatten ++ callsB) ∨
+      ComposedWith.{u}
+        (fun tRole R envT =>
+          ConsistentReadOver.{u} shardCalls.flatten tRole R envT
+            (ShardClaimEntry.allSeeds entries) ∧
+          SeedsNotFalse shardCalls.flatten tRole R (ShardClaimEntry.allSeeds entries))
+        callsB b) := by
+  obtain ⟨hDeriv, hChildOk⟩ := acceptedAggrTree_refines_derivation19 t
+  obtain ⟨hChk, hCl, _⟩ := aggrDerivation19_invariant hDeriv
+  have hMod := shardedModelConclusion_of_shardedComposedSpec hComp hdeB hdB hPart hNoBlk
+  refine ⟨hChk trivial, fun x y hx hDep => (hCl x y hx hDep).elim id False.elim,
+    hS, acceptedAggrTree_unlinked_zero_dynamicLinkDischarges rfl t, hChildOk, ?_⟩
+  rcases hMod with hCol | hOk
+  · exact Or.inl hCol
+  · exact Or.inr (ComposedWith.imp
+      (fun _ _ _ hr => ⟨hr, ConsistentReadOver.seeds_not_false W hr⟩) hOk)
+
+/-- **Sharded Aggregated Root `SeedsInhabited` Theorem
+(`aggregated_root_sharded_checkEnv_seeds_inhabited`):**
+Companion to `aggregated_root_sharded_checkEnv_no_axioms_model` concluding `SeedsInhabited`
+across the union of all shards' claimed seeds (every covered seed's stored type is inhabited in
+every `Ix.Kernel.SetTheory` model of the combined claimed environment), without fixing a single
+`SetTheory W`. -/
+theorem aggregated_root_sharded_checkEnv_seeds_inhabited
+    {sem : AggrSemantics Address Address EvalAssumption Address K DynamicLinkStatement LinkedCircuitEntry}
+    {batchClaim : Nat → ValidatorMode Address → (Address → Prop) → (Address → Prop) →
+      (Address → Prop) → (EvalAssumption → Prop) → Prop}
+    {b : Address} {S : Address → Prop}
+    {shardCalls : List (List (Aiur.Generic.SourceSemantics.Call IxVM.F))}
+    {callsB : List (Aiur.Generic.SourceSemantics.Call IxVM.F)}
+    {ds : List IxVM.Refinement.Digest} {dB : IxVM.Refinement.Digest}
+    (hComp : ShardedComposedSpec.{u} shardCalls callsB ds dB)
+    {bytesB : ByteArray} {spec : Address}
+    (hdeB : Ix.Claim.de bytesB = .ok (.binding spec b))
+    (hdB : packDigest (Address.blake3Pure bytesB) = dB)
+    {assumed : Bool} {V : View} {entries : List ShardClaimEntry}
+    (hPart : ClosedShardPartition ds b assumed V entries)
+    (hNoBlk : NoBlockAssumedRef shardCalls.flatten (ShardClaimEntry.allAsms entries))
+    (hS : ∀ x, S x ↔ x ∈ ShardClaimEntry.allSeeds entries)
+    (t : AcceptedAggrTree sem batchClaim
+      (.checkEnv (.validated b) S (fun _ => False) (fun _ => False) (fun _ => False) (fun _ => False))) :
+    (∀ x, S x → sem.Checked b (fun _ => False) (fun _ => False) (fun _ => False) x) ∧
+    (∀ x y, S x → sem.Dep x y → S y) ∧
+    (∀ x, S x ↔ x ∈ ShardClaimEntry.allSeeds entries) ∧
+    t.dynamicLinkDischarges = 0 ∧
+    (t.HasTreeCollision ∨
+      ∀ vp ∈ t.childProofs, ∃ proofBytes,
+        verifyBatchBytes vp.vkBytes vp.claimsBytes proofBytes = true) ∧
+    (V.HashedCollision (ShardClaimEntry.allBytes entries ++ bytesB :: committedFootprint)
+        (shardCalls.flatten ++ callsB) ∨
+      ComposedWith.{u}
+        (fun tRole R _ =>
+          SeedsInhabited.{u} shardCalls.flatten tRole R (ShardClaimEntry.allSeeds entries))
+        callsB b) := by
+  obtain ⟨hDeriv, hChildOk⟩ := acceptedAggrTree_refines_derivation19 t
+  obtain ⟨hChk, hCl, _⟩ := aggrDerivation19_invariant hDeriv
+  have hMod := shardedModelConclusion_of_shardedComposedSpec hComp hdeB hdB hPart hNoBlk
+  exact ⟨hChk trivial, fun x y hx hDep => (hCl x y hx hDep).elim id False.elim,
+    hS, acceptedAggrTree_unlinked_zero_dynamicLinkDischarges rfl t,
+    hChildOk, shardedModelConclusion_seeds_inhabited hMod⟩
 
 /-- **`Catalog` Root Soundness (`aggregated_root_catalog_sound`, Shape `16`):**
 Every member `(b, S, Ax)` of an accepted `Catalog` root satisfies `Valid b Ax x` for all
@@ -354,7 +462,7 @@ theorem negative_control_a7_dropped_axiom (a₀ : Address) :
   exact (h a₀).mpr (.inl rfl)
 
 /-- **Negative Control 4 (Shape 18 Eval Discharge):**
-Transitioning to `EvalAfter = ∅` (`10 → 3` / `11 → 4`) when a second distinct `EvalAssumption`
+Transitioning to `EvalAfter = ∅` (`10 → 14` / `11 → 15`) when a second distinct `EvalAssumption`
 leaf `e₁ ≠ e₀` remains in `EvalBefore` violates `Aggr.EvalRemoveRel`. -/
 theorem negative_control_shape18_undischarged_eval {e₀ e₁ : EvalAssumption} (hne : e₁ ≠ e₀) :
     ¬ EvalRemoveRel (fun e => e = e₀ ∨ e = e₁) (fun _ => False) e₀ := by

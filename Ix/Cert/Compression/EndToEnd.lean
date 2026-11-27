@@ -2,7 +2,7 @@ import Ix.Cert.Compression.OuterRelation
 import Ix.Cert.Compression.RecursiveKzg
 import Ix.Cert.Compression.FriVerifier
 
-/-! # Proof-Compression Certification Composition Scaffold (Workstream 1C-iv/v)
+/-! # Proof-Compression Certification Composition Scaffold
 
 Bundles the four independently proved stage theorems of the BN254 proof-compression
 stack into a single theorem signature:
@@ -24,7 +24,8 @@ stack into a single theorem signature:
 4. **Stage 1 (Multi-STARK → `IxVM.Refinement.CircuitSound`):**
    `Ix.Cert.MultiStark.ixvm_circuit_sound_of_extracted_trace` bridges an already-extracted
    Multi-STARK trace (`MEMSEG` + `Plan.inspectRow` + Goldilocks LogUp balance) to
-   `IxVM.Refinement.CircuitSound P` (satisfied unconditionally by `IxVM.Refinement.Endpoint`).
+   `IxVM.Refinement.CircuitSound P` (a hypothesis; the endpoint proves it only for the nested
+   two-run property of `CircuitComposed`, via `IxVM.Refinement.Endpoint.circuitComposed`).
 
 ## Current Scope & Remaining Inter-Stage Bridges
 This module is a **stage-isolated composition scaffold**, NOT yet an end-to-end cryptographic

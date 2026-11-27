@@ -1,7 +1,7 @@
 import Ix.Cert.MultiStark.EndToEnd
 import Ix.Cert.MultiStark.Verifier
 
-/-! # Workstream 1A-i Audit Surface (`Ix.Cert.MultiStark.Audit`)
+/-! # Multi-STARK Soundness Audit Surface (`Ix.Cert.MultiStark.Audit`)
 
 Verifies that every headline theorem in the certified Multi-STARK / CertiFRI
 stack depends ONLY on the three standard Lean axioms
@@ -24,7 +24,7 @@ info: Ix.Cert.MultiStark.goldilocksWellFormed : ∀ (params : CertiFri.FriParams
 /-- info: 'Ix.Cert.MultiStark.goldilocksWellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Ix.Cert.MultiStark.goldilocksWellFormed
 
--- Gap 1b: BLAKE3 pure-specification parity
+-- BLAKE3 pure-specification parity (plain mode only; the keyed `derive_key` hashers of v6 are not covered)
 /--
 info: Ix.Cert.MultiStark.blake3_eq_pure : ∀ (bytes : ByteArray),
   CertiFri.P3.blake3 bytes = { data := (Blake3.Pure.digest bytes.data.toList).toArray }
@@ -639,7 +639,7 @@ info: @Ix.Cert.MultiStark.ixvm_circuit_sound_of_extracted_trace : ∀
 /-- info: 'Ix.Cert.MultiStark.ixvm_circuit_sound_of_extracted_trace' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Ix.Cert.MultiStark.ixvm_circuit_sound_of_extracted_trace
 
--- Gap 5b: Complete LogUp zero-denominator bound, C6 vectorized ROM, & executable verifier surface
+-- Complete LogUp zero-denominator bound, vectorized ROM, & executable verifier surface
 /--
 info: @Ix.Cert.MultiStark.card_logup_pair_bad_or_zero_denom_le : ∀ {α : Type u_1} [DecidableEq α] {S S_all : Finset α}
   {args : α → List Ix.Cert.MultiStark.Fp} {w : α → Ix.Cert.MultiStark.K} {maxArity : ℕ} {m₀ : α},
@@ -722,3 +722,56 @@ info: @Ix.Cert.MultiStark.verifyBatch : (sys : Ix.Cert.MultiStark.StarkSystem) �
 #guard_msgs in #print axioms Ix.Cert.MultiStark.verifyBatch
 /-- info: 'Ix.Cert.MultiStark.verifyBatchBytes' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Ix.Cert.MultiStark.verifyBatchBytes
+
+-- Verifying-key decoder parity & executable LookupsPlain soundness
+/-- info: Ix.Cert.MultiStark.checkLookupsPlain : Ix.Cert.MultiStark.SysCircuit → Bool -/
+#guard_msgs (whitespace := lax) in #check @Ix.Cert.MultiStark.checkLookupsPlain
+/-- info: Ix.Cert.MultiStark.computeVkDigest : Array Ix.Cert.MultiStark.SysCircuit → Ix.Cert.MultiStark.D -/
+#guard_msgs (whitespace := lax) in #check @Ix.Cert.MultiStark.computeVkDigest
+/-- info: Ix.Cert.MultiStark.checkSystem : Ix.Cert.MultiStark.StarkSystem → Bool -/
+#guard_msgs (whitespace := lax) in #check @Ix.Cert.MultiStark.checkSystem
+/-- info: @Ix.Cert.MultiStark.checkLookupsPlain_sound : ∀ {c : Ix.Cert.MultiStark.SysCircuit}, Ix.Cert.MultiStark.checkLookupsPlain c = true → c.LookupsPlain -/
+#guard_msgs (whitespace := lax) in #check @Ix.Cert.MultiStark.checkLookupsPlain_sound
+/-- info: 'Ix.Cert.MultiStark.computeVkDigest' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Ix.Cert.MultiStark.computeVkDigest
+/-- info: 'Ix.Cert.MultiStark.checkLookupsPlain_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Ix.Cert.MultiStark.checkLookupsPlain_sound
+/-- info: 'Ix.Cert.MultiStark.lookup_eval_congr_of_checkLookupsPlain' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Ix.Cert.MultiStark.lookup_eval_congr_of_checkLookupsPlain
+/-- info: 'Ix.Cert.MultiStark.respectsBlowupBudget_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Ix.Cert.MultiStark.respectsBlowupBudget_iff
+/-- info: 'Ix.Cert.MultiStark.StarkSystem.fromBytes_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Ix.Cert.MultiStark.StarkSystem.fromBytes_sound
+/-- info: 'Ix.Cert.MultiStark.checkSystem_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Ix.Cert.MultiStark.checkSystem_sound
+
+example {bytes : ByteArray} {sys : Ix.Cert.MultiStark.StarkSystem}
+    (h : Ix.Cert.MultiStark.StarkSystem.fromBytes bytes = .ok sys) :
+    sys.vkDigest = Ix.Cert.MultiStark.computeVkDigest sys.circuits ∧
+      ∀ c ∈ sys.circuits,
+        c.Topological ∧ Ix.Cert.MultiStark.checkLookupsPlain c = true ∧ c.LookupsPlain ∧
+          c.quotientDegree ≤ 2 ^ sys.params.logBlowup :=
+  Ix.Cert.MultiStark.StarkSystem.fromBytes_sound h
+
+example {sys : Ix.Cert.MultiStark.StarkSystem}
+    (h : Ix.Cert.MultiStark.checkSystem sys = true) :
+    sys.vkDigest = Ix.Cert.MultiStark.computeVkDigest sys.circuits ∧
+      ∀ c ∈ sys.circuits,
+        c.Topological ∧ Ix.Cert.MultiStark.checkLookupsPlain c = true ∧ c.LookupsPlain ∧
+          c.quotientDegree ≤ 2 ^ sys.params.logBlowup :=
+  Ix.Cert.MultiStark.checkSystem_sound h
+
+example {c : Ix.Cert.MultiStark.SysCircuit}
+    (htopo : Ix.Cert.MultiStark.checkTopological c.nodes = true)
+    (hlp : Ix.Cert.MultiStark.checkLookupsPlain c = true)
+    {prepCur prepNext mainCur mainNext s2Cur₁ s2Next₁ publics₁ s2Cur₂ s2Next₂ publics₂ : Array Ix.Cert.MultiStark.EF}
+    {isFirst₁ isLast₁ isTrans₁ isFirst₂ isLast₂ isTrans₂ : Ix.Cert.MultiStark.EF}
+    {vals₁ vals₂ : Array Ix.Cert.MultiStark.EF}
+    (h1 : Ix.Cert.MultiStark.sweepGraph? c.nodes prepCur prepNext mainCur mainNext s2Cur₁ s2Next₁ publics₁
+      isFirst₁ isLast₁ isTrans₁ = some vals₁)
+    (h2 : Ix.Cert.MultiStark.sweepGraph? c.nodes prepCur prepNext mainCur mainNext s2Cur₂ s2Next₂ publics₂
+      isFirst₂ isLast₂ isTrans₂ = some vals₂) :
+    ∀ l ∈ c.lookups,
+      vals₁[l.multiplicity]? = vals₂[l.multiplicity]? ∧
+      ∀ a ∈ l.args, vals₁[a]? = vals₂[a]? :=
+  Ix.Cert.MultiStark.lookup_eval_congr_of_checkLookupsPlain htopo hlp h1 h2

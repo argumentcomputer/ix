@@ -6,7 +6,7 @@ import Ix.Cert.MultiStark.SmallHeight
 import Ix.Cert.MultiStark.AirSoundness
 import Ix.Cert.MultiStark.LogUpSoundness
 
-/-! # Shape-Independent Adaptive Multi-STARK ROM & `Settles` (Gap 2)
+/-! # Shape-Independent Adaptive Multi-STARK ROM & `Settles`
 
 CertiFRI's `Exec.soundness_uniqueDecoding` pins the `ClaimShape` statically in
 the oracle's challenge type `Chal P.ldt P.queries`. In Multi-STARK, however,
@@ -15,24 +15,25 @@ per-circuit trace heights `logDegrees` *after* making ROM queries, committing
 them into the batch preamble before `(β, γ)`, `α_air`, `ζ`, and the FRI
 challenges are drawn.
 
-This module closes Gap 2 by building a **shape-independent** ROM oracle
-`DynAnswer` whose challenge space `DynChal` depends *only* on the static
+This module provides pieces toward adaptive-shape ROM soundness; it does not close it. It defines a
+**shape-independent** challenge space `DynChal` that depends *only* on the static
 `StarkSystem` security bounds (`maxLogHeight`, `numQueries`, `commitPowBits`,
 `queryPowBits`) — never on prover-chosen `active` masks, `logDegrees`, or
-`ClaimShape`:
+`ClaimShape` — which no theorem here uses yet, and proves:
 
-1. **`modTwoPow_fractionLE`:** Because `2^h ∣ 2^M` for every dynamic height
+1. **`fractionLE_projectQueryIndex`:** Because `2^h ∣ 2^M` for every dynamic height
    `h ≤ M`, reducing a uniform query challenge `x : Fin (2^M)` to `x % 2^h : Fin (2^h)`
    preserves exact uniform probabilities (`FractionLE`), so dynamically chosen
    trace heights incur zero probability distortion.
-2. **`dyn_settles`:** Any log interpretation `interp` that reads committed Merkle
-   rows (`committedRow l`) solely at roots listed in `digestsOf m` (for rounds `< r`)
+2. **`settles_of_depends_on_digests`:** Any log interpretation `interp` that reads
+   committed Merkle openings solely at roots listed in `digestsOf m` (for rounds `< r`)
    satisfies `CertiFri.Oracle.Settles interp (Hit digestsOf r)`.
-3. **`rbrSound_of_stage_bounds` & `soundness_dynamic_rom`:** Composes
+3. **`soundness_dynamic_rom`:** Composes
    `CertiFri.Oracle.prob_fsExperiment_bind_interp_le` and `prob_hasBad_hit_le`
-   for any `r`-round adaptive Multi-STARK state function `doomed`, giving the
-   exact ROM soundness bound
-     `(Q + r + R) * εmax + (K * r + 3) * (Q + r + R) * (Q + r + R - 1) / (2 * |D|)`.
+   for any `r`-round adaptive state function `doomed` that is round-by-round sound
+   (`RbrSound`, a hypothesis that no theorem here instantiates for the Multi-STARK
+   verifier), giving the ROM bound
+     `(Q + r + R) * εmax + (max M 3 + 3) * (Q + r + R) ^ 2 / (4 * |D|)`.
 4. **Stage-by-stage `FractionLE` helpers** instantiating the per-round Multi-STARK
    soundness errors directly from our proved theorems:
    - `fractionLE_logup_beta` & `fractionLE_logup_pair` (linear single-point non-collision from

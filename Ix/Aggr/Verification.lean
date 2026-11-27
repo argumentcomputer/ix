@@ -252,8 +252,9 @@ in `MultiStark/MultiStark/Modules/{Aggregate,Aggregation}.lean`:
 - Shape `16`: catalog union over unconditional `CheckEnv` / `Catalog` children (`aggr_catalog_join`)
 - Shape `17`: Tier 1 dynamic circuit linking (`aggr_dynamic_link`, `0xE8 0x0D`)
 - Shape `18`: Tier 2 eval-assumption leaf discharge (`aggr_discharge_eval`, `0xE8 0x0E`)
-  with `A7` axiom-set merge: Mode 2 (`@Eq` `Claim.check`) transitions `10 → 3` / `11 → 4`
-  only when `evalAssumptions = none` and `linkedCircuits = none`, whereas Mode 3a
+  with `A7` axiom-set merge: Mode 2 (`@Eq` `Claim.check`) transitions `10 → 14` / `11 → 15`
+  (`EvalDischargedClaim`, strictly disjoint from direct validators `3`/`4`) when
+  `evalAssumptions = none` and `linkedCircuits = none`, whereas Mode 3a
   (`DynamicLinkStatement`) always commits a canonical `LinkedCircuitEntry` (`0xE8 0x0F`)
   under linked validators `12`/`13` (never emitting validators `3`/`4`).
 -/
@@ -465,7 +466,8 @@ theorem rangeSum_append {ε : Type u} (M : ResidualMonoid ε) (f : Nat → ε)
 - `validated b` (`validator = 3`), `assumedBinding b` (`validator = 4`),
 - `literalClass k` (`validator = 5`),
 - `evalAssumed b` (`validator = 10`), `bindingEvalAssumed b` (`validator = 11`),
-- `linked b` (`validator = 12`), `bindingLinked b` (`validator = 13`). -/
+- `linked b` (`validator = 12`), `bindingLinked b` (`validator = 13`),
+- `evalDischarged b` (`validator = 14`), `bindingEvalDischarged b` (`validator = 15`). -/
 inductive ValidatorMode (δ : Type u) where
   | validated (b : δ)
   | assumedBinding (b : δ)
@@ -474,6 +476,8 @@ inductive ValidatorMode (δ : Type u) where
   | bindingEvalAssumed (b : δ)
   | linked (b : δ)
   | bindingLinked (b : δ)
+  | evalDischarged (b : δ)
+  | bindingEvalDischarged (b : δ)
   deriving BEq, DecidableEq, Repr
 
 def ValidatorMode.bindingOf : ValidatorMode δ → δ
@@ -484,6 +488,8 @@ def ValidatorMode.bindingOf : ValidatorMode δ → δ
   | .bindingEvalAssumed b => b
   | .linked b => b
   | .bindingLinked b => b
+  | .evalDischarged b => b
+  | .bindingEvalDischarged b => b
 
 def ValidatorMode.validatorCode : ValidatorMode δ → UInt8
   | .validated _ => 3
@@ -493,18 +499,22 @@ def ValidatorMode.validatorCode : ValidatorMode δ → UInt8
   | .bindingEvalAssumed _ => 11
   | .linked _ => 12
   | .bindingLinked _ => 13
+  | .evalDischarged _ => 14
+  | .bindingEvalDischarged _ => 15
 
 /-- Binding validity precondition required by a validator mode:
-validators `3`, `5`, `10`, `12` already validated their binding (`True`), whereas
-validators `4`, `11`, `13` assume `BindingValid b`. -/
+validators `3`, `5`, `10`, `12`, `14` already validated their binding (`True`), whereas
+validators `4`, `11`, `13`, `15` assume `BindingValid b`. -/
 def ValidatorMode.bindingCond (BindingValid : δ → Prop) : ValidatorMode δ → Prop
   | .validated _ => True
   | .literalClass _ => True
   | .evalAssumed _ => True
   | .linked _ => True
+  | .evalDischarged _ => True
   | .assumedBinding b => BindingValid b
   | .bindingEvalAssumed b => BindingValid b
   | .bindingLinked b => BindingValid b
+  | .bindingEvalDischarged b => BindingValid b
 
 /-- Whether a validator mode has already discharged its binding with zero linked
 circuits (standard validators `3` or `5`). -/
@@ -530,11 +540,12 @@ def ValidatorMode.canDischargeEval : ValidatorMode δ → Bool
   | _ => false
 
 /-- Validator transition when Shape 18 Mode 2 (`@Eq` `Claim.check`) discharges the
-final `evalAssumption` with ZERO linked circuits (`10 → 3` and `11 → 4`).
-Validators `12`/`13` return `none` and can NEVER transition to `3`/`4`. -/
+final `evalAssumption` with ZERO linked circuits (`10 → 14` and `11 → 15`,
+strictly disjoint from direct validators `3`/`4`).
+Validators `12`/`13` return `none` and can NEVER transition to unlinked modes. -/
 def ValidatorMode.dischargeAllEvals : ValidatorMode δ → Option (ValidatorMode δ)
-  | .evalAssumed b => some (.validated b)
-  | .bindingEvalAssumed b => some (.assumedBinding b)
+  | .evalAssumed b => some (.evalDischarged b)
+  | .bindingEvalAssumed b => some (.bindingEvalDischarged b)
   | _ => none
 
 /-- Validator transition when Shape 18 Mode 3a (`DynamicLinkStatement`) discharges
@@ -564,6 +575,14 @@ theorem validatorMode_dischargeAllEvals_unlinked {mode outMode : ValidatorMode �
     (h : mode.dischargeAllEvals = some outMode) :
     mode.isLinked = false ∧ outMode.isLinked = false := by
   cases mode <;> simp [ValidatorMode.dischargeAllEvals] at h <;> subst h <;> exact ⟨rfl, rfl⟩
+
+theorem validatorMode_dischargeAllEvals_distinct {mode outMode : ValidatorMode δ}
+    (h : mode.dischargeAllEvals = some outMode) :
+    outMode.validatorCode ≠ 3 ∧ outMode.validatorCode ≠ 4 ∧
+    (outMode.validatorCode = 14 ∨ outMode.validatorCode = 15) := by
+  cases mode <;> simp [ValidatorMode.dischargeAllEvals] at h
+  · subst h; exact ⟨by simp [ValidatorMode.validatorCode], by simp [ValidatorMode.validatorCode], Or.inl rfl⟩
+  · subst h; exact ⟨by simp [ValidatorMode.validatorCode], by simp [ValidatorMode.validatorCode], Or.inr rfl⟩
 
 /-- Semantic context for the 19-shape aggregation soundness theorem.
 `α`: constant subjects, `β`: user axioms, `γ`: eval assumptions, `δ`: bindings/classes,
@@ -756,7 +775,7 @@ inductive AggrDerivation19 (sem : AggrSemantics α β γ δ ε κ ι)
       AxiomMergeRel Ax₀ Ax₁ AxOut →
       AggrDerivation19 sem batchClaim (.checkEnv mode S A AxOut EvalAfter Linked)
   /-- Shape `18` Mode 2 (final unlinked step): discharge the last `EvalAssumption` leaf `e₀`
-  via an `@Eq` `Claim.check` when `Linked = ∅`, transitioning validator `10 → 3` or `11 → 4`. -/
+  via an `@Eq` `Claim.check` when `Linked = ∅`, transitioning validator `10 → 14` or `11 → 15`. -/
   | dischargeEvalAll {mode outMode : ValidatorMode δ} {S A Ax₀ Ax₁ AxOut EvalBefore e₀} :
       mode.dischargeAllEvals = some outMode →
       AggrDerivation19 sem batchClaim (.checkEnv mode S A Ax₀ EvalBefore (fun _ => False)) →

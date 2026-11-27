@@ -4,7 +4,7 @@ import Ix.Cert.Compression.NativeCurveMsm
 import Mathlib.Algebra.Polynomial.Eval.Defs
 import Mathlib.Algebra.Polynomial.Roots
 
-/-! # Certified Recursive KZG / SHPlonk Verifier & Concrete `BN254::G1` Soundness (Workstream 1C-iii)
+/-! # Certified Recursive KZG / SHPlonk Verifier & Concrete `BN254::G1` Soundness
 
 Formalizes the BN254 KZG recursive verifier (`crates/proof-compression/src/recursive/native_verifier.rs`
 and `crates/proof-compression/src/kzg/pcs.rs`) over `PlonkishM Foreign.BN254Fr` and the
@@ -16,16 +16,18 @@ concrete Mathlib-backed elliptic curve group `NativeCurveMsm.bn254G1`:
    - `kzg_batched_horner_bad_card`: if any committed polynomial `f_i` disagrees with its
      claimed opening `y_i` at `z`, at most `m - 1` batching challenges `γ ∈ BN254Fr` make
      the Horner batch `∑ γ^{m-1-i} (f_i(z) - y_i)` vanish (exact Schwartz–Zippel bound).
-   - `kzg_pairing_eval_of_agm`: given a concrete `bn254G1` pairing equation `L = [τ] R`
-     where `L = ∑_i [γ_i] (C_i - [y_i] G) + [z] W`, `R = W`, `C_i = [f_i(τ)] G`, and
-     `W = [q(τ)] G`, whenever `τ` is not a root of the mismatch polynomial (or in the AGM
-     where the polynomial relation holds identically), `∑_i γ_i (f_i.eval z - y_i) = 0`.
-2. **Concrete `bn254G1` Pairing-Operand MSM Soundness (`bn254_pairing_msm_sound`):**
-   Eliminates all abstract group hypotheses of `NativeCurveMsm.msm_sound` by instantiating
-   at the concrete Mathlib `WeierstrassCurve` group `NativeCurveMsm.bn254G1`.
+   - `kzg_pairing_sound_at_bn254G1`: for a single committed polynomial, the concrete
+     `bn254G1` pairing relation `L = [τ] R` with `L = commit τ F + [z] (commit τ Q)` and
+     `R = commit τ Q` implies `(F - (X - C z) * Q).eval τ = 0`, with `[r] G = O` an explicit
+     hypothesis (a standalone lemma, not yet wired into `EndToEnd.lean`).
+2. **Concrete `bn254G1` Pairing-Operand MSM Soundness: not proved.** No theorem instantiates
+   `NativeCurveMsm.msm_sound` at `NativeCurveMsm.bn254G1`; only the BLS12-381 analogue
+   `bls12381_pairing_msm_sound` (`Bls12381/RecursiveKzg.lean`) exists.
 3. **5-Channel Recursive KZG Verifier Circuit (`buildRecursiveKzgCircuit`, `FiveChannelSatisfied`,
    `recursiveKzgCircuit_sound`):**
-   Built directly in `PlonkishM BN254Fr`, enforcing:
+   Built directly in `PlonkishM BN254Fr` over an arbitrary `base` circuit; the first and
+   last items below live on `base` and are not constrained by `buildRecursiveKzgCircuit`
+   (see `FiveChannelLayout`), and no theorem here mentions the Rust circuit:
    - Public statement & deferred pairing-operand binding,
    - BLAKE3 transcript channel calls (`PlonkishM.blake3Call`),
    - Horner OOD batching & quotient identity `quotient * vanishing = oodCombination` in `BN254Fr`,

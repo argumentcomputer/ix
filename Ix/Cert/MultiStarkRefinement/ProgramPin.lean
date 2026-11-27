@@ -262,6 +262,8 @@ def recursionCoreFunctions : List (String × String) :=
   [ ("MultiStark", "verify_multi_stark_proof")
   , ("StarkIO", "read_byte_stream")
   , ("SystemDeserialize", "read_system")
+  , ("SystemDeserialize", "read_sys_circuit")
+  , ("SystemDeserialize", "read_opt_idx_n")
   , ("SystemDeserialize", "lookup_groups_count")
   , ("ProofDeserialize", "read_u64_at")
   , ("ProofDeserialize", "read_batch")
@@ -311,6 +313,7 @@ def recursionCoreFunctions : List (String × String) :=
   , ("StarkVerifier", "assert_closure_pairs")
   , ("StarkVerifier", "assert_closure_widths_loop")
   , ("StarkVerifier", "assert_closure_widths_ok")
+  , ("StarkVerifier", "assert_u64s_zero")
   , ("StarkVerifier", "verify_shard")
   , ("StarkVerifier", "verify_shards")
   , ("StarkVerifier", "verify_batch")
@@ -365,7 +368,18 @@ def verifyBatchRequiredCalls : List String :=
 
 /-- Required calls inside `StarkVerifier::verify_shard`. -/
 def verifyShardRequiredCalls : List String :=
-  ["Transcript::shard_fiat_shamir", "claims_acc", "ood_loop", "Pcs::pcs_fri_verify", "last_acc"]
+  ["UInt32::less_than_fields", "assert_u64s_zero", "UInt64::is_zero",
+   "Transcript::shard_fiat_shamir", "claims_acc", "ood_loop", "Pcs::pcs_fri_verify", "last_acc"]
+
+/-- Required calls inside `SystemDeserialize::read_sys_circuit` (structural fixed-table invariants:
+`preprocessed_width == 0 ↔ preprocessed_height == 0` and `preprocessed_height` zero or a power of two). -/
+def readSysCircuitRequiredCalls : List String :=
+  ["byte_popcount", "Fields::is_zero", "UInt32::less_than_fields"]
+
+/-- Required calls inside `SystemDeserialize::read_opt_idx_n` (requires `has_commit == 1` whenever
+a preprocessed index is present). -/
+def readOptIdxNRequiredCalls : List String :=
+  ["read_vk_u16", "read_opt_idx_n"]
 
 /-- Required calls inside `StarkVerifier::assert_closure_pairs_n`. -/
 def closurePairsNRequiredCalls : List String :=
@@ -383,22 +397,107 @@ def rowsPopRequiredCalls : List String :=
 def finalizeBucketsRequiredCalls : List String :=
   ["eg3_inv_nonzero", "eg3_eq"]
 
-/-- AST-level pin predicate on any MultiStark verifier program: checks entry point, `verify_batch`,
-`verify_shard`, `assert_closure_pairs_n`, `assert_closure_widths_ok`, `Pcs::eg3_inv_nonzero`,
-`Pcs::rows_pop`, and `Pcs::finalize_buckets` retain all mandatory subcalls and `assert_eq!` constraints. -/
+/-- Required calls inside `StarkVerifier::ood_loop`: the trace height `pow2(l)` of the
+proof's log degree `l = UInt8::to_field(ld8)` that the fixed-table assertion compares, the
+out-of-domain composition and quotient check, and the recursion over the circuits. -/
+def oodLoopRequiredCalls : List String :=
+  ["UInt8::to_field", "pow2", "trace_selectors", "ood_composition", "quotient_eval",
+   "Pcs::eg3_eq", "ood_loop"]
+
+/-- AST-level pin predicate on any MultiStark verifier program: checks entry point,
+`SystemDeserialize::{read_sys_circuit, read_opt_idx_n}`, `verify_batch`, `verify_shard` (including
+its security-floor and zero-bit PoW canonicalization checks), `assert_closure_pairs_n`,
+`assert_closure_widths_ok`, `Pcs::eg3_inv_nonzero`, `Pcs::rows_pop`, `Pcs::finalize_buckets`, and
+`StarkVerifier::ood_loop` (whose ten assertions include the fixed-table height binding,
+`OodLoopBindsFixedHeights`) retain all mandatory subcalls and `assert_eq!` constraints. -/
 def RecursionVerifierAstPinned {α : Type} (prog : Modules.Program α) : Bool :=
   fnHasCallsAndAsserts prog "MultiStark" "verify_multi_stark_proof" entryRequiredCalls 3 &&
+  fnHasCallsAndAsserts prog "SystemDeserialize" "read_sys_circuit" readSysCircuitRequiredCalls 5 &&
+  fnHasCallsAndAsserts prog "SystemDeserialize" "read_opt_idx_n" readOptIdxNRequiredCalls 2 &&
   fnHasCallsAndAsserts prog "StarkVerifier" "verify_batch" verifyBatchRequiredCalls 6 &&
-  fnHasCallsAndAsserts prog "StarkVerifier" "verify_shard" verifyShardRequiredCalls 17 &&
+  fnHasCallsAndAsserts prog "StarkVerifier" "verify_shard" verifyShardRequiredCalls 27 &&
   fnHasCallsAndAsserts prog "StarkVerifier" "assert_closure_pairs_n" closurePairsNRequiredCalls 16 &&
   fnHasCallsAndAsserts prog "StarkVerifier" "assert_closure_widths_ok" closureWidthsOkRequiredCalls 1 &&
   fnHasCallsAndAsserts prog "Pcs" "eg3_inv_nonzero" ["Goldilocks::eg_inv_nonzero"] 0 &&
   fnHasCallsAndAsserts prog "Pcs" "rows_pop" rowsPopRequiredCalls 1 &&
-  fnHasCallsAndAsserts prog "Pcs" "finalize_buckets" finalizeBucketsRequiredCalls 1
+  fnHasCallsAndAsserts prog "Pcs" "finalize_buckets" finalizeBucketsRequiredCalls 1 &&
+  fnHasCallsAndAsserts prog "StarkVerifier" "ood_loop" oodLoopRequiredCalls 10
 
 /-- Kernel-checked AST pin of the deployed `MultiStark.recursionSource`. -/
 theorem recursionSource_ast_pinned :
     RecursionVerifierAstPinned MultiStark.recursionSource = true := by
+  decide
+
+/-! ## The fixed-table height binding of `StarkVerifier::ood_loop`
+
+A circuit with a fixed (preprocessed) table must be proved at its table's height: `ood_loop`
+asserts `(1 - Fields::is_zero(ph)) * (height - ph) = 0`, with `height = pow2(l)` and `l` the
+circuit's log degree from the proof. Without it the recursion circuit accepted inner proofs
+whose fixed tables were not bound to their heights (a historical soundness bug). The count
+pin in `RecursionVerifierAstPinned` sees the assertion's removal; `OodLoopBindsFixedHeights`
+sees its exact form, and `MutationControl` shows that dropping it breaks both. -/
+
+mutual
+/-- Whether `p` holds of some subexpression of an Aiur `Generic.Expr`. -/
+def exprSomeSub {α : Type} (p : Generic.Expr α → Bool) : Generic.Expr α → Bool
+  | e@(.literal _) | e@(.var _) | e@(.global _ _) => p e
+  | e@(.tuple xs) | e@(.array xs) | e@(.construct _ _ _ xs) | e@(.constructAs _ _ _ xs)
+  | e@(.record _ xs) | e@(.update _ xs) | e@(.builtin _ xs) =>
+      p e || exprListSomeSub p xs
+  | e@(.repeat x _) | e@(.index x _) | e@(.slice x _ _) | e@(.member x _)
+  | e@(.project x _) | e@(.store x) | e@(.load x) | e@(.hint _ x _) | e@(.neg x)
+  | e@(.control _ x) =>
+      p e || exprSomeSub p x
+  | e@(.letValue _ v b) | e@(.binary _ v b) =>
+      p e || exprSomeSub p v || exprSomeSub p b
+  | e@(.call _ _ args) =>
+      p e || exprListSomeSub p args
+  | e@(.matchValue s arms) =>
+      p e || exprSomeSub p s || exprArmsSomeSub p arms
+
+def exprListSomeSub {α : Type} (p : Generic.Expr α → Bool) : List (Generic.Expr α) → Bool
+  | [] => false
+  | x :: xs => exprSomeSub p x || exprListSomeSub p xs
+
+def exprArmsSomeSub {α : Type} (p : Generic.Expr α → Bool) :
+    List (Generic.Pattern α × Generic.Expr α) → Bool
+  | [] => false
+  | (_, e) :: arms => exprSomeSub p e || exprArmsSomeSub p arms
+end
+
+/-- `Fields::is_zero(ph)`. -/
+def isIsZeroOfPh : Generic.Expr Nat → Bool
+  | .call "Fields::is_zero" _ [.var "ph"] => true
+  | _ => false
+
+/-- `assert_eq!(g * (height - ph), 0)` with `Fields::is_zero(ph)` in `g`: a circuit with a
+fixed table (`ph ≠ 0`) has height `ph`. -/
+def isFixedHeightAssert : Generic.Expr Nat → Bool
+  | .builtin (.assertEq _) [.binary .mul g (.binary .sub (.var "height") (.var "ph")), .literal 0] =>
+      exprSomeSub isIsZeroOfPh g
+  | _ => false
+
+/-- `let height = pow2(l)`. -/
+def isHeightOfLogDegree : Generic.Expr Nat → Bool
+  | .letValue (.bind "height") (.call "pow2" _ [.var "l"]) _ => true
+  | _ => false
+
+/-- `let l = UInt8::to_field(ld8)`: the log degree read from the proof. -/
+def isLogDegreeField : Generic.Expr Nat → Bool
+  | .letValue (.bind "l") (.call "UInt8::to_field" _ [.var "ld8"]) _ => true
+  | _ => false
+
+/-- `StarkVerifier::ood_loop` binds each circuit's fixed table to its height. -/
+def OodLoopBindsFixedHeights (prog : Modules.Program Nat) : Bool :=
+  match findModuleFunction? prog "StarkVerifier" "ood_loop" with
+  | none => false
+  | some f =>
+    exprSomeSub isFixedHeightAssert f.body && exprSomeSub isHeightOfLogDegree f.body &&
+      exprSomeSub isLogDegreeField f.body
+
+/-- Kernel-checked pin: the deployed `ood_loop` binds fixed tables to their heights. -/
+theorem recursionSource_ood_loop_binds_fixed_heights :
+    OodLoopBindsFixedHeights MultiStark.recursionSource = true := by
   decide
 
 /-- None of the MultiStark-owned modules appear in the library prefix of `withLibraries`. -/
@@ -408,20 +507,24 @@ theorem libraries_disjoint_multistark :
         (Aiur.Library.Option.declarations.toField Fp)).append
         Aiur.Library.Field.Goldilocks.program
     libPrefix.findModule? "MultiStark" = none ∧
+    libPrefix.findModule? "SystemDeserialize" = none ∧
     libPrefix.findModule? "StarkVerifier" = none ∧
     libPrefix.findModule? "Pcs" = none := by
   have hb1 : Aiur.Library.Blake3.Goldilocks.program.findModule? "MultiStark" = none := rfl
-  have hb2 : Aiur.Library.Blake3.Goldilocks.program.findModule? "StarkVerifier" = none := rfl
-  have hb3 : Aiur.Library.Blake3.Goldilocks.program.findModule? "Pcs" = none := rfl
+  have hb2 : Aiur.Library.Blake3.Goldilocks.program.findModule? "SystemDeserialize" = none := rfl
+  have hb3 : Aiur.Library.Blake3.Goldilocks.program.findModule? "StarkVerifier" = none := rfl
+  have hb4 : Aiur.Library.Blake3.Goldilocks.program.findModule? "Pcs" = none := rfl
   have ho : Aiur.Library.Option.declarations.findModule? "MultiStark" = none ∧
+      Aiur.Library.Option.declarations.findModule? "SystemDeserialize" = none ∧
       Aiur.Library.Option.declarations.findModule? "StarkVerifier" = none ∧
       Aiur.Library.Option.declarations.findModule? "Pcs" = none := by
     decide
   have hf : Aiur.Library.Field.Goldilocks.declarations.findModule? "MultiStark" = none ∧
+      Aiur.Library.Field.Goldilocks.declarations.findModule? "SystemDeserialize" = none ∧
       Aiur.Library.Field.Goldilocks.declarations.findModule? "StarkVerifier" = none ∧
       Aiur.Library.Field.Goldilocks.declarations.findModule? "Pcs" = none := by
     decide
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_⟩
   · apply findModule?_append_none
     · exact findModule?_append_none _ _ _ hb1 (findModule?_map_none _ _ _ ho.1)
     · exact findModule?_map_none _ _ _ hf.1
@@ -429,8 +532,11 @@ theorem libraries_disjoint_multistark :
     · exact findModule?_append_none _ _ _ hb2 (findModule?_map_none _ _ _ ho.2.1)
     · exact findModule?_map_none _ _ _ hf.2.1
   · apply findModule?_append_none
-    · exact findModule?_append_none _ _ _ hb3 (findModule?_map_none _ _ _ ho.2.2)
-    · exact findModule?_map_none _ _ _ hf.2.2
+    · exact findModule?_append_none _ _ _ hb3 (findModule?_map_none _ _ _ ho.2.2.1)
+    · exact findModule?_map_none _ _ _ hf.2.2.1
+  · apply findModule?_append_none
+    · exact findModule?_append_none _ _ _ hb4 (findModule?_map_none _ _ _ ho.2.2.2)
+    · exact findModule?_map_none _ _ _ hf.2.2.2
 
 /-- Kernel-checked AST pin lifted to the actual Goldilocks `MultiStark.recursionProgram`. -/
 theorem recursionProgram_ast_pinned :
@@ -439,21 +545,28 @@ theorem recursionProgram_ast_pinned :
   unfold MultiStark.recursionProgram MultiStark.withLibraries RecursionVerifierAstPinned
   unfold fnHasCallsAndAsserts
   rw [findModuleFunction?_append_right _ _ "MultiStark" _ hdisj.1]
-  rw [findModuleFunction?_append_right _ _ "StarkVerifier" _ hdisj.2.1]
-  rw [findModuleFunction?_append_right _ _ "StarkVerifier" _ hdisj.2.1]
-  rw [findModuleFunction?_append_right _ _ "StarkVerifier" _ hdisj.2.1]
-  rw [findModuleFunction?_append_right _ _ "StarkVerifier" _ hdisj.2.1]
-  rw [findModuleFunction?_append_right _ _ "Pcs" _ hdisj.2.2]
-  rw [findModuleFunction?_append_right _ _ "Pcs" _ hdisj.2.2]
-  rw [findModuleFunction?_append_right _ _ "Pcs" _ hdisj.2.2]
+  rw [findModuleFunction?_append_right _ _ "SystemDeserialize" _ hdisj.2.1]
+  rw [findModuleFunction?_append_right _ _ "SystemDeserialize" _ hdisj.2.1]
+  rw [findModuleFunction?_append_right _ _ "StarkVerifier" _ hdisj.2.2.1]
+  rw [findModuleFunction?_append_right _ _ "StarkVerifier" _ hdisj.2.2.1]
+  rw [findModuleFunction?_append_right _ _ "StarkVerifier" _ hdisj.2.2.1]
+  rw [findModuleFunction?_append_right _ _ "StarkVerifier" _ hdisj.2.2.1]
+  rw [findModuleFunction?_append_right _ _ "Pcs" _ hdisj.2.2.2]
+  rw [findModuleFunction?_append_right _ _ "Pcs" _ hdisj.2.2.2]
+  rw [findModuleFunction?_append_right _ _ "Pcs" _ hdisj.2.2.2]
+  rw [findModuleFunction?_append_right _ _ "StarkVerifier" _ hdisj.2.2.1]
   have hsrc := recursionSource_ast_pinned
   unfold RecursionVerifierAstPinned fnHasCallsAndAsserts at hsrc
   have h1 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.recursionSource
     "MultiStark" "verify_multi_stark_proof" entryRequiredCalls 3
+  have h1a := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.recursionSource
+    "SystemDeserialize" "read_sys_circuit" readSysCircuitRequiredCalls 5
+  have h1b := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.recursionSource
+    "SystemDeserialize" "read_opt_idx_n" readOptIdxNRequiredCalls 2
   have h2 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.recursionSource
     "StarkVerifier" "verify_batch" verifyBatchRequiredCalls 6
   have h3 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.recursionSource
-    "StarkVerifier" "verify_shard" verifyShardRequiredCalls 17
+    "StarkVerifier" "verify_shard" verifyShardRequiredCalls 27
   have h4 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.recursionSource
     "StarkVerifier" "assert_closure_pairs_n" closurePairsNRequiredCalls 16
   have h5 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.recursionSource
@@ -464,9 +577,11 @@ theorem recursionProgram_ast_pinned :
     "Pcs" "rows_pop" rowsPopRequiredCalls 1
   have h8 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.recursionSource
     "Pcs" "finalize_buckets" finalizeBucketsRequiredCalls 1
-  unfold fnHasCallsAndAsserts at h1 h2 h3 h4 h5 h6 h7 h8
+  have h9 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.recursionSource
+    "StarkVerifier" "ood_loop" oodLoopRequiredCalls 10
+  unfold fnHasCallsAndAsserts at h1 h1a h1b h2 h3 h4 h5 h6 h7 h8 h9
   unfold Modules.Program.toField
-  rw [h1, h2, h3, h4, h5, h6, h7, h8]
+  rw [h1, h1a, h1b, h2, h3, h4, h5, h6, h7, h8, h9]
   exact hsrc
 
 /-! ## 4. Public Digest Packing, Value Representations, and BLAKE3 Escape -/
