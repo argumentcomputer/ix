@@ -93,7 +93,7 @@ private def evalFftCosts : List (String × Nat) := [
   ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.dependentBuild", 505_774_166),
   ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.mutualEven", 357_469_244),
   ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.mutualOdd", 356_350_031),
-  ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.nestedTree", 578_820_159),
+  ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.nestedTree", 578_876_728),
   ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.higherOrder", 423_699_364),
   ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.largeArithmetic", 1_724_226_581),
   ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.limbPredecessor", 218_979_780),

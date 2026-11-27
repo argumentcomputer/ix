@@ -194,13 +194,13 @@ def limitOfCheckError : Ix.Kernel.CheckError .anon → Option Ix.Kernel.Admissio
 /-- A logical entry's failure as a refusal. -/
 def Refusal.ofError (e : Ix.Kernel.Admission.Error) : Refusal :=
   let stage : Stage := match e with
-    | .limit _ | .duplicate .. | .mismatch .. | .decode .. => .bytes
-    | .binding _ => .binding
+    | .limit _ | .duplicate .. | .mismatch .. | .decode .. | .levels .. => .bytes
+    | .binding _ | .unpinned .. => .binding
     | .prelude _ | .preludeCopy => .prelude
     | .read .. => .read
     | .kernel .. | .axiomRoleUnbound _ => .kernel
   let record : Option KAddr := match e with
-    | .duplicate _ _ a | .mismatch _ _ a | .decode _ a _ => some a
+    | .duplicate _ _ a | .mismatch _ _ a | .decode _ a _ | .levels _ a _ => some a
     | _ => none
   let policy : Option PolicyDecline := match e with
     | .kernel ce _ => policyOf ce
