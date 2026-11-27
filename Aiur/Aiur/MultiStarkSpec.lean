@@ -5,7 +5,7 @@ import Mathlib.Tactic.FieldSimp
 import Mathlib.Tactic.Ring
 
 /-!
-# Formal Multi-STARK Lowering Specification & `lookup_groups::retune` LogUp Equivalence (`WS 2B-2`)
+# Formal Multi-STARK Lowering Specification & `lookup_groups::retune` LogUp Equivalence
 
 This module formalizes the Rust `.ixa` → `multi-stark` lowering layer
 (`crates/aiur/src/trace/stark.rs`, `grouping.rs`, `tables.rs`, `rom.rs`, and
@@ -41,11 +41,15 @@ This module formalizes the Rust `.ixa` → `multi-stark` lowering layer
      the lowered Multi-STARK AIR constraints + ROM membership implies
      `Plan.inspectRow` acceptance (and forces padding rows to have zero
      provide multiplicity).
-   - `lowered_trace_checkMemo_sound` & `lowered_trace_depth_sound_goldilocks`:
-     connects lowered Multi-STARK AIR + retuned LogUp satisfaction (with
-     `rows.length ≤ 2^39` and demand bound `< Goldilocks.order`) through
-     `Grouping.Plan.checkMemo` directly to
-     `Aiur.Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks`.
+   - `checkMemo_of_inspected_field_balance` & `depth_sound_of_inspected_field_balance_goldilocks`:
+     from rows that already pass the model row check (`hinsp : rows.mapM (plan.inspectRow rom) =
+     .ok inspected`) and a per-claim field balance over model messages (`hbal`, with an arbitrary
+     `provWeight`; `rows.length ≤ 2^39`, demand `< Goldilocks.order`), reach
+     `Grouping.Plan.checkMemo` and `Aiur.Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks`.
+     No lowered circuit, constraint polynomial or LogUp sum occurs in their statements: the steps
+     from lowered-AIR satisfaction and one batch-wide LogUp equation to `hinsp` and `hbal` are
+     assumed, not proved (formerly named `lowered_trace_checkMemo_sound` and
+     `lowered_trace_depth_sound_goldilocks`).
 
 Zero `sorry`, zero `native_decide`, standard axioms `[propext, Classical.choice, Quot.sound]` only.
 -/
@@ -67,8 +71,9 @@ def maxBatchRows : Nat := 2 ^ 39
 /-- Maximum LogUp chunk size matching `multi_stark::lookup::MAX_LOOKUP_GROUP`. -/
 def maxLookupGroup : Nat := 8
 
-/-- Goldilocks quadratic extension degree (`Fp2`). -/
-def goldilocksExtDegree : Nat := 2
+/-- Goldilocks extension degree of the shipped Protocol v6 adapter: the cubic extension `Fp^3`
+(`crates/aiur/src/trace/stark.rs`, `GoldilocksBlake3V6Config`). -/
+def goldilocksExtDegree : Nat := 3
 
 /-- Symbolic AIR expression matching `multi_stark::expr::Expr<Val>`. -/
 inductive AirExpr (F : Type) where
@@ -1648,11 +1653,11 @@ theorem exists_provider_of_goldilocks_balance
     (ZMod.natCast_eq_zero_iff d Library.U32.Goldilocks.modulus).mp hzero
   exact Nat.not_lt.mpr (Nat.le_of_dvd hpos hdvd) hlt
 
-/-- **Lowered Multi-STARK trace → `Grouping.Plan.checkMemo` soundness (Goldilocks):**
+/-- **Inspected rows + field balance → `Grouping.Plan.checkMemo` (Goldilocks):**
 Given extracted rows over a plan `plan` satisfying `plan.inspectRow` and Goldilocks
 field-level LogUp balance (under total dynamic demand `< Goldilocks.modulus`),
 there exist integer-weighted rows of identical length accepted by `plan.checkMemo`. -/
-theorem lowered_trace_checkMemo_sound
+theorem checkMemo_of_inspected_field_balance
     {source : Circuit.System Library.U32.Goldilocks.F} {id : String → Except String Nat}
     (plan : Grouping.Plan source id) (rom : WireROM Library.U32.Goldilocks.F)
     (root : Circuit.Message Library.U32.Goldilocks.F)
@@ -1695,10 +1700,11 @@ theorem lowered_trace_checkMemo_sound
   rw [Balance.weigh_balanced hcov]
   rfl
 
-/-- **End-to-End Multi-STARK Lowering → Certified Aiur Source Evaluation (Goldilocks):**
-Composes `Physical.Prepared.checkDepthPlan` (`WS 2B-1`) + `lowered_trace_checkMemo_sound`
-(`WS 2B-2`) + `Aiur.Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks`! -/
-theorem lowered_trace_depth_sound_goldilocks
+/-- **Inspected rows + field balance → certified Aiur source evaluation (Goldilocks).** No lowered
+AIR occurs in the statement (see the module header).
+Composes `Physical.Prepared.checkDepthPlan` + `checkMemo_of_inspected_field_balance`
++ `Aiur.Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks`! -/
+theorem depth_sound_of_inspected_field_balance_goldilocks
     {program : Aiur.Modules.Program Library.U32.Goldilocks.F}
     (prepared : Aiur.Modules.Prepared program) (compiled : ModulesArtifact prepared)
     (physical : Physical.Prepared compiled.circuit.artifact)
@@ -1742,7 +1748,7 @@ theorem lowered_trace_depth_sound_goldilocks
         compiled.specialized.program.enums) heap value result := by
   obtain ⟨certified, bits, activated⟩ := Physical.Prepared.checkDepthPlan_sound certOK
   obtain ⟨wrows, hlen, hchecked⟩ :=
-    lowered_trace_checkMemo_sound plan (Erasure.rawROM rom) root rows inspected
+    checkMemo_of_inspected_field_balance plan (Erasure.rawROM rom) root rows inspected
       hctx hinsp hdemLt provWeight hbal
   exact prepared.depth_grouped_activated_heap_sound_goldilocks compiled physical certified bits
     plan activated selected valid signed rooted outside (hlen ▸ bound) hchecked arguments decoded
@@ -2779,7 +2785,7 @@ theorem vectorizedRom_telescopes_memseg (embed : F →+* E) (β γ : E)
 
 end VectorizedRomSoundness
 
-/-! ## 6. Axiom Audit Guards (`WS 2B-2`) -/
+/-! ## 6. Axiom Audit Guards -/
 
 /-- info: 'Aiur.MultiStarkSpec.AirExpr.eval_fold' depends on axioms: [propext] -/
 #guard_msgs (whitespace := lax) in
@@ -2821,13 +2827,13 @@ end VectorizedRomSoundness
 #guard_msgs (whitespace := lax) in
 #print axioms lowerGroupLayout_row_sound
 
-/-- info: 'Aiur.MultiStarkSpec.lowered_trace_checkMemo_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Aiur.MultiStarkSpec.checkMemo_of_inspected_field_balance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
-#print axioms lowered_trace_checkMemo_sound
+#print axioms checkMemo_of_inspected_field_balance
 
-/-- info: 'Aiur.MultiStarkSpec.lowered_trace_depth_sound_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Aiur.MultiStarkSpec.depth_sound_of_inspected_field_balance_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
-#print axioms lowered_trace_depth_sound_goldilocks
+#print axioms depth_sound_of_inspected_field_balance_goldilocks
 
 /-- info: 'Aiur.MultiStarkSpec.samePackets_logup_sum_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in

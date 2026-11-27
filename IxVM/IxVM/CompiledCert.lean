@@ -9,13 +9,19 @@ import Aiur.Artifact
 import Blake3.Pure
 import Lean
 
-/-! # Kernel-Checked Compilation and Exporter Safety Certificate for `IxVM.source` (`IxVM.CompiledCert`)
+/-! # Compilation and Exporter Safety Certificate Interface for `IxVM.source` (`IxVM.CompiledCert`)
 
-Provides a kernel-checked compilation and exporter-safety certificate binding `IxVM.source` at
-`IxVM.entry` (`"IxVM::verify_claim"`) to:
+Defines the certificate type `CompiledCert` for `IxVM.source` at `IxVM.entry`
+(`"IxVM::verify_claim"`) and theorems that hold for any value of it. **No value of `CompiledCert`
+is constructed in the kernel**: `build` and `buildWithArtifact` construct one at run time, and
+nothing in the repository calls them, so the kernel has checked that the headline applies to a
+compilation that passes the checks, not that the deployed compilation passes them (that happens in
+compiled exporter code). Contents:
 
-1. **Pinned source identity (`pinnedProgramDigest`, `programDigest_eq`)**: pins `IxVM.programDigest`
-   by reflexivity (`rfl`) so any circuit source edit forces an explicit certificate review.
+1. **Source change tripwire (`pinnedProgramDigest`, `programDigest_eq`)**: `IxVM.programDigest` is a
+   string literal the `#ixvm_program` elaborator computes from the source text; `programDigest_eq`
+   compares two literals by `rfl`, so any circuit source edit forces this pin to be updated. The
+   kernel does not relate the literal to `IxVM.program`.
 2. **Executable 2B-1 safety certificates (`CompiledCert`)**: packages a `Generic.Specialized`
    elaboration, an `Aiur.Optimized.GenericArtifact` (`Aiur.Optimized.compile`), a
    `Physical.Prepared` deduplicated circuit system, a `Depth.Config`, and a grouped
@@ -51,7 +57,7 @@ open Aiur.Generic Aiur.Generic.SourceSemantics
 
 /-- Pinned BLAKE3 digest of the elaborated `IxVM` module program (`IxVM.programDigest`). -/
 def pinnedProgramDigest : String :=
-  "8c88bd234c289f6dd57ea361fd71b268fe704adb89b1d38aa6eb55054acd7bf5"
+  "3d1ffe87ce11eecf2201743e6553a90e5b3a548f930f507616d0a3dcc01b55d9"
 
 theorem entry_eq : IxVM.entry = "IxVM::verify_claim" := rfl
 
@@ -163,8 +169,9 @@ def ArtifactPin.matchesBytes (pin : ArtifactPin) (artifactBytes : ByteArray) : P
 
 /-! ## 3. Kernel-Checked Compilation & Exporter Safety Certificate (`CompiledCert`) -/
 
-/-- A kernel-checked compilation and exporter-safety certificate for `IxVM.source` at
-`[IxVM.entry]` (`"IxVM::verify_claim"`).
+/-- A compilation and exporter-safety certificate for `IxVM.source` at `[IxVM.entry]`
+(`"IxVM::verify_claim"`). No value of this type is constructed in the kernel (see the module
+header).
 
 Every exporter side condition required by the Goldilocks observed headline theorem
 (`PlanCertificate`, `Physical.Prepared.DepthCertified`, `cfg.bits ≤ 24`, and

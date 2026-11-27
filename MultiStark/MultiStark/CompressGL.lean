@@ -30,6 +30,10 @@ def program : Modules.Program F :=
     |>.append Library.Field.Goldilocks.Emulated.program
     |>.append (source.toField F)
 
+/-- Source identity of CompressGL over BN254, including its emulated Goldilocks and BLAKE3 libraries.
+`stark-export digest --compress-gl` prints it. -/
+def digest : String := aiur_eval% MultiStark.hexDigest (reprStr program)
+
 def compilePackage (trace : Bool := true)
     (groups : List (String × List String) := MultiStark.functionGroups) : IO ByteArray := do
   let prepared ← IO.ofExcept (Modules.prepare program [entry])

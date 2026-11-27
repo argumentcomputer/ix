@@ -1170,13 +1170,14 @@ def check_family := aiur_fn⟦
               -- constructors require, no more and no fewer
               let flat = KernelCheck::build_flat_block(rec_block, block, univ_offset);
               check_nested_aux(block, flat);
-              -- no partial family record: empty (a declaration-only family) or one recursor per
-              -- member of the flattened block, asserted before the per-recursor loop; under a
-              -- group's validation (the binding stores what it checks) only a complete one
+              -- no partial or empty family record: require one recursor per member of the
+              -- flattened block in every context (both typing and binding validation)
               let complete = Fields::is_zero(n_recs - Lists::length(flat));
               let empty_ok = Fields::is_zero(n_recs) * (1 - KernelRoles::rc_validates_group(rc));
               assert_eq!(complete + empty_ok - complete * empty_ok, 1,
                 "modeled recursor family record is neither empty nor one recursor per member of the flattened block");
+              assert_eq!(complete, 1,
+                "modeled recursor family record cannot be empty");
               -- the family record references only what the block's own walk checks:
               -- the block's used references, members of the blocks those project from,
               -- the block's members, and witnessed members of its closure
@@ -1204,8 +1205,108 @@ def block_elim := aiur_fn⟦
       match (*(Ingress::get_ci(t0))) {
         KernelTypes::KConstantInfo::Induct(nl, ty, np, ni, _, _, _, _) => {
           let lvl = KernelCheck::get_result_sort_level(rc, ty, np + ni, (&(Lists::Node::Nil)));
-          peers_agree(rc, rest, nl, lvl);
+          peers_agree(rc, type_addrs, nl, lvl);
           (nl, KernelLevels::level_is_not_zero(lvl)) } ,
+      }
+    }
+⟧
+
+def check_modeled_pos_aug := aiur_fn⟦
+  fn check_modeled_pos_aug(rc: KernelRoles::RoleCtx, dom: KernelTypes::KExpr,
+                           blocks: Lists::List<Bytes::AddressRef>,
+                           types: Lists::List<KernelTypes::KExpr>) -> () {
+      match KernelCheck::expr_mentions_block(dom, blocks) {
+        0 => {  () } ,
+        _ => {
+          let w = KernelWhnf::whnf(rc, dom, types);
+          match KernelCheck::expr_mentions_block(w, blocks) {
+            0 => {  () } ,
+            _ => {
+              match (*(w)) {
+                KernelTypes::KExprNode::Forall(idom, ibody, _) => {
+                  assert_eq!(KernelCheck::expr_mentions_block(idom, blocks), 0,
+                    "modeled strict positivity: block occurs left of an arrow");
+                  check_modeled_pos_aug(rc, ibody, blocks,
+                    (&(Lists::Node::Cons(idom, types)))) } ,
+                _ => {
+                  match KernelTypes::collect_spine(w) {
+                    (head, args) => {
+                      match (*(head)) {
+                        KernelTypes::KExprNode::Const(caddr, _) => {
+                          match (*(Ingress::get_ci(caddr))) {
+                            KernelTypes::KConstantInfo::Induct(_, _, cnp, _, _, _, cblk, _) => {
+                              match KernelCheck::addr_list_contains(blocks, cblk) {
+                                1 => {
+                                  assert_eq!(KernelCheck::list_any_mentions_block(args, blocks), 0,
+                                    "modeled strict positivity: block occurs in recursive occurrence argument");
+                                  () } ,
+                                _ => {
+                                  assert_eq!(UInt32::less_than_fields(Lists::length(args), cnp), 0,
+                                    "modeled strict positivity: under-applied nested container");
+                                  assert_eq!(KernelCheck::list_any_mentions_block(Lists::drop(args, cnp), blocks), 0,
+                                    "modeled strict positivity: block occurs in nested container index");
+                                  () } ,
+                              } } ,
+                            _ => {
+                              assert_eq!(0, 1,
+                                "modeled strict positivity: non-inductive head applied to block");
+                              () } ,
+                          } } ,
+                        _ => {
+                          assert_eq!(0, 1,
+                            "modeled strict positivity: non-inductive head applied to block");
+                          () } ,
+                      } } ,
+                  } } ,
+              } } ,
+          } } ,
+      }
+    }
+⟧
+
+def check_modeled_pos_fields := aiur_fn⟦
+  fn check_modeled_pos_fields(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr,
+                              blocks: Lists::List<Bytes::AddressRef>,
+                              types: Lists::List<KernelTypes::KExpr>) -> () {
+      match (*(ty)) {
+        KernelTypes::KExprNode::Forall(dom, body, _) => {
+          check_modeled_pos_aug(rc, dom, blocks, types);
+          check_modeled_pos_fields(rc, body, blocks,
+            (&(Lists::Node::Cons(dom, types)))) } ,
+        KernelTypes::KExprNode::Let(_, v, b) => {
+          check_modeled_pos_fields(rc, KernelSubst::expr_inst1(b, v, 0), blocks, types) } ,
+        _ => {  () } ,
+      }
+    }
+⟧
+
+def check_modeled_positivity := aiur_fn⟦
+  fn check_modeled_positivity(rc: KernelRoles::RoleCtx, ctor_ty: KernelTypes::KExpr,
+                              n_params: Field, block_addr: Bytes::AddressRef) -> () {
+      let blocks = (&(Lists::Node::Cons(block_addr, (&(Lists::Node::Nil)))));
+      let (body, ptypes) = KernelCheck::peel_n_foralls_with_types(ctor_ty, n_params,
+        (&(Lists::Node::Nil)));
+      check_modeled_pos_fields(rc, body, blocks, ptypes)
+    }
+⟧
+
+def check_modeled_ctor_guards := aiur_fn⟦
+  fn check_modeled_ctor_guards(rc: KernelRoles::RoleCtx, block_addr: Bytes::AddressRef,
+                               ind_idx: Field, nctors: Field, cidx: Field,
+                               np: Field, lvl0: KernelTypes::KLevel, is_unsafe: Field) -> () {
+      match nctors - cidx {
+        0 => {  () } ,
+        _ => {
+          match (*(Ingress::get_ci_cprj(block_addr, ind_idx, cidx))) {
+            KernelTypes::KConstantInfo::Ctor(_, cty, _, _, _, _, _, _) => {
+              KernelCheck::check_field_universes(rc, cty, np, lvl0);
+              match is_unsafe {
+                0 => {  check_modeled_positivity(rc, cty, np, block_addr) } ,
+                _ => {  () } ,
+              };
+              check_modeled_ctor_guards(rc, block_addr, ind_idx, nctors, cidx + 1,
+                np, lvl0, is_unsafe) } ,
+          } } ,
       }
     }
 ⟧
@@ -1217,11 +1318,12 @@ def peers_agree := aiur_fn⟦
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(t, rest) => {
           match (*(Ingress::get_ci(t))) {
-            KernelTypes::KConstantInfo::Induct(nl, ty, np, ni, _, _, _, _) => {
+            KernelTypes::KConstantInfo::Induct(nl, ty, np, ni, nctors, is_unsafe, mblk, iidx) => {
               assert_eq!(nl, nl0, "modeled block: types disagree on the universe-parameter count");
               let lvl = KernelCheck::get_result_sort_level(rc, ty, np + ni, (&(Lists::Node::Nil)));
               assert_eq!(KernelLevels::level_equal(lvl, lvl0), 1,
                 "modeled block: types land in different universes");
+              check_modeled_ctor_guards(rc, mblk, iidx, nctors, 0, np, lvl0, is_unsafe);
               peers_agree(rc, rest, nl0, lvl0) } ,
           } } ,
       }

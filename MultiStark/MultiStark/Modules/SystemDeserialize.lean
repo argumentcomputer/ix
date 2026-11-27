@@ -228,10 +228,21 @@ module SystemDeserialize {
       }
     }
 
+  inline fn byte_popcount(b: UInt8::U8) -> Field {
+      let bits = UInt8::bit_decomposition(b);
+      bits[0] + bits[1] + bits[2] + bits[3] + bits[4] + bits[5] + bits[6] + bits[7]
+    }
+
   inline fn read_sys_circuit(base: Bytes::Stream) -> (SysCircuit, [UInt64::U64; 7], Bytes::Stream) {
       let (mw, mwl, c1) = read_vk_u16_limb(base);
       let (pw, pwl, c2) = read_vk_u16_limb(c1);
       let (ph, phl, c3) = read_vk_u32_limb(c2);
+      assert_eq!(Fields::is_zero(pw), Fields::is_zero(ph),
+        "vk: preprocessed_width == 0 must match preprocessed_height == 0");
+      let ph_pop = byte_popcount(phl[0]) + byte_popcount(phl[1])
+        + byte_popcount(phl[2]) + byte_popcount(phl[3]);
+      assert_eq!(ph_pop * (ph_pop - 1), 0,
+        "vk: preprocessed_height must be zero or a power of two");
       let (md, mdl, c4) = read_vk_u16_limb(c3);
       let (k, c4b) = read_vk_tag(c4);
       assert_eq!(Fields::is_zero(k), 0);
@@ -284,18 +295,19 @@ module SystemDeserialize {
       }
     }
 
-  fn read_opt_idx_n(i: Bytes::Stream, n: Field, cnt: Field) -> (Lists::List<OptIdx>, Bytes::Stream) {
+  fn read_opt_idx_n(i: Bytes::Stream, n: Field, cnt: Field, has_commit: Field) -> (Lists::List<OptIdx>, Bytes::Stream) {
       match n {
         0 => {  ((&(Lists::Node::Nil)), i) } ,
         _ => {
           let (v, j) = read_vk_u16(i);
           match v {
             65535 => {
-              let (rest, j2) = read_opt_idx_n(j, n - 1, cnt);
+              let (rest, j2) = read_opt_idx_n(j, n - 1, cnt, has_commit);
               ((&(Lists::Node::Cons(OptIdx::NoIdx, rest))), j2) } ,
             _ => {
+              assert_eq!(has_commit, 1, "vk: preprocessed index requires preprocessed commit");
               assert_eq!(v, cnt);
-              let (rest, j2) = read_opt_idx_n(j, n - 1, cnt + 1);
+              let (rest, j2) = read_opt_idx_n(j, n - 1, cnt + 1, has_commit);
               ((&(Lists::Node::Cons(OptIdx::SomeIdx(v), rest))), j2) } ,
           } } ,
       }
@@ -328,7 +340,11 @@ module SystemDeserialize {
       let (n, nlimb, j1) = read_vk_u16_limb(j);
       let (circuits, climbs, j2) = read_sys_circuits_n(j1, n);
       let (commit, j3) = read_opt_commit(j2);
-      let (indices, j4) = read_opt_idx_n(j3, n, 0);
+      let has_commit = match commit {
+        OptCommit::NoCommit => {  0 } ,
+        OptCommit::SomeCommit(_c) => {  1 } ,
+      };
+      let (indices, j4) = read_opt_idx_n(j3, n, 0, has_commit);
       let l_zero = [UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0];
       let l_one = [UInt8::BYTE_1, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0];
       let l_two = [UInt8::BYTE_2, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0];

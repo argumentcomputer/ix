@@ -5,6 +5,7 @@ import Aiur.Library.Field.BN254.Prime
 import Aiur.Library.Field.BLS12381.Prime
 import Aiur.Library.U32.Goldilocks
 import Aiur.Tiling.Ixa
+import Blake3.Rust
 
 /-!
 # Narrow v2 layout export
@@ -304,6 +305,8 @@ structure Source (F : Type) where
   wide : Array (Nat × Nat) := #[]
   /-- For an artifact input: the entry chip's name. -/
   entry : String := ""
+  /-- For an artifact input: the verified BLAKE3 digest of the artifact bytes. -/
+  artifactBlake3 : Option String := none
 
 /-- The row keys `(tag, sub_row)` of the logical messages of `T`: those the
 system's `arities` lists for it. -/
@@ -432,6 +435,14 @@ def readInput1 (j : Json) : IO (Source Fp) := do
     return (C, U, g, none)
   return { W, shards, units, caps, tuples, roms, request }
 
+private def blake3Hex (bytes : ByteArray) : String :=
+  String.join ((Blake3.Rust.hash bytes).val.toList.map fun b =>
+    let digits := Nat.toDigits 16 b.toNat
+    if digits.length == 1 then s!"0{String.ofList digits}" else String.ofList digits)
+
+private def isHexDigest (s : String) : Bool :=
+  s.length == 64 && s.all fun c => ('0' ≤ c && c ≤ '9') || ('a' ≤ c && c ≤ 'f')
+
 /-- `ix-tiling-v2-input-2`: the configuration only. The circuits are
 `Bridge.lower` of the chips of the compiled artifact (`Ixa.IChip.lower`,
 equal to `Bridge.lower` by `IChip.lower_ofChip`), the map claims are the
@@ -441,7 +452,17 @@ def readInput2 (j : Json) (base : System.FilePath) : IO (Source Fp) := do
   let shards ← IO.ofExcept (natField j "shards")
   let path : System.FilePath := ← IO.ofExcept do (← j.getObjVal? "artifact").getStr?
   let path := if path.isAbsolute then path else base / path
-  let pkg ← IO.ofExcept (Ixa.decodeChecked (F := Fp) p ZMod.val (← IO.FS.readBinFile path))
+  let expected := (← IO.ofExcept do
+    match j.getObjVal? "artifact_blake3" with
+    | .ok v => v.getStr?
+    | .error _ => .error "tiling_export2: missing required artifact_blake3 pin").toLower
+  unless isHexDigest expected do
+    throw (IO.userError s!"tiling_export2: invalid artifact_blake3 pin {expected}")
+  let artifactBytes ← IO.FS.readBinFile path
+  let actual := blake3Hex artifactBytes
+  unless actual == expected do
+    throw (IO.userError s!"tiling_export2: artifact {path} BLAKE3 {actual} differs from pinned {expected}")
+  let pkg ← IO.ofExcept (Ixa.decodeChecked (F := Fp) p ZMod.val artifactBytes)
   progress s!"decoded {path}: {pkg.chips.size} chips, {pkg.callables.size} callables"
   let index : Std.HashMap String Nat := pkg.chips.zipIdx.foldl (fun m (x, i) => m.insert x.name i) {}
   let circuitsJ ← IO.ofExcept do (← j.getObjVal? "circuits").getArr?
@@ -492,7 +513,8 @@ def readInput2 (j : Json) (base : System.FilePath) : IO (Source Fp) := do
     | .ok wj => IO.ofExcept wj.getArr?
     | .error _ => pure #[]
   let wide ← wideJ.mapM fun wj => do return (← resolve wj, ← IO.ofExcept (natField wj "cap"))
-  return { W, shards, units, caps, tuples, roms, request, chips, callables, pkg := some pkg, wide, entry }
+  let artifactBlake3 := some expected
+  return { W, shards, units, caps, tuples, roms, request, chips, callables, pkg := some pkg, wide, entry, artifactBlake3 }
 
 /-- The channels of the units' lookups with a row key outside `present`. -/
 def missingChannels (idOf : String → Nat) (W : Nat) (present : Std.HashSet (Fp × Fp))
@@ -556,7 +578,7 @@ def run (field : FieldChoice) (opts : CliOptions) (t0 : Nat) (j : Json) (base : 
     | "ix-tiling-v2-input-1" => readInput1 p j
     | "ix-tiling-v2-input-2" => readInput2 p j base
     | _ => do IO.eprintln s!"unexpected input format {fmt}"; return 1
-  let { W, shards, units, caps, tuples, roms, request, chips, callables, pkg, wide, entry } := src
+  let { W, shards, units, caps, tuples, roms, request, chips, callables, pkg, wide, entry, artifactBlake3 } := src
   if opts.singleCircuit && !wide.isEmpty then
     IO.eprintln "--single-circuit does not support mixed \"wide\" units"; return 1
   if let some maxBits := field.maxDepthBits then
@@ -987,6 +1009,9 @@ def run (field : FieldChoice) (opts : CliOptions) (t0 : Nat) (j : Json) (base : 
     ("ms", Json.mkObj [("parse", Json.num (t1 - t0)), ("lower", Json.num (t2 - t1)),
       ("check", Json.num (t6 - t3)), ("tables", Json.num (t7 - t3)), ("fixed", Json.num (t5 - t4)),
       ("total", Json.num (t7 - t0))])] ++
+    (match artifactBlake3 with
+     | some d => [("artifact_blake3", Json.str d)]
+     | none => []) ++
     (if wideUnits.isEmpty then [] else
       let idOf := (pkg.map (·.idOf)).getD fun _ => 0
       [("wide_units", Json.arr (wideUnits.toArray.zip wide |>.map fun (u, (i, _)) => Json.mkObj [

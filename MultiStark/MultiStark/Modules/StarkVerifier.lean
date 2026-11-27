@@ -940,6 +940,14 @@ module StarkVerifier {
       1
     }
 
+  fn assert_u64s_zero(ws: Lists::List<UInt64::U64>) -> Field {
+      match (*(ws)) {
+        Lists::Node::Nil => {  1 } ,
+        Lists::Node::Cons(w, rest) => {
+          UInt64::is_zero(w) * assert_u64s_zero(rest) } ,
+      }
+    }
+
   fn verify_shard(sys: SystemDeserialize::Sys, header: ProofDeserialize::ShardHeader, shard: Field, proof: ProofDeserialize::Proof,
         input: Bytes::Stream, lch: ProofDeserialize::Ext, fch: ProofDeserialize::Ext) -> ProofDeserialize::Ext {
       let SystemDeserialize::Sys::Mk(params, _tlimbs, circuits, commit, prep_indices) = sys;
@@ -949,9 +957,47 @@ module StarkVerifier {
       assert_eq!(cap_height, 0);
       assert_eq!(log_final_poly_len, 0);
       assert_eq!(max_log_arity, 1);
+      assert_eq!(UInt32::less_than_fields(0, log_blowup), 1,
+        "vk: log_blowup must be >= 1");
+      assert_eq!(UInt32::less_than_fields(log_blowup, 5), 1,
+        "vk: log_blowup must be <= 4");
+      assert_eq!(UInt32::less_than_fields(0, num_queries), 1,
+        "vk: num_queries must be >= 1");
+      assert_eq!(UInt32::less_than_fields(commit_pow_bits, 33), 1,
+        "vk: commit_pow_bits exceeds 32");
+      assert_eq!(UInt32::less_than_fields(query_pow_bits, 33), 1,
+        "vk: query_pow_bits exceeds 32");
+      assert_eq!(UInt32::less_than_fields(219, log_blowup * num_queries + query_pow_bits), 1,
+        "vk: security bits below floor 220");
+      let ud_millibits = match log_blowup {
+        1 => {  415 } ,
+        2 => {  678 } ,
+        3 => {  830 } ,
+        4 => {  912 } ,
+      };
+      assert_eq!(UInt32::less_than_fields(79999, ud_millibits * num_queries + 1000 * query_pow_bits), 1,
+        "vk: provable UD query soundness below 80-bit floor");
+      let johnson_millibits = 500 * log_blowup - 45;
+      assert_eq!(UInt32::less_than_fields(127999, johnson_millibits * num_queries + 1000 * query_pow_bits), 1,
+        "vk: finite-m Johnson query soundness below 128-bit floor");
       let ProofDeserialize::ShardHeader::Mk(h_active, h_cap, h_lds, h_claims) = header;
       let ProofDeserialize::Proof::Mk(active, commitments, accs, log_degrees, opening,
                    q_opened, prep_opt, stage1, stage2) = proof;
+      let ProofDeserialize::FriProof::Mk(_f_commits, commit_pow_witnesses, _f_io, _f_cpo, _f_fp, query_pow_witness) = opening;
+      let _cpow_zero_ok = match commit_pow_bits {
+        0 => {
+          assert_eq!(assert_u64s_zero(commit_pow_witnesses), 1,
+            "fri: nonzero commit PoW witness when commit_pow_bits == 0");
+          1 } ,
+        _ => {  1 } ,
+      };
+      let _qpow_zero_ok = match query_pow_bits {
+        0 => {
+          assert_eq!(UInt64::is_zero(query_pow_witness), 1,
+            "fri: nonzero query PoW witness when query_pow_bits == 0");
+          1 } ,
+        _ => {  1 } ,
+      };
       let num_circuits = Lists::length(accs);
       assert_eq!(Fields::is_zero(num_circuits), 0);
       assert_eq!(Lists::length(stage1), num_circuits);

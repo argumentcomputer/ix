@@ -5588,7 +5588,7 @@ info: Library.IxVMRep.tagn_tail_two_byte_spec : ∀ (lo v0 : UInt8) (q h carry :
 #guard_msgs in
 #print axioms Aiur.Library.IxVMRep.tagn_tail_two_byte_spec
 
-/-! ### Formal Depth/Activation Certificates (`WS 2B-1`) and Multi-STARK Lowering Spec (`WS 2B-2`) -/
+/-! ### Formal Depth/Activation Certificates and Multi-STARK Lowering Spec -/
 
 /-- info: 'Aiur.Optimized.Depth.certify_iff' depends on axioms: [propext] -/
 #guard_msgs in
@@ -5660,12 +5660,100 @@ info: Library.IxVMRep.tagn_tail_two_byte_spec : ∀ (lo v0 : UInt8) (q h carry :
 /-- info: 'Aiur.MultiStarkSpec.lowerGroupLayout_row_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Aiur.MultiStarkSpec.lowerGroupLayout_row_sound
-/-- info: 'Aiur.MultiStarkSpec.lowered_trace_checkMemo_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Aiur.MultiStarkSpec.checkMemo_of_inspected_field_balance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Aiur.MultiStarkSpec.lowered_trace_checkMemo_sound
-/-- info: 'Aiur.MultiStarkSpec.lowered_trace_depth_sound_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#print axioms Aiur.MultiStarkSpec.checkMemo_of_inspected_field_balance
+/--
+info: 'Aiur.MultiStarkSpec.depth_sound_of_inspected_field_balance_goldilocks' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+-/
 #guard_msgs in
-#print axioms Aiur.MultiStarkSpec.lowered_trace_depth_sound_goldilocks
+#print axioms Aiur.MultiStarkSpec.depth_sound_of_inspected_field_balance_goldilocks
+/--
+info: @MultiStarkSpec.checkMemo_of_inspected_field_balance : ∀ {source : Circuit.System Library.U32.Goldilocks.F}
+  {id : String → Except String ℕ} (plan : Optimized.Grouping.Plan source id) (rom : WireROM Library.U32.Goldilocks.F)
+  (root : Circuit.Message Library.U32.Goldilocks.F) (rows : List (Circuit.Row Library.U32.Goldilocks.F))
+  (inspected : List (Option (Circuit.RuleClaims (Circuit.Message Library.U32.Goldilocks.F)))),
+  source.checkContext rom root = Except.ok () →
+    List.mapM (plan.inspectRow rom) rows = Except.ok inspected →
+      (Circuit.Balance.required (fun c => decide (source.MapClaim c)) root
+              (Optimized.Grouping.activeRules inspected)).length <
+          Library.U32.Goldilocks.modulus →
+        ∀ (provWeight : Circuit.RuleClaims (Circuit.Message Library.U32.Goldilocks.F) → Library.U32.Goldilocks.F),
+          (∀
+              claim ∈
+                Circuit.Balance.required (fun c => decide (source.MapClaim c)) root
+                  (Optimized.Grouping.activeRules inspected),
+              (List.map provWeight
+                    (List.filter (fun r => decide (r.1 = claim)) (Optimized.Grouping.activeRules inspected))).sum =
+                ↑(List.countP (fun x => decide (x = claim))
+                    (Circuit.Balance.required (fun c => decide (source.MapClaim c)) root
+                      (Optimized.Grouping.activeRules inspected)))) →
+            ∃ wrows, wrows.length = rows.length ∧ plan.checkMemo rom root wrows = Except.ok ()
+-/
+#guard_msgs (whitespace := lax) in
+#check @Aiur.MultiStarkSpec.checkMemo_of_inspected_field_balance
+/--
+info: @MultiStarkSpec.depth_sound_of_inspected_field_balance_goldilocks : ∀
+  {program : Modules.Program Library.U32.Goldilocks.F} (prepared : Modules.Prepared program)
+  (compiled : Optimized.ModulesArtifact prepared) (physical : Optimized.Physical.Prepared compiled.circuit.artifact)
+  {cfg : Optimized.Depth.Config} {id : String → Except String ℕ}
+  (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg physical.system) id)
+  {measures : Optimized.Depth.Structural.Plan},
+  Optimized.Physical.Prepared.checkDepthPlan compiled.circuit.inlined.program physical cfg measures plan = true →
+    ∀ {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances},
+      prepared.find? external = some entry →
+        ∀ {rom : WidthROM Library.U32.Goldilocks.F},
+          rom.Valid →
+            ∀ {args : List (SourceValue Library.U32.Goldilocks.F)} {result : Value Library.U32.Goldilocks.F}
+              {wires : List (WireValue Library.U32.Goldilocks.F)} {output : WireValue Library.U32.Goldilocks.F},
+              Circuit.Erasure.Signed compiled.circuit.system
+                  { channel := entry.resolved.name, args := wires, result := output } →
+                ∀ {root : Circuit.Message Library.U32.Goldilocks.F},
+                  Optimized.Depth.erase cfg root =
+                      Circuit.Erasure.message compiled.circuit.system
+                        { channel := entry.resolved.name, args := wires, result := output } →
+                    root.channel ∉ cfg.names →
+                      ∀ {rows : List (Circuit.Row Library.U32.Goldilocks.F)},
+                        rows.length ≤ MultiStarkSpec.maxBatchRows →
+                          ∀ (inspected : List (Option (Circuit.RuleClaims (Circuit.Message Library.U32.Goldilocks.F)))),
+                            (Optimized.Depth.system cfg physical.system).checkContext (Circuit.Erasure.rawROM rom)
+                                  root =
+                                Except.ok () →
+                              List.mapM (plan.inspectRow (Circuit.Erasure.rawROM rom)) rows = Except.ok inspected →
+                                (Circuit.Balance.required
+                                        (fun c => decide ((Optimized.Depth.system cfg physical.system).MapClaim c)) root
+                                        (Optimized.Grouping.activeRules inspected)).length <
+                                    Library.U32.Goldilocks.modulus →
+                                  ∀
+                                    (provWeight :
+                                      Circuit.RuleClaims (Circuit.Message Library.U32.Goldilocks.F) →
+                                        Library.U32.Goldilocks.F),
+                                    (∀
+                                        claim ∈
+                                          Circuit.Balance.required
+                                            (fun c => decide ((Optimized.Depth.system cfg physical.system).MapClaim c))
+                                            root (Optimized.Grouping.activeRules inspected),
+                                        (List.map provWeight
+                                              (List.filter (fun r => decide (r.1 = claim))
+                                                (Optimized.Grouping.activeRules inspected))).sum =
+                                          ↑(List.countP (fun x => decide (x = claim))
+                                              (Circuit.Balance.required
+                                                (fun c =>
+                                                  decide ((Optimized.Depth.system cfg physical.system).MapClaim c))
+                                                root (Optimized.Grouping.activeRules inspected)))) →
+                                      DecodesValues compiled.specialized.program.enums wires (entryValues args) →
+                                        WireValue.decode compiled.specialized.program.enums output = some result →
+                                          ∃ value heap,
+                                            prepared.EvalFn external args value heap ∧
+                                              Represents
+                                                (WireROM.decode compiled.specialized.program.enums
+                                                  (Circuit.Erasure.typedROM compiled.circuit.system rom))
+                                                heap value result
+-/
+#guard_msgs (whitespace := lax) in
+#check @Aiur.MultiStarkSpec.depth_sound_of_inspected_field_balance_goldilocks
 /-- info: 'Aiur.MultiStarkSpec.samePackets_logup_sum_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Aiur.MultiStarkSpec.samePackets_logup_sum_eq
