@@ -6,28 +6,39 @@ public import IxCK.Kernel.Verify.Level
 @[expose] public section
 
 /-!
-# The rules tier: a relational description of the core checker (task #305)
+# The rules tier: a relational description of the core checker and IxVM extensions
 
-The moves the `.verified` core checker makes, as six mutually inductive
+The moves the `.verified` core checker makes — extended in Ix with additional
+semantically sound rules used by IxVM's consistency development (closed
+equality reflection `Red.eqProof` / `DefEq.eqProof`, closed level instantiation
+`DefEq.instClosed`, closed well-typed transitivity `DefEq.transClosed`, and the
+`PiRed` lifting relation) — as mutually inductive
 relations over the checker's own `Expr`, indexed by the environment and
 the opening depth `d` (an `fvar` carries its type, so there is no context
 list; a binder opens with `.fvar d ty` at depth `d + 1`, exactly as the
-checker does):
+checker does). Because of these IxVM extensions, a derivation in `Rules` is
+proved sound in the set model (`IxCK/Kernel/Model/Rules/*`), not evidence that
+the executable checker or Lean's kernel accepts the term:
 
 * `Red env d e e'` — one relation for `whnfCore` and the `whnf` loop: β
   (gated and certified), ι with the stuck-major rescues, the projection
-  rule, literal acceleration, δ, the two literal expansions, and the
-  congruences the bodies recurse through (`appFn`, `projArg`).  `refl`
+  rule, literal acceleration, δ, the two literal expansions, the
+  congruences the bodies recurse through (`appFn`, `projArg`), and Ix's
+  closed equality-reflection rule (`eqProof`). `refl`
   and `trans` are constructors: a reduction is a denotation identity,
   so chaining costs nothing semantically, and the checker's loops and
   the major's preparation are chains.
-* `DefEq env d a b` — definitional equality.  **No `trans`** (ruling 1):
-  every non-leaf rule carries a further `DefEq` premise modelling the
-  recursive structure of `isDefEq` — `redL` is "reduce the left side,
-  then the continuation is definitionally equal", and with `Red` holding
-  δ and the literal steps it is every continuation of the lazy-delta
-  loop at once.  `symm` is a constructor; the right-hand variants of
-  the one-sided rules are derived (`IxCK/Kernel/Rules/Derived.lean`).
+* `DefEq env d a b` — definitional equality.  **No unrestricted `trans`**
+  (ruling 1): every non-leaf checker rule carries a further `DefEq` premise
+  modelling the recursive structure of `isDefEq` — `redL` is "reduce the left
+  side, then the continuation is definitionally equal", and with `Red` holding
+  δ and the literal steps it is every continuation of the lazy-delta loop at
+  once.  `symm` is a constructor; the right-hand variants of the one-sided
+  rules are derived (`IxCK/Kernel/Rules/Derived.lean`).  Ix adds three closed
+  IxVM-only rules — `eqProof` (equality reflection), `instClosed`, and
+  `transClosed` (transitivity restricted to a closed middle term obtained by
+  `PiRed` from a closed well-typed term, preserving the reading/grading
+  invariant that unrestricted `trans` would violate).
 * `Infer env g d e t` — type inference at a grade `g` (`Grade.full` for
   the front door, `Grade.io` for the infer-only lane).  The grade
   propagates to the recursive premises as `CoreFns.ioView` does; the
@@ -76,10 +87,13 @@ they are premises of the semantic soundness theorems
 (`IxCK/Kernel/Model/Rules/*`), whose motives conclude the reduct's and the
 inferred type's frame and reading (`Model/Rules/Motive.lean`).
 
-Every rule's docstring cites its checker site in
-`IxCK/Kernel/Core.lean` (`Core.lean:N` below).  The checker is the
-source of truth; a premise that reads wrong against the cited body is
-a finding.
+Every checker rule's docstring cites its checker site in
+`IxCK/Kernel/Core.lean` (`Core.lean:N` below); the additional IxVM-extension
+rules (`Red.eqProof`, `DefEq.eqProof`, `DefEq.instClosed`, `DefEq.transClosed`,
+and `PiRed`, among others) have no checker site and exist for IxVM's
+soundness/consistency chain rather than the executable checker. For checker
+rules, `Core.lean` is the source of truth; a premise that reads wrong against
+the cited body is a bug.
 
 The bridge `run ⇒ derivation` is `IxCK/Kernel/Verify/Rules/*`; the
 soundness `derivation ⇒ P currency` is `IxCK/Kernel/Model/Rules/*`.  This
@@ -492,9 +506,10 @@ inductive Red (env : Env md) : Nat → Expr md → Expr md → Prop where
       DefEq env d fab major →
       Red env d major fab
 
-/-- **Definitional equality**: the verdict `true` of `isDefEq`.
+/-- **Definitional equality**: the verdict `true` of `isDefEq`, extended in Ix
+with three closed IxVM rules (`eqProof`, `instClosed`, `transClosed`).
 
-**There is no `trans` rule, deliberately, and none can be added**
+**There is no unrestricted `trans` rule, deliberately, and none can be added**
 (task #309, the experiment recorded in DESIGN.md).  The relation is
 not an equivalence on terms: it is the checker's verdict, and the
 checker only ever compares terms that are well-formed *together* — a

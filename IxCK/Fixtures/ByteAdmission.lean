@@ -294,4 +294,125 @@ example {hash : ByteArray → Address} {b : Binding} {records : Records}
         2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes :=
   checkBytes_resources h
 
+/-! ## The strict admission
+
+`checkBytesStrict` is `checkBytes` behind two refusals: a record with more
+than `maxRecordLevelParams` universe parameters in a member, and (under
+`RolePins.committed`) a table that binds the string-literal support, `True`
+or `True.intro` elsewhere than the committed default table. -/
+
+/-- An axiom record `axiom a.{u₀ … u_{n-1}} : Sort 0`. -/
+def axiomWith (lvls : UInt64) : Ixon.Constant :=
+  ⟨.axio ⟨false, lvls, .sort 0⟩, #[], #[], #[.zero], #[]⟩
+
+-- The universe-parameter bound, checked on the decoded records before
+-- anything reads them. Without it, a 13-byte record declaring 200000
+-- universe parameters takes tens of minutes through `checkBytes` and
+-- allocates ~31 bytes per parameter in the reader (over 100 GB at the
+-- format's 2^32 maximum).
+#guard (admitLevels [(address 1, axiomWith 1024), (address 2, identity)]).isOk
+#guard match admitLevels [(address 1, identity), (address 2, axiomWith 1025)] with
+  | .error (.levels 1 a 1025) => a == address 2
+  | _ => false
+#guard match admitLevels [(address 1, axiomWith 4294967295)] with
+  | .error e => e.outcome == .declined
+  | _ => false
+#guard match checkBytesStrict .committed fixtureHash binding limits
+    (sealed [(address 1, axiomWith 200000)]) [] with
+  | .error (.levels 0 _ 200000) => true
+  | _ => false
+-- a constructor's count is a member's count
+#guard levelCount falseBlock.info == 1 &&
+  levelCount (.muts #[.indc ⟨false, 0, 0, 0, .sort 0,
+    #[{ isUnsafe := false, lvls := 2000, cidx := 0, params := 0, fields := 0, typ := .sort 0 }]⟩]) ==
+    2000
+-- control: within the bound the strict entry is the entry
+#guard (checkBytesStrict .committed fixtureHash binding limits (sealed falseStore) []).isOk
+
+-- The pinned roles: a table that moves one of them to another record is
+-- refused under `committed` and admitted as bound under `asBound`.
+def rebind (t : Ix.Kernel.RoleTable) (r : Ix.Kernel.Role) (a : Address) : Ix.Kernel.RoleTable :=
+  { t with bound := t.bound.map fun (s, b) => if s == r then (s, a) else (s, b) }
+
+def sealedBinding (t : Ix.Kernel.RoleTable) : Binding :=
+  ⟨fixtureHash t.toBytes, t.toBytes⟩
+
+def strictOn (pins : RolePins) (f : Ix.Kernel.RoleTable → Ix.Kernel.RoleTable) :
+    Option (Except Ix.Kernel.Admission.Error (Ix.Kernel.Env .anon)) :=
+  match Ix.Kernel.Reader.defaultTable with
+  | .ok d => some (checkBytesStrict pins fixtureHash (sealedBinding (f d)) limits [] [])
+  | .error _ => none
+
+-- the committed table itself passes
+#guard match Ix.Kernel.Reader.defaultTable with
+  | .ok d => (admitPinnedRoles .committed d).isOk
+  | .error _ => false
+#guard match strictOn .committed id with
+  | some (.ok _) => true
+  | _ => false
+-- `String.ofList` at another record: refused under `committed`, allowed under `asBound`
+#guard match strictOn .committed (rebind · .stringOfList (address 7)) with
+  | some (.error (.unpinned .stringOfList (some a) (some _))) => a == address 7
+  | _ => false
+#guard match strictOn .asBound (rebind · .stringOfList (address 7)) with
+  | some (.ok _) => true
+  | _ => false
+-- every pinned role, one at a time
+#guard Ix.Kernel.Role.pinnedToReference.all fun r =>
+  match strictOn .committed (rebind · r (address 7)) with
+  | some (.error (.unpinned r' _ _)) => r' == r
+  | _ => false
+-- `True` at another record (would redirect `Lean.trustCompiler`'s statement): refused
+#guard match strictOn .committed (rebind · .true (address 7)) with
+  | some (.error e) => e.outcome == .declined
+  | _ => false
+-- `trustAnchors`: allows custom literal-support roles while keeping `True` and `True.intro` pinned
+#guard Ix.Kernel.Role.literalSupportPinned.all fun r =>
+  match strictOn .trustAnchors (rebind · r (address 7)) with
+  | some (.ok _) => true
+  | _ => false
+#guard Ix.Kernel.Role.trustAnchorsPinned.all fun r =>
+  match strictOn .trustAnchors (rebind · r (address 7)) with
+  | some (.error (.unpinned r' _ _)) => r' == r
+  | _ => false
+-- a role outside the pinned set is the fold's to validate
+#guard match Ix.Kernel.Reader.defaultTable with
+  | .ok d => (admitPinnedRoles .committed (rebind d .bool (address 7))).isOk
+  | .error _ => false
+-- leaving the literal support unbound is not a rebinding
+#guard match Ix.Kernel.Reader.defaultTable with
+  | .ok d => (admitPinnedRoles .committed
+      { d with bound := d.bound.filter fun (s, _) => s != .stringOfList }).isOk
+  | .error _ => false
+
+-- A literal's blob is read by halves; the reading matches Horner's rule
+#guard [0, 1, 64, 65, 129, 1000].all fun n =>
+  let bytes : ByteArray := ⟨(Array.range n).map fun i => (i * 7 + 3).toUInt8⟩
+  Ix.Kernel.Reader.natural bytes == bytes.data.foldr (fun byte rest => byte.toNat + 256 * rest) 0
+
+-- The Géran fallback within its budget. Nested `imax` chains of the form
+-- `X (d+1) = imax (X d) (max p q)` blow up exponentially in sublevel count
+-- (at depth 24, unbudgeted decomposition uses hundreds of seconds and ~10 GB
+-- for a single comparison); beyond the budget the comparison falls back to
+-- upstream's branch answer.
+def geranChain : Nat → Ix.Kernel.Level
+  | 0 => .param 1
+  | d + 1 => .imax (geranChain d) (.max (.param (2 * d + 2)) (.param (2 * d + 3)))
+def geranMax (d : Nat) : Ix.Kernel.Level := .max (geranChain d) (.param 100000)
+#guard Ix.Kernel.Level.isEquiv (.succ (.param 0)) (.succ (geranMax 4)) == some false
+#guard Ix.Kernel.Level.isEquiv (.succ (.param 0)) (.succ (geranMax 24)) == some false
+#guard Ix.Kernel.Level.isEquiv (.succ (.param 0)) (.succ (geranMax 64)) == some false
+-- saturating `sizeBound` stays in `O(|level|)` without computing `2^d` bignums
+#guard Ix.Kernel.Level.Geran.sizeBound (geranChain 500) == Ix.Kernel.Level.Geran.budget + 1
+#guard !Ix.Kernel.Level.Geran.withinBudget (.param 0) (geranMax 500)
+#guard Ix.Kernel.Level.geranCost 4096 (.param 0) (geranMax 500) == none
+-- control: the case the fallback exists for (`RatFunc.liftOn_def`'s levels,
+-- `Tests/Ix/Kernel/Reader.lean`) is within the budget and still decided
+def subtypeLevel : Ix.Kernel.Level :=
+  .max (.imax (.max (.succ (.succ (.param 0))) (.succ (.param 1))) (.param 1)) (.succ .zero)
+def eqLevel : Ix.Kernel.Level :=
+  .max (.succ (.param 1)) (.imax (.succ (.succ (.param 0))) (.param 1))
+#guard Ix.Kernel.Level.Geran.withinBudget (.param 1) subtypeLevel
+#guard Ix.Kernel.Level.isEquiv subtypeLevel eqLevel == some true
+
 end Tests.Ix.Kernel.ByteAdmission

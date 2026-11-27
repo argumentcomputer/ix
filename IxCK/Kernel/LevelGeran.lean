@@ -80,6 +80,58 @@ def dominates : Sub → Sub → Bool
 /-- Every sublevel of `s` is zero or dominated by a sublevel of `t`. -/
 def le (s t : List Sub) : Bool := s.all fun a => a.isZero || t.any (dominates a)
 
+/-- **The fallback's budget**: the sublevels of both
+sides together. `le` compares them pairwise, so this bounds one fallback's work
+by a few million path comparisons; the levels Lean writes decompose into a
+handful. -/
+def budget : Nat := 2048
+
+/-- Number of condition sets in `nzConds`, computed without allocating
+condition-set lists and saturated at `cap + 1` so deep `max`/`imax` chains
+never construct bignums. -/
+def nzCondCountAt (cap : Nat) : Level → Nat
+  | .zero => 0
+  | .succ _ => 1
+  | .param _ => 1
+  | .max a b =>
+    let na := nzCondCountAt cap a
+    if na > cap then cap + 1
+    else min (cap + 1) (na + nzCondCountAt cap b)
+  | .imax _ b => nzCondCountAt cap b
+
+/-- Number of condition sets in `nzConds`, saturated at `budget + 1`. -/
+def nzCondCount (l : Level) : Nat := nzCondCountAt budget l
+
+/-- The number of sublevels `decomposeAux` produces for a level, at most
+(`.param` gives one or two), computed without producing them and saturated at
+`cap + 1`: an `imax u v` repeats `u`'s once per condition set of `v`, so the
+raw count is exponential in the nesting of such `imax`es while this saturating
+computation stays in `O(|level|)` with small machine integers. -/
+def sizeBoundAt (cap : Nat) : Level → Nat
+  | .zero => 1
+  | .succ u => sizeBoundAt cap u
+  | .max u v =>
+    let su := sizeBoundAt cap u
+    if su > cap then cap + 1
+    else min (cap + 1) (su + sizeBoundAt cap v)
+  | .imax u v =>
+    let sv := sizeBoundAt cap v
+    if sv > cap then cap + 1
+    else
+      let nv := nzCondCountAt cap v
+      if nv == 0 then sv
+      else if nv > cap then cap + 1
+      else min (cap + 1) (sv + nv * sizeBoundAt cap u)
+  | .param _ => 2
+
+/-- The number of sublevels `decomposeAux` produces for a level, saturated at
+`budget + 1`. -/
+def sizeBound (l : Level) : Nat := sizeBoundAt budget l
+
+/-- Whether `leq l r _` is within the budget (`sizeBound`, `budget`).
+Beyond it `Level.rest` answers as upstream con-leche's comparison does. -/
+def withinBudget (l r : Level) : Bool := decide (sizeBound l + sizeBound r ≤ budget)
+
 /-- Decide `l ≤ r + diff` at every valuation, on sublevels: the offset goes
 to `l` when `diff` is negative, to `r` otherwise. -/
 def leq (l r : Level) (diff : Int) : Bool :=

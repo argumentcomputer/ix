@@ -523,4 +523,94 @@ def ofEntries (version : Nat) (bound : List (Role × Address))
 
 end RoleTable
 
+/-! ## Roles pinned to a reference table
+
+The fold validates an `anchor` role by its type alone, which keeps every
+accepted environment consistent under any table, but leaves what some
+accepted statements *mean* to the table:
+
+* a string literal denotes `String.ofList [Char.ofNat …]` over the constants
+  the table binds to the literal support, and the checker reduces a literal
+  through the bound `String.ofList`'s value (`strLitToConstructor`,
+  `litMajorToCtor`, `projLitToCtor`), so a table that binds `String.ofList`
+  to another definition of its type changes the truth of statements that
+  project or recurse on a literal;
+* the tolerated `Lean.trustCompiler` is matched against the type `True`, a
+  role nothing in the checker validates, so a table that binds `True` to
+  another proposition makes the tolerated axiom state it.
+
+`RoleTable.PinnedTo t d` says that `t` binds each of these roles
+(`Role.pinnedToReference`) where the reference table `d` does, or not at all.
+Under the committed default table it pins their records by address, as
+`Ix.Kernel.Reader.preludeFor` pins the prelude roles' records; a record's
+address is the hash of its bytes, which the entry authenticates. The strict
+host admission requires it (`Ix.Kernel.Admission.admitPinnedRoles`); nothing
+in the fold or its theorems depends on it. -/
+
+/-- **The string-literal support roles pinned to a reference table**:
+`String`, `String.ofList`, `List`, `List.nil`, `List.cons`, `Char`,
+`Char.ofNat` (with `Nat`, whose block is pinned whole by its specification,
+the roles the checker uses implicitly, `Role.usedImplicitly`). -/
+def Role.literalSupportPinned : List Role :=
+  [.string, .stringOfList, .list, .listNil, .listCons, .char, .charOfNat]
+
+/-- **The trust-anchor roles pinned to a reference table**: `True` and
+`True.intro`, which the tolerated `Lean.trustCompiler`'s type mentions. -/
+def Role.trustAnchorsPinned : List Role :=
+  [.true, .trueIntro]
+
+/-- **The roles pinned to a reference table**: the string-literal support
+(`Role.literalSupportPinned`) and `True`, `True.intro`
+(`Role.trustAnchorsPinned`). -/
+def Role.pinnedToReference : List Role :=
+  Role.literalSupportPinned ++ Role.trustAnchorsPinned
+
+namespace RoleTable
+
+/-- **`t` binds every role in `roles` where `d` does, or leaves it unbound.** -/
+def PinnedRoles (roles : List Role) (t d : RoleTable) : Prop :=
+  ∀ r ∈ roles, t.addressOf? r = none ∨ t.addressOf? r = d.addressOf? r
+
+/-- **`t` binds every pinned role where `d` does, or leaves it unbound.** -/
+def PinnedTo (t d : RoleTable) : Prop :=
+  PinnedRoles Role.pinnedToReference t d
+
+/-- Whether `t` binds `r` where `d` does, or not at all (`pinnedAt_iff`). -/
+def pinnedAt (t d : RoleTable) (r : Role) : Bool :=
+  match t.addressOf? r with
+  | none => true
+  | some a => decide (some a = d.addressOf? r)
+
+theorem pinnedAt_iff (t d : RoleTable) (r : Role) :
+    t.pinnedAt d r = true ↔ (t.addressOf? r = none ∨ t.addressOf? r = d.addressOf? r) := by
+  unfold pinnedAt
+  cases t.addressOf? r <;> simp
+
+/-- The first role in `roles` that `t` binds elsewhere than `d` does, if any
+(`unpinnedIn?_eq_none_iff`). -/
+def unpinnedIn? (roles : List Role) (t d : RoleTable) : Option Role :=
+  roles.find? fun r => !t.pinnedAt d r
+
+theorem unpinnedIn?_eq_none_iff (roles : List Role) (t d : RoleTable) :
+    unpinnedIn? roles t d = none ↔ PinnedRoles roles t d := by
+  unfold unpinnedIn? PinnedRoles
+  rw [List.find?_eq_none]
+  apply forall_congr'
+  intro r
+  apply imp_congr_right
+  intro _
+  rw [← pinnedAt_iff]
+  show ¬ (!t.pinnedAt d r) = true ↔ t.pinnedAt d r = true
+  cases t.pinnedAt d r <;> decide
+
+/-- The first pinned role `t` binds elsewhere than `d` does, if any
+(`unpinned?_eq_none_iff`). -/
+def unpinned? (t d : RoleTable) : Option Role :=
+  unpinnedIn? Role.pinnedToReference t d
+
+theorem unpinned?_eq_none_iff (t d : RoleTable) : t.unpinned? d = none ↔ t.PinnedTo d :=
+  unpinnedIn?_eq_none_iff Role.pinnedToReference t d
+
+end RoleTable
+
 end Ix.Kernel

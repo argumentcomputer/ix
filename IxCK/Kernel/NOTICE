@@ -30,33 +30,43 @@ con-leche's tests/trust-surface/lexer.lean, unchanged.
 Modifications
 -------------
 
+This tree is a substantial fork of con-leche, not a thin wrapper: compared
+mechanically against ae0c0c4e after the namespace/path rename, 43 of the 445
+inherited modules still present are identical and 402 differ, and over 220
+modules are Ix's own (see docs/kernel.md "Origin and attribution"). Major
+departures include:
+
   * Every derived file was moved from ConLeche/Kernel/X or ConLeche/X to
     IxCK/Kernel/X, and the namespace and module prefix ConLeche (and
     ConLeche.Kernel) was renamed to Ix.Kernel.
-  * Primitives by specification (2026-10): the checker validates the
-    constants an input role table binds against fixed specifications
-    (Roles.lean, this repository's) instead of pin tables. CheckerBase.lean
-    imports Roles instead of upstream's NatOpPins, which splices JSON pin
-    dumps at elaboration time (NatOpPins.lean is not included).
-    Checker.lean: the operations' install gate checks the table's evidence
-    (checkDivModEvidence, under the closure condition evidenceLocal;
-    divModCertsGuard), the reduce opaques keep their identity certificate
-    (checkReduceIdentity), and the Nat.div/Nat.mod pin variants,
-    checkDivModPinAt and checkReducePin are gone; TrustAxioms.lean drops
-    the reduce pin; DeclCheck.lean and Cached/ParsedC.lean mirror the gate.
-    The proofs that consume the gate (Cached/Installed.lean,
-    Model/{Fold,Harvest,DivModCert,ReduceOps,Annot/Laws}.lean,
-    Semantics/{DeclRun,Bridge/*}.lean, Verify/**) take the evidence where
-    they took the pin list, and their statements hold for every evidence.
-    TrustPins.lean is removed.
+  * Moded keys and display annotations: Key, Expr, ConstantInfo, Declaration
+    and Env are indexed by Mode (.anon, .meta, .source); BinderMeta and
+    LetMeta carry Squash display annotations; failures carry structured Msg
+    values rather than pre-rendered strings.
+  * Primitives by specification (Roles.lean, RoleEquations.lean): the checker
+    validates constants bound by an input role table against fixed
+    specifications instead of upstream's JSON NatOpPins (NatOpPins.lean,
+    TrustAxioms.lean, TrustPins.lean and Model/ReduceOps.lean are not
+    present). Checker.lean, DeclCheck.lean and Cached/ParsedC.lean validate
+    well-founded Nat operations via checkDivModEvidence (under evidenceLocal)
+    and tolerate the five compiler-trust declarations (Lean.trustCompiler,
+    Lean.ofReduceBool, Lean.ofReduceNat, Lean.reduceBool, Lean.reduceNat) as
+    inert declarations that install nothing and decline on use. The proofs
+    take Evidences where upstream took pin lists.
+  * Strengthened model (Denotes.lean, Model/*): Ix.Kernel.Model carries
+    fourteen semantic laws (including δ, ι, structure/unit η, projection
+    tables, and Nat literal/add semantics) compared to upstream's three, with
+    corresponding proofs in Model/*.
+  * Extended rules tier (Rules/Rel.lean, Model/Rules/*): extended beyond the
+    checker's moves with IxVM-targeted rules including closed equality
+    reflection (Red.eqProof, DefEq.eqProof), closed level instantiation
+    (DefEq.instClosed), closed well-typed transitivity (DefEq.transClosed),
+    and PiRed (each proved sound in Model/Rules/*).
   * Level.lean: when both branches of the level comparison's (param, max)
-    case fail, the comparison falls back on Géran's sublevels
-    (LevelGeran.lean), which decide the case nanoda's branch split misses.
-    Verify/Level.lean extends the soundness proof to that answer.
+    case fail, the comparison falls back on Géran's sublevels within a
+    saturating budget (LevelGeran.lean); Verify/Level.lean extends soundness.
   * Frontend/InModel/Nested.lean forms a nested block's container groups
-    largest family first, and declines a group that would share a member
-    with an earlier one, so that the result does not depend on the order
-    of the block's auxiliary motives.
+    largest family first and declines overlapping groups.
   * Levels the ∀ rule shares (2026-11): Expr.lean gives Level a second
     computed field, its has-parameter bit (hasParamData), and levelHasParam
     runs as that field (a proved @[csimp]); Cached/ExprNodes.lean's census
@@ -130,19 +140,27 @@ Modifications
     checkDeclsUnder_cfg show the worker count changes no result. One task
     per 64 records let the number of threads, each reserving a stack, grow
     with the input.
-  * MainTheorem.lean keeps only model_exists; the corollary about NDJSON
-    files and the imports it needs are dropped.
+  * MainTheorem.lean keeps model_exists (and the user-axiom corollary); the
+    NDJSON corollary and frontend are dropped.
+  * Verify/Cached/StreamConsts.lean is ported from upstream ae0c0c4e and
+    adapted to Ix's moded types, Evidences, FoldConfig, and inert-declaration set.
   * Verify/Cached/AgreeFloor.lean and Verify/Cached/PushChain.lean import
-    Init.LetFun with `import all`: Lean 4.34.0 no longer exposes the body
-    of letFun, which these proofs unfold.
-  * Tests/Ix/Kernel/Axioms.lean keeps the axiom guards on the modules Ix
-    uses, under the renamed namespace.
+    Init.LetFun with `import all` for Lean 4.34.
+  * Tests/Ix/Kernel/Axioms.lean pins the axiom sets of the imported closure
+    (including no_False_theorem_accepted and Cached.checkDecls_consts) and
+    the typing tier under the renamed namespace.
 
 Ix's own files
 --------------
 
-LevelGeran.lean, Verify/LevelGeran.lean, Roles.lean, Ref.lean, Search.lean,
-Admission.lean, and the Admission, Audit, Ingress, Egress and Ixon
-directories are this repository's, under its root licence.
+Over 220 modules under IxCK/Kernel/ are Ix's own, under the repository's root
+licence, including: Admission.lean and Admission/* (the certified entry, byte
+stage, depth scanner, strict admission, tiered and user-axiom entries,
+theorems, closure manifest and audit), Audit/*, Egress/*, Ingress/*, Ixon/*
+(reader, role table, committed RoleData/Prelude, non-contradiction, fidelity
+helpers), Tier/* and Verify/Tier.lean (the typing tier), PinGen/*, Key.lean,
+Roles.lean, RoleEquations.lean, LevelGeran.lean, Verify/LevelGeran.lean,
+Ref.lean, Search.lean, Units.lean, Verify/Rename/*, and Ix's additions under
+Model/*, Semantics/*, Rules/* and Verify/*.
 
 This NOTICE is informational and does not modify any applicable license.
