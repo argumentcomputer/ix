@@ -27,7 +27,8 @@
 //! - `fri-verifier`: CompressGL, the FRI verifier over BN254, with a KZG proof;
 //! - `kzg-verifier`: the fixed-key narrow stage, which verifies CompressGL's
 //!   KZG proof;
-//! - `plonk`: the terminal KZG verifier, proved with gnark PLONK.
+//! - `plonk`: the terminal KZG verifier, proved with native Rust (+ Ix-CUDA)
+//!   or legacy gnark PLONK.
 //!
 //! Each stage writes into a directory named after it, with `span` and a
 //! GNU-time-style `time.txt` as in `run.sh`'s run directory, and
@@ -35,7 +36,6 @@
 pub mod exports;
 mod gl;
 mod narrow;
-#[cfg(feature = "plonk")]
 mod terminal;
 mod wrap;
 
@@ -709,7 +709,6 @@ impl Stages {
       "fri" => wrap::run(stage),
       "fri-verifier" => gl::run(stage),
       "kzg-verifier" => narrow::run(stage),
-      #[cfg(feature = "plonk")]
       "plonk" => terminal::run(stage),
       other => Err(format!("unknown or unavailable stage kind {other:?}")),
     }

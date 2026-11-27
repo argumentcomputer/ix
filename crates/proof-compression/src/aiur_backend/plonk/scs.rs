@@ -231,6 +231,30 @@ impl<'p, 'a> Witness<'p, 'a> {
     entry: &str,
     inputs: Inputs,
   ) -> Result<Self, String> {
+    Self::new_inner(plan, compiler, capacities, entry, inputs, true)
+  }
+
+  /// Like [`Self::new`], allowing prepared function and ROM tables with
+  /// power-of-two capacities greater than or equal to this execution's padded
+  /// row counts (trailing rows stay zeroed/inactive).
+  pub fn new_fitting(
+    plan: &'p TracePlan<'a, Bn254>,
+    compiler: Compiler<'p, 'a>,
+    capacities: &[usize],
+    entry: &str,
+    inputs: Inputs,
+  ) -> Result<Self, String> {
+    Self::new_inner(plan, compiler, capacities, entry, inputs, false)
+  }
+
+  fn new_inner(
+    plan: &'p TracePlan<'a, Bn254>,
+    compiler: Compiler<'p, 'a>,
+    capacities: &[usize],
+    entry: &str,
+    inputs: Inputs,
+    exact_rows: bool,
+  ) -> Result<Self, String> {
     let names = compiler.names();
     if inputs.format != INPUTS_FORMAT || capacities.len() != names.len() {
       return Err("SCS input layout or capacity count differs".into());
@@ -245,9 +269,12 @@ impl<'p, 'a> Witness<'p, 'a> {
       let width = u32::try_from(compiler.inputs()[index].main_width)
         .map_err(|e| e.to_string())?;
       let rom = names[index].starts_with("<ROM:");
-      if t.rows as usize != capacities[index]
-        || t.width != width - if rom { 2 } else { 0 }
-      {
+      let rows_ok = if exact_rows {
+        t.rows as usize == capacities[index]
+      } else {
+        t.rows.is_power_of_two() && (t.rows as usize) >= capacities[index]
+      };
+      if !rows_ok || t.width != width - if rom { 2 } else { 0 } {
         return Err(format!(
           "{}: {}×{} in the SCS file, {}×{} here",
           t.name, t.rows, t.width, capacities[index], width
