@@ -291,10 +291,9 @@ set_option maxHeartbeats 2000000 in
 `installRun_model`, as a lemma of its own — phase A's step at a record,
 from a canonical index whose environment carries the model, leaves the
 model on the environment it produces, keeps the memo residue, and *is*
-a pure `checkDecl` run at some fuel.  The last conjunct is what a walk
-that wants to know WHAT was installed reads
-(`IxCK/Kernel/Verify/Cached/StreamConsts.lean`); `installRun_model` itself
-uses only the first two.
+a pure `checkDecl` run at some fuel.  The last conjunct is what `Ix.Kernel.Cached.checkDecls_consts`
+(`IxCK/Kernel/Verify/Cached/StreamConsts.lean`) reads to know WHAT was
+installed; `installRun_model` itself uses only the first two.
 
 The hypotheses about the run's final index (`q`) are the ones a
 separable value declaration needs: phase A installs its header and

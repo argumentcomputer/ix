@@ -320,7 +320,9 @@ def fidelityRoots : Array Lean.Name :=
     ``Ix.Kernel.Reader.readRecord_singleton,
     ``Ix.Kernel.Reader.StreamRead.singleton, ``Ix.Kernel.Reader.Ctx.keyAt_eq_ok,
     ``Ix.Kernel.Reader.Ctx.memberKey_of_unbound,
-    ``Ix.Kernel.Cached.checkDecls_installs, ``Ix.Kernel.Cached.checkDecls_model_defn_values]
+    ``Ix.Kernel.Cached.checkDecls_installs, ``Ix.Kernel.Cached.checkDecls_model_defn_values,
+    ``Ix.Kernel.Cached.checkDecls_consts, ``Ix.Kernel.Admission.Installed.consts,
+    ``Ix.Kernel.Admission.checkBytesWith_consts, ``Ix.Kernel.Admission.checkBytes_consts]
 
 /-- The executable entry whose runtime closure is audited: the certified entry
 `Ix.Kernel.Admission.checkBytes`, which runs the verified fold behind the Ixon
@@ -745,7 +747,9 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxCK.Kernel.Admission.UserAxioms.Mod
 -- Kernel hardening (memoised level walks, `Expr.hashW`, `Level.beqPtr`,
 -- `Level.hasParamData`, `Level.isZero`, budgeted `Level.leqCoreB` / `FoldConfig`,
 -- and the depth-limited byte/record reader) updates counts (refreshed in reconciliation).
-/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 4746 compiled functions; inherited externs 68, implemented_by 0, unsafe 40, csimp 6; ruled computed_field 31, implemented_by 1, csimp 39 -/
+-- Saturating Géran bounds (`Geran.sizeBoundAt`, `Geran.nzCondCountAt`, `Geran.withinBudget`)
+-- add 1 compiled function net (`4746 -> 4747`); externs, unsafe, csimp and rulings unchanged.
+/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 4747 compiled functions; inherited externs 68, implemented_by 0, unsafe 40, csimp 6; ruled computed_field 31, implemented_by 1, csimp 39 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -786,8 +790,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Ker
 -- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (8 -> 11).
 -- Hardened `Runtime.lean` (`._at_` specialization resolution + target enqueueing) additionally surfaces all inlined ruled `@[computed_field]` `_override`s (`21 -> 29`) and `withExclusiveUnsafe` (`implemented_by 1`), with zero unruled findings.
 -- Kernel hardening (`Level.hasParamData`, memoised level/expr helpers, and reader/codec updates) updates counts (refreshed in reconciliation).
+-- Divide-and-conquer literal reading (`Reader.naturalOfList`) and saturating Géran bounds
+-- move this closure from 2694 to 2698 compiled functions and add the inherited extern `Nat.shiftLeft`.
 /-- info: runtime closure of [Ix.Kernel.Reader.readRecords,
- Ix.Kernel.Admission.readStream]: 2694 compiled functions; inherited externs 86, implemented_by 0, unsafe 43, csimp 2; ruled computed_field 31, implemented_by 1, csimp 14 -/
+ Ix.Kernel.Admission.readStream]: 2698 compiled functions; inherited externs 87, implemented_by 0, unsafe 43, csimp 2; ruled computed_field 31, implemented_by 1, csimp 14 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -830,10 +836,12 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 -- Hardened `Runtime.lean` (`._at_` specialization resolution + target enqueueing) additionally surfaces all inlined ruled `@[computed_field]` `_override`s (`21 -> 29`) and `withExclusiveUnsafe` (`implemented_by 1`), with zero unruled findings.
 -- Kernel hardening (depth scanner, memoised level/expr walks, `Level.hasParamData`,
 -- `Level.isZero`, and raisable `Limits.levelBudget` / `Level.leqCoreB`) updates counts (refreshed in reconciliation).
+-- Divide-and-conquer literal reading (`Reader.naturalOfList`) and saturating Géran bounds
+-- add 4 compiled functions to this closure, the tiered one and the user-axiom one; other counts unchanged.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 8343 compiled functions; inherited externs 115, implemented_by 0, unsafe 43, csimp 8; ruled computed_field 31, implemented_by 1, csimp 42 -/
+ Ix.Kernel.Admission.checkConstants]: 8347 compiled functions; inherited externs 115, implemented_by 0, unsafe 43, csimp 8; ruled computed_field 31, implemented_by 1, csimp 42 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -904,7 +912,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- Kernel hardening (depth scanner, memoised level/expr walks, `Level.hasParamData`,
 -- `Level.isZero`, and raisable `Limits.levelBudget` / `Level.leqCoreB`) updates counts (refreshed in reconciliation).
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 8454 compiled functions; inherited externs 115, implemented_by 0, unsafe 43, csimp 8; ruled computed_field 31, implemented_by 1, csimp 42 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 8458 compiled functions; inherited externs 115, implemented_by 0, unsafe 43, csimp 8; ruled computed_field 31, implemented_by 1, csimp 42 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -950,7 +958,7 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxCK.Kernel.Admission.Tier] Ix.Kerne
  Ix.Kernel.Admission.checkBytesTieredUsingUnder,
  Ix.Kernel.Admission.checkConstantsTieredUnder,
  Ix.Kernel.Cached.checkDeclsWithUserAxioms,
- Ix.Kernel.Cached.annotDeclStepWithUserAxioms]: 8185 compiled functions; inherited externs 114, implemented_by 0, unsafe 43, csimp 8; ruled computed_field 31, implemented_by 1, csimp 42 -/
+ Ix.Kernel.Cached.annotDeclStepWithUserAxioms]: 8189 compiled functions; inherited externs 114, implemented_by 0, unsafe 43, csimp 8; ruled computed_field 31, implemented_by 1, csimp 42 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.userAxiomOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

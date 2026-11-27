@@ -116,11 +116,14 @@ list fails just as loudly as one in a bare file.
       whose continuation returns a `Subsingleton`, so `h` is
       `Subsingleton.elim`. The file's docstring is the justification.
 
-  IxCK/Kernel/BasisGen.lean     unsafe, implemented_by
+  IxCK/Kernel/BasisGen.lean     unsafe, implemented_by, addDecl
       ELABORATION ONLY. `#annotate_basis` / `#annotate_pins` run the
       annotation pass at elaboration time through `unsafe evalTerm`
       (a `meta section`) and splice the resulting literals. Nothing here
       is in the binary; the literals are ordinary data the proofs consume.
+      The generated declarations are installed by `Lean.addDecl`, which
+      runs Lean's kernel on them (unless `debug.skipKernelTC` is set, which
+      the kernel-bypass scan forbids in every certified library).
 
   IxCK/Kernel/Audit/Axioms.lean sorryAx
       NAME ONLY: checks whether a declaration's dependency graph contains
@@ -135,12 +138,25 @@ list fails just as loudly as one in a bare file.
       (`withPtrAddrUnsafe`, `ptrEq`, `ptrAddrUnsafe`, `isExclusiveUnsafe`) in
       `runtimeRulings`.
 
-  IxCK/Kernel/Audit/Runtime.lean unsafe, implemented_by, computed_field, extern
+  IxCK/Kernel/Audit/Runtime.lean unsafe, implemented_by, computed_field, extern, csimp
       AUDIT ENGINE & NEGATIVE CONTROLS: `Finding.unsafe` constructor and
       elaboration-time `RuntimeControls` negative-control fixtures verifying
-      `checkRuntimeWith` rejects unruled escapes.
+      `checkRuntimeWith` rejects unruled escapes (their csimps included).
 
-  Ix/Cert/Compile.lean          ofReduceBool, sorryAx, trustCompiler
+  csimp in IxCK/Kernel/{Expr,Name,Key,Cached/CoreC,Cached/StateC,Canon,Core,
+  CoreDefs,DeclCheck,ExprOps,FEnv,Inductives/NativeInstall,Inductives/Scope,
+  Inductives/StructParts,Level,StdAxioms,Units}.lean, IxCK/Ixon/Codec.lean and
+  Ix/Cert/Compile.lean
+      PROVED REPLACEMENTS: each `@[csimp] theorem f_eq : @f = @g` runs a
+      faster `g` for the checker's (or the certified compile's) `f`, with
+      the equation proved. The runtime audit admits a project csimp only
+      from the ruled modules (`csimpModules`: `IxCK.Kernel` and
+      `IxCK.Ixon.Codec` for the checker, `Ix` for `Ix.Cert.compile`,
+      `Ix/Cert/RuntimeAudit.lean`) and only on the standard axioms, a test a
+      theorem that never reached the kernel also passes; the full-closure
+      kernel replay re-checks every one of these theorems.
+
+  Ix/Cert/Compile.lean          ofReduceBool, sorryAx, trustCompiler, csimp
       NAME ONLY: matches `Ix.Kernel.Role.ofReduceBool` / `.ofReduceNat` /
       `.sorryAx` / `.trustCompiler` when classifying axiom roles in
       `roleRecordKind`.
@@ -176,10 +192,26 @@ list fails just as loudly as one in a bare file.
       The file is scanned with the display modules (`displaySources`), which
       hold no other escape.
 
-Not policed, as upstream: `partial`, `@[csimp]`, `withPtrEq`/`withPtrAddr`,
-`opaque`, `noncomputable`. The Lean runtime audit polices the compiled
-form of the first two (no `partial` definition at all, `csimp` only with a
+Not policed, as upstream: `partial`, `withPtrEq`/`withPtrAddr`, `opaque`,
+`noncomputable`. The Lean runtime audit polices the compiled form of
+`partial` (no `partial` definition at all) and of `@[csimp]` (only with a
 theorem on the standard axioms).
+
+Added here (not upstream):
+- `csimp` in attribute position (inside `[…]`, as `extern`). The runtime
+  audit's test is also passed by a csimp theorem that never reached the
+  kernel, and an unchecked `@f = @g` swaps the executed code while every
+  proof about `f` still stands. The full-closure kernel replay (`lake run
+  check-kernel-replay`, `Scripts/KernelReplay.lean`) re-checks every such
+  theorem; each file that declares one is allowlisted for `csimp` above, so
+  a new one in another file is seen.
+- `addDecl`, `addDeclCore`, `addDeclWithoutChecking`, `setEnv`, `modifyEnv`
+  and `skipKernelTC`: the ways a metaprogram installs a declaration, checked
+  or not.
+- The kernel-bypass scan (`bypassTokens`): `skipKernelTC` and
+  `addDeclWithoutChecking` anywhere in the text of every certified library
+  (`bypassDirs`, `bypassRootFiles`) and lakefile, comments included, with no
+  allowlist.
 
 Changes from upstream: the scanned files come from the repository's own
 layout, and a file under `IxCK/Kernel/` that the layout does not classify
@@ -210,12 +242,57 @@ open Tests.Ix.Kernel.KernelLayout
 
 def tokens : List String :=
   ["unsafe", "unsafeCast", "ptrAddrUnsafe", "implemented_by", "computed_field", "native_decide",
-   "bv_decide", "ofReduceBool", "sorry", "sorryAx", "trustCompiler", "lcProof", "extern", "axiom"]
+   "bv_decide", "ofReduceBool", "sorry", "sorryAx", "trustCompiler", "lcProof", "extern", "axiom",
+   "skipKernelTC", "addDecl", "addDeclCore", "addDeclWithoutChecking", "setEnv", "modifyEnv",
+   "csimp"]
+
+/-- The kernel-bypass tokens: each names a way to put a declaration into an
+environment without the kernel checking it (`debug.skipKernelTC`, which
+`Lean.addDecl` obeys, and `addDeclWithoutChecking`). Searched for, as words in
+the raw text, with no allowlist, in every certified library (`bypassDirs`,
+`bypassRootFiles`) and the lakefiles (`bypassLakefiles`, where `leanOptions`
+or `moreLeanArgs` could set the option for a whole package). The test fixtures that need ill-typed
+declarations (`Tests/`, `Benchmarks/`) are not scanned. The full-closure kernel
+replay (`Scripts/KernelReplay.lean`) is what detects such a declaration in an
+`.olean`; this scan names the source line. -/
+def bypassTokens : List String := ["skipKernelTC", "addDeclWithoutChecking"]
+
+/-- The certified libraries the kernel-bypass scan covers. -/
+def bypassDirs : Array System.FilePath :=
+  #["IxCK", "Ix", "IxVMRefinement", "IxSharingVerify", "Aiur/Aiur", "IxVM/IxVM",
+    "MultiStark/MultiStark", "Models/SetTheory/IxSetTheoryModel"]
+
+/-- Library root files the kernel-bypass scan covers besides `bypassDirs`. -/
+def bypassRootFiles : Array String :=
+  #["Ix.lean", "IxSharingVerify.lean", "FormalAiurKeys.lean", "FormalCodegen.lean",
+    "Aiur/Aiur.lean", "IxVM/IxVM.lean", "MultiStark/MultiStark.lean",
+    "Models/SetTheory/IxSetTheoryModel.lean"]
+
+/-- Every workspace's lakefile: an option set there applies to a whole package.
+These are searched as plain text (a TOML file is not Lean). -/
+def bypassLakefiles : Array String :=
+  #["lakefile.lean", "IxCK/lakefile.lean", "Aiur/lakefile.lean", "IxVM/lakefile.lean",
+    "MultiStark/lakefile.lean", "Models/SetTheory/lakefile.toml"]
 
 def allow : List (String × List String) := [
-  ("IxCK/Kernel/Expr.lean", ["computed_field"]),
-  ("IxCK/Kernel/Name.lean", ["computed_field"]),
-  ("IxCK/Kernel/Key.lean", ["computed_field", "ofReduceBool", "sorryAx", "trustCompiler"]),
+  ("IxCK/Kernel/Expr.lean", ["computed_field", "csimp"]),
+  ("IxCK/Kernel/Name.lean", ["computed_field", "csimp"]),
+  ("IxCK/Kernel/Key.lean", ["computed_field", "ofReduceBool", "sorryAx", "trustCompiler", "csimp"]),
+  ("IxCK/Kernel/Cached/CoreC.lean", ["csimp"]),
+  ("IxCK/Kernel/Cached/StateC.lean", ["csimp"]),
+  ("IxCK/Kernel/Canon.lean", ["csimp"]),
+  ("IxCK/Kernel/Core.lean", ["csimp"]),
+  ("IxCK/Kernel/CoreDefs.lean", ["csimp"]),
+  ("IxCK/Kernel/DeclCheck.lean", ["csimp"]),
+  ("IxCK/Kernel/ExprOps.lean", ["csimp"]),
+  ("IxCK/Kernel/FEnv.lean", ["csimp"]),
+  ("IxCK/Kernel/Inductives/NativeInstall.lean", ["csimp"]),
+  ("IxCK/Kernel/Inductives/Scope.lean", ["csimp"]),
+  ("IxCK/Kernel/Inductives/StructParts.lean", ["csimp"]),
+  ("IxCK/Kernel/Level.lean", ["csimp"]),
+  ("IxCK/Kernel/StdAxioms.lean", ["csimp"]),
+  ("IxCK/Kernel/Units.lean", ["csimp"]),
+  ("IxCK/Ixon/Codec.lean", ["csimp"]),
   ("IxCK/Kernel/Roles.lean", ["ofReduceBool", "sorryAx", "trustCompiler"]),
   ("IxCK/Kernel/Basis/Names.lean", ["sorryAx"]),
   ("IxCK/Kernel/Cached/ParsedC.lean", ["trustCompiler"]),
@@ -225,13 +302,13 @@ def allow : List (String × List String) := [
   ("IxCK/Kernel/Verify/BridgeDecl.lean", ["trustCompiler"]),
   ("IxCK/Kernel/Verify/Cached/BridgeC.lean", ["trustCompiler"]),
   ("IxCK/Kernel/Admission.lean", ["sorryAx"]),
-  ("IxCK/Kernel/BasisGen.lean", ["unsafe", "implemented_by"]),
+  ("IxCK/Kernel/BasisGen.lean", ["unsafe", "implemented_by", "addDecl"]),
   ("IxCK/Kernel/Exclusive.lean", ["unsafe", "implemented_by"]),
   ("IxCK/Kernel/Audit/Axioms.lean", ["sorryAx"]),
   ("IxCK/Kernel/Audit/ClosureManifest.lean", ["unsafe"]),
   ("IxCK/Kernel/Audit/Roots.lean", ["ptrAddrUnsafe"]),
-  ("IxCK/Kernel/Audit/Runtime.lean", ["unsafe", "implemented_by", "computed_field", "extern"]),
-  ("Ix/Cert/Compile.lean", ["ofReduceBool", "sorryAx", "trustCompiler"]),
+  ("IxCK/Kernel/Audit/Runtime.lean", ["unsafe", "implemented_by", "computed_field", "extern", "csimp"]),
+  ("Ix/Cert/Compile.lean", ["ofReduceBool", "sorryAx", "trustCompiler", "csimp"]),
   ("Ix/Cert/LayoutExtra.lean", ["sorryAx"]),
   ("Ix/Address/Admission.lean", ["implemented_by"]),
   ("Ix/KernelDisplay/Peek.lean", ["unsafe", "unsafeCast"])]
@@ -503,10 +580,11 @@ def wordHits (line : Array Char) (w : String) : List Nat := Id.run do
 
 def hasWord (line : Array Char) (w : String) : Bool := !(wordHits line w).isEmpty
 
-/-- Line numbers where word-bounded `extern` occurs inside `[...]` brackets
+/-- Line numbers where word-bounded `w` occurs inside `[...]` brackets
 across the full comment/string-blanked source (covering single-line and
-multi-line `@[\n extern "sym"\n]` and `attribute [\n extern "sym"\n]`). -/
-def externHitLines (out : Array Char) : Array Nat := Id.run do
+multi-line `@[\n extern "sym"\n]` and `attribute [\n extern "sym"\n]`):
+the attribute position of `extern` and `csimp`. -/
+def bracketHitLines (out : Array Char) (w : String) : Array Nat := Id.run do
   let n := out.size
   let mut lineNo := 1
   let mut bracketDepth : Nat := 0
@@ -519,9 +597,9 @@ def externHitLines (out : Array Char) : Array Nat := Id.run do
       bracketDepth := bracketDepth + 1
     else if c == ']' then
       if bracketDepth > 0 then bracketDepth := bracketDepth - 1
-    else if bracketDepth > 0 && c == 'e' && wordAt out q "extern" &&
+    else if bracketDepth > 0 && c == w.front && wordAt out q w &&
         (q == 0 || !isWordChar out[q - 1]!) &&
-        (q + 6 == n || !(out[q + 6]?.any isWordChar)) then
+        (q + w.length == n || !(out[q + w.length]?.any isWordChar)) then
       unless lines.contains lineNo do
         lines := lines.push lineNo
   return lines
@@ -551,9 +629,13 @@ def axiomHit (line : Array Char) : Bool := Id.run do
           i := skip (i + m.length); more := true
   return wordAt line i "axiom" && (i + 5 == n || (line[i + 5]?.any isPySpace))
 
-def tokenHit (externLines : Array Nat) (lineNo : Nat) (line : Array Char) : String → Bool
+def externHitLines (out : Array Char) : Array Nat := bracketHitLines out "extern"
+
+def tokenHit (externLines csimpLines : Array Nat) (lineNo : Nat) (line : Array Char) :
+    String → Bool
   | "ofReduceBool" => hasWord line "ofReduceBool" || hasWord line "ofReduceNat"
   | "extern" => externLines.contains lineNo
+  | "csimp" => csimpLines.contains lineNo
   | "axiom" => axiomHit line
   | tok => hasWord line tok
 
@@ -561,12 +643,13 @@ def tokenHit (externLines : Array Nat) (lineNo : Nat) (line : Array Char) : Stri
 def scanSource (raw : String) (path : String) : Except String (Array (Nat × String × String)) := do
   let out ← codeOnly raw path
   let externLines := externHitLines out
+  let csimpLines := bracketHitLines out "csimp"
   let mut hits := #[]
   let mut lineNo := 1
   for line in (String.ofList out.toList).splitOn "\n" do
     let chars := line.toList.toArray
     for tok in tokens do
-      if tokenHit externLines lineNo chars tok then
+      if tokenHit externLines csimpLines lineNo chars tok then
         hits := hits.push (lineNo, tok, pyStrip line.toList)
     lineNo := lineNo + 1
   return hits
@@ -624,7 +707,21 @@ def extraSelftests : Except String Unit := do
     ("multiline s! interp", "def f := s!\"{\n  unsafeCast 0\n}\"\n", #[(2, "unsafeCast")]),
     ("multiline s! spaced interp", "def f := s! \"{\n  unsafeCast 0\n}\"\n", #[(2, "unsafeCast")]),
     ("sorryAx token", "def f := sorryAx\n", #[(1, "sorryAx")]),
-    ("trustCompiler token", "def f := Lean.trustCompiler\n", #[(1, "trustCompiler")])
+    ("trustCompiler token", "def f := Lean.trustCompiler\n", #[(1, "trustCompiler")]),
+    ("csimp attribute", "@[csimp] theorem f_eq : @f = @g := rfl\n", #[(1, "csimp")]),
+    ("csimp attribute command", "attribute [inline, csimp] f_eq\n", #[(1, "csimp")]),
+    ("multiline csimp", "@[\n  csimp\n]\ntheorem f_eq : @f = @g := rfl\n", #[(2, "csimp")]),
+    ("benign csimp ident", "def csimp : Nat := 0\n", #[]),
+    ("skipKernelTC option", "set_option debug.skipKernelTC true in\n", #[(1, "skipKernelTC")]),
+    ("skipKernelTC withOptions",
+      "run_meta withOptions (debug.skipKernelTC.set · true) (addDecl d)\n",
+      #[(1, "skipKernelTC"), (1, "addDecl")]),
+    ("addDeclWithoutChecking", "def f := env.addDeclWithoutChecking d\n",
+      #[(1, "addDeclWithoutChecking")]),
+    ("addDeclCore", "def f := env.addDeclCore 0 d none\n", #[(1, "addDeclCore")]),
+    ("setEnv and modifyEnv", "def f := do setEnv e; modifyEnv id\n",
+      #[(1, "setEnv"), (1, "modifyEnv")]),
+    ("bypass in comment", "-- debug.skipKernelTC addDeclWithoutChecking\n", #[])
   ]
   for (label, src, want) in cases do
     let hits ← scanSource src s!"<selftest:{label}>"
@@ -632,6 +729,45 @@ def extraSelftests : Except String Unit := do
     let wantSorted := want.qsort pairLt
     if got != wantSorted then
       throw s!"{label}: expected {wantSorted.toList}, got {got.toList}"
+
+/-! ## The kernel-bypass scan -/
+
+/-- Every `.lean` file under `dir`, recursively, skipping `.lake` directories,
+sorted by code point. -/
+def leanFilesOutsideLake (dir : System.FilePath) : IO (Array String) := do
+  unless ← dir.isDir do return #[]
+  let mut files := #[]
+  for path in ← dir.walkDir (fun d => return d.fileName != some ".lake") do
+    if (path.fileName.getD "").endsWith ".lean" && !(← path.isDir) then
+      files := files.push path.toString
+  return files.qsort (· < ·)
+
+/-- The lines of `text` holding a `bypassTokens` word, as (line, token, text). -/
+def bypassHits (text : String) : Array (Nat × String × String) := Id.run do
+  let mut hits := #[]
+  let mut lineNo := 1
+  for line in text.splitOn "\n" do
+    let chars := line.toList.toArray
+    for tok in bypassTokens do
+      if hasWord chars tok then hits := hits.push (lineNo, tok, pyStrip line.toList)
+    lineNo := lineNo + 1
+  return hits
+
+/-- The kernel-bypass occurrences in the certified libraries and the lakefiles,
+as (file, line, token, text), and the number of files read. The text is searched
+as it is, comments and strings included: the lexer is not run over the ~100 MB
+of the libraries, and a mention in a comment fails too (rephrase it). -/
+def bypassScan : IO (Array (String × Nat × String × String) × Nat) := do
+  let mut files : Array String := #[]
+  for d in bypassDirs do files := files ++ (← leanFilesOutsideLake d)
+  for f in bypassRootFiles ++ bypassLakefiles do
+    if ← System.FilePath.pathExists f then files := files.push f
+  let mut hits := #[]
+  for rel in files do
+    let src ← IO.FS.readFile rel
+    unless bypassTokens.any (fun tok => (src.splitOn tok).length > 1) do continue
+    hits := hits ++ (bypassHits (← readText rel)).map fun (i, t, x) => (rel, i, t, x)
+  return (hits, files.size)
 
 def selftest : IO UInt32 := do
   if let .error e := extraSelftests then
@@ -690,10 +826,22 @@ def run (args : List String) : IO UInt32 := do
       IO.println "    An unterminated string or comment means the blanking has"
       IO.println "    desynchronised, so the scan below it would be meaningless."
       return 1
+  let (bypass, bypassFiles) ← bypassScan
   if args.contains "--list" then
     for (rel, i, tok, text) in occurrences do
       IO.println s!"{if allowed rel tok then "ok " else "NEW"} {rel}:{i} [{tok}] {text}"
+    for (rel, i, tok, text) in bypass do
+      IO.println s!"BYPASS {rel}:{i} [{tok}] {text}"
     return 0
+  if !bypass.isEmpty then
+    IO.println s!"TRUST-SURFACE FAIL - kernel-bypass tokens in the certified libraries \
+      ({bypass.size}):"
+    for (rel, i, tok, text) in bypass do
+      IO.println s!"    {rel}:{i} [{tok}] {text}"
+    IO.println "    Each of these can add a declaration the kernel never checked. They have no"
+    IO.println "    allowlist: fixtures that need ill-typed declarations belong under Tests/,"
+    IO.println "    and a comment that names one must be rephrased (the text is searched as is)."
+    return 1
   let bad := occurrences.filter fun (rel, _, tok, _) => !allowed rel tok
   if !bad.isEmpty then
     IO.println s!"TRUST-SURFACE FAIL - compiler escapes outside the allowlist ({bad.size}):"
@@ -716,6 +864,8 @@ def run (args : List String) : IO UInt32 := do
   let files := (occurrences.map (·.1)).toList.eraseDups.length
   IO.println s!"trust surface: {occurrences.size} escapes in {files} allowlisted files \
     ({sources.size} scanned); 0 outside the allowlist"
+  IO.println s!"kernel bypass: {bypassFiles} files of the certified libraries and lakefiles \
+    scanned for {bypassTokens}; none found"
   return 0
 
 end Tests.Ix.Kernel.TrustSurface
