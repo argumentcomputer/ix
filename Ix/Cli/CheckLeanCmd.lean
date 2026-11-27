@@ -24,9 +24,13 @@ whole artifact of an artifact with no role binding cannot run the whole-artifact
 entry: it says so and exits with `exitPartial`, even when every declaration
 passed.
 
-Checking is strict: a safe axiom other than Lean's standard three declines.
-`--allow-user-axioms` admits such axioms (`Key.isCustomAxiomEligible`) in the
-declaration checks, and a whole run runs the kernel's entry that admits them
+Checking is strict: a safe axiom other than Lean's standard three declines,
+except the four inert axiom roles (`sorryAx`, `Lean.trustCompiler`,
+`Lean.ofReduceBool`, `Lean.ofReduceNat`) and two compiler-trust opaques
+(`Lean.reduceBool`, `Lean.reduceNat`), which are tolerated without installation
+(any use declines) and reported as `inert` (`tolerated (not installed)`).
+`--allow-user-axioms` admits other safe axioms (`Key.isCustomAxiomEligible`) in
+the declaration checks, and a whole run runs the kernel's entry that admits them
 once, which lists the user axioms among the declarations. With none listed,
 that run is the certified entry's (T1) and the host statement is issued. With
 some, the run lists them, issues no host statement and exits with
@@ -90,9 +94,21 @@ structure PreparedInput where
   `prepareInput`, after the binding has passed the kernel's role-table check
   (`UserAxioms.requireAxiomRoles`). -/
   allowUserAxioms : Bool := false
+  /-- How the kernel's strict admission treats the pinned roles
+  (`Ix.Kernel.Admission.RolePins`): `committed` unless
+  `--allow-custom-literal-support` (`rolePins`). The whole-artifact entries
+  take it (`checkWhole`); a selected run checks it with `admitPins`. -/
+  pins : Ix.Kernel.Admission.RolePins := .committed
   prepareMs : Nat := 0
   /-- The limits the run is under, with their sources (`Ix.Kernel.Host.resolve`). -/
   settings : Ix.Kernel.Host.Resolved
+
+/-- The kernel's pinned-role admission a run asks for: `trustAnchors` (keeps
+`True` and `True.intro` pinned to the committed default table while allowing
+custom literal-support bindings, checked by type only) under
+`--allow-custom-literal-support`, else `committed`. -/
+def rolePins (allowCustomLiteralSupport : Bool) : Ix.Kernel.Admission.RolePins :=
+  if allowCustomLiteralSupport then .trustAnchors else .committed
 
 /-- Explicit coverage limits for the complete artifact entry, shared by both
 display modes: the host's whole-library byte/expansion bounds, and the kernel's
@@ -120,21 +136,35 @@ published names must agree with the binding (`RoleBinding.Compile.roleBindingErr
 which the compiler's `finalize` also runs). With `allowUserAxioms` the binding
 must pass the kernel's role-table check for user axioms
 (`Admission.admitAxiomPolicy .allowUser`, through `UserAxioms.requireAxiomRoles`:
-`sorryAx`, `propext` and `Classical.choice` bound) before any declaration is
+all six axiom roles bound — `propext`, `Classical.choice`, `sorryAx`,
+`Lean.trustCompiler`, `Lean.ofReduceBool`, `Lean.ofReduceNat`) before any declaration is
 checked, since the record-by-record checks never reach admission; an artifact
-with no binding is refused. -/
+with no binding is refused. `pins` is recorded for the run (`PreparedInput.pins`). -/
 def prepareInput (bytes : ByteArray) (anon : Bool := false) (allowUserAxioms : Bool := false)
-    (settings : Ix.Kernel.Host.Resolved := defaultSettings) :
+    (settings : Ix.Kernel.Host.Resolved := defaultSettings)
+    (pins : Ix.Kernel.Admission.RolePins := .committed)
+    (stackBytes : Nat := settings.limits.stackFor) :
     IO (Except DriverError PreparedInput) := do
   let start ← IO.monoMsNow
-  let result : Except DriverError PreparedInput ← IO.lazyPure fun _ => do
+  -- Decode `.ixe` records and prepare the role binding on a large-stack worker
+  -- thread so deeply nested ASTs do not exhaust the default main thread stack.
+  let run : IO (Except DriverError PreparedInput) := IO.lazyPure fun _ => do
     -- the loader scans every record before decoding it (`Ixon.depthLimitError`)
     let parts ← (Ixon.deEnvVerifiedLazy bytes settings.limits.maxDepth).mapError fun e =>
       limitOr settings (Ix.Cli.KernelLimits.loaderLimitOf e) (.infrastructure e)
     let boundInput ← if parts.env.roleBinding.isSome then
         (Ix.RoleBinding.Artifact.prepareRecords parts.env settings.limits).map some
           |>.mapError fun e => limitOr settings (Ix.Cli.KernelLimits.artifactLimitOf e) (.artifact (toString e))
-      else pure none
+      else do
+        -- Enforce the strict universe-parameter bound on unbound `.ixe`
+        -- files too, before per-declaration `Reader.readRecord` can OOM.
+        let raw := (parts.env.consts.toArray.qsort fun x y => x.1.cmpBytes y.1 == .lt).toList
+        let constants ← raw.mapM fun (a, lc) => do
+          let c ← lc.get.mapError DriverError.infrastructure
+          pure (a, c)
+        (Ix.Kernel.Admission.admitLevels constants).mapError
+          fun e => DriverError.artifact s!"artifact: {e}"
+        pure none
     if allowUserAxioms then
       (Ix.RoleBinding.UserAxioms.requireAxiomRoles parts.env.roleBinding).mapError
         fun e => DriverError.artifact s!"artifact: decline: --allow-user-axioms: {e}"
@@ -172,9 +202,172 @@ def prepareInput (bytes : ByteArray) (anon : Bool := false) (allowUserAxioms : B
     let inventory ← if anon then (anonymousCandidates store).mapError targetError else
       pure (namedCandidates store (parts.namedRows.map fun (r : Ixon.NamedRow) => (toString r.name, r.addr)))
     pure { parts, setup, pre, hints, inventory, anon, bound := boundInput.isSome
-           hasTier := (boundInput.map (·.hasTier)).getD false, allowUserAxioms, settings : PreparedInput }
+           hasTier := (boundInput.map (·.hasTier)).getD false, allowUserAxioms, pins, settings : PreparedInput }
+  if stackBytes != 0 then Ix.Runtime.setLeanThreadStackSize (USize.ofNat stackBytes)
+  let result ← IO.ofExcept (← IO.wait (← IO.asTask (prio := .dedicated) run))
   let elapsed := (← IO.monoMsNow) - start
   return result.map fun p => { p with prepareMs := elapsed }
+
+/-! ## The role binding against the default role table
+
+A literal means its unfolding through the constants the artifact's own role
+binding names for the literal support: a string literal unfolds through the
+bound `String.ofList`, and the kernel checks the string support by type only
+(`anchor` roles, `IxCK/Kernel/Roles.lean`). The theorems hold for every table,
+so an accepted statement about a literal is about the bound constants, which
+need not be Lean's. These commands therefore print the binding, compare every
+bound role with the default role table, and refuse a binding that puts a
+literal-support role elsewhere than the default table's record unless
+`--allow-custom-literal-support` is given. They always
+refuse a binding that puts `True` or `True.intro` elsewhere (even under
+`--allow-custom-literal-support`): the kernel's strict admission pins them under
+both `RolePins.committed` and `RolePins.trustAnchors` (`Role.trustAnchorsPinned`),
+so the flag releases only the literal-support roles
+(`Role.literalSupportPinned`). -/
+
+/-- A bound role whose address is not the default role table's for it: the
+role, its address here, and the default table's (`none`: unbound there). -/
+structure RoleDeviation where
+  role : Role
+  address : Address
+  default? : Option Address
+
+/-- How a role binding compares with the default role table. `address?` is
+`none` when the artifact carries no binding (the default table is used). -/
+structure BindingComparison where
+  address? : Option Address
+  defaultAddress : Address
+  bound : Nat
+  /-- The bound roles not at the default table's record. -/
+  deviations : Array RoleDeviation
+  /-- Those of `deviations` that are literal-support roles (`Ix.Cert.literalSupportRoles`). -/
+  literal : Array RoleDeviation
+  /-- Those of `deviations` that are the kernel's trust-anchor pinned roles (`pinnedNonLiteral`). -/
+  pinned : Array RoleDeviation := #[]
+
+/-- The kernel's pinned roles (`Role.pinnedToReference`) that are not literal
+support: `True` and `True.intro` (`Role.trustAnchorsPinned`), whose bound
+records give the statement of the tolerated `Lean.trustCompiler`. -/
+def pinnedNonLiteral : List Role :=
+  Role.trustAnchorsPinned
+
+/-- Compare the role table `table` that a binding at `address?` decodes to
+with the default role table. -/
+def compareBinding (address? : Option Address) (table : RoleTable) :
+    Except String BindingComparison := do
+  let defaultAddress ← Reader.defaultTableAddress
+  let default ← Reader.defaultTable
+  let deviations : Array RoleDeviation := table.bound.filterMap fun (role, address) =>
+    let default? := default.addressOf? role
+    if default? == some address then none else some { role, address, default? }
+  let literal := deviations.filter fun d => Ix.Cert.literalSupportRoles.contains d.role
+  let pinned := deviations.filter fun d => pinnedNonLiteral.contains d.role
+  return { address?, defaultAddress, bound := table.bound.size, deviations, literal, pinned }
+
+/-- A role's Lean name, for the report. -/
+def roleLabel (role : Role) : String := (Ix.RoleBinding.Compile.roleName role).toString
+
+/-- One deviation, for the report. -/
+def RoleDeviation.describe (d : RoleDeviation) : String :=
+  let default := match d.default? with
+    | some a => s!"not the default table's {a}"
+    | none => "which the default table leaves unbound"
+  s!"{roleLabel d.role} bound to {d.address}, {default}"
+
+/-- The report's lines on the binding, each after `tag`. -/
+def BindingComparison.lines (c : BindingComparison) (tag : String) : Array String :=
+  match c.address? with
+  | none => #[s!"{tag} role binding: none; the default role table {c.defaultAddress} is used"]
+  | some a =>
+    let roles :=
+      if c.deviations.isEmpty then "every bound role is at the default table's record"
+      else s!"{c.deviations.size} bound roles are not at the default table's records"
+    let head :=
+      if a == c.defaultAddress then s!"{tag} role binding: {a}, the default role table"
+      else s!"{tag} role binding: {a} ({c.bound} roles), not the default role table \
+        {c.defaultAddress}; {roles}"
+    let others := c.deviations.filter fun d =>
+      !Ix.Cert.literalSupportRoles.contains d.role && !pinnedNonLiteral.contains d.role
+    let othersLine := if others.isEmpty then #[] else
+      #[s!"{tag}   other roles bound elsewhere: {", ".intercalate (others.toList.map (roleLabel ·.role))}"]
+    let literalLines := if c.literal.isEmpty
+      then #[s!"{tag} literal support: every bound literal-support role is at the default table's record"]
+      else c.literal.map fun d => s!"{tag} literal support: {d.describe}"
+    let pinnedLines := c.pinned.map fun d => s!"{tag} pinned role: {d.describe}"
+    #[head] ++ othersLine ++ literalLines ++ pinnedLines
+
+/-- What a binding that moves the literal support means, for the refusal and
+the warning. -/
+def literalMeaning : String :=
+  "a literal in this artifact means its unfolding through these bound constants (a string \
+literal unfolds through the bound String.ofList), not through Lean's, so an accepted statement \
+about a literal may be false in Lean"
+
+/-- What a binding that moves `True` or `True.intro` means. -/
+def trueMeaning : String :=
+  "the tolerated Lean.trustCompiler's statement is the bound True, so a table that binds True \
+elsewhere has an axiom of another closed statement accepted as Lean.trustCompiler (never \
+installed or usable, tolerated as inert)"
+
+/-- The roles `--allow-custom-literal-support` leaves unpinned, by name: the
+kernel's `Role.literalSupportPinned`, which `RolePins.trustAnchors` releases
+while keeping `True` and `True.intro` pinned. -/
+def unpinnedRolesText : String :=
+  ", ".intercalate (Role.literalSupportPinned.map roleLabel)
+
+/-- Print the binding's report lines, and refuse (an `artifact` error, exit 3):
+* unconditionally, a binding that puts `True` or `True.intro` elsewhere than the
+  default table's record (even when `allowCustom` is true: `RolePins.trustAnchors`
+  keeps them pinned);
+* unless `allowCustom`, a binding that puts a literal-support role elsewhere.
+With `allowCustom` (and `True`/`True.intro` pinned), the kernel's strict
+admission runs with `RolePins.trustAnchors` (`rolePins`): print a warning naming
+the literal-support roles left unpinned and noting that `True` and `True.intro`
+remain pinned. -/
+def bindingGate (c : BindingComparison) (tag : String) (allowCustom : Bool) :
+    IO (Except DriverError Unit) := do
+  for line in c.lines tag do IO.println line
+  if !c.pinned.isEmpty then
+    if c.literal.isEmpty || allowCustom then
+      return .error (.artifact s!"artifact: refused: the role binding puts pinned trust-anchor \
+roles elsewhere than the default role table: {"; ".intercalate (c.pinned.toList.map (·.describe))}; \
+{trueMeaning}. True and True.intro remain pinned even under --allow-custom-literal-support")
+    else
+      return .error (.artifact s!"artifact: refused: the role binding puts pinned roles elsewhere \
+than the default role table: {"; ".intercalate ((c.literal ++ c.pinned).toList.map (·.describe))}; \
+{literalMeaning}; {trueMeaning}. Note: --allow-custom-literal-support releases only the \
+literal-support roles ({unpinnedRolesText}) and still refuses moved True or True.intro")
+  if allowCustom then
+    IO.println s!"{tag} WARNING (--allow-custom-literal-support): the kernel's strict admission \
+runs under RolePins.trustAnchors and does not pin the literal-support roles to the default role \
+table's records in this run (checked by type only): {unpinnedRolesText}. True and True.intro \
+remain pinned to the default role table."
+    unless c.literal.isEmpty do
+      IO.println s!"{tag} WARNING (--allow-custom-literal-support): this binding puts \
+{", ".intercalate (c.literal.toList.map (roleLabel ·.role))} elsewhere than the \
+default role table's records; {literalMeaning}"
+    return .ok ()
+  if c.literal.isEmpty then return .ok ()
+  return .error (.artifact s!"artifact: refused: the role binding puts literal-support roles \
+elsewhere than the default role table: {"; ".intercalate (c.literal.toList.map (·.describe))}; \
+{literalMeaning}. Pass --allow-custom-literal-support to check it under this binding (the kernel \
+then runs under RolePins.trustAnchors, leaving {unpinnedRolesText} unpinned while keeping True \
+and True.intro pinned)")
+
+/-- The kernel's pinned-role admission (`Ix.Kernel.Admission.admitPinnedRoles`)
+on a bound input's table under the run's `pins`. The whole-artifact entries run
+it themselves; a selected or capped run runs no entry, so the command runs it
+after `bindingGate` and before any declaration is checked. -/
+def PreparedInput.admitPins (p : PreparedInput) : Except DriverError Unit :=
+  if p.bound then
+    (Ix.Kernel.Admission.admitPinnedRoles p.pins p.setup.table).mapError
+      fun e => DriverError.artifact s!"artifact: {e}"
+  else pure ()
+
+/-- The binding comparison of a prepared input: its own binding when it
+carries one, else none (the default table is used). -/
+def PreparedInput.bindingComparison (p : PreparedInput) : Except String BindingComparison :=
+  compareBinding (if p.bound then p.parts.env.roleBinding.map (·.address) else none) p.setup.table
 
 def PreparedInput.record (p : PreparedInput) (a : Address) : Except ReadError Ixon.Constant :=
   match p.parts.env.consts[a]? with
@@ -273,11 +466,11 @@ private def checkWholeWithCoverage (p : PreparedInput) (selection : Selection) (
   let artifact := p.parts.env
   let limits := p.settings.limits
   unless p.allowUserAxioms do
-    let ⟨statement, checked⟩ ← (Ix.HostAdmission.certify artifact limits).mapError fun e =>
+    let ⟨statement, checked⟩ ← (Ix.HostAdmission.certify artifact limits p.pins).mapError fun e =>
       limitOr p.settings (Ix.Cli.KernelLimits.hostLimitOf e) (.artifact (toString e))
     return some (ArtifactAdmission.ofRun checked.run, some statement, WholeCoverage.ofRun checked.run)
   if p.hasTier then
-    let receipt ← (Ix.RoleBinding.Artifact.checkTieredConditional artifact limits).mapError fun e =>
+    let receipt ← (Ix.RoleBinding.Artifact.checkTieredConditional artifact limits p.pins).mapError fun e =>
       limitOr p.settings (Ix.Cli.KernelLimits.artifactTierLimitOf e) (.artifact (toString e))
     match noAxioms : receipt.axioms with
     | [] => certifiedVerdictWithCoverage artifact (.tiered (receipt.toTierReceipt noAxioms))
@@ -286,7 +479,7 @@ private def checkWholeWithCoverage (p : PreparedInput) (selection : Selection) (
         (Ix.RoleBinding.UserAxioms.addresses receipt.axioms), none,
         WholeCoverage.ofEnvs receipt.logical receipt.tier)
   else
-    let receipt ← (Ix.RoleBinding.Artifact.checkConditional artifact limits).mapError fun e =>
+    let receipt ← (Ix.RoleBinding.Artifact.checkConditional artifact limits p.pins).mapError fun e =>
       limitOr p.settings (Ix.Cli.KernelLimits.artifactLimitOf e) (.artifact (toString e))
     match noAxioms : receipt.axioms with
     | [] => certifiedVerdictWithCoverage artifact (.logical (receipt.toReceipt noAxioms))
@@ -310,10 +503,19 @@ def checkWhole (p : PreparedInput) (selection : Selection) (maxGroups : Option N
     Except DriverError (Option (ArtifactAdmission × Option Ix.HostAdmission.Statement)) :=
   (checkWholeWithCoverage p selection maxGroups).map (·.map fun (a, s, _) => (a, s))
 
-def success (outcome : String) : Bool := outcome == "accept" || outcome == "typed"
+/-- Whether a declaration key is one of the tolerated inert roles (`sorryAx`,
+`Lean.trustCompiler`, `Lean.ofReduceBool`, `Lean.ofReduceNat`, `Lean.reduceBool`,
+`Lean.reduceNat`) that install nothing into the logical environment and decline
+whenever used. -/
+def isInertKey (k : Key .anon) : Bool :=
+  k == sorryAxName || k.isCompilerTrust
+
+def success (outcome : String) : Bool :=
+  outcome == "accept" || outcome == "typed" || outcome == "inert"
 def CheckReport.targetsCovered (r : CheckReport) : Nat := r.targets.size
 def CheckReport.passed (r : CheckReport) : Nat := (r.targets.filter (success ∘ (·.outcome))).size
 def CheckReport.typed (r : CheckReport) : Nat := (r.targets.filter (·.outcome == "typed")).size
+def CheckReport.inert (r : CheckReport) : Nat := (r.targets.filter (·.outcome == "inert")).size
 def CheckReport.failures (r : CheckReport) : Array (String × String) :=
   (r.targets.filter (!success ·.outcome)).map fun t => (t.target.label, s!"{t.outcome}: {t.reason}")
 /-- Whether any checked target or record in the closure was rejected by the
@@ -466,8 +668,11 @@ def runMode (p : PreparedInput) (cfg : CheckCfg) (plan : Plan) (cx : Ctx md) (ev
           IO.eprintln s!"{cfg.tag} support #{row.address}: {row.outcome} {row.reason}"
         for t in selected do
           let covered := (← seen.get).getD row.address {} |>.contains t.key
-          let outcome := if success row.outcome && !covered then "decline" else row.outcome
-          let reason := if success row.outcome && !covered then "selected key was not emitted" else row.reason
+          let isInert := row.outcome == "accept" && covered && isInertKey t.key
+          let outcome := if success row.outcome && !covered then "decline"
+            else if isInert then "inert" else row.outcome
+          let reason := if success row.outcome && !covered then "selected key was not emitted"
+            else if isInert then "tolerated (not installed)" else row.reason
           if !cfg.silent && (cfg.verbose || !success outcome || (cfg.slowMs > 0 && row.micros / 1000 ≥ cfg.slowMs)) then
             IO.eprintln s!"{cfg.tag} {t.label}: {outcome} {reason} ({row.micros / 1000}ms)"
           if let some h := failOut? then
@@ -475,8 +680,12 @@ def runMode (p : PreparedInput) (cfg : CheckCfg) (plan : Plan) (cx : Ctx md) (ev
               h.putStrLn s!"\n# {outcome}: {(reason.replace "\n" " | ").replace "\r" ""}"
               h.putStrLn t.fileLabel
               h.flush)
-    let targets ← match results plan run.rows (← seen.get) with
+    let rawTargets ← match results plan run.rows (← seen.get) with
       | .ok xs => pure xs | .error e => return .error (targetError e)
+    let targets := rawTargets.map fun r =>
+      if r.outcome == "accept" && isInertKey r.target.key then
+        { r with outcome := "inert", reason := "tolerated (not installed)" }
+      else r
     let actual ← actual.get
     let subject := run.rows.foldl (fun n r => if actual.contains r.address && byProducer.contains r.address then n + r.micros else n) 0
     let total := run.rows.foldl (fun n r => if actual.contains r.address then n + r.micros else n) 0
@@ -496,7 +705,7 @@ def runMode (p : PreparedInput) (cfg : CheckCfg) (plan : Plan) (cx : Ctx md) (ev
 which installs nothing into the logical environment was actually emitted by its
 producer record. -/
 private def inertEmittedBy (p : PreparedInput) (t : Target) : Bool :=
-  if t.key == sorryAxName || t.key.isCompilerTrust then
+  if isInertKey t.key then
     match p.record t.producer >>= readRecord p.setup.cx {} t.producer with
     | .ok rd => (rd.decls.toList.flatMap Benchmarks.Kernel.CheckIxeMeta.declaredKeys).contains t.key
     | .error _ => false
@@ -513,14 +722,17 @@ private def wholeOnlyReport (p : PreparedInput) (plan : Plan) (admission : Artif
     let some prod := p.setup.store[t.producer]?
       | throw (targetError (.coverage t.label "selected producer has no outcome row"))
     let isTier := Ix.Kernel.Admission.isTierInfo prod.info
+    let isInert := !isTier && !coverage.logicalKeys.contains t.key && inertEmittedBy p t
     let covered :=
       if isTier then
         coverage.tierKeys.contains t.key
       else
-        coverage.logicalKeys.contains t.key || inertEmittedBy p t
+        coverage.logicalKeys.contains t.key || isInert
     unless covered do
       throw (targetError (.coverage t.label "selected key was not emitted by its actual producer"))
-    pure { target := t, outcome := if isTier then "typed" else "accept", reason := "", micros := 0 }
+    let outcome := if isTier then "typed" else if isInert then "inert" else "accept"
+    let reason := if isInert then "tolerated (not installed)" else ""
+    pure { target := t, outcome, reason, micros := 0 }
   let records := match admission with
     | .logical n | .tiered n _ | .conditional n _ _ => n
   let userAxioms := match admission with
@@ -628,7 +840,7 @@ def runPrepared (p : PreparedInput) (cfg : CheckCfg) (selection : Selection)
 
 def runMetaCheck (bytes : ByteArray) (cfg : CheckCfg) (selection : Selection)
     (maxGroups : Option Nat := none) (failOut? : Option IO.FS.Handle := none) : IO (Except DriverError CheckReport) := do
-  match ← prepareInput bytes with
+  match ← prepareInput bytes (stackBytes := cfg.stackBytes) with
   | .error e => return .error e | .ok p => runPrepared p cfg selection maxGroups failOut?
 
 /-- First supplied setting wins; malformed values are usage errors. -/
@@ -731,6 +943,11 @@ structure Options where
   failOut? : Option String
   hostOut? : Option String
   hostStore : Bool
+  /-- `--allow-custom-literal-support`: check an artifact whose binding puts a
+  literal-support role elsewhere than the default role table (`bindingGate`),
+  under `RolePins.trustAnchors` (`rolePins`), while still refusing moved `True`
+  or `True.intro`. -/
+  allowCustomLiteralSupport : Bool := false
   /-- The kernel's limits (`--max-*`, `--level-budget`, `--workers`, `IX_KERNEL_*`). -/
   settings : Ix.Kernel.Host.Resolved
 
@@ -752,6 +969,7 @@ def parseOptions (p : Cli.Parsed) (path : String) : IO (Except DriverError Optio
     only := (← ConstsFile.gather p), cap := (p.flag? "max").map (·.as! Nat)
     json? := string "json", jsonName? := string "json-name", perConst? := string "per-const"
     failOut? := string "fail-out", hostOut? := string "host-out", hostStore := p.hasFlag "host-store"
+    allowCustomLiteralSupport := p.hasFlag "allow-custom-literal-support"
     settings }
   if o.hostRequested && (o.hasConsts || o.cap.isSome || o.cfg.allowDeclined) then
     return .error (.usage "[check-lean] host statement output requires a complete bound artifact check")
@@ -873,7 +1091,12 @@ uncertified, no host statement ({report.artifactMs}ms)"
         "[check-lean] host statement output requires a complete bound artifact check"
       else s!"[check-lean] host statement output requires an unconditional whole-artifact \
 admission: this run is CONDITIONAL on {axioms.size} user axioms and issues no host statement"
-  IO.println s!"[check-lean] {report.passed}/{report.targetsCovered} subjects passed ({report.typed} typed only), {report.records} checked/read records"
+  if report.inert > 0 then
+    let inertLabels := (report.targets.filter (·.outcome == "inert")).map (·.target.label)
+    IO.println s!"[check-lean] tolerated inert declarations (not installed; any use declines): \
+{report.inert} ({", ".intercalate inertLabels.toList})"
+  let inertNote := if report.inert > 0 then s!", {report.inert} inert/not installed" else ""
+  IO.println s!"[check-lean] {report.passed}/{report.targetsCovered} subjects passed ({report.typed} typed only{inertNote}), {report.records} checked/read records"
   IO.println s!"[check-lean] authenticated input {report.inputMs}ms; run preparation {report.prepareMs}ms; selected checker {report.subjectMicros / 1000}ms; support checker {report.supportMicros / 1000}ms; reading {report.readMicros / 1000}ms; run {report.elapsedMs}ms"
   IO.println s!"##check-lean## {report.elapsedMs} {report.passed} {report.failures.size} {report.targetsCovered}"
   if let some json := o.json? then
@@ -890,9 +1113,19 @@ def runOptions (o : Options) : IO UInt32 := do
     IO.println s!"Running IxCK record check ({if o.anon then "anon" else "meta"} mode\
 {if o.allowUserAxioms then "; user axioms allowed" else ""}\
 {if o.cfg.allowDeclined then "; declined allowed" else ""})"
-    let prepared ← match ← prepareInput bytes o.anon o.allowUserAxioms o.settings with
+    let prepared ← match ← prepareInput bytes o.anon o.allowUserAxioms o.settings
+        (rolePins o.allowCustomLiteralSupport) o.cfg.stackBytes with
       | .ok prep => pure prep
       | .error e => return (← refuse out e)
+    -- the binding, against the default role table, before any declaration is checked
+    let comparison ← match prepared.bindingComparison with
+      | .ok c => pure c
+      | .error e => return (← refuse out (.infrastructure e))
+    if let .error e ← bindingGate comparison "[check-lean]" o.allowCustomLiteralSupport then
+      return (← refuse out e)
+    -- the kernel's pinned-role admission, for selected runs too (whole runs repeat it)
+    if let .error e := prepared.admitPins then
+      return (← refuse out e)
     if let some json := o.perName? then
       let startAll ← IO.monoMsNow
       let (report, unresolved, refused) ← match ← runPerName o prepared json with
@@ -901,8 +1134,13 @@ def runOptions (o : Options) : IO UInt32 := do
       if let some csv := o.perConst? then writePerConstCsv prepared report.rows csv
       if report.failures.isEmpty && refused.isEmpty && !report.userAxioms.isEmpty then
         for line in conditionalLines prepared "selected checking" report.userAxioms do IO.println line
+      if report.inert > 0 then
+        let inertLabels := (report.targets.filter (·.outcome == "inert")).map (·.target.label)
+        IO.println s!"[check-lean] tolerated inert declarations (not installed; any use declines): \
+{report.inert} ({", ".intercalate inertLabels.toList})"
+      let inertNote := if report.inert > 0 then s!", {report.inert} inert/not installed" else ""
       let failed := report.failures.size + refused.size
-      IO.println s!"[check-lean] {report.passed}/{o.only.size} subjects passed ({report.typed} typed only), \
+      IO.println s!"[check-lean] {report.passed}/{o.only.size} subjects passed ({report.typed} typed only{inertNote}), \
 {failed} failed, {unresolved.size} unresolved"
       IO.println s!"##check-lean## {(← IO.monoMsNow) - startAll} {report.passed} {failed + unresolved.size} {o.only.size}"
       return if !unresolved.isEmpty then Ix.Benchmark.Results.exitUsage
@@ -936,7 +1174,7 @@ end Ix.Cli.CheckLeanCmd
 open Ix.Cli.CheckLeanCmd in
 def checkLeanCmd : Cli.Cmd := `[Cli|
   "check-lean" VIA runCheckLeanCmd;
-  "Check authenticated .ixe declarations with IxCK (bound whole inputs use actual artifact admission; meta display by default). Strict: a safe axiom other than propext, Classical.choice and Quot.sound declines unless --allow-user-axioms. Exit 0: everything asked for passed; 3: a declaration failed or the artifact was refused; 4: every declaration passed but the whole artifact, asked for, carries no role binding, so its admission did not run; 5: CONDITIONAL, everything passed only with the listed user axioms admitted (--allow-user-axioms); 6: declined by a kernel limit, which the message names with the flag and variable that raise it; 2: usage, including a selector naming no declaration, a host statement the run could not issue, a malformed limit and a run whose threads cannot fit the address-space limit; 1: infrastructure"
+  "Check authenticated .ixe declarations with IxCK (bound whole inputs use actual artifact admission; meta display by default). Strict: safe axioms beyond propext, Classical.choice and Quot.sound decline unless --allow-user-axioms, except the four inert axiom roles (sorryAx, Lean.trustCompiler, Lean.ofReduceBool, Lean.ofReduceNat) and two compiler-trust opaques (Lean.reduceBool, Lean.reduceNat), which are tolerated without installation (any use declines) and reported as inert. The artifact's role binding is printed and compared with the default role table; one that puts a literal-support role elsewhere than the default table's record is refused (3) unless --allow-custom-literal-support, and one that puts True or True.intro elsewhere is always refused (3). Exit 0: everything asked for passed; 3: a declaration failed or the artifact was refused; 4: every declaration passed but the whole artifact, asked for, carries no role binding, so its admission did not run; 5: CONDITIONAL, everything passed only with the listed user axioms admitted (--allow-user-axioms); 6: declined by a kernel limit, which the message names with the flag and variable that raise it; 2: usage, including a selector naming no declaration, a host statement the run could not issue, a malformed limit and a run whose threads cannot fit the address-space limit; 1: infrastructure"
   FLAGS:
     anon; "Anonymous keys and #hex display labels"
     workers : String; "Requested workers (>0; else IX_KERNEL_WORKERS, else LEAN_NUM_THREADS or the processor count). Given, it also bounds the tasks of the whole-artifact entry's phase B"
@@ -947,11 +1185,12 @@ def checkLeanCmd : Cli.Cmd := `[Cli|
     "max-record-univ-nodes" : String; "Kernel limit: one record's universe nodes, expanded (else IX_KERNEL_MAX_RECORD_UNIV_NODES; default 67108864)"
     "max-depth" : String; "Kernel limit: how deep a record nests, as stored and with shares expanded (else IX_KERNEL_MAX_DEPTH; default 16384); the threads get 16 KiB of stack per level, at least 256 MiB"
     "level-budget" : String; "Kernel limit: work budget per one-directional universe-level comparison (else IX_KERNEL_LEVEL_BUDGET; default 65536)"
-    "allow-user-axioms"; "Admit safe axioms beyond the standard three; the role binding must bind sorryAx, propext and Classical.choice. A whole run whose declarations hold any runs the uncertified conditional entry, lists the axioms, issues no host statement and exits 5; so does a selected run that reads one"
+    "allow-user-axioms"; "Admit safe axioms beyond the standard three; the role binding must bind all axiom roles (propext, Classical.choice, sorryAx, Lean.trustCompiler, Lean.ofReduceBool, Lean.ofReduceNat). A whole run whose declarations hold any runs the uncertified conditional entry, lists the axioms, issues no host statement and exits 5; so does a selected run that reads one"
     "allow-declined"; "Record-check mode: tolerate declarations outside IxCK's fragment (decline) and their dependents (blocked), failing with exit 3 only on a kernel or reader reject; skips whole-artifact admission and issues no host statement"
     "fail-out" : String; "Write failing selected labels in consts-file format"
     "host-out" : String; "Write the checked whole-artifact host admission statement (certified, unconditional runs only)"
     "host-store"; "Persist the checked host admission statement in the content-addressed store"
+    "allow-custom-literal-support"; "Check an artifact whose role binding puts a literal-support role (String, String.ofList, List, List.nil, List.cons, Char, Char.ofNat, Nat, Nat.zero, Nat.succ) elsewhere than the default role table's record. Refused without it: a literal means its unfolding through the bound constants, so an accepted statement about a literal may be false in Lean. With it the kernel's strict admission runs under RolePins.trustAnchors, leaving String, String.ofList, List, List.nil, List.cons, Char and Char.ofNat unpinned (checked by type only) while still pinning True and True.intro to the default role table (moved True or True.intro is always refused); the run prints a warning naming the unpinned roles"
     consts : String; "Comma-separated selected names or anonymous addresses"
     "consts-file" : String; "Selected labels, one per line; # introduces comments"
     max : Nat; "Select the first N producer groups; all dependencies/prelude remain"

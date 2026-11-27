@@ -95,6 +95,50 @@ partial def serve (stages : Stages) : IO Unit := do
       stages.completeExport id (toString e)
   serve stages
 
+/-- Notice printed to stderr before running Aiur compression stages: there is no
+bundled release L3 verifying key yet, so verification requires an independently
+pinned `ix-l3-verifier-v1` bundle or deployed `IxL3PlonkVerifier.sol`. -/
+def l3VerificationNotice : String :=
+  "Note: --aiur-stages / run-stages emits an IXL3BN1/IXL3BL1 proof whose two-layer \
+  terminal statement is verified off-chain via `ix verify --l3-verifier <bundle> \
+  --l3-verifier-blake3 <pin>` and on-chain via IxL3PlonkVerifier.sol (no bundled \
+  release L3 verifying key is shipped yet)."
+
+/-- Run the single-process Aiur compression stages on an unpacked `rootDir`
+(`root-vk.bin`, `root-claims.bin`, `root-proof.bin`) and return the JSON summary. -/
+def runStages (manifest pin rootDir out : String)
+    (memoryGb? : Option Nat := none) (cache? : Option String := none)
+    (gpuLock : Bool := true) : IO String := do
+  IO.eprintln l3VerificationNotice
+  let mut options : List (String × Lean.Json) :=
+    [("root_dir", .str rootDir), ("out", .str out), ("gpu_lock", .bool gpuLock)]
+  if let some gb := memoryGb? then
+    options := options ++ [("memory_gb", .num gb)]
+  if let some cache := cache? then
+    options := options ++ [("cache", .str cache)]
+  if exporterTrace.all (!·.2.isEmpty) then
+    options := options ++
+      [("exporter_trace", Lean.Json.mkObj (exporterTrace.map fun (k, h) => (k, .str h)))]
+  let stages ← Stages.open manifest pin (Lean.Json.mkObj options).compress
+  let server ← IO.asTask (prio := .dedicated) (serve stages)
+  let result ← stages.run.toBaseIO
+  match ← IO.wait server with
+  | .error e => IO.eprintln s!"compress run-stages: export server: {e}"
+  | .ok () => pure ()
+  match result with
+  | .ok summary => return summary
+  | .error e => throw e
+
+private def manifestCurve (manifestPath : String) : IO String := do
+  let text ← IO.FS.readFile manifestPath
+  let json ← IO.ofExcept (Lean.Json.parse text)
+  match json.getObjVal? "curve" with
+  | .error _ | .ok .null => return "bn254"
+  | .ok (.str "bn254") => return "bn254"
+  | .ok (.str "bls12-381") => return "bls12-381"
+  | .ok other =>
+      throw (IO.userError s!"unknown stages manifest curve {other.compress}: expected bn254 or bls12-381")
+
 def runCmd (p : Cli.Parsed) : IO UInt32 := do
   try
     let flag (name : String) : IO String := do
@@ -102,36 +146,92 @@ def runCmd (p : Cli.Parsed) : IO UInt32 := do
       return f.as! String
     let manifest ← flag "stages"
     let pin ← flag "stages-blake3"
-    let mut options : List (String × Lean.Json) :=
-      [("root_dir", .str (← flag "root-dir")), ("out", .str (← flag "out")),
-       ("gpu_lock", .bool !(p.hasFlag "no-gpu-lock"))]
-    if let some gb := p.flag? "memory-gb" then
-      options := options ++ [("memory_gb", .num (gb.as! Nat))]
-    if let some cache := p.flag? "cache" then
-      options := options ++ [("cache", .str (cache.as! String))]
-    if exporterTrace.all (!·.2.isEmpty) then
-      options := options ++
-        [("exporter_trace", Lean.Json.mkObj (exporterTrace.map fun (k, h) => (k, .str h)))]
-    let stages ← Stages.open manifest pin (Lean.Json.mkObj options).compress
-    let server ← IO.asTask (prio := .dedicated) (serve stages)
-    let result ← stages.run.toBaseIO
-    match ← IO.wait server with
-    | .error e => IO.eprintln s!"compress run-stages: export server: {e}"
-    | .ok () => pure ()
-    match result with
-    | .ok summary =>
-        IO.println summary
-        return 0
-    | .error e =>
-        IO.eprintln s!"compress run-stages: {e}"
-        return 1
+    let summary ← runStages manifest pin (← flag "root-dir") (← flag "out")
+      ((p.flag? "memory-gb").map (·.as! Nat))
+      ((p.flag? "cache").map (·.as! String))
+      (!(p.hasFlag "no-gpu-lock"))
+    IO.println summary
+    return 0
   catch e =>
     IO.eprintln s!"compress run-stages: {e}"
     return 1
 
+/-- Compress a stored or file-backed aggregate `Ixon.Proof` using the single-process
+Aiur compression stages manifest (`--aiur-stages` / `--aiur-stages-blake3`), running
+full `ClaimPolicy.admit` kernel admission before unpacking `root/` and proving. -/
+def runOnProof (p : Cli.Parsed) : IO UInt32 := do
+  try
+    let req (name : String) : IO String := do
+      let some f := p.flag? name | throw (IO.userError s!"--aiur-stages requires --{name}")
+      return f.as! String
+    let manifest ← req "aiur-stages"
+    let pin ← req "aiur-stages-blake3"
+    for flag in #["stark-128", "stark-128-zk", "compact", "groth16", "dev-kzg-srs", "dev-final-srs"] do
+      if p.hasFlag flag then
+        throw (IO.userError s!"--{flag} cannot be combined with --aiur-stages")
+    if Ix.Cli.AiurCompression.selected p then
+      throw (IO.userError "--aiur-stages cannot be combined with --aiur-gl or --aiur-chain")
+    let curve ← manifestCurve manifest
+    if p.hasFlag "curve" || p.hasFlag "bn254" || p.hasFlag "bls12-381" then
+      let requested ← IO.ofExcept (Ix.Cli.CompressCmd.resolveCurve p)
+      if requested != curve then
+        throw (IO.userError s!"requested curve {requested} differs from --aiur-stages manifest curve {curve}")
+    let input := p.positionalArg! "proof" |>.as! String
+    let (addr, wrapper) ← Ix.Cli.Compression.readProofInput input
+    Ix.Cli.CompressCmd.checkInput wrapper false
+    unless Ix.Cli.FormalCompress.isFormalRoot wrapper.proof do
+      throw (IO.userError "compression requires a formal aggregate root (IXAGGR2); legacy Aiur roots are retired")
+    let statementText ← Ix.Cli.ClaimPolicy.admit p wrapper.claim (route := .aggregate)
+    IO.eprintln s!"Compressing a proof of claim {Address.blake3 (Ix.Claim.ser wrapper.claim)} with Aiur stages ({curve}):\n{statementText}"
+    let ctx ← Ix.Cli.FormalAggregate.context p
+    let statement := Ix.Cli.FormalAggregate.statementBytes ctx.toKeys wrapper.claim
+    let vk ← match (p.flag? "root-vk").map (·.as! String) with
+      | some path => IO.FS.readBinFile path
+      | none => pure ctx.aggr.key
+    let raw ← Ix.Cli.FormalAggregate.rawProof .aggr wrapper.proof
+    Ix.Cli.Compression.checkClaim (Ix.Claim.ser wrapper.claim) statement
+    let out ← Ix.Cli.CompressCmd.outputDirectory
+      { out := (p.flag? "out").map (·.as! String) } addr
+    if p.hasFlag "fresh" then
+      Ix.Cli.AiurCompression.resetOutput out
+    let rootDir : System.FilePath := System.FilePath.mk out / "root"
+    IO.FS.createDirAll rootDir
+    IO.FS.writeBinFile (rootDir / "root-vk.bin") vk
+    IO.FS.writeBinFile (rootDir / "root-claims.bin") statement
+    IO.FS.writeBinFile (rootDir / "root-proof.bin") raw
+    Ix.Cli.Compression.releaseGpuMemory
+    let summary ← runStages manifest pin rootDir.toString out
+      ((p.flag? "memory-gb").map (·.as! Nat))
+      ((p.flag? "cache").map (·.as! String))
+      (!(p.hasFlag "no-gpu-lock"))
+    let envelopePath : System.FilePath := System.FilePath.mk out / "l3-proof.bin"
+    if ← envelopePath.pathExists then
+      let l3ProofBytes ← IO.FS.readBinFile envelopePath
+      unless Ix.Cli.FormalAggregate.isL3Proof l3ProofBytes do
+        throw (IO.userError s!"{envelopePath} does not carry an IXL3 proof envelope")
+      let compressed : Ixon.Proof := { claim := wrapper.claim, proof := l3ProofBytes }
+      let serialized := Ixon.Proof.ser compressed
+      let artifactPath : System.FilePath := System.FilePath.mk out / "proof.ixon-proof"
+      IO.FS.writeBinFile artifactPath serialized
+      let proofAddr ← StoreIO.toIO (Store.write serialized)
+      IO.eprintln s!"Wrote verifiable L3 Ixon.Proof to {artifactPath} (store address {proofAddr})."
+      if let .ok json := Lean.Json.parse summary then
+        if let .ok l3 := json.getObjVal? "l3" then
+          if let (.ok bPath, .ok bPin) :=
+              (l3.getObjValAs? String "verifier_bundle_path",
+               l3.getObjValAs? String "verifier_bundle_blake3") then
+            IO.eprintln s!"Verify with: ix verify {proofAddr} --l3-verifier {bPath} --l3-verifier-blake3 {bPin}"
+      IO.println (toString proofAddr)
+    else
+      IO.println summary
+    return 0
+  catch e =>
+    IO.eprintln s!"compress: {e}"
+    return 1
+
 def runStagesCmd : Cli.Cmd := `[Cli|
   "run-stages" VIA runCmd;
-  "Run the compression stages of a manifest (ix-aiur-stages-v1) on a raw root in this process: every stage proves and verifies here, the Lean exporters run here, and intermediate proofs pass in memory."
+  "Run the compression stages of a manifest (ix-aiur-stages-v1) on a raw root in this process: every stage proves and verifies here, the Lean exporters run here, intermediate proofs pass in memory, and the terminal PLONK stage emits a self-checked IXL3BN1/IXL3BL1 envelope and ix-l3-verifier-v1 bundle."
   FLAGS:
     "stages" : String; "Stages manifest (ix-aiur-stages-v1)."
     "stages-blake3" : String; "Independent BLAKE3 pin for the exact manifest bytes."
@@ -142,9 +242,15 @@ def runStagesCmd : Cli.Cmd := `[Cli|
     "no-gpu-lock"; "Let stages use the GPU concurrently instead of serializing GPU sections."
 ]
 
-/-- `compress` with the `run-stages` subcommand. -/
+private def runCompressOrStages (p : Cli.Parsed) : IO UInt32 :=
+  if p.hasFlag "aiur-stages" || p.hasFlag "aiur-stages-blake3" then
+    runOnProof p
+  else
+    Ix.Cli.CompressCmd.runCompressCmd p
+
+/-- `compress` with `--aiur-stages` support and the `run-stages` subcommand. -/
 def compressCmd : Cli.Cmd :=
   let c := _root_.compressCmd
-  .init c.meta c.run (c.subCmds.push runStagesCmd) c.extension?
+  .init c.meta runCompressOrStages (c.subCmds.push runStagesCmd) c.extension?
 
 end Ix.Cli.AiurStages

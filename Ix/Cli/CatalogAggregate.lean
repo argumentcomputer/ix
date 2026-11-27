@@ -139,6 +139,10 @@ def verifyCatalog (p : Cli.Parsed) (ixc : String) : IO UInt32 := do
   if p.hasFlag "ixe" then
     IO.eprintln "error: --ixc takes the members from the catalog; drop --ixe"
     return 1
+  -- Fail closed rather than silently ignoring `--binding-proof`.
+  if p.hasFlag "binding-proof" then
+    IO.eprintln "error: --binding-proof is not used when verifying a catalog's aggregation root"
+    return 1
   let hexes := (p.variableArgsAs! String).toList
   if hexes.isEmpty then
     IO.eprintln "error: --aggregate requires at least one aggregate proof address"
@@ -158,7 +162,7 @@ def verifyCatalog (p : Cli.Parsed) (ixc : String) : IO UInt32 := do
     let piece := (System.FilePath.mk ixc / s!"{m.label}.ixe").toString
     try
       let statement ← ClaimPolicy.admit p m.claim
-        (envs := do return [← TableAdmission.readEnv piece])
+        (envs := do return [← TableAdmission.readEnv piece]) (route := .aggregate)
       IO.println s!"[catalog] member {m.label} admitted, claim {Ix.Claim.commit m.claim}:\n{statement}"
     catch e =>
       IO.eprintln s!"error: member {m.label}: {e}"
@@ -187,10 +191,10 @@ where
     try
       FormalAggregate.verifyWrapper ctx .aggr root.wrapper
       return .ok s!"ok: aggregate proof {address} verifies the catalog's root {expected}: \
-        {count} members, all {constants} of their constants well-typed, each member's under \
-        its own role binding\n  \
+        {count} members, {constants} constants, each member's under its own role binding\n  \
         kind: {ClaimPolicy.kind expected} (the catalog's root, claim {Ix.Claim.commit expected})\n  \
         subject: the {count} members' claims, as admitted above\n  \
+        theorem: none states an aggregation root; see each member's statement above\n  \
         conditions: each member's, as admitted above"
     catch e =>
       return .error s!"aggregate verification of {address} failed: {e}"
@@ -249,8 +253,7 @@ def aggregateCatalog (p : Cli.Parsed) (ixc : String) : IO UInt32 := do
   let root := toString address
   let (count, constants) ← acceptCatalog ctx ixc structuralAbove address
   IO.println s!"ok: aggregate proof {address} verifies the catalog's root {expected}: \
-    {count} members, all {constants} of their constants well-typed, each member's under \
-    its own role binding"
+    {count} members, {constants} constants, each member's under its own role binding"
   IO.println root
   return 0
 
