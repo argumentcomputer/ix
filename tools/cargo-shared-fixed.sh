@@ -30,5 +30,5 @@ restore() { cmp -s "$lock" "$root/Cargo.lock" || cp "$lock" "$root/Cargo.lock"; 
 trap restore EXIT
 cd "$root"
 cargo "$sub" \
-  --config "patch.\"https://github.com/argumentcomputer/multi-stark.git\".multi-stark.path=\"$fork\"" \
+  --config "patch.\"https://github.com/argumentcomputer/CertiFRI.git\".multi-stark.path=\"$fork\"" \
   --features ix-proof-compression/shared-fixed "$@"
