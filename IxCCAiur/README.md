@@ -28,13 +28,16 @@ Pure Lean 4 (+ open scoped Ix.Circuit)
     Aiur.Modules.Program (Goldilocks | BN254 Fr | BLS12-381 Fr)
   ─Aiur.Modules.prepare + TypedWorld.check + Aiur.Optimized (+ DegreeBudget)→
     PACKAGE.ixa (v3) + PACKAGE.ixa.pin.json (+ optional ADVICE.ixa)
-  ─Provers & Exporters→
+  ─Provers & Exporters (100% Zero-Go Pure Ix)→
     • Multi-chip Goldilocks STARK:  crates/aiur/examples/ixcc_prove.rs
     • Endpoint 1 Single-Circuit:    wide_export / tiling_export2 --single-circuit
                                     → crates/aiur/examples/single_circuit_prove.rs
-    • Endpoint 2 BLS12-381 PLONK:   plonk_export --bls12-381 → tools/gnark (BLS12-381 SCS)
+    • Endpoint 2 BLS12-381 PLONK:   plonk_export --bls12-381
+                                    → plonk::native (Rust + Ix-CUDA + EIP-2537 Solidity)
     • Endpoint 3 BN254 L3 Stages:   wide_export / tiling_export2 / plonk_export
-                                    → crates/proof-compression (ix-aiur-stages-v1)
+                                    → plonk::native (Rust + Ix-CUDA + EIP-196/197 Solidity)
+    • Fermat 256-Byte Groth16 Demo: aiur_backend::groth16 (Rust/CUDA/Solidity)
+                                    ↔ Compression/Groth16X86.lean (IxCC standalone x86-64 ELF)
 ```
 
 ## Package layout
@@ -77,6 +80,8 @@ addresses with or without `Ix.Circuit` attributes.
 | `Examples/MultiStarkV6Pure.lean` | Unified 4-pillar Protocol `v6` Multi-STARK verifier (keyed BLAKE3/compact transcript, MMCS, AIR+LogUp OOD, cubic FRI + 3 Tier-2 guesses). |
 | `Compression/StarkWire.lean`, `Compression/CompressWrapPure.lean` | Full-modulus 64-bit Goldilocks ($p = 2^{64} - 2^{32} + 1$) `CompressWrap` / `CompressGL` wire decoder and verifier (`"ix/compress-wrap/v1\0"`). |
 | `Compression/KzgWire.lean`, `Compression/KzgPackedPure.lean` | Single-source BN254 and BLS12-381 production packed-SHPLONK KZG verifier (`CompressNarrowFixed::step_v1`, `CompressFinalNarrow::verify_accumulator_v1`, 18/22 affine-u80 terminal words). |
+| `Compression/PairingPure.lean` | Single-source BN254 and BLS12-381 optimal Ate 2-pairing `PairingCheck` (zero-inversion residue-witnessed final exp $f^{q^6-1} = c^\lambda$ + inversion-free BLS12 subgroup check), exporting self-contained `outputs = 0` `ix-aiur-scs-v1` circuits. |
+| `Compression/Groth16X86.lean` | Standalone 0-import pure Lean 4 BN254 Groth16 prover & verifier (`9 × 29-bit` `< 2^63` CIOS Montgomery limbs, full optimal Ate pairing + exact final exp) compiled directly via certified `IxCC` (`ixcc compile --exe [--machine]`) into a ~215 KiB static x86-64 ELF (0% Rust/Go/C/libc). |
 
 ## `ixcc-aiur` CLI reference
 

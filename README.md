@@ -180,10 +180,13 @@ Ix consists of the following core components:
   which is a first-order functional programming language that generates
   multi-STARK, single-circuit STARK, and KZG/PLONK circuits.
 - The [IxCC certified native compiler](IxCC/README.md), which compiles `ixon`
-  closures to standalone x86-64 ELF executables via rechecked intermediate
-  certificates, and [IxCCAiur](IxCCAiur/README.md), which compiles annotated
-  Lean 4 programs (`open scoped Ix.Circuit`) from `IxCC` FIR directly to Formal
-  Aiur circuits across Goldilocks, BN254 `Fr`, and BLS12-381 `Fr`
+  closures to standalone static x86-64 ELF executables via rechecked
+  intermediate certificates (including pure-Lean BN254 Groth16 proving &
+  verification in `IxCCAiur/Compression/Groth16X86.lean`), and
+  [IxCCAiur](IxCCAiur/README.md), which compiles annotated Lean 4 programs
+  (`open scoped Ix.Circuit`) from `IxCC` FIR directly to Formal Aiur circuits
+  across Goldilocks, BN254 `Fr`, and BLS12-381 `Fr` with a 100% zero-Go
+  Rust/CUDA/Solidity proving stack
   ([compiler & compression guide](docs/ixcc-aiur-compiler.md)).
 - The IxVM (not yet released), which implements reduction and typechecking
   of `ixon` (including ingress and egress from and to binary data).

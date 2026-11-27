@@ -34,16 +34,20 @@ certifying the compiler pipeline itself:
    `InlineFuse`, `PartialEval`, `FieldLower`, `CompressionIntrinsics`,
    `WitnessIO`), verifies the prepared world (`TypedWorld.check`), and compiles
    the circuits with `Aiur.Optimized` (+ optional `DegreeBudget`).
-4. **Formal Aiur certified backends** lower the exported `.ixa` program to:
+4. **Formal Aiur certified backends (100% Go-free Pure Ix)** lower the exported `.ixa` program to:
    - **Multi-chip Goldilocks STARK** (`ixcc_prove`),
    - **Endpoint 1: Single-circuit (`num_circuits == 1`) Goldilocks STARK**
      (`Aiur.Tiling.SingleCircuit`, optional `Aiur.Tiling.VectorRom`,
      `single_circuit_prove`),
    - **Endpoint 2: BLS12-381 KZG / PLONK / SCS** (`Aiur.Plonk.BLS12381`,
-     `Aiur.Tiling.BLS12381`, `plonk_export --bls12-381`, `tools/gnark`
-     `curve: "bls12-381"` with `sw_bls12381.PairingCheck`),
+     `Aiur.Tiling.BLS12381`, `plonk_export --bls12-381`, pure-Rust + Ix-CUDA
+     `plonk::native` + Prague EIP-2537 `Bls12381PlonkVerifier.sol`),
    - **Endpoint 3: BN254 L3 compression stages** (`ix-aiur-stages-v1` with
-     optional `"entry"`, `"advice"`, and `"field"` manifest overrides).
+     `plonk::native` + EIP-196/197 `PlonkVerifier.sol`, plus optional `"entry"`,
+     `"advice"`, and `"field"` manifest overrides),
+   - **256-Byte Groth16 Fermat Demo** (`aiur_backend::groth16` Rust/CUDA/Solidity
+     + `IxCCAiur/Compression/Groth16X86.lean` compiled via certified `IxCC` to a
+     ~215 KiB standalone static Linux x86-64 ELF).
 
 `IxCC` and `IxCK` remain 100% Mathlib-free; `IxCCAiur` sits in its own package
 importing both `IxCC` and `Aiur`.
@@ -69,14 +73,16 @@ Every headline theorem in `IxCCAiur` is pinned in
 
 ### What stays outside the Lean proof boundary
 
-- **Cryptographic proof systems & setups:** `multi-stark` STARK/FRI/LogUp/PCS,
-  packed SHPLONK, `gnark` PLONK (`BN254` and `BLS12-381`), Solidity verifiers,
-  and trusted SRS ceremonies (Ignition for BN254; Filecoin/Powers-of-Tau for
-  BLS12-381).
+- **Cryptographic proof systems & setups (0% Go):** `multi-stark`
+  STARK/FRI/LogUp/PCS, packed SHPLONK, pure-Rust (+ Ix-CUDA `sppark`)
+  `plonk::native` (`BN254` and `BLS12-381`) and `groth16` (BN254 dev setup),
+  Solidity verifiers, and trusted SRS ceremonies (Ignition for BN254;
+  Filecoin/Powers-of-Tau for BLS12-381).
 - **Prover-only components (not soundness-relevant):** host hint / advice
   computation (`ixcc.divmod64`, `"ixcc.guess.<fn>"`, `StarkIO`/`KzgIO` streams),
-  witness solving (`aiur_plonk_scs_wires.go`), GPU kernels, and caching. Any
-  wrong hint or witness fails circuit constraints or proof verification.
+  two-phase parallel SCS witness solving (`plonk/native/solver.rs`), GPU
+  kernels, and caching. Any wrong hint or witness fails circuit constraints or
+  proof verification.
 - **Native driver evaluation of world checks:** `ixcc-aiur` executes
   `World.checkWorld` / `TypedWorld.check` natively before writing `.ixa` and
   `PACKAGE.ixa.pin.json` (the same check can be discharged in the Lean kernel
@@ -247,7 +253,10 @@ flags:
   `--pin PIN.json`, `--stark-io KEY CLAIMS PROOF`, `--stark-128`, and
   `--controls`.
 
-### Endpoint 2: BLS12-381 KZG / PLONK / SCS
+### Endpoint 2 & Endpoint 3: Zero-Go Pure-Rust (+ Ix-CUDA) PLONK-SCS & Solidity (`BN254` & `BLS12-381`)
+
+All Go (`tools/gnark/**`), CGo, and `bindgen` build dependencies have been
+completely removed (**0 `.go` files** in the repository):
 
 - **Formal certification:**
   - `Aiur.Library.Field.BLS12381.Prime` — pure Lean 4 Lucas primality
@@ -256,38 +265,31 @@ flags:
   - All 28 modules under `Aiur/Aiur/Plonk/` generalized over arbitrary prime
     `p`, instantiated in `Aiur.Plonk.BLS12381`,
   - End-to-end tiling and single-circuit corollaries in `Aiur.Tiling.BLS12381`.
-- **Exporters:** `tiling_export2 --bls12-381`, `wide_export --bls12-381`, and
-  `plonk_export --bls12-381` (plus `plonk_check_stage` and `plonk_beta_test`).
-- **Gnark terminal (`tools/gnark`):** `aiur_plonk_scs.go`,
-  `aiur_plonk_pairing.go`, `aiur_plonk_scs_prepare.go`, `aiur_plonk_prover.go`,
-  and `ffi_aiur_plonk.go` support `"curve": "bls12-381"` in `pairing.json`:
-  - **22 private output words** (two affine BLS12-381 G1 points, each encoded
-    as `5 x` + `5 y` + `1 inf` in `affine-u80-v1`: four 80-bit limbs + one
-    61-bit top limb = 381 bits, range-checked against `Fq`),
-  - Constrained via `sw_bls12381.PairingCheck` against two canonical G2
-    anchors,
-  - Dedicated CGo verifier export `ix_gnark_aiur_bls_verify`,
-  - **CPU-only note:** BLS12-381 PLONK runs on CPU (`openAiurProver` rejects
-    `CUDA=true` on BLS12-381; custom CUDA PLONK is BN254-only).
-- **Rust runtime (`crates/proof-compression/src/aiur_backend/bls12_381.rs`):**
+- **Exporters:** `tiling_export2`, `wide_export`, and `plonk_export` (with
+  `O(n)` linear-time hint generation — 685–784× faster on ~1M-gate circuits)
+  support both BN254 and `--bls12-381`, including self-contained `outputs = 0`
+  circuits (when `PairingPure.lean` verifies the pairing in-circuit).
+- **Zero-Go Native Rust + Ix-CUDA PLONK-SCS (`crates/proof-compression/src/aiur_backend/plonk/native/`):**
+  - Parses and validates Lean's `ix-aiur-scs-v1` (`ixscs001`) directly
+    (`outputs = 0` or `outputs = 18/22`), runs a parallel two-phase witness
+    solver (Montgomery batch inversion for LogUp quotients + chain segments),
+    runs ZK-blinded PLONK + BSB22 (`DST = "BSB22-Plonk"`) over **both BN254
+    and BLS12-381**, and dispatches MSM & FFT directly to Ix's CUDA libraries
+    (`libix_bn254_cuda.so` and `libix_bls12_381_cuda.so`) under
+    `#[cfg(feature = "cuda")]` — enabling GPU PLONK on **both** curves!
+  - Emits compact native proofs (`589 B` BN254 / `749 B` BLS12-381), exact
+    EVM `MarshalSolidity` proofs (`864 B` BN254 / `1,184 B` BLS12-381), and
+    deterministic Solidity verifiers (`PlonkVerifier.sol` EIP-196/197 and
+    `Bls12381PlonkVerifier.sol` Prague EIP-2537) directly in pure Rust.
+  - Wired unconditionally into `stages/terminal.rs` (`ix-aiur-stages-v1`,
+    optional `"entry"`, `"advice"`, `"field"`) and standalone CLI
+    `crates/proof-compression/examples/native_plonk_prove.rs`.
+- **Rust BLS12-381 runtime (`crates/proof-compression/src/aiur_backend/bls12_381.rs`):**
   Provides `Bls12381` (`FieldBackend` over `ark_bls12_381::Fr`), canonical
   `encode_fq`/`decode_fq`/`encode_g1`/`decode_g1`/`encode_g2_coordinates`, and
   `WidePackage` execution helpers.
 
-### Endpoint 3 & `ix-aiur-stages-v1` manifest integration
-
-The existing L3 pipeline drivers (`crates/stark-verifier/src/compress_wrap.rs`
-and `crates/proof-compression/src/aiur_backend/{plonk,stages}/`) accept
-optional manifest fields so `ixcc-aiur`-compiled circuits plug in cleanly with
-full backwards compatibility:
-
-- `"entry"` — overrides the default hardcoded entry symbol,
-- `"advice"` — loads an `ADVICE.ixa` package to answer `"ixcc.guess.<fn>"`
-  channels,
-- `"field"` — selects `"bn254"` (default) or `"bls12-381"` for KZG/PLONK
-  stages and export cache keys.
-
-### Pure annotated Lean 4 production compression verifiers
+### Pure annotated Lean 4 production compression & pairing verifiers
 
 - **`IxCCAiur/Compression/{StarkWire,CompressWrapPure}.lean`**: Complete
   full-modulus 64-bit Goldilocks ($p_{\mathrm{GL}} = 2^{64} - 2^{32} + 1$)
@@ -303,6 +305,31 @@ full backwards compatibility:
   `CompressNarrowFixed.stepV1`, `CompressFinalNarrow.verifyAccumulatorV1`
   emitting 18 or 22 affine-u80 words). 104 `#guard`s, 270/270 identical Ixon
   addresses.
+- **`IxCCAiur/Compression/PairingPure.lean`**: Single-source BN254 and
+  BLS12-381 optimal Ate 2-pairing `PairingCheck` (`Fp2`/`Fp6`/`Fp12` tower,
+  zero-inversion residue-witnessed final exp $f^{q^6 - 1} = c^\lambda$,
+  inversion-free Jacobian BLS12 prime-order subgroup check $[x^2]P = -\psi(P)$).
+  71 `#guard`s matching `ark-bn254 0.5.0` & `ark-bls12-381 0.5.0` bit-for-bit,
+  100% Ixon address-invariant (`2,313` constants), exporting self-contained
+  `outputs = 0` `ix-aiur-scs-v1` circuits on both curves!
+
+### Fermat's Margin Note 256-Byte Groth16 Demo (Pure Rust + Certified `IxCC` x86-64 ELF)
+
+- **Pure-Rust (+ Ix-CUDA `sppark`) BN254 Groth16 (`crates/proof-compression/src/aiur_backend/groth16/` + `examples/groth16_fermat_demo.rs`):**
+  Deterministic dev/unsafe setup (no ceremony), exact **256-byte uncompressed
+  EVM proof** (`256 < 262`-byte 1670 Diophantus Latin margin note!) and
+  128-byte compressed proof, plus deterministic `Groth16Verifier.sol` matching
+  `contracts/groth16/src/IxGroth16Verifier.sol` (live Foundry EVM verified in
+  `195,418` raw / `199,785` facade gas, 9/9 negative controls rejected).
+- **Pure-Lean Certified `IxCC` Standalone x86-64 ELF (`IxCCAiur/Compression/Groth16X86.lean`):**
+  0-import pure Lean 4 BN254 Groth16 prover + verifier using certified
+  `9 × 29-bit` (`< 2^63`) CIOS Montgomery limbs, full optimal Ate pairing,
+  exact final exponentiation, and `G2` subgroup check (34/34 `#guard`s).
+  Compiles directly via certified `ixcc compile --rc off --exe [--machine] --embed-cert`
+  into a **~203–215 KiB** static stripped Linux x86-64 ELF (`ixcc verify-exe`
+  verified; 0% Rust, 0% Go, 0% C, 0% libc) that runs full BN254 Groth16
+  setup + prove + verify in **210 ms** and **cross-verifies the live 256-byte
+  Rust+EVM Fermat proof in 40 ms**!
 
 ---
 
@@ -332,5 +359,12 @@ pending GPU host availability).
 | `KzgPackedPure.entryAlgebraStatic*` baseline (`--typed --inline-fuse`) | 35 chips, 1,103 cols, 302 calls, `byte256` | 35 chips, 1,103 cols, 302 calls, `byte256` | identical baseline |
 | `KzgPackedPure.entryAlgebraStatic*` optimized (`--partial-eval --field-lower`) | **3 chips, 139 cols (`7.9×↓`), 2 calls (`151×↓`), 0 ROM, `TableTier.none`** | **3 chips, 139 cols (`7.9×↓`), 2 calls (`151×↓`), 0 ROM, `TableTier.none`** | **0.0%** (`tiling_export2 --bls12-381 --single-circuit`: `512 × 32` main in `659 ms`) |
 | `KzgPackedPure.entryNarrowStep*` (full narrow step + 2/2 `Fq` guesses) | 2,608 cols (`4×80b` `Fq`) | 2,620 cols (`5×80b` `Fq`) | **+0.46% cols** |
-| `tools/gnark` `ix-aiur-scs-v1` + `PairingCheck` (`aiur_plonk_bls_test.go`, synthetic SCS) | 1,796,075 constraints | 2,241,382 constraints (`27.1 s` CPU prove, `4 ms` verify, `744 B` native / `1,184 B` Solidity, 7/7 neg controls) | **+24.8% constraints** |
-| Live Pure Lean `KzgAlgebraPure.expPower2` → `plonk_export --bls12-381` → `gnark` BLS12-381 PLONK | — | **315,877 constraints @ `2^19`**, **3.96 s** CPU prove, **3 ms** verify | live end-to-end verified |
+| **Zero-Go Live E2E `PairingPure` (`outputs = 0`) → `plonk_export` → `plonk::native` → Foundry EVM** | **1,008,840 SCS constraints @ `2^20`**, `7.96 s` CPU prove, `2.57 ms` verify, `864 B` Sol proof, **`292,118` EVM gas** | **803,547 SCS constraints @ `2^20`**, `11.94 s` CPU prove, `5.16 ms` verify, `1,184 B` Sol proof, **`374,413` Prague EIP-2537 EVM gas** | **0% Go**, 5/5 neg controls + EVM wrong-input rejected |
+| **Zero-Go Real Lean 37k-gate `OS01-plain` → `plonk_export` → `plonk::native` → Foundry EVM** | `653 ms` CPU prove @ `2^16`, `2.55 ms` verify, **`270,205` EVM gas** | `1.11 s` CPU prove @ `2^16`, `5.15 ms` verify, **`349,563` Prague EIP-2537 EVM gas** | **0% Go**, live EVM verified |
+
+### Fermat's Margin Note 256-Byte Groth16 Demo (Zero-Go Rust + Certified `IxCC` x86-64 ELF)
+
+| Implementation | Binary / Proof Size | Prove / Verify | EVM / Cross-Verification |
+|---|---|---|---|
+| Pure Rust `aiur_backend::groth16` (`groth16_fermat_demo`, dev setup) | **256 B** EVM proof (`< 262 B` margin note!) / **128 B** compressed | **`1.37–1.91 ms`** prove / **`2.17 ms`** verify | **`195,418` gas** raw / **`199,785` gas** via `IxGroth16Verifier.sol`, 9/9 EVM controls rejected |
+| Certified `IxCC` Standalone x86-64 ELF (`Groth16X86.lean`, `--rc off --exe --machine --embed-cert`, 0% Rust/Go/C/libc) | **219 KB** static stripped ELF (`ixcc verify-exe` VERIFIED) | **`210 ms`** full dev setup + prove + verify / **`40 ms`** verify | **Live cross-verified W6-B's exact 256 B Rust+EVM Fermat proof (`40 ms`, 5/5 neg controls rejected)** |
