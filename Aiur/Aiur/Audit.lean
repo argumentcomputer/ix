@@ -25,6 +25,7 @@ import Aiur.Library.Blake3.Correctness
 import Aiur.Library.Blake3.Goldilocks
 import Aiur.Library.Blake3.BlockLoop
 import Aiur.MultiStarkSpec
+import Aiur.MultiStarkBridge
 
 /-!
 # Frozen Certification Audit for Aiur
