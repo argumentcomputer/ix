@@ -15,7 +15,7 @@ use crate::kzg::{
 };
 
 /// Version of the bundled verifying keys and the layout they were derived for.
-const VERSION: &str = "0.5";
+const VERSION: &str = "0.6";
 
 /// Log2 of the first KZG stage's partition height the keys were derived for.
 pub(super) const FIRST_LOG_HEIGHT: usize = 24;
@@ -23,37 +23,37 @@ pub(super) const FIRST_LOG_HEIGHT: usize = 24;
 /// Serialized aggregation backend key whose roots the layout normalizes: the
 /// formal aggregation program under `aiur::trace::stark::Parameters::DEFAULT`.
 const ROOT_VK_BLAKE3: &str =
-  "d3813ae554af0aa6a24c5c72c796e17403756aa1f9cabbb08519ed4d767c9f13";
+  "e28ef326f80704567ddd29fd1367f21318335626c1b692b9588ee3ae7605175d";
 /// The root layout (`.ixl`, see `FixedRoot`) and its content address.
 const LAYOUT: &[u8] =
-  include_bytes!("../../verifying-keys/0.5/root-layout.ixl");
+  include_bytes!("../../verifying-keys/0.6/root-layout.ixl");
 const LAYOUT_BLAKE3: &str =
-  "035f3b31e438becfe9294b792e7b0cb9aef8a10d073216731ac171c10cdd5748";
+  "baf7e4f0f7dd873a0e72dd3cd600732e0ae68c4c28fa5e1bb6c7b7588ad7aca0";
 
 /// Backend and entrypoint words of the aggregation program, the statement
 /// prefix every compressed claim of this release carries
 /// ([`statement::backend_prefix`] of the IxVM and aggregation keys).
 pub(super) const STATEMENT_PREFIX: [u64; 10] = [
-  1, 0, 2736370005, 1983549104, 896032380, 1564468090, 1137178757, 4223943773,
-  1723211272, 3024343524,
+  1, 0, 1356735494, 692968066, 1454347276, 1702626110, 2840773149, 3210035201,
+  3362587675, 2485232118,
 ];
 
 pub(super) const RECURSIVE_VK: &[u8] =
-  include_bytes!("../../verifying-keys/0.5/recursive-vk.bin");
+  include_bytes!("../../verifying-keys/0.6/recursive-vk.bin");
 const RECURSIVE_VK_BLAKE3: &str =
-  "adb2415c05975b848ad38f123a5e49d718ad6a63a094d2e852634da9923e1aa5";
+  "3ba4f8a4a88d427c82c5146a3e712bf49f70434955e4b364627c3e12d475adcb";
 /// The identifier a recursive KZG packet begins with.
 pub(super) const RECURSIVE_VK_ID: &str =
-  "07b533959666cf26b9ed44baeda8a2c26bc839591b329c2ccc3d2f8622976914";
+  "7182cd465935d85032f40e689915064a020f294e81ff9c243267a5d9719f28ef";
 
 /// Identity of the first stage's FRI verifier plan for the bundled backend
 /// and layout, half of its fixed-cache identity. Independent of the KZG setup.
 pub(super) const FIRST_PLAN_ID: &str =
-  "72e4cff851093d7dbb7836324b6f3ccde0f0bfcea8d90609359f8565aa25a224";
+  "c80536b99e0d9017bfeab392829ae0a3aafc545a02c498e72d0a02f186c16e21";
 /// Identity of the recursive stage's verifier frontend over the first stage
 /// under Ignition, half of its fixed-cache identity.
 pub(super) const RECURSIVE_FRONTEND_ID: &str =
-  "d82bb2ffb899fa22c711582b8dc4a92b01224d7d3e6f4851465980f0f41838e7";
+  "0fd153d3a8cd86aa07c7601e2072adefb9597c61f4d9f1e37b1f4338c976e839";
 
 #[cfg(test)]
 const PLONK_VK: &[u8] =
@@ -67,7 +67,7 @@ const PLONK_VK_SHA256: &str =
 /// KZG transcript seed).
 #[cfg(all(test, feature = "plonk"))]
 pub(super) const FINAL_SCHEMA_SHA256: &str =
-  "481d99bb117b8769dcf78be33bdef23b894a7745d810072a5a1204fa2abf1e6d";
+  "79ae5d33213145c2aa20ab700ea552d224cdfc5f5652072a894a64ed64a78c68";
 
 /// Archived legacy Groth16 development verifying key.
 #[cfg(test)]

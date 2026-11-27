@@ -15,7 +15,7 @@ use stark_verifier::compress_wrap::{Statement, Wrapper};
 // compare statement specialization only; they do not derive a wrapper's
 // recursive compression key or claim equivalence between proof systems.
 const SCHEMA_FIXTURE: &[u8] =
-  include_bytes!("../verifying-keys/0.5/recursive-vk.bin");
+  include_bytes!("../verifying-keys/0.6/recursive-vk.bin");
 
 fn root_key(scale: u64) -> Vec<u8> {
   let parameters = Parameters::DEFAULT;

@@ -38,7 +38,7 @@ development parameters. Final setup is independent: PLONK defaults to Ignition,
 while `--dev-final-srs` prepares local keys for either PLONK or Groth16. With
 `--dev-kzg-srs` as well, neither stage needs Ignition.
 Default verification pins one version of the verifying keys,
-[`0.5`](verifying-keys/0.5): one key per proof system, with the root layout,
+[`0.6`](verifying-keys/0.6): recursive KZG verifying key and fixed root layout,
 statement prefix and Ignition parameters they were derived for. They belong to
 the formal IxVM and aggregation backends under the default STARK parameters
 ([STARK parameters](../../docs/stark-parameters.md)); see
@@ -115,13 +115,13 @@ install it.
 
 `ix compress ROOT` and `ix prove ... --compress kzg|plonk|groth16` automatically
 normalize the formal aggregate root (an `IXAGGR2` proof) using the versioned
-[version 0.5 layout](verifying-keys/0.5/root-layout.ixl).
+[version 0.6 layout](verifying-keys/0.6/root-layout.ixl).
 `--fixed-root` is an optional layout override from `ix compress layout`, and
 `ix compress normalize` writes the root input directory without compressing. The
 default layout covers `Nat.add_comm`, `Init+Std`, and full `Mathlib` 4.34.1
 roots with one more doubling of every circuit (`--headroom 1`). Its root
 verifier is the formal Protocol `v6` aggregation key, BLAKE3
-`d3813ae554af0aa6a24c5c72c796e17403756aa1f9cabbb08519ed4d767c9f13`.
+`e28ef326f80704567ddd29fd1367f21318335626c1b692b9588ee3ae7605175d`.
 The default rejects another backend key, and normalization rejects executions
 that exceed the fixed bounds before allocating traces. A larger supported
 layout is a new release; `ix compress layout` derives one when a release is
