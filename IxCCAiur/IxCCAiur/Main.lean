@@ -44,6 +44,18 @@ structure Options where
   noInline : Bool := false
   pairTable : Bool := false
   stats : Bool := false
+  entryName : Option String := none
+  assertOk : Bool := false
+  emulateGoldilocks : Bool := false
+  linkBlake3 : Bool := false
+  witnessIO : Bool := false
+
+def Options.compression (o : Options) : Driver.CompressionOptions :=
+  { entryName := o.entryName
+    assertOk := o.assertOk
+    emulateGoldilocks := o.emulateGoldilocks
+    linkBlake3 := o.linkBlake3
+    witnessIO := o.witnessIO }
 
 def usage : String :=
   "usage: ixcc-aiur CLOSURE.ixe [--equations EQUATIONS.json | EQUATIONS.json] \
@@ -51,6 +63,7 @@ def usage : String :=
 [--exec] [--typed] [--inline-fuse] [--partial-eval] [--field-lower] \
 [--field goldilocks|bn254|bls12-381] [--degree-budget] [--log-blowup N] \
 [--enable-guesses] [--skip-aiur-eval] [--schedule SCHEDULE.json] \
+[--entry-name NAME] [--assert-ok] [--emulate-goldilocks] [--link-blake3] [--witness-io] \
 [--no-inline] [--pair-table] [--stats]"
 
 def parseNats (s : String) : Except String (List Nat) :=
@@ -88,6 +101,11 @@ def parse : List String → Options → Except String Options
   | "--no-inline" :: rest, o => parse rest { o with noInline := true }
   | "--pair-table" :: rest, o => parse rest { o with pairTable := true }
   | "--stats" :: rest, o => parse rest { o with stats := true }
+  | "--entry-name" :: name :: rest, o => parse rest { o with entryName := some name }
+  | "--assert-ok" :: rest, o => parse rest { o with assertOk := true }
+  | "--emulate-goldilocks" :: rest, o => parse rest { o with emulateGoldilocks := true }
+  | "--link-blake3" :: rest, o => parse rest { o with linkBlake3 := true }
+  | "--witness-io" :: rest, o => parse rest { o with witnessIO := true }
   | arg :: rest, o =>
     if arg.startsWith "-" then .error s!"unknown option {arg}"
     else if o.closure.isNone then parse rest { o with closure := some arg }
@@ -130,28 +148,32 @@ def runTypedWide (o : Options) (front : Driver.Front) (baseSched : Schedule.Circ
     rangeCheck := if o.pairTable then .pairTable else baseSched.rangeCheck
   }
   let start ← IO.monoMsNow
-  let (lowered, shapeAccepted, entry, exportRep, resolvedGroups) ←
+  let comp := o.compression
+  let (lowered, shapeAccepted, entry, exportRep, resolvedGroups, aliasSpec?) ←
     if o.enableGuesses then
       let res ← IO.ofExcept (Driver.linkTypedWithGuesses front.levels.src fir 0 sched
-        o.inlineFuse o.partialEval o.fieldLower o.field)
+        o.inlineFuse o.partialEval o.fieldLower o.field comp)
       let chs := res.manifest.channels.map (·.channel)
       IO.println s!"guesses: rewritten {res.resolved.length} ({chs}), skipped {res.skipped.length}"
       for (cid, reason) in res.skipped do
         IO.println s!"guesses: skipped cid={cid}: {reason}"
       pure (res.linked.lowered, res.linked.shapeAccepted, res.linked.entry,
-        res.linked.exportRep, res.linked.resolvedGroups)
+        res.linked.exportRep, res.linked.resolvedGroups, res.linked.aliasSpec?)
     else
       let res ← IO.ofExcept (Driver.lowerTyped front.levels.src fir 0 sched
-        o.inlineFuse o.partialEval o.fieldLower o.field)
-      pure (res.lowered, res.shapeAccepted, res.entry, res.exportRep, res.resolvedGroups)
+        o.inlineFuse o.partialEval o.fieldLower o.field comp)
+      pure (res.lowered, res.shapeAccepted, res.entry, res.exportRep,
+        res.resolvedGroups, res.aliasSpec?)
   IO.println s!"lowered (typed, field {o.field.label}, inline-fuse {o.inlineFuse}, \
     partial-eval {o.partialEval}, field-lower {o.fieldLower}, guesses {o.enableGuesses}, \
-    tier {reprStr lowered.tier}, fir-shapes {shapeAccepted}, ret {reprStr exportRep}): \
-    {lowered.program.functions.length} functions, entry {entry} ({(← IO.monoMsNow) - start} ms)"
+    assert-ok {o.assertOk}, emulate-gl {o.emulateGoldilocks}, blake3 {o.linkBlake3}, \
+    witness-io {o.witnessIO}, tier {reprStr lowered.tier}, fir-shapes {shapeAccepted}, \
+    ret {reprStr exportRep}): {lowered.program.functions.length} functions, entry {entry} \
+    ({(← IO.monoMsNow) - start} ms)"
   let world ← match o.field with
-    | .bn254 => IO.ofExcept (Driver.typedWorldReportForPrime FieldLower.bn254Modulus lowered 0)
-    | .bls12381 => IO.ofExcept (Driver.typedWorldReportForPrime FieldLower.bls12381Modulus lowered 0)
-    | .goldilocks => IO.ofExcept (Driver.typedWorldReportForPrime FieldLower.goldilocksModulus lowered 0)
+    | .bn254 => IO.ofExcept (Driver.typedWorldReportForPrime FieldLower.bn254Modulus lowered 0 comp aliasSpec?)
+    | .bls12381 => IO.ofExcept (Driver.typedWorldReportForPrime FieldLower.bls12381Modulus lowered 0 comp aliasSpec?)
+    | .goldilocks => IO.ofExcept (Driver.typedWorldReportForPrime FieldLower.goldilocksModulus lowered 0 comp aliasSpec?)
   IO.println s!"world ({o.field.label}): tables {world.tables}, library {world.library}, \
     functions {world.functions}, refuses changed bodies and a changed table {world.refuses}"
   unless world.failing.isEmpty do
@@ -175,9 +197,9 @@ def runTypedWide (o : Options) (front : Driver.Front) (baseSched : Schedule.Circ
     else
       let start ← IO.monoMsNow
       let actual := match o.field with
-        | .bn254 => Driver.typedAiurRunForPrime FieldLower.bn254Modulus fir lowered exportRep args 0
-        | .bls12381 => Driver.typedAiurRunForPrime FieldLower.bls12381Modulus fir lowered exportRep args 0
-        | .goldilocks => Driver.typedAiurRunForPrime FieldLower.goldilocksModulus fir lowered exportRep args 0
+        | .bn254 => Driver.typedAiurRunForPrime FieldLower.bn254Modulus fir lowered exportRep args 0 100000000 comp aliasSpec?
+        | .bls12381 => Driver.typedAiurRunForPrime FieldLower.bls12381Modulus fir lowered exportRep args 0 100000000 comp aliasSpec?
+        | .goldilocks => Driver.typedAiurRunForPrime FieldLower.goldilocksModulus fir lowered exportRep args 0 100000000 comp aliasSpec?
       match actual with
       | .ok (valStr, obs) =>
         IO.println s!"aiur ({o.field.label}): value {valStr}, observation {showObs obs} ({(← IO.monoMsNow) - start} ms)"
@@ -196,7 +218,7 @@ def runTypedWide (o : Options) (front : Driver.Front) (baseSched : Schedule.Circ
     let kind : CompiledCert.ArtifactKind := if o.execPackage then .execution else .program
     let start ← IO.monoMsNow
     let compiled ← IO.ofExcept (Driver.compileTypedForField o.field lowered 0 sched resolvedGroups
-      kind (o.args.getD []) o.degreeBudget o.logBlowup)
+      kind (o.args.getD []) o.degreeBudget o.logBlowup comp aliasSpec?)
     let elapsed := (← IO.monoMsNow) - start
     if o.degreeBudget then
       IO.println s!"degree-budget: logBlowup {o.logBlowup}, chosen maxDegree {compiled.chosenMaxDegree}"
@@ -205,7 +227,7 @@ def runTypedWide (o : Options) (front : Driver.Front) (baseSched : Schedule.Circ
   else if o.stats then
     let start ← IO.monoMsNow
     let (chips, chosenMaxDeg) ← IO.ofExcept (Driver.typedChipStatsForField o.field lowered 0 sched
-      o.degreeBudget o.logBlowup)
+      o.degreeBudget o.logBlowup comp aliasSpec?)
     let elapsed := (← IO.monoMsNow) - start
     if o.degreeBudget then
       IO.println s!"degree-budget: logBlowup {o.logBlowup}, chosen maxDegree {chosenMaxDeg}"
@@ -223,10 +245,11 @@ def runTyped (o : Options) (front : Driver.Front) (baseSched : Schedule.CircuitS
     rangeCheck := if o.pairTable then .pairTable else baseSched.rangeCheck
   }
   let start ← IO.monoMsNow
+  let comp := o.compression
   let (linked, advice?, firWork) ←
     if o.enableGuesses then
       let res ← IO.ofExcept (Driver.linkTypedWithGuesses front.levels.src fir 0 sched
-        o.inlineFuse o.partialEval o.fieldLower .goldilocks)
+        o.inlineFuse o.partialEval o.fieldLower .goldilocks comp)
       let chs := res.manifest.channels.map (·.channel)
       IO.println s!"guesses: rewritten {res.resolved.length} ({chs}), skipped {res.skipped.length}"
       for (cid, reason) in res.skipped do
@@ -234,11 +257,12 @@ def runTyped (o : Options) (front : Driver.Front) (baseSched : Schedule.CircuitS
       pure (res.linked, res.advice, res.foldedFir)
     else
       let linked ← IO.ofExcept (Driver.linkTyped front.levels.src fir 0 sched
-        o.inlineFuse o.partialEval o.fieldLower)
+        o.inlineFuse o.partialEval o.fieldLower comp)
       pure (linked, none, fir)
   IO.println s!"lowered (typed, field {o.field.label}, inline-fuse {o.inlineFuse}, \
     partial-eval {o.partialEval}, field-lower {o.fieldLower}, guesses {o.enableGuesses}, \
-    tier {reprStr linked.lowered.tier}, \
+    assert-ok {o.assertOk}, emulate-gl {o.emulateGoldilocks}, blake3 {o.linkBlake3}, \
+    witness-io {o.witnessIO}, tier {reprStr linked.lowered.tier}, \
     fir-shapes {linked.shapeAccepted}, ret {reprStr linked.exportRep}): \
     {linked.lowered.program.functions.length} functions, \
     entry {linked.entry} ({(← IO.monoMsNow) - start} ms)"
@@ -320,7 +344,9 @@ def run (o : Options) : IO UInt32 := do
       IO.ofExcept (ScheduleJson.fromJsonString text)
     | none => pure ({} : Schedule.CircuitSchedule)
   let noInlineAddrs :=
-    if o.fieldLower then Driver.intrinsicAddresses baseSched else []
+    if o.fieldLower || o.emulateGoldilocks || o.linkBlake3 || o.witnessIO then
+      Driver.intrinsicAddresses baseSched
+    else []
   let start ← IO.monoMsNow
   let (front, equationsBytes?) ← match o.equations with
     | some eqPath =>
@@ -337,7 +363,8 @@ def run (o : Options) : IO UInt32 := do
   let fir := front.levels.fir
   IO.println s!"front: roots {front.input.names}, fir functions {fir.funList.length}, \
     constructors {fir.ctors.length}, exports {fir.exports.length} ({(← IO.monoMsNow) - start} ms)"
-  if o.typed || o.enableGuesses || o.partialEval || o.fieldLower || o.field != .goldilocks then
+  if o.typed || o.enableGuesses || o.partialEval || o.fieldLower ||
+     o.field != .goldilocks || o.compression.hasNonDefault then
     return ← runTyped o front baseSched bytes equationsBytes?
   let start ← IO.monoMsNow
   let linked ← IO.ofExcept (Driver.link fir 0)

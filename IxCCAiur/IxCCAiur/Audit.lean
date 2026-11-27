@@ -5,6 +5,8 @@ import IxCCAiur.Fib
 import IxCCAiur.Gcd
 import IxCCAiur.Roots
 import IxCCAiur.TypedClaim
+import IxCCAiur.WitnessIO
+import IxCCAiur.CompressionIntrinsics
 
 /-! # Direct `IxCC Fir → Formal Aiur` Certified Compiler Audit Surface
 
@@ -1616,5 +1618,117 @@ info: 'IxCC.AiurBackend.TypedClaim.typed_accepted_obj_nat' depends on axioms: [p
 info: 'IxCC.AiurBackend.TypedClaim.typed_accepted_obj_enum' depends on axioms: [propext, Classical.choice, Quot.sound]
 -/
 #guard_msgs (whitespace := lax) in #print axioms TypedClaim.typed_accepted_obj_enum
+
+/-! ## 9. Wave 4: Certified Witness-Stream Ingress (`WitnessIO`) & Compression Intrinsics (`CompressionIntrinsics`) -/
+
+/--
+info: 'IxCC.AiurBackend.WitnessIO.byteListDecode_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms WitnessIO.byteListDecode_sound
+
+/--
+info: 'IxCC.AiurBackend.WitnessIO.byteStreamDecode_complete' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms WitnessIO.byteStreamDecode_complete
+
+/--
+info: 'IxCC.AiurBackend.WitnessIO.dataByteListDecode_complete' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms WitnessIO.dataByteListDecode_complete
+
+/--
+info: 'IxCC.AiurBackend.WitnessIO.starkIOWorld_of_check' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms WitnessIO.starkIOWorld_of_check
+
+/--
+info: 'IxCC.AiurBackend.WitnessIO.kzgIOWorld_of_check' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms WitnessIO.kzgIOWorld_of_check
+
+/--
+info: 'IxCC.AiurBackend.WitnessIO.starkIo_read_byte_stream_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms WitnessIO.starkIo_read_byte_stream_sound
+
+/--
+info: 'IxCC.AiurBackend.WitnessIO.starkIo_read_channel_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms WitnessIO.starkIo_read_channel_sound
+
+/--
+info: 'IxCC.AiurBackend.WitnessIO.kzgIo_sized_channel_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms WitnessIO.kzgIo_sized_channel_sound
+
+/--
+info: 'IxCC.AiurBackend.WitnessIO.kzgIo_read_stream_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms WitnessIO.kzgIo_read_stream_sound
+
+/--
+info: 'IxCC.AiurBackend.WitnessIO.witness_stream_exists' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms WitnessIO.witness_stream_exists
+
+/--
+info: 'IxCC.AiurBackend.WitnessIO.witness_wrapper_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms WitnessIO.witness_wrapper_sound
+
+/--
+info: 'IxCC.AiurBackend.WitnessIO.witness_wrapper_assertOk_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms WitnessIO.witness_wrapper_assertOk_sound
+
+/--
+info: 'IxCC.AiurBackend.CompressionIntrinsics.bls12381_emulated_product_bound' depends on axioms: [propext]
+-/
+#guard_msgs (whitespace := lax) in #print axioms CompressionIntrinsics.bls12381_emulated_product_bound
+
+/--
+info: 'IxCC.AiurBackend.CompressionIntrinsics.bls12381_emulated_reduction_bound' depends on axioms: [propext]
+-/
+#guard_msgs (whitespace := lax) in #print axioms CompressionIntrinsics.bls12381_emulated_reduction_bound
+
+/--
+info: 'IxCC.AiurBackend.CompressionIntrinsics.compressionOp_plain' depends on axioms: [propext]
+-/
+#guard_msgs (whitespace := lax) in #print axioms CompressionIntrinsics.compressionOp_plain
+
+/--
+info: 'IxCC.AiurBackend.CompressionIntrinsics.compressionOpBody_plain' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms CompressionIntrinsics.compressionOpBody_plain
+
+/--
+info: 'IxCC.AiurBackend.CompressionIntrinsics.lowerCompressionOps_plain' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms CompressionIntrinsics.lowerCompressionOps_plain
+
+/--
+info: 'IxCC.AiurBackend.CompressionIntrinsics.isPlainExpr_aliasEntryBody' depends on axioms: [propext]
+-/
+#guard_msgs (whitespace := lax) in #print axioms CompressionIntrinsics.isPlainExpr_aliasEntryBody
+
+/--
+info: 'IxCC.AiurBackend.CompressionIntrinsics.aliasEntry_passthrough_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms CompressionIntrinsics.aliasEntry_passthrough_sound
+
+/--
+info: 'IxCC.AiurBackend.CompressionIntrinsics.aliasEntry_assertOk_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms CompressionIntrinsics.aliasEntry_assertOk_sound
+
+/--
+info: 'IxCC.AiurBackend.CompressionIntrinsics.aliasEntry_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms CompressionIntrinsics.aliasEntry_sound
+
+/--
+info: 'IxCC.AiurBackend.CompressionIntrinsics.aliasEntry_sound_of_check' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in #print axioms CompressionIntrinsics.aliasEntry_sound_of_check
 
 end IxCC.AiurBackend.Audit

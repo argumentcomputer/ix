@@ -29,6 +29,8 @@ import IxCCAiur.PartialEval
 import IxCCAiur.PartialEvalProof
 import IxCCAiur.FieldLower
 import IxCCAiur.FieldLowerProof
+import IxCCAiur.WitnessIO
+import IxCCAiur.CompressionIntrinsics
 import IxCCAiur.CompiledCert
 import IxCCAiur.Driver
 import IxCCAiur.Audit

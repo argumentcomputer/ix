@@ -5,6 +5,7 @@ import IxCCAiur.InlineFuse
 import IxCCAiur.GuessLower
 import IxCCAiur.PartialEval
 import IxCCAiur.FieldLower
+import IxCCAiur.CompressionIntrinsics
 import IxCCAiur.Hints
 import IxCC.Compile
 import IxCC.Recheck.RunFir
@@ -76,6 +77,28 @@ def FieldTarget.parse? : String → Option FieldTarget
   | "bn254" => some .bn254
   | "bls12-381" | "bls12381" => some .bls12381
   | _ => none
+
+/-- Wave-4 compression-verifier options: custom entry-point aliasing, unit-returning
+`--assert-ok` ABI adapter, emulated Goldilocks linking, BLAKE3 library linking, and
+checked witness-stream I/O (`StarkIO` / `KzgIO`). -/
+structure CompressionOptions where
+  entryName : Option String := none
+  assertOk : Bool := false
+  emulateGoldilocks : Bool := false
+  linkBlake3 : Bool := false
+  witnessIO : Bool := false
+  deriving BEq, DecidableEq, Repr, Inhabited
+
+def CompressionOptions.hasNonDefault (c : CompressionOptions) : Bool :=
+  c.entryName.isSome || c.assertOk || c.emulateGoldilocks || c.linkBlake3 || c.witnessIO
+
+def CompressionOptions.toLinkConfig (c : CompressionOptions)
+    (aliasSpec? : Option CompressionIntrinsics.AliasSpec := none) :
+    CompressionIntrinsics.LinkConfig :=
+  { emulateGoldilocks := c.emulateGoldilocks
+    linkBlake3 := c.linkBlake3
+    witnessIO := c.witnessIO
+    aliasSpec? := aliasSpec? }
 
 /-- Extract Ixon addresses carrying an explicit `@[circuit_intrinsic "..."]`
 directive so ANF inlining preserves their function boundaries for `FieldLower`. -/
@@ -455,18 +478,39 @@ def applyTypedOpts (src : Src.Program) (P : Fir.Program) (i : Nat)
     (partialEval : Bool := false)
     (fieldLower : Bool := false)
     (fieldTarget : FieldTarget := .goldilocks)
-    (forcePrune : Bool := false) : TypedLower.LoweredProgram :=
+    (forcePrune : Bool := false)
+    (compression : CompressionOptions := {}) : TypedLower.LoweredProgram :=
   let entryRoot := entryName i
+  let nonFieldBindings :=
+    (CompressionIntrinsics.resolveCompressionBindings src P resolvedSched lowered0.program.functions).filter
+      fun b => match b.op with
+        | .field _ => false
+        | .goldilocks _ => compression.emulateGoldilocks || fieldTarget == .goldilocks
+        | .blake3 _ => compression.linkBlake3
+        | .witness _ => compression.witnessIO
+  let lpPre : TypedLower.LoweredProgram :=
+    if !nonFieldBindings.isEmpty then
+      let cCfg : CompressionIntrinsics.CompressionConfig :=
+        { bindings := nonFieldBindings
+          enableField := false
+          enableGoldilocks := compression.emulateGoldilocks || fieldTarget == .goldilocks
+          enableBlake3 := compression.linkBlake3
+          enableWitnessIO := compression.witnessIO
+          inlineOps := true
+          pruneRoots := none }
+      CompressionIntrinsics.lowerCompressionProgram cCfg lowered0
+    else
+      lowered0
   let lp0 : TypedLower.LoweredProgram :=
     if fieldLower then
-      let explicit := resolveIntrinsicBindings src P resolvedSched lowered0.program.functions
+      let explicit := resolveIntrinsicBindings src P resolvedSched lpPre.program.functions
       let flCfgPre : FieldLower.Config :=
         { ambientModulus := fieldTarget.modulus
           bindings := explicit
           pruneRoots := if inlineFuse || partialEval then none else some [entryRoot] }
-      FieldLower.lowerProgram flCfgPre lowered0
+      FieldLower.lowerProgram flCfgPre lpPre
     else
-      lowered0
+      lpPre
   let lp1 : TypedLower.LoweredProgram :=
     if inlineFuse then
       let optFns := InlineFuse.optimizeFns lp0.program.functions
@@ -501,33 +545,39 @@ def applyTypedOpts (src : Src.Program) (P : Fir.Program) (i : Nat)
       lp2
   lp3
 
-/-- Field-agnostic result of typed lowering + Wave-2 passes (before field linking). -/
+/-- Field-agnostic result of typed lowering + Wave-2/Wave-4 passes (before field linking). -/
 structure TypedLoweredResult where
   lowered : TypedLower.LoweredProgram
   shapeAccepted : Bool
   entry : String
   exportRep : TypedRep.Rep
   resolvedGroups : List (String × List String) := []
+  aliasSpec? : Option CompressionIntrinsics.AliasSpec := none
 
 /-- Infer & check `Fir.Shape.ShapeCert`, resolve `Schedule.byAddress`, lower with
-`TypedLower`, and apply optional `InlineFuse`, `PartialEval`, and `FieldLower`. -/
+`TypedLower`, and apply optional `InlineFuse`, `PartialEval`, `FieldLower`, and
+Wave-4 `CompressionIntrinsics` / `aliasEntry`. -/
 def lowerTyped (src : Src.Program) (P : Fir.Program) (i : Nat)
     (sched : Schedule.CircuitSchedule := {})
     (inlineFuse : Bool := false)
     (partialEval : Bool := false)
     (fieldLower : Bool := false)
-    (fieldTarget : FieldTarget := .goldilocks) : Except String TypedLoweredResult := do
+    (fieldTarget : FieldTarget := .goldilocks)
+    (compression : CompressionOptions := {}) : Except String TypedLoweredResult := do
   let resolvedSched := resolveSchedule src P sched
   let (cert, shapeAccepted) := TypedRep.inferCheckedShapes src P
   let lowered0 ← TypedLower.lowerProgram P cert resolvedSched
   let lowered := applyTypedOpts src P i resolvedSched lowered0
-    inlineFuse partialEval fieldLower fieldTarget
-  let entry := qualified (entryName i)
+    inlineFuse partialEval fieldLower fieldTarget false compression
+  let aliasSpec ← CompressionIntrinsics.aliasEntry lowered.program i
+    compression.entryName compression.assertOk
+  let entry := aliasSpec.entry
+  let aliasSpec? := if aliasSpec.hasWrapper then some aliasSpec else none
   let exportRep := lowered.exportReps[i]?.getD .obj
-  return { lowered, shapeAccepted, entry, exportRep, resolvedGroups := resolvedSched.groups }
+  return { lowered, shapeAccepted, entry, exportRep, resolvedGroups := resolvedSched.groups, aliasSpec? }
 
 /-- A typed/unboxed lowered program, demand-linked and prepared over Goldilocks
-for `Prog::main<i>`. -/
+for `entry` (`Prog::main<i>` or a custom `--entry-name` alias). -/
 structure TypedLinked where
   lowered : TypedLower.LoweredProgram
   shapeAccepted : Bool
@@ -536,18 +586,21 @@ structure TypedLinked where
   exportRep : TypedRep.Rep
   prepared : Aiur.Modules.Prepared program
   resolvedGroups : List (String × List String) := []
+  aliasSpec? : Option CompressionIntrinsics.AliasSpec := none
 
 /-- Infer & check `Fir.Shape.ShapeCert`, resolve `Schedule.byAddress`, lower with
-`TypedLower`, optionally run `InlineFuse`, `PartialEval`, and `FieldLower`,
-demand-link (including `Fields::is_zero` when referenced), and prepare `Prog::main<i>`
+`TypedLower`, optionally run `InlineFuse`, `PartialEval`, `FieldLower`, and Wave-4
+compression intrinsic lowering / custom entry aliasing, demand-link, and prepare
 over Goldilocks. -/
 def linkTyped (src : Src.Program) (P : Fir.Program) (i : Nat)
     (sched : Schedule.CircuitSchedule := {})
     (inlineFuse : Bool := false)
     (partialEval : Bool := false)
-    (fieldLower : Bool := false) : Except String TypedLinked := do
-  let res ← lowerTyped src P i sched inlineFuse partialEval fieldLower .goldilocks
-  let program := FieldLower.linkedProgramFor F res.lowered
+    (fieldLower : Bool := false)
+    (compression : CompressionOptions := {}) : Except String TypedLinked := do
+  let res ← lowerTyped src P i sched inlineFuse partialEval fieldLower .goldilocks compression
+  let program := CompressionIntrinsics.linkedProgramWith F
+    (compression.toLinkConfig res.aliasSpec?) res.lowered
   let prepared ← Aiur.Modules.prepare program [res.entry]
   return {
     lowered := res.lowered
@@ -557,12 +610,15 @@ def linkTyped (src : Src.Program) (P : Fir.Program) (i : Nat)
     exportRep := res.exportRep
     prepared
     resolvedGroups := res.resolvedGroups
+    aliasSpec? := res.aliasSpec?
   }
 
-/-- Evaluate the tier-aware world check (including `Fields::is_zero` when used)
-on any prime field `ZMod p` prepared source. -/
+/-- Evaluate the tier-aware world check (including `Fields::is_zero`, custom
+`AliasSpec`, and referenced `Blake3`/`StarkIO`/`KzgIO` libraries) on any prime
+field `ZMod p` prepared source. -/
 def typedWorldReportOfSource {p : Nat} [Fact (Nat.Prime p)]
-    (s : Aiur.Generic.Source (ZMod p)) (lp : TypedLower.LoweredProgram) : WorldReport :=
+    (s : Aiur.Generic.Source (ZMod p)) (lp : TypedLower.LoweredProgram)
+    (aliasSpec? : Option CompressionIntrinsics.AliasSpec := none) : WorldReport :=
   let changed : Aiur.Generic.Program Nat :=
     { lp.program with
       functions := lp.program.functions.map fun g => { g with body := .tuple [] } }
@@ -578,7 +634,8 @@ def typedWorldReportOfSource {p : Nat} [Fact (Nat.Prime p)]
     | _ => true
   let fieldsOk := !FieldLower.usesFieldsLibrary lp.program.functions ||
     FieldLower.checkFieldsIsZero s
-  let libOk := u32Ok && u64Ok && fieldsOk
+  let compOk := CompressionIntrinsics.checkCompressionWorld s lp aliasSpec?
+  let libOk := u32Ok && u64Ok && fieldsOk && compOk
   let fnsOk := World.checkFunctions s lp.program
   let refuses :=
     !World.checkFunctions s changed &&
@@ -591,15 +648,20 @@ def typedWorldReportOfSource {p : Nat} [Fact (Nat.Prime p)]
 
 /-- Evaluate the tier-aware world check on a Goldilocks typed prepared source. -/
 def typedWorldReport (l : TypedLinked) : WorldReport :=
-  typedWorldReportOfSource l.prepared.environment.source l.lowered
+  typedWorldReportOfSource l.prepared.environment.source l.lowered l.aliasSpec?
 
 /-- Prepare `lp` over `ZMod p` and evaluate the tier-aware world check. -/
 def typedWorldReportForPrime (p : Nat) [Fact (Nat.Prime p)]
-    (lp : TypedLower.LoweredProgram) (entryIdx : Nat := 0) : Except String WorldReport := do
-  let prog := FieldLower.linkedProgramFor (ZMod p) lp
-  let entry := qualified (entryName entryIdx)
+    (lp : TypedLower.LoweredProgram) (entryIdx : Nat := 0)
+    (compression : CompressionOptions := {})
+    (aliasSpec? : Option CompressionIntrinsics.AliasSpec := none) : Except String WorldReport := do
+  let prog := CompressionIntrinsics.linkedProgramWith (ZMod p)
+    (compression.toLinkConfig aliasSpec?) lp
+  let entry := match aliasSpec? with
+    | some spec => spec.entry
+    | none => qualified (entryName entryIdx)
   let prepared ← Aiur.Modules.prepare prog [entry]
-  return typedWorldReportOfSource prepared.environment.source lp
+  return typedWorldReportOfSource prepared.environment.source lp aliasSpec?
 
 /-- Read an unboxed typed Aiur `SourceValue (ZMod p)` back as an observation. -/
 def typedReadbackP {p : Nat} [Fact (Nat.Prime p)]
@@ -649,22 +711,36 @@ def typedAiurRun (P : Fir.Program) (l : TypedLinked) (args : List Nat) (fuel : N
     (Hints.dispatcher (fun (x : F) => x.val))
   let (value, heap) ← l.prepared.run l.entry (args.map fun n => .field (n : F)) fuel hints
   let feat := TypedRep.scanFeatures P
-  return (value, typedReadback P l.lowered.cert feat heap 10000 l.exportRep value)
+  let obs :=
+    if l.aliasSpec?.any (·.assertOk) && value == .tuple [] then
+      some (.nat 1)
+    else
+      typedReadback P l.lowered.cert feat heap 10000 l.exportRep value
+  return (value, obs)
 
 /-- Evaluate a typed `LoweredProgram` over an arbitrary prime field `ZMod p` via
 Formal Aiur's fuelled evaluator, returning `(reprStr value, observation)`. -/
 def typedAiurRunForPrime (p : Nat) [Fact (Nat.Prime p)]
     (P : Fir.Program) (lp : TypedLower.LoweredProgram) (exportRep : TypedRep.Rep)
-    (args : List Nat) (entryIdx : Nat := 0) (fuel : Nat := 100000000) :
+    (args : List Nat) (entryIdx : Nat := 0) (fuel : Nat := 100000000)
+    (compression : CompressionOptions := {})
+    (aliasSpec? : Option CompressionIntrinsics.AliasSpec := none) :
     Except String (String × Option Sem.Obs) := do
-  let prog := FieldLower.linkedProgramFor (ZMod p) lp
-  let entry := qualified (entryName entryIdx)
+  let prog := CompressionIntrinsics.linkedProgramWith (ZMod p)
+    (compression.toLinkConfig aliasSpec?) lp
+  let entry := match aliasSpec? with
+    | some spec => spec.entry
+    | none => qualified (entryName entryIdx)
   let prepared ← Aiur.Modules.prepare prog [entry]
   let hints := prepared.environment.source.checkedHints
     (Hints.dispatcher (fun (x : ZMod p) => x.val))
   let (value, heap) ← prepared.run entry (args.map fun n => .field (n : ZMod p)) fuel hints
   let feat := TypedRep.scanFeatures P
-  let obs := typedReadbackP P lp.cert feat heap 10000 exportRep value
+  let obs :=
+    if aliasSpec?.any (·.assertOk) && value == .tuple [] then
+      some (.nat 1)
+    else
+      typedReadbackP P lp.cert feat heap 10000 exportRep value
   return (reprStr value, obs)
 
 /-- Compile a typed linked Goldilocks program once (`compileOptimized` or
@@ -718,11 +794,16 @@ def compileTypedForPrime (p : Nat) [Fact (Nat.Prime p)]
     (kind : CompiledCert.ArtifactKind := .program)
     (args : List Nat := [])
     (degreeBudget : Bool := false)
-    (logBlowup : Nat := 2) : Except String Compiled := do
-  let prog := FieldLower.linkedProgramFor (ZMod p) lp
-  let entry := qualified (entryName entryIdx)
+    (logBlowup : Nat := 2)
+    (compression : CompressionOptions := {})
+    (aliasSpec? : Option CompressionIntrinsics.AliasSpec := none) : Except String Compiled := do
+  let prog := CompressionIntrinsics.linkedProgramWith (ZMod p)
+    (compression.toLinkConfig aliasSpec?) lp
+  let entry := match aliasSpec? with
+    | some spec => spec.entry
+    | none => qualified (entryName entryIdx)
   let prepared ← Aiur.Modules.prepare prog [entry]
-  let world := typedWorldReportOfSource prepared.environment.source lp
+  let world := typedWorldReportOfSource prepared.environment.source lp aliasSpec?
   unless world.ok do
     throw s!"world check failed for entry {entry} over prime modulus {p}"
   let execution ← prepared.exportExecution
@@ -785,17 +866,19 @@ def compileTypedForField (target : FieldTarget)
     (kind : CompiledCert.ArtifactKind := .program)
     (args : List Nat := [])
     (degreeBudget : Bool := false)
-    (logBlowup : Nat := 2) : Except String Compiled :=
+    (logBlowup : Nat := 2)
+    (compression : CompressionOptions := {})
+    (aliasSpec? : Option CompressionIntrinsics.AliasSpec := none) : Except String Compiled :=
   match target with
   | .goldilocks =>
     compileTypedForPrime FieldLower.goldilocksModulus lp entryIdx sched resolvedGroups
-      kind args degreeBudget logBlowup
+      kind args degreeBudget logBlowup compression aliasSpec?
   | .bn254 =>
     compileTypedForPrime FieldLower.bn254Modulus lp entryIdx sched resolvedGroups
-      kind args degreeBudget logBlowup
+      kind args degreeBudget logBlowup compression aliasSpec?
   | .bls12381 =>
     compileTypedForPrime FieldLower.bls12381Modulus lp entryIdx sched resolvedGroups
-      kind args degreeBudget logBlowup
+      kind args degreeBudget logBlowup compression aliasSpec?
 
 /-- Per-chip stats for a typed linked Goldilocks program (with optional `DegreeBudget`). -/
 def typedChipStats (l : TypedLinked) (sched : Schedule.CircuitSchedule := {})
@@ -813,10 +896,15 @@ def typedChipStats (l : TypedLinked) (sched : Schedule.CircuitSchedule := {})
 def typedChipStatsForPrime (p : Nat) [Fact (Nat.Prime p)]
     (lp : TypedLower.LoweredProgram) (entryIdx : Nat := 0)
     (sched : Schedule.CircuitSchedule := {})
-    (degreeBudget : Bool := false) (logBlowup : Nat := 2) :
+    (degreeBudget : Bool := false) (logBlowup : Nat := 2)
+    (compression : CompressionOptions := {})
+    (aliasSpec? : Option CompressionIntrinsics.AliasSpec := none) :
     Except String (List (String × Nat × Nat × Nat) × Nat) := do
-  let prog := FieldLower.linkedProgramFor (ZMod p) lp
-  let entry := qualified (entryName entryIdx)
+  let prog := CompressionIntrinsics.linkedProgramWith (ZMod p)
+    (compression.toLinkConfig aliasSpec?) lp
+  let entry := match aliasSpec? with
+    | some spec => spec.entry
+    | none => qualified (entryName entryIdx)
   let prepared ← Aiur.Modules.prepare prog [entry]
   let isWide := p ≥ 2 ^ 64
   if degreeBudget then
@@ -832,15 +920,20 @@ def typedChipStatsForPrime (p : Nat) [Fact (Nat.Prime p)]
 def typedChipStatsForField (target : FieldTarget)
     (lp : TypedLower.LoweredProgram) (entryIdx : Nat := 0)
     (sched : Schedule.CircuitSchedule := {})
-    (degreeBudget : Bool := false) (logBlowup : Nat := 2) :
+    (degreeBudget : Bool := false) (logBlowup : Nat := 2)
+    (compression : CompressionOptions := {})
+    (aliasSpec? : Option CompressionIntrinsics.AliasSpec := none) :
     Except String (List (String × Nat × Nat × Nat) × Nat) :=
   match target with
   | .goldilocks =>
     typedChipStatsForPrime FieldLower.goldilocksModulus lp entryIdx sched degreeBudget logBlowup
+      compression aliasSpec?
   | .bn254 =>
     typedChipStatsForPrime FieldLower.bn254Modulus lp entryIdx sched degreeBudget logBlowup
+      compression aliasSpec?
   | .bls12381 =>
     typedChipStatsForPrime FieldLower.bls12381Modulus lp entryIdx sched degreeBudget logBlowup
+      compression aliasSpec?
 
 /-! ## Phase 2.2d Tier-2 `guess` Front-End, Lowering & Universal Advice Package -/
 
@@ -970,7 +1063,8 @@ def linkTypedWithGuesses (src : Src.Program) (P : Fir.Program) (i : Nat)
     (inlineFuse : Bool := false)
     (partialEval : Bool := false)
     (fieldLower : Bool := false)
-    (fieldTarget : FieldTarget := .goldilocks) : Except String TypedLinkedWithGuesses := do
+    (fieldTarget : FieldTarget := .goldilocks)
+    (compression : CompressionOptions := {}) : Except String TypedLinkedWithGuesses := do
   let resolvedSched := resolveSchedule src P sched
   let (cert, shapeAccepted0) := GuessLower.seedGuessShapes src P
   let folded := GuessLower.foldOversizedNatCmp P cert
@@ -981,13 +1075,13 @@ def linkTypedWithGuesses (src : Src.Program) (P : Fir.Program) (i : Nat)
       (P, shapeAccepted0)
   let lowered0 ← TypedLower.lowerProgram PWork cert resolvedSched
   let gl := GuessLower.applyGuesses src PWork lowered0
-  let entry := qualified (entryName i)
+  let baseEntry := qualified (entryName i)
   let advice ←
     if gl.resolved.isEmpty then pure none
     else do
       let (advLowered, advEntries) := GuessLower.prepareAdviceProgram lowered0 gl.resolved
       let advProgram := TypedLower.linkedProgram F advLowered
-      let allAdvEntries := entry :: advEntries.filter (· != entry)
+      let allAdvEntries := baseEntry :: advEntries.filter (· != baseEntry)
       let advPrepared ← Aiur.Modules.prepare advProgram allAdvEntries
       pure (some {
         lowered := advLowered
@@ -996,13 +1090,19 @@ def linkTypedWithGuesses (src : Src.Program) (P : Fir.Program) (i : Nat)
         prepared := advPrepared
       })
   let lowered := applyTypedOpts src PWork i resolvedSched gl.lowered
-    inlineFuse partialEval fieldLower fieldTarget (!gl.resolved.isEmpty)
-  let program := FieldLower.linkedProgramFor F lowered
+    inlineFuse partialEval fieldLower fieldTarget (!gl.resolved.isEmpty) compression
+  let aliasSpec ← CompressionIntrinsics.aliasEntry lowered.program i
+    compression.entryName compression.assertOk
+  let entry := aliasSpec.entry
+  let aliasSpec? := if aliasSpec.hasWrapper then some aliasSpec else none
+  let program := CompressionIntrinsics.linkedProgramWith F
+    (compression.toLinkConfig aliasSpec?) lowered
   let exportRep := lowered.exportReps[i]?.getD .obj
   let prepared ← Aiur.Modules.prepare program [entry]
   let linked : TypedLinked := {
     lowered, shapeAccepted, program, entry, exportRep, prepared
     resolvedGroups := resolvedSched.groups
+    aliasSpec?
   }
   return {
     linked, advice, resolved := gl.resolved, skipped := gl.skipped
@@ -1019,6 +1119,11 @@ def typedAiurRunWithAdvice (P : Fir.Program) (l : TypedLinked)
     (Hints.dispatcherWithAdvice (fun (x : F) => x.val) advicePair)
   let (value, heap) ← l.prepared.run l.entry (args.map fun n => .field (n : F)) fuel hints
   let feat := TypedRep.scanFeatures P
-  return (value, typedReadback P l.lowered.cert feat heap 10000 l.exportRep value)
+  let obs :=
+    if l.aliasSpec?.any (·.assertOk) && value == .tuple [] then
+      some (.nat 1)
+    else
+      typedReadback P l.lowered.cert feat heap 10000 l.exportRep value
+  return (value, obs)
 
 end IxCC.AiurBackend.Driver
