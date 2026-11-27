@@ -63,10 +63,11 @@ const PLONK_VK: &[u8] =
 const PLONK_VK_SHA256: &str =
   "ae9638f047b26990e810bf46dc664d2cc1fd502e8f09e01fc9fb3b192bca2c25";
 
-/// SHA-256 of the exported recursive verifier description.
+/// SHA-256 of the exported recursive verifier description (with the key-bound
+/// KZG transcript seed).
 #[cfg(all(test, feature = "plonk"))]
 pub(super) const FINAL_SCHEMA_SHA256: &str =
-  "cf4a1ba84d81563a5c42b71562071727795f6df298befbf94be515f81da80139";
+  "481d99bb117b8769dcf78be33bdef23b894a7745d810072a5a1204fa2abf1e6d";
 
 /// Archived legacy Groth16 development verifying key.
 #[cfg(test)]
@@ -187,7 +188,7 @@ pub(super) fn verify_recursive_bls12_381(
 ) -> Result<SetupClass> {
   let _id = packet.get(..32).ok_or("truncated compressed proof")?;
   Err(
-    "BLS12-381 recursive KZG proofs have no bundled release verifying key yet; verify with --vk <vk.bin> --vk-digest <blake3>".into(),
+    "BLS12-381 recursive KZG proofs have no bundled release verifying key yet, and ix verify has no option to supply one".into(),
   )
 }
 
@@ -289,6 +290,46 @@ pub(super) fn check_statement(
 mod tests {
   use super::*;
   use sha2::{Digest, Sha256};
+
+  /// `ROOT_VK_BLAKE3`, `STATEMENT_PREFIX` and the layout's key binding follow
+  /// from the release's IxVM and aggregation keys (the `ixvm-proof key` and
+  /// `stark-verifier key` directories). Part of the release-consistency gate
+  /// `tools/rederive-release-keys.sh`.
+  #[test]
+  #[ignore = "needs IX_IXVM_KEY_DIR and IX_AGGR_KEY_DIR, each with key.bin \
+              and identity.json"]
+  fn release_prefix_matches_the_release_keys() {
+    let load = |variable: &str| -> (Vec<u8>, u64) {
+      let dir = std::path::PathBuf::from(
+        std::env::var_os(variable)
+          .unwrap_or_else(|| panic!("{variable} is not set")),
+      );
+      let key = std::fs::read(dir.join("key.bin")).unwrap();
+      let identity: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(dir.join("identity.json")).unwrap(),
+      )
+      .unwrap();
+      assert_eq!(identity["call_channel"].as_u64(), Some(1));
+      assert_eq!(
+        identity["key_digest"].as_str(),
+        Some(blake3::hash(&key).to_hex().as_str())
+      );
+      (key, identity["function_index"].as_u64().unwrap())
+    };
+    let (ixvm, ixvm_index) = load("IX_IXVM_KEY_DIR");
+    let (aggr, aggr_index) = load("IX_AGGR_KEY_DIR");
+    assert_eq!(
+      blake3::hash(&aggr).as_bytes(),
+      &decode(ROOT_VK_BLAKE3).unwrap(),
+      "ROOT_VK_BLAKE3"
+    );
+    assert_eq!(
+      statement::backend_prefix(&ixvm, ixvm_index, &aggr, aggr_index),
+      STATEMENT_PREFIX,
+      "STATEMENT_PREFIX"
+    );
+    assert_eq!(release_root_layout(&aggr).unwrap(), LAYOUT);
+  }
 
   #[test]
   fn bundled_release_files_match_their_pins() {

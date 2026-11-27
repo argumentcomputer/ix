@@ -4,11 +4,11 @@
 //! and claims enter the public statement as authenticated data, while trace
 //! heights vary per execution beneath the same public capacity.
 use super::{
-  Bn254,
+  AiurCurve, AiurField, Bn254,
   kzg::{Backend, Compiler, MAX_TOTAL_ROWS, VerifyingKey},
 };
 use crate::{
-  kzg::{KzgConfig, Scalar},
+  kzg::{CurveScalar, KzgConfig, curve::Bn254 as Bn254Curve},
   pipeline::SetupConfig,
 };
 use aiur::{
@@ -16,7 +16,6 @@ use aiur::{
   artifact::WidePackage,
   budget::{RecordPool, RecordReservation},
   bytecode::CheckedProgram,
-  field::FieldBackend,
   trace::{TracePlan, stark::planning},
 };
 use multi_stark::{
@@ -36,28 +35,28 @@ use std::{sync::Arc, time::Instant};
 pub const ENTRY: &str = "CompressGL::verify_root";
 const DEVELOPMENT_SEED: &[u8] = b"ix/aiur-compress-gl/kzg/v1";
 
-pub struct Wrapper {
-  program: Arc<CheckedProgram<Bn254>>,
-  plan: TracePlan<'static, Bn254>,
+pub struct Wrapper<F: AiurField = Bn254> {
+  program: Arc<CheckedProgram<F>>,
+  plan: TracePlan<'static, F>,
   artifact_digest: [u8; 32],
 }
 
-pub struct Executed<'a> {
+pub struct Executed<'a, F: AiurField = Bn254> {
   input: &'a Input,
-  record: Execution<Bn254>,
-  args: Vec<Scalar>,
+  record: Execution<F>,
+  args: Vec<F::Element>,
   artifact_digest: [u8; 32],
   execution_seconds: f64,
 }
 
-impl Executed<'_> {
+impl<F: AiurField> Executed<'_, F> {
   pub const fn input(&self) -> &Input {
     self.input
   }
-  pub const fn record(&self) -> &Execution<Bn254> {
+  pub const fn record(&self) -> &Execution<F> {
     &self.record
   }
-  pub fn args(&self) -> &[Scalar] {
+  pub fn args(&self) -> &[F::Element] {
     &self.args
   }
 }
@@ -110,48 +109,67 @@ pub struct Capacity {
 }
 
 impl Capacity {
-  pub fn height(self) -> Result<usize, String> {
+  pub fn height_for<C: AiurCurve>(self) -> Result<usize, String> {
     if self.max_log_height == 0
       || !self.quotient_degree.is_power_of_two()
-      || u32::from(self.max_log_height) + self.quotient_degree.ilog2() > 28
+      || u32::from(self.max_log_height) + self.quotient_degree.ilog2()
+        > C::MAX_LOG_DOMAIN
     {
-      return Err("invalid BN254 trace/quotient capacity".into());
+      return Err(format!("invalid {} trace/quotient capacity", C::NAME));
     }
     1usize
       .checked_shl(u32::from(self.max_log_height))
       .ok_or_else(|| "trace capacity overflow".into())
   }
 
-  /// Load proving powers under the same setup identity for every Aiur stage.
-  /// The loaded prefix affects memory use, while the public capacity stays fixed.
-  pub fn config(
+  pub fn height(self) -> Result<usize, String> {
+    self.height_for::<Bn254Curve>()
+  }
+
+  /// Load proving powers under the same setup identity for every Aiur stage
+  /// over curve `C`. The loaded prefix affects memory use, while the public
+  /// capacity stays fixed.
+  pub fn config_for<C: AiurCurve>(
     self,
     setup: &SetupConfig,
     loaded_height: usize,
-  ) -> Result<KzgConfig, String> {
-    let cap = self.height()?;
+  ) -> Result<KzgConfig<C>, String> {
+    let cap = self.height_for::<C>()?;
     if loaded_height < 2
       || !loaded_height.is_power_of_two()
       || loaded_height > cap
     {
       return Err("execution exceeds the admitted trace capacity".into());
     }
-    let source = setup
-      .for_stage::<crate::kzg::Bn254>(DEVELOPMENT_SEED, cap)
-      .map_err(|e| e.to_string())?;
+    let source =
+      setup.for_stage::<C>(DEVELOPMENT_SEED, cap).map_err(|e| e.to_string())?;
     let srs = source.srs(loaded_height, false).map_err(|e| e.to_string())?;
     Ok(
-      KzgConfig::with_max_trace_len(Arc::new(srs), cap, self.quotient_degree)
-        .with_streaming_lookups()
-        .with_streaming_quotient(),
+      KzgConfig::<C>::with_max_trace_len(
+        Arc::new(srs),
+        cap,
+        self.quotient_degree,
+      )
+      .with_streaming_lookups()
+      .with_streaming_quotient(),
     )
+  }
+
+  /// Load proving powers under the same setup identity for every BN254 Aiur
+  /// stage.
+  pub fn config(
+    self,
+    setup: &SetupConfig,
+    loaded_height: usize,
+  ) -> Result<KzgConfig, String> {
+    self.config_for::<Bn254Curve>(setup, loaded_height)
   }
 }
 
-pub struct Proven {
+pub struct Proven<C: AiurCurve = Bn254Curve> {
   pub key: Vec<u8>,
   pub proof: Vec<u8>,
-  pub claim: Vec<Scalar>,
+  pub claim: Vec<CurveScalar<C>>,
   pub statement: [u8; STATEMENT_BYTES],
   pub profile: Profile,
   pub capacity: Capacity,
@@ -162,10 +180,20 @@ pub struct Proven {
   pub verification_seconds: f64,
 }
 
-impl Wrapper {
+impl Wrapper<Bn254> {
   /// Authenticate bytes before parsing. A matching digest identifies trusted
   /// compiler output; structural validation alone cannot establish meaning.
   pub fn from_bytes(
+    bytes: &[u8],
+    expected_digest: &[u8; 32],
+  ) -> Result<Self, String> {
+    Self::from_bytes_for(bytes, expected_digest)
+  }
+}
+
+impl<F: AiurField> Wrapper<F> {
+  /// Authenticate bytes before parsing for curve field `F`.
+  pub fn from_bytes_for(
     bytes: &[u8],
     expected_digest: &[u8; 32],
   ) -> Result<Self, String> {
@@ -176,12 +204,13 @@ impl Wrapper {
     let package = WidePackage::decode(bytes)?;
     let trace =
       package.trace.ok_or("CompressGL needs a compiler trace artifact")?;
-    let mut program = package.program.check_with(Bn254)?;
+    let field = F::default();
+    let mut program = package.program.check_with(field)?;
     program.track_depth(&trace)?;
     program.entry(ENTRY)?;
     let program = Arc::new(program);
     let plan = TracePlan::new(Arc::clone(&program), trace)?;
-    if plan.public_claim(ENTRY, &[Bn254.zero(); 16], &[])?.len() != 18 {
+    if plan.public_claim(ENTRY, &[field.zero(); 16], &[])?.len() != 18 {
       return Err(
         "CompressGL entry must have 16 arguments and unit output".into(),
       );
@@ -192,12 +221,15 @@ impl Wrapper {
   pub const fn artifact_digest(&self) -> &[u8; 32] {
     &self.artifact_digest
   }
-  pub const fn plan(&self) -> &TracePlan<'static, Bn254> {
+  pub const fn plan(&self) -> &TracePlan<'static, F> {
     &self.plan
   }
 
-  pub fn claim(&self, statement: &Statement) -> Result<Vec<Scalar>, String> {
-    self.plan.public_claim(ENTRY, &arguments(statement), &[])
+  pub fn claim(
+    &self,
+    statement: &Statement,
+  ) -> Result<Vec<F::Element>, String> {
+    self.plan.public_claim(ENTRY, &arguments::<F>(statement), &[])
   }
 
   /// Compile the release key with only the powers required by fixed tables.
@@ -216,12 +248,15 @@ impl Wrapper {
       .max()
       .unwrap_or(2)
       .max(2);
-    Backend::new(&self.plan, capacity.config(setup, height)?)?
+    Backend::new(&self.plan, capacity.config_for::<F::Curve>(setup, height)?)?
       .verifying_key()?
       .to_bytes()
   }
 
-  pub fn execute<'a>(&self, input: &'a Input) -> Result<Executed<'a>, String> {
+  pub fn execute<'a>(
+    &self,
+    input: &'a Input,
+  ) -> Result<Executed<'a, F>, String> {
     self.execute_inner(input, None)
   }
 
@@ -231,7 +266,7 @@ impl Wrapper {
     &self,
     input: &'a Input,
     max_record_bytes: usize,
-  ) -> Result<Executed<'a>, String> {
+  ) -> Result<Executed<'a, F>, String> {
     if max_record_bytes == 0 {
       return Err("CompressGL record limit must be positive".into());
     }
@@ -249,17 +284,17 @@ impl Wrapper {
     &self,
     input: &'a Input,
     reservation: Option<&RecordReservation>,
-  ) -> Result<Executed<'a>, String> {
+  ) -> Result<Executed<'a, F>, String> {
     let started = Instant::now();
     let advice = stark_verifier::advice(
-      Bn254,
+      F::default(),
       input.key_bytes(),
       input.claims_bytes(),
       input.proof_bytes(),
     )?;
     let prepared =
       stark_verifier::prepare_compress_gl_advice(&self.program, &advice)?;
-    let args = arguments(input.statement());
+    let args = arguments::<F>(input.statement());
     let record = match reservation {
       Some(reservation) => {
         prepared.execute_reserved(ENTRY, args.clone(), reservation)
@@ -279,7 +314,7 @@ impl Wrapper {
     })
   }
 
-  fn check_execution(&self, execution: &Executed<'_>) -> Result<(), String> {
+  fn check_execution(&self, execution: &Executed<'_, F>) -> Result<(), String> {
     if execution.artifact_digest != self.artifact_digest {
       return Err(
         "CompressGL execution belongs to another compiler artifact".into(),
@@ -290,12 +325,15 @@ impl Wrapper {
 
   /// Exact padded trace cells without trace population. These figures exclude
   /// polynomial transforms, quotient workspaces, commitments and allocator slack.
-  pub fn profile(&self, execution: &Executed<'_>) -> Result<Profile, String> {
+  pub fn profile(
+    &self,
+    execution: &Executed<'_, F>,
+  ) -> Result<Profile, String> {
     self.check_execution(execution)?;
     let started = Instant::now();
     let compiler = Compiler::new(&self.plan)?;
     let heights = compiler.row_counts(&execution.record)?;
-    let params = extension_params::<KzgConfig>();
+    let params = extension_params::<KzgConfig<F::Curve>>();
     let mut circuits = Vec::with_capacity(heights.len());
     let (mut main_cells, mut fixed_cells, mut lookup_cells, mut total_rows) =
       (0usize, 0usize, 0usize, 0usize);
@@ -344,7 +382,7 @@ impl Wrapper {
     let bytes = main_cells
       .checked_add(fixed_cells)
       .and_then(|n| n.checked_add(lookup_cells))
-      .and_then(|n| n.checked_mul(size_of::<Scalar>()))
+      .and_then(|n| n.checked_mul(size_of::<F::Element>()))
       .ok_or("trace byte count overflow")?;
     Ok(Profile {
       artifact_blake3: blake3::Hash::from_bytes(self.artifact_digest)
@@ -370,11 +408,11 @@ impl Wrapper {
       lookup_cells,
       stage2_accumulator_cells: lookup_cells,
       stage2_accumulator_bytes: lookup_cells
-        .checked_mul(size_of::<Scalar>())
+        .checked_mul(size_of::<F::Element>())
         .ok_or("stage-two byte count overflow")?,
       concrete_lookup_cells,
       concrete_lookup_bytes: concrete_lookup_cells
-        .checked_mul(size_of::<Scalar>())
+        .checked_mul(size_of::<F::Element>())
         .ok_or("lookup tuple byte count overflow")?,
       main_fixed_lookup_bytes: bytes,
       quotient_degree,
@@ -387,33 +425,33 @@ impl Wrapper {
 
   pub fn prove(
     &self,
-    execution: &Executed<'_>,
+    execution: &Executed<'_, F>,
     setup: &SetupConfig,
     capacity: Capacity,
-  ) -> Result<Proven, String> {
+  ) -> Result<Proven<F::Curve>, String> {
     self.prove_inner(execution, setup, capacity, None)
   }
 
   /// Reproduce the caller-pinned key before allocating execution traces.
   pub fn prove_with_expected_key(
     &self,
-    execution: &Executed<'_>,
+    execution: &Executed<'_, F>,
     setup: &SetupConfig,
     capacity: Capacity,
     expected_key_digest: &[u8; 32],
-  ) -> Result<Proven, String> {
+  ) -> Result<Proven<F::Curve>, String> {
     self.prove_inner(execution, setup, capacity, Some(expected_key_digest))
   }
 
   fn prove_inner(
     &self,
-    execution: &Executed<'_>,
+    execution: &Executed<'_, F>,
     setup: &SetupConfig,
     capacity: Capacity,
     expected_key_digest: Option<&[u8; 32]>,
-  ) -> Result<Proven, String> {
+  ) -> Result<Proven<F::Curve>, String> {
     let profile = self.profile(execution)?;
-    if profile.max_height > capacity.height()?
+    if profile.max_height > capacity.height_for::<F::Curve>()?
       || profile.quotient_degree > capacity.quotient_degree
       || u64::try_from(profile.total_rows)
         .map_err(|_error| "row count overflow")?
@@ -422,7 +460,7 @@ impl Wrapper {
       return Err("CompressGL trace exceeds the admitted capacity".into());
     }
     let started = Instant::now();
-    let config = capacity.config(setup, profile.max_height)?;
+    let config = capacity.config_for::<F::Curve>(setup, profile.max_height)?;
     let backend = Backend::new(&self.plan, config)?;
     let portable = backend.verifying_key()?;
     let key = portable.to_bytes()?;
@@ -443,8 +481,11 @@ impl Wrapper {
     backend.verify(ENTRY, &execution.args, &[], &proof)?;
     let proof = portable.encode_proof(&proof)?;
     let claim = self.claim(execution.input.statement())?;
-    VerifyingKey::from_bytes(&key, blake3::hash(&key).as_bytes())?
-      .verify_bytes(&claim, &proof)?;
+    VerifyingKey::<F::Curve>::from_bytes_for(
+      &key,
+      blake3::hash(&key).as_bytes(),
+    )?
+    .verify_bytes(&claim, &proof)?;
     Ok(Proven {
       key,
       proof,
@@ -567,8 +608,9 @@ fn hex(digest: &[u8; 32]) -> String {
   blake3::Hash::from_bytes(*digest).to_hex().to_string()
 }
 
-fn arguments(statement: &Statement) -> Vec<Scalar> {
-  statement.arguments().into_iter().map(|word| Bn254.from_u64(word)).collect()
+fn arguments<F: AiurField>(statement: &Statement) -> Vec<F::Element> {
+  let field = F::default();
+  statement.arguments().into_iter().map(|word| field.from_u64(word)).collect()
 }
 
 fn add_cells(

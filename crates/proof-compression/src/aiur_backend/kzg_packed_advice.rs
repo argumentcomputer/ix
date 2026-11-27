@@ -9,9 +9,10 @@
 //! shape against the key and the proof's heights. Channels and digests are
 //! those of [`super::kzg_advice::Inputs`].
 
+use super::{AiurCurve, kzg_advice};
 use crate::kzg::{
-  Scalar, TranscriptKind,
-  curve::G1Affine,
+  CurveScalar, KzgCurve, TranscriptKind,
+  curve::{Bn254 as Bn254Curve, G1AffineOf},
   packed_shplonk::{Commitment, PackedShplonkConfig},
 };
 use ark_serialize::CanonicalSerialize;
@@ -21,38 +22,48 @@ use multi_stark::{
   graph::Node,
   system::System,
 };
+use std::marker::PhantomData;
 
 pub const KEY_MAGIC: &[u8; 8] = b"IXAUSK02";
 pub const PROOF_MAGIC: &[u8; 8] = b"IXAUSP01";
-pub const MAX_BYTES: usize = super::kzg_advice::MAX_BYTES;
+pub const MAX_BYTES: usize = kzg_advice::MAX_BYTES;
 
-pub type Proof = multi_stark::prover::Proof<PackedShplonkConfig>;
+pub type Proof<C = Bn254Curve> =
+  multi_stark::prover::Proof<PackedShplonkConfig<C>>;
 
-#[derive(Default)]
-struct Writer(Vec<u8>);
+struct Writer<C: KzgCurve> {
+  buf: Vec<u8>,
+  _curve: PhantomData<C>,
+}
 
-impl Writer {
+impl<C: KzgCurve> Writer<C> {
+  fn new(buf: Vec<u8>) -> Self {
+    Self { buf, _curve: PhantomData }
+  }
   fn count(&mut self, value: usize) -> Result<(), String> {
-    self.0.extend(
+    self.buf.extend(
       u32::try_from(value)
         .map_err(|error| format!("packed wire count: {error}"))?
         .to_le_bytes(),
     );
     Ok(())
   }
-  fn scalar(&mut self, value: Scalar) -> Result<(), String> {
-    value.0.serialize_compressed(&mut self.0).map_err(|error| error.to_string())
+  fn scalar(&mut self, value: CurveScalar<C>) -> Result<(), String> {
+    value
+      .0
+      .serialize_compressed(&mut self.buf)
+      .map_err(|error| error.to_string())
   }
-  fn point(&mut self, value: &G1Affine) -> Result<(), String> {
+  fn point(&mut self, value: &G1AffineOf<C>) -> Result<(), String> {
     if !value.is_on_curve() || !value.is_in_correct_subgroup_assuming_on_curve()
     {
       return Err("invalid G1 point in packed wire data".into());
     }
-    value.serialize_compressed(&mut self.0).map_err(|error| error.to_string())
+    value.serialize_compressed(&mut self.buf).map_err(|error| error.to_string())
   }
   fn bytes(&mut self, bytes: &[u8]) -> Result<(), String> {
     self.count(bytes.len())?;
-    self.0.extend_from_slice(bytes);
+    self.buf.extend_from_slice(bytes);
     Ok(())
   }
   fn ids(
@@ -61,21 +72,24 @@ impl Writer {
   ) -> Result<(), String> {
     self.count(values.len())?;
     for value in values {
-      self.0.extend(value.to_le_bytes());
+      self.buf.extend(value.to_le_bytes());
     }
     Ok(())
   }
-  fn scalars(&mut self, values: &[Scalar]) -> Result<(), String> {
+  fn scalars(&mut self, values: &[CurveScalar<C>]) -> Result<(), String> {
     self.count(values.len())?;
     for &value in values {
       self.scalar(value)?;
     }
     Ok(())
   }
-  fn commitment(&mut self, value: &Commitment) -> Result<(), String> {
+  fn commitment(&mut self, value: &Commitment<C>) -> Result<(), String> {
     self.bytes(&value.to_bytes()?)
   }
-  fn openings(&mut self, values: &[Vec<Vec<Scalar>>]) -> Result<(), String> {
+  fn openings(
+    &mut self,
+    values: &[Vec<Vec<CurveScalar<C>>>],
+  ) -> Result<(), String> {
     self.count(values.len())?;
     for matrix in values {
       self.count(matrix.len())?;
@@ -86,19 +100,26 @@ impl Writer {
     Ok(())
   }
   fn finish(self) -> Result<Vec<u8>, String> {
-    if self.0.len() > MAX_BYTES {
+    if self.buf.len() > MAX_BYTES {
       Err("packed wire data exceeds 64 MiB".into())
     } else {
-      Ok(self.0)
+      Ok(self.buf)
     }
   }
+}
+
+/// [`key_bytes_with_copies_for`] with one copy of every circuit.
+pub fn key_bytes_for<C: AiurCurve>(
+  system: &System<PackedShplonkConfig<C>>,
+) -> Result<Vec<u8>, String> {
+  key_bytes_with_copies_for::<C>(system, &vec![1; system.circuits.len()])
 }
 
 /// [`key_bytes_with_copies`] with one copy of every circuit.
 pub fn key_bytes(
   system: &System<PackedShplonkConfig>,
 ) -> Result<Vec<u8>, String> {
-  key_bytes_with_copies(system, &vec![1; system.circuits.len()])
+  key_bytes_for::<Bn254Curve>(system)
 }
 
 /// Seed bytes; trace cap (log) and quotient budget; G1 generator; G2 and
@@ -113,8 +134,8 @@ pub fn key_bytes(
 /// sharded function circuit). The caller builds them from one
 /// `CircuitInputs`; only the first copy is encoded and the verifier repeats
 /// it.
-pub fn key_bytes_with_copies(
-  system: &System<PackedShplonkConfig>,
+pub fn key_bytes_with_copies_for<C: AiurCurve>(
+  system: &System<PackedShplonkConfig<C>>,
   copies: &[usize],
 ) -> Result<Vec<u8>, String> {
   if copies.contains(&0)
@@ -126,24 +147,12 @@ pub fn key_bytes_with_copies(
     return Err("Aiur packed verifier requires BLAKE3".into());
   }
   let parameters = system.config.pcs().parameters();
-  let mut writer = Writer(KEY_MAGIC.to_vec());
+  let mut writer = Writer::<C>::new(KEY_MAGIC.to_vec());
   writer.bytes(system.config.transcript_seed())?;
   writer.count(system.config.max_log_degree())?;
   writer.count(system.config.max_quotient_degree())?;
   writer.point(&parameters.g1[0])?;
-  let mut anchors = vec![];
-  parameters
-    .g2
-    .serialize_compressed(&mut anchors)
-    .map_err(|error| error.to_string())?;
-  parameters
-    .tau_g2
-    .serialize_compressed(&mut anchors)
-    .map_err(|error| error.to_string())?;
-  if anchors.len() != 128 {
-    return Err("unexpected BN254 G2 encoding size".into());
-  }
-  writer.0.extend(anchors);
+  writer.buf.extend(kzg_advice::anchors_for::<C>(parameters)?);
   writer.count(copies.len())?;
   let mut first = 0;
   for &count in copies {
@@ -166,11 +175,11 @@ pub fn key_bytes_with_copies(
     for node in &circuit.graph.nodes {
       match *node {
         Node::Const(value) => {
-          writer.0.push(0);
+          writer.buf.push(0);
           writer.scalar(value)?;
         },
         Node::Var(column) => {
-          writer.0.extend([
+          writer.buf.extend([
             1,
             match column.source {
               Source::Preprocessed => 0,
@@ -179,34 +188,34 @@ pub fn key_bytes_with_copies(
             },
             u8::from(column.offset == RowOffset::Next),
           ]);
-          writer.0.extend(column.index.to_le_bytes());
+          writer.buf.extend(column.index.to_le_bytes());
         },
         Node::Public(index) => {
-          writer.0.push(2);
-          writer.0.extend(index.to_le_bytes());
+          writer.buf.push(2);
+          writer.buf.extend(index.to_le_bytes());
         },
-        Node::IsFirstRow => writer.0.push(3),
-        Node::IsLastRow => writer.0.push(4),
-        Node::IsTransition => writer.0.push(5),
+        Node::IsFirstRow => writer.buf.push(3),
+        Node::IsLastRow => writer.buf.push(4),
+        Node::IsTransition => writer.buf.push(5),
         Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b) => {
-          writer.0.push(match node {
+          writer.buf.push(match node {
             Node::Add(..) => 6,
             Node::Sub(..) => 7,
             _ => 8,
           });
-          writer.0.extend(a.0.to_le_bytes());
-          writer.0.extend(b.0.to_le_bytes());
+          writer.buf.extend(a.0.to_le_bytes());
+          writer.buf.extend(b.0.to_le_bytes());
         },
         Node::Neg(value) => {
-          writer.0.push(9);
-          writer.0.extend(value.0.to_le_bytes());
+          writer.buf.push(9);
+          writer.buf.extend(value.0.to_le_bytes());
         },
       }
     }
     writer.ids(circuit.graph.zeros.iter().map(|id| id.0))?;
     writer.count(circuit.graph.lookups.len())?;
     for lookup in &circuit.graph.lookups {
-      writer.0.extend(lookup.multiplicity.0.to_le_bytes());
+      writer.buf.extend(lookup.multiplicity.0.to_le_bytes());
       writer.ids(lookup.args.iter().map(|id| id.0))?;
     }
   }
@@ -218,9 +227,9 @@ pub fn key_bytes_with_copies(
   let committed = slots.iter().copied().max().unwrap_or(0);
   let shared = committed < slots.iter().filter(|&&slot| slot != 0).count();
   match &system.preprocessed_commit {
-    None => writer.0.push(0),
+    None => writer.buf.push(0),
     Some(commitment) => {
-      writer.0.push(if shared { 2 } else { 1 });
+      writer.buf.push(if shared { 2 } else { 1 });
       writer.commitment(commitment)?;
       if shared {
         writer.count(slots.len())?;
@@ -233,13 +242,22 @@ pub fn key_bytes_with_copies(
   writer.finish()
 }
 
+pub fn key_bytes_with_copies(
+  system: &System<PackedShplonkConfig>,
+  copies: &[usize],
+) -> Result<Vec<u8>, String> {
+  key_bytes_with_copies_for::<Bn254Curve>(system, copies)
+}
+
 /// Activation bytes, log-degree bytes, main/stage-2/quotient commitment
 /// blobs, accumulators, main/stage-2/quotient openings, optional fixed
 /// openings, extra pack evaluations, then `[W₁]` and `[W₂]`.
-pub fn proof_bytes(proof: &Proof) -> Result<Vec<u8>, String> {
-  let mut writer = Writer(PROOF_MAGIC.to_vec());
+pub fn proof_bytes_for<C: AiurCurve>(
+  proof: &Proof<C>,
+) -> Result<Vec<u8>, String> {
+  let mut writer = Writer::<C>::new(PROOF_MAGIC.to_vec());
   writer.count(proof.active.len())?;
-  writer.0.extend(proof.active.iter().copied().map(u8::from));
+  writer.buf.extend(proof.active.iter().copied().map(u8::from));
   writer.bytes(&proof.log_degrees)?;
   for commitment in [
     &proof.commitments.stage_1_trace,
@@ -256,7 +274,7 @@ pub fn proof_bytes(proof: &Proof) -> Result<Vec<u8>, String> {
   ] {
     writer.openings(openings)?;
   }
-  writer.0.push(u8::from(proof.preprocessed_opened_values.is_some()));
+  writer.buf.push(u8::from(proof.preprocessed_opened_values.is_some()));
   if let Some(openings) = &proof.preprocessed_opened_values {
     writer.openings(openings)?;
   }
@@ -264,4 +282,8 @@ pub fn proof_bytes(proof: &Proof) -> Result<Vec<u8>, String> {
   writer.point(&proof.opening_proof.opening.w1)?;
   writer.point(&proof.opening_proof.opening.w2)?;
   writer.finish()
+}
+
+pub fn proof_bytes(proof: &Proof) -> Result<Vec<u8>, String> {
+  proof_bytes_for::<Bn254Curve>(proof)
 }

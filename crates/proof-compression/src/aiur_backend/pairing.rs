@@ -3,12 +3,16 @@
 
 pub mod final_program;
 
-use super::{Bn254, fq};
-use crate::kzg::Scalar;
+use super::{AiurCurve, Bn254, fq};
+use crate::kzg::{
+  CurveScalar, KzgCurve, Scalar, VerifierParams,
+  curve::{Bls12381, Bn254 as Bn254Curve, G1AffineOf, G2AffineOf},
+};
 use aiur::field::FieldBackend;
 use ark_bn254::{Config, Fq2, Fq6, Fq12, G2Affine};
 use ark_ec::{
   AffineRepr,
+  bls12::{Bls12Config, G2Prepared as Bls12G2Prepared},
   bn::{BnConfig, G2Prepared},
 };
 
@@ -147,13 +151,185 @@ pub fn evaluate_fixed_lines(
 }
 
 /// Copy the anchors from independently authenticated KZG verifier parameters.
-pub fn verifier_anchors(
-  parameters: &crate::kzg::VerifierParams,
-) -> ([ark_bn254::G1Affine; 2], [G2Affine; 2]) {
+pub fn verifier_anchors_for<C: KzgCurve>(
+  parameters: &VerifierParams<C>,
+) -> ([G1AffineOf<C>; 2], [G2AffineOf<C>; 2]) {
   (parameters.g1, [parameters.g2, parameters.tau_g2])
 }
 
-fn scalar_integer(value: &num_bigint::BigUint) -> Result<Scalar, String> {
+/// Copy the anchors from independently authenticated BN254 KZG verifier parameters.
+pub fn verifier_anchors(
+  parameters: &VerifierParams,
+) -> ([ark_bn254::G1Affine; 2], [G2Affine; 2]) {
+  verifier_anchors_for::<Bn254Curve>(parameters)
+}
+
+pub fn encode_fp2_bls(
+  value: ark_bls12_381::Fq2,
+) -> [CurveScalar<Bls12381>; 10] {
+  let a = fq::encode_for::<Bls12381>(value.c0);
+  let b = fq::encode_for::<Bls12381>(value.c1);
+  std::array::from_fn(|i| if i < 5 { a[i] } else { b[i - 5] })
+}
+
+pub fn decode_fp2_bls(
+  value: &[CurveScalar<Bls12381>],
+) -> Result<ark_bls12_381::Fq2, String> {
+  if value.len() != 10 {
+    return Err("BLS12-381 Fp2 needs ten scalar limbs".into());
+  }
+  Ok(ark_bls12_381::Fq2::new(
+    fq::decode_for::<Bls12381>(&value[..5])?,
+    fq::decode_for::<Bls12381>(&value[5..])?,
+  ))
+}
+
+pub fn encode_fp6_bls(
+  value: ark_bls12_381::Fq6,
+) -> [CurveScalar<Bls12381>; 30] {
+  let values = [
+    encode_fp2_bls(value.c0),
+    encode_fp2_bls(value.c1),
+    encode_fp2_bls(value.c2),
+  ];
+  std::array::from_fn(|i| values[i / 10][i % 10])
+}
+
+pub fn decode_fp6_bls(
+  value: &[CurveScalar<Bls12381>],
+) -> Result<ark_bls12_381::Fq6, String> {
+  if value.len() != 30 {
+    return Err("BLS12-381 Fp6 needs 30 scalar limbs".into());
+  }
+  Ok(ark_bls12_381::Fq6::new(
+    decode_fp2_bls(&value[..10])?,
+    decode_fp2_bls(&value[10..20])?,
+    decode_fp2_bls(&value[20..])?,
+  ))
+}
+
+pub fn encode_fp12_bls(
+  value: ark_bls12_381::Fq12,
+) -> [CurveScalar<Bls12381>; 60] {
+  let values = [encode_fp6_bls(value.c0), encode_fp6_bls(value.c1)];
+  std::array::from_fn(|i| values[i / 30][i % 30])
+}
+
+pub fn decode_fp12_bls(
+  value: &[CurveScalar<Bls12381>],
+) -> Result<ark_bls12_381::Fq12, String> {
+  if value.len() != 60 {
+    return Err("BLS12-381 Fp12 needs 60 scalar limbs".into());
+  }
+  Ok(ark_bls12_381::Fq12::new(
+    decode_fp6_bls(&value[..30])?,
+    decode_fp6_bls(&value[30..])?,
+  ))
+}
+
+/// Prepared BLS12-381 G2 Miller-loop lines for two trusted anchors:
+/// `[square, active0, active1, line0(30 limbs), line1(30 limbs)]`.
+pub fn fixed_lines_bls12_381(
+  anchors: [ark_bls12_381::G2Affine; 2],
+) -> Result<Vec<[CurveScalar<Bls12381>; 63]>, String> {
+  use ark_ff::BitIteratorBE;
+  for point in &anchors {
+    if point.is_zero()
+      || !point.is_on_curve()
+      || !point.is_in_correct_subgroup_assuming_on_curve()
+    {
+      return Err(
+        "fixed pairing anchor must be a nonzero BLS12-381 G2 subgroup point"
+          .into(),
+      );
+    }
+  }
+  let prepared = anchors.map(Bls12G2Prepared::<ark_bls12_381::Config>::from);
+  let mut squares = vec![];
+  for (index, bit) in
+    BitIteratorBE::without_leading_zeros(ark_bls12_381::Config::X)
+      .skip(1)
+      .enumerate()
+  {
+    squares.push(index != 0);
+    if bit {
+      squares.push(false);
+    }
+  }
+  for point in &prepared {
+    if !point.infinity && point.ell_coeffs.len() != squares.len() {
+      return Err("prepared BLS12-381 G2 line schedule differs".into());
+    }
+  }
+  Ok(
+    squares
+      .into_iter()
+      .enumerate()
+      .map(|(index, square)| {
+        let mut row = [Bls12381::FIELD.zero(); 63];
+        row[0] = Bls12381::FIELD.from_u64(u64::from(square));
+        for (operand, point) in prepared.iter().enumerate() {
+          row[1 + operand] =
+            Bls12381::FIELD.from_u64(u64::from(!point.infinity));
+          if !point.infinity {
+            let line = &point.ell_coeffs[index];
+            for (component, value) in
+              [line.0, line.1, line.2].into_iter().enumerate()
+            {
+              let start = 3 + operand * 30 + component * 10;
+              row[start..start + 10].copy_from_slice(&encode_fp2_bls(value));
+            }
+          }
+        }
+        row
+      })
+      .collect(),
+  )
+}
+
+/// Evaluate prepared BLS12-381 Miller lines natively for fixture validation.
+pub fn evaluate_fixed_lines_bls12_381(
+  rows: &[[CurveScalar<Bls12381>; 63]],
+  points: [ark_bls12_381::G1Affine; 2],
+) -> Result<ark_bls12_381::Fq12, String> {
+  use ark_ff::{CyclotomicMultSubgroup, Field, One};
+  let mut accumulator = ark_bls12_381::Fq12::one();
+  for row in rows {
+    match Bls12381::FIELD.try_to_u64(row[0])? {
+      0 => {},
+      1 => {
+        accumulator.square_in_place();
+      },
+      _ => return Err("nonboolean Miller square flag".into()),
+    }
+    for (operand, point) in points.iter().enumerate() {
+      match Bls12381::FIELD.try_to_u64(row[1 + operand])? {
+        0 => continue,
+        1 => {},
+        _ => return Err("nonboolean G2 activation flag".into()),
+      }
+      if point.is_zero() {
+        continue;
+      }
+      let start = 3 + operand * 30;
+      let c0 = decode_fp2_bls(&row[start..start + 10])?;
+      let mut c1 = decode_fp2_bls(&row[start + 10..start + 20])?;
+      let mut c2 = decode_fp2_bls(&row[start + 20..start + 30])?;
+      // BLS12-381 uses TwistType::M: c2 * y, c1 * x, mul_by_014(c0, c1, c2).
+      c2.mul_assign_by_fp(&point.y);
+      c1.mul_assign_by_fp(&point.x);
+      accumulator.mul_by_014(&c0, &c1, &c2);
+    }
+  }
+  if ark_bls12_381::Config::X_IS_NEGATIVE {
+    accumulator.cyclotomic_inverse_in_place();
+  }
+  Ok(accumulator)
+}
+
+fn scalar_integer_for<C: AiurCurve>(
+  value: &num_bigint::BigUint,
+) -> Result<CurveScalar<C>, String> {
   let words = value.to_u64_digits();
   if words.len() > 4 {
     return Err("pairing arithmetic advice exceeds scalar width".into());
@@ -161,33 +337,46 @@ fn scalar_integer(value: &num_bigint::BigUint) -> Result<Scalar, String> {
   let mut limbs = [0; 4];
   limbs[..words.len()].copy_from_slice(&words);
   let word = aiur::FieldWord::from_limbs_le(limbs);
-  if !Bn254.contains(word) {
+  if !C::FIELD.contains(word) {
     return Err("pairing arithmetic advice exceeds Fr".into());
   }
-  Ok(Bn254.from_word(word))
+  Ok(C::FIELD.from_word(word))
 }
 
-fn radix_limbs(value: &num_bigint::BigUint) -> [num_bigint::BigUint; 4] {
+fn radix_limbs_n(
+  value: &num_bigint::BigUint,
+  n: usize,
+) -> Vec<num_bigint::BigUint> {
   let mask = (num_bigint::BigUint::from(1u8) << fq::LIMB_BITS) - 1u8;
-  std::array::from_fn(|index| (value >> (fq::LIMB_BITS * index)) & &mask)
+  (0..n).map(|index| (value >> (fq::LIMB_BITS * index)) & &mask).collect()
 }
 
-/// Candidate arithmetic advice; every quotient and biased carry is checked
-/// by BN254FqProducts. No extension-field or pairing result is trusted.
-pub fn advice(channel: &str, input: &[Scalar]) -> Result<Vec<Scalar>, String> {
+fn pairing_channel_prefix<C: AiurCurve>() -> &'static str {
+  if C::FQ_U80_LIMBS == 4 { "bn254.pairing" } else { "bls12_381.pairing" }
+}
+
+/// Candidate arithmetic advice for curve `C`; every quotient and biased carry
+/// is checked by the constrained Fq product library.
+pub fn advice_for<C: AiurCurve>(
+  channel: &str,
+  input: &[CurveScalar<C>],
+) -> Result<Vec<CurveScalar<C>>, String> {
   use crate::recursive::native_field::{integer, modulus};
   use ark_ff::{BigInteger, PrimeField};
   use num_bigint::{BigInt, BigUint};
-  if channel == "bn254.pairing.bytes86" || channel == "bn254.pairing.u16_86" {
+  let prefix = pairing_channel_prefix::<C>();
+  let bytes86 = format!("{prefix}.bytes86");
+  let u16_86 = format!("{prefix}.u16_86");
+  if channel == bytes86 || channel == u16_86 {
     let [value] = input else {
       return Err("86-bit advice requires one field".into());
     };
-    let value = integer(*value);
+    let value = integer::<C>(*value);
     if value.bits() > 86 {
       return Err("pairing carry exceeds 86 bits".into());
     }
     let mut bytes = value.to_bytes_le();
-    if channel == "bn254.pairing.u16_86" {
+    if channel == u16_86 {
       bytes.resize(12, 0);
       return Ok(
         bytes
@@ -195,32 +384,38 @@ pub fn advice(channel: &str, input: &[Scalar]) -> Result<Vec<Scalar>, String> {
           .0
           .iter()
           .map(|pair| {
-            Bn254.from_u64(u64::from(u16::from_le_bytes([pair[0], pair[1]])))
+            C::FIELD.from_u64(u64::from(u16::from_le_bytes([pair[0], pair[1]])))
           })
           .collect(),
       );
     }
     bytes.resize(11, 0);
     return Ok(
-      bytes.into_iter().map(|byte| Bn254.from_u64(u64::from(byte))).collect(),
+      bytes
+        .into_iter()
+        .map(|byte| C::FIELD.from_u64(u64::from(byte)))
+        .collect(),
     );
   }
-  let paired = channel == "bn254.pairing.fq_products_pairs";
-  if (channel != "bn254.pairing.fq_products" && !paired) || input.len() != 17 {
+  let n = C::FQ_U80_LIMBS;
+  let full_name = format!("{prefix}.fq_products");
+  let pairs_name = format!("{prefix}.fq_products_pairs");
+  let paired = channel == pairs_name;
+  if (channel != full_name && !paired) || input.len() != 4 * n + 1 {
     return Err("unknown pairing advice or invalid input width".into());
   }
-  let mut operands = vec![];
-  for values in input[..16].as_chunks::<4>().0 {
+  let mut operands = Vec::with_capacity(4);
+  for values in input[..4 * n].chunks_exact(n) {
     operands.push(BigUint::from_bytes_le(
-      &fq::decode(values)?.into_bigint().to_bytes_le(),
+      &fq::decode_for::<C>(values)?.into_bigint().to_bytes_le(),
     ));
   }
-  let subtract = match Bn254.try_to_u64(input[16])? {
+  let subtract = match C::FIELD.try_to_u64(input[4 * n])? {
     0 => false,
     1 => true,
     _ => return Err("nonboolean product sign".into()),
   };
-  let p = modulus::<crate::kzg::curve::Bn254>();
+  let p = modulus::<C>();
   let first = &operands[0] * &operands[1] + &p * &p;
   let second = &operands[2] * &operands[3];
   let numerator = if subtract { first - second } else { first + second };
@@ -229,16 +424,21 @@ pub fn advice(channel: &str, input: &[Scalar]) -> Result<Vec<Scalar>, String> {
   if quotient >= 3u8 * &p {
     return Err("two-product quotient exceeds honest bound".into());
   }
-  let raw = radix_limbs(&remainder);
-  let q = radix_limbs(&quotient);
-  let mut output =
-    raw.iter().chain(&q).map(scalar_integer).collect::<Result<Vec<_>, _>>()?;
-  let operands: Vec<_> = operands.iter().map(radix_limbs).collect();
-  let p = radix_limbs(&p);
+  let raw = radix_limbs_n(&remainder, n);
+  let q = radix_limbs_n(&quotient, n);
+  let mut output = raw
+    .iter()
+    .chain(&q)
+    .map(scalar_integer_for::<C>)
+    .collect::<Result<Vec<_>, _>>()?;
+  let operands: Vec<_> =
+    operands.iter().map(|op| radix_limbs_n(op, n)).collect();
+  let p = radix_limbs_n(&p, n);
   let sign = if subtract { BigInt::from(-1) } else { BigInt::from(1) };
-  let mut coefficients = vec![BigInt::from(0); 8];
-  for i in 0..4 {
-    for j in 0..4 {
+  let coeff_count = 2 * n;
+  let mut coefficients = vec![BigInt::from(0); coeff_count];
+  for i in 0..n {
+    for j in 0..n {
       coefficients[i + j] += BigInt::from(&operands[0][i] * &operands[1][j])
         + &sign * BigInt::from(&operands[2][i] * &operands[3][j])
         + BigInt::from(&p[i] * &p[j])
@@ -256,7 +456,7 @@ pub fn advice(channel: &str, input: &[Scalar]) -> Result<Vec<Scalar>, String> {
       return Err("nonintegral product carry".into());
     }
     carry = sum / &radix;
-    if index == 7 {
+    if index + 1 == coeff_count {
       if carry != BigInt::from(0) {
         return Err("nonzero product carry endpoint".into());
       }
@@ -266,43 +466,55 @@ pub fn advice(channel: &str, input: &[Scalar]) -> Result<Vec<Scalar>, String> {
       if encoded >= limit {
         return Err("product carry exceeds 86 bits".into());
       }
-      output.push(scalar_integer(&encoded)?);
+      output.push(scalar_integer_for::<C>(&encoded)?);
     }
   }
   if paired {
-    let retained = [output[9], output[11], output[13]];
-    output.truncate(8);
+    let retained: Vec<_> =
+      (0..n - 1).map(|k| output[2 * n + 1 + 2 * k]).collect();
+    output.truncate(2 * n);
     output.extend(retained);
   }
   Ok(output)
 }
 
-/// Register the two-product arithmetic channels in addition to `fq::register`.
-pub fn register(
-  channels: &mut aiur::hints::HintChannels<Scalar>,
+/// Candidate arithmetic advice; every quotient and biased carry is checked
+/// by BN254FqProducts. No extension-field or pairing result is trusted.
+pub fn advice(channel: &str, input: &[Scalar]) -> Result<Vec<Scalar>, String> {
+  advice_for::<Bn254Curve>(channel, input)
+}
+
+/// Register the two-product arithmetic channels for curve `C` in addition to
+/// `fq::register_for::<C>`.
+pub fn register_for<C: AiurCurve>(
+  channels: &mut aiur::hints::HintChannels<CurveScalar<C>>,
 ) -> Result<(), String> {
   use aiur::bytecode::Type;
+  let n = C::FQ_U80_LIMBS;
+  let prefix = pairing_channel_prefix::<C>();
   let fields = |length| Type::Tuple { items: vec![Type::Field; length] };
-  for (name, input, output) in [
-    ("bn254.pairing.bytes86", Type::Field, fields(11)),
-    ("bn254.pairing.u16_86", Type::Field, fields(6)),
+  let defs: [(String, Type, Type); 4] = [
+    (format!("{prefix}.bytes86"), Type::Field, fields(11)),
+    (format!("{prefix}.u16_86"), Type::Field, fields(6)),
     (
-      "bn254.pairing.fq_products",
+      format!("{prefix}.fq_products"),
       Type::Tuple {
-        items: vec![fields(4), fields(4), fields(4), fields(4), Type::Field],
+        items: vec![fields(n), fields(n), fields(n), fields(n), Type::Field],
       },
-      Type::Tuple { items: vec![fields(4), fields(4), fields(7)] },
+      Type::Tuple { items: vec![fields(n), fields(n), fields(2 * n - 1)] },
     ),
     (
-      "bn254.pairing.fq_products_pairs",
+      format!("{prefix}.fq_products_pairs"),
       Type::Tuple {
-        items: vec![fields(4), fields(4), fields(4), fields(4), Type::Field],
+        items: vec![fields(n), fields(n), fields(n), fields(n), Type::Field],
       },
-      Type::Tuple { items: vec![fields(4), fields(4), fields(3)] },
+      Type::Tuple { items: vec![fields(n), fields(n), fields(n - 1)] },
     ),
-  ] {
-    channels.insert(name, input, output, move |input, output| {
-      let values = advice(name, input)?;
+  ];
+  for (name, input, output) in defs {
+    let channel_name = name.clone();
+    channels.insert(&name, input, output, move |input, output| {
+      let values = advice_for::<C>(&channel_name, input)?;
       if values.len() != output.len() {
         return Err("pairing advice output width mismatch".into());
       }
@@ -311,4 +523,11 @@ pub fn register(
     })?;
   }
   Ok(())
+}
+
+/// Register the two-product arithmetic channels in addition to `fq::register`.
+pub fn register(
+  channels: &mut aiur::hints::HintChannels<Scalar>,
+) -> Result<(), String> {
+  register_for::<Bn254Curve>(channels)
 }

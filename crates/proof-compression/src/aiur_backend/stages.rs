@@ -28,7 +28,7 @@
 //! - `kzg-verifier`: the fixed-key narrow stage, which verifies CompressGL's
 //!   KZG proof;
 //! - `plonk`: the terminal KZG verifier, proved with native Rust (+ Ix-CUDA)
-//!   or legacy gnark PLONK.
+//!   PLONK.
 //!
 //! Each stage writes into a directory named after it, with `span` and a
 //! GNU-time-style `time.txt` as in `run.sh`'s run directory, and
@@ -119,6 +119,7 @@ impl Manifest {
     let base =
       value["base"].as_str().map_or_else(|| base.to_path_buf(), PathBuf::from);
     let manifest = Self { pin: digest, base, value };
+    manifest.curve()?;
     let names: Vec<_> =
       manifest.stages()?.iter().map(|s| s.name.clone()).collect();
     for stage in manifest.stages()? {
@@ -132,6 +133,18 @@ impl Manifest {
       }
     }
     Ok(manifest)
+  }
+
+  pub fn curve(&self) -> Result<crate::kzg::Curve, Error> {
+    match self.value.get("curve") {
+      None | Some(Value::Null) => Ok(crate::kzg::Curve::Bn254),
+      Some(Value::String(name)) => match name.as_str() {
+        "bn254" => Ok(crate::kzg::Curve::Bn254),
+        "bls12-381" => Ok(crate::kzg::Curve::Bls12381),
+        other => Err(format!("unknown stages manifest curve {other:?}")),
+      },
+      Some(_) => Err("stages manifest curve must be a string".into()),
+    }
   }
 
   pub fn path(&self, value: &Value) -> Result<PathBuf, Error> {
@@ -428,6 +441,17 @@ pub struct Options {
   pub gpu_lock: bool,
 }
 
+/// Terminal PLONK verifier metadata captured during the `plonk` stage for
+/// emitting and self-checking the canonical L3 proof envelope and bundle.
+#[derive(Clone, Debug)]
+pub struct TerminalMeta {
+  pub curve: crate::kzg::Curve,
+  pub vk_path: PathBuf,
+  pub vk_sha256: [u8; 32],
+  pub setup: crate::pipeline::SetupClass,
+  pub anchors: Vec<u8>,
+}
+
 pub struct Stages {
   pub manifest: Manifest,
   pub exports: exports::Exports,
@@ -438,6 +462,8 @@ pub struct Stages {
   pub root_bytes: [Vec<u8>; 3],
   pub out: PathBuf,
   pub checks: Checks,
+  pub wrap_policy: Mutex<Option<super::compress_gl::WrapPolicy>>,
+  pub terminal_meta: Mutex<Option<TerminalMeta>>,
 }
 
 /// The checks of `run.sh`'s `checks.json`, from the stages' reports.
@@ -475,9 +501,11 @@ impl Stages {
       &root_bytes[1],
       &root_bytes[2],
     )?;
-    for (name, expected) in
-      [("IX_KZG_SRS", "kzg_srs"), ("IX_PARAMS_DIR", "params_dir")]
-    {
+    for (name, expected) in [
+      ("IX_KZG_SRS", "kzg_srs"),
+      ("IX_KZG_FILECOIN_CACHE", "filecoin_cache"),
+      ("IX_PARAMS_DIR", "params_dir"),
+    ] {
       if let Some(value) = manifest.value["env"][expected].as_str() {
         let wanted = manifest.base.join(value);
         let actual = std::env::var_os(name).map(PathBuf::from);
@@ -499,6 +527,8 @@ impl Stages {
       root_bytes,
       out: options.out.clone(),
       checks: Checks::default(),
+      wrap_policy: Mutex::new(None),
+      terminal_meta: Mutex::new(None),
     })
   }
 
@@ -641,8 +671,26 @@ impl Stages {
     let end = unix_now();
     fs::write(self.out.join("end"), format!("{end}\n"))
       .map_err(io(&self.out))?;
-    let errors =
+    let mut errors =
       errors.into_inner().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let last_handoff =
+      last.into_inner().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut l3_summary: Option<Value> = None;
+    if errors.is_empty()
+      && stages.last().is_some_and(|s| s.kind == "plonk")
+      && let Some(handoff) = &last_handoff
+    {
+      match self.finalize_l3_artifacts(handoff) {
+        Ok(meta) => {
+          self.checks.set("l3_envelope_verified", true);
+          l3_summary = Some(meta);
+        },
+        Err(error) => {
+          self.checks.set("l3_envelope_verified", false);
+          errors.push(("l3-envelope".into(), error));
+        },
+      }
+    }
     let checks = self
       .checks
       .0
@@ -667,6 +715,9 @@ impl Stages {
       "stages": reports.into_inner().unwrap_or_else(std::sync::PoisonError::into_inner),
       "checks": checks,
     });
+    if let Some(l3) = l3_summary {
+      summary["l3"] = l3;
+    }
     let failed: Vec<_> =
       checks.iter().filter(|(_, ok)| !**ok).map(|(k, _)| k.clone()).collect();
     if errors.is_empty() && !failed.is_empty() {
@@ -688,11 +739,92 @@ impl Stages {
     if !failed.is_empty() {
       return Err(format!("checks failed: {}", failed.join(", ")));
     }
-    let last = last
-      .into_inner()
-      .unwrap_or_else(std::sync::PoisonError::into_inner)
-      .ok_or("the manifest has no stages")?;
+    let last = last_handoff.ok_or("the manifest has no stages")?;
     Ok((last, summary))
+  }
+
+  /// Emit the canonical `IXL3BN1\0` / `IXL3BL1\0` proof envelope (`l3-proof.bin`),
+  /// self-verify it through `l3_verifier::verify_l3_proof_from_root_claims`, and
+  /// write an `ix-l3-verifier-v1` bundle (`l3-verifier.json`) when the root
+  /// claims follow the 18-word `ix_aggr` statement layout.
+  fn finalize_l3_artifacts(&self, handoff: &Handoff) -> Result<Value, Error> {
+    use super::l3_verifier::{
+      L3ProofEnvelope, L3VerifierBundle, L3VerifierPins,
+      verify_l3_proof_from_root_claims,
+    };
+    let meta = self
+      .terminal_meta
+      .lock()
+      .unwrap_or_else(std::sync::PoisonError::into_inner)
+      .clone()
+      .ok_or("terminal PLONK stage recorded no verifying key metadata")?;
+    let curve = meta.curve;
+    let wrap_policy = self
+      .wrap_policy
+      .lock()
+      .unwrap_or_else(std::sync::PoisonError::into_inner)
+      .clone()
+      .ok_or("CompressGL stage recorded no WrapPolicy")?;
+
+    let envelope = L3ProofEnvelope {
+      curve,
+      terminal_vk_sha256: meta.vk_sha256,
+      proof: handoff.proof.clone(),
+    };
+    let envelope_bytes = envelope.encode()?;
+    let envelope_path = self.out.join("l3-proof.bin");
+    fs::write(&envelope_path, &envelope_bytes).map_err(io(&envelope_path))?;
+
+    let root_prefix = parse_aggr_root_prefix(&self.root_bytes[1]);
+    let pins = L3VerifierPins {
+      curve,
+      setup: meta.setup,
+      root_vk_blake3: self.root.statement().key_digest,
+      root_statement_prefix: root_prefix.unwrap_or([0u64; 10]),
+      wrap_policy,
+      terminal_vk_sha256: meta.vk_sha256,
+      terminal_vk: handoff.key.clone(),
+      anchors: meta.anchors,
+    };
+    let allow_dev = meta.setup == crate::pipeline::SetupClass::Development;
+    let derived_stmt =
+      pins.derive_statement_from_root_claims(&self.root_bytes[1])?;
+    if handoff.statement != Some(derived_stmt) {
+      return Err(
+        "terminal PLONK statement differs from two-layer WrapPolicy derivation"
+          .into(),
+      );
+    }
+    verify_l3_proof_from_root_claims(
+      &self.root_bytes[1],
+      &envelope_bytes,
+      &pins,
+      allow_dev,
+    )?;
+
+    let mut out_json = json!({
+      "curve": curve.as_str(),
+      "setup": meta.setup.label(),
+      "envelope_path": envelope_path,
+      "envelope_blake3": blake3::hash(&envelope_bytes).to_hex().to_string(),
+      "terminal_vk_sha256": hex(&meta.vk_sha256),
+      "statement": hex(&derived_stmt),
+    });
+    if root_prefix.is_some() {
+      let abs_vk =
+        std::path::absolute(&meta.vk_path).map_err(|e| e.to_string())?;
+      let bundle = pins.to_bundle(Some(abs_vk));
+      let bundle_bytes =
+        serde_json::to_vec_pretty(&bundle).map_err(|e| e.to_string())?;
+      let bundle_path = self.out.join("l3-verifier.json");
+      fs::write(&bundle_path, &bundle_bytes).map_err(io(&bundle_path))?;
+      let bundle_pin = blake3::hash(&bundle_bytes).to_hex().to_string();
+      // Sanity-check that the written bundle reloads under its exact BLAKE3 pin.
+      let _ = L3VerifierBundle::from_pinned_file(&bundle_path, &bundle_pin)?;
+      out_json["verifier_bundle_path"] = json!(bundle_path);
+      out_json["verifier_bundle_blake3"] = json!(bundle_pin);
+    }
+    Ok(out_json)
   }
 
   fn exports_close(&self) {
@@ -713,4 +845,26 @@ impl Stages {
       other => Err(format!("unknown or unavailable stage kind {other:?}")),
     }
   }
+}
+
+/// Extract the 10-word `ix_aggr` statement prefix from canonical 160-byte
+/// `root-claims.bin` (`[u64le(1), u64le(18), prefix[0..10], digest[0..8]]`).
+fn parse_aggr_root_prefix(root_claims_bytes: &[u8]) -> Option<[u64; 10]> {
+  use multi_stark::{p3_field::PrimeField64, types::Val};
+  let (words, rest) = root_claims_bytes.as_chunks::<8>();
+  if !rest.is_empty() || words.len() != 20 {
+    return None;
+  }
+  if u64::from_le_bytes(words[0]) != 1 || u64::from_le_bytes(words[1]) != 18 {
+    return None;
+  }
+  let mut prefix = [0u64; 10];
+  for (slot, chunk) in prefix.iter_mut().zip(&words[2..12]) {
+    let w = u64::from_le_bytes(*chunk);
+    if w >= Val::ORDER_U64 {
+      return None;
+    }
+    *slot = w;
+  }
+  Some(prefix)
 }

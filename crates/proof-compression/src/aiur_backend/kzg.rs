@@ -5,8 +5,8 @@
 //! the public call to those compiler circuits using the existing KZG protocol.
 //! This host adapter is outside the Lean compiler's proof boundary.
 
-use super::Bn254;
-use crate::kzg::{KzgConfig, Scalar};
+use super::{AiurCurve, AiurField, Bn254};
+use crate::kzg::{CurveScalar, KzgConfig, KzgCurve};
 use aiur::{
   Execution, FieldWord,
   trace::{Placement, Trace, TracePlan},
@@ -24,51 +24,53 @@ mod witness;
 
 pub use verifier::VerifyingKey;
 
-pub type Proof = multi_stark::prover::Proof<KzgConfig>;
+pub type Proof<C = crate::kzg::Bn254> =
+  multi_stark::prover::Proof<KzgConfig<C>>;
 
 /// Conservative row cap shared by the Aiur adapters. The compiler's depth
-/// gaps are below `2^24`; `2^39 * 2^24` is below the BN254 scalar modulus,
-/// so a memo cycle cannot wrap its strictly decreasing depth around the field.
+/// gaps are below `2^24`; `2^39 * 2^24` is below both the BN254 and BLS12-381
+/// scalar moduli, so a memo cycle cannot wrap its strictly decreasing depth
+/// around the field.
 pub const MAX_TOTAL_ROWS: u64 = 1 << 39;
 
 /// Lower every compiler group, singleton chip, fixed map and ROM width to
 /// the KZG circuit interface. Fixed columns come from the checked program.
-pub fn circuit_inputs(
-  plan: &TracePlan<'_, Bn254>,
-) -> Result<Vec<CircuitInputs<Scalar>>, String> {
+pub fn circuit_inputs<F: AiurField>(
+  plan: &TracePlan<'_, F>,
+) -> Result<Vec<CircuitInputs<CurveScalar<F::Curve>>>, String> {
   Ok(circuits::build(plan)?.inputs)
 }
 
 /// [`circuit_inputs`] under an explicit lookup quotient-degree budget instead
 /// of `IX_AIUR_KZG_LOOKUP_QUOTIENT_BUDGET`; `None` keeps every circuit's
 /// quotient degree at its group-size-one value.
-pub fn circuit_inputs_with_budget(
-  plan: &TracePlan<'_, Bn254>,
+pub fn circuit_inputs_with_budget<F: AiurField>(
+  plan: &TracePlan<'_, F>,
   lookup_quotient_budget: Option<usize>,
-) -> Result<Vec<CircuitInputs<Scalar>>, String> {
+) -> Result<Vec<CircuitInputs<CurveScalar<F::Curve>>>, String> {
   Ok(circuits::build_with(plan, lookup_quotient_budget)?.inputs)
 }
 
 /// The lookup group size the compiler lowering selects for `input` under
 /// `lookup_quotient_budget` (see [`circuit_inputs_with_budget`]), for
 /// circuits built outside that lowering.
-pub fn lookup_group_size(
-  input: &CircuitInputs<Scalar>,
+pub fn lookup_group_size<C: KzgCurve>(
+  input: &CircuitInputs<CurveScalar<C>>,
   lookup_quotient_budget: Option<usize>,
 ) -> Result<usize, String> {
   if lookup_quotient_budget.is_some_and(|budget| !budget.is_power_of_two()) {
     return Err("lookup quotient budget must be a power of two".into());
   }
   let graph = input
-    .compile_graph(&extension_params::<KzgConfig>())
+    .compile_graph(&extension_params::<KzgConfig<C>>())
     .map_err(|error| format!("invalid circuit: {error:?}"))?;
   circuits::lookup_group_size(&graph, lookup_quotient_budget)
 }
 
-pub struct Backend<'p, 'a> {
-  plan: &'p TracePlan<'a, Bn254>,
-  system: System<KzgConfig>,
-  key: ProverKey<KzgConfig>,
+pub struct Backend<'p, 'a, F: AiurField = Bn254> {
+  plan: &'p TracePlan<'a, F>,
+  system: System<KzgConfig<F::Curve>>,
+  key: ProverKey<KzgConfig<F::Curve>>,
   names: Vec<String>,
   placements: Vec<Placement<FieldWord>>,
   function_circuits: usize,
@@ -76,15 +78,16 @@ pub struct Backend<'p, 'a> {
   memory_widths: Vec<usize>,
 }
 
-impl<'p, 'a> Backend<'p, 'a> {
+impl<'p, 'a, F: AiurField> Backend<'p, 'a, F> {
   /// The configuration must carry trusted proving powers. Production callers
-  /// authenticate their Ignition prefix before constructing `KzgConfig`.
+  /// authenticate their Ignition or Filecoin prefix before constructing
+  /// `KzgConfig`.
   pub fn new(
-    plan: &'p TracePlan<'a, Bn254>,
-    config: KzgConfig,
+    plan: &'p TracePlan<'a, F>,
+    config: KzgConfig<F::Curve>,
   ) -> Result<Self, String> {
     let lowered = circuits::build(plan)?;
-    let params = extension_params::<KzgConfig>();
+    let params = extension_params::<KzgConfig<F::Curve>>();
     for (input, name) in lowered.inputs.iter().zip(&lowered.names) {
       let graph = input.compile_graph(&params).map_err(|error| {
         format!("{name}: invalid compiler circuit: {error:?}")
@@ -133,7 +136,7 @@ impl<'p, 'a> Backend<'p, 'a> {
     })
   }
 
-  pub fn system(&self) -> &System<KzgConfig> {
+  pub fn system(&self) -> &System<KzgConfig<F::Curve>> {
     &self.system
   }
 
@@ -146,18 +149,18 @@ impl<'p, 'a> Backend<'p, 'a> {
   pub fn claim(
     &self,
     entry: &str,
-    args: &[Scalar],
-    output: &[Scalar],
-  ) -> Result<Vec<Scalar>, String> {
+    args: &[CurveScalar<F::Curve>],
+    output: &[CurveScalar<F::Curve>],
+  ) -> Result<Vec<CurveScalar<F::Curve>>, String> {
     self.plan.public_claim(entry, args, output)
   }
 
   pub fn generate(
     &self,
-    record: &Execution<Bn254>,
+    record: &Execution<F>,
     entry: &str,
-    args: &[Scalar],
-  ) -> Result<SystemWitness<Scalar>, String> {
+    args: &[CurveScalar<F::Curve>],
+  ) -> Result<SystemWitness<CurveScalar<F::Curve>>, String> {
     let (trace, timings) =
       self.plan.generate_profiled(record, entry, args, true, false)?;
     tracing::info!(
@@ -174,20 +177,20 @@ impl<'p, 'a> Backend<'p, 'a> {
   /// consumes this record or trusts these diagnostics.
   pub fn witness(
     &self,
-    record: &Execution<Bn254>,
-    trace: &Trace<Scalar>,
+    record: &Execution<F>,
+    trace: &Trace<CurveScalar<F::Curve>>,
     entry: &str,
-    args: &[Scalar],
-  ) -> Result<SystemWitness<Scalar>, String> {
+    args: &[CurveScalar<F::Curve>],
+  ) -> Result<SystemWitness<CurveScalar<F::Curve>>, String> {
     self.plan.check(record, trace, entry, args)?;
     self.pack(record, trace)
   }
 
   fn pack(
     &self,
-    record: &Execution<Bn254>,
-    trace: &Trace<Scalar>,
-  ) -> Result<SystemWitness<Scalar>, String> {
+    record: &Execution<F>,
+    trace: &Trace<CurveScalar<F::Curve>>,
+  ) -> Result<SystemWitness<CurveScalar<F::Curve>>, String> {
     let started = std::time::Instant::now();
     let widths: Vec<_> = self.system.circuits[..self.function_circuits]
       .iter()
@@ -233,10 +236,10 @@ impl<'p, 'a> Backend<'p, 'a> {
   pub fn prove(
     &self,
     entry: &str,
-    args: &[Scalar],
-    output: &[Scalar],
-    witness: SystemWitness<Scalar>,
-  ) -> Result<Proof, String> {
+    args: &[CurveScalar<F::Curve>],
+    output: &[CurveScalar<F::Curve>],
+    witness: SystemWitness<CurveScalar<F::Curve>>,
+  ) -> Result<Proof<F::Curve>, String> {
     let claim = self.claim(entry, args, output)?;
     let (active, degrees) = self.trace_shape(&witness.traces)?;
     self.check_shape(&active, &degrees)?;
@@ -249,9 +252,9 @@ impl<'p, 'a> Backend<'p, 'a> {
   pub fn verify(
     &self,
     entry: &str,
-    args: &[Scalar],
-    output: &[Scalar],
-    proof: &Proof,
+    args: &[CurveScalar<F::Curve>],
+    output: &[CurveScalar<F::Curve>],
+    proof: &Proof<F::Curve>,
   ) -> Result<(), String> {
     let claim = self.claim(entry, args, output)?;
     self.check_shape(&proof.active, &proof.log_degrees)?;
@@ -268,19 +271,19 @@ impl<'p, 'a> Backend<'p, 'a> {
 
 /// Shared compiler lowering and witness packing, independent of the proof
 /// protocol and its setup. Capacities belong to each consuming backend.
-pub struct Compiler<'p, 'a> {
-  plan: &'p TracePlan<'a, Bn254>,
-  lowered: circuits::Lowered,
+pub struct Compiler<'p, 'a, F: AiurField = Bn254> {
+  plan: &'p TracePlan<'a, F>,
+  lowered: circuits::Lowered<F::Curve>,
   function_widths: Vec<usize>,
 }
 
-impl<'p, 'a> Compiler<'p, 'a> {
-  pub fn new(plan: &'p TracePlan<'a, Bn254>) -> Result<Self, String> {
+impl<'p, 'a, F: AiurField> Compiler<'p, 'a, F> {
+  pub fn new(plan: &'p TracePlan<'a, F>) -> Result<Self, String> {
     Ok(Self::from_lowered(plan, circuits::build(plan)?))
   }
 
   pub fn with_lookup_budget(
-    plan: &'p TracePlan<'a, Bn254>,
+    plan: &'p TracePlan<'a, F>,
     lookup_quotient_budget: Option<usize>,
   ) -> Result<Self, String> {
     Ok(Self::from_lowered(
@@ -290,8 +293,8 @@ impl<'p, 'a> Compiler<'p, 'a> {
   }
 
   fn from_lowered(
-    plan: &'p TracePlan<'a, Bn254>,
-    lowered: circuits::Lowered,
+    plan: &'p TracePlan<'a, F>,
+    lowered: circuits::Lowered<F::Curve>,
   ) -> Self {
     let function_widths = lowered.inputs[..lowered.function_circuits]
       .iter()
@@ -300,7 +303,7 @@ impl<'p, 'a> Compiler<'p, 'a> {
     Self { plan, lowered, function_widths }
   }
 
-  pub fn inputs(&self) -> &[CircuitInputs<Scalar>] {
+  pub fn inputs(&self) -> &[CircuitInputs<CurveScalar<F::Curve>>] {
     &self.lowered.inputs
   }
   pub fn names(&self) -> &[String] {
@@ -323,7 +326,7 @@ impl<'p, 'a> Compiler<'p, 'a> {
   /// it estimates storage for the record and does not validate its arithmetic.
   pub fn row_counts(
     &self,
-    record: &Execution<Bn254>,
+    record: &Execution<F>,
   ) -> Result<Vec<usize>, String> {
     let mut heights = self.raw_row_counts(record)?;
     for height in &mut heights {
@@ -339,7 +342,7 @@ impl<'p, 'a> Compiler<'p, 'a> {
   /// Fixed tables report their full height.
   pub fn raw_row_counts(
     &self,
-    record: &Execution<Bn254>,
+    record: &Execution<F>,
   ) -> Result<Vec<usize>, String> {
     let mut heights = vec![0usize; self.lowered.inputs.len()];
     for (function, &chip) in self.plan.function_chips().iter().enumerate() {
@@ -396,10 +399,13 @@ impl<'p, 'a> Compiler<'p, 'a> {
 
   pub fn generate(
     &self,
-    record: &Execution<Bn254>,
+    record: &Execution<F>,
     entry: &str,
-    args: &[Scalar],
-  ) -> Result<Vec<p3_matrix::dense::RowMajorMatrix<Scalar>>, String> {
+    args: &[CurveScalar<F::Curve>],
+  ) -> Result<
+    Vec<p3_matrix::dense::RowMajorMatrix<CurveScalar<F::Curve>>>,
+    String,
+  > {
     let trace = self.plan.generate(record, entry, args, true)?;
     witness::Packing {
       plan: self.plan,

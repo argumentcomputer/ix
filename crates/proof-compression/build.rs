@@ -3,7 +3,8 @@
 //! Without the `cuda` feature the crate needs neither nvcc nor the CUDA
 //! toolkit. With it, the BN254 KZG kernels (plus, with `plonk`, the BN254
 //! PLONK kernels) are linked against sppark into `libix_bn254_cuda.so`, and
-//! the BLS12-381 KZG kernels are linked into `libix_bls12_381_cuda.so`.
+//! the BLS12-381 KZG kernels (plus, with `plonk`, the BLS12-381 PLONK kernels)
+//! are linked into `libix_bls12_381_cuda.so`.
 //! Each library carries a private C++ runtime, unwinder and CUDA runtime and
 //! exports only its curve-prefixed C entry points, so both curves coexist
 //! cleanly alongside a process that links a different C++ runtime (the Lean
@@ -33,6 +34,7 @@ const SOURCES: &[&str] = &[
   "cuda/kzg_runtime.cpp",
   "cuda/plonk/plonk.cu",
   "cuda/plonk/ix_plonk_bn254.h",
+  "cuda/plonk/ix_plonk_bls12_381.h",
 ];
 
 const BN254_LIBRARY: &str = "libix_bn254_cuda.so";
@@ -44,7 +46,7 @@ const BN254_EXPORTS: &str = r"{
 };";
 
 const BLS12_381_EXPORTS: &str = r"{
-    global: ix_kzg_bls12_381_*;
+    global: ix_kzg_bls12_381_*; ix_plonk_bls12_381_*;
     local: *;
 };";
 
@@ -310,7 +312,7 @@ fn build_kzg_cuda() -> (PathBuf, PathBuf) {
     exports: BLS12_381_EXPORTS,
     feature_flag: "-DFEATURE_BLS12_381",
     domain_flag: "-DMAX_LG_DOMAIN_SIZE=32",
-    include_plonk: false,
+    include_plonk: true,
   });
   println!("cargo:rustc-link-arg=-Wl,-rpath,{}", out.display());
   // Tests query the CUDA runtime directly.

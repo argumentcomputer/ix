@@ -18,10 +18,48 @@
 //! (`~/.ix/compression/cache`): both stages' fixed preprocessing is published
 //! to its `fixed-preprocessing` (or `IX_KZG_FIXED_CACHE`), where a later
 //! compression finds them.
+//!
+//! Release keys are derived from a clean state: the Ignition
+//! SRS is checked against its pin whatever selected it, the variables that
+//! redirect the SRS or a cache are refused, and the cache directories a mode
+//! publishes to (`fixed-preprocessing`, or `plonk` and `groth16` with
+//! `--finals`) must not hold entries yet, so no cached entry is adopted.
 use ix_proof_compression::pipeline::{
-  CompressConfig, FinalOptions, FixedRoot, backend_prefix, derive_release,
+  CompressConfig, FinalOptions, FixedRoot, backend_prefix, check_release_srs,
+  derive_release,
 };
 use std::{fs, path::Path, time::Instant};
+
+/// Variables that would let an unpinned setup or another cache directory
+/// reach the derivation.
+const REFUSED_VARIABLES: [&str; 5] = [
+  "IX_KZG_SRS",
+  "IX_KZG_SRS_CACHE",
+  "IX_KZG_FIXED_CACHE",
+  "IX_KZG_FILECOIN_CACHE",
+  "IX_KZG_FILECOIN_MANIFEST",
+];
+
+/// Refuse a cache directory that already holds entries.
+fn require_fresh(directory: &Path) -> Result<()> {
+  match fs::read_dir(directory) {
+    Ok(mut entries) => {
+      if entries.next().is_some() {
+        return Err(
+          format!(
+            "{} already holds entries; release keys are derived into a fresh \
+             cache so that no cached entry is adopted",
+            directory.display()
+          )
+          .into(),
+        );
+      }
+      Ok(())
+    },
+    Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+    Err(error) => Err(error.into()),
+  }
+}
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -58,9 +96,23 @@ fn main() -> Result<()> {
   let (ixvm_key, ixvm_index) = identity(Path::new(ixvm_dir))?;
   let (aggr_key, aggr_index) = identity(Path::new(aggr_dir))?;
   let prefix = backend_prefix(&ixvm_key, ixvm_index, &aggr_key, aggr_index);
+  for variable in REFUSED_VARIABLES {
+    if std::env::var_os(variable).is_some() {
+      return Err(
+        format!("{variable} is set; unset it to derive release keys").into(),
+      );
+    }
+  }
   // The Ignition setup and the caches `ix compress` would use.
   let config =
     CompressConfig::from_env(Path::new(cache), false, FinalOptions::default())?;
+  check_release_srs(&config.setup)?;
+  if finals_only {
+    require_fresh(&config.plonk_cache)?;
+    require_fresh(&config.groth16_cache)?;
+  } else {
+    require_fresh(&config.fixed_cache)?;
+  }
   println!("ROOT_VK_BLAKE3 = {}", blake3::hash(&aggr_key).to_hex());
   println!("STATEMENT_PREFIX = {prefix:?}");
   let recursive_vk = if finals_only {

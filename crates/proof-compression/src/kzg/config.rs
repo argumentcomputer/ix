@@ -233,6 +233,71 @@ impl<C: KzgCurve> KzgConfig<C> {
   }
 }
 
+/// Populate `system.vk_digest` from `system.circuits` and bind the canonical
+/// verifying-key digest (covering `vk_digest`, `preprocessed_indices`, and
+/// `preprocessed_commit`) into `system.config`'s transcript seed when no key
+/// digest is already bound.
+pub fn bind_system_key<C: KzgCurve>(
+  system: &mut multi_stark::system::System<KzgConfig<C>>,
+) {
+  let vk_digest = multi_stark::system::compute_vk_digest::<
+    CurveScalar<C>,
+    CurveScalar<C>,
+  >(&system.circuits);
+  system.vk_digest = vk_digest;
+  if system.config.key_digest().is_some() {
+    return;
+  }
+  let mut hasher = blake3::Hasher::new();
+  hasher.update(b"ix/kzg/system-key/v1\0");
+  hasher.update(&vk_digest);
+  hasher.update(&(system.preprocessed_indices.len() as u64).to_le_bytes());
+  for idx in &system.preprocessed_indices {
+    match idx {
+      Some(i) => {
+        hasher.update(&[1u8]);
+        hasher.update(&(*i as u64).to_le_bytes());
+      },
+      None => {
+        hasher.update(&[0u8]);
+      },
+    }
+  }
+  match &system.preprocessed_commit {
+    Some(commit) => {
+      hasher.update(&[1u8]);
+      hasher.update(&(commit.0.len() as u64).to_le_bytes());
+      for matrix in &commit.0 {
+        hasher.update(&(matrix.len() as u64).to_le_bytes());
+        for point in matrix {
+          let mut buf = Vec::with_capacity(C::G1_COMPRESSED_BYTES);
+          point
+            .serialize_compressed(&mut buf)
+            .expect("compressed G1 serialization");
+          hasher.update(&buf);
+        }
+      }
+    },
+    None => {
+      hasher.update(&[0u8]);
+    },
+  }
+  let digest = *hasher.finalize().as_bytes();
+  system.config = system.config.clone().with_key_digest(digest);
+}
+
+/// Proof configuration that binds a complete system's verifying key digest and
+/// fixed commitments into its Fiat-Shamir transcript seed.
+pub trait BindSystemKeyDigest: ProofConfig + Sized {
+  fn bind_system_key_digest(system: &mut multi_stark::system::System<Self>);
+}
+
+impl<C: KzgCurve> BindSystemKeyDigest for KzgConfig<C> {
+  fn bind_system_key_digest(system: &mut multi_stark::system::System<Self>) {
+    bind_system_key(system);
+  }
+}
+
 /// The committed matrix at a round position.
 fn committed<C: KzgCurve, D: CoefficientData<C>>(
   (data, index): (&D, usize),
@@ -596,6 +661,28 @@ impl<C: KzgCurve> ProofConfig for KzgConfig<C> {
     challenger
   }
 
+  // Protocol v5 keeps `observe_shape` aligned with the recursive and external
+  // verifiers while `bind_system_key` / `with_key_digest` absorbs the canonical
+  // `vk_digest` and fixed commitments into `transcript_seed`.
+  fn protocol_version(&self) -> multi_stark::config::ProtocolVersion {
+    multi_stark::config::ProtocolVersion::V5
+  }
+
+  fn initialise_challenger_for_mode(
+    &self,
+    _mode: multi_stark::config::TranscriptMode,
+  ) -> KzgTranscript<C> {
+    self.initialise_challenger()
+  }
+
+  fn validate_commitment_cap(
+    &self,
+    _commit: &multi_stark::config::Com<Self>,
+    _max_log_lde_height: usize,
+  ) -> bool {
+    true
+  }
+
   fn max_log_degree(&self) -> usize {
     self.max_log_degree
   }
@@ -795,5 +882,66 @@ mod tests {
     assert!(!KzgConfig::<Bn254>::adaptive_disk_spill(Some(495), false));
     assert!(!KzgConfig::<Bn254>::adaptive_disk_spill(None, true));
     assert!(!KzgConfig::<Bn254>::adaptive_disk_spill(Some(64), true));
+  }
+
+  fn check_bind_system_key_transcript_binding<C: KzgCurve>() {
+    let srs = Arc::new(Srs::<C>::unsafe_dev_setup(4, b"vk-transcript-bind"));
+    let make = |c_val: u64, prep_val: u64| {
+      let config = KzgConfig::<C>::new(srs.clone(), 4);
+      let (mut system, pk) = System::new(
+        config,
+        [CircuitInputs {
+          main_width: 1,
+          preprocessed: Some(RowMajorMatrix::new_col(vec![
+            CurveScalar::<C>::from_u64(prep_val),
+            CurveScalar::<C>::ZERO,
+          ])),
+          constraints: vec![
+            Expr::main(0) - Expr::constant(CurveScalar::<C>::from_u64(c_val)),
+          ],
+          ..Default::default()
+        }],
+      );
+      bind_system_key(&mut system);
+      (system, pk)
+    };
+    let (sys_a, pk_a) = make(7, 1);
+    let (sys_b, _pk_b) = make(8, 1);
+    let (sys_c, _pk_c) = make(7, 2);
+
+    // Every bound system has non-zero canonical vk_digest and key_digest.
+    let expected_vk_a = multi_stark::system::compute_vk_digest::<
+      CurveScalar<C>,
+      CurveScalar<C>,
+    >(&sys_a.circuits);
+    assert_eq!(sys_a.vk_digest, expected_vk_a);
+    assert_ne!(sys_a.vk_digest, [0u8; 32]);
+    assert!(sys_a.config.key_digest().is_some());
+
+    // Changing a constraint constant changes both vk_digest and transcript_seed.
+    assert_ne!(sys_a.vk_digest, sys_b.vk_digest);
+    assert_ne!(sys_a.config.key_digest(), sys_b.config.key_digest());
+    assert_ne!(sys_a.config.transcript_seed(), sys_b.config.transcript_seed());
+
+    // Changing fixed commitments (same constraint graph) changes key_digest & transcript_seed.
+    assert_eq!(sys_a.vk_digest, sys_c.vk_digest);
+    assert_ne!(sys_a.config.key_digest(), sys_c.config.key_digest());
+    assert_ne!(sys_a.config.transcript_seed(), sys_c.config.transcript_seed());
+
+    // A proof valid under sys_a is rejected by sys_b and sys_c.
+    let witness = SystemWitness::from_stage_1(
+      vec![RowMajorMatrix::new_col(vec![CurveScalar::<C>::from_u64(7); 2])],
+      &sys_a,
+    );
+    let proof_a = sys_a.prove_multiple_claims(&pk_a, &[], witness);
+    sys_a.verify_multiple_claims(&[], &proof_a).unwrap();
+    assert!(sys_b.verify_multiple_claims(&[], &proof_a).is_err());
+    assert!(sys_c.verify_multiple_claims(&[], &proof_a).is_err());
+  }
+
+  #[test]
+  fn bind_system_key_binds_circuits_and_fixed_commits_for_both_curves() {
+    check_bind_system_key_transcript_binding::<Bn254>();
+    check_bind_system_key_transcript_binding::<Bls12381>();
   }
 }

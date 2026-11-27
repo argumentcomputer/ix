@@ -94,7 +94,8 @@ fn grouped_lookup_key_and_proof_roundtrip_through_the_aiur_verifier() {
     Arc::new(Srs::unsafe_dev_setup(16, b"aiur-lookup-group-roundtrip")),
     2,
   );
-  let (system, prover) = System::new(config, [input]);
+  let (mut system, prover) = System::new(config, [input]);
+  VerifyingKey::bind_system(&mut system).unwrap();
   let claim = vec![one];
   let witness = SystemWitness::from_stage_1(
     vec![RowMajorMatrix::new(

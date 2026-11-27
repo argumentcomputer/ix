@@ -1,5 +1,55 @@
+#if defined(FEATURE_BN254) && !defined(FEATURE_BLS12_381)
 #include "ix_plonk_bn254.h"
 #include <ff/alt_bn128.hpp>
+#define IX_PLONK_FQ_LIMBS 4
+#define IX_PLONK_MAX_MSM_POINTS IX_PLONK_BN254_MAX_MSM_POINTS
+#define IX_PLONK_SYM(name) ix_plonk_bn254_##name
+#define IX_PLONK_OK IX_PLONK_BN254_OK
+#define IX_PLONK_INVALID IX_PLONK_BN254_INVALID
+#define IX_PLONK_UNSUPPORTED IX_PLONK_BN254_UNSUPPORTED
+#define IX_PLONK_MEMORY IX_PLONK_BN254_MEMORY
+#define IX_PLONK_RUNTIME IX_PLONK_BN254_RUNTIME
+#define IX_PLONK_CANCELLED IX_PLONK_BN254_CANCELLED
+#define IX_PLONK_POISONED IX_PLONK_BN254_POISONED
+#define IX_PLONK_MSM_SPLIT IX_PLONK_BN254_MSM_SPLIT
+#define IX_PLONK_MSM_MASK IX_PLONK_BN254_MSM_MASK
+#define IX_PLONK_CURVE_NAME "BN254"
+#define IX_PLONK_FQ_P alt_bn128::ALT_BN128_P
+#define IX_PLONK_FQ_RR alt_bn128::ALT_BN128_RR
+#define IX_PLONK_FR_R alt_bn128::ALT_BN128_r
+#define IX_PLONK_FR_RR alt_bn128::ALT_BN128_rRR
+#define IX_PLONK_FR_MODULUS_INIT \
+    UINT64_C(0x43e1f593f0000001), UINT64_C(0x2833e84879b97091), \
+    UINT64_C(0xb85045b68181585d), UINT64_C(0x30644e72e131a029)
+static_assert(MAX_LG_DOMAIN_SIZE == 28);
+#elif defined(FEATURE_BLS12_381) && !defined(FEATURE_BN254)
+#include "ix_plonk_bls12_381.h"
+#include <ff/bls12-381.hpp>
+#define IX_PLONK_FQ_LIMBS 6
+#define IX_PLONK_MAX_MSM_POINTS IX_PLONK_BLS12_381_MAX_MSM_POINTS
+#define IX_PLONK_SYM(name) ix_plonk_bls12_381_##name
+#define IX_PLONK_OK IX_PLONK_BLS12_381_OK
+#define IX_PLONK_INVALID IX_PLONK_BLS12_381_INVALID
+#define IX_PLONK_UNSUPPORTED IX_PLONK_BLS12_381_UNSUPPORTED
+#define IX_PLONK_MEMORY IX_PLONK_BLS12_381_MEMORY
+#define IX_PLONK_RUNTIME IX_PLONK_BLS12_381_RUNTIME
+#define IX_PLONK_CANCELLED IX_PLONK_BLS12_381_CANCELLED
+#define IX_PLONK_POISONED IX_PLONK_BLS12_381_POISONED
+#define IX_PLONK_MSM_SPLIT IX_PLONK_BLS12_381_MSM_SPLIT
+#define IX_PLONK_MSM_MASK IX_PLONK_BLS12_381_MSM_MASK
+#define IX_PLONK_CURVE_NAME "BLS12-381"
+#define IX_PLONK_FQ_P bls12_381::BLS12_381_P
+#define IX_PLONK_FQ_RR bls12_381::BLS12_381_RR
+#define IX_PLONK_FR_R bls12_381::BLS12_381_r
+#define IX_PLONK_FR_RR bls12_381::BLS12_381_rRR
+#define IX_PLONK_FR_MODULUS_INIT \
+    UINT64_C(0xffffffff00000001), UINT64_C(0x53bda402fffe5bfe), \
+    UINT64_C(0x3339d80809a1d805), UINT64_C(0x73eda753299d7d48)
+static_assert(MAX_LG_DOMAIN_SIZE == 32);
+#else
+#error "Select exactly one PLONK curve"
+#endif
+
 // Complete host Jacobian addition depends on BLST's alias-safe vec_select.
 #include <blst_t.hpp>
 #include <ec/jacobian_t.hpp>
@@ -22,20 +72,32 @@
 #include <unordered_set>
 #include <vector>
 
+using ix_plonk_fr = IX_PLONK_SYM(fr);
+using ix_plonk_fq = IX_PLONK_SYM(fq);
+using ix_plonk_affine = IX_PLONK_SYM(affine);
+using ix_plonk_jacobian = IX_PLONK_SYM(jacobian);
+using ix_plonk_context = IX_PLONK_SYM(context);
+using ix_plonk_basis = IX_PLONK_SYM(basis);
+using ix_plonk_quotient = IX_PLONK_SYM(quotient);
+using ix_plonk_error = IX_PLONK_SYM(error);
+using ix_plonk_config = IX_PLONK_SYM(config);
+using ix_plonk_quotient_config = IX_PLONK_SYM(quotient_config);
+using ix_plonk_stats = IX_PLONK_SYM(stats);
+
 using point_t = jacobian_t<fp_t>;
 using bucket_t = xyzz_t<fp_t>;
 using affine_t = bucket_t::affine_t;
 using msm_impl = msm_t<bucket_t, point_t, affine_t, fr_t>;
 
-static_assert(sizeof(fr_t) == 32 && sizeof(fp_t) == 32);
-static_assert(sizeof(affine_t) == 64 && sizeof(point_t) == 96);
-static_assert(sizeof(ix_plonk_bn254_fr) == sizeof(fr_t));
-static_assert(sizeof(ix_plonk_bn254_affine) == sizeof(affine_t));
-static_assert(sizeof(ix_plonk_bn254_jacobian) == sizeof(point_t));
-static_assert(MAX_LG_DOMAIN_SIZE == 28);
+static_assert(sizeof(fr_t) == 32 && sizeof(fp_t) == IX_PLONK_FQ_LIMBS * sizeof(uint64_t));
+static_assert(sizeof(affine_t) == 2 * sizeof(fp_t) && sizeof(point_t) == 3 * sizeof(fp_t));
+static_assert(sizeof(ix_plonk_fr) == sizeof(fr_t));
+static_assert(sizeof(ix_plonk_affine) == sizeof(affine_t));
+static_assert(sizeof(ix_plonk_jacobian) == sizeof(point_t));
 
 namespace {
-constexpr uint64_t NTT_BYTES = 2 * (512 * 32 + 512 * 512 * 32 + 2 * 2 * 16384 * 32);
+constexpr uint64_t NTT_BYTES = 2 * (512 * sizeof(fr_t) + 512 * 512 * sizeof(fr_t)
+                                  + 2 * uint64_t(WINDOW_NUM) * WINDOW_SIZE * sizeof(fr_t));
 constexpr uint64_t MAX_M = UINT64_C(1) << 27;
 constexpr uint32_t MAX_COMMITMENTS = 16;
 constexpr uint32_t MAX_SLOTS = 12 + 2 * MAX_COMMITMENTS;
@@ -55,12 +117,12 @@ struct Failure : std::runtime_error {
 };
 
 void require(bool condition, const char* message) {
-    if (!condition) throw Failure(IX_PLONK_BN254_INVALID, message);
+    if (!condition) throw Failure(IX_PLONK_INVALID, message);
 }
 
 uint64_t multiply(uint64_t a, uint64_t b) {
     if (b && a > std::numeric_limits<uint64_t>::max() / b)
-        throw Failure(IX_PLONK_BN254_INVALID, "allocation size overflow");
+        throw Failure(IX_PLONK_INVALID, "allocation size overflow");
     return a * b;
 }
 
@@ -72,11 +134,8 @@ uint32_t log_size(uint64_t n) {
     return log;
 }
 
-fr_t field(const ix_plonk_bn254_fr& value) {
-    constexpr uint64_t modulus[4] = {
-        UINT64_C(0x43e1f593f0000001), UINT64_C(0x2833e84879b97091),
-        UINT64_C(0xb85045b68181585d), UINT64_C(0x30644e72e131a029),
-    };
+fr_t field(const ix_plonk_fr& value) {
+    constexpr uint64_t modulus[4] = { IX_PLONK_FR_MODULUS_INIT };
     bool less = false;
     for (int i = 3; i >= 0; --i) {
         if (value.limbs[i] != modulus[i]) {
@@ -90,7 +149,7 @@ fr_t field(const ix_plonk_bn254_fr& value) {
     return result;
 }
 
-void copy_field(ix_plonk_bn254_fr* out, const fr_t& value) {
+void copy_field(ix_plonk_fr* out, const fr_t& value) {
     std::memcpy(out, &value, sizeof(value));
 }
 
@@ -100,7 +159,7 @@ struct MsmPlan {
 };
 
 MsmPlan msm_plan(const gpu_t& gpu, uint64_t count, bool split) {
-    require(count && count <= IX_PLONK_BN254_MAX_MSM_POINTS, "unsupported MSM size");
+    require(count && count <= IX_PLONK_MAX_MSM_POINTS, "unsupported MSM size");
     const uint64_t original_count = count;
     count = (count + 31) & ~UINT64_C(31);
     uint32_t bits = 0;
@@ -147,7 +206,7 @@ std::mutex contexts_mutex;
 std::unordered_set<int> owned_devices;
 }
 
-struct ix_plonk_bn254_context {
+struct IX_PLONK_SYM(context) {
     const gpu_t& gpu;
     uint64_t budget, headroom, accounted = 0, high = 0, next = 1;
     uint32_t msm_strategy;
@@ -158,22 +217,22 @@ struct ix_plonk_bn254_context {
     std::unordered_map<uint64_t, std::unique_ptr<Basis>> bases;
     std::unordered_map<uint64_t, std::unique_ptr<Quotient>> quotients;
     std::unique_ptr<Workspace> workspace;
-    ix_plonk_bn254_stats stats{};
+    ix_plonk_stats stats{};
 
-    ix_plonk_bn254_context(const gpu_t& gpu, uint64_t budget, uint64_t headroom, uint32_t strategy)
+    IX_PLONK_SYM(context)(const gpu_t& gpu, uint64_t budget, uint64_t headroom, uint32_t strategy)
         : gpu(gpu), budget(budget), headroom(headroom), msm_strategy(strategy) {}
-    ~ix_plonk_bn254_context();
+    ~IX_PLONK_SYM(context)();
 
     void ready() {
         gpu.select();
-        if (poisoned) throw Failure(IX_PLONK_BN254_POISONED, "CUDA context is poisoned");
-        if (cancelled.load()) throw Failure(IX_PLONK_BN254_CANCELLED, "CUDA proof cancelled");
+        if (poisoned) throw Failure(IX_PLONK_POISONED, "CUDA context is poisoned");
+        if (cancelled.load()) throw Failure(IX_PLONK_CANCELLED, "CUDA proof cancelled");
     }
 
     void reserve(uint64_t bytes) {
         ready();
         if (bytes > budget - std::min(accounted, budget))
-            throw Failure(IX_PLONK_BN254_MEMORY, "CUDA allocation budget exceeded");
+            throw Failure(IX_PLONK_MEMORY, "CUDA allocation budget exceeded");
         size_t free = 0, total = 0;
         CUDA_OK(cudaMemGetInfo(&free, &total));
         cudaMemPool_t pool;
@@ -183,7 +242,7 @@ struct ix_plonk_bn254_context {
         CUDA_OK(cudaMemPoolGetAttribute(pool, cudaMemPoolAttrUsedMemCurrent, &used));
         uint64_t available = std::min<uint64_t>(total, free + (reserved > used ? reserved - used : 0));
         if (headroom > available || bytes > available - headroom)
-            throw Failure(IX_PLONK_BN254_MEMORY, "insufficient CUDA memory with required headroom");
+            throw Failure(IX_PLONK_MEMORY, "insufficient CUDA memory with required headroom");
         accounted += bytes;
         high = std::max(high, accounted);
     }
@@ -219,16 +278,16 @@ struct ix_plonk_bn254_context {
 
     uint64_t handle() {
         if (next == std::numeric_limits<uint64_t>::max())
-            throw Failure(IX_PLONK_BN254_INVALID, "CUDA handle generation exhausted");
+            throw Failure(IX_PLONK_INVALID, "CUDA handle generation exhausted");
         return next++;
     }
 };
 
 namespace {
 struct Reservation {
-    ix_plonk_bn254_context& context;
+    ix_plonk_context& context;
     uint64_t bytes;
-    Reservation(ix_plonk_bn254_context& context, uint64_t bytes) : context(context), bytes(bytes) {
+    Reservation(ix_plonk_context& context, uint64_t bytes) : context(context), bytes(bytes) {
         context.reserve(bytes);
     }
     ~Reservation() { context.accounted -= bytes; }
@@ -251,7 +310,7 @@ struct Basis {
         }
     };
     std::unordered_map<Range, point_t, RangeHash> mask_sums;
-    Basis(ix_plonk_bn254_context& context, uint64_t count)
+    Basis(ix_plonk_context& context, uint64_t count)
         : reservation(context, multiply(count, sizeof(affine_t))),
           points(context.gpu, reservation.bytes), count(count) {}
 };
@@ -260,10 +319,10 @@ struct Workspace {
     Reservation reservation;
     uint32_t window;
     msm_impl* msm;
-    Workspace(ix_plonk_bn254_context& context, uint64_t count, const MsmPlan& plan)
+    Workspace(ix_plonk_context& context, uint64_t count, const MsmPlan& plan)
         : reservation(context, plan.persistent), window(plan.window),
           msm(new msm_impl(nullptr, count, sizeof(affine_t), context.gpu.id())) {
-        msm->set_split_buckets(context.msm_strategy == IX_PLONK_BN254_MSM_SPLIT);
+        msm->set_split_buckets(context.msm_strategy == IX_PLONK_MSM_SPLIT);
     }
     ~Workspace() {
         // A sticky device fault makes sppark's throwing destructor unsafe.
@@ -285,11 +344,11 @@ struct alignas(32) NumeratorParameters {
 struct Quotient {
     Reservation reservation;
     Buffer canonical, evaluations, boundary, output;
-    ix_plonk_bn254_quotient_config config;
+    ix_plonk_quotient_config config;
     std::vector<bool> present;
     bool finished = false;
 
-    Quotient(ix_plonk_bn254_context& context, const ix_plonk_bn254_quotient_config& config)
+    Quotient(ix_plonk_context& context, const ix_plonk_quotient_config& config)
         : reservation(context, multiply(2 * (12 + 2 * uint64_t(config.commitments)) + 1, multiply(config.n, 32)) + multiply(config.m, 32)),
           canonical(context.gpu, multiply(12 + 2 * uint64_t(config.commitments), multiply(config.n, 32))),
           evaluations(context.gpu, multiply(12 + 2 * uint64_t(config.commitments), multiply(config.n, 32))),
@@ -313,10 +372,7 @@ __global__ void copy_scaled(fr_t* output, const fr_t* input, uint64_t count,
 
 __device__ fr_t mask_scalar(uint64_t seed, uint64_t index) {
     constexpr uint64_t step = UINT64_C(0x9e3779b97f4a7c15);
-    constexpr uint64_t modulus[4] = {
-        UINT64_C(0x43e1f593f0000001), UINT64_C(0x2833e84879b97091),
-        UINT64_C(0xb85045b68181585d), UINT64_C(0x30644e72e131a029),
-    };
+    constexpr uint64_t modulus[4] = { IX_PLONK_FR_MODULUS_INIT };
     uint64_t words[4];
     for (unsigned i = 0; i < 4; ++i)
         words[i] = mix_counter(seed + (4 * index + i + 1) * step);
@@ -353,7 +409,7 @@ __global__ void mask_scalars(fr_t* values, uint64_t count, uint64_t seed, bool a
     }
 }
 
-void scale(ix_plonk_bn254_context& context, fr_t* out, const fr_t* in,
+void scale(ix_plonk_context& context, fr_t* out, const fr_t* in,
            uint64_t n, const fr_t& shift, uint32_t reverse_log = 0,
            bool fill = false, const fr_t& constant = fr_t::one()) {
     copy_scaled<<<context.gpu.sm_count() * 4, 256, 0, context.gpu>>>(
@@ -361,7 +417,7 @@ void scale(ix_plonk_bn254_context& context, fr_t* out, const fr_t* in,
     CUDA_OK(cudaGetLastError());
 }
 
-void transform(ix_plonk_bn254_context& context, fr_t* data, uint64_t count,
+void transform(ix_plonk_context& context, fr_t* data, uint64_t count,
                bool inverse, bool bit_reversed, const fr_t& coset) {
     context.ready();
     uint32_t log = log_size(count);
@@ -420,7 +476,7 @@ __global__ void numerator(NumeratorParameters p) {
     }
 }
 
-int error_result(ix_plonk_bn254_error* out, int code, const char* message) noexcept {
+int error_result(ix_plonk_error* out, int code, const char* message) noexcept {
     if (out) {
         out->code = code;
         std::snprintf(out->message, sizeof(out->message), "%s", message ? message : "CUDA failure");
@@ -429,7 +485,7 @@ int error_result(ix_plonk_bn254_error* out, int code, const char* message) noexc
 }
 
 template<typename Function>
-int guarded(ix_plonk_bn254_context* context, ix_plonk_bn254_error* error,
+int guarded(ix_plonk_context* context, ix_plonk_error* error,
             Function&& function, bool cleanup = false) noexcept {
     if (error) { error->code = 0; error->message[0] = 0; }
     try {
@@ -442,29 +498,29 @@ int guarded(ix_plonk_bn254_context* context, ix_plonk_bn254_error* error,
         if (!cleanup) context->ready();
         return 0;
     } catch (const Failure& failure) {
-        if (context && failure.code == IX_PLONK_BN254_RUNTIME) context->poisoned = true;
+        if (context && failure.code == IX_PLONK_RUNTIME) context->poisoned = true;
         if (context) (void)cudaDeviceSynchronize();
         return error_result(error, failure.code, failure.what());
     } catch (const cuda_error& failure) {
         if (context) { context->poisoned = true; (void)cudaDeviceSynchronize(); }
-        return error_result(error, IX_PLONK_BN254_RUNTIME, failure.what());
+        return error_result(error, IX_PLONK_RUNTIME, failure.what());
     } catch (const std::exception& failure) {
         if (context) { context->poisoned = true; (void)cudaDeviceSynchronize(); }
-        return error_result(error, IX_PLONK_BN254_RUNTIME, failure.what());
+        return error_result(error, IX_PLONK_RUNTIME, failure.what());
     } catch (...) {
         if (context) { context->poisoned = true; (void)cudaDeviceSynchronize(); }
-        return error_result(error, IX_PLONK_BN254_RUNTIME, "unknown CUDA adapter exception");
+        return error_result(error, IX_PLONK_RUNTIME, "unknown CUDA adapter exception");
     }
 }
 
-Quotient& session(ix_plonk_bn254_context& context, uint64_t id) {
+Quotient& session(ix_plonk_context& context, uint64_t id) {
     auto found = context.quotients.find(id);
     require(found != context.quotients.end(), "unknown quotient handle");
     return *found->second;
 }
 }
 
-ix_plonk_bn254_context::~ix_plonk_bn254_context() {
+IX_PLONK_SYM(context)::~IX_PLONK_SYM(context)() {
     gpu.select();
     (void)cudaDeviceSynchronize();
     quotients.clear();
@@ -477,45 +533,47 @@ ix_plonk_bn254_context::~ix_plonk_bn254_context() {
 }
 
 #ifndef __CUDA_ARCH__
-extern "C" int ix_plonk_bn254_check_field_abi(const uint64_t fq[3][4],
-    const uint64_t fr[3][4], ix_plonk_bn254_error* error) {
-    if (!fq || !fr) return error_result(error, IX_PLONK_BN254_INVALID, "null field ABI parameters");
+extern "C" int IX_PLONK_SYM(check_field_abi)(const uint64_t fq[3][IX_PLONK_FQ_LIMBS],
+    const uint64_t fr[3][4], ix_plonk_error* error) {
+    if (!fq || !fr) return error_result(error, IX_PLONK_INVALID, "null field ABI parameters");
     const fp_t fq_one = fp_t::one();
     const fr_t fr_one = fr_t::one();
-    if (std::memcmp(fq[0], alt_bn128::ALT_BN128_P, 32) || std::memcmp(fq[1], &fq_one, 32)
-        || std::memcmp(fq[2], alt_bn128::ALT_BN128_RR, 32)
-        || std::memcmp(fr[0], alt_bn128::ALT_BN128_r, 32) || std::memcmp(fr[1], &fr_one, 32)
-        || std::memcmp(fr[2], alt_bn128::ALT_BN128_rRR, 32))
-        return error_result(error, IX_PLONK_BN254_INVALID, "BN254 Montgomery ABI mismatch");
+    if (std::memcmp(fq[0], IX_PLONK_FQ_P, sizeof(fp_t))
+        || std::memcmp(fq[1], &fq_one, sizeof(fp_t))
+        || std::memcmp(fq[2], IX_PLONK_FQ_RR, sizeof(fp_t))
+        || std::memcmp(fr[0], IX_PLONK_FR_R, sizeof(fr_t))
+        || std::memcmp(fr[1], &fr_one, sizeof(fr_t))
+        || std::memcmp(fr[2], IX_PLONK_FR_RR, sizeof(fr_t)))
+        return error_result(error, IX_PLONK_INVALID, IX_PLONK_CURVE_NAME " Montgomery ABI mismatch");
     return error_result(error, 0, "");
 }
 #endif
 
-extern "C" int ix_plonk_bn254_ntt_parameters(uint32_t log,
-    ix_plonk_bn254_fr* root, ix_plonk_bn254_fr* inverse,
-    ix_plonk_bn254_fr* size_inverse, ix_plonk_bn254_error* error) {
+extern "C" int IX_PLONK_SYM(ntt_parameters)(uint32_t log,
+    ix_plonk_fr* root, ix_plonk_fr* inverse,
+    ix_plonk_fr* size_inverse, ix_plonk_error* error) {
     if (log > 27 || !root || !inverse || !size_inverse)
-        return error_result(error, IX_PLONK_BN254_INVALID, "unsupported NTT parameter request");
+        return error_result(error, IX_PLONK_INVALID, "unsupported NTT parameter request");
     copy_field(root, forward_roots_of_unity[log]);
     copy_field(inverse, inverse_roots_of_unity[log]);
     copy_field(size_inverse, domain_size_inverse[log]);
     return error_result(error, 0, "");
 }
 
-extern "C" int ix_plonk_bn254_context_create(const ix_plonk_bn254_config* config,
-    ix_plonk_bn254_context** out, ix_plonk_bn254_error* error) {
+extern "C" int IX_PLONK_SYM(context_create)(const ix_plonk_config* config,
+    ix_plonk_context** out, ix_plonk_error* error) {
     if (out) *out = nullptr;
     bool claimed = false;
     int ordinal = -1;
     try {
         require(config && out, "missing CUDA context configuration");
-        require(config->msm_strategy <= IX_PLONK_BN254_MSM_MASK,
+        require(config->msm_strategy <= IX_PLONK_MSM_MASK,
             "unsupported CUDA MSM strategy");
         require(config->budget_bytes > NTT_BYTES, "CUDA budget is too small");
         const gpu_t* gpu = nullptr;
         for (const auto* candidate : all_gpus())
             if (candidate->cid() == config->device) gpu = candidate;
-        if (!gpu) throw Failure(IX_PLONK_BN254_UNSUPPORTED, "no compatible CUDA device");
+        if (!gpu) throw Failure(IX_PLONK_UNSUPPORTED, "no compatible CUDA device");
         ordinal = gpu->cid();
         {
             std::lock_guard<std::mutex> lock(contexts_mutex);
@@ -523,7 +581,7 @@ extern "C" int ix_plonk_bn254_context_create(const ix_plonk_bn254_config* config
             claimed = true;
         }
         gpu->select();
-        auto context = std::make_unique<ix_plonk_bn254_context>(*gpu, config->budget_bytes, config->driver_headroom_bytes, config->msm_strategy);
+        auto context = std::make_unique<ix_plonk_context>(*gpu, config->budget_bytes, config->driver_headroom_bytes, config->msm_strategy);
         claimed = false;
         context->reserve(NTT_BYTES);
         (void)NTTParameters::all();
@@ -536,15 +594,15 @@ extern "C" int ix_plonk_bn254_context_create(const ix_plonk_bn254_config* config
         return error_result(error, failure.code, failure.what());
     } catch (const std::exception& failure) {
         if (claimed) { std::lock_guard<std::mutex> lock(contexts_mutex); owned_devices.erase(ordinal); }
-        return error_result(error, IX_PLONK_BN254_RUNTIME, failure.what());
+        return error_result(error, IX_PLONK_RUNTIME, failure.what());
     } catch (...) {
         if (claimed) { std::lock_guard<std::mutex> lock(contexts_mutex); owned_devices.erase(ordinal); }
-        return error_result(error, IX_PLONK_BN254_RUNTIME, "CUDA context initialization failed");
+        return error_result(error, IX_PLONK_RUNTIME, "CUDA context initialization failed");
     }
 }
 
-extern "C" int ix_plonk_bn254_context_destroy(ix_plonk_bn254_context* context,
-    ix_plonk_bn254_error* error) {
+extern "C" int IX_PLONK_SYM(context_destroy)(ix_plonk_context* context,
+    ix_plonk_error* error) {
     if (!context) return error_result(error, 0, "");
     int result = guarded(context, error, [&] {
         context->cancelled.store(true);
@@ -554,15 +612,15 @@ extern "C" int ix_plonk_bn254_context_destroy(ix_plonk_bn254_context* context,
     return result;
 }
 
-extern "C" int ix_plonk_bn254_context_cancel(ix_plonk_bn254_context* context,
-    ix_plonk_bn254_error* error) {
-    if (!context) return error_result(error, IX_PLONK_BN254_INVALID, "null CUDA context");
+extern "C" int IX_PLONK_SYM(context_cancel)(ix_plonk_context* context,
+    ix_plonk_error* error) {
+    if (!context) return error_result(error, IX_PLONK_INVALID, "null CUDA context");
     context->cancelled.store(true);
     return error_result(error, 0, "");
 }
 
-extern "C" int ix_plonk_bn254_get_stats(ix_plonk_bn254_context* context,
-    ix_plonk_bn254_stats* out, ix_plonk_bn254_error* error) {
+extern "C" int IX_PLONK_SYM(get_stats)(ix_plonk_context* context,
+    ix_plonk_stats* out, ix_plonk_error* error) {
     return guarded(context, error, [&] {
         require(out, "null CUDA statistics output");
         *out = context->stats;
@@ -581,12 +639,12 @@ extern "C" int ix_plonk_bn254_get_stats(ix_plonk_bn254_context* context,
     }, true);
 }
 
-extern "C" int ix_plonk_bn254_basis_upload(ix_plonk_bn254_context* context,
-    const ix_plonk_bn254_affine* points, uint64_t count,
-    ix_plonk_bn254_basis* out, ix_plonk_bn254_error* error) {
+extern "C" int IX_PLONK_SYM(basis_upload)(ix_plonk_context* context,
+    const ix_plonk_affine* points, uint64_t count,
+    ix_plonk_basis* out, ix_plonk_error* error) {
     if (out) *out = 0;
     return guarded(context, error, [&] {
-        require(points && out && count && count <= IX_PLONK_BN254_MAX_MSM_POINTS, "invalid CUDA basis upload");
+        require(points && out && count && count <= IX_PLONK_MAX_MSM_POINTS, "invalid CUDA basis upload");
         auto basis = std::make_unique<Basis>(*context, count);
         context->upload(basis->points.as<void>(), points, count * sizeof(affine_t));
         uint64_t id = context->handle();
@@ -595,15 +653,15 @@ extern "C" int ix_plonk_bn254_basis_upload(ix_plonk_bn254_context* context,
     });
 }
 
-extern "C" int ix_plonk_bn254_basis_destroy(ix_plonk_bn254_context* context,
-    ix_plonk_bn254_basis basis, ix_plonk_bn254_error* error) {
+extern "C" int IX_PLONK_SYM(basis_destroy)(ix_plonk_context* context,
+    ix_plonk_basis basis, ix_plonk_error* error) {
     return guarded(context, error, [&] {
         require(context->bases.erase(basis) == 1, "unknown CUDA basis handle");
     }, true);
 }
 
 namespace {
-point_t invoke_msm(ix_plonk_bn254_context& context, affine_t* points,
+point_t invoke_msm(ix_plonk_context& context, affine_t* points,
                    fr_t* scalars, uint64_t count) {
     dev_ptr_t<affine_t> point_view(points, count);
     dev_ptr_t<fr_t> scalar_view(scalars, count);
@@ -612,12 +670,12 @@ point_t invoke_msm(ix_plonk_bn254_context& context, affine_t* points,
     if (status.code) {
         std::string message = status.message ? status.message : "sppark MSM failed";
         std::free(status.message);
-        throw Failure(IX_PLONK_BN254_RUNTIME, message.c_str());
+        throw Failure(IX_PLONK_RUNTIME, message.c_str());
     }
     std::free(status.message);
     context.gpu.sync();
     context.ready();
-    if (context.msm_strategy == IX_PLONK_BN254_MSM_SPLIT) {
+    if (context.msm_strategy == IX_PLONK_MSM_SPLIT) {
         const auto& statistics = context.workspace->msm->split_statistics();
         ++context.stats.split_msm_calls;
         context.stats.split_unit_points += statistics.unit_points;
@@ -638,23 +696,23 @@ point_t invoke_msm(ix_plonk_bn254_context& context, affine_t* points,
     return result;
 }
 
-void run_msm(ix_plonk_bn254_context* context,
-    ix_plonk_bn254_basis basis, uint64_t offset,
-    const ix_plonk_bn254_fr* scalars, uint64_t count,
-    ix_plonk_bn254_jacobian* out) {
+void run_msm(ix_plonk_context* context,
+    ix_plonk_basis basis, uint64_t offset,
+    const ix_plonk_fr* scalars, uint64_t count,
+    ix_plonk_jacobian* out) {
     require(scalars && out && count, "missing MSM operands");
     auto found = context->bases.find(basis);
     require(found != context->bases.end(), "unknown CUDA basis handle");
     require(offset <= found->second->count && count <= found->second->count - offset,
             "CUDA MSM range exceeds basis");
-    auto plan = msm_plan(context->gpu, count, context->msm_strategy == IX_PLONK_BN254_MSM_SPLIT);
+    auto plan = msm_plan(context->gpu, count, context->msm_strategy == IX_PLONK_MSM_SPLIT);
     if (context->workspace && context->workspace->window != plan.window) context->workspace.reset();
     if (!context->workspace) context->workspace = std::make_unique<Workspace>(*context, count, plan);
     Reservation temporary(*context, plan.temporary);
     Buffer values(context->gpu, multiply((count + 31) & ~UINT64_C(31), 32));
     Basis& owner = *found->second;
     affine_t* points = owner.points.as<affine_t>() + offset;
-    const bool masked = context->msm_strategy == IX_PLONK_BN254_MSM_MASK && count >= MASK_THRESHOLD;
+    const bool masked = context->msm_strategy == IX_PLONK_MSM_MASK && count >= MASK_THRESHOLD;
     const Basis::Range range{offset, count};
     const uint64_t mask_seed = mix_counter(owner.mask_seed ^ mix_counter(offset)
                                           ^ mix_counter(count + UINT64_C(0x13198a2e03707344)));
@@ -700,19 +758,19 @@ void run_msm(ix_plonk_bn254_context* context,
 }
 }
 
-extern "C" int ix_plonk_bn254_msm(ix_plonk_bn254_context* context,
-    ix_plonk_bn254_basis basis, uint64_t offset,
-    const ix_plonk_bn254_fr* scalars, uint64_t count,
-    ix_plonk_bn254_jacobian* out, ix_plonk_bn254_error* error) {
+extern "C" int IX_PLONK_SYM(msm)(ix_plonk_context* context,
+    ix_plonk_basis basis, uint64_t offset,
+    const ix_plonk_fr* scalars, uint64_t count,
+    ix_plonk_jacobian* out, ix_plonk_error* error) {
     return guarded(context, error, [&] {
         run_msm(context, basis, offset, scalars, count, out);
     });
 }
 
-extern "C" int ix_plonk_bn254_fft(ix_plonk_bn254_context* context,
-    ix_plonk_bn254_fr* values, uint64_t count, uint32_t inverse,
-    uint32_t reversed, const ix_plonk_bn254_fr* coset,
-    ix_plonk_bn254_error* error) {
+extern "C" int IX_PLONK_SYM(fft)(ix_plonk_context* context,
+    ix_plonk_fr* values, uint64_t count, uint32_t inverse,
+    uint32_t reversed, const ix_plonk_fr* coset,
+    ix_plonk_error* error) {
     return guarded(context, error, [&] {
         require(values && coset && inverse <= 1 && reversed <= 1, "invalid FFT arguments");
         (void)log_size(count);
@@ -726,9 +784,9 @@ extern "C" int ix_plonk_bn254_fft(ix_plonk_bn254_context* context,
     });
 }
 
-extern "C" int ix_plonk_bn254_quotient_begin(ix_plonk_bn254_context* context,
-    const ix_plonk_bn254_quotient_config* config,
-    ix_plonk_bn254_quotient* out, ix_plonk_bn254_error* error) {
+extern "C" int IX_PLONK_SYM(quotient_begin)(ix_plonk_context* context,
+    const ix_plonk_quotient_config* config,
+    ix_plonk_quotient* out, ix_plonk_error* error) {
     if (out) *out = 0;
     return guarded(context, error, [&] {
         require(config && out && !config->reserved, "invalid quotient configuration");
@@ -750,9 +808,9 @@ extern "C" int ix_plonk_bn254_quotient_begin(ix_plonk_bn254_context* context,
     });
 }
 
-extern "C" int ix_plonk_bn254_quotient_put(ix_plonk_bn254_context* context,
-    ix_plonk_bn254_quotient id, uint32_t slot, ix_plonk_bn254_fr* values,
-    uint64_t count, ix_plonk_bn254_error* error) {
+extern "C" int IX_PLONK_SYM(quotient_put)(ix_plonk_context* context,
+    ix_plonk_quotient id, uint32_t slot, ix_plonk_fr* values,
+    uint64_t count, ix_plonk_error* error) {
     return guarded(context, error, [&] {
         auto& q = session(*context, id);
         require(values && !q.finished && slot < q.present.size() && !q.present[slot]
@@ -765,9 +823,9 @@ extern "C" int ix_plonk_bn254_quotient_put(ix_plonk_bn254_context* context,
     });
 }
 
-extern "C" int ix_plonk_bn254_quotient_finish(ix_plonk_bn254_context* context,
-    ix_plonk_bn254_quotient id, ix_plonk_bn254_fr* output,
-    uint64_t count, ix_plonk_bn254_error* error) {
+extern "C" int IX_PLONK_SYM(quotient_finish)(ix_plonk_context* context,
+    ix_plonk_quotient id, ix_plonk_fr* output,
+    uint64_t count, ix_plonk_error* error) {
     return guarded(context, error, [&] {
         auto& q = session(*context, id);
         require(output && !q.finished && count == q.config.m
@@ -812,8 +870,8 @@ extern "C" int ix_plonk_bn254_quotient_finish(ix_plonk_bn254_context* context,
     });
 }
 
-extern "C" int ix_plonk_bn254_quotient_destroy(ix_plonk_bn254_context* context,
-    ix_plonk_bn254_quotient id, ix_plonk_bn254_error* error) {
+extern "C" int IX_PLONK_SYM(quotient_destroy)(ix_plonk_context* context,
+    ix_plonk_quotient id, ix_plonk_error* error) {
     return guarded(context, error, [&] {
         require(context->quotients.erase(id) == 1, "unknown quotient handle");
     }, true);

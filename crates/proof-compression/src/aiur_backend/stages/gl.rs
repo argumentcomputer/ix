@@ -14,13 +14,13 @@ use super::{
 };
 use crate::{
   aiur_backend::{
-    Bls12381, Bn254, bls12_381,
+    AiurField, Bls12381, Bn254, bls12_381,
     compress_bn::{PackedCapacity, PackedGlProver, decompose, plan_copies_of},
     compress_gl,
     kzg::{Compiler, check_shape},
     kzg_advice as wire, kzg_packed_advice as packed_wire, wide,
   },
-  kzg::{Scalar, packed_shplonk::PackedShplonkConfig},
+  kzg::{Curve, KzgCurve, Scalar, packed_shplonk::PackedShplonkConfig},
   pipeline::{SetupClass, SetupConfig},
 };
 use aiur::{
@@ -47,6 +47,42 @@ fn number(spec: &Value, key: &str) -> Result<usize, Error> {
     .as_u64()
     .and_then(|v| usize::try_from(v).ok())
     .ok_or_else(|| format!("compress-gl {key}"))
+}
+
+/// Optional manifest-pinned sharding schedule (`gl_copies`: `[[name, count], ...]`).
+/// Pinning the copy counts makes `gl-key.bin` execution-independent across
+/// roots whose per-circuit row counts sit near `plan_copies_of`'s threshold.
+fn pinned_copies(
+  spec: &Value,
+  names: &[String],
+  functions: usize,
+) -> Result<Option<Vec<usize>>, Error> {
+  let Some(value) = spec.get("gl_copies") else {
+    return Ok(None);
+  };
+  if value.is_null() {
+    return Ok(None);
+  }
+  let entries: Vec<(String, usize)> = serde_json::from_value(value.clone())
+    .map_err(|e| format!("compress-gl gl_copies: {e}"))?;
+  let mut copies = vec![1usize; names.len()];
+  let mut seen = std::collections::BTreeSet::new();
+  for (name, count) in entries {
+    if count == 0 {
+      return Err(format!("compress-gl gl_copies {name}: count must be >= 1"));
+    }
+    if !seen.insert(name.clone()) {
+      return Err(format!("compress-gl gl_copies duplicate circuit {name}"));
+    }
+    let idx = names[..functions]
+      .iter()
+      .position(|candidate| candidate == &name)
+      .ok_or_else(|| {
+        format!("compress-gl gl_copies unknown function circuit {name}")
+      })?;
+    copies[idx] = count;
+  }
+  Ok(Some(copies))
 }
 
 fn prepare_custom_gl_hints<'a>(
@@ -287,6 +323,11 @@ fn run_custom_bn254(
   )?;
   wrap_config.check(&wrapper)?;
   let policy = compress_gl::WrapPolicy::new(&wrapper, &wrap_config.layout)?;
+  *stage
+    .stages
+    .wrap_policy
+    .lock()
+    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(policy.clone());
   let ready_seconds = (super::unix_now() - stage.started).max(0.0);
   stage.reserve(1);
 
@@ -402,15 +443,20 @@ fn run_custom_bn254(
     "units_and_groups": wide_stage.function_circuits,
     "exported_graph_nodes": wide_stage.graph_nodes,
   });
-  let copies = Some(plan_copies_of(
-    &wide_stage.inputs,
-    wide_stage.function_circuits,
-    &wide_stage.rows(&gl_raw),
-    shards,
-    min_saving,
-    column_cost,
-    node_cost,
-  ));
+  let copies =
+    match pinned_copies(spec, &wide_stage.names, wide_stage.function_circuits)?
+    {
+      Some(pinned) => Some(pinned),
+      None => Some(plan_copies_of(
+        &wide_stage.inputs,
+        wide_stage.function_circuits,
+        &wide_stage.rows(&gl_raw),
+        shards,
+        min_saving,
+        column_cost,
+        node_cost,
+      )),
+    };
   let (system, pk, key_bytes, copies) = stage.gpu(|| {
     build_packed_system(
       wide_stage.inputs.clone(),
@@ -615,9 +661,36 @@ fn run_bls12_381(
   ))
 }
 
+fn resolve_gl_curve(stage: &Stage<'_>) -> Result<Curve, Error> {
+  let manifest_curve = stage.stages.manifest.curve()?;
+  let has_manifest_curve =
+    stage.stages.manifest.value.get("curve").is_some_and(|v| !v.is_null());
+  let spec = &stage.spec.spec;
+  if spec["field"].is_null() {
+    return Ok(manifest_curve);
+  }
+  let stage_curve = match parse_stage_field(spec)? {
+    Field::Bn254 => Curve::Bn254,
+    Field::Bls12381 => Curve::Bls12381,
+    Field::Goldilocks => {
+      return Err(
+        "fri-verifier stage field must be \"bn254\" or \"bls12-381\"".into(),
+      );
+    },
+  };
+  if has_manifest_curve && stage_curve != manifest_curve {
+    return Err(format!(
+      "fri-verifier stage field {:?} differs from manifest curve {:?}",
+      stage_curve.as_str(),
+      manifest_curve.as_str()
+    ));
+  }
+  Ok(stage_curve)
+}
+
 pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
   let spec = &stage.spec.spec;
-  let field = parse_stage_field(spec)?;
+  let curve = resolve_gl_curve(stage)?;
   let entry_override = parse_optional_entry(spec)?;
   let advice_file = if spec["advice"].is_null() {
     None
@@ -625,20 +698,30 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
     Some(stage.product("advice")?)
   };
   let entry = entry_override.unwrap_or(compress_gl::ENTRY);
-  if field == Field::Bls12381 {
-    return run_bls12_381(
-      stage,
-      entry,
-      advice_file.as_ref().map(|p| p.bytes.as_slice()),
-    );
-  }
   if entry_override.is_some() || advice_file.is_some() {
-    return run_custom_bn254(
-      stage,
-      entry,
-      advice_file.as_ref().map(|p| p.bytes.as_slice()),
-    );
+    return match curve {
+      Curve::Bn254 => run_custom_bn254(
+        stage,
+        entry,
+        advice_file.as_ref().map(|p| p.bytes.as_slice()),
+      ),
+      Curve::Bls12381 => run_bls12_381(
+        stage,
+        entry,
+        advice_file.as_ref().map(|p| p.bytes.as_slice()),
+      ),
+    };
   }
+  match curve {
+    Curve::Bn254 => run_for::<Bn254>(stage),
+    Curve::Bls12381 => run_for::<Bls12381>(stage),
+  }
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_for<F: AiurField>(stage: &Stage<'_>) -> Result<Handoff, Error> {
+  let field = F::default();
+  let spec = &stage.spec.spec;
   let started = Instant::now();
   let capacity = PackedCapacity {
     log_cap: u8::try_from(number(spec, "log_cap")?)
@@ -648,8 +731,9 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
   };
   let shards = number(spec, "gl_shards")?;
   let (min_saving, column_cost, node_cost) = (1usize << 20, 3600, 600);
-  let setup = SetupConfig::from_env(false).map_err(|e| e.to_string())?;
-  let mut config = capacity.config(&setup)?;
+  let setup = SetupConfig::from_env_for_curve(F::Curve::CURVE, false)
+    .map_err(|e| e.to_string())?;
+  let mut config = capacity.config_for::<F::Curve>(&setup)?;
   if spec["streaming"].as_bool() == Some(true) {
     config = config.with_streaming_lookups().with_streaming_quotient();
   }
@@ -658,8 +742,10 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
 
   let gl_file = stage.product("artifact")?;
   let gl_hash = blake3::hash(&gl_file.bytes);
-  let gl_wrapper =
-    compress_gl::Wrapper::from_bytes(&gl_file.bytes, gl_hash.as_bytes())?;
+  let gl_wrapper = compress_gl::Wrapper::<F>::from_bytes_for(
+    &gl_file.bytes,
+    gl_hash.as_bytes(),
+  )?;
   let rom_file = stage.product("gl_rom")?;
   let rom_json: Value =
     serde_json::from_slice(&rom_file.bytes).map_err(|e| e.to_string())?;
@@ -672,7 +758,7 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
   // The pinned ROM capacities make the export execution-independent.
   let input = wide::grouped_input(
     gl_wrapper.plan(),
-    capacity.cap()?,
+    capacity.cap_for::<F::Curve>()?,
     &rom,
     &gl_file.path,
     gl_hash.to_hex().as_str(),
@@ -680,8 +766,17 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
   )?;
   let input_bytes =
     serde_json::to_vec_pretty(&input).map_err(|e| e.to_string())?;
-  let exported = stage.stages.exports.export(Kind::Wide, &input_bytes)?;
-  let layout = wide::Layout::load(&exported.layout(), &exported.fixed())?;
+  let export_field = match F::Curve::CURVE {
+    Curve::Bn254 => None,
+    Curve::Bls12381 => Some(Field::Bls12381),
+  };
+  let exported = stage.stages.exports.export_with_field(
+    Kind::Wide,
+    export_field,
+    &input_bytes,
+  )?;
+  let layout =
+    wide::Layout::<F::Curve>::load_for(&exported.layout(), &exported.fixed())?;
 
   let package_file = stage.product("wrap_package")?;
   let layout_file = stage.product("wrap_layout")?;
@@ -697,6 +792,11 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
   )?;
   wrap_config.check(&wrapper)?;
   let policy = compress_gl::WrapPolicy::new(&wrapper, &wrap_config.layout)?;
+  *stage
+    .stages
+    .wrap_policy
+    .lock()
+    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(policy.clone());
   let ready_seconds = (super::unix_now() - stage.started).max(0.0);
   stage.reserve(1);
 
@@ -762,10 +862,10 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
   let started = Instant::now();
   let claim = gl_wrapper.plan().public_claim(
     compress_gl::ENTRY,
-    &[Bn254.zero(); 16],
+    &[field.zero(); 16],
     &[],
   )?;
-  let wide_stage = wide::Stage::new(
+  let wide_stage = wide::Stage::<F::Curve>::new(
     layout,
     &gl_compiler,
     gl_wrapper.plan(),
@@ -788,15 +888,20 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
     "units_and_groups": wide_stage.function_circuits,
     "exported_graph_nodes": wide_stage.graph_nodes,
   });
-  let copies = Some(plan_copies_of(
-    &wide_stage.inputs,
-    wide_stage.function_circuits,
-    &wide_stage.rows(&gl_raw),
-    shards,
-    min_saving,
-    column_cost,
-    node_cost,
-  ));
+  let copies =
+    match pinned_copies(spec, &wide_stage.names, wide_stage.function_circuits)?
+    {
+      Some(pinned) => Some(pinned),
+      None => Some(plan_copies_of(
+        &wide_stage.inputs,
+        wide_stage.function_circuits,
+        &wide_stage.rows(&gl_raw),
+        shards,
+        min_saving,
+        column_cost,
+        node_cost,
+      )),
+    };
   let gl_prover = stage.gpu(|| {
     PackedGlProver::from_wide(
       &gl_wrapper,
@@ -826,7 +931,7 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
   let (gl_commit, gl_open) =
     (timings.commit_seconds() - commit0, timings.open_seconds() - open0);
   let mut changed = gl_proven.claim.clone();
-  *changed.last_mut().ok_or("empty claim")? += Bn254.one();
+  *changed.last_mut().ok_or("empty claim")? += field.one();
   let rejected = gl_prover.verify(&changed, &gl_proven.proof).is_err();
   stage.stages.checks.set("gl_native_rejects_changed_output", rejected);
   if !rejected {
@@ -835,6 +940,7 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
   let (gl_peak, _) = super::rss();
   let gl_report = json!({
     "program": compress_gl::ENTRY,
+    "curve": F::Curve::NAME,
     "artifact": gl_file.path,
     "artifact_blake3": gl_hash.to_hex().as_str(),
     "root_key_blake3": blake3::hash(&stage.stages.root_bytes[0]).to_hex().as_str(),
@@ -878,6 +984,7 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
     "summary.json",
     &json!({
       "format": "ix-aiur-compress-gl-packed-chain-v1",
+      "curve": F::Curve::NAME,
       "setup": setup_class.label(),
       "capacity": capacity,
       "streaming": spec["streaming"],
@@ -896,4 +1003,40 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
   drop(gl_prover);
   drop(gl_execution);
   Ok(handoff)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::pinned_copies;
+  use serde_json::json;
+
+  #[test]
+  fn gl_copies_pins_function_circuit_sharding_and_rejects_invalid_entries() {
+    let names =
+      vec!["fn_a".to_string(), "fn_b".to_string(), "rom_0".to_string()];
+    assert_eq!(pinned_copies(&json!({}), &names, 2).unwrap(), None);
+    assert_eq!(
+      pinned_copies(&json!({"gl_copies": [["fn_b", 2]]}), &names, 2).unwrap(),
+      Some(vec![1, 2, 1])
+    );
+    // Rejects unknown, non-function (ROM), duplicate, and zero counts.
+    assert!(
+      pinned_copies(&json!({"gl_copies": [["rom_0", 2]]}), &names, 2).is_err()
+    );
+    assert!(
+      pinned_copies(&json!({"gl_copies": [["missing", 2]]}), &names, 2)
+        .is_err()
+    );
+    assert!(
+      pinned_copies(
+        &json!({"gl_copies": [["fn_a", 2], ["fn_a", 2]]}),
+        &names,
+        2
+      )
+      .is_err()
+    );
+    assert!(
+      pinned_copies(&json!({"gl_copies": [["fn_a", 0]]}), &names, 2).is_err()
+    );
+  }
 }

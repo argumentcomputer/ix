@@ -6,15 +6,15 @@
 //! required before accepting the compression chain.
 
 use super::{
-  Bn254,
+  AiurCurve, AiurField, Bn254,
   compress_gl::CircuitSize,
   fq, g1,
   kzg::{Backend, Compiler, MAX_TOTAL_ROWS, VerifyingKey},
   kzg_advice as wire, kzg_packed_advice as packed_wire,
 };
 use crate::kzg::{
-  KzgConfig, Scalar, TranscriptKind, VerifierParams,
-  curve::{G1Affine, PairingCurve},
+  CurveScalar, KzgConfig, Scalar, TranscriptKind, VerifierParams,
+  curve::{Bn254 as Bn254Curve, G1AffineOf},
 };
 use aiur::{
   Execution, artifact::WidePackage, budget::RecordPool, field::FieldBackend,
@@ -29,20 +29,27 @@ use multi_stark::{
   system::extension_params,
 };
 use serde::Serialize;
-use std::{num::NonZeroU32, sync::Arc, time::Instant};
+use std::{marker::PhantomData, num::NonZeroU32, sync::Arc, time::Instant};
 
 mod packed;
 pub use packed::{
   PACKED_CHAIN_ENTRY, PACKED_CHAIN_POLICY_MAGIC, PACKED_NARROW_FIXED_ENTRY,
   PackedCapacity, PackedGlProven, PackedGlProver, PackedPolicy, PackedProof,
-  PackedProven, PackedProver, decompose, fold_packed, plan_copies,
-  plan_copies_of,
+  PackedProven, PackedProver, decompose, fold_packed, fold_packed_for,
+  plan_copies, plan_copies_of,
 };
 
 pub const ENTRY: &str = "CompressBN::compress_v1";
 pub const ARGUMENTS: usize = 17;
 pub const CLAIM_WORDS: usize = 23;
-const POLICY_BYTES: usize = 8 + 128 + 32 + 4 + 32 + 4;
+
+const fn claim_words_for<C: AiurCurve>() -> usize {
+  2 + ARGUMENTS + C::ACCUMULATOR_CHUNKS
+}
+
+const fn policy_bytes_for<C: AiurCurve>() -> usize {
+  8 + C::G2_PAIR_COMPRESSED_BYTES + 32 + 4 + 32 + 4
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PolicyDigest([u8; 32]);
@@ -110,39 +117,46 @@ pub struct PublicInputs {
 }
 
 impl PublicInputs {
-  pub fn arguments(self) -> [Scalar; ARGUMENTS] {
-    let mut args = [Bn254.zero(); ARGUMENTS];
-    args[..8].copy_from_slice(&wire::digest_words(self.policy.as_bytes()));
-    args[8] = Bn254.from_u64(u64::from(self.stage.get()));
-    args[9..].copy_from_slice(&wire::digest_words(self.statement.as_bytes()));
+  pub fn arguments_for<C: AiurCurve>(self) -> [CurveScalar<C>; ARGUMENTS] {
+    let mut args = [C::FIELD.zero(); ARGUMENTS];
+    args[..8]
+      .copy_from_slice(&wire::digest_words_for::<C>(self.policy.as_bytes()));
+    args[8] = C::FIELD.from_u64(u64::from(self.stage.get()));
+    args[9..]
+      .copy_from_slice(&wire::digest_words_for::<C>(self.statement.as_bytes()));
     args
+  }
+
+  pub fn arguments(self) -> [Scalar; ARGUMENTS] {
+    self.arguments_for::<Bn254Curve>()
   }
 }
 
-/// Two canonical compressed G1 points packed into four little-endian u128s.
+/// Two canonical compressed G1 points packed into `C::ACCUMULATOR_CHUNKS`
+/// little-endian u128s (`4` for BN254, `6` for BLS12-381).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Accumulator([Scalar; 4]);
+pub struct Accumulator<C: AiurCurve = Bn254Curve>(Vec<CurveScalar<C>>);
 
-impl Accumulator {
-  pub fn from_words(words: &[Scalar]) -> Result<Self, String> {
-    let points = wire::decode_accumulator(words)?;
-    let canonical = wire::accumulator_words(&points)?;
+impl<C: AiurCurve> Accumulator<C> {
+  pub fn from_words(words: &[CurveScalar<C>]) -> Result<Self, String> {
+    let points = wire::decode_accumulator_for::<C>(words)?;
+    let canonical = wire::accumulator_words_for::<C>(&points)?;
     if canonical != words {
       return Err("noncanonical CompressBN accumulator".into());
     }
     Ok(Self(canonical))
   }
 
-  pub fn from_points(points: &[G1Affine; 2]) -> Result<Self, String> {
-    Self::from_words(&wire::accumulator_words(points)?)
+  pub fn from_points(points: &[G1AffineOf<C>; 2]) -> Result<Self, String> {
+    Self::from_words(&wire::accumulator_words_for::<C>(points)?)
   }
 
-  pub const fn words(&self) -> &[Scalar; 4] {
+  pub fn words_slice(&self) -> &[CurveScalar<C>] {
     &self.0
   }
 
-  pub fn points(&self) -> [G1Affine; 2] {
-    wire::decode_accumulator(&self.0).expect("validated accumulator")
+  pub fn points(&self) -> [G1AffineOf<C>; 2] {
+    wire::decode_accumulator_for::<C>(&self.0).expect("validated accumulator")
   }
 
   /// Discharge the carried equation natively under independently trusted
@@ -150,7 +164,7 @@ impl Accumulator {
   /// to the expected policy, stage and root statement.
   pub fn check_pairing(
     &self,
-    parameters: &VerifierParams,
+    parameters: &VerifierParams<C>,
   ) -> Result<(), String> {
     let anchors = [parameters.g2, parameters.tau_g2];
     if anchors.iter().any(|point| {
@@ -160,10 +174,20 @@ impl Accumulator {
     }) {
       return Err("invalid CompressBN pairing anchors".into());
     }
-    if !PairingCurve::multi_pairing(self.points(), anchors).is_zero() {
+    if !C::PairingCurve::multi_pairing(self.points(), anchors).is_zero() {
       return Err("CompressBN deferred pairing equation failed".into());
     }
     Ok(())
+  }
+}
+
+impl Accumulator<Bn254Curve> {
+  pub fn words(&self) -> &[Scalar; 4] {
+    self
+      .0
+      .as_slice()
+      .try_into()
+      .expect("BN254 CompressBN accumulator has 4 words")
   }
 }
 
@@ -175,18 +199,23 @@ struct AuthorizedKey {
 /// `gl_packed` marks a packed chain policy (`IXAUKG01`), whose stage-one
 /// predecessor is a packed CompressGL proof.
 struct Policy {
-  anchors: [u8; 128],
+  anchors: Vec<u8>,
   gl: AuthorizedKey,
   bn: AuthorizedKey,
   gl_packed: bool,
 }
 
 impl Policy {
-  fn decode(bytes: &[u8], expected: PolicyDigest) -> Result<Self, String> {
-    let gl_packed = bytes.len() == POLICY_BYTES
-      && bytes.starts_with(PACKED_CHAIN_POLICY_MAGIC);
+  fn decode_for<C: AiurCurve>(
+    bytes: &[u8],
+    expected: PolicyDigest,
+  ) -> Result<Self, String> {
+    let policy_len = policy_bytes_for::<C>();
+    let anchor_len = C::G2_PAIR_COMPRESSED_BYTES;
+    let gl_packed =
+      bytes.len() == policy_len && bytes.starts_with(PACKED_CHAIN_POLICY_MAGIC);
     if !gl_packed
-      && (bytes.len() != POLICY_BYTES || !bytes.starts_with(wire::POLICY_MAGIC))
+      && (bytes.len() != policy_len || !bytes.starts_with(wire::POLICY_MAGIC))
     {
       return Err("invalid CompressBN policy encoding".into());
     }
@@ -199,10 +228,11 @@ impl Policy {
         bytes[offset + 32..offset + 36].try_into().unwrap(),
       ),
     };
+    let anchor_end = 8 + anchor_len;
     Ok(Self {
-      anchors: bytes[8..136].try_into().unwrap(),
-      gl: key(136),
-      bn: key(172),
+      anchors: bytes[8..anchor_end].to_vec(),
+      gl: key(anchor_end),
+      bn: key(anchor_end + 36),
       gl_packed,
     })
   }
@@ -214,14 +244,40 @@ impl Policy {
 
 /// Bounded source-wire advice with independently authenticated policy and key.
 /// Construction checks the public-call envelope; Aiur verifies the proof body.
-pub struct Input {
+pub struct Input<C: AiurCurve = Bn254Curve> {
   public: PublicInputs,
   policy: Policy,
   wire: wire::Inputs,
+  _curve: PhantomData<C>,
 }
 
-impl Input {
+impl Input<Bn254Curve> {
   pub fn from_source(
+    expected: PublicInputs,
+    key: Vec<u8>,
+    claims: Vec<u8>,
+    proof: Vec<u8>,
+    policy: Vec<u8>,
+  ) -> Result<Self, String> {
+    Self::from_source_for(expected, key, claims, proof, policy)
+  }
+
+  /// Input of the packed entries under a packed chain policy: every
+  /// predecessor, the CompressGL proof at stage one included, is a
+  /// packed-SHPLONK proof.
+  pub fn from_packed_source(
+    expected: PublicInputs,
+    key: Vec<u8>,
+    claims: Vec<u8>,
+    proof: Vec<u8>,
+    policy: Vec<u8>,
+  ) -> Result<Self, String> {
+    Self::from_packed_source_for(expected, key, claims, proof, policy)
+  }
+}
+
+impl<C: AiurCurve> Input<C> {
+  pub fn from_source_for(
     expected: PublicInputs,
     key: Vec<u8>,
     claims: Vec<u8>,
@@ -231,10 +287,7 @@ impl Input {
     Self::new(expected, key, claims, proof, policy, false)
   }
 
-  /// Input of the packed entries under a packed chain policy: every
-  /// predecessor, the CompressGL proof at stage one included, is a
-  /// packed-SHPLONK proof.
-  pub fn from_packed_source(
+  pub fn from_packed_source_for(
     expected: PublicInputs,
     key: Vec<u8>,
     claims: Vec<u8>,
@@ -258,7 +311,7 @@ impl Input {
     {
       return Err("CompressBN source input exceeds 64 MiB".into());
     }
-    let authorized = Policy::decode(&policy, expected.policy)?;
+    let authorized = Policy::decode_for::<C>(&policy, expected.policy)?;
     if authorized.gl_packed != packed_bn {
       return Err(
         "packed CompressBN entries take exactly the packed chain policy".into(),
@@ -279,12 +332,12 @@ impl Input {
     if !key.starts_with(key_magic) {
       return Err("invalid CompressBN source key tag".into());
     }
-    if source_anchors(&key)? != authorized.anchors {
+    if source_anchors_for::<C>(&key)? != authorized.anchors.as_slice() {
       return Err(
         "CompressBN predecessor and policy have different SRS anchors".into(),
       );
     }
-    check_previous(&claims, expected, predecessor.entry)?;
+    check_previous_for::<C>(&claims, expected, predecessor.entry)?;
     if !proof.starts_with(proof_magic) {
       return Err("invalid CompressBN source proof tag".into());
     }
@@ -292,6 +345,7 @@ impl Input {
       public: expected,
       policy: authorized,
       wire: wire::Inputs::new(key, claims, proof, policy)?,
+      _curve: PhantomData,
     })
   }
 
@@ -304,32 +358,32 @@ impl Input {
   }
 }
 
-pub struct Wrapper {
-  plan: TracePlan<'static, Bn254>,
-  maps: MapOverrides<Scalar>,
+pub struct Wrapper<F: AiurField = Bn254> {
+  plan: TracePlan<'static, F>,
+  maps: MapOverrides<F::Element>,
   artifact_digest: [u8; 32],
   entry: u32,
   entry_name: &'static str,
 }
 
-pub struct Executed<'a> {
-  input: &'a Input,
-  record: Execution<Bn254>,
-  accumulator: Accumulator,
+pub struct Executed<'a, F: AiurField = Bn254> {
+  input: &'a Input<F::Curve>,
+  record: Execution<F>,
+  accumulator: Accumulator<F::Curve>,
   artifact_digest: [u8; 32],
   execution_seconds: f64,
 }
 
-impl Executed<'_> {
-  pub const fn input(&self) -> &Input {
+impl<F: AiurField> Executed<'_, F> {
+  pub const fn input(&self) -> &Input<F::Curve> {
     self.input
   }
 
-  pub const fn record(&self) -> &Execution<Bn254> {
+  pub const fn record(&self) -> &Execution<F> {
     &self.record
   }
 
-  pub const fn accumulator(&self) -> &Accumulator {
+  pub const fn accumulator(&self) -> &Accumulator<F::Curve> {
     &self.accumulator
   }
 }
@@ -368,7 +422,10 @@ pub struct Profile {
 impl Profile {
   /// Materialized lookup tuples coexist with the trace matrices when lookup
   /// streaming is disabled. Prover workspaces and allocator slack are separate.
-  pub fn trace_bytes(&self, config: &KzgConfig) -> Result<usize, String> {
+  pub fn trace_bytes<C: AiurCurve>(
+    &self,
+    config: &KzgConfig<C>,
+  ) -> Result<usize, String> {
     self.trace_bytes_streaming(config.uses_streaming_lookups())
   }
 
@@ -399,12 +456,12 @@ pub struct TraceLimits {
 }
 
 impl TraceLimits {
-  pub fn check(
+  pub fn check<C: AiurCurve>(
     self,
     profile: &Profile,
-    config: &KzgConfig,
+    config: &KzgConfig<C>,
   ) -> Result<(), String> {
-    self.check_streaming(profile, config.uses_streaming_lookups())
+    self.check_streaming_for::<C>(profile, config.uses_streaming_lookups())
   }
 
   pub fn check_streaming(
@@ -412,8 +469,17 @@ impl TraceLimits {
     profile: &Profile,
     streaming_lookups: bool,
   ) -> Result<(), String> {
+    self.check_streaming_for::<Bn254Curve>(profile, streaming_lookups)
+  }
+
+  pub fn check_streaming_for<C: AiurCurve>(
+    self,
+    profile: &Profile,
+    streaming_lookups: bool,
+  ) -> Result<(), String> {
+    let max_domain_cap = 1usize << C::MAX_LOG_DOMAIN.min(30);
     if !self.max_height.is_power_of_two()
-      || self.max_height > 1 << 28
+      || self.max_height > max_domain_cap
       || self.max_total_rows == 0
       || self.max_total_rows > MAX_TOTAL_ROWS
       || self.max_trace_bytes == 0
@@ -453,14 +519,14 @@ impl VerifyingKeys {
   }
 }
 
-pub struct Proven {
+pub struct Proven<C: AiurCurve = Bn254Curve> {
   pub keys: VerifyingKeys,
   pub proof: Vec<u8>,
   pub source_proof: Vec<u8>,
   pub source_claims: Vec<u8>,
-  pub claim: Vec<Scalar>,
+  pub claim: Vec<CurveScalar<C>>,
   pub public: PublicInputs,
-  pub accumulator: Accumulator,
+  pub accumulator: Accumulator<C>,
   pub profile: Profile,
   pub setup_seconds: f64,
   pub trace_seconds: f64,
@@ -468,19 +534,39 @@ pub struct Proven {
   pub verification_seconds: f64,
 }
 
-impl Wrapper {
+impl Wrapper<Bn254> {
   /// Authenticate compiler output before parsing; structural validity alone
   /// cannot identify the intended verification program.
   pub fn from_bytes(
     bytes: &[u8],
     expected_digest: &[u8; 32],
   ) -> Result<Self, String> {
-    Self::from_bytes_with_entry(bytes, expected_digest, ENTRY)
+    Self::from_bytes_for(bytes, expected_digest)
   }
 
   /// `entry` is [`ENTRY`], [`PACKED_CHAIN_ENTRY`] or
   /// [`PACKED_NARROW_FIXED_ENTRY`]; all share the public call.
   pub fn from_bytes_with_entry(
+    bytes: &[u8],
+    expected_digest: &[u8; 32],
+    entry_name: &'static str,
+  ) -> Result<Self, String> {
+    Self::from_bytes_with_entry_for(bytes, expected_digest, entry_name)
+  }
+}
+
+impl<F: AiurField> Wrapper<F> {
+  /// Authenticate compiler output before parsing for curve field `F`.
+  pub fn from_bytes_for(
+    bytes: &[u8],
+    expected_digest: &[u8; 32],
+  ) -> Result<Self, String> {
+    Self::from_bytes_with_entry_for(bytes, expected_digest, ENTRY)
+  }
+
+  /// `entry` is [`ENTRY`], [`PACKED_CHAIN_ENTRY`] or
+  /// [`PACKED_NARROW_FIXED_ENTRY`]; all share the public call.
+  pub fn from_bytes_with_entry_for(
     bytes: &[u8],
     expected_digest: &[u8; 32],
     entry_name: &'static str,
@@ -497,21 +583,24 @@ impl Wrapper {
     let package = WidePackage::decode(bytes)?;
     let trace =
       package.trace.ok_or("CompressBN needs a compiler trace artifact")?;
-    let mut program = package.program.check_with(Bn254)?;
+    let field = F::default();
+    let mut program = package.program.check_with(field)?;
     program.track_depth(&trace)?;
     program.entry(entry_name)?;
     let plan = TracePlan::new(Arc::new(program), trace)?;
+    let chunks = F::Curve::ACCUMULATOR_CHUNKS;
+    let expected_claim_words = claim_words_for::<F::Curve>();
     let claim = plan.public_claim(
       entry_name,
-      &[Bn254.zero(); ARGUMENTS],
-      &[Bn254.zero(); 4],
+      &[field.zero(); ARGUMENTS],
+      &vec![field.zero(); chunks],
     )?;
-    if claim.len() != CLAIM_WORDS || claim[0] != Bn254.one() {
-      return Err(
-        "CompressBN needs the version-one 23-word public call".into(),
-      );
+    if claim.len() != expected_claim_words || claim[0] != field.one() {
+      return Err(format!(
+        "CompressBN needs the version-one {expected_claim_words}-word public call"
+      ));
     }
-    let entry = u32::try_from(Bn254.try_to_u64(claim[1])?)
+    let entry = u32::try_from(field.try_to_u64(claim[1])?)
       .map_err(|_error| "CompressBN callable exceeds u32")?;
     let mut maps = MapOverrides::new();
     aiur::library::u8::register_maps(plan.program(), &mut maps)?;
@@ -522,7 +611,7 @@ impl Wrapper {
     &self.artifact_digest
   }
 
-  pub const fn plan(&self) -> &TracePlan<'static, Bn254> {
+  pub const fn plan(&self) -> &TracePlan<'static, F> {
     &self.plan
   }
 
@@ -533,12 +622,12 @@ impl Wrapper {
   pub fn claim(
     &self,
     public: PublicInputs,
-    accumulator: &Accumulator,
-  ) -> Result<Vec<Scalar>, String> {
+    accumulator: &Accumulator<F::Curve>,
+  ) -> Result<Vec<F::Element>, String> {
     self.plan.public_claim(
       self.entry_name,
-      &public.arguments(),
-      accumulator.words(),
+      &public.arguments_for::<F::Curve>(),
+      accumulator.words_slice(),
     )
   }
 
@@ -546,10 +635,10 @@ impl Wrapper {
   /// the caller. A shorter loaded SRS prefix must retain the same public cap.
   pub fn verifying_key(
     &self,
-    config: KzgConfig,
+    config: KzgConfig<F::Curve>,
   ) -> Result<VerifyingKeys, String> {
-    check_config(&config)?;
-    check_proving_capacity(&config, 2)?;
+    check_config::<F::Curve>(&config)?;
+    check_proving_capacity::<F::Curve>(&config, 2)?;
     let compiler = Compiler::new(&self.plan)?;
     let fixed_height = compiler
       .inputs()
@@ -559,15 +648,18 @@ impl Wrapper {
       .max()
       .unwrap_or(2)
       .max(2);
-    check_proving_capacity(&config, fixed_height)?;
+    check_proving_capacity::<F::Curve>(&config, fixed_height)?;
     let backend = Backend::new(&self.plan, config)?;
     self.encode_key(&backend.verifying_key()?)
   }
 
-  fn encode_key(&self, key: &VerifyingKey) -> Result<VerifyingKeys, String> {
+  fn encode_key(
+    &self,
+    key: &VerifyingKey<F::Curve>,
+  ) -> Result<VerifyingKeys, String> {
     Ok(VerifyingKeys {
       portable: key.to_bytes()?,
-      source: wire::key_bytes(key)?,
+      source: wire::key_bytes_for::<F::Curve>(key)?,
       entry: self.entry,
     })
   }
@@ -576,20 +668,21 @@ impl Wrapper {
   /// growth. Artifact bytes, source advice and prover workspaces are separate.
   pub fn execute<'a>(
     &self,
-    input: &'a Input,
+    input: &'a Input<F::Curve>,
     max_record_bytes: usize,
-  ) -> Result<Executed<'a>, String> {
+  ) -> Result<Executed<'a, F>, String> {
     if max_record_bytes == 0 {
       return Err("CompressBN record limit must be positive".into());
     }
     let started = Instant::now();
+    let field = F::default();
     let mut hints = HintChannels::new();
-    aiur::library::u32::register(&mut hints, Bn254)?;
-    aiur::library::u64::register(&mut hints, Bn254)?;
-    fq::register(&mut hints)?;
-    g1::register(&mut hints)?;
-    wire::register(&mut hints)?;
-    input.wire.register(&mut hints)?;
+    aiur::library::u32::register(&mut hints, field)?;
+    aiur::library::u64::register(&mut hints, field)?;
+    fq::register_for::<F::Curve>(&mut hints)?;
+    g1::register_for::<F::Curve>(&mut hints)?;
+    wire::register_for::<F::Curve>(&mut hints)?;
+    input.wire.register_for::<F::Curve>(&mut hints)?;
     let prepared = self
       .plan
       .program()
@@ -603,12 +696,12 @@ impl Wrapper {
     let record = prepared
       .execute_reserved(
         self.entry_name,
-        input.public.arguments().to_vec(),
+        input.public.arguments_for::<F::Curve>().to_vec(),
         &reservation,
       )
       .map_err(|error| error.to_string())?;
     reservation.finish_execution();
-    let accumulator = Accumulator::from_words(&record.output)?;
+    let accumulator = Accumulator::<F::Curve>::from_words(&record.output)?;
     Ok(Executed {
       input,
       record,
@@ -618,14 +711,17 @@ impl Wrapper {
     })
   }
 
-  pub fn profile(&self, execution: &Executed<'_>) -> Result<Profile, String> {
+  pub fn profile(
+    &self,
+    execution: &Executed<'_, F>,
+  ) -> Result<Profile, String> {
     self.profile_with(execution, &Compiler::new(&self.plan)?)
   }
 
   /// [`Self::profile`] under an explicit lookup quotient-degree budget.
   pub fn profile_with_budget(
     &self,
-    execution: &Executed<'_>,
+    execution: &Executed<'_, F>,
     lookup_quotient_budget: Option<usize>,
   ) -> Result<Profile, String> {
     self.profile_with(
@@ -636,8 +732,8 @@ impl Wrapper {
 
   fn profile_with(
     &self,
-    execution: &Executed<'_>,
-    compiler: &Compiler<'_, 'static>,
+    execution: &Executed<'_, F>,
+    compiler: &Compiler<'_, 'static, F>,
   ) -> Result<Profile, String> {
     if execution.artifact_digest != self.artifact_digest {
       return Err(
@@ -646,7 +742,7 @@ impl Wrapper {
     }
     let started = Instant::now();
     let heights = compiler.row_counts(&execution.record)?;
-    let params = extension_params::<KzgConfig>();
+    let params = extension_params::<KzgConfig<F::Curve>>();
     let mut circuits = Vec::with_capacity(heights.len());
     let (mut main_cells, mut fixed_cells, mut stage2_cells, mut concrete_cells) =
       (0, 0, 0, 0);
@@ -701,7 +797,7 @@ impl Wrapper {
     let trace_bytes = main_cells
       .checked_add(fixed_cells)
       .and_then(|cells| cells.checked_add(stage2_cells))
-      .and_then(|cells| cells.checked_mul(size_of::<Scalar>()))
+      .and_then(|cells| cells.checked_mul(size_of::<F::Element>()))
       .ok_or("trace byte count overflow")?;
     let public = execution.input.public;
     let function_rows = self
@@ -745,8 +841,8 @@ impl Wrapper {
 
   pub fn preflight(
     &self,
-    execution: &Executed<'_>,
-    config: &KzgConfig,
+    execution: &Executed<'_, F>,
+    config: &KzgConfig<F::Curve>,
     limits: TraceLimits,
   ) -> Result<Profile, String> {
     let profile = self.profile(execution)?;
@@ -758,12 +854,12 @@ impl Wrapper {
   /// to the deferred verification step, not to the final pairing equation.
   pub fn prove(
     &self,
-    execution: &Executed<'_>,
-    config: KzgConfig,
+    execution: &Executed<'_, F>,
+    config: KzgConfig<F::Curve>,
     limits: TraceLimits,
-  ) -> Result<Proven, String> {
+  ) -> Result<Proven<F::Curve>, String> {
     let profile = self.preflight(execution, &config, limits)?;
-    check_config(&config)?;
+    check_config::<F::Curve>(&config)?;
     if profile.max_height > config.pcs().verifier_params().max_trace_len()
       || profile.quotient_degree > config.max_quotient_degree()
     {
@@ -776,7 +872,7 @@ impl Wrapper {
       ));
     }
     let policy = &execution.input.policy;
-    let configured_policy = wire::Policy::new(
+    let configured_policy = wire::Policy::<F::Curve>::new(
       config.pcs().verifier_params(),
       policy.gl.digest,
       policy.gl.entry,
@@ -789,21 +885,22 @@ impl Wrapper {
           .into(),
       );
     }
-    check_proving_capacity(&config, profile.max_height)?;
+    check_proving_capacity::<F::Curve>(&config, profile.max_height)?;
     let started = Instant::now();
     let backend = Backend::new(&self.plan, config)?;
     let portable = backend.verifying_key()?;
     let keys = self.encode_key(&portable)?;
     if keys.source_digest() != execution.input.policy.bn.digest
       || self.entry != execution.input.policy.bn.entry
-      || source_anchors(&keys.source)? != execution.input.policy.anchors
+      || source_anchors_for::<F::Curve>(&keys.source)?
+        != execution.input.policy.anchors.as_slice()
     {
       return Err(
         "CompressBN proving key differs from the trusted policy".into(),
       );
     }
     let setup_seconds = started.elapsed().as_secs_f64();
-    let args = execution.input.public.arguments();
+    let args = execution.input.public.arguments_for::<F::Curve>();
     let started = Instant::now();
     let witness =
       backend.generate(&execution.record, self.entry_name, &args)?;
@@ -812,7 +909,7 @@ impl Wrapper {
     let proof = backend.prove(
       self.entry_name,
       &args,
-      execution.accumulator.words(),
+      execution.accumulator.words_slice(),
       witness,
     )?;
     let proving_seconds = started.elapsed().as_secs_f64();
@@ -824,8 +921,10 @@ impl Wrapper {
     Ok(Proven {
       keys,
       proof: proof_bytes,
-      source_proof: wire::proof_bytes(&proof)?,
-      source_claims: wire::claims_bytes(std::slice::from_ref(&claim))?,
+      source_proof: wire::proof_bytes_for::<F::Curve>(&proof)?,
+      source_claims: wire::claims_bytes_for::<F::Curve>(std::slice::from_ref(
+        &claim,
+      ))?,
       claim,
       public: execution.input.public,
       accumulator: execution.accumulator.clone(),
@@ -838,20 +937,21 @@ impl Wrapper {
   }
 }
 
-fn check_config(config: &KzgConfig) -> Result<(), String> {
+fn check_config<C: AiurCurve>(config: &KzgConfig<C>) -> Result<(), String> {
   if config.transcript_kind() != TranscriptKind::Blake3
     || config.max_log_degree() + config.max_quotient_degree().ilog2() as usize
-      > 28
+      > C::MAX_LOG_DOMAIN as usize
   {
-    return Err(
-      "CompressBN needs BLAKE3 and an admissible BN254 KZG capacity".into(),
-    );
+    return Err(format!(
+      "CompressBN needs BLAKE3 and an admissible {} KZG capacity",
+      C::NAME
+    ));
   }
   Ok(())
 }
 
-fn check_proving_capacity(
-  config: &KzgConfig,
+fn check_proving_capacity<C: AiurCurve>(
+  config: &KzgConfig<C>,
   required: usize,
 ) -> Result<(), String> {
   let loaded = config
@@ -868,7 +968,7 @@ fn check_proving_capacity(
 
 /// Per-column and packed source keys share the layout up to the anchors:
 /// magic, seed blob, trace cap, quotient budget, generator, anchors.
-fn source_anchors(key: &[u8]) -> Result<[u8; 128], String> {
+fn source_anchors_for<C: AiurCurve>(key: &[u8]) -> Result<&[u8], String> {
   if !key.starts_with(wire::KEY_MAGIC)
     && !key.starts_with(packed_wire::KEY_MAGIC)
   {
@@ -879,21 +979,21 @@ fn source_anchors(key: &[u8]) -> Result<[u8; 128], String> {
   ) as usize;
   let offset = 12usize
     .checked_add(seed_bytes)
-    .and_then(|n| n.checked_add(8 + 32))
+    .and_then(|n| n.checked_add(8 + C::G1_COMPRESSED_BYTES))
     .ok_or("source key offset overflow")?;
   key
     .get(offset..)
-    .and_then(|bytes| bytes.get(..128))
+    .and_then(|bytes| bytes.get(..C::G2_PAIR_COMPRESSED_BYTES))
     .ok_or_else(|| "truncated source key anchors".into())
-    .map(|bytes| bytes.try_into().unwrap())
 }
 
-fn check_previous(
+fn check_previous_for<C: AiurCurve>(
   bytes: &[u8],
   public: PublicInputs,
   entry: u32,
 ) -> Result<(), String> {
-  let width = if public.stage == Stage::FIRST { 18 } else { CLAIM_WORDS };
+  let width =
+    if public.stage == Stage::FIRST { 18 } else { claim_words_for::<C>() };
   let encoded_width = u32::try_from(width)
     .map_err(|_error| "CompressBN claim width overflow")?
     .to_le_bytes();
@@ -906,29 +1006,29 @@ fn check_previous(
       "CompressBN predecessor must have one exact version-one call".into(),
     );
   }
-  let words: Vec<_> = bytes[16..]
+  let words: Vec<CurveScalar<C>> = bytes[16..]
     .as_chunks::<32>()
     .0
     .iter()
     .map(|bytes| {
-      ark_bn254::Fr::deserialize_compressed(bytes.as_slice())
-        .map(Scalar::new)
+      C::Fr::deserialize_compressed(bytes.as_slice())
+        .map(CurveScalar::<C>::new)
         .map_err(|error| error.to_string())
     })
     .collect::<Result<_, _>>()?;
-  let mut expected = vec![Bn254.one(), Bn254.from_u64(u64::from(entry))];
+  let mut expected = vec![C::FIELD.one(), C::FIELD.from_u64(u64::from(entry))];
   if public.stage == Stage::FIRST {
-    expected.extend([Bn254.zero(); 8]);
+    expected.extend([C::FIELD.zero(); 8]);
   } else {
-    expected.extend(wire::digest_words(public.policy.as_bytes()));
-    expected.push(Bn254.from_u64(u64::from(public.stage.get() - 1)));
+    expected.extend(wire::digest_words_for::<C>(public.policy.as_bytes()));
+    expected.push(C::FIELD.from_u64(u64::from(public.stage.get() - 1)));
   }
-  expected.extend(wire::digest_words(public.statement.as_bytes()));
+  expected.extend(wire::digest_words_for::<C>(public.statement.as_bytes()));
   if words[..expected.len()] != expected {
     return Err("CompressBN predecessor call differs from the expected statement or stage".into());
   }
   if public.stage != Stage::FIRST {
-    Accumulator::from_words(&words[expected.len()..])?;
+    Accumulator::<C>::from_words(&words[expected.len()..])?;
   }
   Ok(())
 }

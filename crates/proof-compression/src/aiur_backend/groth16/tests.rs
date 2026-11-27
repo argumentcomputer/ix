@@ -302,7 +302,11 @@ fn solidity_codegen_is_deterministic_and_matches_interface() {
   let sol_a = export_solidity(&vk).expect("export solidity 1");
   let sol_b = export_solidity(&vk).expect("export solidity 2");
   assert_eq!(sol_a, sol_b, "Solidity codegen must be deterministic");
-  assert!(sol_a.contains("contract Groth16Verifier"));
+  assert!(sol_a.starts_with(super::solidity::DEV_SOLIDITY_HEADER));
+  assert!(
+    sol_a.contains("contract Groth16Verifier_DEV_INSECURE_DO_NOT_DEPLOY {")
+  );
+  assert!(!sol_a.contains("contract Groth16Verifier {"));
   assert!(sol_a.contains("uint256[2] calldata publicInputs"));
   assert!(sol_a.contains("function verifyProof("));
   assert!(sol_a.contains("PRECOMPILE_ADD = 0x06"));

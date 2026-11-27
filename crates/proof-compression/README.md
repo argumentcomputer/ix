@@ -227,7 +227,8 @@ ix compress setup
 
 # The recursive key and the pins it fixes, then the PLONK key and a Groth16
 # development key (the final keys need Go 1.26.8 or later). Both publish their
-# caches where `ix compress` reads them.
+# caches where `ix compress` reads them; each refuses a cache directory that
+# already holds entries, and IX_KZG_SRS and the IX_KZG_*_CACHE overrides.
 cargo run --release --locked -p ix-proof-compression --example release_keys -- \
   ixvm-key aggr-key root-layout.ixl release ~/.ix/compression/cache
 cargo run --release --locked -p ix-proof-compression --features plonk,groth16 \
@@ -238,7 +239,8 @@ cargo run --release --locked -p ix-proof-compression --features plonk,groth16 \
 The four roots of version 0.2 need the same heights, so the root wrap's
 execution depends on the aggregation program rather than on the root's shape;
 the doubling is headroom. The recursive key took 1,256 s and 99 GB of peak
-memory, and the PLONK and Groth16 keys 492 s (289 s and 203 s) and 15 GB.
+memory (re-deriving 0.5's at 16 threads peaked at 115.6 GB), and the PLONK and
+Groth16 keys 492 s (289 s and 203 s) and 15 GB.
 Compressing a root under the new keys then took 2,326 s and 389 GB; a PLONK
 or Groth16 proof of it, resuming that run, about 2 minutes more. The Groth16
 key comes from a fresh development setup and differs on every run.

@@ -319,14 +319,16 @@ impl<C: KzgCurve> Committed<C> {
     let (fixed_commitment, fixed_data) = KzgProverData::concatenate(fixed);
     let (stage_1_trace_commit, stage_1_trace_data) =
       KzgProverData::concatenate(main);
+    let mut system = System {
+      config,
+      circuits,
+      preprocessed_commit: Some(fixed_commitment),
+      preprocessed_indices: (0..count).map(Some).collect(),
+      vk_digest: [0u8; 32],
+    };
+    crate::kzg::config::bind_system_key(&mut system);
     Ok(Self {
-      system: System {
-        config,
-        circuits,
-        preprocessed_commit: Some(fixed_commitment),
-        preprocessed_indices: (0..count).map(Some).collect(),
-        vk_digest: [0u8; 32],
-      },
+      system,
       key: ProverKey { preprocessed_data: Some(fixed_data) },
       stage: Stage1 {
         active: vec![true; count],
@@ -441,13 +443,15 @@ pub(super) fn fixed_system<C: KzgCurve>(
     circuits.push(circuit);
     fixed.0.append(&mut commitment.0);
   }
-  Ok(System {
+  let mut system = System {
     config,
     circuits,
     preprocessed_commit: Some(fixed),
     preprocessed_indices: (0..count).map(Some).collect(),
     vk_digest: [0u8; 32],
-  })
+  };
+  crate::kzg::config::bind_system_key(&mut system);
+  Ok(system)
 }
 
 /// Commit each fixed partition without allocating a witness.
@@ -843,8 +847,9 @@ mod tests {
     let srs = Arc::new(Srs::unsafe_dev_setup(64, b"partitioned-prover"));
     for kind in [TranscriptKind::Blake3, TranscriptKind::Keccak256] {
       let config = KzgConfig::new(srs.clone(), 2).with_transcript(kind);
-      let (reference, key) =
+      let (mut reference, key) =
         System::new(config.clone(), compiled.kzg_circuit_inputs(64, 2)?);
+      crate::kzg::config::bind_system_key(&mut reference);
       let proof = reference.prove_multiple_claims(
         &key,
         &refs,

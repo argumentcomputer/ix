@@ -67,6 +67,24 @@ fn report(stage: &str, prepared: Prepared) {
   }
 }
 
+/// Check the Ignition SRS file `config` loads against its pin, whichever
+/// variable selected it, for deriving release keys (`examples/release_keys`):
+/// unlike `check_srs`, `IX_KZG_SRS` does not waive the check, and any other
+/// setup is refused.
+pub fn check_release_srs(config: &SetupConfig) -> Result<()> {
+  let SetupConfig::Ignition { srs } = config else {
+    return Err("release keys are derived under the Ignition SRS only".into());
+  };
+  if sha256_file(srs)? != verifying_keys::decode(IGNITION_SRS_SHA256)? {
+    return Err(
+      format!("{} differs from the released Ignition SRS", srs.display())
+        .into(),
+    );
+  }
+  eprintln!("parameters: {} verified", srs.display());
+  Ok(())
+}
+
 /// Check the ceremony SRS file `config` loads against its pin.
 fn check_srs(config: &SetupConfig) -> Result<()> {
   match config {
