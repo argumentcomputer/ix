@@ -20,7 +20,7 @@ IxVM root (Goldilocks/BLAKE3 STARK)
 | Stage | Lean source | Entry | Prover (Rust) |
 |---|---|---|---|
 | wrap | Goldilocks wrap program (`target/wrap-normalized/policies/m16384w64.ixa`) | CompressWrap | `stark-verifier wrap-prove` (`crates/stark-verifier/src/compress_wrap*.rs`) |
-| GL | `MultiStark/MultiStark/CompressGL*.lean` | `CompressGL::verify_root` | `compress_gl_packed_chain --gl-only` (`PackedGlProver`, `aiur_backend/compress_gl.rs`) |
+| GL | `MultiStark/MultiStark/CompressGL*.lean` (`stark-export export-trace OUT --compress-gl`) | `CompressGL::verify_root` | `compress_gl_packed_chain --gl-only` (`PackedGlProver`, `aiur_backend/compress_gl.rs`) |
 | narrow | `MultiStark/MultiStark/CompressNarrowFixed.lean` (exe `compress_narrow_fixed_export GL_KEY OUT`) | `CompressNarrowFixed::step_v1` | `aiur_template_v2_init --fixed-key --config ... --prove --packed --save` (`aiur_backend/template/v2*.rs`) |
 | terminal | `MultiStark/MultiStark/CompressFinalNarrow.lean` (exe `compress_final_narrow_export`) | `CompressFinalNarrow::verify_accumulator_v1` | `aiur_narrow_terminal_prove --cuda` (`aiur_backend/plonk.rs`, `tools/gnark`) |
 

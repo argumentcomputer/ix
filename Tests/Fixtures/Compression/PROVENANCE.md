@@ -19,7 +19,9 @@ changes (see "Deriving the verifying keys" in `crates/proof-compression/README.m
 - Claim digest (BLAKE3 of the claim):
   `c9f440791f4be07cca16a1afe221ce2138a9cc508c8bf74c28f47cf6f567ddf0`
 - Role table: `c60dd3126e86fe6d5221f514a229569a30d1c1075f88f3b23243df82da8194b7`
-  (the default role table, validated in the proof)
+  (the default role table; not assumed by the root claim — validated lazily by
+  the leaf proofs under it as far as each check uses the table, or discharged by
+  a binding proof verified during aggregation)
 - Root layout: `verifying-keys/0.5/root-layout.ixl` (95 bytes, BLAKE3
   `035f3b31e438becfe9294b792e7b0cb9aef8a10d073216731ac171c10cdd5748`,
   `--headroom 1` union over `Nat.add_comm`, `Init+Std`, and full `Mathlib` 4.34.1)

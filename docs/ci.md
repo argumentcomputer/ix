@@ -43,10 +43,12 @@ private work-queue labels and references to internal plan files in Lean,
 Rust and Markdown sources. It runs scanner controls on every invocation and
 uses no grandfather baseline. `lake run check-ci-filters` verifies that
 `.github/workflows/ci.yml`'s `refinement:` and `kernel:` path filters cover
-every project module in the SHA-256 transitive definitional closure manifests
-(`circuit-composed`, `compile-correct`, and `check-bytes`) as well as the TCB
-files `Ix/Address/Admission.lean` and `Ix/KernelDisplay/Peek.lean`. `lake lint`
-runs both after the strict module build and coverage checks.
+every project module in all six SHA-256 transitive definitional closure
+manifests (`circuit-composed`, `security-128`, `statement`, and
+`aiur-compression` under `refinement:`; `compile-correct` and `check-bytes`
+under `kernel:`) as well as the TCB files `Ix/Address/Admission.lean` and
+`Ix/KernelDisplay/Peek.lean`. `lake lint` runs both after the strict module
+build and coverage checks.
 
 Lean test entries are split across three drivers sharing `Tests/Registry.lean`:
 
@@ -58,16 +60,16 @@ The tier says where each entry runs:
 
 | Tier | Driver & Where it runs | What it holds |
 | --- | --- | --- |
-| `primary` | `IxTests` (`lake test`): `ci.yml`'s `host-test-primary`, and Nix's `ix-tests` | the quick host suites (including pure-host `ixvm-pw-hints`, `ixvm-binder-data`, and `ixvm-differential-attribution`) |
+| `primary` | `IxTests` (`lake test`): `ci.yml`'s `host-test-primary` | the quick host suites (including pure-host `ixvm-pw-hints`, `ixvm-binder-data`, and `ixvm-differential-attribution`) |
 | `ci:cli` | `IxTests`: `ci.yml`'s `host-test-cli` | the command-line integration tests |
-| `ci:ixvm` | `IxVMTests`: `ci.yml`'s `ixvm-tier-tests`, on the S3-cached `ixvm.ixa` artifact | PR completeness, FFT cost pins, out-of-scope claims (`eval`, `reveal`, `user-axioms`, `assumed`), and Rust-host circuit-verdict smokes (`IX_AIUR_CIRCUIT_VERDICT`; `=0` for plain execution) |
+| `ci:ixvm` | `IxVMTests`: `ci.yml`'s `ixvm-tier-tests`, on the S3-cached `ixvm.ixa` artifact | PR completeness, FFT cost pins, out-of-scope claims (`eval`, `reveal`, `user-axioms`, `assumed`), the must-reject fixtures of historical `False` acceptances (`ixvm-must-reject`), and Rust-host circuit-verdict smokes (`IX_AIUR_CIRCUIT_VERDICT`; `=0` for plain execution) |
 | `ci:compiler-closures` | `IxTests`: `ci.yml`'s `host-test-closures` | selected closures against the whole environment, auxiliary closure addresses, checker-support grounding, packing, `cert-evidence-agreement`, and the certified checker's pinned subjects and acceleration inputs |
 | `ci:binding-proof` | `IxTests`: `ci.yml`'s `binding-proof-cli`, on the cached `ixvm.ixa` and prebuilt Rust hosts | `ix prove-binding`, shard proofs assuming the binding, and composition/refusal checks (64 GiB budget) |
 | `ci:misc` | `IxTests`: `ci.yml`'s `host-test-misc`, with the ZK voting prover | the tutorial, catalog and commit I/O |
 | `ci:landing-initstd-cli` | `IxTests`: `ci.yml`'s `host-test-landing` | Init+Std through the `ix` binary: `ix compile-lean` with its report checks and reference digest pin (`Tests/Fixtures/initstd-reference.txt`), `ix check-lean` with bound roles admitted, `ix validate-lean` fidelity reusing that artifact (avoiding a second full Init+Std compile), and `ixvm-reader-coverage` |
 | `ci:nightly` | `IxTests`: `nightly.yml` (scheduled daily on `main`) | whole-Init+Std pure-Lean BLAKE3 sweep (`admission-hash-diff-initstd`) and brute-force exact-sharing sweeps (`exact-sharing-full`) |
-| `ci:nightly-ixvm` | `IxVMTests`: `nightly.yml` (scheduled daily on `main`) | full 24-term generated arithmetic `Claim.eval` suite (`ixvm-eval-full`; `Claim.eval` has no soundness proof yet) |
-| `manual` | `IxVMTests` / `IxManualTests` by hand only | entries that need inputs outside the repository, take minutes or hours, diagnostics, or opt-in adversarial sweeps formally superseded by `circuitComposed` (`ixvm-exploits-full`, `ixvm-safe-references-full`, `ixvm-tagn-sweep`, `ixvm-arena-full`); each states its reason |
+| `ci:nightly-ixvm` | `IxVMTests`: `nightly.yml` (scheduled daily on `main`) | full 24-term generated arithmetic `Claim.eval` suite (`ixvm-eval-full`; `Claim.eval` has no soundness proof yet) and the full exploit sweep (`ixvm-exploits-full`) |
+| `manual` | `IxVMTests` / `IxManualTests` by hand only | entries that need inputs outside the repository, take minutes or hours, diagnostics, or opt-in adversarial sweeps (`ixvm-safe-references-full`, `ixvm-tagn-sweep`, `ixvm-arena-full`), which `circuitComposed` covers only for in-scope claims (an accepted closure has a model; it does not show that IxVM refuses what Lean refuses); each states its reason |
 
 The manual runner that proves through the production `ix_aggr` circuit,
 `aggregate-binding-reuse`, takes minutes of recursion and about 190 GB, three
@@ -119,7 +121,11 @@ and `binding-proof-cli`; `ixvm-refinement` and `certified-kernel` run in
 parallel from `t=0` on their own sticky lineages (`ci-refinement`, `ci-kernel`).
 Valgrind runs `ffi-tests` (without Mathlib) whenever Rust/FFI files change. The
 certification statements' freeze, `Ix.Cert.Audit`, is built by `check-kernel`
-and `lake lint`, not by the test binary.
+and `lake lint`, not by the test binary. `certified-kernel` (through
+`check-kernel`), `ixvm-refinement` and `formal-unit-tests` re-check every
+project module in their roots' import closure with Lean's kernel
+(`Scripts/KernelReplay.lean`); their `leanchecker` calls replay only the
+modules they name.
 
 ## Path filtering, draft PRs, and required checks
 
@@ -132,7 +138,9 @@ requests, `ci.yml` runs only the fast dev loop (`quick-checks`, `lints`,
 path-gated parallel DAG including `certified-kernel`, Init+Std & compiler
 closures, `valgrind-ffi`, `ixvm-refinement`, `formal-check`, `ixvm-tier-tests`,
 and `binding-proof-cli`. Pushes to `main` run build-only cache-warming steps so
-sticky disks and the S3 `.ixa` cache stay fresh without re-running tests.
+sticky disks and the S3 `.ixa` cache stay fresh without re-running tests; the
+kernel and refinement jobs also replay their closures with Lean's kernel there,
+and the kernel job runs the IxCK bootstrap check.
 
 Because `runs-on/spot-retry-gate` requires every job in `job_results` to have
 `result == "success"`, a lightweight `check-results` job sits before `ci-gate`
@@ -288,7 +296,7 @@ Each entry below says what replaced the suite, or why it was dropped.
 - **`compile-claim-conflict`.** The compile is certified (`CompileCorrect`). The corpus compiles exercise its completeness.
 - **`decompile` and `decompile-diff`.** `fidelity-initstd`'s phase 5 is the decompile round trip on Init+Std.
 - **`kernel-read-cache`.** The read cache only serves `kernel-check-ixe`'s diagnostics. The user-axiom tests run its path.
-- **Pre-proof IxVM soundness and hypothesis-validation suites** (`ixvm-guard-certificate`, `ixvm-rec-run-bounds`, `ixvm-alias-block`, `ixvm-value-records`, `ixvm-telescope-block`, `ixvm-family-records`, `ixvm-family-graph-records`, `ixvm-twin-pair`, `ixvm-alias-formers`, `AliasParamHeads`, `ixvm-role-member-census`, `ixvm-op-order-scan`, `ixvm-decl-check-must-reject`, `ixvm-advice-must-reject`, `ixvm-quot-advice-must-reject`, `ixvm-refusal-controls`, `ixvm-recgen`, `ixvm-guard-corpus`, and `ixvm-mutator`). These manual suites tested finite fixtures for soundness properties and intermediate obligations now unconditionally proved for all inputs by `IxVM.Refinement.Endpoint.circuitComposed` (zero residual hypotheses). Completeness, parity, FFT pins, and Rust-host/FFI/circuit-verdict smoke coverage remain in `ixvm-kernel-checks`, `ixvm-eval`, `ixvm-exploits`, `ixvm-must-reject`, `ixvm-model-advice`, `ixvm-ind-variations`, `ixvm-shape-guards`, `ixvm-field-reduction`, `ixvm-circuit-verdict`, and `ixvm-differential`.
+- **Pre-proof IxVM soundness and hypothesis-validation suites** (`ixvm-guard-certificate`, `ixvm-rec-run-bounds`, `ixvm-alias-block`, `ixvm-value-records`, `ixvm-telescope-block`, `ixvm-family-records`, `ixvm-family-graph-records`, `ixvm-twin-pair`, `ixvm-alias-formers`, `AliasParamHeads`, `ixvm-role-member-census`, `ixvm-op-order-scan`, `ixvm-decl-check-must-reject`, `ixvm-advice-must-reject`, `ixvm-quot-advice-must-reject`, `ixvm-refusal-controls`, `ixvm-recgen`, `ixvm-guard-corpus`, and `ixvm-mutator`). These manual suites tested finite fixtures for intermediate obligations in the refinement proof chain; `IxVM.Refinement.Endpoint.circuitComposed` proves for in-scope typing claims (paired with an accepted `binding` run, no user axioms, no assumption tree, no literal class) that either a BLAKE3 collision occurred or the claimed closure has a set-theoretic model (it does not prove that IxVM refuses every input Lean refuses, nor does it cover claims with assumptions, user axioms, or literal classes). Completeness, parity, FFT pins, historical `False` must-reject fixtures, and Rust-host/FFI/circuit-verdict smoke coverage remain in `ixvm-kernel-checks`, `ixvm-eval`, `ixvm-exploits`, `ixvm-must-reject`, `ixvm-model-advice`, `ixvm-ind-variations`, `ixvm-shape-guards`, `ixvm-field-reduction`, `ixvm-circuit-verdict`, and `ixvm-differential`.
 
 **Replaced:**
 

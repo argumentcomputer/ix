@@ -132,7 +132,17 @@ prelude" below). The entry admits it before it reads any record: the
 address must be `hash` of the bytes, the bytes a canonical section
 (`RoleTable.ofBytes`), and the table well formed (`RoleTable.check`). The
 default table of the compiled Init is `Admission.defaultBinding`, for tests
-and the command line; every theorem holds for every table.
+and the command line; every theorem holds for every table. The strict admission
+(`Admission.checkBytesStrict`; on the host path, `Ix.RoleBinding.Artifact`'s checks)
+adds two refusals no theorem depends on: a table that binds the string-literal
+support (`Role.literalSupportPinned`) or `True`, `True.intro`
+(`Role.trustAnchorsPinned`, together `Role.pinnedToReference`) elsewhere than
+the default table, unless the caller opts out (`RolePins.trustAnchors` releases
+only the literal-support roles while keeping `True`/`True.intro` pinned, which
+`--allow-custom-literal-support` selects; `RolePins.asBound` releases all pins):
+a literal means what the bound `String.ofList` computes, and the fold checks
+those roles by type only; and a record with more than `maxRecordLevelParams`
+universe parameters in a member.
 
 `hash` is the content hash every address is authenticated against. The
 kernel admits no hasher (its import fence, below), so the entry and every
@@ -271,6 +281,7 @@ root depends on exactly `propext`, `Classical.choice` and `Quot.sound`.
 | `checkBytes_authentic` | `Authentic hash records blobs` (every record and every blob is stored under `hash` of its bytes, as supplied) and `hash binding.bytes = binding.address` |
 | `checkBytes_binding` | `BindingAdmitted hash binding t` for some table `t`: the section is authentic, `t` is its canonical decoding (`t.wireWF`, `t.toBytes = binding.bytes`) and `t.check = .ok ()` (`admitBinding_ok_iff`) |
 | `checkBytes_reading` | the binding admits as some `t` and the prelude reads under it (`preludeFor t = .ok pre`); `WithinBatch limits records blobs`; `UniqueKeys records blobs`; `Authentic hash records blobs`; `BindingAdmitted hash binding t`; `RecordsRead limits records constants` for some `constants`; `Hashed hash constants`; and `Installed t pre constants blobs hint env` |
+| `checkBytes_consts` | under `[Ix.Kernel.SetTheory V]`, every singleton record (definition, theorem, opaque, axiom or quotient) of `RecordsRead limits records constants` reads (`SingletonRead`) to a declaration whose declared constant (`Cached.Declaration.Declares`: definitions, theorems, non-inert opaques and installed axioms) is stored in `env` under its own name, with its own level parameters and with `AnnotOf` of its declared type (from `Cached.checkDecls_consts`, which takes `[SetTheory V]` because the cached-to-pure simulation obtains `EnvWF` from the model; `checkBytesStrict_consts` lifts it to `checkBytesStrict`) |
 | `checkBytes_resources` | `resourceUnits constants ≤ 2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes` |
 
 The projection variant has the same theorems at every `hash`
@@ -296,7 +307,8 @@ irrelevance and the literals' constructor forms hold in every model by the
 reading itself; the structure's docstring lists the definitional equalities
 that are not yet laws of it. The
 model theorem is `Ix.Kernel.model_exists` (`IxCK/Kernel/MainTheorem.lean`,
-upstream's statement and proof) at the prepared declarations: it holds for
+derived from upstream's, but its `Model` has fourteen laws to upstream's
+three and the proof is Ix's) at the prepared declarations: it holds for
 every declaration array the fold accepts, so the reader owes nothing for
 consistency. The definition values come from the kernel's model invariant
 `defn_reads` (`Model.ofEnvModelM`, `IxCK/Kernel/Model/Denotes.lean`). Theorem
@@ -351,11 +363,13 @@ nor a fuel (renaming, locality) are stated at this level.
 
 Not proved:
 
-- that installed types and values equal the decoded ones. The checker
-  installs the annotation of a declared term: binder regimes (`pw`) are
-  computed (the reader emits `pw := .never`), `let` is ζ-reduced, and
-  projections are checked. The intended statement is about `pw`-erasure and
-  needs a lemma about the kernel's `installConstantVal`/`installValue`;
+- that installed **values** equal the decoded ones, or that `indDecl` block
+  members' stored types satisfy `AnnotOf` (generated recursors, whnf'd type
+  formers, and positivity-normalised constructor fields are definitional
+  equalities rather than annotations). Declared **types** of singleton
+  definitions, theorems, non-inert opaques and installed axioms ARE tied to
+  the installed environment up to ζ-reduction and `pw`-erasure (`AnnotOf`) by
+  `checkBytes_consts` / `Cached.checkDecls_consts` (under `[Ix.Kernel.SetTheory V]`);
 - the member-level reading of inductive blocks (member order, constructor
   and recursor headers, rule constructors) through `readInductive`;
 - per-member completeness of definition blocks (`defOrder` is not proved to
@@ -391,8 +405,12 @@ cardinals, which its corollaries take as a hypothesis, not as an axiom.
 and no checker outside its closure ("Trust surface") is consulted. The certified theory
 uses Lean's three standard axioms: `propext`, `Classical.choice` and
 `Quot.sound`. The compiler-trust axioms `Lean.trustCompiler`,
-`Lean.ofReduceBool` and `Lean.ofReduceNat` are non-standard axioms here and
-decline. They are roles, inert ones, so that a role binding names them and a
+`Lean.ofReduceBool` and `Lean.ofReduceNat` are not axioms of the certified
+theory, but their records do not decline: the entry tolerates them as
+declarations that install nothing into the environment, and any declaration
+that uses one declines (`IxCK/Kernel/Checker.lean`). An accepted artifact may
+therefore contain these records, as the Init+Std reference artifact does.
+They are roles, inert ones, so that a role binding names them and a
 claim over Lean's `Init` lists no user axiom for them, and `Lean.reduceBool` and
 `Lean.reduceNat` are type-only anchors because those axioms' types mention
 them; no rule reduces either, and opaque definitions follow the ordinary
@@ -403,10 +421,9 @@ operations are admitted through the role table's evidence, which the
 checker checks itself ("Roles and the role table" below).
 
 **User axioms (uncertified).** Every other safe axiom declines at the
-certified entry and in every host driver by default. A real Lean library
-therefore does not check whole: strict checking of Init+Std declines
-`Lean.trustCompiler` and blocks the four native-evaluation constants that
-depend on it, the other two axioms among them
+certified entry and in every host driver by default. Strict checking of
+Init+Std accepts the whole library: its five compiler-trust records are the
+inert roles above, which install nothing
 (`Tests/Fixtures/initstd-reference.txt`). A binding that binds the
 compiler-trust axioms as their roles keys them by role, so no axiom policy
 admits them: they are user axioms only under a binding that leaves them
@@ -427,12 +444,16 @@ axiom prints `CONDITIONAL on K user axioms:` and lists them (the addresses the
 declarations key them by, with their names in meta mode), and `check-lean`
 exits with 5 rather than 0 ("`ix check-lean`" below). The binding must pass the
 kernel's role-table check for user axioms (`Admission.admitAxiomPolicy
-.allowUser`: `sorryAx`, `propext` and `Classical.choice` bound): a binding that
-leaves one out keys Lean's own constant as an input constant, which the checks
-would admit as a user axiom. The entries run that check themselves; the
-record-by-record drivers never reach admission, so the host runs it first
-(`Ix.RoleBinding.UserAxioms.requireAxiomRoles`), and such an artifact, like
-one with no binding, is refused before any checking.
+.allowUser`: every axiom role in `Admission.userAxiomRoles` bound — `propext`,
+`Classical.choice`, `sorryAx`, `Lean.trustCompiler`, `Lean.ofReduceBool`, and
+`Lean.ofReduceNat`): a binding that leaves one out keys Lean's own constant as
+an input constant, which the checks would admit as a user axiom. The entries run
+that check themselves; the record-by-record drivers never reach admission, so
+the host runs it first (`Ix.RoleBinding.UserAxioms.requireAxiomRoles`), and such
+an artifact, like one with no binding, is refused before any checking. The older
+`…WithUserAxioms` wrappers (`checkBytesWithUserAxioms` and siblings) discard the
+returned axiom list and are deprecated in favour of the `…Under .allowUser`
+entries.
 
 **Running time.** The theorems are about what the entry accepts; none bounds
 its running time, and the checker's fuel (`checkFuel`) bounds recursion
@@ -1005,7 +1026,9 @@ groups roles bound together, `Role.deps` records required groups, and
 
 The specifications carry no toolchain address. Standard axioms' supporting
 families, including Iff and Nonempty, are validated as whole blocks. Each
-inert axiom role has an exact type and supplies no usable proof. The
+inert axiom role has an exact type over the bound roles and supplies no usable
+proof (`Lean.trustCompiler`'s type is the role `True`, which only the strict
+admission pins to the default table's record). The
 specification version, encoding and digest are pinned in
 `IxCK/Kernel/Roles.lean`, `Ix/SpecDigest.lean` and
 `IxCK/Kernel/Audit/Roles.lean`; those sources define the current values.
@@ -1064,24 +1087,18 @@ is installed and validated. `model_exists` holds for every evidence, so the
 evidence is untrusted.
 
 **Binder contracts** (`IxCK/Ixon/Types/Contract.lean`). Ixon binders carry
-usage, ownership and locality contracts, inside the committed bytes. The
-reader keeps a `lam`'s in the binder's `BinderMeta` (`contract`) and an
-`all`'s input and result contracts (`contract`, `result`), and a `let`'s
-let contract (`nonDep`, value or shared borrow, and the bound variable's
-contract) in the `letE`'s `LetMeta`; the Lean ingress gives Lean's lets
-`LetContract.lean nonDep`, as the compiler does. They are identity data. A
-`let` never reaches conversion: the annotation pass ζ-reduces it. Structural
-equality, the expression hash and the specification comparisons see them;
-every specification carries the Lean fragment's defaults (`many`, `shared`,
-`unrestricted`), so a constant with other contracts does not meet it.
-Conversion compares input contracts: the binder congruences and η require
-equal input contracts as well as equal `pw` data, so the entry declines
-`f : ∀[erased] (x : Nat), Nat := fun[many] x => x`. It never compares result
-contracts: a `lam` has none, so the type inferred for one carries the
-default, and `fun[linear] x => x` checks against
-`∀[linear] (x : Nat), unique Nat`. The model reads only `pw`, so an
-accepted environment says nothing about how a variable is used
-(`Tests/Ix/Kernel/Contracts.lean`). The kernel imports these data types
+usage, ownership and locality contracts (modes), inside the committed bytes,
+so they are hashed into the record's address. Kernel terms carry none: the
+reader does not read the binder-data section, `BinderMeta` holds only `pw`
+and a display annotation (`IxCK/Kernel/Expr.lean`), and the checker and the
+model are mode-blind. The entry therefore does not compare contracts: it
+accepts `f : ∀[erased] (x : Nat), Nat := fun[many] x => x` as the plain
+identity, and a declaration's verdict does not depend on its modes
+(`Tests/Ix/Kernel/Contracts.lean`, `IxCK/Fixtures/ByteAdmission.lean`;
+[resource modes](resource-checking.md)). A `let` never reaches conversion:
+the annotation pass ζ-reduces it. The model reads only `pw`, so an
+accepted environment says nothing about how a variable is used; do not erase
+arguments on the strength of a kernel accept. The kernel imports these data types
 from Ixon, and nothing else
 (`kernel-layering`). Source mode gives Lean's binders the defaults and reads
 the compiler's resolved contract frames as the compiler lowers them
@@ -1360,11 +1377,15 @@ re-records it states why the closure or the statement moved.
    checker, the theory, the admission hash (`Ix/Address/Admission.lean`) and
    the display modules (`Ix/KernelDisplay/*`, `Ix/LeanIngress/Names.lean`)
    for compiler escapes (`unsafe`, `implemented_by`,
-   `computed_field`, `native_decide`, `extern`, `sorry`, `axiom`, ...); the
+   `computed_field`, `native_decide`, `extern`, `csimp`, `sorry`, `axiom`,
+   `addDecl`, `skipKernelTC`, ...), and of every certified library and
+   lakefile for the kernel-bypass tokens `skipKernelTC` and
+   `addDeclWithoutChecking`, which have no allowlist; the
    escapes in the allowlisted files (`IxCK/Kernel/{Expr,Name,Key,Exclusive,
-   BasisGen}.lean`, `Ix/Address/Admission.lean`, and the display-only read
-   `Ix/KernelDisplay/Peek.lean`) are permitted, each with its justification
-   in the tool's header;
+   BasisGen}.lean`, `Ix/Address/Admission.lean`, the display-only read
+   `Ix/KernelDisplay/Peek.lean`, and the files of the proved `@[csimp]`
+   replacements) are permitted, each with its justification in the tool's
+   header;
 6. `kernel-entry-cases`: Lean declarations of
    `Tests/Ix/Kernel/EntryCaseDefs.lean` compiled by Ix's compiler and
    submitted as canonical bytes to `Ixon.Authenticated.checkBytes`, each with
@@ -1381,7 +1402,14 @@ re-records it states why the closure or the statement moved.
    axiom, a theorem of `False`). Rows go to
    `.lake/build/kernel-entry-cases.jsonl`;
 7. `kernel-meta-names`: the `.meta` and `.source` names against Lean's, on
-   ill-typed declarations and the fixtures.
+   ill-typed declarations and the fixtures;
+8. the full-closure kernel replay (`lake run check-kernel-replay`,
+   `Scripts/KernelReplay.lean`): every project module in the import closure
+   of the gate's audit roots, and every module of the kernel package and of
+   `IxSharingVerify` (with `--with-model`, the model's too), re-checked by
+   Lean's kernel on top of its imports, so a declaration that entered an
+   `.olean` without a kernel check fails wherever it sits. `leanchecker M`
+   replays only the modules named `M…`, not their imports.
 
 The CI job runs the same gate and keeps the entry-case log.
 
@@ -1496,9 +1524,9 @@ any set theory implementing its `SetTheory` interface, on the three standard
 axioms. Ix's kernel is derived from it, is maintained here, and is expected
 to diverge from upstream.
 
-**What was taken.** 452 Lean modules of con-leche's `ConLeche/` tree, the
+**What was taken.** 453 Lean modules of con-leche's `ConLeche/` tree, the
 import closure of `model_exists`, the eight frontend modules the reader
-calls and `Verify/Cached/StreamThm.lean`, from
+calls, `Verify/Cached/StreamThm.lean` and `Verify/Cached/StreamConsts.lean`, from
 `https://github.com/leanprover/con-leche.git` at
 `ae0c0c4e4ce6a0081648aff03fe9c39d002c4526`; seven of them (the files
 modified by the subsequent upstream update) at `3ca9e2fe749a51cba4c6e3527aeecba074c29316`.
@@ -1510,7 +1538,18 @@ role table's evidence (the default table: `IxCK/Kernel/Ixon/RoleData.lean`).
 
 **What was changed.** Every file was moved (`ConLeche/Kernel/X` and
 `ConLeche/X` to `IxCK/Kernel/X`) and its namespace and module prefix renamed
-(`ConLeche.Kernel` and `ConLeche` to `Ix.Kernel`, as whole names). These
+(`ConLeche.Kernel` and `ConLeche` to `Ix.Kernel`, as whole names). The table
+below and the list of Ix's own files after it are not a complete inventory,
+and upstream's review does not cover what they omit: compared mechanically
+with `ae0c0c4e` after these renames, 43 of the 445 inherited modules still
+present are identical and 402 differ, and 221 modules are Ix's own. Among the
+unlisted changes, `Model` (`IxCK/Kernel/Denotes.lean`) has fourteen laws to
+upstream's three, and the rules tier (`IxCK/Kernel/Rules/Rel.lean`) gained
+constructors that are IxVM's moves rather than the checker's, among them
+equality reflection (`Red.eqProof`, `DefEq.eqProof`: closed terms are
+convertible given a closed proof of their equality) and a closed transitivity
+(`DefEq.transClosed`). Each has a soundness case in the model, but a `Rules`
+derivation is not evidence that the checker, or Lean, accepts a term. These
 files carry further changes:
 
 | File | Change | Why |
@@ -1518,7 +1557,7 @@ files carry further changes:
 | `IxCK/Kernel/{CheckerBase,Checker,DeclCheck}.lean`, `IxCK/Kernel/Cached/ParsedC.lean` and the proofs that consume them; the former `TrustAxioms.lean` was removed | `Roles` replaces `NatOpPins`; the operations' install gate checks the role table's evidence (`checkDivModEvidence`, `evidenceLocal`); compiler-trust support is excluded from the certified theory; the proofs take `Evidences` where they took pin lists | upstream's `NatOpPins` splices JSON pin dumps; Ix binds primitives by a role table and validates them against fixed specifications |
 | `IxCK/Kernel/Verify/Cached/{AgreeFloor,PushChain}.lean` | `import all Init.LetFun` | Lean 4.34.0 no longer exposes `letFun`'s body, which these proofs unfold |
 | `IxCK/Kernel/Frontend/InModel/Nested.lean` | container groups formed largest family first | Larger container families claim their members first, preventing overlapping nested-model groups from emitting a member twice |
-| `IxCK/Kernel/Level.lean`, `IxCK/Kernel/Verify/Level.lean` | the `(param, max)` case falls back on Géran's sublevels, with its soundness case | nanoda's comparison is incomplete there, and Ixon's canonical levels reach the gap (Mathlib's `RatFunc.liftOn_def`) |
+| `IxCK/Kernel/Level.lean`, `IxCK/Kernel/Verify/Level.lean` | the `(param, max)` case falls back on Géran's sublevels within a budget (beyond it, upstream's answer), with its soundness case | nanoda's comparison is incomplete there, and Ixon's canonical levels reach the gap (Mathlib's `RatFunc.liftOn_def`) |
 | `IxCK/Kernel/Expr.lean`, `IxCK/Kernel/Cached/ExprNodes.lean` | `Level` caches its has-parameter bit (`hasParamData`), and `levelHasParam` runs as it (`levelHasParam_eq_csimp`) | the walk visited a level shared as a DAG once per path, at every `.sort` node built |
 | `IxCK/Kernel/Cached/{StateC,CoreC}.lean`, `IxCK/Kernel/Verify/Cached/{SimCEff,DiscC4,DiscC6}.lean` | the binder-telescope loops' peel fuel is `peelFuelToM` (the binders before the first closed residual the memo holds) in place of the constant `peelFuel`, at the ∀ and λ clauses of inference and annotation, with `peelFuelToM_eff` in place of `peelFuelM_eff`; `isEquivLM` simplifies through `simplifyMemoC` (`Level.simplifyGo` seeded with `lsimpC`; `simplifyMemoC_spec`) | a chain `T (j+1) = T j → T j` re-peeled the telescope below each step and annotation rebuilt it unshared: quadratic time and memory, and quadratic comparison of two annotations ("Running time") |
 | `IxCK/Kernel/Cached/{StateC,CoreC}.lean`, `IxCK/Kernel/Verify/Cached/{SimCEff,BinderLoopC,DiscC4}.lean` | the cached core hash-conses the ∀ rule's levels: a table `lvlIntern` in `CState`, and `internLM (.imax u v)` in place of `pure (.imax u v)` in `inferPisOutI` and `inferBodyIOI`; `internLM` returns its argument on every branch (a hit is returned after `==` confirms it), proved by `internLM_eff` (with `CSOK.withIntern`: no clause reads the table), which the two simulation steps take in place of `pureEq_eff`. The rule, the model and the reference core are upstream's | without it the binder loop rebuilds the level of a telescope's tail as a new object equal to the one built before, and a `let` chain over one shared type is cubic ("Running time") |
@@ -1632,7 +1671,7 @@ below refer to it):
 | --- | --- |
 | 0 | `ix check-lean`: everything asked for passed; for a whole bound run, through the certified entry. `ix verify-host`: the statement replayed. `ix compile`: the output written. `kernel-check-ixe`: the run completed; its rows carry each record's outcome, a rejection included |
 | 1 | an infrastructure failure: an unreadable file, an artifact the loader refuses; `ix compile`: also a failure of the compile or of its typing; `kernel-check-ixe`: also a check that raises an error other than a decline by a limit |
-| 2 | a usage error: a bad flag or selector, a malformed limit setting (`0` included), a run that certainly cannot fit the address-space limit ("Under an address-space limit" below); `ix check-lean`: also a selected name that resolves to no declaration, or a host statement the run cannot issue (a selected, capped, unbound, `--allow-declined` or conditional run); `kernel-check-ixe --allow-user-axioms`: an artifact whose binding does not bind `sorryAx`, `propext` and `Classical.choice` |
+| 2 | a usage error: a bad flag or selector, a malformed limit setting (`0` included), a run that certainly cannot fit the address-space limit ("Under an address-space limit" below); `ix check-lean`: also a selected name that resolves to no declaration, or a host statement the run cannot issue (a selected, capped, unbound, `--allow-declined` or conditional run); `kernel-check-ixe --allow-user-axioms`: an artifact whose binding does not bind every axiom role in `Admission.userAxiomRoles` (`propext`, `Classical.choice`, `sorryAx`, `Lean.trustCompiler`, `Lean.ofReduceBool`, `Lean.ofReduceNat`) |
 | 3 | `ix check-lean`: a declaration failed (or, under `--allow-declined`, a declaration or dependency record was rejected), or the artifact was refused. `ix verify-host`: the replay rejected or failed. Both: a fixed decline (a fixed bound's exhaustion, above) |
 | 4 | `ix check-lean`, partial: every declaration passed, but the whole artifact asked for carries no role binding, so its admission did not run |
 | 5 | `ix check-lean`, conditional: everything passed, but only with the listed user axioms admitted |
@@ -1709,7 +1748,9 @@ the recorded checks on `n` worker threads
 its install plus its checks. The check is strict: a safe axiom other than the
 standard three declines. `--allow-user-axioms` admits such axioms on every
 path, the read cache's included, after refusing (exit code 2) an artifact
-whose binding does not bind `sorryAx`, `propext` and `Classical.choice`, and
+whose binding does not bind every axiom role in `Admission.userAxiomRoles`
+(`propext`, `Classical.choice`, `sorryAx`, `Lean.trustCompiler`,
+`Lean.ofReduceBool`, `Lean.ofReduceNat`), and
 ends its log with `CONDITIONAL on K user axioms:` and the axioms it admitted
 ("User axioms (uncertified)" above). A checker failure's reason is rendered by
 `.meta`: its keys spelled with the names the `.ixe`'s metadata gives them and
@@ -1768,7 +1809,8 @@ behind the merge-queue gate `initstd-reference` and the `ixvm-ooc` benchmark. It
 authenticates the bytes and checks every declaration, or a selection
 (`--consts`, `--consts-file`, `--max`), with the same incremental step as the
 environment check. When a whole run of a bound artifact passes, it runs the
-certified entry (`Ix.HostAdmission.certify`) and reports the host statement,
+certified entry (`Ix.HostAdmission.certify`, behind the strict admission's
+refusals above) and reports the host statement,
 which `--host-out` and `--host-store` persist (`docs/host-admission.md`). A
 whole bound run prints `bound roles: N admitted, M refused`: a role is refused
 when the run refused its record. In meta mode, the default, an artifact whose
@@ -1776,7 +1818,15 @@ published role names disagree with its binding is refused before any check
 (`Ix.RoleBinding.Compile.roleBindingError`, as the compiler's `finalize`
 runs it).
 
-Checking is strict. With `--allow-user-axioms` a whole run runs the entry under
+Checking is strict: safe axioms beyond `propext`, `Classical.choice` and
+`Quot.sound` decline, except the four inert axiom roles (`sorryAx`,
+`Lean.trustCompiler`, `Lean.ofReduceBool`, `Lean.ofReduceNat`) and two inert
+compiler-trust opaques (`Lean.reduceBool`, `Lean.reduceNat`), which install
+nothing (any use declines) and are reported distinctly as `inert` (`tolerated
+(not installed)`) rather than logically accepted. `--allow-custom-literal-support`
+runs strict admission under `RolePins.trustAnchors`, releasing only the
+string-literal support while still refusing moved `True` or `True.intro`. With
+`--allow-user-axioms` a whole run runs the entry under
 the `allowUser` policy once ("User axioms (uncertified)" above), and the user
 axioms it lists choose the verdict. With none, its receipt is the certified
 entry's and the run reports and issues the host statement as without the flag.
