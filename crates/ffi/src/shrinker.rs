@@ -11,9 +11,11 @@ use lean_ffi::object::{
 use stark_shrinker::{
   COMPACT_PARAMS, CompiledVerifier, DEFAULT_PARAMS, MAX_PLONKISH_HOPS,
   OuterFriParams, PlonkishCircuitVerifier, PlonkishOptions, StarkShrinker,
-  StarkShrinkerVerifier, decode_single_claim_bytes,
-  envelope::{ShrinkMode, peek_header},
-  hash_publics, peek_plonkish_header, shrink_fixed_root,
+  decode_single_claim_bytes,
+  envelope::ShrinkMode,
+  hash_publics, peek_plonkish_header,
+  plonkish::{ENDPOINT1_PROFILES, admitted_profile},
+  shrink_fixed_root, verify_v1_pinned,
 };
 use std::path::Path;
 
@@ -108,20 +110,19 @@ extern "C" fn rs_stark_shrinker_verify(
 ) -> LeanIOResult<LeanOwned> {
   let result = (|| -> Result<String, String> {
     let envelope_bytes = envelope.as_bytes();
-    let header = peek_header(envelope_bytes)?;
     let expected_inner =
       parse_digest32("expected inner VK digest", &expected_inner_vk_digest)?;
     let expected_claim =
       parse_digest32("expected claim digest", &expected_claim_digest)?;
     let compiled =
       load_pinned_verifier(&verifier_artifact, &expected_artifact_digest)?;
-    let plan = compiled.trace_plan()?;
-    let verifier =
-      StarkShrinkerVerifier::new(&plan, header.mode, header.params)?;
-    let report = verifier.verify(
+    // Mode and parameters must be a shipped v1 profile; the backend is built
+    // from that constant, not from the envelope.
+    let report = verify_v1_pinned(
+      &compiled,
       envelope_bytes,
-      Some(&expected_inner),
-      Some(&expected_claim),
+      &expected_inner,
+      &expected_claim,
     )?;
     Ok(report.banner())
   })();
@@ -175,13 +176,36 @@ fn shrink_fixed_root_with_params(
   Ok((output.envelope_bytes, output.report.banner()))
 }
 
+/// Verify an Endpoint 1 v2 envelope as `ix verify` does: the outer FRI
+/// parameters and mode come from [`ENDPOINT1_PROFILES`], the verifier's
+/// constants, never from the envelope.
 fn verify_fixed_root_bytes(
   inner_vk_bytes: &[u8],
   layout_bytes: &[u8],
   envelope_bytes: &[u8],
   expected_claim_bytes: &[u8],
 ) -> Result<String, String> {
+  verify_fixed_root_bytes_admitting(
+    inner_vk_bytes,
+    layout_bytes,
+    envelope_bytes,
+    expected_claim_bytes,
+    &ENDPOINT1_PROFILES,
+  )
+}
+
+/// [`verify_fixed_root_bytes`] under an explicit list of admitted
+/// `(mode, params)` profiles: the verifier is derived from the admitted
+/// constant equal to the header; any other header is rejected first.
+fn verify_fixed_root_bytes_admitting(
+  inner_vk_bytes: &[u8],
+  layout_bytes: &[u8],
+  envelope_bytes: &[u8],
+  expected_claim_bytes: &[u8],
+  admitted: &[(ShrinkMode, OuterFriParams)],
+) -> Result<String, String> {
   let header = peek_plonkish_header(envelope_bytes)?;
+  let (mode, params) = admitted_profile(&header, admitted)?;
   if !(1..=MAX_PLONKISH_HOPS).contains(&header.hops) {
     return Err(format!(
       "FixedRoot Plonkish verifier expects 1..={MAX_PLONKISH_HOPS} hops (got {} hops)",
@@ -203,15 +227,21 @@ fn verify_fixed_root_bytes(
   let verifier = PlonkishCircuitVerifier::derive_fixed_root(
     &inner_key,
     &layout,
-    header.mode,
-    header.params,
+    mode,
+    params,
     PlonkishOptions::default(),
   )?;
+  if verifier.num_outer_circuits() != 1 {
+    return Err(format!(
+      "Endpoint 1 outer system must be one circuit (derived {})",
+      verifier.num_outer_circuits()
+    ));
+  }
   let report = verifier.verify_report(
     envelope_bytes,
     &claim_vals,
-    Some(&expected_inner_vk),
-    Some(&expected_claim),
+    &expected_inner_vk,
+    &expected_claim,
   )?;
   Ok(report.banner())
 }
@@ -431,7 +461,27 @@ mod tests {
       .is_err()
     );
 
-    for (is_zk, expected_tag) in [(false, "NON-ZK"), (true, "ZERO-KNOWLEDGE")] {
+    // Capped / higher-arity shapes (cap 4 / 8-ary, cap 12 / 16-ary) can no
+    // longer be produced: the floor runs on the real values.
+    for (cap_height, max_log_arity) in [(4, 3), (12, 4)] {
+      let err = shrink_fixed_root_with_params(
+        &vk_bytes,
+        &layout_bytes,
+        &proof_bytes,
+        &claim_bytes,
+        false,
+        OuterFriParams { cap_height, max_log_arity, ..test_params },
+        None,
+      )
+      .expect_err("shrank under a capped outer shape");
+      assert!(err.contains("cap_height"), "{err}");
+    }
+
+    let test_profiles = [
+      (ShrinkMode::Stark128, test_params),
+      (ShrinkMode::Stark128Zk, test_params),
+    ];
+    for (is_zk, expected_tag) in [(false, "NON-ZK"), (true, "BLINDED")] {
       let (env_bytes, shrink_banner) = shrink_fixed_root_with_params(
         &vk_bytes,
         &layout_bytes,
@@ -448,15 +498,48 @@ mod tests {
         stark_shrinker::PLONKISH_ENVELOPE_VERSION
       );
 
-      let verify_banner = verify_fixed_root_bytes(
+      let verify_banner = verify_fixed_root_bytes_admitting(
+        &vk_bytes,
+        &layout_bytes,
+        &env_bytes,
+        &claim_bytes,
+        &test_profiles,
+      )
+      .unwrap();
+      assert!(verify_banner.contains(expected_tag));
+      assert!(verify_banner.contains("1 outer circuit(s)"));
+
+      // `ix verify`'s entry admits only the shipped profiles, so this
+      // honest envelope under a test profile is rejected there.
+      let err = verify_fixed_root_bytes(
         &vk_bytes,
         &layout_bytes,
         &env_bytes,
         &claim_bytes,
       )
+      .unwrap_err();
+      assert!(err.contains("not an admitted Endpoint 1 profile"), "{err}");
+
+      // A header rewritten to a shipped profile no longer matches its proof.
+      let mut relabelled =
+        stark_shrinker::PlonkishEnvelope::from_bytes(&env_bytes).unwrap();
+      relabelled.header.params = fixed_root_params(false);
+      relabelled.header.min_log_degree = u16::try_from(
+        relabelled
+          .header
+          .mode
+          .expected_min_log_degree(relabelled.header.params.num_queries),
+      )
       .unwrap();
-      assert!(verify_banner.contains(expected_tag));
-      assert!(verify_banner.contains("1 outer circuit(s)"));
+      assert!(
+        verify_fixed_root_bytes(
+          &vk_bytes,
+          &layout_bytes,
+          &relabelled.to_bytes().unwrap(),
+          &claim_bytes,
+        )
+        .is_err()
+      );
 
       // Wrong expected claim rejected fail-closed.
       let wrong_claim = stark_verifier::claims_bytes(&[vec![
@@ -464,11 +547,12 @@ mod tests {
         Val::from_u32(39),
       ]]);
       assert!(
-        verify_fixed_root_bytes(
+        verify_fixed_root_bytes_admitting(
           &vk_bytes,
           &layout_bytes,
           &env_bytes,
           &wrong_claim,
+          &test_profiles,
         )
         .is_err()
       );
@@ -477,11 +561,12 @@ mod tests {
       let mut bad_layout = layout_bytes.clone();
       bad_layout[0] ^= 1;
       assert!(
-        verify_fixed_root_bytes(
+        verify_fixed_root_bytes_admitting(
           &vk_bytes,
           &bad_layout,
           &env_bytes,
           &claim_bytes,
+          &test_profiles,
         )
         .is_err()
       );
@@ -490,14 +575,62 @@ mod tests {
       let mut v1_like = env_bytes.clone();
       v1_like[9..11].copy_from_slice(&1u16.to_le_bytes());
       assert!(
-        verify_fixed_root_bytes(
+        verify_fixed_root_bytes_admitting(
           &vk_bytes,
           &layout_bytes,
           &v1_like,
           &claim_bytes,
+          &test_profiles,
         )
         .is_err()
       );
     }
+  }
+
+  /// Honest envelopes under the shipped presets (`--stark-128` default,
+  /// `--stark-128-zk --compact`) verify through `ix verify`'s entry, which
+  /// admits only the shipped profiles.
+  #[test]
+  #[ignore = "proves two lb=4 FixedRoot envelopes: 813 s and 62.0 GB peak RSS \
+              at 16 threads, beyond the 61.8 GiB CI runner; run with \
+              --ignored on a larger host"]
+  fn fixed_root_ffi_release_profiles_verify() {
+    let (vk_bytes, layout_bytes, proof_bytes, claim_bytes) =
+      fixed_root_fixture_bytes();
+    for (is_zk, compact) in [(false, false), (true, true)] {
+      let (env_bytes, _) = shrink_fixed_root_with_params(
+        &vk_bytes,
+        &layout_bytes,
+        &proof_bytes,
+        &claim_bytes,
+        is_zk,
+        fixed_root_params(compact),
+        None,
+      )
+      .unwrap();
+      let banner = verify_fixed_root_bytes(
+        &vk_bytes,
+        &layout_bytes,
+        &env_bytes,
+        &claim_bytes,
+      )
+      .unwrap();
+      assert!(banner.contains("1 outer circuit(s)"), "{banner}");
+      assert!(banner.contains("cap=0"), "{banner}");
+      eprintln!("{banner}");
+    }
+  }
+
+  #[test]
+  fn shipped_presets_are_the_admitted_endpoint1_profiles() {
+    for mode in [ShrinkMode::Stark128, ShrinkMode::Stark128Zk] {
+      for compact in [false, true] {
+        assert!(
+          ENDPOINT1_PROFILES.contains(&(mode, fixed_root_params(compact))),
+          "{mode:?} compact={compact}"
+        );
+      }
+    }
+    assert_eq!(ENDPOINT1_PROFILES.len(), 4);
   }
 }

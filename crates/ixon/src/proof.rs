@@ -173,8 +173,9 @@ pub enum RevealConstantInfo {
 // ============================================================================
 
 /// What a typing claim is relative to. The typing claims (`Eval`, `Check`,
-/// `CheckEnv`, `Catalog`) state that constants are well-typed in Lean's
-/// theory with its primitives read through a role binding, and these three
+/// `CheckEnv`, `Catalog`) state that constants are well-typed under Ix's
+/// typing rules (not Lean's kernel; `docs/Ixon.md` says what an accept
+/// proves) with primitives read through a role binding, and these three
 /// fields say which:
 ///
 /// - `spec`: the specification digest ([`SPEC_DIGEST_HEX`]), naming the
@@ -290,6 +291,18 @@ pub struct Proof {
   /// The proof data (opaque bytes, e.g., ZK proof)
   pub proof: Vec<u8>,
 }
+
+/// 4-byte family prefix shared by all Aiur L3 compressed proof payloads carried
+/// inside [`Proof::proof`].
+pub const L3_PROOF_FAMILY_PREFIX: &[u8; 4] = b"IXL3";
+
+/// 8-byte payload magic prefix for an Aiur L3 BN254 PLONK proof carried inside
+/// [`Proof::proof`].
+pub const L3_BN254_PROOF_TAG: &[u8; 8] = b"IXL3BN1\0";
+
+/// 8-byte payload magic prefix for an Aiur L3 BLS12-381 PLONK proof carried
+/// inside [`Proof::proof`].
+pub const L3_BLS12_381_PROOF_TAG: &[u8; 8] = b"IXL3BL1\0";
 
 // ============================================================================
 // TagN variant layout for flags 0xE (data + claims) and 0xF (proofs)
@@ -1684,6 +1697,24 @@ impl Proof {
     self.put(&mut buf);
     let addr = Address::hash(&buf);
     (addr, buf)
+  }
+
+  /// Whether this proof's payload carries an Aiur L3 compressed proof envelope
+  /// (`IXL3*`).
+  pub fn is_l3_proof(&self) -> bool {
+    self.proof.starts_with(L3_PROOF_FAMILY_PREFIX)
+  }
+
+  /// Whether this proof's payload carries a BN254 Aiur L3 PLONK envelope
+  /// (`IXL3BN1\0`).
+  pub fn is_l3_bn254_proof(&self) -> bool {
+    self.proof.starts_with(L3_BN254_PROOF_TAG)
+  }
+
+  /// Whether this proof's payload carries a BLS12-381 Aiur L3 PLONK envelope
+  /// (`IXL3BL1\0`).
+  pub fn is_l3_bls12_381_proof(&self) -> bool {
+    self.proof.starts_with(L3_BLS12_381_PROOF_TAG)
   }
 }
 
@@ -3251,5 +3282,42 @@ mod tests {
     assert!(incomplete.literal_class().is_err());
     let indices: Vec<u8> = CLASS_ROLES.iter().map(|r| r.index()).collect();
     assert_eq!(indices, [0, 1, 2, 29, 30, 31, 36, 37, 38, 39, 40, 56, 57]);
+  }
+
+  #[test]
+  fn l3_proof_envelope_tags_roundtrip() {
+    let claim = Claim::CheckEnv {
+      ctx: ClaimContext {
+        spec: Address::hash(b"spec"),
+        binding: Address::hash(b"binding"),
+        axioms: None,
+        binding_assumed: false,
+        literal_class: false,
+      },
+      root: Address::hash(b"root"),
+      assumptions: None,
+    };
+    let mut bn_payload = L3_BN254_PROOF_TAG.to_vec();
+    bn_payload.extend_from_slice(&[0xAB; 48]);
+    let bn_proof = Proof::new(claim.clone(), bn_payload);
+    assert!(bn_proof.is_l3_proof());
+    assert!(bn_proof.is_l3_bn254_proof());
+    assert!(!bn_proof.is_l3_bls12_381_proof());
+
+    let (_, wire) = bn_proof.commit();
+    let mut slice = wire.as_slice();
+    let decoded = Proof::get(&mut slice).unwrap();
+    assert!(slice.is_empty());
+    assert_eq!(decoded, bn_proof);
+
+    let mut bls_payload = L3_BLS12_381_PROOF_TAG.to_vec();
+    bls_payload.extend_from_slice(&[0xCD; 48]);
+    let bls_proof = Proof::new(claim.clone(), bls_payload);
+    assert!(bls_proof.is_l3_proof());
+    assert!(!bls_proof.is_l3_bn254_proof());
+    assert!(bls_proof.is_l3_bls12_381_proof());
+
+    let plain = Proof::new(claim, b"IXAGGR2\0payload".to_vec());
+    assert!(!plain.is_l3_proof());
   }
 }

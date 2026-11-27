@@ -98,13 +98,15 @@ impl WitnessField for NativeField<Val> {
 pub type Proof = multi_stark::prover::Proof<GoldilocksBlake3V6Config>;
 pub type BatchProof = multi_stark::batch::BatchProof<GoldilocksBlake3V6Config>;
 
-/// The most rows one LogUp batch may hold, over every shard and active
-/// circuit (padded heights, which only over-count). The depth pass's
-/// acyclicity argument (Track A, H1) needs `MAX_BATCH_ROWS · 2^24 < p`:
-/// a memo cycle among `L` rows lowers depth words by `1 + gap ∈ [1, 2^24]`
-/// per row and must sum to a multiple of `p`, so it needs `L · 2^24 ≥ p`
-/// (`Depth.checkMemo_sound`, `Depth.goldilocks_characteristic`). Every
-/// verifier of these proofs enforces it, including the in-circuit ones.
+/// The most weighted logical rows one LogUp batch or single proof may hold,
+/// over every shard and active circuit (padded heights, weighting `K`-lane
+/// vectorized ROM circuits — both segmented and unsegmented — by `K`, which
+/// only over-counts). The depth pass's acyclicity argument needs
+/// `MAX_BATCH_ROWS · 2^24 < p`: a memo cycle among `L` rows lowers depth words
+/// by `1 + gap ∈ [1, 2^24]` per row and must sum to a multiple of `p`, so it
+/// needs `L · 2^24 ≥ p` (`Depth.checkMemo_sound`,
+/// `Depth.goldilocks_characteristic`). Both batch and single-proof shape
+/// checks enforce this weighted bound, as do the in-circuit verifiers.
 pub const MAX_BATCH_ROWS: u64 = 1 << 39;
 
 // Separate message namespaces; callable/type IDs fix the shape within each.
@@ -473,7 +475,24 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     parameters: Parameters,
     device: Option<i32>,
   ) -> Result<Self, String> {
-    Self::build(plan, parameters, true, RomLayout::Vectorized, device, true)
+    Self::for_batch_on_device_with_rom_layout(
+      plan,
+      parameters,
+      RomLayout::Vectorized,
+      device,
+    )
+  }
+
+  /// [`Self::for_batch_on_device`] with an explicit ROM row layout (e.g.
+  /// [`RomLayout::Scalar`] for Lean-exported wide stages whose `romCircuit`
+  /// stores one entry per row).
+  pub fn for_batch_on_device_with_rom_layout(
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
+    parameters: Parameters,
+    rom_layout: RomLayout,
+    device: Option<i32>,
+  ) -> Result<Self, String> {
+    Self::build(plan, parameters, true, rom_layout, device, true)
   }
 
   /// [`Self::new`] without the security floor, for tests whose toy parameters

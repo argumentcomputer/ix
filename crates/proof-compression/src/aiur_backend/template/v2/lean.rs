@@ -46,13 +46,13 @@
 //! `narrow_circuit`, `compact_circuit` and `compile_graph` lowering are only
 //! compared with them on request ([`Backend::rust_cross_check`]).
 
-use super::super::{decimal, parse_scalar, usize_of};
+use super::super::{decimal, parse_scalar, parse_scalar_for, usize_of};
 use super::{
   Backend, Config, LaneUse, Placement, Row, SlotDef, Stacked, Target, Template,
   Term, ts,
 };
-use crate::aiur_backend::{Bn254, kzg::Compiler};
-use crate::kzg::{KzgConfig, Scalar};
+use crate::aiur_backend::{AiurCurve, Bn254, kzg::Compiler};
+use crate::kzg::{CurveScalar, KzgConfig, Scalar, curve::Bn254 as Bn254Curve};
 use aiur::trace::TracePlan;
 use multi_stark::{
   expr::{ColRef, Expr, RowOffset, Source},
@@ -187,10 +187,11 @@ impl Layout {
   }
 }
 
-/// One `IXTLFX01` block at the start of `bytes`, and the bytes it used.
-pub(crate) fn read_block(
+/// One `IXTLFX01` block at the start of `bytes`, and the bytes it used,
+/// decoded into curve `C`'s scalar field.
+pub(crate) fn read_block_for<C: AiurCurve>(
   bytes: &[u8],
-) -> Result<((usize, usize, Vec<Scalar>), usize), String> {
+) -> Result<((usize, usize, Vec<CurveScalar<C>>), usize), String> {
   use ark_ff::{BigInt, PrimeField};
   if bytes.len() < 24 || &bytes[..8] != b"IXTLFX01" {
     return Err("not a tiling fixed matrix block".into());
@@ -213,13 +214,20 @@ pub(crate) fn read_block(
     for (i, b) in bytes[p + 1..p + 1 + len].iter().enumerate() {
       limbs[i / 8] |= u64::from(*b) << (8 * (i % 8));
     }
-    values.push(Scalar::new(
-      ark_bn254::Fr::from_bigint(BigInt(limbs))
+    values.push(CurveScalar::<C>::new(
+      C::Fr::from_bigint(BigInt(limbs))
         .ok_or("fixed entry is not below the modulus")?,
     ));
     p += 1 + len;
   }
   Ok(((rows, width, values), p))
+}
+
+/// One `IXTLFX01` block at the start of `bytes`, and the bytes it used.
+pub(crate) fn read_block(
+  bytes: &[u8],
+) -> Result<((usize, usize, Vec<Scalar>), usize), String> {
+  read_block_for::<Bn254Curve>(bytes)
 }
 
 /// Decodes an `IXTLFX01` matrix (`rows`, `width` as u64, then every entry as
@@ -789,15 +797,15 @@ impl Backend<'_, '_, '_> {
 /// `v − width`; every `zeros` node is a constraint and every lookup is
 /// `push(node m, [node a…])`.
 #[derive(Clone, Debug)]
-pub struct Graph {
+pub struct Graph<C: AiurCurve = Bn254Curve> {
   pub width: usize,
   pub fixed_width: usize,
-  pub nodes: Vec<Node<Scalar>>,
+  pub nodes: Vec<Node<CurveScalar<C>>>,
   pub zeros: Vec<NodeId>,
   pub lookups: Vec<Lookup<NodeId>>,
 }
 
-impl Graph {
+impl<C: AiurCurve> Graph<C> {
   pub fn parse(v: &Value) -> Result<Self, String> {
     let width = usize_of(&v["width"])?;
     let fixed_width = v.get("fixed_width").map_or(Ok(0), usize_of)?;
@@ -817,17 +825,24 @@ impl Graph {
         id(c)
       };
       nodes.push(match op {
-        "const" => Node::Const(parse_scalar(n.get(1).ok_or("constant without value")?)?),
+        "const" => Node::Const(parse_scalar_for::<C>(
+          n.get(1).ok_or("constant without value")?,
+        )?),
         "var" => {
-          let x = n.get(1).map_or(Err("variable without index".to_owned()), usize_of)?;
+          let x = n
+            .get(1)
+            .map_or(Err("variable without index".to_owned()), usize_of)?;
           let (source, index) = if x < width {
             (Source::Main, x)
           } else if x < width + fixed_width {
             (Source::Preprocessed, x - width)
           } else {
-            return Err(format!("variable {x} outside {width} main and {fixed_width} fixed columns"));
+            return Err(format!(
+              "variable {x} outside {width} main and {fixed_width} fixed columns"
+            ));
           };
-          let index = u32::try_from(index).map_err(|e| format!("variable {x}: {e}"))?;
+          let index =
+            u32::try_from(index).map_err(|e| format!("variable {x}: {e}"))?;
           Node::Var(ColRef { source, offset: RowOffset::Current, index })
         },
         "add" => Node::Add(child(1)?, child(2)?),
@@ -871,7 +886,9 @@ impl Graph {
 
   /// The one-row constraint graph the template lowering reads (no fixed
   /// columns).
-  pub fn constraint_graph(&self) -> Result<ConstraintGraph<Scalar>, String> {
+  pub fn constraint_graph(
+    &self,
+  ) -> Result<ConstraintGraph<CurveScalar<C>>, String> {
     if self.fixed_width != 0 {
       return Err("a function circuit graph has no fixed columns".into());
     }
@@ -902,8 +919,8 @@ impl Graph {
     })
   }
 
-  fn exprs(&self) -> Vec<Expr<Scalar>> {
-    let mut e: Vec<Expr<Scalar>> = Vec::with_capacity(self.nodes.len());
+  fn exprs(&self) -> Vec<Expr<CurveScalar<C>>> {
+    let mut e: Vec<Expr<CurveScalar<C>>> = Vec::with_capacity(self.nodes.len());
     for n in &self.nodes {
       let x = match *n {
         Node::Const(k) => Expr::Const(k),
@@ -928,18 +945,19 @@ impl Graph {
   /// its fixed matrix and the lookup grouping of `lookup_budget`.
   pub fn circuit_inputs(
     &self,
-    fixed: Option<RowMajorMatrix<Scalar>>,
+    fixed: Option<RowMajorMatrix<CurveScalar<C>>>,
     lookup_budget: usize,
-  ) -> CircuitInputs<Scalar> {
+  ) -> CircuitInputs<CurveScalar<C>> {
     let mut input = self.inputs(None);
     input.preprocessed = (self.fixed_width > 0).then(|| {
       RowMajorMatrix::new(
-        vec![Scalar::ZERO; self.fixed_width],
+        vec![CurveScalar::<C>::ZERO; self.fixed_width],
         self.fixed_width,
       )
     });
     // Group sizes depend only on expression shapes.
-    input.lookup_group_size = super::super::group_size(&input, lookup_budget);
+    input.lookup_group_size =
+      super::super::group_size_for::<C>(&input, lookup_budget);
     input.preprocessed = fixed;
     input
   }
@@ -947,8 +965,8 @@ impl Graph {
   /// [`Self::circuit_inputs`] without lookup grouping.
   pub fn inputs(
     &self,
-    fixed: Option<RowMajorMatrix<Scalar>>,
-  ) -> CircuitInputs<Scalar> {
+    fixed: Option<RowMajorMatrix<CurveScalar<C>>>,
+  ) -> CircuitInputs<CurveScalar<C>> {
     let e = self.exprs();
     CircuitInputs {
       main_width: self.width,
@@ -969,11 +987,11 @@ impl Graph {
   }
 }
 
-fn eval_expr(
-  e: &Expr<Scalar>,
-  main: &[Scalar],
-  fixed: &[Scalar],
-) -> Result<Scalar, String> {
+fn eval_expr<C: AiurCurve>(
+  e: &Expr<CurveScalar<C>>,
+  main: &[CurveScalar<C>],
+  fixed: &[CurveScalar<C>],
+) -> Result<CurveScalar<C>, String> {
   Ok(match e {
     Expr::Const(k) => *k,
     Expr::Var(c) if c.offset == RowOffset::Current => match c.source {
@@ -981,24 +999,31 @@ fn eval_expr(
       Source::Preprocessed => fixed[c.index as usize],
       Source::Stage2 => return Err("stage-two variable".into()),
     },
-    Expr::Add(a, b) => eval_expr(a, main, fixed)? + eval_expr(b, main, fixed)?,
-    Expr::Sub(a, b) => eval_expr(a, main, fixed)? - eval_expr(b, main, fixed)?,
-    Expr::Mul(a, b) => eval_expr(a, main, fixed)? * eval_expr(b, main, fixed)?,
-    Expr::Neg(a) => -eval_expr(a, main, fixed)?,
+    Expr::Add(a, b) => {
+      eval_expr::<C>(a, main, fixed)? + eval_expr::<C>(b, main, fixed)?
+    },
+    Expr::Sub(a, b) => {
+      eval_expr::<C>(a, main, fixed)? - eval_expr::<C>(b, main, fixed)?
+    },
+    Expr::Mul(a, b) => {
+      eval_expr::<C>(a, main, fixed)? * eval_expr::<C>(b, main, fixed)?
+    },
+    Expr::Neg(a) => -eval_expr::<C>(a, main, fixed)?,
     _ => return Err("row selector, public or next-row variable".into()),
   })
 }
 
-/// Whether two one-row circuits agree as constraint and lookup multisets at
-/// `trials` pseudo-random points: every constraint value and every lookup's
-/// multiplicity and arguments.
-pub fn same_circuit(
-  a: &CircuitInputs<Scalar>,
-  b: &CircuitInputs<Scalar>,
+/// Whether two one-row circuits over curve `C` agree as constraint and lookup
+/// multisets at `trials` pseudo-random points: every constraint value and every
+/// lookup's multiplicity and arguments.
+pub fn same_circuit_for<C: AiurCurve>(
+  a: &CircuitInputs<CurveScalar<C>>,
+  b: &CircuitInputs<CurveScalar<C>>,
   trials: usize,
 ) -> Result<bool, String> {
-  let fw =
-    |c: &CircuitInputs<Scalar>| c.preprocessed.as_ref().map_or(0, |m| m.width);
+  let fw = |c: &CircuitInputs<CurveScalar<C>>| {
+    c.preprocessed.as_ref().map_or(0, |m| m.width)
+  };
   if a.main_width != b.main_width
     || fw(a) != fw(b)
     || a.lookups.len() != b.lookups.len()
@@ -1010,18 +1035,18 @@ pub fn same_circuit(
     seed ^= seed << 13;
     seed ^= seed >> 7;
     seed ^= seed << 17;
-    Scalar::from_u64(seed)
+    CurveScalar::<C>::from_u64(seed)
   };
   type Point = (Vec<String>, Vec<Vec<String>>);
-  let at = |c: &CircuitInputs<Scalar>,
-            main: &[Scalar],
-            fixed: &[Scalar]|
+  let at = |c: &CircuitInputs<CurveScalar<C>>,
+            main: &[CurveScalar<C>],
+            fixed: &[CurveScalar<C>]|
    -> Result<Point, String> {
-    let text = |x: Scalar| x.0.to_string();
+    let text = |x: CurveScalar<C>| x.0.to_string();
     let mut zeros: Vec<String> = c
       .constraints
       .iter()
-      .map(|z| eval_expr(z, main, fixed).map(text))
+      .map(|z| eval_expr::<C>(z, main, fixed).map(text))
       .collect::<Result<_, _>>()?;
     zeros.retain(|z| z != "0");
     zeros.sort();
@@ -1032,7 +1057,7 @@ pub fn same_circuit(
       .map(|l| {
         std::iter::once(&l.multiplicity)
           .chain(&l.args)
-          .map(|x| eval_expr(x, main, fixed).map(text))
+          .map(|x| eval_expr::<C>(x, main, fixed).map(text))
           .collect()
       })
       .collect::<Result<_, String>>()?;
@@ -1040,13 +1065,23 @@ pub fn same_circuit(
     Ok((zeros, lookups))
   };
   for _ in 0..trials {
-    let main: Vec<Scalar> = (0..a.main_width).map(|_| next()).collect();
-    let fixed: Vec<Scalar> = (0..fw(a)).map(|_| next()).collect();
+    let main: Vec<CurveScalar<C>> = (0..a.main_width).map(|_| next()).collect();
+    let fixed: Vec<CurveScalar<C>> = (0..fw(a)).map(|_| next()).collect();
     if at(a, &main, &fixed)? != at(b, &main, &fixed)? {
       return Ok(false);
     }
   }
   Ok(true)
+}
+
+/// Whether two one-row BN254 circuits agree as constraint and lookup multisets
+/// at `trials` pseudo-random points.
+pub fn same_circuit(
+  a: &CircuitInputs<Scalar>,
+  b: &CircuitInputs<Scalar>,
+  trials: usize,
+) -> Result<bool, String> {
+  same_circuit_for::<Bn254Curve>(a, b, trials)
 }
 
 /// The function circuits in layout order (the entry's first) and, per

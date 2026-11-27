@@ -9,7 +9,8 @@
 //! 149.03b finite-`m` Johnson soundness).
 //!
 //! - Zero trusted setup (transparent).
-//! - Post-quantum ready (hash-based BLAKE3 `derive_key` + `Fp^3` FRI).
+//! - Hash-based (BLAKE3 `derive_key`, 32-byte digests: ~128-bit classical,
+//!   ~85-bit quantum collision resistance) + `Fp^3` FRI.
 //! - Fail-closed Protocol `v6` / `Fp^3` / `FriBatching::Tensor` enforcement;
 //!   `v5` and `Fp^2` are retired and rejected.
 //! - Standalone (non-segmented) ROM eliminates cleartext `MEMSEG` count leakage
@@ -137,17 +138,17 @@ impl VerifyReport {
           .to_owned()
       },
       ShrinkMode::Stark128Zk => format!(
-        "ZERO-KNOWLEDGE (128-bit statistical+ROM ZK: 2x odd-coset hiding PCS, W_R={} randomizer, 128-bit BLAKE3-CTR leaf salts, telescoping quotient blinding, blinded accumulators, min_log_degree={})",
+        "BLINDED (v6-zk hiding-PCS construction: 2x odd-coset blinding, W_R={} randomizer, 16-byte BLAKE3-CTR leaf salts, telescoping quotient blinding, blinded accumulators, min_log_degree={}; no hiding property is stated or proved)",
         self.zk_randomizer_width, self.min_log_degree
       ),
     };
     format!(
       "Endpoint 1 Native Fp^3 STARK Shrinker ({flag} / {proto})\n\
        \x20 Field/PCS : Fp^3 = Fp[X]/(X^3 - X - 1) | BLAKE3 derive_key | FriBatching::Tensor\n\
-       \x20 Soundness : {johnson_whole}.{johnson_frac:02}b finite-m Johnson (m=16) | {ud_whole}.{ud_frac:02}b provable UD | {conj}b conjectured (lb={lb}, q={q}, cpow={cpow}, qpow={qpow})\n\
-       \x20 Trust     : Post-quantum ready | Transparent (zero trusted setup)\n\
+       \x20 FRI query : {johnson_whole}.{johnson_frac:02}b finite-m Johnson (m=16) | {ud_whole}.{ud_frac:02}b unique-decoding | {conj}b conjectured; query-phase floor terms (lb={lb}, q={q}, cpow={cpow}, qpow={qpow})\n\
+       \x20 Trust     : Transparent (zero trusted setup) | 32-byte BLAKE3: ~128-bit classical, ~85-bit quantum collision resistance\n\
        \x20 Privacy   : {zk_line}\n\
-       \x20 Pinned VK : {svk}\n\
+       \x20 Outer VK  : {svk} (derived by the verifier from the pinned package)\n\
        \x20 Inner VK  : {ivk}\n\
        \x20 Claim     : {claim}\n\
        \x20 Proof     : {env} bytes ({raw} B STARK payload) | verified in {ms:.2} ms",
@@ -464,20 +465,18 @@ impl<'p, 'a> StarkShrinker<'p, 'a> {
     let envelope_bytes = envelope.to_bytes()?;
 
     // 5. Independently self-verify the complete serialized envelope before returning.
-    let report = self.verify_envelope(
-      &envelope_bytes,
-      Some(&inner_vk_digest),
-      Some(&claim_digest),
-    )?;
+    let report =
+      self.verify_envelope(&envelope_bytes, &inner_vk_digest, &claim_digest)?;
     Ok(ShrinkOutput { envelope_bytes, report, prove_ms })
   }
 
-  /// Verify an `IXSTARK6\0` envelope against this shrinker's pinned verifying key.
+  /// Verify an `IXSTARK6\0` envelope against this shrinker's pinned verifying
+  /// key, the caller's inner-key digest and the caller's claim digest.
   pub fn verify_envelope(
     &self,
     envelope_bytes: &[u8],
-    expected_inner_vk_digest: Option<&[u8; 32]>,
-    expected_claim_digest: Option<&[u8; 32]>,
+    expected_inner_vk_digest: &[u8; 32],
+    expected_claim_digest: &[u8; 32],
   ) -> Result<VerifyReport, String> {
     verify_against_backend(
       &self.backend,
@@ -522,11 +521,14 @@ impl<'p, 'a> StarkShrinkerVerifier<'p, 'a> {
     &self.vk_digest
   }
 
+  /// Verify an envelope against this verifier's key, the caller's inner-key
+  /// digest and the caller's claim digest (both mandatory: the proof's public
+  /// arguments are these two digests).
   pub fn verify(
     &self,
     envelope_bytes: &[u8],
-    expected_inner_vk_digest: Option<&[u8; 32]>,
-    expected_claim_digest: Option<&[u8; 32]>,
+    expected_inner_vk_digest: &[u8; 32],
+    expected_claim_digest: &[u8; 32],
   ) -> Result<VerifyReport, String> {
     verify_against_backend(
       &self.backend,
@@ -546,8 +548,8 @@ fn verify_against_backend(
   expected_params: Parameters,
   pinned_vk_digest: &[u8; 32],
   envelope_bytes: &[u8],
-  expected_inner_vk_digest: Option<&[u8; 32]>,
-  expected_claim_digest: Option<&[u8; 32]>,
+  expected_inner_vk_digest: &[u8; 32],
+  expected_claim_digest: &[u8; 32],
 ) -> Result<VerifyReport, String> {
   let start = Instant::now();
   let envelope = ShrinkEnvelope::from_bytes(envelope_bytes)?;
@@ -573,26 +575,24 @@ fn verify_against_backend(
       hex_digest(&header.shrinker_vk_digest)
     ));
   }
-  if let Some(expected_inner) = expected_inner_vk_digest
-    && &header.inner_vk_digest != expected_inner
-  {
+  if &header.inner_vk_digest != expected_inner_vk_digest {
     return Err(format!(
       "inner VK digest mismatch: expected {} != envelope {}",
-      hex_digest(expected_inner),
+      hex_digest(expected_inner_vk_digest),
       hex_digest(&header.inner_vk_digest)
     ));
   }
-  if let Some(expected_claim) = expected_claim_digest
-    && &header.claim_digest != expected_claim
-  {
+  if &header.claim_digest != expected_claim_digest {
     return Err(format!(
       "claim digest mismatch: expected {} != envelope {}",
-      hex_digest(expected_claim),
+      hex_digest(expected_claim_digest),
       hex_digest(&header.claim_digest)
     ));
   }
 
-  let args = public_args(&header.inner_vk_digest, &header.claim_digest);
+  // The proof's public arguments are the caller's digests (equal to the
+  // header's, checked above).
+  let args = public_args(expected_inner_vk_digest, expected_claim_digest);
   backend.verify_raw_proof(&args, &envelope.proof_bytes)?;
   let verify_ms = start.elapsed().as_secs_f64() * 1000.0;
   Ok(VerifyReport::build(header, envelope_bytes.len(), verify_ms))
@@ -616,35 +616,77 @@ pub fn shrink_with_package(
   shrinker.shrink(inner_key_bytes, inner_claims_bytes, inner_proof_bytes)
 }
 
-/// One-shot convenience API (used by FFI / CLI): parse an `IXSTARK6\0` envelope
-/// header fail-closed, independently derive the trusted verifying key from the
-/// compiled verifier package at `package_path`, and verify the envelope.
-///
-/// The verifier key is NEVER trusted from the envelope: `header.params` and
-/// `header.mode` are first validated against the 128-bit Protocol `v6`/`v6-zk`
-/// security floor, then the trusted local package compiles its own independent
-/// `shrinker_vk_digest` and rejects any mismatch.
-pub fn verify_with_package(
-  package_path: &Path,
+/// The (mode, parameters) pairs a v1 `IXSTARK6\0` verifier admits: the two
+/// presets the v1 shrinker produces ([`DEFAULT_PARAMS`], `--compact`
+/// [`COMPACT_PARAMS`]) in both modes. The verifier builds its backend from
+/// these constants; an envelope declaring any other parameters is rejected.
+pub const V1_PROFILES: [(ShrinkMode, Parameters); 4] = [
+  (ShrinkMode::Stark128, DEFAULT_PARAMS),
+  (ShrinkMode::Stark128, COMPACT_PARAMS),
+  (ShrinkMode::Stark128Zk, DEFAULT_PARAMS),
+  (ShrinkMode::Stark128Zk, COMPACT_PARAMS),
+];
+
+/// The admitted `(mode, parameters)` pair equal to a v1 envelope header's.
+pub fn admitted_v1_profile(
+  header: &EnvelopeHeader,
+  admitted: &[(ShrinkMode, Parameters)],
+) -> Result<(ShrinkMode, Parameters), String> {
+  admitted
+    .iter()
+    .copied()
+    .find(|&(mode, params)| mode == header.mode && params == header.params)
+    .ok_or_else(|| {
+      format!(
+        "{} envelope under parameters {:?} is not an admitted v1 shrinker profile (admitted: {admitted:?})",
+        header.mode.cli_flag(),
+        header.params
+      )
+    })
+}
+
+/// Verify a v1 `IXSTARK6\0` envelope with an already pinned compiled verifier:
+/// the mode and parameters must be an admitted profile ([`V1_PROFILES`]), the
+/// backend is derived from that constant and `compiled`, and the inner-key and
+/// claim digests must equal the caller's.
+pub fn verify_v1_pinned(
+  compiled: &CompiledVerifier,
   envelope_bytes: &[u8],
-  expected_mode: Option<ShrinkMode>,
-  expected_inner_vk_digest: Option<&[u8; 32]>,
-  expected_claim_digest: Option<&[u8; 32]>,
+  expected_inner_vk_digest: &[u8; 32],
+  expected_claim_digest: &[u8; 32],
 ) -> Result<VerifyReport, String> {
   let header = peek_header(envelope_bytes)?;
-  if let Some(mode) = expected_mode
-    && header.mode != mode
-  {
+  let (mode, params) = admitted_v1_profile(&header, &V1_PROFILES)?;
+  let plan = compiled.trace_plan()?;
+  let verifier = StarkShrinkerVerifier::new(&plan, mode, params)?;
+  verifier.verify(
+    envelope_bytes,
+    expected_inner_vk_digest,
+    expected_claim_digest,
+  )
+}
+
+/// One-shot convenience API: verify a v1 `IXSTARK6\0` envelope with the
+/// compiled verifier package at `package_path`, which must hash to
+/// `expected_package_digest` (as the FFI entry requires), against the caller's
+/// inner-key and claim digests ([`verify_v1_pinned`]).
+pub fn verify_with_package(
+  package_path: &Path,
+  expected_package_digest: &[u8; 32],
+  envelope_bytes: &[u8],
+  expected_inner_vk_digest: &[u8; 32],
+  expected_claim_digest: &[u8; 32],
+) -> Result<VerifyReport, String> {
+  let compiled = CompiledVerifier::from_package_path(package_path)?;
+  if compiled.artifact_digest() != expected_package_digest {
     return Err(format!(
-      "shrink mode mismatch: expected {}, got {}",
-      mode.cli_flag(),
-      header.mode.cli_flag()
+      "verifier artifact digest mismatch: pinned {} != loaded {}",
+      hex_digest(expected_package_digest),
+      hex_digest(compiled.artifact_digest())
     ));
   }
-  let compiled = CompiledVerifier::from_package_path(package_path)?;
-  let plan = compiled.trace_plan()?;
-  let verifier = StarkShrinkerVerifier::new(&plan, header.mode, header.params)?;
-  verifier.verify(
+  verify_v1_pinned(
+    &compiled,
     envelope_bytes,
     expected_inner_vk_digest,
     expected_claim_digest,
@@ -858,6 +900,46 @@ mod tests {
     }
   }
 
+  /// Endpoint 1 v1 path: the verifier admits only the two v1 presets, in both
+  /// modes, and builds its backend from the constant, not the envelope.
+  #[test]
+  fn v1_verifier_admits_only_the_shipped_profiles() {
+    let header = |mode, params| EnvelopeHeader {
+      mode,
+      params,
+      zk_randomizer_width: 0,
+      min_log_degree: 0,
+      shrinker_vk_digest: [0; 32],
+      inner_vk_digest: [0; 32],
+      claim_digest: [0; 32],
+      proof_len: 1,
+    };
+    for mode in [ShrinkMode::Stark128, ShrinkMode::Stark128Zk] {
+      for params in [DEFAULT_PARAMS, COMPACT_PARAMS] {
+        assert_eq!(
+          admitted_v1_profile(&header(mode, params), &V1_PROFILES).unwrap(),
+          (mode, params)
+        );
+      }
+      // Floor-passing but not shipped: rejected.
+      for params in [
+        Parameters { num_queries: 79, ..DEFAULT_PARAMS },
+        Parameters { query_proof_of_work_bits: 32, ..COMPACT_PARAMS },
+        Parameters {
+          log_blowup: 1,
+          num_queries: 211,
+          commit_proof_of_work_bits: 0,
+          query_proof_of_work_bits: 32,
+        },
+      ] {
+        params.check().unwrap();
+        let err =
+          admitted_v1_profile(&header(mode, params), &V1_PROFILES).unwrap_err();
+        assert!(err.contains("not an admitted"), "{err}");
+      }
+    }
+  }
+
   #[test]
   fn end_to_end_stark128_and_stark128_zk_roundtrip_and_negative_controls() {
     let Some(pkg_path) = find_verifier_package() else {
@@ -921,15 +1003,12 @@ mod tests {
       .shrink(&inner_key, &inner_claims, &inner_proof)
       .expect("--stark-128 shrink failed");
     let rep_v6 = verifier_v6
-      .verify(
-        &out_v6.envelope_bytes,
-        Some(&inner_vk_digest),
-        Some(&claim_digest),
-      )
+      .verify(&out_v6.envelope_bytes, &inner_vk_digest, &claim_digest)
       .expect("--stark-128 verify failed");
     assert_eq!(rep_v6.mode, ShrinkMode::Stark128);
     assert!(rep_v6.banner().contains("NON-ZK"));
-    assert!(rep_v6.banner().contains("Post-quantum ready"));
+    assert!(rep_v6.banner().contains("~85-bit quantum"));
+    assert!(!rep_v6.banner().contains("Post-quantum ready"));
     eprintln!(
       "\n[BENCH --stark-128 lb=3 q=78 qpow=20] prove={:.1}ms verify={:.2}ms envelope={}B raw={}B\n{}\n",
       out_v6.prove_ms,
@@ -944,14 +1023,11 @@ mod tests {
       .shrink(&inner_key, &inner_claims, &inner_proof)
       .expect("--stark-128-zk shrink failed");
     let rep_zk = verifier_zk
-      .verify(
-        &out_zk.envelope_bytes,
-        Some(&inner_vk_digest),
-        Some(&claim_digest),
-      )
+      .verify(&out_zk.envelope_bytes, &inner_vk_digest, &claim_digest)
       .expect("--stark-128-zk verify failed");
     assert_eq!(rep_zk.mode, ShrinkMode::Stark128Zk);
-    assert!(rep_zk.banner().contains("ZERO-KNOWLEDGE"));
+    assert!(rep_zk.banner().contains("BLINDED"));
+    assert!(rep_zk.banner().contains("no hiding property is stated"));
     assert!(rep_zk.banner().contains("W_R=4"));
     assert!(rep_zk.banner().contains("min_log_degree=8"));
     eprintln!(
@@ -973,11 +1049,7 @@ mod tests {
       "v6-zk proofs must be freshly randomized"
     );
     verifier_zk
-      .verify(
-        &out_zk_2.envelope_bytes,
-        Some(&inner_vk_digest),
-        Some(&claim_digest),
-      )
+      .verify(&out_zk_2.envelope_bytes, &inner_vk_digest, &claim_digest)
       .expect("--stark-128-zk second proof verify failed");
 
     // 4. Negative controls across BOTH modes
@@ -989,9 +1061,7 @@ mod tests {
       let mut wrong_claim = claim_digest;
       wrong_claim[0] ^= 0x01;
       assert!(
-        verifier
-          .verify(env_bytes, Some(&inner_vk_digest), Some(&wrong_claim))
-          .is_err(),
+        verifier.verify(env_bytes, &inner_vk_digest, &wrong_claim).is_err(),
         "{label}: accepted wrong expected claim digest"
       );
 
@@ -999,19 +1069,28 @@ mod tests {
       let mut wrong_inner = inner_vk_digest;
       wrong_inner[0] ^= 0x01;
       assert!(
-        verifier
-          .verify(env_bytes, Some(&wrong_inner), Some(&claim_digest))
-          .is_err(),
+        verifier.verify(env_bytes, &wrong_inner, &claim_digest).is_err(),
         "{label}: accepted wrong expected inner VK digest"
       );
 
-      // 4c. Tampered claim_digest inside envelope (even without expected_claim pin)
+      // 4c. Tampered claim_digest inside envelope: rejected against the true
+      // expected digest, and rejected by the proof check when the caller
+      // expects the tampered digest itself.
       let mut tampered = ShrinkEnvelope::from_bytes(env_bytes).unwrap();
       tampered.header.claim_digest[0] ^= 0x80;
+      let tampered_claim = tampered.header.claim_digest;
       let tampered_bytes = tampered.to_bytes().unwrap();
       assert!(
-        verifier.verify(&tampered_bytes, None, None).is_err(),
+        verifier
+          .verify(&tampered_bytes, &inner_vk_digest, &claim_digest)
+          .is_err(),
         "{label}: accepted tampered claim digest in envelope"
+      );
+      assert!(
+        verifier
+          .verify(&tampered_bytes, &inner_vk_digest, &tampered_claim)
+          .is_err(),
+        "{label}: proof verified under a tampered claim digest"
       );
 
       // 4d. Tampered shrinker_vk_digest inside envelope
@@ -1019,7 +1098,9 @@ mod tests {
       tampered.header.shrinker_vk_digest[31] ^= 0x01;
       let tampered_bytes = tampered.to_bytes().unwrap();
       assert!(
-        verifier.verify(&tampered_bytes, None, None).is_err(),
+        verifier
+          .verify(&tampered_bytes, &inner_vk_digest, &claim_digest)
+          .is_err(),
         "{label}: accepted wrong shrinker VK digest"
       );
 
@@ -1030,7 +1111,7 @@ mod tests {
       let tampered_bytes = tampered.to_bytes().unwrap();
       assert!(
         verifier
-          .verify(&tampered_bytes, Some(&inner_vk_digest), Some(&claim_digest))
+          .verify(&tampered_bytes, &inner_vk_digest, &claim_digest)
           .is_err(),
         "{label}: accepted corrupted proof bytes"
       );
@@ -1039,9 +1120,7 @@ mod tests {
       let mut trailing = env_bytes.clone();
       trailing.push(0x42);
       assert!(
-        verifier
-          .verify(&trailing, Some(&inner_vk_digest), Some(&claim_digest))
-          .is_err(),
+        verifier.verify(&trailing, &inner_vk_digest, &claim_digest).is_err(),
         "{label}: accepted trailing bytes"
       );
     }
@@ -1049,22 +1128,14 @@ mod tests {
     // 5. Cross-mode replay attacks (header level AND re-headered raw proof level!)
     assert!(
       verifier_zk
-        .verify(
-          &out_v6.envelope_bytes,
-          Some(&inner_vk_digest),
-          Some(&claim_digest)
-        )
+        .verify(&out_v6.envelope_bytes, &inner_vk_digest, &claim_digest)
         .unwrap_err()
         .contains("cross-mode"),
       "v6-zk verifier accepted v6 envelope"
     );
     assert!(
       verifier_v6
-        .verify(
-          &out_zk.envelope_bytes,
-          Some(&inner_vk_digest),
-          Some(&claim_digest)
-        )
+        .verify(&out_zk.envelope_bytes, &inner_vk_digest, &claim_digest)
         .unwrap_err()
         .contains("cross-mode"),
       "v6 verifier accepted v6-zk envelope"
@@ -1089,7 +1160,7 @@ mod tests {
     .unwrap();
     assert!(
       verifier_zk
-        .verify(&forged_as_zk, Some(&inner_vk_digest), Some(&claim_digest))
+        .verify(&forged_as_zk, &inner_vk_digest, &claim_digest)
         .is_err(),
       "v6-zk verifier accepted re-headered raw v6 proof"
     );
@@ -1113,7 +1184,7 @@ mod tests {
     .unwrap();
     assert!(
       verifier_v6
-        .verify(&forged_as_v6, Some(&inner_vk_digest), Some(&claim_digest))
+        .verify(&forged_as_v6, &inner_vk_digest, &claim_digest)
         .is_err(),
       "v6 verifier accepted re-headered raw v6-zk proof"
     );
@@ -1143,11 +1214,7 @@ mod tests {
       let out =
         shrinker.shrink(&inner_key, &inner_claims, &inner_proof).unwrap();
       let rep = verifier
-        .verify(
-          &out.envelope_bytes,
-          Some(&inner_vk_digest),
-          Some(&claim_digest),
-        )
+        .verify(&out.envelope_bytes, &inner_vk_digest, &claim_digest)
         .unwrap();
       eprintln!(
         "[BENCH {} lb=4 q=66 qpow=20] prove={:.1}ms verify={:.2}ms envelope={}B raw={}B",

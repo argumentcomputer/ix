@@ -6,13 +6,16 @@
 //! `rs_stages_complete_export`, while `rs_stages_run` blocks the calling
 //! thread until every stage has ended. All Lean arguments are borrowed and
 //! copied before the call returns.
-use ix_proof_compression::aiur_backend::stages::{
-  Manifest, Options, Stages,
-  exports::{Broker, Exports, Kind, Runner},
+use ix_proof_compression::aiur_backend::{
+  l3_verifier::{L3VerifierBundle, verify_l3_proof_with_options},
+  stages::{
+    Manifest, Options, Stages,
+    exports::{Broker, Exports, Kind, Runner},
+  },
 };
 use lean_ffi::object::{
-  ExternalClass, LeanBorrowed, LeanExternal, LeanIOResult, LeanOwned,
-  LeanString,
+  ExternalClass, LeanBorrowed, LeanByteArray, LeanExternal, LeanIOResult,
+  LeanOwned, LeanString,
 };
 use serde_json::Value;
 use std::{
@@ -191,4 +194,131 @@ extern "C" fn rs_stages_run(
       &serde_json::to_string_pretty(&summary).map_err(|e| e.to_string())?,
     ))
   })
+}
+
+fn verify_l3_bundle_file(
+  proof: &[u8],
+  claim: &[u8],
+  bundle_path: &str,
+  bundle_pin: &str,
+  allow_development: bool,
+) -> Result<String, String> {
+  let pins =
+    L3VerifierBundle::from_pinned_file(Path::new(bundle_path), bundle_pin)?;
+  let setup =
+    verify_l3_proof_with_options(claim, proof, &pins, allow_development)?;
+  Ok(format!("{}\t{}", pins.curve.as_str(), setup.label()))
+}
+
+/// Verify an Aiur L3 proof envelope (`IXL3BN1\0` / `IXL3BL1\0`) against
+/// serialized `claim` bytes and an independently BLAKE3-pinned `ix-l3-verifier-v1`
+/// bundle file. Returns `"<curve>\t<setup>"`.
+#[unsafe(no_mangle)]
+extern "C" fn rs_l3_verify_bundle(
+  proof: LeanByteArray<LeanBorrowed<'_>>,
+  claim: LeanByteArray<LeanBorrowed<'_>>,
+  bundle_path: LeanString<LeanBorrowed<'_>>,
+  bundle_pin: LeanString<LeanBorrowed<'_>>,
+  allow_development: bool,
+) -> LeanIOResult<LeanOwned> {
+  let proof = proof.as_bytes().to_vec();
+  let claim = claim.as_bytes().to_vec();
+  let bundle_path = bundle_path.to_string();
+  let bundle_pin = bundle_pin.to_string();
+  io(move || {
+    let info = verify_l3_bundle_file(
+      &proof,
+      &claim,
+      &bundle_path,
+      &bundle_pin,
+      allow_development,
+    )?;
+    Ok(LeanString::new(&info))
+  })
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use ix_proof_compression::aiur_backend::l3_verifier::{
+    L3_BLS12_381_PROOF_TAG, L3_BN254_PROOF_TAG, L3_PROOF_FAMILY_PREFIX,
+    L3ProofEnvelope, L3VerifierPins,
+  };
+  use ix_proof_compression::{
+    aiur_backend::compress_gl::WrapPolicy,
+    kzg::{Curve, KzgCurve, curve::Bn254},
+    pipeline::SetupClass,
+  };
+  use sha2::{Digest, Sha256};
+
+  #[test]
+  fn ixon_and_proof_compression_l3_tags_match() {
+    assert_eq!(ixon::proof::L3_PROOF_FAMILY_PREFIX, L3_PROOF_FAMILY_PREFIX);
+    assert_eq!(ixon::proof::L3_BN254_PROOF_TAG, L3_BN254_PROOF_TAG);
+    assert_eq!(ixon::proof::L3_BLS12_381_PROOF_TAG, L3_BLS12_381_PROOF_TAG);
+  }
+
+  #[test]
+  fn ffi_l3_bundle_refuses_unpinned_and_dev_keys_without_opt_in() {
+    let tmp = std::env::temp_dir().join(format!(
+      "ix-ffi-l3-test-{}-{}",
+      std::process::id(),
+      std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos()
+    ));
+    std::fs::create_dir_all(&tmp).unwrap();
+    let vk = vec![0x44u8; 64];
+    let vk_sha256: [u8; 32] = Sha256::digest(&vk).into();
+    let pins = L3VerifierPins {
+      curve: Curve::Bn254,
+      setup: SetupClass::Development,
+      root_vk_blake3: [0x11; 32],
+      root_statement_prefix: [1, 0, 2, 3, 4, 5, 6, 7, 8, 9],
+      wrap_policy: WrapPolicy {
+        artifact_blake3: "11".repeat(32),
+        key_blake3: "22".repeat(32),
+        layout_blake3: "33".repeat(32),
+        claim_prefix: [1, 0],
+      },
+      terminal_vk_sha256: vk_sha256,
+      terminal_vk: vk,
+      anchors: vec![0x55; Bn254::PLONK_ANCHOR_BYTES],
+    };
+    let bundle_bytes = serde_json::to_vec(&pins.to_bundle(None)).unwrap();
+    let bundle_path = tmp.join("l3-verifier.json");
+    std::fs::write(&bundle_path, &bundle_bytes).unwrap();
+    let bundle_pin = blake3::hash(&bundle_bytes).to_hex().to_string();
+    let env = L3ProofEnvelope {
+      curve: Curve::Bn254,
+      terminal_vk_sha256: vk_sha256,
+      proof: vec![1, 2, 3, 4],
+    }
+    .encode()
+    .unwrap();
+
+    // Wrong pin refused.
+    assert!(
+      verify_l3_bundle_file(
+        &env,
+        b"claim",
+        bundle_path.to_str().unwrap(),
+        &"00".repeat(32),
+        true
+      )
+      .is_err()
+    );
+    // Development bundle refused when allow_development = false.
+    let err = verify_l3_bundle_file(
+      &env,
+      b"claim",
+      bundle_path.to_str().unwrap(),
+      &bundle_pin,
+      false,
+    )
+    .unwrap_err();
+    assert!(err.contains("development setup"), "unexpected error: {err}");
+    let _ = std::fs::remove_dir_all(&tmp);
+  }
 }

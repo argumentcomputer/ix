@@ -269,7 +269,34 @@ fn run_bls12_381(
 #[allow(clippy::too_many_lines)]
 pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
   let spec = &stage.spec.spec;
-  let field = parse_stage_field(spec)?;
+  let manifest_curve = stage.stages.manifest.curve()?;
+  let has_manifest_curve =
+    stage.stages.manifest.value.get("curve").is_some_and(|v| !v.is_null());
+  let field = if spec["field"].is_null() {
+    match manifest_curve {
+      crate::kzg::Curve::Bn254 => Field::Bn254,
+      crate::kzg::Curve::Bls12381 => Field::Bls12381,
+    }
+  } else {
+    let f = parse_stage_field(spec)?;
+    let stage_curve = match f {
+      Field::Bn254 => crate::kzg::Curve::Bn254,
+      Field::Bls12381 => crate::kzg::Curve::Bls12381,
+      Field::Goldilocks => {
+        return Err(
+          "kzg-verifier stage field must be \"bn254\" or \"bls12-381\"".into(),
+        );
+      },
+    };
+    if has_manifest_curve && stage_curve != manifest_curve {
+      return Err(format!(
+        "kzg-verifier stage field {:?} differs from manifest curve {:?}",
+        stage_curve.as_str(),
+        manifest_curve.as_str()
+      ));
+    }
+    f
+  };
   let explicit_field = if spec["field"].is_null() { None } else { Some(field) };
   let entry_override = parse_optional_entry(spec)?;
   let advice_file = if spec["advice"].is_null() {

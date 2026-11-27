@@ -88,10 +88,7 @@ pub fn prepare_to_dir<C: KzgCurve>(
   let inputs_bytes =
     serde_json::to_vec_pretty(&scs.to_inputs()).map_err(|e| e.to_string())?;
   let solidity_src = export_solidity(&vk)?;
-  let solidity_file = match C::CURVE {
-    crate::kzg::curve::Curve::Bn254 => "PlonkVerifier.sol",
-    crate::kzg::curve::Curve::Bls12381 => "Bls12381PlonkVerifier.sol",
-  };
+  let solidity_file = solidity::solidity_filename_for_vk(&vk);
 
   fs::create_dir_all(out_dir)
     .map_err(|e| format!("{}: {e}", out_dir.display()))?;

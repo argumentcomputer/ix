@@ -390,6 +390,9 @@ impl<'p, 'a, B: WitnessField> WideBackend<'p, 'a, B> {
     if !rust.segmented_memory {
       return Err("a wide stage is proved as a batch".into());
     }
+    if rust.rom_layout() != RomLayout::Scalar {
+      return Err("a wide stage requires scalar ROM layout".into());
+    }
     let order = rust.wide_order()?;
     if export.tables.len() != order.len() {
       return Err(format!(

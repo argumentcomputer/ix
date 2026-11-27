@@ -1,13 +1,12 @@
 use super::*;
-use aiur::field::FieldBackend;
 use multi_stark::traits::Algebra;
 use p3_matrix::{Matrix, dense::RowMajorMatrix};
 use p3_maybe_rayon::prelude::*;
 
-fn empty_trace(
+fn empty_trace<C: KzgCurve>(
   height: usize,
   width: usize,
-) -> Result<RowMajorMatrix<Scalar>, String> {
+) -> Result<RowMajorMatrix<CurveScalar<C>>, String> {
   let padded = if height == 0 {
     0
   } else {
@@ -15,25 +14,26 @@ fn empty_trace(
   };
   let len = padded.checked_mul(width).ok_or("trace size overflow")?;
   // Filled in parallel: a serial fill of the largest traces takes seconds.
-  let values: Vec<Scalar> =
-    (0..len).into_par_iter().map(|_| Scalar::ZERO).collect();
+  let values: Vec<CurveScalar<C>> =
+    (0..len).into_par_iter().map(|_| CurveScalar::<C>::ZERO).collect();
   Ok(RowMajorMatrix::new(values, width))
 }
 
-pub(super) struct Packing<'p, 'a, 'm> {
-  pub(super) plan: &'p TracePlan<'a, Bn254>,
+pub(super) struct Packing<'p, 'a, 'm, F: AiurField> {
+  pub(super) plan: &'p TracePlan<'a, F>,
   pub(super) placements: &'m [Placement<FieldWord>],
   pub(super) function_widths: &'m [usize],
   pub(super) tables: &'m [circuits::FixedTable],
   pub(super) memory_widths: &'m [usize],
 }
 
-impl Packing<'_, '_, '_> {
+impl<F: AiurField> Packing<'_, '_, '_, F> {
   pub(super) fn main_traces(
     &self,
-    record: &Execution<Bn254>,
-    trace: &Trace<Scalar>,
-  ) -> Result<Vec<RowMajorMatrix<Scalar>>, String> {
+    record: &Execution<F>,
+    trace: &Trace<CurveScalar<F::Curve>>,
+  ) -> Result<Vec<RowMajorMatrix<CurveScalar<F::Curve>>>, String> {
+    let field = F::default();
     let mut heights = vec![0usize; self.function_widths.len()];
     for (matrix, placement) in trace.matrices.iter().zip(self.placements) {
       let height =
@@ -45,7 +45,7 @@ impl Packing<'_, '_, '_> {
     let mut traces = heights
       .iter()
       .zip(self.function_widths)
-      .map(|(&height, &width)| empty_trace(height, width))
+      .map(|(&height, &width)| empty_trace::<F::Curve>(height, width))
       .collect::<Result<Vec<_>, _>>()?;
     let mut cursors = vec![0usize; self.function_widths.len()];
     for ((chip, matrix), placement) in self
@@ -65,7 +65,7 @@ impl Packing<'_, '_, '_> {
       let real_values = matrix.unpadded_height * matrix.width;
       if matrix.values[real_values..]
         .par_iter()
-        .any(|&value| value != Scalar::ZERO)
+        .any(|&value| value != CurveScalar::<F::Curve>::ZERO)
         || matrix.multiplicities[matrix.unpadded_height..]
           .par_iter()
           .any(|&value| value != 0)
@@ -85,7 +85,7 @@ impl Packing<'_, '_, '_> {
           for (offset, dest) in rows.chunks_mut(width).enumerate() {
             let row_index = block * 64 + offset;
             let source = matrix.row(row_index);
-            if source[chip.activation] != Scalar::ONE {
+            if source[chip.activation] != CurveScalar::<F::Curve>::ONE {
               return Err("inactive real compiler row".into());
             }
             if identity {
@@ -95,12 +95,12 @@ impl Packing<'_, '_, '_> {
                 dest[column] = value;
               }
             }
-            dest[placement.selector] = Scalar::ONE;
+            dest[placement.selector] = CurveScalar::<F::Curve>::ONE;
             for write in &placement.writes {
-              dest[write.column] = circuits::evaluate(&write.value, dest);
+              dest[write.column] = circuits::evaluate::<F>(&write.value, dest);
             }
             *dest.last_mut().ok_or("empty compiler circuit")? =
-              Bn254.from_u64(matrix.multiplicities[row_index]);
+              field.from_u64(matrix.multiplicities[row_index]);
           }
           Ok(())
         })?;
@@ -151,7 +151,7 @@ impl Packing<'_, '_, '_> {
       for row in 0..table.height {
         for &map in &table.maps {
           values
-            .push(Bn254.from_u64(counts[map].get(row).copied().unwrap_or(0)));
+            .push(field.from_u64(counts[map].get(row).copied().unwrap_or(0)));
         }
       }
       traces.push(RowMajorMatrix::new(values, table.maps.len()));
@@ -165,16 +165,16 @@ impl Packing<'_, '_, '_> {
       memory[bucket].push(cell);
     }
     for (&width, cells) in self.memory_widths.iter().zip(memory) {
-      let mut trace = empty_trace(cells.len(), width + 3)?;
+      let mut trace = empty_trace::<F::Curve>(cells.len(), width + 3)?;
       for (address, (cell, row)) in
         cells.iter().zip(trace.values.chunks_mut(trace.width)).enumerate()
       {
         if cell.address != address {
           return Err("nonconsecutive ROM addresses".into());
         }
-        row[0] = Bn254.from_u64(cell.multiplicity);
-        row[1] = Scalar::ONE;
-        row[2] = Bn254.from_u64(
+        row[0] = field.from_u64(cell.multiplicity);
+        row[1] = CurveScalar::<F::Curve>::ONE;
+        row[2] = field.from_u64(
           u64::try_from(address).map_err(|_error| "ROM address overflow")?,
         );
         row[3..].copy_from_slice(cell.cell.value);
@@ -185,10 +185,10 @@ impl Packing<'_, '_, '_> {
   }
 }
 
-impl Backend<'_, '_> {
+impl<F: AiurField> Backend<'_, '_, F> {
   pub(super) fn trace_shape(
     &self,
-    traces: &[RowMajorMatrix<Scalar>],
+    traces: &[RowMajorMatrix<CurveScalar<F::Curve>>],
   ) -> Result<(Vec<bool>, Vec<u8>), String> {
     if traces.len() != self.system.circuits.len() {
       return Err("wrong circuit count".into());

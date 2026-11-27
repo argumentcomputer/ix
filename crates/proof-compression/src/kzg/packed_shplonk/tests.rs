@@ -1,4 +1,6 @@
 use super::*;
+use crate::kzg::{Scalar, curve::G1Affine};
+use multi_stark::config::ProofConfig;
 use multi_stark::expr::Expr;
 use multi_stark::lookup::Lookup;
 use multi_stark::system::{CircuitInputs, System, SystemWitness};
@@ -129,17 +131,17 @@ fn next_row_classes_separate_packs_and_remove_extra_values() {
 
 #[test]
 fn encodings_reject_trailing_and_truncated_bytes() {
-  let commitment = Commitment {
+  let commitment = Commitment::<Bn254> {
     matrices: vec![MatrixShape { log_size: 2, width: 3, next_row: true }],
     packs: vec![G1Affine::default()],
   };
   let bytes = commitment.to_bytes().unwrap();
   assert_eq!(Commitment::from_bytes(&bytes).unwrap(), commitment);
-  assert!(Commitment::from_bytes(&bytes[..bytes.len() - 1]).is_err());
+  assert!(Commitment::<Bn254>::from_bytes(&bytes[..bytes.len() - 1]).is_err());
   let mut long = bytes;
   long.push(0);
-  assert!(Commitment::from_bytes(&long).is_err());
-  let proof = Proof {
+  assert!(Commitment::<Bn254>::from_bytes(&long).is_err());
+  let proof = Proof::<Bn254> {
     extra_values: vec![Scalar::ONE],
     opening: shplonk::Proof {
       w1: G1Affine::default(),
@@ -148,7 +150,7 @@ fn encodings_reject_trailing_and_truncated_bytes() {
   };
   let bytes = proof.to_bytes().unwrap();
   assert_eq!(Proof::from_bytes(&bytes).unwrap(), proof);
-  assert!(Proof::from_bytes(&bytes[..bytes.len() - 1]).is_err());
+  assert!(Proof::<Bn254>::from_bytes(&bytes[..bytes.len() - 1]).is_err());
 }
 
 /// Heights and widths large enough that CUDA builds take the device
@@ -240,4 +242,93 @@ fn proofs_are_backend_independent() {
     blake3::hash(&wide_proof(true)).to_hex().as_str(),
     "68ee5c03588dca49bf206e6319f2025dbbfeb4f7028f7d42046dd6f4767fb1ca"
   );
+}
+
+#[test]
+fn bls12_381_packed_shplonk_streaming_matches_portable_and_captures_pair() {
+  use crate::kzg::{Bls12381, CurveScalar};
+  type BlsScalar = CurveScalar<Bls12381>;
+
+  const HEIGHT: usize = 1 << 10;
+  let srs = Arc::new(Srs::<Bls12381>::unsafe_dev_setup(
+    1 << 12,
+    b"packed-shplonk-bls12-381",
+  ));
+  let m = Expr::main;
+  let f = BlsScalar::from_u8;
+  let circuits = vec![
+    CircuitInputs {
+      main_width: 4,
+      constraints: vec![m(0) * m(1) - m(2), m(3) - m(0) - m(1)],
+      lookups: vec![
+        Lookup::push(Expr::constant(BlsScalar::ONE), vec![m(0), m(2)]),
+        Lookup::pull(Expr::constant(BlsScalar::ONE), vec![m(0), m(2)]),
+      ],
+      ..Default::default()
+    },
+    CircuitInputs {
+      main_width: 2,
+      preprocessed: Some(RowMajorMatrix::new_col(vec![f(7); HEIGHT / 2])),
+      constraints: vec![
+        Expr::main_next(0) - Expr::preprocessed_next(0),
+        m(1) - m(0) - Expr::constant(f(1)),
+      ],
+      lookups: vec![
+        Lookup::push(Expr::constant(BlsScalar::ONE), vec![m(1)]),
+        Lookup::pull(Expr::constant(BlsScalar::ONE), vec![m(1)]),
+      ],
+      ..Default::default()
+    },
+  ];
+  let g = BlsScalar::from_usize;
+  let make_traces = || {
+    vec![
+      RowMajorMatrix::new(
+        (0..HEIGHT)
+          .flat_map(|i| [g(i), g(i + 1), g(i) * g(i + 1), g(2 * i + 1)])
+          .collect(),
+        4,
+      ),
+      RowMajorMatrix::new(
+        (0..HEIGHT / 2).flat_map(|_| [f(7), f(8)]).collect(),
+        2,
+      ),
+    ]
+  };
+  let prove = |streaming: bool| {
+    let mut config = PackedShplonkConfig::<Bls12381>::new(srs.clone(), 4);
+    if streaming {
+      config = config.with_streaming_lookups().with_streaming_quotient();
+    }
+    let (system, key) = System::new(config, circuits.clone());
+    let traces = make_traces();
+    let witness = if streaming {
+      let lookups = traces
+        .iter()
+        .zip(&system.circuits)
+        .map(|(trace, circuit)| {
+          let widths: Vec<_> =
+            circuit.graph.lookups.iter().map(|l| l.args.len()).collect();
+          multi_stark::lookup::LookupValues::shape_only(trace.height(), &widths)
+        })
+        .collect();
+      SystemWitness { traces, lookups }
+    } else {
+      SystemWitness::from_stage_1(traces, &system)
+    };
+    let proof = system.prove_multiple_claims(&key, &[], witness);
+    let verified = capture_verification_for::<Bls12381, _>(|| {
+      system.verify_multiple_claims(&[], &proof)
+    })
+    .unwrap();
+    assert!(shplonk::pairing_holds(
+      system.config.pcs().parameters(),
+      verified.pair
+    ));
+    let mut bad = proof.clone();
+    bad.commitments.stage_1_trace.matrices[0].next_row ^= true;
+    assert!(system.verify_multiple_claims(&[], &bad).is_err());
+    bincode::serde::encode_to_vec(&proof, bincode::config::standard()).unwrap()
+  };
+  assert_eq!(prove(true), prove(false));
 }

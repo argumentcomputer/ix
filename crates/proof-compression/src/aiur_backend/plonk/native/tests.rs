@@ -870,3 +870,57 @@ fn solver_detects_unsatisfied_pre_and_post_gates() {
   ];
   assert!(solver::batch_invert_in_place::<Bn254>(&mut vals).is_err());
 }
+
+#[test]
+fn dev_srs_never_emits_unmarked_plonk_solidity_and_ceremony_emits_clean() {
+  use crate::kzg::srs::filecoin::{
+    FILECOIN_PREFIX_2P8_FIXTURE, FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3,
+    load_filecoin_cache,
+  };
+  use crate::pipeline::SetupClass;
+
+  // Development BN254 SRS: marked header, renamed contract, `.DEV_INSECURE.sol`.
+  let (bn_scs_bytes, _, _) = build_rich_scs::<Bn254>(0);
+  let bn_scs = ScsFile::<Bn254>::parse(&bn_scs_bytes).unwrap();
+  let bn_domain = domain_size_for_scs(&bn_scs).unwrap();
+  let dev_srs = Srs::<Bn254>::unsafe_dev_setup(
+    (bn_domain + 3).next_power_of_two(),
+    b"dev-sol-guard-bn254",
+  );
+  let (_, dev_vk) =
+    setup(&bn_scs, &dev_srs, &PlonkAccelerator::<Bn254>::cpu()).unwrap();
+  assert_eq!(dev_vk.setup_class(), SetupClass::Development);
+  let dev_sol = export_solidity(&dev_vk).unwrap();
+  assert!(dev_sol.starts_with(solidity::DEV_SOLIDITY_HEADER));
+  assert!(
+    dev_sol.contains("contract PlonkVerifier_DEV_INSECURE_DO_NOT_DEPLOY {")
+  );
+  assert!(!dev_sol.contains("contract PlonkVerifier {"));
+  assert_eq!(
+    solidity::solidity_filename_for_vk(&dev_vk),
+    "PlonkVerifier.DEV_INSECURE.sol"
+  );
+
+  // Ceremony BLS12-381 SRS (Filecoin): unmarked `PlonkVerifier` & filename.
+  let (bls_scs_bytes, _, _) = build_rich_scs::<Bls12381>(0);
+  let bls_scs = ScsFile::<Bls12381>::parse(&bls_scs_bytes).unwrap();
+  let bls_domain = domain_size_for_scs(&bls_scs).unwrap();
+  let fixture_dir =
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(FILECOIN_PREFIX_2P8_FIXTURE);
+  let fc_srs = load_filecoin_cache(
+    &fixture_dir,
+    FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3,
+    (bls_domain + 3).next_power_of_two(),
+  )
+  .unwrap();
+  let (_, fc_vk) =
+    setup(&bls_scs, &fc_srs, &PlonkAccelerator::<Bls12381>::cpu()).unwrap();
+  assert_eq!(fc_vk.setup_class(), SetupClass::Filecoin);
+  let fc_sol = export_solidity(&fc_vk).unwrap();
+  assert!(!fc_sol.contains("DEV_INSECURE"));
+  assert!(fc_sol.contains("contract PlonkVerifier {"));
+  assert_eq!(
+    solidity::solidity_filename_for_vk(&fc_vk),
+    "Bls12381PlonkVerifier.sol"
+  );
+}

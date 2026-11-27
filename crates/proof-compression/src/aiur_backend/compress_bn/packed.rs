@@ -35,35 +35,42 @@ pub const PACKED_NARROW_FIXED_ENTRY: &str = "CompressNarrowFixed::step_v1";
 pub const PACKED_CHAIN_POLICY_MAGIC: &[u8; 8] = b"IXAUKG01";
 const PACKED_SETUP_SEED: &[u8] = b"compress-bn-packed-shplonk-v1";
 
-pub type PackedProof = packed_wire::Proof;
+pub type PackedProof<C = Bn254Curve> = packed_wire::Proof<C>;
 
 /// Authorized predecessor keys of a packed chain (`IXAUKG01`): the packed
 /// CompressGL key for stage one and one key for every later stage.
-pub struct PackedPolicy {
-  anchors: [u8; 128],
+pub struct PackedPolicy<C: AiurCurve = Bn254Curve> {
+  anchors: Vec<u8>,
   gl: ([u8; 32], u32),
   bn: ([u8; 32], u32),
+  _curve: PhantomData<C>,
 }
 
-impl PackedPolicy {
+impl<C: AiurCurve> PackedPolicy<C> {
   pub fn chain(
-    parameters: &VerifierParams,
+    parameters: &VerifierParams<C>,
     gl: ([u8; 32], u32),
     bn: ([u8; 32], u32),
   ) -> Result<Self, String> {
-    let column = wire::Policy::new(parameters, gl.0, gl.1, bn.0, bn.1)?;
-    Ok(Self { anchors: *column.anchor_bytes(), gl, bn })
+    let column = wire::Policy::<C>::new(parameters, gl.0, gl.1, bn.0, bn.1)?;
+    Ok(Self {
+      anchors: column.anchor_bytes_slice().to_vec(),
+      gl,
+      bn,
+      _curve: PhantomData,
+    })
   }
 
   /// Parse a two-key chain policy, checking its anchors against
   /// `parameters`: the canonical encoding round-trips exactly.
   pub fn from_chain_bytes(
-    parameters: &VerifierParams,
+    parameters: &VerifierParams<C>,
     bytes: &[u8],
   ) -> Result<Self, String> {
+    let anchor_len = C::G2_PAIR_COMPRESSED_BYTES;
     let fields = bytes
       .strip_prefix(PACKED_CHAIN_POLICY_MAGIC.as_slice())
-      .filter(|rest| rest.len() == 128 + 2 * (32 + 4))
+      .filter(|rest| rest.len() == anchor_len + 2 * (32 + 4))
       .ok_or("not a canonical IXAUKG01 chain policy")?;
     let key = |offset: usize| -> ([u8; 32], u32) {
       let digest = fields[offset..offset + 32].try_into().unwrap_or([0; 32]);
@@ -72,14 +79,15 @@ impl PackedPolicy {
       );
       (digest, entry)
     };
-    let policy = Self::chain(parameters, key(128), key(128 + 36))?;
+    let policy =
+      Self::chain(parameters, key(anchor_len), key(anchor_len + 36))?;
     if policy.to_bytes() != bytes {
       return Err("chain policy anchors differ from the parameters".into());
     }
     Ok(policy)
   }
 
-  pub fn anchor_bytes(&self) -> &[u8; 128] {
+  pub fn anchor_bytes_slice(&self) -> &[u8] {
     &self.anchors
   }
 
@@ -95,7 +103,7 @@ impl PackedPolicy {
 
   pub fn to_bytes(&self) -> Vec<u8> {
     let mut bytes = PACKED_CHAIN_POLICY_MAGIC.to_vec();
-    bytes.extend(self.anchors);
+    bytes.extend(&self.anchors);
     for (digest, entry) in [&self.gl, &self.bn] {
       bytes.extend(digest);
       bytes.extend(entry.to_le_bytes());
@@ -105,6 +113,16 @@ impl PackedPolicy {
 
   pub fn digest(&self) -> [u8; 32] {
     *blake3::hash(&self.to_bytes()).as_bytes()
+  }
+}
+
+impl PackedPolicy<Bn254Curve> {
+  pub fn anchor_bytes(&self) -> &[u8; 128] {
+    self
+      .anchors
+      .as_slice()
+      .try_into()
+      .expect("BN254 packed policy has 128-byte G2 anchors")
   }
 }
 
@@ -122,38 +140,51 @@ pub struct PackedCapacity {
 }
 
 impl PackedCapacity {
-  pub fn cap(self) -> Result<usize, String> {
+  pub fn cap_for<C: AiurCurve>(self) -> Result<usize, String> {
     if self.log_cap < 1
-      || usize::from(self.log_cap) > <Scalar as TwoAdicField>::TWO_ADICITY
+      || usize::from(self.log_cap)
+        > <CurveScalar<C> as TwoAdicField>::TWO_ADICITY
       || !self.quotient_degree.is_power_of_two()
       || self.lookup_quotient_budget.is_some_and(|b| !b.is_power_of_two())
     {
-      return Err("invalid packed BN254 capacity".into());
+      return Err(format!("invalid packed {} capacity", C::NAME));
     }
     Ok(1usize << self.log_cap)
   }
 
-  /// Load `2^log_cap` proving powers through the release setup loader.
-  /// Ignition prefixes are checked against the released anchors there.
-  pub fn config(
+  pub fn cap(self) -> Result<usize, String> {
+    self.cap_for::<Bn254Curve>()
+  }
+
+  /// Load `2^log_cap` proving powers for curve `C` through the release setup
+  /// loader. Ignition/Filecoin prefixes are checked against released anchors.
+  pub fn config_for<C: AiurCurve>(
     self,
     setup: &SetupConfig,
-  ) -> Result<PackedShplonkConfig, String> {
-    let cap = self.cap()?;
+  ) -> Result<PackedShplonkConfig<C>, String> {
+    let cap = self.cap_for::<C>()?;
     let source = setup
-      .for_stage::<crate::kzg::Bn254>(PACKED_SETUP_SEED, cap)
+      .for_stage::<C>(PACKED_SETUP_SEED, cap)
       .map_err(|e| e.to_string())?;
     let srs = source.srs(cap, false).map_err(|e| e.to_string())?;
-    Ok(PackedShplonkConfig::with_max_trace_len(
+    Ok(PackedShplonkConfig::<C>::with_max_trace_len(
       Arc::new(srs),
       cap,
       self.quotient_degree,
     ))
   }
+
+  /// Load `2^log_cap` BN254 proving powers through the release setup loader.
+  pub fn config(
+    self,
+    setup: &SetupConfig,
+  ) -> Result<PackedShplonkConfig, String> {
+    self.config_for::<Bn254Curve>(setup)
+  }
 }
 
-pub struct PackedProven {
-  pub proof: PackedProof,
+pub struct PackedProven<C: AiurCurve = Bn254Curve> {
+  pub proof: PackedProof<C>,
   /// Padded main cells of the committed traces, after sharding.
   pub main_cells: usize,
   /// `(compiler circuit, shard heights)` of every circuit with several copies.
@@ -161,9 +192,9 @@ pub struct PackedProven {
   /// Source-wire bytes read by the packed Aiur verifier.
   pub source_proof: Vec<u8>,
   pub source_claims: Vec<u8>,
-  pub claim: Vec<Scalar>,
+  pub claim: Vec<CurveScalar<C>>,
   pub public: PublicInputs,
-  pub accumulator: Accumulator,
+  pub accumulator: Accumulator<C>,
   pub profile: Profile,
   pub trace_seconds: f64,
   pub proving_seconds: f64,
@@ -173,20 +204,20 @@ pub struct PackedProven {
 /// The packed system of one [`PACKED_CHAIN_ENTRY`] [`Wrapper`] with its key,
 /// transcript-bound to the digest of its unbound source-wire key as the
 /// per-column backend binds its own.
-pub struct PackedProver<'w> {
-  wrapper: &'w Wrapper,
+pub struct PackedProver<'w, F: AiurField = Bn254> {
+  wrapper: &'w Wrapper<F>,
   capacity: PackedCapacity,
   copies: Vec<usize>,
-  system: System<PackedShplonkConfig>,
-  key: ProverKey<PackedShplonkConfig>,
+  system: System<PackedShplonkConfig<F::Curve>>,
+  key: ProverKey<PackedShplonkConfig<F::Curve>>,
   key_bytes: Vec<u8>,
 }
 
-impl<'w> PackedProver<'w> {
+impl<'w, F: AiurField> PackedProver<'w, F> {
   pub fn new(
-    wrapper: &'w Wrapper,
+    wrapper: &'w Wrapper<F>,
     capacity: PackedCapacity,
-    config: PackedShplonkConfig,
+    config: PackedShplonkConfig<F::Curve>,
   ) -> Result<Self, String> {
     Self::with_copies(wrapper, capacity, config, None)
   }
@@ -197,16 +228,16 @@ impl<'w> PackedProver<'w> {
   /// satisfy the same constraints and LogUp balance as one trace. ROM and
   /// fixed-table circuits constrain consecutive rows or a fixed height.
   pub fn with_copies(
-    wrapper: &'w Wrapper,
+    wrapper: &'w Wrapper<F>,
     capacity: PackedCapacity,
-    config: PackedShplonkConfig,
+    config: PackedShplonkConfig<F::Curve>,
     copies: Option<Vec<usize>>,
   ) -> Result<Self, String> {
     if wrapper.entry_name != PACKED_CHAIN_ENTRY {
       return Err("packed proving needs the packed chain entry".into());
     }
     let PackedSystem { system, key, key_bytes, copies } =
-      PackedSystem::new(wrapper.plan(), capacity, config, copies)?;
+      PackedSystem::<F::Curve>::new(wrapper.plan(), capacity, config, copies)?;
     Ok(Self { wrapper, capacity, copies, system, key, key_bytes })
   }
 
@@ -219,11 +250,11 @@ impl<'w> PackedProver<'w> {
     *blake3::hash(&self.key_bytes).as_bytes()
   }
 
-  pub fn parameters(&self) -> &VerifierParams {
+  pub fn parameters(&self) -> &VerifierParams<F::Curve> {
     self.system.config.pcs().parameters()
   }
 
-  pub fn system(&self) -> &System<PackedShplonkConfig> {
+  pub fn system(&self) -> &System<PackedShplonkConfig<F::Curve>> {
     &self.system
   }
 
@@ -239,19 +270,24 @@ impl<'w> PackedProver<'w> {
   /// one and this chain program's key for every later stage.
   pub fn chain_policy(
     &self,
-    gl: &PackedGlProver<'_>,
-  ) -> Result<PackedPolicy, String> {
-    if source_anchors(gl.key_bytes())? != source_anchors(&self.key_bytes)? {
+    gl: &PackedGlProver<'_, F>,
+  ) -> Result<PackedPolicy<F::Curve>, String> {
+    if source_anchors_for::<F::Curve>(gl.key_bytes())?
+      != source_anchors_for::<F::Curve>(&self.key_bytes)?
+    {
       return Err("packed programs use different setups".into());
     }
-    PackedPolicy::chain(
+    PackedPolicy::<F::Curve>::chain(
       self.parameters(),
       (gl.key_digest(), gl.entry()?),
       (self.key_digest(), self.entry()),
     )
   }
 
-  pub fn profile(&self, execution: &Executed<'_>) -> Result<Profile, String> {
+  pub fn profile(
+    &self,
+    execution: &Executed<'_, F>,
+  ) -> Result<Profile, String> {
     self
       .wrapper
       .profile_with_budget(execution, self.capacity.lookup_quotient_budget)
@@ -259,20 +295,23 @@ impl<'w> PackedProver<'w> {
 
   pub fn prove(
     &self,
-    execution: &Executed<'_>,
+    execution: &Executed<'_, F>,
     limits: TraceLimits,
-  ) -> Result<PackedProven, String> {
+  ) -> Result<PackedProven<F::Curve>, String> {
     let wrapper = self.wrapper;
     let profile = self.profile(execution)?;
-    limits
-      .check_streaming(&profile, self.system.config.uses_streaming_lookups())?;
-    if profile.max_height > self.capacity.cap()?
+    limits.check_streaming_for::<F::Curve>(
+      &profile,
+      self.system.config.uses_streaming_lookups(),
+    )?;
+    let cap = self.capacity.cap_for::<F::Curve>()?;
+    if profile.max_height > cap
       || profile.quotient_degree > self.capacity.quotient_degree
     {
       return Err(format!(
         "CompressBN trace exceeds the packed capacity: height {} / {}, quotient degree {} / {}",
         profile.max_height,
-        self.capacity.cap()?,
+        cap,
         profile.quotient_degree,
         self.capacity.quotient_degree,
       ));
@@ -284,20 +323,22 @@ impl<'w> PackedProver<'w> {
     if !policy.gl_packed {
       return Err("chain proving needs a packed CompressGL policy".into());
     }
-    let configured = PackedPolicy::chain(self.parameters(), gl, bn)?;
+    let configured =
+      PackedPolicy::<F::Curve>::chain(self.parameters(), gl, bn)?;
     let own = &policy.bn;
     if configured.digest() != *input.public.policy.as_bytes()
       || self.key_digest() != own.digest
       || wrapper.entry != own.entry
-      || source_anchors(&self.key_bytes)? != policy.anchors
+      || source_anchors_for::<F::Curve>(&self.key_bytes)?
+        != policy.anchors.as_slice()
     {
       return Err(
         "packed CompressBN proving key differs from the trusted policy".into(),
       );
     }
-    let args = input.public.arguments();
+    let args = input.public.arguments_for::<F::Curve>();
     let claim = wrapper.claim(input.public, &execution.accumulator)?;
-    let proven = prove_packed(
+    let proven = prove_packed::<F>(
       &self.system,
       &self.key,
       &Compiler::with_lookup_budget(
@@ -314,8 +355,10 @@ impl<'w> PackedProver<'w> {
     Ok(PackedProven {
       main_cells: proven.main_cells,
       shards: proven.shards,
-      source_proof: packed_wire::proof_bytes(&proven.proof)?,
-      source_claims: wire::claims_bytes(std::slice::from_ref(&claim))?,
+      source_proof: packed_wire::proof_bytes_for::<F::Curve>(&proven.proof)?,
+      source_claims: wire::claims_bytes_for::<F::Curve>(std::slice::from_ref(
+        &claim,
+      ))?,
       proof: proven.proof,
       claim,
       public: input.public,
@@ -330,30 +373,30 @@ impl<'w> PackedProver<'w> {
   /// Native verification against an independently expected public claim.
   pub fn verify(
     &self,
-    claim: &[Scalar],
-    proof: &PackedProof,
+    claim: &[F::Element],
+    proof: &PackedProof<F::Curve>,
   ) -> Result<(), String> {
-    verify_packed(&self.system, claim, proof)
+    verify_packed::<F::Curve>(&self.system, claim, proof)
   }
 }
 
 /// A packed system with its prover key and source-wire key bytes, after
 /// expanding circuit copies.
-struct PackedSystem {
-  system: System<PackedShplonkConfig>,
-  key: ProverKey<PackedShplonkConfig>,
+struct PackedSystem<C: AiurCurve = Bn254Curve> {
+  system: System<PackedShplonkConfig<C>>,
+  key: ProverKey<PackedShplonkConfig<C>>,
   key_bytes: Vec<u8>,
   copies: Vec<usize>,
 }
 
-impl PackedSystem {
+impl<C: AiurCurve> PackedSystem<C> {
   /// The packed system of a compiler plan, transcript-bound to the digest of
   /// its unbound source-wire key. Every circuit's quotient degree and fixed
   /// table must fit `capacity`.
   fn new(
-    plan: &TracePlan<'static, Bn254>,
+    plan: &TracePlan<'static, C::Field>,
     capacity: PackedCapacity,
-    config: PackedShplonkConfig,
+    config: PackedShplonkConfig<C>,
     copies: Option<Vec<usize>>,
   ) -> Result<Self, String> {
     let inputs =
@@ -367,18 +410,19 @@ impl PackedSystem {
   /// [`Self::new`] over given circuits, the first `functions` of them
   /// function circuits.
   fn from_inputs(
-    inputs: Vec<CircuitInputs<Scalar>>,
+    inputs: Vec<CircuitInputs<CurveScalar<C>>>,
     functions: usize,
     capacity: PackedCapacity,
-    config: PackedShplonkConfig,
+    config: PackedShplonkConfig<C>,
     copies: Option<Vec<usize>>,
   ) -> Result<Self, String> {
-    if config.pcs().parameters().max_trace_len() != capacity.cap()?
+    let cap = capacity.cap_for::<C>()?;
+    if config.pcs().parameters().max_trace_len() != cap
       || config.max_quotient_degree() != capacity.quotient_degree
     {
       return Err("packed configuration differs from its capacity".into());
     }
-    let params = extension_params::<PackedShplonkConfig>();
+    let params = extension_params::<PackedShplonkConfig<C>>();
     for input in &inputs {
       let graph = input
         .compile_graph(&params)
@@ -398,7 +442,7 @@ impl PackedSystem {
       }
       if let Some(fixed) = &input.preprocessed {
         let height = fixed.values.len() / fixed.width;
-        if height > capacity.cap()? {
+        if height > cap {
           return Err("fixed table exceeds the packed capacity".into());
         }
       }
@@ -416,16 +460,18 @@ impl PackedSystem {
       .flat_map(|(input, &k)| std::iter::repeat_n(input, k))
       .collect();
     let (mut system, key) = System::new(config, inputs);
-    let unbound = packed_wire::key_bytes_with_copies(&system, &copies)?;
+    let unbound =
+      packed_wire::key_bytes_with_copies_for::<C>(&system, &copies)?;
     system.config =
       system.config.clone().with_key_digest(*blake3::hash(&unbound).as_bytes());
-    let key_bytes = packed_wire::key_bytes_with_copies(&system, &copies)?;
+    let key_bytes =
+      packed_wire::key_bytes_with_copies_for::<C>(&system, &copies)?;
     Ok(Self { system, key, key_bytes, copies })
   }
 }
 
-struct ProvenTraces {
-  proof: PackedProof,
+struct ProvenTraces<C: AiurCurve = Bn254Curve> {
+  proof: PackedProof<C>,
   main_cells: usize,
   shards: Vec<(usize, Vec<usize>)>,
   trace_seconds: f64,
@@ -436,17 +482,17 @@ struct ProvenTraces {
 /// Populate, shard and prove the traces of one execution, then verify the
 /// proof natively against `claim`.
 #[allow(clippy::too_many_arguments)]
-fn prove_packed(
-  system: &System<PackedShplonkConfig>,
-  key: &ProverKey<PackedShplonkConfig>,
-  compiler: &Compiler<'_, 'static>,
-  stage: Option<&wide::Stage>,
+fn prove_packed<F: AiurField>(
+  system: &System<PackedShplonkConfig<F::Curve>>,
+  key: &ProverKey<PackedShplonkConfig<F::Curve>>,
+  compiler: &Compiler<'_, 'static, F>,
+  stage: Option<&wide::Stage<F::Curve>>,
   copies: &[usize],
-  record: &Execution<Bn254>,
+  record: &Execution<F>,
   entry: &str,
-  args: &[Scalar],
-  claim: &[Scalar],
-) -> Result<ProvenTraces, String> {
+  args: &[F::Element],
+  claim: &[F::Element],
+) -> Result<ProvenTraces<F::Curve>, String> {
   let started = Instant::now();
   let traces = compiler.generate(record, entry, args)?;
   let traces = match stage {
@@ -461,7 +507,7 @@ fn prove_packed(
       Some(stage) => stage.rows(&raw),
       None => raw,
     };
-    shard(traces, copies, &raw)?
+    shard::<F::Curve>(traces, copies, &raw)?
   };
   let main_cells = traces.iter().map(|t| t.height() * t.width()).sum();
   let lookups = if system.config.uses_streaming_lookups() {
@@ -492,7 +538,7 @@ fn prove_packed(
   let proof = system.prove(key, claim, witness);
   let proving_seconds = started.elapsed().as_secs_f64();
   let started = Instant::now();
-  verify_packed(system, claim, &proof)?;
+  verify_packed::<F::Curve>(system, claim, &proof)?;
   Ok(ProvenTraces {
     proof,
     main_cells,
@@ -503,10 +549,10 @@ fn prove_packed(
   })
 }
 
-fn verify_packed(
-  system: &System<PackedShplonkConfig>,
-  claim: &[Scalar],
-  proof: &PackedProof,
+fn verify_packed<C: AiurCurve>(
+  system: &System<PackedShplonkConfig<C>>,
+  claim: &[CurveScalar<C>],
+  proof: &PackedProof<C>,
 ) -> Result<(), String> {
   check_shape(system, &proof.active, &proof.log_degrees)?;
   system
@@ -514,25 +560,22 @@ fn verify_packed(
     .map_err(|error| format!("packed verification failed: {error:?}"))
 }
 
-/// Native reference for `CompressBNPacked::fold` at the stage `public`, whose
-/// predecessor proof `proof` of `system` (key digest `key_digest`) carries
-/// `previous`. Verifies the proof, squeezes the weight from the verifier's
-/// final transcript and returns it with `pair + weight·previous`, where
-/// `pair` is the proof's deferred opening pair.
-pub fn fold_packed(
-  system: &System<PackedShplonkConfig>,
-  claim: &[Scalar],
-  proof: &PackedProof,
+/// Native reference for `CompressBNPacked::fold` over curve `C`.
+pub fn fold_packed_for<C: AiurCurve>(
+  system: &System<PackedShplonkConfig<C>>,
+  claim: &[CurveScalar<C>],
+  proof: &PackedProof<C>,
   public: PublicInputs,
   key_digest: &[u8; 32],
-  previous: &Accumulator,
-) -> Result<(Scalar, Accumulator), String> {
+  previous: &Accumulator<C>,
+) -> Result<(CurveScalar<C>, Accumulator<C>), String> {
   use ark_ec::CurveGroup;
-  let verified = crate::kzg::packed_shplonk::capture_verification(|| {
-    verify_packed(system, claim, proof)
-  })?;
+  let verified =
+    crate::kzg::packed_shplonk::capture_verification_for::<C, _>(|| {
+      verify_packed::<C>(system, claim, proof)
+    })?;
   let previous = previous.points();
-  let weight = wire::transcript_fold_challenge(
+  let weight = wire::transcript_fold_challenge_for::<C>(
     &verified.transcript.0,
     public.policy.as_bytes(),
     public.statement.as_bytes(),
@@ -543,45 +586,59 @@ pub fn fold_packed(
   )?;
   let folded =
     [0, 1].map(|i| (verified.pair[i] + previous[i] * weight.0).into_affine());
-  Ok((weight, Accumulator::from_points(&folded)?))
+  Ok((weight, Accumulator::<C>::from_points(&folded)?))
+}
+
+/// Native reference for `CompressBNPacked::fold` over BN254.
+pub fn fold_packed(
+  system: &System<PackedShplonkConfig>,
+  claim: &[Scalar],
+  proof: &PackedProof,
+  public: PublicInputs,
+  key_digest: &[u8; 32],
+  previous: &Accumulator,
+) -> Result<(Scalar, Accumulator), String> {
+  fold_packed_for::<Bn254Curve>(
+    system, claim, proof, public, key_digest, previous,
+  )
 }
 
 /// A packed-SHPLONK prover of the CompressGL program, whose key the chain
 /// policy authorizes for stage one of [`PACKED_CHAIN_ENTRY`]. Its public call
 /// is CompressGL's own 18-word call.
-pub struct PackedGlProver<'w> {
-  wrapper: &'w gl::Wrapper,
+pub struct PackedGlProver<'w, F: AiurField = Bn254> {
+  wrapper: &'w gl::Wrapper<F>,
   capacity: PackedCapacity,
-  stage: Option<wide::Stage>,
+  stage: Option<wide::Stage<F::Curve>>,
   copies: Vec<usize>,
-  system: System<PackedShplonkConfig>,
-  key: ProverKey<PackedShplonkConfig>,
+  system: System<PackedShplonkConfig<F::Curve>>,
+  key: ProverKey<PackedShplonkConfig<F::Curve>>,
   key_bytes: Vec<u8>,
 }
 
-pub struct PackedGlProven {
-  pub proof: PackedProof,
+pub struct PackedGlProven<C: AiurCurve = Bn254Curve> {
+  pub proof: PackedProof<C>,
   /// Padded main cells of the committed traces, after sharding.
   pub main_cells: usize,
   pub shards: Vec<(usize, Vec<usize>)>,
   pub source_proof: Vec<u8>,
   pub source_claims: Vec<u8>,
-  pub claim: Vec<Scalar>,
+  pub claim: Vec<CurveScalar<C>>,
   pub trace_seconds: f64,
   pub proving_seconds: f64,
   pub verification_seconds: f64,
 }
 
-impl<'w> PackedGlProver<'w> {
+impl<'w, F: AiurField> PackedGlProver<'w, F> {
   /// See [`PackedProver::with_copies`] for `copies`.
   pub fn with_copies(
-    wrapper: &'w gl::Wrapper,
+    wrapper: &'w gl::Wrapper<F>,
     capacity: PackedCapacity,
-    config: PackedShplonkConfig,
+    config: PackedShplonkConfig<F::Curve>,
     copies: Option<Vec<usize>>,
   ) -> Result<Self, String> {
     let PackedSystem { system, key, key_bytes, copies } =
-      PackedSystem::new(wrapper.plan(), capacity, config, copies)?;
+      PackedSystem::<F::Curve>::new(wrapper.plan(), capacity, config, copies)?;
     Ok(Self { wrapper, capacity, stage: None, copies, system, key, key_bytes })
   }
 
@@ -589,14 +646,14 @@ impl<'w> PackedGlProver<'w> {
   /// in its table order), filled from the compiler's witness traces.
   /// `copies` index the stage's tables.
   pub fn from_wide(
-    wrapper: &'w gl::Wrapper,
+    wrapper: &'w gl::Wrapper<F>,
     capacity: PackedCapacity,
-    config: PackedShplonkConfig,
-    stage: wide::Stage,
+    config: PackedShplonkConfig<F::Curve>,
+    stage: wide::Stage<F::Curve>,
     copies: Option<Vec<usize>>,
   ) -> Result<Self, String> {
     let PackedSystem { system, key, key_bytes, copies } =
-      PackedSystem::from_inputs(
+      PackedSystem::<F::Curve>::from_inputs(
         stage.inputs.clone(),
         stage.function_circuits,
         capacity,
@@ -622,11 +679,11 @@ impl<'w> PackedGlProver<'w> {
     *blake3::hash(&self.key_bytes).as_bytes()
   }
 
-  pub fn parameters(&self) -> &VerifierParams {
+  pub fn parameters(&self) -> &VerifierParams<F::Curve> {
     self.system.config.pcs().parameters()
   }
 
-  pub fn system(&self) -> &System<PackedShplonkConfig> {
+  pub fn system(&self) -> &System<PackedShplonkConfig<F::Curve>> {
     &self.system
   }
 
@@ -634,19 +691,20 @@ impl<'w> PackedGlProver<'w> {
     &self.copies
   }
 
-  pub fn stage(&self) -> Option<&wide::Stage> {
+  pub fn stage(&self) -> Option<&wide::Stage<F::Curve>> {
     self.stage.as_ref()
   }
 
   /// Physical entry ID of `CompressGL::verify_root`, as its claim names it.
   pub fn entry(&self) -> Result<u32, String> {
+    let field = F::default();
     let claim =
-      self.wrapper.plan().public_claim(gl::ENTRY, &[Bn254.zero(); 16], &[])?;
-    u32::try_from(Bn254.try_to_u64(claim[1])?)
+      self.wrapper.plan().public_claim(gl::ENTRY, &[field.zero(); 16], &[])?;
+    u32::try_from(field.try_to_u64(claim[1])?)
       .map_err(|_error| "CompressGL callable exceeds u32".into())
   }
 
-  pub fn compiler(&self) -> Result<Compiler<'_, 'static>, String> {
+  pub fn compiler(&self) -> Result<Compiler<'_, 'static, F>, String> {
     Compiler::with_lookup_budget(
       self.wrapper.plan(),
       self.capacity.lookup_quotient_budget,
@@ -655,18 +713,19 @@ impl<'w> PackedGlProver<'w> {
 
   pub fn prove(
     &self,
-    execution: &gl::Executed<'_>,
-  ) -> Result<PackedGlProven, String> {
+    execution: &gl::Executed<'_, F>,
+  ) -> Result<PackedGlProven<F::Curve>, String> {
     let compiler = self.compiler()?;
     let heights = compiler.row_counts(execution.record())?;
-    if heights.iter().any(|&h| h > self.capacity.cap().unwrap_or(0)) {
+    let cap = self.capacity.cap_for::<F::Curve>().unwrap_or(0);
+    if heights.iter().any(|&h| h > cap) {
       return Err("CompressGL trace exceeds the packed capacity".into());
     }
     if let Some(stage) = &self.stage {
       stage.check_rom(&compiler.raw_row_counts(execution.record())?)?;
     }
     let claim = self.wrapper.claim(execution.input().statement())?;
-    let proven = prove_packed(
+    let proven = prove_packed::<F>(
       &self.system,
       &self.key,
       &compiler,
@@ -680,8 +739,10 @@ impl<'w> PackedGlProver<'w> {
     Ok(PackedGlProven {
       main_cells: proven.main_cells,
       shards: proven.shards,
-      source_proof: packed_wire::proof_bytes(&proven.proof)?,
-      source_claims: wire::claims_bytes(std::slice::from_ref(&claim))?,
+      source_proof: packed_wire::proof_bytes_for::<F::Curve>(&proven.proof)?,
+      source_claims: wire::claims_bytes_for::<F::Curve>(std::slice::from_ref(
+        &claim,
+      ))?,
       proof: proven.proof,
       claim,
       trace_seconds: proven.trace_seconds,
@@ -692,10 +753,10 @@ impl<'w> PackedGlProver<'w> {
 
   pub fn verify(
     &self,
-    claim: &[Scalar],
-    proof: &PackedProof,
+    claim: &[F::Element],
+    proof: &PackedProof<F::Curve>,
   ) -> Result<(), String> {
-    verify_packed(&self.system, claim, proof)
+    verify_packed::<F::Curve>(&self.system, claim, proof)
   }
 }
 
@@ -722,15 +783,15 @@ pub fn decompose(rows: usize, pieces: usize) -> Vec<usize> {
 /// cells net of the next stage's cost for every extra active copy:
 /// `column_cost` per committed column (opened, hashed and folded) and
 /// `node_cost` per constraint-graph node (evaluated once per copy).
-pub fn plan_copies(
-  compiler: &Compiler<'_, '_>,
+pub fn plan_copies<F: AiurField>(
+  compiler: &Compiler<'_, '_, F>,
   raw_rows: &[usize],
   max_copies: usize,
   min_saving: usize,
   column_cost: usize,
   node_cost: usize,
 ) -> Vec<usize> {
-  plan_copies_of(
+  plan_copies_of::<F::Curve>(
     compiler.inputs(),
     compiler.function_circuits(),
     raw_rows,
@@ -743,8 +804,8 @@ pub fn plan_copies(
 
 /// [`plan_copies`] over given circuits, the first `functions` of them
 /// function circuits, with `raw_rows` in their order.
-pub fn plan_copies_of(
-  inputs: &[CircuitInputs<Scalar>],
+pub fn plan_copies_of<C: AiurCurve>(
+  inputs: &[CircuitInputs<CurveScalar<C>>],
   functions: usize,
   raw_rows: &[usize],
   max_copies: usize,
@@ -752,7 +813,7 @@ pub fn plan_copies_of(
   column_cost: usize,
   node_cost: usize,
 ) -> Vec<usize> {
-  let params = extension_params::<PackedShplonkConfig>();
+  let params = extension_params::<PackedShplonkConfig<C>>();
   let degree = params.degree;
   inputs
     .iter()
@@ -784,11 +845,14 @@ pub fn plan_copies_of(
 /// Splits each multi-copy circuit's real rows across its copies, largest
 /// shard first, each zero-padded to its power-of-two height; copies left
 /// over are inactive (height zero).
-fn shard(
-  traces: Vec<RowMajorMatrix<Scalar>>,
+fn shard<C: AiurCurve>(
+  traces: Vec<RowMajorMatrix<CurveScalar<C>>>,
   copies: &[usize],
   raw_rows: &[usize],
-) -> Result<(Vec<RowMajorMatrix<Scalar>>, Vec<(usize, Vec<usize>)>), String> {
+) -> Result<
+  (Vec<RowMajorMatrix<CurveScalar<C>>>, Vec<(usize, Vec<usize>)>),
+  String,
+> {
   use p3_maybe_rayon::prelude::*;
   let mut out = Vec::with_capacity(copies.iter().sum());
   let mut shards = vec![];
@@ -818,9 +882,9 @@ fn shard(
     let mut rest = Vec::with_capacity(heights.len() - 1);
     for &height in &heights[1..] {
       let end = (start + height).min(rows);
-      let mut piece: Vec<Scalar> =
+      let mut piece: Vec<CurveScalar<C>> =
         values[start * width..end * width].par_iter().copied().collect();
-      piece.resize(height * width, Bn254.zero());
+      piece.resize(height * width, C::FIELD.zero());
       rest.push(RowMajorMatrix::new(piece, width));
       start = end;
     }
@@ -830,7 +894,7 @@ fn shard(
     if rows < first {
       values[rows * width..]
         .par_iter_mut()
-        .for_each(|value| *value = Bn254.zero());
+        .for_each(|value| *value = C::FIELD.zero());
     }
     out.push(RowMajorMatrix::new(values, width));
     out.extend(rest);
@@ -842,8 +906,8 @@ fn shard(
   Ok((out, shards))
 }
 
-fn trace_shape(
-  witness: &SystemWitness<Scalar>,
+fn trace_shape<S: Clone + Send + Sync + multi_stark::traits::Field>(
+  witness: &SystemWitness<S>,
 ) -> Result<(Vec<bool>, Vec<u8>), String> {
   let mut active = Vec::with_capacity(witness.traces.len());
   let mut degrees = vec![];

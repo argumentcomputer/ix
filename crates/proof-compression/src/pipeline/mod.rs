@@ -31,7 +31,7 @@ pub mod plonk;
 pub mod plonk_limits;
 mod prepare;
 pub use final_proof::{Artifact, FinalOptions, FinalSystem};
-pub use prepare::{prepare, prepare_plonk};
+pub use prepare::{check_release_srs, prepare, prepare_plonk};
 mod prover;
 mod root;
 mod verifying_keys;
@@ -75,17 +75,87 @@ pub fn check_release_statement(claim: &[u8], statement: &[u8]) -> Result<()> {
   verifying_keys::check_release_prefix(&words)
 }
 
-/// Describe the inner KZG setup selected for a BN254 compression run.
+/// Describe the final proof setup when `--dev-final-srs` overrides the
+/// ceremony setup.
+fn final_setup_description(final_proof: FinalOptions) -> Option<&'static str> {
+  if !final_proof.allow_development {
+    return None;
+  }
+  match final_proof.system {
+    FinalSystem::Plonk => Some(
+      "final PLONK SRS: a known-trapdoor development SRS derived from a public seed (NOT production-secure; anyone can forge final proofs; do not deploy exported verifier)",
+    ),
+    FinalSystem::Groth16 => Some(
+      "final Groth16 keys: local development setup, not from a ceremony (NOT production-secure)",
+    ),
+    FinalSystem::None => None,
+  }
+}
+
+fn describe_bn254_setup(
+  inner_class: SetupClass,
+  final_proof: FinalOptions,
+) -> &'static str {
+  if !final_proof.allow_development {
+    return inner_class.description();
+  }
+  match (inner_class, final_proof.system) {
+    (SetupClass::Ignition, FinalSystem::Plonk) => {
+      "inner KZG: the released Aztec Ignition BN254 powers of tau; final PLONK SRS: a known-trapdoor development SRS derived from a public seed (NOT production-secure; anyone can forge final proofs; do not deploy exported verifier)"
+    },
+    (SetupClass::Ignition, FinalSystem::Groth16) => {
+      "inner KZG: the released Aztec Ignition BN254 powers of tau; final Groth16 keys: local development setup, not from a ceremony (NOT production-secure)"
+    },
+    (SetupClass::Development, FinalSystem::Plonk) => {
+      "inner KZG: a known-trapdoor development SRS (not production-secure); final PLONK SRS: a known-trapdoor development SRS derived from a public seed (NOT production-secure; anyone can forge final proofs; do not deploy exported verifier)"
+    },
+    (SetupClass::Development, FinalSystem::Groth16) => {
+      "inner KZG: a known-trapdoor development SRS (not production-secure); final Groth16 keys: local development setup, not from a ceremony (NOT production-secure)"
+    },
+    _ => inner_class.description(),
+  }
+}
+
+/// Format the curve security profile, inner KZG setup, and final proof setup
+/// description for a validated inner `SetupClass` and `FinalOptions`.
+pub fn format_setup_description(
+  curve: Curve,
+  inner_class: SetupClass,
+  final_proof: FinalOptions,
+) -> Result<String> {
+  final_proof.validate_setup(inner_class == SetupClass::Development)?;
+  let zk_note = match final_proof.system {
+    FinalSystem::None => "final-kzg (non-ZK)",
+    FinalSystem::Plonk => "PLONK (ZK)",
+    FinalSystem::Groth16 => "Groth16 (ZK)",
+  };
+  let base = format!(
+    "{} [{}]; {}: {}",
+    curve.as_str(),
+    zk_note,
+    curve.security_label(),
+    inner_class.description(),
+  );
+  Ok(match final_setup_description(final_proof) {
+    Some(final_note) => format!("{base}; {final_note}"),
+    None => base,
+  })
+}
+
+/// Describe the inner KZG and final proof setup selected for a BN254
+/// compression run.
 pub fn setup_description(
   development_kzg: bool,
   final_proof: FinalOptions,
 ) -> Result<&'static str> {
   final_proof.validate_setup(development_kzg)?;
-  Ok(SetupConfig::from_env(development_kzg)?.class().description())
+  let setup = SetupConfig::from_env(development_kzg)?;
+  Ok(describe_bn254_setup(setup.class(), final_proof))
 }
 
-/// Describe the curve security profile and inner KZG setup selected for a
-/// compression run on `curve` (`Curve::Bn254` or `Curve::Bls12381`).
+/// Describe the curve security profile, inner KZG setup, and final proof setup
+/// selected for a compression run on `curve` (`Curve::Bn254` or
+/// `Curve::Bls12381`).
 pub fn setup_description_for_curve(
   curve: Curve,
   development_kzg: bool,
@@ -93,18 +163,7 @@ pub fn setup_description_for_curve(
 ) -> Result<String> {
   final_proof.validate_setup(development_kzg)?;
   let setup = SetupConfig::from_env_for_curve(curve, development_kzg)?;
-  let zk_note = match final_proof.system {
-    FinalSystem::None => "final-kzg (non-ZK)",
-    FinalSystem::Plonk => "PLONK (ZK)",
-    FinalSystem::Groth16 => "Groth16 (ZK)",
-  };
-  Ok(format!(
-    "{} [{}]; {}: {}",
-    curve.as_str(),
-    zk_note,
-    curve.security_label(),
-    setup.class().description(),
-  ))
+  format_setup_description(curve, setup.class(), final_proof)
 }
 
 /// Verify a compressed proof of `claim` under the release key its tag selects.
@@ -351,5 +410,60 @@ mod tests {
     assert!(bls.contains("EIP-2537"));
     assert!(bls.contains("Filecoin challenge_19"));
     assert!(bls.contains("PLONK (ZK)"));
+    assert!(bls.contains("known-trapdoor development SRS"));
+    assert!(bls.contains("NOT production-secure"));
+  }
+
+  /// Mixed mode (Ignition or Filecoin inner + `--dev-final-srs` final) must
+  /// explicitly state that the final PLONK SRS is a known-trapdoor
+  /// development SRS, never reporting only the inner ceremony.
+  #[test]
+  fn setup_description_flags_development_final_srs_in_mixed_mode() {
+    let dev_plonk =
+      FinalOptions { system: FinalSystem::Plonk, allow_development: true };
+    let mixed_bn =
+      format_setup_description(Curve::Bn254, SetupClass::Ignition, dev_plonk)
+        .unwrap();
+    assert!(mixed_bn.contains("Aztec Ignition"));
+    assert!(mixed_bn.contains("final PLONK SRS"));
+    assert!(mixed_bn.contains("known-trapdoor development SRS"));
+    assert!(mixed_bn.contains("public seed"));
+    assert!(mixed_bn.contains("NOT production-secure"));
+    assert!(mixed_bn.contains("anyone can forge"));
+
+    let mixed_bn_short = describe_bn254_setup(SetupClass::Ignition, dev_plonk);
+    assert!(mixed_bn_short.contains("Aztec Ignition"));
+    assert!(mixed_bn_short.contains("known-trapdoor development SRS"));
+    assert!(mixed_bn_short.contains("NOT production-secure"));
+
+    let mixed_bls = format_setup_description(
+      Curve::Bls12381,
+      SetupClass::Filecoin,
+      dev_plonk,
+    )
+    .unwrap();
+    assert!(mixed_bls.contains("Filecoin challenge_19"));
+    assert!(mixed_bls.contains("final PLONK SRS"));
+    assert!(mixed_bls.contains("known-trapdoor development SRS"));
+    assert!(mixed_bls.contains("NOT production-secure"));
+
+    let dev_groth16 =
+      FinalOptions { system: FinalSystem::Groth16, allow_development: true };
+    let mixed_g16 =
+      format_setup_description(Curve::Bn254, SetupClass::Ignition, dev_groth16)
+        .unwrap();
+    assert!(mixed_g16.contains("Aztec Ignition"));
+    assert!(mixed_g16.contains("final Groth16 keys"));
+    assert!(mixed_g16.contains("NOT production-secure"));
+
+    let prod_plonk = format_setup_description(
+      Curve::Bn254,
+      SetupClass::Ignition,
+      FinalOptions::from(FinalSystem::Plonk),
+    )
+    .unwrap();
+    assert!(prod_plonk.contains("Aztec Ignition"));
+    assert!(!prod_plonk.contains("known-trapdoor development SRS"));
+    assert!(!prod_plonk.contains("NOT production-secure"));
   }
 }

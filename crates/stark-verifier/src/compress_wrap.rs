@@ -13,7 +13,7 @@ use aiur::{
   trace::{
     TracePlan,
     stark::{
-      Backend, BatchProof, Parameters, VerifyingKey,
+      Backend, BatchProof, Parameters, RomLayout, VerifyingKey, rom_lanes,
       wide::{CrossCheck, Export, WideBackend},
     },
   },
@@ -844,7 +844,12 @@ impl Wrapper {
     let entry = entry.into();
     let bytes = package.encode();
     let (artifact_digest, program, plan) = Self::program(package, &entry)?;
-    let rows = Backend::for_batch_on_device(plan, parameters, device)?;
+    let rows = Backend::for_batch_on_device_with_rom_layout(
+      plan,
+      parameters,
+      RomLayout::Scalar,
+      device,
+    )?;
     let order = rows.wide_order()?;
     let heights: Vec<u8> = match capacities {
       Capacities::Lean(heights) => heights.to_vec(),
@@ -852,7 +857,26 @@ impl Wrapper {
         if heights.len() != order.len() {
           return Err("the Rust layout has another circuit count".into());
         }
-        order.iter().map(|&ci| heights[ci]).collect()
+        // Rust-lowering layouts pack ROM entries across `rom_lanes(width)`
+        // lanes per row, whereas Lean's `romCircuit` stores one entry per row.
+        let rom_extra: std::collections::HashMap<usize, u8> = rows
+          .memory_circuits()
+          .into_iter()
+          .map(|(width, ci)| {
+            let extra = u8::try_from(rom_lanes(width).ilog2())
+              .expect("ROM lane log2 fits in u8");
+            (ci, extra)
+          })
+          .collect();
+        order
+          .iter()
+          .map(|&ci| {
+            let extra = rom_extra.get(&ci).copied().unwrap_or(0);
+            heights[ci]
+              .checked_add(extra)
+              .ok_or_else(|| "ROM capacity overflow".to_string())
+          })
+          .collect::<Result<Vec<_>, _>>()?
       },
     };
     let capacities = heights

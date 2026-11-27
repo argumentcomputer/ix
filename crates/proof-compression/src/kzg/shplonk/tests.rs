@@ -1,5 +1,6 @@
 use super::*;
 use crate::kzg::{Srs, VerifierParams};
+use ark_bn254::{Fr, G1Affine, G1Projective};
 use ark_ff::{FftField, PrimeField};
 use std::sync::Arc;
 

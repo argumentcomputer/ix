@@ -246,15 +246,21 @@ fn layout_config(args: &[String]) -> Result<(), Box<dyn Error>> {
   }
   let input = load_input(&args[1..])?;
   let (package, _) = Package::load(args[0].as_ref())?;
-  // With a Rust-lowering layout, the Lean wrapper's ROM tables take its
-  // ROM capacities, and the row bounds are matched by circuit name.
+  // With a layout, the Lean wrapper's ROM tables take its ROM capacities,
+  // and the row bounds are matched by circuit name.
   let lean = args.get(9).map(|path| read_layout(path)).transpose()?;
   let wrapper = match &lean {
-    Some((rust, _)) => Wrapper::lean(
+    Some((layout, _)) => Wrapper::lean(
       package,
       Parameters::default(),
       None,
-      Capacities::Rust(&rust.log_heights),
+      if layout.lowering.as_deref()
+        == Some(stark_verifier::compress_wrap::LEAN_LOWERING)
+      {
+        Capacities::Lean(&layout.log_heights)
+      } else {
+        Capacities::Rust(&layout.log_heights)
+      },
     )?,
     None => Wrapper::new(package, Parameters::default(), None)?,
   };

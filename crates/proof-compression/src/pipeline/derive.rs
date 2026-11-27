@@ -128,13 +128,18 @@ mod tests {
   fn ignition() -> SetupConfig {
     let setup = SetupConfig::from_env(false).unwrap();
     assert_eq!(setup.class(), super::super::SetupClass::Ignition);
+    // The derivation itself does not check the file; a release gate must.
+    super::super::check_release_srs(&setup).unwrap();
     setup
   }
 
+  // These ignored tests are the release-consistency gate
+  // `tools/rederive-release-keys.sh` runs.
   #[test]
   #[ignore = "needs IX_ROOT_VK naming the release aggregation backend key, \
               the pinned Ignition release under IX_PARAMS_DIR and about \
-              90 GB of memory; a CUDA build commits on the GPU"]
+              116 GB of memory (115.6 GB peak measured at 16 threads); a \
+              CUDA build commits on the GPU"]
   fn release_recursive_key_derives_without_a_proof() {
     let root_vk =
       std::fs::read(std::env::var_os("IX_ROOT_VK").unwrap()).unwrap();

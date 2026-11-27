@@ -1,0 +1,17 @@
+# Shared Lean/Rust parity table: per-circuit summary of the Multi-STARK
+# lowering of crates/aiur/tests/fixtures/depth.ixa at log_blowup = 1, segmented = true, Protocol v6
+# (Goldilocks cubic extension, ext_degree = 3). Read by Aiur/AiurTests/MultiStarkSpec.lean
+# (Aiur.MultiStarkSpec.lowerFullSystem) and crates/aiur/src/trace/stark/tests/spec_parity.rs
+# (Backend::statistics). Tab-separated columns: name, stage1_width, stage2_width,
+# preprocessed_width, preprocessed_height, lookups, lookup_group_size, quotient_degree,
+# constraint_count, max_constraint_degree.
+Depth::run	7	9	0	0	3	1	1	12	2
+Depth::even	7	3	0	0	2	2	2	12	3
+Depth::odd	7	3	0	0	2	2	2	12	3
+Depth::fib	14	12	0	0	7	2	2	28	3
+Depth::loop	5	6	0	0	2	1	1	9	2
+Depth::top	4	6	0	0	2	1	1	9	2
+Depth::owned	6	3	0	0	2	2	2	11	3
+Depth::link	4	6	0	0	2	1	1	9	2
+<table:Depth::range16_inputs>	1	3	2	65536	1	1	1	3	2
+<table:Depth::range8_inputs>	1	3	2	256	1	1	1	3	2

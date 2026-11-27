@@ -349,6 +349,54 @@ impl<C: KzgCurve> VerifyingKey<C> {
     Ok(())
   }
 
+  /// Verify that this verifying key's KZG anchors match pinned anchor bytes
+  /// produced by [`KzgCurve::encode_plonk_anchors`].
+  pub fn check_anchor_bytes(
+    &self,
+    expected_anchors: &[u8],
+  ) -> Result<(), String> {
+    let actual = C::encode_plonk_anchors(&self.g1, &self.g2, &self.tau_g2);
+    if actual != expected_anchors {
+      return Err(
+        "VK KZG setup anchors differ from pinned ceremony/setup anchors".into(),
+      );
+    }
+    Ok(())
+  }
+
+  /// Classify this verifying key's KZG setup anchors against the compiled-in
+  /// production ceremony anchors (`Ignition` on BN254, `Filecoin` on
+  /// BLS12-381); any non-matching anchor set is [`crate::pipeline::SetupClass::Development`].
+  pub fn setup_class(&self) -> crate::pipeline::SetupClass {
+    use crate::kzg::{
+      curve::{Bls12381, Bn254},
+      srs::filecoin::filecoin_anchors,
+    };
+    use crate::pipeline::{SetupClass, ignition_parameters};
+    let actual = C::encode_plonk_anchors(&self.g1, &self.g2, &self.tau_g2);
+    match C::CURVE {
+      Curve::Bn254 => {
+        if ignition_parameters().is_ok_and(|p| {
+          actual == Bn254::encode_plonk_anchors(&p.g1[0], &p.g2, &p.tau_g2)
+        }) {
+          SetupClass::Ignition
+        } else {
+          SetupClass::Development
+        }
+      },
+      Curve::Bls12381 => {
+        let srs = filecoin_anchors();
+        if actual
+          == Bls12381::encode_plonk_anchors(&srs.g1[0], &srs.g2, &srs.tau_g2)
+        {
+          SetupClass::Filecoin
+        } else {
+          SetupClass::Development
+        }
+      },
+    }
+  }
+
   /// Canonical SHA-256 digest of this verifying key.
   pub fn sha256(&self) -> [u8; 32] {
     let bytes = self.to_bytes().expect("VK serialization infallible");

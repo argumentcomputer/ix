@@ -6,7 +6,10 @@
 
 pub mod v2;
 
-use crate::kzg::{KzgConfig, Scalar};
+use crate::{
+  aiur_backend::AiurCurve,
+  kzg::{CurveScalar, KzgConfig, Scalar, curve::Bn254 as Bn254Curve},
+};
 use multi_stark::{
   config::{ProofConfig, Val},
   lookup::{MAX_LOOKUP_GROUP, logup_max_degree, stage2_width},
@@ -21,23 +24,28 @@ use serde_json::Value;
 /// over the pinned multi-stark). Without any shared slot this is the pinned
 /// multi-stark's `System::new` (`new_without_preprocessed` unless `retain`),
 /// which gives the same system and transcript as the fork does for it.
-pub fn system_with_slots<SC: ProofConfig>(
+pub fn system_with_slots<SC: crate::kzg::config::BindSystemKeyDigest>(
   config: SC,
   inputs: Vec<CircuitInputs<Val<SC>>>,
   shared: &[Option<usize>],
   retain: bool,
 ) -> Result<(System<SC>, ProverKey<SC>), String> {
-  if shared.iter().any(Option::is_some) {
+  let (mut system, pk) = if shared.iter().any(Option::is_some) {
     #[cfg(feature = "shared-fixed")]
-    return Ok(System::new_shared(config, inputs, shared, retain));
+    {
+      System::new_shared(config, inputs, shared, retain)
+    }
     #[cfg(not(feature = "shared-fixed"))]
-    return Err("shared fixed slots need the `shared-fixed` feature and the multi-stark fork".into());
-  }
-  Ok(if retain {
+    {
+      return Err("shared fixed slots need the `shared-fixed` feature and the multi-stark fork".into());
+    }
+  } else if retain {
     System::new(config, inputs)
   } else {
     System::new_without_preprocessed(config, inputs)
-  })
+  };
+  SC::bind_system_key_digest(&mut system);
+  Ok((system, pk))
 }
 
 /// Committed fixed matrices of `system`: its slots when slots are shared,
@@ -79,31 +87,45 @@ pub struct CircuitCount {
   pub fixed_cells: usize,
 }
 
-fn quotient(input: &CircuitInputs<Scalar>, group: usize) -> (usize, usize) {
+fn quotient_for<C: AiurCurve>(
+  input: &CircuitInputs<CurveScalar<C>>,
+  group: usize,
+) -> (usize, usize) {
   let mut probe = input.clone();
   probe.lookup_group_size = group;
   let graph = probe
-    .compile_graph(&extension_params::<KzgConfig>())
+    .compile_graph(&extension_params::<KzgConfig<C>>())
     .expect("template circuit compiles");
   let degree =
     (graph.max_constraint_degree.max(logup_max_degree(&graph, group))) as usize;
   (degree, (degree.max(2) - 1).next_power_of_two())
 }
 
+fn quotient(input: &CircuitInputs<Scalar>, group: usize) -> (usize, usize) {
+  quotient_for::<Bn254Curve>(input, group)
+}
+
 /// The KZG adapter's budgeted group choice: minimize stage-2 columns plus
 /// quotient chunks with quotient degree at most `max(budget, base)`.
-fn group_size(input: &CircuitInputs<Scalar>, budget: usize) -> usize {
+fn group_size_for<C: AiurCurve>(
+  input: &CircuitInputs<CurveScalar<C>>,
+  budget: usize,
+) -> usize {
   let n = input.lookups.len();
-  let base = quotient(input, 1).1;
+  let base = quotient_for::<C>(input, 1).1;
   let budget = budget.max(base);
   let mut best = (stage2_width(n, 1, 1) + base, base, 1);
   for g in 2..=MAX_LOOKUP_GROUP {
-    let q = quotient(input, g).1;
+    let q = quotient_for::<C>(input, g).1;
     if q <= budget {
       best = best.min((stage2_width(n, g, 1) + q, q, g));
     }
   }
   best.2
+}
+
+fn group_size(input: &CircuitInputs<Scalar>, budget: usize) -> usize {
+  group_size_for::<Bn254Curve>(input, budget)
 }
 
 fn count(
@@ -135,13 +157,20 @@ fn count(
   }
 }
 
-pub(crate) fn decimal(x: Scalar) -> Value {
+pub(crate) fn decimal_for<C: AiurCurve>(x: CurveScalar<C>) -> Value {
   let limbs = x.canonical_limbs_le();
   let bytes: Vec<u8> = limbs.iter().flat_map(|l| l.to_le_bytes()).collect();
   Value::String(num_bigint::BigUint::from_bytes_le(&bytes).to_string())
 }
 
-pub(crate) fn parse_scalar(v: &Value) -> Result<Scalar, String> {
+pub(crate) fn decimal(x: Scalar) -> Value {
+  decimal_for::<Bn254Curve>(x)
+}
+
+pub(crate) fn parse_scalar_for<C: AiurCurve>(
+  v: &Value,
+) -> Result<CurveScalar<C>, String> {
+  use ark_ff::{BigInt, PrimeField as ArkPrimeField};
   let s = v.as_str().ok_or("field element is not a string")?;
   let n: num_bigint::BigUint =
     s.parse().map_err(|e| format!("bad field element {s}: {e}"))?;
@@ -149,7 +178,13 @@ pub(crate) fn parse_scalar(v: &Value) -> Result<Scalar, String> {
   for (i, d) in n.to_u64_digits().into_iter().enumerate() {
     *limbs.get_mut(i).ok_or("field element too large")? = d;
   }
-  Ok(Scalar::from_limbs_le(limbs))
+  C::Fr::from_bigint(BigInt(limbs)).map(CurveScalar::<C>::new).ok_or_else(
+    || format!("field element {s} exceeds {} scalar modulus", C::NAME),
+  )
+}
+
+pub(crate) fn parse_scalar(v: &Value) -> Result<Scalar, String> {
+  parse_scalar_for::<Bn254Curve>(v)
 }
 
 pub(crate) fn usize_of(v: &Value) -> Result<usize, String> {

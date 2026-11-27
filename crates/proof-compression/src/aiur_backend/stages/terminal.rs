@@ -249,6 +249,7 @@ where
 struct NativeProofChecks {
   proof: native::ProofBundle,
   key: Vec<u8>,
+  key_pin: [u8; 32],
   key_sha256: String,
   wrong_statement_refused_by_prover: bool,
   wrong_statement_rejected_by_verifier: bool,
@@ -303,6 +304,7 @@ fn prove_verify_native_with<C: KzgCurve>(
   Ok(NativeProofChecks {
     proof,
     key,
+    key_pin,
     key_sha256,
     wrong_statement_refused_by_prover: refused,
     wrong_statement_rejected_by_verifier: native_rejected && sol_rejected,
@@ -374,6 +376,20 @@ fn finalize_native_stage<C: KzgCurve>(
       "the verifying key differs from the prepared manifest's".into(),
     );
   }
+  let vk = ctx.prover.vk();
+  *ctx
+    .stage
+    .stages
+    .terminal_meta
+    .lock()
+    .unwrap_or_else(std::sync::PoisonError::into_inner) =
+    Some(super::TerminalMeta {
+      curve: C::CURVE,
+      vk_path: ctx.prepared_dir.join("verifying-key.bin"),
+      vk_sha256: checks.key_pin,
+      setup: vk.setup_class(),
+      anchors: C::encode_plonk_anchors(&vk.g1, &vk.g2, &vk.tau_g2),
+    });
 
   ctx.stage.write("proof.bin", &checks.proof.native)?;
   ctx.stage.write("proof.solidity.bin", &checks.proof.solidity)?;
@@ -636,6 +652,26 @@ fn run_native_bls12_381(
     Some(bytes) => Some(bls12_381::load_program(bytes)?),
     None => None,
   };
+  let policy_context = if spec["policy"].is_null() {
+    None
+  } else {
+    let setup = SetupConfig::from_env_for_curve(Bls12381Curve::CURVE, false)
+      .map_err(|e| e.to_string())?;
+    let capacity = PackedCapacity {
+      log_cap: 1,
+      quotient_degree: 1,
+      lookup_quotient_budget: None,
+    };
+    let config = capacity.config_for::<Bls12381Curve>(&setup)?;
+    let parameters =
+      multi_stark::config::ProofConfig::pcs(&config).parameters();
+    let policy_file = stage.product("policy")?;
+    let _policy = PackedPolicy::<Bls12381Curve>::from_chain_bytes(
+      parameters,
+      &policy_file.bytes,
+    )?;
+    Some((config, policy_file.bytes))
+  };
   phases.record("setup", started);
 
   let started = Instant::now();
@@ -655,6 +691,10 @@ fn run_native_bls12_381(
     return Err(format!(
       "SCS SHA-256 {scs_sha256} differs from the pinned {scs_pin}"
     ));
+  }
+  if let Some((ref config, _)) = policy_context {
+    let parameters = multi_stark::config::ProofConfig::pcs(config).parameters();
+    prover.vk().check_anchors(parameters)?;
   }
   let inputs =
     read_verified_native_inputs(&prepared_dir, &manifest, prover.scs())?;
@@ -680,6 +720,18 @@ fn run_native_bls12_381(
     narrow.statement.ok_or("the narrow stage passed no statement")?;
   let mut hints = HintChannels::new();
   bls12_381::register_standard_hints(&mut hints)?;
+  if let Some((_, policy_bytes)) = policy_context {
+    fq::register_for::<Bls12381Curve>(&mut hints)?;
+    g1::register_for::<Bls12381Curve>(&mut hints)?;
+    wire::register_for::<Bls12381Curve>(&mut hints)?;
+    wire::Inputs::new(
+      narrow.key.clone(),
+      narrow.claims.clone(),
+      narrow.proof.clone(),
+      policy_bytes,
+    )?
+    .register_for::<Bls12381Curve>(&mut hints)?;
+  }
   if let Some(advice_program) = advice_program {
     aiur::library::ixcc::register_advice_program(
       &mut hints,
@@ -735,7 +787,34 @@ fn run_native_bls12_381(
 
 pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
   let spec = &stage.spec.spec;
-  let field = parse_stage_field(spec)?;
+  let manifest_curve = stage.stages.manifest.curve()?;
+  let has_manifest_curve =
+    stage.stages.manifest.value.get("curve").is_some_and(|v| !v.is_null());
+  let field = if spec["field"].is_null() {
+    match manifest_curve {
+      crate::kzg::Curve::Bn254 => Field::Bn254,
+      crate::kzg::Curve::Bls12381 => Field::Bls12381,
+    }
+  } else {
+    let f = parse_stage_field(spec)?;
+    let stage_curve = match f {
+      Field::Bn254 => crate::kzg::Curve::Bn254,
+      Field::Bls12381 => crate::kzg::Curve::Bls12381,
+      Field::Goldilocks => {
+        return Err(
+          "plonk stage field must be \"bn254\" or \"bls12-381\"".into(),
+        );
+      },
+    };
+    if has_manifest_curve && stage_curve != manifest_curve {
+      return Err(format!(
+        "plonk stage field {:?} differs from manifest curve {:?}",
+        stage_curve.as_str(),
+        manifest_curve.as_str()
+      ));
+    }
+    f
+  };
   let entry_override = parse_optional_entry(spec)?;
   validate_optional_backend(spec)?;
   let advice_file = if spec["advice"].is_null() {

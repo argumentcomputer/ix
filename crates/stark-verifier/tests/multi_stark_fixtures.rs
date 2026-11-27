@@ -474,13 +474,20 @@ fn wire_verify_claims(
 // ---------------------------------------------------------------------------
 
 fn fixture_params() -> (CommitmentParameters, FriParameters) {
-  let cp = CommitmentParameters { log_blowup: 2, cap_height: 0 };
+  // Meets the full Protocol v6 security floor:
+  //   1 <= log_blowup (4) <= 4, num_queries (77) >= 53,
+  //   conjectured = 4*77 + 10 = 318 >= 220,
+  //   provable UD = 912*77 + 10_000 = 80_224 >= 80_000 (80.224 bits),
+  //   finite-m Johnson = 1955*77 + 10_000 = 160_535 >= 128_000 (160.535 bits).
+  // Uses commit_pow_bits = 0 to exercise zero-bit PoW canonicalization and
+  // query_pow_bits = 10 to exercise nonzero PoW verification.
+  let cp = CommitmentParameters { log_blowup: 4, cap_height: 0 };
   let fp = FriParameters {
     log_final_poly_len: 0,
     max_log_arity: 1,
-    num_queries: 4,
-    commit_proof_of_work_bits: 1,
-    query_proof_of_work_bits: 2,
+    num_queries: 77,
+    commit_proof_of_work_bits: 0,
+    query_proof_of_work_bits: 10,
   };
   (cp, fp)
 }
@@ -498,6 +505,19 @@ fn fixture_params() -> (CommitmentParameters, FriParameters) {
 fn two_circuit_system(
   cp: CommitmentParameters,
   fp: FriParameters,
+) -> (
+  System<GoldilocksBlake3V6Config>,
+  multi_stark::system::ProverKey<GoldilocksBlake3V6Config>,
+) {
+  two_circuit_system_ordered(cp, fp, false)
+}
+
+/// The same two circuits, with the fixed-table circuit (Circuit 1 above) first
+/// when `prep_first`.
+fn two_circuit_system_ordered(
+  cp: CommitmentParameters,
+  fp: FriParameters,
+  prep_first: bool,
 ) -> (
   System<GoldilocksBlake3V6Config>,
   multi_stark::system::ProverKey<GoldilocksBlake3V6Config>,
@@ -574,7 +594,8 @@ fn two_circuit_system(
     ..Default::default()
   };
 
-  System::new(GoldilocksBlake3V6Config::new(cp, fp), vec![c0, c1])
+  let circuits = if prep_first { vec![c1, c0] } else { vec![c0, c1] };
+  System::new(GoldilocksBlake3V6Config::new(cp, fp), circuits)
 }
 
 fn c0_trace() -> RowMajorMatrix<Val> {
@@ -642,10 +663,10 @@ fn dump_and_verify_fixture(
   let proof_bytes = proof.to_bytes().expect("proof to_bytes");
   let claims_bytes = stark_verifier::claims_bytes(all_claims);
 
-  // Round-trip via Rust decoders
+  // Round-trip via Rust decoders (enforcing the production security floor).
   let (decoded_sys, decoded_cp, decoded_fp) =
-    stark_key::from_bytes_below_floor(&system_bytes)
-      .expect("stark_key::from_bytes_below_floor");
+    stark_key::from_bytes(&system_bytes)
+      .expect("stark_key::from_bytes (at-floor fixture)");
   assert_eq!(
     stark_key::to_bytes(&decoded_sys, decoded_cp, decoded_fp),
     system_bytes
@@ -722,26 +743,33 @@ fn dump_and_verify_fixture(
   });
   let meta_json = format!("{}\n", serde_json::to_string_pretty(&meta).unwrap());
 
-  let regen = std::env::var_os("IX_REGEN_FIXTURES").is_some();
-  std::fs::create_dir_all(dir).expect("create fixture dir");
   for (name, bytes) in [
     ("system.bin", system_bytes.as_slice()),
     ("proof.bin", proof_bytes.as_slice()),
     ("claims.bin", claims_bytes.as_slice()),
     ("claims.json", meta_json.as_bytes()),
   ] {
-    let path = dir.join(name);
-    if !regen && path.exists() {
-      let existing = std::fs::read(&path).expect("read existing fixture");
-      assert_eq!(
-        existing,
-        bytes,
-        "fixture {} drifted from deterministic Rust output (re-run with IX_REGEN_FIXTURES=1 to update)",
-        path.display()
-      );
-    } else {
-      std::fs::write(&path, bytes).expect("write fixture file");
-    }
+    write_or_compare_fixture(&dir.join(name), bytes);
+  }
+}
+
+/// Write a fixture file or, when it exists and `IX_REGEN_FIXTURES` is unset,
+/// require the deterministic output to equal it.
+fn write_or_compare_fixture(path: &Path, bytes: &[u8]) {
+  let regen = std::env::var_os("IX_REGEN_FIXTURES").is_some();
+  if let Some(parent) = path.parent() {
+    std::fs::create_dir_all(parent).expect("create fixture dir");
+  }
+  if !regen && path.exists() {
+    let existing = std::fs::read(path).expect("read existing fixture");
+    assert_eq!(
+      existing,
+      bytes,
+      "fixture {} drifted from deterministic Rust output (re-run with IX_REGEN_FIXTURES=1 to update)",
+      path.display()
+    );
+  } else {
+    std::fs::write(path, bytes).expect("write fixture file");
   }
 }
 
@@ -898,6 +926,86 @@ fn generate_and_verify_multi_stark_fixtures() {
     &proof_np,
     &claims_np,
   );
+  // Negative-control mutant: non-zero commit PoW witness when commit_pow_bits == 0.
+  let mut bad_cpow = proof_np.clone();
+  assert!(!bad_cpow.proofs[0].opening_proof.commit_pow_witnesses.is_empty());
+  bad_cpow.proofs[0].opening_proof.commit_pow_witnesses[0] = Val::ONE;
+  write_or_compare_fixture(
+    &root.join("single_no_prep/nonzero_cpow/proof.bin"),
+    &bad_cpow.to_bytes().expect("nonzero_cpow to_bytes"),
+  );
+  // Negative-control fixture: natively valid proof under below-floor parameters
+  // `(2, 0, 0, 1, 4, 1, 2)`. Both `stark_key::from_bytes` and the in-circuit
+  // verifier must reject it.
+  let cp_low = CommitmentParameters { log_blowup: 2, cap_height: 0 };
+  let fp_low = FriParameters {
+    log_final_poly_len: 0,
+    max_log_arity: 1,
+    num_queries: 4,
+    commit_proof_of_work_bits: 1,
+    query_proof_of_work_bits: 2,
+  };
+  let x_low = Expr::main(0);
+  let y_low = Expr::main(1);
+  let sel_low = Expr::main(2);
+  let one_low = Expr::constant(Val::ONE);
+  let (sys_low, pk_low) = System::new(
+    GoldilocksBlake3V6Config::new(cp_low, fp_low),
+    vec![CircuitInputs {
+      main_width: 3,
+      constraints: vec![
+        x_low.clone() * x_low.clone() - y_low.clone(),
+        sel_low.clone() * (sel_low.clone() - one_low.clone()),
+      ],
+      lookups: vec![Lookup::pull(
+        sel_low,
+        vec![one_low, Expr::constant(Val::ZERO), x_low, y_low],
+      )],
+      lookup_group_size: 1,
+      ..Default::default()
+    }],
+  );
+  let witness_low = SystemWitness::from_stage_1(
+    vec![RowMajorMatrix::new(
+      vec![
+        Val::from_u64(3),
+        Val::from_u64(9),
+        Val::ONE,
+        Val::from_u64(4),
+        Val::from_u64(16),
+        Val::ZERO,
+        Val::from_u64(5),
+        Val::from_u64(25),
+        Val::ZERO,
+        Val::from_u64(6),
+        Val::from_u64(36),
+        Val::ZERO,
+      ],
+      3,
+    )],
+    &sys_low,
+  );
+  let proof_low = sys_low.prove_batch(
+    &pk_low,
+    vec![ShardInput { claims: claims_np.clone(), witness: witness_low }],
+    vec![],
+  );
+  sys_low.verify_batch(&proof_low).expect("native verify below-floor proof");
+  let low_sys_bytes = stark_key::to_bytes(&sys_low, cp_low, fp_low);
+  assert!(
+    stark_key::from_bytes(&low_sys_bytes).is_err(),
+    "stark_key::from_bytes must reject below-floor key"
+  );
+  let low_dir = root.join("single_no_prep/below_floor");
+  write_or_compare_fixture(&low_dir.join("system.bin"), &low_sys_bytes);
+  write_or_compare_fixture(
+    &low_dir.join("proof.bin"),
+    &proof_low.to_bytes().expect("below-floor proof to_bytes"),
+  );
+  write_or_compare_fixture(
+    &low_dir.join("claims.bin"),
+    &stark_verifier::claims_bytes(&claims_np),
+  );
 
   // -------------------------------------------------------------------------
   // 4. Two-shard MEMSEG=16 closure-pair fixture (`memseg_two_shard/`):
@@ -995,4 +1103,49 @@ fn generate_and_verify_multi_stark_fixtures() {
     &proof_ms,
     &[],
   );
+
+  // -------------------------------------------------------------------------
+  // 5. Fixed-table circuit first (`prep_first/`) and its height mutants
+  //    (`prep_first/logdeg_<k>/proof.bin`, under the same `system.bin` and
+  //    `claims.bin`): the fixed-table circuit's log degree changed from 2 to k
+  //    in the preamble header and the shard proof together. A fixed table must
+  //    be bound to its height (a historical soundness bug of the in-circuit
+  //    verifier); with the fixed-table circuit first, the in-circuit verifier
+  //    meets its height assertion (`StarkVerifier::ood_loop`) before any other
+  //    circuit's out-of-domain check. Native verification rejects every mutant.
+  // -------------------------------------------------------------------------
+  let (sys_pf, pk_pf) = two_circuit_system_ordered(cp, fp, true);
+  let witness_pf =
+    SystemWitness::from_stage_1(vec![c1_trace(), c0_trace()], &sys_pf);
+  let proof_pf = sys_pf.prove_batch(
+    &pk_pf,
+    vec![ShardInput { claims: claims.clone(), witness: witness_pf }],
+    vec![],
+  );
+  let pf_dir = root.join("prep_first");
+  dump_and_verify_fixture(
+    &pf_dir,
+    "2 circuits, the fixed-table circuit first, 1 shard",
+    &sys_pf,
+    cp,
+    fp,
+    &proof_pf,
+    &claims,
+  );
+  assert_eq!(proof_pf.proofs[0].active, vec![true, true]);
+  assert_eq!(proof_pf.proofs[0].log_degrees[0], 2, "a fixed table of 4 rows");
+  for ld in [0u8, 1, 3, 4] {
+    let mut bad = proof_pf.clone();
+    bad.proofs[0].log_degrees[0] = ld;
+    bad.preamble.headers[0].log_degrees[0] = ld;
+    assert!(
+      sys_pf.verify_batch(&bad).is_err(),
+      "prep_first: native verify_batch accepted the fixed table at log degree {ld}"
+    );
+    let bytes = bad.to_bytes().expect("height mutant to_bytes");
+    write_or_compare_fixture(
+      &pf_dir.join(format!("logdeg_{ld}")).join("proof.bin"),
+      &bytes,
+    );
+  }
 }

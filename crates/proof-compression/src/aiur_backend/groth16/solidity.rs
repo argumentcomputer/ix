@@ -37,14 +37,36 @@ fn g2_eip197_dec(pt: &G2Affine) -> (String, String, String, String) {
   }
 }
 
-/// Deterministically emit a complete Solidity `Groth16Verifier` contract for
-/// `vk`.
+pub const DEV_SOLIDITY_CONTRACT: &str =
+  "Groth16Verifier_DEV_INSECURE_DO_NOT_DEPLOY";
+pub const DEV_SOLIDITY_HEADER: &str = "\
+// WARNING: GENERATED FROM A DEVELOPMENT TRAPDOOR SETUP — DO NOT DEPLOY\n\
+// No multi-party ceremony setup exists for this backend yet; anyone holding\n\
+// the setup trapdoors can forge arbitrary proofs accepted by this contract.\n\n";
+
+/// Deterministically emit a complete Solidity verifier contract for `vk`.
+///
+/// Because [`super::setup`] currently only provides a development trapdoor
+/// setup (`setup_dev`), this marks the exported contract as
+/// `Groth16Verifier_DEV_INSECURE_DO_NOT_DEPLOY` with an unmistakable header.
+/// Call [`export_solidity_with_setup`] with `is_development = false` only for
+/// keys produced by an audited multi-party setup ceremony.
+pub fn export_solidity(vk: &VerifyingKey) -> Result<String, String> {
+  export_solidity_with_setup(vk, true)
+}
+
+/// Deterministically emit a complete Solidity verifier contract for `vk`,
+/// selecting either the marked development contract (`is_development = true`)
+/// or the deployable `Groth16Verifier` contract (`is_development = false`).
 ///
 /// The emitted contract exposes:
 /// `function verifyProof(bytes calldata proof, uint256[L] calldata publicInputs) external view`
 /// where `L = vk.num_public_inputs()`. When `L == 2`, it is drop-in compatible
 /// with `contracts/groth16/src/IxGroth16Verifier.sol`.
-pub fn export_solidity(vk: &VerifyingKey) -> Result<String, String> {
+pub fn export_solidity_with_setup(
+  vk: &VerifyingKey,
+  is_development: bool,
+) -> Result<String, String> {
   vk.validate()?;
   let num_public = vk.num_public_inputs();
   if num_public == 0 {
@@ -61,7 +83,12 @@ pub fn export_solidity(vk: &VerifyingKey) -> Result<String, String> {
   let (gx1, gx0, gy1, gy0) = g2_eip197_dec(&gamma_neg);
   let (dx1, dx0, dy1, dy0) = g2_eip197_dec(&delta_neg);
 
-  let mut out = String::with_capacity(4096 + num_public * 256);
+  let contract_name =
+    if is_development { DEV_SOLIDITY_CONTRACT } else { "Groth16Verifier" };
+  let mut out = String::with_capacity(4352 + num_public * 256);
+  if is_development {
+    out.push_str(DEV_SOLIDITY_HEADER);
+  }
 
   let _ = writeln!(out, "// SPDX-License-Identifier: MIT OR Apache-2.0");
   let _ = writeln!(out, "pragma solidity ^0.8.28;");
@@ -75,7 +102,7 @@ pub fn export_solidity(vk: &VerifyingKey) -> Result<String, String> {
     out,
     "/// @dev Compatible with IxGroth16Verifier (IGroth16Verifier.verifyProof)."
   );
-  let _ = writeln!(out, "contract Groth16Verifier {{");
+  let _ = writeln!(out, "contract {contract_name} {{");
   let _ = writeln!(out, "    error InvalidProofLength();");
   let _ = writeln!(out, "    error PublicInputNotInField();");
   let _ = writeln!(out, "    error ProofInvalid();");

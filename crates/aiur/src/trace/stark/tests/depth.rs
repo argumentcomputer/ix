@@ -299,7 +299,7 @@ fn out_of_range_gap_limb_is_rejected_by_verifier() {
     .unwrap();
 }
 
-/// The row bound fires just above 2^39 weighted rows (with `C6` vectorized ROM
+/// The row bound fires just above 2^39 weighted rows (with vectorized ROM
 /// circuits weighted by their lane count `K`) and accepts just at or below it.
 #[test]
 fn row_bound_boundary() {
@@ -347,7 +347,7 @@ fn row_bound_boundary() {
   let error =
     key.validate_preamble(&claim, &preamble(at_bound + 1, vec![])).unwrap_err();
   assert!(error.contains("2^39"), "{error}");
-  // Unweighted shard count that previously slipped past 2^39 under C6 is rejected.
+  // Unweighted shard count that previously slipped past 2^39 for vectorized ROM is rejected.
   assert!(
     key
       .validate_preamble(&claim, &preamble(unweighted_at_bound, vec![]))
@@ -399,4 +399,80 @@ fn row_bound_boundary() {
   );
   // With 2 shards & 1 ROM width, 2 disjoint pairs succeed.
   key.validate_preamble(&claim, &preamble(2, two_pairs)).unwrap();
+}
+
+/// Unsegmented vectorized ROM circuits (single proofs, which carry no `MEMSEG`
+/// lookup) must still be weighted by their lane count `K` in
+/// `circuit_row_weight` and `check_system_shape`.
+#[test]
+fn unsegmented_vectorized_rom_row_weight_enforced() {
+  let (program, artifact) = fixture();
+  let plan = TracePlan::new(&program, activate(artifact)).unwrap();
+  let params = parameters();
+
+  let unseg_vec = Backend::new(&plan, params).unwrap();
+  let rom_idx =
+    unseg_vec.names.iter().position(|n| n == "<ROM:1>").expect("<ROM:1>");
+  let rom_circuit = &unseg_vec.system.circuits[rom_idx];
+  assert_eq!(
+    batch::circuit_memseg_width(rom_circuit),
+    None,
+    "unsegmented ROM circuit must not carry a MEMSEG lookup"
+  );
+  assert_eq!(batch::circuit_row_weight(rom_circuit), rom_lanes(1) as u64);
+  for (i, c) in unseg_vec.system.circuits.iter().enumerate() {
+    if i != rom_idx {
+      assert_eq!(
+        batch::circuit_row_weight(c),
+        1,
+        "non-ROM circuit {} should have weight 1",
+        unseg_vec.names[i]
+      );
+    }
+  }
+
+  // Scalar unsegmented ROM stays weight 1.
+  let unseg_scalar =
+    Backend::new_with_rom_layout(&plan, params, RomLayout::Scalar).unwrap();
+  let scalar_rom_idx =
+    unseg_scalar.names.iter().position(|n| n == "<ROM:1>").expect("<ROM:1>");
+  assert_eq!(
+    batch::circuit_row_weight(&unseg_scalar.system.circuits[scalar_rom_idx]),
+    1
+  );
+
+  // `check_system_shape` must count each unsegmented `<ROM:1>` row with weight
+  // `K = 8`: `at_bound` active circuits of height `2^max_log` hit `2^39`
+  // weighted rows exactly, while `at_bound + 1` active circuits (unweighted
+  // still well below `2^39`) must be rejected.
+  let max_log = u8::try_from(32 - params.log_blowup).unwrap();
+  let weight = rom_lanes(1) as u64;
+  let at_bound = usize::try_from(MAX_BATCH_ROWS / (weight << max_log)).unwrap();
+  assert!(at_bound >= 1);
+  assert!(
+    u128::try_from(at_bound + 1).unwrap() * (1u128 << max_log)
+      <= u128::from(MAX_BATCH_ROWS)
+  );
+
+  let rom_n =
+    rom::Rom { widths: vec![1; at_bound + 1], layout: RomLayout::Vectorized };
+  let mut inputs = Vec::new();
+  let mut names = Vec::new();
+  rom_n.append_circuits(&mut inputs, &mut names, false).unwrap();
+  let (synthetic, _) = build_system(inputs, &names, params, None).unwrap();
+
+  let mut active_at = vec![true; at_bound + 1];
+  active_at[at_bound] = false;
+  check_system_shape(&synthetic, params, &active_at, &vec![max_log; at_bound])
+    .expect("weighted rows == 2^39 should be accepted");
+
+  let active_over = vec![true; at_bound + 1];
+  let err = check_system_shape(
+    &synthetic,
+    params,
+    &active_over,
+    &vec![max_log; at_bound + 1],
+  )
+  .unwrap_err();
+  assert!(err.contains("2^39"), "{err}");
 }

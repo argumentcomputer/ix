@@ -8,11 +8,14 @@
 //! circuit (`inputs.json`, written by gnark's preparation from the pinned
 //! file); a value in the wrong place fails the solve, never soundness.
 
-use super::{Bn254, put_scalar};
-use crate::aiur_backend::bls12_381::{self, Bls12381};
-use crate::aiur_backend::kzg::Compiler;
+use super::{put_scalar_for, rom_rows_for};
+use crate::aiur_backend::{
+  AiurCurve, AiurField, Bn254,
+  bls12_381::{self, Bls12381},
+  kzg::Compiler,
+};
 use crate::kzg::{
-  Scalar, VerifierParams,
+  VerifierParams,
   curve::{Bls12381 as Bls12381Curve, KzgCurve},
   field::{Bls12381Scalar, CurveScalar},
 };
@@ -155,25 +158,24 @@ enum Feed {
 }
 
 /// The binary witness producer of one prepared terminal circuit.
-pub struct Witness<'p, 'a> {
-  plan: &'p TracePlan<'a, Bn254>,
-  compiler: Compiler<'p, 'a>,
+pub struct Witness<'p, 'a, F: AiurField = Bn254> {
+  plan: &'p TracePlan<'a, F>,
+  compiler: Compiler<'p, 'a, F>,
   entry: String,
   inputs: Inputs,
   feeds: Vec<Feed>,
 }
 
-/// The terminal's pairing configuration (`plonk_export` and gnark's
-/// `PairingCheck` read it): the configuration's two G2 anchors.
-pub fn pairing(
-  plan: &TracePlan<'_, Bn254>,
+/// The terminal's pairing configuration: the configuration's two G2 anchors.
+pub fn pairing<F: AiurField>(
+  plan: &TracePlan<'_, F>,
   entry: &str,
   configuration: &crate::aiur_backend::pairing::final_program::Configuration,
 ) -> Result<super::Pairing, String> {
   Ok(super::Pairing {
-    curve: "bn254",
+    curve: F::Curve::NAME,
     encoding: "affine-u80-v1",
-    g2: configuration.terminal_coordinates(plan, entry)?,
+    g2: configuration.terminal_coordinates_for(plan, entry)?,
   })
 }
 
@@ -182,21 +184,20 @@ pub fn pairing(
 /// ROM circuits at these capacities and the public and output counts. The
 /// exporter reads only these; the circuits' expressions come from the
 /// `.ixa`, so they are left empty.
-pub fn stage(
-  plan: &TracePlan<'_, Bn254>,
-  compiler: &Compiler<'_, '_>,
+pub fn stage<F: AiurField>(
+  plan: &TracePlan<'_, F>,
+  compiler: &Compiler<'_, '_, F>,
   capacities: &[usize],
   entry: &str,
-  public_args: &[Scalar],
-  output: &[Scalar],
+  public_args: &[F::Element],
+  output: &[F::Element],
 ) -> Result<serde_json::Value, String> {
-  use crate::aiur_backend::pairing::final_program::ACCUMULATOR_WORDS;
+  let accumulator_words = F::Curve::TERMINAL_OUTPUT_WORDS;
   let claim = plan.public_claim(entry, public_args, output)?;
-  if output.len() != ACCUMULATOR_WORDS || claim.len() != 4 + ACCUMULATOR_WORDS {
-    return Err(
-      "terminal requires two public statement limbs and 18 private outputs"
-        .into(),
-    );
+  if output.len() != accumulator_words || claim.len() != 4 + accumulator_words {
+    return Err(format!(
+      "terminal requires two public statement limbs and {accumulator_words} private outputs"
+    ));
   }
   let names = compiler.names();
   if capacities.len() != names.len() {
@@ -214,19 +215,19 @@ pub fn stage(
     })
     .collect();
   Ok(
-    serde_json::json!({"format": super::TERMINAL_FORMAT, "callable": Bn254.try_to_u64(claim[1])?,
-    "public_inputs": 2, "private_outputs": ACCUMULATOR_WORDS, "boolean_requests": true, "circuits": circuits}),
+    serde_json::json!({"format": super::TERMINAL_FORMAT, "callable": F::default().try_to_u64(claim[1])?,
+    "public_inputs": 2, "private_outputs": accumulator_words, "boolean_requests": true, "circuits": circuits}),
   )
 }
 
-impl<'p, 'a> Witness<'p, 'a> {
+impl<'p, 'a, F: AiurField> Witness<'p, 'a, F> {
   /// Matches every table of `inputs` with its compiler source at these
   /// capacities (the execution's padded rows, which must be the file's), and
   /// requires every compiler circuit to feed exactly one table and the tables
   /// to tile the input wires.
   pub fn new(
-    plan: &'p TracePlan<'a, Bn254>,
-    compiler: Compiler<'p, 'a>,
+    plan: &'p TracePlan<'a, F>,
+    compiler: Compiler<'p, 'a, F>,
     capacities: &[usize],
     entry: &str,
     inputs: Inputs,
@@ -238,8 +239,8 @@ impl<'p, 'a> Witness<'p, 'a> {
   /// power-of-two capacities greater than or equal to this execution's padded
   /// row counts (trailing rows stay zeroed/inactive).
   pub fn new_fitting(
-    plan: &'p TracePlan<'a, Bn254>,
-    compiler: Compiler<'p, 'a>,
+    plan: &'p TracePlan<'a, F>,
+    compiler: Compiler<'p, 'a, F>,
     capacities: &[usize],
     entry: &str,
     inputs: Inputs,
@@ -248,8 +249,8 @@ impl<'p, 'a> Witness<'p, 'a> {
   }
 
   fn new_inner(
-    plan: &'p TracePlan<'a, Bn254>,
-    compiler: Compiler<'p, 'a>,
+    plan: &'p TracePlan<'a, F>,
+    compiler: Compiler<'p, 'a, F>,
     capacities: &[usize],
     entry: &str,
     inputs: Inputs,
@@ -378,12 +379,12 @@ impl<'p, 'a> Witness<'p, 'a> {
     &self.inputs
   }
 
-  /// gnark's binary witness: three big-endian u32 counts (publics, secrets,
-  /// all), then the input wires in order as canonical big-endian words.
+  /// Binary witness: three big-endian u32 counts (publics, secrets, all),
+  /// then the input wires in order as canonical big-endian words.
   pub fn binary(
     &self,
-    record: &Execution<Bn254>,
-    args: &[Scalar],
+    record: &Execution<F>,
+    args: &[F::Element],
   ) -> Result<Vec<u8>, String> {
     let n = &self.inputs;
     let public_args = self.plan.public_args(record, &self.entry, args)?;
@@ -400,15 +401,15 @@ impl<'p, 'a> Witness<'p, 'a> {
     }
     out.resize(12 + 32 * n.cells, 0);
     let words = &mut out[12..];
-    let mut put = |wire: usize, value: Scalar| {
+    let mut put = |wire: usize, value: F::Element| {
       let mut word = Vec::with_capacity(32);
-      put_scalar(&mut word, value);
+      put_scalar_for::<F::Curve>(&mut word, value);
       words[32 * wire..32 * wire + 32].copy_from_slice(&word);
     };
     for (t, feed) in n.tables.iter().zip(&self.feeds) {
       let base = usize::try_from(t.cell_base)
         .map_err(|e| format!("{}: cell base: {e}", t.name))?;
-      let matrix = |m: &RowMajorMatrix<Scalar>| -> Result<(), String> {
+      let matrix = |m: &RowMajorMatrix<F::Element>| -> Result<(), String> {
         if m.width != t.width as usize || m.height() > t.rows as usize {
           return Err(format!(
             "{}: the execution exceeds the SCS table",
@@ -430,7 +431,7 @@ impl<'p, 'a> Witness<'p, 'a> {
           }
         },
         Feed::Rom(i) => {
-          let rows = super::rom_rows(&traces[*i])?;
+          let rows = rom_rows_for::<F::Curve>(&traces[*i])?;
           matrix(&rows)?;
           for (k, &value) in rows.values.iter().enumerate() {
             put(base + k, value);

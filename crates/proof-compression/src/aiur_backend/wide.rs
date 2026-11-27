@@ -31,11 +31,11 @@
 //! witness traces.
 
 use super::{
-  Bn254,
+  AiurCurve, AiurField,
   kzg::{Compiler, lookup_group_size},
-  template::v2::lean::{Graph, read_block, same_circuit},
+  template::v2::lean::{Graph, read_block_for, same_circuit_for},
 };
-use crate::kzg::Scalar;
+use crate::kzg::{CurveScalar, KzgCurve, curve::Bn254 as Bn254Curve};
 use aiur::{
   field::FieldBackend,
   trace::{FunctionCircuit, TracePlan},
@@ -46,12 +46,132 @@ use multi_stark::{
   traits::Field,
 };
 use p3_matrix::{Matrix, dense::RowMajorMatrix};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
   path::{Path, PathBuf},
   process::Command,
   time::Instant,
 };
+
+const WIDE_COMPLETE_FORMAT: &str = "ix-wide-export-complete-v1";
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WideCompleteMarker {
+  format: String,
+  key: String,
+  exporter_blake3: String,
+  input_blake3: String,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  artifact_blake3: Option<String>,
+  layout_blake3: String,
+  fixed_blake3: String,
+}
+
+fn wide_blake3_file(path: &Path) -> Result<String, String> {
+  let mut hasher = blake3::Hasher::new();
+  let mut file = std::fs::File::open(path)
+    .map_err(|e| format!("{}: {e}", path.display()))?;
+  std::io::copy(&mut file, &mut hasher)
+    .map_err(|e| format!("{}: {e}", path.display()))?;
+  Ok(hasher.finalize().to_hex().to_string())
+}
+
+fn wide_check_input_artifact(
+  input: &Value,
+  base_dir: &Path,
+) -> Result<Option<String>, String> {
+  let Some(obj) = input.as_object() else {
+    return Ok(None);
+  };
+  let artifact_path_str = obj.get("artifact").and_then(|v| v.as_str());
+  let artifact_pin_str = obj.get("artifact_blake3").and_then(|v| v.as_str());
+  match (artifact_path_str, artifact_pin_str) {
+    (Some(_), None) => Err(
+      "wide export input references an artifact without artifact_blake3".into(),
+    ),
+    (_, Some(pin)) => {
+      let normalized = pin.to_ascii_lowercase();
+      if normalized.len() != 64
+        || !normalized.bytes().all(|b| b.is_ascii_hexdigit())
+      {
+        return Err(format!("invalid wide export artifact_blake3 pin: {pin}"));
+      }
+      if let Some(rel) = artifact_path_str {
+        let p = Path::new(rel);
+        let resolved =
+          if p.is_absolute() { p.to_path_buf() } else { base_dir.join(p) };
+        let actual = wide_blake3_file(&resolved)?;
+        if actual != normalized {
+          return Err(format!(
+            "wide export artifact {} BLAKE3 {actual} differs from pinned {normalized}",
+            resolved.display()
+          ));
+        }
+      }
+      Ok(Some(normalized))
+    },
+    (None, None) => Ok(None),
+  }
+}
+
+fn verify_wide_complete(
+  dir: &Path,
+  key: &str,
+  exporter_blake3: &str,
+  input: &Value,
+  input_blake3: &str,
+) -> Result<(), String> {
+  let complete_path = dir.join("complete");
+  let raw = std::fs::read(&complete_path)
+    .map_err(|e| format!("{}: {e}", complete_path.display()))?;
+  if raw.is_empty() {
+    return Err(format!(
+      "{}: unauthenticated empty complete marker; refusing stale wide export cache",
+      complete_path.display()
+    ));
+  }
+  let marker: WideCompleteMarker =
+    serde_json::from_slice(&raw).map_err(|e| {
+      format!(
+        "{}: malformed wide complete marker ({e})",
+        complete_path.display()
+      )
+    })?;
+  if marker.format != WIDE_COMPLETE_FORMAT
+    || marker.key != key
+    || marker.exporter_blake3 != exporter_blake3
+    || marker.input_blake3 != input_blake3
+  {
+    return Err(format!(
+      "{}: wide complete marker metadata differs from request",
+      complete_path.display()
+    ));
+  }
+  let expected_artifact = wide_check_input_artifact(input, dir)?;
+  if marker.artifact_blake3 != expected_artifact {
+    return Err(format!(
+      "{}: wide complete marker artifact_blake3 differs from request",
+      complete_path.display()
+    ));
+  }
+  for (name, expected) in [
+    ("input.json", marker.input_blake3.as_str()),
+    ("layout.json", marker.layout_blake3.as_str()),
+    ("fixed.bin", marker.fixed_blake3.as_str()),
+  ] {
+    let path = dir.join(name);
+    let actual = wide_blake3_file(&path)?;
+    if actual != expected {
+      return Err(format!(
+        "{}: BLAKE3 {actual} differs from wide complete marker {expected}",
+        path.display()
+      ));
+    }
+  }
+  Ok(())
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SharedMap {
@@ -69,15 +189,15 @@ pub enum Kind {
   Rom { words: usize },
 }
 
-pub struct Table {
+pub struct Table<C: AiurCurve = Bn254Curve> {
   pub kind: Kind,
   pub rows: usize,
-  pub graph: Graph,
+  pub graph: Graph<C>,
   /// The exported fixed matrix of a map or ROM table, `rows` high.
-  pub fixed: Option<RowMajorMatrix<Scalar>>,
+  pub fixed: Option<RowMajorMatrix<CurveScalar<C>>>,
 }
 
-impl Table {
+impl<C: AiurCurve> Table<C> {
   pub fn name(&self) -> String {
     match &self.kind {
       Kind::Unit { chip } => chip.clone(),
@@ -93,21 +213,21 @@ impl Table {
   }
 }
 
-pub struct Layout {
-  pub tables: Vec<Table>,
-  pub request: Vec<Scalar>,
+pub struct Layout<C: AiurCurve = Bn254Curve> {
+  pub tables: Vec<Table<C>>,
+  pub request: Vec<CurveScalar<C>>,
   pub bound: u64,
 }
 
-/// The exporter's input (`ix-wide-input-1`, field BN254): every function
-/// circuit of `compiler` as a unit with `capacities[i]` rows, and one ROM
-/// table per memory width with the capacity of its ROM circuit. The function
-/// circuits must be single chips. `artifact_blake3` names the artifact's
-/// contents, so that a cache keyed by the input distinguishes artifacts at
-/// one path.
+/// The exporter's input (`ix-wide-input-1`, field `F::Curve::NAME`): every
+/// function circuit of `compiler` as a unit with `capacities[i]` rows, and one
+/// ROM table per memory width with the capacity of its ROM circuit. The
+/// function circuits must be single chips. `artifact_blake3` names the
+/// artifact's contents, so that a cache keyed by the input distinguishes
+/// artifacts at one path.
 #[allow(clippy::too_many_arguments)]
-pub fn input(
-  compiler: &Compiler<'_, '_>,
+pub fn input<F: AiurField>(
+  compiler: &Compiler<'_, '_, F>,
   capacities: &[usize],
   artifact: &Path,
   artifact_blake3: &str,
@@ -135,7 +255,7 @@ pub fn input(
   let artifact = std::path::absolute(artifact)
     .map_err(|e| format!("{}: {e}", artifact.display()))?;
   let mut v = json!({
-    "format": "ix-wide-input-1", "field": "bn254",
+    "format": "ix-wide-input-1", "field": F::Curve::NAME,
     "artifact": artifact, "artifact_blake3": artifact_blake3,
     "circuits": circuits, "rom": rom, "entry": entry,
     "all_maps": all_maps, "pow2": pow2,
@@ -146,14 +266,14 @@ pub fn input(
   Ok(v)
 }
 
-/// The exporter's input for a grouped plan (field BN254): every ungrouped
-/// chip of the layout as a unit and every trace group as a group, all with
-/// `function_rows` rows; `rom` as `(words, capacity)` per memory width; every
-/// map kept in the compiler's shared layout (`all_maps`, `map_layout:
-/// "shared"`) and power-of-two row counts. The entry is the chip of the
-/// program entry `entry`.
-pub fn grouped_input(
-  plan: &TracePlan<'_, Bn254>,
+/// The exporter's input for a grouped plan (field `F::Curve::NAME`): every
+/// ungrouped chip of the layout as a unit and every trace group as a group,
+/// all with `function_rows` rows; `rom` as `(words, capacity)` per memory
+/// width; every map kept in the compiler's shared layout (`all_maps`,
+/// `map_layout: "shared"`) and power-of-two row counts. The entry is the chip
+/// of the program entry `entry`.
+pub fn grouped_input<F: AiurField>(
+  plan: &TracePlan<'_, F>,
   function_rows: usize,
   rom: &[(usize, usize)],
   artifact: &Path,
@@ -182,7 +302,7 @@ pub fn grouped_input(
   let artifact = std::path::absolute(artifact)
     .map_err(|e| format!("{}: {e}", artifact.display()))?;
   Ok(json!({
-    "format": "ix-wide-input-1", "field": "bn254",
+    "format": "ix-wide-input-1", "field": F::Curve::NAME,
     "artifact": artifact, "artifact_blake3": artifact_blake3,
     "circuits": circuits, "groups": grouped,
     "rom": rom.iter().map(|&(w, c)| json!([w, c])).collect::<Vec<_>>(),
@@ -192,8 +312,8 @@ pub fn grouped_input(
 }
 
 /// Where an export came from.
-pub struct Exported {
-  pub layout: Layout,
+pub struct Exported<C: AiurCurve = Bn254Curve> {
+  pub layout: Layout<C>,
   /// The cache entry (`exporter ‖ input` BLAKE3) or the work directory.
   pub dir: PathBuf,
   pub exporter_blake3: String,
@@ -212,16 +332,14 @@ pub fn exporter_from_env() -> Result<(PathBuf, Option<PathBuf>), String> {
   ))
 }
 
-/// Runs `exporter` on `input`, or replays its earlier output: with a cache,
-/// the entry `cache/<BLAKE3(exporter bytes ‖ input bytes)>` holds
-/// `input.json`, `layout.json`, `fixed.bin`, `export.log` and, once whole,
-/// `complete`. Without one the export is written to `work`.
-pub fn export_cached(
+/// Runs `exporter` on `input`, or replays its earlier output, loading the
+/// resulting layout into curve `C`.
+pub fn export_cached_for<C: AiurCurve>(
   input: &Value,
   exporter: &Path,
   cache: Option<&Path>,
   work: &Path,
-) -> Result<Exported, String> {
+) -> Result<Exported<C>, String> {
   let started = Instant::now();
   let read =
     |p: &Path| std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()));
@@ -233,12 +351,22 @@ pub fn export_cached(
   hasher.update(&binary);
   hasher.update(&input_bytes);
   let key = hasher.finalize().to_hex().to_string();
+  let input_blake3 = blake3::hash(&input_bytes).to_hex().to_string();
   let (dir, staging) = match cache {
     Some(cache) => {
       let dir = cache.join(&key);
-      if dir.join("complete").exists() {
-        let layout =
-          Layout::load(&dir.join("layout.json"), &dir.join("fixed.bin"))?;
+      if dir.exists() {
+        verify_wide_complete(
+          &dir,
+          &key,
+          &exporter_blake3,
+          input,
+          &input_blake3,
+        )?;
+        let layout = Layout::<C>::load_for(
+          &dir.join("layout.json"),
+          &dir.join("fixed.bin"),
+        )?;
         return Ok(Exported {
           layout,
           dir,
@@ -258,6 +386,7 @@ pub fn export_cached(
     std::fs::write(p, b).map_err(|e| format!("{}: {e}", p.display()))
   };
   write(&staging.join("input.json"), &input_bytes)?;
+  let artifact_blake3 = wide_check_input_artifact(input, &staging)?;
   let log = staging.join("export.log");
   let log_file = std::fs::File::create(&log)
     .map_err(|e| format!("{}: {e}", log.display()))?;
@@ -275,14 +404,29 @@ pub fn export_cached(
       log.display()
     ));
   }
-  let layout =
-    Layout::load(&staging.join("layout.json"), &staging.join("fixed.bin"))?;
+  let layout = Layout::<C>::load_for(
+    &staging.join("layout.json"),
+    &staging.join("fixed.bin"),
+  )?;
   if staging != dir {
-    write(&staging.join("complete"), b"")?;
-    // A concurrent writer may have published the same entry first; both
-    // hold the same exporter's output for the same input.
+    let marker = WideCompleteMarker {
+      format: WIDE_COMPLETE_FORMAT.to_owned(),
+      key: key.clone(),
+      exporter_blake3: exporter_blake3.clone(),
+      input_blake3: input_blake3.clone(),
+      artifact_blake3,
+      layout_blake3: wide_blake3_file(&staging.join("layout.json"))?,
+      fixed_blake3: wide_blake3_file(&staging.join("fixed.bin"))?,
+    };
+    write(
+      &staging.join("complete"),
+      &serde_json::to_vec_pretty(&marker).map_err(|e| e.to_string())?,
+    )?;
+    // A concurrent writer may have published the same entry first; verify its
+    // complete marker before adopting it.
     if std::fs::rename(&staging, &dir).is_err() {
       let _ = std::fs::remove_dir_all(&staging);
+      verify_wide_complete(&dir, &key, &exporter_blake3, input, &input_blake3)?;
     }
   }
   Ok(Exported {
@@ -294,10 +438,21 @@ pub fn export_cached(
   })
 }
 
-impl Layout {
+/// Runs `exporter` on `input`, or replays its earlier output, loading the
+/// resulting layout over BN254.
+pub fn export_cached(
+  input: &Value,
+  exporter: &Path,
+  cache: Option<&Path>,
+  work: &Path,
+) -> Result<Exported, String> {
+  export_cached_for::<Bn254Curve>(input, exporter, cache, work)
+}
+
+impl<C: AiurCurve> Layout<C> {
   /// Runs `exporter input output fixed` (stderr to `log`) and loads its
   /// output; returns the layout and the exporter's seconds.
-  pub fn export(
+  pub fn export_for(
     exporter: &Path,
     input: &Path,
     output: &Path,
@@ -322,10 +477,11 @@ impl Layout {
         log.display()
       ));
     }
-    Ok((Self::load(output, fixed)?, seconds))
+    Ok((Self::load_for(output, fixed)?, seconds))
   }
 
-  pub fn load(output: &Path, fixed: &Path) -> Result<Self, String> {
+  pub fn load_for(output: &Path, fixed: &Path) -> Result<Self, String> {
+    use ark_ff::BigInteger;
     let read =
       |p: &Path| std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()));
     let out: Value =
@@ -334,14 +490,10 @@ impl Layout {
       return Err("not a wide stage layout".into());
     }
     let modulus = num_bigint::BigUint::from_bytes_le(
-      &<ark_bn254::Fr as ark_ff::PrimeField>::MODULUS
-        .0
-        .iter()
-        .flat_map(|l| l.to_le_bytes())
-        .collect::<Vec<_>>(),
+      &<C::Fr as ark_ff::PrimeField>::MODULUS.to_bytes_le(),
     );
     if out["modulus"].as_str() != Some(modulus.to_string().as_str()) {
-      return Err("the wide layout is not over BN254".into());
+      return Err(format!("the wide layout is not over {}", C::NAME));
     }
     let bytes = read(fixed)?;
     let mut rest = &bytes[..];
@@ -391,14 +543,14 @@ impl Layout {
         Some("rom") => Kind::Rom { words: count(&t["words"], "words")? },
         _ => return Err("unknown table kind".into()),
       };
-      let graph = Graph::parse(&t["circuit"])?;
+      let graph = Graph::<C>::parse(&t["circuit"])?;
       let fixed = if matches!(kind, Kind::Unit { .. } | Kind::Group { .. }) {
         if graph.fixed_width != 0 {
           return Err("a function table has no fixed columns".into());
         }
         None
       } else {
-        let ((r, w, values), used) = read_block(rest)?;
+        let ((r, w, values), used) = read_block_for::<C>(rest)?;
         rest = &rest[used..];
         if r != rows || w != graph.fixed_width {
           return Err("a fixed block does not have its table's shape".into());
@@ -414,13 +566,29 @@ impl Layout {
       .as_array()
       .ok_or("wide layout without request")?
       .iter()
-      .map(super::template::parse_scalar)
+      .map(super::template::parse_scalar_for::<C>)
       .collect::<Result<_, _>>()?;
     Ok(Self {
       tables,
       request,
       bound: out["bound"].as_u64().ok_or("wide layout without bound")?,
     })
+  }
+}
+
+impl Layout<Bn254Curve> {
+  pub fn export(
+    exporter: &Path,
+    input: &Path,
+    output: &Path,
+    fixed: &Path,
+    log: &Path,
+  ) -> Result<(Self, f64), String> {
+    Self::export_for(exporter, input, output, fixed, log)
+  }
+
+  pub fn load(output: &Path, fixed: &Path) -> Result<Self, String> {
+    Self::load_for(output, fixed)
   }
 }
 
@@ -440,14 +608,14 @@ pub enum Origin {
 /// A grouped, shared-map layout as the circuits of a proof system, each
 /// mapped to the compiler trace that fills it. Circuit order is the
 /// export's: units, groups, shared maps, ROMs; function circuits come first.
-pub struct Stage {
+pub struct Stage<C: AiurCurve = Bn254Curve> {
   pub names: Vec<String>,
   /// The exported circuits read literally, with the exported fixed matrices
   /// and the compiler lowering's lookup grouping.
-  pub inputs: Vec<CircuitInputs<Scalar>>,
+  pub inputs: Vec<CircuitInputs<CurveScalar<C>>>,
   pub origins: Vec<Origin>,
   pub function_circuits: usize,
-  pub request: Vec<Scalar>,
+  pub request: Vec<CurveScalar<C>>,
   /// `(words, capacity)` per ROM table, in table order.
   pub rom: Vec<(usize, usize)>,
   /// Constraint-graph nodes of every exported circuit.
@@ -478,8 +646,8 @@ pub fn with_headroom(count: usize, headroom: f64) -> Result<usize, String> {
 /// `(words, capacity)` per memory width: the next power of two of
 /// `⌈count·(1 + headroom)⌉` (at least one row) for every compiler ROM
 /// circuit's `count` in `raw` (raw compiler row counts).
-pub fn rom_capacities(
-  compiler: &Compiler<'_, '_>,
+pub fn rom_capacities<F: AiurField>(
+  compiler: &Compiler<'_, '_, F>,
   raw: &[usize],
   headroom: f64,
 ) -> Result<Vec<(usize, usize)>, String> {
@@ -506,17 +674,17 @@ pub fn rom_capacities(
     .collect()
 }
 
-impl Stage {
+impl<C: AiurCurve> Stage<C> {
   /// Reads `layout` as circuits and maps every table to its compiler trace:
   /// units and groups by name, shared map tables by their callables, ROM
   /// tables by width. Every function circuit, fixed map table and ROM width
   /// of `compiler` must be covered exactly once, and the exported request
   /// must name `entry`'s call.
   pub fn new(
-    layout: Layout,
-    compiler: &Compiler<'_, '_>,
-    plan: &TracePlan<'_, Bn254>,
-    entry_claim: &[Scalar],
+    layout: Layout<C>,
+    compiler: &Compiler<'_, '_, C::Field>,
+    plan: &TracePlan<'_, C::Field>,
+    entry_claim: &[CurveScalar<C>],
     lookup_budget: Option<usize>,
   ) -> Result<Self, String> {
     let names = compiler.names();
@@ -613,7 +781,7 @@ impl Stage {
       }
       graph_nodes += table.graph.nodes.len();
       let mut input = table.graph.inputs(table.fixed);
-      input.lookup_group_size = lookup_group_size(&input, lookup_budget)
+      input.lookup_group_size = lookup_group_size::<C>(&input, lookup_budget)
         .map_err(|e| format!("{name}: {e}"))?;
       out_names.push(name);
       inputs.push(input);
@@ -676,10 +844,10 @@ impl Stage {
   /// order).
   pub fn traces(
     &self,
-    traces: Vec<RowMajorMatrix<Scalar>>,
-  ) -> Result<Vec<RowMajorMatrix<Scalar>>, String> {
+    traces: Vec<RowMajorMatrix<CurveScalar<C>>>,
+  ) -> Result<Vec<RowMajorMatrix<CurveScalar<C>>>, String> {
     use p3_maybe_rayon::prelude::*;
-    let mut traces: Vec<Option<RowMajorMatrix<Scalar>>> =
+    let mut traces: Vec<Option<RowMajorMatrix<CurveScalar<C>>>> =
       traces.into_iter().map(Some).collect();
     self
       .origins
@@ -697,7 +865,8 @@ impl Stage {
             {
               return Ok(trace);
             }
-            let mut values = vec![Bn254.zero(); trace.height() * columns.len()];
+            let mut values =
+              vec![C::FIELD.zero(); trace.height() * columns.len()];
             values
               .par_chunks_mut(columns.len().max(1))
               .zip(trace.values.par_chunks(trace.width.max(1)))
@@ -708,19 +877,19 @@ impl Stage {
               });
             Ok(RowMajorMatrix::new(values, columns.len()))
           },
-          Origin::Rom { rows, .. } => rom_rows(&trace, *rows),
+          Origin::Rom { rows, .. } => rom_rows::<C>(&trace, *rows),
         }
       })
       .collect()
   }
 
   /// Compares every exported circuit with the compiler lowering's: function
-  /// and map circuits at random points ([`same_circuit`]) and their fixed
+  /// and map circuits at random points ([`same_circuit_for`]) and their fixed
   /// matrices entry for entry; ROM tables against `romCircuit w` and the
   /// compiler ROM circuit's lookup under the [`rom_rows`] conversion.
   pub fn rust_cross_check(
     &self,
-    compiler: &Compiler<'_, '_>,
+    compiler: &Compiler<'_, '_, C::Field>,
   ) -> Result<Value, String> {
     let rust = compiler.inputs();
     let mut differing = vec![];
@@ -730,7 +899,7 @@ impl Stage {
       let lean = &self.inputs[k];
       let ok = match origin {
         Origin::Function(c) => {
-          same_circuit(lean, &rust[*c], 4)?
+          same_circuit_for::<C>(lean, &rust[*c], 4)?
             && lean.lookup_group_size == rust[*c].lookup_group_size
         },
         Origin::Map { circuit, columns } => {
@@ -747,7 +916,7 @@ impl Stage {
           }
           let mut mine = rust[*circuit].clone();
           mine.main_width = columns.len();
-          let relabel = |e: &Expr<Scalar>| remap_main(e, columns);
+          let relabel = |e: &Expr<CurveScalar<C>>| remap_main(e, columns);
           mine.lookups = mine
             .lookups
             .iter()
@@ -759,7 +928,7 @@ impl Stage {
             })
             .collect();
           mine.constraints = mine.constraints.iter().map(relabel).collect();
-          same_circuit(lean, &mine, 4)?
+          same_circuit_for::<C>(lean, &mine, 4)?
             && lean.lookup_group_size == rust[*circuit].lookup_group_size
         },
         Origin::Rom { circuit, rows } => {
@@ -774,12 +943,12 @@ impl Stage {
                 .values
                 .iter()
                 .enumerate()
-                .all(|(i, &v)| v == Bn254.from_u64(i as u64))
+                .all(|(i, &v)| v == C::FIELD.from_u64(i as u64))
           });
           if !addr_ok {
             fixed_differing.push(self.names[k].clone());
           }
-          rom_same(lean, &rust[*circuit], words)?
+          rom_same::<C>(lean, &rust[*circuit], words)?
         },
       };
       if !ok {
@@ -805,8 +974,8 @@ fn index_of(origin: &Origin) -> usize {
   }
 }
 
-fn remap_main(e: &Expr<Scalar>, columns: &[usize]) -> Expr<Scalar> {
-  let r = |x: &Expr<Scalar>| Box::new(remap_main(x, columns));
+fn remap_main<S: Clone>(e: &Expr<S>, columns: &[usize]) -> Expr<S> {
+  let r = |x: &Expr<S>| Box::new(remap_main(x, columns));
   match e {
     Expr::Var(c) if c.source == Source::Main => {
       let k = columns
@@ -827,11 +996,11 @@ fn remap_main(e: &Expr<Scalar>, columns: &[usize]) -> Expr<Scalar> {
 
 /// Evaluates `e` at one row, with main columns `main`, fixed columns `fixed`
 /// and no next-row, selector or public variables.
-fn eval(
-  e: &Expr<Scalar>,
-  main: &[Scalar],
-  fixed: &[Scalar],
-) -> Result<Scalar, String> {
+fn eval<C: AiurCurve>(
+  e: &Expr<CurveScalar<C>>,
+  main: &[CurveScalar<C>],
+  fixed: &[CurveScalar<C>],
+) -> Result<CurveScalar<C>, String> {
   Ok(match e {
     Expr::Const(k) => *k,
     Expr::Var(c) if c.offset == RowOffset::Current => match c.source {
@@ -839,10 +1008,10 @@ fn eval(
       Source::Preprocessed => fixed[c.index as usize],
       Source::Stage2 => return Err("stage-two variable".into()),
     },
-    Expr::Add(a, b) => eval(a, main, fixed)? + eval(b, main, fixed)?,
-    Expr::Sub(a, b) => eval(a, main, fixed)? - eval(b, main, fixed)?,
-    Expr::Mul(a, b) => eval(a, main, fixed)? * eval(b, main, fixed)?,
-    Expr::Neg(a) => -eval(a, main, fixed)?,
+    Expr::Add(a, b) => eval::<C>(a, main, fixed)? + eval::<C>(b, main, fixed)?,
+    Expr::Sub(a, b) => eval::<C>(a, main, fixed)? - eval::<C>(b, main, fixed)?,
+    Expr::Mul(a, b) => eval::<C>(a, main, fixed)? * eval::<C>(b, main, fixed)?,
+    Expr::Neg(a) => -eval::<C>(a, main, fixed)?,
     _ => return Err("row selector, public or next-row variable".into()),
   })
 }
@@ -852,9 +1021,9 @@ fn eval(
 /// fixed `[addr]`) and its lookup equals the compiler ROM circuit's
 /// (`[count, active, address, words…]`) on an active row under
 /// [`rom_rows`], at random points.
-fn rom_same(
-  lean: &CircuitInputs<Scalar>,
-  rust: &CircuitInputs<Scalar>,
+fn rom_same<C: AiurCurve>(
+  lean: &CircuitInputs<CurveScalar<C>>,
+  rust: &CircuitInputs<CurveScalar<C>>,
   words: usize,
 ) -> Result<bool, String> {
   if !lean.constraints.is_empty()
@@ -865,36 +1034,36 @@ fn rom_same(
   {
     return Ok(false);
   }
-  let rom = Scalar::from_u64(2);
+  let rom = CurveScalar::<C>::from_u64(2);
   let mut seed = 0x2545_f491_4f6c_dd1du64;
   let mut next = || {
     seed ^= seed << 13;
     seed ^= seed >> 7;
     seed ^= seed << 17;
-    Scalar::from_u64(seed)
+    CurveScalar::<C>::from_u64(seed)
   };
   for _ in 0..4 {
     let (mult, addr) = (next(), next());
-    let cells: Vec<Scalar> = (0..words).map(|_| next()).collect();
-    let main: Vec<Scalar> =
+    let cells: Vec<CurveScalar<C>> = (0..words).map(|_| next()).collect();
+    let main: Vec<CurveScalar<C>> =
       std::iter::once(mult).chain(cells.iter().copied()).collect();
-    let rust_row: Vec<Scalar> = [mult, Bn254.one(), addr]
+    let rust_row: Vec<CurveScalar<C>> = [mult, C::FIELD.one(), addr]
       .into_iter()
       .chain(cells.iter().copied())
       .collect();
-    let tuple = |l: &multi_stark::lookup::Lookup<Expr<Scalar>>,
-                 m: &[Scalar],
-                 f: &[Scalar]|
-     -> Result<Vec<Scalar>, String> {
+    let tuple = |l: &multi_stark::lookup::Lookup<Expr<CurveScalar<C>>>,
+                 m: &[CurveScalar<C>],
+                 f: &[CurveScalar<C>]|
+     -> Result<Vec<CurveScalar<C>>, String> {
       std::iter::once(&l.multiplicity)
         .chain(&l.args)
-        .map(|x| eval(x, m, f))
+        .map(|x| eval::<C>(x, m, f))
         .collect()
     };
     let a = tuple(&lean.lookups[0], &main, &[addr])?;
     let b = tuple(&rust.lookups[0], &rust_row, &[])?;
-    let expected: Vec<Scalar> =
-      [-mult, rom, Scalar::from_u64(words as u64), addr]
+    let expected: Vec<CurveScalar<C>> =
+      [-mult, rom, CurveScalar::<C>::from_u64(words as u64), addr]
         .into_iter()
         .chain(cells.iter().copied())
         .collect();
@@ -909,21 +1078,21 @@ fn rom_same(
 /// addresses from 0, inactive rows zero) as `rows` rows of `romCircuit`
 /// (`[mult, words…]`, row `a` at address `a`, the address being the table's
 /// fixed column), zero-padded.
-pub fn rom_rows(
-  trace: &RowMajorMatrix<Scalar>,
+pub fn rom_rows<C: AiurCurve>(
+  trace: &RowMajorMatrix<CurveScalar<C>>,
   rows: usize,
-) -> Result<RowMajorMatrix<Scalar>, String> {
+) -> Result<RowMajorMatrix<CurveScalar<C>>, String> {
   let width = trace.width.checked_sub(2).ok_or("ROM trace without words")?;
   let mut values = Vec::with_capacity(rows * width);
   for (a, row) in trace.values.chunks(trace.width).enumerate() {
-    if row[1] == Bn254.one() {
+    if row[1] == C::FIELD.one() {
       if a >= rows {
         return Err(format!("ROM trace has more than its {rows} pinned rows"));
       }
-      if row[2] != Bn254.from_u64(a as u64) {
+      if row[2] != C::FIELD.from_u64(a as u64) {
         return Err("nonconsecutive ROM addresses".into());
       }
-    } else if row.iter().any(|&x| x != Bn254.zero()) {
+    } else if row.iter().any(|&x| x != C::FIELD.zero()) {
       return Err("an inactive ROM row is not zero".into());
     }
     if a < rows {
@@ -931,13 +1100,14 @@ pub fn rom_rows(
       values.extend_from_slice(&row[3..]);
     }
   }
-  values.resize(rows * width, Bn254.zero());
+  values.resize(rows * width, C::FIELD.zero());
   Ok(RowMajorMatrix::new(values, width))
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::aiur_backend::Bn254;
 
   #[test]
   fn rom_rows_pads_to_the_pinned_height() {
@@ -946,12 +1116,12 @@ mod tests {
       vec![s(3), s(1), s(0), s(7), s(1), s(1), s(1), s(8)],
       4,
     );
-    let rows = rom_rows(&trace, 4).unwrap();
+    let rows = rom_rows::<Bn254Curve>(&trace, 4).unwrap();
     assert_eq!(rows.width, 2);
     assert_eq!(
       rows.values,
       vec![s(3), s(7), s(1), s(8), s(0), s(0), s(0), s(0)]
     );
-    assert!(rom_rows(&trace, 1).is_err());
+    assert!(rom_rows::<Bn254Curve>(&trace, 1).is_err());
   }
 }
