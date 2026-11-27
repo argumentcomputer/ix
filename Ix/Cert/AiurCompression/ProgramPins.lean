@@ -287,7 +287,7 @@ private theorem goldilocks_libs_disjoint_compressWrap :
       (Aiur.Library.Blake3.Goldilocks.program.append
         (Aiur.Library.Option.declarations.toField _root_.MultiStark.F)).append
         Aiur.Library.Field.Goldilocks.program
-    ["CompressWrap", "MultiStark", "StarkVerifier", "Pcs"].all
+    ["CompressWrap", "MultiStark", "SystemDeserialize", "StarkVerifier", "Pcs"].all
       (fun name => (libPrefix.findModule? name).isNone) = true := by
   decide
 
@@ -306,10 +306,12 @@ theorem compressWrapProgram_ast_pinned :
   dsimp only at hd
   have hCW := findModule?_none_of_mem hd (by decide : "CompressWrap" ∈ _)
   have hMS := findModule?_none_of_mem hd (by decide : "MultiStark" ∈ _)
+  have hSD := findModule?_none_of_mem hd (by decide : "SystemDeserialize" ∈ _)
   have hSV := findModule?_none_of_mem hd (by decide : "StarkVerifier" ∈ _)
   have hPcs := findModule?_none_of_mem hd (by decide : "Pcs" ∈ _)
   simp only [fnHasCallsAndAsserts_append_right _ _ _ _ _ _ hCW,
     fnHasCallsAndAsserts_append_right _ _ _ _ _ _ hMS,
+    fnHasCallsAndAsserts_append_right _ _ _ _ _ _ hSD,
     fnHasCallsAndAsserts_append_right _ _ _ _ _ _ hSV,
     fnHasCallsAndAsserts_append_right _ _ _ _ _ _ hPcs,
     fnGlobalsEq_append_right _ _ _ _ _ hCW]
@@ -333,7 +335,7 @@ private theorem bn254_gl_libs_disjoint_compressGL :
       (Aiur.Library.Blake3.BN254.program.append
         (Aiur.Library.Option.declarations.toField MultiStark.CompressGL.F)).append
         Aiur.Library.Field.Goldilocks.Emulated.program
-    ["CompressGL", "CompressWrap", "MultiStark", "StarkVerifier", "Pcs"].all
+    ["CompressGL", "CompressWrap", "MultiStark", "SystemDeserialize", "StarkVerifier", "Pcs"].all
       (fun name => (libPrefix.findModule? name).isNone) = true := by
   decide
 
@@ -347,11 +349,13 @@ theorem compressGLProgram_ast_pinned :
   have hGL := findModule?_none_of_mem hd (by decide : "CompressGL" ∈ _)
   have hCW := findModule?_none_of_mem hd (by decide : "CompressWrap" ∈ _)
   have hMS := findModule?_none_of_mem hd (by decide : "MultiStark" ∈ _)
+  have hSD := findModule?_none_of_mem hd (by decide : "SystemDeserialize" ∈ _)
   have hSV := findModule?_none_of_mem hd (by decide : "StarkVerifier" ∈ _)
   have hPcs := findModule?_none_of_mem hd (by decide : "Pcs" ∈ _)
   simp only [hasModuleAlias_append_right _ _ _ _ hGL,
     fnHasCallsAndAsserts_append_right _ _ _ _ _ _ hCW,
     fnHasCallsAndAsserts_append_right _ _ _ _ _ _ hMS,
+    fnHasCallsAndAsserts_append_right _ _ _ _ _ _ hSD,
     fnHasCallsAndAsserts_append_right _ _ _ _ _ _ hSV,
     fnHasCallsAndAsserts_append_right _ _ _ _ _ _ hPcs,
     fnGlobalsEq_append_right _ _ _ _ _ hCW]
