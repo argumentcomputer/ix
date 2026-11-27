@@ -317,7 +317,7 @@ theorem aggregateProgram_ast_pinned :
   have h11 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.aggregateSource
     "StarkVerifier" "verify_batch" verifyBatchRequiredCalls 6
   have h12 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.aggregateSource
-    "StarkVerifier" "verify_shard" verifyShardRequiredCalls 17
+    "StarkVerifier" "verify_shard" verifyShardRequiredCalls 27
   unfold fnHasCallsAndAsserts at h1 h2 h3 h4 h5 h6 h7 h8 h9 h11 h12
   unfold hasModuleFunction at h10
   unfold Modules.Program.toField
