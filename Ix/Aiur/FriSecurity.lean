@@ -27,11 +27,15 @@ namespace Aiur.FriSecurity
 def fieldBits : Float := 192
 /-- Field bit-width for a degree-`extensionDegree` Goldilocks extension (`64 * extensionDegree`). -/
 def fieldBitsFor (extensionDegree : Nat) : Float := 64.0 * Float.ofNat (max extensionDegree 1)
-/-- BLAKE3 collision resistance (default 32-byte digest: 128 bits). -/
-def collisionBits : Float := 128
-/-- Collision resistance in bits for a BLAKE3 / BLAKE3-XOF digest of `digestBytes` bytes
-(`4 * digestBytes`: `128` for 32B, `192` for 48B XOF). -/
-def collisionBitsFor (digestBytes : Nat) : Float := 4.0 * Float.ofNat digestBytes
+/-- Classical collision resistance in bits of a sponge digest of `digestBytes`
+bytes: the `log₂ N` at which CertiFRI's collision bound `3N²/(2·2^(8·digestBytes))`
+reaches 1 (`P3/DigestCard.lean`, `digest_sponge_collision_exceeds_one_at_128`),
+`8·digestBytes/2 − log₂(3/2)/2`: about 127.71 for 32 bytes, 191.71 for 48 and
+255.71 for 64. -/
+def collisionBitsFor (digestBytes : Nat) : Float :=
+  4.0 * Float.ofNat digestBytes - Float.log2 1.5 / 2.0
+/-- Collision resistance of the production 32-byte BLAKE3 digest (about 127.71 bits). -/
+def collisionBits : Float := collisionBitsFor 32
 
 /-- One circuit of an instance, as the statistics JSON gives it. -/
 structure Circuit where

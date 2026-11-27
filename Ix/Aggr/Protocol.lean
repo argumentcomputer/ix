@@ -86,9 +86,9 @@ canonical `DynamicLinkStatement` (`0xE8 0x0D`). -/
 
 /-- Tier 2 eval-assumption discharge (`aggr_discharge_eval`, Workstream 5B):
 discharges one `EvalAssumption` leaf (`0xE8 0x0E`) from an `EvalAssumedClaim`
-(validator `10`/`11`) via a `Claim.eval`, `Claim.check`, or Shape 17
-`DynamicLinkStatement` child, transitioning validator `10 → 3` (or `11 → 4`)
-when the final eval assumption is discharged. -/
+(validator `10`/`11`) via a `Claim.check` (Mode 2) or Shape 17
+`DynamicLinkStatement` child (Mode 3a), transitioning validator `10 → 14`
+(or `11 → 15`) when the final eval assumption is discharged under Mode 2. -/
 @[expose] def dischargeEvalShapeCode : Nat := 18
 
 /-- The byte that opens every range statement; no `Ix.Claim` starts with it,

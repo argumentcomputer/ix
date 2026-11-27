@@ -196,8 +196,14 @@ def SourceSound (P : List (Call IxVM.F) → Digest → Prop) : Prop :=
     Aiur.Generic.SourceSemantics.ObsFn IxVM.source.world verifyClaim [digestValue d] []
       value heap calls → P calls d
 
-/-- **The main statement**: every observed `verify_claim`
-derivation satisfies `IxVMClaimSpecIn` of its calls. -/
+/-- **Unproved typing-refinement target (false as stated)**:
+every observed `verify_claim` derivation satisfies `IxVMClaimSpecIn` of its
+calls. No theorem proves this proposition, and it is false as stated (unbounded
+derivations vs field-element wraparound, kernel fuel, mutual-block eta, and
+`.proj` routes); the proved endpoint theorem is
+`IxVM.Refinement.Endpoint.circuitComposed` (`IxVM.Consistency.CircuitComposed`),
+which proves satisfiability (model existence) of the claimed closure rather than
+IxCK typing conformance. -/
 def VerifyClaimSoundIn : Prop :=
   SourceSound IxVMClaimSpecIn
 
@@ -309,11 +315,13 @@ def CircuitSoundAssuming (P : List (Call IxVM.F) → Digest → Prop) : Prop :=
           value heap calls ∧
           Aiur.Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls ∧ P calls d
 
-/-- **The main statement at the circuit.** -/
+/-- **Unproved typing-refinement target at the circuit** (false as stated; see
+`VerifyClaimSoundIn`). -/
 def VerifyClaimCircuitSoundIn : Prop :=
   CircuitSound IxVMClaimSpecIn
 
-/-- **The main statement at the circuit, assuming acyclicity.** -/
+/-- **Unproved typing-refinement target at the circuit, assuming acyclicity**
+(false as stated; see `VerifyClaimSoundIn`). -/
 def VerifyClaimCircuitSoundInAssuming : Prop :=
   CircuitSoundAssuming IxVMClaimSpecIn
 

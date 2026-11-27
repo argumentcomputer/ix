@@ -9,9 +9,15 @@ import CertiFriProofs.Audit128
 Mechanically pins (via `#guard_msgs` on `#check` and `#print axioms`) the 128-bit
 compression endpoint security profile across the three-endpoint architecture:
 
-1. **Endpoint 1 (`stark128Xof48` — Native `Fp^3` `multi-stark` `v6` STARK Shrinker):**
-   Transparent pure-ROM 128-bit security (`p^3 ≥ 2^191`, 48-byte BLAKE3 XOF,
-   reusing `FriVerifier.friVerifierCircuit_sound` with zero pairing/SRS assumptions).
+1. **Endpoint 1 (`stark128Blake2b512` — Native `Fp^3` `multi-stark` `v6` STARK Shrinker):**
+   A profile predicate on literals (`p^3 ≥ 2^191`, 64-byte RFC 7693 `BLAKE2b-512` with true
+   512-bit internal state — `255.7b` classical BCS / `170.7b` BHT / `204.8b` CNS / `256b` Grover
+   as inequalities about `2 ^ 512`), with zero pairing/SRS assumptions. It is not a soundness
+   theorem about the shipped shrinker, post-quantum soundness is not established (no theorem
+   considers a quantum adversary), and `FriVerifier.friVerifierCircuit_sound` is a gadget
+   lemma over an arbitrary `base` circuit, not a proof about Endpoint 1. Production retains
+   32-byte `BLAKE3-256` (`127.71b` classical BCS); retired 48-byte `BLAKE3-XOF48` is excluded
+   from the 64-byte profile due to BLAKE3's 256-bit `cv`.
 2. **Endpoint 2 (`bls12381Plonk` — BLS12-381 KZG + EIP-2537 PLONK):**
    Exact IETF/EIP-2537 BLS12-381 parameters (`|Fq| ≥ 2^380`, `|Fr| ≥ 2^254`,
    cofactor `h1 > 1` with **mandatory `G1` prime-order subgroup check**).
@@ -97,14 +103,14 @@ def bn254CurveSpec : PairingCurveSpec :=
 
 /-- Compression endpoints in the three-endpoint architecture. -/
 inductive CompressionEndpoint where
-  | stark128Xof48
+  | stark128Blake2b512
   | bls12381Plonk
   | bn254Plonk
   deriving DecidableEq, Repr
 
 /-- 128-bit compression profile predicate across endpoints. -/
 def CompressionProfile128Ok : CompressionEndpoint → Prop
-  | .stark128Xof48 => Security128Profile 3 6 48 v6Ud160Params true
+  | .stark128Blake2b512 => Security128Profile 3 6 64 v6Ud160Params true
   | .bls12381Plonk => PairingCurve128Ok bls12381CurveSpec
   | .bn254Plonk => PairingCurve128Ok bn254CurveSpec
 
@@ -128,9 +134,9 @@ theorem bls12381_field_bounds :
   · unfold bls12381G1Cofactor
     norm_num
 
-/-- Endpoint 1 (`stark128Xof48`) satisfies the 128-bit compression profile. -/
-theorem stark128Xof48_profile_ok :
-    CompressionProfile128Ok .stark128Xof48 :=
+/-- Endpoint 1 (`stark128Blake2b512`) satisfies the 128-bit post-quantum compression profile. -/
+theorem stark128Blake2b512_profile_ok :
+    CompressionProfile128Ok .stark128Blake2b512 :=
   v6_positive_128_profiles.1
 
 /-- Endpoint 2 (`bls12381Plonk`) satisfies the 128-bit compression profile. -/
@@ -181,9 +187,9 @@ end Ix.Cert.Compression.Security128
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Compression.Security128.bls12381_field_bounds
 
-/-- info: Ix.Cert.Compression.Security128.stark128Xof48_profile_ok : Ix.Cert.Compression.Security128.CompressionProfile128Ok Ix.Cert.Compression.Security128.CompressionEndpoint.stark128Xof48 -/
+/-- info: Ix.Cert.Compression.Security128.stark128Blake2b512_profile_ok : Ix.Cert.Compression.Security128.CompressionProfile128Ok Ix.Cert.Compression.Security128.CompressionEndpoint.stark128Blake2b512 -/
 #guard_msgs (whitespace := lax) in
-#check @Ix.Cert.Compression.Security128.stark128Xof48_profile_ok
+#check @Ix.Cert.Compression.Security128.stark128Blake2b512_profile_ok
 
 /-- info: Ix.Cert.Compression.Security128.bls12381Plonk_profile_ok : Ix.Cert.Compression.Security128.CompressionProfile128Ok Ix.Cert.Compression.Security128.CompressionEndpoint.bls12381Plonk -/
 #guard_msgs (whitespace := lax) in
@@ -209,9 +215,9 @@ end Ix.Cert.Compression.Security128
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Compression.Security128.bls12381_field_bounds
 
-/-- info: 'Ix.Cert.Compression.Security128.stark128Xof48_profile_ok' depends on axioms: [propext] -/
+/-- info: 'Ix.Cert.Compression.Security128.stark128Blake2b512_profile_ok' depends on axioms: [propext] -/
 #guard_msgs (whitespace := lax) in
-#print axioms Ix.Cert.Compression.Security128.stark128Xof48_profile_ok
+#print axioms Ix.Cert.Compression.Security128.stark128Blake2b512_profile_ok
 
 /-- info: 'Ix.Cert.Compression.Security128.bls12381Plonk_profile_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
@@ -275,14 +281,14 @@ end Ix.Cert.Compression.Security128
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Compression.Bls12381.OuterRelation.bls12381_gnark_folded_pairing_sound
 
-/-- info: 'CertiFri.P3.Exec.goldilocksExt3_soundness_sponge_xof48_johnson_lb3_78_128_unconditional' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'CertiFri.P3.Exec.goldilocksExt3_soundness_sponge_blake2b512_johnson_lb3_78_128_unconditional' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
-#print axioms CertiFri.P3.Exec.goldilocksExt3_soundness_sponge_xof48_johnson_lb3_78_128_unconditional
+#print axioms CertiFri.P3.Exec.goldilocksExt3_soundness_sponge_blake2b512_johnson_lb3_78_128_unconditional
 
-/-- info: 'CertiFri.P3.Exec.goldilocksExt3_soundness_sponge_xof48_johnson_lb4_58_128_unconditional' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'CertiFri.P3.Exec.goldilocksExt3_soundness_sponge_blake2b512_johnson_lb4_58_128_unconditional' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
-#print axioms CertiFri.P3.Exec.goldilocksExt3_soundness_sponge_xof48_johnson_lb4_58_128_unconditional
+#print axioms CertiFri.P3.Exec.goldilocksExt3_soundness_sponge_blake2b512_johnson_lb4_58_128_unconditional
 
-/-- info: 'CertiFri.P3.Exec.goldilocksExt3_v6Zk_soundness_xof48_johnson_128_unconditional' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'CertiFri.P3.Exec.goldilocksExt3_v6Zk_soundness_blake2b512_johnson_128_unconditional' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
-#print axioms CertiFri.P3.Exec.goldilocksExt3_v6Zk_soundness_xof48_johnson_128_unconditional
+#print axioms CertiFri.P3.Exec.goldilocksExt3_v6Zk_soundness_blake2b512_johnson_128_unconditional

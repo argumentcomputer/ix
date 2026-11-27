@@ -20,7 +20,8 @@ Proves the polynomial-identity soundness core of Multi-STARK AIR verification:
    - `isLast(g^i) ≠ 0` iff `i = N - 1`; `isLast(g^i) = 0` for `i < N - 1`
    - `isTrans(g^i) = 0` iff `i = N - 1`; `isTrans(g^i) ≠ 0` for `i < N - 1`.
 
-3. **OOD Identity + `+1` Degree Slack (`air_holds_on_domain_of_ood`):**
+3. **OOD Identity + `+1` Degree Slack (`card_ood_bad_le`, `eval_zero_on_trace_of_divisible`;
+   no theorem here combines them with extracted columns into row-level AIR satisfaction):**
    Even though CertiFRI's `extractColumn` guarantees degree at most `N` (one above the
    honest degree `N - 1`), the AIR constraint polynomial `C(X)` composed with extracted
    column polynomials of degree `≤ N` has degree at most `D_max`, and the recombined
@@ -32,11 +33,11 @@ Proves the polynomial-identity soundness core of Multi-STARK AIR verification:
    - When `P = 0` (`C(X) = (X^N - 1) · Q(X)`), evaluating at every trace point `x = g^i ∈ H_ℓ`
      gives `C(g^i) = (g^{i·N} - 1) · Q(g^i) = 0`, regardless of the `+1` degree slack!
 
-4. **Horner Batching of Constraints (`horner_constraints_zero`):**
+4. **Horner Batching of Constraints (`card_horner_bad_le`, at one point):**
    If `C_α(X) = ∑_{k < m} α^{m - 1 - k} · c_k(X)` vanishes at `x ∈ H_ℓ` for a uniform
    `α ∈ K`, and some `c_k(x) ≠ 0`, then at most `m - 1` values of `α ∈ K` can make
-   `C_α(x) = 0`. Summing over all `x ∈ H_ℓ` gives bad probability at most
-   `N · (m - 1) / |K|`.
+   `C_α(x) = 0`. Summing over all `x ∈ H_ℓ` would give bad probability at most
+   `N · (m - 1) / |K|` (the sum is not stated as a theorem here).
 
 Zero `sorry`, standard axioms only.
 -/

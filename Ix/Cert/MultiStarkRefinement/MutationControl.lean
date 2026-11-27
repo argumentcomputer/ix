@@ -7,6 +7,10 @@ three independent negative controls:
 1. **AST Mutation Control (`mutated_drop_ext_is_zero_fails_pin`):**
    Replacing `StarkVerifier::verify_batch`'s body in `MultiStark.recursionSource` with a body
    that drops the final `ext_is_zero(total) == 1` check breaks `RecursionVerifierAstPinned`!
+1b. **AST Mutation Control (`mutated_drop_fixed_height_fails_pins`):**
+   Replacing `StarkVerifier::ood_loop`'s fixed-table height assertion
+   `(1 - Fields::is_zero(ph)) * (height - ph) == 0` breaks `OodLoopBindsFixedHeights` and
+   `RecursionVerifierAstPinned`.
 2. **Semantic LogUp Mutation Control (`mutated_drop_ext_is_zero_unsound`):**
    A mutated batch verifier that omits `total == GoldilocksExt.zero` accepts a concrete
    nonzero-residual witness (`total = ⟨1, 0⟩`) that `Ix.Cert.MultiStark.verifyBatch` rejects!
@@ -54,6 +58,87 @@ def mutatedRecursionSourceNoExtIsZero : Modules.Program Nat :=
 `RecursionVerifierAstPinned` (contrast with `recursionSource_ast_pinned`). -/
 theorem mutated_drop_ext_is_zero_fails_pin :
     RecursionVerifierAstPinned mutatedRecursionSourceNoExtIsZero = false := by
+  decide
+
+/-! ## 1b. AST Mutation Control: Dropping the Fixed-Table Height Binding Breaks Both Pins -/
+
+mutual
+/-- `e` with every subexpression satisfying `p` replaced by `r` (outermost first). -/
+def exprReplace (p : Generic.Expr Nat → Bool) (r : Generic.Expr Nat) :
+    Generic.Expr Nat → Generic.Expr Nat
+  | e@(.literal _) | e@(.var _) | e@(.global _ _) => if p e then r else e
+  | e@(.tuple xs) => if p e then r else .tuple (exprListReplace p r xs)
+  | e@(.array xs) => if p e then r else .array (exprListReplace p r xs)
+  | e@(.repeat x n) => if p e then r else .repeat (exprReplace p r x) n
+  | e@(.index x i) => if p e then r else .index (exprReplace p r x) i
+  | e@(.slice x a b) => if p e then r else .slice (exprReplace p r x) a b
+  | e@(.construct n ts c xs) => if p e then r else .construct n ts c (exprListReplace p r xs)
+  | e@(.constructAs ps t c xs) => if p e then r else .constructAs ps t c (exprListReplace p r xs)
+  | e@(.record h xs) => if p e then r else .record h (exprListReplace p r xs)
+  | e@(.member x f) => if p e then r else .member (exprReplace p r x) f
+  | e@(.update ps xs) => if p e then r else .update ps (exprListReplace p r xs)
+  | e@(.builtin b xs) => if p e then r else .builtin b (exprListReplace p r xs)
+  | e@(.project x i) => if p e then r else .project (exprReplace p r x) i
+  | e@(.letValue pat v b) => if p e then r else .letValue pat (exprReplace p r v) (exprReplace p r b)
+  | e@(.store x) => if p e then r else .store (exprReplace p r x)
+  | e@(.load x) => if p e then r else .load (exprReplace p r x)
+  | e@(.hint t k c) => if p e then r else .hint t (exprReplace p r k) c
+  | e@(.neg x) => if p e then r else .neg (exprReplace p r x)
+  | e@(.binary o a b) => if p e then r else .binary o (exprReplace p r a) (exprReplace p r b)
+  | e@(.call f ts xs) => if p e then r else .call f ts (exprListReplace p r xs)
+  | e@(.matchValue s arms) => if p e then r else .matchValue (exprReplace p r s) (exprArmsReplace p r arms)
+  | e@(.control k x) => if p e then r else .control k (exprReplace p r x)
+
+def exprListReplace (p : Generic.Expr Nat → Bool) (r : Generic.Expr Nat) :
+    List (Generic.Expr Nat) → List (Generic.Expr Nat)
+  | [] => []
+  | x :: xs => exprReplace p r x :: exprListReplace p r xs
+
+def exprArmsReplace (p : Generic.Expr Nat → Bool) (r : Generic.Expr Nat) :
+    List (Generic.Pattern Nat × Generic.Expr Nat) → List (Generic.Pattern Nat × Generic.Expr Nat)
+  | [] => []
+  | (q, e) :: arms => (q, exprReplace p r e) :: exprArmsReplace p r arms
+end
+
+/-- `MultiStark.recursionSource` with `ood_loop`'s fixed-table height assertion
+(`isFixedHeightAssert`) replaced by the literal `0`: the verifier that accepted fixed tables
+at any height. -/
+def mutatedRecursionSourceNoFixedHeight : Modules.Program Nat :=
+  match findModuleFunction? MultiStark.recursionSource "StarkVerifier" "ood_loop" with
+  | some f =>
+    mutateModuleFn MultiStark.recursionSource "StarkVerifier" "ood_loop"
+      (exprReplace isFixedHeightAssert (.literal 0) f.body)
+  | none => MultiStark.recursionSource
+
+/-- **Negative Control 1b:** Dropping the fixed-table height assertion from `ood_loop` breaks
+both `OodLoopBindsFixedHeights` and `RecursionVerifierAstPinned` (its assertion count). -/
+theorem mutated_drop_fixed_height_fails_pins :
+    OodLoopBindsFixedHeights mutatedRecursionSourceNoFixedHeight = false ∧
+      RecursionVerifierAstPinned mutatedRecursionSourceNoFixedHeight = false := by
+  decide
+
+/-- Concrete tampered `MultiStark.recursionSource` where `StarkVerifier::verify_shard` omits its
+security-floor and zero-bit PoW checks. -/
+def mutatedRecursionSourceNoSecurityFloor : Modules.Program Nat :=
+  mutateModuleFn MultiStark.recursionSource "StarkVerifier" "verify_shard"
+    (.call "last_acc" none [.var "accs"])
+
+/-- **Negative Control 1c:** Dropping the security-floor and zero-bit PoW checks from
+`StarkVerifier::verify_shard` breaks `RecursionVerifierAstPinned`. -/
+theorem mutated_drop_security_floor_fails_pin :
+    RecursionVerifierAstPinned mutatedRecursionSourceNoSecurityFloor = false := by
+  decide
+
+/-- Concrete tampered `MultiStark.recursionSource` where `SystemDeserialize::read_opt_idx_n` omits
+its `has_commit == 1` check when decoding a preprocessed index. -/
+def mutatedRecursionSourceNoPrepCommitGuard : Modules.Program Nat :=
+  mutateModuleFn MultiStark.recursionSource "SystemDeserialize" "read_opt_idx_n"
+    (.call "read_vk_u16" none [.var "i"])
+
+/-- **Negative Control 1d:** Dropping the preprocessed commit guard from
+`SystemDeserialize::read_opt_idx_n` breaks `RecursionVerifierAstPinned`. -/
+theorem mutated_drop_prep_commit_guard_fails_pin :
+    RecursionVerifierAstPinned mutatedRecursionSourceNoPrepCommitGuard = false := by
   decide
 
 /-! ## 2. Semantic Mutation Control: Dropping `total == 0` Breaks LogUp Soundness -/

@@ -800,8 +800,10 @@ private lemma chunkOutputs_eq_range (input : List UInt8) :
       rw [show counter + 1 + i = counter + (i + 1) by omega,
           show 1024 + 1024 * i = 1024 * (i + 1) by omega]
 
-/-- **BLAKE3 Parity (Gap 1b):** `CertiFri.P3.blake3` produces the exact same 32 bytes as
-`Blake3.Pure.digest` for every `ByteArray`. -/
+/-- **BLAKE3 Parity (plain mode):** `CertiFri.P3.blake3` (unkeyed BLAKE3) produces the
+exact same 32 bytes as `Blake3.Pure.digest` for every `ByteArray`. The keyed `derive_key` hashers
+that every v6 verifier uses (`baseHasherSep`, `ext3HasherSep`, the in-circuit `b3_dk_*`) are not
+covered. -/
 theorem blake3_eq_pure (bytes : ByteArray) :
     CertiFri.P3.blake3 bytes = ByteArray.mk (Blake3.Pure.digest bytes.data.toList).toArray := by
   unfold CertiFri.P3.blake3 Blake3.hash Blake3.hashBlocks

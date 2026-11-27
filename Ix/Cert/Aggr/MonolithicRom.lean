@@ -23,14 +23,18 @@ random-oracle log `l` (no rewinding, directly within `CertiFri.Oracle.OracleComp
    (with NO `M * Q` factor!).
 3. **Composition with 19-Shape Aggregation (`monolithic_aggrTree_rom_sound`):**
    Upgrades `AcceptedAggrTree` soundness with the monolithic single-oracle bound.
-4. **Concrete `GoldilocksExt3` (`|F| ≥ 2^191`) + 48-Byte BLAKE3 XOF (`|D| = 2^384`, `c = 3/2`)
-   128-Bit Bounds, Strict Comparison vs Union Bound, and Negative Controls:**
-   - `monolithic_goldilocksExt3_xof48_rate_128`: `≤ N / 2^128` for all `N = Q + M_verif ≤ 2^128`
+4. **Concrete `GoldilocksExt3` (`|F| ≥ 2^191`) + RFC 7693 `BLAKE2b-512` (`|D| = 2^512`, `c = 3/2`)
+   128-Bit Post-Quantum Bounds, Strict Comparison vs Union Bound, and Negative Controls:**
+   - `monolithic_goldilocksExt3_blake2b512_rate_128`: `≤ N / 2^128` for all `N = Q + M_verif ≤ 2^128`
      with `M_verif ≤ 2^20`.
-   - `monolithic_goldilocksExt3_xof48_concrete_prob_128`: literal `≤ 1 / 2^128` bound.
+   - `monolithic_goldilocksExt3_blake2b512_concrete_prob_128`: literal `≤ 1 / 2^128` bound.
    - `monolithic_strictly_tighter_than_union_bound` & `monolithic_beats_union_bound_2_pow_20`.
    - Negative controls rejecting `Fp^2` (`negControl_fp2_below_128`) and 32-byte digests at
      `N = 2^128` (`negControl_digest32_saturates_at_2_128`).
+   - Note: `BLAKE3-XOF48`/`BLAKE3-XOF64` are excluded from concrete 128-bit PQ instantiation
+     because BLAKE3's 256-bit internal `cv` caps concrete BHT collision resistance at `85.3b`,
+     whereas RFC 7693 `BLAKE2b-512` has a true 512-bit internal state (`170.7b` BHT / `204.8b` CNS
+     / `256b` Grover). Production 128-bit classical deployments continue to use 32-byte `BLAKE3-256`.
 
 Zero `sorry`, zero custom `axiom`, zero `native_decide`, zero `bv_decide`,
 strictly `[propext, Classical.choice, Quot.sound]`.
@@ -372,7 +376,7 @@ theorem monolithic_aggrTree_rom_sound
   exact ⟨monolithic_multiNode_rom_sound hsound hε h0 hc0 hashBad hHashBad adv hadv verifyAll hver
     NodeForges hExtract, _root_.Aggr.aggrDerivation19_invariant hDeriv, hChildOk⟩
 
-/-! ## 4. Concrete `GoldilocksExt3` + 48-Byte BLAKE3 XOF (`c = 3 / 2`) 128-Bit Instantiation -/
+/-! ## 4. Concrete `GoldilocksExt3` + RFC 7693 `BLAKE2b-512` (`c = 3 / 2`) 128-Bit PQ Instantiation -/
 
 /-- Goldilocks cubic extension field size `p^3` is strictly above `2^191`. -/
 theorem goldilocksExt3_card_ge_two_pow_191 :
@@ -396,17 +400,18 @@ theorem goldilocksExt3_card_ge_two_pow_191_real :
 noncomputable def monolithicRomBound (Q M_verif : ℕ) (εmax c digestCard : ℝ) : ℝ :=
   ((Q + M_verif : ℕ) : ℝ) * εmax + c * ((Q + M_verif : ℕ) : ℝ) ^ 2 / digestCard
 
-/-- **Concrete 128-Bit Security Rate Bound at `GoldilocksExt3` + 48-Byte BLAKE3 XOF (`c = 3/2`):**
+/-- **Concrete 128-Bit Security Rate Bound at `GoldilocksExt3` + RFC 7693 `BLAKE2b-512` (`c = 3/2`):**
 For ANY `M_verif ≤ 2^20` total verifier queries and `Q ≤ 2^128` adversary queries
-(total `N = Q + M_verif ≤ 2^128`) with 48-byte BLAKE3 XOF (`|D| = 2^384`), incremental sponge
-prefactor `c = 3 / 2`, and per-round RBR error `εmax ≤ (1 / 2) / 2^128`:
-$$\mathrm{monolithicRomBound}\; Q\; M_{\text{verif}}\; \varepsilon_{\max}\; (3/2)\; 2^{384} \le
+(total `N = Q + M_verif ≤ 2^128`) with 64-byte RFC 7693 `BLAKE2b-512` (`|D| = 2^512`, true
+512-bit internal state), incremental sponge prefactor `c = 3 / 2`, and per-round RBR error
+`εmax ≤ (1 / 2) / 2^128`:
+$$\mathrm{monolithicRomBound}\; Q\; M_{\text{verif}}\; \varepsilon_{\max}\; (3/2)\; 2^{512} \le
   \frac{Q + M_{\text{verif}}}{2^{128}}$$
 (full 128-bit ROM security `t / ε ≥ 2^128`, with ZERO `-log₂ M` penalty!). -/
-theorem monolithic_goldilocksExt3_xof48_rate_128
+theorem monolithic_goldilocksExt3_blake2b512_rate_128
     (Q M_verif : ℕ) (_hM : M_verif ≤ 2 ^ 20) (hN : Q + M_verif ≤ 2 ^ 128)
     {εmax : ℝ} (hε : εmax ≤ (1 / 2 : ℝ) / (2 : ℝ) ^ 128) :
-    monolithicRomBound Q M_verif εmax (3 / 2) ((2 : ℝ) ^ 384) ≤
+    monolithicRomBound Q M_verif εmax (3 / 2) ((2 : ℝ) ^ 512) ≤
       ((Q + M_verif : ℕ) : ℝ) / (2 : ℝ) ^ 128 := by
   unfold monolithicRomBound
   set N : ℝ := ((Q + M_verif : ℕ) : ℝ)
@@ -414,78 +419,84 @@ theorem monolithic_goldilocksExt3_xof48_rate_128
   have hNle : N ≤ (2 : ℝ) ^ 128 := by dsimp only [N]; exact_mod_cast hN
   have hterm1 : N * εmax ≤ N * ((1 / 2 : ℝ) / (2 : ℝ) ^ 128) :=
     mul_le_mul_of_nonneg_left hε hN0
-  have hterm2 : (3 / 2 : ℝ) * N ^ 2 / (2 : ℝ) ^ 384 ≤ N * ((1 / 2 : ℝ) / (2 : ℝ) ^ 128) := by
+  have hterm2 : (3 / 2 : ℝ) * N ^ 2 / (2 : ℝ) ^ 512 ≤ N * ((1 / 2 : ℝ) / (2 : ℝ) ^ 128) := by
     have hpos128 : (0 : ℝ) < (2 : ℝ) ^ 128 := by positivity
-    have hpos384 : (0 : ℝ) < (2 : ℝ) ^ 384 := by positivity
+    have hpos512 : (0 : ℝ) < (2 : ℝ) ^ 512 := by positivity
     have hN2 : N ^ 2 ≤ N * (2 : ℝ) ^ 128 := by
       rw [sq]
       exact mul_le_mul_of_nonneg_left hNle hN0
-    have hstep : (3 / 2 : ℝ) * N ^ 2 / (2 : ℝ) ^ 384 ≤
-        (3 / 2 : ℝ) * (N * (2 : ℝ) ^ 128) / (2 : ℝ) ^ 384 :=
-      div_le_div_of_nonneg_right (mul_le_mul_of_nonneg_left hN2 (by norm_num)) hpos384.le
+    have hstep : (3 / 2 : ℝ) * N ^ 2 / (2 : ℝ) ^ 512 ≤
+        (3 / 2 : ℝ) * (N * (2 : ℝ) ^ 128) / (2 : ℝ) ^ 512 :=
+      div_le_div_of_nonneg_right (mul_le_mul_of_nonneg_left hN2 (by norm_num)) hpos512.le
     refine hstep.trans ?_
-    have hsimp : (3 / 2 : ℝ) * (N * (2 : ℝ) ^ 128) / (2 : ℝ) ^ 384 =
-        N * ((3 / 2 : ℝ) / (2 : ℝ) ^ 256) := by
-      have h384 : (2 : ℝ) ^ 384 = (2 : ℝ) ^ 128 * (2 : ℝ) ^ 256 := by rw [← pow_add]
-      rw [h384]
+    have hsimp : (3 / 2 : ℝ) * (N * (2 : ℝ) ^ 128) / (2 : ℝ) ^ 512 =
+        N * ((3 / 2 : ℝ) / (2 : ℝ) ^ 384) := by
+      have h512 : (2 : ℝ) ^ 512 = (2 : ℝ) ^ 128 * (2 : ℝ) ^ 384 := by rw [← pow_add]
+      rw [h512]
       field_simp [hpos128.ne']
     rw [hsimp]
     apply mul_le_mul_of_nonneg_left _ hN0
-    have h256 : (3 : ℝ) * (2 : ℝ) ^ 128 ≤ (2 : ℝ) ^ 256 := by
-      have h2 : (3 : ℝ) ≤ (2 : ℝ) ^ 128 := by
-        have : (3 : ℕ) ≤ 2 ^ 128 := by decide
+    have h384 : (3 : ℝ) * (2 : ℝ) ^ 128 ≤ (2 : ℝ) ^ 384 := by
+      have h2 : (3 : ℝ) ≤ (2 : ℝ) ^ 256 := by
+        have : (3 : ℕ) ≤ 2 ^ 256 := by decide
         exact_mod_cast this
-      have hmul : (3 : ℝ) * (2 : ℝ) ^ 128 ≤ (2 : ℝ) ^ 128 * (2 : ℝ) ^ 128 :=
+      have hmul : (3 : ℝ) * (2 : ℝ) ^ 128 ≤ (2 : ℝ) ^ 256 * (2 : ℝ) ^ 128 :=
         mul_le_mul_of_nonneg_right h2 hpos128.le
-      have hsq : (2 : ℝ) ^ 128 * (2 : ℝ) ^ 128 = (2 : ℝ) ^ 256 := by rw [← pow_add]
-      linarith
+      have hpow : (2 : ℝ) ^ 256 * (2 : ℝ) ^ 128 = (2 : ℝ) ^ 384 := by rw [← pow_add]
+      rw [hpow] at hmul
+      exact hmul
     rw [div_le_div_iff₀ (by positivity) (by positivity)]
-    linarith
+    calc (3 / 2 : ℝ) * (2 : ℝ) ^ 128
+        = (1 / 2 : ℝ) * ((3 : ℝ) * (2 : ℝ) ^ 128) := by ring
+      _ ≤ (1 / 2 : ℝ) * (2 : ℝ) ^ 384 := mul_le_mul_of_nonneg_left h384 (by norm_num)
   exact (add_le_add hterm1 hterm2).trans_eq (by ring)
 
-/-- **Concrete `≤ 1 / 2^128` Probability Bound at `GoldilocksExt3` + 48-Byte BLAKE3 XOF (`c = 3/2`):**
+/-- **Concrete `≤ 1 / 2^128` Probability Bound at `GoldilocksExt3` + RFC 7693 `BLAKE2b-512` (`c = 3/2`):**
 Whenever `M_verif ≤ 2^20`, `Q ≤ 2^128` with total oracle budget `Q + M_verif ≤ 2^127` and
 `((Q + M_verif : ℕ) : ℝ) * εmax ≤ (1 / 2) / 2^128` (for instance `Q ≤ 2^61, M_verif ≤ 2^20`
 with `GoldilocksExt3` single-round field soundness `εmax = 1 / p^3 ≤ 1 / 2^191`, or any
 `Q + M_verif ≤ 2^127` with `εmax ≤ 1 / 2^256`), the monolithic multi-node forgery
 probability is literally `≤ 1 / 2^128`! -/
-theorem monolithic_goldilocksExt3_xof48_concrete_prob_128
+theorem monolithic_goldilocksExt3_blake2b512_concrete_prob_128
     (Q M_verif : ℕ) (_hM : M_verif ≤ 2 ^ 20) (hN : Q + M_verif ≤ 2 ^ 127)
     {εmax : ℝ} (hε : ((Q + M_verif : ℕ) : ℝ) * εmax ≤ (1 / 2 : ℝ) / (2 : ℝ) ^ 128) :
-    monolithicRomBound Q M_verif εmax (3 / 2) ((2 : ℝ) ^ 384) ≤ 1 / (2 : ℝ) ^ 128 := by
+    monolithicRomBound Q M_verif εmax (3 / 2) ((2 : ℝ) ^ 512) ≤ 1 / (2 : ℝ) ^ 128 := by
   unfold monolithicRomBound
   set N : ℝ := ((Q + M_verif : ℕ) : ℝ)
   have hN0 : 0 ≤ N := Nat.cast_nonneg _
   have hNle : N ≤ (2 : ℝ) ^ 127 := by dsimp only [N]; exact_mod_cast hN
   have hNsq : N ^ 2 ≤ ((2 : ℝ) ^ 127) ^ 2 := by nlinarith
-  have hterm2 : (3 / 2 : ℝ) * N ^ 2 / (2 : ℝ) ^ 384 ≤ (1 / 2 : ℝ) / (2 : ℝ) ^ 128 := by
-    have hstep : (3 / 2 : ℝ) * N ^ 2 / (2 : ℝ) ^ 384 ≤
-        (3 / 2 : ℝ) * ((2 : ℝ) ^ 127) ^ 2 / (2 : ℝ) ^ 384 :=
+  have hterm2 : (3 / 2 : ℝ) * N ^ 2 / (2 : ℝ) ^ 512 ≤ (1 / 2 : ℝ) / (2 : ℝ) ^ 128 := by
+    have hstep : (3 / 2 : ℝ) * N ^ 2 / (2 : ℝ) ^ 512 ≤
+        (3 / 2 : ℝ) * ((2 : ℝ) ^ 127) ^ 2 / (2 : ℝ) ^ 512 :=
       div_le_div_of_nonneg_right (mul_le_mul_of_nonneg_left hNsq (by norm_num)) (by positivity)
     refine hstep.trans ?_
-    have hEq : (3 / 2 : ℝ) * ((2 : ℝ) ^ 127) ^ 2 / (2 : ℝ) ^ 384 = (3 / 8 : ℝ) / (2 : ℝ) ^ 128 := by
-      have h384 : (2 : ℝ) ^ 384 = (2 : ℝ) ^ 254 * 4 * (2 : ℝ) ^ 128 := by
-        have h1 : (2 : ℝ) ^ 384 = (2 : ℝ) ^ 254 * (2 : ℝ) ^ 2 * (2 : ℝ) ^ 128 := by
-          rw [← pow_add, ← pow_add]
-        rw [h1]; norm_num
-      have h254 : ((2 : ℝ) ^ 127) ^ 2 = (2 : ℝ) ^ 254 := by rw [← pow_mul]
-      rw [h384, h254]
-      have hp254 : ((2 : ℝ) ^ 254) ≠ 0 := by positivity
-      have hp128 : ((2 : ℝ) ^ 128) ≠ 0 := by positivity
-      field_simp [hp254, hp128]
-      ring
-    rw [hEq]
-    exact div_le_div_of_nonneg_right (by norm_num) (by positivity)
+    have h254 : ((2 : ℝ) ^ 127) ^ 2 = (2 : ℝ) ^ 254 := by rw [← pow_mul]
+    rw [h254, div_le_div_iff₀ (by positivity) (by positivity)]
+    have hL : (3 / 2 : ℝ) * (2 : ℝ) ^ 254 * (2 : ℝ) ^ 128 = (3 / 2 : ℝ) * (2 : ℝ) ^ 382 := by
+      rw [mul_assoc, ← pow_add]
+    have hR : (1 / 2 : ℝ) * (2 : ℝ) ^ 512 = (2 : ℝ) ^ 511 := by
+      have h512 : (2 : ℝ) ^ 512 = 2 * (2 : ℝ) ^ 511 := by
+        rw [show (512 : ℕ) = 1 + 511 by decide, pow_add, pow_one]
+      rw [h512, ← mul_assoc, show (1 / 2 : ℝ) * 2 = 1 by norm_num, one_mul]
+    rw [hL, hR]
+    have h32 : (3 / 2 : ℝ) * (2 : ℝ) ^ 382 ≤ (2 : ℝ) ^ 383 := by
+      have h383 : (2 : ℝ) ^ 383 = 2 * (2 : ℝ) ^ 382 := by
+        rw [show (383 : ℕ) = 1 + 382 by decide, pow_add, pow_one]
+      rw [h383]
+      exact mul_le_mul_of_nonneg_right (by norm_num) (by positivity)
+    exact h32.trans (pow_le_pow_right₀ (by norm_num) (by decide))
   exact (add_le_add hε hterm2).trans_eq (by ring)
 
 /-- **Concrete `GoldilocksExt3` Single-Field-Challenge Bound (`≤ 1 / 2^128`):**
 With `εmax = 1 / |GoldilocksExt3| = 1 / p^3` (`p^3 ≥ 2^191`), `M_verif ≤ 2^20`, and `Q ≤ 2^61`,
-the total monolithic ROM bound with 48-byte BLAKE3 XOF (`c = 3 / 2`) is strictly `≤ 1 / 2^128`. -/
+the total monolithic ROM bound with RFC 7693 `BLAKE2b-512` (`|D| = 2^512`, `c = 3 / 2`) is
+strictly `≤ 1 / 2^128`. -/
 theorem monolithic_goldilocksExt3_field_128
     (Q M_verif : ℕ) (hQ : Q ≤ 2 ^ 61) (hM : M_verif ≤ 2 ^ 20) :
     monolithicRomBound Q M_verif (1 / (CertiFri.P3.Goldilocks.order : ℝ) ^ 3)
-      (3 / 2) ((2 : ℝ) ^ 384) ≤ 1 / (2 : ℝ) ^ 128 := by
-  apply monolithic_goldilocksExt3_xof48_concrete_prob_128 Q M_verif hM (by omega)
+      (3 / 2) ((2 : ℝ) ^ 512) ≤ 1 / (2 : ℝ) ^ 128 := by
+  apply monolithic_goldilocksExt3_blake2b512_concrete_prob_128 Q M_verif hM (by omega)
   have hp3 : (2 : ℝ) ^ 191 ≤ (CertiFri.P3.Goldilocks.order : ℝ) ^ 3 :=
     goldilocksExt3_card_ge_two_pow_191_real
   have hNle : ((Q + M_verif : ℕ) : ℝ) ≤ (2 : ℝ) ^ 62 := by
@@ -524,10 +535,11 @@ theorem monolithic_strictly_tighter_than_union_bound
 /-- **Concrete `2^20`-Node Separation (`monolithic_beats_union_bound_2_pow_20`):**
 At `M = 2^20`, `Q = 2^108`, `M_verif = 2^20`, and `εmax = 1 / 2^128`:
 - Naive union bound `M * Q * εmax = 1` (completely vacuous — loses all 20 bits of margin!),
-- Monolithic single-oracle ROM bound with 48B BLAKE3 XOF (`c = 3/2`) is `< 1 / 2^19`! -/
+- Monolithic single-oracle ROM bound with RFC 7693 `BLAKE2b-512` (`|D| = 2^512`, `c = 3/2`)
+  is `< 1 / 2^19`! -/
 theorem monolithic_beats_union_bound_2_pow_20 :
     ((2 ^ 20 : ℕ) : ℝ) * ((2 ^ 108 : ℕ) : ℝ) * (1 / (2 : ℝ) ^ 128) = 1 ∧
-    monolithicRomBound (2 ^ 108) (2 ^ 20) (1 / (2 : ℝ) ^ 128) (3 / 2) ((2 : ℝ) ^ 384) <
+    monolithicRomBound (2 ^ 108) (2 ^ 20) (1 / (2 : ℝ) ^ 128) (3 / 2) ((2 : ℝ) ^ 512) <
       1 / (2 : ℝ) ^ 19 := by
   constructor
   · rw [Nat.cast_pow, Nat.cast_pow, Nat.cast_ofNat, ← pow_add]
@@ -556,11 +568,11 @@ theorem monolithic_beats_union_bound_2_pow_20 :
     have hNle : ((2 ^ 108 + 2 ^ 20 : ℕ) : ℝ) ≤ (2 : ℝ) ^ 109 := by
       have : 2 ^ 108 + 2 ^ 20 ≤ 2 ^ 109 := by decide
       exact_mod_cast this
-    have ht2 : (3 / 2 : ℝ) * ((2 ^ 108 + 2 ^ 20 : ℕ) : ℝ) ^ 2 / (2 : ℝ) ^ 384 ≤
+    have ht2 : (3 / 2 : ℝ) * ((2 ^ 108 + 2 ^ 20 : ℕ) : ℝ) ^ 2 / (2 : ℝ) ^ 512 ≤
         (1 / 4 : ℝ) / (2 : ℝ) ^ 19 := by
       have hsq : ((2 ^ 108 + 2 ^ 20 : ℕ) : ℝ) ^ 2 ≤ ((2 : ℝ) ^ 109) ^ 2 := by nlinarith
-      have hstep : (3 / 2 : ℝ) * ((2 ^ 108 + 2 ^ 20 : ℕ) : ℝ) ^ 2 / (2 : ℝ) ^ 384 ≤
-          (3 / 2 : ℝ) * ((2 : ℝ) ^ 109) ^ 2 / (2 : ℝ) ^ 384 :=
+      have hstep : (3 / 2 : ℝ) * ((2 ^ 108 + 2 ^ 20 : ℕ) : ℝ) ^ 2 / (2 : ℝ) ^ 512 ≤
+          (3 / 2 : ℝ) * ((2 : ℝ) ^ 109) ^ 2 / (2 : ℝ) ^ 512 :=
         div_le_div_of_nonneg_right (mul_le_mul_of_nonneg_left hsq (by norm_num)) (by positivity)
       refine hstep.trans ?_
       rw [div_le_div_iff₀ (by positivity) (by positivity)]
@@ -568,11 +580,11 @@ theorem monolithic_beats_union_bound_2_pow_20 :
       rw [h218]
       have hcmp : (3 / 2 : ℝ) * (2 : ℝ) ^ 218 * (2 : ℝ) ^ 19 = (3 / 2 : ℝ) * (2 : ℝ) ^ 237 := by
         rw [mul_assoc, ← pow_add]
-      have hcmp2 : (1 / 4 : ℝ) * (2 : ℝ) ^ 384 = (2 : ℝ) ^ 382 := by
-        have h384 : (2 : ℝ) ^ 384 = (2 : ℝ) ^ 2 * (2 : ℝ) ^ 382 := by rw [← pow_add]
-        rw [h384, ← mul_assoc, show (1 / 4 : ℝ) * (2 : ℝ) ^ 2 = 1 by norm_num, one_mul]
+      have hcmp2 : (1 / 4 : ℝ) * (2 : ℝ) ^ 512 = (2 : ℝ) ^ 510 := by
+        have h512 : (2 : ℝ) ^ 512 = (2 : ℝ) ^ 2 * (2 : ℝ) ^ 510 := by rw [← pow_add]
+        rw [h512, ← mul_assoc, show (1 / 4 : ℝ) * (2 : ℝ) ^ 2 = 1 by norm_num, one_mul]
       rw [hcmp, hcmp2]
-      have hle : (2 : ℝ) ^ 238 ≤ (2 : ℝ) ^ 382 :=
+      have hle : (2 : ℝ) ^ 238 ≤ (2 : ℝ) ^ 510 :=
         pow_le_pow_right₀ (by norm_num) (by decide)
       have h32 : (3 / 2 : ℝ) * (2 : ℝ) ^ 237 ≤ (2 : ℝ) ^ 238 := by
         have : (2 : ℝ) ^ 238 = 2 * (2 : ℝ) ^ 237 := by
@@ -601,10 +613,13 @@ theorem negControl_fp2_below_128 :
   exact one_div_lt_one_div_of_lt hpos hltR
 
 /-- **Constructive Negative Control 2 (`negControl_digest32_saturates_at_2_128`):**
-With a 32-byte digest (`|D| = 2^256`) at `N = 2^128` oracle queries:
+With a 32-byte digest (`|D| = 2^256`, production 128-bit classical `BLAKE3-256`) at `N = 2^128`
+oracle queries:
 - Incremental sponge collision term `(3/2) * (2^128)^2 / 2^256 = 3 / 2 > 1` (completely vacuous!),
 - Even plain birthday collision term `(1/2) * (2^128)^2 / 2^256 = 1 / 2 > 1 / 2^128`!
-Therefore 48-byte BLAKE3 XOF (`|D| = 2^384`) is strictly necessary for 128-bit ROM security. -/
+Therefore RFC 7693 `BLAKE2b-512` (`|D| = 2^512`, true 512-bit internal state) is required for
+128-bit post-quantum ROM security (whereas `BLAKE3-XOF48`/`XOF64` remain capped at 256-bit
+internal `cv` → `85.3b` BHT). -/
 theorem negControl_digest32_saturates_at_2_128 :
     (3 / 2 : ℝ) * ((2 : ℝ) ^ 128) ^ 2 / (2 : ℝ) ^ 256 = 3 / 2 ∧
     (1 : ℝ) < (3 / 2 : ℝ) * ((2 : ℝ) ^ 128) ^ 2 / (2 : ℝ) ^ 256 ∧

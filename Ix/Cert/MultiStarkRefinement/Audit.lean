@@ -1,7 +1,7 @@
 import Ix.Cert.MultiStarkRefinement.EndToEnd
 import Ix.Cert.MultiStarkRefinement.MutationControl
 
-/-! # Workstream 1A-ii Audit Surface (`Ix.Cert.MultiStarkRefinement.Audit`)
+/-! # Recursive Verifier Refinement Audit Surface (`Ix.Cert.MultiStarkRefinement.Audit`)
 
 Verifies that every headline theorem in `Ix.Cert.MultiStarkRefinement` (pinning and refining
 `MultiStark.recursionProgram` onto `Ix.Cert.MultiStark.verifyBatch` and `EndToEnd`, plus
@@ -47,6 +47,16 @@ info: @Ix.Cert.MultiStarkRefinement.packDigest8_inj : ∀ {a b : Address},
 
 /-- info: 'Ix.Cert.MultiStarkRefinement.recursionProgram_ast_pinned' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Ix.Cert.MultiStarkRefinement.recursionProgram_ast_pinned
+
+/--
+info: Ix.Cert.MultiStarkRefinement.recursionSource_ood_loop_binds_fixed_heights : Ix.Cert.MultiStarkRefinement.OodLoopBindsFixedHeights
+    MultiStark.recursionSource =
+  true
+-/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.MultiStarkRefinement.recursionSource_ood_loop_binds_fixed_heights
+/-- info: 'Ix.Cert.MultiStarkRefinement.recursionSource_ood_loop_binds_fixed_heights' depends on axioms: [propext] -/
+#guard_msgs (whitespace := lax) in #print axioms Ix.Cert.MultiStarkRefinement.recursionSource_ood_loop_binds_fixed_heights
 /-- info: 'Ix.Cert.MultiStarkRefinement.packDigest8_inj' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Ix.Cert.MultiStarkRefinement.packDigest8_inj
 
@@ -411,107 +421,116 @@ info: Ix.Cert.MultiStarkRefinement.recursionProgram_refines_multiStark_verify : 
                                   ↑(List.filter (fun e => decide (e.2.length = w ∧ e.1 = x - 1)) rom.entries).length +
                                 Ix.Cert.MultiStark.memsegBoundary (ivlsOf w) x =
                               0) →
-                          ∀ (vkBytes claimsBytes : ByteArray) {result : Aiur.Value Ix.Cert.MultiStark.Fp}
-                            {wires : List (Aiur.WireValue Ix.Cert.MultiStark.Fp)}
-                            {output : Aiur.WireValue Ix.Cert.MultiStark.Fp},
-                            Aiur.Circuit.Erasure.Signed compiled.circuit.system
-                                { channel := entry.resolved.name, args := wires, result := output } →
-                              ∀ {root : Aiur.Circuit.Message Ix.Cert.MultiStark.Fp},
-                                Aiur.Optimized.Depth.erase cfg root =
-                                    Aiur.Circuit.Erasure.message compiled.circuit.system
-                                      { channel := entry.resolved.name, args := wires, result := output } →
-                                  root.channel ∉ cfg.names →
-                                    ∀ (rows : List (Aiur.Circuit.Row Ix.Cert.MultiStark.Fp)),
-                                      rows.length ≤ 2 ^ 39 →
-                                        ∀
-                                          (inspected :
-                                            List
-                                              (Option
-                                                (Aiur.Circuit.RuleClaims
-                                                  (Aiur.Circuit.Message Ix.Cert.MultiStark.Fp)))),
-                                          (Aiur.Optimized.Depth.system cfg physical.system).checkContext
-                                                (Aiur.Circuit.Erasure.rawROM rom) root =
-                                              Except.ok () →
-                                            List.mapM (plan.inspectRow (Aiur.Circuit.Erasure.rawROM rom)) rows =
-                                                Except.ok inspected →
-                                              (Aiur.Circuit.Balance.required
-                                                      (fun c =>
-                                                        decide
-                                                          ((Aiur.Optimized.Depth.system cfg physical.system).MapClaim
-                                                            c))
-                                                      root (Aiur.Optimized.Grouping.activeRules inspected)).length <
-                                                  CertiFri.P3.Goldilocks.order →
-                                                ∀
-                                                  (provWeight :
-                                                    Aiur.Circuit.RuleClaims
-                                                        (Aiur.Circuit.Message Ix.Cert.MultiStark.Fp) →
-                                                      Ix.Cert.MultiStark.Fp),
-                                                  (∀
-                                                      claim ∈
-                                                        Aiur.Circuit.Balance.required
+                          ∀ (vkBytes claimsBytes : ByteArray)
+                              {result : Aiur.Value Ix.Cert.MultiStark.Fp}
+                              {wires : List (Aiur.WireValue Ix.Cert.MultiStark.Fp)}
+                              {output : Aiur.WireValue Ix.Cert.MultiStark.Fp},
+                                Aiur.Circuit.Erasure.Signed compiled.circuit.system
+                                    { channel := entry.resolved.name, args := wires, result := output } →
+                                  ∀ {root : Aiur.Circuit.Message Ix.Cert.MultiStark.Fp},
+                                    Aiur.Optimized.Depth.erase cfg root =
+                                        Aiur.Circuit.Erasure.message compiled.circuit.system
+                                          { channel := entry.resolved.name, args := wires, result := output } →
+                                      root.channel ∉ cfg.names →
+                                        ∀ (rows : List (Aiur.Circuit.Row Ix.Cert.MultiStark.Fp)),
+                                          rows.length ≤ 2 ^ 39 →
+                                            ∀
+                                              (inspected :
+                                                List
+                                                  (Option
+                                                    (Aiur.Circuit.RuleClaims
+                                                      (Aiur.Circuit.Message Ix.Cert.MultiStark.Fp)))),
+                                              (Aiur.Optimized.Depth.system cfg physical.system).checkContext
+                                                    (Aiur.Circuit.Erasure.rawROM rom) root =
+                                                  Except.ok () →
+                                                List.mapM (plan.inspectRow (Aiur.Circuit.Erasure.rawROM rom)) rows =
+                                                    Except.ok inspected →
+                                                  (Aiur.Circuit.Balance.required
                                                           (fun c =>
                                                             decide
                                                               ((Aiur.Optimized.Depth.system cfg
                                                                     physical.system).MapClaim
                                                                 c))
-                                                          root (Aiur.Optimized.Grouping.activeRules inspected),
-                                                      (List.map provWeight
-                                                            (List.filter (fun r => decide (r.1 = claim))
-                                                              (Aiur.Optimized.Grouping.activeRules inspected))).sum =
-                                                        ↑(List.countP (fun x => decide (x = claim))
-                                                            (Aiur.Circuit.Balance.required
+                                                          root (Aiur.Optimized.Grouping.activeRules inspected)).length <
+                                                      CertiFri.P3.Goldilocks.order →
+                                                    ∀
+                                                      (provWeight :
+                                                        Aiur.Circuit.RuleClaims
+                                                            (Aiur.Circuit.Message Ix.Cert.MultiStark.Fp) →
+                                                          Ix.Cert.MultiStark.Fp),
+                                                      (∀
+                                                          claim ∈
+                                                            Aiur.Circuit.Balance.required
                                                               (fun c =>
                                                                 decide
                                                                   ((Aiur.Optimized.Depth.system cfg
                                                                         physical.system).MapClaim
                                                                     c))
-                                                              root (Aiur.Optimized.Grouping.activeRules inspected)))) →
-                                                    Aiur.DecodesValues compiled.specialized.program.enums wires
-                                                        (Aiur.entryValues
-                                                          [Ix.Cert.MultiStarkRefinement.digest8SourceValue
-                                                              (Ix.Cert.MultiStarkRefinement.packDigest8
-                                                                (Address.blake3Pure vkBytes)),
-                                                            Ix.Cert.MultiStarkRefinement.digest8SourceValue
-                                                              (Ix.Cert.MultiStarkRefinement.packDigest8
-                                                                (Address.blake3Pure claimsBytes))]) →
-                                                      Aiur.WireValue.decode compiled.specialized.program.enums output =
-                                                          some result →
-                                                        Ix.Cert.MultiStarkRefinement.RecursionVerifierAstPinned
-                                                              MultiStark.recursionProgram =
-                                                            true ∧
-                                                          ∃ value heap calls,
-                                                            prepared.ObsFn
-                                                                Ix.Cert.MultiStarkRefinement.verifyMultiStarkEntry
-                                                                [Ix.Cert.MultiStarkRefinement.digest8SourceValue
-                                                                    (Ix.Cert.MultiStarkRefinement.packDigest8
-                                                                      (Address.blake3Pure vkBytes)),
-                                                                  Ix.Cert.MultiStarkRefinement.digest8SourceValue
-                                                                    (Ix.Cert.MultiStarkRefinement.packDigest8
-                                                                      (Address.blake3Pure claimsBytes))]
-                                                                value heap calls ∧
-                                                              Aiur.Represents (compiled.traceROM rom) heap value
-                                                                  result ∧
-                                                                Aiur.Generic.SourceSemantics.CallsInROM
-                                                                    (compiled.traceROM rom) calls ∧
-                                                                  (Ix.Cert.MultiStarkRefinement.MultiStarkCollision
-                                                                      [vkBytes, claimsBytes] calls ∨
-                                                                    ∃ proofBytes sys expectedClaims batch,
-                                                                      Ix.Cert.MultiStark.StarkSystem.fromBytes vkBytes =
-                                                                          Except.ok sys ∧
-                                                                        Ix.Cert.MultiStark.decodeClaims claimsBytes =
-                                                                            Except.ok expectedClaims ∧
-                                                                          Ix.Cert.MultiStark.BatchProof.fromBytes
-                                                                                proofBytes =
-                                                                              Except.ok batch ∧
-                                                                            Ix.Cert.MultiStark.verifyBatch sys batch =
-                                                                                some expectedClaims ∧
-                                                                              Ix.Cert.MultiStark.verifyBatchBytes
-                                                                                    vkBytes claimsBytes proofBytes =
-                                                                                  true ∧
-                                                                                ∀ (w : ℕ),
-                                                                                  Ix.Cert.MultiStark.DisjointIntervals
-                                                                                    (Ix.Cert.MultiStarkRefinement.extractWidthIntervals
-                                                                                      w batch.preamble.messages.toList))
+                                                              root (Aiur.Optimized.Grouping.activeRules inspected),
+                                                          (List.map provWeight
+                                                                (List.filter (fun r => decide (r.1 = claim))
+                                                                  (Aiur.Optimized.Grouping.activeRules
+                                                                    inspected))).sum =
+                                                            ↑(List.countP (fun x => decide (x = claim))
+                                                                (Aiur.Circuit.Balance.required
+                                                                  (fun c =>
+                                                                    decide
+                                                                      ((Aiur.Optimized.Depth.system cfg
+                                                                            physical.system).MapClaim
+                                                                        c))
+                                                                  root
+                                                                  (Aiur.Optimized.Grouping.activeRules inspected)))) →
+                                                        Aiur.DecodesValues compiled.specialized.program.enums wires
+                                                            (Aiur.entryValues
+                                                              [Ix.Cert.MultiStarkRefinement.digest8SourceValue
+                                                                  (Ix.Cert.MultiStarkRefinement.packDigest8
+                                                                    (Address.blake3Pure vkBytes)),
+                                                                Ix.Cert.MultiStarkRefinement.digest8SourceValue
+                                                                  (Ix.Cert.MultiStarkRefinement.packDigest8
+                                                                    (Address.blake3Pure claimsBytes))]) →
+                                                          Aiur.WireValue.decode compiled.specialized.program.enums
+                                                                output =
+                                                              some result →
+                                                            Ix.Cert.MultiStarkRefinement.RecursionVerifierAstPinned
+                                                                  MultiStark.recursionProgram =
+                                                                true ∧
+                                                              ∃ value heap calls,
+                                                                prepared.ObsFn
+                                                                    Ix.Cert.MultiStarkRefinement.verifyMultiStarkEntry
+                                                                    [Ix.Cert.MultiStarkRefinement.digest8SourceValue
+                                                                        (Ix.Cert.MultiStarkRefinement.packDigest8
+                                                                          (Address.blake3Pure vkBytes)),
+                                                                      Ix.Cert.MultiStarkRefinement.digest8SourceValue
+                                                                        (Ix.Cert.MultiStarkRefinement.packDigest8
+                                                                          (Address.blake3Pure claimsBytes))]
+                                                                    value heap calls ∧
+                                                                  Aiur.Represents (compiled.traceROM rom) heap value
+                                                                      result ∧
+                                                                    Aiur.Generic.SourceSemantics.CallsInROM
+                                                                        (compiled.traceROM rom) calls ∧
+                                                                      (Ix.Cert.MultiStarkRefinement.MultiStarkCollision
+                                                                          [vkBytes, claimsBytes] calls ∨
+                                                                        ∃ proofBytes sys expectedClaims batch,
+                                                                          Ix.Cert.MultiStark.StarkSystem.fromBytes
+                                                                                vkBytes =
+                                                                              Except.ok sys ∧
+                                                                            Ix.Cert.MultiStark.decodeClaims
+                                                                                  claimsBytes =
+                                                                                Except.ok expectedClaims ∧
+                                                                              Ix.Cert.MultiStark.BatchProof.fromBytes
+                                                                                    proofBytes =
+                                                                                  Except.ok batch ∧
+                                                                                Ix.Cert.MultiStark.verifyBatch sys
+                                                                                      batch =
+                                                                                    some expectedClaims ∧
+                                                                                  Ix.Cert.MultiStark.verifyBatchBytes
+                                                                                        vkBytes claimsBytes proofBytes =
+                                                                                      true ∧
+                                                                                    ∀ (w : ℕ),
+                                                                                      Ix.Cert.MultiStark.DisjointIntervals
+                                                                                        (Ix.Cert.MultiStarkRefinement.extractWidthIntervals
+                                                                                          w
+                                                                                          batch.preamble.messages.toList))
 -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.MultiStarkRefinement.recursionProgram_refines_multiStark_verify
@@ -633,6 +652,39 @@ info: Ix.Cert.MultiStarkRefinement.mutated_drop_ext_is_zero_fails_pin : Ix.Cert.
 #check @Ix.Cert.MultiStarkRefinement.mutated_drop_ext_is_zero_fails_pin
 
 /--
+info: Ix.Cert.MultiStarkRefinement.mutated_drop_fixed_height_fails_pins : Ix.Cert.MultiStarkRefinement.OodLoopBindsFixedHeights
+      Ix.Cert.MultiStarkRefinement.mutatedRecursionSourceNoFixedHeight =
+    false ∧
+  Ix.Cert.MultiStarkRefinement.RecursionVerifierAstPinned
+      Ix.Cert.MultiStarkRefinement.mutatedRecursionSourceNoFixedHeight =
+    false
+-/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.MultiStarkRefinement.mutated_drop_fixed_height_fails_pins
+/-- info: 'Ix.Cert.MultiStarkRefinement.mutated_drop_fixed_height_fails_pins' depends on axioms: [propext] -/
+#guard_msgs (whitespace := lax) in #print axioms Ix.Cert.MultiStarkRefinement.mutated_drop_fixed_height_fails_pins
+
+/--
+info: Ix.Cert.MultiStarkRefinement.mutated_drop_security_floor_fails_pin : Ix.Cert.MultiStarkRefinement.RecursionVerifierAstPinned
+    Ix.Cert.MultiStarkRefinement.mutatedRecursionSourceNoSecurityFloor =
+  false
+-/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.MultiStarkRefinement.mutated_drop_security_floor_fails_pin
+/-- info: 'Ix.Cert.MultiStarkRefinement.mutated_drop_security_floor_fails_pin' depends on axioms: [propext] -/
+#guard_msgs (whitespace := lax) in #print axioms Ix.Cert.MultiStarkRefinement.mutated_drop_security_floor_fails_pin
+
+/--
+info: Ix.Cert.MultiStarkRefinement.mutated_drop_prep_commit_guard_fails_pin : Ix.Cert.MultiStarkRefinement.RecursionVerifierAstPinned
+    Ix.Cert.MultiStarkRefinement.mutatedRecursionSourceNoPrepCommitGuard =
+  false
+-/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.MultiStarkRefinement.mutated_drop_prep_commit_guard_fails_pin
+/-- info: 'Ix.Cert.MultiStarkRefinement.mutated_drop_prep_commit_guard_fails_pin' depends on axioms: [propext] -/
+#guard_msgs (whitespace := lax) in #print axioms Ix.Cert.MultiStarkRefinement.mutated_drop_prep_commit_guard_fails_pin
+
+/--
 info: Ix.Cert.MultiStarkRefinement.mutated_drop_ext_is_zero_unsound : ¬∀ (total : Ix.Cert.MultiStark.EF),
     Ix.Cert.MultiStarkRefinement.mutatedFinalCheck total = true →
       Ix.Cert.MultiStarkRefinement.certifiedFinalCheck total = true
@@ -657,7 +709,7 @@ info: Ix.Cert.MultiStarkRefinement.mutated_drop_closure_pairs_unsound : Ix.Cert.
 /-- info: 'Ix.Cert.MultiStarkRefinement.mutated_drop_closure_pairs_unsound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Ix.Cert.MultiStarkRefinement.mutated_drop_closure_pairs_unsound
 
--- 6. Strict nonzero-inverse guards, strict closure-pair inequality, and C6 ROM lanes
+-- 6. Strict nonzero-inverse guards, strict closure-pair inequality, and vectorized ROM lanes
 /--
 info: Ix.Cert.MultiStarkRefinement.goldilocksLibrary_nonzero_inverses_pinned : (Ix.Cert.MultiStarkRefinement.goldilocksCoreFunctions.all fun p =>
       Ix.Cert.MultiStarkRefinement.hasModuleFunction Aiur.Library.Field.Goldilocks.declarations p.1 p.2) =

@@ -21,14 +21,16 @@ relation into `Aiur.Optimized.Grouping.Plan.checkMemo` + `Aiur.WidthROM.Valid`:
    the quadratic pairwise bound `|S|^2 * maxArity / (2|K|)`).
 
 2. **Sharded `MEMSEG = 16` Interval Uniqueness (`memseg_balance_implies_unique` +
-   `memseg_implies_widthROM_valid`):**
+   `widthROM_valid_of_count_le_one`):**
    If active ROM rows for width `w` (total count `< p - 1`) emit `+1` at `addr` and
    `-1` at `addr + 1`, and the batch preamble supplies sorted disjoint intervals
    `[(a_j, b_j)]` (`0 ≤ a_0 ≤ b_0 ≤ ... < p`) emitting `-1` at `a_j` and `+1` at `b_j`,
    then field-level LogUp balance implies `m(x) = I(x) ∈ {0, 1}` for every `x : Fp`,
    yielding `Aiur.WidthROM.Valid`.
 
-3. **Field-Balance → Integer-Balance Reweighting (`reweight_of_field_balance`):**
+3. **Field-Balance → Integer-Balance Reweighting (`exists_provider_of_field_balance`,
+   `reweightRows`; the composed statement is `plan_checkMemo_of_field_balance` in
+   `PlanBridge.lean`):**
    When every send has `enable ∈ {0, 1}` and total demands `< p`, field-level LogUp
    balance guarantees that every demanded message has at least one active provider
    row. Reweighting the first active provider row of each message `m` to

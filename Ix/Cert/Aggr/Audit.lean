@@ -1,19 +1,28 @@
 import Ix.Cert.Aggr.EndToEnd
 
-/-! # Certified Aggregation & Dynamic-Linking Audit Surface (`Ix.Cert.Aggr.Audit`)
+/-! # Aggregation & Dynamic-Linking Model Audit Surface (`Ix.Cert.Aggr.Audit`)
 
 Pins both the **exact theorem types** (`#guard_msgs` around every `#check`) and the
 **exact axiom footprint** (`[propext, Classical.choice, Quot.sound]`, zero `sorry`,
 zero `native_decide`, zero `bv_decide`, zero custom axioms) of the `Ix.Cert.Aggr` stack.
 
 ### Scope boundary (honest accounting)
-`AcceptedAggrTree` and the `aggregated_root_*` theorems prove soundness of the
-**stage-isolated** 19-shape aggregation tree (paired with `AggregateProgramAstPinned`
-on `MultiStark.aggregateProgram`, `RecursionVerifierAstPinned` on
-`MultiStark.recursionProgram`, per-child `verifyBatchBytes` soundness, `SecurityEnvelopeOk`
-with per-`logBlowup` provable UD query floors, and explicit `LinkedCircuitEntry`
-preservation for Shape 18 Mode 3a). Full observation-level lowering of each individual
-`Aggregation::*` Aiur body into `AcceptedAggrTree` constructors is tracked separately.
+`AcceptedAggrTree` and the `aggregated_root_*` theorems take both the aggregation tree `t`
+and an abstract semantics `sem : AggrSemantics` as caller-supplied hypotheses; nothing
+derives `t` from `ObsFn ix_aggr` or relates `rootStmt` to `allowedDig`/`outClaimDig`.
+They pair those tree-level invariants with `AggregateProgramAstPinned` on
+`MultiStark.aggregateProgram`, `RecursionVerifierAstPinned` on
+`MultiStark.recursionProgram`, `SecurityEnvelopeOk` (query-phase floors), and explicit
+`LinkedCircuitEntry` preservation for Shape 18 Mode 3a. Per-child `verifyBatchBytes`
+acceptance in `AcceptedAggrTree` comes from the assumed `VerifiedChildProof` witness
+(and `verifyBatchBytes` itself has no soundness theorem; all `hi - lo` shard proofs verified
+by every Shape 10 range leaf are carried in `AcceptedAggrTree.rangeLeaf` and included in
+`t.childProofs` and `t.verificationCount`). Sharded `CheckEnv` roots built from closed
+conditional-shard DAG partitions compose to a set-theoretic `Ix.Kernel.Model W` via
+`ShardedComposedSpec` / `CircuitShardedComposed` (discharged unconditionally in
+`IxVMRefinement.Endpoint.ConditionalShards`).
+Full observation-level lowering of each individual `Aggregation::*` Aiur body into
+`AcceptedAggrTree` constructors is not proved.
 -/
 
 -- 1. Deployed MultiStark.aggregateProgram 19-shape AST & digest pins
@@ -569,3 +578,205 @@ preservation for Shape 18 Mode 3a). Full observation-level lowering of each indi
 #guard_msgs (whitespace := lax) in #print axioms Ix.Cert.Aggr.negative_control_shape18_undischarged_eval
 /-- info: 'Ix.Cert.Aggr.negative_control_mode3a_cannot_erase_linked' depends on axioms: [propext] -/
 #guard_msgs (whitespace := lax) in #print axioms Ix.Cert.Aggr.negative_control_mode3a_cannot_erase_linked
+
+-- 6. Range-Leaf (Shape 10) Shard-Proof Tracking & Conditional-Shard Partition Model Composition
+/-- info: @Ix.Cert.Aggr.AcceptedAggrTree.rangeLeaf : {sem :
+    Aggr.AggrSemantics Address Address Ix.DynamicLink.EvalAssumption Address Ix.Cert.MultiStark.K
+      Ix.DynamicLink.DynamicLinkStatement Ix.DynamicLink.LinkedCircuitEntry} →
+  {batchClaim :
+      ℕ →
+        Aggr.ValidatorMode Address →
+          (Address → Prop) → (Address → Prop) → (Address → Prop) → (Ix.DynamicLink.EvalAssumption → Prop) → Prop} →
+    {batchId lo hi : ℕ} →
+      (shardProofs : List Ix.Cert.Aggr.VerifiedChildProof) →
+        lo ≤ hi →
+          shardProofs.length = hi - lo →
+            Ix.Cert.Aggr.AcceptedAggrTree sem batchClaim
+              (Aggr.AggrNodeStmt.rangeStmt batchId lo hi
+                (Aggr.rangeSum sem.residualMonoid (sem.shardResidual batchId) lo hi)) -/
+#guard_msgs (whitespace := lax) in #check @Ix.Cert.Aggr.AcceptedAggrTree.rangeLeaf
+/-- info: @Ix.Cert.Aggr.rangeLeaf_childProofs : ∀
+  {sem :
+    Aggr.AggrSemantics Address Address Ix.DynamicLink.EvalAssumption Address Ix.Cert.MultiStark.K
+      Ix.DynamicLink.DynamicLinkStatement Ix.DynamicLink.LinkedCircuitEntry}
+  {batchClaim :
+    ℕ →
+      Aggr.ValidatorMode Address →
+        (Address → Prop) → (Address → Prop) → (Address → Prop) → (Ix.DynamicLink.EvalAssumption → Prop) → Prop}
+  {batchId lo hi : ℕ} (shardProofs : List Ix.Cert.Aggr.VerifiedChildProof) (hle : lo ≤ hi)
+  (hlen : shardProofs.length = hi - lo),
+  (Ix.Cert.Aggr.AcceptedAggrTree.rangeLeaf shardProofs hle hlen).childProofs = shardProofs -/
+#guard_msgs (whitespace := lax) in #check @Ix.Cert.Aggr.rangeLeaf_childProofs
+/-- info: @Ix.Cert.Aggr.rangeLeaf_verificationCount : ∀
+  {sem :
+    Aggr.AggrSemantics Address Address Ix.DynamicLink.EvalAssumption Address Ix.Cert.MultiStark.K
+      Ix.DynamicLink.DynamicLinkStatement Ix.DynamicLink.LinkedCircuitEntry}
+  {batchClaim :
+    ℕ →
+      Aggr.ValidatorMode Address →
+        (Address → Prop) → (Address → Prop) → (Address → Prop) → (Ix.DynamicLink.EvalAssumption → Prop) → Prop}
+  {batchId lo hi : ℕ} (shardProofs : List Ix.Cert.Aggr.VerifiedChildProof) (hle : lo ≤ hi)
+  (hlen : shardProofs.length = hi - lo),
+  (Ix.Cert.Aggr.AcceptedAggrTree.rangeLeaf shardProofs hle hlen).verificationCount = hi - lo -/
+#guard_msgs (whitespace := lax) in #check @Ix.Cert.Aggr.rangeLeaf_verificationCount
+/-- info: @Ix.Cert.Aggr.shardedModelConclusion_of_shardedComposedSpec : ∀
+  {shardCalls : List (List (Aiur.Generic.SourceSemantics.Call IxVM.F))}
+  {callsB : List (Aiur.Generic.SourceSemantics.Call IxVM.F)} {ds : List IxVM.Refinement.Digest}
+  {dB : IxVM.Refinement.Digest},
+  Ix.Cert.Aggr.ShardedComposedSpec shardCalls callsB ds dB →
+    ∀ {bytesB : ByteArray} {spec a : Address},
+      Ix.Claim.de bytesB = Except.ok (Ix.Claim.binding spec a) →
+        IxVM.Refinement.packDigest (Address.blake3Pure bytesB) = dB →
+          ∀ {assumed : Bool} {V : IxVM.Refinement.View} {entries : List Ix.Cert.Aggr.ShardClaimEntry},
+            Ix.Cert.Aggr.ClosedShardPartition ds a assumed V entries →
+              Ix.Cert.Aggr.NoBlockAssumedRef shardCalls.flatten (Ix.Cert.Aggr.ShardClaimEntry.allAsms entries) →
+                Ix.Cert.Aggr.ShardedModelConclusion shardCalls.flatten callsB
+                  (Ix.Cert.Aggr.ShardClaimEntry.allBytes entries) bytesB V a
+                  (Ix.Cert.Aggr.ShardClaimEntry.allSeeds entries) -/
+#guard_msgs (whitespace := lax) in #check @Ix.Cert.Aggr.shardedModelConclusion_of_shardedComposedSpec
+/-- info: @Ix.Cert.Aggr.shardedModelConclusion_has_model : ∀ {allCalls callsB : List (Aiur.Generic.SourceSemantics.Call IxVM.F)}
+  {shardBytes : List ByteArray} {bytesB : ByteArray} {V : IxVM.Refinement.View} {a : Address} {seeds : List Address},
+  Ix.Cert.Aggr.ShardedModelConclusion allCalls callsB shardBytes bytesB V a seeds →
+    V.HashedCollision (shardBytes ++ bytesB :: IxVM.Consistency.committedFootprint) (allCalls ++ callsB) ∨
+      IxVM.Consistency.ComposedWith
+        (fun t R envT =>
+          ∃ E₀ env,
+            IxVM.Consistency.LoadedBy allCalls E₀ ∧
+              (∀ ci ∈ envT.consts, ci ∈ env.consts) ∧
+                (∀ s ∈ seeds,
+                    ∀ (s' : Address),
+                      IxVM.Consistency.SeedConstant E₀ s s' →
+                        ∃ ci,
+                          env.find? (IxVM.Consistency.keyOf t s') = some ci ∧
+                            (IxVM.Consistency.PinnedBasis ci ∨
+                              IxVM.Consistency.KeptIn t (IxVM.Consistency.storeOver E₀ R)
+                                (IxVM.Consistency.blobOver E₀ R) s' ci)) ∧
+                  ∀ (W : Type u_1) [inst : Ix.Kernel.SetTheory W],
+                    Nonempty (Ix.Kernel.Model W (IxVM.Consistency.claimedEnv env)))
+        callsB a -/
+#guard_msgs (whitespace := lax) in #check @Ix.Cert.Aggr.shardedModelConclusion_has_model
+/-- info: Ix.Cert.Aggr.shardedModelConclusion_no_false : ∀ (W : Type u_1) [Ix.Kernel.SetTheory W]
+  {allCalls callsB : List (Aiur.Generic.SourceSemantics.Call IxVM.F)} {shardBytes : List ByteArray} {bytesB : ByteArray}
+  {V : IxVM.Refinement.View} {a : Address} {seeds : List Address},
+  Ix.Cert.Aggr.ShardedModelConclusion allCalls callsB shardBytes bytesB V a seeds →
+    V.HashedCollision (shardBytes ++ bytesB :: IxVM.Consistency.committedFootprint) (allCalls ++ callsB) ∨
+      IxVM.Consistency.ComposedWith (fun t R x => IxVM.Consistency.SeedsNotFalse allCalls t R seeds) callsB a -/
+#guard_msgs (whitespace := lax) in #check @Ix.Cert.Aggr.shardedModelConclusion_no_false
+/-- info: @Ix.Cert.Aggr.shardedModelConclusion_seeds_inhabited : ∀
+  {allCalls callsB : List (Aiur.Generic.SourceSemantics.Call IxVM.F)} {shardBytes : List ByteArray} {bytesB : ByteArray}
+  {V : IxVM.Refinement.View} {a : Address} {seeds : List Address},
+  Ix.Cert.Aggr.ShardedModelConclusion allCalls callsB shardBytes bytesB V a seeds →
+    V.HashedCollision (shardBytes ++ bytesB :: IxVM.Consistency.committedFootprint) (allCalls ++ callsB) ∨
+      IxVM.Consistency.ComposedWith (fun t R x => IxVM.Consistency.SeedsInhabited allCalls t R seeds) callsB a -/
+#guard_msgs (whitespace := lax) in #check @Ix.Cert.Aggr.shardedModelConclusion_seeds_inhabited
+/-- info: @Ix.Cert.Aggr.shardedModelConclusion_selfHashed : ∀ {allCalls callsB : List (Aiur.Generic.SourceSemantics.Call IxVM.F)}
+  {shardBytes : List ByteArray} {bytesB : ByteArray} {V : IxVM.Refinement.View} {a : Address} {seeds : List Address},
+  IxVM.Consistency.SelfHashed V →
+    Ix.Cert.Aggr.ShardedModelConclusion allCalls callsB shardBytes bytesB V a seeds →
+      IxVM.Consistency.GenuineCollision V (shardBytes ++ bytesB :: IxVM.Consistency.committedFootprint)
+          (allCalls ++ callsB) ∨
+        IxVM.Consistency.ComposedWith (fun t R envT => IxVM.Consistency.ConsistentReadOver allCalls t R envT seeds)
+          callsB a -/
+#guard_msgs (whitespace := lax) in #check @Ix.Cert.Aggr.shardedModelConclusion_selfHashed
+/-- info: Ix.Cert.Aggr.aggregated_root_sharded_checkEnv_no_axioms_model : ∀ (W : Type u_1) [Ix.Kernel.SetTheory W]
+  {sem :
+    Aggr.AggrSemantics Address Address Ix.DynamicLink.EvalAssumption Address Ix.Cert.MultiStark.K
+      Ix.DynamicLink.DynamicLinkStatement Ix.DynamicLink.LinkedCircuitEntry}
+  {batchClaim :
+    ℕ →
+      Aggr.ValidatorMode Address →
+        (Address → Prop) → (Address → Prop) → (Address → Prop) → (Ix.DynamicLink.EvalAssumption → Prop) → Prop}
+  {b : Address} {S : Address → Prop} {shardCalls : List (List (Aiur.Generic.SourceSemantics.Call IxVM.F))}
+  {callsB : List (Aiur.Generic.SourceSemantics.Call IxVM.F)} {ds : List IxVM.Refinement.Digest}
+  {dB : IxVM.Refinement.Digest},
+  Ix.Cert.Aggr.ShardedComposedSpec shardCalls callsB ds dB →
+    ∀ {bytesB : ByteArray} {spec : Address},
+      Ix.Claim.de bytesB = Except.ok (Ix.Claim.binding spec b) →
+        IxVM.Refinement.packDigest (Address.blake3Pure bytesB) = dB →
+          ∀ {assumed : Bool} {V : IxVM.Refinement.View} {entries : List Ix.Cert.Aggr.ShardClaimEntry},
+            Ix.Cert.Aggr.ClosedShardPartition ds b assumed V entries →
+              Ix.Cert.Aggr.NoBlockAssumedRef shardCalls.flatten (Ix.Cert.Aggr.ShardClaimEntry.allAsms entries) →
+                (∀ (x : Address), S x ↔ x ∈ Ix.Cert.Aggr.ShardClaimEntry.allSeeds entries) →
+                  ∀
+                    (t :
+                      Ix.Cert.Aggr.AcceptedAggrTree sem batchClaim
+                        (Aggr.AggrNodeStmt.checkEnv (Aggr.ValidatorMode.validated b) S (fun x => False) (fun x => False)
+                          (fun x => False) fun x => False)),
+                    (∀ (x : Address), S x → sem.Checked b (fun x => False) (fun x => False) (fun x => False) x) ∧
+                      (∀ (x y : Address), S x → sem.Dep x y → S y) ∧
+                        (∀ (x : Address), S x ↔ x ∈ Ix.Cert.Aggr.ShardClaimEntry.allSeeds entries) ∧
+                          t.dynamicLinkDischarges = 0 ∧
+                            (t.HasTreeCollision ∨
+                                ∀ vp ∈ t.childProofs,
+                                  ∃ proofBytes,
+                                    Ix.Cert.MultiStark.verifyBatchBytes vp.vkBytes vp.claimsBytes proofBytes = true) ∧
+                              (V.HashedCollision
+                                  (Ix.Cert.Aggr.ShardClaimEntry.allBytes entries ++
+                                    bytesB :: IxVM.Consistency.committedFootprint)
+                                  (shardCalls.flatten ++ callsB) ∨
+                                IxVM.Consistency.ComposedWith
+                                  (fun tRole R envT =>
+                                    IxVM.Consistency.ConsistentReadOver shardCalls.flatten tRole R envT
+                                        (Ix.Cert.Aggr.ShardClaimEntry.allSeeds entries) ∧
+                                      IxVM.Consistency.SeedsNotFalse shardCalls.flatten tRole R
+                                        (Ix.Cert.Aggr.ShardClaimEntry.allSeeds entries))
+                                  callsB b) -/
+#guard_msgs (whitespace := lax) in #check @Ix.Cert.Aggr.aggregated_root_sharded_checkEnv_no_axioms_model
+/-- info: @Ix.Cert.Aggr.aggregated_root_sharded_checkEnv_seeds_inhabited : ∀
+  {sem :
+    Aggr.AggrSemantics Address Address Ix.DynamicLink.EvalAssumption Address Ix.Cert.MultiStark.K
+      Ix.DynamicLink.DynamicLinkStatement Ix.DynamicLink.LinkedCircuitEntry}
+  {batchClaim :
+    ℕ →
+      Aggr.ValidatorMode Address →
+        (Address → Prop) → (Address → Prop) → (Address → Prop) → (Ix.DynamicLink.EvalAssumption → Prop) → Prop}
+  {b : Address} {S : Address → Prop} {shardCalls : List (List (Aiur.Generic.SourceSemantics.Call IxVM.F))}
+  {callsB : List (Aiur.Generic.SourceSemantics.Call IxVM.F)} {ds : List IxVM.Refinement.Digest}
+  {dB : IxVM.Refinement.Digest},
+  Ix.Cert.Aggr.ShardedComposedSpec shardCalls callsB ds dB →
+    ∀ {bytesB : ByteArray} {spec : Address},
+      Ix.Claim.de bytesB = Except.ok (Ix.Claim.binding spec b) →
+        IxVM.Refinement.packDigest (Address.blake3Pure bytesB) = dB →
+          ∀ {assumed : Bool} {V : IxVM.Refinement.View} {entries : List Ix.Cert.Aggr.ShardClaimEntry},
+            Ix.Cert.Aggr.ClosedShardPartition ds b assumed V entries →
+              Ix.Cert.Aggr.NoBlockAssumedRef shardCalls.flatten (Ix.Cert.Aggr.ShardClaimEntry.allAsms entries) →
+                (∀ (x : Address), S x ↔ x ∈ Ix.Cert.Aggr.ShardClaimEntry.allSeeds entries) →
+                  ∀
+                    (t :
+                      Ix.Cert.Aggr.AcceptedAggrTree sem batchClaim
+                        (Aggr.AggrNodeStmt.checkEnv (Aggr.ValidatorMode.validated b) S (fun x => False) (fun x => False)
+                          (fun x => False) fun x => False)),
+                    (∀ (x : Address), S x → sem.Checked b (fun x => False) (fun x => False) (fun x => False) x) ∧
+                      (∀ (x y : Address), S x → sem.Dep x y → S y) ∧
+                        (∀ (x : Address), S x ↔ x ∈ Ix.Cert.Aggr.ShardClaimEntry.allSeeds entries) ∧
+                          t.dynamicLinkDischarges = 0 ∧
+                            (t.HasTreeCollision ∨
+                                ∀ vp ∈ t.childProofs,
+                                  ∃ proofBytes,
+                                    Ix.Cert.MultiStark.verifyBatchBytes vp.vkBytes vp.claimsBytes proofBytes = true) ∧
+                              (V.HashedCollision
+                                  (Ix.Cert.Aggr.ShardClaimEntry.allBytes entries ++
+                                    bytesB :: IxVM.Consistency.committedFootprint)
+                                  (shardCalls.flatten ++ callsB) ∨
+                                IxVM.Consistency.ComposedWith
+                                  (fun tRole R x =>
+                                    IxVM.Consistency.SeedsInhabited shardCalls.flatten tRole R
+                                      (Ix.Cert.Aggr.ShardClaimEntry.allSeeds entries))
+                                  callsB b) -/
+#guard_msgs (whitespace := lax) in #check @Ix.Cert.Aggr.aggregated_root_sharded_checkEnv_seeds_inhabited
+/-- info: 'Ix.Cert.Aggr.rangeLeaf_childProofs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Ix.Cert.Aggr.rangeLeaf_childProofs
+/-- info: 'Ix.Cert.Aggr.rangeLeaf_verificationCount' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Ix.Cert.Aggr.rangeLeaf_verificationCount
+/-- info: 'Ix.Cert.Aggr.shardedModelConclusion_has_model' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Ix.Cert.Aggr.shardedModelConclusion_has_model
+/-- info: 'Ix.Cert.Aggr.shardedModelConclusion_no_false' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Ix.Cert.Aggr.shardedModelConclusion_no_false
+/-- info: 'Ix.Cert.Aggr.shardedModelConclusion_seeds_inhabited' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Ix.Cert.Aggr.shardedModelConclusion_seeds_inhabited
+/-- info: 'Ix.Cert.Aggr.shardedModelConclusion_selfHashed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Ix.Cert.Aggr.shardedModelConclusion_selfHashed
+/-- info: 'Ix.Cert.Aggr.aggregated_root_sharded_checkEnv_no_axioms_model' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Ix.Cert.Aggr.aggregated_root_sharded_checkEnv_no_axioms_model
+/-- info: 'Ix.Cert.Aggr.aggregated_root_sharded_checkEnv_seeds_inhabited' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Ix.Cert.Aggr.aggregated_root_sharded_checkEnv_seeds_inhabited

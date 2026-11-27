@@ -5,13 +5,16 @@ import Ix.Cert.MultiStark.Security128Audit
 /-! # 128-Bit Certified Aggregation Security Audit (`Ix.Cert.Aggr.Security128Audit`)
 
 Mechanically pins (via `#guard_msgs` on `#check` and `#print axioms`) the 128-bit
-Shape 17 security envelope predicate (`SecurityEnvelope128Ok`), its monotonic
-upgrade over the `v5` envelope (`SecurityEnvelopeOk`), its exact equivalence with
-`Ix.Cert.MultiStark.Security128.Security128Profile` / `Aiur.meetsSecurityFloor128*`,
-the shared-log monolithic ROM aggregation bound (`Q + M`, no `M * Q` blowup), the
+post-quantum Shape 17 security envelope predicate (`SecurityEnvelope128Ok`), its
+monotonic upgrade over the `v5` envelope (`SecurityEnvelopeOk`), its exact
+equivalence with `Ix.Cert.MultiStark.Security128.Security128Profile` /
+`Aiur.meetsSecurityFloor128*`, the shared-log monolithic ROM aggregation bound
+(`Q + M`, no `M * Q` blowup, over 64-byte RFC 7693 `BLAKE2b-512` `2 ^ 512`), the
 `M ≤ 16384` naive union-bound headroom theorem at `(2, 128, 0, 20)`, and
-constructive negative controls rejecting `Fp^2`, `v5` protocol, 32B digests,
-weak external VKs, `(2, 100, 0, 20)`, and `(4, 55, 0, 0)`.
+constructive negative controls rejecting `Fp^2`, `v5` protocol, 32B `BLAKE3-256`
+digests (production 128-bit classical profile), retired 48B `BLAKE3-XOF48`
+digests (256-bit internal `cv` cap at `85.3b` BHT), weak external VKs,
+`(2, 100, 0, 20)`, and `(4, 55, 0, 0)`.
 
 Every theorem pinned here depends strictly on standard Lean axioms
 (`propext`, `Classical.choice`, `Quot.sound`) — zero `sorry`, zero custom
@@ -29,10 +32,12 @@ open Ix.Cert.Aggr
 /-- Target 128-bit Shape 17 security envelope in millibits (`128.000` bits). -/
 def minSecurity128Millibits : Nat := Aiur.minProvableSecurityBits128 * 1000
 
-/-- 128-bit `v6` Shape 17 security envelope predicate:
+/-- 128-bit post-quantum `v6` Shape 17 security envelope predicate:
 * Extension degree `≥ 3` (`Fp^3`, `p^3 > 2^191`);
-* Protocol version `≥ 6` (`multi-stark` `v6` BLAKE3 `derive_key`);
-* Digest width `≥ 48` bytes (384-bit BLAKE3 XOF);
+* Protocol version `≥ 6` (`multi-stark` `v6` domain-separated commitments/transcripts);
+* Digest width `≥ 64` bytes (RFC 7693 `BLAKE2b-512`, 512-bit internal state; production
+  128-bit classical deployments continue to use 32-byte `BLAKE3-256`, while 48-byte
+  `BLAKE3-XOF48` is rejected for concrete 128-bit PQ due to BLAKE3's 256-bit internal `cv`);
 * Strictly implies the existing `v5` Shape 17 envelope (`SecurityEnvelopeOk p`);
 * Meets the 128-bit UD floor (`udQueryMillibits ≥ 128000`) when `requireUd = true`,
   or the 128-bit finite-`m` (`m = 16`) Johnson floor (`johnsonMillibits ≥ 128000`)
@@ -41,7 +46,7 @@ def SecurityEnvelope128Ok (extensionDegree protocolVersion digestBytes : Nat)
     (p : StarkParams) (requireUd : Bool) : Prop :=
   Aiur.extensionDegreeV6 ≤ extensionDegree ∧
   Aiur.protocolVersionV6 ≤ protocolVersion ∧
-  Aiur.digestBytesXof48 ≤ digestBytes ∧
+  digestBytesBlake2b512 ≤ digestBytes ∧
   SecurityEnvelopeOk p ∧
   (if requireUd then
     minSecurity128Millibits ≤ udQueryMillibits p.logBlowup p.numQueries p.queryPowBits
@@ -162,12 +167,12 @@ theorem securityEnvelope128Ok_iff_profile (ext ver dig : Nat) (p : StarkParams) 
         simp only [decide_eq_true_eq] at hud
         exact hud
 
-/-- Positive Shape 17 envelope certificates for `v6` `Fp^3` + 48B XOF at
+/-- Positive Shape 17 envelope certificates for `v6` `Fp^3` + 64B RFC 7693 `BLAKE2b-512` at
 UD `(2, 160, 0, 20)` and Johnson `(2, 118, 0, 20)` / `(2, 128, 0, 20)`. -/
 theorem v6_shape17_envelopes_ok :
-    SecurityEnvelope128Ok 3 6 48 v6Ud160Params true ∧
-    SecurityEnvelope128Ok 3 6 48 v6Johnson118Params false ∧
-    SecurityEnvelope128Ok 3 6 48 v6Johnson128Params false := by
+    SecurityEnvelope128Ok 3 6 64 v6Ud160Params true ∧
+    SecurityEnvelope128Ok 3 6 64 v6Johnson118Params false ∧
+    SecurityEnvelope128Ok 3 6 64 v6Johnson128Params false := by
   obtain ⟨h1, h2, h3⟩ := v6_positive_128_profiles
   exact ⟨(securityEnvelope128Ok_iff_profile ..).mpr h1,
          (securityEnvelope128Ok_iff_profile ..).mpr h2,
@@ -178,19 +183,21 @@ theorem v6_shape17_envelopes_ok :
 /-- **Monolithic Shared-Log Aggregation ROM Bound (`aggr_shared_log_rom_bound_128`):**
 Under straight-line extraction from a single shared random-oracle log across `M`
 verification nodes and `Q` adversary queries (`Q + M ≤ 2^128`), when per-round
-soundness satisfies `εmax ≤ (3 / 4) / 2^128`, the global 48-byte BLAKE3 XOF
+soundness satisfies `εmax ≤ (3 / 4) / 2^128`, the global 64-byte RFC 7693 `BLAKE2b-512`
 forgery probability satisfies literally `≤ (Q + M) / 2^128` (eliminating any
 multiplicative `M * Q` blowup). -/
 theorem aggr_shared_log_rom_bound_128 {Q M : ℕ} (hQM : Q + M ≤ 2 ^ 128)
     {εmax : ℝ} (hε : εmax ≤ (3 / 4 : ℝ) / (2 : ℝ) ^ 128) :
-    ((Q + M : ℕ) : ℝ) * εmax + (3 : ℝ) * ((Q + M : ℕ) : ℝ) ^ 2 / (2 * (2 : ℝ) ^ 384) ≤
+    ((Q + M : ℕ) : ℝ) * εmax + (3 : ℝ) * ((Q + M : ℕ) : ℝ) ^ 2 / (2 * (2 : ℝ) ^ 512) ≤
       ((Q + M : ℕ) : ℝ) / (2 : ℝ) ^ 128 :=
-  fp3_xof48_total_budget_le_128 hQM hε
+  fp3_blake2b512_total_budget_le_128 hQM hε
 
-/-- **Belt-and-Suspenders Tree Union-Bound Headroom (`aggr_johnson_128_union_headroom`):**
-Even under the naive `M`-node union bound (`tree_rom_error_bound`), the recommended
-`v6` Johnson parameters `(2, 128, 0, 20)` (`142.3b` at `m = 16`) clear literally
-`≤ 1 / 2^128` across any aggregation tree of up to `M ≤ 16384 = 2^14` nodes. -/
+/-- **Tree Union-Bound Arithmetic (`aggr_johnson_128_union_headroom`):**
+A list of at most `16384 = 2^14` reals, each at most the `m = 16` Johnson query term of
+`(2, 128, 0, 20)` (`142.3b`), sums to at most `1 / 2^128`. This is arithmetic on the query
+term alone, not a forgery bound for an aggregation tree: a per-node forgery probability
+against a `Q`-query adversary is at least `Q` times that term, plus the other round errors
+and the hash term, and no theorem bounds it for the shipped verifier. -/
 theorem aggr_johnson_128_union_headroom (probs : List ℝ)
     (hM : probs.length ≤ 16384)
     (hbound : ∀ p ∈ probs, p ≤ ((33 / 64 : ℝ) ^ 128) / (2 : ℝ) ^ 20) :
@@ -239,43 +246,50 @@ theorem aggr_johnson_128_union_headroom (probs : List ℝ)
         apply mul_le_mul_of_nonneg_left _ (le_of_lt (pow_pos (by norm_num : (0 : ℝ) < 2) 14))
         exact mul_le_mul_of_nonneg_left hreal (le_of_lt hpos128)
 
-/-! ## 3. Constructive Negative Controls (Shape 17 128-Bit Envelope) -/
+/-! ## 3. Constructive Negative Controls (Shape 17 128-Bit PQ Envelope) -/
 
-/-- Negative control 1: `Fp^2` external VKs are rejected on the 128-bit Shape 17 envelope. -/
+/-- Negative control 1: `Fp^2` external VKs are rejected on the 128-bit PQ Shape 17 envelope. -/
 theorem negControl_aggr128_rejects_fp2 (reqUd : Bool) :
-    ¬ SecurityEnvelope128Ok 2 6 48 v6Ud160Params reqUd := by
+    ¬ SecurityEnvelope128Ok 2 6 64 v6Ud160Params reqUd := by
   intro h; exact absurd h.1 (by decide)
 
-/-- Negative control 2: `v5` protocol external VKs are rejected on the 128-bit Shape 17 envelope. -/
+/-- Negative control 2: `v5` protocol external VKs are rejected on the 128-bit PQ Shape 17 envelope. -/
 theorem negControl_aggr128_rejects_v5_protocol (reqUd : Bool) :
-    ¬ SecurityEnvelope128Ok 3 5 48 v6Ud160Params reqUd := by
+    ¬ SecurityEnvelope128Ok 3 5 64 v6Ud160Params reqUd := by
   intro h; exact absurd h.2.1 (by decide)
 
-/-- Negative control 3: 32-byte digest external VKs are rejected on the 128-bit XOF Shape 17 envelope. -/
+/-- Negative control 3: 32-byte `BLAKE3-256` digest external VKs (production 128-bit classical
+profile) are rejected on the 128-bit PQ `BLAKE2b-512` Shape 17 envelope. -/
 theorem negControl_aggr128_rejects_32b_digest (reqUd : Bool) :
     ¬ SecurityEnvelope128Ok 3 6 32 v6Ud160Params reqUd := by
   intro h; exact absurd h.2.2.1 (by decide)
 
+/-- Negative control 3b: Retired 48-byte `BLAKE3-XOF48` digest external VKs are rejected on the
+128-bit PQ `BLAKE2b-512` Shape 17 envelope (BLAKE3's 256-bit internal `cv` caps BHT at `85.3b`). -/
+theorem negControl_aggr128_rejects_48b_xof (reqUd : Bool) :
+    ¬ SecurityEnvelope128Ok 3 6 48 v6Ud160Params reqUd := by
+  intro h; exact absurd h.2.2.1 (by decide)
+
 /-- Negative control 4: Weak Shape 17 external VK (`weakExternalStarkParams`, 60 conj. bits)
-is rejected on the 128-bit Shape 17 envelope. -/
+is rejected on the 128-bit PQ Shape 17 envelope. -/
 theorem negControl_aggr128_rejects_weak_envelope (reqUd : Bool) :
-    ¬ SecurityEnvelope128Ok 3 6 48 weakExternalStarkParams reqUd := by
+    ¬ SecurityEnvelope128Ok 3 6 64 weakExternalStarkParams reqUd := by
   intro h; exact negative_control_weak_security_envelope h.2.2.2.1
 
-/-- Negative control 5: Legacy `v5` default `(2, 100, 0, 20)` is rejected on the 128-bit
+/-- Negative control 5: Legacy `v5` default `(2, 100, 0, 20)` is rejected on the 128-bit PQ
 Shape 17 envelope in BOTH UD and Johnson modes. -/
 theorem negControl_aggr128_rejects_v5_default_100_20 (reqUd : Bool) :
-    ¬ SecurityEnvelope128Ok 3 6 48 v5Default100Params reqUd := by
+    ¬ SecurityEnvelope128Ok 3 6 64 v5Default100Params reqUd := by
   intro h
   have hprof := (securityEnvelope128Ok_iff_profile ..).mp h
   cases reqUd
   · exact negControl_v5_default_100_20_rejected_128.2.2 hprof
   · exact negControl_v5_default_100_20_rejected_128.2.1 hprof
 
-/-- Negative control 6: Deceptive high-blowup `(4, 55, 0, 0)` is rejected on the 128-bit
+/-- Negative control 6: Deceptive high-blowup `(4, 55, 0, 0)` is rejected on the 128-bit PQ
 Shape 17 envelope in BOTH UD and Johnson modes. -/
 theorem negControl_aggr128_rejects_deceptive_4_55_0 (reqUd : Bool) :
-    ¬ SecurityEnvelope128Ok 3 6 48 deceptiveHighBlowupParams reqUd := by
+    ¬ SecurityEnvelope128Ok 3 6 64 deceptiveHighBlowupParams reqUd := by
   intro h; exact negative_control_deceptive_high_blowup_envelope h.2.2.2.1
 
 end Ix.Cert.Aggr.Security128
@@ -290,11 +304,11 @@ end Ix.Cert.Aggr.Security128
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Aggr.Security128.securityEnvelope128Ok_iff_profile
 
-/-- info: Ix.Cert.Aggr.Security128.v6_shape17_envelopes_ok : Ix.Cert.Aggr.Security128.SecurityEnvelope128Ok 3 6 48 Ix.Cert.MultiStark.Security128.v6Ud160Params true ∧ Ix.Cert.Aggr.Security128.SecurityEnvelope128Ok 3 6 48 Ix.Cert.MultiStark.Security128.v6Johnson118Params false ∧ Ix.Cert.Aggr.Security128.SecurityEnvelope128Ok 3 6 48 Ix.Cert.MultiStark.Security128.v6Johnson128Params false -/
+/-- info: Ix.Cert.Aggr.Security128.v6_shape17_envelopes_ok : Ix.Cert.Aggr.Security128.SecurityEnvelope128Ok 3 6 64 Ix.Cert.MultiStark.Security128.v6Ud160Params true ∧ Ix.Cert.Aggr.Security128.SecurityEnvelope128Ok 3 6 64 Ix.Cert.MultiStark.Security128.v6Johnson118Params false ∧ Ix.Cert.Aggr.Security128.SecurityEnvelope128Ok 3 6 64 Ix.Cert.MultiStark.Security128.v6Johnson128Params false -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Aggr.Security128.v6_shape17_envelopes_ok
 
-/-- info: @Ix.Cert.Aggr.Security128.aggr_shared_log_rom_bound_128 : ∀ {Q M : ℕ}, Q + M ≤ 2 ^ 128 → ∀ {εmax : ℝ}, εmax ≤ 3 / 4 / 2 ^ 128 → ↑(Q + M) * εmax + 3 * ↑(Q + M) ^ 2 / (2 * 2 ^ 384) ≤ ↑(Q + M) / 2 ^ 128 -/
+/-- info: @Ix.Cert.Aggr.Security128.aggr_shared_log_rom_bound_128 : ∀ {Q M : ℕ}, Q + M ≤ 2 ^ 128 → ∀ {εmax : ℝ}, εmax ≤ 3 / 4 / 2 ^ 128 → ↑(Q + M) * εmax + 3 * ↑(Q + M) ^ 2 / (2 * 2 ^ 512) ≤ ↑(Q + M) / 2 ^ 128 -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Aggr.Security128.aggr_shared_log_rom_bound_128
 
@@ -302,11 +316,11 @@ end Ix.Cert.Aggr.Security128
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Aggr.Security128.aggr_johnson_128_union_headroom
 
-/-- info: Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_fp2 : ∀ (reqUd : Bool), ¬Ix.Cert.Aggr.Security128.SecurityEnvelope128Ok 2 6 48 Ix.Cert.MultiStark.Security128.v6Ud160Params reqUd -/
+/-- info: Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_fp2 : ∀ (reqUd : Bool), ¬Ix.Cert.Aggr.Security128.SecurityEnvelope128Ok 2 6 64 Ix.Cert.MultiStark.Security128.v6Ud160Params reqUd -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_fp2
 
-/-- info: Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_v5_protocol : ∀ (reqUd : Bool), ¬Ix.Cert.Aggr.Security128.SecurityEnvelope128Ok 3 5 48 Ix.Cert.MultiStark.Security128.v6Ud160Params reqUd -/
+/-- info: Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_v5_protocol : ∀ (reqUd : Bool), ¬Ix.Cert.Aggr.Security128.SecurityEnvelope128Ok 3 5 64 Ix.Cert.MultiStark.Security128.v6Ud160Params reqUd -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_v5_protocol
 
@@ -314,15 +328,19 @@ end Ix.Cert.Aggr.Security128
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_32b_digest
 
-/-- info: Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_weak_envelope : ∀ (reqUd : Bool), ¬Ix.Cert.Aggr.Security128.SecurityEnvelope128Ok 3 6 48 Ix.Cert.Aggr.weakExternalStarkParams reqUd -/
+/-- info: Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_48b_xof : ∀ (reqUd : Bool), ¬Ix.Cert.Aggr.Security128.SecurityEnvelope128Ok 3 6 48 Ix.Cert.MultiStark.Security128.v6Ud160Params reqUd -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_48b_xof
+
+/-- info: Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_weak_envelope : ∀ (reqUd : Bool), ¬Ix.Cert.Aggr.Security128.SecurityEnvelope128Ok 3 6 64 Ix.Cert.Aggr.weakExternalStarkParams reqUd -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_weak_envelope
 
-/-- info: Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_v5_default_100_20 : ∀ (reqUd : Bool), ¬Ix.Cert.Aggr.Security128.SecurityEnvelope128Ok 3 6 48 Ix.Cert.MultiStark.Security128.v5Default100Params reqUd -/
+/-- info: Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_v5_default_100_20 : ∀ (reqUd : Bool), ¬Ix.Cert.Aggr.Security128.SecurityEnvelope128Ok 3 6 64 Ix.Cert.MultiStark.Security128.v5Default100Params reqUd -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_v5_default_100_20
 
-/-- info: Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_deceptive_4_55_0 : ∀ (reqUd : Bool), ¬Ix.Cert.Aggr.Security128.SecurityEnvelope128Ok 3 6 48 Ix.Cert.Aggr.deceptiveHighBlowupParams reqUd -/
+/-- info: Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_deceptive_4_55_0 : ∀ (reqUd : Bool), ¬Ix.Cert.Aggr.Security128.SecurityEnvelope128Ok 3 6 64 Ix.Cert.Aggr.deceptiveHighBlowupParams reqUd -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_deceptive_4_55_0
 
@@ -358,6 +376,10 @@ end Ix.Cert.Aggr.Security128
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_32b_digest
 
+/-- info: 'Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_48b_xof' does not depend on any axioms -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_48b_xof
+
 /-- info: 'Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_weak_envelope' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Aggr.Security128.negControl_aggr128_rejects_weak_envelope
@@ -372,15 +394,15 @@ end Ix.Cert.Aggr.Security128
 
 /-! ## 5. Direct Monolithic Single-Oracle Multi-Node ROM Extraction Wiring (`Ix.Cert.Aggr.MonolithicRom`) -/
 
-/-- info: Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_xof48_rate_128 : ∀ (Q M_verif : ℕ), M_verif ≤ 2 ^ 20 → Q + M_verif ≤ 2 ^ 128 → ∀ {εmax : ℝ}, εmax ≤ 1 / 2 / 2 ^ 128 → Ix.Cert.Aggr.MonolithicRom.monolithicRomBound Q M_verif εmax (3 / 2) (2 ^ 384) ≤ ↑(Q + M_verif) / 2 ^ 128 -/
+/-- info: Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_blake2b512_rate_128 : ∀ (Q M_verif : ℕ), M_verif ≤ 2 ^ 20 → Q + M_verif ≤ 2 ^ 128 → ∀ {εmax : ℝ}, εmax ≤ 1 / 2 / 2 ^ 128 → Ix.Cert.Aggr.MonolithicRom.monolithicRomBound Q M_verif εmax (3 / 2) (2 ^ 512) ≤ ↑(Q + M_verif) / 2 ^ 128 -/
 #guard_msgs (whitespace := lax) in
-#check @Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_xof48_rate_128
+#check @Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_blake2b512_rate_128
 
-/-- info: Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_xof48_concrete_prob_128 : ∀ (Q M_verif : ℕ), M_verif ≤ 2 ^ 20 → Q + M_verif ≤ 2 ^ 127 → ∀ {εmax : ℝ}, ↑(Q + M_verif) * εmax ≤ 1 / 2 / 2 ^ 128 → Ix.Cert.Aggr.MonolithicRom.monolithicRomBound Q M_verif εmax (3 / 2) (2 ^ 384) ≤ 1 / 2 ^ 128 -/
+/-- info: Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_blake2b512_concrete_prob_128 : ∀ (Q M_verif : ℕ), M_verif ≤ 2 ^ 20 → Q + M_verif ≤ 2 ^ 127 → ∀ {εmax : ℝ}, ↑(Q + M_verif) * εmax ≤ 1 / 2 / 2 ^ 128 → Ix.Cert.Aggr.MonolithicRom.monolithicRomBound Q M_verif εmax (3 / 2) (2 ^ 512) ≤ 1 / 2 ^ 128 -/
 #guard_msgs (whitespace := lax) in
-#check @Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_xof48_concrete_prob_128
+#check @Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_blake2b512_concrete_prob_128
 
-/-- info: Ix.Cert.Aggr.MonolithicRom.monolithic_beats_union_bound_2_pow_20 : ↑(2 ^ 20) * ↑(2 ^ 108) * (1 / 2 ^ 128) = 1 ∧ Ix.Cert.Aggr.MonolithicRom.monolithicRomBound (2 ^ 108) (2 ^ 20) (1 / 2 ^ 128) (3 / 2) (2 ^ 384) < 1 / 2 ^ 19 -/
+/-- info: Ix.Cert.Aggr.MonolithicRom.monolithic_beats_union_bound_2_pow_20 : ↑(2 ^ 20) * ↑(2 ^ 108) * (1 / 2 ^ 128) = 1 ∧ Ix.Cert.Aggr.MonolithicRom.monolithicRomBound (2 ^ 108) (2 ^ 20) (1 / 2 ^ 128) (3 / 2) (2 ^ 512) < 1 / 2 ^ 19 -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Aggr.MonolithicRom.monolithic_beats_union_bound_2_pow_20
 
@@ -392,13 +414,13 @@ end Ix.Cert.Aggr.Security128
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Aggr.MonolithicRom.monolithic_aggrTree_rom_sound
 
-/-- info: 'Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_xof48_rate_128' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_blake2b512_rate_128' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
-#print axioms Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_xof48_rate_128
+#print axioms Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_blake2b512_rate_128
 
-/-- info: 'Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_xof48_concrete_prob_128' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_blake2b512_concrete_prob_128' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
-#print axioms Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_xof48_concrete_prob_128
+#print axioms Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_blake2b512_concrete_prob_128
 
 /-- info: 'Ix.Cert.Aggr.MonolithicRom.monolithic_beats_union_bound_2_pow_20' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in

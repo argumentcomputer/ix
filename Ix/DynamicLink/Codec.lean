@@ -17,11 +17,13 @@ and validator space documented in `Ix/Claim.lean:586-612`:
 | validator | `11` | `erased-lean-v2-binding-eval-assumed` (`Check`/`CheckEnv` + assumed binding + `evalAssumptions`) |
 | validator | `12` | `erased-lean-v2-linked` (`Check`/`CheckEnv` + optional `evalAssumptions` + `linkedCircuits`) |
 | validator | `13` | `erased-lean-v2-binding-linked` (`Check`/`CheckEnv` + assumed binding + optional `evalAssumptions` + `linkedCircuits`) |
+| validator | `14` | `erased-lean-v2-eval-discharged` (`Check`/`CheckEnv` discharged exclusively by Shape 18 Mode 2) |
+| validator | `15` | `erased-lean-v2-binding-eval-discharged` (`Check`/`CheckEnv` + assumed binding, discharged exclusively by Shape 18 Mode 2) |
 
 Every byte sequence produced by `serDynamicLink`, `serEvalAssumption`,
-`serLinkedCircuitEntry`, `serEvalAssumedClaim`, or `serLinkedClaim` is strictly
-rejected by `Ix.Claim.de`, preserving the exact domain of frozen
-`IxVM.Consistency.InScopeTyping` and `CircuitComposed`.
+`serLinkedCircuitEntry`, `serEvalAssumedClaim`, `serLinkedClaim`, or
+`serEvalDischargedClaim` is strictly rejected by `Ix.Claim.de`, preserving the
+exact domain of frozen `IxVM.Consistency.InScopeTyping` and `CircuitComposed`.
 -/
 
 @[expose] public section
@@ -35,10 +37,12 @@ def VARIANT_EVAL_ASSUMPTION    : UInt64 := 22  -- wire header: 0xE8 0x0E
 def VARIANT_LINKED_CIRCUIT     : UInt64 := 23  -- wire header: 0xE8 0x0F
 def VARIANT_DYNAMIC_LINK_PROOF : UInt64 := 9   -- wire header: 0xF8 0x01
 
-def VALIDATOR_EVAL_ASSUMED         : UInt8 := 10
-def VALIDATOR_BINDING_EVAL_ASSUMED : UInt8 := 11
-def VALIDATOR_LINKED               : UInt8 := 12
-def VALIDATOR_BINDING_LINKED       : UInt8 := 13
+def VALIDATOR_EVAL_ASSUMED            : UInt8 := 10
+def VALIDATOR_BINDING_EVAL_ASSUMED    : UInt8 := 11
+def VALIDATOR_LINKED                  : UInt8 := 12
+def VALIDATOR_BINDING_LINKED          : UInt8 := 13
+def VALIDATOR_EVAL_DISCHARGED         : UInt8 := 14
+def VALIDATOR_BINDING_EVAL_DISCHARGED : UInt8 := 15
 
 def putU32LE (n : UInt32) : PutM Unit := do
   putU8 (UInt8.ofNat (n.toNat % 256))
@@ -241,11 +245,64 @@ def deEvalAssumedClaim (bytes : ByteArray) : Except String EvalAssumedClaim :=
 
 /-- When all `evalAssumptions` have been discharged EXCLUSIVELY by Mode 2 (`@Eq` `Claim.check`,
 zero external linked circuits), convert an `EvalAssumedClaim` (validator `10`/`11`) to its
-unconditional standard `Ix.Claim` (validator `3`/`4`). -/
-def EvalAssumedClaim.dischargeAll (c : EvalAssumedClaim) : Ix.Claim :=
+distinct Mode-2 `EvalDischargedClaim` (validator `14`/`15`, never `3`/`4`). -/
+def EvalAssumedClaim.dischargeAll (c : EvalAssumedClaim) : EvalDischargedClaim :=
+  { ctx := c.ctx
+    kind := c.kind
+    assumptions := c.assumptions }
+
+/-! ## Mode 2 Final Discharge: `EvalDischargedClaim` (validators `14` / `15`) -/
+
+def EvalDischargedClaim.validator (c : EvalDischargedClaim) : UInt8 :=
+  if c.ctx.bindingAssumed then VALIDATOR_BINDING_EVAL_DISCHARGED else VALIDATOR_EVAL_DISCHARGED
+
+def putEvalDischargedClaim (c : EvalDischargedClaim) : PutM Unit := do
+  let variant := match c.kind with
+    | .check _ => Ix.Claim.VARIANT_CHECK_CLAIM
+    | .checkEnv _ => Ix.Claim.VARIANT_CHECK_ENV_CLAIM
+  putTagN 4 Ix.Claim.FLAG_CLAIM variant
+  Ix.Claim.putScope c.validator
+  Serialize.put c.ctx.spec
+  Serialize.put c.ctx.binding
+  Ix.Claim.putOptAddr c.ctx.axioms
   match c.kind with
-  | .check const => .check c.ctx const c.assumptions
-  | .checkEnv root => .checkEnv c.ctx root c.assumptions
+  | .check const => Serialize.put const
+  | .checkEnv root => Serialize.put root
+  Ix.Claim.putOptAddr c.assumptions
+
+def getEvalDischargedClaim : GetM EvalDischargedClaim := do
+  let tag ← getTagN 4
+  unless tag.flag == Ix.Claim.FLAG_CLAIM &&
+      (tag.value == Ix.Claim.VARIANT_CHECK_CLAIM || tag.value == Ix.Claim.VARIANT_CHECK_ENV_CLAIM) do
+    throw s!"getEvalDischargedClaim: expected check/checkEnv tag, got ({tag.flag}, {tag.value})"
+  let format ← getU8
+  unless format == Ixon.Env.OBJECT_FORMAT do
+    throw s!"getEvalDischargedClaim: unsupported object format {format}"
+  let validator ← getU8
+  let bindingAssumed ←
+    if validator == VALIDATOR_EVAL_DISCHARGED then pure false
+    else if validator == VALIDATOR_BINDING_EVAL_DISCHARGED then pure true
+    else throw s!"getEvalDischargedClaim: expected validator 14 or 15, got {validator}"
+  let spec ← Serialize.get
+  let binding ← Serialize.get
+  let axioms ← Ix.Claim.getOptAddr
+  let kind ←
+    if tag.value == Ix.Claim.VARIANT_CHECK_CLAIM then
+      EvalAssumedKind.check <$> Serialize.get
+    else
+      EvalAssumedKind.checkEnv <$> Serialize.get
+  let assumptions ← Ix.Claim.getOptAddr
+  let st ← get
+  unless st.idx == st.bytes.size do
+    throw s!"getEvalDischargedClaim: trailing bytes ({st.bytes.size - st.idx})"
+  let ctx : Ix.ClaimContext := { spec, binding, axioms, bindingAssumed }
+  pure { ctx, kind, assumptions }
+
+def serEvalDischargedClaim (c : EvalDischargedClaim) : ByteArray :=
+  runPut (putEvalDischargedClaim c)
+
+def deEvalDischargedClaim (bytes : ByteArray) : Except String EvalDischargedClaim :=
+  runGet getEvalDischargedClaim bytes
 
 /-- Transition an `EvalAssumedClaim` (validator `10`/`11`) into a `LinkedClaim`
 (validator `12`/`13`) upon a Shape 18 Mode 3a discharge via an external `DynamicLinkStatement`. -/
