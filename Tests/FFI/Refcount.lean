@@ -22,7 +22,7 @@ public import Tests.Gen.Ix
 public import Ix.Environment
 public import Ix.Address
 
-open LSpec SlimCheck Gen
+open LSpec LSpec.Prop Gen
 open Tests.Gen.Ix
 
 namespace Tests.FFI.Refcount
@@ -88,123 +88,125 @@ private def persistentName : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon "persistent
     Verifies that to_owned_ref (lean_inc) produces a valid owned handle.
     A refcount bug here would manifest as use-after-free or double-free. -/
 
-def borrowToOwnedTests : TestSeq :=
-  test "borrow→owned Name anonymous" (borrowToOwnedName testAnon == testAnon) ++
-  test "borrow→owned Name str" (borrowToOwnedName testStr == testStr) ++
-  test "borrow→owned Name num" (borrowToOwnedName testNum == testNum)
+def borrowToOwnedTests : LSpec.Spec := do
+  itBool "borrow→owned Name anonymous" (borrowToOwnedName testAnon == testAnon)
+  itBool "borrow→owned Name str" (borrowToOwnedName testStr == testStr)
+  itBool "borrow→owned Name num" (borrowToOwnedName testNum == testNum)
 
 /-! ## Multiple borrows from same object
     Verifies that reading fields multiple times from the same borrowed ctor
     doesn't corrupt data (no dangling pointer from intermediate borrow). -/
 
-def multiBorrowTests : TestSeq :=
+def multiBorrowTests : LSpec.Spec := do
   let name := Ix.Name.mkStr Ix.Name.mkAnon "hello"
-  test "multi-borrow Name str" (multiBorrowName name == "hello|hello")
+  itBool "multi-borrow Name str" (multiBorrowName name == "hello|hello")
 
 /-! ## Owned drop tests
     Passes owned (NOT @&) arrays. Rust drops each element
     on scope exit. A missing drop leaks; an extra drop crashes. -/
 
-def ownedDropTests : TestSeq :=
+def ownedDropTests : LSpec.Spec := do
   let names := #[testAnon, testStr, testNum]
-  test "owned array drop 3 names" (ownedArrayDrop names == 3) ++
-  test "owned array drop empty" (ownedArrayDrop #[] == 0)
+  itBool "owned array drop 3 names" (ownedArrayDrop names == 3)
+  itBool "owned array drop empty" (ownedArrayDrop #[] == 0)
 
 /-! ## Clone tests
     Makes two owned clones of a borrowed Name, decodes both.
     After decode, both clones are dropped → two lean_dec_ref calls.
     Would double-free if clone didn't lean_inc. -/
 
-def cloneTests : TestSeq :=
-  test "clone anonymous" (cloneAndCompare testAnon == 1) ++
-  test "clone str name" (cloneAndCompare testStr == 1) ++
-  test "clone num name" (cloneAndCompare testNum == 1)
+def cloneTests : LSpec.Spec := do
+  itBool "clone anonymous" (cloneAndCompare testAnon == 1)
+  itBool "clone str name" (cloneAndCompare testStr == 1)
+  itBool "clone num name" (cloneAndCompare testNum == 1)
 
 /-! ## Roundtrip loop tests
     Each iteration: decode borrowed → build new owned → drop old → repeat.
     Stresses N alloc/dealloc cycles. Would crash on any refcount error. -/
 
-def roundtripLoopTests : TestSeq :=
-  test "roundtrip loop 1x" (roundtripLoop testStr 1 == testStr) ++
-  test "roundtrip loop 5x" (roundtripLoop testStr 5 == testStr) ++
-  test "roundtrip loop 20x" (roundtripLoop testStr 20 == testStr) ++
-  test "roundtrip loop anon 10x" (roundtripLoop testAnon 10 == testAnon) ++
-  test "roundtrip loop num 10x" (roundtripLoop testNum 10 == testNum)
+def roundtripLoopTests : LSpec.Spec := do
+  itBool "roundtrip loop 1x" (roundtripLoop testStr 1 == testStr)
+  itBool "roundtrip loop 5x" (roundtripLoop testStr 5 == testStr)
+  itBool "roundtrip loop 20x" (roundtripLoop testStr 20 == testStr)
+  itBool "roundtrip loop anon 10x" (roundtripLoop testAnon 10 == testAnon)
+  itBool "roundtrip loop num 10x" (roundtripLoop testNum 10 == testNum)
 
 /-! ## Persistent object tests
     Module-level defs have m_rc == 0. Refcount ops are no-ops.
     Verifies that the typed API handles these correctly. -/
 
-def persistentTests : TestSeq :=
-  test "persistent name is_persistent" (isPersistent persistentName == 1) ++
-  test "persistent roundtrip" (persistentRoundtrip persistentName == persistentName)
+def persistentTests : LSpec.Spec := do
+  itBool "persistent name is_persistent" (isPersistent persistentName == 1)
+  itBool "persistent roundtrip" (persistentRoundtrip persistentName == persistentName)
 
 /-! ## Cache dedup tests
     Builds N copies of the same Name via LeanBuildCache, which clones
     cached entries (incrementing refcount). Dropping the array decrements
     each copy. Would crash if clone refcount was wrong. -/
 
-def cacheDedupTests : TestSeq :=
-  let duped := cacheDedup testStr 5
-  test "cache dedup size 5" (duped.size == 5) ++
-  test "cache dedup all equal" (duped.all (· == testStr)) ++
-  let duped20 := cacheDedup testNum 20
-  test "cache dedup size 20" (duped20.size == 20 && duped20.all (· == testNum))
+def cacheDedupTests : LSpec.Spec := do
+  itBool "cache dedup size 5" ((cacheDedup testStr 5).size == 5)
+  itBool "cache dedup all equal" ((cacheDedup testStr 5).all (· == testStr))
+  itBool "cache dedup size 20" (
+    let duped20 := cacheDedup testNum 20
+    duped20.size == 20 && duped20.all (· == testNum))
 
 /-! ## String lifecycle tests -/
 
-def stringTests : TestSeq :=
-  test "string lifecycle" (stringLifecycle "hello" == "olleh") ++
-  test "string lifecycle empty" (stringLifecycle "" == "") ++
-  test "string lifecycle unicode" (stringLifecycle "café" == "éfac")
+def stringTests : LSpec.Spec := do
+  itBool "string lifecycle" (stringLifecycle "hello" == "olleh")
+  itBool "string lifecycle empty" (stringLifecycle "" == "")
+  itBool "string lifecycle unicode" (stringLifecycle "café" == "éfac")
 
 /-! ## Alloc/drop stress tests
     Builds and immediately drops N Lean objects in a loop.
     Under `IX_VALGRIND=1`, cap at 100x to skip the redundant 1000x loop. -/
 
-def allocDropTests (valgrind : Bool := false) : TestSeq :=
-  let base := test "alloc/drop 100x" (allocDropLoop testStr 100 == testStr)
-  if valgrind then base
-  else base ++ test "alloc/drop 1000x" (allocDropLoop testNum 1000 == testNum)
+set_option compiler.extract_closed false in
+def allocDropTests (valgrind : Bool := false) : Spec := do
+  itBool "alloc/drop 100x" (allocDropLoop testStr 100 == testStr)
+  unless valgrind do
+    itBool "alloc/drop 1000x" (allocDropLoop testNum 1000 == testNum)
 
 /-! ## Multi-threaded LeanShared tests
     These exercise lean_mark_mt + atomic refcounting on ix domain types
     across real OS threads. A refcount bug would cause SIGSEGV or assertion failure. -/
 
-def mtTests : TestSeq :=
+def mtTests : LSpec.Spec := do
   let names := #[testAnon, testStr, testNum]
   -- Parallel decode: N threads × 3 names each
-  test "MT parallel decode names 4 threads" (mtParallelDecodeNames names 4 == 12) ++
-  test "MT parallel decode names 1 thread" (mtParallelDecodeNames names 1 == 3) ++
-  test "MT parallel decode names empty" (mtParallelDecodeNames #[] 4 == 0) ++
+  itBool "MT parallel decode names 4 threads" (mtParallelDecodeNames names 4 == 12)
+  itBool "MT parallel decode names 1 thread" (mtParallelDecodeNames names 1 == 3)
+  itBool "MT parallel decode names empty" (mtParallelDecodeNames #[] 4 == 0)
   -- Parallel roundtrip: decode and rebuild from multiple threads
-  test "MT parallel roundtrip names" (mtParallelRoundtripNames names 4 == names) ++
-  test "MT parallel roundtrip empty" (mtParallelRoundtripNames #[] 4 == #[])
+  itBool "MT parallel roundtrip names" (mtParallelRoundtripNames names 4 == names)
+  itBool "MT parallel roundtrip empty" (mtParallelRoundtripNames #[] 4 == #[])
 
 /-! ## Property tests -/
 
-def propertyTests (cfg : SlimCheck.Configuration := {}) : TestSeq :=
-  checkIO "borrow→owned Name" (∀ n : Ix.Name, borrowToOwnedName n == n) .done cfg ++
-  checkIO "clone always equal" (∀ n : Ix.Name, cloneAndCompare n == 1) .done cfg ++
-  checkIO "roundtrip loop 3x" (∀ n : Ix.Name, roundtripLoop n 3 == n) .done cfg
+set_option compiler.extract_closed false in
+def propertyTests (cfg : LSpec.Prop.PropertyConfig := {}) : Spec := do
+  propWith "borrow→owned Name" cfg fun (n : Ix.Name) => borrowToOwnedName n == n
+  propWith "clone always equal" cfg fun (n : Ix.Name) => cloneAndCompare n == 1
+  propWith "roundtrip loop 3x" cfg fun (n : Ix.Name) => roundtripLoop n 3 == n
 
 /-! ## Test Suite -/
 
-public def suiteWith (cfg : SlimCheck.Configuration := {}) (valgrind : Bool := false) :
-    List TestSeq := [
-  borrowToOwnedTests,
-  multiBorrowTests,
-  ownedDropTests,
-  cloneTests,
-  roundtripLoopTests,
-  persistentTests,
-  cacheDedupTests,
-  stringTests,
-  allocDropTests valgrind,
-  mtTests,
-  propertyTests cfg,
-]
+set_option compiler.extract_closed false in
+public def suiteWith (cfg : LSpec.Prop.PropertyConfig := {}) (valgrind : Bool := false) :
+    Spec := do
+  borrowToOwnedTests
+  multiBorrowTests
+  ownedDropTests
+  cloneTests
+  roundtripLoopTests
+  persistentTests
+  cacheDedupTests
+  stringTests
+  allocDropTests valgrind
+  mtTests
+  propertyTests cfg
 
-public def suite : List TestSeq := suiteWith {} false
+public def suite : Spec := suiteWith {} false
 
 end Tests.FFI.Refcount

@@ -88,14 +88,13 @@ def violations : IO (Array String) := do
       found := found.push s!"no function reads {channel}: the scanner no longer reads the sources"
   return found
 
-def structural : TestSeq :=
-  .individualIO "every IO byte the IxVM and multi-stark programs read is range-checked" none (do
+def structural : LSpec.Spec := do
+  it "every IO byte the IxVM and multi-stark programs read is range-checked" do
     let found ← violations
-    let ok := found.isEmpty
-    return (ok, if ok then 1 else 0, 1,
-      if ok then none else some ("; ".intercalate found.toList))) .done
+    expect found.isEmpty ("; ".intercalate found.toList)
 
-def suite : List TestSeq := [structural]
+def suite : LSpec.Spec := do
+  structural
 
 /-! ## Execution -/
 

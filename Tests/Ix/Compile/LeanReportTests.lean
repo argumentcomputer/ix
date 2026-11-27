@@ -54,9 +54,8 @@ private def check : IO Nat := do
   IO.println "check-lean protocol: 2 complete reports with all 5 outcomes; 20 invocation/coverage/protocol refusals"
   return cases.length + 2
 
-def suite : List TestSeq := [
-  .individualIO "IxC CLI reports require exact labels and coherent outcome evidence" none (do
-    let n ← check
-    return (true, n, 0, none)) .done]
+def suite : LSpec.Spec := do
+  it "IxC CLI reports require exact labels and coherent outcome evidence" do
+    let _ ← check
 
 end Tests.Ix.Compile.LeanReportTests

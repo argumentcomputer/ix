@@ -65,10 +65,10 @@ def u64LE (x : UInt64) : ByteArray :=
 
 def cbytes (c : Constant) : Nat := (serConstant c).size
 
-def withOk {α} (name : String) (x : Except SharingError α) (k : α → TestSeq) : TestSeq :=
+def withOk {α} (name : String) (x : Except SharingError α) (k : α → AssertM Unit) : AssertM Unit :=
   match x with
   | .ok a => k a
-  | .error e => test s!"{name}: unexpected error {reprStr e}" false
+  | .error e => fail s!"{name}: unexpected error {reprStr e}"
 
 def isErr {α} (x : Except SharingError α) (p : SharingError → Bool) : Bool :=
   match x with
@@ -263,35 +263,35 @@ def boundaryValues : List Nat :=
     [tagNEnd1 f, tagNEnd2 f, tagNEnd3 f, tagNEnd4 f, tagNEnd5 f].flatMap fun e =>
       [e - 1, e, e + 1])
 
-def widthTests (_ : Unit) : TestSeq :=
-  group "integer widths" <|
-    test "tag0Size = putTagN 0 length at every rung boundary"
-      (boundaryValues.all fun n => tag0Size n == (runPut (putTagN 0 0 n.toUInt64)).size) ++
-    test "tag4Size = putTagN 4 length at every rung boundary"
+def widthTests : Spec :=
+  describe "integer widths" do
+    itBool "tag0Size = putTagN 0 length at every rung boundary"
+      (boundaryValues.all fun n => tag0Size n == (runPut (putTagN 0 0 n.toUInt64)).size)
+    itBool "tag4Size = putTagN 4 length at every rung boundary"
       (boundaryValues.all fun n =>
         [0x7, 0x8, 0x9, 0xB].all fun (f : UInt8) =>
-          tag4Size n == (runPut (putTagN 4 f n.toUInt64)).size) ++
-    test "shareWidth = serialized Share length at every boundary"
+          tag4Size n == (runPut (putTagN 4 f n.toUInt64)).size)
+    itBool "shareWidth = serialized Share length at every boundary"
       (boundaryValues.all fun n =>
         shareWidth n == (serExpr (.share n.toUInt64)).size &&
-          exprSize (.share n.toUInt64) == shareWidth n) ++
-    test "Share 7/8 → 1/2 bytes" (shareWidth 7 == 1 && shareWidth 8 == 2) ++
-    test "Share 1031/1032 → 2/3 bytes" (shareWidth 1031 == 2 && shareWidth 1032 == 3) ++
-    test "Share 66567/66568 → 3/4 bytes" (shareWidth 66567 == 3 && shareWidth 66568 == 4) ++
-    test "Share 16843783/16843784 → 4/5 bytes"
-      (shareWidth 16843783 == 4 && shareWidth 16843784 == 5) ++
-    test "Share 4311811079/4311811080 → 5/9 bytes"
-      (shareWidth 4311811079 == 5 && shareWidth 4311811080 == 9) ++
-    test "Share 2^64-1 → 9 bytes" (shareWidth (2^64 - 1) == 9) ++
-    test "TagN f=0 127/128 → 1/2 bytes, 16511/16512 → 2/3, 82047/82048 → 3/4, 16859263/16859264 → 4/5"
+          exprSize (.share n.toUInt64) == shareWidth n)
+    itBool "Share 7/8 → 1/2 bytes" (shareWidth 7 == 1 && shareWidth 8 == 2)
+    itBool "Share 1031/1032 → 2/3 bytes" (shareWidth 1031 == 2 && shareWidth 1032 == 3)
+    itBool "Share 66567/66568 → 3/4 bytes" (shareWidth 66567 == 3 && shareWidth 66568 == 4)
+    itBool "Share 16843783/16843784 → 4/5 bytes"
+      (shareWidth 16843783 == 4 && shareWidth 16843784 == 5)
+    itBool "Share 4311811079/4311811080 → 5/9 bytes"
+      (shareWidth 4311811079 == 5 && shareWidth 4311811080 == 9)
+    itBool "Share 2^64-1 → 9 bytes" (shareWidth (2^64 - 1) == 9)
+    itBool "TagN f=0 127/128 → 1/2 bytes, 16511/16512 → 2/3, 82047/82048 → 3/4, 16859263/16859264 → 4/5"
       (tag0Size 127 == 1 && tag0Size 128 == 2 && tag0Size 16511 == 2 && tag0Size 16512 == 3 &&
         tag0Size 82047 == 3 && tag0Size 82048 == 4 && tag0Size 16859263 == 4 &&
-        tag0Size 16859264 == 5) ++
-    test "tag0BracketStart is the start of the count's TagN rung"
+        tag0Size 16859264 == 5)
+    itBool "tag0BracketStart is the start of the count's TagN rung"
       (boundaryValues.all fun k =>
         tag0Size (tag0BracketStart k) == tag0Size k &&
-          (tag0BracketStart k == 0 || tag0Size (tag0BracketStart k - 1) < tag0Size k)) ++
-    test "tag0StepBound bounds the growth of the count's TagN width"
+          (tag0BracketStart k == 0 || decide (tag0Size (tag0BracketStart k - 1) < tag0Size k)))
+    itBool "tag0StepBound bounds the growth of the count's TagN width"
       ((boundaryValues.all fun n =>
           n == 0 || decide (tag0Size n - tag0Size (n - 1) ≤ tag0StepBound n)) &&
         tag0StepBound 82048 == 1 && tag0StepBound (tagNEnd5 0 - 1) == 1 &&
@@ -321,14 +321,14 @@ def genExprForSize : RGen Ixon.Expr := do
   | 2 => return .lam e (.share idx.toUInt64)
   | _ => return e
 
-def exprSizeTests (_ : Unit) : TestSeq :=
-  let gen := runGen 7 ((List.range 2000).mapM fun _ => genExprForSize)
-  group "exact expression length" <|
-    test "exprSize = serExpr size on telescope boundaries (1/2/7/8/9/255/256/257)"
-      (telescopeExprs.all fun e => exprSize e == (serExpr e).size) ++
-    test "exprSize = serExpr size on 2000 generated expressions with boundary Shares"
-      (gen.all fun e => exprSize e == (serExpr e).size) ++
-    test "App with 7/8 args uses 1/2 header bytes"
+def exprSizeTests : Spec :=
+  describe "exact expression length" do
+    itBool "exprSize = serExpr size on telescope boundaries (1/2/7/8/9/255/256/257)"
+      (telescopeExprs.all fun e => exprSize e == (serExpr e).size)
+    it "exprSize = serExpr size on 2000 generated expressions with boundary Shares" do
+      let gen := runGen 7 ((List.range 2000).mapM fun _ => genExprForSize)
+      expect (gen.all fun e => exprSize e == (serExpr e).size)
+    itBool "App with 7/8 args uses 1/2 header bytes"
       (let a7 := (List.range 7).foldl (fun f _ => .app f (.var 0)) (.var 1)
        let a8 := Ixon.Expr.app a7 (.var 0)
        (serExpr a7).size == 1 + 8 && (serExpr a8).size == 2 + 9)
@@ -343,24 +343,24 @@ def decompositionHolds (c : Constant) : Bool :=
   cbytes c == fixedConstantBytes c + exprsSize (constantInfoRoots c.info) +
     tag0Size c.sharing.size + exprsSize c.sharing
 
-def decompositionTests (_ : Unit) : TestSeq :=
-  let mkRoots (k : Nat) (n : Nat) : Array Ixon.Expr :=
-    (Array.range n).map fun i => .app (.share (k - 1 - i % (max k 1)).toUInt64) (.var i.toUInt64)
-  let infos (rs : Array Ixon.Expr) : List ConstantInfo :=
-    [ .defn ⟨.defn, .safe, {}, 0, rs[0]!, rs[1]!⟩, .axio ⟨false, 1, rs[0]!⟩,
-      .quot ⟨.lift, 2, rs[0]!⟩,
-      .recr ⟨true, false, 1, 2, 3, 4, 5, rs[0]!, #[⟨1, rs[1]!⟩, ⟨300, rs[2]!⟩]⟩,
-      .cPrj ⟨1, 2, testRefs[0]!⟩, .rPrj ⟨3, testRefs[1]!⟩, .iPrj ⟨200, testRefs[0]!⟩,
-      .dPrj ⟨0, testRefs[1]!⟩,
-      .muts #[.defn ⟨.thm, .part, {}, 0, rs[0]!, rs[1]!⟩,
-              .indc ⟨true, 1, 1, 0, rs[2]!, #[⟨false, 1, 0, 1, 2, .inherited, rs[3]!⟩, ⟨false, 1, 1, 1, 0, .inherited, rs[0]!⟩]⟩,
-              .recr ⟨false, true, 0, 0, 0, 0, 0, rs[1]!, #[⟨2, rs[2]!⟩]⟩] ]
-  let cases := [0, 1, 8, 9, 127, 128, 255, 256, 257, 1032, 1033].flatMap fun k =>
-    (infos (mkRoots k 4)).map fun info => tableConstant info k
-  group "complete-Constant length decomposition" <|
-    test s!"serConstant size = fixed + roots + tag0(table) + table on {cases.length} constants (all kinds; tables 0/1/8/9/127/128/255/256/257/1032/1033)"
-      (cases.all decompositionHolds) ++
-    test "Share 7/8 and 1031/1032 have widths 1/2 and 2/3"
+def decompositionTests : Spec :=
+  describe "complete-Constant length decomposition" do
+    it "serConstant size = fixed + roots + tag0(table) + table (all kinds; tables 0/1/8/9/127/128/255/256/257/1032/1033)" do
+      let mkRoots (k : Nat) (n : Nat) : Array Ixon.Expr :=
+        (Array.range n).map fun i => .app (.share (k - 1 - i % (max k 1)).toUInt64) (.var i.toUInt64)
+      let infos (rs : Array Ixon.Expr) : List ConstantInfo :=
+        [ .defn ⟨.defn, .safe, {}, 0, rs[0]!, rs[1]!⟩, .axio ⟨false, 1, rs[0]!⟩,
+          .quot ⟨.lift, 2, rs[0]!⟩,
+          .recr ⟨true, false, 1, 2, 3, 4, 5, rs[0]!, #[⟨1, rs[1]!⟩, ⟨300, rs[2]!⟩]⟩,
+          .cPrj ⟨1, 2, testRefs[0]!⟩, .rPrj ⟨3, testRefs[1]!⟩, .iPrj ⟨200, testRefs[0]!⟩,
+          .dPrj ⟨0, testRefs[1]!⟩,
+          .muts #[.defn ⟨.thm, .part, {}, 0, rs[0]!, rs[1]!⟩,
+                  .indc ⟨true, 1, 1, 0, rs[2]!, #[⟨false, 1, 0, 1, 2, .inherited, rs[3]!⟩, ⟨false, 1, 1, 1, 0, .inherited, rs[0]!⟩]⟩,
+                  .recr ⟨false, true, 0, 0, 0, 0, 0, rs[1]!, #[⟨2, rs[2]!⟩]⟩] ]
+      let cases := [0, 1, 8, 9, 127, 128, 255, 256, 257, 1032, 1033].flatMap fun k =>
+        (infos (mkRoots k 4)).map fun info => tableConstant info k
+      expect (cases.all decompositionHolds) s!"decomposition failed on {cases.length} constants"
+    itBool "Share 7/8 and 1031/1032 have widths 1/2 and 2/3"
       (exprSize (.share 7) == 1 && exprSize (.share 8) == 2 &&
         exprSize (.share 1031) == 2 && exprSize (.share 1032) == 3)
 
@@ -370,161 +370,182 @@ def fixtureA : Ixon.Expr := arr P P
 def fixtureB : Ixon.Expr := arr P (.sort 1)
 def tiedMinimaRoot : Ixon.Expr := arr fixtureA (arr fixtureA (arr fixtureB fixtureB))
 
-def structuralIdTests (_ : Unit) : TestSeq :=
-  let naiveAgree := runGen 11 do
-    let mut ok := true
-    for _ in [0:300] do
-      let roots ← genRoots 5 10 3
-      match expandRoots roots with
-      | .ok ex =>
-        let naive := naiveCanonical roots
-        let rootIdx := roots.map fun r => (naive.findIdx? (· == r)).getD 1000000
-        ok := ok && ex.dag.toExprs == naive && ex.roots == rootIdx
-      | .error _ => ok := false
-    return ok
-  group "structural IDs" <|
-    withOk "tied-minima fixture" (expandRoots #[tiedMinimaRoot]) (fun ex =>
-      test "ids: Sort0=0 Sort1=1 A=2 B=3 (B→B)=4 (A→B→B)=5 root=6"
-        (ex.dag.toExprs == #[P, .sort 1, fixtureA, fixtureB, arr fixtureB fixtureB,
-          arr fixtureA (arr fixtureB fixtureB), tiedMinimaRoot] && ex.roots == #[6])) ++
-    withOk "witness" (expandRoots #[arr (chain 2) (chain 2)]) (fun ex =>
-      test "ids: P=0 T1=1 T2=2 R=3" (ex.dag.toExprs == #[P, chain 1, chain 2,
-        arr (chain 2) (chain 2)])) ++
-    test "canonical IDs equal an independent naive assignment on 300 generated inputs"
-      naiveAgree ++
-    test "let modes are part of structural identity"
+def structuralIdTests : Spec :=
+  describe "structural IDs" do
+    it "tied-minima fixture: ids Sort0=0 Sort1=1 A=2 B=3 (B→B)=4 (A→B→B)=5 root=6" do
+      withOk "tied-minima fixture" (expandRoots #[tiedMinimaRoot]) fun ex =>
+        expect (ex.dag.toExprs == #[P, .sort 1, fixtureA, fixtureB, arr fixtureB fixtureB,
+          arr fixtureA (arr fixtureB fixtureB), tiedMinimaRoot] && ex.roots == #[6])
+    it "witness: ids P=0 T1=1 T2=2 R=3" do
+      withOk "witness" (expandRoots #[arr (chain 2) (chain 2)]) fun ex =>
+        expect (ex.dag.toExprs == #[P, chain 1, chain 2, arr (chain 2) (chain 2)])
+    it "canonical IDs equal an independent naive assignment on 300 generated inputs" do
+      let naiveAgree := runGen 11 do
+        let mut ok := true
+        for _ in [0:300] do
+          let roots ← genRoots 5 10 3
+          match expandRoots roots with
+          | .ok ex =>
+            let naive := naiveCanonical roots
+            let rootIdx := roots.map fun r => (naive.findIdx? (· == r)).getD 1000000
+            ok := ok && ex.dag.toExprs == naive && ex.roots == rootIdx
+          | .error _ => ok := false
+        return ok
+      expect naiveAgree
+    itBool "let modes are part of structural identity"
       (distinctCount #[.lam P P, .all P P, .letE true (.value .many) P P P,
         .letE false (.value .many) P P P, .letE false .borrow P P P,
-        .letE false (.value .erased) P P P] == 7) ++
-    test "lexCompare: proper prefix first, then numeric"
+        .letE false (.value .erased) P P P] == 7)
+    itBool "lexCompare: proper prefix first, then numeric"
       (lexCompare [1] [1, 0] == .lt && lexCompare [] [0] == .lt &&
-        lexCompare [2] [10] == .lt && lexCompare [1, 0] [1] == .gt) ++
-    test "compareBytes: unsigned, proper prefix first"
+        lexCompare [2] [10] == .lt && lexCompare [1, 0] [1] == .gt)
+    itBool "compareBytes: unsigned, proper prefix first"
       (compareBytes ⟨#[0x7f]⟩ ⟨#[0x80]⟩ == .lt && compareBytes ⟨#[1]⟩ ⟨#[1, 0]⟩ == .lt &&
         compareBytes ⟨#[0xff]⟩ ⟨#[0x00, 0x00]⟩ == .gt)
 
 /-- The same AST in three pointer layouts: generated (pool-shared), fresh
 (deserialized, no sharing), and maximally shared (from the DAG). -/
-def representationTestsWith (count : Nat) (_ : Unit) : TestSeq :=
-  let ok := runGen 13 do
-    let mut ok := true
-    for i in [0:count] do
-      let roots ← genRoots 5 10 3
-      let c := wrapRoots roots i
-      let fresh := match deConstant (serConstant c) with
-        | .ok c' => c'
-        | .error _ => c
-      let dagShared := match expandConstantSharing c with
-        | .ok c' => c'
-        | .error _ => c
-      let alt := alternateOf c
-      let outs := [c, fresh, dagShared, alt].map fun x =>
-        (normalizeConstantSharing x).toOption.map serConstant
-      let tiered := [c, fresh, dagShared, alt].map fun x =>
-        (normalizeConstantSharingTiered .tagN x).toOption.map serConstant
-      ok := ok && outs.all (· == outs.head!) && outs.head!.isSome &&
-        tiered.all (· == tiered.head!) && tiered.head!.isSome
-    return ok
-  group "representation independence" <|
-    test s!"pool-shared, deserialized, DAG-shared and uniform-w1-encoded inputs normalize to identical bytes, by the exact search and by the tiered construction ({count} inputs)" ok
+def representationTestsWith (count : Nat) : Spec :=
+  describe "representation independence" do
+    it s!"pool-shared, deserialized, DAG-shared and uniform-w1-encoded inputs normalize to identical bytes, by the exact search and by the tiered construction ({count} inputs)" do
+      let ok := runGen 13 do
+        let mut ok := true
+        for i in [0:count] do
+          let roots ← genRoots 5 10 3
+          let c := wrapRoots roots i
+          let fresh := match deConstant (serConstant c) with
+            | .ok c' => c'
+            | .error _ => c
+          let dagShared := match expandConstantSharing c with
+            | .ok c' => c'
+            | .error _ => c
+          let alt := alternateOf c
+          let outs := [c, fresh, dagShared, alt].map fun x =>
+            (normalizeConstantSharing x).toOption.map serConstant
+          let tiered := [c, fresh, dagShared, alt].map fun x =>
+            (normalizeConstantSharingTiered .tagN x).toOption.map serConstant
+          ok := ok && outs.all (· == outs.head!) && outs.head!.isSome &&
+            tiered.all (· == tiered.head!) && tiered.head!.isSome
+        return ok
+      expect ok
 
-def representationTests (_ : Unit) : TestSeq := representationTestsWith 120 ()
-def representationTestsPR (_ : Unit) : TestSeq := representationTestsWith 50 ()
+def representationTests : Spec := representationTestsWith 120
+def representationTestsPR : Spec := representationTestsWith 50
 
-def cacheTests (_ : Unit) : TestSeq :=
-  let empty : ExprCache Nat := {}
-  let key : ExprCache.Key := ⟨0, .var 3⟩
-  let cached := empty.insert key 17
-  let collision := cached.insert ⟨0, .var 4⟩ 29
-  let context : ShareCtx := { resolved := #[], tableSize := 0, entry := none, root := 0, allowShare := false }
-  let source : Ixon.Expr := .app (.var 3) (.var 4)
-  let poisoned : IngestState :=
-    { ptrCache := empty.insert ⟨(exprKey source).address, .sort 8⟩ 999 }
-  let ordinary := (ingestExpr {} context 0 source).run {}
-  let repaired := (ingestExpr {} context 0 source).run poisoned
-  let illegal : Ixon.Expr := .share 0
-  let illegalState : IngestState := { ptrCache := empty.insert ⟨(exprKey illegal).address, .var 0⟩ 17 }
-  let dag : Ixon.Expr := (List.range 36).foldl (fun e _ => .app e e) (.var 3)
-  group "checked expression cache" <|
-    test "an exact key retrieves its cached ID" (cached.get? key == some 17) ++
-    test "a colliding address with a different expression misses"
-      (cached.get? ⟨0, .var 4⟩ == none) ++
-    test "collision replacement cannot return the evicted expression's ID"
-      (collision.get? key == none && collision.get? ⟨0, .var 4⟩ == some 29) ++
-    test "equal expression structure can use the same candidate bucket"
-      ((empty.insert ⟨0, .app (.var 3) (.var 4)⟩ 17).get? ⟨0, source⟩ == some 17) ++
-    test "let modes are checked before accepting a hit"
-      ((empty.insert ⟨0, .letE false (.value .many) P P P⟩ 17).get?
-        ⟨0, .letE false .borrow P P P⟩ == none) ++
-    test "poisoning a pointer bucket cannot bypass actual ingestion"
-      (ordinary.toOption.map (fun (id, state) => (id, state.interner.nodes, state.visits)) ==
-        repaired.toOption.map (fun (id, state) => (id, state.interner.nodes, state.visits)) && repaired.isOk) ++
-    test "a colliding candidate cannot hide an illegal Share"
-      (isErr ((ingestExpr {} context 0 illegal).run illegalState) (· == .shareInExpandedInput 0 0)) ++
-    test "fast re-expansion rejects the same colliding candidate"
-      (match ordinary with
+def cacheTests : Spec :=
+  describe "checked expression cache" do
+    it "an exact key retrieves its cached ID" do
+      let empty : ExprCache Nat := {}
+      let key : ExprCache.Key := ⟨0, .var 3⟩
+      let cached := empty.insert key 17
+      expect (cached.get? key == some 17)
+    it "a colliding address with a different expression misses" do
+      let empty : ExprCache Nat := {}
+      let cached := empty.insert ⟨0, .var 3⟩ 17
+      expect (cached.get? ⟨0, .var 4⟩ == none)
+    it "collision replacement cannot return the evicted expression's ID" do
+      let empty : ExprCache Nat := {}
+      let key : ExprCache.Key := ⟨0, .var 3⟩
+      let cached := empty.insert key 17
+      let collision := cached.insert ⟨0, .var 4⟩ 29
+      expect (collision.get? key == none && collision.get? ⟨0, .var 4⟩ == some 29)
+    it "equal expression structure can use the same candidate bucket" do
+      let empty : ExprCache Nat := {}
+      let source : Ixon.Expr := .app (.var 3) (.var 4)
+      expect ((empty.insert ⟨0, .app (.var 3) (.var 4)⟩ 17).get? ⟨0, source⟩ == some 17)
+    it "let modes are checked before accepting a hit" do
+      let empty : ExprCache Nat := {}
+      expect ((empty.insert ⟨0, .letE false (.value .many) P P P⟩ 17).get?
+        ⟨0, .letE false .borrow P P P⟩ == none)
+    it "poisoning a pointer bucket cannot bypass actual ingestion" do
+      let empty : ExprCache Nat := {}
+      let context : ShareCtx := { resolved := #[], tableSize := 0, entry := none, root := 0, allowShare := false }
+      let source : Ixon.Expr := .app (.var 3) (.var 4)
+      let poisoned : IngestState :=
+        { ptrCache := empty.insert ⟨(exprKey source).address, .sort 8⟩ 999 }
+      let ordinary := (ingestExpr {} context 0 source).run {}
+      let repaired := (ingestExpr {} context 0 source).run poisoned
+      expect (ordinary.toOption.map (fun (id, state) => (id, state.interner.nodes, state.visits)) ==
+        repaired.toOption.map (fun (id, state) => (id, state.interner.nodes, state.visits)) && repaired.isOk)
+    it "a colliding candidate cannot hide an illegal Share" do
+      let empty : ExprCache Nat := {}
+      let context : ShareCtx := { resolved := #[], tableSize := 0, entry := none, root := 0, allowShare := false }
+      let illegal : Ixon.Expr := .share 0
+      let illegalState : IngestState := { ptrCache := empty.insert ⟨(exprKey illegal).address, .var 0⟩ 17 }
+      expect (isErr ((ingestExpr {} context 0 illegal).run illegalState) (· == .shareInExpandedInput 0 0))
+    it "fast re-expansion rejects the same colliding candidate" do
+      let empty : ExprCache Nat := {}
+      let context : ShareCtx := { resolved := #[], tableSize := 0, entry := none, root := 0, allowShare := false }
+      let source : Ixon.Expr := .app (.var 3) (.var 4)
+      let poisoned : IngestState :=
+        { ptrCache := empty.insert ⟨(exprKey source).address, .sort 8⟩ 999 }
+      let ordinary := (ingestExpr {} context 0 source).run {}
+      expect (match ordinary with
        | .ok (id, state) =>
          let target : Dag := ⟨state.interner.nodes⟩
          match reIngestExpr {} target (ReIndex.ofDag target) context 0 source poisoned.ptrCache 0 with
          | .ok actual _ _ => actual == id
          | _ => false
-       | .error _ => false : Bool) ++
-    test "a 36-level shared DAG keeps linear ingestion work"
-      (match (ingestExpr {} context 0 dag).run {} with
+       | .error _ => false)
+    it "a 36-level shared DAG keeps linear ingestion work" do
+      let context : ShareCtx := { resolved := #[], tableSize := 0, entry := none, root := 0, allowShare := false }
+      let dag : Ixon.Expr := (List.range 36).foldl (fun e _ => .app e e) (.var 3)
+      expect (match (ingestExpr {} context 0 dag).run {} with
        | .ok (_, state) => state.interner.nodes.size == 37 && state.visits == 37
-       | .error _ => false : Bool)
+       | .error _ => false)
 
-def expansionTests (_ : Unit) : TestSeq :=
-  let chainTable (k : Nat) : Array Ixon.Expr :=
-    #[.var 0] ++ (Array.range (k - 1)).map fun i => .app (.share i.toUInt64) (.var 0)
-  let validTables := runGen 17 do
-    let mut ok := true
-    for _ in [0:100] do
-      -- A random valid backward table: entry i is a node over earlier Shares and leaves.
-      let k := 1 + (← rand 6)
-      let mut table : Array Ixon.Expr := #[]
-      for i in [0:k] do
-        let pick : RGen Ixon.Expr := do
-          if i > 0 && (← rand 2) == 0 then pure (.share (← rand i).toUInt64) else genLeaf
-        table := table.push (← genNode #[← pick, ← pick, ← pick])
-      let roots := #[Ixon.Expr.app (.share (k - 1).toUInt64) (.share 0), .share (← rand k).toUInt64]
-      let info : ConstantInfo := .defn ⟨.defn, .safe, {}, 0, roots[0]!, roots[1]!⟩
-      let c : Constant := { info, sharing := table, refs := #[], univs := #[] }
-      match expandConstantSharing c with
-      | .ok c' => ok := ok && constantInfoRoots c'.info == roots.map (naiveExpand table)
-      | .error _ => ok := false
-    return ok
-  group "bounded share expansion" <|
-    test "expansion equals direct substitution on 100 random backward tables" validTables ++
-    test "forward reference is rejected"
+def expansionTests : Spec :=
+  describe "bounded share expansion" do
+    it "expansion equals direct substitution on 100 random backward tables" do
+      let validTables := runGen 17 do
+        let mut ok := true
+        for _ in [0:100] do
+          -- A random valid backward table: entry i is a node over earlier Shares and leaves.
+          let k := 1 + (← rand 6)
+          let mut table : Array Ixon.Expr := #[]
+          for i in [0:k] do
+            let pick : RGen Ixon.Expr := do
+              if i > 0 && (← rand 2) == 0 then pure (.share (← rand i).toUInt64) else genLeaf
+            table := table.push (← genNode #[← pick, ← pick, ← pick])
+          let roots := #[Ixon.Expr.app (.share (k - 1).toUInt64) (.share 0), .share (← rand k).toUInt64]
+          let info : ConstantInfo := .defn ⟨.defn, .safe, {}, 0, roots[0]!, roots[1]!⟩
+          let c : Constant := { info, sharing := table, refs := #[], univs := #[] }
+          match expandConstantSharing c with
+          | .ok c' => ok := ok && constantInfoRoots c'.info == roots.map (naiveExpand table)
+          | .error _ => ok := false
+        return ok
+      expect validTables
+    itBool "forward reference is rejected"
       (isErr (optimizeSharingTable #[.share 1, P] #[.share 0])
-        (· == .nonBackwardShare 0 1)) ++
-    test "self reference is rejected"
+        (· == .nonBackwardShare 0 1))
+    itBool "self reference is rejected"
       (isErr (optimizeSharingTable #[.app (.share 0) P] #[.share 0])
-        (· == .nonBackwardShare 0 0)) ++
-    test "out-of-range root reference is rejected"
-      (isErr (optimizeSharingTable #[] #[.share 3]) (· == .shareOutOfRange none 3 0)) ++
-    test "re-expanding the DAG's own roots gives their IDs; an encoding of another term (the fast path's fallback) gives it a fresh ID"
+        (· == .nonBackwardShare 0 0))
+    itBool "out-of-range root reference is rejected"
+      (isErr (optimizeSharingTable #[] #[.share 3]) (· == .shareOutOfRange none 3 0))
+    itBool "re-expanding the DAG's own roots gives their IDs; an encoding of another term (the fast path's fallback) gives it a fresh ID"
       (match expandRoots #[arr (chain 2) (chain 2)] with
        | .ok ex =>
          (reexpand {} ex.dag #[] #[arr (chain 2) (chain 2)]).toOption.map (·.2.1) == some ex.roots &&
            ((reexpand {} ex.dag #[] #[arr (chain 3) (chain 3)]).toOption.map
-             fun r => r.2.1.all (· ≥ ex.dag.size)) == some true
-       | .error _ => false : Bool) ++
-    test "out-of-range entry reference is rejected"
-      (isErr (optimizeSharingTable #[.share 5] #[P]) (· == .shareOutOfRange (some 0) 5 1)) ++
-    test "Share in an expanded-root input is rejected"
-      (isErr (optimizeSharing #[P, .share 0]) (· == .shareInExpandedInput 1 0)) ++
-    test "stored depth limit"
-      (isErr (optimizeSharing #[chain 20] { maxDepth := 10 }) (exhausted .depth)) ++
-    test "expanded height limit (shallow entries, deep expansion)"
-      (isErr (optimizeSharingTable (chainTable 40) #[.share 39] { maxDepth := 20 })
-        (exhausted .depth)) ++
-    test "distinct-node limit"
-      (isErr (optimizeSharing #[chain 30] { maxNodes := 10 }) (exhausted .nodes)) ++
-    test "walk limit"
-      (isErr (optimizeSharing #[chain 30] { maxExprVisits := 10 }) (exhausted .exprVisits)) ++
-    test "unreachable entries do not affect the result"
+             fun r => r.2.1.all (fun i => decide (i ≥ ex.dag.size))) == some true
+       | .error _ => false)
+    itBool "out-of-range entry reference is rejected"
+      (isErr (optimizeSharingTable #[.share 5] #[P]) (· == .shareOutOfRange (some 0) 5 1))
+    itBool "Share in an expanded-root input is rejected"
+      (isErr (optimizeSharing #[P, .share 0]) (· == .shareInExpandedInput 1 0))
+    itBool "stored depth limit"
+      (isErr (optimizeSharing #[chain 20] { maxDepth := 10 }) (exhausted .depth))
+    itBool "expanded height limit (shallow entries, deep expansion)"
+      (let chainTable (k : Nat) : Array Ixon.Expr :=
+         #[.var 0] ++ (Array.range (k - 1)).map fun i => .app (.share i.toUInt64) (.var 0)
+       isErr (optimizeSharingTable (chainTable 40) #[.share 39] { maxDepth := 20 })
+         (exhausted .depth))
+    itBool "distinct-node limit"
+      (isErr (optimizeSharing #[chain 30] { maxNodes := 10 }) (exhausted .nodes))
+    itBool "walk limit"
+      (isErr (optimizeSharing #[chain 30] { maxExprVisits := 10 }) (exhausted .exprVisits))
+    itBool "unreachable entries do not affect the result"
       (let c := axiomOf (arr (chain 2) (chain 2))
        let garbage : Constant := { c with
          info := .axio ⟨false, 0, arr (.share 2) (.share 2)⟩,
@@ -545,22 +566,22 @@ def sampleInfos : List ConstantInfo :=
             .recr ⟨false, false, 0, 0, 0, 0, 0, e 13, #[⟨0, e 14⟩]⟩],
     .muts #[] ]
 
-def rootApiTests (_ : Unit) : TestSeq :=
-  let shift (rs : Array Ixon.Expr) := rs.map fun r => Ixon.Expr.app r (.var 99)
-  group "root extraction and reassembly" <|
-    test "constantInfoRoots = Ix.CompileM.constantInfoRootExprs on every kind"
-      (sampleInfos.all fun i => constantInfoRoots i == Ix.CompileM.constantInfoRootExprs i) ++
-    test "withRoots consumes exactly the extracted roots in order"
-      (sampleInfos.all fun i =>
-        let rs := shift (constantInfoRoots i)
-        match withRoots i rs with
-        | .ok i' => constantInfoRoots i' == rs && (withRoots i' (constantInfoRoots i)).toOption == some i
-        | .error _ => false) ++
-    test "mapRoots f info = withRoots info ((constantInfoRoots info).map f) on every kind"
+def rootApiTests : Spec :=
+  describe "root extraction and reassembly" do
+    itBool "constantInfoRoots = Ix.CompileM.constantInfoRootExprs on every kind"
+      (sampleInfos.all fun i => constantInfoRoots i == Ix.CompileM.constantInfoRootExprs i)
+    itBool "withRoots consumes exactly the extracted roots in order"
+      (let shift (rs : Array Ixon.Expr) := rs.map fun r => Ixon.Expr.app r (.var 99)
+       sampleInfos.all fun i =>
+         let rs := shift (constantInfoRoots i)
+         match withRoots i rs with
+         | .ok i' => constantInfoRoots i' == rs && (withRoots i' (constantInfoRoots i)).toOption == some i
+         | .error _ => false)
+    itBool "mapRoots f info = withRoots info ((constantInfoRoots info).map f) on every kind"
       (sampleInfos.all fun i =>
         let g := fun r => Ixon.Expr.app r (.var 98)
-        (withRoots i ((constantInfoRoots i).map g)).toOption == some (mapRoots g i)) ++
-    test "withRoots rejects one root too many / too few"
+        (withRoots i ((constantInfoRoots i).map g)).toOption == some (mapRoots g i))
+    itBool "withRoots rejects one root too many / too few"
       (sampleInfos.all fun i =>
         let rs := constantInfoRoots i
         isErr (withRoots i (rs.push P)) (· == .rootCountMismatch rs.size (rs.size + 1)) &&
@@ -648,85 +669,84 @@ def genSpines : RGen (Array Ixon.Expr) := do
     roots := roots.push (.app e e)
   return roots
 
-def spineWalkTests (_ : Unit) : TestSeq :=
-  let (checked, err) := runGen 53 do
-    let mut checked := 0
-    let mut err : Option String := none
-    for i in [0:200] do
-      if err.isSome then break
-      let roots ← genSpines
-      match expandRoots roots with
-      | .ok ex =>
-        let n := ex.dag.size
-        let p := Prep.ofDag ex.dag
-        let mut width : Array (Option Nat) := Array.replicate n none
-        for t in [0:n] do
-          if (← rand 3) == 0 then
-            let idx := [← rand 8, 8 + (← rand 300), 65530 + (← rand 12), 2^32 + (← rand 3)][← rand 4]!
-            width := width.set! t (some (shareWidth idx))
-        checked := checked + 1
-        unless (p.costsAll width).1 == walkCosts ex.dag width &&
-            p.base == walkCosts ex.dag (Array.replicate n none) do
-          err := some s!"case {i}: available-descendant evaluation differs from the full spine walk"
-      | .error e => err := some s!"case {i}: error {reprStr e}"
-    return (checked, err)
-  group "telescope evaluation vs full spine walk" <|
-    test s!"{checked} long-spine DAGs with random dictionaries (widths 1–5): costs equal the O(l) walk over every cut" (err.isNone && checked == 200) ++
-    (match err with | some m => test m false | none => .done)
+def spineWalkTests : Spec :=
+  describe "telescope evaluation vs full spine walk" do
+    it "200 long-spine DAGs with random dictionaries (widths 1–5): costs equal the O(l) walk over every cut" do
+      let (checked, err) := runGen 53 do
+        let mut checked := 0
+        let mut err : Option String := none
+        for i in [0:200] do
+          if err.isSome then break
+          let roots ← genSpines
+          match expandRoots roots with
+          | .ok ex =>
+            let n := ex.dag.size
+            let p := Prep.ofDag ex.dag
+            let mut width : Array (Option Nat) := Array.replicate n none
+            for t in [0:n] do
+              if (← rand 3) == 0 then
+                let idx := [← rand 8, 8 + (← rand 300), 65530 + (← rand 12), 2^32 + (← rand 3)][← rand 4]!
+                width := width.set! t (some (shareWidth idx))
+            checked := checked + 1
+            unless (p.costsAll width).1 == walkCosts ex.dag width &&
+                p.base == walkCosts ex.dag (Array.replicate n none) do
+              err := some s!"case {i}: available-descendant evaluation differs from the full spine walk"
+          | .error e => err := some s!"case {i}: error {reprStr e}"
+        return (checked, err)
+      if let some m := err then fail m
+      expect (checked == 200) s!"checked {checked} != 200"
 
-def deepTests (_ : Unit) : TestSeq :=
-  let d := 10000
-  let nested : Ixon.Expr :=
-    (List.range d).foldl (fun acc i => .app (.var (i % 2).toUInt64) acc) (.sort 0)
-  let telescope : Ixon.Expr :=
-    (List.range d).foldl (fun acc i => .lam (.var (i % 3).toUInt64) acc) (.sort 0)
-  group "deep inputs" <|
-    withOk "deep" (optimizeSharing #[nested, telescope]) fun r =>
-      test s!"{d}-deep argument nesting and a {d}-binder telescope optimize under default limits ({r.variableBytes} bytes = unshared {r.unsharedBytes})"
-        (r.variableBytes == r.unsharedBytes &&
+def deepTests : Spec :=
+  describe "deep inputs" do
+    it "10000-deep argument nesting and a 10000-binder telescope optimize under default limits" do
+      let d := 10000
+      let nested : Ixon.Expr :=
+        (List.range d).foldl (fun acc i => .app (.var (i % 2).toUInt64) acc) (.sort 0)
+      let telescope : Ixon.Expr :=
+        (List.range d).foldl (fun acc i => .lam (.var (i % 3).toUInt64) acc) (.sort 0)
+      withOk "deep" (optimizeSharing #[nested, telescope]) fun r =>
+        expect (r.variableBytes == r.unsharedBytes &&
           r.variableBytes == exprSize nested + exprSize telescope + 1 &&
           r.variableBytes == (serExpr nested).size + (serExpr telescope).size + 1)
+          s!"variableBytes={r.variableBytes}, unsharedBytes={r.unsharedBytes}"
 
-def dictionaryTestsWith (fixMax fixOffMax genTarget genMaxOrders : Nat) (_ : Unit) : TestSeq :=
+def dictionaryTestsWith (fixMax fixOffMax genTarget genMaxOrders : Nat) : Spec :=
   let fixtures : List (String × Array Ixon.Expr) :=
     [("T2→T2", #[arr (chain 2) (chain 2)]), ("A→A→B→B", #[tiedMinimaRoot]),
      ("mixed spines", #[.app (.app (.lam P (arr P P)) (arr P P)) (.app (.var 0) (arr P P))]),
      ("let/prj", #[.letE false (.value .many) (arr P P) (.prj 0 1 (.app (.var 0) P)) (.app (.var 0) P)])]
-  let fixtureSeq := fixtures.foldl (init := .done) fun acc (name, roots) =>
-    acc ++ withOk name (expandRoots roots) fun ex =>
-      -- Up to `fixMax` of the ordered dictionaries (strided when there are
-      -- more), each at indices 0.., and `fixOffMax` of them at every index offset.
-      let total := (orderedSubsets ex.dag.size (List.range ex.dag.size)).length
-      let stride := if total > fixMax then 7 else 1
-      let (c1, e1) := dictionaryAgreement ex.dag [0] fixMax stride
-      let (c2, e2) := dictionaryAgreement ex.dag dictOffsets fixOffMax (stride * 3)
-      let err := e1.or e2
-      test s!"{name}: C_M and byte-least materialization = enumeration ({c1 + c2} cases over {total} ordered dictionaries, stride {stride}; {dictOffsets.length} index offsets)"
-        (err.isNone) ++
-      (match err with | some m => test m false | none => .done)
-  let (genChecked, genErr) := runGen 19 do
-    let mut checked := 0
-    let mut err : Option String := none
-    let mut cases := 0
-    for _ in [0:400] do
-      if cases ≥ genTarget || err.isSome then break
-      let roots ← genRoots 3 4 2
-      match expandRoots roots with
-      | .ok ex =>
-        if ex.dag.size ≤ 5 then
-          cases := cases + 1
-          let (c, e) := dictionaryAgreement ex.dag [0, 6, 254] genMaxOrders
-          checked := checked + c
-          if let some m := e then err := some s!"{m} roots={reprStr roots}"
-      | .error _ => pure ()
-    return (checked, err)
-  group "fixed-dictionary optimizer vs enumeration" <|
-    fixtureSeq ++
-    test s!"generated inputs (N ≤ 5): {genChecked} (dictionary, term) cases agree" genErr.isNone ++
-    (match genErr with | some m => test m false | none => .done)
+  describe "fixed-dictionary optimizer vs enumeration" do
+    for (name, roots) in fixtures do
+      it s!"{name}: C_M and byte-least materialization = enumeration" do
+        withOk name (expandRoots roots) fun ex => do
+          -- Up to `fixMax` of the ordered dictionaries (strided when there are
+          -- more), each at indices 0.., and `fixOffMax` of them at every index offset.
+          let total := (orderedSubsets ex.dag.size (List.range ex.dag.size)).length
+          let stride := if total > fixMax then 7 else 1
+          let (_, e1) := dictionaryAgreement ex.dag [0] fixMax stride
+          let (_, e2) := dictionaryAgreement ex.dag dictOffsets fixOffMax (stride * 3)
+          if let some m := e1.or e2 then fail m
+    it s!"generated inputs (N ≤ 5, up to {genTarget} cases): (dictionary, term) cases agree" do
+      let (_, genErr) := runGen 19 do
+        let mut checked := 0
+        let mut err : Option String := none
+        let mut cases := 0
+        for _ in [0:400] do
+          if cases ≥ genTarget || err.isSome then break
+          let roots ← genRoots 3 4 2
+          match expandRoots roots with
+          | .ok ex =>
+            if ex.dag.size ≤ 5 then
+              cases := cases + 1
+              let (c, e) := dictionaryAgreement ex.dag [0, 6, 254] genMaxOrders
+              checked := checked + c
+              if let some m := e then err := some s!"{m} roots={reprStr roots}"
+          | .error _ => pure ()
+        return (checked, err)
+      if let some m := genErr then fail m
 
-def dictionaryTests (_ : Unit) : TestSeq := dictionaryTestsWith 2000 300 60 400 ()
-def dictionaryTestsPR (_ : Unit) : TestSeq := dictionaryTestsWith 120 40 15 80 ()
+def dictionaryTests : Spec := dictionaryTestsWith 2000 300 60 400
+def dictionaryTestsPR : Spec := dictionaryTestsWith 120 40 15 80
 
 /-! ## Full optimizer vs exhaustive oracle (P1/P3) -/
 
@@ -760,17 +780,19 @@ def oracleAgreement (seed cases maxN : Nat) (product : Bool) : Nat × Nat × Nat
         err := some s!"case {attempts}: error {reprStr e} roots={reprStr roots}"
     return (checked, skipped, tables, err)
 
-def oracleTestsWith (partCases prodCases : Nat) (_ : Unit) : TestSeq :=
-  let (n1, s1, t1, e1) := oracleAgreement 23 partCases 6 false
-  let (n2, s2, t2, e2) := oracleAgreement 29 prodCases 4 true
-  group "optimizer vs exhaustive oracle (full key)" <|
-    test s!"per-part oracle: {n1} generated constants (N ≤ 6, all kinds and let modes, {t1} tables) agree on bytes and table IDs ({s1} skipped: oracle budget)" (e1.isNone && n1 == partCases) ++
-    (match e1 with | some m => test m false | none => .done) ++
-    test s!"full-product oracle: {n2} generated constants (N ≤ 4, {t2} tables) agree ({s2} skipped: oracle budget)" (e2.isNone && n2 == prodCases) ++
-    (match e2 with | some m => test m false | none => .done)
+def oracleTestsWith (partCases prodCases : Nat) : Spec :=
+  describe "optimizer vs exhaustive oracle (full key)" do
+    it s!"per-part oracle: {partCases} generated constants (N ≤ 6, all kinds and let modes) agree on bytes and table IDs" do
+      let (n1, s1, t1, e1) := oracleAgreement 23 partCases 6 false
+      if let some m := e1 then fail m
+      expect (n1 == partCases) s!"checked {n1}/{partCases} ({t1} tables, {s1} skipped)"
+    it s!"full-product oracle: {prodCases} generated constants (N ≤ 4) agree" do
+      let (n2, s2, t2, e2) := oracleAgreement 29 prodCases 4 true
+      if let some m := e2 then fail m
+      expect (n2 == prodCases) s!"checked {n2}/{prodCases} ({t2} tables, {s2} skipped)"
 
-def oracleTests (_ : Unit) : TestSeq := oracleTestsWith 150 40 ()
-def oracleTestsPR (_ : Unit) : TestSeq := oracleTestsWith 30 10 ()
+def oracleTests : Spec := oracleTestsWith 150 40
+def oracleTestsPR : Spec := oracleTestsWith 30 10
 
 /-- Unit-width relaxation (§4.1): with no telescope merging and at most 8
 positive-weight terms of indegree ≥ 2, the minimum variable length is
@@ -794,27 +816,28 @@ def unitWidthLength (roots : Array Ixon.Expr) : Option Nat := Id.run do
   return some (roots.size + kstar + tag0Size kstar +
     distinct.foldl (fun acc t => acc + w t) 0)
 
-def unitWidthTestsWith (target minRequired : Nat) (_ : Unit) : TestSeq :=
-  let (checked, err) := runGen 31 do
-    let mut checked := 0
-    let mut err : Option String := none
-    for i in [0:600] do
-      if checked ≥ target || err.isSome then break
-      let roots ← genRoots 6 14 4 (noMerge := true)
-      let some expected := unitWidthLength roots | continue
-      match optimizeSharing roots with
-      | .ok r =>
-        checked := checked + 1
-        unless r.variableBytes == expected do
-          err := some s!"case {i}: exact={r.variableBytes} unit={expected} roots={reprStr roots}"
-      | .error e => err := some s!"case {i}: error {reprStr e}"
-    return (checked, err)
-  group "unit-width relaxation oracle" <|
-    test s!"exact length = unit-width optimum on {checked} merge-free generated inputs" (err.isNone && checked ≥ minRequired) ++
-    (match err with | some m => test m false | none => .done)
+def unitWidthTestsWith (target minRequired : Nat) : Spec :=
+  describe "unit-width relaxation oracle" do
+    it s!"exact length = unit-width optimum on up to {target} merge-free generated inputs (≥ {minRequired})" do
+      let (checked, err) := runGen 31 do
+        let mut checked := 0
+        let mut err : Option String := none
+        for i in [0:600] do
+          if checked ≥ target || err.isSome then break
+          let roots ← genRoots 6 14 4 (noMerge := true)
+          let some expected := unitWidthLength roots | continue
+          match optimizeSharing roots with
+          | .ok r =>
+            checked := checked + 1
+            unless r.variableBytes == expected do
+              err := some s!"case {i}: exact={r.variableBytes} unit={expected} roots={reprStr roots}"
+          | .error e => err := some s!"case {i}: error {reprStr e}"
+        return (checked, err)
+      if let some m := err then fail m
+      expect (decide (checked ≥ minRequired)) s!"checked {checked} < {minRequired}"
 
-def unitWidthTests (_ : Unit) : TestSeq := unitWidthTestsWith 150 100 ()
-def unitWidthTestsPR (_ : Unit) : TestSeq := unitWidthTestsWith 50 50 ()
+def unitWidthTests : Spec := unitWidthTestsWith 150 100
+def unitWidthTestsPR : Spec := unitWidthTestsWith 50 50
 
 /-- Independent atoms: for a fixed stored set the optimal order gives the
 cheapest slots to the most-used atoms, so a brute force over subsets gives
@@ -834,80 +857,87 @@ def atomsBrute (sizes occs : Array Nat) : Nat := Id.run do
     if mask == 0 || cost < best then best := cost
   return best
 
-def atomsTests (_ : Unit) : TestSeq :=
-  let (checked, err) := runGen 37 do
-    let mut checked := 0
-    let mut err : Option String := none
-    for i in [0:12] do
-      let n := 9 + (← rand 3)
-      let mut atoms : Array Ixon.Expr := #[]
-      let mut occs : Array Nat := #[]
-      for j in [0:n] do
-        atoms := atoms.push (.ref (j + 2).toUInt64 (Array.replicate (← rand 4) 0))
-        occs := occs.push (2 + (← rand 12))
-      let roots := (Array.range n).foldl (fun acc j => acc ++ Array.replicate occs[j]! atoms[j]!) #[]
-      let sizes := atoms.map exprSize
-      let expected := atomsBrute sizes occs
-      match optimizeSharing roots with
-      | .ok r =>
-        checked := checked + 1
-        unless r.variableBytes == expected do
-          err := some s!"case {i}: exact={r.variableBytes} brute={expected} occs={occs} sizes={sizes}"
-      | .error e => err := some s!"case {i}: error {reprStr e}"
-    return (checked, err)
-  group "multi-width buckets vs brute force" <|
-    test s!"independent atoms (9–11 atoms, slots cross index 8): {checked} cases equal the brute-force minimum" (err.isNone && checked == 12) ++
-    (match err with | some m => test m false | none => .done)
+def atomsTests : Spec :=
+  describe "multi-width buckets vs brute force" do
+    it "independent atoms (9–11 atoms, slots cross index 8): 12 cases equal the brute-force minimum" do
+      let (checked, err) := runGen 37 do
+        let mut checked := 0
+        let mut err : Option String := none
+        for i in [0:12] do
+          let n := 9 + (← rand 3)
+          let mut atoms : Array Ixon.Expr := #[]
+          let mut occs : Array Nat := #[]
+          for j in [0:n] do
+            atoms := atoms.push (.ref (j + 2).toUInt64 (Array.replicate (← rand 4) 0))
+            occs := occs.push (2 + (← rand 12))
+          let roots := (Array.range n).foldl (fun acc j => acc ++ Array.replicate occs[j]! atoms[j]!) #[]
+          let sizes := atoms.map exprSize
+          let expected := atomsBrute sizes occs
+          match optimizeSharing roots with
+          | .ok r =>
+            checked := checked + 1
+            unless r.variableBytes == expected do
+              err := some s!"case {i}: exact={r.variableBytes} brute={expected} occs={occs} sizes={sizes}"
+          | .error e => err := some s!"case {i}: error {reprStr e}"
+        return (checked, err)
+      if let some m := err then fail m
+      expect (checked == 12) s!"checked {checked} != 12"
 
 /-! ## §2 fixtures -/
 
 def witness2 : Constant := axiomOf (arr (chain 2) (chain 2))
 
-def witnessTests (_ : Unit) : TestSeq :=
-  -- A valid 17-byte encoding of T2 → T2, two bytes above the minimum.
-  let altBytes := ByteArray.mk #[0xd2, 0x00, 0x00, 0x91, 0xb1, 0xb1, 0x02, 0x91,
-    0x00, 0x00, 0x91, 0x00, 0xb0, 0x00, 0x01, 0x00, 0x00]
-  let alt := (deConstant altBytes).toOption.getD witness2
-  group "fixture T2 → T2 (17 → 15)" <|
-    test "the 17-byte encoding decodes to T2 → T2"
-      (hexOf (serConstant alt) == "d2000091b1b1029100009100b000010000" &&
+def witnessTests : Spec :=
+  describe "fixture T2 → T2 (17 → 15)" do
+    it "the 17-byte encoding decodes to T2 → T2" do
+      -- A valid 17-byte encoding of T2 → T2, two bytes above the minimum.
+      let altBytes := ByteArray.mk #[0xd2, 0x00, 0x00, 0x91, 0xb1, 0xb1, 0x02, 0x91,
+        0x00, 0x00, 0x91, 0x00, 0xb0, 0x00, 0x01, 0x00, 0x00]
+      let alt := (deConstant altBytes).toOption.getD witness2
+      expect (hexOf (serConstant alt) == "d2000091b1b1029100009100b000010000" &&
         (expandConstantSharing alt).toOption.map (constantInfoRoots ·.info) ==
-          some (constantInfoRoots witness2.info)) ++
-    test "unshared is 16 bytes" (cbytes witness2 == 16) ++
-    withOk "exact" (optimizeSharingTable #[] (constantInfoRoots witness2.info)) (fun r =>
-      test "exact table term IDs = [T2] = [2]" (r.tableTerms == #[2])) ++
-    withOk "exact" (normalizeConstantSharing witness2) (fun n =>
-      test "exact bytes d2000091b0b0019200000000010000 (15)"
-        (hexOf (serConstant n) == "d2000091b0b0019200000000010000")) ++
-    withOk "exact from the 17-byte encoding" (normalizeConstantSharing alt) (fun n =>
-      test "normalizing the 17-byte encoding gives the same 15 bytes"
-        (hexOf (serConstant n) == "d2000091b0b0019200000000010000")) ++
-    withOk "oracle" (oracleConstant witness2) (fun (oc, o) =>
-      test s!"per-part oracle: 15-byte unique minimum over {o.work.tables} ordered tables"
-        (hexOf (serConstant oc) == "d2000091b0b0019200000000010000" &&
-          o.work.tables == 65 && o.minima.size == 1))
+          some (constantInfoRoots witness2.info))
+    itBool "unshared is 16 bytes" (cbytes witness2 == 16)
+    it "exact table term IDs = [T2] = [2]" do
+      withOk "exact" (optimizeSharingTable #[] (constantInfoRoots witness2.info)) fun r =>
+        expect (r.tableTerms == #[2])
+    it "exact bytes d2000091b0b0019200000000010000 (15)" do
+      withOk "exact" (normalizeConstantSharing witness2) fun n =>
+        expect (hexOf (serConstant n) == "d2000091b0b0019200000000010000")
+    it "normalizing the 17-byte encoding gives the same 15 bytes" do
+      let altBytes := ByteArray.mk #[0xd2, 0x00, 0x00, 0x91, 0xb1, 0xb1, 0x02, 0x91,
+        0x00, 0x00, 0x91, 0x00, 0xb0, 0x00, 0x01, 0x00, 0x00]
+      let alt := (deConstant altBytes).toOption.getD witness2
+      withOk "exact from the 17-byte encoding" (normalizeConstantSharing alt) fun n =>
+        expect (hexOf (serConstant n) == "d2000091b0b0019200000000010000")
+    it "per-part oracle: 15-byte unique minimum over 65 ordered tables" do
+      withOk "oracle" (oracleConstant witness2) fun (oc, o) =>
+        expect (hexOf (serConstant oc) == "d2000091b0b0019200000000010000" &&
+          o.work.tables == 65 && o.minima.size == 1)
 
 /-- Full-product brute-force oracle over all 3,061,082 complete candidates for
 `witness2` (nightly sweep). -/
-def witnessProductOracleTests (_ : Unit) : TestSeq :=
-  group "fixture T2 → T2 (full-product oracle)" <|
-    withOk "product oracle" (oracleConstant witness2 {} true) (fun (oc, o) =>
-      test s!"full-product oracle: {o.work.candidates} complete candidates, 15-byte unique minimum"
-        (hexOf (serConstant oc) == "d2000091b0b0019200000000010000" &&
-          o.work.candidates == 3061082 && o.minima.size == 1))
+def witnessProductOracleTests : Spec :=
+  describe "fixture T2 → T2 (full-product oracle)" do
+    it "full-product oracle: 3061082 complete candidates, 15-byte unique minimum" do
+      withOk "product oracle" (oracleConstant witness2 {} true) fun (oc, o) =>
+        expect (hexOf (serConstant oc) == "d2000091b0b0019200000000010000" &&
+          o.work.candidates == 3061082 && o.minima.size == 1)
 
 def witness16 : Constant := axiomOf (arr (chain 16) (chain 16))
 
-def t16Tests (_ : Unit) : TestSeq :=
-  let only16 : Constant := { witness16 with
-    info := .axio ⟨false, 0, arr (.share 0) (.share 0)⟩, sharing := #[chain 16] }
-  group "fixture T16 → T16" <|
-    test "unshared is 46 bytes" (cbytes witness16 == 46) ++
-    test "storing only T16 is 30 bytes" (cbytes only16 == 30) ++
-    withOk "exact" (optimizeSharingTable #[] (constantInfoRoots witness16.info)) (fun r =>
-      withOk "exact" (normalizeConstantSharing witness16) fun n =>
-        test s!"exact certified minimum = {cbytes n} bytes ≤ 30 (candidates {r.stats.candidates}, states reached {r.stats.statesReached}, expanded {r.stats.statesExpanded}, pruned {r.stats.statesPruned}, transitions {r.stats.transitions})"
-          (cbytes n ≤ 30 && cbytes n == r.variableBytes + 7))
+def t16Tests : Spec :=
+  describe "fixture T16 → T16" do
+    itBool "unshared is 46 bytes" (cbytes witness16 == 46)
+    itBool "storing only T16 is 30 bytes"
+      (let only16 : Constant := { witness16 with
+         info := .axio ⟨false, 0, arr (.share 0) (.share 0)⟩, sharing := #[chain 16] }
+       cbytes only16 == 30)
+    it "exact certified minimum ≤ 30 bytes" do
+      withOk "exact" (optimizeSharingTable #[] (constantInfoRoots witness16.info)) fun r =>
+        withOk "exact" (normalizeConstantSharing witness16) fun n =>
+          expect (decide (cbytes n ≤ 30) && cbytes n == r.variableBytes + 7)
+            s!"cbytes={cbytes n}, variableBytes={r.variableBytes}"
 
 /-- The nine-Ref fixture, built as in the production probe: atoms sorted by
 the blake3 hash of their encoding, each twice, then 98 more uses of the last (hot) atom; one
@@ -926,198 +956,212 @@ def nineRef : Constant × Ixon.Expr :=
     univs := #[.zero] }
   (c, hot)
 
-def nineRefTests (_ : Unit) : TestSeq :=
-  let (c, hot) := nineRef
-  -- Two tables of the nine atoms: hash order (the hot atom last, in the 2-byte
-  -- slot 8) and most-used first.
-  let atoms := (constantInfoRoots c.info).foldl
-    (fun acc a => if acc.contains a then acc else acc.push a) #[]
-  let tableWith (table : Array Ixon.Expr) : Constant :=
-    let idxOf (a : Ixon.Expr) : Nat := (table.findIdx? (· == a)).getD 0
-    let roots := (constantInfoRoots c.info).map fun a => Ixon.Expr.share (idxOf a).toUInt64
-    match withRoots c.info roots with
-    | .ok info => { c with info, sharing := table }
-    | .error _ => c
-  let hashOrder := tableWith atoms
-  let freqTable := #[hot] ++ (atoms.filter (· != hot))
-  group "fixture nine independent Refs (677 → 579)" <|
-    test "hot atom is Ref(2,[0,0,0])" (hot == .ref 2 #[0, 0, 0]) ++
-    test "hash order: 677 bytes, hot atom in slot 8"
-      (cbytes hashOrder == 677 && atoms.size == 9 && atoms[8]? == some hot) ++
-    test "same entries, frequency order: 579 bytes" (cbytes (tableWith freqTable) == 579) ++
-    withOk "exact" (optimizeSharingTable #[] (constantInfoRoots c.info)) (fun r =>
-      withOk "exact" (normalizeConstantSharing c) fun n =>
-        test s!"exact: {cbytes n} bytes, table IDs {r.tableTerms}, hot atom at a width-1 slot"
-          (cbytes n == 579 && r.tableTerms == #[0, 1, 2, 3, 4, 5, 6, 7, 8] &&
-            ((n.sharing.findIdx? (· == hot)).map fun i => decide (i < 8)) == some true))
+def nineRefTests : Spec :=
+  describe "fixture nine independent Refs (677 → 579)" do
+    it "hot atom is Ref(2,[0,0,0])" do
+      let (_, hot) := nineRef
+      expect (hot == .ref 2 #[0, 0, 0])
+    it "hash order: 677 bytes, hot atom in slot 8" do
+      let (c, hot) := nineRef
+      let atoms := (constantInfoRoots c.info).foldl
+        (fun acc a => if acc.contains a then acc else acc.push a) #[]
+      let tableWith (table : Array Ixon.Expr) : Constant :=
+        let idxOf (a : Ixon.Expr) : Nat := (table.findIdx? (· == a)).getD 0
+        let roots := (constantInfoRoots c.info).map fun a => Ixon.Expr.share (idxOf a).toUInt64
+        match withRoots c.info roots with
+        | .ok info => { c with info, sharing := table }
+        | .error _ => c
+      let hashOrder := tableWith atoms
+      expect (cbytes hashOrder == 677 && atoms.size == 9 && atoms[8]? == some hot)
+    it "same entries, frequency order: 579 bytes" do
+      let (c, hot) := nineRef
+      let atoms := (constantInfoRoots c.info).foldl
+        (fun acc a => if acc.contains a then acc else acc.push a) #[]
+      let tableWith (table : Array Ixon.Expr) : Constant :=
+        let idxOf (a : Ixon.Expr) : Nat := (table.findIdx? (· == a)).getD 0
+        let roots := (constantInfoRoots c.info).map fun a => Ixon.Expr.share (idxOf a).toUInt64
+        match withRoots c.info roots with
+        | .ok info => { c with info, sharing := table }
+        | .error _ => c
+      let freqTable := #[hot] ++ (atoms.filter (· != hot))
+      expect (cbytes (tableWith freqTable) == 579)
+    it "exact: 579 bytes, table IDs [0..8], hot atom at a width-1 slot" do
+      let (c, hot) := nineRef
+      withOk "exact" (optimizeSharingTable #[] (constantInfoRoots c.info)) fun r =>
+        withOk "exact" (normalizeConstantSharing c) fun n =>
+          expect (cbytes n == 579 && r.tableTerms == #[0, 1, 2, 3, 4, 5, 6, 7, 8] &&
+            ((n.sharing.findIdx? (· == hot)).map fun i => decide (i < 8)) == some true)
 
 /-- Fast PR check for the tied-minima fixture: exact solver picks `[A]`. -/
-def tiedMinimaExactTests (_ : Unit) : TestSeq :=
-  let c := axiomOf tiedMinimaRoot #[.zero, .succ .zero]
-  let onlyA := "d2000094b0b0910001000101910000" ++ "000200010000"
-  group "fixture three 21-byte minima (exact)" <|
-    withOk "exact" (optimizeSharingTable #[] (constantInfoRoots c.info)) (fun r =>
-      withOk "exact" (normalizeConstantSharing c) fun n =>
-        test "exact picks the [A] minimum (table IDs [2])"
-          (hexOf (serConstant n) == onlyA && r.tableTerms == #[2]))
+def tiedMinimaExactTests : Spec :=
+  describe "fixture three 21-byte minima (exact)" do
+    it "exact picks the [A] minimum (table IDs [2])" do
+      let c := axiomOf tiedMinimaRoot #[.zero, .succ .zero]
+      let onlyA := "d2000094b0b0910001000101910000" ++ "000200010000"
+      withOk "exact" (optimizeSharingTable #[] (constantInfoRoots c.info)) fun r =>
+        withOk "exact" (normalizeConstantSharing c) fun n =>
+          expect (hexOf (serConstant n) == onlyA && r.tableTerms == #[2])
 
 /-- Full 13,700-table exhaustive oracle check for the tied-minima fixture
 (nightly sweep). -/
-def tiedMinimaTests (_ : Unit) : TestSeq :=
-  let c := axiomOf tiedMinimaRoot #[.zero, .succ .zero]
-  -- Table [A]: the root is one telescope with binders `Share 0`, `Share 0`, `B`, `P`
-  -- over `Type`; tables [A,B] and [B,A]: the root is cut at `B`, all `Share`s.
-  let onlyA := "d2000094b0b0910001000101910000" ++ "000200010000"
-  let first := "d2000093b0b0b1b10291000091000100020001" ++ "0000"
-  let second := "d2000093b1b1b0b00291000191000000020001" ++ "0000"
-  group "fixture three 21-byte minima" <|
-    withOk "oracle" (oracleConstant c) (fun (oc, o) =>
-      test s!"oracle: minimum 21 over {o.work.tables} ordered tables; [A], [A,B] and [B,A] attain it; the least table [A] wins"
-        (cbytes oc == 21 && o.work.tables == 13700 && o.minima.size == 3 &&
+def tiedMinimaTests : Spec :=
+  describe "fixture three 21-byte minima" do
+    it "oracle: minimum 21 over 13700 ordered tables; [A], [A,B] and [B,A] attain it; the least table [A] wins" do
+      let c := axiomOf tiedMinimaRoot #[.zero, .succ .zero]
+      -- Table [A]: the root is one telescope with binders `Share 0`, `Share 0`, `B`, `P`
+      -- over `Type`; tables [A,B] and [B,A]: the root is cut at `B`, all `Share`s.
+      let onlyA := "d2000094b0b0910001000101910000" ++ "000200010000"
+      let first := "d2000093b0b0b1b10291000091000100020001" ++ "0000"
+      let second := "d2000093b1b1b0b00291000191000000020001" ++ "0000"
+      withOk "oracle" (oracleConstant c) fun (oc, o) =>
+        expect (cbytes oc == 21 && o.work.tables == 13700 && o.minima.size == 3 &&
           o.minima.any (hexOf · == first) && o.minima.any (hexOf · == second) &&
-          hexOf (serConstant oc) == onlyA && o.table == #[2])) ++
-    withOk "exact" (optimizeSharingTable #[] (constantInfoRoots c.info)) (fun r =>
-      withOk "exact" (normalizeConstantSharing c) fun n =>
-        test "exact picks the [A] minimum (table IDs [2])"
-          (hexOf (serConstant n) == onlyA && r.tableTerms == #[2]))
+          hexOf (serConstant oc) == onlyA && o.table == #[2])
+    it "exact picks the [A] minimum (table IDs [2])" do
+      let c := axiomOf tiedMinimaRoot #[.zero, .succ .zero]
+      let onlyA := "d2000094b0b0910001000101910000" ++ "000200010000"
+      withOk "exact" (optimizeSharingTable #[] (constantInfoRoots c.info)) fun r =>
+        withOk "exact" (normalizeConstantSharing c) fun n =>
+          expect (hexOf (serConstant n) == onlyA && r.tableTerms == #[2])
 
 /-- A parent stored before its separately stored descendant (which the
 parent's entry therefore inlines): seven hot atoms take slots 0–6, the
 50-use parent `P = App(Var 0, D)` takes slot 7 and `D` (3 more uses) slot 8. -/
-def orderingTests (_ : Unit) : TestSeq :=
-  let d : Ixon.Expr := .ref 1 #[0, 0, 0]
-  let p : Ixon.Expr := .app (.var 0) d
-  let hots := (Array.range 7).map fun i => Ixon.Expr.ref (i + 2).toUInt64 #[0, 0, 0]
-  let roots := hots.foldl (fun acc h => acc ++ Array.replicate 100 h) #[] ++
-    Array.replicate 50 p ++ Array.replicate 3 d
-  group "ordering: parent before descendant" <|
-    withOk "exact" (optimizeSharing roots) fun r =>
-      test s!"variable bytes {r.variableBytes} = 804, table IDs {r.tableTerms} = [2..8, 9 (P), 1 (D)], P's entry inlines D"
-        (r.variableBytes == 804 && r.tableTerms == #[2, 3, 4, 5, 6, 7, 8, 9, 1] &&
+def orderingTests : Spec :=
+  describe "ordering: parent before descendant" do
+    it "variable bytes = 804, table IDs = [2..8, 9 (P), 1 (D)], P's entry inlines D" do
+      let d : Ixon.Expr := .ref 1 #[0, 0, 0]
+      let p : Ixon.Expr := .app (.var 0) d
+      let hots := (Array.range 7).map fun i => Ixon.Expr.ref (i + 2).toUInt64 #[0, 0, 0]
+      let roots := hots.foldl (fun acc h => acc ++ Array.replicate 100 h) #[] ++
+        Array.replicate 50 p ++ Array.replicate 3 d
+      withOk "exact" (optimizeSharing roots) fun r =>
+        expect (r.variableBytes == 804 && r.tableTerms == #[2, 3, 4, 5, 6, 7, 8, 9, 1] &&
           r.sharing[7]? == some p)
 
 /-! ## Properties on generated inputs -/
 
-def propertyTestsWith (target : Nat) (_ : Unit) : TestSeq :=
-  let (checked, err) := runGen 41 do
-    let mut checked := 0
-    let mut err : Option String := none
-    for i in [0:target] do
-      if err.isSome then break
-      let roots ← genRoots 5 12 4
-      let c := wrapRoots roots i
-      let alt := alternateOf c
-      match normalizeConstantSharing c, optimizeSharingTable #[] (constantInfoRoots c.info) with
-      | .ok n, .ok r =>
-        checked := checked + 1
-        let idem := (normalizeConstantSharing n).toOption.map serConstant == some (serConstant n)
-        let fromAlt := (normalizeConstantSharing alt).toOption.map serConstant == some (serConstant n)
-        let fromExpanded := ((expandConstantSharing n).toOption.bind
-          fun e => (normalizeConstantSharing e).toOption).map serConstant == some (serConstant n)
-        let minimum := match checkExactMinimum n with
-          | .ok .minimum => true
-          | _ => false
-        let altCheck := match checkExactMinimum alt with
-          | .ok .minimum => serConstant alt == serConstant n
-          | .ok (.notMinimum exp) => exp == serConstant n
-          | .error _ => false
-        let f := fixedConstantBytes c
-        let fixedOk := cbytes n == f + r.variableBytes && cbytes c == f + r.unsharedBytes
-        let expandsBack := (expandConstantSharing n).toOption.map (fun e => constantInfoRoots e.info) ==
-          some (constantInfoRoots c.info)
-        unless cbytes n ≤ cbytes c && cbytes n ≤ cbytes alt && idem && fromAlt &&
-            fromExpanded && minimum && altCheck && fixedOk && expandsBack do
-          err := some s!"case {i}: exact={cbytes n} unshared={cbytes c} uniform-w1={cbytes alt} idem={idem} fromAlt={fromAlt} fromExpanded={fromExpanded} minimum={minimum} altCheck={altCheck} fixed={fixedOk} expands={expandsBack} roots={reprStr roots}"
-      | .error e, _ | _, .error e => err := some s!"case {i}: error {reprStr e}"
-    return (checked, err)
-  group "properties on generated inputs" <|
-    test s!"{checked} constants: exact ≤ unshared, exact ≤ uniform-w1, idempotent, normalize(uniform-w1) = normalize(expanded) = exact, check=minimum, decomposition, expansion preserved" (err.isNone && checked == target) ++
-    (match err with | some m => test m false | none => .done)
+def propertyTestsWith (target : Nat) : Spec :=
+  describe "properties on generated inputs" do
+    it s!"{target} constants: exact ≤ unshared, exact ≤ uniform-w1, idempotent, normalize(uniform-w1) = normalize(expanded) = exact, check=minimum, decomposition, expansion preserved" do
+      let (checked, err) := runGen 41 do
+        let mut checked := 0
+        let mut err : Option String := none
+        for i in [0:target] do
+          if err.isSome then break
+          let roots ← genRoots 5 12 4
+          let c := wrapRoots roots i
+          let alt := alternateOf c
+          match normalizeConstantSharing c, optimizeSharingTable #[] (constantInfoRoots c.info) with
+          | .ok n, .ok r =>
+            checked := checked + 1
+            let idem := (normalizeConstantSharing n).toOption.map serConstant == some (serConstant n)
+            let fromAlt := (normalizeConstantSharing alt).toOption.map serConstant == some (serConstant n)
+            let fromExpanded := ((expandConstantSharing n).toOption.bind
+              fun e => (normalizeConstantSharing e).toOption).map serConstant == some (serConstant n)
+            let minimum := match checkExactMinimum n with
+              | .ok .minimum => true
+              | _ => false
+            let altCheck := match checkExactMinimum alt with
+              | .ok .minimum => serConstant alt == serConstant n
+              | .ok (.notMinimum exp) => exp == serConstant n
+              | .error _ => false
+            let f := fixedConstantBytes c
+            let fixedOk := cbytes n == f + r.variableBytes && cbytes c == f + r.unsharedBytes
+            let expandsBack := (expandConstantSharing n).toOption.map (fun e => constantInfoRoots e.info) ==
+              some (constantInfoRoots c.info)
+            unless cbytes n ≤ cbytes c && cbytes n ≤ cbytes alt && idem && fromAlt &&
+                fromExpanded && minimum && altCheck && fixedOk && expandsBack do
+              err := some s!"case {i}: exact={cbytes n} unshared={cbytes c} uniform-w1={cbytes alt} idem={idem} fromAlt={fromAlt} fromExpanded={fromExpanded} minimum={minimum} altCheck={altCheck} fixed={fixedOk} expands={expandsBack} roots={reprStr roots}"
+          | .error e, _ | _, .error e => err := some s!"case {i}: error {reprStr e}"
+        return (checked, err)
+      if let some m := err then fail m
+      expect (checked == target) s!"checked {checked} != {target}"
 
-def propertyTests (_ : Unit) : TestSeq := propertyTestsWith 250 ()
-def propertyTestsPR (_ : Unit) : TestSeq := propertyTestsWith 60 ()
+def propertyTests : Spec := propertyTestsWith 250
+def propertyTestsPR : Spec := propertyTestsWith 60
 
 /-- LB pruning never changes a result: compare
 with the search with pruning disabled, on inputs with 9–11 candidates
 (beyond the oracle's reach; tables can cross the 8-slot width boundary). -/
-def pruningTestsWith (genTarget wideTarget : Nat) (_ : Unit) : TestSeq :=
-  let (checked, wide, err) := runGen 43 do
-    let mut checked := 0
-    let mut wide := 0
-    let mut err : Option String := none
-    for i in [0:4000] do
-      if checked ≥ genTarget || err.isSome then break
-      let roots ← genRoots 8 24 6
-      let cands := match sharingProfile (wrapRoots roots 0) with
-        | .ok p => p.candidates
-        | .error _ => 0
-      if cands < 9 || cands > 11 then continue
-      match optimizeSharing roots,
-          optimizeSharing roots { prune := false } with
-      | .ok a, .ok b =>
-        checked := checked + 1
-        if a.sharing.size > 8 then wide := wide + 1
-        unless a.sharing == b.sharing && a.roots == b.roots &&
-            a.tableTerms == b.tableTerms && a.variableBytes == b.variableBytes do
-          err := some s!"case {i}: pruned={a.variableBytes} {a.tableTerms} unpruned={b.variableBytes} {b.tableTerms}"
-      | .error e, _ | _, .error e => err := some s!"case {i}: error {reprStr e}"
-    return (checked, wide, err)
-  -- Many profitable atoms plus nested nodes over them: optimal tables
-  -- usually exceed 8 entries, so widths 1 and 2 compete.
-  let genWide : RGen (Array Ixon.Expr) := do
-    let n := 9 + (← rand 3)
-    let atoms : Array Ixon.Expr := (Array.range n).map fun j =>
-      .ref (j + 2).toUInt64 (Array.replicate (1 + j % 3) 0)
-    let mut roots : Array Ixon.Expr := #[]
-    for j in [0:n] do
-      for _ in [0:2 + (← rand 4)] do roots := roots.push atoms[j]!
-    for _ in [0:(← rand 3)] do
-      let a := atoms[← rand n]!
-      let b := atoms[← rand n]!
-      let node : Ixon.Expr := if (← rand 2) == 0 then .app a b else arr a b
-      for _ in [0:2 + (← rand 2)] do roots := roots.push node
-    return roots
-  let (wChecked, wWide, wErr) := runGen 47 do
-    let mut checked := 0
-    let mut wide := 0
-    let mut err : Option String := none
-    for i in [0:400] do
-      if checked ≥ wideTarget || err.isSome then break
-      let roots ← genWide
-      let cands := match sharingProfile (wrapRoots roots 0) with
-        | .ok p => p.candidates
-        | .error _ => 0
-      if cands > 12 then continue
-      match optimizeSharing roots,
-          optimizeSharing roots { prune := false } with
-      | .ok a, .ok b =>
-        checked := checked + 1
-        if a.sharing.size > 8 then wide := wide + 1
-        unless a.sharing == b.sharing && a.roots == b.roots &&
-            a.tableTerms == b.tableTerms && a.variableBytes == b.variableBytes do
-          err := some s!"wide case {i}: pruned={a.variableBytes} {a.tableTerms} unpruned={b.variableBytes} {b.tableTerms}"
-      | .error e, _ | _, .error e => err := some s!"wide case {i}: error {reprStr e}"
-    return (checked, wide, err)
-  group "pruning never changes the result" <|
-    test s!"{checked} inputs with 9–11 candidates ({wide} with more than 8 table entries): pruned search = unpruned search"
-      (err.isNone && checked == genTarget) ++
-    (match err with | some m => test m false | none => .done) ++
-    test s!"{wChecked} atom-heavy inputs with ≤ 12 candidates ({wWide} with more than 8 table entries): pruned = unpruned"
-      (wErr.isNone && wChecked == wideTarget && wWide > 0) ++
-    (match wErr with | some m => test m false | none => .done)
+def pruningTestsWith (genTarget wideTarget : Nat) : Spec :=
+  describe "pruning never changes the result" do
+    it s!"{genTarget} inputs with 9–11 candidates: pruned search = unpruned search" do
+      let (checked, _, err) := runGen 43 do
+        let mut checked := 0
+        let mut wide := 0
+        let mut err : Option String := none
+        for i in [0:4000] do
+          if checked ≥ genTarget || err.isSome then break
+          let roots ← genRoots 8 24 6
+          let cands := match sharingProfile (wrapRoots roots 0) with
+            | .ok p => p.candidates
+            | .error _ => 0
+          if cands < 9 || cands > 11 then continue
+          match optimizeSharing roots,
+              optimizeSharing roots { prune := false } with
+          | .ok a, .ok b =>
+            checked := checked + 1
+            if a.sharing.size > 8 then wide := wide + 1
+            unless a.sharing == b.sharing && a.roots == b.roots &&
+                a.tableTerms == b.tableTerms && a.variableBytes == b.variableBytes do
+              err := some s!"case {i}: pruned={a.variableBytes} {a.tableTerms} unpruned={b.variableBytes} {b.tableTerms}"
+          | .error e, _ | _, .error e => err := some s!"case {i}: error {reprStr e}"
+        return (checked, wide, err)
+      if let some m := err then fail m
+      expect (checked == genTarget) s!"checked {checked} != {genTarget}"
+    it s!"{wideTarget} atom-heavy inputs with ≤ 12 candidates: pruned = unpruned" do
+      -- Many profitable atoms plus nested nodes over them: optimal tables
+      -- usually exceed 8 entries, so widths 1 and 2 compete.
+      let genWide : RGen (Array Ixon.Expr) := do
+        let n := 9 + (← rand 3)
+        let atoms : Array Ixon.Expr := (Array.range n).map fun j =>
+          .ref (j + 2).toUInt64 (Array.replicate (1 + j % 3) 0)
+        let mut roots : Array Ixon.Expr := #[]
+        for j in [0:n] do
+          for _ in [0:2 + (← rand 4)] do roots := roots.push atoms[j]!
+        for _ in [0:(← rand 3)] do
+          let a := atoms[← rand n]!
+          let b := atoms[← rand n]!
+          let node : Ixon.Expr := if (← rand 2) == 0 then .app a b else arr a b
+          for _ in [0:2 + (← rand 2)] do roots := roots.push node
+        return roots
+      let (wChecked, wWide, wErr) := runGen 47 do
+        let mut checked := 0
+        let mut wide := 0
+        let mut err : Option String := none
+        for i in [0:400] do
+          if checked ≥ wideTarget || err.isSome then break
+          let roots ← genWide
+          let cands := match sharingProfile (wrapRoots roots 0) with
+            | .ok p => p.candidates
+            | .error _ => 0
+          if cands > 12 then continue
+          match optimizeSharing roots,
+              optimizeSharing roots { prune := false } with
+          | .ok a, .ok b =>
+            checked := checked + 1
+            if a.sharing.size > 8 then wide := wide + 1
+            unless a.sharing == b.sharing && a.roots == b.roots &&
+                a.tableTerms == b.tableTerms && a.variableBytes == b.variableBytes do
+              err := some s!"wide case {i}: pruned={a.variableBytes} {a.tableTerms} unpruned={b.variableBytes} {b.tableTerms}"
+          | .error e, _ | _, .error e => err := some s!"wide case {i}: error {reprStr e}"
+        return (checked, wide, err)
+      if let some m := wErr then fail m
+      expect (wChecked == wideTarget && decide (wWide > 0)) s!"wChecked={wChecked}, wWide={wWide}"
 
-def pruningTests (_ : Unit) : TestSeq := pruningTestsWith 25 15 ()
-def pruningTestsPR (_ : Unit) : TestSeq := pruningTestsWith 5 5 ()
+def pruningTests : Spec := pruningTestsWith 25 15
+def pruningTestsPR : Spec := pruningTestsWith 5 5
 
-def profileTests (_ : Unit) : TestSeq :=
-  group "sharing profile" <|
-    withOk "T2 → T2" (sharingProfile witness2) (fun p =>
-      test "T2→T2: N=4, 3 repeated, 2 candidates (T1,T2), height 3, unshared 9 variable bytes"
-        (p.distinctSubterms == 4 && p.repeated == 3 && p.candidates == 2 && p.height == 3 &&
-          p.unsharedBytes == 9 && p.inputBytes == 9)) ++
-    withOk "T16 → T16" (sharingProfile witness16) (fun p =>
-      test "T16→T16: N=18, 16 candidates, unshared 39 variable bytes"
-        (p.distinctSubterms == 18 && p.candidates == 16 && p.unsharedBytes == 39))
+def profileTests : Spec :=
+  describe "sharing profile" do
+    it "T2→T2: N=4, 3 repeated, 2 candidates (T1,T2), height 3, unshared 9 variable bytes" do
+      withOk "T2 → T2" (sharingProfile witness2) fun p =>
+        expect (p.distinctSubterms == 4 && p.repeated == 3 && p.candidates == 2 && p.height == 3 &&
+          p.unsharedBytes == 9 && p.inputBytes == 9)
+    it "T16→T16: N=18, 16 candidates, unshared 39 variable bytes" do
+      withOk "T16 → T16" (sharingProfile witness16) fun p =>
+        expect (p.distinctSubterms == 18 && p.candidates == 16 && p.unsharedBytes == 39)
 
 /-! ## Safety, limits, empty input -/
 
@@ -1125,53 +1169,41 @@ def staleProjection : Constant :=
   let info : ConstantInfo := .iPrj ⟨0, testRefs[0]!⟩
   { info, sharing := #[arr P P, .share 0], refs := testRefs, univs := #[] }
 
-def safetyTests (_ : Unit) : TestSeq :=
-  let roots := constantInfoRoots witness16.info
-  group "resource limits and edge cases" <|
-    test "state limit → resourceExhausted, no result"
-      (isErr (optimizeSharing roots { maxStates := 5 }) (exhausted .states)) ++
-    test "transition limit → resourceExhausted"
-      (isErr (optimizeSharing roots { maxTransitions := 5 }) (exhausted .transitions)) ++
-    test "cost-evaluation limit → resourceExhausted"
-      (isErr (optimizeSharing roots { maxCostEvals := 50 }) (exhausted .costEvals)) ++
-    test "output-byte limit → resourceExhausted"
-      (isErr (optimizeSharing roots { maxOutputBytes := 10 }) (exhausted .outputBytes)) ++
-    test "materialization limit → resourceExhausted"
-      (isErr (optimizeSharing roots { maxMaterialize := 3 }) (exhausted .materialize)) ++
-    test "oracle table limit → resourceExhausted"
-      (isErr (oracleConstant witness2 { maxOracleTables := 10 }) (exhausted .oracleTables)) ++
-    test "oracle variant limit → resourceExhausted"
-      (isErr (oracleConstant witness2 { maxOracleVariants := 100 }) (exhausted .oracleVariants)) ++
-    test "larger limits do not change a successful result"
-      ((optimizeSharing roots { maxStates := 1 <<< 30, maxCostEvals := 1 <<< 40 }).toOption.map (·.sharing) ==
-        (optimizeSharing roots).toOption.map (·.sharing)) ++
-    withOk "empty input" (optimizeSharing #[]) (fun r =>
-      test "no roots: empty table, 1 variable byte (the table count)"
-        (r.sharing.isEmpty && r.roots.isEmpty && r.variableBytes == 1)) ++
-    withOk "projection with a stale table"
-      (normalizeConstantSharing staleProjection) (fun n =>
-      test "a constant without roots drops its (unreachable) table" n.sharing.isEmpty) ++
-    test "repeated identical roots can be shared as whole roots"
+def safetyTests : Spec :=
+  describe "resource limits and edge cases" do
+    itBool "state limit → resourceExhausted, no result"
+      (isErr (optimizeSharing (constantInfoRoots witness16.info) { maxStates := 5 }) (exhausted .states))
+    itBool "transition limit → resourceExhausted"
+      (isErr (optimizeSharing (constantInfoRoots witness16.info) { maxTransitions := 5 }) (exhausted .transitions))
+    itBool "cost-evaluation limit → resourceExhausted"
+      (isErr (optimizeSharing (constantInfoRoots witness16.info) { maxCostEvals := 50 }) (exhausted .costEvals))
+    itBool "output-byte limit → resourceExhausted"
+      (isErr (optimizeSharing (constantInfoRoots witness16.info) { maxOutputBytes := 10 }) (exhausted .outputBytes))
+    itBool "materialization limit → resourceExhausted"
+      (isErr (optimizeSharing (constantInfoRoots witness16.info) { maxMaterialize := 3 }) (exhausted .materialize))
+    itBool "oracle table limit → resourceExhausted"
+      (isErr (oracleConstant witness2 { maxOracleTables := 10 }) (exhausted .oracleTables))
+    itBool "oracle variant limit → resourceExhausted"
+      (isErr (oracleConstant witness2 { maxOracleVariants := 100 }) (exhausted .oracleVariants))
+    itBool "larger limits do not change a successful result"
+      (let roots := constantInfoRoots witness16.info
+       (optimizeSharing roots { maxStates := 1 <<< 30, maxCostEvals := 1 <<< 40 }).toOption.map (·.sharing) ==
+         (optimizeSharing roots).toOption.map (·.sharing))
+    it "no roots: empty table, 1 variable byte (the table count)" do
+      withOk "empty input" (optimizeSharing #[]) fun r =>
+        expect (r.sharing.isEmpty && r.roots.isEmpty && r.variableBytes == 1)
+    it "a constant without roots drops its (unreachable) table" do
+      withOk "projection with a stale table" (normalizeConstantSharing staleProjection) fun n =>
+        expect n.sharing.isEmpty
+    itBool "repeated identical roots can be shared as whole roots"
       ((optimizeSharing #[chain 5, chain 5, chain 5]).toOption.map (·.sharing.size) == some 1)
 
-/-! ## Randomized codec properties (SlimCheck) -/
+/-! ## Randomized codec properties -/
 
-def slimTests (_ : Unit) : TestSeq :=
-  checkIO "exprSize = serExpr size (SlimCheck)" (∀ e : Ixon.Expr, exprSize e == (serExpr e).size) ++
-  checkIO "Constant length decomposition (SlimCheck)" (∀ c : Constant, decompositionHolds c)
-
-/-! ## Suite -/
-
-/-- Build and run a test group only when the suite executes (never at module
-initialization), printing its report and wall time. -/
-def deferred (descr : String) (mk : Unit → TestSeq) : TestSeq :=
-  .individualIO descr none (do
-    let start ← IO.monoMsNow
-    let (ok, out) ← (mk ()).runIO 4
-    let stop ← IO.monoMsNow
-    IO.print out
-    IO.println s!"    [{descr}: {stop - start} ms]"
-    return (ok, 0, 0, if ok then none else some s!"a check in '{descr}' failed; see above")) .done
+def slimTests : Spec :=
+  describe "randomized codec properties" do
+    prop "exprSize = serExpr size" fun (e : Ixon.Expr) => exprSize e == (serExpr e).size
+    prop "Constant length decomposition" fun (c : Constant) => decompositionHolds c
 
 /-! ## Limits: defaults and overrides -/
 
@@ -1229,76 +1261,79 @@ def limitSpecMismatches : List String :=
       | .error _ => none
     if got == want then none else some spec
 
-def limitTests (_ : Unit) : TestSeq :=
-  let d : Limits := {}
-  let resources : List Resource := [.exprVisits, .depth, .nodes, .states, .transitions,
-    .costEvals, .outputBytes, .materialize, .materializeWork, .knapsackCells]
-  group "limits" <|
-    test "the defaults are the safety net"
-      (d.maxExprVisits == 2 ^ 40 && d.maxDepth == 2 ^ 20 && d.maxNodes == 2 ^ 32 &&
-        d.maxStates == 2 ^ 40 && d.maxTransitions == 2 ^ 40 && d.maxCostEvals == 2 ^ 50 &&
-        d.maxOutputBytes == 2 ^ 40 && d.maxMaterialize == 2 ^ 40 &&
-        d.maxMaterializeWork == 2 ^ 56 && d.maxKnapsackCells == 2 ^ 28) ++
-    test "overrides set the named limits, left to right"
-      (match d.withOverrides " states = 2^10 ,cost_evals=12345, output_bytes=max,, states=2^11" with
+def limitTests : Spec :=
+  describe "limits" do
+    itBool "the defaults are the safety net"
+      (let d : Limits := {}
+       d.maxExprVisits == 2 ^ 40 && d.maxDepth == 2 ^ 20 && d.maxNodes == 2 ^ 32 &&
+         d.maxStates == 2 ^ 40 && d.maxTransitions == 2 ^ 40 && d.maxCostEvals == 2 ^ 50 &&
+         d.maxOutputBytes == 2 ^ 40 && d.maxMaterialize == 2 ^ 40 &&
+         d.maxMaterializeWork == 2 ^ 56 && d.maxKnapsackCells == 2 ^ 28)
+    itBool "overrides set the named limits, left to right"
+      (let d : Limits := {}
+       match d.withOverrides " states = 2^10 ,cost_evals=12345, output_bytes=max,, states=2^11" with
        | .ok l => l.maxStates == 2048 && l.maxCostEvals == 12345 &&
            l.maxOutputBytes == limitMax && l.maxDepth == d.maxDepth
-       | .error _ => false : Bool) ++
-    test "the retired Rust port's keys are unknown keys"
-      (["height=5", "work=2^3", "layer_states=9", "input_nodes=1", "distinct_nodes=1",
-        "candidates=1"].all fun s => overrideFails (d.withOverrides s)) ++
-    test "unbounded sets every production limit to max; a later item still applies"
-      (match d.withOverrides "unbounded,states=2" with
+       | .error _ => false)
+    itBool "the retired Rust port's keys are unknown keys"
+      (let d : Limits := {}
+       ["height=5", "work=2^3", "layer_states=9", "input_nodes=1", "distinct_nodes=1",
+         "candidates=1"].all fun s => overrideFails (d.withOverrides s))
+    itBool "unbounded sets every production limit to max; a later item still applies"
+      (let d : Limits := {}
+       match d.withOverrides "unbounded,states=2" with
        | .ok l => l.maxDepth == limitMax && l.maxMaterializeWork == limitMax &&
            l.maxStates == 2 && l.maxOracleTables == d.maxOracleTables
-       | .error _ => false : Bool) ++
-    test "malformed overrides are errors"
-      (["bogus=1", "states", "states=2^64", "states=-1", "states=1e3", "=3",
-        "states=18446744073709551616"].all fun s => overrideFails (d.withOverrides s)) ++
-    test s!"the {limitSpecParity.length} grammar specs get the listed verdict"
-      (limitSpecParity.length == 35 && limitSpecMismatches.isEmpty) ++
-    test "every production resource key names a limit"
-      (resources.all fun r => (d.set? r.key 3).isSome)
+       | .error _ => false)
+    itBool "malformed overrides are errors"
+      (let d : Limits := {}
+       ["bogus=1", "states", "states=2^64", "states=-1", "states=1e3", "=3",
+         "states=18446744073709551616"].all fun s => overrideFails (d.withOverrides s))
+    itBool s!"the {limitSpecParity.length} grammar specs get the listed verdict"
+      (limitSpecParity.length == 35 && limitSpecMismatches.isEmpty)
+    itBool "every production resource key names a limit"
+      (let d : Limits := {}
+       let resources : List Resource := [.exprVisits, .depth, .nodes, .states, .transitions,
+         .costEvals, .outputBytes, .materialize, .materializeWork, .knapsackCells]
+       resources.all fun r => (d.set? r.key 3).isSome)
 
-public def suite : List TestSeq := [
-  deferred "integer widths" widthTests,
-  deferred "limits" limitTests,
-  deferred "exact expression length" exprSizeTests,
-  deferred "Constant length decomposition" decompositionTests,
-  deferred "structural IDs" structuralIdTests,
-  deferred "representation independence" representationTestsPR,
-  deferred "checked expression cache" cacheTests,
-  deferred "bounded share expansion" expansionTests,
-  deferred "root extraction and reassembly" rootApiTests,
-  deferred "fixed-dictionary optimizer vs enumeration" dictionaryTestsPR,
-  deferred "telescope evaluation vs full spine walk" spineWalkTests,
-  deferred "deep inputs" deepTests,
-  deferred "optimizer vs exhaustive oracle" oracleTestsPR,
-  deferred "unit-width relaxation oracle" unitWidthTestsPR,
-  deferred "multi-width buckets vs brute force" atomsTests,
-  deferred "fixture T2 → T2" witnessTests,
-  deferred "fixture T16 → T16" t16Tests,
-  deferred "fixture nine Refs" nineRefTests,
-  deferred "fixture three 21-byte minima (exact)" tiedMinimaExactTests,
-  deferred "ordering: parent before descendant" orderingTests,
-  deferred "properties on generated inputs" propertyTestsPR,
-  deferred "pruning never changes the result" pruningTestsPR,
-  deferred "sharing profile" profileTests,
-  deferred "resource limits and edge cases" safetyTests,
-  slimTests (),
-]
+public def suite : Spec := do
+  widthTests
+  limitTests
+  exprSizeTests
+  decompositionTests
+  structuralIdTests
+  representationTestsPR
+  cacheTests
+  expansionTests
+  rootApiTests
+  dictionaryTestsPR
+  spineWalkTests
+  deepTests
+  oracleTestsPR
+  unitWidthTestsPR
+  atomsTests
+  witnessTests
+  t16Tests
+  nineRefTests
+  tiedMinimaExactTests
+  orderingTests
+  propertyTestsPR
+  pruningTestsPR
+  profileTests
+  safetyTests
+  slimTests
 
 /-- Full exhaustive oracle and large-sweep checks for nightly CI
 (`exact-sharing-full`). -/
-public def nightlySuite : List TestSeq := [
-  deferred "representation independence (full)" representationTests,
-  deferred "fixed-dictionary optimizer vs enumeration (full)" dictionaryTests,
-  deferred "optimizer vs exhaustive oracle (full)" oracleTests,
-  deferred "unit-width relaxation oracle (full)" unitWidthTests,
-  deferred "fixture T2 → T2 (full-product oracle)" witnessProductOracleTests,
-  deferred "fixture three 21-byte minima (exhaustive oracle)" tiedMinimaTests,
-  deferred "properties on generated inputs (full)" propertyTests,
-  deferred "pruning never changes the result (full)" pruningTests,
-]
+public def nightlySuite : Spec := do
+  representationTests
+  dictionaryTests
+  oracleTests
+  unitWidthTests
+  witnessProductOracleTests
+  tiedMinimaTests
+  propertyTests
+  pruningTests
 
 end Tests.SharingExact

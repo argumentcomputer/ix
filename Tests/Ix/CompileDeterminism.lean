@@ -39,10 +39,9 @@ private def compileOnce (source : String) (out : System.FilePath) :
 
 /-- Two separate `ix compile` processes over `source`, byte identity asserted via their Blake3
 digests (`Ix.FileDigest.blake3File`). -/
-private def determinismLeg (source : String) :
-    IO (Bool × Nat × Nat × Option String) := do
+private def determinismLeg (source : String) : AssertM Unit := do
   unless (← ixExe.pathExists) do
-    return (false, 0, 0, some s!"{ixExe} missing — run `lake build ix` first")
+    fail s!"{ixExe} missing — run `lake build ix` first"
   let dir ← IO.FS.createTempDir
   try
     let out1 := dir / "run1.ixe"
@@ -51,25 +50,23 @@ private def determinismLeg (source : String) :
     let task2 ← IO.asTask (prio := .dedicated) (compileOnce source out2)
     let res1 ← IO.wait task1
     let res2 ← IO.wait task2
-    if let .error e ← IO.ofExcept res1 then
-      return (false, 0, 0, some e)
-    if let .error e ← IO.ofExcept res2 then
-      return (false, 0, 0, some e)
-    let h1 ← try Ix.FileDigest.blake3File out1
-      catch e => return (false, 0, 0, some s!"blake3 of {out1}: {e}")
-    let h2 ← try Ix.FileDigest.blake3File out2
-      catch e => return (false, 0, 0, some s!"blake3 of {out2}: {e}")
-    let bytes := (← out1.metadata).byteSize.toNat
+    if let Except.error e ← IO.ofExcept res1 then
+      fail e
+    if let Except.error e ← IO.ofExcept res2 then
+      fail e
+    let h1 ← match ← (Ix.FileDigest.blake3File out1).toBaseIO with
+      | .ok h => pure h
+      | .error e => fail s!"blake3 of {out1}: {e}"
+    let h2 ← match ← (Ix.FileDigest.blake3File out2).toBaseIO with
+      | .ok h => pure h
+      | .error e => fail s!"blake3 of {out2}: {e}"
     if h1 != h2 then
-      return (false, bytes, 0, some s!"{source}: cross-process compile \
-is nondeterministic — {h1} vs {h2}")
-    return (true, bytes, 0, none)
+      fail s!"{source}: cross-process compile is nondeterministic — {h1} vs {h2}"
   finally
     IO.FS.removeDirAll dir
 
-def suite : List TestSeq := [
-  .individualIO
-    "compile determinism: fixture corpus, two processes, Blake3-identical"
-    none (determinismLeg "Tests/Ix/Compile/Mutual.lean") .done ]
+public def suite : LSpec.Spec := do
+  it "compile determinism: fixture corpus, two processes, Blake3-identical" do
+    determinismLeg "Tests/Ix/Compile/Mutual.lean"
 
 end Tests.Ix.CompileDeterminism

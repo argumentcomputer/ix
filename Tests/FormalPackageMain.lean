@@ -21,8 +21,8 @@ private def runNamed (getEnv : IO Lean.Environment) (name : String) : IO UInt32 
     | "instance-symbols" => Tests.Ix.InstanceSymbols.run
     | "ixvm-source" => do Tests.Ix.VMSource.run (← getEnv)
     | "multistark-verifier" => do
-      let ts ← Tests.Ix.MultiStarkVerifier.suite
-      LSpec.lspecIO (.ofList [("multistark-verifier", ts)]) []
+      let spec ← Tests.Ix.MultiStarkVerifier.suite
+      LSpec.lspecMain (LSpec.describe "multistark-verifier" spec) []
     | "ixvm-export-safe-walk" => Tests.Ix.IxVM.SafeReferencesWalk.exportWalkArtifact
     | other =>
       IO.eprintln s!"[formal-package-tests] unknown entry: {other}"

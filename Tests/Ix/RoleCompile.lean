@@ -117,10 +117,9 @@ private def check : IO Bool := IO.FS.withTempDir fun dir => do
     "a changed hint passed the finalized-artifact check"
   return true
 
-public def suite : List LSpec.TestSeq := [
-  .individualIO "production artifact bindings: source certificates, both compilers and certified checking" none (do
+public def suite : LSpec.Spec :=
+  it "production artifact bindings: source certificates, both compilers and certified checking" do
     let ok ← check
-    return (ok, 0, 0, none)) .done
-]
+    LSpec.expect ok
 
 end Tests.Ix.RoleCompile

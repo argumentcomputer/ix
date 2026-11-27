@@ -80,11 +80,8 @@ private def checks (record : Constant) : Except String Unit := do
   need "missing owner fails before publication"
     (!(publication projected (fun a => if a == projectionAddress then some projection else none) [.nat]).isOk)
 
-public def units (record : Constant) : LSpec.TestSeq :=
-  .individualIO "role publication: structural names, aliases, explicit absence and actual prelude owners" none (do
-    let result ← IO.lazyPure fun _ => checks record
-    return match result with
-      | .ok _ => (true, 0, 0, none)
-      | .error message => (false, 0, 0, some message)) .done
+public def units (record : Constant) : LSpec.Spec :=
+  it "role publication: structural names, aliases, explicit absence and actual prelude owners" do
+    LSpec.expectOk (checks record)
 
 end Tests.Ix.RolePublication

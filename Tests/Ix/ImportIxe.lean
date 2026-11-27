@@ -268,63 +268,57 @@ private def compileFixtureToFile (consts : List (Lean.Name × Lean.ConstantInfo)
   return (root, failures.toMap.size)
 
 /-- C6 parity, source root equality and fresh replay. -/
-private def roundtripTest : IO (Bool × Nat × Nat × Option String) := do
+private def roundtripTest : AssertM Unit := do
   let dir ← IO.FS.createTempDir
   let path := (dir / "fixture.ixe").toString
   try
     let original ← buildFixtureConsts
     let (root1, ungrounded1) ← compileFixtureToFile original.toList path
     if ungrounded1 > 0 then
-      return (false, 0, 0,
-        some s!"fixture compile ungrounded: {ungrounded1}")
+      fail s!"fixture compile ungrounded: {ungrounded1}"
     -- C6 parity: materialize everything and compare per constant. Source
     -- import restores the complete original declaration set.
     let materialized ← Ix.ImportIxe.materializeIxe path
     let extra := materialized.filter fun (n, _) => !original.any (·.1 == n)
     let missing := original.filter fun (n, _) => !materialized.any (·.1 == n)
     if materialized.size != original.size || !missing.isEmpty || !extra.isEmpty then
-      return (false, 0, 0, some s!"materialized names: original \
-{original.size}, materialized {materialized.size}; extra {extra.map (·.1)}, missing {missing.map (·.1)}")
+      fail s!"materialized names: original \
+{original.size}, materialized {materialized.size}; extra {extra.map (·.1)}, missing {missing.map (·.1)}"
     let mut origMap : Lean.NameMap Lean.ConstantInfo := {}
     for (n, ci) in original do
       origMap := origMap.insert n ci
     let mut matMap : Lean.NameMap Lean.ConstantInfo := {}
     for (n, ci) in materialized do
       let some oci := origMap.find? n
-        | return (false, 0, 0, some s!"unexpected source constant {n}")
+        | fail s!"unexpected source constant {n}"
       if let some e := compareCI n oci ci then
-        return (false, 0, 0, some e)
+        fail e
       matMap := matMap.insert n ci
     -- Root equality: recompiling the complete materialized source output is
     -- a fixed point of the canonical root.
     let path2 := (dir / "rebuilt.ixe").toString
     let (root2, _) ← compileFixtureToFile materialized.toList path2
     if root2 != root1 then
-      return (false, 0, 0, some s!"root drift: {root1.take 12}… → \
-{root2.take 12}…")
+      fail s!"root drift: {root1.take 12}… → {root2.take 12}…"
     -- Fresh kernel replay via the shared planner (import_ixe core).
     let matMapFrozen := matMap
-    let plan ← match Ix.Replay.planDeclarations matMap
-        matMapFrozen.find? with
-      | .ok plan => pure plan
-      | .error e => return (false, 0, 0, some s!"planDeclarations: {e}")
+    let plan ← expectOk ((Ix.Replay.planDeclarations matMap matMapFrozen.find?).mapError (s!"planDeclarations: {·}"))
     let emptyEnv ← Lean.mkEmptyEnvironment
     let mut kenv := emptyEnv.toKernelEnv
     for (key, decl) in plan do
       match kenv.addDecl {} decl with
       | .ok kenv' => kenv := kenv'
       | .error _ =>
-        return (false, 0, 0, some s!"fresh kernel replay rejected {key}")
+        fail s!"fresh kernel replay rejected {key}"
     for (n, expected) in original do
       let some actual := kenv.constants.find? n
-        | return (false, 0, 0, some s!"fresh replay lost source constant {n}")
+        | fail s!"fresh replay lost source constant {n}"
       if let some e := compareCI n expected actual then
-        return (false, 0, 0, some s!"fresh replay: {e}")
-    return (true, original.size, 0, none)
+        fail s!"fresh replay: {e}"
   finally
     IO.FS.removeDirAll dir
 
-private def closureTest : IO (Bool × Nat × Nat × Option String) := do
+private def closureTest : AssertM Unit := do
   let dir ← IO.FS.createTempDir
   let path := (dir / "fixture.ixe").toString
   try
@@ -341,9 +335,8 @@ private def closureTest : IO (Bool × Nat × Nat × Option String) := do
       ("axiom excluded", !names.contains `TIxImp.axm),
       ("theorem excluded", !names.contains `TIxImp.thm),
       ("proj fixture excluded", !names.contains `TIxImp.P) ]
-    match checks.find? (!·.2) with
-    | some (what, _) => return (false, 0, 0, some s!"failed: {what}")
-    | none => return (true, subset.size, 0, none)
+    if let some (what, _) := checks.find? (!·.2) then
+      fail s!"failed: {what}"
   finally
     IO.FS.removeDirAll dir
 
@@ -380,20 +373,21 @@ private def getConsumerEnv : IO Lean.Environment := do
 /-- C8: a consumer file `import_ixe`s the fixture artifact through the
     real command elaborator (in-process frontend + interpreter) and
     defines a term over the materialized constants. -/
-private def elabTest : IO (Bool × Nat × Nat × Option String) := do
-  try
-    let env ← getConsumerEnv
-    let checks : List (String × Bool) := [
-      ("consumer def elaborated", env.contains `Consumer.uses),
-      ("consumer theorem elaborated", env.contains `Consumer.alsoUses),
-      ("materialized inductive present", env.contains nN),
-      ("materialized recursor present", env.contains nRec),
-      ("materialized defn present", env.contains `TIxImp.dbl) ]
-    match checks.find? (!·.2) with
-    | some (what, _) => return (false, 0, 0, some s!"failed: {what}")
-    | none => return (true, 0, 0, none)
-  catch e =>
-    return (false, 0, 0, some s!"consumer elaboration failed: {e}")
+private def elabTest : AssertM Unit := do
+  let envRes : Except String Lean.Environment ← liftM (m := IO) do
+    try
+      pure (.ok (← getConsumerEnv))
+    catch e =>
+      pure (.error s!"consumer elaboration failed: {e}")
+  let env ← expectOk envRes
+  let checks : List (String × Bool) := [
+    ("consumer def elaborated", env.contains `Consumer.uses),
+    ("consumer theorem elaborated", env.contains `Consumer.alsoUses),
+    ("materialized inductive present", env.contains nN),
+    ("materialized recursor present", env.contains nRec),
+    ("materialized defn present", env.contains `TIxImp.dbl) ]
+  if let some (what, _) := checks.find? (!·.2) then
+    fail s!"failed: {what}"
 
 /-- C9: the ZkVoting consumption pattern against an imported artifact —
     `import_ixe` the fixture, commit a private value of an imported
@@ -402,7 +396,7 @@ private def elabTest : IO (Bool × Nat × Nat × Option String) := do
     (`Ix.Commit.evalClaim`) — all with a closure-scoped compile, so
     cost tracks the claim, not the environment. (Proving the claim is
     `ix prove`'s job; the IxVM eval arm is still landing.) -/
-private def zkPatternTest : IO (Bool × Nat × Nat × Option String) := do
+private def zkPatternTest : AssertM Unit := do
   let env ← getConsumerEnv
   -- Closure-scoped compile env over what the claim touches.
   let mut seen : Lean.NameSet := {}
@@ -414,7 +408,7 @@ private def zkPatternTest : IO (Bool × Nat × Nat × Option String) := do
     if seen.contains n then continue
     seen := seen.insert n
     let some ci := env.find? n
-      | return (false, 0, 0, some s!"consumer env missing {n}")
+      | fail s!"consumer env missing {n}"
     closure := (n, ci) :: closure
     for r in Ix.Replay.constantInfoReferences ci do
       unless seen.contains r do
@@ -433,12 +427,12 @@ private def zkPatternTest : IO (Bool × Nat × Nat × Option String) := do
   let (chained, env2) ← IO.ofExcept (Ix.Commit.compileDef env1 [] k2Ty k2Val)
   let (alone, _) ← IO.ofExcept (Ix.Commit.compileDef compileEnv [] k2Ty k2Val)
   unless chained == alone do
-    return (false, 0, 0, some "a chained anonymous definition has another address than alone")
+    fail "a chained anonymous definition has another address than alone"
   let some bytes := env2.constants.get? chained
-    | return (false, 0, 0, some "compileDef stored no record")
+    | fail "compileDef stored no record"
   let defn ← IO.ofExcept (Ixon.deConstantAt bytes 0 bytes.size)
   if defn.binders.isEmpty || defn.binders.any (·.nodes.any (·.isUndecided)) then
-    return (false, 0, 0, some "a definition compiled over the input has no decided binder data")
+    fail "a definition compiled over the input has no decided binder data"
   -- Commit a private value of the imported type.
   let voteType := Lean.Expr.const nN []
   let vote := Lean.Expr.app (.const nSucc []) (.const nZero [])
@@ -446,8 +440,7 @@ private def zkPatternTest : IO (Bool × Nat × Nat × Option String) := do
     Ix.Commit.commitDef compileEnv env [] voteType vote
   let commitName := Address.toUniqueName commitAddr
   unless env'.contains commitName do
-    return (false, 0, 0,
-      some "commitDef did not register the commitment constant")
+    fail "commitDef did not register the commitment constant"
   -- Claim: an imported function applied to the commitment evaluates
   -- to the public result.
   let input := Lean.mkApp (.const `TIxImp.dbl []) (.const commitName [])
@@ -455,25 +448,18 @@ private def zkPatternTest : IO (Bool × Nat × Nat × Option String) := do
     (Lean.mkApp (.const nSucc []) (.const nZero []))
   let ctx : Ix.ClaimContext :=
     { spec := default, binding := default, axioms := none }
-  let claim ← match Ix.Commit.evalClaim ctx compileEnv' [] input output
-      voteType with
-    | .ok claim => pure claim
-    | .error e => return (false, 0, 0, some s!"evalClaim failed: {e}")
+  let claim ← expectOk ((Ix.Commit.evalClaim ctx compileEnv' [] input output voteType).mapError (s!"evalClaim failed: {·}"))
   match claim with
   | .eval _ i o _ =>
     if i == o then
-      return (false, 0, 0, some "degenerate claim: input addr = output addr")
-    return (true, 0, 0, none)
-  | _ => return (false, 0, 0, some "expected an eval claim")
+      fail "degenerate claim: input addr = output addr"
+  | _ => fail "expected an eval claim"
 
-def suite : List TestSeq := [
-  .individualIO "materialize ∘ compile is exact and root-stable" none
-    roundtripTest .done,
-  .individualIO "only-scoped materialization returns the closure" none
-    closureTest .done,
-  .individualIO "import_ixe elaborates a consumer file (C8)" none
-    elabTest .done,
-  .individualIO "commit + eval claim over imported constants (C9)" none
-    zkPatternTest .done ]
+def suite : LSpec.Spec := do
+  it "materialize ∘ compile is exact and root-stable" roundtripTest
+  it "only-scoped materialization returns the closure" closureTest
+  sequential do
+    it "import_ixe elaborates a consumer file (C8)" elabTest
+    it "commit + eval claim over imported constants (C9)" zkPatternTest
 
 end Tests.Ix.ImportIxe

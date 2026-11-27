@@ -20,7 +20,7 @@ open LSpec Aiur
 
 namespace Tests.Aggr
 
-open Tests.ProofHelpers (expectOk expectErr recCommitParams innerFri u64le)
+open Tests.ProofHelpers (recCommitParams innerFri u64le)
 
 private def canonicalTree (leaves : Array Address) : Ix.AssumptionTree :=
   (Ix.AssumptionTree.canonical leaves).get!
@@ -732,94 +732,93 @@ def semanticSuite : IO UInt32 := do
     finally
       IO.FS.removeDirAll tmpDir
 
-  lspecIO (.ofList [("ix-aggr-semantics", [
-    test "recursion FRI cache encoding is the pinned 40-byte layout"
-      defaultFriEncodingStable,
-    test "FRI and commitment overrides independently change recursion identity"
-      recursionParametersIndependent,
-    test "aggregate cache version is 2" (Aggr.aggregateCacheVersion == 2),
-    test "aggregate cache key is stable for identical inputs" cacheKeyStable,
-    test "aggregate cache key binds the uniform outer claim" cacheKeyBindsOuter,
-    test "aggregate cache key binds recursion FRI parameters" cacheKeyBindsFri,
-    test "aggregate cache key binds the recursion verifying key" cacheKeyBindsVk,
-    test "aggregate cache key rejects version-1 entries" cacheKeyBindsVersion,
-    test "Rust and Lean aggregate cache identity share a fixed vector"
-      cacheKeyMatchesRustVector,
-    test "wrap-first specs precompute every uniform claim and cache key"
-      wrapSpecsComplete,
-    test "direct specs retain raw IxVM leaves and one aggregate root"
-      directSpecsUseRawLeaves,
-    test "wrap-first and direct policies derive the same flat root claim"
-      policiesShareRootClaim,
-    test "aggregate outer claims bind the exact CheckEnv value" outerClaimBindsValue,
-    test "aggregate verifier accepts a content-addressed proof wrapper"
-      wrapperContentAddressAccepted,
-    test "aggregate verifier rejects a wrapper stored under the wrong address"
-      wrapperContentAddressRejected,
-    test "flat host fold constructs canonical union/discharge trees" flatHostCorrect,
-    test "structural host fold constructs root-of-roots and survivors"
-      structuralHostCorrect,
-    test "CheckEnvTrees.ofClaim rejects overlapping subjects and assumptions"
-      ofClaimRejectsSelfAssumption,
-    test "host join helpers do not self-discharge assumptions"
-      hostJoinRejectsSelfDischarge,
-    test "manifest tree lowers to post-order binary slots"
-      (manifestPlan == expectedPlan),
-    test "manifest parser exposes its validated bisection tree" parsedManifestPlan,
-    test "manifest parser rejects repeated aggregation leaves"
-      malformedManifestRejected,
-    test "coverage accepts legacy zero-constant manifest leaves" singleCoverage,
-    test "empty manifest leaves contract and retained ids remap densely"
-      emptyPruningCorrect,
-    test "one retained shard reconstructs one value-based root" singletonValueRoot,
-    test "two-shard manifest passes exact environment coverage" pairCoverage,
-    test "aggregate startup prepares every shard from one ownership pass"
-      batchedShardPreparationCorrect,
-    test "flat manifest value equals the canonical environment root"
-      manifestFlatIsCanonical,
-    test "structural manifest value equals the manifest-relative hybrid root"
-      manifestStructuralIsHybrid,
-    test "flat and structural schedules produce distinguishable values"
-      manifestValuesDiffer,
-    test "shard prep preserves trees and one-pass closure semantics"
-      shardPrepPreservesSemantics,
-    test "verified aggregate proof audit certifies every fixture constant"
-      aggregateProofAuditsEveryConstant,
-    test "dated Mathlib Stage 2 proof is pinned and rejected by the current protocol"
-      productionStage2FixturePinnedAndFenced,
-    test "aggregate constant audit rejects an omitted environment constant"
-      missingConstantRejected,
-    test "aggregate constant audit rejects a foreign subject"
-      foreignConstantRejected,
-    test "aggregate constant audit rejects a duplicate subject"
-      duplicateConstantRejected,
-    test "aggregate constant audit rejects residual assumptions"
-      residualAssumptionRejected,
-    test "threshold scheduling is flat below and structural above monotonically"
-      mixedScheduleCorrect,
-    test "flat self-pair RAM reserve is affine in subject leaves"
-      flatWeightAffine,
-    test "aggregate scheduler parses MemTotal for its default budget"
-      memTotalParsing,
-    test "invalid non-post-order schedules are rejected" invalidScheduleRejected,
-    test "CodecTag has no custom aliasing for tags 0/1/2" codecTagNoAliasing,
-    test "DynamicLinkStatement with (spec, binding) BridgeBinding round-trips and is rejected by Claim.de"
-      dlStmtRoundTripsAndDisjoint,
-    test "LinkedCircuitEntry (0xE8 0x0F, with evalType) round-trips and is rejected by Claim.de"
-      dlEntryRoundTripsAndDisjoint,
-    test "Shape 18 Mode 3a cannot emit validator 3/4 or erase linkedCircuits"
-      mode3aCannotEmitValidator3Or4,
-    test "ClaimPolicy rejects linkedCircuits != none (validators 12/13) by default"
-      defaultPolicyRefusesLinked,
-    test "ClaimPolicy.refusalDynamicBytes rejects LinkedClaim, EvalAssumedClaim, and DynamicLinkStatement by default"
-      defaultPolicyRefusesDynamicBytes,
-    test "ClaimPolicy enforces no wildcard, separate Mode-3a allowlist, full tuple pinning, and rejects forged (myTrue, myFalse, MyProp)"
-      allowlistPolicyChecks,
-    test "ClaimPolicy.refusalDynamicLinkStatement enforces bridge.binding/customBinding and codec arities"
-      dynamicLinkStatementPolicyChecks,
-    test "VerifyCmd CLI fails closed on <vk> wildcards and routes --dynamic-claim through ClaimPolicy"
-      verifyCmdDynamicDispatchChecks
-  ])]) []
+  lspecMain (describe "ix-aggr-semantics" do
+    itBool "recursion FRI cache encoding is the pinned 40-byte layout"
+      defaultFriEncodingStable
+    itBool "FRI and commitment overrides independently change recursion identity"
+      recursionParametersIndependent
+    itBool "aggregate cache version is 2" (Aggr.aggregateCacheVersion == 2)
+    itBool "aggregate cache key is stable for identical inputs" cacheKeyStable
+    itBool "aggregate cache key binds the uniform outer claim" cacheKeyBindsOuter
+    itBool "aggregate cache key binds recursion FRI parameters" cacheKeyBindsFri
+    itBool "aggregate cache key binds the recursion verifying key" cacheKeyBindsVk
+    itBool "aggregate cache key rejects version-1 entries" cacheKeyBindsVersion
+    itBool "Rust and Lean aggregate cache identity share a fixed vector"
+      cacheKeyMatchesRustVector
+    itBool "wrap-first specs precompute every uniform claim and cache key"
+      wrapSpecsComplete
+    itBool "direct specs retain raw IxVM leaves and one aggregate root"
+      directSpecsUseRawLeaves
+    itBool "wrap-first and direct policies derive the same flat root claim"
+      policiesShareRootClaim
+    itBool "aggregate outer claims bind the exact CheckEnv value" outerClaimBindsValue
+    itBool "aggregate verifier accepts a content-addressed proof wrapper"
+      wrapperContentAddressAccepted
+    itBool "aggregate verifier rejects a wrapper stored under the wrong address"
+      wrapperContentAddressRejected
+    itBool "flat host fold constructs canonical union/discharge trees" flatHostCorrect
+    itBool "structural host fold constructs root-of-roots and survivors"
+      structuralHostCorrect
+    itBool "CheckEnvTrees.ofClaim rejects overlapping subjects and assumptions"
+      ofClaimRejectsSelfAssumption
+    itBool "host join helpers do not self-discharge assumptions"
+      hostJoinRejectsSelfDischarge
+    itBool "manifest tree lowers to post-order binary slots"
+      (manifestPlan == expectedPlan)
+    itBool "manifest parser exposes its validated bisection tree" parsedManifestPlan
+    itBool "manifest parser rejects repeated aggregation leaves"
+      malformedManifestRejected
+    itBool "coverage accepts legacy zero-constant manifest leaves" singleCoverage
+    itBool "empty manifest leaves contract and retained ids remap densely"
+      emptyPruningCorrect
+    itBool "one retained shard reconstructs one value-based root" singletonValueRoot
+    itBool "two-shard manifest passes exact environment coverage" pairCoverage
+    itBool "aggregate startup prepares every shard from one ownership pass"
+      batchedShardPreparationCorrect
+    itBool "flat manifest value equals the canonical environment root"
+      manifestFlatIsCanonical
+    itBool "structural manifest value equals the manifest-relative hybrid root"
+      manifestStructuralIsHybrid
+    itBool "flat and structural schedules produce distinguishable values"
+      manifestValuesDiffer
+    itBool "shard prep preserves trees and one-pass closure semantics"
+      shardPrepPreservesSemantics
+    itBool "verified aggregate proof audit certifies every fixture constant"
+      aggregateProofAuditsEveryConstant
+    itBool "dated Mathlib Stage 2 proof is pinned and rejected by the current protocol"
+      productionStage2FixturePinnedAndFenced
+    itBool "aggregate constant audit rejects an omitted environment constant"
+      missingConstantRejected
+    itBool "aggregate constant audit rejects a foreign subject"
+      foreignConstantRejected
+    itBool "aggregate constant audit rejects a duplicate subject"
+      duplicateConstantRejected
+    itBool "aggregate constant audit rejects residual assumptions"
+      residualAssumptionRejected
+    itBool "threshold scheduling is flat below and structural above monotonically"
+      mixedScheduleCorrect
+    itBool "flat self-pair RAM reserve is affine in subject leaves"
+      flatWeightAffine
+    itBool "aggregate scheduler parses MemTotal for its default budget"
+      memTotalParsing
+    itBool "invalid non-post-order schedules are rejected" invalidScheduleRejected
+    itBool "CodecTag has no custom aliasing for tags 0/1/2" codecTagNoAliasing
+    itBool "DynamicLinkStatement with (spec, binding) BridgeBinding round-trips and is rejected by Claim.de"
+      dlStmtRoundTripsAndDisjoint
+    itBool "LinkedCircuitEntry (0xE8 0x0F, with evalType) round-trips and is rejected by Claim.de"
+      dlEntryRoundTripsAndDisjoint
+    itBool "Shape 18 Mode 3a cannot emit validator 3/4 or erase linkedCircuits"
+      mode3aCannotEmitValidator3Or4
+    itBool "ClaimPolicy rejects linkedCircuits != none (validators 12/13) by default"
+      defaultPolicyRefusesLinked
+    itBool "ClaimPolicy.refusalDynamicBytes rejects LinkedClaim, EvalAssumedClaim, and DynamicLinkStatement by default"
+      defaultPolicyRefusesDynamicBytes
+    itBool "ClaimPolicy enforces no wildcard, separate Mode-3a allowlist, full tuple pinning, and rejects forged (myTrue, myFalse, MyProp)"
+      allowlistPolicyChecks
+    itBool "ClaimPolicy.refusalDynamicLinkStatement enforces bridge.binding/customBinding and codec arities"
+      dynamicLinkStatementPolicyChecks
+    itBool "VerifyCmd CLI fails closed on <vk> wildcards and routes --dynamic-claim through ClaimPolicy"
+      verifyCmdDynamicDispatchChecks) []
 
 def convergedSuite : IO UInt32 := semanticSuite
 

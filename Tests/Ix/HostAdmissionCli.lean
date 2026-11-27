@@ -78,9 +78,8 @@ private def checks : IO Nat := do
   finally
     IO.FS.removeDirAll dir
 
-def suite : List LSpec.TestSeq := [
-  .individualIO "host statement persistence, addressed replay and actual CLI refusals" none (do
-    let count ← checks
-    return (true, count, 0, none)) .done]
+def suite : LSpec.Spec :=
+  it "host statement persistence, addressed replay and actual CLI refusals" do
+    let _ ← checks
 
 end Tests.Ix.HostAdmissionCli

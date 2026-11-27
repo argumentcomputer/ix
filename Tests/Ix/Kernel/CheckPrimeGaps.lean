@@ -32,16 +32,17 @@ private def filterFocusConsts (names : Array Lean.Name) : IO (Array Lean.Name) :
       {filtered.size}/{names.size}"
     pure filtered
 
-def testLeanCheckPrimeGaps : TestSeq :=
-  .individualIO s!"IxC check {focusConsts.size} inlined PrimeGaps consts" none (do
+def testLeanCheckPrimeGaps : Spec :=
+  it s!"IxC check {focusConsts.size} inlined PrimeGaps consts" do
     let names ← filterFocusConsts focusConsts
     let leanEnv ← get_env!
     IO.println s!"[check-primegaps/lean] compiling \
       selected IxC closure for {names.size} exact subject(s)"
-    Tests.Ix.Kernel.FocusedLeanCheck.checkClosure "check-primegaps/lean"
+    let (ok, _, _, msg) ← Tests.Ix.Kernel.FocusedLeanCheck.checkClosure "check-primegaps/lean"
       "primegaps-reduction" leanEnv names
-  ) .done
+    expect ok (msg.getD "PrimeGaps check failed")
 
-def suite : List TestSeq := [testLeanCheckPrimeGaps]
+def suite : LSpec.Spec := do
+  testLeanCheckPrimeGaps
 
 end Tests.Ix.Kernel.CheckPrimeGaps

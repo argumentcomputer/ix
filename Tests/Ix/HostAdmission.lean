@@ -119,9 +119,8 @@ private def checks : IO Nat := do
     ensure (!(verify changed tierArtifact limits).isOk) "tier downgrade/partition tampering passed"
   return 2
 
-public def units : LSpec.TestSeq :=
-  .individualIO "host admission: actual receipts, canonical identities and replay/tamper controls" none (do
-    let count ← checks
-    return (true, count, 0, none)) .done
+public def units : LSpec.Spec :=
+  it "host admission: actual receipts, canonical identities and replay/tamper controls" do
+    let _ ← checks
 
 end Tests.Ix.HostAdmission

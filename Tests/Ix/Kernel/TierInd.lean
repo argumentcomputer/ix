@@ -253,13 +253,13 @@ def evaluate : IO (Array String × Array String) := do
     (errors, lines) := expectDecline s!"Poly, {label} levels" bad fe₀ why errors lines
   return (errors, lines)
 
-def tierInd : TestSeq :=
-  .individualIO "the tier's typing-only inductive install and its answer view" none (do
+def tierInd : Spec :=
+  it "the tier's typing-only inductive install and its answer view" do
     let (errors, lines) ← evaluate
     for l in lines do IO.println l
-    let msg := if errors.isEmpty then none else some ("\n".intercalate errors.toList)
-    return (errors.isEmpty, lines.size, 0, msg)) .done
+    expect errors.isEmpty ("\n".intercalate errors.toList)
 
-def suite : List TestSeq := [tierInd]
+def suite : LSpec.Spec := do
+  tierInd
 
 end Tests.Ix.Kernel.TierInd

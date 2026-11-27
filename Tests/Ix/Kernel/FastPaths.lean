@@ -93,16 +93,16 @@ def ixcVerdicts (compiled : Ix.CompileM.CertifiedOut) (names : List Lean.Name) :
 
 /-- The check of one probe against one kernel's verdicts. -/
 def checkProbe (kernel : String) (closure : List Lean.Name) (verdicts : Verdicts)
-    (p : Probe) : TestSeq :=
+    (p : Probe) : Spec := do
   let missing := closure.filter (!verdicts.contains ·)
   let failures := closure.filter fun n => !(verdicts.getD n .accept).isAccept
-  let describe (ns : List Lean.Name) : String :=
+  let describeVerdicts (ns : List Lean.Name) : String :=
     ", ".intercalate (ns.map fun n => s!"{n}: {(verdicts.getD n .accept).label}")
-  let complete := test s!"{kernel}: every member of {p.name}'s closure has a verdict \
+  itBool s!"{kernel}: every member of {p.name}'s closure has a verdict \
     (missing: {missing.take 5})" missing.isEmpty
   match p.expect with
   | .accept =>
-    complete ++ test s!"{kernel} accepts the closure of {p.name} ({describe failures})"
+    itBool s!"{kernel} accepts the closure of {p.name} ({describeVerdicts failures})"
       failures.isEmpty
   | .reject culprit =>
     let culpritRejected := (verdicts.getD culprit .accept).isReject
@@ -110,11 +110,10 @@ def checkProbe (kernel : String) (closure : List Lean.Name) (verdicts : Verdicts
     -- trusted) or blocked behind the culprit, never rejected on its own
     let probeOk := p.name == culprit || !(verdicts.getD p.name .accept).isReject
     let others := failures.filter fun n => n != culprit && n != p.name
-    complete
-      ++ test s!"{kernel} rejects {culprit}, so the closure of {p.name} \
-          ({(verdicts.getD culprit .accept).label})" culpritRejected
-      ++ test s!"{kernel}: {p.name} fails only through {culprit} ({describe others})"
-          (probeOk && others.isEmpty)
+    itBool s!"{kernel} rejects {culprit}, so the closure of {p.name} \
+      ({(verdicts.getD culprit .accept).label})" culpritRejected
+    itBool s!"{kernel}: {p.name} fails only through {culprit} ({describeVerdicts others})"
+      (probeOk && others.isEmpty)
 
 def run : IO UInt32 := do
   let leanEnv ← get_env!
@@ -137,10 +136,10 @@ def run : IO UInt32 := do
   let ixc ← ixcVerdicts compiled names
   let t2 ← IO.monoMsNow
   IO.println s!"[kernel-fast-paths] compile {t1 - t0} ms, IxC {t2 - t1} ms"
-  let mut seq : TestSeq := .done
-  for (kernel, verdicts) in [("IxC", ixc)] do
-    for p in probes do
-      seq := seq ++ checkProbe kernel (closures.getD p.name []) verdicts p
-  lspecIO (.ofList [("kernel-fast-paths", [seq])]) []
+  let spec : Spec := describe "kernel-fast-paths" do
+    for (kernel, verdicts) in [("IxC", ixc)] do
+      for p in probes do
+        checkProbe kernel (closures.getD p.name []) verdicts p
+  lspecMain spec []
 
 end Tests.Ix.Kernel.FastPaths

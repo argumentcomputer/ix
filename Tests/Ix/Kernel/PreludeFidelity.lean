@@ -91,9 +91,8 @@ private def check : IO Nat := do
     {borrowed.constants} borrowed-owner source comparisons and explicit setup reader failure"
   return baseline.constants
 
-def suite : List TestSeq := [
-  .individualIO "setup-only prelude preserves source coverage and every input/error refusal" none (do
-    let n ← check
-    return (true, n, 0, none)) .done]
+def suite : LSpec.Spec := do
+  it "setup-only prelude preserves source coverage and every input/error refusal" do
+    let _ ← check
 
 end Tests.Ix.Kernel.PreludeFidelity

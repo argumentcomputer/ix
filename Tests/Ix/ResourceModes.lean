@@ -32,7 +32,9 @@ producer of records could, and read, run and check the result. -/
 
 namespace Tests.ResourceModes
 
-open IxC.Resource Ixon
+open IxC.Resource Ixon LSpec
+
+set_option compiler.extract_closed false
 
 /-! ## A small library -/
 
@@ -157,7 +159,7 @@ def noArgs : Heap × List Val := (({} : HB).heap, [])
 
 def noExtern : ExternOracle := fun _ _ _ => none
 
-def outcomeName : Outcome → String
+def outcomeName : IxC.Resource.Outcome → String
   | .value .. => "a value"
   | .violation k => s!"violation {repr k}"
   | .stuck => "stuck"
@@ -171,8 +173,8 @@ def verdictName : Verdict → String
 /-- Run `entry` on `input` and check `toCheck`: the run ends as `run` says (a
 value, or the violation), and the checker accepts exactly when `accept`. -/
 def runCase (label : String) (defs : List (Ref × RunDef)) (entry : Ref) (input : Heap × List Val)
-    (run : Option Violation) (accept : Bool) (toCheck : List Ref := [entry]) : LSpec.TestSeq :=
-  .individualIO label none (do
+    (run : Option Violation) (accept : Bool) (toCheck : List Ref := [entry]) : Spec :=
+  it label do
     let P := prog defs
     let o := runR P noExtern 100000 entry input.1 input.2
     let runOk := match o, run with
@@ -186,7 +188,7 @@ def runCase (label : String) (defs : List (Ref × RunDef)) (entry : Ref) (input 
       | .violation _ => false
       | _ => true
     let msg := s!"run: {outcomeName o}; checker: {verdictName verdict}"
-    return (runOk && checkOk && consistent, 0, 0, if runOk && checkOk && consistent then none else some msg)) .done
+    expect (runOk && checkOk && consistent) msg
 
 /-! ### Erased binders and fields -/
 
@@ -200,19 +202,18 @@ def idOf := mem 103
 -- `let (@erased x) := xs; len x`
 def eraseLet := mem 104
 
-def erasedCases : List LSpec.TestSeq := [
+def erasedCases : LSpec.Spec := do
   runCase "erased: reading an erased parameter" [(useErased, body [par .erased .leaf]
-    (add (v 0 .leaf) (.natLit 1)) .shared .leaf)] useErased irrArg (some .erasedRead) false,
+    (add (v 0 .leaf) (.natLit 1)) .shared .leaf)] useErased irrArg (some .erasedRead) false
   runCase "erased: an erased parameter never read" [(keepE, body [par .erased .leaf, par]
-    (v 0))] keepE irrAndList none true,
+    (v 0))] keepE irrAndList none true
   runCase "erased: projecting an erased field" [(leak, body [par] (.proj K 0 (v 0) .leaf) .shared .leaf)]
-    leak oneKey (some .erasedRead) false,
+    leak oneKey (some .erasedRead) false
   runCase "erased: projecting a kept field" [(idOf, body [par] (.proj K 1 (v 0) .leaf) .shared .leaf)]
-    idOf oneKey none true,
+    idOf oneKey none true
   runCase "erased: reading an erased let" [(eraseLet, body [par]
     (.letE (.value .erased) .val (v 0) (lenOf (v 0))) .shared .leaf)] eraseLet oneList
     (some .erasedRead) false
-]
 
 /-! ### Unique transfer -/
 
@@ -227,44 +228,43 @@ def boxS := mem 117
 def boxI := mem 118
 def twiceN := mem 119
 
-def uniqueCases : List LSpec.TestSeq := [
+def uniqueCases : LSpec.Spec := do
   -- `twice (@unique xs) := consume xs + consume xs`
   runCase "unique: a binding transferred twice" [(twice, body [par .unique]
     (add (app (.const consumeR .val) [v 0] .leaf) (app (.const consumeR .val) [v 0] .leaf)) .shared .leaf)]
-    twice oneList (some .revokedUse) false,
+    twice oneList (some .revokedUse) false
   runCase "unique: a binding transferred once" [(once1, body [par .unique]
-    (app (.const consumeR .val) [v 0] .leaf) .shared .leaf)] once1 oneList none true,
+    (app (.const consumeR .val) [v 0] .leaf) .shared .leaf)] once1 oneList none true
   -- `share1 (xs : List) := consume xs`; `caller (xs) := share1 xs + len xs`
   runCase "unique: a shared parameter given away, then read by its caller"
     [(share1, body [par] (app (.const consumeR .val) [v 0] .leaf) .shared .leaf),
      (caller, body [par] (add (app (.const share1 .val) [v 0] .leaf) (lenOf (v 0))) .shared .leaf)]
-    caller oneList (some .revokedUse) false [share1, caller],
+    caller oneList (some .revokedUse) false [share1, caller]
   -- `headU (@unique xs) := match xs with | [] => 0 | _ :: t => len t`
   runCase "unique: a consuming match, the fields used" [(headU, body [par .unique]
-    (onList (v 0) (.natLit 0) (lenOf (v 0)) .val .leaf) .shared .leaf)] headU oneList none true,
+    (onList (v 0) (.natLit 0) (lenOf (v 0)) .val .leaf) .shared .leaf)] headU oneList none true
   -- `headBad (@unique xs) := match xs with | [] => 0 | _ :: _ => len xs`
   runCase "unique: a consumed major read in an alternative" [(headBad, body [par .unique]
     (onList (v 0) (.natLit 0) (lenOf (v 2)) .val .leaf) .shared .leaf)] headBad oneList
-    (some .revokedUse) false,
+    (some .revokedUse) false
   -- `deep (@unique xs) := match xs with | [] => 0 | h :: t => consume (h :: t) + len t`
   runCase "unique: deep transfer revokes the fields" [(deep, body [par .unique]
     (onList (v 0) (.natLit 0)
       (add (app (.const consumeR .val) [app (.const consR .val) [.irr, v 1, v 0]] .leaf) (lenOf (v 0))) .val .leaf)
-    .shared .leaf)] deep oneList (some .revokedUse) false,
+    .shared .leaf)] deep oneList (some .revokedUse) false
   -- `boxS (x : List) := let s := ⟨x⟩ : S; consumeS s + len x` (a `@shared` field)
   runCase "unique: a @shared field stops deep uniqueness" [(boxS, body [par]
     (.letE (.value .many) .val (app (.const sboxR .val) [v 0])
-      (add (app (.const consumeSR .val) [v 0] .leaf) (lenOf (v 1)))) .shared .leaf)] boxS oneList none true,
+      (add (app (.const consumeSR .val) [v 0] .leaf) (lenOf (v 1)))) .shared .leaf)] boxS oneList none true
   -- `boxI (x : List) := let s := ⟨x⟩ : B; consumeB s + len x` (an inherited field)
   runCase "unique: an inherited field is transferred with its box" [(boxI, body [par]
     (.letE (.value .many) .val (app (.const boxR .val) [v 0])
       (add (app (.const consumeBR .val) [v 0] .leaf) (lenOf (v 1)))) .shared .leaf)] boxI oneList
-    (some .revokedUse) false,
+    (some .revokedUse) false
   -- `twiceN (@unique n : Nat) := consumeN n + consumeN n` (a leaf is never unique)
   runCase "unique: a leaf transferred twice" [(twiceN, body [par .unique .leaf]
     (add (app (.const consumeNR .val) [v 0 .leaf] .leaf) (app (.const consumeNR .val) [v 0 .leaf] .leaf))
     .shared .leaf)] twiceN oneNat none true
-]
 
 /-! ### Borrows -/
 
@@ -281,53 +281,51 @@ def headN := mem 129
 def storeN := mem 132
 def shf := mem 133
 
-def borrowCases : List LSpec.TestSeq := [
+def borrowCases : LSpec.Spec := do
   runCase "borrow: a borrowed parameter returned" [(esc, body [par .borrowed] (v 0))] esc oneList
-    (some .borrowEscape) false,
+    (some .borrowEscape) false
   runCase "borrow: a borrowed parameter read" [(peek, body [par .borrowed] (lenOf (v 0)) .shared .leaf)]
-    peek oneList none true,
+    peek oneList none true
   runCase "borrow: a borrowed parameter returned borrowed" [(same, body [par .borrowed] (v 0) .borrowed)]
-    same oneList none true,
+    same oneList none true
   -- `stash (@borrowed b : List) : List := [b]`
   runCase "borrow: a borrowed parameter stored in a cell" [(stash, body [par .borrowed]
     (app (.const consR .val) [.irr, v 0, app (.const nilR .val) [.irr] .imm]))] stash oneList
-    (some .borrowEscape) false,
+    (some .borrowEscape) false
   runCase "borrow: a borrowed parameter given away" [(give, body [par .borrowed]
-    (app (.const consumeR .val) [v 0] .leaf) .shared .leaf)] give oneList (some .borrowEscape) false,
+    (app (.const consumeR .val) [v 0] .leaf) .shared .leaf)] give oneList (some .borrowEscape) false
   runCase "borrow: a let's loan returned" [(letEsc, body [par] (.letE .borrow .val (v 0) (v 0)))]
-    letEsc oneList (some .borrowEscape) false,
+    letEsc oneList (some .borrowEscape) false
   runCase "borrow: a let's loan read" [(letOk, body [par] (.letE .borrow .val (v 0) (lenOf (v 0)))
-    .shared .leaf)] letOk oneList none true,
+    .shared .leaf)] letOk oneList none true
   runCase "borrow: a borrowed leaf returned" [(escN, body [par .borrowed .leaf] (v 0 .leaf) .shared .leaf)]
-    escN oneNat (some .borrowEscape) false,
+    escN oneNat (some .borrowEscape) false
   runCase "borrow: arithmetic on a borrowed leaf" [(addN, body [par .borrowed .leaf]
-    (add (v 0 .leaf) (.natLit 1)) .shared .leaf)] addN oneNat none true,
+    (add (v 0 .leaf) (.natLit 1)) .shared .leaf)] addN oneNat none true
   -- `headN (@borrowed xs : List Nat) : Nat := match xs with | [] => 0 | h :: _ => h`
   runCase "borrow: a leaf read out of a borrowed container is not confined" [(headN, body [par .borrowed]
-    (onList (v 0) (.natLit 0) (v 1 .leaf) .leaf .leaf) .shared .leaf)] headN oneList none true,
+    (onList (v 0) (.natLit 0) (v 1 .leaf) .leaf .leaf) .shared .leaf)] headN oneList none true
   -- `storeN (@borrowed n : Nat) : Nat := match [n] with | [] => 0 | h :: _ => h`
   runCase "borrow: a borrowed leaf stored in a cell and read back is a counted value" [(storeN,
     body [par .borrowed .leaf]
       (onList (app (.const consR .val) [.irr, v 0 .leaf, app (.const nilR .val) [.irr] .imm])
-        (.natLit 0) (v 1 .leaf) .leaf .leaf) .shared .leaf)] storeN oneNat none true,
+        (.natLit 0) (v 1 .leaf) .leaf .leaf) .shared .leaf)] storeN oneNat none true
   -- `shf (@borrowed b : List) : List := (⟨b⟩ : S).1` (a borrowed value in a `@shared` field)
   runCase "borrow: a borrowed value stored in a @shared field and returned" [(shf,
     body [par .borrowed] (.proj S 0 (app (.const sboxR .val) [v 0]) .val))] shf oneList
     (some .borrowEscape) false
-]
 
 /-! ### Once -/
 
 def twiceCall := mem 130
 def onceCall := mem 131
 
-def onceCases : List LSpec.TestSeq := [
+def onceCases : LSpec.Spec := do
   runCase "once: a once parameter called twice" [(twiceCall, body [par .once .val arrowSk]
     (add (app (v 0) [.natLit 1] .leaf) (app (v 0) [.natLit 2] .leaf)) .shared .leaf)] twiceCall oneFun
-    (some .onceReentry) false,
+    (some .onceReentry) false
   runCase "once: a once parameter called once" [(onceCall, body [par .once .val arrowSk]
     (app (v 0) [.natLit 1] .leaf) .shared .leaf)] onceCall oneFun none true
-]
 
 /-! ### Captures and partial applications -/
 
@@ -336,25 +334,24 @@ def capOuter := mem 141
 def capPlain := mem 142
 def papT := mem 143
 
-def captureCases : List LSpec.TestSeq := [
+def captureCases : LSpec.Spec := do
   -- `capOnce (@unique xs) := let g := fun u => consume xs; g 0 + g 1`
   runCase "capture: a closure consuming its capture called twice" [(capOnce, body [par .unique]
     (.letE (.value .many) .val (lam (par .many .leaf) (app (.const consumeR .val) [v 1] .leaf) .shared .leaf)
       (add (app (v 0) [.natLit 0] .leaf) (app (v 0) [.natLit 1] .leaf))) .shared .leaf)] capOnce oneList
-    (some .revokedUse) false,
+    (some .revokedUse) false
   -- `capOuter (@unique xs) := let g := fun u => len xs; len xs`
   runCase "capture: a unique binding captured, then read outside" [(capOuter, body [par .unique]
     (.letE (.value .many) .val (lam (par .many .leaf) (lenOf (v 1)) .shared .leaf) (lenOf (v 1)))
-    .shared .leaf)] capOuter oneList (some .revokedUse) false,
+    .shared .leaf)] capOuter oneList (some .revokedUse) false
   -- `capPlain (xs : List) := let g := fun u => len xs; g 0 + len xs`
   runCase "capture: a shared binding captured and read" [(capPlain, body [par]
     (.letE (.value .many) .val (lam (par .many .leaf) (lenOf (v 1)) .shared .leaf)
-      (add (app (v 0) [.natLit 0] .leaf) (lenOf (v 1)))) .shared .leaf)] capPlain oneList none true,
+      (add (app (v 0) [.natLit 0] .leaf) (lenOf (v 1)))) .shared .leaf)] capPlain oneList none true
   -- `papT (@unique xs) := let g := consume2 xs; len xs`
   runCase "capture: a partial application transfers its unique argument" [(papT, body [par .unique]
     (.letE (.value .many) .val (app (.const consume2R .val) [v 0]) (lenOf (v 1))) .shared .leaf)] papT oneList
     (some .revokedUse) false
-]
 
 /-! ### Skeletons and statics -/
 
@@ -363,37 +360,36 @@ def callUseOk := mem 151
 def badStatic := mem 152
 def okStatic := mem 153
 
-def skeletonCases : List LSpec.TestSeq := [
+def skeletonCases : LSpec.Spec := do
   -- `callUse (xs) := use (fun (@unique y) => consume y) xs`
   runCase "skeleton: a closure with a unique binder at a plain arrow" [(callUse, body [par]
     (app (.const useR .val) [lam (par .unique) (app (.const consumeR .val) [v 0] .leaf) .shared .leaf, v 0] .leaf)
-    .shared .leaf)] callUse oneList (some .revokedUse) false,
+    .shared .leaf)] callUse oneList (some .revokedUse) false
   runCase "skeleton: a closure with a plain binder at a plain arrow" [(callUseOk, body [par]
     (app (.const useR .val) [lam (par .many) (lenOf (v 0)) .shared .leaf, v 0] .leaf) .shared .leaf)]
-    callUseOk oneList none true,
+    callUseOk oneList none true
   -- `badStatic := consume tbl + len tbl`
   runCase "static: a static given away, then read" [(badStatic, body []
     (add (app (.const consumeR .val) [.const tblR .val] .leaf) (lenOf (.const tblR .val))) .shared .leaf)] badStatic
-    noArgs (some .revokedUse) false,
+    noArgs (some .revokedUse) false
   runCase "static: a static read twice" [(okStatic, body []
     (add (lenOf (.const tblR .val)) (lenOf (.const tblR .val))) .shared .leaf)] okStatic noArgs none true
-]
 
 /-! ### Limits and the fast path -/
 
 /-- A step limit declines. -/
-def limitCase : LSpec.TestSeq :=
-  .individualIO "limits: the step limit declines" none (do
+def limitCase : LSpec.Spec := do
+  it "limits: the step limit declines" do
     let verdict := checkBodies { steps := 3 } (prog []) [lenR]
     let ok := match verdict with
       | .decline _ => true
       | _ => false
-    return (ok, 0, 0, if ok then none else some (verdictName verdict))) .done
+    expect ok (verdictName verdict)
 
 /-- A closure of default records is accepted without reading; an annotated axiom
 is read and refused outside the extern set, accepted inside it. -/
-def fastPathCase : LSpec.TestSeq :=
-  .individualIO "fast path and externs: default records unread; an annotated axiom only as an extern" none (do
+def fastPathCase : LSpec.Spec := do
+  it "fast path and externs: default records unread; an annotated axiom only as an extern" do
     let plain : Ixon.Constant :=
       { info := .axio ⟨false, 0, .sort 0⟩, sharing := #[], refs := #[], univs := #[.zero] }
     let moded : Ixon.Constant :=
@@ -410,8 +406,7 @@ def fastPathCase : LSpec.TestSeq :=
     let ok := (match v1 with | .accept 0 true => true | _ => false) &&
       (match v2 with | .refuse _ w => (w.splitOn "not in the extern set").length > 1 | _ => false) &&
       (match v3 with | .accept _ false => true | _ => false)
-    return (ok, 0, 0, if ok then none else
-      some s!"{verdictName v1}; {verdictName v2}; {verdictName v3}")) .done
+    expect ok s!"{verdictName v1}; {verdictName v2}; {verdictName v3}"
 
 /-! ### Must-reject cases: an erased field at an alternative -/
 
@@ -424,19 +419,18 @@ def altConst := mem 161
 def secondOf := mem 162
 def altLam := mem 163
 
-def alternativeCases : List LSpec.TestSeq := [
+def alternativeCases : LSpec.Spec := do
   -- `firstOf (a : List) (b : Nat) : List := a`; `altConst (k : Key) := Key.casesOn k firstOf`
   runCase "must-reject: an erased field passed to an alternative that is not a λ" [
     (firstOf, body [par, par .many .leaf] (v 1)),
     (altConst, body [par] (.case caseK (v 0) #[.const firstOf .val] #[] .val))]
-    altConst oneKey (some .erasedRead) false,
+    altConst oneKey (some .erasedRead) false
   -- `secondOf (b : Nat) : Nat := b`; `altLam (k : Key) := Key.casesOn k (fun (@erased g) => secondOf)`
   runCase "erased: a λ alternative binds the erased field, the rest passed on" [
     (secondOf, body [par .many .leaf] (v 0 .leaf) .shared .leaf),
     (altLam, body [par] (.case caseK (v 0) #[lam (par .erased) (.const secondOf .val) .shared .leaf] #[]
       .leaf) .shared .leaf)]
     altLam oneKey none true
-]
 
 /-! ### Must-reject cases from records -/
 
@@ -618,23 +612,21 @@ def runRecCase (b : Built) (c : RecCase) : Except String (Bool × String) := do
   let ok := readOk == c.reads && v.isAccept == c.accept && valueOk
   pure (ok, s!"{c.label}: {readStr}; run: {runStr}; checker: {verdictName v}")
 
-def recordCasesTest : LSpec.TestSeq :=
-  .individualIO "must-reject cases from records: case definitions, primitives, recursors, quotients, \
-    η-short interfaces" none (do
-    match ← buildFixture with
-    | .error e => return (false, 0, 0, some s!"the fixture: {e}")
-    | .ok b =>
-      let mut allOk := true
-      let mut failed : Array String := #[]
-      for c in recordCases do
-        let (ok, line) := match runRecCase b c with
-          | .ok r => r
-          | .error e => (false, s!"{c.label}: {e}")
-        IO.println s!"    {if ok then "ok" else "FAIL"} {line}"
-        unless ok do
-          allOk := false
-          failed := failed.push line
-      return (allOk, 0, 0, if allOk then none else some ("; ".intercalate failed.toList))) .done
+def recordCasesTest : LSpec.Spec := do
+  it "must-reject cases from records: case definitions, primitives, recursors, quotients, \
+    η-short interfaces" do
+    let b ← expectOk ((← buildFixture).mapError (s!"the fixture: {·}"))
+    let mut allOk := true
+    let mut failed : Array String := #[]
+    for c in recordCases do
+      let (ok, line) := match runRecCase b c with
+        | .ok r => r
+        | .error e => (false, s!"{c.label}: {e}")
+      IO.println s!"    {if ok then "ok" else "FAIL"} {line}"
+      unless ok do
+        allOk := false
+        failed := failed.push line
+    expect allOk ("; ".intercalate failed.toList)
 
 /-! ### Annotated Lean source compile, closure completeness, `DefAsserts`, and `0x04` diagnostics -/
 
@@ -898,12 +890,10 @@ def runAnnotatedCompileSuite : IO (Array String) := do
           errs := errs.push s!"readErased: expected erasedRead, got: {e}"
   return errs
 
-def annotatedCompileCasesTest : LSpec.TestSeq :=
-  .individualIO "annotated Lean source compile: positive modes, 2-variant shared λ, strip/apply, tier retry, must-rejects"
-    none (do
-      let errs ← runAnnotatedCompileSuite
-      return (errs.isEmpty, 0, 0,
-        if errs.isEmpty then none else some ("; ".intercalate errs.toList))) .done
+def annotatedCompileCasesTest : LSpec.Spec := do
+  it "annotated Lean source compile: positive modes, 2-variant shared λ, strip/apply, tier retry, must-rejects" do
+    let errs ← runAnnotatedCompileSuite
+    expect errs.isEmpty ("; ".intercalate errs.toList)
 
 def runCompletenessAndAssertsSuite : IO (Array String) := do
   let mut errs : Array String := #[]
@@ -1063,12 +1053,10 @@ def runCompletenessAndAssertsSuite : IO (Array String) := do
   | _ => errs := errs.push "ModeFixture.k was not a standalone .defn"
   return errs
 
-def completenessAndAssertsTest : LSpec.TestSeq :=
-  .individualIO "closure completeness (`bindersComplete`, `modesCanonical`) and `DefAsserts` placement"
-    none (do
-      let errs ← runCompletenessAndAssertsSuite
-      return (errs.isEmpty, 0, 0,
-        if errs.isEmpty then none else some ("; ".intercalate errs.toList))) .done
+def completenessAndAssertsTest : LSpec.Spec := do
+  it "closure completeness (`bindersComplete`, `modesCanonical`) and `DefAsserts` placement" do
+    let errs ← runCompletenessAndAssertsSuite
+    expect errs.isEmpty ("; ".intercalate errs.toList)
 
 def runUndecidedRoleDiagnosticSuite : IO (Array String) := do
   let mut errs : Array String := #[]
@@ -1119,16 +1107,24 @@ def runUndecidedRoleDiagnosticSuite : IO (Array String) := do
   | _ => errs := errs.push "compileAndFinalize for bound diagnostic fixture failed"
   return errs
 
-def undecidedRoleDiagnosticTest : LSpec.TestSeq :=
-  .individualIO "diagnostic when unannotated (`0x04`) records meet the role table (`Ix.Typing`, `Ix.ModeCheck`)"
-    none (do
-      let errs ← runUndecidedRoleDiagnosticSuite
-      return (errs.isEmpty, 0, 0,
-        if errs.isEmpty then none else some ("; ".intercalate errs.toList))) .done
+def undecidedRoleDiagnosticTest : LSpec.Spec := do
+  it "diagnostic when unannotated (`0x04`) records meet the role table (`Ix.Typing`, `Ix.ModeCheck`)" do
+    let errs ← runUndecidedRoleDiagnosticSuite
+    expect errs.isEmpty ("; ".intercalate errs.toList)
 
-public def suite : List LSpec.TestSeq :=
-  erasedCases ++ uniqueCases ++ borrowCases ++ onceCases ++ captureCases ++ skeletonCases ++
-    alternativeCases ++ [limitCase, fastPathCase, recordCasesTest,
-      annotatedCompileCasesTest, completenessAndAssertsTest, undecidedRoleDiagnosticTest]
+public def suite : LSpec.Spec := do
+  erasedCases
+  uniqueCases
+  borrowCases
+  onceCases
+  captureCases
+  skeletonCases
+  alternativeCases
+  limitCase
+  fastPathCase
+  recordCasesTest
+  annotatedCompileCasesTest
+  completenessAndAssertsTest
+  undecidedRoleDiagnosticTest
 
 end Tests.ResourceModes

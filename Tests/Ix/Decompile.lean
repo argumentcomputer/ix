@@ -21,6 +21,8 @@ public import Tests.Ix.Fixtures
 
 open LSpec
 
+set_option compiler.extract_closed false
+
 namespace Tests.Decompile
 
 /-! ## Extension-table append (pure unit)
@@ -43,7 +45,7 @@ private def nX : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon "x"
 /-- Type `∀ (x : B), Sort (max u 0)` where ref index 1 and univ index 1
     are VIRTUAL — resolvable only through the appended extension
     tables. -/
-private def extFixture :
+private def mkExtFixture (_ : Unit) :
     Ixon.Constant × ConstantMeta × ExprMetaArena × Ixon.Expr := Id.run do
   let ty : Ixon.Expr := .leanAll (.ref 1 #[]) (.sort 1)
   let aAddr := Address.blake3 "ext-fixture-A".toUTF8
@@ -59,7 +61,7 @@ private def extFixture :
   ]⟩
   return (cnst, cm, arena, ty)
 
-private def extEnv : DecompileEnv := Id.run do
+private def mkExtEnv (_ : Unit) : DecompileEnv := Id.run do
   let base : Ixon.Env := {}
   let names := [nB, nU, nX].foldl (init := base.names)
     Ixon.RawEnv.addNameComponents
@@ -67,10 +69,10 @@ private def extEnv : DecompileEnv := Id.run do
 
 /-- With extensions installed, the virtual indices resolve and the
     original expression comes back. -/
-private def extAppendResolves : Bool := Id.run do
-  let (cnst, cm, arena, ty) := extFixture
+private def extAppendResolves (_ : Unit) : Bool := Id.run do
+  let (cnst, cm, arena, ty) := mkExtFixture ()
   let ctx := mkBlockCtx cnst #[] #[nU] arena cm
-  match DecompileM.run extEnv ctx {} (decompileExpr ty 2) with
+  match DecompileM.run (mkExtEnv ()) ctx {} (decompileExpr ty 2) with
   | .ok (e, _) =>
     let expected := Ix.Expr.mkForallE nX
       (Ix.Expr.mkConst nB #[])
@@ -82,10 +84,10 @@ private def extAppendResolves : Bool := Id.run do
 
 /-- Without the metadata wrapper, the same indices are out of bounds —
     proving the append (not table size coincidence) made them resolve. -/
-private def extAppendTeeth : Bool := Id.run do
-  let (cnst, _, arena, ty) := extFixture
+private def extAppendTeeth (_ : Unit) : Bool := Id.run do
+  let (cnst, _, arena, ty) := mkExtFixture ()
   let ctx := mkBlockCtx cnst #[] #[nU] arena
-  match DecompileM.run extEnv ctx {} (decompileExpr ty 2) with
+  match DecompileM.run (mkExtEnv ()) ctx {} (decompileExpr ty 2) with
   | .ok _ => return false
   | .error e =>
     return match e with
@@ -111,7 +113,7 @@ open Ix.DecompileM Ixon
 private def nAx : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon "MS.ax"
 
 /-- The names the fixtures read. -/
-private def msEnv : DecompileEnv :=
+private def mkMsEnv (_ : Unit) : DecompileEnv :=
   { ixonEnv := { names := Ixon.RawEnv.addNameComponents {} nAx } }
 
 /-- Primary entry 0. -/
@@ -130,15 +132,15 @@ private def isMetaShareErr {α : Type} (idx entry p q : Nat) : Except DecompileE
   | _ => false
 
 /-- Forward reference (`metaSharing[0]` → `metaSharing[1]`): rejected. -/
-private def msForward : Bool :=
+private def msForward (_ : Unit) : Bool :=
   isMetaShareErr 2 0 1 2 (validateMetaSharing 1 #[.app (.share 2) (.var 3), .var 4])
 
 /-- Self reference (`share p` in `metaSharing[0]`): rejected, not a loop. -/
-private def msSelf : Bool :=
+private def msSelf (_ : Unit) : Bool :=
   isMetaShareErr 1 0 1 1 (validateMetaSharing 1 #[.app (.share 1) (.var 3)])
 
 /-- `i ≥ p + q`: out of range. -/
-private def msOutOfRange : Bool :=
+private def msOutOfRange (_ : Unit) : Bool :=
   let r := validateMetaSharing 1 #[.var 0, .app (.share 5) (.var 3)]
   isMetaShareErr 5 1 1 2 r
     && (match r with
@@ -148,30 +150,30 @@ private def msOutOfRange : Bool :=
 /-- Whole-constant path (`decompileAxiom` → `withFreshBlock`): the table
     check rejects a malformed entry that nothing reads, and the error names
     the constant. -/
-private def msAxiomUnreadEntryRejected : Bool :=
+private def msAxiomUnreadEntryRejected (_ : Unit) : Bool :=
   let ax : Ixon.Axiom := ⟨false, 0, .sort 0⟩
   let cnst : Ixon.Constant := ⟨.axio ax, #[prim0], #[], #[.zero], #[]⟩
   -- Entry 2 references itself (`share 3 = p + 2`).
   let cm : ConstantMeta :=
     { info := .axio nAx.getHash #[] ⟨#[.leaf]⟩ 0,
       metaSharing := #[sharedM0, sharedM1, .app (.share 3) (.var 0)] }
-  let r := (DecompileM.run msEnv default {} (decompileAxiom ax cnst cm)).map (·.1)
+  let r := (DecompileM.run (mkMsEnv ()) default {} (decompileAxiom ax cnst cm)).map (·.1)
   isMetaShareErr 3 2 1 3 r && match r with
     | .error (.invalidMetaShareIndex _ _ _ _ c) => c == nAx.pretty
     | _ => false
 
 /-- Tables without shares pass the check. -/
-private def msNoShares : Bool :=
+private def msNoShares (_ : Unit) : Bool :=
   validateMetaSharing 0 #[plainM0, plainM1] matches .ok ()
 
 /-- A valid shared table passes the check. -/
-private def msSharedTable : Bool :=
+private def msSharedTable (_ : Unit) : Bool :=
   validateMetaSharing 1 #[sharedM0, sharedM1] matches .ok ()
 
 /-- The table check visits each shared node once: the chain
     `e(k+1) = app e(k) e(k)` of depth 64 (2^64 nodes as a tree) validates, and
     the first violation inside it is still its leftmost leaf. -/
-private def msSharedChain : Bool :=
+private def msSharedChain (_ : Unit) : Bool :=
   let chain := (List.range 64).foldl (fun e _ => Ixon.Expr.app e e)
     (Ixon.Expr.app (.share 0) (.var 0))
   (validateMetaSharing 1 #[chain, chain] matches .ok ()) &&
@@ -179,19 +181,15 @@ private def msSharedChain : Bool :=
 
 end MetaShare
 
-public def unitSuite : List TestSeq := [
-  test "extension append: virtual ref/univ indices resolve"
-      extAppendResolves
-    ++ test "extension append: absent metadata leaves indices OOB"
-      extAppendTeeth,
-  test "metadata share: forward reference rejected" msForward
-    ++ test "metadata share: self reference rejected" msSelf
-    ++ test "metadata share: i ≥ p + q rejected" msOutOfRange
-    ++ test "metadata share: unread malformed entry rejected"
-      msAxiomUnreadEntryRejected
-    ++ test "metadata share: tables without shares unchanged" msNoShares
-    ++ test "metadata share: a valid shared table passes" msSharedTable
-    ++ test "metadata share: shared subterms are checked once" msSharedChain
-]
+public def unitSuite : LSpec.Spec := do
+  itBool "extension append: virtual ref/univ indices resolve" (extAppendResolves ())
+  itBool "extension append: absent metadata leaves indices OOB" (extAppendTeeth ())
+  itBool "metadata share: forward reference rejected" (msForward ())
+  itBool "metadata share: self reference rejected" (msSelf ())
+  itBool "metadata share: i ≥ p + q rejected" (msOutOfRange ())
+  itBool "metadata share: unread malformed entry rejected" (msAxiomUnreadEntryRejected ())
+  itBool "metadata share: tables without shares unchanged" (msNoShares ())
+  itBool "metadata share: a valid shared table passes" (msSharedTable ())
+  itBool "metadata share: shared subterms are checked once" (msSharedChain ())
 
 end Tests.Decompile

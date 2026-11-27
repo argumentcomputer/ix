@@ -109,10 +109,10 @@ def Tier.parse? (s : String) : Option (Tier → Bool) :=
 
 /-- What an entry runs. -/
 inductive Body where
-  /-- LSpec suites (values; built when their module initializes, as before). -/
-  | suite (tests : List LSpec.TestSeq)
-  /-- LSpec suites built by an IO action when the entry is selected. -/
-  | suiteIO (tests : IO (List LSpec.TestSeq))
+  /-- LSpec v3 specification (deferred; zero work at module initialization). -/
+  | suite (spec : LSpec.Spec)
+  /-- LSpec v3 specification built by an IO action when the entry is selected. -/
+  | suiteIO (spec : IO LSpec.Spec)
   /-- A runner; its result is the exit code. -/
   | runner (run : IO UInt32)
   /-- A runner that takes the test binary's Lean environment. -/
@@ -123,35 +123,15 @@ structure Entry where
   tier : Tier
   body : Body
 
-/-- Smart constructors, so that a registration reads `.suite "name" tier tests`. -/
-def Entry.suite (name : String) (tier : Tier) (tests : List LSpec.TestSeq) : Entry :=
-  ⟨name, tier, .suite tests⟩
-def Entry.suiteIO (name : String) (tier : Tier) (tests : IO (List LSpec.TestSeq)) : Entry :=
-  ⟨name, tier, .suiteIO tests⟩
+/-- Smart constructors, so that a registration reads `.suite "name" tier spec`. -/
+def Entry.suite (name : String) (tier : Tier) (spec : LSpec.Spec) : Entry :=
+  ⟨name, tier, .suite spec⟩
+def Entry.suiteIO (name : String) (tier : Tier) (spec : IO LSpec.Spec) : Entry :=
+  ⟨name, tier, .suiteIO spec⟩
 def Entry.runner (name : String) (tier : Tier) (run : IO UInt32) : Entry :=
   ⟨name, tier, .runner run⟩
 def Entry.env (name : String) (tier : Tier) (run : Lean.Environment → IO UInt32) : Entry :=
   ⟨name, tier, .env run⟩
-
-/-- `tests` with every `individualIO` check started now, each on a thread of
-its own with its output captured; each check of the result waits for its
-thread and then prints that output, so results and output keep their order.
-For a suite of independent long checks, the suite takes as long as its
-longest check rather than their sum. -/
-def startChecks : LSpec.TestSeq → IO LSpec.TestSeq
-  | .individualIO descr shown check next => do
-    let task ← IO.asTask (IO.FS.withIsolatedStreams check) .dedicated
-    return .individualIO descr shown (do
-      let (output, result) ← IO.ofExcept (← IO.wait task)
-      IO.print output
-      return result) (← startChecks next)
-  | .individual descr p shown inst next => return .individual descr p shown inst (← startChecks next)
-  | .group descr tests next => return .group descr (← startChecks tests) (← startChecks next)
-  | .done => return .done
-
-/-- `suites`, their checks started at once (`startChecks`). -/
-def concurrently (suites : List LSpec.TestSeq) : IO (List LSpec.TestSeq) :=
-  suites.mapM startChecks
 
 /-- A workflow line without its YAML comment: from the first `#` at the line's
 start or after a space or a tab. A `#` inside a quoted string after a space is
@@ -306,6 +286,7 @@ structure Options where
   exclude : List String := []
   list : Bool := false
   listGate : Option (Tier → Bool) := none
+  threads : Nat := 1
 
 def parseArgs : List String → Options → Except String Options
   | [], o => .ok o
@@ -318,10 +299,24 @@ def parseArgs : List String → Options → Except String Options
   | "--list" :: rest, o => parseArgs rest { o with list := true }
   | "--ignored" :: rest, o => parseArgs rest { o with ignored := true }
   | "--include-ignored" :: rest, o => parseArgs rest { o with includeIgnored := true }
+  | "-j" :: val :: rest, o | "--threads" :: val :: rest, o =>
+    match val.toNat? with
+    | some n => if n == 0 then .error "--threads must be at least 1" else parseArgs rest { o with threads := n }
+    | none => .error s!"expected natural number for --threads, got '{val}'"
   | a :: rest, o =>
     if a.startsWith "--exclude=" then
       let xs := ((a.drop "--exclude=".length).toString.splitOn ",").filter (!·.isEmpty)
       parseArgs rest { o with exclude := o.exclude ++ xs }
+    else if a.startsWith "--threads=" then
+      let val := (a.drop "--threads=".length).toString
+      match val.toNat? with
+      | some n => if n == 0 then .error "--threads must be at least 1" else parseArgs rest { o with threads := n }
+      | none => .error s!"expected natural number for --threads, got '{val}'"
+    else if a.startsWith "-j" && a.length > 2 then
+      let val := (a.drop 2).toString
+      match val.toNat? with
+      | some n => if n == 0 then .error "-j must be at least 1" else parseArgs rest { o with threads := n }
+      | none => .error s!"expected natural number for -j, got '{val}'"
     else if a.startsWith "-" then .error s!"unknown option '{a}'"
     else parseArgs rest { o with names := o.names ++ [a] }
 
@@ -345,12 +340,42 @@ def select (entries : List Entry) (o : Options) : Except String (List Entry) := 
   if out.isEmpty then throw "nothing selected"
   return out
 
-def runEntry (getEnv : IO Lean.Environment) (e : Entry) : IO UInt32 := do
+def runEntry (getEnv : IO Lean.Environment) (threads : Nat) (e : Entry) : IO UInt32 := do
   match e.body with
-  | .suite tests => LSpec.lspecIO (.ofList [(e.name, tests)]) []
-  | .suiteIO tests => LSpec.lspecIO (.ofList [(e.name, ← tests)]) []
+  | .suite spec =>
+    let tree ← spec.toTestTree e.name
+    LSpec.defaultMainTree tree [] { threads }
+  | .suiteIO mkSpec =>
+    let spec ← mkSpec
+    let tree ← spec.toTestTree e.name
+    LSpec.defaultMainTree tree [] { threads }
   | .runner run => run
   | .env run => run (← getEnv)
+
+/-- Convert an `Entry` into a `TestTree` so all selected entries can share a
+    single bounded LSpec v3 `WorkerPool` when `threads > 1`. -/
+private def entryToTestTree (getEnv : IO Lean.Environment) (e : Entry) : IO LSpec.TestTree := do
+  match e.body with
+  | .suite spec => spec.toTestTree e.name
+  | .suiteIO mkSpec =>
+    let spec ← mkSpec
+    spec.toTestTree e.name
+  | .runner run =>
+    return .leaf e.name #[] fun _ => do
+      let code ← run
+      if code == 0 then return .pass
+      else return .fail s!"exited with code {code}"
+  | .env run =>
+    return .leaf e.name #[] fun _ => do
+      let env ← getEnv
+      let code ← run env
+      if code == 0 then return .pass
+      else return .fail s!"exited with code {code}"
+
+/-- Total duration across all leaves of a `ReportTree`. -/
+private partial def reportTreeDuration : LSpec.ReportTree → Nat
+  | .leaf r => r.durationMs
+  | .group _ cs => cs.foldl (fun acc c => acc + reportTreeDuration c) 0
 
 /-- Internal dispatch shared by `run`, `runScoped`, and `runManual`. -/
 private def runEntries (entries : List Entry) (loadEnv : IO Lean.Environment)
@@ -371,17 +396,46 @@ private def runEntries (entries : List Entry) (loadEnv : IO Lean.Environment)
   -- Non-primary entries ran after the dispatcher's `get_env!`, which also
   -- set the Lean search path; keep the search path without the import.
   if selected.any (!isPrimary ·) then initLeanSearchPath
-  let envRef ← IO.mkRef (none : Option Lean.Environment)
-  let getEnv : IO Lean.Environment := do
-    if let some env ← envRef.get then return env
-    let env ← loadEnv
-    envRef.set (some env)
-    return env
+  let envMutex ← Std.Mutex.new (none : Option Lean.Environment)
+  let getEnv : IO Lean.Environment :=
+    envMutex.atomically do
+      if let some env ← get then return env
+      let env ← loadEnv
+      set (some env)
+      return env
+  if o.threads > 1 && selected.length > 1 then
+    -- Run ALL selected entries inside one shared bounded LSpec v3 WorkerPool!
+    let mut children := Array.mkEmpty selected.length
+    for e in selected do
+      children := children.push (← entryToTestTree getEnv e)
+    let combined : LSpec.TestTree := .group "" children
+    let (report, summary) ← LSpec.runTree combined { threads := o.threads }
+    let useColor := (← IO.getEnv "NO_COLOR").isNone
+    let entryReports := match report with
+      | .group _ cs => cs
+      | other => #[other]
+    let mut failed : Array String := #[]
+    for h : i in [:selected.length] do
+      let e := selected[i]
+      let rep := entryReports.getD i (.group e.name #[])
+      let s := rep.summarize
+      let ms := reportTreeDuration rep
+      if s.allPassed then
+        IO.println s!"[ixtests] {e.name}: ok {ms} ms ({s.passed} tests)"
+      else
+        let rendered := LSpec.Processors.formatReport rep useColor false
+        unless rendered.isEmpty do IO.eprintln rendered
+        IO.println s!"[ixtests] {e.name}: FAILED ({s.failed} failed) {ms} ms"
+        failed := failed.push e.name
+    IO.println s!"[ixtests] {selected.length - failed.size} of {selected.length} passed\
+      {if failed.isEmpty then "" else s!"; failed: {", ".intercalate failed.toList}"} \
+      ({summary.totalDurationMs} ms wall, threads={o.threads})"
+    return if failed.isEmpty then 0 else 1
   let mut first : UInt32 := 0
   let mut failed : Array String := #[]
   for e in selected do
     let start ← IO.monoMsNow
-    let code ← try runEntry getEnv e catch ex => do
+    let code ← try runEntry getEnv o.threads e catch ex => do
       IO.eprintln s!"[ixtests] {e.name}: uncaught exception: {ex}"
       pure 1
     let ms := (← IO.monoMsNow) - start

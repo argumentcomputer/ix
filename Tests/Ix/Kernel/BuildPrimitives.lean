@@ -121,8 +121,8 @@ def parseIxName (s : String) : Ix.Name := Id.run do
 /-- Dump the current `(name, hex)` table for every entry in `kernelPrimitives`.
     Pass iff every entry resolves; missing names are printed as `// MISSING:`
     comments so the output is still valid as-is for partial regeneration. -/
-def testBuildPrimitives : TestSeq :=
-  .individualIO "build primitives dump" none (do
+def testBuildPrimitives : Spec :=
+  it "build primitives dump" do
     let leanEnv ← get_env!
     let filtered := primitiveClosure leanEnv
 
@@ -157,10 +157,7 @@ def testBuildPrimitives : TestSeq :=
     if !missing.isEmpty then
       IO.println s!"// Missing: {missing}"
 
-    let msg : Option String :=
-      if missing.isEmpty then none else some s!"{missing.size} primitives missing from Ixon env"
-    return (missing.isEmpty, found, missing.size, msg)
-  ) .done
+    expect missing.isEmpty s!"{missing.size} primitives missing from Ixon env"
 
 /-- FFI: expose `PrimAddrs::new()` from Rust as
     `(lean_name, hex_address)` pairs in the same order as
@@ -186,8 +183,8 @@ opaque rsPrimAddrsCanonicalFFI : IO (Array (String × String))
     PrimAddrs value (`0xff…3`) intentionally diverges from its
     compiled content hash (which collides with `id`). Skip the check
     for it. -/
-def testPrimitivesParity : TestSeq :=
-  .individualIO "primitive address parity (PrimAddrs vs live compile)" none (do
+def testPrimitivesParity : Spec :=
+  it "primitive address parity (PrimAddrs vs live compile)" do
     -- Reuse the same Lean → Ixon compile pipeline as testBuildPrimitives.
     let leanEnv ← get_env!
     let filtered := primitiveClosure leanEnv
@@ -232,15 +229,12 @@ def testPrimitivesParity : TestSeq :=
       IO.eprintln "Regenerate via `lake test -- --ignored rust-kernel-build-primitives` and paste into crates/common/src/prim_addrs.rs."
 
     let total_problems := missing.size + mismatches.size
-    let passed := kernelPrimitives.size - min total_problems kernelPrimitives.size
-    let msg : Option String :=
-      if total_problems == 0 then none
-      else some s!"{mismatches.size} mismatch(es), {missing.size} missing"
-    return (total_problems == 0, passed, total_problems, msg)
-  ) .done
+    expect (total_problems == 0) s!"{mismatches.size} mismatch(es), {missing.size} missing"
 
-def paritySuite : List TestSeq := [testPrimitivesParity]
+def paritySuite : LSpec.Spec := do
+  testPrimitivesParity
 
-def suite : List TestSeq := [testBuildPrimitives]
+def suite : LSpec.Spec := do
+  testBuildPrimitives
 
 end Tests.Ix.Kernel.BuildPrimitives

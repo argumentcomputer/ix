@@ -9,8 +9,10 @@ public import Tests.Ix.RoleArtifactConsumer
 public import Tests.Ix.RolePacking
 public import Tests.Ix.HostAdmission
 
-open LSpec SlimCheck Gen Ixon
+open LSpec LSpec.Prop Ixon
 open Tests.FFI.Ixon (rsEqUnivSerialization rsEqExprSerialization rsEqConstantSerialization rsEqEnvSerialization)
+
+set_option compiler.extract_closed false
 
 /-!
 ## Roundtrip Tests for New Format Types
@@ -57,7 +59,7 @@ def envSerde (raw : RawEnv) : Bool :=
 ## Unit Tests for New Format Types
 -/
 
-def univUnits : TestSeq :=
+def univUnits : LSpec.Spec := do
   let cases : List Univ := [
     .zero,
     .var 0,
@@ -75,10 +77,9 @@ def univUnits : TestSeq :=
     .imax (.var 1) .zero,
     .max (.succ .zero) (.succ (.succ .zero)),
   ]
-  cases.foldl (init := .done) fun acc u =>
-    acc ++ test s!"Univ roundtrip: {repr u}" (univSerde u) ++
-      test s!"Univ Lean==Rust bytes: {repr u}"
-        (rsEqUnivSerialization u (serUniv u))
+  for u in cases do
+    itBool s!"Univ roundtrip: {repr u}" (univSerde u)
+    itBool s!"Univ Lean==Rust bytes: {repr u}" (rsEqUnivSerialization u (serUniv u))
 
 def univPrefixAccepts (bytes : ByteArray) : Bool :=
   match runGet getUniv bytes with
@@ -90,14 +91,15 @@ def univExactRejects (bytes : ByteArray) : Bool :=
   | .error _ => true
   | .ok _ => false
 
-def univExactUnits : TestSeq :=
-  let bytes := serUniv Univ.zero ++ [0].toByteArray
-  test "Univ prefix runner may leave trailing bytes"
-      (univPrefixAccepts bytes) ++
-    test "Univ full-buffer decoder rejects trailing bytes"
-      (univExactRejects bytes)
+def univExactUnits : LSpec.Spec := do
+  it "Univ prefix runner may leave trailing bytes" do
+    let bytes := serUniv Univ.zero ++ [0].toByteArray
+    expect (univPrefixAccepts bytes)
+  it "Univ full-buffer decoder rejects trailing bytes" do
+    let bytes := serUniv Univ.zero ++ [0].toByteArray
+    expect (univExactRejects bytes)
 
-def exprUnits : TestSeq :=
+def exprUnits : LSpec.Spec := do
   let cases : List Expr := [
     .sort 0,
     .var 0,
@@ -121,10 +123,9 @@ def exprUnits : TestSeq :=
     .letE true .borrow (.sort 0) (.var 0) (.var 1),
     .prj 0 1 (.var 0),
   ]
-  cases.foldl (init := .done) fun acc e =>
-    acc ++ test s!"Expr roundtrip: {repr e}" (exprSerde e) ++
-      test s!"Expr Lean==Rust bytes: {repr e}"
-        (rsEqExprSerialization e (serExpr e))
+  for e in cases do
+    itBool s!"Expr roundtrip: {repr e}" (exprSerde e)
+    itBool s!"Expr Lean==Rust bytes: {repr e}" (rsEqExprSerialization e (serExpr e))
 
 def exprPrefixAccepts (bytes : ByteArray) : Bool :=
   match runGet getExpr bytes with
@@ -136,12 +137,13 @@ def exprExactRejects (bytes : ByteArray) : Bool :=
   | .error _ => true
   | .ok _ => false
 
-def exprExactUnits : TestSeq :=
-  let bytes := serExpr (.sort 0) ++ [0].toByteArray
-  test "Expr prefix runner may leave trailing bytes"
-      (exprPrefixAccepts bytes) ++
-    test "Expr full-buffer decoder rejects trailing bytes"
-      (exprExactRejects bytes)
+def exprExactUnits : LSpec.Spec := do
+  it "Expr prefix runner may leave trailing bytes" do
+    let bytes := serExpr (.sort 0) ++ [0].toByteArray
+    expect (exprPrefixAccepts bytes)
+  it "Expr full-buffer decoder rejects trailing bytes" do
+    let bytes := serExpr (.sort 0) ++ [0].toByteArray
+    expect (exprExactRejects bytes)
 
 def exprPrefixRejects (bytes : Array UInt8) : Bool :=
   match runGet getExpr (ByteArray.mk bytes) with
@@ -152,13 +154,13 @@ def exprPrefixRejects (bytes : Array UInt8) : Bool :=
     `runGet getExpr` so rejection comes from the grammar itself rather than
     trailing bytes. Reserved let codes and additional malformed vectors are
     covered by `Tests.IxonGolden.rejectedExprCases`. -/
-def strictExprUnits : TestSeq :=
-  test "rejects empty app spine" (exprPrefixRejects #[0x70]) ++
-  test "rejects nested app base"
-    (exprPrefixRejects #[0x71, 0x71, 0x10, 0x11, 0x12]) ++
-  test "rejects nested lambda body"
-    (exprPrefixRejects #[0x81, 0x00, 0x81, 0x00, 0x10]) ++
-  test "rejects nested forall codomain"
+def strictExprUnits : LSpec.Spec := do
+  itBool "rejects empty app spine" (exprPrefixRejects #[0x70])
+  itBool "rejects nested app base"
+    (exprPrefixRejects #[0x71, 0x71, 0x10, 0x11, 0x12])
+  itBool "rejects nested lambda body"
+    (exprPrefixRejects #[0x81, 0x00, 0x81, 0x00, 0x10])
+  itBool "rejects nested forall codomain"
     (exprPrefixRejects #[0x91, 0x00, 0x91, 0x00, 0x10])
 
 /-! ## TagN integer code -/
@@ -198,83 +200,82 @@ def tagNShortCanonical (f : Nat) : Bool := Id.run do
         if runPut (putTagN f t.flag t.value) != two then return false
   return true
 
-def tagNUnits : TestSeq :=
-  let perF (f : Nat) : TestSeq :=
+def tagNUnits : LSpec.Spec := do
+  for f in [0, 2, 4] do
     let flags : List UInt8 := [0, (2 ^ f - 1).toUInt8]
-    let cases := flags.flatMap fun flag => (tagNBoundaries f).map (flag, ·)
-    cases.foldl (init := .done) fun acc (flag, v) =>
-      acc ++ test s!"TagN f={f} flag={flag} value={v}: width and roundtrip"
-        (tagNRoundtrip f flag v)
-  perF 0 ++ perF 2 ++ perF 4 ++
-  test "TagN rung ends f=0" ([tagNEnd1 0, tagNEnd2 0, tagNEnd3 0, tagNEnd4 0, tagNEnd5 0]
-    == [128, 16512, 82048, 16859264, 4311826560]) ++
-  test "TagN rung ends f=2" ([tagNEnd1 2, tagNEnd2 2, tagNEnd3 2, tagNEnd4 2, tagNEnd5 2]
-    == [32, 4128, 69664, 16846880, 4311814176]) ++
-  test "TagN rung ends f=4" ([tagNEnd1 4, tagNEnd2 4, tagNEnd3 4, tagNEnd4 4, tagNEnd5 4]
-    == [8, 1032, 66568, 16843784, 4311811080]) ++
-  test "TagN f=4 bytes: 7" (tagNEncodes 4 0xA 7 #[0xA7]) ++
-  test "TagN f=4 bytes: 8" (tagNEncodes 4 0xA 8 #[0xA8, 0x00]) ++
-  test "TagN f=4 bytes: 1031" (tagNEncodes 4 0x1 1031 #[0x1B, 0xFF]) ++
-  test "TagN f=4 bytes: 1032" (tagNEncodes 4 0 1032 #[0x0C, 0x00, 0x00]) ++
-  test "TagN f=4 bytes: 66567" (tagNEncodes 4 0 66567 #[0x0C, 0xFF, 0xFF]) ++
-  test "TagN f=4 bytes: 66568" (tagNEncodes 4 0 66568 #[0x0D, 0, 0, 0]) ++
-  test "TagN f=4 bytes: 16843783" (tagNEncodes 4 0 16843783 #[0x0D, 0xFF, 0xFF, 0xFF]) ++
-  test "TagN f=4 bytes: 16843784" (tagNEncodes 4 0 16843784 #[0x0E, 0, 0, 0, 0]) ++
-  test "TagN f=4 bytes: 4311811079"
-    (tagNEncodes 4 0 4311811079 #[0x0E, 0xFF, 0xFF, 0xFF, 0xFF]) ++
-  test "TagN f=4 bytes: 4311811080"
-    (tagNEncodes 4 0 4311811080 #[0x0F, 0, 0, 0, 0, 0, 0, 0, 0]) ++
-  test "TagN f=0 bytes: 127" (tagNEncodes 0 0 127 #[0x7F]) ++
-  test "TagN f=0 bytes: 128" (tagNEncodes 0 0 128 #[0x80, 0x00]) ++
-  test "TagN f=0 bytes: 16512" (tagNEncodes 0 0 16512 #[0xC0, 0x00, 0x00]) ++
-  test "TagN f=0 bytes: 82047" (tagNEncodes 0 0 82047 #[0xC0, 0xFF, 0xFF]) ++
-  test "TagN f=0 bytes: 82048" (tagNEncodes 0 0 82048 #[0xC1, 0, 0, 0]) ++
-  test "TagN f=0 bytes: 16859263" (tagNEncodes 0 0 16859263 #[0xC1, 0xFF, 0xFF, 0xFF]) ++
-  test "TagN f=0 bytes: 16859264" (tagNEncodes 0 0 16859264 #[0xC2, 0, 0, 0, 0]) ++
-  test "TagN f=0 bytes: 4311826560"
-    (tagNEncodes 0 0 4311826560 #[0xC3, 0, 0, 0, 0, 0, 0, 0, 0]) ++
-  test "TagN f=0 bytes: 2^64 - 1"
-    (tagNEncodes 0 0 (2 ^ 64 - 1) #[0xC3, 0x7F, 0xBF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF]) ++
-  test "TagN f=2 bytes: 32" (tagNEncodes 2 3 32 #[0xE0, 0x00]) ++
-  test "TagN f=2 bytes: 4128" (tagNEncodes 2 3 4128 #[0xF0, 0x00, 0x00]) ++
-  test "TagN f=2 bytes: 69663" (tagNEncodes 2 3 69663 #[0xF0, 0xFF, 0xFF]) ++
-  test "TagN f=2 bytes: 69664" (tagNEncodes 2 3 69664 #[0xF1, 0, 0, 0]) ++
-  test "TagN f=2 bytes: 16846879" (tagNEncodes 2 3 16846879 #[0xF1, 0xFF, 0xFF, 0xFF]) ++
-  test "TagN f=2 bytes: 16846880" (tagNEncodes 2 3 16846880 #[0xF2, 0, 0, 0, 0]) ++
-  test "TagN f=2 bytes: 4311814176"
-    (tagNEncodes 2 3 4311814176 #[0xF3, 0, 0, 0, 0, 0, 0, 0, 0]) ++
-  test "TagN f=2 rejects code 4" (tagNRejects 2 #[0x34]) ++
-  test "TagN f=2 rejects code 15" (tagNRejects 2 #[0x3F]) ++
-  test "TagN f=0 rejects code 4" (tagNRejects 0 #[0xC4]) ++
-  test "TagN f=0 rejects code 63" (tagNRejects 0 #[0xFF]) ++
-  test "TagN f=4 rejects overflow"
-    (tagNRejects 4 #[0x0F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]) ++
-  test "TagN f=0 rejects overflow"
-    (tagNRejects 0 #[0xC3, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]) ++
+    for flag in flags do
+      for v in tagNBoundaries f do
+        itBool s!"TagN f={f} flag={flag} value={v}: width and roundtrip"
+          (tagNRoundtrip f flag v)
+  itBool "TagN rung ends f=0" ([tagNEnd1 0, tagNEnd2 0, tagNEnd3 0, tagNEnd4 0, tagNEnd5 0]
+    == [128, 16512, 82048, 16859264, 4311826560])
+  itBool "TagN rung ends f=2" ([tagNEnd1 2, tagNEnd2 2, tagNEnd3 2, tagNEnd4 2, tagNEnd5 2]
+    == [32, 4128, 69664, 16846880, 4311814176])
+  itBool "TagN rung ends f=4" ([tagNEnd1 4, tagNEnd2 4, tagNEnd3 4, tagNEnd4 4, tagNEnd5 4]
+    == [8, 1032, 66568, 16843784, 4311811080])
+  itBool "TagN f=4 bytes: 7" (tagNEncodes 4 0xA 7 #[0xA7])
+  itBool "TagN f=4 bytes: 8" (tagNEncodes 4 0xA 8 #[0xA8, 0x00])
+  itBool "TagN f=4 bytes: 1031" (tagNEncodes 4 0x1 1031 #[0x1B, 0xFF])
+  itBool "TagN f=4 bytes: 1032" (tagNEncodes 4 0 1032 #[0x0C, 0x00, 0x00])
+  itBool "TagN f=4 bytes: 66567" (tagNEncodes 4 0 66567 #[0x0C, 0xFF, 0xFF])
+  itBool "TagN f=4 bytes: 66568" (tagNEncodes 4 0 66568 #[0x0D, 0, 0, 0])
+  itBool "TagN f=4 bytes: 16843783" (tagNEncodes 4 0 16843783 #[0x0D, 0xFF, 0xFF, 0xFF])
+  itBool "TagN f=4 bytes: 16843784" (tagNEncodes 4 0 16843784 #[0x0E, 0, 0, 0, 0])
+  itBool "TagN f=4 bytes: 4311811079"
+    (tagNEncodes 4 0 4311811079 #[0x0E, 0xFF, 0xFF, 0xFF, 0xFF])
+  itBool "TagN f=4 bytes: 4311811080"
+    (tagNEncodes 4 0 4311811080 #[0x0F, 0, 0, 0, 0, 0, 0, 0, 0])
+  itBool "TagN f=0 bytes: 127" (tagNEncodes 0 0 127 #[0x7F])
+  itBool "TagN f=0 bytes: 128" (tagNEncodes 0 0 128 #[0x80, 0x00])
+  itBool "TagN f=0 bytes: 16512" (tagNEncodes 0 0 16512 #[0xC0, 0x00, 0x00])
+  itBool "TagN f=0 bytes: 82047" (tagNEncodes 0 0 82047 #[0xC0, 0xFF, 0xFF])
+  itBool "TagN f=0 bytes: 82048" (tagNEncodes 0 0 82048 #[0xC1, 0, 0, 0])
+  itBool "TagN f=0 bytes: 16859263" (tagNEncodes 0 0 16859263 #[0xC1, 0xFF, 0xFF, 0xFF])
+  itBool "TagN f=0 bytes: 16859264" (tagNEncodes 0 0 16859264 #[0xC2, 0, 0, 0, 0])
+  itBool "TagN f=0 bytes: 4311826560"
+    (tagNEncodes 0 0 4311826560 #[0xC3, 0, 0, 0, 0, 0, 0, 0, 0])
+  itBool "TagN f=0 bytes: 2^64 - 1"
+    (tagNEncodes 0 0 (2 ^ 64 - 1) #[0xC3, 0x7F, 0xBF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF])
+  itBool "TagN f=2 bytes: 32" (tagNEncodes 2 3 32 #[0xE0, 0x00])
+  itBool "TagN f=2 bytes: 4128" (tagNEncodes 2 3 4128 #[0xF0, 0x00, 0x00])
+  itBool "TagN f=2 bytes: 69663" (tagNEncodes 2 3 69663 #[0xF0, 0xFF, 0xFF])
+  itBool "TagN f=2 bytes: 69664" (tagNEncodes 2 3 69664 #[0xF1, 0, 0, 0])
+  itBool "TagN f=2 bytes: 16846879" (tagNEncodes 2 3 16846879 #[0xF1, 0xFF, 0xFF, 0xFF])
+  itBool "TagN f=2 bytes: 16846880" (tagNEncodes 2 3 16846880 #[0xF2, 0, 0, 0, 0])
+  itBool "TagN f=2 bytes: 4311814176"
+    (tagNEncodes 2 3 4311814176 #[0xF3, 0, 0, 0, 0, 0, 0, 0, 0])
+  itBool "TagN f=2 rejects code 4" (tagNRejects 2 #[0x34])
+  itBool "TagN f=2 rejects code 15" (tagNRejects 2 #[0x3F])
+  itBool "TagN f=0 rejects code 4" (tagNRejects 0 #[0xC4])
+  itBool "TagN f=0 rejects code 63" (tagNRejects 0 #[0xFF])
+  itBool "TagN f=4 rejects overflow"
+    (tagNRejects 4 #[0x0F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])
+  itBool "TagN f=0 rejects overflow"
+    (tagNRejects 0 #[0xC3, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])
   -- The smallest overflowing rung-6 payloads: 2^64 - R5 for each f, one past
   -- the payload of 2^64 - 1 (R5 = 0x1_0101_4080, 0x1_0101_1020, 0x1_0101_0408).
-  test "TagN f=0 rejects the smallest overflow"
-    (tagNRejects 0 #[0xC3, 0x80, 0xBF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF]) ++
-  test "TagN f=2 accepts 2^64 - 1"
-    (tagNEncodes 2 0 (2 ^ 64 - 1) #[0x33, 0xDF, 0xEF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF]) ++
-  test "TagN f=2 rejects the smallest overflow"
-    (tagNRejects 2 #[0x33, 0xE0, 0xEF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF]) ++
-  test "TagN f=4 accepts 2^64 - 1"
-    (tagNEncodes 4 0 (2 ^ 64 - 1) #[0x0F, 0xF7, 0xFB, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF]) ++
-  test "TagN f=4 rejects the smallest overflow"
-    (tagNRejects 4 #[0x0F, 0xF8, 0xFB, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF]) ++
+  itBool "TagN f=0 rejects the smallest overflow"
+    (tagNRejects 0 #[0xC3, 0x80, 0xBF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF])
+  itBool "TagN f=2 accepts 2^64 - 1"
+    (tagNEncodes 2 0 (2 ^ 64 - 1) #[0x33, 0xDF, 0xEF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF])
+  itBool "TagN f=2 rejects the smallest overflow"
+    (tagNRejects 2 #[0x33, 0xE0, 0xEF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF])
+  itBool "TagN f=4 accepts 2^64 - 1"
+    (tagNEncodes 4 0 (2 ^ 64 - 1) #[0x0F, 0xF7, 0xFB, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF])
+  itBool "TagN f=4 rejects the smallest overflow"
+    (tagNRejects 4 #[0x0F, 0xF8, 0xFB, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF])
   -- An invalid code followed by as many bytes as a valid rung would read:
   -- a reader that kept only the low two code bits would accept these.
-  test "TagN f=0 rejects code 4 with two following bytes" (tagNRejects 0 #[0xC4, 0x00, 0x00]) ++
-  test "TagN f=2 rejects code 4 with two following bytes" (tagNRejects 2 #[0x34, 0x00, 0x00]) ++
-  test "TagN rejects truncated rung 2" (tagNRejects 4 #[0x08]) ++
-  test "TagN rejects truncated rung 4" (tagNRejects 4 #[0x0D, 0x00, 0x00]) ++
-  test "TagN rejects truncated rung 5" (tagNRejects 4 #[0x0E, 0x00, 0x00, 0x00]) ++
-  test "TagN rejects truncated rung 6" (tagNRejects 4 #[0x0F, 0x00, 0x00, 0x00]) ++
-  test "TagN rejects trailing byte" (tagNRejects 4 #[0x07, 0x00]) ++
-  test "TagN f=0 short strings canonical" (tagNShortCanonical 0) ++
-  test "TagN f=2 short strings canonical" (tagNShortCanonical 2) ++
-  test "TagN f=4 short strings canonical" (tagNShortCanonical 4)
+  itBool "TagN f=0 rejects code 4 with two following bytes" (tagNRejects 0 #[0xC4, 0x00, 0x00])
+  itBool "TagN f=2 rejects code 4 with two following bytes" (tagNRejects 2 #[0x34, 0x00, 0x00])
+  itBool "TagN rejects truncated rung 2" (tagNRejects 4 #[0x08])
+  itBool "TagN rejects truncated rung 4" (tagNRejects 4 #[0x0D, 0x00, 0x00])
+  itBool "TagN rejects truncated rung 5" (tagNRejects 4 #[0x0E, 0x00, 0x00, 0x00])
+  itBool "TagN rejects truncated rung 6" (tagNRejects 4 #[0x0F, 0x00, 0x00, 0x00])
+  itBool "TagN rejects trailing byte" (tagNRejects 4 #[0x07, 0x00])
+  itBool "TagN f=0 short strings canonical" (tagNShortCanonical 0)
+  itBool "TagN f=2 short strings canonical" (tagNShortCanonical 2)
+  itBool "TagN f=4 short strings canonical" (tagNShortCanonical 4)
 
 /-! ## ExprMeta arena wire format
 
@@ -283,16 +284,16 @@ explicit TagN backward deltas); the same vectors are pinned in Rust
 (`ixon::metadata::tests::arena_vector_*`). Name indices are 0 and 1 (one
 byte in every integer code). -/
 
-def arenaVecNames : Address × Address × NameIndex × NameReverseIndex :=
+def arenaVecNames (_ : Unit) : Address × Address × NameIndex × NameReverseIndex :=
   let a := Address.blake3 (ByteArray.mk #[1])
   let b := Address.blake3 (ByteArray.mk #[2])
   (a, b, (({} : NameIndex).insert a 0).insert b 1, #[a, b])
 
 def arenaBytes (arena : ExprMetaArena) : ByteArray :=
-  runPut (putExprMetaArenaIndexed arena arenaVecNames.2.2.1)
+  runPut (putExprMetaArenaIndexed arena (arenaVecNames ()).2.2.1)
 
 def arenaFrom (bytes : Array UInt8) : Except String ExprMetaArena :=
-  runGetExact (getExprMetaArenaIndexed arenaVecNames.2.2.2) (ByteArray.mk bytes)
+  runGetExact (getExprMetaArenaIndexed (arenaVecNames ()).2.2.2) (ByteArray.mk bytes)
 
 /-- The arena writes exactly `bytes`, and `bytes` read back to the arena. -/
 def arenaVector (arena : ExprMetaArena) (bytes : Array UInt8) : Bool :=
@@ -306,57 +307,60 @@ def arenaRejects (bytes : Array UInt8) : Bool :=
   | .error _ => true
   | .ok _ => false
 
-def exprMetaArenaUnits : TestSeq :=
-  let a := arenaVecNames.1
-  let b := arenaVecNames.2.1
-  -- `fun (x : T) => f x` in post-order: every child implicit.
-  let tree : ExprMetaArena := { nodes := #[
-    .ref b, .ref a, .leaf, .app 1 2, .binder a .default 0 3] }
-  -- Shared nodes: explicit backward deltas next to implicit slots.
-  let dag : ExprMetaArena := { nodes := #[
-    .leaf, .app 0 0, .letBinder a 0 1 0, .prj b 1, .mdata #[] 3] }
-  -- A forward reference wraps.
-  let forward : ExprMetaArena := { nodes := #[.leaf, .leaf, .leaf, .prj a 7] }
-  test "arena: a post-order tree writes no references"
-    (arenaVector tree #[0x05, 0x38, 0x01, 0x38, 0x00, 0x00, 0x0B, 0x13, 0x00]) ++
-  test "arena: shared nodes are explicit backward deltas"
-    (arenaVector dag #[0x05, 0x00, 0x0A, 0x00, 0x32, 0x00, 0x01, 0x01, 0x40,
-      0x01, 0x01, 0x49, 0x00]) ++
-  test "arena: a forward reference wraps"
-    (arenaVector forward #[0x04, 0x00, 0x00, 0x00,
-      0x40, 0x00, 0xC3, 0x7B, 0xBF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF]) ++
-  test "arena: rejects the retired call-site kinds 10 and 11"
+def exprMetaArenaUnits : LSpec.Spec := do
+  it "arena: a post-order tree writes no references" do
+    let (a, b, _, _) := arenaVecNames ()
+    -- `fun (x : T) => f x` in post-order: every child implicit.
+    let tree : ExprMetaArena := { nodes := #[
+      .ref b, .ref a, .leaf, .app 1 2, .binder a .default 0 3] }
+    expect (arenaVector tree #[0x05, 0x38, 0x01, 0x38, 0x00, 0x00, 0x0B, 0x13, 0x00])
+  it "arena: shared nodes are explicit backward deltas" do
+    let (a, b, _, _) := arenaVecNames ()
+    -- Shared nodes: explicit backward deltas next to implicit slots.
+    let dag : ExprMetaArena := { nodes := #[
+      .leaf, .app 0 0, .letBinder a 0 1 0, .prj b 1, .mdata #[] 3] }
+    expect (arenaVector dag #[0x05, 0x00, 0x0A, 0x00, 0x32, 0x00, 0x01, 0x01, 0x40,
+      0x01, 0x01, 0x49, 0x00])
+  it "arena: a forward reference wraps" do
+    let (a, _, _, _) := arenaVecNames ()
+    -- A forward reference wraps.
+    let forward : ExprMetaArena := { nodes := #[.leaf, .leaf, .leaf, .prj a 7] }
+    expect (arenaVector forward #[0x04, 0x00, 0x00, 0x00,
+      0x40, 0x00, 0xC3, 0x7B, 0xBF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF])
+  itBool "arena: rejects the retired call-site kinds 10 and 11"
     (arenaRejects #[0x01, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00] &&
-      arenaRejects #[0x01, 0x58, 0x00, 0x00, 0x00, 0x00, 0x00]) ++
-  test "arena: rejects an explicit slot at the implicit position"
-    (arenaRejects #[0x02, 0x00, 0x08, 0x00, 0x00]) ++
-  test "arena: rejects an implicit slot with no preceding node"
-    (arenaRejects #[0x01, 0x09, 0x00]) ++
-  test "arena: rejects mask bits beyond the kind's slots"
+      arenaRejects #[0x01, 0x58, 0x00, 0x00, 0x00, 0x00, 0x00])
+  itBool "arena: rejects an explicit slot at the implicit position"
+    (arenaRejects #[0x02, 0x00, 0x08, 0x00, 0x00])
+  itBool "arena: rejects an implicit slot with no preceding node"
+    (arenaRejects #[0x01, 0x09, 0x00])
+  itBool "arena: rejects mask bits beyond the kind's slots"
     (arenaRejects #[0x01, 0x01] && arenaRejects #[0x02, 0x00, 0x0C] &&
-      arenaRejects #[0x01, 0x39, 0x00]) ++
-  test "arena: rejects unknown kinds" (arenaRejects #[0x01, 0x60]) ++
-  test "arena: rejects every truncation"
+      arenaRejects #[0x01, 0x39, 0x00])
+  itBool "arena: rejects unknown kinds" (arenaRejects #[0x01, 0x60])
+  itBool "arena: rejects every truncation"
     (let bytes : Array UInt8 := #[0x05, 0x38, 0x01, 0x38, 0x00, 0x00, 0x0B, 0x13, 0x00]
-     (List.range bytes.size).all fun n => arenaRejects (bytes.extract 0 n)) ++
-  test "arena: the canonical form of a rejected vector is accepted"
+     (List.range bytes.size).all fun n => arenaRejects (bytes.extract 0 n))
+  itBool "arena: the canonical form of a rejected vector is accepted"
     (arenaVector { nodes := #[.leaf, .app 0 0] } #[0x02, 0x00, 0x0A, 0x00])
 
-def constantUnits : TestSeq :=
-  let defn := Definition.mk .defn .safe {} 0 (.sort 0) (.var 0)
-  let c := Constant.mk
-    (.defn defn)
-    #[.var 0, .sort 1]  -- sharing
-    #[⟨(Blake3.Rust.hash "ref".toUTF8).val⟩]  -- refs
-    #[.zero, .succ .zero]  -- univs
-    #[]  -- binder data
-  test "Constant roundtrip" (constantSerde c)
+def constantUnits : LSpec.Spec := do
+  it "Constant roundtrip" do
+    let defn := Definition.mk .defn .safe {} 0 (.sort 0) (.var 0)
+    let c := Constant.mk
+      (.defn defn)
+      #[.var 0, .sort 1]  -- sharing
+      #[⟨(Blake3.Rust.hash "ref".toUTF8).val⟩]  -- refs
+      #[.zero, .succ .zero]  -- univs
+      #[]  -- binder data
+    expect (constantSerde c)
 
-def commUnits : TestSeq :=
-  let addr1 : Address := ⟨(Blake3.Rust.hash "secret".toUTF8).val⟩
-  let addr2 : Address := ⟨(Blake3.Rust.hash "payload".toUTF8).val⟩
-  let c := Comm.mk addr1 addr2
-  test "Comm roundtrip" (commSerde c)
+def commUnits : LSpec.Spec := do
+  it "Comm roundtrip" do
+    let addr1 : Address := ⟨(Blake3.Rust.hash "secret".toUTF8).val⟩
+    let addr2 : Address := ⟨(Blake3.Rust.hash "payload".toUTF8).val⟩
+    let c := Comm.mk addr1 addr2
+    expect (commSerde c)
 
 /-! ## Env Unit Tests -/
 
@@ -371,80 +375,84 @@ def envSerdeUnit (env : Env) : Bool :=
       | .error _ => false
     | .error _ => false
 
-def envUnitTests : TestSeq :=
-  -- Test 1: Empty env
-  let emptyEnv : Env := {}
-  -- Test 2: Env with only a blob. Blob addresses must be the content
-  -- hash of the bytes — readers verify per entry.
-  let blobBytes := ByteArray.mk #[4, 5, 6]
-  let blobAddr := Address.blake3 blobBytes
-  let envWithBlob : Env := { blobs := ({} : Std.HashMap _ _).insert blobAddr blobBytes }
-  -- Test 3: Env with a simple name (no named entry)
-  let testName := Ix.Name.mkStr Ix.Name.mkAnon "test"
-  let testNameAddr := testName.getHash
-  let envWithName : Env := { names := ({} : Std.HashMap _ _).insert testNameAddr testName }
-  -- Test 4: Env with named entry and empty metadata. §5 keys the
-  -- entry's constant by §2 rank, so the target must be a stored
-  -- constant (content-addressed — readers verify per entry).
-  let namedDef : Definition := {
-    kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0
-  }
-  let namedConst : Constant := {
-    info := .defn namedDef, sharing := #[], refs := #[], univs := #[]
-  }
-  let constAddr := Address.blake3 (serConstant namedConst)
-  let envWithNamed : Env := Id.run do
-    let mut env : Env := {}
-    env := env.storeConst constAddr namedConst
-    env := { env with names := RawEnv.addNameComponents env.names testName }
-    env := env.registerName testName { addr := constAddr, constMeta := .empty }
-    return env
-  -- Test 5: Env with nested name and named entry, plus an `original`
-  -- edge whose address is deliberately NOT a stored constant — the §5
-  -- original address stays raw on the wire (it may reference an
-  -- assumed constant), so this must roundtrip.
-  let nestedName := Ix.Name.mkStr (Ix.Name.mkNat testName 42) "bar"
-  let envWithNestedName : Env := Id.run do
-    let mut env : Env := {}
-    env := env.storeConst constAddr namedConst
-    env := { env with names := RawEnv.addNameComponents env.names nestedName }
-    env := env.registerName nestedName
-      { addr := constAddr, constMeta := .empty,
-        original := some (Address.blake3 (ByteArray.mk #[99]), .empty) }
-    return env
-  -- Test 6: Env with blob and comm
-  let secretAddr := Address.blake3 (ByteArray.mk #[10, 11, 12])
-  let payloadAddr := Address.blake3 (ByteArray.mk #[13, 14, 15])
-  let commAddr := Address.blake3 (ByteArray.mk #[16, 17, 18])
-  let envWithBlobAndComm : Env := {
-    blobs := ({} : Std.HashMap _ _).insert blobAddr blobBytes,
-    comms := ({} : Std.HashMap _ _).insert commAddr (Comm.mk secretAddr payloadAddr)
-  }
-  -- Test 7: Bundle env — main + assumptions + anonHints exercise the
-  -- bundle header and §3.
-  let bundleDef : Definition := {
-    kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0
-  }
-  let bundleConst : Constant := {
-    info := .defn bundleDef, sharing := #[], refs := #[], univs := #[]
-  }
-  let bundleConstAddr := Address.blake3 (serConstant bundleConst)
-  let bundleEnv : Env := Id.run do
-    let mut env : Env := {}
-    env := env.storeConst bundleConstAddr bundleConst
-    return { env with
-      main := some bundleConstAddr
-      assumptions := ({} : Std.HashSet Address)
-        |>.insert (Address.blake3 (ByteArray.mk #[42]))
-        |>.insert (Address.blake3 (ByteArray.mk #[43]))
-      anonHints := ({} : Std.HashMap _ _).insert bundleConstAddr (.regular 5) }
-  test "Empty env roundtrip" (envSerdeUnit emptyEnv) ++
-  test "Env with blob roundtrip" (envSerdeUnit envWithBlob) ++
-  test "Env with name roundtrip" (envSerdeUnit envWithName) ++
-  test "Env with named (empty meta) roundtrip" (envSerdeUnit envWithNamed) ++
-  test "Env with nested name roundtrip" (envSerdeUnit envWithNestedName) ++
-  test "Env with blob+comm roundtrip" (envSerdeUnit envWithBlobAndComm) ++
-  test "Bundle env (main/assumptions/hints) roundtrip" (envSerdeUnit bundleEnv)
+def envUnitTests : LSpec.Spec := do
+  it "Empty env roundtrip" do
+    let emptyEnv : Env := {}
+    expect (envSerdeUnit emptyEnv)
+  it "Env with blob roundtrip" do
+    let blobBytes := ByteArray.mk #[4, 5, 6]
+    let blobAddr := Address.blake3 blobBytes
+    let envWithBlob : Env := { blobs := ({} : Std.HashMap _ _).insert blobAddr blobBytes }
+    expect (envSerdeUnit envWithBlob)
+  it "Env with name roundtrip" do
+    let testName := Ix.Name.mkStr Ix.Name.mkAnon "test"
+    let testNameAddr := testName.getHash
+    let envWithName : Env := { names := ({} : Std.HashMap _ _).insert testNameAddr testName }
+    expect (envSerdeUnit envWithName)
+  it "Env with named (empty meta) roundtrip" do
+    let testName := Ix.Name.mkStr Ix.Name.mkAnon "test"
+    let namedDef : Definition := {
+      kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0
+    }
+    let namedConst : Constant := {
+      info := .defn namedDef, sharing := #[], refs := #[], univs := #[]
+    }
+    let constAddr := Address.blake3 (serConstant namedConst)
+    let envWithNamed : Env := Id.run do
+      let mut env : Env := {}
+      env := env.storeConst constAddr namedConst
+      env := { env with names := RawEnv.addNameComponents env.names testName }
+      env := env.registerName testName { addr := constAddr, constMeta := .empty }
+      return env
+    expect (envSerdeUnit envWithNamed)
+  it "Env with nested name roundtrip" do
+    let testName := Ix.Name.mkStr Ix.Name.mkAnon "test"
+    let namedDef : Definition := {
+      kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0
+    }
+    let namedConst : Constant := {
+      info := .defn namedDef, sharing := #[], refs := #[], univs := #[]
+    }
+    let constAddr := Address.blake3 (serConstant namedConst)
+    let nestedName := Ix.Name.mkStr (Ix.Name.mkNat testName 42) "bar"
+    let envWithNestedName : Env := Id.run do
+      let mut env : Env := {}
+      env := env.storeConst constAddr namedConst
+      env := { env with names := RawEnv.addNameComponents env.names nestedName }
+      env := env.registerName nestedName
+        { addr := constAddr, constMeta := .empty,
+          original := some (Address.blake3 (ByteArray.mk #[99]), .empty) }
+      return env
+    expect (envSerdeUnit envWithNestedName)
+  it "Env with blob+comm roundtrip" do
+    let blobBytes := ByteArray.mk #[4, 5, 6]
+    let blobAddr := Address.blake3 blobBytes
+    let secretAddr := Address.blake3 (ByteArray.mk #[10, 11, 12])
+    let payloadAddr := Address.blake3 (ByteArray.mk #[13, 14, 15])
+    let commAddr := Address.blake3 (ByteArray.mk #[16, 17, 18])
+    let envWithBlobAndComm : Env := {
+      blobs := ({} : Std.HashMap _ _).insert blobAddr blobBytes,
+      comms := ({} : Std.HashMap _ _).insert commAddr (Comm.mk secretAddr payloadAddr)
+    }
+    expect (envSerdeUnit envWithBlobAndComm)
+  it "Bundle env (main/assumptions/hints) roundtrip" do
+    let bundleDef : Definition := {
+      kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0
+    }
+    let bundleConst : Constant := {
+      info := .defn bundleDef, sharing := #[], refs := #[], univs := #[]
+    }
+    let bundleConstAddr := Address.blake3 (serConstant bundleConst)
+    let bundleEnv : Env := Id.run do
+      let mut env : Env := {}
+      env := env.storeConst bundleConstAddr bundleConst
+      return { env with
+        main := some bundleConstAddr
+        assumptions := ({} : Std.HashSet Address)
+          |>.insert (Address.blake3 (ByteArray.mk #[42]))
+          |>.insert (Address.blake3 (ByteArray.mk #[43]))
+        anonHints := ({} : Std.HashMap _ _).insert bundleConstAddr (.regular 5) }
+    expect (envSerdeUnit bundleEnv)
 
 /-! ## Cross-implementation serialization comparison tests -/
 
@@ -493,117 +501,101 @@ def envSerdeAndRustParity (raw : RawEnv) : Bool :=
     leanRoundtrip && rustParity
 
 /-- Unit tests for Lean==Rust serialization comparison -/
-def envSerializationUnitTests : TestSeq :=
-  -- Test 1: Empty env
-  let emptyRaw : RawEnv := { consts := #[], named := #[], blobs := #[], comms := #[] }
-  -- Test 2: Env with one blob (content-addressed: readers verify).
-  let blobBytes := ByteArray.mk #[4, 5, 6]
-  let blobAddr := Address.blake3 blobBytes
-  let blobRaw : RawEnv := {
-    consts := #[], named := #[],
-    blobs := #[{ addr := blobAddr, bytes := blobBytes }],
-    comms := #[]
-  }
-  -- Test 3: Env with one comm
-  let commAddr := Address.blake3 (ByteArray.mk #[7, 8, 9])
-  let secretAddr := Address.blake3 (ByteArray.mk #[10, 11, 12])
-  let payloadAddr := Address.blake3 (ByteArray.mk #[13, 14, 15])
-  let commRaw : RawEnv := {
-    consts := #[], named := #[],
-    blobs := #[],
-    comms := #[{ addr := commAddr, comm := Comm.mk secretAddr payloadAddr }]
-  }
-  -- Test 4: Env with blob + comm
-  let blobCommRaw : RawEnv := {
-    consts := #[], named := #[],
-    blobs := #[{ addr := blobAddr, bytes := blobBytes }],
-    comms := #[{ addr := commAddr, comm := Comm.mk secretAddr payloadAddr }]
-  }
-  -- Test 5: Bundle env — the directed cross-language vector for the
-  -- bundle header (main/assumptions) and §3 anon_hints.
-  let bundleDef : Definition := {
-    kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0
-  }
-  let bundleConst : Constant := {
-    info := .defn bundleDef, sharing := #[], refs := #[], univs := #[]
-  }
-  let bundleConstAddr := Address.blake3 (serConstant bundleConst)
-  let bundleRaw : RawEnv := {
-    consts := #[{ addr := bundleConstAddr, const := bundleConst }],
-    named := #[], blobs := #[], comms := #[],
-    main := some bundleConstAddr,
-    assumptions := #[
-      Address.blake3 (ByteArray.mk #[42]),
-      Address.blake3 (ByteArray.mk #[43])],
-    anonHints := #[(bundleConstAddr, .regular 5)]
-  }
-  -- Test 6: Named entry + hints — the directed cross-language vector
-  -- for the index-keyed §5 (name §4-index + const §2 rank) and §3
-  -- (delta-coded ranks + fused hints). Unlike `RawEnv.toEnv`, the Rust
-  -- FFI side does not auto-add name components for named entries, so
-  -- `names` carries the leaf explicitly (ancestors are emitted by both
-  -- topological sorts from the parent chain).
-  let namedName := Ix.Name.mkStr Ix.Name.mkAnon "MyDef"
-  let namedRaw : RawEnv := {
-    consts := #[{ addr := bundleConstAddr, const := bundleConst }],
-    named := #[{ name := namedName, addr := bundleConstAddr,
-                 constMeta := .empty, hints := some (.regular 7) }],
-    blobs := #[], comms := #[],
-    names := #[{ addr := namedName.getHash, name := namedName }],
-    anonHints := #[(bundleConstAddr, .abbrev)]
-  }
-  -- Test 7: Metadata-bearing named entries — the directed cross-language
-  -- byte vector for the FULL metadata wire grammar: an arena over the
-  -- kinds 0-9 (indexed names, binder info, an app, a ref, mdata), the
-  -- extension tables (sharing exprs, raw refs, univs, univ patches), and
-  -- a muts entry with the nested-aux `auxLayout` sidecar. Every indexed
-  -- name address is a registered name component. (Before call-site metadata was retired, the arena
-  -- also carried a call-site surgery node, kinds 10/11, now retired.)
-  let surgName := Ix.Name.mkStr Ix.Name.mkAnon "surg"
-  let blkName := Ix.Name.mkStr Ix.Name.mkAnon "blk"
-  let anonAddr := Ix.Name.mkAnon.getHash
-  let surgArena : ExprMetaArena := { nodes := #[
-    .leaf,
-    .binder anonAddr .implicit 0 0,
-    .ref surgName.getHash,
-    .app 2 1,
-    .mdata #[#[(blkName.getHash, .ofName surgName.getHash)]] 3
-  ] }
-  let surgMeta : ConstantMeta := {
-    info := .defn surgName.getHash #[anonAddr] #[surgName.getHash] #[]
-      surgArena 0 4,
-    metaSharing := #[.app (.share 1) (.var 2), .sort 0],
-    metaRefs := #[bundleConstAddr],
-    metaUnivs := #[.succ (.var 0), .max .zero (.var 1)],
-    univPatches := #[⟨1, #[0, 2]⟩, ⟨4, #[3]⟩]
-  }
-  let mutsMeta : ConstantMeta := .new
-    (.muts #[#[surgName.getHash], #[blkName.getHash]]
-      (some { perm := #[1, 0], sourceCtorCounts := #[2, 3],
-              evaporated := #[0, 0] }))
-  let metaRaw : RawEnv := {
-    consts := #[{ addr := bundleConstAddr, const := bundleConst }],
-    named := #[
-      { name := surgName, addr := bundleConstAddr, constMeta := surgMeta,
-        hints := some (.regular 3) },
-      { name := blkName, addr := bundleConstAddr, constMeta := mutsMeta }],
-    blobs := #[], comms := #[],
-    names := #[
-      { addr := surgName.getHash, name := surgName },
-      { addr := blkName.getHash, name := blkName }]
-  }
-  test "Empty env Lean==Rust" (envSerializationMatches emptyRaw) ++
-  test "Blob env Lean==Rust" (envSerializationMatches blobRaw) ++
-  test "Comm env Lean==Rust" (envSerializationMatches commRaw) ++
-  test "Blob+Comm env Lean==Rust" (envSerializationMatches blobCommRaw) ++
-  test "Bundle env Lean==Rust" (envSerializationMatches bundleRaw) ++
-  test "Named env Lean==Rust" (envSerializationMatches namedRaw) ++
-  test "Empty env bytes Lean==Rust" (envBytesMatchRust emptyRaw) ++
-  test "Blob env bytes Lean==Rust" (envBytesMatchRust blobRaw) ++
-  test "Bundle env bytes Lean==Rust" (envBytesMatchRust bundleRaw) ++
-  test "Named env bytes Lean==Rust" (envBytesMatchRust namedRaw) ++
-  test "Metadata env bytes Lean==Rust" (envBytesMatchRust metaRaw) ++
-  test "Metadata env pure serde" (envSerde metaRaw)
+def envSerializationUnitTests : LSpec.Spec := do
+  let mkEmptyRaw (_ : Unit) : RawEnv :=
+    { consts := #[], named := #[], blobs := #[], comms := #[] }
+  let mkBlobRaw (_ : Unit) : RawEnv :=
+    let blobBytes := ByteArray.mk #[4, 5, 6]
+    let blobAddr := Address.blake3 blobBytes
+    { consts := #[], named := #[],
+      blobs := #[{ addr := blobAddr, bytes := blobBytes }],
+      comms := #[] }
+  let mkCommRaw (_ : Unit) : RawEnv :=
+    let commAddr := Address.blake3 (ByteArray.mk #[7, 8, 9])
+    let secretAddr := Address.blake3 (ByteArray.mk #[10, 11, 12])
+    let payloadAddr := Address.blake3 (ByteArray.mk #[13, 14, 15])
+    { consts := #[], named := #[], blobs := #[],
+      comms := #[{ addr := commAddr, comm := Comm.mk secretAddr payloadAddr }] }
+  let mkBlobCommRaw (_ : Unit) : RawEnv :=
+    let blobBytes := ByteArray.mk #[4, 5, 6]
+    let blobAddr := Address.blake3 blobBytes
+    let commAddr := Address.blake3 (ByteArray.mk #[7, 8, 9])
+    let secretAddr := Address.blake3 (ByteArray.mk #[10, 11, 12])
+    let payloadAddr := Address.blake3 (ByteArray.mk #[13, 14, 15])
+    { consts := #[], named := #[],
+      blobs := #[{ addr := blobAddr, bytes := blobBytes }],
+      comms := #[{ addr := commAddr, comm := Comm.mk secretAddr payloadAddr }] }
+  let mkBundleConst (_ : Unit) : Address × Constant :=
+    let bundleDef : Definition := {
+      kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0
+    }
+    let bundleConst : Constant := {
+      info := .defn bundleDef, sharing := #[], refs := #[], univs := #[]
+    }
+    (Address.blake3 (serConstant bundleConst), bundleConst)
+  let mkBundleRaw (_ : Unit) : RawEnv :=
+    let (bundleConstAddr, bundleConst) := mkBundleConst ()
+    { consts := #[{ addr := bundleConstAddr, const := bundleConst }],
+      named := #[], blobs := #[], comms := #[],
+      main := some bundleConstAddr,
+      assumptions := #[
+        Address.blake3 (ByteArray.mk #[42]),
+        Address.blake3 (ByteArray.mk #[43])],
+      anonHints := #[(bundleConstAddr, .regular 5)] }
+  let mkNamedRaw (_ : Unit) : RawEnv :=
+    let (bundleConstAddr, bundleConst) := mkBundleConst ()
+    let namedName := Ix.Name.mkStr Ix.Name.mkAnon "MyDef"
+    { consts := #[{ addr := bundleConstAddr, const := bundleConst }],
+      named := #[{ name := namedName, addr := bundleConstAddr,
+                   constMeta := .empty, hints := some (.regular 7) }],
+      blobs := #[], comms := #[],
+      names := #[{ addr := namedName.getHash, name := namedName }],
+      anonHints := #[(bundleConstAddr, .abbrev)] }
+  let mkMetaRaw (_ : Unit) : RawEnv :=
+    let (bundleConstAddr, bundleConst) := mkBundleConst ()
+    let surgName := Ix.Name.mkStr Ix.Name.mkAnon "surg"
+    let blkName := Ix.Name.mkStr Ix.Name.mkAnon "blk"
+    let anonAddr := Ix.Name.mkAnon.getHash
+    let surgArena : ExprMetaArena := { nodes := #[
+      .leaf,
+      .binder anonAddr .implicit 0 0,
+      .ref surgName.getHash,
+      .app 2 1,
+      .mdata #[#[(blkName.getHash, .ofName surgName.getHash)]] 3
+    ] }
+    let surgMeta : ConstantMeta := {
+      info := .defn surgName.getHash #[anonAddr] #[surgName.getHash] #[]
+        surgArena 0 4,
+      metaSharing := #[.app (.share 1) (.var 2), .sort 0],
+      metaRefs := #[bundleConstAddr],
+      metaUnivs := #[.succ (.var 0), .max .zero (.var 1)],
+      univPatches := #[⟨1, #[0, 2]⟩, ⟨4, #[3]⟩]
+    }
+    let mutsMeta : ConstantMeta := .new
+      (.muts #[#[surgName.getHash], #[blkName.getHash]]
+        (some { perm := #[1, 0], sourceCtorCounts := #[2, 3],
+                evaporated := #[0, 0] }))
+    { consts := #[{ addr := bundleConstAddr, const := bundleConst }],
+      named := #[
+        { name := surgName, addr := bundleConstAddr, constMeta := surgMeta,
+          hints := some (.regular 3) },
+        { name := blkName, addr := bundleConstAddr, constMeta := mutsMeta }],
+      blobs := #[], comms := #[],
+      names := #[
+        { addr := surgName.getHash, name := surgName },
+        { addr := blkName.getHash, name := blkName }] }
+  itBool "Empty env Lean==Rust" (envSerializationMatches (mkEmptyRaw ()))
+  itBool "Blob env Lean==Rust" (envSerializationMatches (mkBlobRaw ()))
+  itBool "Comm env Lean==Rust" (envSerializationMatches (mkCommRaw ()))
+  itBool "Blob+Comm env Lean==Rust" (envSerializationMatches (mkBlobCommRaw ()))
+  itBool "Bundle env Lean==Rust" (envSerializationMatches (mkBundleRaw ()))
+  itBool "Named env Lean==Rust" (envSerializationMatches (mkNamedRaw ()))
+  itBool "Empty env bytes Lean==Rust" (envBytesMatchRust (mkEmptyRaw ()))
+  itBool "Blob env bytes Lean==Rust" (envBytesMatchRust (mkBlobRaw ()))
+  itBool "Bundle env bytes Lean==Rust" (envBytesMatchRust (mkBundleRaw ()))
+  itBool "Named env bytes Lean==Rust" (envBytesMatchRust (mkNamedRaw ()))
+  itBool "Metadata env bytes Lean==Rust" (envBytesMatchRust (mkMetaRaw ()))
+  itBool "Metadata env pure serde" (envSerde (mkMetaRaw ()))
 
 /-! ## Canonical env merkle root: Lean vs. Rust agreement -/
 
@@ -613,36 +605,35 @@ def envMerkleRootMatches (raw : RawEnv) : Bool :=
 
 /-- Both pure-Lean and Rust FFI agree on the merkle root over the env's
     consts addresses. Distinct tests for various const-set shapes. -/
-def envMerkleRootUnitTests : TestSeq :=
-  -- Empty env: no root.
-  let emptyRaw : RawEnv :=
-    { consts := #[], named := #[], blobs := #[], comms := #[] }
-  -- Single-const env.
-  let constAddr := Address.blake3 (ByteArray.mk #[42])
+def envMerkleRootUnitTests : LSpec.Spec := do
   let oneConst : Constant :=
     { info := .axio { isUnsafe := false, lvls := 0, typ := .sort 0 },
       sharing := #[], refs := #[], univs := #[] }
-  let singleRaw : RawEnv :=
+  let mkEmpty (_ : Unit) : RawEnv :=
+    { consts := #[], named := #[], blobs := #[], comms := #[] }
+  let mkSingle (_ : Unit) : RawEnv :=
+    let constAddr := Address.blake3 (ByteArray.mk #[42])
     { consts := #[{ addr := constAddr, const := oneConst }],
       named := #[], blobs := #[], comms := #[] }
-  -- Two-const env, inserted in different orders to check sort invariance.
-  let addrA := Address.blake3 "a".toUTF8
-  let addrB := Address.blake3 "b".toUTF8
-  let raw_ab : RawEnv :=
+  let mkAB (_ : Unit) : RawEnv :=
+    let addrA := Address.blake3 "a".toUTF8
+    let addrB := Address.blake3 "b".toUTF8
     { consts := #[{ addr := addrA, const := oneConst },
                   { addr := addrB, const := oneConst }],
       named := #[], blobs := #[], comms := #[] }
-  let raw_ba : RawEnv :=
+  let mkBA (_ : Unit) : RawEnv :=
+    let addrA := Address.blake3 "a".toUTF8
+    let addrB := Address.blake3 "b".toUTF8
     { consts := #[{ addr := addrB, const := oneConst },
                   { addr := addrA, const := oneConst }],
       named := #[], blobs := #[], comms := #[] }
-  test "empty env merkle root is none" (emptyRaw.merkleRoot == none) ++
-  test "empty env: Lean==Rust" (envMerkleRootMatches emptyRaw) ++
-  test "single const: Lean==Rust" (envMerkleRootMatches singleRaw) ++
-  test "two consts (a,b): Lean==Rust" (envMerkleRootMatches raw_ab) ++
-  test "two consts (b,a): Lean==Rust" (envMerkleRootMatches raw_ba) ++
-  test "(a,b) and (b,a) same root"
-    (raw_ab.merkleRoot == raw_ba.merkleRoot)
+  itBool "empty env merkle root is none" ((mkEmpty ()).merkleRoot == none)
+  itBool "empty env: Lean==Rust" (envMerkleRootMatches (mkEmpty ()))
+  itBool "single const: Lean==Rust" (envMerkleRootMatches (mkSingle ()))
+  itBool "two consts (a,b): Lean==Rust" (envMerkleRootMatches (mkAB ()))
+  itBool "two consts (b,a): Lean==Rust" (envMerkleRootMatches (mkBA ()))
+  itBool "(a,b) and (b,a) same root"
+    ((mkAB ()).merkleRoot == (mkBA ()).merkleRoot)
 
 /-! ## Checked format 4 and versioned storage envelopes -/
 
@@ -659,18 +650,19 @@ private def versionRejected {α : Type} (r : Except String α) (got : Nat) : Boo
   | .error e =>
     (e.splitOn s!"unsupported .ixe envelope version {got}").length > 1
 
-def envHeaderUnits : TestSeq :=
-  let bytes := match serEnv ({} : Env) with | .ok b => b | .error _ => .empty
-  test "env header is TagN(4, 0xE, 4) = 0xE4" (bytes.data[0]? == some 0xE4)
-  ++ test "wireFormatId is ixon-v5" (wireFormatId == "ixon-v5")
-  ++ test "checked object-format byte remains 4" (Env.OBJECT_FORMAT == 4)
-  ++ test "Lean reader accepts the version 4 header" ((deEnv bytes).toOption.isSome)
-  ++ test "Lean reader rejects a version 3 header"
-      (versionRejected (deEnv (emptyEnvWithHeader 0xE3)) 3)
-  ++ test "Lean streaming reader rejects a version 3 header"
-      (versionRejected (deEnvVerifiedLazy (emptyEnvWithHeader 0xE3)) 3)
-  ++ test "Rust reader rejects a version 3 header"
-      (versionRejected (deEnvAnon (emptyEnvWithHeader 0xE3)) 3)
+def envHeaderUnits : LSpec.Spec := do
+  let mkEmptyBytes (_ : Unit) : ByteArray :=
+    match serEnv ({} : Env) with | .ok b => b | .error _ => .empty
+  itBool "env header is TagN(4, 0xE, 4) = 0xE4" ((mkEmptyBytes ()).data[0]? == some 0xE4)
+  itBool "wireFormatId is ixon-v5" (wireFormatId == "ixon-v5")
+  itBool "checked object-format byte remains 4" (Env.OBJECT_FORMAT == 4)
+  itBool "Lean reader accepts the version 4 header" ((deEnv (mkEmptyBytes ())).toOption.isSome)
+  itBool "Lean reader rejects a version 3 header"
+    (versionRejected (deEnv (emptyEnvWithHeader 0xE3)) 3)
+  itBool "Lean streaming reader rejects a version 3 header"
+    (versionRejected (deEnvVerifiedLazy (emptyEnvWithHeader 0xE3)) 3)
+  itBool "Rust reader rejects a version 3 header"
+    (versionRejected (deEnvAnon (emptyEnvWithHeader 0xE3)) 3)
 
 /-! ## Envelope versions
 
@@ -725,12 +717,10 @@ private def envelopeChecks (definition : Definition) : Except String Unit := do
 
 /-- Keep the fixture as a parameter so the compiler cannot initialize the
 entire closed FFI computation before the selected test runs. -/
-private def envelopeUnits (definition : Definition) : TestSeq :=
-  .individualIO "envelope: v4 bytes, both writers and readers, malformed controls" none (do
-    let result ← IO.lazyPure fun _ => envelopeChecks definition
-    return match result with
-      | .ok _ => (true, 0, 0, none)
-      | .error e => (false, 0, 0, some e)) .done
+private def envelopeUnits (definition : Definition) : Spec :=
+  it "envelope: v4 bytes, both writers and readers, malformed controls" do
+    let result ← liftM (m := IO) (IO.lazyPure fun _ => envelopeChecks definition)
+    discard <| expectOk result
 
 /-! ## The binder-data section
 
@@ -765,7 +755,7 @@ def canonicalRead (c : Constant) : Bool :=
   (Canonical.deConstant bytes.size loadMaxUnivNodes bytes).toOption == some c
 
 /-- Each form still round-trips; the canonical (local) form rejects it. -/
-def noncanonicalSections : List (String × Array BinderBlock) :=
+def noncanonicalSections (_ : Unit) : List (String × Array BinderBlock) :=
   let b := binderFixture.binders
   [("blocks out of order", #[b[1]!, b[0]!, b[2]!, b[3]!]),
    ("a repeated key", b.push b[3]!),
@@ -778,7 +768,7 @@ def noncanonicalSections : List (String × Array BinderBlock) :=
 
 /-- Each form is canonical (local) and round-trips; only the complete form
 rejects it. -/
-def incompleteSections : List (String × Array BinderBlock) :=
+def incompleteSections (_ : Unit) : List (String × Array BinderBlock) :=
   let b := binderFixture.binders
   [("a variant no share node names", b.push ⟨true, 0, 2, #[.never {}]⟩),
    ("a missing root block", #[b[0]!, b[2]!, b[3]!]),
@@ -798,91 +788,95 @@ def projectionWithSection (node : BinderNode) : Constant :=
   { info := .dPrj ⟨0, Address.blake3 "block".toUTF8⟩, sharing := #[], refs := #[], univs := #[],
     binders := #[⟨false, 0, 0, #[node]⟩] }
 
-def binderSectionUnits : TestSeq :=
-  let bytes := serConstant binderFixture
-  let badTag := bytes.set! (bytes.size - binderFixtureSection.size + 5) 5
-  let badKind := bytes.set! (bytes.size - binderFixtureSection.size + 1) 2
-  test "section bytes" ((runPut (putBinders binderFixture.binders)).data == binderFixtureSection)
-  ++ test "the empty section is 0x00" ((runPut (putBinders #[])).data == #[0])
-  ++ test "a record ends with its section"
-      ((bytes.extract (bytes.size - binderFixtureSection.size) bytes.size).data
-        == binderFixtureSection)
-  ++ test "record with a section round-trips" (constantSerde binderFixture)
-  ++ test "record without a section round-trips" (constantSerde { binderFixture with binders := #[] })
-  ++ test "the fixture's section is canonical" binderFixture.bindersCanonical
-  ++ test "the fixture's section is complete" binderFixture.bindersComplete
-  ++ test "the canonical decoder accepts it" (canonicalRead binderFixture)
-  ++ test "a record without binders and no section is canonical and complete"
-      (let c := { binderFixture with
-        info := .defn (Definition.mk .defn .safe {} 0 (.sort 0) (.sort 0)), sharing := #[], binders := #[] }
-       canonicalRead c && c.bindersComplete)
-  ++ noncanonicalSections.foldl (init := .done) (fun acc (label, blocks) =>
-      let c := { binderFixture with binders := blocks }
-      acc ++ test s!"{label}: round-trips" (constantSerde c)
-        ++ test s!"{label}: not canonical" (!c.bindersCanonical && !canonicalRead c))
-  ++ incompleteSections.foldl (init := .done) (fun acc (label, blocks) =>
-      let c := { binderFixture with binders := blocks }
-      acc ++ test s!"{label}: round-trips" (constantSerde c)
-        ++ test s!"{label}: canonical but not complete"
-          (c.bindersCanonical && canonicalRead c && !c.bindersComplete))
-  ++ test "a projection with a parameter is not canonical"
-      (!canonicalRead (projectionWithSection (.ifAllZero #[0] {})))
-  ++ test "a projection with any section is not canonical"
-      (!canonicalRead (projectionWithSection (.never {})))
-  ++ test "a level count below 2^32 is canonical; 2^32 round-trips and is not"
-      (let withLvls (n : Nat) : Constant :=
-        { info := .defn (Definition.mk .defn .safe {} n.toUInt64 (.sort 0) (.sort 0)),
-          sharing := #[], refs := #[], univs := #[.zero], binders := #[] }
-       canonicalRead (withLvls (maxLevelCount - 1)) && constantSerde (withLvls maxLevelCount) &&
-         !(withLvls maxLevelCount).bindersCanonical && !canonicalRead (withLvls maxLevelCount))
-  ++ test "an unknown node tag is rejected" ((deConstant badTag).toOption.isNone)
-  ++ test "a block kind other than 0 or 1 is rejected" ((deConstant badKind).toOption.isNone)
-  ++ test "a truncated section is rejected"
-      ((deConstantExact (bytes.extract 0 (bytes.size - 1))).toOption.isNone)
-  ++ test "section serialization Lean==Rust" (constantSerializationMatches binderFixture)
+def binderSectionUnits : LSpec.Spec := do
+  itBool "section bytes" ((runPut (putBinders binderFixture.binders)).data == binderFixtureSection)
+  itBool "the empty section is 0x00" ((runPut (putBinders #[])).data == #[0])
+  it "a record ends with its section" do
+    let bytes := serConstant binderFixture
+    expect ((bytes.extract (bytes.size - binderFixtureSection.size) bytes.size).data
+      == binderFixtureSection)
+  itBool "record with a section round-trips" (constantSerde binderFixture)
+  itBool "record without a section round-trips" (constantSerde { binderFixture with binders := #[] })
+  itBool "the fixture's section is canonical" binderFixture.bindersCanonical
+  itBool "the fixture's section is complete" binderFixture.bindersComplete
+  itBool "the canonical decoder accepts it" (canonicalRead binderFixture)
+  itBool "a record without binders and no section is canonical and complete"
+    (let c := { binderFixture with
+      info := .defn (Definition.mk .defn .safe {} 0 (.sort 0) (.sort 0)), sharing := #[], binders := #[] }
+     canonicalRead c && c.bindersComplete)
+  for (label, blocks) in noncanonicalSections () do
+    let c := { binderFixture with binders := blocks }
+    itBool s!"{label}: round-trips" (constantSerde c)
+    itBool s!"{label}: not canonical" (!c.bindersCanonical && !canonicalRead c)
+  for (label, blocks) in incompleteSections () do
+    let c := { binderFixture with binders := blocks }
+    itBool s!"{label}: round-trips" (constantSerde c)
+    itBool s!"{label}: canonical but not complete"
+      (c.bindersCanonical && canonicalRead c && !c.bindersComplete)
+  itBool "a projection with a parameter is not canonical"
+    (!canonicalRead (projectionWithSection (.ifAllZero #[0] {})))
+  itBool "a projection with any section is not canonical"
+    (!canonicalRead (projectionWithSection (.never {})))
+  itBool "a level count below 2^32 is canonical; 2^32 round-trips and is not"
+    (let withLvls (n : Nat) : Constant :=
+      { info := .defn (Definition.mk .defn .safe {} n.toUInt64 (.sort 0) (.sort 0)),
+        sharing := #[], refs := #[], univs := #[.zero], binders := #[] }
+     canonicalRead (withLvls (maxLevelCount - 1)) && constantSerde (withLvls maxLevelCount) &&
+       !(withLvls maxLevelCount).bindersCanonical && !canonicalRead (withLvls maxLevelCount))
+  it "an unknown node tag is rejected" do
+    let bytes := serConstant binderFixture
+    let badTag := bytes.set! (bytes.size - binderFixtureSection.size + 5) 5
+    expect (deConstant badTag).toOption.isNone
+  it "a block kind other than 0 or 1 is rejected" do
+    let bytes := serConstant binderFixture
+    let badKind := bytes.set! (bytes.size - binderFixtureSection.size + 1) 2
+    expect (deConstant badKind).toOption.isNone
+  it "a truncated section is rejected" do
+    let bytes := serConstant binderFixture
+    expect (deConstantExact (bytes.extract 0 (bytes.size - 1))).toOption.isNone
+  itBool "section serialization Lean==Rust" (constantSerializationMatches binderFixture)
 
 /-! ## Test Suite (property-based) -/
 
-public def Tests.Ixon.suite : List TestSeq := [
-  envHeaderUnits,
-  Tests.Ix.RoleGeneration.units .natDiv,
-  Tests.Ix.RoleGeneration.artifactUnits .natDiv,
-  Tests.Ix.RoleArtifactConsumer.units,
-  Tests.Ix.RolePacking.units,
-  Tests.Ix.HostAdmission.units,
+public def Tests.Ixon.suite : LSpec.Spec := do
+  envHeaderUnits
+  Tests.Ix.RoleGeneration.units .natDiv
+  Tests.Ix.RoleGeneration.artifactUnits .natDiv
+  Tests.Ix.RoleArtifactConsumer.units
+  Tests.Ix.RolePacking.units
+  Tests.Ix.HostAdmission.units
   Tests.Ix.RoleBinding.units {
     sharing := #[], refs := #[], univs := #[.zero], info := .defn {
-      kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0 } },
+      kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0 } }
   Tests.Ix.RolePublication.units {
     sharing := #[], refs := #[], univs := #[.zero], info := .defn {
-      kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0 } },
+      kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0 } }
   envelopeUnits {
-    kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0 },
-  univExactUnits,
-  univUnits,
-  exprExactUnits,
-  exprUnits,
-  strictExprUnits,
-  tagNUnits,
-  exprMetaArenaUnits,
-  binderSectionUnits,
+    kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0 }
+  univExactUnits
+  univUnits
+  exprExactUnits
+  exprUnits
+  strictExprUnits
+  tagNUnits
+  exprMetaArenaUnits
+  binderSectionUnits
   -- Env unit tests (for debugging serialization)
-  envUnitTests,
+  envUnitTests
   -- Env serialization comparison unit tests
-  envSerializationUnitTests,
+  envSerializationUnitTests
   -- Env merkle root agreement (Lean vs. Rust FFI)
-  envMerkleRootUnitTests,
+  envMerkleRootUnitTests
   -- Pure Lean serde roundtrips
-  checkIO "Univ serde roundtrips" (∀ u : Univ, univSerde u),
-  checkIO "Expr serde roundtrips" (∀ e : Expr, exprSerde e),
-  checkIO "Constant serde roundtrips" (∀ c : Constant, constantSerde c),
-  checkIO "Comm serde roundtrips" (∀ c : Comm, commSerde c),
+  prop "Univ serde roundtrips" fun (u : Univ) => univSerde u
+  prop "Expr serde roundtrips" fun (e : Expr) => exprSerde e
+  prop "Constant serde roundtrips" fun (c : Constant) => constantSerde c
+  prop "Comm serde roundtrips" fun (c : Comm) => commSerde c
   -- Cross-implementation serialization comparison (Lean == Rust)
-  checkIO "Univ serialization Lean==Rust" (∀ u : Univ, univSerializationMatches u),
-  checkIO "Expr serialization Lean==Rust" (∀ e : Expr, exprSerializationMatches e),
-  checkIO "Constant serialization Lean==Rust" (∀ c : Constant, constantSerializationMatches c),
+  prop "Univ serialization Lean==Rust" fun (u : Univ) => univSerializationMatches u
+  prop "Expr serialization Lean==Rust" fun (e : Expr) => exprSerializationMatches e
+  prop "Constant serialization Lean==Rust" fun (c : Constant) => constantSerializationMatches c
   -- Combined Env serde roundtrip + Lean==Rust decode and strict byte equality
   -- (generated named entries carry full metadata: arena nodes, extension
   -- tables, auxLayout — keeping the metadata wire format in sync).
-  checkIO "Env serde roundtrips and Lean==Rust bytes" (∀ raw : RawEnv, envSerdeAndRustParity raw),
-]
+  prop "Env serde roundtrips and Lean==Rust bytes" fun (raw : RawEnv) => envSerdeAndRustParity raw

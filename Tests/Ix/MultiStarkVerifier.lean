@@ -95,50 +95,50 @@ private def fixtures : List (String × System.FilePath × Bool) := [
   ("memseg_two_shard", "Tests/Fixtures/MultiStark/memseg_two_shard", false)
 ]
 
-def suite : IO (List TestSeq) := do
+def suite : IO Spec := do
   let system ← loadRecursionSystem
-  let mut tests : TestSeq := .done
-  for (name, dir, hasInactivePrep) in fixtures do
+  let loaded ← fixtures.mapM fun (name, dir, hasInactivePrep) => do
     let sys ← IO.FS.readBinFile (dir / "system.bin")
     let prf ← IO.FS.readBinFile (dir / "proof.bin")
     let clm ← IO.FS.readBinFile (dir / "claims.bin")
-    if hasInactivePrep then
-      -- Strict active-preprocessed invariant: `select_active_prep` rejects shards that
-      -- deactivate a circuit with a fixed preprocessed table.
-      let ok ← checkProof system sys clm prf
-      tests := tests ++ test s!"{name}: strict active-preprocessed check rejects inactive fixed table"
-        (!ok)
-    else
-      let ok ← checkProof system sys clm prf
-      tests := tests ++ test s!"{name}: valid Protocol v6 Fp^3 Rust proof accepted by Aiur verifier" ok
-      -- Negative control 1: flip a byte near the end of the proof (FRI/MMCS payload)
-      let badPrf1 := flipByte prf (prf.size - 17)
-      tests := tests ++ test s!"{name}: tampered proof tail rejected"
-        (!(← checkProof system sys clm badPrf1))
-      -- Negative control 2: flip a byte in the proof header/length prefix
-      let badPrf2 := flipByte prf (min 12 (prf.size - 1))
-      tests := tests ++ test s!"{name}: tampered proof header rejected"
-        (!(← checkProof system sys clm badPrf2))
-      -- Negative control 3: flip a byte in claims.bin
-      let badClm := flipByte clm (clm.size - 1)
-      tests := tests ++ test s!"{name}: tampered claims rejected"
-        (!(← checkProof system sys badClm prf))
-      -- Negative control 4: truncated proof rejected without panicking
-      let truncPrf := prf.extract 0 (prf.size / 2)
-      tests := tests ++ test s!"{name}: truncated proof rejected"
-        (!(← checkProof system sys clm truncPrf))
-      -- Negative control 5: Protocol v5 header downgrade rejected fail-closed
-      let v5Sys := setU16LE sys 0 5
-      tests := tests ++ test s!"{name}: Protocol v5 downgrade rejected fail-closed"
-        (!(← checkProof system v5Sys clm prf))
-      -- Negative control 6: Fp^2 (extension_degree = 2) header downgrade rejected fail-closed
-      let fp2Sys := setU16LE sys 2 2
-      tests := tests ++ test s!"{name}: Fp^2 (ext_degree=2) downgrade rejected fail-closed"
-        (!(← checkProof system fp2Sys clm prf))
-      -- Negative control 7: FriBatching::Horner (tag 0) downgrade rejected fail-closed
-      let hornerSys := setU16LE sys 4 0
-      tests := tests ++ test s!"{name}: FriBatching::Horner downgrade rejected fail-closed"
-        (!(← checkProof system hornerSys clm prf))
-  return [tests]
+    return (name, hasInactivePrep, sys, prf, clm)
+  return do
+    for (name, hasInactivePrep, sys, prf, clm) in loaded do
+      if hasInactivePrep then
+        -- Strict active-preprocessed invariant: `select_active_prep` rejects shards that
+        -- deactivate a circuit with a fixed preprocessed table.
+        it s!"{name}: strict active-preprocessed check rejects inactive fixed table" do
+          expectFalse (← checkProof system sys clm prf)
+      else
+        it s!"{name}: valid Protocol v6 Fp^3 Rust proof accepted by Aiur verifier" do
+          expect (← checkProof system sys clm prf)
+        -- Negative control 1: flip a byte near the end of the proof (FRI/MMCS payload)
+        it s!"{name}: tampered proof tail rejected" do
+          let badPrf1 := flipByte prf (prf.size - 17)
+          expectFalse (← checkProof system sys clm badPrf1)
+        -- Negative control 2: flip a byte in the proof header/length prefix
+        it s!"{name}: tampered proof header rejected" do
+          let badPrf2 := flipByte prf (min 12 (prf.size - 1))
+          expectFalse (← checkProof system sys clm badPrf2)
+        -- Negative control 3: flip a byte in claims.bin
+        it s!"{name}: tampered claims rejected" do
+          let badClm := flipByte clm (clm.size - 1)
+          expectFalse (← checkProof system sys badClm prf)
+        -- Negative control 4: truncated proof rejected without panicking
+        it s!"{name}: truncated proof rejected" do
+          let truncPrf := prf.extract 0 (prf.size / 2)
+          expectFalse (← checkProof system sys clm truncPrf)
+        -- Negative control 5: Protocol v5 header downgrade rejected fail-closed
+        it s!"{name}: Protocol v5 downgrade rejected fail-closed" do
+          let v5Sys := setU16LE sys 0 5
+          expectFalse (← checkProof system v5Sys clm prf)
+        -- Negative control 6: Fp^2 (extension_degree = 2) header downgrade rejected fail-closed
+        it s!"{name}: Fp^2 (ext_degree=2) downgrade rejected fail-closed" do
+          let fp2Sys := setU16LE sys 2 2
+          expectFalse (← checkProof system fp2Sys clm prf)
+        -- Negative control 7: FriBatching::Horner (tag 0) downgrade rejected fail-closed
+        it s!"{name}: FriBatching::Horner downgrade rejected fail-closed" do
+          let hornerSys := setU16LE sys 4 0
+          expectFalse (← checkProof system hornerSys clm prf)
 
 end Tests.Ix.MultiStarkVerifier

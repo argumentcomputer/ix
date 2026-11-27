@@ -30,20 +30,21 @@ private def markedSource : ConstantInfo := .axiomInfo {
 
 private def constants (source : ConstantInfo) := [(source.name, source)]
 
-private def ioTest (description : String) (check : IO Bool) : TestSeq :=
-  .individualIO description none (do return (← check, 0, 0, none)) .done
+private def ioTest (description : String) (check : IO Bool) : Spec :=
+  it description do
+    expect (← check)
 
 /-- An IO test that reports what the compile said when mode checking did not
 refuse an annotated constant with no run body. -/
 private def refusalTest (description : String) (result : IO (Except String Ix.CompileM.CertifiedOut)) :
-    TestSeq :=
-  .individualIO description none (do
+    Spec :=
+  it description do
     match ← result with
-    | .ok _ => return (false, 0, 0, some "compiled")
+    | .ok _ => fail "compiled"
     | .error message =>
       let ok := (message.splitOn "not in the extern set").length > 1 ||
         (message.splitOn "annotated source is refused").length > 1
-      return (ok, 0, 0, if ok then none else some message)) .done
+      expect ok message
 
 private def compileConsts (consts : List (Lean.Name × ConstantInfo)) :
     IO (Except String Ix.CompileM.CertifiedOut) := do
@@ -91,8 +92,8 @@ private def placement : IO Bool := do
     unless ok do throw (IO.userError s!"semantic placement: {label}")
   return true
 
-def suite : List TestSeq := [
-  ioTest "prepared semantic lambda: source presence, binder inspection and malformed-frame refusal" placement,
+public def suite : LSpec.Spec := do
+  ioTest "prepared semantic lambda: source presence, binder inspection and malformed-frame refusal" placement
   ioTest "ordinary source preflight preserves declarations and validates names" do
     let env ← Lean.mkEmptyEnvironment
     let sources := constants plainSource
@@ -100,7 +101,7 @@ def suite : List TestSeq := [
       if (prepare sources).toOption != some sources then return false
       if (prepare (sources ++ sources)).toOption.isSome then return false
       if (prepare [(`wrongName, plainSource)]).toOption.isSome then return false
-    return true,
+    return true
   ioTest "ordinary source preflight cannot bypass reserved semantic metadata" do
     let env ← Lean.mkEmptyEnvironment
     let source : ConstantInfo := .axiomInfo {
@@ -111,7 +112,7 @@ def suite : List TestSeq := [
       if (prepare (constants source)).toOption.isSome then return false
       let .ok marked := prepare (constants markedSource) | return false
       if marked == constants markedSource then return false
-    return true,
+    return true
   ioTest "parallel source preflight checks every batch and its final remainder" do
     let sources := (List.range 2049).map fun i =>
       let name := Lean.Name.num plainSource.name i
@@ -128,28 +129,28 @@ def suite : List TestSeq := [
             isUnsafe := false }
           (name, source)
       if (checkOrdinaryConstants marked (fun _ => false)).toOption != some false then return false
-    return true,
+    return true
   refusalTest "Lean constant-list driver refuses an annotated axiom"
-    (compileConsts (constants markedSource)),
+    (compileConsts (constants markedSource))
   ioTest "explicit Lean input rejects a missing annotation registry" do
     match ← compileInput (.plain (constants markedSource)) with
     | .error message => return (message.splitOn "missingContract").length > 1
-    | .ok _ => return false,
+    | .ok _ => return false
   refusalTest "explicit Lean input refuses an annotated axiom" (do
     let .ok contract := SourceContract.ofTelescope plainSource #[
       { binder := .position 0, uses := .linear }]
       | return .error "the telescope contract does not resolve"
-    compileInput { constants := constants plainSource, contracts := #[contract] }),
+    compileInput { constants := constants plainSource, contracts := #[contract] })
   ioTest "measure-only input preserves ordinary production bytes" do
     let input := CompileInput.plain (constants plainSource)
     let .ok plain ← compileInput input | return false
     let hinted := { input with measureHints := #[⟨plainSource, .position 0, some 1⟩] }
     let .ok measured ← compileInput hinted | return false
-    return (Ixon.serEnv plain.env).toOption == (Ixon.serEnv measured.env).toOption,
+    return (Ixon.serEnv plain.env).toOption == (Ixon.serEnv measured.env).toOption
   ioTest "prepared-source preflight rejects unresolved source binder contracts" do
     match checkPreparedSource (constants markedSource) with
     | .error message => return (message.splitOn "unresolved source binder contracts").length > 1
-    | .ok _ => return false,
+    | .ok _ => return false
   ioTest "explicit Lean input compiles and mode-checks a valid annotated definition" do
     let tyA : ConstantInfo := .axiomInfo {
       name := `SourceContractDriver.TyA, levelParams := [], type := .sort (.succ .zero), isUnsafe := false }
@@ -165,7 +166,6 @@ def suite : List TestSeq := [
     let some nd := out.env.named.get? (_root_.Ix.Name.fromLeanName defId.name) | return false
     let some c := out.env.getConst? nd.addr | return false
     return out.annotated && _root_.Ix.Compile.BinderData.hasModes c
-]
 
 end Tests.Ix.SourceContract.Driver
 

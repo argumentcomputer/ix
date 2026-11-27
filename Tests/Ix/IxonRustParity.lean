@@ -68,165 +68,173 @@ private def reqNat (j : Json) (k : String) : Except String Nat :=
 private def reqArr (j : Json) (k : String) : Except String (Array Json) := do
   (← j.getObjVal? k).getArr?
 
-def suite : IO (List TestSeq) := do
+def suite : IO Spec := do
   let raw ← IO.FS.readFile fixturePath
   let root ← IO.ofExcept (Json.parse raw)
-  let mut tests : TestSeq := .done
-
-  -- 1. Claims (20 positive vectors)
   let claims ← IO.ofExcept (reqArr root "claims")
-  tests := tests ++ test "claims count ≥ 15" (claims.size ≥ 15)
-  for c in claims do
+  let proofs ← IO.ofExcept (reqArr root "proofs")
+  let trees ← IO.ofExcept (reqArr root "assumption_trees")
+  let comms ← IO.ofExcept (reqArr root "comms")
+  let univs ← IO.ofExcept (reqArr root "univs")
+  let exprs ← IO.ofExcept (reqArr root "exprs")
+  let consts ← IO.ofExcept (reqArr root "constants")
+  let b3s ← IO.ofExcept (reqArr root "blake3")
+  let negs ← IO.ofExcept (reqArr root "negative_claims")
+
+  let parseClaimVec (c : Json) : IO (String × ByteArray × String × Nat) := do
     let name ← IO.ofExcept (reqStr c "name")
     let hex ← IO.ofExcept (reqStr c "hex")
     let blake ← IO.ofExcept (reqStr c "blake3")
     let byteLen ← IO.ofExcept (reqNat c "byte_len")
     let bytes ← IO.ofExcept (parseHex hex)
-    let lenOk := bytes.size == byteLen
-    let hashOk := addrHex (Address.blake3 bytes) == blake && addrHex (Address.blake3Pure bytes) == blake
-    let rtOk := match Ix.Claim.de bytes with
-      | .ok val => Ix.Claim.ser val == bytes
-      | .error _ => false
-    tests := tests ++ test s!"claim/{name}: len+blake3+roundtrip" (lenOk && hashOk && rtOk)
-
-  -- 2. Proofs (7 positive vectors)
-  let proofs ← IO.ofExcept (reqArr root "proofs")
-  tests := tests ++ test "proofs count ≥ 7" (proofs.size ≥ 7)
-  for p in proofs do
-    let name ← IO.ofExcept (reqStr p "name")
-    let hex ← IO.ofExcept (reqStr p "hex")
-    let blake ← IO.ofExcept (reqStr p "blake3")
+    return (name, bytes, blake, byteLen)
+  let parseHexVec (v : Json) (hexKey : String := "hex") : IO (String × ByteArray × String) := do
+    let name ← IO.ofExcept (reqStr v "name")
+    let hex ← IO.ofExcept (reqStr v hexKey)
+    let blake ← IO.ofExcept (reqStr v "blake3")
     let bytes ← IO.ofExcept (parseHex hex)
-    let hashOk := addrHex (Address.blake3 bytes) == blake && addrHex (Address.blake3Pure bytes) == blake
-    let rtOk := match Ixon.Proof.de bytes with
-      | .ok val => Ixon.Proof.ser val == bytes
-      | .error _ => false
-    tests := tests ++ test s!"proof/{name}: blake3+roundtrip" (hashOk && rtOk)
-
-  -- 3. AssumptionTrees (5 vectors + root hash)
-  let trees ← IO.ofExcept (reqArr root "assumption_trees")
-  tests := tests ++ test "assumption_trees count ≥ 5" (trees.size ≥ 5)
-  for t in trees do
+    return (name, bytes, blake)
+  let parseTreeVec (t : Json) : IO (String × ByteArray × String × String) := do
     let name ← IO.ofExcept (reqStr t "name")
     let hex ← IO.ofExcept (reqStr t "hex")
     let blake ← IO.ofExcept (reqStr t "blake3")
     let rootBlake ← IO.ofExcept (reqStr t "root_blake3")
     let bytes ← IO.ofExcept (parseHex hex)
-    let hashOk := addrHex (Address.blake3 bytes) == blake
-    let rtOk := match Ix.AssumptionTree.de bytes with
-      | .ok val => Ix.AssumptionTree.ser val == bytes && addrHex val.root == rootBlake
-      | .error _ => false
-    tests := tests ++ test s!"tree/{name}: blake3+roundtrip+root" (hashOk && rtOk)
-
-  -- 4. Comms (2 vectors: untagged, tagged, commitment digest)
-  let comms ← IO.ofExcept (reqArr root "comms")
-  tests := tests ++ test "comms count ≥ 2" (comms.size ≥ 2)
-  for cm in comms do
+    return (name, bytes, blake, rootBlake)
+  let parseCommVec (cm : Json) : IO (String × ByteArray × ByteArray × String) := do
     let name ← IO.ofExcept (reqStr cm "name")
     let untaggedHex ← IO.ofExcept (reqStr cm "untagged_hex")
     let taggedHex ← IO.ofExcept (reqStr cm "tagged_hex")
     let commitBlake ← IO.ofExcept (reqStr cm "commit_blake3")
     let untagged ← IO.ofExcept (parseHex untaggedHex)
     let tagged ← IO.ofExcept (parseHex taggedHex)
-    let rtOk := match Ixon.deComm untagged with
-      | .ok val =>
-        Ixon.serComm val == untagged &&
-        Ixon.serCommTagged val == tagged &&
-        addrHex val.commit == commitBlake
-      | .error _ => false
-    tests := tests ++ test s!"comm/{name}: untagged+tagged+commit" (rtOk == true)
-
-  -- 5. Univs (7 vectors)
-  let univs ← IO.ofExcept (reqArr root "univs")
-  tests := tests ++ test "univs count ≥ 7" (univs.size ≥ 7)
-  for u in univs do
-    let name ← IO.ofExcept (reqStr u "name")
-    let hex ← IO.ofExcept (reqStr u "hex")
-    let blake ← IO.ofExcept (reqStr u "blake3")
-    let bytes ← IO.ofExcept (parseHex hex)
-    let hashOk := addrHex (Address.blake3 bytes) == blake
-    let rtOk := match Ixon.deUniv bytes with
-      | .ok val => Ixon.serUniv val == bytes
-      | .error _ => false
-    tests := tests ++ test s!"univ/{name}: blake3+roundtrip" (hashOk && rtOk)
-
-  -- 6. Exprs (22 vectors)
-  let exprs ← IO.ofExcept (reqArr root "exprs")
-  tests := tests ++ test "exprs count ≥ 20" (exprs.size ≥ 20)
-  for e in exprs do
-    let name ← IO.ofExcept (reqStr e "name")
-    let hex ← IO.ofExcept (reqStr e "hex")
-    let blake ← IO.ofExcept (reqStr e "blake3")
-    let bytes ← IO.ofExcept (parseHex hex)
-    let hashOk := addrHex (Address.blake3 bytes) == blake
-    let rtOk := match Ixon.deExpr bytes with
-      | .ok val => Ixon.serExpr val == bytes
-      | .error _ => false
-    tests := tests ++ test s!"expr/{name}: blake3+roundtrip" (hashOk && rtOk)
-
-  -- 7. Constants (11 vectors)
-  let consts ← IO.ofExcept (reqArr root "constants")
-  tests := tests ++ test "constants count ≥ 11" (consts.size ≥ 11)
-  for k in consts do
-    let name ← IO.ofExcept (reqStr k "name")
-    let hex ← IO.ofExcept (reqStr k "hex")
-    let blake ← IO.ofExcept (reqStr k "blake3")
-    let bytes ← IO.ofExcept (parseHex hex)
-    let hashOk := addrHex (Address.blake3 bytes) == blake
-    let rtOk := match Ixon.deConstant bytes with
-      | .ok val => Ixon.serConstant val == bytes
-      | .error _ => false
-    tests := tests ++ test s!"constant/{name}: blake3+roundtrip" (hashOk && rtOk)
-
-  -- 8. BLAKE3 (6 vectors across block & chunk boundaries)
-  let b3s ← IO.ofExcept (reqArr root "blake3")
-  tests := tests ++ test "blake3 count ≥ 6" (b3s.size ≥ 6)
-  for b in b3s do
-    let name ← IO.ofExcept (reqStr b "name")
-    let inputHex ← IO.ofExcept (reqStr b "input_hex")
-    let blake ← IO.ofExcept (reqStr b "blake3")
-    let bytes ← IO.ofExcept (parseHex inputHex)
-    let ok := addrHex (Address.blake3 bytes) == blake && addrHex (Address.blake3Pure bytes) == blake
-    tests := tests ++ test s!"blake3/{name}: ffi+pure match Rust" ok
-
-  -- 9. Negative Claim Controls (17 vectors: ALL rejected by Claim.de, DynamicLink cases round-trip in Codec)
-  let negs ← IO.ofExcept (reqArr root "negative_claims")
-  tests := tests ++ test "negative_claims count ≥ 17" (negs.size ≥ 17)
-  for n in negs do
+    return (name, untagged, tagged, commitBlake)
+  let parseNegVec (n : Json) : IO (String × ByteArray × String) := do
     let name ← IO.ofExcept (reqStr n "name")
     let hex ← IO.ofExcept (reqStr n "hex")
     let dlKind ← IO.ofExcept (reqStr n "dynamic_link_kind")
     let bytes ← IO.ofExcept (parseHex hex)
-    let rejectedByClaim := !(Ix.Claim.de bytes).isOk
-    tests := tests ++ test s!"neg/{name}: Claim.de rejects" rejectedByClaim
-    -- For the canonical DynamicLink wire vectors (non-scope-prefix probes), verify Lean Codec round-trip
-    if dlKind == "dynamic_link" && !name.endsWith "_scope_prefix_0403" then
-      let dlOk := match Ix.DynamicLink.deDynamicLink bytes with
-        | .ok s => Ix.DynamicLink.serDynamicLink s == bytes
-        | .error _ => false
-      tests := tests ++ test s!"neg/{name}: DynamicLink.deDynamicLink roundtrips" (dlOk == true)
-    else if dlKind == "eval_assumption" && !name.endsWith "_scope_prefix_0403" then
-      let eaOk := match Ix.DynamicLink.deEvalAssumption bytes with
-        | .ok e => Ix.DynamicLink.serEvalAssumption e == bytes
-        | .error _ => false
-      tests := tests ++ test s!"neg/{name}: DynamicLink.deEvalAssumption roundtrips" (eaOk == true)
-    else if dlKind == "eval_assumed_claim" then
-      let eacOk := match Ix.DynamicLink.deEvalAssumedClaim bytes with
-        | .ok c => Ix.DynamicLink.serEvalAssumedClaim c == bytes
-        | .error _ => false
-      tests := tests ++ test s!"neg/{name}: DynamicLink.deEvalAssumedClaim roundtrips" (eacOk == true)
-    else if dlKind == "linked_circuit_entry" then
-      let lceOk := match Ix.DynamicLink.deLinkedCircuitEntry bytes with
-        | .ok e => Ix.DynamicLink.serLinkedCircuitEntry e == bytes
-        | .error _ => false
-      tests := tests ++ test s!"neg/{name}: DynamicLink.deLinkedCircuitEntry roundtrips" (lceOk == true)
-    else if dlKind == "linked_claim" then
-      let lcOk := match Ix.DynamicLink.deLinkedClaim bytes with
-        | .ok c => Ix.DynamicLink.serLinkedClaim c == bytes
-        | .error _ => false
-      tests := tests ++ test s!"neg/{name}: DynamicLink.deLinkedClaim roundtrips" (lcOk == true)
+    return (name, bytes, dlKind)
 
-  return [tests]
+  let claimVecs ← claims.mapM parseClaimVec
+  let proofVecs ← proofs.mapM parseHexVec
+  let treeVecs ← trees.mapM parseTreeVec
+  let commVecs ← comms.mapM parseCommVec
+  let univVecs ← univs.mapM parseHexVec
+  let exprVecs ← exprs.mapM parseHexVec
+  let constVecs ← consts.mapM parseHexVec
+  let b3Vecs ← b3s.mapM (parseHexVec · "input_hex")
+  let negVecs ← negs.mapM parseNegVec
+
+  return do
+    -- 1. Claims (20 positive vectors)
+    itBool "claims count ≥ 15" (decide (claimVecs.size ≥ 15))
+    for (name, bytes, blake, byteLen) in claimVecs do
+      itBool s!"claim/{name}: len+blake3+roundtrip" (
+        let lenOk := bytes.size == byteLen
+        let hashOk := addrHex (Address.blake3 bytes) == blake && addrHex (Address.blake3Pure bytes) == blake
+        let rtOk := match Ix.Claim.de bytes with
+          | .ok val => Ix.Claim.ser val == bytes
+          | .error _ => false
+        lenOk && hashOk && rtOk)
+
+    -- 2. Proofs (7 positive vectors)
+    itBool "proofs count ≥ 7" (decide (proofVecs.size ≥ 7))
+    for (name, bytes, blake) in proofVecs do
+      itBool s!"proof/{name}: blake3+roundtrip" (
+        let hashOk := addrHex (Address.blake3 bytes) == blake && addrHex (Address.blake3Pure bytes) == blake
+        let rtOk := match Ixon.Proof.de bytes with
+          | .ok val => Ixon.Proof.ser val == bytes
+          | .error _ => false
+        hashOk && rtOk)
+
+    -- 3. AssumptionTrees (5 vectors + root hash)
+    itBool "assumption_trees count ≥ 5" (decide (treeVecs.size ≥ 5))
+    for (name, bytes, blake, rootBlake) in treeVecs do
+      itBool s!"tree/{name}: blake3+roundtrip+root" (
+        let hashOk := addrHex (Address.blake3 bytes) == blake
+        let rtOk := match Ix.AssumptionTree.de bytes with
+          | .ok val => Ix.AssumptionTree.ser val == bytes && addrHex val.root == rootBlake
+          | .error _ => false
+        hashOk && rtOk)
+
+    -- 4. Comms (2 vectors: untagged, tagged, commitment digest)
+    itBool "comms count ≥ 2" (decide (commVecs.size ≥ 2))
+    for (name, untagged, tagged, commitBlake) in commVecs do
+      itBool s!"comm/{name}: untagged+tagged+commit" (
+        match Ixon.deComm untagged with
+        | .ok val =>
+          Ixon.serComm val == untagged &&
+          Ixon.serCommTagged val == tagged &&
+          addrHex val.commit == commitBlake
+        | .error _ => false)
+
+    -- 5. Univs (7 vectors)
+    itBool "univs count ≥ 7" (decide (univVecs.size ≥ 7))
+    for (name, bytes, blake) in univVecs do
+      itBool s!"univ/{name}: blake3+roundtrip" (
+        let hashOk := addrHex (Address.blake3 bytes) == blake
+        let rtOk := match Ixon.deUniv bytes with
+          | .ok val => Ixon.serUniv val == bytes
+          | .error _ => false
+        hashOk && rtOk)
+
+    -- 6. Exprs (22 vectors)
+    itBool "exprs count ≥ 20" (decide (exprVecs.size ≥ 20))
+    for (name, bytes, blake) in exprVecs do
+      itBool s!"expr/{name}: blake3+roundtrip" (
+        let hashOk := addrHex (Address.blake3 bytes) == blake
+        let rtOk := match Ixon.deExpr bytes with
+          | .ok val => Ixon.serExpr val == bytes
+          | .error _ => false
+        hashOk && rtOk)
+
+    -- 7. Constants (11 vectors)
+    itBool "constants count ≥ 11" (decide (constVecs.size ≥ 11))
+    for (name, bytes, blake) in constVecs do
+      itBool s!"constant/{name}: blake3+roundtrip" (
+        let hashOk := addrHex (Address.blake3 bytes) == blake
+        let rtOk := match Ixon.deConstant bytes with
+          | .ok val => Ixon.serConstant val == bytes
+          | .error _ => false
+        hashOk && rtOk)
+
+    -- 8. BLAKE3 (6 vectors across block & chunk boundaries)
+    itBool "blake3 count ≥ 6" (decide (b3Vecs.size ≥ 6))
+    for (name, bytes, blake) in b3Vecs do
+      itBool s!"blake3/{name}: ffi+pure match Rust"
+        (addrHex (Address.blake3 bytes) == blake && addrHex (Address.blake3Pure bytes) == blake)
+
+    -- 9. Negative Claim Controls (17 vectors: ALL rejected by Claim.de, DynamicLink cases round-trip in Codec)
+    itBool "negative_claims count ≥ 17" (decide (negVecs.size ≥ 17))
+    for (name, bytes, dlKind) in negVecs do
+      itBool s!"neg/{name}: Claim.de rejects" (!(Ix.Claim.de bytes).isOk)
+      -- For the canonical DynamicLink wire vectors (non-scope-prefix probes), verify Lean Codec round-trip
+      if dlKind == "dynamic_link" && !name.endsWith "_scope_prefix_0403" then
+        itBool s!"neg/{name}: DynamicLink.deDynamicLink roundtrips" (
+          match Ix.DynamicLink.deDynamicLink bytes with
+          | .ok s => Ix.DynamicLink.serDynamicLink s == bytes
+          | .error _ => false)
+      else if dlKind == "eval_assumption" && !name.endsWith "_scope_prefix_0403" then
+        itBool s!"neg/{name}: DynamicLink.deEvalAssumption roundtrips" (
+          match Ix.DynamicLink.deEvalAssumption bytes with
+          | .ok e => Ix.DynamicLink.serEvalAssumption e == bytes
+          | .error _ => false)
+      else if dlKind == "eval_assumed_claim" then
+        itBool s!"neg/{name}: DynamicLink.deEvalAssumedClaim roundtrips" (
+          match Ix.DynamicLink.deEvalAssumedClaim bytes with
+          | .ok c => Ix.DynamicLink.serEvalAssumedClaim c == bytes
+          | .error _ => false)
+      else if dlKind == "linked_circuit_entry" then
+        itBool s!"neg/{name}: DynamicLink.deLinkedCircuitEntry roundtrips" (
+          match Ix.DynamicLink.deLinkedCircuitEntry bytes with
+          | .ok e => Ix.DynamicLink.serLinkedCircuitEntry e == bytes
+          | .error _ => false)
+      else if dlKind == "linked_claim" then
+        itBool s!"neg/{name}: DynamicLink.deLinkedClaim roundtrips" (
+          match Ix.DynamicLink.deLinkedClaim bytes with
+          | .ok c => Ix.DynamicLink.serLinkedClaim c == bytes
+          | .error _ => false)
 
 end Tests.Ix.IxonRustParity
 

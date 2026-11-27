@@ -146,9 +146,8 @@ private def check : IO Nat := do
   IO.println s!"selected coverage: {labels.size} named at both modes; 5 aliases; caps, recursors, omitted projections and failures"
   return labels.size * 2 + 5
 
-def suite : List TestSeq := [
-  .individualIO "selected labels require their actual producer and emitted key" none (do
-    let n ← check
-    return (true, n, 0, none)) .done]
+def suite : LSpec.Spec := do
+  it "selected labels require their actual producer and emitted key" do
+    let _ ← check
 
 end Tests.Ix.Kernel.CheckLeanTargets

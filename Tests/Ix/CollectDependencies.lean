@@ -63,15 +63,14 @@ def sameSet (ns ms : List Lean.Name) : Bool :=
   ns.length == ms.length && ns.all ms.contains && ms.all ns.contains
 
 open LSpec in
-def suite : List TestSeq := [
-  test "the closure of First lists each declaration once" (distinct fromFirst),
-  test "the closure of First, in first-discovery order" (fromFirst == firstExpected),
-  test "the closure of Second lists the family once" (distinct fromSecond && sameSet fromSecond family),
-  test "the closure of Third lists the family once" (distinct fromThird && sameSet fromThird family),
-  test "the closure of a constructor lists the family once"
-    (distinct fromConstructor && sameSet fromConstructor family),
-  test "two roots of one family share one walk" (distinct fromTwo && sameSet fromTwo family),
-  test "the single-root collector agrees" (fromFirstOne == fromFirst)
-]
+def suite : LSpec.Spec := do
+  itBool "the closure of First lists each declaration once" (distinct fromFirst)
+  itBool "the closure of First, in first-discovery order" (fromFirst == firstExpected)
+  itBool "the closure of Second lists the family once" (distinct fromSecond && sameSet fromSecond family)
+  itBool "the closure of Third lists the family once" (distinct fromThird && sameSet fromThird family)
+  itBool "the closure of a constructor lists the family once"
+    (distinct fromConstructor && sameSet fromConstructor family)
+  itBool "two roots of one family share one walk" (distinct fromTwo && sameSet fromTwo family)
+  itBool "the single-root collector agrees" (fromFirstOne == fromFirst)
 
 end Tests.Ix.CollectDependencies

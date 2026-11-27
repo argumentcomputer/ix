@@ -23,12 +23,12 @@ namespace Tests.Ix.EnvBody
 `lake test` runs the `IxTests` executable. -/
 def fixturePath : System.FilePath := "Tests/Ix/Fixtures/Export.lean"
 
-public def suite : IO LSpec.TestSeq := do
+public def suite : IO LSpec.Spec := do
   let env ← getFileEnv fixturePath
-  pure $
-    LSpec.test "getFileEnv includes the file body (not just imports)"
+  return do
+    itBool "getFileEnv includes the file body (not just imports)"
       ((env.constants.find? `MyNat).isSome)
-    ++ LSpec.test "getFileEnv still includes imports"
+    itBool "getFileEnv still includes imports"
       ((env.constants.find? `Nat).isSome)
 
 end Tests.Ix.EnvBody

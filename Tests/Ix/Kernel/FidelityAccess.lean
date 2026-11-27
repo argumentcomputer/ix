@@ -100,9 +100,8 @@ private def check : IO Nat := do
   IO.println s!"projection access: {baseline.blocks} blocks, {baseline.compiled} projections; eager/lazy parity and strict faults"
   return baseline.compiled
 
-def suite : List TestSeq := [
-  .individualIO "lazy projection fidelity preserves exact reports and refuses access faults" none (do
-    let n ← check
-    return (true, n, 0, none)) .done]
+def suite : LSpec.Spec := do
+  it "lazy projection fidelity preserves exact reports and refuses access faults" do
+    let _ ← check
 
 end Tests.Ix.Kernel.FidelityAccess

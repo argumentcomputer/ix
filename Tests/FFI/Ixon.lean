@@ -12,7 +12,7 @@ public import Ix.Cli.DiffCmd
 
 public section
 
-open LSpec SlimCheck Gen Ixon
+open LSpec LSpec.Prop Gen Ixon
 open Ix (DefKind DefinitionSafety QuotKind)
 
 namespace Tests.FFI.Ixon
@@ -111,66 +111,66 @@ opaque roundtripIxonComm : @& Comm → Comm
 
 /-! ## Ixon type FFI unit tests -/
 
-def ixonDefKindTests : TestSeq :=
-  test "Ixon.DefKind.defn" (roundtripIxonDefKind .defn == .defn) ++
-  test "Ixon.DefKind.opaq" (roundtripIxonDefKind .opaq == .opaq) ++
-  test "Ixon.DefKind.thm" (roundtripIxonDefKind .thm == .thm)
+def ixonDefKindTests : LSpec.Spec := do
+  itBool "Ixon.DefKind.defn" (roundtripIxonDefKind .defn == .defn)
+  itBool "Ixon.DefKind.opaq" (roundtripIxonDefKind .opaq == .opaq)
+  itBool "Ixon.DefKind.thm" (roundtripIxonDefKind .thm == .thm)
 
-def ixonDefinitionSafetyTests : TestSeq :=
-  test "Ixon.DefinitionSafety.unsaf" (roundtripIxonDefinitionSafety .unsaf == .unsaf) ++
-  test "Ixon.DefinitionSafety.safe" (roundtripIxonDefinitionSafety .safe == .safe) ++
-  test "Ixon.DefinitionSafety.part" (roundtripIxonDefinitionSafety .part == .part)
+def ixonDefinitionSafetyTests : LSpec.Spec := do
+  itBool "Ixon.DefinitionSafety.unsaf" (roundtripIxonDefinitionSafety .unsaf == .unsaf)
+  itBool "Ixon.DefinitionSafety.safe" (roundtripIxonDefinitionSafety .safe == .safe)
+  itBool "Ixon.DefinitionSafety.part" (roundtripIxonDefinitionSafety .part == .part)
 
-def ixonQuotKindTests : TestSeq :=
-  test "Ixon.QuotKind.type" (roundtripIxonQuotKind .type == .type) ++
-  test "Ixon.QuotKind.ctor" (roundtripIxonQuotKind .ctor == .ctor) ++
-  test "Ixon.QuotKind.lift" (roundtripIxonQuotKind .lift == .lift) ++
-  test "Ixon.QuotKind.ind" (roundtripIxonQuotKind .ind == .ind)
+def ixonQuotKindTests : LSpec.Spec := do
+  itBool "Ixon.QuotKind.type" (roundtripIxonQuotKind .type == .type)
+  itBool "Ixon.QuotKind.ctor" (roundtripIxonQuotKind .ctor == .ctor)
+  itBool "Ixon.QuotKind.lift" (roundtripIxonQuotKind .lift == .lift)
+  itBool "Ixon.QuotKind.ind" (roundtripIxonQuotKind .ind == .ind)
 
-def ixonUnivTests : TestSeq :=
-  test "Ixon.Univ.zero" (roundtripIxonUniv .zero == .zero) ++
-  test "Ixon.Univ.var 0" (roundtripIxonUniv (.var 0) == .var 0) ++
-  test "Ixon.Univ.var 42" (roundtripIxonUniv (.var 42) == .var 42) ++
-  test "Ixon.Univ.succ zero" (roundtripIxonUniv (.succ .zero) == .succ .zero) ++
-  test "Ixon.Univ.max" (roundtripIxonUniv (.max .zero (.var 1)) == .max .zero (.var 1)) ++
-  test "Ixon.Univ.imax" (roundtripIxonUniv (.imax (.var 0) .zero) == .imax (.var 0) .zero)
+def ixonUnivTests : LSpec.Spec := do
+  itBool "Ixon.Univ.zero" (roundtripIxonUniv .zero == .zero)
+  itBool "Ixon.Univ.var 0" (roundtripIxonUniv (.var 0) == .var 0)
+  itBool "Ixon.Univ.var 42" (roundtripIxonUniv (.var 42) == .var 42)
+  itBool "Ixon.Univ.succ zero" (roundtripIxonUniv (.succ .zero) == .succ .zero)
+  itBool "Ixon.Univ.max" (roundtripIxonUniv (.max .zero (.var 1)) == .max .zero (.var 1))
+  itBool "Ixon.Univ.imax" (roundtripIxonUniv (.imax (.var 0) .zero) == .imax (.var 0) .zero)
 
-def ixonExprTests : TestSeq :=
-  test "Ixon.Expr.sort" (roundtripIxonExpr (.sort 0) == .sort 0) ++
-  test "Ixon.Expr.var" (roundtripIxonExpr (.var 5) == .var 5) ++
-  test "Ixon.Expr.ref" (roundtripIxonExpr (.ref 1 #[0, 1]) == .ref 1 #[0, 1]) ++
-  test "Ixon.Expr.recur" (roundtripIxonExpr (.recur 2 #[]) == .recur 2 #[]) ++
-  test "Ixon.Expr.str" (roundtripIxonExpr (.str 3) == .str 3) ++
-  test "Ixon.Expr.nat" (roundtripIxonExpr (.nat 42) == .nat 42) ++
-  test "Ixon.Expr.share" (roundtripIxonExpr (.share 0) == .share 0) ++
-  test "Ixon.Expr.app" (roundtripIxonExpr (.app (.var 0) (.var 1)) == .app (.var 0) (.var 1)) ++
-  test "Ixon.Expr.lam" (roundtripIxonExpr (.lam (.sort 0) (.var 0)) == .lam (.sort 0) (.var 0)) ++
-  test "Ixon.Expr.all" (roundtripIxonExpr (.all (.sort 0) (.var 0)) == .all (.sort 0) (.var 0)) ++
-  test "Ixon.Expr.letE" (roundtripIxonExpr (.leanLet true (.sort 0) (.var 0) (.var 1)) == .leanLet true (.sort 0) (.var 0) (.var 1)) ++
-  test "Ixon.Expr.letE unique" (roundtripIxonExpr (.letE false (.value .unique) (.sort 0) (.var 0) (.var 1)) ==
-    .letE false (.value .unique) (.sort 0) (.var 0) (.var 1)) ++
-  test "Ixon.Expr.letE borrow" (roundtripIxonExpr (.letE true .borrow (.sort 0) (.var 0) (.var 1)) ==
-    .letE true .borrow (.sort 0) (.var 0) (.var 1)) ++
-  test "Ixon.Expr.prj" (roundtripIxonExpr (.prj 0 1 (.var 0)) == .prj 0 1 (.var 0))
+def ixonExprTests : LSpec.Spec := do
+  itBool "Ixon.Expr.sort" (roundtripIxonExpr (.sort 0) == .sort 0)
+  itBool "Ixon.Expr.var" (roundtripIxonExpr (.var 5) == .var 5)
+  itBool "Ixon.Expr.ref" (roundtripIxonExpr (.ref 1 #[0, 1]) == .ref 1 #[0, 1])
+  itBool "Ixon.Expr.recur" (roundtripIxonExpr (.recur 2 #[]) == .recur 2 #[])
+  itBool "Ixon.Expr.str" (roundtripIxonExpr (.str 3) == .str 3)
+  itBool "Ixon.Expr.nat" (roundtripIxonExpr (.nat 42) == .nat 42)
+  itBool "Ixon.Expr.share" (roundtripIxonExpr (.share 0) == .share 0)
+  itBool "Ixon.Expr.app" (roundtripIxonExpr (.app (.var 0) (.var 1)) == .app (.var 0) (.var 1))
+  itBool "Ixon.Expr.lam" (roundtripIxonExpr (.lam (.sort 0) (.var 0)) == .lam (.sort 0) (.var 0))
+  itBool "Ixon.Expr.all" (roundtripIxonExpr (.all (.sort 0) (.var 0)) == .all (.sort 0) (.var 0))
+  itBool "Ixon.Expr.letE" (roundtripIxonExpr (.leanLet true (.sort 0) (.var 0) (.var 1)) == .leanLet true (.sort 0) (.var 0) (.var 1))
+  itBool "Ixon.Expr.letE unique" (roundtripIxonExpr (.letE false (.value .unique) (.sort 0) (.var 0) (.var 1)) ==
+    .letE false (.value .unique) (.sort 0) (.var 0) (.var 1))
+  itBool "Ixon.Expr.letE borrow" (roundtripIxonExpr (.letE true .borrow (.sort 0) (.var 0) (.var 1)) ==
+    .letE true .borrow (.sort 0) (.var 0) (.var 1))
+  itBool "Ixon.Expr.prj" (roundtripIxonExpr (.prj 0 1 (.var 0)) == .prj 0 1 (.var 0))
 
 /-! ## Metadata Unit Tests -/
 
-def exprMetaDataTests : TestSeq :=
+def exprMetaDataTests : LSpec.Spec := do
   let testAddr := Address.blake3 (ByteArray.mk #[1, 2, 3])
   let _kvmap : KVMap := #[(testAddr, DataValue.ofBool true)]
-  test "ExprMetaData.leaf" (roundtripIxonExprMetaData .leaf == .leaf) ++
-  test "ExprMetaData.app" (roundtripIxonExprMetaData (.app 0 1) == .app 0 1) ++
-  test "ExprMetaData.ref" (roundtripIxonExprMetaData (.ref testAddr) == .ref testAddr) ++
-  test "ExprMetaData.prj" (roundtripIxonExprMetaData (.prj testAddr 5) == .prj testAddr 5) ++
-  test "ExprMetaData.letBinder" (roundtripIxonExprMetaData (.letBinder testAddr 0 1 2) == .letBinder testAddr 0 1 2) ++
-  test "ExprMetaData.mdata empty" (roundtripIxonExprMetaData (.mdata #[] 0) == .mdata #[] 0) ++
-  test "ExprMetaData.mdata with kvmap" (roundtripIxonExprMetaData (.mdata #[_kvmap] 3) == .mdata #[_kvmap] 3) ++
-  test "ExprMetaData.binder default" (roundtripIxonExprMetaData (.binder testAddr .default 0 1) == .binder testAddr .default 0 1) ++
-  test "ExprMetaData.binder implicit" (roundtripIxonExprMetaData (.binder testAddr .implicit 2 3) == .binder testAddr .implicit 2 3) ++
-  test "ExprMetaData.binder strictImplicit" (roundtripIxonExprMetaData (.binder testAddr .strictImplicit 0 0) == .binder testAddr .strictImplicit 0 0) ++
-  test "ExprMetaData.binder instImplicit" (roundtripIxonExprMetaData (.binder testAddr .instImplicit 0 0) == .binder testAddr .instImplicit 0 0)
+  itBool "ExprMetaData.leaf" (roundtripIxonExprMetaData .leaf == .leaf)
+  itBool "ExprMetaData.app" (roundtripIxonExprMetaData (.app 0 1) == .app 0 1)
+  itBool "ExprMetaData.ref" (roundtripIxonExprMetaData (.ref testAddr) == .ref testAddr)
+  itBool "ExprMetaData.prj" (roundtripIxonExprMetaData (.prj testAddr 5) == .prj testAddr 5)
+  itBool "ExprMetaData.letBinder" (roundtripIxonExprMetaData (.letBinder testAddr 0 1 2) == .letBinder testAddr 0 1 2)
+  itBool "ExprMetaData.mdata empty" (roundtripIxonExprMetaData (.mdata #[] 0) == .mdata #[] 0)
+  itBool "ExprMetaData.mdata with kvmap" (roundtripIxonExprMetaData (.mdata #[_kvmap] 3) == .mdata #[_kvmap] 3)
+  itBool "ExprMetaData.binder default" (roundtripIxonExprMetaData (.binder testAddr .default 0 1) == .binder testAddr .default 0 1)
+  itBool "ExprMetaData.binder implicit" (roundtripIxonExprMetaData (.binder testAddr .implicit 2 3) == .binder testAddr .implicit 2 3)
+  itBool "ExprMetaData.binder strictImplicit" (roundtripIxonExprMetaData (.binder testAddr .strictImplicit 0 0) == .binder testAddr .strictImplicit 0 0)
+  itBool "ExprMetaData.binder instImplicit" (roundtripIxonExprMetaData (.binder testAddr .instImplicit 0 0) == .binder testAddr .instImplicit 0 0)
 
-def exprMetaArenaTests : TestSeq :=
+def exprMetaArenaTests : LSpec.Spec := do
   let testAddr := Address.blake3 (ByteArray.mk #[1, 2, 3])
   let emptyArena : ExprMetaArena := {}
   let singleLeaf : ExprMetaArena := { nodes := #[.leaf] }
@@ -179,12 +179,12 @@ def exprMetaArenaTests : TestSeq :=
     .leaf, .ref testAddr, .app 0 0, .binder testAddr .default 0 1,
     .letBinder testAddr 0 1 2, .prj testAddr 0, .mdata #[] 0
   ] }
-  checkIO "ExprMetaArena empty" (roundtripIxonExprMetaArena emptyArena == emptyArena) ++
-  checkIO "ExprMetaArena single leaf" (roundtripIxonExprMetaArena singleLeaf == singleLeaf) ++
-  checkIO "ExprMetaArena small" (roundtripIxonExprMetaArena smallArena == smallArena) ++
-  checkIO "ExprMetaArena mixed" (roundtripIxonExprMetaArena mixedArena == mixedArena)
+  itBool "ExprMetaArena empty" (roundtripIxonExprMetaArena emptyArena == emptyArena)
+  itBool "ExprMetaArena single leaf" (roundtripIxonExprMetaArena singleLeaf == singleLeaf)
+  itBool "ExprMetaArena small" (roundtripIxonExprMetaArena smallArena == smallArena)
+  itBool "ExprMetaArena mixed" (roundtripIxonExprMetaArena mixedArena == mixedArena)
 
-def constantMetaTests : TestSeq :=
+def constantMetaTests : LSpec.Spec := do
   let testAddr := Address.blake3 (ByteArray.mk #[1, 2, 3])
   let emptyArena : ExprMetaArena := {}
   let smallArena : ExprMetaArena := { nodes := #[.leaf, .app 0 0, .ref testAddr] }
@@ -195,26 +195,26 @@ def constantMetaTests : TestSeq :=
     .mdata #[#[(testAddr, .ofBool true)]] 0
   ] }
   let rt (cm : ConstantMeta) : Bool := roundtripIxonConstantMeta cm == cm
-  checkIO "ConstantMeta.empty" (rt .empty) ++
-  checkIO "ConstantMeta.defn" (rt (.new
-    (.defn testAddr #[testAddr] #[] #[] smallArena 0 1))) ++
-  checkIO "ConstantMeta.axio" (rt (.new (.axio testAddr #[] emptyArena 0))) ++
-  checkIO "ConstantMeta.ctor" (rt (.new
-    (.ctor testAddr #[] testAddr smallArena 2))) ++
-  checkIO "ConstantMeta.recr" (rt (.new
-    (.recr testAddr #[] #[] #[] #[] smallArena 0 #[1, 2]))) ++
-  checkIO "ConstantMeta.muts auxLayout none" (rt (.new
-    (.muts #[#[testAddr]] none))) ++
+  itBool "ConstantMeta.empty" (rt .empty)
+  itBool "ConstantMeta.defn" (rt (.new
+    (.defn testAddr #[testAddr] #[] #[] smallArena 0 1)))
+  itBool "ConstantMeta.axio" (rt (.new (.axio testAddr #[] emptyArena 0)))
+  itBool "ConstantMeta.ctor" (rt (.new
+    (.ctor testAddr #[] testAddr smallArena 2)))
+  itBool "ConstantMeta.recr" (rt (.new
+    (.recr testAddr #[] #[] #[] #[] smallArena 0 #[1, 2])))
+  itBool "ConstantMeta.muts auxLayout none" (rt (.new
+    (.muts #[#[testAddr]] none)))
   -- `evaporated` fixtures spell the canonical one-flag-per-perm-entry
   -- form the compiler materializes (the Rust FFI decode expands the
   -- `#[]` construction default to that shape).
-  checkIO "ConstantMeta.muts auxLayout some" (rt (.new
-    (.muts #[#[testAddr]] (some ⟨#[1, 0], #[2, 3], #[0, 0]⟩)))) ++
-  checkIO "ConstantMeta.muts auxLayout evaporated" (rt (.new
-    (.muts #[#[testAddr]] (some ⟨#[1, 0], #[2, 3], #[0, 1]⟩)))) ++
-  checkIO "ConstantMeta mdata arena" (rt (.new
-    (.defn testAddr #[] #[] #[] recordArena 0 1))) ++
-  checkIO "ConstantMeta extension tables" (rt
+  itBool "ConstantMeta.muts auxLayout some" (rt (.new
+    (.muts #[#[testAddr]] (some ⟨#[1, 0], #[2, 3], #[0, 0]⟩))))
+  itBool "ConstantMeta.muts auxLayout evaporated" (rt (.new
+    (.muts #[#[testAddr]] (some ⟨#[1, 0], #[2, 3], #[0, 1]⟩))))
+  itBool "ConstantMeta mdata arena" (rt (.new
+    (.defn testAddr #[] #[] #[] recordArena 0 1)))
+  itBool "ConstantMeta extension tables" (rt
     { info := .defn testAddr #[] #[] #[] recordArena 0 1,
       metaSharing := #[.app (.share 0) (.var 3), .sort 1],
       metaRefs := #[testAddr],
@@ -245,16 +245,6 @@ opaque rsEqEnvSerialization : @& RawEnv → @& ByteArray → Bool
 @[extern "rs_roundtrip_raw_env"]
 opaque roundtripRawEnv : @& RawEnv → RawEnv
 
-instance : Shrinkable RawEnv where
-  shrink env :=
-    if env.consts.isEmpty && env.named.isEmpty && env.blobs.isEmpty && env.comms.isEmpty then []
-    else [{
-      consts := if env.consts.isEmpty then #[] else env.consts.pop,
-      named := if env.named.isEmpty then #[] else env.named.pop,
-      blobs := if env.blobs.isEmpty then #[] else env.blobs.pop,
-      comms := if env.comms.isEmpty then #[] else env.comms.pop
-    }]
-
 /-- Compare RawEnv with content-aware comparison.
     Checks array sizes and content matching by Address. -/
 def rawEnvEq (a b : RawEnv) : Bool :=
@@ -277,7 +267,7 @@ def rawEnvEq (a b : RawEnv) : Bool :=
 
 /-! ## RawEnv unit tests -/
 
-def rawEnvTests : TestSeq :=
+def rawEnvTests : LSpec.Spec := do
   let empty : RawEnv := { consts := #[], named := #[], blobs := #[], comms := #[] }
   -- Create test data for non-empty case
   let testAddr := Address.blake3 (ByteArray.mk #[1, 2, 3])
@@ -303,8 +293,8 @@ def rawEnvTests : TestSeq :=
     blobs := #[testRawBlob],
     comms := #[testRawComm]
   }
-  test "RawEnv empty" (rawEnvEq (roundtripRawEnv empty) empty) ++
-  test "RawEnv with data" (rawEnvEq (roundtripRawEnv withData) withData)
+  itBool "RawEnv empty" (rawEnvEq (roundtripRawEnv empty) empty)
+  itBool "RawEnv with data" (rawEnvEq (roundtripRawEnv withData) withData)
 
 /-! ## Env diff FFI (`rs_diff_envs`)
 
@@ -312,7 +302,7 @@ The classification logic is covered by Rust unit tests
 (`crates/ixon/src/diff.rs`); these tests pin the FFI marshaling — a
 constructor-slot swap would surface as wrong-category contents. -/
 
-def envDiffTests : TestSeq :=
+def envDiffTests : LSpec.Spec := do
   let fooName := Ix.Name.mkStr Ix.Name.mkAnon "foo"
   let barName := Ix.Name.mkStr Ix.Name.mkAnon "bar"
   -- `.var` exprs only: classification resolves table indices, so a
@@ -349,34 +339,36 @@ def envDiffTests : TestSeq :=
   let runDiff (a b : Env) (compareMeta : Bool := false) :
       Option Ixon.EnvDiff :=
     (Ixon.rsDiffEnvs (serEnv! a) (serEnv! b) compareMeta).toOption
-  (TestSeq.individualIO "EnvDiff: CLI exit codes" none (do
+  it "EnvDiff: CLI exit codes" do
     let dir ← IO.FS.createTempDir
-    let pa := dir / "a.ixe"
-    let pb := dir / "b.ixe"
-    IO.FS.writeBinFile pa (serEnv! envBase)
-    IO.FS.writeBinFile pb (serEnv! envValueChanged)
-    let (sameOut, sameCode) ← IO.FS.withIsolatedStreams
-      (diffCmd.validate [pa.toString, pa.toString, "--meta"])
-    let (_, differCode) ← IO.FS.withIsolatedStreams
-      (diffCmd.validate [pa.toString, pb.toString, "--anon"])
-    IO.FS.removeDirAll dir
-    let ok := sameCode == 0 && sameOut.contains "identical" && differCode == 1
-    return (ok, if ok then 1 else 0, 1, if ok then none else some s!"CLI exits {sameCode}/{differCode}")) .done) ++
-  test "EnvDiff: self-diff empty (anon)"
-    ((runDiff envBase envBase).any (·.isEmpty)) ++
-  test "EnvDiff: self-diff empty (meta)"
-    ((runDiff envBase envBase true).any (·.isEmpty)) ++
-  test "EnvDiff: stats populated"
+    try
+      let pa := dir / "a.ixe"
+      let pb := dir / "b.ixe"
+      IO.FS.writeBinFile pa (serEnv! envBase)
+      IO.FS.writeBinFile pb (serEnv! envValueChanged)
+      let (sameOut, sameCode) ← IO.FS.withIsolatedStreams
+        (diffCmd.validate [pa.toString, pa.toString, "--meta"])
+      let (_, differCode) ← IO.FS.withIsolatedStreams
+        (diffCmd.validate [pa.toString, pb.toString, "--anon"])
+      expect (sameCode == 0 && sameOut.contains "identical" && differCode == 1)
+        s!"CLI exits {sameCode}/{differCode}"
+    finally
+      IO.FS.removeDirAll dir
+  itBool "EnvDiff: self-diff empty (anon)"
+    ((runDiff envBase envBase).any (·.isEmpty))
+  itBool "EnvDiff: self-diff empty (meta)"
+    ((runDiff envBase envBase true).any (·.isEmpty))
+  itBool "EnvDiff: stats populated"
     ((runDiff envBase envBase).any fun d =>
-      d.statsA.consts == 1 && d.statsA.named == 1 && d.statsB == d.statsA) ++
-  test "EnvDiff: added name"
+      d.statsA.consts == 1 && d.statsA.named == 1 && d.statsB == d.statsA)
+  itBool "EnvDiff: added name"
     ((runDiff envBase envExtra).any fun d =>
       d.namedAdded == #[("bar", addrB)] && d.constsOnlyB == #[addrB]
-      && d.namedRemoved.isEmpty && d.namedChanged.isEmpty) ++
-  test "EnvDiff: removed name"
+      && d.namedRemoved.isEmpty && d.namedChanged.isEmpty)
+  itBool "EnvDiff: removed name"
     ((runDiff envExtra envBase).any fun d =>
-      d.namedRemoved == #[("bar", addrB)] && d.constsOnlyA == #[addrB]) ++
-  test "EnvDiff: value change classified"
+      d.namedRemoved == #[("bar", addrB)] && d.constsOnlyA == #[addrB])
+  itBool "EnvDiff: value change classified"
     ((runDiff envBase envValueChanged).any fun d =>
       d.namedChanged.size == 1 &&
       (d.namedChanged[0]!).name == "foo" &&
@@ -386,10 +378,10 @@ def envDiffTests : TestSeq :=
       (d.namedChanged[0]!).newKind == "defn" &&
       (d.namedChanged[0]!).fields == #["value"] &&
       (d.namedChanged[0]!).metaFields.isEmpty &&
-      (d.namedChanged[0]!).rippled == false) ++
+      (d.namedChanged[0]!).rippled == false)
   -- A dependent whose only change is its ref re-addressing must marshal
   -- `rippled == true` (pins the num_8 scalar slot against layout swaps).
-  test "EnvDiff: ripple verdict marshals"
+  itBool "EnvDiff: ripple verdict marshals"
     (let mkRefConst (r : Address) : Constant :=
       { info := .defn { kind := .defn, safety := .safe, lvls := 0,
                         typ := .var 3, value := .ref 0 #[] }
@@ -409,22 +401,22 @@ def envDiffTests : TestSeq :=
      (runDiff (mkPair constA) (mkPair constB)).any fun d =>
        d.namedChanged.size == 2 &&
        (d.namedChanged.find? (·.name == "foo")).any (·.rippled == false) &&
-       (d.namedChanged.find? (·.name == "bar")).any (·.rippled == true)) ++
+       (d.namedChanged.find? (·.name == "bar")).any (·.rippled == true))
   -- Hints live only in the env-level hints section, so a hint tweak
   -- is a pure `hintsChanged` row — no metadata difference in either
   -- mode (the named entries are identical).
-  test "EnvDiff: hint change visible in anon mode"
+  itBool "EnvDiff: hint change visible in anon mode"
     ((runDiff envBase envHintChanged).any fun d =>
       d.hintsChanged == #[(addrA, "regular(5)", "regular(6)")]
-      && d.namedMetaOnly.isEmpty && d.namedChanged.isEmpty) ++
-  test "EnvDiff: hint change is not a metadata change"
+      && d.namedMetaOnly.isEmpty && d.namedChanged.isEmpty)
+  itBool "EnvDiff: hint change is not a metadata change"
     ((runDiff envBase envHintChanged true).any fun d =>
       d.hintsChanged.size == 1 && d.namedMetaOnly.isEmpty
-      && d.namedChanged.isEmpty) ++
-  test "EnvDiff: main change"
+      && d.namedChanged.isEmpty)
+  itBool "EnvDiff: main change"
     ((runDiff { envBase with main := some addrA } envBase).any fun d =>
-      d.mainChanged == some (some addrA, none)) ++
-  test "EnvDiff: assumptions delta"
+      d.mainChanged == some (some addrA, none))
+  itBool "EnvDiff: assumptions delta"
     (let p := Address.blake3 (ByteArray.mk #[1])
      let q := Address.blake3 (ByteArray.mk #[2])
      let r := Address.blake3 (ByteArray.mk #[3])
@@ -433,30 +425,25 @@ def envDiffTests : TestSeq :=
      let b := { envBase with
        assumptions := ({} : Std.HashSet Address).insert q |>.insert r }
      (runDiff a b).any fun d =>
-       d.assumptionsAdded == #[r] && d.assumptionsRemoved == #[p]) ++
+       d.assumptionsAdded == #[r] && d.assumptionsRemoved == #[p])
   -- The mmap file-path entry must agree with the bytes-based one, and
   -- the byte-equality fast path must distinguish same vs different.
-  (TestSeq.individualIO "EnvDiff: file-based diff matches bytes-based"
-    none (do
-      let dir ← IO.FS.createTempDir
+  it "EnvDiff: file-based diff matches bytes-based" do
+    let dir ← IO.FS.createTempDir
+    try
       let pa := dir / "a.ixe"
       let pb := dir / "b.ixe"
       let bytesA := serEnv! envBase
       let bytesB := serEnv! envValueChanged
       IO.FS.writeBinFile pa bytesA
       IO.FS.writeBinFile pb bytesB
-      let r ← try
-        let eqSame ← Ixon.rsIxeFilesEqual pa.toString pa.toString
-        let eqDiff ← Ixon.rsIxeFilesEqual pa.toString pb.toString
-        let dFiles ← Ixon.rsDiffEnvFiles pa.toString pb.toString false
-        let ok := eqSame && !eqDiff &&
-          (match Ixon.rsDiffEnvs bytesA bytesB false with
-           | .ok dBytes => dFiles == dBytes
-           | .error _ => false)
-        pure (ok, if ok then none else some "file/bytes reports disagree")
-      catch e => pure (false, some e.toString)
+      let eqSame ← Ixon.rsIxeFilesEqual pa.toString pa.toString
+      let eqDiff ← Ixon.rsIxeFilesEqual pa.toString pb.toString
+      let dFiles ← Ixon.rsDiffEnvFiles pa.toString pb.toString false
+      let dBytes ← expectOk (Ixon.rsDiffEnvs bytesA bytesB false)
+      expect (eqSame && !eqDiff && dFiles == dBytes) "file/bytes reports disagree"
+    finally
       IO.FS.removeDirAll dir
-      pure (r.1, 0, 0, r.2)) .done)
 
 /-- Self-diff over the pure-Lean writer's bytes must be empty in both
     modes (also exercises report marshaling on arbitrary inputs). -/
@@ -496,23 +483,20 @@ private def packFixture (env : Env) (mainName : String)
 
 /-- IO test asserting on a successfully packed bundle. -/
 private def packTest (descr : String) (act : IO (Except String Env))
-    (check : Env → Bool) : TestSeq :=
-  .individualIO descr none (do
-    match ← act with
-    | .ok bundle =>
-      let ok := check bundle
-      pure (ok, 0, 0, if ok then none else some "bundle assertion failed")
-    | .error e => pure (false, 0, 0, some e)) .done
+    (check : Env → Bool) : Spec :=
+  it descr do
+    let bundle ← expectOk (← act)
+    expect (check bundle) "bundle assertion failed"
 
 /-- IO test asserting the pack call fails. -/
 private def packErrTest (descr : String) (act : IO (Except String Env)) :
-    TestSeq :=
-  .individualIO descr none (do
+    Spec :=
+  it descr do
     match ← act with
-    | .ok _ => pure (false, 0, 0, some "expected pack to fail")
-    | .error _ => pure (true, 0, 0, none)) .done
+    | .ok _ => fail "expected pack to fail"
+    | .error _ => pure ()
 
-def envPackTests : TestSeq :=
+def envPackTests : LSpec.Spec := do
   let fooName := Ix.Name.mkStr Ix.Name.mkAnon "foo"
   let barName := Ix.Name.mkStr Ix.Name.mkAnon "bar"
   let quxName := Ix.Name.mkStr Ix.Name.mkAnon "qux"
@@ -551,35 +535,30 @@ def envPackTests : TestSeq :=
       && b.getAddr? fooName == some fooAddr
       && (b.getAddr? quxName).isNone
       && b.consts.size == 2
-      && b.assumptions.isEmpty) ++
-  (TestSeq.individualIO "EnvPack: bundle is a removals-only subset under diff"
-    none (do
-      match ← packFixture src "bar" #[] with
-      | .error e => pure (false, 0, 0, some e)
-      | .ok b =>
-        match Ixon.rsDiffEnvs (serEnv! src) (serEnv! b) with
-        | .error e => pure (false, 0, 0, some s!"diff failed: {e}")
-        | .ok d =>
-          let ok := d.mainChanged == some (none, some barAddr)
-            && d.namedRemoved.size == 1
-            && d.namedAdded.isEmpty && d.namedChanged.isEmpty
-            && d.constsOnlyB.isEmpty && d.blobsOnlyB.isEmpty
-          let msg := s!"mainOk={d.mainChanged == some (none, some barAddr)} \
-            removed={d.namedRemoved.map (·.1)} \
-            added={d.namedAdded.map (·.1)} \
-            changed={d.namedChanged.map (·.name)} \
-            constsOnlyB={d.constsOnlyB.size} blobsOnlyB={d.blobsOnlyB.size}"
-          pure (ok, 0, 0, if ok then none else some msg)) .done) ++
+      && b.assumptions.isEmpty)
+  it "EnvPack: bundle is a removals-only subset under diff" do
+    let b ← expectOk (← packFixture src "bar" #[])
+    let d ← expectOk (Ixon.rsDiffEnvs (serEnv! src) (serEnv! b))
+    let ok := d.mainChanged == some (none, some barAddr)
+      && d.namedRemoved.size == 1
+      && d.namedAdded.isEmpty && d.namedChanged.isEmpty
+      && d.constsOnlyB.isEmpty && d.blobsOnlyB.isEmpty
+    let msg := s!"mainOk={d.mainChanged == some (none, some barAddr)} \
+      removed={d.namedRemoved.map (·.1)} \
+      added={d.namedAdded.map (·.1)} \
+      changed={d.namedChanged.map (·.name)} \
+      constsOnlyB={d.constsOnlyB.size} blobsOnlyB={d.blobsOnlyB.size}"
+    expect ok msg
   packTest "EnvPack: assume cut (by name) records assumption"
     (packFixture src "bar" #["foo"]) (fun b =>
       b.main == some barAddr
       && (b.getAddr? fooName).isNone
       && b.consts.size == 1
       && b.assumptions.size == 1
-      && b.assumptions.contains fooAddr) ++
+      && b.assumptions.contains fooAddr)
   packTest "EnvPack: assume cut (by hex address) records assumption"
     (packFixture src "bar" #[toString fooAddr]) (fun b =>
-      b.consts.size == 1 && b.assumptions.contains fooAddr) ++
+      b.consts.size == 1 && b.assumptions.contains fooAddr)
   packTest "EnvPack: anon bundle has no metadata, keeps the value pin"
     (packFixture src "bar" #[] (anon := true)) (fun b =>
       b.main == some barAddr
@@ -587,62 +566,62 @@ def envPackTests : TestSeq :=
       -- The writer always emits the anonymous name as §4 entry 0.
       && b.names.size <= 1
       && b.consts.size == 2
-      && (b.getAddr? barName).isNone) ++
+      && (b.getAddr? barName).isNone)
   packErrTest "EnvPack: unknown root name errors"
-    (packFixture src "nope" #[]) ++
+    (packFixture src "nope" #[])
   packErrTest "EnvPack: main cannot be assumed"
     (packFixture src "bar" #["bar"])
 
 /-! ## Test Suite -/
 
-def suiteWith (cfg : SlimCheck.Configuration := {}) : List TestSeq := [
+set_option compiler.extract_closed false in
+def suiteWith (cfg : LSpec.Prop.PropertyConfig := {}) : Spec := do
   -- Ixon type unit tests
-  ixonDefKindTests,
-  ixonDefinitionSafetyTests,
-  ixonQuotKindTests,
-  ixonUnivTests,
-  ixonExprTests,
-  exprMetaDataTests,
-  exprMetaArenaTests,
-  constantMetaTests,
-  rawEnvTests,
+  ixonDefKindTests
+  ixonDefinitionSafetyTests
+  ixonQuotKindTests
+  ixonUnivTests
+  ixonExprTests
+  exprMetaDataTests
+  exprMetaArenaTests
+  constantMetaTests
+  rawEnvTests
   -- Ixon property tests - recursive & composite types
   -- (finite enums `DefKind`, `DefinitionSafety`, `QuotKind` are exhaustively unit-tested above)
-  checkIO "Ixon.Univ roundtrip" (∀ x : Univ, roundtripIxonUniv x == x) .done cfg,
-  checkIO "Ixon.Expr roundtrip" (∀ x : Expr, roundtripIxonExpr x == x) .done cfg,
-  checkIO "Ixon.Definition roundtrip" (∀ x : Definition, roundtripIxonDefinition x == x) .done cfg,
-  checkIO "Ixon.RecursorRule roundtrip" (∀ x : RecursorRule, roundtripIxonRecursorRule x == x) .done cfg,
-  checkIO "Ixon.Recursor roundtrip" (∀ x : Recursor, roundtripIxonRecursor x == x) .done cfg,
-  checkIO "Ixon.Axiom roundtrip" (∀ x : Axiom, roundtripIxonAxiom x == x) .done cfg,
-  checkIO "Ixon.Quotient roundtrip" (∀ x : Quotient, roundtripIxonQuotient x == x) .done cfg,
-  checkIO "Ixon.Constructor roundtrip" (∀ x : Constructor, roundtripIxonConstructor x == x) .done cfg,
-  checkIO "Ixon.Inductive roundtrip" (∀ x : Inductive, roundtripIxonInductive x == x) .done cfg,
-  checkIO "Ixon.InductiveProj roundtrip" (∀ x : InductiveProj, roundtripIxonInductiveProj x == x) .done cfg,
-  checkIO "Ixon.ConstructorProj roundtrip" (∀ x : ConstructorProj, roundtripIxonConstructorProj x == x) .done cfg,
-  checkIO "Ixon.RecursorProj roundtrip" (∀ x : RecursorProj, roundtripIxonRecursorProj x == x) .done cfg,
-  checkIO "Ixon.DefinitionProj roundtrip" (∀ x : DefinitionProj, roundtripIxonDefinitionProj x == x) .done cfg,
-  checkIO "Ixon.MutConst roundtrip" (∀ x : MutConst, roundtripIxonMutConst x == x) .done cfg,
-  checkIO "Ixon.ConstantInfo roundtrip" (∀ x : ConstantInfo, roundtripIxonConstantInfo x == x) .done cfg,
-  checkIO "Ixon.Constant roundtrip" (∀ x : Constant, roundtripIxonConstant x == x) .done cfg,
-  checkIO "Ixon.DataValue roundtrip" (∀ x : DataValue, roundtripIxonDataValue x == x) .done cfg,
-  checkIO "Ixon.Comm roundtrip" (∀ x : Comm, roundtripIxonComm x == x) .done cfg,
+  propWith "Ixon.Univ roundtrip" cfg fun (x : Univ) => roundtripIxonUniv x == x
+  propWith "Ixon.Expr roundtrip" cfg fun (x : Expr) => roundtripIxonExpr x == x
+  propWith "Ixon.Definition roundtrip" cfg fun (x : Definition) => roundtripIxonDefinition x == x
+  propWith "Ixon.RecursorRule roundtrip" cfg fun (x : RecursorRule) => roundtripIxonRecursorRule x == x
+  propWith "Ixon.Recursor roundtrip" cfg fun (x : Recursor) => roundtripIxonRecursor x == x
+  propWith "Ixon.Axiom roundtrip" cfg fun (x : Axiom) => roundtripIxonAxiom x == x
+  propWith "Ixon.Quotient roundtrip" cfg fun (x : Quotient) => roundtripIxonQuotient x == x
+  propWith "Ixon.Constructor roundtrip" cfg fun (x : Constructor) => roundtripIxonConstructor x == x
+  propWith "Ixon.Inductive roundtrip" cfg fun (x : Inductive) => roundtripIxonInductive x == x
+  propWith "Ixon.InductiveProj roundtrip" cfg fun (x : InductiveProj) => roundtripIxonInductiveProj x == x
+  propWith "Ixon.ConstructorProj roundtrip" cfg fun (x : ConstructorProj) => roundtripIxonConstructorProj x == x
+  propWith "Ixon.RecursorProj roundtrip" cfg fun (x : RecursorProj) => roundtripIxonRecursorProj x == x
+  propWith "Ixon.DefinitionProj roundtrip" cfg fun (x : DefinitionProj) => roundtripIxonDefinitionProj x == x
+  propWith "Ixon.MutConst roundtrip" cfg fun (x : MutConst) => roundtripIxonMutConst x == x
+  propWith "Ixon.ConstantInfo roundtrip" cfg fun (x : ConstantInfo) => roundtripIxonConstantInfo x == x
+  propWith "Ixon.Constant roundtrip" cfg fun (x : Constant) => roundtripIxonConstant x == x
+  propWith "Ixon.DataValue roundtrip" cfg fun (x : DataValue) => roundtripIxonDataValue x == x
+  propWith "Ixon.Comm roundtrip" cfg fun (x : Comm) => roundtripIxonComm x == x
   -- Metadata types (arena-based)
-  checkIO "Ixon.ExprMetaData roundtrip" (∀ x : ExprMetaData, roundtripIxonExprMetaData x == x) .done cfg,
-  checkIO "Ixon.ConstantMeta roundtrip" (∀ x : ConstantMeta, roundtripIxonConstantMeta x == x) .done cfg,
-  checkIO "Ixon.Named roundtrip" (∀ x : Named, roundtripIxonNamed x == x) .done cfg,
+  propWith "Ixon.ExprMetaData roundtrip" cfg fun (x : ExprMetaData) => roundtripIxonExprMetaData x == x
+  propWith "Ixon.ConstantMeta roundtrip" cfg fun (x : ConstantMeta) => roundtripIxonConstantMeta x == x
+  propWith "Ixon.Named roundtrip" cfg fun (x : Named) => roundtripIxonNamed x == x
   ---- RawEnv roundtrip
-  checkIO "Ixon.RawEnv roundtrip" (∀ env : RawEnv, rawEnvEq (roundtripRawEnv env) env) .done cfg,
+  propWith "Ixon.RawEnv roundtrip" cfg fun (env : RawEnv) => rawEnvEq (roundtripRawEnv env) env
   ---- Env diff
-  envDiffTests,
-  checkIO "Ixon.EnvDiff self-diff empty (anon)"
-    (∀ env : RawEnv, selfDiffEmpty false env) .done cfg,
-  checkIO "Ixon.EnvDiff self-diff empty (meta)"
-    (∀ env : RawEnv, selfDiffEmpty true env) .done cfg,
+  envDiffTests
+  propWith "Ixon.EnvDiff self-diff empty (anon)" cfg fun (env : RawEnv) =>
+    selfDiffEmpty false env
+  propWith "Ixon.EnvDiff self-diff empty (meta)" cfg fun (env : RawEnv) =>
+    selfDiffEmpty true env
   ---- Env pack
-  envPackTests,
-]
+  envPackTests
 
-def suite : List TestSeq := suiteWith {}
+def suite : Spec := suiteWith {}
 
 end Tests.FFI.Ixon
 

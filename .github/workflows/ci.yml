@@ -690,7 +690,7 @@ jobs:
           lake env lean --run Scripts/CheckCiFilters.lean --self-test
           lake env lean --run Scripts/CheckCiFilters.lean
       - name: Run primary IxTests
-        run: lake env .lake/build/bin/IxTests
+        run: lake env .lake/build/bin/IxTests -j 16
       - name: Test Ixon contracts and primitives
         run: |
           lake env .lake/build/bin/ixon-primitives

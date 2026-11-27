@@ -528,15 +528,15 @@ normalizer. Closed numeric examples additionally pin a hand-computed result.
 Neutral terms deliberately avoid arithmetic, where Lean and IxVM choose
 different representations for stuck primitives. -/
 def difficultTests (leanEnv : Lean.Environment) (base : Ix.CompileM.CompileEnv)
-    (env : Ixon.Env) (r : Tests.Ix.IxVM.Runner) : IO TestSeq := do
-  let mut seq : TestSeq := .done
+    (env : Ixon.Env) (r : Tests.Ix.IxVM.Runner) : IO Spec := do
+  let mut checks : Array (String × Bool) := #[]
   for name in difficultNumeric.map Prod.fst ++ difficultNeutral do
     let some (.defnInfo info) := leanEnv.find? name
       | throw <| IO.userError s!"expected definition: {name}"
     let expected ← runMeta (Lean.Meta.withTransparency .all (Lean.Meta.reduceAll info.value)) leanEnv
     if let some (_, n) := difficultNumeric.find? (fun p => p.1 == name) then
-      seq := seq ++ test s!"Lean oracle agrees with pinned result: {name}"
-        (expected == .lit (.natVal n))
+      checks := checks.push (s!"Lean oracle agrees with pinned result: {name}",
+        expected == .lit (.natVal n))
     let input ← lookupAddr env name
     let (fixture, obj) ← compiledOutput base env info.levelParams info.type expected
     r.build <| execute s!"Lean differential: {name}" (← witness fixture input obj)
@@ -550,8 +550,8 @@ def difficultTests (leanEnv : Lean.Environment) (base : Ix.CompileM.CompileEnv)
   let input ← lookupAddr env ``Fixtures.wellFoundedTree
   let (fixture, output) ← natOutput env 15
   let opaqueId ← lookupAddr env ``Lean.opaqueId
-  seq := seq ++ test "generated WF fixture contains the opaqueId dependency"
-    ((closureFrom env input).contains opaqueId)
+  checks := checks.push ("generated WF fixture contains the opaqueId dependency",
+    (closureFrom env input).contains opaqueId)
   r.build <| execute "opaque accessibility proof blocks kernel evaluation"
     (← witness fixture input output) (some "result does not match")
   -- This explicit proof does expose constructors to Acc.rec. Meta keeps its
@@ -578,7 +578,9 @@ def difficultTests (leanEnv : Lean.Environment) (base : Ix.CompileM.CompileEnv)
   let input ← lookupAddr env ``Fixtures.openZero
   r.build <| execute "symbolic Nat addition exposes zero after argument reduction"
     (← witness env input (definition natArrow (.leanLam (.ref 0 #[]) (.var 0)) #[nat] 0 #[]))
-  return seq
+  return do
+    for (label, ok) in checks do
+      itBool label ok
 
 private structure GenState where
   seed : UInt64 := 0x4958564d
@@ -621,18 +623,18 @@ private def genNat (fuel : Nat) (locals : List Nat) :
 
 def differentialTests (leanEnv : Lean.Environment) (base : Ix.CompileM.CompileEnv)
     (sharedEnv : Ixon.Env) (r : Tests.Ix.IxVM.Runner)
-    (count : Nat := 24) : IO TestSeq := do
+    (count : Nat := 24) : IO Spec := do
   let ty := Lean.mkConst ``Nat
   let mut state : GenState := {}
-  let mut seq : TestSeq := .done
+  let mut checks : Array (String × Bool) := #[]
   for i in [:count] do
     let seed := state.seed
     let ((value, answer), next) := (genNat 4 []).run state
     state := next
     let label := s!"generated arithmetic {i}, seed {seed}"
     let nf ← runMeta (Lean.Meta.withTransparency .all (Lean.Meta.reduceAll value)) leanEnv
-    seq := seq ++ test s!"Lean agrees with independent numeric oracle: {label}"
-      (nf == .lit (.natVal answer))
+    checks := checks.push (s!"Lean agrees with independent numeric oracle: {label}",
+      nf == .lit (.natVal answer))
     let (input, cache) ← IO.ofExcept (Ix.Commit.compileDef base [] ty value)
     let some bytes := cache.constants[input]? | throw <| IO.userError "missing generated input"
     let c : Ixon.Constant ← IO.ofExcept (Ixon.de bytes)
@@ -644,9 +646,11 @@ def differentialTests (leanEnv : Lean.Environment) (base : Ix.CompileM.CompileEn
     r.build <| execute s!"mutated output: {label}"
       (← witness fixture input wrong) (some "result does not match")
   if count ≥ 24 then
-    seq := seq ++ test "generated corpus covers add/mul/sub/let/beta/div/mod"
-      (state.coverage.all (· > 0))
-  return seq
+    checks := checks.push ("generated corpus covers add/mul/sub/let/beta/div/mod",
+      state.coverage.all (· > 0))
+  return do
+    for (label, ok) in checks do
+      itBool label ok
 
 private def packBundle (env : Ixon.Env) (root : Address) : IO Ixon.Env := do
   let name := Ix.Name.mkStr Ix.Name.mkAnon "_obj"
@@ -665,7 +669,7 @@ private def packBundle (env : Ixon.Env) (root : Address) : IO Ixon.Env := do
 /-- Check the command's printed claim against an independent construction,
 transport both endpoints through ordinary bundles, then execute the claim. -/
 def commandTests (leanEnv : Lean.Environment) (base : Ix.CompileM.CompileEnv)
-    (sharedEnv : Ixon.Env) (r : Tests.Ix.IxVM.Runner) : IO TestSeq := do
+    (sharedEnv : Ixon.Env) (r : Tests.Ix.IxVM.Runner) : IO Spec := do
   let (claim, cache) ← IO.ofExcept (Ix.Commit.evalClaimWithEnv evalCtx base []
     (Lean.mkConst ``Fixtures.arithmetic) (.lit (.natVal 42)) (Lean.mkConst ``Nat))
   let .eval _ input output _ := claim | throw <| IO.userError "expected Eval claim"
@@ -690,31 +694,31 @@ def commandTests (leanEnv : Lean.Environment) (base : Ix.CompileM.CompileEnv)
   let messages ← state.messages.toList.mapM fun msg => do
     pure (msg.severity, ← msg.data.toString)
   let expected := s!"42\n{claim}\ndigest {Address.blake3 (Ix.Claim.ser claim)}"
-  let seq := test "command prints the expected result, Eval claim, and digest"
-    (messages == [(.information, expected)])
+  let msgOk := messages == [(.information, expected)]
   let inputBundle ← packBundle env input
   let outputBundle ← packBundle env output
-  let seq := seq ++ test "bundles retain the claim's individual constant addresses"
-    (inputBundle.main == some input && outputBundle.main == some output)
-    ++ test "output bundle prunes the input and display metadata"
-      (!outputBundle.consts.contains input && outputBundle.named.isEmpty)
+  let retainOk := inputBundle.main == some input && outputBundle.main == some output
+  let pruneOk := !outputBundle.consts.contains input && outputBundle.named.isEmpty
   let transported := { inputBundle with
     consts := outputBundle.consts.fold (fun m k v => m.insert k v) inputBundle.consts
     blobs := outputBundle.blobs.fold (fun m k v => m.insert k v) inputBundle.blobs
     anonHints := outputBundle.anonHints.fold (fun m k v => m.insert k v) inputBundle.anonHints }
   let w ← IO.ofExcept (buildClaimWitness transported claim)
   r.build (execute "command claim after bundle transport" w (exactPin := true))
-  return seq
+  return do
+    itBool "command prints the expected result, Eval claim, and digest" msgOk
+    itBool "bundles retain the claim's individual constant addresses" retainOk
+    itBool "output bundle prunes the input and display metadata" pruneOk
 
 /-- IxC's reader on the same Nat literal blobs as the program: the compiler's
 `[0]` and `[42]` are read, a trailing zero byte and the empty blob are refused
 (`Ix.Kernel.Reader.canonicalNatural`), each output record through the certified
 entry under the default table. -/
-def natBlobParity (env : Ixon.Env) : IO TestSeq := do
+def natBlobParity (env : Ixon.Env) : IO Spec := do
   let some binding := Ix.Kernel.Admission.defaultBinding.toOption
-    | return test "the default role table loads" false
+    | return itBool "the default role table loads" false
   let limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
-  let mut tests := TestSeq.done
+  let mut checks : Array (String × Bool) := #[]
   for (label, blob, canonical) in [("[0]", ByteArray.mk #[0], true), ("[42]", ByteArray.mk #[42], true),
       ("[42, 0]", ByteArray.mk #[42, 0], false), ("[]", ByteArray.empty, false)] do
     let (_, c) ← natBlobOutput env blob
@@ -725,16 +729,19 @@ def natBlobParity (env : Ixon.Env) : IO TestSeq := do
       | .ok _, true => true
       | .error e, false => ((toString e).splitOn "natural literal blob is not canonical").length > 1
       | _, _ => false
-    tests := tests ++ test s!"IxC's reader {if canonical then "reads" else "refuses"} the Nat literal blob {label}"
-      (ok && Ix.Kernel.Reader.canonicalNatural blob == canonical)
-  return tests
+    checks := checks.push (
+      s!"IxC's reader {if canonical then "reads" else "refuses"} the Nat literal blob {label}",
+      ok && Ix.Kernel.Reader.canonicalNatural blob == canonical)
+  return do
+    for (label, ok) in checks do
+      itBool label ok
 
 /-- Run the evaluation suite: `full = false` (PR `ci:ixvm`) runs all handcrafted,
 compiled, difficult, command, and parity cases plus 6 generated arithmetic pairs
 and 4 boundary truncation offsets; `full = true` (`ci:nightly`) runs all 24
 generated arithmetic pairs (`0..23`) and verifies every FFT pin in `evalFftCosts`. -/
 def runWith (leanEnv : Lean.Environment) (suiteName : String) (full : Bool) : IO UInt32 := do
-  let oracles ← IO.mkRef TestSeq.done
+  let oracles ← IO.mkRef (pure () : Spec)
   let genCount := if full then 24 else 6
   -- Compile all Eval fixtures once and attach default role binding & models once.
   let allNames :=
@@ -753,7 +760,7 @@ def runWith (leanEnv : Lean.Environment) (suiteName : String) (full : Bool) : IO
     let generated ← differentialTests leanEnv base sharedEnv r (count := genCount)
     let command ← commandTests leanEnv base sharedEnv r
     let parity ← natBlobParity sharedEnv
-    oracles.set (difficult ++ generated ++ command ++ parity)
+    oracles.set (do difficult; generated; command; parity)
     let labels ← r.labels.get
     for (name, _) in evalFftCosts do
       if !full && name.startsWith "generated arithmetic " then
@@ -761,7 +768,7 @@ def runWith (leanEnv : Lean.Environment) (suiteName : String) (full : Bool) : IO
         if idx?.any (· ≥ genCount) then continue
       unless labels.contains s!"eval accepts {name}" do
         r.fail s!"unused evaluation FFT pin: {name}"
-  let lean ← lspecIO (.ofList [(s!"{suiteName} oracles", [← oracles.get])]) []
+  let lean ← lspecMain (describe s!"{suiteName} oracles" (← oracles.get)) []
   return if code == 0 && lean == 0 then 0 else 1
 
 /-- PR fast evaluation suite. -/

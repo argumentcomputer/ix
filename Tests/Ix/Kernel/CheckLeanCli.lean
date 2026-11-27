@@ -64,7 +64,7 @@ private def check : IO Nat := do
   -- Keep the actual pin adapter's fresh-run/timing path executable on a small
   -- fixture; the historical corpus pin labels and budgets stay unchanged.
   let pin ← Tests.Tc.Pins.checkPin prepared { label := "CliAlias0", budgetMs := 60000 }
-  ensure ((← lspecIO (.ofList [("pin-adapter", [pin])]) []) == 0) "pin adapter failed"
+  ensure ((← lspecMain (describe "pin-adapter" pin) []) == 0) "pin adapter failed"
   let window := prepared.parts.env.consts[twice.addr]!
   let tampered := bytes.set! window.off (bytes[window.off]! ^^^ 1)
   for anon in [false, true] do
@@ -244,9 +244,8 @@ private def check : IO Nat := do
   finally
     IO.FS.removeDirAll dir
 
-def suite : List TestSeq := [
-  .individualIO "authenticated IxC CLI and repeatable prepared callers" none (do
-    let n ← check
-    return (true, n, 0, none)) .done]
+def suite : LSpec.Spec := do
+  it "authenticated IxC CLI and repeatable prepared callers" do
+    let _ ← check
 
 end Tests.Ix.Kernel.CheckLeanCli

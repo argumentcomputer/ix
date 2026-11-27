@@ -168,14 +168,12 @@ private def checkerSupportMatchesNatOpDeps : Bool :=
 
 theorem checkerSupport_matches_natOpDeps : checkerSupportMatchesNatOpDeps = true := by decide
 
-private def report (errors : Array String) (checked : Nat) (what : String) :
-    IO (Bool × Nat × Nat × Option String) := do
+private def report (errors : Array String) (what : String) : AssertM Unit := do
   for e in errors do IO.println s!"[selected-closure] FAIL {e}"
-  return (errors.isEmpty, if errors.isEmpty then checked else 0, checked,
-    if errors.isEmpty then none else some s!"{errors.size} {what} failure(s)")
+  expect errors.isEmpty s!"{errors.size} {what} failure(s)"
 
-def suite : List TestSeq := [
-  .individualIO "selected closures carry the whole unit of PassO2.SA._sizeOf_N" none (do
+def suite : LSpec.Spec := do
+  it "selected closures carry the whole unit of PassO2.SA._sizeOf_N" do
     let env ← getFileEnv fixture
     let units := Ix.EnvScope.unitIndex env.constants
     let required := sizeOfInstances ++ sizeOfUnitSupport
@@ -198,12 +196,11 @@ def suite : List TestSeq := [
     let raw := nameSet (Ix.EnvScope.collectDeps env sizeOfRoots {})
     for n in sizeOfInstances do
       if raw.contains n then errors := errors.push s!"raw negative control carries {n}"
-    report errors (seedSets.length + 1) "unit closure")
-    (.individualIO "selected closures: a matcher's unit, mutual siblings, checker support" none (do
+    report errors "unit closure"
+  it "selected closures: a matcher's unit, mutual siblings, checker support" do
     let env ← get_env!
     let units := Ix.EnvScope.unitIndex env.constants
     let mut errors : Array String := #[]
-    let mut checked := 0
     -- 2. the matcher's unit, and nothing outside it
     let bare := nameSet (Ix.EnvScope.collectSelectedDepsWith env units [``matcher])
     let carried := nameSet (Ix.EnvScope.collectSelectedDepsWith env units [``carriedProof])
@@ -213,10 +210,8 @@ def suite : List TestSeq := [
       errors := errors.push "the bare matcher lost matcher._arg_pusher of its unit"
     if bare.contains ``carriedProof then
       errors := errors.push "the bare matcher pulled its caller carriedProof"
-    checked := checked + 1
     -- 3. mutual siblings
     for (root, sibling) in mutualSeeds do
-      checked := checked + 1
       unless (nameSet (Ix.EnvScope.collectSelectedDepsWith env units [root])).contains sibling do
         errors := errors.push s!"{root}: missing its sibling {sibling}"
     -- 4. checker support
@@ -232,7 +227,6 @@ def suite : List TestSeq := [
       errors := errors.push "raw negative control: landUser's raw closure carries Nat.mul"
     unless selected.contains ``Nat.mul do
       errors := errors.push "landUser's selected closure lacks Nat.mul"
-    checked := checked + 1
     -- 5. self-contained for IxC: an inductive's recursor, and the string-literal
     -- support when a closed constant has a string literal
     unless bare.contains ``Nat.rec do
@@ -248,7 +242,7 @@ def suite : List TestSeq := [
     if selected.contains ``String.ofList then
       errors := errors.push "landUser's selected closure (no string literal) carries String.ofList"
     -- a String literal in a theorem's proof only (`value? (allowOpaque := true)`)
-    let some proofCi := env.find? ``stringInProof | throw (IO.userError "stringInProof missing")
+    let some proofCi := env.find? ``stringInProof | fail "stringInProof missing"
     let isStr : Expr → Bool | .lit (.strVal _) => true | _ => false
     unless (proofCi.type.find? isStr).isNone && Ix.EnvScope.hasStringLiteral proofCi do
       errors := errors.push "stringInProof: the literal is not in its proof only, or is not seen there"
@@ -257,9 +251,7 @@ def suite : List TestSeq := [
       errors := errors.push "stringInProof's closure holds another String literal (the case is vacuous)"
     unless (nameSet (Ix.EnvScope.collectSelectedDepsWith env units [``stringInProof])).contains ``String.ofList do
       errors := errors.push "stringInProof's selected closure (a literal in a proof) lacks String.ofList"
-    checked := checked + 1
-    report errors checked "selected closure") .done)
-]
+    report errors "selected closure"
 
 /-- `compiler-selected-closure-e2e`: the fixture compiled whole and as each
 selected closure of `seedSets`, by the Lean pipeline; the Rust compile of

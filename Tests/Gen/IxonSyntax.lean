@@ -20,7 +20,7 @@ public import Ix.IxonSyntax
 
 public section
 
-open LSpec SlimCheck Gen Ixon.Syntax
+open LSpec LSpec.Prop Gen Ixon.Syntax
 
 namespace Tests.Gen.IxonSyntax
 
@@ -39,16 +39,16 @@ def strPool : Array String :=
     "Except", "def", "weird name", "123", "max"]
 
 def genStrComponent : Gen NameComponent :=
-  .str <$> elements strPool
+  .str <$> Gen.elements! strPool
 
 def genComponent : Gen NameComponent :=
   frequency [
-    (1, .num <$> choose Nat 0 999),
+    (1, .num <$> Gen.chooseNat 0 999),
     (4, genStrComponent)
   ]
 
 def genSName : Gen SName := do
-  let n ← choose Nat 0 2
+  let n ← Gen.chooseNat 0 2
   let mut parts := #[← genStrComponent]
   for _ in [0:n] do
     parts := parts.push (← genComponent)
@@ -61,28 +61,28 @@ def hexChars : Array Char :=
 def genHex (len : Nat) : Gen String := do
   let mut s := ""
   for _ in [0:len] do
-    s := s.push (← elements hexChars)
+    s := s.push (← Gen.elements! hexChars)
   return s
 
 def genHash : Gen HashRef := do
-  return { hex := ← genHex (4 + (← choose Nat 0 11)) }
+  return { hex := ← genHex (4 + (← Gen.chooseNat 0 11)) }
 
 /-- Universe variables: `Str` only; includes `"max"` (must print
     escaped in universe positions). -/
 def genUvar : Gen NameComponent :=
-  .str <$> elements #["u", "v", "w", "max", "weird name"]
+  .str <$> Gen.elements! #["u", "v", "w", "max", "weird name"]
 
 def genUniv : Nat → Gen UnivExpr
   | 0 =>
     frequency [
-      (1, (.nat · {}) <$> choose Nat 0 3),
+      (1, (.nat · {}) <$> Gen.chooseNat 0 3),
       (1, (.var · {}) <$> genUvar)
     ]
   | d + 1 =>
     frequency [
-      (1, (.nat · {}) <$> choose Nat 0 3),
+      (1, (.nat · {}) <$> Gen.chooseNat 0 3),
       (1, (.var · {}) <$> genUvar),
-      (1, do return .add (← genUniv d) (1 + (← choose Nat 0 2)) {}),
+      (1, do return .add (← genUniv d) (1 + (← Gen.chooseNat 0 2)) {}),
       (1, do return .max (← genUniv d) (← genUniv d) {}),
       (1, do return .imax (← genUniv d) (← genUniv d) {})
     ]
@@ -94,7 +94,7 @@ def genCref : Gen ConstRef := do
     else frequency [(1, some <$> genHash), (3, pure none)]
   let levels ← frequency [
     (1, do
-      let n ← choose Nat 1 2
+      let n ← Gen.chooseNat 1 2
       let mut ls := #[]
       for _ in [0:n] do
         ls := ls.push (← genUniv 1)
@@ -121,15 +121,15 @@ def genSort : Gen SortKind :=
     pool. -/
 def genLitString : Gen String :=
   frequency [
-    (3, elements #["", "hi", "line\nbreak", "q\"uote", "tab\there\\"]),
+    (3, Gen.elements! #["", "hi", "line\nbreak", "q\"uote", "tab\there\\"]),
     (1, do
-      let n ← choose Nat 0 12
+      let n ← Gen.chooseNat 0 12
       let mut s := ""
       for _ in [0:n] do
         let c ← frequency [
-          (3, elements #['"', '\\', '\n', '\t', 'a', ' ', '«', '»', '¤']),
-          (2, Char.ofNat <$> choose Nat 0x20 0x7e),
-          (1, Char.ofNat <$> choose Nat 0xa0 0x2fff)
+          (3, Gen.elements! #['"', '\\', '\n', '\t', 'a', ' ', '«', '»', '¤']),
+          (2, Char.ofNat <$> Gen.chooseNat 0x20 0x7e),
+          (1, Char.ofNat <$> Gen.chooseNat 0xa0 0x2fff)
         ]
         s := s.push c
       pure s)
@@ -137,29 +137,29 @@ def genLitString : Gen String :=
 
 def genValueContract : Gen Ixon.ValueContract := do
   return {
-    owned := if (← choose Nat 0 1) == 0 then .unique else .shared
-    locality := if (← choose Nat 0 1) == 0 then .unrestricted else .local }
+    owned := if (← Gen.chooseNat 0 1) == 0 then .unique else .shared
+    locality := if (← Gen.chooseNat 0 1) == 0 then .unrestricted else .local }
 
 def genBinderContract : Gen Ixon.BinderContract := do
-  let uses ← elements #[Ixon.Uses.erased, .linear, .affine, .many]
+  let uses ← Gen.elements! #[Ixon.Uses.erased, .linear, .affine, .many]
   return { uses, value := ← genValueContract }
 
 def genLetContract : Gen Ixon.LetContract := do
   return {
-    nonDep := (← choose Nat 0 1) == 0
-    kind := if (← choose Nat 0 1) == 0 then .value else .borrowShared
+    nonDep := (← Gen.chooseNat 0 1) == 0
+    kind := if (← Gen.chooseNat 0 1) == 0 then .value else .borrowShared
     binder := ← genBinderContract }
 
 mutual
 
 partial def genBinder (depth : Nat) : Gen BinderGroup := do
-  let info ← elements #[Lean.BinderInfo.default, .implicit,
+  let info ← Gen.elements! #[Lean.BinderInfo.default, .implicit,
     .strictImplicit, .instImplicit]
   let names ←
-    if info == Lean.BinderInfo.instImplicit && (← choose Nat 0 1) == 0 then
+    if info == Lean.BinderInfo.instImplicit && (← Gen.chooseNat 0 1) == 0 then
       pure #[]
     else do
-      let n ← choose Nat 1 2
+      let n ← Gen.chooseNat 1 2
       let mut ns := #[]
       for _ in [0:n] do
         ns := ns.push (← genBinderName)
@@ -169,7 +169,7 @@ partial def genBinder (depth : Nat) : Gen BinderGroup := do
 partial def genTerm (depth : Nat) : Gen Term := do
   if depth == 0 then
     frequency [
-      (1, (.natLit · {}) <$> choose Nat 0 1000000),
+      (1, (.natLit · {}) <$> Gen.chooseNat 0 1000000),
       (1, (.strLit · {}) <$> genLitString),
       (1, (.sort · {}) <$> genSort),
       (3, .ref <$> genCref)
@@ -179,19 +179,19 @@ partial def genTerm (depth : Nat) : Gen Term := do
     frequency [
       (1, (.sort · {}) <$> genSort),
       (2, do
-        let n ← choose Nat 1 3
+        let n ← Gen.chooseNat 1 3
         let mut args := #[]
         for _ in [0:n] do
           args := args.push (← genTerm d)
         return .app (← genTerm d) args {}),
       (2, do
-        let n ← choose Nat 1 2
+        let n ← Gen.chooseNat 1 2
         let mut bs := #[]
         for _ in [0:n] do
           bs := bs.push (← genBinder d)
         return .lam bs (← genTerm d) {}),
       (1, do
-        let n ← choose Nat 1 2
+        let n ← Gen.chooseNat 1 2
         let mut bs := #[]
         for _ in [0:n] do
           bs := bs.push (← genBinder d)
@@ -200,14 +200,14 @@ partial def genTerm (depth : Nat) : Gen Term := do
       (1, do
         return .letE (← genLetContract) (← genBinderName)
           (← genTerm d) (← genTerm d) (← genTerm d) {}),
-      (1, do return .proj (← genCref) (← choose Nat 0 7) (← genTerm d) {}),
+      (1, do return .proj (← genCref) (← Gen.chooseNat 0 7) (← genTerm d) {}),
       (1, .ref <$> genCref)
     ]
 
 end
 
 def genUParams : Gen (Array UParam) := do
-  let n ← choose Nat 0 2
+  let n ← Gen.chooseNat 0 2
   let mut out := #[]
   for _ in [0:n] do
     out := out.push { name := ← genUvar }
@@ -218,85 +218,85 @@ def genName? : Gen (Option SName) :=
 
 /-- The parser rejects `partial` on non-`def` and unsafe+partial. -/
 def genModifiers (kw : DefKw) : Gen Modifiers := do
-  match ← choose Nat 0 3 with
+  match ← Gen.chooseNat 0 3 with
   | 0 => return { isUnsafe := true }
   | 1 => if kw == .defn then return { isPartial := true } else return {}
   | _ => return {}
 
 def genDefDecl (depth : Nat) : Gen DefDecl := do
-  let kw ← elements #[DefKw.defn, .thm, .opaq]
+  let kw ← Gen.elements! #[DefKw.defn, .thm, .opaq]
   return { kw, mods := ← genModifiers kw, name := ← genName?
            uparams := ← genUParams, ty := ← genTerm depth
            value := ← genTerm depth }
 
 def genIndDecl (depth : Nat) : Gen IndDecl := do
-  let nCtors ← choose Nat 0 2
+  let nCtors ← Gen.chooseNat 0 2
   let mut ctors := #[]
   for _ in [0:nCtors] do
     ctors := ctors.push
-      { name := ← genName?, params := ← choose Nat 0 3
-        fields := ← choose Nat 0 3, ty := ← genTerm depth }
-  return { isUnsafe := (← choose Nat 0 1) == 0, name := ← genName?
-           uparams := ← genUParams, params := ← choose Nat 0 3
-           indices := ← choose Nat 0 3, ty := ← genTerm depth, ctors }
+      { name := ← genName?, params := ← Gen.chooseNat 0 3
+        fields := ← Gen.chooseNat 0 3, ty := ← genTerm depth }
+  return { isUnsafe := (← Gen.chooseNat 0 1) == 0, name := ← genName?
+           uparams := ← genUParams, params := ← Gen.chooseNat 0 3
+           indices := ← Gen.chooseNat 0 3, ty := ← genTerm depth, ctors }
 
 def genRecrDecl (depth : Nat) : Gen RecrDecl := do
-  let nRules ← choose Nat 0 2
+  let nRules ← Gen.chooseNat 0 2
   let mut rules := #[]
   for _ in [0:nRules] do
     rules := rules.push
-      { fields := ← choose Nat 0 3, rhs := ← genTerm depth }
-  return { isUnsafe := (← choose Nat 0 1) == 0, name := ← genName?
-           uparams := ← genUParams, params := ← choose Nat 0 3
-           indices := ← choose Nat 0 3, motives := 1 + (← choose Nat 0 1)
-           minors := ← choose Nat 0 3, k := (← choose Nat 0 1) == 0
+      { fields := ← Gen.chooseNat 0 3, rhs := ← genTerm depth }
+  return { isUnsafe := (← Gen.chooseNat 0 1) == 0, name := ← genName?
+           uparams := ← genUParams, params := ← Gen.chooseNat 0 3
+           indices := ← Gen.chooseNat 0 3, motives := 1 + (← Gen.chooseNat 0 1)
+           minors := ← Gen.chooseNat 0 3, k := (← Gen.chooseNat 0 1) == 0
            ty := ← genTerm depth, rules }
 
 def genDecl (depth : Nat) : Gen Decl := do
-  match ← choose Nat 0 7 with
+  match ← Gen.chooseNat 0 7 with
   | 0 | 1 => .defn <$> genDefDecl depth
   | 2 =>
-    return .axio { isUnsafe := (← choose Nat 0 1) == 0
+    return .axio { isUnsafe := (← Gen.chooseNat 0 1) == 0
                    name := ← genName?, uparams := ← genUParams
                    ty := ← genTerm depth }
   | 3 =>
-    return .quot { kind := ← elements #[QuotKindKw.type, .ctor, .lift, .ind]
+    return .quot { kind := ← Gen.elements! #[QuotKindKw.type, .ctor, .lift, .ind]
                    name := ← genName?, uparams := ← genUParams
                    ty := ← genTerm depth }
   | 4 => .indc <$> genIndDecl depth
   | 5 => .recr <$> genRecrDecl depth
   | 6 => do
-    let n ← choose Nat 1 2
+    let n ← Gen.chooseNat 1 2
     let mut members := #[]
     for _ in [0:n] do
-      let m ← match ← choose Nat 0 2 with
+      let m ← match ← Gen.chooseNat 0 2 with
         | 0 => Decl.indc <$> genIndDecl depth
         | 1 => Decl.recr <$> genRecrDecl depth
         | _ => Decl.defn <$> genDefDecl depth
       members := members.push m
     return .muts members {}
   | _ => do
-    let kind ← elements #[PrjKind.dprj, .iprj, .cprj, .rprj]
+    let kind ← Gen.elements! #[PrjKind.dprj, .iprj, .cprj, .rprj]
     let cidx ←
-      if kind == .cprj then some <$> choose Nat 0 7 else pure none
+      if kind == .cprj then some <$> Gen.chooseNat 0 7 else pure none
     return .prj { kind, name := ← genName?, block := ← genHash
-                  idx := ← choose Nat 0 7, cidx }
+                  idx := ← Gen.chooseNat 0 7, cidx }
 
 def genImport : Gen ImportDecl := do
   return { prefixName := ← frequency [(1, some <$> genSName), (1, pure none)]
            hash := { hex := ← genHex 64 } }
 
 def genFile : Gen File := do
-  let nImports ← choose Nat 0 2
+  let nImports ← Gen.chooseNat 0 2
   let mut imports := #[]
   for _ in [0:nImports] do
     imports := imports.push (← genImport)
-  let nDecls ← choose Nat 0 3
+  let nDecls ← Gen.chooseNat 0 3
   let mut decls := #[]
   for _ in [0:nDecls] do
     decls := decls.push (← genDecl 2)
   let main ←
-    if (← choose Nat 0 2) == 0 then
+    if (← Gen.chooseNat 0 2) == 0 then
       pure (some { value := ← genTerm 2, ty := ← genTerm 2 : MainExpr })
     else pure none
   return { version := VERSION, imports, decls, main }
@@ -383,13 +383,11 @@ instance : Shrinkable File where
         out := out ++ [{ f with decls := f.decls.set! i s }]
     return out
 
-/-! ## SampleableExt instances -/
+/-! ## Sampleable instances -/
 
-instance : SampleableExt Term :=
-  SampleableExt.mkSelfContained (genTerm 4)
+instance : Sampleable Term := ⟨(genTerm 4)⟩
 
-instance : SampleableExt File :=
-  SampleableExt.mkSelfContained genFile
+instance : Sampleable File := ⟨genFile⟩
 
 /-- Fuzz input: strings biased toward syntax-relevant characters
     (delimiters, escapes, digits, unicode) — a sharper boundary walk
@@ -404,13 +402,13 @@ def fuzzChars : Array Char :=
     'a', 'x', 'f', '0', '1', '9', 'α', 'd', 'e', 'u', 'n', '-', '/']
 
 def genFuzz : Gen Fuzz := do
-  let n ← choose Nat 0 60
+  let n ← Gen.chooseNat 0 60
   let mut s := ""
   for _ in [0:n] do
     let c ← frequency [
-      (6, elements fuzzChars),
-      (1, Char.ofNat <$> choose Nat 0x20 0x7e),
-      (1, Char.ofNat <$> choose Nat 0xa0 0x2fff)
+      (6, Gen.elements! fuzzChars),
+      (1, Char.ofNat <$> Gen.chooseNat 0x20 0x7e),
+      (1, Char.ofNat <$> Gen.chooseNat 0xa0 0x2fff)
     ]
     s := s.push c
   return ⟨s⟩
@@ -424,7 +422,7 @@ instance : Shrinkable Fuzz where
        ⟨String.ofList (l.drop (l.length / 2))⟩,
        ⟨String.ofList l.tail⟩]
 
-instance : SampleableExt Fuzz := SampleableExt.mkSelfContained genFuzz
+instance : Sampleable Fuzz := ⟨genFuzz⟩
 
 /-- A batch of (position, pool-index) char mutations for the
     near-valid fuzz property. -/
@@ -433,15 +431,15 @@ structure Muts where
   deriving Repr, Inhabited
 
 def genMuts : Gen Muts := do
-  let n ← choose Nat 0 6
+  let n ← Gen.chooseNat 0 6
   let mut out : List (Nat × Nat) := []
   for _ in [0:n] do
-    out := (← choose Nat 0 100000, ← choose Nat 0 1000) :: out
+    out := (← Gen.chooseNat 0 100000, ← Gen.chooseNat 0 1000) :: out
   return ⟨out⟩
 
 instance : Shrinkable Muts where
   shrink m := if m.muts.isEmpty then [] else [⟨m.muts.tail⟩]
 
-instance : SampleableExt Muts := SampleableExt.mkSelfContained genMuts
+instance : Sampleable Muts := ⟨genMuts⟩
 
 end Tests.Gen.IxonSyntax

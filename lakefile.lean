@@ -22,7 +22,7 @@ require «certifri-proofs» from git
   "https://github.com/argumentcomputer/CertiFRI" @ "a835ba93059df440df04570298103a591abb9573" / "Proofs"
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "d8eb3e0d9a8e33fc116e6700df0418a1d8114508"
+  "https://github.com/argumentcomputer/LSpec" @ "7ad87bdfb358253a731f6730d62b0acdcdbf84d8"
 
 /- The pinned package supplies the pure Lean hash and host C/Rust
 accelerators. -/
@@ -378,7 +378,8 @@ lean_exe «fri-security» where
 
 section Tests
 
-lean_lib Tests
+lean_lib Tests where
+  moreLeanArgs := #["-Dcompiler.extract_closed=false"]
 
 /-- The certified entry's host cases (`Tests.Ix.Kernel.EntryCaseDefs`), built as a
 library of their own so that suites can import them at run time (some host cases
