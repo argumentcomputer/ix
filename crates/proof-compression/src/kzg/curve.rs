@@ -313,7 +313,7 @@ impl KzgCurve for Bn254 {
     b"init-fri-kzg-bn254/v1/development-srs/quotient2";
   const FIXED_CACHE_DOMAIN: &'static [u8] = b"ix/kzg-fixed-cache/bn254/v1";
   const OUTER_SEED: &'static [u8] = b"init-kzg-recursive-bn254-v1";
-  const OUTER_VK_VERSION: u32 = 7;
+  const OUTER_VK_VERSION: u32 = 8;
   const OUTER_VK_NAMESPACE: &'static str = "init-kzg-recursive-bn254-profile";
   const RECURSIVE_PROOF_TAG: &'static [u8; 8] = b"IXBN\0\0\0\x01";
   const PLONK_PROOF_TAG: &'static [u8; 8] = b"IXBN\0\0\0\x02";
@@ -451,7 +451,7 @@ impl KzgCurve for Bls12381 {
     b"init-fri-kzg-ordinary-v1/development-srs/quotient2";
   const FIXED_CACHE_DOMAIN: &'static [u8] = b"ix/kzg-fixed-cache/v5";
   const OUTER_SEED: &'static [u8] = b"init-kzg-recursive-v1";
-  const OUTER_VK_VERSION: u32 = 6;
+  const OUTER_VK_VERSION: u32 = 7;
   const OUTER_VK_NAMESPACE: &'static str = "init-kzg-recursive-profile";
   const RECURSIVE_PROOF_TAG: &'static [u8; 8] = b"IXCMP\0\0\x04";
   const PLONK_PROOF_TAG: &'static [u8; 8] = b"IXCMP\0\0\x05";
