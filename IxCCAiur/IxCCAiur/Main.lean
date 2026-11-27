@@ -149,7 +149,7 @@ def runTypedWide (o : Options) (front : Driver.Front) (baseSched : Schedule.Circ
   }
   let start ← IO.monoMsNow
   let comp := o.compression
-  let (lowered, shapeAccepted, entry, exportRep, resolvedGroups, aliasSpec?) ←
+  let (lowered, advice?, shapeAccepted, entry, exportRep, resolvedGroups, aliasSpec?) ←
     if o.enableGuesses then
       let res ← IO.ofExcept (Driver.linkTypedWithGuesses front.levels.src fir 0 sched
         o.inlineFuse o.partialEval o.fieldLower o.field comp)
@@ -157,12 +157,12 @@ def runTypedWide (o : Options) (front : Driver.Front) (baseSched : Schedule.Circ
       IO.println s!"guesses: rewritten {res.resolved.length} ({chs}), skipped {res.skipped.length}"
       for (cid, reason) in res.skipped do
         IO.println s!"guesses: skipped cid={cid}: {reason}"
-      pure (res.linked.lowered, res.linked.shapeAccepted, res.linked.entry,
+      pure (res.linked.lowered, res.advice, res.linked.shapeAccepted, res.linked.entry,
         res.linked.exportRep, res.linked.resolvedGroups, res.linked.aliasSpec?)
     else
       let res ← IO.ofExcept (Driver.lowerTyped front.levels.src fir 0 sched
         o.inlineFuse o.partialEval o.fieldLower o.field comp)
-      pure (res.lowered, res.shapeAccepted, res.entry, res.exportRep,
+      pure (res.lowered, none, res.shapeAccepted, res.entry, res.exportRep,
         res.resolvedGroups, res.aliasSpec?)
   IO.println s!"lowered (typed, field {o.field.label}, inline-fuse {o.inlineFuse}, \
     partial-eval {o.partialEval}, field-lower {o.fieldLower}, guesses {o.enableGuesses}, \
@@ -208,6 +208,16 @@ def runTypedWide (o : Options) (front : Driver.Front) (baseSched : Schedule.Circ
         | .ok (some a), .ok (_, some b) => a == b
         | _, _ => false
     IO.println s!"agree: {agree}"
+  if let some advPath := o.adviceOut then
+    match advice? with
+    | some adv =>
+      let advStart ← IO.monoMsNow
+      let advBytes ← IO.ofExcept (Driver.compileAdvicePackageForField o.field adv)
+      Aiur.Artifact.write advPath advBytes
+      IO.println s!"advice ({o.field.label}): {advPath}, {advBytes.size} bytes, entries {adv.entries} \
+        ({(← IO.monoMsNow) - advStart} ms)"
+    | none =>
+      IO.println s!"advice ({o.field.label}): skipped writing {advPath} (no guesses rewritten)"
   if let some path := o.out then
     unless world.ok do
       IO.eprintln "ixcc-aiur: the world check failed; no package written"

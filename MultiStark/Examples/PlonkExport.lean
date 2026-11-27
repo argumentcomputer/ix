@@ -346,19 +346,24 @@ def runFor (p : Nat) [Fact (Nat.Prime p)] (args : List String) (check sharedMaps
       let b := getU32 part (o + 4)
       let c := getU32 part (o + 8)
       let sel := part[o + 12]!.toNat
-      for x in [a, b, c] do
-        if kind[x]! == 255 && preset[x]! == 1 then kind := kind.set! x 2
-      let un := ([a, b, c].filter fun x => kind[x]! == 255).eraseDups
-      match un with
-      | [] => pure ()
-      | [u] =>
-          let lin := (a == u && sel &&& 1 != 0) || (b == u && sel &&& 2 != 0) || (c == u && sel &&& 4 != 0) ||
-            (sel &&& 8 != 0 && ((a == u) != (b == u)))
-          if lin then kind := kind.set! u 1; hx := hx.set! u gi.toUInt32
-          else kind := kind.set! u 4; free := free + 1
-      | us =>
-          multi := multi + 1
-          for u in us do kind := kind.set! u 4
+      if kind[a]! == 255 && preset[a]! == 1 then kind := kind.set! a 2
+      if kind[b]! == 255 && preset[b]! == 1 then kind := kind.set! b 2
+      if kind[c]! == 255 && preset[c]! == 1 then kind := kind.set! c 2
+      let ka := kind[a]! == 255
+      let kb := kind[b]! == 255 && b != a
+      let kc := kind[c]! == 255 && c != a && c != b
+      let unCount := (if ka then 1 else 0) + (if kb then 1 else 0) + (if kc then 1 else 0)
+      if unCount == 1 then
+        let u := if ka then a else if kb then b else c
+        let lin := (a == u && sel &&& 1 != 0) || (b == u && sel &&& 2 != 0) || (c == u && sel &&& 4 != 0) ||
+          (sel &&& 8 != 0 && ((a == u) != (b == u)))
+        if lin then kind := kind.set! u 1; hx := hx.set! u gi.toUInt32
+        else kind := kind.set! u 4; free := free + 1
+      else if unCount > 1 then
+        multi := multi + 1
+        if ka then kind := kind.set! a 4
+        if kb then kind := kind.set! b 4
+        if kc then kind := kind.set! c 4
       gi := gi + 1
   let mut unused := 0
   for x in [0:nWires] do

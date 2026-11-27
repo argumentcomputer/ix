@@ -1040,6 +1040,26 @@ def compileAdvicePackage (adv : AdviceLinked) : Except String ByteArray := do
   let execution ← adv.prepared.exportExecution
   Aiur.Artifact.package execution modulus ZMod.val none
 
+/-- Serialize a bytecode-only advice package over any prime field `ZMod p` (Goldilocks,
+BN254 `Fr`, or BLS12-381 `Fr`) for zero-hardcoding host advice execution. -/
+def compileAdvicePackageForPrime (p : Nat) [Fact (Nat.Prime p)] (adv : AdviceLinked) :
+    Except String ByteArray := do
+  let prog := TypedLower.linkedProgram (ZMod p) adv.lowered
+  let prepared ← Aiur.Modules.prepare prog adv.entries
+  let execution ← prepared.exportExecution
+  if p ≥ 2 ^ 64 then
+    Aiur.Artifact.packageWide execution p ZMod.val none
+  else
+    Aiur.Artifact.package execution p ZMod.val none
+
+/-- Serialize a bytecode-only advice package for the selected `FieldTarget`. -/
+def compileAdvicePackageForField (target : FieldTarget) (adv : AdviceLinked) :
+    Except String ByteArray :=
+  match target with
+  | .goldilocks => compileAdvicePackage adv
+  | .bn254 => compileAdvicePackageForPrime FieldLower.bn254Modulus adv
+  | .bls12381 => compileAdvicePackageForPrime FieldLower.bls12381Modulus adv
+
 /-- Result of typed lowering with Phase 2.2d Tier-2 `guess` rewriting enabled. -/
 structure TypedLinkedWithGuesses where
   linked : TypedLinked
