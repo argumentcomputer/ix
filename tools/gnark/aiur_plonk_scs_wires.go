@@ -2,7 +2,8 @@
 
 package main
 
-// Prover-side values of the non-input wires of an `ix-aiur-scs-v1` circuit.
+// Prover-side values of the non-input wires of an `ix-aiur-scs-v1` circuit
+// (over either BN254 Fr or BLS12-381 Fr).
 //
 // Every wire that is not an input is the output of a gnark hint, which adds
 // no constraint: the file's gates, added by aiurScsCircuit.Define, are the
@@ -30,6 +31,7 @@ import (
 	"fmt"
 	"math/big"
 
+	blsfr "github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	"github.com/consensys/gnark/constraint/solver"
 	"github.com/consensys/gnark/frontend"
@@ -44,36 +46,56 @@ func init() {
 var aiurScsDivBatch = 1024
 var aiurScsChainSegment = 1 << 14
 
-type aiurScsTerm struct {
-	w uint32
-	c fr.Element
+type aiurScsElem[T any] interface {
+	*T
+	SetBigInt(*big.Int) *T
+	BigInt(*big.Int) *big.Int
+	SetInt64(int64) *T
+	SetOne() *T
+	IsZero() bool
+	IsOne() bool
+	Add(*T, *T) *T
+	Mul(*T, *T) *T
+	Neg(*T) *T
+	Inverse(*T) *T
 }
 
-// aiurScsForm is gate gate solved for u. With div unset, u = Σ c·w +
+type aiurScsWireBuilder interface {
+	wire(x uint32, gate int) (frontend.Variable, error)
+	post(api frontend.API, gamma frontend.Variable) error
+	stats() string
+}
+
+type aiurScsTerm[T any] struct {
+	w uint32
+	c T
+}
+
+// aiurScsForm is gate solved for u. With div unset, u = Σ c·w +
 // pc·w[pa]·w[pb] (when prod) + k. With div set, u·(d0 + dc·w[dw]) = Σ c·w + k.
-type aiurScsForm struct {
-	terms  [3]aiurScsTerm
+type aiurScsForm[T comparable, P aiurScsElem[T]] struct {
+	terms  [3]aiurScsTerm[T]
 	n      int
 	prod   bool
 	pa, pb uint32
-	pc, k  fr.Element
+	pc, k  T
 	div    bool
 	dw     uint32
-	d0, dc fr.Element
+	d0, dc T
 }
 
-func (f *aiurScsForm) quotient() bool {
-	return f.div && f.d0.IsZero() && f.n == 1 && f.k.IsZero()
+func (f *aiurScsForm[T, P]) quotient() bool {
+	return f.div && P(&f.d0).IsZero() && f.n == 1 && P(&f.k).IsZero()
 }
 
 // link is the term of coefficient 1 that a chain link adds its other term
 // to, or −1.
-func (f *aiurScsForm) link() int {
-	if f.div || f.prod || f.n != 2 || !f.k.IsZero() {
+func (f *aiurScsForm[T, P]) link() int {
+	if f.div || f.prod || f.n != 2 || !P(&f.k).IsZero() {
 		return -1
 	}
 	for i := range 2 {
-		if f.terms[i].c.IsOne() {
+		if P(&f.terms[i].c).IsOne() {
 			return i
 		}
 	}
@@ -96,12 +118,12 @@ type aiurScsChain struct {
 	units  []int32
 }
 
-type aiurScsWires struct {
+type aiurScsWires[T comparable, P aiurScsElem[T]] struct {
 	api         frontend.API
 	s           *aiurScs
 	v           []frontend.Variable
-	coeff       []fr.Element
-	inverse     map[fr.Element]fr.Element
+	coeff       []T
+	inverse     map[T]T
 	afterCommit bool
 	// unit[x] is the index of x's group in units, or −1.
 	unit  []int32
@@ -111,24 +133,31 @@ type aiurScsWires struct {
 	dissolved int
 }
 
-func newAiurScsWires(api frontend.API, s *aiurScs, v []frontend.Variable) *aiurScsWires {
-	p := &aiurScsWires{api: api, s: s, v: v, coeff: make([]fr.Element, len(s.Coeffs)), inverse: map[fr.Element]fr.Element{}}
+func newAiurScsWires(api frontend.API, s *aiurScs, v []frontend.Variable) aiurScsWireBuilder {
+	if api.Compiler().Field().Cmp(blsfr.Modulus()) == 0 {
+		return newAiurScsWiresTyped[blsfr.Element, *blsfr.Element](api, s, v)
+	}
+	return newAiurScsWiresTyped[fr.Element, *fr.Element](api, s, v)
+}
+
+func newAiurScsWiresTyped[T comparable, P aiurScsElem[T]](api frontend.API, s *aiurScs, v []frontend.Variable) *aiurScsWires[T, P] {
+	p := &aiurScsWires[T, P]{api: api, s: s, v: v, coeff: make([]T, len(s.Coeffs)), inverse: map[T]T{}}
 	for i := range s.Coeffs {
-		p.coeff[i].SetBigInt(&s.Coeffs[i])
+		P(&p.coeff[i]).SetBigInt(&s.Coeffs[i])
 	}
 	return p
 }
 
-func aiurScsBig(x *fr.Element) *big.Int { return x.BigInt(new(big.Int)) }
+func aiurScsBig[T any, P aiurScsElem[T]](x P) *big.Int { return x.BigInt(new(big.Int)) }
 
-func (p *aiurScsWires) hint(f solver.Hint, n int, in ...frontend.Variable) ([]frontend.Variable, error) {
+func (p *aiurScsWires[T, P]) hint(f solver.Hint, n int, in ...frontend.Variable) ([]frontend.Variable, error) {
 	return p.api.Compiler().NewHint(f, n, in...)
 }
 
-// wire is the variable of x as gate gate reads it. Before the commitment a
+// wire is the variable of x as gate reads it. Before the commitment a
 // solved wire is created at its solve gate; after it, any determined wire is
 // created (with what it depends on) when first read.
-func (p *aiurScsWires) wire(x uint32, gate int) (frontend.Variable, error) {
+func (p *aiurScsWires[T, P]) wire(x uint32, gate int) (frontend.Variable, error) {
 	if p.v[x] != nil {
 		return p.v[x], nil
 	}
@@ -153,7 +182,7 @@ func (p *aiurScsWires) wire(x uint32, gate int) (frontend.Variable, error) {
 	return nil, fmt.Errorf("Aiur SCS gate %d reads wire %d (kind %d) before it is determined", gate, x, kind)
 }
 
-func (p *aiurScsWires) setOut(x uint32, out []frontend.Variable, err error) (frontend.Variable, error) {
+func (p *aiurScsWires[T, P]) setOut(x uint32, out []frontend.Variable, err error) (frontend.Variable, error) {
 	if err != nil {
 		return nil, err
 	}
@@ -161,19 +190,19 @@ func (p *aiurScsWires) setOut(x uint32, out []frontend.Variable, err error) (fro
 	return out[0], nil
 }
 
-func (p *aiurScsWires) inv(a *fr.Element) fr.Element {
+func (p *aiurScsWires[T, P]) inv(a P) T {
 	if r, ok := p.inverse[*a]; ok {
 		return r
 	}
-	var r fr.Element
-	r.Inverse(a)
+	var r T
+	P(&r).Inverse(a)
 	p.inverse[*a] = r
 	return r
 }
 
-func (p *aiurScsWires) form(gate int, u uint32) (f aiurScsForm, err error) {
+func (p *aiurScsWires[T, P]) form(gate int, u uint32) (f aiurScsForm[T, P], err error) {
 	g := p.s.gate(gate)
-	al, be, om := &p.coeff[g.Al], &p.coeff[g.Be], &p.coeff[g.Om]
+	al, be, om := P(&p.coeff[g.Al]), P(&p.coeff[g.Be]), P(&p.coeff[g.Om])
 	sL, sR, sO, sM := g.Sel&1 != 0, g.Sel&2 != 0, g.Sel&4 != 0, g.Sel&8 != 0
 	ua, ub, uc := g.A == u, g.B == u, g.C == u
 	if !ua && !ub && !uc {
@@ -182,23 +211,23 @@ func (p *aiurScsWires) form(gate int, u uint32) (f aiurScsForm, err error) {
 	if sM && ua && ub {
 		return f, fmt.Errorf("Aiur SCS gate %d is quadratic in wire %d", gate, u)
 	}
-	var A fr.Element
+	var A T
 	if ua && sL {
-		A.Add(&A, al)
+		P(&A).Add(&A, al)
 	}
 	if ub && sR {
-		A.Add(&A, be)
+		P(&A).Add(&A, be)
 	}
 	if uc && sO {
-		A.Add(&A, om)
+		P(&A).Add(&A, om)
 	}
-	var qM fr.Element
+	var qM T
 	if sM {
-		qM.Mul(al, be)
+		P(&qM).Mul(al, be)
 	}
-	f.k.SetInt64(int64(g.QC))
-	add := func(c *fr.Element, w uint32) {
-		f.terms[f.n] = aiurScsTerm{w: w, c: *c}
+	P(&f.k).SetInt64(int64(g.QC))
+	add := func(c P, w uint32) {
+		f.terms[f.n] = aiurScsTerm[T]{w: w, c: *c}
 		f.n++
 	}
 	if !ua && sL {
@@ -210,40 +239,40 @@ func (p *aiurScsWires) form(gate int, u uint32) (f aiurScsForm, err error) {
 	if !uc && sO {
 		add(om, g.C)
 	}
-	var scale fr.Element
+	var scale T
 	if sM && ua != ub {
 		f.div, f.d0, f.dc, f.dw = true, A, qM, g.A
 		if ua {
 			f.dw = g.B
 		}
-		scale.SetOne()
+		P(&scale).SetOne()
 	} else {
-		if A.IsZero() {
+		if P(&A).IsZero() {
 			return f, fmt.Errorf("Aiur SCS gate %d does not determine wire %d", gate, u)
 		}
 		scale = p.inv(&A)
 		if sM && !ua && !ub {
 			f.prod, f.pa, f.pb, f.pc = true, g.A, g.B, qM
-			f.pc.Mul(&f.pc, &scale)
-			f.pc.Neg(&f.pc)
+			P(&f.pc).Mul(&f.pc, &scale)
+			P(&f.pc).Neg(&f.pc)
 		}
 	}
-	scale.Neg(&scale)
+	P(&scale).Neg(&scale)
 	for i := 0; i < f.n; i++ {
-		f.terms[i].c.Mul(&f.terms[i].c, &scale)
+		P(&f.terms[i].c).Mul(&f.terms[i].c, &scale)
 	}
-	f.k.Mul(&f.k, &scale)
+	P(&f.k).Mul(&f.k, &scale)
 	return f, nil
 }
 
 // term is c·w for an existing wire w (a hint input, no constraint).
-func (p *aiurScsWires) term(t aiurScsTerm) frontend.Variable {
-	return p.api.Mul(p.v[t.w], aiurScsBig(&t.c))
+func (p *aiurScsWires[T, P]) term(t aiurScsTerm[T]) frontend.Variable {
+	return p.api.Mul(p.v[t.w], aiurScsBig[T, P](&t.c))
 }
 
 // single creates the hint of solved or bit wire x, all of whose inputs
 // exist.
-func (p *aiurScsWires) single(x uint32) error {
+func (p *aiurScsWires[T, P]) single(x uint32) error {
 	kind, a, b := p.s.hint(x)
 	if kind == aiurScsBit {
 		out, err := p.hint(aiurScsBitHint, 1, int(b), p.v[a])
@@ -260,13 +289,13 @@ func (p *aiurScsWires) single(x uint32) error {
 	var in []frontend.Variable
 	h := aiurScsSumHint
 	if f.prod {
-		in, h = append(in, p.term(aiurScsTerm{w: f.pa, c: f.pc}), p.v[f.pb]), aiurScsProductHint
+		in, h = append(in, p.term(aiurScsTerm[T]{w: f.pa, c: f.pc}), p.v[f.pb]), aiurScsProductHint
 	}
 	for i := 0; i < f.n; i++ {
 		in = append(in, p.term(f.terms[i]))
 	}
-	if !f.k.IsZero() || len(in) == 0 {
-		in = append(in, aiurScsBig(&f.k))
+	if !P(&f.k).IsZero() || len(in) == 0 {
+		in = append(in, aiurScsBig[T, P](&f.k))
 	}
 	out, err := p.hint(h, 1, in...)
 	_, err = p.setOut(x, out, err)
@@ -275,7 +304,7 @@ func (p *aiurScsWires) single(x uint32) error {
 
 // general solves x through aiurScsSolveHint, which reads the gate's selector
 // code and coefficients as inputs.
-func (p *aiurScsWires) general(x uint32, gate int) error {
+func (p *aiurScsWires[T, P]) general(x uint32, gate int) error {
 	s := p.s
 	g := s.gate(gate)
 	mask := 0
@@ -289,7 +318,7 @@ func (p *aiurScsWires) general(x uint32, gate int) error {
 	}
 	code := int(g.Sel) | mask<<4 | (int(g.QC)+128)<<8
 	inputs[0] = code
-	if inv, ok := aiurScsSolveInverse(uint64(code), &s.Coeffs[g.Al], &s.Coeffs[g.Be], &s.Coeffs[g.Om]); ok {
+	if inv, ok := aiurScsSolveInverseFor[T, P](uint64(code), &s.Coeffs[g.Al], &s.Coeffs[g.Be], &s.Coeffs[g.Om]); ok {
 		inputs[4] = inv
 	}
 	out, err := p.hint(aiurScsSolveHint, 1, inputs...)
@@ -298,7 +327,7 @@ func (p *aiurScsWires) general(x uint32, gate int) error {
 }
 
 // reads appends the wires whose values x's hint reads.
-func (p *aiurScsWires) reads(x uint32, out []uint32) ([]uint32, error) {
+func (p *aiurScsWires[T, P]) reads(x uint32, out []uint32) ([]uint32, error) {
 	kind, a, _ := p.s.hint(x)
 	if kind == aiurScsBit {
 		return append(out, a), nil
@@ -336,7 +365,7 @@ func aiurScsSlotRead(sel uint8, k int) bool {
 
 // deps appends the wires that x's group (or x alone) reads and that do not
 // exist yet.
-func (p *aiurScsWires) deps(x uint32, out []uint32) ([]uint32, error) {
+func (p *aiurScsWires[T, P]) deps(x uint32, out []uint32) ([]uint32, error) {
 	u := p.unit[x]
 	if u < 0 {
 		reads, err := p.reads(x, nil)
@@ -377,7 +406,7 @@ func (p *aiurScsWires) deps(x uint32, out []uint32) ([]uint32, error) {
 // dissolve turns x's group into single wires when one of its members
 // depends on another through wires outside it; for a chain, from x's
 // segment on (earlier segments may already exist).
-func (p *aiurScsWires) dissolve(x uint32) {
+func (p *aiurScsWires[T, P]) dissolve(x uint32) {
 	u := p.unit[x]
 	units := []int32{u}
 	if ch := p.units[u].chain; ch != nil {
@@ -395,7 +424,7 @@ func (p *aiurScsWires) dissolve(x uint32) {
 
 // need creates x and, first, every wire it depends on that does not exist,
 // with an explicit stack (dependency chains are millions of wires long).
-func (p *aiurScsWires) need(x uint32) error {
+func (p *aiurScsWires[T, P]) need(x uint32) error {
 	stack := []uint32{x}
 	var deps []uint32
 	for len(stack) > 0 {
@@ -439,14 +468,14 @@ func (p *aiurScsWires) need(x uint32) error {
 	return nil
 }
 
-func (p *aiurScsWires) isActive(x uint32) bool {
+func (p *aiurScsWires[T, P]) isActive(x uint32) bool {
 	if u := p.unit[x]; u >= 0 {
 		return p.units[u].active
 	}
 	return p.active[x]
 }
 
-func (p *aiurScsWires) setActive(x uint32, on bool) {
+func (p *aiurScsWires[T, P]) setActive(x uint32, on bool) {
 	if u := p.unit[x]; u >= 0 {
 		p.units[u].active = on
 	} else if on {
@@ -457,7 +486,7 @@ func (p *aiurScsWires) setActive(x uint32, on bool) {
 }
 
 // create emits the hint of x's group (or of x alone); its inputs exist.
-func (p *aiurScsWires) create(x uint32) error {
+func (p *aiurScsWires[T, P]) create(x uint32) error {
 	u := p.unit[x]
 	if u < 0 {
 		return p.single(x)
@@ -471,7 +500,7 @@ func (p *aiurScsWires) create(x uint32) error {
 			if err != nil {
 				return err
 			}
-			in = append(in, p.term(f.terms[0]), p.term(aiurScsTerm{w: f.dw, c: f.dc}))
+			in = append(in, p.term(f.terms[0]), p.term(aiurScsTerm[T]{w: f.dw, c: f.dc}))
 		}
 		out, err := p.hint(aiurScsDivHint, len(unit.ws), in...)
 		if err != nil {
@@ -514,7 +543,7 @@ func (p *aiurScsWires) create(x uint32) error {
 // in solve-gate order, and chains, each link being the first wire (in
 // solve-gate order) that adds a term to its predecessor with coefficient 1.
 // Wires are then created on first read.
-func (p *aiurScsWires) post(api frontend.API, gamma frontend.Variable) error {
+func (p *aiurScsWires[T, P]) post(api frontend.API, gamma frontend.Variable) error {
 	s := p.s
 	p.api, p.afterCommit = api, true
 	p.v[s.Gamma] = gamma
@@ -590,7 +619,7 @@ func (p *aiurScsWires) post(api frontend.API, gamma frontend.Variable) error {
 	return nil
 }
 
-func (p *aiurScsWires) stats() string {
+func (p *aiurScsWires[T, P]) stats() string {
 	quotients, chains, links := 0, 0, 0
 	for _, u := range p.units {
 		switch {
@@ -664,9 +693,29 @@ func aiurScsChainHint(q *big.Int, in []*big.Int, out []*big.Int) error {
 
 // aiurScsDivHint: in = n_0, d_0, n_1, d_1, …; out[k] = n_k / d_k, with one
 // field inversion for the batch.
-func aiurScsDivHint(_ *big.Int, in []*big.Int, out []*big.Int) error {
+func aiurScsDivHint(q *big.Int, in []*big.Int, out []*big.Int) error {
 	if len(out) == 0 || len(in) != 2*len(out) {
 		return fmt.Errorf("aiurScsDivHint arity")
+	}
+	if q != nil && q.Cmp(blsfr.Modulus()) == 0 {
+		den := make([]blsfr.Element, len(out))
+		for k := range den {
+			den[k].SetBigInt(in[2*k+1])
+			if den[k].IsZero() {
+				return fmt.Errorf("Aiur SCS quotient with a zero denominator")
+			}
+		}
+		den = blsfr.BatchInvert(den)
+		var n blsfr.Element
+		for k := range den {
+			n.SetBigInt(in[2*k])
+			n.Mul(&n, &den[k])
+			n.BigInt(out[k])
+		}
+		return nil
+	}
+	if q != nil && q.Cmp(fr.Modulus()) != 0 {
+		return fmt.Errorf("unsupported Aiur SCS division field modulus")
 	}
 	den := make([]fr.Element, len(out))
 	for k := range den {
@@ -689,106 +738,120 @@ func aiurScsDivHint(_ *big.Int, in []*big.Int, out []*big.Int) error {
 // function of the wire u that fills the slots of mask, into A·u + B. code is
 // sel | mask<<4 | (qC+128)<<8; w holds the gate's other wire values (masked
 // slots ignored). A constant A (no qM·w term) is returned with w unused.
-func aiurScsSolveTerms(code uint64, al, be, om *fr.Element, w *[3]fr.Element, withB bool) (A, B fr.Element, constant bool, err error) {
+func aiurScsSolveTerms[T comparable, P aiurScsElem[T]](code uint64, al, be, om P, w *[3]T, withB bool) (A, B T, constant bool, err error) {
 	sel, mask := code&15, (code>>4)&7
 	ua, ub, uc := mask&1 != 0, mask&2 != 0, mask&4 != 0
 	sL, sR, sO, sM := sel&1 != 0, sel&2 != 0, sel&4 != 0, sel&8 != 0
 	if mask == 0 || (ua && ub && sM) {
 		return A, B, false, fmt.Errorf("Aiur SCS gate is not affine in its unsolved wire")
 	}
-	var t fr.Element
+	var t T
 	if ua && sL {
-		A.Add(&A, al)
+		P(&A).Add(&A, al)
 	}
 	if ub && sR {
-		A.Add(&A, be)
+		P(&A).Add(&A, be)
 	}
 	if uc && sO {
-		A.Add(&A, om)
+		P(&A).Add(&A, om)
 	}
-	var qM fr.Element
+	var qM T
 	if sM {
-		qM.Mul(al, be)
+		P(&qM).Mul(al, be)
 	}
 	constant = !sM || ua == ub
 	if !constant {
 		if ua {
-			t.Mul(&qM, &w[1])
+			P(&t).Mul(&qM, &w[1])
 		} else {
-			t.Mul(&qM, &w[0])
+			P(&t).Mul(&qM, &w[0])
 		}
-		A.Add(&A, &t)
+		P(&A).Add(&A, &t)
 	}
 	if !withB {
 		return A, B, constant, nil
 	}
 	if !ua && sL {
-		t.Mul(al, &w[0])
-		B.Add(&B, &t)
+		P(&t).Mul(al, &w[0])
+		P(&B).Add(&B, &t)
 	}
 	if !ub && sR {
-		t.Mul(be, &w[1])
-		B.Add(&B, &t)
+		P(&t).Mul(be, &w[1])
+		P(&B).Add(&B, &t)
 	}
 	if !uc && sO {
-		t.Mul(om, &w[2])
-		B.Add(&B, &t)
+		P(&t).Mul(om, &w[2])
+		P(&B).Add(&B, &t)
 	}
 	if sM && !ua && !ub {
-		t.Mul(&w[0], &w[1])
-		t.Mul(&t, &qM)
-		B.Add(&B, &t)
+		P(&t).Mul(&w[0], &w[1])
+		P(&t).Mul(&t, &qM)
+		P(&B).Add(&B, &t)
 	}
-	t.SetInt64(int64(code>>8) - 128)
-	B.Add(&B, &t)
+	P(&t).SetInt64(int64(code>>8) - 128)
+	P(&B).Add(&B, &t)
 	return A, B, constant, nil
 }
 
-// aiurScsSolveInverse is 1/A when A does not depend on the witness. It is
-// handed to the solve hint so that the common case needs no inversion.
-func aiurScsSolveInverse(code uint64, al, be, om *big.Int) (*big.Int, bool) {
-	var a, b, o fr.Element
-	a.SetBigInt(al)
-	b.SetBigInt(be)
-	o.SetBigInt(om)
-	A, _, constant, err := aiurScsSolveTerms(code, &a, &b, &o, &[3]fr.Element{}, false)
-	if err != nil || !constant || A.IsZero() {
+// aiurScsSolveInverseFor is 1/A when A does not depend on the witness.
+func aiurScsSolveInverseFor[T comparable, P aiurScsElem[T]](code uint64, al, be, om *big.Int) (*big.Int, bool) {
+	var a, b, o T
+	P(&a).SetBigInt(al)
+	P(&b).SetBigInt(be)
+	P(&o).SetBigInt(om)
+	A, _, constant, err := aiurScsSolveTerms[T, P](code, &a, &b, &o, &[3]T{}, false)
+	if err != nil || !constant || P(&A).IsZero() {
 		return nil, false
 	}
-	A.Inverse(&A)
-	return A.BigInt(new(big.Int)), true
+	P(&A).Inverse(&A)
+	return P(&A).BigInt(new(big.Int)), true
+}
+
+// aiurScsSolveInverse is 1/A over BN254 Fr when A does not depend on the witness.
+func aiurScsSolveInverse(code uint64, al, be, om *big.Int) (*big.Int, bool) {
+	return aiurScsSolveInverseFor[fr.Element, *fr.Element](code, al, be, om)
+}
+
+func aiurScsSolveHintTyped[T comparable, P aiurScsElem[T]](in []*big.Int, out []*big.Int) error {
+	var al, be, om, inv T
+	var w [3]T
+	P(&al).SetBigInt(in[1])
+	P(&be).SetBigInt(in[2])
+	P(&om).SetBigInt(in[3])
+	P(&inv).SetBigInt(in[4])
+	for k := range w {
+		P(&w[k]).SetBigInt(in[5+k])
+	}
+	A, B, _, err := aiurScsSolveTerms[T, P](in[0].Uint64(), &al, &be, &om, &w, true)
+	if err != nil {
+		return err
+	}
+	if P(&inv).IsZero() {
+		if P(&A).IsZero() {
+			return fmt.Errorf("Aiur SCS gate does not determine its unsolved wire")
+		}
+		P(&inv).Inverse(&A)
+	}
+	P(&B).Mul(&B, &inv)
+	P(&B).Neg(&B)
+	P(&B).BigInt(out[0])
+	return nil
 }
 
 // aiurScsSolveHint solves a gate for its one unsolved wire. Inputs: code
 // (see aiurScsSolveTerms), α, β, ω, 1/A or 0, then a, b, c (zero in masked
 // slots).
-func aiurScsSolveHint(_ *big.Int, in []*big.Int, out []*big.Int) error {
+func aiurScsSolveHint(q *big.Int, in []*big.Int, out []*big.Int) error {
 	if len(in) != 8 || len(out) != 1 {
 		return fmt.Errorf("aiurScsSolveHint arity")
 	}
-	var al, be, om, inv fr.Element
-	var w [3]fr.Element
-	al.SetBigInt(in[1])
-	be.SetBigInt(in[2])
-	om.SetBigInt(in[3])
-	inv.SetBigInt(in[4])
-	for k := range w {
-		w[k].SetBigInt(in[5+k])
+	if q != nil && q.Cmp(blsfr.Modulus()) == 0 {
+		return aiurScsSolveHintTyped[blsfr.Element, *blsfr.Element](in, out)
 	}
-	A, B, _, err := aiurScsSolveTerms(in[0].Uint64(), &al, &be, &om, &w, true)
-	if err != nil {
-		return err
+	if q != nil && q.Cmp(fr.Modulus()) != 0 {
+		return fmt.Errorf("unsupported Aiur SCS solve field modulus")
 	}
-	if inv.IsZero() {
-		if A.IsZero() {
-			return fmt.Errorf("Aiur SCS gate does not determine its unsolved wire")
-		}
-		inv.Inverse(&A)
-	}
-	B.Mul(&B, &inv)
-	B.Neg(&B)
-	B.BigInt(out[0])
-	return nil
+	return aiurScsSolveHintTyped[fr.Element, *fr.Element](in, out)
 }
 
 // aiurScsBitHint returns bit in[0] of the canonical value in[1].

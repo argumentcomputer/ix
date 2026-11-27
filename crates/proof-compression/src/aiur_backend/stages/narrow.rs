@@ -5,18 +5,26 @@
 //! Manifest fields: `artifact`, `config`, `policy`, `key` (the pinned key
 //! file; the key produced must equal it byte for byte), all products;
 //! `commit_cache` (directory of fixed-slot commitments, keyed by layout
-//! digest), `stage` (default 1).
+//! digest), `stage` (default 1); optional `entry` (overrides
+//! `CompressNarrowFixed::step_v1`), optional `advice` (product `.ixa` bound
+//! via `ixcc::register_advice_program`), optional `field` (`"bn254"` default
+//! or `"bls12-381"`).
 //!
 //! Everything the configuration determines is prepared before the
 //! CompressGL proof arrives: the SRS prefix, the Lean export
 //! (`tiling_export2`), the circuits and the fixed-slot commitment.
-use super::{Error, Handoff, Stage, exports::Kind};
+use super::{
+  Error, Handoff, Stage,
+  exports::{Field, Kind, parse_optional_entry, parse_stage_field},
+};
 use crate::{
   aiur_backend::{
+    Bls12381, Bn254, bls12_381,
     compress_bn::{
-      Input, PACKED_NARROW_FIXED_ENTRY, PolicyDigest, PublicInputs,
-      Stage as ChainStage, StatementDigest, Wrapper,
+      Accumulator, Input, PACKED_NARROW_FIXED_ENTRY, PolicyDigest,
+      PublicInputs, Stage as ChainStage, StatementDigest, Wrapper,
     },
+    fq, g1,
     kzg::Compiler,
     kzg_advice as wire, kzg_packed_advice as packed_wire,
     template::{
@@ -29,6 +37,15 @@ use crate::{
     packed_shplonk::{self, PackedShplonkConfig},
     srs::gnark,
   },
+};
+use aiur::{
+  Execution,
+  artifact::WidePackage,
+  budget::RecordPool,
+  field::FieldBackend,
+  hints::HintChannels,
+  maps::MapOverrides,
+  trace::{FunctionCircuit, TracePlan},
 };
 use multi_stark::{
   config::ProofConfig,
@@ -77,11 +94,199 @@ fn number(v: &Value, k: &str) -> Result<usize, Error> {
     .ok_or_else(|| format!("config {k}"))
 }
 
+enum NarrowProgram {
+  Standard(Wrapper),
+  Custom(TracePlan<'static, Bn254>),
+}
+
+impl NarrowProgram {
+  fn plan(&self) -> &TracePlan<'static, Bn254> {
+    match self {
+      Self::Standard(wrapper) => wrapper.plan(),
+      Self::Custom(plan) => plan,
+    }
+  }
+}
+
+enum NarrowExecution<'a> {
+  Standard(crate::aiur_backend::compress_bn::Executed<'a>),
+  Custom(Execution<Bn254>),
+}
+
+impl NarrowExecution<'_> {
+  fn record(&self) -> &Execution<Bn254> {
+    match self {
+      Self::Standard(executed) => executed.record(),
+      Self::Custom(record) => record,
+    }
+  }
+}
+
+fn execute_custom_bn254(
+  plan: &TracePlan<'static, Bn254>,
+  entry: &str,
+  input: &Input,
+  advice_bytes: Option<&[u8]>,
+  max_record_bytes: usize,
+) -> Result<Execution<Bn254>, Error> {
+  let mut hints = HintChannels::new();
+  aiur::library::u32::register(&mut hints, Bn254)?;
+  aiur::library::u64::register(&mut hints, Bn254)?;
+  fq::register(&mut hints)?;
+  g1::register(&mut hints)?;
+  wire::register(&mut hints)?;
+  input.source().register(&mut hints)?;
+  aiur::library::ixcc::register(&mut hints, Bn254)?;
+  if let Some(bytes) = advice_bytes {
+    let pkg = WidePackage::decode(bytes)?;
+    let mut advice_program = pkg.program.check_with(Bn254)?;
+    if let Some(trace) = &pkg.trace {
+      advice_program.track_depth(trace)?;
+    }
+    aiur::library::ixcc::register_advice_program(
+      &mut hints,
+      plan.program(),
+      advice_program,
+    )?;
+  }
+  let mut maps = MapOverrides::new();
+  aiur::library::u8::register_maps(plan.program(), &mut maps)?;
+  let prepared = plan
+    .program()
+    .prepare_hint_channels(&[], &hints)?
+    .with_map_overrides(&maps)?;
+  let pool = RecordPool::new(max_record_bytes, max_record_bytes);
+  let reservation = pool
+    .try_admit()
+    .map_err(|e| e.to_string())?
+    .ok_or("CompressBN record reservation unavailable")?;
+  let record = prepared
+    .execute_reserved(
+      entry,
+      input.public_inputs().arguments().to_vec(),
+      &reservation,
+    )
+    .map_err(|e| e.to_string())?;
+  reservation.finish_execution();
+  if record.output.len() == 4 {
+    let _ = Accumulator::from_words(&record.output)?;
+  }
+  Ok(record)
+}
+
+fn run_bls12_381(
+  stage: &Stage<'_>,
+  entry: &str,
+  advice_bytes: Option<&[u8]>,
+) -> Result<Handoff, Error> {
+  let config_file = stage.product("config")?;
+  let fixed_config: Value =
+    serde_json::from_slice(&config_file.bytes).map_err(|e| e.to_string())?;
+  let artifact = stage.product("artifact")?;
+  let hash = blake3::hash(&artifact.bytes);
+  let plan = bls12_381::load_trace_plan(&artifact.bytes)?;
+  let entry_fn = plan.program().entry(entry)?.function;
+  if let Some(bytes) = advice_bytes {
+    let advice_program = bls12_381::load_program(bytes)?;
+    let mut hints = HintChannels::new();
+    bls12_381::register_standard_hints(&mut hints)?;
+    aiur::library::ixcc::register_advice_program(
+      &mut hints,
+      plan.program(),
+      advice_program,
+    )?;
+  }
+  let layout = plan.layout()?;
+  let nf = layout.circuits.len();
+  if fixed_config["format"] != "ix-template-v2-stage-config-v1"
+    || fixed_config["functions"].as_array().map(Vec::len) != Some(nf)
+  {
+    return Err("stage configuration does not match this artifact".into());
+  }
+  let width = number(&fixed_config, "width")?;
+  let capacities = numbers(&fixed_config, "capacities")?;
+  let rom_capacities = numbers(&fixed_config, "rom_capacities")?;
+  let shards = number(&fixed_config, "shards")?;
+  if capacities.len() != nf || shards == 0 {
+    return Err("invalid BLS12-381 narrow stage capacities or shards".into());
+  }
+  let chips = &plan.artifact().chips;
+  let groups = &plan.artifact().groups;
+  let names: Vec<String> = layout
+    .circuits
+    .iter()
+    .map(|circuit| match *circuit {
+      FunctionCircuit::Chip(i) => chips[i].name.clone(),
+      FunctionCircuit::Group(i) => groups[i].name.clone(),
+    })
+    .collect();
+  let entry_chip = *plan
+    .function_chips()
+    .get(entry_fn)
+    .ok_or("BLS12-381 entry without a chip")?;
+  let entry_circuit = layout.placements[entry_chip].circuit;
+  let mut order: Vec<usize> = vec![entry_circuit];
+  order.extend((0..nf).filter(|&i| i != entry_circuit));
+  let circuits: Vec<Value> = order
+    .iter()
+    .map(|&c| json!({"chip": names[c], "cap": capacities[c].div_ceil(shards)}))
+    .collect();
+  let mut mem_widths: Vec<usize> = chips
+    .iter()
+    .flat_map(|chip| chip.memory.iter().map(|m| m.values.len()))
+    .collect();
+  mem_widths.sort_unstable();
+  mem_widths.dedup();
+  if mem_widths.len() != rom_capacities.len() {
+    return Err("one ROM capacity per BLS12-381 memory width".into());
+  }
+  let artifact_path = std::path::absolute(&artifact.path)
+    .map_err(|e| format!("{}: {e}", artifact.path.display()))?;
+  let input2 = json!({
+    "format": "ix-tiling-v2-input-2",
+    "field": Field::Bls12381.name(),
+    "artifact": artifact_path,
+    "artifact_blake3": hash.to_hex().as_str(),
+    "width": width,
+    "shards": shards,
+    "circuits": circuits,
+    "rom": mem_widths.iter().zip(&rom_capacities).map(|(w, c)| json!([w, c])).collect::<Vec<_>>(),
+    "entry": names[entry_circuit],
+  });
+  let input_bytes = serde_json::to_vec(&input2).map_err(|e| e.to_string())?;
+  let _exported = stage.stages.exports.export_with_field(
+    Kind::Tiling2,
+    Some(Field::Bls12381),
+    &input_bytes,
+  )?;
+  stage.write("lean-input.json", &input_bytes)?;
+  Err(format!(
+    "BLS12-381 kzg-verifier artifact ({}, entry {entry}) validated and exported via tiling_export2 --field bls12-381; packed-SHPLONK BLS12-381 narrow prover is not yet wired",
+    Bls12381.modulus()
+  ))
+}
+
+#[allow(clippy::too_many_lines)]
 pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
-  let entry: &'static str = PACKED_NARROW_FIXED_ENTRY;
-  let stage_number =
-    u32::try_from(stage.spec.spec["stage"].as_u64().unwrap_or(1))
-      .map_err(|e| e.to_string())?;
+  let spec = &stage.spec.spec;
+  let field = parse_stage_field(spec)?;
+  let explicit_field = if spec["field"].is_null() { None } else { Some(field) };
+  let entry_override = parse_optional_entry(spec)?;
+  let advice_file = if spec["advice"].is_null() {
+    None
+  } else {
+    Some(stage.product("advice")?)
+  };
+  let entry = entry_override.unwrap_or(PACKED_NARROW_FIXED_ENTRY);
+  if field == Field::Bls12381 {
+    return run_bls12_381(
+      stage,
+      entry,
+      advice_file.as_ref().map(|p| p.bytes.as_slice()),
+    );
+  }
+  let stage_number = u32::try_from(spec["stage"].as_u64().unwrap_or(1))
+    .map_err(|e| e.to_string())?;
   let config_file = stage.product("config")?;
   let fixed_config: Value =
     serde_json::from_slice(&config_file.bytes).map_err(|e| e.to_string())?;
@@ -103,10 +308,23 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
 
   let artifact = stage.product("artifact")?;
   let hash = blake3::hash(&artifact.bytes);
-  let wrapper =
-    Wrapper::from_bytes_with_entry(&artifact.bytes, hash.as_bytes(), entry)?;
+  let program = if entry_override.is_none() && advice_file.is_none() {
+    NarrowProgram::Standard(Wrapper::from_bytes_with_entry(
+      &artifact.bytes,
+      hash.as_bytes(),
+      PACKED_NARROW_FIXED_ENTRY,
+    )?)
+  } else {
+    let package = WidePackage::decode(&artifact.bytes)?;
+    let trace =
+      package.trace.ok_or("narrow stage needs a compiler trace artifact")?;
+    let mut checked = package.program.check_with(Bn254)?;
+    checked.track_depth(&trace)?;
+    checked.entry(entry)?;
+    NarrowProgram::Custom(TracePlan::new(Arc::new(checked), trace)?)
+  };
   let policy = stage.product("policy")?;
-  let plan = wrapper.plan();
+  let plan = program.plan();
   let compiler = Compiler::with_lookup_budget(plan, Some(4))?;
   let nf = compiler.function_circuits();
   let compress = compiler.names().iter().position(|n| n == "Blake3::compress");
@@ -138,7 +356,11 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
     hash.to_hex().as_str(),
   )?;
   let input_bytes = serde_json::to_vec(&input2).map_err(|e| e.to_string())?;
-  let exported = stage.stages.exports.export(Kind::Tiling2, &input_bytes)?;
+  let exported = stage.stages.exports.export_with_field(
+    Kind::Tiling2,
+    explicit_field,
+    &input_bytes,
+  )?;
   stage.write("lean-input.json", &input_bytes)?;
   for (from, to) in [
     (exported.layout(), "lean-layout.json"),
@@ -259,7 +481,20 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
     policy.bytes.clone(),
   )?;
   let started = Instant::now();
-  let execution = wrapper.execute(&input, 64 << 30)?;
+  let execution = match &program {
+    NarrowProgram::Standard(wrapper) => {
+      NarrowExecution::Standard(wrapper.execute(&input, 64 << 30)?)
+    },
+    NarrowProgram::Custom(plan) => {
+      NarrowExecution::Custom(execute_custom_bn254(
+        plan,
+        entry,
+        &input,
+        advice_file.as_ref().map(|p| p.bytes.as_slice()),
+        64 << 30,
+      )?)
+    },
+  };
   let exec_s = started.elapsed().as_secs_f64();
   let record = execution.record();
   let raw = compiler.raw_row_counts(record)?;
@@ -283,7 +518,15 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
   let (traces, key) =
     backend.witness_from_wide(&wide, entry, &call_args, record)?;
   drop(wide);
-  let claim = wrapper.claim(public, execution.accumulator())?;
+  let claim = match (&program, &execution) {
+    (NarrowProgram::Standard(wrapper), NarrowExecution::Standard(executed)) => {
+      wrapper.claim(public, executed.accumulator())?
+    },
+    (_, NarrowExecution::Custom(record)) => {
+      plan.public_claim(entry, &call_args, &record.output)?
+    },
+    _ => unreachable!("narrow program and execution variants always match"),
+  };
   let claims = backend.claims(&claim, key);
   let witness_s = started.elapsed().as_secs_f64();
   backend.check_lean_request(&claims)?;

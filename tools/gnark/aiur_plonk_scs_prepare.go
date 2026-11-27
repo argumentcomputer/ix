@@ -17,6 +17,7 @@ import (
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/plonk"
 	"github.com/consensys/gnark/constraint"
+	csbls "github.com/consensys/gnark/constraint/bls12-381"
 	csbn254 "github.com/consensys/gnark/constraint/bn254"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/scs"
@@ -59,11 +60,15 @@ func readAiurScsPinned(scsPath, scsDigest, pairingPath, pairingDigest string) (*
 			return nil, nil, err
 		}
 	}
-	s, err := readAiurScs(scsPath, scsDigest)
+	p, err := readAiurScsPairing(pairingPath, pairingDigest)
 	if err != nil {
 		return nil, nil, err
 	}
-	p, err := readAiurScsPairing(pairingPath, pairingDigest)
+	curve, err := p.curveID()
+	if err != nil {
+		return nil, nil, err
+	}
+	s, err := readAiurScsFor(scsPath, scsDigest, curve)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -72,7 +77,14 @@ func readAiurScsPinned(scsPath, scsDigest, pairingPath, pairingDigest string) (*
 
 func compileAiurScsCircuit(s *aiurScs, p *aiurPairing) (constraint.ConstraintSystem, circuitInfo, error) {
 	var info circuitInfo
-	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), scs.NewBuilder, newAiurScsCircuit(s, p))
+	if p == nil {
+		return nil, info, fmt.Errorf("missing Aiur pairing configuration")
+	}
+	curve, err := p.curveID()
+	if err != nil {
+		return nil, info, err
+	}
+	ccs, err := frontend.Compile(curve.ScalarField(), scs.NewBuilder, newAiurScsCircuit(s, p))
 	if err != nil {
 		return nil, info, err
 	}
@@ -82,7 +94,7 @@ func compileAiurScsCircuit(s *aiurScs, p *aiurPairing) (constraint.ConstraintSys
 		Commitments: len(ccs.GetCommitments().CommitmentIndexes()),
 	}
 	if info.Domain > aiurMaxDomain {
-		return nil, info, fmt.Errorf("Aiur PLONK domain exceeds Ignition ceremony capacity (2^26)")
+		return nil, info, fmt.Errorf("Aiur PLONK domain exceeds ceremony capacity (2^26)")
 	}
 	if info.Commitments != 1 || info.PublicInputs != s.Publics || ccs.GetNbSecretVariables() != s.Cells-s.Publics {
 		return nil, info, fmt.Errorf("unexpected Aiur SCS commitment or input counts")
@@ -98,13 +110,19 @@ func compileAiurScsCircuit(s *aiurScs, p *aiurPairing) (constraint.ConstraintSys
 const aiurScsMaxHintRun = 1 << 22
 
 func aiurScsHintRun(ccs constraint.ConstraintSystem) int {
-	spr, ok := ccs.(*csbn254.SparseR1CS)
-	if !ok {
+	var instructions []constraint.PackedInstruction
+	var blueprints []constraint.Blueprint
+	switch spr := ccs.(type) {
+	case *csbn254.SparseR1CS:
+		instructions, blueprints = spr.Instructions, spr.Blueprints
+	case *csbls.SparseR1CS:
+		instructions, blueprints = spr.Instructions, spr.Blueprints
+	default:
 		return 0
 	}
 	run, longest := 0, 0
-	for _, inst := range spr.Instructions {
-		if _, isGate := spr.Blueprints[inst.BlueprintID].(constraint.BlueprintSparseR1C); isGate {
+	for _, inst := range instructions {
+		if _, isGate := blueprints[inst.BlueprintID].(constraint.BlueprintSparseR1C); isGate {
 			run = 0
 		} else if run++; run > longest {
 			longest = run
@@ -135,8 +153,16 @@ func (s *aiurScs) inputs() *aiurScsInputs {
 }
 
 func (in *aiurScsInputs) validate() error {
+	return in.validateFor(ecc.BN254)
+}
+
+func (in *aiurScsInputs) validateFor(curve ecc.ID) error {
+	wantOutputs, err := aiurTerminalOutputsFor(curve)
+	if err != nil {
+		return err
+	}
 	if in.Format != aiurScsInputsFormat || in.Publics < 1 || in.Publics > aiurMaxPublic || in.Cells < in.Publics || in.Cells > aiurMaxSecret ||
-		len(in.Outputs) != aiurTerminalOutputs {
+		len(in.Outputs) != wantOutputs {
 		return fmt.Errorf("invalid Aiur SCS input layout")
 	}
 	return nil
@@ -155,7 +181,11 @@ func prepareAiurScs(request *aiurScsPreparation) (*aiurManifest, error) {
 	if err := validateAiurInfo(request.Info); err != nil {
 		return nil, err
 	}
-	s, _, err := readAiurScsPinned(request.Scs, request.ScsSHA256, request.Pairing, request.PairingSHA256)
+	s, p, err := readAiurScsPinned(request.Scs, request.ScsSHA256, request.Pairing, request.PairingSHA256)
+	if err != nil {
+		return nil, err
+	}
+	curve, err := p.curveID()
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +198,7 @@ func prepareAiurScs(request *aiurScsPreparation) (*aiurManifest, error) {
 		return nil, err
 	}
 	phase := time.Now()
-	ccs := plonk.NewCS(curveID)
+	ccs := plonk.NewCS(curve)
 	if err := readVerified(request.Circuit, request.CircuitHash, ccs); err != nil {
 		return nil, err
 	}
@@ -176,25 +206,50 @@ func prepareAiurScs(request *aiurScsPreparation) (*aiurManifest, error) {
 		ccs.GetNbSecretVariables() != s.Cells-s.Publics || len(ccs.GetCommitments().CommitmentIndexes()) != 1 {
 		return nil, fmt.Errorf("compiled Aiur circuit differs from its trusted metadata")
 	}
-	log.Printf("aiur-plonk prepare phase=circuit-load seconds=%.6f domain=%d", time.Since(phase).Seconds(), request.Info.Domain)
-	phase = time.Now()
-	srs, err := readSRS(request.SRS, request.SRSBLAKE3, request.Info.Domain)
-	if err != nil {
-		return nil, err
+	log.Printf("aiur-plonk prepare phase=circuit-load curve=%s seconds=%.6f domain=%d", curve, time.Since(phase).Seconds(), request.Info.Domain)
+	var pk plonk.ProvingKey
+	var vk plonk.VerifyingKey
+	switch curve {
+	case ecc.BN254:
+		phase = time.Now()
+		srs, err := readSRS(request.SRS, request.SRSBLAKE3, request.Info.Domain)
+		if err != nil {
+			return nil, err
+		}
+		log.Printf("aiur-plonk prepare phase=srs-load curve=bn254 seconds=%.6f domain=%d", time.Since(phase).Seconds(), request.Info.Domain)
+		phase = time.Now()
+		lagrange, err := loadLagrange(srs, request.Info.Domain, request.Lagrange, request.LagrangeSHA256)
+		if err != nil {
+			return nil, err
+		}
+		log.Printf("aiur-plonk prepare phase=lagrange curve=bn254 seconds=%.6f domain=%d", time.Since(phase).Seconds(), request.Info.Domain)
+		phase = time.Now()
+		pk, vk, err = plonk.Setup(ccs, srs, lagrange)
+		if err != nil {
+			return nil, err
+		}
+	case ecc.BLS12_381:
+		phase = time.Now()
+		srs, err := readSRSBLS(request.SRS, request.SRSBLAKE3, request.Info.Domain)
+		if err != nil {
+			return nil, err
+		}
+		log.Printf("aiur-plonk prepare phase=srs-load curve=bls12-381 seconds=%.6f domain=%d", time.Since(phase).Seconds(), request.Info.Domain)
+		phase = time.Now()
+		lagrange, err := loadLagrangeBLS(srs, request.Info.Domain, request.Lagrange, request.LagrangeSHA256)
+		if err != nil {
+			return nil, err
+		}
+		log.Printf("aiur-plonk prepare phase=lagrange curve=bls12-381 seconds=%.6f domain=%d", time.Since(phase).Seconds(), request.Info.Domain)
+		phase = time.Now()
+		pk, vk, err = plonk.Setup(ccs, srs, lagrange)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("unsupported Aiur curve %s", curve)
 	}
-	log.Printf("aiur-plonk prepare phase=srs-load seconds=%.6f domain=%d", time.Since(phase).Seconds(), request.Info.Domain)
-	phase = time.Now()
-	lagrange, err := loadLagrange(srs, request.Info.Domain, request.Lagrange, request.LagrangeSHA256)
-	if err != nil {
-		return nil, err
-	}
-	log.Printf("aiur-plonk prepare phase=lagrange seconds=%.6f domain=%d", time.Since(phase).Seconds(), request.Info.Domain)
-	phase = time.Now()
-	pk, vk, err := plonk.Setup(ccs, srs, lagrange)
-	if err != nil {
-		return nil, err
-	}
-	log.Printf("aiur-plonk prepare phase=key-setup seconds=%.6f domain=%d", time.Since(phase).Seconds(), request.Info.Domain)
+	log.Printf("aiur-plonk prepare phase=key-setup curve=%s seconds=%.6f domain=%d", curve, time.Since(phase).Seconds(), request.Info.Domain)
 	phase = time.Now()
 	for _, item := range []struct {
 		name  string
@@ -245,9 +300,38 @@ func (m *aiurManifest) validateScs() error {
 	return nil
 }
 
-// aiurScsDimensions reads the prepared input layout, checked against the
+// aiurScsPairingCurve reads and authenticates `pairing.json` in `dir` against
+// the manifest and returns its curve ID (BN254 or BLS12-381).
+func aiurScsPairingCurve(dir string, m *aiurManifest) (ecc.ID, error) {
+	data, err := readDescription(filepath.Join(dir, "pairing.json"))
+	if err != nil {
+		return ecc.UNKNOWN, err
+	}
+	hash := sha256.Sum256(data)
+	if hex.EncodeToString(hash[:]) != m.Files["pairing.json"].SHA256 ||
+		hex.EncodeToString(hash[:]) != m.PairingSHA256 ||
+		int64(len(data)) != m.Files["pairing.json"].Bytes {
+		return ecc.UNKNOWN, fmt.Errorf("Aiur pairing configuration differs from manifest")
+	}
+	var p aiurPairing
+	if err := decodeReader(bytes.NewReader(data), &p); err != nil {
+		return ecc.UNKNOWN, err
+	}
+	if err := p.validate(); err != nil {
+		return ecc.UNKNOWN, err
+	}
+	return p.curveID()
+}
+
+// aiurScsDimensions reads the prepared BN254 input layout, checked against the
 // manifest, and returns its public and secret input counts.
 func aiurScsDimensions(dir string, m *aiurManifest) (int, int, error) {
+	return aiurScsDimensionsFor(dir, m, ecc.BN254)
+}
+
+// aiurScsDimensionsFor reads the prepared input layout for `curve`, checked
+// against the manifest, and returns its public and secret input counts.
+func aiurScsDimensionsFor(dir string, m *aiurManifest, curve ecc.ID) (int, int, error) {
 	data, err := readDescription(filepath.Join(dir, "inputs.json"))
 	if err != nil {
 		return 0, 0, err
@@ -260,7 +344,7 @@ func aiurScsDimensions(dir string, m *aiurManifest) (int, int, error) {
 	if err := decodeReader(bytes.NewReader(data), &in); err != nil {
 		return 0, 0, err
 	}
-	if err := in.validate(); err != nil {
+	if err := in.validateFor(curve); err != nil {
 		return 0, 0, err
 	}
 	return in.Publics, in.Cells - in.Publics, nil

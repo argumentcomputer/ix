@@ -75,6 +75,20 @@ func ix_gnark_aiur_verify(key, pin, proof, public, anchors C.ix_gnark_view) C.ix
 	})
 }
 
+//export ix_gnark_aiur_bls_verify
+func ix_gnark_aiur_bls_verify(key, pin, proof, public, anchors C.ix_gnark_view) C.ix_gnark_result {
+	return guarded(func() (result C.ix_gnark_result, err error) {
+		values := make([][]byte, 5)
+		for i, view := range []C.ix_gnark_view{key, pin, proof, public, anchors} {
+			values[i], err = borrowed(view, 1<<20)
+			if err != nil {
+				return result, err
+			}
+		}
+		return result, verifyAiurProofBLS(values[0], values[1], values[2], values[3], values[4])
+	})
+}
+
 //export ix_gnark_aiur_scs_compile
 func ix_gnark_aiur_scs_compile(request C.ix_gnark_view) C.ix_gnark_result {
 	return guarded(func() (result C.ix_gnark_result, err error) {

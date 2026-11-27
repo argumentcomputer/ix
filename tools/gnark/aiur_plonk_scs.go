@@ -26,6 +26,7 @@ import (
 	"math/big"
 	"os"
 
+	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/std/multicommit"
@@ -52,6 +53,7 @@ type aiurScsTable struct {
 // aiurScs is a validated `ix-aiur-scs-v1` file. Gates and hints stay in
 // their packed encodings and are decoded on access.
 type aiurScs struct {
+	Curve                      ecc.ID
 	Publics, Wires, Gates, Pre int
 	Gamma, Beta                uint32
 	Cells                      int
@@ -84,9 +86,16 @@ func (s *aiurScs) hint(x uint32) (kind uint8, a, b uint32) {
 	return h[0], binary.LittleEndian.Uint32(h[1:]), binary.LittleEndian.Uint32(h[5:])
 }
 
-// readAiurScs reads the file, checks its SHA-256 against the pinned digest
-// and validates it completely before anything is built from it.
+// readAiurScs reads a BN254 `ix-aiur-scs-v1` file, checks its SHA-256
+// against the pinned digest and validates it completely before anything is
+// built from it.
 func readAiurScs(path, digest string) (*aiurScs, error) {
+	return readAiurScsFor(path, digest, ecc.BN254)
+}
+
+// readAiurScsFor reads an `ix-aiur-scs-v1` file for `curve` (BN254 or
+// BLS12-381), checks its SHA-256 against the pinned digest and validates it.
+func readAiurScsFor(path, digest string, curve ecc.ID) (*aiurScs, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -95,10 +104,26 @@ func readAiurScs(path, digest string) (*aiurScs, error) {
 	if hex.EncodeToString(hash[:]) != digest {
 		return nil, fmt.Errorf("Aiur SCS file differs from its pinned SHA-256")
 	}
-	return parseAiurScs(data)
+	return parseAiurScsFor(data, curve)
 }
 
 func parseAiurScs(data []byte) (*aiurScs, error) {
+	return parseAiurScsFor(data, ecc.BN254)
+}
+
+func parseAiurScsFor(data []byte, curve ecc.ID) (*aiurScs, error) {
+	wantOutputs, err := aiurTerminalOutputsFor(curve)
+	if err != nil {
+		return nil, err
+	}
+	return parseAiurScsWithOutputs(data, curve, wantOutputs)
+}
+
+func parseAiurScsWithOutputs(data []byte, curve ecc.ID, expectedOutputs int) (*aiurScs, error) {
+	r, err := aiurScalarModulusFor(curve)
+	if err != nil {
+		return nil, err
+	}
 	if len(data) < 88 || string(data[:8]) != aiurScsMagic {
 		return nil, fmt.Errorf("not an ix-aiur-scs-v1 file")
 	}
@@ -108,15 +133,16 @@ func parseAiurScs(data []byte) (*aiurScs, error) {
 	}
 	publics, outputs, wires, gates, pre, commits, gamma, beta, coeffs, tables := h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], h[8], h[9]
 	const limit = 1 << 32
+	outputsOK := (expectedOutputs >= 0 && outputs == uint64(expectedOutputs)) || (expectedOutputs < 0 && outputs <= aiurMaxPublic)
 	if wires == 0 || wires >= limit || gates >= limit || coeffs >= limit || commits >= limit || tables >= 1<<16 ||
-		outputs != aiurTerminalOutputs || publics == 0 || publics > aiurMaxPublic || pre > gates || gamma >= wires || beta >= wires {
+		!outputsOK || publics == 0 || publics > aiurMaxPublic || pre > gates || gamma >= wires || beta >= wires {
 		return nil, fmt.Errorf("invalid Aiur SCS header")
 	}
 	body := 88 + 4*outputs + 32*coeffs + aiurScsGateBytes*gates + 4*commits + aiurScsHintBytes*wires
 	if uint64(len(data)) < body {
 		return nil, fmt.Errorf("truncated Aiur SCS file")
 	}
-	s := &aiurScs{Publics: int(publics), Wires: int(wires), Gates: int(gates), Pre: int(pre), Gamma: uint32(gamma), Beta: uint32(beta)}
+	s := &aiurScs{Curve: curve, Publics: int(publics), Wires: int(wires), Gates: int(gates), Pre: int(pre), Gamma: uint32(gamma), Beta: uint32(beta)}
 	o := uint64(88)
 	inRange := func(x uint32) bool { return uint64(x) < wires }
 	s.Outputs = make([]uint32, outputs)
@@ -127,7 +153,6 @@ func parseAiurScs(data []byte) (*aiurScs, error) {
 		}
 		o += 4
 	}
-	r := scalarModulus()
 	s.Coeffs = make([]big.Int, coeffs)
 	var le [32]byte
 	for i := range s.Coeffs {
@@ -251,10 +276,35 @@ func (c *aiurScsCircuit) Define(api frontend.API) error {
 	if s == nil || c.Pairing == nil {
 		return fmt.Errorf("missing Aiur SCS or pairing configuration")
 	}
-	if api.Compiler().Field().Cmp(scalarModulus()) != 0 {
-		return fmt.Errorf("Aiur SCS requires BN254 Fr")
+	curve, err := c.Pairing.curveID()
+	if err != nil {
+		return err
 	}
-	if len(c.Public) != s.Publics || len(c.Cells) != s.Cells-s.Publics {
+	if s.Curve != ecc.UNKNOWN && s.Curve != curve {
+		return fmt.Errorf("Aiur SCS curve %s differs from pairing curve %s", s.Curve, curve)
+	}
+	return defineAiurScsGates(api, s, curve, c.Public, c.Cells, c.VIDs, c.Pairing.constrain)
+}
+
+func defineAiurScsGates(
+	api frontend.API,
+	s *aiurScs,
+	curve ecc.ID,
+	public, cells []frontend.Variable,
+	vids []uint32,
+	constrainOutputs func(frontend.API, []frontend.Variable) error,
+) error {
+	if s == nil {
+		return fmt.Errorf("missing Aiur SCS")
+	}
+	wantMod, err := aiurScalarModulusFor(curve)
+	if err != nil {
+		return err
+	}
+	if api.Compiler().Field().Cmp(wantMod) != 0 {
+		return fmt.Errorf("Aiur SCS requires %s Fr", curve)
+	}
+	if len(public) != s.Publics || len(cells) != s.Cells-s.Publics {
 		return fmt.Errorf("Aiur SCS circuit shape differs")
 	}
 	plonkAPI, ok := api.(frontend.PlonkAPI)
@@ -262,8 +312,8 @@ func (c *aiurScsCircuit) Define(api frontend.API) error {
 		return fmt.Errorf("Aiur SCS requires a PLONK builder")
 	}
 	v := make([]frontend.Variable, s.Wires)
-	copy(v, c.Public)
-	copy(v[s.Publics:], c.Cells)
+	copy(v, public)
+	copy(v[s.Publics:], cells)
 	// Every non-input wire is created by w as an unconstrained prover hint.
 	w := newAiurScsWires(api, s, v)
 	sel := func(g aiurScsGate, bit uint) int { return int(g.Sel>>bit) & 1 }
@@ -285,16 +335,18 @@ func (c *aiurScsCircuit) Define(api frontend.API) error {
 			return err
 		}
 	}
-	outputs := make([]frontend.Variable, len(s.Outputs))
-	for i, x := range s.Outputs {
-		outputs[i] = v[x]
-	}
-	// The pairing gadget registers its range-check commitment before
-	// multicommit closes, so the file's commit list shares the one BSB22
-	// commitment, and the file's callback runs first (it receives the
-	// commitment itself, not a power of it).
-	if err := c.Pairing.constrain(api, outputs); err != nil {
-		return err
+	if constrainOutputs != nil {
+		outputs := make([]frontend.Variable, len(s.Outputs))
+		for i, x := range s.Outputs {
+			outputs[i] = v[x]
+		}
+		// The pairing gadget registers its range-check commitment before
+		// multicommit closes, so the file's commit list shares the one BSB22
+		// commitment, and the file's callback runs first (it receives the
+		// commitment itself, not a power of it).
+		if err := constrainOutputs(api, outputs); err != nil {
+			return err
+		}
 	}
 	committed := make([]frontend.Variable, len(s.Commits))
 	for i, x := range s.Commits {
@@ -313,21 +365,21 @@ func (c *aiurScsCircuit) Define(api frontend.API) error {
 			}
 		}
 		log.Printf("aiur-scs hints: %s", w.stats())
-		if c.VIDs != nil {
-			c.recordVIDs(api, v)
+		if vids != nil {
+			recordAiurScsVIDs(api, v, vids)
 		}
 		return nil
 	}, committed...)
 	return postErr
 }
 
-func (c *aiurScsCircuit) recordVIDs(api frontend.API, v []frontend.Variable) {
+func recordAiurScsVIDs(api frontend.API, v []frontend.Variable, vids []uint32) {
 	for x, y := range v {
 		if y == nil {
 			continue
 		}
 		if t, ok := api.Compiler().ToCanonicalVariable(y).(constraint.Term); ok {
-			c.VIDs[x] = t.VID
+			vids[x] = t.VID
 		}
 	}
 }
@@ -347,7 +399,7 @@ func readAiurScsPairing(path, digest string) (*aiurPairing, error) {
 	if err := decodeReader(bytes.NewReader(data), &p); err != nil {
 		return nil, err
 	}
-	if _, err := p.anchors(); err != nil {
+	if err := p.validate(); err != nil {
 		return nil, err
 	}
 	return &p, nil

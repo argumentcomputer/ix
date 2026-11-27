@@ -9,6 +9,7 @@ use aiur::{FieldWord, field::FieldBackend};
 use ark_bn254::Fr;
 use ark_ff::{Field, PrimeField};
 
+pub mod bls12_381;
 pub mod chain;
 pub mod compress_bn;
 pub mod compress_gl;
@@ -23,6 +24,8 @@ pub mod plonk;
 pub mod stages;
 pub mod template;
 pub mod wide;
+
+pub use bls12_381::Bls12381;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Bn254;

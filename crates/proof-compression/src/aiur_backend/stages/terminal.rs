@@ -5,23 +5,35 @@
 //!
 //! Manifest fields: `artifact`, `policy`, `prepared_manifest` (the prepared
 //! directory's `manifest.json`), all products; `scs` (`path` and `sha256`;
-//! the file is hashed off the critical path), `cuda` (default true).
+//! the file is hashed off the critical path), `cuda` (default true on BN254,
+//! false on BLS12-381); optional `entry` (overrides
+//! `CompressFinalNarrow::verify_accumulator_v1`), optional `advice` (product
+//! `.ixa` bound via `ixcc::register_advice_program`), optional `field`
+//! (`"bn254"` default or `"bls12-381"`).
 //!
 //! The prepared directory (`prepared/` beside the manifest) is reused, never
 //! rebuilt: its manifest must name this SCS file's and this terminal's
 //! pairing configuration's digests.
-use super::{Error, Handoff, Stage};
+use super::{
+  Error, Handoff, Stage,
+  exports::{Field, parse_optional_entry, parse_stage_field},
+};
 use crate::{
   aiur_backend::{
-    Bn254,
+    Bls12381, Bn254, bls12_381,
     compress_bn::{PackedCapacity, PackedPolicy},
     fq, g1,
     kzg::Compiler,
     kzg_advice as wire,
     pairing::final_program::{
-      Configuration, NARROW_ACCUMULATOR_ENTRY, statement_arguments,
+      ACCUMULATOR_ENTRY, Configuration, NARROW_ACCUMULATOR_ENTRY,
+      statement_arguments,
     },
-    plonk::{gnark, scs},
+    plonk::{self, gnark, scs},
+  },
+  kzg::{
+    VerifierParams, curve::Bls12381 as Bls12381Curve,
+    srs::filecoin::filecoin_anchors,
   },
   pipeline::SetupConfig,
 };
@@ -81,8 +93,231 @@ impl Phases {
   }
 }
 
+#[allow(clippy::too_many_lines)]
+fn run_bls12_381(
+  stage: &Stage<'_>,
+  entry: &str,
+  advice_bytes: Option<&[u8]>,
+) -> Result<Handoff, Error> {
+  let spec = &stage.spec.spec;
+  if spec["cuda"].as_bool() == Some(true) {
+    return Err(
+      "CUDA backend is not available for BLS12-381 PLONK; set cuda: false"
+        .into(),
+    );
+  }
+  let backend = gnark::Backend::Cpu;
+  let scs_path = stage.stages.manifest.path(&spec["scs"]["path"])?;
+  let scs_pin = spec["scs"]["sha256"].as_str().ok_or("scs.sha256")?.to_owned();
+  let scs_hash = {
+    let path = scs_path.clone();
+    std::thread::spawn(move || sha256_file(&path))
+  };
+  let mut phases = Phases(serde_json::Map::new());
+
+  let started = Instant::now();
+  let artifact = stage.product("artifact")?;
+  let pin = blake3::hash(&artifact.bytes);
+  let plan = bls12_381::load_trace_plan(&artifact.bytes)?;
+  plan.program().entry(entry)?;
+  let advice_program = match advice_bytes {
+    Some(bytes) => Some(bls12_381::load_program(bytes)?),
+    None => None,
+  };
+  let bls_params =
+    VerifierParams::<Bls12381Curve>::from_srs(&filecoin_anchors());
+  let manifest_file = stage.product("prepared_manifest")?;
+  let manifest: gnark::Manifest =
+    serde_json::from_slice(&manifest_file.bytes).map_err(|e| e.to_string())?;
+  let prepared_root =
+    manifest_file.path.parent().ok_or("prepared manifest path")?.to_path_buf();
+  let prepared = prepared_root.join("prepared");
+  phases.record("setup", started);
+  let started = Instant::now();
+  prefetch(&prepared)?;
+  phases.record("prefetch", started);
+  let started = Instant::now();
+  let mut prover = Some(
+    stage
+      .gpu(|| gnark::Prover::open(&prepared, &manifest, backend))
+      .map_err(|e| e.to_string())?,
+  );
+  phases.record("load", started);
+  stage.reserve(1);
+
+  let started = Instant::now();
+  let (narrow, _) = stage.input()?;
+  phases.record("wait", started);
+  stage.cancelled()?;
+  stage.reserve(2);
+  let started = Instant::now();
+  let statement_bytes =
+    narrow.statement.ok_or("the narrow stage passed no statement")?;
+  let mut hints = HintChannels::new();
+  bls12_381::register_standard_hints(&mut hints)?;
+  if let Some(advice_program) = advice_program {
+    aiur::library::ixcc::register_advice_program(
+      &mut hints,
+      plan.program(),
+      advice_program,
+    )?;
+  }
+  let mut maps = MapOverrides::new();
+  aiur::library::u8::register_maps(plan.program(), &mut maps)?;
+  let arguments = bls12_381::statement_arguments(&statement_bytes).to_vec();
+  let record = plan
+    .program()
+    .prepare_hint_channels(&[], &hints)?
+    .with_map_overrides(&maps)?
+    .execute(entry, arguments.clone())
+    .map_err(|e| e.to_string())?;
+  bls12_381::check_pairing(&record.output, [bls_params.g2, bls_params.tau_g2])?;
+  phases.record("execute", started);
+
+  let pairing =
+    serde_json::to_vec(&scs::bls12_381_pairing_from_params(&bls_params)?)
+      .map_err(|e| e.to_string())?;
+
+  let started = Instant::now();
+  let scs_sha256 = scs_hash
+    .join()
+    .map_err(|_error| "SCS digest thread panicked".to_string())??;
+  if scs_sha256 != scs_pin {
+    return Err(format!(
+      "SCS SHA-256 {scs_sha256} differs from the pinned {scs_pin}"
+    ));
+  }
+  let pairing_sha256 = format!("{:x}", Sha256::digest(&pairing));
+  if manifest.scs_sha256 != scs_sha256
+    || manifest.pairing_sha256 != pairing_sha256
+  {
+    return Err(
+      "the prepared circuit is not this SCS file's and pairing configuration's"
+        .into(),
+    );
+  }
+  phases.record("scs_digest", started);
+  let started = Instant::now();
+  let layout =
+    fs::read(prepared.join("inputs.json")).map_err(|e| e.to_string())?;
+  let pinned =
+    manifest.files.get("inputs.json").ok_or("manifest without inputs.json")?;
+  if format!("{:x}", Sha256::digest(&layout)) != pinned.sha256 {
+    return Err("prepared inputs.json differs from its manifest".into());
+  }
+  let witness = scs::Bls12381Witness::new(
+    &plan,
+    entry,
+    serde_json::from_slice(&layout).map_err(|e| e.to_string())?,
+  )?
+  .binary(&record, &arguments)?;
+  phases.record("witness", started);
+
+  let started = Instant::now();
+  let mut open = prover.take().ok_or("the PLONK prover is gone")?;
+  let proof = stage
+    .gpu(|| open.prove_bls12_381(&witness, &arguments))
+    .map_err(|e| e.to_string())?;
+  phases.record("prove", started);
+  let mut wrong = arguments.clone();
+  wrong[0] += Bls12381.one();
+  let refused = stage.gpu(|| open.prove_bls12_381(&witness, &wrong)).is_err();
+  open.close().map_err(|e| e.to_string())?;
+  stage.stages.checks.set("plonk_wrong_statement_refused_by_prover", refused);
+
+  let started = Instant::now();
+  let key =
+    fs::read(prepared.join("verifying-key.bin")).map_err(|e| e.to_string())?;
+  let key_sha256 = format!("{:x}", Sha256::digest(&key));
+  let key_pin: [u8; 32] = Sha256::digest(&key).into();
+  let anchor_bytes = gnark::bls12_381_anchors(&bls_params);
+  gnark::verify_bls12_381(
+    &key,
+    &key_pin,
+    &proof.native,
+    &arguments,
+    &anchor_bytes,
+  )
+  .map_err(|e| e.to_string())?;
+  phases.record("verify", started);
+  let rejected = gnark::verify_bls12_381(
+    &key,
+    &key_pin,
+    &proof.native,
+    &wrong,
+    &anchor_bytes,
+  )
+  .is_err();
+  stage
+    .stages
+    .checks
+    .set("plonk_wrong_statement_rejected_by_verifier", rejected);
+  let prepared_key = manifest
+    .files
+    .get("verifying-key.bin")
+    .is_some_and(|file| file.sha256 == key_sha256);
+  stage.stages.checks.set("plonk_verifying_key_is_prepared", prepared_key);
+  if !rejected {
+    return Err("BLS12-381 PLONK verifier accepted a changed statement".into());
+  }
+  if !prepared_key {
+    return Err(
+      "the verifying key differs from the prepared manifest's".into(),
+    );
+  }
+  stage.write("proof.bin", &proof.native)?;
+  stage.write("proof.solidity.bin", &proof.solidity)?;
+  let info = &manifest.info;
+  let summary = json!({
+    "format": "ix-aiur-narrow-terminal-plonk-v1",
+    "curve": "bls12-381",
+    "circuit": "ix-aiur-scs-v1", "scs": scs_path, "scs_sha256": scs_sha256, "pairing_sha256": pairing_sha256,
+    "entry": entry,
+    "artifact": artifact.path, "artifact_blake3": pin.to_hex().as_str(),
+    "statement": super::hex(&statement_bytes),
+    "backend": "cpu",
+    "constraints": info.constraints, "domain": info.domain, "public_inputs": info.public_inputs,
+    "commitments": info.commitments,
+    "witness_bytes": witness.len(), "witness_sha256": format!("{:x}", Sha256::digest(&witness)),
+    "srs_blake3": manifest.srs_blake3,
+    "verifying_key_sha256": key_sha256,
+    "proof_bytes": proof.native.len(), "solidity_proof_bytes": proof.solidity.len(),
+    "public_inputs_decimal": arguments.iter().map(|v| v.0.to_string()).collect::<Vec<_>>(),
+    "outputs_decimal": record.output.iter().map(|v| v.0.to_string()).collect::<Vec<_>>(),
+    "wrong_statement_refused_by_prover": refused,
+    "wrong_statement_rejected_by_verifier": rejected,
+    "phases": phases.0,
+    "peak_rss_gb": super::peak_rss_gb(),
+  });
+  stage.write_json("summary.json", &summary)?;
+  Ok(Handoff {
+    key,
+    claims: Vec::new(),
+    proof: proof.native,
+    stage: narrow.stage + 1,
+    statement: Some(statement_bytes),
+    solidity: proof.solidity,
+  })
+}
+
+#[allow(clippy::too_many_lines)]
 pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
   let spec = &stage.spec.spec;
+  let field = parse_stage_field(spec)?;
+  let entry_override = parse_optional_entry(spec)?;
+  let advice_file = if spec["advice"].is_null() {
+    None
+  } else {
+    Some(stage.product("advice")?)
+  };
+  let entry = entry_override.unwrap_or(NARROW_ACCUMULATOR_ENTRY);
+  if field == Field::Bls12381 {
+    return run_bls12_381(
+      stage,
+      entry,
+      advice_file.as_ref().map(|p| p.bytes.as_slice()),
+    );
+  }
   let backend = if spec["cuda"].as_bool().unwrap_or(true) {
     let gib: u64 = std::env::var("IX_PLONK_CUDA_MEMORY_GIB")
       .unwrap_or_else(|_| "64".into())
@@ -108,7 +343,19 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
   let trace = package.trace.ok_or("missing trace")?;
   let mut program = package.program.check_with(Bn254)?;
   program.track_depth(&trace)?;
+  program.entry(entry)?;
   let plan = TracePlan::new(Arc::new(program), trace)?;
+  let advice_program = match &advice_file {
+    Some(file) => {
+      let pkg = WidePackage::decode(&file.bytes)?;
+      let mut prog = pkg.program.check_with(Bn254)?;
+      if let Some(t) = &pkg.trace {
+        prog.track_depth(t)?;
+      }
+      Some(prog)
+    },
+    None => None,
+  };
   let setup = SetupConfig::from_env(false).map_err(|e| e.to_string())?;
   let capacity = PackedCapacity {
     log_cap: 1,
@@ -161,6 +408,16 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
     policy_file.bytes.clone(),
   )?
   .register(&mut hints)?;
+  if entry_override.is_some() || advice_program.is_some() {
+    aiur::library::ixcc::register(&mut hints, Bn254)?;
+  }
+  if let Some(advice_program) = advice_program {
+    aiur::library::ixcc::register_advice_program(
+      &mut hints,
+      plan.program(),
+      advice_program,
+    )?;
+  }
   let mut maps = MapOverrides::new();
   aiur::library::u8::register_maps(plan.program(), &mut maps)?;
   let arguments = statement_arguments(&statement_bytes).to_vec();
@@ -168,7 +425,7 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
     .program()
     .prepare_hint_channels(&[], &hints)?
     .with_map_overrides(&maps)?
-    .execute(NARROW_ACCUMULATOR_ENTRY, arguments.clone())
+    .execute(entry, arguments.clone())
     .map_err(|e| e.to_string())?;
   let pair =
     [g1::decode(&record.output[..9])?, g1::decode(&record.output[9..])?];
@@ -183,12 +440,25 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
   let compiler = Compiler::new(&plan)?;
   let capacities: Vec<usize> =
     compiler.row_counts(&record)?.into_iter().map(|rows| rows.max(1)).collect();
-  let pairing = serde_json::to_vec(&scs::pairing(
-    &plan,
-    NARROW_ACCUMULATOR_ENTRY,
-    &configuration,
-  )?)
-  .map_err(|e| e.to_string())?;
+  let pairing_config =
+    if entry == NARROW_ACCUMULATOR_ENTRY || entry == ACCUMULATOR_ENTRY {
+      scs::pairing(&plan, entry, &configuration)?
+    } else {
+      plonk::Pairing {
+        curve: "bn254",
+        encoding: "affine-u80-v1",
+        g2: anchors.map(|point| {
+          [
+            point.x.c0.to_string(),
+            point.x.c1.to_string(),
+            point.y.c0.to_string(),
+            point.y.c1.to_string(),
+          ]
+        }),
+      }
+    };
+  let pairing =
+    serde_json::to_vec(&pairing_config).map_err(|e| e.to_string())?;
 
   let started = Instant::now();
   let scs_sha256 = scs_hash
@@ -221,7 +491,7 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
     &plan,
     compiler,
     &capacities,
-    NARROW_ACCUMULATOR_ENTRY,
+    entry,
     serde_json::from_slice(&layout).map_err(|e| e.to_string())?,
   )?
   .binary(&record, &arguments)?;
@@ -274,7 +544,7 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
   let summary = json!({
     "format": "ix-aiur-narrow-terminal-plonk-v1",
     "circuit": "ix-aiur-scs-v1", "scs": scs_path, "scs_sha256": scs_sha256, "pairing_sha256": pairing_sha256,
-    "entry": NARROW_ACCUMULATOR_ENTRY,
+    "entry": entry,
     "artifact": artifact.path, "artifact_blake3": pin.to_hex().as_str(),
     "statement": super::hex(&statement_bytes),
     "backend": if matches!(backend, gnark::Backend::Cpu) { "cpu" } else { "cuda" },

@@ -1,7 +1,11 @@
 //! Compilation through the pinned gnark sparse PLONK backend.
 
 use super::public_bytes;
-use crate::kzg::Scalar;
+use crate::kzg::{
+  Scalar, VerifierParams,
+  curve::{Bls12381 as Bls12381Curve, KzgCurve},
+  field::Bls12381Scalar,
+};
 pub use crate::pipeline::gnark::{Artifact, Backend, Proof};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, marker::PhantomData, rc::Rc};
@@ -9,7 +13,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 /// Solidity/gnark anchor coordinates for independently authenticated KZG
 /// parameters: G1, G2 and tau-G2, each base-field coordinate big-endian.
-pub fn anchors(parameters: &crate::kzg::VerifierParams) -> Vec<u8> {
+pub fn anchors(parameters: &VerifierParams) -> Vec<u8> {
   use ark_ff::{BigInteger, PrimeField};
   let (g1, g2) = crate::aiur_backend::pairing::verifier_anchors(parameters);
   [
@@ -19,6 +23,19 @@ pub fn anchors(parameters: &crate::kzg::VerifierParams) -> Vec<u8> {
   .into_iter()
   .flat_map(|value| value.into_bigint().to_bytes_be())
   .collect()
+}
+
+/// Curve-generic gnark PLONK verifying key setup anchors (`320` bytes for
+/// BN254, `240` compressed bytes for BLS12-381).
+pub fn anchors_for<C: KzgCurve>(parameters: &VerifierParams<C>) -> Vec<u8> {
+  C::encode_plonk_anchors(&parameters.g1[0], &parameters.g2, &parameters.tau_g2)
+}
+
+/// BLS12-381 gnark PLONK setup anchors (`240` bytes: compressed `G1 || G2 || tau*G2`).
+pub fn bls12_381_anchors(
+  parameters: &VerifierParams<Bls12381Curve>,
+) -> Vec<u8> {
+  anchors_for::<Bls12381Curve>(parameters)
 }
 pub use crate::pipeline::gnark::CircuitInfo;
 use std::{ffi::c_void, path::Path};
@@ -187,10 +204,25 @@ impl Prover {
     expected: &[Scalar],
   ) -> Result<Proof> {
     let expected = public_bytes(expected)?;
+    self.prove_raw(witness, &expected)
+  }
+
+  /// Prove a prepared BLS12-381 `ix-aiur-scs-v1` circuit against expected
+  /// BLS12-381 `Fr` public inputs.
+  pub fn prove_bls12_381(
+    &mut self,
+    witness: &[u8],
+    expected: &[Bls12381Scalar],
+  ) -> Result<Proof> {
+    let expected = super::scs::bls12_381_public_bytes(expected)?;
+    self.prove_raw(witness, &expected)
+  }
+
+  fn prove_raw(&mut self, witness: &[u8], expected: &[u8]) -> Result<Proof> {
     let handle = self.handle.ok_or("Aiur prover is closed")?;
     // Exclusive access prevents concurrent proof generation or closing.
     let response = Response::checked(unsafe {
-      raw::ix_gnark_aiur_prove(handle, view(witness), view(&expected))
+      raw::ix_gnark_aiur_prove(handle, view(witness), view(expected))
     })?;
     let solidity = if response.0.solidity_len == 0 {
       Vec::new()
@@ -233,6 +265,29 @@ pub fn verify(
   // Inputs remain borrowed until the synchronous verification call returns.
   Response::checked(unsafe {
     raw::ix_gnark_aiur_verify(
+      view(key),
+      view(trusted_digest),
+      view(proof),
+      view(&expected),
+      view(anchors),
+    )
+  })?;
+  Ok(())
+}
+
+/// Verify a BLS12-381 `ix-aiur-scs-v1` PLONK proof against a pinned
+/// verifying-key SHA-256 digest, expected BLS12-381 `Fr` public inputs, and
+/// 240-byte compressed BLS12-381 setup anchors.
+pub fn verify_bls12_381(
+  key: &[u8],
+  trusted_digest: &[u8; 32],
+  proof: &[u8],
+  expected: &[Bls12381Scalar],
+  anchors: &[u8],
+) -> Result<()> {
+  let expected = super::scs::bls12_381_public_bytes(expected)?;
+  Response::checked(unsafe {
+    raw::ix_gnark_aiur_bls_verify(
       view(key),
       view(trusted_digest),
       view(proof),

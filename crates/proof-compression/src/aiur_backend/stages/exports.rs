@@ -23,6 +23,99 @@ use std::{
   time::Instant,
 };
 
+/// The prime field passed to `wide_export` and `tiling_export2`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Field {
+  #[default]
+  Bn254,
+  Bls12381,
+  Goldilocks,
+}
+
+impl Field {
+  pub const fn name(self) -> &'static str {
+    match self {
+      Self::Bn254 => "bn254",
+      Self::Bls12381 => "bls12-381",
+      Self::Goldilocks => "goldilocks",
+    }
+  }
+
+  pub fn parse(name: &str) -> Result<Self, String> {
+    match name {
+      "bn254" => Ok(Self::Bn254),
+      "bls12-381" | "bls12_381" | "bls12381" => Ok(Self::Bls12381),
+      "goldilocks" => Ok(Self::Goldilocks),
+      other => Err(format!(
+        "unknown exporter field {other:?}; expected bn254, bls12-381, or goldilocks"
+      )),
+    }
+  }
+}
+
+/// Optional manifest `"field"` selector for KZG/PLONK stages (`"bn254"` default
+/// or `"bls12-381"`).
+pub(super) fn parse_stage_field(
+  spec: &serde_json::Value,
+) -> Result<Field, String> {
+  match &spec["field"] {
+    serde_json::Value::Null => Ok(Field::Bn254),
+    serde_json::Value::String(name) => match Field::parse(name)? {
+      Field::Bn254 => Ok(Field::Bn254),
+      Field::Bls12381 => Ok(Field::Bls12381),
+      Field::Goldilocks => {
+        Err("stage field must be \"bn254\" or \"bls12-381\"".into())
+      },
+    },
+    _ => {
+      Err("manifest field must be a string (\"bn254\" or \"bls12-381\")".into())
+    },
+  }
+}
+
+/// Optional manifest `"entry"` override (for plugging in `ixcc-aiur`-compiled
+/// circuits).
+pub(super) fn parse_optional_entry(
+  spec: &serde_json::Value,
+) -> Result<Option<&str>, String> {
+  match &spec["entry"] {
+    serde_json::Value::Null => Ok(None),
+    serde_json::Value::String(s) if !s.is_empty() => Ok(Some(s.as_str())),
+    _ => Err("manifest entry must be a non-empty string".into()),
+  }
+}
+
+fn input_field(input: &[u8]) -> Result<Option<Field>, String> {
+  let Ok(value) = serde_json::from_slice::<serde_json::Value>(input) else {
+    return Ok(None);
+  };
+  let Some(object) = value.as_object() else {
+    return Ok(None);
+  };
+  match object.get("field") {
+    None | Some(serde_json::Value::Null) => Ok(None),
+    Some(serde_json::Value::String(name)) => Field::parse(name).map(Some),
+    Some(_) => Err("exporter input.json \"field\" must be a string".into()),
+  }
+}
+
+fn resolve_export_field(
+  explicit: Option<Field>,
+  input: &[u8],
+) -> Result<(Option<Field>, Option<Field>), String> {
+  let json_field = input_field(input)?;
+  if let (Some(cli), Some(in_json)) = (explicit, json_field)
+    && cli != in_json
+  {
+    return Err(format!(
+      "exporter field {} conflicts with input.json field {}",
+      cli.name(),
+      in_json.name()
+    ));
+  }
+  Ok((explicit.or(json_field), json_field))
+}
+
 /// The exporters a stage can request.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -274,11 +367,49 @@ impl Exports {
     hasher.finalize().to_hex().to_string()
   }
 
+  /// Cache key for `export_with_field`. Identical to [`Self::key`] when
+  /// `field` is `None`, matches `"field"` inside `input`, or defaults to BN254.
+  pub fn key_with_field(
+    &self,
+    kind: Kind,
+    field: Option<Field>,
+    input: &[u8],
+  ) -> Result<String, String> {
+    let (effective, json_field) = resolve_export_field(field, input)?;
+    match (effective, json_field) {
+      (Some(f), None) if f != Field::Bn254 => {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"ix/aiur-stages-export/v1\0");
+        hasher.update(kind.name().as_bytes());
+        hasher.update(&[0]);
+        hasher.update(&self.ids[kind.name()]);
+        hasher.update(blake3::hash(input).as_bytes());
+        hasher.update(b"\0field=");
+        hasher.update(f.name().as_bytes());
+        Ok(hasher.finalize().to_hex().to_string())
+      },
+      _ => Ok(self.key(kind, input)),
+    }
+  }
+
   /// The export of `input` (stored as `input.json` byte for byte), from the
-  /// cache or from the exporter.
+  /// cache or from the exporter. Forwards `--field <name>` when `input`
+  /// specifies `"field"`.
   pub fn export(&self, kind: Kind, input: &[u8]) -> Result<Entry, String> {
+    self.export_with_field(kind, None, input)
+  }
+
+  /// Like [`Self::export`], with an optional explicit [`Field`] forwarded via
+  /// `--field <name>` to `wide_export` and `tiling_export2`.
+  pub fn export_with_field(
+    &self,
+    kind: Kind,
+    field: Option<Field>,
+    input: &[u8],
+  ) -> Result<Entry, String> {
     let started = Instant::now();
-    let key = self.key(kind, input);
+    let (effective, json_field) = resolve_export_field(field, input)?;
+    let key = self.key_with_field(kind, field, input)?;
     let base = self.root.join("exports").join(kind.name());
     let dir = base.join(&key);
     if dir.join("complete").is_file() {
@@ -299,7 +430,19 @@ impl Exports {
     ));
     fs::create_dir_all(&staging).map_err(io(&staging))?;
     let result = (|| {
-      fs::write(staging.join("input.json"), input).map_err(io(&staging))?;
+      let staged_input = match (&self.runner, effective, json_field) {
+        (Runner::Broker(_), Some(f), None) if f != Field::Bn254 => {
+          let mut value: serde_json::Value = serde_json::from_slice(input)
+            .map_err(|e| format!("exporter input.json: {e}"))?;
+          if let Some(obj) = value.as_object_mut() {
+            obj.insert("field".into(), serde_json::json!(f.name()));
+          }
+          serde_json::to_vec(&value).map_err(|e| e.to_string())?
+        },
+        _ => input.to_vec(),
+      };
+      fs::write(staging.join("input.json"), &staged_input)
+        .map_err(io(&staging))?;
       match &self.runner {
         Runner::Binaries { wide, tiling2 } => {
           let exe = match kind {
@@ -309,6 +452,9 @@ impl Exports {
           let log = fs::File::create(staging.join("export.log"))
             .map_err(io(&staging))?;
           let mut command = Command::new(exe);
+          if let Some(f) = effective {
+            command.arg("--field").arg(f.name());
+          }
           command
             .arg(staging.join("input.json"))
             .arg(staging.join("layout.json"))
@@ -395,5 +541,135 @@ impl stark_verifier::compress_wrap::WideExporter for WideSource<'_> {
       fs::read(&layout).map_err(io(&layout))?,
       fs::read(&fixed).map_err(io(&fixed))?,
     ))
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use serde_json::json;
+  use std::os::unix::fs::PermissionsExt;
+
+  fn temp_dir(label: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+      "ix-exports-test-{label}-{}-{}",
+      std::process::id(),
+      std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos())
+    ));
+    fs::create_dir_all(&dir).unwrap();
+    dir
+  }
+
+  fn write_mock_exporter(path: &Path) {
+    let script = "#!/bin/sh\nset -e\n\
+      FIELD=\"\"\n\
+      if [ \"$1\" = \"--field\" ]; then FIELD=\"$2\"; shift 2; fi\n\
+      INPUT=\"$1\"; LAYOUT=\"$2\"; FIXED=\"$3\"; TABLES=\"$4\"\n\
+      printf '{\"field\":\"%s\"}' \"$FIELD\" > \"$LAYOUT\"\n\
+      printf 'fixed' > \"$FIXED\"\n\
+      if [ -n \"$TABLES\" ]; then printf 'tables' > \"$TABLES\"; fi\n";
+    fs::write(path, script).unwrap();
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+  }
+
+  #[test]
+  fn cache_key_compatibility_and_field_forwarding() {
+    let root = temp_dir("field");
+    let wide = root.join("mock_wide.sh");
+    let tiling2 = root.join("mock_tiling2.sh");
+    write_mock_exporter(&wide);
+    write_mock_exporter(&tiling2);
+    let exports = Exports::new(
+      &root.join("cache"),
+      Runner::Binaries { wide, tiling2 },
+      None,
+    )
+    .unwrap();
+
+    // BN254 cache key is 100% backward-compatible whether field is omitted or
+    // explicit.
+    let bn_no_field = br#"{"format":"ix-tiling-v2-input-2","width":8}"#;
+    let legacy_key = exports.key(Kind::Tiling2, bn_no_field);
+    assert_eq!(
+      exports.key_with_field(Kind::Tiling2, None, bn_no_field).unwrap(),
+      legacy_key
+    );
+    assert_eq!(
+      exports
+        .key_with_field(Kind::Tiling2, Some(Field::Bn254), bn_no_field)
+        .unwrap(),
+      legacy_key
+    );
+
+    // Explicit BLS12-381 gets a distinct key from BN254.
+    let bls_key = exports
+      .key_with_field(Kind::Tiling2, Some(Field::Bls12381), bn_no_field)
+      .unwrap();
+    assert_ne!(bls_key, legacy_key);
+
+    // Input JSON with `"field": "bls12-381"` forwards `--field bls12-381`.
+    let wide_bls = br#"{"format":"ix-wide-input-1","field":"bls12-381"}"#;
+    let entry = exports.export(Kind::Wide, wide_bls).unwrap();
+    assert!(!entry.cached);
+    let layout: serde_json::Value =
+      serde_json::from_slice(&fs::read(entry.layout()).unwrap()).unwrap();
+    assert_eq!(layout["field"], "bls12-381");
+    let cached = exports.export(Kind::Wide, wide_bls).unwrap();
+    assert!(cached.cached);
+    assert_eq!(cached.key, entry.key);
+
+    // Explicit `--field bls12-381` forwarded to tiling_export2.
+    let t_entry = exports
+      .export_with_field(Kind::Tiling2, Some(Field::Bls12381), bn_no_field)
+      .unwrap();
+    let t_layout: serde_json::Value =
+      serde_json::from_slice(&fs::read(t_entry.layout()).unwrap()).unwrap();
+    assert_eq!(t_layout["field"], "bls12-381");
+
+    // Explicit `--field bn254` forwarded to tiling_export2.
+    let bn_entry = exports
+      .export_with_field(Kind::Tiling2, Some(Field::Bn254), bn_no_field)
+      .unwrap();
+    let bn_layout: serde_json::Value =
+      serde_json::from_slice(&fs::read(bn_entry.layout()).unwrap()).unwrap();
+    assert_eq!(bn_layout["field"], "bn254");
+    assert_eq!(bn_entry.key, legacy_key);
+
+    // Conflicting CLI and input.json field fails closed.
+    assert!(
+      exports
+        .export_with_field(Kind::Wide, Some(Field::Bn254), wide_bls)
+        .is_err()
+    );
+    // Unknown field in input.json fails closed.
+    let bad_field = br#"{"format":"ix-wide-input-1","field":"secp256k1"}"#;
+    assert!(exports.export(Kind::Wide, bad_field).is_err());
+
+    let _ = fs::remove_dir_all(&root);
+  }
+
+  #[test]
+  fn manifest_field_and_entry_parsing() {
+    assert_eq!(parse_stage_field(&json!({})).unwrap(), Field::Bn254);
+    assert_eq!(
+      parse_stage_field(&json!({"field": "bn254"})).unwrap(),
+      Field::Bn254
+    );
+    assert_eq!(
+      parse_stage_field(&json!({"field": "bls12-381"})).unwrap(),
+      Field::Bls12381
+    );
+    assert!(parse_stage_field(&json!({"field": "goldilocks"})).is_err());
+    assert!(parse_stage_field(&json!({"field": 123})).is_err());
+
+    assert_eq!(parse_optional_entry(&json!({})).unwrap(), None);
+    assert_eq!(
+      parse_optional_entry(&json!({"entry": "Prog::main"})).unwrap(),
+      Some("Prog::main")
+    );
+    assert!(parse_optional_entry(&json!({"entry": ""})).is_err());
+    assert!(parse_optional_entry(&json!({"entry": 42})).is_err());
   }
 }
