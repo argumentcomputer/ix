@@ -16,6 +16,7 @@ pub mod compress_gl;
 pub mod fq;
 pub mod fq_relation;
 pub mod g1;
+pub mod groth16;
 pub mod kzg;
 pub mod kzg_advice;
 pub mod kzg_packed_advice;
