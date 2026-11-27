@@ -665,7 +665,10 @@ def isFormalOnlyModule (m : Lean.Name) : Bool :=
   s.startsWith "Ix.Cert.MultiStarkRefinement." ||
   s.startsWith "Ix.Cert.Aggr." ||
   s.startsWith "Ix.Cert.Compression." ||
+  s.startsWith "Ix.Cert.AiurCompression." ||
   m == `Ix.Cert.Security128ClosureManifest ||
+  m == `Ix.Cert.StatementClosureManifest ||
+  m == `Ix.Cert.AiurCompressionClosureManifest ||
   m == `Ix.Cert.RecordSectionsBridge ||
   m == `Tests.FormalPackageMain ||
   m == `Tests.Ix.MultiStarkVerifier ||
@@ -973,20 +976,71 @@ lean_exe «kernel-pin-gen» where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs]
 
+/-- Run `cmd args`, inheriting the output, and fail on a nonzero exit code. -/
+def runChecked (cmd : String) (args : Array String) : IO Unit := do
+  let child ← IO.Process.spawn { cmd, args, stdout := .inherit, stderr := .inherit }
+  let code ← child.wait
+  unless code == 0 do
+    throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
+
+/-- The certified kernel gate's roots for the full-closure kernel replay: its
+audit and freeze modules (the modules CI's kernel job also names to
+`leanchecker`) and the certified sharing library. The replay re-checks every
+project module in their import closure, so a lemma below them that entered an
+`.olean` without a kernel check fails the gate. -/
+def kernelReplayRoots : Array String := #[
+  "IxCK.Kernel.Audit.Roots", "IxCK.Kernel.Admission.Audit",
+  "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Ix.Ixon.Authenticated.Audit",
+  "Ix.HostAdmission.Audit", "Ix.Cert.RuntimeAudit", "Ix.Cert.ModuleAudit", "Ix.Cert.Audit",
+  "Ix.Cert.ClosureManifest", "Ix.SpecDigest",
+  "IxSharingVerify", "IxSharingVerify.Audit.Statements", "IxSharingVerify.Audit.CompiledCode",
+  "IxSharingVerify.Audit.SorryFrontier",
+  "IxCK.Kernel", "IxCK.Resource", "IxCK.Address.Core"]
+
+/-- Every module of the certified kernel package (its libraries glob these
+directories) and of the certified sharing library, replayed whether or not an
+audit root imports it: the kernel theory only IxVM's consistency proof uses is
+here too. -/
+def kernelReplayTrees : Array String := #[
+  "IxCK/Kernel:IxCK.Kernel", "IxCK/Ixon:IxCK.Ixon", "IxCK/Resource:IxCK.Resource",
+  "IxCK/Fixtures:IxCK.Fixtures", "IxSharingVerify:IxSharingVerify"]
+
+/-- Build the kernel replay's roots, then replay their closure (and, with the
+model, the set-theory model's) with Lean's kernel (`Scripts/KernelReplay.lean`). -/
+def kernelReplay (withModel : Bool) : IO Unit := do
+  runChecked "lake" #["-d", "IxCK", "build", "--wfail"]
+  runChecked "lake" (#["build", "--wfail"] ++ kernelReplayRoots)
+  runChecked "lake" (#["env", "lean", "--run", "Scripts/KernelReplay.lean", "--jobs", "8"] ++
+    (kernelReplayTrees.flatMap fun t => #["--tree", t]) ++ kernelReplayRoots)
+  if withModel then
+    runChecked "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
+    runChecked "lake" #["-d", "Models/SetTheory", "env", "lean", "--run",
+      "Scripts/KernelReplay.lean", "--jobs", "4",
+      "--tree", "Models/SetTheory/IxSetTheoryModel:IxSetTheoryModel",
+      "IxSetTheoryModel", "IxSetTheoryModel.Audit"]
+
+/-- The certified kernel gate's full-closure kernel replay alone (`check-kernel`
+runs it last). CI runs it on pushes to `main`, where the other checks are not
+repeated. Accepts `--with-model`. -/
+script "check-kernel-replay" (args) := do
+  unless args.isEmpty || args == ["--with-model"] do
+    IO.eprintln "usage: lake run check-kernel-replay [--with-model]"
+    return 2
+  kernelReplay (args == ["--with-model"])
+  IO.println "Certified kernel replay passed."
+  return 0
+
 /-- Run the certified kernel gate: the standalone strict build with its audits,
 the host-side tests, optionally the set-theory model, the certification
 statements' freeze (`Ix.Cert.Audit`), the layering and
 trust-surface fences, the certified entry's host-compiled
-cases, and the `.meta` and `.source` names against Lean's. -/
+cases, the `.meta` and `.source` names against Lean's, and the full-closure
+kernel replay of the kernel package and its audit roots (`check-kernel-replay`). -/
 script "check-kernel" (args) := do
   unless args.isEmpty || args == ["--with-model"] do
     IO.eprintln "usage: lake run check-kernel [--with-model]"
     return 2
-  let run (cmd : String) (args : Array String) : ScriptM Unit := do
-    let child ← IO.Process.spawn { cmd, args, stdout := .inherit, stderr := .inherit }
-    let code ← child.wait
-    unless code == 0 do
-      throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
+  let run (cmd : String) (args : Array String) : ScriptM Unit := runChecked cmd args
   run "lake" #["-d", "IxCK", "build", "--wfail"]
   -- Batch all root-workspace kernel audit modules, freeze, fences and host-entry
   -- executables into one Lake invocation so dependency tracing runs once.
@@ -1016,6 +1070,9 @@ script "check-kernel" (args) := do
   -- The `.meta` and `.source` names against Lean's, on ill-typed declarations
   -- and the fixtures (`Tests/Ix/Kernel/MetaNames.lean`).
   run ".lake/build/bin/kernel-meta-names" #[]
+  -- Every project module below the audit roots, and every module of the
+  -- kernel package, re-checked by Lean's kernel.
+  kernelReplay (args == ["--with-model"])
   IO.println "Certified kernel checks passed."
   return 0
 
