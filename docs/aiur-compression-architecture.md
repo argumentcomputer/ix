@@ -936,3 +936,42 @@ Peak RSS stays 146 GB. What remains on the critical path is mostly
 CompressGL's single-threaded execution (30 s), CompressGL's GPU-bound
 commitments and openings (35 s), the narrow stage's GPU work and its
 mostly single-threaded witness (4.8 s), and gnark (23 s).
+
+## 9. Multi-endpoint & compiled verifier extensions (2026-11-26)
+
+Beyond the hand-written BN254 L3 pipeline above, the stack now supports three
+additional certified capabilities (detailed with soundness theorems and CPU
+benchmarks in [docs/ixcc-aiur-compiler.md](ixcc-aiur-compiler.md)):
+
+- **Endpoint 1 — Certified single-circuit (`num_circuits == 1`) Goldilocks STARK:**
+  `Aiur.Tiling.SingleCircuit` packs multiple row-local circuits horizontally
+  into a single uniform-height circuit (`wide_export --goldilocks --single-circuit --pow2-rows [--vector-rom K]`
+  and `tiling_export2 --goldilocks --single-circuit --pow2-rows`).
+  `crates/aiur/examples/single_circuit_prove.rs` proves and verifies both
+  layouts with `--advice`, `--pin`, `--stark-io`, `--stark-128`, and
+  `--controls` (with optional `Aiur.Tiling.VectorRom` `K`-lane ROM packing).
+- **Endpoint 2 — Certified BLS12-381 KZG / PLONK / SCS:**
+  `Aiur.Library.Field.BLS12381.Prime`, `Aiur.Plonk.BLS12381`, and
+  `Aiur.Tiling.BLS12381` certify tiling and PLONK SCS lowering over BLS12-381
+  `Fr`. `tiling_export2`, `wide_export`, and `plonk_export` accept
+  `--bls12-381`; `tools/gnark` loads BLS12-381 `ix-aiur-scs-v1` files with
+  `curve: "bls12-381"` (22 `affine-u80-v1` private output words constrained via
+  `sw_bls12381.PairingCheck`, CPU-only; see [tools/gnark/AIUR.md](../tools/gnark/AIUR.md));
+  and `crates/proof-compression/src/aiur_backend/bls12_381.rs` implements the
+  corresponding Rust scalar backend and canonical G1/G2 codecs.
+- **Optional `ix-aiur-stages-v1` manifest overrides:**
+  `crates/stark-verifier/src/compress_wrap.rs` and
+  `crates/proof-compression/src/aiur_backend/{plonk,stages}/` accept optional
+  `"entry"`, `"advice"`, and `"field"` (`"bn254"` default or `"bls12-381"`)
+  fields so `ixcc-aiur`-compiled circuits plug directly into existing stage
+  drivers without breaking existing L3 manifests.
+- **Pure annotated Lean 4 production compression verifiers (`IxCCAiur/Compression/`):**
+  `StarkWire.lean` + `CompressWrapPure.lean` (full-modulus 64-bit Goldilocks
+  Protocol `v6` `CompressWrap`/`CompressGL` verifier) and `KzgWire.lean` +
+  `KzgPackedPure.lean` (single-source BN254 & BLS12-381 packed-SHPLONK KZG
+  verifier for `CompressNarrowFixed::step_v1` and
+  `CompressFinalNarrow::verify_accumulator_v1`) compile directly via
+  `ixcc-aiur` (`WitnessIO`, `CompressionIntrinsics`, `--entry-name`,
+  `--assert-ok`, `--partial-eval`, `--field-lower`, `--enable-guesses`),
+  replacing manual refinement proofs with compiler certification. Full GPU
+  benchmarks against the hand-written L3 stages await GPU host availability.

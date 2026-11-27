@@ -230,8 +230,10 @@ measuring machine had no GPU.
 
 ## Compiler backends, tiling, and IxCCAiur
 
-Additional certified backend passes, field instantiations, and the `IxCCAiur`
-compiler bridge extend the formal Aiur stack:
+Additional certified backend passes, field instantiations, pure-Lean
+compression verifiers, and the `IxCCAiur` compiler bridge extend the formal
+Aiur stack (see [docs/ixcc-aiur-compiler.md](ixcc-aiur-compiler.md) and
+[IxCCAiur/README.md](../IxCCAiur/README.md)):
 
 | Module / package | Role |
 | --- | --- |
@@ -244,4 +246,7 @@ compiler bridge extend the formal Aiur stack:
 | `Aiur/Aiur/Optimized/Split.lean` | Certified fast-path / cold-path chip splitting across mutually exclusive boolean selectors sharing a single logical LogUp channel. |
 | `Aiur/Aiur/Optimized/Vectorize.lean` | Certified `K`-lane horizontal chip vectorization reducing physical row count by `K×` with exact polynomial constraint-degree invariance. |
 | `Ix/Compile/CircuitContract/{Basic,Attr,Emit}.lean` | Scoped `Ix.Circuit` operational attributes (`@[circuit_*]`, `checked def`) stored in a persistent sidecar environment extension that leaves `ConstantInfo` and Ixon content addresses unchanged, and deterministic `"ixcc/circuit-schedule/1"` JSON export. |
-| `IxCCAiur/` (`IxCCAiur.lean`, `IxCCAiur/*.lean`, `Examples/*.lean`) | Certified lowering from `IxCC` FIR to `Aiur.Program` (base and typed lowering, inline fusion, guess/field lowering, partial evaluation, schedule JSON ingestion, compiled-certificate composition, `IxCCAiur.Audit`, and the `ixcc-aiur` CLI). |
+| `IxCCAiur/` (`IxCCAiur.lean`, `IxCCAiur/*.lean`) | Certified lowering from `IxCC` FIR to `Aiur.Program` (base and typed unboxed lowering, inline fusion, partial evaluation, 3-field `FieldLower`, Tier-2 `GuessLower`, existential NP `WitnessIO`, `CompressionIntrinsics`, `Blake3Spec`, schedule JSON ingestion, `CompiledCert.{Cert,TypedCert}`, `IxCCAiur.Audit`, and the `ixcc-aiur` CLI). |
+| `IxCCAiur/Examples/*.lean` & `IxCCAiur/Compression/*.lean` | Pure annotated Lean 4 benchmark and production compression verifiers (`Blake3Block`, `MmcsPure`, `KzgAlgebraPure`, `CurveOpsPure`, `FriPure`, `MultiStarkV6Pure`, `StarkWire` + `CompressWrapPure`, `KzgWire` + `KzgPackedPure`) importing only `Ix.Compile.CircuitContract`. |
+| `crates/aiur/examples/{ixcc_prove,single_circuit_prove}.rs` | Live CPU STARK provers for `ixcc-aiur` packages and certified Endpoint 1 single-circuit (`num_circuits == 1`) layouts (`wide_export --single-circuit [--vector-rom K]` and `tiling_export2 --goldilocks --single-circuit`), with universal `--advice`, `--pin`, `--stark-io`, `--stark-128`, and `--controls`. |
+| `crates/proof-compression/src/aiur_backend/bls12_381.rs` & `tools/gnark/aiur_plonk*.go` | Endpoint 2 BLS12-381 scalar backend, canonical 22-word `affine-u80-v1` G1 encoding, and `gnark` BLS12-381 `ix-aiur-scs-v1` + `sw_bls12381.PairingCheck` terminal prover/verifier (CPU-only). |

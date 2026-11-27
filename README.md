@@ -34,12 +34,17 @@ transactions over proofs.
 
 > :warning: **This repository is a pre-alpha work in progress and should not be used for any purpose.**
 
-The formal Aiur compiler and runtime live in separate Lean and Rust packages
-(`Aiur/`, `IxVM/`, `MultiStark/` and `crates/`). See
-[the migration guide](docs/formal-aiur-migration.md) for their build commands,
-what the Aiur proofs cover and what they trust, and
+The formal Aiur compiler, certified compilers, and runtime live in separate
+Lean and Rust packages (`Aiur/`, `IxCK/`, `IxCC/`, `IxCCAiur/`, `IxVM/`,
+`MultiStark/`, and `crates/`). See
+[the migration guide](docs/formal-aiur-migration.md) for formal Aiur build
+commands and trust boundaries,
 [the controller design](docs/formal-aiur-unified-controller.md) for how claims
-and their aggregation are proven.
+and their aggregation are proven,
+[IxCC/README.md](IxCC/README.md) for the certified native x86-64 compiler, and
+[IxCCAiur/README.md](IxCCAiur/README.md) /
+[docs/ixcc-aiur-compiler.md](docs/ixcc-aiur-compiler.md) for the certified
+Lean-to-Formal-Aiur circuit compiler and multi-endpoint compression pipeline.
 
 ## Use Cases
 
@@ -173,7 +178,13 @@ Ix consists of the following core components:
   object and re-merging the computationally relevant and irrelevant parts).
 - The [Aiur zkDSL](https://github.com/argumentcomputer/ix/tree/main/Aiur)
   which is a first-order functional programming language that generates
-  multi-STARK circuits.
+  multi-STARK, single-circuit STARK, and KZG/PLONK circuits.
+- The [IxCC certified native compiler](IxCC/README.md), which compiles `ixon`
+  closures to standalone x86-64 ELF executables via rechecked intermediate
+  certificates, and [IxCCAiur](IxCCAiur/README.md), which compiles annotated
+  Lean 4 programs (`open scoped Ix.Circuit`) from `IxCC` FIR directly to Formal
+  Aiur circuits across Goldilocks, BN254 `Fr`, and BLS12-381 `Fr`
+  ([compiler & compression guide](docs/ixcc-aiur-compiler.md)).
 - The IxVM (not yet released), which implements reduction and typechecking
   of `ixon` (including ingress and egress from and to binary data).
 - Integration with the [iroh p2p network](https://www.iroh.computer/) so that
