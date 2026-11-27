@@ -28,3 +28,6 @@ IxCC/fixtures/**/*census.json linguist-generated=true
 IxCC/fixtures/**/*equations.json linguist-generated=true
 IxCC/fixtures/**/steps.json linguist-generated=true
 IxCC/docs/performance/**/*.json linguist-generated=true
+
+# Generated SHA-256 definitional closure manifests
+Tests/Fixtures/*-closure-manifest.txt linguist-generated=true

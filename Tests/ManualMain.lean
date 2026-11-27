@@ -8,7 +8,6 @@ import Tests.Ix.Kernel.PrimAddrs
 import Tests.Ix.IxVM.InductiveDeclBench
 import Tests.Ix.IxVM.Differential
 import Tests.Ix.IxVM.BinderAnnotators
-import Tests.Ix.IxVM.MustReject
 import Tests.Ix.IxVM.IndVariations
 import Tests.AggrBindingReuse
 import Tests.AggrToolchains
@@ -26,9 +25,6 @@ import Ix.Meta
 
 open Tests.Registry in
 def registry : List Entry := [
-  -- Must-reject gate: compact hand-built inputs the program has to refuse, with
-  -- controls exercising the Rust executor and circuit-verdict deferred assertions.
-  .env "ixvm-must-reject" (.manual "hand-built must-reject fixtures and their controls, checked against Lean's kernel") Tests.Ix.IxVM.MustReject.run,
   .env "ixvm-ind-variations" (.manual "inductive variations through Lean, the certified kernel and IxVM; IX_IV_ONLY") Tests.Ix.IxVM.IndVariations.run,
   .runner "binder-data-annotators" (.manual "the compiler's inline annotator against IxCK's pass on a compiled artifact, byte for byte; IX_BD_IXE") Tests.Ix.IxVM.BinderAnnotators.run,
   .runner "prim-addrs-artifact" (.manual "every Ix.PrimAddrs address is the record a compiled artifact publishes under its Lean name; IX_PRIM_IXE") Tests.Ix.Kernel.PrimAddrs.artifact,

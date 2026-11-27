@@ -15,7 +15,7 @@ There are no new AST operations, native arithmetic primitives, or proof axioms.
 | `List/Word.lean` | Checked depth and U64-indexed list operations, separated from the generic list library. |
 | `Option.lean`, `Bytes.lean` | Shared option layout, byte streams, 32-byte addresses, and structural address equality. |
 | `Blake3.lean` | Shared compression, hashing, address conversion, and digest packing. Uses the byte, word, and list libraries. |
-| `Field/Goldilocks.lean` | Canonical field encoding, checked inverse advice, and quadratic extension arithmetic with nonresidue 7. This implementation is specifically selected for Goldilocks, unlike the bounded U32 implementation. |
+| `Field/Goldilocks.lean` | Canonical field encoding, checked inverse advice, and cubic extension arithmetic over $\mathbb{F}_p[X]/(X^3 - X - 1)$. This implementation is specifically selected for Goldilocks, unlike the bounded U32 implementation. |
 | `Field/BLS12381/Prime.lean` | Pure Lean Lucas primality certificates for the BLS12-381 scalar field modulus `r`, providing `Aiur.Library.Field.BLS12381.F := ZMod modulus` without primality oracles or extra axioms. |
 
 The library modules are written as Lean syntax, as the applications are (see

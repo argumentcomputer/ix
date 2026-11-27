@@ -48,7 +48,7 @@ def resolveCurve (p : Cli.Parsed) : Except String String := do
   | false, false, none => pure "bn254"
   | true, true, _ => throw "choose at most one of --bn254 and --bls12-381"
 
-private def outputDirectory (opts : Options) (addr : Address) : IO String := do
+def outputDirectory (opts : Options) (addr : Address) : IO String := do
   match opts.out with
   | some path => return path
   | none => return ((← StoreIO.toIO Store.getHomeDir) / ".ix/compression" / toString addr).toString
@@ -66,6 +66,23 @@ def finalOf : String → Except String UInt8
   | "stark-128-zk" => .ok 4
   | other => .error s!"unknown compression output {other}: expected kzg, plonk, groth16, stark-128 or stark-128-zk"
 
+/-- What the final keys of a `--dev-final-srs` run are, for the setup banner: the
+banner's setup description (`Compression.describeSetupForCurve`) is the inner
+KZG setup's. Development PLONK keys are set up on powers
+from a fixed public seed, so anyone can derive their trapdoor and forge proofs;
+development Groth16 keys come from a setup generated locally, not under a
+ceremony. -/
+def finalSetupNote (opts : Options) : Option String :=
+  if !opts.devFinalSrs then none
+  else if opts.finalProof == 1 then
+    some "; final PLONK keys: a known-trapdoor development SRS derived from a public seed \
+      (anyone can forge final proofs and the PlonkVerifier.sol written with them accepts \
+      them; NOT production-secure, never deploy it)"
+  else if opts.finalProof == 2 then
+    some "; final Groth16 keys: a development setup generated locally, not under a ceremony \
+      (NOT production-secure)"
+  else none
+
 /-- Check what can be checked before proving: the setup is configured and
 authenticates, and the options are consistent. Returns the setup description. -/
 def preflight (p : Cli.Parsed) (opts : Options) : IO String := do
@@ -76,12 +93,14 @@ def preflight (p : Cli.Parsed) (opts : Options) : IO String := do
       throw <| IO.userError "--curve, --bn254 and --bls12-381 are not used with --stark-128 / --stark-128-zk"
     if opts.devKzgSrs || opts.devFinalSrs || opts.fresh || opts.out.isSome then
       throw <| IO.userError "--dev-kzg-srs, --dev-final-srs, --fresh and --out are not used with --stark-128 / --stark-128-zk"
+    -- The Johnson figures are classical query-phase estimates, not theorems about the shipped
+    -- verifier; 32-byte BLAKE3 gives about 85-bit post-quantum collision resistance.
     let paramsDesc := if opts.compact then
-      "1-circuit Plonkish ULTRA_COMPACT_400KB_ZK (lb=4, q=55, qpow=30, mla=3, lfp=8, 137.53b Johnson, ~344-389 KiB)"
+      "1-circuit Plonkish ULTRA_COMPACT_400KB_ZK (lb=4, q=55, qpow=30, mla=3, lfp=8, 137.53b classical Johnson query-phase estimate, ~344-389 KiB)"
     else
-      "1-circuit Plonkish COMPACT_400KB_BALANCED (lb=4, q=58, qpow=28, mla=3, lfp=8, 141.39b Johnson, ~361-405 KiB)"
+      "1-circuit Plonkish COMPACT_400KB_BALANCED (lb=4, q=58, qpow=28, mla=3, lfp=8, 141.39b classical Johnson query-phase estimate, ~361-405 KiB)"
     if opts.finalProof == 4 then
-      return s!"Endpoint 1 native Fp^3 STARK shrinker (--stark-128-zk, Protocol v6-zk, zero-knowledge, transparent, {paramsDesc})"
+      return s!"Endpoint 1 native Fp^3 STARK shrinker (--stark-128-zk, Protocol v6-zk, zero-knowledge by design, not formally stated, transparent, {paramsDesc})"
     else
       return s!"Endpoint 1 native Fp^3 STARK shrinker (--stark-128, Protocol v6, transparent NON-ZK, {paramsDesc})"
   if opts.compact then
@@ -90,12 +109,15 @@ def preflight (p : Cli.Parsed) (opts : Options) : IO String := do
     throw (IO.userError "Aiur compression currently produces BN254 KZG proofs; --bls12-381, --plonk, --groth16, --root-vk and --dev-final-srs are incompatible")
   if let some aiur := opts.aiur then
     let _ ← AiurCompression.preflightOptions aiur opts.devKzgSrs
-  Compression.describeSetupForCurve opts.curve opts.devKzgSrs opts.devFinalSrs opts.finalProof
+  let setup ← Compression.describeSetupForCurve opts.curve opts.devKzgSrs opts.devFinalSrs opts.finalProof
+  -- The description above is the inner setup's; append what the final keys are.
+  return setup ++ (finalSetupNote opts).getD ""
 
 /-- Refuse an input other than an uncompressed proof of a `CheckEnv` (or `Catalog`
 for native STARK shrinking) claim. -/
-private def checkInput (wrapper : Ixon.Proof) (nativeStark : Bool := false) : IO Unit := do
-  if Compression.isCompressed wrapper.proof || StarkShrinker.isShrunk wrapper.proof then
+def checkInput (wrapper : Ixon.Proof) (nativeStark : Bool := false) : IO Unit := do
+  if Compression.isCompressed wrapper.proof || StarkShrinker.isShrunk wrapper.proof
+      || FormalAggregate.isL3Proof wrapper.proof then
     throw <| IO.userError "proof is already compressed or shrunk"
   match wrapper.claim with
   | .checkEnv .. => pure ()
@@ -178,6 +200,10 @@ private def compressProof (p : Cli.Parsed) (addr : Address) (wrapper : Ixon.Proo
   let proof ← Compression.compressForCurve vk root (Ix.Claim.ser wrapper.claim) statement
     layout out (← Compression.cacheDir).toString opts.curve
     opts.devKzgSrs opts.devFinalSrs opts.finalProof opts.fresh
+  if opts.devFinalSrs && opts.finalProof == 1 then
+    IO.eprintln s!"WARNING: --dev-final-srs: the final PLONK keys use a development SRS whose \
+      trapdoor anyone can derive from the public seed; anyone can forge proofs that the \
+      PlonkVerifier.sol written under {out} accepts. Do not deploy it."
   let compressed : Ixon.Proof := { claim := wrapper.claim, proof }
   StoreIO.toIO (Store.write (Ixon.Proof.ser compressed))
 
@@ -189,10 +215,10 @@ def compressRoot (p : Cli.Parsed) (addr : Address) (opts : Options) : IO Address
 
 def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
   try
-    if p.hasFlag "fresh" && AiurCompression.selected p then
-      if let some out := p.flag? "out" then AiurCompression.resetOutput (out.as! String)
-      else if let some addr := Address.fromString (p.positionalArg! "proof" |>.as! String) then
-        AiurCompression.resetOutput (← outputDirectory {} addr)
+    if p.hasFlag "aiur-stages" || p.hasFlag "aiur-stages-blake3" then
+      throw <| IO.userError "--aiur-stages must be invoked through the top-level ix compress command"
+    if p.hasFlag "memory-gb" || p.hasFlag "cache" || p.hasFlag "no-gpu-lock" then
+      throw <| IO.userError "--memory-gb, --cache and --no-gpu-lock require --aiur-stages"
     let modeFlags := #["plonk", "groth16", "stark-128", "stark-128-zk"].filter p.hasFlag
     if modeFlags.size > 1 then
       throw <| IO.userError "choose at most one of --plonk, --groth16, --stark-128, and --stark-128-zk"
@@ -217,8 +243,12 @@ def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
     let input := p.positionalArg! "proof" |>.as! String
     if opts.aiur.isSome then
       let (addr, wrapper) ← Compression.readProofInput input
+      checkInput wrapper false
+      let statement ← ClaimPolicy.admit p wrapper.claim (route := .aggregate)
       if opts.fresh then AiurCompression.resetOutput (← outputDirectory opts addr)
       let setup ← preflight p opts
+      IO.eprintln s!"Compressing a proof of claim {Address.blake3 (Ix.Claim.ser wrapper.claim)}:\n\
+        {statement}"
       let result ← compressProof p addr wrapper opts setup
       IO.println (toString result)
       return 0
@@ -226,7 +256,7 @@ def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
     let (addr, wrapper) ← Compression.readProofInput input
     -- the input's shape before the policy, which then sees only `CheckEnv` (or `Catalog`) claims
     checkInput wrapper (isNativeStark opts.finalProof)
-    let statement ← ClaimPolicy.admit p wrapper.claim
+    let statement ← ClaimPolicy.admit p wrapper.claim (route := .aggregate)
     IO.eprintln s!"Compressing a proof of claim {Address.blake3 (Ix.Claim.ser wrapper.claim)}:\n\
       {statement}"
     let result ← compressProof p addr wrapper opts setup
@@ -243,6 +273,11 @@ def compressCmd : Cli.Cmd := `[Cli|
   compress VIA runCompressCmd;
   "Compress an aggregate CheckEnv proof; preserve its claim and print the new proof address."
   FLAGS:
+    "aiur-stages" : String; "Use the single-process Aiur compression stages manifest (ix-aiur-stages-v1) to produce an IXL3BN1/IXL3BL1 Ixon.Proof artifact (verified via `ix verify --l3-verifier` and on-chain via IxL3PlonkVerifier.sol)."
+    "aiur-stages-blake3" : String; "Independent BLAKE3 pin for the exact --aiur-stages manifest bytes."
+    "memory-gb" : Nat; "Memory budget in GiB for --aiur-stages (default: the manifest's memory_gb)."
+    "cache" : String; "Export cache directory for --aiur-stages (default: the manifest's cache)."
+    "no-gpu-lock"; "With --aiur-stages, let stages use the GPU concurrently instead of serializing GPU sections."
     "aiur-chain" : String; "Use the trusted GL-to-BN chain manifest with independently pinned artifacts and keys."
     "aiur-chain-blake3" : String; "Independent BLAKE3 pin for the exact --aiur-chain manifest bytes."
     "aiur-gl" : String; "Use the Aiur CompressGL KZG stage with this independently trusted compiler artifact."
@@ -263,17 +298,17 @@ def compressCmd : Cli.Cmd := `[Cli|
     "max-ram" : Nat; "RAM budget in GiB for native root normalization; does not cap Aiur KZG workspaces (default MemTotal less 20%)."
     "gpu-device" : Nat; "Prove the normalized root or native STARK shrinker on this CUDA device (requires a CUDA build)."
     "dev-kzg-srs"; "Generate local development parameters for inner KZG. With --groth16 or --plonk, also requires --dev-final-srs."
-    "dev-final-srs"; "Generate and cache local development Groth16 or PLONK keys for the selected inner verifier. With --dev-kzg-srs, no ceremony parameters are required."
+    "dev-final-srs"; "Generate and cache local development Groth16 or PLONK keys for the selected inner verifier. With --dev-kzg-srs, no ceremony parameters are required. NOT production-secure: development PLONK keys use an SRS whose trapdoor anyone can derive from a public seed, so anyone can forge final proofs, and the PlonkVerifier.sol written with them must never be deployed."
     "curve" : String; "Pairing curve backend: bn254 (default, ~100b classical / 0b PQ, Ignition SRS) or bls12-381 (~126–128b classical / 0b PQ, EIP-2537, Filecoin challenge_19 SRS)."
     "bn254"; "Use the BN254 pairing curve backend (default, ~100b classical / 0b PQ, Ignition SRS)."
     "bls12-381"; "Use the BLS12-381 pairing curve backend (~126–128b classical / 0b PQ, EIP-2537, Filecoin challenge_19 SRS)."
     "plonk"; "Add a final PLONK proof using the selected curve and setup."
     "groth16"; "Add a final Groth16 proof using the selected curve and prepared, independently admitted circuit keys."
-    "stark-128"; "Endpoint 1: shrink into a compact (~361 KiB) transparent post-quantum 128-bit 1-circuit Plonkish Protocol v6 (Fp^3) STARK (zero trusted setup, NON-ZK)."
-    "stark-128-zk"; "Endpoint 1: shrink into a compact (~405 KiB) zero-knowledge post-quantum 128-bit 1-circuit Plonkish Protocol v6-zk (Fp^3) STARK (zero trusted setup, 128-bit hiding PCS)."
+    "stark-128"; "Endpoint 1: shrink into a compact (~361 KiB) transparent 1-circuit Plonkish Protocol v6 (Fp^3) STARK (zero trusted setup, NON-ZK). 128-bit classical by the query-phase estimate, not proved for this verifier; about 85-bit post-quantum collision resistance with 32-byte BLAKE3."
+    "stark-128-zk"; "Endpoint 1: shrink into a compact (~405 KiB) 1-circuit Plonkish Protocol v6-zk (Fp^3) STARK (zero trusted setup), zero-knowledge by design; hiding is not formally stated. Security level as --stark-128."
     "compact"; "With --stark-128 or --stark-128-zk: use 1-circuit Plonkish ULTRA_COMPACT_400KB_ZK (lb=4, q=55, qpow=30, mla=3, lfp=8, ~344-389 KiB; default COMPACT_400KB_BALANCED lb=4, q=58, qpow=28, mla=3, lfp=8, ~361-405 KiB)."
     "binding-env" : String; "An `.ixe` whose role binding is the claim's table, with the records it binds and its evidence theorems: the kernel admits the table over them (once per table; recorded in `~/.ix/cache/table-admission`)."
-    "allow-custom-binding"; "Compress a claim relative to a role binding the kernel does not admit here, or to a literal class (outside the IxVM consistency theorem)."
+    "allow-custom-binding"; "Compress a claim relative to a role binding other than the default role table that the kernel does not admit here, or to a literal class (which no theorem covers)."
     "allow-axioms"; "Compress a claim that depends on axioms beyond the standard three."
     "allow-assumed-binding"; "Compress a claim that assumes its role binding meets the specifications."
     "allow-assumptions"; "Compress a claim conditional on typing assumptions (assumed leaves)."

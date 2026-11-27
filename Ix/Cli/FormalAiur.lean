@@ -459,14 +459,22 @@ def verifyWrapper (system : FormalProver.System) (wrapper : Ixon.Proof) : IO Uni
   let _ ← system.verify "IxVM::verify_claim"
     ((packedDigestKey digest).map (·.val)) wrapper.proof
 
-def readProofFileOrStore (pathOrHex : String) : IO Ixon.Proof := do
-  let bytes ← if ← System.FilePath.pathExists pathOrHex then
-      IO.FS.readBinFile pathOrHex
-    else if let some addr := Address.fromString pathOrHex then
-      StoreIO.toIO (Store.read addr)
-    else
-      throw (IO.userError s!"cannot find proof file or store address '{pathOrHex}'")
+/-- Read a persisted proof wrapper from the store at `addr`, checking that its
+bytes hash to `addr` before decoding. -/
+def readProofAt (addr : Address) : IO Ixon.Proof := do
+  let bytes ← StoreIO.toIO (Store.read addr)
+  let actual := Address.blake3 bytes
+  if actual != addr then
+    throw (IO.userError s!"proof store object {addr} hashes to {actual}")
   IO.ofExcept (Ixon.Proof.de bytes)
+
+def readProofFileOrStore (pathOrHex : String) : IO Ixon.Proof := do
+  if ← System.FilePath.pathExists pathOrHex then
+    IO.ofExcept (Ixon.Proof.de (← IO.FS.readBinFile pathOrHex))
+  else if let some addr := Address.fromString pathOrHex then
+    readProofAt addr
+  else
+    throw (IO.userError s!"cannot find proof file or store address '{pathOrHex}'")
 
 def shardIndex : IO System.FilePath := ShardProofIndex.indexDir
 
@@ -510,7 +518,7 @@ def one (p : Cli.Parsed) (selected : Selected) (options : HostOptions)
     if lookup then
       if let some addr ← ShardProofIndex.readAddress (← shardIndex) digest then
         try
-          let wrapper ← IO.ofExcept (Ixon.Proof.de (← StoreIO.toIO (Store.read addr)))
+          let wrapper ← readProofAt addr
           unless wrapper.claim == claim do throw (IO.userError "cached claim mismatch")
           verifyWrapper (← selected.system) wrapper
           IO.println s!"{label}: verified proof {addr} of this claim in the shard-proof index; reused"
@@ -782,22 +790,39 @@ def verify (p : Cli.Parsed)
       let prepared ← IO.ofExcept (Aggr.Reference.prepareShards env view.shards #[] assumeBinding)
       expected := prepared.map (·.claim)
   | none, none =>
-    if shard.isSome || p.hasFlag "record" || bindingProof?.isSome then
-      throw (IO.userError "--shard/--record/--binding-proof requires --ixe and --ixes")
+    if shard.isSome || p.hasFlag "record" then
+      throw (IO.userError "--shard/--record requires --ixe and --ixes")
   | _, _ => throw (IO.userError "formal partition verification requires both --ixe and --ixes")
   if proofs.isEmpty then
     if expected.isEmpty then IO.eprintln "expected a proof address"; return 1
     for claim in expected do IO.println s!"CheckEnv claim digest: {Address.blake3 (Ix.Claim.ser claim)}"
     return 0
+  -- a partition with no claim binds no proof to a shard: refuse rather than accept any proof
+  if ixe.isSome && expected.isEmpty then
+    IO.eprintln "the manifest selects no nonempty shard, so no proof can be bound to one"
+    return 1
   let registry ← FormalProver.Registry.new
   let mut system? : Option FormalProver.System := none
+  -- the role table of the binding proof verified with the typing proofs: with
+  -- --ixe/--ixes the environment's, otherwise the one the proof's binding claim
+  -- names under this build's specification set
+  let mut bindingTable? : Option Address := none
   if let some bPath := bindingProof? then
-    let some ctx := envCtx? | throw (IO.userError "missing environment context for binding proof")
     let bWrapper ← readProofFileOrStore bPath
-    let expectedBindingClaim : Ix.Claim := .binding ctx.spec ctx.binding
+    let spec ← IO.ofExcept Ix.SpecDigest.specDigest
+    let expected? : Option Ix.Claim := match envCtx?, bWrapper.claim with
+      | some ctx, _ => some (.binding ctx.spec ctx.binding)
+      | none, .binding named table => if named == spec then some (.binding named table) else none
+      | none, _ => none
+    let some expectedBindingClaim := expected? | do
+      IO.eprintln s!"binding proof {bPath} states {bWrapper.claim}, not a binding claim under \
+        this build's specification set {spec}"
+      return 1
     unless bWrapper.claim == expectedBindingClaim do
       IO.eprintln s!"binding proof {bPath} states {bWrapper.claim}, expected {expectedBindingClaim}"
       return 1
+    let .binding _ table := expectedBindingClaim | return 1
+    bindingTable? := some table
     try
       let system ← match system? with
         | some system => pure system
@@ -818,14 +843,31 @@ def verify (p : Cli.Parsed)
   for hex in proofs do
     try
       let some addr := Address.fromString hex | throw (IO.userError "invalid proof address")
-      let wrapper ← IO.ofExcept (Ixon.Proof.de (← StoreIO.toIO (Store.read addr)))
+      let wrapper ← readProofAt addr
       unless expected.isEmpty || expected.contains wrapper.claim do
         throw (IO.userError "proof does not match a requested manifest shard")
       if covered.contains wrapper.claim then throw (IO.userError "duplicate shard proof")
-      -- a whole partition discharges its shards' assumed leaves; a verified binding
-      -- proof, their assumed binding
-      let statement ← ClaimPolicy.admit p wrapper.claim (bindingDischarged := assumeBinding)
+      let packed := StarkShrinker.isShrunk wrapper.proof || Compression.isCompressed wrapper.proof
+      -- A binding proof pairs with IxVM proofs of typing claims under its own table
+      -- only; fail closed rather than silently ignoring it.
+      if let some table := bindingTable? then
+        if packed then
+          throw (IO.userError "--binding-proof pairs with IxVM proofs of check and check-env \
+            claims, not with a compressed or shrunk aggregation root")
+        match wrapper.claim with
+        | .check ctx .. | .checkEnv ctx .. =>
+          if ctx.literalClass then
+            throw (IO.userError s!"the claim is relative to literal class {ctx.binding}, not a \
+              role table, so --binding-proof for role table {table} cannot discharge it")
+          unless ctx.binding == table do
+            throw (IO.userError s!"the claim is relative to role table {ctx.binding}, but the \
+              binding proof is for role table {table}")
+        | _ => throw (IO.userError "--binding-proof pairs only with check and check-env claims")
+      -- a whole partition discharges its shards' assumed leaves; the verified binding
+      -- proof, the assumed binding of a claim under its table
+      let statement ← ClaimPolicy.admit p wrapper.claim (bindingProof := bindingTable?)
         (assumptionsDischarged := !expected.isEmpty && shard.isNone) (envs := pure tableEnvs)
+        (route := if packed then .compressed else .direct)
       let digest := Address.blake3 (Ix.Claim.ser wrapper.claim)
       if StarkShrinker.isShrunk wrapper.proof then
         let rc ← verifyShrunk addr wrapper statement

@@ -96,8 +96,20 @@ public def runHost : IO Unit := do
     let help ← invoke home #["compress", "--help"]
     unless help.exitCode == 0 && (help.stdout.splitOn "--root-vk").length > 1
         && (help.stdout.splitOn "COMPACT_400KB_BALANCED").length > 1
-        && (help.stdout.splitOn "ULTRA_COMPACT_400KB_ZK").length > 1 do
+        && (help.stdout.splitOn "ULTRA_COMPACT_400KB_ZK").length > 1
+        && (help.stdout.splitOn "IXL3BN1/IXL3BL1").length > 1
+        && (help.stdout.splitOn "--l3-verifier").length > 1 do
       throw <| IO.userError s!"compress help failed: {help.stdout} {help.stderr}"
+    let stagesHelp ← invoke home #["compress", "run-stages", "--help"]
+    unless stagesHelp.exitCode == 0
+        && (stagesHelp.stdout.splitOn "IXL3BN1/IXL3BL1").length > 1
+        && (stagesHelp.stdout.splitOn "ix-l3-verifier-v1").length > 1 do
+      throw <| IO.userError s!"compress run-stages help failed: {stagesHelp.stdout} {stagesHelp.stderr}"
+    let verifyHelp ← invoke home #["verify", "--help"]
+    unless verifyHelp.exitCode == 0
+        && (verifyHelp.stdout.splitOn "--l3-verifier").length > 1
+        && (verifyHelp.stdout.splitOn "--l3-verifier-blake3").length > 1 do
+      throw <| IO.userError s!"verify help failed: {verifyHelp.stdout} {verifyHelp.stderr}"
     -- Endpoint 1 Plonkish STARK preflight descriptions and envelope version decoding
     let preV6 ← Ix.Cli.CompressCmd.preflight default { finalProof := 3 }
     unless (preV6.splitOn "COMPACT_400KB_BALANCED").length > 1
@@ -107,6 +119,14 @@ public def runHost : IO Unit := do
     unless (preZkCompact.splitOn "ULTRA_COMPACT_400KB_ZK").length > 1
         && (preZkCompact.splitOn "zero-knowledge").length > 1 do
       throw <| IO.userError s!"unexpected --stark-128-zk --compact preflight: {preZkCompact}"
+    -- The setup banner states what development final keys are.
+    let devPlonk := (Ix.Cli.CompressCmd.finalSetupNote { finalProof := 1, devFinalSrs := true }).getD ""
+    let devGroth := (Ix.Cli.CompressCmd.finalSetupNote { finalProof := 2, devFinalSrs := true }).getD ""
+    unless (devPlonk.splitOn "known-trapdoor development SRS").length > 1
+        && (devPlonk.splitOn "never deploy").length > 1
+        && (devGroth.splitOn "NOT production-secure").length > 1
+        && (Ix.Cli.CompressCmd.finalSetupNote { finalProof := 1 }).isNone do
+      throw <| IO.userError s!"--dev-final-srs banner note changed: {devPlonk} / {devGroth}"
     let v1Prefix := Ix.Cli.StarkShrinker.magic ++ ByteArray.mk #[1, 0]
     let v2Prefix := Ix.Cli.StarkShrinker.magic ++ ByteArray.mk #[2, 0]
     let v3Prefix := Ix.Cli.StarkShrinker.magic ++ ByteArray.mk #[3, 0]
@@ -224,6 +244,58 @@ public def runHost : IO Unit := do
     let unknownAddr ← putProof home (Ixon.Proof.ser { claim, proof := unknownKey })
     rejects home #["verify", toString unknownAddr] "other than the"
     rejects home #["verify", toString unknownAddr, "--dev-srs"] "other than the"
+
+    -- Aiur L3 proof envelope (`IXL3BN1\0` / `IXL3BL1\0`) classification, pin enforcement,
+    -- and fail-closed verification checks
+    unless Ix.Cli.FormalAggregate.isL3Proof Ix.Cli.FormalAggregate.l3Bn254ProofTag
+        && Ix.Cli.FormalAggregate.isL3Proof Ix.Cli.FormalAggregate.l3Bls12381ProofTag
+        && !Ix.Cli.FormalAggregate.isL3Proof "IXCMP".toUTF8
+        && !Ix.Cli.FormalAggregate.isL3Proof "IXAGGR2\x00".toUTF8 do
+      throw <| IO.userError "FormalAggregate.isL3Proof tag classification failed"
+    let l3VkSha256 : ByteArray := ByteArray.mk #[
+      0x96, 0xca, 0x1e, 0x8d, 0x17, 0x6b, 0x8f, 0x0f,
+      0xb4, 0x1d, 0xc5, 0xa6, 0x6b, 0xdd, 0x55, 0x3b,
+      0xa4, 0x80, 0x48, 0x93, 0x69, 0xab, 0xc3, 0x37,
+      0xa7, 0xc5, 0xb3, 0x97, 0xd3, 0xc8, 0x27, 0x9d]
+    let l3ProofBytes := Ix.Cli.FormalAggregate.l3Bn254ProofTag ++ l3VkSha256 ++ ByteArray.mk #[1, 2, 3, 4]
+    let l3Serialized := Ixon.Proof.ser { claim, proof := l3ProofBytes }
+    let l3Addr ← putProof home l3Serialized
+    let l3File := home / "l3.ixon-proof"
+    IO.FS.writeBinFile l3File l3Serialized
+    rejects home #["compress", toString l3Addr, "--dev-kzg-srs"] "already compressed or shrunk"
+    rejects home #["verify", toString l3Addr] "--l3-verifier"
+    rejects home #["verify", "--aggregate", toString l3Addr] "--l3-verifier"
+    rejects home #["verify", toString l3Addr, "--l3-verifier", "/missing"]
+      "must be supplied together"
+    rejects home #["verify", toString l3Addr, "--l3-verifier-blake3",
+      String.ofList (List.replicate 64 '0')] "must be supplied together"
+    let hexOf (c : Char) (n : Nat) := String.ofList (List.replicate n c)
+    let l3BundleJson :=
+      "{\"format\":\"ix-l3-verifier-v1\",\"curve\":\"bn254\",\"setup\":\"development\"," ++
+      s!"\"root_vk_blake3\":\"{hexOf '1' 64}\"," ++
+      "\"root_statement_prefix\":[1,0,2,3,4,5,6,7,8,9]," ++
+      "\"wrap_policy\":{" ++
+      s!"\"artifact_blake3\":\"{hexOf '1' 64}\"," ++
+      s!"\"key_blake3\":\"{hexOf '2' 64}\"," ++
+      s!"\"layout_blake3\":\"{hexOf '3' 64}\"," ++
+      "\"claim_prefix\":[1,0]}," ++
+      "\"terminal_vk_sha256\":\"96ca1e8d176b8f0fb41dc5a66bdd553ba480489369abc337a7c5b397d3c8279d\"," ++
+      s!"\"terminal_vk_hex\":\"{hexOf '4' 128}\"," ++
+      s!"\"anchors_hex\":\"{hexOf '5' 640}\"" ++ "}"
+    let l3BundlePath := home / "l3-verifier.json"
+    IO.FS.writeFile l3BundlePath l3BundleJson
+    let l3BundlePin := toString (Address.blake3 l3BundleJson.toUTF8)
+    rejects home #["verify", toString l3Addr, "--l3-verifier", l3BundlePath.toString,
+      "--l3-verifier-blake3", hexOf '0' 64, "--dev-srs"] "differs from pinned"
+    rejects home #["verify", toString l3Addr, "--l3-verifier", l3BundlePath.toString,
+      "--l3-verifier-blake3", l3BundlePin] "development setup"
+    rejects home #["verify", l3File.toString, "--l3-verifier", l3BundlePath.toString,
+      "--l3-verifier-blake3", l3BundlePin] "development setup"
+    rejects home #["verify", toString l3Addr, "--l3-verifier", l3BundlePath.toString,
+      "--l3-verifier-blake3", l3BundlePin, "--verifier-bundle", "/x"]
+      "cannot be combined with --verifier-bundle"
+    rejects home #["verify", toString l3Addr, "--l3-verifier", l3BundlePath.toString,
+      "--l3-verifier-blake3", l3BundlePin, "--dev-srs"] "L3"
     IO.println "compression CLI: BN254 setup and proof rejection checks passed"
   finally
     IO.FS.removeDirAll home

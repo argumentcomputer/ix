@@ -478,7 +478,7 @@ def semanticSuite : IO UInt32 := do
     | .ok _ => false
 
   -- Dynamic circuit linking: Mode 3a isolation, wire round-trips, CodecTag injectivity,
-  -- H2 full-tuple allowlist pinning, M6 bridge.binding & VerifyCmd CLI dispatch.
+  -- full-tuple allowlist pinning, bridge.binding & VerifyCmd CLI dispatch.
   let dlVk := Address.blake3 "dynlink-ext-vk".toUTF8
   let dlOtherVk := Address.blake3 "dynlink-other-vk".toUTF8
   let dlTarget := Address.blake3 "dynlink-target".toUTF8
@@ -576,7 +576,15 @@ def semanticSuite : IO UInt32 := do
     (match Ix.Cli.ClaimPolicy.refusalDynamicBytes defaultPolicy dlStmtBytes none with
       | .ok (some _) => true | _ => false)
   let tier1AllowPolicy : Ix.Cli.ClaimPolicy.Policy :=
-    match Ix.Cli.ClaimPolicy.parseAllowedDynamicCircuit s!"{dlVk}:7" with
+    match Ix.Cli.ClaimPolicy.parseAllowedDynamicCircuit s!"{dlVk}:7:2:1" with
+    | .ok entry => { allowedDynamicCircuits := #[entry] }
+    | .error _ => {}
+  let tier1PairAllowPolicy : Ix.Cli.ClaimPolicy.Policy :=
+    match Ix.Cli.ClaimPolicy.parseAllowedDynamicCircuit s!"{dlVk}:7:8:8" with
+    | .ok entry => { allowedDynamicCircuits := #[entry] }
+    | .error _ => {}
+  let tier1SingleAllowPolicy : Ix.Cli.ClaimPolicy.Policy :=
+    match Ix.Cli.ClaimPolicy.parseAllowedDynamicCircuit s!"{dlVk}:7:8:0" with
     | .ok entry => { allowedDynamicCircuits := #[entry] }
     | .error _ => {}
   let exactLinkedAllowPolicy : Ix.Cli.ClaimPolicy.Policy :=
@@ -624,18 +632,20 @@ def semanticSuite : IO UInt32 := do
     (Ix.Cli.ClaimPolicy.refusalLinkedClaim exactLinkedAllowPolicy dlLinkedClaim (some #[dlEntry])).toOption == some none &&
     (Ix.Cli.ClaimPolicy.refusalLinkedClaim explicitCodecLinkedAllowPolicy dlLinkedClaim (some #[dlEntry])).toOption == some none &&
     (Ix.Cli.ClaimPolicy.refusalDynamicBytes exactLinkedAllowPolicy dlLinkedBytes (some #[dlEntry])).toOption == some none &&
-    -- H2: VK-wide wildcard `<vk>` is strictly REJECTED by both parsers.
+    -- VK-wide `<vk>` and unpinned-arity `<vk>:<entry>` are strictly REJECTED by both parsers.
     (Ix.Cli.ClaimPolicy.parseAllowedDynamicCircuit s!"{dlVk}").isOk == false &&
+    (Ix.Cli.ClaimPolicy.parseAllowedDynamicCircuit s!"{dlVk}:7").isOk == false &&
+    (Ix.Cli.ClaimPolicy.parseAllowedDynamicCircuit s!"{dlVk}:7:2").isOk == false &&
     (Ix.Cli.ClaimPolicy.parseAllowedLinkedCircuit s!"{dlVk}").isOk == false &&
     (Ix.Cli.ClaimPolicy.parseAllowedLinkedCircuit s!"{dlVk}:7").isOk == false &&
-    -- H2: Non-ixonAddrPair codecs are rejected by parseAllowedLinkedCircuit.
+    -- Non-ixonAddrPair codecs are rejected by parseAllowedLinkedCircuit.
     (Ix.Cli.ClaimPolicy.parseAllowedLinkedCircuit s!"{dlVk}:7:rawWords:{dlTarget}:{dlCert}:{dlEvalType}").isOk == false &&
     (Ix.Cli.ClaimPolicy.parseAllowedLinkedCircuit s!"{dlVk}:7:0:{dlTarget}:{dlCert}:{dlEvalType}").isOk == false &&
     (Ix.Cli.ClaimPolicy.parseAllowedLinkedCircuit s!"{dlVk}:7:2:{dlTarget}:{dlCert}:{dlEvalType}").isOk == false &&
-    -- H2: Tier-1 `--allow-dynamic-circuit <vk>:<entry>` CANNOT authorize Mode-3a LinkedClaim.
+    -- Tier-1 `--allow-dynamic-circuit <vk>:<entry>` CANNOT authorize Mode-3a LinkedClaim.
     (match Ix.Cli.ClaimPolicy.refusalLinkedClaim tier1AllowPolicy dlLinkedClaim (some #[dlEntry]) with
       | .ok (some msg) => msg.contains "--allow-linked-circuit" | _ => false) &&
-    -- H2: Wrong codec / targetConst / certConst / evalType are ALL rejected even when (vk, entry) matches.
+    -- Wrong codec / targetConst / certConst / evalType are ALL rejected even when (vk, entry) matches.
     (match Ix.Cli.ClaimPolicy.refusalLinkedClaim exactLinkedAllowPolicy wrongCodecClaim (some #[wrongCodecEntry]) with
       | .ok (some msg) => msg.contains "requires ixonAddrPair" | _ => false) &&
     (match Ix.Cli.ClaimPolicy.refusalLinkedClaim exactLinkedAllowPolicy wrongTargetClaim (some #[wrongTargetEntry]) with
@@ -644,7 +654,7 @@ def semanticSuite : IO UInt32 := do
       | .ok (some msg) => msg.contains "is not allowlisted" | _ => false) &&
     (match Ix.Cli.ClaimPolicy.refusalLinkedClaim exactLinkedAllowPolicy forgedMyPropClaim (some #[forgedMyPropEntry]) with
       | .ok (some msg) => msg.contains "is not allowlisted" | _ => false) &&
-    -- H2: Forged (myTrue, myFalse, MyProp) with certConst=Nat.zero cannot pass under either Tier-1 or Mode-3a allowlist.
+    -- Forged (myTrue, myFalse, MyProp) with certConst=Nat.zero cannot pass under either Tier-1 or Mode-3a allowlist.
     (match Ix.Cli.ClaimPolicy.refusalLinkedClaim tier1AllowPolicy forgedMyTrueMyFalseClaim (some #[forgedMyTrueMyFalseEntry]) with
       | .ok (some _) => true | _ => false) &&
     (match Ix.Cli.ClaimPolicy.refusalLinkedClaim exactLinkedAllowPolicy forgedMyTrueMyFalseClaim (some #[forgedMyTrueMyFalseEntry]) with
@@ -668,8 +678,15 @@ def semanticSuite : IO UInt32 := do
       | .ok (some msg) => msg.contains "is not allowlisted" | _ => false) &&
     -- Malformed --allow-dynamic-circuit specifiers fail closed.
     (Ix.Cli.ClaimPolicy.parseAllowedDynamicCircuit "not-hex").isOk == false &&
-    (Ix.Cli.ClaimPolicy.parseAllowedDynamicCircuit s!"{dlVk}:not-a-nat").isOk == false
-  -- M6: refusalDynamicLinkStatement enforces bridge.binding/customBinding and codec arities.
+    (Ix.Cli.ClaimPolicy.parseAllowedDynamicCircuit s!"{dlVk}:not-a-nat:2:1").isOk == false &&
+    (Ix.Cli.ClaimPolicy.parseAllowedDynamicCircuit s!"{dlVk}:7:not-a-nat:1").isOk == false &&
+    (Ix.Cli.ClaimPolicy.parseAllowedDynamicCircuit s!"{dlVk}:7:2:not-a-nat").isOk == false
+  -- refusalDynamicLinkStatement enforces bridge.binding/customBinding, codec arities,
+  -- and exact (nin, nout) pinning on both bridged and unbridged statements.
+  let dlStmtUnbridged : Ix.DynamicLink.DynamicLinkStatement :=
+    { dlStmt with bridge? := none }
+  let dlStmtRelabeled : Ix.DynamicLink.DynamicLinkStatement :=
+    { dlStmt with pubInputs := #[1], pubOutputs := #[2, 3], bridge? := none }
   let dlStmtCustomBinding : Ix.DynamicLink.DynamicLinkStatement :=
     { dlStmt with bridge? := some { dlBridge with binding := dlCustomBinding } }
   let dlStmtBadPairArity : Ix.DynamicLink.DynamicLinkStatement :=
@@ -695,10 +712,18 @@ def semanticSuite : IO UInt32 := do
   let tier1CustomBindingAllowPolicy : Ix.Cli.ClaimPolicy.Policy :=
     { tier1AllowPolicy with customBinding := true }
   let dynamicLinkStatementPolicyChecks : Bool :=
-    -- Default role binding + allowlisted (vk, entry) accepted for rawWords, 8+8 ixonAddrPair, 8+0 ixonAddrSingle.
+    -- Default role binding + allowlisted (vk, entry, nin, nout) accepted for rawWords, unbridged, 8+8 ixonAddrPair, 8+0 ixonAddrSingle.
     (Ix.Cli.ClaimPolicy.refusalDynamicLinkStatement tier1AllowPolicy dlStmt).toOption == some none &&
-    (Ix.Cli.ClaimPolicy.refusalDynamicLinkStatement tier1AllowPolicy dlStmtGoodPairArity).toOption == some none &&
-    (Ix.Cli.ClaimPolicy.refusalDynamicLinkStatement tier1AllowPolicy dlStmtGoodSingleArity).toOption == some none &&
+    (Ix.Cli.ClaimPolicy.refusalDynamicLinkStatement tier1AllowPolicy dlStmtUnbridged).toOption == some none &&
+    (Ix.Cli.ClaimPolicy.refusalDynamicLinkStatement tier1PairAllowPolicy dlStmtGoodPairArity).toOption == some none &&
+    (Ix.Cli.ClaimPolicy.refusalDynamicLinkStatement tier1SingleAllowPolicy dlStmtGoodSingleArity).toOption == some none &&
+    -- Relabeled (1 in, 2 out) unbridged statement with identical concatenated words [1,2,3] is rejected under (2,1) pin.
+    (match Ix.Cli.ClaimPolicy.refusalDynamicLinkStatement tier1AllowPolicy dlStmtRelabeled with
+      | .ok (some msg) => msg.contains "with 1 inputs, 2 outputs" && msg.contains s!"{dlVk}:7:1:2"
+      | _ => false) &&
+    -- Mismatched (8,8) statement is rejected under (2,1) pin.
+    (match Ix.Cli.ClaimPolicy.refusalDynamicLinkStatement tier1AllowPolicy dlStmtGoodPairArity with
+      | .ok (some msg) => msg.contains "with 8 inputs, 8 outputs" | _ => false) &&
     -- Custom bridge.binding rejected without --allow-custom-binding or tableAdmitted.
     (match Ix.Cli.ClaimPolicy.refusalDynamicLinkStatement tier1AllowPolicy dlStmtCustomBinding with
       | .ok (some msg) => msg.contains "--allow-custom-binding" | _ => false) &&
@@ -706,29 +731,33 @@ def semanticSuite : IO UInt32 := do
     (Ix.Cli.ClaimPolicy.refusalDynamicLinkStatement tier1AllowPolicy dlStmtCustomBinding (tableAdmitted := true)).toOption == some none &&
     (Ix.Cli.ClaimPolicy.refusalDynamicLinkStatement tier1CustomBindingAllowPolicy dlStmtCustomBinding).toOption == some none &&
     -- Wrong codec arities rejected (16-in/0-out predicate cannot pose as ixonAddrPair; 8-in/1-out cannot pose as ixonAddrSingle).
-    (match Ix.Cli.ClaimPolicy.refusalDynamicLinkStatement tier1AllowPolicy dlStmtBadPairArity with
+    (match Ix.Cli.ClaimPolicy.refusalDynamicLinkStatement tier1PairAllowPolicy dlStmtBadPairArity with
       | .ok (some msg) => msg.contains "8 pubInputs and 8 pubOutputs" | _ => false) &&
-    (match Ix.Cli.ClaimPolicy.refusalDynamicLinkStatement tier1AllowPolicy dlStmtBadSingleArity with
+    (match Ix.Cli.ClaimPolicy.refusalDynamicLinkStatement tier1SingleAllowPolicy dlStmtBadSingleArity with
       | .ok (some msg) => msg.contains "8 pubInputs and 0 pubOutputs" | _ => false)
-  -- M6: VerifyCmd CLI dispatch fails closed on <vk> wildcards and routes --dynamic-claim through ClaimPolicy.
+  -- VerifyCmd CLI dispatch fails closed on <vk> wildcards, unpinned arities, and relabeled I/O splits.
   let verifyCmdDynamicDispatchChecks ← do
     let tmpDir ← IO.FS.createTempDir
     try
       let linkedClaimFile := tmpDir / "linked.claim"
       let evalClaimFile := tmpDir / "eval.claim"
       let customDlFile := tmpDir / "custom-dl.claim"
+      let relabeledDlFile := tmpDir / "relabeled-dl.claim"
       let entryFile := tmpDir / "entry.bin"
       IO.FS.writeBinFile linkedClaimFile dlLinkedBytes
       IO.FS.writeBinFile evalClaimFile dlEvalBytes
       IO.FS.writeBinFile customDlFile (Ix.DynamicLink.serDynamicLink dlStmtCustomBinding)
+      IO.FS.writeBinFile relabeledDlFile (Ix.DynamicLink.serDynamicLink dlStmtRelabeled)
       IO.FS.writeBinFile entryFile dlEntryBytes
       let rcWildcard ← verifyCmd.validate ["--allow-dynamic-circuit", s!"{dlVk}"]
+      let rcUnpinnedArity ← verifyCmd.validate ["--allow-dynamic-circuit", s!"{dlVk}:7"]
       let rcDefaultLinked ← verifyCmd.validate ["--dynamic-claim", linkedClaimFile.toString, "--linked-entry", entryFile.toString]
-      let rcTier1OnLinked ← verifyCmd.validate ["--dynamic-claim", linkedClaimFile.toString, "--linked-entry", entryFile.toString, "--allow-dynamic-circuit", s!"{dlVk}:7"]
+      let rcTier1OnLinked ← verifyCmd.validate ["--dynamic-claim", linkedClaimFile.toString, "--linked-entry", entryFile.toString, "--allow-dynamic-circuit", s!"{dlVk}:7:2:1"]
       let rcEvalAssumed ← verifyCmd.validate ["--dynamic-claim", evalClaimFile.toString]
-      let rcCustomBinding ← verifyCmd.validate ["--dynamic-claim", customDlFile.toString, "--allow-dynamic-circuit", s!"{dlVk}:7"]
-      pure (rcWildcard != 0 && rcDefaultLinked != 0 && rcTier1OnLinked != 0 &&
-        rcEvalAssumed != 0 && rcCustomBinding != 0)
+      let rcCustomBinding ← verifyCmd.validate ["--dynamic-claim", customDlFile.toString, "--allow-dynamic-circuit", s!"{dlVk}:7:2:1"]
+      let rcRelabeledArity ← verifyCmd.validate ["--dynamic-claim", relabeledDlFile.toString, "--allow-dynamic-circuit", s!"{dlVk}:7:2:1"]
+      pure (rcWildcard != 0 && rcUnpinnedArity != 0 && rcDefaultLinked != 0 && rcTier1OnLinked != 0 &&
+        rcEvalAssumed != 0 && rcCustomBinding != 0 && rcRelabeledArity != 0)
     finally
       IO.FS.removeDirAll tmpDir
 

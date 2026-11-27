@@ -9,6 +9,8 @@ manifest files themselves and the trust-surface root files fenced by `kernel-tru
 
 * `Tests/Fixtures/circuit-composed-closure-manifest.txt` (required) → `refinement:` filter;
 * `Tests/Fixtures/security-128-closure-manifest.txt` (required) → `refinement:` filter;
+* `Tests/Fixtures/statement-closure-manifest.txt` (required) → `refinement:` filter;
+* `Tests/Fixtures/aiur-compression-closure-manifest.txt` (required) → `refinement:` filter;
 * `Tests/Fixtures/compile-correct-closure-manifest.txt` (checked when present) → `kernel:` filter;
 * `Tests/Fixtures/check-bytes-closure-manifest.txt` (checked when present) → `kernel:` filter;
 * `Ix/Address/Admission.lean` and `Ix/KernelDisplay/Peek.lean` → `kernel:` filter.
@@ -366,12 +368,19 @@ def requiredFilterCoverage : Array (String × String) := #[
   ("Scripts/FriSecurity.lean", "formal"),
   ("Scripts/CheckFormalKeys.lean", "formal"),
   ("Scripts/CheckAiurCompressionFixtures.lean", "formal"),
+  ("Scripts/KernelReplay.lean", "kernel"),
+  ("Scripts/KernelReplay.lean", "refinement"),
+  ("Scripts/KernelReplay.lean", "formal"),
+  ("Tests/Ix/Kernel/TrustSurface.lean", "kernel"),
+  ("Tests/Ix/Kernel/TrustSurface.lean", "refinement"),
+  ("Tests/Ix/Kernel/TrustSurface.lean", "host"),
   ("Ix/Aiur/Parameters.lean", "formal"),
   ("Ix/Aiur/Parameters.lean", "refinement"),
   ("Ix/MultiStark/Wire.lean", "formal"),
   ("Ix/MultiStark/Wire.lean", "refinement"),
   ("Tests/FormalChecks/Common.lean", "formal"),
   ("Tests/Fixtures/MultiStark/sample.bin", "formal"),
+  ("Tests/Fixtures/fri-security/ixvm-2p23.json", "formal"),
   ("Tests/Ix/Kernel/ModelLaws.lean", "formal"),
   ("Ix/HostAdmission.lean", "kernel"),
   ("Ix/HostAdmission.lean", "refinement"),
@@ -416,7 +425,10 @@ def transitiveImportChecks : Array (String × String × Array String) := #[
     "Ix.Cert.Compression.Bls12381.Audit",
     "Ix.Cert.Compression.StarkShrinkerAudit",
     "Ix.Cert.Compression.Security128Audit",
-    "Ix.Cert.Security128ClosureManifest"]),
+    "Ix.Cert.Security128ClosureManifest",
+    "Ix.Cert.AiurCompression.Audit",
+    "Ix.Cert.StatementClosureManifest",
+    "Ix.Cert.AiurCompressionClosureManifest"]),
   ("formal leanchecker roots and formal-only modules", "formal", #[
     "Aiur.Audit",
     "Ix.IxVM.ConsistencyAudit",
@@ -429,6 +441,9 @@ def transitiveImportChecks : Array (String × String × Array String) := #[
     "Ix.Cert.Compression.StarkShrinkerAudit",
     "Ix.Cert.Compression.Security128Audit",
     "Ix.Cert.Security128ClosureManifest",
+    "Ix.Cert.AiurCompression.Audit",
+    "Ix.Cert.StatementClosureManifest",
+    "Ix.Cert.AiurCompressionClosureManifest",
     "Tests.FormalPackageMain",
     "Tests.Ix.InstanceSymbols",
     "Tests.Ix.VMSource",
@@ -439,6 +454,8 @@ def transitiveImportChecks : Array (String × String × Array String) := #[
 def manifestChecks : Array (String × String × Bool) := #[
   ("Tests/Fixtures/circuit-composed-closure-manifest.txt", "refinement", true),
   ("Tests/Fixtures/security-128-closure-manifest.txt", "refinement", true),
+  ("Tests/Fixtures/statement-closure-manifest.txt", "refinement", true),
+  ("Tests/Fixtures/aiur-compression-closure-manifest.txt", "refinement", true),
   ("Tests/Fixtures/compile-correct-closure-manifest.txt", "kernel", true),
   ("Tests/Fixtures/check-bytes-closure-manifest.txt", "kernel", true)]
 

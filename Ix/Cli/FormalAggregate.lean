@@ -72,6 +72,26 @@ def outerClaim (ctx : Keys) (kind : ChildKind) (claim : Ix.Claim) : Array Aiur.G
   | .ixvm => Aiur.buildClaim ctx.ixvm.index (MultiStark.digestGs (Ix.Claim.ser claim)) #[]
   | .aggr => Aggr.aggregateOuterClaim ctx.allowed ctx.aggr.index claim
 
+/-- 4-byte family prefix shared by all Aiur L3 compressed proof payloads (`IXL3*`). -/
+def l3ProofFamilyPrefix : ByteArray := "IXL3".toUTF8
+
+/-- 8-byte envelope tag for BN254 Aiur L3 PLONK proofs (`IXL3BN1\0`). -/
+def l3Bn254ProofTag : ByteArray := "IXL3BN1\x00".toUTF8
+
+/-- 8-byte envelope tag for BLS12-381 Aiur L3 PLONK proofs (`IXL3BL1\0`). -/
+def l3Bls12381ProofTag : ByteArray := "IXL3BL1\x00".toUTF8
+
+/-- Whether `proof` carries an Aiur L3 compressed proof envelope (`IXL3*`). -/
+def isL3Proof (proof : ByteArray) : Bool :=
+  proof.extract 0 l3ProofFamilyPrefix.size == l3ProofFamilyPrefix
+
+/-- Verify an Aiur L3 proof envelope (`IXL3BN1\0` / `IXL3BL1\0`) against serialized
+claim bytes and an independently BLAKE3-pinned `ix-l3-verifier-v1` bundle file.
+Returns `"<curve>\t<setup>"`. -/
+@[extern "rs_l3_verify_bundle"]
+opaque verifyL3Bundle (proof claim : @& ByteArray)
+  (bundlePath bundlePin : @& String) (allowDevelopment : Bool) : IO String
+
 def rawProof (kind : ChildKind) (proof : ByteArray) : IO ByteArray := do
   let magic := (if kind == .ixvm then "IXAIUR2\x00" else "IXAGGR2\x00").toUTF8
   unless proof.extract 0 magic.size == magic do
@@ -125,10 +145,10 @@ when the controller did not write it to the store (`--no-write`), read from
 the store otherwise. Either copy is untrusted until `accept` or `acceptSlot`
 checks it; the digest check only ties the bytes to the printed address. -/
 def resultWrapper (address : Address) (bytes : ByteArray := .empty) : IO Ixon.Proof := do
-  let bytes ← if bytes.size == 0 then StoreIO.toIO (Store.read address) else do
-    unless Address.blake3 bytes == address do
-      throw (IO.userError s!"the controller's proof bytes do not hash to {address}")
-    pure bytes
+  let bytes ← if bytes.size == 0 then StoreIO.toIO (Store.read address) else pure bytes
+  let actual := Address.blake3 bytes
+  unless actual == address do
+    throw (IO.userError s!"proof bytes at {address} hash to {actual}")
   IO.ofExcept (Ixon.Proof.de bytes)
 
 /-- The part of `accept` that depends only on the environment and a
@@ -390,11 +410,10 @@ def verifyShrunkProof (p : Cli.Parsed) (addr : Address) (wrapper : Ixon.Proof)
   IO.println statement
   return 0
 
-def verify (p : Cli.Parsed) : IO UInt32 := do
-  rejectFlags p #["shard", "record", "distributed"]
-  -- the expected claim, and the environment whose records the kernel's admission of
-  -- the claim's table reads
-  let (expected, tableEnvs) ← match (p.flag? "ixe").map (·.as! String),
+/-- Recompute the optional expected root claim (and table-admission env list)
+from `--ixe` / `--ixes` / `--structural-above` for aggregate and L3 verification. -/
+def expectedClaimForVerify (p : Cli.Parsed) : IO (Option Ix.Claim × List Ixon.Env) := do
+  match (p.flag? "ixe").map (·.as! String),
       (p.flag? "ixes").map (·.as! String) with
   | none, none => pure ((none : Option Ix.Claim), ([] : List Ixon.Env))
   | none, some _ => throw (IO.userError "--ixes requires --ixe")
@@ -411,6 +430,16 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
     let root ← IO.ofExcept (Reference.expectedFromManifest env view above)
     let _ ← IO.ofExcept (auditAggregateConstants env root)
     pure (some root.claim, [env])
+
+def verify (p : Cli.Parsed) : IO UInt32 := do
+  rejectFlags p #["shard", "record", "distributed"]
+  -- Fail closed rather than silently ignoring `--binding-proof`.
+  if p.hasFlag "binding-proof" then
+    throw (IO.userError "--binding-proof is not used when verifying an aggregation root: the \
+      aggregation discharges the binding when it is proved (ix aggregate --binding-proof)")
+  -- the expected claim, and the environment whose records the kernel's admission of
+  -- the claim's table reads
+  let (expected, tableEnvs) ← expectedClaimForVerify p
   let proofs := p.variableArgsAs! String
   if proofs.isEmpty then throw (IO.userError "expected an aggregate proof address")
   let mut ctx? : Option Context := none
@@ -419,6 +448,11 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
     let wrapper ← Compression.readProof addr
     unless expected.all (· == wrapper.claim) do throw (IO.userError "aggregate does not match the requested environment/manifest")
     let statement ← ClaimPolicy.admit p wrapper.claim (envs := pure tableEnvs)
+      (route := if StarkShrinker.isShrunk wrapper.proof || Compression.isCompressed wrapper.proof
+          || isL3Proof wrapper.proof
+        then .compressed else .aggregate)
+    if isL3Proof wrapper.proof then
+      throw (IO.userError s!"L3 compressed proof {addr} requires --l3-verifier <bundle> --l3-verifier-blake3 <pin>")
     if AiurCompression.selected p && !AiurCompression.isCompressed wrapper.proof then
       throw (IO.userError "expected an Aiur compression envelope for the supplied verifier")
     if StarkShrinker.isShrunk wrapper.proof then
@@ -441,7 +475,7 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
             let c ← context p
             ctx? := some c
             pure c
-        AiurCompression.verifyProof opts addr wrapper ctx.aggr.key (statementBytes ctx.toKeys wrapper.claim) (p.hasFlag "dev-srs")
+        AiurCompression.verifyProof opts addr wrapper ctx.aggr.key (statementBytes ctx.toKeys wrapper.claim) (p.hasFlag "dev-srs") statement
       else
         let rc ← Compression.verifyProof addr wrapper (p.hasFlag "dev-srs") statement
         if rc != 0 then return rc

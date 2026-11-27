@@ -1,7 +1,8 @@
 /-
   Endpoint 1 native `Fp^3` STARK shrinker FFI bindings and envelope prefix checks.
   Supports both `--stark-128` (transparent Protocol v6) and `--stark-128-zk`
-  (hiding Protocol v6-zk) with zero trusted setup and post-quantum hash security.
+  (Protocol v6-zk, hiding by design, not formally stated) with zero trusted setup.
+  The hashes are 32-byte BLAKE3: about 85-bit post-quantum collision resistance.
 -/
 module
 public import Ix.Cli.FormalKeys

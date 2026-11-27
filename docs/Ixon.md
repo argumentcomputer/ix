@@ -1893,11 +1893,21 @@ The typing claims (Eval, Check, CheckEnv) are relative to a
                       --   (or 01 + [32 bytes]: merkle root of their addresses)
 ```
 
-The claim states that its constants are well-typed in Lean's theory over
-the standard axioms (`propext`, `Classical.choice`, `Quot.sound`), with the
-primitives read through the bound roles, each validated against the named
-specifications. The axioms field names further axioms, the leaves of a merkle
-tree, and the claim then holds in that theory extended by them. IxVM accepts
+The claim states that its constants are well-typed under Ix's typing rules
+over the standard axioms (`propext`, `Classical.choice`, `Quot.sound`), with
+the primitives read through the bound roles, each validated against the named
+specifications. These rules (`IxCK/Kernel/Rules/Rel.lean`) are not Lean's
+kernel: they include equality reflection (a closed proof of `a = b` makes `a`
+and `b` convertible), so an accepted constant need not be accepted by Lean.
+What is proved about an accept is a model statement, not typing:
+`IxVM.Refinement.Endpoint.circuitComposed` says that for accepted runs of
+IxVM's circuit model of a typing claim and of a `binding` claim for the same
+table, either a BLAKE3 collision occurred or the claimed closure has a model
+in every set theory. It covers only typing claims with no further axioms, no
+assumptions and no literal class, and says nothing of a typing claim without
+its `binding` claim or of claims reached through aggregation
+(`Ix/IxVM/Consistency/TableValid.lean`). The axioms field names further
+axioms, the leaves of a merkle tree, and the claim then holds in that theory extended by them. IxVM accepts
 a leaf only if it is a stored safe axiom record that the role table does not
 bind, and it typechecks every leaf with its closure, whether or not the
 claim's constants use it, under the claim's assumptions: a leaf the assumption
@@ -1994,11 +2004,12 @@ pub struct ClaimContext {
 pub enum Claim {
     /// `input` evaluates to `output`, optionally modulo `assumptions`.
     Eval { ctx: ClaimContext, input: Address, output: Address, assumptions: Option<Address> },
-    /// The constant at `const_addr` is well-typed, optionally modulo
+    /// The constant at `const_addr` is well-typed under Ix's rules (see
+    /// the context above for what an accept proves), optionally modulo
     /// `assumptions`.
     Check { ctx: ClaimContext, const_addr: Address, assumptions: Option<Address> },
-    /// Every constant in the env merkle-rooted at `root` is well-typed,
-    /// optionally modulo `assumptions`.
+    /// Every constant in the env merkle-rooted at `root` is well-typed
+    /// as for Check, optionally modulo `assumptions`.
     CheckEnv { ctx: ClaimContext, root: Address, assumptions: Option<Address> },
     /// Selective field revelation of a committed constant, optionally
     /// committing to `blake3(put_binders(c.binders))`.

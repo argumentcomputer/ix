@@ -79,7 +79,7 @@ def runClaimCheck (p : Cli.Parsed) : IO UInt32 := do
 
 def claimCheckCmd : Cli.Cmd := `[Cli|
   check VIA runClaimCheck;
-  "Build and persist a `Check` claim: the constant at <addr-hex> is well-typed (optionally modulo an assumption tree)."
+  "Build and persist a `Check` claim: the constant at <addr-hex> type-checks under Ix's kernel rules (which include equality reflection; not Lean's kernel), optionally modulo an assumption tree."
 
   FLAGS:
     asm : String; "32-byte hex address of an assumption-tree merkle root. The tree must already live in `~/.ix/store/` (build it with `ix tree canonical`). When set, the claim asserts well-typedness modulo the assumed leaves."
@@ -108,7 +108,7 @@ def runClaimCheckEnv (p : Cli.Parsed) : IO UInt32 := do
 
 def claimCheckEnvCmd : Cli.Cmd := `[Cli|
   "check-env" VIA runClaimCheckEnv;
-  "Build and persist a `CheckEnv` claim: every constant in the env merkle-rooted at <env-root-hex> is well-typed (optionally modulo an assumption tree). The env tree itself must already live in the store (`ix tree env <ixe>`); same goes for the asm tree if set."
+  "Build and persist a `CheckEnv` claim: every constant in the env merkle-rooted at <env-root-hex> type-checks under Ix's kernel rules (which include equality reflection; not Lean's kernel), optionally modulo an assumption tree. The env tree itself must already live in the store (`ix tree env <ixe>`); same goes for the asm tree if set."
 
   FLAGS:
     asm : String; "32-byte hex address of an assumption-tree merkle root (typically the env's axiom leaves). The tree must already live in `~/.ix/store/`."

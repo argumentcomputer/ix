@@ -2,8 +2,8 @@
   # Claim: ZK claim types and serialization
 
   Defines the claim types used in Ix's zero-knowledge proof system:
-  - `EvalClaim`: asserts that a constant evaluates to a given output
-  - `CheckClaim`: asserts that a constant is well-typed
+  - `EvalClaim`: asserts that a constant evaluates to a given output (no soundness theorem states this)
+  - `CheckClaim`: asserts that a constant type-checks under Ix's kernel rules (which include equality reflection, not Lean's kernel)
   - `RevealClaim`: selectively reveals fields of a committed constant
 
   `RevealConstantInfo` and `RevealMutConstInfo` use bitmask-based serialization
@@ -156,8 +156,12 @@ inductive RevealConstantInfo where
   deriving BEq, Repr, Inhabited
 
 /-- What a typing claim is relative to. The typing claims (`eval`, `check`,
-`checkEnv`) state that constants are well-typed in Lean's theory with its
-primitives read through a role binding, and these three fields say which:
+`checkEnv`) state that constants type-check under Ix's kernel rules (which
+include equality reflection — proved equations as conversions — rather than
+Lean's kernel) with primitives read through a role binding; for unconditional
+`check`/`checkEnv` claims paired with a `binding` claim, the proved theorem
+(`IxVM.Refinement.Endpoint.circuitComposed`) gives a set-theoretic model of the
+claimed environment, not typing by Lean's kernel. These three fields say which:
 
 - `spec`: the specification digest (`Ix.SpecDigest.specDigest`), naming the
   specifications every bound role is validated against;
@@ -233,12 +237,13 @@ A claim that can be proven.
 Eight active variants in six families (variant 9 `resource` is retired):
 
 - **Typechecking claims** (`eval`, `check`, `checkEnv`): assert that a
-  constant evaluates, a constant is well-typed, or every constant in an env
-  is well-typed, relative to their `ClaimContext`. Each carries
+  constant evaluates, a constant type-checks, or every constant in an env
+  type-checks under Ix's kernel rules (which include equality reflection, not
+  Lean's kernel), relative to their `ClaimContext`. Each carries
   `assumptions : Option Address`:
   - `none` → unconditional.
   - `some root` → conditional on every leaf in the merkle tree rooted
-    at `root` being well-typed.
+    at `root` being discharged by other claims.
 - **`catalog`**: a conjunction of unconditional `checkEnv` claims, each under
   its own context, so members compiled under different role bindings (from
   different Lean toolchains) meet in one statement. `members` is the
@@ -776,9 +781,10 @@ def getOptAddr : GetM (Option Address) := do
   refuse it rather than read such a claim as a newer one;
 - `2`, resource-v1: retired with the resource claim; refused;
 - `3`, erased-lean-v2: the typing claims, relative to their `ClaimContext`
-  (Lean's theory over the standard axioms, primitives read through the
-  committed role binding and validated against the committed
-  specifications), and the `binding` claim;
+  (Ix's kernel rules — which include equality reflection — over the standard
+  axioms, primitives read through the committed role binding and validated
+  against the committed specifications; paired with a `binding` claim,
+  `circuitComposed` gives a set-theoretic model), and the `binding` claim;
 - `4`, erased-lean-v2-assumed: a `check` or `checkEnv` claim that assumes
   its binding meets the specifications instead of validating it
   (`ClaimContext.bindingAssumed`); its typing holds if the `binding` claim

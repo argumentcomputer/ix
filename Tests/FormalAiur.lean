@@ -254,6 +254,9 @@ private def checkCase (leanEnv : Lean.Environment) (name : Lean.Name) : IO Ix.Ai
 
 def main (args : List String) : IO Unit := do
   if let ["pins", root] := args then return ← FormalPins.run root
+  if let ["pins"] := args then
+    let _ ← FormalPins.checkAcceptance
+    return
   -- Without an argument, write into a fresh temporary directory, not a fixed
   -- /tmp path that concurrent runs would share.
   let path ← match args.head? with

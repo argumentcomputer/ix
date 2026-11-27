@@ -222,9 +222,9 @@ pieces as needed, so the complete stage-one matrices are never allocated. See
 [incremental generation](formal-aiur-orchestration.md#incremental-trace-generation)
 and the [streaming design](formal-aiur-streaming-traces.md).
 
-Proving uses the production STARK parameters (`Parameters::DEFAULT` in
-`crates/aiur/src/trace/stark.rs`): `log_blowup` 2 (blowup factor 4), 100
-queries and 20 query proof-of-work bits, above the enforced security floor
+Proving uses the production Protocol `v6` (`Fp^3`) STARK parameters (`Parameters::DEFAULT` in
+`crates/aiur/src/trace/stark.rs`): `log_blowup` 2 (blowup factor 4), 128
+queries and 20 query proof-of-work bits, above the enforced 128-bit Johnson security floor
 ([STARK parameters](stark-parameters.md)). The aggregate identity and cache key
 include `fri_parameter_bytes`, so caches follow the parameters actually used.
 

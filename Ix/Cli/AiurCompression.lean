@@ -102,7 +102,7 @@ def runOptions (options : Options) (vk raw claim rows : ByteArray) (out : String
   | .chain manifest pin => chainRun vk raw claim rows manifest pin out development fresh
 
 def verifyProof (opts : Options) (addr : Address) (wrapper : Ixon.Proof)
-    (vk rows : ByteArray) (development : Bool) : IO Unit := do
+    (vk rows : ByteArray) (development : Bool) (statement : String) : IO Unit := do
   let claim := Ix.Claim.ser wrapper.claim
   let setup ← match opts with
     | .gl gl =>
@@ -113,6 +113,7 @@ def verifyProof (opts : Options) (addr : Address) (wrapper : Ixon.Proof)
     IO.println s!"development-only: algebraic checks passed for {opts.label} proof {addr}, claim {Address.blake3 claim}; the independently pinned KZG setup is not admitted for production verification"
   else
     IO.println s!"ok: {opts.label} proof {addr} verifies claim {Address.blake3 claim} under the independently pinned {setup} KZG verifier"
+  IO.println statement
 
 def runPrepareKey (p : Cli.Parsed) : IO UInt32 := do
   try
