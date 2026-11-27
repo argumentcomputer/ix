@@ -11,6 +11,7 @@ use serde::Serialize;
 
 #[cfg(feature = "plonk")]
 pub mod gnark;
+pub mod native;
 pub mod scs;
 
 /// The format of the terminal stage description `plonk_export` reads.
