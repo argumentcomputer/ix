@@ -187,6 +187,7 @@ jobs:
               - 'Tests/Fixtures/trust-surface/**'
               - 'Tests/Fixtures/compile-correct-closure-manifest.txt'
               - 'Tests/Fixtures/check-bytes-closure-manifest.txt'
+              - 'Scripts/KernelReplay.lean'
             refinement:
               - 'Aiur/**'
               - 'IxVM/**'
@@ -241,6 +242,11 @@ jobs:
               - 'Tests/Ix/Kernel/ModelLaws.lean'
               - 'Tests/Fixtures/circuit-composed-closure-manifest.txt'
               - 'Tests/Fixtures/security-128-closure-manifest.txt'
+              - 'Tests/Fixtures/statement-closure-manifest.txt'
+              - 'Tests/Fixtures/aiur-compression-closure-manifest.txt'
+              - 'Tests/Ix/Kernel/TrustSurface.lean'
+              - 'Tests/Ix/Kernel/KernelLayout.lean'
+              - 'Scripts/KernelReplay.lean'
             formal:
               - 'Aiur/**'
               - 'IxVM/**'
@@ -311,6 +317,7 @@ jobs:
               - 'Tests/FormalChecks/**'
               - 'Tests/VerifyPath.lean'
               - 'Tests/Fixtures/MultiStark/**'
+              - 'Tests/Fixtures/fri-security/**'
               - 'Tests/IxVMMain.lean'
               - 'Tests/Ix/IxVM/**'
               - 'Tests/Ix/MultiStarkVerifier.lean'
@@ -323,6 +330,7 @@ jobs:
               - 'tools/formal-aiur.keys'
               - 'Scripts/CheckFormalKeys.lean'
               - 'Scripts/CheckAiurCompressionFixtures.lean'
+              - 'Scripts/KernelReplay.lean'
               - 'crates/**'
             ixcc:
               - 'IxCC/**'
@@ -791,7 +799,11 @@ jobs:
           use-github-cache: false
           use-mathlib-cache: false
       - name: Run host-only batched lint, module coverage and source hygiene
-        run: lake lint -- --host-only --wfail
+        run: |
+          lake lint -- --host-only --wfail
+          # The trust-surface fence's kernel-bypass scan covers every certified
+          # library, so it runs wherever their sources change.
+          lake env .lake/build/bin/kernel-trust-surface
 
   # Runs Init+Std landing checks (`initstd-reference`, `fidelity-initstd` reusing
   # `.lake/build/initstd-reference.ixe`, and `ixvm-reader-coverage`) in parallel
@@ -944,6 +956,11 @@ jobs:
           lake build --wfail \
             Ix.Cert.Audit Ix.Cert.RuntimeAudit Ix.Ixon.BlockOrder.Audit IxSharingVerify \
             kernel-layering kernel-trust-surface kernel-entry-cases kernel-meta-names
+      # The merged tree is re-checked by the kernel, not only built: the same
+      # full-closure replay `check-kernel` runs on pull requests.
+      - name: Replay the kernel closure with Lean's kernel on main
+        if: needs.changes.outputs.is_push == 'true'
+        run: lake run check-kernel-replay --with-model
       - name: Check certified kernel, host audits, model, fences, entry cases and meta names
         if: needs.changes.outputs.is_push != 'true'
         run: |
@@ -969,8 +986,9 @@ jobs:
             IxSharingVerify.Audit.CompiledCode \
             IxSharingVerify.Audit.SorryFrontier
           lake -d Models/SetTheory env leanchecker IxSetTheoryModel.Audit
-      - name: Bootstrap IxCK certified kernel check (WS 2C)
-        if: needs.changes.outputs.is_push != 'true'
+      # Also on pushes to `main`: the merged tree's kernel closure re-checked by
+      # IxCK's own certified checker.
+      - name: Bootstrap IxCK certified kernel check
         run: |
           lake build --wfail ix kernel-check-ixe
           tmp=$(mktemp -d)
@@ -1078,7 +1096,7 @@ jobs:
             -p ixvm -p stark-verifier -p ix-prover -p aiur \
             --features aiur/parallel,ixvm/parallel,stark-verifier/parallel,ix-prover/parallel \
             --bin ixvm --bin ixvm-proof --bin stark-verifier --bin ix-prover \
-            --example claim_fixture --example library_check
+            --example claim_fixture --example library_check --example check_enables
           mkdir -p "${{ runner.temp }}/ci-hosts"
           cp target/release/ixvm-proof target/release/stark-verifier target/release/ix-prover "${{ runner.temp }}/ci-hosts/"
       - name: Save Rust formal hosts to S3 cache
@@ -1104,6 +1122,16 @@ jobs:
           lake env MultiStark/.lake/build/bin/stark-export export-trace "${{ runner.temp }}/ci-artifacts/aggregate.ixa" --aggregate &
           p3=$!
           wait "$p1" "$p2" "$p3"
+      # The compiler theorems read a send or memory lookup as present exactly
+      # when its enable is 1, while the AIR uses the enable as the lookup's
+      # multiplicity: every enable must be boolean on satisfying rows. No
+      # theorem states it for the final chips, so it is decided here.
+      - name: Check every lookup enable of the exported artifacts is boolean
+        run: |
+          target/release/examples/check_enables --self-test \
+            "${{ runner.temp }}/ci-artifacts/ixvm.ixa" \
+            "${{ runner.temp }}/ci-artifacts/recursion.ixa" \
+            "${{ runner.temp }}/ci-artifacts/aggregate.ixa"
       - name: Save .ixa artifacts to S3 cache
         if: steps.ixa-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -1160,6 +1188,10 @@ jobs:
         run: |
           lake env Aiur/.lake/build/bin/axiom_sweep Aiur
           lake env leanchecker Aiur.Audit
+          # Every module of the Aiur library (`aiur/Aiur` globs them all),
+          # re-checked by Lean's kernel with its project imports.
+          lake env lean --run Scripts/KernelReplay.lean --jobs 8 \
+            --tree Aiur/Aiur:Aiur Aiur Aiur.Audit
           Aiur/.lake/build/bin/aiur_tests
           Aiur/.lake/build/bin/execution_tests
           Aiur/.lake/build/bin/trace_tests
@@ -1209,16 +1241,27 @@ jobs:
         env:
           IS_PUSH: ${{ needs.changes.outputs.is_push }}
         run: |
-          lake build --wfail IxVMRefinement \
-            IxVM.CompiledCert \
+          roots="IxVM.CompiledCert \
             IxVMRefinement.Endpoint.Companions \
             Ix.IxVM.ConsistencyAudit Ix.IxVM.ConsistencyModelAudit Ix.IxVM.Refinement.Audit Ix.Cert.Compile \
             Ix.Cert.MultiStark.Audit Ix.Cert.MultiStarkRefinement.Audit \
             Ix.Cert.Aggr.Audit Ix.Cert.Aggr.MonolithicRom Ix.Cert.Compression.Audit \
             Ix.Cert.Compression.Bls12381.Audit Ix.Cert.Compression.StarkShrinkerAudit \
+            Ix.Cert.AiurCompression.Audit \
             Ix.Cert.MultiStark.Security128Audit Ix.Cert.Aggr.Security128Audit \
             Ix.Cert.Compression.Security128Audit Ix.Cert.Security128ClosureManifest \
-            Ix.Cert.RecordSectionsBridge
+            Ix.Cert.StatementClosureManifest Ix.Cert.AiurCompressionClosureManifest \
+            Ix.Cert.RecordSectionsBridge"
+          # shellcheck disable=SC2086
+          lake build --wfail IxVMRefinement $roots
+          # Every project module in the closure of these roots and of the
+          # IxVMRefinement library, re-checked by Lean's kernel (on `main`
+          # too): `leanchecker` below replays only the modules it names.
+          # shellcheck disable=SC2086
+          lake env lean --run Scripts/KernelReplay.lean --jobs 8 \
+            --tree IxVMRefinement:IxVMRefinement $roots
+          lake build --wfail kernel-trust-surface
+          lake env .lake/build/bin/kernel-trust-surface
           if [ "$IS_PUSH" != "true" ]; then
             lake env lean --run Scripts/CheckCiFilters.lean
             pinned=$(sed -n 's/^def pinnedDigest : String := "\([0-9a-f]\{64\}\)".*/\1/p' IxVMRefinement/Endpoint/ClosureManifest.lean)
@@ -1227,6 +1270,12 @@ jobs:
             pinned128=$(sed -n 's/^def pinnedDigest : String := "\([0-9a-f]\{64\}\)".*/\1/p' Ix/Cert/Security128ClosureManifest.lean)
             test -n "$pinned128"
             printf '%s  Tests/Fixtures/security-128-closure-manifest.txt\n' "$pinned128" | sha256sum -c -
+            pinnedst=$(sed -n 's/^def pinnedDigest : String := "\([0-9a-f]\{64\}\)".*/\1/p' Ix/Cert/StatementClosureManifest.lean)
+            test -n "$pinnedst"
+            printf '%s  Tests/Fixtures/statement-closure-manifest.txt\n' "$pinnedst" | sha256sum -c -
+            pinnedac=$(sed -n 's/^def pinnedDigest : String := "\([0-9a-f]\{64\}\)".*/\1/p' Ix/Cert/AiurCompressionClosureManifest.lean)
+            test -n "$pinnedac"
+            printf '%s  Tests/Fixtures/aiur-compression-closure-manifest.txt\n' "$pinnedac" | sha256sum -c -
             lake env leanchecker \
               IxVM.CompiledCert \
               IxVMRefinement.Endpoint.ComposedResidual \
@@ -1245,10 +1294,13 @@ jobs:
               Ix.Cert.Compression.Audit \
               Ix.Cert.Compression.Bls12381.Audit \
               Ix.Cert.Compression.StarkShrinkerAudit \
+              Ix.Cert.AiurCompression.Audit \
               Ix.Cert.MultiStark.Security128Audit \
               Ix.Cert.Aggr.Security128Audit \
               Ix.Cert.Compression.Security128Audit \
               Ix.Cert.Security128ClosureManifest \
+              Ix.Cert.StatementClosureManifest \
+              Ix.Cert.AiurCompressionClosureManifest \
               Ix.Cert.RecordSectionsBridge
             tmp=$(mktemp -d)
             {

@@ -14,7 +14,9 @@ refused (`refused:`, and the flag or option the refusal names); an accepted clai
 then fails at verification only.
 
 * `ix verify`: an unconditional `check` claim under the default role table is
-  accepted. Each kind of claim that states no typing is refused, naming its flag,
+  accepted; an `eval` claim is refused unless `--allow-eval-claim`;
+  `--binding-proof` is refused where it is unused (`--aggregate`) and when its
+  claim is not a binding claim. Each kind of claim that states no typing is refused, naming its flag,
   accepted under that flag and refused under another kind's. A catalog is refused
   under every flag, naming `--ixc`, and so is `ix verify --aggregate` of one. A
   claim naming another specification set than this build's is refused under every
@@ -164,10 +166,24 @@ def run : IO UInt32 := do
       check s!"  and accepted under {flag}" (!mentions o "refused:") o
       let o ← verify w #[other]
       check s!"  and refused under {other}" (mentions o "refused:") o
+    -- An eval claim, which no theorem states
+    let evalClaim ← wrapperOf home (.eval ctx (addr "input") (addr "output") none)
+    let o ← verify evalClaim #[]
+    check "an eval claim is refused, naming --allow-eval-claim"
+      (mentions o "refused:" && mentions o "--allow-eval-claim") o
+    let o ← verify evalClaim #["--allow-eval-claim"]
+    check "  and accepted under --allow-eval-claim" (!mentions o "refused:") o
+    -- --binding-proof is never silently ignored, and must be a binding claim
+    let o ← invoke (#["verify", "--aggregate", toString unconditional, "--binding-proof",
+      toString unconditional] ++ artifacts)
+    check "ix verify --aggregate refuses --binding-proof" (mentions o "--binding-proof is not used") o
+    let o ← verify unconditional #["--binding-proof", toString unconditional]
+    check "a --binding-proof whose claim is not a binding claim is refused"
+      (mentions o "not a binding claim") o
     -- a catalog
     let catalogRoot ← wrapperOf home (.catalog (addr "members"))
     let everyFlag := #["--allow-custom-binding", "--allow-axioms", "--allow-assumed-binding",
-      "--allow-assumptions", "--allow-reveal-claim", "--allow-contains-claim",
+      "--allow-assumptions", "--allow-eval-claim", "--allow-reveal-claim", "--allow-contains-claim",
       "--allow-binding-claim"]
     let o ← verify catalogRoot #[]
     check "a catalog claim is refused, naming --ixc" (mentions o "refused:" && mentions o "--ixc") o
@@ -184,6 +200,17 @@ def run : IO UInt32 := do
     let o ← verify staleBinding #["--allow-binding-claim"]
     check "  and a binding claim under it, under --allow-binding-claim"
       (mentions o "refused:" && mentions o "specification set") o
+    -- Bare `ix verify <addr>` re-hashes local store bytes against `<addr>`
+    let tamperedAddr := addr "tampered store slot"
+    let tamperedHex := toString tamperedAddr
+    let tamperedDir := home / ".ix" / "store" / (tamperedHex.take 2).toString /
+      ((tamperedHex.drop 2).take 2).toString / ((tamperedHex.drop 4).take 2).toString
+    IO.FS.createDirAll tamperedDir
+    IO.FS.writeBinFile (tamperedDir / (tamperedHex.drop 6).toString)
+      (Ixon.Proof.ser { claim := .check ctx (addr "constant") none, proof := "no proof".toUTF8 })
+    let o ← verify tamperedAddr #[]
+    check "bare ix verify refuses a store object whose bytes do not hash to its address"
+      (mentions o "hashes to") o
     -- `ix compress`
     let contains ← wrapperOf home (.contains (addr "tree") (addr "constant"))
     let compress (proof : Address) : IO String :=
@@ -194,6 +221,18 @@ def run : IO UInt32 := do
       (mentions o "aggregate CheckEnv proof" && !mentions o "refused:") o
     let o ← compress stale
     check "ix compress refuses a CheckEnv claim under another specification set"
+      (mentions o "refused:" && mentions o "specification set") o
+    -- `ix compress --aiur-chain` enforces checkInput + ClaimPolicy.admit before preflight/proving
+    let zeroPin := String.ofList (List.replicate 64 '0')
+    let compressAiur (proof : Address) : IO String :=
+      invoke (#["compress", toString proof, "--aiur-chain", (dir / "absent-chain.json").toString,
+        "--aiur-chain-blake3", zeroPin, "--dev-kzg-srs", "--out", (dir / "aiur-run").toString]
+        ++ artifacts)
+    let o ← compressAiur contains
+    check "ix compress --aiur-chain refuses an input other than a CheckEnv proof before the policy"
+      (mentions o "aggregate CheckEnv proof" && !mentions o "refused:") o
+    let o ← compressAiur stale
+    check "ix compress --aiur-chain refuses a CheckEnv claim under another specification set"
       (mentions o "refused:" && mentions o "specification set") o
     -- `ix verify --aggregate --ixc`: each member under the policy
     let (bad, badAxioms) ← catalog dir "axiom" true
