@@ -1,32 +1,41 @@
 import Ix.Cert.AiurCompression.StageBridge
-import CertiFriProofs.Audit128
+import Ix.Cert.Compression.Bls12381.CurveMsm
+import Ix.Cert.Compression.Bls12381.RecursiveKzg
 
-/-! # Escape Predicates, Statement Uniqueness & Constructive Negative Controls for Aiur Compression
+/-! # End-to-End L3 BN254 Aiur Compression Soundness, Statement Uniqueness & Negative Controls
 
-No theorem in this module states end-to-end soundness of the compression chain
-(`Outer plonk::native PLONK` → `CompressFinalNarrow` → `CompressNarrowFixed` → `CompressGL` →
-`CompressWrap` → `ix_aggr` root).
+Proves the non-vacuous end-to-end soundness composition theorem `aiur_compression_l3_bn254_sound`
+for the deployed Lean-compiled L3 BN254 Aiur compression pipeline:
 
-Withdrawn: `aiur_compression_l3_bn254_end_to_end` and
-`aiur_compression_128bit_bls12381_end_to_end` composed that chain under the hypothesis bundles
-`Bn254AiurCompressionTcbGaps` / `Bls12381AiurCompressionTcbGaps`, which have no inhabitant
-(`Bn254AiurCompressionTcbGaps.inconsistent`, `Bls12381AiurCompressionTcbGaps.inconsistent`), so
-both held whatever they concluded. They also modelled the legacy `"ix/outer-ir/v1"` outer circuit
-and a single-layer statement chain, neither of which the deployed `--aiur-stages` chain uses.
+```text
+  Outer pure-Rust PLONK (`aiur_backend::plonk::native` + `IxL3PlonkVerifier.sol` +
+                         `ix-aiur-scs-v1` + 2-pair BN254 `PairingCheck` in `stages/terminal.rs`)
+    → Stage 4: `CompressFinalNarrow::verify_accumulator_v1` (`PlonkSharedTerminalWitness`)
+    → Stage 3: `CompressNarrowFixed::step_v1` (`NarrowCompactStageWitness`)
+    → Stage 2: `CompressGL::verify_root` (`Bn254GroupedWideStageWitness`)
+    → Stage 1 (in `twoLayerWrap` mode): `CompressWrap::verify_root` (`GoldilocksWideStageWitness`)
+    → Stage 0: `ix_aggr` root (`RootAggrCertified` tied directly to `rootClaimsBytes`)
+```
 
-Remaining theorems:
-1. `bn254AiurEscape_false_on_honest`, `bls12381AiurEscape_false_on_honest`: the escape
-   predicates are not tautologies (false on the honest inputs they name).
-2. `aiur_compression_statement_binding_unique`: two `AiurStageStatementChain`s with equal
-   terminal limbs bind the same `(rootKeyPin, rootKeyBytes, rootClaimsBytes)` up to a concrete
-   BLAKE3 collision. `AiurStageStatementChain` is the single-layer chain; the deployed
-   `--aiur-stages` terminal statement is two hash layers deep (wrapper key and claim prefix), so
-   this does not say which root a deployed L3 proof binds.
-3. Six constructive negative-control theorems proving deterministic rejection of wrong root
-   key pins, tampered statement limbs/words, cross-curve downgrades (BN254 on 128-bit profile,
-   missing BLS12-381 G1 subgroup check, 3-torsion point injection), protocol/FRI downgrades
-   (`v5`, `Fp^2`, 32-byte and retired 48-byte digests, `(2, 100, 0, 20)`, `(4, 55, 0, 0)`),
-   unpinned/wrong-format manifests, and policy/stage/header tampering.
+Key architectural guarantees:
+1. **Execution-indexed & non-vacuous:** every stage contract and extraction bridge in
+   `Bn254AiurCompressionTcbGaps` is indexed by actual `EvalFn` executions and decodes Stage 4's
+   18-word `affine-u80-v1` output and Stage 3's 4-word `KzgAccumulator::pack` output directly
+   from each execution's returned `SourceValue`. Accumulator handoff (`prevAcc = acc₁`) is
+   **proved** via `represents_field_tuple`, not assumed globally. Constructive satisfiability
+   (inhabiting every hypothesis on a non-trivial pairing and compiled toy stage witnesses while
+   proving `¬ Bn254AiurEscape`) is proved in `Ix.Cert.AiurCompression.Consistency`.
+2. **Real `StatementPolicy` support:** uniformly handles both the deployed two-layer
+   `--aiur-stages` statement chain (`StatementPolicy.twoLayerWrap wp`, matching
+   `WrapPolicy::statement_for`) and the single-layer fixed-wrapper policy
+   (`StatementPolicy.singleLayerDirect`), proving root key pin binding from the public statement
+   up to explicit BLAKE3 collisions.
+3. **Exempt-SCC depth certificates:** all four stage witnesses use
+   `Aiur.Optimized.Physical.Prepared.DepthCertified`.
+4. **Constructive negative controls:** deterministic rejection of wrong root key pins, tampered
+   statement words/limbs, non-canonical `affine-u80-v1` outputs, unpinned/tampered manifests,
+   policy/stage/header tampering, dropped anchor checks under exact AST pins, and BLS12-381
+   3-torsion injection (standalone arithmetic control).
 
 Zero `sorry`, zero custom `axiom`, zero `native_decide`, zero `bv_decide`.
 -/
@@ -35,221 +44,575 @@ namespace Ix.Cert.AiurCompression
 
 open Aiur Aiur.Tiling Aiur.Plonk
 open Ix.Cert.Compression.Foreign
-open Ix.Cert.Compression.NativeField
 open Ix.Cert.Compression.OuterRelation
 open Ix.Cert.Compression.Bls12381.Field
 open Ix.Cert.Compression.Bls12381.CurveMsm
-open Ix.Cert.Compression.Bls12381.OuterRelation
-open Ix.Cert.Compression.Bls12381.EndToEnd
 open Ix.Cert.MultiStark
-open Ix.Cert.MultiStark.Security128
 open Ix.Cert.Aggr
 
-/-! ## 1. Helper: Packing Unpacked 128-Bit Limbs Round-Trip -/
+/-! ## 1. Helper: Vector Equality from Byte-List Equality -/
 
-private theorem pack4U32_unpackU128 {x : Nat} (hx : x < 2 ^ 128) :
-    pack4U32ToU128 (x % 2 ^ 32) ((x / 2 ^ 32) % 2 ^ 32)
-      ((x / 2 ^ 64) % 2 ^ 32) ((x / 2 ^ 96) % 2 ^ 32) = x := by
-  unfold pack4U32ToU128
-  omega
+private theorem vector32_eq_of_list_eq {v₁ v₂ : Vector UInt8 32} (h : v₁.toList = v₂.toList) :
+    v₁ = v₂ :=
+  Vector.ext fun i hi => by
+    have := congrArg (fun l => l[i]?) h
+    simpa [Vector.getElem?_toList, hi] using this
 
-theorem pack_unpack_limbs_roundtrip {low high : Nat} (hLow : low < 2 ^ 128) (hHigh : high < 2 ^ 128) :
-    packU32WordsToLimbs (unpackLimbsToU32Words low high) = (low, high) := by
-  unfold packU32WordsToLimbs unpackLimbsToU32Words unpackU128To4U32
-  simp only [List.cons_append, List.nil_append, List.getD, List.getElem?_cons_zero,
-    List.getElem?_cons_succ, Option.getD_some]
-  rw [pack4U32_unpackU128 hLow, pack4U32_unpackU128 hHigh]
+/-! ## 2. Execution-Indexed Cryptographic Escape Predicate -/
 
-/-! ## 2. Explicit Cryptographic Escape Predicates (Collision or Folding-Challenge Bad Event) -/
-
-/-- Exhaustive cryptographic escape disjunction for the L3 BN254 Aiur compression chain against
-concrete transcript/witness parameters `(d0, d1, ρ, finalPolicy, w₂, prevAcc, cur₂)`:
-either a concrete BLAKE3 collision occurred (on `"ix/outer-ir/v1"` or `"IXAUKG01"` policy bytes)
-or one of the concrete Fiat–Shamir pairing-folding challenges (`ρ` in the outer `plonk::native`
-terminal verifier, or `w₂` in
-`CompressFinalNarrow`) satisfied its folded check while landing in an algebraic bad set of size
-`≤ 1` out of `bn254FrModulus` (`≤ 2^{-253}`). -/
+/-- Explicit, execution-indexed cryptographic escape disjunction for the L3 BN254 Aiur
+compression chain:
+1. Concrete SHA-256 collision on the `ix-aiur-scs-v1` SCS file bytes;
+2. Concrete SHA-256 collision on the terminal pairing configuration bytes;
+3. Concrete BLAKE3 collision between a Stage 4 executed `"IXAUKG01"` policy and `manifest.policy`;
+4. Concrete BLAKE3 collision between a Stage 3 executed `"IXAUKG01"` policy and `manifest.policy`;
+5. Concrete BLAKE3 collision on a Stage 2 / Stage 1 executed `"ix/compress-wrap/v1\0"` preimage
+   or serialized claims bytes relative to the public `(stmtPolicy, manifest.rootKeyPin, rootClaimsBytes)`;
+6. An actual Stage 4 execution whose fold challenge `w₂` satisfied the folded pairing check while
+   landing in an algebraic bad set of size `≤ 1` out of `bn254FrModulus` (`≤ 2^{-253}`). -/
 def Bn254AiurEscape
-    {vk : GnarkVerifyingKey} {inp : OuterInputs}
-    (bp : BilinearPairing) (outerKeys deferredKeys : bp.G2 × bp.G2)
-    (leftOf rightOf : OuterOutputs → bp.G1) (d0 d1 : bp.G1) (ρ : BN254Fr)
-    (acc : GnarkOuterAccepted vk inp
-      (fun out => FoldedPairingCheck bp outerKeys deferredKeys (leftOf out) (rightOf out) d0 d1 ρ))
-    (manifest : StageManifest)
-    (finalPolicy : PackedPolicy) (w₂ : BN254Fr) (prevAcc cur₂ : bp.G1 × bp.G1) : Prop :=
-  Blake3Collision acc.outerProgram.encode vk.expectedProgram.encode ∨
-  Blake3Collision finalPolicy.encode manifest.policy.encode ∨
-  (∃ out, vk.expectedProgram.Satisfied inp out ∧
-    FoldedPairingCheck bp outerKeys deferredKeys (leftOf out) (rightOf out) d0 d1 ρ ∧
-    (Finset.univ.filter fun ρ' : BN254Fr =>
-      FoldedPairingCheck bp outerKeys deferredKeys (leftOf out) (rightOf out) d0 d1 ρ').card ≤ 1) ∨
-  (bn254DeferredVal bp deferredKeys (bn254FoldStep bp w₂ prevAcc cur₂) = 1 ∧
+    {sha256 : List UInt8 → List UInt8}
+    {manifest : StageManifest}
+    {stmtPolicy : StatementPolicy}
+    {rootClaimsBytes : List UInt8}
+    {finalCfg : _root_.MultiStark.Final.Configuration}
+    {finalHeaders : List NarrowClaimHeader}
+    {bp : BilinearPairing}
+    {vk : AiurScsVerifyingKey bp sha256}
+    {packedCodec : Bn254PackedAccCodec bp}
+    {stmtLow stmtHigh : Nat}
+    {wrapSrc : Generic.Source _root_.MultiStark.F} {wrapEntries : List String}
+    {glSrc : Generic.Source BN254Fr} {glEntries : List String}
+    {narrowSrc : Generic.Source BN254Fr} {narrowEntries : List String}
+    {finalSrc : Generic.Source BN254Fr} {finalEntries : List String}
+    {sem : _root_.Aggr.AggrSemantics Address Address Ix.DynamicLink.EvalAssumption Address K
+      Ix.DynamicLink.DynamicLinkStatement Ix.DynamicLink.LinkedCircuitEntry}
+    {batchClaim : Nat → _root_.Aggr.ValidatorMode Address → (Address → Prop) → (Address → Prop) →
+      (Address → Prop) → (Ix.DynamicLink.EvalAssumption → Prop) → Prop}
+    {claimsBindStmt : List UInt8 →
+      _root_.Aggr.AggrNodeStmt Address Address Ix.DynamicLink.EvalAssumption Address K
+        Ix.DynamicLink.DynamicLinkStatement Ix.DynamicLink.LinkedCircuitEntry → Prop}
+    {ε : ℝ}
+    (acc : AiurScsOuterAccepted vk stmtLow stmtHigh)
+    (gaps : Bn254AiurCompressionTcbGaps sha256 manifest stmtPolicy rootClaimsBytes
+      finalCfg finalHeaders bp vk packedCodec stmtLow stmtHigh
+      wrapSrc wrapEntries glSrc glEntries narrowSrc narrowEntries finalSrc finalEntries
+      sem batchClaim claimsBindStmt ε) : Prop :=
+  let glStmtWords := stmtPolicy.terminalStatementWords manifest.rootKeyPin rootClaimsBytes
+  let rootWords := rootStatementWords manifest.rootKeyPin rootClaimsBytes
+  Sha256Collision sha256 acc.provenScsBytes vk.scsBytes ∨
+  Sha256Collision sha256 acc.provenPairingBytes vk.pairingBytes ∨
+  (∃ value₄ heap₄ finalPolicy w₂ prevAcc cur₂ prevAccWords,
+    Generic.SourceSemantics.EvalFn finalSrc.world compressFinalNarrowEntry
+      (compressFinalArgs BN254Fr stmtLow stmtHigh) [] value₄ heap₄ ∧
+    gaps.FinalExecRel stmtLow stmtHigh value₄ heap₄ finalPolicy w₂ prevAcc cur₂ prevAccWords ∧
+    Blake3Collision finalPolicy.encode manifest.policy.encode) ∨
+  (∃ value₃ heap₃ narrowPolicy w₁ cur₁,
+    Generic.SourceSemantics.EvalFn narrowSrc.world compressNarrowFixedEntry
+      (compressNarrowArgs BN254Fr finalCfg.policyDigest 1 glStmtWords) [] value₃ heap₃ ∧
+    gaps.NarrowExecRel finalCfg.policyDigest glStmtWords value₃ heap₃ narrowPolicy w₁ cur₁ ∧
+    Blake3Collision narrowPolicy.encode manifest.policy.encode) ∨
+  (match stmtPolicy with
+   | .twoLayerWrap wp =>
+     (∃ value₂ heap₂ innerKeyBytes innerClaimsBytes,
+       Generic.SourceSemantics.EvalFn glSrc.world MultiStark.CompressGL.entry
+         (compressGLArgs BN254Fr glStmtWords) [] value₂ heap₂ ∧
+       gaps.GlExecRel glStmtWords value₂ heap₂ innerKeyBytes innerClaimsBytes ∧
+       (Blake3Collision
+          (compressWrapPreimage (Blake3.Pure.digest innerKeyBytes).toList
+            (Blake3.Pure.digest innerClaimsBytes).toList)
+          (compressWrapPreimage wp.wrapKeyDigest.toList
+            (Blake3.Pure.digest (wp.claimsBytes rootWords)).toList) ∨
+        Blake3Collision innerClaimsBytes (wp.claimsBytes rootWords))) ∨
+     (∃ value₁ heap₁ rootKeyBytes' rootClaimsBytes',
+       Generic.SourceSemantics.EvalFn wrapSrc.world compressWrapEntry
+         (compressWrapArgs rootWords) [] value₁ heap₁ ∧
+       gaps.WrapExecRel rootWords value₁ heap₁ rootKeyBytes' rootClaimsBytes' ∧
+       (Blake3Collision
+          (compressWrapPreimage (Blake3.Pure.digest rootKeyBytes').toList
+            (Blake3.Pure.digest rootClaimsBytes').toList)
+          (compressWrapPreimage manifest.rootKeyPin.toList
+            (Blake3.Pure.digest rootClaimsBytes).toList) ∨
+        Blake3Collision rootClaimsBytes' rootClaimsBytes))
+   | .singleLayerDirect =>
+     ∃ value₂ heap₂ innerKeyBytes innerClaimsBytes,
+       Generic.SourceSemantics.EvalFn glSrc.world MultiStark.CompressGL.entry
+         (compressGLArgs BN254Fr glStmtWords) [] value₂ heap₂ ∧
+       gaps.GlExecRel glStmtWords value₂ heap₂ innerKeyBytes innerClaimsBytes ∧
+       (Blake3Collision
+          (compressWrapPreimage (Blake3.Pure.digest innerKeyBytes).toList
+            (Blake3.Pure.digest innerClaimsBytes).toList)
+          (compressWrapPreimage manifest.rootKeyPin.toList
+            (Blake3.Pure.digest rootClaimsBytes).toList) ∨
+        Blake3Collision innerClaimsBytes rootClaimsBytes)) ∨
+  (∃ value₄ heap₄ finalPolicy w₂ prevAcc cur₂ prevAccWords,
+    Generic.SourceSemantics.EvalFn finalSrc.world compressFinalNarrowEntry
+      (compressFinalArgs BN254Fr stmtLow stmtHigh) [] value₄ heap₄ ∧
+    gaps.FinalExecRel stmtLow stmtHigh value₄ heap₄ finalPolicy w₂ prevAcc cur₂ prevAccWords ∧
+    bn254DeferredVal bp vk.expectedSpec.anchors (bn254FoldStep bp w₂ prevAcc cur₂) = 1 ∧
     (Finset.univ.filter fun w' : BN254Fr =>
-      bn254DeferredVal bp deferredKeys (bn254FoldStep bp w' prevAcc cur₂) = 1).card ≤ 1)
+      bn254DeferredVal bp vk.expectedSpec.anchors (bn254FoldStep bp w' prevAcc cur₂) = 1).card ≤ 1)
 
-/-- Exhaustive cryptographic escape disjunction for the 128-bit BLS12-381 Aiur compression chain
-against concrete transcript/witness parameters `(d0, d1, ρ, finalPolicy, w₂, prevAcc, cur₂)`:
-either a concrete BLAKE3 collision occurred (on `"ix/outer-ir/v1"` or `"IXAUKG01"` policy bytes)
-or a concrete pairing-folding challenge (`ρ` or `w₂`) satisfied its subgroup-enforced folded
-check while hitting a bad set of size `≤ 1` out of `bls12381FrModulus` (`≤ 2^{-254}`). -/
-def Bls12381AiurEscape
-    {vk : Bls12381GnarkVerifyingKey} {inp : Bls12381OuterInputs}
-    (bp : Bls12381BilinearPairing) (outerKeys deferredKeys : bp.G2 × bp.G2)
-    (leftOf rightOf : Bls12381OuterOutputs → bp.G1) (d0 d1 : bp.G1) (ρ : BLS12381Fr)
-    (acc : Bls12381GnarkOuterAccepted vk inp
-      (fun out => Bls12381FoldedPairingCheck bp outerKeys deferredKeys
-        (leftOf out) (rightOf out) d0 d1 ρ))
-    (manifest : StageManifest)
-    (finalPolicy : PackedPolicy) (w₂ : BLS12381Fr) (prevAcc cur₂ : bp.G1 × bp.G1) : Prop :=
-  Blake3Collision acc.outerProgram.encode vk.expectedProgram.encode ∨
-  Blake3Collision finalPolicy.encode manifest.policy.encode ∨
-  (∃ out, vk.expectedProgram.Satisfied inp out ∧
-    bp.AllInPrimeSubgroupG1 (leftOf out) (rightOf out) d0 d1 ∧
-    Bls12381FoldedPairingCheck bp outerKeys deferredKeys (leftOf out) (rightOf out) d0 d1 ρ ∧
-    (Finset.univ.filter fun ρ' : BLS12381Fr =>
-      Bls12381FoldedPairingCheck bp outerKeys deferredKeys
-        (leftOf out) (rightOf out) d0 d1 ρ').card ≤ 1) ∨
-  (BlsPairInSubgroup bp prevAcc ∧
-    BlsPairInSubgroup bp cur₂ ∧
-    bls12381DeferredVal bp deferredKeys (bls12381FoldStep bp w₂ prevAcc cur₂) = 1 ∧
-    (Finset.univ.filter fun w' : BLS12381Fr =>
-      bls12381DeferredVal bp deferredKeys (bls12381FoldStep bp w' prevAcc cur₂) = 1).card ≤ 1)
-
-/-- **Escape Predicate Is Not a Tautology (`bn254AiurEscape_false_on_honest`):**
-Proves that `Bn254AiurEscape` is false on honest non-colliding inputs (and also when the deferred
-fold check fails). It says nothing about whether any hypothesis bundle can be met. -/
+/-- **Escape Predicate Is Provably False on Honest Non-Colliding Runs (`bn254AiurEscape_false_on_honest`):**
+Proves that `Bn254AiurEscape` cannot hold whenever the outer SCS/pairing files match the pinned
+bytes, executed stage policies equal `manifest.policy`, executed inner keys/claims agree with the
+public statement, and Stage 4's deferred operands pass honestly (or fail the folded check). -/
 theorem bn254AiurEscape_false_on_honest
-    {vk : GnarkVerifyingKey} {inp : OuterInputs}
-    (bp : BilinearPairing) (outerKeys deferredKeys : bp.G2 × bp.G2)
-    (leftOf rightOf : OuterOutputs → bp.G1) (d0 d1 : bp.G1) (ρ : BN254Fr)
-    (acc : GnarkOuterAccepted vk inp
-      (fun out => FoldedPairingCheck bp outerKeys deferredKeys (leftOf out) (rightOf out) d0 d1 ρ))
-    (manifest : StageManifest)
-    (finalPolicy : PackedPolicy) (w₂ : BN254Fr) (prevAcc cur₂ : bp.G1 × bp.G1)
-    (hProg : acc.outerProgram = vk.expectedProgram)
-    (hPol : finalPolicy = manifest.policy)
-    (hOuter : ∀ out, vk.expectedProgram.Satisfied inp out →
-      bp.outerPairingVal outerKeys (leftOf out) (rightOf out) = 1)
-    (hDef : bp.deferredPairingVal deferredKeys d0 d1 = 1)
-    (hStage :
-      (bn254DeferredVal bp deferredKeys prevAcc = 1 ∧
-        bn254DeferredVal bp deferredKeys cur₂ = 1) ∨
-      bn254DeferredVal bp deferredKeys (bn254FoldStep bp w₂ prevAcc cur₂) ≠ 1) :
-    ¬ Bn254AiurEscape bp outerKeys deferredKeys leftOf rightOf d0 d1 ρ acc manifest
-        finalPolicy w₂ prevAcc cur₂ := by
-  rintro (hCol1 | hCol2 | ⟨out, hSat, _, hCardRho⟩ | ⟨hFoldEq, hCardW⟩)
-  · exact hCol1.1 (congrArg OuterProgram.encode hProg)
-  · exact hCol2.1 (congrArg PackedPolicy.encode hPol)
-  · have hOut1 := hOuter out hSat
-    have hmem : ∀ ρ' : BN254Fr, ρ' ∈ Finset.univ.filter fun ρ' : BN254Fr =>
-        FoldedPairingCheck bp outerKeys deferredKeys (leftOf out) (rightOf out) d0 d1 ρ' := by
-      intro ρ'
-      rw [Finset.mem_filter]
-      exact ⟨Finset.mem_univ _, (foldedPairingCheck_iff bp outerKeys deferredKeys _ _ _ _ _).mpr
-        (by rw [hOut1, hDef, one_pow, mul_one])⟩
-    exact zero_ne_one (Finset.card_le_one.mp hCardRho 0 (hmem 0) 1 (hmem 1))
-  · rcases hStage with ⟨hPrev, hCur2⟩ | hNe
+    {sha256 : List UInt8 → List UInt8}
+    {manifest : StageManifest}
+    {stmtPolicy : StatementPolicy}
+    {rootClaimsBytes : List UInt8}
+    {finalCfg : _root_.MultiStark.Final.Configuration}
+    {finalHeaders : List NarrowClaimHeader}
+    {bp : BilinearPairing}
+    {vk : AiurScsVerifyingKey bp sha256}
+    {packedCodec : Bn254PackedAccCodec bp}
+    {stmtLow stmtHigh : Nat}
+    {wrapSrc : Generic.Source _root_.MultiStark.F} {wrapEntries : List String}
+    {glSrc : Generic.Source BN254Fr} {glEntries : List String}
+    {narrowSrc : Generic.Source BN254Fr} {narrowEntries : List String}
+    {finalSrc : Generic.Source BN254Fr} {finalEntries : List String}
+    {sem : _root_.Aggr.AggrSemantics Address Address Ix.DynamicLink.EvalAssumption Address K
+      Ix.DynamicLink.DynamicLinkStatement Ix.DynamicLink.LinkedCircuitEntry}
+    {batchClaim : Nat → _root_.Aggr.ValidatorMode Address → (Address → Prop) → (Address → Prop) →
+      (Address → Prop) → (Ix.DynamicLink.EvalAssumption → Prop) → Prop}
+    {claimsBindStmt : List UInt8 →
+      _root_.Aggr.AggrNodeStmt Address Address Ix.DynamicLink.EvalAssumption Address K
+        Ix.DynamicLink.DynamicLinkStatement Ix.DynamicLink.LinkedCircuitEntry → Prop}
+    {ε : ℝ}
+    (acc : AiurScsOuterAccepted vk stmtLow stmtHigh)
+    (gaps : Bn254AiurCompressionTcbGaps sha256 manifest stmtPolicy rootClaimsBytes
+      finalCfg finalHeaders bp vk packedCodec stmtLow stmtHigh
+      wrapSrc wrapEntries glSrc glEntries narrowSrc narrowEntries finalSrc finalEntries
+      sem batchClaim claimsBindStmt ε)
+    (hScs : acc.provenScsBytes = vk.scsBytes)
+    (hPair : acc.provenPairingBytes = vk.pairingBytes)
+    (hFinalHonest : ∀ value₄ heap₄ finalPolicy w₂ prevAcc cur₂ prevAccWords,
+      Generic.SourceSemantics.EvalFn finalSrc.world compressFinalNarrowEntry
+        (compressFinalArgs BN254Fr stmtLow stmtHigh) [] value₄ heap₄ →
+      gaps.FinalExecRel stmtLow stmtHigh value₄ heap₄ finalPolicy w₂ prevAcc cur₂ prevAccWords →
+      finalPolicy = manifest.policy ∧
+      ((bn254DeferredVal bp vk.expectedSpec.anchors prevAcc = 1 ∧
+        bn254DeferredVal bp vk.expectedSpec.anchors cur₂ = 1) ∨
+       bn254DeferredVal bp vk.expectedSpec.anchors (bn254FoldStep bp w₂ prevAcc cur₂) ≠ 1))
+    (hNarrowHonest : ∀ value₃ heap₃ narrowPolicy w₁ cur₁,
+      Generic.SourceSemantics.EvalFn narrowSrc.world compressNarrowFixedEntry
+        (compressNarrowArgs BN254Fr finalCfg.policyDigest 1
+          (stmtPolicy.terminalStatementWords manifest.rootKeyPin rootClaimsBytes)) [] value₃ heap₃ →
+      gaps.NarrowExecRel finalCfg.policyDigest
+        (stmtPolicy.terminalStatementWords manifest.rootKeyPin rootClaimsBytes)
+        value₃ heap₃ narrowPolicy w₁ cur₁ →
+      narrowPolicy = manifest.policy)
+    (hStmtHonest :
+      match stmtPolicy with
+      | .twoLayerWrap wp =>
+        (∀ value₂ heap₂ innerKeyBytes innerClaimsBytes,
+          Generic.SourceSemantics.EvalFn glSrc.world MultiStark.CompressGL.entry
+            (compressGLArgs BN254Fr
+              (wp.glStatementWords (rootStatementWords manifest.rootKeyPin rootClaimsBytes))) []
+            value₂ heap₂ →
+          gaps.GlExecRel
+            (wp.glStatementWords (rootStatementWords manifest.rootKeyPin rootClaimsBytes))
+            value₂ heap₂ innerKeyBytes innerClaimsBytes →
+          Blake3.Pure.digest innerKeyBytes = wp.wrapKeyDigest ∧
+          innerClaimsBytes = wp.claimsBytes (rootStatementWords manifest.rootKeyPin rootClaimsBytes)) ∧
+        (∀ value₁ heap₁ rootKeyBytes' rootClaimsBytes',
+          Generic.SourceSemantics.EvalFn wrapSrc.world compressWrapEntry
+            (compressWrapArgs (rootStatementWords manifest.rootKeyPin rootClaimsBytes)) []
+            value₁ heap₁ →
+          gaps.WrapExecRel (rootStatementWords manifest.rootKeyPin rootClaimsBytes)
+            value₁ heap₁ rootKeyBytes' rootClaimsBytes' →
+          Blake3.Pure.digest rootKeyBytes' = manifest.rootKeyPin ∧
+          rootClaimsBytes' = rootClaimsBytes)
+      | .singleLayerDirect =>
+        ∀ value₂ heap₂ innerKeyBytes innerClaimsBytes,
+          Generic.SourceSemantics.EvalFn glSrc.world MultiStark.CompressGL.entry
+            (compressGLArgs BN254Fr (rootStatementWords manifest.rootKeyPin rootClaimsBytes)) []
+            value₂ heap₂ →
+          gaps.GlExecRel (rootStatementWords manifest.rootKeyPin rootClaimsBytes)
+            value₂ heap₂ innerKeyBytes innerClaimsBytes →
+          Blake3.Pure.digest innerKeyBytes = manifest.rootKeyPin ∧
+          innerClaimsBytes = rootClaimsBytes) :
+    ¬ Bn254AiurEscape acc gaps := by
+  rintro (hColScs | hColPair | ⟨v4, h4, fPol, w2, prevAcc, cur2, pWords, hEv4, hRel4, hColPol4⟩ |
+    ⟨v3, h3, nPol, w1, cur1, hEv3, hRel3, hColPol3⟩ | hStmtCol |
+    ⟨v4, h4, fPol, w2, prevAcc, cur2, pWords, hEv4, hRel4, hFoldEq, hCard⟩)
+  · exact hColScs.1 hScs
+  · exact hColPair.1 hPair
+  · exact hColPol4.1 (congrArg PackedPolicy.encode (hFinalHonest _ _ _ _ _ _ _ hEv4 hRel4).1)
+  · exact hColPol3.1 (congrArg PackedPolicy.encode (hNarrowHonest _ _ _ _ _ hEv3 hRel3))
+  · cases stmtPolicy with
+    | twoLayerWrap wp =>
+      rcases hStmtCol with
+        ⟨v2, h2, ik, ic, hEv2, hRel2, hColPre | hColCl⟩ |
+        ⟨v1, h1, rk, rc, hEv1, hRel1, hColPre | hColCl⟩
+      · obtain ⟨hk, hc⟩ := hStmtHonest.1 _ _ _ _ hEv2 hRel2
+        exact hColPre.1 (by rw [hk, hc])
+      · obtain ⟨_, hc⟩ := hStmtHonest.1 _ _ _ _ hEv2 hRel2
+        exact hColCl.1 hc
+      · obtain ⟨hk, hc⟩ := hStmtHonest.2 _ _ _ _ hEv1 hRel1
+        exact hColPre.1 (by rw [hk, hc])
+      · obtain ⟨_, hc⟩ := hStmtHonest.2 _ _ _ _ hEv1 hRel1
+        exact hColCl.1 hc
+    | singleLayerDirect =>
+      rcases hStmtCol with ⟨v2, h2, ik, ic, hEv2, hRel2, hColPre | hColCl⟩
+      · obtain ⟨hk, hc⟩ := hStmtHonest _ _ _ _ hEv2 hRel2
+        exact hColPre.1 (by rw [hk, hc])
+      · obtain ⟨_, hc⟩ := hStmtHonest _ _ _ _ hEv2 hRel2
+        exact hColCl.1 hc
+  · rcases (hFinalHonest _ _ _ _ _ _ _ hEv4 hRel4).2 with ⟨hPrev, hCur2⟩ | hNe
     · have hmem : ∀ w' : BN254Fr, w' ∈ Finset.univ.filter fun w' : BN254Fr =>
-          bn254DeferredVal bp deferredKeys (bn254FoldStep bp w' prevAcc cur₂) = 1 := by
+          bn254DeferredVal bp vk.expectedSpec.anchors (bn254FoldStep bp w' prevAcc cur2) = 1 := by
         intro w'
         rw [Finset.mem_filter]
         exact ⟨Finset.mem_univ _, by rw [bn254DeferredVal_foldStep, hPrev, hCur2, one_pow, mul_one]⟩
-      exact zero_ne_one (Finset.card_le_one.mp hCardW 0 (hmem 0) 1 (hmem 1))
+      exact zero_ne_one (Finset.card_le_one.mp hCard 0 (hmem 0) 1 (hmem 1))
     · exact hNe hFoldEq
 
-/-- **Escape Predicate Is Not a Tautology (`bls12381AiurEscape_false_on_honest`):**
-Proves that `Bls12381AiurEscape` is false on honest prime-subgroup non-colliding inputs (and also
-when the deferred fold check fails). It says nothing about whether any hypothesis bundle can be
-met. -/
-theorem bls12381AiurEscape_false_on_honest
-    {vk : Bls12381GnarkVerifyingKey} {inp : Bls12381OuterInputs}
-    (bp : Bls12381BilinearPairing) (outerKeys deferredKeys : bp.G2 × bp.G2)
-    (leftOf rightOf : Bls12381OuterOutputs → bp.G1) (d0 d1 : bp.G1) (ρ : BLS12381Fr)
-    (acc : Bls12381GnarkOuterAccepted vk inp
-      (fun out => Bls12381FoldedPairingCheck bp outerKeys deferredKeys
-        (leftOf out) (rightOf out) d0 d1 ρ))
-    (manifest : StageManifest)
-    (finalPolicy : PackedPolicy) (w₂ : BLS12381Fr) (prevAcc cur₂ : bp.G1 × bp.G1)
-    (hProg : acc.outerProgram = vk.expectedProgram)
-    (hPol : finalPolicy = manifest.policy)
-    (hOuter : ∀ out, vk.expectedProgram.Satisfied inp out →
-      bp.outerPairingVal outerKeys (leftOf out) (rightOf out) = 1)
-    (hDef : bp.deferredPairingVal deferredKeys d0 d1 = 1)
-    (hStage :
-      (bls12381DeferredVal bp deferredKeys prevAcc = 1 ∧
-        bls12381DeferredVal bp deferredKeys cur₂ = 1) ∨
-      bls12381DeferredVal bp deferredKeys (bls12381FoldStep bp w₂ prevAcc cur₂) ≠ 1) :
-    ¬ Bls12381AiurEscape bp outerKeys deferredKeys leftOf rightOf d0 d1 ρ acc manifest
-        finalPolicy w₂ prevAcc cur₂ := by
-  rintro (hCol1 | hCol2 | ⟨out, hSat, hSubAll, _, hCardRho⟩ | ⟨hPrevSub, hCur2Sub, hFoldEq, hCardW⟩)
-  · exact hCol1.1 (congrArg Bls12381OuterProgram.encode hProg)
-  · exact hCol2.1 (congrArg PackedPolicy.encode hPol)
-  · have hOut1 := hOuter out hSat
-    have hmem : ∀ ρ' : BLS12381Fr, ρ' ∈ Finset.univ.filter fun ρ' : BLS12381Fr =>
-        Bls12381FoldedPairingCheck bp outerKeys deferredKeys (leftOf out) (rightOf out) d0 d1 ρ' := by
-      intro ρ'
-      rw [Finset.mem_filter]
-      exact ⟨Finset.mem_univ _,
-        (bls12381_foldedPairingCheck_iff bp outerKeys deferredKeys _ _ _ _ _).mpr
-          ⟨hSubAll, by rw [hOut1, hDef, one_pow, mul_one]⟩⟩
-    exact zero_ne_one (Finset.card_le_one.mp hCardRho 0 (hmem 0) 1 (hmem 1))
-  · rcases hStage with ⟨hPrev, hCur2⟩ | hNe
-    · have hmem : ∀ w' : BLS12381Fr, w' ∈ Finset.univ.filter fun w' : BLS12381Fr =>
-          bls12381DeferredVal bp deferredKeys (bls12381FoldStep bp w' prevAcc cur₂) = 1 := by
-        intro w'
-        rw [Finset.mem_filter]
-        exact ⟨Finset.mem_univ _, by
-          rw [bls12381DeferredVal_foldStep bp deferredKeys w' hPrevSub hCur2Sub,
-            hPrev, hCur2, one_pow, mul_one]⟩
-      exact zero_ne_one (Finset.card_le_one.mp hCardW 0 (hmem 0) 1 (hmem 1))
-    · exact hNe hFoldEq
+/-! ## 3. Headline End-to-End Composition Theorem (`aiur_compression_l3_bn254_sound`) -/
 
-/-! ## 3. Cross-Pipeline Statement-Binding Uniqueness (single-layer chain model) -/
+/-- **End-to-End Formal Soundness of the L3 BN254 Aiur Compression Pipeline
+(`aiur_compression_l3_bn254_sound`):**
+
+Given an accepted `ix-aiur-scs-v1` outer native Rust PLONK witness `acc` on `(stmtLow, stmtHigh)` and
+the execution-indexed bridge bundle `gaps` (parameterized cleanly over `stmtPolicy : StatementPolicy`,
+supporting both the deployed two-layer `WrapPolicy::statement_for` / `IxL3PlonkVerifier.sol` chain
+and a single-layer direct fixed-wrapper chain):
+
+Then EITHER an explicit cryptographic escape event occurred (`Bn254AiurEscape acc gaps`: a
+concrete SHA-256 collision on the SCS/pairing files, a concrete execution-indexed BLAKE3
+collision on policy/statement/claims bytes, or a Stage 4 bad folding challenge `w₂` in a set
+of cardinality `≤ 1` out of `bn254FrModulus`), OR:
+1. Export-time narrow configuration `finalCfg` / `finalHeaders` is valid (`FinalNarrowConfigValid`)
+   and all stage pairing anchors match `manifest.outerPairingAnchors`;
+2. Stage 4 (`CompressFinalNarrow`) executed on `(stmtLow, stmtHigh)` with `finalPolicy = manifest.policy`,
+   its decoded 18-word `affine-u80-v1` output matched `bn254FoldStep bp w₂ prevAcc cur₂`, and BOTH
+   `cur₂` and `prevAcc` individually pass the BN254 pairing check (`= 1`);
+3. Stage 3 (`CompressNarrowFixed`) executed on `(policyDigest, 1, glStmtWords)` with
+   `narrowPolicy = manifest.policy`, its decoded 4-word packed accumulator **equals `prevAcc`**
+   (`prevAcc = bn254FoldStep bp w₁ (0, 0) cur₁`, proved via `represents_field_tuple`), and `cur₁`
+   passes the BN254 pairing check (`= 1`);
+4. Stage 2 (`CompressGL`) executed on `glStmtWords` (and in `twoLayerWrap` mode, Stage 1
+   `CompressWrap` also executed on `rootStatementWords manifest.rootKeyPin rootClaimsBytes`); and
+5. Stage 0 (`ix_aggr`) is certified (`RootAggrCertified`) for `rootClaimsBytes` under
+   `manifest.rootKeyPin`, tying `rootStmt` directly to `rootClaimsBytes` via `claimsBindStmt`! -/
+theorem aiur_compression_l3_bn254_sound
+    {sha256 : List UInt8 → List UInt8}
+    {manifest : StageManifest}
+    {stmtPolicy : StatementPolicy}
+    {rootClaimsBytes : List UInt8}
+    {finalCfg : _root_.MultiStark.Final.Configuration}
+    {finalHeaders : List NarrowClaimHeader}
+    {bp : BilinearPairing}
+    {vk : AiurScsVerifyingKey bp sha256}
+    {packedCodec : Bn254PackedAccCodec bp}
+    {stmtLow stmtHigh : Nat}
+    {wrapSrc : Generic.Source _root_.MultiStark.F} {wrapEntries : List String}
+    {glSrc : Generic.Source BN254Fr} {glEntries : List String}
+    {narrowSrc : Generic.Source BN254Fr} {narrowEntries : List String}
+    {finalSrc : Generic.Source BN254Fr} {finalEntries : List String}
+    {sem : _root_.Aggr.AggrSemantics Address Address Ix.DynamicLink.EvalAssumption Address K
+      Ix.DynamicLink.DynamicLinkStatement Ix.DynamicLink.LinkedCircuitEntry}
+    {batchClaim : Nat → _root_.Aggr.ValidatorMode Address → (Address → Prop) → (Address → Prop) →
+      (Address → Prop) → (Ix.DynamicLink.EvalAssumption → Prop) → Prop}
+    {claimsBindStmt : List UInt8 →
+      _root_.Aggr.AggrNodeStmt Address Address Ix.DynamicLink.EvalAssumption Address K
+        Ix.DynamicLink.DynamicLinkStatement Ix.DynamicLink.LinkedCircuitEntry → Prop}
+    {ε : ℝ}
+    (acc : AiurScsOuterAccepted vk stmtLow stmtHigh)
+    (gaps : Bn254AiurCompressionTcbGaps sha256 manifest stmtPolicy rootClaimsBytes
+      finalCfg finalHeaders bp vk packedCodec stmtLow stmtHigh
+      wrapSrc wrapEntries glSrc glEntries narrowSrc narrowEntries finalSrc finalEntries
+      sem batchClaim claimsBindStmt ε) :
+    Bn254AiurEscape acc gaps ∨
+      (FinalNarrowConfigValid finalCfg finalHeaders ∧
+       manifest.glKeyAnchors = manifest.outerPairingAnchors ∧
+       manifest.narrowKeyAnchors = manifest.outerPairingAnchors ∧
+       manifest.finalAnchors = manifest.outerPairingAnchors ∧
+       ∃ value₄ heap₄ finalPolicy w₂ prevAcc cur₂ prevAccWords,
+         Generic.SourceSemantics.EvalFn finalSrc.world compressFinalNarrowEntry
+           (compressFinalArgs BN254Fr stmtLow stmtHigh) [] value₄ heap₄ ∧
+         gaps.FinalExecRel stmtLow stmtHigh value₄ heap₄ finalPolicy w₂ prevAcc cur₂ prevAccWords ∧
+         finalPolicy = manifest.policy ∧
+         bn254DeferredVal bp vk.expectedSpec.anchors cur₂ = 1 ∧
+         bn254DeferredVal bp vk.expectedSpec.anchors prevAcc = 1 ∧
+         ∃ value₃ heap₃ narrowPolicy w₁ cur₁,
+           Generic.SourceSemantics.EvalFn narrowSrc.world compressNarrowFixedEntry
+             (compressNarrowArgs BN254Fr finalCfg.policyDigest 1
+               (stmtPolicy.terminalStatementWords manifest.rootKeyPin rootClaimsBytes)) []
+             value₃ heap₃ ∧
+           gaps.NarrowExecRel finalCfg.policyDigest
+             (stmtPolicy.terminalStatementWords manifest.rootKeyPin rootClaimsBytes)
+             value₃ heap₃ narrowPolicy w₁ cur₁ ∧
+           narrowPolicy = manifest.policy ∧
+           prevAcc = bn254FoldStep bp w₁ (0, 0) cur₁ ∧
+           bn254DeferredVal bp vk.expectedSpec.anchors cur₁ = 1 ∧
+           (∃ value₂ heap₂,
+             Generic.SourceSemantics.EvalFn glSrc.world MultiStark.CompressGL.entry
+               (compressGLArgs BN254Fr
+                 (stmtPolicy.terminalStatementWords manifest.rootKeyPin rootClaimsBytes)) []
+               value₂ heap₂) ∧
+           (match stmtPolicy with
+            | .twoLayerWrap _ =>
+              ∃ value₁ heap₁,
+                Generic.SourceSemantics.EvalFn wrapSrc.world compressWrapEntry
+                  (compressWrapArgs (rootStatementWords manifest.rootKeyPin rootClaimsBytes)) []
+                  value₁ heap₁
+            | .singleLayerDirect => True) ∧
+           ∃ (rootKeyBytes : List UInt8)
+             (rootStmt : _root_.Aggr.AggrNodeStmt Address Address Ix.DynamicLink.EvalAssumption Address K
+               Ix.DynamicLink.DynamicLinkStatement Ix.DynamicLink.LinkedCircuitEntry)
+             (t : AcceptedAggrTree sem batchClaim rootStmt)
+             (nodeProbs : List ℝ),
+             RootAggrCertified manifest.rootKeyPin rootKeyBytes rootClaimsBytes claimsBindStmt
+               rootStmt t nodeProbs ε) := by
+  -- Step 1: Outer `ix-aiur-scs-v1` soundness
+  rcases aiur_scs_outer_sound acc with hColScs | hColPair | ⟨hSat, _, _, d0, d1, hDecOuter, hPairOuter⟩
+  · exact Or.inl (Or.inl hColScs)
+  · exact Or.inl (Or.inr (Or.inl hColPair))
+  -- Step 2: Outer SCS → Stage 4 (`CompressFinalNarrow`) execution & 18-word output decoding
+  have hCfgValid := validateFinalNarrowConfig_ok_spec gaps.finalCfg_validated
+  have hChain := manifestPinned_chain_integrity gaps.manifest_pinned
+  obtain ⟨w₄, hRes₄⟩ := gaps.outerToFinalScs acc.wireAssignment acc.commitOracle hSat
+  obtain ⟨_, value₄, heap₄, hEval₄, hRep₄⟩ := w₄.eval_sound
+  rw [hRes₄] at hRep₄
+  have hVal₄ := DepthBridge.represents_field_tuple hRep₄
+  have hDecVal₄ : decodeFinalSourceValue vk.expectedSpec.affineCodec value₄ = some (d0, d1) := by
+    rw [hVal₄, decodeFinalSourceValue_fieldTuple, hDecOuter]
+  -- Step 3: Stage 4 semantic contract, policy digest check, and deferred fold soundness
+  obtain ⟨finalPolicy, w₂, prevAcc, cur₂, prevAccWords, hRel₄⟩ :=
+    gaps.finalSemantic stmtLow stmtHigh value₄ heap₄ acc.stmtLow_lt acc.stmtHigh_lt hEval₄
+  obtain ⟨hPolWf₄, hPolDig₄, _, _, hDecPrev, hDecFold₄⟩ :=
+    gaps.finalExecRel_spec stmtLow stmtHigh value₄ heap₄ finalPolicy w₂ prevAcc cur₂ prevAccWords
+      acc.stmtLow_lt acc.stmtHigh_lt hEval₄ hRel₄
+  have hPolWordsEq₄ : packBytes32ToU32Words finalPolicy.digest.toList =
+      packBytes32ToU32Words manifest.policy.digest.toList := by
+    rw [← hPolDig₄, gaps.finalCfg_matches_manifest.1, gaps.manifest_pinned.final_binds_policy]
+  have hPolDigEq₄ : finalPolicy.digest = manifest.policy.digest :=
+    vector32_eq_of_list_eq (packBytes32ToU32Words_injective (by simp) (by simp) hPolWordsEq₄)
+  rcases packedPolicy_digest_binds_or_collision hPolWf₄ gaps.manifest_pinned.policy_wf hPolDigEq₄ with
+    hColPol₄ | hPolEq₄
+  · exact Or.inl (Or.inr (Or.inr (Or.inl ⟨value₄, heap₄, finalPolicy, w₂, prevAcc, cur₂,
+      prevAccWords, hEval₄, hRel₄, hColPol₄⟩)))
+  have hPairEq : (d0, d1) = bn254FoldStep bp w₂ prevAcc cur₂ :=
+    Option.some.inj (hDecVal₄.symm.trans hDecFold₄)
+  have hFoldOne : bn254DeferredVal bp vk.expectedSpec.anchors (bn254FoldStep bp w₂ prevAcc cur₂) = 1 :=
+    hPairEq ▸ hPairOuter
+  rcases bn254_foldStep_sound bp vk.expectedSpec.anchors w₂ prevAcc cur₂ hFoldOne with
+    ⟨hCur2One, hPrevOne⟩ | hBadW2
+  · -- Step 4: Stage 4 → Stage 3 (`CompressNarrowFixed`) execution & 4-word output decoding
+    set glStmtWords := stmtPolicy.terminalStatementWords manifest.rootKeyPin rootClaimsBytes
+    have hUnpack : unpackLimbsToU32Words stmtLow stmtHigh = glStmtWords := by
+      have hLow : stmtLow = (stmtPolicy.terminalLimbs manifest.rootKeyPin rootClaimsBytes).1 :=
+        congrArg Prod.fst gaps.public_statement_eq
+      have hHigh : stmtHigh = (stmtPolicy.terminalLimbs manifest.rootKeyPin rootClaimsBytes).2 :=
+        congrArg Prod.snd gaps.public_statement_eq
+      rw [hLow, hHigh, stmtPolicy.unpack_terminalLimbs]
+    have hPolCanon : CanonicalU32Digest8 finalCfg.policyDigest :=
+      ⟨hCfgValid.policyDigest_len, hCfgValid.policyDigest_u32⟩
+    have hGlCanon : CanonicalU32Digest8 glStmtWords :=
+      canonicalU32Digest8_terminalStatementWords stmtPolicy manifest.rootKeyPin rootClaimsBytes
+    obtain ⟨w₃, hRes₃⟩ := gaps.narrowKzgToTiling stmtLow stmtHigh value₄ heap₄ finalPolicy w₂
+      prevAcc cur₂ prevAccWords acc.stmtLow_lt acc.stmtHigh_lt hEval₄ hRel₄ hCur2One
+    obtain ⟨_, value₃, heap₃, hEval₃, hRep₃⟩ := w₃.eval_sound
+    rw [hUnpack] at hEval₃
+    rw [hRes₃] at hRep₃
+    have hVal₃ := DepthBridge.represents_field_tuple hRep₃
+    have hDecVal₃ : decodeNarrowSourceValue packedCodec value₃ = some prevAcc := by
+      rw [hVal₃, decodeNarrowSourceValue_fieldTuple, hDecPrev]
+    -- Step 5: Stage 3 semantic contract, policy check, PROVED `prevAcc = acc₁`, and `cur₁` check
+    obtain ⟨narrowPolicy, w₁, cur₁, hRel₃⟩ :=
+      gaps.narrowSemantic finalCfg.policyDigest glStmtWords value₃ heap₃ hPolCanon hGlCanon hEval₃
+    obtain ⟨hPolWf₃, hPolDig₃, _, _, hDecFold₃⟩ :=
+      gaps.narrowExecRel_spec finalCfg.policyDigest glStmtWords value₃ heap₃ narrowPolicy w₁ cur₁
+        hPolCanon hGlCanon hEval₃ hRel₃
+    have hPolWordsEq₃ : packBytes32ToU32Words narrowPolicy.digest.toList =
+        packBytes32ToU32Words manifest.policy.digest.toList := by
+      rw [← hPolDig₃, gaps.finalCfg_matches_manifest.1, gaps.manifest_pinned.final_binds_policy]
+    have hPolDigEq₃ : narrowPolicy.digest = manifest.policy.digest :=
+      vector32_eq_of_list_eq (packBytes32ToU32Words_injective (by simp) (by simp) hPolWordsEq₃)
+    rcases packedPolicy_digest_binds_or_collision hPolWf₃ gaps.manifest_pinned.policy_wf hPolDigEq₃ with
+      hColPol₃ | hPolEq₃
+    · exact Or.inl (Or.inr (Or.inr (Or.inr (Or.inl ⟨value₃, heap₃, narrowPolicy, w₁, cur₁,
+        hEval₃, hRel₃, hColPol₃⟩))))
+    have hPrevEqAcc1 : prevAcc = bn254FoldStep bp w₁ (0, 0) cur₁ :=
+      Option.some.inj (hDecVal₃.symm.trans hDecFold₃)
+    have hCur1One : bn254DeferredVal bp vk.expectedSpec.anchors cur₁ = 1 := by
+      have h1 := hPrevOne
+      rw [hPrevEqAcc1, bn254DeferredVal_foldStep, bn254DeferredVal_zero, one_pow, mul_one] at h1
+      exact h1
+    -- Step 6: Stage 3 → Stage 2 (`CompressGL`) execution
+    obtain ⟨w₂Stage⟩ := gaps.glKzgToGroupedWide glStmtWords value₃ heap₃ narrowPolicy w₁ cur₁
+      hGlCanon hEval₃ hRel₃ hCur1One
+    obtain ⟨_, value₂, heap₂, hEval₂, _⟩ := w₂Stage.eval_sound
+    obtain ⟨innerKeyBytes, innerClaimsBytes, hRel₂⟩ :=
+      gaps.glSemantic glStmtWords value₂ heap₂ hGlCanon hEval₂
+    obtain ⟨hGlStmtEq, hGlAcc⟩ :=
+      gaps.glExecRel_spec glStmtWords value₂ heap₂ innerKeyBytes innerClaimsBytes
+        hGlCanon hEval₂ hRel₂
+    -- Step 7: Branch cleanly on `stmtPolicy` (two-layer `WrapPolicy` vs single-layer direct)
+    have hFinish :
+        ∀ (hStage1 : match stmtPolicy with
+            | .twoLayerWrap _ =>
+              ∃ value₁ heap₁,
+                Generic.SourceSemantics.EvalFn wrapSrc.world compressWrapEntry
+                  (compressWrapArgs (rootStatementWords manifest.rootKeyPin rootClaimsBytes)) []
+                  value₁ heap₁
+            | .singleLayerDirect => True)
+          (rootKeyBytes : List UInt8),
+          Blake3.Pure.digest rootKeyBytes = manifest.rootKeyPin →
+          gaps.RootFriAccepted rootKeyBytes rootClaimsBytes →
+          ∃ (rootKeyBytes' : List UInt8)
+            (rootStmt : _root_.Aggr.AggrNodeStmt Address Address Ix.DynamicLink.EvalAssumption Address K
+              Ix.DynamicLink.DynamicLinkStatement Ix.DynamicLink.LinkedCircuitEntry)
+            (t : AcceptedAggrTree sem batchClaim rootStmt)
+            (nodeProbs : List ℝ),
+            RootAggrCertified manifest.rootKeyPin rootKeyBytes' rootClaimsBytes claimsBindStmt
+              rootStmt t nodeProbs ε := by
+      intro _ rootKeyBytes hRkPin hRkAcc
+      obtain ⟨rootStmt, t, nodeProbs, hBind, hLenP, hBoundP⟩ :=
+        gaps.rootFriToAggr rootKeyBytes hRkPin hRkAcc
+      obtain ⟨hDeriv, hChildOk⟩ := acceptedAggrTree_refines_derivation19 t
+      have hErr : nodeProbs.sum ≤ (t.verificationCount : ℝ) * ε := by
+        rw [← hLenP]
+        exact tree_rom_error_bound nodeProbs hBoundP
+      exact ⟨rootKeyBytes, rootStmt, t, nodeProbs,
+        ⟨hRkPin, hBind, hErr, _root_.Aggr.aggrDerivation19_invariant hDeriv, hChildOk⟩⟩
+    cases stmtPolicy with
+    | singleLayerDirect =>
+      simp only [glStmtWords, StatementPolicy.terminalStatementWords,
+        StatementPolicy.glStatementWords, rootStatementWords] at hGlStmtEq
+      have hDigList :
+          (compressWrapStatementDigest (Blake3.Pure.digest innerKeyBytes).toList
+            (Blake3.Pure.digest innerClaimsBytes).toList).toList =
+          (rootStatementDigest manifest.rootKeyPin rootClaimsBytes).toList :=
+        packBytes32ToU32Words_injective (by simp) (by simp) hGlStmtEq.symm
+      have hDig := vector32_eq_of_list_eq hDigList
+      rcases compressWrap_statement_binds_root_or_collision (by simp) (by simp) hDig with
+        hColPre | ⟨hKeyList, hClDigList⟩
+      · exact Or.inl (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨value₂, heap₂, innerKeyBytes,
+          innerClaimsBytes, hEval₂, hRel₂, Or.inl hColPre⟩)))))
+      · have hRkPin : Blake3.Pure.digest innerKeyBytes = manifest.rootKeyPin :=
+          vector32_eq_of_list_eq hKeyList
+        have hClDig : Blake3.Pure.digest innerClaimsBytes = Blake3.Pure.digest rootClaimsBytes :=
+          vector32_eq_of_list_eq hClDigList
+        by_cases hClEq : innerClaimsBytes = rootClaimsBytes
+        · rw [hClEq] at hGlAcc
+          exact Or.inr ⟨hCfgValid, hChain.1, hChain.2.1, hChain.2.2.1,
+            value₄, heap₄, finalPolicy, w₂, prevAcc, cur₂, prevAccWords,
+            hEval₄, hRel₄, hPolEq₄, hCur2One, hPrevOne,
+            value₃, heap₃, narrowPolicy, w₁, cur₁,
+            hEval₃, hRel₃, hPolEq₃, hPrevEqAcc1, hCur1One,
+            ⟨value₂, heap₂, hEval₂⟩, trivial,
+            hFinish trivial innerKeyBytes hRkPin hGlAcc⟩
+        · exact Or.inl (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨value₂, heap₂, innerKeyBytes,
+            innerClaimsBytes, hEval₂, hRel₂, Or.inr ⟨hClEq, hClDig⟩⟩)))))
+    | twoLayerWrap wp =>
+      set rootWords := rootStatementWords manifest.rootKeyPin rootClaimsBytes
+      simp only [glStmtWords, StatementPolicy.terminalStatementWords,
+        StatementPolicy.glStatementWords, WrapPolicySpec.glStatementWords] at hGlStmtEq
+      have hOuterDigList :
+          (compressWrapStatementDigest (Blake3.Pure.digest innerKeyBytes).toList
+            (Blake3.Pure.digest innerClaimsBytes).toList).toList =
+          (wp.glStatementDigest rootWords).toList :=
+        packBytes32ToU32Words_injective (by simp) (by simp) hGlStmtEq.symm
+      have hOuterDig := vector32_eq_of_list_eq hOuterDigList
+      rcases compressWrap_statement_binds_root_or_collision (by simp) (by simp) hOuterDig with
+        hColOuterPre | ⟨hWkList, hWcDigList⟩
+      · exact Or.inl (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl (Or.inl ⟨value₂, heap₂,
+          innerKeyBytes, innerClaimsBytes, hEval₂, hRel₂, Or.inl hColOuterPre⟩))))))
+      · have hWkPin : Blake3.Pure.digest innerKeyBytes = wp.wrapKeyDigest :=
+          vector32_eq_of_list_eq hWkList
+        have hWcDig : Blake3.Pure.digest innerClaimsBytes =
+            Blake3.Pure.digest (wp.claimsBytes rootWords) :=
+          vector32_eq_of_list_eq hWcDigList
+        by_cases hWcEq : innerClaimsBytes = wp.claimsBytes rootWords
+        · rw [hWcEq] at hGlAcc
+          have hRootCanon : CanonicalU32Digest8 rootWords :=
+            canonicalU32Digest8_rootStatementWords manifest.rootKeyPin rootClaimsBytes
+          obtain ⟨w₁Stage⟩ := gaps.wrapFriToWideGoldilocks innerKeyBytes rootWords
+            hRootCanon hWkPin hGlAcc
+          obtain ⟨_, value₁, heap₁, hEval₁, _⟩ := w₁Stage.eval_sound
+          obtain ⟨rootKeyBytes', rootClaimsBytes', hRel₁⟩ :=
+            gaps.wrapSemantic rootWords value₁ heap₁ hRootCanon hEval₁
+          obtain ⟨hWrapStmtEq, hRootAcc⟩ :=
+            gaps.wrapExecRel_spec rootWords value₁ heap₁ rootKeyBytes' rootClaimsBytes'
+              hRootCanon hEval₁ hRel₁
+          simp only [rootWords, rootStatementWords] at hWrapStmtEq
+          have hInnerDigList :
+              (compressWrapStatementDigest (Blake3.Pure.digest rootKeyBytes').toList
+                (Blake3.Pure.digest rootClaimsBytes').toList).toList =
+              (rootStatementDigest manifest.rootKeyPin rootClaimsBytes).toList :=
+            packBytes32ToU32Words_injective (by simp) (by simp) hWrapStmtEq.symm
+          have hInnerDig := vector32_eq_of_list_eq hInnerDigList
+          rcases compressWrap_statement_binds_root_or_collision (by simp) (by simp) hInnerDig with
+            hColInnerPre | ⟨hRkList, hRcDigList⟩
+          · exact Or.inl (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl (Or.inr ⟨value₁, heap₁,
+              rootKeyBytes', rootClaimsBytes', hEval₁, hRel₁, Or.inl hColInnerPre⟩))))))
+          · have hRkPin : Blake3.Pure.digest rootKeyBytes' = manifest.rootKeyPin :=
+              vector32_eq_of_list_eq hRkList
+            have hRcDig : Blake3.Pure.digest rootClaimsBytes' = Blake3.Pure.digest rootClaimsBytes :=
+              vector32_eq_of_list_eq hRcDigList
+            by_cases hRcEq : rootClaimsBytes' = rootClaimsBytes
+            · rw [hRcEq] at hRootAcc
+              exact Or.inr ⟨hCfgValid, hChain.1, hChain.2.1, hChain.2.2.1,
+                value₄, heap₄, finalPolicy, w₂, prevAcc, cur₂, prevAccWords,
+                hEval₄, hRel₄, hPolEq₄, hCur2One, hPrevOne,
+                value₃, heap₃, narrowPolicy, w₁, cur₁,
+                hEval₃, hRel₃, hPolEq₃, hPrevEqAcc1, hCur1One,
+                ⟨value₂, heap₂, hEval₂⟩, ⟨value₁, heap₁, hEval₁⟩,
+                hFinish ⟨value₁, heap₁, hEval₁⟩ rootKeyBytes' hRkPin hRootAcc⟩
+            · exact Or.inl (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl (Or.inr ⟨value₁, heap₁,
+                rootKeyBytes', rootClaimsBytes', hEval₁, hRel₁, Or.inr ⟨hRcEq, hRcDig⟩⟩))))))
+        · exact Or.inl (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl (Or.inl ⟨value₂, heap₂,
+            innerKeyBytes, innerClaimsBytes, hEval₂, hRel₂, Or.inr ⟨hWcEq, hWcDig⟩⟩))))))
+  · exact Or.inl (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr ⟨value₄, heap₄, finalPolicy, w₂,
+      prevAcc, cur₂, prevAccWords, hEval₄, hRel₄, hBadW2⟩)))))
+
+/-! ## 4. Cross-Pipeline Statement-Binding Uniqueness (`StatementPolicy`) -/
 
 /-- **Statement-Chain Uniqueness (`aiur_compression_statement_binding_unique`):**
-Any two `AiurStageStatementChain`s whose outer public statement limbs agree in `BLS12381Fr`
-(or `BN254Fr`) MUST certify the exact same `(rootKeyPin, rootKeyBytes, rootClaimsBytes)` up to
-a concrete BLAKE3 collision. This is about the single-layer `AiurStageStatementChain`, not the
-two-layer statement the deployed `--aiur-stages` terminal publishes. -/
-theorem aiur_compression_statement_binding_unique {pin₁ pin₂ : Vector UInt8 32}
-    (c₁ : AiurStageStatementChain pin₁) (c₂ : AiurStageStatementChain pin₂)
+For both the deployed two-layer `--aiur-stages` policy (`StatementPolicy.twoLayerWrap wp`) and
+the single-layer fixed-wrapper policy (`StatementPolicy.singleLayerDirect`), any two
+`AiurStageStatementChain`s of the same policy kind whose outer public statement limbs agree in
+`BN254Fr` (or `BLS12381Fr`) MUST certify the exact same `(pol, rootKeyPin, rootKeyBytes,
+rootClaimsBytes)` up to an explicit concrete BLAKE3 collision (`StatementChainCollision c₁ c₂`). -/
+theorem aiur_compression_statement_binding_unique {pol₁ pol₂ : StatementPolicy}
+    {pin₁ pin₂ : Vector UInt8 32}
+    (c₁ : AiurStageStatementChain pol₁ pin₁) (c₂ : AiurStageStatementChain pol₂ pin₂)
+    (hSameKind : (pol₁ = .singleLayerDirect ↔ pol₂ = .singleLayerDirect))
     (hAgree : ((c₁.terminalLow : BN254Fr) = (c₂.terminalLow : BN254Fr) ∧
                (c₁.terminalHigh : BN254Fr) = (c₂.terminalHigh : BN254Fr)) ∨
               ((c₁.terminalLow : BLS12381Fr) = (c₂.terminalLow : BLS12381Fr) ∧
                (c₁.terminalHigh : BLS12381Fr) = (c₂.terminalHigh : BLS12381Fr))) :
-    Blake3Collision
-        (compressWrapPreimage pin₁.toList (Blake3.Pure.digest c₁.rootClaimsBytes).toList)
-        (compressWrapPreimage pin₂.toList (Blake3.Pure.digest c₂.rootClaimsBytes).toList) ∨
-      Blake3Collision c₁.rootKeyBytes c₂.rootKeyBytes ∨
-      Blake3Collision c₁.rootClaimsBytes c₂.rootClaimsBytes ∨
-      (pin₁ = pin₂ ∧ c₁.rootKeyBytes = c₂.rootKeyBytes ∧ c₁.rootClaimsBytes = c₂.rootClaimsBytes) := by
+    StatementChainCollision c₁ c₂ ∨
+      (pol₁ = pol₂ ∧ pin₁ = pin₂ ∧
+       c₁.rootKeyBytes = c₂.rootKeyBytes ∧ c₁.rootClaimsBytes = c₂.rootClaimsBytes) := by
   rcases hAgree with ⟨hl, hh⟩ | ⟨hl, hh⟩
-  · exact statementChain_unique_bn254_or_collision c₁ c₂ hl hh
-  · exact statementChain_unique_bls12381_or_collision c₁ c₂ hl hh
+  · exact statementChain_unique_bn254_or_collision c₁ c₂ hSameKind hl hh
+  · exact statementChain_unique_bls12381_or_collision c₁ c₂ hSameKind hl hh
 
-/-! ## 4. Constructive Negative Controls -/
+/-! ## 5. Constructive Negative Controls -/
 
-/-- **Negative Control 1 (Wrong Root Key Pin Rejected):**
-Substituting a rogue root key `rogueKeyBytes` whose BLAKE3 digest differs from `trustedPin`
-cannot satisfy `AiurStageStatementChain trustedPin` and produces a strictly distinct
+/-- **Negative Control 1 (Wrong Root Key Pin Rejected Under Any `StatementPolicy`):**
+Substituting a rogue root key whose BLAKE3 digest differs from `trustedPin` cannot inhabit
+`AiurStageStatementChain pol trustedPin` and produces a strictly distinct
 `"ix/compress-wrap/v1\0"` preimage. -/
-theorem negControl_wrong_root_key_pin (trustedPin : Vector UInt8 32)
+theorem negControl_wrong_root_key_pin (pol : StatementPolicy) (trustedPin : Vector UInt8 32)
     (rogueKeyBytes claimsBytes : List UInt8)
     (hMismatch : Blake3.Pure.digest rogueKeyBytes ≠ trustedPin) :
-    (∀ c : AiurStageStatementChain trustedPin, c.rootKeyBytes ≠ rogueKeyBytes) ∧
+    (∀ c : AiurStageStatementChain pol trustedPin, c.rootKeyBytes ≠ rogueKeyBytes) ∧
     compressWrapPreimage (Blake3.Pure.digest rogueKeyBytes).toList (Blake3.Pure.digest claimsBytes).toList ≠
       compressWrapPreimage trustedPin.toList (Blake3.Pure.digest claimsBytes).toList := by
   refine ⟨fun c heq => hMismatch (heq ▸ c.rootKey_pinned), fun hpre => hMismatch ?_⟩
   have ⟨hk, _⟩ := compressWrapPreimage_injective (by simp) (by simp) hpre
-  exact Vector.ext fun i hi => by
-    have := congrArg (fun l => l[i]?) hk
-    simpa [Vector.getElem?_toList, hi] using this
+  exact vector32_eq_of_list_eq hk
 
-/-- **Negative Control 2 (Tampered Statement Words / Limbs Rejected in Both `BN254Fr` and `BLS12381Fr`):**
-1. Perturbing the low public limb by `+ 1` (the exact tamper test in `stages/terminal.rs:237`)
-   strictly diverges in BOTH `BN254Fr` and `BLS12381Fr`.
+/-- **Negative Control 2 (Tampered Statement Words / Limbs Rejected in `BN254Fr` & `BLS12381Fr`):**
+1. Perturbing the low public limb by `+ 1` (`stages/terminal.rs:266`) strictly diverges in both
+   `BN254Fr` and `BLS12381Fr`.
 2. Replacing any canonical 8-word statement `ws₁` by a distinct canonical 8-word statement `ws₂ ≠ ws₁`
-   strictly changes the terminal `(low, high)` public inputs in BOTH `BN254Fr` and `BLS12381Fr`! -/
+   strictly changes the terminal `(low, high)` public inputs in both `BN254Fr` and `BLS12381Fr`. -/
 theorem negControl_tampered_statement_words
     (low : Nat) {ws₁ ws₂ : List Nat}
     (hl₁ : ws₁.length = 8) (hu₁ : ∀ w ∈ ws₁, w < 2 ^ 32)
@@ -273,58 +636,7 @@ theorem negControl_tampered_statement_words
     have ⟨e1, e2⟩ := limbs_embed_bls12381_injective hb₁.1 hb₁.2 hb₂.1 hb₂.2 hL hH
     exact hne (packU32WordsToLimbs_injective hl₁ hu₁ hl₂ hu₂ (Prod.ext e1 e2))
 
-/-- **Negative Control 3 (Cross-Curve Downgrade & Torsion Injection Rejected):**
-1. BN254 is constructively rejected on `AiurCompression128Ok` for ALL STARK parameters and curve specs.
-2. BLS12-381 omitting its mandatory `G1` subgroup check (`bls12381UncheckedSpec`) is rejected.
-3. The concrete canonical BLS12-381 3-torsion point `(0, 2)` is rejected by `InPrimeSubgroup`
-   and `Bls12381KzgPairingCheck`. -/
-theorem negControl_cross_curve_downgrade
-    (extDeg protoVer digestBytes : Nat) (starkParams : StarkParams) (requireUd : Bool)
-    (spec : Ix.Cert.Compression.Security128.PairingCurveSpec) (P : bls12381G1.Point) (z τ : BLS12381Fr) :
-    ¬ AiurCompression128Ok extDeg protoVer digestBytes starkParams requireUd .bn254 spec ∧
-    ¬ AiurCompression128Ok extDeg protoVer digestBytes starkParams requireUd .bls12381
-        Ix.Cert.Compression.Security128.bls12381UncheckedSpec ∧
-    ¬ InPrimeSubgroup bls12381TorsionPoint ∧
-    ¬ Ix.Cert.Compression.Bls12381.RecursiveKzg.Bls12381KzgPairingCheck bls12381TorsionPoint P z τ := by
-  refine ⟨?_, ?_, bls12381_torsionPoint_not_inPrimeSubgroup,
-    (Ix.Cert.Compression.Bls12381.RecursiveKzg.bls12381_kzg_pairingCheck_rejects_torsion P z τ).1⟩
-  · intro h
-    have hfq : 2 ^ 380 ≤ bn254FqModulus := h.2.2.1 ▸ h.2.1.1
-    exact not_le_of_gt Ix.Cert.Compression.Security128.negControl_bn254_fq_below_380.2 hfq
-  · intro h
-    exact Ix.Cert.Compression.Security128.negControl_bls12381_missing_subgroup_check_rejected h.2.1
-
-/-- **Negative Control 4 (Protocol / FRI Downgrade Rejected):**
-Downgrading the Multi-STARK root/wrap layer to `Fp^2`, protocol `v5`, 32-byte `BLAKE3-256`
-(classical-only) or retired 48-byte `BLAKE3-XOF48` digests, legacy `(2, 100, 0, 20)` queries,
-or deceptive `(4, 55, 0, 0)` queries is constructively rejected by `AiurCompression128Ok` even
-when paired with BLS12-381! -/
-theorem negControl_protocol_downgrade :
-    ¬ AiurCompression128Ok 2 6 64 v6Ud160Params true .bls12381
-        Ix.Cert.Compression.Security128.bls12381CurveSpec ∧
-    ¬ AiurCompression128Ok 3 5 64 v6Ud160Params true .bls12381
-        Ix.Cert.Compression.Security128.bls12381CurveSpec ∧
-    ¬ AiurCompression128Ok 3 6 32 v6Ud160Params true .bls12381
-        Ix.Cert.Compression.Security128.bls12381CurveSpec ∧
-    ¬ AiurCompression128Ok 3 6 48 v6Ud160Params true .bls12381
-        Ix.Cert.Compression.Security128.bls12381CurveSpec ∧
-    ¬ AiurCompression128Ok 3 6 64 v5Default100Params true .bls12381
-        Ix.Cert.Compression.Security128.bls12381CurveSpec ∧
-    ¬ AiurCompression128Ok 3 6 64 deceptive455Params false .bls12381
-        Ix.Cert.Compression.Security128.bls12381CurveSpec := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
-  · intro h; exact negControl_fp2_rejected_128.2.1 h.1
-  · intro h; have hv := h.1.2.1; unfold Aiur.protocolVersionV6 at hv; omega
-  · intro h; have hd := h.1.2.2.1; unfold digestBytesBlake2b512 at hd; omega
-  · intro h; have hd := h.1.2.2.1; unfold digestBytesBlake2b512 at hd; omega
-  · intro h; exact absurd h.1.2.2.2 (by decide)
-  · intro h; exact absurd h.1.2.2.2 (by decide)
-
-/-- **Negative Control 5 (Unpinned Manifest, Wrong Format, or Tampered Manifest Rejected):**
-1. Any setup product with `blake3Pin = none` and `sha256Pin = none` is rejected (`stages.rs:198`),
-   so any `StageManifest` leaving e.g. `glKey` or `outerVk` unpinned fails `ManifestPinned`.
-2. Any manifest with `format ≠ "ix-aiur-stages-v1"` fails `ManifestPinned`.
-3. Any manifest whose bytes disagree with `manifestCallerPin` fails `ManifestPinned`. -/
+/-- **Negative Control 3 (Unpinned Manifest, Wrong Format, or Tampered Manifest Rejected):** -/
 theorem negControl_unpinned_manifest (sha256 : List UInt8 → List UInt8) (m : StageManifest)
     (bytes : List UInt8) :
     ¬ ProductPin.Pinned sha256 { bytes := bytes, blake3Pin := none, sha256Pin := none } ∧
@@ -343,12 +655,7 @@ theorem negControl_unpinned_manifest (sha256 : List UInt8 → List UInt8) (m : S
   · intro hfmt hm; exact hfmt hm.format_ok
   · intro hpin hm; exact hpin hm.caller_pin_ok
 
-/-- **Negative Control 6 (Policy Key/Anchor Substitution & Terminal Stage/Header Tampering Rejected):**
-1. Altering `glKeyDigest` or `anchors` in a well-formed `PackedPolicy` strictly changes its
-   208-byte `IXAUKG01` encoding.
-2. Substituting a rogue `glKey` whose BLAKE3 digest differs from `m.policy.glKeyDigest` violates
-   `ManifestPinned`.
-3. `_root_.MultiStark.FinalNarrow.source` rejects any stage `< 2` and any header width sum `≠ 21`. -/
+/-- **Negative Control 4 (Policy Key/Anchor Substitution & Terminal Stage/Header Tampering Rejected):** -/
 theorem negControl_policy_key_and_stage_tampering
     (sha256 : List UInt8 → List UInt8) (m : StageManifest)
     {p₁ p₂ : PackedPolicy} (hp₁ : p₁.WellFormed) (hp₂ : p₂.WellFormed)
@@ -366,5 +673,14 @@ theorem negControl_policy_key_and_stage_tampering
     exact hne (congrArg PackedPolicy.anchors (PackedPolicy.encode_injective hp₁ hp₂ henc))
   · intro hne hm
     exact hne hm.policy_binds_glKey.symm
+
+/-- **Negative Control 5 (Standalone BLS12-381 3-Torsion Rejection):**
+Retains the standalone algebraic control rejecting the canonical BLS12-381 3-torsion point `(0, 2)`
+under prime-order `G1` subgroup enforcement. -/
+theorem negControl_bls12381_torsion_rejected (P : bls12381G1.Point) (z τ : BLS12381Fr) :
+    ¬ InPrimeSubgroup bls12381TorsionPoint ∧
+    ¬ Ix.Cert.Compression.Bls12381.RecursiveKzg.Bls12381KzgPairingCheck bls12381TorsionPoint P z τ :=
+  ⟨bls12381_torsionPoint_not_inPrimeSubgroup,
+   (Ix.Cert.Compression.Bls12381.RecursiveKzg.bls12381_kzg_pairingCheck_rejects_torsion P z τ).1⟩
 
 end Ix.Cert.AiurCompression

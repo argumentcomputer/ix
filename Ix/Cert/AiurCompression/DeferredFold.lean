@@ -6,7 +6,9 @@ import Ix.Cert.Compression.Bls12381.OuterRelation
 
 Formalizes the algebraic soundness of the deferred KZG pairing accumulator folded across the
 Lean-compiled Aiur compression chain (`CompressNarrowFixed` → `CompressFinalNarrow` → outer
-`plonk::native` PLONK `PairingCheck`), over BOTH BN254 (L3) and BLS12-381 (128-bit EIP-2537):
+pure-Rust `aiur_backend::plonk::native` PLONK `ix-aiur-scs-v1` + two-pair `PairingCheck` in
+`stages/terminal.rs`), over BN254, together with standalone BLS12-381 subgroup-enforced
+deferred-fold arithmetic and affine codec lemmas:
 
 1. **BN254 Deferred Pairing Accumulation (`bn254_l3_deferred_fold_sound`,
    `bn254_kstage_deferred_fold_sound`):**
@@ -16,20 +18,19 @@ Lean-compiled Aiur compression chain (`CompressNarrowFixed` → `CompressFinalNa
    - Proves that if `deferredPairVal acc₂ = 1`, then EITHER both `cur₁` (`CompressGL`) and
      `cur₂` (`CompressNarrowFixed`) pass their pairing checks individually (`= 1`), OR `w₂`
      hits the algebraic bad fold-challenge set of size `≤ 1` out of `bn254FrModulus` (`≤ 2^{-253}`).
-   - Proves the inductive `k`-stage generalization covering arbitrary L3/L4/L5 chains.
-2. **BLS12-381 Subgroup-Enforced Deferred Pairing Accumulation
+   - Proves the inductive `k`-stage generalization covering arbitrary multi-stage chains.
+2. **BLS12-381 Subgroup-Enforced Deferred Pairing Arithmetic
    (`bls12381_l3_deferred_fold_sound`, `bls12381_kstage_deferred_fold_sound`):**
-   - Enforces `InPrimeSubgroupG1` on every deferred accumulator point (rejecting small-order
-     cofactor torsion points), proving that passing the folded terminal check implies either
-     every stage's pairing check holds individually or some fold weight landed in a bad set
-     of size `≤ 1` out of `bls12381FrModulus` (`≤ 2^{-254}`).
-3. **Canonical Affine `u80` Terminal Output Word Codecs (`bn254AffineU80_injective`,
+   - Standalone algebraic/arithmetic lemmas enforcing `InPrimeSubgroupG1` on every deferred
+     accumulator point (rejecting small-order cofactor torsion points).
+3. **Canonical Affine `u80` Terminal Output Word Codecs & Decoders (`bn254AffineU80_injective`,
+   `decodeBn254AffineU80PointWords`, `Bn254AffineCodec`, `Bn254PackedAccCodec`,
    `bls12381AffineU80_injective`):**
-   - Exact mathematical model of `CompressFinalNarrow::verify_accumulator_v1`'s 18-word BN254
-     output (`2 × (4 × u80/u14 + infinity)`, matching the `affine-u80-v1` terminal layout in
-     `crates/proof-compression/src/aiur_backend/plonk/scs.rs` and `plonk::native`)
-     and the 22-word BLS12-381 `5 × u80/u61` generalization, proving strict injectivity and
-     infinity canonicalization.
+   - Exact mathematical model and total field-word decoder of `CompressFinalNarrow::verify_accumulator_v1`'s
+     18-word BN254 output (`2 × (4 × u80/u14 + infinity)`, matching the `affine-u80-v1` layout in
+     `crates/proof-compression/src/aiur_backend/plonk/scs.rs` and `stages/terminal.rs`)
+     and the 4-word packed accumulator (`KzgAccumulator::pack`), plus the 22-word BLS12-381
+     `5 × u80/u61` coordinate injectivity lemma.
 
 Zero `sorry`, zero custom `axiom`, zero `native_decide`, zero `bv_decide`.
 -/
@@ -429,8 +430,8 @@ theorem bls12381_kstage_deferred_fold_nonvacuous (bp : Bls12381BilinearPairing)
 
 /-! ## 3. Canonical Affine `u80` Terminal Output Word Encodings (`affine-u80-v1`, `plonk/scs.rs`) -/
 
-/-- Canonical 4-limb `u80`/`u14` BN254 `Fq` coordinate (`affine-u80-v1` terminal output
-encoding in `crates/proof-compression/src/aiur_backend/plonk/scs.rs` / `plonk::native`). -/
+/-- Canonical 4-limb `u80`/`u14` BN254 `Fq` coordinate (`affine-u80-v1` terminal output encoding
+in `crates/proof-compression/src/aiur_backend/plonk/scs.rs` and `aiur_backend::plonk::native`). -/
 structure Bn254AffineU80Coord where
   w0 : Nat
   w1 : Nat
@@ -455,7 +456,7 @@ theorem Bn254AffineU80Coord.toNat_injective {c₁ c₂ : Bn254AffineU80Coord}
 
 /-- Canonical 9-word BN254 affine `G1` point output (`x` limbs `0..3`, `y` limbs `4..7`,
 boolean `infinity` word `8`), matching the `affine-u80-v1` layout in
-`crates/proof-compression/src/aiur_backend/plonk/scs.rs` and `plonk::native`. -/
+`crates/proof-compression/src/aiur_backend/plonk/scs.rs` and `stages/terminal.rs`. -/
 structure Bn254AffineU80Point where
   x : Bn254AffineU80Coord
   y : Bn254AffineU80Coord
@@ -543,5 +544,219 @@ theorem bls12381AffineU80_injective {p₁ p₂ : Bls12381AffineU80Point}
       rw [h2] at this; exact absurd this (by decide)
     · rfl
   simp [Bls12381AffineU80Point.words, hx0, hx1, hx2, hx3, hx4, hy0, hy1, hy2, hy3, hy4, hinf]
+
+/-! ## 4. Total `BN254Fr` Field-Word Decoders for `affine-u80-v1` (18 words) & Packed Accumulators (4 words) -/
+
+/-- The 9 `BN254Fr` field words corresponding to a canonical `Bn254AffineU80Point`. -/
+def Bn254AffineU80Point.fieldWords (p : Bn254AffineU80Point) : List BN254Fr :=
+  p.words.map fun n => (n : BN254Fr)
+
+/-- Canonical `0` coordinate in `4 × u80/u14` representation. -/
+def bn254AffineZeroCoord : Bn254AffineU80Coord where
+  w0 := 0
+  w1 := 0
+  w2 := 0
+  w3 := 0
+  h0 := by decide
+  h1 := by decide
+  h2 := by decide
+  h3 := by decide
+  hRange := by decide
+
+/-- Canonical 9-word infinity point `(0, 0, true)` (`[0,0,0,0, 0,0,0,0, 1]`). -/
+def bn254AffineInfinityPoint : Bn254AffineU80Point where
+  x := bn254AffineZeroCoord
+  y := bn254AffineZeroCoord
+  infinity := true
+  inf_iff_zero := by simp [Bn254AffineU80Coord.toNat, bn254AffineZeroCoord]
+
+/-- Canonical 9-word `BN254Fr` encoding of the point at infinity. -/
+def bn254AffineInfinityWords : List BN254Fr :=
+  [0, 0, 0, 0, 0, 0, 0, 0, 1]
+
+/-- Canonical 18-word `BN254Fr` encoding of the zero deferred pair `(0, 0)`. -/
+def bn254AffineZeroPairWords : List BN254Fr :=
+  bn254AffineInfinityWords ++ bn254AffineInfinityWords
+
+/-- Decode four `BN254Fr` limbs into a canonical `4 × u80/u14` BN254 `Fq` coordinate,
+matching the `affine-u80-v1` coordinate representation in
+`crates/proof-compression/src/aiur_backend/fq.rs` and `stages/terminal.rs`. -/
+def decodeBn254AffineU80Coord (f0 f1 f2 f3 : BN254Fr) : Option Bn254AffineU80Coord :=
+  if h0 : f0.val < 2 ^ 80 then
+    if h1 : f1.val < 2 ^ 80 then
+      if h2 : f2.val < 2 ^ 80 then
+        if h3 : f3.val < 2 ^ 14 then
+          if hR : f0.val + 2 ^ 80 * f1.val + 2 ^ 160 * f2.val + 2 ^ 240 * f3.val < bn254FqModulus then
+            some ⟨f0.val, f1.val, f2.val, f3.val, h0, h1, h2, h3, hR⟩
+          else none
+        else none
+      else none
+    else none
+  else none
+
+/-- Decode nine `BN254Fr` output words into a canonical `Bn254AffineU80Point`, matching
+`g1::decode_affine_words` / `check_bn254_native_outputs` (`stages/terminal.rs`):
+- `x` limbs `0..3` and `y` limbs `4..7` are canonical `4 × u80/u14` `Fq` coordinates;
+- word `8` is boolean (`0` or `1`);
+- `infinity = 1 ↔ x = 0 ∧ y = 0`. -/
+def decodeBn254AffineU80PointWords : List BN254Fr → Option Bn254AffineU80Point
+  | [x0, x1, x2, x3, y0, y1, y2, y3, inf] =>
+    match decodeBn254AffineU80Coord x0 x1 x2 x3, decodeBn254AffineU80Coord y0 y1 y2 y3 with
+    | some xc, some yc =>
+      if _hInf : inf.val = 1 then
+        if hZero : xc.toNat = 0 ∧ yc.toNat = 0 then
+          some ⟨xc, yc, true, ⟨fun _ => hZero, fun _ => rfl⟩⟩
+        else none
+      else if _hFin : inf.val = 0 then
+        if hNz : ¬ (xc.toNat = 0 ∧ yc.toNat = 0) then
+          some ⟨xc, yc, false, ⟨fun h => absurd h (by decide), fun hz => absurd hz hNz⟩⟩
+        else none
+      else none
+    | _, _ => none
+  | _ => none
+
+theorem decodeBn254AffineU80Coord_zero :
+    decodeBn254AffineU80Coord 0 0 0 0 = some bn254AffineZeroCoord := by
+  have h0 : (0 : BN254Fr).val = 0 := ZMod.val_zero
+  simp [decodeBn254AffineU80Coord, bn254AffineZeroCoord, h0]
+
+theorem decodeBn254AffineU80PointWords_infinity :
+    decodeBn254AffineU80PointWords bn254AffineInfinityWords = some bn254AffineInfinityPoint := by
+  have h1 : (1 : BN254Fr).val = 1 := ZMod.val_one bn254FrModulus
+  simp [decodeBn254AffineU80PointWords, bn254AffineInfinityWords, bn254AffineInfinityPoint,
+    decodeBn254AffineU80Coord_zero, Bn254AffineU80Coord.toNat, bn254AffineZeroCoord, h1]
+
+theorem decodeBn254AffineU80Coord_eq_some {f0 f1 f2 f3 : BN254Fr} {c : Bn254AffineU80Coord}
+    (h : decodeBn254AffineU80Coord f0 f1 f2 f3 = some c) :
+    (c.w0 : BN254Fr) = f0 ∧ (c.w1 : BN254Fr) = f1 ∧
+    (c.w2 : BN254Fr) = f2 ∧ (c.w3 : BN254Fr) = f3 := by
+  unfold decodeBn254AffineU80Coord at h
+  split_ifs at h
+  simp only [Option.some.injEq] at h
+  subst h
+  exact ⟨ZMod.natCast_zmod_val f0, ZMod.natCast_zmod_val f1,
+    ZMod.natCast_zmod_val f2, ZMod.natCast_zmod_val f3⟩
+
+/-- Every 9-word sequence accepted by `decodeBn254AffineU80PointWords` equals the exact
+canonical `fieldWords` of the decoded point (proving strict injectivity on `BN254Fr` words). -/
+theorem decodeBn254AffineU80PointWords_roundtrip {ws : List BN254Fr} {p : Bn254AffineU80Point}
+    (h : decodeBn254AffineU80PointWords ws = some p) :
+    ws = p.fieldWords := by
+  match ws with
+  | [x0, x1, x2, x3, y0, y1, y2, y3, inf] =>
+    unfold decodeBn254AffineU80PointWords at h
+    cases hx : decodeBn254AffineU80Coord x0 x1 x2 x3 with
+    | none => simp [hx] at h
+    | some xc =>
+      cases hy : decodeBn254AffineU80Coord y0 y1 y2 y3 with
+      | none => simp [hx, hy] at h
+      | some yc =>
+        simp only [hx, hy] at h
+        obtain ⟨hx0, hx1, hx2, hx3⟩ := decodeBn254AffineU80Coord_eq_some hx
+        obtain ⟨hy0, hy1, hy2, hy3⟩ := decodeBn254AffineU80Coord_eq_some hy
+        split_ifs at h with hInf hZero hFin hNz
+        · simp only [Option.some.injEq] at h
+          subst h
+          have hinfEq : (1 : BN254Fr) = inf := by
+            have hcast : ((inf.val : Nat) : BN254Fr) = inf := ZMod.natCast_zmod_val inf
+            rw [hInf] at hcast
+            simpa using hcast
+          simp [Bn254AffineU80Point.fieldWords, Bn254AffineU80Point.words,
+            hx0, hx1, hx2, hx3, hy0, hy1, hy2, hy3, hinfEq]
+        · simp only [Option.some.injEq] at h
+          subst h
+          have hinfEq : (0 : BN254Fr) = inf := by
+            have hcast : ((inf.val : Nat) : BN254Fr) = inf := ZMod.natCast_zmod_val inf
+            rw [hFin] at hcast
+            simpa using hcast
+          simp [Bn254AffineU80Point.fieldWords, Bn254AffineU80Point.words,
+            hx0, hx1, hx2, hx3, hy0, hy1, hy2, hy3, hinfEq]
+  | [] | [_] | [_, _] | [_, _, _] | [_, _, _, _] | [_, _, _, _, _]
+  | [_, _, _, _, _, _] | [_, _, _, _, _, _, _] | [_, _, _, _, _, _, _, _]
+  | _ :: _ :: _ :: _ :: _ :: _ :: _ :: _ :: _ :: _ :: _ =>
+    simp [decodeBn254AffineU80PointWords] at h
+
+theorem decodeBn254AffineU80PointWords_injective {ws₁ ws₂ : List BN254Fr} {p : Bn254AffineU80Point}
+    (h₁ : decodeBn254AffineU80PointWords ws₁ = some p)
+    (h₂ : decodeBn254AffineU80PointWords ws₂ = some p) :
+    ws₁ = ws₂ :=
+  (decodeBn254AffineU80PointWords_roundtrip h₁).trans
+    (decodeBn254AffineU80PointWords_roundtrip h₂).symm
+
+/-- Constructive rejection of malformed `affine-u80-v1` flags:
+1. Any non-boolean infinity word (`inf.val ≠ 0 ∧ inf.val ≠ 1`) is rejected (`none`);
+2. Setting `inf = 1` with nonzero `x0` is rejected (`none`);
+3. Setting `inf = 0` with all-zero coordinates `(0, 0)` is rejected (`none`). -/
+theorem decodeBn254AffineU80PointWords_rejects_bad_flag
+    (x0 x1 x2 x3 y0 y1 y2 y3 inf : BN254Fr) :
+    (inf.val ≠ 0 → inf.val ≠ 1 →
+      decodeBn254AffineU80PointWords [x0, x1, x2, x3, y0, y1, y2, y3, inf] = none) ∧
+    (x0 ≠ 0 →
+      decodeBn254AffineU80PointWords [x0, x1, x2, x3, y0, y1, y2, y3, 1] = none) ∧
+    decodeBn254AffineU80PointWords [0, 0, 0, 0, 0, 0, 0, 0, 0] = none := by
+  refine ⟨?_, ?_, ?_⟩
+  · intro h0 h1
+    simp only [decodeBn254AffineU80PointWords]
+    cases hx : decodeBn254AffineU80Coord x0 x1 x2 x3 <;>
+      cases hy : decodeBn254AffineU80Coord y0 y1 y2 y3 <;>
+      simp [h0, h1]
+  · intro hx0
+    simp only [decodeBn254AffineU80PointWords]
+    cases hx : decodeBn254AffineU80Coord x0 x1 x2 x3 with
+    | none => simp
+    | some xc =>
+      cases hy : decodeBn254AffineU80Coord y0 y1 y2 y3 with
+      | none => simp
+      | some yc =>
+        have h1 : (1 : BN254Fr).val = 1 := ZMod.val_one bn254FrModulus
+        have hxc := (decodeBn254AffineU80Coord_eq_some hx).1
+        have hnz : xc.toNat ≠ 0 := by
+          intro hz
+          unfold Bn254AffineU80Coord.toNat at hz
+          have hw0 : xc.w0 = 0 := by omega
+          rw [hw0, Nat.cast_zero] at hxc
+          exact hx0 hxc.symm
+        simp [h1, hnz]
+  · have h0 : (0 : BN254Fr).val = 0 := ZMod.val_zero
+    simp [decodeBn254AffineU80PointWords, decodeBn254AffineU80Coord_zero,
+      Bn254AffineU80Coord.toNat, bn254AffineZeroCoord, h0]
+
+/-- Canonical curve-point decoder from a range-checked 9-word `Bn254AffineU80Point` into `bp.G1`
+(modeling on-curve `G1` decoding in `crates/proof-compression/src/aiur_backend/g1.rs` and
+`check_bn254_native_outputs` in `stages/terminal.rs`). -/
+structure Bn254AffineCodec (bp : BilinearPairing) where
+  decodePoint : Bn254AffineU80Point → Option bp.G1
+  decode_infinity : ∀ p : Bn254AffineU80Point, p.infinity = true → decodePoint p = some 0
+
+/-- Decode the 18 `BN254Fr` terminal output words (`2 × 9` `affine-u80-v1` words) into a
+deferred pairing operand pair `(d0, d1) ∈ bp.G1 × bp.G1`. -/
+def decodeBn254AffinePairWords {bp : BilinearPairing} (codec : Bn254AffineCodec bp)
+    (ws : List BN254Fr) : Option (bp.G1 × bp.G1) :=
+  if ws.length = 18 then
+    match decodeBn254AffineU80PointWords (ws.take 9),
+          decodeBn254AffineU80PointWords (ws.drop 9) with
+    | some p0, some p1 =>
+      match codec.decodePoint p0, codec.decodePoint p1 with
+      | some g0, some g1 => some (g0, g1)
+      | _, _ => none
+    | _, _ => none
+  else none
+
+theorem decodeBn254AffinePairWords_zeroPair {bp : BilinearPairing}
+    (codec : Bn254AffineCodec bp) :
+    decodeBn254AffinePairWords codec bn254AffineZeroPairWords = some (0, 0) := by
+  have hlen : bn254AffineZeroPairWords.length = 18 := rfl
+  have htake : bn254AffineZeroPairWords.take 9 = bn254AffineInfinityWords := rfl
+  have hdrop : bn254AffineZeroPairWords.drop 9 = bn254AffineInfinityWords := rfl
+  simp only [decodeBn254AffinePairWords, hlen, ite_true, htake, hdrop,
+    decodeBn254AffineU80PointWords_infinity,
+    codec.decode_infinity bn254AffineInfinityPoint rfl]
+
+/-- Canonical decoder for the 4-word packed deferred accumulator (`KzgAccumulator::pack`,
+`[Field; 4]` returned by `CompressNarrowFixed::step_v1` and unpacked by
+`CompressFinalNarrow::previous`) into `bp.G1 × bp.G1`. -/
+structure Bn254PackedAccCodec (bp : BilinearPairing) where
+  decodePacked : List BN254Fr → Option (bp.G1 × bp.G1)
+  decode_len : ∀ ws pair, decodePacked ws = some pair → ws.length = 4
 
 end Ix.Cert.AiurCompression
