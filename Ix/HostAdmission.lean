@@ -145,37 +145,40 @@ structure Checked (statement : Statement) (artifact : Ixon.Env)
   run : Run artifact limits
   derived : statementOf artifact limits run = .ok statement
 
-def certify (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) :
+def certify (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits)
+    (pins : Ix.Kernel.Admission.RolePins := .committed) :
     Except Error (Σ statement, Checked statement artifact limits) := do
   unless artifact.assumptions.isEmpty do
     throw (.identity "host statement: external artifact assumptions are unsupported")
   let input ← (Artifact.prepareRecords artifact limits).mapError .preparation
   let run ← if input.hasTier then
-      (Artifact.checkTiered artifact limits).map Run.tiered |>.mapError .tiered
-    else (Artifact.check artifact limits).map Run.logical |>.mapError .preparation
+      (Artifact.checkTiered artifact limits pins).map Run.tiered |>.mapError .tiered
+    else (Artifact.check artifact limits pins).map Run.logical |>.mapError .preparation
   match made : statementOf artifact limits run with
   | .error e => throw e
   | .ok statement => return ⟨statement, ⟨run, made⟩⟩
 
-def verify (expected : Statement) (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) :
+def verify (expected : Statement) (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits)
+    (pins : Ix.Kernel.Admission.RolePins := .committed) :
     Except Error (Checked expected artifact limits) := do
   expected.check.mapError .encoding
-  let ⟨actual, checked⟩ ← certify artifact limits
+  let ⟨actual, checked⟩ ← certify artifact limits pins
   if same : actual = expected then return same ▸ checked
   else throw (.identity "host statement: commitments differ from actual admitted artifact")
 
-def verifyBytes (bytes : ByteArray) (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) :
+def verifyBytes (bytes : ByteArray) (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits)
+    (pins : Ix.Kernel.Admission.RolePins := .committed) :
     Except Error (Σ statement, Checked statement artifact limits) := do
   let statement ← Statement.decode bytes |>.mapError .encoding
-  return ⟨statement, ← verify statement artifact limits⟩
+  return ⟨statement, ← verify statement artifact limits pins⟩
 
 /-- Store.read does not authenticate its key. Every addressed verification
 must check the bytes at that address before parsing or replaying admission. -/
 def verifyAddressed (address : Address) (bytes : ByteArray) (artifact : Ixon.Env)
-    (limits : Ix.Kernel.Admission.Limits) :
+    (limits : Ix.Kernel.Admission.Limits) (pins : Ix.Kernel.Admission.RolePins := .committed) :
     Except Error (Σ statement, Checked statement artifact limits) := do
   unless Address.admissionHash bytes == address do
     throw (.identity "host statement: stored bytes do not match their address")
-  verifyBytes bytes artifact limits
+  verifyBytes bytes artifact limits pins
 
 end Ix.HostAdmission

@@ -96,6 +96,7 @@ theorem prepareRecordsAt_order {artifact : Ixon.Env} {limits : Limits} {order : 
     obtain ⟨constants,decoded,rest⟩ := except_bind_ok.mp rest
     obtain ⟨_,_,rest⟩ := except_bind_ok.mp rest
     obtain ⟨_,_,rest⟩ := except_bind_ok.mp rest
+    obtain ⟨_,_,rest⟩ := except_bind_ok.mp rest
     obtain ⟨pre,_,rest⟩ := except_bind_ok.mp rest
     obtain ⟨_,_,rest⟩ := except_bind_ok.mp rest
     obtain ⟨_,_,rest⟩ := except_bind_ok.mp rest

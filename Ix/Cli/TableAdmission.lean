@@ -1,8 +1,11 @@
 /-
   The kernel's admission of a claim's role table, run by the consumer.
 
-  `IxVM.consistent` covers a typing claim under the default role table, or under
-  a role table the kernel admits (`TableAdmitted`): its section is
+  `ix verify` accepts a typing claim under the default role table, or under a
+  role table the kernel admits (`TableAdmitted`, a premise of the unproved
+  reduction `IxVM.consistent`; no proved theorem connects it to the table
+  validity `IxVM.Refinement.Endpoint.circuitComposed` takes from a binding
+  claim): its section is
   authenticated, canonical and well formed, its prelude roles are the committed
   records, and the kernel's strict check accepts the closure of the constants it
   binds (all but the compiler-trust roles) and the theorems its evidence names,
@@ -54,7 +57,7 @@ public section
 namespace Ix.Cli.TableAdmission
 
 /-- **The kernel's executable admission of a role table** over the records of an
-environment: `check`, whose `true` establishes the statement's premise
+environment: `check`, whose `true` establishes `IxVM.consistent`'s premise
 (`TableAdmitted`) for that table, and `explain`, the first stage that refuses
 (read only when `check` refused; it reruns the stages). -/
 structure Checker where
