@@ -17,8 +17,8 @@ const MAGIC: &[u8] = b"IXAIUR2\0";
 const CIRCUIT_VERDICT: &str = "IX_AIUR_CIRCUIT_VERDICT";
 
 fn main() -> Result<(), Box<dyn Error>> {
-  let cli: Vec<_> = std::env::args().collect();
-  if cli.get(1).is_some_and(|s| s == "resources") {
+  let raw_cli: Vec<_> = std::env::args().collect();
+  if raw_cli.get(1).is_some_and(|s| s == "resources") {
     println!(
       "{}",
       serde_json::json!({"budget_bytes":aiur::trace::stark::planning::default_budget(),
@@ -26,8 +26,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
     return Ok(());
   }
+  let (cli, verify_pin_mode) = parse_verify_cli(&raw_cli)?;
   if cli.len() < 4 {
-    return Err("usage: ixvm-proof execute|plan|prove|verify ARTIFACT INPUT.ixi [PROOF] [SHARD_ROWS] [RETENTION] [OPTIONS.json]".into());
+    return Err("usage: ixvm-proof execute|plan|prove|verify ARTIFACT INPUT.ixi [PROOF] [SHARD_ROWS] [RETENTION] [OPTIONS.json] [--keys PATH | --artifact-digest HEX | --allow-unpinned]".into());
   }
   let mode = cli[1].as_str();
   if !["execute", "plan", "prove", "verify", "test", "key", "tiles"]
@@ -38,6 +39,18 @@ fn main() -> Result<(), Box<dyn Error>> {
   ixvm::register_compiled_trace();
   let (mut package, artifact) = Package::load(cli[2].as_ref())?;
   eprintln!("artifact {}: blake3 {artifact}", cli[2]);
+  let verify_pin = if mode == "verify" {
+    let pin = resolve_verify_pin(&verify_pin_mode)?;
+    check_artifact_digest(&artifact.to_string(), pin.as_ref())?;
+    if pin.is_none() {
+      eprintln!(
+        "warning: verifying proof against unpinned artifact {artifact} (--allow-unpinned)"
+      );
+    }
+    pin
+  } else {
+    None
+  };
   // Circuit-verdict mode: execution also checks the assertions only the
   // circuit enforces (`runtime_check: false`), so that a run fails exactly
   // where the circuit has no trace for the same witness. The artifact, its
@@ -268,7 +281,7 @@ fn main() -> Result<(), Box<dyn Error>> {
       )?;
     }
     println!(
-      "verified claim in {:.3}s ({} queries, {} instructions)",
+      "executed claim in {:.3}s ({} queries, {} instructions; runtime_check: false assertions skipped)",
       seconds,
       result.queries.len(),
       result.instructions
@@ -292,6 +305,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     )?,
   };
   if mode == "verify" {
+    if let Some(expected_key) =
+      verify_pin.as_ref().and_then(|pin| pin.key_digest.as_deref())
+    {
+      let key = backend.verifying_key_bytes()?;
+      let derived = blake3::hash(&key).to_hex().to_string();
+      check_key_digest(&derived, expected_key)?;
+    }
     let bytes = std::fs::read(path)?;
     let bytes = bytes.strip_prefix(MAGIC).ok_or("not a formal Aiur proof")?;
     let proof = BatchProof::from_bytes(bytes)?;
@@ -412,4 +432,293 @@ fn main() -> Result<(), Box<dyn Error>> {
   report.as_object_mut().unwrap().remove("execution_statistics");
   println!("{}", report);
   Ok(())
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum VerifyPinMode {
+  DefaultKeys,
+  KeysFile(std::path::PathBuf),
+  ArtifactDigest(String),
+  AllowUnpinned,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct IxvmPin {
+  artifact_digest: String,
+  key_digest: Option<String>,
+  source: String,
+}
+
+fn is_hex_digest(s: &str) -> bool {
+  s.len() == 64 && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+fn parse_verify_cli(
+  raw: &[String],
+) -> Result<(Vec<String>, VerifyPinMode), String> {
+  if raw.get(1).map(String::as_str) != Some("verify") {
+    return Ok((raw.to_vec(), VerifyPinMode::DefaultKeys));
+  }
+  let mut positional = Vec::with_capacity(raw.len());
+  let mut pin: Option<VerifyPinMode> = None;
+  let mut set_pin = |next: VerifyPinMode| -> Result<(), String> {
+    if pin.is_some() {
+      return Err(
+        "conflicting verify pin flags: choose at most one of --keys, --artifact-digest, or --allow-unpinned"
+          .into(),
+      );
+    }
+    pin = Some(next);
+    Ok(())
+  };
+  let mut i = 0;
+  while i < raw.len() {
+    match raw[i].as_str() {
+      "--allow-unpinned" => {
+        set_pin(VerifyPinMode::AllowUnpinned)?;
+        i += 1;
+      },
+      "--keys" => {
+        let path = raw.get(i + 1).ok_or("missing path argument for --keys")?;
+        set_pin(VerifyPinMode::KeysFile(std::path::PathBuf::from(path)))?;
+        i += 2;
+      },
+      "--artifact-digest" => {
+        let digest = raw
+          .get(i + 1)
+          .ok_or("missing hex digest argument for --artifact-digest")?
+          .to_ascii_lowercase();
+        if !is_hex_digest(&digest) {
+          return Err(format!(
+            "invalid --artifact-digest {digest:?}: expected 64 hex characters"
+          ));
+        }
+        set_pin(VerifyPinMode::ArtifactDigest(digest))?;
+        i += 2;
+      },
+      arg if i >= 2 && arg.starts_with("--") => {
+        return Err(format!("unknown verify flag {arg:?}"));
+      },
+      _ => {
+        positional.push(raw[i].clone());
+        i += 1;
+      },
+    }
+  }
+  Ok((positional, pin.unwrap_or(VerifyPinMode::DefaultKeys)))
+}
+
+fn parse_ixvm_pin(contents: &str, source: &str) -> Result<IxvmPin, String> {
+  let mut found: Option<IxvmPin> = None;
+  for (lineno, raw_line) in contents.lines().enumerate() {
+    let line = raw_line.split('#').next().unwrap_or("").trim();
+    if line.is_empty() {
+      continue;
+    }
+    let fields: Vec<_> = line.split_whitespace().collect();
+    if fields.first().copied() != Some("ixvm") {
+      continue;
+    }
+    if fields.len() < 3 {
+      return Err(format!("{source}:{}: malformed ixvm pin line", lineno + 1));
+    }
+    let artifact_digest = fields[1].to_ascii_lowercase();
+    let key_digest = fields[2].to_ascii_lowercase();
+    if !is_hex_digest(&artifact_digest) || !is_hex_digest(&key_digest) {
+      return Err(format!(
+        "{source}:{}: malformed ixvm hex digest",
+        lineno + 1
+      ));
+    }
+    if found.is_some() {
+      return Err(format!("{source}:{}: duplicate ixvm pin line", lineno + 1));
+    }
+    found = Some(IxvmPin {
+      artifact_digest,
+      key_digest: Some(key_digest),
+      source: source.to_owned(),
+    });
+  }
+  found.ok_or_else(|| format!("{source}: missing ixvm pin entry"))
+}
+
+fn locate_default_keys_file() -> Option<std::path::PathBuf> {
+  let rel = std::path::Path::new("tools/formal-aiur.keys");
+  if rel.is_file() {
+    return Some(rel.to_path_buf());
+  }
+  if let Ok(exe) = std::env::current_exe() {
+    for ancestor in exe.ancestors() {
+      let candidate = ancestor.join(rel);
+      if candidate.is_file() {
+        return Some(candidate);
+      }
+    }
+  }
+  let manifest_fallback = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    .join("../../tools/formal-aiur.keys");
+  if manifest_fallback.is_file() {
+    return Some(manifest_fallback);
+  }
+  None
+}
+
+fn resolve_verify_pin(mode: &VerifyPinMode) -> Result<Option<IxvmPin>, String> {
+  match mode {
+    VerifyPinMode::AllowUnpinned => Ok(None),
+    VerifyPinMode::ArtifactDigest(digest) => Ok(Some(IxvmPin {
+      artifact_digest: digest.clone(),
+      key_digest: None,
+      source: "--artifact-digest".to_owned(),
+    })),
+    VerifyPinMode::KeysFile(path) => {
+      let text = std::fs::read_to_string(path)
+        .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+      Ok(Some(parse_ixvm_pin(&text, &path.display().to_string())?))
+    },
+    VerifyPinMode::DefaultKeys => {
+      let path = locate_default_keys_file().ok_or_else(|| {
+        "cannot locate tools/formal-aiur.keys to verify artifact digest pin \
+         (pass --keys PATH, --artifact-digest HEX, or --allow-unpinned)"
+          .to_owned()
+      })?;
+      let text = std::fs::read_to_string(&path)
+        .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+      Ok(Some(parse_ixvm_pin(&text, &path.display().to_string())?))
+    },
+  }
+}
+
+fn check_artifact_digest(
+  actual: &str,
+  pin: Option<&IxvmPin>,
+) -> Result<(), String> {
+  let Some(pin) = pin else {
+    return Ok(());
+  };
+  if actual != pin.artifact_digest {
+    return Err(format!(
+      "artifact digest {actual} does not match pinned ixvm digest {} from {} \
+       (pass --allow-unpinned to verify against an unpinned artifact)",
+      pin.artifact_digest, pin.source
+    ));
+  }
+  Ok(())
+}
+
+fn check_key_digest(actual: &str, expected: &str) -> Result<(), String> {
+  if actual != expected {
+    return Err(format!(
+      "derived verifying key digest {actual} does not match pinned ixvm key digest {expected}"
+    ));
+  }
+  Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn parse_default_formal_aiur_keys_and_validate_digest() {
+    let pin = resolve_verify_pin(&VerifyPinMode::DefaultKeys)
+      .unwrap()
+      .expect("default keys file yields an ixvm pin");
+    assert!(is_hex_digest(&pin.artifact_digest));
+    let key = pin.key_digest.as_deref().expect("ixvm pin includes key digest");
+    assert!(is_hex_digest(key));
+    check_artifact_digest(&pin.artifact_digest, Some(&pin)).unwrap();
+    check_key_digest(key, key).unwrap();
+
+    let wrong = "0".repeat(64);
+    let err = check_artifact_digest(&wrong, Some(&pin)).unwrap_err();
+    assert!(err.contains("does not match pinned ixvm digest"), "{err}");
+    let err = check_key_digest(&wrong, key).unwrap_err();
+    assert!(err.contains("does not match pinned ixvm key digest"), "{err}");
+  }
+
+  #[test]
+  fn parse_verify_cli_supports_pin_flags_and_rejects_conflicts() {
+    let args =
+      |xs: &[&str]| xs.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+    let (pos, mode) = parse_verify_cli(&args(&[
+      "ixvm-proof",
+      "verify",
+      "a.ixa",
+      "in.ixi",
+      "p.bin",
+    ]))
+    .unwrap();
+    assert_eq!(pos.len(), 5);
+    assert_eq!(mode, VerifyPinMode::DefaultKeys);
+
+    let (pos, mode) = parse_verify_cli(&args(&[
+      "ixvm-proof",
+      "verify",
+      "a.ixa",
+      "in.ixi",
+      "p.bin",
+      "--allow-unpinned",
+    ]))
+    .unwrap();
+    assert_eq!(pos.len(), 5);
+    assert_eq!(mode, VerifyPinMode::AllowUnpinned);
+
+    let hex = "a".repeat(64);
+    let (pos, mode) = parse_verify_cli(&args(&[
+      "ixvm-proof",
+      "verify",
+      "a.ixa",
+      "in.ixi",
+      "p.bin",
+      "--artifact-digest",
+      &hex,
+    ]))
+    .unwrap();
+    assert_eq!(pos.len(), 5);
+    assert_eq!(mode, VerifyPinMode::ArtifactDigest(hex.clone()));
+
+    assert!(
+      parse_verify_cli(&args(&[
+        "ixvm-proof",
+        "verify",
+        "a.ixa",
+        "in.ixi",
+        "p.bin",
+        "--allow-unpinned",
+        "--artifact-digest",
+        &hex,
+      ]))
+      .is_err()
+    );
+    assert!(
+      parse_verify_cli(&args(&[
+        "ixvm-proof",
+        "verify",
+        "a.ixa",
+        "in.ixi",
+        "p.bin",
+        "--artifact-digest",
+        "not-a-digest",
+      ]))
+      .is_err()
+    );
+  }
+
+  #[test]
+  fn parse_ixvm_pin_rejects_missing_or_malformed_entries() {
+    assert!(
+      parse_ixvm_pin("# comment only\nparameters log_blowup 2\n", "test")
+        .is_err()
+    );
+    assert!(parse_ixvm_pin("ixvm short digest\n", "test").is_err());
+    let dup = format!(
+      "ixvm {} {} 0\nixvm {} {} 0\n",
+      "1".repeat(64),
+      "2".repeat(64),
+      "3".repeat(64),
+      "4".repeat(64)
+    );
+    assert!(parse_ixvm_pin(&dup, "test").is_err());
+  }
 }

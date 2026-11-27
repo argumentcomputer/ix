@@ -1,5 +1,8 @@
-//! Provably equivalent vertical circuit merger and FRI-arity height aligner
-//! for `multi-stark` Plonkish circuits with compact BLAKE3 custom gates.
+//! Vertical circuit merger and FRI-arity height aligner for `multi-stark`
+//! Plonkish circuits with compact BLAKE3 custom gates. Its equivalence with
+//! the unmerged lowering is not proved: it is checked by the differential
+//! test `tests/merged_blake3_differential.rs`, and `try_merge` admits only the
+//! lowering that test covers (`COMPACT_BLAKE3_STRUCTURE_DIGEST`).
 //!
 //! `multi-stark`'s `Circuit::lower_to_multi_stark_sharded` with compact BLAKE3
 //! emits 9 auxiliary circuits alongside the computation trace(s) and merged
@@ -37,6 +40,120 @@ const TID_B3_XOR: usize = 10;
 const TID_B3_SPLIT4: usize = 11;
 const TID_B3_SPLIT7: usize = 12;
 const TID_B3_BYTE: usize = 13;
+
+/// Structure digest ([`compact_blake3_structure_digest`]) of the lowered
+/// compact-BLAKE3 circuits that `B3_All` and `UnifiedTable` restate by hand.
+/// `try_merge` refuses any other lowering: a change to `multi-stark`'s BLAKE3
+/// gadget (a new constraint, lookup or table entry, even at the same widths)
+/// must be reviewed against the merged circuits, and the differential test
+/// `tests/merged_blake3_differential.rs` re-run, before this constant moves.
+pub const COMPACT_BLAKE3_STRUCTURE_DIGEST: [u8; 32] = [
+  0x7e, 0xbc, 0x5b, 0x47, 0xc3, 0x96, 0x6b, 0x0c, 0x1a, 0x0b, 0x34, 0xb2, 0xd1,
+  0xf0, 0xf7, 0x12, 0x8d, 0x35, 0x05, 0xb4, 0xb3, 0x34, 0x43, 0x6a, 0x7c, 0x21,
+  0x1f, 0x5d, 0xb8, 0x4a, 0xc8, 0x70,
+];
+
+const STRUCTURE_DIGEST_CONTEXT: &str =
+  "ix/stark-shrinker/circuit-merge/compact-blake3-structure/v1";
+
+fn hash_expr(hasher: &mut blake3::Hasher, expr: &Expr<Val>) {
+  match expr {
+    Expr::Const(c) => {
+      hasher.update(&[0]);
+      hasher.update(&c.as_canonical_u64().to_le_bytes());
+    },
+    Expr::Var(col) => {
+      let source = match col.source {
+        Source::Preprocessed => 0u8,
+        Source::Main => 1,
+        Source::Stage2 => 2,
+      };
+      let offset = match col.offset {
+        RowOffset::Current => 0u8,
+        RowOffset::Next => 1,
+      };
+      hasher.update(&[1, source, offset]);
+      hasher.update(&col.index.to_le_bytes());
+    },
+    Expr::Public(i) => {
+      hasher.update(&[2]);
+      hasher.update(&i.to_le_bytes());
+    },
+    Expr::IsFirstRow => {
+      hasher.update(&[3]);
+    },
+    Expr::IsLastRow => {
+      hasher.update(&[4]);
+    },
+    Expr::IsTransition => {
+      hasher.update(&[5]);
+    },
+    Expr::Add(a, b) => {
+      hasher.update(&[6]);
+      hash_expr(hasher, a);
+      hash_expr(hasher, b);
+    },
+    Expr::Sub(a, b) => {
+      hasher.update(&[7]);
+      hash_expr(hasher, a);
+      hash_expr(hasher, b);
+    },
+    Expr::Mul(a, b) => {
+      hasher.update(&[8]);
+      hash_expr(hasher, a);
+      hash_expr(hasher, b);
+    },
+    Expr::Neg(a) => {
+      hasher.update(&[9]);
+      hash_expr(hasher, a);
+    },
+  }
+}
+
+fn hash_len(hasher: &mut blake3::Hasher, len: usize) {
+  hasher.update(&(len as u64).to_le_bytes());
+}
+
+/// BLAKE3 digest of what `try_merge` discards from the lowered compact-BLAKE3
+/// circuits `t0..t5` and their three tables (`definitions[b3_start..][..9]`):
+/// every circuit's widths, lookup group size, constraints (base, and the
+/// count of extension ones) and lookups, and the tables' fixed contents. The
+/// pipeline traces' fixed matrices (row activations and constants, which
+/// depend on the hashed messages) are excluded; `try_merge` copies them.
+pub fn compact_blake3_structure_digest(
+  defs: &[CircuitInputs<Val>],
+) -> [u8; 32] {
+  let mut hasher = blake3::Hasher::new_derive_key(STRUCTURE_DIGEST_CONTEXT);
+  hash_len(&mut hasher, defs.len());
+  for (i, def) in defs.iter().enumerate() {
+    hash_len(&mut hasher, def.main_width);
+    hash_len(&mut hasher, def.preprocessed.as_ref().map_or(0, Matrix::width));
+    hash_len(&mut hasher, def.lookup_group_size);
+    hash_len(&mut hasher, def.constraints.len());
+    for c in &def.constraints {
+      hash_expr(&mut hasher, c);
+    }
+    hash_len(&mut hasher, def.ext_constraints.len());
+    hash_len(&mut hasher, def.lookups.len());
+    for lookup in &def.lookups {
+      hash_expr(&mut hasher, &lookup.multiplicity);
+      hash_len(&mut hasher, lookup.args.len());
+      for arg in &lookup.args {
+        hash_expr(&mut hasher, arg);
+      }
+    }
+    // The three tables (after the six pipeline traces) are fixed content.
+    if i >= 6
+      && let Some(prep) = def.preprocessed.as_ref()
+    {
+      hash_len(&mut hasher, prep.height());
+      for v in &prep.values {
+        hasher.update(&v.as_canonical_u64().to_le_bytes());
+      }
+    }
+  }
+  *hasher.finalize().as_bytes()
+}
 
 /// Plan describing how the original `MultiStarkCircuit` traces map into the
 /// merged layout (`Comp_0..Comp_{m-1}`, `B3_All`, `UnifiedTable`), including
@@ -179,6 +296,18 @@ impl MergedLayout {
           prep.width()
         ));
       }
+    }
+
+    // The hand-written `B3_All` and `UnifiedTable` restate exactly the
+    // lowering with this structure; refuse any other.
+    let structure =
+      compact_blake3_structure_digest(&definitions[b3_start..b3_start + 9]);
+    if structure != COMPACT_BLAKE3_STRUCTURE_DIGEST {
+      return Err(format!(
+        "the lowered compact-BLAKE3 circuits (structure digest {}) are not the ones the merged B3_All/UnifiedTable circuits restate ({}); review circuit_merge.rs against multi-stark's BLAKE3 gadget",
+        blake3::Hash::from_bytes(structure).to_hex(),
+        blake3::Hash::from_bytes(COMPACT_BLAKE3_STRUCTURE_DIGEST).to_hex()
+      ));
     }
 
     // Count contiguous active rows of each BLAKE3 sub-trace t0..t5.

@@ -290,18 +290,67 @@ pub fn circuit_memseg_width(circuit: &Circuit<Val>) -> Option<u64> {
   None
 }
 
+/// Extract the ROM payload width from a `<ROM:w>` circuit, either segmented
+/// (via its `MEMSEG = 16` lookup) or unsegmented (no preprocessed table,
+/// non-empty lookups, and every lookup is a `ROM = 2` pull with `3 + w`
+/// arguments for the same width `w`).
+pub(super) fn circuit_rom_width(circuit: &Circuit<Val>) -> Option<u64> {
+  if let Some(w) = circuit_memseg_width(circuit) {
+    return Some(w);
+  }
+  use multi_stark::graph::Node;
+  if circuit.preprocessed_height != 0 || circuit.graph.lookups.is_empty() {
+    return None;
+  }
+  let mut rom_width: Option<u64> = None;
+  for lookup in &circuit.graph.lookups {
+    let Some(Node::Neg(_)) =
+      circuit.graph.nodes.get(lookup.multiplicity.0 as usize)
+    else {
+      return None;
+    };
+    if lookup.args.len() < 3 {
+      return None;
+    }
+    let ch = circuit.graph.nodes.get(lookup.args[0].0 as usize);
+    let w = circuit.graph.nodes.get(lookup.args[1].0 as usize);
+    let (Some(Node::Const(c)), Some(Node::Const(width))) = (ch, w) else {
+      return None;
+    };
+    if *c != Val::from_u64(ROM) {
+      return None;
+    }
+    let w_val = width.as_canonical_u64();
+    if usize::try_from(w_val).ok().and_then(|n| n.checked_add(3))
+      != Some(lookup.args.len())
+    {
+      return None;
+    }
+    match rom_width {
+      None => rom_width = Some(w_val),
+      Some(prev) if prev != w_val => return None,
+      Some(_) => {},
+    }
+  }
+  rom_width
+}
+
 /// Logical entry weight per row of a circuit for `MAX_BATCH_ROWS` accounting:
-/// `K = rom_lanes(w)` for `C6` vectorized `<ROM:w>` circuits (`main_width ==
-/// 1 + K * (w + 2)`), and `1` for scalar ROM, function, and fixed-table circuits.
+/// `K = rom_lanes(w)` for vectorized `<ROM:w>` circuits (both segmented
+/// and unsegmented, where `main_width == 1 + K * (w + 2)`), and `1` for
+/// scalar ROM, function, and fixed-table circuits.
 pub(super) fn circuit_row_weight(circuit: &Circuit<Val>) -> u64 {
-  let Some(w) = circuit_memseg_width(circuit) else {
+  let Some(w) = circuit_rom_width(circuit) else {
     return 1;
   };
   let Ok(w_usize) = usize::try_from(w) else {
     return 1;
   };
   let k = rom_lanes(w_usize);
+  let expected_lookups =
+    if circuit_memseg_width(circuit).is_some() { k + 2 } else { k };
   if k > 1
+    && circuit.graph.lookups.len() == expected_lookups
     && w_usize
       .checked_add(2)
       .and_then(|s| s.checked_mul(k))
@@ -372,7 +421,7 @@ fn validate_preamble_with<C: AsRef<[Val]>>(
         return Err("fixed table height mismatch".into());
       }
       // The depth pass's row bound, over every shard ([`MAX_BATCH_ROWS`]),
-      // weighting `C6` vectorized `<ROM:w>` circuits by their lane count `K`
+      // weighting vectorized `<ROM:w>` circuits by their lane count `K`
       // so `rom.entries.length <= 2^39` holds unconditionally.
       let weight = u128::from(circuit_row_weight(circuit));
       rows += height * weight;
