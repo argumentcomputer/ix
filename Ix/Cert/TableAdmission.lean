@@ -4,15 +4,18 @@ import IxCK.Kernel.Verify.Cached.Reference
 
 /-! # The kernel's admission of a role table, executed
 
-`IxVM.consistent` covers a claim under the default role table or under a role table
-the kernel admits (`IxVM.Refinement.TableAdmitted`): the table's section admits
-(`admitBinding`), binds all of `String`'s literal support if it binds `String`, and the
-strict fold accepts, behind the committed prelude, the
-closure of the constants the table binds (but for the compiler-trust roles) and of
-the theorems its evidence names, with the role specifications the fold does not
-check on its own (`BindingSpecs`). `check b E` decides that over the records of
-`E`; `tableAdmitted_of_check` proves that a `true` answer establishes
-`TableAdmitted` for every view holding `E`.
+This module decides `IxVM.Refinement.TableAdmitted`, the kernel's role-table
+admission predicate (a premise of the unproved reduction `IxVM.consistent` and
+the forgetful projection of `ReaderTable` / `ReaderAdmissionWitness`; no proved
+theorem connects `TableAdmitted` to the table validity
+`IxVM.Refinement.Endpoint.circuitComposed` takes from a binding claim): the table's section admits (`admitBinding`), binds all of
+`String`'s literal support if it binds `String`, and the strict fold accepts,
+behind the committed prelude, the closure of the constants the table binds (but
+for the compiler-trust roles) and of the theorems its evidence names, with the
+role specifications the fold does not check on its own (`BindingSpecs`).
+`check b E` decides that over the records of `E`; `tableAdmitted_of_check`
+proves that a `true` answer establishes `TableAdmitted` for every view holding
+`E`.
 
 The proof does not follow how the check finds the closure's order. The check
 builds a candidate (`candidate`: a search over the closure's edges that records
@@ -675,17 +678,33 @@ theorem preparedOkWith_sound {P Ev Ds En ε₁ ε₂ ε₃ : Type} {pref : Excep
         simp only [hck] at h
         exact ⟨pre, ev, ds, envA, rfl, hprep, hck, h⟩
 
+/-- Check the strict admission's batch limits, depth-bounded canonical decoding,
+and universe-parameter bound (`Admission.admitLevels`) on `order` before
+`Admission.prepareWith` runs the reader. -/
+def levelsOk (E : Ixon.Env) (order : List Address) : Bool :=
+  let recs := recordsOf E order
+  match Admission.preflight admissionLimits recs (blobsOf E order) with
+  | .error _ => false
+  | .ok () =>
+    match Admission.decodeWithin admissionLimits recs with
+    | .error _ => false
+    | .ok constants => (Admission.admitLevels constants).isOk
+
 /-- **The reading and the fold accept the records of `order`** under the admitted
 table `t` (of the binding `b`), behind its committed prelude, and the installed
-environment meets `declsOk`. The artifact's hints are read through a map built once
-(`hintsAt`, equal to `hintsOf`). -/
+environment meets `declsOk`. Checks `levelsOk` (`Admission.admitLevels`) before
+`Admission.prepareWith` so records with oversized universe-parameter counts are
+refused before the reader allocates level-parameter lists. The
+artifact's hints are read through a map built once (`hintsAt`, equal to
+`hintsOf`). -/
 def preparedOk (b : Binding) (E : Ixon.Env) (t : RoleTable) (order : List Address) : Bool :=
-  let projAt := hintsProjAt E
-  preparedOkWith (Reader.preludeFor t : Except String (Reader.Prelude .anon))
-    (fun pre => Admission.prepareWith Address.admissionHash b pre admissionLimits
-      (recordsOf E order) (blobsOf E order) (hintsAt projAt E))
-    (fun ev ds => Cached.checkDecls .verified ev (ds.map IxVM.Refinement.thmToOpaqueDefn))
-    (fun envA ev ds => declsOk t envA ev ds.toList)
+  levelsOk E order &&
+    (let projAt := hintsProjAt E
+     preparedOkWith (Reader.preludeFor t : Except String (Reader.Prelude .anon))
+       (fun pre => Admission.prepareWith Address.admissionHash b pre admissionLimits
+         (recordsOf E order) (blobsOf E order) (hintsAt projAt E))
+       (fun ev ds => Cached.checkDecls .verified ev (ds.map IxVM.Refinement.thmToOpaqueDefn))
+       (fun envA ev ds => declsOk t envA ev ds.toList))
 
 theorem preparedOk_sound (W : Type w) [SetTheory W] {b : Binding} {E : Ixon.Env}
     {t : RoleTable} {order : List Address} (h : preparedOk b E t order = true) :
@@ -698,7 +717,9 @@ theorem preparedOk_sound (W : Type w) [SetTheory W] {b : Binding} {E : Ixon.Env}
       IxVM.Refinement.TheoremsInProp envA ds.toList ∧
       IxVM.Refinement.UserAxiomsWithin (fun _ => False) ds.toList ∧
       IxVM.Refinement.BindingSpecs t b envA ds.toList := by
-  obtain ⟨pre, ev, ds, envA, hpre, hprep, hck, hfin⟩ := preparedOkWith_sound h
+  unfold preparedOk at h
+  rw [Bool.and_eq_true] at h
+  obtain ⟨pre, ev, ds, envA, hpre, hprep, hck, hfin⟩ := preparedOkWith_sound h.2
   have href := Cached.checkDecls_refines_ref W rfl hck
   rw [Array.toList_map] at href
   obtain ⟨hthm, hax, hspecs⟩ := declsOk_sound (b := b) hfin

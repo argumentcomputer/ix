@@ -7,6 +7,7 @@ import IxCK.Kernel.Admission.UserAxioms
 
 Pins the kernel-level definitional closure of the public certified admission statements:
 * `Ix.Kernel.Admission.checkBytes_has_model`
+* `Ix.Kernel.Admission.checkBytes_consts`
 * `Ix.Kernel.Admission.checkBytesTiered_has_model`
 * `Ix.Kernel.Admission.checkBytesUnder_strict_of_nil`
 
@@ -22,6 +23,7 @@ namespace Ix.Kernel.Admission.ClosureManifest
 /-- The public admission theorem roots whose definitional closure is pinned. -/
 def roots : Array Lean.Name := #[
   ``Ix.Kernel.Admission.checkBytes_has_model,
+  ``Ix.Kernel.Admission.checkBytes_consts,
   ``Ix.Kernel.Admission.checkBytesTiered_has_model,
   ``Ix.Kernel.Admission.checkBytesUnder_strict_of_nil]
 
@@ -30,7 +32,7 @@ def manifestPath : System.FilePath := "Tests/Fixtures/check-bytes-closure-manife
 
 /-- The SHA-256 digest of the manifest's text (its lines, each followed by a newline).
 Regenerate with `IXC_CLOSURE_MANIFEST_WRITE=Tests/Fixtures/check-bytes-closure-manifest.txt`. -/
-def pinnedDigest : String := "20dcbe59118cc866b9fef3d95903bed33f72bac409896840b45302994e0fe96f"
+def pinnedDigest : String := "592bf94ee5f93dbd063e883c7274189f2046042d026155533273461081d8935b"
 
 open Lean Elab Command in
 elab "#check_closure_manifest" : command =>

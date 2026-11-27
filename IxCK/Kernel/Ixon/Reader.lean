@@ -563,9 +563,78 @@ def recLps (large : Bool) (blockLps : List LevelParam) : List LevelParam :=
 
 /-! ## Expressions -/
 
-/-- Little-endian natural-number payload (Ix's `Ingress.natural`). -/
+/-- A little-endian byte list's natural number, by halves: the low half plus
+the high half shifted past it, and Horner's rule below 65 bytes. Horner's rule
+over the whole list multiplies an accumulator as long as the result at every
+byte, quadratic in the length; by halves the work is quasi-linear.
+`naturalOfList_eq` is the specification. -/
+def naturalOfList (l : List UInt8) : Nat :=
+  if _h : l.length ≤ 64 then l.foldr (fun byte rest => byte.toNat + 256 * rest) 0
+  else
+    naturalOfList (l.take (l.length / 2)) +
+      (naturalOfList (l.drop (l.length / 2)) <<< (8 * (l.length / 2)))
+termination_by l.length
+decreasing_by
+  all_goals
+    simp only [List.length_take, List.length_drop]
+    omega
+
+/-- Little-endian natural-number payload (Ix's `Ingress.natural`):
+`bytes.data.foldr (fun byte rest => byte.toNat + 256 * rest) 0`
+(`natural_eq_foldr`), computed by halves (`naturalOfList`). -/
 def natural (bytes : ByteArray) : Nat :=
-  bytes.data.foldr (fun byte rest => byte.toNat + 256 * rest) 0
+  naturalOfList bytes.data.toList
+
+private theorem foldr_append_256 (xs ys : List UInt8) :
+    (xs ++ ys).foldr (fun byte rest => byte.toNat + 256 * rest) 0 =
+      xs.foldr (fun byte rest => byte.toNat + 256 * rest) 0 +
+        256 ^ xs.length * ys.foldr (fun byte rest => byte.toNat + 256 * rest) 0 := by
+  induction xs with
+  | nil => simp
+  | cons x xs ih =>
+    simp only [List.cons_append, List.foldr_cons, List.length_cons, ih, Nat.pow_succ, Nat.mul_add,
+      Nat.add_assoc]
+    ac_rfl
+
+private theorem naturalOfList_eq_le : ∀ (n : Nat) (l : List UInt8), l.length ≤ n →
+    naturalOfList l = l.foldr (fun byte rest => byte.toNat + 256 * rest) 0 := by
+  intro n
+  induction n with
+  | zero =>
+    intro l hl
+    have h0 : l.length ≤ 64 := by omega
+    rw [naturalOfList]; simp only [h0, ↓reduceDIte]
+  | succ n ih =>
+    intro l hl
+    rw [naturalOfList]
+    by_cases h : l.length ≤ 64
+    · simp only [h, ↓reduceDIte]
+    · simp only [h, ↓reduceDIte]
+      have h1 : (l.take (l.length / 2)).length ≤ n := by
+        rw [List.length_take]; omega
+      have h2 : (l.drop (l.length / 2)).length ≤ n := by
+        rw [List.length_drop]; omega
+      have hsplit : l.foldr (fun byte rest => byte.toNat + 256 * rest) 0 =
+          (l.take (l.length / 2) ++ l.drop (l.length / 2)).foldr
+            (fun byte rest => byte.toNat + 256 * rest) 0 := by
+        rw [List.take_append_drop]
+      have hhalf : (l.take (l.length / 2)).length = l.length / 2 := by
+        rw [List.length_take]; omega
+      have hpow : (2 : Nat) ^ (8 * (l.length / 2)) = 256 ^ (l.length / 2) :=
+        Nat.pow_mul 2 8 (l.length / 2)
+      rw [ih _ h1, ih _ h2, Nat.shiftLeft_eq, hsplit, foldr_append_256, hhalf, hpow,
+        Nat.mul_comm (256 ^ (l.length / 2))]
+
+/-- **The specification of `naturalOfList`**: Horner's rule, little-endian. -/
+theorem naturalOfList_eq (l : List UInt8) :
+    naturalOfList l = l.foldr (fun byte rest => byte.toNat + 256 * rest) 0 :=
+  naturalOfList_eq_le l.length l (Nat.le_refl _)
+
+/-- **The specification of `natural`**: the little-endian Horner reading of
+the blob. -/
+theorem natural_eq_foldr (bytes : ByteArray) :
+    natural bytes = bytes.data.foldr (fun byte rest => byte.toNat + 256 * rest) 0 := by
+  rw [natural, naturalOfList_eq, Array.foldr_toList]
 
 /-- Whether `bytes` is a natural number's one blob, the compiler's (Ix's
 `Nat.toBytesLE`): little-endian with no trailing zero byte, and `[0]` for

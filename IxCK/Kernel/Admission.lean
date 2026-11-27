@@ -93,6 +93,11 @@ def admitBinding (hash : ByteArray → Address) (b : Binding) :
   t.check.mapError .malformed
   pure t
 
+/-- **The bound on a record's universe-parameter count** under the strict
+admission (`admitLevels`): Lean declarations have a handful; the format
+admits up to `2^32` (`Ixon.maxLevelCount`). -/
+def maxRecordLevelParams : Nat := 1024
+
 /-- Byte, binding, reader and checker failures, kept apart. Positions are the
 supplied records' (authentication, decoding, reading) or the fold's
 (checking). -/
@@ -115,6 +120,15 @@ inductive Error where
   leaves one of `userAxiomRoles` unbound: that role's own axiom would read under
   an input key and be admitted as a user axiom (`admitAxiomPolicy`) -/
   | axiomRoleUnbound (role : Ix.Kernel.Role)
+  /-- the strict admission pins the role table to the committed default table
+  (`admitPinnedRoles`), and the table binds the pinned role `role`
+  (`Role.pinnedToReference`) at `address`, where the committed table binds
+  `committed` -/
+  | unpinned (role : Ix.Kernel.Role) (address : Option Address) (committed : Option Address)
+  /-- the strict admission's universe-parameter bound (`admitLevels`): the
+  decoded record at `position` (address `address`) has a member with `count`
+  universe parameters, more than `maxRecordLevelParams` -/
+  | levels (position : Nat) (address : Address) (count : Nat)
 
 instance : ToString Error where
   toString
@@ -131,6 +145,13 @@ instance : ToString Error where
     | .kernel e p => s!"kernel at {p}: {e}"
     | .axiomRoleUnbound r => s!"user axioms: the role table leaves {repr r} unbound; a check that \
         admits user axioms requires all axiom roles bound"
+    | .unpinned r a c =>
+      let addr? : Option Address → String := fun | some a => toString a | none => "nothing"
+      s!"pinned role: the role table binds {r.leanName} at {addr? a}, the committed default \
+        table at {addr? c}; the strict admission requires the committed binding of the literal \
+        support and of True (a caller may opt out)"
+    | .levels p a n => s!"limit: the record at {p} ({a}) has a member with {n} universe \
+        parameters; the strict admission reads at most {maxRecordLevelParams}"
 
 /-- The byte stage's failures, unchanged. -/
 def Error.ofBytes : ByteError → Error
@@ -339,6 +360,127 @@ the command line: the entry's theorems hold for every table. -/
 def defaultBinding : Except String Binding := do
   pure ⟨← defaultTableAddress, ← defaultTableBytes⟩
 
+/-! ## The strict admission
+
+Two checks a strict admission makes before the entry, none of which any
+theorem of the entry depends on (every theorem holds for every table and
+every batch), and which only refuse:
+
+* **pinned roles** (`admitPinnedRoles`): the
+  string-literal support (`Role.literalSupportPinned`) and `True`, `True.intro`
+  (`Role.trustAnchorsPinned`, together `Role.pinnedToReference`) are bound where
+  the committed default table binds them, or not at all, as `checkBytes` binds
+  the prelude roles to the committed prelude records (`preludeFor`). A literal's
+  meaning, and the statement of the tolerated `Lean.trustCompiler`, follow these
+  roles' bound records, which the fold validates by type only. A caller that
+  wants custom literal-support bindings while keeping `True`/`True.intro` pinned
+  passes `RolePins.trustAnchors` (used by `--allow-custom-literal-support`); a
+  caller that wants to release every pinned role passes `RolePins.asBound`;
+* **universe-parameter counts** (`admitLevels`): no record has more
+  than `maxRecordLevelParams` universe parameters in any member. The reader
+  builds a list of that length per member and the header check compares its
+  entries pairwise, so a count near the format's bound (`2^32`) costs a record
+  of a dozen bytes gigabytes of memory or hours before any verdict.
+
+`checkBytesStrict` is `checkBytes` behind both; the host's artifact admission
+(`Ix.RoleBinding.Artifact`) runs them on its own preparation. -/
+
+/-- **How a strict admission treats the pinned roles**
+(`Ix.Kernel.Role.pinnedToReference`). -/
+inductive RolePins where
+  /-- each pinned role (`Role.pinnedToReference`: the string-literal support
+  and `True`, `True.intro`) the table binds is bound where the committed
+  default table binds it (`RoleTable.PinnedTo`) -/
+  | committed
+  /-- `True` and `True.intro` (`Role.trustAnchorsPinned`) remain bound where
+  the committed default table binds them (`RoleTable.PinnedRoles
+  Role.trustAnchorsPinned`), while the string-literal support uses the table's
+  own bindings (checked by type only): for `--allow-custom-literal-support`
+  without releasing the tolerated `Lean.trustCompiler`'s statement -/
+  | trustAnchors
+  /-- the table's own bindings, which the fold validates by type only: a
+  caller that pins the binding itself, or reads literals and `True` as the
+  table defines them -/
+  | asBound
+  deriving Repr, DecidableEq, Inhabited
+
+/-- **The pinned roles' admission**: under `committed`, the first pinned role
+(`Role.pinnedToReference`) the table binds elsewhere than the committed default
+table is refused (`Error.unpinned`); under `trustAnchors`, only `True` and
+`True.intro` (`Role.trustAnchorsPinned`) are checked; under `asBound`, none.
+A corrupted committed table is a `prelude` failure. -/
+def admitPinnedRoles (pins : RolePins) (t : Ix.Kernel.RoleTable) : Except Error Unit :=
+  match pins with
+  | .asBound => pure ()
+  | .committed => do
+    let d ← defaultTable.mapError Error.prelude
+    match t.unpinned? d with
+    | some r => throw (.unpinned r (t.addressOf? r) (d.addressOf? r))
+    | none => pure ()
+  | .trustAnchors => do
+    let d ← defaultTable.mapError Error.prelude
+    match t.unpinnedIn? Ix.Kernel.Role.trustAnchorsPinned d with
+    | some r => throw (.unpinned r (t.addressOf? r) (d.addressOf? r))
+    | none => pure ()
+
+/-- **The largest universe-parameter count among a record's members**,
+constructors included: the length of each level-parameter list the reader
+builds (`Reader.readRecord`). -/
+def levelCount : Ixon.ConstantInfo → Nat
+  | .defn d => d.lvls.toNat
+  | .recr r => r.lvls.toNat
+  | .axio a => a.lvls.toNat
+  | .quot q => q.lvls.toNat
+  | .cPrj _ | .rPrj _ | .iPrj _ | .dPrj _ => 0
+  | .muts ms => ms.foldl (init := 0) fun acc m => max acc <| match m with
+    | .defn d => d.lvls.toNat
+    | .indc i => i.ctors.foldl (init := i.lvls.toNat) fun acc c => max acc c.lvls.toNat
+    | .recr r => r.lvls.toNat
+
+/-- Whether a decoded record's universe-parameter counts are within the
+strict admission's bound. -/
+def levelsWithin (entry : Address × Ixon.Constant) : Bool :=
+  decide (levelCount entry.2.info ≤ maxRecordLevelParams)
+
+/-- **The universe-parameter bound's admission**: the first decoded record
+over `maxRecordLevelParams` is refused (`Error.levels`, a decline), before the
+reader builds anything from it. -/
+def admitLevels (constants : List (Address × Ixon.Constant)) : Except Error Unit :=
+  if constants.all levelsWithin then pure ()
+  else
+    let i := constants.findIdx (fun e => !levelsWithin e)
+    match constants[i]? with
+    | some (a, c) => throw (.levels i a (levelCount c.info))
+    | none => throw (.levels i ⟨ByteArray.empty⟩ 0)
+
+/-- **The strict admission's checks**, on the admitted table and the decoded
+records: the universe-parameter bound, then the pinned roles. -/
+def admitStrict (pins : RolePins) (t : Ix.Kernel.RoleTable)
+    (constants : List (Address × Ixon.Constant)) : Except Error Unit := do
+  admitLevels constants
+  admitPinnedRoles pins t
+
+/-- **The certified entry behind the strict admission**: the batch limits,
+the role table's admission and canonical decoding within the depth limit (as
+in `checkBytes`), the strict admission's checks (`admitStrict`), then
+`checkBytes`. An accept is an accept of `checkBytes`
+(`checkBytesStrict_checkBytes`), so every theorem of `checkBytes` holds of it.
+
+`checkBytesStrict` delegates directly to `checkBytes` (repeating preflight and
+record decoding) so that `checkBytes` and all of its theorems stay unchanged;
+hot host paths (`Ix.RoleBinding.Artifact.check`, `Ix.HostAdmission.certify`)
+run `admitLevels` and `admitPinnedRoles` on their single preparation pass to
+avoid double-decoding. -/
+def checkBytesStrict (pins : RolePins) (hash : ByteArray → Address) (binding : Binding)
+    (limits : Limits) (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    Except Error (Ix.Kernel.Env .anon) := do
+  (preflight limits records blobs).mapError Error.ofBytes
+  let t ← (admitBinding hash binding).mapError .binding
+  let constants ← (decodeWithin limits records).mapError Error.ofBytes
+  admitStrict pins t constants
+  checkBytes hash binding limits records blobs hint
+
 /-- How an Ix caller classifies a failure of the certified entry
 (`docs/kernel.md`, "Outcomes"):
 `reject` only where an independent check establishes that the
@@ -367,6 +509,8 @@ def Error.outcome : Error → Outcome
   | .preludeCopy => .declined
   | .kernel _ _ => .declined
   | .axiomRoleUnbound _ => .declined
+  | .unpinned .. => .declined
+  | .levels .. => .declined
 
 /-- The classification of a byte-stage failure, as `Error.outcome` makes it:
 a batch limit declines; a key used twice in one table, a key that is not the
@@ -475,17 +619,22 @@ def checkBytesUnder (policy : Ix.Kernel.Cached.AxiomPolicy) (hash : ByteArray �
   let constants ← (decodeWithin limits records).mapError Error.ofBytes
   checkConstantsUnder policy hash t pre constants blobs hint limits.fold
 
-/-- `checkBytesWith` with user axioms admitted: the environment of
-`checkBytesUnder .allowUser`, which also lists the user axioms the accept is
-conditional on. -/
+/-- **Deprecated**: `checkBytesWith` with user axioms
+admitted, returning only `Prod.fst` of `checkBytesUnder .allowUser` and
+discarding the list of user axioms the accepted environment depends on. A
+caller cannot observe which axioms were admitted; prefer `checkBytesUnder
+.allowUser` directly so the returned axiom list is inspected and reported. -/
 def checkBytesWithUserAxioms (hash : ByteArray → Address) (binding : Binding) (pre : Prelude .anon)
     (limits : Limits) (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
     Except Error (Ix.Kernel.Env .anon) :=
   Prod.fst <$> checkBytesUnder .allowUser hash binding pre limits records blobs hint
 
-/-- `checkConstantsWith` with user axioms admitted: the environment of
-`checkConstantsUnder .allowUser`. -/
+/-- **Deprecated**: `checkConstantsWith` with user
+axioms admitted, returning only `Prod.fst` of `checkConstantsUnder .allowUser`
+and discarding the list of user axioms the accepted environment depends on.
+Prefer `checkConstantsUnder .allowUser` directly so the returned axiom list
+is inspected and reported. -/
 def checkConstantsWithUserAxioms (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable) (pre : Prelude .anon)
     (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :

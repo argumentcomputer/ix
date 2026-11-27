@@ -305,9 +305,11 @@ def checkBytesTieredUsingUnder (policy : Ix.Kernel.Cached.AxiomPolicy)
   let constants ← (decodeWithin limits records).mapError (.entry ∘ Error.ofBytes)
   checkConstantsTieredUnder policy hash t pre constants blobs hint limits.fold
 
-/-- `checkConstantsTiered` with user axioms admitted on the logical part: the
-result of `checkConstantsTieredUnder .allowUser`, without its list of user
-axioms. -/
+/-- **Deprecated**: `checkConstantsTiered` with user
+axioms admitted on the logical part, returning only `Prod.fst` of
+`checkConstantsTieredUnder .allowUser` and discarding the list of user axioms
+the accepted logical environment depends on. Prefer `checkConstantsTieredUnder
+.allowUser` directly so the returned axiom list is inspected and reported. -/
 def checkConstantsTieredWithUserAxioms (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable) (pre : Prelude .anon)
     (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none)
@@ -315,9 +317,12 @@ def checkConstantsTieredWithUserAxioms (hash : ByteArray → Address) (t : Ix.Ke
     Except TierError (Ix.Kernel.Env .anon × List (TierConst .anon)) :=
   Prod.fst <$> checkConstantsTieredUnder .allowUser hash t pre constants blobs hint cfg
 
-/-- `checkBytesTieredUsing` with user axioms admitted on the logical part: the
-result of `checkBytesTieredUsingUnder .allowUser`, without its list of user
-axioms. -/
+/-- **Deprecated**: `checkBytesTieredUsing` with user
+axioms admitted on the logical part, returning only `Prod.fst` of
+`checkBytesTieredUsingUnder .allowUser` and discarding the list of user axioms
+the accepted logical environment depends on. Prefer
+`checkBytesTieredUsingUnder .allowUser` directly so the returned axiom list is
+inspected and reported. -/
 def checkBytesTieredUsingWithUserAxioms (prelude : Ix.Kernel.RoleTable → Except String (Prelude .anon))
     (hash : ByteArray → Address) (binding : Binding) (limits : Limits)
     (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)

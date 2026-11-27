@@ -70,8 +70,11 @@ helpers or their specializations; every execution allowance is unchanged. -/
 -- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
 -- Hardened `Runtime.lean` surfaces specialized kernel helpers, ruled overrides, and all 5 `Blake3.Rust` externs.
 -- Kernel hardening updates counts (refreshed in reconciliation).
+-- Strict admission (`Prepared.admitPins`: `admitPinnedRoles` over the committed default table,
+-- decoded and checked; `admitLevels`), divide-and-conquer literal reading, and saturating Géran
+-- bounds add 63 compiled functions and one inherited extern, as for `Ix.RoleBinding.Artifact.check`.
 /-- info: runtime closure of [Ix.HostAdmission.certify,
- Ix.HostAdmission.verifyAddressed]: 9073 compiled functions; inherited externs 129, implemented_by 0, unsafe 43, csimp 9; ruled assumed 6, computed_field 31, implemented_by 1, csimp 42 -/
+ Ix.HostAdmission.verifyAddressed]: 9136 compiled functions; inherited externs 130, implemented_by 0, unsafe 43, csimp 9; ruled assumed 6, computed_field 31, implemented_by 1, csimp 42 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith #[``Ix.HostAdmission.certify, ``Ix.HostAdmission.verifyAddressed]

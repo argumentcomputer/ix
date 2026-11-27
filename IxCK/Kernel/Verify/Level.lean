@@ -157,8 +157,15 @@ theorem leqCore_sound : ∀ {fuel : Nat} {l r : Level} {diff : Int},
         · intro φ; have H := ih h1 φ; simp only [eval] at H ⊢; omega
         rcases bind_or_some_true h1 with h2 | h2
         · intro φ; have H := ih h2 φ; simp only [eval] at H ⊢; omega
+        -- within the budget, `Geran.leq`; beyond it, `false`
+        have budgeted : ∀ {b c : Bool},
+            (pure (if b = true then c else false) : Option Bool) = some true → c = true := by
+          intro b c hh
+          cases b
+          · simp [Pure.pure] at hh
+          · simpa [Pure.pure] using hh
         intro φ
-        have H := Geran.leq_sound (by simpa [Pure.pure] using h2) φ
+        have H := Geran.leq_sound (budgeted h2) φ
         rw [eval_eq_levelEval, eval_eq_levelEval]; exact H
       · rcases bind_or_some_true h with h1 | h1 <;>
           { intro φ; have H := ih h1 φ; simp only [eval] at H ⊢; omega }

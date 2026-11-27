@@ -44,6 +44,9 @@ def explain (b : Admission.Binding) (E : Ixon.Env) : String :=
         match (Reader.preludeFor t : Except String (Reader.Prelude .anon)) with
         | .error e => s!"the committed prelude does not read under the table: {e}"
         | .ok pre =>
+          if !levelsOk E order then
+            s!"a record in the closure fails byte preflight/decoding or exceeds the universe-parameter limit ({Admission.maxRecordLevelParams})"
+          else
           -- the hints read through a map built once, as `check` reads them (`hintsAt`)
           match Admission.prepareWith Address.admissionHash b pre admissionLimits
               (Ix.Cert.recordsOf E order) (Ix.Cert.blobsOf E order)

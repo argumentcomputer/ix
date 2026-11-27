@@ -12,7 +12,11 @@ import IxCK.Kernel.Ixon.Values
 
 The kernel-side boundary of the certified Ixon checker. The checker
 (`Ix.Kernel.Cached.checkDecls` at `.verified`, with `Ix.Kernel.model_exists`)
-is derived from con-leche (`IxCK/Kernel/NOTICE`); Ix contributes only the
+was originally derived from con-leche and has diverged substantially in this
+repository (43 of 445 inherited modules unchanged, 402 modified, and over 220
+Ix-only modules, including moded keys, role specifications, a 14-law `Model`,
+the typing tier, and rules-tier extensions for IxVM; see `IxCK/Kernel/NOTICE`
+and `docs/kernel.md`). Alongside the checker, this umbrella re-exports Ix's
 boundary:
 
 * `Ix.Kernel.Reader` (`IxCK/Kernel/Ixon/Reader.lean`, with

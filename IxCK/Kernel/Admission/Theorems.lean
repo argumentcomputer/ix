@@ -4,6 +4,7 @@ import IxCK.Kernel.Ixon.ReaderSpec
 import IxCK.Kernel.Ixon.Installed
 import IxCK.Kernel.Ixon.Values
 import IxCK.Kernel.Verify.Cached.StreamThm
+import IxCK.Kernel.Verify.Cached.StreamConsts
 import IxCK.Kernel.Verify.Frontend.Prepare
 import IxCK.Kernel.MainTheorem
 
@@ -380,6 +381,29 @@ theorem Installed.singleton {hash : ByteArray → Address} {t : Ix.Kernel.RoleTa
   have hd' := Ix.Kernel.Frontend.mem_preparePrelude (pre := pre.ix) hd
   exact ⟨st, decl, _, _, cfg, hread, hd', hc, fun s hsk => Ix.Kernel.Cached.checkDecls_installs_cfg hc hd' hsk⟩
 
+/-- **Per-record type fidelity**: every singleton record
+(definition, theorem, opaque, axiom or quotient) of an accepted input is read
+(`SingletonRead`), and whenever its declaration declares a constant
+(`Declaration.Declares`: definitions, theorems, non-inert opaques, and
+installed axioms), the returned environment stores that constant under its own
+name, with its own level parameters, and with the annotation of its declared
+type (`AnnotOf`: every `let` ζ-reduced and binder prop-ness written). The
+`[Ix.Kernel.SetTheory V]` premise is inherited from `Cached.checkDecls_consts_cfg`
+(the cached-to-pure simulation needs `EnvWF` from the model). -/
+theorem Installed.consts (V : Type u) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address}
+    {t : Ix.Kernel.RoleTable} {pre : Prelude .anon}
+    {constants : List (Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
+    (h : Installed hash t pre constants blobs hint env) {owner : Address} {c : Ixon.Constant}
+    (hmem : (owner, c) ∈ constants) (hs : isSingleton c.info = true) :
+    ∃ st decl, SingletonRead (streamContext hash t pre constants blobs hint) st owner c decl ∧
+      ∀ cv, Ix.Kernel.Cached.Declaration.Declares decl cv →
+        ∃ ci, env.find? cv.name = some ci ∧
+          ci.toConstantVal.levelParams = cv.levelParams ∧
+          Ix.Kernel.AnnotOf cv.type ci.toConstantVal.type := by
+  obtain ⟨st, decl, ev, ds, cfg, hread, hd, hc, -⟩ := h.singleton hmem hs
+  exact ⟨st, decl, hread, fun cv hcv => Ix.Kernel.Cached.checkDecls_consts_cfg V hc hd hcv⟩
+
 /-! ## Model existence and no proof of `False` -/
 
 theorem Installed.has_model (V : Type u) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address} {t : Ix.Kernel.RoleTable}
@@ -592,6 +616,36 @@ theorem checkBytesWith_no_False_reference (V : Type u) [Ix.Kernel.SetTheory V]
   exact MemberReader.read_ref (by simpa [definitionReader] using href)
     (by simpa [definitionReader] using hfalse)
 
+/-- **Per-record type fidelity at `checkBytesWith`**:
+for every singleton record (definition, theorem, opaque, axiom or quotient) of
+accepted bytes (`RecordsRead`), its reading (`SingletonRead`) produces a
+declaration whose declared constant (for definitions, theorems, non-inert
+opaques and installed axioms) is stored in `env` under its own name, with its
+own level parameters, and with the annotation (`AnnotOf`) of its declared type.
+Under `[Ix.Kernel.SetTheory V]` (`Cached.checkDecls_consts_cfg` needs `EnvWF`
+from the model). -/
+theorem checkBytesWith_consts (V : Type u) [Ix.Kernel.SetTheory V]
+    {hash : ByteArray → Address} {binding : Binding} {pre : Prelude .anon}
+    {limits : Limits} {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
+    (h : checkBytesWith hash binding pre limits records blobs hint = .ok env)
+    {t : Ix.Kernel.RoleTable} (ht : admitBinding hash binding = .ok t)
+    {constants : List (Address × Ixon.Constant)} (reading : RecordsRead limits records constants)
+    {owner : Address} {c : Ixon.Constant}
+    (hmem : (owner, c) ∈ constants) (hs : isSingleton c.info = true) :
+    ∃ st decl, SingletonRead (streamContext hash t pre constants blobs hint) st owner c decl ∧
+      ∀ cv, Ix.Kernel.Cached.Declaration.Declares decl cv →
+        ∃ ci, env.find? cv.name = some ci ∧
+          ci.toConstantVal.levelParams = cv.levelParams ∧
+          Ix.Kernel.AnnotOf cv.type ci.toConstantVal.type := by
+  obtain ⟨_, _, _, t', constants', hb, reading', _, installed⟩ := checkBytesWith_reading h
+  have ht' : t' = t := by
+    rw [(admitBinding_ok_iff _ _ _).mpr hb] at ht
+    exact Except.ok.inj ht
+  subst ht'
+  obtain rfl := reading.deterministic reading'
+  exact installed.consts V hmem hs
+
 /-! ## The entry -/
 
 /-- **Fidelity.** Accepted bytes are within the batch limits, use each
@@ -689,6 +743,33 @@ theorem checkBytes_no_False_theorem (V : Type u) [Ix.Kernel.SetTheory V]
   rw [hpre] at hq; cases hq
   exact checkBytesWith_no_False_theorem V hw ht reading hmem hc hk hty
 
+/-- **Per-record type fidelity at `checkBytes`**:
+every singleton record (definition, theorem, opaque, axiom or quotient) of
+accepted bytes reads (`SingletonRead`) to a declaration whose declared constant
+(for definitions, theorems, non-inert opaques and installed axioms) is stored
+in `env` under its own name, with its own level parameters, and with the
+annotation (`AnnotOf`) of its declared type. Under `[Ix.Kernel.SetTheory V]`
+(`Cached.checkDecls_consts_cfg` needs `EnvWF` from the model). -/
+theorem checkBytes_consts (V : Type u) [Ix.Kernel.SetTheory V]
+    {hash : ByteArray → Address} {binding : Binding} {limits : Limits}
+    {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
+    (h : checkBytes hash binding limits records blobs hint = .ok env)
+    {t : Ix.Kernel.RoleTable} {pre : Prelude .anon}
+    (ht : admitBinding hash binding = .ok t) (hpre : preludeFor t = .ok pre)
+    {constants : List (Address × Ixon.Constant)} (reading : RecordsRead limits records constants)
+    {owner : Address} {c : Ixon.Constant}
+    (hmem : (owner, c) ∈ constants) (hs : isSingleton c.info = true) :
+    ∃ st decl, SingletonRead (streamContext hash t pre constants blobs hint) st owner c decl ∧
+      ∀ cv, Ix.Kernel.Cached.Declaration.Declares decl cv →
+        ∃ ci, env.find? cv.name = some ci ∧
+          ci.toConstantVal.levelParams = cv.levelParams ∧
+          Ix.Kernel.AnnotOf cv.type ci.toConstantVal.type := by
+  obtain ⟨t', pre', ht', hq, hw⟩ := checkBytes_with h
+  rw [ht] at ht'; cases ht'
+  rw [hpre] at hq; cases hq
+  exact checkBytesWith_consts V hw ht reading hmem hs
+
 /-! ## Decoded records -/
 
 theorem checkConstantsWith_has_model (V : Type u) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address} {t : Ix.Kernel.RoleTable}
@@ -741,5 +822,200 @@ theorem checkConstantsAt_has_model (V : Type w) [Ix.Kernel.SetTheory V] {hash : 
     Nonempty (Ix.Kernel.Model V env) := by
   obtain ⟨_, _, _, _, hw⟩ := checkConstantsAt_with h
   exact checkConstantsWith_has_model V hw
+
+end Ix.Kernel.Admission
+
+/-! ## The strict admission
+
+`admitStrict` and `checkBytesStrict` (`Ix.Kernel.Admission`) only refuse: an
+accept of `checkBytesStrict` is an accept of `checkBytes`
+(`checkBytesStrict_checkBytes`), so every theorem above holds of it, and in
+addition its table binds the pinned roles where the committed default table
+does and its records are within the universe-parameter bound
+(`checkBytesStrict_strict`). -/
+
+namespace Ix.Kernel.Admission
+
+open Ix.Kernel (ConstRef)
+open Ix.Kernel.Reader
+
+universe v
+
+set_option linter.unusedSimpArgs false in
+/-- An accepted universe-parameter admission: every record is within the
+bound. -/
+theorem admitLevels_ok {constants : List (Address × Ixon.Constant)}
+    (h : admitLevels constants = .ok ()) :
+    ∀ e ∈ constants, levelCount e.2.info ≤ maxRecordLevelParams := by
+  unfold admitLevels at h
+  by_cases hall : constants.all levelsWithin = true
+  · intro e he
+    have := List.all_eq_true.mp hall e he
+    simpa [levelsWithin] using this
+  · simp only [hall, Bool.false_eq_true, ↓reduceIte] at h
+    split at h <;> simp [throw, throwThe, MonadExceptOf.throw] at h
+
+set_option linter.unusedSimpArgs false in
+/-- An accepted pinned-role admission under `committed`: the table binds every
+pinned role where the committed default table does, or not at all. -/
+theorem admitPinnedRoles_committed {t : Ix.Kernel.RoleTable}
+    (h : admitPinnedRoles .committed t = .ok ()) :
+    ∃ d, defaultTable = .ok d ∧ t.PinnedTo d := by
+  unfold admitPinnedRoles at h
+  cases hd : (defaultTable : Except String Ix.Kernel.RoleTable) with
+  | error e =>
+    rw [hd] at h
+    simp [Except.mapError, bind, Except.bind] at h
+  | ok d =>
+    refine ⟨d, rfl, ?_⟩
+    cases hu : t.unpinned? d with
+    | none => exact (Ix.Kernel.RoleTable.unpinned?_eq_none_iff t d).mp hu
+    | some r =>
+      rw [hd] at h
+      simp [Except.mapError, bind, Except.bind, hu, throw, throwThe, MonadExceptOf.throw] at h
+
+set_option linter.unusedSimpArgs false in
+/-- An accepted pinned-role admission under `trustAnchors`: the table binds
+`True` and `True.intro` (`Role.trustAnchorsPinned`) where the committed default
+table does, or not at all. -/
+theorem admitPinnedRoles_trustAnchors {t : Ix.Kernel.RoleTable}
+    (h : admitPinnedRoles .trustAnchors t = .ok ()) :
+    ∃ d, defaultTable = .ok d ∧ t.PinnedRoles Ix.Kernel.Role.trustAnchorsPinned d := by
+  unfold admitPinnedRoles at h
+  cases hd : (defaultTable : Except String Ix.Kernel.RoleTable) with
+  | error e =>
+    rw [hd] at h
+    simp [Except.mapError, bind, Except.bind] at h
+  | ok d =>
+    refine ⟨d, rfl, ?_⟩
+    cases hu : t.unpinnedIn? Ix.Kernel.Role.trustAnchorsPinned d with
+    | none => exact (Ix.Kernel.RoleTable.unpinnedIn?_eq_none_iff Ix.Kernel.Role.trustAnchorsPinned t d).mp hu
+    | some r =>
+      rw [hd] at h
+      simp [Except.mapError, bind, Except.bind, hu, throw, throwThe, MonadExceptOf.throw] at h
+
+set_option linter.unusedSimpArgs false in
+/-- An accepted strict admission: the records are within the universe-parameter
+bound, and the pinned roles' admission accepted. -/
+theorem admitStrict_ok {pins : RolePins} {t : Ix.Kernel.RoleTable}
+    {constants : List (Address × Ixon.Constant)} (h : admitStrict pins t constants = .ok ()) :
+    (∀ e ∈ constants, levelCount e.2.info ≤ maxRecordLevelParams) ∧
+      admitPinnedRoles pins t = .ok () := by
+  unfold admitStrict at h
+  cases hl : admitLevels constants with
+  | error e => simp [hl, bind, Except.bind] at h
+  | ok u =>
+    simp only [hl, bind, Except.bind] at h
+    exact ⟨admitLevels_ok hl, h⟩
+
+set_option linter.unusedSimpArgs false in
+/-- **An accept of the strict entry is an accept of `checkBytes`.** -/
+theorem checkBytesStrict_checkBytes {pins : RolePins} {hash : ByteArray → Address}
+    {binding : Binding} {limits : Limits} {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
+    (h : checkBytesStrict pins hash binding limits records blobs hint = .ok env) :
+    checkBytes hash binding limits records blobs hint = .ok env := by
+  unfold checkBytesStrict at h
+  cases hp : preflight limits records blobs with
+  | error e => simp [hp, Except.mapError, bind, Except.bind] at h
+  | ok u =>
+    cases ht : admitBinding hash binding with
+    | error e => simp [hp, ht, Except.mapError, bind, Except.bind] at h
+    | ok t =>
+      cases hd : decodeWithin limits records with
+      | error e => simp [hp, ht, hd, Except.mapError, bind, Except.bind] at h
+      | ok constants =>
+        cases hs : admitStrict pins t constants with
+        | error e => simp [hp, ht, hd, hs, Except.mapError, bind, Except.bind] at h
+        | ok v => simpa [hp, ht, hd, hs, Except.mapError, bind, Except.bind] using h
+
+set_option linter.unusedSimpArgs false in
+/-- **What the strict entry adds**: an accept admits the table `t`, reads the
+records canonically as `constants` within the universe-parameter bound, and,
+under `committed`, `t` binds every pinned role where the committed default
+table does (`RoleTable.PinnedTo`). -/
+theorem checkBytesStrict_strict {pins : RolePins} {hash : ByteArray → Address}
+    {binding : Binding} {limits : Limits} {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
+    (h : checkBytesStrict pins hash binding limits records blobs hint = .ok env) :
+    ∃ t constants, BindingAdmitted hash binding t ∧ RecordsRead limits records constants ∧
+      (∀ e ∈ constants, levelCount e.2.info ≤ maxRecordLevelParams) ∧
+      (pins = .committed → ∃ d, defaultTable = .ok d ∧ t.PinnedTo d) := by
+  unfold checkBytesStrict at h
+  cases hp : preflight limits records blobs with
+  | error e => simp [hp, Except.mapError, bind, Except.bind] at h
+  | ok u =>
+    cases ht : admitBinding hash binding with
+    | error e => simp [hp, ht, Except.mapError, bind, Except.bind] at h
+    | ok t =>
+      cases hd : decodeWithin limits records with
+      | error e => simp [hp, ht, hd, Except.mapError, bind, Except.bind] at h
+      | ok constants =>
+        cases hs : admitStrict pins t constants with
+        | error e => simp [hp, ht, hd, hs, Except.mapError, bind, Except.bind] at h
+        | ok v =>
+          obtain ⟨hl, hpin⟩ := admitStrict_ok hs
+          refine ⟨t, constants, (admitBinding_ok_iff _ _ _).mp ht,
+            (decodeRecords_ok_iff _ _ _).mp (decodeWithin_decodeRecords hd), hl, ?_⟩
+          rintro rfl
+          exact admitPinnedRoles_committed hpin
+
+/-- **Model existence for the strict entry**, through `checkBytes`. -/
+theorem checkBytesStrict_has_model (V : Type v) [Ix.Kernel.SetTheory V] {pins : RolePins}
+    {hash : ByteArray → Address} {binding : Binding} {limits : Limits} {records : Records}
+    {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {env : Ix.Kernel.Env .anon}
+    (h : checkBytesStrict pins hash binding limits records blobs hint = .ok env) :
+    Nonempty (Ix.Kernel.Model V env) :=
+  checkBytes_has_model V (checkBytesStrict_checkBytes h)
+
+set_option linter.unusedSimpArgs false in
+/-- **What `checkBytesStrict .trustAnchors` adds**: an accept admits the table
+`t`, reads the records canonically as `constants` within the universe-parameter
+bound, and keeps `True` and `True.intro` pinned to the committed default table
+(`RoleTable.PinnedRoles Role.trustAnchorsPinned`) while allowing custom
+literal-support bindings. -/
+theorem checkBytesStrict_trustAnchors {hash : ByteArray → Address}
+    {binding : Binding} {limits : Limits} {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
+    (h : checkBytesStrict .trustAnchors hash binding limits records blobs hint = .ok env) :
+    ∃ t constants, BindingAdmitted hash binding t ∧ RecordsRead limits records constants ∧
+      (∀ e ∈ constants, levelCount e.2.info ≤ maxRecordLevelParams) ∧
+      ∃ d, defaultTable = .ok d ∧ t.PinnedRoles Ix.Kernel.Role.trustAnchorsPinned d := by
+  unfold checkBytesStrict at h
+  cases hp : preflight limits records blobs with
+  | error e => simp [hp, Except.mapError, bind, Except.bind] at h
+  | ok u =>
+    cases ht : admitBinding hash binding with
+    | error e => simp [hp, ht, Except.mapError, bind, Except.bind] at h
+    | ok t =>
+      cases hd : decodeWithin limits records with
+      | error e => simp [hp, ht, hd, Except.mapError, bind, Except.bind] at h
+      | ok constants =>
+        cases hs : admitStrict .trustAnchors t constants with
+        | error e => simp [hp, ht, hd, hs, Except.mapError, bind, Except.bind] at h
+        | ok v =>
+          obtain ⟨hl, hpin⟩ := admitStrict_ok hs
+          exact ⟨t, constants, (admitBinding_ok_iff _ _ _).mp ht,
+            (decodeRecords_ok_iff _ _ _).mp (decodeWithin_decodeRecords hd), hl,
+            admitPinnedRoles_trustAnchors hpin⟩
+
+/-- **Per-record type fidelity for the strict entry**, through `checkBytes`. -/
+theorem checkBytesStrict_consts (V : Type v) [Ix.Kernel.SetTheory V] {pins : RolePins}
+    {hash : ByteArray → Address} {binding : Binding} {limits : Limits} {records : Records}
+    {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {env : Ix.Kernel.Env .anon}
+    (h : checkBytesStrict pins hash binding limits records blobs hint = .ok env)
+    {t : Ix.Kernel.RoleTable} {pre : Prelude .anon}
+    (ht : admitBinding hash binding = .ok t) (hpre : preludeFor t = .ok pre)
+    {constants : List (Address × Ixon.Constant)} (reading : RecordsRead limits records constants)
+    {owner : Address} {c : Ixon.Constant}
+    (hmem : (owner, c) ∈ constants) (hs : isSingleton c.info = true) :
+    ∃ st decl, SingletonRead (streamContext hash t pre constants blobs hint) st owner c decl ∧
+      ∀ cv, Ix.Kernel.Cached.Declaration.Declares decl cv →
+        ∃ ci, env.find? cv.name = some ci ∧
+          ci.toConstantVal.levelParams = cv.levelParams ∧
+          Ix.Kernel.AnnotOf cv.type ci.toConstantVal.type :=
+  checkBytes_consts V (checkBytesStrict_checkBytes h) ht hpre reading hmem hs
 
 end Ix.Kernel.Admission

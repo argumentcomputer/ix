@@ -436,10 +436,13 @@ def rest (fuel : Nat) (l r : Level) (diff : Int) : Option Bool :=
     -- `k` where it is zero), and the two may be dominated in different
     -- branches, as in `v + 1 ≤ max (imax (max (u+2) (v+1)) v) 1`.  When
     -- both branches fail, `Geran.leq` decides the case; it is sound and
-    -- complete (`Verify/LevelGeran.lean`).
+    -- complete (`Verify/LevelGeran.lean`). Its decomposition is exponential
+    -- in nested `imax`es, so it runs within a budget
+    -- (`Geran.withinBudget`); beyond it the case answers as upstream's does,
+    -- with the branch tests' `false`.
     if ← leqCore fuel l x diff then pure true
     else if ← leqCore fuel l y diff then pure true
-    else pure (Geran.leq l r diff)
+    else pure (if Geran.withinBudget l r then Geran.leq l r diff else false)
   | .zero, .max x y => do
     if ← leqCore fuel l x diff then pure true else leqCore fuel l y diff
   | _, _ =>
@@ -575,7 +578,8 @@ def restGo (fuel : Nat) (l r : Level) (diff : Int) (m : LeqMemo) :
     | some false =>
       let q := leqCoreGo fuel l y diff p.2
       match q.1 with
-      | some false => (some (Geran.leq l r diff), q.2)
+      | some false =>
+        (some (if Geran.withinBudget l r then Geran.leq l r diff else false), q.2)
       | v => (v, q.2)
     | v => (v, p.2)
   | .zero, .max x y =>
@@ -833,11 +837,13 @@ theorem decomposeAux_length_le : ∀ (l : Level) (path : List LevelParam) (k : N
 its operands, when the call is within the per-call cap `cap` (its operands'
 trees have fewer than `cap` nodes together, and at most `cap` sublevels);
 `none` past the cap. Its time is bounded by `cap`: the tree is measured by
-`sizeLeft`, which stops after `cap` nodes, before `geranSubs` walks it. -/
+`sizeLeft`, which stops after `cap` nodes, and the sublevel count saturates
+at `cap + 1` (`Geran.sizeBoundAt`) so deep `imax` chains never construct
+bignums. -/
 def geranCost (cap : Nat) (l r : Level) : Option Nat :=
   if sizeLeft (sizeLeft cap l) r == 0 then none
   else
-    let c := (geranSubs l).1 + (geranSubs r).1
+    let c := Geran.sizeBoundAt cap l + Geran.sizeBoundAt cap r
     if c ≤ cap then some c else none
 
 /-- A call of `Geran.leq` in the counted walk (`restBGo`): its weighted
@@ -848,7 +854,8 @@ def geranStepB (budget : Nat) (l r : Level) (diff : Int) (m : LeqMemo) (n : Nat)
     Option (Option Bool × LeqMemo × Nat) :=
   (geranCost (budget / 16) l r).bind fun c =>
     let w := c / 64
-    if budget < n + w then none else some (some (Geran.leq l r diff), m, n + w)
+    if budget < n + w then none
+    else some (some (if Geran.withinBudget l r then Geran.leq l r diff else false), m, n + w)
 
 mutual
 
@@ -1030,12 +1037,15 @@ private theorem bagree_imaxEq {a b x y : Level} {diff : Int} {m : LeqMemo} {n : 
 
 /-- Géran's step: it gives up, or it is the memoised walk's Géran answer. -/
 private theorem bagree_geran (budget : Nat) (l r : Level) (diff : Int) (m : LeqMemo) (n : Nat) :
-    LeqBAgrees (geranStepB budget l r diff m n) (some (Geran.leq l r diff), m) := by
+    LeqBAgrees (geranStepB budget l r diff m n)
+      (some (if Geran.withinBudget l r then Geran.leq l r diff else false), m) := by
   unfold geranStepB
   cases geranCost (budget / 16) l r with
   | none => exact Or.inl rfl
   | some c =>
-    show LeqBAgrees (if budget < n + c / 64 then none else some (some (Geran.leq l r diff), m, n + c / 64)) _
+    show LeqBAgrees
+      (if budget < n + c / 64 then none
+        else some (some (if Geran.withinBudget l r then Geran.leq l r diff else false), m, n + c / 64)) _
     by_cases hb : budget < n + c / 64
     · rw [if_pos hb]; exact Or.inl rfl
     · rw [if_neg hb]; exact Or.inr ⟨n + c / 64, rfl⟩
@@ -1160,7 +1170,7 @@ def restPlain (fuel : Nat) (l r : Level) (diff : Int) : Option Bool :=
   | .param _, .max x y => do
     if ← leqCorePlain fuel l x diff then pure true
     else if ← leqCorePlain fuel l y diff then pure true
-    else pure (Geran.leq l r diff)
+    else pure (if Geran.withinBudget l r then Geran.leq l r diff else false)
   | .zero, .max x y => do
     if ← leqCorePlain fuel l x diff then pure true else leqCorePlain fuel l y diff
   | _, _ =>
