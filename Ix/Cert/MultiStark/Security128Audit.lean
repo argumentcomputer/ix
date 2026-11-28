@@ -695,17 +695,17 @@ end Ix.Cert.MultiStark.Security128
 
 /-! ## 6. `Fp^3` `StarkModel`, Concrete `DynamicRom`, Multi-Arity 8-ary FRI & `v6-zk` HVZK Locks -/
 
-/-- info: CertiFri.P3.GoldilocksExt3.starkModel : CertiFri.Stark.StarkModel CertiFri.P3.Goldilocks CertiFri.P3.GoldilocksExt3 CertiFri.P3.Fp3Model -/
+/-- info: CertiFri.P3.GoldilocksExt3.starkModel : CertiFri.Exec.Stark.StarkModel CertiFri.P3.Goldilocks CertiFri.P3.GoldilocksExt3 CertiFri.P3.Fp3Model -/
 #guard_msgs (whitespace := lax) in
 #check @CertiFri.P3.GoldilocksExt3.starkModel
 
-/-- info: CertiFri.Fri.FriParams.compact400KBBalanced : CertiFri.Fri.FriParams -/
+/-- info: CertiFri.FriParams.compact400KBBalanced : CertiFri.FriParams -/
 #guard_msgs (whitespace := lax) in
-#check @CertiFri.Fri.FriParams.compact400KBBalanced
+#check @CertiFri.FriParams.compact400KBBalanced
 
-/-- info: CertiFri.Fri.FriParams.ultraCompact400KBZk : CertiFri.Fri.FriParams -/
+/-- info: CertiFri.FriParams.ultraCompact400KBZk : CertiFri.FriParams -/
 #guard_msgs (whitespace := lax) in
-#check @CertiFri.Fri.FriParams.ultraCompact400KBZk
+#check @CertiFri.FriParams.ultraCompact400KBZk
 
 /-- info: 'Ix.Cert.MultiStark.soundness_dynamic_rom_starkTensor_fp3_ud' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in

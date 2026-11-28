@@ -477,7 +477,7 @@ end StageBounds
 
 section ConcreteFp3DynamicRom
 
-open CertiFri.Stark CertiFri.Exec.Stark CertiFri.P3 CertiFri.P3.GoldilocksExt3 OracleComp
+open CertiFri.Stark CertiFri.Exec CertiFri.Exec.Stark CertiFri.P3 CertiFri.P3.GoldilocksExt3 OracleComp
 
 private lemma length_chalDigests_tensor_le {D : Type} [DecidableEq D]
     {fslots slots width : ℕ} (B : Bounds) (r : ℕ)
