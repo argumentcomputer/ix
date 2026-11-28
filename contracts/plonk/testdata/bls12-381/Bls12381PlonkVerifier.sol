@@ -871,7 +871,8 @@ contract PlonkVerifier {
         // ζ to ensure that the prover cannot control the random number.
         // Note: adding the other point ζω is not needed, as ω is known beforehand.
         
-        mcopy(mPtr, add(state, STATE_FOLDED_DIGESTS), 0x80)
+        mcopy(mPtr, add(state, add(STATE_FOLDED_DIGESTS, 0x10)), 0x30)
+        mcopy(add(mPtr, 0x30), add(state, add(STATE_FOLDED_DIGESTS, 0x50)), 0x30)
         calldatacopy(add(mPtr, 0x60), add(aproof, PROOF_BATCH_OPENING_AT_ZETA_X), 0x60)
         calldatacopy(add(mPtr, 0xc0), add(aproof, PROOF_GRAND_PRODUCT_COMMITMENT_X), 0x60)
         calldatacopy(add(mPtr, 0x120), add(aproof, PROOF_OPENING_AT_ZETA_OMEGA_X), 0x60)
@@ -898,30 +899,33 @@ contract PlonkVerifier {
         store_point_calldata(add(folded_digests, 0x280), add(aproof, PROOF_OPENING_AT_ZETA_OMEGA_X))
         let zeta_omega := mulmod(mload(add(state, STATE_ZETA)), VK_OMEGA, R_MOD)
         mstore(add(folded_digests, 0x300), mulmod(random, zeta_omega, R_MOD))
-        let l_success := staticcall(gas(), BLS12_MSM_G1, folded_digests, 0x320, folded_digests, 0x80)
-        if iszero(l_success){
+        let l_success := staticcall(gas(), BLS12_MSM_G1, folded_digests, 0x320, add(mPtr, 0x320), 0x80)
+        if iszero(and(l_success, eq(returndatasize(), 0x80))){
           error_ec_op()
         }
+        mcopy(folded_digests, add(mPtr, 0x320), 0x80)
 
         let folded_quotients := add(mPtr, 0x180)
         store_point_calldata(folded_quotients, add(aproof, PROOF_BATCH_OPENING_AT_ZETA_X))
         mstore(add(folded_quotients, 0x80), sub(R_MOD, 1))
         store_point_calldata(add(folded_quotients, 0xa0), add(aproof, PROOF_OPENING_AT_ZETA_OMEGA_X))
         mstore(add(folded_quotients, 0x120), sub(R_MOD, random))
-        l_success := staticcall(gas(), BLS12_MSM_G1, folded_quotients, 0x140, folded_quotients, 0x80)
-        if iszero(l_success){
+        l_success := staticcall(gas(), BLS12_MSM_G1, folded_quotients, 0x140, add(mPtr, 0x2c0), 0x80)
+        if iszero(and(l_success, eq(returndatasize(), 0x80))){
           error_ec_op()
         }
+        mcopy(folded_quotients, add(mPtr, 0x2c0), 0x80)
       
         store_point(add(mPtr,  0x80), G2_SRS_0_X_0_hi, G2_SRS_0_X_0_lo, G2_SRS_0_X_1_hi, G2_SRS_0_X_1_lo)
         store_point(add(mPtr, 0x100), G2_SRS_0_Y_0_hi, G2_SRS_0_Y_0_lo, G2_SRS_0_Y_1_hi, G2_SRS_0_Y_1_lo)
         store_point(add(mPtr, 0x200), G2_SRS_1_X_0_hi, G2_SRS_1_X_0_lo, G2_SRS_1_X_1_hi, G2_SRS_1_X_1_lo)
         store_point(add(mPtr, 0x280), G2_SRS_1_Y_0_hi, G2_SRS_1_Y_0_lo, G2_SRS_1_Y_1_hi, G2_SRS_1_Y_1_lo)
-        l_success := staticcall(gas(), BLS12_PAIR, mPtr, 0x300, mPtr, 0x20)
-        if iszero(l_success) {
+        mstore(add(mPtr, 0x300), 0)
+        l_success := staticcall(gas(), BLS12_PAIR, mPtr, 0x300, add(mPtr, 0x300), 0x20)
+        if iszero(and(l_success, eq(returndatasize(), 0x20))) {
           error_pairing()
         }
-        mstore(add(state, STATE_SUCCESS), mload(mPtr))
+        mstore(add(state, STATE_SUCCESS), eq(mload(add(mPtr, 0x300)), 1))
       }
 
       /// @notice Fold the opening proofs at ζ:
@@ -974,7 +978,7 @@ contract PlonkVerifier {
         
         
         let l_success := staticcall(gas(), BLS12_MSM_G1, mPtr, 0x460, add(state, STATE_FOLDED_DIGESTS), 0x80)
-        if iszero(l_success){
+        if iszero(and(l_success, eq(returndatasize(), 0x80))){
           error_ec_op()
         }
         
@@ -1138,7 +1142,7 @@ contract PlonkVerifier {
         calldatacopy(add(mPtr, 0x6c0), add(aproof, add(PROOF_QCP_AT_ZETA, 0x0)), 0x20)
         
         let l_success := staticcall(gas(), BLS12_MSM_G1, mPtr, 0x6e0, add(state, STATE_LINEARISED_POLYNOMIAL), 0x80)
-        if iszero(l_success){
+        if iszero(and(l_success, eq(returndatasize(), 0x80))){
           error_ec_op()
         }
 

@@ -397,32 +397,40 @@ contract Verifier {
             let f := mload(0x40)
             let g := add(f, 0x40)
             let s
+            let callOk
             mstore(f, CONSTANT_X)
             mstore(add(f, 0x20), CONSTANT_Y)
             mstore(g, mload(commitments))
             mstore(add(g, 0x20), mload(add(commitments, 0x20)))
-            success := and(success,  staticcall(gas(), PRECOMPILE_ADD, f, 0x80, f, 0x40))
+            callOk := staticcall(gas(), PRECOMPILE_ADD, f, 0x80, f, 0x40)
+            success := and(success, and(callOk, eq(returndatasize(), 0x40)))
             mstore(g, PUB_0_X)
             mstore(add(g, 0x20), PUB_0_Y)
             s :=  calldataload(input)
             mstore(add(g, 0x40), s)
             success := and(success, lt(s, R))
-            success := and(success, staticcall(gas(), PRECOMPILE_MUL, g, 0x60, g, 0x40))
-            success := and(success, staticcall(gas(), PRECOMPILE_ADD, f, 0x80, f, 0x40))
+            callOk := staticcall(gas(), PRECOMPILE_MUL, g, 0x60, g, 0x40)
+            success := and(success, and(callOk, eq(returndatasize(), 0x40)))
+            callOk := staticcall(gas(), PRECOMPILE_ADD, f, 0x80, f, 0x40)
+            success := and(success, and(callOk, eq(returndatasize(), 0x40)))
             mstore(g, PUB_1_X)
             mstore(add(g, 0x20), PUB_1_Y)
             s :=  calldataload(add(input, 32))
             mstore(add(g, 0x40), s)
             success := and(success, lt(s, R))
-            success := and(success, staticcall(gas(), PRECOMPILE_MUL, g, 0x60, g, 0x40))
-            success := and(success, staticcall(gas(), PRECOMPILE_ADD, f, 0x80, f, 0x40))
+            callOk := staticcall(gas(), PRECOMPILE_MUL, g, 0x60, g, 0x40)
+            success := and(success, and(callOk, eq(returndatasize(), 0x40)))
+            callOk := staticcall(gas(), PRECOMPILE_ADD, f, 0x80, f, 0x40)
+            success := and(success, and(callOk, eq(returndatasize(), 0x40)))
             mstore(g, PUB_2_X)
             mstore(add(g, 0x20), PUB_2_Y)
             s := mload(publicCommitments)
             mstore(add(g, 0x40), s)
             success := and(success, lt(s, R))
-            success := and(success, staticcall(gas(), PRECOMPILE_MUL, g, 0x60, g, 0x40))
-            success := and(success, staticcall(gas(), PRECOMPILE_ADD, f, 0x80, f, 0x40))
+            callOk := staticcall(gas(), PRECOMPILE_MUL, g, 0x60, g, 0x40)
+            success := and(success, and(callOk, eq(returndatasize(), 0x40)))
+            callOk := staticcall(gas(), PRECOMPILE_ADD, f, 0x80, f, 0x40)
+            success := and(success, and(callOk, eq(returndatasize(), 0x40)))
 
             x := mload(f)
             y := mload(add(f, 0x20))
@@ -539,10 +547,11 @@ contract Verifier {
             // Verify pedersen commitments
             bool success;
             assembly ("memory-safe") {
-                let f := mload(0x40)
+                let out := mload(0x40)
+                mstore(out, 0)
 
-                success := staticcall(gas(), PRECOMPILE_VERIFY, pairings, 0x180, f, 0x20)
-                success := and(success, mload(f))
+                success := staticcall(gas(), PRECOMPILE_VERIFY, pairings, 0x180, out, 0x20)
+                success := and(success, and(eq(returndatasize(), 0x20), eq(mload(out), 1)))
             }
             if (!success) {
                 revert CommitmentInvalid();
@@ -595,9 +604,11 @@ contract Verifier {
             bool success;
             uint256[1] memory output;
             assembly ("memory-safe") {
-                success := staticcall(gas(), PRECOMPILE_VERIFY, pairings, 0x300, output, 0x20)
+                mstore(output, 0)
+                let pairOk := staticcall(gas(), PRECOMPILE_VERIFY, pairings, 0x300, output, 0x20)
+                success := and(pairOk, and(eq(returndatasize(), 0x20), eq(mload(output), 1)))
             }
-            if (!success || output[0] != 1) {
+            if (!success) {
                 // Either proof or verification key invalid.
                 // We assume the contract is correctly generated, so the verification key is valid.
                 revert ProofInvalid();
@@ -655,8 +666,10 @@ contract Verifier {
             mstore(add(f, 0x140), PEDERSEN_G_Y_1)
             mstore(add(f, 0x160), PEDERSEN_G_Y_0)
 
-            success := staticcall(gas(), PRECOMPILE_VERIFY, f, 0x180, f, 0x20)
-            success := and(success, mload(f))
+            let out := add(f, 0x180)
+            mstore(out, 0)
+            success := staticcall(gas(), PRECOMPILE_VERIFY, f, 0x180, out, 0x20)
+            success := and(success, and(eq(returndatasize(), 0x20), eq(mload(out), 1)))
         }
         if (!success) {
             revert CommitmentInvalid();
@@ -699,9 +712,11 @@ contract Verifier {
             mstore(add(f, 0x2e0), GAMMA_NEG_Y_0)
 
             // Check pairing equation.
-            success := staticcall(gas(), PRECOMPILE_VERIFY, f, 0x300, f, 0x20)
-            // Also check returned value (both are either 1 or 0).
-            success := and(success, mload(f))
+            let out := add(f, 0x300)
+            mstore(out, 0)
+            success := staticcall(gas(), PRECOMPILE_VERIFY, f, 0x300, out, 0x20)
+            // Also check returned size and value (must be 32 bytes equal to 1).
+            success := and(success, and(eq(returndatasize(), 0x20), eq(mload(out), 1)))
         }
         if (!success) {
             // Either proof or verification key invalid.

@@ -136,4 +136,86 @@ contract IxBls12381Groth16VerifierTest {
         require(address(adapter).code.length <= 24576, "adapter exceeds EIP-170");
         require(type(BlsCommittedVerifier).creationCode.length <= 49152, "BLS12-381 Groth16 initcode exceeds EIP-3860");
     }
+
+    function testRawBls12381VerifierNegativeControls() public {
+        _assertRawBlsNegativeControls(IGroth16Verifier(address(new BlsPlainVerifier())), "plain", false);
+        _assertRawBlsNegativeControls(IGroth16Verifier(address(new BlsCommittedVerifier())), "committed", true);
+    }
+
+    function _assertRawBlsNegativeControls(IGroth16Verifier raw, string memory name, bool committed) private {
+        uint256 BLS12_381_R_MOD = 52435875175126190479447740508185965837690552500527637822603658699938581184513;
+        IxBls12381Groth16Verifier adapter = facade(address(raw));
+        (bytes memory proof, bytes32 claim) = vector(name);
+        uint256[2] memory validInputs = _digestToInputs(claim);
+
+        // Sanity: raw verifier accepts the valid fixture proof.
+        raw.verifyProof{gas: 2_000_000}(proof, validInputs);
+
+        // Unreduced public inputs (`input + R_MOD` and exact `R_MOD`) must revert on raw verifier.
+        _assertRawReverts(raw, proof, [validInputs[0] + BLS12_381_R_MOD, validInputs[1]], "raw BLS12-381 verifier accepted input[0] + R_MOD");
+        _assertRawReverts(raw, proof, [validInputs[0], validInputs[1] + BLS12_381_R_MOD], "raw BLS12-381 verifier accepted input[1] + R_MOD");
+        _assertRawReverts(raw, proof, [BLS12_381_R_MOD, validInputs[1]], "raw BLS12-381 verifier accepted input[0] == R_MOD");
+
+        // All-zero proof of expected length must revert on raw verifier and return false via adapter.
+        bytes memory allZero = new bytes(proof.length);
+        _assertRawReverts(raw, allZero, validInputs, "raw BLS12-381 verifier accepted all-zero proof");
+        require(!adapter.verify(allZero, claim), "adapter accepted all-zero BLS12-381 proof");
+
+        // BLS12-381 on-curve non-subgroup torsion point (0, 2) (y^2 = 4 = x^3 + 4,
+        // outside prime-order G1 subgroup r) injected into A (0x00) and C (0x120),
+        // plus commitment (0x180) and PoK (0x1e0) for committed proofs.
+        bytes memory torsionA = _withBlsTorsionG1(proof, 0x00);
+        _assertRawReverts(raw, torsionA, validInputs, "raw BLS12-381 verifier accepted torsion point (0, 2) in A");
+        require(!adapter.verify(torsionA, claim), "adapter accepted torsion point (0, 2) in A");
+
+        bytes memory torsionC = _withBlsTorsionG1(proof, 0x120);
+        _assertRawReverts(raw, torsionC, validInputs, "raw BLS12-381 verifier accepted torsion point (0, 2) in C");
+        require(!adapter.verify(torsionC, claim), "adapter accepted torsion point (0, 2) in C");
+
+        if (committed) {
+            bytes memory torsionCom = _withBlsTorsionG1(proof, 0x180);
+            _assertRawReverts(raw, torsionCom, validInputs, "raw BLS12-381 verifier accepted torsion point (0, 2) in commitment");
+            require(!adapter.verify(torsionCom, claim), "adapter accepted torsion point (0, 2) in commitment");
+
+            bytes memory torsionPok = _withBlsTorsionG1(proof, 0x1e0);
+            _assertRawReverts(raw, torsionPok, validInputs, "raw BLS12-381 verifier accepted torsion point (0, 2) in PoK");
+            require(!adapter.verify(torsionPok, claim), "adapter accepted torsion point (0, 2) in PoK");
+        }
+    }
+
+    function _withBlsTorsionG1(bytes memory base, uint256 offset) private pure returns (bytes memory mutated) {
+        mutated = bytes.concat(base);
+        for (uint256 i; i < 96; ++i) {
+            mutated[offset + i] = bytes1(0x00);
+        }
+        mutated[offset + 95] = bytes1(0x02);
+    }
+
+    function _digestToInputs(bytes32 expectedClaimDigest) private pure returns (uint256[2] memory inputs) {
+        inputs = [
+            uint256(_reverse128(uint128(uint256(expectedClaimDigest) >> 128))),
+            uint256(_reverse128(uint128(uint256(expectedClaimDigest))))
+        ];
+    }
+
+    function _reverse128(uint128 value) private pure returns (uint128) {
+        value = ((value >> 8) & 0x00ff00ff00ff00ff00ff00ff00ff00ff) |
+            ((value & 0x00ff00ff00ff00ff00ff00ff00ff00ff) << 8);
+        value = ((value >> 16) & 0x0000ffff0000ffff0000ffff0000ffff) |
+            ((value & 0x0000ffff0000ffff0000ffff0000ffff) << 16);
+        value = ((value >> 32) & 0x00000000ffffffff00000000ffffffff) |
+            ((value & 0x00000000ffffffff00000000ffffffff) << 32);
+        return (value >> 64) | (value << 64);
+    }
+
+    function _assertRawReverts(
+        IGroth16Verifier raw,
+        bytes memory p,
+        uint256[2] memory inputs,
+        string memory errMsg
+    ) private view {
+        try raw.verifyProof{gas: 2_000_000}(p, inputs) {
+            revert(errMsg);
+        } catch {}
+    }
 }

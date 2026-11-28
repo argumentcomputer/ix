@@ -113,6 +113,78 @@ contract IxBls12381PlonkVerifierTest {
         require(type(Bls12381PlonkVerifier).creationCode.length <= 49152, "BLS12-381 PLONK initcode exceeds EIP-3860");
     }
 
+    function testRawBls12381VerifierNegativeControls() public view {
+        uint256 BLS12_381_R_MOD = 52435875175126190479447740508185965837690552500527637822603658699938581184513;
+        uint256[] memory validInputs = _digestToInputs(digest);
+        require(plonk.Verify{gas: 2_000_000}(proof, validInputs), "raw valid BLS12-381 PLONK proof rejected");
+
+        // Unreduced public inputs (`input + R_MOD` and exact `R_MOD`) must revert on raw verifier.
+        uint256[] memory bad0 = new uint256[](2);
+        bad0[0] = validInputs[0] + BLS12_381_R_MOD;
+        bad0[1] = validInputs[1];
+        _assertRawReverts(proof, bad0, "raw BLS12-381 verifier accepted input[0] + R_MOD");
+
+        uint256[] memory bad1 = new uint256[](2);
+        bad1[0] = validInputs[0];
+        bad1[1] = validInputs[1] + BLS12_381_R_MOD;
+        _assertRawReverts(proof, bad1, "raw BLS12-381 verifier accepted input[1] + R_MOD");
+
+        uint256[] memory exactR = new uint256[](2);
+        exactR[0] = BLS12_381_R_MOD;
+        exactR[1] = validInputs[1];
+        _assertRawReverts(proof, exactR, "raw BLS12-381 verifier accepted input[0] == R_MOD");
+
+        // All-zero proof of expected length (1184 bytes) must be rejected.
+        bytes memory allZero = new bytes(proof.length);
+        _assertRawRejected(allZero, validInputs, "raw BLS12-381 verifier accepted all-zero proof");
+        _reject(allZero, digest);
+
+        // BLS12-381 on-curve non-subgroup torsion point (0, 2) (y^2 = 4 = x^3 + 4,
+        // outside prime-order G1 subgroup r) injected into L, Z, W_zeta, and BSB22 slots.
+        uint256[4] memory g1Offsets = [uint256(0x00), uint256(0x2e0), uint256(0x360), uint256(0x440)];
+        for (uint256 i; i < g1Offsets.length; ++i) {
+            bytes memory torsionProof = _withBlsTorsionG1(proof, g1Offsets[i]);
+            _assertRawRejected(torsionProof, validInputs, "raw BLS12-381 verifier accepted torsion point (0, 2)");
+            _reject(torsionProof, digest);
+        }
+    }
+
+    function _withBlsTorsionG1(bytes memory base, uint256 offset) private pure returns (bytes memory mutated) {
+        mutated = bytes.concat(base);
+        for (uint256 i; i < 96; ++i) {
+            mutated[offset + i] = bytes1(0x00);
+        }
+        mutated[offset + 95] = bytes1(0x02);
+    }
+
+    function _digestToInputs(bytes32 expectedClaimDigest) private pure returns (uint256[] memory inputs) {
+        inputs = new uint256[](2);
+        inputs[0] = _reverse128(uint128(uint256(expectedClaimDigest) >> 128));
+        inputs[1] = _reverse128(uint128(uint256(expectedClaimDigest)));
+    }
+
+    function _reverse128(uint128 value) private pure returns (uint128) {
+        value = ((value >> 8) & 0x00ff00ff00ff00ff00ff00ff00ff00ff) |
+            ((value & 0x00ff00ff00ff00ff00ff00ff00ff00ff) << 8);
+        value = ((value >> 16) & 0x0000ffff0000ffff0000ffff0000ffff) |
+            ((value & 0x0000ffff0000ffff0000ffff0000ffff) << 16);
+        value = ((value >> 32) & 0x00000000ffffffff00000000ffffffff) |
+            ((value & 0x00000000ffffffff00000000ffffffff) << 32);
+        return (value >> 64) | (value << 64);
+    }
+
+    function _assertRawReverts(bytes memory p, uint256[] memory inputs, string memory errMsg) private view {
+        try plonk.Verify{gas: 2_000_000}(p, inputs) returns (bool) {
+            revert(errMsg);
+        } catch {}
+    }
+
+    function _assertRawRejected(bytes memory p, uint256[] memory inputs, string memory errMsg) private view {
+        try plonk.Verify{gas: 2_000_000}(p, inputs) returns (bool valid) {
+            require(!valid, errMsg);
+        } catch {}
+    }
+
     function _reject(bytes memory badProof, bytes32 badDigest) private view {
         require(!adapter.verify{gas: 2_000_000}(badProof, badDigest), "invalid BLS12-381 proof accepted");
     }
