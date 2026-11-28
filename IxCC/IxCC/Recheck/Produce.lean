@@ -187,6 +187,22 @@ def produceSource (cfg : Config) (inp : Input) : Except Err ProducedSource := do
   pure { table, tableDiags, tableStats, ann, src, checked
          wordHints := Src.Table.wordHints src adm.reached }
 
+/-- Collect all source `CId`s carrying non-default Ixon v5 `DefAsserts` so the ANF
+inline oracle never erases an assertion-annotated definition into a weaker caller. -/
+def assertedOrigins (rd : Src.KernelFront.Reading) (src : Src.Program) : Src.NatSet :=
+  Src.NatSet.ofList <|
+    (rd.assertsMap src).toList.filterMap fun (c, a) =>
+      if a == ({} : _root_.Ixon.DefAsserts) then none else some c
+
+/-- Merge `assertedOrigins` into `budgets.inline.noInlineOrigins`. -/
+def withAssertedNoInline (rd : Src.KernelFront.Reading) (src : Src.Program)
+    (budgets : Anf.Pipeline.Budgets) : Anf.Pipeline.Budgets :=
+  let origins := assertedOrigins rd src
+  if origins.toList.isEmpty then budgets
+  else
+    let merged := origins.toList.foldl (fun s (c, _) => s.insert c) budgets.inline.noInlineOrigins
+    { budgets with inline := { budgets.inline with noInlineOrigins := merged } }
+
 /-- Produce an ANF middle-end trace under `budgets` (keeps `Anf.Pipeline.produce`
 centralized inside `Recheck.Produce`). -/
 def produceAnf (budgets : Anf.Pipeline.Budgets) (lam : Lam.Program) :
@@ -198,7 +214,7 @@ def produceAnf (budgets : Anf.Pipeline.Budgets) (lam : Lam.Program) :
 def produceWith (cfg : Config) (inp : Input) : Except Err Produced := do
   let ⟨table, tableDiags, tableStats, ann, src, checked, wordHints⟩ ← produceSource cfg inp
   let (lam, _) ← (Lam.erase src checked).mapError Err.ofErase
-  let trace ← produceAnf cfg.budgets lam
+  let trace ← produceAnf (withAssertedNoInline inp.kernel.rd src cfg.budgets) lam
   -- the closures step, as the replay runs it (`Recheck.anfOf`)
   let (anf, stages) ← produceClosures src trace
   let fir ← (Fir.lower anf).mapError Err.ofFir
@@ -262,7 +278,7 @@ sufficient for `Recheck.runFir`. -/
 def produceFir (cfg : Config) (inp : Input) : Except Err Cert := do
   let ⟨table, _, _, ann, src, checked, _⟩ ← produceSource cfg inp
   let (lam, _) ← (Lam.erase src checked).mapError Err.ofErase
-  let trace ← produceAnf cfg.budgets lam
+  let trace ← produceAnf (withAssertedNoInline inp.kernel.rd src cfg.budgets) lam
   let (anf, _) ← produceClosures src trace
   let _ ← (Fir.lower anf).mapError Err.ofFir
   pure { table := Src.Table.TableCert.ofTable table, relevance := ann, mid := trace.cert }

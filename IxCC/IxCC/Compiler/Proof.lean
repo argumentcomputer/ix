@@ -500,11 +500,14 @@ theorem produceAuto_zeroRc_parts {cfg : Recheck.Config} {inp : Recheck.Input}
         simp [hpl, pure, Except.pure] at accepted
       | error reason =>
         simp only [hpl] at accepted
-        cases hi : Recheck.RcReplay.produceImmortal (cfg.forInput inp) inp front with
-        | error e => simp [hi] at accepted
-        | ok r =>
-          obtain ⟨p, a⟩ := r
-          simp [hi, pure, Except.pure] at accepted
+        by_cases ha : reason.code.startsWith "assert."
+        · simp [ha, throw, throwThe, MonadExceptOf.throw] at accepted
+        · simp only [ha, Bool.false_eq_true, ↓reduceIte] at accepted
+          cases hi : Recheck.RcReplay.produceImmortal (cfg.forInput inp) inp front with
+          | error e => simp [hi] at accepted
+          | ok r =>
+            obtain ⟨p, a⟩ := r
+            simp [hi, pure, Except.pure] at accepted
 
 /-- Decomposition of `RcReplay.produceAuto` when it selects `.plainRc`. -/
 theorem produceAuto_plainRc_parts {cfg : Recheck.Config} {inp : Recheck.Input}
@@ -543,11 +546,14 @@ theorem produceAuto_plainRc_parts {cfg : Recheck.Config} {inp : Recheck.Input}
         exact ⟨front, p, rfl, hpol, hfin, rfl, rfl, hrun⟩
       | error reason =>
         simp only [hpl] at accepted
-        cases hi : Recheck.RcReplay.produceImmortal (cfg.forInput inp) inp front with
-        | error e => simp [hi] at accepted
-        | ok r =>
-          obtain ⟨p, a⟩ := r
-          simp [hi, pure, Except.pure] at accepted
+        by_cases ha : reason.code.startsWith "assert."
+        · simp [ha, throw, throwThe, MonadExceptOf.throw] at accepted
+        · simp only [ha, Bool.false_eq_true, ↓reduceIte] at accepted
+          cases hi : Recheck.RcReplay.produceImmortal (cfg.forInput inp) inp front with
+          | error e => simp [hi] at accepted
+          | ok r =>
+            obtain ⟨p, a⟩ := r
+            simp [hi, pure, Except.pure] at accepted
 
 /-- Decomposition of `RcReplay.produceAuto` when it falls back to the immortal
 policy: plain RC was selected, its certificate or replay was refused with
@@ -585,15 +591,18 @@ theorem produceAuto_immortal_parts {cfg : Recheck.Config} {inp : Recheck.Input}
         simp [hpl, pure, Except.pure] at accepted
       | error reason' =>
         simp only [hpl] at accepted
-        cases hi : Recheck.RcReplay.produceImmortal (cfg.forInput inp) inp front with
-        | error e => simp [hi] at accepted
-        | ok r =>
-          obtain ⟨p, a⟩ := r
-          simp only [hi, pure, Except.pure, Except.ok.injEq,
-            Recheck.RcReplay.AutoCompiled.immortal.injEq] at accepted
-          obtain ⟨rfl, rfl, rfl, rfl⟩ := accepted
-          obtain ⟨hfin, hrun⟩ := produceImmortal_parts hi
-          exact ⟨front, p, rfl, hpol, hpl, hfin, rfl, rfl, hrun⟩
+        by_cases ha : reason'.code.startsWith "assert."
+        · simp [ha, throw, throwThe, MonadExceptOf.throw] at accepted
+        · simp only [ha, Bool.false_eq_true, ↓reduceIte] at accepted
+          cases hi : Recheck.RcReplay.produceImmortal (cfg.forInput inp) inp front with
+          | error e => simp [hi] at accepted
+          | ok r =>
+            obtain ⟨p, a⟩ := r
+            simp only [hi, pure, Except.pure, Except.ok.injEq,
+              Recheck.RcReplay.AutoCompiled.immortal.injEq] at accepted
+            obtain ⟨rfl, rfl, rfl, rfl⟩ := accepted
+            obtain ⟨hfin, hrun⟩ := produceImmortal_parts hi
+            exact ⟨front, p, rfl, hpol, hpl, hfin, rfl, rfl, hrun⟩
 
 /-- End-to-end soundness of `RcReplay.produceAuto` on the `.zeroRc` path
 (covering both scalar closures and contract-annotated zero-RC heap closures). -/

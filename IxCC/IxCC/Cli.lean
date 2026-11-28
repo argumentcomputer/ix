@@ -531,6 +531,7 @@ def checkTextWith (opt : Bool) (cfg : Config) (inp : Input) (text : String) :
   | .zeroRc cert =>
     let a ← DefAsserts.runWithReading cfg inp.program inp.kernel.rd cert
     if !opt then
+      let _ ← Compile.zeroPolicy a
       return (cc, a)
     else
       let root := (a.src.roots.head?.map (·.1)).getD default
@@ -584,6 +585,8 @@ def produceText (rc : RcMode) (cfg : Config) (inp : Input) :
       match RcReplay.producePlain cfg inp front with
       | .ok (p, _) => pure (p.text, p.alloc, some "plain-rc", front.wordHints)
       | .error reason =>
+        if reason.code.startsWith "assert." then
+          throw reason
         let p ← RcReplay.finishZeroRcCert cfg front
         pure (p.text, p.alloc,
           some s!"immortal (plain RC refused: {reason.stage.name}: {reason.code}: {reason.message})",
@@ -1133,6 +1136,9 @@ def compilePlan (o : Options) (limits : Ix.Kernel.Admission.Limits) : ExceptT Fa
             let (text, outcomes, policy, hints) ← phase .declined (lift fun _ => produceText o.rc cfg inp)
             pure (text, some outcomes, policy, hints)
         let ((cliCert, a), tRun) ← timed (phase .rejected (lift fun _ => checkTextWith o.opt cfg inp text))
+        if !o.opt then
+          for (target, _) in inp.program.roots do
+            phase .rejected (lift fun _ => Compile.seedClosure inp target cliCert.base.table limits)
         pure (some text, some cliCert, outcomes, policy, tProduce, a, tRun, hints)
       if o.cert.isNone then withRetry cfg produceRun else produceRun cfg
   if let some l := Src.Table.wordHintLine hints then IO.eprintln l

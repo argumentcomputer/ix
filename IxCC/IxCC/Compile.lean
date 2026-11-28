@@ -349,7 +349,8 @@ def certifyAuto (cfg : Config) (inp : Input) (front : RcReplay.ProducedFir) : Ex
     match RcReplay.producePlain cfg inp front with
     | .ok (p, rc) => certifyPlain cfg inp p rc
     | .error reason =>
-      (RcReplay.finishZeroRcCert cfg front) >>= fun p =>
+      (if reason.code.startsWith "assert." then .error reason
+       else RcReplay.finishZeroRcCert cfg front) >>= fun p =>
         certifyZero cfg inp p
           (some s!"immortal (plain RC refused: {reason.stage.name}: {reason.code}: {reason.message})")
 

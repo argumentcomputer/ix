@@ -57,12 +57,151 @@ def gkeyOrigin? : Key.GKey → Option CId
   | .dispatch _ => none
   | .entry g _ => gkeyOrigin? g
 
+/-- Look up the Ixon v5 `DefAsserts` governing a compiled global key `k`. -/
+def keyAsserts (asserts : NatMap _root_.Ixon.DefAsserts) (k : Key.GKey) :
+    _root_.Ixon.DefAsserts :=
+  match gkeyOrigin? k with
+  | some c => (asserts.get? c).getD {}
+  | none => {}
+
 /-- Look up the Ixon v5 `DefAsserts` governing `Cfg.Fun` `fd`. -/
 def funAsserts (asserts : NatMap _root_.Ixon.DefAsserts) (fd : Cfg.Fun) :
     _root_.Ixon.DefAsserts :=
-  match gkeyOrigin? fd.key with
-  | some c => (asserts.get? c).getD {}
-  | none => {}
+  keyAsserts asserts fd.key
+
+/-- Strength order on `AllocAssert`: `unrestricted ≤ noRc ≤ noAlloc`. -/
+def allocRank : _root_.Ixon.AllocAssert → Nat
+  | .unrestricted => 0
+  | .noRc => 1
+  | .noAlloc => 2
+
+/-- Whether `caller`'s assertions are at least as strong as `callee`'s. -/
+def assertsLe (callee caller : _root_.Ixon.DefAsserts) : Bool :=
+  decide (allocRank callee.alloc ≤ allocRank caller.alloc) &&
+  (!callee.boundedStack || caller.boundedStack)
+
+/-! ## Pre-ANF reachability & inline-preservation checks (`H-7`) -/
+
+mutual
+
+/-- Direct global references in a pre-ANF `Lam.Term` (`D17` structural). -/
+def lamTermRefs : Lam.Term → List Lam.GlobalId
+  | .glob g => [g]
+  | .lam _ _ b | .tick b | .proj _ _ b => lamTermRefs b
+  | .app f a _ | .letE _ f a => lamTermRefs f ++ lamTermRefs a
+  | .con _ fs | .prim _ fs => lamTermListRefs fs
+  | .case s alts d => lamTermRefs s ++ lamAltRefs alts ++ lamOptRefs d
+  | .var _ | .lit _ | .box | .trap => []
+  termination_by structural t => t
+
+def lamTermListRefs : List Lam.Term → List Lam.GlobalId
+  | [] => []
+  | t :: ts => lamTermRefs t ++ lamTermListRefs ts
+  termination_by structural ts => ts
+
+def lamAltRefs : List Lam.Alt → List Lam.GlobalId
+  | [] => []
+  | .mk _ _ b :: as => lamTermRefs b ++ lamAltRefs as
+  termination_by structural as => as
+
+def lamOptRefs : Option Lam.Term → List Lam.GlobalId
+  | none => []
+  | some t => lamTermRefs t
+  termination_by structural o => o
+
+end
+
+/-- Worklist reachability from `L.roots` in pre-ANF `Lam.Program` (`D17` fuel-bounded). -/
+def lamReachLoop (L : Lam.Program) :
+    Nat → List Lam.GlobalId → NatSet → List Lam.GlobalId → Option (List Lam.GlobalId)
+  | 0, _ :: _, _, _ => none
+  | _, [], _, acc => some acc
+  | fuel + 1, g :: todo, seen, acc =>
+    if seen.contains g then
+      lamReachLoop L fuel todo seen acc
+    else
+      match L.global? g with
+      | none => none
+      | some gd =>
+        let next := (lamTermRefs gd.body).filter fun h => !seen.contains h && !todo.contains h
+        lamReachLoop L fuel (next ++ todo) (seen.insert g) (g :: acc)
+
+/-- Compute all globals reachable from `L.roots` in pre-ANF `Lam.Program`. -/
+def lamReachable (L : Lam.Program) : Option (List Lam.GlobalId) :=
+  lamReachLoop L (L.size * 2 + 16) L.roots .leaf []
+
+/-- Reject inlining any callee with non-default `DefAsserts` into a caller whose
+`DefAsserts` do not subsume the callee's (`D17` structural). -/
+def checkInlineRoundCallees (asserts : NatMap _root_.Ixon.DefAsserts) (P : Anf.Program)
+    (callerId : Anf.GlobalId) (callerA : _root_.Ixon.DefAsserts) :
+    List Anf.GlobalId → Except Err Unit
+  | [] => pure ()
+  | calleeId :: rest => do
+    match P.global? calleeId with
+    | some gd =>
+      let calleeA := keyAsserts asserts gd.key
+      if calleeA != ({} : _root_.Ixon.DefAsserts) && !assertsLe calleeA callerA then
+        throw { stage := .rt, code := "assert.inline",
+                message := s!"inline global {calleeId} into {callerId}: callee assertions are not subsumed by caller" }
+    | none => pure ()
+    checkInlineRoundCallees asserts P callerId callerA rest
+
+def checkInlineRound (asserts : NatMap _root_.Ixon.DefAsserts) (P : Anf.Program) :
+    Anf.Inline.Round → Except Err Unit
+  | [] => pure ()
+  | (callerId, callees) :: rest => do
+    match P.global? callerId with
+    | some gd => checkInlineRoundCallees asserts P callerId (keyAsserts asserts gd.key) callees
+    | none => pure ()
+    checkInlineRound asserts P rest
+
+def checkMidSteps (asserts : NatMap _root_.Ixon.DefAsserts) (p : Anf.Shrink.Params) :
+    List Anf.Pipeline.Step → Anf.Program → Except Err Anf.Program
+  | [], P => pure P
+  | s :: rest, P => do
+    match s with
+    | .inline r => checkInlineRound asserts P r
+    | _ => pure ()
+    let P' ← (s.run p P).mapError fun msg =>
+      { stage := .anf, code := "anf.replay", message := msg }
+    checkMidSteps asserts p rest P'
+
+def checkPostSteps (asserts : NatMap _root_.Ixon.DefAsserts) (p : Anf.Shrink.Params) :
+    List Anf.Pipeline.PostStep → Anf.Program → Except Err Unit
+  | [], _ => pure ()
+  | s :: rest, P => do
+    match s with
+    | .inline r => checkInlineRound asserts P r
+    | _ => pure ()
+    let P' ← (s.run p P).mapError fun msg =>
+      { stage := .anf, code := "anf.replay", message := msg }
+    checkPostSteps asserts p rest P'
+
+/-- Trusted middle-end check: when `asserts` is non-empty, verify that no `Step.inline`
+or `PostStep.inline` inlines a callee carrying `DefAsserts` into a caller whose `DefAsserts`
+do not subsume the callee's. `O(1)` no-op when `asserts` is empty. -/
+def checkMidNoUnsafeInline (asserts : NatMap _root_.Ixon.DefAsserts)
+    (src : Src.Program) (lam : Lam.Program) (mid : Anf.Pipeline.Cert) : Except Err Unit := do
+  if asserts.toList.isEmpty then
+    return ()
+  let P0 ← (Anf.Pipeline.checkLamNodes lam >>= Anf.convert >>= Anf.Pipeline.checkGlobalNodes).mapError
+    fun msg => { stage := .anf, code := "anf.replay", message := msg }
+  let P1 ← checkMidSteps asserts mid.shrink mid.steps P0
+  match declaredCounts src with
+  | none => throw { stage := .anf, code := "anf.entry", message := "a root has no declaration" }
+  | some decl =>
+    if Anf.Pipeline.plain decl P1 then
+      pure ()
+    else
+      let E ← (Anf.Entry.run decl P1).mapError fun msg =>
+        { stage := .anf, code := "anf.entry", message := msg }
+      let Q8 ← (Anf.defun E).mapError Err.ofClosures
+      let pc :=
+        open IxCC.Anf.Pipeline (producePost) in
+        match mid.post with
+        | some c => if E.size == c.baseSize then c else producePost E.size Q8
+        | none => producePost E.size Q8
+      checkPostSteps asserts pc.shrink pc.steps Q8
 
 /-! ## LIR call-graph extraction & transitive reachability -/
 
@@ -296,6 +435,9 @@ structure CheckCtx where
   allocProcs : List Lir.FunId := []
   lir : Lir.Program
   frames : List Xv.Stacking.FrameLayout
+  /-- Optional pre-ANF `Lam.Program`, used to reject annotated definitions that
+  were erased (inlined/pruned away) before `Cfg`. -/
+  lam : Option Lam.Program := none
 
 /-- Enforce a single function `f`'s decoded `DefAsserts` (`a`). -/
 def checkFunAsserts (ctx : CheckCtx) (f : Lir.FunId) (a : _root_.Ixon.DefAsserts)
@@ -337,9 +479,46 @@ def checkAllLoop (ctx : CheckCtx) (asserts : NatMap _root_.Ixon.DefAsserts)
     checkFunAsserts ctx f (funAsserts asserts fd) witness?
     checkAllLoop ctx asserts witness? rest
 
-/-- Enforce decoded Ixon v5 `DefAsserts` over a `CheckCtx`. -/
+/-- Verify that every pre-ANF reachable `Lam.Global` carrying non-default `DefAsserts`
+still has at least one surviving `Cfg.Fun` in `ctx.cfg.funList` with the same originating
+`Src.CId`. Fails closed (`assert.erased`) if an annotated definition disappeared before `Cfg`. -/
+def checkPreAnfLoop (L : Lam.Program) (asserts : NatMap _root_.Ixon.DefAsserts)
+    (surviving : NatSet) : List Lam.GlobalId → Except Err Unit
+  | [] => pure ()
+  | g :: rest => do
+    match L.global? g with
+    | some gd =>
+      match gkeyOrigin? gd.key with
+      | some c =>
+        let a := (asserts.get? c).getD {}
+        if a != ({} : _root_.Ixon.DefAsserts) && !surviving.contains c then
+          throw { stage := .rt, code := "assert.erased",
+                  message := s!"constant {c}: definition carrying assertions was erased before Cfg" }
+      | none => pure ()
+    | none => pure ()
+    checkPreAnfLoop L asserts surviving rest
+
+def checkPreAnfAsserts (ctx : CheckCtx) (asserts : NatMap _root_.Ixon.DefAsserts) :
+    Except Err Unit := do
+  if asserts.toList.isEmpty then
+    return ()
+  match ctx.lam with
+  | none => pure ()
+  | some L =>
+    let some reach := lamReachable L
+      | throw { stage := .rt, code := "assert.reach",
+                message := "pre-ANF call-graph reachability failed" }
+    let surviving : NatSet := ctx.cfg.funList.foldl (fun s (_, fd) =>
+      match gkeyOrigin? fd.key with
+      | some c => s.insert c
+      | none => s) .leaf
+    checkPreAnfLoop L asserts surviving reach
+
+/-- Enforce decoded Ixon v5 `DefAsserts` over a `CheckCtx` (both pre-ANF survival
+of annotated constants and post-lowering RC/allocation/stack checks). -/
 def check (ctx : CheckCtx) (asserts : NatMap _root_.Ixon.DefAsserts)
-    (witness? : Option StackWitness := none) : Except Err Unit :=
+    (witness? : Option StackWitness := none) : Except Err Unit := do
+  checkPreAnfAsserts ctx asserts
   checkAllLoop ctx asserts witness? ctx.cfg.funList
 
 /-- Build a `CheckCtx` for a Phase 1 `Recheck.Artifact` and its frame layouts
@@ -351,25 +530,33 @@ def ctxOfArtifact (art : Recheck.Artifact)
     rcProcs := []
     allocProcs := []
     lir := art.lowered.program
-    frames := frames?.getD (Xv.Stacking.produce art.xl) }
+    frames := frames?.getD (Xv.Stacking.produce art.xl)
+    lam := some art.lam }
 
 /-- Build a `CheckCtx` for a plain-RC `Recheck.RcReplay.Artifact` and its
-frame layouts (identifying all RC and allocation runtime procedures from
-`art.front.layout` and `art.front.drop`). -/
+frame layouts (identifying all RC, allocation, and Track A4 reset/reuse
+runtime procedures from `art.front.layout` and `art.front.drop`). -/
 def ctxOfRcArtifact (art : Recheck.RcReplay.Artifact)
     (frames : List Xv.Stacking.FrameLayout) : CheckCtx :=
   let layout := art.front.layout
+  let ctorIdxs := List.range layout.ctors.length
   let rcProcs :=
-    [layout.incWrapper, layout.decWrapper, layout.incProc, layout.decProc, art.front.drop]
+    [layout.incWrapper, layout.decWrapper, layout.incProc, layout.decProc,
+     art.front.drop, layout.isUniqueProc] ++
+    ctorIdxs.flatMap fun i =>
+      [layout.resetWrapper i, layout.resetUWrapper i,
+       layout.reuseWrapper i, layout.reuseUWrapper i]
   let allocProcs :=
-    (List.range layout.ctors.length).flatMap fun i =>
-      [layout.allocProc i, layout.allocWrapper i]
+    ctorIdxs.flatMap fun i =>
+      [layout.allocProc i, layout.allocWrapper i,
+       layout.reuseWrapper i, layout.reuseUWrapper i]
   { cfg := art.front.cfg.base
     rcActions := some art.front.cfg.actions
     rcProcs
     allocProcs
     lir := art.front.lowered.program
-    frames }
+    frames
+    lam := some art.front.lam }
 
 /-- Enforce `asserts` on a Phase 1 `Recheck.Artifact`. -/
 def checkArtifact (asserts : NatMap _root_.Ixon.DefAsserts) (art : Recheck.Artifact)
@@ -384,16 +571,22 @@ def checkRcArtifact (asserts : NatMap _root_.Ixon.DefAsserts)
   check (ctxOfRcArtifact art frames) asserts witness?
 
 /-- Enforce decoded Ixon v5 `Definition.asserts` from `KernelFront.Reading` on
-a Phase 1 `Recheck.Artifact` and its `Recheck.Cert`. -/
+a Phase 1 `Recheck.Artifact` and its `Recheck.Cert` (including middle-end
+inline-preservation checks). -/
 def checkWithReading (rd : Src.KernelFront.Reading) (art : Recheck.Artifact)
-    (cert : Recheck.Cert) (witness? : Option StackWitness := none) : Except Err Unit :=
-  checkArtifact (rd.assertsMap art.src) art (some cert.frames) witness?
+    (cert : Recheck.Cert) (witness? : Option StackWitness := none) : Except Err Unit := do
+  let asserts := rd.assertsMap art.src
+  checkMidNoUnsafeInline asserts art.src art.lam cert.mid
+  checkArtifact asserts art (some cert.frames) witness?
 
 /-- Enforce decoded Ixon v5 `Definition.asserts` from `KernelFront.Reading` on
-a plain-RC `Recheck.RcReplay.Artifact` and its `Recheck.RcReplay.Cert`. -/
+a plain-RC `Recheck.RcReplay.Artifact` and its `Recheck.RcReplay.Cert` (including
+middle-end inline-preservation checks). -/
 def checkRcWithReading (rd : Src.KernelFront.Reading) (art : Recheck.RcReplay.Artifact)
-    (cert : Recheck.RcReplay.Cert) (witness? : Option StackWitness := none) : Except Err Unit :=
-  checkRcArtifact (rd.assertsMap art.front.src) art cert.base.frames witness?
+    (cert : Recheck.RcReplay.Cert) (witness? : Option StackWitness := none) : Except Err Unit := do
+  let asserts := rd.assertsMap art.front.src
+  checkMidNoUnsafeInline asserts art.front.src art.front.lam cert.base.mid
+  checkRcArtifact asserts art cert.base.frames witness?
 
 /-- Run `Recheck.run` and enforce decoded Ixon v5 `Definition.asserts` from `rd`. -/
 def runWithReading (cfg : Config) (P : Src.Program) (rd : Src.KernelFront.Reading)

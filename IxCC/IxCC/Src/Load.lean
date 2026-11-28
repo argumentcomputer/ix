@@ -84,6 +84,7 @@ reading, and the unfolding table. -/
 def prepare (cfg : LoadConfig) (env : V3.Env) (hints : Hints) :
     Except Diag (Program × KernelFront.Kernel × Array Diag × Table.Stats) := do
   let acc ← (KernelFront.accept env).mapError fun r => Diag.of "kernel" r.report
+  let () ← (KernelFront.defaultModeCheck acc).mapError fun r => Diag.of "mode-check" r.report
   let records ← stage "decode" (Ingress.reach env
     (Ingress.Seeds.of hints (KernelFront.pinsOfTable acc.table)))
   let p ← stage "ingress" (Ingress.readConsts env records (hints.roots.map (·.1)))
@@ -141,6 +142,7 @@ def loadEnvAuto (cfg : LoadConfig) (env : V3.Env)
     (roots : Array (Ixon.Address × Option String))
     (oracle : RelOracle := kernelOracle) : Except Diag Loaded := do
   let acc ← (KernelFront.accept env).mapError fun r => Diag.of "kernel" r.report
+  let () ← (KernelFront.defaultModeCheck acc).mapError fun r => Diag.of "mode-check" r.report
   let pins := KernelFront.pinsOfTable acc.table
   let proposals := AutoHints.discover env pins
   let hints : Hints := { roots, proposals }

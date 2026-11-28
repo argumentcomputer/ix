@@ -61,7 +61,10 @@ def allocFunc (env : Xl.Env) (fi : Nat) (f : Func Lir.VReg) (chaos : Chaos) :
   | .ok o =>
       match Validate.func env fi f o with
       | .ok () => pure (o, .scan)
-      | .error _ => tryLinearScan
+      | .error e =>
+          -- Record IRC validation failure instead of silently swallowing it into `.scan`
+          let (o', _) ← tryLinearScan
+          pure (o', .rejected e)
 
 /-- Allocate every function with linear scan + all-slots fallback (for A/B comparison). -/
 def runLinearScan (env : Xl.Env) (p : VProgram) (chaos : Chaos := {}) : Except String Result := do

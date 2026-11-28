@@ -75,6 +75,9 @@ structure Budgets where
   rounds : Nat := 8
   /-- Global keys withheld from inlining (e.g. DR3 pinned native `Array`/`ByteArray` ops). -/
   noInline : List Key.GKey := []
+  /-- Originating `Src.CId`s withheld from cross-origin inlining (e.g. definitions carrying
+  non-default Ixon v5 `DefAsserts`). -/
+  noInlineOrigins : Src.NatSet := .leaf
   deriving Repr, Inhabited
 
 /-- Globals on a cycle of the reference graph: those with a reference to
@@ -171,6 +174,41 @@ def baseInlineKey : Key.GKey → Key.GKey
 def isNoInlineKey (noInline : List Key.GKey) (k : Key.GKey) : Bool :=
   noInline.contains k || noInline.contains (baseInlineKey k)
 
+/-- Originating `Src.CId` of a global key (matching `Recheck.DefAsserts.gkeyOrigin?`). -/
+def keyOrigin? : Key.GKey → Option Src.CId
+  | .const c _ => some c
+  | .byName c _ => some c
+  | .recStar r _ => some r
+  | .wrapper (.ctor c) _ | .wrapper (.quotMk c) _ | .wrapper (.quotLift c) _
+  | .wrapper (.recr c) _ | .wrapper (.cases c) _ => some c
+  | .wrapper _ _ => none
+  | .spec g _ => keyOrigin? g
+  | .worker g _ => keyOrigin? g
+  | .lam g _ => keyOrigin? g
+  | .dispatch _ => none
+  | .entry g _ => keyOrigin? g
+
+/-- Whether `k`'s originating `Src.CId` is in `origins`. -/
+def isNoInlineOrigin (origins : Src.NatSet) (k : Key.GKey) : Bool :=
+  match keyOrigin? k with
+  | some c => origins.contains c
+  | none => false
+
+/-- Whether `callerKey` may inline `calleeKey` under `B`: never inlines keys listed in
+`B.noInline`, and never inlines a callee whose originating constant is in `B.noInlineOrigins`
+into a caller from a different originating constant. -/
+def inlineAllowedFor (B : Budgets) (callerKey calleeKey : Key.GKey) : Bool :=
+  !isNoInlineKey B.noInline calleeKey &&
+  (!isNoInlineOrigin B.noInlineOrigins calleeKey || keyOrigin? callerKey == keyOrigin? calleeKey)
+
+/-- Expand `B.noInline` with every global key in `P` whose originating constant is in
+`B.noInlineOrigins` (for post-P8 helpers taking `noInline : List Key.GKey`). -/
+def expandNoInline (B : Budgets) (P : Program) : List Key.GKey :=
+  if B.noInlineOrigins.toList.isEmpty then B.noInline
+  else
+    B.noInline ++ P.globalList.filterMap fun (_, gd) =>
+      if isNoInlineOrigin B.noInlineOrigins gd.key then some gd.key else none
+
 /-- Whether the default oracle inlines `g`. -/
 def inlinable (B : Budgets) (recs : Std.HashSet GlobalId) (gd : GDef) (g : GlobalId) : Bool :=
   !isNoInlineKey B.noInline gd.key &&
@@ -197,7 +235,8 @@ def produce (B : Budgets) (P : Program) : Round :=
       g != f && (match P.global? g with
         | some gd' =>
           -- a function `glob` is a closure, not a site: only calls and CAFs
-          inl.getD g false && (gd'.ps.isEmpty || sites.contains g)
+          inl.getD g false && inlineAllowedFor B gd.key gd'.key &&
+            (gd'.ps.isEmpty || sites.contains g)
         | none => false)
     -- at most the callees a certificate may list per caller (`checkCert`)
     if cs.isEmpty then none else some (f, cs.take maxCertCallees)
@@ -362,7 +401,7 @@ def produceClosureRound (B : Budgets) (P : Program) : Round :=
         if seen.contains g then (seen, acc) else (Src.NatSet.insert seen g, g :: acc)).2.reverse
     let cs := cs.filter fun g =>
       g != f && !recs.contains g && (match P.global? g with
-        | some gd' => !isNoInlineKey B.noInline gd'.key
+        | some gd' => inlineAllowedFor B gd.key gd'.key
         | none => false)
     if cs.isEmpty then none else some (f, cs.take maxCertCallees)
 

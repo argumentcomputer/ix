@@ -1,4 +1,6 @@
 import IxCC.Recheck.DefAsserts
+import IxCC.Compile
+import IxCC.Cli
 import IxCC.Recheck.Proof.LiveClosed
 import IxCC.X86.Exe.Machine.Proof.Loaded
 import IxCCTests.Exe.Run
@@ -465,6 +467,132 @@ def partEM0 (a : Assert) : IO Unit := do
     expect a (!(DefAsserts.checkRcArtifact (NatMap.empty.insert rcOrigin noRcNoAlloc)
         rcArt rcCert.base.frames none).isOk)
       "EM-0: plain-RC Resource.heapList rejected for @[no_alloc]"
+    -- L-10: ctxOfRcArtifact explicitly includes Track A4 isUnique + reset/reuse wrappers
+    let rcCtx := DefAsserts.ctxOfRcArtifact rcArt rcCert.base.frames
+    let lay := rcArt.front.layout
+    expect a (rcCtx.rcProcs.contains lay.isUniqueProc)
+      "L-10: ctxOfRcArtifact rcProcs includes isUniqueProc"
+    for i in List.range lay.ctors.length do
+      expect a (rcCtx.rcProcs.contains (lay.resetWrapper i) &&
+          rcCtx.rcProcs.contains (lay.resetUWrapper i) &&
+          rcCtx.rcProcs.contains (lay.reuseWrapper i) &&
+          rcCtx.rcProcs.contains (lay.reuseUWrapper i))
+        s!"L-10: ctxOfRcArtifact rcProcs includes reset/reuse wrappers for ctor {i}"
+      expect a (rcCtx.allocProcs.contains (lay.reuseWrapper i) &&
+          rcCtx.allocProcs.contains (lay.reuseUWrapper i))
+        s!"L-10: ctxOfRcArtifact allocProcs includes reuse wrappers for ctor {i}"
+    -- H-8: `@[no_rc]` under `--rc auto` MUST fail closed (`assert.no_rc`), NEVER fall back to immortal!
+    let patchReading (inp : Recheck.Input) (cid : CId) (da : _root_.Ixon.DefAsserts) : Recheck.Input :=
+      let rd := inp.kernel.rd
+      let sources' := rd.sources.modify cid fun rs =>
+        let info' := match rs.constant.info with
+          | .defn d => .defn { d with asserts := da }
+          | .muts ms =>
+            match inp.program.cref cid with
+            | .member _ idx =>
+              .muts (ms.modify idx fun
+                | .defn d => .defn { d with asserts := da }
+                | m => m)
+            | _ => .muts ms
+          | other => other
+        { rs with constant := { rs.constant with info := info' } }
+      { inp with kernel := { inp.kernel with rd := { rd with sources := sources' } } }
+    let rcInpNoRc := patchReading rcInp rcOrigin noRcOnly
+    let rcCfgFor := rcCfg.forInput rcInpNoRc
+    match Recheck.RcReplay.produceAuto rcCfg rcInpNoRc with
+    | .error e =>
+      expect a (e.code == "assert.no_rc")
+        s!"H-8: produceAuto fails closed with assert.no_rc (got {e.code}: {e.message})"
+    | .ok _ => expect a false "H-8: produceAuto bypassed @[no_rc] via immortal fallback!"
+    match Recheck.RcReplay.produceFir rcCfgFor rcInpNoRc with
+    | .error e => expect a false s!"H-8: produceFir failed unexpectedly: {e.render}"
+    | .ok front =>
+      match Compile.certifyAuto rcCfgFor rcInpNoRc front with
+      | .error e =>
+        expect a (e.code == "assert.no_rc")
+          s!"H-8: Compile.certifyAuto fails closed with assert.no_rc (got {e.code}: {e.message})"
+      | .ok _ => expect a false "H-8: Compile.certifyAuto bypassed @[no_rc] via immortal fallback!"
+    match Cli.produceText .auto rcCfgFor rcInpNoRc with
+    | .error e =>
+      expect a (e.code == "assert.no_rc")
+        s!"H-8: Cli.produceText .auto fails closed with assert.no_rc (got {e.code}: {e.message})"
+      | .ok _ => expect a false "H-8: Cli.produceText .auto bypassed @[no_rc] via immortal fallback!"
+  -- H-7: Small `@[no_alloc]` allocating helper called from unannotated `main`
+  -- must NOT be silently bypassed by ANF inlining + pruning (both producer & trusted recheck)!
+  let pairCtorKey : Key.CtorKey := .src 99
+  let lamWithHelper : Lam.Program :=
+    { globals := (NatMap.leaf.insert 0
+        { key := .const 10 []
+          body := .app (.glob 1) (.lit (.nat 1)) .strict })
+        |>.insert 1
+        { key := .const 11 []
+          body := .lam .strict .many (.con pairCtorKey [.var 0, .var 0]) }
+      size := 2
+      roots := [0]
+      ctors := [{ key := pairCtorKey, tag := 0, arity := 2 }]
+      known := default }
+  let helperAsserts : NatMap _root_.Ixon.DefAsserts := NatMap.empty.insert 11 noRcNoAlloc
+  let synSrc : Src.Program :=
+    { consts := (NatMap.leaf.insert 10
+        { ref := .member default 0, addr := default
+          decl := .defn .defn .safe 0 (.sort .zero) (.natLit 0) })
+        |>.insert 11
+        { ref := .member default 1, addr := default
+          decl := .defn .defn .safe 0 (.pi default (.sort .zero) (.sort .zero)) (.natLit 0) }
+      size := 12
+      roots := [(default, 10)] }
+  -- H-7a: Producer with `noInlineOrigins` preserves `bad` (origin 11), and `DefAsserts.check` rejects it
+  let prodBudgets : Anf.Pipeline.Budgets :=
+    { inline := { noInlineOrigins := NatSet.ofList [11] } }
+  match Anf.Pipeline.produce prodBudgets lamWithHelper with
+  | .error e => expect a false s!"H-7a: Anf.Pipeline.produce failed: {e}"
+  | .ok tr =>
+    let anfGood := (tr.stages.getLast?.map (·.2)).getD default
+    match IxCC.Fir.lower anfGood with
+    | .error e => expect a false s!"H-7a: Fir.lower failed: {e.render}"
+    | .ok firGood =>
+      let cfgGood := Cfg.lower (Own.immortal firGood)
+      match Rt.lower { names := ["main"] } cfgGood with
+      | .error e => expect a false s!"H-7a: Rt.lower failed: {e.render}"
+      | .ok loGood =>
+        let hasHelper := cfgGood.funList.any fun (_, fd) => DefAsserts.gkeyOrigin? fd.key == some 11
+        expect a hasHelper "H-7a: producer with noInlineOrigins kept @[no_alloc] helper in Cfg"
+        let framesGood := (List.range loGood.program.funcs.size).map fun _ => leafFrame
+        let ctxGood : DefAsserts.CheckCtx :=
+          { cfg := cfgGood, lir := loGood.program, frames := framesGood, lam := some lamWithHelper }
+        match DefAsserts.check ctxGood helperAsserts none with
+        | .error e =>
+          expect a (e.code == "assert.no_alloc")
+            s!"H-7a: preserved allocating helper rejected with assert.no_alloc (got {e.code})"
+        | .ok () => expect a false "H-7a: allocating @[no_alloc] helper was wrongly accepted!"
+  -- H-7b: Adversarial cert that DOES inline + prune `bad` into unannotated `main` is rejected
+  -- by BOTH Defense 1 (`check`: `assert.erased`) AND Defense 2 (`checkMidNoUnsafeInline`: `assert.inline`)!
+  match Anf.Pipeline.produce {} lamWithHelper with
+  | .error e => expect a false s!"H-7b: adversarial produce failed: {e}"
+  | .ok trAdv =>
+    let anfAdv := (trAdv.stages.getLast?.map (·.2)).getD default
+    match IxCC.Fir.lower anfAdv with
+    | .error e => expect a false s!"H-7b: Fir.lower failed: {e.render}"
+    | .ok firAdv =>
+      let cfgAdv := Cfg.lower (Own.immortal firAdv)
+      let helperErased := !(cfgAdv.funList.any fun (_, fd) => DefAsserts.gkeyOrigin? fd.key == some 11)
+      expect a helperErased "H-7b: adversarial cert without noInlineOrigins erased helper from Cfg"
+      match Rt.lower { names := ["main"] } cfgAdv with
+      | .error e => expect a false s!"H-7b: Rt.lower failed: {e.render}"
+      | .ok loAdv =>
+        let framesAdv := (List.range loAdv.program.funcs.size).map fun _ => leafFrame
+        let ctxAdv : DefAsserts.CheckCtx :=
+          { cfg := cfgAdv, lir := loAdv.program, frames := framesAdv, lam := some lamWithHelper }
+        match DefAsserts.check ctxAdv helperAsserts none with
+        | .error e =>
+          expect a (e.code == "assert.erased")
+            s!"H-7b: Defense 1 rejects erased annotated helper with assert.erased (got {e.code})"
+        | .ok () => expect a false "H-7b: Defense 1 missed erased @[no_alloc] helper!"
+        match DefAsserts.checkMidNoUnsafeInline helperAsserts synSrc lamWithHelper trAdv.cert with
+        | .error e =>
+          expect a (e.code == "assert.inline")
+            s!"H-7b: Defense 2 rejects unsafe cross-origin inline with assert.inline (got {e.code})"
+        | .ok () => expect a false "H-7b: Defense 2 missed unsafe cross-origin inline!"
   -- Ixon v5 `Definition.asserts` propagation via `defAssertsOf`
   let v5Def : _root_.Ixon.Definition :=
     { kind := .defn, safety := .safe, asserts := allThree, lvls := 0,

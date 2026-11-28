@@ -352,7 +352,8 @@ def produceFir (cfg : Config) (inp : Recheck.Input) : Except Err ProducedFir := 
       let d := diags[0]?.getD (Src.Diag.of "admit" "rejected")
       throw { Err.ofDiag .admit d with message := "; ".intercalate (diags.toList.map fun d => (splitCode d.render).2) }
   let (lam, _) ← (Lam.erase src checked).mapError Err.ofErase
-  let trace ← (Anf.Pipeline.produce cfg.budgets lam).mapError fun m =>
+  let budgets := Recheck.withAssertedNoInline inp.kernel.rd src cfg.budgets
+  let trace ← (Anf.Pipeline.produce budgets lam).mapError fun m =>
     { stage := .anf, code := "anf.produce", message := m }
   -- the closures step, as the replays run it (`Recheck.anfOf`)
   let (anf, stages) ← Recheck.produceClosures src trace
@@ -574,6 +575,8 @@ def produceAuto (cfg : Config) (input : Recheck.Input) : Except Err AutoCompiled
     match producePlain cfg input front with
     | .ok (p, artifact) => return .plainRc p.cert artifact p.alloc
     | .error reason =>
+      if reason.code.startsWith "assert." then
+        throw reason
       let (p, artifact) ← produceImmortal cfg input front
       return .immortal p.cert artifact p.alloc reason
 

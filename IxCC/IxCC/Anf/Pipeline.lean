@@ -161,13 +161,13 @@ private def callSiteCounts (P : Program) : Src.NatMap Nat :=
 /-- Post-P5 inline oracle: inlines non-recursive, non-dispatcher callees that are
 single-call-site helpers (≤ 512 nodes, zero code duplication) or small bodies
 ignoring `tick` inflation (≤ 160 non-tick nodes). -/
-private def producePostExtraRound (P : Program) (noInline : List Key.GKey) : Inline.Round :=
+private def producePostExtraRound (P : Program) (B : Inline.Budgets) : Inline.Round :=
   let recs := Inline.directRecursive P
   let counts := callSiteCounts P
   let inl : Src.NatMap Bool :=
     Src.NatMap.ofList (P.globalList.map fun (g, gd) =>
       let ok :=
-        !Inline.isNoInlineKey noInline gd.key &&
+        !Inline.isNoInlineKey B.noInline gd.key &&
         !Walk.isDispatchKey gd.key &&
         !recs.contains g &&
         (gd.ps.isEmpty ||
@@ -185,7 +185,9 @@ private def producePostExtraRound (P : Program) (noInline : List Key.GKey) : Inl
         fun (seen, acc) g => if seen.contains g then (seen, acc) else (Src.NatSet.insert seen g, g :: acc)).2.reverse
       let cs := refs.filter fun g =>
         g != f && (match P.global? g with
-          | some gd' => inl.getD g false && (gd'.ps.isEmpty || sites.contains g)
+          | some gd' =>
+            inl.getD g false && Inline.inlineAllowedFor B gd.key gd'.key &&
+              (gd'.ps.isEmpty || sites.contains g)
           | none => false)
       if cs.isEmpty then none else some (f, cs.take Inline.maxCertCallees)
 
@@ -195,7 +197,7 @@ private def refinePostExtraLoop (B : Budgets) :
   | rem + 1, P, revSteps =>
     if revSteps.length + 3 > maxPostSteps then (P, revSteps)
     else
-      let r := producePostExtraRound P B.inline.noInline
+      let r := producePostExtraRound P B.inline
       if r.isEmpty || !Inline.checkCert r then (P, revSteps)
       else
         let res :=
@@ -359,12 +361,14 @@ def produceOnce (B : Budgets := {}) (L : Lam.Program) : Except String Trace := d
     if firstOrder P then (none, none)
     else match defun P with
       | .ok Q8 =>
+        let postNoInline := Inline.expandNoInline B.inline Q8
         let (pc0, Qout0) := producePostBy B.shrink.params
           (fun Q => match Shrink.produce B.shrink Q with
             | .ok (c, Q', _) => .ok (c, Q')
             | .error e => .error e)
-          P.size Q8 B.inline.noInline
-        let (pc, Qout) := refinePostExtra B pc0 Qout0
+          P.size Q8 postNoInline
+        let (pc, Qout) := refinePostExtra
+          { B with inline := { B.inline with noInline := postNoInline } } pc0 Qout0
         (some pc, some Qout)
       | .error _ => (none, none)
   return { cert := { shrink := B.shrink.params, steps := steps.toList, post }
