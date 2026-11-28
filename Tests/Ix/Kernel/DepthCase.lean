@@ -515,6 +515,63 @@ def runOne (name : String) (n : Nat) : IO String := do
   | "wide" => timed do
     let rs := wide n
     IO.lazyPure fun _ => entryVerdict (_root_.Ixon.Authenticated.checkBytes binding limits rs [] hint)
+  | "tagn0-values" => timed do
+    -- H-9 regression: large TagN0 lists must decode in constant native stack on 2 MiB,
+    -- and `getBinderNode` must reject oversized counts upfront via `checkCount`.
+    let refBytes := _root_.Ixon.serExpr (.ref 0 (Array.replicate n 0))
+    let refOk ← IO.lazyPure fun _ =>
+      match _root_.Ixon.deExpr refBytes with
+      | .ok (.ref 0 us) => us.size == n
+      | _ => false
+    unless refOk do return "failed: deExpr ref"
+    let binderBytes := _root_.Ixon.runPut (_root_.Ixon.putBinderNode (.ifAllZero (Array.replicate n 0) {}))
+    let binderOk ← IO.lazyPure fun _ =>
+      match _root_.Ixon.runGet _root_.Ixon.getBinderNode binderBytes with
+      | .ok (.ifAllZero ps _) => ps.size == n
+      | _ => false
+    unless binderOk do return "failed: getBinderNode large"
+    let forged := _root_.Ixon.runPut do
+      _root_.Ixon.putU8 (_root_.Ixon.binderNodeByte 2 {})
+      _root_.Ixon.putTagN 0 0 10000000
+      _root_.Ixon.putU8 0
+      _root_.Ixon.putU8 0
+    let forgedOk ← IO.lazyPure fun _ =>
+      match _root_.Ixon.runGet _root_.Ixon.getBinderNode forged with
+      | .error e => e == "count exceeds remaining bytes"
+      | .ok _ => false
+    unless forgedOk do return "failed: getBinderNode forged count"
+    return "decoded ok"
+  | "lazy-depth" => timed do
+    -- H-10 regression: a raw record nested `n` deep (> loadMaxDepth) must be rejected
+    -- by `LazyConstant.get`, `LazyConstant.getWithin?`, and `Env.checkDepthWithin` on a
+    -- 2 MiB stack without invoking the recursive decoder.
+    let deepBytes := _root_.Ixon.runPut do
+      _root_.Ixon.putTagN 4 _root_.Ixon.Constant.FLAG 0 -- defn
+      _root_.Ixon.putU8 0 -- kind=defn, safety=safe, asserts={}
+      _root_.Ixon.putTagN 0 0 0 -- lvls
+      _root_.Ixon.putTagN 4 _root_.Ixon.Expr.FLAG_SORT 0 -- typ
+      for _ in [0:n] do
+        _root_.Ixon.putTagN 4 _root_.Ixon.Expr.FLAG_PRJ 0
+        _root_.Ixon.putTagN 0 0 0
+      _root_.Ixon.putTagN 4 _root_.Ixon.Expr.FLAG_SORT 0 -- leaf
+      _root_.Ixon.putTagN 0 0 0 -- sharing
+      _root_.Ixon.putTagN 0 0 0 -- refs
+      _root_.Ixon.putTagN 0 0 0 -- univs
+      _root_.Ixon.putTagN 0 0 0 -- binders
+    let lc := _root_.Ixon.LazyConstant.ofSlice deepBytes 0 deepBytes.size
+    let addr := Address.admissionHash deepBytes
+    let env : _root_.Ixon.Env := { consts := ({} : Std.HashMap Address _root_.Ixon.LazyConstant).insert addr lc }
+    let getRejected ← IO.lazyPure fun _ =>
+      match lc.get with
+      | .error e => _root_.Ixon.isDepthLimitError e
+      | .ok _ => false
+    let getWithinNone ← IO.lazyPure fun _ => (lc.getWithin? _root_.Ixon.loadMaxDepth).isNone
+    let envRejected ← IO.lazyPure fun _ =>
+      match env.checkDepthWithin _root_.Ixon.loadMaxDepth with
+      | .error e => _root_.Ixon.isDepthLimitError e
+      | .ok () => false
+    if getRejected && getWithinNone && envRejected then return "depth rejected"
+    else return s!"failed: get={getRejected} within={getWithinNone} env={envRejected}"
   | "bounds" => boundsCase
   | "wide-w0" | "wide-w1" | "wide-w4" => timed do
     -- phase B on at most 0 (the calling thread), 1 or 4 tasks: the verdict of `wide`

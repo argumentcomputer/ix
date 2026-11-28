@@ -59,6 +59,8 @@ def cases : List (String × Nat × String) :=
    ("delta", 150000, "declined"),
    ("iota", 100000, "accepted"),
    ("wide", 200000, "accepted"),
+   ("tagn0-values", 200000, "decoded ok"),
+   ("lazy-depth", 16385, "depth rejected"),
    ("bounds", 0, "bounds hold"),
    ("wide-w0", 20000, "accepted"),
    ("wide-w1", 20000, "accepted"),

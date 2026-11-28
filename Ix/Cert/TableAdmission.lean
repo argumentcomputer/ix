@@ -829,20 +829,34 @@ def candidate (t : RoleTable) (E : Ixon.Env) (idx : Reader.RecIndex) :
   let wit := (discover t E idx (seedList t)).toList
   (wit, (topo E idx (wit.map (·.1))).toList)
 
+/-- Every pinned role (`Role.pinnedToReference`) bound by `t` agrees with the
+committed default role table (`Admission.admitPinnedRoles .committed`). -/
+def pinnedRolesOk (t : RoleTable) : Bool :=
+  (Admission.admitPinnedRoles .committed t).isOk
+
+/-- Every uncached constant in `E` nests within `admissionLimits.maxDepth`
+(`Ix.Kernel.Admission.Depth.within`) before any eager constant decoding runs. -/
+def depthsOk (E : Ixon.Env) : Bool :=
+  E.consts.fold (init := true) fun ok _ lc =>
+    ok && lc.withinDepth admissionLimits.maxDepth
+
 /-- **The kernel's admission of the role table `b` over the records of `E`**,
-decided: `b` admits, and the strict fold accepts, behind the committed prelude,
-the closure in `E` of the constants the table binds (but for the compiler-trust
-roles) and of the theorems its evidence names, with the role specifications
-(`BindingSpecs`). `true` establishes `TableAdmitted` for every view holding `E`
-(`tableAdmitted_of_check`). The records must be in `E`, recursor records
-included. -/
+decided: `b` admits, binds literal support and pinned roles compatibly with the
+committed default table, every record in `E` nests within `admissionLimits.maxDepth`,
+and the strict fold accepts, behind the committed prelude, the closure in `E` of the
+constants the table binds (but for the compiler-trust roles) and of the theorems its
+evidence names, with the role specifications (`BindingSpecs`). `true` establishes
+`TableAdmitted` for every view holding `E` (`tableAdmitted_of_check`). The records
+must be in `E`, recursor records included. -/
 def check (b : Binding) (E : Ixon.Env) : Bool :=
   match Admission.admitBinding Address.admissionHash b with
   | .error _ => false
   | .ok t =>
-    let idx := artifactRecIndex E
-    let c := candidate t E idx
-    checkAt b E t idx c.1 c.2
+    if !literalSupportOk t || !pinnedRolesOk t || !depthsOk E then false
+    else
+      let idx := artifactRecIndex E
+      let c := candidate t E idx
+      checkAt b E t idx c.1 c.2
 
 /-- **A passing check establishes the table's admission** for every view holding
 the records, through the fold's refinement (the set theory is a hypothesis of
@@ -854,7 +868,9 @@ theorem tableAdmitted_of_check (W : Type w) [SetTheory W] {b : Binding} {E : Ixo
   split at h
   · exact absurd h Bool.false_ne_true
   · rename_i t ht
-    exact checkAt_sound (wit := (candidate t E (artifactRecIndex E)).1)
-      (order := (candidate t E (artifactRecIndex E)).2) W ht rfl h V hV
+    split at h
+    · exact absurd h Bool.false_ne_true
+    · exact checkAt_sound (wit := (candidate t E (artifactRecIndex E)).1)
+        (order := (candidate t E (artifactRecIndex E)).2) W ht rfl h V hV
 
 end Ix.Cert.TableAdmission

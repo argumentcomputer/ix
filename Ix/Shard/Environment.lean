@@ -53,7 +53,7 @@ def ownedConstsPer (ixonEnv : Ixon.Env) (lists : Array (Array Address))
     (init := (Array.replicate lists.size (#[] : Array (Address × Address)),
       ({} : Std.HashSet Address)))
     fun (owned, aside) addr lc =>
-      match lc.get? with
+      match lc.getWithin? Ixon.loadMaxDepth with
       | none => (owned, aside)
       | some c =>
         let aside := if c.outsideLogic then aside.insert addr else aside
@@ -79,7 +79,7 @@ def partitionOwned (ixonEnv : Ixon.Env) (owned : Array Address)
     (parts : Array (Array Address)) : Array (Array Address) :=
   let blockTo := blockIndexOf parts
   owned.foldl (init := Array.replicate parts.size #[]) fun acc a =>
-    match (ixonEnv.consts.get? a).bind (·.get?) with
+    match (ixonEnv.consts.get? a).bind (·.getWithin? Ixon.loadMaxDepth) with
     | none => acc
     | some c =>
       match blockTo.get? (blockAddrOf a c) with
@@ -151,7 +151,10 @@ def loadEnvAndShards (manifestPath ixePath : String) :
   | .error e => return .error s!"manifest parse failed: {e}"
   | .ok shards => match Ixon.deEnvAnon (← IO.FS.readBinFile ixePath) with
     | .error e => return .error s!"deserialize {ixePath} failed: {e}"
-    | .ok env => return .ok (env, shards)
+    | .ok env =>
+      match env.checkDepthWithin Ixon.loadMaxDepth with
+      | .error e => return .error s!"{ixePath}: {e}"
+      | .ok () => return .ok (env, shards)
 
 /-- Coverage check over already-loaded env + shards: every constant in Lean's
     logic has its check-schedule block owned by **exactly one** shard. That is
@@ -192,7 +195,7 @@ def coveredOwnersWithGraph (ixonEnv : Ixon.Env) (shards : Array (Array Address))
         let mut unparsed : Nat := 0
         for i in [lo:hi] do
           let (addr, lc) := entries[i]!
-          let some c := lc.get? | unparsed := unparsed + 1; continue
+          let some c := lc.getWithin? Ixon.loadMaxDepth | unparsed := unparsed + 1; continue
           if c.outsideLogic then aside := aside.push addr
           blockOf := blockOf.push (addr, blockAddrOf addr c)
           let wes := IxVM.ClaimHarness.walkEdges c

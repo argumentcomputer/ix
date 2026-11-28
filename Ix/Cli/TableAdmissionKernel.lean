@@ -30,6 +30,12 @@ def explain (b : Admission.Binding) (E : Ixon.Env) : String :=
       "the table binds String without the rest of a string literal's support \
         (String.ofList, List and its constructors, Char, Char.ofNat)"
     else
+    match Admission.admitPinnedRoles .committed t with
+    | .error e => s!"a pinned role is not bound to the committed default role table: {e}"
+    | .ok () =>
+    if !depthsOk E then
+      s!"a record in the environment nests past the depth limit ({admissionLimits.maxDepth} levels)"
+    else
     match seeds.find? (!E.consts.contains ·) with
     | some a =>
       s!"the environment lacks {a}, which the table binds or its evidence names"
