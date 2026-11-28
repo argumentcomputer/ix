@@ -100,8 +100,9 @@ module CompressFinalNarrow {
     let (policy_bytes,policy_length)=KzgIO::sized_channel(4);
     assert_eq!(Blake3::pack_digest(KzgBlake3::hash_input(policy_bytes,policy_length)),policy_digest,"compression policy digest mismatch");
     let policy=KzgPackedDeserialize::chain_policy(policy_bytes);
-    let KzgDeserialize::Policy::Mk(anchors,_gl_key,_gl_entry,_bn_key,_bn_entry)=policy;
+    let KzgDeserialize::Policy::Mk(anchors,_gl_key,_gl_entry,bn_key,_bn_entry)=policy;
     let key_digest=key_digest();
+    assert_eq!(key_digest,bn_key,"unauthorized narrow compression predecessor key");
     let key=KzgPackedTerminal::key();
     let KzgPackedDeserialize::Key::Mk(_seed,_max_log,_budget,_generator,key_anchors,_circuits,_fixed)=key;
     KzgIO::equal_bytes(anchors,key_anchors);

@@ -7639,6 +7639,8 @@ theorem verifyAccumulatorV1_sound {c : CurveParams} {cfg : FinalConfig} {key : P
   set pp := readChainPolicy policyBytes
   by_cases h3 : (pp.ok == 0) = true; · simp [h3] at h
   simp only [h3, Bool.false_eq_true, ↓reduceIte] at h ⊢
+  by_cases h3b : (digestWordsEq cfg.keyDigest pp.policy.bnDigest == 0) = true; · simp [h3b] at h
+  simp only [h3b, Bool.false_eq_true, ↓reduceIte] at h ⊢
   by_cases h4 : (byteListEq pp.policy.anchors key.anchors == 0) = true; · simp [h4] at h
   simp only [h4, Bool.false_eq_true, ↓reduceIte] at h ⊢
   by_cases h5 : (byteListEq pp.policy.anchors cfg.expectedAnchors == 0) = true; · simp [h5] at h
@@ -7727,6 +7729,33 @@ theorem verifyAccumulatorV1_sound {c : CurveParams} {cfg : FinalConfig} {key : P
     exact h01.resolve_left (fun h0 => h11 (beq_iff_eq.mpr h0))
   exact ⟨hlowLt, hhighLt, hunpack, hstageGe, hpolHash, hppOk, hancK, hancE, hpcOk,
     hpAV, hpBV, hprOk, hvrOk, hfdOk, trivial, trivial⟩
+
+/-- **Stage-2 Terminal `CompressFinalNarrow.verifyAccumulatorV1` Predecessor-Key Policy Binding
+(`verifyAccumulatorV1_bnDigest_eq`):**
+Whenever `(verifyAccumulatorV1 c cfg key stmtLow stmtHigh policyBytes claimsBytes proofBytes).ok = 1`,
+the verified predecessor key digest `cfg.keyDigest` equals the authorized `bnDigest` carried in the
+authenticated chain policy `readChainPolicy policyBytes` (matching `CompressFinalNarrow.lean`'s
+`assert_eq!(key_digest, bn_key)` check). -/
+theorem verifyAccumulatorV1_bnDigest_eq {c : CurveParams} {cfg : FinalConfig} {key : PackedKey}
+    {stmtLow stmtHigh : Nat} {policyBytes claimsBytes proofBytes : ByteList}
+    (h : (verifyAccumulatorV1 c cfg key stmtLow stmtHigh policyBytes claimsBytes proofBytes).ok = 1) :
+    cfg.keyDigest = (readChainPolicy policyBytes).policy.bnDigest := by
+  have hdEq01 : ∀ a b, digestWordsEq a b = 0 ∨ digestWordsEq a b = 1 := by
+    intro a b; unfold digestWordsEq; split_ifs <;> simp
+  unfold verifyAccumulatorV1 at h
+  dsimp only at h
+  by_cases h1 : ((statementFromLimbs stmtLow stmtHigh).1 == 0 || decide (cfg.stage < 2)) = true
+  · simp only [h1, ↓reduceIte] at h; exact absurd h (by decide)
+  simp only [h1, Bool.false_eq_true, ↓reduceIte] at h
+  by_cases h2 : (digestWordsEq (blake3HashWords policyBytes) cfg.policyDigest == 0) = true
+  · simp [h2] at h
+  simp only [h2, Bool.false_eq_true, ↓reduceIte] at h
+  by_cases h3 : ((readChainPolicy policyBytes).ok == 0) = true
+  · simp [h3] at h
+  simp only [h3, Bool.false_eq_true, ↓reduceIte] at h
+  by_cases h3b : (digestWordsEq cfg.keyDigest (readChainPolicy policyBytes).policy.bnDigest == 0) = true
+  · simp [h3b] at h
+  exact (digestWordsEq_eq_one_iff _ _).mp ((hdEq01 _ _).resolve_left (fun h0 => h3b (beq_iff_eq.mpr h0)))
 
 /-- **Two-Stage BN254 `KzgPackedPure` → `Ix.Cert.AiurCompression.DeferredFold` Headline Theorem
 (`twoStage_kzgPacked_deferred_fold_sound_bn254`):**
@@ -8628,6 +8657,8 @@ section AxiomFences
 #guard_msgs (whitespace := lax) in #print axioms stepV1_sound
 /-- info: 'IxCCAiur.Compression.KzgPairingSpec.verifyAccumulatorV1_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms verifyAccumulatorV1_sound
+/-- info: 'IxCCAiur.Compression.KzgPairingSpec.verifyAccumulatorV1_bnDigest_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms verifyAccumulatorV1_bnDigest_eq
 /-- info: 'IxCCAiur.Compression.KzgPairingSpec.twoStage_kzgPacked_deferred_fold_sound_bn254' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms twoStage_kzgPacked_deferred_fold_sound_bn254
 /-- info: 'IxCCAiur.Compression.KzgPairingSpec.twoStage_kzgPacked_deferred_fold_sound_bls12381' depends on axioms: [propext, Classical.choice, Quot.sound] -/

@@ -1,11 +1,13 @@
 name = "ix-cc-aiur"
-defaultTargets = ["IxCCAiur"]
+defaultTargets = ["IxCCAiur", "IxCCAiurCompression", "IxCCAiurExamples"]
 # The lowering from the compiler's first-order IR (`IxCC.Fir`) to Formal Aiur,
 # with its backward simulation. It is a package of its own because it needs
 # both sides: `ix-cc` (which must not depend on Mathlib) and `aiur` (which
 # does). Nothing in `IxCC` or in the root package imports it.
 # `IxCCAiur.Fib` imports one generated artifact of `ix-cc`'s test library
-# (`IxCCTests.Recheck.Artifacts.Fib`, the K1 `fib` closure as Lean terms).
+# (`IxCCTests.Recheck.Artifacts.Fib`, the K1 `fib` closure as Lean terms), and
+# `IxCCAiurCompression` / `IxCCAiurExamples` import `Ix.Compile.CircuitContract`,
+# `Ix.Aiur.Parameters`, and `Ix.Cert.*` from the root `ix` package.
 #
 # Shares the root package's packages directory, so the Mathlib and Blake3
 # checkouts and builds that the root package (through `aiur`) uses serve this
@@ -22,8 +24,29 @@ path = "../IxCC"
 name = "aiur"
 path = "../Aiur"
 
+[[require]]
+name = "ix"
+path = ".."
+
+# Warnings in this package's own modules are errors (matching `Models/KernelBridge`).
+# `lake build --wfail` would also fail on the deprecation warnings IxCC's modules emit today.
 [[lean_lib]]
 name = "IxCCAiur"
+leanOptions = { warningAsError = true }
+
+[[lean_lib]]
+name = "IxCCAiurCompression"
+srcDir = ".."
+roots = ["IxCCAiur.Compression"]
+globs = ["IxCCAiur.Compression.+"]
+leanOptions = { warningAsError = true }
+
+[[lean_lib]]
+name = "IxCCAiurExamples"
+srcDir = ".."
+roots = ["IxCCAiur.Examples"]
+globs = ["IxCCAiur.Examples.+"]
+leanOptions = { warningAsError = true }
 
 # The driver: one root of a closure through `Recheck.runFir`, the lowering and
 # Formal Aiur's preparation to an execution package for the Rust host
@@ -31,3 +54,4 @@ name = "IxCCAiur"
 [[lean_exe]]
 name = "ixcc-aiur"
 root = "IxCCAiur.Main"
+leanOptions = { warningAsError = true }

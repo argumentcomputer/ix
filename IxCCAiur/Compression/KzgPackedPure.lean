@@ -1325,6 +1325,7 @@ def verifyAccumulatorV1 (c : CurveParams) (cfg : FinalConfig) (key : PackedKey)
   else
     let pp := readChainPolicy policyBytes
     if pp.ok == 0 then fail
+    else if digestWordsEq cfg.keyDigest pp.policy.bnDigest == 0 then fail
     else if byteListEq pp.policy.anchors key.anchors == 0 then fail
     else if byteListEq pp.policy.anchors cfg.expectedAnchors == 0 then fail
     else
@@ -1797,10 +1798,25 @@ private def mkStage2ClaimRows (policyDigest : DigestWords) (prevStage : Nat)
     (.cons { tag := 8, owner := 100, width := fListLen chunk1 } .nil)
   (.cons row0 (.cons row1 .nil), hdrs)
 
-/-- Build a 2-lookup circuit matching 2 stage-2 claim rows on `N = 2` (`H = {1, -1}`):
+/-- Append `count` main-column `.var 1 0 (colStart + j)` nodes starting at `nextId`. -/
+private def appendMainVarNodes (colStart count nextId : Nat) : NodeList × FList :=
+  match count with
+  | 0 => (.nil, .nil)
+  | n + 1 =>
+    let (restNodes, restIds) := appendMainVarNodes (colStart + 1) n (nextId + 1)
+    (.cons (.var 1 0 colStart) restNodes, .cons nextId restIds)
+
+private def fListConcat (a b : FList) : FList :=
+  match a with
+  | .nil => b
+  | .cons h t => .cons h (fListConcat t b)
+
+/-- Build a 2-lookup circuit matching 2 stage-2 claim rows of widths `(len0, len1)`
+on `N = 2` (`H = {1, -1}`), reading claim fields from constant main columns so the
+key is independent of the claim payload (matching real `CompressNarrowFixed` keys):
 * Row 0 (`X = 1`): `main1 = 1` → lookup 0 has multiplicity `-main1 = -1` matching `row0`,
 * Row 1 (`X = -1`): `1 - main1 = 1` → lookup 1 has multiplicity `-(1 - main1) = -1` matching `row1`! -/
-private def buildRealCircuit2Claims (row0 row1 : FList) : Circuit :=
+private def buildRealCircuit2Claims (len0 len1 : Nat) : Circuit :=
   let baseNodes : NodeList :=
     .cons (.var 1 0 0)         -- 0: main[0]
     (.cons (.var 1 1 0)        -- 1: mainNext[0]
@@ -1814,11 +1830,10 @@ private def buildRealCircuit2Claims (row0 row1 : FList) : Circuit :=
     (.cons (.const 1)          -- 9: 1
     (.cons (.sub 3 9)          -- 10: main[1] - 1 (0 at X=1, -1 at X=-1)
     .nil))))))))))
-  let (ns0, ids0) := appendClaimConstNodes row0 11
-  let nextIdx := 11 + fListLen row0
-  let (ns1, ids1) := appendClaimConstNodes row1 nextIdx
+  let (ns0, ids0) := appendMainVarNodes 2 len0 11
+  let (ns1, ids1) := appendMainVarNodes (2 + len0) len1 (11 + len0)
   let allNodes := nodeListAppend (nodeListAppend baseNodes ns0) ns1
-  { shape := { m0 := 2, m1 := 2, m2 := 2, m3 := 1, m4 := 2, m5 := 1, m6 := 2, m7 := 1 }
+  { shape := { m0 := 2, m1 := 2, m2 := 2, m3 := 1, m4 := 2 + len0 + len1, m5 := 1, m6 := 2, m7 := 1 }
     nodes := allNodes
     roots := .cons 7 .nil
     lookups := .cons { multiplicity := 8, args := ids0 }
@@ -1826,29 +1841,39 @@ private def buildRealCircuit2Claims (row0 row1 : FList) : Circuit :=
     mainNext := 1
     fixedNext := 0 }
 
-/-- Honest prover for `buildRealCircuit2Claims` (stage 2 narrow predecessor with 2 claim chunks!). -/
-private def buildAndProveStage2 (c : CurveParams) (tau : Nat) (anchors : ByteList)
-    (row0 row1 : FList) : PackedKey × ByteList :=
+/-- Build the fixed stage-2 narrow predecessor key for `buildRealCircuit2Claims len0 len1`,
+independent of the claim values so its BLAKE3 digest can be pinned in `ChainPolicy.bnDigest`. -/
+private def buildStage2Key (c : CurveParams) (tau : Nat) (anchors : ByteList)
+    (len0 len1 : Nat) : PackedKey :=
   let p := c.frMod
   let gen := g1Gen c
-  let inv2 := frInv p 2
   let tau2 := frMul p tau tau
-  let circ := buildRealCircuit2Claims row0 row1
+  let circ := buildRealCircuit2Claims len0 len1
   let fixedEvalTau := frAdd p 1 (frMul p 7 (frSub p tau2 1))
   let fixedComm := mkPackedCommitment c (.cons { log := 1, width := 1, hasNext := 0 } .nil)
     (.cons (g1ScalarMul c fixedEvalTau gen) .nil)
   let circuits : CircuitList := .cons circ .nil
   let fixed : PackedFixed := .some fixedComm
   let baseSeed : ByteList := .cons 105 (.cons 120 (.cons 50 .nil)) -- "ix2"
-  let key : PackedKey :=
-    { seed := bindPackedSeed c baseSeed circuits fixed
-      maxLog := 2, budget := 2, generator := gen, anchors
-      circuits, fixed }
+  { seed := bindPackedSeed c baseSeed circuits fixed
+    maxLog := 6, budget := 2, generator := gen, anchors
+    circuits, fixed }
+
+/-- Honest prover for `buildStage2Key` (stage 2 narrow predecessor with 2 claim chunks!). -/
+private def proveStage2Key (c : CurveParams) (tau : Nat) (key : PackedKey)
+    (row0 row1 : FList) : ByteList :=
+  let p := c.frMod
+  let gen := key.generator
+  let inv2 := frInv p 2
   let claims : FListList := .cons row0 (.cons row1 .nil)
-  let main0Tau2 := frSub p (frMul p 11 inv2) (frMul p inv2 tau2)
-  let main1Tau2 := frMul p (frAdd p 1 tau2) inv2
-  let pMainTau := frAdd p main0Tau2 (frMul p tau main1Tau2)
-  let mainComm := mkPackedCommitment c (.cons { log := 1, width := 2, hasNext := 1 } .nil)
+  let claimCols := fListConcat row0 row1
+  let w := 2 + fListLen claimCols
+  let tauW := frPowU32 p tau w
+  let main0TauW := frSub p (frMul p 11 inv2) (frMul p inv2 tauW)
+  let main1TauW := frMul p (frAdd p 1 tauW) inv2
+  let claimsPolyTau := frMul p (frMul p tau tau) (polynomial p claimCols tau)
+  let pMainTau := frAdd p (frAdd p main0TauW (frMul p tau main1TauW)) claimsPolyTau
+  let mainComm := mkPackedCommitment c (.cons { log := 1, width := w, hasNext := 1 } .nil)
     (.cons (g1ScalarMul c pMainTau gen) .nil)
   let active : FList := .cons 1 .nil
   let logs : FList := .cons 1 .nil
@@ -1900,9 +1925,9 @@ private def buildAndProveStage2 (c : CurveParams) (tau : Nat) (anchors : ByteLis
   let evalMain1 (y : Nat) := frMul p (frAdd p 1 y) inv2
   let evalQuot (y : Nat) := frMul p alpha (frSub p neg6 (frMul p 7 y))
   let evalFixed (y : Nat) := frAdd p 1 (frMul p 7 (frSub p (frMul p y y) 1))
-  let mo : FList3 := .cons
-    (.cons (.cons (evalMain0 zeta) (.cons (evalMain1 zeta) .nil))
-    (.cons (.cons (evalMain0 zetaNext) (.cons (evalMain1 zetaNext) .nil)) .nil)) .nil
+  let mainAtZeta := .cons (evalMain0 zeta) (.cons (evalMain1 zeta) claimCols)
+  let mainAtZetaNext := .cons (evalMain0 zetaNext) (.cons (evalMain1 zetaNext) claimCols)
+  let mo : FList3 := .cons (.cons mainAtZeta (.cons mainAtZetaNext .nil)) .nil
   let so : FList3 := .cons
     (.cons (.cons (evalStage2 zeta) .nil)
     (.cons (.cons (evalStage2 zetaNext) .nil) .nil)) .nil
@@ -1933,9 +1958,7 @@ private def buildAndProveStage2 (c : CurveParams) (tau : Nat) (anchors : ByteLis
   let trP5 := transcriptObserveBytes sGammaPcs.transcript w1Bytes
   let sZ := transcriptSampleFr c trP5
   let z := sZ.challenge
-  let (_, wMain, rMain) := weighSinglePack c 1 1
-    (.cons (evalMain0 zeta) (.cons (evalMain1 zeta) .nil))
-    (.cons (evalMain0 zetaNext) (.cons (evalMain1 zetaNext) .nil)) z zeta 1
+  let (_, wMain, rMain) := weighSinglePack c 1 1 mainAtZeta mainAtZetaNext z zeta 1
   let (_, wStage2, rStage2) := weighSinglePack c 1 1
     (.cons (evalStage2 zeta) .nil) (.cons (evalStage2 zetaNext) .nil) z zeta gp
   let (_, wQuot, rQuot) := weighSinglePack c 1 0
@@ -1954,13 +1977,12 @@ private def buildAndProveStage2 (c : CurveParams) (tau : Nat) (anchors : ByteLis
   let w2Scalar := frDiv p lTau (frSub p tau z)
   let w2Pt := g1ScalarMul c w2Scalar gen
   let w2Bytes := g1ToBytes c w2Pt
-  let proofBytes := encodePackedProof
+  encodePackedProof
     { active, logs, main := mainComm, stage2 := stage2Comm, quotient := quotComm
       accumulators, mainOpen := mo, stage2Open := so, quotientOpen := qo
       fixedOpen := .some fo, extras := .nil
       w1 := { point := w1Pt, rawBytes := w1Bytes }
       w2 := { point := w2Pt, rawBytes := w2Bytes } }
-  (key, proofBytes)
 
 /-- Helper to check the deferred pairing equation `e(A, [1]₂) · e(B, [τ]₂) = 1` in the exponent:
 `A + τ · B == g1Inf` (with non-trivial `A ≠ g1Inf`, `B ≠ g1Inf`). -/
@@ -1985,12 +2007,17 @@ private def runFullTwoStagePipeline (c : CurveParams) (tau : Nat) :
   let s1KeyBytes := encodePackedKey c s1Key
   let s1KeyDig := blake3HashWords s1KeyBytes
   let s1KeyRoundtrip := (readPackedKey c s1KeyBytes).ok == 1
-  -- Build a placeholder stage-2 key digest after we produce stage-1 output
+  -- Stage 2 key is fixed (independent of claim payload), so its digest pins `pol.bnDigest`!
+  let s2Len1 := if c.affineWords == 18 then 14 else 16
+  let s2Key := buildStage2Key c tau anchors 11 s2Len1
+  let s2KeyBytes := encodePackedKey c s2Key
+  let s2KeyDig := blake3HashWords s2KeyBytes
+  let s2KeyRoundtrip := (readPackedKey c s2KeyBytes).ok == 1
   let s1ClaimsBytes := encodeClaims (.cons s1ClaimRow .nil)
   let s1ProofBytes := proveRealKey c tau s1Key (.cons s1ClaimRow .nil)
   let s1ProofRoundtrip := (readPackedProof c s1ProofBytes).ok == 1
   let pol : ChainPolicy :=
-    { anchors, glDigest := s1KeyDig, glEntry, bnDigest := s1KeyDig, bnEntry }
+    { anchors, glDigest := s1KeyDig, glEntry, bnDigest := s2KeyDig, bnEntry }
   let polBytes := encodeChainPolicy pol
   let polDig := blake3HashWords polBytes
   let stepRes := stepV1 c s1Key s1KeyDig polDig 1 stmt polBytes s1ClaimsBytes s1ProofBytes
@@ -1999,10 +2026,7 @@ private def runFullTwoStagePipeline (c : CurveParams) (tau : Nat) :
   let (row0, row1) := match s2ClaimRows with
     | .cons r0 (.cons r1 .nil) => (r0, r1)
     | _ => (.nil, .nil)
-  let (s2Key, s2ProofBytes) := buildAndProveStage2 c tau anchors row0 row1
-  let s2KeyBytes := encodePackedKey c s2Key
-  let s2KeyDig := blake3HashWords s2KeyBytes
-  let s2KeyRoundtrip := (readPackedKey c s2KeyBytes).ok == 1
+  let s2ProofBytes := proveStage2Key c tau s2Key row0 row1
   let s2ProofRoundtrip := (readPackedProof c s2ProofBytes).ok == 1
   let s2ClaimsBytes := encodeClaims s2ClaimRows
   let cfg : FinalConfig :=
@@ -2055,6 +2079,13 @@ private def bnCfg := bn254Run.2.2.2.2.2.2.2
 #guard
   let badCfg : FinalConfig :=
     { bnCfg with policyDigest := { bnCfg.policyDigest with d0 := bnCfg.policyDigest.d0 + 1 } }
+  (verifyAccumulatorV1 bn254CurveParams badCfg bnS2Key
+    0x0123456789ABCDEF 0x1122334455667788 bnPolBytes bnClaimsBytes bnProofBytes).ok == 0
+
+-- Unauthorized narrow predecessor key digest (`cfg.keyDigest ≠ policy.bnDigest`) rejected (M-1)
+#guard
+  let badCfg : FinalConfig :=
+    { bnCfg with keyDigest := { bnCfg.keyDigest with d0 := bnCfg.keyDigest.d0 + 1 } }
   (verifyAccumulatorV1 bn254CurveParams badCfg bnS2Key
     0x0123456789ABCDEF 0x1122334455667788 bnPolBytes bnClaimsBytes bnProofBytes).ok == 0
 

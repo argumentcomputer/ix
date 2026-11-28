@@ -1734,3 +1734,930 @@ info: 'IxCC.AiurBackend.CompressionIntrinsics.aliasEntry_sound_of_check' depends
 #guard_msgs (whitespace := lax) in #print axioms CompressionIntrinsics.aliasEntry_sound_of_check
 
 end IxCC.AiurBackend.Audit
+
+namespace IxCC.AiurBackend.Audit
+
+open IxCC.AiurBackend
+
+/-! ## 10. Keyed / `derive_key` BLAKE3 (`Blake3KeyedSpec`) & Compression Intrinsics Soundness (`CompressionIntrinsicsProof`) -/
+
+/--
+info: @Blake3KeyedSpec.eval_compress_init_keyed_single_block : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {world : Aiur.Generic.SourceSemantics.World F},
+  Blake3Spec.Blake3Contracts world →
+    ∀ {key : Blake3.Pure.CV} {bytes : List UInt8},
+      bytes.length ≤ 64 →
+        ∀ {r : Aiur.SourceValue F} {h h' : Aiur.Heap F},
+          Aiur.Generic.SourceSemantics.EvalFn world "Blake3::compress_init"
+              [Blake3Spec.vecV key, Blake3Spec.vecV (Blake3.Pure.blockWords bytes), Blake3Spec.u64v 0,
+                Aiur.Value.field ↑bytes.length, Aiur.Value.field 27]
+              h r h' →
+            r = Blake3Spec.vecV (Blake3KeyedSpec.digestCVKeyed key bytes) ∧ h' = h
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @Blake3KeyedSpec.eval_compress_init_keyed_single_block
+/-- info: 'IxCC.AiurBackend.Blake3KeyedSpec.eval_compress_init_keyed_single_block' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Blake3KeyedSpec.eval_compress_init_keyed_single_block
+
+/--
+info: @Blake3KeyedSpec.eval_keyed_single_block_digest : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {world : Aiur.Generic.SourceSemantics.World F},
+  Blake3Spec.Blake3Contracts world →
+    ∀ {key : Blake3.Pure.CV} {bytes : List UInt8},
+      bytes.length ≤ 64 →
+        ∀ {rCV rDig : Aiur.SourceValue F} {h h1 h2 : Aiur.Heap F},
+          Aiur.Generic.SourceSemantics.EvalFn world "Blake3::compress_init"
+              [Blake3Spec.vecV key, Blake3Spec.vecV (Blake3.Pure.blockWords bytes), Blake3Spec.u64v 0,
+                Aiur.Value.field ↑bytes.length, Aiur.Value.field 27]
+              h rCV h1 →
+            Aiur.Generic.SourceSemantics.EvalFn world "Blake3::digest_bytes" [rCV] h1 rDig h2 →
+              rCV = Blake3Spec.vecV (Blake3KeyedSpec.digestCVKeyed key bytes) ∧
+                rDig = Blake3Spec.digestV (Blake3KeyedSpec.digestKeyed key bytes) ∧ h2 = h
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @Blake3KeyedSpec.eval_keyed_single_block_digest
+/-- info: 'IxCC.AiurBackend.Blake3KeyedSpec.eval_keyed_single_block_digest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Blake3KeyedSpec.eval_keyed_single_block_digest
+
+/--
+info: @Blake3KeyedSpec.eval_two_pass_derive_key_single_block : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {world : Aiur.Generic.SourceSemantics.World F},
+  Blake3Spec.Blake3Contracts world →
+    ∀ {ctx : String} {bytes : List UInt8},
+      ctx.toUTF8.data.toList.length ≤ 64 →
+        bytes.length ≤ 64 →
+          ∀ {rCtx rOut : Aiur.SourceValue F} {h h1 h2 : Aiur.Heap F},
+            Aiur.Generic.SourceSemantics.EvalFn world "Blake3::compress_init"
+                [Blake3Spec.vecV Blake3.Pure.iv, Blake3Spec.vecV (Blake3.Pure.blockWords ctx.toUTF8.data.toList),
+                  Blake3Spec.u64v 0, Aiur.Value.field ↑ctx.toUTF8.data.toList.length, Aiur.Value.field 43]
+                h rCtx h1 →
+              Aiur.Generic.SourceSemantics.EvalFn world "Blake3::compress_init"
+                  [rCtx, Blake3Spec.vecV (Blake3.Pure.blockWords bytes), Blake3Spec.u64v 0,
+                    Aiur.Value.field ↑bytes.length, Aiur.Value.field 75]
+                  h1 rOut h2 →
+                rCtx = Blake3Spec.vecV (Blake3KeyedSpec.deriveKeyContextCV ctx.toUTF8.data.toList) ∧
+                  rOut = Blake3Spec.vecV (Blake3KeyedSpec.digestCVDeriveKey ctx bytes) ∧ h2 = h
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @Blake3KeyedSpec.eval_two_pass_derive_key_single_block
+/-- info: 'IxCC.AiurBackend.Blake3KeyedSpec.eval_two_pass_derive_key_single_block' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Blake3KeyedSpec.eval_two_pass_derive_key_single_block
+
+/--
+info: @Blake3KeyedSpec.evalMultiChunkKeyed_spec : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {world : Aiur.Generic.SourceSemantics.World F},
+  Aiur.Library.U32.Compatible F →
+    Blake3Spec.Blake3Contracts world →
+      ∀ {key : Blake3.Pure.CV} {bytes : List UInt8} {rCV rDig : Aiur.SourceValue F} {h h1 h2 : Aiur.Heap F},
+        Blake3KeyedSpec.EvalMultiChunkWith world key Blake3KeyedSpec.flagKeyedHash bytes h rCV h1 →
+          Aiur.Generic.SourceSemantics.EvalFn world "Blake3::digest_bytes" [rCV] h1 rDig h2 →
+            rCV = Blake3Spec.vecV (Blake3KeyedSpec.digestCVKeyed key bytes) ∧
+              rDig = Blake3Spec.digestV (Blake3KeyedSpec.digestKeyed key bytes) ∧ h2 = h
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @Blake3KeyedSpec.evalMultiChunkKeyed_spec
+/-- info: 'IxCC.AiurBackend.Blake3KeyedSpec.evalMultiChunkKeyed_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Blake3KeyedSpec.evalMultiChunkKeyed_spec
+
+/--
+info: @Blake3KeyedSpec.evalTwoPassDeriveKey_multiChunk_spec : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {world : Aiur.Generic.SourceSemantics.World F},
+  Aiur.Library.U32.Compatible F →
+    Blake3Spec.Blake3Contracts world →
+      ∀ {ctx : String} {bytes : List UInt8} {ctxCV : Blake3.Pure.CV} {rOut rDig : Aiur.SourceValue F}
+        {h h1 h2 h3 : Aiur.Heap F},
+        Blake3KeyedSpec.EvalMultiChunkWith world Blake3.Pure.iv Blake3KeyedSpec.flagDeriveKeyContext
+            ctx.toUTF8.data.toList h (Blake3Spec.vecV ctxCV) h1 →
+          Blake3KeyedSpec.EvalMultiChunkWith world ctxCV Blake3KeyedSpec.flagDeriveKeyMaterial bytes h1 rOut h2 →
+            Aiur.Generic.SourceSemantics.EvalFn world "Blake3::digest_bytes" [rOut] h2 rDig h3 →
+              ctxCV = Blake3KeyedSpec.deriveKeyContextCV ctx.toUTF8.data.toList ∧
+                rOut = Blake3Spec.vecV (Blake3KeyedSpec.digestCVDeriveKey ctx bytes) ∧
+                  rDig = Blake3Spec.digestV (Blake3KeyedSpec.digestDeriveKey ctx bytes) ∧ h3 = h
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @Blake3KeyedSpec.evalTwoPassDeriveKey_multiChunk_spec
+/-- info: 'IxCC.AiurBackend.Blake3KeyedSpec.evalTwoPassDeriveKey_multiChunk_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Blake3KeyedSpec.evalTwoPassDeriveKey_multiChunk_spec
+
+/--
+info: @Blake3KeyedSpec.evalProtocolDomain_multiChunk_spec : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {world : Aiur.Generic.SourceSemantics.World F},
+  Aiur.Library.U32.Compatible F →
+    Blake3Spec.Blake3Contracts world →
+      ∀ (d : Blake3KeyedSpec.ProtocolDomain) {bytes : List UInt8} {rCV rDig : Aiur.SourceValue F}
+        {h h1 h2 : Aiur.Heap F},
+        Blake3KeyedSpec.EvalMultiChunkWith world d.pinnedCV d.domainFlags bytes h rCV h1 →
+          Aiur.Generic.SourceSemantics.EvalFn world "Blake3::digest_bytes" [rCV] h1 rDig h2 →
+            rCV = Blake3Spec.vecV (d.digestCVPure bytes) ∧ rDig = Blake3Spec.digestV (d.digestPure bytes) ∧ h2 = h
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @Blake3KeyedSpec.evalProtocolDomain_multiChunk_spec
+/-- info: 'IxCC.AiurBackend.Blake3KeyedSpec.evalProtocolDomain_multiChunk_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Blake3KeyedSpec.evalProtocolDomain_multiChunk_spec
+
+/--
+info: @Blake3KeyedSpec.Blake3KeyedContracts.ofCheck : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F],
+  Aiur.Library.U32.Compatible F →
+    ∀ {s : Aiur.Generic.Source F}, Blake3Spec.checkBlake3World s = true → Blake3KeyedSpec.Blake3KeyedContracts s.world
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @Blake3KeyedSpec.Blake3KeyedContracts.ofCheck
+/-- info: 'IxCC.AiurBackend.Blake3KeyedSpec.Blake3KeyedContracts.ofCheck' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Blake3KeyedSpec.Blake3KeyedContracts.ofCheck
+
+/--
+info: @Blake3KeyedSpec.Blake3KeyedContracts.ofCheckGoldilocks : ∀ {s : Aiur.Generic.Source Aiur.Library.U32.Goldilocks.F},
+  Blake3Spec.checkBlake3World s = true → Blake3KeyedSpec.Blake3KeyedContracts s.world
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @Blake3KeyedSpec.Blake3KeyedContracts.ofCheckGoldilocks
+/-- info: 'IxCC.AiurBackend.Blake3KeyedSpec.Blake3KeyedContracts.ofCheckGoldilocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Blake3KeyedSpec.Blake3KeyedContracts.ofCheckGoldilocks
+
+/--
+info: @Blake3KeyedSpec.Blake3KeyedContracts.ofCheckBN254 : ∀ {s : Aiur.Generic.Source Aiur.Library.Field.BN254.F},
+  Blake3Spec.checkBlake3World s = true → Blake3KeyedSpec.Blake3KeyedContracts s.world
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @Blake3KeyedSpec.Blake3KeyedContracts.ofCheckBN254
+/-- info: 'IxCC.AiurBackend.Blake3KeyedSpec.Blake3KeyedContracts.ofCheckBN254' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Blake3KeyedSpec.Blake3KeyedContracts.ofCheckBN254
+
+/--
+info: @Blake3KeyedSpec.Blake3KeyedContracts.ofCheckBLS12381 : ∀ {s : Aiur.Generic.Source Aiur.Library.Field.BLS12381.F},
+  Blake3Spec.checkBlake3World s = true → Blake3KeyedSpec.Blake3KeyedContracts s.world
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @Blake3KeyedSpec.Blake3KeyedContracts.ofCheckBLS12381
+/-- info: 'IxCC.AiurBackend.Blake3KeyedSpec.Blake3KeyedContracts.ofCheckBLS12381' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Blake3KeyedSpec.Blake3KeyedContracts.ofCheckBLS12381
+
+/--
+info: @CompressionIntrinsicsProof.lowerCompressionOps_backward : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {wPruned wMid wOrig : Aiur.Generic.SourceSemantics.World F} {cfg : CompressionIntrinsics.CompressionConfig}
+  {fns : List Lower.Fn},
+  InlineFuseProof.SameAuxWorld wPruned wMid →
+    InlineFuseProof.SameAuxWorld wMid wOrig →
+      (List.map (fun x => x.name) fns).Nodup →
+        (∀ f ∈ fns, (List.map Prod.fst f.params).Nodup) →
+          (∀ f ∈ fns, Lower.isPlainExpr f.body = true) →
+            InlineFuseProof.WorldHasFns wPruned (CompressionIntrinsics.lowerCompressionOps cfg fns) →
+              InlineFuseProof.WorldHasFns wMid (CompressionIntrinsics.lowerCompressionOpsCore cfg fns) →
+                InlineFuseProof.WorldProvidesFns wMid (CompressionIntrinsics.lowerCompressionOpsCore cfg fns) →
+                  InlineFuseProof.WorldHasFns wOrig fns →
+                    InlineFuseProof.WorldProvidesFns wOrig fns →
+                      (∀ (nm : String) (args : List (Aiur.SourceValue F))
+                          (res : Aiur.Generic.SourceSemantics.Types × Aiur.Environment F ℕ × Aiur.Generic.Expr F),
+                          (∀ f ∈ CompressionIntrinsics.lowerCompressionOps cfg fns, Lower.qualified f.name ≠ nm) →
+                            wPruned.prepare nm args = Except.ok res → wMid.prepare nm args = Except.ok res) →
+                        (∀ (nm : String) (args : List (Aiur.SourceValue F))
+                            (res : Aiur.Generic.SourceSemantics.Types × Aiur.Environment F ℕ × Aiur.Generic.Expr F),
+                            (∀ f' ∈ CompressionIntrinsics.lowerCompressionOpsCore cfg fns,
+                                Lower.qualified f'.name ≠ nm) →
+                              wMid.prepare nm args = Except.ok res → wOrig.prepare nm args = Except.ok res) →
+                          CompressionIntrinsicsProof.CompressionIntrinsicWorld wOrig
+                              (CompressionIntrinsicsProof.activeCompressionBindings cfg) →
+                            ∀ {nm : String} {args : List (Aiur.SourceValue F)} {h h' : Aiur.Heap F}
+                              {r : Aiur.SourceValue F},
+                              Aiur.Generic.SourceSemantics.EvalFn wPruned nm args h r h' →
+                                Aiur.Generic.SourceSemantics.EvalFn wOrig nm args h r h'
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @CompressionIntrinsicsProof.lowerCompressionOps_backward
+/-- info: 'IxCC.AiurBackend.CompressionIntrinsicsProof.lowerCompressionOps_backward' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CompressionIntrinsicsProof.lowerCompressionOps_backward
+
+/--
+info: @CompressionIntrinsicsProof.lowerCompressionOps_backward_goldilocks : ∀
+  {wPruned wMid wOrig : Aiur.Generic.SourceSemantics.World CompressionIntrinsicsProof.GLF}
+  {cfg : CompressionIntrinsics.CompressionConfig} {fns : List Lower.Fn},
+  InlineFuseProof.SameAuxWorld wPruned wMid →
+    InlineFuseProof.SameAuxWorld wMid wOrig →
+      (List.map (fun x => x.name) fns).Nodup →
+        (∀ f ∈ fns, (List.map Prod.fst f.params).Nodup) →
+          (∀ f ∈ fns, Lower.isPlainExpr f.body = true) →
+            InlineFuseProof.WorldHasFns wPruned (CompressionIntrinsics.lowerCompressionOps cfg fns) →
+              InlineFuseProof.WorldHasFns wMid (CompressionIntrinsics.lowerCompressionOpsCore cfg fns) →
+                InlineFuseProof.WorldProvidesFns wMid (CompressionIntrinsics.lowerCompressionOpsCore cfg fns) →
+                  InlineFuseProof.WorldHasFns wOrig fns →
+                    InlineFuseProof.WorldProvidesFns wOrig fns →
+                      (∀ (nm : String) (args : List (Aiur.SourceValue CompressionIntrinsicsProof.GLF))
+                          (res :
+                            Aiur.Generic.SourceSemantics.Types ×
+                              Aiur.Environment CompressionIntrinsicsProof.GLF ℕ ×
+                                Aiur.Generic.Expr CompressionIntrinsicsProof.GLF),
+                          (∀ f ∈ CompressionIntrinsics.lowerCompressionOps cfg fns, Lower.qualified f.name ≠ nm) →
+                            wPruned.prepare nm args = Except.ok res → wMid.prepare nm args = Except.ok res) →
+                        (∀ (nm : String) (args : List (Aiur.SourceValue CompressionIntrinsicsProof.GLF))
+                            (res :
+                              Aiur.Generic.SourceSemantics.Types ×
+                                Aiur.Environment CompressionIntrinsicsProof.GLF ℕ ×
+                                  Aiur.Generic.Expr CompressionIntrinsicsProof.GLF),
+                            (∀ f' ∈ CompressionIntrinsics.lowerCompressionOpsCore cfg fns,
+                                Lower.qualified f'.name ≠ nm) →
+                              wMid.prepare nm args = Except.ok res → wOrig.prepare nm args = Except.ok res) →
+                          CompressionIntrinsicsProof.CompressionIntrinsicWorld wOrig
+                              (CompressionIntrinsicsProof.activeCompressionBindings cfg) →
+                            ∀ {nm : String} {args : List (Aiur.SourceValue CompressionIntrinsicsProof.GLF)}
+                              {h h' : Aiur.Heap CompressionIntrinsicsProof.GLF}
+                              {r : Aiur.SourceValue CompressionIntrinsicsProof.GLF},
+                              Aiur.Generic.SourceSemantics.EvalFn wPruned nm args h r h' →
+                                Aiur.Generic.SourceSemantics.EvalFn wOrig nm args h r h'
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @CompressionIntrinsicsProof.lowerCompressionOps_backward_goldilocks
+/-- info: 'IxCC.AiurBackend.CompressionIntrinsicsProof.lowerCompressionOps_backward_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CompressionIntrinsicsProof.lowerCompressionOps_backward_goldilocks
+
+/--
+info: @CompressionIntrinsicsProof.lowerCompressionOps_backward_bn254 : ∀
+  {wPruned wMid wOrig : Aiur.Generic.SourceSemantics.World Aiur.Library.Field.BN254.F}
+  {cfg : CompressionIntrinsics.CompressionConfig} {fns : List Lower.Fn},
+  InlineFuseProof.SameAuxWorld wPruned wMid →
+    InlineFuseProof.SameAuxWorld wMid wOrig →
+      (List.map (fun x => x.name) fns).Nodup →
+        (∀ f ∈ fns, (List.map Prod.fst f.params).Nodup) →
+          (∀ f ∈ fns, Lower.isPlainExpr f.body = true) →
+            InlineFuseProof.WorldHasFns wPruned (CompressionIntrinsics.lowerCompressionOps cfg fns) →
+              InlineFuseProof.WorldHasFns wMid (CompressionIntrinsics.lowerCompressionOpsCore cfg fns) →
+                InlineFuseProof.WorldProvidesFns wMid (CompressionIntrinsics.lowerCompressionOpsCore cfg fns) →
+                  InlineFuseProof.WorldHasFns wOrig fns →
+                    InlineFuseProof.WorldProvidesFns wOrig fns →
+                      (∀ (nm : String) (args : List (Aiur.SourceValue Aiur.Library.Field.BN254.F))
+                          (res :
+                            Aiur.Generic.SourceSemantics.Types ×
+                              Aiur.Environment Aiur.Library.Field.BN254.F ℕ ×
+                                Aiur.Generic.Expr Aiur.Library.Field.BN254.F),
+                          (∀ f ∈ CompressionIntrinsics.lowerCompressionOps cfg fns, Lower.qualified f.name ≠ nm) →
+                            wPruned.prepare nm args = Except.ok res → wMid.prepare nm args = Except.ok res) →
+                        (∀ (nm : String) (args : List (Aiur.SourceValue Aiur.Library.Field.BN254.F))
+                            (res :
+                              Aiur.Generic.SourceSemantics.Types ×
+                                Aiur.Environment Aiur.Library.Field.BN254.F ℕ ×
+                                  Aiur.Generic.Expr Aiur.Library.Field.BN254.F),
+                            (∀ f' ∈ CompressionIntrinsics.lowerCompressionOpsCore cfg fns,
+                                Lower.qualified f'.name ≠ nm) →
+                              wMid.prepare nm args = Except.ok res → wOrig.prepare nm args = Except.ok res) →
+                          CompressionIntrinsicsProof.CompressionIntrinsicWorld wOrig
+                              (CompressionIntrinsicsProof.activeCompressionBindings cfg) →
+                            ∀ {nm : String} {args : List (Aiur.SourceValue Aiur.Library.Field.BN254.F)}
+                              {h h' : Aiur.Heap Aiur.Library.Field.BN254.F}
+                              {r : Aiur.SourceValue Aiur.Library.Field.BN254.F},
+                              Aiur.Generic.SourceSemantics.EvalFn wPruned nm args h r h' →
+                                Aiur.Generic.SourceSemantics.EvalFn wOrig nm args h r h'
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @CompressionIntrinsicsProof.lowerCompressionOps_backward_bn254
+/-- info: 'IxCC.AiurBackend.CompressionIntrinsicsProof.lowerCompressionOps_backward_bn254' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CompressionIntrinsicsProof.lowerCompressionOps_backward_bn254
+
+/--
+info: @CompressionIntrinsicsProof.lowerCompressionOps_backward_bls12381 : ∀
+  {wPruned wMid wOrig : Aiur.Generic.SourceSemantics.World Aiur.Library.Field.BLS12381.F}
+  {cfg : CompressionIntrinsics.CompressionConfig} {fns : List Lower.Fn},
+  InlineFuseProof.SameAuxWorld wPruned wMid →
+    InlineFuseProof.SameAuxWorld wMid wOrig →
+      (List.map (fun x => x.name) fns).Nodup →
+        (∀ f ∈ fns, (List.map Prod.fst f.params).Nodup) →
+          (∀ f ∈ fns, Lower.isPlainExpr f.body = true) →
+            InlineFuseProof.WorldHasFns wPruned (CompressionIntrinsics.lowerCompressionOps cfg fns) →
+              InlineFuseProof.WorldHasFns wMid (CompressionIntrinsics.lowerCompressionOpsCore cfg fns) →
+                InlineFuseProof.WorldProvidesFns wMid (CompressionIntrinsics.lowerCompressionOpsCore cfg fns) →
+                  InlineFuseProof.WorldHasFns wOrig fns →
+                    InlineFuseProof.WorldProvidesFns wOrig fns →
+                      (∀ (nm : String) (args : List (Aiur.SourceValue Aiur.Library.Field.BLS12381.F))
+                          (res :
+                            Aiur.Generic.SourceSemantics.Types ×
+                              Aiur.Environment Aiur.Library.Field.BLS12381.F ℕ ×
+                                Aiur.Generic.Expr Aiur.Library.Field.BLS12381.F),
+                          (∀ f ∈ CompressionIntrinsics.lowerCompressionOps cfg fns, Lower.qualified f.name ≠ nm) →
+                            wPruned.prepare nm args = Except.ok res → wMid.prepare nm args = Except.ok res) →
+                        (∀ (nm : String) (args : List (Aiur.SourceValue Aiur.Library.Field.BLS12381.F))
+                            (res :
+                              Aiur.Generic.SourceSemantics.Types ×
+                                Aiur.Environment Aiur.Library.Field.BLS12381.F ℕ ×
+                                  Aiur.Generic.Expr Aiur.Library.Field.BLS12381.F),
+                            (∀ f' ∈ CompressionIntrinsics.lowerCompressionOpsCore cfg fns,
+                                Lower.qualified f'.name ≠ nm) →
+                              wMid.prepare nm args = Except.ok res → wOrig.prepare nm args = Except.ok res) →
+                          CompressionIntrinsicsProof.CompressionIntrinsicWorld wOrig
+                              (CompressionIntrinsicsProof.activeCompressionBindings cfg) →
+                            ∀ {nm : String} {args : List (Aiur.SourceValue Aiur.Library.Field.BLS12381.F)}
+                              {h h' : Aiur.Heap Aiur.Library.Field.BLS12381.F}
+                              {r : Aiur.SourceValue Aiur.Library.Field.BLS12381.F},
+                              Aiur.Generic.SourceSemantics.EvalFn wPruned nm args h r h' →
+                                Aiur.Generic.SourceSemantics.EvalFn wOrig nm args h r h'
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @CompressionIntrinsicsProof.lowerCompressionOps_backward_bls12381
+/-- info: 'IxCC.AiurBackend.CompressionIntrinsicsProof.lowerCompressionOps_backward_bls12381' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CompressionIntrinsicsProof.lowerCompressionOps_backward_bls12381
+
+/--
+info: @CompressionIntrinsicsProof.CompressionCert.evalFn_target_of_checkMemo : ∀ {F : Type} [inst : Field F]
+  [inst_1 : DecidableEq F] {P : Fir.Program} {shapeCert : Fir.Shape.ShapeCert} {sched : Schedule.CircuitSchedule}
+  {lp : TypedLower.LoweredProgram} {compCfg : CompressionIntrinsics.CompressionConfig}
+  {lpComp : TypedLower.LoweredProgram} {moduleProg : Aiur.Modules.Program F}
+  {prepared : Aiur.Modules.Prepared moduleProg} {i : ℕ} (cert : CompressionIntrinsicsProof.CompressionCert prepared i),
+  (∀ (n : ℕ), 0 < n → n ≤ 2 ^ 39 * 2 ^ 24 → ↑n ≠ 0) →
+    ∀ {rom : Aiur.WidthROM F},
+      rom.Valid →
+        ∀ {args : List (Aiur.SourceValue F)} {result : Aiur.Value F} {wires : List (Aiur.WireValue F)}
+          {output : Aiur.WireValue F},
+          Aiur.Circuit.Erasure.Signed cert.compiled.circuit.system
+              { channel := cert.entry.resolved.name, args := wires, result := output } →
+            ∀ {root : Aiur.Circuit.Message F},
+              Aiur.Optimized.Depth.erase cert.dcfg root =
+                  Aiur.Circuit.Erasure.message cert.compiled.circuit.system
+                    { channel := cert.entry.resolved.name, args := wires, result := output } →
+                root.channel ∉ cert.dcfg.names →
+                  ∀ {rows : List (Aiur.Circuit.WeightedRow F)},
+                    rows.length ≤ 2 ^ 39 →
+                      cert.plan.checkMemo (Aiur.Circuit.Erasure.rawROM rom) root rows = Except.ok () →
+                        Aiur.DecodesValues cert.compiled.specialized.program.enums wires (Aiur.entryValues args) →
+                          Aiur.WireValue.decode cert.compiled.specialized.program.enums output = some result →
+                            ∃ value heap,
+                              Aiur.Represents
+                                  (Aiur.WireROM.decode cert.compiled.specialized.program.enums
+                                    (Aiur.Circuit.Erasure.typedROM cert.compiled.circuit.system rom))
+                                  heap value result ∧
+                                if cert.aliasSpec.assertOk = true then
+                                  value = Aiur.Value.tuple [] ∧
+                                    Aiur.Generic.SourceSemantics.EvalFn prepared.environment.source.world
+                                      (Lower.qualified (Lower.entryName i)) args [] (Aiur.Value.field 1) heap
+                                else
+                                  Aiur.Generic.SourceSemantics.EvalFn prepared.environment.source.world
+                                    (Lower.qualified (Lower.entryName i)) args [] value heap
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @CompressionIntrinsicsProof.CompressionCert.evalFn_target_of_checkMemo
+/-- info: 'IxCC.AiurBackend.CompressionIntrinsicsProof.CompressionCert.evalFn_target_of_checkMemo' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CompressionIntrinsicsProof.CompressionCert.evalFn_target_of_checkMemo
+
+/--
+info: @CompressionIntrinsicsProof.CompressionCert.accepted_assertOk_source : ∀ {p : ℕ} [inst : Fact (Nat.Prime p)],
+  TypedGadgets.FieldCompatible64 (ZMod p) →
+    (∀ (n : ℕ), 0 < n → n ≤ 2 ^ 39 * 2 ^ 24 → ↑n ≠ 0) →
+      Lower.natLimit ≤ p →
+        ∀ {cfg : Recheck.Config} {P : Src.Program} {c : Recheck.Cert} {f : Recheck.FrontFir},
+          Recheck.runFir cfg P c = Except.ok f →
+            ∀ {shapeCert : Fir.Shape.ShapeCert} {sched : Schedule.CircuitSchedule} {lp : TypedLower.LoweredProgram}
+              {compCfg : CompressionIntrinsics.CompressionConfig} {lpComp : TypedLower.LoweredProgram}
+              {moduleProg : Aiur.Modules.Program (ZMod p)} {prepared : Aiur.Modules.Prepared moduleProg} {i : ℕ}
+              {g : Fir.FunId} (cert : CompressionIntrinsicsProof.CompressionCert prepared i),
+              cert.aliasSpec.assertOk = true →
+                f.fir.exports[i]? = some g →
+                  ∀ {retR : TypedRep.Rep},
+                    lp.exportReps[i]? = some retR →
+                      retR.isFieldNat = true →
+                        ∀ {sOrig : Aiur.Generic.Source (ZMod p)},
+                          TypedWorld.checkTypedWorld sOrig lp = true →
+                            ∀
+                              (bridge :
+                                CompressionIntrinsicsProof.CompressionLowerBridge prepared.environment.source.world
+                                  compCfg lp.program.functions sOrig.world)
+                              {as : List (ZMod p)} {rom : Aiur.WidthROM (ZMod p)},
+                              rom.Valid →
+                                ∀ {wires : List (Aiur.WireValue (ZMod p))} {output : Aiur.WireValue (ZMod p)},
+                                  Aiur.Circuit.Erasure.Signed cert.compiled.circuit.system
+                                      { channel := cert.entry.resolved.name, args := wires, result := output } →
+                                    ∀ {root : Aiur.Circuit.Message (ZMod p)},
+                                      Aiur.Optimized.Depth.erase cert.dcfg root =
+                                          Aiur.Circuit.Erasure.message cert.compiled.circuit.system
+                                            { channel := cert.entry.resolved.name, args := wires, result := output } →
+                                        root.channel ∉ cert.dcfg.names →
+                                          ∀ {rows : List (Aiur.Circuit.WeightedRow (ZMod p))},
+                                            rows.length ≤ 2 ^ 39 →
+                                              cert.plan.checkMemo (Aiur.Circuit.Erasure.rawROM rom) root rows =
+                                                  Except.ok () →
+                                                Aiur.DecodesValues cert.compiled.specialized.program.enums wires
+                                                    (Aiur.entryValues (List.map Aiur.Value.field as)) →
+                                                  Aiur.WireValue.decode cert.compiled.specialized.program.enums output =
+                                                      some (Aiur.Value.tuple (ZMod p) []) →
+                                                    f.Covered c (i, List.map ZMod.val as) →
+                                                      ∀ {shapes : SrcShape.Cert},
+                                                        Progress.checkShape f.src shapes i as.length = true →
+                                                          ∃ k v,
+                                                            Sem.Lang.run { p := f.src, ch := f.checked }
+                                                                  (i, List.map ZMod.val as) k =
+                                                                Sem.Result.ok v ∧
+                                                              Sem.Lang.obs v = some (Sem.Obs.nat 1)
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @CompressionIntrinsicsProof.CompressionCert.accepted_assertOk_source
+/-- info: 'IxCC.AiurBackend.CompressionIntrinsicsProof.CompressionCert.accepted_assertOk_source' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CompressionIntrinsicsProof.CompressionCert.accepted_assertOk_source
+
+/--
+info: @CompressionIntrinsicsProof.CompressionCert.accepted_witness_sound : ∀ {F : Type} [inst : Field F]
+  [inst_1 : DecidableEq F] {P : Fir.Program} {shapeCert : Fir.Shape.ShapeCert} {sched : Schedule.CircuitSchedule}
+  {lp : TypedLower.LoweredProgram} {compCfg : CompressionIntrinsics.CompressionConfig}
+  {lpComp : TypedLower.LoweredProgram} {moduleProg : Aiur.Modules.Program F}
+  {prepared : Aiur.Modules.Prepared moduleProg} {i : ℕ} (cert : CompressionIntrinsicsProof.CompressionCert prepared i),
+  (∀ (n : ℕ), 0 < n → n ≤ 2 ^ 39 * 2 ^ 24 → ↑n ≠ 0) →
+    cert.aliasSpec.assertOk = false →
+      WitnessIO.StarkIOWorld prepared.environment.source.world →
+        WitnessIO.KzgIOWorld prepared.environment.source.world →
+          ∀ {wOrig : Aiur.Generic.SourceSemantics.World F}
+            (bridge :
+              CompressionIntrinsicsProof.CompressionLowerBridge prepared.environment.source.world compCfg
+                lp.program.functions wOrig)
+            {checkFnName : String} {pubParams : List String} {channels : List (WitnessIO.WitnessChannelKind × ℕ)},
+            Lower.hasDoubleColon checkFnName.toList = true →
+              (pubParams ++ List.map WitnessIO.witnessVarName (List.range channels.length)).Nodup →
+                Gadgets.WorldHasFn prepared.environment.source.world (Lower.qualified (Lower.entryName i)) pubParams
+                    (Lower.qualifyExprF F (WitnessIO.witnessWrapperBody pubParams channels checkFnName)) →
+                  ∀ {Spec : List (Aiur.SourceValue F) → List (List UInt8) → Prop},
+                    (∀ (pubArgs : List (Aiur.SourceValue F)) (h1 h2 : Aiur.Heap F) (wPtrs : List (Aiur.SourceValue F))
+                        (ws : List (List UInt8)),
+                        List.Forall₂ (WitnessIO.ByteStreamRel h1) ws wPtrs →
+                          Aiur.Generic.SourceSemantics.EvalFn wOrig checkFnName (pubArgs ++ wPtrs) h1
+                              (Aiur.Value.field 1) h2 →
+                            Spec pubArgs ws) →
+                      ∀ {pub : List (Aiur.SourceValue F)} {rom : Aiur.WidthROM F},
+                        rom.Valid →
+                          ∀ {wires : List (Aiur.WireValue F)} {output : Aiur.WireValue F},
+                            Aiur.Circuit.Erasure.Signed cert.compiled.circuit.system
+                                { channel := cert.entry.resolved.name, args := wires, result := output } →
+                              ∀ {root : Aiur.Circuit.Message F},
+                                Aiur.Optimized.Depth.erase cert.dcfg root =
+                                    Aiur.Circuit.Erasure.message cert.compiled.circuit.system
+                                      { channel := cert.entry.resolved.name, args := wires, result := output } →
+                                  root.channel ∉ cert.dcfg.names →
+                                    ∀ {rows : List (Aiur.Circuit.WeightedRow F)},
+                                      rows.length ≤ 2 ^ 39 →
+                                        cert.plan.checkMemo (Aiur.Circuit.Erasure.rawROM rom) root rows = Except.ok () →
+                                          Aiur.DecodesValues cert.compiled.specialized.program.enums wires
+                                              (Aiur.entryValues pub) →
+                                            Aiur.WireValue.decode cert.compiled.specialized.program.enums output =
+                                                some (Aiur.Value.field F 1) →
+                                              ∃ ws,
+                                                ws.length = channels.length ∧
+                                                  (∀ b ∈ ws, WitnessIO.isValidByteList (List.map UInt8.toNat b)) ∧
+                                                    Spec pub ws
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @CompressionIntrinsicsProof.CompressionCert.accepted_witness_sound
+/-- info: 'IxCC.AiurBackend.CompressionIntrinsicsProof.CompressionCert.accepted_witness_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CompressionIntrinsicsProof.CompressionCert.accepted_witness_sound
+
+/--
+info: @CompressionIntrinsicsProof.CompressionCert.accepted_witness_assertOk_sound : ∀ {F : Type} [inst : Field F]
+  [inst_1 : DecidableEq F] {P : Fir.Program} {shapeCert : Fir.Shape.ShapeCert} {sched : Schedule.CircuitSchedule}
+  {lp : TypedLower.LoweredProgram} {compCfg : CompressionIntrinsics.CompressionConfig}
+  {lpComp : TypedLower.LoweredProgram} {moduleProg : Aiur.Modules.Program F}
+  {prepared : Aiur.Modules.Prepared moduleProg} {i : ℕ} (cert : CompressionIntrinsicsProof.CompressionCert prepared i),
+  (∀ (n : ℕ), 0 < n → n ≤ 2 ^ 39 * 2 ^ 24 → ↑n ≠ 0) →
+    cert.aliasSpec.assertOk = true →
+      WitnessIO.StarkIOWorld prepared.environment.source.world →
+        WitnessIO.KzgIOWorld prepared.environment.source.world →
+          ∀ {wOrig : Aiur.Generic.SourceSemantics.World F}
+            (bridge :
+              CompressionIntrinsicsProof.CompressionLowerBridge prepared.environment.source.world compCfg
+                lp.program.functions wOrig)
+            {checkFnName : String} {pubParams : List String} {channels : List (WitnessIO.WitnessChannelKind × ℕ)},
+            Lower.hasDoubleColon checkFnName.toList = true →
+              (pubParams ++ List.map WitnessIO.witnessVarName (List.range channels.length)).Nodup →
+                Gadgets.WorldHasFn prepared.environment.source.world (Lower.qualified (Lower.entryName i)) pubParams
+                    (Lower.qualifyExprF F (WitnessIO.witnessWrapperBody pubParams channels checkFnName)) →
+                  ∀ {Spec : List (Aiur.SourceValue F) → List (List UInt8) → Prop},
+                    (∀ (pubArgs : List (Aiur.SourceValue F)) (h1 h2 : Aiur.Heap F) (wPtrs : List (Aiur.SourceValue F))
+                        (ws : List (List UInt8)),
+                        List.Forall₂ (WitnessIO.ByteStreamRel h1) ws wPtrs →
+                          Aiur.Generic.SourceSemantics.EvalFn wOrig checkFnName (pubArgs ++ wPtrs) h1
+                              (Aiur.Value.field 1) h2 →
+                            Spec pubArgs ws) →
+                      ∀ {pub : List (Aiur.SourceValue F)} {rom : Aiur.WidthROM F},
+                        rom.Valid →
+                          ∀ {wires : List (Aiur.WireValue F)} {output : Aiur.WireValue F},
+                            Aiur.Circuit.Erasure.Signed cert.compiled.circuit.system
+                                { channel := cert.entry.resolved.name, args := wires, result := output } →
+                              ∀ {root : Aiur.Circuit.Message F},
+                                Aiur.Optimized.Depth.erase cert.dcfg root =
+                                    Aiur.Circuit.Erasure.message cert.compiled.circuit.system
+                                      { channel := cert.entry.resolved.name, args := wires, result := output } →
+                                  root.channel ∉ cert.dcfg.names →
+                                    ∀ {rows : List (Aiur.Circuit.WeightedRow F)},
+                                      rows.length ≤ 2 ^ 39 →
+                                        cert.plan.checkMemo (Aiur.Circuit.Erasure.rawROM rom) root rows = Except.ok () →
+                                          Aiur.DecodesValues cert.compiled.specialized.program.enums wires
+                                              (Aiur.entryValues pub) →
+                                            Aiur.WireValue.decode cert.compiled.specialized.program.enums output =
+                                                some (Aiur.Value.tuple F []) →
+                                              ∃ ws,
+                                                ws.length = channels.length ∧
+                                                  (∀ b ∈ ws, WitnessIO.isValidByteList (List.map UInt8.toNat b)) ∧
+                                                    Spec pub ws
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @CompressionIntrinsicsProof.CompressionCert.accepted_witness_assertOk_sound
+/-- info: 'IxCC.AiurBackend.CompressionIntrinsicsProof.CompressionCert.accepted_witness_assertOk_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CompressionIntrinsicsProof.CompressionCert.accepted_witness_assertOk_sound
+
+/--
+info: @CompressionIntrinsicsProof.accepted_compression_nat : ∀ {cfg : Recheck.Config} {P : Src.Program} {c : Recheck.Cert}
+  {f : Recheck.FrontFir},
+  Recheck.runFir cfg P c = Except.ok f →
+    ∀ {shapeCert : Fir.Shape.ShapeCert} {sched : Schedule.CircuitSchedule} {lp : TypedLower.LoweredProgram}
+      {compCfg : CompressionIntrinsics.CompressionConfig},
+      TypedBackward.natCoreProgram f.fir shapeCert = true →
+        TypedLower.lowerProgram f.fir shapeCert sched = Except.ok lp →
+          ∀ {moduleProg : Aiur.Modules.Program CompressionIntrinsicsProof.GLF}
+            (prepared : Aiur.Modules.Prepared moduleProg) {sOrig : Aiur.Generic.Source CompressionIntrinsicsProof.GLF},
+            TypedWorld.checkTypedWorld sOrig lp = true →
+              ∀
+                (bridge :
+                  CompressionIntrinsicsProof.CompressionLowerBridge prepared.environment.source.world compCfg
+                    lp.program.functions sOrig.world)
+                {i : ℕ} {g : Fir.FunId},
+                f.fir.exports[i]? = some g →
+                  ∀ {retR : TypedRep.Rep},
+                    lp.exportReps[i]? = some retR →
+                      retR.isFieldNat = true →
+                        ∀ {as : List CompressionIntrinsicsProof.GLF} {y : CompressionIntrinsicsProof.GLF},
+                          Claim.Accepted prepared i (List.map Aiur.Value.field as) (Aiur.Value.field Claim.G y) →
+                            f.Covered c (i, List.map ZMod.val as) →
+                              ∀ {shapes : SrcShape.Cert},
+                                Progress.checkShape f.src shapes i as.length = true →
+                                  ∃ k v,
+                                    Sem.Lang.run { p := f.src, ch := f.checked } (i, List.map ZMod.val as) k =
+                                        Sem.Result.ok v ∧
+                                      Sem.Lang.obs v = some (Sem.Obs.nat (ZMod.val y))
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @CompressionIntrinsicsProof.accepted_compression_nat
+/-- info: 'IxCC.AiurBackend.CompressionIntrinsicsProof.accepted_compression_nat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CompressionIntrinsicsProof.accepted_compression_nat
+
+/--
+info: @CompressionIntrinsicsProof.compressionCert_assertOk_goldilocks : ∀ {cfg : Recheck.Config} {P : Src.Program}
+  {c : Recheck.Cert} {f : Recheck.FrontFir},
+  Recheck.runFir cfg P c = Except.ok f →
+    ∀ {shapeCert : Fir.Shape.ShapeCert} {sched : Schedule.CircuitSchedule} {lp : TypedLower.LoweredProgram}
+      {compCfg : CompressionIntrinsics.CompressionConfig} {lpComp : TypedLower.LoweredProgram}
+      {moduleProg : Aiur.Modules.Program CompressionIntrinsicsProof.GLF} {prepared : Aiur.Modules.Prepared moduleProg}
+      {i : ℕ} {g : Fir.FunId} (cert : CompressionIntrinsicsProof.CompressionCert prepared i),
+      cert.aliasSpec.assertOk = true →
+        f.fir.exports[i]? = some g →
+          ∀ {retR : TypedRep.Rep},
+            lp.exportReps[i]? = some retR →
+              retR.isFieldNat = true →
+                ∀ {sOrig : Aiur.Generic.Source CompressionIntrinsicsProof.GLF},
+                  TypedWorld.checkTypedWorld sOrig lp = true →
+                    ∀
+                      (bridge :
+                        CompressionIntrinsicsProof.CompressionLowerBridge prepared.environment.source.world compCfg
+                          lp.program.functions sOrig.world)
+                      {as : List CompressionIntrinsicsProof.GLF} {rom : Aiur.WidthROM CompressionIntrinsicsProof.GLF},
+                      rom.Valid →
+                        ∀ {wires : List (Aiur.WireValue CompressionIntrinsicsProof.GLF)}
+                          {output : Aiur.WireValue CompressionIntrinsicsProof.GLF},
+                          Aiur.Circuit.Erasure.Signed cert.compiled.circuit.system
+                              { channel := cert.entry.resolved.name, args := wires, result := output } →
+                            ∀ {root : Aiur.Circuit.Message CompressionIntrinsicsProof.GLF},
+                              Aiur.Optimized.Depth.erase cert.dcfg root =
+                                  Aiur.Circuit.Erasure.message cert.compiled.circuit.system
+                                    { channel := cert.entry.resolved.name, args := wires, result := output } →
+                                root.channel ∉ cert.dcfg.names →
+                                  ∀ {rows : List (Aiur.Circuit.WeightedRow CompressionIntrinsicsProof.GLF)},
+                                    rows.length ≤ 2 ^ 39 →
+                                      cert.plan.checkMemo (Aiur.Circuit.Erasure.rawROM rom) root rows = Except.ok () →
+                                        Aiur.DecodesValues cert.compiled.specialized.program.enums wires
+                                            (Aiur.entryValues (List.map Aiur.Value.field as)) →
+                                          Aiur.WireValue.decode cert.compiled.specialized.program.enums output =
+                                              some (Aiur.Value.tuple CompressionIntrinsicsProof.GLF []) →
+                                            f.Covered c (i, List.map ZMod.val as) →
+                                              ∀ {shapes : SrcShape.Cert},
+                                                Progress.checkShape f.src shapes i as.length = true →
+                                                  ∃ k v,
+                                                    Sem.Lang.run { p := f.src, ch := f.checked }
+                                                          (i, List.map ZMod.val as) k =
+                                                        Sem.Result.ok v ∧
+                                                      Sem.Lang.obs v = some (Sem.Obs.nat 1)
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @CompressionIntrinsicsProof.compressionCert_assertOk_goldilocks
+/-- info: 'IxCC.AiurBackend.CompressionIntrinsicsProof.compressionCert_assertOk_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CompressionIntrinsicsProof.compressionCert_assertOk_goldilocks
+
+/--
+info: @CompressionIntrinsicsProof.compressionCert_witness_goldilocks : ∀ {P : Fir.Program} {shapeCert : Fir.Shape.ShapeCert}
+  {sched : Schedule.CircuitSchedule} {lp : TypedLower.LoweredProgram}
+  {compCfg : CompressionIntrinsics.CompressionConfig} {lpComp : TypedLower.LoweredProgram}
+  {moduleProg : Aiur.Modules.Program CompressionIntrinsicsProof.GLF} {prepared : Aiur.Modules.Prepared moduleProg}
+  {i : ℕ} (cert : CompressionIntrinsicsProof.CompressionCert prepared i),
+  cert.aliasSpec.assertOk = true →
+    WitnessIO.StarkIOWorld prepared.environment.source.world →
+      WitnessIO.KzgIOWorld prepared.environment.source.world →
+        ∀ {wOrig : Aiur.Generic.SourceSemantics.World CompressionIntrinsicsProof.GLF}
+          (bridge :
+            CompressionIntrinsicsProof.CompressionLowerBridge prepared.environment.source.world compCfg
+              lp.program.functions wOrig)
+          {checkFnName : String} {pubParams : List String} {channels : List (WitnessIO.WitnessChannelKind × ℕ)},
+          Lower.hasDoubleColon checkFnName.toList = true →
+            (pubParams ++ List.map WitnessIO.witnessVarName (List.range channels.length)).Nodup →
+              Gadgets.WorldHasFn prepared.environment.source.world (Lower.qualified (Lower.entryName i)) pubParams
+                  (Lower.qualifyExprF CompressionIntrinsicsProof.GLF
+                    (WitnessIO.witnessWrapperBody pubParams channels checkFnName)) →
+                ∀ {Spec : List (Aiur.SourceValue CompressionIntrinsicsProof.GLF) → List (List UInt8) → Prop},
+                  (∀ (pubArgs : List (Aiur.SourceValue CompressionIntrinsicsProof.GLF))
+                      (h1 h2 : Aiur.Heap CompressionIntrinsicsProof.GLF)
+                      (wPtrs : List (Aiur.SourceValue CompressionIntrinsicsProof.GLF)) (ws : List (List UInt8)),
+                      List.Forall₂ (WitnessIO.ByteStreamRel h1) ws wPtrs →
+                        Aiur.Generic.SourceSemantics.EvalFn wOrig checkFnName (pubArgs ++ wPtrs) h1 (Aiur.Value.field 1)
+                            h2 →
+                          Spec pubArgs ws) →
+                    ∀ {pub : List (Aiur.SourceValue CompressionIntrinsicsProof.GLF)}
+                      {rom : Aiur.WidthROM CompressionIntrinsicsProof.GLF},
+                      rom.Valid →
+                        ∀ {wires : List (Aiur.WireValue CompressionIntrinsicsProof.GLF)}
+                          {output : Aiur.WireValue CompressionIntrinsicsProof.GLF},
+                          Aiur.Circuit.Erasure.Signed cert.compiled.circuit.system
+                              { channel := cert.entry.resolved.name, args := wires, result := output } →
+                            ∀ {root : Aiur.Circuit.Message CompressionIntrinsicsProof.GLF},
+                              Aiur.Optimized.Depth.erase cert.dcfg root =
+                                  Aiur.Circuit.Erasure.message cert.compiled.circuit.system
+                                    { channel := cert.entry.resolved.name, args := wires, result := output } →
+                                root.channel ∉ cert.dcfg.names →
+                                  ∀ {rows : List (Aiur.Circuit.WeightedRow CompressionIntrinsicsProof.GLF)},
+                                    rows.length ≤ 2 ^ 39 →
+                                      cert.plan.checkMemo (Aiur.Circuit.Erasure.rawROM rom) root rows = Except.ok () →
+                                        Aiur.DecodesValues cert.compiled.specialized.program.enums wires
+                                            (Aiur.entryValues pub) →
+                                          Aiur.WireValue.decode cert.compiled.specialized.program.enums output =
+                                              some (Aiur.Value.tuple CompressionIntrinsicsProof.GLF []) →
+                                            ∃ ws,
+                                              ws.length = channels.length ∧
+                                                (∀ b ∈ ws, WitnessIO.isValidByteList (List.map UInt8.toNat b)) ∧
+                                                  Spec pub ws
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @CompressionIntrinsicsProof.compressionCert_witness_goldilocks
+/-- info: 'IxCC.AiurBackend.CompressionIntrinsicsProof.compressionCert_witness_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CompressionIntrinsicsProof.compressionCert_witness_goldilocks
+
+/--
+info: @CompressionIntrinsicsProof.compressionCert_assertOk_bn254 : ∀ {cfg : Recheck.Config} {P : Src.Program}
+  {c : Recheck.Cert} {f : Recheck.FrontFir},
+  Recheck.runFir cfg P c = Except.ok f →
+    ∀ {shapeCert : Fir.Shape.ShapeCert} {sched : Schedule.CircuitSchedule} {lp : TypedLower.LoweredProgram}
+      {compCfg : CompressionIntrinsics.CompressionConfig} {lpComp : TypedLower.LoweredProgram}
+      {moduleProg : Aiur.Modules.Program Aiur.Library.Field.BN254.F} {prepared : Aiur.Modules.Prepared moduleProg}
+      {i : ℕ} {g : Fir.FunId} (cert : CompressionIntrinsicsProof.CompressionCert prepared i),
+      cert.aliasSpec.assertOk = true →
+        f.fir.exports[i]? = some g →
+          ∀ {retR : TypedRep.Rep},
+            lp.exportReps[i]? = some retR →
+              retR.isFieldNat = true →
+                ∀ {sOrig : Aiur.Generic.Source Aiur.Library.Field.BN254.F},
+                  TypedWorld.checkTypedWorld sOrig lp = true →
+                    ∀
+                      (bridge :
+                        CompressionIntrinsicsProof.CompressionLowerBridge prepared.environment.source.world compCfg
+                          lp.program.functions sOrig.world)
+                      {as : List Aiur.Library.Field.BN254.F} {rom : Aiur.WidthROM Aiur.Library.Field.BN254.F},
+                      rom.Valid →
+                        ∀ {wires : List (Aiur.WireValue Aiur.Library.Field.BN254.F)}
+                          {output : Aiur.WireValue Aiur.Library.Field.BN254.F},
+                          Aiur.Circuit.Erasure.Signed cert.compiled.circuit.system
+                              { channel := cert.entry.resolved.name, args := wires, result := output } →
+                            ∀ {root : Aiur.Circuit.Message Aiur.Library.Field.BN254.F},
+                              Aiur.Optimized.Depth.erase cert.dcfg root =
+                                  Aiur.Circuit.Erasure.message cert.compiled.circuit.system
+                                    { channel := cert.entry.resolved.name, args := wires, result := output } →
+                                root.channel ∉ cert.dcfg.names →
+                                  ∀ {rows : List (Aiur.Circuit.WeightedRow Aiur.Library.Field.BN254.F)},
+                                    rows.length ≤ 2 ^ 39 →
+                                      cert.plan.checkMemo (Aiur.Circuit.Erasure.rawROM rom) root rows = Except.ok () →
+                                        Aiur.DecodesValues cert.compiled.specialized.program.enums wires
+                                            (Aiur.entryValues (List.map Aiur.Value.field as)) →
+                                          Aiur.WireValue.decode cert.compiled.specialized.program.enums output =
+                                              some (Aiur.Value.tuple Aiur.Library.Field.BN254.F []) →
+                                            f.Covered c (i, List.map ZMod.val as) →
+                                              ∀ {shapes : SrcShape.Cert},
+                                                Progress.checkShape f.src shapes i as.length = true →
+                                                  ∃ k v,
+                                                    Sem.Lang.run { p := f.src, ch := f.checked }
+                                                          (i, List.map ZMod.val as) k =
+                                                        Sem.Result.ok v ∧
+                                                      Sem.Lang.obs v = some (Sem.Obs.nat 1)
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @CompressionIntrinsicsProof.compressionCert_assertOk_bn254
+/-- info: 'IxCC.AiurBackend.CompressionIntrinsicsProof.compressionCert_assertOk_bn254' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CompressionIntrinsicsProof.compressionCert_assertOk_bn254
+
+/--
+info: @CompressionIntrinsicsProof.compressionCert_witness_bn254 : ∀ {P : Fir.Program} {shapeCert : Fir.Shape.ShapeCert}
+  {sched : Schedule.CircuitSchedule} {lp : TypedLower.LoweredProgram}
+  {compCfg : CompressionIntrinsics.CompressionConfig} {lpComp : TypedLower.LoweredProgram}
+  {moduleProg : Aiur.Modules.Program Aiur.Library.Field.BN254.F} {prepared : Aiur.Modules.Prepared moduleProg} {i : ℕ}
+  (cert : CompressionIntrinsicsProof.CompressionCert prepared i),
+  cert.aliasSpec.assertOk = true →
+    WitnessIO.StarkIOWorld prepared.environment.source.world →
+      WitnessIO.KzgIOWorld prepared.environment.source.world →
+        ∀ {wOrig : Aiur.Generic.SourceSemantics.World Aiur.Library.Field.BN254.F}
+          (bridge :
+            CompressionIntrinsicsProof.CompressionLowerBridge prepared.environment.source.world compCfg
+              lp.program.functions wOrig)
+          {checkFnName : String} {pubParams : List String} {channels : List (WitnessIO.WitnessChannelKind × ℕ)},
+          Lower.hasDoubleColon checkFnName.toList = true →
+            (pubParams ++ List.map WitnessIO.witnessVarName (List.range channels.length)).Nodup →
+              Gadgets.WorldHasFn prepared.environment.source.world (Lower.qualified (Lower.entryName i)) pubParams
+                  (Lower.qualifyExprF Aiur.Library.Field.BN254.F
+                    (WitnessIO.witnessWrapperBody pubParams channels checkFnName)) →
+                ∀ {Spec : List (Aiur.SourceValue Aiur.Library.Field.BN254.F) → List (List UInt8) → Prop},
+                  (∀ (pubArgs : List (Aiur.SourceValue Aiur.Library.Field.BN254.F))
+                      (h1 h2 : Aiur.Heap Aiur.Library.Field.BN254.F)
+                      (wPtrs : List (Aiur.SourceValue Aiur.Library.Field.BN254.F)) (ws : List (List UInt8)),
+                      List.Forall₂ (WitnessIO.ByteStreamRel h1) ws wPtrs →
+                        Aiur.Generic.SourceSemantics.EvalFn wOrig checkFnName (pubArgs ++ wPtrs) h1 (Aiur.Value.field 1)
+                            h2 →
+                          Spec pubArgs ws) →
+                    ∀ {pub : List (Aiur.SourceValue Aiur.Library.Field.BN254.F)}
+                      {rom : Aiur.WidthROM Aiur.Library.Field.BN254.F},
+                      rom.Valid →
+                        ∀ {wires : List (Aiur.WireValue Aiur.Library.Field.BN254.F)}
+                          {output : Aiur.WireValue Aiur.Library.Field.BN254.F},
+                          Aiur.Circuit.Erasure.Signed cert.compiled.circuit.system
+                              { channel := cert.entry.resolved.name, args := wires, result := output } →
+                            ∀ {root : Aiur.Circuit.Message Aiur.Library.Field.BN254.F},
+                              Aiur.Optimized.Depth.erase cert.dcfg root =
+                                  Aiur.Circuit.Erasure.message cert.compiled.circuit.system
+                                    { channel := cert.entry.resolved.name, args := wires, result := output } →
+                                root.channel ∉ cert.dcfg.names →
+                                  ∀ {rows : List (Aiur.Circuit.WeightedRow Aiur.Library.Field.BN254.F)},
+                                    rows.length ≤ 2 ^ 39 →
+                                      cert.plan.checkMemo (Aiur.Circuit.Erasure.rawROM rom) root rows = Except.ok () →
+                                        Aiur.DecodesValues cert.compiled.specialized.program.enums wires
+                                            (Aiur.entryValues pub) →
+                                          Aiur.WireValue.decode cert.compiled.specialized.program.enums output =
+                                              some (Aiur.Value.tuple Aiur.Library.Field.BN254.F []) →
+                                            ∃ ws,
+                                              ws.length = channels.length ∧
+                                                (∀ b ∈ ws, WitnessIO.isValidByteList (List.map UInt8.toNat b)) ∧
+                                                  Spec pub ws
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @CompressionIntrinsicsProof.compressionCert_witness_bn254
+/-- info: 'IxCC.AiurBackend.CompressionIntrinsicsProof.compressionCert_witness_bn254' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CompressionIntrinsicsProof.compressionCert_witness_bn254
+
+/--
+info: @CompressionIntrinsicsProof.compressionCert_assertOk_bls12381 : ∀ {cfg : Recheck.Config} {P : Src.Program}
+  {c : Recheck.Cert} {f : Recheck.FrontFir},
+  Recheck.runFir cfg P c = Except.ok f →
+    ∀ {shapeCert : Fir.Shape.ShapeCert} {sched : Schedule.CircuitSchedule} {lp : TypedLower.LoweredProgram}
+      {compCfg : CompressionIntrinsics.CompressionConfig} {lpComp : TypedLower.LoweredProgram}
+      {moduleProg : Aiur.Modules.Program Aiur.Library.Field.BLS12381.F} {prepared : Aiur.Modules.Prepared moduleProg}
+      {i : ℕ} {g : Fir.FunId} (cert : CompressionIntrinsicsProof.CompressionCert prepared i),
+      cert.aliasSpec.assertOk = true →
+        f.fir.exports[i]? = some g →
+          ∀ {retR : TypedRep.Rep},
+            lp.exportReps[i]? = some retR →
+              retR.isFieldNat = true →
+                ∀ {sOrig : Aiur.Generic.Source Aiur.Library.Field.BLS12381.F},
+                  TypedWorld.checkTypedWorld sOrig lp = true →
+                    ∀
+                      (bridge :
+                        CompressionIntrinsicsProof.CompressionLowerBridge prepared.environment.source.world compCfg
+                          lp.program.functions sOrig.world)
+                      {as : List Aiur.Library.Field.BLS12381.F} {rom : Aiur.WidthROM Aiur.Library.Field.BLS12381.F},
+                      rom.Valid →
+                        ∀ {wires : List (Aiur.WireValue Aiur.Library.Field.BLS12381.F)}
+                          {output : Aiur.WireValue Aiur.Library.Field.BLS12381.F},
+                          Aiur.Circuit.Erasure.Signed cert.compiled.circuit.system
+                              { channel := cert.entry.resolved.name, args := wires, result := output } →
+                            ∀ {root : Aiur.Circuit.Message Aiur.Library.Field.BLS12381.F},
+                              Aiur.Optimized.Depth.erase cert.dcfg root =
+                                  Aiur.Circuit.Erasure.message cert.compiled.circuit.system
+                                    { channel := cert.entry.resolved.name, args := wires, result := output } →
+                                root.channel ∉ cert.dcfg.names →
+                                  ∀ {rows : List (Aiur.Circuit.WeightedRow Aiur.Library.Field.BLS12381.F)},
+                                    rows.length ≤ 2 ^ 39 →
+                                      cert.plan.checkMemo (Aiur.Circuit.Erasure.rawROM rom) root rows = Except.ok () →
+                                        Aiur.DecodesValues cert.compiled.specialized.program.enums wires
+                                            (Aiur.entryValues (List.map Aiur.Value.field as)) →
+                                          Aiur.WireValue.decode cert.compiled.specialized.program.enums output =
+                                              some (Aiur.Value.tuple Aiur.Library.Field.BLS12381.F []) →
+                                            f.Covered c (i, List.map ZMod.val as) →
+                                              ∀ {shapes : SrcShape.Cert},
+                                                Progress.checkShape f.src shapes i as.length = true →
+                                                  ∃ k v,
+                                                    Sem.Lang.run { p := f.src, ch := f.checked }
+                                                          (i, List.map ZMod.val as) k =
+                                                        Sem.Result.ok v ∧
+                                                      Sem.Lang.obs v = some (Sem.Obs.nat 1)
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @CompressionIntrinsicsProof.compressionCert_assertOk_bls12381
+/-- info: 'IxCC.AiurBackend.CompressionIntrinsicsProof.compressionCert_assertOk_bls12381' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CompressionIntrinsicsProof.compressionCert_assertOk_bls12381
+
+/--
+info: @CompressionIntrinsicsProof.compressionCert_witness_bls12381 : ∀ {P : Fir.Program} {shapeCert : Fir.Shape.ShapeCert}
+  {sched : Schedule.CircuitSchedule} {lp : TypedLower.LoweredProgram}
+  {compCfg : CompressionIntrinsics.CompressionConfig} {lpComp : TypedLower.LoweredProgram}
+  {moduleProg : Aiur.Modules.Program Aiur.Library.Field.BLS12381.F} {prepared : Aiur.Modules.Prepared moduleProg}
+  {i : ℕ} (cert : CompressionIntrinsicsProof.CompressionCert prepared i),
+  cert.aliasSpec.assertOk = true →
+    WitnessIO.StarkIOWorld prepared.environment.source.world →
+      WitnessIO.KzgIOWorld prepared.environment.source.world →
+        ∀ {wOrig : Aiur.Generic.SourceSemantics.World Aiur.Library.Field.BLS12381.F}
+          (bridge :
+            CompressionIntrinsicsProof.CompressionLowerBridge prepared.environment.source.world compCfg
+              lp.program.functions wOrig)
+          {checkFnName : String} {pubParams : List String} {channels : List (WitnessIO.WitnessChannelKind × ℕ)},
+          Lower.hasDoubleColon checkFnName.toList = true →
+            (pubParams ++ List.map WitnessIO.witnessVarName (List.range channels.length)).Nodup →
+              Gadgets.WorldHasFn prepared.environment.source.world (Lower.qualified (Lower.entryName i)) pubParams
+                  (Lower.qualifyExprF Aiur.Library.Field.BLS12381.F
+                    (WitnessIO.witnessWrapperBody pubParams channels checkFnName)) →
+                ∀ {Spec : List (Aiur.SourceValue Aiur.Library.Field.BLS12381.F) → List (List UInt8) → Prop},
+                  (∀ (pubArgs : List (Aiur.SourceValue Aiur.Library.Field.BLS12381.F))
+                      (h1 h2 : Aiur.Heap Aiur.Library.Field.BLS12381.F)
+                      (wPtrs : List (Aiur.SourceValue Aiur.Library.Field.BLS12381.F)) (ws : List (List UInt8)),
+                      List.Forall₂ (WitnessIO.ByteStreamRel h1) ws wPtrs →
+                        Aiur.Generic.SourceSemantics.EvalFn wOrig checkFnName (pubArgs ++ wPtrs) h1 (Aiur.Value.field 1)
+                            h2 →
+                          Spec pubArgs ws) →
+                    ∀ {pub : List (Aiur.SourceValue Aiur.Library.Field.BLS12381.F)}
+                      {rom : Aiur.WidthROM Aiur.Library.Field.BLS12381.F},
+                      rom.Valid →
+                        ∀ {wires : List (Aiur.WireValue Aiur.Library.Field.BLS12381.F)}
+                          {output : Aiur.WireValue Aiur.Library.Field.BLS12381.F},
+                          Aiur.Circuit.Erasure.Signed cert.compiled.circuit.system
+                              { channel := cert.entry.resolved.name, args := wires, result := output } →
+                            ∀ {root : Aiur.Circuit.Message Aiur.Library.Field.BLS12381.F},
+                              Aiur.Optimized.Depth.erase cert.dcfg root =
+                                  Aiur.Circuit.Erasure.message cert.compiled.circuit.system
+                                    { channel := cert.entry.resolved.name, args := wires, result := output } →
+                                root.channel ∉ cert.dcfg.names →
+                                  ∀ {rows : List (Aiur.Circuit.WeightedRow Aiur.Library.Field.BLS12381.F)},
+                                    rows.length ≤ 2 ^ 39 →
+                                      cert.plan.checkMemo (Aiur.Circuit.Erasure.rawROM rom) root rows = Except.ok () →
+                                        Aiur.DecodesValues cert.compiled.specialized.program.enums wires
+                                            (Aiur.entryValues pub) →
+                                          Aiur.WireValue.decode cert.compiled.specialized.program.enums output =
+                                              some (Aiur.Value.tuple Aiur.Library.Field.BLS12381.F []) →
+                                            ∃ ws,
+                                              ws.length = channels.length ∧
+                                                (∀ b ∈ ws, WitnessIO.isValidByteList (List.map UInt8.toNat b)) ∧
+                                                  Spec pub ws
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @CompressionIntrinsicsProof.compressionCert_witness_bls12381
+/-- info: 'IxCC.AiurBackend.CompressionIntrinsicsProof.compressionCert_witness_bls12381' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CompressionIntrinsicsProof.compressionCert_witness_bls12381
+
+end IxCC.AiurBackend.Audit
