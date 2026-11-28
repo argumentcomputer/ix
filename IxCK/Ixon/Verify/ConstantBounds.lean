@@ -298,11 +298,13 @@ theorem getBinderNode_bound : ReaderBound getBinderNode BinderNode.resourceSize 
         exact tagSpan.weaken (by simp [BinderNode.resourceSize])
       · obtain ⟨count, countState, countRead, read⟩ := bind_ok.mp read
         have countSpan := (getTagN_bound 0) _ _ _ tagSpan.valid countRead
+        obtain ⟨_, checkState, checkRead, read⟩ := bind_ok.mp read
+        have checkSpan := checkCount_bound _ _ _ _ _ countSpan.valid checkRead
         obtain ⟨params, final, paramsRead, result⟩ := bind_ok.mp read
-        obtain ⟨length, paramsSpan⟩ := getTagN0Values_spec _ _ _ _ countSpan.valid paramsRead
+        obtain ⟨length, paramsSpan⟩ := getTagN0Values_spec _ _ _ _ checkSpan.valid paramsRead
         change EStateM.Result.ok _ _ = .ok value finish at result
         cases result
-        exact ((tagSpan.trans countSpan).trans paramsSpan).weaken
+        exact (((tagSpan.trans countSpan).trans checkSpan).trans paramsSpan).weaken
           (by simp only [BinderNode.resourceSize, List.size_toArray, length]; omega)
       · change EStateM.Result.ok _ _ = .ok value finish at read
         cases read

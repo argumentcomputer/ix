@@ -22,12 +22,14 @@ def dataImports : Array Lean.Name :=
 
 def proofImports : Array Lean.Name := dataImports ++ #[`Lean, `Std, `IxCK.Ixon.Verify]
 
-/-- The codec's one ruled exception to the runtime audit: its two `@[csimp]`
-replacements, `getTagN_eq_fast` and `putTagN_eq_fast` (`IxCK/Ixon/Codec.lean`),
-the TagN reader and writer at a fixed flag width with their powers
-folded, each admitted only with a theorem on the standard axioms. Compiled code
-calls `getTagNFast`/`putTagNFast`; every theorem is about `getTagN`/`putTagN`,
-which the two equations make the same functions. -/
+/-- The codec's one ruled exception to the runtime audit: its three `@[csimp]`
+replacements, `getTagN_eq_fast`, `putTagN_eq_fast`, and `getTagN0Values_eq_fast`
+(`IxCK/Ixon/Codec.lean`), the TagN reader and writer at a fixed flag width with
+their powers folded and the tail-recursive `getTagN0Values` loop, each admitted
+only with a theorem on the standard axioms. Compiled code calls
+`getTagNFast`/`putTagNFast`/`getTagN0ValuesFast`; every theorem is about
+`getTagN`/`putTagN`/`getTagN0Values`, which the three equations make the same
+functions. -/
 def rulings : Ix.Kernel.Audit.RuntimeRulings := { csimpModules := #[`IxCK.Ixon.Codec] }
 
 end Ixon.Audit
@@ -54,6 +56,7 @@ end Ixon.Audit
 #guard_kernel_axioms Ixon.Verify.BoundedConstant.deConstant_serConstant [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ixon.Verify.BoundedConstant.deConstant_noTrailing [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ixon.Verify.ReaderBounds.getTagN0Values_spec [propext, Quot.sound]
+#guard_kernel_axioms Ixon.getTagN0Values_eq_fast [propext, Quot.sound]
 #guard_kernel_axioms Ixon.Verify.ReaderBounds.getTagN_bound [propext, Quot.sound]
 #guard_kernel_axioms Ixon.Verify.ReaderBounds.getArray_spec [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ixon.Verify.ReaderBounds.getArray_error_prefix [propext, Classical.choice, Quot.sound]
@@ -125,10 +128,13 @@ inherited externs to 437 and 57. -/
 -- Resolving `._at_.<caller>.spec_<n>` specializations and following `implemented_by`/`csimp`
 -- targets in `Runtime.lean` walks the underlying specialized `Init`/`Std` sources (437 -> 494
 -- compiled functions, inherited externs 57 -> 58, unsafe 2 -> 7; zero unruled findings).
+-- Tail-recursive `getTagN0ValuesFast` (`getTagN0Values_eq_fast` `@[csimp]`) replaces
+-- non-tail-recursive `getTagN0Values` in compiled code (494 -> 495 compiled functions,
+-- ruled csimp 2 -> 3; externs, implemented_by, unsafe unchanged; zero unruled findings).
 /-- info: runtime closure of [Ixon.serUniv, Ixon.deUniv, Ixon.serExpr, Ixon.deExpr,
 Ixon.serConstant, Ixon.deConstant, Ixon.deConstantExact, Ixon.Bounded.deUniv,
-Ixon.Bounded.deConstant, Ixon.Canonical.deConstant]: 494 compiled functions;
-inherited externs 58, implemented_by 0, unsafe 7, csimp 2; ruled csimp 2 -/
+Ixon.Bounded.deConstant, Ixon.Canonical.deConstant]: 495 compiled functions;
+inherited externs 58, implemented_by 0, unsafe 7, csimp 2; ruled csimp 3 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Audit.operations #[`Init, `Std] Ixon.Audit.rulings
 

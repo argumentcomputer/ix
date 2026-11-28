@@ -318,4 +318,21 @@ def fallbackRefused (pre : Ix.Kernel.Reader.Prelude .anon) : Bool :=
   | .error _ => false
 #guard (Ix.Kernel.Reader.builtinPrelude : Except String (Ix.Kernel.Reader.Prelude .meta)).isOk
 
+/-! ## H-9 regression: `getTagN0ValuesFast` and `getBinderNode` `checkCount` -/
+
+#guard
+  let vals : Array UInt64 := #[0, 1, 127, 128, 16512, 100000]
+  let bytes := Ixon.runPut (for v in vals do Ixon.putTagN 0 0 v)
+  (Ixon.runGet (Ixon.getTagN0Values vals.size) bytes).toOption == some vals.toList &&
+    (Ixon.runGet (Ixon.getTagN0ValuesFast vals.size) bytes).toOption == some vals.toList
+
+#guard
+  let forged := Ixon.runPut do
+    Ixon.putU8 (Ixon.binderNodeByte 2 {})
+    Ixon.putTagN 0 0 10000000
+    Ixon.putU8 0
+  match Ixon.runGet Ixon.getBinderNode forged with
+  | .error e => e == "count exceeds remaining bytes"
+  | .ok _ => false
+
 end Tests.Ix.Kernel.CertifiedEntry

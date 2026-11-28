@@ -73,8 +73,10 @@ helpers or their specializations; every execution allowance is unchanged. -/
 -- Strict admission (`Prepared.admitPins`: `admitPinnedRoles` over the committed default table,
 -- decoded and checked; `admitLevels`), divide-and-conquer literal reading, and saturating Géran
 -- bounds add 63 compiled functions and one inherited extern, as for `Ix.RoleBinding.Artifact.check`.
+-- Tail-recursive `getTagN0ValuesFast` (`getTagN0Values_eq_fast` `@[csimp]`) adds 1 compiled function
+-- and 1 ruled csimp (`42 -> 43`).
 /-- info: runtime closure of [Ix.HostAdmission.certify,
- Ix.HostAdmission.verifyAddressed]: 9136 compiled functions; inherited externs 130, implemented_by 0, unsafe 43, csimp 9; ruled assumed 6, computed_field 31, implemented_by 1, csimp 42 -/
+ Ix.HostAdmission.verifyAddressed]: 9137 compiled functions; inherited externs 130, implemented_by 0, unsafe 43, csimp 9; ruled assumed 6, computed_field 31, implemented_by 1, csimp 43 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith #[``Ix.HostAdmission.certify, ``Ix.HostAdmission.verifyAddressed]

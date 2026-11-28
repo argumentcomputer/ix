@@ -165,6 +165,7 @@ def binderNode : M BinderNode := do
     | 1 => charged 1 (pure (.zero mode))
     | 2 => do
       let count ← tagN 0
+      check count.value 1
       let params ← tagN0Values count.value.toNat
       charged (2 * params.length + 1) (pure (.ifAllZero params.toArray mode))
     | 4 => charged 1 (pure (.undecided mode))
@@ -387,8 +388,8 @@ theorem binderNode_erases : Erases binderNode getBinderNode := by
       split <;> simp_all only
       · exact (pure_erases _).charged 1
       · exact (pure_erases _).charged 1
-      · exact (tagN_erases 0).bind fun _ => (tagN0Values_erases _).bind fun _ =>
-          (pure_erases _).charged _
+      · exact (tagN_erases 0).bind fun _ => (check_erases _ _).bind fun _ =>
+          (tagN0Values_erases _).bind fun _ => (pure_erases _).charged _
       · exact (pure_erases _).charged 1
       · exact fail_erases _
 
@@ -630,6 +631,8 @@ theorem binderNode_bound : Bound binderNode 16 0 (fun _ => 2) := by
       · exact charged_pure_bound _ _ _ _ _ (by decide)
       · apply ((tagN_bound 0 16 (by decide)).frame 15).bind
         intro count
+        apply (check_bound _ _ _ _).bind
+        intro checked
         apply ((tagN0Values_bound _).frame 29).bind
         intro params
         exact charged_pure_bound _ _ _ _ _ (by omega)

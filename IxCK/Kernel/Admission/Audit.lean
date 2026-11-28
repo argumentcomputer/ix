@@ -167,11 +167,13 @@ externs, `implemented_by`, `unsafe`, csimp and their rulings are unchanged. -/
 -- `Level.isZero`, and raisable `Limits.levelBudget` / `Level.leqCoreB`) updates counts (refreshed in reconciliation).
 -- Divide-and-conquer literal reading (`Reader.naturalOfList`) and saturating Géran bounds
 -- add 4 compiled functions; the other counts are unchanged.
+-- Tail-recursive `getTagN0ValuesFast` (`getTagN0Values_eq_fast` `@[csimp]`) adds 1 compiled function
+-- and 1 ruled csimp (`42 -> 43`).
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 8344 compiled functions; inherited externs 115, implemented_by 0, unsafe 43, csimp 8; ruled computed_field 31, implemented_by 1, csimp 42 -/
+ Ix.Kernel.Admission.checkBytes]: 8345 compiled functions; inherited externs 115, implemented_by 0, unsafe 43, csimp 8; ruled computed_field 31, implemented_by 1, csimp 43 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
@@ -571,6 +573,6 @@ theorems reduce to `checkBytes`'s, and its runtime closure is fenced here. -/
 #eval Ix.Kernel.Admission.maxRecordLevelParams
 
 -- The strict entry reaches no extern, unsafe or ruled replacement beyond `checkBytes`'s.
-/-- info: runtime closure of [Ix.Kernel.Admission.checkBytesStrict]: 8385 compiled functions; inherited externs 115, implemented_by 0, unsafe 43, csimp 8; ruled computed_field 31, implemented_by 1, csimp 42 -/
+/-- info: runtime closure of [Ix.Kernel.Admission.checkBytesStrict]: 8386 compiled functions; inherited externs 115, implemented_by 0, unsafe 43, csimp 8; ruled computed_field 31, implemented_by 1, csimp 43 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Kernel.Admission.checkBytesStrict] #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings

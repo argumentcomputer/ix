@@ -190,6 +190,130 @@ theorem nodeByte_tag2 : ∀ n, n < 256 → n % 8 = 2 → (UInt8.ofNat n &&& 7) =
 theorem nodeByte_tag4 : ∀ n, n < 256 → n % 8 = 4 → (UInt8.ofNat n &&& 7) = 4 := by
   decide +kernel
 
+private theorem getU8_advance {σ σ' : Ixon.GetState} {b : UInt8}
+    (h : Ixon.getU8 σ = .ok b σ') :
+    σ.idx < σ.bytes.size ∧ σ'.idx = σ.idx + 1 ∧ σ'.bytes = σ.bytes := by
+  unfold Ixon.getU8 at h
+  simp only [bind, EStateM.bind, get, getThe, MonadStateOf.get, EStateM.get] at h
+  split at h
+  · rename_i hlt
+    simp only [set, MonadStateOf.set, EStateM.set, pure, EStateM.pure,
+      EStateM.Result.ok.injEq] at h
+    rcases h with ⟨_, rfl⟩
+    exact ⟨hlt, rfl, rfl⟩
+  · simp only [throw, throwThe, MonadExceptOf.throw, EStateM.throw] at h
+    cases h
+
+private theorem getU64TrimmedLEAux_advance : ∀ (len : Nat) {σ σ' : Ixon.GetState} {v : UInt64},
+    Ixon.getU64TrimmedLEAux len σ = .ok v σ' → σ.idx ≤ σ'.idx ∧ σ'.bytes = σ.bytes
+  | 0, _, _, _, h => by
+    simp only [Ixon.getU64TrimmedLEAux, pure, EStateM.pure, EStateM.Result.ok.injEq] at h
+    obtain ⟨_, hst⟩ := h
+    subst hst
+    exact ⟨Nat.le_refl _, rfl⟩
+  | len + 1, σ, σ', v, h => by
+    simp only [Ixon.getU64TrimmedLEAux, bind, EStateM.bind] at h
+    cases h1 : Ixon.getU8 σ with
+    | error _ _ => simp [h1] at h
+    | ok b σ1 =>
+      simp only [h1] at h
+      cases h2 : Ixon.getU64TrimmedLEAux len σ1 with
+      | error _ _ => simp [h2] at h
+      | ok hi σ2 =>
+        simp only [h2, pure, EStateM.pure, EStateM.Result.ok.injEq] at h
+        obtain ⟨_, hst⟩ := h
+        subst hst
+        obtain ⟨_, hidx1, hbytes1⟩ := getU8_advance h1
+        obtain ⟨hle2, hbytes2⟩ := getU64TrimmedLEAux_advance len h2
+        exact ⟨by omega, hbytes2.trans hbytes1⟩
+
+private theorem getTagNWide_advance {f c : Nat} {flag : UInt8} {σ σ' : Ixon.GetState}
+    {tag : Ixon.TagN} (h : Ixon.getTagNWide f flag c σ = .ok tag σ') :
+    σ.idx ≤ σ'.idx ∧ σ'.bytes = σ.bytes := by
+  unfold Ixon.getTagNWide at h
+  split at h
+  · simp only [bind, EStateM.bind] at h
+    cases h1 : Ixon.getU64TrimmedLEAux 2 σ with
+    | error _ _ => simp [h1] at h
+    | ok x σ1 =>
+      simp only [h1, pure, EStateM.pure, EStateM.Result.ok.injEq] at h
+      obtain ⟨_, hst⟩ := h; subst hst; exact getU64TrimmedLEAux_advance 2 h1
+  · split at h
+    · simp only [bind, EStateM.bind] at h
+      cases h1 : Ixon.getU64TrimmedLEAux 3 σ with
+      | error _ _ => simp [h1] at h
+      | ok x σ1 =>
+        simp only [h1, pure, EStateM.pure, EStateM.Result.ok.injEq] at h
+        obtain ⟨_, hst⟩ := h; subst hst; exact getU64TrimmedLEAux_advance 3 h1
+    · split at h
+      · simp only [bind, EStateM.bind] at h
+        cases h1 : Ixon.getU64TrimmedLEAux 4 σ with
+        | error _ _ => simp [h1] at h
+        | ok x σ1 =>
+          simp only [h1, pure, EStateM.pure, EStateM.Result.ok.injEq] at h
+          obtain ⟨_, hst⟩ := h; subst hst; exact getU64TrimmedLEAux_advance 4 h1
+      · split at h
+        · simp only [bind, EStateM.bind] at h
+          cases h1 : Ixon.getU64TrimmedLEAux 8 σ with
+          | error _ _ => simp [h1] at h
+          | ok x σ1 =>
+            simp only [h1] at h
+            split at h
+            · simp only [pure, EStateM.pure, EStateM.Result.ok.injEq] at h
+              obtain ⟨_, hst⟩ := h; subst hst; exact getU64TrimmedLEAux_advance 8 h1
+            · simp only [throw, throwThe, MonadExceptOf.throw, EStateM.throw] at h; cases h
+        · simp only [throw, throwThe, MonadExceptOf.throw, EStateM.throw] at h; cases h
+
+private theorem getTagN_advance {f : Nat} {σ σ' : Ixon.GetState} {tag : Ixon.TagN}
+    (h : Ixon.getTagN f σ = .ok tag σ') :
+    σ.idx < σ.bytes.size ∧ σ.idx + 1 ≤ σ'.idx ∧ σ'.bytes = σ.bytes := by
+  unfold Ixon.getTagN at h
+  simp only [bind, EStateM.bind] at h
+  cases h1 : Ixon.getU8 σ with
+  | error _ _ => simp [h1] at h
+  | ok b σ1 =>
+    simp only [h1] at h
+    obtain ⟨hlt, hidx1, hbytes1⟩ := getU8_advance h1
+    split at h
+    · simp only [pure, EStateM.pure, EStateM.Result.ok.injEq] at h
+      obtain ⟨_, hst⟩ := h; subst hst; exact ⟨hlt, by omega, hbytes1⟩
+    · split at h
+      · simp only [EStateM.bind] at h
+        cases h2 : Ixon.getU8 σ1 with
+        | error _ _ => simp [h2] at h
+        | ok lo σ2 =>
+          simp only [h2, pure, EStateM.pure, EStateM.Result.ok.injEq] at h
+          rcases h with ⟨_, rfl⟩
+          obtain ⟨_, hidx2, hbytes2⟩ := getU8_advance h2
+          exact ⟨hlt, by omega, hbytes2.trans hbytes1⟩
+      · obtain ⟨hle, hbytes2⟩ := getTagNWide_advance h
+        exact ⟨hlt, by omega, hbytes2.trans hbytes1⟩
+
+private theorem getTagN0Values_le_rem : ∀ (n : Nat) {σ σ' : Ixon.GetState} {ps : List UInt64},
+    Ixon.getTagN0Values n σ = .ok ps σ' → n ≤ σ.bytes.size - σ.idx
+  | 0, _, _, _, _ => Nat.zero_le _
+  | n + 1, σ, σ', ps, h => by
+    simp only [Ixon.getTagN0Values, bind, EStateM.bind] at h
+    cases h1 : Ixon.getTagN 0 σ with
+    | error _ _ => simp [h1] at h
+    | ok tag σ1 =>
+      simp only [h1] at h
+      cases h2 : Ixon.getTagN0Values n σ1 with
+      | error _ _ => simp [h2] at h
+      | ok tail σ2 =>
+        obtain ⟨hlt, hidx1, hbytes1⟩ := getTagN_advance h1
+        have hrem := getTagN0Values_le_rem n h2
+        rw [hbytes1] at hrem
+        omega
+
+private theorem checkCount_of_getTagN0Values {count : UInt64} {σ σ' : Ixon.GetState}
+    {ps : List UInt64} (h : Ixon.getTagN0Values count.toNat σ = .ok ps σ') :
+    Ixon.checkCount count 1 σ = .ok () σ := by
+  have hle := getTagN0Values_le_rem count.toNat h
+  have hng : ¬ (σ.bytes.size - σ.idx < count.toNat) := by omega
+  simp [Ixon.checkCount, bind, EStateM.bind, get, getThe, MonadStateOf.get, EStateM.get,
+    pure, EStateM.pure, hng]
+
 /-- **IxCK's node reader on a binder's byte** `b` (not a share's, its input code
 not 7): the node of its tag at `allModeOfByte b`, after the tag's payload. -/
 theorem getBinderNode_binder {σ σ' : Ixon.GetState} {b : UInt8}
@@ -229,8 +353,9 @@ theorem getBinderNode_binder {σ σ' : Ixon.GetState} {b : UInt8}
   · have hand : b &&& 7 = 2 := by
       have := nodeByte_tag2 b.toNat hb ht
       rwa [UInt8.ofNat_toNat] at this
+    have hchk : Ixon.checkCount t.value 1 σ2 = .ok () σ2 := checkCount_of_getTagN0Values hok3
     simp only [Ixon.getBinderNode, bind, EStateM.bind, hu8, hbeq, hm, hand, Bool.false_eq_true,
-      ↓reduceIte, hok2, hok3]
+      ↓reduceIte, hok2, hchk, hok3]
     rfl
 
 /-- **IxCK's node reader on the share byte 3**: the share node of the variant

@@ -133,9 +133,11 @@ end Ixon.Authenticated.Audit
 -- all 5 `@[extern]` methods on `Blake3.Rust.instHasherOpsHasher`.
 -- Kernel hardening updates counts (refreshed in reconciliation).
 -- Divide-and-conquer literal reading (`Reader.naturalOfList`) and saturating Géran bounds add 4 compiled functions.
+-- Tail-recursive `getTagN0ValuesFast` (`getTagN0Values_eq_fast` `@[csimp]`) adds 1 compiled function
+-- and 1 ruled csimp (`42 -> 43`).
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
- Address.admissionHash]: 8387 compiled functions; inherited externs 120, implemented_by 1, unsafe 43, csimp 8; ruled assumed 6, computed_field 31, implemented_by 1, csimp 42 -/
+ Address.admissionHash]: 8388 compiled functions; inherited externs 120, implemented_by 1, unsafe 43, csimp 8; ruled assumed 6, computed_field 31, implemented_by 1, csimp 43 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
@@ -317,7 +319,9 @@ and the prelude-copy check (`State.keepsPrelude` in `readStream`) from 6060, lik
 -- Hardened `Runtime.lean` surfaces specialized kernel helpers, ruled overrides, and all 5 `Blake3.Rust` externs.
 -- Kernel hardening updates counts (refreshed in reconciliation).
 -- Divide-and-conquer literal reading (`Reader.naturalOfList`) and saturating Géran bounds add 4 compiled functions.
-/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 8470 compiled functions; inherited externs 120, implemented_by 0, unsafe 43, csimp 8; ruled assumed 6, computed_field 31, implemented_by 1, csimp 42 -/
+-- Tail-recursive `getTagN0ValuesFast` (`getTagN0Values_eq_fast` `@[csimp]`) adds 1 compiled function
+-- and 1 ruled csimp (`42 -> 43`).
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 8471 compiled functions; inherited externs 120, implemented_by 0, unsafe 43, csimp 8; ruled assumed 6, computed_field 31, implemented_by 1, csimp 43 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 

@@ -755,6 +755,54 @@ def getTagN0Values : Nat → GetM (List UInt64)
     let tail ← getTagN0Values count
     return head :: tail
 
+/-- Tail-recursive accumulator loop for `getTagN0ValuesFast`. Takes `GetState`
+directly so the recursive call is a direct tail call (constant native stack)
+rather than a continuation inside `EStateM.bind`. -/
+def getTagN0ValuesAux : Nat → List UInt64 → GetM (List UInt64)
+  | 0, acc, st => .ok acc.reverse st
+  | count + 1, acc, st =>
+    match getTagN 0 st with
+    | .ok tag st' => getTagN0ValuesAux count (tag.value :: acc) st'
+    | .error e st' => .error e st'
+
+/-- Tail-recursive replacement for `getTagN0Values` (`getTagN0Values_eq_fast`),
+so large universe-index lists and binder-parameter lists run in constant native
+stack. Marked `@[noinline]` so runtime-closure audits observe the `@[csimp]`
+target by name. -/
+@[noinline] def getTagN0ValuesFast (count : Nat) : GetM (List UInt64) :=
+  getTagN0ValuesAux count []
+
+private theorem getTagN0ValuesAux_eq (count : Nat) :
+    ∀ (acc : List UInt64) (st : GetState),
+      getTagN0ValuesAux count acc st =
+        match getTagN0Values count st with
+        | .ok tail st' => .ok (acc.reverse ++ tail) st'
+        | .error e st' => .error e st' := by
+  induction count with
+  | zero =>
+    intro acc st
+    simp [getTagN0ValuesAux, getTagN0Values, pure, EStateM.pure]
+  | succ count ih =>
+    intro acc st
+    simp only [getTagN0ValuesAux, getTagN0Values, bind, EStateM.bind]
+    cases h : getTagN 0 st with
+    | error e st' => rfl
+    | ok tag st' =>
+      dsimp only
+      rw [ih (tag.value :: acc) st']
+      cases getTagN0Values count st' with
+      | error e st'' => rfl
+      | ok tail st'' =>
+        simp [pure, EStateM.pure, List.reverse_cons, List.append_assoc]
+
+/-- Compiled code reads TagN (`f = 0`) value lists with the tail-recursive loop. -/
+@[csimp] theorem getTagN0Values_eq_fast : @getTagN0Values = @getTagN0ValuesFast := by
+  funext count st
+  simp only [getTagN0ValuesFast, getTagN0ValuesAux_eq]
+  cases getTagN0Values count st with
+  | ok tail st' => simp
+  | error e st' => rfl
+
 /-- Read and apply one canonical application argument at a time. -/
 def getExprAppArgs (recur : GetM Expr) : Nat → Expr → GetM Expr
   | 0, result => pure result
@@ -1209,6 +1257,7 @@ def getBinderNode : GetM BinderNode := do
     | 1 => return .zero m
     | 2 => do
       let count := (← getTagN 0).value
+      checkCount count
       let params ← getTagN0Values count.toNat
       return .ifAllZero params.toArray m
     | 4 => return .undecided m

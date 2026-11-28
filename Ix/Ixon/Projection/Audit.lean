@@ -166,9 +166,11 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- Hardened `Runtime.lean` (`._at_` specialization resolution + target enqueueing) additionally surfaces all inlined ruled `@[computed_field]` `_override`s (`21 -> 29`) and `withExclusiveUnsafe` (`implemented_by 1`), with zero unruled findings.
 -- Kernel hardening updates counts (refreshed in reconciliation).
 -- Divide-and-conquer literal reading (`Reader.naturalOfList`) and saturating Géran bounds add 4 compiled functions.
+-- Tail-recursive `getTagN0ValuesFast` (`getTagN0Values_eq_fast` `@[csimp]`) adds 1 compiled function
+-- and 1 ruled csimp (`42 -> 43`).
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 8369 compiled functions; inherited externs 115, implemented_by 0, unsafe 43, csimp 8; ruled computed_field 31, implemented_by 1, csimp 42 -/
+ Ixon.Projection.checkBytes]: 8370 compiled functions; inherited externs 115, implemented_by 0, unsafe 43, csimp 8; ruled computed_field 31, implemented_by 1, csimp 43 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

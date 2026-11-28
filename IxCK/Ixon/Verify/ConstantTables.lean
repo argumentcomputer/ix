@@ -340,13 +340,17 @@ theorem getBinderNode_reads (node : Ixon.BinderNode) (h : node.wireWF) :
       (Ixon.Verify.Codec.Expr.getTagN0Values_reads params.toList) hreturn
     have hparams : Reads
         (do
+          Ixon.checkCount params.size.toUInt64
           let decoded ← Ixon.getTagN0Values params.size.toUInt64.toNat
           return Ixon.BinderNode.ifAllZero decoded.toArray mode)
         (Ixon.Verify.Codec.Expr.tag0ListBytes params.toList) (.ifAllZero params mode) := by
-      rw [hcount]
-      simpa using hvalues
+      have hchecked := Reads.checkCount params.size.toUInt64 1
+        (by simpa [hcount] using Ixon.Verify.Codec.Expr.tag0ListBytes_size_ge_length params.toList)
+        hvalues
+      simpa [hcount] using hchecked
     have hcountRead := Reads.bind
       (next := fun count : Ixon.TagN => do
+        Ixon.checkCount count.value
         let decoded ← Ixon.getTagN0Values count.value.toNat
         return Ixon.BinderNode.ifAllZero decoded.toArray mode)
       (getTag0_reads params.size.toUInt64) hparams

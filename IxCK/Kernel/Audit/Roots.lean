@@ -838,10 +838,12 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 -- `Level.isZero`, and raisable `Limits.levelBudget` / `Level.leqCoreB`) updates counts (refreshed in reconciliation).
 -- Divide-and-conquer literal reading (`Reader.naturalOfList`) and saturating Géran bounds
 -- add 4 compiled functions to this closure, the tiered one and the user-axiom one; other counts unchanged.
+-- Tail-recursive `getTagN0ValuesFast` (`getTagN0Values_eq_fast` `@[csimp]`) adds 1 compiled function
+-- and 1 ruled csimp (`42 -> 43`) to this closure, the tiered one, and the user-axiom one.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 8347 compiled functions; inherited externs 115, implemented_by 0, unsafe 43, csimp 8; ruled computed_field 31, implemented_by 1, csimp 42 -/
+ Ix.Kernel.Admission.checkConstants]: 8348 compiled functions; inherited externs 115, implemented_by 0, unsafe 43, csimp 8; ruled computed_field 31, implemented_by 1, csimp 43 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -912,7 +914,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- Kernel hardening (depth scanner, memoised level/expr walks, `Level.hasParamData`,
 -- `Level.isZero`, and raisable `Limits.levelBudget` / `Level.leqCoreB`) updates counts (refreshed in reconciliation).
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 8458 compiled functions; inherited externs 115, implemented_by 0, unsafe 43, csimp 8; ruled computed_field 31, implemented_by 1, csimp 42 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 8459 compiled functions; inherited externs 115, implemented_by 0, unsafe 43, csimp 8; ruled computed_field 31, implemented_by 1, csimp 43 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -958,7 +960,7 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxCK.Kernel.Admission.Tier] Ix.Kerne
  Ix.Kernel.Admission.checkBytesTieredUsingUnder,
  Ix.Kernel.Admission.checkConstantsTieredUnder,
  Ix.Kernel.Cached.checkDeclsWithUserAxioms,
- Ix.Kernel.Cached.annotDeclStepWithUserAxioms]: 8189 compiled functions; inherited externs 114, implemented_by 0, unsafe 43, csimp 8; ruled computed_field 31, implemented_by 1, csimp 42 -/
+ Ix.Kernel.Cached.annotDeclStepWithUserAxioms]: 8190 compiled functions; inherited externs 114, implemented_by 0, unsafe 43, csimp 8; ruled computed_field 31, implemented_by 1, csimp 43 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.userAxiomOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
