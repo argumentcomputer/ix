@@ -187,6 +187,7 @@ jobs:
               - 'Tests/Fixtures/trust-surface/**'
               - 'Tests/Fixtures/compile-correct-closure-manifest.txt'
               - 'Tests/Fixtures/check-bytes-closure-manifest.txt'
+              - 'ModeRepairTests/**'
               - 'Scripts/KernelReplay.lean'
             refinement:
               - 'Aiur/**'
@@ -345,19 +346,58 @@ jobs:
               - 'flake.nix'
               - 'flake.lock'
               - 'lean-toolchain'
+              - '.github/workflows/ci.yml'
               - '.github/workflows/ixcc.yml'
               - '.github/actions/**'
             ixcc-aiur:
               - 'IxCCAiur/**'
               - 'IxCC/IxCC/**'
               - 'IxCC/IxCC.lean'
-              - 'IxCC/IxCCTests/Recheck/Artifacts/Fib.lean'
+              - 'IxCC/IxCCTests/Recheck/Artifacts/**'
               - 'IxCC/lakefile.lean'
               - 'IxCC/lake-manifest.json'
               - 'IxCC/lean-toolchain'
               - 'Aiur/**'
               - 'IxCK/**'
+              - 'IxVM/**'
+              - 'MultiStark/**'
+              - 'Ix/Address.lean'
+              - 'Ix/Address/**'
+              - 'Ix/Aiur/**'
+              - 'Ix/AssumptionTree.lean'
+              - 'Ix/CanonM.lean'
+              - 'Ix/Cert/**'
+              - 'Ix/Claim*.lean'
+              - 'Ix/Common.lean'
+              - 'Ix/Compile/**'
+              - 'Ix/CompileCert/**'
+              - 'Ix/CompileDriver.lean'
+              - 'Ix/CompileM.lean'
+              - 'Ix/CondenseM.lean'
+              - 'Ix/Environment.lean'
+              - 'Ix/GraphM.lean'
+              - 'Ix/Ground.lean'
+              - 'Ix/HostAdmission/**'
+              - 'Ix/IndFlags.lean'
+              - 'Ix/IxVM/Refinement/**'
+              - 'Ix/Ixon.lean'
+              - 'Ix/Ixon/**'
+              - 'Ix/IxonContract.lean'
+              - 'Ix/IxonUniv.lean'
+              - 'Ix/LeanIngress.lean'
+              - 'Ix/LeanIngress/**'
+              - 'Ix/Merkle.lean'
+              - 'Ix/Mutual.lean'
+              - 'Ix/RoleEvidence.lean'
+              - 'Ix/SOrder.lean'
+              - 'Ix/SemanticContract.lean'
+              - 'Ix/Sharing/**'
+              - 'Ix/SpecDigest.lean'
+              - 'Ix/SpecDigest/**'
+              - 'Ix/Store.lean'
+              - 'Scripts/KernelReplay.lean'
               - 'lean-toolchain'
+              - 'lakefile.lean'
               - 'lake-manifest.json'
               - '.github/workflows/ci.yml'
               - '.github/actions/**'
@@ -409,9 +449,9 @@ jobs:
             [ "$F_GLOBAL" = "true" ] || [ "$F_KERNEL" = "true" ] && kernel=true
             [ "$F_GLOBAL" = "true" ] || [ "$F_REFINEMENT" = "true" ] && refinement=true
             [ "$F_GLOBAL" = "true" ] || [ "$F_FORMAL" = "true" ] || [ "$F_REFINEMENT" = "true" ] && formal=true
-            [ "$F_IXCC" = "true" ] && ixcc=true
-            [ "$F_IXCC_AIUR" = "true" ] && ixcc_aiur=true
-            [ "$F_KERNEL_BRIDGE" = "true" ] && kernel_bridge=true
+            [ "$F_GLOBAL" = "true" ] || [ "$F_IXCC" = "true" ] && ixcc=true
+            [ "$F_GLOBAL" = "true" ] || [ "$F_IXCC_AIUR" = "true" ] && ixcc_aiur=true
+            [ "$F_GLOBAL" = "true" ] || [ "$F_KERNEL_BRIDGE" = "true" ] && kernel_bridge=true
           fi
 
           run_quick=false
@@ -929,7 +969,7 @@ jobs:
           sccache: s3
           sticky_cache: |
             rust
-            custom,path=.lake,path=Aiur/.lake,path=IxVM/.lake,path=MultiStark/.lake,path=target,path=Models/SetTheory/.lake
+            custom,path=.lake,path=Aiur/.lake,path=IxVM/.lake,path=MultiStark/.lake,path=target,path=Models/SetTheory/.lake,path=ModeRepairTests/.lake
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - uses: $/.github/actions/setup-rust-toolchain
         with:
@@ -986,6 +1026,11 @@ jobs:
             IxSharingVerify.Audit.CompiledCode \
             IxSharingVerify.Audit.SorryFrontier
           lake -d Models/SetTheory env leanchecker IxSetTheoryModel.Audit
+      - name: Run ModeRepairTests (unit suite & differential fuzzer)
+        run: |
+          lake -d ModeRepairTests build --wfail difftest
+          lake -d IxCK env lean --run ModeRepairTests/Main.lean
+          ModeRepairTests/.lake/build/bin/difftest --seed 1 --n 2000
       # Also on pushes to `main`: the merged tree's kernel closure re-checked by
       # IxCK's own certified checker.
       - name: Bootstrap IxCK certified kernel check
@@ -1467,7 +1512,9 @@ jobs:
       CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
   # The certified Fir-to-Aiur lowering package (`IxCCAiur/`): builds the
-  # library, audit fences, and `ixcc-aiur` driver, and kernel-checks `IxCCAiur.Audit`.
+  # library, compression specs, examples, audit fences, and `ixcc-aiur` driver
+  # (with `warningAsError = true` on all package targets), and runs full-closure
+  # kernel replay across all three trees (including on `push`).
   ixcc-aiur:
     name: IxCCAiur lowering & audit
     needs: changes
@@ -1484,7 +1531,7 @@ jobs:
           sccache: s3
           sticky_cache: |
             rust
-            custom,path=.lake,path=Aiur/.lake,path=IxCC/.lake,path=IxCCAiur/.lake,path=target
+            custom,path=.lake,path=Aiur/.lake,path=IxVM/.lake,path=MultiStark/.lake,path=IxCC/.lake,path=IxCCAiur/.lake,path=target
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - uses: $/.github/actions/setup-rust-toolchain
         with:
@@ -1495,14 +1542,16 @@ jobs:
           auto-config: false
           use-github-cache: false
           use-mathlib-cache: true
-      - name: Build IxCCAiur library, audit and driver
-        env:
-          IS_PUSH: ${{ needs.changes.outputs.is_push }}
+      - name: Build IxCCAiur library, compression specs, examples, audit and driver
         run: |
-          lake -d IxCCAiur build IxCCAiur ixcc-aiur
-          if [ "$IS_PUSH" != "true" ]; then
-            lake -d IxCCAiur env leanchecker IxCCAiur.Audit
-          fi
+          lake -d IxCCAiur build IxCCAiur ixcc-aiur IxCCAiurCompression IxCCAiurExamples
+          lake -d IxCCAiur build --wfail IxCCAiurExamples
+      - name: Full-closure kernel replay of IxCCAiur, Compression and Examples
+        run: |
+          lake -d IxCCAiur env lean --run Scripts/KernelReplay.lean --jobs 8 \
+            --tree IxCCAiur/IxCCAiur:IxCCAiur \
+            --tree IxCCAiur/Compression:IxCCAiur.Compression \
+            --tree IxCCAiur/Examples:IxCCAiur.Examples
 
   # The kernel-bridge model's gate (`lake run check-kernel-bridge`: its build,
   # whose modules treat warnings as errors, and its axiom-fence inventory).

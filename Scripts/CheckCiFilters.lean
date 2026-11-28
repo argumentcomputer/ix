@@ -144,11 +144,13 @@ def parseCiFilters (yaml : String) : Except String (Std.HashMap String (Array St
 `Init`, `Std`, `Lean`, `Mathlib`, `Batteries`, `Blake3` are excluded). -/
 def projectRoots : List String :=
   ["Ix", "IxCK", "IxSharingVerify", "Aiur", "IxVM", "MultiStark", "IxVMRefinement",
-   "Models", "IxSetTheoryModel", "Tests"]
+   "Models", "IxSetTheoryModel", "IxKernelBridge",
+   "IxCC", "IxCCTests", "IxCCGrounding", "IxCCCorrect", "IxCCAiur",
+   "Tests"]
 
 /-- Nested workspace packages whose `M.X` modules live under `M/M/X.lean`. -/
 def nestedPackageRoots : List String :=
-  ["Aiur", "IxVM", "MultiStark"]
+  ["Aiur", "IxVM", "MultiStark", "IxCC"]
 
 /-- Whether a Lean module name belongs to this repository. -/
 def isProjectModule (modName : String) : Bool :=
@@ -157,15 +159,25 @@ def isProjectModule (modName : String) : Bool :=
 
 /-- Convert a project Lean module name (`A.B.C`) to its repository-relative `.lean` path,
 accounting for nested packages (`Aiur.X` → `Aiur/Aiur/X.lean`,
-`IxSetTheoryModel.X` → `Models/SetTheory/IxSetTheoryModel/X.lean`, etc.). -/
+`IxCC.X` → `IxCC/IxCC/X.lean`, `IxCCTests.X` → `IxCC/IxCCTests/X.lean`,
+`IxCCAiur.Compression.X` → `IxCCAiur/Compression/X.lean`,
+`IxCCAiur.Examples.X` → `IxCCAiur/Examples/X.lean`,
+`IxCCAiur.X` → `IxCCAiur/IxCCAiur/X.lean`,
+`IxSetTheoryModel.X` → `Models/SetTheory/IxSetTheoryModel/X.lean`,
+`IxKernelBridge.X` → `Models/KernelBridge/IxKernelBridge/X.lean`, etc.). -/
 def moduleToSourcePath (modName : String) : String :=
   let parts := modName.splitOn "."
   let rel := "/".intercalate parts ++ ".lean"
-  match parts.head? with
-  | some "IxSetTheoryModel" => "Models/SetTheory/" ++ rel
-  | some root =>
+  match parts with
+  | "IxSetTheoryModel" :: _ => "Models/SetTheory/" ++ rel
+  | "IxKernelBridge" :: _ => "Models/KernelBridge/" ++ rel
+  | "IxCCTests" :: _ | "IxCCGrounding" :: _ | "IxCCCorrect" :: _ => "IxCC/" ++ rel
+  | "IxCCAiur" :: "Compression" :: _ => rel
+  | "IxCCAiur" :: "Examples" :: _ => rel
+  | "IxCCAiur" :: _ => "IxCCAiur/" ++ rel
+  | root :: _ =>
     if nestedPackageRoots.contains root then root ++ "/" ++ rel else rel
-  | none => rel
+  | [] => rel
 
 /-- Extract all imported module names from a Lean source file's header (handling
 nested block comments `/- ... -/`, line comments `-- ...`, `module`,
@@ -303,7 +315,15 @@ def selfCheck : IO Unit := do
     ("IxVMRefinement.Endpoint.ComposedResidual", "IxVMRefinement/Endpoint/ComposedResidual.lean"),
     ("IxSharingVerify.CanonicalMeaning", "IxSharingVerify/CanonicalMeaning.lean"),
     ("Models.SetTheory.IxSetTheoryModel.Carneiro", "Models/SetTheory/IxSetTheoryModel/Carneiro.lean"),
-    ("IxSetTheoryModel.Audit", "Models/SetTheory/IxSetTheoryModel/Audit.lean")]
+    ("IxSetTheoryModel.Audit", "Models/SetTheory/IxSetTheoryModel/Audit.lean"),
+    ("IxKernelBridge.Audit", "Models/KernelBridge/IxKernelBridge/Audit.lean"),
+    ("IxCC.Recheck.Run", "IxCC/IxCC/Recheck/Run.lean"),
+    ("IxCCTests.Recheck.Artifacts.Gcd", "IxCC/IxCCTests/Recheck/Artifacts/Gcd.lean"),
+    ("IxCCGrounding.Fence", "IxCC/IxCCGrounding/Fence.lean"),
+    ("IxCCCorrect.Fence", "IxCC/IxCCCorrect/Fence.lean"),
+    ("IxCCAiur.Audit", "IxCCAiur/IxCCAiur/Audit.lean"),
+    ("IxCCAiur.Compression.CompressWrapSpec", "IxCCAiur/Compression/CompressWrapSpec.lean"),
+    ("IxCCAiur.Examples.MultiStarkV6Pure", "IxCCAiur/Examples/MultiStarkV6Pure.lean")]
   for (modName, want) in expectedPaths do
     let got := moduleToSourcePath modName
     unless got == want do
@@ -371,6 +391,20 @@ def requiredFilterCoverage : Array (String × String) := #[
   ("Scripts/KernelReplay.lean", "kernel"),
   ("Scripts/KernelReplay.lean", "refinement"),
   ("Scripts/KernelReplay.lean", "formal"),
+  ("Scripts/KernelReplay.lean", "ixcc-aiur"),
+  ("ModeRepairTests/lakefile.lean", "kernel"),
+  ("ModeRepairTests/Main.lean", "kernel"),
+  ("IxCC/IxCCTests/Recheck/Artifacts/Fib.lean", "ixcc-aiur"),
+  ("IxCC/IxCCTests/Recheck/Artifacts/Gcd.lean", "ixcc-aiur"),
+  ("IxCC/IxCCTests/Recheck/Artifacts/EvenOdd.lean", "ixcc-aiur"),
+  ("IxCC/IxCCTests/Recheck/Artifacts/Sfib.lean", "ixcc-aiur"),
+  ("IxCC/IxCCTests/Recheck/Artifacts/Tak.lean", "ixcc-aiur"),
+  ("IxCCAiur/Compression/CompressWrapSpec.lean", "ixcc-aiur"),
+  ("IxCCAiur/Compression/KzgPairingSpec.lean", "ixcc-aiur"),
+  ("IxCCAiur/Examples/MultiStarkV6Pure.lean", "ixcc-aiur"),
+  (".github/workflows/ci.yml", "ixcc"),
+  (".github/workflows/ci.yml", "ixcc-aiur"),
+  (".github/workflows/ci.yml", "kernel-bridge"),
   ("Tests/Ix/Kernel/TrustSurface.lean", "kernel"),
   ("Tests/Ix/Kernel/TrustSurface.lean", "refinement"),
   ("Tests/Ix/Kernel/TrustSurface.lean", "host"),
@@ -448,7 +482,33 @@ def transitiveImportChecks : Array (String × String × Array String) := #[
     "Tests.Ix.InstanceSymbols",
     "Tests.Ix.VMSource",
     "Tests.Ix.IxVM.SafeReferencesWalk",
-    "Tests.Ix.Kernel.ModelLaws"])]
+    "Tests.Ix.Kernel.ModelLaws"]),
+  ("ixcc transitive closure", "ixcc", #[
+    "IxCC",
+    "IxCCGrounding.Fence",
+    "IxCCCorrect.Fence",
+    "IxCCTests.Recheck.Audit"]),
+  ("ixcc-aiur transitive closure", "ixcc-aiur", #[
+    "IxCCAiur",
+    "IxCCAiur.Audit",
+    "IxCCAiur.Main",
+    "IxCCAiur.Compression.StarkWire",
+    "IxCCAiur.Compression.CompressWrapPure",
+    "IxCCAiur.Compression.CompressWrapSpec",
+    "IxCCAiur.Compression.KzgWire",
+    "IxCCAiur.Compression.KzgPackedPure",
+    "IxCCAiur.Compression.PairingPure",
+    "IxCCAiur.Compression.KzgPairingSpec",
+    "IxCCAiur.Compression.Groth16X86",
+    "IxCCAiur.Examples.Blake3Block",
+    "IxCCAiur.Examples.CurveOpsPure",
+    "IxCCAiur.Examples.FriPure",
+    "IxCCAiur.Examples.KzgAlgebraPure",
+    "IxCCAiur.Examples.MmcsPure",
+    "IxCCAiur.Examples.MultiStarkV6Pure"]),
+  ("kernel-bridge transitive closure", "kernel-bridge", #[
+    "IxKernelBridge",
+    "IxKernelBridge.Audit"])]
 
 /-- Closure manifests to verify: `(manifestPath, ciFilterName, required)`. -/
 def manifestChecks : Array (String × String × Bool) := #[
