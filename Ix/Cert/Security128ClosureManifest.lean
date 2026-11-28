@@ -44,10 +44,11 @@ namespace Ix.Cert.Security128ClosureManifest
 
 /-- Pinned 128-bit security audit roots across MultiStark, Aggregation, and Compression
 whose definitional closure is SHA-256 pinned: numerical parameter/digest inequalities,
-negative controls, `CertiFRI`'s Horner-batched binary-folding `Fri.verify` theorems over
-the 64-byte `Digest64` type, abstract `MonolithicRom` / `StarkShrinker` schemas, and
-schematic `Bls12381` stage models (not theorems about the shipped Rust `v6` verifier,
-shrinker, or hand-written compression circuits). -/
+negative controls, `CertiFRI`'s Horner-batched, binary tensor-batched, and multi-arity
+(`2^a` / 8-ary) FRI + `GoldilocksExt3` pruned-MMCS STARK soundness and `v6-zk` HVZK
+theorems, concrete `DynamicRom` `Fp^3` instantiations, abstract `MonolithicRom` /
+`StarkShrinker` schemas, and schematic `Bls12381` stage models (not theorems about the
+shipped Rust `v6` verifier, shrinker, or hand-written compression circuits). -/
 def roots : Array Lean.Name := #[
   ``Ix.Cert.MultiStark.Security128.goldilocks_fp3_card_ge_2_pow_191,
   ``Ix.Cert.MultiStark.Security128.ud_160_pow20_query_error_le_128,
@@ -64,6 +65,8 @@ def roots : Array Lean.Name := #[
   ``Ix.Cert.MultiStark.Security128.negControl_deceptive_4_55_0_rejected_128,
   ``Ix.Cert.MultiStark.Security128.negControl_digest32_rejected_128,
   ``Ix.Cert.MultiStark.Security128.negControl_digest48_xof_rejected_128,
+  ``Ix.Cert.MultiStark.soundness_dynamic_rom_starkTensor_fp3_ud,
+  ``Ix.Cert.MultiStark.soundness_dynamic_rom_starkTensorMulti_fp3_ud,
   ``CertiFri.P3.Blake2b.kat_empty_hex,
   ``CertiFri.P3.Blake2b.kat_abc_hex,
   ``CertiFri.P3.Blake2b.kat_exact128_hex,
@@ -84,6 +87,31 @@ def roots : Array Lean.Name := #[
   ``CertiFri.P3.Exec.goldilocksExt3_zk_tensor2DMCA_ud_128,
   ``CertiFri.P3.Blake3Domain.mode_injective,
   ``CertiFri.P3.Blake3Domain.v6Zk_keyWords_ne_nonZk,
+  ``CertiFri.P3.GoldilocksExt3.starkModel,
+  ``CertiFri.P3.GoldilocksExt3.rbrSound_starkTensor_ud,
+  ``CertiFri.P3.GoldilocksExt3.rbrSound_pcsTensor_johnson,
+  ``CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorPruned_digest32,
+  ``CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorPruned_digest64,
+  ``CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorPruned_lookups_digest32,
+  ``CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorPruned_lookups_digest64,
+  ``CertiFri.P3.GoldilocksExt3.rbrSound_starkTensorMulti_ud,
+  ``CertiFri.P3.GoldilocksExt3.rbrSound_pcsTensorMulti_compact400KBBalanced,
+  ``CertiFri.P3.GoldilocksExt3.rbrSound_pcsTensorMulti_ultraCompact400KBZk,
+  ``CertiFri.P3.Exec.goldilocksExt3_compact400KBBalanced_sponge_blake3,
+  ``CertiFri.P3.Exec.goldilocksExt3_compact400KBBalanced_sponge_blake2b512,
+  ``CertiFri.P3.Exec.goldilocksExt3_ultraCompact400KBZk_sponge_blake3,
+  ``CertiFri.P3.Exec.goldilocksExt3_ultraCompact400KBZk_sponge_blake2b512,
+  ``CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorMultiArityPruned_compact400KBBalanced_digest32,
+  ``CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorMultiArityPruned_compact400KBBalanced_digest64,
+  ``CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorMultiArityPruned_ultraCompact400KBZk_digest32,
+  ``CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorMultiArityPruned_ultraCompact400KBZk_digest64,
+  ``CertiFri.P3.Exec.v6Zk_alg_perfect_hvzk,
+  ``CertiFri.P3.Exec.v6Zk_hvzk,
+  ``CertiFri.P3.Exec.goldilocksExt3_v6Zk_hvzk,
+  ``CertiFri.P3.Exec.goldilocksExt3_v6Zk_hvzk_salt32,
+  ``CertiFri.P3.Exec.goldilocksExt3_ultraCompact400KBZk_hvzk,
+  ``CertiFri.P3.Exec.goldilocksExt3_ultraCompact400KBZk_hvzk_salt32,
+  ``CertiFri.P3.Exec.goldilocksExt3_v6Zk_hvzk_with_tensor4_span,
   ``Ix.Cert.Aggr.Security128.securityEnvelope128Ok_implies_v5,
   ``Ix.Cert.Aggr.Security128.securityEnvelope128Ok_iff_profile,
   ``Ix.Cert.Aggr.Security128.v6_shape17_envelopes_ok,

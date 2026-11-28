@@ -16,10 +16,10 @@ require ixvm from "IxVM"
 require multiStark from "MultiStark"
 
 require certifri from git
-  "https://github.com/argumentcomputer/CertiFRI" @ "193e603b1643e0c29f3c8362075c094289940184"
+  "https://github.com/argumentcomputer/CertiFRI" @ "9ae20f3feb6875a7875222811b23f8a8bc4ee8a3"
 
 require «certifri-proofs» from git
-  "https://github.com/argumentcomputer/CertiFRI" @ "193e603b1643e0c29f3c8362075c094289940184" / "Proofs"
+  "https://github.com/argumentcomputer/CertiFRI" @ "9ae20f3feb6875a7875222811b23f8a8bc4ee8a3" / "Proofs"
 
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "d8eb3e0d9a8e33fc116e6700df0418a1d8114508"

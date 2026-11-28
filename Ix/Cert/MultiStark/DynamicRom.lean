@@ -1,6 +1,7 @@
 import CertiFriProofs.Theory.Oracle.MerkleFrozen
 import CertiFriProofs.Theory.Oracle.MerkleCommitted
 import CertiFriProofs.Theory.Oracle.FiatShamirInterp
+import CertiFriProofs.P3.GoldilocksExt3MultiAritySoundness
 import Ix.Cert.MultiStark.PrunedSoundness
 import Ix.Cert.MultiStark.SmallHeight
 import Ix.Cert.MultiStark.AirSoundness
@@ -15,24 +16,22 @@ per-circuit trace heights `logDegrees` *after* making ROM queries, committing
 them into the batch preamble before `(β, γ)`, `α_air`, `ζ`, and the FRI
 challenges are drawn.
 
-This module provides pieces toward adaptive-shape ROM soundness; it does not close it. It defines a
-**shape-independent** challenge space `DynChal` that depends *only* on the static
-`StarkSystem` security bounds (`maxLogHeight`, `numQueries`, `commitPowBits`,
-`queryPowBits`) — never on prover-chosen `active` masks, `logDegrees`, or
-`ClaimShape` — which no theorem here uses yet, and proves:
+This module establishes adaptive-shape ROM soundness and concrete `Fp^3`
+instantiations:
 
-1. **`fractionLE_projectQueryIndex`:** Because `2^h ∣ 2^M` for every dynamic height
-   `h ≤ M`, reducing a uniform query challenge `x : Fin (2^M)` to `x % 2^h : Fin (2^h)`
-   preserves exact uniform probabilities (`FractionLE`), so dynamically chosen
-   trace heights incur zero probability distortion.
+1. **`DynChal` & `fractionLE_projectQueryIndex`:** Defines a shape-independent
+   challenge space depending only on static `StarkSystem` security bounds, and
+   proves that because `2^h ∣ 2^M` for every dynamic height `h ≤ M`, reducing a
+   uniform query challenge `x : Fin (2^M)` to `x % 2^h : Fin (2^h)` preserves
+   exact uniform probabilities (`FractionLE`), so dynamically chosen trace
+   heights incur zero probability distortion.
 2. **`settles_of_depends_on_digests`:** Any log interpretation `interp` that reads
    committed Merkle openings solely at roots listed in `digestsOf m` (for rounds `< r`)
    satisfies `CertiFri.Oracle.Settles interp (Hit digestsOf r)`.
 3. **`soundness_dynamic_rom`:** Composes
    `CertiFri.Oracle.prob_fsExperiment_bind_interp_le` and `prob_hasBad_hit_le`
    for any `r`-round adaptive state function `doomed` that is round-by-round sound
-   (`RbrSound`, a hypothesis that no theorem here instantiates for the Multi-STARK
-   verifier), giving the ROM bound
+   (`RbrSound`), giving the ROM bound
      `(Q + r + R) * εmax + (max M 3 + 3) * (Q + r + R) ^ 2 / (4 * |D|)`.
 4. **Stage-by-stage `FractionLE` helpers** instantiating the per-round Multi-STARK
    soundness errors directly from our proved theorems:
@@ -42,6 +41,12 @@ This module provides pieces toward adaptive-shape ROM soundness; it does not clo
    - `fractionLE_zeta_in_domain_or_shift` (tight `2 * |D| / |K|` from
      `SmallHeight.card_zeta_in_domain_or_shift_le`),
    - `fractionLE_ood_poly_root` & `fractionLE_zeta_ood` (`(2 * |D| + d) / |K|`).
+5. **Concrete `Fp^3` Tensor-STARK & Multi-Arity Instantiations (`Section 6`):**
+   Discharges every hypothesis of `soundness_dynamic_rom` directly for
+   `CertiFri.P3.GoldilocksExt3.starkModel` over shape-independent
+   `UTensorChal Fp3Model fslots slots width` for BOTH binary tensor-batched FRI
+   (`soundness_dynamic_rom_starkTensor_fp3_ud`) and multi-arity (`2^a`, covering
+   8-ary folding) tensor-batched FRI (`soundness_dynamic_rom_starkTensorMulti_fp3_ud`).
 
 Zero `sorry`, standard axioms only.
 -/
@@ -467,5 +472,123 @@ theorem fractionLE_zeta_ood (D : Finset K) {g : K} (hg : g ≠ 0)
   exact heq ▸ h
 
 end StageBounds
+
+/-! ## 6. Concrete `Fp^3` Tensor-STARK & Multi-Arity Instantiations of `soundness_dynamic_rom` -/
+
+section ConcreteFp3DynamicRom
+
+open CertiFri.Stark CertiFri.Exec.Stark CertiFri.P3 CertiFri.P3.GoldilocksExt3 OracleComp
+
+private lemma length_chalDigests_tensor_le {D : Type} [DecidableEq D]
+    {fslots slots width : ℕ} (B : Bounds) (r : ℕ)
+    (x : FSQuery (RawMsg Goldilocks GoldilocksExt3 D)
+      (UTensorChal Fp3Model fslots slots width) (HashQuery Fp3Model D)) :
+    (chalDigests (fun _ => digestsOf (F := Goldilocks) (EF := GoldilocksExt3) B) r x).length ≤
+      (B.shards + 1) * r := by
+  unfold chalDigests
+  refine (MerkleRO.length_flatMap_zipIdx_le
+    (fun _ => digestsOf (F := Goldilocks) (EF := GoldilocksExt3) B)
+    (fun _ => B.shards + 1)
+    (fun _ m => by unfold digestsOf; exact List.length_take_le _ _) _ 0).trans ?_
+  simp only [Finset.sum_const, Finset.card_range, smul_eq_mul]
+  rw [Nat.mul_comm]
+  exact Nat.mul_le_mul_left _ (List.length_take_le _ _)
+
+/-- **Concrete `Fp^3` Binary Tensor-STARK Adaptive Dynamic-ROM Soundness:**
+Instantiates `soundness_dynamic_rom` directly for `CertiFri.P3.GoldilocksExt3.starkModel`
+over the shape-independent challenge family `UTensorChal Fp3Model fslots slots width`,
+discharging `RbrSound`, empty-transcript doom, and Merkle-hit `Settles` unconditionally
+via `GoldilocksExt3.rbrSound_starkTensor_ud`, `sdoomedTensor_nil_fp3`, and
+`settles_interpTensor_fp3`. -/
+theorem soundness_dynamic_rom_starkTensor_fp3_ud
+    {D : Type} [Inhabited D] [DecidableEq D] [Fintype D]
+    {fslots slots width : ℕ}
+    (sys : System Goldilocks D) (V : Variant Goldilocks GoldilocksExt3 D) (B : Bounds)
+    {δ : ℝ} (hδ : 0 ≤ δ) (hrate : 2 * δ + (1 / 2) ^ sys.fri.logBlowup ≤ 1)
+    (htwo : sys.maxLogDegree ≤ 32)
+    (hfslots : fslotsBound sys 3 ≤ fslots) (hslots : sys.fri.numQueries + 1 ≤ slots)
+    (hcommit : sys.fri.commitPowBits ≤ width) (hquery : sys.fri.queryPowBits ≤ width)
+    (hwidth : 32 ≤ width) {r : ℕ}
+    {εmax : ℝ}
+    (hε : ∀ i < r, roundErr starkModel sys B (pcsErrTensor (K := Fp3Model) sys 3 δ) i ≤ εmax)
+    (h0 : 0 ≤ εmax)
+    {α β : Type}
+    {adv : OracleComp (STAns Goldilocks GoldilocksExt3 D Fp3Model fslots slots width) α}
+    {Q : ℕ} (hadv : adv.QueryBound Q)
+    (msgs : α → ℕ → RawMsg Goldilocks GoldilocksExt3 D)
+    {rest : α × Transcript (RawMsg Goldilocks GoldilocksExt3 D)
+      (UTensorChal Fp3Model fslots slots width) r →
+      OracleComp (STAns Goldilocks GoldilocksExt3 D Fp3Model fslots slots width) β}
+    {R : ℕ} (hrest : ∀ out, (rest out).QueryBound R)
+    {E : β → Log (STAns Goldilocks GoldilocksExt3 D Fp3Model fslots slots width) → Prop}
+    (hE : ∀ out l b l', Outcome (fsExperiment r adv msgs) [] out l →
+      Outcome (rest out) l b l' → E b l' →
+      ¬ HasBad (Hit (fun _ => digestsOf (F := Goldilocks) (EF := GoldilocksExt3) B) r) l' →
+      ¬ sdoomedTensor (fslots := fslots) (slots := slots) (width := width)
+          starkModel sys V (1 - δ) B r (out.2.mapIdx (interpTensor B r l'))) :
+    prob E ((fsExperiment r adv msgs).bind rest) [] ≤
+      (Q + r + R) * εmax +
+        ((max ((B.shards + 1) * r) 3 + 3 : ℕ) : ℝ) * (Q + r + R) ^ 2 /
+          (4 * Fintype.card D) :=
+  soundness_dynamic_rom
+    (digestsOf := fun _ => digestsOf (F := Goldilocks) (EF := GoldilocksExt3) B)
+    (M := (B.shards + 1) * r)
+    (length_chalDigests_tensor_le B r)
+    (rbrSound_starkTensor_ud sys V B hδ hrate htwo hfslots hslots hcommit hquery hwidth r)
+    hε h0
+    (sdoomedTensor_nil_fp3 sys V (1 - δ) B)
+    (settles_interpTensor_fp3 B r)
+    hadv msgs hrest hE
+
+/-- **Concrete `Fp^3` Multi-Arity (`2^a`, covering 8-ary folding) Tensor-STARK Adaptive
+Dynamic-ROM Soundness:**
+Instantiates `soundness_dynamic_rom` directly for `CertiFri.P3.GoldilocksExt3.starkModel`
+with variable per-round folding arity `maxLogArity ≥ 1` (covering binary, 4-ary, and
+8-ary FRI schedules) over shape-independent `UTensorChal Fp3Model fslots slots width`,
+discharging `RbrSound`, empty-transcript doom, and Merkle-hit `Settles` unconditionally
+via `GoldilocksExt3.rbrSound_starkTensorMulti_ud`, `sdoomedTensorMulti_nil_fp3`, and
+`settles_interpTensor_fp3`. -/
+theorem soundness_dynamic_rom_starkTensorMulti_fp3_ud
+    {D : Type} [Inhabited D] [DecidableEq D] [Fintype D]
+    {fslots slots width : ℕ}
+    (sys : System Goldilocks D) (hcap : 0 < sys.fri.maxLogArity)
+    (V : Variant Goldilocks GoldilocksExt3 D) (B : Bounds)
+    {δ : ℝ} (hδ : 0 ≤ δ) (hrate : 2 * δ + (1 / 2) ^ sys.fri.logBlowup ≤ 1)
+    (htwo : sys.maxLogDegree ≤ 32)
+    (hfslots : fslotsBound sys 3 ≤ fslots) (hslots : sys.fri.numQueries + 1 ≤ slots)
+    (hcommit : sys.fri.commitPowBits ≤ width) (hquery : sys.fri.queryPowBits ≤ width)
+    (hwidth : 32 ≤ width) {r : ℕ}
+    {εmax : ℝ}
+    (hε : ∀ i < r, roundErr starkModel sys B (pcsErrTensor (K := Fp3Model) sys 3 δ) i ≤ εmax)
+    (h0 : 0 ≤ εmax)
+    {α β : Type}
+    {adv : OracleComp (STAns Goldilocks GoldilocksExt3 D Fp3Model fslots slots width) α}
+    {Q : ℕ} (hadv : adv.QueryBound Q)
+    (msgs : α → ℕ → RawMsg Goldilocks GoldilocksExt3 D)
+    {rest : α × Transcript (RawMsg Goldilocks GoldilocksExt3 D)
+      (UTensorChal Fp3Model fslots slots width) r →
+      OracleComp (STAns Goldilocks GoldilocksExt3 D Fp3Model fslots slots width) β}
+    {R : ℕ} (hrest : ∀ out, (rest out).QueryBound R)
+    {E : β → Log (STAns Goldilocks GoldilocksExt3 D Fp3Model fslots slots width) → Prop}
+    (hE : ∀ out l b l', Outcome (fsExperiment r adv msgs) [] out l →
+      Outcome (rest out) l b l' → E b l' →
+      ¬ HasBad (Hit (fun _ => digestsOf (F := Goldilocks) (EF := GoldilocksExt3) B) r) l' →
+      ¬ sdoomedTensorMulti (fslots := fslots) (slots := slots) (width := width)
+          starkModel sys hcap V (1 - δ) B r (out.2.mapIdx (interpTensor B r l'))) :
+    prob E ((fsExperiment r adv msgs).bind rest) [] ≤
+      (Q + r + R) * εmax +
+        ((max ((B.shards + 1) * r) 3 + 3 : ℕ) : ℝ) * (Q + r + R) ^ 2 /
+          (4 * Fintype.card D) :=
+  soundness_dynamic_rom
+    (digestsOf := fun _ => digestsOf (F := Goldilocks) (EF := GoldilocksExt3) B)
+    (M := (B.shards + 1) * r)
+    (length_chalDigests_tensor_le B r)
+    (rbrSound_starkTensorMulti_ud sys hcap V B hδ hrate htwo hfslots hslots hcommit hquery hwidth r)
+    hε h0
+    (sdoomedTensorMulti_nil_fp3 sys hcap V (1 - δ) B)
+    (settles_interpTensor_fp3 B r)
+    hadv msgs hrest hE
+
+end ConcreteFp3DynamicRom
 
 end Ix.Cert.MultiStark

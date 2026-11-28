@@ -2304,7 +2304,7 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/CertiFRI.git?rev=193e603b1643e0c29f3c8362075c094289940184#193e603b1643e0c29f3c8362075c094289940184"
+source = "git+https://github.com/argumentcomputer/CertiFRI.git?rev=9ae20f3feb6875a7875222811b23f8a8bc4ee8a3#9ae20f3feb6875a7875222811b23f8a8bc4ee8a3"
 dependencies = [
  "bincode",
  "blake3",

@@ -28,22 +28,35 @@ profile, together with constructive negative controls rejecting `Fp^2`,
   concrete 128-bit PQ because BLAKE3's 256-bit internal `cv` caps concrete BHT
   collision resistance at `85.3b` on every `> 64`-byte input.
 
-### Direct Unconditional `CertiFRI` Wiring (pinned `CertiFRI` `193e603b`)
+### Direct Unconditional `CertiFRI` Wiring (pinned `CertiFRI` `9ae20f3`)
 Imports `CertiFriProofs.Audit128` and `CertiFriProofs.Exec.SoundnessTensorSponge` directly
-and locks the RFC 7693 `BLAKE2b-512` kernel-checked KATs, `Blake2b512Domain` injectivity,
-`card_digest64` (`2 ^ 512`), BHT/CNS/Grover bounds, and unconditional `GoldilocksExt3` +
-incremental sponge (`c = 3 / 2`) executable soundness theorems — for BOTH Horner-batched
-`Fri.verify` AND tensor-batched `Fri.verifyTensor` (`FriBatching::Tensor`), across both
-unique-decoding and unconditional Johnson (`lb = 2, 3, 4`, zero `CurveListCA` hypothesis)
-regimes over 32-byte `BLAKE3` (`Digest`) and 64-byte `BLAKE2b-512` (`Digest64`) — together
-with their strict `[propext, Classical.choice, Quot.sound]` axiom footprints.
+and locks:
+- RFC 7693 `BLAKE2b-512` kernel-checked KATs, `Blake2b512Domain` / `Blake3Domain` injectivity,
+  `card_digest64` (`2 ^ 512`), and BHT/CNS/Grover arithmetic bounds;
+- Unconditional `GoldilocksExt3` + incremental sponge (`c = 3 / 2`) executable FRI soundness
+  theorems for Horner-batched `Fri.verify`, binary tensor-batched `Fri.verifyTensor`, and
+  multi-arity (`2^a`, `logArity ∈ {1, 2, 3}`, fold factors `2, 4, 8`) tensor-batched FRI
+  including `FriParams.compact400KBBalanced` (`lb = 4, maxLogArity = 3, q = 58, pow = 28`)
+  and `FriParams.ultraCompact400KBZk` (`lb = 4, maxLogArity = 3, q = 55, pow = 30`), across
+  both unique-decoding and unconditional Johnson (`lb = 2, 3, 4`, zero `CurveListCA`
+  hypothesis) regimes over 32-byte `BLAKE3` (`Digest`) and 64-byte `BLAKE2b-512` (`Digest64`);
+- Cubic-extension (`Fp3Model`) `GoldilocksExt3.starkModel`, concrete `DynamicRom`
+  instantiations (`soundness_dynamic_rom_starkTensor_fp3_ud`,
+  `soundness_dynamic_rom_starkTensorMulti_fp3_ud`), and unpruned & pruned-MMCS
+  (`CertiFri.P3.prunedMmcs`) binary and multi-arity tensor-batched STARK + LogUp soundness;
+- Protocol `v6-zk` formal Honest-Verifier Zero-Knowledge (`v6Zk_alg_perfect_hvzk`,
+  `v6Zk_hvzk`, `goldilocksExt3_v6Zk_hvzk`, `goldilocksExt3_v6Zk_hvzk_salt32`,
+  `goldilocksExt3_ultraCompact400KBZk_hvzk`, `goldilocksExt3_ultraCompact400KBZk_hvzk_salt32`,
+  `goldilocksExt3_v6Zk_hvzk_with_tensor4_span`) covering polynomial blinding, masked-LogUp
+  boundary hiding, multi-arity FRI randomizer uniformity, and salted-Merkle leaf hiding
+  for both 16-byte (`2^128`) and 32-byte (`2^256`) salts —
+together with their strict `[propext, Classical.choice, Quot.sound]` axiom footprints.
 
-What these theorems are about: the executable soundness theorems concern `CertiFRI`'s
-Lean binary-folding `Fri.verify` (Horner) and `Fri.verifyTensor` (`FriBatching::Tensor`)
-verifiers under the idealized incremental-sponge ROM (`c = 3 / 2`), not the Rust `multi-stark`
-implementation directly, not the shrinker's 8-ary folding, and not a hiding `v6-zk` verifier
-(the `v6-zk` theorems conclude about the non-hiding `Fri.verify`). None considers a quantum
-adversary.
+What these theorems are about: the executable soundness and HVZK theorems concern
+`CertiFRI`'s Lean verifiers and `v6-zk` ROM model (binary and multi-arity `2^a` / 8-ary
+tensor-batched FRI, unpruned and pruned-MMCS `GoldilocksExt3` STARKs, and salted-Merkle
+`v6-zk` transcripts) under the idealized classical ROM (`c = 3 / 2` incremental sponge),
+not the compiled Rust `multi-stark` binary directly. None considers a quantum adversary.
 
 Every theorem pinned here depends strictly on standard Lean axioms
 (`propext`, `Classical.choice`, `Quot.sound`) — zero `sorry`, zero custom
@@ -538,7 +551,7 @@ end Ix.Cert.MultiStark.Security128
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.MultiStark.goldilocks_pruned_fri_soundness
 
-/-! ## 5. Direct Upstream `CertiFRI` (`193e603b`) Unconditional 128-Bit Theorem & Axiom Locks -/
+/-! ## 5. Direct Upstream `CertiFRI` (`9ae20f3`) Unconditional 128-Bit Theorem & Axiom Locks -/
 
 /-- info: CertiFri.P3.Exec.curveListCA_fp3 : CertiFri.CurveListCA CertiFri.P3.Fp3Model CertiFri.CurveListCAProof.curveListThreshold -/
 #guard_msgs (whitespace := lax) in
@@ -679,3 +692,125 @@ end Ix.Cert.MultiStark.Security128
 /-- info: 'CertiFri.P3.Exec.goldilocksExt3_soundnessTensor_sponge_blake2b512_johnson_lb4_58_128_unconditional' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms CertiFri.P3.Exec.goldilocksExt3_soundnessTensor_sponge_blake2b512_johnson_lb4_58_128_unconditional
+
+/-! ## 6. `Fp^3` `StarkModel`, Concrete `DynamicRom`, Multi-Arity 8-ary FRI & `v6-zk` HVZK Locks -/
+
+/-- info: CertiFri.P3.GoldilocksExt3.starkModel : CertiFri.Stark.StarkModel CertiFri.P3.Goldilocks CertiFri.P3.GoldilocksExt3 CertiFri.P3.Fp3Model -/
+#guard_msgs (whitespace := lax) in
+#check @CertiFri.P3.GoldilocksExt3.starkModel
+
+/-- info: CertiFri.Fri.FriParams.compact400KBBalanced : CertiFri.Fri.FriParams -/
+#guard_msgs (whitespace := lax) in
+#check @CertiFri.Fri.FriParams.compact400KBBalanced
+
+/-- info: CertiFri.Fri.FriParams.ultraCompact400KBZk : CertiFri.Fri.FriParams -/
+#guard_msgs (whitespace := lax) in
+#check @CertiFri.Fri.FriParams.ultraCompact400KBZk
+
+/-- info: 'Ix.Cert.MultiStark.soundness_dynamic_rom_starkTensor_fp3_ud' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.MultiStark.soundness_dynamic_rom_starkTensor_fp3_ud
+
+/-- info: 'Ix.Cert.MultiStark.soundness_dynamic_rom_starkTensorMulti_fp3_ud' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.MultiStark.soundness_dynamic_rom_starkTensorMulti_fp3_ud
+
+/-- info: 'CertiFri.P3.GoldilocksExt3.starkModel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.GoldilocksExt3.starkModel
+
+/-- info: 'CertiFri.P3.GoldilocksExt3.rbrSound_starkTensor_ud' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.GoldilocksExt3.rbrSound_starkTensor_ud
+
+/-- info: 'CertiFri.P3.GoldilocksExt3.rbrSound_pcsTensor_johnson' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.GoldilocksExt3.rbrSound_pcsTensor_johnson
+
+/-- info: 'CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorPruned_digest32' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorPruned_digest32
+
+/-- info: 'CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorPruned_digest64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorPruned_digest64
+
+/-- info: 'CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorPruned_lookups_digest32' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorPruned_lookups_digest32
+
+/-- info: 'CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorPruned_lookups_digest64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorPruned_lookups_digest64
+
+/-- info: 'CertiFri.P3.GoldilocksExt3.rbrSound_starkTensorMulti_ud' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.GoldilocksExt3.rbrSound_starkTensorMulti_ud
+
+/-- info: 'CertiFri.P3.GoldilocksExt3.rbrSound_pcsTensorMulti_compact400KBBalanced' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.GoldilocksExt3.rbrSound_pcsTensorMulti_compact400KBBalanced
+
+/-- info: 'CertiFri.P3.GoldilocksExt3.rbrSound_pcsTensorMulti_ultraCompact400KBZk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.GoldilocksExt3.rbrSound_pcsTensorMulti_ultraCompact400KBZk
+
+/-- info: 'CertiFri.P3.Exec.goldilocksExt3_compact400KBBalanced_sponge_blake3' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.Exec.goldilocksExt3_compact400KBBalanced_sponge_blake3
+
+/-- info: 'CertiFri.P3.Exec.goldilocksExt3_compact400KBBalanced_sponge_blake2b512' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.Exec.goldilocksExt3_compact400KBBalanced_sponge_blake2b512
+
+/-- info: 'CertiFri.P3.Exec.goldilocksExt3_ultraCompact400KBZk_sponge_blake3' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.Exec.goldilocksExt3_ultraCompact400KBZk_sponge_blake3
+
+/-- info: 'CertiFri.P3.Exec.goldilocksExt3_ultraCompact400KBZk_sponge_blake2b512' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.Exec.goldilocksExt3_ultraCompact400KBZk_sponge_blake2b512
+
+/-- info: 'CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorMultiArityPruned_compact400KBBalanced_digest32' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorMultiArityPruned_compact400KBBalanced_digest32
+
+/-- info: 'CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorMultiArityPruned_compact400KBBalanced_digest64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorMultiArityPruned_compact400KBBalanced_digest64
+
+/-- info: 'CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorMultiArityPruned_ultraCompact400KBZk_digest32' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorMultiArityPruned_ultraCompact400KBZk_digest32
+
+/-- info: 'CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorMultiArityPruned_ultraCompact400KBZk_digest64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.GoldilocksExt3.soundness_verifyBatchTensorMultiArityPruned_ultraCompact400KBZk_digest64
+
+/-- info: 'CertiFri.P3.Exec.v6Zk_alg_perfect_hvzk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.Exec.v6Zk_alg_perfect_hvzk
+
+/-- info: 'CertiFri.P3.Exec.v6Zk_hvzk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.Exec.v6Zk_hvzk
+
+/-- info: 'CertiFri.P3.Exec.goldilocksExt3_v6Zk_hvzk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.Exec.goldilocksExt3_v6Zk_hvzk
+
+/-- info: 'CertiFri.P3.Exec.goldilocksExt3_v6Zk_hvzk_salt32' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.Exec.goldilocksExt3_v6Zk_hvzk_salt32
+
+/-- info: 'CertiFri.P3.Exec.goldilocksExt3_ultraCompact400KBZk_hvzk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.Exec.goldilocksExt3_ultraCompact400KBZk_hvzk
+
+/-- info: 'CertiFri.P3.Exec.goldilocksExt3_ultraCompact400KBZk_hvzk_salt32' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.Exec.goldilocksExt3_ultraCompact400KBZk_hvzk_salt32
+
+/-- info: 'CertiFri.P3.Exec.goldilocksExt3_v6Zk_hvzk_with_tensor4_span' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms CertiFri.P3.Exec.goldilocksExt3_v6Zk_hvzk_with_tensor4_span
