@@ -349,6 +349,8 @@
   {"path": "IxCCTests/Soundness/Run.lean",
    "imports":
    ["IxCC.Recheck.DefAsserts",
+    "IxCC.Compile",
+    "IxCC.Cli",
     "IxCC.Recheck.Proof.LiveClosed",
     "IxCC.X86.Exe.Machine.Proof.Loaded",
     "IxCCTests.Exe.Run",
@@ -4142,6 +4144,8 @@
     "IxCC.BigNat.Bootstrap",
     "IxCC.Rt.BigNat.Cell",
     "IxCC.Rt.BigNat.Dispatch",
+    "IxCC.Rt.BigNat.LowerBig",
+    "IxCC.Fir.Rep",
     "IxCC.Rt.Procs.Nat",
     "IxCC.Rt.Rc.Array.Procs",
     "IxCC.Rt.Readback.Array",

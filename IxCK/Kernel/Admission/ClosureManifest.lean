@@ -32,7 +32,7 @@ def manifestPath : System.FilePath := "Tests/Fixtures/check-bytes-closure-manife
 
 /-- The SHA-256 digest of the manifest's text (its lines, each followed by a newline).
 Regenerate with `IXC_CLOSURE_MANIFEST_WRITE=Tests/Fixtures/check-bytes-closure-manifest.txt`. -/
-def pinnedDigest : String := "592bf94ee5f93dbd063e883c7274189f2046042d026155533273461081d8935b"
+def pinnedDigest : String := "2118cc66b1a33756f9f56074e9b15166980ee04221d35f934798a1138f0741bc"
 
 open Lean Elab Command in
 elab "#check_closure_manifest" : command =>
