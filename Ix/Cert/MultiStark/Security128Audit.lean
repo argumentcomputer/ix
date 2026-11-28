@@ -28,7 +28,7 @@ profile, together with constructive negative controls rejecting `Fp^2`,
   concrete 128-bit PQ because BLAKE3's 256-bit internal `cv` caps concrete BHT
   collision resistance at `85.3b` on every `> 64`-byte input.
 
-### Direct Unconditional `CertiFRI` Wiring (pinned `CertiFRI` `9ae20f3`)
+### Direct Unconditional `CertiFRI` Wiring (pinned `CertiFRI` `e815d47`)
 Imports `CertiFriProofs.Audit128` and `CertiFriProofs.Exec.SoundnessTensorSponge` directly
 and locks:
 - RFC 7693 `BLAKE2b-512` kernel-checked KATs, `Blake2b512Domain` / `Blake3Domain` injectivity,
@@ -551,7 +551,7 @@ end Ix.Cert.MultiStark.Security128
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.MultiStark.goldilocks_pruned_fri_soundness
 
-/-! ## 5. Direct Upstream `CertiFRI` (`9ae20f3`) Unconditional 128-Bit Theorem & Axiom Locks -/
+/-! ## 5. Direct Upstream `CertiFRI` (`e815d47`) Unconditional 128-Bit Theorem & Axiom Locks -/
 
 /-- info: CertiFri.P3.Exec.curveListCA_fp3 : CertiFri.CurveListCA CertiFri.P3.Fp3Model CertiFri.CurveListCAProof.curveListThreshold -/
 #guard_msgs (whitespace := lax) in
