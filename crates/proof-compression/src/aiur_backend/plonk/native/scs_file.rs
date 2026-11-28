@@ -3,9 +3,13 @@
 //!
 //! Gates and hints remain in their compact packed representations (26 bytes per
 //! gate, 9 bytes per wire) so multi-million-gate constraint systems stay memory
-//! bounded. Supports both self-contained circuits (`outputs == 0`, e.g. with
-//! in-circuit pairing) and accumulator circuits (`outputs == 18` for BN254 or
-//! `outputs == 22` for BLS12-381).
+//! bounded. While the `ix-aiur-scs-v1` wire format can parse non-empty
+//! `outputs` headers (e.g. legacy 18-word BN254 or 22-word BLS12-381 deferred
+//! pairing accumulators), native PLONK-SCS (`setup`, `prepare_to_dir`,
+//! `NativeProver::open`, `prove`) does not synthesize in-circuit pairing
+//! constraints for deferred `scs.outputs` and rejects any circuit with
+//! `!scs.outputs.is_empty()` fail-closed (requiring self-contained
+//! `outputs == 0` circuits).
 
 use crate::aiur_backend::plonk::{
   MAX_PUBLIC_INPUTS,

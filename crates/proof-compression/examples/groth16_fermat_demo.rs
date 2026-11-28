@@ -3,7 +3,8 @@
 //! Runs deterministic DEV/UNSAFE setup -> Groth16 proving (256-byte uncompressed
 //! EVM proof vs 262-byte Fermat Margin Note; 128-byte compressed proof) ->
 //! native Rust verification -> negative controls -> exports
-//! `Groth16Verifier.sol`, `proof.bin` (256 B), and `fermat_vector.json`.
+//! `Groth16Verifier.DEV_INSECURE.sol`, `proof.bin` (256 B), and
+//! `fermat_vector.json`.
 //!
 //! Usage:
 //!   `groth16_fermat_demo [--out DIR] [--deterministic] [--cuda]`
@@ -15,8 +16,8 @@ use ix_proof_compression::aiur_backend::groth16::{
   FERMAT_DEMO_DEV_SEED, FERMAT_MARGIN_NOTE, Groth16Accelerator, Proof,
   default_fermat_claim_digest, export_fermat_vector, export_solidity,
   fermat_demo_assignment, fermat_demo_r1cs, prove_with_accel,
-  prove_with_blinding_accel, setup_dev, verify, verify_compressed_bytes,
-  verify_evm_bytes,
+  prove_with_blinding_accel, setup_dev, solidity_filename, verify,
+  verify_compressed_bytes, verify_evm_bytes,
 };
 use std::{env, fs, path::PathBuf, time::Instant};
 
@@ -173,7 +174,7 @@ fn run() -> Result<(), String> {
   if let Some(out_dir) = cli.out_dir {
     fs::create_dir_all(&out_dir)
       .map_err(|e| format!("failed to create {}: {e}", out_dir.display()))?;
-    let sol_path = out_dir.join("Groth16Verifier.sol");
+    let sol_path = out_dir.join(solidity_filename(true));
     let bin_path = out_dir.join("proof.bin");
     let json_path = out_dir.join("fermat_vector.json");
     fs::write(&sol_path, solidity_src.as_bytes())

@@ -34,6 +34,7 @@ pub use scs_file::{
 };
 pub use solidity::{
   export_bls12_381_solidity, export_bn254_solidity, export_solidity,
+  solidity_filename_for_vk,
 };
 pub use solver::{
   PreCommitmentState, parse_binary_witness, solve_post_commitment,
@@ -82,13 +83,21 @@ pub fn prepare_to_dir<C: KzgCurve>(
   let scs_bytes =
     fs::read(scs_path).map_err(|e| format!("{}: {e}", scs_path.display()))?;
   let scs = ScsFile::<C>::parse(&scs_bytes)?;
+  if !scs.outputs.is_empty() {
+    return Err(format!(
+      "native PLONK-SCS does not synthesize in-circuit pairing constraints \
+       for deferred scs.outputs (got {} output wires); self-contained \
+       outputs == 0 circuits are required",
+      scs.outputs.len()
+    ));
+  }
   let (pk, vk) = setup(&scs, srs, accel)?;
   let vk_bytes = vk.to_bytes()?;
   let pk_bytes = pk.to_bytes()?;
   let inputs_bytes =
     serde_json::to_vec_pretty(&scs.to_inputs()).map_err(|e| e.to_string())?;
   let solidity_src = export_solidity(&vk)?;
-  let solidity_file = solidity::solidity_filename_for_vk(&vk);
+  let solidity_file = solidity_filename_for_vk(&vk);
 
   fs::create_dir_all(out_dir)
     .map_err(|e| format!("{}: {e}", out_dir.display()))?;
@@ -167,6 +176,15 @@ impl<C: KzgCurve> NativeProver<C> {
       ));
     }
     let scs = ScsFile::<C>::read_pinned(scs_path, &manifest.scs_sha256)?;
+    if !scs.outputs.is_empty() || manifest.outputs != 0 {
+      return Err(format!(
+        "native PLONK-SCS does not synthesize in-circuit pairing constraints \
+         for deferred scs.outputs (scs has {} output wires, manifest has {}); \
+         self-contained outputs == 0 circuits are required",
+        scs.outputs.len(),
+        manifest.outputs
+      ));
+    }
 
     let vk_bytes = fs::read(prepared_dir.join("verifying-key.bin"))
       .map_err(|e| format!("verifying-key.bin: {e}"))?;

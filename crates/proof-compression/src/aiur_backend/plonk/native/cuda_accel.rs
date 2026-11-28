@@ -263,22 +263,62 @@ mod cuda_impl {
     Ok(ordinal)
   }
 
+  /// RAII guard owning a GPU MSM context allocated by `C::ffi_msm_create`,
+  /// ensuring `C::ffi_msm_destroy` runs even if an invoke panics/unwinds.
+  struct MsmContextGuard<C: KzgCurve> {
+    device: i32,
+    context: *mut c_void,
+    _curve: std::marker::PhantomData<C>,
+  }
+
+  impl<C: KzgCurve> MsmContextGuard<C> {
+    fn create(device: i32, bases: &[G1AffineOf<C>]) -> Self {
+      let mut context: *mut c_void = std::ptr::null_mut();
+      let code = unsafe {
+        C::ffi_msm_create(
+          device,
+          &mut context,
+          bases.as_ptr().cast(),
+          bases.len(),
+        )
+      };
+      assert_eq!(code, 0, "native PLONK CUDA MSM upload failed ({code})");
+      assert!(!context.is_null());
+      Self { device, context, _curve: std::marker::PhantomData }
+    }
+
+    fn as_ptr(&self) -> *mut c_void {
+      self.context
+    }
+
+    fn destroy(mut self) {
+      let ctx = std::mem::replace(&mut self.context, std::ptr::null_mut());
+      if !ctx.is_null() {
+        let destroy_code = unsafe { C::ffi_msm_destroy(self.device, ctx) };
+        assert_eq!(
+          destroy_code, 0,
+          "native PLONK CUDA MSM destroy failed ({destroy_code})"
+        );
+      }
+    }
+  }
+
+  impl<C: KzgCurve> Drop for MsmContextGuard<C> {
+    fn drop(&mut self) {
+      let ctx = std::mem::replace(&mut self.context, std::ptr::null_mut());
+      if !ctx.is_null() {
+        // Best-effort cleanup during unwind without risking a double-panic.
+        let _ = unsafe { C::ffi_msm_destroy(self.device, ctx) };
+      }
+    }
+  }
+
   pub(super) fn msm_batch<C: KzgCurve>(
     bases: &[G1AffineOf<C>],
     columns: &[&[C::Fr]],
   ) -> Vec<G1ProjectiveOf<C>> {
     let device = ensure_device::<C>().expect("CUDA device validated");
-    let mut context: *mut c_void = std::ptr::null_mut();
-    let code = unsafe {
-      C::ffi_msm_create(
-        device,
-        &mut context,
-        bases.as_ptr().cast(),
-        bases.len(),
-      )
-    };
-    assert_eq!(code, 0, "native PLONK CUDA MSM upload failed ({code})");
-    assert!(!context.is_null());
+    let guard = MsmContextGuard::<C>::create(device, bases);
 
     let mut results = Vec::with_capacity(columns.len());
     for scalars in columns {
@@ -286,7 +326,7 @@ mod cuda_impl {
       let code = unsafe {
         C::ffi_msm_invoke(
           device,
-          context,
+          guard.as_ptr(),
           &mut out,
           scalars.as_ptr().cast(),
           scalars.len(),
@@ -301,11 +341,7 @@ mod cuda_impl {
       ));
     }
 
-    let destroy_code = unsafe { C::ffi_msm_destroy(device, context) };
-    assert_eq!(
-      destroy_code, 0,
-      "native PLONK CUDA MSM destroy failed ({destroy_code})"
-    );
+    guard.destroy();
     results
   }
 

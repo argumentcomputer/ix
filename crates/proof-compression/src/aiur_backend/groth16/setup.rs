@@ -47,6 +47,12 @@ impl VerifyingKey {
     check_g2_valid(&self.beta_g2, "vk.beta_g2")?;
     check_g2_valid(&self.gamma_g2, "vk.gamma_g2")?;
     check_g2_valid(&self.delta_g2, "vk.delta_g2")?;
+    if self.alpha_g1.is_zero() {
+      return Err("vk.alpha_g1 cannot be the point at infinity".into());
+    }
+    if self.beta_g2.is_zero() {
+      return Err("vk.beta_g2 cannot be the point at infinity".into());
+    }
     if self.gamma_g2.is_zero() {
       return Err("vk.gamma_g2 cannot be the point at infinity".into());
     }

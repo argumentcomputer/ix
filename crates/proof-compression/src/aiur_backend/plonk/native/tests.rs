@@ -588,6 +588,31 @@ fn check_full_prove_verify_and_controls<C: KzgCurve>(num_outputs: usize) {
     crate::kzg::curve::Curve::Bls12381 => "VK_COSET_SHIFT = 7;",
   };
   assert!(sol_contract.contains(expected_shift));
+  // H-6 & M-4: verify exported Solidity checks returndatasize(), avoids
+  // aliasing pairing output over input, and (for BLS12-381) copies unpadded
+  // 48B X/Y of STATE_FOLDED_DIGESTS into batch_verify_multi_points transcript.
+  assert!(sol_contract.contains("eq(returndatasize(), 0x20)"));
+  match C::CURVE {
+    crate::kzg::curve::Curve::Bn254 => {
+      assert!(sol_contract.contains("eq(returndatasize(), 0x40)"));
+      assert!(sol_contract.contains("eq(mload(out), 1)"));
+    },
+    crate::kzg::curve::Curve::Bls12381 => {
+      assert!(sol_contract.contains("eq(returndatasize(), 0x80)"));
+      assert!(sol_contract.contains(
+        "mcopy(mPtr, add(state, add(STATE_FOLDED_DIGESTS, 0x10)), 0x30)"
+      ));
+      assert!(sol_contract.contains(
+        "mcopy(add(mPtr, 0x30), add(state, add(STATE_FOLDED_DIGESTS, 0x50)), 0x30)"
+      ));
+      assert!(sol_contract.contains(
+        "mstore(add(state, STATE_SUCCESS), eq(mload(add(mPtr, 0x300)), 1))"
+      ));
+      assert!(!sol_contract.contains(
+        "staticcall(gas(), BLS12_PAIR, mPtr, 0x300, mPtr, 0x20)"
+      ));
+    },
+  }
 
   // Disk persistence round-trip (`prepare_to_dir` + `NativeProver::open`).
   let dir = std::env::temp_dir()
@@ -799,8 +824,45 @@ fn bn254_full_prove_verify_solidity_and_negative_controls_outputs_0() {
 }
 
 #[test]
-fn bn254_full_prove_verify_solidity_and_negative_controls_outputs_18() {
-  check_full_prove_verify_and_controls::<Bn254>(18);
+fn bn254_setup_and_prepare_reject_deferred_outputs_18() {
+  let (scs_bytes, input_wires, public_inputs) = build_rich_scs::<Bn254>(18);
+  let scs = ScsFile::<Bn254>::parse(&scs_bytes).unwrap();
+  assert_eq!(scs.outputs.len(), 18);
+  let domain = domain_size_for_scs(&scs).unwrap();
+  let srs_len = (domain + 3).next_power_of_two();
+  let srs = Srs::<Bn254>::unsafe_dev_setup(srs_len, b"ix-native-plonk-out18");
+  let accel = PlonkAccelerator::<Bn254>::cpu();
+
+  // `setup` MUST reject deferred `scs.outputs` fail-closed.
+  let err_setup = setup(&scs, &srs, &accel).unwrap_err();
+  assert!(
+    err_setup.contains("scs.outputs") && err_setup.contains("outputs == 0"),
+    "unexpected setup error for BN254 outputs == 18: {err_setup}"
+  );
+
+  // `prepare_to_dir` MUST also reject deferred `scs.outputs` fail-closed.
+  let dir = std::env::temp_dir().join("ix-native-plonk-reject-bn254-out18");
+  let _ = fs::remove_dir_all(&dir);
+  fs::create_dir_all(&dir).unwrap();
+  let scs_path = dir.join("circuit.ixscs");
+  fs::write(&scs_path, &scs_bytes).unwrap();
+  let prep_dir = dir.join("prepared");
+  let err_prep =
+    prepare_to_dir(&scs_path, &srs, "dev-srs-blake3", &prep_dir, &accel)
+      .unwrap_err();
+  assert!(
+    err_prep.contains("scs.outputs") && err_prep.contains("outputs == 0"),
+    "unexpected prepare_to_dir error for BN254 outputs == 18: {err_prep}"
+  );
+  assert!(!prep_dir.exists(), "failed prepare_to_dir must not write artifacts");
+  let _ = fs::remove_dir_all(&dir);
+
+  // Defense-in-depth: `prove` also refuses an SCS with deferred outputs even
+  // if paired with a valid PK of matching shape.
+  let (scs0_bytes, _, _) = build_rich_scs::<Bn254>(0);
+  let scs0 = ScsFile::<Bn254>::parse(&scs0_bytes).unwrap();
+  let (pk0, _) = setup(&scs0, &srs, &accel).unwrap();
+  assert!(prove(&scs, &pk0, &input_wires, &public_inputs, &accel).is_err());
 }
 
 #[test]
@@ -809,8 +871,75 @@ fn bls12_381_full_prove_verify_solidity_and_negative_controls_outputs_0() {
 }
 
 #[test]
-fn bls12_381_full_prove_verify_solidity_and_negative_controls_outputs_22() {
-  check_full_prove_verify_and_controls::<Bls12381>(22);
+fn bls12_381_setup_and_prepare_reject_deferred_outputs_22() {
+  let (scs_bytes, input_wires, public_inputs) = build_rich_scs::<Bls12381>(22);
+  let scs = ScsFile::<Bls12381>::parse(&scs_bytes).unwrap();
+  assert_eq!(scs.outputs.len(), 22);
+  let domain = domain_size_for_scs(&scs).unwrap();
+  let srs_len = (domain + 3).next_power_of_two();
+  let srs =
+    Srs::<Bls12381>::unsafe_dev_setup(srs_len, b"ix-native-plonk-out22");
+  let accel = PlonkAccelerator::<Bls12381>::cpu();
+
+  // `setup` MUST reject deferred `scs.outputs` fail-closed.
+  let err_setup = setup(&scs, &srs, &accel).unwrap_err();
+  assert!(
+    err_setup.contains("scs.outputs") && err_setup.contains("outputs == 0"),
+    "unexpected setup error for BLS12-381 outputs == 22: {err_setup}"
+  );
+
+  // `prepare_to_dir` MUST also reject deferred `scs.outputs` fail-closed.
+  let dir = std::env::temp_dir().join("ix-native-plonk-reject-bls12-381-out22");
+  let _ = fs::remove_dir_all(&dir);
+  fs::create_dir_all(&dir).unwrap();
+  let scs_path = dir.join("circuit.ixscs");
+  fs::write(&scs_path, &scs_bytes).unwrap();
+  let prep_dir = dir.join("prepared");
+  let err_prep =
+    prepare_to_dir(&scs_path, &srs, "dev-srs-blake3", &prep_dir, &accel)
+      .unwrap_err();
+  assert!(
+    err_prep.contains("scs.outputs") && err_prep.contains("outputs == 0"),
+    "unexpected prepare_to_dir error for BLS12-381 outputs == 22: {err_prep}"
+  );
+  assert!(!prep_dir.exists(), "failed prepare_to_dir must not write artifacts");
+  let _ = fs::remove_dir_all(&dir);
+
+  // Defense-in-depth: `prove` also refuses an SCS with deferred outputs.
+  let (scs0_bytes, _, _) = build_rich_scs::<Bls12381>(0);
+  let scs0 = ScsFile::<Bls12381>::parse(&scs0_bytes).unwrap();
+  let (pk0, _) = setup(&scs0, &srs, &accel).unwrap();
+  assert!(prove(&scs, &pk0, &input_wires, &public_inputs, &accel).is_err());
+}
+
+#[test]
+fn prover_rejects_malformed_pk_commitment_row_at_runtime() {
+  let (scs_bytes, input_wires, public_inputs) = build_rich_scs::<Bn254>(0);
+  let scs = ScsFile::<Bn254>::parse(&scs_bytes).unwrap();
+  let domain = domain_size_for_scs(&scs).unwrap();
+  let srs = Srs::<Bn254>::unsafe_dev_setup(
+    (domain + 3).next_power_of_two(),
+    b"ix-native-plonk-m8-test",
+  );
+  let accel = PlonkAccelerator::<Bn254>::cpu();
+  let (pk, _) = setup(&scs, &srs, &accel).unwrap();
+
+  // Mismatched commitment_constraint_index must return Err (never rely on debug_assert!).
+  let mut bad_idx_pk = pk.clone();
+  bad_idx_pk.vk.commitment_constraint_indexes[0] += 1;
+  let err = prove(&scs, &bad_idx_pk, &input_wires, &public_inputs, &accel)
+    .unwrap_err();
+  assert!(
+    err.contains("commitment_constraint_index"),
+    "unexpected error: {err}"
+  );
+
+  // Colliding commit_row >= domain_size - 1 must return Err cleanly.
+  let mut bad_dom_pk = pk;
+  bad_dom_pk.vk.domain_size = scs.publics + scs.pre + scs.commits.len() + 1;
+  let err_dom = prove(&scs, &bad_dom_pk, &input_wires, &public_inputs, &accel)
+    .unwrap_err();
+  assert!(err_dom.contains("blinding row"), "unexpected error: {err_dom}");
 }
 
 #[test]
@@ -897,7 +1026,7 @@ fn dev_srs_never_emits_unmarked_plonk_solidity_and_ceremony_emits_clean() {
   );
   assert!(!dev_sol.contains("contract PlonkVerifier {"));
   assert_eq!(
-    solidity::solidity_filename_for_vk(&dev_vk),
+    solidity_filename_for_vk(&dev_vk),
     "PlonkVerifier.DEV_INSECURE.sol"
   );
 
@@ -920,7 +1049,7 @@ fn dev_srs_never_emits_unmarked_plonk_solidity_and_ceremony_emits_clean() {
   assert!(!fc_sol.contains("DEV_INSECURE"));
   assert!(fc_sol.contains("contract PlonkVerifier {"));
   assert_eq!(
-    solidity::solidity_filename_for_vk(&fc_vk),
+    solidity_filename_for_vk(&fc_vk),
     "Bls12381PlonkVerifier.sol"
   );
 }

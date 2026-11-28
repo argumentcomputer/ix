@@ -44,6 +44,16 @@ pub const DEV_SOLIDITY_HEADER: &str = "\
 // No multi-party ceremony setup exists for this backend yet; anyone holding\n\
 // the setup trapdoors can forge arbitrary proofs accepted by this contract.\n\n";
 
+/// Output filename for an exported Groth16 Solidity verifier. Development
+/// setups never emit an unmarked `Groth16Verifier.sol`.
+pub const fn solidity_filename(is_development: bool) -> &'static str {
+  if is_development {
+    "Groth16Verifier.DEV_INSECURE.sol"
+  } else {
+    "Groth16Verifier.sol"
+  }
+}
+
 /// Deterministically emit a complete Solidity verifier contract for `vk`.
 ///
 /// Because [`super::setup`] currently only provides a development trapdoor
@@ -161,7 +171,9 @@ pub fn export_solidity_with_setup(
   let _ = writeln!(out, "        assembly (\"memory-safe\") {{");
   let _ = writeln!(out, "            let f := mload(0x40)");
   let _ = writeln!(out, "            let g := add(f, 0x40)");
+  let _ = writeln!(out, "            let tmp := add(f, 0xa0)");
   let _ = writeln!(out, "            let s");
+  let _ = writeln!(out, "            let callOk");
   let _ = writeln!(out, "            mstore(f, IC_0_X)");
   let _ = writeln!(out, "            mstore(add(f, 0x20), IC_0_Y)");
   for i in 0..num_public {
@@ -180,14 +192,32 @@ pub fn export_solidity_with_setup(
     }
     let _ = writeln!(out, "            mstore(add(g, 0x40), s)");
     let _ = writeln!(out, "            success := and(success, lt(s, R))");
+    let _ = writeln!(out, "            mstore(tmp, 0)");
+    let _ = writeln!(out, "            mstore(add(tmp, 0x20), 0)");
     let _ = writeln!(
       out,
-      "            success := and(success, staticcall(gas(), PRECOMPILE_MUL, g, 0x60, g, 0x40))"
+      "            callOk := staticcall(gas(), PRECOMPILE_MUL, g, 0x60, tmp, 0x40)"
     );
     let _ = writeln!(
       out,
-      "            success := and(success, staticcall(gas(), PRECOMPILE_ADD, f, 0x80, f, 0x40))"
+      "            success := and(success, and(callOk, eq(returndatasize(), 0x40)))"
     );
+    let _ = writeln!(out, "            mstore(g, mload(tmp))");
+    let _ =
+      writeln!(out, "            mstore(add(g, 0x20), mload(add(tmp, 0x20)))");
+    let _ = writeln!(out, "            mstore(tmp, 0)");
+    let _ = writeln!(out, "            mstore(add(tmp, 0x20), 0)");
+    let _ = writeln!(
+      out,
+      "            callOk := staticcall(gas(), PRECOMPILE_ADD, f, 0x80, tmp, 0x40)"
+    );
+    let _ = writeln!(
+      out,
+      "            success := and(success, and(callOk, eq(returndatasize(), 0x40)))"
+    );
+    let _ = writeln!(out, "            mstore(f, mload(tmp))");
+    let _ =
+      writeln!(out, "            mstore(add(f, 0x20), mload(add(tmp, 0x20)))");
   }
   let _ = writeln!(out);
   let _ = writeln!(out, "            x := mload(f)");
@@ -265,12 +295,16 @@ pub fn export_solidity_with_setup(
   let _ = writeln!(out, "            mstore(add(f, 0x2e0), GAMMA_NEG_Y_C0)");
   let _ = writeln!(out);
   let _ = writeln!(out, "            if inField {{");
+  let _ = writeln!(out, "                let out := add(f, 0x300)");
+  let _ = writeln!(out, "                mstore(out, 0)");
   let _ = writeln!(
     out,
-    "                success := staticcall(gas(), PRECOMPILE_PAIRING, f, 0x300, f, 0x20)"
+    "                let pairOk := staticcall(gas(), PRECOMPILE_PAIRING, f, 0x300, out, 0x20)"
   );
-  let _ =
-    writeln!(out, "                success := and(success, eq(mload(f), 1))");
+  let _ = writeln!(
+    out,
+    "                success := and(pairOk, and(eq(returndatasize(), 0x20), eq(mload(out), 1)))"
+  );
   let _ = writeln!(out, "            }}");
   let _ = writeln!(out, "        }}");
   let _ = writeln!(out, "        if (!success) {{");

@@ -313,6 +313,54 @@ fn solidity_codegen_is_deterministic_and_matches_interface() {
   assert!(sol_a.contains("PRECOMPILE_MUL = 0x07"));
   assert!(sol_a.contains("PRECOMPILE_PAIRING = 0x08"));
   assert!(sol_a.contains("IC_2_Y"));
+  // H-6: verify precompile returndatasize() checks and dedicated pre-zeroed output slots.
+  assert!(sol_a.contains("eq(returndatasize(), 0x40)"));
+  assert!(sol_a.contains("eq(returndatasize(), 0x20)"));
+  assert!(sol_a.contains("let out := add(f, 0x300)"));
+  assert!(sol_a.contains("mstore(out, 0)"));
+  assert!(sol_a.contains("eq(mload(out), 1)"));
+  assert!(!sol_a.contains("PRECOMPILE_PAIRING, f, 0x300, f, 0x20"));
+  // M-6: verify dev filename guard helper.
+  assert_eq!(
+    super::solidity::solidity_filename(true),
+    "Groth16Verifier.DEV_INSECURE.sol"
+  );
+  assert_eq!(super::solidity::solidity_filename(false), "Groth16Verifier.sol");
+}
+
+#[test]
+fn verifying_key_validate_rejects_infinity_alpha_beta_gamma_delta() {
+  use ark_bn254::G1Affine;
+
+  let r1cs = fermat_demo_r1cs();
+  let (_pk, vk) = setup_dev(&r1cs, FERMAT_DEMO_DEV_SEED).expect("setup_dev");
+  vk.validate().expect("honest vk validates");
+
+  let mut bad_alpha = vk.clone();
+  bad_alpha.alpha_g1 = G1Affine::identity();
+  let err = bad_alpha.validate().unwrap_err();
+  assert!(err.contains("alpha_g1"), "unexpected error: {err}");
+  assert!(export_solidity(&bad_alpha).is_err());
+
+  let mut bad_beta = vk.clone();
+  bad_beta.beta_g2 = G2Affine::identity();
+  let err = bad_beta.validate().unwrap_err();
+  assert!(err.contains("beta_g2"), "unexpected error: {err}");
+  assert!(export_solidity(&bad_beta).is_err());
+
+  let mut bad_gamma = vk.clone();
+  bad_gamma.gamma_g2 = G2Affine::identity();
+  assert!(bad_gamma.validate().is_err());
+
+  let mut bad_delta = vk.clone();
+  bad_delta.delta_g2 = G2Affine::identity();
+  assert!(bad_delta.validate().is_err());
+
+  // Also check `num_public == 0` is cleanly rejected by Solidity export.
+  let mut zero_pub_vk = vk;
+  zero_pub_vk.ic.truncate(1);
+  assert_eq!(zero_pub_vk.num_public_inputs(), 0);
+  assert!(export_solidity(&zero_pub_vk).is_err());
 }
 
 #[test]

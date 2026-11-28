@@ -236,7 +236,12 @@ impl<C: KzgCurve> NativeProof<C> {
     for _ in 0..num_custom_gates {
       bsb22_commitments.push(take_g1(&mut off)?);
     }
-    debug_assert_eq!(off, bytes.len());
+    if off != bytes.len() {
+      return Err(format!(
+        "Solidity proof decode offset mismatch: consumed {off}, expected {}",
+        bytes.len()
+      ));
+    }
     Ok(Self {
       lro,
       z,
@@ -385,6 +390,14 @@ fn prove_internal<C: KzgCurve>(
   let mut timings = ProverTimings::default();
 
   // Check circuit/PK consistency and public statement match.
+  if !scs.outputs.is_empty() {
+    return Err(format!(
+      "native PLONK-SCS does not synthesize in-circuit pairing constraints \
+       for deferred scs.outputs (got {} output wires); self-contained \
+       outputs == 0 circuits are required",
+      scs.outputs.len()
+    ));
+  }
   let n = pk.vk.domain_size;
   let np = scs.publics;
   let nc = scs.commits.len();
@@ -417,9 +430,25 @@ fn prove_internal<C: KzgCurve>(
   let commitment_constraint_index =
     usize::try_from(pk.vk.commitment_constraint_indexes[0])
       .map_err(|e| e.to_string())?;
-  let commit_row = np + commitment_constraint_index;
-  debug_assert_eq!(commitment_constraint_index, scs.pre + nc);
-  debug_assert!(commit_row < n - 1);
+  let expected_commit_idx = scs
+    .pre
+    .checked_add(nc)
+    .ok_or_else(|| "BSB22 commitment index overflow".to_owned())?;
+  if commitment_constraint_index != expected_commit_idx {
+    return Err(format!(
+      "proving key commitment_constraint_index {commitment_constraint_index} \
+       differs from SCS pre + commits ({expected_commit_idx})"
+    ));
+  }
+  let commit_row = np
+    .checked_add(commitment_constraint_index)
+    .ok_or_else(|| "BSB22 commitment row index overflow".to_owned())?;
+  if n < 2 || commit_row >= n - 1 {
+    return Err(format!(
+      "BSB22 commitment row {commit_row} collides with Pi(X) blinding row \
+       (domain_size = {n})"
+    ));
+  }
 
   // 1. Phase 1 witness solve (pre-commitment).
   let t0 = Instant::now();
@@ -569,7 +598,9 @@ fn prove_internal<C: KzgCurve>(
   let domain4 = Radix2EvaluationDomain::<C::Fr>::new(4 * n)
     .ok_or("4N quotient domain exceeds curve two-adicity")?;
   let w4 = domain4.group_gen();
-  debug_assert_eq!(w4.pow([4u64]), omega);
+  if w4.pow([4u64]) != omega {
+    return Err("4N quotient domain generator does not match PK omega".into());
+  }
 
   let mut h_evals_4n = vec![C::FR_ZERO; 4 * n];
   let n_u64 = u64::try_from(n).expect("domain fits u64");

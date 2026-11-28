@@ -560,11 +560,23 @@ pub(super) fn permutation_support<C: KzgCurve>(
 
 /// Preprocess a validated `ix-aiur-scs-v1` constraint system with an
 /// authenticated KZG [`Srs`] into `(ProvingKey, VerifyingKey)`.
+///
+/// Fails closed if `!scs.outputs.is_empty()`: native PLONK-SCS does not
+/// synthesize in-circuit pairing constraints for deferred `scs.outputs` and
+/// requires self-contained `outputs == 0` circuits.
 pub fn setup<C: KzgCurve>(
   scs: &ScsFile<C>,
   srs: &Srs<C>,
   accel: &PlonkAccelerator<C>,
 ) -> Result<(ProvingKey<C>, VerifyingKey<C>), String> {
+  if !scs.outputs.is_empty() {
+    return Err(format!(
+      "native PLONK-SCS does not synthesize in-circuit pairing constraints \
+       for deferred scs.outputs (got {} output wires); self-contained \
+       outputs == 0 circuits are required",
+      scs.outputs.len()
+    ));
+  }
   let n = domain_size_for_scs(scs)?;
   if srs.g1.len() < n + 3 {
     return Err(format!(

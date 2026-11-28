@@ -32,7 +32,7 @@ pub use prover::{
 };
 pub use r1cs::{Constraint, LinearCombination, R1cs};
 pub use setup::{ProvingKey, VerifyingKey, setup_dev};
-pub use solidity::export_solidity;
+pub use solidity::{export_solidity, solidity_filename};
 pub use verifier::{
   decode_fq_be_canonical, decode_fr_be_canonical, decode_g1_evm, decode_g2_evm,
   verify, verify_compressed_bytes, verify_evm_bytes,

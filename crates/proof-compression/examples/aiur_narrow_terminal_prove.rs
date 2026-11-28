@@ -1,8 +1,14 @@
-//! A final PLONK proof of the narrow-stage terminal relation
-//! (`CompressFinalNarrow::verify_accumulator_v1`) on the Ignition setup,
-//! proved by the pure-Rust (+ optional Ix-CUDA) native PLONK + BSB22 backend.
+//! A final PLONK proof of a self-contained (`outputs == 0`) terminal relation
+//! (defaulting to `CompressFinal::verify_v1`, which checks pairing in-circuit)
+//! on the Ignition setup, proved by the pure-Rust (+ optional Ix-CUDA) native
+//! PLONK + BSB22 backend.
 //!
-//! `aiur_narrow_terminal_prove ARTIFACT NARROW_DIR POLICY OUT_DIR --scs FILE [--cuda] [--reuse] [--wait-for F]`
+//! Deferred-output accumulator entries (`CompressFinalNarrow::verify_accumulator_v1`,
+//! `CompressFinal::verify_accumulator_v1`, or any `.ixscs` with `outputs != 0`)
+//! are refused fail-closed for proving because native PLONK-SCS does not
+//! synthesize in-circuit pairing constraints for deferred `scs.outputs`.
+//!
+//! `aiur_narrow_terminal_prove ARTIFACT NARROW_DIR POLICY OUT_DIR --scs FILE [--entry NAME] [--cuda] [--reuse] [--wait-for F]`
 //!
 //! The circuit is `FILE`, the `ix-aiur-scs-v1` constraint system that
 //! `plonk_export` wrote for this terminal's stage (`plonk::scs`). The native
@@ -41,8 +47,8 @@
 //! with each phase's time and the process's peak RSS after it.
 
 use aiur::{
-  artifact::WidePackage, hints::HintChannels, maps::MapOverrides,
-  trace::TracePlan,
+  artifact::WidePackage, bytecode::Type, field::FieldBackend,
+  hints::HintChannels, maps::MapOverrides, trace::TracePlan,
 };
 use ark_ec::pairing::Pairing;
 use ix_proof_compression::{
@@ -52,8 +58,12 @@ use ix_proof_compression::{
     fq, g1,
     kzg::Compiler,
     kzg_advice as wire,
-    pairing::final_program::{
-      Configuration, NARROW_ACCUMULATOR_ENTRY, statement_arguments,
+    pairing::{
+      self,
+      final_program::{
+        ACCUMULATOR_ENTRY, Configuration, ENTRY, NARROW_ACCUMULATOR_ENTRY,
+        statement_arguments,
+      },
     },
     plonk::{
       native::{
@@ -149,8 +159,7 @@ fn load_ignition_srs(
   let prefix_len = opening_powers.next_power_of_two();
   let public_setup = parameters.public_setup();
   let srs = ignition_srs::load(srs_path, prefix_len, public_setup)?;
-  let (g1_anchors, g2_anchors) =
-    ix_proof_compression::aiur_backend::pairing::verifier_anchors(parameters);
+  let (g1_anchors, g2_anchors) = pairing::verifier_anchors(parameters);
   if srs.g1[..2] != g1_anchors
     || srs.g2 != g2_anchors[0]
     || srs.tau_g2 != g2_anchors[1]
@@ -165,6 +174,7 @@ fn load_ignition_srs(
 }
 
 struct Scs<'p, 'a> {
+  entry: &'p str,
   path: &'p Path,
   sha256: std::thread::JoinHandle<Result<String, String>>,
   plan: &'p TracePlan<'a, Bn254>,
@@ -191,7 +201,8 @@ fn reusable_manifest(out: &Path, scs_sha256: &str) -> Option<PreparedManifest> {
     serde_json::from_slice(&fs::read(out.join("manifest.json")).ok()?).ok()?;
   (manifest.format == NATIVE_MANIFEST_FORMAT
     && manifest.curve == Bn254Curve::NAME
-    && manifest.scs_sha256 == scs_sha256)
+    && manifest.scs_sha256 == scs_sha256
+    && manifest.outputs == 0)
     .then_some(manifest)
 }
 
@@ -201,6 +212,7 @@ fn reusable_manifest(out: &Path, scs_sha256: &str) -> Option<PreparedManifest> {
 #[allow(clippy::too_many_lines)]
 fn prove_scs(run: Scs<'_, '_>) -> Result<(), Error> {
   let Scs {
+    entry,
     path,
     sha256,
     plan,
@@ -219,6 +231,14 @@ fn prove_scs(run: Scs<'_, '_>) -> Result<(), Error> {
     artifact_blake3,
     statement,
   } = run;
+  if entry == NARROW_ACCUMULATOR_ENTRY || entry == ACCUMULATOR_ENTRY {
+    return Err(format!(
+      "entry {entry:?} defers pairing checks to scs.outputs, which native \
+       PLONK-SCS does not constrain in-circuit; use a self-contained \
+       outputs == 0 entry such as {ENTRY:?}"
+    )
+    .into());
+  }
   let started = Instant::now();
   let scs_sha256 = sha256.join().map_err(|_err| "SCS digest thread")??;
   let prepared = out.join("prepared");
@@ -237,6 +257,15 @@ fn prove_scs(run: Scs<'_, '_>) -> Result<(), Error> {
     let started = Instant::now();
     let scs_bytes = fs::read(path)?;
     let parsed = ScsFile::<Bn254Curve>::parse(&scs_bytes)?;
+    if !parsed.outputs.is_empty() {
+      return Err(format!(
+        "native PLONK-SCS does not synthesize in-circuit pairing constraints \
+         for deferred scs.outputs (got {} output wires); self-contained \
+         outputs == 0 circuits are required",
+        parsed.outputs.len()
+      )
+      .into());
+    }
     let domain = domain_size_for_scs(&parsed)?;
     eprintln!("{} gates, domain {domain}", parsed.gates_count);
     let (srs, srs_blake3, opening_powers) =
@@ -276,6 +305,13 @@ fn prove_scs(run: Scs<'_, '_>) -> Result<(), Error> {
       prover
     },
   };
+  if !prover.scs().outputs.is_empty() || manifest.outputs != 0 {
+    return Err(format!(
+      "native PLONK-SCS requires self-contained outputs == 0 circuits (got {} SCS outputs)",
+      prover.scs().outputs.len()
+    )
+    .into());
+  }
   prover.vk().check_anchors(parameters)?;
 
   let started = Instant::now();
@@ -287,14 +323,9 @@ fn prove_scs(run: Scs<'_, '_>) -> Result<(), Error> {
   if inputs != prover.scs().to_inputs() {
     return Err("prepared inputs.json differs from SCS input layout".into());
   }
-  let witness = scs::Witness::new_fitting(
-    plan,
-    compiler,
-    capacities,
-    NARROW_ACCUMULATOR_ENTRY,
-    inputs,
-  )?
-  .binary(record, arguments)?;
+  let witness =
+    scs::Witness::new_fitting(plan, compiler, capacities, entry, inputs)?
+      .binary(record, arguments)?;
   phases.record("witness", started);
 
   let expected_publics: Vec<ark_bn254::Fr> =
@@ -332,7 +363,7 @@ fn prove_scs(run: Scs<'_, '_>) -> Result<(), Error> {
     "circuit": "ix-aiur-scs-v1",
     "scs": path,
     "scs_sha256": scs_sha256,
-    "entry": NARROW_ACCUMULATOR_ENTRY,
+    "entry": entry,
     "artifact": artifact,
     "artifact_blake3": artifact_blake3,
     "statement": statement,
@@ -371,11 +402,27 @@ fn main() -> Result<(), Error> {
   let args: Vec<_> = std::env::args().skip(1).collect();
   let [artifact, narrow, policy, out, flags @ ..] = args.as_slice() else {
     return Err(
-      "usage: aiur_narrow_terminal_prove ARTIFACT NARROW_DIR POLICY OUT_DIR --scs FILE [--cuda] [--reuse] [--wait-for FILE] | --stage-only".into(),
+      "usage: aiur_narrow_terminal_prove ARTIFACT NARROW_DIR POLICY OUT_DIR --scs FILE [--entry NAME] [--cuda] [--reuse] [--wait-for FILE] | --stage-only [--entry NAME]".into(),
     );
   };
+  let stage_only = flags.iter().any(|f| f == "--stage-only");
   let reuse = flags.iter().any(|f| f == "--reuse");
   let use_cuda = flags.iter().any(|f| f == "--cuda");
+  let entry = flags
+    .iter()
+    .position(|f| f == "--entry")
+    .and_then(|i| flags.get(i + 1))
+    .map_or(ENTRY, String::as_str);
+  if !stage_only
+    && (entry == NARROW_ACCUMULATOR_ENTRY || entry == ACCUMULATOR_ENTRY)
+  {
+    return Err(format!(
+      "refusing to prove accumulator entry {entry:?}: native PLONK-SCS does \
+       not synthesize in-circuit pairing constraints for deferred scs.outputs \
+       and requires self-contained outputs == 0 circuits (e.g. {ENTRY:?})"
+    )
+    .into());
+  }
   let narrow = Path::new(narrow);
   let out = Path::new(out);
   let scs_path =
@@ -441,14 +488,22 @@ fn main() -> Result<(), Error> {
     serde_json::from_slice(&fs::read(narrow.join("narrow.json"))?)?;
   let narrow_stage =
     u32::try_from(record_json["stage"].as_u64().ok_or("narrow stage")?)?;
+  let terminal_stage = narrow_stage + 1;
   let configuration =
-    Configuration::narrow(&policy, parameters, narrow_stage + 1)?;
+    Configuration::narrow(&policy, parameters, terminal_stage)?;
   let mut hints = HintChannels::new();
   aiur::library::u32::register(&mut hints, Bn254)?;
   aiur::library::u64::register(&mut hints, Bn254)?;
   fq::register(&mut hints)?;
   g1::register(&mut hints)?;
+  pairing::register(&mut hints)?;
   wire::register(&mut hints)?;
+  hints.insert_fixed::<0, 1>(
+    "kzg.final.stage",
+    Type::Tuple { items: vec![] },
+    Type::Field,
+    move |[]| Ok([Bn254.from_u64(u64::from(terminal_stage))]),
+  )?;
   wire::Inputs::new(
     fs::read(narrow.join("key.bin"))?,
     fs::read(narrow.join("claims.bin"))?,
@@ -464,15 +519,26 @@ fn main() -> Result<(), Error> {
     .program()
     .prepare_hint_channels(&[], &hints)?
     .with_map_overrides(&maps)?
-    .execute(NARROW_ACCUMULATOR_ENTRY, arguments.clone())?;
-  let pair =
-    [g1::decode(&record.output[..9])?, g1::decode(&record.output[9..])?];
-  let (_, anchors) =
-    ix_proof_compression::aiur_backend::pairing::verifier_anchors(parameters);
-  if ark_bn254::Bn254::multi_pairing(pair, [anchors[0], anchors[1]]).0
-    != <ark_bn254::Bn254 as Pairing>::TargetField::from(1u8)
+    .execute(entry, arguments.clone())?;
+  if !stage_only && !record.output.is_empty() {
+    return Err(format!(
+      "entry {entry:?} returned {} deferred output words; native PLONK-SCS \
+       requires self-contained outputs == 0 circuits",
+      record.output.len()
+    )
+    .into());
+  }
+  if stage_only
+    && (entry == NARROW_ACCUMULATOR_ENTRY || entry == ACCUMULATOR_ENTRY)
   {
-    return Err("terminal accumulator fails the Ignition pairing check".into());
+    let pair =
+      [g1::decode(&record.output[..9])?, g1::decode(&record.output[9..])?];
+    let (_, anchors) = pairing::verifier_anchors(parameters);
+    if ark_bn254::Bn254::multi_pairing(pair, [anchors[0], anchors[1]]).0
+      != <ark_bn254::Bn254 as Pairing>::TargetField::from(1u8)
+    {
+      return Err("terminal accumulator fails the Ignition pairing check".into());
+    }
   }
   phases.record("execute", started);
 
@@ -480,21 +546,21 @@ fn main() -> Result<(), Error> {
   let compiler = Compiler::new(&plan)?;
   let capacities: Vec<usize> =
     compiler.row_counts(&record)?.into_iter().map(|rows| rows.max(1)).collect();
-  let public =
-    plan.public_args(&record, NARROW_ACCUMULATOR_ENTRY, &arguments)?;
-  if flags.iter().any(|f| f == "--stage-only") {
+  let public = plan.public_args(&record, entry, &arguments)?;
+  if stage_only {
     let stage = scs::stage(
       &plan,
       &compiler,
       &capacities,
-      NARROW_ACCUMULATOR_ENTRY,
+      entry,
       &public,
       &record.output,
     )?;
     fs::write(out.join("stage.json"), serde_json::to_vec(&stage)?)?;
-    let pairing =
-      scs::pairing(&plan, NARROW_ACCUMULATOR_ENTRY, &configuration)?;
-    fs::write(out.join("pairing.json"), serde_json::to_vec(&pairing)?)?;
+    if entry == NARROW_ACCUMULATOR_ENTRY || entry == ACCUMULATOR_ENTRY {
+      let pairing = scs::pairing(&plan, entry, &configuration)?;
+      fs::write(out.join("pairing.json"), serde_json::to_vec(&pairing)?)?;
+    }
     phases.record("stage", started);
     println!(
       "{}",
@@ -506,6 +572,7 @@ fn main() -> Result<(), Error> {
   }
   let scs_path = scs_path.ok_or("--scs FILE is required (or --stage-only)")?;
   prove_scs(Scs {
+    entry,
     path: Path::new(scs_path),
     sha256: scs_hash.ok_or("SCS digest")?,
     plan: &plan,

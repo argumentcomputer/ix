@@ -352,6 +352,19 @@ impl WideExporter for Exporter {
   }
 }
 
+const WIDE_COMPLETE_FORMAT: &str = "ix-wide-export-complete-v1";
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WideCompleteMarker {
+  format: String,
+  key: String,
+  binary_blake3: String,
+  input_blake3: String,
+  layout_blake3: String,
+  fixed_blake3: String,
+}
+
 impl Exporter {
   pub fn from_env() -> Result<Self, String> {
     let var = |name: &str| {
@@ -381,8 +394,80 @@ impl Exporter {
     std::path::absolute(&path).map_err(|e| e.to_string())
   }
 
+  /// Verify an existing cache entry's authenticated `complete` sentinel and
+  /// return the verified `(layout.json, fixed.bin)` bytes. Refuses empty,
+  /// malformed, mismatched, or tampered cache entries fail-closed.
+  fn read_verified_entry(
+    entry: &Path,
+    key: &str,
+    binary_blake3: &str,
+    input_blake3: &str,
+  ) -> Result<(Vec<u8>, Vec<u8>), String> {
+    let read =
+      |p: &Path| std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()));
+    let complete_path = entry.join("complete");
+    let raw = read(&complete_path)?;
+    if raw.is_empty() {
+      return Err(format!(
+        "{}: unauthenticated empty complete marker; refusing stale cache entry",
+        complete_path.display()
+      ));
+    }
+    let marker: WideCompleteMarker = serde_json::from_slice(&raw).map_err(|e| {
+      format!(
+        "{}: malformed complete marker ({e}); refusing cache entry",
+        complete_path.display()
+      )
+    })?;
+    if marker.format != WIDE_COMPLETE_FORMAT {
+      return Err(format!(
+        "{}: unsupported complete marker format {:?}",
+        complete_path.display(),
+        marker.format
+      ));
+    }
+    if marker.key != key
+      || marker.binary_blake3 != binary_blake3
+      || marker.input_blake3 != input_blake3
+    {
+      return Err(format!(
+        "{}: complete marker metadata differs from requested export",
+        complete_path.display()
+      ));
+    }
+    let stored_input = read(&entry.join("input.json"))?;
+    let actual_input = blake3::hash(&stored_input).to_hex().to_string();
+    if actual_input != marker.input_blake3 {
+      return Err(format!(
+        "{}: input.json BLAKE3 {actual_input} differs from complete marker {}",
+        entry.display(),
+        marker.input_blake3
+      ));
+    }
+    let layout = read(&entry.join("layout.json"))?;
+    let actual_layout = blake3::hash(&layout).to_hex().to_string();
+    if actual_layout != marker.layout_blake3 {
+      return Err(format!(
+        "{}: layout.json BLAKE3 {actual_layout} differs from complete marker {}",
+        entry.display(),
+        marker.layout_blake3
+      ));
+    }
+    let fixed = read(&entry.join("fixed.bin"))?;
+    let actual_fixed = blake3::hash(&fixed).to_hex().to_string();
+    if actual_fixed != marker.fixed_blake3 {
+      return Err(format!(
+        "{}: fixed.bin BLAKE3 {actual_fixed} differs from complete marker {}",
+        entry.display(),
+        marker.fixed_blake3
+      ));
+    }
+    Ok((layout, fixed))
+  }
+
   /// The layout and fixed file of `input`, exported once per exporter
-  /// binary and input.
+  /// binary and input. Cache hits verify BLAKE3 digests of `input.json`,
+  /// `layout.json`, and `fixed.bin` recorded in the `complete` sentinel.
   pub fn export(
     &self,
     input: &serde_json::Value,
@@ -390,16 +475,23 @@ impl Exporter {
     let read =
       |p: &Path| std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()));
     let input = serde_json::to_vec_pretty(input).map_err(|e| e.to_string())?;
+    let binary_hash = blake3::hash(&read(&self.binary)?);
+    let input_hash = blake3::hash(&input);
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"ix/wide-export-cache/v1\0");
-    hasher.update(blake3::hash(&read(&self.binary)?).as_bytes());
-    hasher.update(blake3::hash(&input).as_bytes());
-    let entry = self.cache.join(hasher.finalize().to_hex().as_str());
+    hasher.update(binary_hash.as_bytes());
+    hasher.update(input_hash.as_bytes());
+    let key = hasher.finalize().to_hex().to_string();
+    let binary_blake3 = binary_hash.to_hex().to_string();
+    let input_blake3 = input_hash.to_hex().to_string();
+    let entry = self.cache.join(&key);
     if entry.join("complete").is_file() {
-      return Ok((
-        read(&entry.join("layout.json"))?,
-        read(&entry.join("fixed.bin"))?,
-      ));
+      return Self::read_verified_entry(
+        &entry,
+        &key,
+        &binary_blake3,
+        &input_blake3,
+      );
     }
     std::fs::create_dir_all(&self.cache)
       .map_err(|e| format!("{}: {e}", self.cache.display()))?;
@@ -428,12 +520,30 @@ impl Exporter {
         staging.join("export.log").display()
       ));
     }
-    std::fs::write(staging.join("complete"), b"").map_err(io)?;
+    let layout = read(&staging.join("layout.json"))?;
+    let fixed = read(&staging.join("fixed.bin"))?;
+    let marker = WideCompleteMarker {
+      format: WIDE_COMPLETE_FORMAT.to_owned(),
+      key: key.clone(),
+      binary_blake3: binary_blake3.clone(),
+      input_blake3: input_blake3.clone(),
+      layout_blake3: blake3::hash(&layout).to_hex().to_string(),
+      fixed_blake3: blake3::hash(&fixed).to_hex().to_string(),
+    };
+    let marker_bytes =
+      serde_json::to_vec_pretty(&marker).map_err(|e| e.to_string())?;
+    std::fs::write(staging.join("complete"), &marker_bytes).map_err(io)?;
     if std::fs::rename(&staging, &entry).is_err() {
-      // Another process published this entry first.
+      // Another process published this entry first; verify its sentinel too.
       let _ = std::fs::remove_dir_all(&staging);
+      return Self::read_verified_entry(
+        &entry,
+        &key,
+        &binary_blake3,
+        &input_blake3,
+      );
     }
-    Ok((read(&entry.join("layout.json"))?, read(&entry.join("fixed.bin"))?))
+    Ok((layout, fixed))
   }
 }
 
@@ -1778,5 +1888,85 @@ mod tests {
     assert!(
       reloaded.verify_normalized(&wrong_stmt, &proven.proof, &layout).is_err()
     );
+  }
+
+  #[test]
+  fn exporter_cache_complete_sentinel_authenticates_layout_and_fixed() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let base = std::env::temp_dir().join(format!(
+      "ix-compress-wrap-exporter-m9-{}",
+      std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&base);
+    let cache = base.join("cache");
+    std::fs::create_dir_all(&cache).unwrap();
+
+    let count_file = base.join("runs.txt");
+    let script = base.join("fake_wide_export.sh");
+    std::fs::write(
+      &script,
+      format!(
+        "#!/bin/sh\nset -e\necho x >> '{}'\nprintf '{{\"ok\":true}}' > \"$2\"\nprintf 'FIXED_BYTES' > \"$3\"\n",
+        count_file.display()
+      ),
+    )
+    .unwrap();
+    let mut perms = std::fs::metadata(&script).unwrap().permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&script, perms).unwrap();
+
+    let exporter = Exporter { binary: script.clone(), cache: cache.clone() };
+    let req = serde_json::json!({"test": "m9"});
+
+    // First export runs the binary and writes an authenticated JSON `complete` marker.
+    let (layout1, fixed1) = exporter.export(&req).unwrap();
+    assert_eq!(layout1, br#"{"ok":true}"#);
+    assert_eq!(fixed1, b"FIXED_BYTES");
+    assert_eq!(std::fs::read_to_string(&count_file).unwrap().lines().count(), 1);
+
+    // Second export hits the verified cache without re-running the binary.
+    let (layout2, fixed2) = exporter.export(&req).unwrap();
+    assert_eq!((layout2, fixed2), (layout1.clone(), fixed1.clone()));
+    assert_eq!(std::fs::read_to_string(&count_file).unwrap().lines().count(), 1);
+
+    // Locate the single cache entry directory.
+    let entry = std::fs::read_dir(&cache)
+      .unwrap()
+      .filter_map(Result::ok)
+      .map(|e| e.path())
+      .find(|p| p.join("complete").is_file())
+      .expect("cache entry directory");
+    let orig_complete = std::fs::read(entry.join("complete")).unwrap();
+
+    // Negative control 1: tampered layout.json fails closed.
+    std::fs::write(entry.join("layout.json"), br#"{"ok":false}"#).unwrap();
+    assert!(exporter.export(&req).unwrap_err().contains("layout.json"));
+    std::fs::write(entry.join("layout.json"), &layout1).unwrap();
+
+    // Negative control 2: tampered fixed.bin fails closed.
+    std::fs::write(entry.join("fixed.bin"), b"TAMPERED").unwrap();
+    assert!(exporter.export(&req).unwrap_err().contains("fixed.bin"));
+    std::fs::write(entry.join("fixed.bin"), &fixed1).unwrap();
+
+    // Negative control 3: tampered input.json fails closed.
+    let orig_input = std::fs::read(entry.join("input.json")).unwrap();
+    std::fs::write(entry.join("input.json"), b"{}").unwrap();
+    assert!(exporter.export(&req).unwrap_err().contains("input.json"));
+    std::fs::write(entry.join("input.json"), &orig_input).unwrap();
+
+    // Negative control 4: legacy 0-byte `complete` sentinel fails closed.
+    std::fs::write(entry.join("complete"), b"").unwrap();
+    assert!(exporter.export(&req).unwrap_err().contains("empty complete"));
+
+    // Negative control 5: malformed JSON in `complete` fails closed.
+    std::fs::write(entry.join("complete"), b"not-json").unwrap();
+    assert!(exporter.export(&req).unwrap_err().contains("malformed complete"));
+
+    // Restoring the valid sentinel restores cache hit cleanly.
+    std::fs::write(entry.join("complete"), &orig_complete).unwrap();
+    assert_eq!(exporter.export(&req).unwrap(), (layout1, fixed1));
+
+    let _ = std::fs::remove_dir_all(&base);
   }
 }

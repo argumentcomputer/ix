@@ -12,8 +12,10 @@
 //! required for native BN254 circuits consuming narrow KZG proof advice),
 //! optional `backend` (must be `"native"` when present), optional `cuda`
 //! (boolean; defaults to `cfg!(feature = "cuda")` and supports Ix-CUDA on both
-//! BN254 and BLS12-381), optional `entry` (overrides
-//! `CompressFinalNarrow::verify_accumulator_v1`), optional `advice` (product
+//! BN254 and BLS12-381), optional `entry` (defaults to
+//! `CompressFinal::verify_v1`, a self-contained `outputs == 0` in-circuit
+//! pairing entry; deferred-output accumulator entries with `scs.outputs != 0`
+//! are rejected fail-closed), optional `advice` (product
 //! `.ixa` bound via `ixcc::register_advice_program`), optional `field`
 //! (`"bn254"` default or `"bls12-381"`).
 //!
@@ -31,8 +33,11 @@ use crate::{
     fq, g1,
     kzg::Compiler,
     kzg_advice as wire,
-    pairing::final_program::{
-      ACCUMULATOR_WORDS, NARROW_ACCUMULATOR_ENTRY, statement_arguments,
+    pairing::{
+      self,
+      final_program::{
+        ACCUMULATOR_ENTRY, ENTRY, NARROW_ACCUMULATOR_ENTRY, statement_arguments,
+      },
     },
     plonk::{native, scs},
   },
@@ -44,10 +49,10 @@ use crate::{
   pipeline::SetupConfig,
 };
 use aiur::{
-  Execution, FieldWord, artifact::WidePackage, field::FieldBackend,
-  hints::HintChannels, maps::MapOverrides, trace::TracePlan,
+  Execution, FieldWord, artifact::WidePackage, bytecode::Type,
+  field::FieldBackend, hints::HintChannels, maps::MapOverrides,
+  trace::TracePlan,
 };
-use ark_ec::pairing::Pairing;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
@@ -143,58 +148,43 @@ impl Phases {
   }
 }
 
+fn validate_terminal_entry(entry: &str) -> Result<(), Error> {
+  if entry == NARROW_ACCUMULATOR_ENTRY || entry == ACCUMULATOR_ENTRY {
+    return Err(format!(
+      "terminal entry {entry:?} defers pairing checks to scs.outputs, which \
+       native PLONK-SCS does not constrain in-circuit; use a self-contained \
+       outputs == 0 entry such as {ENTRY:?}"
+    ));
+  }
+  Ok(())
+}
+
 fn check_bn254_native_outputs(
   scs_outputs: usize,
-  record_output: &[Scalar],
-  anchors: &[ark_bn254::G2Affine; 2],
+  _record_output: &[Scalar],
 ) -> Result<(), Error> {
-  match scs_outputs {
-    // Self-contained circuit (e.g. in-circuit pairing): no external pairing
-    // output words required; `record.output` may be empty or a scalar status.
-    0 => Ok(()),
-    ACCUMULATOR_WORDS => {
-      if record_output.len() != ACCUMULATOR_WORDS {
-        return Err(format!(
-          "BN254 terminal accumulator needs {ACCUMULATOR_WORDS} words, got {}",
-          record_output.len(),
-        ));
-      }
-      let pair =
-        [g1::decode(&record_output[..9])?, g1::decode(&record_output[9..])?];
-      if ark_bn254::Bn254::multi_pairing(pair, *anchors).0
-        != <ark_bn254::Bn254 as Pairing>::TargetField::from(1u8)
-      {
-        return Err(
-          "terminal accumulator fails the Ignition pairing check".into(),
-        );
-      }
-      Ok(())
-    },
-    other => Err(format!(
-      "unsupported BN254 native PLONK output count {other}; expected 0 \
-       (self-contained) or {ACCUMULATOR_WORDS} (external pairing accumulator)"
-    )),
+  if scs_outputs != 0 {
+    return Err(format!(
+      "unsupported BN254 native PLONK output count {scs_outputs}; native \
+       PLONK-SCS does not synthesize in-circuit pairing constraints for \
+       deferred scs.outputs and requires self-contained outputs == 0 circuits"
+    ));
   }
+  Ok(())
 }
 
 fn check_bls12_381_native_outputs(
   scs_outputs: usize,
-  record_output: &[Bls12381Scalar],
-  anchors: &[ark_bls12_381::G2Affine; 2],
+  _record_output: &[Bls12381Scalar],
 ) -> Result<(), Error> {
-  match scs_outputs {
-    // Self-contained circuit (e.g. in-circuit pairing): no external pairing
-    // output words required; `record.output` may be empty or a scalar status.
-    0 => Ok(()),
-    bls12_381::ACCUMULATOR_WORDS => {
-      bls12_381::check_pairing(record_output, *anchors)
-    },
-    other => Err(format!(
-      "unsupported BLS12-381 native PLONK output count {other}; expected 0 \
-       (self-contained) or {} (external pairing accumulator)",
-      bls12_381::ACCUMULATOR_WORDS,
-    )),
+  if scs_outputs != 0 {
+    return Err(format!(
+      "unsupported BLS12-381 native PLONK output count {scs_outputs}; native \
+       PLONK-SCS does not synthesize in-circuit pairing constraints for \
+       deferred scs.outputs and requires self-contained outputs == 0 circuits"
+    ));
   }
+  Ok(())
 }
 
 fn read_verified_native_inputs<C: KzgCurve>(
@@ -228,6 +218,12 @@ where
   C: KzgCurve,
 {
   let public_args = plan.public_args(record, entry, arguments)?;
+  if scs_outputs != 0 {
+    return Err(format!(
+      "native PLONK-SCS does not constrain deferred scs.outputs \
+       (got {scs_outputs}); expected self-contained outputs == 0"
+    ));
+  }
   let claim = plan.public_claim(entry, &public_args, &record.output)?;
   if claim.len() != 2 + scs_publics + scs_outputs {
     return Err(format!(
@@ -529,10 +525,11 @@ fn run_native_bn254(
   let inputs =
     read_verified_native_inputs(&prepared_dir, &manifest, prover.scs())?;
   let scs_outputs = prover.scs().outputs.len();
-  if scs_outputs != 0 && scs_outputs != ACCUMULATOR_WORDS {
+  if scs_outputs != 0 {
     return Err(format!(
-      "unsupported BN254 native PLONK output count {scs_outputs}; expected 0 \
-       (self-contained) or {ACCUMULATOR_WORDS} (external pairing accumulator)"
+      "unsupported BN254 native PLONK output count {scs_outputs}; native \
+       PLONK-SCS does not synthesize in-circuit pairing constraints for \
+       deferred scs.outputs and requires self-contained outputs == 0 circuits"
     ));
   }
   phases.record("load", started);
@@ -552,8 +549,16 @@ fn run_native_bn254(
   aiur::library::u64::register(&mut hints, Bn254)?;
   fq::register(&mut hints)?;
   g1::register(&mut hints)?;
+  pairing::register(&mut hints)?;
   wire::register(&mut hints)?;
   aiur::library::ixcc::register(&mut hints, Bn254)?;
+  let terminal_stage = narrow.stage.saturating_add(1);
+  hints.insert_fixed::<0, 1>(
+    "kzg.final.stage",
+    Type::Tuple { items: vec![] },
+    Type::Field,
+    move |[]| Ok([Bn254.from_u64(u64::from(terminal_stage))]),
+  )?;
   if let Some((_, policy_bytes)) = policy_context {
     wire::Inputs::new(
       narrow.key.clone(),
@@ -579,8 +584,7 @@ fn run_native_bn254(
     .with_map_overrides(&maps)?
     .execute(entry, arguments.clone())
     .map_err(|e| e.to_string())?;
-  let anchors = [prover.vk().g2, prover.vk().tau_g2];
-  check_bn254_native_outputs(scs_outputs, &record.output, &anchors)?;
+  check_bn254_native_outputs(scs_outputs, &record.output)?;
   phases.record("execute", started);
 
   let started = Instant::now();
@@ -699,11 +703,11 @@ fn run_native_bls12_381(
   let inputs =
     read_verified_native_inputs(&prepared_dir, &manifest, prover.scs())?;
   let scs_outputs = prover.scs().outputs.len();
-  if scs_outputs != 0 && scs_outputs != bls12_381::ACCUMULATOR_WORDS {
+  if scs_outputs != 0 {
     return Err(format!(
-      "unsupported BLS12-381 native PLONK output count {scs_outputs}; \
-       expected 0 (self-contained) or {} (external pairing accumulator)",
-      bls12_381::ACCUMULATOR_WORDS,
+      "unsupported BLS12-381 native PLONK output count {scs_outputs}; native \
+       PLONK-SCS does not synthesize in-circuit pairing constraints for \
+       deferred scs.outputs and requires self-contained outputs == 0 circuits"
     ));
   }
   phases.record("load", started);
@@ -720,9 +724,17 @@ fn run_native_bls12_381(
     narrow.statement.ok_or("the narrow stage passed no statement")?;
   let mut hints = HintChannels::new();
   bls12_381::register_standard_hints(&mut hints)?;
+  let terminal_stage = narrow.stage.saturating_add(1);
+  hints.insert_fixed::<0, 1>(
+    "kzg.final.stage",
+    Type::Tuple { items: vec![] },
+    Type::Field,
+    move |[]| Ok([Bls12381.from_u64(u64::from(terminal_stage))]),
+  )?;
   if let Some((_, policy_bytes)) = policy_context {
     fq::register_for::<Bls12381Curve>(&mut hints)?;
     g1::register_for::<Bls12381Curve>(&mut hints)?;
+    pairing::register_for::<Bls12381Curve>(&mut hints)?;
     wire::register_for::<Bls12381Curve>(&mut hints)?;
     wire::Inputs::new(
       narrow.key.clone(),
@@ -748,8 +760,7 @@ fn run_native_bls12_381(
     .with_map_overrides(&maps)?
     .execute(entry, arguments.clone())
     .map_err(|e| e.to_string())?;
-  let anchors = [prover.vk().g2, prover.vk().tau_g2];
-  check_bls12_381_native_outputs(scs_outputs, &record.output, &anchors)?;
+  check_bls12_381_native_outputs(scs_outputs, &record.output)?;
   phases.record("execute", started);
 
   let started = Instant::now();
@@ -823,7 +834,8 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
     Some(stage.product("advice")?)
   };
   let advice_bytes = advice_file.as_ref().map(|p| p.bytes.as_slice());
-  let entry = entry_override.unwrap_or(NARROW_ACCUMULATOR_ENTRY);
+  let entry = entry_override.unwrap_or(ENTRY);
+  validate_terminal_entry(entry)?;
   let manifest_file = stage.product("prepared_manifest")?;
   validate_backend(spec, &manifest_file.bytes)?;
 
@@ -844,19 +856,23 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
 mod tests {
   use super::*;
   use crate::{
-    aiur_backend::plonk::{
-      native::{
-        NativeProver, PackedGate, PlonkAccelerator, ScsBuilder, ScsFile,
-        WireHint, domain_size_for_scs, prepare_to_dir,
-        scs_file::{SEL_L, SEL_M, SEL_O, SEL_R},
+    aiur_backend::{
+      pairing::final_program::ACCUMULATOR_WORDS,
+      plonk::{
+        native::{
+          NativeProver, PackedGate, PlonkAccelerator, ScsBuilder, ScsFile,
+          WireHint, domain_size_for_scs, prepare_to_dir,
+          scs_file::{SEL_L, SEL_M, SEL_O, SEL_R},
+          setup,
+        },
+        scs::{Table, serialize_binary_witness},
       },
-      scs::{Table, serialize_binary_witness},
     },
     kzg::{
-      Srs, VerifierParams,
+      Srs,
       srs::filecoin::{
         FILECOIN_PREFIX_2P8_FIXTURE, FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3,
-        filecoin_anchors, load_filecoin_cache,
+        load_filecoin_cache,
       },
     },
   };
@@ -1354,83 +1370,60 @@ mod tests {
 
   #[test]
   fn native_output_checks_bn254_and_bls12_381() {
-    // BN254 anchors and valid pairing accumulator: e(tau*G1, G2) * e(-G1, tau*G2) == 1.
+    // Terminal entry validation: self-contained ENTRY accepted, deferred
+    // accumulator entries refused fail-closed.
+    validate_terminal_entry(ENTRY).unwrap();
+    validate_terminal_entry("Prog::check_unit").unwrap();
+    assert!(validate_terminal_entry(NARROW_ACCUMULATOR_ENTRY).is_err());
+    assert!(validate_terminal_entry(ACCUMULATOR_ENTRY).is_err());
+
+    // Self-contained BN254 (`outputs == 0`) accepted; deferred `scs.outputs`
+    // (including 18-word valid pairing accumulators) MUST be rejected.
     let bn_srs =
       Srs::<Bn254Curve>::unsafe_dev_setup(16, b"ix-terminal-bn254-outputs");
-    let bn_anchors = [bn_srs.g2, bn_srs.tau_g2];
-    check_bn254_native_outputs(0, &[], &bn_anchors).unwrap();
-    check_bn254_native_outputs(0, &[Bn254.one()], &bn_anchors).unwrap();
+    check_bn254_native_outputs(0, &[]).unwrap();
+    check_bn254_native_outputs(0, &[Bn254.one()]).unwrap();
 
     let mut bn_acc = Vec::with_capacity(ACCUMULATOR_WORDS);
     bn_acc.extend(g1::encode(bn_srs.g1[1]));
     bn_acc.extend(g1::encode(-bn_srs.g1[0]));
-    check_bn254_native_outputs(ACCUMULATOR_WORDS, &bn_acc, &bn_anchors)
-      .unwrap();
-
-    let mut bn_inf = Vec::with_capacity(ACCUMULATOR_WORDS);
-    bn_inf.extend(g1::encode(ark_bn254::G1Affine::identity()));
-    bn_inf.extend(g1::encode(ark_bn254::G1Affine::identity()));
-    check_bn254_native_outputs(ACCUMULATOR_WORDS, &bn_inf, &bn_anchors)
-      .unwrap();
-
-    let mut bn_bad = Vec::with_capacity(ACCUMULATOR_WORDS);
-    bn_bad.extend(g1::encode(bn_srs.g1[2]));
-    bn_bad.extend(g1::encode(-bn_srs.g1[0]));
+    let err_bn =
+      check_bn254_native_outputs(ACCUMULATOR_WORDS, &bn_acc).unwrap_err();
     assert!(
-      check_bn254_native_outputs(ACCUMULATOR_WORDS, &bn_bad, &bn_anchors)
-        .is_err()
+      err_bn.contains("outputs == 0"),
+      "unexpected BN254 error: {err_bn}"
     );
-    assert!(
-      check_bn254_native_outputs(ACCUMULATOR_WORDS, &[], &bn_anchors).is_err()
-    );
-    assert!(
-      check_bn254_native_outputs(1, &[Bn254.one()], &bn_anchors).is_err()
-    );
+    assert!(check_bn254_native_outputs(ACCUMULATOR_WORDS, &[]).is_err());
+    assert!(check_bn254_native_outputs(1, &[Bn254.one()]).is_err());
 
-    // BLS12-381 anchors (real Filecoin 256-power fixture) and valid accumulator.
+    // Self-contained BLS12-381 (`outputs == 0`) accepted; deferred
+    // `scs.outputs` (including 22-word valid Filecoin accumulators) MUST be
+    // rejected.
     let bls_srs = load_filecoin_cache(
       Path::new(FILECOIN_PREFIX_2P8_FIXTURE),
       FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3,
       64,
     )
     .unwrap();
-    let bls_anchors = [bls_srs.g2, bls_srs.tau_g2];
-    check_bls12_381_native_outputs(0, &[], &bls_anchors).unwrap();
-    check_bls12_381_native_outputs(0, &[Bls12381.one()], &bls_anchors).unwrap();
+    check_bls12_381_native_outputs(0, &[]).unwrap();
+    check_bls12_381_native_outputs(0, &[Bls12381.one()]).unwrap();
 
     let mut bls_acc = Vec::with_capacity(bls12_381::ACCUMULATOR_WORDS);
     bls_acc.extend(bls12_381::encode_g1(bls_srs.g1[1]));
     bls_acc.extend(bls12_381::encode_g1(-bls_srs.g1[0]));
-    check_bls12_381_native_outputs(
+    let err_bls = check_bls12_381_native_outputs(
       bls12_381::ACCUMULATOR_WORDS,
       &bls_acc,
-      &bls_anchors,
     )
-    .unwrap();
-
-    let mut bls_bad = Vec::with_capacity(bls12_381::ACCUMULATOR_WORDS);
-    bls_bad.extend(bls12_381::encode_g1(bls_srs.g1[2]));
-    bls_bad.extend(bls12_381::encode_g1(-bls_srs.g1[0]));
+    .unwrap_err();
     assert!(
-      check_bls12_381_native_outputs(
-        bls12_381::ACCUMULATOR_WORDS,
-        &bls_bad,
-        &bls_anchors,
-      )
-      .is_err()
+      err_bls.contains("outputs == 0"),
+      "unexpected BLS12-381 error: {err_bls}"
     );
     assert!(
-      check_bls12_381_native_outputs(
-        bls12_381::ACCUMULATOR_WORDS,
-        &[],
-        &bls_anchors,
-      )
-      .is_err()
+      check_bls12_381_native_outputs(bls12_381::ACCUMULATOR_WORDS, &[]).is_err()
     );
-    assert!(
-      check_bls12_381_native_outputs(1, &[Bls12381.one()], &bls_anchors)
-        .is_err()
-    );
+    assert!(check_bls12_381_native_outputs(1, &[Bls12381.one()]).is_err());
   }
 
   fn run_native_e2e_roundtrip<C: KzgCurve>(
@@ -1505,10 +1498,10 @@ mod tests {
   }
 
   #[test]
-  fn native_terminal_e2e_bn254_outputs_0_and_18() {
+  fn native_terminal_e2e_bn254_outputs_0_and_rejects_18() {
     let srs =
       Srs::<Bn254Curve>::unsafe_dev_setup(64, b"ix-terminal-native-bn254");
-    // Self-contained circuit (`outputs == 0`).
+    // Self-contained circuit (`outputs == 0`) in both flat and nested layouts.
     run_native_e2e_roundtrip::<Bn254Curve>(
       "bn254-out0",
       &srs,
@@ -1516,25 +1509,44 @@ mod tests {
       &[],
       false,
     );
+    run_native_e2e_roundtrip::<Bn254Curve>(
+      "bn254-out0-nested",
+      &srs,
+      "dev-bn254-srs",
+      &[],
+      true,
+    );
 
-    // External-output circuit (`outputs == 18`) with valid BN254 pairing accumulator.
+    // Negative control: deferred-output circuit (`outputs == 18`) MUST be
+    // rejected fail-closed by both `setup` and `prepare_to_dir`.
     let mut acc = Vec::with_capacity(ACCUMULATOR_WORDS);
     acc.extend(g1::encode(srs.g1[1]));
     acc.extend(g1::encode(-srs.g1[0]));
-    check_bn254_native_outputs(ACCUMULATOR_WORDS, &acc, &[srs.g2, srs.tau_g2])
-      .unwrap();
     let acc_fr: Vec<ark_bn254::Fr> = acc.iter().map(|s| s.0).collect();
-    run_native_e2e_roundtrip::<Bn254Curve>(
-      "bn254-out18",
+    let (scs_bytes, _, _) =
+      build_synthetic_scs::<Bn254Curve>(ACCUMULATOR_WORDS, &acc_fr);
+    let scs = ScsFile::<Bn254Curve>::parse(&scs_bytes).unwrap();
+    assert_eq!(scs.outputs.len(), ACCUMULATOR_WORDS);
+    let accel = PlonkAccelerator::<Bn254Curve>::cpu();
+    assert!(setup(&scs, &srs, &accel).is_err());
+
+    let dir = temp_dir("bn254-reject-out18");
+    let scs_path = dir.join("circuit.ixscs");
+    fs::write(&scs_path, &scs_bytes).unwrap();
+    let err = prepare_to_dir(
+      &scs_path,
       &srs,
       "dev-bn254-srs",
-      &acc_fr,
-      true,
-    );
+      &dir.join("prepared"),
+      &accel,
+    )
+    .unwrap_err();
+    assert!(err.contains("outputs == 0"), "unexpected error: {err}");
+    let _ = fs::remove_dir_all(&dir);
   }
 
   #[test]
-  fn native_terminal_e2e_bls12_381_outputs_0_and_22() {
+  fn native_terminal_e2e_bls12_381_outputs_0_and_rejects_22() {
     // Use the real checked-in Filecoin 256-power ceremony SRS fixture!
     let srs = load_filecoin_cache(
       Path::new(FILECOIN_PREFIX_2P8_FIXTURE),
@@ -1542,12 +1554,10 @@ mod tests {
       64,
     )
     .unwrap();
-    let filecoin_params =
-      VerifierParams::<Bls12381Curve>::from_srs(&filecoin_anchors());
     let srs_blake3 =
       blake3::Hash::from(FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3).to_hex();
 
-    // Self-contained circuit (`outputs == 0`).
+    // Self-contained circuit (`outputs == 0`) in both flat and nested layouts.
     run_native_e2e_roundtrip::<Bls12381Curve>(
       "bls12-381-out0",
       &srs,
@@ -1555,25 +1565,42 @@ mod tests {
       &[],
       false,
     );
+    run_native_e2e_roundtrip::<Bls12381Curve>(
+      "bls12-381-out0-nested",
+      &srs,
+      srs_blake3.as_str(),
+      &[],
+      true,
+    );
 
-    // External-output circuit (`outputs == 22`) with real Filecoin pairing accumulator.
+    // Negative control: deferred-output circuit (`outputs == 22`) MUST be
+    // rejected fail-closed by both `setup` and `prepare_to_dir`.
     let mut acc = Vec::with_capacity(bls12_381::ACCUMULATOR_WORDS);
     acc.extend(bls12_381::encode_g1(srs.g1[1]));
     acc.extend(bls12_381::encode_g1(-srs.g1[0]));
-    check_bls12_381_native_outputs(
-      bls12_381::ACCUMULATOR_WORDS,
-      &acc,
-      &[filecoin_params.g2, filecoin_params.tau_g2],
-    )
-    .unwrap();
     let acc_fr: Vec<ark_bls12_381::Fr> = acc.iter().map(|s| s.0).collect();
-    run_native_e2e_roundtrip::<Bls12381Curve>(
-      "bls12-381-out22",
+    let (scs_bytes, _, _) = build_synthetic_scs::<Bls12381Curve>(
+      bls12_381::ACCUMULATOR_WORDS,
+      &acc_fr,
+    );
+    let scs = ScsFile::<Bls12381Curve>::parse(&scs_bytes).unwrap();
+    assert_eq!(scs.outputs.len(), bls12_381::ACCUMULATOR_WORDS);
+    let accel = PlonkAccelerator::<Bls12381Curve>::cpu();
+    assert!(setup(&scs, &srs, &accel).is_err());
+
+    let dir = temp_dir("bls12-381-reject-out22");
+    let scs_path = dir.join("circuit.ixscs");
+    fs::write(&scs_path, &scs_bytes).unwrap();
+    let err = prepare_to_dir(
+      &scs_path,
       &srs,
       srs_blake3.as_str(),
-      &acc_fr,
-      true,
-    );
+      &dir.join("prepared"),
+      &accel,
+    )
+    .unwrap_err();
+    assert!(err.contains("outputs == 0"), "unexpected error: {err}");
+    let _ = fs::remove_dir_all(&dir);
 
     // Without `--features cuda`, requesting CUDA on BLS12-381 fails cleanly
     // with the native CUDA feature message (rather than gnark's rejection).

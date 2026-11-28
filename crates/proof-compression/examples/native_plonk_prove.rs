@@ -28,14 +28,14 @@ use ix_proof_compression::{
         WireHint, domain_size_for_scs, export_solidity, parse_binary_witness,
         prepare_to_dir,
         scs_file::{SEL_L, SEL_M, SEL_O, SEL_R},
-        verify_native_bytes, verify_solidity_bytes,
+        solidity_filename_for_vk, verify_native_bytes, verify_solidity_bytes,
       },
       scs::{CurveWitness, Table, stage_for_plan},
     },
   },
   kzg::{
     Srs,
-    curve::{Bls12381, Bn254, Curve, G1AffineOf, G1ProjectiveOf, KzgCurve},
+    curve::{Bls12381, Bn254, G1AffineOf, G1ProjectiveOf, KzgCurve},
     field::CurveScalar,
   },
 };
@@ -628,10 +628,7 @@ fn run_prove_verify_pipeline<C: KzgCurve>(
       NativeProver::<C>::open(&prep_dir, &scs_out, &manifest, accel)?;
     assert_eq!(reopened.vk_sha256(), vk_sha);
 
-    let sol_name = match C::CURVE {
-      Curve::Bn254 => "PlonkVerifier.sol",
-      Curve::Bls12381 => "Bls12381PlonkVerifier.sol",
-    };
+    let sol_name = solidity_filename_for_vk(&vk);
     fs::write(dir.join(sol_name), solidity_src.as_bytes())
       .map_err(|e| e.to_string())?;
     fs::write(dir.join("proof.bin"), &bundle.native)
@@ -730,13 +727,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cli.use_cuda,
       )?;
       let (bytes18, w18) = build_synthetic_scs::<Bn254>(18);
-      let out18 = cli.out_dir.as_ref().map(|d| d.join("bn254-out18"));
-      run_prove_verify_pipeline::<Bn254>(
-        &bytes18,
-        &w18,
-        out18.as_deref(),
-        cli.use_cuda,
-      )?;
+      if run_prove_verify_pipeline::<Bn254>(&bytes18, &w18, None, cli.use_cuda)
+        .is_ok()
+      {
+        return Err(
+          "negative control failed: BN254 outputs == 18 accepted".into(),
+        );
+      }
+      println!("[bn254] deferred outputs=18 rejected fail-closed (negative control ok)");
     }
     if matches!(cli.curve, CurveChoice::Bls12381 | CurveChoice::Both) {
       let (bytes0, w0) = build_synthetic_scs::<Bls12381>(0);
@@ -748,13 +746,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cli.use_cuda,
       )?;
       let (bytes22, w22) = build_synthetic_scs::<Bls12381>(22);
-      let out22 = cli.out_dir.as_ref().map(|d| d.join("bls12-381-out22"));
-      run_prove_verify_pipeline::<Bls12381>(
+      if run_prove_verify_pipeline::<Bls12381>(
         &bytes22,
         &w22,
-        out22.as_deref(),
+        None,
         cli.use_cuda,
-      )?;
+      )
+      .is_ok()
+      {
+        return Err(
+          "negative control failed: BLS12-381 outputs == 22 accepted".into(),
+        );
+      }
+      println!("[bls12-381] deferred outputs=22 rejected fail-closed (negative control ok)");
     }
     return Ok(());
   }
