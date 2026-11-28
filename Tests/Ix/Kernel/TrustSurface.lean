@@ -248,31 +248,48 @@ def tokens : List String :=
 
 /-- The kernel-bypass tokens: each names a way to put a declaration into an
 environment without the kernel checking it (`debug.skipKernelTC`, which
-`Lean.addDecl` obeys, and `addDeclWithoutChecking`). Searched for, as words in
-the raw text, with no allowlist, in every certified library (`bypassDirs`,
-`bypassRootFiles`) and the lakefiles (`bypassLakefiles`, where `leanOptions`
-or `moreLeanArgs` could set the option for a whole package). The test fixtures that need ill-typed
+`Lean.addDecl` obeys, and `addDeclWithoutChecking`), or direct low-level
+environment declaration installation (`addDeclCore`). Searched for, as words in
+the raw text, in every certified library (`bypassDirs`, `bypassRootFiles`) and
+the lakefiles (`bypassLakefiles`, where `leanOptions` or `moreLeanArgs` could
+set the option for a whole package). The test fixtures that need ill-typed
 declarations (`Tests/`, `Benchmarks/`) are not scanned. The full-closure kernel
 replay (`Scripts/KernelReplay.lean`) is what detects such a declaration in an
 `.olean`; this scan names the source line. -/
-def bypassTokens : List String := ["skipKernelTC", "addDeclWithoutChecking"]
+def bypassTokens : List String := ["skipKernelTC", "addDeclWithoutChecking", "addDeclCore"]
 
 /-- The certified libraries the kernel-bypass scan covers. -/
 def bypassDirs : Array System.FilePath :=
   #["IxCK", "Ix", "IxVMRefinement", "IxSharingVerify", "Aiur/Aiur", "IxVM/IxVM",
-    "MultiStark/MultiStark", "Models/SetTheory/IxSetTheoryModel"]
+    "MultiStark/MultiStark", "Models/SetTheory/IxSetTheoryModel",
+    "IxCC/IxCC", "IxCC/IxCCGrounding", "IxCC/IxCCCorrect",
+    "IxCCAiur", "Models/KernelBridge"]
 
 /-- Library root files the kernel-bypass scan covers besides `bypassDirs`. -/
 def bypassRootFiles : Array String :=
   #["Ix.lean", "IxSharingVerify.lean", "FormalAiurKeys.lean", "FormalCodegen.lean",
     "Aiur/Aiur.lean", "IxVM/IxVM.lean", "MultiStark/MultiStark.lean",
-    "Models/SetTheory/IxSetTheoryModel.lean"]
+    "Models/SetTheory/IxSetTheoryModel.lean",
+    "IxCC/IxCC.lean", "IxCC/IxCCGrounding.lean", "IxCC/IxCCCorrect.lean",
+    "IxCCAiur/IxCCAiur.lean", "Models/KernelBridge/IxKernelBridge.lean"]
 
 /-- Every workspace's lakefile: an option set there applies to a whole package.
 These are searched as plain text (a TOML file is not Lean). -/
 def bypassLakefiles : Array String :=
   #["lakefile.lean", "IxCK/lakefile.lean", "Aiur/lakefile.lean", "IxVM/lakefile.lean",
-    "MultiStark/lakefile.lean", "Models/SetTheory/lakefile.toml"]
+    "MultiStark/lakefile.lean", "Models/SetTheory/lakefile.toml",
+    "IxCC/lakefile.lean", "IxCCAiur/lakefile.toml", "Models/KernelBridge/lakefile.toml"]
+
+/-- Narrow audited exceptions for `bypassScan`:
+- `Ix/Commit.lean`: untrusted host CLI commitment helper (`commitDef`, outside
+  all certified kernel closures) calling Lean's kernel-checked `addDeclCore`
+  (never `skipKernelTC` or `addDeclWithoutChecking`).
+- `IxCC/IxCC/Tools/SourceScan.lean`: IxCC's own hygiene scanner, which lists
+  the forbidden token names as string literals; `bypassScan` still runs
+  `codeOnly` on it to guarantee zero occurrences in executable code. -/
+def bypassCodeOnlyFiles : List String := ["IxCC/IxCC/Tools/SourceScan.lean"]
+def bypassAllow : List (String × List String) :=
+  [("Ix/Commit.lean", ["addDeclCore"])]
 
 def allow : List (String × List String) := [
   ("IxCK/Kernel/Expr.lean", ["computed_field", "csimp"]),
@@ -604,39 +621,45 @@ def bracketHitLines (out : Array Char) (w : String) : Array Nat := Id.run do
         lines := lines.push lineNo
   return lines
 
-/-- An `axiom` declaration: at the start of the line after blanks,
-declaration modifiers and `@[…]` attributes, followed by a blank or the end
-of the line (upstream: `^\s*axiom\s`). -/
-def axiomHit (line : Array Char) : Bool := Id.run do
-  let n := line.size
-  let mut i := 0
-  let skip (i : Nat) : Nat := Id.run do
-    let mut j := i
-    while j < n && isPySpace line[j]! do j := j + 1
-    return j
-  i := skip i
-  let mut more := true
-  while more do
-    more := false
-    if line[i]? == some '@' && line[i + 1]? == some '[' then
-      let mut j := i + 2
-      while j < n && line[j]! != ']' do j := j + 1
-      if j < n then
-        i := skip (j + 1); more := true
-    else
-      for m in ["public", "private", "protected", "noncomputable", "unsafe", "partial", "meta", "scoped", "local"] do
-        if !more && wordAt line i m && (line[i + m.length]?.any isPySpace) then
-          i := skip (i + m.length); more := true
-  return wordAt line i "axiom" && (i + 5 == n || (line[i + 5]?.any isPySpace))
+/-- Line numbers where an `axiom` declaration keyword occurs in the full
+comment/string-blanked source `out`. Catches `axiom` anywhere on a line —
+including after `set_option ... in`, `namespace X`, nested `@[simp [a]]`, and
+multi-line `@[\n...\n]` — while excluding only projection/constructor notation
+(`.axiom`, `Foo.axiom`) and same-line inductive constructor branches (`| axiom`,
+not `|| axiom`). -/
+def axiomHitLines (out : Array Char) : Array Nat := Id.run do
+  let n := out.size
+  let mut lineNo := 1
+  let mut lines : Array Nat := #[]
+  for q in [0:n] do
+    let c := out[q]!
+    if c == '\n' then
+      lineNo := lineNo + 1
+    else if c == 'a' && wordAt out q "axiom" &&
+        (q == 0 || !isWordChar out[q - 1]!) &&
+        (q + 5 == n || !(out[q + 5]?.any isWordChar)) then
+      let isDotProj := q > 0 && out[q - 1]! == '.'
+      let isQuotedIdent := q > 0 && out[q - 1]! == '«'
+      let isPipeCtor := Id.run do
+        let mut k := q
+        while k > 0 && (out[k - 1]! == ' ' || out[k - 1]! == '\t') do
+          k := k - 1
+        if k > 0 && out[k - 1]! == '|' then
+          return !(k ≥ 2 && out[k - 2]! == '|')
+        return false
+      if !isDotProj && !isQuotedIdent && !isPipeCtor then
+        unless lines.contains lineNo do
+          lines := lines.push lineNo
+  return lines
 
 def externHitLines (out : Array Char) : Array Nat := bracketHitLines out "extern"
 
-def tokenHit (externLines csimpLines : Array Nat) (lineNo : Nat) (line : Array Char) :
+def tokenHit (externLines csimpLines axiomLines : Array Nat) (lineNo : Nat) (line : Array Char) :
     String → Bool
   | "ofReduceBool" => hasWord line "ofReduceBool" || hasWord line "ofReduceNat"
   | "extern" => externLines.contains lineNo
   | "csimp" => csimpLines.contains lineNo
-  | "axiom" => axiomHit line
+  | "axiom" => axiomLines.contains lineNo
   | tok => hasWord line tok
 
 /-- Scan raw Lean source text for compiler-escape occurrences. -/
@@ -644,12 +667,13 @@ def scanSource (raw : String) (path : String) : Except String (Array (Nat × Str
   let out ← codeOnly raw path
   let externLines := externHitLines out
   let csimpLines := bracketHitLines out "csimp"
+  let axiomLines := axiomHitLines out
   let mut hits := #[]
   let mut lineNo := 1
   for line in (String.ofList out.toList).splitOn "\n" do
     let chars := line.toList.toArray
     for tok in tokens do
-      if tokenHit externLines csimpLines lineNo chars tok then
+      if tokenHit externLines csimpLines axiomLines lineNo chars tok then
         hits := hits.push (lineNo, tok, pyStrip line.toList)
     lineNo := lineNo + 1
   return hits
@@ -702,6 +726,12 @@ def extraSelftests : Except String Unit := do
     ("meta axiom", "meta axiom pwn : False\n", #[(1, "axiom")]),
     ("scoped axiom", "scoped axiom pwn : False\n", #[(1, "axiom")]),
     ("local axiom", "local axiom pwn : False\n", #[(1, "axiom")]),
+    ("set_option in axiom", "set_option pp.all true in axiom pwn : False\n", #[(1, "axiom")]),
+    ("namespace axiom", "namespace X axiom pwn : False\n", #[(1, "axiom")]),
+    ("nested attr axiom", "@[simp [a]] axiom pwn : False\n", #[(1, "axiom")]),
+    ("multiline attr axiom", "@[\n  simp [a]\n] axiom pwn : False\n", #[(3, "axiom")]),
+    ("cross-line pipe axiom", "inductive T where\n  |\naxiom pwn : False\n", #[(3, "axiom")]),
+    ("benign ctor and proj axiom", "inductive T where\n  | axiom (n : Nat)\ndef x : T := .axiom 0\ndef y : T → Nat\n  | «axiom» n => n\n", #[]),
     ("multiline extern", "@[\n  extern \"sym\"\n]\nopaque f : Nat\n", #[(2, "extern")]),
     ("benign extern ident", "def extern : Nat := 0\n", #[]),
     ("multiline s! interp", "def f := s!\"{\n  unsafeCast 0\n}\"\n", #[(2, "unsafeCast")]),
@@ -753,10 +783,15 @@ def bypassHits (text : String) : Array (Nat × String × String) := Id.run do
     lineNo := lineNo + 1
   return hits
 
+def bypassAllowed (file tok : String) : Bool :=
+  ((bypassAllow.lookup file).getD []).contains tok
+
 /-- The kernel-bypass occurrences in the certified libraries and the lakefiles,
 as (file, line, token, text), and the number of files read. The text is searched
 as it is, comments and strings included: the lexer is not run over the ~100 MB
-of the libraries, and a mention in a comment fails too (rephrase it). -/
+of the libraries, and a mention in a comment fails too (rephrase it). For the
+audited scanner file in `bypassCodeOnlyFiles`, `codeOnly` is run to verify zero
+occurrences appear in executable code. -/
 def bypassScan : IO (Array (String × Nat × String × String) × Nat) := do
   let mut files : Array String := #[]
   for d in bypassDirs do files := files ++ (← leanFilesOutsideLake d)
@@ -766,7 +801,17 @@ def bypassScan : IO (Array (String × Nat × String × String) × Nat) := do
   for rel in files do
     let src ← IO.FS.readFile rel
     unless bypassTokens.any (fun tok => (src.splitOn tok).length > 1) do continue
-    hits := hits ++ (bypassHits (← readText rel)).map fun (i, t, x) => (rel, i, t, x)
+    let text ← readText rel
+    let scannedText ← if bypassCodeOnlyFiles.contains rel then
+        match codeOnly text rel with
+        | .ok out => pure (String.ofList out.toList)
+        | .error e =>
+          hits := hits.push (rel, 1, "lexer", e)
+          continue
+      else pure text
+    for (i, t, x) in bypassHits scannedText do
+      unless bypassAllowed rel t do
+        hits := hits.push (rel, i, t, x)
   return (hits, files.size)
 
 def selftest : IO UInt32 := do

@@ -118,80 +118,136 @@ private def lexerTests : IO Unit := do
     checked (hygiene (← checked (scan "def pair : Nat × Nat := ⟨sorry, 0⟩")))
   rejects "Unicode-delimited native tactic" "native_decide is not allowed" do
     checked (hygiene (← checked (scan "by exact ⟨by native_decide⟩")))
-  -- every spelling of native evaluation the lexer can see
+  -- every spelling of native evaluation, proof holes, and kernel bypasses
   for (source, fragment) in [
       ("theorem t : 2 + 2 = 4 := by decide +native", "decide +native is not allowed"),
+      ("theorem t : 2 + 2 = 4 := by decide +«native»", "decide +native is not allowed"),
       ("theorem t : 2 + 2 = 4 := by decide +kernel +native", "decide +native is not allowed"),
       ("theorem t : 2 + 2 = 4 := by decide (config := { native := true })",
         "native := true is not allowed"),
       ("theorem t : 2 + 2 = 4 := by decide (config := {kernel := false, native := true})",
         "native := true is not allowed"),
+      ("theorem t : 2 + 2 = 4 := by decide (config := { native := (true) })",
+        "native := true is not allowed"),
+      ("theorem t : 2 + 2 = 4 := by decide (config := { native := Bool.true })",
+        "native := true is not allowed"),
+      ("theorem t : 2 + 2 = 4 := by decide (config := { native := !false })",
+        "native := true is not allowed"),
+      ("theorem t : 2 + 2 = 4 := by decide (config := { native := myFlag })",
+        "decide config with native := is not allowed"),
       ("theorem t : True := Lean.ofReduceBool _ _ rfl", "Lean.ofReduceBool is not allowed"),
+      ("theorem t : True := _root_.Lean.ofReduceBool _ _ rfl", "_root_.Lean.ofReduceBool is not allowed"),
+      ("theorem t : True := Lean.«ofReduceBool» _ _ rfl", "Lean.ofReduceBool is not allowed"),
+      ("theorem t : True := «Lean».«ofReduceBool» _ _ rfl", "Lean.ofReduceBool is not allowed"),
       ("open Lean in theorem t : True := ofReduceBool _ _ rfl", "ofReduceBool is not allowed"),
       ("example := Lean.ofReduceNat", "Lean.ofReduceNat is not allowed"),
+      ("example := _root_.Lean.ofReduceNat", "_root_.Lean.ofReduceNat is not allowed"),
       ("example := Lean.trustCompiler", "Lean.trustCompiler is not allowed"),
-      ("example := Lean.reduceBool true", "Lean.reduceBool is not allowed")] do
+      ("example := _root_.Lean.trustCompiler", "_root_.Lean.trustCompiler is not allowed"),
+      ("example := Lean.reduceBool true", "Lean.reduceBool is not allowed"),
+      ("theorem t : False := sorryAx False false", "sorryAx is not allowed"),
+      ("theorem t : False := _root_.sorryAx False false", "_root_.sorryAx is not allowed"),
+      ("theorem t : False := «sorryAx» False false", "sorryAx is not allowed"),
+      ("theorem t : True := by bv_decide", "bv_decide is not allowed"),
+      ("set_option debug.skipKernelTC true in def f := 0", "debug.skipKernelTC is not allowed"),
+      ("def f := skipKernelTC", "skipKernelTC is not allowed"),
+      ("def f := env.addDeclWithoutChecking d", "env.addDeclWithoutChecking is not allowed"),
+      ("def f := env.addDeclCore 0 d none", "env.addDeclCore is not allowed"),
+      ("def f := Lean.Environment.addDeclCore env 0 d none", "Lean.Environment.addDeclCore is not allowed"),
+      ("def s := r#\"\\\"#\naxiom bad : False", "axiom is not allowed"),
+      ("def s := r\"\\\"\nsorry", "sorry is not allowed"),
+      ("def s := s!\"ok {sorry}\"", "sorry is not allowed")] do
     rejects source fragment do checked (hygiene (← checked (scan source)))
-  -- kernel decision, a variable or field named `native`, the bare marker
-  -- names IxCC uses as fields, comments and literals are accepted
+  rejects "unterminated raw string" "unterminated raw string literal" do
+    discard (checked (scan "def s := r#\"unclosed"))
+  -- kernel decision, raw strings, a variable or field named `native`, the bare
+  -- marker names IxCC uses as fields, nullary `| sorryAx` ctor, comments and
+  -- non-interpolated literals are accepted
   checked (hygiene (← checked (scan ("theorem t : 2 + 2 = 4 := by decide +kernel\n" ++
+    "theorem t2 : 2 + 2 = 4 := by decide (config := { native := false })\n" ++
     "def f (native : Nat) := 1 + native\ndef g := { native := 0, kernel := true }\n" ++
     "def h := let native := 1; native\ndef r (p : P) := p.reduceBool\n" ++
+    "inductive PolicyDecline where\n  | sorryAx\n  | other\ndef p : PolicyDecline := .sorryAx\n" ++
+    "def raw := r#\"axiom sorry @[extern \"nope\"]\"#\n" ++
     "-- by decide +native\n/- Lean.ofReduceBool -/\ndef s := \"native := true\"\n"))))
   -- a dependency's constructors named `axiom` or the specVersion 4 compiler-trust
   -- role names are not axiom declarations or uses of Lean's compiler-trust axioms;
-  -- every declaration form and bare/Lean-qualified use still is
+  -- every declaration form, cross-line `|` / `.`, and bare/Lean-qualified use still is
   checked (hygieneDependency (← checked (scan
-    "inductive Spec where\n  | axiom (n : Nat)\n  | trustCompiler | ofReduceBool | ofReduceNat\n  | other\ndef k : Spec := .axiom 0\ndef m : Spec → Nat\n  | .axiom n => n\n  | .trustCompiler => 1\n  | _ => 0\n")))
+    "inductive Spec where\n  | axiom (n : Nat)\n  | sorryAx\n  | trustCompiler | ofReduceBool | ofReduceNat\n  | other\ndef k : Spec := .axiom 0\ndef m : Spec → Nat\n  | .axiom n => n\n  | .trustCompiler => 1\n  | _ => 0\n")))
   for source in ["axiom bad : False\n", "private axiom bad : False\n", "@[simp] axiom bad : False\n",
-      "noncomputable axiom bad : False\n"] do
+      "noncomputable axiom bad : False\n",
+      "inductive T where\n  |\naxiom bad : False\n",
+      "def x := foo .\naxiom bad : False\n"] do
     rejects s!"dependency {source}" "axiom is not allowed" do
       checked (hygieneDependency (← checked (scan source)))
   for (source, fragment) in [("def bad := Lean.trustCompiler\n", "Lean.trustCompiler is not allowed"),
       ("def bad := trustCompiler\n", "trustCompiler is not allowed"),
-      ("def bad := ofReduceBool\n", "ofReduceBool is not allowed")] do
+      ("def bad := ofReduceBool\n", "ofReduceBool is not allowed"),
+      ("def bad := a || ofReduceBool\n", "ofReduceBool is not allowed"),
+      ("def bad := Lean.«ofReduceBool»\n", "Lean.ofReduceBool is not allowed")] do
     rejects s!"dependency {source}" fragment do
       checked (hygieneDependency (← checked (scan source)))
   rejects "a project constructor named axiom" "axiom is not allowed" do
     checked (hygiene (← checked (scan "inductive Spec where\n  | axiom (n : Nat)\n")))
   let externInput := "/- @[extern \"ignored\"] opaque absent : Nat -/\n" ++
+    "def raw := r##\"\"#\"##\n" ++
     "@[extern 1 \"ffi_first\"] private unsafe opaque first : Nat\n" ++
-    "attribute [extern \"ffi_second\"] second Qualified.third\n"
+    "@[simp [foo], extern \"ffi_nested\"] opaque nested : Nat\n" ++
+    "@[«extern» \"ffi_quoted\"] opaque «qdecl» : Nat\n" ++
+    "attribute [extern \"ffi_second\"] second Qualified.third\n" ++
+    "  fourth «fifth»\ndef nextDef := 0\n"
   let found ← checked (externs (← checked (scan externInput)))
-  need (found == [("ffi_first", "first"), ("ffi_second", "second"), ("ffi_second", "Qualified.third")])
-    "extern declaration/attribute inventory changed"
-  rejects "trailing quoted extern attribute target" "unsupported attribute-command target" do
-    discard (checked (externs (← checked (scan "attribute [extern \"ffi\"] ok «quoted»\n"))))
-  rejects "trailing quoted csimp attribute target" "unsupported csimp attribute target" do
+  need (found == [("ffi_first", "first"), ("ffi_nested", "nested"), ("ffi_quoted", "qdecl"),
+      ("ffi_second", "second"), ("ffi_second", "Qualified.third"), ("ffi_second", "fourth"),
+      ("ffi_second", "fifth")])
+    s!"extern declaration/attribute inventory changed: {repr found}"
+  rejects "trailing malformed extern attribute target" "unsupported attribute-command target" do
+    discard (checked (externs (← checked (scan "attribute [extern \"ffi\"] ok (bad)\n"))))
+  rejects "unaccounted bracketed extern" "extern outside an attribute" do
+    discard (checked (externs (← checked (scan "def xs := [extern]\n"))))
+  rejects "trailing malformed csimp attribute target" "unsupported csimp attribute target" do
+    discard (checked (csimps (← checked (scan "theorem ok : @f = @g := rfl\nattribute [csimp] ok (bad)\n"))))
+  rejects "trailing unknown quoted csimp attribute target" "not a theorem of this source" do
     discard (checked (csimps (← checked (scan "theorem ok : @f = @g := rfl\nattribute [csimp] ok «quoted»\n"))))
+  rejects "unaccounted bracketed csimp" "csimp outside an attribute" do
+    discard (checked (csimps (← checked (scan "def xs := [csimp]\n"))))
   rejects "unsupported extern" "unrecognized extern declaration" do
     let _ ← checked (externs (← checked (scan "@[extern \"unaccounted\"] theorem unsupported : True := by trivial")))
   rejects "implicit extern" "explicit symbol" do
     let _ ← checked (externs (← checked (scan "@[extern] opaque unsupported : Nat")))
   let csimpInput := "/- @[csimp] theorem hidden : @a = @b := rfl -/\n" ++
     "def text := \"@[csimp] theorem quoted : @a = @b := rfl\"\n" ++
-    "@[inline, csimp] private theorem f_eq : @f = @fFast := rfl\n" ++
-    "theorem g_eq : g = gFast := by rfl\nattribute [csimp] g_eq\n"
+    "@[inline, simp [foo], csimp] private theorem f_eq : @f = @fFast := rfl\n" ++
+    "@[«csimp»] theorem «q_eq» : @«q» = @«qFast» := rfl\n" ++
+    "theorem g_eq : g = gFast := by rfl\n" ++
+    "theorem h_eq : h = hFast := by rfl\n" ++
+    "attribute [csimp] g_eq\n  h_eq\ndef nextDef := 0\n"
   need ((← checked (csimps (← checked (scan csimpInput)))) ==
-      ([⟨"f_eq", "f", "fFast"⟩, ⟨"g_eq", "g", "gFast"⟩] : List CSimp)) "csimp declaration/attribute inventory changed"
+      ([⟨"f_eq", "f", "fFast"⟩, ⟨"q_eq", "q", "qFast"⟩, ⟨"g_eq", "g", "gFast"⟩,
+        ⟨"h_eq", "h", "hFast"⟩] : List CSimp)) "csimp declaration/attribute inventory changed"
   rejects "csimp with binders" "is not stated as" do
     let _ ← checked (csimps (← checked (scan "@[csimp] theorem h_eq (x : Nat) : f x = g x := rfl")))
   rejects "csimp attribute without its theorem" "not a theorem of this source" do
     let _ ← checked (csimps (← checked (scan "attribute [csimp] elsewhere_eq\n")))
   rejects "csimp on a definition" "csimp attribute not on a theorem" do
     let _ ← checked (csimps (← checked (scan "@[csimp] def notATheorem : Nat := 0")))
-  -- the implemented_by inventory: attributes on a def or an opaque and the
-  -- attribute command; comments and literals ignored; any other spelling refused
+  -- the implemented_by inventory: attributes on a def or an opaque (including
+  -- nested brackets and quoted names) and multi-line attribute commands;
+  -- comments and literals ignored; any other spelling refused
   let implInput := "/- @[implemented_by hiddenImpl] def hidden : Nat := 0 -/\n" ++
     "def text := \"@[implemented_by quotedImpl]\"\n" ++
-    "@[inline, implemented_by fImpl] private def f : Nat := 0\n" ++
-    "@[implemented_by gImpl] opaque g : Nat\nattribute [implemented_by hImpl] h\n"
+    "@[inline, simp [foo], implemented_by fImpl] private def f : Nat := 0\n" ++
+    "@[«implemented_by» «qImpl»] opaque «q» : Nat\n" ++
+    "attribute [implemented_by hImpl] h\n  h2\ndef nextDef := 0\n"
   need ((← checked (implementedBys (← checked (scan implInput)))) ==
-      [("f", "fImpl"), ("g", "gImpl"), ("h", "hImpl")]) "implemented_by inventory changed"
+      [("f", "fImpl"), ("q", "qImpl"), ("h", "hImpl"), ("h2", "hImpl")]) "implemented_by inventory changed"
   rejects "implemented_by on a theorem" "not on a def or an opaque" do
     let _ ← checked (implementedBys (← checked (scan "@[implemented_by tImpl] theorem t : True := trivial")))
   rejects "implemented_by outside an attribute" "outside an attribute" do
     let _ ← checked (implementedBys (← checked (scan "def x := implemented_by")))
+  rejects "quoted implemented_by outside an attribute" "outside an attribute" do
+    let _ ← checked (implementedBys (← checked (scan "def x := «implemented_by»")))
   rejects "unterminated comment" "unterminated block comment" do
     let _ ← checked (scan "/- nested /- closed -/")
   let cInput := "/* LEAN_EXPORT int ignored(void); */\n" ++
@@ -227,9 +283,10 @@ private def lexerTests : IO Unit := do
   -- open namespaces
   let decideInput := "theorem top : 1 = 1 := by native_decide\nnamespace A.B\npublic section\n" ++
     "namespace C\ndef f (h : 2 < 3 := by native_decide) := 0\nend C\nend\nend A.B\nmutual\n" ++
-    "def g := by native_decide\nend\ntheorem _root_.r : True := by native_decide\n"
+    "def g := by native_decide\nend\ntheorem _root_.r : True := by native_decide\n" ++
+    "def «quotedDecl» := by «native_decide»\n"
   need ((← checked (nativeDecideSites (← checked (scan decideInput)))) ==
-      [("top", 1), ("A.B.C.f", 5), ("g", 10), ("r", 12)]) "native_decide sites changed"
+      [("top", 1), ("A.B.C.f", 5), ("g", 10), ("r", 12), ("quotedDecl", 13)]) "native_decide sites changed"
   for (source, fragment) in [("example : 1 = 1 := by native_decide\n", "outside a named declaration"),
       ("def f := 0\nvariable (h : 1 = 1 := by native_decide)\n", "outside a named declaration"),
       ("instance : Inhabited Nat := by native_decide\n", "outside a named declaration"),
@@ -807,9 +864,22 @@ private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.w
       rejects "unpinned covered source" "files the rule covers have no pin" check
     withFile (root / "docs/trusted-externs.json")
       (← pinProject listed root "IxCC/AuditRegression.lean").compress check
-  for token in ["axiom", "sorry", "native_decide"] do
+  for token in ["axiom", "sorry", "native_decide", "bv_decide"] do
     withFile regression s!"{token} injected\n" do
       rejects token (token ++ " is not allowed") check
+  for (label, source, fragment) in [
+      ("project skipKernelTC", "set_option debug.skipKernelTC true in def rogue := 0\n",
+        "debug.skipKernelTC is not allowed"),
+      ("project addDeclWithoutChecking", "def rogue := env.addDeclWithoutChecking d\n",
+        "env.addDeclWithoutChecking is not allowed"),
+      ("project addDeclCore", "def rogue := env.addDeclCore 0 d none\n",
+        "env.addDeclCore is not allowed"),
+      ("project implemented_by", "@[implemented_by rogueImpl] def rogue : Nat := 0\n",
+        "project sources declare unexpected implemented_by substitutions"),
+      ("project raw-string desync", "def s := r#\"\\\"#\naxiom rogue : False\n",
+        "axiom is not allowed")] do
+    withFile regression source do
+      rejects label fragment check
   -- with no native interface recorded, a project extern and a C source the
   -- Lake file names are each refused
   withFile regression "@[extern \"unexpected_symbol\"] opaque rogue : Nat\n" do

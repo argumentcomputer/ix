@@ -777,12 +777,20 @@ also declare no extern, no `implemented_by` and no `@[csimp]` theorem
 (`proofOnlyClosure`). Comments and literals are not scanned. -/
 def proofOnlyForbiddenNames : List String := ["admit", "bv_decide", "unsafe", "partial"]
 
-/-- The hygiene of a proof-only closure file (`proofOnlyForbiddenNames`). -/
+/-- The hygiene of a proof-only closure file (`proofOnlyForbiddenNames`),
+normalizing guillemet-quoted and `_root_.`-prefixed names. -/
 def proofOnlyHygiene (tokens : Array Token) : Except String Unit := do
   hygieneDependency tokens
-  for token in tokens do
-    if token.kind == .name && proofOnlyForbiddenNames.contains token.text then
-      throw s!"line {token.line}: {token.text} is not allowed in a proof-only dependency"
+  let mut index := 0
+  while index < tokens.size do
+    let token := tokens[index]!
+    if let some (name, nextIdx, _) := identAt tokens index then
+      let stripped := if name.startsWith "_root_." then (name.drop 7).toString else name
+      if proofOnlyForbiddenNames.contains stripped then
+        throw s!"line {token.line}: {name} is not allowed in a proof-only dependency"
+      index := nextIdx
+    else
+      index := index + 1
 
 /-- The digest of a proof-only closure, given as `(path, bytes)` in path order:
 the BLAKE3 (`Blake3.Pure`, lowercase hex) of its `b3sum` listing, one line
@@ -1036,6 +1044,30 @@ def validateProjectCSimps (root : FilePath) (ledger : Json)
       actual := (relative, c.name, c.replaces, c.replacement) :: actual
   sameSet actual (← csimpRecords (← field ledger "csimp_theorems")) "project csimp inventory"
 
+/-- The exact negative-control `@[implemented_by]` fixtures inside
+`IxCCTests/Recheck/Audit.lean` that verify `checkRuntimeWith` catches
+unruled substitutions. Every production, grounding, target-statement, and
+other test source in IxCC must declare zero `@[implemented_by]` substitutions. -/
+def allowedAuditControlImplementedBys : List (String × String × String) :=
+  [("IxCCTests/Recheck/Audit.lean", "controlImplementedBy", "controlUnsafeImpl"),
+   ("IxCCTests/Recheck/Audit.lean", "controlInlinedSrc", "controlInlinedImpl")]
+
+/-- Verify that IxCC's own sources declare zero `@[implemented_by]`
+substitutions (outside the exact negative-control fixtures of
+`IxCCTests/Recheck/Audit.lean`) and no unparsed `implemented_by` spelling. -/
+def validateProjectImplementedBys (root : FilePath)
+    (sources : List (FilePath × Array Token)) : IO Unit := do
+  let mut actual : List (String × String × String) := []
+  for (path, tokens) in sources do
+    let relative := (path.toString.dropPrefix (root.toString ++ "/")).toString
+      |>.dropPrefix "./" |>.toString
+    for (declaration, implementation) in ← checked ((implementedBys tokens).mapError
+        (fun error => s!"{path}: {error}")) do
+      actual := (relative, declaration, implementation) :: actual
+  let unexpected := actual.filter (!allowedAuditControlImplementedBys.contains ·)
+  need unexpected.isEmpty
+    s!"project sources declare unexpected implemented_by substitutions: {repr unexpected}"
+
 /-- The complete audit. `repositoryRoot` and `flakeLock` override the ledger's
 repository root and the `flake.lock` in it (for a copy of the project taken
 out of its repository, as in a Nix check). -/
@@ -1053,6 +1085,7 @@ def audit (root : FilePath) (overrides : List (String × String)) (gmp : Option 
     checked ((hygiene tokens).mapError (fun error => s!"{path}: {error}"))
   validateImports root ledger interfaces sources
   validateProjectCSimps root ledger sources
+  validateProjectImplementedBys root sources
   let cargoCount ← validateNative root interfaces sources lake overrides repo.flakeLock
   let (proofModules, proofFiles) ← validateProofOnly root ledger overrides sources
   let (leanFiles, nativeDecides) ←

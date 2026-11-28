@@ -193,21 +193,122 @@ def isSpecSuffix (s : String) : Bool :=
 def isCompilerSuffix (s : String) : Bool :=
   s == "_redArg" || s == "_boxed" || s == "_impl" || isSpecSuffix s
 
-def reducedAritySource? (env : Environment) : Name → Option Name
+def stripAtPrefix? : Name → Option Name
+  | .str p "_at_" =>
+    match stripAtPrefix? p with
+    | some root => some root
+    | none => some p
+  | .str p _ => stripAtPrefix? p
+  | .num p _ => stripAtPrefix? p
+  | .anonymous => none
+
+def stripSuffixesSource? (env : Environment) : Name → Option Name
   | .str source s =>
     if isCompilerSuffix s then
-      match reducedAritySource? env source with
+      match stripSuffixesSource? env source with
       | some root => some root
       | none => if env.contains source then some source else none
     else none
   | _ => none
 
-/-- Walk compiled IR reachable from `roots`, ALSO scanning each visited
-function's logical body for inlined `@[csimp]` and `@[implemented_by]` targets
-(closing `BE-5`). -/
-partial def runtimeClosure (env : Environment) (roots : Array Name) : RuntimeReport :=
-  go (csimpByTarget env) (csimpBySource env) (implementedByTargets env) roots {} {}
+def reducedAritySource? (env : Environment) (name : Name) : Option Name :=
+  match stripAtPrefix? name with
+  | some base =>
+    match stripSuffixesSource? env base with
+    | some root => some root
+    | none => if env.contains base then some base else none
+  | none => stripSuffixesSource? env name
+
+/-- Walk compiled IR reachable from `roots`, and transitively walk project-level
+logical definition bodies (`scanLogical`, ported from `IxCK/Kernel/Audit/Runtime.lean`)
+so `@[inline]` or auto-inlined `@[csimp]`, `@[implemented_by]`, `partial`, `unsafe`,
+and `@[extern]` declarations cannot vanish across multi-hop inlining (closing `BE-5`). -/
+partial def runtimeClosure (env : Environment) (roots : Array Name)
+    (skipLogical : Name → Bool := fun _ => false) : RuntimeReport :=
+  let csimpSources := csimpBySource env
+  let report := go (csimpByTarget env) csimpSources (implementedByTargets env) roots {} {}
+  let seenImpl : NameSet :=
+    report.implementedBy.foldl (fun s (n, _) => s.insert n) <|
+      report.implementationsReached.foldl (fun s (n, _) => s.insert n) {}
+  let seenCSimp : NameSet :=
+    report.csimp.foldl (fun s (n, _) => s.insert n) <|
+      report.csimpTargets.foldl (fun s (n, _, _) => s.insert n) {}
+  let seenUnsafe : NameSet := report.unsafes.foldl (fun s n => s.insert n) {}
+  let seenExtern : NameSet := report.externs.foldl (fun s n => s.insert n) {}
+  let seenOpaque : NameSet := report.opaqueCode.foldl (fun s n => s.insert n) {}
+  let (initTodo, initQueued) : Array Name × NameSet :=
+    (report.visited ++ roots).foldl (init := (#[], {})) fun (todo, queued) n =>
+      if skipLogical n || queued.contains n then (todo, queued)
+      else (todo.push n, queued.insert n)
+  scanLogical csimpSources initTodo initQueued seenImpl seenCSimp seenUnsafe seenExtern seenOpaque report
 where
+  scanLogical (csimpSources : NameMap (Array Compiler.CSimp.Entry))
+      (initTodo : Array Name) (initQueued initSeenImpl initSeenCSimp initSeenUnsafe initSeenExtern initSeenOpaque : NameSet)
+      (initReport : RuntimeReport) : RuntimeReport := Id.run do
+    let mut todo := initTodo
+    let mut queued := initQueued
+    let mut seenImpl := initSeenImpl
+    let mut seenCSimp := initSeenCSimp
+    let mut seenUnsafe := initSeenUnsafe
+    let mut seenExtern := initSeenExtern
+    let mut seenOpaque := initSeenOpaque
+    let mut report := initReport
+    while h : todo.size > 0 do
+      let name := todo.back
+      todo := todo.pop
+      if let some target := Compiler.getImplementedBy? env name then
+        unless queued.contains target do
+          todo := todo.push target
+          queued := queued.insert target
+        unless seenImpl.contains name do
+          seenImpl := seenImpl.insert name
+          report := { report with implementationsReached := report.implementationsReached.push (name, target) }
+      if let some entries := csimpSources.find? name then
+        for e in entries do
+          unless queued.contains e.toDeclName do
+            todo := todo.push e.toDeclName
+            queued := queued.insert e.toDeclName
+        unless seenCSimp.contains name do
+          seenCSimp := seenCSimp.insert name
+          for e in entries do
+            report := { report with
+              csimpTargets := report.csimpTargets.push (e.fromDeclName, e.toDeclName, e.thmName) }
+      if skipLogical name then
+        continue
+      if !seenUnsafe.contains name && (env.find? name).any (·.isUnsafe) then
+        seenUnsafe := seenUnsafe.insert name
+        report := { report with unsafes := report.unsafes.push name }
+      let isExt := match IR.findEnvDecl env name with
+        | some (.extern ..) => true
+        | _ => isExtern env name
+      if !seenExtern.contains name && isExt then
+        seenExtern := seenExtern.insert name
+        report := { report with externs := report.externs.push name }
+      let hasImpl := (Compiler.getImplementedBy? env name).isSome
+      if let some (.opaqueInfo _) := env.find? name then
+        let unsafeRec := name.str "_unsafe_rec"
+        let hasUnsafeRec := env.contains unsafeRec
+        let hasCompiledCode := match IR.findEnvDecl env name with
+          | some (.fdecl _ #[] _ (.ret .erased) _) => false
+          | some (.fdecl ..) => true
+          | _ => false
+        if !seenOpaque.contains name && !isExt && !hasImpl && (hasCompiledCode || hasUnsafeRec) then
+          seenOpaque := seenOpaque.insert name
+          report := { report with opaqueCode := report.opaqueCode.push name }
+        if hasUnsafeRec && !queued.contains unsafeRec then
+          todo := todo.push unsafeRec
+          queued := queued.insert unsafeRec
+      unless hasImpl do
+        let val? := match env.find? name with
+          | some (.defnInfo v) => some v.value
+          | some (.opaqueInfo v) => some v.value
+          | _ => none
+        if let some val := val? then
+          for c in val.getUsedConstants do
+            unless queued.contains c do
+              todo := todo.push c
+              queued := queued.insert c
+    return report
   go (targets : NameMap (Array Compiler.CSimp.Entry))
       (csimpSources : NameMap (Array Compiler.CSimp.Entry))
       (implementations : NameMap (Array Name))
@@ -260,28 +361,6 @@ where
             | some (.opaqueInfo _), none => { report with opaqueCode := report.opaqueCode.push name }
             | _, _ => report
           let usedIr := IR.collectUsedDecls env [decl]
-          -- Scan logical body for both inlined `@[csimp]` and inlined `@[implemented_by]`!
-          let (todo, report) : Array Name × RuntimeReport :=
-            match (env.find? name).bind ConstantInfo.value? with
-            | some val =>
-              val.getUsedConstants.foldl (init := (todo, report)) fun ((todo, report) : Array Name × RuntimeReport) c =>
-                let report := match csimpSources.find? c with
-                  | some entries =>
-                    if usedIr.contains c || entries.any (fun e => usedIr.contains e.toDeclName) then
-                      report
-                    else
-                      entries.foldl (init := report) fun (report : RuntimeReport) e =>
-                        { report with
-                          csimpTargets := report.csimpTargets.push (e.fromDeclName, e.toDeclName, e.thmName) }
-                  | none => report
-                match Compiler.getImplementedBy? env c with
-                | some tgt =>
-                  if usedIr.contains c || usedIr.contains tgt then (todo, report)
-                  else
-                    (todo.push tgt,
-                      { report with implementationsReached := report.implementationsReached.push (c, tgt) })
-                | none => (todo, report)
-            | none => (todo, report)
           go targets csimpSources implementations (todo ++ usedIr) seen report
 
 def moduleOf (env : Environment) (name : Name) : Option Name :=
@@ -396,10 +475,11 @@ def checkRuntimeWith (roots : Array Name) (prefixes : Array Name) (rulings : Run
     unless (IR.findEnvDecl env root).isSome || (Compiler.getImplementedBy? env root).isSome do
       throwError m!"root has no compiled code: {root}"
   let inherited (name : Name) : Bool := (moduleOf env name).any (underAny prefixes)
-  let report := runtimeClosure env roots
+  let report := runtimeClosure env roots inherited
   -- Unconditionally reject any native/Rust BLAKE3 FFI in the closure.
   let blake3RustNs : Name := Name.str (Name.mkSimple "Blake3") "Rust"
-  for n in report.visited ++ report.externs do
+  for n in report.visited ++ report.externs ++ report.unsafes ++
+      report.implementedBy.map (·.2) ++ report.implementationsReached.map (·.2) do
     if blake3RustNs.isPrefixOf n then
       throwError m!"Rust BLAKE3 FFI symbol reached from {roots}: {n}"
   let csimpSources := csimpBySource env
@@ -444,10 +524,13 @@ def kernelRulings : RuntimeRulings where
   elaborationModules := #[`IxCK.Kernel.BasisGen]
   partialModules := #[`IxCC.Key]
 
-/- Pure-Lean `Recheck.run` closure: strictly `Init` and `Std`, only the 6
-proved `@[csimp]`s and `IxCC.Key`'s `deriving Repr` (no `unsafe`, `extern`,
-or `implemented_by` anywhere in `IxCC.*`, `IxCK.*`, or `Blake3.*`). -/
+/- Pure-Lean `Recheck.run` and `Recheck.RcReplay.run` closures: strictly `Init`
+and `Std`, only the 6 proved `@[csimp]`s and `IxCC.Key`'s `deriving Repr` (no
+`unsafe`, `extern`, or `implemented_by` anywhere in `IxCC.*`, `IxCK.*`, or
+`Blake3.*`). -/
 run_cmd checkRuntimeWith #[``IxCC.Recheck.run] #[`Init, `Std] recheckRulings
+
+run_cmd checkRuntimeWith #[``IxCC.Recheck.RcReplay.run] #[`Init, `Std] recheckRulings
 
 /- Full `CompileClaim.verifyBytes` & `Exe.Cert.verifyExeBytes` transitive
 closures across `IxCC.*`, `IxCK.*`, and `Blake3.*`: only the audited `IxCK` +
@@ -460,34 +543,88 @@ run_cmd do
     #[`Init, `Std, `Lean]
     kernelRulings
 
-/-! ### Positive sanity controls for `checkRuntimeWith` -/
+/-! ### Negative sanity controls for `checkRuntimeWith` -/
 
-private partial def controlPartial (n : Nat) : Nat :=
+namespace Controls
+
+def plainSquare (n : Nat) : Nat := n * n
+
+#guard_msgs in
+run_cmd checkRuntimeWith #[``plainSquare] #[`Init, `Std] {}
+
+partial def controlPartial (n : Nat) : Nat :=
   if n > 100 then n else controlPartial (2 * n + 1)
 
-private def usesControlPartial (n : Nat) : Nat := controlPartial n + 1
+def usesControlPartial (n : Nat) : Nat := controlPartial n + 1
 
-private unsafe def controlUnsafeImpl (n : Nat) : Nat := n
+/-- error: project-level execution replacements reached from [IxCCTests.Recheck.Audit.Controls.usesControlPartial]:
+[IxCCTests.Recheck.Audit.Controls.controlPartial] -/
+#guard_msgs (whitespace := lax) in
+run_cmd checkRuntimeWith #[``usesControlPartial] #[`Init, `Std] {}
+
+unsafe def controlUnsafeImpl (n : Nat) : Nat := n
 
 @[implemented_by controlUnsafeImpl]
-private def controlImplementedBy (n : Nat) : Nat := n
+def controlImplementedBy (n : Nat) : Nat := n
 
-@[inline] private def controlInlinedImpl (n : Nat) : Nat := n + 1
+/-- error: project-level execution replacements reached from [IxCCTests.Recheck.Audit.Controls.controlImplementedBy]:
+[IxCCTests.Recheck.Audit.Controls.controlImplementedBy, IxCCTests.Recheck.Audit.Controls.controlUnsafeImpl] -/
+#guard_msgs (whitespace := lax) in
+run_cmd checkRuntimeWith #[``controlImplementedBy] #[`Init, `Std] {}
 
-@[implemented_by controlInlinedImpl]
-private def controlInlinedSrc (n : Nat) : Nat := n
+@[inline] def controlInlinedImpl (n : Nat) : Nat := n + 1
 
-private def usesControlInlined (n : Nat) : Nat := controlInlinedSrc n * 2
+@[inline, implemented_by controlInlinedImpl]
+def controlInlinedSrc (n : Nat) : Nat := n
 
+def usesControlInlined (n : Nat) : Nat := controlInlinedSrc n * 2
+
+/-- error: project-level execution replacements reached from [IxCCTests.Recheck.Audit.Controls.usesControlInlined]:
+[IxCCTests.Recheck.Audit.Controls.controlInlinedSrc] -/
+#guard_msgs (whitespace := lax) in
+run_cmd checkRuntimeWith #[``usesControlInlined] #[`Init, `Std] {}
+
+/-- 2-hop inlined wrapper over `controlInlinedSrc`: both the wrapper and the
+`implemented_by` target inline away in IR, so only transitive `scanLogical`
+catches it. -/
+@[inline] def controlInlinedMid (n : Nat) : Nat := controlInlinedSrc n + 3
+
+def usesControlInlined2Hop (n : Nat) : Nat := controlInlinedMid n * 2
+
+/-- error: project-level execution replacements reached from [IxCCTests.Recheck.Audit.Controls.usesControlInlined2Hop]:
+[IxCCTests.Recheck.Audit.Controls.controlInlinedSrc] -/
+#guard_msgs (whitespace := lax) in
+run_cmd checkRuntimeWith #[``usesControlInlined2Hop] #[`Init, `Std] {}
+
+/-- Polymorphic `partial def` specialized to `._at_.<caller>.spec_0` in IR. -/
+partial def controlPolyPartial [BEq α] (x y : α) : Bool :=
+  if x == y then true else controlPolyPartial x x
+
+def usesControlPolyPartial (a b : Nat) : Bool := controlPolyPartial a b
+
+/-- error: project-level execution replacements reached from [IxCCTests.Recheck.Audit.Controls.usesControlPolyPartial]:
+[IxCCTests.Recheck.Audit.Controls.controlPolyPartial] -/
+#guard_msgs (whitespace := lax) in
+run_cmd checkRuntimeWith #[``usesControlPolyPartial] #[`Init, `Std] {}
+
+-- Verify `reducedAritySource?` strips stacked compiler suffixes and `_at_` specializations.
 run_cmd do
-  -- Confirm `checkRuntimeWith` catches `partial`, `implemented_by`, and inlined `implemented_by`!
-  let checkMustFail (roots : Array Name) (label : String) : CommandElabM Unit := do
-    try
-      checkRuntimeWith roots #[`Init, `Std] {}
-      throwError "checkRuntimeWith failed to catch {label}"
-    catch _ => pure ()
-  checkMustFail #[``usesControlPartial] "partial definition"
-  checkMustFail #[``controlImplementedBy] "implemented_by / unsafe definition"
-  checkMustFail #[``usesControlInlined] "inlined implemented_by substitution (BE-5)"
+  let env ← getEnv
+  let base := ``plainSquare
+  for suffixed in #[
+    base.str "_redArg",
+    base.str "_boxed",
+    base.str "_impl",
+    base.str "_spec_0",
+    (base.str "_redArg").str "_boxed",
+    ((base.str "_impl").str "_redArg").str "_spec_12",
+    (((base.str "_at_").str "Caller").str "spec_0"),
+    (((((base.str "_at_").str "Caller").str "spec_0").str "_redArg").str "_boxed"),
+    (((((base.str "_redArg").str "_at_").str "A").str "B").str "spec_1")
+  ] do
+    unless reducedAritySource? env suffixed == some base do
+      throwError m!"expected {suffixed} to resolve to {base}"
+
+end Controls
 
 end IxCCTests.Recheck.Audit
