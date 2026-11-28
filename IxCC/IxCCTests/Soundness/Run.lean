@@ -593,6 +593,46 @@ def partEM0 (a : Assert) : IO Unit := do
           expect a (e.code == "assert.inline")
             s!"H-7b: Defense 2 rejects unsafe cross-origin inline with assert.inline (got {e.code})"
         | .ok () => expect a false "H-7b: Defense 2 missed unsafe cross-origin inline!"
+  -- H-7c: Completeness of `lamReachable` when `main` references an `@[no_alloc]` helper 35 times
+  -- (exceeding `L.size * 2 + 16 = 20`) and with duplicate roots: must deduplicate in `queued`
+  -- rather than exhausting fuel and spuriously failing `assert.reach`.
+  let rec repeatCall (n : Nat) (acc : Lam.Term) : Lam.Term :=
+    match n with
+    | 0 => acc
+    | k + 1 => repeatCall k (.app (.glob 1) acc .strict)
+  let lamManyCalls : Lam.Program :=
+    { globals := (NatMap.leaf.insert 0
+        { key := .const 10 []
+          body := repeatCall 35 (.lit (.nat 1)) })
+        |>.insert 1
+        { key := .const 11 []
+          body := .lam .strict .many (.var 0) }
+      size := 2
+      roots := [0, 0, 0]
+      ctors := []
+      known := default }
+  match DefAsserts.lamReachable lamManyCalls with
+  | none => expect a false "H-7c: lamReachable spuriously exhausted fuel on 35 repeated calls"
+  | some rs =>
+    expect a (rs.contains 0 && rs.contains 1 && rs.length == 2)
+      s!"H-7c: lamReachable deduplicated 35 calls + dup roots to [0, 1] (got {reprStr rs})"
+  match Anf.Pipeline.produce prodBudgets { lamManyCalls with roots := [0] } with
+  | .error e => expect a false s!"H-7c: Anf.Pipeline.produce failed: {e}"
+  | .ok trMany =>
+    let anfMany := (trMany.stages.getLast?.map (·.2)).getD default
+    match IxCC.Fir.lower anfMany with
+    | .error e => expect a false s!"H-7c: Fir.lower failed: {e.render}"
+    | .ok firMany =>
+      let cfgMany := Cfg.lower (Own.immortal firMany)
+      match Rt.lower { names := ["main"] } cfgMany with
+      | .error e => expect a false s!"H-7c: Rt.lower failed: {e.render}"
+      | .ok loMany =>
+        let framesMany := (List.range loMany.program.funcs.size).map fun _ => leafFrame
+        let ctxMany : DefAsserts.CheckCtx :=
+          { cfg := cfgMany, lir := loMany.program, frames := framesMany, lam := some lamManyCalls }
+        match DefAsserts.check ctxMany helperAsserts none with
+        | .ok () => expect a true "H-7c: valid 35-call @[no_alloc] helper accepted without assert.reach"
+        | .error e => expect a false s!"H-7c: valid 35-call helper wrongly rejected: {e.code}: {e.message}"
   -- Ixon v5 `Definition.asserts` propagation via `defAssertsOf`
   let v5Def : _root_.Ixon.Definition :=
     { kind := .defn, safety := .safe, asserts := allThree, lvls := 0,

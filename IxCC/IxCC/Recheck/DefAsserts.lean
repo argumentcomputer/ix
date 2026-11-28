@@ -111,24 +111,31 @@ def lamOptRefs : Option Lam.Term → List Lam.GlobalId
 
 end
 
-/-- Worklist reachability from `L.roots` in pre-ANF `Lam.Program` (`D17` fuel-bounded). -/
+/-- Enqueue each `GlobalId` in `gs` into `todo` at most once, tracking membership in `queued`. -/
+def lamReachEnqueue :
+    List Lam.GlobalId → NatSet → List Lam.GlobalId → NatSet × List Lam.GlobalId
+  | [], queued, todo => (queued, todo)
+  | h :: hs, queued, todo =>
+    if queued.contains h then lamReachEnqueue hs queued todo
+    else lamReachEnqueue hs (queued.insert h) (h :: todo)
+
+/-- Worklist reachability from `L.roots` in pre-ANF `Lam.Program` (`D17` fuel-bounded).
+Every `GlobalId` enters `queued` and `todo` at most once, so `L.size + 1` steps suffice. -/
 def lamReachLoop (L : Lam.Program) :
     Nat → List Lam.GlobalId → NatSet → List Lam.GlobalId → Option (List Lam.GlobalId)
   | 0, _ :: _, _, _ => none
   | _, [], _, acc => some acc
-  | fuel + 1, g :: todo, seen, acc =>
-    if seen.contains g then
-      lamReachLoop L fuel todo seen acc
-    else
-      match L.global? g with
-      | none => none
-      | some gd =>
-        let next := (lamTermRefs gd.body).filter fun h => !seen.contains h && !todo.contains h
-        lamReachLoop L fuel (next ++ todo) (seen.insert g) (g :: acc)
+  | fuel + 1, g :: todo, queued, acc =>
+    match L.global? g with
+    | none => none
+    | some gd =>
+      let (queued', todo') := lamReachEnqueue (lamTermRefs gd.body) queued todo
+      lamReachLoop L fuel todo' queued' (g :: acc)
 
 /-- Compute all globals reachable from `L.roots` in pre-ANF `Lam.Program`. -/
 def lamReachable (L : Lam.Program) : Option (List Lam.GlobalId) :=
-  lamReachLoop L (L.size * 2 + 16) L.roots .leaf []
+  let (queued0, todo0) := lamReachEnqueue L.roots .leaf []
+  lamReachLoop L (L.size + L.globals.toList.length + 1) todo0 queued0 []
 
 /-- Reject inlining any callee with non-default `DefAsserts` into a caller whose
 `DefAsserts` do not subsume the callee's (`D17` structural). -/
