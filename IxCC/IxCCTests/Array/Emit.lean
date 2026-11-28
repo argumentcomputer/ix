@@ -60,7 +60,9 @@ def program : Lir.Program :=
       exp byteArrPop "cx_byte_pop",
       exp byteArrExtract "cx_byte_extract",
       exp byteArrCopySlice "cx_byte_copy_slice",
-      -- 27..30: effect wrappers + heap init + 2-field ctor allocator
+      -- 27: internal alias-safe recursive value increment (`fnIncVal`)
+      arrIncValue,
+      -- 28..31: effect wrappers + heap init + 2-field ctor allocator
       effectWrapper "cx_arr_inc" fnInc,
       effectWrapper "cx_arr_dec" fnDec,
       Rt.Procs.cxInit,

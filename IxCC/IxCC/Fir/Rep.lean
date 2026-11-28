@@ -815,9 +815,12 @@ private def repJoinOpt : Option Fir.Rep → Option Fir.Rep → Option Fir.Rep
   | some r1, some r2 =>
     if r1 == r2 then some r1 else some .obj
 
+/-- Infer the lattice representation of an argument: `< 2^63` literals are polymorphic bottom
+(`none`), `[2^63, 2^64)` literals are raw 64-bit `.word`, and `≥ 2^64` literals are `.tobj`
+(they do not satisfy `argCompat _ _ .word`, so they must join with `.word` to `.obj`). -/
 private def argRepOpt (vars : Src.NatMap (Option Fir.Rep)) : Arg → Option Fir.Rep
   | .var y => vars.getD y none
-  | .lit (.nat n) => if n < 2 ^ 63 then none else some .word
+  | .lit (.nat n) => if n < 2 ^ 63 then none else if n < 2 ^ 64 then some .word else some .tobj
   | .lit (.str _) | .erased => some .tobj
 
 private def isSpecialKey (P : Program) (k : Key.CtorKey) : Bool :=

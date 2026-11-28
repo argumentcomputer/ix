@@ -815,6 +815,43 @@ theorem unbox64OrBigNat_noNatOverflow (x : VReg) (a : Lir.Arg) :
   | imm _ => exact preserves_assign ..
   | v _ => unfold unbox64OrBigNat; dsimp only; solve_no_ovf
 
+theorem objToNatVal_noNatOverflow (x : VReg) (a : Lir.Arg) :
+    PreservesNoOvf (objToNatVal x a) := by
+  cases a with
+  | imm _ => exact preserves_assign ..
+  | v _ =>
+    unfold objToNatVal
+    dsimp only
+    exact preserves_bind preserves_newLabel fun _ =>
+      preserves_bind preserves_newLabel fun _ =>
+      preserves_bind preserves_newLabel fun _ =>
+      preserves_bind preserves_newLabel fun _ =>
+      preserves_bind preserves_newLabel fun _ =>
+      preserves_bind (preserves_close (by trivial)) fun _ =>
+      preserves_bind (preserves_put (by trivial)) fun _ =>
+      preserves_bind preserves_freshReg fun _ =>
+      preserves_bind (preserves_put (by trivial)) fun _ =>
+      preserves_bind (preserves_put (by trivial)) fun _ =>
+      preserves_bind (preserves_openAt _ _) fun _ =>
+      preserves_bind preserves_freshReg fun _ =>
+      preserves_bind (preserves_assign _ _) fun _ =>
+      preserves_bind preserves_freshReg fun _ =>
+      preserves_bind (promoteRaw64ToNatVal_noNatOverflow _ _) fun _ =>
+      preserves_bind (preserves_close (by trivial)) fun _ =>
+      preserves_openAt _ _
+
+theorem natValSaturate64_noNatOverflow (x : VReg) (a : Lir.Arg) :
+    PreservesNoOvf (natValSaturate64 x a) := by
+  cases a with
+  | imm _ => exact preserves_assign ..
+  | v _ => unfold natValSaturate64; dsimp only; solve_no_ovf
+
+theorem unbox64OrSaturateBigNat_noNatOverflow (x : VReg) (a : Lir.Arg) :
+    PreservesNoOvf (unbox64OrSaturateBigNat x a) := by
+  cases a with
+  | imm _ => exact preserves_assign ..
+  | v _ => unfold unbox64OrSaturateBigNat; dsimp only; solve_no_ovf
+
 theorem word64Big_noNatOverflow (f : FunId) (x : VReg) (op : Src.WordOp) (as : List Lir.Arg) :
     PreservesNoOvf (word64Big f x op as) := by
   unfold word64Big
@@ -1327,24 +1364,58 @@ theorem emitIncCallArgs_noNatOverflow (rc : RcCtx) (fc : Fir.Rep.FunCert)
     (liveAfter : Src.NatSet) (as : List Fir.Arg) (mutFlags : List Bool) :
     PreservesNoOvf (emitIncCallArgs rc fc liveAfter as mutFlags) := by
   unfold emitIncCallArgs
-  split
-  · exact preserves_pure ()
-  · have aux : ∀ xs fs inced, PreservesNoOvf (emitIncCallArgs.go rc fc liveAfter as xs fs inced) := by
-      intro xs
-      induction xs with
-      | nil => intro _ _; exact preserves_pure ()
-      | cons a rest ih =>
-        intro fs inced
-        unfold emitIncCallArgs.go
-        cases a with
-        | var y =>
-          dsimp only
-          split
-          · exact preserves_bind (preserves_emit _) fun _ =>
-              preserves_bind (preserves_pure _) fun _ => ih _ _
-          · exact preserves_bind (preserves_pure _) fun _ => ih _ _
-        | _ => exact preserves_bind (preserves_pure _) fun _ => ih _ _
-    exact aux as mutFlags []
+  exact preserves_forM fun _ _ => preserves_emit _
+
+theorem operandNatValBig_noNatOverflow (f : FunId) (fc : Fir.Rep.FunCert)
+    (sc : StrCtx) (bc : BigNatLitCtx) (a : Fir.Arg) :
+    PreservesNoOvf (operandNatValBig f fc sc bc a) := by
+  unfold operandNatValBig
+  cases a with
+  | var y =>
+    dsimp only
+    cases fc.varRep y with
+    | word => exact preserves_bind preserves_freshReg fun r =>
+        preserves_bind (promoteRaw64ToNatVal_noNatOverflow r (.v y)) fun _ => preserves_pure _
+    | obj => exact preserves_bind preserves_freshReg fun r =>
+        preserves_bind (objToNatVal_noNatOverflow r (.v y)) fun _ => preserves_pure _
+    | tobj => exact preserves_pure _
+    | erased => exact preserves_pure _
+  | lit _ => exact operandBig_noNatOverflow ..
+  | erased => exact operandBig_noNatOverflow ..
+
+theorem operandsNatValBig_noNatOverflow (f : FunId) (fc : Fir.Rep.FunCert)
+    (sc : StrCtx) (bc : BigNatLitCtx) :
+    ∀ as, PreservesNoOvf (operandsNatValBig f fc sc bc as)
+  | [] => preserves_pure []
+  | a :: as =>
+    preserves_bind (operandNatValBig_noNatOverflow f fc sc bc a) fun _ =>
+    preserves_bind (operandsNatValBig_noNatOverflow f fc sc bc as) fun _ =>
+    preserves_pure _
+
+theorem operandNarrowRepBig_noNatOverflow (f : FunId) (fc : Fir.Rep.FunCert)
+    (sc : StrCtx) (bc : BigNatLitCtx) (a : Fir.Arg) :
+    PreservesNoOvf (operandNarrowRepBig f fc sc bc a) := by
+  unfold operandNarrowRepBig
+  cases a with
+  | var y =>
+    dsimp only
+    cases fc.varRep y with
+    | word => exact preserves_temp _
+    | obj => exact preserves_bind preserves_freshReg fun u =>
+        preserves_bind (unbox64OrBigNat_noNatOverflow u (.v y)) fun _ => preserves_temp _
+    | tobj => exact preserves_pure _
+    | erased => exact preserves_pure _
+  | lit _ => exact operandBig_noNatOverflow ..
+  | erased => exact operandBig_noNatOverflow ..
+
+theorem operandsNarrowRepBig_noNatOverflow (f : FunId) (fc : Fir.Rep.FunCert)
+    (sc : StrCtx) (bc : BigNatLitCtx) :
+    ∀ as, PreservesNoOvf (operandsNarrowRepBig f fc sc bc as)
+  | [] => preserves_pure []
+  | a :: as =>
+    preserves_bind (operandNarrowRepBig_noNatOverflow f fc sc bc a) fun _ =>
+    preserves_bind (operandsNarrowRepBig_noNatOverflow f fc sc bc as) fun _ =>
+    preserves_pure _
 
 theorem emitLimbPairBig_noNatOverflow (f : FunId) (fc : Fir.Rep.FunCert)
     (kind : LimbPairKind) (r1 r2 : VReg) (as : List Fir.Arg) :
@@ -1375,6 +1446,15 @@ theorem primitiveRepBig_noNatOverflow (f : FunId) (T : Tables) (procs : BigNatPr
     · split
       · exact preserves_bind (operandRaw64Big_noNatOverflow ..) fun _ => finishRaw64Big_noNatOverflow ..
       · exact preserves_throw _
+    · split
+      · split
+        · exact preserves_bind (operandRaw64Big_noNatOverflow ..) fun _ => finishRaw64Big_noNatOverflow ..
+        · exact preserves_throw _
+      · split
+        · refine preserves_bind (operandRaw64Big_noNatOverflow ..) fun _ =>
+            preserves_bind (preserves_bin _ _ _) fun _ => ?_
+          cases fc.varRep x <;> exact preserves_assign ..
+        · exact preserves_throw _
     · refine preserves_bind (operandsRaw64Big_noNatOverflow ..) fun las => ?_
       split
       · exact wordRaw64_noNatOverflow ..
@@ -1387,7 +1467,7 @@ theorem primitiveRepBig_noNatOverflow (f : FunId) (T : Tables) (procs : BigNatPr
       | nil => exact finishRaw64Big_noNatOverflow ..
       | cons _ _ => exact preserves_throw _
     | nil => exact preserves_throw _
-  · refine preserves_bind (operandsBig_noNatOverflow ..) fun las => ?_
+  · refine preserves_bind (operandsNarrowRepBig_noNatOverflow ..) fun las => ?_
     split
     · exact preserves_bind preserves_freshReg fun tmp =>
         preserves_bind (wordBig_noNatOverflow ..) fun _ => natValLow64_noNatOverflow ..
@@ -1407,9 +1487,9 @@ theorem primitiveRepBig_noNatOverflow (f : FunId) (T : Tables) (procs : BigNatPr
             | cons _ _ => exact preserves_throw _
           | nil => exact preserves_throw _
         | nil => exact preserves_throw _
-      · exact preserves_bind (operandsAtRepsBig_noNatOverflow ..) fun las =>
+      · exact preserves_bind (operandsNatValBig_noNatOverflow ..) fun las =>
           primitiveBig_noNatOverflow ..
-    · exact preserves_bind (operandsAtRepsBig_noNatOverflow ..) fun las =>
+    · exact preserves_bind (operandsNatValBig_noNatOverflow ..) fun las =>
         primitiveBig_noNatOverflow ..
 
 theorem allocRepBig_noNatOverflow (f : FunId) (T : Tables) (cert : Fir.Rep.Cert)
@@ -1764,6 +1844,16 @@ private theorem toRawWordParamBig_noNatOverflow (reg : VReg) (rep : Fir.Rep) :
       preserves_bind (unbox64OrBigNat_noNatOverflow r (.v reg)) fun _ => preserves_pure _
   | erased => exact preserves_pure _
 
+private theorem toRawIndexBig_noNatOverflow (reg : VReg) (rep : Fir.Rep) :
+    PreservesNoOvf (toRawIndexBig reg rep) := by
+  cases rep with
+  | word => exact preserves_pure _
+  | tobj => exact preserves_bind preserves_freshReg fun r =>
+      preserves_bind (natValSaturate64_noNatOverflow r (.v reg)) fun _ => preserves_pure _
+  | obj => exact preserves_bind preserves_freshReg fun r =>
+      preserves_bind (unbox64OrSaturateBigNat_noNatOverflow r (.v reg)) fun _ => preserves_pure _
+  | erased => exact preserves_pure _
+
 private theorem paramRegRepBig_noNatOverflow (f : FunId) (params : List VReg)
     (fc : Fir.Rep.FunCert) (idx : Nat) :
     PreservesNoOvf (paramRegRepBig f params fc idx) := by
@@ -1780,7 +1870,7 @@ private theorem arrayPrimBody_noNatOverflow (arrBase : FunId) (f : FunId)
   split
   · solve_no_ovf
   · exact preserves_bind (paramRegRepBig_noNatOverflow ..) fun _ =>
-      preserves_bind (toRawWordParamBig_noNatOverflow ..) fun _ => by solve_no_ovf
+      preserves_bind (toRawIndexBig_noNatOverflow ..) fun _ => by solve_no_ovf
   · refine preserves_bind (paramRegRepBig_noNatOverflow ..) fun _ =>
       preserves_bind preserves_freshReg fun _ =>
       preserves_bind (preserves_emit _) fun _ => ?_
@@ -1791,7 +1881,7 @@ private theorem arrayPrimBody_noNatOverflow (arrBase : FunId) (f : FunId)
         preserves_close (by trivial)
   · refine preserves_bind (paramRegRepBig_noNatOverflow ..) fun _ =>
       preserves_bind (paramRegRepBig_noNatOverflow ..) fun _ =>
-      preserves_bind (toRawWordParamBig_noNatOverflow ..) fun _ => ?_
+      preserves_bind (toRawIndexBig_noNatOverflow ..) fun _ => ?_
     cases spec.kind with
     | bytes =>
       refine preserves_bind preserves_freshReg fun _ =>
@@ -1814,28 +1904,31 @@ private theorem arrayPrimBody_noNatOverflow (arrBase : FunId) (f : FunId)
           preserves_bind (unbox64OrBigNat_noNatOverflow ..) fun _ =>
           preserves_close (by trivial)
       · exact preserves_close (by trivial)
-  · refine preserves_bind (paramRegRepBig_noNatOverflow ..) fun _ =>
-      preserves_bind (paramRegRepBig_noNatOverflow ..) fun _ =>
-      preserves_bind (toRawWordParamBig_noNatOverflow ..) fun _ =>
-      preserves_bind preserves_freshReg fun _ =>
-      preserves_bind (preserves_emit _) fun _ =>
-      preserves_bind preserves_newLabel fun _ =>
-      preserves_bind preserves_newLabel fun _ =>
-      preserves_bind (preserves_close (by trivial)) fun _ =>
-      preserves_bind (preserves_openAt _ _) fun _ =>
-      preserves_bind preserves_freshReg fun _ =>
-      preserves_bind (preserves_emit _) fun _ => ?_
-    dsimp only
-    split
-    · exact preserves_bind (preserves_close (by trivial)) fun _ =>
-        preserves_bind (preserves_openAt _ _) fun _ => preserves_close (by trivial)
-    · exact preserves_bind (preserves_temp _) fun _ =>
+  · by_cases hbytes : (spec.kind == .bytes) = true
+    · simp only [hbytes, ↓reduceIte]
+      refine preserves_bind (paramRegRepBig_noNatOverflow ..) fun _ =>
+        preserves_bind (paramRegRepBig_noNatOverflow ..) fun _ =>
+        preserves_bind (toRawIndexBig_noNatOverflow ..) fun _ =>
+        preserves_bind preserves_freshReg fun _ =>
+        preserves_bind (preserves_emit _) fun _ =>
+        preserves_bind preserves_newLabel fun _ =>
+        preserves_bind preserves_newLabel fun _ =>
         preserves_bind (preserves_close (by trivial)) fun _ =>
-        preserves_bind (preserves_openAt _ _) fun _ => preserves_close (by trivial)
+        preserves_bind (preserves_openAt _ _) fun _ =>
+        preserves_bind preserves_freshReg fun _ =>
+        preserves_bind (preserves_emit _) fun _ => ?_
+      split
+      · exact preserves_bind (preserves_close (by trivial)) fun _ =>
+          preserves_bind (preserves_openAt _ _) fun _ => preserves_close (by trivial)
+      · exact preserves_bind (preserves_temp _) fun _ =>
+          preserves_bind (preserves_close (by trivial)) fun _ =>
+          preserves_bind (preserves_openAt _ _) fun _ => preserves_close (by trivial)
+    · simp only [hbytes]
+      exact preserves_bind_throw ..
   · refine preserves_bind (paramRegRepBig_noNatOverflow ..) fun _ =>
       preserves_bind (paramRegRepBig_noNatOverflow ..) fun _ =>
       preserves_bind (paramRegRepBig_noNatOverflow ..) fun _ =>
-      preserves_bind (toRawWordParamBig_noNatOverflow ..) fun _ =>
+      preserves_bind (toRawIndexBig_noNatOverflow ..) fun _ =>
       preserves_bind preserves_freshReg fun _ => ?_
     dsimp only
     cases spec.kind with
@@ -1874,21 +1967,21 @@ private theorem arrayPrimBody_noNatOverflow (arrBase : FunId) (f : FunId)
   · exact preserves_bind (paramRegRepBig_noNatOverflow ..) fun _ =>
       preserves_bind (paramRegRepBig_noNatOverflow ..) fun _ =>
       preserves_bind (paramRegRepBig_noNatOverflow ..) fun _ =>
-      preserves_bind (toRawWordParamBig_noNatOverflow ..) fun _ =>
-      preserves_bind (toRawWordParamBig_noNatOverflow ..) fun _ => by solve_no_ovf
+      preserves_bind (toRawIndexBig_noNatOverflow ..) fun _ =>
+      preserves_bind (toRawIndexBig_noNatOverflow ..) fun _ => by solve_no_ovf
   · exact preserves_bind (paramRegRepBig_noNatOverflow ..) fun _ =>
       preserves_bind (paramRegRepBig_noNatOverflow ..) fun _ =>
       preserves_bind (paramRegRepBig_noNatOverflow ..) fun _ =>
       preserves_bind (paramRegRepBig_noNatOverflow ..) fun _ =>
       preserves_bind (paramRegRepBig_noNatOverflow ..) fun _ =>
-      preserves_bind (toRawWordParamBig_noNatOverflow ..) fun _ =>
-      preserves_bind (toRawWordParamBig_noNatOverflow ..) fun _ =>
-      preserves_bind (toRawWordParamBig_noNatOverflow ..) fun _ => by solve_no_ovf
+      preserves_bind (toRawIndexBig_noNatOverflow ..) fun _ =>
+      preserves_bind (toRawIndexBig_noNatOverflow ..) fun _ =>
+      preserves_bind (toRawIndexBig_noNatOverflow ..) fun _ => by solve_no_ovf
   · exact preserves_bind (paramRegRepBig_noNatOverflow ..) fun _ =>
       preserves_bind (paramRegRepBig_noNatOverflow ..) fun _ =>
       preserves_bind (paramRegRepBig_noNatOverflow ..) fun _ =>
-      preserves_bind (toRawWordParamBig_noNatOverflow ..) fun _ =>
-      preserves_bind (toRawWordParamBig_noNatOverflow ..) fun _ => by solve_no_ovf
+      preserves_bind (toRawIndexBig_noNatOverflow ..) fun _ =>
+      preserves_bind (toRawIndexBig_noNatOverflow ..) fun _ => by solve_no_ovf
   · exact preserves_throw _
 
 theorem arrayPrimFuncBig_noNatOverflow {arrBase : FunId} {f : FunId} {fd : Cfg.Fun}
@@ -2100,14 +2193,13 @@ theorem extendedArrayRuntimeFuncs_noNatOverflow (base : FunId) (nilTag consTag :
   rcases List.mem_append.mp hf0 with hbase | hext
   · exact arrayRuntimeFuncs_noNatOverflow f0 hbase
   · simp only [List.mem_cons, List.not_mem_nil, or_false] at hext
-    rcases hext with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+    rcases hext with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
     · exact lirFuncNoOvf_of_all _ (by decide)
     · exact lirFuncNoOvf_of_all _ (by decide)
     · exact lirFuncNoOvf_of_all _ (by decide)
     · exact lirFuncNoOvf_of_all _ (by simp [arrToListBoxed])
     · exact lirFuncNoOvf_of_all _ (by decide)
     · exact lirFuncNoOvf_of_all _ (by simp [arrToListLimbs])
-    · exact lirFuncNoOvf_of_all _ (by decide)
     · exact lirFuncNoOvf_of_all _ (by decide)
     · exact lirFuncNoOvf_of_all _ (by decide)
 

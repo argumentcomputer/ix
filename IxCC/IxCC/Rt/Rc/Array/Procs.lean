@@ -33,7 +33,7 @@ namespace IxCC.Rt.Rc.Array
 
 open Lir
 open IxCC.Rt (bumpOff limitOff)
-open IxCC.Rt.Rc (maxClass classBytes maxCellWords)
+open IxCC.Rt.Rc (maxClass classBytes maxCellWords maxCount)
 open IxCC.Rt.Rc.Procs (v i to cellAddr ctx)
 
 /-! ## Function table indices in `arrayRuntimeProgram` -/
@@ -65,6 +65,7 @@ def fnBytePush : FunId := 23
 def fnBytePop : FunId := 24
 def fnByteExtract : FunId := 25
 def fnByteCopySlice : FunId := 26
+def fnIncVal : FunId := 27
 
 /-- Fixed low-32-bit header template `scan + 65536 * tag` (class byte 0, rc 0). -/
 def scanTagFixed (k : ArrayKind) : Word :=
@@ -368,9 +369,11 @@ def byteArrGet : Func where
 
 /-! ## 5. Word-backed mutations (`arrSet`, `arrPush`, `arrPop`, `arrExtract`, `arrCopySlice`) -/
 
-/-- Helper: optional `inc` call statement when `isBoxed = true`. -/
+/-- Helper: optional alias-safe value `inc` (`fnIncVal`) call statement when `isBoxed = true`.
+Uses `fnIncVal` rather than `fnInc` so dynamic arrays nested inside immortal algebraic constructors
+(`Option.some`, `Prod.mk`, `List.cons`) also have their reference counts incremented. -/
 private def optInc (isBoxed : Bool) (r : VReg) : Array Stmt :=
-  if isBoxed then #[.call [] fnInc [v r]] else #[]
+  if isBoxed then #[.call [] fnIncVal [v r]] else #[]
 
 /-- Helper: optional `arrDec` call statement when `isBoxed = true`. -/
 private def optDec (isBoxed : Bool) (r : VReg) : Array Stmt :=
@@ -636,7 +639,7 @@ def arrCopySliceWord (isBoxed : Bool) : Func :=
           if isBoxed then
             #[.assign 15 (.bin .add .w64 (v 1) (v 14)),
               .assign 16 (.load .w64 .zero (wordElemAddr 0 15)),
-              .call [] fnInc [v 16],
+              .call [] fnIncVal [v 16],
               .assign 17 (.bin .add .w64 (v 9) (v 14)),
               .assign 18 (.bin .add .w64 (v 14) (i 1))]
           else
@@ -974,9 +977,54 @@ def byteArrCopySlice : Func where
     { body := #[.call [] fnDec [v 2]]
       term := .ret [v 20] }]
 
+/-- Alias-safe value increment `(x)`:
+* Immediate (odd): no-op.
+* Dynamic cell (`rc ≥ 0`, e.g. `Array` / `ByteArray` / `LimbArray`): fails `.heap` if
+  `rc == maxCount - 1` (matching `Rt.Rc.Procs.inc`), else `rc := rc + 1`.
+* Static `.rodata` (`rc < 0`, `scan = 0` or `0xFF`): no-op (zero writes to `.rodata`).
+* Immortal constructor (`rc < 0`, `1 ≤ scan ≤ 254`): recursively increments its `scan`
+  object fields so dynamic arrays stored inside shared immortal constructors safely COW. -/
+def arrIncValue : Func where
+  name := "rt_arr_inc_val"
+  params := [0]
+  results := 0
+  blocks := #[
+    -- 0: immediate check
+    { term := .br .tnz .w64 (v 0) (i 1) (to 6) (to 1) },
+    -- 1: load rc = [v0 + 4]; dynamic (rc >= 0) vs immortal/static (rc < 0)
+    { body := #[.assign 1 (.load .w32 .zero (cellAddr 0 4))]
+      term := .br .slt .w32 (v 1) (i 0) (to 3) (to 9) },
+    -- 2: dynamic cell (rc < maxCount - 1): increment rc in place
+    { body := #[
+        .assign 2 (.bin .add .w32 (v 1) (i 1)),
+        .store .w32 (cellAddr 0 4) (v 2)]
+      term := .ret [] },
+    -- 3: immortal/static cell: check scan == 0 (ByteArray, LimbArray, scalar ctor)
+    { body := #[.assign 3 (.load .w8 .zero (cellAddr 0 0))]
+      term := .br .eq .w64 (v 3) (i 0) (to 6) (to 7) },
+    -- 4: loop k = v4 < v3 over immortal ctor object fields
+    { params := [4]
+      term := .br .ult .w64 (v 4) (v 3) (to 5) (to 6) },
+    -- 5: load field [v0 + 8 + k*8], recursively inc, k++
+    { body := #[
+        .assign 5 (.load .w64 .zero { base := some (.v 0), index := some (4, .eight), disp := 8 }),
+        .call [] fnIncVal [v 5],
+        .assign 6 (.bin .add .w64 (v 4) (i 1))]
+      term := .jump (to 4 [v 6]) },
+    -- 6: done
+    { term := .ret [] },
+    -- 7: check scan == 0xFF (static .rodata boxed array)
+    { term := .br .eq .w64 (v 3) (i 0xFF) (to 6) (to 8) },
+    -- 8: enter field loop for immortal ctor (1 <= scan <= 254)
+    { term := .jump (to 4 [i 0]) },
+    -- 9: dynamic cell overflow guard (matching Rt.Rc.Procs.inc)
+    { term := .br .eq .w32 (v 1) (i (maxCount - 1)) (to 10) (to 2) },
+    -- 10: RC overflow
+    { term := .fail .heap, cold := true } ]
+
 /-! ## 7. Complete runtime program bundle & well-formedness -/
 
-/-- All 27 native array/bytearray/limbarray/RC procedures in exact `FunId` order. -/
+/-- All 28 native array/bytearray/limbarray/RC procedures in exact `FunId` order. -/
 def arrayRuntimeFuncs : Array Func := #[
   IxCC.Rt.Rc.Procs.inc, -- 0: fnInc
   arrDec,               -- 1: fnDec
@@ -1004,7 +1052,8 @@ def arrayRuntimeFuncs : Array Func := #[
   byteArrPush,          -- 23: fnBytePush
   byteArrPop,           -- 24: fnBytePop
   byteArrExtract,       -- 25: fnByteExtract
-  byteArrCopySlice      -- 26: fnByteCopySlice
+  byteArrCopySlice,     -- 26: fnByteCopySlice
+  arrIncValue           -- 27: fnIncVal
 ]
 
 /-- Bundle the runtime with entry point `mainFn`. -/

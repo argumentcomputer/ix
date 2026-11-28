@@ -302,7 +302,44 @@ private def testWireProcs (logs : FilePath) (cnt : IO.Ref Nat) : IO Unit := do
     let roAddr ← callOk 25 [] "rodataStrProc"
     require cnt (roAddr == 0x12345678 && (← Session.readWord s (base + 24)) == bumpRo)
       "rodataStrProc returns address without advancing bump"
-  IO.println "PASS WireTests: relocated 36-proc Wire.lean + strLitProc + rodataStrProc natively on Xeon"
+    -- 7. H-11: boxed array runtime ops use `fnIncVal` (traversing immortal wrappers) + overflow guard
+    let mut innerA ← callOk 4 [4] "H-11 empty innerA"
+    innerA ← callOk 10 [innerA, 223] "H-11 push innerA 111"
+    innerA ← callOk 10 [innerA, 445] "H-11 push innerA 222"
+    let rcBefore := ((← Session.readWord s innerA).toNat >>> 32)
+    require cnt (rcBefore == 0) s!"H-11 innerA initial rc == 0 (unique, got {rcBefore})"
+    let wrapA ← callOk 2 [innerA, nilW] "H-11 immortal cons wrapping innerA"
+    let mut outerA ← callOk 4 [4] "H-11 empty outerA"
+    outerA ← callOk 10 [outerA, wrapA] "H-11 push wrapA"
+    outerA ← callOk 10 [outerA, 1555] "H-11 push imm"
+    discard <| callOk 1 [outerA] "H-11 share outerA"
+    let outerCow ← callOk 13 [outerA, 0, 1] "H-11 arrSwapBoxed COW with wrapped innerA"
+    require cnt (outerCow != outerA) "H-11 arrSwapBoxed allocated COW clone"
+    let rcAfterSwap := ((← Session.readWord s innerA).toNat >>> 32)
+    require cnt (rcAfterSwap ≥ 1)
+      s!"H-11 arrSwapBoxed COW incremented wrapped innerA rc via fnIncVal (got {rcAfterSwap})"
+    let innerAMut ← callOk 10 [innerA, 667] "H-11 push innerA after COW"
+    require cnt (innerAMut != innerA && (← callOk 7 [innerA] "H-11 orig innerA size") == 2)
+      "H-11 innerA COW preserved original wrapped array"
+    -- H-11b: arrOfListBoxed increments nested dynamic array inside immortal wrapper
+    let mut innerB ← callOk 4 [2] "H-11 empty innerB"
+    innerB ← callOk 10 [innerB, 99] "H-11 push innerB"
+    let wrapB ← callOk 2 [innerB, nilW] "H-11 immortal cons wrapping innerB"
+    let lstB ← callOk 2 [wrapB, nilW] "H-11 list containing wrapB"
+    discard <| callOk 15 [lstB] "H-11 arrOfListBoxed on wrapped innerB"
+    let rcAfterList := ((← Session.readWord s innerB).toNat >>> 32)
+    require cnt (rcAfterList ≥ 1)
+      s!"H-11 arrOfListBoxed incremented wrapped innerB rc via fnIncVal (got {rcAfterList})"
+    -- H-11c: arrIncValue maxCount - 1 (0x7FFFFFFF) overflow guard fails .heap instead of wrapping into immortal
+    let ovfArr ← callOk 4 [2] "H-11 empty ovfArr"
+    let ovfHdr ← Session.readWord s ovfArr
+    let maxMinus1 : Nat := Rt.Rc.maxCount - 1 -- 0x7FFFFFFF
+    let maxedHdr : Nat := (ovfHdr.toNat &&& 0xFFFFFFFF) ||| (maxMinus1 <<< 32)
+    Session.writeWord s ovfArr maxedHdr
+    let (ovfRax, _, ovfOk) ← Session.call s 1 [base, ovfArr]
+    require cnt (ovfOk && ovfRax != 0)
+      s!"H-11 arrIncValue at maxCount-1 (0x7FFFFFFF) fails .heap (ok={ovfOk} rax={ovfRax})"
+  IO.println "PASS WireTests: relocated 36-proc Wire.lean + strLitProc + rodataStrProc + H-11 natively on Xeon"
 
 /-! ## 2. DR1 `.rodata` ELF64 Round-Trip (`LowerStr.buildStringRodata`) -/
 
@@ -866,12 +903,173 @@ def testArrayAnalyses (cnt : IO.Ref Nat) : IO Unit := do
     taint {rounds ((·.2) <$> LowerRep.taintedFix 0 td .leaf)} > 12, \
     parameter flags {rounds ((·.2) <$> LowerRep.paramMutFix P {})} > 16) and refuse a bound too small"
 
+/-! ## C-5: DR3 Mini-RC Multi-Use Argument & Edge Increment Regression Tests -/
+
+private def testDr3MultiUseRc (cnt : IO.Ref Nat) : IO Unit := do
+  let fc : Fir.Rep.FunCert :=
+    { params := [.obj, .obj], ret := .obj
+      vars := (Src.NatMap.leaf.insert 0 .obj).insert 1 .obj }
+  let rc : Rt.LowerRep.RcCtx :=
+    { enabled := true
+      arrBase := 10
+      tainted := Src.NatSet.ofList [0, 1]
+      paramMut := Src.NatMap.leaf.insert 0 [true, true]
+      liveIn := Src.NatMap.leaf.insert 1 (Src.NatSet.ofList [0])
+      blockParams := Src.NatMap.leaf.insert 1 [0, 1] }
+  let live0 : Src.NatSet := Src.NatSet.ofList [0]
+  -- 1. `call f a a` with `a` live after: MUST emit 2 incs (not 1!)
+  require cnt ((Rt.LowerRep.callIncVars rc fc live0 [.var 0, .var 0] [true, true]).length == 2)
+    "C-5: call f a a (live after, mut=[T,T]) emits 2 incs"
+  -- 2. `call f a a` with `a` dead after: MUST emit 1 inc (not 0!)
+  require cnt ((Rt.LowerRep.callIncVars rc fc .leaf [.var 0, .var 0] [true, true]).length == 1)
+    "C-5: call f a a (dead after, mut=[T,T]) emits 1 inc"
+  -- 3. `call f a a a` with `a` live after: MUST emit 3 incs!
+  require cnt ((Rt.LowerRep.callIncVars rc fc live0 [.var 0, .var 0, .var 0] [true, true, true]).length == 3)
+    "C-5: call f a a a (live after, mut=[T,T,T]) emits 3 incs"
+  -- 4. `call f a a a` with `a` dead after: MUST emit 2 incs!
+  require cnt ((Rt.LowerRep.callIncVars rc fc .leaf [.var 0, .var 0, .var 0] [true, true, true]).length == 2)
+    "C-5: call f a a a (dead after, mut=[T,T,T]) emits 2 incs"
+  -- 5. `call f a a` dead after with `mut=[T,F]`: non-mutating arg still reads `a`, so MUST emit 1 inc!
+  require cnt ((Rt.LowerRep.callIncVars rc fc .leaf [.var 0, .var 0] [true, false]).length == 1)
+    "C-5: call f a a (dead after, mut=[T,F]) emits 1 inc"
+  -- 6. `edge` passing `[a, a]` to 2 tainted block params with `a` live across edge: MUST emit 2 incs!
+  let eDup : Cfg.Edge := { target := 1, args := [.var 0, .var 0], back := false }
+  require cnt ((Rt.LowerRep.edgeIncVars fc rc eDup).length == 2)
+    "C-5: edge [a, a] (live across, tainted=[T,T]) emits 2 incs"
+  -- 7. `edge` passing `[a, a]` to 2 tainted block params with `a` dead across edge: MUST emit 1 inc!
+  let rcDead : Rt.LowerRep.RcCtx := { rc with liveIn := .leaf }
+  require cnt ((Rt.LowerRep.edgeIncVars fc rcDead eDup).length == 1)
+    "C-5: edge [a, a] (dead across, tainted=[T,T]) emits 1 inc"
+
+  -- 8. End-to-end `Rt.lowerRep` + `Lir.eval` execution of `f a a` AND `let p := (a, a); ...`
+  -- Function IDs in Cfg.Program:
+  --   0: `testCallAlias(arr)`  -- calls `mutBoth(arr, arr)` while `arr` stays live, returns arr[0]*10000 + sum
+  --   1: `testPairAlias(arr)`  -- `p := Pair(arr, arr); x := p.0; y := p.1; mutBoth(x, y)`
+  --   2: `mutBoth(a, b)`       -- `a' := set(a, 0, 111); b' := set(b, 0, 222); get(a', 0) + get(b', 0)`
+  --   3: array prim `arrSet`
+  --   4: array prim `arrGet`
+  --   5: array prim `arrEmptyCap`
+  --   6: array prim `arrPush`
+  let pairKey : Key.CtorKey := .src 90
+  let pairInfo : Fir.CtorInfo :=
+    { key := pairKey, tag := 0, nobj := 2, nscalar := 0, fieldKinds := [.shared, .shared] }
+  let pairLamInfo : Lam.CtorInfo := { key := pairKey, tag := 0, arity := 2 }
+  let arrMkKey : Key.CtorKey := .src 91
+  let psigObj : Own.PSig := Own.PSig.plain .obj
+  let fMutBoth : Cfg.Fun :=
+    { key := .const 2 [], sig := default, vars := 8
+      blocks := [{
+        params := [(0, psigObj), (1, psigObj)]
+        body := [
+          .bind 2 (.fir (.call 3 [.var 0, .lit (.nat 0), .lit (.nat 111)])),
+          .bind 3 (.fir (.call 3 [.var 1, .lit (.nat 0), .lit (.nat 222)])),
+          .bind 4 (.fir (.call 4 [.var 2, .lit (.nat 0)])),
+          .bind 5 (.fir (.call 4 [.var 3, .lit (.nat 0)])),
+          .bind 6 (.fir (.prim .natAdd [.var 4, .var 5]))
+        ]
+        term := .ret (.var 6)
+      }] }
+  let fCallAlias : Cfg.Fun :=
+    { key := .const 0 [], sig := default, vars := 10
+      blocks := [{
+        params := []
+        body := [
+          .bind 0 (.fir (.call 5 [.lit (.nat 4)])),
+          .bind 1 (.fir (.call 6 [.var 0, .lit (.nat 10)])),
+          .bind 2 (.fir (.call 2 [.var 1, .var 1])),
+          .bind 3 (.fir (.call 4 [.var 1, .lit (.nat 0)])),
+          .bind 4 (.fir (.prim .natMul [.var 3, .lit (.nat 10000)])),
+          .bind 5 (.fir (.prim .natAdd [.var 4, .var 2]))
+        ]
+        term := .ret (.var 5)
+      }] }
+  let fPairAlias : Cfg.Fun :=
+    { key := .const 1 [], sig := default, vars := 10
+      blocks := [{
+        params := []
+        body := [
+          .bind 0 (.fir (.call 5 [.lit (.nat 4)])),
+          .bind 1 (.fir (.call 6 [.var 0, .lit (.nat 10)])),
+          .bind 2 (.alloc pairInfo [.var 1, .var 1] .shared),
+          .bind 3 (.proj 2 pairKey 0),
+          .bind 4 (.proj 2 pairKey 1),
+          .bind 5 (.fir (.call 2 [.var 3, .var 4]))
+        ]
+        term := .ret (.var 5)
+      }] }
+  let mkPrimStub (cid nparams : Nat) : Cfg.Fun :=
+    { key := .const cid [], sig := default, vars := nparams
+      blocks := [{ params := (List.range nparams).map (·, psigObj), term := .trap }] }
+  let cfgP : Cfg.Program :=
+    { funs := Src.NatMap.ofDense
+        [fCallAlias, fPairAlias, fMutBoth, mkPrimStub 3 3, mkPrimStub 4 2, mkPrimStub 5 1, mkPrimStub 6 2]
+      size := 7
+      exports := [0, 1]
+      ctors := [pairLamInfo]
+      known := default }
+  let arrPrims : Src.NatMap Fir.Rep.ArrayPrimSpec :=
+    (((Src.NatMap.leaf.insert 3 { op := .set, kind := .boxed, argIdx := [0, 1, 2] })
+      |>.insert 4 { op := .get, kind := .boxed, argIdx := [0, 1] })
+      |>.insert 5 { op := .emptyCap, kind := .boxed, argIdx := [0] })
+      |>.insert 6 { op := .push, kind := .boxed, argIdx := [0, 1] }
+  let fcStub (ps : List Fir.Rep) (ret : Fir.Rep) : Fir.Rep.FunCert :=
+    { params := ps, ret, vars := Src.NatMap.ofList (ps.zipIdx.map fun (r, i) => (i, r)) }
+  let repCert : Fir.Rep.Cert :=
+    { funs := Src.NatMap.ofDense [
+        { params := [], ret := .tobj
+          vars := Src.NatMap.ofList [(0, .obj), (1, .obj), (2, .tobj), (3, .tobj), (4, .tobj), (5, .tobj)] },
+        { params := [], ret := .tobj
+          vars := Src.NatMap.ofList [(0, .obj), (1, .obj), (2, .obj), (3, .obj), (4, .obj), (5, .tobj)] },
+        { params := [.obj, .obj], ret := .tobj
+          vars := Src.NatMap.ofList [(0, .obj), (1, .obj), (2, .obj), (3, .obj), (4, .tobj), (5, .tobj), (6, .tobj)] },
+        fcStub [.obj, .tobj, .tobj] .obj,
+        fcStub [.obj, .tobj] .tobj,
+        fcStub [.tobj] .obj,
+        fcStub [.obj, .tobj] .obj ]
+      arrayPrims := arrPrims
+      arrayMkKey := some arrMkKey }
+  let lowered ← IO.ofExcept <| (Rt.lowerRep { names := ["c5_call", "c5_pair"] } repCert cfgP).mapError (·.render)
+  let prog := lowered.program.splitCriticalEdges
+  match prog.check with
+  | .ok () => require cnt true "C-5 lowered LIR well-formed"
+  | .error e => throw (IO.userError s!"FAIL WireTests C-5 Lir.check: {e}")
+  let regionBase : UInt64 := 0x800000
+  let regionSize : Nat := 0x20000
+  let ctx : UInt64 := regionBase + UInt64.ofNat Rt.ctxOffset
+  let mem0 : X86.Memory :=
+    let endAddr := regionBase + UInt64.ofNat regionSize
+    let m1 : X86.Memory :=
+      { X86.Memory.unmapped with
+        readable := fun a => regionBase ≤ a && a < endAddr
+        writable := fun a => regionBase ≤ a && a < endAddr }
+    (m1.write64 (ctx - 40) (regionBase + UInt64.ofNat Rt.ctxBlockBytes)).write64 (ctx - 32) endAddr
+  let fmtOut : Lir.Outcome → String
+    | .ok _ => "ok"
+    | .trap => "trap"
+    | .stuck => "stuck"
+    | .timeout => "timeout"
+    | .resource r => s!"resource({reprStr r})"
+  match Lir.eval { prog with main := 0 } 5000 [] mem0 ctx with
+  | .ok ([res], _) =>
+    let v := (res >>> 1).toNat
+    require cnt ((res &&& 1) == 1 && v == 100333)
+      s!"C-5: call mutBoth(arr, arr) while arr live == 100333 (got {v})"
+  | other => throw (IO.userError s!"FAIL WireTests C-5 fCallAlias: {fmtOut other}")
+  match Lir.eval { prog with main := 1 } 5000 [] mem0 ctx with
+  | .ok ([res], _) =>
+    let v := (res >>> 1).toNat
+    require cnt ((res &&& 1) == 1 && v == 333)
+      s!"C-5: let p := (arr, arr); mutBoth(p.0, p.1) == 333 (got {v})"
+  | other => throw (IO.userError s!"FAIL WireTests C-5 fPairAlias: {fmtOut other}")
+  IO.println "PASS WireTests: C-5 DR3 multi-use call/edge/pair-projection RC aliasing COW verified"
+
 /-! ## Entry Point -/
 
 def run (logs : FilePath) (cliIx : Option String := none) (requireIx : Bool := false) : IO Nat := do
   IO.FS.createDirAll logs
   let cnt ← IO.mkRef 0
   testArrayAnalyses cnt
+  testDr3MultiUseRc cnt
   testWireProcs logs cnt
   testRodataElf cnt
   testCommittedDeclines logs cnt

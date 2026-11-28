@@ -255,6 +255,91 @@ def unbox64OrBigNat (x : VReg) (a : Lir.Arg) : M Unit :=
     }
     openAt joinBlk [x]
 
+/-- Normalize a numeric `.obj` word (odd tagged immediate, `BigNat` `LimbArray` with
+`tag = 0x7F03`, or 1-scalar-word `box64` `UInt64` cell) into a canonical Phase 4 `NatVal`.
+Preserves all limbs of arbitrary-precision `BigNat` values; never fails `.natOverflow`. -/
+def objToNatVal (x : VReg) (a : Lir.Arg) : M Unit :=
+  match a with
+  | .imm w => assign x (.arg (.imm w))
+  | .v y => do
+    let immBlk ← newLabel
+    let ptrBlk ← newLabel
+    let limbBlk ← newLabel
+    let boxBlk ← newLabel
+    let joinBlk ← newLabel
+    close (.br .tz (.v y) (.imm 1) (loc ptrBlk) (loc immBlk))
+    put immBlk { term := .jump ⟨.loc joinBlk, [.v y]⟩ }
+    let tag ← freshReg
+    put ptrBlk {
+      body := [.assign tag (.load .w16 .zero (mem y tagOffset))]
+      term := .br .eq (.v tag) (.imm (UInt64.ofNat tagLimbArray)) (loc limbBlk) (loc boxBlk)
+    }
+    put limbBlk { term := .jump ⟨.loc joinBlk, [.v y]⟩, cold := true }
+    openAt boxBlk
+    let raw ← freshReg
+    assign raw (.load .w64 .zero (mem y (fieldOffset 0)))
+    let nv ← freshReg
+    promoteRaw64ToNatVal nv (.v raw)
+    close (.jump ⟨.loc joinBlk, [.v nv]⟩)
+    openAt joinBlk [x]
+
+/-- Extract a 64-bit unsigned index/bound/capacity from a `.tobj` Phase 4 `NatVal`:
+odd immediate `2n + 1` → `w >>> 1`; even `BigNat` (`n ≥ 2^63`) → saturates to
+`0xFFFFFFFFFFFFFFFF` (`UINT64_MAX`) instead of silently truncating mod `2^64`. -/
+def natValSaturate64 (x : VReg) (a : Lir.Arg) : M Unit :=
+  match a with
+  | .imm w => assign x (.arg (.imm (w >>> 1)))
+  | .v y => do
+    let smallBlk ← newLabel
+    let bigBlk ← newLabel
+    let joinBlk ← newLabel
+    close (.br .tz (.v y) (.imm 1) (loc bigBlk) (loc smallBlk))
+    let rSmall ← freshReg
+    put smallBlk {
+      body := [.assign rSmall (.bin .shr .w64 (.v y) (.imm 1))]
+      term := .jump ⟨.loc joinBlk, [.v rSmall]⟩
+    }
+    put bigBlk {
+      term := .jump ⟨.loc joinBlk, [.imm 0xFFFFFFFFFFFFFFFF]⟩
+      cold := true
+    }
+    openAt joinBlk [x]
+
+/-- Extract a 64-bit unsigned index/bound/capacity from a `.obj` word:
+odd immediate `2n + 1` → `w >>> 1`; even `BigNat` `LimbArray` (`tag = 0x7F03`, `n ≥ 2^63`)
+→ saturates to `0xFFFFFFFFFFFFFFFF` (`UINT64_MAX`); even 1-scalar-word `box64` cell
+(`tag ≠ 0x7F03`, e.g. boxed `USize`/`UInt64`) → loads raw `[y + 8]`. -/
+def unbox64OrSaturateBigNat (x : VReg) (a : Lir.Arg) : M Unit :=
+  match a with
+  | .imm w => assign x (.arg (.imm (w >>> 1)))
+  | .v y => do
+    let immBlk ← newLabel
+    let ptrBlk ← newLabel
+    let boxBlk ← newLabel
+    let limbBlk ← newLabel
+    let joinBlk ← newLabel
+    close (.br .tz (.v y) (.imm 1) (loc ptrBlk) (loc immBlk))
+    let rImm ← freshReg
+    put immBlk {
+      body := [.assign rImm (.bin .shr .w64 (.v y) (.imm 1))]
+      term := .jump ⟨.loc joinBlk, [.v rImm]⟩
+    }
+    let tag ← freshReg
+    put ptrBlk {
+      body := [.assign tag (.load .w16 .zero (mem y tagOffset))]
+      term := .br .eq (.v tag) (.imm (UInt64.ofNat tagLimbArray)) (loc limbBlk) (loc boxBlk)
+    }
+    let rBox ← freshReg
+    put boxBlk {
+      body := [.assign rBox (.load .w64 .zero (mem y (fieldOffset 0)))]
+      term := .jump ⟨.loc joinBlk, [.v rBox]⟩
+    }
+    put limbBlk {
+      term := .jump ⟨.loc joinBlk, [.imm 0xFFFFFFFFFFFFFFFF]⟩
+      cold := true
+    }
+    openAt joinBlk [x]
+
 /-- Zero-`natOverflow` width-64 word operation on `NatVal` operands (for non-Rep `lowerBig`):
 extracts low 64 bits via `natValLow64`, computes raw 64-bit result via `wordRaw64`, and
 promotes via `promoteRaw64ToNatVal`. -/
@@ -648,23 +733,105 @@ def emitLimbPairBig (f : FunId) (fc : Fir.Rep.FunCert) (kind : LimbPairKind)
     finishRaw64Big r2 (fc.varRep r2) (.v t2)
   | _, _ => throw (.form f "limb pair arity mismatch")
 
+/-- Strict raw 64-bit operand predicate for `lowerRepBig`: `true` ONLY when `a` is guaranteed
+to be a raw 64-bit unsigned word `< 2^64` (NEVER a `.tobj` or `.obj` variable that could hold
+an arbitrary-precision `BigNat ≥ 2^64`). -/
+def isStrictWord64Arg (fc : Fir.Rep.FunCert) : Fir.Arg → Bool
+  | .var y => fc.varRep y == .word
+  | .lit (.nat n) => decide (n < 2 ^ 64)
+  | _ => false
+
+/-- Strict raw 64-bit comparison predicate for `lowerRepBig`: `true` ONLY when BOTH operands
+are guaranteed `< 2^64` raw words/literals (never arbitrary-precision `Nat` values). -/
+def cmpIsStrictWord64 (fc : Fir.Rep.FunCert) (a b : Fir.Arg) : Bool :=
+  isStrictWord64Arg fc a && isStrictWord64Arg fc b
+
+/-- Evaluate numeric operand `a` as a canonical Phase 4 `NatVal` (promoting `.word` via
+`promoteRaw64ToNatVal` and normalizing `.obj` via `objToNatVal`). -/
+def operandNatValBig (f : FunId) (fc : Fir.Rep.FunCert)
+    (sc : StrCtx) (bc : BigNatLitCtx) (a : Fir.Arg) : M Lir.Arg :=
+  match a with
+  | .var y =>
+    match fc.varRep y with
+    | .word => do
+      let r ← freshReg
+      promoteRaw64ToNatVal r (.v y)
+      pure (.v r)
+    | .obj => do
+      let r ← freshReg
+      objToNatVal r (.v y)
+      pure (.v r)
+    | .tobj | .erased => pure (.v y)
+  | _ => operandBig f sc bc a
+
+def operandsNatValBig (f : FunId) (fc : Fir.Rep.FunCert)
+    (sc : StrCtx) (bc : BigNatLitCtx) : List Fir.Arg → M (List Lir.Arg)
+  | [] => pure []
+  | a :: as => do
+    let la ← operandNatValBig f fc sc bc a
+    let las ← operandsNatValBig f fc sc bc as
+    pure (la :: las)
+
+/-- Convert operand `a` to the representation expected by narrow `wordBig` (`w ≠ .w64`),
+respecting `fc.varRep y` (`.word` → `retag`, `.obj` → `unbox64OrBigNat` + `retag`,
+`.tobj` → as-is). Never passes raw even `.word`s or 16-byte `box64` cells to `natValLow64`. -/
+def operandNarrowRepBig (f : FunId) (fc : Fir.Rep.FunCert)
+    (sc : StrCtx) (bc : BigNatLitCtx) (a : Fir.Arg) : M Lir.Arg :=
+  match a with
+  | .var y =>
+    match fc.varRep y with
+    | .word => temp (retag (.v y))
+    | .obj => do
+      let u ← freshReg
+      unbox64OrBigNat u (.v y)
+      temp (retag (.v u))
+    | .tobj | .erased => pure (.v y)
+  | _ => operandBig f sc bc a
+
+def operandsNarrowRepBig (f : FunId) (fc : Fir.Rep.FunCert)
+    (sc : StrCtx) (bc : BigNatLitCtx) : List Fir.Arg → M (List Lir.Arg)
+  | [] => pure []
+  | a :: as => do
+    let la ← operandNarrowRepBig f fc sc bc a
+    let las ← operandsNarrowRepBig f fc sc bc as
+    pure (la :: las)
+
 /-- Primitive lowering for `lowerRepBig` (ZERO `.fail .natOverflow`):
-* `.word .w64 op` / widening `.convert .w64`: raw 64-bit ALU + `finishRaw64Big`;
-* narrow `.word w op`: `wordBig` (untagging via `natValLow64` for `.ofNat`);
-* raw 64-bit `UInt64` comparisons (`cmpIsRaw64`): direct unsigned `select`;
-* ALL 16 arbitrary-precision `Nat` primitives: `Dispatch.primitiveBig`! -/
+* `.word .w64 op` / widening `.convert .w64`: raw 64-bit ALU + `finishRaw64Big` (with narrowing
+  `.convert w'` retagging into `.tobj`/`.obj`, NEVER `box64`!);
+* narrow `.word w op`: `operandsNarrowRepBig` + `wordBig`;
+* strict raw 64-bit `UInt64` comparisons (`cmpIsStrictWord64`): direct unsigned `select`;
+* ALL 16 arbitrary-precision `Nat` primitives: `operandsNatValBig` + `Dispatch.primitiveBig`! -/
 def primitiveRepBig (f : FunId) (T : Tables) (procs : BigNatProcs) (fc : Fir.Rep.FunCert)
     (sc : StrCtx) (bc : BigNatLitCtx) (x : VReg) (op : Lam.Prim) (as : List Fir.Arg) : M Unit :=
   let rx := fc.varRep x
   match op with
   | .word .w64 wo =>
-    if wo == .toNat then
+    match wo with
+    | .toNat =>
       match as with
       | [a] => do
         let la ← operandRaw64Big f fc a
         finishRaw64Big x rx la
       | _ => throw (.prim f (.word .w64 .toNat))
-    else do
+    | .convert w' =>
+      if w' == .w64 then
+        match as with
+        | [a] => do
+          let la ← operandRaw64Big f fc a
+          finishRaw64Big x rx la
+        | _ => throw (.prim f (.word .w64 (.convert .w64)))
+      else
+        match as with
+        | [a] => do
+          let la ← operandRaw64Big f fc a
+          let m ← bin .and la (.imm (UInt64.ofNat (w'.size - 1)))
+          match rx with
+          | .word => assign x (.arg m)
+          | .tobj | .obj => assign x (retag m)
+          | .erased => assign x (.arg m)
+        | _ => throw (.prim f (.word .w64 (.convert w')))
+    | _ => do
       let las ← operandsRaw64Big f fc as
       if rx == .word then
         wordRaw64 f x wo las
@@ -677,7 +844,7 @@ def primitiveRepBig (f : FunId) (T : Tables) (procs : BigNatProcs) (fc : Fir.Rep
     | [a] => finishRaw64Big x rx a
     | _ => throw (.prim f (.word w (.convert .w64)))
   | .word w wo => do
-    let las ← operandsBig f sc bc as
+    let las ← operandsNarrowRepBig f fc sc bc as
     if rx == .word then
       let tmp ← freshReg
       wordBig f tmp w wo las
@@ -687,15 +854,15 @@ def primitiveRepBig (f : FunId) (T : Tables) (procs : BigNatProcs) (fc : Fir.Rep
   | op =>
     match compareOf op, as with
     | some cond, [a, b] =>
-      if cmpIsRaw64 fc a b && isNumericRepArg fc a && isNumericRepArg fc b then do
+      if cmpIsStrictWord64 fc a b then do
         let [la, lb] ← operandsRaw64Big f fc [a, b] | throw (.prim f op)
         let some (t, e) := T.bools | throw (.noBool f)
         assign x (.select cond .w64 la lb (.imm t) (.imm e))
       else do
-        let las ← operandsAtRepsBig f fc [a, b] [.tobj, .tobj] sc bc
+        let las ← operandsNatValBig f fc sc bc [a, b]
         primitiveBig f { bools := T.bools, procs } x op las
     | _, _ => do
-      let las ← operandsAtRepsBig f fc as (List.replicate as.length .tobj) sc bc
+      let las ← operandsNatValBig f fc sc bc as
       primitiveBig f { bools := T.bools, procs } x op las
 
 /-- Allocation lowering for `lowerRepBig` (DR3 arrays + scalar tails + big `Nat` literals,
@@ -784,7 +951,8 @@ def projRepBig (f : FunId) (T : Tables) (procs : BigNatProcs) (cert : Fir.Rep.Ce
           unbox64OrBigNat x (.v tmp)
         else
           assign x (.load .w64 .zero (mem y (fieldOffset i)))
-          if rc.enabled && rx != .word && rc.tainted.contains x && liveAfter.contains y &&
+          if rc.enabled && rx != .word && (rc.tainted.contains x || rc.tainted.contains y) &&
+              liveAfter.contains y &&
               (liveTerm.contains y || hasConflictProjUse y c i rest) then
             emit (.call [] (rc.arrBase + Rt.Rc.Array.fnIncVal) [.v x])
       else throw (.form f s!"field {i} of a constructor with {info.arity}")
@@ -797,7 +965,8 @@ def instrRepBig (f : FunId) (T : Tables) (procs : BigNatProcs) (cert : Fir.Rep.C
   | .bind x (.fir (.arg a)) => do
     match a with
     | .var y =>
-      if rc.enabled && fc.varRep y != .word && liveAfter.contains y && rc.tainted.contains x then
+      if rc.enabled && fc.varRep y != .word && liveAfter.contains y &&
+          (rc.tainted.contains x || rc.tainted.contains y) then
         emit (.call [] (rc.arrBase + Rt.Rc.Array.fnIncVal) [.v y])
     | _ => pure ()
     let la ← operandAtRepBig f fc a (fc.varRep x) sc bc
@@ -937,10 +1106,10 @@ def blockCodeRepBig (f : FunId) (T : Tables) (procs : BigNatProcs) (cert : Fir.R
     (fc : Fir.Rep.FunCert) (blockReps : Src.NatMap (List Fir.Rep)) (uses : Src.NatMap Nat)
     (src : Nat) (b : Cfg.Block) (sc : StrCtx) (bc : BigNatLitCtx) (rc : RcCtx) : M Unit :=
   let lt := if rc.enabled then liveAtTermBig rc.liveIn b else .leaf
-  -- Only fuse raw 64-bit `.word` comparisons (NEVER arbitrary-precision `Nat` comparisons!)
+  -- Only fuse strict raw 64-bit `.word` comparisons (NEVER arbitrary-precision `Nat` comparisons!)
   match fusable T uses b with
   | some (init, c, a, a') =>
-    if cmpIsRaw64 fc a a' && isNumericRepArg fc a && isNumericRepArg fc a' then do
+    if cmpIsStrictWord64 fc a a' then do
       let lt' := (Cfg.Check.argVars [a, a']).foldl (fun s x => s.insert x) lt
       let ann := if rc.enabled then annotateBody lt' init else init.map (·, .leaf)
       instrsRepBigAnn f T procs cert fc sc bc rc lt ann
@@ -993,6 +1162,23 @@ def toRawWordParamBig (reg : VReg) (rep : Fir.Rep) : M Lir.Arg :=
     pure (.v r)
   | .erased => pure (.imm 0)
 
+/-- Convert a `Nat` index/offset/length/capacity parameter to a raw 64-bit word,
+saturating any `BigNat` cell (`≥ 2^63`, `tag = 0x7F03`) to `0xFFFFFFFFFFFFFFFF`
+instead of truncating mod `2^64`. (Separate from `toRawWordParamBig`, used for
+`UInt64`/`UInt8` payloads.) -/
+def toRawIndexBig (reg : VReg) (rep : Fir.Rep) : M Lir.Arg :=
+  match rep with
+  | .word => pure (.v reg)
+  | .tobj => do
+    let r ← freshReg
+    natValSaturate64 r (.v reg)
+    pure (.v r)
+  | .obj => do
+    let r ← freshReg
+    unbox64OrSaturateBigNat r (.v reg)
+    pure (.v r)
+  | .erased => pure (.imm 0)
+
 def paramRegRepBig (f : FunId) (params : List VReg) (fc : Fir.Rep.FunCert) (idx : Nat) :
     M (VReg × Fir.Rep) := do
   let some reg := params[idx]? | throw (.form f s!"array prim param index {idx} out of range")
@@ -1013,7 +1199,7 @@ def arrayPrimBody (arrBase : FunId) (f : FunId) (params : List VReg) (fc : Fir.R
     close (.ret (.v res))
   | .emptyCap, [ci] =>
     let (creg, crep) ← paramRegRepBig f params fc ci
-    let cap ← toRawWordParamBig creg crep
+    let cap ← toRawIndexBig creg crep
     let callee := arrBase + match spec.kind with
       | .boxed => Rt.Rc.Array.fnEmptyCapBoxed
       | .limbs => Rt.Rc.Array.fnEmptyCapLimbs
@@ -1034,7 +1220,7 @@ def arrayPrimBody (arrBase : FunId) (f : FunId) (params : List VReg) (fc : Fir.R
   | .get, [ai, ii] =>
     let (areg, _) ← paramRegRepBig f params fc ai
     let (ireg, irep) ← paramRegRepBig f params fc ii
-    let idx ← toRawWordParamBig ireg irep
+    let idx ← toRawIndexBig ireg irep
     match spec.kind with
     | .bytes =>
       let raw ← freshReg
@@ -1060,9 +1246,11 @@ def arrayPrimBody (arrBase : FunId) (f : FunId) (params : List VReg) (fc : Fir.R
       else
         close (.ret (.v res))
   | .getBang, [ai, ii] =>
+    unless spec.kind == .bytes do
+      throw (.form f "array prim getBang is only supported for ByteArray (.bytes)")
     let (areg, _) ← paramRegRepBig f params fc ai
     let (ireg, irep) ← paramRegRepBig f params fc ii
-    let idx ← toRawWordParamBig ireg irep
+    let idx ← toRawIndexBig ireg irep
     let sz ← freshReg
     emit (.call [sz] (arrBase + Rt.Rc.Array.fnSize) [.v areg])
     let inB ← newLabel
@@ -1082,7 +1270,7 @@ def arrayPrimBody (arrBase : FunId) (f : FunId) (params : List VReg) (fc : Fir.R
     let (areg, _) ← paramRegRepBig f params fc ai
     let (ireg, irep) ← paramRegRepBig f params fc ii
     let (vreg, vrep) ← paramRegRepBig f params fc vi
-    let idx ← toRawWordParamBig ireg irep
+    let idx ← toRawIndexBig ireg irep
     let res ← freshReg
     match spec.kind with
     | .bytes =>
@@ -1127,8 +1315,8 @@ def arrayPrimBody (arrBase : FunId) (f : FunId) (params : List VReg) (fc : Fir.R
     let (areg, _) ← paramRegRepBig f params fc ai
     let (breg, brep) ← paramRegRepBig f params fc bi
     let (ereg, erep) ← paramRegRepBig f params fc ei
-    let bRaw ← toRawWordParamBig breg brep
-    let eRaw ← toRawWordParamBig ereg erep
+    let bRaw ← toRawIndexBig breg brep
+    let eRaw ← toRawIndexBig ereg erep
     let callee := arrBase + match spec.kind with
       | .boxed => Rt.Rc.Array.fnExtractBoxed
       | .limbs => Rt.Rc.Array.fnExtractLimbs
@@ -1142,9 +1330,9 @@ def arrayPrimBody (arrBase : FunId) (f : FunId) (params : List VReg) (fc : Fir.R
     let (dreg, _) ← paramRegRepBig f params fc di
     let (doreg, dorep) ← paramRegRepBig f params fc doi
     let (lreg, lrep) ← paramRegRepBig f params fc li
-    let soRaw ← toRawWordParamBig soreg sorep
-    let doRaw ← toRawWordParamBig doreg dorep
-    let lRaw ← toRawWordParamBig lreg lrep
+    let soRaw ← toRawIndexBig soreg sorep
+    let doRaw ← toRawIndexBig doreg dorep
+    let lRaw ← toRawIndexBig lreg lrep
     let callee := arrBase + match spec.kind with
       | .boxed => Rt.Rc.Array.fnCopySliceBoxed
       | .limbs => Rt.Rc.Array.fnCopySliceLimbs
@@ -1156,8 +1344,8 @@ def arrayPrimBody (arrBase : FunId) (f : FunId) (params : List VReg) (fc : Fir.R
     let (areg, _) ← paramRegRepBig f params fc ai
     let (ireg, irep) ← paramRegRepBig f params fc ii
     let (jreg, jrep) ← paramRegRepBig f params fc ji
-    let iRaw ← toRawWordParamBig ireg irep
-    let jRaw ← toRawWordParamBig jreg jrep
+    let iRaw ← toRawIndexBig ireg irep
+    let jRaw ← toRawIndexBig jreg jrep
     let callee := arrBase + match spec.kind with
       | .limbs => Rt.Rc.Array.fnSwapLimbs
       | _ => Rt.Rc.Array.fnSwapBoxed

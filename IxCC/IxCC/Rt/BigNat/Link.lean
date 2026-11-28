@@ -346,19 +346,26 @@ def buildCoreWrappers (lib : CompiledBigNatLib) (libBase wrapBase natPowId natGc
 /-! ## Bootstrap Compilation (`FrozenLibrary → CompiledBigNatLib`) -/
 
 private def lookupCtorTag (namedMap : Std.HashMap String String) (src : Src.Program)
-    (ctors : List Lam.CtorInfo) (name : String) (defaultTag : Nat) : Nat :=
-  match (namedMap[name]?.bind hexToAddr?).bind src.lookup with
-  | some cid =>
-    match Fir.CtorInfo.ofKey ctors (.src cid) with
-    | some ci => ci.tag
-    | none => defaultTag
-  | none => defaultTag
+    (ctors : List Lam.CtorInfo) (name : String) : Except String Nat := do
+  let some hex := namedMap[name]?
+    | throw s!"bignat link: constructor '{name}' missing from closure named map"
+  let some addr := hexToAddr? hex
+    | throw s!"bignat link: malformed hex address '{hex}' for constructor '{name}'"
+  let some cid := src.lookup addr
+    | throw s!"bignat link: constructor '{name}' ({hex}) missing from ingested Src.Program"
+  let some ci := Fir.CtorInfo.ofKey ctors (.src cid)
+    | throw s!"bignat link: constructor '{name}' missing from Fir constructor table"
+  pure ci.tag
 
 private def lookupCtorFieldRep (namedMap : Std.HashMap String String) (src : Src.Program)
-    (cert : Fir.Rep.Cert) (name : String) (fieldIdx : Nat) (defaultRep : Fir.Rep) : Fir.Rep :=
-  match (namedMap[name]?.bind hexToAddr?).bind src.lookup with
-  | some cid => cert.fieldRep (.src cid) fieldIdx
-  | none => defaultRep
+    (cert : Fir.Rep.Cert) (name : String) (fieldIdx : Nat) : Except String Fir.Rep := do
+  let some hex := namedMap[name]?
+    | throw s!"bignat link: constructor '{name}' missing from closure named map"
+  let some addr := hexToAddr? hex
+    | throw s!"bignat link: malformed hex address '{hex}' for constructor '{name}'"
+  let some cid := src.lookup addr
+    | throw s!"bignat link: constructor '{name}' ({hex}) missing from ingested Src.Program"
+  pure (cert.fieldRep (.src cid) fieldIdx)
 
 /-- Refine `.limbs` array primitive parameter representations in a `Fir.Rep.Cert` so
 `Array.set` / `Array.push` take raw `.word` `UInt64` limb values (zero `box64`/`unbox64`
@@ -420,15 +427,18 @@ def compileLibrary (lib : FrozenLibrary) : Except String CompiledBigNatLib := do
   (Rt.LowerRep.checkArrayAnalyses cert cfg).mapError (·.render)
   let lowered ← (Rt.lowerRep { names := rootNames } cert cfg).mapError (·.render)
   lowered.program.check
-  -- Resolve exact constructor tags & field reps from the compiled closure
-  let namedMap := (extractNamedMap lib.closureBytes).toOption.getD {}
-  let smallTag := lookupCtorTag namedMap ps.src fir.ctors "IxCC.BigNat.Entry.SlowNat.small" 0
-  let bigTag := lookupCtorTag namedMap ps.src fir.ctors "IxCC.BigNat.Entry.SlowNat.big" 1
-  let smallFieldRep := lookupCtorFieldRep namedMap ps.src cert "IxCC.BigNat.Entry.SlowNat.small" 0 .obj
-  let optNoneTag := lookupCtorTag namedMap ps.src fir.ctors "Option.none" 0
-  let optSomeTag := lookupCtorTag namedMap ps.src fir.ctors "Option.some" 1
-  let boolFalseTag := (fir.known.boolFalse.bind (Fir.CtorInfo.ofKey fir.ctors)).map (·.tag) |>.getD 0
-  let boolTrueTag := (fir.known.boolTrue.bind (Fir.CtorInfo.ofKey fir.ctors)).map (·.tag) |>.getD 1
+  -- Resolve exact constructor tags & field reps from the compiled closure (fail closed)
+  let namedMap ← (extractNamedMap lib.closureBytes).mapError fun e =>
+    s!"bignat link: failed to extract named map from BigNat closure: {e}"
+  let smallTag ← lookupCtorTag namedMap ps.src fir.ctors "IxCC.BigNat.Entry.SlowNat.small"
+  let bigTag ← lookupCtorTag namedMap ps.src fir.ctors "IxCC.BigNat.Entry.SlowNat.big"
+  let smallFieldRep ← lookupCtorFieldRep namedMap ps.src cert "IxCC.BigNat.Entry.SlowNat.small" 0
+  let optNoneTag ← lookupCtorTag namedMap ps.src fir.ctors "Option.none"
+  let optSomeTag ← lookupCtorTag namedMap ps.src fir.ctors "Option.some"
+  let some boolFalseTag := (fir.known.boolFalse.bind (Fir.CtorInfo.ofKey fir.ctors)).map (·.tag)
+    | throw "bignat link: Bool.false constructor tag missing from Fir constructor table"
+  let some boolTrueTag := (fir.known.boolTrue.bind (Fir.CtorInfo.ofKey fir.ctors)).map (·.tag)
+    | throw "bignat link: Bool.true constructor tag missing from Fir constructor table"
   -- Pair each `SlowPathOp` with its compiled `Lir.FunId` (exports preserve `rootNames` order)
   unless lowered.roots.length == lib.entryAddrs.length do
     throw s!"bignat link: root count mismatch ({lowered.roots.length} vs {lib.entryAddrs.length})"

@@ -2,6 +2,8 @@ import IxCC.BigNat.Entry
 import IxCC.BigNat.Bootstrap
 import IxCC.Rt.BigNat.Cell
 import IxCC.Rt.BigNat.Dispatch
+import IxCC.Rt.BigNat.LowerBig
+import IxCC.Fir.Rep
 import IxCC.Rt.Procs.Nat
 import IxCC.Rt.Rc.Array.Procs
 import IxCC.Rt.Readback.Array
@@ -582,12 +584,334 @@ def testLirDispatch (ro : MappedRodataBigs) (cnt : IO.Ref Nat) : IO Unit := do
       assertCheck (isCanonical rGcd && rGcd.val == Nat.gcd na nb) s!"bridge gcd exact ({lbl})" cnt
     | other => throw (IO.userError s!"FAIL SlowPathTest: bridge {lbl}: {renderOutcome other}")
 
+/-! ## Part 5: Audit Remediation Regression Tests (C-2, C-3, C-4, M-16b, L-10) -/
+
+private def addHeapRegion (mem : Memory) (regionBase : Word) (regionSize : Nat) : Memory :=
+  let endAddr := regionBase + UInt64.ofNat regionSize
+  let ctx := regionBase + UInt64.ofNat Rt.ctxOffset
+  let mem1 : Memory :=
+    { mem with
+      readable := fun a => mem.readable a || (regionBase ≤ a && a < endAddr)
+      writable := fun a => mem.writable a || (regionBase ≤ a && a < endAddr) }
+  let mem2 := mem1.write64 (ctx - 40) (regionBase + UInt64.ofNat Rt.ctxBlockBytes)
+  mem2.write64 (ctx - 32) endAddr
+
+/-- Write an immortal 1-scalar-word `box64` cell (`tag = 0, nobj = 0, rc = 0x80000000`,
+payload `v` at `+8`) at `addr` in `mem`. -/
+private def writeBox64Cell (mem : Memory) (addr v : Word) : Memory :=
+  let mem1 : Memory :=
+    { mem with
+      readable := fun a => mem.readable a || (addr ≤ a && a < addr + 16)
+      writable := fun a => mem.writable a || (addr ≤ a && a < addr + 16) }
+  let mem2 := mem1.write64 addr (Rt.immortalHeader 0 0)
+  mem2.write64 (addr + 8) v
+
+private def testAuditRegressions (cnt : IO.Ref Nat) : IO Unit := do
+  -- Build static .rodata BigNats for C-2 / C-3 / C-4 regression boundaries
+  let big63 : Nat := 2 ^ 63
+  let big64 : Nat := 2 ^ 64
+  let big64Plus1 : Nat := 2 ^ 64 + 1
+  let big64Plus5 : Nat := 2 ^ 64 + 5
+  let big64Plus63 : Nat := 2 ^ 64 + 2 ^ 63
+  let tbl0 := RodataTable.empty
+  let (tbl2, off64) := addBigNatLiteral tbl0 "reg_big64" big64
+  let (tbl3, off64p1) := addBigNatLiteral tbl2 "reg_big64p1" big64Plus1
+  let (tbl4, off64p5) := addBigNatLiteral tbl3 "reg_big64p5" big64Plus5
+  let (tbl, off64p63) := addBigNatLiteral tbl4 "reg_big64p63" big64Plus63
+  let roBase : Word := 0x400000
+  let w64 := roBase + UInt64.ofNat off64
+  let w64p1 := roBase + UInt64.ofNat off64p1
+  let w64p5 := roBase + UInt64.ofNat off64p5
+  let w64p63 := roBase + UInt64.ofNat off64p63
+  let boxAddr63 : Word := 0x600000
+  let boxAddr100 : Word := 0x600020
+  let boxAddr63p5 : Word := 0x600040
+  let regionBase : Word := 0x800000
+  let ctx : Word := regionBase + UInt64.ofNat Rt.ctxOffset
+  let baseMem :=
+    let m0 := mapRodata Memory.unmapped roBase tbl.bytes
+    let m1 := writeBox64Cell m0 boxAddr63 (UInt64.ofNat (2 ^ 63))
+    let m2 := writeBox64Cell m1 boxAddr100 100
+    let m3 := writeBox64Cell m2 boxAddr63p5 (UInt64.ofNat (2 ^ 63 + 5))
+    addHeapRegion m3 regionBase 0x20000
+
+  let rtTables : Rt.Lower.Tables :=
+    { ctors := []
+      known := default
+      bools := some (boolTrueWord, boolFalseWord)
+      natPow := harnessProcs.pow
+      natGcd := harnessProcs.gcd }
+
+  -- =========================================================================
+  -- C-2: Strict `cmpIsStrictWord64` (NO silent mod-2^64 Nat comparison truncation!)
+  -- =========================================================================
+  let fcTobjWord : Fir.Rep.FunCert :=
+    { params := [.tobj, .word], ret := .tobj
+      vars := (Src.NatMap.leaf.insert 0 .tobj).insert 1 .word |>.insert 2 .tobj }
+  let fcObjObj : Fir.Rep.FunCert :=
+    { params := [.obj, .obj], ret := .tobj
+      vars := (Src.NatMap.leaf.insert 0 .obj).insert 1 .obj |>.insert 2 .tobj }
+  let fcWordWord : Fir.Rep.FunCert :=
+    { params := [.word, .word], ret := .tobj
+      vars := (Src.NatMap.leaf.insert 0 .word).insert 1 .word |>.insert 2 .tobj }
+
+  assertCheck (!cmpIsStrictWord64 fcTobjWord (.var 0) (.var 1))
+    "C-2: cmpIsStrictWord64 rejects (.tobj, .word)" cnt
+  assertCheck (!cmpIsStrictWord64 fcObjObj (.var 0) (.var 1))
+    "C-2: cmpIsStrictWord64 rejects (.obj, .obj)" cnt
+  assertCheck (!cmpIsStrictWord64 fcTobjWord (.var 0) (.lit (.nat 0)))
+    "C-2: cmpIsStrictWord64 rejects (.tobj, .lit 0)" cnt
+  assertCheck (!cmpIsStrictWord64 fcWordWord (.var 0) (.lit (.nat (2 ^ 64))))
+    "C-2: cmpIsStrictWord64 rejects (.word, .lit 2^64)" cnt
+  assertCheck (cmpIsStrictWord64 fcWordWord (.var 0) (.var 1))
+    "C-2: cmpIsStrictWord64 accepts (.word, .word)" cnt
+  assertCheck (cmpIsStrictWord64 fcWordWord (.var 0) (.lit (.nat (2 ^ 63))))
+    "C-2: cmpIsStrictWord64 accepts (.word, .lit 2^63)" cnt
+
+  -- C-2 live LIR eval: (2^64 + 2^63) == 2^63 (.tobj vs .word) MUST dispatch slow beq (NOT true!)
+  let fnBeqTW ← IO.ofExcept <| lowerHarnessFunc "c2_beq_tw" [0, 1] 2 3
+    (primitiveRepBig 0 rtTables harnessProcs fcTobjWord {} {} 2 .natBeq [.var 0, .var 1])
+  let pBeqTW := mkHarnessProgram fnBeqTW
+  checkProgramWFAndNoOvf "c2_beq_tw" pBeqTW cnt
+  match Lir.eval pBeqTW 500 [w64p63, UInt64.ofNat (2 ^ 63)] baseMem ctx with
+  | .ok ([res], mem') =>
+    assertCheck (res == slowSentinel 7) "C-2: (2^64+2^63)==2^63 (.tobj,.word) dispatches slow beq" cnt
+    let some na := readbackBigNat mem' (mem'.read64 ctx)
+      | throw (IO.userError "FAIL SlowPathTest: C-2 beq_tw readback arg0")
+    let some nb := readbackBigNat mem' (mem'.read64 (ctx + 8))
+      | throw (IO.userError "FAIL SlowPathTest: C-2 beq_tw readback arg1")
+    assertCheck (na == big64Plus63 && nb == big63 && !Entry.beq (SlowNat.ofNat na) (SlowNat.ofNat nb))
+      s!"C-2: (2^64+2^63)==2^63 exact args ({na}, {nb}) -> false" cnt
+  | other => throw (IO.userError s!"FAIL SlowPathTest: C-2 beq_tw: {renderOutcome other}")
+
+  -- C-2 live LIR eval: (2^64 + 1) < 2^63 (.tobj vs .word) MUST dispatch slow blt (NOT true!)
+  let fnBltTW ← IO.ofExcept <| lowerHarnessFunc "c2_blt_tw" [0, 1] 2 3
+    (primitiveRepBig 0 rtTables harnessProcs fcTobjWord {} {} 2 .natBlt [.var 0, .var 1])
+  let pBltTW := mkHarnessProgram fnBltTW
+  checkProgramWFAndNoOvf "c2_blt_tw" pBltTW cnt
+  match Lir.eval pBltTW 500 [w64p1, UInt64.ofNat (2 ^ 63)] baseMem ctx with
+  | .ok ([res], mem') =>
+    assertCheck (res == slowSentinel 9) "C-2: (2^64+1)<2^63 (.tobj,.word) dispatches slow blt" cnt
+    let some na := readbackBigNat mem' (mem'.read64 ctx)
+      | throw (IO.userError "FAIL SlowPathTest: C-2 blt_tw readback arg0")
+    let some nb := readbackBigNat mem' (mem'.read64 (ctx + 8))
+      | throw (IO.userError "FAIL SlowPathTest: C-2 blt_tw readback arg1")
+    assertCheck (na == big64Plus1 && nb == big63 && !Entry.blt (SlowNat.ofNat na) (SlowNat.ofNat nb))
+      s!"C-2: (2^64+1)<2^63 exact args ({na}, {nb}) -> false" cnt
+  | other => throw (IO.userError s!"FAIL SlowPathTest: C-2 blt_tw: {renderOutcome other}")
+
+  -- C-2 live LIR eval: (2^64 + 2^63) == box64(2^63) (.obj vs .obj) normalizes box64 via objToNatVal
+  let fnBeqOO ← IO.ofExcept <| lowerHarnessFunc "c2_beq_oo" [0, 1] 2 3
+    (primitiveRepBig 0 rtTables harnessProcs fcObjObj {} {} 2 .natBeq [.var 0, .var 1])
+  let pBeqOO := mkHarnessProgram fnBeqOO
+  checkProgramWFAndNoOvf "c2_beq_oo" pBeqOO cnt
+  match Lir.eval pBeqOO 500 [w64p63, boxAddr63] baseMem ctx with
+  | .ok ([res], mem') =>
+    assertCheck (res == slowSentinel 7) "C-2: (2^64+2^63)==box64(2^63) (.obj,.obj) dispatches slow beq" cnt
+    let some na := readbackBigNat mem' (mem'.read64 ctx)
+      | throw (IO.userError "FAIL SlowPathTest: C-2 beq_oo readback arg0")
+    let some nb := readbackBigNat mem' (mem'.read64 (ctx + 8))
+      | throw (IO.userError "FAIL SlowPathTest: C-2 beq_oo readback arg1")
+    assertCheck (na == big64Plus63 && nb == big63 && !Entry.beq (SlowNat.ofNat na) (SlowNat.ofNat nb))
+      s!"C-2: (.obj,.obj) exact args ({na}, {nb}) -> false" cnt
+  | other => throw (IO.userError s!"FAIL SlowPathTest: C-2 beq_oo: {renderOutcome other}")
+
+  -- C-2 positive control: strict (.word, .word) still uses fast direct select (canary == 0)
+  let fnBeqWW ← IO.ofExcept <| lowerHarnessFunc "c2_beq_ww" [0, 1] 2 3
+    (primitiveRepBig 0 rtTables harnessProcs fcWordWord {} {} 2 .natBeq [.var 0, .var 1])
+  let pBeqWW := mkHarnessProgram fnBeqWW
+  checkProgramWFAndNoOvf "c2_beq_ww" pBeqWW cnt
+  evalBinOp "C-2 strict (.word,.word) 2^63==2^63 fast" pBeqWW 7 baseMem ctx
+    (UInt64.ofNat (2 ^ 63)) (UInt64.ofNat (2 ^ 63)) false boolTrueWord cnt
+
+  -- =========================================================================
+  -- C-3: `toRawIndexBig` BigNat index/slice/capacity saturation + L-10 getBang kind assert
+  -- =========================================================================
+  let arrBase : Lir.FunId := 1
+  let arrFuncs := Rt.Rc.Array.extendedArrayRuntimeFuncs arrBase 0 1
+  let mkArrProg (fn : Lir.Func) : Lir.Program :=
+    { funcs := (#[fn] ++ arrFuncs.toArray), main := 0 }
+  let mkDummyCfgFun (nparams : Nat) : Cfg.Fun :=
+    { key := .const 0 []
+      sig := default
+      vars := nparams
+      blocks := [{ params := (List.range nparams).map fun i => (i, Own.PSig.plain .obj)
+                   term := .trap }] }
+  -- Allocate a 3-element boxed array #[10, 20, 30] and 3-byte ByteArray #[10, 20, 30]
+  let arrRtProg : Lir.Program :=
+    { funcs := (Rt.Rc.Array.extendedArrayRuntimeFuncs 0 0 1).toArray, main := 0 }
+  let evalRt (fid : Lir.FunId) (args : List Word) (m : Memory) : IO (Word × Memory) := do
+    match Lir.eval { arrRtProg with main := fid } 5000 args m ctx with
+    | .ok ([r], m') => pure (r, m')
+    | other => throw (IO.userError s!"FAIL SlowPathTest: evalRt({fid}): {renderOutcome other}")
+  let (a0, mA) ← evalRt Rt.Rc.Array.fnEmptyCapBoxed [4] baseMem
+  let (a1, mA) ← evalRt Rt.Rc.Array.fnPushBoxed [a0, tagNat 10] mA
+  let (a2, mA) ← evalRt Rt.Rc.Array.fnPushBoxed [a1, tagNat 20] mA
+  let (arrPtr, mArr) ← evalRt Rt.Rc.Array.fnPushBoxed [a2, tagNat 30] mA
+
+  let (b0, mB) ← evalRt Rt.Rc.Array.fnByteEmptyCap [4] mArr
+  let (b1, mB) ← evalRt Rt.Rc.Array.fnBytePush [b0, 10] mB
+  let (b2, mB) ← evalRt Rt.Rc.Array.fnBytePush [b1, 20] mB
+  let (baPtr, mArr) ← evalRt Rt.Rc.Array.fnBytePush [b2, 30] mB
+
+  -- C-3a: arr.get (2^64) MUST trap (OOB), NOT return arr[0] = 10!
+  let fcGet : Fir.Rep.FunCert := { params := [.obj, .tobj], ret := .tobj }
+  let fnGet ← IO.ofExcept <| (arrayPrimFuncBig arrBase 0 (mkDummyCfgFun 2) fcGet
+    { op := .get, kind := .boxed, argIdx := [0, 1] } .internal).mapError (·.render)
+  let pGet := mkArrProg fnGet
+  checkProgramWFAndNoOvf "c3_arr_get" pGet cnt
+  match Lir.eval pGet 5000 [arrPtr, w64] mArr ctx with
+  | .trap => assertCheck true "C-3: arr.get (2^64) traps OOB" cnt
+  | other => throw (IO.userError s!"FAIL SlowPathTest: C-3 arr.get (2^64) expected trap, got {renderOutcome other}")
+
+  -- C-3b: arr.set (2^64 + 1) 999 MUST be a no-op (NOT overwrite arr[1] = 20)!
+  let fcSet : Fir.Rep.FunCert := { params := [.obj, .tobj, .tobj], ret := .obj }
+  let fnSet ← IO.ofExcept <| (arrayPrimFuncBig arrBase 0 (mkDummyCfgFun 3) fcSet
+    { op := .set, kind := .boxed, argIdx := [0, 1, 2] } .internal).mapError (·.render)
+  let pSet := mkArrProg fnSet
+  checkProgramWFAndNoOvf "c3_arr_set" pSet cnt
+  match Lir.eval pSet 5000 [arrPtr, w64p1, tagNat 999] mArr ctx with
+  | .ok ([arrAfter], mAfter) =>
+    let (v1, _) ← evalRt Rt.Rc.Array.fnGetWord [arrAfter, 1] mAfter
+    assertCheck (v1 == tagNat 20)
+      s!"C-3: arr.set (2^64+1) preserved arr[1]==20 (got {v1 >>> 1})" cnt
+  | other => throw (IO.userError s!"FAIL SlowPathTest: C-3 arr.set (2^64+1): {renderOutcome other}")
+
+  -- C-3c: arr.extract 0 (2^64) MUST return full 3-element array (NOT empty #[])!
+  let fcExt : Fir.Rep.FunCert := { params := [.obj, .tobj, .tobj], ret := .obj }
+  let fnExt ← IO.ofExcept <| (arrayPrimFuncBig arrBase 0 (mkDummyCfgFun 3) fcExt
+    { op := .extract, kind := .boxed, argIdx := [0, 1, 2] } .internal).mapError (·.render)
+  let pExt := mkArrProg fnExt
+  checkProgramWFAndNoOvf "c3_arr_extract" pExt cnt
+  match Lir.eval pExt 5000 [arrPtr, tagNat 0, w64] mArr ctx with
+  | .ok ([extArr], mExt) =>
+    let (sz, _) ← evalRt Rt.Rc.Array.fnSize [extArr] mExt
+    let (v0, _) ← evalRt Rt.Rc.Array.fnGetWord [extArr, 0] mExt
+    let (v2, _) ← evalRt Rt.Rc.Array.fnGetWord [extArr, 2] mExt
+    assertCheck (sz == 3 && v0 == tagNat 10 && v2 == tagNat 30)
+      s!"C-3: arr.extract 0 (2^64) returned full 3-elem array (sz={sz})" cnt
+  | other => throw (IO.userError s!"FAIL SlowPathTest: C-3 arr.extract 0 (2^64): {renderOutcome other}")
+
+  -- C-3d: arr.emptyCap (2^64) MUST fail .heap (NOT allocate 0-cap array)!
+  let fcCap : Fir.Rep.FunCert := { params := [.tobj], ret := .obj }
+  let fnCap ← IO.ofExcept <| (arrayPrimFuncBig arrBase 0 (mkDummyCfgFun 1) fcCap
+    { op := .emptyCap, kind := .boxed, argIdx := [0] } .internal).mapError (·.render)
+  let pCap := mkArrProg fnCap
+  checkProgramWFAndNoOvf "c3_arr_emptyCap" pCap cnt
+  match Lir.eval pCap 5000 [w64] mArr ctx with
+  | .resource .heap => assertCheck true "C-3: arr.emptyCap (2^64) fails .heap" cnt
+  | other => throw (IO.userError s!"FAIL SlowPathTest: C-3 emptyCap (2^64) expected .resource .heap, got {renderOutcome other}")
+
+  -- C-3e: ba.getBang (2^64) MUST return 0 (OOB default), NOT ba[0] = 10!
+  let fnGB ← IO.ofExcept <| (arrayPrimFuncBig arrBase 0 (mkDummyCfgFun 2) fcGet
+    { op := .getBang, kind := .bytes, argIdx := [0, 1] } .internal).mapError (·.render)
+  let pGB := mkArrProg fnGB
+  checkProgramWFAndNoOvf "c3_ba_getBang" pGB cnt
+  match Lir.eval pGB 5000 [baPtr, w64] mArr ctx with
+  | .ok ([res], _) =>
+    assertCheck (res == tagNat 0) s!"C-3: ba.getBang (2^64) returned 0 (got {res >>> 1})" cnt
+  | other => throw (IO.userError s!"FAIL SlowPathTest: C-3 ba.getBang (2^64): {renderOutcome other}")
+
+  -- L-10: getBang with non-.bytes kind MUST be rejected by both arrayPrimFuncBig & LowerRep.arrayPrimFunc
+  assertCheck ((arrayPrimFuncBig arrBase 0 (mkDummyCfgFun 2) fcGet
+    { op := .getBang, kind := .boxed, argIdx := [0, 1] } .internal).isOk == false)
+    "L-10: arrayPrimFuncBig rejects .getBang on .boxed" cnt
+  assertCheck ((Rt.LowerRep.arrayPrimFunc arrBase 0 (mkDummyCfgFun 2) fcGet
+    { op := .getBang, kind := .limbs, argIdx := [0, 1] } .internal).isOk == false)
+    "L-10: LowerRep.arrayPrimFunc rejects .getBang on .limbs" cnt
+
+  -- =========================================================================
+  -- C-4: Narrow-word (.w8) .word/.obj conversions & .word .w64 (.convert .w8) into .obj
+  -- =========================================================================
+  -- C-4a: UInt8.add on (.word 200, .obj box64(100)) -> tagNat 44 (no segfault / OOB read!)
+  let fcWordObj : Fir.Rep.FunCert :=
+    { params := [.word, .obj], ret := .tobj
+      vars := (Src.NatMap.leaf.insert 0 .word).insert 1 .obj |>.insert 2 .tobj }
+  let fnU8AddBig ← IO.ofExcept <| lowerHarnessFunc "c4_u8_add_big" [0, 1] 2 3
+    (primitiveRepBig 0 rtTables harnessProcs fcWordObj {} {} 2 (.word .w8 .add) [.var 0, .var 1])
+  let pU8AddBig := mkHarnessProgram fnU8AddBig
+  checkProgramWFAndNoOvf "c4_u8_add_big" pU8AddBig cnt
+  match Lir.eval pU8AddBig 500 [200, boxAddr100] baseMem ctx with
+  | .ok ([res], _) =>
+    assertCheck (res == tagNat 44) s!"C-4: LowerBig UInt8.add(.word 200, .obj 100) == 44 (got {res})" cnt
+  | other => throw (IO.userError s!"FAIL SlowPathTest: C-4 LowerBig u8_add: {renderOutcome other}")
+
+  let fnU8AddRep ← IO.ofExcept <| lowerHarnessFunc "c4_u8_add_rep" [0, 1] 2 3 do
+    let _ ← Rt.LowerRep.primitiveRep 0 rtTables fcWordObj 2 (.word .w8 .add) [.var 0, .var 1]
+    pure ()
+  match Lir.eval { funcs := #[fnU8AddRep], main := 0 } 500 [200, boxAddr100] baseMem ctx with
+  | .ok ([res], _) =>
+    assertCheck (res == tagNat 44) s!"C-4: LowerRep UInt8.add(.word 200, .obj 100) == 44 (got {res})" cnt
+  | other => throw (IO.userError s!"FAIL SlowPathTest: C-4 LowerRep u8_add: {renderOutcome other}")
+
+  -- C-4b: UInt8.ofNat on .word (2^63+5), .obj box64(2^63+5), and .tobj BigNat(2^64+5) -> tagNat 5
+  let fcOneW : Fir.Rep.FunCert :=
+    { params := [.word], ret := .tobj, vars := (Src.NatMap.leaf.insert 0 .word).insert 1 .tobj }
+  let fcOneO : Fir.Rep.FunCert :=
+    { params := [.obj], ret := .tobj, vars := (Src.NatMap.leaf.insert 0 .obj).insert 1 .tobj }
+  let fcOneT : Fir.Rep.FunCert :=
+    { params := [.tobj], ret := .tobj, vars := (Src.NatMap.leaf.insert 0 .tobj).insert 1 .tobj }
+  for (lbl, fc, arg) in [ ("word", fcOneW, UInt64.ofNat (2 ^ 63 + 5))
+                        , ("obj-box64", fcOneO, boxAddr63p5)
+                        , ("tobj-bignat", fcOneT, w64p5) ] do
+    let fnOfN ← IO.ofExcept <| lowerHarnessFunc s!"c4_u8_ofNat_{lbl}" [0] 1 2
+      (primitiveRepBig 0 rtTables harnessProcs fc {} {} 1 (.word .w8 .ofNat) [.var 0])
+    let pOfN := mkHarnessProgram fnOfN
+    checkProgramWFAndNoOvf s!"c4_u8_ofNat_{lbl}" pOfN cnt
+    match Lir.eval pOfN 500 [arg] baseMem ctx with
+    | .ok ([res], _) =>
+      assertCheck (res == tagNat 5) s!"C-4: UInt8.ofNat ({lbl}) == 5 (got {res})" cnt
+    | other => throw (IO.userError s!"FAIL SlowPathTest: C-4 u8_ofNat ({lbl}): {renderOutcome other}")
+
+  -- C-4c: UInt64.toUInt8 (.word .w64 (.convert .w8)) into rx == .obj MUST emit odd retag, NEVER box64!
+  let fcConvObj : Fir.Rep.FunCert :=
+    { params := [.word], ret := .obj, vars := (Src.NatMap.leaf.insert 0 .word).insert 1 .obj }
+  let fnConvBig ← IO.ofExcept <| lowerHarnessFunc "c4_conv_big" [0] 1 2
+    (primitiveRepBig 0 rtTables harnessProcs fcConvObj {} {} 1 (.word .w64 (.convert .w8)) [.var 0])
+  let pConvBig := mkHarnessProgram fnConvBig
+  checkProgramWFAndNoOvf "c4_conv_big" pConvBig cnt
+  let bumpBefore := baseMem.read64 (ctx - 40)
+  match Lir.eval pConvBig 500 [0x123456789ABCDEF5] baseMem ctx with
+  | .ok ([res], mem') =>
+    assertCheck (res == tagNat 0xF5 && (res &&& 1) == 1 && mem'.read64 (ctx - 40) == bumpBefore)
+      s!"C-4: LowerBig UInt64.toUInt8 -> .obj emits odd tagged immediate 0xF5 (zero alloc, got {res})" cnt
+  | other => throw (IO.userError s!"FAIL SlowPathTest: C-4 LowerBig conv: {renderOutcome other}")
+
+  let fnConvRep ← IO.ofExcept <| lowerHarnessFunc "c4_conv_rep" [0] 1 2 do
+    let _ ← Rt.LowerRep.primitiveRep 0 rtTables fcConvObj 1 (.word .w64 (.convert .w8)) [.var 0]
+    pure ()
+  match Lir.eval { funcs := #[fnConvRep], main := 0 } 500 [0x123456789ABCDEF5] baseMem ctx with
+  | .ok ([res], mem') =>
+    assertCheck (res == tagNat 0xF5 && (res &&& 1) == 1 && mem'.read64 (ctx - 40) == bumpBefore)
+      s!"C-4: LowerRep UInt64.toUInt8 -> .obj emits odd tagged immediate 0xF5 (zero alloc, got {res})" cnt
+  | other => throw (IO.userError s!"FAIL SlowPathTest: C-4 LowerRep conv: {renderOutcome other}")
+
+  -- =========================================================================
+  -- M-16b: `Fir.Rep.inferWithArrays` must NOT assign `.word` to Nat literal >= 2^64
+  -- =========================================================================
+  let bigLitFun : Fir.Fun :=
+    { key := .const 0 []
+      params := []
+      body := .ret (.lit (.nat (2 ^ 64))) }
+  let bigLitFir : Fir.Program :=
+    { funs := Src.NatMap.ofDense [bigLitFun]
+      size := 1
+      exports := [0]
+      ctors := []
+      known := default }
+  let bigLitCert := Fir.Rep.inferWithArrays bigLitFir {}
+  assertCheck ((bigLitCert.funCert 0).ret != .word)
+    s!"M-16b: Nat literal 2^64 not assigned .word (got {reprStr (bigLitCert.funCert 0).ret})" cnt
+  assertCheck (Fir.Rep.checkWithArrays bigLitFir bigLitCert)
+    "M-16b: Fir.Rep.checkWithArrays accepts Nat literal 2^64 cert" cnt
+
 def run : IO Nat := do
   let cnt ← IO.mkRef 0
   testEntryMatrix cnt
   testBootstrap cnt
   let ro ← buildRodataBigs cnt
   testLirDispatch ro cnt
+  testAuditRegressions cnt
   cnt.get
 
 end IxCCTests.BigNat.SlowPathTest

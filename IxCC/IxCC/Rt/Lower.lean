@@ -1580,26 +1580,35 @@ def emitIncVal (rc : RcCtx) (fc : Fir.Rep.FunCert) (y : VReg) : M Unit := do
 def countVarInArgs (y : VReg) (as : List Fir.Arg) : Nat :=
   as.foldl (fun n a => if a == .var y then n + 1 else n) 0
 
-/-- Emit `rt_arr_inc_val` for each variable argument in `as` at a mutating/escaping position
-that is still live after the operation or duplicated in `as`. -/
-def emitIncCallArgs (rc : RcCtx) (fc : Fir.Rep.FunCert) (liveAfter : Src.NatSet)
-    (as : List Fir.Arg) (mutFlags : List Bool) : M Unit := do
-  if !rc.enabled then pure ()
+/-- Compute the exact multiset of variable arguments requiring `rt_arr_inc_val` before a call
+or constructor allocation: for each distinct non-`.word` variable `y` appearing `k ≥ 1` times in
+mutating/escaping positions (`mutFlags[i] = true`), emit `k` increments if `y` is still live
+after the operation or also appears in a non-mutating argument, else `k - 1` increments. -/
+def callIncVars (rc : RcCtx) (fc : Fir.Rep.FunCert) (liveAfter : Src.NatSet)
+    (as : List Fir.Arg) (mutFlags : List Bool) : List VReg :=
+  if !rc.enabled then []
   else
-    let rec go : List Fir.Arg → List Bool → List VReg → M Unit
-      | [], _, _ => pure ()
-      | a :: rest, fs, inced => do
-        let m := fs.headD true
-        let inced' ← match a with
-          | .var y =>
-            if m && fc.varRep y != .word && !inced.contains y &&
-                (liveAfter.contains y || countVarInArgs y as > 1) then do
-              emit (.call [] (rc.arrBase + Rt.Rc.Array.fnIncVal) [.v y])
-              pure (y :: inced)
-            else pure inced
-          | _ => pure inced
-        go rest fs.tail inced'
-    go as mutFlags []
+    let pairs := as.zipIdx.map fun (a, i) => (a, mutFlags.getD i true)
+    let rec collect (seen : List VReg) : List Fir.Arg → List VReg
+      | [] => []
+      | .var y :: rest =>
+        if fc.varRep y == .word || seen.contains y then collect seen rest
+        else
+          let kMut := pairs.foldl (fun n (a, m) => if a == .var y && m then n + 1 else n) 0
+          let kNonMut := pairs.foldl (fun n (a, m) => if a == .var y && !m then n + 1 else n) 0
+          let needed :=
+            if kMut == 0 then 0
+            else if liveAfter.contains y || kNonMut > 0 then kMut
+            else kMut - 1
+          List.replicate needed y ++ collect (y :: seen) rest
+      | _ :: rest => collect seen rest
+    collect [] as
+
+/-- Emit `rt_arr_inc_val` for each variable argument in `as` according to `callIncVars`. -/
+def emitIncCallArgs (rc : RcCtx) (fc : Fir.Rep.FunCert) (liveAfter : Src.NatSet)
+    (as : List Fir.Arg) (mutFlags : List Bool) : M Unit :=
+  (callIncVars rc fc liveAfter as mutFlags).forM fun y =>
+    emit (.call [] (rc.arrBase + Rt.Rc.Array.fnIncVal) [.v y])
 
 /-- Whether `y` has any remaining use in `rest` other than a projection of a different field `j ≠ i`
 of the same constructor `c`. -/
@@ -1768,6 +1777,37 @@ def cmpIsRaw64 (fc : Fir.Rep.FunCert) (a b : Fir.Arg) : Bool :=
     | .lit (.nat n) => decide (natLimit ≤ n ∧ n < 2 ^ 64)
     | _ => false)
 
+/-- Convert operand `a` to an odd tagged immediate `2v + 1` expected by narrow `Lower.word`
+(`w ≠ .w64`), respecting `fc.varRep y` (`.word` → `retag`, `.obj` → `unbox64` + `retag`,
+`.tobj` → as-is). -/
+def operandNarrowRep (f : FunId) (fc : Fir.Rep.FunCert) (a : Fir.Arg) : M (Option Lir.Arg) :=
+  match a with
+  | .var y =>
+    match fc.varRep y with
+    | .word => do pure (some (← temp (retag (.v y))))
+    | .obj => do
+      let u ← freshReg
+      unbox64 u (.v y)
+      pure (some (← temp (retag (.v u))))
+    | .tobj | .erased => pure (some (.v y))
+  | _ => do pure (← Lower.operand f a)
+
+def operandsNarrowRep (f : FunId) (fc : Fir.Rep.FunCert) : List Fir.Arg → M (Option (List Lir.Arg))
+  | [] => pure (some [])
+  | a :: as => do
+    match ← operandNarrowRep f fc a with
+    | none => pure none
+    | some la =>
+      match ← operandsNarrowRep f fc as with
+      | none => pure none
+      | some las => pure (some (la :: las))
+
+def withOperandsNarrowRep (f : FunId) (fc : Fir.Rep.FunCert) (as : List Fir.Arg)
+    (k : List Lir.Arg → M Unit) : M Bool := do
+  match ← operandsNarrowRep f fc as with
+  | some las => k las; pure true
+  | none => close (.fail .natOverflow); pure false
+
 /-- Lower a primitive in Stage W2 (`Rt.lowerRep`). -/
 def primitiveRep (f : FunId) (T : Tables) (fc : Fir.Rep.FunCert) (x : VReg)
     (op : Lam.Prim) (as : List Fir.Arg) : M Bool := do
@@ -1785,14 +1825,13 @@ def primitiveRep (f : FunId) (T : Tables) (fc : Fir.Rep.FunCert) (x : VReg)
           | [a] => finishRaw64 x rx a; pure true
           | _ => throw (.prim f (.word .w64 wo))
         else
-          -- Narrowing `UInt64.toUInt8/16/32`: mask raw 64-bit value, retag if `.tobj`, NEVER overflows!
+          -- Narrowing `UInt64.toUInt8/16/32`: mask raw 64-bit value, retag for `.tobj`/`.obj`, NEVER box64!
           match las with
           | [a] =>
             let m ← bin .and a (.imm (UInt64.ofNat (w'.size - 1)))
             match rx with
             | .word => assign x (.arg m)
-            | .tobj => assign x (retag m)
-            | .obj => box64 x m
+            | .tobj | .obj => assign x (retag m)
             | .erased => assign x (.arg m)
             pure true
           | _ => throw (.prim f (.word .w64 wo))
@@ -1812,18 +1851,13 @@ def primitiveRep (f : FunId) (T : Tables) (fc : Fir.Rep.FunCert) (x : VReg)
     | some _ => throw (.prim f (.word w (.convert .w64)))
   | .word w wo =>
     if rx == .word then
-      -- Narrow word op producing a `.word` register: compute tagged then untag (or raw).
-      withOperands f as fun las => do
+      -- Narrow word op producing a `.word` register: compute tagged then untag.
+      withOperandsNarrowRep f fc as fun las => do
         let tmp ← freshReg
         Lower.word f tmp w wo las
         assign x (.bin .shr .w64 (.v tmp) (.imm 1))
-    else if rx == .obj then
-      withOperands f as fun las => do
-        let tmp ← freshReg
-        Lower.word f tmp w wo las
-        assign x (.arg (.v tmp))
     else
-      withOperands f as (Lower.word f x w wo)
+      withOperandsNarrowRep f fc as (Lower.word f x w wo)
   | op =>
     match compareOf op, as with
     | some cond, [a, b] =>
@@ -1924,7 +1958,8 @@ def projRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert
           box64 x (.v tmp)
         else
           assign x (.load .w64 .zero (mem y (fieldOffset i)))
-          if rc.enabled && rx != .word && rc.tainted.contains x && liveAfter.contains y &&
+          if rc.enabled && rx != .word && (rc.tainted.contains x || rc.tainted.contains y) &&
+              liveAfter.contains y &&
               (liveTerm.contains y || hasConflictProjUse y c i rest) then
             emit (.call [] (rc.arrBase + Rt.Rc.Array.fnIncVal) [.v x])
       else throw (.form f s!"field {i} of a constructor with {info.arity}")
@@ -1939,7 +1974,8 @@ def instrRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCer
   | .bind x (.fir (.arg a)) => do
     match a with
     | .var y =>
-      if rc.enabled && fc.varRep y != .word && liveAfter.contains y && rc.tainted.contains x then
+      if rc.enabled && fc.varRep y != .word && liveAfter.contains y &&
+          (rc.tainted.contains x || rc.tainted.contains y) then
         emit (.call [] (rc.arrBase + Rt.Rc.Array.fnIncVal) [.v y])
     | _ => pure ()
     withOperandsAtReps f fc [a] [fc.varRep x] (fun
@@ -2037,25 +2073,35 @@ def pureOperandsAtReps (f : FunId) (fc : Fir.Rep.FunCert)
       | some none => pure (some none)
       | some (some las) => pure (some (some (la :: las)))
 
-/-- Edge arguments requiring `rt_arr_inc_val` because they alias live-through variables or
-duplicate a tainted block parameter on edge `e`. -/
+/-- Exact multiset of edge arguments requiring `rt_arr_inc_val`: for each distinct non-`.word`
+variable `y` appearing `k ≥ 1` times in tainted target-parameter positions, emit `k` increments
+if `y` is also live-through at `e.target` or passed to an untainted parameter, else `k - 1`
+increments; if `k = 0` but `y` is live-through, tainted, and passed to an untainted parameter,
+emit `1` increment so the live-through mutation cannot corrupt the untainted alias. -/
 def edgeIncVars (fc : Fir.Rep.FunCert) (rc : RcCtx) (e : Cfg.Edge) : List VReg :=
   if !rc.enabled then []
   else
     let liveThru := rc.liveIn.getD e.target .leaf
     let tParams := rc.blockParams.getD e.target []
-    let rec go : List Fir.Arg → List VReg → List VReg → List VReg
-      | [], _, acc => acc
-      | a :: rest, ps, acc =>
-        let pTainted := match ps with | p :: _ => rc.tainted.contains p | [] => false
-        let acc' := match a with
-          | .var y =>
-            if pTainted && fc.varRep y != .word && !acc.contains y &&
-                (liveThru.contains y || countVarInArgs y e.args > 1) then y :: acc
-            else acc
-          | _ => acc
-        go rest ps.tail acc'
-    (go e.args tParams []).reverse
+    let pairs := e.args.zipIdx.map fun (a, i) =>
+      let pTainted := match tParams[i]? with | some p => rc.tainted.contains p | none => false
+      (a, pTainted)
+    let rec collect (seen : List VReg) : List Fir.Arg → List VReg
+      | [] => []
+      | .var y :: rest =>
+        if fc.varRep y == .word || seen.contains y then collect seen rest
+        else
+          let kMut := pairs.foldl (fun n (a, m) => if a == .var y && m then n + 1 else n) 0
+          let kNonMut := pairs.foldl (fun n (a, m) => if a == .var y && !m then n + 1 else n) 0
+          let needed :=
+            if kMut > 0 then
+              if liveThru.contains y || kNonMut > 0 then kMut else kMut - 1
+            else if liveThru.contains y && rc.tainted.contains y && kNonMut > 0 then
+              1
+            else 0
+          List.replicate needed y ++ collect (y :: seen) rest
+      | _ :: rest => collect seen rest
+    collect [] e.args
 
 /-- Lower a Cfg edge under Stage W2 + DR3/DR4 representations, emitting a trampoline block only
 if an edge argument requires `box64`, `unbox64`, string materialization, or alias `fnIncVal`. -/
@@ -2486,6 +2532,8 @@ def arrayPrimFunc (arrBase : FunId) (f : FunId) (fd : Cfg.Fun) (fc : Fir.Rep.Fun
         else
           close (.ret (.v res))
     | .getBang, [ai, ii] =>
+      unless spec.kind == .bytes do
+        throw (.form f "array prim getBang is only supported for ByteArray (.bytes)")
       let (areg, _) ← paramRegRep f params fc ai
       let (ireg, irep) ← paramRegRep f params fc ii
       let idx ← toRawWordParam ireg irep

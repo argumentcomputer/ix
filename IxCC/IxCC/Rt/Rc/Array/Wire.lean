@@ -29,17 +29,16 @@ open IxCC.Rt (bumpOff limitOff immortalHeader ctor0Word)
 open IxCC.Rt.Rc.Procs (v i to cellAddr ctx)
 open IxCC.X86.ELFRodata (encodeStaticString encodeStaticStringK)
 
-/-! ## Additional function indices in the extended array runtime table (`27..34`) -/
+/-! ## Additional function indices in the extended array runtime table (`28..35`) -/
 
-def fnSwapBoxed : FunId := 27
-def fnSwapLimbs : FunId := 28
-def fnArrOfListBoxed : FunId := 29
-def fnArrToListBoxed : FunId := 30
-def fnArrOfListLimbs : FunId := 31
-def fnArrToListLimbs : FunId := 32
-def fnByteArrOfArr : FunId := 33
-def fnByteArrToArr : FunId := 34
-def fnIncVal : FunId := 35
+def fnSwapBoxed : FunId := 28
+def fnSwapLimbs : FunId := 29
+def fnArrOfListBoxed : FunId := 30
+def fnArrToListBoxed : FunId := 31
+def fnArrOfListLimbs : FunId := 32
+def fnArrToListLimbs : FunId := 33
+def fnByteArrOfArr : FunId := 34
+def fnByteArrToArr : FunId := 35
 
 /-- Total count of functions in the extended native array runtime table (`0..35`). -/
 def extendedArrayRuntimeCount : Nat := 36
@@ -83,10 +82,10 @@ def arrSwapBoxed : Func :=
       -- 6: copy loop k = v8 < v3
       { params := [8]
         term := .br .ult .w64 (v 8) (v 3) (to 7) (to 8) },
-      -- 7: copy v0[k] -> v7[k] with fnInc
+      -- 7: copy v0[k] -> v7[k] with fnIncVal
       { body := #[
           .assign 9 (.load .w64 .zero (wordElemAddr 0 8)),
-          .call [] fnInc [v 9],
+          .call [] fnIncVal [v 9],
           .store .w64 (wordElemAddr 7 8) (v 9),
           .assign 10 (.bin .add .w64 (v 8) (i 1))]
         term := .jump (to 6 [v 10]) },
@@ -176,10 +175,10 @@ def arrOfListBoxed : Func where
     -- 4: pass 2 — fill arr[k] from list (cur = v6, k = v7)
     { params := [6, 7]
       term := .br .ult .w64 (v 7) (v 2) (to 5) (to 6) },
-    -- 5: elem = [cur + 8]; fnInc(elem); arr[k] = elem; cur = [cur + 16]; k++
+    -- 5: elem = [cur + 8]; fnIncVal(elem); arr[k] = elem; cur = [cur + 16]; k++
     { body := #[
         .assign 8 (.load .w64 .zero (cellAddr 6 8)),
-        .call [] fnInc [v 8],
+        .call [] fnIncVal [v 8],
         .store .w64 (wordElemAddr 5 7) (v 8),
         .assign 9 (.load .w64 .zero (cellAddr 6 16)),
         .assign 10 (.bin .add .w64 (v 7) (i 1))]
@@ -207,7 +206,7 @@ def arrToListBoxed (nilTag consTag : Nat) : Func :=
       { body := #[
           .assign 5 (.bin .sub .w64 (v 3) (i 1)),
           .assign 6 (.load .w64 .zero (wordElemAddr 0 5)),
-          .call [] fnInc [v 6],
+          .call [] fnIncVal [v 6],
           .assign 7 (.load .w64 .zero (ctx bumpOff)),
           .assign 8 (.load .w64 .zero (ctx limitOff))]
         term := .brOvf .addC 9 (v 7) (i 24) (to 3) (to 6) },
@@ -388,46 +387,6 @@ def byteArrToArr : Func where
     -- 3: return a
     { term := .ret [v 2] } ]
 
-/-- Alias-safe value increment `(x)`:
-* Immediate (odd): no-op.
-* Dynamic cell (`rc ≥ 0`, e.g. `Array` / `ByteArray` / `LimbArray`): `rc := rc + 1`.
-* Static `.rodata` (`rc < 0`, `scan = 0` or `0xFF`): no-op (zero writes to `.rodata`).
-* Immortal constructor (`rc < 0`, `1 ≤ scan ≤ 254`): recursively increments its `scan`
-  object fields so dynamic arrays stored inside shared immortal constructors safely COW. -/
-def arrIncValue : Func where
-  name := "rt_arr_inc_val"
-  params := [0]
-  results := 0
-  blocks := #[
-    -- 0: immediate check
-    { term := .br .tnz .w64 (v 0) (i 1) (to 6) (to 1) },
-    -- 1: load rc = [v0 + 4]; dynamic (rc >= 0) vs immortal/static (rc < 0)
-    { body := #[.assign 1 (.load .w32 .zero (cellAddr 0 4))]
-      term := .br .slt .w32 (v 1) (i 0) (to 3) (to 2) },
-    -- 2: dynamic cell: increment rc in place
-    { body := #[
-        .assign 2 (.bin .add .w32 (v 1) (i 1)),
-        .store .w32 (cellAddr 0 4) (v 2)]
-      term := .ret [] },
-    -- 3: immortal/static cell: check scan == 0 (ByteArray, LimbArray, scalar ctor)
-    { body := #[.assign 3 (.load .w8 .zero (cellAddr 0 0))]
-      term := .br .eq .w64 (v 3) (i 0) (to 6) (to 7) },
-    -- 4: loop k = v4 < v3 over immortal ctor object fields
-    { params := [4]
-      term := .br .ult .w64 (v 4) (v 3) (to 5) (to 6) },
-    -- 5: load field [v0 + 8 + k*8], recursively inc, k++
-    { body := #[
-        .assign 5 (.load .w64 .zero { base := some (.v 0), index := some (4, .eight), disp := 8 }),
-        .call [] fnIncVal [v 5],
-        .assign 6 (.bin .add .w64 (v 4) (i 1))]
-      term := .jump (to 4 [v 6]) },
-    -- 6: done
-    { term := .ret [] },
-    -- 7: check scan == 0xFF (static .rodata boxed array)
-    { term := .br .eq .w64 (v 3) (i 0xFF) (to 6) (to 8) },
-    -- 8: enter field loop for immortal ctor (1 <= scan <= 254)
-    { term := .jump (to 4 [i 0]) } ]
-
 /-! ## 4. Relocation (`relocateFunc`, `extendedArrayRuntimeFuncs`) -/
 
 /-- Shift every internal callee `FunId` in a `Lir.Stmt` by `+ base`. -/
@@ -450,15 +409,15 @@ def relocateBlock (base : FunId) (b : Block) : Block :=
 def relocateFunc (base : FunId) (fn : Func) : Func :=
   Func.splitCriticalEdges { fn with blocks := fn.blocks.map (relocateBlock base) }
 
-/-- The complete 36-proc native array runtime table (`0..26` from `arrayRuntimeFuncs` plus
-`27..35` swap, `List`/`ByteArray` bridges, and `arrIncValue`), relocated to start at `FunId` `base`. -/
+/-- The complete 36-proc native array runtime table (`0..27` from `arrayRuntimeFuncs`, including
+`arrIncValue` at `fnIncVal = 27`, plus `28..35` swap and `List`/`ByteArray` bridges), relocated to
+start at `FunId` `base`. -/
 def extendedArrayRuntimeFuncs (base : FunId) (nilTag consTag : Nat) : List Func :=
   let extra : List Func :=
     [ arrSwapBoxed, arrSwapLimbs,
       arrOfListBoxed, arrToListBoxed nilTag consTag,
       arrOfListLimbs, arrToListLimbs nilTag consTag,
-      byteArrOfArr, byteArrToArr,
-      arrIncValue ]
+      byteArrOfArr, byteArrToArr ]
   (arrayRuntimeFuncs.toList ++ extra).map (relocateFunc base)
 
 theorem extendedArrayRuntimeFuncs_length (base : FunId) (nilTag consTag : Nat) :
