@@ -411,7 +411,9 @@ def RuntimeRulings.admits (rulings : RuntimeRulings) (finding : Finding) :
   | .extern _ => return if rulings.assumed.any (·.externs.contains name) then some "assumed" else none
   | .csimp _ _ thm =>
     unless (moduleOf env thm).any (underAny rulings.csimpModules) do return none
-    let axioms := (Ix.Kernel.Audit.collect (← getEnv) thm).axioms
+    let axioms ← match Ix.Kernel.Audit.collect env thm with
+      | .ok st => pure st.axioms
+      | .error e => throwError m!"{e}"
     return if axioms.all rulings.csimpAxioms.contains then some "csimp" else none
   | .opaqueCode _ => return if partialIn env rulings.partialModules name then some "partial" else none
   | .implementedBy _ target =>

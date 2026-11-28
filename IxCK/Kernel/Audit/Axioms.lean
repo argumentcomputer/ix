@@ -49,21 +49,22 @@ structure Node where
 Reachability and axiom sets are computed afresh for each root. -/
 abbrev Cache := NameMap Node
 
-abbrev M := ReaderT Environment (StateM (State × Cache))
+abbrev M := ReaderT Environment (StateT (State × Cache) (Except String))
 
 partial def visit (name : Name) : M Unit := do
   let (state, cache) ← get
   unless state.visited.contains name do
     let env ← read
-    let (node, cache) := match cache.find? name with
-      | some node => (node, cache)
+    let (node, cache) ← match cache.find? name with
+      | some node => pure (node, cache)
       | none =>
-        let node : Node := match env.checked.get.find? name with
-          | some info =>
+        match env.checked.get.find? name with
+        | some info =>
+          let node : Node :=
             { isAxiom := (info matches .axiomInfo _)
               dependencies := directConstants info }
-          | none => {}
-        (node, cache.insert name node)
+          pure (node, cache.insert name node)
+        | none => throw s!"missing constant in checked environment: {name}"
     let state := { state with
       visited := state.visited.insert name
       names := state.names.push name
@@ -73,19 +74,22 @@ partial def visit (name : Name) : M Unit := do
     set (state, cache)
     node.dependencies.forM visit
 
-def collectCached (env : Environment) (root : Name) (cache : Cache) : State × Cache :=
-  ((visit root).run env).run ({}, cache) |>.2
+def collectCached (env : Environment) (root : Name) (cache : Cache) :
+    Except String (State × Cache) :=
+  (((visit root).run env).run ({}, cache)).map Prod.snd
 
 /-- The transitive closure of `root` with its axioms and direct `sorryAx` users. -/
-def collect (env : Environment) (root : Name) : State :=
-  (collectCached env root {}).1
+def collect (env : Environment) (root : Name) : Except String State :=
+  (collectCached env root {}).map Prod.fst
 
 /-- Fail unless `root` exists and its axiom set is exactly `expected`. -/
 def checkAxioms (root : Name) (expected : Array Name) : CommandElabM Unit := do
   let env ← getEnv
   unless env.contains root do
     throwError m!"required root is missing: {root}"
-  let actual := (collect env root).axioms
+  let actual ← match collect env root with
+    | .ok state => pure state.axioms
+    | .error e => throwError m!"{e}"
   unless actual.qsort Name.lt == expected.qsort Name.lt do
     let missing := expected.filter (!actual.contains ·)
     let additional := actual.filter (!expected.contains ·)
@@ -122,8 +126,8 @@ is traversed again to name the declarations that reach the extra axiom. -/
 def logicalAxioms : Array Name := #[``propext, ``Classical.choice, ``Quot.sound]
 
 /-- The axioms that the closures of `decls` reach, together. -/
-def axiomsOf (env : Environment) (decls : Array Name) : Array Name :=
-  (((decls.forM visit).run env).run ({}, {})).2.1.axioms
+def axiomsOf (env : Environment) (decls : Array Name) : Except String (Array Name) :=
+  (((decls.forM visit).run env).run ({}, {})).map fun (_, (state, _)) => state.axioms
 
 /-- The safe declarations of an imported module. -/
 def moduleDecls (env : Environment) (module : Name) : Option (Array Name) := do
@@ -133,12 +137,12 @@ def moduleDecls (env : Environment) (module : Name) : Option (Array Name) := do
 
 /-- At most `limit` declarations of `decls` whose closure reaches `ax`. -/
 def reaching (env : Environment) (decls : Array Name) (ax : Name) (limit : Nat := 5) :
-    Array Name := Id.run do
+    Except String (Array Name) := do
   let mut out := #[]
   let mut cache : Cache := {}
   for d in decls do
     if out.size ≥ limit then break
-    let (state, cache') := collectCached env d cache
+    let (state, cache') ← collectCached env d cache
     cache := cache'
     if state.axioms.contains ax then out := out.push d
   return out
@@ -158,11 +162,20 @@ def checkModules (modules : Array Name) (allowEmpty : Bool := false)
       throwError m!"module declares nothing: {m}"
     all := all ++ decls
     present := present.push (m, decls)
-  if (axiomsOf env all).all allowed.contains then return
+  let allAxioms ← match axiomsOf env all with
+    | .ok axs => pure axs
+    | .error e => throwError m!"{e}"
+  if allAxioms.all allowed.contains then return
   let mut lines : Array String := #[]
   for (m, decls) in present do
-    for ax in (axiomsOf env decls).filter (!allowed.contains ·) do
-      lines := lines.push s!"  {m}: {ax}, reached from {reaching env decls ax}"
+    let modAxioms ← match axiomsOf env decls with
+      | .ok axs => pure axs
+      | .error e => throwError m!"{e}"
+    for ax in modAxioms.filter (!allowed.contains ·) do
+      let reached ← match reaching env decls ax with
+        | .ok rs => pure rs
+        | .error e => throwError m!"{e}"
+      lines := lines.push s!"  {m}: {ax}, reached from {reached}"
   throwError m!"axiom boundary changed: beyond {allowed}\n{"\n".intercalate lines.toList}"
 
 /-- The imported modules whose names `pre` prefixes. -/
@@ -203,12 +216,23 @@ private inductive AuditFixture : Prop where
 
 run_cmd do
   let env ← getEnv
-  let (first, cache) := Ix.Kernel.Audit.collectCached env ``AuditFixture.plain {}
-  let (independent, cache) := Ix.Kernel.Audit.collectCached env ``Eq.refl cache
-  let (sibling, _) := Ix.Kernel.Audit.collectCached env ``AuditFixture.withAxiom cache
+  let (first, cache) ← match Ix.Kernel.Audit.collectCached env ``AuditFixture.plain {} with
+    | .ok r => pure r
+    | .error e => throwError m!"{e}"
+  let (independent, cache) ← match Ix.Kernel.Audit.collectCached env ``Eq.refl cache with
+    | .ok r => pure r
+    | .error e => throwError m!"{e}"
+  let (sibling, _) ← match Ix.Kernel.Audit.collectCached env ``AuditFixture.withAxiom cache with
+    | .ok r => pure r
+    | .error e => throwError m!"{e}"
   unless first.axioms == #[``propext] && independent.axioms.isEmpty &&
       sibling.axioms == #[``propext] do
     throwError "cached axiom traversal changed a root's dependency boundary"
+  match Ix.Kernel.Audit.collect env `Ix.Kernel.Audit.doesNotExist with
+  | .ok _ => throwError "collect accepted a missing constant without throwing"
+  | .error e =>
+    unless (e.splitOn "missing constant in checked environment").length > 1 do
+      throwError m!"unexpected error for missing constant: {e}"
 
 /--
 error: axiom boundary changed for propext

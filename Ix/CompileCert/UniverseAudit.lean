@@ -45,7 +45,9 @@ def checkRoots (label : String) (roots : Array Lean.Name) (tag : String := "univ
     unless env.contains root do
       missing := missing.push root
       continue
-    let (state, cache') := Ix.Kernel.Audit.collectCached env root cache
+    let (state, cache') ← match Ix.Kernel.Audit.collectCached env root cache with
+      | .ok r => pure r
+      | .error e => throwError m!"{label}: {root}: {e}"
     cache := cache'
     for ax in state.axioms do
       unless used.contains ax do used := used.push ax
