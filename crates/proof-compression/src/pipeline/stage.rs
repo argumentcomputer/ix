@@ -356,8 +356,13 @@ pub(in crate::pipeline) fn prove_lowered<C: KzgCurve>(
   let transcript = config.transcript_kind();
   let committed = lowered.commit(config, None, 0)?;
   let prover::Proved { mut system, proof, .. } = committed.prove(&claims)?;
-  system.config =
+  let mut verifier_config =
     KzgConfig::verifier_only(params, 2).with_transcript(transcript);
+  if let Some(digest) = system.config.key_digest().copied() {
+    verifier_config = verifier_config.with_key_digest(digest);
+  }
+  system.config = verifier_config;
+  crate::kzg::config::bind_system_key(&mut system);
   Ok((KzgVerifier::new(system, statement)?, proof))
 }
 
@@ -461,8 +466,13 @@ impl<C: KzgCurve> KzgVerifier<C> {
     let transcript = config.transcript_kind();
     let mut system = prover::setup(config, &compiled)?;
     drop(compiled);
-    system.config =
+    let mut verifier_config =
       KzgConfig::verifier_only(params, 2).with_transcript(transcript);
+    if let Some(digest) = system.config.key_digest().copied() {
+      verifier_config = verifier_config.with_key_digest(digest);
+    }
+    system.config = verifier_config;
+    crate::kzg::config::bind_system_key(&mut system);
     Self::new(system, statement)
   }
 
@@ -505,15 +515,14 @@ impl<C: KzgCurve> KzgVerifier<C> {
       _ => return Err("unsupported KZG transcript".into()),
     };
     let indices = (0..circuits.len()).map(Some).collect();
-    Self::new(
-      System {
-        config: KzgConfig::verifier_only(params, 2).with_transcript(transcript),
-        circuits,
-        preprocessed_commit: preprocessing,
-        preprocessed_indices: indices,
-        vk_digest: [0u8; 32],
-      },
-      statement,
-    )
+    let mut system = System {
+      config: KzgConfig::verifier_only(params, 2).with_transcript(transcript),
+      circuits,
+      preprocessed_commit: preprocessing,
+      preprocessed_indices: indices,
+      vk_digest: [0u8; 32],
+    };
+    crate::kzg::config::bind_system_key(&mut system);
+    Self::new(system, statement)
   }
 }

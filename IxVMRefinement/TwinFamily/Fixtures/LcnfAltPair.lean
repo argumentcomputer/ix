@@ -7,7 +7,7 @@ The family of `Lean.Compiler.LCNF.Alt` compiled twice by the certified compile: 
 `autoParam`s of its constructors' fields kept at the recursors (the canonical record, stored
 first) and as Lean has it (the second record, `blk`). `blk` is the statement's reading
 (`IxVM.Consistency.RecReads`) of the second record's recursor projection records, at the keys
-of their addresses. `env` is IxC's own environment over the canonical variant's records and
+of their addresses. `env` is IxCK's own environment over the canonical variant's records and
 model advice (its reader and phase A of its fold), restricted to the constants the check
 reads: those the second record names, the canonical recursors with their model companions, the
 wrappers the canonical terms use, and what their types name (and a wrapper's value), in the
@@ -437,12 +437,12 @@ def blk : List (ConstantInfo .anon) :=
   [b0, b1, b2, b3, b4, b5]
 
 set_option maxHeartbeats 0 in
-/-- **IxC's twin check accepts the second record against the stored canonical one, and after
+/-- **IxCK's twin check accepts the second record against the stored canonical one, and after
 it each member is stored as a constant that stores it, with a model companion** (evaluated). -/
 theorem check_ok : twinStepCheck 1000000 ⟨env⟩ blk = true := by
   decide +kernel
 
-/-- **The twin step's record at this pair**: IxC's twin record at the positional package, each
+/-- **The twin step's record at this pair**: IxCK's twin record at the positional package, each
 member stored after the step as a constant that stores its reading, and a model companion at each
 member. -/
 theorem inhabited :

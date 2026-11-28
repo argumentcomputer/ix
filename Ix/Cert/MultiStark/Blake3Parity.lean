@@ -1,15 +1,23 @@
 import CertiFriP3.Blake3
 import CertiFriP3.Hashers
+import CertiFriP3.DomainSep
+import CertiFriP3.Challenger
 import Aiur.Library.Blake3.PureTree
 import Mathlib.Tactic.IntervalCases
 
-/-! # BLAKE3 Parity: `CertiFri.P3.blake3` = `Blake3.Pure.digest` (Gap 1b)
+/-! # BLAKE3 Parity: Plain, Keyed, and `derive_key` Modes vs `Blake3.Pure`
 
 Proves exact byte-for-byte equality between CertiFRI's Plonky3 BLAKE3 implementation
-(`CertiFri.P3.blake3`, `CertiFri.P3.baseHasher`, `CertiFri.P3.extHasher`,
-`CertiFri.P3.Blake3.hashPair`) and Ix's pure mathematical specification
-`Blake3.Pure.digest` (the same specification audited in `Aiur.Audit` and `IxVM.Refinement`).
-Zero `sorry`, standard axioms only.
+and Ix's pure mathematical BLAKE3 specification (`Blake3.Pure.digest` and its
+parameterized generalization `digestWith (key : Blake3.Pure.CV) (flags : UInt32)`):
+- Plain mode (`iv`, `flags = 0`): `CertiFri.P3.blake3`, `CertiFri.P3.Blake3.hashPair`,
+  `CertiFri.P3.baseHasher`, `CertiFri.P3.extHasher`, `CertiFri.P3.ext3Hasher`.
+- Parameterized keyed / `derive_key` modes: `Blake3.hashBlocksWith`, `Blake3.deriveContextKey`,
+  `CertiFri.P3.blake3KeyedHash`, `CertiFri.P3.blake3DeriveKey`, `Blake3.deriveKeyPair`,
+  all 11 protocol domains of `CertiFri.P3.Blake3Domain` (`plain`, 5 `v6`, 5 `v6-zk`),
+  the domain-separated Merkle hashers (`baseHasherSep`, `extHasherSep`, `ext3HasherSep`,
+  `hashSaltedRow`), and `ChallengerState.sampleWord` / `challenger3Sep`.
+Zero `sorry`, zero `native_decide`, standard axioms only.
 -/
 
 namespace Ix.Cert.MultiStark
@@ -800,8 +808,11 @@ private lemma chunkOutputs_eq_range (input : List UInt8) :
       rw [show counter + 1 + i = counter + (i + 1) by omega,
           show 1024 + 1024 * i = 1024 * (i + 1) by omega]
 
-/-- **BLAKE3 Parity (Gap 1b):** `CertiFri.P3.blake3` produces the exact same 32 bytes as
-`Blake3.Pure.digest` for every `ByteArray`. -/
+/-- **BLAKE3 Parity (plain mode):** `CertiFri.P3.blake3` (unkeyed BLAKE3) produces the
+exact same 32 bytes as `Blake3.Pure.digest` for every `ByteArray`. Keyed and two-pass
+`derive_key` parity across all 11 protocol domains (`Blake3Domain`, `baseHasherSep`,
+`ext3HasherSep`, `deriveKeyPair`, `ChallengerState.sampleWord`) is proved below via
+`digestWith`. -/
 theorem blake3_eq_pure (bytes : ByteArray) :
     CertiFri.P3.blake3 bytes = ByteArray.mk (Blake3.Pure.digest bytes.data.toList).toArray := by
   unfold CertiFri.P3.blake3 Blake3.hash Blake3.hashBlocks
@@ -1421,5 +1432,1307 @@ theorem ext3Hasher_hashRows_eq_pure (row : Array GoldilocksExt3) :
   unfold Hashers.ext3RowBlock Hashers.rowBlock
   dsimp only
   simp only [wordOrZero_flattenExt3Row]
+
+/-! ## 8. Parameterized Pure BLAKE3 (`digestWith`: Plain, Keyed, and Two-Pass `derive_key`) -/
+
+private lemma uint32_or_comm (a b : UInt32) : a ||| b = b ||| a :=
+  UInt32.toNat_inj.mp (by rw [UInt32.toNat_or, UInt32.toNat_or, Nat.or_comm])
+
+private lemma uint32_zero_or (a : UInt32) : (0 : UInt32) ||| a = a :=
+  UInt32.toNat_inj.mp (by rw [UInt32.toNat_or]; simp)
+
+private lemma uint32_or_assoc (a b c : UInt32) : (a ||| b) ||| c = a ||| (b ||| c) :=
+  UInt32.toNat_inj.mp (by simp only [UInt32.toNat_or, Nat.or_assoc])
+
+/-- BLAKE3 `KEYED_HASH` domain flag (`1 << 4`). -/
+def pureFlagKeyedHash : UInt32 := 16
+
+/-- BLAKE3 `DERIVE_KEY_CONTEXT` domain flag (`1 << 5`). -/
+def pureFlagDeriveKeyContext : UInt32 := 32
+
+/-- BLAKE3 `DERIVE_KEY_MATERIAL` domain flag (`1 << 6`). -/
+def pureFlagDeriveKeyMaterial : UInt32 := 64
+
+/-- Generalized BLAKE3 chunk block loop with explicit domain `flags` OR'd into every block. -/
+def chunkLoopWith (flags : UInt32) (counter : UInt64) (cv : Blake3.Pure.CV)
+    (start : Bool) (input : List UInt8) : Blake3.Pure.Output :=
+  if _h : input.length ≤ 64 then
+    ⟨cv, Blake3.Pure.blockWords input, input.length.toUInt32, counter,
+      flags ||| ((if start then 1 else 0) ||| 2)⟩
+  else
+    let next := Blake3.Pure.compress cv (Blake3.Pure.blockWords (input.take 64))
+      counter 64 (flags ||| if start then 1 else 0)
+    chunkLoopWith flags counter next false (input.drop 64)
+termination_by input.length
+decreasing_by simp only [List.length_drop]; omega
+
+theorem chunkLoopWith_of_le (flags : UInt32) (counter : UInt64) (cv : Blake3.Pure.CV)
+    (start : Bool) (input : List UInt8) (small : input.length ≤ 64) :
+    chunkLoopWith flags counter cv start input =
+      ⟨cv, Blake3.Pure.blockWords input, input.length.toUInt32, counter,
+        flags ||| ((if start then 1 else 0) ||| 2)⟩ := by
+  rw [chunkLoopWith, dite_eq_left small]
+
+theorem chunkLoopWith_of_gt (flags : UInt32) (counter : UInt64) (cv : Blake3.Pure.CV)
+    (start : Bool) (input : List UInt8) (large : 64 < input.length) :
+    chunkLoopWith flags counter cv start input =
+      chunkLoopWith flags counter
+        (Blake3.Pure.compress cv (Blake3.Pure.blockWords (input.take 64))
+          counter 64 (flags ||| if start then 1 else 0))
+        false (input.drop 64) := by
+  rw [chunkLoopWith, dite_eq_right (by omega)]
+
+/-- Generalized chunk output starting from explicit initial chaining value `key` and domain `flags`. -/
+def chunkOutputWith (key : Blake3.Pure.CV) (flags : UInt32) (counter : UInt64)
+    (input : List UInt8) : Blake3.Pure.Output :=
+  chunkLoopWith flags counter key true input
+
+/-- Generalized internal parent output under explicit `key` and domain `flags`. -/
+def parentOutputWith (key : Blake3.Pure.CV) (flags : UInt32)
+    (left right : Blake3.Pure.CV) : Blake3.Pure.Output :=
+  ⟨key, left ++ right, 64, 0, flags ||| 4⟩
+
+/-- Generalized canonical BLAKE3 subtree under explicit `key` and domain `flags`. -/
+def subtreeWith (key : Blake3.Pure.CV) (flags : UInt32) (counter : Nat)
+    (input : List UInt8) : Blake3.Pure.Output :=
+  if _h : input.length ≤ 1024 then chunkOutputWith key flags counter.toUInt64 input
+  else
+    let split := Blake3.Pure.leftLen input.length
+    let left := subtreeWith key flags counter (input.take split)
+    let right := subtreeWith key flags (counter + split / 1024) (input.drop split)
+    parentOutputWith key flags left.chainingValue right.chainingValue
+termination_by input.length
+decreasing_by
+  · have := Blake3.Pure.leftLen_lt (size := input.length) (by omega)
+    simp only [List.length_take]; omega
+  · have := Blake3.Pure.leftLen_positive input.length
+    simp only [List.length_drop]; omega
+
+theorem subtreeWith_of_le (key : Blake3.Pure.CV) (flags : UInt32) (counter : Nat)
+    (input : List UInt8) (small : input.length ≤ 1024) :
+    subtreeWith key flags counter input = chunkOutputWith key flags counter.toUInt64 input := by
+  rw [subtreeWith, dite_eq_left small]
+
+theorem subtreeWith_of_gt (key : Blake3.Pure.CV) (flags : UInt32) (counter : Nat)
+    (input : List UInt8) (large : 1024 < input.length) :
+    subtreeWith key flags counter input = parentOutputWith key flags
+      (subtreeWith key flags counter (input.take (Blake3.Pure.leftLen input.length))).chainingValue
+      (subtreeWith key flags (counter + Blake3.Pure.leftLen input.length / 1024)
+        (input.drop (Blake3.Pure.leftLen input.length))).chainingValue := by
+  rw [subtreeWith, dite_eq_right (by omega)]
+
+/-- 8-word root chaining value under explicit initial chaining value `key` and domain `flags`. -/
+def digestCVWith (key : Blake3.Pure.CV) (flags : UInt32) (input : List UInt8) : Blake3.Pure.CV :=
+  let out := subtreeWith key flags 0 input
+  Blake3.Pure.compress out.cv out.block 0 out.blockLen (out.flags ||| 8)
+
+/-- 32-byte BLAKE3 digest under explicit initial chaining value `key` and domain `flags`:
+- plain mode: `(Blake3.Pure.iv, 0)` (see `digestWith_plain`),
+- keyed mode: `(key, 16)` (`digestKeyed`),
+- `derive_key` pass 1 (context key CV): `(Blake3.Pure.iv, 32)` (`deriveKeyContextCV`),
+- `derive_key` pass 2 (key material): `(ctxCv, 64)` (`digestDeriveKey`). -/
+def digestWith (key : Blake3.Pure.CV) (flags : UInt32) (input : List UInt8) : Blake3.Pure.Digest :=
+  (subtreeWith key flags 0 input).rootHash
+
+theorem digestWith_eq_cvBytes_digestCVWith (key : Blake3.Pure.CV) (flags : UInt32)
+    (input : List UInt8) :
+    digestWith key flags input = Blake3.Pure.cvBytes (digestCVWith key flags input) :=
+  rfl
+
+/-- Pure keyed BLAKE3 (`KEYED_HASH = 16`). -/
+def digestKeyed (key : Blake3.Pure.CV) (input : List UInt8) : Blake3.Pure.Digest :=
+  digestWith key pureFlagKeyedHash input
+
+/-- First pass of BLAKE3 `derive_key`: 8-word context chaining value under `(iv, 32)`. -/
+def deriveKeyContextCV (ctxBytes : List UInt8) : Blake3.Pure.CV :=
+  digestCVWith Blake3.Pure.iv pureFlagDeriveKeyContext ctxBytes
+
+/-- Two-pass pure BLAKE3 `derive_key`: derive the context CV under `(iv, 32)`, then hash
+`input` under `(ctxCv, 64)`. -/
+def digestDeriveKey (ctx : String) (input : List UInt8) : Blake3.Pure.Digest :=
+  digestWith (deriveKeyContextCV ctx.toUTF8.data.toList) pureFlagDeriveKeyMaterial input
+
+/-- Pure BLAKE3 specification for all 11 protocol domains (`plain` + 5 `v6` + 5 `v6-zk`). -/
+def domainDigestPure (d : Blake3Domain) (input : List UInt8) : Blake3.Pure.Digest :=
+  match d.context? with
+  | none => Blake3.Pure.digest input
+  | some ctx => digestDeriveKey ctx input
+
+theorem chunkLoopWith_zero (counter : UInt64) (cv : Blake3.Pure.CV)
+    (start : Bool) (input : List UInt8) :
+    chunkLoopWith 0 counter cv start input = Blake3.Pure.chunkLoop counter cv start input := by
+  by_cases small : input.length ≤ 64
+  · rw [chunkLoopWith_of_le 0 counter cv start input small,
+        Blake3.Pure.chunkLoop_of_le counter cv start input small, uint32_zero_or]
+  · have large : 64 < input.length := by omega
+    rw [chunkLoopWith_of_gt 0 counter cv start input large,
+        Blake3.Pure.chunkLoop_of_gt counter cv start input large, uint32_zero_or]
+    exact chunkLoopWith_zero counter _ false (input.drop 64)
+termination_by input.length
+decreasing_by simp only [List.length_drop]; omega
+
+theorem chunkOutputWith_plain (counter : UInt64) (input : List UInt8) :
+    chunkOutputWith Blake3.Pure.iv 0 counter input = Blake3.Pure.chunkOutput counter input :=
+  chunkLoopWith_zero counter Blake3.Pure.iv true input
+
+theorem parentOutputWith_plain (left right : Blake3.Pure.CV) :
+    parentOutputWith Blake3.Pure.iv 0 left right = Blake3.Pure.parentOutput left right :=
+  rfl
+
+theorem subtreeWith_plain (counter : Nat) (input : List UInt8) :
+    subtreeWith Blake3.Pure.iv 0 counter input = Blake3.Pure.subtree counter input := by
+  by_cases small : input.length ≤ 1024
+  · rw [subtreeWith_of_le Blake3.Pure.iv 0 counter input small,
+        Blake3.Pure.subtree_of_le counter input small, chunkOutputWith_plain]
+  · have large : 1024 < input.length := by omega
+    rw [subtreeWith_of_gt Blake3.Pure.iv 0 counter input large,
+        Blake3.Pure.subtree_of_gt counter input large, parentOutputWith_plain,
+        subtreeWith_plain counter (input.take (Blake3.Pure.leftLen input.length)),
+        subtreeWith_plain (counter + Blake3.Pure.leftLen input.length / 1024)
+          (input.drop (Blake3.Pure.leftLen input.length))]
+termination_by input.length
+decreasing_by
+  · have := Blake3.Pure.leftLen_lt (size := input.length) (by omega)
+    simp only [List.length_take]; omega
+  · have := Blake3.Pure.leftLen_positive input.length
+    simp only [List.length_drop]; omega
+
+/-- Plain-mode specialization: `digestWith Blake3.Pure.iv 0` is identically `Blake3.Pure.digest`. -/
+theorem digestWith_plain (input : List UInt8) :
+    digestWith Blake3.Pure.iv 0 input = Blake3.Pure.digest input := by
+  unfold digestWith Blake3.Pure.digest
+  rw [subtreeWith_plain]
+
+/-! ## 9. Generalized Level-by-Level Tree Equivalence (`mergeLevelsWith` = `subtreeWith`) -/
+
+def chunkOutputsWith (key : Blake3.Pure.CV) (flags : UInt32) (counter : Nat)
+    (input : List UInt8) : List Blake3.Pure.Output :=
+  if _h : input.length ≤ 1024 then [chunkOutputWith key flags counter.toUInt64 input]
+  else
+    chunkOutputWith key flags counter.toUInt64 (input.take 1024) ::
+      chunkOutputsWith key flags (counter + 1) (input.drop 1024)
+termination_by input.length
+decreasing_by simp only [List.length_drop]; omega
+
+private theorem chunkOutputsWith_small (key : Blake3.Pure.CV) (flags : UInt32) (counter : Nat)
+    (input : List UInt8) (small : input.length ≤ 1024) :
+    chunkOutputsWith key flags counter input = [chunkOutputWith key flags counter.toUInt64 input] := by
+  rw [chunkOutputsWith, dite_eq_left small]
+
+private theorem chunkOutputsWith_large (key : Blake3.Pure.CV) (flags : UInt32) (counter : Nat)
+    (input : List UInt8) (large : 1024 < input.length) :
+    chunkOutputsWith key flags counter input =
+      chunkOutputWith key flags counter.toUInt64 (input.take 1024) ::
+        chunkOutputsWith key flags (counter + 1) (input.drop 1024) := by
+  rw [chunkOutputsWith, dite_eq_right (by omega)]
+
+private theorem chunkOutputsWith_length (key : Blake3.Pure.CV) (flags : UInt32) (counter : Nat)
+    (input : List UInt8) :
+    (chunkOutputsWith key flags counter input).length =
+      if input.length ≤ 1024 then 1 else (input.length + 1023) / 1024 := by
+  by_cases small : input.length ≤ 1024
+  · rw [chunkOutputsWith_small key flags counter input small, ite_eq_left small, List.length_singleton]
+  · rw [chunkOutputsWith_large key flags counter input (by omega), ite_eq_right small, List.length_cons,
+        chunkOutputsWith_length key flags (counter + 1) (input.drop 1024), List.length_drop]
+    split <;> omega
+termination_by input.length
+decreasing_by simp only [List.length_drop]; omega
+
+private theorem chunkOutputsWith_append (key : Blake3.Pure.CV) (flags : UInt32)
+    (counter count : Nat) (left right : List UInt8)
+    (full : left.length = 1024 * count) (positive : 0 < count) (nonempty : 0 < right.length) :
+    chunkOutputsWith key flags counter (left ++ right) =
+      chunkOutputsWith key flags counter left ++ chunkOutputsWith key flags (counter + count) right := by
+  have long : 1024 < (left ++ right).length := by rw [List.length_append]; omega
+  rw [chunkOutputsWith_large key flags counter (left ++ right) long]
+  by_cases one : count = 1
+  · subst one
+    rw [chunkOutputsWith_small key flags counter left (by omega), List.take_left' (by omega),
+        List.drop_left' (by omega), List.singleton_append]
+  · rw [chunkOutputsWith_large key flags counter left (by omega),
+        List.take_append_of_le_length (by omega),
+        List.drop_append_of_le_length (by omega),
+        chunkOutputsWith_append key flags (counter + 1) (count - 1) (left.drop 1024) right
+          (by rw [List.length_drop]; omega) (by omega) nonempty,
+        List.cons_append, show counter + 1 + (count - 1) = counter + count by omega]
+termination_by left.length
+decreasing_by rw [List.length_drop]; omega
+
+def pairOutputsWith (key : Blake3.Pure.CV) (flags : UInt32) :
+    List Blake3.Pure.Output → List Blake3.Pure.Output
+  | [] => []
+  | [output] => [output]
+  | left :: right :: rest =>
+      parentOutputWith key flags left.chainingValue right.chainingValue ::
+        pairOutputsWith key flags rest
+
+private theorem pairOutputsWith_length (key : Blake3.Pure.CV) (flags : UInt32) :
+    (outputs : List Blake3.Pure.Output) →
+      (pairOutputsWith key flags outputs).length = (outputs.length + 1) / 2
+  | [] => by simp [pairOutputsWith]
+  | [_] => by simp [pairOutputsWith]
+  | _ :: _ :: rest => by
+      simp only [pairOutputsWith, List.length_cons, pairOutputsWith_length key flags rest]
+      omega
+
+private theorem pairOutputsWith_length_lt {key : Blake3.Pure.CV} {flags : UInt32}
+    {outputs : List Blake3.Pure.Output} (two : 2 ≤ outputs.length) :
+    (pairOutputsWith key flags outputs).length < outputs.length := by
+  rw [pairOutputsWith_length]; omega
+
+private theorem pairOutputsWith_append (key : Blake3.Pure.CV) (flags : UInt32) :
+    (left right : List Blake3.Pure.Output) → left.length % 2 = 0 →
+      pairOutputsWith key flags (left ++ right) =
+        pairOutputsWith key flags left ++ pairOutputsWith key flags right
+  | [], _, _ => rfl
+  | [_], _, even => by simp at even
+  | _ :: _ :: rest, right, even => by
+      have restEven : rest.length % 2 = 0 := by simp only [List.length_cons] at even; omega
+      simp only [List.cons_append, pairOutputsWith,
+        pairOutputsWith_append key flags rest right restEven]
+
+def mergeLevelsWith (key : Blake3.Pure.CV) (flags : UInt32)
+    (outputs : List Blake3.Pure.Output) : Blake3.Pure.Output :=
+  match outputs with
+  | [] => chunkOutputWith key flags 0 []
+  | [output] => output
+  | left :: right :: rest =>
+      mergeLevelsWith key flags (pairOutputsWith key flags (left :: right :: rest))
+termination_by outputs.length
+decreasing_by exact pairOutputsWith_length_lt (by rw [List.length_cons, List.length_cons]; omega)
+
+private theorem mergeLevelsWith_singleton (key : Blake3.Pure.CV) (flags : UInt32)
+    (output : Blake3.Pure.Output) : mergeLevelsWith key flags [output] = output := by
+  rw [mergeLevelsWith]
+
+private theorem mergeLevelsWith_step (key : Blake3.Pure.CV) (flags : UInt32)
+    (left right : Blake3.Pure.Output) (rest : List Blake3.Pure.Output) :
+    mergeLevelsWith key flags (left :: right :: rest) =
+      mergeLevelsWith key flags (pairOutputsWith key flags (left :: right :: rest)) := by
+  conv => lhs; rw [mergeLevelsWith]
+
+private theorem mergeLevelsWith_pairOutputs (key : Blake3.Pure.CV) (flags : UInt32) :
+    (outputs : List Blake3.Pure.Output) →
+      mergeLevelsWith key flags (pairOutputsWith key flags outputs) =
+        mergeLevelsWith key flags outputs
+  | [] => rfl
+  | [_] => rfl
+  | left :: right :: rest => (mergeLevelsWith_step key flags left right rest).symm
+
+private theorem mergeLevelsWith_append (key : Blake3.Pure.CV) (flags : UInt32) (exponent : Nat) :
+    (left right : List Blake3.Pure.Output) →
+      left.length = 2 ^ exponent → 0 < right.length → right.length ≤ 2 ^ exponent →
+      mergeLevelsWith key flags (left ++ right) =
+        parentOutputWith key flags
+          (mergeLevelsWith key flags left).chainingValue
+          (mergeLevelsWith key flags right).chainingValue := by
+  induction exponent with
+  | zero =>
+    intro left right leftLength rightPositive rightLength
+    rw [Nat.pow_zero] at leftLength rightLength
+    obtain ⟨x, rfl⟩ := List.length_eq_one_iff.mp leftLength
+    obtain ⟨y, rfl⟩ := List.length_eq_one_iff.mp (by omega : right.length = 1)
+    rw [List.singleton_append, mergeLevelsWith_step,
+      show pairOutputsWith key flags [x, y] =
+        [parentOutputWith key flags x.chainingValue y.chainingValue] from rfl,
+      mergeLevelsWith_singleton, mergeLevelsWith_singleton, mergeLevelsWith_singleton]
+  | succ exponent ih =>
+    intro left right leftLength rightPositive rightLength
+    have double : 2 ^ (exponent + 1) = 2 * 2 ^ exponent := by rw [Nat.pow_succ, Nat.mul_comm]
+    have leftPairs := pairOutputsWith_length key flags left
+    have rightPairs := pairOutputsWith_length key flags right
+    rw [← mergeLevelsWith_pairOutputs key flags (left ++ right),
+      pairOutputsWith_append key flags left right (by omega),
+      ih (pairOutputsWith key flags left) (pairOutputsWith key flags right)
+        (by omega) (by omega) (by omega),
+      mergeLevelsWith_pairOutputs, mergeLevelsWith_pairOutputs]
+
+theorem mergeLevelsWith_chunkOutputs (key : Blake3.Pure.CV) (flags : UInt32)
+    (counter : Nat) (input : List UInt8) :
+    mergeLevelsWith key flags (chunkOutputsWith key flags counter input) =
+      subtreeWith key flags counter input := by
+  by_cases small : input.length ≤ 1024
+  · rw [chunkOutputsWith_small key flags counter input small, mergeLevelsWith_singleton,
+        subtreeWith_of_le key flags counter input small]
+  · have large : 1024 < input.length := by omega
+    obtain ⟨exponent, full⟩ := Blake3.Pure.leftLen_eq_pow large
+    obtain ⟨below, atMost⟩ := Blake3.Pure.leftLen_half large
+    have positive := Nat.two_pow_pos exponent
+    have takeLength : (input.take (Blake3.Pure.leftLen input.length)).length =
+        Blake3.Pure.leftLen input.length := by
+      rw [List.length_take]; omega
+    have dropLength : (input.drop (Blake3.Pure.leftLen input.length)).length =
+        input.length - Blake3.Pure.leftLen input.length := List.length_drop
+    have halves := chunkOutputsWith_append key flags counter (2 ^ exponent)
+      (input.take (Blake3.Pure.leftLen input.length))
+      (input.drop (Blake3.Pure.leftLen input.length))
+      (takeLength.trans full) positive (by rw [dropLength]; omega)
+    rw [List.take_append_drop] at halves
+    rw [subtreeWith_of_gt key flags counter input large,
+      show Blake3.Pure.leftLen input.length / 1024 = 2 ^ exponent by omega, halves,
+      mergeLevelsWith_append key flags exponent _ _
+        (by rw [chunkOutputsWith_length, takeLength]; split <;> omega)
+        (by rw [chunkOutputsWith_length]; split <;> omega)
+        (by rw [chunkOutputsWith_length, dropLength]; split <;> omega),
+      mergeLevelsWith_chunkOutputs key flags counter
+        (input.take (Blake3.Pure.leftLen input.length)),
+      mergeLevelsWith_chunkOutputs key flags (counter + 2 ^ exponent)
+        (input.drop (Blake3.Pure.leftLen input.length))]
+termination_by input.length
+decreasing_by
+  · have := Blake3.Pure.leftLen_lt (size := input.length) (by omega)
+    simp only [List.length_take]; omega
+  · have := Blake3.Pure.leftLen_positive input.length
+    simp only [List.length_drop]; omega
+
+theorem digestCVWith_eq_mergeLevelsWith (key : Blake3.Pure.CV) (flags : UInt32)
+    (input : List UInt8) :
+    digestCVWith key flags input =
+      let out := mergeLevelsWith key flags (chunkOutputsWith key flags 0 input)
+      Blake3.Pure.compress out.cv out.block 0 out.blockLen (out.flags ||| 8) := by
+  unfold digestCVWith
+  rw [mergeLevelsWith_chunkOutputs]
+
+theorem digestWith_eq_mergeLevelsWith (key : Blake3.Pure.CV) (flags : UInt32)
+    (input : List UInt8) :
+    digestWith key flags input =
+      (mergeLevelsWith key flags (chunkOutputsWith key flags 0 input)).rootHash := by
+  unfold digestWith
+  rw [mergeLevelsWith_chunkOutputs]
+
+/-! ## 10. Parameterized Chunk & Stack-Tree Parity (`hashBlocksWith` = `digestWith`) -/
+
+private lemma parentNodeWith_eq (key : Digest) (flags : UInt32) (a b : Digest) :
+    nodeToOutput (Blake3.parentNodeWith key flags a b) =
+      parentOutputWith (digestToCV key) flags (digestToCV a) (digestToCV b) := by
+  unfold Blake3.parentNodeWith nodeToOutput parentOutputWith Blake3.flagParent
+  rw [uint32_or_comm 4 flags]
+  rfl
+
+private lemma chainBlocksWith_chunkLoopWith_eq (flags : UInt32) (block : Nat → Blake3.Block)
+    (first : Nat) (counter : UInt64) (chunkBytes : List UInt8)
+    (hblk : ∀ j, j < max 1 ((chunkBytes.length + 63) / 64) →
+      blockToPure (block (first + j)) =
+        Blake3.Pure.blockWords ((chunkBytes.drop (64 * j)).take 64)) :
+    ∀ (count j : Nat) (cv : Digest),
+      let blocks := max 1 ((chunkBytes.length + 63) / 64)
+      count + j + 1 = blocks →
+      nodeToOutput
+        { cv := Blake3.chainBlocksWith flags block first counter count j cv
+          block := block (first + (blocks - 1))
+          counter := counter
+          blockLen := (chunkBytes.length - 64 * (blocks - 1)).toUInt32
+          flags := flags ||| if blocks = 1 then Blake3.flagChunkStart ||| Blake3.flagChunkEnd
+                             else Blake3.flagChunkEnd } =
+        chunkLoopWith flags counter (digestToCV cv) (j = 0) (chunkBytes.drop (64 * j)) := by
+  intro count
+  induction count with
+  | zero =>
+    intro j cv blocks hsum
+    have hj : j = blocks - 1 := by omega
+    have hrem_len : (chunkBytes.drop (64 * j)).length = chunkBytes.length - 64 * (blocks - 1) := by
+      rw [List.length_drop, hj]
+    have hrem_le : (chunkBytes.drop (64 * j)).length ≤ 64 := by
+      rw [hrem_len]
+      dsimp only [blocks] at *
+      omega
+    rw [chunkLoopWith_of_le flags counter (digestToCV cv) (decide (j = 0)) _ hrem_le]
+    unfold Blake3.chainBlocksWith nodeToOutput
+    have htake : (chunkBytes.drop (64 * (blocks - 1))).take 64 = chunkBytes.drop (64 * j) := by
+      rw [← hj, List.take_of_length_le hrem_le]
+    have hb := hblk (blocks - 1) (by dsimp only [blocks]; omega)
+    rw [htake] at hb
+    rw [hb, hrem_len]
+    have hflags :
+        (flags ||| if blocks = 1 then Blake3.flagChunkStart ||| Blake3.flagChunkEnd
+                   else Blake3.flagChunkEnd) =
+        (flags ||| ((if decide (j = 0) = true then (1 : UInt32) else 0) ||| 2)) := by
+      by_cases h1 : blocks = 1
+      · have hj0 : j = 0 := by omega
+        simp [h1, hj0, Blake3.flagChunkStart, Blake3.flagChunkEnd]
+      · have hjne : j ≠ 0 := by omega
+        simp [h1, hjne, Blake3.flagChunkEnd]
+    rw [hflags]
+  | succ count ih =>
+    intro j cv blocks hsum
+    have hrem_gt : 64 < (chunkBytes.drop (64 * j)).length := by
+      rw [List.length_drop]
+      dsimp only [blocks] at *
+      omega
+    rw [chunkLoopWith_of_gt flags counter (digestToCV cv) (decide (j = 0)) _ hrem_gt]
+    unfold Blake3.chainBlocksWith
+    have hdrop : (chunkBytes.drop (64 * j)).drop 64 = chunkBytes.drop (64 * (j + 1)) := by
+      rw [List.drop_drop, show 64 * j + 64 = 64 * (j + 1) by omega]
+    rw [hdrop]
+    have hnext_cv :
+        digestToCV (Blake3.compress cv (block (first + j)) counter 64
+          (flags ||| if j = 0 then Blake3.flagChunkStart else 0)) =
+        Blake3.Pure.compress (digestToCV cv)
+          (Blake3.Pure.blockWords ((chunkBytes.drop (64 * j)).take 64))
+          counter 64 (flags ||| if decide (j = 0) = true then 1 else 0) := by
+      rw [compress_eq, hblk j (by omega)]
+      by_cases hj0 : j = 0 <;> simp [hj0, Blake3.flagChunkStart]
+    have hstep := ih (j + 1)
+      (Blake3.compress cv (block (first + j)) counter 64
+        (flags ||| if j = 0 then Blake3.flagChunkStart else 0))
+      (by omega)
+    rw [hnext_cv] at hstep
+    dsimp only [blocks]
+    simpa [Nat.succ_ne_zero] using hstep
+
+theorem chunkNodeWith_eq_chunkOutputWith (key : Digest) (flags : UInt32)
+    (bytes : ByteArray) (chunk : Nat) :
+    nodeToOutput (Blake3.chunkNodeWith key flags bytes.size (Blake3.bytesBlock bytes) chunk) =
+      chunkOutputWith (digestToCV key) flags chunk.toUInt64
+        ((bytes.data.toList.drop (1024 * chunk)).take 1024) := by
+  set chunkBytes := (bytes.data.toList.drop (1024 * chunk)).take 1024
+  have hlen : chunkBytes.length = min 1024 (bytes.size - 1024 * chunk) := by
+    simp only [chunkBytes, List.length_take, List.length_drop, Array.length_toList]
+    rfl
+  have hblk : ∀ j, j < max 1 ((chunkBytes.length + 63) / 64) →
+      blockToPure (Blake3.bytesBlock bytes (16 * chunk + j)) =
+        Blake3.Pure.blockWords ((chunkBytes.drop (64 * j)).take 64) := by
+    intro j hj
+    rw [blockToPure_bytesBlock]
+    congr 1
+    have h64 : 64 * (16 * chunk + j) = 1024 * chunk + 64 * j := by omega
+    rw [h64]
+    have hj_lt16 : j < 16 := by omega
+    apply List.ext_getElem?
+    intro idx
+    by_cases hidx : idx < 64
+    · simp only [chunkBytes, List.getElem?_take_of_lt hidx, List.getElem?_drop,
+        List.getElem?_take_of_lt (show 64 * j + idx < 1024 by omega)]
+      congr 1; omega
+    · simp only [List.getElem?_take_eq_none (Nat.le_of_not_lt hidx)]
+  have hmain := chainBlocksWith_chunkLoopWith_eq flags (Blake3.bytesBlock bytes) (16 * chunk)
+    chunk.toUInt64 chunkBytes hblk (max 1 ((chunkBytes.length + 63) / 64) - 1) 0 key (by omega)
+  simpa [Blake3.chunkNodeWith, chunkOutputWith, hlen] using hmain
+
+private def StackInvWith (key : Digest) (flags : UInt32) (exps : List Nat) (st : List Digest)
+    (outs : List Blake3.Pure.Output) : Prop :=
+  ∃ (segs : List (List Blake3.Pure.Output)) (hsegs : segs.length = exps.length)
+    (hst : st.length = exps.length),
+    segs.reverse.flatten = outs ∧
+    (∀ (k : Nat) (hk : k < exps.length),
+      (segs[k]'(by omega)).length = 2 ^ exps[k] ∧
+      digestToCV (st[k]'(by omega)) =
+        (mergeLevelsWith (digestToCV key) flags (segs[k]'(by omega))).chainingValue)
+
+private lemma stackInvWith_nil (key : Digest) (flags : UInt32) : StackInvWith key flags [] [] [] :=
+  ⟨[], rfl, rfl, rfl, fun _ hk => by simp at hk⟩
+
+private lemma pushChunkWith_inv (key : Digest) (flags : UInt32) (shift q : Nat)
+    (st : List Digest) (outs cur : List Blake3.Pure.Output) (cv : Digest)
+    (hst : StackInvWith key flags (bitExps shift q) st outs)
+    (hcur_len : cur.length = 2 ^ shift)
+    (hcv : digestToCV cv = (mergeLevelsWith (digestToCV key) flags cur).chainingValue) :
+    StackInvWith key flags (bitExps shift (q + 1))
+      (Blake3.pushChunkWith key flags st cv (q + 1)) (outs ++ cur) := by
+  induction q using Nat.strong_induction_on generalizing shift st outs cur cv with
+  | h q ih =>
+    by_cases hodd : q % 2 = 1
+    · have hexp_q := bitExps_odd shift q hodd
+      have hexp_q1 : bitExps shift (q + 1) = bitExps (shift + 1) ((q + 1) / 2) :=
+        bitExps_even_pos shift (q + 1) (by omega) (by omega)
+      rw [hexp_q] at hst
+      obtain ⟨segs, hsegs_len, hst_len, hflat, hspec⟩ := hst
+      cases st with
+      | nil => simp at hst_len
+      | cons top rest =>
+        cases segs with
+        | nil => simp at hsegs_len
+        | cons s0 srest =>
+          have hs0 := hspec 0 (by simp)
+          simp only [List.getElem_cons_zero] at hs0
+          have hmerged_len : (s0 ++ cur).length = 2 ^ (shift + 1) := by
+            rw [List.length_append, hs0.1, hcur_len, Nat.pow_succ]; omega
+          have hmerged_cv :
+              digestToCV (Blake3.parentNodeWith key flags top cv).chainingValue =
+                (mergeLevelsWith (digestToCV key) flags (s0 ++ cur)).chainingValue := by
+            rw [node_chainingValue_eq, parentNodeWith_eq, hs0.2, hcv,
+              mergeLevelsWith_append (digestToCV key) flags shift s0 cur hs0.1
+                (by rw [hcur_len]; exact Nat.two_pow_pos shift) (by rw [hcur_len])]
+          have hrest_inv :
+              StackInvWith key flags (bitExps (shift + 1) (q / 2)) rest srest.reverse.flatten := by
+            refine ⟨srest, by simpa using hsegs_len, by simpa using hst_len, rfl, ?_⟩
+            intro k hk
+            have hk' := hspec (k + 1) (by simp; omega)
+            simp only [List.getElem_cons_succ] at hk'
+            exact hk'
+          have hstep : Blake3.pushChunkWith key flags (top :: rest) cv (q + 1) =
+              Blake3.pushChunkWith key flags rest
+                (Blake3.parentNodeWith key flags top cv).chainingValue ((q + 1) / 2) := by
+            simp [Blake3.pushChunkWith, show (q + 1) % 2 = 0 by omega]
+          have hdiv : (q + 1) / 2 = q / 2 + 1 := by omega
+          rw [hexp_q1, hstep, hdiv]
+          have hrec := ih (q / 2) (by omega) (shift + 1) rest srest.reverse.flatten (s0 ++ cur)
+            (Blake3.parentNodeWith key flags top cv).chainingValue
+            hrest_inv hmerged_len hmerged_cv
+          have hflat' : srest.reverse.flatten ++ (s0 ++ cur) = outs ++ cur := by
+            rw [← hflat, List.reverse_cons, List.flatten_append, List.flatten_singleton,
+                List.append_assoc]
+          rwa [hflat'] at hrec
+    · have heven : q % 2 = 0 := by omega
+      have hexp_q1 : bitExps shift (q + 1) = shift :: bitExps (shift + 1) ((q + 1) / 2) :=
+        bitExps_odd shift (q + 1) (by omega)
+      have hexp_q : bitExps shift q = bitExps (shift + 1) ((q + 1) / 2) := by
+        cases q with
+        | zero => simp [bitExps]
+        | succ k =>
+          have hdiv : (k + 1 + 1) / 2 = (k + 1) / 2 := by omega
+          rw [hdiv]
+          exact bitExps_even_pos shift (k + 1) (by omega) heven
+      have hpush_eq : Blake3.pushChunkWith key flags st cv (q + 1) = cv :: st := by
+        cases st with
+        | nil => rfl
+        | cons top rest => simp [Blake3.pushChunkWith, show (q + 1) % 2 ≠ 0 by omega]
+      rw [hexp_q1, hpush_eq]
+      rw [hexp_q] at hst
+      obtain ⟨segs, hsegs_len, hst_len, hflat, hspec⟩ := hst
+      refine ⟨cur :: segs, by simp [hsegs_len], by simp [hst_len], ?_, ?_⟩
+      · rw [List.reverse_cons, List.flatten_append, List.flatten_singleton, hflat]
+      · intro k hk
+        cases k with
+        | zero => exact ⟨hcur_len, hcv⟩
+        | succ k => simpa only [List.getElem_cons_succ] using hspec k (by simp at hk; omega)
+
+private lemma pushChunksWith_inv (key : Digest) (flags : UInt32)
+    (len : Nat) (block : Nat → Blake3.Block) (outs : Nat → Blake3.Pure.Output) :
+    ∀ (count start : Nat) (st : List Digest) (prefixOuts : List Blake3.Pure.Output),
+      StackInvWith key flags (bitExps 0 start) st prefixOuts →
+      (∀ c, start ≤ c → c < start + count →
+        nodeToOutput (Blake3.chunkNodeWith key flags len block c) = outs c) →
+      StackInvWith key flags (bitExps 0 (start + count))
+        (Blake3.pushChunksWith key flags len block count start st)
+        (prefixOuts ++ (List.range count).map (fun i => outs (start + i))) := by
+  intro count
+  induction count with
+  | zero =>
+    intro start st prefixOuts hst _
+    simpa [Blake3.pushChunksWith] using hst
+  | succ count ih =>
+    intro start st prefixOuts hst hmatch
+    unfold Blake3.pushChunksWith
+    have h0 := hmatch start (le_refl _) (by omega)
+    have hcv0 : digestToCV (Blake3.chunkNodeWith key flags len block start).chainingValue =
+        (mergeLevelsWith (digestToCV key) flags [outs start]).chainingValue := by
+      rw [node_chainingValue_eq, h0, mergeLevelsWith_singleton]
+    have hst1 := pushChunkWith_inv key flags 0 start st prefixOuts [outs start]
+      (Blake3.chunkNodeWith key flags len block start).chainingValue hst rfl hcv0
+    have hrec := ih (start + 1)
+      (Blake3.pushChunkWith key flags st
+        (Blake3.chunkNodeWith key flags len block start).chainingValue (start + 1))
+      (prefixOuts ++ [outs start]) hst1
+      (fun c hc1 hc2 => hmatch c (by omega) (by omega))
+    have hsum : start + 1 + count = start + (count + 1) := by omega
+    rw [hsum] at hrec
+    have hlist :
+        (prefixOuts ++ [outs start]) ++ (List.range count).map (fun i => outs (start + 1 + i)) =
+        prefixOuts ++ (List.range (count + 1)).map (fun i => outs (start + i)) := by
+      rw [List.append_assoc, List.range_succ_eq_map, List.map_cons, List.map_map]
+      simp only [Nat.add_zero, Function.comp_def, List.singleton_append]
+      congr 2
+      apply List.map_congr_left
+      intro i _
+      congr 1; omega
+    rwa [hlist] at hrec
+
+private lemma finishNodeWith_spec (key : Digest) (flags : UInt32) :
+    ∀ (exps : List Nat) (st : List Digest) (prefixOuts tailOuts : List Blake3.Pure.Output)
+      (lastNode : Blake3.Node),
+      exps.Pairwise (· < ·) →
+      StackInvWith key flags exps st prefixOuts →
+      0 < tailOuts.length →
+      (∀ e ∈ exps, tailOuts.length ≤ 2 ^ e) →
+      nodeToOutput lastNode = mergeLevelsWith (digestToCV key) flags tailOuts →
+      (exps = [] → lastNode.counter = 0) →
+      nodeToOutput (Blake3.finishNodeWith key flags st lastNode) =
+        mergeLevelsWith (digestToCV key) flags (prefixOuts ++ tailOuts) ∧
+      (Blake3.finishNodeWith key flags st lastNode).counter = 0 := by
+  intro exps
+  induction exps with
+  | nil =>
+    intro st prefixOuts tailOuts lastNode _ hst _ _ hlast hcnt
+    obtain ⟨segs, hsegs_len, hst_len, hflat, _⟩ := hst
+    cases st with
+    | cons _ _ => simp at hst_len
+    | nil =>
+      cases segs with
+      | cons _ _ => simp at hsegs_len
+      | nil =>
+        have hp : prefixOuts = [] := by simpa using hflat.symm
+        subst hp
+        simp only [Blake3.finishNodeWith, List.nil_append]
+        exact ⟨hlast, hcnt rfl⟩
+  | cons e0 erest ih =>
+    intro st prefixOuts tailOuts lastNode hpair hst htail_pos htail_le hlast _
+    obtain ⟨segs, hsegs_len, hst_len, hflat, hspec⟩ := hst
+    cases st with
+    | nil => simp at hst_len
+    | cons top rest =>
+      cases segs with
+      | nil => simp at hsegs_len
+      | cons s0 srest =>
+        have hs0 := hspec 0 (by simp)
+        simp only [List.getElem_cons_zero] at hs0
+        have he0_le : tailOuts.length ≤ 2 ^ e0 := htail_le e0 (by simp)
+        have hparent_out :
+            nodeToOutput (Blake3.parentNodeWith key flags top lastNode.chainingValue) =
+              mergeLevelsWith (digestToCV key) flags (s0 ++ tailOuts) := by
+          rw [parentNodeWith_eq, hs0.2, node_chainingValue_eq, hlast,
+            mergeLevelsWith_append (digestToCV key) flags e0 s0 tailOuts hs0.1 htail_pos he0_le]
+        have hrest_inv : StackInvWith key flags erest rest srest.reverse.flatten := by
+          refine ⟨srest, by simpa using hsegs_len, by simpa using hst_len, rfl, ?_⟩
+          intro k hk
+          have hk' := hspec (k + 1) (by simp; omega)
+          simp only [List.getElem_cons_succ] at hk'
+          exact hk'
+        have hpair' := List.pairwise_cons.mp hpair
+        have hnew_le : ∀ e ∈ erest, (s0 ++ tailOuts).length ≤ 2 ^ e := by
+          intro e he
+          have hlt : e0 < e := hpair'.1 e he
+          rw [List.length_append, hs0.1]
+          have hpow : 2 ^ (e0 + 1) ≤ 2 ^ e := Nat.pow_le_pow_right (by omega) (by omega)
+          rw [Nat.pow_succ] at hpow
+          omega
+        unfold Blake3.finishNodeWith
+        have hrec := ih rest srest.reverse.flatten (s0 ++ tailOuts)
+          (Blake3.parentNodeWith key flags top lastNode.chainingValue) hpair'.2 hrest_inv
+          (by rw [List.length_append]; omega) hnew_le hparent_out (fun _ => rfl)
+        have hconcat : srest.reverse.flatten ++ (s0 ++ tailOuts) = prefixOuts ++ tailOuts := by
+          rw [← hflat, List.reverse_cons, List.flatten_append, List.flatten_singleton,
+              List.append_assoc]
+        rwa [hconcat] at hrec
+
+private lemma chunkOutputsWith_eq_range (key : Blake3.Pure.CV) (flags : UInt32)
+    (input : List UInt8) :
+    ∀ (counter : Nat),
+      chunkOutputsWith key flags counter input =
+        (List.range (max 1 ((input.length + 1023) / 1024))).map fun i =>
+          chunkOutputWith key flags (counter + i).toUInt64 ((input.drop (1024 * i)).take 1024) := by
+  induction hlen : input.length using Nat.strong_induction_on generalizing input with
+  | h n ih =>
+    intro counter
+    by_cases hsmall : input.length ≤ 1024
+    · have hc : max 1 ((n + 1023) / 1024) = 1 := by omega
+      rw [chunkOutputsWith_small key flags counter input hsmall, hc, List.range_one,
+          List.map_singleton]
+      simp [List.take_of_length_le hsmall]
+    · have hlarge : 1024 < input.length := by omega
+      rw [chunkOutputsWith_large key flags counter input hlarge]
+      have hdrop_len : (input.drop 1024).length < n := by rw [List.length_drop]; omega
+      have hrec := ih (input.drop 1024).length hdrop_len (input.drop 1024) rfl (counter + 1)
+      have hc : max 1 ((n + 1023) / 1024) =
+          max 1 (((input.drop 1024).length + 1023) / 1024) + 1 := by
+        rw [List.length_drop]; omega
+      rw [hc, List.range_succ_eq_map, List.map_cons, List.map_map, hrec]
+      simp only [Nat.add_zero, Nat.mul_zero, List.drop_zero, List.cons.injEq, true_and]
+      apply List.map_congr_left
+      intro i _
+      simp only [Function.comp_def, List.drop_drop, Nat.succ_eq_add_one]
+      rw [show counter + 1 + i = counter + (i + 1) by omega,
+          show 1024 + 1024 * i = 1024 * (i + 1) by omega]
+
+/-- **Generalized BLAKE3 CV Parity:** `Blake3.hashBlocksWith key flags` over `bytesBlock bytes`
+computes the exact 8-word root chaining value `digestCVWith (digestToCV key) flags` for every
+initial key, flag mask, and input byte array of arbitrary length. -/
+theorem hashBlocksWith_bytesBlock_eq_digestCVWith (key : Digest) (flags : UInt32)
+    (bytes : ByteArray) :
+    digestToCV (Blake3.hashBlocksWith key flags bytes.size (Blake3.bytesBlock bytes)) =
+      digestCVWith (digestToCV key) flags bytes.data.toList := by
+  unfold Blake3.hashBlocksWith Blake3.rootNodeWith
+  set chunks := max 1 ((bytes.size + 1023) / 1024)
+  set f : Nat → Blake3.Pure.Output := fun i =>
+    chunkOutputWith (digestToCV key) flags i.toUInt64 ((bytes.data.toList.drop (1024 * i)).take 1024)
+  have hchunks_pos : 0 < chunks := by dsimp [chunks]; omega
+  have hpush := pushChunksWith_inv key flags bytes.size (Blake3.bytesBlock bytes) f
+    (chunks - 1) 0 [] [] (by rw [bitExps_zero]; exact stackInvWith_nil key flags)
+    (fun c _ _ => chunkNodeWith_eq_chunkOutputWith key flags bytes c)
+  simp only [Nat.zero_add, List.nil_append] at hpush
+  have hlast :
+      nodeToOutput (Blake3.chunkNodeWith key flags bytes.size (Blake3.bytesBlock bytes) (chunks - 1)) =
+        mergeLevelsWith (digestToCV key) flags [f (chunks - 1)] := by
+    rw [mergeLevelsWith_singleton]
+    exact chunkNodeWith_eq_chunkOutputWith key flags bytes (chunks - 1)
+  have hcnt : bitExps 0 (chunks - 1) = [] →
+      (Blake3.chunkNodeWith key flags bytes.size (Blake3.bytesBlock bytes) (chunks - 1)).counter = 0 := by
+    intro hnil
+    have h0 : chunks - 1 = 0 := by
+      by_contra hne
+      have hpos : 0 < chunks - 1 := by omega
+      have hne_nil : bitExps 0 (chunks - 1) ≠ [] := by
+        clear hnil
+        generalize hm : chunks - 1 = m at hpos
+        clear hm
+        generalize hs : 0 = s
+        clear hs
+        induction m using Nat.strong_induction_on generalizing s with
+        | h m ihm =>
+          cases m with
+          | zero => omega
+          | succ k =>
+            by_cases ho : (k + 1) % 2 = 1
+            · rw [bitExps_odd s (k + 1) ho]; exact List.cons_ne_nil _ _
+            · rw [bitExps_even_pos s (k + 1) (by omega) (by omega)]
+              exact ihm ((k + 1) / 2) (by omega) (by omega) (s + 1)
+      exact hne_nil hnil
+    simp [Blake3.chunkNodeWith, h0]
+  have hfin := finishNodeWith_spec key flags (bitExps 0 (chunks - 1))
+    (Blake3.pushChunksWith key flags bytes.size (Blake3.bytesBlock bytes) (chunks - 1) 0 [])
+    ((List.range (chunks - 1)).map f) [f (chunks - 1)]
+    (Blake3.chunkNodeWith key flags bytes.size (Blake3.bytesBlock bytes) (chunks - 1))
+    (bitExps_strict 0 (chunks - 1)) hpush (by simp)
+    (fun e _ => by simp [Nat.one_le_two_pow]) hlast hcnt
+  have hall_chunks :
+      (List.range (chunks - 1)).map f ++ [f (chunks - 1)] =
+        chunkOutputsWith (digestToCV key) flags 0 bytes.data.toList := by
+    rw [chunkOutputsWith_eq_range (digestToCV key) flags bytes.data.toList 0]
+    have hsz : bytes.data.toList.length = bytes.size := rfl
+    rw [hsz]
+    have hrange : List.range chunks = List.range (chunks - 1) ++ [chunks - 1] := by
+      conv => lhs; rw [show chunks = (chunks - 1) + 1 by omega, List.range_succ]
+    rw [hrange, List.map_append, List.map_singleton]
+    simp [f]
+  rw [hall_chunks] at hfin
+  set rn := Blake3.finishNodeWith key flags
+    (Blake3.pushChunksWith key flags bytes.size (Blake3.bytesBlock bytes) (chunks - 1) 0 [])
+    (Blake3.chunkNodeWith key flags bytes.size (Blake3.bytesBlock bytes) (chunks - 1))
+  unfold Blake3.Node.rootDigest
+  rw [compress_eq, hfin.2]
+  have hcv_eq : digestToCV rn.cv = (nodeToOutput rn).cv := rfl
+  have hblk_eq : blockToPure rn.block = (nodeToOutput rn).block := rfl
+  have hlen_eq : rn.blockLen = (nodeToOutput rn).blockLen := rfl
+  have hfl_eq : rn.flags = (nodeToOutput rn).flags := rfl
+  rw [hcv_eq, hblk_eq, hlen_eq, hfl_eq, hfin.1, digestCVWith_eq_mergeLevelsWith]
+  rfl
+
+/-- **Generalized BLAKE3 Byte Parity:** `Blake3.hashBlocksWith key flags` over `bytesBlock bytes`
+produces the exact same 32 bytes as `digestWith (digestToCV key) flags`. -/
+theorem hashBlocksWith_bytesBlock_eq_digestWith (key : Digest) (flags : UInt32)
+    (bytes : ByteArray) :
+    (Blake3.hashBlocksWith key flags bytes.size (Blake3.bytesBlock bytes)).toBytes =
+      ByteArray.mk (digestWith (digestToCV key) flags bytes.data.toList).toArray := by
+  apply ByteArray.ext
+  rw [digest_toBytes_eq_cvBytes, hashBlocksWith_bytesBlock_eq_digestCVWith,
+      digestWith_eq_cvBytes_digestCVWith]
+
+/-- First-pass `derive_key` parity: `Blake3.deriveContextKey ctx` equals `deriveKeyContextCV`. -/
+theorem deriveContextKey_eq_pure (ctx : String) :
+    digestToCV (Blake3.deriveContextKey ctx) = deriveKeyContextCV ctx.toUTF8.data.toList := by
+  unfold Blake3.deriveContextKey deriveKeyContextCV
+  simpa [Blake3.iv, digestToCV, Blake3.Pure.iv, Blake3.flagDeriveKeyContext,
+         pureFlagDeriveKeyContext] using
+    hashBlocksWith_bytesBlock_eq_digestCVWith Blake3.iv Blake3.flagDeriveKeyContext ctx.toUTF8
+
+/-- Keyed-mode parity (`KEYED_HASH = 16`): `Blake3.hashBlocksWith key flagKeyedHash` equals
+`digestKeyed (digestToCV key)`. -/
+theorem hashKeyed_eq_pure (key : Digest) (bytes : ByteArray) :
+    (Blake3.hashBlocksWith key Blake3.flagKeyedHash bytes.size (Blake3.bytesBlock bytes)).toBytes =
+      ByteArray.mk (digestKeyed (digestToCV key) bytes.data.toList).toArray :=
+  hashBlocksWith_bytesBlock_eq_digestWith key Blake3.flagKeyedHash bytes
+
+/-- **Keyed-mode BLAKE3 parity (`CertiFri.P3.blake3KeyedHash`):** produces the exact same
+32 bytes as `digestKeyed (digestToCV key) bytes.data.toList` for every 32-byte key and input. -/
+theorem blake3KeyedHash_eq_pure (key : Digest) (bytes : ByteArray) :
+    CertiFri.P3.blake3KeyedHash key bytes =
+      ByteArray.mk (digestKeyed (digestToCV key) bytes.data.toList).toArray :=
+  hashKeyed_eq_pure key bytes
+
+/-- Two-pass `derive_key` parity with a precomputed context key matching `deriveContextKey ctx`. -/
+theorem deriveKeyWithKey_eq_pure {ctx : String} {key : Digest}
+    (hkey : key = Blake3.deriveContextKey ctx) (bytes : ByteArray) :
+    (Blake3.deriveKeyWithKey key bytes).toBytes =
+      ByteArray.mk (digestDeriveKey ctx bytes.data.toList).toArray := by
+  subst hkey
+  unfold Blake3.deriveKeyWithKey Blake3.deriveKeyBlocks digestDeriveKey
+  rw [hashBlocksWith_bytesBlock_eq_digestWith, deriveContextKey_eq_pure]
+  rfl
+
+/-- **Two-pass `derive_key` BLAKE3 parity:** `CertiFri.P3.blake3DeriveKey ctx bytes` produces the
+exact same 32 bytes as `digestDeriveKey ctx bytes.data.toList` for every context string and input. -/
+theorem blake3DeriveKey_eq_pure (ctx : String) (bytes : ByteArray) :
+    CertiFri.P3.blake3DeriveKey ctx bytes =
+      ByteArray.mk (digestDeriveKey ctx bytes.data.toList).toArray :=
+  deriveKeyWithKey_eq_pure rfl bytes
+
+/-! ## 11. Parity Across All 11 `Blake3Domain`s, `deriveKeyPair`, Merkle Hashers, and `ChallengerState` -/
+
+private lemma hashBlocksWith_congr (key : Digest) (flags : UInt32) (len : Nat)
+    (b1 b2 : Nat → Blake3.Block)
+    (h : ∀ i, i < 16 * max 1 ((len + 1023) / 1024) → b1 i = b2 i) :
+    Blake3.hashBlocksWith key flags len b1 = Blake3.hashBlocksWith key flags len b2 := by
+  have hchain : ∀ first counter count j cv,
+      (∀ k, k < count → b1 (first + (j + k)) = b2 (first + (j + k))) →
+      Blake3.chainBlocksWith flags b1 first counter count j cv =
+        Blake3.chainBlocksWith flags b2 first counter count j cv := by
+    intro first counter count
+    induction count with
+    | zero => intro j cv _; rfl
+    | succ count ih =>
+      intro j cv hb
+      unfold Blake3.chainBlocksWith
+      have h0 : b1 (first + j) = b2 (first + j) := by simpa using hb 0 (by omega)
+      rw [h0]
+      exact ih (j + 1) _ (fun k hk => by
+        have := hb (k + 1) (by omega)
+        rwa [show j + (k + 1) = j + 1 + k by omega] at this)
+  have hchunk : ∀ c, c < max 1 ((len + 1023) / 1024) →
+      Blake3.chunkNodeWith key flags len b1 c = Blake3.chunkNodeWith key flags len b2 c := by
+    intro c hc
+    unfold Blake3.chunkNodeWith
+    dsimp only
+    have hblks_le : max 1 ((min 1024 (len - 1024 * c) + 63) / 64) ≤ 16 := by omega
+    have hch := hchain (16 * c) c.toUInt64
+      (max 1 ((min 1024 (len - 1024 * c) + 63) / 64) - 1) 0 key
+      (fun k hk => h (16 * c + (0 + k)) (by omega))
+    have hlast := h (16 * c + (max 1 ((min 1024 (len - 1024 * c) + 63) / 64) - 1)) (by omega)
+    rw [hch, hlast]
+  have hpush : ∀ count c st, c + count ≤ max 1 ((len + 1023) / 1024) →
+      Blake3.pushChunksWith key flags len b1 count c st =
+        Blake3.pushChunksWith key flags len b2 count c st := by
+    intro count
+    induction count with
+    | zero => intro c st _; rfl
+    | succ count ih =>
+      intro c st hle
+      unfold Blake3.pushChunksWith
+      rw [hchunk c (by omega)]
+      exact ih (c + 1) _ (by omega)
+  unfold Blake3.hashBlocksWith Blake3.rootNodeWith
+  dsimp only
+  rw [hpush (max 1 ((len + 1023) / 1024) - 1) 0 [] (by omega),
+      hchunk (max 1 ((len + 1023) / 1024) - 1) (by omega)]
+
+private lemma bytesBlock_pair_eq (a b : Digest) :
+    (a.toBytes ++ b.toBytes).size = 64 ∧
+    Blake3.bytesBlock (a.toBytes ++ b.toBytes) 0 = Blake3.pairBlock a b := by
+  have hlist : (a.toBytes ++ b.toBytes).data.toList =
+      [a.w0.toUInt8, (a.w0 >>> 8).toUInt8, (a.w0 >>> 16).toUInt8, (a.w0 >>> 24).toUInt8,
+       a.w1.toUInt8, (a.w1 >>> 8).toUInt8, (a.w1 >>> 16).toUInt8, (a.w1 >>> 24).toUInt8,
+       a.w2.toUInt8, (a.w2 >>> 8).toUInt8, (a.w2 >>> 16).toUInt8, (a.w2 >>> 24).toUInt8,
+       a.w3.toUInt8, (a.w3 >>> 8).toUInt8, (a.w3 >>> 16).toUInt8, (a.w3 >>> 24).toUInt8,
+       a.w4.toUInt8, (a.w4 >>> 8).toUInt8, (a.w4 >>> 16).toUInt8, (a.w4 >>> 24).toUInt8,
+       a.w5.toUInt8, (a.w5 >>> 8).toUInt8, (a.w5 >>> 16).toUInt8, (a.w5 >>> 24).toUInt8,
+       a.w6.toUInt8, (a.w6 >>> 8).toUInt8, (a.w6 >>> 16).toUInt8, (a.w6 >>> 24).toUInt8,
+       a.w7.toUInt8, (a.w7 >>> 8).toUInt8, (a.w7 >>> 16).toUInt8, (a.w7 >>> 24).toUInt8,
+       b.w0.toUInt8, (b.w0 >>> 8).toUInt8, (b.w0 >>> 16).toUInt8, (b.w0 >>> 24).toUInt8,
+       b.w1.toUInt8, (b.w1 >>> 8).toUInt8, (b.w1 >>> 16).toUInt8, (b.w1 >>> 24).toUInt8,
+       b.w2.toUInt8, (b.w2 >>> 8).toUInt8, (b.w2 >>> 16).toUInt8, (b.w2 >>> 24).toUInt8,
+       b.w3.toUInt8, (b.w3 >>> 8).toUInt8, (b.w3 >>> 16).toUInt8, (b.w3 >>> 24).toUInt8,
+       b.w4.toUInt8, (b.w4 >>> 8).toUInt8, (b.w4 >>> 16).toUInt8, (b.w4 >>> 24).toUInt8,
+       b.w5.toUInt8, (b.w5 >>> 8).toUInt8, (b.w5 >>> 16).toUInt8, (b.w5 >>> 24).toUInt8,
+       b.w6.toUInt8, (b.w6 >>> 8).toUInt8, (b.w6 >>> 16).toUInt8, (b.w6 >>> 24).toUInt8,
+       b.w7.toUInt8, (b.w7 >>> 8).toUInt8, (b.w7 >>> 16).toUInt8, (b.w7 >>> 24).toUInt8] := by
+    have happ : (a.toBytes ++ b.toBytes).data.toList =
+        a.toBytes.data.toList ++ b.toBytes.data.toList := by
+      simp [Array.toList_append]
+    rw [happ, digest_toBytes_toList a, digest_toBytes_toList b]
+    rfl
+  have hsz : (a.toBytes ++ b.toBytes).size = 64 := by
+    have : (a.toBytes ++ b.toBytes).data.toList.length = 64 := by rw [hlist]; rfl
+    simpa only [ByteArray.size, Array.length_toList] using this
+  have hblk : Blake3.bytesBlock (a.toBytes ++ b.toBytes) 0 = Blake3.pairBlock a b := by
+    have hrepack (w : UInt32) :
+        w.toUInt8.toUInt32 ||| ((w >>> 8).toUInt8.toUInt32 <<< 8) |||
+        ((w >>> 16).toUInt8.toUInt32 <<< 16) ||| ((w >>> 24).toUInt8.toUInt32 <<< 24) = w := by
+      rw [pack_le_u32]
+      apply UInt32.toNat_inj.mp
+      rw [UInt32.toNat_ofNat']
+      have h0 : w.toUInt8.toNat = w.toNat % 256 := rfl
+      have h1 : (w >>> 8).toUInt8.toNat = (w.toNat / 256) % 256 := by
+        have h := uint32_shr_toUInt8_eq w 1 (by omega)
+        change (w >>> 8).toUInt8 = _ at h
+        rw [h]; rfl
+      have h2 : (w >>> 16).toUInt8.toNat = (w.toNat / 65536) % 256 := by
+        have h := uint32_shr_toUInt8_eq w 2 (by omega)
+        change (w >>> 16).toUInt8 = _ at h
+        rw [h]; rfl
+      have h3 : (w >>> 24).toUInt8.toNat = (w.toNat / 16777216) % 256 := by
+        have h := uint32_shr_toUInt8_eq w 3 (by omega)
+        change (w >>> 24).toUInt8 = _ at h
+        rw [h]; rfl
+      have hwlt : w.toNat < 2 ^ 32 := w.toNat_lt
+      rw [h0, h1, h2, h3, Nat.mod_eq_of_lt (by omega)]
+      omega
+    unfold Blake3.bytesBlock Blake3.pairBlock LittleEndian.word32
+    simp only [byteOrZero_eq_list_getD, hlist, Nat.mul_zero, Nat.zero_add]
+    simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD_some, hrepack]
+  exact ⟨hsz, hblk⟩
+
+private theorem compress_pairBlock_eq_hashBlocksWith (key : Digest) (flags : UInt32) (a b : Digest) :
+    Blake3.compress key (Blake3.pairBlock a b) 0 64
+      (Blake3.flagChunkStart ||| Blake3.flagChunkEnd ||| Blake3.flagRoot ||| flags) =
+    Blake3.hashBlocksWith key flags (a.toBytes ++ b.toBytes).size
+      (Blake3.bytesBlock (a.toBytes ++ b.toBytes)) := by
+  obtain ⟨hsz, hblk⟩ := bytesBlock_pair_eq a b
+  have hfl :
+      Blake3.flagChunkStart ||| Blake3.flagChunkEnd ||| Blake3.flagRoot ||| flags =
+        (flags ||| (Blake3.flagChunkStart ||| Blake3.flagChunkEnd)) ||| Blake3.flagRoot := by
+    rw [uint32_or_assoc (Blake3.flagChunkStart ||| Blake3.flagChunkEnd) Blake3.flagRoot flags,
+        uint32_or_comm Blake3.flagRoot flags,
+        ← uint32_or_assoc (Blake3.flagChunkStart ||| Blake3.flagChunkEnd) flags Blake3.flagRoot,
+        uint32_or_comm (Blake3.flagChunkStart ||| Blake3.flagChunkEnd) flags]
+  unfold Blake3.hashBlocksWith Blake3.rootNodeWith
+  rw [hsz]
+  change Blake3.compress key (Blake3.pairBlock a b) 0 64
+      (Blake3.flagChunkStart ||| Blake3.flagChunkEnd ||| Blake3.flagRoot ||| flags) =
+    Blake3.compress key (Blake3.bytesBlock (a.toBytes ++ b.toBytes) 0) 0 64
+      ((flags ||| (Blake3.flagChunkStart ||| Blake3.flagChunkEnd)) ||| Blake3.flagRoot)
+  rw [hblk, hfl]
+
+/-- `Blake3.deriveKeyPair contextKey a b` equals `digestWith (digestToCV contextKey) 64` of the
+64 concatenated digest bytes `a.toBytes ++ b.toBytes`. -/
+theorem deriveKeyPair_eq_digestWith (contextKey a b : Digest) :
+    (Blake3.deriveKeyPair contextKey a b).toBytes =
+      ByteArray.mk
+        (digestWith (digestToCV contextKey) pureFlagDeriveKeyMaterial
+          (a.toBytes ++ b.toBytes).data.toList).toArray := by
+  unfold Blake3.deriveKeyPair
+  rw [compress_pairBlock_eq_hashBlocksWith, hashBlocksWith_bytesBlock_eq_digestWith]
+  rfl
+
+/-- `Blake3.deriveKeyPair contextKey a b` equals two-pass `digestDeriveKey ctx` of
+`a.toBytes ++ b.toBytes` whenever `contextKey = Blake3.deriveContextKey ctx`. -/
+theorem deriveKeyPair_eq_pure {ctx : String} {contextKey : Digest}
+    (hkey : contextKey = Blake3.deriveContextKey ctx) (a b : Digest) :
+    (Blake3.deriveKeyPair contextKey a b).toBytes =
+      ByteArray.mk (digestDeriveKey ctx (a.toBytes ++ b.toBytes).data.toList).toArray := by
+  rw [deriveKeyPair_eq_digestWith, hkey, deriveContextKey_eq_pure]
+  rfl
+
+/-- **All 11 `Blake3Domain` byte-array parity (`digestWith` form):** holds uniformly for
+`.plain`, the 5 `v6` domains, and the 5 `v6-zk` domains. -/
+theorem blake3Domain_hash_eq_digestWith (d : Blake3Domain) (bytes : ByteArray) :
+    (d.hash bytes).toBytes =
+      ByteArray.mk (digestWith (digestToCV d.keyWords) d.domainFlags bytes.data.toList).toArray :=
+  hashBlocksWith_bytesBlock_eq_digestWith d.keyWords d.domainFlags bytes
+
+/-- **All 11 `Blake3Domain` byte-array parity (plain + two-pass `derive_key` form):**
+for `.plain`, `d.hash` equals `Blake3.Pure.digest`; for every one of the 10 `v6` and `v6-zk`
+domains, `d.hash` equals two-pass `digestDeriveKey ctx`. -/
+theorem blake3Domain_hash_eq_pure (d : Blake3Domain) (bytes : ByteArray) :
+    (d.hash bytes).toBytes = ByteArray.mk (domainDigestPure d bytes.data.toList).toArray := by
+  cases hctx : d.context? with
+  | none =>
+    have hd : d = .plain := by cases d <;> simp [Blake3Domain.context?] at hctx ⊢
+    subst hd
+    rw [blake3Domain_hash_eq_digestWith]
+    unfold domainDigestPure Blake3Domain.context? Blake3Domain.keyWords Blake3Domain.domainFlags
+    have hiv : digestToCV Blake3.iv = Blake3.Pure.iv := rfl
+    rw [hiv, digestWith_plain]
+  | some ctx =>
+    have hkey : d.keyWords = Blake3.deriveContextKey ctx :=
+      Blake3Domain.keyWords_eq_deriveContextKey d ctx hctx
+    have hfl : d.domainFlags = pureFlagDeriveKeyMaterial := by
+      cases d <;> simp [Blake3Domain.context?] at hctx <;> rfl
+    rw [blake3Domain_hash_eq_digestWith, hkey, hfl, deriveContextKey_eq_pure]
+    simp [domainDigestPure, hctx, digestDeriveKey]
+
+/-- Explicit `derive_key` parity for any of the 10 keyed `Blake3Domain`s (`d.context? = some ctx`). -/
+theorem blake3Domain_deriveKey_hash_eq_pure (d : Blake3Domain) (ctx : String)
+    (hctx : d.context? = some ctx) (bytes : ByteArray) :
+    (d.hash bytes).toBytes = ByteArray.mk (digestDeriveKey ctx bytes.data.toList).toArray := by
+  rw [blake3Domain_hash_eq_pure]
+  simp [domainDigestPure, hctx]
+
+/-- **All 11 `Blake3Domain` 2-to-1 pair compression parity:** `d.hashPair a b` equals
+`domainDigestPure d` of the 64 concatenated bytes `a.toBytes ++ b.toBytes`. -/
+theorem blake3Domain_hashPair_eq_pure (d : Blake3Domain) (a b : Digest) :
+    (d.hashPair a b).toBytes =
+      ByteArray.mk (domainDigestPure d (a.toBytes ++ b.toBytes).data.toList).toArray := by
+  have hstep : d.hashPair a b = d.hash (a.toBytes ++ b.toBytes) := by
+    unfold Blake3Domain.hashPair Blake3Domain.hash
+    exact compress_pairBlock_eq_hashBlocksWith d.keyWords d.domainFlags a b
+  rw [hstep, blake3Domain_hash_eq_pure]
+
+private lemma rowBlock_eq_bytesBlock_rowBytes (row : Array Goldilocks) (i : Nat) :
+    Hashers.rowBlock row i = Blake3.bytesBlock (Hashers.rowBytes row) i := by
+  unfold Hashers.rowBlock Hashers.wordsBlock Blake3.bytesBlock
+  simp only [
+    show 64 * i + 4 * 0 = 8 * (8 * i) by omega,
+    show 64 * i + 4 * 1 = 8 * (8 * i) + 4 by omega,
+    show 64 * i + 4 * 2 = 8 * (8 * i + 1) by omega,
+    show 64 * i + 4 * 3 = 8 * (8 * i + 1) + 4 by omega,
+    show 64 * i + 4 * 4 = 8 * (8 * i + 2) by omega,
+    show 64 * i + 4 * 5 = 8 * (8 * i + 2) + 4 by omega,
+    show 64 * i + 4 * 6 = 8 * (8 * i + 3) by omega,
+    show 64 * i + 4 * 7 = 8 * (8 * i + 3) + 4 by omega,
+    show 64 * i + 4 * 8 = 8 * (8 * i + 4) by omega,
+    show 64 * i + 4 * 9 = 8 * (8 * i + 4) + 4 by omega,
+    show 64 * i + 4 * 10 = 8 * (8 * i + 5) by omega,
+    show 64 * i + 4 * 11 = 8 * (8 * i + 5) + 4 by omega,
+    show 64 * i + 4 * 12 = 8 * (8 * i + 6) by omega,
+    show 64 * i + 4 * 13 = 8 * (8 * i + 6) + 4 by omega,
+    show 64 * i + 4 * 14 = 8 * (8 * i + 7) by omega,
+    show 64 * i + 4 * 15 = 8 * (8 * i + 7) + 4 by omega,
+    word32_rowBytes_lo, word32_rowBytes_hi]
+
+/-- **`baseHasherSep.hashRows` parity:** for every `DomainSep` (`v6Single`, `v6Batch`,
+`v6ZkSingle`, `v6ZkBatch`), `(baseHasherSep sep).hashRows row` equals two-pass
+`digestDeriveKey sep.leafContext` of `Hashers.rowBytes row`. -/
+theorem baseHasherSep_hashRows_eq_pure (sep : DomainSep) (row : Array Goldilocks) :
+    ((CertiFri.P3.baseHasherSep sep).hashRows row).toBytes =
+      ByteArray.mk (digestDeriveKey sep.leafContext (Hashers.rowBytes row).data.toList).toArray := by
+  rw [← deriveKeyWithKey_eq_pure sep.leafKey_eq (Hashers.rowBytes row)]
+  unfold CertiFri.P3.baseHasherSep Blake3.deriveKeyWithKey Blake3.deriveKeyBlocks
+  dsimp only
+  rw [rowBytes_size]
+  exact congrArg Digest.toBytes
+    (hashBlocksWith_congr sep.leafKey Blake3.flagDeriveKeyMaterial (8 * row.size)
+      (Hashers.rowBlock row) (Blake3.bytesBlock (Hashers.rowBytes row))
+      (fun i _ => rowBlock_eq_bytesBlock_rowBytes row i))
+
+/-- **`baseHasherSep.compress` parity:** `(baseHasherSep sep).compress a b` equals two-pass
+`digestDeriveKey sep.compressContext` of `a.toBytes ++ b.toBytes`. -/
+theorem baseHasherSep_compress_eq_pure (sep : DomainSep) (a b : Digest) :
+    ((CertiFri.P3.baseHasherSep sep).compress a b).toBytes =
+      ByteArray.mk
+        (digestDeriveKey sep.compressContext (a.toBytes ++ b.toBytes).data.toList).toArray :=
+  deriveKeyPair_eq_pure sep.compressKey_eq a b
+
+/-- **`extHasherSep.hashRows` parity:** `(extHasherSep sep).hashRows row` equals two-pass
+`digestDeriveKey sep.leafContext` of `Hashers.extRowBytes row`. -/
+theorem extHasherSep_hashRows_eq_pure (sep : DomainSep) (row : Array GoldilocksExt) :
+    ((CertiFri.P3.extHasherSep sep).hashRows row).toBytes =
+      ByteArray.mk
+        (digestDeriveKey sep.leafContext (Hashers.extRowBytes row).data.toList).toArray := by
+  rw [extRowBytes_eq_rowBytes_flatten, ← baseHasherSep_hashRows_eq_pure sep (flattenExtRow row)]
+  unfold CertiFri.P3.extHasherSep CertiFri.P3.baseHasherSep Blake3.deriveKeyBlocks
+  dsimp only
+  rw [flattenExtRow_size, show 8 * (2 * row.size) = 16 * row.size by omega]
+  apply congrArg Digest.toBytes
+  apply hashBlocksWith_congr
+  intro i _
+  unfold Hashers.extRowBlock Hashers.rowBlock
+  dsimp only
+  rw [show 8 * i = 2 * (4 * i) by omega,
+      show 2 * (4 * i) + 2 = 2 * (4 * i + 1) by omega,
+      show 2 * (4 * i) + 3 = 2 * (4 * i + 1) + 1 by omega,
+      show 2 * (4 * i) + 4 = 2 * (4 * i + 2) by omega,
+      show 2 * (4 * i) + 5 = 2 * (4 * i + 2) + 1 by omega,
+      show 2 * (4 * i) + 6 = 2 * (4 * i + 3) by omega,
+      show 2 * (4 * i) + 7 = 2 * (4 * i + 3) + 1 by omega,
+      wordOrZero_flattenExtRow_even, wordOrZero_flattenExtRow_odd,
+      wordOrZero_flattenExtRow_even, wordOrZero_flattenExtRow_odd,
+      wordOrZero_flattenExtRow_even, wordOrZero_flattenExtRow_odd,
+      wordOrZero_flattenExtRow_even, wordOrZero_flattenExtRow_odd]
+
+/-- **`extHasherSep.compress` parity.** -/
+theorem extHasherSep_compress_eq_pure (sep : DomainSep) (a b : Digest) :
+    ((CertiFri.P3.extHasherSep sep).compress a b).toBytes =
+      ByteArray.mk
+        (digestDeriveKey sep.compressContext (a.toBytes ++ b.toBytes).data.toList).toArray :=
+  deriveKeyPair_eq_pure sep.compressKey_eq a b
+
+/-- **`ext3HasherSep.hashRows` parity:** for every `DomainSep` (`v6Single`, `v6Batch`,
+`v6ZkSingle`, `v6ZkBatch`), `(ext3HasherSep sep).hashRows row` equals two-pass
+`digestDeriveKey sep.leafContext` of `Hashers.ext3RowBytes row`. -/
+theorem ext3HasherSep_hashRows_eq_pure (sep : DomainSep) (row : Array GoldilocksExt3) :
+    ((CertiFri.P3.ext3HasherSep sep).hashRows row).toBytes =
+      ByteArray.mk
+        (digestDeriveKey sep.leafContext (Hashers.ext3RowBytes row).data.toList).toArray := by
+  rw [ext3RowBytes_eq_rowBytes_flatten, ← baseHasherSep_hashRows_eq_pure sep (flattenExt3Row row)]
+  unfold CertiFri.P3.ext3HasherSep CertiFri.P3.baseHasherSep Blake3.deriveKeyBlocks
+  dsimp only
+  rw [flattenExt3Row_size, show 8 * (3 * row.size) = 24 * row.size by omega]
+  apply congrArg Digest.toBytes
+  apply hashBlocksWith_congr
+  intro i _
+  unfold Hashers.ext3RowBlock Hashers.rowBlock
+  dsimp only
+  simp only [wordOrZero_flattenExt3Row]
+
+/-- **`ext3HasherSep.compress` parity.** -/
+theorem ext3HasherSep_compress_eq_pure (sep : DomainSep) (a b : Digest) :
+    ((CertiFri.P3.ext3HasherSep sep).compress a b).toBytes =
+      ByteArray.mk
+        (digestDeriveKey sep.compressContext (a.toBytes ++ b.toBytes).data.toList).toArray :=
+  deriveKeyPair_eq_pure sep.compressKey_eq a b
+
+/-- **`v6-zk` salted Merkle leaf parity:** `hashSaltedRow row salt` equals two-pass
+`digestDeriveKey v6ZkMerkleLeafContext` of `DomainSep.saltedRowBytes row salt`. -/
+theorem hashSaltedRow_eq_pure (row : Array Goldilocks) (salt : DomainSep.Salt16) :
+    (CertiFri.P3.hashSaltedRow row salt).toBytes =
+      ByteArray.mk
+        (digestDeriveKey v6ZkMerkleLeafContext
+          (DomainSep.saltedRowBytes row salt).data.toList).toArray :=
+  blake3Domain_deriveKey_hash_eq_pure .zkMerkleLeaf v6ZkMerkleLeafContext rfl
+    (DomainSep.saltedRowBytes row salt)
+
+/-- **Transcript byte-hash parity:** `blake3Transcript sep input` equals two-pass
+`digestDeriveKey sep.transcriptContext` of `input` for every `DomainSep`. -/
+theorem blake3Transcript_eq_pure (sep : DomainSep) (input : ByteArray) :
+    CertiFri.P3.blake3Transcript sep input =
+      ByteArray.mk (digestDeriveKey sep.transcriptContext input.data.toList).toArray :=
+  deriveKeyWithKey_eq_pure sep.transcriptKey_eq input
+
+/-- Pointwise hash congruence for `ChallengerState.sampleByte`. -/
+theorem challengerState_sampleByte_congr {h₁ h₂ : ByteArray → ByteArray}
+    (heq : ∀ b, h₁ b = h₂ b) (s : ChallengerState) :
+    ChallengerState.sampleByte h₁ s = ChallengerState.sampleByte h₂ s := by
+  unfold ChallengerState.sampleByte
+  cases s.output <;> simp [heq]
+
+/-- Pointwise hash congruence for `ChallengerState.sampleBytes`. -/
+theorem challengerState_sampleBytes_congr {h₁ h₂ : ByteArray → ByteArray}
+    (heq : ∀ b, h₁ b = h₂ b) :
+    ∀ (count : Nat) (shift acc : UInt64) (s : ChallengerState),
+      ChallengerState.sampleBytes h₁ count shift acc s =
+        ChallengerState.sampleBytes h₂ count shift acc s
+  | 0, _, _, _ => rfl
+  | count + 1, shift, acc, s => by
+      simp only [ChallengerState.sampleBytes, challengerState_sampleByte_congr heq]
+      exact challengerState_sampleBytes_congr heq count _ _ _
+
+/-- Pointwise hash congruence for `ChallengerState.sampleWord`. -/
+theorem challengerState_sampleWord_congr {h₁ h₂ : ByteArray → ByteArray}
+    (heq : ∀ b, h₁ b = h₂ b) (s : ChallengerState) :
+    ChallengerState.sampleWord h₁ s = ChallengerState.sampleWord h₂ s :=
+  challengerState_sampleBytes_congr heq 8 0 0 s
+
+/-- Pointwise hash congruence for `ChallengerState.sampleBaseWith`. -/
+theorem challengerState_sampleBaseWith_congr {h₁ h₂ : ByteArray → ByteArray}
+    (heq : ∀ b, h₁ b = h₂ b) :
+    ∀ (fuel : Nat) (s : ChallengerState),
+      ChallengerState.sampleBaseWith h₁ fuel s = ChallengerState.sampleBaseWith h₂ fuel s
+  | 0, _ => rfl
+  | fuel + 1, s => by
+      simp only [ChallengerState.sampleBaseWith, challengerState_sampleWord_congr heq]
+      cases s.exhausted
+      · simp only [Bool.false_eq_true, ↓reduceIte]
+        cases Goldilocks.ofCanonical? (ChallengerState.sampleWord h₂ s).1 with
+        | some _ => rfl
+        | none => exact challengerState_sampleBaseWith_congr heq fuel _
+      · rfl
+
+/-- Pointwise hash congruence for `ChallengerState.sampleExt3?`. -/
+theorem challengerState_sampleExt3?_congr {h₁ h₂ : ByteArray → ByteArray}
+    (heq : ∀ b, h₁ b = h₂ b) (s : ChallengerState) :
+    ChallengerState.sampleExt3? h₁ s = ChallengerState.sampleExt3? h₂ s := by
+  unfold ChallengerState.sampleExt3? ChallengerState.sampleBase
+  rw [challengerState_sampleBaseWith_congr heq]
+  cases ChallengerState.sampleBaseWith h₂ ChallengerState.rejectionFuel s with
+  | none => rfl
+  | some p1 =>
+    dsimp only
+    rw [challengerState_sampleBaseWith_congr heq]
+    cases ChallengerState.sampleBaseWith h₂ ChallengerState.rejectionFuel p1.2 with
+    | none => rfl
+    | some p2 =>
+      dsimp only
+      rw [challengerState_sampleBaseWith_congr heq]
+
+/-- **`ChallengerState.sampleWord` parity for `blake3Transcript sep`:** sampling a 64-bit word
+from the domain-separated Fiat–Shamir transcript (`v6Single`, `v6Batch`, `v6ZkSingle`, `v6ZkBatch`)
+agrees identically with sampling from two-pass pure `digestDeriveKey sep.transcriptContext`. -/
+theorem challengerState_sampleWord_blake3Transcript_eq_pure (sep : DomainSep)
+    (s : ChallengerState) :
+    ChallengerState.sampleWord (CertiFri.P3.blake3Transcript sep) s =
+      ChallengerState.sampleWord
+        (fun b => ByteArray.mk (digestDeriveKey sep.transcriptContext b.data.toList).toArray) s :=
+  challengerState_sampleWord_congr (blake3Transcript_eq_pure sep) s
+
+/-- **`ChallengerState.sampleWord` parity across all 11 `Blake3Domain`s.** -/
+theorem challengerState_sampleWord_domain_eq_pure (d : Blake3Domain) (s : ChallengerState) :
+    ChallengerState.sampleWord (fun b => (d.hash b).toBytes) s =
+      ChallengerState.sampleWord
+        (fun b => ByteArray.mk (domainDigestPure d b.data.toList).toArray) s :=
+  challengerState_sampleWord_congr (blake3Domain_hash_eq_pure d) s
+
+/-- **`challenger3Sep.sampleExt` parity** across `v6Single`, `v6Batch`, `v6ZkSingle`, `v6ZkBatch`. -/
+theorem challenger3Sep_sampleExt_eq_pure (sep : DomainSep) (s : ChallengerState) :
+    (CertiFri.P3.challenger3Sep sep).sampleExt s =
+      ChallengerState.sampleExt3
+        (fun b => ByteArray.mk (digestDeriveKey sep.transcriptContext b.data.toList).toArray) s := by
+  unfold CertiFri.P3.challenger3Sep CertiFri.P3.challenger3With ChallengerState.sampleExt3
+  dsimp only
+  rw [challengerState_sampleExt3?_congr (blake3Transcript_eq_pure sep)]
+
+/-- **`challenger3Sep.sampleBits` parity** across `v6Single`, `v6Batch`, `v6ZkSingle`, `v6ZkBatch`. -/
+theorem challenger3Sep_sampleBits_eq_pure (sep : DomainSep) (s : ChallengerState) (bits : Nat) :
+    (CertiFri.P3.challenger3Sep sep).sampleBits s bits =
+      ChallengerState.sampleBits
+        (fun b => ByteArray.mk (digestDeriveKey sep.transcriptContext b.data.toList).toArray) s bits := by
+  unfold CertiFri.P3.challenger3Sep CertiFri.P3.challenger3With ChallengerState.sampleBits
+  dsimp only
+  rw [challengerState_sampleWord_blake3Transcript_eq_pure]
+
+/-! ## 12. Axiom Audit Fences -/
+
+/-- info: 'Ix.Cert.MultiStark.blake3_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms blake3_eq_pure
+
+/-- info: 'Ix.Cert.MultiStark.digestWith_plain' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms digestWith_plain
+
+/-- info: 'Ix.Cert.MultiStark.mergeLevelsWith_chunkOutputs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms mergeLevelsWith_chunkOutputs
+
+/-- info: 'Ix.Cert.MultiStark.hashBlocksWith_bytesBlock_eq_digestCVWith' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms hashBlocksWith_bytesBlock_eq_digestCVWith
+
+/-- info: 'Ix.Cert.MultiStark.hashBlocksWith_bytesBlock_eq_digestWith' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms hashBlocksWith_bytesBlock_eq_digestWith
+
+/-- info: 'Ix.Cert.MultiStark.deriveContextKey_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms deriveContextKey_eq_pure
+
+/-- info: 'Ix.Cert.MultiStark.hashKeyed_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms hashKeyed_eq_pure
+
+/-- info: 'Ix.Cert.MultiStark.blake3KeyedHash_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms blake3KeyedHash_eq_pure
+
+/-- info: 'Ix.Cert.MultiStark.deriveKeyWithKey_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms deriveKeyWithKey_eq_pure
+
+/-- info: 'Ix.Cert.MultiStark.blake3DeriveKey_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms blake3DeriveKey_eq_pure
+
+/-- info: 'Ix.Cert.MultiStark.deriveKeyPair_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms deriveKeyPair_eq_pure
+
+/-- info: 'Ix.Cert.MultiStark.blake3Domain_hash_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms blake3Domain_hash_eq_pure
+
+/-- info: 'Ix.Cert.MultiStark.blake3Domain_deriveKey_hash_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms blake3Domain_deriveKey_hash_eq_pure
+
+/-- info: 'Ix.Cert.MultiStark.blake3Domain_hashPair_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms blake3Domain_hashPair_eq_pure
+
+/-- info: 'Ix.Cert.MultiStark.baseHasherSep_hashRows_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms baseHasherSep_hashRows_eq_pure
+
+/-- info: 'Ix.Cert.MultiStark.baseHasherSep_compress_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms baseHasherSep_compress_eq_pure
+
+/-- info: 'Ix.Cert.MultiStark.extHasherSep_hashRows_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms extHasherSep_hashRows_eq_pure
+
+/-- info: 'Ix.Cert.MultiStark.ext3HasherSep_hashRows_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms ext3HasherSep_hashRows_eq_pure
+
+/-- info: 'Ix.Cert.MultiStark.ext3HasherSep_compress_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms ext3HasherSep_compress_eq_pure
+
+/-- info: 'Ix.Cert.MultiStark.hashSaltedRow_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms hashSaltedRow_eq_pure
+
+/-- info: 'Ix.Cert.MultiStark.blake3Transcript_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms blake3Transcript_eq_pure
+
+/-- info: 'Ix.Cert.MultiStark.challengerState_sampleWord_blake3Transcript_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms challengerState_sampleWord_blake3Transcript_eq_pure
+
+/-- info: 'Ix.Cert.MultiStark.challengerState_sampleWord_domain_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms challengerState_sampleWord_domain_eq_pure
+
+/-- info: 'Ix.Cert.MultiStark.challenger3Sep_sampleExt_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms challenger3Sep_sampleExt_eq_pure
+
+/-- info: 'Ix.Cert.MultiStark.challenger3Sep_sampleBits_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms challenger3Sep_sampleBits_eq_pure
 
 end Ix.Cert.MultiStark

@@ -10,7 +10,7 @@ audit and the host-admission audit import this module. -/
 `sorryAx` its type. It adds the `eqns` kind, 44 native definitions and their
 anchors, and `Role.usedImplicitly`. A change to the
 specification set changes these lines; it
-is made on purpose, with `specVersion` (`IxC/Kernel/Audit/Roles.lean`).
+is made on purpose, with `specVersion` (`IxCK/Kernel/Audit/Roles.lean`).
 `specVersion` 4 adds the compiler-trust roles: three inert axioms of their exact
 types and the two opaques their types mention, as anchors; the schedule gains their
 five groups after `sorryAx`'s (77 groups).

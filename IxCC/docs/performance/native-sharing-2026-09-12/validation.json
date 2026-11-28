@@ -1,0 +1,44 @@
+{
+  "all_frozen_source_files_unchanged_through_measurement": true,
+  "axioms": "checkCandidate_program: propext, Quot.sound; existing physical/source/ownership/capacity fences unchanged",
+  "byte_identical_repetitions": 3,
+  "code_identity_count": 619,
+  "final_nix_checks": 29,
+  "heap_each_mode": {
+    "elf_executions": 171,
+    "independent_corruptions": 182,
+    "native_calls": 774,
+    "persisted_replays": 9,
+    "physical_cases": 4,
+    "reload_rejections": 36,
+    "source_applications": 95,
+    "source_cases": 5
+  },
+  "join_certificate_mutations_per_reference_worker": 560,
+  "nix_log_sha256": "86701334f87f718a1d6bdf7dfded0eb0c49e47a519e65caf50059d71ce73c97a",
+  "nix_passed": true,
+  "nix_system": "x86_64-linux",
+  "reference": {
+    "independent_corruptions": 90,
+    "native_calls": 495,
+    "objects": 15,
+    "passed": true,
+    "persisted_replays": 15
+  },
+  "shared_heap_certificate_checks": 436,
+  "source_directory_replay": {
+    "passed": true,
+    "scope": "frozen source directory, retained seed, independent checker and persisted-only re-emission; not a compiler rebuild",
+    "seed_checked": true,
+    "source_files_checked": 747,
+    "source_sha256": "aee5236d1ae03872bfdd20626eaecc5587eedab526765e2d622cab66158c7e6e",
+    "validation": {
+      "independent_corruptions": 90,
+      "native_calls": 495,
+      "objects": 15,
+      "passed": true,
+      "persisted_replays": 15
+    }
+  },
+  "source_file_count": 747
+}

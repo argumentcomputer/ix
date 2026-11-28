@@ -232,7 +232,7 @@ def get_expr := aiur_fn⟦
     }
 ⟧
 
-  -- A `let`'s header value is `nonDep + 2 · m` for its mode's code `m` (IxC's `LetMode.header`):
+  -- A `let`'s header value is `nonDep + 2 · m` for its mode's code `m` (IxCK's `LetMode.header`):
   -- every value below 16 is a header, and none above. The `Let` node keeps the value.
 
 def get_expr_let := aiur_fn⟦
@@ -399,7 +399,7 @@ def get_univs := aiur_fn⟦
 ⟧
 
   -- A definition's first byte: its kind and safety in the low nibble (`kind · 4 + safety`, both
-  -- below 3), the code of its assertions (IxC's `DefAsserts`) in the high nibble. A byte with no
+  -- below 3), the code of its assertions (IxCK's `DefAsserts`) in the high nibble. A byte with no
   -- assertions is one of the nine below; any other is read by `unpack_def_asserts`.
 
 def unpack_def_kind_safety := aiur_fn⟦
@@ -422,7 +422,7 @@ def unpack_def_kind_safety := aiur_fn⟦
   -- A definition's first byte that is none of the nine without assertions. Its high nibble is a
   -- `DefAsserts` code: the allocation's code (0 to 2, not 3) in bits 4 and 5, a bounded stack in
   -- bit 6, bit 7 clear. Its low nibble is a definition's or an opaque's: a theorem asserts
-  -- nothing (IxC's `Constant.modesCanonical`). A byte whose high nibble is 0 is one of the nine
+  -- nothing (IxCK's `Constant.modesCanonical`). A byte whose high nibble is 0 is one of the nine
   -- or no definition's, so a low nibble without an arm here is refused either way.
 
 def unpack_def_asserts := aiur_fn⟦
@@ -551,9 +551,9 @@ def get_field_mode_list := aiur_fn⟦
     }
 ⟧
 
-  -- A constructor's field modes (IxC's `getConstructorFieldModes`): none when the flag bit is
+  -- A constructor's field modes (IxCK's `getConstructorFieldModes`): none when the flag bit is
   -- clear (every field inherited), otherwise `fields` mode bytes, at least one of them shared
-  -- (IxC's `FieldModes.listed`).
+  -- (IxCK's `FieldModes.listed`).
 
 def get_constructor_modes := aiur_fn⟦
   fn get_constructor_modes(listed: Field, fields: UInt64::U64, s: Bytes::Stream)
@@ -847,7 +847,7 @@ def get_binder_node := aiur_fn⟦
   -- Any other node byte: `tag | input << 3 | result << 6`, the node of a binder (tag 0, 1, 2 or
   -- 4) at a mode other than the default, `input` a `BinderMode` code (not 7) and `result` a
   -- `ResultMode` code. A share node has no mode (its byte is 3), and tags 5 to 7 are no node.
-  -- The node keeps the mode's code `input + 8 · result` (IxC's `AllMode.toCode`).
+  -- The node keeps the mode's code `input + 8 · result` (IxCK's `AllMode.toCode`).
 
 def get_moded_binder_node := aiur_fn⟦
   fn get_moded_binder_node(byte: UInt8::U8, s: Bytes::Stream, lvls: Field)

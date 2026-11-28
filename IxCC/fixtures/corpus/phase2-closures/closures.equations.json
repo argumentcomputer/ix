@@ -1,0 +1,117 @@
+{
+  "format": "ixcc/k1-equations/1",
+  "source": "Closures.lean",
+  "roots": [
+    {
+      "name": "Closures.composeClosure",
+      "address": "46bb0e02bf940ad5fb203bc2fc93a2192cdf9641719cab6a1ca08da72a2fb2a3"
+    },
+    {
+      "name": "Closures.polyRec",
+      "address": "5fe7da8505499bc0ceb92ca6e60825d932ab8a66ffab85276cc4ccbd3735f10c"
+    },
+    {
+      "name": "Closures.stateLoop",
+      "address": "d6f8bd3529cc26daa1f2ed97514b12a5d63079a792a6ef2b0e7e149bec9ba9b3"
+    },
+    {
+      "name": "Closures.stateLoopSE",
+      "address": "d352679fc172cde905aa7bb16a9fd898b3244443e729e6f1b1da765f4eaed476"
+    },
+    {
+      "name": "Closures.storedApply",
+      "address": "e5462cd89bc46a4bc965e4a87676d154b3875c5ac03df1316943ef9707a3b111"
+    },
+    {
+      "name": "Closures.knot",
+      "address": "07f01eaab86f16125d7bcc68b0b1f96a3f21b99c305f621a09fab4e48c19e2ef"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "Closures.coreKnot",
+      "definition_address": "29208a68a673b6870df3f3249d751e0f85f9461e9e446144cb820aa6082757de",
+      "equation": "Closures.coreKnot.eq_def",
+      "equation_address": "6eb5166f334dd700f3aff0ca45acc193d5bd21c084a775d3510a9acf63ad6ede"
+    },
+    {
+      "definition": "Closures.iterCompose",
+      "definition_address": "e1a3b06adcc6e676aad410b7c98db8fcf37a2a61b1d4642430bad4d62e8f4a73",
+      "equation": "Closures.iterCompose.eq_def",
+      "equation_address": "19bd0b2747894606614f5e4d6daf17ca0aea15d28180b331d1944771dd2b9ae1"
+    },
+    {
+      "definition": "Closures.sizeAt",
+      "definition_address": "cbafc3582989e9f81353c4e8679e00962fa31544f7fc1ab2b966fd56a7b3ab1d",
+      "equation": "Closures.sizeAt.eq_def",
+      "equation_address": "ad2ecdcb6344074f51acbd0b48691247661ce68532ce93a4073e8357d479332a"
+    },
+    {
+      "definition": "Closures.steps",
+      "definition_address": "b758f3c497028d1128330f6833d1fb05597386b738c56d7edc6b22631b2ff92a",
+      "equation": "Closures.steps.eq_def",
+      "equation_address": "456cc044426aab8438b618fd4a8c6d7c9cffadf33dc0c33c6834fa8ff8b945c5"
+    },
+    {
+      "definition": "Closures.stepsSE",
+      "definition_address": "b2be3685fd7db14d3c4a7f50167f90ad762d56a7d93f958f8cc14bd5f4365912",
+      "equation": "Closures.stepsSE.eq_def",
+      "equation_address": "b1ff50aaa63412834dd085c67b138f08c194c9201c3ea27ea5f7456cd2553544"
+    },
+    {
+      "definition": "Closures.useOps",
+      "definition_address": "76d800b9de539436bd99e8c6fdb3fac44704a19b946da7d861cae85f721708e5",
+      "equation": "Closures.useOps.eq_def",
+      "equation_address": "9d62fe558f6839565caaf75971142aaac4eb6b042cd7b9584169485f58df9118"
+    },
+    {
+      "definition": "Nat.add",
+      "definition_address": "a04e7e6b19f5e48dbb0b53dae24db5dcc1b1a98c8e97551db8fb4b5f4a14caa8",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "300f835ac35174de29416ee013ec8c57d5c01c6e448335ee4086f384f3f1a249"
+    },
+    {
+      "definition": "Nat.beq",
+      "definition_address": "dd0668fbe8c2b2a2260e95da62a2bea5df42c670a3e95ccffea03c3a7ffdc1c2",
+      "equation": "Nat.beq.eq_def",
+      "equation_address": "a2262f61bc575994ebe308858282397b4e0c8ca19e626eba79956699501e124c"
+    },
+    {
+      "definition": "Nat.ble",
+      "definition_address": "a939cc7925834d04a7ced860c5c44484231c9f5c44728d83d55f19c08037f3b4",
+      "equation": "Nat.ble.eq_def",
+      "equation_address": "25a12692ef836a0d2771c46279e413f421082b3128e091b2931f9e9733348403"
+    },
+    {
+      "definition": "Nat.div.go",
+      "definition_address": "0d78a77d8ea6b073d86da27fd8ccb0fed5771b11062d5585f73279abdfe38784",
+      "equation": "Nat.div.go.eq_def",
+      "equation_address": "fbec97a8f4e8edc20956d9322bb93c4d16d01cb27f3554fe75bc6bdd82ecf9f4"
+    },
+    {
+      "definition": "Nat.modCore.go",
+      "definition_address": "205697164cd9b61d252cc44c7d7f4a00b4bab80be3d77991ce288eefa2532bed",
+      "equation": "Nat.modCore.go.eq_def",
+      "equation_address": "3c0ada33a37dd767b729e80f3ac7efbdef99f6fc83fddf87fa66df5b8dc6d16d"
+    },
+    {
+      "definition": "Nat.mul",
+      "definition_address": "7e736639472dcc920bdc54d8ff0255a4c03b3c05375eacf08814e341deebd331",
+      "equation": "Nat.mul.eq_def",
+      "equation_address": "ab44c6c6e51692fbde3e413a5b90e4727eb15bfc1851cbd56869c27ecb615ee3"
+    },
+    {
+      "definition": "Nat.pow",
+      "definition_address": "473d7239744c820ddb45b6ce56d0506734ba90e5699e985444fd7a6647e9b0a0",
+      "equation": "Nat.pow.eq_def",
+      "equation_address": "7db03b695da2842f3a309f783d03f8a5b71c7c083a9c443fba18f4383e14feeb"
+    },
+    {
+      "definition": "Nat.sub",
+      "definition_address": "f8410bb7b91afaa0cb6f9162faeee2a682e98cde21acf19712380f4e9dbcbf00",
+      "equation": "Nat.sub.eq_def",
+      "equation_address": "80ffad9e0b779752b2e73b7a35e69cce0463317b238fe9679447f01194f157ab"
+    }
+  ],
+  "failures": []
+}

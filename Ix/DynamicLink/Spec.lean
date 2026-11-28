@@ -202,6 +202,17 @@ structure LinkedClaim where
   linkedCircuits : Address
   deriving BEq, Repr, Inhabited
 
+/-- Typing claim whose `evalAssumptions` were all discharged exclusively via Shape 18 Mode 2
+(`@Eq` `Claim.check`, with `linkedCircuits = none`). Encoded under validators `14`
+(`erased-lean-v2-eval-discharged`) and `15` (`erased-lean-v2-binding-eval-discharged`), strictly
+disjoint from `Ix.Claim.de`'s validators `0, 3, 4, 5` so a Mode 2 equality-reflection root can
+never be byte-identical to a direct `InScopeTyping` claim. -/
+structure EvalDischargedClaim where
+  ctx : Ix.ClaimContext
+  kind : EvalAssumedKind
+  assumptions : Option Address
+  deriving BEq, Repr, Inhabited
+
 /-- Canonical Multi-STARK public claim words `[1, entryIdx, pubInputs..., pubOutputs...]`
 expected from an external accelerator circuit `C`. -/
 def DynamicLinkStatement.expectedMultiStarkClaim (s : DynamicLinkStatement) : Array UInt64 :=

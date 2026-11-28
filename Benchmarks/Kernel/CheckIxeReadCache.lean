@@ -29,7 +29,7 @@ header check.
 `CHECK_IXE_READ_CACHE=<dir>`) and other host tools. Never the certified entry
 (`Ix.Kernel.Admission.checkBytes`): its theorems are about the bytes it is
 given, so it decodes and reads them itself every time. Nothing here is
-imported by the `IxC` package.
+imported by the `IxCK` package.
 
 **Unsafe code.** `CompactedRegion.save`/`read` are `unsafe` in Lean core
 because the root's type is erased at the extern boundary; `save` and `load`
@@ -73,27 +73,27 @@ def formatTag : String := "check-ixe-read-cache-2"
 
 /-- The sources a reading or the plan's layout depends on. -/
 def sourceDigest : UInt64 := hash [
-  include_str "../../IxC/Kernel/Ixon/Reader.lean",
-  include_str "../../IxC/Kernel/Ixon/Prelude.lean",
-  include_str "../../IxC/Kernel/Ixon/RoleData.lean",
-  include_str "../../IxC/Kernel/Ixon/RoleTable.lean",
-  include_str "../../IxC/Kernel/Roles.lean",
-  include_str "../../IxC/Kernel/Ref.lean",
-  include_str "../../IxC/Kernel/Frontend/InModel.lean",
-  include_str "../../IxC/Kernel/Frontend/InModel/Kit.lean",
-  include_str "../../IxC/Kernel/Frontend/InModel/Mutual.lean",
-  include_str "../../IxC/Kernel/Frontend/InModel/Nested.lean",
-  include_str "../../IxC/Kernel/Frontend/ProjRec.lean",
-  include_str "../../IxC/Kernel/Frontend/NatOpGround.lean",
-  include_str "../../IxC/Kernel/Expr.lean",
-  include_str "../../IxC/Kernel/ExprOps.lean",
-  include_str "../../IxC/Kernel/Level.lean",
-  include_str "../../IxC/Kernel/CoreDefs.lean",
-  include_str "../../IxC/Kernel/Name.lean",
-  include_str "../../IxC/Kernel/Env.lean",
-  include_str "../../IxC/Kernel/PropWhen.lean",
+  include_str "../../IxCK/Kernel/Ixon/Reader.lean",
+  include_str "../../IxCK/Kernel/Ixon/Prelude.lean",
+  include_str "../../IxCK/Kernel/Ixon/RoleData.lean",
+  include_str "../../IxCK/Kernel/Ixon/RoleTable.lean",
+  include_str "../../IxCK/Kernel/Roles.lean",
+  include_str "../../IxCK/Kernel/Ref.lean",
+  include_str "../../IxCK/Kernel/Frontend/InModel.lean",
+  include_str "../../IxCK/Kernel/Frontend/InModel/Kit.lean",
+  include_str "../../IxCK/Kernel/Frontend/InModel/Mutual.lean",
+  include_str "../../IxCK/Kernel/Frontend/InModel/Nested.lean",
+  include_str "../../IxCK/Kernel/Frontend/ProjRec.lean",
+  include_str "../../IxCK/Kernel/Frontend/NatOpGround.lean",
+  include_str "../../IxCK/Kernel/Expr.lean",
+  include_str "../../IxCK/Kernel/ExprOps.lean",
+  include_str "../../IxCK/Kernel/Level.lean",
+  include_str "../../IxCK/Kernel/CoreDefs.lean",
+  include_str "../../IxCK/Kernel/Name.lean",
+  include_str "../../IxCK/Kernel/Env.lean",
+  include_str "../../IxCK/Kernel/PropWhen.lean",
   include_str "../../Ix/Ixon.lean",
-  include_str "../../IxC/Ixon/Types.lean",
+  include_str "../../IxCK/Ixon/Types.lean",
   include_str "../../Ix/KernelCheck/Step.lean",
   include_str "../../Ix/KernelCheck/Stream.lean",
   include_str "../../Ix/KernelCheck/Binding.lean",

@@ -1,5 +1,5 @@
 import Ix.Cert.RoleClosure
-import IxC.Kernel.Ixon.RoleTableInj
+import IxCK.Kernel.Ixon.RoleTableInj
 import IxVMRefinement.Claim.HexDecode
 import IxVMRefinement.Ingress.Hashed
 
@@ -1566,14 +1566,14 @@ theorem defaultAdmits_of_unfolds (hUnf : DefaultTableBytesUnfolds) :
    defaultBinding_eq hUnf, admitBinding_default⟩
 
 /-- Separate parameterized helper mirroring `Ix.Kernel.Reader.defaultTableBytesOf` in
-`IxC/Kernel/Ixon/Prelude.lean` (a distinct constant from `defaultTableBytesOf` above). -/
+`IxCK/Kernel/Ixon/Prelude.lean` (a distinct constant from `defaultTableBytesOf` above). -/
 def defaultTableBytesOf' (s : String) : Except String ByteArray :=
   match bytesOfHex s with
   | some b => pure b
   | none => throw "role table: bad bytes"
 
 /-- 0-argument `defaultTableBytes` delegating to `defaultTableBytesOf'` (matching the 4-line
-split of `Ix.Kernel.Reader.defaultTableBytes` in `IxC/Kernel/Ixon/Prelude.lean`). -/
+split of `Ix.Kernel.Reader.defaultTableBytes` in `IxCK/Kernel/Ixon/Prelude.lean`). -/
 def defaultTableBytes' : Except String ByteArray :=
   defaultTableBytesOf' Ix.Kernel.Reader.RoleData.table
 

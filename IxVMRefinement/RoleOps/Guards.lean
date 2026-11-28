@@ -1,8 +1,8 @@
 import IxVMRefinement.Decl.DeclWalkedConst
-import IxC.Kernel.Verify.EnvGuards
-import IxC.Kernel.Verify.DivModInv
-import IxC.Kernel.Checker
-import IxC.Kernel.Roles
+import IxCK.Kernel.Verify.EnvGuards
+import IxCK.Kernel.Verify.DivModInv
+import IxCK.Kernel.Checker
+import IxCK.Kernel.Roles
 
 /-! # Stored-shape guards at the install of a `Nat` operation
 

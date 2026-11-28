@@ -174,7 +174,7 @@ def red_proj := aiur_fn⟦
 ⟧
 
   -- Whether the sort a stored type former's telescope ends in, after `n` binders and
-  -- at the levels `lvls`, is never zero (`level_is_not_zero`, IxC's `isNeverZero`).
+  -- at the levels `lvls`, is never zero (`level_is_not_zero`, IxCK's `isNeverZero`).
   -- A type that is not syntactically such a telescope answers 0.
 
 def type_sort_never := aiur_fn⟦

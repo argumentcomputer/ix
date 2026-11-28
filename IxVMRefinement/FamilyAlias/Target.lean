@@ -13,12 +13,12 @@ import IxVMRefinement.FamilyAlias.Step
 import IxVMRefinement.FamilyAlias.Install
 import IxVMRefinement.FamilyAlias.Roots
 
-/-! # The family step: its target at IxC's own record, with model aliases
+/-! # The family step: its target at IxCK's own record, with model aliases
 
 The one statement the step of a mutual or nested family has to produce from the circuit
 (`FamilyStepTarget`), and what the fold gets from it (`modelSide_of_target`).
 
-The target is stated at IxC's renamed record `DeclIndRenRunJ` at the model keys, over the family
+The target is stated at IxCK's renamed record `DeclIndRenRunJ` at the model keys, over the family
 package `famJ h` in place of `rulesJ`, after an alias group at derived keys: the circuit's advice
 records are stored at keys of their own, and each model key of the record is a definition by its
 advice constant. It is stated at any limit of the role context (`lim : Option Nat`: validating at
@@ -80,7 +80,7 @@ environment a step is asked at extends a valid table's, `eqPin_of_shape`), fresh
 freedom. The conclusion is an alias group at
 derived keys over the prefix (each alias a definition whose value is a stored constant at the
 alias's own level parameters), each alias rooted at a member of the block, the family's
-declaration as read, IxC's renamed record at the model keys over `famJ h` (positional
+declaration as read, IxCK's renamed record at the model keys over `famJ h` (positional
 derivations on the terms with the aliases renamed to their targets), and each member stored
 after the block as a constant that stores its reading (`StoredAs`: what a unit step hands the
 fold for each constant address of the two records). -/

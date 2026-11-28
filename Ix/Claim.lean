@@ -2,8 +2,8 @@
   # Claim: ZK claim types and serialization
 
   Defines the claim types used in Ix's zero-knowledge proof system:
-  - `EvalClaim`: asserts that a constant evaluates to a given output
-  - `CheckClaim`: asserts that a constant is well-typed
+  - `EvalClaim`: asserts that a constant evaluates to a given output (no soundness theorem states this)
+  - `CheckClaim`: asserts that a constant type-checks under Ix's kernel rules (which include equality reflection, not Lean's kernel)
   - `RevealClaim`: selectively reveals fields of a committed constant
 
   `RevealConstantInfo` and `RevealMutConstInfo` use bitmask-based serialization
@@ -156,8 +156,12 @@ inductive RevealConstantInfo where
   deriving BEq, Repr, Inhabited
 
 /-- What a typing claim is relative to. The typing claims (`eval`, `check`,
-`checkEnv`) state that constants are well-typed in Lean's theory with its
-primitives read through a role binding, and these three fields say which:
+`checkEnv`) state that constants type-check under Ix's kernel rules (which
+include equality reflection — proved equations as conversions — rather than
+Lean's kernel) with primitives read through a role binding; for unconditional
+`check`/`checkEnv` claims paired with a `binding` claim, the proved theorem
+(`IxVM.Refinement.Endpoint.circuitComposed`) gives a set-theoretic model of the
+claimed environment, not typing by Lean's kernel. These three fields say which:
 
 - `spec`: the specification digest (`Ix.SpecDigest.specDigest`), naming the
   specifications every bound role is validated against;
@@ -169,7 +173,7 @@ primitives read through a role binding, and these three fields say which:
   built from an environment with user axioms names their tree
   (`Ix.ClaimContext.ofEnv`); IxVM admits exactly the tree's leaves, each a
   safe axiom the role table does not bind (`KernelRoles::load_role_ctx`), and
-  IxC states such a claim with its fold under `allowUser`
+  IxCK states such a claim with its fold under `allowUser`
   (`Ix.Kernel.Cached.AcceptsRefUnder`, `Ix.Cert.IxonAcceptsRefUnder`).
 
 Typing assumptions (`assumptions` on the claims themselves) are a different
@@ -205,18 +209,41 @@ structure ClaimContext where
   literalClass : Bool := false
   deriving BEq, Repr, Inhabited
 
+/-- Memory-management policy under which an x86-64 ELF object was compiled. -/
+inductive CompilePolicy where
+  | immortal
+  | zeroRc
+  | plainRc
+  deriving BEq, Repr, Inhabited, DecidableEq
+
+/-- Asserts that `target` in the Ixon environment with Merkle root `env`, read
+under the role table with binding hash `roleTable` (`none` for an environment
+without a role binding), compiles under `policy` with ABI parameter count
+`abiArity` to an x86-64 ELF64 object whose BLAKE3 digest is `elfHash`. A
+typing claim about the same artifact names the same pair: its `root` and its
+context's `binding`. -/
+structure CompileClaim where
+  env       : Address
+  roleTable : Option Address
+  target    : Address
+  policy    : CompilePolicy
+  abiArity  : UInt64
+  elfHash   : Address
+  deriving BEq, Repr, Inhabited, DecidableEq
+
 /--
 A claim that can be proven.
 
-Eight variants in five families:
+Eight active variants in six families (variant 9 `resource` is retired):
 
 - **Typechecking claims** (`eval`, `check`, `checkEnv`): assert that a
-  constant evaluates, a constant is well-typed, or every constant in an env
-  is well-typed, relative to their `ClaimContext`. Each carries
+  constant evaluates, a constant type-checks, or every constant in an env
+  type-checks under Ix's kernel rules (which include equality reflection, not
+  Lean's kernel), relative to their `ClaimContext`. Each carries
   `assumptions : Option Address`:
   - `none` → unconditional.
   - `some root` → conditional on every leaf in the merkle tree rooted
-    at `root` being well-typed.
+    at `root` being discharged by other claims.
 - **`catalog`**: a conjunction of unconditional `checkEnv` claims, each under
   its own context, so members compiled under different role bindings (from
   different Lean toolchains) meet in one statement. `members` is the
@@ -232,6 +259,15 @@ Eight variants in five families:
   each bound constant meets its specification in `spec`. It discharges the
   condition of the typing claims that assume their binding
   (`ClaimContext.bindingAssumed`), once per aggregate.
+- **`compile`**: certified compilation claim asserting that `target` in the
+  environment with Merkle root `env` and role table `roleTable` compiles under
+  `policy` with ABI parameter count `abiArity` to an x86-64 ELF64 object with
+  BLAKE3 digest `elfHash` (tag 13, 2-byte header `E8 05`, object format `04`,
+  validator `07`, followed by `env` (32B), `roleTable` (`00`, or `01` and 32B),
+  `target` (32B), `policy` (1B), `putTagN 0 0 abiArity`, and `elfHash` (32B)).
+  The former format (validator `06`, without `roleTable`) is refused. Values 11
+  and 12 of the tag space are the role-binding section (`E8 03`) and the
+  literal-class preimage (`E8 04`).
 
 A `catalog` claim is formed only by aggregation (`ix_aggr` shape 16), from
 unconditional `checkEnv` claims (validator `erased-lean-v2` or
@@ -253,8 +289,78 @@ inductive Claim where
   | catalog  (members : Address)
   /-- The role table with hash `binding` binds every role, and each bound
   constant meets its specification in the set with digest `spec`. -/
-  | binding (spec binding : Address)
+  | binding  (spec binding : Address)
+  /-- Certified compilation claim connecting an environment Merkle root `env`,
+  role table `roleTable`, and target constant `target` under `policy` and
+  `abiArity` to `elfHash`. -/
+  | compile  (c : CompileClaim)
   deriving BEq, Repr, Inhabited
+
+-- ============================================================================
+-- CompilePolicy and CompileClaim serialization
+-- ============================================================================
+
+namespace CompilePolicy
+
+def toUInt8 : CompilePolicy → UInt8
+  | .immortal => 0
+  | .zeroRc   => 1
+  | .plainRc  => 2
+
+def put (p : CompilePolicy) : PutM Unit :=
+  putU8 p.toUInt8
+
+def get : GetM CompilePolicy := do
+  match (← getU8) with
+  | 0 => return .immortal
+  | 1 => return .zeroRc
+  | 2 => return .plainRc
+  | v => throw s!"CompilePolicy.get: invalid {v}"
+
+instance : Serialize CompilePolicy where
+  put := put
+  get := get
+
+instance : ToString CompilePolicy where
+  toString
+    | .immortal => "immortal"
+    | .zeroRc   => "zeroRc"
+    | .plainRc  => "plainRc"
+
+end CompilePolicy
+
+namespace CompileClaim
+
+def put (c : CompileClaim) : PutM Unit := do
+  Serialize.put c.env
+  match c.roleTable with
+  | none => putU8 0
+  | some a => do putU8 1; Serialize.put a
+  Serialize.put c.target
+  CompilePolicy.put c.policy
+  putTagN 0 0 c.abiArity
+  Serialize.put c.elfHash
+
+def get : GetM CompileClaim := do
+  let env ← Serialize.get
+  let roleTable ← match ← getU8 with
+    | 0 => pure none
+    | 1 => some <$> Serialize.get
+    | t => throw s!"CompileClaim.get: invalid role table tag {t}"
+  let target ← Serialize.get
+  let policy ← CompilePolicy.get
+  let abiArity ← getTagN0Value
+  let elfHash ← Serialize.get
+  return { env, roleTable, target, policy, abiArity, elfHash }
+
+instance : Serialize CompileClaim where
+  put := put
+  get := get
+
+instance : ToString CompileClaim where
+  toString c := s!"CompileClaim({c.env}, {c.roleTable}, {c.target}, {c.policy}, {c.abiArity}, {c.elfHash})"
+
+end CompileClaim
 
 -- ============================================================================
 -- RevealConstructorInfo serialization
@@ -594,32 +700,36 @@ is 8). A claim's scope is two bytes: the object format's version
 | 0xE | 10 (`E8 02`) | binding claim |
 | 0xE | 11 (`E8 03`) | role-table section preimage |
 | 0xE | 12 (`E8 04`) | literal-class preimage (`Ix.ClaimContext`) |
-| 0xE | 13 (`E8 05`) | reserved: IxCC compile claim (not implemented here) |
+| 0xE | 13 (`E8 05`) | IxCC compile claim (Lean-only; refused by Rust `crates/ixon`) |
 | 0xE | 14 (`E8 06`) | reserved: frontend `.ixsp` header |
 | 0xE | 15–18 (`E8 07`–`E8 0A`) | reserved: frontend `.ixc`, `.ixes`, `.ixprof` and host-admission tags (this tree's files of those kinds use ASCII magic) |
 | 0xE | 19 (`E8 0B`) | reserved: frontend elaboration claim |
 | 0xE | 20 (`E8 0C`) | reserved: frontend `.ixs` header |
 | 0xF | 0–5, 7 (`F0`–`F5`, `F7`) | eval, check, checkEnv, reveal, contains, catalog, binding proofs |
 | 0xF | 6 (`F6`) | **retired** (resource proof): refused |
-| 0xF | 8 (`F8 00`) | reserved: IxCC compile proof |
+| 0xF | 8 (`F8 00`) | IxCC compile proof (Lean-only; refused by Rust `crates/ixon`) |
 | validator | 0, 3, 4, 5 | structural-v1, erased-lean-v2, erased-lean-v2-assumed, erased-lean-v2-class |
 | validator | 1 | retired (erased-lean-v1): refused |
 | validator | 2 | **retired** (resource-v1): refused |
-| validator | 6 | reserved: IxCC compile-v1 (retired there): refused |
-| validator | 7 | reserved: IxCC compile-v2: refused |
+| validator | 6 | **retired** (IxCC compile-v1, without role table): refused |
+| validator | 7 | IxCC compile-v2 (`compile` claim, Lean-only; reserved/refused by Rust) |
 | validator | 8 | reserved: erased-lean-v2-modes (claims about modes): refused until a validator for it exists |
-| validator | 9 | reserved: IxCC compile-v3 (its next compile-claim version): refused |
+| validator | 9 | reserved: IxCC compile-v3 (future compile-claim version): refused |
 
 `E9` is not a tag value: under TagN `E9` opens a two-byte header. -/
 
--- TagN (`f = 4`) value dispatch (mirrors crates/ixon/src/proof.rs).
+-- TagN (`f = 4`) value dispatch (variants 2–10 mirror crates/ixon/src/proof.rs;
+-- variant 13 `compile` is Lean-only for IxCC).
 -- Flag 0xE holds Comm, AssumptionTree, and claims. Variants 0–7 are in
 -- rung 1, the single bytes 0xE0–0xE7; from 8 on the header is two bytes,
--- so catalog is `E8 00` and binding `E8 02` on the wire (`E8 01`, the
--- resource claim, is retired: refused). The `.ixe` header also uses flag 0xE, with the format version as the value
--- (`0xE4` for version 4, the same byte as the check claim tag).
--- Flag 0xF holds proofs (single-byte tags 0xF0–0xF7; 0xF6, the resource
--- proof, is retired: refused).
+-- so catalog is `E8 00`, binding `E8 02`, and compile `E8 05` (`E8 01`, the
+-- resource claim, is retired: refused). The `.ixe` header also uses flag 0xE,
+-- with the format version as the value (`0xE4` for version 4, the same byte as
+-- the check claim tag).
+-- Flag 0xF holds proofs (single-byte tags 0xF0–0xF7 for variants 0–7, where
+-- 0xF6 is retired/refused, and two-byte tag `F8 00` for variant 8 `compile`).
+-- Proof variant `v` wraps claim variant `v + 3`, except `compile`'s
+-- (`claimVariantOfProof`).
 
 def FLAG_CLAIM : UInt8 := 0xE
 def FLAG_PROOF : UInt8 := 0xF
@@ -634,6 +744,7 @@ def VARIANT_CONTAINS_CLAIM   : UInt64 := 7
 def VARIANT_CATALOG_CLAIM    : UInt64 := 8
 def VARIANT_RESOURCE_CLAIM_RETIRED : UInt64 := 9
 def VARIANT_BINDING_CLAIM    : UInt64 := 10
+def VARIANT_COMPILE_CLAIM    : UInt64 := 13
 
 def VARIANT_EVAL_PROOF       : UInt64 := 0
 def VARIANT_CHECK_PROOF      : UInt64 := 1
@@ -643,6 +754,12 @@ def VARIANT_CONTAINS_PROOF   : UInt64 := 4
 def VARIANT_CATALOG_PROOF    : UInt64 := 5
 def VARIANT_RESOURCE_PROOF_RETIRED : UInt64 := 6
 def VARIANT_BINDING_PROOF    : UInt64 := 7
+def VARIANT_COMPILE_PROOF    : UInt64 := 8
+
+/-- The claim variant a proof variant wraps: `v + 3`, except the compile proof
+(`8`), which wraps the compile claim (`13`). -/
+def claimVariantOfProof (variant : UInt64) : UInt64 :=
+  if variant == VARIANT_COMPILE_PROOF then VARIANT_COMPILE_CLAIM else variant + 3
 
 /-- Encode an `Option Address` as `[0x00]` (none) or `[0x01][addr:32]`
     (some). Mirrors `put_opt_addr` in crates/ixon/src/proof.rs. -/
@@ -664,9 +781,10 @@ def getOptAddr : GetM (Option Address) := do
   refuse it rather than read such a claim as a newer one;
 - `2`, resource-v1: retired with the resource claim; refused;
 - `3`, erased-lean-v2: the typing claims, relative to their `ClaimContext`
-  (Lean's theory over the standard axioms, primitives read through the
-  committed role binding and validated against the committed
-  specifications), and the `binding` claim;
+  (Ix's kernel rules — which include equality reflection — over the standard
+  axioms, primitives read through the committed role binding and validated
+  against the committed specifications; paired with a `binding` claim,
+  `circuitComposed` gives a set-theoretic model), and the `binding` claim;
 - `4`, erased-lean-v2-assumed: a `check` or `checkEnv` claim that assumes
   its binding meets the specifications instead of validating it
   (`ClaimContext.bindingAssumed`); its typing holds if the `binding` claim
@@ -674,20 +792,28 @@ def getOptAddr : GetM (Option Address) := do
 - `5`, erased-lean-v2-class: a `checkEnv` claim relative to a literal class
   instead of one binding (`ClaimContext.literalClass`): its typing holds
   under every binding of that class that meets the specifications;
-- `6`, `7`: reserved for IxCC's compile-v1 (retired there) and compile-v2;
-  refused;
+- `6`, compile-v1: the former `compile` format, without the role table;
+  retired and refused;
+- `7`, compile-v2: `compile`;
 - `8`, erased-lean-v2-modes: reserved for claims about a record's modes;
-  refused until a validator for it exists. -/
+  refused until a validator for it exists;
+- `9`, compile-v3: reserved for a future compile-claim version; refused. -/
 def VALIDATOR_STRUCTURAL : UInt8 := 0
 def VALIDATOR_ERASED_LEAN_RETIRED : UInt8 := 1
 def VALIDATOR_RESOURCE_RETIRED : UInt8 := 2
 def VALIDATOR_ERASED_LEAN : UInt8 := 3
 def VALIDATOR_ERASED_LEAN_ASSUMED : UInt8 := 4
 def VALIDATOR_ERASED_LEAN_CLASS : UInt8 := 5
+def VALIDATOR_COMPILE_V1_RETIRED : UInt8 := 6
+def VALIDATOR_COMPILE_V2 : UInt8 := 7
+def VALIDATOR_ERASED_LEAN_MODES_RESERVED : UInt8 := 8
+def VALIDATOR_COMPILE_V3_RESERVED : UInt8 := 9
 
 def validatorForVariant (variant : UInt64) : UInt8 :=
   if variant == VARIANT_REVEAL_CLAIM || variant == VARIANT_CONTAINS_CLAIM then
     VALIDATOR_STRUCTURAL
+  else if variant == VARIANT_COMPILE_CLAIM then
+    VALIDATOR_COMPILE_V2
   else VALIDATOR_ERASED_LEAN
 
 /-- Whether claims of variant `variant` may assume their binding: `check`
@@ -703,6 +829,7 @@ def variantOf : Claim → UInt64
   | .contains .. => VARIANT_CONTAINS_CLAIM
   | .catalog .. => VARIANT_CATALOG_CLAIM
   | .binding .. => VARIANT_BINDING_CLAIM
+  | .compile .. => VARIANT_COMPILE_CLAIM
 
 /-- The validator a claim's scope names: its variant's,
     erased-lean-v2-assumed for a `check` or `checkEnv` claim that assumes
@@ -736,6 +863,12 @@ def getScope (variant : UInt64) : GetM UInt8 := do
   if found == VALIDATOR_ERASED_LEAN_CLASS && variant == VARIANT_CHECK_ENV_CLAIM then return found
   if validator == VALIDATOR_ERASED_LEAN && found == VALIDATOR_ERASED_LEAN_RETIRED then
     throw "claim: validator erased-lean-v1 is retired — regenerate the claim"
+  if validator == VALIDATOR_COMPILE_V2 && found == VALIDATOR_COMPILE_V1_RETIRED then
+    throw "claim: validator compile-v1 is retired (the compile claim now names its role table) — regenerate the claim"
+  if found == VALIDATOR_RESOURCE_RETIRED then
+    throw "claim: validator resource-v1 is retired"
+  if found == VALIDATOR_ERASED_LEAN_MODES_RESERVED || found == VALIDATOR_COMPILE_V3_RESERVED then
+    throw s!"claim: validator {found} is reserved, not read"
   throw "claim: wrong validator identity"
 
 def putContext (ctx : ClaimContext) : PutM Unit := do
@@ -778,6 +911,9 @@ def putPayload : Claim → PutM Unit
     -- A two-byte claim tag: `E8 02` on the wire.
     Serialize.put spec
     Serialize.put bound
+  | .compile cc => do
+    -- A two-byte claim tag: `E8 05` on the wire.
+    CompileClaim.put cc
 
 /-- Read the bytes after the scope of the claim variant `variant`;
     `validator` is what the scope said (`getScope`). -/
@@ -808,6 +944,8 @@ def getPayload (variant : UInt64) (validator : UInt8) : GetM Claim := do
     return .catalog (← Serialize.get)
   else if variant == VARIANT_BINDING_CLAIM then
     return .binding (← Serialize.get) (← Serialize.get)
+  else if variant == VARIANT_COMPILE_CLAIM then
+    return .compile (← CompileClaim.get)
   else
     throw s!"Claim.get: invalid claim variant {variant}"
 
@@ -859,6 +997,7 @@ instance : ToString Claim where
     | .contains t c => s!"Contains({t}, {c})"
     | .catalog m => s!"Catalog({m})"
     | .binding spec bound => s!"Binding({bound} meets spec {spec})"
+    | .compile cc => s!"Compile({cc.env}, {cc.target}, {cc.policy}, {cc.abiArity}, {cc.elfHash})"
 
 end Claim
 
@@ -998,6 +1137,7 @@ def variantOf : Ix.Claim → UInt64
   | .contains .. => Ix.Claim.VARIANT_CONTAINS_PROOF
   | .catalog ..  => Ix.Claim.VARIANT_CATALOG_PROOF
   | .binding ..  => Ix.Claim.VARIANT_BINDING_PROOF
+  | .compile ..  => Ix.Claim.VARIANT_COMPILE_PROOF
 
 def put (p : Proof) : PutM Unit := do
   putTagN 4 Ix.Claim.FLAG_PROOF (variantOf p.claim)
@@ -1010,15 +1150,20 @@ def get : GetM Proof := do
   let tag ← getTagN 4
   if tag.flag != Ix.Claim.FLAG_PROOF then
     throw s!"Ixon.Proof.get: expected flag 0xF, got {tag.flag}"
-  if tag.value > Ix.Claim.VARIANT_BINDING_PROOF then
+  if tag.value > Ix.Claim.VARIANT_COMPILE_PROOF then
     throw s!"Ixon.Proof.get: invalid proof variant {tag.value}"
   if tag.value == Ix.Claim.VARIANT_RESOURCE_PROOF_RETIRED then
     throw s!"proof: variant {tag.value} (the resource proof) is retired"
-  let validator ← Ix.Claim.getScope (tag.value + 3)
-  let claim ← Ix.Claim.getPayload (tag.value + 3) validator
+  let variant := Ix.Claim.claimVariantOfProof tag.value
+  let validator ← Ix.Claim.getScope variant
+  let claim ← Ix.Claim.getPayload variant validator
   let lenTag ← getTagN 0
   let bytes ← getBytes lenTag.value.toNat
   pure { claim, proof := bytes }
+
+instance : Serialize Proof where
+  put := put
+  get := get
 
 def ser (p : Proof) : ByteArray := runPut (put p)
 def de (bytes : ByteArray) : Except String Proof := runGetExact get bytes

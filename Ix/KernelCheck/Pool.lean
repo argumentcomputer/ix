@@ -100,7 +100,7 @@ def installDecls (ev : Ix.Kernel.Evidences md) (pendOffset : Nat) (recordDecls :
           decls.push { consts := added, pendStart := pStart, pendStop := pStop }
         else decls
       installDecls ev pendOffset recordDecls allowUserAxioms pos' fe' pend' decls cs' rest
-    | .error (e, _) => (pos + 1, Ix.Kernel.mkFEnv before, recorded, decls, {}, some e)
+    | .error (e, _) => (pos + 1, Ix.Kernel.mkFEnv before, recorded, decls, cs.reset, some e)
 
 /-- Phase A's step: install a record's declarations, recording their checks
 (and, with `recordDecls`, what each declaration installed). -/
@@ -156,13 +156,14 @@ def checkedLogicalEnv (fe : Ix.Kernel.FEnv md) (failures : Nat)
 /-- A watchdog slot: the record a worker is checking, and since when. -/
 abbrev Slot := IO.Ref (Option (Address × Nat))
 
-/-- Recorded check `k` against its prefix view, from a fresh memo state:
+/-- Recorded check `k` against its prefix view, from a fresh memo state at `core`:
 its failure, if any, and its time. -/
-def checkOne (fe : Ix.Kernel.FEnv md) (pend : Array (Ix.Kernel.Cached.PendingCheck md)) (k : Nat) :
+def checkOne (fe : Ix.Kernel.FEnv md) (pend : Array (Ix.Kernel.Cached.PendingCheck md)) (k : Nat)
+    (core : Ix.Kernel.Cached.CoreConfig := {}) :
     IO (Option (Ix.Kernel.CheckError md) × Nat) := do
   let t0 ← IO.monoNanosNow
   let r ← IO.lazyPure fun _ => match pend[k]? with
-    | some pc => match Ix.Kernel.Cached.checkPending .verified fe pc {} with
+    | some pc => match Ix.Kernel.Cached.checkPending .verified fe pc { core } with
       | .ok _ => none
       | .error e => some e
     | none => some (.internal s!"check phase: no recorded check {k}")
@@ -171,7 +172,8 @@ def checkOne (fe : Ix.Kernel.FEnv md) (pend : Array (Ix.Kernel.Cached.PendingChe
 /-- A worker: claim one check at a time off `next` until it is past the
 checks, with its watchdog slot set while it checks. -/
 def worker (fe : Ix.Kernel.FEnv md) (pend : Array (Ix.Kernel.Cached.PendingCheck md))
-    (owners : Array Address) (next : IO.Ref Nat) (slot : Slot) :
+    (owners : Array Address) (next : IO.Ref Nat) (slot : Slot)
+    (core : Ix.Kernel.Cached.CoreConfig := {}) :
     (fuel : Nat) → Array (Nat × Option (Ix.Kernel.CheckError md) × Nat) →
       IO (Array (Nat × Option (Ix.Kernel.CheckError md) × Nat))
   | 0, acc => pure acc
@@ -179,20 +181,22 @@ def worker (fe : Ix.Kernel.FEnv md) (pend : Array (Ix.Kernel.Cached.PendingCheck
     let k ← next.modifyGet fun a => (a, a + 1)
     if k < pend.size then
       if let some a := owners[k]? then slot.set (some (a, ← IO.monoMsNow))
-      let (r, micros) ← checkOne fe pend k
+      let (r, micros) ← checkOne fe pend k core
       slot.set none
-      worker fe pend owners next slot fuel (acc.push (k, r, micros))
+      worker fe pend owners next slot core fuel (acc.push (k, r, micros))
     else pure acc
 
 /-- Phase B on one dedicated worker thread per slot: every check's failure,
 if any, and its time, in check order. -/
 def pool (fe : Ix.Kernel.FEnv md) (pend : Array (Ix.Kernel.Cached.PendingCheck md))
-    (owners : Array Address) (slots : Array Slot) :
+    (owners : Array Address) (slots : Array Slot)
+    (core : Ix.Kernel.Cached.CoreConfig := {}) :
     IO (Array (Option (Ix.Kernel.CheckError md) × Nat)) := do
   let next ← IO.mkRef 0
   let mut tasks := #[]
   for slot in slots do
-    tasks := tasks.push (← IO.asTask (prio := .dedicated) (worker fe pend owners next slot (pend.size + 1) #[]))
+    tasks := tasks.push (← IO.asTask (prio := .dedicated)
+      (worker fe pend owners next slot core (pend.size + 1) #[]))
   let mut table : Array (Option (Ix.Kernel.CheckError md) × Nat) :=
     Array.replicate pend.size (some (.internal "check phase: check never ran"), 0)
   for t in tasks do
@@ -216,7 +220,8 @@ def runOutcome {σ : Type} (src : LoopSource σ md) (ev : Ix.Kernel.Evidences md
     (spell : Ix.Kernel.Key md → String := toString)
     (tier : Option (TierHook σ (Checker md) md) := none)
     (allowUserAxioms : Bool := false)
-    (persist : Bool := true) :
+    (persist : Bool := true)
+    (core : Ix.Kernel.Cached.CoreConfig := {}) :
     IO (LoopOutcome Unit) := do
   let some slot0 := slots[0]? | throw (IO.userError "check-ixe: the pool needs a worker")
   -- phase A: what each record's rows will carry besides the verdict
@@ -253,7 +258,8 @@ def runOutcome {σ : Type} (src : LoopSource σ md) (ev : Ix.Kernel.Evidences md
         tierAddresses := some tierAddrSet }
   let needDecls := tier.isSome && !tierReads.isEmpty
   let startInstaller : Installer md :=
-    { pend := Array.mkEmpty addresses.size
+    { cs := { core }
+      pend := Array.mkEmpty addresses.size
       owners := Array.mkEmpty addresses.size
       installedLog := if needDecls then Array.mkEmpty addresses.size else #[] }
   let installed ← checkLoopWith src.view src.read src.commit st
@@ -291,7 +297,7 @@ def runOutcome {σ : Type} (src : LoopSource σ md) (ev : Ix.Kernel.Evidences md
     let _ ← unsafe Runtime.markPersistent owners
     log s!"installed environment marked persistent in {(← IO.monoMsNow) - tM} ms"
   let tB ← IO.monoMsNow
-  let table ← pool fe pend owners slots
+  let table ← pool fe pend owners slots core
   let failures := table.foldl (fun n (r, _) => if r.isSome then n + 1 else n) 0
   let summed := table.foldl (fun n (_, micros) => n + micros) 0
   log s!"phase B on {slots.size} workers: {(← IO.monoMsNow) - tB} ms wall, {summed / 1000} ms summed, \
@@ -339,6 +345,7 @@ def runOutcome {σ : Type} (src : LoopSource σ md) (ev : Ix.Kernel.Evidences md
                         readMicros := (times.getD row.address (0, 0)).2 })
     (spell := spell)
     (tier := tierHookB)
+    (core := core)
   return { checker := (), counts := out.counts, reasons := out.reasons, failed := out.failed }
 
 /-- Compatibility count-pair API over the mode-generic pool. -/
@@ -349,9 +356,11 @@ def run {σ : Type} (src : LoopSource σ md) (ev : Ix.Kernel.Evidences md) (name
     (onRead : Address → Except ReadError (Read md) → Nat → IO Unit := fun _ _ _ => pure ())
     (spell : Ix.Kernel.Key md → String := toString)
     (tier : Option (TierHook σ (Checker md) md) := src.tierHook)
-    (allowUserAxioms : Bool := false) :
+    (allowUserAxioms : Bool := false)
+    (core : Ix.Kernel.Cached.CoreConfig := {}) :
     IO (Std.HashMap String Nat × Std.HashMap String Nat) := do
   let out ← runOutcome src ev names addresses skip slots emit log progress onRead spell tier allowUserAxioms
+    (core := core)
   return (out.counts, out.reasons)
 
 end Benchmarks.Kernel.CheckIxePool

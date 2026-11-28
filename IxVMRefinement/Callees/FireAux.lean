@@ -3,8 +3,8 @@ import IxVMRefinement.Core.Open
 import IxVMRefinement.Core.Window
 import IxVMRefinement.Levels.Spec
 import IxVMRefinement.Callees.Modeled
-import IxC.Kernel.Verify.InstLevels
-import IxC.Kernel.Verify.InstList
+import IxCK.Kernel.Verify.InstLevels
+import IxCK.Kernel.Verify.InstList
 
 /-! # Pure and representation helpers for `fire_compare` and `fire_ok`
 

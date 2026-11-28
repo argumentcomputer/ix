@@ -1,5 +1,5 @@
-import IxC.Kernel.Admission.Theorems
-import IxC.Fixtures.Authentic
+import IxCK.Kernel.Admission.Theorems
+import IxCK.Fixtures.Authentic
 import Ix.Address.Admission
 import Tests.Ix.Kernel.ReaderTwinFamilies
 import Tests.Ix.Kernel.ReaderShape
@@ -78,7 +78,9 @@ def iPrj (block : Address) (i : Nat := 0) : Ixon.Constant := const (.iPrj ⟨i.t
 def cPrj (block : Address) (c : Nat) (i : Nat := 0) : Ixon.Constant :=
   const (.cPrj ⟨i.toUInt64, c.toUInt64, block⟩) [] []
 
-def limits : Ix.Kernel.Admission.Limits := ⟨1024, 1024, 1 <<< 24, 1 <<< 20, 1 <<< 16⟩
+def limits : Ix.Kernel.Admission.Limits :=
+  { maxRecords := 1024, maxBlobs := 1024, maxTotalBytes := 1 <<< 24,
+    maxRecordBytes := 1 <<< 20, maxRecordUnivNodes := 1 <<< 16 }
 
 def encode (cs : List (Address × Ixon.Constant)) : Ix.Kernel.Admission.Records :=
   cs.map fun (a, c) => (a, Ixon.serConstant c)
@@ -644,7 +646,7 @@ both claim motive 1 here (`List`'s singleton group and `LNode`'s family), and
 the block would be rejected with `duplicate declaration
 ix.<LTree>.0._model._impl.pack_0`, as Mathlib's `Lean.Elab.InfoTree` would
 be (with `pack_1`). The modeller forms the groups largest family first
-(`IxC/Kernel/Frontend/InModel/Nested.lean`, an adapted file). -/
+(`IxCK/Kernel/Frontend/InModel/Nested.lean`, an adapted file). -/
 
 /-- (address, canonical record bytes) -/
 def lTreeRecords : List (String × String) := [
@@ -849,7 +851,7 @@ kernel's `Level.leqCore` implements) establishes only `≤`: the converse
 `application type mismatch`, as Mathlib's `RatFunc.liftOn_def` and
 `RatFunc.liftOn'_def` (unfolding lemmas of `irreducible_def`) would be.
 That case of the comparison falls back on Géran's sublevels
-(`IxC/Kernel/LevelGeran.lean`, a decision procedure,
+(`IxCK/Kernel/LevelGeran.lean`, a decision procedure,
 `Ix.Kernel.Level.Geran.leq_iff`), and the theorem is accepted. The reader
 converts levels as stored. -/
 

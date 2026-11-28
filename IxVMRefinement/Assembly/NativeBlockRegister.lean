@@ -103,7 +103,7 @@ theorem LateRegistry.nativeNoRec {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
   obtain ⟨Reg, hR⟩ := h
   exact ⟨_, hR.nativeNoRec hfacts hext hat⟩
 
-/-- **The install extends the prefix** (IxC: the former and the constructors are fresh, the
+/-- **The install extends the prefix** (IxCK: the former and the constructors are fresh, the
 table is the new structure's). -/
 theorem NativeNoRecFacts.envExt {env env₂ : Ix.Kernel.Env .anon}
     {blk : List (ConstantInfo .anon)} {nP : Nat} {p₀ : Ix.Kernel.NativeParts .anon}

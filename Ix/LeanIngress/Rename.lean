@@ -1,7 +1,7 @@
 import Ix.LeanIngress
-import IxC.Kernel.Verify.Rename.Fold
-import IxC.Kernel.Verify.Frontend.Prepare
-import IxC.Kernel.Ixon.RoleTableInj
+import IxCK.Kernel.Verify.Rename.Fold
+import IxCK.Kernel.Verify.Frontend.Prepare
+import IxCK.Kernel.Ixon.RoleTableInj
 
 /-! # Quotient Source under the artifact's addresses
 

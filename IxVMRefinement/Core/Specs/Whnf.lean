@@ -799,7 +799,7 @@ image, ζ-expanded, may be a `∀`), and a `Let`'s value is scanned even where t
 use it. The field scan answers "found" at a `Let` that ends a `∀` chain (the fields behind it
 are not read syntactically). The claims are stated on the heap, positively (they persist as the
 heap grows). The kernel decides `is_rec` on the classified field kinds of the normalised
-constructors (`nativeIsRec`, `IxC/Kernel/Inductives/NativeInstall.lean:621-647`; its first
+constructors (`nativeIsRec`, `IxCK/Kernel/Inductives/NativeInstall.lean:621-647`; its first
 pass reads the declared telescope syntactically, `nativeRawRec`, `:122-128`). -/
 
 /-- **A chain of `∀` nodes in the heap**: the term at `p` is `∀` nodes with the domains `ds`

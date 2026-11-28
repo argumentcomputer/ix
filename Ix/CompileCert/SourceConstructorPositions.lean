@@ -37,7 +37,7 @@ members.
 to be related to its key (`selfKey`, the published maps), and no
 constructor of the family occurs in the family's own types
 (`InductiveReading.NoCtorIn`). The ingress does not check the latter; the
-fold does, through IxC's route-independent shape guard on every accepted
+fold does, through IxCK's route-independent shape guard on every accepted
 `.indDecl`, and `Ix.Cert.NoCtor.inductive_reads_sourceAccepts` discharges it
 from Source acceptance. Source acceptance (`checkSource … = .ok _`)
 reaches a group's conversion through `Ix.LeanIngress.scheduleOf`;

@@ -1,11 +1,11 @@
 import IxVMRefinement.Endpoint.ComposedResidual
 import IxVMRefinement.StatementRel.ReadsMono
-import IxC.Kernel.SetTheory.FiniteChain
+import IxCK.Kernel.SetTheory.FiniteChain
 import Ix.IxVM.Consistency.ReadsKeys
 import Ix.IxVM.Consistency.Restrict
 import Ix.Cert.CompileCorrectProof
 import Ix.Cert.ReadingKeys
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 import Tests.Ix.Kernel.ModelLaws
 
 /-!
@@ -23,7 +23,7 @@ into consumer-facing corollaries and verification checks:
      `Ix.Kernel.SetTheory W`.
    * `circuitComposed_no_False_VSet` and `circuitComposed_seeds_inhabited_VSet`
      instantiate the `SetTheory` parameter concretely on the pure-Lean Aczel
-     set universe `Ix.Kernel.VSet.{u}` (`IxC/Kernel/SetTheory/FiniteChain.lean`)
+     set universe `Ix.Kernel.VSet.{u}` (`IxCK/Kernel/SetTheory/FiniteChain.lean`)
      under `Ix.Kernel.VSet.OmegaUniverses.{u}` (the exact set-theoretic
      assumption equivalent to Carneiro's `OmegaInaccessibles` in
      `Models/SetTheory/IxSetTheoryModel/Carneiro.lean`).  Every finite prefix
@@ -866,7 +866,7 @@ end IxVM.Refinement.Endpoint
 
 /-! ## 4. Kernel axiom guards on all exported theorems -/
 
-#guard_module_axioms IxC.Kernel.SetTheory.FiniteChain
+#guard_module_axioms IxCK.Kernel.SetTheory.FiniteChain
 
 #guard_kernel_axioms Ix.Kernel.VSet.isTGUniverse_univSet [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.VSet.isTGUniverse_lift [propext, Classical.choice, Quot.sound]

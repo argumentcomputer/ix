@@ -21,7 +21,7 @@ trusted: a wrong datum can only make a claim fail.
 
 ## What is computed
 
-The data are the kernel's: IxC's annotation pass (`annotateBody`, its cached
+The data are the kernel's: IxCK's annotation pass (`annotateBody`, its cached
 twin `annotateBodyI`) writes `BinderMeta.pw` at every binder, by
 `annotPwPiI`/`annotPwLamI` on the annotated opened body. The walk below is
 that pass's traversal, node for node, over an Ixon record as IxVM converts
@@ -30,9 +30,9 @@ domains, the same ζ-reduction of `let` (a `let`-bound variable reads as the
 annotated value), the same datum functions on the same annotated bodies. It
 calls the kernel's datum functions; it does not infer anything itself.
 
-The kernel's environment is IxC's own: the witness's records, read by IxC's
+The kernel's environment is IxCK's own: the witness's records, read by IxCK's
 reader and installed by phase A of its fold (`annotDeclStepWithUserAxioms`;
-partial and unsafe records by the typing tier), in IxC's check order. The
+partial and unsafe records by the typing tier), in IxCK's check order. The
 environment check's phase B is not run: an ill-typed record is installed
 anyway, and IxVM rejects it.
 
@@ -248,7 +248,7 @@ structure View where
   undecoded : Nat := 0
   /-- the records of the builder's environment the witness does not carry: read
   by the kernel only, to type the witness's records (an inductive block's
-  recursor records, which IxC needs to install the block and its projection
+  recursor records, which IxCK needs to install the block and its projection
   table, are often outside a claim's closure); never annotated -/
   support : Array (Address × Ixon.Constant) := #[]
   /-- the carried records that are IxVM model records (`Ixon.Env.modelRecords`):
@@ -307,7 +307,7 @@ def View.ofBuffer (io : Aiur.IOBuffer) (env : Ixon.Env := {}) : View := Id.run d
     records := v.records.qsort (fun x y => x.1.cmpBytes y.1 == .lt)
     support := support.qsort (fun x y => x.1.cmpBytes y.1 == .lt) }
 
-/-- The kernel's environment over a view: IxC's reader context over the
+/-- The kernel's environment over a view: IxCK's reader context over the
 records (and the prelude), and the environment its fold installs. -/
 structure KernelEnv where
   setup : Setup
@@ -334,7 +334,7 @@ def reindex (env : Ix.Kernel.Env .anon) : Ix.Kernel.FEnv .anon := Id.run do
     unless idx.contains ci.name do idx := idx.insert ci.name (i, ci)
   return ⟨env, idx, n⟩
 
-/-- One declaration through phase A of IxC's fold; on failure, the
+/-- One declaration through phase A of IxCK's fold; on failure, the
 environment as it was. -/
 def installDecl (ev : Ix.Kernel.Evidences .anon) (fe : Ix.Kernel.FEnv .anon) (pos : Nat)
     (d : Ix.Kernel.Declaration .anon) :
@@ -358,7 +358,7 @@ def levelCount (c : Ixon.Constant) : Nat :=
   | .muts ms => ms.foldl (fun n m => max n (ofMember m)) 0
   | _ => 0
 
-/-- Records declaring more level parameters than this are not given to IxC:
+/-- Records declaring more level parameters than this are not given to IxCK:
 its install lists the parameters and checks them pairwise distinct, so a record
 with 2^32 of them (the TagN boundary cases, which IxVM cannot prove either) would
 never finish. Their own data need no count: the walk reads the
@@ -438,7 +438,7 @@ private def reserve : EM Nat :=
 private def setNode (ord : Nat) (n : Node) : EM Unit :=
   modify fun nodes => nodes.set! ord n
 
-/-- A leaf, by IxC's reader (`convExpr`), and whether it failed. -/
+/-- A leaf, by IxCK's reader (`convExpr`), and whether it failed. -/
 private def leaf (rc : RecCx) (e : Ixon.Expr) : WM (KExpr × Bool) :=
   match Ix.Kernel.Reader.convExpr rc.ecx #[] e with
   | .ok k => pure (k, false)
@@ -558,7 +558,7 @@ def annotateRecord (k : KernelEnv) (core : Ix.Kernel.Cached.CoreFnsI .anon) (add
 
 /-! ## A record the kernel does not install
 
-IxC installs a record only if its fold accepts it, and refuses records of a
+IxCK installs a record only if its fold accepts it, and refuses records of a
 partial closure in cascades (a recursor whose block is not in the input, then
 whatever uses that recursor, then the `Nat` operations whose evidence uses
 those...). The data must not depend on that: a record the kernel does not
@@ -667,7 +667,7 @@ def lenientInfos (cx : Ctx .anon) (fe : Ix.Kernel.FEnv .anon)
         j := j + 1 + ind.ctors.size
   return (out, left)
 
-/-- Install `addresses` (owners, in check order) as phase A of IxC's fold
+/-- Install `addresses` (owners, in check order) as phase A of IxCK's fold
 does, continuing past failures: a failed declaration leaves the environment
 as it was. Partial and unsafe records go through the typing tier. A record
 the kernel does not install enters directly, annotated by the walk

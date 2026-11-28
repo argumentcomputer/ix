@@ -1,6 +1,6 @@
 import Ix.Cert.ReaderClosureKeys
 import Ix.CompileCert.Loop
-import IxC.Kernel.Ixon.PreludeShape
+import IxCK.Kernel.Ixon.PreludeShape
 
 /-! # The committed fallback's cache facts
 

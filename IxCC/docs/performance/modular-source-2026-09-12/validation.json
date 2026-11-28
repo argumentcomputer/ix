@@ -1,0 +1,143 @@
+{
+  "artifact_sets_equal_across_three_reference_processes": true,
+  "certificate_rejections": 40,
+  "format": "ixcc/modular-source-validation/1",
+  "fresh_replay": {
+    "all_artifact_bytes_exact": true,
+    "compiler_executable_rebuilt": false,
+    "executable_seeds": {
+      "check-source-modular": {
+        "bytes": 119277504,
+        "sha256": "531f7e47e639f3273db87ebab013030026de3cb6c65172e5a3ba9d37d51cb8f9"
+      },
+      "source-modular": {
+        "bytes": 124062728,
+        "sha256": "5e3cfbc5c149fc1134dee0f3f93eda208dcca3c14ec38196ba5c5acfec16d321"
+      }
+    },
+    "finished_utc": "2026-09-12T20:57:49.803998+00:00",
+    "independent_gate_passed": true,
+    "retained_certificates_rechecked": true,
+    "source_inventory_exact": true
+  },
+  "full_nix_checks": [
+    {
+      "derivation": "/nix/store/2f3x74ilp9330b8qyasp7xrig8ij4pf6-IxCC.drv",
+      "name": "build"
+    },
+    {
+      "derivation": "/nix/store/8hb29yjrvnx3lh5y70jjg3i7f1hal1zr-ci-workflow-check.drv",
+      "name": "ci-workflow"
+    },
+    {
+      "derivation": "/nix/store/cra2srcg2531f5cz406k5cpwzalrycfs-check-trusted-externs.drv",
+      "name": "trusted-extern-ledger"
+    },
+    {
+      "derivation": "/nix/store/4fy2smlfdr6hplb1bsrrn8hkpan45b80-check-x86-encoder.drv",
+      "name": "x86-encoder-decoder"
+    },
+    {
+      "derivation": "/nix/store/mb77wv6cslyffcifrzr9z4x8ikfhlwcd-check-x86-bytes.drv",
+      "name": "x86-byte-execution"
+    },
+    {
+      "derivation": "/nix/store/j2si8cn637vr0hnkv1pxxaigzz0d6y5h-check-x86-streams.drv",
+      "name": "x86-stream-objects"
+    },
+    {
+      "derivation": "/nix/store/bn7p5mh1irw6a01f65n61pds3dk4jpwy-x86-object-fixture.drv",
+      "name": "x86-elf-object"
+    },
+    {
+      "derivation": "/nix/store/2ww59n9vkfhrbgcvxda0yjh9ynww9y2w-source-coverage.drv",
+      "name": "source-coverage"
+    },
+    {
+      "derivation": "/nix/store/n7780l4pknsw833qbq0rjgz1a8smp5v8-source-recursion.drv",
+      "name": "source-recursion"
+    },
+    {
+      "derivation": "/nix/store/hb7nkzaa8z3rcib3d61mm3xgi78zwn6x-source-call-reuse.drv",
+      "name": "source-call-reuse"
+    },
+    {
+      "derivation": "/nix/store/25mh8619s872qqja2q8varh7fr8snzyv-source-space.drv",
+      "name": "source-space"
+    },
+    {
+      "derivation": "/nix/store/3nf5j2d2plvnhcgbpwmwd7dhkrpr4yxa-source-modular.drv",
+      "name": "source-modular"
+    },
+    {
+      "derivation": "/nix/store/xiln0sm2bvb55fwffiy8h7721j08syaw-ixir2-fixture.drv",
+      "name": "ixir2-identity"
+    },
+    {
+      "derivation": "/nix/store/pmrgams1x98wkrq2v2ir5k937mp5rhyp-source-unique-reuse.drv",
+      "name": "source-unique-reuse"
+    },
+    {
+      "derivation": "/nix/store/h7m7mv8qdgnwp5pkl0n0i921d6619rd9-source-native-unique.drv",
+      "name": "source-native-unique"
+    },
+    {
+      "derivation": "/nix/store/m8aqnllprha1wj92r2ylrq67anl6qis1-source-native-runtime.drv",
+      "name": "source-native-runtime"
+    },
+    {
+      "derivation": "/nix/store/z8s9qcyapf2jvbiqiyaddz8kdy0mxvhb-source-native-allocating.drv",
+      "name": "source-native-allocating"
+    },
+    {
+      "derivation": "/nix/store/kynsjcqq218br0am4471f7w8h2x2kaap-source-native-upstream.drv",
+      "name": "source-native-upstream"
+    },
+    {
+      "derivation": "/nix/store/3p062gla3nhdjdi42mw8fjb0jlz5z4q8-source-native-scalar.drv",
+      "name": "source-native-scalar"
+    },
+    {
+      "derivation": "/nix/store/w5crhp532w55020aiih8y4691kiyik5d-source-native-physical-scalar.drv",
+      "name": "source-native-physical-scalar"
+    },
+    {
+      "derivation": "/nix/store/n15yp5j6c1p5q9nv5s2wmhajvbwfyap5-source-native-heap.drv",
+      "name": "source-native-heap"
+    },
+    {
+      "derivation": "/nix/store/kjzac9righyd261akr4sza0ym9wf5bb3-source-native-captured-scalar.drv",
+      "name": "source-native-captured-scalar"
+    },
+    {
+      "derivation": "/nix/store/z4ny7w1y0nj5ihnqg9n3mf1x5gi0bflb-source-borrow.drv",
+      "name": "source-borrow"
+    },
+    {
+      "derivation": "/nix/store/ksl5v8vqbmjzyqpq1pnnfq8za6i9ny68-source-borrow-runtime.drv",
+      "name": "source-borrow-runtime"
+    },
+    {
+      "derivation": "/nix/store/xa67arzn90xwzkck3qagj35qy87kwill-tests.drv",
+      "name": "tests"
+    },
+    {
+      "derivation": "/nix/store/xinxq3gv1fcppxdagl50fyw8kyhwk15l-catalog-contact.drv",
+      "name": "catalog-contact"
+    },
+    {
+      "derivation": "/nix/store/ss4w0mqjxwcj838vy46zvayj2w5ifcjk-benchmark.drv",
+      "name": "benchmark-correctness-smoke"
+    },
+    {
+      "derivation": "/nix/store/i8x6lhsvhb4xx6hm2hjd0yyalviyjpf8-compiler-scaling.drv",
+      "name": "compiler-scaling-correctness-smoke"
+    }
+  ],
+  "full_nix_exit_code": 0,
+  "platform": "x86_64-linux",
+  "public_file_mutations": 6,
+  "recorded_utc": "2026-09-12T20:58:27.666154+00:00",
+  "reference_processes_failed": 0,
+  "targeted_check_passed": true
+}

@@ -1,0 +1,29 @@
+{"source": "Blocks.lean",
+ "roots":
+ [{"name": "ErasedBlocks.mainB",
+   "address":
+   "e8df4a5c960447da164eb0886ca091b5abcb9b3f8e9c4c736a1eec87e2ac94f7"},
+  {"name": "ErasedBlocks.mainM2",
+   "address":
+   "66ad2cb5f550760f9f840fbac47d129b5a9e7786d58aaa4331f9588a80d7a0c6"},
+  {"name": "ErasedBlocks.mainN",
+   "address":
+   "83eb4a59337964f1a72ba14ecc2790bac033c58882c65668e1f572a547deb1b4"},
+  {"name": "ErasedBlocks.mainN1",
+   "address":
+   "61f114618c1429de287e42b001881099bb498bd92d0a1669e59f525a49d1edf1"},
+  {"name": "ErasedBlocks.mainR",
+   "address":
+   "f7ef91e3654b387d71e962e7bd7227d507f1bd06b7045d71661fceb91aef2cd0"},
+  {"name": "ErasedBlocks.r0",
+   "address":
+   "63af8f0da3438e0537321150a9792287d4a4d20b38bdc9a2be385b86ad473563"},
+  {"name": "ErasedBlocks.r1",
+   "address":
+   "d3f43b95252d4efbb1c27fe061371bd8d0c06980cd459e0620e5f1140ad28f76"},
+  {"name": "ErasedBlocks.r2",
+   "address":
+   "c3631f29dc211bb6cd3732b83609a83d96bc5b79a319ffa7e91e50887a0dae52"}],
+ "format": "ixcc/k1-equations/1",
+ "failures": [],
+ "equations": []}

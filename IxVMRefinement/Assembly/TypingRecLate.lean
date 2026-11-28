@@ -1,10 +1,10 @@
 import IxVMRefinement.Assembly.LateRegistry
-import IxC.Kernel.Model.StoreLate
+import IxCK.Kernel.Model.StoreLate
 
 /-! # The step of a recursor record for a registered native family
 
 A standalone recursor record whose family is an ordinary inductive family the circuit treats
-as native is installed by IxC's late step (`DeclNativeRecLateRunJ`): the recursor for a family
+as native is installed by IxCK's late step (`DeclNativeRecLateRunJ`): the recursor for a family
 already stored, at the record's own position. This module proves the refinement's side of that
 step from the step's relation:
 
@@ -24,7 +24,7 @@ step from the step's relation:
   the parent's; the rules are at the family's constructors in order).
 * `late_prefixInv_step`: the prefix invariant and the registry at the environment with the
   recursor, from the relation, the companions there and the recursor's reload. The model step
-  is IxC's `EnvModelN.late`; the store facts are `storeFacts_declNativeRecLateRunJ`; the
+  is IxCK's `EnvModelN.late`; the store facts are `storeFacts_declNativeRecLateRunJ`; the
   refinement's own store fields (`StrongEnvProps`, `EtaCtorStored`, `EtaShape`,
   `AuxRootSynced`) hold because the head is a recursor at a base key; the load contract is
   `storedLoads_cons_value` (a recursor is none of the excluded kinds).

@@ -2,7 +2,7 @@ module
 
 public import LSpec
 public import Ix.Cli.ClaimPolicy
-public import IxC.Kernel.Ixon.Prelude
+public import IxCK.Kernel.Ixon.Prelude
 
 /-! # The claims `ix verify` and `ix compress` refuse by default
 
@@ -11,12 +11,13 @@ is admitted; one under a role binding other than the default role table that the
 kernel does not admit, or with user axioms, an assumed binding or assumed leaves,
 is refused unless its flag allows it, or a binding proof or a whole partition
 discharges the condition. A claim naming another specification set than this
-build's is refused under every flag. A claim of another kind than `eval`, `check`
-and `checkEnv` is refused unless its own flag accepts it, and a catalog under
-every flag.
+build's is refused under every flag. A claim of another kind than `check` and
+`checkEnv` is refused unless its own flag accepts it (`eval` included), and a
+catalog under every flag.
 
-`Ix.Cli.ClaimPolicy.statement`: each kind's report names the kind, the subject
-and the conditions, each with what discharges it or the flag that accepted it.
+`Ix.Cli.ClaimPolicy.statement`: each kind's report names the kind, the subject,
+the theorem that covers a typing claim or that none does, and the conditions,
+each with what discharges it or the flag that accepted it.
 
 `Ix.Cli.TableAdmission.standing` over a temporary cache: the default table
 needs no admission and reads no environment; a literal class, another
@@ -56,17 +57,18 @@ def refusesSaying (pol : Policy) (claim : Ix.Claim) (text : String)
 
 /-- Every flag. -/
 private def everyFlag : Policy :=
-  { customBinding := true, axioms := true, assumedBinding := true, assumptions := true,
+  { eval := true, customBinding := true, axioms := true, assumedBinding := true, assumptions := true,
     reveal := true, contains := true, binding := true }
 
 /-- `everyFlag` without `except`'s kind flag. -/
 private def allBut (except : String) : Policy :=
   { everyFlag with
-    reveal := except != "reveal", contains := except != "contains",
+    eval := except != "eval", reveal := except != "reveal", contains := except != "contains",
     binding := except != "binding" }
 
-/-- A claim of each kind that states no typing, with its kind and its flag. -/
+/-- A claim of each kind that no theorem states, with its kind and its flag. -/
 private def untyped : List (String × Ix.Claim × Policy) := [
+  ("eval", .eval ctx (addr "in") (addr "out") none, { eval := true }),
   ("reveal", .reveal (addr "comm") (.axio none none none) none, { reveal := true }),
   ("contains", .contains (addr "tree") (addr "const"), { contains := true }),
   ("binding", .binding spec (addr "binding"), { binding := true })]
@@ -99,8 +101,9 @@ def kindTests : TestSeq :=
 
 /-- Whether `claim`'s statement says every one of `texts`. -/
 private def statementSays (claim : Ix.Claim) (texts : List String)
-    (bindingDischarged assumptionsDischarged tableAdmitted : Bool := false) : Bool :=
-  match statement claim bindingDischarged assumptionsDischarged tableAdmitted with
+    (bindingDischarged assumptionsDischarged tableAdmitted : Bool := false)
+    (route : Route := .direct) : Bool :=
+  match statement claim bindingDischarged assumptionsDischarged tableAdmitted route with
   | .ok s => texts.all fun t => (s.splitOn t).length > 1
   | .error _ => false
 
@@ -112,18 +115,55 @@ def statementTests : TestSeq :=
       ["kind: check-env", s!"subject: the constants of the canonical tree with root {addr "root"}",
        "conditions:", s!"specification set: {spec}, this build's",
        s!"role table: {defaultTable}, the default role table", "axioms: the standard three only",
-       "role binding: validated in the proof", "typing assumptions: none"])
+       "role binding: validated lazily by this proof", "typing assumptions: none"])
   ++ test "a check names its constant" (statementSays (.check ctx (addr "c") none)
       ["kind: check", s!"subject: the constant {addr "c"}"])
+  ++ test "  states typing under Ix's rules, not Lean's kernel"
+      (statementSays (.check ctx (addr "c") none)
+        ["type-checks under Ix's kernel rules", "equality reflection", "not Lean's kernel"]
+       && !statementSays (.check ctx (addr "c") none) ["well-typed"])
+  ++ test "  and names the theorem, which needs a binding proof this run did not verify"
+      (statementSays (.check ctx (addr "c") none)
+        ["theorem: IxVM.Refinement.Endpoint.circuitComposed covers this claim only together with \
+          an accepted binding claim", "which this run did not verify",
+         "has a model in every set theory", "no typing by Lean's kernel",
+         "role binding: validated lazily by this proof",
+         "established only by a binding proof for it"])
+  ++ test "  or states what it gives with a binding proof for its table"
+      (statementSays (.check ctx (addr "c") none) (bindingDischarged := true)
+        [s!"with the binding proof for role table {defaultTable} verified in this run",
+         "a BLAKE3 collision, or the table is valid",
+         "established by the binding proof verified with it"])
+  ++ test "  and that no theorem covers a table only the kernel admitted"
+      (statementSays (.check { ctx with binding := addr "table" } (addr "c") none)
+          (tableAdmitted := true)
+        ["the kernel's admission of the table is not such a proof",
+         "no theorem connects that admission"])
+  ++ test "a claim with assumed leaves is covered by no theorem"
+      (statementSays (.checkEnv ctx (addr "root") (some (addr "leaves"))) (assumptionsDischarged := true)
+        ["theorem: none", "no theorem states the composition of a shard partition"])
+  ++ test "nor an aggregation root"
+      (statementSays (.checkEnv ctx (addr "root") none) (route := .aggregate)
+        ["theorem: none states an aggregation root", "distinct validators 14/15"])
+  ++ test "Mode 2 EvalDischargedClaim (validators 14/15) is distinct from Ix.Claim.de and refused by default"
+      (let dc : Ix.DynamicLink.EvalDischargedClaim := { ctx, kind := .check (addr "c"), assumptions := none }
+       let bytes := Ix.DynamicLink.serEvalDischargedClaim dc
+       (Ix.Claim.de bytes).isOk == false &&
+       (Ix.DynamicLink.deEvalDischargedClaim bytes).toOption == some dc &&
+       (match refusalDynamicBytes {} bytes with | .ok (some _) => true | _ => false) &&
+       (match refusalDynamicBytes { eval := true } bytes with | .ok none => true | _ => false))
+  ++ test "  nor a compressed one"
+      (statementSays (.checkEnv ctx (addr "root") none) (route := .compressed)
+        ["nor a compressed proof to the aggregation proof"])
   ++ test "an eval names its input and output"
       (statementSays (.eval ctx (addr "in") (addr "out") none)
         ["kind: eval", s!"the constant {addr "in"}, evaluating to the constant {addr "out"}"])
-  ++ test "an eval says what it asserts and that the consistency theorem does not state it"
+  ++ test "an eval says what it asserts and that no theorem states it"
       (statementSays (.eval ctx (addr "in") (addr "out") none)
         ["the output is the input's normal form as IxVM's evaluator computes it",
-         "scope: not covered by the IxVM consistency theorem"])
-  ++ test "no other kind carries the eval scope line"
-      (!statementSays (.check ctx (addr "c") none) ["scope: not covered"])
+         "theorem: none; no theorem states an eval claim", "--allow-eval-claim"])
+  ++ test "no other kind carries the eval theorem line"
+      (!statementSays (.check ctx (addr "c") none) ["no theorem states an eval claim"])
   ++ test "each open condition names the flag that accepted it"
       (statementSays (.checkEnv
           { ctx with binding := addr "table", axioms := some (addr "ax"), bindingAssumed := true }
@@ -177,6 +217,10 @@ def unitTests : TestSeq :=
   ++ test "  unless --allow-custom-binding" (admits { customBinding := true } other)
   ++ test "  or the kernel admits the table" (admits {} other (tableAdmitted := true))
   ++ test "  which a literal class never is" (!admits {} literal (tableAdmitted := true))
+  ++ test "  and a binding proof never discharges a literal class's assumed binding"
+      (!admits { customBinding := true }
+        (.checkEnv { ctx with literalClass := true, bindingAssumed := true } (addr "root") none)
+        (bindingDischarged := true))
   ++ test "  and the admission relaxes no other condition"
       (!admits {} (.checkEnv { ctx with binding := addr "table", axioms := some (addr "axioms") }
         (addr "root") none) (tableAdmitted := true))

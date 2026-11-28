@@ -62,7 +62,7 @@ def skip_bytes := aiur_fn⟦
 ⟧
 
   -- Nat literal blobs. A blob is canonical when it is Lean's `Nat.toBytesLE n`: `[0]` for 0,
-  -- otherwise no trailing zero byte. IxC's reader accepts exactly these (`canonicalNatural`: one
+  -- otherwise no trailing zero byte. IxCK's reader accepts exactly these (`canonicalNatural`: one
   -- byte, or more than one whose last is not 0) and refuses any other (`ECx.natAt`). A Nat
   -- literal's blob is read in one place, the `Nat` arm of `convert_expr`
   -- (`Ingress::load_verified_blob` has no other caller but the `Str` arm), which refuses the same
@@ -146,7 +146,7 @@ def convert_univ_idxs := aiur_fn⟦
 
   -- Sharing in bounded form: `sharing` is the record's whole table, and `bound` the number of
   -- entries the expression may refer to. Entry `n` is converted with bound `n`, so it refers only
-  -- to entries before it, and entry 0 to none (IxC's `MemberReader.mk'`). An entry is found by
+  -- to entries before it, and entry 0 to none (IxCK's `MemberReader.mk'`). An entry is found by
   -- `Lists::drop` on the one table, whose calls all lookups share. (The earlier form converted
   -- entry `n` under `Lists::take(sharing, n)`, a new list per entry: quadratic, review K3-1.)
   --

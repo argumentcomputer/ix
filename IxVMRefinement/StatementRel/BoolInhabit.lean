@@ -1,17 +1,17 @@
 import IxVMRefinement.StatementRel.BoolRowStore
 import IxVMRefinement.StatementRel.DefInhabit
-import IxC.Kernel.Semantics.Inductives.DeclNative
+import IxCK.Kernel.Semantics.Inductives.DeclNative
 
 /-! # An inhabitant of the table-validity shape with the `Bool` group
 
 `tableShape_bool`: the default table is valid, in the public sense of `TableShape`, on the
 basis and quotient groups and the `Bool` group (group 6), with the store of their 29
-committed records and the environment that IxC's own executable check of the `Bool` block
+committed records and the environment that IxCK's own executable check of the `Bool` block
 installs at the basis environment.
 
 * The block is read from its rows by the row reader (`boolBlock`: the type, the two
   constructors and the recursor, the recursor record folded into the block's declaration).
-* The environment is IxC's: `nativeParts?` recognises the block, and the native check
+* The environment is IxCK's: `nativeParts?` recognises the block, and the native check
   (`checkNative`, at fuel 16) passes at the basis environment and installs the four
   constants in front of the pins (`boolCheck`, evaluated). The kernel's step theorem gives
   the model (`boolEnv_ok`).
@@ -64,23 +64,23 @@ theorem boolBlock_notPin : (basisPinHit boolBlock).isNone = true := by decide +k
 
 set_option maxHeartbeats 4000000 in
 set_option maxRecDepth 100000 in
-/-- IxC's recogniser of directly installed blocks accepts the block (decided). -/
+/-- IxCK's recogniser of directly installed blocks accepts the block (decided). -/
 theorem boolParts_isSome : (nativeParts? 0 boolBlock).isSome = true := by decide +kernel
 
-/-- **The block's parts for IxC's native check.** -/
+/-- **The block's parts for IxCK's native check.** -/
 def boolParts : NativeParts .anon := (nativeParts? 0 boolBlock).get boolParts_isSome
 
 theorem boolParts_eq : nativeParts? 0 boolBlock = some boolParts :=
   (Option.some_get boolParts_isSome).symm
 
-/-- **The environment**: what IxC's native check of the block installs at the basis
+/-- **The environment**: what IxCK's native check of the block installs at the basis
 environment (its executable run at fuel 16). -/
 def boolEnv : Env .anon :=
   okOr (checkNative (m := CheckM .anon) (fueledOps .verified 16) basisEnv boolParts) basisEnv
 
 set_option maxHeartbeats 4000000 in
 set_option maxRecDepth 100000 in
-/-- **IxC's native check of the block passes at the basis environment** (its executable run
+/-- **IxCK's native check of the block passes at the basis environment** (its executable run
 at fuel 16, evaluated). -/
 theorem boolCheck_ok :
     (checkNative (m := CheckM .anon) (fueledOps .verified 16) basisEnv boolParts).toBool =
@@ -338,7 +338,7 @@ theorem installed_keptIn {ci : ConstantInfo .anon} (h : ci ∈ boolEnv.consts.ta
 /-! ## The inhabitant -/
 
 /-- **The default table is valid, in the public sense, on the basis and quotient groups and
-the `Bool` group**, with the store of their 29 committed records and the environment IxC's
+the `Bool` group**, with the store of their 29 committed records and the environment IxCK's
 native check of the `Bool` block installs at the basis environment. -/
 theorem tableShape_bool :
     TableShape.{u} committedDefaultRoleTable (fun g => g < 6 ∨ g = 6) boolStore boolEnv := {

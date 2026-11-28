@@ -231,7 +231,7 @@ programs, their executors, verifiers and verifying keys, and a
   cached proofs follow the parameters actually in use.
 
 The production parameters are `Parameters::default`
-(`crates/aiur/src/trace/stark.rs`): `log_blowup` 2 (blowup 4), 100 queries
+(`crates/aiur/src/trace/stark.rs`, Protocol `v6` / `Fp^3`): `log_blowup` 2 (blowup 4), 128 queries
 and 20-bit query proof of work.
 
 - **Lanes.** A `Lane` holds both provers on its device, a prover thread pool

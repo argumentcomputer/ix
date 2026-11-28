@@ -1,6 +1,6 @@
 import Ix.IxVM.Refinement.DeserializeBinders
-import IxC.Ixon.Verify.BoundedConstant
-import IxC.Ixon.Verify.Framing
+import IxCK.Ixon.Verify.BoundedConstant
+import IxCK.Ixon.Verify.Framing
 import IxVM.Obs.IxonDeserialize
 import IxVMRefinement.Lib.Lists
 import IxVMRefinement.Lib.Words
@@ -9,7 +9,7 @@ import IxVMRefinement.Ingress.Hashed
 /-! # Payload and side-table deserialization specs for `IxonDeserialize`
 
 Refines every payload, projection, mutual-member, and side-table decoder in `IxonDeserialize`
-against `Ixon.GetM` (`IxC.Ixon.Codec`):
+against `Ixon.GetM` (`IxCK.Ixon.Codec`):
 
 * Heap representations (`RepIxonAddressRef`, `RepDefinition`, `RepRecursorRule`, `RepRecursor`,
   `RepAxiom`, `RepQuotient`, `RepFieldMode`, `RepConstructor`, `RepInductive`,

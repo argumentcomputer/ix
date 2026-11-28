@@ -1,0 +1,406 @@
+import Lake
+
+open System Lake DSL
+
+package «ix-cc» where
+  /- CI distributes many executables together. Resolve Lean/Lake symbols from
+  the pinned shared libraries before the default static archives, avoiding a
+  separate copy of the compiler runtime in every test binary. -/
+  moreLinkArgs := match get_config? ciLeanLibDir with
+    | some directory => #[s!"-Wl,-rpath,{directory}", "-lLake_shared", "-lleanshared",
+        "-lleanshared_2", "-lleanshared_1", "-lInit_shared"]
+    | none => #[]
+
+/- Blake3. IxCC imports only its pure Lean `Blake3.Pure` (every address IxCC
+computes is pure BLAKE3); the trust ledger refuses an import of the package's
+Rust or C backend. Keep this revision in lockstep with ix's (`../lakefile.lean`),
+the repository flake's `blake3-lean` input and `lake-manifest.json`. -/
+require Blake3 from git
+  "https://github.com/argumentcomputer/Blake3.lean" @
+  "3f8b805614a0bae1c033469ff893a8f0ee85f601"
+
+/- Ix's certified-kernel package (`IxCK/`, no dependencies, no Rust). Its
+pure Ixon v5 codec (`IxCK.Ixon.Canonical`) is imported by the ingress wire
+layer (`IxCC.Ixon.V4.Convert`, `IxCC.Ixon.V3.Wire`); its role vocabulary
+(`IxCK.Kernel.Key`) by the mapping of the kernel's roles to IxCC's pinned
+identities (`IxCC.Src.Pinned`); its host limit resolver (`IxCK.Host.Limits`)
+by `IxCC.Cli`; its resource mode checker (`IxCK.Resource.Check`) by the N5
+ingress gate (`IxCC.Src.KernelFront.Accept`); and its tiered admission entry,
+prelude and executed typing core (`IxCK.Kernel.Admission.Tier`,
+`IxCK.Kernel.Ixon.Prelude`, `IxCK.Kernel.Cached.CoreC`) by the front end over the
+kernel (`IxCC.Src.KernelFront`, `docs/kernel-front-end-design.md`). It is the
+package beside this one in the ix workspace; the trust ledger records the
+SHA-256 of every file of the imported closure (including the
+kernel's model statement imported only by `IxCCGrounding` and `IxCCCorrect`), so a change to
+it is reviewed here. The part of the kernel's proof tree that the target statements
+(`IxCCCorrect`) cite, which nothing else may import, is the ledger's proof-only dependency
+(`ix-kernel-proofs`), pinned by one BLAKE3 digest over its files. -/
+require «ix-ck» from "../IxCK"
+
+@[default_target]
+lean_lib IxCC where
+  roots := #[`IxCC]
+
+/- The compiler: `ixcc compile CLOSURE.ixe --equations EQ.json
+--root NAME -o OUT.o` runs ingress, `produce` and `Recheck.run` and writes the
+ELF object; `ixcc check-cert` rechecks a certificate. The logic is in
+`IxCC.Cli`; the root only calls it. -/
+lean_exe ixcc where
+  root := `IxCC.Cli.Main
+
+/- Test modules are separate from the production import root. They include the
+repository checks and tools (`IxCCTests.Scripts`) and the fixture sources
+compiled natively as independent oracles (`IxCCTests.Fixtures.K1` for the Src
+differential suite, `IxCCTests.Fixtures.SortPoly` for level-exact relevance,
+D18). -/
+lean_lib IxCCTests where
+  roots := #[`IxCCTests]
+
+/- The grounding of SrcEval in the certified kernel's model
+(docs/certification-design.md, "The grounding library"): soundness of SrcEval
+in every model of the kernel's reading with the laws. It and the target
+statements (`IxCCCorrect`, below) are the libraries that import the kernel's
+model (`IxCK.Kernel.Denotes`); nothing in the production library or the shared
+program build imports either
+(`check-build-graph`). Built, with its axiom fence, and run on committed
+closures by the required check `ixcc-grounding`. -/
+lean_lib IxCCGrounding where
+  roots := #[`IxCCGrounding]
+
+/- The target statements (`IxCCCorrect`): the public claim, the proposition
+`Correct` an accepted argument has to establish about a shipped file, the two
+routes to it, and what the existing theorems establish today (`CorrectToday`).
+It imports the compiler, the grounding library's syntax and the kernel's model
+statement, so nothing in the production library, the shared proof aggregate or
+a shared program imports it (`check-build-graph`). Built, with its axiom fence
+(`IxCCCorrect/Fence.lean`), by the required check `ixcc-grounding`, in the
+grounding library's build. -/
+lean_lib IxCCCorrect where
+  roots := #[`IxCCCorrect]
+
+/- Src: rules, the K1 table and runs, the native differential, pins,
+diagnostics and the bench-k1 entries. -/
+lean_exe «tests-src» where
+  root := `IxCCTests.Src.Main
+
+/- SrcEval step counts (`docs/source-steps.md`): a closure's root on `Nat`
+arguments after `ixcc`'s front end, or every case of a corpus manifest; one
+JSON object per run. -/
+lean_exe «src-steps» where
+  root := `IxCCTests.Src.StepsMain
+
+/- Src rows over the 60 s budget: `ack 3 10`, `fib 30` without primitives. -/
+lean_exe «tests-src-slow» where
+  root := `IxCCTests.Src.SlowMain
+
+/- The relevance annotator and checker. -/
+lean_exe «tests-relevance» where
+  root := `IxCCTests.Src.Relevance.Main
+
+/- Lam and erasure: Lam's rules, erasure on
+synthetic programs, SrcEval against Lam on K1, bench-k1 and src-sortpoly
+(readback, traps, least clocks), the native differential, annotation
+mutation, well-formedness and static modes of every erased program. -/
+lean_exe «tests-lam» where
+  root := `IxCCTests.Lam.Main
+
+/- Regenerates (or with `--check` compares) the K1 artifacts the kernel
+evaluates: `IxCCTests/Src/Artifacts/*.lean`, the loaded fib, tak and
+gcd programs with their annotations as Lean terms. -/
+lean_exe «gen-src-artifacts» where
+  root := `IxCCTests.Src.ArtifactMain
+
+/- Anf and the middle-end passes P1–P4: Lam
+against Anf after every pass on k1.ixe and bench-k1, the K1 shape
+expectations, generated Lam programs under random oracles, WellScoped and
+shrink idempotence, and the passes re-run by the kernel. -/
+lean_exe «tests-anf» where
+  root := `IxCCTests.Anf.Main
+
+/- Fir, the Phase 1 Own fragment and Cfg: every
+root and first-order constant of k1.ixe and bench-k1 through Anf → Fir →
+Own → Cfg against Anf and Lam (readback, traps, each level's clock map and
+timeout clause), the fallback route declined at Fir, generated first-order
+programs, the bench entries at test sizes, well-formedness at every level,
+and the lowerings re-run by the kernel. -/
+lean_exe «tests-fir» where
+  root := `IxCCTests.Fir.Main
+
+/- The shape certificate at Fir: on the K1 benchmarks and the scalar corpus, the untrusted
+producer (`Fir.ShapeInfer`) and the checker (`Fir.Shape.check`), accept or first refusal per
+root, the trivial certificate and a refused mutant per closure, the native flow condition; and,
+at build time, the checker's path audited for the kernel-evaluable style. -/
+lean_exe «tests-fir-shape» where
+  root := `IxCCTests.Fir.ShapeMain
+
+/- The runtime lowering: `Rt.lower` from Cfg to
+Lir on k1.ixe, bench-k1 and generated programs against Cfg (related values,
+typed readback, traps, the clock relation, heap and natOverflow), the
+primitive sequences at their boundaries, `cx_init`, hand-written cases and
+planted mutations; with `--native`, `Backend.compile` to native objects run at
+every level and as test executables IxCC writes; and the lowering re-run by
+the kernel. -/
+lean_exe «tests-rt» where
+  root := `IxCCTests.Rt.Main
+
+/- Plain-RC runtime controls, iterative reclamation and native allocator ABI. -/
+lean_exe «tests-rt-rc» where
+  root := `IxCCTests.Rt.Rc.Main
+
+/- Exact RC Cfg admission predicates and independently literal evaluator results. -/
+lean_exe «tests-cfg-rc» where
+  root := `IxCCTests.Cfg.Rc.Main
+
+/- Real-source RC certificates: independent writer/reader processes,
+complete list observations, corruptions and same-arena call/drop recycling. -/
+lean_exe «tests-rc-certificate» where
+  root := `IxCCTests.Recheck.Rc.Main
+
+/- Actual RC pipeline observations and event counts, with independent emitted
+object corruption and real-source heap exhaustion controls. -/
+lean_exe «tests-pipeline-rc» where
+  root := `IxCCTests.Pipeline.Rc.Main
+
+/- Object driver protocol, raw-word release and inter-call memory controls. -/
+lean_exe «tests-driver-session» where
+  root := `IxCCTests.X86.DriverSession.Main
+
+/- The compiler end to end: the `ixcc` command line on
+the bench-k1 closures and k1.ixe (with `--native`, run as test executables at
+test and bench sizes), `produce` + `Recheck.run` against the stage
+suites' pipeline, the certificate's JSON round trip, declines, and
+certificate mutations (rejected, or code that agrees on every tested input). -/
+lean_exe «tests-pipeline» where
+  root := `IxCCTests.Pipeline.Main
+
+/- Deterministic x86 step counts: each bench-k1 program's
+`cx_init` and root on the typed x86 machine and on `ByteEval`, compared
+exactly with the reviewed baseline `fixtures/ixon-v4/bench-k1/steps.json`
+(`--write` regenerates it). -/
+lean_exe «check-steps» where
+  root := `IxCCTests.Pipeline.StepsMain
+
+/- The corpus builder (`docs/corpus.md`): `corpus check` verifies the
+frozen fixture families against their `ixcc/corpus/1` manifests
+without ix; `corpus rebuild MANIFEST --ix IX` recompiles a family with the
+pinned ix and recomputes the expected outputs with Lean's interpreter. -/
+lean_exe corpus where
+  root := `IxCCTests.Corpus.ToolMain
+
+/- Optional diagnostic report from an external, pinned certified checker.
+The kernel itself is neither imported nor a build dependency. -/
+lean_exe «certified-census» where
+  root := `IxCCTests.Corpus.CertifiedCensusMain
+
+/- The corpus suite: every root of every registered corpus family
+compiled, declined with its expected code, or run at every level (SrcEval
+… Cfg, Lir, Xv, Xl, typed x86, ByteEval), natively (with `--native`) and as
+standalone executables (with `--exe`) on its frozen cases against Lean's
+interpreter. -/
+lean_exe «tests-corpus» where
+  root := `IxCCTests.Corpus.Main
+
+/- Standalone executables (`ixcc compile --exe`): the layout, the shell, the
+writer and its structural check, and with `--run` the executables themselves
+(their arguments, failures, confinement and, with `--strace`, system calls). -/
+lean_exe «tests-exe» where
+  root := `IxCCTests.Exe.Main
+
+/- The ownership and usage-annotation suite, Phase 1 part: the annotated
+programs ix accepts against their plain twins and Lean's interpreter at every
+level and natively, their code compared, erasure, the Cfg stepper's counters,
+the annotator's handling of `0` binders, and ix's recorded verdicts (`fixtures/ownership`). -/
+lean_exe «tests-own» where
+  root := `IxCCTests.Own.Main
+
+/- Checked plain-RC acceptance, execution, aliasing and complete release. -/
+lean_exe «tests-own-plain» where
+  root := `IxCCTests.Own.Plain.Main
+
+/- The ownership checker `Own.Plain.checkOwned` (heap stage 2, active on the plain-RC verifier
+path): the canonical and a liveness placement of every registered corpus root accepted and run
+under a refinement oracle, the six negative controls, and a site-directed mutation campaign whose
+accepted mutants must pass the oracle. -/
+lean_exe «tests-own-owned» where
+  root := `IxCCTests.Own.Owned.Main
+
+/- Shrinking and first-divergence reports for the generators: recorded
+choice sequences replay to the seeded cases, and a planted bug per generator
+(LamGen, FoGen, the Lir generator, the allocation mutants) is found, named at
+its level, shrunk and written out as a replayable record. -/
+lean_exe «tests-shrink» where
+  root := `IxCCTests.Pipeline.ShrinkMain
+
+/- Regenerates (or with `--check` compares) the recheck artifacts the kernel
+evaluates: `IxCCTests/Recheck/Artifacts/*.lean`, each bench-k1
+closure's `Src.Program`, configuration and certificate as shared Lean terms,
+with the typed program and object bytes of the native run. -/
+lean_exe «gen-recheck-artifacts» where
+  root := `IxCCTests.Recheck.ArtifactMain
+
+/- The recheck path in kernel-evaluable style: building it evaluates
+`Recheck.runTyped` on the fib, tak and gcd artifacts and the whole
+`Recheck.run` on fib by `decide +kernel`; running it checks every committed
+artifact against a fresh ingress, `produce` and native run, and the
+recheck path's statistics-free selection against `Select.run`. -/
+lean_exe «tests-recheck» where
+  root := `IxCCTests.Recheck.Main
+
+/- P1, relevance preservation, tested by running it (`IxCCTests.Recheck.P1Twin`): SrcEval's twin with
+the executable invariants and a mutant pass, on the 12 corpus manifests, the five erased-position parts'
+programs and planted ones. Its own target, not a required check (about 10 minutes on the build box;
+`docs/ci.md`). -/
+lean_exe «tests-p1-twin» where
+  root := `IxCCTests.Recheck.P1TwinMain
+
+/- Every certificate `ixcc compile` writes is one `check-cert` accepts: every committed root under
+`--rc off`, `on` and `auto`, and the certificate-depth input `fixtures/rc/deep` through the command
+line. -/
+lean_exe «tests-cert-text» where
+  root := `IxCCTests.Recheck.CertTextMain
+
+/- The pure compiler (`IxCC.Compile.compile`: environment bytes, target address and options to an
+executable and its claim) is a function of its three arguments and is the compiler the command
+line runs: every K1 root and a sample of the corpus compiled twice in one process, again in
+another process under another environment, and compared byte for byte with `ixcc compile`
+(`--exe`, `-o`, `--emit-cert`, `--embed-cert`) and through `verify-exe`. -/
+lean_exe «tests-pure-compile» where
+  root := `IxCCTests.Compile.Main
+
+/- The certified route's compiler (`IxCC.Correct.compileCertified`: `compile`, the untrusted shape
+producer and the shape decision) on every root of the corpus families: twice in one process,
+again in another process under another environment, against `compile`, with accept and decline
+counts per family. It imports the target statements (`IxCCCorrect`), so it is built with them by
+the grounding build (`groundingTargets`), not by the shared program build, and run by its own
+required check, `ixcc-compile-certified` (it alone takes about half an hour). -/
+lean_exe «tests-compile-certified» where
+  root := `IxCCTests.Compile.CertifiedMain
+
+/- Ground first-order readback discovery: source instances, emitted layouts,
+independent signature validation and malformed candidate rejection. -/
+lean_exe «tests-recheck-readback» where
+  root := `IxCCTests.Recheck.ReadbackMain
+
+/- The front end over the certified kernel (`IxCC.Src.KernelFront`) against
+the front end over IxCC's erased type checker: acceptance, the program, the
+annotation, the certificate and the object, on the committed role-bound
+closures, and the refusals; `diff` and `single` take any role-bound closure. -/
+lean_exe «tests-kernel-front» where
+  root := `IxCCTests.KernelFront.Main
+
+/- Wave 1 soundness, anti-DoS, executable-shell hardening, and EM-0 DefAsserts controls. -/
+lean_exe «tests-soundness» where
+  root := `IxCCTests.Soundness.Main
+
+/- Pure-Lean BigNat differential fuzz suite against GMP-backed Nat (157,911 checks). -/
+lean_exe «tests-bignat» where
+  root := `IxCCTests.BigNat.DiffTest
+
+/- Phase 4 arbitrary-precision Nat slow-path entrypoints, bootstrap verifier, .rodata literals, and zero-natOverflow LIR dispatch tests (18,271 checks). -/
+lean_exe «tests-bignat-slowpath» where
+  root := `IxCCTests.BigNat.SlowPathTest
+
+/- Pure-Lean 100k+ arbitrary-precision differential harness comparing BigNat or compiled ixcc executables against Lean 4 GMP. -/
+lean_exe «tests-bignat-nativediff» where
+  root := `IxCCTests.BigNat.NativeDiff
+
+/- DR1 .rodata statics, DR3 contiguous Array/ByteArray/LimbArray runtime, readback, and native Xeon controls. -/
+lean_exe «tests-array» where
+  root := `IxCCTests.Array.Main
+
+/- The grounding check (`IxCCGrounding.Check`) on the committed closures of
+the grounding subjects, conjunct by conjunct, with negative controls that each
+falsify exactly one conjunct; with the argument `pipeline`, instead the report of the
+pipeline's grounding check (`IxCC.Correct.groundCheck`) on every committed root, which asserts
+nothing. Both built and run by `ixcc-grounding`, not by the shared program build
+(`nix/sources.nix`). -/
+lean_exe «tests-grounding» where
+  root := `IxCCTests.Grounding.Main
+
+/- The shape producer and the shape decision (`IxCC.Shape.Src.Produce`, the decision of
+`IxCC.Shape.Src`, in production) on every committed family's closures, root by root: accept, or
+the first instance the decision refuses. It reports and asserts nothing (a closure that does not
+load is listed; it fails only if it crashes). It imports production only, so it is a program of
+the shared build, run by the `suites` check. -/
+lean_exe «tests-shape» where
+  root := `IxCCTests.Shape.Main
+
+lean_exe «tests-ixon-v3» where
+  root := `IxCCTests.IxonV3.Main
+
+/- Lir: kernels, then generated SSA programs checked for well-formedness,
+critical-edge splitting, clock monotonicity and exactness, and determinism. -/
+lean_exe «check-lir» where
+  root := `IxCCTests.Lir.Main
+
+/- Validated Lir SSA optimizer (GVN/CSE, LICM, div-magic, store forwarding/DSE):
+unit tests, negative-control mutants, Lir.Gen fuzzing, and K1/K2/K3 parity. -/
+lean_exe «tests-lir-opt» where
+  root := `IxCCTests.Lir.Opt.Main
+
+/- Selection: Lir.eval against Xv.eval on the kernels and on generated Lir, in
+lock-step (outcome, memory and clock), with per-rule firing counts. -/
+lean_exe «check-xv-select» where
+  root := `IxCCTests.Xv.Main
+
+/- Allocation: linear scan, the validator and the all-slots fallback on
+the kernels and on generated programs, with chaos seeds, validator mutation
+and Xv.eval against Xl.eval on every accepted allocation. -/
+lean_exe «check-regalloc» where
+  root := `IxCCTests.Xv.Alloc.Main
+
+/- Stacking, layout and emission: hand-written Xl, the Lir kernels and
+generated Lir to ELF objects, run on the typed machine, the byte machine
+and (with `--native`) natively, as test executables IxCC writes. -/
+lean_exe «check-backend» where
+  root := `IxCCTests.Backend.Main
+
+/- The early backend probe: the Lir kernels fib, sumLoop and gcd as ELF objects, with
+their static spill and move counts and compile times, for the optional
+measurement in benchmarks/meas4 (not a CI gate). -/
+lean_exe «backend-probe» where
+  root := `IxCCTests.Backend.ProbeMain
+
+/- Emit deterministic ELF fixtures for the independent object/link gate. -/
+lean_exe «x86-object-fixture» where
+  root := `IxCCTests.Scripts.X86ObjectFixture
+
+lean_exe «check-x86-encoder» where
+  root := `IxCCTests.Scripts.CheckX86Encoder
+
+lean_exe «check-x86-bytes» where
+  root := `IxCCTests.Scripts.CheckX86Bytes
+
+lean_exe «check-x86-streams» where
+  root := `IxCCTests.Scripts.CheckX86Streams
+
+lean_exe «check-x86-object» where
+  root := `IxCCTests.Scripts.CheckX86Object
+
+lean_exe «check-trusted-externs» where
+  root := `IxCCTests.Scripts.CheckTrustedExterns
+
+lean_exe «check-tools-tests» where
+  root := `IxCCTests.Scripts.CheckToolsTests
+
+lean_exe «check-build-graph» where
+  root := `IxCCTests.Scripts.CheckBuildGraph
+
+/- Admission census over an Ixon v4 closure: first rejecting stage per constant. -/
+lean_exe census where
+  root := `IxCCTests.Scripts.Census
+
+/- Differential check of the local x86 byte model against the host processor. -/
+lean_exe «check-x86-hardware» where
+  root := `IxCCTests.Scripts.CheckX86Hardware
+
+/- Manual generator for `fixtures/ixon-v4/src-tables.tsv` (runs ix). -/
+lean_exe «pin-src-tables» where
+  root := `IxCCTests.Scripts.PinSrcTables
+  supportInterpreter := true
+
+/- Manual refreeze steps beside `corpus rebuild` and `pin-src-tables`: the
+producer pins, ix's fixture package, the primitive table and the RC
+real-source input (runs ix; `docs/corpus.md`). -/
+lean_exe «refreeze-ixon» where
+  root := `IxCCTests.Scripts.RefreezeIxon

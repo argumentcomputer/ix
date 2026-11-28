@@ -1,10 +1,10 @@
 import IxVMRefinement.Core.Ctx
 import IxVMRefinement.Assembly.LayerSeams
 import Ix.IxVM.Consistency.Restrict
-import IxC.Kernel.Model.JudgeRules
-import IxC.Kernel.Model.StoreCompanions
-import IxC.Kernel.Model.StoreRecShape
-import IxC.Kernel.Model.StoreFold
+import IxCK.Kernel.Model.JudgeRules
+import IxCK.Kernel.Model.StoreCompanions
+import IxCK.Kernel.Model.StoreRecShape
+import IxCK.Kernel.Model.StoreFold
 
 /-! # Unified declaration fold invariant, `claimedEnv` restriction, and per-route refinement glue
 

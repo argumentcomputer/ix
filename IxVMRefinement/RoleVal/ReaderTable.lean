@@ -1753,7 +1753,7 @@ private theorem checkSingleRecShape_sound {nPd indIndices : Nat}
             | none => rw [hlz] at hkchk; cases hkchk
             | some b =>
               rw [hlz] at hkchk
-              rw [levelIsZeroFast_sound hlz] at hkE
+              rw [← Ix.Kernel.Level.isEquiv_zero_beq_true s, levelIsZeroFast_sound hlz] at hkE
               have hbeq_b : (some b == some true) = b := by cases b <;> rfl
               rw [hbeq_b] at hkE
               injection hkE with hkE; subst hkE

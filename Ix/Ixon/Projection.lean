@@ -1,8 +1,8 @@
 module
 
-public import IxC.Ixon.Codec
-public import IxC.Kernel.Admission
-public import IxC.Kernel.Egress.Projection
+public import IxCK.Ixon.Codec
+public import IxCK.Kernel.Admission
+public import IxCK.Kernel.Egress.Projection
 
 @[expose] public section
 
@@ -133,9 +133,9 @@ def checkBytes (hash : ByteArray → Address) (binding : Admission.Binding) (max
   (Admission.preflight limits records blobs).mapError (fun error => .reconstruction (.admission error))
   (Admission.uniqueKeys records blobs).mapError (fun error => .reconstruction (.admission error))
   (Admission.authenticate hash records blobs).mapError (fun error => .reconstruction (.admission error))
-  let constants ← (Admission.decodeRecords limits records).mapError
+  let constants ← (Admission.decodeWithin limits records).mapError
     (fun error => .reconstruction (.admission error))
   let expanded ← (reconstruct hash maxProjections constants).mapError .reconstruction
-  (Admission.checkConstantsAt hash binding expanded blobs hint).mapError .checker
+  (Admission.checkConstantsAt hash binding expanded blobs hint limits.fold).mapError .checker
 
 end Ixon.Projection

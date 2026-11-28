@@ -168,7 +168,7 @@ theorem auxRootSynced_famStep {J : Judgements .anon} {env env₂ : Env .anon}
     exact hstored ci hci
 
 /-- **The declaration layer's invariant across the family step with aliases**: from an alias
-group over the prefix and IxC's renamed record over the family package, `FullDeclInv` after the
+group over the prefix and IxCK's renamed record over the family package, `FullDeclInv` after the
 block in every set theory. -/
 theorem fullDeclInv_famStep {env env₂ : Env .anon} {h : KKey → KKey}
     {aliases block : List (ConstantInfo .anon)}

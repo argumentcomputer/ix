@@ -157,7 +157,7 @@ aggregation programs, the program identity and the BLAKE3 digest of the
 verifying key under the default STARK parameters, which the file states:
 
 ```text
-parameters log_blowup 2 num_queries 100
+parameters log_blowup 2 num_queries 128
 ixvm <identity hex> <key digest hex>
 verifier <identity hex> <key digest hex>
 aggregation <identity hex> <key digest hex>

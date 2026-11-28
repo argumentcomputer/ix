@@ -2,7 +2,7 @@ import IxVMRefinement.Assembly.NativeBlockCtorStage
 
 /-! # The no-recursor install of a native block, with its family named
 
-`Decl.nativeNoRecFacts_of_stage` and `Typing.nativeNoRecFacts_of_outs` conclude IxC's
+`Decl.nativeNoRecFacts_of_stage` and `Typing.nativeNoRecFacts_of_outs` conclude IxCK's
 no-recursor install with the family's summary hidden. The theorems here are the same proofs with
 the summary named: the telescope constant is the stored former `cvS` and the stored constructors
 are `ctorsA` (the ones the stages were given), so the caller can read the new constants off its
@@ -393,7 +393,7 @@ universe u
 set_option maxHeartbeats 1600000
 set_option linter.unusedVariables false
 
-/-- **IxC's no-recursor install of the block, from the outputs of its two stages, with the family
+/-- **IxCK's no-recursor install of the block, from the outputs of its two stages, with the family
 named and the sorts of the table stage kept**: `nativeNoRecFacts_of_outs` with the telescope
 constant the stored former `cvS` and the stored constructors `ctorsA`; the constructor outputs
 carry any property `Q` of the recursion flag and the field sorts, and the table stage is run at

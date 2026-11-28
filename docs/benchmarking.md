@@ -172,7 +172,7 @@ and, if selected, its env row.
 | `ixvm` | env | the same execution over the whole env: `ix shard` partitions it for the runner's default budget, `MemTotal` less 20% (outside the timed window), then one `ix check` executes every shard's claim, one job per core: `execute-time` (the wall clock of that concurrent execution, after the env load, which `ix check --batch-time` records), `peak-rss`, `shards` | `ix check --ixe <env>.ixe --ixes <manifest> --jobs 0` |
 | `ixvm prove` | constant | the constant proven end to end, in the same `bench-ixvm` process after its execution: it extracts a one-constant env and splits it into two shards (setup, untimed; aggregation needs a join), proves both claims and joins them into a root on the in-process aggregate controller with no proof reused from the index or cache (`prove-time`, `prove-peak-rss`, `prove-proof-size`, and `prove-trace-shards`: the trace shards of the two claim proofs), checks the root proves the env's statement, and verifies it (`verify-time`) | `bench-ixvm --ixe <env>.ixe --const <name> --mode prove` |
 | `ixvm compress` | constant | executes and proves the constant (as `ixvm prove`), then `ix compress` compresses the root to KZG with development parameters (`compress-time`, `compress-peak-rss`, `compress-proof-size`) and verifies it (`compress-verify-time`) | `ix compress <root> --dev-kzg-srs` |
-| `ixvm-ooc` | constant | out-of-circuit Lean kernel (`IxC`) over each constant's full closure, user axioms admitted as the `ixvm` claim context admits them: `check-time` wraps only the check — the env loads once, outside every row's timed window, and the rows share that process, so they report no peak RSS of their own | `ix check-lean --anon --allow-user-axioms --consts-file` |
+| `ixvm-ooc` | constant | out-of-circuit Lean kernel (`IxCK`) over each constant's full closure, user axioms admitted as the `ixvm` claim context admits them: `check-time` wraps only the check — the env loads once, outside every row's timed window, and the rows share that process, so they report no peak RSS of their own | `ix check-lean --anon --allow-user-axioms --consts-file` |
 | `ixvm-ooc` | env | the same kernel over the whole env. An env with user axioms gets a `conditional` verdict (it holds only under the axioms listed); its row is measured and uploaded like an `ok` one | `ix check-lean --anon --allow-user-axioms --per-const` |
 | `compile` | env | `ix compile <env>.lean → <env>.ixe`, the default certified compiler: compile-time, file-size, constants, throughput | `ix compile --json` |
 | `decompile` | env | inverse of compile — `ix decompile <env>.ixe → Lean consts`: decompile-time, throughput, peak-rss, constants, file-size (input `.ixe`). Consumes the compile cell's `.ixe` rather than producing one; a malformed decompile reddens the cell. Deep roundtrip fidelity is gated by the canonical checks (`ix validate` / roundtrip tests), which need the original Lean env the `.ixe` can't supply | `ix decompile --json` |
@@ -379,15 +379,15 @@ runs are removed. The PR comment still marks each Δ% past ±3% with ⚠️ or �
 **Dashboard plots**: `ix bench plots` pins one plot per (workload, measure)
 to <https://bencher.dev/console/projects/ix/plots> — main-branch trend
 lines on the current machine's native r8i testbed only, one line per
-benchmark row, labelled with the constant or env name, plus the IxC
+benchmark row, labelled with the constant or env name, plus the IxCK
 input-constants overlay over the `ixvm-ooc` constant rows. Each workload
 is the current implementation's own series: `ix-compile-certified` (the
 certified compiler), `ix-decompile-lean` (the Lean decompiler), `ixvm`
-(formal IxVM execution) and `ixvm-ooc` (the IxC out-of-circuit check). No
+(formal IxVM execution) and `ixvm-ooc` (the IxCK out-of-circuit check). No
 plot draws a retired testbed (`ix-compile`, `ix-decompile`, `ooc-check`,
 the legacy Aiur ones, or the historical Warp `<workload>-x64-32x`). Titles
 name what is measured ("Certified Compile Time", "IxVM Execute Time",
-"IxVM OOC (IxC) Check Time", …). Registry-derived like the job matrices (titles,
+"IxVM OOC (IxCK) Check Time", …). Registry-derived like the job matrices (titles,
 ordering, and skips live in `Ix/Cli/BenchPlots.lean`), so rerun the sync
 after changing the registry or the constant set — either locally
 (needs the bencher CLI and a user API key in `BENCHER_API_KEY`;

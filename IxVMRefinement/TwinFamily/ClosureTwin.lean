@@ -55,7 +55,7 @@ set_option linter.unusedSimpArgs false
 /-! ## Lifting twin parts to `OverUnitStepTwin` -/
 
 /-- **Lift a twin parts producer at `(Ec, some (Binding.valLimit g))` to `OverUnitStepTwin`**:
-executes IxC's twin step once over `Ec`, then transports the fold's clause (`FoldClauseWith`) with
+executes IxCK's twin step once over `Ec`, then transports the fold's clause (`FoldClauseWith`) with
 the same registry `Reg` to every record store `E` for `R₁` and every carried limit within `(· < g)`
 via `foldClauseWith_twinStep`, `twinKeepsStoreAr`, `coreCompanions_twin`, `twinMember_reloads_at`,
 and `twinRecs_recNotKAt_at`. -/
@@ -178,7 +178,7 @@ private theorem overUnitStepTwin_of_parts {t : Ix.Kernel.RoleTable}
     twinRecs_recNotKAt_at (Binding.recordOf_of_recordsFor hE hc₁)
       (fun i m hm => Binding.recordOf_of_recordsFor hE (hcl₁.2 A c rs' hc₁ hA.muts i m hm).1)
       hA hreads hblock hF.front hLd
-  -- Build IxC's twin step record directly on `ws`, matching `twinTarget_of_facts`
+  -- Build IxCK's twin step record directly on `ws`, matching `twinTarget_of_facts`
   have hmod : ∀ w ∈ ws, ∃ cvm mval hint,
       env.find? (Ix.Kernel.auxKey w.kC .model) = some (.defnInfo cvm mval hint) ∧
         w.model? = some (cvm, mval, hint) := by

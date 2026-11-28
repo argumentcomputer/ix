@@ -1,0 +1,37 @@
+{
+  "format": "ixcc/k1-equations/1",
+  "source": "even-odd/EvenOdd.lean",
+  "roots": [
+    {
+      "name": "entry",
+      "address": "029a844c11e0d4862cb5552678b7e3f1ecd237073a03d2822a7020bc978eaa25"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "Nat.add",
+      "definition_address": "a04e7e6b19f5e48dbb0b53dae24db5dcc1b1a98c8e97551db8fb4b5f4a14caa8",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "300f835ac35174de29416ee013ec8c57d5c01c6e448335ee4086f384f3f1a249"
+    },
+    {
+      "definition": "Nat.ble",
+      "definition_address": "a939cc7925834d04a7ced860c5c44484231c9f5c44728d83d55f19c08037f3b4",
+      "equation": "Nat.ble.eq_def",
+      "equation_address": "25a12692ef836a0d2771c46279e413f421082b3128e091b2931f9e9733348403"
+    },
+    {
+      "definition": "Scalar.isEven",
+      "definition_address": "aa66a1c372d490f64fe358b52e1b9172a9ad300a44e74f196d8cf0751ba81d04",
+      "equation": "Scalar.isEven.eq_def",
+      "equation_address": "09feebe1efd44c156269e44a8d41193ea3a5a0401d493deb39fe3176fe5aa78d"
+    },
+    {
+      "definition": "Scalar.isOdd",
+      "definition_address": "bf6e1c41cbbf92659668a89fb394297c2d697cef94c3420852a2b4ba49d1d876",
+      "equation": "Scalar.isOdd.eq_def",
+      "equation_address": "194c9091cb234bb1e51226189803012006e7d039010e89567df67fe8810a0024"
+    }
+  ],
+  "failures": []
+}

@@ -26,10 +26,14 @@ use p3_matrix::dense::RowMajorMatrix;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::coefficients::Column;
-use super::curve::{Fr, G1_COMPRESSED_BYTES, G1Affine, read_g1_compressed};
+use super::curve::{
+  Bn254, G1AffineOf, G1ProjectiveOf, KzgCurve, read_g1_compressed_for,
+};
 use super::pcs::{CoefficientData, CommittedMatrix};
 use super::shplonk::{self, Coefficients, PackClaim, PackPolynomial};
-use super::{KzgPcs, KzgTranscript, Radix2Coset, Scalar, Srs, VerifierParams};
+use super::{
+  CurveScalar, KzgPcs, KzgTranscript, Radix2Coset, Srs, VerifierParams,
+};
 
 pub mod config;
 pub mod layout;
@@ -51,17 +55,17 @@ pub struct MatrixShape {
 
 /// One round: every matrix shape, then one point per planned pack.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Commitment {
+pub struct Commitment<C: KzgCurve = Bn254> {
   pub matrices: Vec<MatrixShape>,
-  pub packs: Vec<G1Affine>,
+  pub packs: Vec<G1AffineOf<C>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Proof {
+pub struct Proof<C: KzgCurve = Bn254> {
   /// Pack evaluations not requested by their matrix, in round, pack, point,
   /// column order.
-  pub extra_values: Vec<Scalar>,
-  pub opening: shplonk::Proof,
+  pub extra_values: Vec<CurveScalar<C>>,
+  pub opening: shplonk::Proof<C>,
 }
 
 fn take<'a>(input: &mut &'a [u8], n: usize) -> Result<&'a [u8], String> {
@@ -81,15 +85,15 @@ fn count(input: &mut &[u8], element: usize) -> Result<usize, String> {
   Ok(n)
 }
 
-fn point(input: &mut &[u8]) -> Result<G1Affine, String> {
-  read_g1_compressed(input).map_err(|error| error.to_string())
+fn point<C: KzgCurve>(input: &mut &[u8]) -> Result<G1AffineOf<C>, String> {
+  read_g1_compressed_for::<C>(input).map_err(|error| error.to_string())
 }
 
 fn length(n: usize) -> Result<[u8; 4], String> {
   Ok(u32::try_from(n).map_err(|_error| "packed count overflow")?.to_le_bytes())
 }
 
-impl Commitment {
+impl<C: KzgCurve> Commitment<C> {
   pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
     let mut out = COMMITMENT_MAGIC.to_vec();
     out.extend(length(self.matrices.len())?);
@@ -119,13 +123,14 @@ impl Commitment {
         1 => true,
         _ => return Err("invalid packed matrix class".into()),
       };
-      if usize::from(log_size) > Scalar::TWO_ADICITY || width == 0 {
+      if usize::from(log_size) > CurveScalar::<C>::TWO_ADICITY || width == 0 {
         return Err("invalid packed matrix shape".into());
       }
       matrices.push(MatrixShape { log_size, width, next_row });
     }
-    let n = count(&mut input, G1_COMPRESSED_BYTES)?;
-    let packs = (0..n).map(|_| point(&mut input)).collect::<Result<_, _>>()?;
+    let n = count(&mut input, C::G1_COMPRESSED_BYTES)?;
+    let packs =
+      (0..n).map(|_| point::<C>(&mut input)).collect::<Result<_, _>>()?;
     if !input.is_empty() {
       return Err("trailing packed commitment bytes".into());
     }
@@ -141,7 +146,7 @@ impl Commitment {
   }
 }
 
-impl Proof {
+impl<C: KzgCurve> Proof<C> {
   pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
     let mut out = PROOF_MAGIC.to_vec();
     out.extend(length(self.extra_values.len())?);
@@ -161,13 +166,13 @@ impl Proof {
     let n = count(&mut input, 32)?;
     let extra_values = (0..n)
       .map(|_| {
-        Fr::deserialize_compressed(&mut input)
-          .map(Scalar::new)
+        C::Fr::deserialize_compressed(&mut input)
+          .map(CurveScalar::new)
           .map_err(|e| e.to_string())
       })
       .collect::<Result<_, _>>()?;
-    let w1 = point(&mut input)?;
-    let w2 = point(&mut input)?;
+    let w1 = point::<C>(&mut input)?;
+    let w2 = point::<C>(&mut input)?;
     if !input.is_empty() {
       return Err("trailing packed proof bytes".into());
     }
@@ -176,13 +181,13 @@ impl Proof {
 }
 
 macro_rules! bytes_serde {
-  ($type:ty) => {
-    impl Serialize for $type {
+  ($type:ident) => {
+    impl<C: KzgCurve> Serialize for $type<C> {
       fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         self.to_bytes().map_err(serde::ser::Error::custom)?.serialize(s)
       }
     }
-    impl<'de> Deserialize<'de> for $type {
+    impl<'de, C: KzgCurve> Deserialize<'de> for $type<C> {
       fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         Self::from_bytes(&Vec::<u8>::deserialize(d)?)
           .map_err(serde::de::Error::custom)
@@ -194,37 +199,37 @@ bytes_serde!(Commitment);
 bytes_serde!(Proof);
 
 #[derive(Clone)]
-pub struct PackedTranscript(pub KzgTranscript);
+pub struct PackedTranscript<C: KzgCurve = Bn254>(pub KzgTranscript<C>);
 
-impl Transcript for PackedTranscript {
-  type F = Scalar;
-  type Challenge = Scalar;
-  type Commitment = Commitment;
-  fn observe_field(&mut self, value: Scalar) {
+impl<C: KzgCurve> Transcript for PackedTranscript<C> {
+  type F = CurveScalar<C>;
+  type Challenge = CurveScalar<C>;
+  type Commitment = Commitment<C>;
+  fn observe_field(&mut self, value: CurveScalar<C>) {
     self.0.observe_field(value);
   }
-  fn observe_field_slice(&mut self, values: &[Scalar]) {
+  fn observe_field_slice(&mut self, values: &[CurveScalar<C>]) {
     self.0.observe_field_slice(values);
   }
-  fn observe_challenge(&mut self, value: Scalar) {
+  fn observe_challenge(&mut self, value: CurveScalar<C>) {
     self.0.observe_challenge(value);
   }
-  fn sample_challenge(&mut self) -> Scalar {
+  fn sample_challenge(&mut self) -> CurveScalar<C> {
     self.0.sample_challenge()
   }
-  fn observe_commitment(&mut self, commitment: Commitment) {
+  fn observe_commitment(&mut self, commitment: Commitment<C>) {
     self.0.observe_bytes(&commitment.to_bytes().expect("bounded commitment"));
   }
 }
 
-pub struct ProverData {
-  matrices: Vec<CommittedMatrix>,
+pub struct ProverData<C: KzgCurve = Bn254> {
+  matrices: Vec<CommittedMatrix<C>>,
   layout: Vec<layout::Pack>,
-  commitment: Commitment,
+  commitment: Commitment<C>,
 }
 
-impl CoefficientData<super::Bn254> for ProverData {
-  fn matrix(&self, index: usize) -> Option<&CommittedMatrix> {
+impl<C: KzgCurve> CoefficientData<C> for ProverData<C> {
+  fn matrix(&self, index: usize) -> Option<&CommittedMatrix<C>> {
     self.matrices.get(index)
   }
 }
@@ -252,19 +257,22 @@ impl Timings {
 }
 
 #[derive(Clone)]
-pub struct PackedShplonkPcs {
-  base: Arc<KzgPcs>,
+pub struct PackedShplonkPcs<C: KzgCurve = Bn254> {
+  base: Arc<KzgPcs<C>>,
   timings: Arc<Timings>,
   /// A commitment computed earlier for the next [`Pcs::commit`] call (the
   /// preprocessed round), used instead of its multi-scalar multiplications
   /// when the round's matrix shapes and pack count match. It affects only
   /// proving: a wrong commitment yields a key the verifier's pin rejects.
-  preloaded: Arc<std::sync::Mutex<Option<Commitment>>>,
+  preloaded: Arc<std::sync::Mutex<Option<Commitment<C>>>>,
 }
 
 /// Distinct points requested by any matrix of `pack`, in first-appearance
 /// order.
-fn pack_points(pack: &layout::Pack, points: &[Vec<Scalar>]) -> Vec<Scalar> {
+fn pack_points<C: KzgCurve>(
+  pack: &layout::Pack,
+  points: &[Vec<CurveScalar<C>>],
+) -> Vec<CurveScalar<C>> {
   let mut union = vec![];
   for columns in &pack.columns {
     for &point in &points[columns.matrix] {
@@ -276,10 +284,10 @@ fn pack_points(pack: &layout::Pack, points: &[Vec<Scalar>]) -> Vec<Scalar> {
   union
 }
 
-fn observe_round(
-  commitment: &Commitment,
-  points: &[Vec<Scalar>],
-  transcript: &mut PackedTranscript,
+fn observe_round<C: KzgCurve>(
+  commitment: &Commitment<C>,
+  points: &[Vec<CurveScalar<C>>],
+  transcript: &mut PackedTranscript<C>,
 ) {
   transcript.observe_commitment(commitment.clone());
   transcript.0.observe_canonical(&(points.len() as u64));
@@ -289,13 +297,13 @@ fn observe_round(
   }
 }
 
-enum Held<'a> {
-  Constant(Fr),
-  Loaded(Cow<'a, [Fr]>),
+enum Held<'a, C: KzgCurve> {
+  Constant(C::Fr),
+  Loaded(Cow<'a, [C::Fr]>),
 }
 
-impl Held<'_> {
-  fn view(&self) -> Coefficients<'_> {
+impl<C: KzgCurve> Held<'_, C> {
+  fn view(&self) -> Coefficients<'_, C> {
     match self {
       Self::Constant(value) => Coefficients::Constant(*value),
       Self::Loaded(values) => Coefficients::Dense(values),
@@ -303,17 +311,17 @@ impl Held<'_> {
   }
 }
 
-fn hold(column: &Column) -> Held<'_> {
+fn hold<C: KzgCurve>(column: &Column<C>) -> Held<'_, C> {
   match column {
     Column::Constant { value, .. } => Held::Constant(*value),
     _ => Held::Loaded(column.load().expect("trusted coefficient storage")),
   }
 }
 
-fn hold_pack<'a>(
+fn hold_pack<'a, C: KzgCurve>(
   pack: &layout::Pack,
-  matrices: &'a [CommittedMatrix],
-) -> Vec<Held<'a>> {
+  matrices: &'a [CommittedMatrix<C>],
+) -> Vec<Held<'a, C>> {
   pack
     .columns
     .iter()
@@ -326,8 +334,8 @@ fn hold_pack<'a>(
     .collect()
 }
 
-impl PackedShplonkPcs {
-  pub fn new(srs: Arc<Srs>, cap: usize, quotient_degree: usize) -> Self {
+impl<C: KzgCurve> PackedShplonkPcs<C> {
+  pub fn new(srs: Arc<Srs<C>>, cap: usize, quotient_degree: usize) -> Self {
     Self {
       base: Arc::new(KzgPcs::with_max_trace_len(srs, cap, quotient_degree)),
       timings: Arc::default(),
@@ -335,7 +343,10 @@ impl PackedShplonkPcs {
     }
   }
 
-  pub fn verifier_only(params: VerifierParams, quotient_degree: usize) -> Self {
+  pub fn verifier_only(
+    params: VerifierParams<C>,
+    quotient_degree: usize,
+  ) -> Self {
     Self {
       base: Arc::new(KzgPcs::verifier_only(params, quotient_degree)),
       timings: Arc::default(),
@@ -343,7 +354,7 @@ impl PackedShplonkPcs {
     }
   }
 
-  pub fn parameters(&self) -> &VerifierParams {
+  pub fn parameters(&self) -> &VerifierParams<C> {
     self.base.verifier_params()
   }
 
@@ -353,7 +364,7 @@ impl PackedShplonkPcs {
 
   /// Supplies the commitment of the next [`Pcs::commit`] round (see
   /// `preloaded`). It is consumed by that call whether or not it matches.
-  pub fn preload_commitment(&self, commitment: Commitment) {
+  pub fn preload_commitment(&self, commitment: Commitment<C>) {
     *self.preloaded.lock().expect("preloaded commitment lock") =
       Some(commitment);
   }
@@ -361,7 +372,7 @@ impl PackedShplonkPcs {
   /// The pack plan of a commitment, after checking its pack count and points.
   pub fn layout(
     &self,
-    commitment: &Commitment,
+    commitment: &Commitment<C>,
   ) -> Result<Vec<layout::Pack>, String> {
     let cap = self.parameters().max_trace_len();
     let dimensions = commitment.dimensions();
@@ -383,8 +394,8 @@ impl PackedShplonkPcs {
   /// every matrix a next-row reader (planning by height alone).
   fn commit_matrices(
     &self,
-    matrices: Vec<CommittedMatrix>,
-  ) -> (Commitment, ProverData) {
+    matrices: Vec<CommittedMatrix<C>>,
+  ) -> (Commitment<C>, ProverData<C>) {
     let classes = vec![true; matrices.len()];
     self.commit_classified(matrices, &classes)
   }
@@ -392,18 +403,18 @@ impl PackedShplonkPcs {
   /// Commit one round with each matrix's declared next-row class.
   fn commit_classified(
     &self,
-    matrices: Vec<CommittedMatrix>,
+    matrices: Vec<CommittedMatrix<C>>,
     next_rows: &[bool],
-  ) -> (Commitment, ProverData) {
+  ) -> (Commitment<C>, ProverData<C>) {
     self.commit_known(matrices, next_rows, None)
   }
 
   fn commit_known(
     &self,
-    matrices: Vec<CommittedMatrix>,
+    matrices: Vec<CommittedMatrix<C>>,
     next_rows: &[bool],
-    known: Option<Commitment>,
-  ) -> (Commitment, ProverData) {
+    known: Option<Commitment<C>>,
+  ) -> (Commitment<C>, ProverData<C>) {
     assert_eq!(matrices.len(), next_rows.len(), "one class per matrix");
     let started = std::time::Instant::now();
     let dimensions: Vec<_> = matrices
@@ -461,7 +472,7 @@ impl PackedShplonkPcs {
     }
     let commitment = Commitment {
       matrices: shapes,
-      packs: super::curve::G1Projective::normalize_batch(&packs),
+      packs: G1ProjectiveOf::<C>::normalize_batch(&packs),
     };
     Timings::add(&self.timings.commit_nanos, started);
     tracing::info!(
@@ -473,18 +484,18 @@ impl PackedShplonkPcs {
   }
 }
 
-impl Pcs for PackedShplonkPcs {
-  type F = Scalar;
-  type Challenge = Scalar;
-  type Domain = Radix2Coset;
-  type Challenger = PackedTranscript;
-  type Commitment = Commitment;
-  type ProverData = ProverData;
-  type Proof = Proof;
+impl<C: KzgCurve> Pcs for PackedShplonkPcs<C> {
+  type F = CurveScalar<C>;
+  type Challenge = CurveScalar<C>;
+  type Domain = Radix2Coset<C>;
+  type Challenger = PackedTranscript<C>;
+  type Commitment = Commitment<C>;
+  type ProverData = ProverData<C>;
+  type Proof = Proof<C>;
   type Error = String;
-  type Evaluations<'a> = RowMajorMatrix<Scalar>;
+  type Evaluations<'a> = RowMajorMatrix<CurveScalar<C>>;
 
-  fn natural_domain_for_degree(&self, degree: usize) -> Radix2Coset {
+  fn natural_domain_for_degree(&self, degree: usize) -> Radix2Coset<C> {
     self.base.natural_domain_for_degree(degree)
   }
 
@@ -494,13 +505,11 @@ impl Pcs for PackedShplonkPcs {
 
   fn commit(
     &self,
-    evaluations: Vec<(Radix2Coset, RowMajorMatrix<Scalar>)>,
-  ) -> (Commitment, ProverData) {
+    evaluations: Vec<(Radix2Coset<C>, RowMajorMatrix<CurveScalar<C>>)>,
+  ) -> (Commitment<C>, ProverData<C>) {
     let matrices: Vec<_> = evaluations
       .into_iter()
-      .map(|(domain, matrix)| {
-        KzgPcs::<super::Bn254>::interpolate_columns(domain, matrix)
-      })
+      .map(|(domain, matrix)| KzgPcs::<C>::interpolate_columns(domain, matrix))
       .collect();
     let classes = vec![true; matrices.len()];
     let known =
@@ -510,14 +519,14 @@ impl Pcs for PackedShplonkPcs {
 
   fn commit_quotient(
     &self,
-    quotients: Vec<(Radix2Coset, RowMajorMatrix<Scalar>, usize)>,
-  ) -> (Commitment, ProverData) {
+    quotients: Vec<(Radix2Coset<C>, RowMajorMatrix<CurveScalar<C>>, usize)>,
+  ) -> (Commitment<C>, ProverData<C>) {
     let next_rows = vec![false; quotients.len()];
     self.commit_classified(
       quotients
         .into_iter()
         .map(|(domain, matrix, degree)| {
-          KzgPcs::<super::Bn254>::interpolate_quotient(domain, matrix, degree)
+          KzgPcs::<C>::interpolate_quotient(domain, matrix, degree)
         })
         .collect(),
       &next_rows,
@@ -526,10 +535,10 @@ impl Pcs for PackedShplonkPcs {
 
   fn get_evaluations_on_domain(
     &self,
-    data: &ProverData,
+    data: &ProverData<C>,
     index: usize,
-    domain: Radix2Coset,
-  ) -> RowMajorMatrix<Scalar> {
+    domain: Radix2Coset<C>,
+  ) -> RowMajorMatrix<CurveScalar<C>> {
     let matrix = &data.matrices[index];
     self.base.evaluate_matrix_columns(
       matrix,
@@ -540,9 +549,9 @@ impl Pcs for PackedShplonkPcs {
 
   fn open(
     &self,
-    rounds: OpeningRounds<'_, ProverData, Scalar>,
-    transcript: &mut PackedTranscript,
-  ) -> (OpenedValues<Scalar>, Proof) {
+    rounds: OpeningRounds<'_, ProverData<C>, CurveScalar<C>>,
+    transcript: &mut PackedTranscript<C>,
+  ) -> (OpenedValues<CurveScalar<C>>, Proof<C>) {
     let started = std::time::Instant::now();
     transcript.0.observe_bytes(OPEN_DOMAIN);
     transcript.0.observe_canonical(&(rounds.len() as u64));
@@ -558,7 +567,9 @@ impl Pcs for PackedShplonkPcs {
       let mut round: Vec<_> = points
         .iter()
         .zip(&data.matrices)
-        .map(|(points, m)| vec![vec![Scalar::ZERO; m.width()]; points.len()])
+        .map(|(points, m)| {
+          vec![vec![CurveScalar::<C>::ZERO; m.width()]; points.len()]
+        })
         .collect();
       for pack in &data.layout {
         let queries = pack_points(pack, points);
@@ -581,7 +592,7 @@ impl Pcs for PackedShplonkPcs {
               .filter_map(|(i, &p)| (p == query).then_some(i))
               .collect();
             for column in columns.source.clone() {
-              let value = Scalar::new(row[source]);
+              let value = CurveScalar::new(row[source]);
               if matches.is_empty() {
                 extra_values.push(value);
               }
@@ -592,7 +603,7 @@ impl Pcs for PackedShplonkPcs {
             }
           }
           transcript.observe_field_slice(
-            &row.iter().copied().map(Scalar::new).collect::<Vec<_>>(),
+            &row.iter().copied().map(CurveScalar::new).collect::<Vec<_>>(),
           );
         }
         claims.push(PackClaim {
@@ -623,9 +634,9 @@ impl Pcs for PackedShplonkPcs {
 
   fn verify(
     &self,
-    rounds: VerifyRounds<Commitment, Radix2Coset, Scalar>,
-    proof: &Proof,
-    transcript: &mut PackedTranscript,
+    rounds: VerifyRounds<Commitment<C>, Radix2Coset<C>, CurveScalar<C>>,
+    proof: &Proof<C>,
+    transcript: &mut PackedTranscript<C>,
   ) -> Result<(), String> {
     let mut plans = vec![];
     let mut queries = vec![];
@@ -637,7 +648,7 @@ impl Pcs for PackedShplonkPcs {
         matrices.iter().zip(&commitment.matrices)
       {
         if domain.log_size != usize::from(shape.log_size)
-          || domain.shift != <Scalar as Algebra<Scalar>>::ONE
+          || domain.shift != <CurveScalar<C> as Algebra<CurveScalar<C>>>::ONE
           || openings.iter().any(|(_, v)| v.len() != shape.width as usize)
         {
           return Err("wrong packed matrix opening shape".into());
@@ -717,7 +728,7 @@ impl Pcs for PackedShplonkPcs {
     CAPTURED.with(|captured| {
       let mut captured = captured.borrow_mut();
       if !matches!(*captured, Capture::Idle) {
-        *captured = Capture::Captured(Box::new(Verified {
+        *captured = Capture::Captured(Box::new(Verified::<C> {
           transcript: transcript.clone(),
           pair,
         }));
@@ -730,9 +741,9 @@ impl Pcs for PackedShplonkPcs {
 /// The state an accepted packed opening leaves: the transcript after `[W₂]`
 /// and the deferred pairing pair `(A, B)` with `e(A, [1]₂)·e(B, [τ]₂) = 1`.
 #[derive(Clone)]
-pub struct Verified {
-  pub transcript: PackedTranscript,
-  pub pair: [G1Affine; 2],
+pub struct Verified<C: KzgCurve = Bn254> {
+  pub transcript: PackedTranscript<C>,
+  pub pair: [G1AffineOf<C>; 2],
 }
 
 /// This thread's [`capture_verification`] state.
@@ -742,7 +753,7 @@ enum Capture {
   /// A capture is running and no packed opening has been verified yet.
   Armed,
   /// A capture is running and holds the last verified opening.
-  Captured(Box<Verified>),
+  Captured(Box<dyn std::any::Any>),
 }
 
 std::thread_local! {
@@ -755,9 +766,9 @@ std::thread_local! {
 /// samples no challenge after the PCS opening, so the returned transcript is
 /// the verifier's final transcript: it has absorbed every commitment, claim,
 /// accumulator, evaluation and opening witness of the proof.
-pub fn capture_verification<E: std::fmt::Debug>(
+pub fn capture_verification_for<C: KzgCurve, E: std::fmt::Debug>(
   verify: impl FnOnce() -> Result<(), E>,
-) -> Result<Verified, String> {
+) -> Result<Verified<C>, String> {
   struct Reset;
   impl Drop for Reset {
     fn drop(&mut self) {
@@ -776,12 +787,21 @@ pub fn capture_verification<E: std::fmt::Debug>(
   let result = verify();
   let verified = match CAPTURED.with(|captured| captured.replace(Capture::Idle))
   {
-    Capture::Captured(verified) => Some(*verified),
+    Capture::Captured(verified) => verified.downcast::<Verified<C>>().ok(),
     Capture::Idle | Capture::Armed => None,
   };
   drop(reset);
   result.map_err(|error| format!("packed verification failed: {error:?}"))?;
-  verified.ok_or_else(|| "no packed opening was verified".to_string())
+  verified
+    .map(|v| *v)
+    .ok_or_else(|| "no packed opening was verified for this curve".to_string())
+}
+
+/// BN254 specialization of [`capture_verification_for`].
+pub fn capture_verification<E: std::fmt::Debug>(
+  verify: impl FnOnce() -> Result<(), E>,
+) -> Result<Verified<Bn254>, String> {
+  capture_verification_for::<Bn254, E>(verify)
 }
 
 #[cfg(test)]

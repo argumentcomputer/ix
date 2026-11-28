@@ -1,6 +1,6 @@
 import IxSharingVerify.UniformOptimizer
 import Ix.Sharing.Exact.PinnedDeps
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 /-!
 # The pinned order lists stored descendants first

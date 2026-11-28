@@ -10,6 +10,10 @@ public import Ix.TracingTexray
 public import Ix.Benchmark.Results
 public import Ix.Cli.ConstsFile
 public import Ix.Cli.ValidateCmd
+public import Ix.Compile.Equations
+public import Ix.Compile.CircuitContract
+public import Ix.SemanticContract
+public import Ix.Cli.KernelLimits
 import Std.Internal.UV.System
 
 /-! `ix compile`: compile a Lean source file to an Ixon `.ixe` artifact using
@@ -38,14 +42,53 @@ def Ix.Cli.publishedEnvelopeVersion (published : Bool) (path : FilePath) : IO (O
   | some 0xE5 => return some 5
   | _ => throw <| IO.userError s!"compile report: invalid published envelope header in {path}"
 
-def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
+/-- Close `constList` over the companion declarations (`checkDecl`, `uniqueThm`, optional
+`compThm`) of every `@[circuit_guess]` / `checked def` subject in `constList`, re-running
+`collectSelectedDepsWith` until fixpoint without mutating any `ConstantInfo`. -/
+private def closeCircuitGuesses (env : Lean.Environment)
+    (constList : List (Lean.Name × Lean.ConstantInfo)) :
+    List (Lean.Name × Lean.ConstantInfo) × Nat :=
+  let regSize := (Ix.Compile.CircuitContract.circuitAttrExtension.getState env).size
+  if regSize == 0 then
+    (constList, 0)
+  else
+    let present0 : Std.HashSet Lean.Name := constList.foldl (init := {}) fun s (n, _) => s.insert n
+    let extra0 := Ix.Compile.CircuitContract.guessCompanionNames env present0
+    if extra0.isEmpty then
+      (constList, 0)
+    else
+      let units := unitIndex env.constants
+      let next0 := collectSelectedDepsWith env units (constList.map (·.1) ++ extra0.toList)
+      go units regSize next0 extra0.size
+where
+  go (units : UnitIndex) : Nat → List (Lean.Name × Lean.ConstantInfo) → Nat →
+      List (Lean.Name × Lean.ConstantInfo) × Nat
+    | 0, cur, added => (cur, added)
+    | fuel + 1, cur, added =>
+      let present : Std.HashSet Lean.Name := cur.foldl (init := {}) fun s (n, _) => s.insert n
+      let extra := Ix.Compile.CircuitContract.guessCompanionNames env present
+      if extra.isEmpty then
+        (cur, added)
+      else
+        let seeds := cur.map (·.1) ++ extra.toList
+        let next := collectSelectedDepsWith env units seeds
+        go units fuel next (added + extra.size)
+
+/-- The compile, on the thread `runCompileCmd` sized for it. `--workers` is the compiler's
+worker count (default 32) and, given, also the bound on the tasks of the typing entry's phase
+B, whose limits are `settings`. -/
+def compileWith (p : Cli.Parsed) (settings : Ix.Kernel.Host.Resolved) : IO UInt32 := do
   -- Keep the environment-variable interface for scripts, while giving the
   -- CLI an ordinary discoverable switch.
   if p.hasFlag "verbose" then
     Std.Internal.UV.System.osSetenv "IX_VERBOSE" "1"
-  let workers := match p.flag? "workers" with
-    | some f => max 1 (f.as! Nat)
-    | none => 32
+  let workers := match settings.source .workers, settings.limits.workers with
+    | .flag, some n => n
+    | _, _ => 32
+  let decline (e : String) : IO (Option UInt32) := do
+    let some r := Ix.Kernel.Host.limitOfText e | return none
+    IO.eprintln s!"[compile] {Ix.Kernel.Host.declineMessage settings r}"
+    return some Ix.Kernel.Host.exitDeclined
 
   let some path := p.positionalArg? "path"
     | p.printError "error: must specify <path> to a Lean source file"
@@ -107,15 +150,18 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     return 1
   -- With each list, whether it is the whole import environment (the default
   -- scope, as `compile-lean` without `--local`), whose compile publishes every
-  -- role: that compile prefetches every role's certificates.
-  let (constList, wholeEnv) ←
+  -- role: that compile prefetches every role's certificates. With them, the
+  -- constants the compile selected (the roots of the word-equation walk).
+  let (constList, wholeEnv, roots) ←
     if p.hasFlag "local" then do
       if !constsSeeds.isEmpty || (p.flag? "module").isSome || !excludeSet.isEmpty then
         p.printError "error: --local excludes --consts/--consts-file, --module and --exclude"
         return 1
       let closed := localConstList fe
       IO.println s!"[compile] local: {closed.length} constants (the file's own and their dependencies)"
-      pure (closed, false)
+      let own := leanEnv.constants.toList.filterMap fun (n, _) =>
+        if (leanEnv.getModuleIdxFor? n).isNone then some n else none
+      pure (closed, false, own)
     else if !constsSeeds.isEmpty then do
       let mut seeds : List Lean.Name := []
       let mut missing : List String := []
@@ -140,12 +186,12 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.println s!"[compile] consts: {seeds.length} seed constant(s)"
       let closed := collectSelectedDeps leanEnv seeds
       IO.println s!"[compile] consts: {closed.length} constants after transitive-dep closure"
-      pure (closed, false)
+      pure (closed, false, seeds)
     else match p.flag? "module" with
     | none =>
       if excludeSet.isEmpty then
         let whole ← defaultConstList fe pathStr
-        pure (whole, true)
+        pure (whole, true, whole.map (·.1))
       else
         -- Exclusion applies on top of the default scope (full env for classic
         -- files, module-visible closure for module-mode files).
@@ -153,13 +199,13 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
         let seeds := base.filterMap fun (n, _) =>
           if excludeSet.contains n then none else some n
         IO.println s!"[compile] exclude applied: {seeds.length} seed constants"
-        pure (collectSelectedDeps leanEnv seeds, false)
+        pure (collectSelectedDeps leanEnv seeds, false, seeds)
     | some flag =>
       let raw := flag.as! String
       let prefixes := parsePrefixes raw
       if prefixes.isEmpty then
         IO.println s!"[compile] warning: --module '{raw}' parsed to empty list; compiling full env"
-        pure (leanEnv.constants.toList, true)
+        pure (leanEnv.constants.toList, true, leanEnv.constants.toList.map (·.1))
       else
         let moduleNames := leanEnv.allImportedModuleNames
         let seeds := leanEnv.constants.toList.filterMap fun (n, _) =>
@@ -172,7 +218,53 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
         IO.println s!"[compile] filter: {prefixes.length} module-prefix(es), {seeds.length} seed constants"
         let closed := collectSelectedDeps leanEnv seeds
         IO.println s!"[compile] filter: {closed.length} constants after transitive-dep closure"
-        pure (closed, false)
+        pure (closed, false, seeds)
+
+  -- Unfolding theorems (`Ix.Compile.Equations`) and stored word equations
+  -- (`Ix.Compile.WordEquations`). On by default for a selected closure
+  -- (`--consts`, `--consts-file`, `--local`, `--module`); a whole environment
+  -- gets them only with `--equations` (the cost there is not measured).
+  -- `--no-equations` and `--no-word-equations` turn them off.
+  for (on, off) in [("equations", "no-equations"), ("word-equations", "no-word-equations")] do
+    if p.hasFlag on && p.hasFlag off then
+      p.printError s!"error: --{on} and --{off} contradict each other"
+      return 1
+  let selected := p.hasFlag "local" || !constsSeeds.isEmpty || ((p.flag? "module").isSome && !wholeEnv)
+  let equations := p.hasFlag "equations" || (selected && !p.hasFlag "no-equations")
+  if (p.flag? "equations-out").isSome && !equations then
+    p.printError "error: --equations-out needs equations (the default for a selected closure, or --equations)"
+    return 1
+  if p.hasFlag "word-equations" && !equations then
+    p.printError "error: --word-equations needs equations (the default for a selected closure, or --equations)"
+    return 1
+  let wantCircuitSchedule := (p.flag? "circuit-schedule-out").isSome
+  let wantCircuitGuesses := (p.flag? "circuit-guesses-out").isSome
+  let includeCircuitGuesses := wantCircuitSchedule || wantCircuitGuesses
+  let (constList, guessWordRoots) ← if includeCircuitGuesses then do
+      let (closed, added) := closeCircuitGuesses leanEnv constList
+      if added > 0 then
+        IO.println s!"[compile] circuit-guesses: added {added} companion declaration(s); {closed.length} constants"
+      let present : Std.HashSet Lean.Name := closed.foldl (init := {}) fun s (n, _) => s.insert n
+      let checkers := Ix.Compile.CircuitContract.guessCheckerNames leanEnv present
+      pure (closed, checkers.toList)
+    else pure (constList, [])
+
+  let (leanEnv, constList) ← if equations then do
+      let (env, closed, found, failed) ←
+        Ix.Compile.Equations.close leanEnv (constList.map (·.1))
+          (words := !p.hasFlag "no-word-equations") (roots := roots ++ guessWordRoots)
+      let (closed, postAdded) :=
+        if includeCircuitGuesses then closeCircuitGuesses env closed else (closed, 0)
+      if postAdded > 0 then
+        IO.println s!"[compile] circuit-guesses (post-equations): added {postAdded} companion declaration(s); {closed.length} constants"
+      IO.println s!"[compile] equations: {found.size} unfolding theorem(s), {failed.size} failure(s); {closed.length} constants"
+      let sidecar := (p.flag? "equations-out").map (·.as! String)
+        |>.getD (outPath ++ ".equations.json")
+      let theorems := Ix.Compile.Equations.theorems (closed.map (·.1))
+      IO.FS.writeFile sidecar
+        ((Ix.Compile.Equations.toJson found theorems failed).pretty ++ "\n")
+      pure (env, closed)
+    else pure (leanEnv, constList)
 
   let totalConsts := constList.length
   println! "Total constants: {totalConsts}"
@@ -201,18 +293,54 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let strip (artifact : Ixon.Env) : Ixon.Env := if strictAnon then { artifact with
     named := {}, names := {}, comms := {}, addrToName := {} } else artifact
   let (out, finalization) ← match ← Ix.CompileM.compileAndFinalize leanEnv constList workers
-      allowPartial log (strip := strip) (prefetch := wholeEnv) (modeCheck := Ix.ModeCheck.checkArtifact) with
+      allowPartial log (strip := strip) (prefetch := wholeEnv)
+      (modeCheck := fun ixe => Ix.ModeCheck.checkArtifact ixe settings.limits)
+      (limits := settings.limits) with
     | .ok r => pure r
-    | .error e => throw (IO.userError s!"compile refused: {e}")
+    | .error e =>
+      match ← decline e with
+      | some code => return code
+      | none => throw (IO.userError s!"compile refused: {e}")
   let status := statusOf out.env out.failures.toMap
   let status ← match finalization with
     | .refused => pure status
-    | .failed e => throw (IO.userError e)
+    | .failed e =>
+      match ← decline e with
+      | some code => return code
+      | none => throw (IO.userError e)
     | .done artifact bytes =>
       if out.annotated then
-        IO.println "[compile] mode checking: accepted by IxC.Resource.check, which is uncertified \
+        IO.println "[compile] mode checking: accepted by IxCK.Resource.check, which is uncertified \
           (nothing proves it sound)"
       Ix.RoleBinding.Compile.writeAtomic (FilePath.mk outPath) bytes
+      let nameToAddr : Std.HashMap Lean.Name String :=
+        if wantCircuitSchedule || wantCircuitGuesses then
+          out.env.named.fold (init := {}) fun m k named =>
+            m.insert (Ix.SemanticContract.toLeanName k) (toString named.addr)
+        else {}
+      if let some schedPath := (p.flag? "circuit-schedule-out").map (·.as! String) then
+        let schedJson ← match Ix.Compile.CircuitContract.exportScheduleJsonChecked leanEnv nameToAddr with
+          | .ok j => pure j
+          | .error e => throw (IO.userError s!"circuit-schedule export failed: {e}")
+        IO.FS.writeFile schedPath (schedJson.pretty ++ "\n")
+      if let some guessesPath := (p.flag? "circuit-guesses-out").map (·.as! String) then
+        let guessRoots : List Lean.Name :=
+          if !constsSeeds.isEmpty then
+            roots.reverse
+          else
+            let lookupEnv := leanEnv.setExporting false
+            let defRoots := roots.filter fun n =>
+              (unitAuxOwner? leanEnv.constants n).isNone &&
+              match lookupEnv.find? n with
+              | some (.defnInfo d) => d.safety == .safe
+              | _ => false
+            let chosen := if defRoots.isEmpty then roots else defRoots
+            (chosen.toArray.qsort fun a b => a.toString < b.toString).toList
+        let guessesJson ← match Ix.Compile.CircuitContract.emitK1HintsWithGuessesJson
+            leanEnv nameToAddr guessRoots pathStr with
+          | .ok j => pure j
+          | .error e => throw (IO.userError s!"circuit-guesses export failed: {e}")
+        IO.FS.writeFile guessesPath (guessesJson.pretty ++ "\n")
       pure { status with
         bytes := bytes.size.toUInt64
         named := artifact.named.size.toUInt64
@@ -244,7 +372,8 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
           , ("constsFile", flagStr "consts-file")
           , ("module", flagStr "module")
           , ("exclude", flagStr "exclude")
-          , ("excludeFile", flagStr "exclude-file") ])
+          , ("excludeFile", flagStr "exclude-file")
+          , ("equations", Lean.toJson equations) ])
       , ("requested", Lean.toJson totalConsts)
       , ("named", Lean.toJson status.named.toNat)
       , ("uniqueAnon", Lean.toJson status.uniqueAnon.toNat)
@@ -294,6 +423,19 @@ serialized the grounded subset ({status.named} named, \
       , ("peak-rss", Lean.toJson peakRss) ]
   return 0
 
+/-- `ix compile`: the kernel's limits resolved over `Ix.Typing.typingLimits` (a malformed one
+is a usage error, exit 2) and printed when not at their defaults; the threads sized from them
+before any task (`KernelLimits.prepareThreads`; a run that cannot fit the address-space limit
+exits 2); then the whole compile, its typing included, on a thread of that size. A decline of
+the typing by a limit exits 6. -/
+def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
+  let settings ← match ← Ix.Cli.KernelLimits.resolveCli Ix.Typing.typingLimits p with
+    | .ok s => pure s
+    | .error e => IO.eprintln s!"[compile] {e}"; return 2
+  if let some h := Ix.Kernel.Host.header settings then IO.eprintln s!"[compile] {h}"
+  if let some why ← Ix.Cli.KernelLimits.prepareThreads settings then
+    IO.eprintln s!"[compile] {why}"; return 2
+  Ix.Cli.KernelLimits.onKernelThread (compileWith p settings)
 
 def compileCmd : Cli.Cmd := `[Cli|
   compile VIA runCompileCmd;
@@ -301,7 +443,14 @@ def compileCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     v, verbose;               "Print compiler phase timings, scheduler progress, and serialization progress. Equivalent to IX_VERBOSE=1."
-    workers        : Nat;    "Worker count for the certified compiler's parallel phases (default 32)."
+    workers        : String; "Worker count for the certified compiler's parallel phases (default 32); given, also the bound on the tasks of the typing entry's phase B (else IX_KERNEL_WORKERS, else unbounded). A positive whole number."
+    "max-records" : String; "Typing kernel limit: records (else IX_KERNEL_MAX_RECORDS; default 4194304)"
+    "max-blobs" : String; "Typing kernel limit: blobs (else IX_KERNEL_MAX_BLOBS; default 4194304)"
+    "max-total-bytes" : String; "Typing kernel limit: payload bytes of records and blobs (else IX_KERNEL_MAX_TOTAL_BYTES; default 17179869184)"
+    "max-record-bytes" : String; "Typing kernel limit: one record's payload bytes (else IX_KERNEL_MAX_RECORD_BYTES; default 268435456)"
+    "max-record-univ-nodes" : String; "Typing kernel limit: one record's universe nodes, expanded (else IX_KERNEL_MAX_RECORD_UNIV_NODES; default 67108864)"
+    "max-depth" : String; "Typing kernel limit: how deep a record nests (else IX_KERNEL_MAX_DEPTH; default 16384); the threads get 16 KiB of stack per level, at least 256 MiB. A decline by any of these exits 6"
+    "level-budget" : String; "Typing kernel limit: work budget per one-directional universe-level comparison (else IX_KERNEL_LEVEL_BUDGET; default 65536)"
     "no-build";               "Skip the Lake build/cache step and reuse existing import artifacts. The input file is still elaborated. The caller must ensure all imports are built and up to date."
     out            : String; "Output path for serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe` (e.g. CompileMathlib.lean -> compilemathlib.ixe)"
     consts         : String; "Comma-separated EXACT constant names to compile (transitive deps pulled in automatically) instead of the whole import env — e.g. `Nat.add_comm`. Same flag/shape as `ix check --consts`. Mutually exclusive with --module; --exclude does not apply."
@@ -315,6 +464,13 @@ def compileCmd : Cli.Cmd := `[Cli|
     "allow-partial" ;        "Allow writing the successfully compiled subset despite requested compilation failures. Without this flag, those failures cause a nonzero exit and leave the output path untouched."
     anon           ;         "Strict-anonymous output: clear §4 names, §5 metadata, and §6 commitments (after hint finalization, so §3 anon hints survive). The env root is unchanged — it covers §2 only. Default keeps names: they are harmless to catalog semantics and valuable for fidelity/debugging."
     report         : String; "Write a machine-readable JSON compile report (versions, seed spec, requested/named/unique-anon/ungrounded counts, full ungrounded list, canonical consts merkle root, bytes, elapsed ms) to this path — written on success, fail-closed abort, and partial publish alike."
+    equations      ;         "Realize the unfolding theorem (`f.eq_def`) of every recursive definition the closure reaches, library definitions included; compile each theorem with its dependencies, to a fixed point, and write the definition/theorem associations to --equations-out. The default for a selected closure (--consts, --consts-file, --local, --module); a whole-environment compile realizes none unless given this flag, since the cost on a whole environment is not measured."
+    "no-equations" ;         "Realize no unfolding theorem and add no word equation (the selected closure as it is; no --equations-out)."
+    "word-equations" ;       "Add the stored equation of every fixed-width word operation (`UInt8`…`UInt64`) the compile's roots reach (a dependency walk over the values of definitions and opaques and the rules of recursors that enters no declaration type, no theorem and no word operation; `Ix.Compile.WordEquations`), with the bridges it mentions, as seeds, and name each, with its operation, in the output's `theorems` list. On wherever the equations are; the flag says so explicitly."
+    "no-word-equations" ;    "Keep the unfolding theorems but add no word equation."
+    "equations-out" : String; "Path for the equations output (JSON, format `ix/compile-equations/2`: `equations` [{definition, equation}] sorted by definition, `theorems` [{kind, subject, theorem}] sorted by subject (kind `word`: a word operation and its stored equation), `failures` [{definition, message}]); defaults to <out>.equations.json."
+    "circuit-schedule-out" : String; "Path for the address-keyed CircuitSchedule sidecar JSON (`ixcc/circuit-schedule/1`) exported from `open scoped Ix.Circuit` annotations without mutating Ixon addresses."
+    "circuit-guesses-out"  : String; "Path for the address-keyed Tier-2 guess hints sidecar JSON (`ixcc/k1-equations/1`) exported from `open scoped Ix.Circuit` (`@[circuit_guess]` / `checked def`) annotations; compiles companion checkers and proofs into the `.ixe` without mutating Ixon addresses."
 
   ARGS:
     path : String; "Path to the Lean source file to compile."

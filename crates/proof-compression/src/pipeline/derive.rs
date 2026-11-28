@@ -123,18 +123,23 @@ mod tests {
   use super::*;
 
   const RECURSIVE_VK: &[u8] =
-    include_bytes!("../../verifying-keys/0.5/recursive-vk.bin");
+    include_bytes!("../../verifying-keys/0.6/recursive-vk.bin");
 
   fn ignition() -> SetupConfig {
     let setup = SetupConfig::from_env(false).unwrap();
     assert_eq!(setup.class(), super::super::SetupClass::Ignition);
+    // The derivation itself does not check the file; a release gate must.
+    super::super::check_release_srs(&setup).unwrap();
     setup
   }
 
+  // These ignored tests are the release-consistency gate
+  // `tools/rederive-release-keys.sh` runs.
   #[test]
   #[ignore = "needs IX_ROOT_VK naming the release aggregation backend key, \
               the pinned Ignition release under IX_PARAMS_DIR and about \
-              90 GB of memory; a CUDA build commits on the GPU"]
+              116 GB of memory (115.6 GB peak measured at 16 threads); a \
+              CUDA build commits on the GPU"]
   fn release_recursive_key_derives_without_a_proof() {
     let root_vk =
       std::fs::read(std::env::var_os("IX_ROOT_VK").unwrap()).unwrap();
@@ -155,26 +160,5 @@ mod tests {
       Sha256::digest(&description).as_slice(),
       verifying_keys::decode(verifying_keys::FINAL_SCHEMA_SHA256).unwrap()
     );
-  }
-
-  #[cfg(feature = "plonk")]
-  #[test]
-  #[ignore = "needs the pinned Ignition release under IX_PARAMS_DIR and \
-              compiles and sets up the PLONK circuit into a new directory \
-              under the temporary directory (minutes on a GPU-backed gnark, \
-              longer on CPU)"]
-  fn release_plonk_key_derives_without_a_proof() {
-    use sha2::{Digest, Sha256};
-    let scratch = crate::test_support::TempDir::new("plonk-derive");
-    let cache = scratch.join("cache");
-    let derived = super::super::plonk::derive_verifying_key(
-      RECURSIVE_VK,
-      &verifying_keys::STATEMENT_PREFIX,
-      &ignition(),
-      &cache,
-    )
-    .unwrap();
-    eprintln!("derived PLONK key SHA-256 {:x}", Sha256::digest(&derived));
-    assert!(derived == verifying_keys::PLONK_VK, "derived PLONK key differs");
   }
 }

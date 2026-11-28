@@ -281,7 +281,8 @@ theorem canonicalNatural_toBytes (value : Nat) :
 /-- A natural-number literal's blob reads back as the literal. -/
 theorem natural_toBytes (value : Nat) :
     Kernel.Reader.natural (ByteArray.mk (Nat.toBytesLE value)) = value := by
-  unfold Kernel.Reader.natural Nat.toBytesLE
+  rw [Kernel.Reader.natural_eq_foldr]
+  unfold Nat.toBytesLE
   by_cases zero : value = 0
   · subst value; rfl
   · simp only [beq_iff_eq, zero, ↓reduceIte]

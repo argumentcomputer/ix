@@ -3,20 +3,20 @@ import Tests.Ix.Kernel.KernelLayout
 /-! # The kernel's trust-surface fence (`kernel-trust-surface`)
 
 Derived from con-leche's `tests/trust-surface.sh` (Apache-2.0), modified; see
-`IxC/Kernel/NOTICE`. Its lexer fixture, upstream's
+`IxCK/Kernel/NOTICE`. Its lexer fixture, upstream's
 `tests/trust-surface/lexer.lean`, is kept unchanged as
 `Tests/Fixtures/trust-surface/lexer.lean` (its text still names upstream's
 script). Upstream's is a Python program in a shell wrapper.
 
-It scans the checker and the theory under `IxC/Kernel/`
+It scans the checker and the theory under `IxCK/Kernel/`
 (`Tests.Ix.Kernel.KernelLayout`, whose table `topLevel` must classify every
-file under `IxC/Kernel/`) for compiler escapes, and the root library's files
+file under `IxCK/Kernel/`) for compiler escapes, and the root library's files
 that substitute code in the certified entries' execution (`rootSources`),
 and its display modules (`displaySources`: the one display-only
 read).
 Ix's boundary (`Ixon`,
 `Audit`, `Ingress`, `Egress`, `Ref`, `Search`) is fenced by Ix's Lean audits
-in `IxC/Kernel/Audit/*`, which see compiled code, not tokens; ruled entries
+in `IxCK/Kernel/Audit/*`, which see compiled code, not tokens; ruled entries
 are recorded once more in the Lean runtime audit
 (`Ix.Kernel.Audit.runtimeRulings`), which checks the compiled closure.
 
@@ -42,19 +42,20 @@ THE ALLOWLIST, and the justification for every entry (file → the tokens
 tolerated there). A token in an allowlisted file that is not on its own
 list fails just as loudly as one in a bare file.
 
-  IxC/Kernel/Expr.lean          computed_field
-      The packed `@[computed_field] data` and `Level.hashData`: the
+  IxCK/Kernel/Expr.lean         computed_field
+      The packed `@[computed_field] data`, `Expr.hashW`, `Level.hashData` and
+      `Level.hasParamData`: the
       user's ruling R-meta ("we trust the compiler"), the same escape
       class `Lean.Expr` lives on. Expression equality is not an escape:
       it goes through `@[csimp]` + `withPtrEq`/`withPtrAddr` with the
       memoised descent proved equal to `decide (a = b)`.
 
-  IxC/Kernel/Name.lean          computed_field
+  IxCK/Kernel/Name.lean         computed_field
       A cached hash only (`Name.hashData`), as `Lean.Name`'s. Pointer
       equality goes through `@[csimp]` + `withPtrEq` with the redundancy
       proved (`Name.beqPtr_eq`).
 
-  IxC/Kernel/Key.lean           computed_field, ofReduceBool, sorryAx, trustCompiler
+  IxCK/Kernel/Key.lean          computed_field, ofReduceBool, sorryAx, trustCompiler
       A cached hash only (`Key.hashData`), as `Name`'s: the constant keys
       (input, role and derived) hash in O(1). Pointer equality goes
       through `@[csimp]` + `withPtrEq` with the redundancy proved
@@ -67,47 +68,47 @@ list fails just as loudly as one in a bare file.
       (non-standard axioms), IxVM refuses each as a claim's seed and
       refuses every use, and nothing here evaluates natively.
 
-  IxC/Kernel/Roles.lean         ofReduceBool, sorryAx, trustCompiler
+  IxCK/Kernel/Roles.lean        ofReduceBool, sorryAx, trustCompiler
       NAMES ONLY, the same `Role` constructors: their specification
       (`Role.spec`, an axiom of the stated type), the roles their types
       mention (`Role.deps`), `installAnchors`, and `Role.inert`, which
       marks them inert.
 
-  IxC/Kernel/Basis/Names.lean   sorryAx
+  IxCK/Kernel/Basis/Names.lean  sorryAx
       NAME ONLY: `sorryAxName := roleKey .sorryAx` names the `Role.sorryAx`
       key.
 
-  IxC/Kernel/Cached/ParsedC.lean trustCompiler
+  IxCK/Kernel/Cached/ParsedC.lean trustCompiler
       NAME ONLY: checks `cv.name = roleKey .trustCompiler` in the inert
       compiler-trust axiom declaration branch (`checkDeclC`), installing
       nothing so any use declines.
 
-  IxC/Kernel/Cached/Policy.lean sorryAx, trustCompiler
+  IxCK/Kernel/Cached/Policy.lean sorryAx, trustCompiler
       NAME ONLY: looks up `Role.sorryAx` in the user-axiom policy filter and
       checks `cv.name = roleKey .trustCompiler` in the inert compiler-trust
       axiom declaration branch (`checkStdAxiomDeclC`), installing nothing.
 
-  IxC/Kernel/Checker.lean       trustCompiler
+  IxCK/Kernel/Checker.lean      trustCompiler
       NAME ONLY: checks `cv.name = roleKey .trustCompiler` in the inert
       compiler-trust axiom declaration branch (`checkDecl`), installing
       nothing so any use declines.
 
-  IxC/Kernel/Semantics/Bridge/DeclRun.lean trustCompiler
+  IxCK/Kernel/Semantics/Bridge/DeclRun.lean trustCompiler
       NAME ONLY: case-splits on `cv.name = roleKey .trustCompiler` in the
       soundness proof of `checkDecl`'s inert compiler-trust branch.
 
-  IxC/Kernel/Verify/BridgeDecl.lean trustCompiler
+  IxCK/Kernel/Verify/BridgeDecl.lean trustCompiler
       NAME ONLY: case-splits on `cv.name = roleKey .trustCompiler` in the
       fuel-bridge proof for `checkDecl`'s inert compiler-trust branch.
 
-  IxC/Kernel/Verify/Cached/BridgeC.lean trustCompiler
+  IxCK/Kernel/Verify/Cached/BridgeC.lean trustCompiler
       NAME ONLY: case-splits on `cv.name = roleKey .trustCompiler` in the
       simulation proof of `checkDeclC`'s inert compiler-trust branch.
 
-  IxC/Kernel/Admission.lean     sorryAx
+  IxCK/Kernel/Admission.lean    sorryAx
       NAME ONLY: lists `Role.sorryAx` in `userAxiomRoles`.
 
-  IxC/Kernel/Exclusive.lean     unsafe, implemented_by
+  IxCK/Kernel/Exclusive.lean    unsafe, implemented_by
       `withExclusive`: defined as `k false` and `@[implemented_by]` the
       compiled `k (isExclusiveUnsafe a)`, the reference-count read the
       substitution memo keys on. The obligation `h : k true = k false`
@@ -115,31 +116,47 @@ list fails just as loudly as one in a bare file.
       whose continuation returns a `Subsingleton`, so `h` is
       `Subsingleton.elim`. The file's docstring is the justification.
 
-  IxC/Kernel/BasisGen.lean      unsafe, implemented_by
+  IxCK/Kernel/BasisGen.lean     unsafe, implemented_by, addDecl
       ELABORATION ONLY. `#annotate_basis` / `#annotate_pins` run the
       annotation pass at elaboration time through `unsafe evalTerm`
       (a `meta section`) and splice the resulting literals. Nothing here
       is in the binary; the literals are ordinary data the proofs consume.
+      The generated declarations are installed by `Lean.addDecl`, which
+      runs Lean's kernel on them (unless `debug.skipKernelTC` is set, which
+      the kernel-bypass scan forbids in every certified library).
 
-  IxC/Kernel/Audit/Axioms.lean  sorryAx
+  IxCK/Kernel/Audit/Axioms.lean sorryAx
       NAME ONLY: checks whether a declaration's dependency graph contains
       Lean's `sorryAx` constant in the axiom audit engine.
 
-  IxC/Kernel/Audit/ClosureManifest.lean  unsafe
+  IxCK/Kernel/Audit/ClosureManifest.lean unsafe
       NAME ONLY: matches `Lean.DefinitionSafety.unsafe` when hashing a
       definition's safety tag into the SHA-256 closure manifest.
 
-  IxC/Kernel/Audit/Roots.lean   ptrAddrUnsafe
+  IxCK/Kernel/Audit/Roots.lean  ptrAddrUnsafe
       NAME ONLY: enumerates Lean's audited runtime primitives
       (`withPtrAddrUnsafe`, `ptrEq`, `ptrAddrUnsafe`, `isExclusiveUnsafe`) in
       `runtimeRulings`.
 
-  IxC/Kernel/Audit/Runtime.lean unsafe, implemented_by, computed_field, extern
+  IxCK/Kernel/Audit/Runtime.lean unsafe, implemented_by, computed_field, extern, csimp
       AUDIT ENGINE & NEGATIVE CONTROLS: `Finding.unsafe` constructor and
       elaboration-time `RuntimeControls` negative-control fixtures verifying
-      `checkRuntimeWith` rejects unruled escapes.
+      `checkRuntimeWith` rejects unruled escapes (their csimps included).
 
-  Ix/Cert/Compile.lean          ofReduceBool, sorryAx, trustCompiler
+  csimp in IxCK/Kernel/{Expr,Name,Key,Cached/CoreC,Cached/StateC,Canon,Core,
+  CoreDefs,DeclCheck,ExprOps,FEnv,Inductives/NativeInstall,Inductives/Scope,
+  Inductives/StructParts,Level,StdAxioms,Units}.lean, IxCK/Ixon/Codec.lean and
+  Ix/Cert/Compile.lean
+      PROVED REPLACEMENTS: each `@[csimp] theorem f_eq : @f = @g` runs a
+      faster `g` for the checker's (or the certified compile's) `f`, with
+      the equation proved. The runtime audit admits a project csimp only
+      from the ruled modules (`csimpModules`: `IxCK.Kernel` and
+      `IxCK.Ixon.Codec` for the checker, `Ix` for `Ix.Cert.compile`,
+      `Ix/Cert/RuntimeAudit.lean`) and only on the standard axioms, a test a
+      theorem that never reached the kernel also passes; the full-closure
+      kernel replay re-checks every one of these theorems.
+
+  Ix/Cert/Compile.lean          ofReduceBool, sorryAx, trustCompiler, csimp
       NAME ONLY: matches `Ix.Kernel.Role.ofReduceBool` / `.ofReduceNat` /
       `.sorryAx` / `.trustCompiler` when classifying axiom roles in
       `roleRecordKind`.
@@ -170,21 +187,37 @@ list fails just as loudly as one in a bare file.
       `peekSquash` reads one (`unsafeCast`, a `Squash` is its value at run
       time) to print it, and `peekAll` hands it to the safe renderer
       (`Ix.KernelDisplay.Render`). No certified root's compiled closure
-      reaches it (`IxC/Kernel/Audit/Roots.lean`, `Ix/Cert/RuntimeAudit.lean`),
+      reaches it (`IxCK/Kernel/Audit/Roots.lean`, `Ix/Cert/RuntimeAudit.lean`),
       and the `.meta` and `.source` verdicts are `.anon`'s (the erasure test).
       The file is scanned with the display modules (`displaySources`), which
       hold no other escape.
 
-Not policed, as upstream: `partial`, `@[csimp]`, `withPtrEq`/`withPtrAddr`,
-`opaque`, `noncomputable`. The Lean runtime audit polices the compiled
-form of the first two (no `partial` definition at all, `csimp` only with a
+Not policed, as upstream: `partial`, `withPtrEq`/`withPtrAddr`, `opaque`,
+`noncomputable`. The Lean runtime audit polices the compiled form of
+`partial` (no `partial` definition at all) and of `@[csimp]` (only with a
 theorem on the standard axioms).
 
+Added here (not upstream):
+- `csimp` in attribute position (inside `[…]`, as `extern`). The runtime
+  audit's test is also passed by a csimp theorem that never reached the
+  kernel, and an unchecked `@f = @g` swaps the executed code while every
+  proof about `f` still stands. The full-closure kernel replay (`lake run
+  check-kernel-replay`, `Scripts/KernelReplay.lean`) re-checks every such
+  theorem; each file that declares one is allowlisted for `csimp` above, so
+  a new one in another file is seen.
+- `addDecl`, `addDeclCore`, `addDeclWithoutChecking`, `setEnv`, `modifyEnv`
+  and `skipKernelTC`: the ways a metaprogram installs a declaration, checked
+  or not.
+- The kernel-bypass scan (`bypassTokens`): `skipKernelTC` and
+  `addDeclWithoutChecking` anywhere in the text of every certified library
+  (`bypassDirs`, `bypassRootFiles`) and lakefile, comments included, with no
+  allowlist.
+
 Changes from upstream: the scanned files come from the repository's own
-layout, and a file under `IxC/Kernel/` that the layout does not classify
+layout, and a file under `IxCK/Kernel/` that the layout does not classify
 fails; the allowlist drops upstream's `Main.lean` and
 `ConLeche/Challenge.lean` (not part of this kernel) and names files by
-their paths here; an empty `IxC/Kernel/` scans nothing and passes once the
+their paths here; an empty `IxCK/Kernel/` scans nothing and passes once the
 lexer self-test passes; and three patterns are wider than upstream's
 regular expressions, so this fence reports everything they do and more: a
 token's word boundary is ASCII (a non-ASCII letter next to a token is a
@@ -209,28 +242,90 @@ open Tests.Ix.Kernel.KernelLayout
 
 def tokens : List String :=
   ["unsafe", "unsafeCast", "ptrAddrUnsafe", "implemented_by", "computed_field", "native_decide",
-   "bv_decide", "ofReduceBool", "sorry", "sorryAx", "trustCompiler", "lcProof", "extern", "axiom"]
+   "bv_decide", "ofReduceBool", "sorry", "sorryAx", "trustCompiler", "lcProof", "extern", "axiom",
+   "skipKernelTC", "addDecl", "addDeclCore", "addDeclWithoutChecking", "setEnv", "modifyEnv",
+   "csimp"]
+
+/-- The kernel-bypass tokens: each names a way to put a declaration into an
+environment without the kernel checking it (`debug.skipKernelTC`, which
+`Lean.addDecl` obeys, and `addDeclWithoutChecking`), or direct low-level
+environment declaration installation (`addDeclCore`). Searched for, as words in
+the raw text, in every certified library (`bypassDirs`, `bypassRootFiles`) and
+the lakefiles (`bypassLakefiles`, where `leanOptions` or `moreLeanArgs` could
+set the option for a whole package). The test fixtures that need ill-typed
+declarations (`Tests/`, `Benchmarks/`) are not scanned. The full-closure kernel
+replay (`Scripts/KernelReplay.lean`) is what detects such a declaration in an
+`.olean`; this scan names the source line. -/
+def bypassTokens : List String := ["skipKernelTC", "addDeclWithoutChecking", "addDeclCore"]
+
+/-- The certified libraries the kernel-bypass scan covers. -/
+def bypassDirs : Array System.FilePath :=
+  #["IxCK", "Ix", "IxVMRefinement", "IxSharingVerify", "Aiur/Aiur", "IxVM/IxVM",
+    "MultiStark/MultiStark", "Models/SetTheory/IxSetTheoryModel",
+    "IxCC/IxCC", "IxCC/IxCCGrounding", "IxCC/IxCCCorrect",
+    "IxCCAiur", "Models/KernelBridge"]
+
+/-- Library root files the kernel-bypass scan covers besides `bypassDirs`. -/
+def bypassRootFiles : Array String :=
+  #["Ix.lean", "IxSharingVerify.lean", "FormalAiurKeys.lean", "FormalCodegen.lean",
+    "Aiur/Aiur.lean", "IxVM/IxVM.lean", "MultiStark/MultiStark.lean",
+    "Models/SetTheory/IxSetTheoryModel.lean",
+    "IxCC/IxCC.lean", "IxCC/IxCCGrounding.lean", "IxCC/IxCCCorrect.lean",
+    "IxCCAiur/IxCCAiur.lean", "Models/KernelBridge/IxKernelBridge.lean"]
+
+/-- Every workspace's lakefile: an option set there applies to a whole package.
+These are searched as plain text (a TOML file is not Lean). -/
+def bypassLakefiles : Array String :=
+  #["lakefile.lean", "IxCK/lakefile.lean", "Aiur/lakefile.lean", "IxVM/lakefile.lean",
+    "MultiStark/lakefile.lean", "Models/SetTheory/lakefile.toml",
+    "IxCC/lakefile.lean", "IxCCAiur/lakefile.toml", "Models/KernelBridge/lakefile.toml"]
+
+/-- Narrow audited exceptions for `bypassScan`:
+- `Ix/Commit.lean`: untrusted host CLI commitment helper (`commitDef`, outside
+  all certified kernel closures) calling Lean's kernel-checked `addDeclCore`
+  (never `skipKernelTC` or `addDeclWithoutChecking`).
+- `IxCC/IxCC/Tools/SourceScan.lean`: IxCC's own hygiene scanner, which lists
+  the forbidden token names as string literals; `bypassScan` still runs
+  `codeOnly` on it to guarantee zero occurrences in executable code. -/
+def bypassCodeOnlyFiles : List String := ["IxCC/IxCC/Tools/SourceScan.lean"]
+def bypassAllow : List (String × List String) :=
+  [("Ix/Commit.lean", ["addDeclCore"])]
 
 def allow : List (String × List String) := [
-  ("IxC/Kernel/Expr.lean", ["computed_field"]),
-  ("IxC/Kernel/Name.lean", ["computed_field"]),
-  ("IxC/Kernel/Key.lean", ["computed_field", "ofReduceBool", "sorryAx", "trustCompiler"]),
-  ("IxC/Kernel/Roles.lean", ["ofReduceBool", "sorryAx", "trustCompiler"]),
-  ("IxC/Kernel/Basis/Names.lean", ["sorryAx"]),
-  ("IxC/Kernel/Cached/ParsedC.lean", ["trustCompiler"]),
-  ("IxC/Kernel/Cached/Policy.lean", ["sorryAx", "trustCompiler"]),
-  ("IxC/Kernel/Checker.lean", ["trustCompiler"]),
-  ("IxC/Kernel/Semantics/Bridge/DeclRun.lean", ["trustCompiler"]),
-  ("IxC/Kernel/Verify/BridgeDecl.lean", ["trustCompiler"]),
-  ("IxC/Kernel/Verify/Cached/BridgeC.lean", ["trustCompiler"]),
-  ("IxC/Kernel/Admission.lean", ["sorryAx"]),
-  ("IxC/Kernel/BasisGen.lean", ["unsafe", "implemented_by"]),
-  ("IxC/Kernel/Exclusive.lean", ["unsafe", "implemented_by"]),
-  ("IxC/Kernel/Audit/Axioms.lean", ["sorryAx"]),
-  ("IxC/Kernel/Audit/ClosureManifest.lean", ["unsafe"]),
-  ("IxC/Kernel/Audit/Roots.lean", ["ptrAddrUnsafe"]),
-  ("IxC/Kernel/Audit/Runtime.lean", ["unsafe", "implemented_by", "computed_field", "extern"]),
-  ("Ix/Cert/Compile.lean", ["ofReduceBool", "sorryAx", "trustCompiler"]),
+  ("IxCK/Kernel/Expr.lean", ["computed_field", "csimp"]),
+  ("IxCK/Kernel/Name.lean", ["computed_field", "csimp"]),
+  ("IxCK/Kernel/Key.lean", ["computed_field", "ofReduceBool", "sorryAx", "trustCompiler", "csimp"]),
+  ("IxCK/Kernel/Cached/CoreC.lean", ["csimp"]),
+  ("IxCK/Kernel/Cached/StateC.lean", ["csimp"]),
+  ("IxCK/Kernel/Canon.lean", ["csimp"]),
+  ("IxCK/Kernel/Core.lean", ["csimp"]),
+  ("IxCK/Kernel/CoreDefs.lean", ["csimp"]),
+  ("IxCK/Kernel/DeclCheck.lean", ["csimp"]),
+  ("IxCK/Kernel/ExprOps.lean", ["csimp"]),
+  ("IxCK/Kernel/FEnv.lean", ["csimp"]),
+  ("IxCK/Kernel/Inductives/NativeInstall.lean", ["csimp"]),
+  ("IxCK/Kernel/Inductives/Scope.lean", ["csimp"]),
+  ("IxCK/Kernel/Inductives/StructParts.lean", ["csimp"]),
+  ("IxCK/Kernel/Level.lean", ["csimp"]),
+  ("IxCK/Kernel/StdAxioms.lean", ["csimp"]),
+  ("IxCK/Kernel/Units.lean", ["csimp"]),
+  ("IxCK/Ixon/Codec.lean", ["csimp"]),
+  ("IxCK/Kernel/Roles.lean", ["ofReduceBool", "sorryAx", "trustCompiler"]),
+  ("IxCK/Kernel/Basis/Names.lean", ["sorryAx"]),
+  ("IxCK/Kernel/Cached/ParsedC.lean", ["trustCompiler"]),
+  ("IxCK/Kernel/Cached/Policy.lean", ["sorryAx", "trustCompiler"]),
+  ("IxCK/Kernel/Checker.lean", ["trustCompiler"]),
+  ("IxCK/Kernel/Semantics/Bridge/DeclRun.lean", ["trustCompiler"]),
+  ("IxCK/Kernel/Verify/BridgeDecl.lean", ["trustCompiler"]),
+  ("IxCK/Kernel/Verify/Cached/BridgeC.lean", ["trustCompiler"]),
+  ("IxCK/Kernel/Admission.lean", ["sorryAx"]),
+  ("IxCK/Kernel/BasisGen.lean", ["unsafe", "implemented_by", "addDecl"]),
+  ("IxCK/Kernel/Exclusive.lean", ["unsafe", "implemented_by"]),
+  ("IxCK/Kernel/Audit/Axioms.lean", ["sorryAx"]),
+  ("IxCK/Kernel/Audit/ClosureManifest.lean", ["unsafe"]),
+  ("IxCK/Kernel/Audit/Roots.lean", ["ptrAddrUnsafe"]),
+  ("IxCK/Kernel/Audit/Runtime.lean", ["unsafe", "implemented_by", "computed_field", "extern", "csimp"]),
+  ("Ix/Cert/Compile.lean", ["ofReduceBool", "sorryAx", "trustCompiler", "csimp"]),
   ("Ix/Cert/LayoutExtra.lean", ["sorryAx"]),
   ("Ix/Address/Admission.lean", ["implemented_by"]),
   ("Ix/KernelDisplay/Peek.lean", ["unsafe", "unsafeCast"])]
@@ -239,7 +334,7 @@ def allow : List (String × List String) := [
 escapes so inlined `@[implemented_by]` or `bv_decide` cannot hide outside the
 core checker/theory fence. -/
 def boundaryDirs : Array System.FilePath :=
-  #["IxC/Ixon", "Ix/Ixon/Authenticated", "Ix/HostAdmission", "Ix/Cert"]
+  #["IxCK/Ixon", "Ix/Ixon/Authenticated", "Ix/HostAdmission", "Ix/Cert"]
 
 /-- Root-library files in the certified entries' execution that substitute
 code: the admission hash, which the authenticated entries run. -/
@@ -502,10 +597,11 @@ def wordHits (line : Array Char) (w : String) : List Nat := Id.run do
 
 def hasWord (line : Array Char) (w : String) : Bool := !(wordHits line w).isEmpty
 
-/-- Line numbers where word-bounded `extern` occurs inside `[...]` brackets
+/-- Line numbers where word-bounded `w` occurs inside `[...]` brackets
 across the full comment/string-blanked source (covering single-line and
-multi-line `@[\n extern "sym"\n]` and `attribute [\n extern "sym"\n]`). -/
-def externHitLines (out : Array Char) : Array Nat := Id.run do
+multi-line `@[\n extern "sym"\n]` and `attribute [\n extern "sym"\n]`):
+the attribute position of `extern` and `csimp`. -/
+def bracketHitLines (out : Array Char) (w : String) : Array Nat := Id.run do
   let n := out.size
   let mut lineNo := 1
   let mut bracketDepth : Nat := 0
@@ -518,54 +614,66 @@ def externHitLines (out : Array Char) : Array Nat := Id.run do
       bracketDepth := bracketDepth + 1
     else if c == ']' then
       if bracketDepth > 0 then bracketDepth := bracketDepth - 1
-    else if bracketDepth > 0 && c == 'e' && wordAt out q "extern" &&
+    else if bracketDepth > 0 && c == w.front && wordAt out q w &&
         (q == 0 || !isWordChar out[q - 1]!) &&
-        (q + 6 == n || !(out[q + 6]?.any isWordChar)) then
+        (q + w.length == n || !(out[q + w.length]?.any isWordChar)) then
       unless lines.contains lineNo do
         lines := lines.push lineNo
   return lines
 
-/-- An `axiom` declaration: at the start of the line after blanks,
-declaration modifiers and `@[…]` attributes, followed by a blank or the end
-of the line (upstream: `^\s*axiom\s`). -/
-def axiomHit (line : Array Char) : Bool := Id.run do
-  let n := line.size
-  let mut i := 0
-  let skip (i : Nat) : Nat := Id.run do
-    let mut j := i
-    while j < n && isPySpace line[j]! do j := j + 1
-    return j
-  i := skip i
-  let mut more := true
-  while more do
-    more := false
-    if line[i]? == some '@' && line[i + 1]? == some '[' then
-      let mut j := i + 2
-      while j < n && line[j]! != ']' do j := j + 1
-      if j < n then
-        i := skip (j + 1); more := true
-    else
-      for m in ["public", "private", "protected", "noncomputable", "unsafe", "partial", "meta", "scoped", "local"] do
-        if !more && wordAt line i m && (line[i + m.length]?.any isPySpace) then
-          i := skip (i + m.length); more := true
-  return wordAt line i "axiom" && (i + 5 == n || (line[i + 5]?.any isPySpace))
+/-- Line numbers where an `axiom` declaration keyword occurs in the full
+comment/string-blanked source `out`. Catches `axiom` anywhere on a line —
+including after `set_option ... in`, `namespace X`, nested `@[simp [a]]`, and
+multi-line `@[\n...\n]` — while excluding only projection/constructor notation
+(`.axiom`, `Foo.axiom`) and same-line inductive constructor branches (`| axiom`,
+not `|| axiom`). -/
+def axiomHitLines (out : Array Char) : Array Nat := Id.run do
+  let n := out.size
+  let mut lineNo := 1
+  let mut lines : Array Nat := #[]
+  for q in [0:n] do
+    let c := out[q]!
+    if c == '\n' then
+      lineNo := lineNo + 1
+    else if c == 'a' && wordAt out q "axiom" &&
+        (q == 0 || !isWordChar out[q - 1]!) &&
+        (q + 5 == n || !(out[q + 5]?.any isWordChar)) then
+      let isDotProj := q > 0 && out[q - 1]! == '.'
+      let isQuotedIdent := q > 0 && out[q - 1]! == '«'
+      let isPipeCtor := Id.run do
+        let mut k := q
+        while k > 0 && (out[k - 1]! == ' ' || out[k - 1]! == '\t') do
+          k := k - 1
+        if k > 0 && out[k - 1]! == '|' then
+          return !(k ≥ 2 && out[k - 2]! == '|')
+        return false
+      if !isDotProj && !isQuotedIdent && !isPipeCtor then
+        unless lines.contains lineNo do
+          lines := lines.push lineNo
+  return lines
 
-def tokenHit (externLines : Array Nat) (lineNo : Nat) (line : Array Char) : String → Bool
+def externHitLines (out : Array Char) : Array Nat := bracketHitLines out "extern"
+
+def tokenHit (externLines csimpLines axiomLines : Array Nat) (lineNo : Nat) (line : Array Char) :
+    String → Bool
   | "ofReduceBool" => hasWord line "ofReduceBool" || hasWord line "ofReduceNat"
   | "extern" => externLines.contains lineNo
-  | "axiom" => axiomHit line
+  | "csimp" => csimpLines.contains lineNo
+  | "axiom" => axiomLines.contains lineNo
   | tok => hasWord line tok
 
 /-- Scan raw Lean source text for compiler-escape occurrences. -/
 def scanSource (raw : String) (path : String) : Except String (Array (Nat × String × String)) := do
   let out ← codeOnly raw path
   let externLines := externHitLines out
+  let csimpLines := bracketHitLines out "csimp"
+  let axiomLines := axiomHitLines out
   let mut hits := #[]
   let mut lineNo := 1
   for line in (String.ofList out.toList).splitOn "\n" do
     let chars := line.toList.toArray
     for tok in tokens do
-      if tokenHit externLines lineNo chars tok then
+      if tokenHit externLines csimpLines axiomLines lineNo chars tok then
         hits := hits.push (lineNo, tok, pyStrip line.toList)
     lineNo := lineNo + 1
   return hits
@@ -618,12 +726,32 @@ def extraSelftests : Except String Unit := do
     ("meta axiom", "meta axiom pwn : False\n", #[(1, "axiom")]),
     ("scoped axiom", "scoped axiom pwn : False\n", #[(1, "axiom")]),
     ("local axiom", "local axiom pwn : False\n", #[(1, "axiom")]),
+    ("set_option in axiom", "set_option pp.all true in axiom pwn : False\n", #[(1, "axiom")]),
+    ("namespace axiom", "namespace X axiom pwn : False\n", #[(1, "axiom")]),
+    ("nested attr axiom", "@[simp [a]] axiom pwn : False\n", #[(1, "axiom")]),
+    ("multiline attr axiom", "@[\n  simp [a]\n] axiom pwn : False\n", #[(3, "axiom")]),
+    ("cross-line pipe axiom", "inductive T where\n  |\naxiom pwn : False\n", #[(3, "axiom")]),
+    ("benign ctor and proj axiom", "inductive T where\n  | axiom (n : Nat)\ndef x : T := .axiom 0\ndef y : T → Nat\n  | «axiom» n => n\n", #[]),
     ("multiline extern", "@[\n  extern \"sym\"\n]\nopaque f : Nat\n", #[(2, "extern")]),
     ("benign extern ident", "def extern : Nat := 0\n", #[]),
     ("multiline s! interp", "def f := s!\"{\n  unsafeCast 0\n}\"\n", #[(2, "unsafeCast")]),
     ("multiline s! spaced interp", "def f := s! \"{\n  unsafeCast 0\n}\"\n", #[(2, "unsafeCast")]),
     ("sorryAx token", "def f := sorryAx\n", #[(1, "sorryAx")]),
-    ("trustCompiler token", "def f := Lean.trustCompiler\n", #[(1, "trustCompiler")])
+    ("trustCompiler token", "def f := Lean.trustCompiler\n", #[(1, "trustCompiler")]),
+    ("csimp attribute", "@[csimp] theorem f_eq : @f = @g := rfl\n", #[(1, "csimp")]),
+    ("csimp attribute command", "attribute [inline, csimp] f_eq\n", #[(1, "csimp")]),
+    ("multiline csimp", "@[\n  csimp\n]\ntheorem f_eq : @f = @g := rfl\n", #[(2, "csimp")]),
+    ("benign csimp ident", "def csimp : Nat := 0\n", #[]),
+    ("skipKernelTC option", "set_option debug.skipKernelTC true in\n", #[(1, "skipKernelTC")]),
+    ("skipKernelTC withOptions",
+      "run_meta withOptions (debug.skipKernelTC.set · true) (addDecl d)\n",
+      #[(1, "skipKernelTC"), (1, "addDecl")]),
+    ("addDeclWithoutChecking", "def f := env.addDeclWithoutChecking d\n",
+      #[(1, "addDeclWithoutChecking")]),
+    ("addDeclCore", "def f := env.addDeclCore 0 d none\n", #[(1, "addDeclCore")]),
+    ("setEnv and modifyEnv", "def f := do setEnv e; modifyEnv id\n",
+      #[(1, "setEnv"), (1, "modifyEnv")]),
+    ("bypass in comment", "-- debug.skipKernelTC addDeclWithoutChecking\n", #[])
   ]
   for (label, src, want) in cases do
     let hits ← scanSource src s!"<selftest:{label}>"
@@ -631,6 +759,60 @@ def extraSelftests : Except String Unit := do
     let wantSorted := want.qsort pairLt
     if got != wantSorted then
       throw s!"{label}: expected {wantSorted.toList}, got {got.toList}"
+
+/-! ## The kernel-bypass scan -/
+
+/-- Every `.lean` file under `dir`, recursively, skipping `.lake` directories,
+sorted by code point. -/
+def leanFilesOutsideLake (dir : System.FilePath) : IO (Array String) := do
+  unless ← dir.isDir do return #[]
+  let mut files := #[]
+  for path in ← dir.walkDir (fun d => return d.fileName != some ".lake") do
+    if (path.fileName.getD "").endsWith ".lean" && !(← path.isDir) then
+      files := files.push path.toString
+  return files.qsort (· < ·)
+
+/-- The lines of `text` holding a `bypassTokens` word, as (line, token, text). -/
+def bypassHits (text : String) : Array (Nat × String × String) := Id.run do
+  let mut hits := #[]
+  let mut lineNo := 1
+  for line in text.splitOn "\n" do
+    let chars := line.toList.toArray
+    for tok in bypassTokens do
+      if hasWord chars tok then hits := hits.push (lineNo, tok, pyStrip line.toList)
+    lineNo := lineNo + 1
+  return hits
+
+def bypassAllowed (file tok : String) : Bool :=
+  ((bypassAllow.lookup file).getD []).contains tok
+
+/-- The kernel-bypass occurrences in the certified libraries and the lakefiles,
+as (file, line, token, text), and the number of files read. The text is searched
+as it is, comments and strings included: the lexer is not run over the ~100 MB
+of the libraries, and a mention in a comment fails too (rephrase it). For the
+audited scanner file in `bypassCodeOnlyFiles`, `codeOnly` is run to verify zero
+occurrences appear in executable code. -/
+def bypassScan : IO (Array (String × Nat × String × String) × Nat) := do
+  let mut files : Array String := #[]
+  for d in bypassDirs do files := files ++ (← leanFilesOutsideLake d)
+  for f in bypassRootFiles ++ bypassLakefiles do
+    if ← System.FilePath.pathExists f then files := files.push f
+  let mut hits := #[]
+  for rel in files do
+    let src ← IO.FS.readFile rel
+    unless bypassTokens.any (fun tok => (src.splitOn tok).length > 1) do continue
+    let text ← readText rel
+    let scannedText ← if bypassCodeOnlyFiles.contains rel then
+        match codeOnly text rel with
+        | .ok out => pure (String.ofList out.toList)
+        | .error e =>
+          hits := hits.push (rel, 1, "lexer", e)
+          continue
+      else pure text
+    for (i, t, x) in bypassHits scannedText do
+      unless bypassAllowed rel t do
+        hits := hits.push (rel, i, t, x)
+  return (hits, files.size)
 
 def selftest : IO UInt32 := do
   if let .error e := extraSelftests then
@@ -670,7 +852,7 @@ def run (args : List String) : IO UInt32 := do
   if (← selftest) != 0 then return 1
   let (kernelCore, unclassified) ← covered
   if ← reportUnclassified "TRUST-SURFACE" unclassified then return 1
-  let allKernel ← leanFilesUnder "IxC/Kernel"
+  let allKernel ← leanFilesUnder "IxCK/Kernel"
   let kernelIx := allKernel.filter (fun f => part? f == some .ix)
   let mut boundarySources : Array String := #[]
   for dir in boundaryDirs do
@@ -689,10 +871,22 @@ def run (args : List String) : IO UInt32 := do
       IO.println "    An unterminated string or comment means the blanking has"
       IO.println "    desynchronised, so the scan below it would be meaningless."
       return 1
+  let (bypass, bypassFiles) ← bypassScan
   if args.contains "--list" then
     for (rel, i, tok, text) in occurrences do
       IO.println s!"{if allowed rel tok then "ok " else "NEW"} {rel}:{i} [{tok}] {text}"
+    for (rel, i, tok, text) in bypass do
+      IO.println s!"BYPASS {rel}:{i} [{tok}] {text}"
     return 0
+  if !bypass.isEmpty then
+    IO.println s!"TRUST-SURFACE FAIL - kernel-bypass tokens in the certified libraries \
+      ({bypass.size}):"
+    for (rel, i, tok, text) in bypass do
+      IO.println s!"    {rel}:{i} [{tok}] {text}"
+    IO.println "    Each of these can add a declaration the kernel never checked. They have no"
+    IO.println "    allowlist: fixtures that need ill-typed declarations belong under Tests/,"
+    IO.println "    and a comment that names one must be rephrased (the text is searched as is)."
+    return 1
   let bad := occurrences.filter fun (rel, _, tok, _) => !allowed rel tok
   if !bad.isEmpty then
     IO.println s!"TRUST-SURFACE FAIL - compiler escapes outside the allowlist ({bad.size}):"
@@ -715,6 +909,8 @@ def run (args : List String) : IO UInt32 := do
   let files := (occurrences.map (·.1)).toList.eraseDups.length
   IO.println s!"trust surface: {occurrences.size} escapes in {files} allowlisted files \
     ({sources.size} scanned); 0 outside the allowlist"
+  IO.println s!"kernel bypass: {bypassFiles} files of the certified libraries and lakefiles \
+    scanned for {bypassTokens}; none found"
   return 0
 
 end Tests.Ix.Kernel.TrustSurface

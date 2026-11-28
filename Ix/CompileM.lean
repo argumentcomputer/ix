@@ -2,7 +2,7 @@ module
 import Std.Sync
 public import Ix.Ixon
 public import Ix.IxonUniv
-public import IxC.Ixon.WireCheck
+public import IxCK.Ixon.WireCheck
 public import Ix.Environment
 public import Ix.SemanticContract
 public import Ix.Compile.SourceContract.Transport
@@ -1830,6 +1830,7 @@ def finishDefinitionDataCompilation (d : Def)
   let defn : Ixon.Definition := {
     kind := d.kind
     safety := d.safety
+    asserts := SemanticContract.defAsserts d.kind d.type
     lvls := d.levelParams.size.toUInt64
     typ := typeExpr
     value := valueExpr
@@ -2064,6 +2065,7 @@ def finishConstructorCompilation (c : ConstructorVal)
     cidx := c.cidx.toUInt64
     params := c.numParams.toUInt64
     fields := c.numFields.toUInt64
+    fieldModes := SemanticContract.ctorFieldModes c.numParams c.numFields.toUInt64 c.cnst.type
     typ := typeExpr
   }
   let ctorMeta := { Ixon.ConstantMeta.new

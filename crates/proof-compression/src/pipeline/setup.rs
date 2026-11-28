@@ -404,10 +404,10 @@ impl<C: KzgCurve> SetupSource<C> {
   pub(crate) fn security_description(&self) -> &'static str {
     match self.policy {
       Policy::Ignition { .. } => {
-        "Aztec Ignition BN254 powers of tau (~100b classical / 0b PQ, pre-Pectra EVM, AGM/q-SDH + Ignition SRS; gnark ZK vs non-ZK final-kzg). Verification uses the fixed release keys.\n"
+        "Aztec Ignition BN254 powers of tau (~100b classical / 0b PQ, pre-Pectra EVM, AGM/q-SDH + Ignition SRS; PLONK/Groth16 ZK vs non-ZK final-kzg). Verification uses the fixed release keys.\n"
       },
       Policy::Filecoin { .. } => {
-        "Filecoin challenge_19 (2^27) BLS12-381 phase-one powers of tau (~126–128b classical / 0b PQ, EIP-2537, AGM/q-SDH + Filecoin challenge_19 SRS; gnark ZK vs non-ZK final-kzg).\n"
+        "Filecoin challenge_19 (2^27) BLS12-381 phase-one powers of tau (~126–128b classical / 0b PQ, EIP-2537, AGM/q-SDH + Filecoin challenge_19 SRS; PLONK/Groth16 ZK vs non-ZK final-kzg).\n"
       },
       Policy::Development { .. } => {
         "Known-trapdoor development public-degree KZG. Not ceremony parameters. For development and testing only.\n"

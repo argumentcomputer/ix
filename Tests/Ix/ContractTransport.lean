@@ -32,9 +32,6 @@ def compileMany (sources : Array Lean.Expr) :
   let (output, _) ← Ix.CompileM.CompileM.run default block {} action
   return output
 
-/-- The unsupported-mode refusal's stable prefix. -/
-def unsupportedModeRefusal : String := "unsupported semantic contract mode"
-
 /-- The misplaced-frame refusal. -/
 def misplacedRefusal : String :=
   "semantic contract is not attached to its original binder"
@@ -62,35 +59,23 @@ def expectRefusal (label : String) (source : Lean.Expr) (message : String) : IO 
 
 def run : IO Unit := do
   let mut sources := #[]
-  for inputBits in [:16] do
-    let some binder := Ixon.BinderContract.ofBits? inputBits.toUInt8
-      | throw <| IO.userError "invalid test binder"
-    let validInput := (Ix.SemanticContract.toBinderMode? binder).isSome
-    for resultBits in [:4] do
-      let some result := Ixon.ValueContract.ofBits? resultBits.toUInt8
-        | throw <| IO.userError "invalid test result"
+  for inputCode in [:7] do
+    let some mode := Ixon.BinderMode.ofCode? inputCode.toUInt8
+      | throw <| IO.userError "invalid test binder mode"
+    for resultCode in [:4] do
+      let some result := Ixon.ResultMode.ofCode? resultCode.toUInt8
+        | throw <| IO.userError "invalid test result mode"
       let original ← get "telescope" (SourceContract.ofTelescope source #[{
-        binder := .position 0, uses := binder.uses, value := binder.value, result := some result }])
+        binder := .position 0, mode, result := some result }])
       let resolved ← get "resolution" (original.resolve source)
-      if validInput then
-        let decorated ← get "decoration" resolved.decorate
-        -- Valid frames lower cleanly; lam/all modes live in the binder-data section.
-        expectLowering s!"arrow {inputBits}/{resultBits}" decorated.type (.all (.sort 0) (.sort 0))
-        if resultBits == 0 then
-          let some body := sourceBody? decorated | throw <| IO.userError "missing decorated body"
-          sources := sources.push body
-          expectLowering s!"lambda {inputBits}" body (.lam (.sort 0) (.var 0))
-      else
-        match resolved.decorate with
-        | .error e =>
-          unless e == unsupportedModeRefusal do
-            throw <| IO.userError s!"invalid binder {inputBits}/{resultBits} unexpected refusal: {e}"
-        | .ok _ =>
-          throw <| IO.userError s!"invalid binder {inputBits}/{resultBits} was not refused at decoration"
-        let rawArrow : Ix.SemanticContract.Contract := { kind := .all, binder, result }
-        expectRefusal s!"raw arrow {inputBits}/{resultBits}"
-          (rawArrow.attach (.forallE `x (.sort .zero) (.sort .zero) .default)) unsupportedModeRefusal
-  -- All valid occurrences share their unannotated inner binder. The complete
+      let decorated ← get "decoration" resolved.decorate
+      -- Valid frames lower cleanly; lam/all modes live in the binder-data section.
+      expectLowering s!"arrow {inputCode}/{resultCode}" decorated.type (.all (.sort 0) (.sort 0))
+      if resultCode == 0 then
+        let some body := sourceBody? decorated | throw <| IO.userError "missing decorated body"
+        sources := sources.push body
+        expectLowering s!"lambda {inputCode}" body (.lam (.sort 0) (.var 0))
+  -- All 7 valid lambda occurrences share their unannotated inner binder. The complete
   -- metadata wrapper must distinguish them in both hash and equality paths.
   for i in [:sources.size] do
     for j in [:sources.size] do
@@ -98,23 +83,24 @@ def run : IO Unit := do
       unless equal == (i == j) do throw <| IO.userError "semantic equality ignored a contract"
   let rawLet := Lean.Expr.letE `view (.sort .zero) (.bvar 0) (.bvar 0) false
   let plainLet := Ixon.Expr.leanLet false (.sort 0) (.var 0) (.var 0)
-  let ordinaryLet : Ix.SemanticContract.Contract := { kind := .letE, binder := .many }
+  let ordinaryLet : Ix.SemanticContract.Contract := .letE (.value .many)
   let output ← get "ordinary let lowering" (compileMany #[rawLet, ordinaryLet.attach rawLet, rawLet])
   unless output == #[plainLet, plainLet, plainLet] do
     throw <| IO.userError "an ordinary let frame did not lower to the plain let"
-  let borrow : Ix.SemanticContract.Contract := {
-    kind := .letE, binder := ⟨.affine, .localShared⟩, letKind := .borrowShared }
+  let borrow : Ix.SemanticContract.Contract := .letE .borrow
   expectLowering "borrow" (borrow.attach rawLet) (.letE false .borrow (.sort 0) (.var 0) (.var 0))
-  let uniqueLet : Ix.SemanticContract.Contract := {
-    kind := .letE, binder := ⟨.linear, .localUnique⟩ }
+  let uniqueLet : Ix.SemanticContract.Contract := .letE (.value .uniqueBorrowed)
   expectLowering "uniqueBorrowed let" (uniqueLet.attach rawLet)
     (.letE false (.value .uniqueBorrowed) (.sort 0) (.var 0) (.var 0))
-  let badLet : Ix.SemanticContract.Contract := {
-    kind := .letE, binder := ⟨.erased, .localShared⟩ }
-  expectRefusal "erased local let" (badLet.attach rawLet) unsupportedModeRefusal
+  let asserts : Ix.SemanticContract.Contract := .defAsserts { alloc := .noAlloc, boundedStack := true }
+  expectLowering "defAsserts on scalar type" (asserts.attach (.sort .zero)) (.sort 0)
+  let fieldShared : Ix.SemanticContract.Contract := .field .shared
+  expectLowering "field shared on forall"
+    (fieldShared.attach (.forallE `x (.sort .zero) (.sort .zero) .default)) (.all (.sort 0) (.sort 0))
   expectRefusal "misplaced borrow" (borrow.attach (.sort .zero)) misplacedRefusal
   expectRefusal "misplaced ordinary frame" (ordinaryLet.attach (.sort .zero)) misplacedRefusal
-  let malformed := Lean.Expr.mdata (({} : Lean.MData).setNat `ix.contract 3) (.sort .zero)
+  expectRefusal "misplaced field frame" (fieldShared.attach (.sort .zero)) misplacedRefusal
+  let malformed := Lean.Expr.mdata (({} : Lean.MData).setNat `ix.contract 4) (.sort .zero)
   unless (compileMany #[malformed]).toOption.isNone do
     throw <| IO.userError "malformed semantic metadata was discarded"
   let inner := Lean.Expr.lam `x (.sort .zero) (.bvar 0) .default
@@ -124,15 +110,15 @@ def run : IO Unit := do
   let nestedContract : SourceContract := {
     source := nestedSource
     binders := #[
-      { site := ⟨.body, [.appFn]⟩, uses := .linear },
-      { site := ⟨.body, [.appArg]⟩, uses := .affine, value := .localUnique }] }
+      { site := ⟨.body, [.appFn]⟩, mode := .once },
+      { site := ⟨.body, [.appArg]⟩, mode := .uniqueBorrowed }] }
   let nested ← get "nested resolution" (nestedContract.resolve nestedSource)
   let nested ← get "nested decoration" nested.decorate
   let some body := sourceBody? nested | throw <| IO.userError "missing nested body"
   expectLowering "nested occurrences" body
     (.app (.lam (.sort 0) (.var 0)) (.lam (.sort 0) (.var 0)))
-  IO.println "Contract transport: valid binder, arrow, let, borrow and nested frames lower; \
-    unsupported erased-owned/local, misplaced and malformed frames are refused"
+  IO.println "Contract transport: all 28 AllMode, 8 LetMode, FieldMode, DefAsserts and nested frames lower; \
+    misplaced and malformed frames are refused"
 
 end Tests.ContractTransport
 

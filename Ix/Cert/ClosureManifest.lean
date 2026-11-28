@@ -1,4 +1,4 @@
-import IxC.Kernel.Audit.ClosureManifest
+import IxCK.Kernel.Audit.ClosureManifest
 import Ix.Cert.CompileCorrect
 
 /-! # The definitional closure of `Ix.Cert.CompileCorrect`, pinned
@@ -24,7 +24,7 @@ def manifestPath : System.FilePath := "Tests/Fixtures/compile-correct-closure-ma
 
 /-- The SHA-256 digest of the manifest's text (its lines, each followed by a newline).
 Regenerate with `IX_CERT_CLOSURE_MANIFEST_WRITE=Tests/Fixtures/compile-correct-closure-manifest.txt`. -/
-def pinnedDigest : String := "9dff8caaac4a79b73c4a10a5668cc1a25be3495ebc880d336503937591162f0f"
+def pinnedDigest : String := "ee0ecc9df3a6345cf7b187687ea952175ec6b6bab62c3d9ae7c79e9d04c76cb6"
 
 open Lean Elab Command in
 elab "#check_closure_manifest" : command =>

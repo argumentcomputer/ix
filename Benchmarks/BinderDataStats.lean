@@ -1,6 +1,6 @@
 import Ix.Ixon
 import Ix.Ixon.CheckOrder
-import IxC.Ixon.WireCheck
+import IxCK.Ixon.WireCheck
 import Ix.Compile.BinderData
 
 /-!

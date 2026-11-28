@@ -1,5 +1,5 @@
 import IxVMRefinement.Decl.NativeEnv
-import IxC.Kernel.Semantics.Inductives.DeclNativeRecLateExtJ
+import IxCK.Kernel.Semantics.Inductives.DeclNativeRecLateExtJ
 
 /-! # No stored constructor type of a registered family projects out of the family
 

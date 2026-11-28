@@ -1,10 +1,10 @@
 import Ix.IxVM.Refinement.TagN
-import IxC.Ixon.Verify.TagN
+import IxCK.Ixon.Verify.TagN
 
 /-! # The TagN slice: the wide rungs
 
 The multi-byte rungs of IxVM's TagN decoders (`get_tagn_tail`'s wide branch,
-`get_tagn_wide`: three, four, five and nine bytes) against IxC's
+`get_tagn_wide`: three, four, five and nine bytes) against IxCK's
 `getTagNWide`, on the generated mirrors (`IxVM.Mirrors.TagN`),
 and the refinements of `Ixon.getTagN 0`, `2` and `4` on every header. -/
 
@@ -258,7 +258,7 @@ theorem getU64le_short {heap : Heap F} : ∀ (n : Nat), n ≤ 8 → ∀ {bs : Li
           hrec]
 
 
-/-! ## Wide rungs: IxC's reader -/
+/-! ## Wide rungs: IxCK's reader -/
 
 theorem getTrimmed_at {bs : List UInt8} : ∀ (n i : Nat), n ≤ 8 → i + n ≤ bs.length →
     Ixon.getU64TrimmedLEAux n { idx := i, bytes := ⟨bs.toArray⟩ } =
@@ -290,7 +290,7 @@ theorem getTrimmed_at {bs : List UInt8} : ∀ (n i : Nat), n ≤ 8 → i + n ≤
     simp only [Ixon.getU64TrimmedLEAux, bind, EStateM.bind, read, ih, pure, EStateM.pure]
     rw [hdrop, hv, show i + 1 + n = i + (n + 1) by omega]
 
-/-- Where wide code `c` starts for an `f`-bit flag: IxC's rung ends. -/
+/-- Where wide code `c` starts for an `f`-bit flag: IxCK's rung ends. -/
 def wideEnd (f : Nat) : Nat → Nat
   | 0 => Ixon.tagNEnd2 f
   | 1 => Ixon.tagNEnd3 f
@@ -301,7 +301,7 @@ theorem toUInt64_toNat_small {x : Nat} (hx : x < 18446744073709551616) : x.toUIn
   simp only [Nat.toUInt64_eq, UInt64.toNat_ofNat']
   exact Nat.mod_eq_of_lt hx
 
-/-- **IxC's wide rungs**, after the header: code `c` reads `wideN c` bytes and adds the
+/-- **IxCK's wide rungs**, after the header: code `c` reads `wideN c` bytes and adds the
 rung's start. -/
 theorem getTagNWide_at {f : Nat} {flag : UInt8} {c : Nat} (hc : c < 4) {b : UInt8} {tl : List UInt8}
     (hlen : wideN c ≤ tl.length)
@@ -443,7 +443,7 @@ theorem leValue_take_lt {l : List UInt8} {n : Nat} (h : n ≤ l.length) : leValu
   have := leValue_lt (l.take n)
   rwa [show (l.take n).length = n by simp; omega] at this
 
-/-- **IxC's `getTagN 0` on a wide header** `192 + c`. -/
+/-- **IxCK's `getTagN 0` on a wide header** `192 + c`. -/
 theorem getTagN0_wide {b : UInt8} {rest : List UInt8} {c : Nat} (hbc : b.toNat = 192 + c)
     (hc4 : c < 4) (hlen : wideN c ≤ rest.length)
     (nov : wideEnd 0 c + leValue (rest.take (wideN c)) < 18446744073709551616) :
@@ -463,11 +463,11 @@ theorem wideEnd0 {c : Nat} (hc : c < 4) : wideEnd 0 c = wideOff 64 c := by
   all_goals rfl
 
 set_option maxHeartbeats 4000000 in
-/-- **IxVM's `get_tagn0` refines IxC's `Ixon.getTagN 0` on every header**: every
-derivation of `IxonDeserialize::get_tagn0` on a stream of `bytes` is matched by IxC's
+/-- **IxVM's `get_tagn0` refines IxCK's `Ixon.getTagN 0` on every header**: every
+derivation of `IxonDeserialize::get_tagn0` on a stream of `bytes` is matched by IxCK's
 reader on the same bytes: it succeeds with flag `0` and the value the derivation
 returns as eight little-endian bytes, and the derivation's rest pointer holds the bytes
-IxC's reader did not consume. The heap is unchanged. -/
+IxCK's reader did not consume. The heap is unchanged. -/
 theorem getTagN0_refines {stream r : SourceValue F} {heap h' : Heap F} {bytes : List UInt8}
     (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum heap bytes stream)
     (ev : EvalFn W "IxonDeserialize::get_tagn0" [stream] heap r h') :
@@ -546,7 +546,7 @@ theorem getTagN0_refines {stream r : SourceValue F} {heap h' : Heap F} {bytes : 
 
 /-! ## Every header: `getTagN 4` -/
 
-/-- **IxC's `getTagN 4` on a wide header**: low bits `12 + c`. -/
+/-- **IxCK's `getTagN 4` on a wide header**: low bits `12 + c`. -/
 theorem getTagN4_wide {b : UInt8} {rest : List UInt8} {c : Nat} (hbc : b.toNat % 16 = 12 + c)
     (hc4 : c < 4) (hlen : wideN c ≤ rest.length)
     (nov : wideEnd 4 c + leValue (rest.take (wideN c)) < 18446744073709551616) :
@@ -564,9 +564,9 @@ theorem wideEnd4 {c : Nat} (hc : c < 4) : wideEnd 4 c = wideOff 4 c := by
   all_goals rfl
 
 set_option maxHeartbeats 4000000 in
-/-- **IxVM's `get_tagn4` refines IxC's `Ixon.getTagN 4` on every header**: every
-derivation agrees with IxC's reader on the same bytes: the flag, the value as eight
-little-endian bytes, the rest pointer at IxC's position, the heap unchanged. -/
+/-- **IxVM's `get_tagn4` refines IxCK's `Ixon.getTagN 4` on every header**: every
+derivation agrees with IxCK's reader on the same bytes: the flag, the value as eight
+little-endian bytes, the rest pointer at IxCK's position, the heap unchanged. -/
 theorem getTagN4_refines {stream r : SourceValue F} {heap h' : Heap F} {bytes : List UInt8}
     (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum heap bytes stream)
     (ev : EvalFn W "IxonDeserialize::get_tagn4" [stream] heap r h') :
@@ -644,7 +644,7 @@ theorem getTagN4_refines {stream r : SourceValue F} {heap h' : Heap F} {bytes : 
 
 /-! ## Every header: `getTagN 2` -/
 
-/-- **IxC's `getTagN 2` on a wide header**: low bits `48 + c`. -/
+/-- **IxCK's `getTagN 2` on a wide header**: low bits `48 + c`. -/
 theorem getTagN2_wide {b : UInt8} {rest : List UInt8} {c : Nat} (hbc : b.toNat % 64 = 48 + c)
     (hc4 : c < 4) (hlen : wideN c ≤ rest.length)
     (nov : wideEnd 2 c + leValue (rest.take (wideN c)) < 18446744073709551616) :
@@ -662,9 +662,9 @@ theorem wideEnd2 {c : Nat} (hc : c < 4) : wideEnd 2 c = wideOff 16 c := by
   all_goals rfl
 
 set_option maxHeartbeats 4000000 in
-/-- **IxVM's `get_tagn2` refines IxC's `Ixon.getTagN 2` on every header**: every
-derivation agrees with IxC's reader on the same bytes: the flag, the value as eight
-little-endian bytes, the rest pointer at IxC's position, the heap unchanged. -/
+/-- **IxVM's `get_tagn2` refines IxCK's `Ixon.getTagN 2` on every header**: every
+derivation agrees with IxCK's reader on the same bytes: the flag, the value as eight
+little-endian bytes, the rest pointer at IxCK's position, the heap unchanged. -/
 theorem getTagN2_refines {stream r : SourceValue F} {heap h' : Heap F} {bytes : List UInt8}
     (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum heap bytes stream)
     (ev : EvalFn W "IxonDeserialize::get_tagn2" [stream] heap r h') :

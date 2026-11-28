@@ -193,13 +193,14 @@ theorem TableAdmittedAt.prepareWith_unpack
         cases hb : Ix.Kernel.Admission.admitBinding _root_.Address.admissionHash b with
         | error e => simp [hf, hu, ha, hb, Except.mapError, bind, Except.bind] at h
         | ok _ =>
-          cases hd : Ix.Kernel.Admission.decodeRecords limits
+          cases hd : Ix.Kernel.Admission.decodeWithin limits
               (Ix.Cert.recordsOf E_role order_role) with
           | error e => simp [hf, hu, ha, hb, hd, Except.mapError, bind, Except.bind] at h
           | ok constants =>
             exact ⟨(Ix.Kernel.Admission.uniqueKeys_ok_iff _ _).mp hu,
               (Ix.Kernel.Admission.authenticate_ok_iff _ _ _).mp ha,
-              constants, (Ix.Kernel.Admission.decodeRecords_ok_iff _ _ _).mp hd⟩
+              constants, (Ix.Kernel.Admission.decodeRecords_ok_iff _ _ _).mp
+                (Ix.Kernel.Admission.decodeWithin_decodeRecords hd)⟩
 
 /-- Every `a ∈ order_role` is stored in `E_role.consts` with pure-BLAKE3 authenticated `rawBytes`,
 canonical encoding `serConstant c = lc.rawBytes`, wire-WF `c`, exact decoding

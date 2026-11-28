@@ -4,7 +4,7 @@ public import Blake3.Rust
 public import Std.Data.HashMap
 public import Std.Data.TreeMap
 public import Ix.Address
-public import IxC.Ixon.Types
+public import IxCK.Ixon.Types
 public import Lean.Declaration
 
 /-!

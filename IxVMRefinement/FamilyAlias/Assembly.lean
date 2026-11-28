@@ -6,7 +6,7 @@ import IxVMRefinement.FamilyAlias.Target
 
 `familyRecord_of_facts`: from what the family check establishes (`FamilyCheckFacts`) and premises
 about the prefix and the family's names only, an alias group at derived keys over the prefix,
-each alias rooted at a member, IxC's renamed record over the family package `famJ h` after the
+each alias rooted at a member, IxCK's renamed record over the family package `famJ h` after the
 group, and each member stored after the step as a constant that stores its reading.
 
 The order is the install order: the members' aliases and the rules' aliases
@@ -484,7 +484,7 @@ theorem famStepConclusion_installed_full {t : Ix.Kernel.RoleTable} {E₀ : Ixon.
     heq
 
 /-- **The family step's record from the family check's facts, with the installed members**: the
-alias group, the roots, IxC's renamed record and each member stored as its reading, from the facts
+alias group, the roots, IxCK's renamed record and each member stored as its reading, from the facts
 at the family as read (`FamDeclReads`), the prefix's store invariant and root synchronization, the
 pinned equality, and the target's own freshness and key-freedom hypotheses on the family's
 addresses; and the members as the record installs them from the selected annotated types `tys`

@@ -16,10 +16,10 @@ require ixvm from "IxVM"
 require multiStark from "MultiStark"
 
 require certifri from git
-  "https://github.com/argumentcomputer/CertiFRI" @ "a835ba93059df440df04570298103a591abb9573"
+  "https://github.com/argumentcomputer/CertiFRI" @ "e815d47a8d73b8356a75650b80977d4312e0870c"
 
 require «certifri-proofs» from git
-  "https://github.com/argumentcomputer/CertiFRI" @ "a835ba93059df440df04570298103a591abb9573" / "Proofs"
+  "https://github.com/argumentcomputer/CertiFRI" @ "e815d47a8d73b8356a75650b80977d4312e0870c" / "Proofs"
 
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "d8eb3e0d9a8e33fc116e6700df0418a1d8114508"
@@ -35,7 +35,7 @@ require Cli from git
 require batteries from git
   "https://github.com/leanprover-community/batteries" @ "v4.34.0"
 
-require «ix-kernel» from "IxC" with
+require «ix-ck» from "IxCK" with
   if (get_config? profile).isSome then
     ({} : Lean.NameMap String).insert `profile ""
   else {}
@@ -192,8 +192,8 @@ def isRustBuildInput (path : FilePath) : Bool :=
      | _ => false)
 
 /-- Input trace for `buildRustStatic`: Rust sources, manifests, CUDA/C sources,
-embedded fixtures, optional gnark sources, and build-affecting environment
-variables. When none of these change, Lake skips invoking Cargo altogether. -/
+embedded fixtures, and build-affecting environment variables. When none of these
+change, Lake skips invoking Cargo altogether. -/
 def rustInputDeps (pkg : Package) (features : Array String) : FetchM (Job Unit) := do
   -- Sandboxed Nix builds omit Rust sources and symlink Crane's prebuilt
   -- `target/release/libix_ffi.a`; trace the prebuilt archive directly.
@@ -209,15 +209,7 @@ def rustInputDeps (pkg : Package) (features : Array String) : FetchM (Job Unit) 
   if ← (pkg.dir / ".cargo" / "config.toml").pathExists then
     manifestJobs := manifestJobs.push (← inputTextFile (pkg.dir / ".cargo" / "config.toml"))
   let manifests := Job.collectArray manifestJobs
-  let mut deps := crates.zipWith (fun _ _ => ()) manifests
-  if (features.contains "plonk" || features.contains "groth16") &&
-      (← (pkg.dir / "tools" / "gnark").pathExists) then
-    let gnark ← inputDir (pkg.dir / "tools" / "gnark") false fun path =>
-      path.fileName == some "go.mod" || path.fileName == some "go.sum" ||
-      match path.extension with
-      | some "go" | some "h" | some "json" | some "bin" => true
-      | _ => false
-    deps := deps.zipWith (fun _ _ => ()) gnark
+  let deps := crates.zipWith (fun _ _ => ()) manifests
   let envVars := #["RUSTFLAGS", "CARGO_BUILD_RUSTFLAGS", "MULTI_STARK_CUDA_ARCHS",
     "LEAN_SYSROOT", "LIBCLANG_PATH", "CLANG_PATH", "IX_CUDA", "IX_NO_PAR",
     "IX_PLONK", "IX_GROTH16", "IX_FORMAL_COMPILED_TRACE"]
@@ -356,7 +348,7 @@ lean_lib FormalAiurKeys where
 /-- The main library, with Lake's default root: the module `Ix` (`Ix.lean`) and
 its imports, not every module under `Ix/`. A module that `Ix.lean` does not
 import, such as `Ix.Cert.Audit`, is built only when named, as the
-`check-kernel` gate and `lake lint`'s module coverage name it. Nothing the `ix-kernel` dependency or `IxSharingVerify` owns
+`check-kernel` gate and `lake lint`'s module coverage name it. Nothing the `ix-ck` dependency or `IxSharingVerify` owns
 is under the `Ix.` module root (their declaration namespaces are, their module
 names are not), so this library never shadows them. Keep new modules of theirs
 under their roots. -/
@@ -420,7 +412,7 @@ lean_exe «formal-package-tests» where
 lean_exe IxTests where
   root := `Tests.Main
   supportInterpreter := true
-  needs := #[`@/ix, `@/«kernel-check-ixe», `@/EntryCaseFixtures]
+  needs := #[`@/ix, `@/«kernel-check-ixe», `@/«kernel-depth-case», `@/EntryCaseFixtures]
   moreLinkObjs := #[ix_rs_test]
 
 /-- IxVM circuit-verdict and FFT-pin test runner (`--tier ci:ixvm`,
@@ -440,6 +432,13 @@ lean_exe IxManualTests where
   supportInterpreter := true
   needs := #[`@/ix, `@/«kernel-check-ixe»]
   moreLinkObjs := #[ix_rs_test]
+
+/-- One case of the `kernel-depth` test (`kernel-depth-case NAME N`), in a
+process of its own on the stack `LEAN_STACK_SIZE_KB` sets: a small binary,
+so that each case starts in milliseconds. -/
+lean_exe «kernel-depth-case» where
+  root := `Tests.Ix.Kernel.DepthCaseMain
+  moreLinkObjs := #[ix_rs]
 
 /-- The FFI suite (`IxTests ffi`) on its own, linked like `IxTests` with the
 test-only FFI code, for the Valgrind job: its import closure is
@@ -610,7 +609,7 @@ def moduleExclusions : Array ModuleExclusion := #[
     kind := .script }]
 
 /-- The directories whose modules `check-modules` builds, with the root files.
-`IxC/` (its own package, globbed, `lake -d IxC build --wfail`) and
+`IxCK/` (its own package, globbed, `lake -d IxCK build --wfail`) and
 `IxSharingVerify/` (a globbed library, built by `lake lint`) are covered by
 their own targets, and `IxVMRefinement/` (a globbed library) by the refinement
 step only; `Models/` and every directory with its own lakefile are
@@ -666,8 +665,10 @@ def isFormalOnlyModule (m : Lean.Name) : Bool :=
   s.startsWith "Ix.Cert.MultiStarkRefinement." ||
   s.startsWith "Ix.Cert.Aggr." ||
   s.startsWith "Ix.Cert.Compression." ||
-  s.startsWith "Ix.Cert.IxccAiur." ||
+  s.startsWith "Ix.Cert.AiurCompression." ||
   m == `Ix.Cert.Security128ClosureManifest ||
+  m == `Ix.Cert.StatementClosureManifest ||
+  m == `Ix.Cert.AiurCompressionClosureManifest ||
   m == `Ix.Cert.RecordSectionsBridge ||
   m == `Tests.FormalPackageMain ||
   m == `Tests.Ix.MultiStarkVerifier ||
@@ -901,10 +902,10 @@ lean_lib IxVMRefinement where
 
 end IxVMRefinement
 
-section IxC
+section IxCK
 
-/- The `ix-kernel` dependency owns the certified modules and their artifacts.
-`lake -d IxC build --wfail` checks them without host dependencies;
+/- The `ix-ck` dependency owns the certified modules and their artifacts.
+`lake -d IxCK build --wfail` checks them without host dependencies;
 the host tests below consume that same package. See `docs/kernel.md`. -/
 
 /-- The kernel's fences, derived from con-leche's (`Tests/Ix/Kernel/{Layering,
@@ -965,7 +966,7 @@ lean_exe «kernel-check-ixe» where
   root := `Benchmarks.Kernel.CheckIxeMain
   moreLinkObjs := #[ix_rs]
 
-/-- The role-table generator: regenerates `IxC/Kernel/Ixon/RoleData.lean` (the
+/-- The role-table generator: regenerates `IxCK/Kernel/Ixon/RoleData.lean` (the
 default role table, its evidence records and the Ixon prelude) from a compiled
 Init (`.lake/envs/initstd.ixe`), each binding validated by the verified fold,
 and Source mode's evidence from the certificate module's environment, which it
@@ -975,21 +976,72 @@ lean_exe «kernel-pin-gen» where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs]
 
+/-- Run `cmd args`, inheriting the output, and fail on a nonzero exit code. -/
+def runChecked (cmd : String) (args : Array String) : IO Unit := do
+  let child ← IO.Process.spawn { cmd, args, stdout := .inherit, stderr := .inherit }
+  let code ← child.wait
+  unless code == 0 do
+    throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
+
+/-- The certified kernel gate's roots for the full-closure kernel replay: its
+audit and freeze modules (the modules CI's kernel job also names to
+`leanchecker`) and the certified sharing library. The replay re-checks every
+project module in their import closure, so a lemma below them that entered an
+`.olean` without a kernel check fails the gate. -/
+def kernelReplayRoots : Array String := #[
+  "IxCK.Kernel.Audit.Roots", "IxCK.Kernel.Admission.Audit",
+  "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Ix.Ixon.Authenticated.Audit",
+  "Ix.HostAdmission.Audit", "Ix.Cert.RuntimeAudit", "Ix.Cert.ModuleAudit", "Ix.Cert.Audit",
+  "Ix.Cert.ClosureManifest", "Ix.SpecDigest",
+  "IxSharingVerify", "IxSharingVerify.Audit.Statements", "IxSharingVerify.Audit.CompiledCode",
+  "IxSharingVerify.Audit.SorryFrontier",
+  "IxCK.Kernel", "IxCK.Resource", "IxCK.Address.Core"]
+
+/-- Every module of the certified kernel package (its libraries glob these
+directories) and of the certified sharing library, replayed whether or not an
+audit root imports it: the kernel theory only IxVM's consistency proof uses is
+here too. -/
+def kernelReplayTrees : Array String := #[
+  "IxCK/Kernel:IxCK.Kernel", "IxCK/Ixon:IxCK.Ixon", "IxCK/Resource:IxCK.Resource",
+  "IxCK/Fixtures:IxCK.Fixtures", "IxSharingVerify:IxSharingVerify"]
+
+/-- Build the kernel replay's roots, then replay their closure (and, with the
+model, the set-theory model's) with Lean's kernel (`Scripts/KernelReplay.lean`). -/
+def kernelReplay (withModel : Bool) : IO Unit := do
+  runChecked "lake" #["-d", "IxCK", "build", "--wfail"]
+  runChecked "lake" (#["build", "--wfail"] ++ kernelReplayRoots)
+  runChecked "lake" (#["env", "lean", "--run", "Scripts/KernelReplay.lean", "--jobs", "8"] ++
+    (kernelReplayTrees.flatMap fun t => #["--tree", t]) ++ kernelReplayRoots)
+  if withModel then
+    runChecked "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
+    runChecked "lake" #["-d", "Models/SetTheory", "env", "lean", "--run",
+      "Scripts/KernelReplay.lean", "--jobs", "4",
+      "--tree", "Models/SetTheory/IxSetTheoryModel:IxSetTheoryModel",
+      "IxSetTheoryModel", "IxSetTheoryModel.Audit"]
+
+/-- The certified kernel gate's full-closure kernel replay alone (`check-kernel`
+runs it last). CI runs it on pushes to `main`, where the other checks are not
+repeated. Accepts `--with-model`. -/
+script "check-kernel-replay" (args) := do
+  unless args.isEmpty || args == ["--with-model"] do
+    IO.eprintln "usage: lake run check-kernel-replay [--with-model]"
+    return 2
+  kernelReplay (args == ["--with-model"])
+  IO.println "Certified kernel replay passed."
+  return 0
+
 /-- Run the certified kernel gate: the standalone strict build with its audits,
 the host-side tests, optionally the set-theory model, the certification
 statements' freeze (`Ix.Cert.Audit`), the layering and
 trust-surface fences, the certified entry's host-compiled
-cases, and the `.meta` and `.source` names against Lean's. -/
+cases, the `.meta` and `.source` names against Lean's, and the full-closure
+kernel replay of the kernel package and its audit roots (`check-kernel-replay`). -/
 script "check-kernel" (args) := do
   unless args.isEmpty || args == ["--with-model"] do
     IO.eprintln "usage: lake run check-kernel [--with-model]"
     return 2
-  let run (cmd : String) (args : Array String) : ScriptM Unit := do
-    let child ← IO.Process.spawn { cmd, args, stdout := .inherit, stderr := .inherit }
-    let code ← child.wait
-    unless code == 0 do
-      throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
-  run "lake" #["-d", "IxC", "build", "--wfail"]
+  let run (cmd : String) (args : Array String) : ScriptM Unit := runChecked cmd args
+  run "lake" #["-d", "IxCK", "build", "--wfail"]
   -- Batch all root-workspace kernel audit modules, freeze, fences and host-entry
   -- executables into one Lake invocation so dependency tracing runs once.
   run "lake" #["build", "--wfail",
@@ -1018,7 +1070,83 @@ script "check-kernel" (args) := do
   -- The `.meta` and `.source` names against Lean's, on ill-typed declarations
   -- and the fixtures (`Tests/Ix/Kernel/MetaNames.lean`).
   run ".lake/build/bin/kernel-meta-names" #[]
+  -- Every project module below the audit roots, and every module of the
+  -- kernel package, re-checked by Lean's kernel.
+  kernelReplay (args == ["--with-model"])
   IO.println "Certified kernel checks passed."
   return 0
 
-end IxC
+/-- The theorems `Models/KernelBridge/IxKernelBridge/Audit.lean` fences with
+`#guard_msgs in #print axioms`. `check-kernel-bridge` fails unless the fenced
+set is exactly this list, so removing or adding a fence also changes this
+inventory. -/
+def kernelBridgeFences : List String := [
+  "IxKernelBridge.srcRun_to_red",
+  "IxKernelBridge.red_to_denotes_nat",
+  "IxKernelBridge.infer_red_to_denotes_nat",
+  "IxKernelBridge.srcRun_to_denotes_nat",
+  "IxKernelBridge.srcRun_infer_to_denotes_nat",
+  "IxKernelBridge.checkDecls_srcRun_denotes_nat",
+  "IxKernelBridge.checkDecls_recheck_x86_denotes_nat",
+  "IxKernelBridge.checkDecls_verifyBytes_immortal_denotes_nat",
+  "IxKernelBridge.Examples.add_premise",
+  "IxKernelBridge.Examples.sub_premise",
+  "IxKernelBridge.Examples.mul_premise",
+  "IxKernelBridge.Examples.div_premise",
+  "IxKernelBridge.Examples.mod_premise",
+  "IxKernelBridge.Examples.gcd_premise",
+  "IxKernelBridge.Examples.land_premise",
+  "IxKernelBridge.Examples.lor_premise",
+  "IxKernelBridge.Examples.xor_premise",
+  "IxKernelBridge.Examples.shiftLeft_premise",
+  "IxKernelBridge.Examples.shiftRight_premise",
+  "IxKernelBridge.Examples.beq_premise_false",
+  "IxKernelBridge.Examples.ble_premise_false",
+  "IxKernelBridge.Examples.pow_premise_false",
+  "IxKernelBridge.Examples.id_bridge",
+  "IxKernelBridge.Examples.succ_bridge",
+  "IxKernelBridge.Examples.add_bridge",
+  "IxKernelBridge.Examples.addLit_bridge",
+  "IxKernelBridge.Examples.addLit_concrete",
+  "IxKernelBridge.KernelFront.infer_derives",
+  "IxKernelBridge.KernelFront.whnf_derives",
+  "IxKernelBridge.KernelFront.annotate_runs",
+  "IxKernelBridge.KernelFront.classifyTerm_derivations",
+  "IxKernelBridge.KernelFront.classifyTerm_sound"]
+
+/-- Build the kernel-bridge model (`Models/KernelBridge`, a workspace of its
+own that requires `IxCK` and `IxCC` by path: a conditional simulation lemma
+between IxCC's source evaluator and the kernel's reduction; its README states
+the scope), whose modules treat warnings as errors and whose audit module
+holds the axiom fences, then check that the fenced theorems are exactly
+`kernelBridgeFences` and that no `#print axioms` is unguarded. Run from the
+repository root. The merge-queue kernel partition runs it beside
+`check-kernel --with-model`. -/
+script "check-kernel-bridge" (args) := do
+  unless args.isEmpty do
+    IO.eprintln "usage: lake run check-kernel-bridge"
+    return 2
+  let child ← IO.Process.spawn {
+    cmd := "lake", args := #["-d", "Models/KernelBridge", "build"],
+    stdout := .inherit, stderr := .inherit }
+  let code ← child.wait
+  unless code == 0 do
+    IO.eprintln s!"lake -d Models/KernelBridge build failed with exit code {code}"
+    return 1
+  let marker := "#guard_msgs in #print axioms "
+  let lines := (← IO.FS.readFile "Models/KernelBridge/IxKernelBridge/Audit.lean").splitOn "\n"
+  let fenced := lines.filterMap fun line =>
+    if line.startsWith marker then some (line.drop marker.length).toString.trimAscii.toString
+    else none
+  let unguarded := lines.filter fun line =>
+    line.trimAscii.toString.startsWith "#print axioms"
+  let missing := kernelBridgeFences.filter (!fenced.contains ·)
+  let extra := fenced.filter (!kernelBridgeFences.contains ·)
+  unless unguarded.isEmpty && missing.isEmpty && extra.isEmpty &&
+      fenced.eraseDups.length == fenced.length do
+    IO.eprintln s!"kernel-bridge fence inventory changed: missing {missing}, unlisted {extra}, unguarded {unguarded}, {fenced.length - fenced.eraseDups.length} duplicates"
+    return 1
+  IO.println s!"Kernel bridge checks passed: {fenced.length} exact axiom fences."
+  return 0
+
+end IxCK

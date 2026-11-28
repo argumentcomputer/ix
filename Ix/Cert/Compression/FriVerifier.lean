@@ -1,26 +1,31 @@
 import Ix.Cert.Compression.Foreign
 import Ix.Cert.MultiStark.EndToEnd
 
-/-! # Certified In-Circuit Goldilocks Plonkish FRI / Multi-STARK Verifier (Workstream 1C-ii)
+/-! # Schematic In-Circuit Goldilocks Plonkish FRI / Multi-STARK Gadget Model
 
-Formalizes the in-circuit Goldilocks Plonkish FRI / Multi-STARK batch verifier
-(`crates/proof-compression/src/fri/{quadratic,algebra,pcs,batch}.rs`) directly inside
-`PlonkishM Foreign.GoldilocksF`, and composes it with `Foreign.foreign_compile_sound_lifted`
-(lifting BN254 Plonkish satisfaction down to Goldilocks) and the `Ix.Cert.MultiStark`
-mathematical semantics (`K = Fp[u]/(u^2 - 7)` and `Blake3.Pure.digest`):
+Schematic `PlonkishM Foreign.GoldilocksF` model of selected arithmetic, fold, and Merkle
+gadgets over an arbitrary caller-supplied `base` circuit and `FriVerifierLayout`, composed
+with `Foreign.foreign_compile_sound_lifted` and `Ix.Cert.MultiStark`'s cubic extension
+`K = Fp[X]/(X^3 - X - 1)` and plain `Aiur.Library.Blake3.digest`:
 
-1. **Quadratic Extension Gadgets (`QWire`, `qAdd`, `qSub`, `qMul`, `qHornerStep`, `qAssertEq`, `qAssertZero`):**
-   Built from degree-2 `PlonkishM GoldilocksF` gates with exact soundness proofs against
-   `Ix.Cert.MultiStark.K` (`u^2 = 7`).
-2. **In-Circuit BLAKE3 Merkle Path Gadget (`constrainMerkleStep`, `constrainMerklePath`):**
+1. **Cubic Extension Gadgets (`QWire`, `qAdd`, `qSub`, `qMul`, `qHornerStep`, `qAssertEq`, `qAssertZero`):**
+   Built from degree-2 `PlonkishM GoldilocksF` gates with soundness proofs against
+   `Ix.Cert.MultiStark.K` (`Fp[X]/(X^3 - X - 1)`).
+2. **In-Circuit Plain BLAKE3 Merkle Path Gadget (`constrainMerkleStep`, `constrainMerklePath`):**
    Uses `PlonkishM.select` + `PlonkishM.blake3Call` (64-byte compression of ordered child digests)
-   with exact soundness against `Aiur.Library.Blake3.digest`.
+   against plain `Aiur.Library.Blake3.digest` (not the domain-separated `derive_key` modes used
+   by `crates/proof-compression/src/fri/pcs.rs`).
 3. **In-Circuit FRI Folding & Batch LogUp Residual Gadgets (`constrainFriFold`, `constrainBatchLogUpVanish`):**
-   Constrains the quadratic-extension FRI folding relation and global shard LogUp residual sum.
-4. **End-to-End Foreign-Compiled FRI Verifier Soundness (`friVerifierCircuit_sound`,
+   Constrains listed cubic-extension fold equations and a sum-to-zero residual equation.
+4. **Schematic Foreign-Compiled Model Composition (`friVerifierCircuit_sound`,
    `foreign_friVerifier_sound`):**
-   Composes `Foreign.foreign_compile_sound_lifted` with the Goldilocks verifier circuit,
-   discharging BN254 → Goldilocks field translation with zero dummy witnesses.
+   Composes `Foreign.foreign_compile_sound_lifted` with `buildFriVerifierCircuit base layout`.
+
+**Scope boundary:** This is a schematic model over an arbitrary `base` circuit and wire
+layout, NOT a formalization of the shipped Rust FRI verifier circuits
+(`crates/proof-compression/src/fri/{cubic,algebra,pcs,batch}.rs`) or bundled release keys.
+Transcript hashing, challenge derivation, query sampling, reduced openings, final-polynomial
+checks, proof-of-work, and domain-separated `derive_key` Merkle hashing are not modeled here.
 
 Zero `sorry`, zero `native_decide`, standard axioms only.
 -/

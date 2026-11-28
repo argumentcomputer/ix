@@ -21,13 +21,13 @@ namespace Aiur.Plonk
 
 open Aiur.Tiling (Template SlotDef)
 open Aiur.Tiling.WideStage (Air)
-open Lower (Fr LGate Ref)
+open Lower (LGate Ref)
 
 namespace Lower
 
 /-- The reference of each slot `toTemplate` creates: the sorted cell
 references, then the output of each defining gate. -/
-def slotRefs (gates : Array LGate) : Array Ref := Id.run do
+def slotRefs {F : Type} (gates : Array (LGate F)) : Array Ref := Id.run do
   let gs := gates.filter (·.tag == .constraint)
   let isCell (r : Ref) := r % 4 == 0
   let cells := (gs.toList.flatMap fun g => [g.a, g.b, g.c].filter isCell).eraseDups.mergeSort (· ≤ ·)
@@ -38,7 +38,7 @@ def slotRefs (gates : Array LGate) : Array Ref := Id.run do
 
 end Lower
 
-def colsB (T : Template Fr) (sr : Nat → Ref) : Bool :=
+def colsB {F : Type} (T : Template F) (sr : Nat → Ref) : Bool :=
   T.slots.zipIdx.all fun (d, s) =>
     match d with
     | .column c => sr s % 4 == 0 && sr s / 8 == c
@@ -46,18 +46,22 @@ def colsB (T : Template Fr) (sr : Nat → Ref) : Bool :=
 
 namespace AirIn
 
-def coneOkR (gs : Array LGate) (W : Nat) (C : Nat → Tiling.Circuit Fr) (j : Nat) : Bool :=
+section Generic
+
+variable {F : Type} [Field F] [DecidableEq F]
+
+def coneOkR (gs : Array (LGate F)) (W : Nat) (C : Nat → Tiling.Circuit F) (j : Nat) : Bool :=
   match Lower.coneTemplate gs airCol j with
   | .ok T =>
-      let roots := (Array.range gs.size).filter fun i => gs[i]!.root == some j
+      let roots := (Array.range gs.size).filter fun i => (gs.getD i Lower.LGate.empty).root == some j
       let sr := match roots.toList with
-        | [i] => Lower.slotRefs ((Lower.cone gs i).map fun (g : LGate) => if g.root.isSome then { g with root := some 0 } else g)
+        | [i] => Lower.slotRefs ((Lower.cone gs i).map fun (g : LGate F) => if g.root.isSome then { g with root := some 0 } else g)
         | _ => #[]
       let srf (s : Nat) : Ref := sr.getD s 0
       T.check (C j) && coversVars T W (C j) && realisedB T srf gs.toList && colsB T srf
   | .error _ => false
 
-theorem coneOkR_spec {gs : Array LGate} {W : Nat} {C : Nat → Tiling.Circuit Fr} {j : Nat}
+theorem coneOkR_spec {gs : Array (LGate F)} {W : Nat} {C : Nat → Tiling.Circuit F} {j : Nat}
     (h : coneOkR gs W C j = true) :
     ∃ T sr, T.check (C j) = true ∧ coversVars T W (C j) = true ∧ realisedB T sr gs.toList = true ∧
       colsB T sr = true := by
@@ -68,21 +72,28 @@ theorem coneOkR_spec {gs : Array LGate} {W : Nat} {C : Nat → Tiling.Circuit Fr
     exact ⟨T, _, h.1.1.1, h.1.1.2, h.1.2, h.2⟩
   · exact absurd h (by simp)
 
-def rowOkR (a : Air Fr) (r : Nat) : Bool :=
-  let gs := rowGates a r
-  (List.range a.circuit.constraints.length).all (coneOkR gs a.circuit.width (rowConstraint a r))
-
-theorem colSlot_column {T : Template Fr} {v s : Nat} (h : T.colSlot v = some s) :
+omit [Field F] in
+theorem colSlot_column {T : Template F} {v s : Nat} (h : T.colSlot v = some s) :
     T.slots[s]? = some (.column v) := by
   unfold Template.colSlot at h
   obtain ⟨hs, hp, _⟩ := List.findIdx?_eq_some_iff_getElem.mp h
   simp only [beq_iff_eq] at hp
   simp [hs, hp]
 
-theorem constraints_of_gates {a : Air Fr} {r : Nat} (ok : rowOkR a r = true)
+end Generic
+
+section Prime
+
+variable {p : Nat} [Fact (Nat.Prime p)]
+
+def rowOkR (a : Air (ZMod p)) (r : Nat) : Bool :=
+  let gs := rowGates a r
+  (List.range a.circuit.constraints.length).all (coneOkR gs a.circuit.width (rowConstraint a r))
+
+theorem constraints_of_gates {a : Air (ZMod p)} {r : Nat} (ok : rowOkR a r = true)
     (wireOf : Ref → Nat) (cellWire : Nat → Nat) (hcell : ∀ x, x % 4 = 0 → wireOf x = cellWire (x / 8))
-    (w : Nat → Fr) (hold : ∀ g ∈ (rowGates a r).toList.map (Lower.LGate.inst wireOf), g.Holds w)
-    (main : Nat → Nat → Fr) (hmain : ∀ v, main r v = w (cellWire v)) :
+    (w : Nat → ZMod p) (hold : ∀ g ∈ (rowGates a r).toList.map (Lower.LGate.inst wireOf), g.Holds w)
+    (main : Nat → Nat → ZMod p) (hmain : ∀ v, main r v = w (cellWire v)) :
     a.circuit.Holds (a.assign main r) := by
   intro c hc
   obtain ⟨j, hj, rfl⟩ := List.getElem_of_mem hc
@@ -98,7 +109,7 @@ theorem constraints_of_gates {a : Air Fr} {r : Nat} (ok : rowOkR a r = true)
   simp [Function.comp, hcell _ hc'.1, hc'.2, hmain]
 
 /-- `checkConstraints` with `rowOkR`. -/
-def checkConstraintsR (name : String) (a : Air Fr) : Except String Unit := do
+def checkConstraintsR (name : String) (a : Air (ZMod p)) : Except String Unit := do
   if a.circuit.constraints.isEmpty then return
   let rows := if readsMainOnly a then 1 else a.rows
   for r in [0:rows] do
@@ -107,6 +118,8 @@ def checkConstraintsR (name : String) (a : Air Fr) : Except String Unit := do
       for j in [0:a.circuit.constraints.length] do
         unless coneOkR gs a.circuit.width (rowConstraint a r) j do
           throw s!"{name} row {r}: constraint {j} is not realised by its gates"
+
+end Prime
 
 end AirIn
 

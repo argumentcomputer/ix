@@ -1,8 +1,8 @@
 module
 public import Ix.Claim
 public import Ix.ClaimContext
-public import IxC.Kernel.Ixon.RoleTable
-public import IxC.Kernel.Ixon.Prelude
+public import IxCK.Kernel.Ixon.RoleTable
+public import IxCK.Kernel.Ixon.Prelude
 
 public section
 

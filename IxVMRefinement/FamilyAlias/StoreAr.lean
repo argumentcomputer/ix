@@ -1,11 +1,11 @@
 import IxVMRefinement.FamilyAlias.Clause
 import IxVMRefinement.FamilyAlias.RecsRecord
-import IxC.Kernel.Model.StoreArLate
-import IxC.Kernel.Verify.Extend.Iota
+import IxCK.Kernel.Model.StoreArLate
+import IxCK.Kernel.Verify.Extend.Iota
 
 /-! # The arity of the stored terms across the family step
 
-`FamilyKeepsStoreAr` (`Clause.lean`): across an alias group over the prefix and IxC's renamed
+`FamilyKeepsStoreAr` (`Clause.lean`): across an alias group over the prefix and IxCK's renamed
 record over the family package, the stored terms stay arity-correct and resolving
 (`StoreArR`). Proved here (`familyKeepsStoreAr`).
 

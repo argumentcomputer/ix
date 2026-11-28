@@ -1,8 +1,8 @@
 import IxVMRefinement.Decl.JudgeMap
 import IxVMRefinement.Assembly.RoleFacts
-import IxC.Kernel.Model.JudgeRules
-import IxC.Kernel.Verify.Rules.Bridge
-import IxC.Kernel.Verify.Level
+import IxCK.Kernel.Model.JudgeRules
+import IxCK.Kernel.Verify.Rules.Bridge
+import IxCK.Kernel.Verify.Level
 
 /-! # Verified checker runs as rules-tier judgements -/
 

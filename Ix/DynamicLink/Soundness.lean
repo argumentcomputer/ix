@@ -1,17 +1,19 @@
 import Ix.DynamicLink.Codec
-import IxC.Kernel.Rules.Rel
+import IxCK.Kernel.Rules.Rel
 
 /-! # Dynamic Circuit Linking Soundness (`Ix.DynamicLink.Soundness`)
 
-Core soundness theorems for Workstream 5 (both Tier 1 and Tier 2), keeping
-`IxC/Kernel/Denotes.lean`, `IxVM.Consistency.CircuitComposed`, and `Ix.Claim.de`
+Core soundness theorems for dynamic circuit linking (both Tier 1 and Tier 2), keeping
+`IxCK/Kernel/Denotes.lean`, `IxVM.Consistency.CircuitComposed`, and `Ix.Claim.de`
 completely untouched:
 
 1. **Codec Disjointness:**
    Every wire-encoded `DynamicLinkStatement` (`0xE8 0x0D`), `EvalAssumption` (`0xE8 0x0E`),
-   `LinkedCircuitEntry` (`0xE8 0x0F`), `EvalAssumedClaim` (validators `10`/`11`), and
-   `LinkedClaim` (validators `12`/`13`) is rejected by `Ix.Claim.de`, so Tier 1 and Tier 2
-   statements can never alias any `InScopeTyping` claim in frozen `CircuitComposed`.
+   `LinkedCircuitEntry` (`0xE8 0x0F`), `EvalAssumedClaim` (validators `10`/`11`),
+   `LinkedClaim` (validators `12`/`13`), and Mode-2 `EvalDischargedClaim` (validators `14`/`15`)
+   is rejected by `Ix.Claim.de`, so Tier 1 and Tier 2 statements — including fully discharged
+   Mode 2 equality-reflection roots — can never alias any `InScopeTyping` claim in frozen
+   `CircuitComposed`.
 
 2. **Tier 1 Reification (`reify_accepted_eval_trace`, `reify_accepted_prop_trace`):**
    An accepted Multi-STARK trace for `(h_C, entry_C)` on public words
@@ -23,8 +25,8 @@ completely untouched:
    `evalDischarge_mode3a_step_sound`):**
    - **Mode 2 (`Claim.check` of `@Eq`):** discharges an `EvalAssumption` leaf `(lhs, rhs, typ)`
      unconditionally into `Ix.Kernel.Rules.DefEq.eqProof` / `Red.defEqClosed`, preserving
-     `linkedCircuits` and transitioning `10 → 3` / `11 → 4` ONLY when `evalAssumptions = ∅`
-     AND `linkedCircuits = ∅`.
+     `linkedCircuits` and transitioning `10 → 14` / `11 → 15` (`EvalDischargedClaim`, strictly
+     disjoint from validators `3`/`4`) ONLY when `evalAssumptions = ∅` AND `linkedCircuits = ∅`.
    - **Mode 3a (Shape 17 `DynamicLinkStatement`):** records a canonical `LinkedCircuitEntry`
      (`0xE8 0x0F`) into the output claim's `linkedCircuits` Merkle set under validators
      `12`/`13` (strictly disjoint from validators `3`/`4`), so external circuits can NEVER be
@@ -65,9 +67,9 @@ theorem reify_accepted_prop_trace
     P x :=
   hBridge x (hEnc.symm ▸ hTrace)
 
-/-! ## 2. Tier 2: Grounding `EvalAssumption` Leaves into `IxC` (`DefEq.eqProof` / `Red.defEqClosed`) -/
+/-! ## 2. Tier 2: Grounding `EvalAssumption` Leaves into `IxCK` (`DefEq.eqProof` / `Red.defEqClosed`) -/
 
-/-- A grounded closed evaluation equality in an `IxC` environment `env`:
+/-- A grounded closed evaluation equality in an `IxCK` environment `env`:
 both `lhs` and `rhs` are closed terms typing at `typ` in the empty context,
 and `DefEq env d lhs rhs` holds at every binder depth `d` (with `Red env d lhs rhs`
 whenever `lhs` is neither a sort nor a `∀`). -/
@@ -80,9 +82,9 @@ structure GroundedEval {md : Mode} (env : Env md) (lhs rhs typ : Ix.Kernel.Expr 
   red_all : isSortOrPi lhs = false → ∀ d : Nat, Red env d lhs rhs
 
 /-- **Discharge via Closed Equality Proof (from `Claim.check` or Tier 1 Shape 17 bridge):**
-Given a closed `IxC` proof `p` of `@Eq.{u} typ lhs rhs` in the empty context with
+Given a closed `IxCK` proof `p` of `@Eq.{u} typ lhs rhs` in the empty context with
 well-typed `lhs, rhs : typ` and `typ : Sort u`, `GroundedEval env lhs rhs typ` holds
-at every depth `d` via `DefEq.eqProof` and `Red.defEqClosed` (`IxC/Kernel/Rules/Rel.lean`). -/
+at every depth `d` via `DefEq.eqProof` and `Red.defEqClosed` (`IxCK/Kernel/Rules/Rel.lean`). -/
 theorem groundedEval_of_eqProof {md : Mode} {env : Env md}
     {lhs rhs p typ ta tb sT : Ix.Kernel.Expr md} {u v : Ix.Kernel.Level} {ci : Ix.Kernel.ConstantInfo md}
     (hEq : env.find? eqName = some ci)
@@ -157,9 +159,9 @@ theorem evalDischarge_step_sound {Valid : EvalAssumption → Prop}
   · exact hDischarged
   · exact hRem e hmem
 
-/-- **Full Discharge (`validators 10 → 3` / `11 → 4`):**
+/-- **Full Discharge (`validators 10 → 14` / `11 → 15`):**
 When every leaf in `evalAsms` has been discharged (so the remaining set is empty),
-`Goal` holds unconditionally! -/
+`Goal` holds under equality reflection without aliasing direct validator-`3`/`4` claims! -/
 theorem evalDischarge_all_sound {Valid : EvalAssumption → Prop}
     {evalAsms : List EvalAssumption} {Goal : Prop}
     (hCond : ConditionalOnEvals Valid evalAsms Goal)
@@ -219,8 +221,9 @@ theorem evalDischarge_mode3a_step_sound
   · intro l hl
     exact hLinksOut l (hLinkSub l hl)
 
-/-- **Unconditional Zero-Link Soundness:** when BOTH `evalAsms = []` AND `linked = []`
-(validators `3`/`4`), `Goal` holds unconditionally with zero external circuit assumptions. -/
+/-- **Zero-Link Mode-2 Soundness:** when BOTH `evalAsms = []` AND `linked = []`
+(validators `14`/`15`), `Goal` holds with zero external circuit assumptions while remaining
+distinct from direct validator `3`/`4` claims. -/
 theorem unconditional_of_empty_evals_and_links
     {EvalValid : EvalAssumption → Prop} {LinkValid : LinkedCircuitEntry → Prop} {Goal : Prop}
     (h : ConditionalOnEvalsAndLinks EvalValid LinkValid [] [] Goal) : Goal :=
@@ -274,6 +277,29 @@ theorem claim_de_validator13_distinct :
     VALIDATOR_BINDING_LINKED ≠ VALIDATOR_EVAL_ASSUMED ∧
     VALIDATOR_BINDING_LINKED ≠ VALIDATOR_BINDING_EVAL_ASSUMED ∧
     VALIDATOR_BINDING_LINKED ≠ VALIDATOR_LINKED := by
+  decide
+
+theorem claim_de_validator14_distinct :
+    VALIDATOR_EVAL_DISCHARGED ≠ Ix.Claim.VALIDATOR_STRUCTURAL ∧
+    VALIDATOR_EVAL_DISCHARGED ≠ Ix.Claim.VALIDATOR_ERASED_LEAN ∧
+    VALIDATOR_EVAL_DISCHARGED ≠ Ix.Claim.VALIDATOR_ERASED_LEAN_ASSUMED ∧
+    VALIDATOR_EVAL_DISCHARGED ≠ Ix.Claim.VALIDATOR_ERASED_LEAN_CLASS ∧
+    VALIDATOR_EVAL_DISCHARGED ≠ VALIDATOR_EVAL_ASSUMED ∧
+    VALIDATOR_EVAL_DISCHARGED ≠ VALIDATOR_BINDING_EVAL_ASSUMED ∧
+    VALIDATOR_EVAL_DISCHARGED ≠ VALIDATOR_LINKED ∧
+    VALIDATOR_EVAL_DISCHARGED ≠ VALIDATOR_BINDING_LINKED := by
+  decide
+
+theorem claim_de_validator15_distinct :
+    VALIDATOR_BINDING_EVAL_DISCHARGED ≠ Ix.Claim.VALIDATOR_STRUCTURAL ∧
+    VALIDATOR_BINDING_EVAL_DISCHARGED ≠ Ix.Claim.VALIDATOR_ERASED_LEAN ∧
+    VALIDATOR_BINDING_EVAL_DISCHARGED ≠ Ix.Claim.VALIDATOR_ERASED_LEAN_ASSUMED ∧
+    VALIDATOR_BINDING_EVAL_DISCHARGED ≠ Ix.Claim.VALIDATOR_ERASED_LEAN_CLASS ∧
+    VALIDATOR_BINDING_EVAL_DISCHARGED ≠ VALIDATOR_EVAL_ASSUMED ∧
+    VALIDATOR_BINDING_EVAL_DISCHARGED ≠ VALIDATOR_BINDING_EVAL_ASSUMED ∧
+    VALIDATOR_BINDING_EVAL_DISCHARGED ≠ VALIDATOR_LINKED ∧
+    VALIDATOR_BINDING_EVAL_DISCHARGED ≠ VALIDATOR_BINDING_LINKED ∧
+    VALIDATOR_BINDING_EVAL_DISCHARGED ≠ VALIDATOR_EVAL_DISCHARGED := by
   decide
 
 end Ix.DynamicLink

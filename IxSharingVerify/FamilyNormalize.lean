@@ -1,5 +1,5 @@
 import Ix.Sharing.FamilyNormalize
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 -- This audits only the charged evaluator field. Family leastness and the
 -- semantic model/finish bridge are deliberately not claimed by this module.

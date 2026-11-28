@@ -1,6 +1,6 @@
 import Ix.Ixon.Authenticated.Theorems
 import Ix.Address
-import IxC.Fixtures.ByteAdmission
+import IxCK.Fixtures.ByteAdmission
 
 /-! Projection reconstruction (keys under the entry's hash, exact records,
 the request bound and conflicts) and the certified entry with projection

@@ -21,7 +21,7 @@ earlier constants only. The facts are stated the same way:
   positional derivation package `posRulesJ`, at `env`;
 * a member's model is a stored definition whose type is the member's annotated type, renamed, at
   positions (`MemberFacts`);
-* a rule's facts (`RuleFacts`, `StatementFacts`) are the conjuncts of IxC's rule record
+* a rule's facts (`RuleFacts`, `StatementFacts`) are the conjuncts of IxCK's rule record
   `IotaThmNRenRunJ` read at the advice: the statement is the advice theorem's own type, the head
   of its left side the recursor's model, the constructor of its major premise the constructor's
   model, and the pins are the parameter arguments of the recursor's major premise
@@ -30,7 +30,7 @@ earlier constants only. The facts are stated the same way:
 Nothing here is the in-process modeller's: `env` stores the advice as the fold stored it from
 its records.
 
-**The renaming is IxC's** (`Expr.renameConsts`), which leaves a projection's structure name as
+**The renaming is IxCK's** (`Expr.renameConsts`), which leaves a projection's structure name as
 it is; the circuit's `rename` renames it too. The two agree on a term with no projection at a
 member of the family (`NoProjIn`, `renameAll_eq_renameConsts_of_noProjIn`,
 `Decl/ModeledTele.lean`). A refinement of the circuit therefore owes that for each term the
@@ -58,7 +58,7 @@ earlier advice blocks and witnessed references.
 A family record with no recursor is covered as stated: `recs` is then an empty condition, and
 `adv.thms` is empty.
 
-**The pinned equality is not among the facts.** IxC's record asks that the pinned equality be
+**The pinned equality is not among the facts.** IxCK's record asks that the pinned equality be
 stored wherever the family has a recursor. The check reads the equality's address only inside
 a rule's statement, so it establishes nothing where no recursor has a rule. That lookup is a
 premise of whoever uses the facts: every environment a family step is asked at extends the
@@ -72,7 +72,7 @@ gives the fields marked `needs change N`:
 
 1. `KernelModeled::defeq_lam_tele` extends its context with the Π-side domain, not the λ-side
    one. The rule's λ-domains are then compared at variables annotated by the recursor's and
-   the constructor's domains, as IxC's rule record compares them
+   the constructor's domains, as IxCK's rule record compares them
    (`StatementFacts`, the λ-walk).
 2. `KernelModeled::member_val` asserts that a type's type names no member of the family, and
    that a constructor's type names no constructor and no recursor of it, as `check_recs`
@@ -183,7 +183,7 @@ def RuleCtor (env : Env .anon) (blk : List (ConstantInfo .anon)) (tys : List KEx
 
 /-- **A rule's theorem statement against the rule** (`KernelModeled::check_iota_rule`, from the
 load of the theorem on). `stmt` is the advice theorem's type in the recursor's level parameters;
-`g` is the renaming to the advice. These are the conjuncts of IxC's `IotaThmNRenRunJ` with `g`
+`g` is the renaming to the advice. These are the conjuncts of IxCK's `IotaThmNRenRunJ` with `g`
 for the block renaming and `posRulesJ` for the package:
 
 * the statement opens to an equation of three arguments under `rP + cnF` binders;

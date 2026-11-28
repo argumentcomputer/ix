@@ -1,6 +1,6 @@
-import IxC.Kernel.Ixon.Prelude
-import IxC.Kernel.Admission
-import IxC.Kernel.Verify.Cached.Reference
+import IxCK.Kernel.Ixon.Prelude
+import IxCK.Kernel.Admission
+import IxCK.Kernel.Verify.Cached.Reference
 import Ix.Address.Admission
 
 /-! # Preparing a role table's closure (Route A, B6b)
@@ -9,7 +9,7 @@ The Ixon entry's reading of a role closure's records under a table, behind a
 prelude (`prepareClosure`), and the executed check that it defines every
 well-founded `Nat` operation and that the verified fold accepts it
 (`closureCheck`). `kernel-pin-gen` runs the check on the closure it pins in
-`IxC/Kernel/Ixon/RoleData.lean` before writing it; `Ix.Cert.RoleClosure` states
+`IxCK/Kernel/Ixon/RoleData.lean` before writing it; `Ix.Cert.RoleClosure` states
 it on the committed file (`RoleEvidenceChecks`). -/
 
 namespace Ix.Cert.RoleClosure

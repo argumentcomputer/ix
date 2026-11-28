@@ -282,9 +282,9 @@ gives the commands.
 | `MULTI_STARK_CUDA_DEVICE` | Device for a single proof when `--gpu-device` is not given. |
 | `--texray` or `IX_TEXRAY=1` | Per-phase wall and RSS lines on stderr, as on the CPU. The environment switch also enables TeXRay output for compression. |
 
-Every proof uses the production STARK parameters: `log_blowup` 2, 100 FRI
+Every proof uses the production Protocol `v6` (`Fp^3`) STARK parameters: `log_blowup` 2, 128 FRI
 queries and 20-bit query proof of work (`Parameters::DEFAULT` in
-`crates/aiur/src/trace/stark.rs`), which meet the enforced security floor
+`crates/aiur/src/trace/stark.rs`), which meet the enforced 128-bit Johnson security floor
 ([stark-parameters.md](stark-parameters.md)). The aggregate cache key includes
 them, so a parameter change never reuses a cached proof.
 

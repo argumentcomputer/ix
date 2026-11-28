@@ -9,3 +9,6 @@ import Aiur.Optimized.Physical
 import Aiur.Optimized.Activation
 import Aiur.Optimized.Grouping.Plan
 import Aiur.Optimized.EndToEnd
+import Aiur.Optimized.DegreeBudget
+import Aiur.Optimized.Split
+import Aiur.Optimized.Vectorize

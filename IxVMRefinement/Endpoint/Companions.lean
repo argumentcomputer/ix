@@ -10,13 +10,13 @@ import IxVM.Obs.IxonDeserialize
 import IxVM.Obs.UInt8
 import Ix.Cert.Aggr.ConditionalShard
 import Ix.DynamicLink.Soundness
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 /-! # Companion Observed-Path Lemmas and Abstract Lifting Theorems
 
 This module provides two distinct categories of results alongside the frozen
 `IxVM.Consistency.CircuitComposed` statement (leaving `Ix/IxVM/ConsistencyAudit.lean`,
-`Ix/IxVM/Refinement/Audit.lean`, `IxC/Kernel/Denotes.lean`, and `CircuitComposed` itself
+`Ix/IxVM/Refinement/Audit.lean`, `IxCK/Kernel/Denotes.lean`, and `CircuitComposed` itself
 completely untouched):
 
 1. **Observed-Circuit Path Soundness Lemmas (directly proved from `IxVM.source` via `ObsFn`):**

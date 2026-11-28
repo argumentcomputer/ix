@@ -1,6 +1,6 @@
 //! Cross-language parity tests between `crates/aiur/src/trace/stark.rs` +
 //! `lookup_groups::retune` and the formalized Lean reference spec in
-//! `Aiur/Aiur/MultiStarkSpec.lean` (`WS 2B-2`).
+//! `Aiur/Aiur/MultiStarkSpec.lean`.
 use super::*;
 use crate::trace::stark::tests::depth::depth_fixture;
 use multi_stark::{
@@ -17,7 +17,7 @@ use multi_stark::{
 
 #[derive(Debug, PartialEq, Eq)]
 struct SpecSummary {
-  name: &'static str,
+  name: String,
   stage1_width: usize,
   stage2_width: usize,
   preprocessed_width: usize,
@@ -30,129 +30,47 @@ struct SpecSummary {
 }
 
 /// Exact table for `crates/aiur/tests/fixtures/depth.ixa` at `log_blowup = 1`,
-/// `segmented = true`, `ext_degree = 3` (Protocol v6 Fp^3).
-const EXPECTED_DEPTH_FIXTURE: &[SpecSummary] = &[
-  SpecSummary {
-    name: "Depth::run",
-    stage1_width: 7,
-    stage2_width: 9,
-    preprocessed_width: 0,
-    preprocessed_height: 0,
-    lookups: 3,
-    lookup_group_size: 1,
-    quotient_degree: 1,
-    constraint_count: 12,
-    max_constraint_degree: 2,
-  },
-  SpecSummary {
-    name: "Depth::even",
-    stage1_width: 7,
-    stage2_width: 3,
-    preprocessed_width: 0,
-    preprocessed_height: 0,
-    lookups: 2,
-    lookup_group_size: 2,
-    quotient_degree: 2,
-    constraint_count: 12,
-    max_constraint_degree: 3,
-  },
-  SpecSummary {
-    name: "Depth::odd",
-    stage1_width: 7,
-    stage2_width: 3,
-    preprocessed_width: 0,
-    preprocessed_height: 0,
-    lookups: 2,
-    lookup_group_size: 2,
-    quotient_degree: 2,
-    constraint_count: 12,
-    max_constraint_degree: 3,
-  },
-  SpecSummary {
-    name: "Depth::fib",
-    stage1_width: 14,
-    stage2_width: 12,
-    preprocessed_width: 0,
-    preprocessed_height: 0,
-    lookups: 7,
-    lookup_group_size: 2,
-    quotient_degree: 2,
-    constraint_count: 28,
-    max_constraint_degree: 3,
-  },
-  SpecSummary {
-    name: "Depth::loop",
-    stage1_width: 5,
-    stage2_width: 6,
-    preprocessed_width: 0,
-    preprocessed_height: 0,
-    lookups: 2,
-    lookup_group_size: 1,
-    quotient_degree: 1,
-    constraint_count: 9,
-    max_constraint_degree: 2,
-  },
-  SpecSummary {
-    name: "Depth::top",
-    stage1_width: 4,
-    stage2_width: 6,
-    preprocessed_width: 0,
-    preprocessed_height: 0,
-    lookups: 2,
-    lookup_group_size: 1,
-    quotient_degree: 1,
-    constraint_count: 9,
-    max_constraint_degree: 2,
-  },
-  SpecSummary {
-    name: "Depth::owned",
-    stage1_width: 6,
-    stage2_width: 3,
-    preprocessed_width: 0,
-    preprocessed_height: 0,
-    lookups: 2,
-    lookup_group_size: 2,
-    quotient_degree: 2,
-    constraint_count: 11,
-    max_constraint_degree: 3,
-  },
-  SpecSummary {
-    name: "Depth::link",
-    stage1_width: 4,
-    stage2_width: 6,
-    preprocessed_width: 0,
-    preprocessed_height: 0,
-    lookups: 2,
-    lookup_group_size: 1,
-    quotient_degree: 1,
-    constraint_count: 9,
-    max_constraint_degree: 2,
-  },
-  SpecSummary {
-    name: "<table:Depth::range16_inputs>",
-    stage1_width: 1,
-    stage2_width: 3,
-    preprocessed_width: 2,
-    preprocessed_height: 65536,
-    lookups: 1,
-    lookup_group_size: 1,
-    quotient_degree: 1,
-    constraint_count: 3,
-    max_constraint_degree: 2,
-  },
-  SpecSummary {
-    name: "<table:Depth::range8_inputs>",
-    stage1_width: 1,
-    stage2_width: 3,
-    preprocessed_width: 2,
-    preprocessed_height: 256,
-    lookups: 1,
-    lookup_group_size: 1,
-    quotient_degree: 1,
-    constraint_count: 3,
-    max_constraint_degree: 2,
-  },
-];
+/// `segmented = true`, `ext_degree = 3` (Protocol v6 Fp^3). The same file is
+/// read by `Aiur/AiurTests/MultiStarkSpec.lean`, so the two sides compare
+/// against one checked-in table.
+const DEPTH_SPEC_PARITY: &str =
+  include_str!("../../../../tests/fixtures/depth_spec_parity.tsv");
+
+/// Exact vectorized ROM summaries for widths `[1, 3, 5, 13]` at
+/// `blowup = 4` (`log_blowup = 2`), `segmented = true`, `ext_degree = 3`
+/// (Protocol v6); shared with `Aiur/AiurTests/MultiStarkSpec.lean`.
+const VECTORIZED_ROM_SPEC_PARITY: &str =
+  include_str!("../../../../tests/fixtures/vectorized_rom_spec_parity.tsv");
+
+/// Parse a shared parity table: `#` comment lines, then one tab-separated row
+/// of ten fields per circuit (name and nine counts).
+fn parse_spec_table(table: &str) -> Vec<SpecSummary> {
+  table
+    .lines()
+    .filter(|line| !line.trim().is_empty() && !line.starts_with('#'))
+    .map(|line| {
+      let fields: Vec<&str> = line.split('\t').collect();
+      assert_eq!(fields.len(), 10, "malformed parity row: {line:?}");
+      let n = |i: usize| -> usize {
+        fields[i]
+          .parse()
+          .unwrap_or_else(|e| panic!("bad field {i} in {line:?}: {e}"))
+      };
+      SpecSummary {
+        name: fields[0].to_string(),
+        stage1_width: n(1),
+        stage2_width: n(2),
+        preprocessed_width: n(3),
+        preprocessed_height: n(4),
+        lookups: n(5),
+        lookup_group_size: n(6),
+        quotient_degree: n(7),
+        constraint_count: n(8),
+        max_constraint_degree: n(9),
+      }
+    })
+    .collect()
+}
 
 #[test]
 fn depth_fixture_matches_lean_multistark_spec() {
@@ -160,9 +78,10 @@ fn depth_fixture_matches_lean_multistark_spec() {
   let plan = TracePlan::new(&program, trace).unwrap();
   let backend = Backend::for_batch_verification(&plan, parameters()).unwrap();
   let stats = backend.statistics();
-  assert_eq!(stats.len(), EXPECTED_DEPTH_FIXTURE.len());
+  let expected_depth = parse_spec_table(DEPTH_SPEC_PARITY);
+  assert_eq!(stats.len(), expected_depth.len());
   for ((s, c), expected) in
-    stats.iter().zip(&backend.system.circuits).zip(EXPECTED_DEPTH_FIXTURE)
+    stats.iter().zip(&backend.system.circuits).zip(&expected_depth)
   {
     assert_eq!(
       (
@@ -178,7 +97,7 @@ fn depth_fixture_matches_lean_multistark_spec() {
         c.max_constraint_degree,
       ),
       (
-        expected.name,
+        expected.name.as_str(),
         expected.stage1_width,
         expected.stage2_width,
         expected.preprocessed_width,
@@ -197,7 +116,7 @@ fn depth_fixture_matches_lean_multistark_spec() {
 
 /// Numerical witness check of `Aiur.MultiStarkSpec.retune_logup_equiv`:
 /// `lookup_groups::retune` (including balanced reordering of mixed-degree
-/// lookups and `group > 1` chunking) leaves the exact `Fp2` LogUp total sum
+/// lookups and `group > 1` chunking) leaves the exact `Fp^3` LogUp total sum
 /// bit-for-bit identical to the ungrouped `group = 1` rational sum.
 #[test]
 fn retune_preserves_exact_logup_rational_sum_and_matches_lean_degrees() {
@@ -282,7 +201,7 @@ fn retune_preserves_exact_logup_rational_sum_and_matches_lean_degrees() {
     .collect();
   assert_eq!(degs1, vec![(1, 1), (1, 1), (1, 2)]);
 
-  // Verify exact LogUp rational sum equivalence in Fp2 before vs after retune
+  // Verify exact LogUp rational sum equivalence in Fp^3 before vs after retune
   // on concrete multi-row traces over multiple (alpha, beta) pairs.
   let traces = vec![
     RowMajorMatrix::new(
@@ -519,59 +438,6 @@ fn ptr_eq_bytecode_round_trips_and_proves_end_to_end() {
     "forged ptr_eq=1 on distinct pointers must be rejected"
   );
 }
-
-/// Exact `C6` vectorized ROM summaries for widths `[1, 3, 5, 13]` at
-/// `blowup = 4` (`log_blowup = 2`), `segmented = true`, `ext_degree = 3` (Protocol v6).
-const EXPECTED_VECTORIZED_ROM_SUMMARIES: &[SpecSummary] = &[
-  SpecSummary {
-    name: "<ROM:1>",
-    stage1_width: 25,
-    stage2_width: 15,
-    preprocessed_width: 0,
-    preprocessed_height: 0,
-    lookups: 10,
-    lookup_group_size: 2,
-    quotient_degree: 2,
-    constraint_count: 40,
-    max_constraint_degree: 3,
-  },
-  SpecSummary {
-    name: "<ROM:3>",
-    stage1_width: 41,
-    stage2_width: 15,
-    preprocessed_width: 0,
-    preprocessed_height: 0,
-    lookups: 10,
-    lookup_group_size: 2,
-    quotient_degree: 2,
-    constraint_count: 40,
-    max_constraint_degree: 3,
-  },
-  SpecSummary {
-    name: "<ROM:5>",
-    stage1_width: 29,
-    stage2_width: 9,
-    preprocessed_width: 0,
-    preprocessed_height: 0,
-    lookups: 6,
-    lookup_group_size: 2,
-    quotient_degree: 2,
-    constraint_count: 22,
-    max_constraint_degree: 3,
-  },
-  SpecSummary {
-    name: "<ROM:13>",
-    stage1_width: 16,
-    stage2_width: 9,
-    preprocessed_width: 0,
-    preprocessed_height: 0,
-    lookups: 3,
-    lookup_group_size: 1,
-    quotient_degree: 1,
-    constraint_count: 13,
-    max_constraint_degree: 2,
-  },
-];
 
 /// Build a multi-width ROM program (`driver`, `store_local`, `store_owned`)
 /// that exercises widths `[1, 3, 5, 13]` with `local_n` calls to `store_local`
@@ -812,17 +678,16 @@ fn vectorized_rom_matches_lean_multistark_spec_and_cuts_rom3_cells() {
   assert_eq!(scalar_backend.rom_layout(), RomLayout::Scalar);
   assert_eq!(vec_backend.rom_layout(), RomLayout::Vectorized);
 
-  // Exact 10-field parity against `AiurMultiStarkSpecTests.expectedVectorizedRomSummaries`.
+  // Exact 10-field parity against the shared table that
+  // `AiurMultiStarkSpecTests` also reads.
+  let expected_rom = parse_spec_table(VECTORIZED_ROM_SPEC_PARITY);
   let vec_stats = vec_backend.statistics();
   let rom_base = vec_backend.members.len() + vec_backend.tables.len();
-  assert_eq!(
-    vec_stats.len() - rom_base,
-    EXPECTED_VECTORIZED_ROM_SUMMARIES.len()
-  );
+  assert_eq!(vec_stats.len() - rom_base, expected_rom.len());
   for ((s, c), expected) in vec_stats[rom_base..]
     .iter()
     .zip(&vec_backend.system.circuits[rom_base..])
-    .zip(EXPECTED_VECTORIZED_ROM_SUMMARIES)
+    .zip(&expected_rom)
   {
     assert_eq!(
       (
@@ -838,7 +703,7 @@ fn vectorized_rom_matches_lean_multistark_spec_and_cuts_rom3_cells() {
         c.max_constraint_degree,
       ),
       (
-        expected.name,
+        expected.name.as_str(),
         expected.stage1_width,
         expected.stage2_width,
         expected.preprocessed_width,
@@ -849,7 +714,7 @@ fn vectorized_rom_matches_lean_multistark_spec_and_cuts_rom3_cells() {
         expected.constraint_count,
         expected.max_constraint_degree,
       ),
-      "C6 Rust/Lean MultiStarkSpec mismatch on {}",
+      "vectorized ROM Rust/Lean MultiStarkSpec mismatch on {}",
       s.name
     );
   }
@@ -980,7 +845,7 @@ fn vectorized_rom_proves_verifies_and_rejects_tampering() {
         assert_eq!(
           proof.to_bytes().unwrap(),
           control,
-          "C6 incremental proof mismatch at max_rows={max_rows}, {retention:?}"
+          "vectorized ROM incremental proof mismatch at max_rows={max_rows}, {retention:?}"
         );
       }
     }

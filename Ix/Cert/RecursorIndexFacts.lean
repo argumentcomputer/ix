@@ -3,7 +3,7 @@ import Ix.Cert.InductiveCompile
 import Ix.Cert.GraphWalk
 import Ix.CompileCert.ReaderIndexDiscovery
 import Ix.CompileCert.Canon.QSortSorted
-import IxC.Kernel.Ixon.ShapeSpec
+import IxCK.Kernel.Ixon.ShapeSpec
 
 /-! # The recursor index over a store: facts independent of the closure
 

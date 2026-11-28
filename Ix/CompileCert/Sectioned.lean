@@ -1,5 +1,5 @@
 import Ix.CompileM
-import IxC.Ixon.Verify.WireCheck
+import IxCK.Ixon.Verify.WireCheck
 import IxSharingVerify.Builder
 
 /-! # A built record with its binder data

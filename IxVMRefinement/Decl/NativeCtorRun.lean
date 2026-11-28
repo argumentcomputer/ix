@@ -1,5 +1,5 @@
 import IxVMRefinement.Decl.NativeFront
-import IxC.Kernel.Verify.Denote.TeleOpen
+import IxCK.Kernel.Verify.Denote.TeleOpen
 
 /-! # Semantic constructor stages from actual scoped outputs
 

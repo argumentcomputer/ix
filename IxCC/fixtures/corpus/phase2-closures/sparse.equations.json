@@ -1,0 +1,157 @@
+{
+  "format": "ixcc/k1-equations/1",
+  "source": "Sparse.lean",
+  "roots": [
+    {
+      "name": "Sparse.minS",
+      "address": "add57547e687fe1b41ad3ff5dc653c32aa6d5f1b3a06301d678b717a5f93b06d"
+    },
+    {
+      "name": "Sparse.minF",
+      "address": "308129cf15e71482a828a5b566f77b08b52d786f0052702380dd75b4838720af"
+    },
+    {
+      "name": "Sparse.minO",
+      "address": "e83bcdf36713abe38aaa7167003bf073fbdd524c273f96fe6881ed687b49e1ac"
+    },
+    {
+      "name": "Sparse.minE",
+      "address": "d9563735599d95ce0d018e50e168930ba7027cd1e98f0f46445a1bd3aa23f992"
+    },
+    {
+      "name": "Sparse.minN",
+      "address": "8b8cdb7c5591b8a01571732f02111776dea446f066a5a8b96d429a09b7f6d916"
+    },
+    {
+      "name": "Sparse.minD",
+      "address": "f7b3a575ba03364857db30a7ac6a164e7d4360330db1b08baefbb2514d367592"
+    },
+    {
+      "name": "Sparse.minH",
+      "address": "60a93c80527092fc955d6eb874c7a4d0b46de73097eb86af290945d1a34bf212"
+    },
+    {
+      "name": "Sparse.sumS",
+      "address": "3cb982110278344bf7c0274875b9d8d92f8d648c4c521008ff9d33d99783efe5"
+    },
+    {
+      "name": "Sparse.sumF",
+      "address": "b3ce9c1d901d80c61d1c68c4ea6ef02cdba87c79907f806de2109a62593d0f4b"
+    },
+    {
+      "name": "Sparse.minM",
+      "address": "0c01b8efaa6b06f1f0007fd02137ab5f87d63a1afd8c219003605fea9fe44dda"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "Nat.add",
+      "definition_address": "a04e7e6b19f5e48dbb0b53dae24db5dcc1b1a98c8e97551db8fb4b5f4a14caa8",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "300f835ac35174de29416ee013ec8c57d5c01c6e448335ee4086f384f3f1a249"
+    },
+    {
+      "definition": "Nat.beq",
+      "definition_address": "dd0668fbe8c2b2a2260e95da62a2bea5df42c670a3e95ccffea03c3a7ffdc1c2",
+      "equation": "Nat.beq.eq_def",
+      "equation_address": "a2262f61bc575994ebe308858282397b4e0c8ca19e626eba79956699501e124c"
+    },
+    {
+      "definition": "Nat.bitwise",
+      "definition_address": "f67972af52c7a4fce7de2595075e6b6d0ca7d7f67e01e1a1383c6a270aa613cd",
+      "equation": "Nat.bitwise.eq_def",
+      "equation_address": "28835212de0d7d796e7256b5a560118c470befd066f5b4504652736867998670"
+    },
+    {
+      "definition": "Nat.bitwise._unary",
+      "definition_address": "0958d930c48997ef917230a263e338a060842f382586a230293b2ccafa1967a9",
+      "equation": "Nat.bitwise._unary.eq_def",
+      "equation_address": "cefc1262dc2a1b0d22598e8221053070583da86918a112e6f115c7746da59f39"
+    },
+    {
+      "definition": "Nat.ble",
+      "definition_address": "a939cc7925834d04a7ced860c5c44484231c9f5c44728d83d55f19c08037f3b4",
+      "equation": "Nat.ble.eq_def",
+      "equation_address": "25a12692ef836a0d2771c46279e413f421082b3128e091b2931f9e9733348403"
+    },
+    {
+      "definition": "Nat.div.go",
+      "definition_address": "0d78a77d8ea6b073d86da27fd8ccb0fed5771b11062d5585f73279abdfe38784",
+      "equation": "Nat.div.go.eq_def",
+      "equation_address": "fbec97a8f4e8edc20956d9322bb93c4d16d01cb27f3554fe75bc6bdd82ecf9f4"
+    },
+    {
+      "definition": "Nat.modCore.go",
+      "definition_address": "205697164cd9b61d252cc44c7d7f4a00b4bab80be3d77991ce288eefa2532bed",
+      "equation": "Nat.modCore.go.eq_def",
+      "equation_address": "3c0ada33a37dd767b729e80f3ac7efbdef99f6fc83fddf87fa66df5b8dc6d16d"
+    },
+    {
+      "definition": "Nat.mul",
+      "definition_address": "7e736639472dcc920bdc54d8ff0255a4c03b3c05375eacf08814e341deebd331",
+      "equation": "Nat.mul.eq_def",
+      "equation_address": "ab44c6c6e51692fbde3e413a5b90e4727eb15bfc1851cbd56869c27ecb615ee3"
+    },
+    {
+      "definition": "Nat.pow",
+      "definition_address": "473d7239744c820ddb45b6ce56d0506734ba90e5699e985444fd7a6647e9b0a0",
+      "equation": "Nat.pow.eq_def",
+      "equation_address": "7db03b695da2842f3a309f783d03f8a5b71c7c083a9c443fba18f4383e14feeb"
+    },
+    {
+      "definition": "Nat.shiftLeft",
+      "definition_address": "c2a2258d56e14ebdb8c9986365cf0c0f6dfe4128a8faf847dd5e50b4ae7bb310",
+      "equation": "Nat.shiftLeft.eq_def",
+      "equation_address": "492f48a67ad9ee6b523243728498f022ce79f6642d925ebb2a304a1bcfd18239"
+    },
+    {
+      "definition": "Nat.shiftRight",
+      "definition_address": "74a4836a0eddfd07e45e5da0929df974e0caef28fd26001f7de1712d5beddd4e",
+      "equation": "Nat.shiftRight.eq_def",
+      "equation_address": "013214b1403ee47e67c71a59668e01660308f761b1b15ee85f50e9e7e6923da5"
+    },
+    {
+      "definition": "Nat.sub",
+      "definition_address": "f8410bb7b91afaa0cb6f9162faeee2a682e98cde21acf19712380f4e9dbcbf00",
+      "equation": "Nat.sub.eq_def",
+      "equation_address": "80ffad9e0b779752b2e73b7a35e69cce0463317b238fe9679447f01194f157ab"
+    },
+    {
+      "definition": "Sparse.build",
+      "definition_address": "ce37ca43161f13aa77baa811ea70654837065a21f7f1eb12a12b0c957f94f9c5",
+      "equation": "Sparse.build.eq_def",
+      "equation_address": "dbd09145b3e2598a90efe86af416264f3080f1e74167a3ecefd024169fd1fd2a"
+    },
+    {
+      "definition": "Sparse.count",
+      "definition_address": "20856b7d320a9db75e257c8e95bbb503661342d0783903a18b83726e2394339b",
+      "equation": "Sparse.count.eq_def",
+      "equation_address": "0dd286df9c93b905809291c50e1bf291eb98d5f6ef78f8c6ad8dd854d4817d51"
+    },
+    {
+      "definition": "Sparse.deep",
+      "definition_address": "0334311d04579f08b4c66a4fee9e1a152b7eb37dd7b886b62a572cc96e16bbdb",
+      "equation": "Sparse.deep.eq_def",
+      "equation_address": "48f08147ea414c02604ac51007b54d5d3b8a265214297fe57b1090bcb1db6668"
+    },
+    {
+      "definition": "Sparse.len",
+      "definition_address": "ff0793fb0619b79c89a3dfa27437a9e28d841e0e3640110718ae56112d38ba67",
+      "equation": "Sparse.len.eq_def",
+      "equation_address": "2e064c6c35d6b7737bb123b86d45792e57e98eb97c92adc0909655b75345a404"
+    },
+    {
+      "definition": "Sparse.loopF",
+      "definition_address": "3fa197581c5bf136f466cef0a7ec4c334a9990794c1d2ba114250bc646bae76f",
+      "equation": "Sparse.loopF.eq_def",
+      "equation_address": "45eaeb97e203357ede718eecbb3a0b47cac99c412740f4460e151e12733fb3a1"
+    },
+    {
+      "definition": "Sparse.loopS",
+      "definition_address": "5a68645bf58fdfb576da908192798526b759d47f240ebf1dfdc91f5fad699ae1",
+      "equation": "Sparse.loopS.eq_def",
+      "equation_address": "ae8960e4df9e96eb5fb10732352cb12a12c460dc13080af31c466d376251d88f"
+    }
+  ],
+  "failures": []
+}

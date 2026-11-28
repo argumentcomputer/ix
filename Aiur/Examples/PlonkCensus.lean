@@ -1,7 +1,10 @@
+import Aiur.Library.Field.BN254
 import Aiur.Plonk.Schema
 import Aiur.Plonk.Template
 
 open Aiur.Plonk Aiur.Plonk.Lower
+
+private abbrev Fr := Aiur.Library.Field.BN254.F
 
 def groupOf (n : String) : String :=
   if n.startsWith "<table:" then "fixed"
@@ -17,8 +20,8 @@ def Aiur.Plonk.Lower.Census.plus (a b : Census) : Census :=
 def main (args : List String) : IO Unit := do
   let path := args.headD "target/e2e-l3/plonk-prepared/prepared/schema.json"
   let j ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile path))
-  let src ← IO.ofExcept (Schema.source j)
-  let mut pool : Pool := {}
+  let src ← IO.ofExcept (Schema.source (F := Fr) j)
+  let mut pool : Pool Fr := {}
   let mut groups : Std.HashMap String Census := {}
   let mut lines : Array (Nat × String) := #[]
   for t in src.tables do
@@ -38,7 +41,7 @@ def main (args : List String) : IO Unit := do
 def checkAll (args : List String) : IO Unit := do
   let path := args.headD "target/e2e-l3/plonk-prepared/prepared/schema.json"
   let j ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile path))
-  let src ← IO.ofExcept (Schema.source j)
+  let src ← IO.ofExcept (Schema.source (F := Fr) j)
   let mut ok := 0
   let mut bad := 0
   for t in src.tables do

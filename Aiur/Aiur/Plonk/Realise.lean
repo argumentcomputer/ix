@@ -15,21 +15,24 @@ hypothesis of `constraint_of_cone` and `message_of_cone`.
 namespace Aiur.Plonk
 
 open Aiur.Tiling (Template Lane Row Role)
-open Lower (Fr)
+
+section Generic
+
+variable {F : Type} [Field F] [DecidableEq F]
 
 /-- The gnark gate of a one-lane gate row through `wire`. -/
-def rowGate (wire : Nat → Nat) : Row Fr → Option (Gate Fr)
+def rowGate (wire : Nat → Nat) : Row F → Option (Gate F)
   | .gate [lane] false _ =>
       match lane.c0, lane.c1, lane.c2, lane.c3 with
       | some a, some b, some c, none => if lane.qid = 0 then some (Lane.toGate wire lane a b c) else none
       | _, _, _, _ => none
   | _ => none
 
-def Realised (T : Template Fr) (wire : Nat → Nat) (gates : Gate Fr → Prop) : Prop :=
+def Realised (T : Template F) (wire : Nat → Nat) (gates : Gate F → Prop) : Prop :=
   ∀ row ∈ T.rows, ∃ g, rowGate wire row = some g ∧ gates g
 
-theorem relationsHold_of_realised {T : Template Fr} {wire : Nat → Nat} {gates : Gate Fr → Prop}
-    (h : Realised T wire gates) {w : Nat → Fr} (hold : ∀ g, gates g → g.Holds w) :
+theorem relationsHold_of_realised {T : Template F} {wire : Nat → Nat} {gates : Gate F → Prop}
+    (h : Realised T wire gates) {w : Nat → F} (hold : ∀ g, gates g → g.Holds w) :
     T.RelationsHold (w ∘ wire) := by
   intro rel hrel
   simp only [Template.relations, List.mem_flatMap] at hrel
@@ -54,5 +57,7 @@ theorem relationsHold_of_realised {T : Template Fr} {wire : Nat → Nat} {gates 
       · exact absurd hg (by simp)
     · exact absurd hg (by simp)
   · exact absurd hg (by simp)
+
+end Generic
 
 end Aiur.Plonk

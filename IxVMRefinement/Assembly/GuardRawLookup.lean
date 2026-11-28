@@ -1,6 +1,6 @@
-import IxC.Kernel.Model.GuardClassifier
-import IxC.Kernel.Model.GuardClassifierErase
-import IxC.Kernel.Verify.Cached.NormalizeRef
+import IxCK.Kernel.Model.GuardClassifier
+import IxCK.Kernel.Model.GuardClassifierErase
+import IxCK.Kernel.Verify.Cached.NormalizeRef
 import IxVMRefinement.StatementRel.ReadsMono
 import IxVMRefinement.Assembly.TypingStore
 import IxVMRefinement.Assembly.BareState

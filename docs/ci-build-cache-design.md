@@ -61,7 +61,7 @@ on `merge_group` to prevent competing writers while those jobs are separate.
 
 The producer builds the union of targets required by its consumers: library
 and executable coverage, `IxTests` and its dependencies, CLI tools, the ZK
-voting prover, the standalone `IxC` package, certification audits, kernel
+voting prover, the standalone `IxCK` package, certification audits, kernel
 test executables, and the set-theory model when included in the build contract.
 The designated writer of the canonical `main` cache must build the complete
 set, even when its invocation skips test execution. Build target lists must

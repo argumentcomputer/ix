@@ -80,6 +80,88 @@ pub const PLONKISH_HEADER_LEN: usize = 9 // magic
   + 32 * 3 // shrinker_vk_digest, inner_vk_digest, claim_digest
   + 8; // proof_len
 
+/// The outer FRI shapes [`OuterFriParams::check`] admits: folding arity up to
+/// 8 (`max_log_arity <= 3`), a final polynomial of up to `2^8` coefficients,
+/// and (for every shape) a single Merkle root, `cap_height = 0`.
+pub const OUTER_SHAPE_LIMITS: stark_key::security::ShapeLimits =
+  stark_key::security::ShapeLimits {
+    max_log_arity: 3,
+    max_log_final_poly_len: 8,
+  };
+
+/// The (mode, outer FRI parameters) pairs an Endpoint 1 (`IXSTARK6` v2)
+/// verifier admits: the two presets `ix compress --stark-128[-zk]` produces
+/// (default [`OuterFriParams::COMPACT_400KB_BALANCED`], `--compact`
+/// [`OuterFriParams::ULTRA_COMPACT_400KB_ZK`]) in both modes. The verifier
+/// derives its outer system from these constants; an envelope declaring any
+/// other parameters is rejected.
+pub const ENDPOINT1_PROFILES: [(ShrinkMode, OuterFriParams); 4] = [
+  (ShrinkMode::Stark128, OuterFriParams::COMPACT_400KB_BALANCED),
+  (ShrinkMode::Stark128, OuterFriParams::ULTRA_COMPACT_400KB_ZK),
+  (ShrinkMode::Stark128Zk, OuterFriParams::COMPACT_400KB_BALANCED),
+  (ShrinkMode::Stark128Zk, OuterFriParams::ULTRA_COMPACT_400KB_ZK),
+];
+
+/// The admitted `(mode, params)` pair equal to an envelope header's, taken
+/// from `admitted` (the verifier's constants), or an error naming the
+/// admitted profiles.
+pub fn admitted_profile(
+  header: &PlonkishHeader,
+  admitted: &[(ShrinkMode, OuterFriParams)],
+) -> Result<(ShrinkMode, OuterFriParams), String> {
+  admitted
+    .iter()
+    .copied()
+    .find(|&(mode, params)| mode == header.mode && params == header.params)
+    .ok_or_else(|| {
+      format!(
+        "{} envelope under outer FRI parameters {:?} is not an admitted Endpoint 1 profile (admitted: {admitted:?})",
+        header.mode.cli_flag(),
+        header.params
+      )
+    })
+}
+
+/// The layout invariant that keeps multi-stark's Merkle-cap weakness for
+/// matrices shorter than the cap layer away from Endpoint 1: the
+/// final outer system is exactly one circuit whose height is fixed by its
+/// preprocessed matrix (so every multi-matrix commitment holds matrices of
+/// one height, which the verifier pins), and that height's LDE reaches the
+/// cap layer. `OuterFriParams::check` additionally requires `cap_height = 0`.
+fn check_endpoint1_outer_layout(
+  definitions: &[CircuitInputs<Val>],
+  params: OuterFriParams,
+) -> Result<(), String> {
+  let [def] = definitions else {
+    return Err(format!(
+      "Endpoint 1 outer system must be exactly one circuit (got {})",
+      definitions.len()
+    ));
+  };
+  let Some(prep) = def.preprocessed.as_ref() else {
+    return Err(
+      "Endpoint 1 outer circuit has no preprocessed matrix fixing its height"
+        .into(),
+    );
+  };
+  let height = prep.height();
+  if !height.is_power_of_two() {
+    return Err(format!(
+      "Endpoint 1 outer circuit height {height} is not a power of two"
+    ));
+  }
+  let lde_log = (height.ilog2() as usize)
+    .checked_add(params.log_blowup)
+    .ok_or("Endpoint 1 outer LDE height overflow")?;
+  if lde_log < params.cap_height {
+    return Err(format!(
+      "Endpoint 1 outer circuit LDE height 2^{lde_log} is below the cap layer 2^{}",
+      params.cap_height
+    ));
+  }
+  Ok(())
+}
+
 /// Generalized outer FRI parameters for out-of-circuit verification of shrunk
 /// Protocol `v6` and `v6-zk` STARK proofs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -236,44 +318,23 @@ impl OuterFriParams {
     self.cap_height == 0 && self.max_log_arity >= 1 && self.max_log_arity <= 4
   }
 
-  /// Enforce the full Protocol `v6` 128-bit production security floor:
-  /// - `log_blowup in 1..=4`
-  /// - `>= 128.000b` finite-`m` (`m=16`) Johnson soundness
-  /// - `>= 80.000b` provable unique-decoding (`CertiFRI`) soundness
-  /// - `>= 220b` conjectured ethSTARK soundness
-  /// - `commit_pow <= 32`, `query_pow <= 32`
-  /// - `max_log_arity in 1..=4`, `cap_height <= 12`, `log_final_poly_len <= 8`
+  /// Enforce the Protocol `v6` production floor on these exact values
+  /// (`stark_key::security::check_with_shape` with [`OUTER_SHAPE_LIMITS`]):
+  /// - `cap_height = 0` (single-root commitments)
+  /// - `max_log_arity in 1..=3`, `log_final_poly_len <= 8`
+  /// - `log_blowup in 1..=4`, `commit_pow <= 32`, `query_pow <= 32`
+  /// - query-phase floors: `>= 128.000b` finite-`m` (`m=16`) Johnson,
+  ///   `>= 80.000b` unique-decoding, `>= 220b` conjectured
+  ///
+  /// The floors count the FRI query phase only and are paper bounds; no
+  /// machine-checked theorem covers folding by more than two.
   pub fn check(self) -> Result<(), String> {
-    if !(1..=4).contains(&self.max_log_arity) {
-      return Err(format!(
-        "unsupported outer max_log_arity {}: expected 1..=4",
-        self.max_log_arity
-      ));
-    }
-    if self.cap_height > 12 {
-      return Err(format!(
-        "unsupported outer cap_height {}: expected <= 12",
-        self.cap_height
-      ));
-    }
-    if self.log_final_poly_len > 12 {
-      return Err(format!(
-        "unsupported outer log_final_poly_len {}: expected <= 12",
-        self.log_final_poly_len
-      ));
-    }
-    // Delegate all query/blowup/PoW/UD/Johnson/conjectured floor checks to
-    // `stark_key::security::check` using canonical structural placeholders.
-    let floor_cp =
-      CommitmentParameters { log_blowup: self.log_blowup, cap_height: 0 };
-    let floor_fp = FriParameters {
-      log_final_poly_len: 0,
-      max_log_arity: 1,
-      num_queries: self.num_queries,
-      commit_proof_of_work_bits: self.commit_proof_of_work_bits,
-      query_proof_of_work_bits: self.query_proof_of_work_bits,
-    };
-    stark_key::security::check(&floor_cp, &floor_fp)
+    stark_key::security::check_with_shape(
+      &self.commitment(),
+      &self.fri(),
+      OUTER_SHAPE_LIMITS,
+    )
+    .map_err(|e| format!("outer FRI parameters rejected: {e}"))
   }
 
   /// Check mode-specific `v6` / `v6-zk` invariants plus CUDA constraints when
@@ -1072,7 +1133,7 @@ impl PlonkishVerifyReport {
           .to_owned()
       },
       ShrinkMode::Stark128Zk => format!(
-        "ZERO-KNOWLEDGE (128-bit statistical+ROM ZK: 2x odd-coset hiding PCS, W_R={}, 128-bit BLAKE3-CTR leaf salts, telescoping quotient blinding, {} outer circuit(s), min_log_degree={})",
+        "BLINDED (v6-zk hiding-PCS construction: 2x odd-coset blinding, W_R={}, 16-byte BLAKE3-CTR leaf salts, telescoping quotient blinding, {} outer circuit(s), min_log_degree={}; no hiding property is stated or proved)",
         self.header.zk_randomizer_width,
         self.outer_circuits,
         self.header.min_log_degree,
@@ -1081,10 +1142,10 @@ impl PlonkishVerifyReport {
     format!(
       "Endpoint 1 Compact Plonkish Native Fp^3 STARK Shrinker ({flag} / {proto})\n\
        \x20 Field/PCS : Fp^3 = Fp[X]/(X^3 - X - 1) | BLAKE3 derive_key | FriBatching::Tensor | {c} outer circuit(s)\n\
-       \x20 Soundness : {j_w}.{j_f:02}b finite-m Johnson (m=16) | {u_w}.{u_f:02}b provable UD | {conj}b conjectured (lb={lb}, q={q}, mla={mla}, lfp={lfp}, cap={cap}, qpow={qpow})\n\
-       \x20 Trust     : Post-quantum ready | Transparent (zero trusted setup)\n\
+       \x20 FRI query : {j_w}.{j_f:02}b finite-m Johnson (m=16) | {u_w}.{u_f:02}b unique-decoding | {conj}b conjectured; query-phase floor terms, no machine-checked theorem covers this verifier (lb={lb}, q={q}, mla={mla}, lfp={lfp}, cap={cap}, qpow={qpow})\n\
+       \x20 Trust     : Transparent (zero trusted setup) | 32-byte BLAKE3: ~128-bit classical, ~85-bit quantum collision resistance\n\
        \x20 Privacy   : {zk_line}\n\
-       \x20 Pinned VK : {svk}\n\
+       \x20 Outer VK  : {svk} (derived by the verifier)\n\
        \x20 Inner VK  : {ivk}\n\
        \x20 Claim     : {claim}\n\
        \x20 Proof     : {env} bytes ({raw} B payload, codec={codec}, hops={hops}) | verified in {ms:.2} ms",
@@ -1380,15 +1441,8 @@ impl OuterSystem {
           ZK_RANDOMIZER_WIDTH,
           device,
         );
-        // On CUDA, `HidingCudaTwoAdicFriPcs` does not cache 1x traces on host,
-        // so streaming lookups would trigger full 32x inverse DFTs on GPU.
-        // Retain 1x host preprocessed traces during proving and drop them once
-        // the proof finishes.
-        let (system, key) = if cfg!(feature = "cuda") && keep_prover_key {
-          System::new(config, definitions)
-        } else {
-          System::new_without_preprocessed(config, definitions)
-        };
+        let (system, key) =
+          System::new_without_preprocessed(config, definitions);
         debug_assert_eq!(
           system.vk_digest,
           compute_vk_digest_with_domain::<Val, ExtVal3>(
@@ -1475,64 +1529,38 @@ impl OuterSystem {
       },
       Self::Zk { system, key } => {
         let key = key.take().ok_or("verifier-only system cannot prove")?;
-        let proof = if cfg!(feature = "cuda") {
-          let traces: Vec<RowMajorMatrix<Val>> = if let Some(layout) = merged
-            && layout.is_merged()
-          {
-            layout.build_traces(&compiled, &assignment)?
-          } else {
-            let shards = compiled
-              .trace_shards(&assignment)
-              .map_err(|e| format!("trace shards failed: {e}"))?;
-            let count = system.circuits.len();
-            (0..count)
-              .map(|ci| {
-                shards.trace(ci).map_err(|e| format!("trace {ci} failed: {e}"))
-              })
-              .collect::<Result<Vec<_>, _>>()?
-          };
+        let stage1 = if let Some(layout) = merged
+          && layout.is_merged()
+        {
+          let traces = layout.build_traces(&compiled, &assignment)?;
           drop(compiled);
           drop(assignment);
-          let witness =
-            multi_stark::system::SystemWitness::from_stage_1(traces, system);
-          system.prove_multiple_claims(&key, &refs, witness)
+          system.prove_stage_1_streaming(traces)
         } else {
-          let stage1 = if let Some(layout) = merged
-            && layout.is_merged()
-          {
-            let traces = layout.build_traces(&compiled, &assignment)?;
-            drop(compiled);
-            drop(assignment);
-            system.prove_stage_1_streaming(traces)
-          } else {
-            let shards = compiled
-              .trace_shards(&assignment)
-              .map_err(|e| format!("trace shards failed: {e}"))?;
-            let count = system.circuits.len();
-            let mut trace_err: Option<String> = None;
-            let iter = (0..count).map(|ci| match shards.trace(ci) {
-              Ok(t) => t,
-              Err(e) => {
-                if trace_err.is_none() {
-                  trace_err = Some(format!("trace {ci} failed: {e}"));
-                }
-                RowMajorMatrix::new(Vec::new(), system.circuits[ci].main_width)
-              },
-            });
-            let s1 = system.prove_stage_1_streaming(iter);
-            if let Some(err) = trace_err {
-              return Err(err);
-            }
-            drop(compiled);
-            drop(assignment);
-            s1
-          };
-          system.prove_committed(&key, &refs, stage1)
+          let shards = compiled
+            .trace_shards(&assignment)
+            .map_err(|e| format!("trace shards failed: {e}"))?;
+          let count = system.circuits.len();
+          let mut trace_err: Option<String> = None;
+          let iter = (0..count).map(|ci| match shards.trace(ci) {
+            Ok(t) => t,
+            Err(e) => {
+              if trace_err.is_none() {
+                trace_err = Some(format!("trace {ci} failed: {e}"));
+              }
+              RowMajorMatrix::new(Vec::new(), system.circuits[ci].main_width)
+            },
+          });
+          let s1 = system.prove_stage_1_streaming(iter);
+          if let Some(err) = trace_err {
+            return Err(err);
+          }
+          drop(compiled);
+          drop(assignment);
+          s1
         };
+        let proof = system.prove_committed(&key, &refs, stage1);
         drop(key);
-        for circuit in &mut system.circuits {
-          circuit.preprocessed = None;
-        }
         #[cfg(feature = "cuda")]
         multi_stark::cuda::release_device_memory();
         system
@@ -1695,8 +1723,8 @@ fn prove_lowered_plonkish(
   let report = verifier.verify_report(
     &envelope_bytes,
     &publics,
-    Some(&inner_vk_digest),
-    Some(&claim_digest),
+    &inner_vk_digest,
+    &claim_digest,
   )?;
   let verify_ms = v_start.elapsed().as_secs_f64() * 1000.0;
 
@@ -1827,6 +1855,7 @@ impl PlonkishCircuitVerifier {
     for hop in 1..=MAX_PLONKISH_HOPS {
       match plan_hop_lowering(circuit, options, mode, params, hop)? {
         HopLowering::Final { definitions, schema, .. } => {
+          check_endpoint1_outer_layout(&definitions, params)?;
           return Self::from_lowered(
             definitions,
             schema,
@@ -1892,8 +1921,8 @@ impl PlonkishCircuitVerifier {
     &self,
     envelope_bytes: &[u8],
     expected_publics: &[Val],
-    expected_inner_vk_digest: Option<&[u8; 32]>,
-    expected_claim_digest: Option<&[u8; 32]>,
+    expected_inner_vk_digest: &[u8; 32],
+    expected_claim_digest: &[u8; 32],
   ) -> Result<PlonkishHeader, String> {
     Ok(
       self
@@ -1907,12 +1936,15 @@ impl PlonkishCircuitVerifier {
     )
   }
 
+  /// Verify an envelope against this verifier's derived outer system, the
+  /// caller's public values, inner-key digest and claim digest (all
+  /// mandatory).
   pub fn verify_report(
     &self,
     envelope_bytes: &[u8],
     expected_publics: &[Val],
-    expected_inner_vk_digest: Option<&[u8; 32]>,
-    expected_claim_digest: Option<&[u8; 32]>,
+    expected_inner_vk_digest: &[u8; 32],
+    expected_claim_digest: &[u8; 32],
   ) -> Result<PlonkishVerifyReport, String> {
     let start = Instant::now();
     let envelope = PlonkishEnvelope::from_bytes(envelope_bytes)?;
@@ -1936,15 +1968,17 @@ impl PlonkishCircuitVerifier {
     if h.shrinker_vk_digest != self.vk_digest {
       return Err("shrinker VK digest mismatch".into());
     }
-    if let Some(ivk) = expected_inner_vk_digest
-      && &h.inner_vk_digest != ivk
-    {
+    if &h.inner_vk_digest != expected_inner_vk_digest {
       return Err("inner VK digest mismatch".into());
     }
-    if let Some(cd) = expected_claim_digest
-      && &h.claim_digest != cd
-    {
+    if &h.claim_digest != expected_claim_digest {
       return Err("claim digest mismatch".into());
+    }
+    if &hash_publics(expected_publics) != expected_claim_digest {
+      return Err(
+        "expected claim digest is not the digest of the expected public values"
+          .into(),
+      );
     }
     let claims = self.schema.materialize(expected_publics)?;
     self.outer.verify_bytes(
@@ -1996,6 +2030,7 @@ pub fn shrink_fixed_root(
   for hop in 1..=MAX_PLONKISH_HOPS {
     match plan_hop_lowering(circuit, options, mode, params, hop)? {
       HopLowering::Final { compiled, definitions, schema, merged } => {
+        check_endpoint1_outer_layout(&definitions, params)?;
         return prove_lowered_plonkish(
           start,
           compiled,
@@ -2226,6 +2261,8 @@ pub fn shrink_single_batch_2hop(
   let refs1: Vec<&[Val]> = claims1.iter().map(Vec::as_slice).collect();
   let hop1_proof = sys1.prove_committed(&key1, &refs1, stage1);
   drop(key1);
+  #[cfg(feature = "cuda")]
+  multi_stark::cuda::release_device_memory();
   sys1
     .verify_multiple_claims(&refs1, &hop1_proof)
     .map_err(|e| format!("hop1 self-verify failed: {e:?}"))?;
@@ -2629,6 +2666,44 @@ mod tests {
       bad[31..33].copy_from_slice(&20u16.to_le_bytes()); // qpow=20
       assert!(peek_plonkish_header(&bad).is_err());
 
+      // The shape is checked on the real values (formerly replaced by
+      // `cap 0, arity 2, lfp 0` before the floor): Merkle caps, folding by more
+      // than 8 and final polynomials above 2^8 are rejected. Offsets: cap
+      // 21..23, lfp 23..25, max_log_arity 25..27.
+      for (offset, value, needle) in [
+        (21, 4u16, "cap_height"),
+        (21, 12, "cap_height"),
+        (25, 4, "max_log_arity"),
+        (25, 0, "max_log_arity"),
+        (23, 9, "log_final_poly_len"),
+        (23, 12, "log_final_poly_len"),
+      ] {
+        let mut bad = good.clone();
+        bad[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+        let err = peek_plonkish_header(&bad).unwrap_err();
+        assert!(err.contains(needle), "{offset}={value}: {err}");
+      }
+      // Capped / higher-arity shapes that previously slipped past the floor are rejected.
+      for shape in [
+        (3usize, 75usize, 0usize, 20usize, 4usize, 3usize, 8usize),
+        (3, 75, 0, 20, 12, 4, 8),
+        (3, 66, 0, 32, 12, 4, 8),
+        (1, 282, 0, 0, 12, 4, 0),
+        (4, 88, 0, 0, 12, 4, 8),
+      ] {
+        let (log_blowup, num_queries, cpow, qpow, cap, mla, lfp) = shape;
+        let p = OuterFriParams {
+          log_blowup,
+          num_queries,
+          commit_proof_of_work_bits: cpow,
+          query_proof_of_work_bits: qpow,
+          cap_height: cap,
+          max_log_arity: mla,
+          log_final_poly_len: lfp,
+        };
+        assert!(p.check().is_err(), "{shape:?}");
+      }
+
       // Trailing byte rejected
       let mut bad = good.clone();
       bad.push(0);
@@ -2668,6 +2743,87 @@ mod tests {
     assert!(
       peek_plonkish_header(&bad).unwrap_err().contains("log_blowup >= 3")
     );
+  }
+
+  /// The Endpoint 1 verifier admits exactly the two shipped presets in
+  /// both modes; any other header, including floor-passing ones, is refused.
+  #[test]
+  fn endpoint1_admits_only_the_shipped_profiles() {
+    let header = |mode, params| PlonkishHeader {
+      mode,
+      params,
+      compact_encoding: true,
+      hops: 1,
+      zk_randomizer_width: 0,
+      min_log_degree: 0,
+      shrinker_vk_digest: [0; 32],
+      inner_vk_digest: [0; 32],
+      claim_digest: [0; 32],
+      proof_len: 1,
+    };
+    for mode in [ShrinkMode::Stark128, ShrinkMode::Stark128Zk] {
+      for params in [
+        OuterFriParams::COMPACT_400KB_BALANCED,
+        OuterFriParams::ULTRA_COMPACT_400KB_ZK,
+      ] {
+        params.check_for_mode(mode, None).unwrap();
+        assert_eq!(
+          admitted_profile(&header(mode, params), &ENDPOINT1_PROFILES).unwrap(),
+          (mode, params)
+        );
+      }
+      for params in [
+        OuterFriParams::COMPACT_400KB_FAST,
+        OuterFriParams::CUDA_COMPACT_128,
+        OuterFriParams::HOP1_DEFAULT,
+        OuterFriParams {
+          log_blowup: 3,
+          num_queries: 75,
+          commit_proof_of_work_bits: 0,
+          query_proof_of_work_bits: 20,
+          cap_height: 0,
+          max_log_arity: 3,
+          log_final_poly_len: 8,
+        },
+        OuterFriParams {
+          num_queries: 53,
+          query_proof_of_work_bits: 32,
+          ..OuterFriParams::COMPACT_400KB_BALANCED
+        },
+      ] {
+        params.check().unwrap();
+        let err = admitted_profile(&header(mode, params), &ENDPOINT1_PROFILES)
+          .unwrap_err();
+        assert!(err.contains("not an admitted"), "{err}");
+      }
+    }
+  }
+
+  /// The Endpoint 1 outer system must be one circuit whose height
+  /// is fixed by its preprocessed matrix and whose LDE reaches the cap layer.
+  #[test]
+  fn endpoint1_outer_layout_invariant_is_enforced() {
+    let fixed = |height: usize| CircuitInputs {
+      main_width: 1,
+      preprocessed: Some(RowMajorMatrix::new_col(vec![Val::ZERO; height])),
+      ..Default::default()
+    };
+    let params = OuterFriParams::COMPACT_400KB_BALANCED;
+    check_endpoint1_outer_layout(&[fixed(1 << 17)], params).unwrap();
+    let err = check_endpoint1_outer_layout(&[], params).unwrap_err();
+    assert!(err.contains("exactly one circuit"), "{err}");
+    let err =
+      check_endpoint1_outer_layout(&[fixed(1 << 17), fixed(256)], params)
+        .unwrap_err();
+    assert!(err.contains("exactly one circuit"), "{err}");
+    let unfixed = CircuitInputs::<Val> { main_width: 1, ..Default::default() };
+    let err = check_endpoint1_outer_layout(&[unfixed], params).unwrap_err();
+    assert!(err.contains("preprocessed"), "{err}");
+    // A cap layer above the LDE would leave rows unbound: refused.
+    let capped = OuterFriParams { cap_height: 12, log_blowup: 1, ..params };
+    let err =
+      check_endpoint1_outer_layout(&[fixed(1 << 8)], capped).unwrap_err();
+    assert!(err.contains("cap layer"), "{err}");
   }
 
   #[test]
@@ -2867,8 +3023,8 @@ mod tests {
       .verify_report(
         &out_v6.envelope_bytes,
         &publics,
-        Some(&inner_vk_digest),
-        Some(&claim_digest),
+        &inner_vk_digest,
+        &claim_digest,
       )
       .unwrap();
     assert!(rep_v6.banner().contains("NON-ZK"));
@@ -2895,11 +3051,12 @@ mod tests {
       .verify_report(
         &out_zk1.envelope_bytes,
         &publics,
-        Some(&inner_vk_digest),
-        Some(&claim_digest),
+        &inner_vk_digest,
+        &claim_digest,
       )
       .unwrap();
-    assert!(rep_zk.banner().contains("ZERO-KNOWLEDGE"));
+    assert!(rep_zk.banner().contains("BLINDED"));
+    assert!(!rep_zk.banner().contains("Post-quantum ready"));
     assert!(rep_zk.banner().contains("W_R=4"));
 
     // 4. v6-zk fresh randomization: second proof on same witness differs!
@@ -2924,8 +3081,8 @@ mod tests {
       .verify(
         &out_zk2.envelope_bytes,
         &publics,
-        Some(&inner_vk_digest),
-        Some(&claim_digest),
+        &inner_vk_digest,
+        &claim_digest,
       )
       .unwrap();
 
@@ -2939,12 +3096,7 @@ mod tests {
       bad_pub[0] += Val::ONE;
       assert!(
         ver
-          .verify(
-            env_bytes,
-            &bad_pub,
-            Some(&inner_vk_digest),
-            Some(&claim_digest)
-          )
+          .verify(env_bytes, &bad_pub, &inner_vk_digest, &claim_digest)
           .is_err(),
         "{label}: accepted wrong public statement"
       );
@@ -2953,17 +3105,13 @@ mod tests {
       let mut wrong_ivk = inner_vk_digest;
       wrong_ivk[0] ^= 1;
       assert!(
-        ver
-          .verify(env_bytes, &publics, Some(&wrong_ivk), Some(&claim_digest))
-          .is_err(),
+        ver.verify(env_bytes, &publics, &wrong_ivk, &claim_digest).is_err(),
         "{label}: accepted wrong inner VK digest"
       );
       let mut wrong_cd = claim_digest;
       wrong_cd[0] ^= 1;
       assert!(
-        ver
-          .verify(env_bytes, &publics, Some(&inner_vk_digest), Some(&wrong_cd))
-          .is_err(),
+        ver.verify(env_bytes, &publics, &inner_vk_digest, &wrong_cd).is_err(),
         "{label}: accepted wrong claim digest"
       );
 
@@ -2971,7 +3119,14 @@ mod tests {
       let mut env = PlonkishEnvelope::from_bytes(env_bytes).unwrap();
       env.header.shrinker_vk_digest[31] ^= 1;
       assert!(
-        ver.verify(&env.to_bytes().unwrap(), &publics, None, None).is_err(),
+        ver
+          .verify(
+            &env.to_bytes().unwrap(),
+            &publics,
+            &inner_vk_digest,
+            &claim_digest
+          )
+          .is_err(),
         "{label}: accepted wrong shrinker VK digest"
       );
 
@@ -2984,8 +3139,8 @@ mod tests {
           .verify(
             &env.to_bytes().unwrap(),
             &publics,
-            Some(&inner_vk_digest),
-            Some(&claim_digest)
+            &inner_vk_digest,
+            &claim_digest
           )
           .is_err(),
         "{label}: accepted corrupted proof byte"
@@ -2999,8 +3154,8 @@ mod tests {
           .verify(
             &env.to_bytes().unwrap(),
             &publics,
-            Some(&inner_vk_digest),
-            Some(&claim_digest)
+            &inner_vk_digest,
+            &claim_digest
           )
           .is_err(),
         "{label}: accepted noncanonical active bitmap padding"
@@ -3011,12 +3166,7 @@ mod tests {
       trailing.push(0x42);
       assert!(
         ver
-          .verify(
-            &trailing,
-            &publics,
-            Some(&inner_vk_digest),
-            Some(&claim_digest)
-          )
+          .verify(&trailing, &publics, &inner_vk_digest, &claim_digest)
           .is_err(),
         "{label}: accepted trailing byte"
       );
@@ -3028,8 +3178,8 @@ mod tests {
         .verify(
           &out_v6.envelope_bytes,
           &publics,
-          Some(&inner_vk_digest),
-          Some(&claim_digest)
+          &inner_vk_digest,
+          &claim_digest
         )
         .unwrap_err()
         .contains("cross-mode")
@@ -3039,8 +3189,8 @@ mod tests {
         .verify(
           &out_zk1.envelope_bytes,
           &publics,
-          Some(&inner_vk_digest),
-          Some(&claim_digest)
+          &inner_vk_digest,
+          &claim_digest
         )
         .unwrap_err()
         .contains("cross-mode")
@@ -3066,12 +3216,7 @@ mod tests {
     .unwrap();
     assert!(
       ver_zk
-        .verify(
-          &forged_as_zk,
-          &publics,
-          Some(&inner_vk_digest),
-          Some(&claim_digest)
-        )
+        .verify(&forged_as_zk, &publics, &inner_vk_digest, &claim_digest)
         .is_err(),
       "v6-zk verifier accepted re-headered raw v6 proof"
     );
@@ -3099,31 +3244,32 @@ mod tests {
     .expect("v6-zk must reject height-16 nibble table");
     assert!(err.contains("below v6-zk min height"), "{err}");
 
-    // 8. C2 cap_height pinning: cap_height=4 verifier rejects cap_height=0 proof (CPU only).
-    #[cfg(not(feature = "cuda"))]
-    {
-      let cap4_params = OuterFriParams { cap_height: 4, ..params };
-      let (c_cap4, _, _) = build_compact_blake3_plonkish_circuit(7);
-      let ver_cap4 = PlonkishCircuitVerifier::derive(
-        c_cap4,
-        ShrinkMode::Stark128,
-        cap4_params,
-        opts,
-        1,
+    // 8. Single-root commitments only: no capped outer
+    //    verifier can be derived, and a header declaring a cap is rejected.
+    let cap4_params = OuterFriParams { cap_height: 4, ..params };
+    let (c_cap4, _, _) = build_compact_blake3_plonkish_circuit(7);
+    let err = PlonkishCircuitVerifier::derive(
+      c_cap4,
+      ShrinkMode::Stark128,
+      cap4_params,
+      opts,
+      1,
+    )
+    .err()
+    .expect("derived a cap_height=4 outer verifier");
+    assert!(err.contains("cap_height"), "{err}");
+    let mut capped =
+      PlonkishEnvelope::from_bytes(&out_v6.envelope_bytes).unwrap();
+    capped.header.params = cap4_params;
+    let err = ver_v6
+      .verify(
+        &capped.to_bytes().unwrap(),
+        &publics,
+        &inner_vk_digest,
+        &claim_digest,
       )
-      .unwrap();
-      assert_ne!(ver_cap4.vk_digest(), ver_v6.vk_digest());
-      assert!(
-        ver_cap4
-          .verify(
-            &out_v6.envelope_bytes,
-            &publics,
-            Some(&inner_vk_digest),
-            Some(&claim_digest)
-          )
-          .is_err()
-      );
-    }
+      .unwrap_err();
+    assert!(err.contains("cap_height"), "{err}");
   }
 
   fn build_fixed_root_fixture()
@@ -3274,12 +3420,7 @@ mod tests {
       assert_eq!(out.report.header.mode, mode);
       assert_eq!(out.report.header.hops, 1);
       let rep = ver
-        .verify_report(
-          &out.envelope_bytes,
-          &expected,
-          Some(&inner_id),
-          Some(&claim_digest),
-        )
+        .verify_report(&out.envelope_bytes, &expected, &inner_id, &claim_digest)
         .unwrap();
       assert_eq!(rep.header.mode, mode);
       assert_eq!(rep.header.hops, 1);
@@ -3287,21 +3428,30 @@ mod tests {
       let mut bad_hops = out.envelope_bytes.clone();
       bad_hops[18] = 2;
       assert!(
-        ver
-          .verify(&bad_hops, &expected, Some(&inner_id), Some(&claim_digest))
-          .is_err()
+        ver.verify(&bad_hops, &expected, &inner_id, &claim_digest).is_err()
       );
-      // Wrong public claim rejected fail-closed!
+      // Wrong public claim rejected fail-closed: against the true digest, and
+      // by the proof check when the header is rewritten to the wrong claim's
+      // digest (so every digest comparison passes).
+      let wrong = [expected[0] + Val::ONE, expected[1]];
+      let wrong_digest = hash_publics(&wrong);
       assert!(
         ver
-          .verify(
-            &out.envelope_bytes,
-            &[expected[0] + Val::ONE, expected[1]],
-            Some(&inner_id),
-            None,
-          )
+          .verify(&out.envelope_bytes, &wrong, &inner_id, &claim_digest)
           .is_err()
       );
+      let mut reheadered =
+        PlonkishEnvelope::from_bytes(&out.envelope_bytes).unwrap();
+      reheadered.header.claim_digest = wrong_digest;
+      let err = ver
+        .verify(
+          &reheadered.to_bytes().unwrap(),
+          &wrong,
+          &inner_id,
+          &wrong_digest,
+        )
+        .unwrap_err();
+      assert!(err.contains("verification failed"), "{err}");
       eprintln!(
         "[FIXED_ROOT {}] dims={:?} hops={} prove={:.1}ms verify={:.2}ms env={}B ({:.1}KB)",
         mode.cli_flag(),
@@ -3465,8 +3615,8 @@ mod tests {
         .verify_report(
           &out.envelope_bytes,
           &publics,
-          Some(&inner_vk_digest),
-          Some(&claim_digest),
+          &inner_vk_digest,
+          &claim_digest,
         )
         .unwrap();
       assert_eq!(rep.header.mode, mode);
@@ -3521,8 +3671,8 @@ mod tests {
         .verify_report(
           &out.envelope_bytes,
           &expected,
-          Some(&inner_id),
-          Some(&fixed_claim_digest),
+          &inner_id,
+          &fixed_claim_digest,
         )
         .unwrap();
       assert_eq!(rep.header.mode, mode);
@@ -3532,8 +3682,8 @@ mod tests {
           .verify(
             &out.envelope_bytes,
             &[expected[0] + Val::ONE, expected[1]],
-            Some(&inner_id),
-            None,
+            &inner_id,
+            &hash_publics(&[expected[0] + Val::ONE, expected[1]]),
           )
           .is_err(),
         "CUDA FixedRoot {} accepted wrong public statement",
@@ -3556,16 +3706,123 @@ mod tests {
     assert!(
       envelopes[0]
         .0
-        .verify(&envelopes[1].1, &expected, Some(&inner_id), None)
+        .verify(&envelopes[1].1, &expected, &inner_id, &fixed_claim_digest)
         .unwrap_err()
         .contains("cross-mode")
     );
     assert!(
       envelopes[1]
         .0
-        .verify(&envelopes[0].1, &expected, Some(&inner_id), None)
+        .verify(&envelopes[0].1, &expected, &inner_id, &fixed_claim_digest)
         .unwrap_err()
         .contains("cross-mode")
+    );
+  }
+
+  #[cfg(feature = "cuda")]
+  #[test]
+  #[ignore = "requires exclusive access to a CUDA device: sets MULTI_STARK_SPILL_DIR and reserves VRAM"]
+  fn cuda_plonkish_spilled_v6_and_v6zk_gpu_prove_cpu_verify() {
+    let _gpu_guard = gpu_test_guard();
+    let spill_dir = std::env::temp_dir()
+      .join(format!("stark-shrinker-cuda-spill-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&spill_dir);
+    std::fs::create_dir_all(&spill_dir).unwrap();
+
+    struct EnvGuard {
+      prev: Option<std::ffi::OsString>,
+      dir: std::path::PathBuf,
+    }
+    impl Drop for EnvGuard {
+      fn drop(&mut self) {
+        // SAFETY: ignored exclusive GPU test runs with `--test-threads=1`.
+        unsafe {
+          match &self.prev {
+            Some(v) => std::env::set_var("MULTI_STARK_SPILL_DIR", v),
+            None => std::env::remove_var("MULTI_STARK_SPILL_DIR"),
+          }
+        }
+        let _ = std::fs::remove_dir_all(&self.dir);
+      }
+    }
+    let prev = std::env::var_os("MULTI_STARK_SPILL_DIR");
+    // SAFETY: ignored exclusive GPU test runs with `--test-threads=1`.
+    unsafe {
+      std::env::set_var("MULTI_STARK_SPILL_DIR", &spill_dir);
+    }
+    let _env_guard = EnvGuard { prev, dir: spill_dir.clone() };
+
+    let params = OuterFriParams::COMPACT_400KB_FAST;
+    let opts = PlonkishOptions::default();
+    let inner_vk_digest = [0xDD; 32];
+    let (_, _, publics) = build_compact_blake3_plonkish_circuit(11);
+    let claim_digest = hash_publics(&publics);
+
+    // 1. Reference resident v6 envelope on GPU.
+    let (circuit_ref, assignment_ref, _) =
+      build_compact_blake3_plonkish_circuit(11);
+    let (out_v6_res, _) = prove_plonkish_circuit(
+      circuit_ref,
+      assignment_ref,
+      inner_vk_digest,
+      claim_digest,
+      ShrinkMode::Stark128,
+      params,
+      opts,
+      1,
+      Some(0),
+    )
+    .unwrap();
+
+    // 2. Force disk spilling under a VRAM reservation and prove both v6 and
+    //    v6-zk via `prove_plonkish_circuit(..., Some(0))`.
+    {
+      let _reservation =
+        multi_stark::cuda::DeviceMemoryReservation::new(0, 1usize << 40);
+      for mode in [ShrinkMode::Stark128, ShrinkMode::Stark128Zk] {
+        let (circuit_der, _, _) = build_compact_blake3_plonkish_circuit(11);
+        let ver =
+          PlonkishCircuitVerifier::derive(circuit_der, mode, params, opts, 1)
+            .unwrap();
+        let (circuit, assignment, _) =
+          build_compact_blake3_plonkish_circuit(11);
+        let (out, _) = prove_plonkish_circuit(
+          circuit,
+          assignment,
+          inner_vk_digest,
+          claim_digest,
+          mode,
+          params,
+          opts,
+          1,
+          Some(0),
+        )
+        .unwrap();
+        assert_eq!(out.trace_dimensions.len(), 1);
+        assert_eq!(out.vk_digest, *ver.vk_digest());
+        if mode == ShrinkMode::Stark128 {
+          assert_eq!(
+            out.envelope_bytes, out_v6_res.envelope_bytes,
+            "v6 spilled CUDA shrinker envelope must match resident CUDA envelope byte-for-byte"
+          );
+        }
+        let rep = ver
+          .verify_report(
+            &out.envelope_bytes,
+            &publics,
+            &inner_vk_digest,
+            &claim_digest,
+          )
+          .unwrap();
+        assert_eq!(rep.header.mode, mode);
+        assert_eq!(rep.header.params, params);
+      }
+    }
+
+    assert_eq!(
+      multi_stark::p3_adapter::spill::active_spill_files(),
+      0,
+      "all CUDA shrinker spill files must be cleaned up"
     );
   }
 

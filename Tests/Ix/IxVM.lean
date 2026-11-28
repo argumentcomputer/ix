@@ -54,8 +54,8 @@ def kernelCheckEntries : List (String × Nat) := [
   ("Nat.sub_le_of_le_add", 1_615_087_816),
   ("Nat.shiftRight_succ", 321_030_192),
   ("Trans.mk", 196_031_477),
-  ("Array.append_assoc", 8_356_870_897),
-  ("Vector.append", 8_534_402_063),
+  ("Array.append_assoc", 8_357_076_024),
+  ("Vector.append", 8_534_607_720),
   ("IxVMPrim.nat_add_lit", 221_712_310),
   ("IxVMPrim.nat_sub_lit", 221_719_470),
   ("IxVMPrim.nat_mul_lit", 203_174_910),
@@ -79,46 +79,46 @@ def kernelCheckEntries : List (String × Nat) := [
   ("IxVMPrim.nat_dec_eq", 235_581_565),
   ("IxVMPrim.str_size_lit", 2_004_791_175),
   ("IxVMPrim.bv_to_nat_lit", 1_710_067_402),
-  ("IxVMInd.Even", 352_142_315),
-  ("IxVMInd.Odd", 352_142_315),
-  ("IxVMInd.Even.rec", 352_540_678),
-  ("IxVMInd.Odd.rec", 352_540_678),
-  ("IxVMInd.IdxTeleN.rec", 343_682_627),
-  ("IxVMInd.IdxTeleB.rec", 343_682_627),
-  ("IxVMInd.SoloA.rec", 298_809_940),
-  ("IxVMInd.SoloB.rec", 298_809_940),
-  ("IxVMInd.Tree", 434_942_964),
-  ("IxVMInd.Tree.rec", 435_298_556),
-  ("IxVMInd.DedupM", 519_145_459),
-  ("IxVMInd.DedupM.rec", 519_517_738),
-  ("IxVMInd.DepthM", 522_444_933),
-  ("IxVMInd.DepthM.rec", 522_762_373),
+  ("IxVMInd.Even", 352_220_671),
+  ("IxVMInd.Odd", 352_220_671),
+  ("IxVMInd.Even.rec", 352_619_034),
+  ("IxVMInd.Odd.rec", 352_619_034),
+  ("IxVMInd.IdxTeleN.rec", 343_761_380),
+  ("IxVMInd.IdxTeleB.rec", 343_761_380),
+  ("IxVMInd.SoloA.rec", 298_908_561),
+  ("IxVMInd.SoloB.rec", 298_908_561),
+  ("IxVMInd.Tree", 434_988_533),
+  ("IxVMInd.Tree.rec", 435_344_125),
+  ("IxVMInd.DedupM", 519_221_161),
+  ("IxVMInd.DedupM.rec", 519_593_440),
+  ("IxVMInd.DepthM", 522_554_604),
+  ("IxVMInd.DepthM.rec", 522_872_044),
   ("String.Internal.append", 2_015_660_200),
-  ("Lean.Syntax.rec", 910_664_368),
-  ("IxVMInd.AuxTie", 872_251_468),
-  ("IxVMInd.AuxTie.rec", 872_905_321),
+  ("Lean.Syntax.rec", 910_833_595),
+  ("IxVMInd.AuxTie", 872_343_383),
+  ("IxVMInd.AuxTie.rec", 872_997_237),
   ("IxVMInd.HiddenIdx", 189_082_175),
   ("IxVMInd.HiddenIdx.rec", 192_586_553),
-  ("IxVMInd.NestParIdx.rec", 635_031_814),
-  ("IxVMInd.NestListIdx.rec", 597_555_440),
-  ("IxVMInd.NestRefl.rec", 475_624_501),
-  ("IxVMInd.NestReflOpt.rec", 424_362_018),
+  ("IxVMInd.NestParIdx.rec", 635_124_339),
+  ("IxVMInd.NestListIdx.rec", 597_629_608),
+  ("IxVMInd.NestRefl.rec", 475_718_107),
+  ("IxVMInd.NestReflOpt.rec", 424_424_494),
   ("IxVMInd.thmMajorUse", 518_679_909),
   ("IxVMInd.partialKRec", 205_208_275),
   ("IxVMInd.deepRebase", 251_665_701),
   ("String.Slice.Pattern.Model.NoPrefixPatternModel.rec", 2_032_832_461),
-  ("Lean.Widget.TaggedText.rec", 1_034_831_321),
-  ("Lean.Doc.Part.rec", 9_585_545_818),
-  ("Lean.Doc.Block.rec", 8_109_337_850),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A", 848_022_429),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec", 848_705_252),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_1", 848_700_936),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_2", 848_700_936),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup2.A.rec_1", 524_964_748),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M", 752_660_151),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec", 753_188_795),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_1", 753_188_795),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_2", 753_188_795),
+  ("Lean.Widget.TaggedText.rec", 1_034_998_798),
+  ("Lean.Doc.Part.rec", 9_586_867_975),
+  ("Lean.Doc.Block.rec", 8_110_333_485),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A", 848_132_512),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec", 848_815_335),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_1", 848_811_019),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_2", 848_811_019),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup2.A.rec_1", 525_038_860),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M", 752_755_612),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec", 753_284_256),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_1", 753_284_256),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_2", 753_284_256),
   ("strOfListFoldSize", 213_025_462),
   ("strOfListFoldSizeAscii", 213_011_463),
   ("IxVMPrim.lazy_ble_offset", 225_712_274),
@@ -142,9 +142,9 @@ def validatingCheckEntries : List (String × Nat) := [
 its blocks are declared through Lean's kernel, which the fixtures module
 cannot export), with claims that assume their binding. -/
 def entryCheckEntries : List (String × Nat) := [
-  ("Tests.Ix.Kernel.EntryCaseDefs.BD1.rec", 454_977_719),
-  ("Tests.Ix.Kernel.EntryCaseDefs.BD2.rec", 455_768_299),
-  ("Tests.Ix.Kernel.EntryCaseDefs.EA.rec", 637_417_124)]
+  ("Tests.Ix.Kernel.EntryCaseDefs.BD1.rec", 455_077_176),
+  ("Tests.Ix.Kernel.EntryCaseDefs.BD2.rec", 455_833_194),
+  ("Tests.Ix.Kernel.EntryCaseDefs.EA.rec", 637_571_714)]
 
 /-- A `Check` claim on `name` over `ixonEnv`. -/
 def kernelCheckCase (ixonEnv : Ixon.Env) (name : Lean.Name) (assumeBinding : Bool) :
@@ -206,7 +206,7 @@ def shardCase (env : Lean.Environment) : IO Builder := do
   return fun _ => do
     let (_, witness) ← buildShardCheckEnvWitness ixonEnv owned
     return { label := s!"shard CheckEnv of {owned.size} String/Char constants of {base}'s closure",
-             accept := true, expectedFftCost := some 84_321_983_556, witness := witness }
+             accept := true, expectedFftCost := some 84_322_225_999, witness := witness }
 
 /-- The verdict suite: every listed constant accepted, the binding claim of the
 default table, and a shard of the shard pipeline. A listed constant missing
@@ -230,7 +230,7 @@ def kernelChecks (env : Lean.Environment) : IO UInt32 := do
   let binding : Builder := fun _ => do
     let ctx ← Ix.ClaimContext.ofEnv ixonEnv
     let c ← Case.ofClaim "binding claim for the default table" ixonEnv (.binding ctx.spec ctx.binding)
-    return { c with expectedFftCost := some 274_706_794_397 }
+    return { c with expectedFftCost := some 274_707_057_978 }
   let shard ← shardCase env
   let fenv ← getCompileEnv #[`Tests.Ix.Kernel.EntryCaseDefs]
   let fixEnv ← loadSharedIxonEnv (entryCheckEntries.map (nameOfString ∘ Prod.fst)).toArray fenv

@@ -72,7 +72,7 @@ def main (args : List String) : IO Unit := do
     let typing ← IO.lazyPure fun _ => Ix.Typing.typeCheck env
     let t1 ← IO.monoMsNow
     discard <| IO.ofExcept typing
-    IO.println s!"Typing the primitive closure: IxC {t1 - t0} ms (accepted)"
+    IO.println s!"Typing the primitive closure: IxCK {t1 - t0} ms (accepted)"
   -- Lean/Rust byte parity last, after every Lean-only check.
   let ffiChecks ← Tests.IxonGolden.runFFI cases
   IO.println s!"{Ixon.wireFormatId}: {ffiChecks} FFI roundtrip and Lean/Rust byte parity checks passed"

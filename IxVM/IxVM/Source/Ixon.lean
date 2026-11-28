@@ -14,7 +14,7 @@ record's address hashes the section with the rest of its bytes.
 
 Resource modes are data of the record and nothing else reads them here: a
 binder's mode is the field of its section node (`Never`, `Zero`, `IfAllZero`,
-`Undecided`: the wire code of IxC's `AllMode`, the node byte's high five bits),
+`Undecided`: the wire code of IxCK's `AllMode`, the node byte's high five bits),
 a `let`'s is in its header value (`Let`'s field, `nonDep + 2 · LetMode` code,
 below 16), a definition's assertions are the `DefAsserts` code (`Definition`'s
 third field, the kind and safety byte's high nibble), and a constructor's field

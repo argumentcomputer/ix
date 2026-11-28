@@ -3,7 +3,7 @@ public import Ix.GraphM
 import all Ix.GraphM
 import Std.Data.HashSet.Lemmas
 import Std.Data.HashMap.Lemmas
-import IxC.Kernel.Ingress.Records
+import IxCK.Kernel.Ingress.Records
 
 /-! # The reference graph's walk is exact
 

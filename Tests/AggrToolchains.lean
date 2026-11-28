@@ -3,7 +3,7 @@ module
 public import LSpec
 public import Ix.ClaimContext
 public import Ix.Ixon
-public import IxC.Kernel.Ixon.RoleTable
+public import IxCK.Kernel.Ixon.RoleTable
 
 /-!
 # Libraries from several Lean toolchains in one aggregate

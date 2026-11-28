@@ -1,6 +1,6 @@
 import Ix.IxVM.Refinement.Claim
 import Ix.Cert.Stream
-import IxC.Kernel.Units
+import IxCK.Kernel.Units
 
 /-! # Coherent reader admission
 

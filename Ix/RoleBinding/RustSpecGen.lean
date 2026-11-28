@@ -1,6 +1,6 @@
 module
 
-public import IxC.Kernel.RoleEquations
+public import IxCK.Kernel.RoleEquations
 public import Ix.IxVM.RoleSpecGen
 
 /-! # Render the shared role specifications for the Rust checker
@@ -73,7 +73,7 @@ def specification (r : Role) : Except String (Option String) := do
     return some s!"Specification::Definition \{ levels: {levels}, typ: {typ}, equations: vec![{", ".intercalate equations}] }"
   | _ => pure none
 
-def header : String := "// Generated from IxC's Role.spec by Ix/RoleBinding/RustSpecGen.lean.
+def header : String := "// Generated from IxCK's Role.spec by Ix/RoleBinding/RustSpecGen.lean.
 // Run scripts/RustRoleSpecs.lean to regenerate or check this file.
 // These terms describe candidates; only checked admission enables reductions.
 

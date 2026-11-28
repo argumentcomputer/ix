@@ -169,7 +169,7 @@ private def noModel : String := "no model advice for a mutual or nested block"
 private def twoMotives : String := "a recursor of a native block with more than one motive"
 private def levelLink : String :=
   "universe-parameter count is not its block's plus the elimination parameter"
-private def lamZeroDatum : String := "a lambda's datum is not the zero-ness of its body type's sort"
+private def lamZeroDatum : String := "a lambda's datum does not match its body"
 
 /-- The rejection message each case not on the list is pinned to: the first assertion the
 program is expected to meet on the case's walk. A required rejection without one accepts

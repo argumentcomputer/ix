@@ -11,7 +11,7 @@ import Tests.Ix.IxVM.Harness
 import Tests.Ix.Kernel.SourceIngressCompare
 import Tests.Ix.IxVM.SyntheticRegressionsDefs
 
-/-! # Corpus-driven and synthetic 3-way IxVM / IxC regressions
+/-! # Corpus-driven and synthetic 3-way IxVM / IxCK regressions
 
 End-to-end regressions covering:
 1. **`ix shard extract` modeled-family closure (`extractCases`)**: extracting a leaf that
@@ -25,14 +25,14 @@ End-to-end regressions covering:
    `ctx.axioms = none`, while explicit custom user axioms stay in `ClaimContext.userAxioms`.
 3. **Dead-`let` out-of-range universe parameters (`deadLetUnivCases`)**: `lvls = 0`
    definitions, theorems, opaques, types, and inductive constructors carrying an undeclared
-   universe parameter inside an unused `let` are rejected by BOTH IxC and IxVM.
+   universe parameter inside an unused `let` are rejected by BOTH IxCK and IxVM.
 4. **Large multi-container & mutual AST and synthetic positive 3-way regressions
    (`positiveCases`)**: 5-container `MultiContDoc`, 8-member 19-motive mutual+nested
    `AstMod`..`AstType`, `NestedInMut`, `NestedInNested`, `TriM1`..`TriM3`, `KS1Clean`/
    `KS2Clean`/`kitchenSinkCleanThm`, `AliasParamDep`, `Nat.pow` at `2^24`, and 4-byte
-   UTF-8 `String.ofList` — all verified accepted by BOTH IxC and IxVM.
+   UTF-8 `String.ofList` — all verified accepted by BOTH IxCK and IxVM.
 5. **Semantic `imax` universe algebra (`imaxCases`)**: 5 valid `imax` identities accepted
-   by BOTH IxC and IxVM, paired with 2 false negative controls rejected by BOTH.
+   by BOTH IxCK and IxVM, paired with 2 false negative controls rejected by BOTH.
 6. **Adversarial boundary controls (`adversarialCases`)**: forged large eliminator on a
    2-constructor `Prop` inductive (UTF-8, non-canonical `Nat` literal blobs, unused-sharing
    unsafe refs, and the retired `resource-v1` claim are covered by `Exploits`, `Eval`,
@@ -82,18 +82,18 @@ private def checkIxcOutcome (verdicts : Std.HashMap (Ix.Kernel.Key .source) (Str
   let key := Ix.LeanIngress.ingressKey (Ix.Name.fromLeanName nm)
   match verdicts[key]? with
   | none =>
-    throw (IO.userError s!"[ixvm-synthetic-regressions] IxC produced no verdict for {nm}")
+    throw (IO.userError s!"[ixvm-synthetic-regressions] IxCK produced no verdict for {nm}")
   | some (outcome, reason) =>
     if expectAccept then
       unless outcome == "accept" do
-        throw (IO.userError s!"[ixvm-synthetic-regressions] IxC unexpectedly did not accept {nm}: \
+        throw (IO.userError s!"[ixvm-synthetic-regressions] IxCK unexpectedly did not accept {nm}: \
           {outcome} ({reason})")
     else
       if outcome == "accept" then
-        throw (IO.userError s!"[ixvm-synthetic-regressions] IxC unexpectedly ACCEPTED {nm}!")
+        throw (IO.userError s!"[ixvm-synthetic-regressions] IxCK unexpectedly ACCEPTED {nm}!")
       if let some needle := expectReasonSubstr then
         unless (reason.splitOn needle).length > 1 do
-          throw (IO.userError s!"[ixvm-synthetic-regressions] IxC rejected {nm} with '{reason}', \
+          throw (IO.userError s!"[ixvm-synthetic-regressions] IxCK rejected {nm} with '{reason}', \
             expected substring '{needle}'")
 
 /-! ## 1. `ix shard extract` modeled-family & container-recursor closure -/
@@ -229,7 +229,7 @@ private def nativeDecideCases (leanEnv : Lean.Environment) : IO (Array Builder) 
       (.check ctx ndDownA none) {} false
       (some "an axiom that is not one of Lean's standard axioms")]
 
-/-! ## 3. Dead-`let` out-of-range universe parameters (IxC + IxVM) -/
+/-! ## 3. Dead-`let` out-of-range universe parameters (IxCK + IxVM) -/
 
 private def deadLetUnivCases (leanEnv : Lean.Environment) : IO (Array Builder) := do
   let env ← loadSharedIxonEnv #[``Nat, ``Nat.zero, ``True, ``True.intro] leanEnv
@@ -263,14 +263,14 @@ private def deadLetUnivCases (leanEnv : Lean.Environment) : IO (Array Builder) :
   let (env, _) := storeNamed env `SynReg.Raw.deadLetInd.mk
     ⟨.cPrj ⟨0, 0, deadLetIndBlockA⟩, #[], #[], #[], #[]⟩
 
-  -- Verify IxC rejects ALL 5!
+  -- Verify IxCK rejects ALL 5!
   let verdicts ← Tests.Ix.Kernel.SourceIngressCompare.ixonVerdicts env
   checkIxcOutcome verdicts `SynReg.Raw.deadLetDefnVal false (some "undeclared universe parameter")
   checkIxcOutcome verdicts `SynReg.Raw.deadLetThmVal false (some "undeclared universe parameter")
   checkIxcOutcome verdicts `SynReg.Raw.deadLetDefnType false (some "undeclared universe parameter")
   checkIxcOutcome verdicts `SynReg.Raw.deadLetOpaqueVal false (some "undeclared universe parameter")
   checkIxcOutcome verdicts `SynReg.Raw.deadLetInd false
-  IO.println "[ixvm-synthetic-regressions] IxC rejected all 5 dead-let OOB universe param probes"
+  IO.println "[ixvm-synthetic-regressions] IxCK rejected all 5 dead-let OOB universe param probes"
 
   let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env true)
   let msg := some "universe param index out of range"
@@ -320,11 +320,11 @@ private def positiveCases (leanEnv : Lean.Environment) : IO (Array Builder) := d
   unless maxContainerRecs ≥ 4 do
     throw (IO.userError s!"[ixvm-synthetic-regressions] expected >= 4 non-role container recursors \
       on MultiContDoc, observed max {maxContainerRecs}")
-  -- Verify IxC accepts every single positive regression!
+  -- Verify IxCK accepts every single positive regression!
   let verdicts ← Tests.Ix.Kernel.SourceIngressCompare.ixonVerdicts env
   for nm in positiveNames do
     checkIxcOutcome verdicts nm true
-  IO.println s!"[ixvm-synthetic-regressions] IxC accepted all {positiveNames.size} positive \
+  IO.println s!"[ixvm-synthetic-regressions] IxCK accepted all {positiveNames.size} positive \
     regressions (max {maxContainerRecs} container recs, max {maxAdviceRecs} advice records)"
 
   let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env true)
@@ -334,7 +334,7 @@ private def positiveCases (leanEnv : Lean.Environment) : IO (Array Builder) := d
     cases := cases.push fun _ => Case.ofClaim s!"pos-{nm}" env (.check ctx a none) {} true
   return cases
 
-/-! ## 5. Semantic `imax` universe algebra (IxC + IxVM) -/
+/-! ## 5. Semantic `imax` universe algebra (IxCK + IxVM) -/
 
 private def imaxThm (eqA eqReflA : Address) (lvls : UInt64) (l1 l2 : Ixon.Univ) : Ixon.Constant :=
   let univs : Array Ixon.Univ := #[l1, l2, .succ l1, .succ (.succ l1)]
@@ -373,7 +373,7 @@ private def imaxCases (leanEnv : Lean.Environment) : IO (Array Builder) := do
   let verdicts ← Tests.Ix.Kernel.SourceIngressCompare.ixonVerdicts env
   for (_, nm, _, ok) in addrs do
     checkIxcOutcome verdicts nm ok
-  IO.println "[ixvm-synthetic-regressions] IxC agreed on all 7 semantic imax cases (5 accept, 2 reject)"
+  IO.println "[ixvm-synthetic-regressions] IxCK agreed on all 7 semantic imax cases (5 accept, 2 reject)"
   let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env true)
   return addrs.map fun (label, _, a, ok) => fun _ =>
     Case.ofClaim label env (.check ctx a none) {} ok
@@ -400,7 +400,7 @@ private def adversarialCases (leanEnv : Lean.Environment) : IO (Array Builder) :
     ⟨.recr ⟨false, false, 1, 0, 0, 1, 2, recTy, #[mkRule 1, mkRule 0]⟩,
       #[], #[twoA, twoLA, twoRA], #[.var 0], #[]⟩
   let (env, forgedLargeRecA) ← storeNamedAnnot env `SynReg.Raw.forgedLargeRec forgedLargeRec
-  -- Verify IxC also rejects the forged large eliminator.
+  -- Verify IxCK also rejects the forged large eliminator.
   let forgedLargeVerdicts ← Tests.Ix.Kernel.SourceIngressCompare.ixonVerdicts env
   checkIxcOutcome forgedLargeVerdicts `SynReg.Raw.forgedLargeRec false
 

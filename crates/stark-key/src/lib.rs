@@ -77,7 +77,7 @@ use multi_stark::{
   graph::{ConstraintGraph, Node, NodeId},
   lookup::Lookup,
   p3_adapter::fri_batching::FriBatching,
-  p3_field::{PrimeCharacteristicRing, PrimeField64},
+  p3_field::{PrimeCharacteristicRing, PrimeField64, TwoAdicField},
   system::{Circuit, System, compute_vk_digest},
   types::{
     Commitment, CommitmentParameters, ExtVal3, FriParameters,
@@ -492,6 +492,7 @@ fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
       "lookup_prefix_len {lookup_prefix_len} smaller than required {min_lookup_prefix_len}"
     ));
   }
+  check_compiler_contexts(&nodes, &zeros, lookup_prefix_len)?;
   let mut lookup_degree = 1u64;
   for group in lookups.chunks(lookup_group_size) {
     let mut m_degs = Vec::with_capacity(group.len());
@@ -547,6 +548,66 @@ fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
     ),
     max_constraint_degree,
   })
+}
+
+/// Reject graphs multi-stark's compiler cannot produce for an Aiur key:
+/// - lookup expressions are compiled in a context that reads the preprocessed
+///   and main traces only (`multi_stark::graph`, `Context::Lookup`): a public
+///   value, a row selector or a stage-2 column there is a compile error. Every
+///   node a lookup reaches lies in the prefix (lookup roots are inside it,
+///   checked by the caller, and children precede parents), and the compiler
+///   interns nothing else there, so the whole prefix is checked;
+/// - a base constraint that reads stage 2 is a compile error
+///   (`Stage2InBaseContext`), and Aiur keys carry no extension constraints,
+///   so no constraint root may reach a stage-2 column.
+fn check_compiler_contexts(
+  nodes: &[Node<Val>],
+  zeros: &[NodeId],
+  lookup_prefix_len: usize,
+) -> Result<(), String> {
+  for (id, node) in nodes[..lookup_prefix_len].iter().enumerate() {
+    let forbidden = match node {
+      Node::Public(_) => Some("a public value"),
+      Node::IsFirstRow | Node::IsLastRow | Node::IsTransition => {
+        Some("a row selector")
+      },
+      Node::Var(col) if col.source == Source::Stage2 => {
+        Some("a stage-2 column")
+      },
+      _ => None,
+    };
+    if let Some(what) = forbidden {
+      return Err(format!(
+        "lookup prefix node {id} reads {what}, which a lookup may not read"
+      ));
+    }
+  }
+  // Mark the nodes reachable from a constraint root; children precede parents
+  // (checked by `recompute_degrees`), so one descending sweep suffices.
+  let mut reached = vec![false; nodes.len()];
+  for z in zeros {
+    reached[z.0 as usize] = true;
+  }
+  for id in (0..nodes.len()).rev() {
+    if !reached[id] {
+      continue;
+    }
+    match nodes[id] {
+      Node::Var(col) if col.source == Source::Stage2 => {
+        return Err(format!(
+          "constraint node {id} reads stage-2 column {}, which an Aiur constraint may not read",
+          col.index
+        ));
+      },
+      Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b) => {
+        reached[a.0 as usize] = true;
+        reached[b.0 as usize] = true;
+      },
+      Node::Neg(a) => reached[a.0 as usize] = true,
+      _ => {},
+    }
+  }
+  Ok(())
 }
 
 /// The folded constraint count: user roots + the directly-evaluated logUp
@@ -614,6 +675,32 @@ fn decode(bytes: &[u8], floor: bool) -> Result<Decoded, String> {
   };
   if floor {
     security::check(&commitment_parameters, &fri_parameters)?;
+  } else {
+    // The waiver lifts the security floor only. Proof-of-work counts above
+    // the cap would abort the verifier's grinding check (`sample_bits`), and
+    // `log_blowup` outside `1..=Val::TWO_ADICITY` would underflow
+    // `Val::TWO_ADICITY - log_blowup` or overflow `1 << log_blowup`, so both
+    // are refused here too.
+    if commitment_parameters.log_blowup == 0
+      || commitment_parameters.log_blowup > Val::TWO_ADICITY
+    {
+      return Err(format!(
+        "log_blowup {} is outside 1..={}",
+        commitment_parameters.log_blowup,
+        Val::TWO_ADICITY
+      ));
+    }
+    for (phase, bits) in [
+      ("commit", fri_parameters.commit_proof_of_work_bits),
+      ("query", fri_parameters.query_proof_of_work_bits),
+    ] {
+      if bits > security::MAX_PROOF_OF_WORK_BITS {
+        return Err(format!(
+          "{phase} proof of work of {bits} bits exceeds {}",
+          security::MAX_PROOF_OF_WORK_BITS
+        ));
+      }
+    }
   }
   let n_circuits = r.u16()? as usize;
   let mut circuits = Vec::with_capacity(n_circuits);
@@ -636,6 +723,14 @@ fn decode(bytes: &[u8], floor: bool) -> Result<Decoded, String> {
         let mut d = [0u8; 32];
         d.copy_from_slice(r.take(32)?);
         caps.push(d);
+      }
+      // `Commitment::from` asserts a power-of-two root count; check it first
+      // so a malformed key is an error, not an abort. The exact count is
+      // checked against the parameters and heights below.
+      if !n.is_power_of_two() {
+        return Err(format!(
+          "preprocessed commitment has {n} roots, not a power of two"
+        ));
       }
       Some(Commitment::from(caps))
     },
@@ -895,8 +990,11 @@ mod tests {
           || error.contains("exceeds"),
         "{error}"
       );
-      // The waiver decodes the same bytes, for tests only.
-      if field != 0 || value != 0 {
+      // The waiver decodes the same bytes, for tests only, except proof of
+      // work above the cap and invalid log_blowup, which it refuses too.
+      if (field, value) == (5, 33) || (field, value) == (0, 0) {
+        assert!(from_bytes_below_floor(&bytes).is_err());
+      } else {
         from_bytes_below_floor(&bytes).unwrap();
       }
     }
@@ -1089,6 +1187,134 @@ mod tests {
       .err()
       .expect("accepted missing preprocessed index for preprocessed circuit");
     assert!(err.contains("preprocessed_height"), "{err}");
+  }
+
+  /// A preprocessed-commitment root count that is not a power of two (0, or
+  /// 2^32 truncated to 0, or 3) used to reach `MerkleCap`'s assertion and
+  /// abort; it must be an error, through
+  /// both decoders.
+  #[test]
+  fn rejects_malformed_preprocessed_root_count_without_panicking() {
+    let bytes = encoded();
+    // Trailer: flag (1) + root count (2) + one 32-byte root + two u16 indices.
+    let trailer = bytes.len() - (1 + 2 + 32 + 2 * 2);
+    assert_eq!(bytes[trailer], 1, "preprocessed commit flag");
+    let root = &bytes[trailer + 3..trailer + 35];
+    let indices = &bytes[trailer + 35..];
+    for n in [0u16, 3, 5] {
+      let mut bad = bytes[..=trailer].to_vec();
+      bad.extend_from_slice(&n.to_le_bytes());
+      for _ in 0..n {
+        bad.extend_from_slice(root);
+      }
+      bad.extend_from_slice(indices);
+      let err =
+        from_bytes(&bad).err().expect("accepted a malformed root count");
+      assert!(err.contains("roots"), "{n}: {err}");
+      let err = from_bytes_below_floor(&bad)
+        .err()
+        .expect("below_floor accepted a malformed root count");
+      assert!(err.contains("roots"), "{n}: {err}");
+    }
+    // A power-of-two count other than the expected one is still refused.
+    let mut bad = bytes[..=trailer].to_vec();
+    bad.extend_from_slice(&2u16.to_le_bytes());
+    bad.extend_from_slice(root);
+    bad.extend_from_slice(root);
+    bad.extend_from_slice(indices);
+    let err = from_bytes(&bad).err().expect("accepted 2 roots for cap 0");
+    assert!(err.contains("roots"), "{err}");
+  }
+
+  /// The below-floor decoder still refuses proof-of-work counts above
+  /// the cap, which would abort the verifier's grinding check.
+  #[test]
+  fn below_floor_refuses_excessive_proof_of_work() {
+    for (field, value) in [(5, 33u16), (6, 33), (5, u16::MAX), (6, 64)] {
+      let bytes = with_header(field, value);
+      let err = from_bytes_below_floor(&bytes)
+        .err()
+        .unwrap_or_else(|| panic!("accepted field {field} = {value}"));
+      assert!(err.contains("exceeds"), "{err}");
+      assert!(from_bytes(&bytes).is_err());
+    }
+  }
+
+  /// The below-floor decoder bounds `log_blowup` to `1..=Val::TWO_ADICITY`
+  /// so `Val::TWO_ADICITY - log_blowup` and `1 << log_blowup` cannot panic.
+  #[test]
+  fn below_floor_refuses_invalid_log_blowup() {
+    for bad in [0u16, 33, 64, u16::MAX] {
+      let bytes = with_header(0, bad);
+      let err = from_bytes_below_floor(&bytes)
+        .err()
+        .unwrap_or_else(|| panic!("accepted log_blowup = {bad}"));
+      assert!(err.contains("log_blowup"), "{bad}: {err}");
+      assert!(from_bytes(&bytes).is_err());
+    }
+    for good in [1u16, 32] {
+      let bytes = with_header(0, good);
+      let (_, cp, _) = from_bytes_below_floor(&bytes)
+        .unwrap_or_else(|e| panic!("rejected log_blowup = {good}: {e}"));
+      assert_eq!(cp.log_blowup, usize::from(good));
+    }
+  }
+
+  /// Lookup expressions may read only the preprocessed and main traces
+  /// (multi-stark's `Context::Lookup`); constraint roots may not reach stage 2.
+  #[test]
+  fn rejects_graphs_the_compiler_forbids() {
+    let (cp, fp) = floor_parameters();
+    let base = test_system(cp, fp);
+    let prefix_var = base.circuits[0].graph.nodes
+      [..base.circuits[0].graph.lookup_prefix_len]
+      .iter()
+      .position(|n| matches!(n, Node::Var(c) if c.source == Source::Main))
+      .expect("a main-trace variable in circuit 0's lookup prefix");
+    let stage2 = Node::Var(ColRef {
+      source: Source::Stage2,
+      offset: RowOffset::Current,
+      index: 0,
+    });
+    for replacement in [
+      Node::Public(0),
+      Node::IsFirstRow,
+      Node::IsLastRow,
+      Node::IsTransition,
+      stage2,
+    ] {
+      let mut system = test_system(cp, fp);
+      system.circuits[0].graph.nodes[prefix_var] = replacement;
+      // A self-consistent key: its digest covers the changed graph.
+      system.vk_digest = compute_vk_digest::<Val, ExtVal3>(&system.circuits);
+      let err = from_bytes(&to_bytes(&system, cp, fp))
+        .err()
+        .unwrap_or_else(|| panic!("accepted {replacement:?} in a lookup"));
+      assert!(err.contains("lookup prefix"), "{replacement:?}: {err}");
+    }
+    // A constraint root reading a stage-2 column.
+    let idx0 = 0u16.to_le_bytes();
+    let bytes = raw_single_circuit_vk(1, 1, &[(14, &idx0)], &[0]);
+    let err =
+      from_bytes(&bytes).err().expect("accepted stage 2 in a constraint");
+    assert!(err.contains("stage-2"), "{err}");
+    assert!(from_bytes_below_floor(&bytes).is_err());
+    // Stage 2 reached through an operation, two levels down.
+    let mul = [0u8, 0, 0, 0]; // Mul(0, 0)
+    let neg = [1u8, 0]; // Neg(1)
+    let bytes =
+      raw_single_circuit_vk(1, 2, &[(14, &idx0), (8, &mul), (9, &neg)], &[2]);
+    let err = from_bytes(&bytes).err().expect("accepted reachable stage 2");
+    assert!(err.contains("stage-2"), "{err}");
+    // An honest key, and selectors and publics in constraints, still decode.
+    from_bytes(&encoded()).unwrap();
+    let bytes = raw_single_circuit_vk(
+      1,
+      2,
+      &[(12, &idx0), (3, &[]), (8, &[0, 0, 1, 0])],
+      &[2],
+    );
+    from_bytes(&bytes).unwrap();
   }
 
   #[test]

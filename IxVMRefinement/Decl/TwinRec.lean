@@ -1,8 +1,8 @@
 import IxVMRefinement.Decl.NativeFront
 import IxVM.Obs.KernelClaim
-import IxC.Kernel.Model.Annot.BitLevels
-import IxC.Kernel.Verify.InferLeaves
-import IxC.Kernel.Verify.Level
+import IxCK.Kernel.Model.Annot.BitLevels
+import IxCK.Kernel.Verify.InferLeaves
+import IxCK.Kernel.Verify.Level
 import Std.Data.HashSet.Lemmas
 
 /-! # Twin recursor declaration refinement

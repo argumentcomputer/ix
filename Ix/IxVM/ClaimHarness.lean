@@ -46,7 +46,7 @@ def roleNames : Array Lean.Name :=
   Ix.Kernel.Role.all.toArray.map fun r => r.leanName.toString.toName
 
 /-- The records, blobs and hints the default role table's roles and evidence
-    are validated against (`IxC/Kernel/Ixon/RoleData.lean`): the prelude's
+    are validated against (`IxCK/Kernel/Ixon/RoleData.lean`): the prelude's
     basis records, the evidence theorems and the well-founded operations'
     dependency closure in the compiled `Init`. -/
 def defaultTableSupport : Except String (Array (Address × Ixon.Constant) ×
@@ -137,7 +137,7 @@ private def dedupConstList (entries : List (Lean.Name × Lean.ConstantInfo)) :
 
 /-- The dependency closure of `roots` with the recursors of every inductive in it (and
 of the inductives those bring in): the compile input on which the binder-data
-annotator can install every inductive block, which IxC installs only with its
+annotator can install every inductive block, which IxCK installs only with its
 recursor. A definition typed over a block the annotator could not install gets
 undecided data. -/
 def collectCertifiedClosure (roots : Array Lean.Name)
@@ -191,16 +191,16 @@ def withModeledRecursors (roots : Array Lean.Name) (leanEnv : Lean.Environment) 
 /-- `env`, a canonicalized compile input (`Ix.CompileM.canonInput`), with the compile's
 binder-data annotator over it, installed as `Ix.CompileM.compileCertifiedPrepared` installs
 it: a compile of `env` (`Ix.Cert.compileUnchecked`, `compileReport`) then writes each
-record's binder data, as `ix compile` does. Fails if IxC's environment does not install. -/
+record's binder data, as `ix compile` does. Fails if IxCK's environment does not install. -/
 def withKernelAnnotator (env : Ix.Environment) (workers : Nat := 32) : IO Ix.Environment := do
   let pre ← match Ix.Compile.KernelAnnotate.prelude? with
     | .ok pre => pure pre
-    | .error e => throw (IO.userError s!"binder data: IxC's prelude is not installed: {e}")
+    | .error e => throw (IO.userError s!"binder data: IxCK's prelude is not installed: {e}")
   match ← Ix.Compile.KernelAnnotate.installInput env pre workers with
   | .ok installed =>
     pure { env with
       binderAnnotator? := some (Ix.Compile.KernelAnnotate.annotator env (Task.pure (.ok installed))) }
-  | .error e => throw (IO.userError s!"binder data: IxC's environment is not installed: {e}")
+  | .error e => throw (IO.userError s!"binder data: IxCK's environment is not installed: {e}")
 
 /-- Variant of loadIxonEnv: also seeds the constants the kernel
     fabricates during reduction (Bool.true/false + Nat.zero/succ), so
@@ -532,7 +532,7 @@ def seedClaimTrees (env : Ixon.Env) (claim : Ix.Claim)
   | .check ctx _ asm | .eval ctx _ _ asm => seedAsm asm (← seedAxioms ctx ioBuffer)
   | .checkEnv ctx root asm => seedAsm asm (← seedAxioms ctx (← seedTreeAt root trees ioBuffer))
   | .contains tree _ => seedTreeAt tree trees ioBuffer
-  | .reveal .. | .catalog .. | .binding .. => pure ioBuffer
+  | .reveal .. | .catalog .. | .binding .. | .compile .. => pure ioBuffer
 
 /-- Serializes `claim`, seeds its bytes at `key = blake3(claim)`, and
     populates the IOBuffer with the `closureFrom` byte scope of every
@@ -585,6 +585,11 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
   | .catalog .. =>
     throw "catalog claims have no single-run witness; they are formed by \
 aggregating their members' check-env claims"
+  | .compile .. =>
+    -- A compile claim is formed and verified by the IxCC certificate checker
+    -- (`compile-v2`), never by an IxVM circuit run.
+    throw "compile claims have no IxVM witness; they are verified by the \
+IxCC certificate checker"
   ioBuffer ← seedClaimTrees env claim trees ioBuffer
   return { funcName := `verify_claim
            input := digestKey, inputIOBuffer := ioBuffer }

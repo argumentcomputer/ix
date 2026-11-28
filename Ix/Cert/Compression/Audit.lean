@@ -1,14 +1,19 @@
 import Ix.Cert.Compression.EndToEnd
 
-/-! # Workstream 1C Proof-Compression Audit Surface (`Ix.Cert.Compression.Audit`)
+/-! # Proof-Compression Model Audit Surface (`Ix.Cert.Compression.Audit`)
 
-Verifies that every headline theorem in the certified BN254 proof-compression
-stack depends ONLY on the three standard Lean axioms
-`[propext, Classical.choice, Quot.sound]` (zero `sorry`, zero `native_decide`,
-zero `bv_decide`, zero custom axioms).
+Pins theorem types and verifies that every declaration in the schematic BN254
+proof-compression stage models (`Ix.Cert.Compression.*`) depends ONLY on the three
+standard Lean axioms `[propext, Classical.choice, Quot.sound]` (zero `sorry`, zero
+`native_decide`, zero `bv_decide`, zero custom axioms).
+
+**Scope boundary:** These modules are schematic models quantifying over arbitrary
+`base` circuits and wire layouts (plus standalone field/limb arithmetic lemmas); they do
+not reference or certify the shipped hand-written Rust compression circuits or bundled
+release keys.
 -/
 
--- 1C-i: Plonkish IR, Sharded Lowering, and Goldilocks-in-BN254 Foreign Compiler
+-- Plonkish IR, Sharded Lowering, and Goldilocks-in-BN254 Foreign Compiler
 /--
 info: @Ix.Cert.Compression.Plonkish.lowerToMultiStarkSharded_sound : ∀ {F : Type} [inst : Field F]
   (c : Ix.Cert.Compression.Plonkish.Circuit F) (namespaceTag : F) (maxLogHeight tableHeight : ℕ) (pub : List F)
@@ -55,7 +60,7 @@ info: Ix.Cert.Compression.Foreign.foreign_compile_sound_lifted : ∀
 /-- info: 'Ix.Cert.Compression.Foreign.foreign_compile_sound_lifted' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Ix.Cert.Compression.Foreign.foreign_compile_sound_lifted
 
--- 1C-ii: In-Circuit Goldilocks FRI Verifier & Foreign BN254 Lifting
+-- In-Circuit Goldilocks FRI Verifier & Foreign BN254 Lifting
 /--
 info: Ix.Cert.Compression.FriVerifier.friVerifierCircuit_sound : ∀
   (base : Ix.Cert.Compression.Plonkish.Circuit Ix.Cert.Compression.Foreign.GoldilocksF)
@@ -88,7 +93,7 @@ info: Ix.Cert.Compression.FriVerifier.foreign_friVerifier_sound : ∀
 /-- info: 'Ix.Cert.Compression.FriVerifier.foreign_friVerifier_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Ix.Cert.Compression.FriVerifier.foreign_friVerifier_sound
 
--- 1C-iii: Non-Native BN254::Fq, Concrete Mathlib BN254::G1, 4-bit Straus MSM, & Recursive KZG
+-- Non-Native BN254::Fq, Concrete Mathlib BN254::G1, 4-bit Straus MSM, & Recursive KZG
 /-- info: Ix.Cert.Compression.NativeCurveMsm.bn254G1 : Ix.Cert.Compression.NativeCurveMsm.BN254G1 -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Compression.NativeCurveMsm.bn254G1
@@ -224,7 +229,7 @@ info: Ix.Cert.Compression.RecursiveKzg.recursiveKzgCircuit_sound : ∀
 /-- info: 'Ix.Cert.Compression.RecursiveKzg.recursiveKzgCircuit_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Ix.Cert.Compression.RecursiveKzg.recursiveKzgCircuit_sound
 
--- 1C-iv: Canonical "ix/outer-ir/v1" BLAKE3 3-Way Parity, Folded Pairing & Gnark Outer-IR Soundness
+-- Canonical "ix/outer-ir/v1" BLAKE3 3-Way Parity, Folded Pairing & Gnark Outer-IR Soundness
 /--
 info: Ix.Cert.Compression.OuterRelation.empty_program_digest_matches_rust_go : { nodes := [], assertions := [],
       coefficients := [], witnesses := [] }.digest =
@@ -309,7 +314,7 @@ info: @Ix.Cert.Compression.OuterRelation.gnark_folded_pairing_sound : ∀
 /-- info: 'Ix.Cert.Compression.OuterRelation.gnark_folded_pairing_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Ix.Cert.Compression.OuterRelation.gnark_folded_pairing_sound
 
--- 1C-v: Full Multi-Stage Proof-Compression Composition (Stage-Isolated Scaffold)
+-- Full Multi-Stage Proof-Compression Composition (Stage-Isolated Scaffold)
 /--
 info: @Ix.Cert.Compression.compression_pipeline_sound : ∀ {vk : Ix.Cert.Compression.OuterRelation.GnarkVerifyingKey}
   {inp : Ix.Cert.Compression.OuterRelation.OuterInputs}

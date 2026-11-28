@@ -41,7 +41,9 @@ namespace Tests.Ix.Kernel.ReaderCoverage
 open IxVM.ClaimHarness
 
 /-- The limits `ix check-lean` reads artifacts at. -/
-def limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
+def limits : Ix.Kernel.Admission.Limits :=
+  { maxRecords := 1 <<< 22, maxBlobs := 1 <<< 22, maxTotalBytes := 1 <<< 34,
+    maxRecordBytes := 1 <<< 28, maxRecordUnivNodes := 1 <<< 26 }
 
 /-- An unsafe inductive block: the reader declines it (`readInductive`). -/
 def unsafeInductive : Ixon.ConstantInfo → Bool

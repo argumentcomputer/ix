@@ -2,7 +2,7 @@ import IxVMRefinement.Assembly.TypingSkeleton
 
 /-! # The pinned equality at every extension of a valid table's environment
 
-IxC's record of a family with a recursor asks that the pinned equality be stored. The family
+IxCK's record of a family with a recursor asks that the pinned equality be stored. The family
 check reads the equality's address only inside a rule's statement, and the prefix invariant
 speaks of the equality only where its role is in force. What stores it is the table: a valid
 table's environment holds every pinned block whole (`TableShape.pins`), and a unit's step is

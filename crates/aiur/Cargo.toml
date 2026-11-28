@@ -39,6 +39,10 @@ cuda = ["stark", "multi-stark/cuda"]
 native = ["dep:stacker"]
 
 [[example]]
+name = "ixcc_prove"
+required-features = ["stark"]
+
+[[example]]
 name = "prove"
 required-features = ["stark"]
 
@@ -48,4 +52,16 @@ required-features = ["stark"]
 
 [[example]]
 name = "library_check"
+required-features = ["stark"]
+
+[[example]]
+name = "check_enables"
+required-features = ["stark"]
+
+[[example]]
+name = "artifact_statistics"
+required-features = ["stark"]
+
+[[example]]
+name = "single_circuit_prove"
 required-features = ["stark"]

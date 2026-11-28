@@ -1,4 +1,4 @@
-import IxC.Kernel.Model.GuardClassifier
+import IxCK.Kernel.Model.GuardClassifier
 
 /-! # A propositional structure with a quantified field: its raw syntax
 

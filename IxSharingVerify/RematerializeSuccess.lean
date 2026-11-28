@@ -3,7 +3,7 @@ import IxSharingVerify.WireSuccess
 import IxSharingVerify.ReexpandSuccess
 import IxSharingVerify.TieredGuard
 import IxSharingVerify.FamilyBudget
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 /-!
 # Re-materialization at the layout widths never refuses

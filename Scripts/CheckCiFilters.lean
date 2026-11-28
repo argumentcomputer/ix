@@ -9,6 +9,8 @@ manifest files themselves and the trust-surface root files fenced by `kernel-tru
 
 * `Tests/Fixtures/circuit-composed-closure-manifest.txt` (required) → `refinement:` filter;
 * `Tests/Fixtures/security-128-closure-manifest.txt` (required) → `refinement:` filter;
+* `Tests/Fixtures/statement-closure-manifest.txt` (required) → `refinement:` filter;
+* `Tests/Fixtures/aiur-compression-closure-manifest.txt` (required) → `refinement:` filter;
 * `Tests/Fixtures/compile-correct-closure-manifest.txt` (checked when present) → `kernel:` filter;
 * `Tests/Fixtures/check-bytes-closure-manifest.txt` (checked when present) → `kernel:` filter;
 * `Ix/Address/Admission.lean` and `Ix/KernelDisplay/Peek.lean` → `kernel:` filter.
@@ -141,12 +143,14 @@ def parseCiFilters (yaml : String) : Except String (Std.HashMap String (Array St
 /-- Top-level module prefixes belonging to this repository (external dependencies such as
 `Init`, `Std`, `Lean`, `Mathlib`, `Batteries`, `Blake3` are excluded). -/
 def projectRoots : List String :=
-  ["Ix", "IxC", "IxSharingVerify", "Aiur", "IxVM", "MultiStark", "IxVMRefinement",
-   "Models", "IxSetTheoryModel", "Tests"]
+  ["Ix", "IxCK", "IxSharingVerify", "Aiur", "IxVM", "MultiStark", "IxVMRefinement",
+   "Models", "IxSetTheoryModel", "IxKernelBridge",
+   "IxCC", "IxCCTests", "IxCCGrounding", "IxCCCorrect", "IxCCAiur",
+   "Tests"]
 
 /-- Nested workspace packages whose `M.X` modules live under `M/M/X.lean`. -/
 def nestedPackageRoots : List String :=
-  ["Aiur", "IxVM", "MultiStark"]
+  ["Aiur", "IxVM", "MultiStark", "IxCC"]
 
 /-- Whether a Lean module name belongs to this repository. -/
 def isProjectModule (modName : String) : Bool :=
@@ -155,15 +159,25 @@ def isProjectModule (modName : String) : Bool :=
 
 /-- Convert a project Lean module name (`A.B.C`) to its repository-relative `.lean` path,
 accounting for nested packages (`Aiur.X` → `Aiur/Aiur/X.lean`,
-`IxSetTheoryModel.X` → `Models/SetTheory/IxSetTheoryModel/X.lean`, etc.). -/
+`IxCC.X` → `IxCC/IxCC/X.lean`, `IxCCTests.X` → `IxCC/IxCCTests/X.lean`,
+`IxCCAiur.Compression.X` → `IxCCAiur/Compression/X.lean`,
+`IxCCAiur.Examples.X` → `IxCCAiur/Examples/X.lean`,
+`IxCCAiur.X` → `IxCCAiur/IxCCAiur/X.lean`,
+`IxSetTheoryModel.X` → `Models/SetTheory/IxSetTheoryModel/X.lean`,
+`IxKernelBridge.X` → `Models/KernelBridge/IxKernelBridge/X.lean`, etc.). -/
 def moduleToSourcePath (modName : String) : String :=
   let parts := modName.splitOn "."
   let rel := "/".intercalate parts ++ ".lean"
-  match parts.head? with
-  | some "IxSetTheoryModel" => "Models/SetTheory/" ++ rel
-  | some root =>
+  match parts with
+  | "IxSetTheoryModel" :: _ => "Models/SetTheory/" ++ rel
+  | "IxKernelBridge" :: _ => "Models/KernelBridge/" ++ rel
+  | "IxCCTests" :: _ | "IxCCGrounding" :: _ | "IxCCCorrect" :: _ => "IxCC/" ++ rel
+  | "IxCCAiur" :: "Compression" :: _ => rel
+  | "IxCCAiur" :: "Examples" :: _ => rel
+  | "IxCCAiur" :: _ => "IxCCAiur/" ++ rel
+  | root :: _ =>
     if nestedPackageRoots.contains root then root ++ "/" ++ rel else rel
-  | none => rel
+  | [] => rel
 
 /-- Extract all imported module names from a Lean source file's header (handling
 nested block comments `/- ... -/`, line comments `-- ...`, `module`,
@@ -272,14 +286,14 @@ def selfCheck : IO Unit := do
   if globMatch "Ix/Claim*.lean" "Ix/Claim/Foo.lean" then
     throw <| IO.userError "self-test failed: `*` crossed `/`"
   -- Trailing `**`
-  unless globMatch "IxC/**" "IxC/Kernel/Admission.lean" do
-    throw <| IO.userError "self-test failed: IxC/** deep match"
-  unless globMatch "IxC/**" "IxC/Kernel.lean" do
-    throw <| IO.userError "self-test failed: IxC/** shallow match"
-  if globMatch "IxC/**" "IxC.lean" then
-    throw <| IO.userError "self-test failed: IxC/** matched sibling file"
-  if globMatch "IxC/**" "IxC" then
-    throw <| IO.userError "self-test failed: IxC/** matched bare directory"
+  unless globMatch "IxCK/**" "IxCK/Kernel/Admission.lean" do
+    throw <| IO.userError "self-test failed: IxCK/** deep match"
+  unless globMatch "IxCK/**" "IxCK/Kernel.lean" do
+    throw <| IO.userError "self-test failed: IxCK/** shallow match"
+  if globMatch "IxCK/**" "IxCK.lean" then
+    throw <| IO.userError "self-test failed: IxCK/** matched sibling file"
+  if globMatch "IxCK/**" "IxCK" then
+    throw <| IO.userError "self-test failed: IxCK/** matched bare directory"
   -- Leading and interior `**`
   unless globMatch "**/*.rs" "lib.rs" && globMatch "**/*.rs" "crates/ix/src/lib.rs" do
     throw <| IO.userError "self-test failed: **/*.rs"
@@ -294,14 +308,22 @@ def selfCheck : IO Unit := do
     ("Ix.Ixon", "Ix/Ixon.lean"),
     ("Ix.Environment", "Ix/Environment.lean"),
     ("Ix.Address.Admission", "Ix/Address/Admission.lean"),
-    ("IxC.Kernel.Admission", "IxC/Kernel/Admission.lean"),
+    ("IxCK.Kernel.Admission", "IxCK/Kernel/Admission.lean"),
     ("Aiur.Generic.AST", "Aiur/Aiur/Generic/AST.lean"),
     ("IxVM.Source", "IxVM/IxVM/Source.lean"),
     ("MultiStark.Basic", "MultiStark/MultiStark/Basic.lean"),
     ("IxVMRefinement.Endpoint.ComposedResidual", "IxVMRefinement/Endpoint/ComposedResidual.lean"),
     ("IxSharingVerify.CanonicalMeaning", "IxSharingVerify/CanonicalMeaning.lean"),
     ("Models.SetTheory.IxSetTheoryModel.Carneiro", "Models/SetTheory/IxSetTheoryModel/Carneiro.lean"),
-    ("IxSetTheoryModel.Audit", "Models/SetTheory/IxSetTheoryModel/Audit.lean")]
+    ("IxSetTheoryModel.Audit", "Models/SetTheory/IxSetTheoryModel/Audit.lean"),
+    ("IxKernelBridge.Audit", "Models/KernelBridge/IxKernelBridge/Audit.lean"),
+    ("IxCC.Recheck.Run", "IxCC/IxCC/Recheck/Run.lean"),
+    ("IxCCTests.Recheck.Artifacts.Gcd", "IxCC/IxCCTests/Recheck/Artifacts/Gcd.lean"),
+    ("IxCCGrounding.Fence", "IxCC/IxCCGrounding/Fence.lean"),
+    ("IxCCCorrect.Fence", "IxCC/IxCCCorrect/Fence.lean"),
+    ("IxCCAiur.Audit", "IxCCAiur/IxCCAiur/Audit.lean"),
+    ("IxCCAiur.Compression.CompressWrapSpec", "IxCCAiur/Compression/CompressWrapSpec.lean"),
+    ("IxCCAiur.Examples.MultiStarkV6Pure", "IxCCAiur/Examples/MultiStarkV6Pure.lean")]
   for (modName, want) in expectedPaths do
     let got := moduleToSourcePath modName
     unless got == want do
@@ -310,10 +332,10 @@ def selfCheck : IO Unit := do
   let sampleLean :=
     "/- block comment import Fake.One -/\n" ++
     "module public import Init.Core import Ix.HostAdmission -- import Fake.Two\n" ++
-    "private meta import all IxC.Kernel.Audit.Roots\n" ++
+    "private meta import all IxCK.Kernel.Audit.Roots\n" ++
     "def body := \"import Fake.Three\"\n"
   let parsedImps := parseLeanImports sampleLean
-  unless parsedImps == #["Init.Core", "Ix.HostAdmission", "IxC.Kernel.Audit.Roots"] do
+  unless parsedImps == #["Init.Core", "Ix.HostAdmission", "IxCK.Kernel.Audit.Roots"] do
     throw <| IO.userError s!"self-test failed: parseLeanImports = {parsedImps}"
   -- YAML filter parser
   let sampleYaml :=
@@ -321,7 +343,7 @@ def selfCheck : IO Unit := do
     "        with:\n" ++
     "          filters: |\n" ++
     "            kernel:\n" ++
-    "              - 'IxC/**'\n" ++
+    "              - 'IxCK/**'\n" ++
     "              - 'Ix/Address/Admission.lean' # hash impl\n" ++
     "            refinement:\n" ++
     "              - 'Aiur/**'\n" ++
@@ -330,7 +352,7 @@ def selfCheck : IO Unit := do
   match parseCiFilters sampleYaml with
   | .error e => throw <| IO.userError s!"self-test failed: parseCiFilters error: {e}"
   | .ok parsed =>
-    unless parsed.getD "kernel" #[] == #["IxC/**", "Ix/Address/Admission.lean"] do
+    unless parsed.getD "kernel" #[] == #["IxCK/**", "Ix/Address/Admission.lean"] do
       throw <| IO.userError s!"self-test failed: unexpected kernel globs: {parsed.getD "kernel" #[]}"
     unless parsed.getD "refinement" #[] == #["Aiur/**", "Ix/Ixon.lean"] do
       throw <| IO.userError s!"self-test failed: unexpected refinement globs: {parsed.getD "refinement" #[]}"
@@ -356,8 +378,6 @@ def requiredFilterCoverage : Array (String × String) := #[
   ("rustfmt.toml", "rust"),
   ("crates/stark-shrinker/Cargo.toml", "rust"),
   ("crates/stark-shrinker/Cargo.toml", "cuda"),
-  ("tools/gnark/circuit.go", "gnark"),
-  ("tools/gnark/circuit.go", "rust"),
   ("contracts/plonk/src/PlonkVerifier.sol", "contracts"),
   ("contracts/groth16/src/IxGroth16Verifier.sol", "contracts"),
   ("c/common.h", "rust"),
@@ -368,12 +388,33 @@ def requiredFilterCoverage : Array (String × String) := #[
   ("Scripts/FriSecurity.lean", "formal"),
   ("Scripts/CheckFormalKeys.lean", "formal"),
   ("Scripts/CheckAiurCompressionFixtures.lean", "formal"),
+  ("Scripts/KernelReplay.lean", "kernel"),
+  ("Scripts/KernelReplay.lean", "refinement"),
+  ("Scripts/KernelReplay.lean", "formal"),
+  ("Scripts/KernelReplay.lean", "ixcc-aiur"),
+  ("ModeRepairTests/lakefile.lean", "kernel"),
+  ("ModeRepairTests/Main.lean", "kernel"),
+  ("IxCC/IxCCTests/Recheck/Artifacts/Fib.lean", "ixcc-aiur"),
+  ("IxCC/IxCCTests/Recheck/Artifacts/Gcd.lean", "ixcc-aiur"),
+  ("IxCC/IxCCTests/Recheck/Artifacts/EvenOdd.lean", "ixcc-aiur"),
+  ("IxCC/IxCCTests/Recheck/Artifacts/Sfib.lean", "ixcc-aiur"),
+  ("IxCC/IxCCTests/Recheck/Artifacts/Tak.lean", "ixcc-aiur"),
+  ("IxCCAiur/Compression/CompressWrapSpec.lean", "ixcc-aiur"),
+  ("IxCCAiur/Compression/KzgPairingSpec.lean", "ixcc-aiur"),
+  ("IxCCAiur/Examples/MultiStarkV6Pure.lean", "ixcc-aiur"),
+  (".github/workflows/ci.yml", "ixcc"),
+  (".github/workflows/ci.yml", "ixcc-aiur"),
+  (".github/workflows/ci.yml", "kernel-bridge"),
+  ("Tests/Ix/Kernel/TrustSurface.lean", "kernel"),
+  ("Tests/Ix/Kernel/TrustSurface.lean", "refinement"),
+  ("Tests/Ix/Kernel/TrustSurface.lean", "host"),
   ("Ix/Aiur/Parameters.lean", "formal"),
   ("Ix/Aiur/Parameters.lean", "refinement"),
   ("Ix/MultiStark/Wire.lean", "formal"),
   ("Ix/MultiStark/Wire.lean", "refinement"),
   ("Tests/FormalChecks/Common.lean", "formal"),
   ("Tests/Fixtures/MultiStark/sample.bin", "formal"),
+  ("Tests/Fixtures/fri-security/ixvm-2p23.json", "formal"),
   ("Tests/Ix/Kernel/ModelLaws.lean", "formal"),
   ("Ix/HostAdmission.lean", "kernel"),
   ("Ix/HostAdmission.lean", "refinement"),
@@ -392,8 +433,8 @@ def requiredFilterCoverage : Array (String × String) := #[
 import closure must be covered by the corresponding CI filter group. -/
 def transitiveImportChecks : Array (String × String × Array String) := #[
   ("certified-kernel leanchecker roots", "kernel", #[
-    "IxC.Kernel.Audit.Roots",
-    "IxC.Kernel.Admission.Audit",
+    "IxCK.Kernel.Audit.Roots",
+    "IxCK.Kernel.Admission.Audit",
     "Ix.Ixon.Authenticated.Audit",
     "Ix.Ixon.BlockOrder.Audit",
     "Ix.HostAdmission.Audit",
@@ -418,7 +459,10 @@ def transitiveImportChecks : Array (String × String × Array String) := #[
     "Ix.Cert.Compression.Bls12381.Audit",
     "Ix.Cert.Compression.StarkShrinkerAudit",
     "Ix.Cert.Compression.Security128Audit",
-    "Ix.Cert.Security128ClosureManifest"]),
+    "Ix.Cert.Security128ClosureManifest",
+    "Ix.Cert.AiurCompression.Audit",
+    "Ix.Cert.StatementClosureManifest",
+    "Ix.Cert.AiurCompressionClosureManifest"]),
   ("formal leanchecker roots and formal-only modules", "formal", #[
     "Aiur.Audit",
     "Ix.IxVM.ConsistencyAudit",
@@ -431,16 +475,47 @@ def transitiveImportChecks : Array (String × String × Array String) := #[
     "Ix.Cert.Compression.StarkShrinkerAudit",
     "Ix.Cert.Compression.Security128Audit",
     "Ix.Cert.Security128ClosureManifest",
+    "Ix.Cert.AiurCompression.Audit",
+    "Ix.Cert.StatementClosureManifest",
+    "Ix.Cert.AiurCompressionClosureManifest",
     "Tests.FormalPackageMain",
     "Tests.Ix.InstanceSymbols",
     "Tests.Ix.VMSource",
     "Tests.Ix.IxVM.SafeReferencesWalk",
-    "Tests.Ix.Kernel.ModelLaws"])]
+    "Tests.Ix.Kernel.ModelLaws"]),
+  ("ixcc transitive closure", "ixcc", #[
+    "IxCC",
+    "IxCCGrounding.Fence",
+    "IxCCCorrect.Fence",
+    "IxCCTests.Recheck.Audit"]),
+  ("ixcc-aiur transitive closure", "ixcc-aiur", #[
+    "IxCCAiur",
+    "IxCCAiur.Audit",
+    "IxCCAiur.Main",
+    "IxCCAiur.Compression.StarkWire",
+    "IxCCAiur.Compression.CompressWrapPure",
+    "IxCCAiur.Compression.CompressWrapSpec",
+    "IxCCAiur.Compression.KzgWire",
+    "IxCCAiur.Compression.KzgPackedPure",
+    "IxCCAiur.Compression.PairingPure",
+    "IxCCAiur.Compression.KzgPairingSpec",
+    "IxCCAiur.Compression.Groth16X86",
+    "IxCCAiur.Examples.Blake3Block",
+    "IxCCAiur.Examples.CurveOpsPure",
+    "IxCCAiur.Examples.FriPure",
+    "IxCCAiur.Examples.KzgAlgebraPure",
+    "IxCCAiur.Examples.MmcsPure",
+    "IxCCAiur.Examples.MultiStarkV6Pure"]),
+  ("kernel-bridge transitive closure", "kernel-bridge", #[
+    "IxKernelBridge",
+    "IxKernelBridge.Audit"])]
 
 /-- Closure manifests to verify: `(manifestPath, ciFilterName, required)`. -/
 def manifestChecks : Array (String × String × Bool) := #[
   ("Tests/Fixtures/circuit-composed-closure-manifest.txt", "refinement", true),
   ("Tests/Fixtures/security-128-closure-manifest.txt", "refinement", true),
+  ("Tests/Fixtures/statement-closure-manifest.txt", "refinement", true),
+  ("Tests/Fixtures/aiur-compression-closure-manifest.txt", "refinement", true),
   ("Tests/Fixtures/compile-correct-closure-manifest.txt", "kernel", true),
   ("Tests/Fixtures/check-bytes-closure-manifest.txt", "kernel", true)]
 
@@ -496,7 +571,7 @@ def run : IO UInt32 := do
         unless matchesAny kernelGlobs p do
           IO.eprintln s!"[ci-filters] MISSING from 'kernel:' filter (required trust-surface file): {p}"
           failures := failures + 1
-    -- Required non-Lean security-critical files (Go gnark, Solidity contracts, C headers)
+    -- Required non-Lean security-critical files (Solidity contracts, C headers, Cargo/Rust configs)
     for (p, filterName) in requiredFilterCoverage do
       checkedFiles := checkedFiles + 1
       match filters[filterName]? with

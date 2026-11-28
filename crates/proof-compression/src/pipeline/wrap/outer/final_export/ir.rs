@@ -75,8 +75,7 @@ fn push_u32_slice(out: &mut Vec<u8>, values: &[usize]) {
 }
 
 impl<C: KzgCurve> Program<C> {
-  /// Canonical deterministic binary encoding shared with Go (`tools/gnark`)
-  /// and Lean (`OuterIR`).
+  /// Canonical deterministic binary encoding shared with Lean (`OuterIR`).
   pub(super) fn encode(&self) -> Vec<u8> {
     let mut out = Vec::with_capacity(
       OUTER_IR_DOMAIN.len()
@@ -495,8 +494,6 @@ mod tests {
     "0x02d95030e924d62b65dcb11734967f540cddd90337d58184d90f02197df5a799";
   const GOLDEN_DIGEST: &str =
     "0x3841d46e6b5730d0f1d9faba16072a2c3caed66c64f8e32ee5ebdb69a57a2b28";
-  const FIXTURE_VK_DIGEST: &str =
-    "0x764a1979c109cbc92bff867f7f929950438365adfe3c502a82700ed4d6f7a7b0";
 
   fn golden_program() -> Program {
     Program {
@@ -617,13 +614,9 @@ mod tests {
   }
 
   #[test]
-  fn fixture_vk_program_digest_matches_go() {
-    let raw: serde_json::Value = serde_json::from_slice(include_bytes!(
-      "../../../../../../../tools/gnark/testdata/bn254/vk.json"
-    ))
-    .unwrap();
-    let program = parse_program_json::<Bn254>(&raw["program"]);
-    assert_eq!(hex_json(&program.digest()), FIXTURE_VK_DIGEST);
-    assert_eq!(raw["programDigest"].as_str().unwrap(), FIXTURE_VK_DIGEST);
+  fn golden_program_json_roundtrip_matches_pinned_digest() {
+    let encoded = serde_json::to_value(golden_program()).unwrap();
+    let parsed = parse_program_json::<Bn254>(&encoded);
+    assert_eq!(hex_json(&parsed.digest()), GOLDEN_DIGEST);
   }
 }

@@ -862,7 +862,9 @@ def closureOrderProblems (ixe : Ixon.Env) (seeds : Array Address) (order : Array
 
 /-- Bounds wide enough for a whole compiled library
 (`Benchmarks.Kernel.CheckIxeEntry.limits`). -/
-def limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
+def limits : Ix.Kernel.Admission.Limits :=
+  { maxRecords := 1 <<< 22, maxBlobs := 1 <<< 22, maxTotalBytes := 1 <<< 34,
+    maxRecordBytes := 1 <<< 28, maxRecordUnivNodes := 1 <<< 26 }
 
 /-- The statements' hypotheses and conclusion on the closure of the accepted
 fixtures: errors, and lines for the report. -/
@@ -1249,7 +1251,7 @@ def evidenceAgreement (leanEnv : Lean.Environment) : IO (Array String × Array S
   return (errors, lines)
 
 /-- Literal support in `DependsOn` (owner, 2026-10-20): the statement closure of a root
-with a `String` literal (`outOfBounds`, a `panic!` message) holds the constants IxC checks
+with a `String` literal (`outOfBounds`, a `panic!` message) holds the constants IxCK checks
 the literal against (`Ix.Cert.literalSupport`), and Source at the bundle evidence accepts it. -/
 def literalClosure (leanEnv : Lean.Environment) (root : Lean.Name) : IO (Array String × Array String) := do
   let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv #[root])

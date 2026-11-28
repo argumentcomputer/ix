@@ -1,6 +1,6 @@
 import IxVMRefinement.DefEq.Basic
 import IxVMRefinement.Lib.Words
-import IxC.Kernel.Rules.Transport
+import IxCK.Kernel.Rules.Transport
 
 /-! # Step lemmas of `KernelDefEq`: the rebase, the structural tiers and the slow tiers
 

@@ -68,9 +68,10 @@ def prepareCertified (source : Lean.Environment)
     (constants : List (Lean.Name × Lean.ConstantInfo)) :
     Except String (List (Lean.Name × Lean.ConstantInfo) × Bool) := do
   let registry := Ix.Compile.sourceContractExtension.getState source
+  let assertsReg := Ix.Compile.sourceDefAssertsExtension.getState source
   let hints := Ix.Compile.sourceMeasureExtension.getState source
   if ← Ix.Compile.checkOrdinaryConstants constants
-      (fun name => registry.contains name || hints.contains name) then
+      (fun name => registry.contains name || assertsReg.contains name || hints.contains name) then
     return (constants, false)
   let input ← (Ix.Compile.compileInputFromEnv source constants).mapError toString
   let prepared ← input.prepare
@@ -165,7 +166,7 @@ generated from the export, and `checkFinalized` checks every published role
 name against that table (`Ix.Cert.PublishedRolesBound` at the artifact's own
 binding).
 
-With `binderData`, IxC installs the canonical environment in Source mode on a
+With `binderData`, IxCK installs the canonical environment in Source mode on a
 task beside the compile (`Ix.Compile.KernelAnnotate.installTask`) and the
 canonical environment carries the annotator over its input and that task
 (`Ix.Compile.KernelAnnotate.annotator`): the compile writes every record's binder
@@ -203,7 +204,7 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
   let mut install? : Option (Task (Except String Ix.Compile.KernelAnnotate.Installed)) := none
   if binderData then
     match Ix.Compile.KernelAnnotate.prelude? with
-    | .error e => return .error s!"binder data: IxC's prelude is not installed: {e}"
+    | .error e => return .error s!"binder data: IxCK's prelude is not installed: {e}"
     | .ok pre =>
       -- the install's environment: the input, with `installExtra` beside it (never compiled)
       let installEnv ← if installExtra.isEmpty then pure env else
@@ -235,7 +236,7 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
         {installed.endMs - installed.startMs}ms, ready {installed.endMs - t1}ms into the compile"
       for (name, why) in installed.failures.extract 0 20 do
         log s!"binder data: the kernel refused {name}: {(why.replace "\n" " ").take 200}"
-    | .error e => return .error s!"binder data: IxC's environment is not installed: {e}"
+    | .error e => return .error s!"binder data: IxCK's environment is not installed: {e}"
   let (ixe, failures) ← match report.val with
     | .ok out => pure out
     | .error e => return .error e
@@ -269,7 +270,7 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
 of the inductives of `constants` that `constants` do not hold, with their closure in
 `source` (`Ix.EnvScope.collectDeps`, recursors on), less `constants`.
 
-IxC installs an inductive block only with its recursors (the ingress declines a
+IxCK installs an inductive block only with its recursors (the ingress declines a
 block without them, `Ix.LeanIngress.inductiveGroupUsing`; the executable checker has
 no route for one), so an input that reaches a family without its recursor (a closure
 of single constants: `And`, `Eq`, `Nat`, `PProd`, …) cannot be installed for its binder
@@ -292,7 +293,7 @@ def installRecursors (source : Lean.Environment) (constants : List (Lean.Name ×
 
 /-- **The certified compile** of the constants `constants` of `source`:
 `prepareCertified`, then `compileCertifiedPrepared` (with `defaultRoles`), with
-the binder data from IxC's pass over the input (`Ix.Compile.KernelAnnotate`), unless
+the binder data from IxCK's pass over the input (`Ix.Compile.KernelAnnotate`), unless
 `binderData` is off: then every record with a binder carries the undecided
 section (preserving any source modes). The install the binder data are read from
 holds, beside the input, the recursors the input lacks (`installRecursors`). -/
@@ -345,7 +346,7 @@ namespace Ix.RoleBinding.Compile
 /-- The certified compiler as `finalize`'s backend: the role support and the
 certificates are compiled with `Ix.Cert.compileReport`, and must compile
 completely. `defaultRoles` as in `Ix.CompileM.compileCertifiedPrepared`; the binder
-data come from IxC's pass over the backend's prepared input, unless `binderData` is off. -/
+data come from IxCK's pass over the backend's prepared input, unless `binderData` is off. -/
 def certifiedBackend (workers : Nat) (defaultRoles : Bool := true) (binderData : Bool := true)
     (modeCheck : Ix.CompileM.ModeChecker := Ix.CompileM.noModeChecker) : Backend := fun _source input => do
   let prepared ← IO.ofExcept input.prepare
@@ -362,10 +363,10 @@ end Ix.RoleBinding.Compile
 namespace Ix.CompileM
 
 /-- How `compileAndFinalize` gives records their binder data: while building each
-record, from IxC's pass over the input (`inline`, the default and what the compile
+record, from IxCK's pass over the input (`inline`, the default and what the compile
 commands run: `Ix.CompileM.withBinderSection` with
 `Ix.Compile.KernelAnnotate.annotator`); with every binder undecided (`off`, for
-measurement); or as `off`, then by IxC's pass over the finalized artifact, which is
+measurement); or as `off`, then by IxCK's pass over the finalized artifact, which is
 then re-addressed (`post`, for comparison: `Ix.Compile.BinderData.apply`). -/
 inductive BinderDataMode where
   | off | inline | post
@@ -401,7 +402,7 @@ shutdown no longer runs.
 
 Binder data (`binderData`): `inline` writes every record's section while the
 record is built, and `finalize`'s generated theorem records get theirs from
-IxC's pass over the records before they are addressed. `post` finalizes
+IxCK's pass over the records before they are addressed. `post` finalizes
 without data, then gives every record its section
 (`Ix.Compile.BinderData.apply`, the artifact re-addressed) before
 `validateFinalized`; `onBinders` receives the report and the artifact. A safe
@@ -419,7 +420,8 @@ def compileAndFinalize (source : Lean.Environment)
     (strip : Ixon.Env → Ixon.Env := id) (defaultRoles : Bool := true)
     (prefetch : Bool := false) (binderData : BinderDataMode := .inline)
     (onBinders : Ix.Compile.BinderData.Report → Ixon.Env → IO Unit := fun _ _ => pure ())
-    (modeCheck : ModeChecker := noModeChecker) :
+    (modeCheck : ModeChecker := noModeChecker)
+    (limits : Ix.Kernel.Admission.Limits := Ix.Typing.typingLimits) :
     IO (Except String (CertifiedOut × Finalization)) := do
   let inline := binderData == .inline
   let backend := Ix.RoleBinding.Compile.certifiedBackend workers defaultRoles inline modeCheck
@@ -436,7 +438,7 @@ def compileAndFinalize (source : Lean.Environment)
     try
       let t0 ← IO.monoMsNow
       let artifact ← Ix.RoleBinding.Compile.finalize backend source certSource
-        (.plain constants) out.env Ix.Typing.typingLimits (existing? := out.existing?)
+        (.plain constants) out.env limits (existing? := out.existing?)
         (prefetched? := certificates?) (binderData := inline)
       let tb ← IO.monoMsNow
       log s!"finalize: {tb - t0}ms, rss {← Ix.Cli.residentSetSize}"

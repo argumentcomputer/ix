@@ -1,0 +1,296 @@
+import IxCC.Src.Table.Word
+import IxCC.Src.Table.Guess
+import IxCC.Src.Hints
+import Std.Data.HashMap
+
+/-! # Building the unfolding table
+
+Collects proposals (pinned primitives, `lazy` and opaque-by-value rows;
+sidecar `eqn`/`csimp`/`inline` hints, and, when words are enabled, the sidecar's
+`word` proposals naming a pinned word operation's stored equation; `case`
+candidates found by scanning
+for recursor-headed definitions, and `lazy` rows for the sparse casesOn among
+them), checks each one, and resolves by priority
+`prim, word > csimp > eqn > case > body`. Every refused explicit
+proposal leaves a `hint` diagnostic. Recursor kinds are derived for every
+recursor. -/
+
+namespace IxCC.Src.Table
+
+open IxCC.Ixon
+
+/-- What the build accepted, for tests and the census. -/
+structure Stats where
+  primAccepted : Array CId := #[]
+  wordAccepted : Array CId := #[]
+  eqnAccepted : Array CId := #[]
+  eqnRefused : Array (CId × String) := #[]
+  csimpAccepted : Array CId := #[]
+  caseAccepted : Array CId := #[]
+  lazyAccepted : Array CId := #[]
+  /-- Sparse casesOn given a `lazy` row by shape (`checkSparseCases`). -/
+  sparseAccepted : Array CId := #[]
+  opaqueByValue : Array CId := #[]
+  /-- Phase 2.2 Tier-2 `guess` proposals accepted (`Guess.checkGuess`). -/
+  guessAccepted : Array CId := #[]
+  guessRefused : Array (CId × String) := #[]
+  deriving Inhabited
+
+/-- The address index of a program (the producer's inverse of `consts`;
+later constants win, as in ingress). -/
+def addrIndex (p : Program) : Std.HashMap Ixon.Address CId :=
+  (List.range p.size).foldl (fun m c => m.insert (p.addr c) c) {}
+
+/-- Why a proposal's address resolves to no constant: ingress reads only the
+records its seeds reach (`Ingress.reach`), so the address is either a record
+nothing reaches or not in the artifact at all; the table cannot tell which. -/
+def notRead : String :=
+  "is not in the program read (not reached from the sidecar's roots and the other seeds of \
+  ingress, or absent from the artifact)"
+
+private def resolveHint (index : Std.HashMap Ixon.Address CId) (a : Ixon.Address) (what : String) :
+    Except String CId :=
+  match index[a]? with
+  | some c => .ok c
+  | none => .error s!"{what} {((toString a).take 8).toString} {notRead}"
+
+def csimpProposal (p : Program) (index : Std.HashMap Ixon.Address CId) (prop : Proposal) :
+    Except String (CId × Resolve) := do
+  let f ← resolveHint index prop.subject "subject"
+  let some ga := prop.target? | throw "csimp: missing target"
+  let some ta := prop.theorem? | throw "csimp: missing theorem"
+  let g ← resolveHint index ga "target"
+  let thm ← resolveHint index ta "theorem"
+  return (f, ← checkCsimp p f g thm)
+
+def eqnProposal (p : Program) (index : Std.HashMap Ixon.Address CId) (prop : Proposal) :
+    Except String (CId × Resolve) := do
+  let f ← resolveHint index prop.subject "subject"
+  let some ta := prop.theorem? | throw "eqn: missing theorem"
+  let thm ← resolveHint index ta "theorem"
+  return (f, ← checkEqn p f thm)
+
+/-- A `word` proposal (stage W1): its subject is a pinned word operation, its theorem the
+operation's stored equation (`checkWord`). -/
+def wordProposal (cfg : Config) (p : Program) (index : Std.HashMap Ixon.Address CId)
+    (prop : Proposal) : Except String (CId × Resolve) := do
+  let f ← resolveHint index prop.subject "subject"
+  let some ta := prop.theorem? | throw "word: missing theorem"
+  let thm ← resolveHint index ta "theorem"
+  let some (w, op) := Pinned.wordAt? p.known.pins (p.addr f)
+    | throw "word: the subject is not a pinned word operation"
+  checkWord cfg p f w op thm
+  return (f, .word w op thm)
+
+/-- A Phase 2.2 Tier-2 `guess` proposal (`guess f c θ [θc]`): resolves subject, checker,
+soundness theorem, and optional completeness theorem, checking them via `Guess.checkGuess`. -/
+def guessProposal (p : Program) (index : Std.HashMap Ixon.Address CId) (prop : Proposal) :
+    Except String (CId × GuessEntry) := do
+  let f ← resolveHint index prop.subject "subject"
+  let some ca := prop.checker? | throw "guess: missing checker"
+  let some ta := prop.theorem? | throw "guess: missing soundness theorem"
+  let c ← resolveHint index ca "checker"
+  let thm ← resolveHint index ta "soundness theorem"
+  let comp? ← match prop.comp? with
+    | none => pure none
+    | some cpa => some <$> resolveHint index cpa "completeness theorem"
+  return (f, ← Guess.checkGuess p f c thm comp?)
+
+/-- Candidate `case` keys: safe definitions whose body, under its λs, is a
+spine headed by a single-motive recursor. -/
+def caseCandidates (p : Program) : Array CId := Id.run do
+  let mut out := #[]
+  for c in [0:p.size] do
+    if let some (.defn .defn .safe _ _ value) := p.decl? c then
+      if let (.const r _, _) := value.lams.2.spine then
+        if let some (.recr _ _ _ _ 1 _ _ _ _ _) := p.decl? r then out := out.push c
+  return out
+
+def build (cfg : Config) (p : Program) (hints : Array Proposal) :
+    Table × Array Diag × Stats := Id.run do
+  let n := p.size
+  let index := addrIndex p
+  let lookup := fun (a : Ixon.Address) => index[a]?
+  let mut resolve : NatMap Resolve := .leaf
+  let mut diags : Array Diag := #[]
+  let mut stats : Stats := {}
+  let hintDiag := fun (prop : Proposal) (msg : String) =>
+    ({ code := "hint", addr := some prop.subject, name := prop.name?, message := msg } : Diag)
+  -- prim: every pinned primitive present in the closure.
+  for c in [0:n] do
+    if let some op := Pinned.primAt? p.known.pins (p.addr c) then
+      match checkPrim p c op cfg.prims with
+      | .ok () =>
+        resolve := resolve.insert c (.prim op)
+        stats := { stats with primAccepted := stats.primAccepted.push c }
+      | .error msg =>
+        if cfg.prims.contains op then
+          diags := diags.push { code := "hint", addr := some (p.addr c), message := msg }
+  -- word: the sidecar's word proposals (stage W1), each naming a pinned word operation and
+  -- its stored equation; the first that passes `checkWord` for an operation is its entry.
+  if cfg.words then
+    for prop in hints do
+      if prop.kind != .word then continue
+      match wordProposal cfg p index prop with
+      | .ok (f, entry) =>
+        if (resolve.get? f).isNone then
+          resolve := resolve.insert f entry
+          stats := { stats with wordAccepted := stats.wordAccepted.push f }
+      | .error msg => diags := diags.push (hintDiag prop msg)
+  -- csimp hints.
+  for prop in hints do
+    if prop.kind != .csimp then continue
+    match csimpProposal p index prop with
+    | .ok (f, entry) =>
+      if (resolve.get? f).isNone then
+        resolve := resolve.insert f entry
+        stats := { stats with csimpAccepted := stats.csimpAccepted.push f }
+    | .error msg => diags := diags.push (hintDiag prop msg)
+  -- A csimp target must be a safe definition or carry its own entry; the
+  -- redirect graph must be acyclic.
+  for f in [0:n] do
+    if let some (.csimp g _ _) := resolve.get? f then
+      let targetOk := (safeDefn? p g).isSome || (resolve.get? g).isSome
+      unless targetOk && csimpAcyclic resolve n f do
+        resolve := resolve.erase f
+        let d : Diag := { code := "hint", addr := some (p.addr f)
+                          message := "csimp: target not admissible or redirect cycle" }
+        diags := diags.push d
+  -- eqn hints (checked even when a higher-priority entry already resolves f).
+  for prop in hints do
+    if prop.kind != .eqn then continue
+    match eqnProposal p index prop with
+    | .ok (f, entry) =>
+      stats := { stats with eqnAccepted := stats.eqnAccepted.push f }
+      if (resolve.get? f).isNone then resolve := resolve.insert f entry
+    | .error msg =>
+      if let some f := lookup prop.subject then
+        stats := { stats with eqnRefused := stats.eqnRefused.push (f, msg) }
+      diags := diags.push (hintDiag prop msg)
+  -- Drop any `.eqn` entry participating in an unconditional unfolding cycle (`FE-3`).
+  for f in [0:n] do
+    if let some (.eqn ..) := resolve.get? f then
+      unless eqnAcyclic p resolve f do
+        resolve := resolve.erase f
+        let d : Diag := { code := "hint", addr := some (p.addr f)
+                          message := "eqn: cyclic unconditional unfolding" }
+        diags := diags.push d
+  -- case: scanned candidates and explicit hints.
+  let explicitCases := hints.filterMap fun prop =>
+    if prop.kind == .case then lookup prop.subject else none
+  let candidates := caseCandidates p
+  for c in candidates ++ explicitCases do
+    if (resolve.get? c).isSome then continue
+    match checkCase p c with
+    | .ok entry =>
+      resolve := resolve.insert c entry
+      stats := { stats with caseAccepted := stats.caseAccepted.push c }
+    | .error msg =>
+      if explicitCases.contains c then
+        diags := diags.push { code := "hint", addr := some (p.addr c), message := msg }
+  -- lazy: pinned rows and hints (a hinted row is refused unless it is pinned
+  -- or a sparse casesOn: `checkLazy`).
+  let mut lazy : NatMap Nat := .leaf
+  let pinnedLazy := Pinned.lazyRows.filterMap fun (name, hex, arity) =>
+    (lookup (Pinned.addr hex)).map (·, arity, name)
+  let hintedLazy := hints.toList.filterMap fun prop =>
+    if prop.kind == .lazy then
+      match lookup prop.subject, prop.arity? with
+      | some c, some a => some (c, a, prop.name?.getD "")
+      | _, _ => none
+    else none
+  for (c, arity, name) in pinnedLazy ++ hintedLazy do
+    if (lazy.get? c).isSome then continue
+    -- a sparse casesOn's row beside a `resolve` entry is refused (`lazyResolveOk`)
+    let paired := !Table.pinnedLazy p c arity && (resolve.get? c).isSome
+    match checkLazy p c arity, paired with
+    | .ok (), false =>
+      lazy := lazy.insert c arity
+      stats := { stats with lazyAccepted := stats.lazyAccepted.push c }
+    | .ok (), true =>
+      let d : Diag := { code := "hint", addr := some (p.addr c), name := some name
+                        message := "lazy: a sparse casesOn's row beside a resolve entry" }
+      diags := diags.push d
+    | .error msg, _ =>
+      let d : Diag := { code := "hint", addr := some (p.addr c), name := some name
+                        message := msg }
+      diags := diags.push d
+  -- lazy: the sparse casesOn among the case candidates, at their binder count,
+  -- unless the constant already has a row or a `resolve` entry.
+  for c in candidates do
+    if (lazy.get? c).isSome || (resolve.get? c).isSome then continue
+    if let .ok arity := checkSparseCases p c then
+      if let .ok () := checkLazy p c arity then
+        lazy := lazy.insert c arity
+        stats := { stats with sparseAccepted := stats.sparseAccepted.push c }
+  -- opaque-by-value allowlist (D12 + DR4 safe opaques).
+  let mut opaqueByValue : NatSet := .leaf
+  for n in p.known.pins.opaqueByValue ++ Pinned.dr4OpaqueByValuePins do
+    if let some c := lookup (Pinned.addrOfNat n) then
+      if let some (.defn _ .safe _ _ _) := p.decl? c then
+        if !opaqueByValue.contains c then
+          opaqueByValue := opaqueByValue.insert c
+          stats := { stats with opaqueByValue := stats.opaqueByValue.push c }
+  -- inline hints.
+  let mut inline : NatSet := .leaf
+  for prop in hints do
+    if prop.kind != .inline then continue
+    match lookup prop.subject with
+    | some c =>
+      match checkInline p c cfg.inlineCap with
+      | .ok () => inline := inline.insert c
+      | .error msg => diags := diags.push (hintDiag prop msg)
+    | none => diags := diags.push (hintDiag prop s!"inline: subject {notRead}")
+  -- Derived recursor kinds.
+  let recKind := NatMap.ofOptions ((List.range n).map (deriveRecKind p))
+  -- Phase 2.2 Tier-2 guess-and-verify hints (`guess f c θ [θc]`).
+  let mut guess : NatMap GuessEntry := .leaf
+  for prop in hints do
+    if prop.kind != .guess then continue
+    match guessProposal p index prop with
+    | .ok (f, entry) =>
+      if (guess.get? f).isNone then
+        guess := guess.insert f entry
+        stats := { stats with guessAccepted := stats.guessAccepted.push f }
+    | .error msg =>
+      if let some f := lookup prop.subject then
+        stats := { stats with guessRefused := stats.guessRefused.push (f, msg) }
+      diags := diags.push (hintDiag prop msg)
+  return ({ resolve, recKind, lazy, inline, opaqueByValue, guess }, diags, stats)
+
+/-- How a program gets its word entries, named once for every word hint (`wordHints`,
+`wordHintLine`) and the tests: `ix compile` adds the word equations by default for a selected
+closure. -/
+def wordEquationsAdvice : String :=
+  "recompile the closure with `ix compile`, which adds the word equations by default for a \
+  selected closure (not with `--no-equations` or `--no-word-equations`; a whole environment needs \
+  `--equations`)"
+
+/-- **The word hints** (stage W1), after admission: a `hint` for each pinned primitive word
+operation the admitted program reaches in a runtime term (`reached`, `Admitted.reached`) without a
+`word` entry, which therefore runs its reference body. A word operation reached only through
+proofs is not in `reached` and gets none. -/
+def wordHints (p : Program) (reached : Array CId) : Array Diag := Id.run do
+  let mut out := #[]
+  for c in reached do
+    if let some (w, op) := Pinned.wordAt? p.known.pins (p.addr c) then
+      if op.isPrimitive && !(p.table.resolveOf c matches some (.word ..)) then
+        out := out.push { code := "hint", addr := some (p.addr c), name := some (op.leanName w)
+                          message := s!"word: {op.leanName w} is reached at run time without an \
+                            accepted word equation, so it runs its reference body; \
+                            {wordEquationsAdvice} to make it a primitive" }
+  return out
+
+/-- The one line `ixcc compile` prints on standard error for the word hints (`none` when there are
+none): how many operations, the first `shown` of their names, and how to get the entries. -/
+def wordHintLine (hints : Array Diag) (shown : Nat := 3) : Option String :=
+  if hints.isEmpty then none else
+  let names := hints.toList.filterMap (·.name)
+  let listed := ", ".intercalate (names.take shown)
+  let more := if names.length > shown then s!" and {names.length - shown} more" else ""
+  let what := if hints.size == 1 then "word operation is" else "word operations are"
+  let runs := if hints.size == 1 then "runs its reference body" else "run their reference bodies"
+  some s!"hint: {hints.size} {what} reached at run time without an accepted word equation and \
+    {runs} ({listed}{more}): {wordEquationsAdvice}"
+
+end IxCC.Src.Table

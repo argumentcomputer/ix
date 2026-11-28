@@ -1,6 +1,6 @@
 import IxVMRefinement.Decl.ModeledRules
 import IxVMRefinement.Decl.ModeledSound
-import IxC.Kernel.Model.Inductives.DeclRecTwin
+import IxCK.Kernel.Model.Inductives.DeclRecTwin
 
 /-!
 # Auxiliary Model Construction and Positional Lifting for Modeled Inductive Blocks

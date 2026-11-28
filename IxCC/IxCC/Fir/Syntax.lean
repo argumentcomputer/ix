@@ -1,0 +1,230 @@
+import IxCC.Lam.Syntax
+import IxCC.Own.Kind
+
+/-! # Fir syntax
+
+The first-order IR below Anf (Phase 1 fragment): functions keyed by `Key.GKey`, known saturated
+calls and tail calls, join points (recursive or not), `case` over
+constructor keys (with `Nat` literals peeling as `Nat.zero`/`Nat.succ`),
+projections, constructor applications and primitives. There are no
+closures: Anf → Fir (`Fir.lower`) declines a program that still has an `fn`,
+an `app` or a function-valued `glob` until P8 (Phase 2) defunctionalises it.
+
+* **Variables are names** (`Var := Nat`), unique per function: parameters,
+  `bind`s, join-point parameters and case-arm projections each bind a fresh
+  one (a deterministic name supply, `Fun.vars` bounds them). Join points are
+  named the same way (`Fun.joins`).
+* `case x alts dflt` selects by key; an alternative binds no fields, its
+  body projects them (`proj x c i`).
+* `bind x (call f as) k` is a non-tail call; `tcall f as` a tail call; `jmp`
+  appears only in tail position (it is a terminator). A recursive join point
+  is in scope in its own body.
+* Every value is `tobj` in Phase 1: a pointer or an immediate.
+  □ is the immediate operand `Arg.erased`.
+* Constructor info is a function of the checked key and Lam's constructor
+  table (`CtorInfo.ofKey`, D19): tag and field count; every field is
+  an object field of kind `shared` in Phase 1.
+
+Forms planned for later phases are not in this syntax: `Rhs.const` (static
+objects, Phase 2), `Rhs.box`/`unbox` (word representations, Phase 3) and
+`Program.globals`. Fir has no `tick`: Anf's ticks are
+erased at Anf → Fir. -/
+
+namespace IxCC.Fir
+
+open IxCC.Ixon
+
+abbrev Var := Nat
+abbrev FunId := Nat
+abbrev JoinId := Nat
+
+/-- Constructor shape: a function of the checked key and the
+constructor table (`ofKey`). `nobj` object fields, then `nscalar` scalar
+fields; `fieldKinds` from v3 field contracts (default `shared`). -/
+structure CtorInfo where
+  key : Key.CtorKey
+  tag : Nat
+  nobj : Nat
+  nscalar : Nat := 0
+  fieldKinds : List Own.Kind
+  deriving DecidableEq, Repr, Inhabited
+
+namespace CtorInfo
+
+/-- The constructor info of a key: its tag and kept-field arity from the
+table, every field an object field of kind `shared` (Phase 1: no scalar
+fields, no written field contracts yet). -/
+def ofKey (table : List Lam.CtorInfo) (c : Key.CtorKey) : Option CtorInfo :=
+  (table.find? (·.key == c)).map fun r =>
+    { key := c, tag := r.tag, nobj := r.arity, fieldKinds := List.replicate r.arity .shared }
+
+/-- Number of fields. -/
+def arity (c : CtorInfo) : Nat := c.nobj + c.nscalar
+
+/-- A field-less constructor: an immediate from Own down. -/
+def fieldless (c : CtorInfo) : Bool := c.arity == 0
+
+end CtorInfo
+
+/-- Value representation, decided in Anf → Fir: `tobj` everywhere
+in Phase 1. -/
+inductive Rep where
+  | obj
+  | tobj
+  | word
+  | erased
+  deriving DecidableEq, Repr, Inhabited
+
+/-- An operand: a variable, a literal, or □ (an immediate). -/
+inductive Arg where
+  | var (x : Var)
+  | lit (l : Lam.Lit)
+  | erased
+  deriving DecidableEq, Repr, Inhabited
+
+inductive Rhs where
+  | arg (a : Arg)
+  /-- Saturated: `args.length = c.arity`. -/
+  | ctor (c : CtorInfo) (args : List Arg)
+  /-- Field `i` of `x` as constructor `c` (a `Nat` peels). -/
+  | proj (x : Var) (c : Key.CtorKey) (i : Nat)
+  /-- Saturated. -/
+  | prim (op : Lam.Prim) (args : List Arg)
+  /-- A known, saturated, non-tail call. -/
+  | call (f : FunId) (args : List Arg)
+  deriving DecidableEq, Repr, Inhabited
+
+mutual
+
+inductive Code where
+  | bind (x : Var) (rhs : Rhs) (k : Code)
+  /-- Join point `j` with `params` over `k`; `rec`: `body` may jump to `j`
+  (a loop). -/
+  | jp (j : JoinId) (params : List Var) (rec : Bool) (body k : Code)
+  | jmp (j : JoinId) (args : List Arg)
+  | case (x : Var) (alts : List Alt) (dflt : Option Code)
+  | ret (a : Arg)
+  | tcall (f : FunId) (args : List Arg)
+  | trap
+
+/-- A `case` alternative: a constructor key and the arm. -/
+inductive Alt where
+  | mk (key : Key.CtorKey) (body : Code)
+
+end
+
+deriving instance Repr for Code, Alt
+
+instance : Inhabited Code := ⟨.trap⟩
+
+namespace Alt
+
+def key : Alt → Key.CtorKey | .mk k _ => k
+def body : Alt → Code | .mk _ b => b
+
+end Alt
+
+/-- A function: key, parameters with their representation, body,
+and the modes carried from Anf. -/
+structure Fun where
+  key : Key.GKey
+  params : List (Var × Rep)
+  body : Code
+  result : V3.ResultMode := .shared
+  contracts : List V3.BinderMode := []
+  /-- `let borrow` sites (`LetMode.borrow` binds). -/
+  letContracts : List (Var × V3.LetMode) := []
+  /-- Variables are below `vars`, join points below `joins`. -/
+  vars : Nat := 0
+  joins : Nat := 0
+  deriving Inhabited
+
+def Fun.arity (f : Fun) : Nat := f.params.length
+
+structure Program where
+  funs : Src.NatMap Fun
+  /-- Functions are numbered `0 … size - 1` (Anf's global ids). -/
+  size : Nat
+  /-- One function per Anf root, in root order. -/
+  exports : List FunId
+  /-- Lam's constructor table (for `CtorInfo.ofKey` and readback). -/
+  ctors : List Lam.CtorInfo
+  known : Lam.Known
+  deriving Inhabited
+
+namespace Program
+
+def fun? (P : Program) (f : FunId) : Option Fun := P.funs.get? f
+
+/-- Functions in id order. -/
+def funList (P : Program) : List (FunId × Fun) :=
+  (List.range P.size).filterMap fun f => (P.fun? f).map (f, ·)
+
+def ctorInfo? (P : Program) (c : Key.CtorKey) : Option CtorInfo := CtorInfo.ofKey P.ctors c
+
+end Program
+
+/-! ## Sizes -/
+
+mutual
+
+def Code.size : Code → Nat
+  | .bind _ _ k => k.size + 1
+  | .jp _ _ _ b k => b.size + k.size + 1
+  | .case _ alts d => Code.altsSize alts + Code.optSize d + 2
+  | .jmp .. | .ret _ | .tcall .. | .trap => 1
+
+def Code.altsSize : List Alt → Nat
+  | [] => 0
+  | .mk _ b :: as => b.size + Code.altsSize as
+
+def Code.optSize : Option Code → Nat
+  | none => 0
+  | some c => c.size
+
+end
+
+theorem Code.size_pos (c : Code) : 0 < c.size := by
+  cases c <;> simp [Code.size]
+
+/-! ## Array-primitive bindings -/
+
+/-- A right-hand side that is an array primitive (`Lam.Prim.arr`). -/
+def Rhs.isArrPrim : Rhs → Bool
+  | .prim op _ => op.isArr
+  | _ => false
+
+theorem Rhs.isArrPrim_eq_true {r : Rhs} (h : r.isArrPrim = true) :
+    ∃ op as, r = .prim (.arr op) as := by
+  match r, h with
+  | .prim p as, h =>
+    obtain ⟨op, rfl⟩ := Lam.Prim.isArr_eq_true h
+    exact ⟨op, as, rfl⟩
+  | .arg _, h => cases h
+  | .ctor .., h => cases h
+  | .proj .., h => cases h
+  | .call .., h => cases h
+
+mutual
+
+/-- No binding of an array primitive anywhere in the code (what `Fir.lower` produces while it
+declines them, `fir.arrays`). -/
+def Code.arrFree : Code → Bool
+  | .bind _ r k => !r.isArrPrim && k.arrFree
+  | .jp _ _ _ b k => b.arrFree && k.arrFree
+  | .case _ alts d => Code.altsArrFree alts && Code.optArrFree d
+  | .jmp .. | .ret _ | .tcall .. | .trap => true
+
+def Code.altsArrFree : List Alt → Bool
+  | [] => true
+  | .mk _ b :: as => b.arrFree && Code.altsArrFree as
+
+def Code.optArrFree : Option Code → Bool
+  | none => true
+  | some c => c.arrFree
+
+end
+
+def Program.nodes (P : Program) : Nat := P.funList.foldl (fun n (_, f) => n + f.body.size) 0
+
+end IxCC.Fir

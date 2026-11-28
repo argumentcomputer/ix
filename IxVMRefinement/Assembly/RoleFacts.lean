@@ -1,11 +1,11 @@
 import IxVMRefinement.Core.Ctx
 import Ix.IxVM.Refinement.Claim
 import Ix.IxVM.Consistency.Statement
-import IxC.Kernel.Verify.Rules.Bridge
-import IxC.Kernel.Verify.Abstract
-import IxC.Kernel.Rules.Inversion
-import IxC.Kernel.Rules.Transport
-import IxC.Kernel.Model.StoreCompanions
+import IxCK.Kernel.Verify.Rules.Bridge
+import IxCK.Kernel.Verify.Abstract
+import IxCK.Kernel.Rules.Inversion
+import IxCK.Kernel.Rules.Transport
+import IxCK.Kernel.Model.StoreCompanions
 
 /-! # Pure kernel role-fact bridges (`TableAdmitted` → `Core.EnvFacts` role fields)
 

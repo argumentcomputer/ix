@@ -254,7 +254,7 @@ impl Verifier {
     let claim = self.gl.claim(expected)?;
     let proof = self.gl_key.decode_proof(gl_proof)?;
     self.gl_key.verify(&claim, &proof)?;
-    bn::Input::from_source(
+    bn::Input::<crate::kzg::Bn254>::from_source(
       self.public_inputs(expected, 1)?,
       self.gl_source_key.clone(),
       wire::claims_bytes(&[claim])?,
@@ -330,7 +330,7 @@ impl Verifier {
       statement: *bn::StatementDigest::from_root(expected).as_bytes(),
       stage,
     };
-    bn::Input::from_source(
+    bn::Input::<crate::kzg::Bn254>::from_source(
       self.public_inputs(expected, stage)?,
       prepared.key.clone(),
       prepared.claims.clone(),
@@ -493,7 +493,7 @@ impl Prover {
         first
       } else {
         let source = source.take().ok_or("missing BN predecessor")?;
-        bn::Input::from_source(
+        bn::Input::<crate::kzg::Bn254>::from_source(
           self.verifier.public_inputs(expected, stage)?,
           self.verifier.bn_source_key.clone(),
           source.claims,

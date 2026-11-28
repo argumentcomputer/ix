@@ -1,6 +1,6 @@
 import IxVMRefinement.Ingress.DecodePayloads
 import IxVMRefinement.Lib.Words
-import IxC.Ixon.Verify.ConstantBounds
+import IxCK.Ixon.Verify.ConstantBounds
 import IxVMRefinement.Core.Specs.Callees
 
 /-! # Top-level constant deserialization specs (`Ingress`)

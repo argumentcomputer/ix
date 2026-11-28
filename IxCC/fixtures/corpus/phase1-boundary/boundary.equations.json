@@ -1,0 +1,329 @@
+{
+  "format": "ixcc/k1-equations/1",
+  "source": "Boundary.lean",
+  "roots": [
+    {
+      "name": "Boundary.add",
+      "address": "811cf79f3f94c01757b010813f43a6948695f5e4d1d67322ac443b4f7f4bc01e"
+    },
+    {
+      "name": "Boundary.sub",
+      "address": "af5bbaa4f38bd0d0557aaa7c38d794ed7740d4b201426120cf05e39c3a71d99d"
+    },
+    {
+      "name": "Boundary.mul",
+      "address": "da4f82ede08af6c5abd671a73b8c34191b6d7407e5db6fe058da7e69545e2d1b"
+    },
+    {
+      "name": "Boundary.div",
+      "address": "4eda7e3e425743f232b3d1a7b6017f6f155c49262ac42fac6984a0c6564b354a"
+    },
+    {
+      "name": "Boundary.mod",
+      "address": "d1871c77da65d58956b1fb23c138a7eb8d6de3a8c5b590c713799e15714325ef"
+    },
+    {
+      "name": "Boundary.pow",
+      "address": "c9f3bc075262979d2e8a7f92c7b4a7aefde443174d1c91145478856eabd9a8f2"
+    },
+    {
+      "name": "Boundary.gcd",
+      "address": "cafc4b3a4173844e368b3608e674c2cb57331e3d7db46a0e4129f392b53922f0"
+    },
+    {
+      "name": "Boundary.land",
+      "address": "2e0174eb8d609b971ea6d4419923dac7f7c7008e60ba88c35564adb8412e21cb"
+    },
+    {
+      "name": "Boundary.lor",
+      "address": "5851c5cecfab8a507fadea3fdd520499c7b9a0c6518531fad189e6383324e08d"
+    },
+    {
+      "name": "Boundary.xor",
+      "address": "df6fb4287bcfd08fe21cf8d252c192f2af34b001cb435db924053091913fff1e"
+    },
+    {
+      "name": "Boundary.shl",
+      "address": "2634c5e74345279fb6de34148bf33f0a9024366c0becb76ccc0acc0598d0cbb8"
+    },
+    {
+      "name": "Boundary.shr",
+      "address": "7157f41966a92848e33e301677689c35b9358e96c14a5b6270c994b87512b26e"
+    },
+    {
+      "name": "Boundary.beq",
+      "address": "3c5b080e25b719ef59d4b2c344d35e70e67574ad6ac39b1b196ad0f66b47c217"
+    },
+    {
+      "name": "Boundary.ble",
+      "address": "c6c3991760eb2c54baba5eb5aaa56456c5f782289f8c0ac68e24c69b3cf0246e"
+    },
+    {
+      "name": "Boundary.blt",
+      "address": "1ce9bf706ac9e2e49ce834006301d132446d5736815de9abbea68a86efb90929"
+    },
+    {
+      "name": "Boundary.decEq",
+      "address": "aaeed99dfdb2a27b9b4de1321381ab1d272ad3eb1a5ce95f12ea14378aedbfeb"
+    },
+    {
+      "name": "Boundary.decLe",
+      "address": "2540bedf5b4d924989d9d897f239861e76ca8cb05abfc2f7b495bd0e9f763d01"
+    },
+    {
+      "name": "Boundary.decLt",
+      "address": "d81e5c0c5e0f2ecc64a0e8f5961b1d2a51fc8847f4060d31bc115ed4ca5ef9a5"
+    },
+    {
+      "name": "Boundary.decGt",
+      "address": "a59abccbbf5d15a7f45a00a60d67151aa1b82d4a7851e5295396e6b78e1b81c5"
+    },
+    {
+      "name": "Boundary.bne",
+      "address": "e0460f5fbe8023476a082532a4a5f97f7eb7062483586771ce8fb31bfd7fecc7"
+    },
+    {
+      "name": "Boundary.ltBranch",
+      "address": "e08c821bf09d7090d1071277be507d2404fa97a3ed20466db4cdbb58049d80d7"
+    },
+    {
+      "name": "Boundary.leBranch",
+      "address": "3ab64bee4a7bf7c780e15d3954d0d4a53df6c4c3e397b0cda6747db3214e46f6"
+    },
+    {
+      "name": "Boundary.minN",
+      "address": "43f0bca6e66b79b8c3ebe30a302d786d85081c3927986acff7a3ecc68886ae03"
+    },
+    {
+      "name": "Boundary.maxN",
+      "address": "5c7b1e5cd622b4beb0f3f968f7348bcc41539a1fb2c0ac729729c397e2561f02"
+    },
+    {
+      "name": "Boundary.pred",
+      "address": "91606d99740383f3ae1fb3a16325c2a62639b334ad9ba78760638a4b730a65d9"
+    },
+    {
+      "name": "Boundary.succ",
+      "address": "7c8672191f2660e01d355dfa1cd777fe653155bbe72e25fd7cfe3994eb43cd8c"
+    },
+    {
+      "name": "Boundary.ident",
+      "address": "2b7fdd58247a5e2db7014d74140f22d3350101072a4b2edbac02d46b9474761d"
+    },
+    {
+      "name": "Boundary.addK",
+      "address": "251333c60749b371b46139f7a4f71f937e773a56d254c9102947774a45291866"
+    },
+    {
+      "name": "Boundary.kAdd",
+      "address": "bd7c5a7a362d8fecfb99b53a618492ed7d25519f44b8d383f6fb4f904e0b9ec9"
+    },
+    {
+      "name": "Boundary.subK",
+      "address": "1caefbee488795575bffbdb7ecdc84ac44585196358c4e285e68e5ed1bc231d4"
+    },
+    {
+      "name": "Boundary.kSub",
+      "address": "9380580077d5d6d7e8e2d18ea8b2d0377fd0580269751268661c52dc2f62385d"
+    },
+    {
+      "name": "Boundary.mulK",
+      "address": "fabd277f4ab7c28b8a9493ee14b773e85ba4b157b02a6956649144128c640d04"
+    },
+    {
+      "name": "Boundary.kMul",
+      "address": "0dbf8bd626c480ab9b7c005c353647b2d7a15bda66ec6ffc60f889ceaa6860e4"
+    },
+    {
+      "name": "Boundary.divK",
+      "address": "8bef8a00ed4f79759d42b4fc679dc7e32c677593f786711fa65085426cbd9ea5"
+    },
+    {
+      "name": "Boundary.kDiv",
+      "address": "e27e58ca7988861b8dbbabba7bee2c3ae9d8dbcf28761011a3db92f703d5e663"
+    },
+    {
+      "name": "Boundary.modK",
+      "address": "34e3dbd8debe432eeb13190bb32d3b6455cb6a4344b1a5f855bd87f560492649"
+    },
+    {
+      "name": "Boundary.kMod",
+      "address": "5f9e65f86bec4e2ef266e1e681257479921b5f486bb7b705818b810c87ce03b5"
+    },
+    {
+      "name": "Boundary.shlK",
+      "address": "8155d11b7606811a2d2e8c1efad92ad302a2ed93708d7fc54f6bf927b7ca9f3f"
+    },
+    {
+      "name": "Boundary.kShl",
+      "address": "b8dada77be90ba844e4ff83ae8fd1bfcb7075e25222ad47875ac7b0458fdd995"
+    },
+    {
+      "name": "Boundary.shrK",
+      "address": "5380caac466b5b7f9518449d74b6b3aa532650abcdecf1b0f894046c077ebfcf"
+    },
+    {
+      "name": "Boundary.kShr",
+      "address": "cea055e3683f076c68d1052a9f731e5c39ef4648f33cf4c639eea9952b7a53af"
+    },
+    {
+      "name": "Boundary.powK",
+      "address": "ef9fc430ac32d7ba621ec855b909493f3cb51b62031b6c286359c8dd3900956e"
+    },
+    {
+      "name": "Boundary.kPow",
+      "address": "501bf96964fcb6a5b4ed239f18f3e80ef6fa6d72c73142be53bf89f1eb9a5310"
+    },
+    {
+      "name": "Boundary.landK",
+      "address": "87244294ede94a505e376dfa4dd10c2e7f2973e779f1f05d2453d17105c7cd90"
+    },
+    {
+      "name": "Boundary.xorK",
+      "address": "952dd130d28d4ef3b92955cca8efc394ed633ace198f3b44cd7e1cb872e27127"
+    },
+    {
+      "name": "Boundary.ltK",
+      "address": "58dfb056ffe8d773bc01747f22eeaf0eb607d0ecbbfcc8aafbe64834a06cf152"
+    },
+    {
+      "name": "Boundary.leK",
+      "address": "41be217917651e21a6a107cc91cb76a08fd5d7185df2ec547aa5ee762467c9eb"
+    },
+    {
+      "name": "Boundary.eqK",
+      "address": "8f9fecbc68fe463bcc678ba56e921443c0bf6ac90a0ce529f81458e09694dbac"
+    },
+    {
+      "name": "Boundary.litMax",
+      "address": "990d9a6455ab08ac64c611a64fed8433a316342d46401b84420a754a0188f7b9"
+    },
+    {
+      "name": "Boundary.litWord",
+      "address": "938a474828b8e9587f4a3ca52cccdf6ef2c283d35be5daec205f963a60c0db17"
+    },
+    {
+      "name": "Boundary.litDead",
+      "address": "dfa4f99d9f955b3c2ecd61c8bae4957d04701259ca73e90b42ea64540f9ff0bf"
+    },
+    {
+      "name": "Boundary.litArm",
+      "address": "f0cd450661e14fcc4fe1a9f90207fd5ca85680b19d5a45461b3f9eddb0d56c4f"
+    },
+    {
+      "name": "Boundary.litOperand",
+      "address": "d62327bf3f48ab3f624c06cfdc98f8552f8c9d1421883c40da28b16c9e0f1f82"
+    },
+    {
+      "name": "Boundary.litCompare",
+      "address": "977410ca06efdca2c5da663ee26a24db059208db5509540190918323b2386875"
+    },
+    {
+      "name": "Boundary.addSub",
+      "address": "8918c60d59c8ab7767a38f316b5fb662df9567c9266a2bcd99a850cdbeac4216"
+    },
+    {
+      "name": "Boundary.mulDiv",
+      "address": "0bb5390fb0650218f11516806f93d6fd053c15646878c1fcd6bffdd3ee0cf409"
+    },
+    {
+      "name": "Boundary.shlShr",
+      "address": "8a9a43c64424df067caf2069b0b53961eabc36920b41188a492035bac94362cf"
+    },
+    {
+      "name": "Boundary.powMod",
+      "address": "57eb83e9406b52f7f28403e2b8645537185b8cc369e62ad9951f98a7eb08cdcc"
+    },
+    {
+      "name": "Boundary.succPred",
+      "address": "df4962e3627214100b4cfd7e7c4e077493b24e3a836371eed568656e53176e5c"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "Nat.add",
+      "definition_address": "a04e7e6b19f5e48dbb0b53dae24db5dcc1b1a98c8e97551db8fb4b5f4a14caa8",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "300f835ac35174de29416ee013ec8c57d5c01c6e448335ee4086f384f3f1a249"
+    },
+    {
+      "definition": "Nat.beq",
+      "definition_address": "dd0668fbe8c2b2a2260e95da62a2bea5df42c670a3e95ccffea03c3a7ffdc1c2",
+      "equation": "Nat.beq.eq_def",
+      "equation_address": "a2262f61bc575994ebe308858282397b4e0c8ca19e626eba79956699501e124c"
+    },
+    {
+      "definition": "Nat.bitwise",
+      "definition_address": "f67972af52c7a4fce7de2595075e6b6d0ca7d7f67e01e1a1383c6a270aa613cd",
+      "equation": "Nat.bitwise.eq_def",
+      "equation_address": "28835212de0d7d796e7256b5a560118c470befd066f5b4504652736867998670"
+    },
+    {
+      "definition": "Nat.bitwise._unary",
+      "definition_address": "0958d930c48997ef917230a263e338a060842f382586a230293b2ccafa1967a9",
+      "equation": "Nat.bitwise._unary.eq_def",
+      "equation_address": "cefc1262dc2a1b0d22598e8221053070583da86918a112e6f115c7746da59f39"
+    },
+    {
+      "definition": "Nat.ble",
+      "definition_address": "a939cc7925834d04a7ced860c5c44484231c9f5c44728d83d55f19c08037f3b4",
+      "equation": "Nat.ble.eq_def",
+      "equation_address": "25a12692ef836a0d2771c46279e413f421082b3128e091b2931f9e9733348403"
+    },
+    {
+      "definition": "Nat.div.go",
+      "definition_address": "0d78a77d8ea6b073d86da27fd8ccb0fed5771b11062d5585f73279abdfe38784",
+      "equation": "Nat.div.go.eq_def",
+      "equation_address": "fbec97a8f4e8edc20956d9322bb93c4d16d01cb27f3554fe75bc6bdd82ecf9f4"
+    },
+    {
+      "definition": "Nat.gcd",
+      "definition_address": "f1286e3ceac7bf4afa1c95a2f70c69ffc0667295035661b9be57ed6f0b08babb",
+      "equation": "Nat.gcd.eq_def",
+      "equation_address": "4a887f64d8c0246de65ffa5b2e7edd16392140bdca84e2fea6c90a112f1fd874"
+    },
+    {
+      "definition": "Nat.gcd._unary",
+      "definition_address": "8a27c53d86ca324e0cec8aeb636634bb49482c14d8780addc13bc8ecb4e574c8",
+      "equation": "Nat.gcd._unary.eq_def",
+      "equation_address": "4b966fddb88d4cffe06f26a2f3c638962819ea3054d7ef413c34e384a092f79b"
+    },
+    {
+      "definition": "Nat.modCore.go",
+      "definition_address": "205697164cd9b61d252cc44c7d7f4a00b4bab80be3d77991ce288eefa2532bed",
+      "equation": "Nat.modCore.go.eq_def",
+      "equation_address": "3c0ada33a37dd767b729e80f3ac7efbdef99f6fc83fddf87fa66df5b8dc6d16d"
+    },
+    {
+      "definition": "Nat.mul",
+      "definition_address": "7e736639472dcc920bdc54d8ff0255a4c03b3c05375eacf08814e341deebd331",
+      "equation": "Nat.mul.eq_def",
+      "equation_address": "ab44c6c6e51692fbde3e413a5b90e4727eb15bfc1851cbd56869c27ecb615ee3"
+    },
+    {
+      "definition": "Nat.pow",
+      "definition_address": "473d7239744c820ddb45b6ce56d0506734ba90e5699e985444fd7a6647e9b0a0",
+      "equation": "Nat.pow.eq_def",
+      "equation_address": "7db03b695da2842f3a309f783d03f8a5b71c7c083a9c443fba18f4383e14feeb"
+    },
+    {
+      "definition": "Nat.shiftLeft",
+      "definition_address": "c2a2258d56e14ebdb8c9986365cf0c0f6dfe4128a8faf847dd5e50b4ae7bb310",
+      "equation": "Nat.shiftLeft.eq_def",
+      "equation_address": "492f48a67ad9ee6b523243728498f022ce79f6642d925ebb2a304a1bcfd18239"
+    },
+    {
+      "definition": "Nat.shiftRight",
+      "definition_address": "74a4836a0eddfd07e45e5da0929df974e0caef28fd26001f7de1712d5beddd4e",
+      "equation": "Nat.shiftRight.eq_def",
+      "equation_address": "013214b1403ee47e67c71a59668e01660308f761b1b15ee85f50e9e7e6923da5"
+    },
+    {
+      "definition": "Nat.sub",
+      "definition_address": "f8410bb7b91afaa0cb6f9162faeee2a682e98cde21acf19712380f4e9dbcbf00",
+      "equation": "Nat.sub.eq_def",
+      "equation_address": "80ffad9e0b779752b2e73b7a35e69cce0463317b238fe9679447f01194f157ab"
+    }
+  ],
+  "failures": []
+}

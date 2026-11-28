@@ -2,9 +2,10 @@
 //! Proving powers and fixed matrices are excluded. Circuit activation and trace
 //! heights remain proof data subject to the same bounds as in-process checking.
 
-use super::{Backend, Proof, check_shape};
+use super::{AiurCurve, AiurField, Backend, Proof, check_shape};
 use crate::kzg::{
-  KzgCommitment, KzgConfig, Scalar, TranscriptKind, VerifierParams,
+  CurveScalar, KzgCommitment, KzgConfig, KzgCurve, TranscriptKind,
+  VerifierParams,
 };
 use multi_stark::{
   config::ProofConfig,
@@ -18,12 +19,19 @@ const PROOF_MAGIC: &[u8; 8] = b"IXAUBP01";
 const MAX_BYTES: usize = 64 << 20;
 
 #[derive(Serialize, Deserialize)]
-struct EncodedKey<C = Vec<Circuit<Scalar>>> {
+#[serde(bound(
+  serialize = "Circuits: Serialize, KzgCommitment<C>: Serialize",
+  deserialize = "Circuits: Deserialize<'de>, KzgCommitment<C>: Deserialize<'de>"
+))]
+struct EncodedKey<
+  C: KzgCurve = crate::kzg::Bn254,
+  Circuits = Vec<Circuit<CurveScalar<C>>>,
+> {
   parameters: Vec<u8>,
   transcript: u8,
   quotient_budget: usize,
-  circuits: C,
-  preprocessing: Option<KzgCommitment>,
+  circuits: Circuits,
+  preprocessing: Option<KzgCommitment<C>>,
   indices: Vec<Option<usize>>,
   key_bound: bool,
 }
@@ -35,25 +43,27 @@ struct EncodedProof {
   body: Vec<u8>,
 }
 
-pub struct VerifyingKey {
-  system: System<KzgConfig>,
+pub struct VerifyingKey<C: AiurCurve = crate::kzg::Bn254> {
+  system: System<KzgConfig<C>>,
 }
 
-impl Backend<'_, '_> {
-  pub fn verifying_key(&self) -> Result<VerifyingKey, String> {
+impl<F: AiurField> Backend<'_, '_, F> {
+  pub fn verifying_key(&self) -> Result<VerifyingKey<F::Curve>, String> {
     VerifyingKey::from_system(self.system())
   }
 }
 
-impl VerifyingKey {
+impl<C: AiurCurve> VerifyingKey<C> {
   /// Derive verification data from a system built from trusted compiler output
   /// and setup. Fixed commitments are retained; fixed witness matrices are not.
-  pub fn from_system(source: &System<KzgConfig>) -> Result<Self, String> {
+  pub fn from_system(source: &System<KzgConfig<C>>) -> Result<Self, String> {
     let parameters = source.config.pcs().verifier_params().clone();
     let circuits = source.circuits.iter().map(copy_circuit).collect();
-    let mut config =
-      KzgConfig::verifier_only(parameters, source.config.max_quotient_degree())
-        .with_transcript(source.config.transcript_kind());
+    let mut config = KzgConfig::<C>::verifier_only(
+      parameters,
+      source.config.max_quotient_degree(),
+    )
+    .with_transcript(source.config.transcript_kind());
     if let Some(digest) = source.config.key_digest() {
       config = config.with_key_digest(*digest);
     }
@@ -69,7 +79,7 @@ impl VerifyingKey {
     Ok(key)
   }
 
-  pub fn system(&self) -> &System<KzgConfig> {
+  pub fn system(&self) -> &System<KzgConfig<C>> {
     &self.system
   }
 
@@ -81,10 +91,16 @@ impl VerifyingKey {
     self.system.config.key_digest().is_some()
   }
 
+  /// Bind a KZG system's Fiat-Shamir transcript seed to its canonical encoded
+  /// verifying-key digest before proving.
+  pub fn bind_system(system: &mut System<KzgConfig<C>>) -> Result<(), String> {
+    bind_system(system)
+  }
+
   fn encode_key(&self, key_bound: bool) -> Result<Vec<u8>, String> {
     encode(
       KEY_MAGIC,
-      &EncodedKey {
+      &EncodedKey::<C, _> {
         parameters: self
           .system
           .config
@@ -105,41 +121,49 @@ impl VerifyingKey {
     )
   }
 
-  /// Authenticate the complete key before decoding. The expected digest must
-  /// come from trusted compilation or verifier configuration, not the proof.
-  pub fn from_bytes(
+  /// Authenticate the complete key before decoding for curve `C`.
+  pub fn from_bytes_for(
     bytes: &[u8],
     expected_digest: &[u8; 32],
   ) -> Result<Self, String> {
     if blake3::hash(bytes).as_bytes() != expected_digest {
       return Err("Aiur KZG verifying key digest mismatch".into());
     }
-    let encoded: EncodedKey = decode(KEY_MAGIC, bytes)?;
+    let encoded: EncodedKey<C> = decode(KEY_MAGIC, bytes)?;
     if !encoded.quotient_budget.is_power_of_two()
-      || encoded.quotient_budget.ilog2() as usize > Scalar::TWO_ADICITY
+      || encoded.quotient_budget.ilog2() as usize
+        > CurveScalar::<C>::TWO_ADICITY
     {
       return Err("invalid KZG quotient budget".into());
     }
-    let parameters = VerifierParams::from_bytes(&encoded.parameters)
+    let parameters = VerifierParams::<C>::from_bytes(&encoded.parameters)
       .map_err(|error| error.to_string())?;
     let transcript = match encoded.transcript {
       0 => TranscriptKind::Blake3,
       1 => TranscriptKind::Keccak256,
       _ => return Err("unsupported KZG transcript".into()),
     };
-    let mut config =
-      KzgConfig::verifier_only(parameters, encoded.quotient_budget)
-        .with_transcript(transcript);
-    if encoded.key_bound {
-      config = config.with_key_digest(*blake3::hash(bytes).as_bytes());
+    if !encoded.key_bound {
+      return Err(
+        "Aiur KZG verifying key must bind its transcript to the key digest"
+          .into(),
+      );
     }
+    let config =
+      KzgConfig::<C>::verifier_only(parameters, encoded.quotient_budget)
+        .with_transcript(transcript)
+        .with_key_digest(*blake3::hash(bytes).as_bytes());
+    let vk_digest = multi_stark::system::compute_vk_digest::<
+      CurveScalar<C>,
+      CurveScalar<C>,
+    >(&encoded.circuits);
     let key = Self {
       system: System {
         config,
         circuits: encoded.circuits,
         preprocessed_commit: encoded.preprocessing,
         preprocessed_indices: encoded.indices,
-        vk_digest: [0u8; 32],
+        vk_digest,
       },
     };
     key.validate()?;
@@ -148,7 +172,11 @@ impl VerifyingKey {
 
   /// `claim` is the independently expected native call message, including its
   /// CALL namespace, compiler callable ID, typed inputs and outputs.
-  pub fn verify(&self, claim: &[Scalar], proof: &Proof) -> Result<(), String> {
+  pub fn verify(
+    &self,
+    claim: &[CurveScalar<C>],
+    proof: &Proof<C>,
+  ) -> Result<(), String> {
     check_shape(&self.system, &proof.active, &proof.log_degrees)?;
     self
       .system
@@ -156,9 +184,9 @@ impl VerifyingKey {
       .map_err(|error| format!("Aiur KZG verification failed: {error:?}"))
   }
 
-  pub fn encode_proof(&self, proof: &Proof) -> Result<Vec<u8>, String> {
+  pub fn encode_proof(&self, proof: &Proof<C>) -> Result<Vec<u8>, String> {
     check_shape(&self.system, &proof.active, &proof.log_degrees)?;
-    let codec = crate::kzg::compact::FixedProofCodec::new_active(
+    let codec = crate::kzg::compact::FixedProofCodec::<C>::new_active(
       &self.system,
       &proof.active,
       &proof.log_degrees,
@@ -176,7 +204,7 @@ impl VerifyingKey {
 
   pub fn verify_bytes(
     &self,
-    claim: &[Scalar],
+    claim: &[CurveScalar<C>],
     bytes: &[u8],
   ) -> Result<(), String> {
     self.verify(claim, &self.decode_proof(bytes)?)
@@ -184,10 +212,10 @@ impl VerifyingKey {
 
   /// Decode canonical transport against this authenticated key's dimensions.
   /// Verification still requires an independently expected public claim.
-  pub fn decode_proof(&self, bytes: &[u8]) -> Result<Proof, String> {
+  pub fn decode_proof(&self, bytes: &[u8]) -> Result<Proof<C>, String> {
     let encoded: EncodedProof = decode(PROOF_MAGIC, bytes)?;
     check_shape(&self.system, &encoded.active, &encoded.log_degrees)?;
-    let codec = crate::kzg::compact::FixedProofCodec::new_active(
+    let codec = crate::kzg::compact::FixedProofCodec::<C>::new_active(
       &self.system,
       &encoded.active,
       &encoded.log_degrees,
@@ -232,7 +260,7 @@ impl VerifyingKey {
           || height > system.config.pcs().verifier_params().max_trace_len()
           || height.ilog2() as usize
             + circuit.quotient_degree().ilog2() as usize
-            > Scalar::TWO_ADICITY
+            > CurveScalar::<C>::TWO_ADICITY
           || *index != Some(next_fixed)
           || fixed
             .and_then(|commitments| commitments.get(next_fixed))
@@ -253,8 +281,8 @@ impl VerifyingKey {
   }
 }
 
-pub(super) fn bind_system(
-  system: &mut System<KzgConfig>,
+pub(super) fn bind_system<C: AiurCurve>(
+  system: &mut System<KzgConfig<C>>,
 ) -> Result<(), String> {
   let key = VerifyingKey::from_system(system)?;
   let digest = *blake3::hash(&key.encode_key(true)?).as_bytes();
@@ -262,7 +290,9 @@ pub(super) fn bind_system(
   Ok(())
 }
 
-fn copy_circuit(source: &Circuit<Scalar>) -> Circuit<Scalar> {
+fn copy_circuit<C: KzgCurve>(
+  source: &Circuit<CurveScalar<C>>,
+) -> Circuit<CurveScalar<C>> {
   Circuit {
     graph: source.graph.clone(),
     main_width: source.main_width,
@@ -308,6 +338,17 @@ fn decode<T: Serialize + DeserializeOwned>(
   Ok(value)
 }
 
+impl VerifyingKey<crate::kzg::Bn254> {
+  /// Authenticate the complete key before decoding. The expected digest must
+  /// come from trusted compilation or verifier configuration, not the proof.
+  pub fn from_bytes(
+    bytes: &[u8],
+    expected_digest: &[u8; 32],
+  ) -> Result<Self, String> {
+    Self::from_bytes_for(bytes, expected_digest)
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -339,7 +380,9 @@ mod tests {
         ..Default::default()
       })
       .collect();
-    System::new(config, circuits)
+    let (mut system, pk) = System::new(config, circuits);
+    bind_system(&mut system).unwrap();
+    (system, pk)
   }
 
   #[test]
@@ -348,6 +391,7 @@ mod tests {
     let key = VerifyingKey::from_system(&system).unwrap();
     let bytes = key.to_bytes().unwrap();
     for mutate in [
+      |key: &mut EncodedKey| key.key_bound = false,
       |key: &mut EncodedKey| key.indices[2] = Some(1),
       |key: &mut EncodedKey| key.circuits[0].stage_2_width += 1,
       |key: &mut EncodedKey| key.circuits[2].preprocessed_height = 3,

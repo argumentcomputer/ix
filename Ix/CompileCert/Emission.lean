@@ -192,7 +192,9 @@ local macro "tidy_steps" : tactic => `(tactic|
 
 /-- The payload a definition-like declaration's finisher assembles. -/
 def definitionPayload (source : Ix.Def) (type value : Ixon.Expr) : Ixon.Definition :=
-  { kind := source.kind, safety := source.safety, lvls := source.levelParams.size.toUInt64, typ := type, value }
+  { kind := source.kind, safety := source.safety,
+    asserts := Ix.SemanticContract.defAsserts source.kind source.type,
+    lvls := source.levelParams.size.toUInt64, typ := type, value }
 
 def axiomPayload (source : AxiomVal) (type : Ixon.Expr) : Ixon.Axiom :=
   { isUnsafe := source.isUnsafe, lvls := source.cnst.levelParams.size.toUInt64, typ := type }
@@ -202,7 +204,9 @@ def quotientPayload (source : QuotVal) (type : Ixon.Expr) : Ixon.Quotient :=
 
 def constructorPayload (source : ConstructorVal) (type : Ixon.Expr) : Ixon.Constructor :=
   { isUnsafe := source.isUnsafe, lvls := source.cnst.levelParams.size.toUInt64, cidx := source.cidx.toUInt64,
-    params := source.numParams.toUInt64, fields := source.numFields.toUInt64, typ := type }
+    params := source.numParams.toUInt64, fields := source.numFields.toUInt64,
+    fieldModes := Ix.SemanticContract.ctorFieldModes source.numParams source.numFields.toUInt64 source.cnst.type,
+    typ := type }
 
 def recursorPayload (source : RecursorVal) (type : Ixon.Expr) (rules : Array Ixon.RecursorRule) :
     Ixon.Recursor :=

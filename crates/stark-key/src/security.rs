@@ -9,8 +9,11 @@
 //! - Explicit per-`log_blowup` minimum query count and PoW cap <= 32 bits.
 //!
 //! The default Protocol v6 parameters (`log_blowup = 2, num_queries = 128,
-//! query_proof_of_work_bits = 20`) provide 142.24 bits finite-`m` Johnson
-//! (+14.24 bits headroom), 106.78 bits provable UD, and 276 bits conjectured.
+//! query_proof_of_work_bits = 20`) give FRI query terms of 142.24 bits
+//! finite-`m` Johnson, 106.78 bits UD, and 276 bits conjectured. These are
+//! query terms only, not soundness levels (the weakest term decides; the
+//! 32-byte digest alone caps the level at about 128 bits), and no
+//! machine-checked theorem covers the tensor-batched v6 verifier.
 //!
 //! The Lean mirror lives in `Ix/Aiur/Parameters.lean`; a test in the `aiur`
 //! crate checks that they agree.
@@ -57,8 +60,25 @@ pub const PROTOCOL_VERSION_V6: usize = 6;
 /// (both unique-decoding and finite-`m` Johnson list-decoding regimes).
 pub const MIN_PROVABLE_SECURITY_BITS_128: usize = 128;
 
-/// Digest width in bytes for the 48-byte (384-bit) BLAKE3 XOF profile
-/// (`>= 190.5` classical BCS collision bits and exact `128.0` BHT quantum bits).
+/// Digest width in bytes for the production 128-bit classical `BLAKE3-256`
+/// profile (`32` bytes = 256 bits; `127.7` classical BCS collision bits,
+/// `85.3` BHT quantum bits).
+pub const DIGEST_BYTES_BLAKE3_256: usize = 32;
+
+/// Digest width in bytes for the certified 128-bit post-quantum RFC 7693
+/// `BLAKE2b-512` profile (`64` bytes = 512 bits, true 512-bit internal state,
+/// 128-byte block = single-block 2-to-1 Merkle compression; `255.7` classical
+/// BCS collision bits, `170.7` BHT quantum bits, `204.8` CNS bits, `256` Grover bits).
+pub const DIGEST_BYTES_BLAKE2B512: usize = 64;
+
+/// Legacy 48-byte (384-bit) BLAKE3 XOF digest width constant, retained solely
+/// for `Ix/Aiur/Parameters.lean` mirror test compatibility.
+///
+/// **Retired for concrete 128-bit post-quantum security:** BLAKE3's 256-bit
+/// internal chaining value (`cv`) caps concrete collision resistance at `128`
+/// classical / `85.3` BHT quantum bits on every `> 64`-byte input regardless
+/// of XOF output length. Use `DIGEST_BYTES_BLAKE2B512` (64 bytes, RFC 7693
+/// `BLAKE2b-512`) for concrete 128-bit post-quantum security.
 pub const DIGEST_BYTES_XOF48: usize = 48;
 
 /// Conservative integer lower bound on `-1000 · log2((1 + 2^{-log_blowup}) / 2)`
@@ -177,11 +197,46 @@ pub const fn conjectured_bits(
     .saturating_add(fri.query_proof_of_work_bits)
 }
 
+/// The FRI shapes a floor check admits besides the query-phase numbers:
+/// folding arity up to `2^max_log_arity` and a final polynomial of up to
+/// `2^max_log_final_poly_len` coefficients. Every shape requires
+/// `cap_height = 0` (single-root commitments), whatever the limits.
+///
+/// The numeric floors of [`check_with_shape`] count FRI query-phase bits
+/// only; they read `log_blowup`, `num_queries` and `query_proof_of_work_bits`
+/// and do not depend on the arity or the final-polynomial length. No term
+/// for the commit-phase cost of folding by more than two is counted, and no
+/// machine-checked theorem covers a shape other than [`ShapeLimits::BINARY`]
+/// (`CertiFRI`'s verifier folds by two only).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ShapeLimits {
+  pub max_log_arity: usize,
+  pub max_log_final_poly_len: usize,
+}
+
+impl ShapeLimits {
+  /// Binary folding, constant final polynomial: the only shape [`check`]
+  /// admits, and the one `CertiFRI`'s verifier models.
+  pub const BINARY: Self = Self { max_log_arity: 1, max_log_final_poly_len: 0 };
+}
+
 /// Reject parameters below the floor. Builders call this before they create
-/// a key, and the codec calls it before it accepts one.
+/// a key, and the codec calls it before it accepts one. Admits only
+/// [`ShapeLimits::BINARY`] with `cap_height = 0`.
 pub fn check(
   commitment: &CommitmentParameters,
   fri: &FriParameters,
+) -> Result<(), String> {
+  check_with_shape(commitment, fri, ShapeLimits::BINARY)
+}
+
+/// [`check`] for a caller that admits the FRI shapes of `shape`: the
+/// structural limits and the numeric floors are evaluated on the real
+/// parameter values, never on substitutes. `cap_height` must be 0.
+pub fn check_with_shape(
+  commitment: &CommitmentParameters,
+  fri: &FriParameters,
+  shape: ShapeLimits,
 ) -> Result<(), String> {
   if commitment.cap_height != 0 {
     return Err(format!(
@@ -189,17 +244,28 @@ pub fn check(
       commitment.cap_height
     ));
   }
-  if fri.log_final_poly_len != 0 {
-    return Err(format!(
-      "unsupported log_final_poly_len {}: expected 0",
-      fri.log_final_poly_len
-    ));
+  if fri.log_final_poly_len > shape.max_log_final_poly_len {
+    return Err(if shape.max_log_final_poly_len == 0 {
+      format!(
+        "unsupported log_final_poly_len {}: expected 0",
+        fri.log_final_poly_len
+      )
+    } else {
+      format!(
+        "unsupported log_final_poly_len {}: expected at most {}",
+        fri.log_final_poly_len, shape.max_log_final_poly_len
+      )
+    });
   }
-  if fri.max_log_arity != 1 {
-    return Err(format!(
-      "unsupported max_log_arity {}: expected 1",
-      fri.max_log_arity
-    ));
+  if !(1..=shape.max_log_arity).contains(&fri.max_log_arity) {
+    return Err(if shape.max_log_arity == 1 {
+      format!("unsupported max_log_arity {}: expected 1", fri.max_log_arity)
+    } else {
+      format!(
+        "unsupported max_log_arity {}: expected 1..={}",
+        fri.max_log_arity, shape.max_log_arity
+      )
+    });
   }
   if !LOG_BLOWUP_RANGE.contains(&commitment.log_blowup) {
     return Err(format!(
@@ -454,6 +520,49 @@ mod tests {
     }
   }
 
+  /// `check_with_shape` evaluates the shape on the real values: it admits the
+  /// declared arity and final-polynomial limits, still requires a single
+  /// root, and applies the same numeric floors as `check`.
+  #[test]
+  fn shape_limits_are_checked_on_real_values() {
+    let wide = ShapeLimits { max_log_arity: 3, max_log_final_poly_len: 8 };
+    let (cp, fp) = parameters(4, 58, 0, 28);
+    let shaped =
+      FriParameters { max_log_arity: 3, log_final_poly_len: 8, ..fp };
+    check_with_shape(&cp, &shaped, wide).unwrap();
+    // `check` is `check_with_shape(.., BINARY)` and still refuses the shape.
+    assert!(check(&cp, &shaped).is_err());
+    check_with_shape(&cp, &fp, ShapeLimits::BINARY).unwrap();
+    // A single root is required at every shape.
+    for cap_height in [1, 4, 12] {
+      let capped = CommitmentParameters { cap_height, ..cp };
+      let err = check_with_shape(&capped, &shaped, wide).unwrap_err();
+      assert!(err.contains("cap_height"), "{err}");
+    }
+    // Arity and final length beyond the limits, and arity 0, are refused.
+    for (mla, lfp, needle) in [
+      (4, 8, "max_log_arity"),
+      (0, 8, "max_log_arity"),
+      (3, 9, "log_final_poly_len"),
+      (3, 12, "log_final_poly_len"),
+    ] {
+      let bad =
+        FriParameters { max_log_arity: mla, log_final_poly_len: lfp, ..fp };
+      let err = check_with_shape(&cp, &bad, wide).unwrap_err();
+      assert!(err.contains(needle), "{err}");
+    }
+    // The numeric floors are unchanged by the shape.
+    for (b, q, c, p) in [(4, 58, 0, 20), (4, 52, 0, 32), (3, 74, 0, 20)] {
+      let (cp, fp) = parameters(b, q, c, p);
+      let shaped =
+        FriParameters { max_log_arity: 3, log_final_poly_len: 8, ..fp };
+      assert!(
+        check_with_shape(&cp, &shaped, wide).is_err(),
+        "accepted {b} {q} {c} {p}"
+      );
+    }
+  }
+
   #[test]
   fn finite_m_johnson_accounts_for_proximity_slack() {
     let johnson_m = f64::from(u32::try_from(JOHNSON_M).unwrap());
@@ -570,6 +679,16 @@ mod tests {
           "Johnson accepted ({b}, {q}, {c}, {p})"
         );
       }
+    }
+  }
+
+  #[test]
+  fn digest_width_constants_match_classical_and_pq_profiles() {
+    assert_eq!(DIGEST_BYTES_BLAKE3_256, 32);
+    assert_eq!(DIGEST_BYTES_BLAKE2B512, 64);
+    const {
+      assert!(DIGEST_BYTES_BLAKE2B512 > DIGEST_BYTES_XOF48);
+      assert!(DIGEST_BYTES_XOF48 > DIGEST_BYTES_BLAKE3_256);
     }
   }
 }

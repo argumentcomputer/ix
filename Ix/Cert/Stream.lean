@@ -1,5 +1,5 @@
 import Ix.Cert.Statement
-import IxC.Kernel.Admission.Theorems
+import IxCK.Kernel.Admission.Theorems
 
 /-! # The reader succeeds over the compiled closure's stream (Route A, B3)
 
@@ -9,14 +9,14 @@ they reference (`blobsOf`) and the artifact's hints (`hintsOf`). The entry
 first prepares the fold's input (`Ix.Kernel.Admission.prepareWith`): the
 byte stage (batch limits, unique keys, authentication), the role table's
 admission, canonical decoding, and the reader over the decoded records
-(`readStream`, `readRecords` threading `Reader.State`). IxC proves what an
+(`readStream`, `readRecords` threading `Reader.State`). IxCK proves what an
 accepted preparation means; this file proves the converse that Route A needs:
 the preparation **succeeds** on the compiled closure.
 
 * `readRecords_complete`, `readStream_complete`: the reader's stream loop
   succeeds on every record-by-record reading (`StreamRead`, each record read
   against the state the records before it left), with distinct addresses:
-  the converse of IxC's `readRecords_spec`. `readStream_complete` also requires
+  the converse of IxCK's `readRecords_spec`. `readStream_complete` also requires
   the final state to keep the prelude's entries (`State.keepsPrelude`);
 * the byte stage on the compiled closure: unique keys (`closure_unique`, from
   the order's distinctness and the blob map), authentication
@@ -281,11 +281,14 @@ theorem closure_reads (ixe : Ixon.Env) (limits : Limits) :
       · exact bytesFit (a, lc.rawBytes) (by rw [recordsOf_cons, hl]; simp)
       · exact nodesFit (a, c) (by rw [decodedOf_cons, hr]; simp)
 
-/-- **Batch limits and canonical decoding on the compiled closure**, under
-some limits: those that fit exactly the closure's records and blobs. -/
+/-- **Batch limits, canonical decoding and the depth limit on the compiled closure**,
+under some limits: those that fit exactly the closure's records and blobs, with a depth
+limit none of its records can reach (`Admission.DepthsWithin.of_bound`) and default fold config. -/
 theorem closure_decodes (ixe : Ixon.Env) {order : List Address} (canonical : StoredCanonical ixe order) :
-    ∃ limits : Limits, Ix.Kernel.Admission.WithinBatch limits (recordsOf ixe order) (blobsOf ixe order) ∧
-      Ix.Kernel.Admission.RecordsRead limits (recordsOf ixe order) (decodedOf ixe order) := by
+    ∃ limits : Limits, limits.fold = {} ∧
+      Ix.Kernel.Admission.WithinBatch limits (recordsOf ixe order) (blobsOf ixe order) ∧
+      Ix.Kernel.Admission.RecordsRead limits (recordsOf ixe order) (decodedOf ixe order) ∧
+      Ix.Kernel.Admission.DepthsWithin limits (recordsOf ixe order) (decodedOf ixe order) := by
   let records := recordsOf ixe order
   let blobs := blobsOf ixe order
   let limits : Limits :=
@@ -293,9 +296,18 @@ theorem closure_decodes (ixe : Ixon.Env) {order : List Address} (canonical : Sto
       maxBlobs := blobs.length
       maxTotalBytes := Ix.Kernel.Admission.payloadBytes records + Ix.Kernel.Admission.payloadBytes blobs
       maxRecordBytes := Ix.Kernel.Admission.payloadBytes records
-      maxRecordUnivNodes := nodesOf (decodedOf ixe order) }
-  refine ⟨limits, ⟨Nat.le_refl _, Nat.le_refl _, Nat.le_refl _⟩, ?_⟩
-  exact closure_reads ixe limits order canonical (fun _ h => size_le_payload h) (fun _ h => nodes_le h)
+      maxRecordUnivNodes := nodesOf (decodedOf ixe order)
+      maxDepth := 3 * Ix.Kernel.Admission.payloadBytes records + nodesOf (decodedOf ixe order) + 2 }
+  refine ⟨limits, rfl, ⟨Nat.le_refl _, Nat.le_refl _, Nat.le_refl _⟩,
+    closure_reads ixe limits order canonical (fun _ h => size_le_payload h) (fun _ h => nodes_le h), ?_⟩
+  refine Ix.Kernel.Admission.DepthsWithin.of_bound (fun e h => ?_) ?_
+  · have := size_le_payload h
+    show e.2.size + nodesOf (decodedOf ixe order) + 1 ≤
+      3 * Ix.Kernel.Admission.payloadBytes (recordsOf ixe order) + nodesOf (decodedOf ixe order) + 2
+    omega
+  · show 2 * Ix.Kernel.Admission.payloadBytes (recordsOf ixe order) + 2 ≤
+      3 * Ix.Kernel.Admission.payloadBytes (recordsOf ixe order) + nodesOf (decodedOf ixe order) + 2
+    omega
 
 /-! ## The preparation succeeds -/
 
@@ -312,6 +324,7 @@ theorem prepareWith_ok {hash : ByteArray → Address} {binding : Binding} {pre :
     (authentic : Ix.Kernel.Admission.Authentic hash records blobs)
     (admitted : Ix.Kernel.Admission.admitBinding hash binding = .ok t)
     (decoded : Ix.Kernel.Admission.RecordsRead limits records constants)
+    (depth : Ix.Kernel.Admission.DepthsWithin limits records constants)
     (reads : StreamRead (Ix.Kernel.Admission.streamContext hash t pre constants blobs hint) pre.state
       constants st' decls) (keeps : State.keepsPrelude pre.state st' = true) :
     Ix.Kernel.Admission.prepareWith hash binding pre limits records blobs hint =
@@ -320,7 +333,7 @@ theorem prepareWith_ok {hash : ByteArray → Address} {binding : Binding} {pre :
   have hp := (Ix.Kernel.Admission.preflight_ok_iff limits records blobs).mpr batch
   have hu := (Ix.Kernel.Admission.uniqueKeys_ok_iff records blobs).mpr unique
   have ha := (Ix.Kernel.Admission.authenticate_ok_iff hash records blobs).mpr authentic
-  have hd := (Ix.Kernel.Admission.decodeRecords_ok_iff limits records constants).mpr decoded
+  have hd := (Ix.Kernel.Admission.decodeWithin_ok_iff limits records constants).mpr ⟨decoded, depth⟩
   have keys : (constants.map Prod.fst).Nodup := decoded.keys ▸ unique.1
   have hs := readStream_complete reads keys keeps
   unfold Ix.Kernel.Admission.prepareWith
@@ -347,9 +360,9 @@ theorem closure_prepares {env : Ix.Environment} {ixe : Ixon.Env} (compiled : com
       .ok (evidenceOf (Ix.Kernel.Admission.streamContext Address.admissionHash t pre (decodedOf ixe order)
           (blobsOf ixe order) (hintsOf ixe)) st' t,
         Ix.Kernel.Frontend.preparePrelude pre.ix decls) := by
-  obtain ⟨limits, batch, decoded⟩ := closure_decodes ixe canonical
+  obtain ⟨limits, _, batch, decoded, depth⟩ := closure_decodes ixe canonical
   exact ⟨limits, prepareWith_ok batch (closure_unique ixe nodup) (closure_authentic compiled order) admitted
-    decoded reads keeps⟩
+    decoded depth reads keeps⟩
 
 /-- The entry over a source of preludes succeeds from the prelude, the
 preparation and the fold. -/
@@ -360,7 +373,7 @@ theorem checkBytesUsing_ok {prelude : Ix.Kernel.RoleTable → Except String (Pre
     {ds : Array (Ix.Kernel.Declaration .anon)} {envA : Ix.Kernel.Env .anon}
     (admitted : Ix.Kernel.Admission.admitBinding hash binding = .ok t) (hq : prelude t = .ok pre)
     (prepared : Ix.Kernel.Admission.prepareWith hash binding pre limits records blobs hint = .ok (ev, ds))
-    (checked : Ix.Kernel.Cached.checkDecls .verified ev ds = .ok envA) :
+    (checked : Ix.Kernel.Cached.checkDecls .verified ev ds limits.fold = .ok envA) :
     Ix.Kernel.Admission.checkBytesUsing prelude hash binding limits records blobs hint = .ok envA := by
   unfold Ix.Kernel.Admission.checkBytesUsing Ix.Kernel.Admission.checkBytesWith
   simp only [admitted, hq, prepared, checked, Except.mapError, bind, Except.bind]
@@ -384,7 +397,9 @@ theorem closure_accepts {env : Ix.Environment} {ixe : Ixon.Env} (compiled : comp
         (blobsOf ixe order) (hintsOf ixe)) st' t)
       (Ix.Kernel.Frontend.preparePrelude pre.ix decls) = .ok envA) :
     ∃ limits, IxonAccepts binding limits ixe S order envA := by
-  obtain ⟨limits, prepared⟩ := closure_prepares compiled closure.nodup canonical admitted pre reads keeps
-  exact ⟨limits, closure, checkBytesUsing_ok admitted prelude prepared checked⟩
+  obtain ⟨limits, hfold, batch, decoded, depth⟩ := closure_decodes ixe canonical
+  have prepared := prepareWith_ok batch (closure_unique ixe closure.nodup)
+    (closure_authentic compiled order) admitted decoded depth reads keeps
+  exact ⟨limits, closure, checkBytesUsing_ok admitted prelude prepared (hfold ▸ checked)⟩
 
 end Ix.Cert.Stream

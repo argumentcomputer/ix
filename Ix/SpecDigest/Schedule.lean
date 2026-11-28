@@ -1,6 +1,6 @@
 module
 
-public import IxC.Kernel.Roles
+public import IxCK.Kernel.Roles
 
 @[expose] public section
 

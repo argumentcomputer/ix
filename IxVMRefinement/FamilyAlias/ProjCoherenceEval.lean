@@ -1,9 +1,9 @@
 import IxVMRefinement.FamilyAlias.ProjCoherence
-import IxC.Kernel.Model.IndFrame
-import IxC.Kernel.Model.Inductives.StructEntryKit2
-import IxC.Kernel.Model.Inductives.FixStageRec
-import IxC.Kernel.Model.Rules.RedSoundKit
-import IxC.Kernel.Model.Open.StoredFacts
+import IxCK.Kernel.Model.IndFrame
+import IxCK.Kernel.Model.Inductives.StructEntryKit2
+import IxCK.Kernel.Model.Inductives.FixStageRec
+import IxCK.Kernel.Model.Rules.RedSoundKit
+import IxCK.Kernel.Model.Open.StoredFacts
 
 /-! # Evaluation and coherence proofs for modeled structure projections
 

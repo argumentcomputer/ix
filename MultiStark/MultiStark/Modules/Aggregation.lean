@@ -1606,8 +1606,8 @@ module Aggregation {
               ((spec, binding, axioms, out_validator), target, assumptions,
                 Options::Option::Some(eval_asm), Options::Option::None) } ,
             _ => {
-              assert_eq!(out_validator, c0_validator - 7,
-                "aggr discharge eval: full unlinked discharge must transition validator 10->3 or 11->4");
+              assert_eq!(out_validator, c0_validator + 4,
+                "aggr discharge eval: full unlinked discharge must transition validator 10->14 or 11->15");
               let Lists::Node::Nil = (*(s));
               ((spec, binding, axioms, out_validator), target, assumptions,
                 Options::Option::None, Options::Option::None) } ,
@@ -1910,7 +1910,9 @@ module Aggregation {
       -- Mode 1 (`tag == 227`, `Claim.eval`) is disabled in 0.4 until `VerifyClaimCircuitSoundIn`
       -- is proved for `KernelEval::run_eval`.
       -- Mode 2 (`tag == 228`, `@Eq` `Claim.check`): sound unconditional discharge; transitions
-      -- `10->3` / `11->4` ONLY when `eval_leaves` becomes empty AND `linkedCircuits == None`.
+      -- `10->14` / `11->15` ONLY when `eval_leaves` becomes empty AND `linkedCircuits == None`,
+      -- preserving a distinct validator marker so Mode 2 roots are never byte-identical to
+      -- direct `InScopeTyping` claims (validators `3`/`4`).
       -- Mode 3a (`tag == 232`, `DynamicLinkStatement`): ALWAYS commits `LinkedCircuitEntry`
       -- (`0xE8 0x0F`) into `out_linked_opt` under validators `12`/`13` (NEVER `3`/`4`).
       match UInt8::to_field(c1_tag) {

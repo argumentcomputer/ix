@@ -28,9 +28,9 @@ public import Ix.SemanticContract
                                         compile-lean writes
     2. Serde gate (pure)              — verified lazy parsing, with exact
                                         writer bytes per serialized unit
-    3. Projection/block-order fidelity — IxC reconstructs the projections;
+    3. Projection/block-order fidelity — IxCK reconstructs the projections;
                                         exact bytes, coverage and block order
-    4. Source/reader fidelity         — IxC's reader compared with a direct
+    4. Source/reader fidelity         — IxCK's reader compared with a direct
                                         translation of the Lean source;
                                         complete named-source coverage
     5. Decompile (Ixon → Lean)        — stored records read without a
@@ -274,7 +274,7 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
         | .error _ => #[]
       -- The binding's own constants (role support and certificate theorems) are
       -- compared with their sources too: those of the input's environment, and
-      -- the certificate theorems' (`IxC.Kernel.PinGen.Certs`).
+      -- the certificate theorems' (`IxCK.Kernel.PinGen.Certs`).
       let sources ← if added.all fun n => leanEnv.contains (Ix.SemanticContract.toLeanName n) then
           pure #[leanEnv]
         else pure #[leanEnv, ← Ix.RoleBinding.Compile.nativeCertSource]
@@ -354,7 +354,7 @@ failure(s) ({finalizedBytes.size} bytes, {t1 - t0}ms)\n" ++
   -- When validating a pre-compiled `.ixe` against a Lean source file, enrich
   -- the decompile oracle and foreign-record list with any role-binding
   -- constants present in the artifact outside the source environment (such as
-  -- certificate theorems from `IxC.Kernel.PinGen.Certs`).
+  -- certificate theorems from `IxCK.Kernel.PinGen.Certs`).
   if reusingIxeWithSource then
     if let (some parts, some leanEnv) := (parts?, leanEnv?) then
       let missingNames : Array Ix.Name := parts.namedRows.filterMap fun row =>

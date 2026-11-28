@@ -23,7 +23,7 @@ record store for its witness store.
 * `famRead_of_install`: the family the install names, read off the store at the environment
   after the install.
 * `FoldClauseWith.nativeNoRec`: the install keeps the clause at one store, limit and registry,
-  from IxC's record of the install, the load contract, the store keys and the family read
+  from IxCK's record of the install, the load contract, the store keys and the family read
   off the store at the new environment.
 * `NativeInstallOut.keeps`: the install's output at a store gives the clause there after the
   install, at every limit and registry. The projection table of a structure-like proposition
@@ -131,9 +131,9 @@ theorem BlockInstall.atStore {t : Ix.Kernel.RoleTable} {E₀ Ec E : Ixon.Env}
 /-! ## The clause after the install, from its parts -/
 
 /-- **The install of a block whose former is declared at its telescope keeps the clause**,
-registering its family, at one store, limit and registry. From the clause before and IxC's
+registering its family, at one store, limit and registry. From the clause before and IxCK's
 record of the install (`NativeNoRecFacts`): the model step registers the family, the prefix
-invariant is `PrefixInv.nativeNoRec_eta`, the roots and the level clauses are IxC's. What the
+invariant is `PrefixInv.nativeNoRec_eta`, the roots and the level clauses are IxCK's. What the
 step reads off its run: the load contract at the new environment, that the new keys resolve
 and are keys of 32-byte addresses or of none, and the family read off the store there. -/
 theorem FoldClauseWith.nativeNoRec {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
@@ -232,7 +232,7 @@ theorem famRead_of_install {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop
     lps := hlps
     tele := htc
     sort := hsort
-    isProp := by rw [hp]; rfl
+    isProp := by rw [hp]; exact (Ix.Kernel.Level.isEquiv_zero_beq_true _).symm
     kinds := by rw [hpk]; exact hK
     nodup := by rw [← hO.ctorNames]; exact hnd₀
     ctorFields := fun j c cA hc hcA => (hall j c cA hc hcA).1

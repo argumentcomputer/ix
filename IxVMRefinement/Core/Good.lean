@@ -1,8 +1,8 @@
 import IxVMRefinement.Core.Ctx
 import Ix.IxVM.Consistency.Statement
-import IxC.Ixon.Wire
-import IxC.Kernel.Inductives.StructParts
-import IxC.Kernel.Verify.EnvPreds
+import IxCK.Ixon.Wire
+import IxCK.Kernel.Inductives.StructParts
+import IxCK.Kernel.Verify.EnvPreds
 
 /-! # Good calls, the collision escape, and the loads
 
@@ -211,7 +211,7 @@ structure LoadFacts (c : Ctx) : Prop where
   and its shape check ties the constructor's parameter count to the inductive's;
   `block_is_modeled` is a function of the record); the head data by the store invariant
   (`EnvFacts.store`, `ProjOkT.towerHead`); the bodies and guards by
-  `Ix.Kernel.Model.TableBodies` (`IxC/Kernel/Model/StoreCompanions.lean`,
+  `Ix.Kernel.Model.TableBodies` (`IxCK/Kernel/Model/StoreCompanions.lean`,
   `tableBodies_declsRunJ`). Still owed by the declaration layer: that the guards' `sorts` are the
   fields' sorts. -/
   projTables : ∀ (bp ip ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))

@@ -874,8 +874,8 @@ def inspectSemanticSource (source : Lean.ConstantInfo) : Except String Unit := d
   | .defnInfo info => let _ ← Ix.SemanticContract.inspect info.value; pure ()
   | .thmInfo info => let _ ← Ix.SemanticContract.inspect info.value; pure ()
   | .opaqueInfo info => let _ ← Ix.SemanticContract.inspect info.value; pure ()
-  | .axiomInfo _ => pure ()
-  | _ => throw s!"annotated inductive/constructor/recursor transformations are unsupported: {source.name}"
+  | .axiomInfo _ | .ctorInfo _ => pure ()
+  | _ => throw s!"annotated inductive/recursor transformations are unsupported: {source.name}"
 
 /-- **The checks of a prepared source list** (`Ix.Compile.CompileInput.prepare`'s
 output), made before it is canonicalized: no binder contract is left

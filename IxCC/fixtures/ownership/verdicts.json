@@ -1,0 +1,883 @@
+{
+  "format": "ixcc/own-verdicts/1",
+  "description": "ix's verdict, under the pinned producer and the corpus manifest's anonymous command, on every annotated source of the ownership suite (MT.7): accepted sources are frozen as fixtures of corpus.json, rejected ones are recorded here with the stage and code ix gave.",
+  "source_root": "fixtures/ownership/src",
+  "manifest": "fixtures/ownership/corpus.json",
+  "producer": {
+    "ix": "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
+    "command": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--anon",
+      "--out",
+      "{ixe}",
+      "--equations-out",
+      "{equations}",
+      "{src}"
+    ]
+  },
+  "verdicts": [
+    {
+      "id": "OS-01",
+      "name": "erased-proof-arg",
+      "categories": [
+        "erasure",
+        "equivalence"
+      ],
+      "source": "OS01/Annotated.lean",
+      "sha256": "c9347ba9dcbfb19f131d32a66d5f4c86dc452cc100f859a8f7cddc1388d1f893",
+      "consts": [
+        "entry"
+      ],
+      "probe": "P32NonRecErased",
+      "producer": {
+        "verdict": "ok"
+      },
+      "fixture": "OS01-annotated",
+      "twin": "OS01-plain"
+    },
+    {
+      "id": "OS-01b",
+      "name": "erased-proof-prop",
+      "categories": [
+        "erasure"
+      ],
+      "source": "OS01b/Annotated.lean",
+      "sha256": "7e6b6c0749076bdf8580c3c2e6c5f6dbf727a7940f3ef8ef878af849c910196b",
+      "consts": [
+        "predPos",
+        "entry"
+      ],
+      "producer": {
+        "verdict": "ok"
+      },
+      "note": "a proof argument of a proposition over another argument; the base matrix had no such probe"
+    },
+    {
+      "id": "OS-03",
+      "name": "erased-data",
+      "categories": [
+        "erasure",
+        "negative"
+      ],
+      "source": "OS03/Annotated.lean",
+      "sha256": "14fdc052528186d4661560f188b96a859552b4de7c9b9c19be9b09962dc996df",
+      "consts": [
+        "entry"
+      ],
+      "probe": "P34ErasedData",
+      "producer": {
+        "verdict": "ok"
+      },
+      "fixture": "OS03-annotated",
+      "twin": "OS03-plain",
+      "note": "CX-1: IxCC rejected it with relevance-C0 before the annotator honoured 0 binders"
+    },
+    {
+      "id": "OS-03b",
+      "name": "erased-data-dead-work",
+      "categories": [
+        "erasure"
+      ],
+      "source": "OS03b/Annotated.lean",
+      "sha256": "3e06f0fd8e82a44cfd597a584a719764f9b4bbffc623c92937dd887780b7ab43",
+      "consts": [
+        "entry"
+      ],
+      "probe": "P34ErasedData",
+      "producer": {
+        "verdict": "ok"
+      },
+      "fixture": "OS03b-annotated",
+      "twin": "OS03b-plain",
+      "note": "OS-03 with an argument that costs work: erased, the work is never done"
+    },
+    {
+      "id": "OS-04",
+      "name": "erased-type-recursive",
+      "categories": [
+        "erasure"
+      ],
+      "source": "OS04/Annotated.lean",
+      "sha256": "ef07aa184ee9e56f4b237885598da5601fe158a523dedef84e52bec27742472c",
+      "consts": [
+        "len",
+        "entry"
+      ],
+      "probe": "P31LenErasedType",
+      "producer": {
+        "verdict": "reject",
+        "stage": "resource",
+        "code": "reading"
+      },
+      "note": "accepted without --equations; the eq_def's brecOn projections have no field rule"
+    },
+    {
+      "id": "OS-05",
+      "name": "erased-index-match",
+      "categories": [
+        "erasure"
+      ],
+      "source": "OS05/Annotated.lean",
+      "sha256": "1743412feb1cca57a759b85913c7ae508e9ecc3e55f84e13bc4e46b19632a80b",
+      "consts": [
+        "vhead",
+        "entry"
+      ],
+      "probe": "P26Vec",
+      "producer": {
+        "verdict": "reject",
+        "stage": "elaboration",
+        "code": "misplacedAnnotation"
+      }
+    },
+    {
+      "id": "OS-06",
+      "name": "erased-proof-uses",
+      "categories": [
+        "erasure",
+        "negative"
+      ],
+      "source": "OS06/Annotated.lean",
+      "sha256": "62dbd25a4024a4effc4f838c4c24bea0259a44b60928d2980a4f1d37bb1b8e97",
+      "consts": [
+        "absurdUse"
+      ],
+      "probe": "P39ErasedAbsurd",
+      "producer": {
+        "verdict": "ok"
+      }
+    },
+    {
+      "id": "OS-06b",
+      "name": "erased-proof-discriminant",
+      "categories": [
+        "erasure",
+        "negative"
+      ],
+      "source": "OS06b/Annotated.lean",
+      "sha256": "19a846ec21db1370c77e20f7fc6365ee1a900cb8d433bae1606074c5399a7dc6",
+      "consts": [
+        "headOr",
+        "entry"
+      ],
+      "probe": "P25HeadProof",
+      "producer": {
+        "verdict": "ok"
+      }
+    },
+    {
+      "id": "OS-07",
+      "name": "erased-proof-recursive",
+      "categories": [
+        "erasure"
+      ],
+      "source": "OS07/Annotated.lean",
+      "sha256": "cedc650cdf1039a8630aaa5af8633402fc331f1150beda6476c0bb7ac7f60ec7",
+      "consts": [
+        "countdown",
+        "entry"
+      ],
+      "probe": "P23Countdown",
+      "producer": {
+        "verdict": "reject",
+        "stage": "resource",
+        "code": "reading"
+      }
+    },
+    {
+      "id": "OS-07b",
+      "name": "erased-proof-wf",
+      "categories": [
+        "erasure"
+      ],
+      "source": "OS07b/Annotated.lean",
+      "sha256": "b19178591ebf1aaa0fd68bb325db091403014e72d0a25fd42442e260e4789e79",
+      "consts": [
+        "countdownWF",
+        "entry"
+      ],
+      "probe": "P33CountdownWF",
+      "producer": {
+        "verdict": "reject",
+        "stage": "elaboration",
+        "code": "misplacedAnnotation"
+      }
+    },
+    {
+      "id": "OS-08",
+      "name": "bounds-proof-array",
+      "categories": [
+        "erasure"
+      ],
+      "source": "OS08/Annotated.lean",
+      "sha256": "52fd08b9999f387034c85eb4403d884bc7a4dc50e53816f87e603986f6c089fa",
+      "consts": [
+        "getE"
+      ],
+      "probe": "OS08BoundsArray",
+      "producer": {
+        "verdict": "reject",
+        "stage": "resource-decline",
+        "code": "oracleDepthLimit"
+      }
+    },
+    {
+      "id": "OS-09",
+      "name": "linear-add",
+      "categories": [
+        "negative"
+      ],
+      "source": "OS09/Annotated.lean",
+      "sha256": "7ce7eeaa5dac02b01c20c84b5c903c849de6a9c461390b62da3b470139f0ada5",
+      "consts": [
+        "lin"
+      ],
+      "probe": "P14Linear",
+      "producer": {
+        "verdict": "reject",
+        "stage": "resource",
+        "code": "onceReentry",
+        "constant": "d0a92cc80a1a"
+      },
+      "note": "over-conservative: the + reads each linear Nat once"
+    },
+    {
+      "id": "OS-10",
+      "name": "linear-dup",
+      "categories": [
+        "negative"
+      ],
+      "source": "OS10/Annotated.lean",
+      "sha256": "2728535496c99a3aac496e3f0b11b92b6f955a7c2f21ec8d4e0ecb367e47f1b3",
+      "consts": [
+        "twice"
+      ],
+      "probe": "P14bLinearDup",
+      "producer": {
+        "verdict": "reject",
+        "stage": "resource",
+        "code": "onceReentry",
+        "constant": "307f87759713"
+      },
+      "note": "true negative"
+    },
+    {
+      "id": "OS-11",
+      "name": "linear-unused",
+      "categories": [
+        "negative"
+      ],
+      "source": "OS11/Annotated.lean",
+      "sha256": "9a61b88dbc2441733632b5c0453d802fdb80bdedaca488acbc6eba4af82824d3",
+      "consts": [
+        "unused"
+      ],
+      "probe": "P14cLinearUnused",
+      "producer": {
+        "verdict": "ok"
+      },
+      "note": "true negative"
+    },
+    {
+      "id": "OS-12",
+      "name": "affine-dup",
+      "categories": [
+        "negative"
+      ],
+      "source": "OS12/Annotated.lean",
+      "sha256": "0f1e5b7e5f46207613eb35d7fcfea919a8cbd25703d47afbced572790ebab3a4",
+      "consts": [
+        "twiceA"
+      ],
+      "probe": "P36AffineDup",
+      "producer": {
+        "verdict": "reject",
+        "stage": "resource",
+        "code": "onceReentry",
+        "constant": "307f87759713"
+      },
+      "note": "true negative"
+    },
+    {
+      "id": "OS-13",
+      "name": "linear-identity",
+      "categories": [
+        "equivalence",
+        "negative"
+      ],
+      "source": "OS13/Annotated.lean",
+      "sha256": "f9d4fb6905be8924c819d215a6e61a2813367ee7d773f8329e53beab6c9d0607",
+      "consts": [
+        "linId",
+        "entry"
+      ],
+      "probe": "P01Basic",
+      "producer": {
+        "verdict": "reject",
+        "stage": "resource",
+        "code": "onceReentry",
+        "constant": "e60eaffdaac9"
+      }
+    },
+    {
+      "id": "OS-14",
+      "name": "unique-nat-match",
+      "categories": [
+        "equivalence",
+        "negative"
+      ],
+      "source": "OS14/Annotated.lean",
+      "sha256": "43dcc5fb65a656c9d84c7cfccc913bfe14ad5c2e2cbca45e978bfa4d5b97ac4c",
+      "consts": [
+        "entry"
+      ],
+      "probe": "P15UniqueNatMatch",
+      "producer": {
+        "verdict": "ok"
+      },
+      "fixture": "OS14-annotated",
+      "twin": "OS14-plain"
+    },
+    {
+      "id": "OS-14b",
+      "name": "unique-nat-plain-caller",
+      "categories": [
+        "negative"
+      ],
+      "source": "OS14b/Annotated.lean",
+      "sha256": "ac7f9cfca210e0b236427fd7f13141754df4142f0e22c3dfc5585222f6827e6e",
+      "consts": [
+        "pred",
+        "entry"
+      ],
+      "probe": "OS14PlainCaller",
+      "producer": {
+        "verdict": "ok"
+      },
+      "note": "OS-14 with a plain caller passing a shared Nat to the unique parameter"
+    },
+    {
+      "id": "OS-15",
+      "name": "unique-reverse-acc",
+      "categories": [
+        "effect",
+        "inference"
+      ],
+      "source": "OS15/Annotated.lean",
+      "sha256": "8655bda9401a68b74e8b676e7cde44c98bb709c750190334c58ef46f619f1480",
+      "consts": [
+        "revAcc"
+      ],
+      "probe": "P04RevUniqueAcc",
+      "producer": {
+        "verdict": "reject",
+        "stage": "resource",
+        "code": "reading"
+      },
+      "note": "the annotated twin of OS-16"
+    },
+    {
+      "id": "OS-15b",
+      "name": "unique-reverse-both",
+      "categories": [
+        "effect",
+        "inference"
+      ],
+      "source": "OS15b/Annotated.lean",
+      "sha256": "7afd8e87529e2283e72f7dd452927b42079b052d400601afa9b4a2d84823dad4",
+      "consts": [
+        "revAcc"
+      ],
+      "probe": "P03RevUniqueBoth",
+      "producer": {
+        "verdict": "reject",
+        "stage": "resource",
+        "code": "reading"
+      }
+    },
+    {
+      "id": "OS-17",
+      "name": "unique-push",
+      "categories": [
+        "negative"
+      ],
+      "source": "OS17/Annotated.lean",
+      "sha256": "5d9b89199d456ffe86ac01cf1a9cbb66bbdeab19d097cffa5cd8fb5c994cd84c",
+      "consts": [
+        "push"
+      ],
+      "probe": "P05Push",
+      "producer": {
+        "verdict": "ok"
+      }
+    },
+    {
+      "id": "OS-18",
+      "name": "unique-dup",
+      "categories": [
+        "negative"
+      ],
+      "source": "OS18/Annotated.lean",
+      "sha256": "5e601cb3a1ad3b7d18c0c38cb46094ba8fe0317697ab25be265d4ac45770083d",
+      "consts": [
+        "dupU"
+      ],
+      "probe": "P37UniqueDup",
+      "producer": {
+        "verdict": "ok"
+      },
+      "note": "true negative"
+    },
+    {
+      "id": "OS-19",
+      "name": "unique-tree-node",
+      "categories": [
+        "effect"
+      ],
+      "source": "OS19/Annotated.lean",
+      "sha256": "708f612b0a217399580322a38b44e1957a61a3eff9ab556b5893b20ca6a2ec15",
+      "consts": [
+        "swapT"
+      ],
+      "probe": "P28TreeUnique",
+      "producer": {
+        "verdict": "reject",
+        "stage": "resource",
+        "code": "revokedUse",
+        "constant": "046addfb2140"
+      }
+    },
+    {
+      "id": "OS-20",
+      "name": "unique-string",
+      "categories": [
+        "negative"
+      ],
+      "source": "OS20/Annotated.lean",
+      "sha256": "67ed4b19ae04c3c81a350a7d45cd0a8249c6249989eb967e7e537ca746ed1bfb",
+      "consts": [
+        "addExcl"
+      ],
+      "probe": "P18UniqueString",
+      "producer": {
+        "verdict": "reject",
+        "stage": "resource",
+        "code": "revokedUse",
+        "constant": "3bb31426feca"
+      }
+    },
+    {
+      "id": "OS-21",
+      "name": "fresh-unique-result",
+      "categories": [
+        "negative"
+      ],
+      "source": "OS21/Annotated.lean",
+      "sha256": "75762c5b51f33d741b042d2f013960974ecbad77c3b9b159cbd31c6f5c45d3f1",
+      "consts": [
+        "single",
+        "idT",
+        "entry"
+      ],
+      "probe": "P35FreshResult",
+      "producer": {
+        "verdict": "ok"
+      }
+    },
+    {
+      "id": "OS-22",
+      "name": "local-forward",
+      "categories": [
+        "equivalence",
+        "negative"
+      ],
+      "source": "OS22/Annotated.lean",
+      "sha256": "d7a099d91212b5ca49d813f7a8982717f95d76e451cfc9ac58951c993058ef6d",
+      "consts": [
+        "entry"
+      ],
+      "probe": "P38LocalForward",
+      "producer": {
+        "verdict": "ok"
+      },
+      "fixture": "OS22-annotated",
+      "twin": "OS22-plain"
+    },
+    {
+      "id": "OS-23",
+      "name": "local-escape",
+      "categories": [
+        "negative"
+      ],
+      "source": "OS23/Annotated.lean",
+      "sha256": "ffb7f328129e80ffa17be3da374b6e3e35e1633fc0c9c1a900c200635b058b4d",
+      "consts": [
+        "esc"
+      ],
+      "probe": "P17LocalEscape",
+      "producer": {
+        "verdict": "ok"
+      },
+      "note": "true negative"
+    },
+    {
+      "id": "OS-24",
+      "name": "local-to-library",
+      "categories": [
+        "negative"
+      ],
+      "source": "OS24/Annotated.lean",
+      "sha256": "994bbc9eaa17ec69d03a89e79b883b46311ee4d7a5388b0f0843130abcbd37b8",
+      "consts": [
+        "len"
+      ],
+      "probe": "P09LocalLib",
+      "producer": {
+        "verdict": "ok"
+      },
+      "note": "over-conservative"
+    },
+    {
+      "id": "OS-25",
+      "name": "local-match",
+      "categories": [
+        "negative"
+      ],
+      "source": "OS25/Annotated.lean",
+      "sha256": "0b0b4c58fbc5c188f65a5d9c4d74d7d31d722dffdbb47c22e08e7e1f6ab8f2ad",
+      "consts": [
+        "nonEmpty"
+      ],
+      "probe": "P10LocalMatch",
+      "producer": {
+        "verdict": "ok"
+      },
+      "note": "over-conservative"
+    },
+    {
+      "id": "OS-26",
+      "name": "borrow-match",
+      "categories": [
+        "negative"
+      ],
+      "source": "OS26/Annotated.lean",
+      "sha256": "547c01b2344956b68c76248a08b6946af4dcfd6662a85912cf35c6dcd74beb8b",
+      "consts": [
+        "viaBorrow"
+      ],
+      "probe": "P11BorrowMatch",
+      "producer": {
+        "verdict": "reject",
+        "stage": "resource",
+        "code": "borrowEscape",
+        "constant": "8507d0f5fe8d"
+      },
+      "note": "a producer bug (R18 moves it past elaboration)"
+    },
+    {
+      "id": "OS-27",
+      "name": "borrow-return",
+      "categories": [
+        "negative"
+      ],
+      "source": "OS27/Annotated.lean",
+      "sha256": "f83869cdbc59f89a67d8727ded39adc0d0625990b25077cbf8d7b1e087a8bdf0",
+      "consts": [
+        "sharedLoan",
+        "entry"
+      ],
+      "probe": "P29SharedLoan",
+      "producer": {
+        "verdict": "ok"
+      },
+      "note": "true negative: the view escapes"
+    },
+    {
+      "id": "OS-28",
+      "name": "borrow-accumulate",
+      "categories": [
+        "effect",
+        "inference"
+      ],
+      "source": "OS28/Annotated.lean",
+      "sha256": "d8051b32cef15089e2c969d2e73100ed9c34666e8ec35883b6939eab47cc5358",
+      "consts": [
+        "lenL",
+        "countAll"
+      ],
+      "probe": "OS28BorrowAccumulate",
+      "producer": {
+        "verdict": "ok"
+      }
+    },
+    {
+      "id": "OS-29",
+      "name": "one-shot-closure",
+      "categories": [
+        "effect"
+      ],
+      "source": "OS29/Annotated.lean",
+      "sha256": "37a17b78b0a177c5752acd06df060c9f7c4d10376fdd6663265a6bf286a7a24d",
+      "consts": [
+        "applyOnce",
+        "useIt"
+      ],
+      "probe": "P12OnceClosure",
+      "producer": {
+        "verdict": "ok"
+      }
+    },
+    {
+      "id": "OS-29b",
+      "name": "unique-closure",
+      "categories": [
+        "effect"
+      ],
+      "source": "OS29b/Annotated.lean",
+      "sha256": "84df23a871ad243e20cee4d3bd0fe0a8e26dbcab2576a0effcbe13ff20c74514",
+      "consts": [
+        "applyOnce",
+        "useIt"
+      ],
+      "probe": "OS29bUniqueClosure",
+      "producer": {
+        "verdict": "reject",
+        "stage": "resource",
+        "code": "revokedUse",
+        "constant": "def67e323713"
+      }
+    },
+    {
+      "id": "OS-34",
+      "name": "static-vs-unique",
+      "categories": [
+        "negative"
+      ],
+      "source": "OS34/Annotated.lean",
+      "sha256": "b63ca3fabef52ce67e7c6aadc781cf7771920ce57cf36a378062731a7406ab45",
+      "consts": [
+        "leafPair",
+        "keep",
+        "entry"
+      ],
+      "probe": "OS34StaticUnique",
+      "producer": {
+        "verdict": "ok"
+      }
+    },
+    {
+      "id": "OS-35",
+      "name": "list-filter-fbip",
+      "categories": [
+        "effect"
+      ],
+      "source": "OS35/Annotated.lean",
+      "sha256": "ce9867628da20c3025a41d77b52e43622d0b36e2420df67620f3dfdd4c6bb6d9",
+      "consts": [
+        "filterOdd"
+      ],
+      "probe": "OS35FilterOdd",
+      "producer": {
+        "verdict": "reject",
+        "stage": "resource",
+        "code": "reading"
+      }
+    },
+    {
+      "id": "OS-36",
+      "name": "array-bump-in-place",
+      "categories": [
+        "effect"
+      ],
+      "source": "OS36/Annotated.lean",
+      "sha256": "84e3cd93f8bfc7533124b09a695ec8f607a3157a0000b90e28eb34ee54a50f69",
+      "consts": [
+        "bump"
+      ],
+      "probe": "OS36ArrayBump",
+      "producer": {
+        "verdict": "reject",
+        "stage": "resource-decline",
+        "code": "oracleDepthLimit"
+      }
+    },
+    {
+      "id": "OS-37",
+      "name": "bytes-builder",
+      "categories": [
+        "effect"
+      ],
+      "source": "OS37/Annotated.lean",
+      "sha256": "df1a687aa79ec8934aff961ec92ab94732b0b01953ad10749ab93c4b1483963b",
+      "consts": [
+        "emit"
+      ],
+      "probe": "OS37BytesBuilder",
+      "producer": {
+        "verdict": "reject",
+        "stage": "resource",
+        "code": "reading"
+      }
+    },
+    {
+      "id": "N-01",
+      "name": "consume-borrowed",
+      "categories": [
+        "negative"
+      ],
+      "source": "N01/Annotated.lean",
+      "sha256": "f0ae023cb6b42d236fba74626455a78f5724bb1d484439f11ce8f430b186a73e",
+      "consts": [
+        "take",
+        "consumeView"
+      ],
+      "probe": "N01ConsumeBorrowed",
+      "producer": {
+        "verdict": "reject",
+        "stage": "resource",
+        "code": "borrowEscape",
+        "constant": "b4a2ff6c2965"
+      }
+    },
+    {
+      "id": "N-02",
+      "name": "move-while-borrowed",
+      "categories": [
+        "negative"
+      ],
+      "source": "N02/Annotated.lean",
+      "sha256": "95b1d39e0fb48c951e69b5757a308c797c4f2791a0cbd2e2e61493a0ac60dcd8",
+      "consts": [
+        "lenL",
+        "moveDuringLoan"
+      ],
+      "probe": "N02MoveWhileBorrowed",
+      "producer": {
+        "verdict": "ok"
+      }
+    },
+    {
+      "id": "N-03",
+      "name": "unique-twice",
+      "categories": [
+        "negative"
+      ],
+      "source": "N03/Annotated.lean",
+      "sha256": "ac10b89dc6a7fc838baefe1644b3302a16a3d9556fb2af3fa447b2a09009f38c",
+      "consts": [
+        "take",
+        "twice"
+      ],
+      "probe": "N03UniqueTwice",
+      "producer": {
+        "verdict": "reject",
+        "stage": "resource",
+        "code": "revokedUse",
+        "constant": "fe349725fa46"
+      },
+      "note": "true negative"
+    },
+    {
+      "id": "N-04",
+      "name": "freeze-then-unique",
+      "categories": [
+        "negative"
+      ],
+      "source": "N04/Annotated.lean",
+      "sha256": "f5600c2fc047c3589f881686921dabbb5243a2721f40a0f9e562d9a35ac89752",
+      "consts": [
+        "take",
+        "freezeThenTake"
+      ],
+      "probe": "N04FreezeThenUnique",
+      "producer": {
+        "verdict": "ok"
+      }
+    },
+    {
+      "id": "N-05",
+      "name": "local-escape-list",
+      "categories": [
+        "negative"
+      ],
+      "source": "N05/Annotated.lean",
+      "sha256": "a50037ebe57d230c6c2c9b3bab33966902be4c6f2bae35c61637fec7a4ff30d5",
+      "consts": [
+        "escList"
+      ],
+      "probe": "N05LocalEscapeList",
+      "producer": {
+        "verdict": "reject",
+        "stage": "resource",
+        "code": "borrowEscape",
+        "constant": "06bcd90de2fa"
+      },
+      "note": "true negative"
+    },
+    {
+      "id": "N-06",
+      "name": "local-into-ctor",
+      "categories": [
+        "negative"
+      ],
+      "source": "N06/Annotated.lean",
+      "sha256": "d566ef27ff71dc9e2df1fd7f15defdc6d4c3a5a84dc0ff5b8c72ad86ec396d53",
+      "consts": [
+        "wrap"
+      ],
+      "probe": "N06LocalIntoCtor",
+      "producer": {
+        "verdict": "reject",
+        "stage": "resource",
+        "code": "borrowEscape",
+        "constant": "c79e8175badb"
+      },
+      "note": "true negative"
+    },
+    {
+      "id": "N-07",
+      "name": "linear-into-two-branches",
+      "categories": [
+        "negative"
+      ],
+      "source": "N07/Annotated.lean",
+      "sha256": "b83f8da71358c428c67d8c6bd6959588bb10d40b21695e59c6eb0bf291a34519",
+      "consts": [
+        "pickOne"
+      ],
+      "probe": "N07LinearIntoTwoBranches",
+      "producer": {
+        "verdict": "reject",
+        "stage": "resource",
+        "code": "onceReentry",
+        "constant": "7e3c80fff088"
+      },
+      "note": "true negative at this pin (R19 accepts it until R15)"
+    },
+    {
+      "id": "N-08",
+      "name": "erased-used",
+      "categories": [
+        "negative"
+      ],
+      "source": "N08/Annotated.lean",
+      "sha256": "8aece107843b5ffaeac2d32bffb6abb3c991aa8a74b891241cd267824c1b72b0",
+      "consts": [
+        "useErased"
+      ],
+      "probe": "N08ErasedUsed",
+      "producer": {
+        "verdict": "reject",
+        "stage": "resource",
+        "code": "erasedRead",
+        "constant": "e365b8661c1d"
+      },
+      "note": "true negative: the producer's half of CX-1's negative; IxCC's half (relevance-C1) is tests-own's synthetic case"
+    }
+  ]
+}

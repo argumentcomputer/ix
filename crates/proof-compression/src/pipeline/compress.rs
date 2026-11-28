@@ -381,20 +381,13 @@ impl CompressConfig {
     final_proof
       .validate_setup(self.setup.class() == SetupClass::Development)?;
     match final_proof.system {
-      FinalSystem::Plonk if !cfg!(feature = "plonk") => {
-        return Err(
-          "this ix was built without PLONK; rebuild with IX_PLONK=1".into(),
-        );
-      },
-      FinalSystem::Groth16 if !cfg!(feature = "groth16") => {
-        return Err(
-          "this ix was built without Groth16; rebuild with IX_GROTH16=1".into(),
-        );
+      FinalSystem::Plonk => {
+        return Err(plonk::retired_error());
       },
       FinalSystem::Groth16 => {
-        groth16::preflight_for(self.curve, final_proof.allow_development)?
+        return Err(groth16::retired_error());
       },
-      _ => {},
+      FinalSystem::None => {},
     }
     if std::env::var_os("IX_ROOT_GENERIC_HASHES").is_some() {
       return Err(
@@ -623,11 +616,6 @@ pub fn compress(
 ) -> Result<Vec<u8>> {
   let words = super::check_claim(input.claim, input.statement)?;
   config.validate()?;
-  if config.final_proof.system == FinalSystem::Groth16
-    && !config.final_proof.allow_development
-  {
-    groth16::check_statement_for(config.curve, &words)?;
-  }
   let requested_stage = requested_stage_from_env()?;
   let files = root_files(input.vk, input.proof, &words, input.fixed_root)?;
   open_output(input.out, &files, config.fresh && requested_stage.is_none())?;
@@ -965,28 +953,6 @@ fn check_final<C: KzgCurve>(
   verifying_keys::check_statement(C::CURVE, &vk.id(), words)
 }
 
-#[cfg(feature = "plonk")]
-fn prove_plonk<C: KzgCurve>(
-  final_dir: &Path,
-  out: &Path,
-  words: &statement::Statement,
-  config: &CompressConfig,
-) -> Result<()> {
-  let verifier = final_dir.join("vk.bin");
-  let trusted = blake3::hash(&fs::read(&verifier)?).to_hex();
-  plonk::wrap_packet_for::<C>(
-    &verifier,
-    &final_dir.join("kzg/packet.bin"),
-    trusted.as_str(),
-    words,
-    &config.plonk_cache,
-    out,
-    &config.setup,
-    config.final_proof.allow_development,
-  )
-}
-
-#[cfg(not(feature = "plonk"))]
 #[allow(clippy::extra_unused_type_parameters)]
 fn prove_plonk<C: KzgCurve>(
   _final_dir: &Path,
@@ -994,31 +960,9 @@ fn prove_plonk<C: KzgCurve>(
   _words: &statement::Statement,
   _config: &CompressConfig,
 ) -> Result<()> {
-  Err("this ix was built without PLONK; rebuild with IX_PLONK=1".into())
+  Err(plonk::retired_error())
 }
 
-#[cfg(feature = "groth16")]
-fn prove_groth16<C: KzgCurve>(
-  final_dir: &Path,
-  out: &Path,
-  words: &statement::Statement,
-  config: &CompressConfig,
-) -> Result<()> {
-  let verifier = final_dir.join("vk.bin");
-  let trusted = blake3::hash(&fs::read(&verifier)?).to_hex();
-  groth16::wrap_packet_for::<C>(
-    &verifier,
-    &final_dir.join("kzg/packet.bin"),
-    trusted.as_str(),
-    words,
-    out,
-    config.final_proof.allow_development,
-    &config.setup,
-    &config.groth16_cache,
-  )
-}
-
-#[cfg(not(feature = "groth16"))]
 #[allow(clippy::extra_unused_type_parameters)]
 fn prove_groth16<C: KzgCurve>(
   _final_dir: &Path,
@@ -1026,7 +970,7 @@ fn prove_groth16<C: KzgCurve>(
   _words: &statement::Statement,
   _config: &CompressConfig,
 ) -> Result<()> {
-  Err("this ix was built without Groth16; rebuild with IX_GROTH16=1".into())
+  Err(groth16::retired_error())
 }
 
 /// Logs the process's resident and peak resident size every 30 seconds

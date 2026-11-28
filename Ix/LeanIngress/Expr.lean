@@ -1,11 +1,11 @@
 module
 
 public import Ix.Environment
-public import IxC.Kernel.Expr
+public import IxCK.Kernel.Expr
 public import Ix.SemanticContract
 public import Ix.IxonUniv
 /- `withPtrEq` is `public` but not `@[expose]`; the memo probe (`probe`) reads
-that `withPtrEq a b k h` is definitionally `k ()`, as `IxC.Kernel.Expr` does.
+that `withPtrEq a b k h` is definitionally `k ()`, as `IxCK.Kernel.Expr` does.
 `import all` makes that body visible in this module only. -/
 import all Init.Util
 

@@ -47,11 +47,21 @@ The validator is `erased-lean-v2`, and the claim carries its context (the
 specification digest, the role binding's hash and the axioms beyond the
 standard three; see the claim formats in [Ixon](Ixon.md)). Eval claims always
 validate their binding: only `check` and `checkEnv` may assume it (validator
-`erased-lean-v2-assumed`). Resource
-annotations remain committed in
+`erased-lean-v2-assumed`). Resource annotations remain committed in
 constant bytes but are erased by the kernel; Eval does not certify resource
 admission or resource preservation. It also does not assert that arbitrary
 inputs terminate or impose an execution-time bound.
+
+## Verification policy and soundness status
+
+No machine-checked soundness theorem states an `eval` claim:
+`IxVM.Refinement.Endpoint.circuitComposed` covers only unconditional `check` and
+`checkEnv` claims (paired with an accepted `binding` claim), and no theorem
+states that an accepted `eval` claim's output is its input's normal form.
+Accordingly, `ix verify` and `ix compress` **refuse `eval` claims by default**
+(`Ix/Cli/ClaimPolicy.lean`); accepting one on `ix verify` requires passing
+`--allow-eval-claim` explicitly (`ix compress` accepts only aggregate `checkEnv`
+or native-STARK `catalog` proofs).
 
 ## Environment bundles
 
@@ -77,12 +87,16 @@ not execute IxVM or prove the claim. Lean and IxVM can choose different
 normal forms at opacity and symbolic-arithmetic boundaries, so a proposed
 claim still needs verification.
 
-The existing `ixvm` suite covers reductions, output type and safety checks,
-malformed/authenticated bytes, assumptions, dependent and recursive programs,
-24 generated arithmetic programs, and exact FFT-cost pins for successful evaluations.
-The command regression packs both endpoints into ordinary bundles before
-executing its printed claim. These tests execute Aiur without proving:
+The `IxVMTests` `ixvm-eval` (PR fast subset, `ci:ixvm`) and `ixvm-eval-full`
+(full 24-term generated arithmetic suite, `ci:nightly-ixvm`) suites cover
+reductions, output type and safety checks, malformed/authenticated bytes,
+assumptions, dependent and recursive programs, generated arithmetic programs,
+and exact FFT-cost pins for successful evaluations. The command regression packs
+both endpoints into ordinary bundles before executing its printed claim. These
+tests execute Aiur without proving:
 
 ```sh
-lake test -- --ignored ixvm
+lake build IxVMTests
+lake env .lake/build/bin/IxVMTests ixvm-eval
+lake env .lake/build/bin/IxVMTests ixvm-eval-full
 ```

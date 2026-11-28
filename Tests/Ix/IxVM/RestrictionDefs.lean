@@ -3,13 +3,13 @@ import Lean
 /-! # Positive controls for the rule-shaped core's restrictions (fixtures)
 
 IxVM's moves are restricted to instances of the certified kernel's rules
-(`IxC/Kernel/Rules/Rel.lean`). Nothing in the `ci:ixvm` tier reached the restricted
+(`IxCK/Kernel/Rules/Rel.lean`). Nothing in the `ci:ixvm` tier reached the restricted
 cases, so each restriction gets a small case it now refuses, next to a control it
 must still accept. These are ordinary, kernel-checked Lean declarations.
 
 * Structure-η ι (`Red.rescueEta`) needs the structure's sort to be never zero
   (`capsNeverZero`). Lean's kernel also fires it at a `Sort u` structure; IxVM, like
-  IxC, no longer does. `etaIotaSortU` holds in Lean only by that move;
+  IxCK, no longer does. `etaIotaSortU` holds in Lean only by that move;
   `etaIotaType` is the same statement at a `Type` structure.
 
 The other two restrictions (`.proj` on an indexed family; structure η at a

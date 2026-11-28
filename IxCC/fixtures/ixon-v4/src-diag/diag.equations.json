@@ -1,0 +1,20 @@
+{"source": "Diag.lean",
+ "roots":
+ [{"name": "SrcDiag.rootPartial",
+   "address":
+   "f7afdee8179936ccda7ec1019454c3c91df1845e97bae0736aecf82fadf6a3b6"},
+  {"name": "SrcDiag.rootMixHash",
+   "address":
+   "1ea58484aeba18c007db676b67f166c71fad44ec4c22c278d101a433a884ea3d"},
+  {"name": "SrcDiag.rootFloat",
+   "address":
+   "b93839998e01ceb38dcd4142c863fad552b3197f135e86f4ed2626416342e7b5"},
+  {"name": "SrcDiag.rootClassical",
+   "address":
+   "f07f99ac21f24c1d8d78dfae26bbae0ca4a1222e8b97042bd4db674fa343ac89"},
+  {"name": "SrcDiag.rootOpaqueId",
+   "address":
+   "64c1548f5a6c1356b93367698cceedccc2383579804f48e7fedcfd713ef9f5fa"}],
+ "format": "ixcc/k1-equations/1",
+ "failures": [],
+ "equations": []}

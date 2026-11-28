@@ -11,21 +11,21 @@ import Ix.CondenseM
 import Ix.Compile.FrontEnd
 import Ix.LeanIngress
 import Ix.Cert.RoleClosurePrepare
-import IxC.Kernel.Verify.Rename.Basic
-import IxC.Kernel.RoleEquations
+import IxCK.Kernel.Verify.Rename.Basic
+import IxCK.Kernel.RoleEquations
 import Ix.IxVM.RecordSections
 import Ix.FileDigest
 
 /-! # The default role table, its evidence and the Ixon prelude, from Ixon (untrusted)
 
-Generates `IxC/Kernel/Ixon/RoleData.lean`: the role table of a compiled
+Generates `IxCK/Kernel/Ixon/RoleData.lean`: the role table of a compiled
 Init (`Ix.Kernel.RoleTable`, its binding section and the section's address),
 the theorem records its proof evidence names, the blobs their literals use,
 and the checker's prelude records. The inputs are two compiled `.ixe` files:
 the compiled Init (`.lake/envs/initstd.ixe`) and
-`IxC/Kernel/PinGen/Certs.lean` compiled by the Ix compiler (`regenerate`
+`IxCK/Kernel/PinGen/Certs.lean` compiled by the Ix compiler (`regenerate`
 below gives the commands). A toolchain bump reruns this and changes nothing
-in IxC: the specifications (`Role.spec`), `specVersion` and their digest stay.
+in IxCK: the specifications (`Role.spec`), `specVersion` and their digest stay.
 
 1. **The bindings.** Every role's Lean name (`Role.leanName`) is looked up in
    the environment's `named` metadata (this host tool is the only place
@@ -37,7 +37,7 @@ in IxC: the specifications (`Role.spec`), `specVersion` and their digest stay.
    recursor.
 3. **The evidence.** The structural operations get one `defeq` entry per
    recurrence equation. For each well-founded operation, the theorems of
-   `IxC/Kernel/PinGen/Certs.lean` (`Ix.RoleEvidence.certTheorems`), compiled
+   `IxCK/Kernel/PinGen/Certs.lean` (`Ix.RoleEvidence.certTheorems`), compiled
    by the Ix compiler and read by the same reader over the Init's records,
    are closed over the operation's dependency closure
    (`Ix.RoleEvidence.closedProofs`: every constant outside it inlined, with
@@ -67,7 +67,7 @@ in IxC: the specifications (`Role.spec`), `specVersion` and their digest stay.
    and Source mode's evidence (`Ix.RoleEvidence.bundleEvidence`, for an
    input without the certificate theorems): the theorems closed in Source
    mode over the certificate module's own environment (`sourceEvidenceOf`;
-   the module's `.olean`, which `lake -d IxC build` builds), written as
+   the module's `.olean`, which `lake -d IxCK build` builds), written as
    theorem records whose references are names (`nameAddress`), with the
    names, and read back. Not the `.anon` records renamed: an Ixon address
    is an alias fiber's, several Lean names, and plain Source keeps them apart.
@@ -109,17 +109,17 @@ def preludeGroups : List (List Role) :=
    [.and, .andIntro, .andRec], [.bool, .boolFalse, .boolTrue, .boolRec]]
 
 /-- The commands that regenerate `RoleData.lean`, written into its header.
-`--no-build`: the files import only `Init`, and `IxC/`'s lakefile does not
-know `IxC/Kernel/PinGen/Certs.lean` as a target of the root's. The
+`--no-build`: the files import only `Init`, and `IxCK/`'s lakefile does not
+know `IxCK/Kernel/PinGen/Certs.lean` as a target of the root's. The
 generator loads that module's `.olean` for Source mode's evidence, which
-`lake -d IxC build` builds. -/
+`lake -d IxCK build` builds. -/
 def regenerate : List String :=
   ["lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --no-build --out .lake/envs/initstd.ixe",
-   "lake -d IxC build IxC.Kernel.PinGen.Certs",
-   s!"lake exe ix compile IxC/Kernel/PinGen/Certs.lean --no-build --out .lake/envs/certs.ixe --consts \\\n      \
+   "lake -d IxCK build IxCK.Kernel.PinGen.Certs",
+   s!"lake exe ix compile IxCK/Kernel/PinGen/Certs.lean --no-build --out .lake/envs/certs.ixe --consts \\\n      \
     {",".intercalate (Ix.RoleEvidence.allCertTheorems.flatMap (·.2) |>.map toString)}",
    "lake exe kernel-pin-gen .lake/envs/initstd.ixe .lake/envs/certs.ixe \\\n      \
-    IxC/Kernel/Ixon/RoleData.lean",
+    IxCK/Kernel/Ixon/RoleData.lean",
    "lake exe IxTests cert-statement   # then: RoleEvidenceChecks on the committed file"]
 
 /-- Separate large data initializers so elaboration does not keep every row
@@ -171,7 +171,7 @@ def readOrdered (s : Setup) (addresses : Array Address) :
 /-! ## Source mode's evidence -/
 
 /-- The module of the certificate theorems. -/
-def certsModule : Lean.Name := `IxC.Kernel.PinGen.Certs
+def certsModule : Lean.Name := `IxCK.Kernel.PinGen.Certs
 
 /-- A Lean name's bytes for its address: each component tagged and
 length-delimited, so distinct names have distinct bytes. -/
@@ -187,7 +187,7 @@ constant of that name (`RoleData.sourceNames` names it back). -/
 def nameAddress (n : Lean.Name) : Address := hash (nameBytes n)
 
 /-- **Source mode's closed certificate proofs**, over the Lean environment
-of the certificate module (Init and `IxC/Kernel/PinGen/Certs.lean`), as the
+of the certificate module (Init and `IxCK/Kernel/PinGen/Certs.lean`), as the
 Source ingress takes it: canonicalized (`Ix.CanonM`, on `workers` tasks) and
 condensed, every declaration group lowered in the Source order behind the
 prelude `pre` (a group that does not lower, a `partial` or `unsafe` one, is
@@ -526,7 +526,7 @@ def run (args : List String) : IO UInt32 := do
     Ix.RoleEvidence.defeqRoles.toArray.map (fun r => (r, (Ix.RoleEvidence.defeqEvidence r).toArray)) ++
       Ix.RoleEvidence.defeqDefinitions.toArray
   -- the closed theorems have no Lean source the compiler could annotate: their
-  -- binder data come from IxC's pass over the record, typed against the store
+  -- binder data come from IxCK's pass over the record, typed against the store
   let secBlobs : Std.HashMap Address ByteArray := certEnv.blobs.fold (fun m a b => m.insert a b) env.blobs
   let secHints := certEnv.anonHints.fold (fun m a h => m.insert a h) env.anonHints
   let secSupport := certStore.toArray
@@ -819,7 +819,7 @@ To regenerate:
 The default table binds every role (`Ix.Kernel.Role`) to the constant of the
 compiled Init (blake3 {digest}) under the role's Lean name, with the
 structural `Nat` operations' `defeq` evidence and, for each well-founded one,
-the theorems of `IxC/Kernel/PinGen/Certs.lean` (compiled, blake3 {certDigest})
+the theorems of `IxCK/Kernel/PinGen/Certs.lean` (compiled, blake3 {certDigest})
 closed over the operation's dependency closure and written as theorem
 records. Every bound constant's record, the evidence and both literal
 capabilities were checked by the verified fold through the Ixon reader under

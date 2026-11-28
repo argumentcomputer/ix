@@ -5,8 +5,8 @@ import IxVMRefinement.Ingress.Decode
 import IxVM.Obs.Convert
 import IxVMRefinement.Nat.Utf8
 import IxVMRefinement.Subst.Basic
-import IxC.Kernel.Ixon.Reader
-import IxC.Kernel.Verify.PropWhen
+import IxCK.Kernel.Ixon.Reader
+import IxCK.Kernel.Verify.PropWhen
 import Ix.IxVM.Consistency.Statement
 
 /-! # Expression, Universe, Literal, and Binder-Table Conversion (`Convert` part 1)
@@ -299,7 +299,7 @@ def bytesVal : List UInt8 → Nat
 
 theorem bytesVal_eq_natural (bs : List UInt8) :
     bytesVal bs = Ix.Kernel.Reader.natural ⟨bs.toArray⟩ := by
-  unfold Ix.Kernel.Reader.natural
+  rw [Ix.Kernel.Reader.natural_eq_foldr]
   show bytesVal bs = bs.toArray.foldr (fun byte rest => byte.toNat + 256 * rest) 0
   rw [List.foldr_toArray]
   induction bs with

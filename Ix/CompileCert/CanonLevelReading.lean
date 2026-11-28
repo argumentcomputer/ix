@@ -5,7 +5,7 @@ import Ix.LeanIngress.CanonLevel
 
 The reading chain related a compiled level to its Source level by value only
 (`ExpressionState.related_ingress_value`): Source mode lowered levels as Lean
-wrote them. IxC's U lowers them to the compiler's canonical form
+wrote them. IxCK's U lowers them to the compiler's canonical form
 (`Ix.LeanIngress.canonLevelIn`: `canonUniv` over the constant's own level
 parameters), and the compiler reads the canonical form of its exact lowering
 (`UniversePipeline.LevelMeaning.exact`). So, with the reader's parameter map
@@ -125,7 +125,7 @@ theorem levelOfUniv_eq_convUniv {lps : List Kernel.LevelParam} {param : Nat → 
 
 /-- **A level reads as Source's canonical level**: the reader's level of the
 canonical form of the compiler's exact lowering is the Source level in the
-compiler's canonical form (`canonLevelIn`, what IxC's U lowers Source levels
+compiler's canonical form (`canonLevelIn`, what IxCK's U lowers Source levels
 to), when the reader's parameter map is the constant's level parameters
 (`param i = σ params[i]`) and `σ` keeps them apart. -/
 theorem canonLevelIn_ingress {params : List Ix.Name} {σ : Ix.Name → Kernel.LevelParam}

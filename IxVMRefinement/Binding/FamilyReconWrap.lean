@@ -1290,7 +1290,7 @@ theorem wrap_rel_one_wrapConsObs {rootCalls : List (Call F)} {t : Ix.Kernel.Role
     WrapConsObs (wrapAt t E₀) (WrapperObserved rootCalls t) G D :=
   (wrap_rel_one_oexact ht hwf hS hH hbd hRagree hcl hlv hsub hG hD hGin ev).toWrapConsObs
 
-/-- **`ConsumesObs` converts to IxC's `WrapDom`** whenever every observed wrapper has matching
+/-- **`ConsumesObs` converts to IxCK's `WrapDom`** whenever every observed wrapper has matching
 `wrapperArity find?`. -/
 theorem ConsumesObs.toWrapDom_obs {W : KKey → Option (Option Nat)} {ObsW : KKey → Nat → Prop}
     {find? : KKey → Option (Ix.Kernel.ConstantInfo .anon)}
@@ -1312,7 +1312,7 @@ theorem ConsumesObs.toWrapDom_obs {W : KKey → Option (Option Nat)} {ObsW : KKe
       simp [Ix.Kernel.Semantics.consumeWrapper, hfn, hargs, hW w' (rest.length + 1) hw ho]
     exact .consume hcw (ih hr)
 
-/-- **`WrapConsObs` converts to IxC's `WrapRel`** whenever every observed wrapper has matching
+/-- **`WrapConsObs` converts to IxCK's `WrapRel`** whenever every observed wrapper has matching
 `wrapperArity find?`. -/
 theorem WrapConsObs.toWrapRel_obs {W : KKey → Option (Option Nat)} {ObsW : KKey → Nat → Prop}
     {find? : KKey → Option (Ix.Kernel.ConstantInfo .anon)}

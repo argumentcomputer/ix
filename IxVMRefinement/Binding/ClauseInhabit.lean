@@ -24,7 +24,7 @@ import IxVMRefinement.Decl.LateWalkedConst
     the store of the basis rows to the store with `Bool`'s committed rows. Its store clauses are
     proved; its run clause is the observed validation of the group's roles.
   * `storeCovered_bool`: the store after group 6 is covered.
-  * `shapes_bool`, `groupKept_bool`, `bndOver_bool`: at the environment IxC's native check of
+  * `shapes_bool`, `groupKept_bool`, `bndOver_bool`: at the environment IxCK's native check of
     the `Bool` block installs, the stored shapes below 7, the group's roles kept, and the
     invariant below 7 from the clause below 6 at that environment and block wholeness (what the
     closure's unit step is to give): the raise past group 6 needs nothing else.
@@ -77,7 +77,7 @@ is a record store for `R` the check is read at; `R` holds the record, only recor
 loaded, and every blob the run loaded. One constant is installed, the declaration of the
 record's canonical annotations at the record's key. At every record store for `R` and every
 carried limit within `G` the prefix invariant is the walked-constant step's transport, the
-registry is kept at the same registered families by IxC's declaration step, and the store
+registry is kept at the same registered families by IxCK's declaration step, and the store
 keys, the roots and the level clauses are kept by a value constant at the key of a 32-byte
 address. -/
 theorem overUnitStep_defn {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
@@ -315,7 +315,7 @@ private theorem ops_not_boolRoles :
   decide
 
 /-- **The invariant below group 7 at the default table**, at the store with `Bool`'s committed
-rows and the environment IxC's native check of the `Bool` block installs, from the clause below
+rows and the environment IxCK's native check of the `Bool` block installs, from the clause below
 group 6 at that environment and block wholeness there (what the closure's unit step gives).
 The stored shapes, the group's roles and the raise past group 6 are proved. -/
 theorem bndOver_bool (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)

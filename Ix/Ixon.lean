@@ -2,7 +2,7 @@
   Ixon: Alpha-invariant serialization format for Lean constants.
 
   This host module reexports the pure types and anonymous codecs from
-  IxC.Ixon.Codec (Ixon v5: TagN integers and binder-data sections), and adds metadata, lazy
+  IxCK.Ixon.Codec (Ixon v5: TagN integers and binder-data sections), and adds metadata, lazy
   records, environments, and hashing.
   The pure anonymous grammar is shared with the certified codec proofs.
 -/
@@ -12,9 +12,10 @@ public import Ix.Address.Admission
 public import Ix.Common
 public import Ix.Environment
 public import Ix.IxonContract
-public import IxC.Ixon.Codec
-public import IxC.Ixon.Bounded.Constant
-import all IxC.Ixon.Codec
+public import IxCK.Ixon.Codec
+public import IxCK.Ixon.Bounded.Constant
+public import IxCK.Kernel.Admission.Depth
+import all IxCK.Ixon.Codec
 public import Ix.Merkle
 
 public section
@@ -397,6 +398,37 @@ structure LazyConstant where
   cache : Option Constant := none
   deriving Inhabited
 
+/-- The depth limit the loaders apply when the caller gives none: the kernel's default
+    (`Ix.Kernel.Admission.Limits.maxDepth`, 16,384 levels). -/
+def loadMaxDepth : Nat := 16384
+
+/-- How a loader reports a record nested past its depth limit; a host reads an error
+    that starts with it as a decline by the depth limit (exit 6), not as malformed input. -/
+def depthLimitMessage : String := "Env.get: a record nests past the depth limit"
+
+/-- The loaders' error for a record nested past `maxDepth`, found by the certified
+    entry's byte scan (`Ix.Kernel.Admission.Depth.within`, which reads the bytes with a stack
+    of its own and builds nothing) before the record is decoded. The decoder recurses on
+    the native stack once per level, so the scan is what bounds it: without it a record
+    nested deep enough overflows the loader's thread before any limit is checked. -/
+def depthLimitError (maxDepth : Nat) (address : Address) : String :=
+  s!"{depthLimitMessage} ({maxDepth} levels): record {address}"
+
+/-- Whether a loader's error (possibly prefixed by a caller) is `depthLimitError`. -/
+def isDepthLimitError (e : String) : Bool := (e.splitOn depthLimitMessage).length > 1
+
+/-- `deConstantAt`, guarded by `Ix.Kernel.Admission.Depth.within maxDepth` before
+    invoking the recursive decoder. -/
+def deConstantAtWithin (buf : ByteArray) (off len : Nat)
+    (maxDepth : Nat := loadMaxDepth) (maxUnivNodes : Nat := loadMaxUnivNodes) :
+    Except String Constant :=
+  if off + len ≤ buf.size then
+    let slice := if off == 0 && len == buf.size then buf else buf.extract off (off + len)
+    if Ix.Kernel.Admission.Depth.within maxDepth slice then
+      deConstantAt buf off len maxUnivNodes
+    else .error s!"{depthLimitMessage} ({maxDepth} levels)"
+  else .error s!"constant window: {off} + {len} exceeds the buffer's {buf.size} bytes"
+
 namespace LazyConstant
 
 /-- Build from a structured constant (build/compile path). Serializes once into
@@ -412,12 +444,12 @@ def ofSlice (buf : ByteArray) (off len : Nat) : LazyConstant :=
   { buf, off, len, cache := none }
 
 /-- Materialize the constant, surfacing parse errors. Returns the cached value
-    when present, otherwise parses exactly the window in place (no copy;
-    `deConstantAt`). -/
+    when present, otherwise checks `Depth.within loadMaxDepth` and parses the
+    window (`deConstantAtWithin`). -/
 def get (lc : LazyConstant) : Except String Constant :=
   match lc.cache with
   | some c => .ok c
-  | none => deConstantAt lc.buf lc.off lc.len
+  | none => deConstantAtWithin lc.buf lc.off lc.len loadMaxDepth
 
 /-- Materialize the constant, discarding parse errors. -/
 def get? (lc : LazyConstant) : Option Constant :=
@@ -431,6 +463,24 @@ def get? (lc : LazyConstant) : Option Constant :=
 @[inline] def rawBytes (lc : @& LazyConstant) : ByteArray :=
   if lc.off == 0 && lc.len == lc.buf.size then lc.buf
   else lc.buf.extract lc.off (lc.off + lc.len)
+
+/-- Whether the constant is already materialized or its raw bytes nest within `maxDepth`. -/
+def withinDepth (maxDepth : Nat := loadMaxDepth) (lc : LazyConstant) : Bool :=
+  lc.cache.isSome || Ix.Kernel.Admission.Depth.within maxDepth lc.rawBytes
+
+/-- `get`, after the depth scan of the record's bytes: a record nested past
+    `maxDepth` is `depthLimitError`, not decoded. -/
+def getWithin (maxDepth : Nat) (address : Address) (lc : LazyConstant) : Except String Constant :=
+  match lc.cache with
+  | some c => .ok c
+  | none =>
+    if Ix.Kernel.Admission.Depth.within maxDepth lc.rawBytes then
+      deConstantAt lc.buf lc.off lc.len
+    else .error (depthLimitError maxDepth address)
+
+/-- `get?`, guarded by `Depth.within maxDepth` before invoking the recursive decoder. -/
+def getWithin? (maxDepth : Nat := loadMaxDepth) (lc : LazyConstant) : Option Constant :=
+  if lc.withinDepth maxDepth then lc.get? else none
 
 end LazyConstant
 
@@ -2190,7 +2240,7 @@ def deConstantLoaded (bytes : ByteArray) : Except String Constant :=
     path does **not** go through here — it uses the Rust parser via
     `deEnvAnon` / `rsDeEnvLazyFFI`, which handles every metadata variant and
     returns zero-copy constant windows. -/
-def getEnv : GetM Env := do
+def getEnv (maxDepth : Nat := loadMaxDepth) : GetM Env := do
   -- Header
   let tag ← getTagN 4
   if tag.flag != FLAG then
@@ -2256,6 +2306,7 @@ def getEnv : GetM Env := do
       if !(compare prev addr).isLT then
         throw "Env.get: §2 constants not in strictly ascending address order"
     constOrder := constOrder.push addr
+    unless Ix.Kernel.Admission.Depth.within maxDepth bytes do throw (depthLimitError maxDepth addr)
     match deConstantLoaded bytes with
     | .ok constant => env := env.storeConst addr constant
     | .error e =>
@@ -2515,7 +2566,7 @@ private structure NamedEntrySpan where
 
 /-- Streaming counterpart of `deEnv` + `serEnv` roundtrip verification.
     See the section comment above. -/
-def getEnvVerifiedLazy : GetM LazyEnvParts := do
+def getEnvVerifiedLazy (maxDepth : Nat := loadMaxDepth) : GetM LazyEnvParts := do
   -- Header (verified as one span; the root's VALUE is verified against
   -- the recomputed merkle root after §2, exactly as `getEnv` does).
   let hdrStart := (← get).idx
@@ -2634,6 +2685,7 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
         let prev := constEntries[i - 1]!.addr
         if !(compare prev e.addr).isLT then
           throw "Env.get: §2 constants not in strictly ascending address order"
+      unless Ix.Kernel.Admission.Depth.within maxDepth body do throw (depthLimitError maxDepth e.addr)
       match Env.deConstantLoaded body with
       | .ok constant =>
         let frag := runPut do
@@ -2857,8 +2909,9 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
   pure { env, namedRows, rowIdx, nameRev, backing }
 
 /-- Run the streaming verified lazy load over an image. -/
-def deEnvVerifiedLazy (bytes : ByteArray) : Except String LazyEnvParts :=
-  match getEnvVerifiedLazy.run { idx := 0, bytes } with
+def deEnvVerifiedLazy (bytes : ByteArray) (maxDepth : Nat := loadMaxDepth) :
+    Except String LazyEnvParts :=
+  match (getEnvVerifiedLazy maxDepth).run { idx := 0, bytes } with
   | .ok parts _ => .ok parts
   | .error e _ => .error e
 
@@ -2886,7 +2939,10 @@ private def materializeConstRange (constArr : Array (Address × LazyConstant)) (
   let mut out : Array (Address × LazyConstant) := Array.emptyWithCapacity (hi - lo)
   for i in [lo:hi] do
     let (addr, lc) := constArr[i]!
-    match lc.get with
+    let parsed : Except String Constant := match lc.cache with
+      | some c => .ok c
+      | none => deConstantAt lc.buf lc.off lc.len
+    match parsed with
     | .ok c => out := out.push (addr, { lc with cache := some c })
     | .error e =>
       throw s!"materializeAll: constant {reprStr (toString addr)}: {e}"
@@ -2956,7 +3012,8 @@ def serEnv (env : Env) : Except String ByteArray :=
   | (.error e, _) => .error e
 
 /-- Deserialize an Env from bytes (full metadata, pure Lean). -/
-def deEnv (bytes : ByteArray) : Except String Env := runGet Env.getEnv bytes
+def deEnv (bytes : ByteArray) (maxDepth : Nat := loadMaxDepth) : Except String Env :=
+  runGet (Env.getEnv maxDepth) bytes
 
 /-- Compute section sizes for debugging.
     Returns (blobs, consts, anonHints, names, named, comms). -/
@@ -3136,6 +3193,13 @@ opaque rsDeEnvLazyFFI : @& ByteArray → Except String RawEnvLazy
     lazy + metadata-light, over a resident buffer. -/
 def deEnvAnon (bytes : ByteArray) : Except String Env :=
   return (← rsDeEnvLazyFFI bytes).toEnv bytes
+
+/-- Check that every uncached constant record in `env` nests within `maxDepth`
+    (`Ix.Kernel.Admission.Depth.within`) before any caller decodes it. -/
+def Env.checkDepthWithin (env : Env) (maxDepth : Nat := loadMaxDepth) : Except String Unit := do
+  for (addr, lc) in env.consts do
+    unless lc.withinDepth maxDepth do
+      throw (depthLimitError maxDepth addr)
 
 /-- Anonymous-only deserialization: keep blobs + consts + anon_hints
     and stop — the metadata sections (names/named/comms) are laid out

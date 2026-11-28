@@ -74,9 +74,9 @@ def plotTitle (workload measure : String) : String :=
   | "ixvm", "compress-peak-rss" => "IxVM KZG Compress Peak RAM Usage"
   | "ixvm", "compress-proof-size" => "IxVM KZG Proof Size"
   | "ixvm", "compress-verify-time" => "IxVM KZG Verify Time"
-  | "ixvm-ooc", "check-time"   => "IxVM OOC (IxC) Check Time"
-  | "ixvm-ooc", "throughput"   => "IxVM OOC (IxC) Check Throughput"
-  | "ixvm-ooc", "peak-rss"     => "IxVM OOC (IxC) Check Peak RAM Usage"
+  | "ixvm-ooc", "check-time"   => "IxVM OOC (IxCK) Check Time"
+  | "ixvm-ooc", "throughput"   => "IxVM OOC (IxCK) Check Throughput"
+  | "ixvm-ooc", "peak-rss"     => "IxVM OOC (IxCK) Check Peak RAM Usage"
   | w, m => s!"{w}: {m}"
 
 /-- Tracked but not plotted solo. `ix-decompile-lean` reuses the compile run's `.ixe`, so its `file-size` /
@@ -314,7 +314,7 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
     let consts ← findUuid measures "slug" "constants"
     let names := Ix.BenchConstants.benchConstants.filterMap fun c =>
       findUuid benchmarks "name" c.name
-    return { title := "IxVM OOC (IxC) Input Constants",
+    return { title := "IxVM OOC (IxCK) Input Constants",
              testbeds := #[oocTb], benchmarks := names,
              measure := consts, window }
   match overlay with

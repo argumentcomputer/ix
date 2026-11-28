@@ -1,5 +1,5 @@
 import Ix.RoleBinding.Artifact
-import IxC.Kernel.Admission.Reference
+import IxCK.Kernel.Admission.Reference
 
 /-! Target-model exports of the receipt's actual certified run. These do
 not establish Source value preservation or a host claim commitment. -/
@@ -9,7 +9,7 @@ theorem Receipt.strongModel (V : Type u) [Ix.Kernel.SetTheory V]
     {artifact : Ixon.Env} {limits : Ix.Kernel.Admission.Limits} (receipt : Receipt artifact limits) :
     Nonempty (Ix.Kernel.Cached.StrongModel V receipt.target) := by
   obtain ⟨_, _, _, checked⟩ := Ix.Kernel.Admission.checkBytesWith_checkDecls receipt.checked
-  exact Ix.Kernel.Cached.checkDecls_strongModel V checked
+  exact Ix.Kernel.Cached.checkDecls_strongModel_cfg V checked
 
 theorem Receipt.authentic {artifact : Ixon.Env} {limits : Ix.Kernel.Admission.Limits}
     (receipt : Receipt artifact limits) :

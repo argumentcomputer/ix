@@ -3,7 +3,7 @@ import IxVMRefinement.Assembly.NativeBlockRegister
 
 /-! # η typing after a native block's install without its recursor
 
-At the environment IxC's no-recursor install of any native block produces (`NativeNoRecFacts`),
+At the environment IxCK's no-recursor install of any native block produces (`NativeNoRecFacts`),
 from the fold invariant at the prefix and the install's own inputs only:
 
 * `NativeNoRecFacts.etaStable`: `EtaStable` at the new environment (every stored η-capable

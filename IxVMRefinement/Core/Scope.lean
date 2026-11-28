@@ -1,5 +1,5 @@
 import IxVMRefinement.Core.Loaded
-import IxC.Kernel.Verify.InstLevels
+import IxCK.Kernel.Verify.InstLevels
 import IxVMRefinement.Nat.Levels
 import IxVM.Obs.KernelCheck
 import Ix.IxVM.Consistency.Statement

@@ -1,7 +1,7 @@
 import Ix.Cert.EvidenceReading
 import Ix.Cert.Statement
 import Ix.LeanIngress.Rename
-import IxC.Kernel.Admission
+import IxCK.Kernel.Admission
 
 /-! # Quotient Source's bundle against the role table's evidence, on an artifact
 

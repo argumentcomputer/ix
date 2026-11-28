@@ -5,14 +5,14 @@ import Ix.IxVM.RecordSections
 
 Two routes write a record's binder-data section: the compiler's inline
 annotator, the Ix kernel's annotation pass over each declaration installed from
-its source, for every compiled record; and IxC's annotation pass over the Ixon record (`IxVM.RecordSections`),
+its source, for every compiled record; and IxCK's annotation pass over the Ixon record (`IxVM.RecordSections`),
 for the records no Lean source annotates (model records, closed evidence
 theorems, ad hoc definitions, hand-built test records). A difference between
 them gives one constant two addresses depending on the tool, so they must write
 the same section bytes for the same record.
 
 `binder-data-annotators` (manual) checks a compiled artifact (`IX_BD_IXE`): every
-record's section recomputed by IxC's pass, the record re-encoded with it, must be
+record's section recomputed by IxCK's pass, the record re-encoded with it, must be
 byte-identical to the stored record. A record that differs is counted as a data
 difference (the data of its binders, read in pre-order through its shares, differ)
 or an encoding difference (the data agree, the section's spelling does not: variant
@@ -86,7 +86,7 @@ def run : IO UInt32 := do
   let chosen ← IO.ofExcept (IxVM.RecordSections.chosenOf env)
   let (sections, stats) ← IO.ofExcept
     (IxVM.RecordSections.sectionsOfWithStats records #[] env.blobs env.anonHints chosen)
-  IO.println s!"BDANN {records.size} records; IxC's pass in {(← IO.monoMsNow) - t0} ms"
+  IO.println s!"BDANN {records.size} records; IxCK's pass in {(← IO.monoMsNow) - t0} ms"
   IO.println s!"BDANN pass: {stats.render}"
   if let some dump ← IO.getEnv "IX_BD_DUMP" then
     let lines := (records.filter fun (_, c) => !(roots c).isEmpty).qsort

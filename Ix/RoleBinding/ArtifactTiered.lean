@@ -65,15 +65,20 @@ structure TierReceipt (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits
   checked : Ix.Kernel.Admission.checkBytesTieredUsing prepared.preludeFor Address.admissionHash
     prepared.binding limits prepared.records prepared.blobs prepared.hints.lookup = .ok (logical, tier)
 
-def checkTiered (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) :
+def checkTiered (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits)
+    (pins : Ix.Kernel.Admission.RolePins := .committed) :
     Except TierError (TierReceipt artifact limits) :=
   match fromArtifact : prepareTiered artifact limits with
   | .error e => .error e
   | .ok prepared =>
-    match checked : Ix.Kernel.Admission.checkBytesTieredUsing prepared.preludeFor Address.admissionHash
-        prepared.binding limits prepared.records prepared.blobs prepared.hints.lookup with
-    | .error e => .error (.admission e)
-    | .ok (logical, tier) => .ok ⟨prepared, logical, tier, fromArtifact, checked⟩
+    match prepared.admitPins pins with
+    | .error e => .error (.preparation e)
+    | .ok () =>
+      match checked : Ix.Kernel.Admission.checkBytesTieredUsing prepared.preludeFor
+          Address.admissionHash prepared.binding limits prepared.records prepared.blobs
+          prepared.hints.lookup with
+      | .error e => .error (.admission e)
+      | .ok (logical, tier) => .ok ⟨prepared, logical, tier, fromArtifact, checked⟩
 
 /-- Logical/tier partitioning, fence and evidence are recomputed in this
 chosen order. A logical failure is terminal; there is no fallback retry. -/
@@ -86,15 +91,20 @@ structure OrderedTierReceipt (artifact : Ixon.Env) (limits : Ix.Kernel.Admission
   checked : Ix.Kernel.Admission.checkBytesTieredUsing prepared.preludeFor Address.admissionHash
     prepared.binding limits prepared.records prepared.blobs prepared.hints.lookup = .ok (logical,tier)
 
-def checkTieredAt (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) (order : Array Address) :
+def checkTieredAt (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) (order : Array Address)
+    (pins : Ix.Kernel.Admission.RolePins := .committed) :
     Except TierError (OrderedTierReceipt artifact limits order) :=
   match fromArtifact : prepareTieredAt artifact limits order with
   | .error e => .error e
   | .ok prepared =>
-    match checked : Ix.Kernel.Admission.checkBytesTieredUsing prepared.preludeFor Address.admissionHash
-        prepared.binding limits prepared.records prepared.blobs prepared.hints.lookup with
-    | .error e => .error (.admission e)
-    | .ok (logical,tier) => .ok ⟨prepared,logical,tier,fromArtifact,checked⟩
+    match prepared.admitPins pins with
+    | .error e => .error (.preparation e)
+    | .ok () =>
+      match checked : Ix.Kernel.Admission.checkBytesTieredUsing prepared.preludeFor
+          Address.admissionHash prepared.binding limits prepared.records prepared.blobs
+          prepared.hints.lookup with
+      | .error e => .error (.admission e)
+      | .ok (logical,tier) => .ok ⟨prepared,logical,tier,fromArtifact,checked⟩
 
 /-- A receipt of preparation and of the tiered check that admits user axioms on
 the logical part (`Admission.checkBytesTieredUsingUnder .allowUser`), with the
@@ -111,16 +121,21 @@ structure TierReceiptConditional (artifact : Ixon.Env) (limits : Ix.Kernel.Admis
     Address.admissionHash prepared.binding limits prepared.records prepared.blobs
     prepared.hints.lookup = .ok ((logical, tier), axioms)
 
-def checkTieredConditional (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) :
+def checkTieredConditional (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits)
+    (pins : Ix.Kernel.Admission.RolePins := .committed) :
     Except TierError (TierReceiptConditional artifact limits) :=
   match fromArtifact : prepareTiered artifact limits with
   | .error e => .error e
   | .ok prepared =>
-    match checked : Ix.Kernel.Admission.checkBytesTieredUsingUnder .allowUser prepared.preludeFor
-        Address.admissionHash prepared.binding limits prepared.records prepared.blobs
-        prepared.hints.lookup with
-    | .error e => .error (.admission e)
-    | .ok ((logical, tier), axioms) => .ok ⟨prepared, logical, tier, axioms, fromArtifact, checked⟩
+    match prepared.admitPins pins with
+    | .error e => .error (.preparation e)
+    | .ok () =>
+      match checked : Ix.Kernel.Admission.checkBytesTieredUsingUnder .allowUser prepared.preludeFor
+          Address.admissionHash prepared.binding limits prepared.records prepared.blobs
+          prepared.hints.lookup with
+      | .error e => .error (.admission e)
+      | .ok ((logical, tier), axioms) =>
+        .ok ⟨prepared, logical, tier, axioms, fromArtifact, checked⟩
 
 /-- **A tiered conditional receipt that lists no user axiom is a receipt of the
 certified tiered entry**, with the same preparation, logical environment and

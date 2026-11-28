@@ -1,14 +1,14 @@
 import IxVMRefinement.FamilyAlias.RuleCopy
 import IxVMRefinement.Decl.ModeledRules
-import IxC.Kernel.Verify.Close
-import IxC.Kernel.Verify.Subst
-import IxC.Kernel.Verify.Abstract
-import IxC.Kernel.Verify.Denote.TeleOpen
-import IxC.Kernel.Model.Iota
+import IxCK.Kernel.Verify.Close
+import IxCK.Kernel.Verify.Subst
+import IxCK.Kernel.Verify.Abstract
+import IxCK.Kernel.Verify.Denote.TeleOpen
+import IxCK.Kernel.Model.Iota
 
 /-! # Opening a telescope, and closing it again
 
-A statement is given to the family step opened: its binders replaced by variables, as IxC's
+A statement is given to the family step opened: its binders replaced by variables, as IxCK's
 rule record reads it. A copy of the statement is a closed term. This module has what passes
 between the two forms.
 

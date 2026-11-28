@@ -1,0 +1,21 @@
+{"source_sha256":
+ {"consumer.equations.json":
+  "4f39baab104b05b9894be5afb89c24122d41801ae24a4ff73a51305c19620e04",
+  "anonymous.ixe":
+  "631b6cd26961ae88a36bb541352f946bcf762d66152faa42ecad63a57e781bf4",
+  "Reverse.lean":
+  "c2035e83589a7f6ddb0aa807e1c17d94cb95bbab0c7b85d9a41c9febbc927ed7"},
+ "source_path": "fixtures/rc/real-source",
+ "regenerate":
+ "lake exe refreeze-ixon rc-real-source --ix IX --ix-path FAKE (docs/corpus.md, Refreezing)",
+ "producer_version": "4.34.1|0.0.1",
+ "producer":
+ "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
+ "named_env_sha256":
+ "bf710a06df832c50e9963bd31ada9f9f64e575c90e72aa3ecf2056d72868b732",
+ "lean_version":
+ "Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)\n",
+ "commands":
+ ["ix compile --no-build --consts <roots> --equations --anon --out anonymous.ixe --equations-out anonymous.equations.json fixtures/rc/real-source/Reverse.lean",
+  "ix compile --no-build --consts <roots> --equations --out named.ixe --equations-out named.equations.json fixtures/rc/real-source/Reverse.lean",
+  "ix addr-of --ixe named.ixe NAME, for every root, definition and equation"]}

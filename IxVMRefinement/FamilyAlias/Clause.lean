@@ -1,12 +1,12 @@
 import IxVMRefinement.FamilyAlias.Roots
-import IxC.Kernel.Model.FoldLate
-import IxC.Kernel.Model.ThmLevels
-import IxC.Kernel.Model.StoreArKeep
+import IxCK.Kernel.Model.FoldLate
+import IxCK.Kernel.Model.ThmLevels
+import IxCK.Kernel.Model.StoreArKeep
 
-/-! # What the family step keeps of IxC's half of the carried clause
+/-! # What the family step keeps of IxCK's half of the carried clause
 
-The carried clause's IxC half is IxC's fold invariant with the native families registered so far
-(`EnvModelN`) and IxC's store facts. From the family step's conclusion (an alias group over the
+The carried clause's IxCK half is IxCK's fold invariant with the native families registered so far
+(`EnvModelN`) and IxCK's store facts. From the family step's conclusion (an alias group over the
 prefix and the renamed record over the family package), across the aliases and the block:
 
 * `envModelN_famStep`: `EnvModelN` at any registry, in every set theory. Each alias extends the
@@ -18,7 +18,7 @@ prefix and the renamed record over the family package), across the aliases and t
   definition.
 
 The one store fact not proved here is the arity of the stored terms (`StoreArR`). It is stated
-as `FamilyKeepsStoreAr`. IxC has no lemma of this kind for its modeled route. -/
+as `FamilyKeepsStoreAr`. IxCK has no lemma of this kind for its modeled route. -/
 
 universe u
 
@@ -37,7 +37,7 @@ set_option linter.unusedSimpArgs false
 
 /-! ## The fold invariant with a registry -/
 
-/-- IxC's fold invariant with a registry across one installed alias: the alias extends the model
+/-- IxCK's fold invariant with a registry across one installed alias: the alias extends the model
 it is given. -/
 theorem envModelN_installAliasPos {V : Type u} [Ix.Kernel.SetTheory V] {E : Env .anon}
     {R : NativeFam .anon → Prop} (hE : EnvModelN V .verified E R)
@@ -62,7 +62,7 @@ theorem envModelN_installAliasPos {V : Type u} [Ix.Kernel.SetTheory V] {E : Env 
       htr htb (fun ψ => aliasType_reads mp.base2 (renameOkPos_of_aliasEnv mp hA) hperm hlps hty ψ)
     exact ⟨hEE', mp', hext⟩)
 
-/-- IxC's fold invariant with a registry across an alias group. -/
+/-- IxCK's fold invariant with a registry across an alias group. -/
 theorem envModelN_aliasGroup {V : Type u} [Ix.Kernel.SetTheory V] {env : Env .anon}
     {R : NativeFam .anon → Prop} {h : KKey → KKey} {as : List (ConstantInfo .anon)}
     (hg : AliasGroup env h as) (hE : EnvModelN V .verified env R) :
@@ -74,7 +74,7 @@ theorem envModelN_aliasGroup {V : Type u} [Ix.Kernel.SetTheory V] {env : Env .an
     exact ⟨envModelN_installAliasPos hF hperm hfresh hnpt hsrc hlps htf htp htr htb hA hty,
       aliasEnv_cons hA hperm hfresh hsrc hlps hk' hrest⟩
 
-/-- **IxC's fold invariant with a registry across the family step**: from an alias group over
+/-- **IxCK's fold invariant with a registry across the family step**: from an alias group over
 the prefix and the renamed record over the family package, `EnvModelN` at the same registry after
 the block, in every set theory. -/
 theorem envModelN_famStep {env env₂ : Env .anon} {h : KKey → KKey}

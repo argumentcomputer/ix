@@ -1,11 +1,11 @@
-import IxC.Kernel.Admission.Theorems
+import IxCK.Kernel.Admission.Theorems
 import Ix.Ixon.Authenticated.Theorems
 import Tests.Ix.Kernel.Reader
 
 /-! # Binder modes in the checker
 
 An Ixon record keeps its binders' modes in its binder-data section and a
-`let`'s mode in the `let`'s header (`IxC/Ixon/Types/Modes.lean`). The checker
+`let`'s mode in the `let`'s header (`IxCK/Ixon/Types/Modes.lean`). The checker
 is mode-blind:
 
 * **The reader does not read modes.** A definition whose section gives

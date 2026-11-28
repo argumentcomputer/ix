@@ -173,8 +173,9 @@ pub enum RevealConstantInfo {
 // ============================================================================
 
 /// What a typing claim is relative to. The typing claims (`Eval`, `Check`,
-/// `CheckEnv`, `Catalog`) state that constants are well-typed in Lean's
-/// theory with its primitives read through a role binding, and these three
+/// `CheckEnv`, `Catalog`) state that constants are well-typed under Ix's
+/// typing rules (not Lean's kernel; `docs/Ixon.md` says what an accept
+/// proves) with primitives read through a role binding, and these three
 /// fields say which:
 ///
 /// - `spec`: the specification digest ([`SPEC_DIGEST_HEX`]), naming the
@@ -291,6 +292,18 @@ pub struct Proof {
   pub proof: Vec<u8>,
 }
 
+/// 4-byte family prefix shared by all Aiur L3 compressed proof payloads carried
+/// inside [`Proof::proof`].
+pub const L3_PROOF_FAMILY_PREFIX: &[u8; 4] = b"IXL3";
+
+/// 8-byte payload magic prefix for an Aiur L3 BN254 PLONK proof carried inside
+/// [`Proof::proof`].
+pub const L3_BN254_PROOF_TAG: &[u8; 8] = b"IXL3BN1\0";
+
+/// 8-byte payload magic prefix for an Aiur L3 BLS12-381 PLONK proof carried
+/// inside [`Proof::proof`].
+pub const L3_BLS12_381_PROOF_TAG: &[u8; 8] = b"IXL3BL1\0";
+
 // ============================================================================
 // TagN variant layout for flags 0xE (data + claims) and 0xF (proofs)
 // ============================================================================
@@ -312,6 +325,9 @@ pub struct Proof {
 /// - 8: Catalog claim (`E8 00`)
 /// - 9: retired (the resource claim, `E8 01`), refused
 /// - 10: Binding claim (`E8 02`)
+/// - 11 (`E8 03`) and 12 (`E8 04`) are not claims: they begin the role-binding
+///   section and the literal-class preimage (`role_table.rs`)
+/// - 13: the Lean-only compile claim (`E8 05`), which this crate refuses
 ///
 /// The `.ixe` header also uses flag 0xE, with its storage envelope version:
 /// legacy 4 is `0xE4` and the role-bound 5 is `0xE5`. Checked claims still bind
@@ -1184,6 +1200,7 @@ fn get_opt_addr(buf: &mut &[u8]) -> Result<Option<Address>, String> {
 ///   compile-v2; refused.
 /// - `8`, erased-lean-v2-modes: reserved for claims about a record's modes;
 ///   refused until a validator for it exists.
+/// - `9`, compile-v3: reserved for IxCC's next compile-claim version; refused.
 pub const VALIDATOR_STRUCTURAL: u8 = 0;
 pub const VALIDATOR_ERASED_LEAN_RETIRED: u8 = 1;
 pub const VALIDATOR_RESOURCE_RETIRED: u8 = 2;
@@ -1193,6 +1210,7 @@ pub const VALIDATOR_ERASED_LEAN_CLASS: u8 = 5;
 pub const VALIDATOR_COMPILE_V1_RESERVED: u8 = 6;
 pub const VALIDATOR_COMPILE_V2_RESERVED: u8 = 7;
 pub const VALIDATOR_ERASED_LEAN_MODES_RESERVED: u8 = 8;
+pub const VALIDATOR_COMPILE_V3_RESERVED: u8 = 9;
 
 fn validator_for_variant(variant: u64) -> u8 {
   match variant {
@@ -1259,6 +1277,7 @@ fn get_scope(variant: u64, buf: &mut &[u8]) -> Result<u8, String> {
     VALIDATOR_COMPILE_V1_RESERVED
       | VALIDATOR_COMPILE_V2_RESERVED
       | VALIDATOR_ERASED_LEAN_MODES_RESERVED
+      | VALIDATOR_COMPILE_V3_RESERVED
   ) {
     return Err(format!("claim: validator {found} is reserved, not read"));
   }
@@ -1678,6 +1697,24 @@ impl Proof {
     self.put(&mut buf);
     let addr = Address::hash(&buf);
     (addr, buf)
+  }
+
+  /// Whether this proof's payload carries an Aiur L3 compressed proof envelope
+  /// (`IXL3*`).
+  pub fn is_l3_proof(&self) -> bool {
+    self.proof.starts_with(L3_PROOF_FAMILY_PREFIX)
+  }
+
+  /// Whether this proof's payload carries a BN254 Aiur L3 PLONK envelope
+  /// (`IXL3BN1\0`).
+  pub fn is_l3_bn254_proof(&self) -> bool {
+    self.proof.starts_with(L3_BN254_PROOF_TAG)
+  }
+
+  /// Whether this proof's payload carries a BLS12-381 Aiur L3 PLONK envelope
+  /// (`IXL3BL1\0`).
+  pub fn is_l3_bls12_381_proof(&self) -> bool {
+    self.proof.starts_with(L3_BLS12_381_PROOF_TAG)
   }
 }
 
@@ -2109,7 +2146,7 @@ mod tests {
 
   /// The retired resource claim (`E8 01`) and proof (`F6`) are refused as
   /// retired, whatever follows their tag, and so are the retired and reserved
-  /// validators 2 and 6 to 8 on every claim and proof.
+  /// validators 2 and 6 to 9 on every claim and proof.
   #[test]
   fn retired_resource_claim_and_reserved_validators_refused() {
     let root = Address::hash(b"root");
@@ -2165,9 +2202,10 @@ mod tests {
       Proof::new(claim.clone(), vec![]).put(&mut proof_bytes);
       for (validator, text) in [
         (VALIDATOR_RESOURCE_RETIRED, "resource-v1 is retired"),
-        (VALIDATOR_COMPILE_V1_RESERVED, "reserved"),
-        (VALIDATOR_COMPILE_V2_RESERVED, "reserved"),
-        (VALIDATOR_ERASED_LEAN_MODES_RESERVED, "reserved"),
+        (VALIDATOR_COMPILE_V1_RESERVED, "reserved, not read"),
+        (VALIDATOR_COMPILE_V2_RESERVED, "reserved, not read"),
+        (VALIDATOR_ERASED_LEAN_MODES_RESERVED, "reserved, not read"),
+        (VALIDATOR_COMPILE_V3_RESERVED, "reserved, not read"),
       ] {
         let mut bad = bytes.clone();
         bad[header + 1] = validator;
@@ -2179,6 +2217,54 @@ mod tests {
         assert!(err.contains(text), "{claim:?} {validator}: {err}");
       }
     }
+  }
+
+  /// The Lean-only compile claim (`Ix.Claim.compile`, `IxCC.CompileClaim`):
+  /// TagN `0xE8 0x05` (variant 13), scope `04 07` (compile-v2), `env`, the role
+  /// table (`00`, or `01` and its address), `target`, policy, `abiArity` and
+  /// `elfHash`. This is the 103-byte vector that `Tests/Ix/Claim.lean` and
+  /// `IxCC/IxCCTests/Pipeline/Compiler.lean` pin. Rust has no compile variant: it
+  /// must refuse these bytes with an error, under reserved validators 6/7/9,
+  /// under validator 3, as a proof wrapper (`F8 00`), and as a role-binding
+  /// section, never read them as another claim; the same holds for the former
+  /// 102-byte format (validator `06`, no role table).
+  #[test]
+  fn compile_claim_vector_refused() {
+    let mut bytes = vec![0xE8, 0x05, 4, VALIDATOR_COMPILE_V2_RESERVED];
+    bytes.extend_from_slice(&[0x11; 32]);
+    bytes.push(0x00);
+    bytes.extend_from_slice(&[0x22; 32]);
+    bytes.extend_from_slice(&[0x02, 0x03]);
+    bytes.extend_from_slice(&[0x33; 32]);
+    assert_eq!(bytes.len(), 103);
+    let mut former = vec![0xE8, 0x05, 4, VALIDATOR_COMPILE_V1_RESERVED];
+    former.extend_from_slice(&[0x11; 32]);
+    former.extend_from_slice(&[0x22; 32]);
+    former.extend_from_slice(&[0x02, 0x03]);
+    former.extend_from_slice(&[0x33; 32]);
+    assert_eq!(former.len(), 102);
+    let err = Claim::from_bytes(&former).unwrap_err();
+    assert!(err.contains("reserved, not read"), "{err}");
+    let err = Claim::from_bytes(&bytes).unwrap_err();
+    assert!(err.contains("reserved, not read"), "{err}");
+    let mut v9 = bytes.clone();
+    v9[3] = VALIDATOR_COMPILE_V3_RESERVED;
+    let err = Claim::from_bytes(&v9).unwrap_err();
+    assert!(err.contains("reserved, not read"), "{err}");
+    // Under the validator its variant would have (erased-lean-v2), the
+    // variant itself is refused.
+    let mut v3 = bytes.clone();
+    v3[3] = VALIDATOR_ERASED_LEAN;
+    let err = Claim::from_bytes(&v3).unwrap_err();
+    assert!(err.contains("invalid claim variant 13"), "{err}");
+    // The proof wrapper Lean writes for it (`F8 00`, proof variant 8).
+    let mut proof = vec![0xF8, 0x00];
+    proof.extend_from_slice(&bytes[2..]);
+    proof.push(0);
+    let err = Proof::get(&mut proof.as_slice()).unwrap_err();
+    assert!(err.contains("invalid proof variant 8"), "{err}");
+    // It is not a role-binding section (`E8 03`).
+    assert!(crate::role_table::RoleTable::from_bytes(&bytes).is_err());
   }
 
   fn reveal_info_roundtrip(info: &RevealConstantInfo) -> bool {
@@ -3196,5 +3282,42 @@ mod tests {
     assert!(incomplete.literal_class().is_err());
     let indices: Vec<u8> = CLASS_ROLES.iter().map(|r| r.index()).collect();
     assert_eq!(indices, [0, 1, 2, 29, 30, 31, 36, 37, 38, 39, 40, 56, 57]);
+  }
+
+  #[test]
+  fn l3_proof_envelope_tags_roundtrip() {
+    let claim = Claim::CheckEnv {
+      ctx: ClaimContext {
+        spec: Address::hash(b"spec"),
+        binding: Address::hash(b"binding"),
+        axioms: None,
+        binding_assumed: false,
+        literal_class: false,
+      },
+      root: Address::hash(b"root"),
+      assumptions: None,
+    };
+    let mut bn_payload = L3_BN254_PROOF_TAG.to_vec();
+    bn_payload.extend_from_slice(&[0xAB; 48]);
+    let bn_proof = Proof::new(claim.clone(), bn_payload);
+    assert!(bn_proof.is_l3_proof());
+    assert!(bn_proof.is_l3_bn254_proof());
+    assert!(!bn_proof.is_l3_bls12_381_proof());
+
+    let (_, wire) = bn_proof.commit();
+    let mut slice = wire.as_slice();
+    let decoded = Proof::get(&mut slice).unwrap();
+    assert!(slice.is_empty());
+    assert_eq!(decoded, bn_proof);
+
+    let mut bls_payload = L3_BLS12_381_PROOF_TAG.to_vec();
+    bls_payload.extend_from_slice(&[0xCD; 48]);
+    let bls_proof = Proof::new(claim.clone(), bls_payload);
+    assert!(bls_proof.is_l3_proof());
+    assert!(!bls_proof.is_l3_bn254_proof());
+    assert!(bls_proof.is_l3_bls12_381_proof());
+
+    let plain = Proof::new(claim, b"IXAGGR2\0payload".to_vec());
+    assert!(!plain.is_l3_proof());
   }
 }

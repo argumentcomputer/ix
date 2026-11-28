@@ -18,7 +18,7 @@ shards: the binding of `agg-med`, the closure of `Array.extract_append` and
 `Array.extract_append._proof_1_1`.
 
 No native rule answers a decision, so the specification gives the decisions no
-dependency on the `of_decide_eq_*` roles (`IxC/Kernel/Roles.lean`), and a binding
+dependency on the `of_decide_eq_*` roles (`IxCK/Kernel/Roles.lean`), and a binding
 may bind a decision without them.
 
 The case compiles that constant's closure as `ix compile --consts` does

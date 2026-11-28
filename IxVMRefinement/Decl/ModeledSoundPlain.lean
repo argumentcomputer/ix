@@ -1,12 +1,12 @@
 import IxVMRefinement.Decl.ModeledSoundKit
-import IxC.Kernel.Model.IndPinGrade
-import IxC.Kernel.Model.IndBottomProj
-import IxC.Kernel.Model.JudgeSound
-import IxC.Kernel.Model.Tiers
-import IxC.Kernel.Model.Annot.Bit
-import IxC.Kernel.Model.Annot.BitLevels
-import IxC.Kernel.Verify.Denote.OpenRevDenote
-import IxC.Kernel.Semantics.IndBlockRun
+import IxCK.Kernel.Model.IndPinGrade
+import IxCK.Kernel.Model.IndBottomProj
+import IxCK.Kernel.Model.JudgeSound
+import IxCK.Kernel.Model.Tiers
+import IxCK.Kernel.Model.Annot.Bit
+import IxCK.Kernel.Model.Annot.BitLevels
+import IxCK.Kernel.Verify.Denote.OpenRevDenote
+import IxCK.Kernel.Semantics.IndBlockRun
 
 /-!
 # Soundness of Canonical (`.plain`) Modeled-Inductive `iota` Rules for the VM

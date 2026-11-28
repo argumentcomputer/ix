@@ -38,29 +38,37 @@ open Aiur.Optimized
 open Aiur.Tiling
 open Aiur.Tiling.Bridge
 open Aiur.Tiling.WideStage (Air StageHolds stageLedger)
-open Lower (Fr LGate Ref)
+open Lower (Ref)
 
-theorem stageLedger_append (A B : List (Air Fr)) (main : Nat → Nat → Nat → Fr) :
+section Generic
+
+variable {F : Type} [Field F] [DecidableEq F]
+
+omit [DecidableEq F] in
+theorem stageLedger_append (A B : List (Air F)) (main : Nat → Nat → Nat → F) :
     stageLedger (A ++ B) main = stageLedger A main + stageLedger B (fun t => main (A.length + t)) := by
   simp only [stageLedger, List.zipIdx_append, List.map_append, List.sum_append, Nat.zero_add]
   congr 1
   rw [List.zipIdx_eq_map_add, List.map_map]
   rfl
 
-theorem stageHolds_append_left {A B : List (Air Fr)} {main : Nat → Nat → Nat → Fr}
+omit [DecidableEq F] in
+theorem stageHolds_append_left {A B : List (Air F)} {main : Nat → Nat → Nat → F}
     (h : StageHolds (A ++ B) main) : StageHolds A main := by
   intro x hx
   exact h x (by rw [List.zipIdx_append]; exact List.mem_append_left _ hx)
 
+omit [DecidableEq F] in
 /-- The root table: one row, `n` main cells and the lookup
 `push(1, [CALL, k, cells…])`. `CALL` and the entry id `k` are constants of
 the circuit, not cells; the cells are the rest of the statement. -/
-def rootAir (k : Fr) (n : Nat) : Air Fr :=
-  ⟨⟨n, 0, [], [⟨.const 1, .const (CALL : Fr) :: .const k :: (List.range n).map .var⟩]⟩, 1, fun _ _ => 0⟩
+def rootAir (k : F) (n : Nat) : Air F :=
+  ⟨⟨n, 0, [], [⟨.const 1, .const (CALL : F) :: .const k :: (List.range n).map .var⟩]⟩, 1, fun _ _ => 0⟩
 
-theorem stageLedger_root (k : Fr) (n : Nat) (main : Nat → Nat → Nat → Fr) :
+omit [DecidableEq F] in
+theorem stageLedger_root (k : F) (n : Nat) (main : Nat → Nat → Nat → F) :
     stageLedger [rootAir k n] main =
-      Finsupp.single ((CALL : Fr) :: k :: (List.range n).map (main 0 0)) 1 := by
+      Finsupp.single ((CALL : F) :: k :: (List.range n).map (main 0 0)) 1 := by
   simp only [stageLedger, List.zipIdx_singleton, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil,
     add_zero, Air.ledger, rootAir, List.range_one, Tiling.Circuit.rowLedger, Tiling.Lookup.entry,
     Tiling.Lookup.tuple, List.map_map]
@@ -71,16 +79,23 @@ theorem stageLedger_root (k : Fr) (n : Nat) (main : Nat → Nat → Nat → Fr) 
   intro v hv
   simp [Function.comp, Scalar.Circuit.ArithExpr.denote, Air.assign, List.mem_range.mp hv]
 
+end Generic
+
+section Prime
+
+variable {p : Nat} [Fact (Nat.Prime p)]
+
 /-- With the root table last and a good challenge, every table holds and the
 ledger of `airs` plus the root message (row 0 of the root table) is zero. -/
-theorem stage_balanced {airs : List (Air Fr)} {k : Fr} {n : Nat} {P : Lower.Pool} {poolIdx : Ref → Option Nat}
-    (ok : stageOk (airs ++ [rootAir k n]) P poolIdx = true) (W : Wiring (airs ++ [rootAir k n]) P) (w : Nat → Fr)
-    (sat : ∀ g ∈ emitGates (airs ++ [rootAir k n]) P W, g.Holds w)
+theorem stage_balanced {airs : List (Air (ZMod p))} {k : ZMod p} {n : Nat} {P : Lower.Pool (ZMod p)}
+    {poolIdx : Ref → Option Nat}
+    (ok : stageOk (airs ++ [rootAir k n]) P poolIdx = true) (W : Wiring (airs ++ [rootAir k n]) P)
+    (w : Nat → ZMod p) (sat : ∀ g ∈ emitGates (airs ++ [rootAir k n]) P W, g.Holds w)
     (good : ChallengeGood (w (W.poolWire Lower.gammaRef)) (w (W.poolWire Lower.betaRef))
       (MsgTuple (airs ++ [rootAir k n]) (W.main w)) (stageLedger (airs ++ [rootAir k n]) (W.main w))) :
     StageHolds airs (W.main w) ∧
       stageLedger airs (W.main w) +
-        Finsupp.single ((CALL : Fr) :: k :: (List.range n).map (W.main w airs.length 0)) 1 = 0 := by
+        Finsupp.single ((CALL : ZMod p) :: k :: (List.range n).map (W.main w airs.length 0)) 1 = 0 := by
   obtain ⟨holds, eval⟩ := stage_sound ok W w sat
   refine ⟨stageHolds_append_left holds, ?_⟩
   have h := good.2 (by rw [eval good.1, init_zero W sat, neg_zero])
@@ -88,47 +103,48 @@ theorem stage_balanced {airs : List (Air Fr)} {k : Fr} {n : Nat} {P : Lower.Pool
   simpa using h
 
 /-- The emitted constraint system. -/
-def emitScs (airs : List (Air Fr)) (P : Lower.Pool) (W : Wiring airs P) (wires publics : Nat)
-    (committed : List Nat) : Scs Fr :=
+def emitScs (airs : List (Air (ZMod p))) (P : Lower.Pool (ZMod p)) (W : Wiring airs P)
+    (wires publics : Nat) (committed : List Nat) : Scs (ZMod p) :=
   { wires, publics, committed, gamma := W.poolWire Lower.gammaRef, gates := emitGates airs P W }
 
-theorem plonk_wide_heap_sound {source : Generic.Source Fr} {entries : List String}
+theorem plonk_wide_heap_sound {source : Generic.Source (ZMod p)} {entries : List String}
     {specialized : Generic.Specialized source entries} (compiled : GenericArtifact specialized)
     (prepared : Physical.Prepared compiled.artifact) {cfg : Depth.Config}
     (certified : Depth.Certified cfg prepared.system) {id : String → Except String Nat}
     (plan : Grouping.Plan (Depth.system cfg prepared.system) id) (activated : plan.WellFormedActivation)
     {name : String} (entry : name ∈ entries)
-    {args : List (SourceValue Fr)} {result : Value Fr} {wires : List (WireValue Fr)}
-    {output : WireValue Fr}
+    {args : List (SourceValue (ZMod p))} {result : Value (ZMod p)} {wires : List (WireValue (ZMod p))}
+    {output : WireValue (ZMod p)}
     (signed : Erasure.Signed compiled.system ⟨name, wires, output⟩)
-    {root : Circuit.Message Fr}
+    {root : Circuit.Message (ZMod p)}
     (rooted : Depth.erase cfg root = Erasure.message compiled.system ⟨name, wires, output⟩)
     (outside : root.channel ∉ cfg.names)
     (entryPlain : cfg.recursive name = false)
     (arguments : DecodesValues specialized.program.enums wires (entryValues args))
     (decoded : output.decode specialized.program.enums = some result)
-    (idOf : String → Nat) {units : List ((Chip Fr × Option (Unroll Fr)) × Nat)}
+    (idOf : String → Nat) {units : List ((Chip (ZMod p) × Option (Unroll (ZMod p))) × Nat)}
     (chipsIn : ∀ u ∈ units, u.1.1 ∈ plan.singles)
     (unrolled : ∀ u ∈ units, Bridge.unitOk idOf u.1 = true)
     (capacity : WideStage.unitCapRows units ≤ 2 ^ 39)
     {mapCap : Nat → Nat} {roms : List (Nat × Nat)} (widths : (roms.map Prod.fst).Nodup)
     {bound : Nat} (romCaps : ∀ r ∈ roms, r.2 ≤ bound)
-    (small : SmallCast Fr bound) (tags : 2 < bound) (lookups : WideStage.unitCapLookups units < bound)
-    (characteristic : ∀ n : Nat, 0 < n → n ≤ 2 ^ 39 * 2 ^ cfg.bits → (n : Fr) ≠ 0)
+    (small : SmallCast (ZMod p) bound) (tags : 2 < bound) (lookups : WideStage.unitCapLookups units < bound)
+    (characteristic : ∀ n : Nat, 0 < n → n ≤ 2 ^ 39 * 2 ^ cfg.bits → (n : ZMod p) ≠ 0)
     (chanIds : ∀ x ∈ Bridge.channels (Depth.system cfg prepared.system) plan.singles root,
       ∀ y ∈ Bridge.channels (Depth.system cfg prepared.system) plan.singles root, idOf x = idOf y → x = y)
     (chanBound : ∀ x ∈ Bridge.channels (Depth.system cfg prepared.system) plan.singles root, idOf x < bound)
     (enablesOk : ∀ c ∈ plan.singles, Bridge.checkEnables bound c = true)
-    {airs : List (Air Fr)}
+    {airs : List (Air (ZMod p))}
     (hairs : airs = WideStage.unitAirs idOf units ++
       WideStage.mapAirs ((Depth.system cfg prepared.system).mapClaims.map (encode idOf)) mapCap ++
       WideStage.romAirs roms)
-    {k : Fr} {n : Nat} {P : Lower.Pool} {poolIdx : Ref → Option Nat}
+    {k : ZMod p} {n : Nat} {P : Lower.Pool (ZMod p)} {poolIdx : Ref → Option Nat}
     (ok : stageOk (airs ++ [rootAir k n]) P poolIdx = true)
     (W : Wiring (airs ++ [rootAir k n]) P)
-    {nWires publics : Nat} {committed : List Nat} {w : Nat → Fr} {pub : List Fr} {H : List Fr → Fr}
+    {nWires publics : Nat} {committed : List Nat} {w : Nat → ZMod p} {pub : List (ZMod p)}
+    {H : List (ZMod p) → ZMod p}
     (sat : (emitScs (airs ++ [rootAir k n]) P W nWires publics committed).Satisfied w pub H)
-    (entryId : (idOf root.channel : Fr) = k)
+    (entryId : (idOf root.channel : ZMod p) = k)
     (statement : (List.range n).map (W.main w airs.length 0) = (encode idOf root).drop 2)
     (good : ChallengeGood (w (W.poolWire Lower.gammaRef)) (w (W.poolWire Lower.betaRef))
       (MsgTuple (airs ++ [rootAir k n]) (W.main w)) (stageLedger (airs ++ [rootAir k n]) (W.main w))) :
@@ -140,7 +156,7 @@ theorem plonk_wide_heap_sound {source : Generic.Source Fr} {entries : List Strin
           specialized.program.enums) heap value result := by
   intro mainR
   obtain ⟨holds, balanced⟩ := stage_balanced ok W w sat.2.2 good
-  have hroot : (CALL : Fr) :: k :: (encode idOf root).drop 2 = encode idOf root := by
+  have hroot : (CALL : ZMod p) :: k :: (encode idOf root).drop 2 = encode idOf root := by
     rw [← entryId]; rfl
   rw [statement, hroot] at balanced
   subst hairs
@@ -152,5 +168,7 @@ theorem plonk_wide_heap_sound {source : Generic.Source Fr} {entries : List Strin
     (stageHolds_append_left (stageHolds_append_left holds)) ?_
   rw [← balanced]
   simp only [List.length_append, mainR, Nat.add_assoc]
+
+end Prime
 
 end Aiur.Plonk

@@ -1,11 +1,11 @@
 import IxVMRefinement.Decl.DeclSpecs
-import IxC.Kernel.Model.DeclIndRen
-import IxC.Kernel.Model.IndRenJudge
+import IxCK.Kernel.Model.DeclIndRen
+import IxCK.Kernel.Model.IndRenJudge
 
 /-! # The declaration layer's invariants across a family installed on the renamed route
 
 A mutual or nested block is installed in full (its types, its constructors and the recursors of
-its family record) by IxC's renamed record `DeclIndRenRunJ` (`IxC/Kernel/Model/IndRenRecord.lean`):
+its family record) by IxCK's renamed record `DeclIndRenRunJ` (`IxCK/Kernel/Model/IndRenRecord.lean`):
 the block's rules and front doors may be typed on the terms renamed to the block's model. This
 module carries the declaration layer's invariant `FullDeclInv` across such a step, at the
 derivation package `rulesJ`, the package every refinement of the circuit's judgements targets.

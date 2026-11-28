@@ -1,0 +1,16 @@
+{"source_sha256":
+ "a6e3cbdb4530056d2969ed3aec2b97da5d0e9c7f8f09c445cd9ede28dd830c59",
+ "producer_version": "4.34.1|0.0.1",
+ "producer":
+ "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
+ "named_env_sha256":
+ "2a6a18017be4373df650e323d028c052542ab52277d2ee3e98e4563787ff44f3",
+ "files":
+ {"diag.ixe":
+  "bdc92ff5001785e1406996b56aebb5a9901b263674959a4aff85e3b38d478084",
+  "diag.equations.json":
+  "b3d0fc5e59f18acb9e5864365aee1cc661694fced2a0513aefad98a5e83692d5"},
+ "commands":
+ ["ix compile --no-build --consts <roots> --no-equations --anon --out diag.ixe Diag.lean",
+  "ix compile --no-build --consts <roots> --no-equations --out diag.named.ixe Diag.lean",
+  "ix addr-of --ixe diag.named.ixe NAME, for every root"]}

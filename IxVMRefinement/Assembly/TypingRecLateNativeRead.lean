@@ -1,7 +1,7 @@
 import IxVMRefinement.StatementRel.LoadedReads
 import IxVMRefinement.Ingress.ConvertExpr
 import IxVMRefinement.Decl.Common
-import IxC.Kernel.Verify.InstLevels
+import IxCK.Kernel.Verify.InstLevels
 
 /-! # Reading a recursor's expressions under its level parameters
 

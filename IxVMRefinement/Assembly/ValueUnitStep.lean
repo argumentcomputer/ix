@@ -225,7 +225,7 @@ theorem memberInstall {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ Ec
 
 /-- **A value constant at the key of a 32-byte address, installed along its declaration step,
 keeps the clause at the same registry**, given the prefix invariant past it. The registry is
-kept at the same registered families by IxC's declaration step (`EnvModelN.declRunJ`); the
+kept at the same registered families by IxCK's declaration step (`EnvModelN.declRunJ`); the
 store keys, the roots and the level clauses by a value constant at such a key. -/
 theorem FoldClauseWith.consValue {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     (hL : LinkLaws L) {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {lim : Option Nat}

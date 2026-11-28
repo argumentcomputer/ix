@@ -53,7 +53,7 @@ def verdict (label : String) (ixe : Ixon.Env) : Array String × Array String :=
     | .error e => #[s!"{label}: the typing half declines: {e} (names: {named e})"]
     | .ok _ => #[]
   (errors, #[s!"{label}: {ixe.consts.size} records, {uncertifiedSize ixe} in the initial uncertified split, \
-    IxC {if ixc.toOption.isSome then "accepts" else "declines"}"])
+    IxCK {if ixc.toOption.isSome then "accepts" else "declines"}"])
 
 def fixtureVerdict : IO (Array String × Array String) := do
   let leanEnv ← getCompileEnv #[defsModule, ownModule]
@@ -68,7 +68,7 @@ def compiledVerdicts : IO (Array String × Array String) := do
   let mut lines : Array String := #[]
   -- the contract pipeline's input: an assumption axiom and an identity under the
   -- ordinary contract
-  match Tests.ContractPipeline.input .many .shared .shared with
+  match Tests.ContractPipeline.input .many .shared with
   | .error e => errors := errors.push s!"contract pipeline: input: {e}"
   | .ok input =>
     match ← Tests.ContractPipeline.compileInput input with

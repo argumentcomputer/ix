@@ -1,6 +1,6 @@
 import Ix.Sharing.Family
 import IxSharingVerify.UniformTables
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 /-! Additive family contracts. These facts describe the actual greedy
 chain and untrimmed rows; they do not establish slack preservation, global

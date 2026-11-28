@@ -1,4 +1,4 @@
-import IxC.Kernel.Ixon.Shape
+import IxCK.Kernel.Ixon.Shape
 
 namespace Tests.Ix.Kernel.ReaderShape
 

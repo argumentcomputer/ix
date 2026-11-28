@@ -93,7 +93,7 @@ private def evalFftCosts : List (String × Nat) := [
   ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.dependentBuild", 505_774_166),
   ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.mutualEven", 357_469_244),
   ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.mutualOdd", 356_350_031),
-  ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.nestedTree", 578_820_159),
+  ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.nestedTree", 578_876_728),
   ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.higherOrder", 423_699_364),
   ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.largeArithmetic", 1_724_226_581),
   ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.limbPredecessor", 218_979_780),
@@ -706,14 +706,16 @@ def commandTests (leanEnv : Lean.Environment) (base : Ix.CompileM.CompileEnv)
   r.build (execute "command claim after bundle transport" w (exactPin := true))
   return seq
 
-/-- IxC's reader on the same Nat literal blobs as the program: the compiler's
+/-- IxCK's reader on the same Nat literal blobs as the program: the compiler's
 `[0]` and `[42]` are read, a trailing zero byte and the empty blob are refused
 (`Ix.Kernel.Reader.canonicalNatural`), each output record through the certified
 entry under the default table. -/
 def natBlobParity (env : Ixon.Env) : IO TestSeq := do
   let some binding := Ix.Kernel.Admission.defaultBinding.toOption
     | return test "the default role table loads" false
-  let limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
+  let limits : Ix.Kernel.Admission.Limits :=
+    { maxRecords := 1 <<< 22, maxBlobs := 1 <<< 22, maxTotalBytes := 1 <<< 34,
+      maxRecordBytes := 1 <<< 28, maxRecordUnivNodes := 1 <<< 26 }
   let mut tests := TestSeq.done
   for (label, blob, canonical) in [("[0]", ByteArray.mk #[0], true), ("[42]", ByteArray.mk #[42], true),
       ("[42, 0]", ByteArray.mk #[42, 0], false), ("[]", ByteArray.empty, false)] do
@@ -725,7 +727,7 @@ def natBlobParity (env : Ixon.Env) : IO TestSeq := do
       | .ok _, true => true
       | .error e, false => ((toString e).splitOn "natural literal blob is not canonical").length > 1
       | _, _ => false
-    tests := tests ++ test s!"IxC's reader {if canonical then "reads" else "refuses"} the Nat literal blob {label}"
+    tests := tests ++ test s!"IxCK's reader {if canonical then "reads" else "refuses"} the Nat literal blob {label}"
       (ok && Ix.Kernel.Reader.canonicalNatural blob == canonical)
   return tests
 

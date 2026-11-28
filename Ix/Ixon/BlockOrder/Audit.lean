@@ -47,7 +47,8 @@ by the logical-body scan) with no externs or unsafe primitives beyond
 -- Hardened `Runtime.lean` (`reducedAritySource?` stripping `._at_.<caller>` plus
 -- `scanLogical` following `implemented_by` and `csimp` targets) resolves specialized
 -- kernel helpers and their ruled `computed_field` / `withExclusive` overrides.
-/-- info: runtime closure of [Ixon.BlockOrder.checkRecord]: 235 compiled functions; inherited externs 46, implemented_by 0, unsafe 36, csimp 0; ruled computed_field 29, implemented_by 1, csimp 5 -/
+-- Kernel hardening updates counts (refreshed in reconciliation).
+/-- info: runtime closure of [Ixon.BlockOrder.checkRecord]: 239 compiled functions; inherited externs 46, implemented_by 0, unsafe 38, csimp 0; ruled computed_field 31, implemented_by 1, csimp 6 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.BlockOrder.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

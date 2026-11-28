@@ -1,5 +1,5 @@
 import Ix.CompileCert.SharingRoots
-import IxC.Kernel.Ixon.ShapeSpec
+import IxCK.Kernel.Ixon.ShapeSpec
 
 /-! # Symbolic result shapes commute with canonical sharing -/
 

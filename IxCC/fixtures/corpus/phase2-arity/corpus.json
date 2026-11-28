@@ -1,0 +1,591 @@
+{
+  "format": "ixcc/corpus/1",
+  "family": "phase2-arity",
+  "description": "Roots whose compiled arity is not their declared parameter count (docs/closures-design.md, Proof obligation): stored values with fewer or more leading lambdas than the type shows, erased leading parameters, a result type that is a definition of a function type, and table entries that change a root's arity. Not yet a registered family: the P8 end-to-end test reads it outside the production pipeline.",
+  "tier": "required",
+  "phase": 2,
+  "directory": "fixtures/corpus/phase2-arity",
+  "source_root": "fixtures/corpus/phase2-arity/src",
+  "lean": {
+    "version": "4.34.1",
+    "interpret": {
+      "args": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "{args}"
+      ],
+      "stdin": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "<",
+        "{ROOT ARGS lines}"
+      ]
+    }
+  },
+  "producer": {
+    "ix": "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
+    "ix_version": "4.34.1|0.0.1",
+    "anonymous": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--anon",
+      "--out",
+      "{ixe}",
+      "--equations-out",
+      "{equations}",
+      "{src}"
+    ],
+    "named": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--out",
+      "{named}",
+      "--equations-out",
+      "{named-equations}",
+      "{src}"
+    ],
+    "address": [
+      "ix",
+      "addr-of",
+      "--ixe",
+      "{named}",
+      "{name}"
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "arity",
+      "source": {
+        "path": "Arity.lean",
+        "sha256": "1950d69065338c4359fa08fa493bef74e12281e6f06fcbc1fe1445db9e731405",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Arity.main1",
+        "Arity.main2",
+        "Arity.main3",
+        "Arity.main4",
+        "Arity.addTo",
+        "Arity.halve",
+        "Arity.pm",
+        "Arity.main7",
+        "Arity.main7b",
+        "Arity.main8",
+        "Arity.main8t",
+        "Arity.main8p",
+        "Arity.main9",
+        "Arity.main9r",
+        "Arity.main10",
+        "Arity.main10c",
+        "Arity.main11",
+        "Arity.main12",
+        "Arity.mainB3",
+        "Arity.mainB4",
+        "Arity.slowDouble",
+        "Arity.spin",
+        "Arity.main4_eta",
+        "Arity.fastDouble",
+        "Arity.slowDouble_eq"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "arity.ixe",
+        "sha256": "ba9c600e18c57ab0caed7c7a3b15c39b2cba064f5e74e2e9e4bed6504aadc3e5",
+        "bytes": 2623859
+      },
+      "equations": {
+        "path": "arity.equations.json",
+        "sha256": "b0a4766ec01bc60d554d3bce07df5780ba6c068ec7f25c4a9c25675c8f218945",
+        "equations": 43,
+        "failures": 0
+      },
+      "named_env_sha256": "879baff0292fc26df9b678be2cfaa2719eeaf17805d69a7eb03af5dc0a99092d",
+      "census": {
+        "path": "arity.census.json",
+        "sha256": "9d84c06ea7066bae642cfa2ef3e99cf2a3fdaa83ba2d2416255c7e81b73ed9bb"
+      },
+      "roots": [
+        {
+          "name": "Arity.main1",
+          "address": "1772ffa0072fddf5cb800847c12f7e162073abc36a72953ea781b3e1ac335844",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                3,
+                4
+              ],
+              "value": "34"
+            },
+            {
+              "args": [
+                12,
+                5
+              ],
+              "value": "125"
+            }
+          ]
+        },
+        {
+          "name": "Arity.main2",
+          "address": "1772ffa0072fddf5cb800847c12f7e162073abc36a72953ea781b3e1ac335844",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                3,
+                4
+              ],
+              "value": "34"
+            }
+          ]
+        },
+        {
+          "name": "Arity.main3",
+          "address": "42e6d34eca8db327a5068393858efcb8c963d6654050e3cbe44bf5960b244675",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                3,
+                4
+              ],
+              "value": "34"
+            }
+          ]
+        },
+        {
+          "name": "Arity.main4",
+          "address": "9e160dc73ebf362983ae43fd522bfb49a4531599194a0162600ea005a6b39bc9",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                3,
+                4
+              ],
+              "value": "34"
+            },
+            {
+              "args": [
+                12,
+                5
+              ],
+              "value": "125"
+            }
+          ]
+        },
+        {
+          "name": "Arity.addTo",
+          "address": "a0b25ac639c224e6ef14db6850911c44deb0cf9278865c3a5dc563ab22a7b5ea",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                3,
+                4
+              ],
+              "value": "10"
+            },
+            {
+              "args": [
+                0,
+                7
+              ],
+              "value": "7"
+            }
+          ]
+        },
+        {
+          "name": "Arity.halve",
+          "address": "59b7b3dbbc912c80bd8364aff67ad17b96f227035429b2b8f4ab0cccaea0d0f9",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                8,
+                0
+              ],
+              "value": "3"
+            },
+            {
+              "args": [
+                1,
+                5
+              ],
+              "value": "5"
+            }
+          ]
+        },
+        {
+          "name": "Arity.pm",
+          "address": "81de31905583a4a03975bc64a9e4681ed84bc96f559e2f0e7da4f69a219ec686",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                3,
+                4
+              ],
+              "value": "7"
+            },
+            {
+              "args": [
+                2,
+                0
+              ],
+              "value": "2"
+            }
+          ]
+        },
+        {
+          "name": "Arity.main7",
+          "address": "37fdf5f492add06b2d977611ee5405ae259dec69e037103d90ccd5b56d1b5038",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                3,
+                4
+              ],
+              "value": "34"
+            }
+          ]
+        },
+        {
+          "name": "Arity.main7b",
+          "address": "6d91e59e4073b4adda5d96e3c7274e3ff06a39e0546a04dfd51c4ef906cb4afa",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                3,
+                4
+              ],
+              "value": "34"
+            }
+          ]
+        },
+        {
+          "name": "Arity.main8",
+          "address": "59ff992da8c7574cbaed54ca29c65673565d6a1611dd8ed5607c8da7d1f48640",
+          "params": 3,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                3,
+                4
+              ],
+              "value": "34"
+            }
+          ]
+        },
+        {
+          "name": "Arity.main8t",
+          "address": "289d67df548124d86915e442eef3e0cba837bc3762d22df57205907d559b545f",
+          "params": 3,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                3,
+                4
+              ],
+              "value": "34"
+            }
+          ]
+        },
+        {
+          "name": "Arity.main8p",
+          "address": "295f5ba441064e081722858f14b84908e2131bba0f6d97ad1f71298b5564d875",
+          "params": 3,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                3,
+                4
+              ],
+              "value": "34"
+            }
+          ]
+        },
+        {
+          "name": "Arity.main9",
+          "address": "8e6991bc2c59ea266e8c4034c9361f7f8652161d73bd2e5e4c72d580e6c6e4e7",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                3,
+                4
+              ],
+              "value": "34"
+            }
+          ]
+        },
+        {
+          "name": "Arity.main9r",
+          "address": "f455a202b843a1c920247e6d5882b3176452f410225e3e83d4e7760befd6262f",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                3,
+                4
+              ],
+              "value": "7"
+            }
+          ]
+        },
+        {
+          "name": "Arity.main10",
+          "address": "fde87fcfb39682b7bc1019c29d0d55c0647a5babd053584bea816231ca0e644d",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                4
+              ],
+              "value": "34"
+            }
+          ]
+        },
+        {
+          "name": "Arity.main10c",
+          "address": "251333c60749b371b46139f7a4f71f937e773a56d254c9102947774a45291866",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                4
+              ],
+              "value": "5"
+            }
+          ]
+        },
+        {
+          "name": "Arity.main11",
+          "address": "60b236548d80e0c18c179451615a1baa533d618b03d903b3928d86e692b0b60f",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                3,
+                4
+              ],
+              "value": "13"
+            }
+          ]
+        },
+        {
+          "name": "Arity.main12",
+          "address": "848d531fee19137d0b0208fdb80959b237a6cd0d05a1e14d09c99000c2eac021",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                4
+              ],
+              "value": "4"
+            },
+            {
+              "args": [
+                3,
+                4
+              ],
+              "value": "34"
+            }
+          ]
+        },
+        {
+          "name": "Arity.mainB3",
+          "address": "a07e0b5bc0f005b4b6382eb55053417b0ba9e40a01cf3bffdb9866cf509b55be",
+          "params": 2,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                3,
+                4
+              ],
+              "value": "true"
+            },
+            {
+              "args": [
+                4,
+                3
+              ],
+              "value": "false"
+            }
+          ]
+        },
+        {
+          "name": "Arity.mainB4",
+          "address": "8aa7caae55de41771cb294127c52ebecf122e0ec17ad020d5d6b6b18dfd6a3dc",
+          "params": 2,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                3,
+                4
+              ],
+              "value": "true"
+            },
+            {
+              "args": [
+                4,
+                3
+              ],
+              "value": "false"
+            }
+          ]
+        },
+        {
+          "name": "Arity.slowDouble",
+          "address": "385746d09caa29037d8a8520a44e2f8838093ccb7f85e1f8f54b11c646042c29",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                5
+              ],
+              "value": "10"
+            }
+          ]
+        },
+        {
+          "name": "Arity.spin",
+          "address": "409ede9bca1a69f224308432dcbef269f7e0abe2507925f60bf21f67860b6701",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": []
+        }
+      ]
+    }
+  ]
+}

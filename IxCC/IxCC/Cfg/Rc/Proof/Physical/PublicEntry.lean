@@ -1,0 +1,75 @@
+import IxCC.Cfg.Rc.Proof.Physical.EntryEval
+import IxCC.Cfg.Rc.Proof.Physical.PublicRoot
+
+set_option autoImplicit false
+namespace IxCC.Cfg.Rc.Native.Spec
+open IxCC.Cfg.Rc.Proof.Physical.Bridge IxCC.Rt.Rc.Procs
+
+variable {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
+  {config : Rt.Config} {pairs : List (Nat × Cfg.Fun)} {functions : List Lir.Func}
+  {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+  {lowered : Public.Lowered} {root : Nat} {sourceFunction : Fir.Fun}
+  {H : Own.Heap} {addresses : AddressMap} {external : Nat → Nat}
+  {values : List Own.RVal} {logical : List Fir.Val} {words : List Lir.Word}
+  {memory : X86.Memory} {context base bump limit : Lir.Word} {regionBytes : Nat}
+  {slots : List Slot} {lists : Nat → List Lir.Word}
+
+/-- Concrete initialized entry through the accepted public program, at any
+selected root. Both the whole-code proof and every layout transport are
+discharged; successful evaluation keeps its physical return witness. -/
+theorem public_entry_eval_sim
+    (admission : CodeAdmission F bodies P config pairs functions borrows uniqs)
+    (accepted : Public.lower config F bodies P borrows uniqs = .ok lowered)
+    (sourceLookup : F.fun? root = some sourceFunction)
+    (den : Sem.Forall2 (Own.Proof.Den H) values logical)
+    (balance : Own.Rc.Balance H external (Own.Plain.selectOwnedVals (borrows.getD root []) values))
+    (hbrw : ∀ v, v ∈ Own.Plain.selectBorrowedVals (borrows.getD root []) values →
+      Own.Plain.ReachableFrom H external v)
+    (huniq : ∀ v, v ∈ Own.Plain.selectUniqueVals (borrows.getD root []) (uniqs.getD root ([], false)).1 values →
+      Own.Plain.UniqVal F.ctors H external (Own.Plain.selectOwnedVals (borrows.getD root []) values) v)
+    (represented : Rt.Proof.ListRel (fun value word => valueWord addresses value = some word) values words)
+    (entry : ∀ r ∈ (tablesOf P pairs).rawParams root 0, r = false)
+    (compatible : ∀ value ∈ values, ValueCtorOk (tablesOf P pairs) value)
+    (arity : values.length = sourceFunction.params.length)
+    (heap : HeapState P pairs H addresses memory external
+      (Own.Plain.selectOwnedVals (borrows.getD root []) values)
+      context base bump limit regionBytes slots lists) :
+    let raw := Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) root
+    Sem.Sim (ReturnedOutput P pairs raw H addresses external context base limit regionBytes)
+      (Inline.inlineEntryClock lowered.runtime.program)
+      (fun clock => Fir.run F clock root logical)
+      (fun clock => Lir.eval {lowered.runtime.program with main := root} clock words memory context) := by
+  have hroot : root < P.base.size := by
+    rw [generate_size (checkProgram_parts (checkScopedProgram_parts admission.scopedProgram).1).2]
+    exact checked_source_dense admission.scopedProgram sourceLookup
+  have h1 := entry_eval_sim admission sourceLookup den balance hbrw huniq represented entry compatible arity heap
+  have h2 := admitted_root_eval_stages admission accepted root hroot words memory context
+  exact (Sem.Sim.comp (Lir.eval_mono _ words memory context) h1 h2).mono (by rintro a c ⟨b, hr, rfl⟩; exact hr)
+
+theorem public_entry_eval_refines
+    (admission : CodeAdmission F bodies P config pairs functions borrows uniqs)
+    (accepted : Public.lower config F bodies P borrows uniqs = .ok lowered)
+    (sourceLookup : F.fun? root = some sourceFunction)
+    (den : Sem.Forall2 (Own.Proof.Den H) values logical)
+    (balance : Own.Rc.Balance H external (Own.Plain.selectOwnedVals (borrows.getD root []) values))
+    (hbrw : ∀ v, v ∈ Own.Plain.selectBorrowedVals (borrows.getD root []) values →
+      Own.Plain.ReachableFrom H external v)
+    (huniq : ∀ v, v ∈ Own.Plain.selectUniqueVals (borrows.getD root []) (uniqs.getD root ([], false)).1 values →
+      Own.Plain.UniqVal F.ctors H external (Own.Plain.selectOwnedVals (borrows.getD root []) values) v)
+    (represented : Rt.Proof.ListRel (fun value word => valueWord addresses value = some word) values words)
+    (entry : ∀ r ∈ (tablesOf P pairs).rawParams root 0, r = false)
+    (compatible : ∀ value ∈ values, ValueCtorOk (tablesOf P pairs) value)
+    (arity : values.length = sourceFunction.params.length)
+    (heap : HeapState P pairs H addresses memory external
+      (Own.Plain.selectOwnedVals (borrows.getD root []) values)
+      context base bump limit regionBytes slots lists) :
+    let raw := Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) root
+    Sem.Behaviour.Refines (ReturnedOutput P pairs raw H addresses external context base limit regionBytes)
+      (Sem.behaviour (fun clock => Fir.run F clock root logical))
+      (Sem.behaviour (fun clock => Lir.eval {lowered.runtime.program with main := root} clock words memory context)) :=
+  Sem.Sim.refines (Fir.run_mono F root logical) (Lir.eval_mono _ words memory context)
+    (public_entry_eval_sim admission accepted sourceLookup den balance hbrw huniq represented entry compatible arity heap)
+
+
+
+end IxCC.Cfg.Rc.Native.Spec

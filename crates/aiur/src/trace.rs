@@ -405,12 +405,89 @@ pub struct TracePlan<'a, B: FieldBackend = PrimeField> {
   depth: depth::DepthPlan<B::Word>,
 }
 
+const CALL_CHANNEL_TAG: u64 = 1;
+const ROM_CHANNEL_TAG: u64 = 2;
+
 fn indices(xs: &[usize], width: usize) -> Result<(), String> {
   if xs.iter().any(|x| *x >= width) {
     Err("plan index out of bounds".into())
   } else {
     Ok(())
   }
+}
+
+fn record_ungrouped_arity(
+  arities: &mut FxHashMap<(u64, u64), usize>,
+  tag: u64,
+  id: u64,
+  arity: usize,
+) -> Result<(), String> {
+  if let Some(&prev) = arities.get(&(tag, id)) {
+    if prev != arity {
+      return Err(format!(
+        "inconsistent ungrouped lookup arity for ({tag}, {id}): {prev} vs {arity}"
+      ));
+    }
+  } else {
+    arities.insert((tag, id), arity);
+  }
+  Ok(())
+}
+
+fn constant_tag_id<B: FieldBackend>(
+  field: B,
+  args: &[Polynomial<B::Word>],
+) -> Option<(u64, u64)> {
+  let [Polynomial::Const(tag), Polynomial::Const(id), ..] = args else {
+    return None;
+  };
+  let tag = field.try_to_u64(field.from_word(*tag)).ok()?;
+  let id = field.try_to_u64(field.from_word(*id)).ok()?;
+  Some((tag, id))
+}
+
+/// Validate uniform per-`(tag, id)` message arity across `(is_grouped, args)`
+/// lookups.
+///
+/// LogUp's polynomial fingerprint ignores trailing zeros, so two ungrouped
+/// lookups sharing a constant `(tag, id)` prefix with different arities would
+/// alias when the extra words are zero. Ungrouped lookups must therefore agree
+/// on exact arity per `(tag, id)`, while grouped CALL slots (`is_grouped &&
+/// tag == 1`) may zero-pad to the group's maximum slot width (`arity >=
+/// expected`) and may never truncate below `expected`.
+pub fn check_constant_prefix_lookup_arities<'b, B: FieldBackend>(
+  field: B,
+  arities: &mut FxHashMap<(u64, u64), usize>,
+  lookups: impl IntoIterator<Item = (bool, &'b [Polynomial<B::Word>])>,
+) -> Result<(), String> {
+  let mut grouped_checks = Vec::new();
+  for (is_grouped, args) in lookups {
+    if let Some((tag, id)) = constant_tag_id(field, args) {
+      if is_grouped {
+        grouped_checks.push((tag, id, args.len()));
+      } else {
+        record_ungrouped_arity(arities, tag, id, args.len())?;
+      }
+    }
+  }
+  for (tag, id, arity) in grouped_checks {
+    if let Some(&expected) = arities.get(&(tag, id)) {
+      if tag == CALL_CHANNEL_TAG {
+        if arity < expected {
+          return Err(format!(
+            "truncated grouped CALL lookup arity for ({tag}, {id}): {arity} < {expected}"
+          ));
+        }
+      } else if arity != expected {
+        return Err(format!(
+          "inconsistent grouped lookup arity for ({tag}, {id}): {arity} vs {expected}"
+        ));
+      }
+    } else if tag != CALL_CHANNEL_TAG {
+      record_ungrouped_arity(arities, tag, id, arity)?;
+    }
+  }
+  Ok(())
 }
 
 impl<'a, B: FieldBackend> TracePlan<'a, B> {
@@ -435,6 +512,15 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
     let callables: FxHashMap<_, _> = (0..program.inputs.len())
       .map(|id| (program.callable_name(id).unwrap().to_owned(), id))
       .collect();
+    if callables.len() != program.inputs.len() {
+      return Err("duplicate callable name".into());
+    }
+    let mut group_names = FxHashSet::default();
+    for group in &artifact.groups {
+      if chips.contains_key(&group.name) || !group_names.insert(&group.name) {
+        return Err("duplicate circuit or group name".into());
+      }
+    }
     let field = program.field;
     let mut members = vec![];
     for (id, function) in artifact.functions.iter_mut().enumerate() {
@@ -560,18 +646,51 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
           .is_some_and(|&c| artifact.chips[c].depth.column.is_some()),
       )
     };
+    let mut lookup_arities: FxHashMap<(u64, u64), usize> = FxHashMap::default();
+    for map_id in 0..program.program.maps.len() {
+      let callable = program.program.functions.len() + map_id;
+      let arity = 2
+        + program.inputs[callable].width()
+        + program.outputs[callable].width();
+      record_ungrouped_arity(
+        &mut lookup_arities,
+        CALL_CHANNEL_TAG,
+        callable as u64,
+        arity,
+      )?;
+    }
+    for layout in program.memory_layouts.values() {
+      let width = layout.width();
+      record_ungrouped_arity(
+        &mut lookup_arities,
+        ROM_CHANNEL_TAG,
+        width as u64,
+        3 + width,
+      )?;
+    }
     for chip in &artifact.chips {
       if chip.activation.checked_add(1) != Some(chip.width) {
         return Err("invalid activation column".into());
       }
       let callable =
         *callables.get(&chip.name).ok_or("unknown chip callable")?;
+      if callable >= program.program.functions.len() {
+        return Err(
+          "trace chip names a static map rather than a function".into(),
+        );
+      }
       if chip.inputs.len()
         != program.inputs[callable].width() + depth_words(&chip.name)
         || chip.output.len() != program.outputs[callable].width()
       {
         return Err("circuit interface width mismatch".into());
       }
+      record_ungrouped_arity(
+        &mut lookup_arities,
+        CALL_CHANNEL_TAG,
+        callable as u64,
+        2 + chip.inputs.len() + chip.output.len(),
+      )?;
       indices(&chip.inputs, chip.width)?;
       for p in chip.constraints.iter().chain(&chip.output) {
         p.validate(chip.width, field)?;
@@ -590,6 +709,12 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
         {
           return Err("circuit send shape mismatch".into());
         }
+        record_ungrouped_arity(
+          &mut lookup_arities,
+          CALL_CHANNEL_TAG,
+          id as u64,
+          2 + send.args.len() + send.result.len(),
+        )?;
       }
       for cell in &chip.memory {
         cell.enable.validate(chip.width, field)?;
@@ -602,8 +727,46 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
         {
           return Err("circuit memory shape mismatch".into());
         }
+        record_ungrouped_arity(
+          &mut lookup_arities,
+          ROM_CHANNEL_TAG,
+          cell.values.len() as u64,
+          3 + cell.values.len(),
+        )?;
       }
     }
+    let zero_word = B::Word::from(0u64);
+    let mut group_lookups = Vec::new();
+    for group in &artifact.groups {
+      if let Some(Polynomial::Const(tag)) = group.receive.first() {
+        let tag = field
+          .try_to_u64(field.from_word(*tag))
+          .map_err(|err| format!("invalid group receive channel tag: {err}"))?;
+        if tag != CALL_CHANNEL_TAG {
+          return Err("group receive has non-CALL channel tag".into());
+        }
+      }
+      let is_grouped = group.members.len() > 1;
+      group_lookups.push((is_grouped, group.receive.as_slice()));
+      for send in &group.sends {
+        if let Some(Polynomial::Const(tag)) = send.args.first()
+          && send.enable != Polynomial::Const(zero_word)
+        {
+          let tag = field
+            .try_to_u64(field.from_word(*tag))
+            .map_err(|err| format!("invalid group send channel tag: {err}"))?;
+          if tag != CALL_CHANNEL_TAG && tag != ROM_CHANNEL_TAG {
+            return Err("group send has invalid channel tag".into());
+          }
+        }
+        group_lookups.push((is_grouped, send.args.as_slice()));
+      }
+    }
+    check_constant_prefix_lookup_arities(
+      field,
+      &mut lookup_arities,
+      group_lookups,
+    )?;
     let fills = artifact
       .functions
       .iter()

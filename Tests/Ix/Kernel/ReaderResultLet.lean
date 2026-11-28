@@ -1,5 +1,5 @@
-import IxC.Kernel.Admission
-import IxC.Kernel.Cached.Installed
+import IxCK.Kernel.Admission
+import IxCK.Kernel.Cached.Installed
 import Ix.Address.Pure
 
 /-! Recursor result lets are consumed before the result's motive is indexed. -/

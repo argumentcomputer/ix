@@ -1,5 +1,5 @@
 import IxVMRefinement.Core.Specs.Common
-import IxC.Kernel.Tier.Ind
+import IxCK.Kernel.Tier.Ind
 
 /-! # Specs: the functions outside the core that the core calls
 

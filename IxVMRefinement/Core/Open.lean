@@ -1,7 +1,7 @@
 import IxVMRefinement.Core.Rep
 import IxVMRefinement.Core.Ctx
-import IxC.Kernel.Verify.Subst
-import IxC.Kernel.Ixon.RoleTableInj
+import IxCK.Kernel.Verify.Subst
+import IxCK.Kernel.Ixon.RoleTableInj
 
 /-! # The term relation under substitution, opening, and scope
 

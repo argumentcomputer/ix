@@ -17,7 +17,7 @@ module
 
 public import Ix.Ixon
 import all Ix.Ixon
-import all IxC.Ixon.Codec
+import all IxCK.Ixon.Codec
 public import Std.Data.HashMap
 
 public section

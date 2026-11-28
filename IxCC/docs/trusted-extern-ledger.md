@@ -1,0 +1,972 @@
+# Trusted-extern ledger
+
+The machine-readable ledger is
+[`trusted-externs.json`](trusted-externs.json); the `ixcc-trusted-extern-ledger`
+check of ix's flake validates it with
+[`IxCCTests/Scripts/CheckTrustedExterns.lean`](../IxCCTests/Scripts/CheckTrustedExterns.lean).
+
+**Status, 2026-09-29.** The inventory was reset for the rebuilt compiler.
+Removed with the legacy pipeline: the durable-filesystem native interface,
+the IxIR and Ixby specification assumptions, the modeled IxIR oracles, the
+hosted CI actions and runner, and the comparison-runtime pins. All remain
+on branch `jcb/ixby-archive` of the pre-merge `argumentcomputer/Compilatr.ix` repository.
+`nix flake check` runs the audit again.
+
+This document separates four things that are easy to blur:
+
+1. a native semantic boundary whose result IxCC uses;
+2. the Gen-0 seed/build/runtime supply chain used to construct and test it;
+3. a target specification or emitter assumption not yet connected by proof;
+4. interpreter oracles that are mathematical models, not linked native code.
+
+Only the first category is a target-language trusted extern. A specification
+assumption is nevertheless part of a native-correctness claim until its
+reference bridge lands. The other categories still matter to bootstrap and
+test confidence, so they are accounted for without pretending they are
+`@[extern]` declarations.
+
+## Change-control rule
+
+Every native interface, whether project-local or supplied by an external Lake
+package, must have an entry. For a native dependency, every `@[extern]` symbol
+anywhere in its pinned source tree is listed — including sibling modules this
+repository does not import and exports it does not call. Project-local Lean
+extern declarations and C `LEAN_EXPORT`s are exact, separately checked
+inventories. Every symbol records its shipping module and current reachability;
+each interface names the semantics assumed, owner, evidence, proof effect, and
+an observable retirement condition.
+
+Target semantics, encoder, and object-writer assumptions follow the same discipline: each
+entry states the exact scope, proof effect, independent evidence, and staged
+retirement theorem. They add no Lean axiom merely by being recorded, but a
+native-execution claim may not silently omit them.
+
+The checker deliberately fails closed on changes to:
+
+- Lake dependencies and revisions (a git-pinned pure dependency's revision
+  against `lake-manifest.json` and its `flake.lock` node);
+- the Lean source inventory itself, derived from the controlled
+  `lakefile.lean` `lean_lib`/`lean_exe` declarations (unsupported syntax, a
+  missing root, or an empty root set is a hard failure, so a new top-level
+  module cannot escape the scan);
+- external import roots, the project's imports and names under a git-pinned
+  pure dependency's root, and the qualified native entry points used in
+  project sources (none while no native interface is recorded); every
+  spelling of the import command is read (`import`, `public import`,
+  `meta import`, `public meta import`, `import all`, guillemet-quoted
+  components), and a keyword `import` without a module name fails;
+- for a native dependency (none is recorded; a fixture entry exercises it),
+  the complete extern inventory of every `.lean` file in its pinned package
+  source tree, covering `@[extern ...] opaque`/`def` declarations and
+  post-hoc `attribute [extern ...]` commands, plus each symbol's
+  imported/unimported reachability claim (checked against actual imports);
+- the exact project-local Lean extern inventory, each Lake-referenced C source,
+  its pinned SHA-256, and its exact `LEAN_EXPORT` inventory (all empty: no
+  project extern and no C source);
+- declaration-level `axiom`, standalone `sorry`, and every spelling of native
+  evaluation the lexer can see in the checked project sources and each pure
+  Lean dependency's closure: `native_decide`, `decide +native` (also after
+  other flags, as in `decide +kernel +native`), a configuration field
+  `native := true` (`decide (config := { native := true })`), and the names
+  `ofReduceBool`, `ofReduceNat`, `trustCompiler` (bare or under `Lean.`) and
+  `Lean.reduceBool`/`Lean.reduceNat`. A conservative lexer excludes comments
+  and literals and retains line locations. The bare names `reduceBool` and
+  `reduceNat` are accepted, because the primitive table (`V3.PrimAddrs`) uses
+  them as field names, and so is a variable or field named `native` in any
+  other position. The one exception is a dependency's reviewed
+  `native_decide_sites`: the three default-argument `native_decide` proofs of
+  the Blake3 package's root module (below), admitted occurrence by occurrence;
+- every `@[csimp]` theorem (and `attribute [csimp]` command) in the project's
+  audited sources and in each pure Lean dependency's closure: each must be
+  stated as `: @f = @g :=` and listed with its file and replacement pair
+  (`csimp_theorems`, top level and per dependency), since it changes the code
+  compiled for every call of `f`;
+- for a native dependency, every package/version and the complete
+  checksum-bearing Cargo lockfile;
+- the symbol tables of the executables the checks ship or run (the link
+  audit, "No native interface" below);
+- the integrity pins (below): the SHA-256 of every file the integrity rule
+  covers, among them IxCC's build-selection files (`lakefile.lean`,
+  `lake-manifest.json`, `lean-toolchain`, `nix/*`), its checkers, scripts and
+  native harnesses and its fixtures, and of the repository files listed in
+  `integrity.repository_files` (`.github/workflows/ixcc.yml`);
+- the revision of every locked Nix flake node of the repository's
+  `flake.lock`, and, inside a larger repository, that the repository's
+  `lean-toolchain` (whose Lean ix's flake builds IxCC with) equals IxCC's;
+- the required-check inventory (below): the attributes of `nix/checks.nix`
+  against `required_checks`;
+- every `uses:` reference in the CI workflows in scope (below), followed
+  through the repository's own local actions and reusable workflows
+  (`./path` or `$/path`, which must stay inside the repository): a remote
+  reference not pinned to a full 40-hex commit is rejected outright, and the
+  pinned inventory must match the ledger.
+
+ix's `flake.nix` is not pinned. It selects the toolchain (the repository's
+`lean-toolchain`, checked above), passes ix's Blake3 build (its `blake3` and
+`blake3-lean` nodes are pinned in `flake.lock`, and the `blake3-pure` entry
+below ties `blake3-lean` to the Lake pin) and exposes `nix/checks.nix`'s checks as
+`ixcc-*`. What it exposes is checked by `ixcc.yml` (below), not by this
+audit.
+
+### Integrity pins
+
+`integrity.rule` states which project files are pinned, and the audit fails
+unless `integrity.tracked_files` pins exactly those: a covered file without a
+pin fails, and so does a pin of a file the rule does not cover. A file is
+covered when its path relative to `IxCC/` matches an `include` glob and no
+`exclude` glob (`*` within a path segment, `**` for any number of segments);
+hidden files and directories (`.gitignore`, `.lake`) are never covered. The
+rule covers everything that can change what a check builds, runs or compares
+against:
+
+- the Lake and toolchain files (`lakefile.lean`, `lake-manifest.json`,
+  `lean-toolchain`) and the root modules `IxCC.lean`, `IxCCTests.lean`,
+  `IxCCGrounding.lean` and `IxCCCorrect.lean`;
+- every file under `IxCCGrounding/` (the grounding library: its laws,
+  relation, lemmas, check and axiom fence) and `IxCCCorrect/` (the target
+  statements: the claim, the tiers, the routes, the progress statements and
+  their proofs, and its axiom fence);
+- every file under `IxCC/` (the production library and the repository checkers
+  in `IxCC/Tools`), `IxCCTests/` (tests,
+  fences, executable scripts such as `Scripts/X86ObjectFixture.lean` and
+  `Scripts/Census.lean`), `fixtures/` (closures, goldens, and the C test
+  harnesses such as `fixtures/x86/exports_harness.c` and
+  `unwind_harness.c`), `nix/` and `tools/`;
+- the benchmark runner's C entry points (`benchmarks/runner/entry/*.c`) and
+  `benchmarks/toolchains.json`, and the specifications the
+  Ixon boundary and x86 checks cite (`docs/ixon-v4.md`,
+  `docs/x86-reference-model.json`);
+- except anything under a `target/` directory (Cargo output of the manual
+  reference tools).
+
+Not pinned: the rest of `docs/` (including this ledger, `trusted-externs.json`),
+`README.md`, `AGENTS.md`, `.gitignore`, and the rest of `benchmarks/` (the
+optional measurement package, its fixtures and records). These describe or
+measure; no required check reads them. Also not pinned: `lib/`, the Lean
+source that programs are compiled *with* (`lib/IxccExe.lean`, the numeric
+state machines' parsing and rendering). It is not IxCC and not trusted: IxCC
+compiles it like the rest of a program, so the compiler's theorem covers it.
+What the gates compile is its copy at the head of
+`fixtures/corpus/phase1-machines/src/Machines.lean`, which the rule pins, and
+`tests-exe` requires the two to be equal byte for byte. No Lake target, Nix
+source set or module manifest takes `lib/` as an IxCC module (nothing imports
+it).
+
+`integrity.repository_files` pins files of the enclosing repository by path
+relative to its root. Every configured workflow file must be listed, so
+inside ix `.github/workflows/ixcc.yml` is pinned in full, not only its
+`uses:` lines.
+
+### Required checks
+
+`required_checks` lists IxCC's required checks: exactly the attribute names
+`nix/checks.nix` binds in its attribute sets (a lexer for that file's form
+reads them, and refuses a binding it cannot account for). ix's flake exposes
+each as `ixcc-<name>`, and `.github/workflows/ixcc.yml` builds the flake's
+evaluated `ixcc-*` checks only if they are exactly `required_checks` with that
+prefix. So dropping or adding a check in `nix/checks.nix` fails this audit,
+dropping one in ix's `flake.nix` fails `ixcc.yml`, and narrowing what
+`ixcc.yml` runs changes its pinned hash. What remains outside: an edit to
+`ixcc.yml` that also stops it running `ixcc-trusted-extern-ledger` is caught
+only by review of that file, which the ledger's pin makes a ledger change,
+and CI Jobs' and Merge tests' calls of `ixcc.yml` are ix's and unaudited.
+
+Standalone, the project is its repository: its `flake.lock` and
+`.github/workflows` are checked. Inside a larger repository, the optional
+`policy.repository` object names it: `root` is the repository root relative to
+the project (`..` for `ix/IxCC`), whose `flake.lock` is checked, and
+`workflows` (repository-relative files or directories, default
+`.github/workflows`) scopes the workflows whose actions this ledger
+inventories. `check-trusted-externs --repository-root DIR --flake-lock FILE`
+overrides both, for a copy of the project taken out of its repository.
+
+Inside ix the ledger names the repository (`root: ".."`), so ix's
+`flake.lock` is checked, and scopes the workflow audit to
+`.github/workflows/ixcc.yml`, the reusable workflow that runs IxCC's checks
+and that IxCC owns; its three remote actions are pinned and listed in
+`ci_actions`, and its full text is pinned in `integrity.repository_files`.
+ix's other workflows, including the jobs that call `ixcc.yml`, are outside
+the scope: they track `argumentcomputer/ci-workflows@main` and
+`argumentcomputer/lean-update@dev` by branch, by ix's choice, which this audit
+would reject. A change to `flake.lock` (for example a toolchain or
+`lean4-nix` update) fails the audit until the node inventory is reviewed here.
+The Nix check runs on a copy of the workspace that keeps this layout
+(`nix/sources.nix`, `ledgerWorkspace`: IxCC, the codec closure, the
+repository's `flake.lock` and `lean-toolchain`, the scoped workflows and the
+pinned repository files).
+
+Updating a dependency therefore requires reviewing and updating this ledger,
+not merely refreshing a lockfile. An entry may only be removed when its exit
+criteria are met and the coverage check confirms that its boundary vanished.
+
+### Routine updates
+
+ix's update automation changes pinned inputs, so each such pull request fails
+`ixcc-trusted-extern-ledger` until the ledger is updated in the same pull
+request:
+
+| Update | What changes | Ledger fields |
+| --- | --- | --- |
+| `update-rust.yml` (weekly Rust toolchain; runs `nix flake update`) | `flake.lock` revisions; ix's `flake.nix` (not pinned) | `integrity.flake_nodes`; `seed_and_build_trust` `gmp-seed.version` by hand if nixpkgs' GMP moved (the Nix check passes Nix's GMP version) |
+| `update.yml` (Lean release; moves `lean4-nix`) | the `lean-toolchain` files, `flake.lock`, possibly `lake-manifest.json` | `integrity.flake_nodes`; the hashes of `lean-toolchain` and of any changed `lake-manifest.json`; `seed_and_build_trust` `lean-seed-runtime.version` by hand |
+| A Blake3.lean revision (`lakefile.lean`, `lake-manifest.json` and the flake's `blake3-lean` input moved together) | the package's revision and possibly its two closure files | `lean_dependencies` `blake3-pure`: `pins.lake_rev`, the closure hashes and `native_decide_sites` by hand, after reviewing the two files' diff (`integrity.flake_nodes` and the hash of `lake-manifest.json` by `--record`) |
+| Dependabot `github-actions` bump of `ixcc.yml` | an action commit in `ixcc.yml` | `ci_actions[].commit` (and `.version` by hand, from the `# vX` comment); `integrity.repository_files` for `ixcc.yml` |
+| Any edit of a covered IxCC file or of `ixcc.yml` | its hash | `integrity.tracked_files` or `integrity.repository_files` |
+| A change to the kernel's proof tree that the target statements import (a file of `ix-kernel-proofs`' closure, or which files it holds) | the closure's digest, possibly its file list | `proof_only_dependencies` `closure_files` and `closure_blake3`, by `--record`, after reading the diff of those files (the audit has already refused any hygiene or import violation) |
+
+The mechanical fields (every integrity hash, the flake node revisions, the
+`ci_actions` commits and each proof-only dependency's closure files and digest)
+are re-recorded by the checker itself, which prints them
+as the tree stands (it never edits the ledger), and a Lean script
+(`tools/RecordLedgerPins.lean`) that merges them while keeping each object's
+order. From `IxCC/`, in ix's development shell:
+
+```sh
+lake build check-trusted-externs
+mkdir -p plans
+.lake/build/bin/check-trusted-externs --record > plans/ledger-pins.json
+lean --run tools/RecordLedgerPins.lean plans/ledger-pins.json docs/trusted-externs.json
+git diff docs/trusted-externs.json   # review every changed pin against the diff it records
+.lake/build/bin/check-trusted-externs
+```
+
+Then edit by hand what the audit still names (a seed version, a new action
+repository, a closure hash of a pure dependency, a csimp theorem), set `last_reviewed`, and
+commit the ledger with the change. `--record` leaves the pure dependencies'
+closure hashes (`lean_dependencies[].closure`: the 100 files of the kernel's
+closure and the two of Blake3's) alone: a change to them is a dependency
+review, edited by hand, not a routine update.
+
+All repository check scripts are Lean executables. The trust auditor uses
+the pinned Lake TOML parser, GNU `sha256sum`, IxCC's own `Blake3.Pure` (for the
+proof-only digests) and, for the link audit, GNU
+`nm`; the independent encoder
+and object checks invoke GNU binutils
+and, on x86-64 Linux, the C test harnesses of `fixtures/x86` and the system
+linker (`x86-elf-object`, `x86-hardware` only). These remain seed/build
+tools and introduce no project native interface or proof axiom. The
+support modules, executable scripts, native harness, and source matrices
+have reviewed integrity pins.
+
+Clock, allocation, GC, process-memory, compiler and runtime measurements
+belong to build and measurement trust, separately from production
+source/compiler proof assumptions.
+
+Compiler comparisons and measurement runners live in an optional package
+outside the root flake, being rebuilt for the new benchmark ladder
+([benchmark design](benchmark-plan.md)). CakeML and CompCert are never
+dependencies of the root flake checks.
+
+`lake exe check-tools-tests` exercises the auditor on isolated temporary
+copies. It checks source literals/comments, every spelling of native
+evaluation above (and that kernel decision and fields named `native` pass),
+every spelling of the import command, the attribution of `native_decide`s to
+their declarations, unrecognized extern attributes, new executable roots,
+project/dependency extern drift, a C source in the Lake file, imports and
+native entry points, integrity changes, the integrity rule (a covered file
+without a pin, a pin outside the rule, its globs), pinned repository files (an
+edited or unpinned `ixcc.yml`, and a narrowed check filter in it), the
+required-check inventory (a check renamed in `nix/checks.nix`, a listed check
+it lacks, and the Nix lexer's strings, antiquotations and refusals), the
+repository's toolchain, CI action drift (including scoped repository workflows
+and their local actions), an overriding `flake.lock`, the workspace-pinned and
+the git-pinned pure Lean dependency (revisions, closure files, imports and
+names under the root, `native_decide` sites unlisted, stale or outside a
+declaration), the proof-only dependency (an import from production, an
+importer or the entry removed, a module nothing imports, a closure file
+dropped from the record or changed, and each forbidden spelling, declaration
+or import planted in a closure file), the native-dependency audit on its planted fixture entry
+(sibling externs, reachability, entry points, malformed/duplicate Cargo
+metadata, upstream pins), the link audit on planted symbol tables, and
+unlisted, dropped, malformed or attribute-only `@[csimp]` theorems. The Nix
+trust-ledger check runs these regressions too, and the link audit on the
+built executables.
+
+The `IxCCTests` Lake root keeps every test and fence inside the
+audited source inventory, and the proof aggregate `IxCCTests.Proofs`
+imports every fence. The [CI guide](ci.md) records the current check surface
+and its coverage changes.
+
+## No native interface
+
+The ledger records no native interface (`native_interfaces` is empty): no
+IxCC module declares an `@[extern]` or names a C source, and IxCC takes
+nothing native from a dependency. Every address IxCC computes is pure BLAKE3,
+`Blake3.Pure.hash` (the git-pinned pure dependency `blake3-pure`, under "Pure
+Lean dependencies" below), compiled natively like the rest of IxCC, so the
+compiler's composition theorems in `Recheck/Proof/Compile.lean` and every
+byte-level theorem rest on the three standard axioms; the fences that once
+listed `Blake3.HasherOps.hash._native.native_decide.ax_1` list only those, and
+`IxCC.Ixon.Address.blake3Pure` itself is fenced at `[propext, Quot.sound]`.
+The Blake3 package's Rust backend (`Blake3.Rust`, six `rs_blake3_*`
+exports) was last imported by the erased type checker, deleted in the switch
+to the kernel front end, for its internal hash-consing keys; its C backend
+(`Blake3.C`, six `c_blake3_*` exports) never was. The entry that recorded the
+Rust backend was removed when the checks below replaced it.
+
+An empty list cannot hide a native interface. Each way one could enter is
+refused by a check of its own:
+
+| How native code could enter | What refuses it |
+| --- | --- |
+| an `@[extern]` in an IxCC module | the project extern inventory (`validateNative`): every extern must be a recorded interface's symbol |
+| a C source named in `lakefile.lean` | the project foreign-source inventory (`validateNative`) |
+| a new Lake dependency or import root | the Lake dependency inventory and the external import roots (`validateImports`): every package of `lake-manifest.json` and every import root is a recorded dependency's |
+| a native module of a recorded pure dependency (`Blake3.Rust`, `Blake3.C`), imported by any IxCC module in any spelling of the import command | the dependency's exact imports (`validateLeanDependencies`): IxCC's imports under `Blake3` are exactly `Blake3.Pure` |
+| an extern, or an import of a backend, inside a pure dependency's closure | the closure scan: each file's hash, no native declaration, imports only of closure and toolchain modules |
+| a link of either backend, however it got there | the link audit (`check-trusted-externs --linked`, run by `ixcc-trusted-extern-ledger`): the symbol table of every executable the checks ship or run (the shared program build and the grounding suite, read with GNU `nm`) has no `rs_blake3_`, `c_blake3_` or upstream `blake3_` symbol, no compiled declaration of `Blake3.Rust` or `Blake3.C` (`lp_Blake3_Blake3_Rust_…`, `lp_Blake3_Blake3_C_…`) and neither module's initializer, and lists `main` (so a table that could not be read fails) |
+
+`check-tools-tests` plants a violation of each: a project extern, a C source
+in the Lake file, an unrecorded import root (also as `public import`), imports
+of `Blake3.Rust`, `Blake3.C` and `Blake3` in every spelling of the import
+command, an extern and a backend import in `Blake3/Pure.lean` with its hash
+re-recorded, and each kind of forbidden symbol in a symbol table, beside a
+table of the pure implementation's own symbols (`lp_Blake3_Blake3_Pure_…`,
+the root module's `lp_Blake3_Blake3_HasherOps_…`), which passes.
+
+The audit of a native dependency (the extern inventory of the whole package
+tree, each symbol's reachability against the project's imports, the qualified
+entry points, the Cargo lock with its crate inventory, and the flake and
+upstream pins) stays in the checker for the next native interface. So that it
+stays exercised, `check-tools-tests` plants a fixture entry in its copy of the
+ledger, the Rust backend as it was last recorded
+(`fixtures/ledger/blake3-native-entry.json`, every symbol unimported), sees the
+audit accept it, and refuses a sibling module's extern, a qualified use of
+`Blake3.Rust`, an import that contradicts a reachability claim, three changes
+of the Cargo lock, and changed upstream BLAKE3 and lean-ffi pins.
+
+The Nix build still compiles the Blake3 package's Rust code: ix's flake builds
+the package from its `blake3-lean` node with the Rust static library (the
+upstream BLAKE3 sources are its `blake3` node; both are pinned in
+`flake.lock`), and Lake links that library only into an executable that
+imports `Blake3.Rust`, which no IxCC module does. Building only the package's
+pure part is a follow-up for the owners of ix's root package, whose flake
+defines that build.
+
+Of the retired entry's exit criteria, three are met: no native Blake3 module is
+imported (the import audit), every address fixture is byte-identical (the
+addressed constants and role-bound/K1 closures hash with
+`Blake3.Pure` to the addresses ix's producer recorded with the native hasher,
+in `tests-ixon-v3`), and no executable links the Rust static library (the link
+audit). The fourth, the official vector corpus, is the package's own test
+(`Tests/PureVectors.lean` in its tree), which IxCC's checks do not run; a
+refinement theorem relating `Blake3.Pure.hash` to a BLAKE3 specification is
+the `blake3-pure` entry's retirement condition.
+## Ix frontend / Ixon v4 source boundary
+
+The [source adapter](ixon-v4.md) reads Ixon v4 through ix's pure codec (the
+pure Lean dependency below) and keeps the data model
+adapted from an earlier ix (Ixon v3, a revision outside this repository's
+history), with the primitive table following this repository's
+`Ix/PrimAddrs.lean`. It
+preserves independent usage, ownership, relative locality, arrow results, and
+borrow lets (exposed via unified mode accessors in `Ixon.V3.Contracts`).
+Canonical bytes, addressed constants and role-bound ingress are checked against
+ix's frozen v4 fixtures and K1 packs.
+Ingress authenticates every object and the constant root with pure BLAKE3
+(`Blake3.Pure`), and runs the certified kernel's acceptance of the whole
+role-bound environment (`Src.KernelFront`). IxCC's private v4 resource checker,
+validation API and handoff bindings (`V3.Resource`, `V3.Validate`, `V3.Source`,
+`Src.Resource`) were retired ahead of the Ixon v5 migration. The ten exact
+fences of the contract roundtrips and quantity laws (`IxCCTests/Fences/IxonV3.lean`)
+retain the standard axiom basis. Backend simulation remains outside this boundary.
+
+## Pure Lean dependencies
+
+`lean_dependencies` records Lake dependencies that contain no native code, so
+they are not trusted externs, but whose behaviour IxCC relies on. Each
+entry names the Lake package, the modules our sources import from it, and the
+SHA-256 of every file of their import closure, which fix the audited source
+whatever the pin. A dependency is pinned in one of two ways (`source_kind`):
+
+- `workspace_path`: a package of the enclosing workspace, at
+  `pins.workspace_path` relative to the project (`../IxCK` inside ix); the
+  manifest must record it by that path, and the pin records nothing else.
+- `git`: a package Lake checks out at a revision (`pins.lake_rev`, a full
+  commit) and Nix builds from a node of the repository's `flake.lock`
+  (`pins.flake_node`); the manifest must record that revision (type `git`),
+  the node must be locked at it, and the pin records nothing else. Its modules
+  are those under one module root (`import_root`): the project's imports under
+  that root must be exactly the entry's `imported_modules`, and the names under
+  it that the project's sources spell (qualified uses and `open`s, outside
+  import commands) exactly its `project_entrypoints`.
+
+Either way the dependency's root must hold that package's `lakefile.lean` (a
+`--dependency-root` override replaces the root). The checker requires every
+import of the project's sources that names neither a project module nor a
+toolchain module to be such a recorded module; reads the import command in
+every spelling the module system has (`import`, `public import`,
+`meta import`, `public meta import`, `import all`, and module names with
+guillemet-quoted components; a keyword `import` followed by no module name
+fails the audit); checks each closure file's hash; rejects a closure file that
+declares a native symbol or an axiom (a constructor named `axiom` is not one),
+uses `sorry` or a native-evaluation spelling (`decide +native`,
+`native := true`, `Lean.ofReduceBool` and the others above), or imports a
+module outside the closure or the toolchain; requires its `native_decide`s to
+be exactly the entry's `native_decide_sites` (absent: none), occurrence by
+occurrence, each attributed to the declaration whose text holds it and
+recorded with the ruling that admits it (an unlisted one, a listed one the
+closure no longer holds, and one outside a named declaration are refused); and
+requires its `@[csimp]` theorems to be exactly the entry's `csimp_theorems`
+and its `implemented_by` substitutions exactly the entry's
+`implemented_by_sites` (absent: none), each recorded with the ruling that
+admits it. `--record` leaves the closure hashes alone: a change to a
+dependency's closure is a dependency review, edited by hand.
+
+There are two entries. `blake3-pure` is the Blake3 package
+(`argumentcomputer/Blake3.lean`, Lake package `Blake3`), pinned at
+`3f8b805614a0bae1c033469ff893a8f0ee85f601` in `lakefile.lean`,
+`lake-manifest.json` and the `blake3-lean` node of ix's `flake.lock`. IxCC
+imports `Blake3.Pure` only and uses `Blake3.Pure.hash` only, for every address
+it computes. The closure is two files: `Blake3/Pure.lean` (the total, unkeyed,
+32-byte BLAKE3 over a checked canonical tree; it imports the package's root
+module and `Std`) and `Blake3.lean`, the root module, which holds the result
+type `Blake3Hash` and `BLAKE3_OUT_LEN`, and also the interface the package's
+native backends implement (`HasherOps`, `Sponge`), which IxCC does not use.
+`Blake3.lean` has three `native_decide`s, each a default-argument proof in a
+signature (`HasherOps.finalizeWithLength`'s length bound, `Sponge.init`'s
+non-empty label, `Sponge.squeeze`'s length bound), the entry's three
+`native_decide_sites`. Such a proof runs only where a caller omits the
+argument, and adds a native-evaluation axiom (`Lean.ofReduceBool`) to that
+caller alone; in that file the callers are `HasherOps.hash`, `hashKeyed`,
+`hashDeriveKey` and `Sponge.ratchet`, none of which `Blake3.Pure` calls. That
+IxCC does not call them either rests on two checks, each with its part:
+
+- `project_entrypoints`: IxCC's names under `Blake3` are exactly
+  `Blake3.Pure.hash`, so a qualified use of the interface, of a backend or an
+  `open Blake3` is refused. This reads the text: a name reached without
+  spelling `Blake3` (by generalized field notation on a value of a Blake3 type,
+  or through an instance) escapes it.
+- The exact axiom fences across IxCC are what show that no fenced IxCC theorem
+  depends on a native-evaluation axiom: each lists its axioms exactly, the
+  standard three at most, among them `IxCC.Ixon.Address.blake3Pure` at
+  `[propext, Quot.sound]`. A theorem that is not fenced is not covered by
+  them.
+
+The other entry, `ix-ck-kernel`, is ix's `IxCK/` package (`«ix-ck»`), beside
+IxCC in the workspace, of which IxCC imports `IxCK.Ixon.Canonical`,
+`IxCK.Ixon.Codec`, `IxCK.Kernel.Key`, `IxCK.Kernel.Admission.Tier`,
+`IxCK.Kernel.Cached.CoreC`, `IxCK.Kernel.Ixon.Prelude`, and `IxCK.Host.Limits`,
+and the grounding library (`IxCCGrounding`) also `IxCK.Kernel.Core` and the
+kernel's model, `IxCK.Kernel.Denotes` (a 100-module closure: 84 modules of the
+production/host closure and 16 more for the model's statement, the set theory
+interface `IxCK/Kernel/SetTheory/*`, `IxCK/Kernel/SetModel/Ops.lean` and
+`IxCK/Kernel/Verify/{Level,LevelGeran}.lean`, about 3,500 lines; importing
+`Init`, `Std` and, at elaboration time in `IxCK/Kernel/BasisGen.lean`, `Lean`;
+not the kernel's proof tree). The model's files are pinned because the
+grounding theorems are stated over them: a change to `Denotes.lean` (the
+certified IxVM work's laws, when they land) fails this audit until reviewed.
+The target statements (`IxCCCorrect`) import the model too (`IxCK.Kernel.Denotes`,
+no module outside that closure), for the kernel meaning the tiers are stated in.
+`check-build-graph` refuses an import of the grounding library, of the target
+statements or of the model
+from the production library or any program of the shared build, so the
+production binaries' import closures stay within the 84. The codec is the ingress decoder and encoder;
+the tiered admission entry and the executed typing core are the front end
+over the kernel ([kernel front end](kernel-front-end-design.md)), which takes
+an environment's acceptance and the relevance annotation's types from them;
+`IxCK.Kernel.Key` gives the kernel's role vocabulary (`Ix.Kernel.Role`, `Role.all`), against
+which IxCC decodes the binding section of a role-bound environment and maps
+roles to its pinned identities ([byte contract](byte-contract.md)), so a role
+is read as the kernel of the same build reads it. Its 32 `@[csimp]`
+theorems are the entry's `csimp_theorems`, among them `Name.beq_eq_beqPtr`,
+`Key.beq_eq_beqPtr` and `Level.beq_eq_beqPtr` (pointer-guarded equality),
+`putTagN_eq_fast` and `getTagN_eq_fast` (the TagN codec specialised to its flag
+widths), and the kernel's memoised term walks (`instantiate1_eq_instantiate1Fast`
+and its siblings). Each is a proved equality, so the functions the theorems are
+about are unchanged; only the compiled code path differs.
+
+Its `implemented_by_sites` are the four substitutions the closure declares,
+each admitted by the kernel's own runtime audit (`Ix.Kernel.Audit.runtimeRulings`,
+`IxCK/Kernel/Audit/Roots.lean`), whose list the entry reuses rather than
+reinventing: `Ix.Kernel.withExclusive`, implemented by `withExclusiveUnsafe`
+(`IxCK/Kernel/Exclusive.lean`; the audit's one admitted runtime
+implementation, whose type carries the obligation `k true = k false`, so the
+reference-count read it performs cannot change a value), and the three
+elaboration-time evaluators of `IxCK/Kernel/BasisGen.lean` (`evalInfo`,
+`evalVal`, `evalEnv`, each implemented by its `unsafe` twin; the audit's
+elaboration module, `meta` code compiled code cannot call). The kernel's
+`@[computed_field]` hash overrides are not `implemented_by` in source and are
+admitted by the same audit; the closure declares no `partial` definition and
+no extern. The kernel takes its content hash as a parameter, so no assumed
+substitution enters: IxCC instantiates it with its pure BLAKE3.
+A codec defect can make ingress reject a closure or read a different program
+than ix compiled, which `Recheck.run` then checks as given; the front end over
+the kernel checks IxCC's reading against the kernel's. The kernel's soundness
+theorems are proved in its own package on Lean's standard axioms; IxCC imports
+the executable kernel, not those proofs.
+Nix packages exactly the closure this entry records (`nix/sources.nix`) under
+the same package name with a library of exactly those modules
+(`nix/build.nix`), so the production library and the shared program build
+never build the kernel's proof tree; the
+`trusted-extern-ledger` check reads the same files at `../IxCK` in its copy of
+the workspace.
+
+### Proof-only dependencies
+
+`proof_only_dependencies` records modules of a workspace dependency, outside
+the closure its `lean_dependencies` entry records, that only non-production
+libraries may import: proofs the target statements cite, which nothing that
+runs in the compiler or in a program of the shared build reaches. Each entry
+names the package (its `lean_dependencies` entry gives the directory), the
+libraries allowed to import from it (`importers`), the modules they import
+(`imported_modules`), every file of those modules' import closure outside the
+recorded closure (`closure_files`), and one digest over those files
+(`closure_blake3`). The audit (`validateProofOnly`):
+
+- requires `imported_modules` to be none of a `lean_dependencies` entry's
+  modules, each imported by some project source, and imported only by sources
+  of the `importers` (a source's library is the first component of its path:
+  `IxCCCorrect` for `IxCCCorrect.lean` and `IxCCCorrect/**`); with the
+  `lean_dependencies` modules they must account for every import of the
+  package's modules, as above;
+- recomputes the closure from the imports and requires it to be exactly
+  `closure_files`, each file passing a stricter hygiene than the recorded
+  closure, with nothing admitted by a ruling: no `axiom` declaration, `sorry`,
+  `admit`, `native_decide`, `bv_decide`, native-evaluation spelling, `unsafe`
+  or `partial` (outside comments and literals), no extern, no
+  `implemented_by`, no `@[csimp]` theorem, and no import outside the package's
+  module roots and the toolchain;
+- requires `closure_blake3` to be the BLAKE3 (`Blake3.Pure`) of the files'
+  `b3sum` listing, one line `<BLAKE3 of the file>  <path>` per file in path
+  order, the paths relative to the package's source directory. From that
+  directory (the ix checkout for «ix-ck»), the files listed in the entry give
+  the same digest with `LC_ALL=C sort | xargs b3sum | b3sum`.
+
+The files are pinned together rather than one by one: a change to the
+dependency's proofs, or to which files the closure holds, fails the audit
+until `check-trusted-externs --record` re-records the entry's `closure_files`
+and `closure_blake3` (`tools/RecordLedgerPins.lean` merges them), one entry
+however many files changed. The hygiene and import checks make that re-pin
+mechanical; what the reviewer reads is the diff of the dependency's proofs.
+
+There is one entry, `ix-kernel-proofs`: the kernel's proof tree under
+«ix-ck», for the target statements (`IxCCCorrect`) only. It records one
+module, `IxCK.Kernel.Admission.TierTheorems` (the tiered entry's theorems:
+an accept is `checkConstantsWith`'s accept of the logical records,
+`checkConstantsTiered_ok`, and that environment has a model in every set
+theory, `checkConstantsWith_has_model`), which `IxCCCorrect/Unique.lean` and
+`IxCCCorrect/AdmitsKernel.lean` cite where a statement needs the kernel's
+acceptance to give a model. Its closure is 434 files (about 193,000 lines) of
+the kernel's admission theorems, model, semantics and verification trees, beside
+the 102 of its 536 modules already in `ix-kernel`'s closure. None of them is
+admitted anything by a ruling. The target statements' exact axiom fences
+(`IxCCCorrect/Fence.lean`) cover the theorems that use them, so an axiom in
+those files would show there as well; and `check-build-graph` keeps the
+target statements out of production and the shared program build, so
+production's import closure is still `ix-kernel`'s recorded closure. Nix
+builds the files for the grounding build only (`nix/build.nix` `ixCProof`: the
+same package with `ixC`'s artifacts, `ix-kernel`'s closure as the library
+`IxCK`, unchanged, and these files as the library `IxCKProofs`); a change to
+them rebuilds that package and the grounding build, not the production library
+or the shared program build. The entry retires when the target statements no
+longer import the kernel's proofs (for instance when `Admits` is discharged by
+an IxVM certificate and IxVM's consistency theorem, in `IxCCArgument`).
+
+## Legacy Aiur logical-trace boundary (retired)
+
+Retired (RL-3): the legacy verifier-side Aiur bytecode model (`IxCC/Aiur`),
+vendored upstream snapshot (`IxCC/Vendor`), `ixcc-aiur` check, seven `docs/aiur-*.md`
+documents, fixtures and reference tools, and the three ledger entries
+(`aiur-bytecode-wire-v1`, `aiur-logical-trace-v0`, `aiur-witness-bytecode-v0`)
+were deleted. Neither planned Aiur route uses that bytecode.
+
+## Target specification boundaries: x86-64 v0
+
+[E1](x86-encoded-instructions.md) proves every row of the x86 instruction
+table: one declarative row supplies the typed semantics, the byte semantics
+and the encoding, and a separate decoder finds rows through a kernel-checked
+injective index. [E2](x86-stream-objects.md) now certifies complete
+production text and independent ELF interpretation, and the N2 source
+endpoint consumes actual object execution. The JSON retains stable boundary
+identifiers and records exactly which portions are discharged.
+
+Because the typed and byte machines share each row's semantic function, E1
+no longer checks one semantics against another; a wrong semantic function or
+opcode in a row would pass every proof. The required `x86-hardware` check
+tests the table against the host processor. It enumerates `Op.rows` and runs
+every generated case natively through
+[`hw_diff_harness.c`](../fixtures/x86/hw_diff_harness.c): each non-control
+row with each kind combination of its slots, addressing shapes, immediate
+edges, shift counts, `div` scenarios, fused producer/consumer pairs,
+branches after every producer form, all conditions and the control recipes,
+63,475 cases in total. It compares exit, registers, model-defined flags,
+changed memory and faults (memory faults as SIGSEGV or SIGBUS, `#DE` as
+SIGFPE) with `ByteEval`, and requires LLVM's `llvm-mc` to decode each case to the same
+instruction lengths, mnemonics and encodings. This is test evidence, not a
+proof of faithfulness: operand values the generator does not reach and
+flags the model leaves undefined are not compared. The Sail agreement (step S2 of the
+[reference-model route](x86-reference-model.md)) remains the proof route.
+
+**Native runs in the gates: test executables, no C (X1).** The native suites
+run a compiled object as a test executable IxCC writes of it with the same
+writer as `ixcc compile --exe` (`X86.Exe.writeFor`, checked by `checkFor`), with
+the test shell [`IxCCTests/Exe/TestShell.lean`](../IxCCTests/Exe/TestShell.lean)
+as its frame. The test shell is untrusted, integrity-pinned test code, like the
+C drivers it replaced: after `prctl` and a seccomp filter that allows only
+`read` from standard input, `write` to standard output or error and `exit`, it
+serves binary requests from a host in Lean: call an export by a direct
+`call rel32` with the six argument registers, sentinels in the callee-saved
+registers and `rsp` at a fixed top, answering `rax:rdx` and whether the
+sentinels and `rsp` survived; read or write bytes of the region (bounds
+checked). The host ([`IxCCTests/Rt/Native.lean`](../IxCCTests/Rt/Native.lean))
+does what the C runtime driver did: for each input it stores
+`stack_budget` (the stack size less 4 KiB) at `region + 16`, calls
+`cx_init(region, size, stack_budget)` and then the root, and reads the context
+and the object area back. The region is private, a zero-filled segment of its
+own one unmapped page above the stack segment, and untouched between `cx_init`
+and the root's return; nothing is mapped right below it, past its last page or
+below the stack, so a write just outside the region and a stack that ran past
+its budget and its reserve both fault. Each result is decoded by `Rt.readback` and by an
+independent decoder ([`IxCCTests/Rt/Decoder.lean`](../IxCCTests/Rt/Decoder.lean),
+the C driver's decoder transcribed to Lean, separate code with a separate
+derivation in the same language), and the two must agree. The back end's
+harness ([`IxCCTests/Backend/Native.lean`](../IxCCTests/Backend/Native.lean))
+sets up the context block as `cx_init` would and places generated programs'
+regions at the Lean test region's address, in a zero-filled segment of its own.
+No production path depends on any of it.
+
+C remains in the tree only as test harnesses: `native_harness.c`,
+`exports_harness.c` and `unwind_harness.c`, with which `check-x86-object` links
+the object writer's fixtures and runs them (`native_harness.c` still supplies
+the legacy `callRuntime` fixture's `ixcc_rt_allocate` stub until
+`Instr.callRuntime` retires), and `hw_diff_harness.c`, with which
+`check-x86-hardware` tests the processor against the instruction table. No gate
+runs a compiled program through C. Because the native gates no longer link
+the compiler's objects, `check-x86-object --ixcc` links objects `ixcc compile`
+writes in the check (eleven objects: the five K1 programs, `k1.ixe`'s five
+roots, the real-source RC fixture on the plain-RC route, `gcd` on the zero-RC
+route, and the ABI, scalar and boundary corpus families' roots, one object per
+family) with the system linker, without running them, and requires every export
+where the object puts it.
+
+`Recheck.Readback` adds bounded structural signature discovery for ground
+first-order constructor results. Successful discovery certifies closed
+indices and checked source-instance/emitted-layout provenance; its three
+exact fences use only `propext`. It adds no source-typing or SrcEval adequacy
+claim. `Rt.Rc.Layout` and `Rt.Rc.Readback` add ten header/observation fences
+using the existing logical basis. Those header/readback laws are inputs to
+the bounded recycling runtime below; neither extension adds a native
+interface or changes this driver.
+
+`Own.Plain` and `Own.Rc` add a conservative executable plain-RC checker and
+abstract semantics. The checker binds the complete untrusted function map to
+its canonical producer. The separate refinement and heap-shape proofs derive
+full result values, exact ownership counts and final reclamation from concrete
+input denotations, balanced counts and older-field ordering. Their public
+theorems have exact fences in `OwnPlain` and `OwnRc`, with at most `propext`,
+`Classical.choice` and `Quot.sound`. They add no axiom, native interface or
+trusted allocator. The promoted `Cfg.Rc` and `Rt.Rc.Procs` path now composes
+these invariants through actual initialization, allocation, count changes,
+iterative release, source control/calls, layout and the existing backend.
+`Recheck.RcReplay.run` checks the complete serialized ownership/backend
+certificate and emits the actual public object. Its `sound` theorem retains
+successful replay, `X86.Driver.Ok`, the source `GoesWrong` qualification and
+SrcEval as semantic anchor, with complete constructor-tree observations.
+The general source-adequacy and selected-producer obligations remain open.
+
+The public `cx_drop` export receives the original owned result word unchanged
+through its `.word` argument representation. `Returned.release_public` derives
+release from the actual physical return invariant and restores allocator
+readiness; successful readback alone is not ownership evidence. With zero
+external owners, ordered-heap balance proves complete reclamation.
+`recycled_entry` starts the next numeric root on that reached heap without
+resetting bump/free-list history, and `drop_sim_linked` supplies the emitted
+drop ABI simulation under the established `EntryBase` contract. These are
+operation-composition results. They do not assert unconditional ownership for
+every successful arbitrary `DriverSession`: source-stuck behavior remains
+qualified, and general backend session iteration needs the whole-call budget
+word frame as well.
+
+The RC procedures' native controls
+([`IxCCTests/Rt/Rc/NativeControls.lean`](../IxCCTests/Rt/Rc/NativeControls.lean))
+and the same-arena reuse session
+([`IxCCTests/Rt/Rc/ReuseSupport.lean`](../IxCCTests/Rt/Rc/ReuseSupport.lean))
+run in test executables IxCC writes; until X1 they were C harnesses linked with
+the object, and they are those harnesses transcribed to Lean, check for check.
+They are test evidence, not allocator externs. The primitive controls write
+synthetic fixture fields to test exact procedure behavior; the reuse session
+initializes once and makes no allocator metadata writes afterward. The compiled
+gates preserve 4,393 primitive assertions, 40 codec refusals, 15
+complete-replay refusals, 25 standalone full-value checks and 168 same-arena
+calls/drops with 114,820 independent assertions, full values by two decoders
+and exact reclaimed-address sets.
+The separately required `tests-cfg-rc` retains four complete abstract-Cfg
+value/heap cases, bounded timeout checks and 12 bridge ownership/count controls;
+its pure proof aggregate retains all 29 original marker/map/scope/bounds examples.
+`tests-pipeline-rc` additionally compares complete values across actual RC
+pipeline stages with independent list/pair formulas. Its allocation/inc/dec/free
+counter is a test-side observer of production `Cfg.Rc.step`, differential-tested
+against `Cfg.Rc.run`; it is neither a new trusted evaluator nor a native cost
+theorem. The native modes retain two decoders' observations, reject
+object-only text corruption before it runs even when its bundle is rehashed, and
+exercise real-source root heap exhaustion separately from initializer refusal,
+with successful same-code neighbors. Counts stop before caller output-drop;
+physical reclamation remains covered by the existing native recycling gate.
+These tests add no driver assumption, extern or trusted allocator.
+The real-source fixture records its historical producer; final Phase 1.5 gate, producer
+review and refreeze are still separate from these accepted local results.
+
+**The comparison with test executables (X1).** Before the C drivers were
+deleted, every line they printed in a required gate was also produced by a test
+executable IxCC wrote of the same object, and the two had to agree: `init`,
+status, value (an address as the same offset into each region), the
+callee-saved registers and `rsp`, the observation and the object area. They
+agreed on every line (2,955 across the native suites), and the Lean RC controls
+and reuse sessions reproduced the C harnesses' 4,393 and 114,820 checks count
+for count.
+
+**The driver model (specification assumption
+`x86-phase1-runtime-driver-model`).** `Recheck.sound` and the bounded
+`Recheck.RcReplay.sound` are theorems about
+`X86.Linked` ([`Linked.lean`](../IxCC/X86/Linked.lean)): the
+object's execution from a `X86.Driver`
+([`Driver.lean`](../IxCC/X86/Driver.lean)) that calls `cx_init` and
+then the root's export, each at the address `ELF.symbol?` finds for its
+symbol in the parsed object, and observes the root's result by
+`Rt.readback`. Reading it as a statement about a native run assumes that the
+caller and the loader set up those calls as the model does. Since X1 every
+caller is an executable IxCC writes: the standalone executable's shell
+(`x86-linux-exe-shell`, below) and, in the gates, the test shell. The writer
+places the object's text byte for byte and resolves each of the shell's calls
+to its export's offset by `ELF.symbol?`, and the executable check reads each
+call's target back from the file (`check_sound`, `checkFor_sound`), so no
+system linker resolves symbols. What the gates now assume:
+- the Linux loader maps the executable as its checked program headers say:
+  the file read and execute at `0x400000` (the text at `base`), the
+  zero-filled segments read and write and zero, nothing executable on the
+  stack;
+- one region of `size` bytes at `region`, its bytes before the first call
+  zero except the stack budget at `region + 16` (`ctx − 48`), which the host
+  stores through the test shell before `cx_init`; the call stack (`budget + 56`
+  bytes below `sp`, and the return slot) apart from the region;
+- the test shell enters each call at its export's address with `rsp` at its
+  fixed top less the return slot, its return address after the text,
+  `rdi = region` and the arguments in `rsi`…`r9`, sentinels in the callee-saved
+  registers, other registers and flags as it leaves them, and does not touch
+  the region between `cx_init` and the root's return (it touches it only to
+  serve the host's reads and writes between calls), as `TestShell.lean`
+  describes;
+- `read`, `write`, `exit`, `prctl` and `seccomp` behave as Linux documents them;
+- the observation: status 0 and the value read back at the root's type over
+  the region from `region + 16` (the host reads the region back through the
+  shell and decodes it with `Rt.readback` and the independent decoder, which
+  must agree), other statuses the wrapper's resource failures; arguments of
+  2⁶⁴ or more cannot be passed.
+
+Until X1 the caller was a C runtime driver linked by the system linker, and the
+assumption covered that driver, the C compiler, the C library and the linker's
+symbol resolution; X1 deleted the driver. The model maps only the region and
+the call stack. A real process maps more (its file, the shell's 256 bytes, the
+initial stack, the vDSO). That a run the model shows non-faulting is the
+process's run, or the process stops on a fault, and writes nothing outside the
+model's mapping is a theorem of the byte machine for every row
+(`X86.ByteAgree`: agreement or fault, and the frame), no longer part of this
+assumption. A caller with two call sites, the shell, calling `cx_init` from one
+and the root from another with other registers, is modelled by `X86.LinkedAt`,
+for which the object theorems hold (`Recheck.sound_at`, `RcReplay.sound_at`);
+`X86.Linked` is its instance at the driver's own site. `Driver.Ok`, the numeric contract,
+is a hypothesis of the theorem, satisfiable for every accepted artifact
+(`Recheck.driver_exists`), not part of this assumption. The reading also rests
+on `x86-v0-local-semantics`; the loader's mapping of the written executable is
+part of this entry and of `x86-linux-exe-shell`.
+
+The same specification entry records the distinct `X86.DriverSession`
+protocol: initialize once; call a numeric root at exact arity; observe the
+complete result while live; call `cx_drop` with that original raw word; then
+continue from the released bytes, repeating only return-slot setup. The
+existing `X86.Linked.call` theorem initializes per root call, so it is not
+definitionally that session protocol. Native session evidence and the proved
+release/reentry operations complement the single-call theorem without adding
+a trusted allocator, new extern or Lean axiom.
+
+The benchmark runner's entry profile
+([`benchmarks/runner/entry/`](../benchmarks/runner/entry/): the timing
+driver, one adapter per row, and tagged C twins of `ackermann`, `tak`,
+`collatz`, `prime-count`, `even-odd` and `sfib`)
+is untrusted measurement code, integrity-pinned so that a change to how a
+row is built or timed is reviewed with the ledger. Its ixcc adapter
+stores the stack budget at `region + 16` as `X86.Driver.initBytes` has it, calls
+`cx_init` once and then the root's SysV wrapper directly, under the
+driver contract (a private region untouched by C, a stack budget
+that leaves at least 1 MiB below the thread's stack limit); it checks the
+status and the Nat tag of every result. No check, proof or production
+artifact depends on these files, and the runner is outside the root flake.
+
+**The standalone executable's shell (specification assumption
+`x86-linux-exe-shell`).** `ixcc compile --exe` writes a static Linux x86-64
+executable with no C compiler, C library, linker or assembler
+([`IxCC/Exe.lean`](../IxCC/Exe.lean), [`X86/Exe/`](../IxCC/X86/Exe)): the
+object's text byte for byte, read-only data (a seccomp filter and the
+messages), and a *shell* that sets up the calls the model `X86.Driver` describes.
+The shell is trusted code, about 950 bytes: platform code written as typed
+x86 and encoded by the compiler's own encoder, with the system call (`0F 05`)
+as a constructor of its own instruction type (`X86/Exe/Shell.lean`), never a
+row of the program instruction table, so compiled program text still cannot
+contain it. The entry assumes what [`X86/Exe/Code.lean`](../IxCC/X86/Exe/Code.lean)
+says the shell does: confine the process (no new privileges, then a seccomp
+filter allowing only `write` to file descriptors 1 and 2 and `exit`), parse
+exactly the root's parameter count of decimal numerals from the initial stack,
+store the stack budget at `region + 16`, call `cx_init` and the root on the
+static stack by direct calls, and print the value (`n` for a `Nat`, `#k` for a
+constructor without fields) or a message and a fixed status per failure. It
+also assumes the kernel loads the file as its program headers say (the file
+read and execute at `0x400000`, a zero-filled read-write segment at
+`0x10000000` holding the stack and then the region) and enters it with the
+System V initial stack. What is proved: `Layout.driver_canonicalOk`, every
+clause of `Driver.CanonicalOk` for each accepted layout and each of the
+shell's return addresses, which `X86.Exe.writeChecked` carries for both calls;
+and `X86.Exe.check_sound`, the written file's structure read back by an
+independent reader, including each call's target decoded from the file. Each
+call is meant to see the driver `Layout.driver` builds, `cx_init` from its call
+site and the root from its own (`X86.LinkedAt`; `Recheck.sound_at` holds for
+it). That a run the model shows non-faulting touches only modelled memory is
+`X86.ByteAgree`'s theorem. The driver model's entry
+(`x86-phase1-runtime-driver-model`) covers the native gates' test executables,
+which replaced the C driver in X1. This shell is retired on its own: the
+shell proof (X0-P) takes the generic machine shell below first, and this one
+stays ledgered until byte executables (X3) can replace its parsing and
+rendering.
+
+**The numeric state machines' generic shell (specification assumption
+`x86-linux-machine-shell`).** `ixcc compile --exe FILE --machine` writes the
+executable of a numeric state machine: a root `step : Nat → Nat → Nat` of a
+state and an event whose result packs the next state and a request
+([`IxCC/Exe/Machine.lean`](../IxCC/Exe/Machine.lean)), run by a generic shell
+([`X86/Exe/Machine.lean`](../IxCC/X86/Exe/Machine.lean); 1,059 bytes, the same
+for every machine). It parses and renders nothing: a program does that in
+Lean compiled with it (`lib/IxccExe.lean`). The entry is separate from
+`x86-linux-exe-shell` so that each can be retired on its own.
+
+**The shell's code is proved** (X0-P): for every executable
+`X86.Exe.Machine.writeChecked` accepts, `X86.Exe.Process.shell_sound` shows
+that every finite trace of the process's system calls from the loader's
+post-state is a prefix of the system calls of a trace the session model
+performs over the object's calls (`cx_init` and the step, each from its own
+call site, each keeping the driver contract), preceded by the confinement;
+or has passed those of a trace reaching a call the model shows stuck; or is
+the confinement's refusal. `machine_exe_sound` (and `Rc.machine_exe_sound`,
+for plain-RC objects) compose it with the per-call theorems: every such trace
+is a prefix of what the source step's iteration does on the same answers, or
+of that followed by a resource failure's report, or has passed the point
+where the source goes wrong, or is the refusal. The shell's text in the
+written file is checked when it is written (`X86.Exe.Shell.check`, carried in
+`CertifiedFor.shell`), and the shell is run symbolically on the byte machine
+from it ([`X86/Exe/Machine/Proof/`](../IxCC/X86/Exe/Machine/Proof/)).
+
+**What the entry still assumes** is the platform, exactly the three
+specification modules the theorems take as hypotheses, each transcribing the
+document it cites, one platform fact, and the environment they describe:
+- `Process.Loaded` ([`X86/Exe/Process/Loaded.lean`](../IxCC/X86/Exe/Process/Loaded.lean)):
+  the loader's post-state, from the System V gABI's program loading and the
+  x86-64 psABI's initial stack: `rip` the entry, the file's bytes at
+  `fileBase`, the argument block at `rsp` outside the zero-filled segments;
+- `Process.Syscall` ([`X86/Exe/Process/Syscall.lean`](../IxCC/X86/Exe/Process/Syscall.lean)):
+  the `syscall(2)` convention and what `prctl`, `seccomp`, `write` and `exit`
+  document for the arguments the shell passes (any other call may do
+  anything);
+- `Process.Step` ([`X86/Exe/Process/Step.lean`](../IxCC/X86/Exe/Process/Step.lean)):
+  the processor is the byte machine (`x86-v0-local-semantics`) fetching from
+  the file (which the loader maps read-and-execute), with `syscall` where
+  nothing decodes and the bytes are `0F 05`; where the byte machine does not
+  say what the processor does (bytes it does not decode that are not `0F 05`,
+  `rip` outside the file, a condition on a flag it leaves undefined, none of
+  them a fault of the processor) it promises nothing: the process may do
+  anything, including any system call;
+- a memory fault or a divide error ends the process with no further system
+  call: the processor raises an exception, the kernel sends `SIGSEGV`,
+  `SIGBUS` or `SIGFPE`, and its default action applies, no handler being
+  installed (`execve` resets handlers, the kernel forces the default action
+  of a fault's signal that is ignored or blocked, and the shell installs
+  none, its only system calls before a call the model shows stuck being the
+  four above, which the theorem proves);
+- the environment: no tracer is attached (a tracer can change results,
+  registers and memory and suppress a fault's signal); no seccomp filter or
+  supervisor installed by an ancestor changes what `write`, `exit`, `prctl`
+  or `seccomp` do or return (an `exit` made to return makes the shell's exit
+  block repeat the call; a `write` answered with more than its count makes
+  the report loop write bytes no theorem allows); no other process writes the
+  process's memory or its file; the process has one thread (so system call
+  60, which ends the calling thread, ends the process).
+
+Nothing else is assumed by this entry. Nothing is assumed of permissions or
+zero fill, so the theorems allow a fault at any memory access, which ends the
+trace; they are safety only (nothing says a trace goes on: a process that
+faults at once, hangs in its first call or reports a resource failure
+satisfies them, so "the shell's code is proved" means it does nothing it
+should not). The process reaches a state where `Process.Step` promises
+nothing only past the point where the source goes wrong
+(`machine_exe_unspecified`, a corollary of the theorems' statements). The
+entry stays an active specification until models of the Linux kernel and of
+the x86-64 processor are shown to behave only as these specifications allow.
+
+The [indexed stream checker](stream-checking.md) preserves this boundary:
+bounded decoding and cached canonical positions are proved exactly equal
+to the original decoder and stream checker on all inputs. Production
+emission and relocation validation use the same `Stream.Valid` certificate.
+Four additional public fences retain the ordinary logical axiom basis.
+
+| Boundary | Current scope | Evidence and remaining work |
+| --- | --- | --- |
+| Local ISA semantics | Agreement of the local byte machine with actual x86-64, including canonical addresses, unified code fetch, memory permissions, flags, faults, and the caller ABI. Compiler-contract traps must be proved unreachable; they are not hardware exceptions. | E1 and E2 prove local-to-local agreement. The [S0 readiness decision](x86-reference-model.md) pins the Sail snapshot; reference execution comparison, the Lean adapter, and S2 agreement remain pending. |
+| Encoder stream/layout | Discharged for successful certified production emission. Raw `Encode.encode`/`Program.encode` clients must validate their output or prove the same facts. | `Stream.check_sound` checks every boundary, canonical position, target and relocation. Complete-stream proofs cover call-free execution and internal calls under concrete `SafeTrace` conditions, including residual return-slot bytes. `ELFLink` proves checked PC32 application and runtime CALL transfer. External procedure bodies still require their semantic/ABI contracts. |
+| Runtime driver model | `X86.Driver`/`X86.Linked` model initialization and the root call for accepted scalar and bounded RC objects. The same entry describes `DriverSession`'s separate owned raw-word drop protocol; it does not upgrade the one-call theorem to arbitrary-session adequacy. | Existing pipeline gates plus `tests-rt-rc`, `tests-rc-certificate` and `tests-driver-session` check complete values, ABI, reclamation and same-region reuse. The callers are executables IxCC writes (the production and the test shell); the loader's mapping, the shells' code, source adequacy and general whole-call session framing remain explicit. |
+| Standalone executable shell | `x86-linux-exe-shell`: the shell of `ixcc compile --exe` and the kernel's loading of the static executable, as `X86/Exe/Code.lean` describes them | `Layout.driver_canonicalOk` (the layout keeps the driver contract), `X86.Exe.check_sound` (the file's structure); `tests-corpus --exe` and `tests-exe`. The shell's behaviour from the loader's post-state is not proved; it stays ledgered until byte executables (X3) can replace it |
+| Numeric state machines' shell | `x86-linux-machine-shell`: the platform under the generic request shell of `ixcc compile --exe --machine`, exactly `Process.Loaded` (the loader's post-state), `Process.Syscall` (the four system calls) and `Process.Step` (the processor, fetching from the file, promising nothing where the byte machine does not say what the processor does), a memory fault or divide error ending the process, and the environment (no tracer, no inherited seccomp filter or supervisor changing the four calls, no outside writer, one thread); the shell's code is proved | `X86.Exe.Machine.Layout.driver_canonicalOk` (the contract at every call, from any bytes), `X86.Exe.checkFor_sound`, the session theorem over the linked-object model (`Exe.Machine.session_sound`) and over the shell's two call sites (`machine_session_sound_at`), `X86.ByteAgree` (a non-faulting model run is the process's and writes only the model's mapping), `X86.Exe.Shell.check_sound` (the shell's text in the written file, checked by the writer), `X86.Exe.Process.call_lifts` and `two_calls` (each call on the process); **`X86.Exe.Process.shell_sound`** (the shell realises the session model) and **`machine_exe_sound`**, **`Rc.machine_exe_sound`** (the executable theorems), with their corollaries `shell_unspecified` and `machine_exe_unspecified` (a state where `Process.Step` promises nothing is reached only past the point where the source goes wrong); `tests-exe` (the `phase1-machines` roots, `fib` against `--exe`, `echo` against Lean's interpreter and the model on the byte evaluator, the process simulated as the specifications allow against the session model) and `tests-corpus` |
+| ELF serialization and system loading | Independent interpretation is discharged for successful `ELF.writeChecked` output. Raw `ELF.write` clients lack that certificate. Actual system linker/loader behavior remains assumed. | `ELFRead` independently parses actual fields; `ELF.check_sound` certifies text, bounded/aligned/nonoverlapping sections, export placement, symbols, relocations, non-executable stack and exact provenance. `ObjectEval` begins from the parsed export and text. A real loader must implement the proved PC32 rule, map immutable executable text, resolve named procedures and enter with the stated ABI. |
+
+The reviewed format references are the [generic ABI ELF specification](https://gabi.xinuos.com/elf.pdf)
+and [x86-64 psABI](https://refspecs.linuxfoundation.org/elf/x86_64-SysV-psABI.pdf).
+The existing provenance note uses the Linux/GNU four-byte convention for
+ELF64 notes, explicitly supported by [GNU binutils](https://sourceware.org/pipermail/binutils-cvs/2017-November/046965.html).
+It does not claim generic ELF64 eight-byte note alignment.
+
+The independent instruction and ELF readers import neither corresponding
+writer. All production object emitters validate the actual outputs and
+retain proof fields. This is fail-closed translation validation, with no
+claim of completeness for the unchecked encoder or writer. The AST still
+excludes division, floating point, SIMD, atomics, indirect calls, syscalls,
+TLS, high-byte registers, RSP SIB indices, and byte-width two-operand IMUL.
+
+E2 adds 23 public axiom fences. Its generic stream/object laws use ordinary
+logical axioms; the indexed N2 source endpoint retains its existing native
+BLAKE3 dependency. The source argument, sharing/oracle, successful-application
+and bounded-ABI premises remain explicit, along with successful certified
+emission and an initial readable caller return slot outside the arena.
+The proof derives preservation of that slot and actual physical return.
+
+The integrity-pinned stream/object gate checks 14 complete streams, 50
+branch objects, 15 stream corruptions, 1,002 object mutations/truncations,
+10 relocation cases, six stack contracts and a physical caller-slot fault.
+It also executes one actual source-selected N2 object pair for all eight
+runtime inputs (6,512 byte steps), checking registers, every arena byte,
+reversed pointer graphs and complete reclamation. Existing GNU readelf,
+objdump, fresh-artifact and linked-native checks remain independent evidence.
+
+## Seed, runtime, and build trust
+
+These entries explain what can affect a Gen-0 build without mislabeling it as
+a project FFI symbol.
+
+| Entry | Current role | Retirement/containment |
+| --- | --- | --- |
+| Lean 4.34.1 seed/runtime | Elaborates, kernel-checks, compiles, executes `#guard`s, and hosts compiled tests | Gen-1 self-host plus address-exact diverse double compilation; production checking moves to the public lean4ix/ix verified checker |
+| GMP 6.3.0 | Lean runtime arbitrary-precision arithmetic; direct Nix build input | Verified limb bignums refining `Nat`/`Int`, compiled by IxCC |
+| Host C ABI/runtime | glibc 2.40-66 on the x86_64-linux baseline, plus compiler runtime; hosts Lean/Rust and the native x86 test harness | Gen 1 removes upstream runtime; allocator/memcpy and libc surface retire to verified `.ix` code plus a syscall model |
+| Locked Nix supply chain | nixpkgs, lean4-nix, flake-parts, crane, fenix/Rust, host C compiler/linker, GNU binutils readelf/objdump, rsync, binary substitution | Locked hashes now; later diverse reproduction and address-exact output comparison remove it from the semantic TCB |
+
+The recorded GMP/glibc versions describe the inspected x86_64-linux closure.
+Other configured systems use their corresponding locked Nix platform closure;
+the ledger does not claim that Darwin uses glibc.
+
+## Known limitations
+
+- BLAKE3 has conformance tests, not a refinement proof or collision-resistance
+  formalization. Address-identity theorems expose the required pairwise
+  no-collision condition as a premise rather than hiding it in the TCB.
+- The ledger covers the current Gen-0 repository/build closure. Future libc,
+  IO, store, thread, float, or syscall primitives are unapproved until added
+  per symbol/address.
+- “Empty ledger” means no persistent target/runtime extern assumptions. Seed
+  provenance and independently reproducible build attestation remain separate
+  bootstrap obligations.

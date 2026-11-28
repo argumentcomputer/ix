@@ -4,13 +4,16 @@
 //! arguments bind both byte strings, so the compression key can remain fixed
 //! while a caller independently authorizes another root key and statement.
 use aiur::{
-  artifact::Package,
-  bytecode::CheckedProgram,
+  artifact::{EXECUTION_MAGIC, ExecutionPackage, PACKAGE_MAGIC, Package},
+  bytecode::{CheckedProgram, Program as RawProgram, Type},
   field::{FieldBackend, NativeField},
+  hints::{HintChannels, PreparedHints},
+  library::{advice::Advice, io::StreamAdvice},
+  maps::MapOverrides,
   trace::{
     TracePlan,
     stark::{
-      Backend, BatchProof, Parameters, VerifyingKey,
+      Backend, BatchProof, Parameters, RomLayout, VerifyingKey, rom_lanes,
       wide::{CrossCheck, Export, WideBackend},
     },
   },
@@ -141,9 +144,13 @@ impl Input {
   }
 
   pub fn invocation(&self) -> crate::Invocation {
+    self.invocation_for(ENTRY)
+  }
+
+  pub fn invocation_for(&self, entry: &str) -> crate::Invocation {
     let mut invocation =
       crate::invocation(&self.key, &self.claims_bytes, &self.proof);
-    invocation.entry = ENTRY.into();
+    invocation.entry = entry.into();
     invocation.args = self.statement.arguments().to_vec();
     invocation
   }
@@ -300,6 +307,8 @@ macro_rules! circuits {
 /// The trusted generic recursion artifact and its proving backend.
 pub struct Wrapper {
   program: Arc<Program>,
+  entry: String,
+  advice_program: Option<RawProgram>,
   backend: Circuits,
   artifact_digest: [u8; 32],
   key: Vec<u8>,
@@ -343,6 +352,19 @@ impl WideExporter for Exporter {
   }
 }
 
+const WIDE_COMPLETE_FORMAT: &str = "ix-wide-export-complete-v1";
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WideCompleteMarker {
+  format: String,
+  key: String,
+  binary_blake3: String,
+  input_blake3: String,
+  layout_blake3: String,
+  fixed_blake3: String,
+}
+
 impl Exporter {
   pub fn from_env() -> Result<Self, String> {
     let var = |name: &str| {
@@ -372,8 +394,80 @@ impl Exporter {
     std::path::absolute(&path).map_err(|e| e.to_string())
   }
 
+  /// Verify an existing cache entry's authenticated `complete` sentinel and
+  /// return the verified `(layout.json, fixed.bin)` bytes. Refuses empty,
+  /// malformed, mismatched, or tampered cache entries fail-closed.
+  fn read_verified_entry(
+    entry: &Path,
+    key: &str,
+    binary_blake3: &str,
+    input_blake3: &str,
+  ) -> Result<(Vec<u8>, Vec<u8>), String> {
+    let read =
+      |p: &Path| std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()));
+    let complete_path = entry.join("complete");
+    let raw = read(&complete_path)?;
+    if raw.is_empty() {
+      return Err(format!(
+        "{}: unauthenticated empty complete marker; refusing stale cache entry",
+        complete_path.display()
+      ));
+    }
+    let marker: WideCompleteMarker = serde_json::from_slice(&raw).map_err(|e| {
+      format!(
+        "{}: malformed complete marker ({e}); refusing cache entry",
+        complete_path.display()
+      )
+    })?;
+    if marker.format != WIDE_COMPLETE_FORMAT {
+      return Err(format!(
+        "{}: unsupported complete marker format {:?}",
+        complete_path.display(),
+        marker.format
+      ));
+    }
+    if marker.key != key
+      || marker.binary_blake3 != binary_blake3
+      || marker.input_blake3 != input_blake3
+    {
+      return Err(format!(
+        "{}: complete marker metadata differs from requested export",
+        complete_path.display()
+      ));
+    }
+    let stored_input = read(&entry.join("input.json"))?;
+    let actual_input = blake3::hash(&stored_input).to_hex().to_string();
+    if actual_input != marker.input_blake3 {
+      return Err(format!(
+        "{}: input.json BLAKE3 {actual_input} differs from complete marker {}",
+        entry.display(),
+        marker.input_blake3
+      ));
+    }
+    let layout = read(&entry.join("layout.json"))?;
+    let actual_layout = blake3::hash(&layout).to_hex().to_string();
+    if actual_layout != marker.layout_blake3 {
+      return Err(format!(
+        "{}: layout.json BLAKE3 {actual_layout} differs from complete marker {}",
+        entry.display(),
+        marker.layout_blake3
+      ));
+    }
+    let fixed = read(&entry.join("fixed.bin"))?;
+    let actual_fixed = blake3::hash(&fixed).to_hex().to_string();
+    if actual_fixed != marker.fixed_blake3 {
+      return Err(format!(
+        "{}: fixed.bin BLAKE3 {actual_fixed} differs from complete marker {}",
+        entry.display(),
+        marker.fixed_blake3
+      ));
+    }
+    Ok((layout, fixed))
+  }
+
   /// The layout and fixed file of `input`, exported once per exporter
-  /// binary and input.
+  /// binary and input. Cache hits verify BLAKE3 digests of `input.json`,
+  /// `layout.json`, and `fixed.bin` recorded in the `complete` sentinel.
   pub fn export(
     &self,
     input: &serde_json::Value,
@@ -381,16 +475,23 @@ impl Exporter {
     let read =
       |p: &Path| std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()));
     let input = serde_json::to_vec_pretty(input).map_err(|e| e.to_string())?;
+    let binary_hash = blake3::hash(&read(&self.binary)?);
+    let input_hash = blake3::hash(&input);
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"ix/wide-export-cache/v1\0");
-    hasher.update(blake3::hash(&read(&self.binary)?).as_bytes());
-    hasher.update(blake3::hash(&input).as_bytes());
-    let entry = self.cache.join(hasher.finalize().to_hex().as_str());
+    hasher.update(binary_hash.as_bytes());
+    hasher.update(input_hash.as_bytes());
+    let key = hasher.finalize().to_hex().to_string();
+    let binary_blake3 = binary_hash.to_hex().to_string();
+    let input_blake3 = input_hash.to_hex().to_string();
+    let entry = self.cache.join(&key);
     if entry.join("complete").is_file() {
-      return Ok((
-        read(&entry.join("layout.json"))?,
-        read(&entry.join("fixed.bin"))?,
-      ));
+      return Self::read_verified_entry(
+        &entry,
+        &key,
+        &binary_blake3,
+        &input_blake3,
+      );
     }
     std::fs::create_dir_all(&self.cache)
       .map_err(|e| format!("{}: {e}", self.cache.display()))?;
@@ -419,12 +520,30 @@ impl Exporter {
         staging.join("export.log").display()
       ));
     }
-    std::fs::write(staging.join("complete"), b"").map_err(io)?;
+    let layout = read(&staging.join("layout.json"))?;
+    let fixed = read(&staging.join("fixed.bin"))?;
+    let marker = WideCompleteMarker {
+      format: WIDE_COMPLETE_FORMAT.to_owned(),
+      key: key.clone(),
+      binary_blake3: binary_blake3.clone(),
+      input_blake3: input_blake3.clone(),
+      layout_blake3: blake3::hash(&layout).to_hex().to_string(),
+      fixed_blake3: blake3::hash(&fixed).to_hex().to_string(),
+    };
+    let marker_bytes =
+      serde_json::to_vec_pretty(&marker).map_err(|e| e.to_string())?;
+    std::fs::write(staging.join("complete"), &marker_bytes).map_err(io)?;
     if std::fs::rename(&staging, &entry).is_err() {
-      // Another process published this entry first.
+      // Another process published this entry first; verify its sentinel too.
       let _ = std::fs::remove_dir_all(&staging);
+      return Self::read_verified_entry(
+        &entry,
+        &key,
+        &binary_blake3,
+        &input_blake3,
+      );
     }
-    Ok((read(&entry.join("layout.json"))?, read(&entry.join("fixed.bin"))?))
+    Ok((layout, fixed))
   }
 }
 
@@ -506,12 +625,33 @@ impl Wrapper {
     parameters: Parameters,
     device: Option<i32>,
   ) -> Result<Self, String> {
+    Self::from_bytes_with_entry(
+      bytes,
+      artifact_pin,
+      key_pin,
+      parameters,
+      device,
+      ENTRY,
+    )
+  }
+
+  /// [`Self::from_bytes`] selecting a custom entry point (e.g., `"Prog::main0"`
+  /// for an `ixcc-aiur` compiled wrapper circuit).
+  pub fn from_bytes_with_entry(
+    bytes: &[u8],
+    artifact_pin: &[u8; 32],
+    key_pin: &[u8; 32],
+    parameters: Parameters,
+    device: Option<i32>,
+    entry: impl Into<String>,
+  ) -> Result<Self, String> {
     if blake3::hash(bytes).as_bytes() != artifact_pin {
       return Err(
         "compression wrapper artifact differs from the trusted pin".into(),
       );
     }
-    let wrapper = Self::new(Package::decode(bytes)?, parameters, device)?;
+    let wrapper =
+      Self::new_with_entry(Package::decode(bytes)?, parameters, device, entry)?;
     if wrapper.key_digest() != key_pin {
       return Err(
         "compression wrapper key differs from the trusted pin".into(),
@@ -528,17 +668,34 @@ impl Wrapper {
     device: Option<i32>,
     layout: &Layout,
   ) -> Result<Self, String> {
+    Self::for_layout_entry(package, parameters, device, layout, ENTRY)
+  }
+
+  /// [`Self::for_layout`] selecting a custom entry point.
+  pub fn for_layout_entry(
+    package: Package,
+    parameters: Parameters,
+    device: Option<i32>,
+    layout: &Layout,
+    entry: impl Into<String>,
+  ) -> Result<Self, String> {
     match layout.lowering.as_deref() {
-      Some(LEAN_LOWERING) => Self::for_layout_with(
+      Some(LEAN_LOWERING) => Self::for_layout_with_entry(
         package,
         parameters,
         device,
         layout,
         &Exporter::from_env()?,
+        entry,
       ),
-      _ => {
-        Self::for_layout_with(package, parameters, device, layout, &NoExporter)
-      },
+      _ => Self::for_layout_with_entry(
+        package,
+        parameters,
+        device,
+        layout,
+        &NoExporter,
+        entry,
+      ),
     }
   }
 
@@ -550,14 +707,31 @@ impl Wrapper {
     layout: &Layout,
     exporter: &dyn WideExporter,
   ) -> Result<Self, String> {
+    Self::for_layout_with_entry(
+      package, parameters, device, layout, exporter, ENTRY,
+    )
+  }
+
+  /// [`Self::for_layout_with`] selecting a custom entry point (e.g.,
+  /// `"Prog::main0"` or [`ENTRY`]).
+  pub fn for_layout_with_entry(
+    package: Package,
+    parameters: Parameters,
+    device: Option<i32>,
+    layout: &Layout,
+    exporter: &dyn WideExporter,
+    entry: impl Into<String>,
+  ) -> Result<Self, String> {
+    let entry = entry.into();
     let wrapper = match layout.lowering.as_deref() {
-      None => Self::new(package, parameters, device)?,
-      Some(LEAN_LOWERING) => Self::lean_with(
+      None => Self::new_with_entry(package, parameters, device, entry)?,
+      Some(LEAN_LOWERING) => Self::lean_with_entry(
         package,
         parameters,
         device,
         Capacities::Lean(&layout.log_heights),
         exporter,
+        entry,
       )?,
       Some(other) => return Err(format!("unknown wrapper lowering {other:?}")),
     };
@@ -574,13 +748,39 @@ impl Wrapper {
     device: Option<i32>,
     layout: &Layout,
   ) -> Result<Self, String> {
+    Self::from_bytes_for_layout_with_entry(
+      bytes,
+      artifact_pin,
+      key_pin,
+      parameters,
+      device,
+      layout,
+      ENTRY,
+    )
+  }
+
+  /// [`Self::from_bytes_for_layout`] selecting a custom entry point.
+  pub fn from_bytes_for_layout_with_entry(
+    bytes: &[u8],
+    artifact_pin: &[u8; 32],
+    key_pin: &[u8; 32],
+    parameters: Parameters,
+    device: Option<i32>,
+    layout: &Layout,
+    entry: impl Into<String>,
+  ) -> Result<Self, String> {
     if blake3::hash(bytes).as_bytes() != artifact_pin {
       return Err(
         "compression wrapper artifact differs from the trusted pin".into(),
       );
     }
-    let wrapper =
-      Self::for_layout(Package::decode(bytes)?, parameters, device, layout)?;
+    let wrapper = Self::for_layout_entry(
+      Package::decode(bytes)?,
+      parameters,
+      device,
+      layout,
+      entry,
+    )?;
     if wrapper.key_digest() != key_pin {
       return Err(
         "compression wrapper key differs from the trusted pin".into(),
@@ -591,13 +791,14 @@ impl Wrapper {
 
   fn program(
     package: Package,
+    entry: &str,
   ) -> Result<([u8; 32], Arc<Program>, Arc<TracePlan<'static, Field>>), String>
   {
     let artifact_digest = *blake3::hash(&package.encode()).as_bytes();
     let (program, trace) = package.traced()?;
     let mut program = program.check_field::<Val>()?;
     program.track_depth(&trace)?;
-    program.entry(ENTRY)?;
+    program.entry(entry)?;
     let program = Arc::new(program);
     let plan = Arc::new(TracePlan::new(Arc::clone(&program), trace)?);
     Ok((artifact_digest, program, plan))
@@ -605,13 +806,14 @@ impl Wrapper {
 
   fn finish(
     program: Arc<Program>,
+    entry: String,
     backend: Circuits,
     artifact_digest: [u8; 32],
     parameters: Parameters,
     cross_check: Option<CrossCheck>,
   ) -> Result<Self, String> {
     let (claim, key) = circuits!(&backend, b => (
-      b.claim(ENTRY, &[Val::ZERO; 16], &[])?,
+      b.claim(&entry, &[Val::ZERO; 16], &[])?,
       b.verifying_key_bytes()?,
     ));
     if claim.len() != 18 {
@@ -620,6 +822,8 @@ impl Wrapper {
     let key_digest = *blake3::hash(&key).as_bytes();
     Ok(Self {
       program,
+      entry,
+      advice_program: None,
       backend,
       artifact_digest,
       key,
@@ -627,6 +831,39 @@ impl Wrapper {
       parameters,
       cross_check,
     })
+  }
+
+  /// Attach an unmodified pre-guess `ixcc` advice package (written by
+  /// `ixcc-aiur --advice-out`) so `"ixcc.guess.*"` channels in a compiled
+  /// wrapper circuit are answered automatically during [`Self::execute`].
+  /// Validates the advice program and its guess-channel bindings immediately.
+  pub fn with_advice(mut self, advice: Package) -> Result<Self, String> {
+    let raw = advice.program;
+    let checked = raw.clone().check_field::<Val>()?;
+    let mut probe = HintChannels::new();
+    aiur::library::ixcc::register_advice_program(
+      &mut probe,
+      &self.program,
+      checked,
+    )?;
+    self.advice_program = Some(raw);
+    Ok(self)
+  }
+
+  /// Decode an `ixcc` advice artifact (`IXAIURP\0` or `IXAIURX\0`) and attach
+  /// it via [`Self::with_advice`].
+  pub fn with_advice_bytes(self, bytes: &[u8]) -> Result<Self, String> {
+    let package = if bytes.starts_with(PACKAGE_MAGIC) {
+      Package::decode(bytes)?
+    } else if bytes.starts_with(EXECUTION_MAGIC) {
+      ExecutionPackage::decode(bytes)?.package
+    } else {
+      return Err(
+        "unrecognized advice artifact magic (expected IXAIURP\\0 or IXAIURX\\0)"
+          .into(),
+      );
+    };
+    self.with_advice(package)
   }
 
   /// The Rust lowering of the circuits (layouts without
@@ -638,10 +875,22 @@ impl Wrapper {
     parameters: Parameters,
     device: Option<i32>,
   ) -> Result<Self, String> {
-    let (artifact_digest, program, plan) = Self::program(package)?;
+    Self::new_with_entry(package, parameters, device, ENTRY)
+  }
+
+  /// [`Self::new`] selecting a custom entry point (e.g., `"Prog::main0"`).
+  pub fn new_with_entry(
+    package: Package,
+    parameters: Parameters,
+    device: Option<i32>,
+    entry: impl Into<String>,
+  ) -> Result<Self, String> {
+    let entry = entry.into();
+    let (artifact_digest, program, plan) = Self::program(package, &entry)?;
     let backend = Backend::for_batch_on_device(plan, parameters, device)?;
     Self::finish(
       program,
+      entry,
       Circuits::Rust(Box::new(backend)),
       artifact_digest,
       parameters,
@@ -659,12 +908,24 @@ impl Wrapper {
     device: Option<i32>,
     capacities: Capacities<'_>,
   ) -> Result<Self, String> {
-    Self::lean_with(
+    Self::lean_entry(package, parameters, device, capacities, ENTRY)
+  }
+
+  /// [`Self::lean`] selecting a custom entry point.
+  pub fn lean_entry(
+    package: Package,
+    parameters: Parameters,
+    device: Option<i32>,
+    capacities: Capacities<'_>,
+    entry: impl Into<String>,
+  ) -> Result<Self, String> {
+    Self::lean_with_entry(
       package,
       parameters,
       device,
       capacities,
       &Exporter::from_env()?,
+      entry,
     )
   }
 
@@ -676,9 +937,29 @@ impl Wrapper {
     capacities: Capacities<'_>,
     exporter: &dyn WideExporter,
   ) -> Result<Self, String> {
+    Self::lean_with_entry(
+      package, parameters, device, capacities, exporter, ENTRY,
+    )
+  }
+
+  /// [`Self::lean_with`] selecting a custom entry point.
+  pub fn lean_with_entry(
+    package: Package,
+    parameters: Parameters,
+    device: Option<i32>,
+    capacities: Capacities<'_>,
+    exporter: &dyn WideExporter,
+    entry: impl Into<String>,
+  ) -> Result<Self, String> {
+    let entry = entry.into();
     let bytes = package.encode();
-    let (artifact_digest, program, plan) = Self::program(package)?;
-    let rows = Backend::for_batch_on_device(plan, parameters, device)?;
+    let (artifact_digest, program, plan) = Self::program(package, &entry)?;
+    let rows = Backend::for_batch_on_device_with_rom_layout(
+      plan,
+      parameters,
+      RomLayout::Scalar,
+      device,
+    )?;
     let order = rows.wide_order()?;
     let heights: Vec<u8> = match capacities {
       Capacities::Lean(heights) => heights.to_vec(),
@@ -686,7 +967,26 @@ impl Wrapper {
         if heights.len() != order.len() {
           return Err("the Rust layout has another circuit count".into());
         }
-        order.iter().map(|&ci| heights[ci]).collect()
+        // Rust-lowering layouts pack ROM entries across `rom_lanes(width)`
+        // lanes per row, whereas Lean's `romCircuit` stores one entry per row.
+        let rom_extra: std::collections::HashMap<usize, u8> = rows
+          .memory_circuits()
+          .into_iter()
+          .map(|(width, ci)| {
+            let extra = u8::try_from(rom_lanes(width).ilog2())
+              .expect("ROM lane log2 fits in u8");
+            (ci, extra)
+          })
+          .collect();
+        order
+          .iter()
+          .map(|&ci| {
+            let extra = rom_extra.get(&ci).copied().unwrap_or(0);
+            heights[ci]
+              .checked_add(extra)
+              .ok_or_else(|| "ROM capacity overflow".to_string())
+          })
+          .collect::<Result<Vec<_>, _>>()?
       },
     };
     let capacities = heights
@@ -697,19 +997,31 @@ impl Wrapper {
     let digest = blake3::Hash::from(artifact_digest).to_hex();
     let artifact = exporter.artifact(&bytes, digest.as_str())?;
     let input =
-      rows.wide_input(&artifact, digest.as_str(), ENTRY, &capacities)?;
+      rows.wide_input(&artifact, digest.as_str(), &entry, &capacities)?;
     let (layout, fixed) = exporter.export(&input)?;
     let wide = WideBackend::new(rows, Export::parse(&layout, &fixed)?)?;
-    wide.check_request(&wide.claim(ENTRY, &[Val::ZERO; 16], &[])?)?;
+    wide.check_request(&wide.claim(&entry, &[Val::ZERO; 16], &[])?)?;
     let cross_check =
       if cross_check_requested()? { Some(wide.cross_check(4)?) } else { None };
     Self::finish(
       program,
+      entry,
       Circuits::Lean(Box::new(wide)),
       artifact_digest,
       parameters,
       cross_check,
     )
+  }
+
+  /// Entrypoint name invoked by this wrapper (default [`ENTRY`]).
+  pub fn entry(&self) -> &str {
+    &self.entry
+  }
+
+  /// Whether an `ixcc` advice package is attached for Tier-2 `"ixcc.guess.*"`
+  /// host advice channels.
+  pub const fn has_advice(&self) -> bool {
+    self.advice_program.is_some()
   }
 
   /// The comparison with the Rust lowering, when [`Self::lean`] ran one.
@@ -743,7 +1055,62 @@ impl Wrapper {
 
   pub fn claim_for(&self, statement: &Statement) -> Result<Vec<Val>, String> {
     let args = self.program.field().decode(&statement.arguments())?;
-    circuits!(&self.backend, b => b.claim(ENTRY, &args, &[]))
+    circuits!(&self.backend, b => b.claim(&self.entry, &args, &[]))
+  }
+
+  fn prepare_hints<'a>(
+    &'a self,
+    advice: &Advice<Field>,
+  ) -> Result<PreparedHints<'a, Field>, String> {
+    let field = self.program.field();
+    let mut channels = HintChannels::new();
+    aiur::library::u32::register(&mut channels, field)?;
+    aiur::library::u64::register(&mut channels, field)?;
+    aiur::library::ixcc::register(&mut channels, field)?;
+    channels.insert_fixed::<1, 1>(
+      "goldilocks.inverse",
+      Type::Field,
+      Type::Field,
+      move |[x]| Ok([field.inverse(x).unwrap_or_else(|| field.zero())]),
+    )?;
+    advice.register_read::<1>("stark.io.read1", false, &mut channels)?;
+    advice.register_read::<8>("stark.io.read8", false, &mut channels)?;
+    advice.register_read::<64>("stark.io.read64", false, &mut channels)?;
+    if let Some(adv_raw) = &self.advice_program {
+      let checked_adv = adv_raw.clone().check_field::<Val>()?;
+      aiur::library::ixcc::register_advice_program(
+        &mut channels,
+        &self.program,
+        checked_adv,
+      )?;
+    }
+    let mut data = advice.metadata(
+      "stark.io.info",
+      &Type::Tuple { items: vec![Type::Field; 2] },
+      None,
+      |_, key| key.len() == 1,
+      false,
+    )?;
+    data.extend(advice.metadata(
+      "stark.io.address",
+      &Type::Tuple {
+        items: vec![Type::Field, Type::Tuple { items: vec![Type::Field; 32] }],
+      },
+      None,
+      |_, key| key.len() == 32,
+      false,
+    )?);
+    data.extend(advice.metadata(
+      "stark.io.digest",
+      &Type::Tuple { items: vec![Type::Field; 8] },
+      Some(4),
+      |channel, key| channel == 4 && key.len() == 8,
+      false,
+    )?);
+    let prepared = self.program.prepare_hint_channels(&data, &channels)?;
+    let mut maps = MapOverrides::new();
+    aiur::library::u8::register_maps(&self.program, &mut maps)?;
+    prepared.with_map_overrides(&maps)
   }
 
   pub fn execute<'a>(&self, input: &'a Input) -> Result<Executed<'a>, String> {
@@ -754,8 +1121,9 @@ impl Wrapper {
       &input.claims_bytes,
       &input.proof,
     )?;
-    let record = crate::prepare_advice(&self.program, &advice)?
-      .execute(ENTRY, args.clone())
+    let record = self
+      .prepare_hints(&advice)?
+      .execute(&self.entry, args.clone())
       .map_err(|error| format!("compression wrapper execution: {error}"))?;
     if !record.output.is_empty() {
       return Err("compression wrapper returned a non-unit value".into());
@@ -869,7 +1237,7 @@ impl Wrapper {
     self.check_execution(&execution)?;
     self.validate_layout(layout)?;
     let (claim, proof) = circuits!(&self.backend, b => b.prove_normalized(
-      ENTRY,
+      &self.entry,
       &execution.args,
       &[],
       execution.record,
@@ -931,7 +1299,7 @@ impl Wrapper {
   ) -> Result<(), String> {
     let proof = decode_proof(proof_bytes)?;
     let args = self.program.field().decode(&expected.arguments())?;
-    circuits!(&self.backend, b => b.verify_batch(ENTRY, &args, &[], &proof))
+    circuits!(&self.backend, b => b.verify_batch(&self.entry, &args, &[], &proof))
   }
 
   /// Verify the independently expected statement and the exact geometry used
@@ -946,7 +1314,7 @@ impl Wrapper {
     let proof = decode_proof(proof_bytes)?;
     check_normalized_shape(&proof, layout)?;
     let args = self.program.field().decode(&expected.arguments())?;
-    circuits!(&self.backend, b => b.verify_batch(ENTRY, &args, &[], &proof))
+    circuits!(&self.backend, b => b.verify_batch(&self.entry, &args, &[], &proof))
   }
 
   fn check_execution(&self, execution: &Executed<'_>) -> Result<(), String> {
@@ -1285,5 +1653,320 @@ mod tests {
     assert!(other.statistics(&execution).is_err());
     assert!(other.plan_layout(&execution, 0).is_err());
     assert!(other.prove_normalized(execution, &layout).is_err());
+  }
+
+  fn compiled_wrapper_fixture(guess_offset: u64) -> (Package, Package) {
+    use aiur::{
+      bytecode::{Binary, Entry, Function, Instruction, VERSION},
+      trace::TraceArtifact,
+      value::IoType,
+    };
+    let pair = Type::Tuple { items: vec![Type::Field; 2] };
+    let args_ty = Type::Tuple { items: vec![Type::Field; 16] };
+    let unit_ty = Type::Tuple { items: vec![] };
+    let main_prog = RawProgram {
+      version: VERSION,
+      modulus: Val::ORDER_U64,
+      functions: vec![Function {
+        name: "Prog::main0".into(),
+        params: vec![args_ty],
+        result: unit_ty,
+        registers: 28,
+        code: vec![
+          Instruction::Literal { dest: 16, value: 1 },
+          Instruction::Literal { dest: 17, value: 0 },
+          Instruction::Hint {
+            channel: "stark.io.info".into(),
+            key_type: pair.clone(),
+            r#type: pair.clone(),
+            key: vec![16, 17],
+            dest: vec![18, 19],
+          },
+          Instruction::Literal { dest: 20, value: 7 },
+          Instruction::Hint {
+            channel: "ixcc.divmod".into(),
+            key_type: pair.clone(),
+            r#type: pair,
+            key: vec![8, 20],
+            dest: vec![21, 22],
+          },
+          Instruction::Binary {
+            dest: 23,
+            operator: Binary::Mul,
+            left: 21,
+            right: 20,
+          },
+          Instruction::Binary {
+            dest: 24,
+            operator: Binary::Add,
+            left: 23,
+            right: 22,
+          },
+          Instruction::AssertEq {
+            left: vec![24],
+            right: vec![8],
+            message: Some("divmod check".into()),
+            runtime_check: true,
+          },
+          Instruction::Hint {
+            channel: "ixcc.guess.stmt_check".into(),
+            key_type: Type::Field,
+            r#type: Type::Field,
+            key: vec![8],
+            dest: vec![25],
+          },
+          Instruction::Literal { dest: 26, value: 5 },
+          Instruction::Binary {
+            dest: 27,
+            operator: Binary::Add,
+            left: 8,
+            right: 26,
+          },
+          Instruction::AssertEq {
+            left: vec![25],
+            right: vec![27],
+            message: Some("guess check".into()),
+            runtime_check: true,
+          },
+          Instruction::Ret { value: vec![] },
+        ],
+      }],
+      enums: vec![],
+      tables: vec![],
+      maps: vec![],
+      entries: vec![Entry {
+        name: "Prog::main0".into(),
+        function: 0,
+        inputs: vec![IoType::Tuple { items: vec![IoType::Field; 16] }],
+        output: Some(IoType::Tuple { items: vec![] }),
+      }],
+    };
+    let writes: Vec<serde_json::Value> = (0..16)
+      .map(|i| {
+        serde_json::json!({
+          "column": i,
+          "source": i,
+          "guard": { "const": 1 }
+        })
+      })
+      .collect();
+    let trace: TraceArtifact = serde_json::from_value(serde_json::json!({
+      "version": 3,
+      "modulus": Val::ORDER_U64,
+      "functions": [{
+        "name": "Prog::main0",
+        "chip": "Prog::main0",
+        "witnesses": 16,
+        "inputs": (0..16).collect::<Vec<_>>(),
+        "output": [],
+        "steps": [],
+        "writes": writes
+      }],
+      "chips": [{
+        "name": "Prog::main0",
+        "width": 17,
+        "activation": 16,
+        "inputs": (0..16).collect::<Vec<_>>(),
+        "output": [],
+        "constraints": [{
+          "mul": [
+            { "var": 16 },
+            { "sub": [{ "const": 1 }, { "var": 16 }] }
+          ]
+        }],
+        "sends": [],
+        "memory": []
+      }]
+    }))
+    .unwrap();
+    let advice_prog = RawProgram {
+      version: VERSION,
+      modulus: Val::ORDER_U64,
+      functions: vec![Function {
+        name: "Prog::stmt_check".into(),
+        params: vec![Type::Field],
+        result: Type::Field,
+        registers: 3,
+        code: vec![
+          Instruction::Literal { dest: 1, value: guess_offset },
+          Instruction::Binary {
+            dest: 2,
+            operator: Binary::Add,
+            left: 0,
+            right: 1,
+          },
+          Instruction::Ret { value: vec![2] },
+        ],
+      }],
+      enums: vec![],
+      tables: vec![],
+      maps: vec![],
+      entries: vec![Entry {
+        name: "Prog::stmt_check".into(),
+        function: 0,
+        inputs: vec![IoType::Field],
+        output: Some(IoType::Field),
+      }],
+    };
+    (
+      Package { program: main_prog, trace: Some(trace) },
+      Package { program: advice_prog, trace: None },
+    )
+  }
+
+  #[test]
+  fn custom_entry_with_ixcc_and_guess_advice_proves_and_verifies() {
+    let f = fixture();
+    let pin = *blake3::hash(&f.key).as_bytes();
+    let input = Input::new(&f.key, pin, &f.claims, &f.proof).unwrap();
+    let (pkg, good_advice) = compiled_wrapper_fixture(5);
+    let (_, bad_advice) = compiled_wrapper_fixture(6);
+    let params = Parameters {
+      log_blowup: 1,
+      num_queries: 282,
+      commit_proof_of_work_bits: 0,
+      query_proof_of_work_bits: 0,
+    };
+
+    // Without advice attached, execution fails on the unbound guess channel.
+    let no_advice =
+      Wrapper::new_with_entry(pkg.clone(), params, None, "Prog::main0")
+        .unwrap();
+    assert_eq!(no_advice.entry(), "Prog::main0");
+    assert!(!no_advice.has_advice());
+    assert!(no_advice.execute(&input).is_err());
+
+    // Invalid advice magic fails closed.
+    assert!(
+      Wrapper::new_with_entry(pkg.clone(), params, None, "Prog::main0")
+        .unwrap()
+        .with_advice_bytes(b"NOT_AIUR")
+        .is_err()
+    );
+
+    // Wrong advice fails the circuit's verified checker during execution.
+    let bad_wrapper =
+      Wrapper::new_with_entry(pkg.clone(), params, None, "Prog::main0")
+        .unwrap()
+        .with_advice(bad_advice)
+        .unwrap();
+    assert!(bad_wrapper.execute(&input).is_err());
+
+    // Honest advice executes, proves normalized, and verifies via for_layout_with_entry.
+    let advice_bytes = good_advice.encode();
+    let wrapper =
+      Wrapper::new_with_entry(pkg.clone(), params, None, "Prog::main0")
+        .unwrap()
+        .with_advice_bytes(&advice_bytes)
+        .unwrap();
+    assert!(wrapper.has_advice());
+    let execution = wrapper.execute(&input).unwrap();
+    let layout = wrapper.plan_layout(&execution, 0).unwrap();
+    let _admission = wrapper.admit(&execution, &layout).unwrap();
+    let proven = wrapper.prove_normalized(execution, &layout).unwrap();
+    wrapper
+      .verify_normalized(input.statement(), &proven.proof, &layout)
+      .unwrap();
+
+    // Reconstruct through `for_layout_with_entry` and verify + reject forged statement.
+    let reloaded = Wrapper::for_layout_with_entry(
+      pkg,
+      params,
+      None,
+      &layout,
+      &NoExporter,
+      "Prog::main0",
+    )
+    .unwrap()
+    .with_advice_bytes(&advice_bytes)
+    .unwrap();
+    reloaded
+      .verify_normalized(input.statement(), &proven.proof, &layout)
+      .unwrap();
+    let mut wrong_stmt = input.statement().clone();
+    wrong_stmt.claims_digest[0] ^= 1;
+    assert!(
+      reloaded.verify_normalized(&wrong_stmt, &proven.proof, &layout).is_err()
+    );
+  }
+
+  #[test]
+  fn exporter_cache_complete_sentinel_authenticates_layout_and_fixed() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let base = std::env::temp_dir().join(format!(
+      "ix-compress-wrap-exporter-m9-{}",
+      std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&base);
+    let cache = base.join("cache");
+    std::fs::create_dir_all(&cache).unwrap();
+
+    let count_file = base.join("runs.txt");
+    let script = base.join("fake_wide_export.sh");
+    std::fs::write(
+      &script,
+      format!(
+        "#!/bin/sh\nset -e\necho x >> '{}'\nprintf '{{\"ok\":true}}' > \"$2\"\nprintf 'FIXED_BYTES' > \"$3\"\n",
+        count_file.display()
+      ),
+    )
+    .unwrap();
+    let mut perms = std::fs::metadata(&script).unwrap().permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&script, perms).unwrap();
+
+    let exporter = Exporter { binary: script.clone(), cache: cache.clone() };
+    let req = serde_json::json!({"test": "m9"});
+
+    // First export runs the binary and writes an authenticated JSON `complete` marker.
+    let (layout1, fixed1) = exporter.export(&req).unwrap();
+    assert_eq!(layout1, br#"{"ok":true}"#);
+    assert_eq!(fixed1, b"FIXED_BYTES");
+    assert_eq!(std::fs::read_to_string(&count_file).unwrap().lines().count(), 1);
+
+    // Second export hits the verified cache without re-running the binary.
+    let (layout2, fixed2) = exporter.export(&req).unwrap();
+    assert_eq!((layout2, fixed2), (layout1.clone(), fixed1.clone()));
+    assert_eq!(std::fs::read_to_string(&count_file).unwrap().lines().count(), 1);
+
+    // Locate the single cache entry directory.
+    let entry = std::fs::read_dir(&cache)
+      .unwrap()
+      .filter_map(Result::ok)
+      .map(|e| e.path())
+      .find(|p| p.join("complete").is_file())
+      .expect("cache entry directory");
+    let orig_complete = std::fs::read(entry.join("complete")).unwrap();
+
+    // Negative control 1: tampered layout.json fails closed.
+    std::fs::write(entry.join("layout.json"), br#"{"ok":false}"#).unwrap();
+    assert!(exporter.export(&req).unwrap_err().contains("layout.json"));
+    std::fs::write(entry.join("layout.json"), &layout1).unwrap();
+
+    // Negative control 2: tampered fixed.bin fails closed.
+    std::fs::write(entry.join("fixed.bin"), b"TAMPERED").unwrap();
+    assert!(exporter.export(&req).unwrap_err().contains("fixed.bin"));
+    std::fs::write(entry.join("fixed.bin"), &fixed1).unwrap();
+
+    // Negative control 3: tampered input.json fails closed.
+    let orig_input = std::fs::read(entry.join("input.json")).unwrap();
+    std::fs::write(entry.join("input.json"), b"{}").unwrap();
+    assert!(exporter.export(&req).unwrap_err().contains("input.json"));
+    std::fs::write(entry.join("input.json"), &orig_input).unwrap();
+
+    // Negative control 4: legacy 0-byte `complete` sentinel fails closed.
+    std::fs::write(entry.join("complete"), b"").unwrap();
+    assert!(exporter.export(&req).unwrap_err().contains("empty complete"));
+
+    // Negative control 5: malformed JSON in `complete` fails closed.
+    std::fs::write(entry.join("complete"), b"not-json").unwrap();
+    assert!(exporter.export(&req).unwrap_err().contains("malformed complete"));
+
+    // Restoring the valid sentinel restores cache hit cleanly.
+    std::fs::write(entry.join("complete"), &orig_complete).unwrap();
+    assert_eq!(exporter.export(&req).unwrap(), (layout1, fixed1));
+
+    let _ = std::fs::remove_dir_all(&base);
   }
 }

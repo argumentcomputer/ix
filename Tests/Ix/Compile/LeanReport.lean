@@ -18,7 +18,7 @@ def Row.toJson (r : Row) : Lean.Json :=
 
 def success (outcome : String) : Bool := outcome == "accept" || outcome == "typed"
 
-/-- Read the actual verbose IxC CLI protocol. Every requested label has one
+/-- Read the actual verbose IxCK CLI protocol. Every requested label has one
 outcome; machine counts, fail-out labels/reasons and exit status must agree.
 Invocation/protocol failures cannot become known logical refusals. -/
 def parse (expected : Array String) (stdout stderr failOut : String) (exitCode : UInt32) :

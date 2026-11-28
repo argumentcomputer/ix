@@ -1,17 +1,17 @@
 import IxVMRefinement.Decl.DeclSpecs
-import IxC.Kernel.Model.FoldLate
+import IxCK.Kernel.Model.FoldLate
 
-/-! # The no-recursor install of a native block, in IxC's terms
+/-! # The no-recursor install of a native block, in IxCK's terms
 
-`NativeNoRecFacts env env₂ blk nP p₀ fam` is what a native block step concludes about IxC: the
+`NativeNoRecFacts env env₂ blk nP p₀ fam` is what a native block step concludes about IxCK: the
 recogniser reads the declared block `blk` as `p₀` (`nativePartsNoRec?`), and the stages of
 `DeclNativeNoRecRunJ` hold with the family's summary `fam` named, so that the hypotheses of
 `Ix.Kernel.Model.EnvModelN.nativeCore` (no-recursor tail) are available to the caller. From it:
 
-* `NativeNoRecFacts.runJ`: IxC's record `DeclNativeNoRecRunJ rulesJ env p₀ env₂`;
+* `NativeNoRecFacts.runJ`: IxCK's record `DeclNativeNoRecRunJ rulesJ env p₀ env₂`;
 * `NativeNoRecFacts.declRunJ`: the declaration step `DeclRunJ` of `.indDecl blk nP`;
 * `NativeNoRecFacts.register`: the model step with the family registered
-  (`EnvModelN.nativeCore`'s conclusion, in IxC's own terms, at every registry);
+  (`EnvModelN.nativeCore`'s conclusion, in IxCK's own terms, at every registry);
 * `NativeNoRecFacts.foldInv`, `NativeNoRecFacts.fullDeclInv`, `NativeNoRecFacts.foldStoreInv`:
   the declaration layer's invariants at the new environment;
 * `NativeNoRecFacts.installStep`: the install's shape (`InstallStep`).
@@ -26,7 +26,7 @@ open Ix.Kernel.Semantics (DeclNativeNoRecRunJ SumIndRunJ SumCtorsRunJ FieldSorts
 
 universe u w
 
-/-- **The no-recursor install of a native block, in IxC's terms** (module docstring). The former
+/-- **The no-recursor install of a native block, in IxCK's terms** (module docstring). The former
 is stored at `cvS` with the capability record `caps`, the constructors at `ctorsA`; `fam` is the
 family's summary. -/
 def NativeNoRecFacts (env env₂ : Env .anon) (blk : List (ConstantInfo .anon)) (nP : Nat)
@@ -65,7 +65,7 @@ theorem NativeNoRecFacts.recognised (h : NativeNoRecFacts env env₂ blk nP p₀
   obtain ⟨hdp, -⟩ := h
   exact hdp
 
-/-- **IxC's record of the install.** -/
+/-- **IxCK's record of the install.** -/
 theorem NativeNoRecFacts.runJ (h : NativeNoRecFacts env env₂ blk nP p₀ fam) :
     DeclNativeNoRecRunJ Ix.Kernel.Model.rulesJ env p₀ env₂ := by
   obtain ⟨-, hnd, isRec, cvS, cvTa, caps, p₁, p, ctorsA, sortss, kinds, tfvs, trest, isorts, -,

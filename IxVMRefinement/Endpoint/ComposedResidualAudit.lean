@@ -1,5 +1,5 @@
 import IxVMRefinement.Endpoint.ComposedResidual
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 /-! # The open obligations of the composed statement, printed
 

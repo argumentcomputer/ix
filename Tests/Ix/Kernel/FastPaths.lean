@@ -8,7 +8,7 @@ import Tests.Ix.Kernel.FastPathDefs
 /-! # Reductions beyond Lean's, per kernel (`kernel-fast-paths`)
 
 Each probe of `Tests.Ix.Kernel.FastPathDefs` is checked with its whole
-dependency closure (recursors included) by IxC on the Lean compiler's
+dependency closure (recursors included) by IxCK on the Lean compiler's
 output, through the environment check (`SourceIngressCompare.ixonVerdicts`:
 the verified fold one record at a time, under the default role table and
 its evidence).
@@ -17,9 +17,9 @@ A probe expected to be rejected names its culprit: the false or
 non-definitional equation itself, or, for a derivation of `False`, the
 equation it uses. The kernel must reject the culprit, and nothing else in
 the closure may fail except the probe itself when it is a derivation
-(accepted with its dependencies trusted, or, as IxC does, blocked behind
+(accepted with its dependencies trusted, or, as IxCK does, blocked behind
 the culprit; never rejected on its own). A probe expected to be accepted must
-have every closure member accepted. So the test fails both when IxC
+have every closure member accepted. So the test fails both when IxCK
 accepts a proof of `False` and when a removed fast path's honest
 replacement stops reducing the canonical forms. -/
 
@@ -78,7 +78,7 @@ def Verdict.label : Verdict → String
 
 abbrev Verdicts := Std.HashMap Lean.Name Verdict
 
-/-- IxC's environment check on the compiled environment, by name. -/
+/-- IxCK's environment check on the compiled environment, by name. -/
 def ixcVerdicts (compiled : Ix.CompileM.CertifiedOut) (names : List Lean.Name) :
     IO Verdicts := do
   let rows ← Tests.Ix.Kernel.SourceIngressCompare.ixonVerdicts compiled.env
@@ -136,9 +136,9 @@ def run : IO UInt32 := do
   let t1 ← IO.monoMsNow
   let ixc ← ixcVerdicts compiled names
   let t2 ← IO.monoMsNow
-  IO.println s!"[kernel-fast-paths] compile {t1 - t0} ms, IxC {t2 - t1} ms"
+  IO.println s!"[kernel-fast-paths] compile {t1 - t0} ms, IxCK {t2 - t1} ms"
   let mut seq : TestSeq := .done
-  for (kernel, verdicts) in [("IxC", ixc)] do
+  for (kernel, verdicts) in [("IxCK", ixc)] do
     for p in probes do
       seq := seq ++ checkProbe kernel (closures.getD p.name []) verdicts p
   lspecIO (.ofList [("kernel-fast-paths", [seq])]) []

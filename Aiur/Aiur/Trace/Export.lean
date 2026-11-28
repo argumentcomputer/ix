@@ -10,7 +10,9 @@ import Aiur.Optimized.Depth.Grouped
 import Aiur.Optimized.Depth.Structural
 import Aiur.Optimized.Depth.StructuralEndToEnd
 import Aiur.Artifact
+import Aiur.Tiling.Enables
 import Std.Data.HashMap
+import Std.Data.HashSet
 
 /-! Ixon encoding of companion population plans and physical circuits: the
 trace section of an artifact. The grammar is documented with its Rust reader,
@@ -337,6 +339,47 @@ def exportBytecode [Field F] [DecidableEq F] (modulus : Nat)
     throw "a program map is not among the exported maps"
   return (cfg, measures, depthBytecode cfg original)
 
+/-- Linear-time duplicate check for exported callable, circuit, and group names. -/
+def allDistinctNames (xs : List String) : Bool :=
+  (xs.foldl (fun (seen, ok) s =>
+    if !ok || seen.contains s then (seen, false)
+    else (seen.insert s, true)) (({} : Std.HashSet String), true)).2
+
+/-- Executable exporter safety gate checked before emitting trace bytes:
+depth-grouped plan certificate, distinct callable names, distinct circuit and
+group names, and booleanity of every send and memory enable across all exported
+chips. -/
+def exportSafetyOk [Field F] [DecidableEq F]
+    (program : Program F) {artifact : Optimized.Artifact F}
+    (physical : Physical.Prepared artifact)
+    (cfg : Depth.Config) (measures : Depth.Structural.Plan)
+    (callableNames : List String)
+    (chips : List (Circuit.Chip F)) {id : String → Except String Nat}
+    (plan : Grouping.Plan (Depth.system cfg physical.system) id) : Bool :=
+  physical.checkDepthPlan program cfg measures plan &&
+    allDistinctNames callableNames &&
+    allDistinctNames (chips.map (·.name) ++ plan.groups.map (·.checked.layout.name)) &&
+    chips.all Tiling.Bridge.checkChipEnables
+
+/-- Specific error message when `exportSafetyOk` rejects an export. -/
+def exportSafetyError [Field F] [DecidableEq F]
+    (program : Program F) {artifact : Optimized.Artifact F}
+    (physical : Physical.Prepared artifact)
+    (cfg : Depth.Config) (measures : Depth.Structural.Plan)
+    (callableNames : List String)
+    (chips : List (Circuit.Chip F)) {id : String → Except String Nat}
+    (plan : Grouping.Plan (Depth.system cfg physical.system) id) : String :=
+  if !physical.checkDepthPlan program cfg measures plan then
+    "depth-grouped plan failed executable safety certificate (Physical.Prepared.checkDepthPlan)"
+  else if !allDistinctNames callableNames then
+    "duplicate callable name in exported bytecode"
+  else if !allDistinctNames (chips.map (·.name) ++ plan.groups.map (·.checked.layout.name)) then
+    "duplicate circuit or group name in exported trace section"
+  else
+    match chips.find? fun c => !Tiling.Bridge.checkChipEnables c with
+    | some c => s!"non-boolean lookup enable in exported circuit {c.name}"
+    | none => "exported trace section failed safety gate"
+
 /-- The trace section for the depth configuration `cfg`, exempt-SCC measures
 `measures`, and the package bytecode `bytecode` (`exportBytecode`): population
 plans for every function of `original`, the activated depth circuits
@@ -365,13 +408,14 @@ def exportTraceSection [Field F] [DecidableEq F] (encoding : FieldEncoding)
   let packed ← selected.parMapM fun (name, chips) => do
     return (⟨chips, ← Grouping.compile name id chips⟩ : Grouping.Packed F id)
   let plan ← Grouping.preparePlan system id packed
-  -- Enforce all executable WS 2B-1 exporter safety certificates (`PlanCertificate`, both
-  -- halves of the depth certificate, `cfg.bits ≤ 24`, and `Plan.WellFormedActivation`) before
+  -- Enforce all executable exporter safety certificates (`PlanCertificate`, both
+  -- halves of the depth certificate, `cfg.bits ≤ 24`, `Plan.WellFormedActivation`,
+  -- callable/circuit/group name distinctness, and boolean lookup enables) before
   -- emitting bytes.
   unless Grouping.checkPlanCertificate system plan.singles plan.groups do
     throw "grouping partition failed executable certificate check (Grouping.checkPlanCertificate)"
-  unless physical.checkDepthPlan program cfg measures plan do
-    throw "depth-grouped plan failed executable safety certificate (Physical.Prepared.checkDepthPlan)"
+  unless exportSafetyOk program physical cfg measures callableNames system.chips plan do
+    throw (exportSafetyError program physical cfg measures callableNames system.chips plan)
   let trace ← Ixon.run do
     nat planVersion
     encoding.putModulus modulus
@@ -482,5 +526,13 @@ def exportPlanParallelWide [Field F] [DecidableEq F] (modulus : Nat) (encode : F
     (groups : List (String × List String) := []) (config : Config := {}) :
     IO (Execution.Export F × ByteArray) :=
   exportPlanParallelWithEncoding .wide modulus encode source entries exported groups config
+
+section SelfTests
+
+#guard allDistinctNames ["f", "g", "map0"] == true
+#guard allDistinctNames ["f", "g", "f"] == false
+#guard allDistinctNames ["chipA", "chipB", "chipA"] == false
+
+end SelfTests
 
 end Aiur.Trace

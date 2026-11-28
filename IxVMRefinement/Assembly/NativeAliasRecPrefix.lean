@@ -1,5 +1,5 @@
 import IxVMRefinement.Assembly.NativeAliasTeleWalk
-import IxC.Kernel.Model.Inductives.NativeAtRecLate
+import IxCK.Kernel.Model.Inductives.NativeAtRecLate
 
 /-! # A recursor depends on the former's binders, not its residual
 

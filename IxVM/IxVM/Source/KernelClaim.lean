@@ -521,7 +521,7 @@ def env_walk_leaves := aiur_fn⟦
   -- or constructor, or a block holding one. Lean's kernel accepts an unsafe
   -- constant of any type, `False` included, and a partial block may refer to
   -- itself. The test is the reader's safety policy (`safetyDeclineOf`,
-  -- `readInductive`, `readRecord` in `IxC/Kernel/Ixon/Reader.lean`), and
+  -- `readInductive`, `readRecord` in `IxCK/Kernel/Ixon/Reader.lean`), and
   -- `Ingress::defn_is_unsafe_ci`'s on definitions: a theorem is never unsafe,
   -- and a `partial` opaque (the face of a `partial def`) is safe. The check
   -- reads the seed's records only, before the walk. An `eval` claim already

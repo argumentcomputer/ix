@@ -3,7 +3,7 @@ import IxVMRefinement.Assembly.TypingBasisInv
 
 /-! # The projection-name clause beside the registry
 
-IxC's install of a native family checks that the projection names of the family
+IxCK's install of a native family checks that the projection names of the family
 (`projFnName T j`, `projTableName T`) are fresh (`checkNativeTable`), and the constructor stage
 reads the absence of a projection at the family. The circuit does not check these names; the
 prefix has their freshness from `Decl.AuxRootSynced` (every stored derived key has its root

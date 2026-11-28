@@ -168,7 +168,7 @@ def fidelity : IO (Bool × Nat × Nat × Option String) := do
   let exported ← IO.ofExcept (importString (← readFixture Lean.versionString))
   require (exported.exportMeta.leanVersion == Lean.versionString)
     s!"the fixture comes from Lean {exported.exportMeta.leanVersion}, the test runs on {Lean.versionString}"
-  let native ← getCompileEnv #[`IxC.Kernel.PinGen.Certs, `Tests.Fixtures.toolchains.Primitives]
+  let native ← getCompileEnv #[`IxCK.Kernel.PinGen.Certs, `Tests.Fixtures.toolchains.Primitives]
   let mut nativeDecls : Array (Lean.Name × Lean.ConstantInfo) := #[]
   let mut binderDiffs := 0
   for (name, ci) in exported.constants do

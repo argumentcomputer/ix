@@ -119,6 +119,61 @@ contract IxPlonkVerifierTest {
         require(type(PlonkVerifier).creationCode.length <= 49152, "PLONK initcode exceeds EIP-3860");
     }
 
+    function testRawVerifierNegativeControls() public view {
+        uint256 BN254_R_MOD = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
+        uint256[] memory validInputs = _digestToInputs(digest);
+        require(plonk.Verify{gas: 2_000_000}(proof, validInputs), "raw valid BN254 PLONK proof rejected");
+
+        // Unreduced public inputs (`input + R_MOD` and exact `R_MOD`) must revert on raw verifier.
+        uint256[] memory bad0 = new uint256[](2);
+        bad0[0] = validInputs[0] + BN254_R_MOD;
+        bad0[1] = validInputs[1];
+        _assertRawReverts(proof, bad0, "raw verifier accepted input[0] + R_MOD");
+
+        uint256[] memory bad1 = new uint256[](2);
+        bad1[0] = validInputs[0];
+        bad1[1] = validInputs[1] + BN254_R_MOD;
+        _assertRawReverts(proof, bad1, "raw verifier accepted input[1] + R_MOD");
+
+        uint256[] memory exactR = new uint256[](2);
+        exactR[0] = BN254_R_MOD;
+        exactR[1] = validInputs[1];
+        _assertRawReverts(proof, exactR, "raw verifier accepted input[0] == R_MOD");
+
+        // All-zero proof of expected length must be rejected by both raw verifier and adapter.
+        bytes memory allZero = new bytes(proof.length);
+        _assertRawRejected(allZero, validInputs, "raw verifier accepted all-zero proof");
+        _reject(allZero, digest);
+    }
+
+    function _digestToInputs(bytes32 expectedClaimDigest) private pure returns (uint256[] memory inputs) {
+        inputs = new uint256[](2);
+        inputs[0] = _reverse128(uint128(uint256(expectedClaimDigest) >> 128));
+        inputs[1] = _reverse128(uint128(uint256(expectedClaimDigest)));
+    }
+
+    function _reverse128(uint128 value) private pure returns (uint128) {
+        value = ((value >> 8) & 0x00ff00ff00ff00ff00ff00ff00ff00ff) |
+            ((value & 0x00ff00ff00ff00ff00ff00ff00ff00ff) << 8);
+        value = ((value >> 16) & 0x0000ffff0000ffff0000ffff0000ffff) |
+            ((value & 0x0000ffff0000ffff0000ffff0000ffff) << 16);
+        value = ((value >> 32) & 0x00000000ffffffff00000000ffffffff) |
+            ((value & 0x00000000ffffffff00000000ffffffff) << 32);
+        return (value >> 64) | (value << 64);
+    }
+
+    function _assertRawReverts(bytes memory p, uint256[] memory inputs, string memory errMsg) private view {
+        try plonk.Verify{gas: 2_000_000}(p, inputs) returns (bool) {
+            revert(errMsg);
+        } catch {}
+    }
+
+    function _assertRawRejected(bytes memory p, uint256[] memory inputs, string memory errMsg) private view {
+        try plonk.Verify{gas: 2_000_000}(p, inputs) returns (bool valid) {
+            require(!valid, errMsg);
+        } catch {}
+    }
+
     function _reject(bytes memory badProof, bytes32 badDigest) private view {
         require(!adapter.verify{gas: 2_000_000}(badProof, badDigest), "invalid proof accepted");
     }

@@ -40,7 +40,7 @@ use ark_ec::{CurveGroup, VariableBaseMSM};
 use ark_ff::{AdditiveGroup, Field, Zero};
 use p3_maybe_rayon::prelude::*;
 
-use super::curve::{Fr, G1Affine, G1Projective};
+use super::curve::{Bn254, G1AffineOf, G1ProjectiveOf, KzgCurve};
 use super::pcs::KzgPcs;
 use super::transcript::KzgTranscript;
 
@@ -54,43 +54,43 @@ const COMBINE_BLOCK: usize = 1 << 14;
 
 /// One column's monomial coefficients, without materializing constants.
 #[derive(Clone, Copy, Debug)]
-pub enum Coefficients<'a> {
-  Constant(Fr),
-  Dense(&'a [Fr]),
+pub enum Coefficients<'a, C: KzgCurve = Bn254> {
+  Constant(C::Fr),
+  Dense(&'a [C::Fr]),
 }
 
-impl Coefficients<'_> {
-  fn get(&self, index: usize) -> Fr {
+impl<C: KzgCurve> Coefficients<'_, C> {
+  fn get(&self, index: usize) -> C::Fr {
     match self {
       Self::Constant(value) => {
         if index == 0 {
           *value
         } else {
-          Fr::ZERO
+          C::Fr::ZERO
         }
       },
-      Self::Dense(values) => values.get(index).copied().unwrap_or(Fr::ZERO),
+      Self::Dense(values) => values.get(index).copied().unwrap_or(C::Fr::ZERO),
     }
   }
 
   /// `f(x)` by blocked Horner's rule.
-  pub fn evaluate(&self, x: Fr) -> Fr {
+  pub fn evaluate(&self, x: C::Fr) -> C::Fr {
     match self {
       Self::Constant(value) => *value,
-      Self::Dense(values) => super::pcs::eval_poly::<super::Bn254>(values, x),
+      Self::Dense(values) => super::pcs::eval_poly::<C>(values, x),
     }
   }
 
   /// Floor quotient by `Π_a (Y − a)`; `height − points.len()` coefficients.
   #[cfg(test)]
-  fn divide(&self, height: usize, points: &[Fr]) -> Vec<Fr> {
+  fn divide(&self, height: usize, points: &[C::Fr]) -> Vec<C::Fr> {
     let mut current = match self {
       Self::Constant(_) => {
-        return vec![Fr::ZERO; height.saturating_sub(points.len())];
+        return vec![C::Fr::ZERO; height.saturating_sub(points.len())];
       },
       Self::Dense(values) => {
         let mut values = values.to_vec();
-        values.resize(height, Fr::ZERO);
+        values.resize(height, C::Fr::ZERO);
         values
       },
     };
@@ -98,33 +98,33 @@ impl Coefficients<'_> {
       if current.is_empty() {
         break;
       }
-      current = super::pcs::divide_by_linear_host::<super::Bn254>(current, a);
+      current = super::pcs::divide_by_linear_host::<C>(current, a);
     }
     current
   }
 }
 
 /// Prover view of one pack: `columns.len()` columns of `height` coefficients.
-pub struct PackPolynomial<'a> {
+pub struct PackPolynomial<'a, C: KzgCurve = Bn254> {
   pub height: usize,
-  pub columns: Vec<Coefficients<'a>>,
+  pub columns: Vec<Coefficients<'a, C>>,
 }
 
-impl PackPolynomial<'_> {
+impl<C: KzgCurve> PackPolynomial<'_, C> {
   pub fn width(&self) -> usize {
     self.columns.len()
   }
 
   /// Interleaved coefficients of `P`.
-  pub fn interleave(&self) -> Vec<Fr> {
+  pub fn interleave(&self) -> Vec<C::Fr> {
     let width = self.width();
-    let mut out = vec![Fr::ZERO; width * self.height];
-    self.scatter(&mut out, Fr::ONE);
+    let mut out = vec![C::Fr::ZERO; width * self.height];
+    self.scatter(&mut out, C::Fr::ONE);
     out
   }
 
   /// `target += scale · P`, coefficient-wise.
-  fn scatter(&self, target: &mut [Fr], scale: Fr) {
+  fn scatter(&self, target: &mut [C::Fr], scale: C::Fr) {
     let width = self.width();
     assert!(target.len() >= width * self.height);
     target[..width * self.height].par_chunks_mut(width).enumerate().for_each(
@@ -142,7 +142,12 @@ impl PackPolynomial<'_> {
   /// `target += scale · ⌊P / Z_S⌋`, the interleaved per-column quotients:
   /// the per-pack reference for [`scatter_group_quotient`].
   #[cfg(test)]
-  fn scatter_quotient(&self, target: &mut [Fr], scale: Fr, points: &[Fr]) {
+  fn scatter_quotient(
+    &self,
+    target: &mut [C::Fr],
+    scale: C::Fr,
+    points: &[C::Fr],
+  ) {
     let width = self.width();
     let rows = self.height.saturating_sub(points.len());
     for (batch, columns) in self.columns.chunks(COLUMN_BATCH).enumerate() {
@@ -162,18 +167,18 @@ impl PackPolynomial<'_> {
   }
 
   /// Every column at `point`.
-  pub fn evaluate(&self, point: Fr) -> Vec<Fr> {
+  pub fn evaluate(&self, point: C::Fr) -> Vec<C::Fr> {
     self.columns.par_iter().map(|column| column.evaluate(point)).collect()
   }
 }
 
 /// `target += Σ_i scale_i · ⌊P_i / Z_S⌋` for packs of one width sharing the
 /// point set `points`, interleaved like [`PackPolynomial::scatter_quotient`].
-fn scatter_group_quotient(
-  target: &mut [Fr],
+fn scatter_group_quotient<C: KzgCurve>(
+  target: &mut [C::Fr],
   width: usize,
-  points: &[Fr],
-  members: &[(&PackPolynomial<'_>, Fr)],
+  points: &[C::Fr],
+  members: &[(&PackPolynomial<'_, C>, C::Fr)],
 ) {
   let height = members.iter().map(|(pack, _)| pack.height).max().unwrap_or(0);
   let rows = height.saturating_sub(points.len());
@@ -182,7 +187,7 @@ fn scatter_group_quotient(
   }
   for start in (0..width).step_by(COLUMN_BATCH) {
     let end = (start + COLUMN_BATCH).min(width);
-    let quotients: Vec<Vec<Fr>> = (start..end)
+    let quotients: Vec<Vec<C::Fr>> = (start..end)
       .into_par_iter()
       .map(|j| {
         // Constant columns have a zero quotient.
@@ -194,7 +199,7 @@ fn scatter_group_quotient(
         }
         // Row blocks in parallel: a group of few, tall columns otherwise
         // combines its packs on one thread per column.
-        let mut combined = vec![Fr::ZERO; height];
+        let mut combined = vec![C::Fr::ZERO; height];
         combined.par_chunks_mut(COMBINE_BLOCK).enumerate().for_each(
           |(block, chunk)| {
             let offset = block * COMBINE_BLOCK;
@@ -216,8 +221,7 @@ fn scatter_group_quotient(
           if current.is_empty() {
             break;
           }
-          current =
-            super::pcs::divide_by_linear_host::<super::Bn254>(current, a);
+          current = super::pcs::divide_by_linear_host::<C>(current, a);
         }
         current
       })
@@ -236,16 +240,16 @@ fn scatter_group_quotient(
 
 /// Verifier view of one pack's claim: `values[p][j] = f_j(points[p])`.
 #[derive(Clone, Debug)]
-pub struct PackClaim {
+pub struct PackClaim<C: KzgCurve = Bn254> {
   pub width: usize,
-  pub points: Vec<Fr>,
-  pub values: Vec<Vec<Fr>>,
+  pub points: Vec<C::Fr>,
+  pub values: Vec<Vec<C::Fr>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Proof {
-  pub w1: G1Affine,
-  pub w2: G1Affine,
+pub struct Proof<C: KzgCurve = Bn254> {
+  pub w1: G1AffineOf<C>,
+  pub w2: G1AffineOf<C>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -259,7 +263,7 @@ pub enum Error {
   PairingCheckFailed,
 }
 
-impl PackClaim {
+impl<C: KzgCurve> PackClaim<C> {
   fn check(&self) -> Result<(), Error> {
     if self.width == 0
       || self.points.is_empty()
@@ -277,47 +281,59 @@ impl PackClaim {
   }
 
   /// `Z_S(z) = Π_a (z^W − a)`.
-  pub fn vanishing(&self, z: Fr) -> Fr {
-    vanishing(z, self.width, &self.points)
+  pub fn vanishing(&self, z: C::Fr) -> C::Fr {
+    vanishing::<C>(z, self.width, &self.points)
   }
 
   /// `r(z)` for the remainder `r = P mod Z_S` fixed by the claimed values.
-  pub fn remainder(&self, z: Fr) -> Fr {
-    remainder(z, self.width, &self.points, &self.values)
+  pub fn remainder(&self, z: C::Fr) -> C::Fr {
+    remainder::<C>(z, self.width, &self.points, &self.values)
   }
 }
 
-pub fn vanishing(z: Fr, width: usize, points: &[Fr]) -> Fr {
+pub fn vanishing<C: KzgCurve>(
+  z: C::Fr,
+  width: usize,
+  points: &[C::Fr],
+) -> C::Fr {
   let y = z.pow([width as u64]);
   points.iter().map(|&a| y - a).product()
 }
 
-pub fn remainder(z: Fr, width: usize, points: &[Fr], values: &[Vec<Fr>]) -> Fr {
+pub fn remainder<C: KzgCurve>(
+  z: C::Fr,
+  width: usize,
+  points: &[C::Fr],
+  values: &[Vec<C::Fr>],
+) -> C::Fr {
   let y = z.pow([width as u64]);
-  let mut total = Fr::ZERO;
+  let mut total = C::Fr::ZERO;
   for (i, (&a, row)) in points.iter().zip(values).enumerate() {
     debug_assert_eq!(row.len(), width);
-    let mut numerator = Fr::ONE;
-    let mut denominator = Fr::ONE;
+    let mut numerator = C::Fr::ONE;
+    let mut denominator = C::Fr::ONE;
     for (k, &b) in points.iter().enumerate() {
       if k != i {
         numerator *= y - b;
         denominator *= a - b;
       }
     }
-    let combined = row.iter().rev().fold(Fr::ZERO, |acc, v| acc * z + v);
+    let combined = row.iter().rev().fold(C::Fr::ZERO, |acc, v| acc * z + v);
     total +=
       numerator * denominator.inverse().expect("distinct points") * combined;
   }
   total
 }
 
-fn sample(transcript: &mut KzgTranscript) -> Fr {
+fn sample<C: KzgCurve>(transcript: &mut KzgTranscript<C>) -> C::Fr {
   multi_stark::traits::Transcript::sample_challenge(transcript).0
 }
 
 /// Sample `γ` and `z` around `W₁`, mirroring the prover. Returns `(γ, z)`.
-fn challenges(transcript: &mut KzgTranscript, proof: &Proof) -> (Fr, Fr) {
+fn challenges<C: KzgCurve>(
+  transcript: &mut KzgTranscript<C>,
+  proof: &Proof<C>,
+) -> (C::Fr, C::Fr) {
   transcript.observe_bytes(DOMAIN);
   let gamma = sample(transcript);
   transcript.observe_canonical(&proof.w1);
@@ -327,14 +343,14 @@ fn challenges(transcript: &mut KzgTranscript, proof: &Proof) -> (Fr, Fr) {
 }
 
 /// Per-pack combination weights `γ^i / Z_{S_i}(z)` and `Σ_i weight_i·r_i(z)`.
-fn weights(
-  claims: &[&PackClaim],
-  gamma: Fr,
-  z: Fr,
-) -> Result<(Vec<Fr>, Fr), Error> {
+fn weights<C: KzgCurve>(
+  claims: &[&PackClaim<C>],
+  gamma: C::Fr,
+  z: C::Fr,
+) -> Result<(Vec<C::Fr>, C::Fr), Error> {
   let mut weights = Vec::with_capacity(claims.len());
-  let mut constant = Fr::ZERO;
-  let mut power = Fr::ONE;
+  let mut constant = C::Fr::ZERO;
+  let mut power = C::Fr::ONE;
   for claim in claims {
     let inverse =
       claim.vanishing(z).inverse().ok_or(Error::DegenerateChallenge)?;
@@ -348,11 +364,11 @@ fn weights(
 
 /// Prove every pack's claim. The claims must be exactly the packs'
 /// evaluations; the caller has already absorbed commitments and claims.
-pub fn open(
-  pcs: &KzgPcs,
-  packs: &[(&PackPolynomial<'_>, &PackClaim)],
-  transcript: &mut KzgTranscript,
-) -> Proof {
+pub fn open<C: KzgCurve>(
+  pcs: &KzgPcs<C>,
+  packs: &[(&PackPolynomial<'_, C>, &PackClaim<C>)],
+  transcript: &mut KzgTranscript<C>,
+) -> Proof<C> {
   transcript.observe_bytes(DOMAIN);
   let gamma = sample(transcript);
   let started = std::time::Instant::now();
@@ -362,12 +378,13 @@ pub fn open(
     .map(|(p, c)| p.width() * p.height.saturating_sub(c.points.len()))
     .max()
     .unwrap_or(0);
-  let mut w1 = vec![Fr::ZERO; w1_len];
+  let mut w1 = vec![C::Fr::ZERO; w1_len];
   // Division by `Z_S` is linear and the interleaving depends only on the
   // width, so the packs of one width and point set are combined first and
   // divided once: `Σ_i γ^i ⌊P_i/Z_S⌋ = ⌊(Σ_i γ^i P_i)/Z_S⌋`.
-  let mut groups: Vec<(usize, &[Fr], Vec<(&PackPolynomial<'_>, Fr)>)> = vec![];
-  let mut power = Fr::ONE;
+  let mut groups: Vec<(usize, &[C::Fr], Vec<(&PackPolynomial<'_, C>, C::Fr)>)> =
+    vec![];
+  let mut power = C::Fr::ONE;
   for (pack, claim) in packs {
     debug_assert_eq!(pack.width(), claim.width);
     match groups
@@ -398,7 +415,7 @@ pub fn open(
     .unwrap_or(0)
     .max(w1.len())
     .max(1);
-  let mut l = vec![Fr::ZERO; l_len];
+  let mut l = vec![C::Fr::ZERO; l_len];
   for ((pack, _), &weight) in packs.iter().zip(&weights) {
     pack.scatter(&mut l, weight);
   }
@@ -421,12 +438,12 @@ pub fn open(
 
 /// Reduce the batch to `[A, B]` with acceptance iff
 /// `e(A, [1]₂)·e(B, [τ]₂) = 1`.
-pub fn verify_deferred(
-  generator: G1Affine,
-  packs: &[(G1Affine, &PackClaim)],
-  proof: &Proof,
-  transcript: &mut KzgTranscript,
-) -> Result<[G1Affine; 2], Error> {
+pub fn verify_deferred<C: KzgCurve>(
+  generator: G1AffineOf<C>,
+  packs: &[(G1AffineOf<C>, &PackClaim<C>)],
+  proof: &Proof<C>,
+  transcript: &mut KzgTranscript<C>,
+) -> Result<[G1AffineOf<C>; 2], Error> {
   for (_, claim) in packs {
     claim.check()?;
   }
@@ -444,19 +461,19 @@ pub fn verify_deferred(
   let mut bases: Vec<_> = packs.iter().map(|(c, _)| *c).collect();
   let mut scalars = weights;
   bases.extend([generator, proof.w1, proof.w2]);
-  scalars.extend([-constant, -Fr::ONE, z]);
-  let lhs = G1Projective::msm(&bases, &scalars).expect("equal lengths");
-  Ok([lhs.into_affine(), (-G1Projective::from(proof.w2)).into_affine()])
+  scalars.extend([-constant, -C::Fr::ONE, z]);
+  let lhs = G1ProjectiveOf::<C>::msm(&bases, &scalars).expect("equal lengths");
+  Ok([lhs.into_affine(), (-G1ProjectiveOf::<C>::from(proof.w2)).into_affine()])
 }
 
-pub fn verify(
-  params: &super::VerifierParams,
-  packs: &[(G1Affine, &PackClaim)],
-  proof: &Proof,
-  transcript: &mut KzgTranscript,
+pub fn verify<C: KzgCurve>(
+  params: &super::VerifierParams<C>,
+  packs: &[(G1AffineOf<C>, &PackClaim<C>)],
+  proof: &Proof<C>,
+  transcript: &mut KzgTranscript<C>,
 ) -> Result<(), Error> {
-  let pair = verify_deferred(params.g1[0], packs, proof, transcript)?;
-  if pairing_holds(params, pair) {
+  let pair = verify_deferred::<C>(params.g1[0], packs, proof, transcript)?;
+  if pairing_holds::<C>(params, pair) {
     Ok(())
   } else {
     Err(Error::PairingCheckFailed)
@@ -464,13 +481,12 @@ pub fn verify(
 }
 
 /// `e(A, [1]₂) · e(B, [τ]₂) = 1` for a deferred pair `[A, B]`.
-pub fn pairing_holds(
-  params: &super::VerifierParams,
-  [a, b]: [G1Affine; 2],
+pub fn pairing_holds<C: KzgCurve>(
+  params: &super::VerifierParams<C>,
+  [a, b]: [G1AffineOf<C>; 2],
 ) -> bool {
   use ark_ec::pairing::Pairing;
-  super::curve::PairingCurve::multi_pairing([a, b], [params.g2, params.tau_g2])
-    .is_zero()
+  C::PairingCurve::multi_pairing([a, b], [params.g2, params.tau_g2]).is_zero()
 }
 
 /// Committed-evaluation binding: the claimed values of all packs, in pack,
@@ -481,7 +497,9 @@ pub fn pairing_holds(
 /// is linear in the values, so a prover can choose them after the
 /// challenges (see the `committed_evaluations_without_hashing_are_forgeable`
 /// test). This is kept for measurement only.
-pub fn committed_evaluations(claims: &[&PackClaim]) -> Vec<Fr> {
+pub fn committed_evaluations<C: KzgCurve>(
+  claims: &[&PackClaim<C>],
+) -> Vec<C::Fr> {
   claims
     .iter()
     .flat_map(|claim| claim.values.iter().flatten().copied())

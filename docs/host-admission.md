@@ -6,6 +6,21 @@ The statement commits to the actual admitted binding, current host
 specification, complete record set, optional main, and admission kind.
 Selected, capped and legacy unbound checks issue no host statement.
 
+Both `ix check-lean` and `ix verify-host` print the binding's address and
+compare each bound role with the default role table. A literal means its
+unfolding through the bound literal-support constants (a string literal through
+the bound `String.ofList`, which the kernel checks by type only), so a binding
+that puts a literal-support role elsewhere than the default table's record is
+refused unless `--allow-custom-literal-support` is given, which prints a
+warning. A binding that moves `True` or `True.intro` — whose bound records give
+the tolerated `Lean.trustCompiler`'s statement — is always refused (exit 3),
+even with `--allow-custom-literal-support`. The flag runs the kernel's strict
+admission with `RolePins.trustAnchors`, which releases only the string-literal
+support (`Role.literalSupportPinned`) while keeping `True` and `True.intro`
+(`Role.trustAnchorsPinned`) pinned to the default role table; the warning names
+the unpinned roles. A relying party that accepts custom literal support must pin
+the binding.
+
 To persist and replay a statement:
 
 ```sh

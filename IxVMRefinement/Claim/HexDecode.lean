@@ -1,14 +1,14 @@
 module
 
-public import IxC.Address.Core
-import all IxC.Address.Core
+public import IxCK.Address.Core
+import all IxCK.Address.Core
 
 /-! # Hexadecimal string round-trip for `bytesOfHex`
 
 Provides `hexCharsOfBytes` and proves `bytesOfHex_ofList_hexChars`:
 `bytesOfHex (String.ofList (hexCharsOfBytes bs)) = some ⟨bs.toArray⟩`, using `import all` on
-`IxC.Address.Core` in this leaf module so `bytesOfHex.go` is visible privately without exposing
-`IxC.Address.Core`'s internals downstream. -/
+`IxCK.Address.Core` in this leaf module so `bytesOfHex.go` is visible privately without exposing
+`IxCK.Address.Core`'s internals downstream. -/
 
 @[expose] public section
 

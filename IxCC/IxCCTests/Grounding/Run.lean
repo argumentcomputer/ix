@@ -1,0 +1,1081 @@
+import IxCC.Recheck.Produce
+import IxCC.Src.Readback
+import IxCCGrounding.Check
+import IxCCGrounding.RootCheck
+import IxCCGrounding.Direct.Check
+import IxCCTests.Grounding.Oracle
+import IxCCTests.Src.Support
+
+/-! # `tests-grounding`: the grounding check on committed closures
+
+The grounding library's theorems (`IxCCGrounding`) take one Boolean check
+(`IxCC.Grounding.groundCheck`) as their hypothesis on the program, the kernel's reading and the
+certificate's annotation. This suite runs it on the committed closures of the grounding subjects:
+
+* `fib` (`fixtures/ixon-v4/bench-k1/fib`, role-bound, root `entry` at `10`);
+* `decide (fib 10 = 55)` (`fixtures/corpus/grounding/decide`, root `Grounding.decideFib10`).
+
+For each: the kernel accepts the closure (`Recheck.ingress`, the tiered entry), the front end
+builds the program SrcEval runs and the kernel annotator its annotation, and the key map, the
+level parameters and the set `Sl` (the root's closure under the terms SrcEval runs, with the
+pinned `Bool` constructors) are computed as the theorems take them. Every conjunct of the check is
+asserted true by name; SrcEval runs the root and reads back the expected observation; the
+root's checks (`rootParts`, `foArgsB`, `resultTagB` at the observed result, and for the `Bool`
+root `boolListedB`) are asserted true.
+
+Then the negative controls, on `fib`: each mutation makes exactly the conjunct it targets false
+(the list of false conjuncts is asserted equal to that one name):
+
+| Mutation | Conjunct |
+| --- | --- |
+| the root's stored value replaced by a literal | `valueCorr` |
+| the equation theorem's right-hand side replaced by a literal | `eqnCorr` |
+| the annotation's class of a constant the root unfolds made a type | `okClosed` |
+| `Nat.succ`'s stored binder datum made "always a proposition" | `natBasis` |
+| the first `case` entry's `casesOn` value hands its recursor the last two minors swapped | `caseShape` |
+| `Nat`'s stored sort made `Prop` (its `case` entry is then over a family of propositions) | `caseShape` |
+| a structure of `Sl` with fields, its constructor in `Sl`, made a family of propositions | `proj` |
+
+The direct route (`IxCCGrounding.Direct.Check`, a Boolean beside `groundCheck`): `sitesDirectB`
+refuses no application site of either subject; two controls on `fib` each make it false and leave
+`groundCheck` true: (a) the stored type of a constant passed as an argument made `Nat` (10 sites
+refused, each naming it); (h) a head constant's first binder datum (`never`) made "always a
+proposition" (3 sites refused, each headed by it).
+
+Every planted control is attributed in the assertion that checks it: the same input unplanted is
+accepted by the same decision there, the plant changed what the decision reads (a stored record, a
+term, an observation, a pin), and where the decision has parts or is refused at places the suite
+can name (conjuncts, sites, constants of `Sl`, roles), exactly those are asserted.
+
+The kernel as an oracle (`IxCCTests.Grounding.Oracle`), on both subjects: at every site-profile
+instance the direct route accepts, the kernel's own typing core (the front end's, over the
+closure) types the site in the graph regime (the function part's inferred type reduces to a `∀`
+whose domain is definitionally equal to the argument's inferred type, its binder datum not a
+proposition at that profile); every accepted site whose kernel binder datum is a proposition at
+some other profile is refused by the walk at that profile; the walk's refused positions are
+`runRefused`'s. The counts (sites, site-profile instances, site-profile pairs where the kernel's
+datum holds) are asserted per subject.
+
+And, for the root's checks, on `decide`: the observation `false` (tag `0`) fails `resultTagB` where
+`true` passes (`PUnit.unit` and `Eq.refl` are field-less constructors at index `0` in `Sl` beside
+`Bool.false`, so the check rejects it, as documented; the refusing constants asserted by key, and on
+`fib` `PUnit.unit` alone); an enumeration argument that is not its type's listed constructor fails
+`foArgsB` where `Bool.true` passes; the pinned `Bool` re-pinned at `Nat` fails `boolListedB` where
+the pinned `Bool` passes, and nothing in `groundCheck`. On `tags16`, `Bool.rec`'s `true` rule given
+the `false` rule's right-hand side makes the direct route refuse 5 sites (in one constant); on
+`panic`, `String.ofList`'s codomain made `Nat` makes it refuse 25 more, each holding a string
+literal.
+
+Recursors (G3): with no recursor class admitted the check is the landed one, true on `fib`. On
+`tak` (`fixtures/ixon-v4/bench-k1/tak`), whose one recursor in `Sl` is `Eq.rec` (run by
+`Eq.ndrec`), of class `eqRec`, admitted since part C: every conjunct true (with only the class
+`empty` admitted, as parts A and B landed, exactly `declOk` false); and six controls, each making
+exactly `recShape` false there: `Eq.rec`'s stored rule given the right-hand side `0`, its stored
+type cut by one binder (fewer than the arguments SrcEval takes), `Eq.refl`'s first binder datum
+made `never`; and for `EqRecBasis` (`RecStored` still true, `EqRecBasis` alone false): `Eq.rec`'s
+rule made `λ α a motive refl. a` in the kernel's reading and the program alike, its major
+premise's domain made `@Eq α b a`; and its level-parameter list reversed (refused by `RecStored`,
+since its rule's levels no longer correspond to the program's; `EqRecBasis` does not read the
+list).
+
+On `strictAndOr` (`Bool.rec`, class `flat`, part D) every conjunct is true; on `Sl` cut to the
+recursor and `Bool`'s constructors, a rule's λ-domain changed, its rules swapped and its major
+domain at one more level each make exactly `recShape` false (by `RecTele`, `RecProg`,
+`RecCtorsRaw`). A rule's body made `0` in the reading and the program alike is no longer flat: since
+part E it is of class `noParams` and **admitted** (refused at `declOk` as parts C and D landed it):
+the mutation is consistent between the kernel's reading and the program (ι in the mutated reading
+gives `0`, which SrcEval's evaluation of the literal body gives too), and the theorems are relative
+to the environment as stored. The body made the constant `Bool.true` alike is refused, exactly at
+`recShape`, by `RecBodies` (a rule body may name no constant).
+
+On `tags16` (`T16.rec`, class `noParams`, part E: 16 rules, the last with a field, its body
+`m₁₅ f`) every conjunct is true, and with the classes of part D's first step exactly `declOk` is
+false. On `Sl` cut to the recursor, its constructors and `Bool`'s, four controls each make exactly
+`recShape` false, the part that refuses asserted: the field-carrying constructor's stored field type
+made `Nat → Nat` (`RecFields`), that rule's body made `Bool.true` (`RecBodies`), made `m₁₅ m₁₅`
+(`RecSites`: the direct route refuses the site) and the major premise's binder datum given a level
+parameter the recursor does not have (`RecSites`).
+-/
+
+namespace IxCCTests.Grounding
+
+open IxCC IxCC.Src IxCC.Sem IxCC.Grounding
+open IxCCTests.Src (Assert expect)
+
+/-- A grounding subject: a committed closure and sidecar, its root, the root's arguments and
+the observation SrcEval reads back. -/
+structure Subject where
+  label : String
+  stem : String
+  root : String
+  args : List Value
+  expected : Obs
+  /-- the root's first-order argument types; its result type is `Nat`, or the pinned `Bool` -/
+  argTys : List FoTy
+  boolResult : Bool
+  /-- the kernel oracle's counts: site positions the direct route walks, their site-profile
+  instances, and pairs of an accepted site and a profile at which the kernel's binder datum is a
+  proposition -/
+  oracle : Nat × Nat × Nat
+
+def subjects : List Subject :=
+  [{ label := "fib", stem := "fixtures/ixon-v4/bench-k1/fib", root := "entry", args := [.lit 10],
+     expected := .nat 55, argTys := [.nat], boolResult := false, oracle := (60, 68, 11) },
+   { label := "decide", stem := "fixtures/corpus/grounding/decide",
+     root := "Grounding.decideFib10", args := [], expected := .ctor 1 [], argTys := [],
+     boolResult := true, oracle := (93, 101, 17) }]
+
+/-- What the check runs on. -/
+structure Input where
+  src : Program
+  env : KEnv
+  κ : CId → KKey
+  lpsOf : CId → List Nat
+  ann : Relevance.Ann
+  Sl : List CId
+  rootId : CId
+  /-- the constants of `Sl` the kernel's reading has no key for -/
+  keyless : List CId
+
+/-- The kernel's acceptance, the program SrcEval runs, its annotation, the key map, the level
+parameters and the root's closure; and the kernel's typing core over the closure (the oracle's). -/
+def load (s : Subject) : IO (Input × Oracle.Core) := do
+  let bytes ← IO.FS.readBinFile s!"{s.stem}.ixe"
+  let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile s!"{s.stem}.equations.json"))
+  let k ← match Recheck.ingress bytes json [s.root] with
+    | .ok k => pure k
+    | .error e => throw (IO.userError s!"{s.label}: ingress: {e.render}")
+  let cfg : Recheck.Config := { names := [s.root] }
+  let cfg := cfg.forInput k
+  let P := k.program
+  let (table, _, _) := Src.Table.build cfg.table P k.hints.proposals
+  let p0 := { P with table }
+  let ann ← IO.ofExcept (k.kernel.annotateChecked p0)
+  let (src, _) ← match Src.Recheck.annotation p0 ann with
+    | .ok r => pure r
+    | .error _ => throw (IO.userError s!"{s.label}: the annotation was refused")
+  let some (_, rootId) := src.roots.head? | throw (IO.userError s!"{s.label}: no root")
+  let env := k.kernel.acc.env
+  let κ : CId → KKey := fun c => (k.kernel.rd.key? c).getD Ix.Kernel.natName
+  let lpsOf : CId → List Nat := fun c =>
+    match env.find? (κ c) with
+    | some ci => ci.toConstantVal.levelParams
+    | none => []
+  let pins := [src.known.boolTrue, src.known.boolFalse].filterMap id
+  let mut sl : List CId := rootId :: pins
+  let mut todo : List CId := sl
+  while !todo.isEmpty do
+    let c := todo.head!
+    todo := todo.tail!
+    for t in runTerms src c do
+      for d in constsOf t do
+        if !sl.contains d then
+          sl := sl ++ [d]
+          todo := todo ++ [d]
+  let keyless := sl.filter fun c => (k.kernel.rd.key? c).isNone
+  return ({ src, env, κ, lpsOf, ann, Sl := sl, rootId, keyless }, KernelFront.coreOf k.kernel.fe)
+
+/-- The conjuncts of the check that are false. -/
+def failing (i : Input) : List String :=
+  (checkParts i.src i.env i.κ i.lpsOf i.ann i.Sl).filterMap fun (n, b) => if b then none else some n
+
+/-- Replace the stored constant at `k`. -/
+def mapConst (env : KEnv) (k : KKey)
+    (f : Ix.Kernel.ConstantInfo .anon → Ix.Kernel.ConstantInfo .anon) : KEnv :=
+  { env with consts := env.consts.map fun ci => if ci.name == k then f ci else ci }
+
+/-- The root's stored value replaced by the literal `0`. -/
+def mutateValue (i : Input) : Input :=
+  { i with env := mapConst i.env (i.κ i.rootId) fun
+      | .defnInfo cv _ h => .defnInfo cv (litE 0) h
+      | ci => ci }
+
+/-- The first `eqn` entry of `Sl` whose theorem's right-hand side is replaced by the literal `0`,
+and the entry's name. -/
+def mutateEqn (i : Input) : Option (Input × CId) := do
+  let (c, thm) ← i.Sl.findSome? fun c =>
+    match i.src.table.resolveOf c with
+    | some (.eqn thm _) => some (c, thm)
+    | _ => none
+  let env := mapConst i.env (i.κ thm) fun
+    | .thmInfo cv pf =>
+      match splitAll cv.type with
+      | (Ds, .app X _) => .thmInfo { cv with type := piTele Ds (.app X (litE 0)) } pf
+      | _ => .thmInfo cv pf
+    | ci => ci
+  return ({ i with env }, c)
+
+/-- The annotation's class of the first constant the root's run term may unfold made a type, and
+that constant. -/
+def mutateClass (i : Input) : Option (Input × CId) := do
+  let t ← (runTerms i.src i.rootId).head?
+  let (d, _) ← (evalConsts [] t).head?
+  let r ← i.ann.constRel? d
+  return ({ i with ann := { i.ann with consts := i.ann.consts.insert d { r with result := .type } } }, d)
+
+/-- `Nat.succ`'s stored binder datum made "a proposition where parameter `0` is zero". -/
+def mutateSucc (i : Input) : Input :=
+  { i with env := mapConst i.env Ix.Kernel.natSuccName fun
+      | .ctorInfo cv np nf =>
+        .ctorInfo { cv with type := .forallE natK natK { pw := .ifAllZero [] } } np nf
+      | ci => ci }
+
+/-- The last two minors a `casesOn` value hands its recursor, swapped (under its λs). -/
+def swapLastMinors : KExpr → KExpr
+  | .lam d b m => .lam d (swapLastMinors b) m
+  | e =>
+    let args := e.getAppArgs
+    let n := args.length
+    match args[n - 3]?, args[n - 2]? with
+    | some a, some b => Ix.Kernel.Expr.mkAppN e.getAppFn ((args.set (n - 3) b).set (n - 2) a)
+    | _, _ => e
+
+/-- The first `case` entry of `Sl` whose `casesOn` value has its last two minors swapped, and the
+entry's name. -/
+def mutateCase (i : Input) : Option (Input × CId) := do
+  let c ← i.Sl.find? fun c =>
+    match i.src.table.resolveOf c with
+    | some (.case _) => true
+    | _ => false
+  let env := mapConst i.env (i.κ c) fun
+    | .defnInfo cv val h => .defnInfo cv (swapLastMinors val) h
+    | ci => ci
+  return ({ i with env }, c)
+
+/-- A stored type whose final sort is made `Prop`. -/
+def toProp : KExpr → KExpr
+  | .forallE d b m => .forallE d (toProp b) m
+  | .sort _ => .sort .zero
+  | e => e
+
+/-- The stored inductive at `k` made a family of propositions (its type's final sort `Prop`). -/
+def mutateIndSort (i : Input) (k : KKey) : Input :=
+  { i with env := mapConst i.env k fun
+      | .indInfo cv caps => .indInfo { cv with type := toProp cv.type } caps
+      | ci => ci }
+
+/-- A one-constructor inductive of `Sl` whose constructor is in `Sl` and has fields (what the
+`proj` conjunct asks to be never a proposition). -/
+def projectedStruct (i : Input) : Option CId :=
+  i.Sl.find? fun s =>
+    match i.src.decl? s with
+    | some (.induct _ _ _ _ _ [c]) =>
+      i.Sl.contains c && match i.env.find? (i.κ c) with
+        | some (.ctorInfo _ _ nf) => nf > 0
+        | _ => false
+    | _ => false
+
+/-- Every application site of `Sl`'s run terms (relevant or not), with its constant. -/
+def allRunSites (i : Input) : List (CId × Site) :=
+  i.Sl.flatMap fun c => (runPairsB i.src i.env i.κ c).flatMap fun (t, e) =>
+    (allSites [] t e).map fun s => (c, s)
+
+/-- The refused sites of `Sl`'s run terms (`runRefused`, with the reading's table built once). -/
+def refusedSites (i : Input) : List (CId × Site) :=
+  let tab := KTab.of i.env
+  i.Sl.flatMap fun c => (runPairsB i.src i.env i.κ c).flatMap fun (t, e) =>
+    (runRefusedT tab i.src i.lpsOf i.ann c t e).map fun s => (c, s)
+
+def directOk (i : Input) : Bool := sitesDirectB i.src i.env i.κ i.lpsOf i.ann i.Sl
+
+/-! ### Attribution of the planted controls
+
+A planted control's refusal counts only where the same input unplanted is accepted by the same
+decision, asserted in the same place, and the plant changed what the decision reads (the stored
+record, term or datum differs from the unplanted one); where the decision is a list of parts, the
+parts that refuse are asserted exactly. The helpers below name what a control changed and where its
+decision refuses. -/
+
+/-- A stored constant's type (`none` where the reading does not store it). -/
+def typeAt (env : KEnv) (k : KKey) : Option KExpr := (env.find? k).map (·.toConstantVal.type)
+
+/-- Does a kernel term name the constant `k` anywhere in it? -/
+def namesKey (k : KKey) : KExpr → Bool
+  | .const k' _ => k' == k
+  | .app f a => namesKey k f || namesKey k a
+  | .lam d b _ => namesKey k d || namesKey k b
+  | .forallE d b _ => namesKey k d || namesKey k b
+  | .letE t v b _ => namesKey k t || namesKey k v || namesKey k b
+  | .proj _ _ e => namesKey k e
+  | _ => false
+
+/-- Does a site name the constant `k` in its function, its argument or its context? -/
+def siteNames (k : KKey) (s : Site) : Bool :=
+  namesKey k s.2.1 || namesKey k s.2.2 || s.1.any (namesKey k)
+
+/-- Is a site's head (its function's head) the constant `k`? -/
+def headIs (k : KKey) (s : Site) : Bool :=
+  match s.2.1.getAppFn with
+  | .const k' _ => k' == k
+  | _ => false
+
+/-- Does a kernel term hold a string literal? -/
+def hasStrLitK : KExpr → Bool
+  | .lit (.strVal _) => true
+  | .app f a => hasStrLitK f || hasStrLitK a
+  | .lam d b _ => hasStrLitK d || hasStrLitK b
+  | .forallE d b _ => hasStrLitK d || hasStrLitK b
+  | .letE t v b _ => hasStrLitK t || hasStrLitK v || hasStrLitK b
+  | .proj _ _ e => hasStrLitK e
+  | _ => false
+
+/-- The constants of `Sl` at which `resultTagB` refuses the pinned `Bool`'s observation `tag` (the
+decision is `Sl.all` of a condition per constant), by key. -/
+def tagRefusals (i : Input) (boolD : CId) (tag : Nat) : List KKey :=
+  (i.Sl.filter fun c => !resultTagB i.src i.env i.κ [c] (.enum boolD) (.ctor tag [])).map i.κ
+
+/-- A recursor's stored rules' right-hand sides. -/
+def recRhss (env : KEnv) (k : KKey) : List KExpr :=
+  match env.find? k with
+  | some (.recInfo _ _ _ rules) => rules.map fun (rl : Ix.Kernel.RecRule .anon) => rl.rhs
+  | _ => []
+
+/-- `expect` with its failure message computed only when the assertion fails (several messages
+count refused sites, a walk of the closure). -/
+def expectL (a : Assert) (cond : Bool) (msg : Unit → String) : IO Unit := do
+  unless cond do throw (IO.userError (msg ()))
+  a.modify (· + 1)
+
+/-- (a) The stored type of a constant passed as an argument made `Nat`. -/
+def mutateArgType (i : Input) : Option (Input × KKey) := do
+  let k ← (allRunSites i).findSome? fun (_, _, _, a) =>
+    match a with
+    | .const k _ => match i.env.find? k with
+      | some (.defnInfo cv _ _) => if cv.type != natK then some k else none
+      | _ => none
+    | _ => none
+  return ({ i with env := mapConst i.env k fun
+      | .defnInfo cv v h => .defnInfo { cv with type := natK } v h
+      | ci => ci }, k)
+
+/-- (h) A head constant's first binder datum (`never`) made "always a proposition". -/
+def mutateHeadDatum (i : Input) : Option (Input × KKey) := do
+  let (k, T) ← (allRunSites i).findSome? fun (_, _, f, _) =>
+    match f with
+    | .const k _ => match i.env.find? k with
+      | some ci => match ci.toConstantVal.type with
+        | .forallE d b m =>
+          if m.pw == .never && ci.toConstantVal.levelParams.isEmpty && k != Ix.Kernel.natSuccName then
+            some (k, (.forallE d b { m with pw := .ifAllZero [] } : KExpr))
+          else none
+        | _ => none
+      | none => none
+    | _ => none
+  return ({ i with env := mapConst i.env k fun
+      | .defnInfo cv v h => .defnInfo { cv with type := T } v h
+      | .ctorInfo cv np nf => .ctorInfo { cv with type := T } np nf
+      | .axiomInfo cv => .axiomInfo { cv with type := T }
+      | .thmInfo cv v => .thmInfo { cv with type := T } v
+      | ci => ci }, k)
+
+/-! ## G2b: the widened direct route and the renaming-tolerant `case` shape -/
+
+/-- A closure of the corpus with all its roots (`Sl` the roots' closure), as the corpus
+measurement loads it; the kernel's typing core over it. -/
+def loadClosure (label stem : String) (roots : List String) : IO (Input × Oracle.Core) := do
+  let bytes ← IO.FS.readBinFile s!"{stem}.ixe"
+  let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile s!"{stem}.equations.json"))
+  let k ← match Recheck.ingress bytes json roots with
+    | .ok k => pure k
+    | .error e => throw (IO.userError s!"{label}: ingress: {e.render}")
+  let cfg : Recheck.Config := { names := k.names }
+  let cfg := cfg.forInput k
+  let P := k.program
+  let (table, _, _) := Src.Table.build cfg.table P k.hints.proposals
+  let p0 := { P with table }
+  let ann ← IO.ofExcept (k.kernel.annotateChecked p0)
+  let (src, _) ← match Src.Recheck.annotation p0 ann with
+    | .ok r => pure r
+    | .error _ => throw (IO.userError s!"{label}: the annotation was refused")
+  let rootIds := src.roots.map (·.2)
+  let some rootId := rootIds.head? | throw (IO.userError s!"{label}: no root")
+  let env := k.kernel.acc.env
+  let κ : CId → KKey := fun c => (k.kernel.rd.key? c).getD Ix.Kernel.natName
+  let lpsOf : CId → List Nat := fun c =>
+    match env.find? (κ c) with
+    | some ci => ci.toConstantVal.levelParams
+    | none => []
+  let pins := [src.known.boolTrue, src.known.boolFalse].filterMap id
+  let mut sl : List CId := rootIds ++ pins.filter (fun c => !rootIds.contains c)
+  let mut todo : List CId := sl
+  while !todo.isEmpty do
+    let c := todo.head!
+    todo := todo.tail!
+    for t in runTerms src c do
+      for d in constsOf t do
+        if !sl.contains d then
+          sl := sl ++ [d]
+          todo := todo ++ [d]
+  let keyless := sl.filter fun c => (k.kernel.rd.key? c).isNone
+  return ({ src, env, κ, lpsOf, ann, Sl := sl, rootId, keyless }, KernelFront.coreOf k.kernel.fe)
+
+/-- The stored recursor whose two rules are `Bool.false`'s and `Bool.true`'s. -/
+def boolRec? (env : KEnv) : Option KKey :=
+  env.consts.findSome? fun ci =>
+    match ci with
+    | .recInfo cv _ _ [r0, r1] =>
+      if r0.ctor == Ix.Kernel.boolFalseName && r1.ctor == Ix.Kernel.boolTrueName then some cv.name
+      else none
+    | _ => none
+
+/-- A recursor's second rule given its first rule's right-hand side (for `Bool.rec`: `true` reduces
+as `false` does). Swapping the two right-hand sides is no control here: the sites ι clears read
+`Bool.noConfusionType` at two different constructors, which is the same under the swap. -/
+def mutateRecRules (i : Input) (k : KKey) : Input :=
+  { i with env := mapConst i.env k fun
+      | .recInfo cv mI rP (r0 :: r1 :: rest) =>
+        .recInfo cv mI rP (r0 :: { r1 with rhs := r0.rhs } :: rest)
+      | ci => ci }
+
+/-- `String.ofList`'s stored type with its codomain made `Nat`. -/
+def mutateStringOfList (i : Input) : Input :=
+  let retype : KExpr → KExpr
+    | .forallE d _ m => .forallE d natK m
+    | T => T
+  { i with env := mapConst i.env Ix.Kernel.stringOfListName fun
+      | .defnInfo cv v h => .defnInfo { cv with type := retype cv.type } v h
+      | .ctorInfo cv np nf => .ctorInfo { cv with type := retype cv.type } np nf
+      | .axiomInfo cv => .axiomInfo { cv with type := retype cv.type }
+      | ci => ci }
+
+/-- A `casesOn` value with the levels at which it calls the recursor `kr` reversed (under its λs). -/
+def revRecLevels (kr : KKey) : KExpr → KExpr
+  | .lam d b m => .lam d (revRecLevels kr b) m
+  | e =>
+    match e.getAppFn with
+    | .const k us => if k == kr then Ix.Kernel.Expr.mkAppN (.const k us.reverse) e.getAppArgs else e
+    | _ => e
+
+/-- A `case` entry of `Sl` whose recursor names its level parameters apart from `casesOn`'s (it
+passes `caseShape` only because the shape compares the recursor at the levels `casesOn`'s body
+calls it at), with levels that reversing changes. -/
+def renamedCase? (i : Input) : Option (CId × CId) :=
+  i.Sl.findSome? fun c =>
+    match i.src.table.resolveOf c with
+    | some (.case r) =>
+      match caseShape? i.env (i.κ c) (i.κ r), i.env.find? (i.κ r) with
+      | some sh, some (.recInfo cvr _ _ _) =>
+        if cvr.levelParams.map Ix.Kernel.Level.param != sh.recLevels &&
+            sh.recLevels.reverse != sh.recLevels && caseStoredB i.env (i.κ c) (i.κ r) sh then
+          some (c, r)
+        else none
+      | _, _ => none
+    | _ => none
+
+/-! ## G3: recursors in the checked set -/
+
+/-- The conjuncts of the check that are false with the recursor classes `adm` admitted. -/
+def failingWith (adm : List RecClass) (i : Input) : List String :=
+  (checkPartsWith adm i.src i.env i.κ i.lpsOf i.ann i.Sl).filterMap fun (n, b) =>
+    if b then none else some n
+
+/-- Every recursor class. -/
+def allClasses : List RecClass := [.empty, .eqRec, .flat, .noParams, .ordinary]
+
+/-- The recursor of `Sl` the kernel stores under `Eq.rec`'s key. -/
+def eqRecOf? (i : Input) : Option CId :=
+  i.Sl.find? fun c => i.κ c == Ix.Kernel.eqRecName &&
+    match i.src.decl? c with
+    | some (.recr ..) => true
+    | _ => false
+
+/-- `Eq.rec`'s stored rule given the right-hand side `0`. -/
+def mutateEqRecRule (i : Input) : Input :=
+  { i with env := mapConst i.env Ix.Kernel.eqRecName fun
+      | .recInfo cv mI rP (r0 :: rest) => .recInfo cv mI rP ({ r0 with rhs := litE 0 } :: rest)
+      | ci => ci }
+
+/-- `Eq.rec`'s stored type without its first binder: one `∀` fewer than the arguments SrcEval
+takes. -/
+def mutateEqRecArity (i : Input) : Input :=
+  { i with env := mapConst i.env Ix.Kernel.eqRecName fun
+      | .recInfo cv mI rP rules => .recInfo { cv with type := piBody 1 cv.type } mI rP rules
+      | ci => ci }
+
+/-- `Eq.refl`'s stored type with its first binder datum made `never` (its telescope unchanged, so
+the `ctor` conjunct, which reads its length, is not affected). -/
+def mutateEqRefl (i : Input) : Input :=
+  let redatum : KExpr → KExpr
+    | .forallE d b _ => .forallE d b { pw := .never }
+    | T => T
+  { i with env := mapConst i.env Ix.Kernel.eqReflName fun
+      | .ctorInfo cv np nf => .ctorInfo { cv with type := redatum cv.type } np nf
+      | ci => ci }
+
+/-- A Src term's body under `n` λs replaced by `new`. -/
+def setLamBody : Nat → Term → Term → Term
+  | 0, _, new => new
+  | n + 1, .lam b d t, new => .lam b d (setLamBody n t new)
+  | _ + 1, t, _ => t
+
+/-- `Eq.rec`'s rule made `λ α a motive refl. a`, in the kernel's reading and in the program alike:
+the Src rule still corresponds to the stored one (`RecStored` holds), and only `EqRecBasis`
+refuses it. -/
+def mutateEqRecRhsA (i : Input) (er : CId) : Input :=
+  let env := mapConst i.env Ix.Kernel.eqRecName fun
+    | .recInfo cv mI rP (r0 :: rest) =>
+      .recInfo cv mI rP ({ r0 with rhs := lamTele eqRecPrefix (.bvar 2) } :: rest)
+    | ci => ci
+  let src := match i.src.entry? er with
+    | some e =>
+      match e.decl with
+      | .recr sf kk lv np nmot nmin ni ind (rl :: rest) ty =>
+        let rl' := { rl with rhs := setLamBody 4 rl.rhs (.var 2) }
+        let e' := { e with decl := .recr sf kk lv np nmot nmin ni ind (rl' :: rest) ty }
+        { i.src with consts := i.src.consts.insert er e' }
+      | _ => i.src
+    | none => i.src
+  { i with env, src }
+
+/-- `Eq.rec`'s stored type with its major premise's domain made `@Eq α b a` (the arity unchanged,
+so `RecStored` holds). -/
+def mutateEqRecType (i : Input) : Input :=
+  let ty := piTele (eqRecPrefix ++ [(.bvar 3, bmR), (eqAppK (.bvar 4) (.bvar 0) (.bvar 3), bmR)])
+    eqRecBody
+  { i with env := mapConst i.env Ix.Kernel.eqRecName fun
+      | .recInfo cv mI rP rules => .recInfo { cv with type := ty } mI rP rules
+      | ci => ci }
+
+/-- `Eq.rec`'s level-parameter list reversed (`[1, 0]` to `[0, 1]`), the names inside its type and
+rule unchanged; the level parameters `lpsOf` read off the mutated reading, as `load` computes them. -/
+def mutateEqRecLevels (i : Input) : Input :=
+  let env := mapConst i.env Ix.Kernel.eqRecName fun
+    | .recInfo cv mI rP rules => .recInfo { cv with levelParams := cv.levelParams.reverse } mI rP rules
+    | ci => ci
+  let lpsOf : CId → List Nat := fun c =>
+    match env.find? (i.κ c) with
+    | some ci => ci.toConstantVal.levelParams
+    | none => []
+  { i with env, lpsOf }
+
+/-! ## G3, part D: flat recursors -/
+
+/-- The first flat recursor of `Sl`. -/
+def flatRecOf? (i : Input) : Option CId :=
+  i.Sl.find? fun c => recClassB i.src i.env i.κ c == some .flat
+
+/-- A kernel term with the domain of its `n`-th leading λ replaced by `new`. -/
+def setLamDomK : Nat → KExpr → KExpr → KExpr
+  | 0, .lam _ b m, new => .lam new b m
+  | n + 1, .lam d b m, new => .lam d (setLamDomK n b new) m
+  | _, e, _ => e
+
+/-- A Src term with the domain of its `n`-th leading λ replaced by `new`. -/
+def setLamDomS : Nat → Term → Term → Term
+  | 0, .lam b _ t, new => .lam b new t
+  | n + 1, .lam b d t, new => .lam b d (setLamDomS n t new)
+  | _, t, _ => t
+
+/-- A kernel term's body under `n` λs replaced by `new`. -/
+def setLamBodyK : Nat → KExpr → KExpr → KExpr
+  | 0, _, new => new
+  | k + 1, .lam d b m, new => .lam d (setLamBodyK k b new) m
+  | _ + 1, e, _ => e
+
+/-- A recursor's stored rules and its Src rules mapped alike (`f` on the kernel's list, `g` on the
+program's). -/
+def mapRecRules (i : Input) (r : CId)
+    (f : List (Ix.Kernel.RecRule .anon) → List (Ix.Kernel.RecRule .anon))
+    (g : List Src.Rule → List Src.Rule) : Input :=
+  let env := mapConst i.env (i.κ r) fun
+    | .recInfo cv mI rP rules => .recInfo cv mI rP (f rules)
+    | ci => ci
+  let src := match i.src.entry? r with
+    | some e =>
+      match e.decl with
+      | .recr sf kk lv np nmot nmin ni ind rules ty =>
+        let e' := { e with decl := .recr sf kk lv np nmot nmin ni ind (g rules) ty }
+        { i.src with consts := i.src.consts.insert r e' }
+      | _ => i.src
+    | none => i.src
+  { i with env, src }
+
+/-- The first rule's second λ-domain (the first minor premise's) made the variable `0`, in the
+kernel's reading and the program alike: the rule still corresponds (`RecStored`), its domains are
+no longer the type's (`RecTele`). -/
+def mutateRecTele (i : Input) (r : CId) : Input :=
+  mapRecRules i r
+    (fun | r0 :: rest => { r0 with rhs := setLamDomK 1 r0.rhs (.bvar 0) } :: rest | rs => rs)
+    (fun | r0 :: rest => { r0 with rhs := setLamDomS 1 r0.rhs (.var 0) } :: rest | rs => rs)
+
+/-- The first two rules swapped, in the kernel's reading and the program alike: they still
+correspond position by position (`RecStored`), but the rule at a constructor's index is no longer
+its own (`RecProg`). -/
+def mutateRecProg (i : Input) (r : CId) : Input :=
+  mapRecRules i r (fun | r0 :: r1 :: rest => r1 :: r0 :: rest | rs => rs)
+    (fun | r0 :: r1 :: rest => r1 :: r0 :: rest | rs => rs)
+
+/-- The major premise's domain (after `n` binders) at one more level. -/
+def majorMoreLevels : Nat → KExpr → KExpr
+  | 0, .forallE d b m =>
+    match d.getAppFn with
+    | .const k ls => .forallE (Ix.Kernel.Expr.mkAppN (.const k (ls ++ [.zero])) d.getAppArgs) b m
+    | _ => .forallE d b m
+  | n + 1, .forallE d b m => .forallE d (majorMoreLevels n b) m
+  | _, e => e
+
+/-- The recursor's stored type with its major premise's domain at one more level: no longer at as
+many levels as the rules' constructors have level parameters (`RecCtorsRaw`). -/
+def mutateRecMajor (i : Input) (r : CId) : Input :=
+  { i with env := mapConst i.env (i.κ r) fun
+      | .recInfo cv mI rP rules => .recInfo { cv with type := majorMoreLevels mI cv.type } mI rP rules
+      | ci => ci }
+
+/-- The first rule's body (under `n` λs) made the literal `0`, in the kernel's reading and the
+program alike: it still corresponds (`RecStored`), but the body is not a variable, so the
+recursor is not flat. -/
+def mutateRecBody (i : Input) (r : CId) (n : Nat) : Input :=
+  mapRecRules i r
+    (fun | r0 :: rest => { r0 with rhs := setLamBodyK n r0.rhs (.lit (.natVal 0)) } :: rest
+         | rs => rs)
+    (fun | r0 :: rest => { r0 with rhs := setLamBody n r0.rhs (.natLit 0) } :: rest | rs => rs)
+
+/-! ## G3, part E: recursors without parameters whose rule bodies run -/
+
+/-- The first recursor of `Sl` of class `noParams`. -/
+def noParamsRecOf? (i : Input) : Option CId :=
+  i.Sl.find? fun c => recClassB i.src i.env i.κ c == some .noParams
+
+/-- Rule `j`'s body (under `n` λs) made `newK` in the kernel's reading and `newS` in the program. -/
+def mutateRuleBodyAt (i : Input) (r : CId) (j n : Nat) (newK : KExpr) (newS : Term) : Input :=
+  mapRecRules i r
+    (fun rs => rs.mapIdx fun k rl => if k == j then { rl with rhs := setLamBodyK n rl.rhs newK } else rl)
+    (fun rs => rs.mapIdx fun k rl => if k == j then { rl with rhs := setLamBody n rl.rhs newS } else rl)
+
+/-- A constructor's stored type with its first binder's domain made `Nat → Nat` (its telescope's
+length unchanged). -/
+def mutateCtorField (i : Input) (k : KKey) : Input :=
+  let retype : KExpr → KExpr
+    | .forallE _ b m => .forallE (.forallE natK natK bmN) b m
+    | T => T
+  { i with env := mapConst i.env k fun
+      | .ctorInfo cv np nf => .ctorInfo { cv with type := retype cv.type } np nf
+      | ci => ci }
+
+/-- A kernel `∀`-telescope with the datum of its binder after `n` binders made `m'`. -/
+def setPiMetaK : Nat → KExpr → Ix.Kernel.BinderMeta → KExpr
+  | 0, .forallE d b _, m' => .forallE d b m'
+  | n + 1, .forallE d b m, m' => .forallE d (setPiMetaK n b m') m
+  | _, e, _ => e
+
+/-- The recursor's major premise's binder datum made "a proposition where the level parameter `99`
+is zero", a parameter it does not have. -/
+def mutateMajorDatum (i : Input) (r : CId) : Input :=
+  { i with env := mapConst i.env (i.κ r) fun
+      | .recInfo cv mI rP rules =>
+        .recInfo { cv with type := setPiMetaK mI cv.type { pw := Ix.Kernel.PropWhen.ifAllZero [99] } }
+          mI rP rules
+      | ci => ci }
+
+/-- What `recShape` asks at a recursor of class `noParams`, part by part: `RecStored`, `RecTele`,
+`RecProg`, `RecCtorsRaw`, `RecFields`, `RecBodies`, `RecSites`. -/
+def partsE (i : Input) (r : CId) : List Bool :=
+  [recStoredB i.src i.env i.κ i.lpsOf r, recTeleB i.env (i.κ r), recProgB i.src i.κ i.Sl r,
+    recCtorsRawB i.src i.env i.κ r, recFieldsB i.env (i.κ r), recBodiesB i.src i.env i.κ i.lpsOf r,
+    recSitesB i.src i.env i.κ i.lpsOf r]
+
+/-- `n` nested `Nat.succ`s around `Nat.zero`. -/
+def succs (n : Nat) : KExpr := (List.range n).foldl (fun e _ => .app succK e) zeroK
+
+/-- The kernel as an oracle on a widening closure: every accepted site typed in the graph regime,
+refused where the datum holds, the walk's refusals `runRefused`'s; the counts. -/
+def oracleOn (a : Assert) (label : String) (core : Oracle.Core) (i : Input) : IO Oracle.Tally := do
+  let t := Oracle.tally core i.src i.env i.κ i.lpsOf i.ann i.Sl
+  expect a (t.selfCheckBad == 0 && t.declined == 0)
+    s!"{label}: the walk's verdicts differ from runRefused: {repr t}"
+  expect a (t.agree == t.acceptedInstances && t.disagree == 0 && t.errors == 0)
+    s!"{label}: the kernel does not type an accepted site in the graph regime: {repr t}"
+  expect a (t.refusedThere == t.datumHolds)
+    s!"{label}: a site is accepted at a profile where the kernel's datum holds: {repr t}"
+  return t
+
+/-- The root's result type: `Nat`, or the pinned `Bool`. -/
+def resTy (s : Subject) (i : Input) : Option FoTy :=
+  if s.boolResult then i.src.known.bool.map .enum else some .nat
+
+/-- The arguments' kernel terms. -/
+def argTerms (i : Input) : List Value → List KExpr
+  | [] => []
+  | .lit n :: xs => litE n :: argTerms i xs
+  | .con c _ _ _ :: xs => .const (i.κ c) [] :: argTerms i xs
+  | _ :: xs => litE 0 :: argTerms i xs
+
+def run : IO Bool := do
+  let a : Assert ← IO.mkRef 0
+  try
+    let mut fib? : Option Input := none
+    let mut fcore? : Option Oracle.Core := none
+    let mut dec? : Option (Input × CId) := none
+    for s in subjects do
+      let (i, core) ← load s
+      expect a i.keyless.isEmpty s!"{s.label}: constants of Sl without a kernel key: {i.keyless}"
+      let bad := failing i
+      expect a bad.isEmpty s!"{s.label}: the check's conjuncts {bad} are false"
+      expect a (groundCheck i.src i.env i.κ i.lpsOf i.ann i.Sl)
+        s!"{s.label}: groundCheck is false"
+      let out := match Src.run i.src 100000 i.rootId s.args with
+        | .ok v => readbackAll i.src v
+        | _ => none
+      expect a (out == some s.expected) s!"{s.label}: SrcEval read back {repr out}"
+      -- the root's checks
+      let some res := resTy s i | throw (IO.userError s!"{s.label}: no pinned Bool")
+      let rbad := (rootParts i.src i.env i.κ i.Sl i.ann i.rootId s.argTys res).filterMap
+        fun (n, b) => if b then none else some n
+      expect a rbad.isEmpty s!"{s.label}: the root's conjuncts {rbad} are false"
+      expect a (foArgsB i.src i.κ s.argTys s.args (argTerms i s.args))
+        s!"{s.label}: the arguments are not first-order"
+      expect a (resultTagB i.src i.env i.κ i.Sl res s.expected)
+        s!"{s.label}: the observed tag does not name one constructor"
+      if s.boolResult then
+        let some boolD := i.src.known.bool | throw (IO.userError "decide: no pinned Bool")
+        expect a (boolListedB i.src boolD) "decide: Bool's listed constructor 1 is not Bool.true"
+        dec? := some (i, boolD)
+      IO.println s!"{s.label}: {i.Sl.length} constants, every conjunct of the check and of the \
+        root's checks true; SrcEval reads back {repr out}"
+      -- the direct route (G2a): no site refused
+      expectL a (directOk i) fun _ =>
+        s!"{s.label}: sitesDirect is false: {(refusedSites i).length} sites refused"
+      IO.println s!"{s.label}: sitesDirect true: none of {(allRunSites i).length} application sites \
+        of the run terms refused"
+      -- the kernel as an oracle at every site the direct route accepts
+      let t := Oracle.tally core i.src i.env i.κ i.lpsOf i.ann i.Sl
+      expect a (t.selfCheckBad == 0 && t.declined == 0 && t.accepted == t.sites)
+        s!"{s.label}: the walk's verdicts differ from runRefused, or refuse: {repr t}"
+      expect a (t.agree == t.acceptedInstances && t.disagree == 0 && t.errors == 0)
+        s!"{s.label}: the kernel does not type an accepted site in the graph regime: {repr t}"
+      expect a (t.refusedThere == t.datumHolds)
+        s!"{s.label}: a site is accepted at a profile where the kernel's datum holds: {repr t}"
+      expect a ((t.sites, t.instances, t.datumHolds) == s.oracle)
+        s!"{s.label}: oracle counts {(t.sites, t.instances, t.datumHolds)}, expected {s.oracle}"
+      IO.println s!"{s.label}: the kernel types all {t.acceptedInstances} site-profile instances the \
+        direct route accepts ({t.accepted} sites) in the graph regime; at the {t.datumHolds} \
+        site-profile pairs where its datum is a proposition, the walk refuses"
+      if s.label == "fib" then
+        fib? := some i
+        fcore? := some core
+    let some i := fib? | throw (IO.userError "no fib subject")
+    -- negative controls
+    let v := failing (mutateValue i)
+    expect a (v == ["valueCorr"]) s!"mutated root value: false conjuncts {v}, expected [valueCorr]"
+    let some (ie, c) := mutateEqn i | throw (IO.userError "fib: no eqn entry to mutate")
+    let e := failing ie
+    expect a (e == ["eqnCorr"]) s!"mutated equation theorem of c{c}: false conjuncts {e}, expected [eqnCorr]"
+    let some (ic, d) := mutateClass i | throw (IO.userError "fib: no constant to reclassify")
+    let o := failing ic
+    expect a (o == ["okClosed"]) s!"reclassified c{d}: false conjuncts {o}, expected [okClosed]"
+    let n := failing (mutateSucc i)
+    expect a (n == ["natBasis"]) s!"mutated Nat.succ: false conjuncts {n}, expected [natBasis]"
+    let some (icase, cc) := mutateCase i | throw (IO.userError "fib: no case entry to mutate")
+    let cs := failing icase
+    expect a (cs == ["caseShape"]) s!"swapped minors of c{cc}: false conjuncts {cs}, expected [caseShape]"
+    -- the restricted laws: a `case` over a family that can be a proposition is refused by
+    -- `caseShape`, a projection out of such a structure by `proj`
+    let ns := failing (mutateIndSort i Ix.Kernel.natName)
+    expect a (ns == ["caseShape"])
+      s!"Nat made a family of propositions: false conjuncts {ns}, expected [caseShape]"
+    let pcands : List Input := i :: (dec?.map (·.1)).toList
+    let some (pj, ps) := pcands.findSome? (fun j => (projectedStruct j).map fun s => (j, s))
+      | throw (IO.userError "no structure with fields and its constructor in Sl in either subject")
+    let pp := failing (mutateIndSort pj (pj.κ ps))
+    expect a (pp == ["proj"])
+      s!"structure c{ps} made a family of propositions: false conjuncts {pp}, expected [proj]"
+    -- the direct route's controls: each makes `sitesDirect` false and leaves `groundCheck` true,
+    -- attributed in the same assertion: `fib` unplanted accepted by both, the planted constant's
+    -- stored type changed, and the refused sites counted, each naming the planted constant (the
+    -- argument's: 10 sites, in their function, argument or context; the head's: 3, as their head)
+    let some (ia, ka) := mutateArgType i | throw (IO.userError "fib: no constant argument")
+    let ra := refusedSites ia
+    expectL a (directOk i && (failing i).isEmpty && typeAt i.env ka != typeAt ia.env ka &&
+        typeAt ia.env ka == some natK && !directOk ia && (failing ia).isEmpty && ra.length == 10 &&
+        ra.all (siteNames ka ·.2)) fun _ =>
+      s!"argument {ka}'s stored type made Nat: unplanted sitesDirect {directOk i}, false conjuncts \
+        {failing i}; stored type changed {typeAt i.env ka != typeAt ia.env ka}; planted sitesDirect \
+        {directOk ia}, false conjuncts {failing ia}, {ra.length} sites refused (expected 10), \
+        {(ra.filter (siteNames ka ·.2)).length} of them naming {ka}"
+    let some (ih, kh) := mutateHeadDatum i | throw (IO.userError "fib: no head with a `never` binder")
+    let rh := refusedSites ih
+    expectL a (directOk i && (failing i).isEmpty && typeAt i.env kh != typeAt ih.env kh &&
+        !directOk ih && (failing ih).isEmpty && rh.length == 3 && rh.all (headIs kh ·.2)) fun _ =>
+      s!"head {kh}'s first binder datum made always: unplanted sitesDirect {directOk i}; stored type \
+        changed {typeAt i.env kh != typeAt ih.env kh}; planted sitesDirect {directOk ih}, false \
+        conjuncts {failing ih}, {rh.length} sites refused (expected 3), \
+        {(rh.filter (headIs kh ·.2)).length} of them headed by {kh}"
+    IO.println s!"direct-route controls: argument {ka}'s type made Nat ({ra.length} sites refused, each \
+      naming it), head {kh}'s datum made always a proposition ({rh.length} sites refused, each headed \
+      by it): sitesDirect false, groundCheck true; fib unplanted: both true"
+    IO.println s!"negative controls: each mutation falsifies exactly its conjunct \
+      (valueCorr, eqnCorr, okClosed, natBasis, caseShape at c{cc}; Nat made Prop: caseShape; \
+      structure c{ps} made Prop: proj)"
+    -- the root's checks, on `decide`
+    let some (di, boolD) := dec? | throw (IO.userError "no decide subject")
+    -- `resultTagB` at the observation `false` (tag 0): refused where `true` (tag 1) is accepted, at
+    -- exactly the field-less constructors at index 0 of `Sl` other than `Bool.false`: on `decide`
+    -- `PUnit.unit` and `Eq.refl`, on `fib` `PUnit.unit` alone (until GA the documented reason named
+    -- `PUnit.unit` alone on both)
+    let (r1, r0) := (resultTagB di.src di.env di.κ di.Sl (.enum boolD) (.ctor 1 []),
+      resultTagB di.src di.env di.κ di.Sl (.enum boolD) (.ctor 0 []))
+    let (dt1, dt0) := (tagRefusals di boolD 1, tagRefusals di boolD 0)
+    expect a (r1 && !r0 && dt1.isEmpty && dt0 == [Ix.Kernel.punitUnitName, Ix.Kernel.eqReflName])
+      s!"decide: resultTag at the observation true {r1}, false {r0} (expected the documented \
+        rejection); refused at tag 1 at {dt1}, at tag 0 at {dt0}, expected [PUnit.unit, Eq.refl]"
+    let some fBool := i.src.known.bool | throw (IO.userError "fib: no pinned Bool")
+    let (ft1, ft0) := (tagRefusals i fBool 1, tagRefusals i fBool 0)
+    expect a (ft1.isEmpty && ft0 == [Ix.Kernel.punitUnitName])
+      s!"fib: resultTag of the pinned Bool refused at tag 1 at {ft1}, at tag 0 at {ft0}, expected [PUnit.unit]"
+    -- `foArgsB`: `Bool.true` accepted and `Nat.zero` refused as a `Bool` argument, in one assertion
+    let some natZ := di.src.known.natZero | throw (IO.userError "decide: no pinned Nat.zero")
+    let some tru := di.src.known.boolTrue | throw (IO.userError "decide: no pinned Bool.true")
+    let (fa1, fa0) := (foArgsB di.src di.κ [.enum boolD] [.con tru [] [] []] [.const (di.κ tru) []],
+      foArgsB di.src di.κ [.enum boolD] [.con natZ [] [] []] [.const (di.κ natZ) []])
+    expect a (fa1 && natZ != tru && !fa0)
+      s!"decide: foArgs on Bool.true {fa1} (expected true), on Nat.zero {fa0} (expected false)"
+    -- `boolListedB`: the pinned `Bool` accepted, the pin moved to `Nat` (another inductive) refused
+    let some natD := di.src.known.nat | throw (IO.userError "decide: no pinned Nat")
+    let dm := { di with src := { di.src with known := { di.src.known with bool := some natD } } }
+    expect a (boolListedB di.src boolD && natD != boolD && dm.src.known.bool == some natD &&
+        !boolListedB dm.src natD)
+      s!"decide: boolListed on the pinned Bool {boolListedB di.src boolD}, re-pinned at Nat \
+        {boolListedB dm.src natD}"
+    expect a ((failing di).isEmpty && (failing dm).isEmpty)
+      s!"decide: Bool re-pinned at Nat falsifies {failing dm} (unplanted {failing di})"
+    IO.println s!"root controls on decide: resultTag accepts `true` and rejects `false`, at \
+      {dt0.length} constants of Sl (PUnit.unit, Eq.refl; on fib PUnit.unit alone); foArgs accepts \
+      Bool.true and rejects Nat.zero as a Bool argument; boolListed accepts the pinned Bool and \
+      rejects Bool re-pinned at Nat, groundCheck unaffected"
+    -- G2b. Levels: `imax a a` against `a`, and controls that differ at some assignment
+    let u : Ix.Kernel.Level := .param 0
+    let w : Ix.Kernel.Level := .param 1
+    expect a (lvlEq (.imax u u) u && lvlEq (.imax (.imax .zero u) u) u &&
+        lvlEq (.max (.imax u u) w) (.max u w) && lvlEq (.imax (.imax u w) (.imax u w)) (.imax u w))
+      "lvlEq misses `imax a a` against `a`"
+    expect a (!lvlEq (.imax u w) u && !lvlEq (.imax u u) w && !lvlEq (.imax u .zero) u)
+      "lvlEq equates two levels that differ at some assignment"
+    -- the fuel: a nested argument costs two levels, so 31 nested `Nat.succ`s are typed at the
+    -- check's fuel and 32 are not
+    let xf : DCtx := { tab := KTab.of i.env, lps := [], profs := [[]] }
+    expect a (dInfer xf directFuel [] (succs 31) == some natK && (dInfer xf directFuel [] (succs 32)).isNone)
+      s!"the fuel: 31 nested Nat.succ typed {dInfer xf directFuel [] (succs 31) |>.isSome}, \
+        32 typed {dInfer xf directFuel [] (succs 32) |>.isSome}"
+    -- `Nat` primitives on literals: the direct route's head reduction gives `eval2`'s value, and
+    -- so does the kernel's (fib's reading holds `Nat.add` and `Nat.ble`)
+    let some fcore := fcore? | throw (IO.userError "no fib subject")
+    for (op, x, y) in [(Src.PrimOp.add, 3, 5), (.add, 0, 0), (.ble, 3, 5), (.ble, 5, 3), (.ble, 4, 4)] do
+      let t : KExpr := primApp op x y
+      let exp : KExpr := primResultE (op.eval2 x y)
+      expect a (whnfD xf directFuel false [] t == some exp)
+        s!"{op.name} {x} {y}: the direct route's head reduction gives {repr (whnfD xf directFuel false [] t)}"
+      expect a (match Oracle.kernelWhnf fcore t with | .ok r => r == exp | .error _ => false)
+        s!"{op.name} {x} {y}: the kernel's head normal form is not eval2's value"
+    IO.println "G2b levels, fuel and Nat primitives: lvlEq takes imax a a for a and refuses three \
+      different pairs; 31 nested Nat.succ typed, 32 not; Nat.add and Nat.ble on literals reduce to \
+      eval2's value, as in the kernel"
+    -- ι, `Nat` arithmetic on literals and `imax u u`, on `tags16`: the landed route refused 36 of
+    -- its 200 sites, the widened one none
+    let (ti, tcore) ← loadClosure "tags16" "fixtures/corpus/phase1-boundary/tags16" ["Limits.tags16"]
+    expectL a (directOk ti) fun _ => s!"tags16: sitesDirect is false: {(refusedSites ti).length} sites refused"
+    let tt ← oracleOn a "tags16" tcore ti
+    expect a ((tt.sites, tt.instances, tt.datumHolds) == (200, 214, 76))
+      s!"tags16: oracle counts {(tt.sites, tt.instances, tt.datumHolds)}, expected (200, 214, 76)"
+    let some br := boolRec? ti.env | throw (IO.userError "tags16: no Bool.rec in the reading")
+    let tm := mutateRecRules ti br
+    -- attributed: `tags16` unplanted accepted, `Bool.rec`'s stored rules changed, and exactly 5
+    -- sites refused, all in c36 (sites whose conversion takes ι at `Bool.rec`)
+    let ttr := refusedSites tm
+    expectL a (directOk ti && recRhss ti.env br != recRhss tm.env br && !directOk tm &&
+        ttr.length == 5 && (ttr.map (·.1)).eraseDups == [36]) fun _ =>
+      s!"tags16: Bool.rec's `true` rule given the `false` rule's right-hand side: unplanted \
+        sitesDirect {directOk ti}, rules changed {recRhss ti.env br != recRhss tm.env br}; planted \
+        sitesDirect {directOk tm}, {ttr.length} sites refused (expected 5) in {(ttr.map (·.1)).eraseDups} \
+        (expected [36])"
+    IO.println s!"tags16: sitesDirect true, the kernel agrees at all {tt.acceptedInstances} accepted \
+      site-profile instances; Bool.rec's `true` rule given `false`'s right-hand side: sitesDirect false \
+      ({ttr.length} sites refused, in c36)"
+    -- string literals, on `panic`: the landed route refused 34 of its 762 sites (25 at string
+    -- literals), the widened one 1 (a `Char` validity proof), none since G3's cost fix (a
+    -- telescope's width costs no fuel), the kernel agreeing. 698 sites since the closure carries
+    -- the word equations `ix compile` adds by default (2026-11-13): `UInt32.toNat` and
+    -- `UInt8.ofNat` are word entries, so their reference bodies are no run terms (7 sites each)
+    -- and the constants reached only through them leave `Sl` (`BitVec.ofNat` 20 sites,
+    -- `BitVec.toNat` 19, `Fin.Internal.ofNat` 11, nine with none): 64 sites fewer, all accepted
+    -- before, and every remaining site still accepted. Since step C the walk also visits the
+    -- 405 sites under the `let`s of its run terms and refuses them all (the direct route is
+    -- not extended through a `let`)
+    let (pa, pcore) ← loadClosure "panic" "fixtures/corpus/phase1-decline/panic" ["Decline.withPanic"]
+    let pt ← oracleOn a "panic" pcore pa
+    expect a ((pt.sites, pt.accepted) == (698 + 405, 698))
+      s!"panic: {pt.accepted} of {pt.sites} sites accepted, expected 698 of {698 + 405}"
+    let pm := mutateStringOfList pa
+    -- attributed: `String.ofList`'s stored type changed; the 405 sites refused unplanted (under the
+    -- `let`s) still refused, and exactly 25 more, each holding a string literal (whose type the route
+    -- reads off `String.ofList`) in its function or argument, all in the two constants whose run terms
+    -- hold string literals, c363 and c322 (`IxCCTests.Grounding.Zeta`)
+    let sk := Ix.Kernel.stringOfListName
+    let (paR, pmR) := (refusedSites pa, refusedSites pm)
+    let pnew := pmR.filter (!paR.contains ·)
+    expectL a (typeAt pa.env sk != typeAt pm.env sk && paR.length == 405 && paR.all pmR.contains &&
+        pmR.length == 405 + 25 && pnew.length == 25 &&
+        pnew.all (fun (_, _, f, x) => hasStrLitK f || hasStrLitK x) &&
+        (pnew.map (·.1)).eraseDups == [257, 181]) fun _ =>
+      s!"panic: String.ofList's codomain made Nat: type changed {typeAt pa.env sk != typeAt pm.env sk}; \
+        {paR.length} sites refused unplanted (expected 405), {pmR.length} planted (expected 430), \
+        {pnew.length} new (expected 25), {(pnew.filter fun (_, _, f, x) => hasStrLitK f || hasStrLitK x).length} \
+        of them holding a string literal, in {(pnew.map (·.1)).eraseDups} (expected [257, 181])"
+    IO.println s!"panic: {pt.accepted} of {pt.sites} sites accepted, the kernel agrees at all \
+      {pt.acceptedInstances} accepted instances; String.ofList's codomain made Nat: \
+      {pmR.length} refused, {pnew.length} more, each holding a string literal, in c257 and c181"
+    -- the renaming-tolerant `case` shape, on `OS16-plain`: `List.casesOn`'s recursor names its
+    -- level parameters apart; the landed check refused the closure at `caseShape` alone
+    let (oi, _) ← loadClosure "OS16-plain" "fixtures/ownership/OS16-plain" []
+    expect a (failing oi).isEmpty s!"OS16-plain: the check's conjuncts {failing oi} are false"
+    let some (rc, rr) := renamedCase? oi | throw (IO.userError "OS16-plain: no case entry named apart")
+    let om := { oi with env := mapConst oi.env (oi.κ rc) fun
+      | .defnInfo cv val h => .defnInfo cv (revRecLevels (oi.κ rr) val) h
+      | ci => ci }
+    expect a (failing om == ["caseShape"])
+      s!"OS16-plain: c{rc}'s recursor called at its levels reversed: false conjuncts {failing om}"
+    IO.println s!"OS16-plain: every conjunct of the check true (c{rc}'s recursor named apart); its \
+      levels reversed in casesOn's body: exactly caseShape false"
+    -- G3: recursors. As first landed, `declOk` admitted no class; with none admitted the check
+    -- is the landed one, true on `fib`
+    expect a (failingWith [] i).isEmpty
+      s!"fib: with no recursor class admitted, false conjuncts {failingWith [] i}"
+    -- `tak`: `Eq.rec` (run by `Eq.ndrec`) is its only recursor; since G3's part C its class is
+    -- admitted (F3 proved), and every conjunct of the check is true
+    let (ki, _) ← loadClosure "tak" "fixtures/ixon-v4/bench-k1/tak" ["entry"]
+    let some er := eqRecOf? ki | throw (IO.userError "tak: no Eq.rec in Sl")
+    expect a (recClassB ki.src ki.env ki.κ er == some .eqRec && admittedClasses.contains .eqRec &&
+        eqRecBasisB ki.env && (failing ki).isEmpty)
+      s!"tak: Eq.rec c{er} class {repr (recClassB ki.src ki.env ki.κ er)}, EqRecBasis {eqRecBasisB ki.env}, false conjuncts {failing ki}, expected none"
+    expect a (failingWith [.empty] ki == ["declOk"])
+      s!"tak: with only the class empty admitted (parts A and B), false conjuncts {failingWith [.empty] ki}, expected [declOk]"
+    -- controls: each makes exactly `recShape` false
+    let kr := failing (mutateEqRecRule ki)
+    expect a (kr == ["recShape"]) s!"tak: Eq.rec's rule rhs made 0: false conjuncts {kr}, expected [recShape]"
+    let ka := failing (mutateEqRecArity ki)
+    expect a (ka == ["recShape"]) s!"tak: Eq.rec's type cut by one binder: false conjuncts {ka}, expected [recShape]"
+    let kf := failing (mutateEqRefl ki)
+    expect a (kf == ["recShape"]) s!"tak: Eq.refl's first binder datum made never: false conjuncts {kf}, expected [recShape]"
+    -- `EqRecBasis`' own controls: `RecStored` still holds, `EqRecBasis` alone is false
+    let mA := mutateEqRecRhsA ki er
+    let kA := failing mA
+    expect a (kA == ["recShape"] && recStoredB mA.src mA.env mA.κ mA.lpsOf er && !eqRecBasisB mA.env)
+      s!"tak: Eq.rec's rule made λ α a motive refl. a (kernel and program): false conjuncts {kA}, RecStored {recStoredB mA.src mA.env mA.κ mA.lpsOf er}, EqRecBasis {eqRecBasisB mA.env}"
+    let mT := mutateEqRecType ki
+    let kT := failing mT
+    expect a (kT == ["recShape"] && recStoredB mT.src mT.env mT.κ mT.lpsOf er && !eqRecBasisB mT.env)
+      s!"tak: Eq.rec's major domain made @Eq α b a: false conjuncts {kT}, RecStored {recStoredB mT.src mT.env mT.κ mT.lpsOf er}, EqRecBasis {eqRecBasisB mT.env}"
+    -- the level parameters permuted: `EqRecBasis` does not read them; `RecStored` refuses it, since
+    -- the rule's levels no longer correspond to the program's
+    let mL := mutateEqRecLevels ki
+    let kL := failing mL
+    expect a (kL == ["recShape"] && !recStoredB mL.src mL.env mL.κ mL.lpsOf er && eqRecBasisB mL.env)
+      s!"tak: Eq.rec's level parameters reversed: false conjuncts {kL}, RecStored {recStoredB mL.src mL.env mL.κ mL.lpsOf er}, EqRecBasis {eqRecBasisB mL.env}"
+    IO.println s!"tak: Eq.rec c{er} of class eqRec, admitted; every conjunct true (with only the \
+      class empty admitted, declOk false); Eq.rec's rule rhs made 0, its type cut by one binder, \
+      Eq.refl's first binder datum changed, its rule made λ α a motive refl. a (EqRecBasis), its \
+      major domain swapped (EqRecBasis), its level parameters reversed (RecStored): exactly recShape false"
+    -- G3, part D: flat recursors (no parameter, no field, rule bodies variables). `strictAndOr`:
+    -- its recursor `Bool.rec` (run by `Bool.and`, `Bool.or`) is flat, admitted since part D, and
+    -- every conjunct is true; with the classes part C admitted, `declOk` alone is false
+    let (si, _) ← loadClosure "strictAndOr" "fixtures/corpus/phase1-scalar/strictAndOr"
+      ["entryStrictOr", "entryStrictAnd"]
+    let some fr := flatRecOf? si | throw (IO.userError "strictAndOr: no flat recursor in Sl")
+    expect a ((failing si).isEmpty && admittedClasses.contains .flat)
+      s!"strictAndOr: false conjuncts {failing si}, expected none"
+    expect a (failingWith [.empty, .eqRec] si == ["declOk"])
+      s!"strictAndOr: with the classes of part C, false conjuncts {failingWith [.empty, .eqRec] si}, expected [declOk]"
+    -- controls, on `Sl` cut to the flat recursor and `Bool`'s constructors: the closure's
+    -- `Bool.casesOn` reads the same stored recursor, so on the whole `Sl` a control on it also
+    -- falsifies `caseShape`. Each makes exactly `recShape` false (or, for the class, `declOk`),
+    -- and the suite asserts which part refuses
+    let ri := { si with Sl := fr :: [si.src.known.boolFalse, si.src.known.boolTrue].filterMap id }
+    expect a (failing ri).isEmpty
+      s!"strictAndOr cut to c{fr} and Bool's constructors: false conjuncts {failing ri}, expected none"
+    let parts (j : Input) : List Bool :=
+      [recStoredB j.src j.env j.κ j.lpsOf fr, recTeleB j.env (j.κ fr), recProgB j.src j.κ j.Sl fr,
+        recCtorsRawB j.src j.env j.κ fr]
+    let mT := mutateRecTele ri fr
+    expect a (failing mT == ["recShape"] && parts mT == [true, false, true, true])
+      s!"strictAndOr: Bool.rec's first rule's second λ-domain made #0 (kernel and program): false conjuncts {failing mT}, parts (RecStored, RecTele, RecProg, RecCtorsRaw) {parts mT}"
+    let mP := mutateRecProg ri fr
+    expect a (failing mP == ["recShape"] && parts mP == [true, true, false, true])
+      s!"strictAndOr: Bool.rec's two rules swapped (kernel and program): false conjuncts {failing mP}, parts {parts mP}"
+    let mC := mutateRecMajor ri fr
+    expect a (failing mC == ["recShape"] && parts mC == [true, true, true, false])
+      s!"strictAndOr: Bool.rec's major domain at one more level: false conjuncts {failing mC}, parts {parts mC}"
+    let nPre := match si.src.decl? fr with
+      | some (.recr _ _ _ np nmot nmin _ _ _ _) => np + nmot + nmin
+      | _ => 0
+    -- a rule's body made `0` alike: not flat, so (since part E) of class `noParams`, and admitted:
+    -- the mutation is consistent between the kernel's reading and the program (ι in the mutated
+    -- reading gives `0` too, and SrcEval evaluates the literal), and the theorems are relative to the
+    -- environment as stored. As parts C and D landed it, this control was refused at `declOk`
+    let mB := mutateRecBody ri fr nPre
+    expect a ((failing mB).isEmpty && recClassB mB.src mB.env mB.κ fr == some .noParams)
+      s!"strictAndOr: Bool.rec's first rule's body made 0 (kernel and program): false conjuncts {failing mB}, class {repr (recClassB mB.src mB.env mB.κ fr)}, expected none and noParams"
+    -- the refusing variant: the body made a constant alike (`Bool.true`), which a rule body may not
+    -- name (`RecBodies`): exactly `recShape`
+    let some stru := si.src.known.boolTrue | throw (IO.userError "strictAndOr: no pinned Bool.true")
+    let mBc := mutateRuleBodyAt ri fr 0 nPre (.const Ix.Kernel.boolTrueName []) (.const stru [])
+    expect a (failing mBc == ["recShape"] && recClassB mBc.src mBc.env mBc.κ fr == some .noParams &&
+        partsE mBc fr == [true, true, true, true, true, false, true])
+      s!"strictAndOr: Bool.rec's first rule's body made Bool.true (kernel and program): false conjuncts {failing mBc}, parts {partsE mBc fr}"
+    IO.println s!"strictAndOr: Bool.rec c{fr} of class flat, admitted; every conjunct true (with the \
+      classes of part C, declOk false); cut to c{fr} and Bool's constructors: a rule's λ-domain \
+      changed (RecTele), its rules swapped (RecProg), its major domain at one more level \
+      (RecCtorsRaw): exactly recShape false; a rule's body made 0: not flat, of class noParams, \
+      admitted; made Bool.true: exactly recShape false (RecBodies)"
+    -- G3, part E: recursors without parameters whose rule bodies run (`noParams`). `tags16`: its
+    -- recursor `T16.rec` (16 rules, the last with a field, its body `m₁₅ f`) is of class
+    -- `noParams`, admitted since part E, and every conjunct is true; with the classes of part D's
+    -- first step, `declOk` alone is false
+    let some tr := noParamsRecOf? ti
+      | throw (IO.userError "tags16: no recursor of class noParams in Sl")
+    expect a ((failing ti).isEmpty && admittedClasses.contains .noParams)
+      s!"tags16: false conjuncts {failing ti}, expected none"
+    expect a (failingWith [.empty, .eqRec, .flat] ti == ["declOk"])
+      s!"tags16: with the classes of part D's first step, false conjuncts {failingWith [.empty, .eqRec, .flat] ti}, expected [declOk]"
+    let some (.recr _ _ _ _ tnmot tnmin _ _ trules _) := ti.src.decl? tr
+      | throw (IO.userError s!"tags16: c{tr} is not a recursor")
+    let jF := trules.length - 1
+    let some rlF := trules[jF]? | throw (IO.userError "tags16: the recursor has no rules")
+    expect a (rlF.fields == 1) s!"tags16: the last rule has {rlF.fields} fields, expected 1"
+    -- controls, on `Sl` cut to the recursor, its constructors and `Bool`'s (the pins); each makes
+    -- exactly `recShape` false, and the suite asserts which part refuses
+    let tc := { ti with Sl := tr :: (trules.map (·.ctor) ++
+      [ti.src.known.boolFalse, ti.src.known.boolTrue].filterMap id) }
+    expect a ((failing tc).isEmpty && partsE tc tr == [true, true, true, true, true, true, true])
+      s!"tags16 cut to c{tr} and the constructors: false conjuncts {failing tc}, parts {partsE tc tr}"
+    let nPreT := tnmot + tnmin
+    -- `RecFields`: the field-carrying constructor's stored field type made `Nat → Nat`
+    let mFd := mutateCtorField tc (tc.κ rlF.ctor)
+    expect a (failing mFd == ["recShape"] && partsE mFd tr == [true, true, true, true, false, true, true])
+      s!"tags16: c{rlF.ctor}'s field type made Nat → Nat: false conjuncts {failing mFd}, parts {partsE mFd tr}"
+    -- `RecBodies`: that rule's body made `Bool.true` (kernel and program alike)
+    let some ttru := tc.src.known.boolTrue | throw (IO.userError "tags16: no pinned Bool.true")
+    let mBd := mutateRuleBodyAt tc tr jF (nPreT + 1) (.const Ix.Kernel.boolTrueName []) (.const ttru [])
+    expect a (failing mBd == ["recShape"] && partsE mBd tr == [true, true, true, true, true, false, true])
+      s!"tags16: the last rule's body made Bool.true (kernel and program): false conjuncts {failing mBd}, parts {partsE mBd tr}"
+    -- `RecSites`: that rule's body made `m₁₅ m₁₅` alike (the minor premise applied to itself: the
+    -- direct route refuses the site, the argument is not a `Nat`)
+    let mSt := mutateRuleBodyAt tc tr jF (nPreT + 1) (.app (.bvar 1) (.bvar 1))
+      (.app (.var 1) (.var 1) .strict .rel)
+    expect a (failing mSt == ["recShape"] && partsE mSt tr == [true, true, true, true, true, true, false])
+      s!"tags16: the last rule's body made m₁₅ m₁₅ (kernel and program): false conjuncts {failing mSt}, parts {partsE mSt tr}"
+    -- `RecSites`: the major premise's binder datum made "a proposition where the parameter 99 is
+    -- zero", a parameter the recursor does not have (the profiles where it fails are not decided)
+    let mDt := mutateMajorDatum tc tr
+    expect a (failing mDt == ["recShape"] && partsE mDt tr == [true, true, true, true, true, true, false])
+      s!"tags16: the major premise's datum made ifAllZero [99]: false conjuncts {failing mDt}, parts {partsE mDt tr}"
+    IO.println s!"tags16: T16.rec c{tr} of class noParams, admitted; every conjunct true (with the \
+      classes of part D's first step, declOk false); cut to c{tr} and the constructors: a \
+      constructor's field type changed (RecFields), the field rule's body made Bool.true \
+      (RecBodies), made m m (RecSites), the major premise's datum given an undefined parameter \
+      (RecSites): exactly recShape false"
+    IO.println s!"tests-grounding: {← a.get} assertions passed"
+    return true
+  catch error =>
+    IO.eprintln s!"FAIL: grounding: {error}"
+    return false
+
+end IxCCTests.Grounding

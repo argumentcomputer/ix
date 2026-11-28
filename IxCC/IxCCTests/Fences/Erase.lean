@@ -1,0 +1,804 @@
+import IxCC.Lam.WordSem
+import IxCC.Src.Proof.Mono
+import IxCC.Src.Word
+import IxCC.Lam.Proof.Mono
+import IxCC.Lam.Erase.Proof.Correct
+import IxCC.Src.Relevance.Proof.Sound
+import IxCC.Src.Relevance.Proof.Canonical
+import IxCC.Src.Relevance.Proof.P1.Defs
+import IxCC.Src.Relevance.Proof.P1.Basic
+import IxCC.Src.Relevance.Proof.P1.Cases
+import IxCC.Src.Relevance.Proof.P1.Recr
+import IxCC.Src.Relevance.Proof.P1.Ctor
+import IxCC.Src.Relevance.Proof.P1.Delta
+import IxCC.Src.Relevance.Proof.P1.Plumbing
+import IxCC.Src.Relevance.Proof.P1.CaseKey
+import IxCC.Src.Relevance.Proof.P1.App
+import IxCC.Src.Relevance.Proof.P1.Main
+import IxCC.Lam.Erase.Proof.ModesOk
+import IxCC.Lam.Erase.Proof.WFProg
+
+/-! Required axiom fences for the source-to-Lam theorems: clock
+monotonicity of SrcEval and Lam, erasure's correctness, the relevance
+checker's soundness, and the fixed-width words' lemmas (stage W1: the range lemma
+`WordOp.eval_word_lt`, the width facts it uses, F6w's unfolding `fire_word`, and erasure's word
+case).
+Expected messages are preserved verbatim. -/
+
+/-- info: 'IxCC.Src.eval_mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.eval_mono
+
+/-- info: 'IxCC.Src.WordOp.eval_word_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.WordOp.eval_word_lt
+
+/-- info: 'IxCC.Src.Width.size_pos' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Src.Width.size_pos
+
+/-- info: 'IxCC.Src.Width.bits_pos' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Src.Width.bits_pos
+
+/-- info: 'IxCC.Src.Width.size_le_of_bits_le' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Src.Width.size_le_of_bits_le
+
+/-- info: 'IxCC.Src.fire_word' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.fire_word
+
+/-- info: 'IxCC.Src.apply_mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.apply_mono
+
+/-- info: 'IxCC.Src.applyAll_mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.applyAll_mono
+
+/-- info: 'IxCC.Src.fire_mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.fire_mono
+
+/-- info: 'IxCC.Src.force_mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.force_mono
+
+/-- info: 'IxCC.Src.forceAll_mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.forceAll_mono
+
+/-- info: 'IxCC.Src.evalConst_mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.evalConst_mono
+
+/-- info: 'IxCC.Src.run_mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.run_mono
+
+/-- info: 'IxCC.Lam.eval_mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.eval_mono
+
+/-- info: 'IxCC.Lam.apply_mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.apply_mono
+
+/-- info: 'IxCC.Lam.force_mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.force_mono
+
+/-- info: 'IxCC.Lam.evalList_mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.evalList_mono
+
+/-- info: 'IxCC.Lam.applyAll_mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.applyAll_mono
+
+/-- info: 'IxCC.Lam.run_mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.run_mono
+
+/-! Erasure's simulation and correctness. -/
+
+/-- info: 'IxCC.Lam.Erase.Proof.erase_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.erase_correct
+
+/-- info: 'IxCC.Lam.Erase.Proof.erase_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.erase_refines
+
+/-- info: 'IxCC.Lam.Erase.Proof.erase_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.erase_spec
+
+/-- info: 'IxCC.Lam.Erase.Proof.readback_erase' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.readback_erase
+
+/-- info: 'IxCC.Lam.Erase.Proof.readback_erase_nat' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.readback_erase_nat
+
+/-- info: 'IxCC.Lam.Erase.Proof.vr_eraseVal' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.vr_eraseVal
+
+/-- info: 'IxCC.Lam.Erase.Proof.vr_obs' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.vr_obs
+
+/-- info: 'IxCC.Lam.Erase.Proof.Setting.level' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.Setting.level
+
+/-- info: 'IxCC.Lam.Erase.Proof.Setting.tr_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.Setting.tr_correct
+
+/-- info: 'IxCC.Lam.Erase.Proof.Setting.apply_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.Setting.apply_correct
+
+/-- info: 'IxCC.Lam.Erase.Proof.Setting.run_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.Setting.run_correct
+
+/-- info: 'IxCC.Lam.Erase.Proof.sound_term' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.sound_term
+
+/-- info: 'IxCC.Sem.SimUpTo.sim' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Sem.SimUpTo.sim
+
+/-! The relevance checker's soundness (tier S). -/
+
+/-- info: 'IxCC.Src.Relevance.Proof.check_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.check_sound
+
+/-- info: 'IxCC.Src.Relevance.Proof.loop_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.loop_spec
+
+/-- info: 'IxCC.Src.Relevance.Proof.visit_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.visit_spec
+
+/-- info: 'IxCC.Src.Relevance.Proof.records_nil' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.records_nil
+
+/-- info: 'IxCC.Src.Relevance.Proof.term_nil' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.term_nil
+
+/-- info: 'IxCC.Src.Relevance.Proof.rest_nil' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.rest_nil
+
+/-- info: 'IxCC.Src.Relevance.Proof.subsingletonFields_nil' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.subsingletonFields_nil
+
+/-! C3's refusal of an eliminator away from a saturated spine only adds errors. -/
+
+/-- info: 'IxCC.Src.Relevance.Proof.adds_partialElim' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.adds_partialElim
+
+/-- info: 'IxCC.Src.Relevance.Proof.bareHead_constHead' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.bareHead_constHead
+
+/-! The closure loop over any fact the term walk gives (`visit_spec` and `loop_spec` are its
+tier-S instances, `check_soundC` its tier-C one). -/
+
+/-- info: 'IxCC.Src.Relevance.Proof.visit_specQ' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.visit_specQ
+
+/-- info: 'IxCC.Src.Relevance.Proof.LoopInvQ.transfer' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.LoopInvQ.transfer
+
+/-- info: 'IxCC.Src.Relevance.Proof.loop_visitQ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.loop_visitQ
+
+/-- info: 'IxCC.Src.Relevance.Proof.loop_specQ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.loop_specQ
+
+/-- info: 'IxCC.Src.Relevance.Proof.instsQ_of_loop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.instsQ_of_loop
+
+/-- info: 'IxCC.Src.Relevance.Proof.check_instsQ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.check_instsQ
+
+/-! The relevance checks' facts as propositions (L1): tier C (`check_soundC`), the pairing C3
+uses at a recursor, `checkCanonical`'s facts and the three facts about positions written erased. -/
+
+/-- info: 'IxCC.Src.Relevance.Proof.term_nilC' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.term_nilC
+
+/-- info: 'IxCC.Src.Relevance.Proof.check_soundC' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.check_soundC
+
+/-- info: 'IxCC.Src.Relevance.Proof.elimShape_recr_minors' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.elimShape_recr_minors
+
+/-- info: 'IxCC.Src.Relevance.Proof.checkCanonical_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.checkCanonical_sound
+
+/-- info: 'IxCC.Src.Relevance.Proof.param_erased_irr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.param_erased_irr
+
+/-- info: 'IxCC.Src.Relevance.Proof.field_erased_dropped' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.field_erased_dropped
+
+/-- info: 'IxCC.Src.Relevance.Proof.arg_erased_irr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.arg_erased_irr
+
+/-- info: 'IxCC.Src.Relevance.Proof.headArityOf_eq' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.headArityOf_eq
+
+/-- info: 'IxCC.Src.Relevance.Proof.erased_lt_arity' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.erased_lt_arity
+
+/-! P1's definitions (`Relevance.Proof.P1.Defs`; P1 is proved in `Relevance.Proof.P1.Main`, below): a
+marker is never `Live`. -/
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.live_not_irr' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.live_not_irr
+
+/-! P1's core (`Relevance.Proof.P1.Basic`, `Measure`, `Cases`): its first lemmas, the induction's
+measure, the five cases proved in `Cases`, and `preserve_of_cases` and `pre_step_of_cases` from the
+25 cases (`Cases`, a hypothesis, which `cases_all` in `Relevance.Proof.P1.Main` discharges). -/
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.termC_peel' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.termC_peel
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.wholeTerm_of_termC' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.wholeTerm_of_termC
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.not_shieldedIn_lam' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.not_shieldedIn_lam
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.envOk_lam' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.envOk_lam
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.resolve_none_of_recr' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.resolve_none_of_recr
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.ruleTermC' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.ruleTermC
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.recr_no_erased' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.recr_no_erased
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.callLt_wf' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.callLt_wf
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.lex_trans' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.lex_trans
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.callLt_trans' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.callLt_trans
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.step_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.step_lt
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.transGen_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.transGen_lt
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.reach_transGen' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.reach_transGen
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_sort' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_sort
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_pi
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_natLit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_natLit
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_strLit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_strLit
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_F4' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_F4
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_recr_of' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_recr_of
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_all_of' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_all_of
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.core_of_cases' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.core_of_cases
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.preserve_of_cases' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.preserve_of_cases
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.pre_step_of_cases' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.pre_step_of_cases
+
+/-! P1's core, F2 (`Relevance.Proof.P1.Recr`) and the lemmas it adds to `Basic`. -/
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.peelLams_eq_peelLamsN' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.peelLams_eq_peelLamsN
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.lamRels_length_of_peel' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.lamRels_length_of_peel
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.univsOk_peel' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.univsOk_peel
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.relevantRefs_append' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.relevantRefs_append
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.mem_foldl_relevantRefs' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.mem_foldl_relevantRefs
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.refsHandled_runtime' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.refsHandled_runtime
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.refs_peel' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.refs_peel
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.rev_get' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.rev_get
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.mentionsVar_go' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.mentionsVar_go
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.mentionsVar_arg' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.mentionsVar_arg
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.ruleDispatch_some' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.ruleDispatch_some
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.headArity_recr' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.headArity_recr
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.fire_recr_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.fire_recr_ok
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.frame_F2' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.frame_F2
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_F2' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_F2
+
+/-! P1's core, F3 (`Relevance.Proof.P1.Recr`): a subsingleton recursor fired. -/
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.frame_F3' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.frame_F3
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_F3' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_F3
+
+/-! P1's core, the constructor values (`Relevance.Proof.P1.Ctor`): E6, F1, F7, F8 and the lemmas they
+share, marked for `Basic` and not yet moved. -/
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.tg_head' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.tg_head
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.mem_of_mem_drop'' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.mem_of_mem_drop'
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.agree_profileOf' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.agree_profileOf
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.ofRel_dropWhen' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.ofRel_dropWhen
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.ch_ctorRel' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.ch_ctorRel
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.decl_of_fieldWrittenErased' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.decl_of_fieldWrittenErased
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.decl_of_isQuotCtor' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.decl_of_isQuotCtor
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.decl_of_quotMk' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.decl_of_quotMk
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.erasedMinors_true' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.erasedMinors_true
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.minorsIgnore_of_whole' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.minorsIgnore_of_whole
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.forceAll_ok_get' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.forceAll_ok_get
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.force_live' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.force_live
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.readsField_ctor_false' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.readsField_ctor_false
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_proj' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_proj
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_ctor' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_ctor
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_quotMk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_quotMk
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.fire_quotLift_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.fire_quotLift_ok
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_quotLift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_quotLift
+
+/-! P1's core, δ (`Relevance.Proof.P1.Delta`): E8, δ, `headValue`, F6, F6w and their lemmas, those
+marked for `Basic` not yet moved. -/
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.elimShape_arity_pos' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.elimShape_arity_pos
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.wholeTerm_const_elim' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.wholeTerm_const_elim
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.wholeTerm_const' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.wholeTerm_const
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.whole_con' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.whole_con
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.whole_lit' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.whole_lit
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.whole_irr' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.whole_irr
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.live_con_of_fields' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.live_con_of_fields
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.fireOk_live_of_none' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.fireOk_live_of_none
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.boolValue_ok' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.boolValue_ok
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.wordValue_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.wordValue_ok
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_const' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_const
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_evalConst' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_evalConst
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_headValue' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_headValue
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_prim' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_prim
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_word' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_word
+
+/-! P1's core, the plumbing (`Relevance.Proof.P1.Plumbing`): E1, E4, E5, A1–A3, `applyAll`, `force`,
+`forceAll` and the frame lemmas marked for `Basic`, not yet moved. -/
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.frame_termOk' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.frame_termOk
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.frame_of_termOk' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.frame_of_termOk
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.liveSlot_name_frame' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.liveSlot_name_frame
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_var' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_var
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_lam' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_lam
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_letE' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_letE
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_apply' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_apply
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_applyAll' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_applyAll
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_force' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_force
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_forceAll' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_forceAll
+
+/-! P1's core, a `case` key fired (`Relevance.Proof.P1.CaseKey`): F5 and its lemmas. -/
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.ignoresAt_clo' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.ignoresAt_clo
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.ignoresAt_stuck' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.ignoresAt_stuck
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.ignoresAt_of_slot' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.ignoresAt_of_slot
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.slotFits_of_ignores' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.slotFits_of_ignores
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.slotFits_of_live' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.slotFits_of_live
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.allFit_chain' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.allFit_chain
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.resolve_of_cases' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.resolve_of_cases
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.cases_not_erased' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.cases_not_erased
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.headArity_cases' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.headArity_cases
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.elimShape_cases' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.elimShape_cases
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.fire_cases_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.fire_cases_ok
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.fire_cases_decl' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.fire_cases_decl
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.pre_force_getD' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.pre_force_getD
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.fields_F5' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.fields_F5
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_cases' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_cases
+
+/-! P1's core, an application (`Relevance.Proof.P1.App`): E7 and its lemmas. -/
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.spineL_mkApps'' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.spineL_mkApps'
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.wholeTerm_of_head' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.wholeTerm_of_head
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.shieldedIn_app' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.shieldedIn_app
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.envOk_fun' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.envOk_fun
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.envOk_arg' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.envOk_arg
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.frame_app_parts' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.frame_app_parts
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.frame_fun' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.frame_fun
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.frame_arg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.frame_arg
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.not_shielded_of_ne' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.not_shielded_of_ne
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.not_shielded_fun' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.not_shielded_fun
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.slotOf_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.slotOf_step
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.exists_of_not_whole' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.exists_of_not_whole
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.pap_of_not_whole' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.pap_of_not_whole
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.headArity_of_shape' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.headArity_of_shape
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.evalConst_elim' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.evalConst_elim
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.unroll' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.unroll
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.minorsIgnore_snoc' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.minorsIgnore_snoc
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.ruleCtorFields_rel' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.ruleCtorFields_rel
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.dropP_of_alwaysDropped' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.dropP_of_alwaysDropped
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.ignoresSlot_of_headC' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.ignoresSlot_of_headC
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.ignoresSlot_of_slotOf' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.ignoresSlot_of_slotOf
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.pre_apply' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.pre_apply
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.case_app' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.case_app
+
+/-! P1, relevance preservation (`Relevance.Proof.P1.Main`): the 25 cases collected (`cases_all`),
+`preserve`, `pre_step`, `reads_live` and the root `run_live`, under `Facts`, `ShapeOk` and the sort
+events (`SortAgree`, `RunSortAgree`), which nothing proves. -/
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.cases_all' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.cases_all
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.preserve' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.preserve
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.pre_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.pre_step
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.isIrr_of_selectRule' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.isIrr_of_selectRule
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.reads_live' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.reads_live
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.agree_nil_normalize' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.agree_nil_normalize
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.allFit_lits' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.allFit_lits
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.run_live' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.run_live
+
+namespace IxCC.Src.Relevance.Proof.L1Repair
+
+open IxCC.Src IxCC.Src.Relevance IxCC.Src.Relevance.Check IxCC.Src.Relevance.Check.Canonical
+open IxCC.Src.Relevance.Proof
+
+/-! L1's statements as first approved stated `CtorCanon` without the length of the classified
+telescope past the parameters (`checkCanonical`'s `flds.length == nf`), and under that predicate
+`field_erased_dropped` is false: a constructor declared with no fields whose type has one Π
+binder, written erased, satisfies it. The repaired `CtorCanon` excludes that constructor. -/
+
+/-- `CtorCanon` as first approved. -/
+private def CtorCanonFirst (p : Program) (ann : Ann) (c : CId) (kr : CtorRel) : Prop :=
+  ∃ sf lv ind cidx np nf ty, p.decl? c = some (.ctor sf lv ind cidx np nf ty) ∧
+    kr.fields.length = nf ∧
+    (∀ cr, ann.constRel? c = some cr → (cr.params.drop np).map FieldClass.ofRel = kr.fields) ∧
+    ∀ (i : Nat) (actual : FieldClass) (b : Binder) (exp : Option Rel), kr.fields[i]? = some actual →
+      ((classifyTelescope p [] (ty.piCount + 1) ty).1.drop np)[i]? = some (b, exp) →
+      actual ≠ .proof .never ∧
+      (if writtenErased b then actual.alwaysDropped = true
+       else actual = (match exp with | some e => FieldClass.ofRel e | none => .keep))
+
+/-- One Π binder, written erased. -/
+private def cexTy : Term := .pi { mode := .erased } (.sort .zero) (.sort .zero)
+
+/-- No parameters, declared with no fields, the type `cexTy`. -/
+private def cexP : Program :=
+  Program.ofConsts [{ ref := default, addr := default, decl := .ctor true 0 0 0 0 0 cexTy }]
+
+example : ¬ (∀ {p : Program} {ann : Ann} {k : CId} {kr : CtorRel}, CtorCanonFirst p ann k kr →
+    ∀ {i : Nat}, fieldWrittenErased p k i = true →
+      ∃ cls, kr.fields[i]? = some cls ∧ cls.alwaysDropped = true) := fun h => by
+  have hc : CtorCanonFirst cexP {} 0 ⟨[]⟩ :=
+    ⟨true, 0, 0, 0, 0, 0, cexTy, rfl, rfl, fun _ h => by simp [Ann.constRel?, NatMap.get?] at h,
+      fun i _ _ _ h => by simp at h⟩
+  obtain ⟨cls, hcls, _⟩ := h hc (i := 0) (by decide)
+  simp at hcls
+
+example : ¬ CtorCanon cexP {} 0 ⟨[]⟩ := by
+  rintro ⟨sf, lv, ind, cidx, np, nf, ty, hd, hl, hf, -⟩
+  have hd' : cexP.decl? 0 = some (.ctor true 0 0 0 0 0 cexTy) := rfl
+  rw [hd'] at hd
+  cases hd
+  revert hf
+  decide
+
+end IxCC.Src.Relevance.Proof.L1Repair
+
+/-! Erasure decides the declarations' well-formedness (`progWF`), so
+`erase_correct` and `erase_refines` need no premise about them. -/
+
+/-- info: 'IxCC.Lam.Erase.Proof.progWF_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.progWF_iff
+
+/-- info: 'IxCC.Lam.Erase.Proof.erase_progWF' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.erase_progWF
+
+/-- info: 'IxCC.Src.NatMap.mem_toList' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.NatMap.mem_toList
+
+/-! Erasure's constructor table has a row for every key it emits. -/
+
+/-- info: 'IxCC.Lam.Erase.Proof.erase_reg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.erase_reg
+
+/-! Registering the rows a root's result needs: a row for each constructor,
+and nothing else of the state changes. -/
+
+/-- info: 'IxCC.Lam.Erase.Proof.csound_registerResultRow' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.csound_registerResultRow
+
+/-- info: 'IxCC.Lam.Erase.Proof.csound_registerRows' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.csound_registerRows
+
+/-- info: 'IxCC.Lam.Erase.Proof.CtorsOnly.refl' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.CtorsOnly.refl
+
+/-- info: 'IxCC.Lam.Erase.Proof.CtorsOnly.trans' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.CtorsOnly.trans
+
+/-- info: 'IxCC.Lam.Erase.Proof.registerCtor_ctorsOnly' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.registerCtor_ctorsOnly
+
+/-- info: 'IxCC.Lam.Erase.Proof.registerResultRow_ctorsOnly' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.registerResultRow_ctorsOnly
+
+/-- info: 'IxCC.Lam.Erase.Proof.registerRows_ctorsOnly' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.registerRows_ctorsOnly
+
+/-! Erasure's output is well formed. -/
+
+/-- info: 'IxCC.Lam.Erase.Proof.erase_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.erase_wellFormed
+
+/-- info: 'IxCC.Lam.Erase.Proof.erase_spec_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.erase_spec_run
+
+/-- info: 'IxCC.Lam.Erase.Proof.tr_wf' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.tr_wf
+
+/-- info: 'IxCC.Lam.Erase.Proof.bodyR_wf' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.bodyR_wf
+
+/-! `ModesOk` as a proposition, its checker's soundness, and erasure's output
+checked against it. -/
+
+/-- info: 'IxCC.Lam.modesOk_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.modesOk_sound
+
+/-- info: 'IxCC.Lam.ModesOk.check_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.ModesOk.check_sound
+
+/-- info: 'IxCC.Lam.Erase.Proof.erase_modesOk' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.erase_modesOk
+
+/-- info: 'IxCC.Lam.Erase.Proof.erase_modesOkSpec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.erase_modesOkSpec
+
+/-! Stage W1: the word primitives' meaning on literals (`IxCC.Lam.WordSem`). -/
+
+/-- info: 'IxCC.Lam.Prim.sem_word' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Lam.Prim.sem_word
+
+/-- info: 'IxCC.Lam.wordSem_ne_bool' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Lam.wordSem_ne_bool
+
+/-- info: 'IxCC.Lam.wordSem_two' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.wordSem_two
+
+/-- info: 'IxCC.Lam.wordSem_one' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.wordSem_one
+
+
+/-! Stage W1: erasure's word case (`IxCC.Lam.Erase.Proof.Word`, the producer cases `sound_wordForm`
+and `reg_wordForm`). -/
+
+/-- info: 'IxCC.Src.WordOp.eval_resultWidth' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.WordOp.eval_resultWidth
+
+/-- info: 'IxCC.Lam.Erase.Proof.unboxesAt0_of_B' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.unboxesAt0_of_B
+
+/-- info: 'IxCC.Lam.Erase.Proof.wordUnboxAt_of_B' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.wordUnboxAt_of_B
+
+/-- info: 'IxCC.Lam.Erase.Proof.VR.unbox0_inv' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.VR.unbox0_inv
+
+/-- info: 'IxCC.Lam.Erase.Proof.VR.unbox0' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.VR.unbox0
+
+/-- info: 'IxCC.Lam.Erase.Proof.asWord?_some' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.asWord?_some
+
+/-- info: 'IxCC.Lam.Erase.Proof.vr_word' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.vr_word
+
+/-- info: 'IxCC.Lam.Erase.Proof.vr_mkWord' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.vr_mkWord
+
+/-- info: 'IxCC.Lam.Erase.Proof.wordResult_sim' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.wordResult_sim
+
+/-- info: 'IxCC.Lam.Erase.Proof.wordResult_dec' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.wordResult_dec
+
+/-- info: 'IxCC.Lam.Erase.Proof.primResult_word1' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.primResult_word1
+
+/-- info: 'IxCC.Lam.Erase.Proof.primResult_word2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.primResult_word2
+
+/-- info: 'IxCC.Lam.Erase.Proof.word_value_sim' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.word_value_sim
+
+/-- info: 'IxCC.Lam.Erase.Proof.sound_wordForm' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.sound_wordForm
+
+/-- info: 'IxCC.Lam.Erase.Proof.reg_wordForm' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.reg_wordForm

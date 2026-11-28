@@ -1,5 +1,5 @@
 module
-public import IxC.Address.Core
+public import IxCK.Address.Core
 public import Blake3.Pure
 
 public section

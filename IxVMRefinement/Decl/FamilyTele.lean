@@ -15,7 +15,7 @@ comes from `CoreEnvFacts`.
 * `defeq_list_ok_scoped_spec`, `inst_params_typed_scoped_spec`, `defeq_tele_scoped_spec`,
   `defeq_lam_tele_scoped_spec`;
 * `rawDefEqList_rulesJ`, `rawTypedList_rulesJ`: the raw lists they conclude are the lists of the
-  derivation package `rulesJ` (`DefEqListJ`, `TypedListJ`), the form IxC's records state.
+  derivation package `rulesJ` (`DefEqListJ`, `TypedListJ`), the form IxCK's records state.
 
 Provenance: the four proofs are those of `defeq_list_ok_spec`, `inst_params_typed_spec`,
 `defeq_tele_spec`, `defeq_lam_tele_spec` (`Decl/ModeledTele.lean:3081-3771`) with `core_defeq`/

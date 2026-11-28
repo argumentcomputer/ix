@@ -99,7 +99,7 @@ theorem lateFamAt_of_install {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {n : 
     tele := rfl
     lps := by rw [hpL]
     sort := ⟨bs, by rw [hpnP, hpnIdx, hpres]; exact hstrip⟩
-    isProp := by rw [hp]; rfl
+    isProp := by rw [hp]; exact (Ix.Kernel.Level.isEquiv_zero_beq_true _).symm
     kinds := by rw [hpk]; exact hK
     nodup := by rw [← hO.ctorNames]; exact hnd₀
     ctorFields := fun j c cA hc hcA => (hall j c cA hc hcA).1

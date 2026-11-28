@@ -1,7 +1,7 @@
 import Tests.Ix.IxVM
 import Tests.Ix.IxVM.ShapeGuardsDefs
-import IxC.Kernel.Admission
-import IxC.Kernel.Cached.Installed
+import IxCK.Kernel.Admission
+import IxCK.Kernel.Cached.Installed
 import Ix.Address.Pure
 
 /-! # The declaration checker's shape guards

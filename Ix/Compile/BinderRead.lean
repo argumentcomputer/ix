@@ -48,14 +48,14 @@ Anything else (a body headed by a projection of anything but a bound variable or
 application of a constant, a
 redex, a match whose motive computes a sort, a constant whose type is not
 syntactically such a telescope)
-is not read, and the record falls to IxC's pass (`Ix.Compile.KernelAnnotate`):
-the reader never guesses. Every datum it does read is the one IxC's pass
+is not read, and the record falls to IxCK's pass (`Ix.Compile.KernelAnnotate`):
+the reader never guesses. Every datum it does read is the one IxCK's pass
 computes, because the source is Lean-checked and Lean's conversion has no
 equality reflection: an argument's inferred type is definitionally its head's
 domain there, and definitionally equal types have equivalent sorts.
 
 The numbering of the data and of share variants is the compiler's
-(`Ix.CompileM.withBinderSection`), as IxC's pass gives it: the record's tree
+(`Ix.CompileM.withBinderSection`), as IxCK's pass gives it: the record's tree
 numbers the nodes, a share's entry is read once per context of the variables it
 can name, and a variant is a distinct node list.
 -/

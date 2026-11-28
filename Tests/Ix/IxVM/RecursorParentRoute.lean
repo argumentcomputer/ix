@@ -1,6 +1,6 @@
 import Tests.Ix.IxVM.Harness
-import IxC.Kernel.Admission
-import IxC.Kernel.Cached.Installed
+import IxCK.Kernel.Admission
+import IxCK.Kernel.Cached.Installed
 import Ix.Address.Pure
 
 /-! # Native recursor dispatch uses the actual major-premise parent

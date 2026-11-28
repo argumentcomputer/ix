@@ -1,0 +1,382 @@
+import IxCC.Own.Plain.Check
+import IxCC.Own.Plain.Owned
+import IxCC.Recheck.Json
+import IxCC.Src.Hints
+import IxCC.Anf.Budget
+
+set_option autoImplicit false
+namespace IxCC.Own.Plain.Certificate
+open Lean (Json toJson)
+open IxCC.Recheck.CertJson (arr nat str nats getArr)
+
+def format : String := "ixcc/own-plain/1"
+def formatV2 : String := "ixcc/own-plain/2"
+def formatV3 : String := "ixcc/own-plain/3"
+def maxDepth : Nat := 4096
+
+def action : Action → Json
+  | .inc x n => arr [str "inc", nat x, nat n]
+  | .dec x => arr [str "dec", nat x]
+
+def action? (j : Json) : Except String Action := do
+  match ← getArr j with
+  | [.str "inc", x, n] => return .inc (← x.getNat?) (← n.getNat?)
+  | [.str "dec", x] => return .dec (← x.getNat?)
+  | _ => throw "own.cert.action: expected inc(x,n) or dec(x)"
+
+def ctorIndexOf (ctors : List Lam.CtorInfo) (key : Key.CtorKey) : Nat :=
+  ((ctors.zipIdx.find? fun p => p.1.key == key).map (·.2)).getD 0
+
+def optVar : Option Fir.Var → Json
+  | none => .null
+  | some v => nat v
+
+def optVar? : Json → Except String (Option Fir.Var)
+  | .null => pure none
+  | j => return some (← j.getNat?)
+
+mutual
+def codeWith (ctors : List Lam.CtorInfo) : Code → Json
+  | .act a k => arr [str "act", action a, codeWith ctors k]
+  | .bind _ _ k => arr [str "bind", codeWith ctors k]
+  | .reset s x ctor fields uniq k =>
+    arr [str "reset", nat s, nat x, nat (ctorIndexOf ctors ctor.key),
+      arr (fields.map optVar), nat (if uniq then 1 else 0), codeWith ctors k]
+  | .reuse _ s _ _ uniq k =>
+    arr [str "reuse", nat s, nat (if uniq then 1 else 0), codeWith ctors k]
+  | .dropSlot s k => arr [str "dropSlot", nat s, codeWith ctors k]
+  | .jp _ _ captured _ b k => arr [str "join", toJson captured, codeWith ctors b, codeWith ctors k]
+  | .jmp .. => arr [str "jump"]
+  | .case _ alts dflt => arr [str "case", arr (alternativesWith ctors alts), optionalWith ctors dflt]
+  | .ret .. => arr [str "return"]
+  | .tcall .. => arr [str "tail"]
+  | .trap => arr [str "trap"]
+def alternativesWith (ctors : List Lam.CtorInfo) : List Alt → List Json
+  | [] => []
+  | .mk _ b :: bs => codeWith ctors b :: alternativesWith ctors bs
+def optionalWith (ctors : List Lam.CtorInfo) : Option Code → Json
+  | none => .null
+  | some c => codeWith ctors c
+end
+
+def code : Code → Json := codeWith []
+def alternatives : List Alt → List Json := alternativesWith []
+def optional : Option Code → Json := optionalWith []
+
+mutual
+def code? (ctors : List Lam.CtorInfo := []) : Nat → Json → Fir.Code → Except String Code
+  | 0, _, _ => throw "own.cert.depth: decoding depth exhausted"
+  | fuel + 1, j, source => do
+    match (← getArr j), source with
+    | [.str "act", a, k], source => return .act (← action? a) (← code? ctors fuel k source)
+    | [.str "bind", k], .bind x r next => return .bind x r (← code? ctors fuel k next)
+    | [.str "reset", sJ, xJ, ciJ, fsJ, uJ, kJ], source => do
+      let s ← sJ.getNat?
+      let x ← xJ.getNat?
+      let ci ← ciJ.getNat?
+      let some lamCtor := ctors[ci]? | throw s!"own.cert.reset: unknown ctor index {ci}"
+      let some info := Fir.CtorInfo.ofKey ctors lamCtor.key |
+        throw s!"own.cert.reset: missing ctor info for index {ci}"
+      let fs ← (← getArr fsJ).mapM optVar?
+      let u ← match ← uJ.getNat? with
+        | 0 => pure false
+        | 1 => pure true
+        | _ => throw "own.cert.reset: expected 0 or 1 unique flag"
+      return .reset s x info fs u (← code? ctors fuel kJ source)
+    | [.str "reuse", sJ, uJ, kJ], .bind x (.ctor c args) next => do
+      let s ← sJ.getNat?
+      let u ← match ← uJ.getNat? with
+        | 0 => pure false
+        | 1 => pure true
+        | _ => throw "own.cert.reuse: expected 0 or 1 unique flag"
+      return .reuse x s c args u (← code? ctors fuel kJ next)
+    | [.str "dropSlot", sJ, kJ], source => do
+      let s ← sJ.getNat?
+      return .dropSlot s (← code? ctors fuel kJ source)
+    | [.str "join", captured, b, k], .jp label params rec body next =>
+      return .jp label params (← nats captured) rec (← code? ctors fuel b body) (← code? ctors fuel k next)
+    | [.str "jump"], .jmp j as => return .jmp j as
+    | [.str "case", branches, fallback], .case x alts dflt =>
+      return .case x (← alternatives? ctors fuel (← getArr branches) alts)
+        (← optional? ctors fuel fallback dflt)
+    | [.str "return"], .ret a => return .ret a
+    | [.str "tail"], .tcall f as => return .tcall f as
+    | [.str "trap"], .trap => return .trap
+    | _, _ => throw "own.cert.shape: source and ownership control trees differ"
+def alternatives? (ctors : List Lam.CtorInfo := []) : Nat → List Json → List Fir.Alt → Except String (List Alt)
+  | _, [], [] => pure []
+  | fuel + 1, j :: js, .mk key body :: bs => do
+    return .mk key (← code? ctors fuel j body) :: (← alternatives? ctors fuel js bs)
+  | 0, _, _ => throw "own.cert.depth: alternative decoding depth exhausted"
+  | _, _, _ => throw "own.cert.alternatives: missing or extra branch"
+def optional? (ctors : List Lam.CtorInfo := []) : Nat → Json → Option Fir.Code → Except String (Option Code)
+  | _, .null, none => pure none
+  | fuel + 1, j, some body => do return some (← code? ctors fuel j body)
+  | 0, _, _ => throw "own.cert.depth: optional decoding depth exhausted"
+  | _, _, _ => throw "own.cert.default: mismatched default branch"
+end
+
+def bodyMapWith (ctors : List Lam.CtorInfo) : Src.NatMap Code → Json
+  | .leaf => arr [str "leaf"]
+  | .node value zero one =>
+    arr [str "node", optionalWith ctors value, bodyMapWith ctors zero, bodyMapWith ctors one]
+
+def bodyMap : Src.NatMap Code → Json := bodyMapWith []
+
+def bodyMap? (ctors : List Lam.CtorInfo := []) : Nat → Json → Src.NatMap Fir.Fun → Except String (Src.NatMap Code)
+  | 0, _, _ => throw "own.cert.depth: function-map decoding depth exhausted"
+  | fuel + 1, j, source => do
+    match (← getArr j), source with
+    | [.str "leaf"], .leaf => return .leaf
+    | [.str "node", value, zero, one], .node fd zs os =>
+      let body ← optional? ctors fuel value (fd.map (·.body))
+      return .node body (← bodyMap? ctors fuel zero zs) (← bodyMap? ctors fuel one os)
+    | _, _ => throw "own.cert.functions: complete source and candidate map shapes differ"
+
+def borrowMask (bs : List Bool) : Json :=
+  arr (bs.map fun b => nat (if b then 1 else 0))
+
+def borrowMask? (j : Json) : Except String (List Bool) := do
+  (← getArr j).mapM fun x => do
+    match ← x.getNat? with
+    | 0 => pure false
+    | 1 => pure true
+    | _ => throw "own.cert.borrows: expected 0 or 1 borrow flag"
+
+def borrowMap (borrows : BorrowSigs) : Json :=
+  arr (borrows.toList.filterMap fun (f, bs) =>
+    if bs.any id then some (arr [nat f, borrowMask bs]) else none)
+
+def borrowMap? (j : Json) : Except String BorrowSigs := do
+  let items ← getArr j
+  items.foldlM (fun m item => do
+    match ← getArr item with
+    | [fJ, bsJ] =>
+      let f ← fJ.getNat?
+      if m.contains f then throw s!"own.cert.borrows: duplicate entry for f{f}"
+      let bs ← borrowMask? bsJ
+      pure (m.insert f bs)
+    | _ => throw "own.cert.borrows: expected [funId, [0|1, ...]]") .leaf
+
+def uniqMap (uniqs : UniqSigs) : Json :=
+  arr (uniqs.toList.filterMap fun (f, (us, retU)) =>
+    if us.any id || retU then
+      some (arr [nat f, borrowMask us, nat (if retU then 1 else 0)])
+    else none)
+
+def uniqMap? (j : Json) : Except String UniqSigs := do
+  let items ← getArr j
+  items.foldlM (fun m item => do
+    match ← getArr item with
+    | [fJ, usJ, rJ] =>
+      let f ← fJ.getNat?
+      if m.contains f then throw s!"own.cert.uniqs: duplicate entry for f{f}"
+      let us ← borrowMask? usJ
+      let retU ← match ← rJ.getNat? with
+        | 0 => pure false
+        | 1 => pure true
+        | _ => throw "own.cert.uniqs: expected 0 or 1 return uniqueness flag"
+      pure (m.insert f (us, retU))
+    | _ => throw "own.cert.uniqs: expected [funId, [0|1, ...], 0|1]") .leaf
+
+def hasReuseMap (bodies : Src.NatMap Code) : Bool :=
+  bodies.toList.any fun (_, c) => 0 < slotBound c
+
+def encode (bodies : Src.NatMap Code) : Json := arr [str format, bodyMap bodies]
+
+def encodeWith (bodies : Src.NatMap Code) (borrows : BorrowSigs) : Json :=
+  if borrows.toList.any (fun p => p.2.any id) then
+    arr [str formatV2, bodyMap bodies, borrowMap borrows]
+  else
+    encode bodies
+
+def encodeFull (F : Fir.Program) (bodies : Src.NatMap Code) (borrows : BorrowSigs)
+    (uniqs : UniqSigs) : Json :=
+  if hasReuseMap bodies || uniqs.toList.any (fun p => p.2.1.any id || p.2.2) then
+    arr [str formatV3, bodyMapWith F.ctors bodies, borrowMap borrows, uniqMap uniqs]
+  else
+    encodeWith bodies borrows
+
+def toText (bodies : Src.NatMap Code) : String := (encode bodies).compress
+
+def toTextWith (bodies : Src.NatMap Code) (borrows : BorrowSigs) : String :=
+  (encodeWith bodies borrows).compress
+
+def toTextFull (F : Fir.Program) (bodies : Src.NatMap Code) (borrows : BorrowSigs)
+    (uniqs : UniqSigs) : String :=
+  (encodeFull F bodies borrows uniqs).compress
+
+def decode (F : Fir.Program) (j : Json) : Except String (Src.NatMap Code) := do
+  match ← getArr j with
+  | [.str version, bodies] =>
+    if version == format then bodyMap? F.ctors maxDepth bodies F.funs
+    else throw "own.cert.version: unsupported wire format"
+  | _ => throw "own.cert.envelope: expected version and complete body map"
+
+def decodeWith (F : Fir.Program) (j : Json) : Except String (Src.NatMap Code × BorrowSigs) := do
+  match ← getArr j with
+  | [.str version, bodies] =>
+    if version == format then return (← bodyMap? F.ctors maxDepth bodies F.funs, .leaf)
+    else throw "own.cert.version: unsupported wire format"
+  | [.str version, bodies, borrows] =>
+    if version == formatV2 then return (← bodyMap? F.ctors maxDepth bodies F.funs, ← borrowMap? borrows)
+    else throw "own.cert.version: unsupported wire format"
+  | _ => throw "own.cert.envelope: expected version and complete body map"
+
+def decodeFull (F : Fir.Program) (j : Json) :
+    Except String (Src.NatMap Code × BorrowSigs × UniqSigs) := do
+  match ← getArr j with
+  | [.str version, bodies] =>
+    if version == format then return (← bodyMap? F.ctors maxDepth bodies F.funs, .leaf, .leaf)
+    else throw "own.cert.version: unsupported wire format"
+  | [.str version, bodies, borrows] =>
+    if version == formatV2 then
+      return (← bodyMap? F.ctors maxDepth bodies F.funs, ← borrowMap? borrows, .leaf)
+    else throw "own.cert.version: unsupported wire format"
+  | [.str version, bodies, borrows, uniqs] =>
+    if version == formatV3 then
+      return (← bodyMap? F.ctors maxDepth bodies F.funs, ← borrowMap? borrows, ← uniqMap? uniqs)
+    else throw "own.cert.version: unsupported wire format"
+  | _ => throw "own.cert.envelope: expected version and complete body map"
+
+/-! ## The captured-work budget
+
+The ownership checker takes, at each jump, one token of every variable the target join captures,
+and at each declaration walks the captured list; a join may capture its whole lexical scope and be
+jumped to from every branch, so its work is not linear in the certificate. Admission first sums
+that work over the decoded map (a linear walk; `capturedCode` resolves a jump's target as the
+checker's `Δ` does) and refuses a certificate past `budget` (by default `Anf.maxCapturedWork`)
+before the checker runs. A refusal is policy, not soundness: acceptance is monotone in the budget
+(`admit_mono`). `RcReplay.runFront` runs the checker twice more on the admitted map
+(`checkScopedProgram`, `Public.lower`); their bound rests on `admit` having run first on the same
+certificate (`RcReplay.runFront_budget`). -/
+
+mutual
+/-- Captured work of one body, accumulated in `acc`; `Δ` maps the joins in scope to the length of
+their captured lists. -/
+def capturedCode (Δ : Src.NatMap Nat) (acc : Nat) : Code → Nat
+  | .act _ k => capturedCode Δ acc k
+  | .bind _ _ k => capturedCode Δ acc k
+  | .reset _ _ _ _ _ k => capturedCode Δ acc k
+  | .reuse _ _ _ _ _ k => capturedCode Δ acc k
+  | .dropSlot _ k => capturedCode Δ acc k
+  | .jp j _ captured rec body k =>
+    let n := captured.length
+    capturedCode (Δ.insert j n) (capturedCode (if rec then Δ.insert j n else Δ) (acc + n) body) k
+  | .jmp j _ => acc + Δ.getD j 0
+  | .case _ alts dflt => capturedOpt Δ (capturedAlts Δ acc alts) dflt
+  | .ret _ => acc
+  | .tcall .. => acc
+  | .trap => acc
+def capturedAlts (Δ : Src.NatMap Nat) (acc : Nat) : List Alt → Nat
+  | [] => acc
+  | .mk _ body :: rest => capturedAlts Δ (capturedCode Δ acc body) rest
+def capturedOpt (Δ : Src.NatMap Nat) (acc : Nat) : Option Code → Nat
+  | none => acc
+  | some c => capturedCode Δ acc c
+end
+
+/-- The captured work of a whole body map: the sum over its bodies. -/
+def capturedWork (bodies : Src.NatMap Code) : Nat :=
+  bodies.toList.foldl (fun acc (_, body) => capturedCode .leaf acc body) 0
+
+def checkBudget (budget : Nat) (bodies : Src.NatMap Code) : Except String Unit :=
+  let work := capturedWork bodies
+  if work ≤ budget then .ok ()
+  else .error s!"own.cert.budget: the ownership certificate makes the checker take {work} captured tokens (jumps and join declarations), past the limit {budget} (Anf.maxCapturedWork)"
+
+theorem checkBudget_ok {budget : Nat} {bodies : Src.NatMap Code} :
+    checkBudget budget bodies = .ok () ↔ capturedWork bodies ≤ budget := by
+  simp only [checkBudget]
+  split <;> simp_all
+
+/-! ## The parameter total
+
+A function's parameters and a join point's cost no Anf node (a join counts one node whatever its
+arity), so the node budgets do not bound them; but the source-domain check (`programDomain`,
+`contractProgramDomain`: `freshSet` and `insertVars` over every parameter list) and the ownership
+checker (a token for each parameter at every entry) walk every one, and the plain-RC verifier runs
+both three times. Admission first counts them (a linear walk over the program) and refuses a
+program past `params` (by default `Anf.maxParamTotal`) before it decodes the certificate;
+`Recheck.runWithContracts` does the same before its domain check. A refusal is policy, not
+soundness: acceptance is monotone in the limit (`admit_params_mono`). -/
+
+mutual
+/-- The parameters of the join points one body declares, added to `acc`. -/
+def joinParamsCode (acc : Nat) : Fir.Code → Nat
+  | .bind _ _ k => joinParamsCode acc k
+  | .jp _ ps _ b k => joinParamsCode (joinParamsCode (acc + ps.length) b) k
+  | .jmp .. => acc
+  | .case _ alts dflt => joinParamsOpt (joinParamsAlts acc alts) dflt
+  | .ret _ => acc
+  | .tcall .. => acc
+  | .trap => acc
+def joinParamsAlts (acc : Nat) : List Fir.Alt → Nat
+  | [] => acc
+  | .mk _ body :: rest => joinParamsAlts (joinParamsCode acc body) rest
+def joinParamsOpt (acc : Nat) : Option Fir.Code → Nat
+  | none => acc
+  | some c => joinParamsCode acc c
+end
+
+/-- The parameter total of a program: over its numbered functions (those `programDomain` checks),
+each one's parameters and those of the join points its body declares. -/
+def paramTotal (F : Fir.Program) : Nat :=
+  (List.range F.size).foldl (fun acc f =>
+    match F.fun? f with
+    | none => acc
+    | some fd => joinParamsCode (acc + fd.params.length) fd.body) 0
+
+def checkParamTotal (limit : Nat) (F : Fir.Program) : Except String Unit :=
+  let total := paramTotal F
+  if total ≤ limit then .ok ()
+  else .error s!"own.cert.params: the program has {total} parameters (of its functions and join points together), past the limit {limit} (Anf.maxParamTotal)"
+
+theorem checkParamTotal_ok {limit : Nat} {F : Fir.Program} :
+    checkParamTotal limit F = .ok () ↔ paramTotal F ≤ limit := by
+  simp only [checkParamTotal]
+  split <;> simp_all
+
+/-- The refusal of a map the checker does not accept: the checker's first reason when the source
+is in the domain and its pins are sound, the domain refusal otherwise. Computed only on refusal. -/
+def checkRefusal (domain : Bool) (F : Fir.Program) (bodies : Src.NatMap Code)
+    (borrows : BorrowSigs := .leaf) (uniqs : UniqSigs := .leaf) : String :=
+  match domain && checkBoolPins F && borrowsValid F borrows && uniqsValid F borrows uniqs,
+      checkMapE F bodies borrows uniqs with
+  | true, .error e => s!"own.cert.check: ownership proposal refused: {e}"
+  | _, _ => "own.cert.check: ownership proposal or source domain refused"
+
+/-- **Certificate admission.** The program must be within the parameter total (checked first, from
+the program alone), the decoded map within the captured-work budget (linear), and the map accepted
+by the ownership checker, which judges any placement of `inc`/`dec`, `@borrowed`, `reset`/`reuse`,
+and `@unique` signatures (`Own.Plain.checkOwned`). -/
+def admit (F : Fir.Program) (j : Json) (budget : Nat := Anf.maxCapturedWork)
+    (params : Nat := Anf.maxParamTotal) : Except String Program := do
+  checkParamTotal params F
+  let (bodies, borrows, uniqs) ← decodeFull F j
+  checkBudget budget bodies
+  if checkOwned F bodies borrows uniqs then return { source := F, bodies, borrows, uniqs }
+  else throw (checkRefusal (programDomain F) F bodies borrows uniqs)
+
+def ofText (F : Fir.Program) (text : String) (budget : Nat := Anf.maxCapturedWork)
+    (params : Nat := Anf.maxParamTotal) : Except String Program := do
+  Src.Hints.checkJsonText text
+  admit F (← Json.parse text) budget params
+
+/-- Contract-aware certificate admission: the same, with the checker's contract-aware domain
+(`checkContractOwned`), admitting all frontend binder and let contract annotations (`0`, `1`,
+`&`, `*`, `!`, `~`, `let borrow`). -/
+def admitContract (F : Fir.Program) (j : Json) (budget : Nat := Anf.maxCapturedWork)
+    (params : Nat := Anf.maxParamTotal) : Except String Program := do
+  checkParamTotal params F
+  let (bodies, borrows, uniqs) ← decodeFull F j
+  checkBudget budget bodies
+  if checkContractOwned F bodies borrows uniqs then return { source := F, bodies, borrows, uniqs }
+  else throw (checkRefusal (contractProgramDomain F) F bodies borrows uniqs)
+
+def ofTextContract (F : Fir.Program) (text : String) (budget : Nat := Anf.maxCapturedWork)
+    (params : Nat := Anf.maxParamTotal) : Except String Program := do
+  Src.Hints.checkJsonText text
+  admitContract F (← Json.parse text) budget params
+
+end IxCC.Own.Plain.Certificate

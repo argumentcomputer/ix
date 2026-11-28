@@ -4,6 +4,7 @@ import Tests.Ix.Compile.Mutual
 import Tests.Ix.IxVM
 import Tests.Ix.IxVM.Eval
 import Tests.Ix.IxVM.Exploits
+import Tests.Ix.IxVM.MustReject
 import Tests.Ix.IxVM.DefinitionDependencies
 import Tests.Ix.IxVM.BindingAnchors
 import Tests.Ix.IxVM.BindingFrontier
@@ -47,10 +48,16 @@ def registry : List Entry := [
   -- Prover-authored malformed Ixon, each exploit with its controls (PR subset
   -- focused on unproved boundaries, positive controls, and host smokes).
   .env "ixvm-exploits" (.ci .ixvm) Tests.Ix.IxVM.Exploits.run,
-  -- Opt-in full `.binding` exploit sweep: formally covered unconditionally by
-  -- `IxVM.Refinement.Endpoint.circuitComposed` (`ClosureManifest.lean`) plus
-  -- `ixvm-kernel-checks` completeness and PR `ixvm-exploits` host smoke.
-  .env "ixvm-exploits-full" (.manual "opt-in `.binding` exploit sweep; formally covered by `circuitComposed` (`ClosureManifest.lean`) + `ixvm-kernel-checks`") Tests.Ix.IxVM.Exploits.runFull,
+  -- Full exploit sweep, every `.binding` case included (about 90 s), nightly.
+  -- `IxVM.Refinement.Endpoint.circuitComposed` proves that an accepted in-scope
+  -- claim's closure has a model; it does not imply that the program refuses
+  -- every input Lean refuses, so the sweep stays automated.
+  .env "ixvm-exploits-full" (.ci .nightlyIxvm) Tests.Ix.IxVM.Exploits.runFull,
+  -- Hand-built inputs the program must refuse, among them the closed proofs of
+  -- `False` of two historical acceptances (a recursor family that splits its
+  -- elimination levels; a negative occurrence behind a mutual container's peer),
+  -- each with the controls that show it reaches the code it targets.
+  .env "ixvm-must-reject" (.ci .ixvm) Tests.Ix.IxVM.MustReject.run,
   -- The lean-kernel-arena tutorial fixtures: good + native_decide + bad smokes on PR.
   .env "ixvm-arena" (.ci .ixvm) Tests.Ix.Kernel.Arena.run,
   -- Opt-in full 100+ `bad_*` arena sweep: PR `ixvm-arena` + `ixvm-exploits`
@@ -108,7 +115,7 @@ def registry : List Entry := [
   -- The declaration checker's shape guards: one kind of member per inductive block, no later
   -- use of a recursive field, a recursor header free of `let`.
   .env "ixvm-shape-guards" (.ci .ixvm) Tests.Ix.IxVM.ShapeGuards.run,
-  -- Corpus-driven and synthetic 3-way IxVM / IxC regressions: modeled extract closure,
+  -- Corpus-driven and synthetic 3-way IxVM / IxCK regressions: modeled extract closure,
   -- Lean 4.34 native_decide inert classification, dead-let universe bounds, multi-container
   -- and mutual AST modeled families, semantic imax, and adversarial boundary controls.
   .env "ixvm-synthetic-regressions" (.ci .ixvm) Tests.Ix.IxVM.SyntheticRegressions.run,
@@ -126,6 +133,8 @@ def registry : List Entry := [
 def required : List (String × String) := [
   ("ixvm-kernel-checks", "ci:ixvm"),
   ("ixvm-exploits", "ci:ixvm"),
+  ("ixvm-exploits-full", "ci:nightly-ixvm"),
+  ("ixvm-must-reject", "ci:ixvm"),
   ("ixvm-arena", "ci:ixvm"),
   ("ixvm-tagn", "ci:ixvm"),
   ("ixvm-codec", "ci:ixvm"),

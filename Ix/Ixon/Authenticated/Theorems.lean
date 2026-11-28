@@ -1,6 +1,6 @@
 import Ix.Ixon.Authenticated
 import Ix.Ixon.Projection.Theorems
-import IxC.Kernel.Admission.TierTheorems
+import IxCK.Kernel.Admission.TierTheorems
 
 /-! # The theorems of the authenticated entries at BLAKE3
 
@@ -93,7 +93,7 @@ theorem checkBytesProjection_authentic {binding : Admission.Binding} {maxProject
     (h : checkBytesProjection binding maxProjections limits records blobs hint = .ok env) :
     Admission.Authentic Address.blake3Pure records blobs ∧
       ∃ output, Admission.Hashed Address.blake3Pure output ∧
-        Admission.checkConstantsAt Address.blake3Pure binding output blobs hint = .ok env :=
+        Admission.checkConstantsAt Address.blake3Pure binding output blobs hint limits.fold = .ok env :=
   Projection.checkBytes_authentic h
 
 theorem checkBytesProjection_reading {binding : Admission.Binding} {maxProjections : Nat}

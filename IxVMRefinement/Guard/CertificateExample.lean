@@ -17,7 +17,7 @@ dropped at a `∀`, and arguments are not classified.
 
 * `ctorType_signatures`: the classifier's walk of the two fields, over every lookup that reads
   the two declared types.
-* `install_and_use`: **install and one projection use**. IxC's table stage run at the sorts
+* `install_and_use`: **install and one projection use**. IxCK's table stage run at the sorts
   `[imax 1 0, 0]` stores a table that has its certificate over the witness store `R`; and over
   every record store `E` for `R` (constrained by `Typing.RecordsFor R E` alone), the use
   observation of field `0` exists and `Rules.FireSem` holds at the entry of field `0`, at every
@@ -108,7 +108,7 @@ theorem use_first {look : Lookup .anon}
 
 /-- **Install and one use over a binding-style store.**
 
-Install: IxC's table stage for the structure (`checkNativeTable` at a one-constructor block
+Install: IxCK's table stage for the structure (`checkNativeTable` at a one-constructor block
 without indices and without parameters), run at the two inferred sorts, stores a table; that
 table has its certificate over the witness store `R`, whose raw dictionary reads the
 constructor's telescope at the block address `B` and the declared types of `Eq` and `True`.

@@ -1,0 +1,661 @@
+import IxCC.Src.KernelFront.Reading
+import IxCC.Src.Relevance.Syntax
+import IxCK.Kernel.Cached.CoreC
+
+/-! # The relevance annotation from the certified kernel's inference
+
+The kernel front end's annotator, IxCC's only one: the annotation IxCC's
+earlier annotator gave (it asked IxCC's own erased type checker; both were
+deleted by the switch to the kernel front end once the two annotators agreed on
+every committed closure), computed from the certified kernel's type inference, weak head
+normalisation and annotation pass over the environment the kernel accepted
+(`Accepted.env`), each question asked of the kernel's own reading of the term
+at the position IxCC's term occupies.
+
+For each runtime term (a definition's value, a recursor rule's right-hand
+side, or an equation's body) of each constant the roots reach, the annotator
+
+1. checks that IxCC's term corresponds to the kernel's reading of it
+   (`Reading.corr`; an equation's body, which IxCC's table check builds, is
+   translated instead, `toKernel`);
+2. walks the two together, opening each λ binder as a kernel free variable
+   whose type is the binder's annotated domain and reducing each `let` as the
+   kernel's annotation pass does (substituting its value into its body), and
+   classifies every binder, argument and let:
+   * a **proof** under a zero condition when the sort of its type is zero
+     exactly under that condition on the constant's universe parameters (D18):
+     the kernel infers the position's type, infers that type's type and reduces
+     it to `Sort u`, and the condition is `u`'s (`zeroCond`);
+   * a **type** when its type reduces to a Π-telescope ending in a sort;
+   * **relevant** otherwise;
+
+   and gives each λ the zero condition of the sort of its body's type, asked
+   once per maximal run of λs, of the run's innermost body: by the Π rule
+   (`Π x : A, B` has sort `imax` of the two sorts, zero exactly when `B`'s is)
+   every λ of a run has that condition. Until 2026-11-13 the kernel was asked
+   at every λ, which cost each the work of the rest of its run; the two were
+   tested equal on the registered programs, not proved equal
+   (`IxCCTests/KernelFront/LamRuns.lean`);
+3. records the constants the term reaches in relevant positions, which joins
+   them to the queue.
+
+Every constant reached also gets its own class and its Π-telescope's binder
+classes (`constRel`), and every constructor its fields' classes (`ctorRel`).
+A binder written erased is irrelevant at every instance whatever its type
+(`honourErased`), as before. The output is the annotation's format
+(`Src.Relevance.Ann`); the recheck path decides it as before
+(`Relevance.check`, `checkCanonical`), and the byte-level verifiers require it
+to be this function's output (`Front.checkCanonicalRelevance`).
+
+**Positions.** The kernel's binder datum (`BinderMeta.pw`) is the zero
+condition of a binder's *codomain*; IxCC's position classes are about the
+*domain* (a binder's type, an argument's type), so the annotator asks the
+kernel's inference about domains and arguments rather than reading `pw`.
+
+**Universes.** The kernel's reader renames a large eliminator's universe
+parameters (`Reading.backOf`); every condition is read back to IxCC's
+numbering before it is recorded.
+
+The kernel calls are the executed cached core (`Ix.Kernel.Cached.coreKnotI
+.verified`), threaded through one memo state (emptied when a sort question
+fails, `Ctx.sortCond`); each call is bounded by the kernel's own fuel
+(`Ix.Kernel.checkFuel`). Every walk is bounded by a depth and a node budget.
+Since the memo carries answers from call to call, an answer can depend on it
+where the fuel decides: the annotation is a function of the program, but it is
+not proved independent of the order in which the kernel is asked. -/
+
+namespace IxCC.Src.KernelFront
+
+open IxCC.Src IxCC.Src.Relevance
+
+/-- The annotator's monad: the kernel core's memo state, over IxCC's
+failures. -/
+abbrev AM := StateT (Ix.Kernel.Cached.CState .anon) (Except String)
+
+/-- The cached core over an accepted environment's index, at the verified
+mode and the kernel's fuel. -/
+def coreOf (fe : Ix.Kernel.FEnv .anon) : Ix.Kernel.Cached.CoreFnsI .anon :=
+  Ix.Kernel.Cached.coreKnotI .verified fe Ix.Kernel.checkFuel
+
+/-- Run a kernel call; a kernel failure is the annotator's. -/
+def kcall (what : String) (x : Ix.Kernel.Cached.CheckCM .anon α) : AM α := fun s =>
+  match x s with
+  | .ok (a, s') => .ok (a, s')
+  | .error e => .error s!"{what}: {e}"
+
+/-- The zero condition of a level, over its parameters: `none` when never
+zero, `some ps` when zero exactly when every parameter in `ps` is. Exact for
+every form, so no normalisation is needed; the list is in the order
+`Src.zeroCond` on `Univ` gives it (the same recursion). -/
+def zeroCond : KLevel → Option (List Nat)
+  | .zero => some []
+  | .succ _ => none
+  | .param i => some [i]
+  | .max a b =>
+    match zeroCond a, zeroCond b with
+    | some xs, some ys => some (xs ++ ys)
+    | _, _ => none
+  | .imax _ b => zeroCond b
+
+/-- The zero condition of a level as a `PropWhen`, its kernel parameters read
+back to IxCC's numbering (`back`), duplicates removed. -/
+def condOfLevel (back : Nat → Nat) (u : KLevel) : PropWhen :=
+  match zeroCond u with
+  | none => .never
+  | some ps => .allZero (ps.map back).eraseDups
+
+/-- What a classification needs: the core, and the reading-back of the
+universe parameters of the constant whose term is walked. -/
+structure Ctx where
+  core : Ix.Kernel.Cached.CoreFnsI .anon
+  back : Nat → Nat
+
+/-- The kernel's annotation pass on a term at depth `d` (free variables below
+`d`): what inference and reduction take. -/
+def Ctx.annotate (k : Ctx) (d : Nat) (e : KTerm) : AM KTerm :=
+  kcall "annotation" (k.core.annotate d e)
+
+/-- When a term whose (annotated) type is `ty` is a proof: the zero condition
+of `ty`'s sort. Only `ty`'s type is inferred and reduced to a sort; a failure
+counts as `never`, as before, and the walk continues with the empty memo (the
+state is only the kernel's memo). Keeping the state from before the call for
+that branch would make it shared during the call, and the kernel's memo would
+then copy its whole table at its first insertion: one copy per new type, of a
+memo that grows with the program. -/
+def Ctx.sortCond (k : Ctx) (d : Nat) (ty : KTerm) : AM PropWhen := fun s =>
+  match k.core.infer d ty s with
+  | .error _ => .ok (.never, {})
+  | .ok (t, s₁) =>
+    match k.core.whnf d t s₁ with
+    | .ok (.sort u, s₂) => .ok (condOfLevel k.back u, s₂)
+    | .ok (_, s₂) => .ok (.never, s₂)
+    | .error _ => .ok (.never, {})
+
+/-- Whether an (annotated) type reduces to a Π-telescope ending in a sort. -/
+def Ctx.endsInSort (k : Ctx) : Nat → Nat → KTerm → AM Bool
+  | 0, _, _ => pure false
+  | fuel + 1, d, ty => do
+    match ← kcall "reduction" (k.core.whnf d ty) with
+    | .sort .. => pure true
+    | .forallE dom body _ => k.endsInSort fuel (d + 1) (body.instantiate1 (.fvar d dom))
+    | _ => pure false
+
+/-- The class of a position whose annotated type is `ty`: the proof test
+first (it only infers the type's sort), then the type-former test. -/
+def Ctx.classifyAnnotated (k : Ctx) (d : Nat) (ty : KTerm) : AM Rel := fun s =>
+  match k.sortCond d ty s with
+  | .error e => .error e
+  | .ok (w, s₁) =>
+    if w = .never then
+      match k.endsInSort 256 d ty s₁ with
+      | .ok (true, s₂) => .ok (.type, s₂)
+      | .ok (false, s₂) => .ok (.rel, s₂)
+      | .error e => .error e
+    else .ok (.proof w, s₁)
+
+/-- The class of a position whose type is the (read) term `ty`. -/
+def Ctx.classifyType (k : Ctx) (d : Nat) (ty : KTerm) : AM Rel := fun s =>
+  match k.core.annotate d ty s with
+  | .error e => .error s!"annotation: {e}"
+  | .ok (ty', s₁) => k.classifyAnnotated d ty' s₁
+
+/-- The class of the (read) term `e` as a position: its inferred type's. -/
+def Ctx.classifyTerm (k : Ctx) (d : Nat) (e : KTerm) : AM Rel := fun s =>
+  match k.core.annotate d e s with
+  | .error err => .error s!"annotation: {err}"
+  | .ok (e', s₁) =>
+    match k.core.infer d e' s₁ with
+    | .error err => .error s!"inference: {err}"
+    | .ok (t, s₂) => k.classifyAnnotated d t s₂
+
+/-- A λ's `propWhen` from its opened body (a read term at depth `d`): the λ's
+type is a proof exactly when the sort of the body's type is zero. `walk` asks
+it once per run of λs, of the run's innermost body (`openLams`). -/
+def Ctx.propWhenOf (k : Ctx) (d : Nat) (body : KTerm) : AM PropWhen := do
+  let b' ← k.annotate d body
+  let bty ← kcall "inference" (k.core.infer d b')
+  let s ← kcall "inference" (k.core.infer d bty)
+  match ← kcall "reduction" (k.core.whnf d s) with
+  | .sort u => return condOfLevel k.back u
+  | _ => throw "relevance annotator: a λ body's type is not a type"
+
+/-- A binder written `0` (erased) is irrelevant at every instance: the class
+its type gives is kept when that is already irrelevant at every instance, and
+is a proof at every instance otherwise. -/
+def honourErased (erased : Bool) (r : Rel) : Rel :=
+  if erased && !r.alwaysIrr then Rel.prf else r
+
+/-- Whether the `i`-th argument of a spine headed by `head` meets a binder
+written erased: a parameter of a constant's Π telescope, or a binder of a
+β-redex's λ telescope. -/
+def erasedAt (p : Program) (head : Term) (i : Nat) : Bool :=
+  let binders : List (Binder × Term) := match head with
+    | .const c _ => ((p.decl? c).map fun (d : Decl) => d.type.pis.1).getD []
+    | .lam .. => head.lams.1
+    | _ => []
+  match binders[i]? with
+  | some (b, _) => b.isErased
+  | none => false
+
+structure Acc where
+  tags : Array Tag := #[]
+  refs : Array CId := #[]
+  projs : Array CId := #[]
+  nodes : Nat := 0
+
+/-- The innermost body of the run of λs at the head of `e` (a read term at depth
+`d`) and its depth, each binder opened as `walk` opens it (a free variable at
+its depth whose type is the binder's annotated domain); `e` itself when it is
+not a λ. -/
+def Ctx.openLams (k : Ctx) : Nat → Nat → KTerm → AM (Nat × KTerm)
+  | 0, _, _ => throw "relevance annotator: depth budget exhausted"
+  | fuel + 1, d, e =>
+    match e with
+    | .lam kty kbody _ => do
+      let kty' ← k.annotate d kty
+      k.openLams fuel (d + 1) (kbody.instantiate1 (.fvar d kty'))
+    | _ => pure (d, e)
+
+/-- Walk the positions of a Src term that are relevant at some instance, with
+the kernel's reading of the term at depth `d` (outer λ binders opened as free
+variables, outer lets substituted). `run` is the `propWhen` of the run of λs
+the term continues (`some` only in the body of a λ): each λ of a run gets the
+one zero condition its innermost body's type gives (`propWhenOf`, asked once
+per run). A λ is a proof exactly when its body is, so by the Π rule (the sort of
+`Π x : A, B` is `imax` of the two sorts, zero exactly when `B`'s is) every λ of a
+run has the innermost λ's condition; asking at every λ instead cost each the
+work of the rest of its run. -/
+def walk (p : Program) (k : Ctx) : Nat → Nat → Term → KTerm → Option PropWhen → Acc → AM Acc
+  | 0, _, _, _, _, _ => throw "relevance annotator: depth budget exhausted"
+  | fuel + 1, d, t, e, run, acc => do
+    let acc := { acc with nodes := acc.nodes + 1 }
+    if acc.nodes > nodeBudget then throw "relevance annotator: node budget exhausted"
+    match t, e with
+    | .lam b _ body, .lam kty kbody _ => do
+      let r := honourErased b.isErased (← k.classifyType d kty)
+      let kty' ← k.annotate d kty
+      let kb := kbody.instantiate1 (.fvar d kty')
+      let pw ← match run with
+        | some pw => pure pw
+        | none => do
+          let (d', inner) ← k.openLams fuel (d + 1) kb
+          k.propWhenOf d' inner
+      walk p k fuel (d + 1) body kb (some pw) { acc with tags := acc.tags.push (.lam r pw) }
+    | .app f a _ _, .app kf ka => do
+      let acc ← walk p k fuel d f kf none acc
+      let r ← k.classifyTerm d ka
+      let (head, args) := Term.spine t
+      let r := if erasedAt p head (args.length - 1) then honourErased true r else r
+      let acc := { acc with tags := acc.tags.push (.arg r) }
+      if r.alwaysIrr then pure acc else walk p k fuel d a ka none acc
+    | .letE _ m _ _ v body, .letE kty kv kbody _ => do
+      let r := honourErased m.isErased (← k.classifyType d kty)
+      let acc := { acc with tags := acc.tags.push (.letE r) }
+      let acc ← if r.alwaysIrr then pure acc else walk p k fuel d v kv none acc
+      -- the kernel's annotation pass reduces a `let` by substituting its value
+      walk p k fuel d body (kbody.instantiate1 kv) none acc
+    | .proj s _ e', .proj _ _ kv => walk p k fuel d e' kv none { acc with projs := acc.projs.push s }
+    | .const c _, .const .. => pure { acc with refs := acc.refs.push c }
+    -- a λ-bound variable is a free variable; a let-bound one is the let's value
+    | .var _, _ => pure acc
+    | .natLit _, .lit .. | .strLit _, .lit .. | .sort _, .sort .. | .pi .., .forallE .. => pure acc
+    | _, _ => throw s!"relevance annotator: a Src {srcHead t} node meets a kernel {kHead e} node"
+
+/-! ## N2 fail-closed stored zero-ness datum cross-check -/
+
+/-- The v5 record root backing a runtime `TermKey` (`none` for a table-built equation). -/
+def Reading.termRoot? (rd : Reading) : TermKey → Option RecRoot
+  | .value c => rd.valueRoot? c
+  | .rule r j => rd.ruleRoot? r j
+  | .eqn _ => none
+
+/-- Extract the stored zero-ness datum from a kernel-codec v5 `BinderNode`:
+`some pw` when decided, `none` for `.undecided` or `.share`. -/
+def kBinderNodeDatum : _root_.Ixon.BinderNode → Option PropWhen
+  | .never _ => some .never
+  | .zero _ => some .always
+  | .ifAllZero params _ => some (.allZero (params.toList.map UInt64.toNat))
+  | .undecided _ => none
+  | .share _ => none
+
+/-- Sorted, deduplicated universe parameter indices for semantic `PropWhen` comparison. -/
+def canonicalParams (ps : List Nat) : List Nat :=
+  (ps.toArray.qsort (· < ·)).toList.eraseDups
+
+/-- Whether two `PropWhen` conditions agree on every universe profile. -/
+def samePropWhen : PropWhen → PropWhen → Bool
+  | .never, .never => true
+  | .allZero ps, .allZero qs => canonicalParams ps == canonicalParams qs
+  | _, _ => false
+
+/-- Number of numbered nodes in a kernel-codec v5 expression (without entering
+shared entries), matching `_root_.Ixon.Expr.numberedNodes`. -/
+def kNumberedNodeCount (full : Array Bool) : _root_.Ixon.Expr → Nat
+  | .lam t b | .all t b => 1 + kNumberedNodeCount full t + kNumberedNodeCount full b
+  | .app f a => kNumberedNodeCount full f + kNumberedNodeCount full a
+  | .letE _ _ t v b =>
+      kNumberedNodeCount full t + kNumberedNodeCount full v + kNumberedNodeCount full b
+  | .prj _ _ v => kNumberedNodeCount full v
+  | .share n => if full[n.toNat]?.getD false then 1 else 0
+  | _ => 0
+
+/-- N2 fail-closed cross-check at one binder position: advisory when stored is
+`.undecided` (`none`), fails closed on any disagreement with `computed`. -/
+def checkStoredDatumAt (blk : RecBlock) (ord : Nat) (node : _root_.Ixon.BinderNode)
+    (computed : PropWhen) : Except String Unit :=
+  match node with
+  | .share _ =>
+    throw s!"stored binder datum: unexpected share node at \
+      ({blk.shared}, {blk.index}, {blk.variant}, {ord})"
+  | _ =>
+    match kBinderNodeDatum node with
+    | none => pure ()
+    | some stored =>
+      if samePropWhen stored computed then pure ()
+      else throw s!"stored binder datum {repr stored} disagrees with computed \
+        {repr computed} at ({blk.shared}, {blk.index}, {blk.variant}, {ord})"
+
+private def checkStoredTermLoop (rec : RecRoot) (tags : Array Tag) :
+    Nat → RecBlock → Nat → _root_.Ixon.Expr → Term → Nat → Except String (Nat × Nat)
+  | 0, _, _, _, _, _ => throw "stored binder datum: depth budget exhausted"
+  | fuel + 1, blk, ord, e, t, ti =>
+    match e with
+    | .share i =>
+      if rec.binderful[i.toNat]?.getD false then do
+        let some node := blk.nodes[ord]?
+          | throw s!"stored binder datum: missing share node at \
+              ({blk.shared}, {blk.index}, {blk.variant}, {ord})"
+        let .share variant := node
+          | throw s!"stored binder datum: expected share node at \
+              ({blk.shared}, {blk.index}, {blk.variant}, {ord})"
+        let some expansion := rec.constant.sharing[i.toNat]?
+          | throw s!"stored binder datum: share index {i} out of range"
+        let some subNodes := rec.constant.blockNodes? true i variant
+          | throw s!"stored binder datum: missing binder block for share ({i}, {variant})"
+        let (subEnd, ti') ← checkStoredTermLoop rec tags fuel
+          { shared := true, index := i, variant, nodes := subNodes } 0 expansion t ti
+        unless subEnd == subNodes.size do
+          throw s!"stored binder datum: share block ({i}, {variant}) consumed {subEnd} of {subNodes.size} nodes"
+        pure (ord + 1, ti')
+      else do
+        let some expansion := rec.constant.sharing[i.toNat]?
+          | throw s!"stored binder datum: share index {i} out of range"
+        let (_, ti') ← checkStoredTermLoop rec tags fuel
+          { shared := true, index := i, variant := 0, nodes := #[] } 0 expansion t ti
+        pure (ord, ti')
+    | .lam ed eb =>
+      match t with
+      | .lam _ _ body => do
+        let some node := blk.nodes[ord]?
+          | throw s!"stored binder datum: missing lam node at \
+              ({blk.shared}, {blk.index}, {blk.variant}, {ord})"
+        let some (.lam _ computedPw) := tags[ti]?
+          | throw s!"stored binder datum: missing lam tag at index {ti}"
+        checkStoredDatumAt blk ord node computedPw
+        let ord1 := ord + 1 + kNumberedNodeCount rec.binderful ed
+        checkStoredTermLoop rec tags fuel blk ord1 eb body (ti + 1)
+      | _ => throw "stored binder datum: term mismatch at lam"
+    | .all ed eb =>
+      match t with
+      | .pi .. =>
+        pure (ord + 1 + kNumberedNodeCount rec.binderful ed + kNumberedNodeCount rec.binderful eb, ti)
+      | _ => throw "stored binder datum: term mismatch at all"
+    | .app ef ea =>
+      match t with
+      | .app f a _ _ => do
+        let (ord1, ti1) ← checkStoredTermLoop rec tags fuel blk ord ef f ti
+        let some (.arg r) := tags[ti1]?
+          | throw s!"stored binder datum: missing arg tag at index {ti1}"
+        if r.alwaysIrr then
+          pure (ord1 + kNumberedNodeCount rec.binderful ea, ti1 + 1)
+        else
+          checkStoredTermLoop rec tags fuel blk ord1 ea a (ti1 + 1)
+      | _ => throw "stored binder datum: term mismatch at app"
+    | .letE _ _ ety ev eb =>
+      match t with
+      | .letE _ _ _ _ v body => do
+        let ord1 := ord + kNumberedNodeCount rec.binderful ety
+        let some (.letE r) := tags[ti]?
+          | throw s!"stored binder datum: missing let tag at index {ti}"
+        let (ord2, ti2) ←
+          if r.alwaysIrr then
+            pure (ord1 + kNumberedNodeCount rec.binderful ev, ti + 1)
+          else
+            checkStoredTermLoop rec tags fuel blk ord1 ev v (ti + 1)
+        checkStoredTermLoop rec tags fuel blk ord2 eb body ti2
+      | _ => throw "stored binder datum: term mismatch at let"
+    | .prj _ _ ev =>
+      match t with
+      | .proj _ _ e' => checkStoredTermLoop rec tags fuel blk ord ev e' ti
+      | _ => throw "stored binder datum: term mismatch at proj"
+    | _ => pure (ord, ti)
+
+/-- N2 fail-closed cross-check of the stored zero-ness data in `rec` against the
+annotator's computed λ `PropWhen` tags for runtime term `t`. -/
+def checkStoredTermBinders (rec : RecRoot) (t : Term) (tags : Array Tag) : Except String Unit := do
+  let nodes := (rec.constant.blockNodes? false rec.rootIdx 0).getD #[]
+  let (endOrd, endTi) ← checkStoredTermLoop rec tags depthBudget
+    { shared := false, index := rec.rootIdx, variant := 0, nodes } 0 rec.expr t 0
+  unless endOrd == nodes.size do
+    throw s!"stored binder datum: root block {rec.rootIdx} consumed {endOrd} of {nodes.size} nodes"
+  unless endTi == tags.size do
+    throw s!"stored binder datum: tag walk consumed {endTi} of {tags.size} tags"
+
+private def checkStoredTypeLoop (rec : RecRoot) (codPw : PropWhen) :
+    Nat → Nat → RecBlock → Nat → _root_.Ixon.Expr → Except String Unit
+  | _, 0, _, _, _ => pure ()
+  | 0, _ + 1, _, _, _ => throw "stored binder datum: type depth budget exhausted"
+  | fuel + 1, remaining + 1, blk, ord, e =>
+    match e with
+    | .share i =>
+      if rec.binderful[i.toNat]?.getD false then do
+        let some node := blk.nodes[ord]?
+          | throw s!"stored binder datum: missing type share node at \
+              ({blk.shared}, {blk.index}, {blk.variant}, {ord})"
+        let .share variant := node
+          | throw s!"stored binder datum: expected type share node at \
+              ({blk.shared}, {blk.index}, {blk.variant}, {ord})"
+        let some expansion := rec.constant.sharing[i.toNat]?
+          | throw s!"stored binder datum: type share index {i} out of range"
+        let some subNodes := rec.constant.blockNodes? true i variant
+          | throw s!"stored binder datum: missing type binder block for share ({i}, {variant})"
+        checkStoredTypeLoop rec codPw fuel (remaining + 1)
+          { shared := true, index := i, variant, nodes := subNodes } 0 expansion
+      else do
+        let some expansion := rec.constant.sharing[i.toNat]?
+          | throw s!"stored binder datum: type share index {i} out of range"
+        checkStoredTypeLoop rec codPw fuel (remaining + 1)
+          { shared := true, index := i, variant := 0, nodes := #[] } 0 expansion
+    | .all ed ec => do
+      let some node := blk.nodes[ord]?
+        | throw s!"stored binder datum: missing all node at \
+            ({blk.shared}, {blk.index}, {blk.variant}, {ord})"
+      checkStoredDatumAt blk ord node codPw
+      let ord1 := ord + 1 + kNumberedNodeCount rec.binderful ed
+      checkStoredTypeLoop rec codPw fuel remaining blk ord1 ec
+    | _ => pure ()
+
+/-- N2 fail-closed cross-check of the leading Π binders' stored zero-ness data
+in a constant's type `rec` against the annotator's computed codomain zero condition. -/
+def checkStoredTypeBinders (rec : RecRoot) (numLeading : Nat) (codPw : PropWhen) :
+    Except String Unit := do
+  if numLeading == 0 then return ()
+  let nodes := (rec.constant.blockNodes? false rec.rootIdx 0).getD #[]
+  checkStoredTypeLoop rec codPw depthBudget numLeading
+    { shared := false, index := rec.rootIdx, variant := 0, nodes } 0 rec.expr
+
+/-- The kernel term of a runtime term, with the kernel parameters of the
+constant it belongs to: a value's or a rule's reading, after checking that
+IxCC's term corresponds to both the kernel term and the accepted v5 record's
+binder-data section (`corrRec`); an equation's body translated (`toKernel`),
+IxCC's table check having built it. -/
+def kernelTermOf (p : Program) (rd : Reading) (key : TermKey) (t : Term) :
+    Except String (KTerm × List Nat) := do
+  match key with
+  | .value c =>
+    let some (.defn cv v _) := rd.info? c
+      | throw s!"constant {c}: the kernel's reading has no definition there"
+    let some rec := rd.valueRoot? c
+      | throw s!"constant {c} ({p.addr c}): missing v5 record for its value"
+    let _ ← (corrRec rd.keys cv.levelParams rec depthBudget t v nodeBudget).mapError
+      fun e => s!"constant {c} ({p.addr c}), its value: {e}"
+    pure (v, cv.levelParams)
+  | .rule r j =>
+    let some (.recr cv _ _ rules) := rd.info? r
+      | throw s!"constant {r}: the kernel's reading has no recursor there"
+    let some rule := rules[j]? | throw s!"recursor {r}: no rule {j} in the kernel's reading"
+    let some rec := rd.ruleRoot? r j
+      | throw s!"recursor {r} ({p.addr r}), rule {j}: missing v5 record for rule"
+    let _ ← (corrRec rd.keys cv.levelParams rec depthBudget t rule.rhs nodeBudget).mapError
+      fun e => s!"recursor {r} ({p.addr r}), rule {j}: {e}"
+    pure (rule.rhs, cv.levelParams)
+  | .eqn c =>
+    let lps := rd.lps c
+    let (e, _) ← (toKernel rd.keys lps depthBudget t).run nodeBudget
+    pure (e, lps)
+
+/-- Peel one Π, syntactically or after reduction, opening its binder at
+depth `d`: the binder's annotated domain and the opened body. -/
+def Ctx.openPi (k : Ctx) (d : Nat) (ty : KTerm) : AM (Option (KTerm × KTerm)) := do
+  let ty ← match ty with
+    | .forallE .. => pure ty
+    | _ => do kcall "reduction" (k.core.whnf d (← k.annotate d ty))
+  match ty with
+  | .forallE dom body _ =>
+    let dom' ← k.annotate d dom
+    return some (dom, body.instantiate1 (.fvar d dom'))
+  | _ => return none
+
+/-- A constant's class and its Π telescope's binder classes, from its kernel
+type; a parameter written erased in its Src type is irrelevant. -/
+def constRel (p : Program) (k : Ctx) (c : CId) (ty : KTerm) : AM ConstRel := do
+  let result ← k.classifyType 0 ty
+  let written := ((p.decl? c).map fun d => d.type.pis.1.map (·.1.isErased)).getD []
+  let mut cur := ty
+  let mut d := 0
+  let mut params := #[]
+  for _ in [0:4096] do
+    match cur with
+    | .forallE dom body _ =>
+      let r ← k.classifyType d dom
+      params := params.push (match written[params.size]? with
+        | some erased => honourErased erased r
+        | none => r)
+      let dom' ← k.annotate d dom
+      cur := body.instantiate1 (.fvar d dom')
+      d := d + 1
+    | _ => break
+  return { result, params := params.toList }
+
+/-- A constructor's field classes, from its kernel type. -/
+def ctorRel (k : Ctx) (np nf : Nat) (ty : KTerm) : AM CtorRel := do
+  let mut cur := ty
+  let mut d := 0
+  for _ in [0:np] do
+    let some (_, b) ← k.openPi d cur | throw "relevance annotator: constructor parameters"
+    cur := b
+    d := d + 1
+  let mut fields := #[]
+  for _ in [0:nf] do
+    let some (dom, b) ← k.openPi d cur | throw "relevance annotator: constructor fields"
+    fields := fields.push (FieldClass.ofRel (← k.classifyType d dom))
+    cur := b
+    d := d + 1
+  return { fields := fields.toList }
+
+/-- Constructors of an inductive (for recursors and projections). -/
+def ctorsOf (p : Program) (ind : CId) : Array CId :=
+  match p.decl? ind with
+  | some (.induct _ _ _ _ _ ctors) => ctors.toArray
+  | _ => #[]
+
+/-- The annotation of the runtime-reachable part of `p`, from the roots, with
+the kernel core `core` over the accepted environment. -/
+def annotateRun (p : Program) (rd : Reading) (core : Ix.Kernel.Cached.CoreFnsI .anon) : AM Ann := do
+  let n := p.size
+  let mut reached : Array Bool := .replicate n false
+  let mut consts : Array (Option ConstRel) := .replicate n none
+  let mut ctors : Array (Option CtorRel) := .replicate n none
+  let mut nodes : Array (TermKey × Array Tag) := #[]
+  let mut queue : Array CId := p.roots.toArray.map (·.2)
+  let mut ctorQueue : Array CId := #[]
+  let mut qi := 0
+  while qi < queue.size do
+    let c := queue[qi]!
+    qi := qi + 1
+    if reached[c]?.getD true then continue
+    reached := reached.set! c true
+    let some info := rd.info? c | throw s!"relevance annotator: constant {c} has no kernel declaration"
+    let lps := info.cv.levelParams
+    let kc : Ctx := { core, back := backOf lps }
+    let cr ← constRel p kc c info.cv.type
+    if let some rec := rd.typeRoot? c then
+      let codPw : PropWhen := match cr.result with | .proof w => w | _ => .never
+      (checkStoredTypeBinders rec cr.params.length codPw).mapError
+        fun e => s!"constant {c} ({p.addr c}), its type: {e}"
+    consts := consts.set! c (some cr)
+    match p.decl? c with
+    | some (.ctor ..) => ctorQueue := ctorQueue.push c
+    | some (.recr _ _ _ _ _ _ _ ind _ _) => ctorQueue := ctorQueue ++ ctorsOf p ind
+    | _ => pure ()
+    for key in p.runtimeKeys c do
+      let some t := p.termOf key | throw "relevance annotator: missing runtime term"
+      let (e, lps) ← (kernelTermOf p rd key t : Except String _)
+      let acc ← walk p { core, back := backOf lps } depthBudget 0 t e none {}
+      if let some rec := rd.termRoot? key then
+        (checkStoredTermBinders rec t acc.tags).mapError
+          fun e => s!"constant {c} ({p.addr c}): {e}"
+      nodes := nodes.push (key, acc.tags)
+      queue := queue ++ acc.refs
+      for s in acc.projs do ctorQueue := ctorQueue ++ ctorsOf p s
+    queue := queue ++ (p.runtimeRefs c).toArray.map (·.1)
+  for c in ctorQueue do
+    if (ctors[c]?).join.isNone then
+      let some (.ctor cv np nf) := rd.info? c
+        | throw s!"relevance annotator: constant {c} is not a constructor in the kernel's reading"
+      ctors := ctors.set! c (some (← ctorRel { core, back := backOf cv.levelParams } np nf cv.type))
+  return { consts := NatMap.ofOptions consts.toList, ctors := NatMap.ofOptions ctors.toList
+           nodes := nodes.toList.map fun (key, tags) => (key, tags.toList) }
+
+/-- **The relevance oracle over the certified kernel**: annotate the
+runtime-reachable part of `p` (IxCC's reading of the accepted environment,
+keyed to the kernel's by `rd`), asking the kernel core over the accepted
+environment's index `fe`. -/
+def annotate (fe : Ix.Kernel.FEnv .anon) (rd : Reading) (p : Program) : Except String Ann :=
+  match (annotateRun p rd (coreOf fe)).run {} with
+  | .ok (ann, _) => .ok ann
+  | .error e => .error s!"relevance annotator (kernel): {e}"
+
+/-- The constants an annotation reaches: every constant with a class and
+every constructor with field classes. -/
+def annReached (a : Ann) (size : Nat) : List CId :=
+  (List.range size).filter fun c => (a.constRel? c).isSome || (a.ctorRel? c).isSome
+
+/-- Constants referenced by unfolding-table entries: subjects, target
+definitions, justifying theorems, and recursors. -/
+def tableConstants (p : Program) : List CId :=
+  (List.range p.size).flatMap fun c =>
+    match p.table.resolveOf c with
+    | some (.eqn thm _) => [c, thm]
+    | some (.csimp g _ thm) => [c, g, thm]
+    | some (.word _ _ thm) => [c, thm]
+    | some (.case r) => [c, r]
+    | some (.prim _) => [c]
+    | none => []
+
+/-- Theorems justifying `.eqn`, `.csimp`, and `.word` unfolding-table entries. -/
+def tableTheorems (p : Program) : List CId :=
+  (List.range p.size).flatMap fun c =>
+    match p.table.resolveOf c with
+    | some (.eqn thm _) | some (.csimp _ _ thm) | some (.word _ _ thm) => [thm]
+    | _ => []
+
+/-- Run a check on every `CId` in a list (structural for clean soundness proofs). -/
+def checkEachId (f : CId → Except String Unit) : List CId → Except String Unit
+  | [] => pure ()
+  | c :: cs => do
+    f c
+    checkEachId f cs
+
+/-- Check the value of a `.case` or `.eqn` subject against the kernel and v5
+record (`Reading.valueCheck` / `corrRec`), since `checkCase` and `checkEqn`
+inspect the subject's body directly rather than through the runtime annotator. -/
+def checkTableSubjectValue (rd : Reading) (p : Program) (c : CId) : Except String Unit :=
+  match p.table.resolveOf c with
+  | some (.case _) => rd.valueCheck p c
+  | some (.eqn ..) => rd.valueCheck p c bodyNodeBudget
+  | _ => pure ()
+
+/-- **The types and table justifications the program reads correspond to the
+kernel's**:
+1. Every constant `a` reaches and every constant referenced by `p.table.resolve`
+   (including table subjects, `csimp` targets, `case` recursors, and `.eqn`/
+   `.csimp`/`.word` theorems) passes `Reading.typeCheck` (`corrRec`).
+2. Every theorem justifying an `.eqn`, `.csimp`, or `.word` entry passes
+   `Reading.thmCheck` (safe logical theorem, not read by statement, and
+   statement verified via `corrRec`).
+3. Every `.case` and `.eqn` subject's body passes `Reading.valueCheck`
+   (`corrRec`). -/
+def checkReachedTypes (rd : Reading) (p : Program) (a : Ann) : Except String Unit := do
+  checkEachId (rd.typeCheck p) (annReached a p.size ++ tableConstants p).eraseDups
+  checkEachId (rd.thmCheck p) (tableTheorems p).eraseDups
+  checkEachId (checkTableSubjectValue rd p) (List.range p.size)
+
+/-- **What ingress keeps of the kernel** for the producer, the loader and
+Stage A: the acceptance (`accept`), IxCC's program keyed to the kernel's
+reading (`Reading.build`), and the accepted environment's index, which the
+annotator queries. -/
+structure Kernel where
+  acc : Accepted
+  rd : Reading
+  fe : Ix.Kernel.FEnv .anon
+
+/-- **The relevance oracle over the kernel**, on a program with a table: the
+kernel annotator's output (`annotate`), and the check that the types the
+program reads are the kernel's (`checkReachedTypes`). -/
+def Kernel.annotateChecked (k : Kernel) (p : Program) : Except String Ann := do
+  let ann ← annotate k.fe k.rd p
+  checkReachedTypes k.rd p ann
+  pure ann
+
+end IxCC.Src.KernelFront

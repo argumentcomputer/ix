@@ -224,7 +224,7 @@ pub fn execute(system: &System, request: &Request) -> Result<Outcome, String> {
   }
   let seconds = start.elapsed().as_secs_f64();
   println!(
-    "verified claim in {seconds:.3}s ({} queries, {} instructions)",
+    "executed claim in {seconds:.3}s ({} queries, {} instructions; runtime_check: false assertions skipped)",
     result.queries.len(),
     result.instructions
   );

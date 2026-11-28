@@ -168,31 +168,31 @@ info: Ix.Cert.Aggr.MonolithicRom.goldilocksExt3_card_ge_two_pow_191 : 2 ^ 191 �
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Aggr.MonolithicRom.goldilocksExt3_card_ge_two_pow_191
 /--
-info: Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_xof48_rate_128 : ∀ (Q M_verif : ℕ),
+info: Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_blake2b512_rate_128 : ∀ (Q M_verif : ℕ),
   M_verif ≤ 2 ^ 20 →
     Q + M_verif ≤ 2 ^ 128 →
       ∀ {εmax : ℝ},
         εmax ≤ 1 / 2 / 2 ^ 128 →
-          Ix.Cert.Aggr.MonolithicRom.monolithicRomBound Q M_verif εmax (3 / 2) (2 ^ 384) ≤ ↑(Q + M_verif) / 2 ^ 128
+          Ix.Cert.Aggr.MonolithicRom.monolithicRomBound Q M_verif εmax (3 / 2) (2 ^ 512) ≤ ↑(Q + M_verif) / 2 ^ 128
 -/
 #guard_msgs (whitespace := lax) in
-#check @Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_xof48_rate_128
+#check @Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_blake2b512_rate_128
 /--
-info: Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_xof48_concrete_prob_128 : ∀ (Q M_verif : ℕ),
+info: Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_blake2b512_concrete_prob_128 : ∀ (Q M_verif : ℕ),
   M_verif ≤ 2 ^ 20 →
     Q + M_verif ≤ 2 ^ 127 →
       ∀ {εmax : ℝ},
         ↑(Q + M_verif) * εmax ≤ 1 / 2 / 2 ^ 128 →
-          Ix.Cert.Aggr.MonolithicRom.monolithicRomBound Q M_verif εmax (3 / 2) (2 ^ 384) ≤ 1 / 2 ^ 128
+          Ix.Cert.Aggr.MonolithicRom.monolithicRomBound Q M_verif εmax (3 / 2) (2 ^ 512) ≤ 1 / 2 ^ 128
 -/
 #guard_msgs (whitespace := lax) in
-#check @Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_xof48_concrete_prob_128
+#check @Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_blake2b512_concrete_prob_128
 /--
 info: Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_field_128 : ∀ (Q M_verif : ℕ),
   Q ≤ 2 ^ 61 →
     M_verif ≤ 2 ^ 20 →
       Ix.Cert.Aggr.MonolithicRom.monolithicRomBound Q M_verif (1 / ↑CertiFri.P3.Goldilocks.order ^ 3) (3 / 2)
-          (2 ^ 384) ≤
+          (2 ^ 512) ≤
         1 / 2 ^ 128
 -/
 #guard_msgs (whitespace := lax) in
@@ -205,7 +205,7 @@ info: Ix.Cert.Aggr.MonolithicRom.monolithic_strictly_tighter_than_union_bound : 
 #check @Ix.Cert.Aggr.MonolithicRom.monolithic_strictly_tighter_than_union_bound
 /--
 info: Ix.Cert.Aggr.MonolithicRom.monolithic_beats_union_bound_2_pow_20 : ↑(2 ^ 20) * ↑(2 ^ 108) * (1 / 2 ^ 128) = 1 ∧
-  Ix.Cert.Aggr.MonolithicRom.monolithicRomBound (2 ^ 108) (2 ^ 20) (1 / 2 ^ 128) (3 / 2) (2 ^ 384) < 1 / 2 ^ 19
+  Ix.Cert.Aggr.MonolithicRom.monolithicRomBound (2 ^ 108) (2 ^ 20) (1 / 2 ^ 128) (3 / 2) (2 ^ 512) < 1 / 2 ^ 19
 -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Aggr.MonolithicRom.monolithic_beats_union_bound_2_pow_20
@@ -463,26 +463,33 @@ info: Ix.Cert.Compression.StarkShrinker.negControl_shrinker_v6_rejects_weak_para
         pinnedVkDigest := __src.pinnedVkDigest }) ∧
   ¬Ix.Cert.Compression.StarkShrinker.StarkShrinkerV6ProfileOk
         (have __src := Ix.Cert.Compression.StarkShrinker.v6ShrinkerUd128;
-        { version := __src.version, extDegree := __src.extDegree, digestBytes := __src.digestBytes,
-          batching := Ix.Cert.Compression.StarkShrinker.FriBatchingMode.powers, regime := __src.regime,
-          logBlowup := __src.logBlowup, numQueries := __src.numQueries, queryPowBits := __src.queryPowBits,
-          numCircuits := __src.numCircuits, leafDomain := __src.leafDomain, compressDomain := __src.compressDomain,
-          transcriptDomain := __src.transcriptDomain, vkDomain := __src.vkDomain,
+        { version := __src.version, extDegree := __src.extDegree, digestBytes := 48, batching := __src.batching,
+          regime := __src.regime, logBlowup := __src.logBlowup, numQueries := __src.numQueries,
+          queryPowBits := __src.queryPowBits, numCircuits := __src.numCircuits, leafDomain := __src.leafDomain,
+          compressDomain := __src.compressDomain, transcriptDomain := __src.transcriptDomain, vkDomain := __src.vkDomain,
           pinnedVkDigest := __src.pinnedVkDigest }) ∧
     ¬Ix.Cert.Compression.StarkShrinker.StarkShrinkerV6ProfileOk
           (have __src := Ix.Cert.Compression.StarkShrinker.v6ShrinkerUd128;
           { version := __src.version, extDegree := __src.extDegree, digestBytes := __src.digestBytes,
-            batching := __src.batching, regime := __src.regime, logBlowup := __src.logBlowup, numQueries := 159,
-            queryPowBits := __src.queryPowBits, numCircuits := __src.numCircuits, leafDomain := __src.leafDomain,
-            compressDomain := __src.compressDomain, transcriptDomain := __src.transcriptDomain,
-            vkDomain := __src.vkDomain, pinnedVkDigest := __src.pinnedVkDigest }) ∧
+            batching := Ix.Cert.Compression.StarkShrinker.FriBatchingMode.powers, regime := __src.regime,
+            logBlowup := __src.logBlowup, numQueries := __src.numQueries, queryPowBits := __src.queryPowBits,
+            numCircuits := __src.numCircuits, leafDomain := __src.leafDomain, compressDomain := __src.compressDomain,
+            transcriptDomain := __src.transcriptDomain, vkDomain := __src.vkDomain,
+            pinnedVkDigest := __src.pinnedVkDigest }) ∧
       ¬Ix.Cert.Compression.StarkShrinker.StarkShrinkerV6ProfileOk
-          (have __src := Ix.Cert.Compression.StarkShrinker.v6ShrinkerJohnsonLb2;
-          { version := __src.version, extDegree := __src.extDegree, digestBytes := __src.digestBytes,
-            batching := __src.batching, regime := __src.regime, logBlowup := __src.logBlowup, numQueries := 117,
-            queryPowBits := __src.queryPowBits, numCircuits := __src.numCircuits, leafDomain := __src.leafDomain,
-            compressDomain := __src.compressDomain, transcriptDomain := __src.transcriptDomain,
-            vkDomain := __src.vkDomain, pinnedVkDigest := __src.pinnedVkDigest })
+            (have __src := Ix.Cert.Compression.StarkShrinker.v6ShrinkerUd128;
+            { version := __src.version, extDegree := __src.extDegree, digestBytes := __src.digestBytes,
+              batching := __src.batching, regime := __src.regime, logBlowup := __src.logBlowup, numQueries := 159,
+              queryPowBits := __src.queryPowBits, numCircuits := __src.numCircuits, leafDomain := __src.leafDomain,
+              compressDomain := __src.compressDomain, transcriptDomain := __src.transcriptDomain,
+              vkDomain := __src.vkDomain, pinnedVkDigest := __src.pinnedVkDigest }) ∧
+        ¬Ix.Cert.Compression.StarkShrinker.StarkShrinkerV6ProfileOk
+            (have __src := Ix.Cert.Compression.StarkShrinker.v6ShrinkerJohnsonLb2;
+            { version := __src.version, extDegree := __src.extDegree, digestBytes := __src.digestBytes,
+              batching := __src.batching, regime := __src.regime, logBlowup := __src.logBlowup, numQueries := 117,
+              queryPowBits := __src.queryPowBits, numCircuits := __src.numCircuits, leafDomain := __src.leafDomain,
+              compressDomain := __src.compressDomain, transcriptDomain := __src.transcriptDomain,
+              vkDomain := __src.vkDomain, pinnedVkDigest := __src.pinnedVkDigest })
 -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Compression.StarkShrinker.negControl_shrinker_v6_rejects_weak_params
@@ -1010,19 +1017,19 @@ info: 'Ix.Cert.Aggr.MonolithicRom.goldilocksExt3_card_ge_two_pow_191' depends on
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Aggr.MonolithicRom.goldilocksExt3_card_ge_two_pow_191
 /--
-info: 'Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_xof48_rate_128' depends on axioms: [propext,
+info: 'Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_blake2b512_rate_128' depends on axioms: [propext,
  Classical.choice,
  Quot.sound]
 -/
 #guard_msgs (whitespace := lax) in
-#print axioms Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_xof48_rate_128
+#print axioms Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_blake2b512_rate_128
 /--
-info: 'Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_xof48_concrete_prob_128' depends on axioms: [propext,
+info: 'Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_blake2b512_concrete_prob_128' depends on axioms: [propext,
  Classical.choice,
  Quot.sound]
 -/
 #guard_msgs (whitespace := lax) in
-#print axioms Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_xof48_concrete_prob_128
+#print axioms Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_blake2b512_concrete_prob_128
 /--
 info: 'Ix.Cert.Aggr.MonolithicRom.monolithic_goldilocksExt3_field_128' depends on axioms: [propext,
  Classical.choice,

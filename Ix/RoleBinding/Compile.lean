@@ -5,7 +5,7 @@ public import Ix.Cert.Compile
 public import Ix.EnvScope
 public import Ix.LeanExport
 public import Ix.Meta
-public import IxC.Kernel.PinGen.Certs
+public import IxCK.Kernel.PinGen.Certs
 
 /-! Artifact-specific support and evidence for the production compiler.
 
@@ -638,19 +638,19 @@ def compileRequired (backend : Backend) (source : Lean.Environment)
 initialize cachedNativeCertSource : IO.Ref (Option Lean.Environment) ← IO.mkRef none
 
 def nativeCertSourceText : String :=
-  include_str "../../IxC/Kernel/PinGen/Certs.lean"
+  include_str "../../IxCK/Kernel/PinGen/Certs.lean"
 
-/-- Elaborate the embedded `IxC/Kernel/PinGen/Certs.lean` source against the
+/-- Elaborate the embedded `IxCK/Kernel/PinGen/Certs.lean` source against the
 toolchain's `Init` when the prebuilt `.olean` is not available on disk (for
 example when `ix` runs as a standalone binary outside a built root workspace). -/
 def elaborateNativeCertSource : IO Lean.Environment := do
   let opts := Lean.Options.empty.setBool `linter.deprecated false
-  let inputCtx := Lean.Parser.mkInputContext nativeCertSourceText "IxC/Kernel/PinGen/Certs.lean"
+  let inputCtx := Lean.Parser.mkInputContext nativeCertSourceText "IxCK/Kernel/PinGen/Certs.lean"
   let (header, _, _) ← Lean.Parser.parseHeader inputCtx
   unsafe Lean.enableInitializersExecution
   let some certElabEnv ← Lean.Elab.runFrontend nativeCertSourceText opts
-      "IxC/Kernel/PinGen/Certs.lean" `IxC.Kernel.PinGen.Certs
-    | throw (IO.userError "nativeCertSource: failed to elaborate embedded IxC.Kernel.PinGen.Certs")
+      "IxCK/Kernel/PinGen/Certs.lean" `IxCK.Kernel.PinGen.Certs
+    | throw (IO.userError "nativeCertSource: failed to elaborate embedded IxCK.Kernel.PinGen.Certs")
   unsafe Lean.enableInitializersExecution
   let baseEnv ← Lean.importModules (Lean.Elab.HeaderSyntax.imports header) default (loadExts := false)
   let baseConsts := baseEnv.constants.fold (init := #[]) fun acc n ci => acc.push (n, ci)
@@ -658,7 +658,7 @@ def elaborateNativeCertSource : IO Lean.Environment := do
   Ix.LeanExport.environment (baseConsts ++ certConsts)
 
 /-- The certificate theorems of the toolchain ix runs on: its own
-`IxC.Kernel.PinGen.Certs`, elaborated against its own `Init`. Uses the
+`IxCK.Kernel.PinGen.Certs`, elaborated against its own `Init`. Uses the
 prebuilt `.olean` when present on the search path or in a local `.lake/kernel`
 build directory, and otherwise elaborates the embedded source against `Init`
 without invoking `lake`. -/
@@ -667,7 +667,7 @@ def nativeCertSource : IO Lean.Environment := do
     return env
   if (← (← Lean.searchPathRef.get).findWithExt "olean" `Init).isNone then
     Lean.initSearchPath (← Lean.findSysroot)
-  if (← (← Lean.searchPathRef.get).findModuleWithExt "olean" `IxC.Kernel.PinGen.Certs).isNone then
+  if (← (← Lean.searchPathRef.get).findModuleWithExt "olean" `IxCK.Kernel.PinGen.Certs).isNone then
     let mut localDirs : List System.FilePath := []
     for dir in ([".lake/kernel/lib/lean", "../.lake/kernel/lib/lean",
         "../../.lake/kernel/lib/lean"] : List System.FilePath) do
@@ -676,11 +676,11 @@ def nativeCertSource : IO Lean.Environment := do
     unless localDirs.isEmpty do
       let current ← Lean.searchPathRef.get
       Lean.searchPathRef.set (localDirs ++ current)
-  let hasOlean ← match ← (← Lean.searchPathRef.get).findModuleWithExt "olean" `IxC.Kernel.PinGen.Certs with
+  let hasOlean ← match ← (← Lean.searchPathRef.get).findModuleWithExt "olean" `IxCK.Kernel.PinGen.Certs with
     | some path => System.FilePath.pathExists (System.FilePath.mk (path.toString ++ ".private"))
     | none => pure false
   let env ← if hasOlean then
-      Lean.importModules #[{ module := `IxC.Kernel.PinGen.Certs }] default (loadExts := false)
+      Lean.importModules #[{ module := `IxCK.Kernel.PinGen.Certs }] default (loadExts := false)
     else
       elaborateNativeCertSource
   cachedNativeCertSource.set (some env)
@@ -848,6 +848,15 @@ def sliceSupportRoles? (source : Lean.Environment) (artifact : Ixon.Env)
 def certTheoremsOf (roles : List Role) : List Lean.Name :=
   (Ix.RoleEvidence.allCertTheorems.filter (fun (role, _) => roles.contains role)).flatMap (·.2)
 
+/-- The roles whose constants the certificate closure of `required` contains: the
+closure `compileCertificates` compiles for `certTheoremsOf required`, read from
+`certSource`. When `generate` retains that closure (`retainsCertificates`), its
+records enter the artifact, so these are roles the artifact publishes. -/
+def certificateRoles (certSource : Lean.Environment) (required : List Role) : List Role :=
+  let constants := Ix.EnvScope.collectSelectedDeps certSource (certTheoremsOf required)
+  let found := constants.filterMap fun (name, _) => Role.ofLeanName? (Ix.Kernel.Name.ofLeanName name)
+  Role.all.filter found.contains
+
 /-- The certificate closure of `theorems`, read from `certSource` and compiled
 by `backend` (empty for no theorems). -/
 def compileCertificates (backend : Backend) (certSource : IO Lean.Environment)
@@ -884,7 +893,9 @@ toolchain's environment as `source`: `nativeCertSource` for a compile of ix's ow
 toolchain, and the imported environment itself for a compile of another
 toolchain's export (`Ix.LeanExport`). It is only run when a role with
 certificate evidence (a well-founded operation, or a definition specified by
-equations that hold by a certificate) is published. A `prefetched` compile
+equations that hold by a certificate) is published; role selection reads it
+too when the artifact retains the certificate closure (`certificateRoles`).
+A `prefetched` compile
 (`prefetchCertificates`, from the same `backend` and `certSource`) stands in
 for it when its theorems are the ones needed.
 
@@ -904,17 +915,37 @@ def finalize (backend : Backend) (source : Lean.Environment)
     | some m => pure m
     | none => IO.ofExcept (sourceAddresses artifact)
   let initialRoles := publishedRolesFrom existing
-  let initRoles := closeRoles (alwaysBoundFor source ++ initialRoles)
-  -- The roles to support, and how: `initRoles`, sliced from the artifact when
-  -- it can be; otherwise `supportInput`'s closure, from its selected input.
-  let sliced? := if initialRoles == initRoles then
-      sliceSupportRoles? source artifact existing initRoles
-    else none
-  let (required, plan) ← match sliced? with
-    | some sliced => pure (initRoles, Sum.inl sliced)
-    | none => do
-      let (required, selected) ← IO.ofExcept (supportInput source artifact (some initialRoles))
-      pure (required, Sum.inr selected)
+  -- The roles to support, and how, to a fixpoint over the role domain. From the
+  -- roles `seed` (first the artifact's published roles): `closeRoles` over
+  -- `alwaysBoundFor source ++ seed`, sliced from the artifact when that is the artifact's
+  -- own role closure; otherwise `supportInput`'s closure, from its selected input.
+  -- When the emitted artifact retains the certificate closure (`retainsCertificates`),
+  -- every role whose constant that closure contains (`certificateRoles`) joins
+  -- the seed: those records enter the artifact, and a checker reads a role's
+  -- constant as its role only when the table binds it (an unbound
+  -- `Classical.choice` is an axiom the checker does not admit).
+  let mut seed := initialRoles
+  let mut selection? : Option (List Role × (Ixon.Env ⊕ Ix.Compile.CompileInput)) := none
+  for _ in [:Role.all.length + 1] do
+    let initRoles := closeRoles (alwaysBoundFor source ++ seed)
+    let sliced? := if seed == initialRoles && initialRoles == initRoles then
+        sliceSupportRoles? source artifact existing initRoles
+      else none
+    let (required, plan) ← match sliced? with
+      | some sliced => pure (initRoles, Sum.inl sliced)
+      | none => do
+        let (required, selected) ← IO.ofExcept (supportInput source artifact (some seed))
+        pure (required, Sum.inr selected)
+    let mut extra : List Role := []
+    if retainsCertificates required && required.length < Role.all.length then
+      let certEnv ← certSource
+      extra := (certificateRoles certEnv required).filter (!required.contains ·)
+    if extra.isEmpty then
+      selection? := some (required, plan)
+      break
+    seed := Role.all.filter (required ++ extra).contains
+  let some (required, plan) := selection?
+    | throw (IO.userError "artifact support: role selection exceeded its finite domain")
   -- Their certificates: the prefetched compile when it compiles exactly these
   -- theorems, otherwise our own, joined in the `finally` below.
   let theorems := certTheoremsOf required

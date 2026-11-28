@@ -1,4 +1,4 @@
-import IxC.Kernel.Admission.Theorems
+import IxCK.Kernel.Admission.Theorems
 import Ix.Ixon.Authenticated.Theorems
 import Tests.Ix.Kernel.Reader
 
@@ -214,7 +214,7 @@ example {binding : Ix.Kernel.Admission.Binding} {records : Ix.Kernel.Admission.R
   obtain ⟨t, pre, _, _, _, _, _, constants, _, reading, _, installed⟩ :=
     Ixon.Authenticated.checkBytes_reading h
   refine ⟨t, pre, constants, reading, fun owner c hmem hs => ?_⟩
-  obtain ⟨st, decl, _, _, hread, _, _, hinst⟩ := installed.singleton hmem hs
+  obtain ⟨st, decl, _, _, _, hread, _, _, hinst⟩ := installed.singleton hmem hs
   exact ⟨st, decl, hread, hinst⟩
 
 /-- Key uniqueness at the API: no two records and no two blobs of accepted
@@ -317,5 +317,22 @@ def fallbackRefused (pre : Ix.Kernel.Reader.Prelude .anon) : Bool :=
   | .ok pre => (Ix.Kernel.Reader.checkFallbackRecursors pre).isOk
   | .error _ => false
 #guard (Ix.Kernel.Reader.builtinPrelude : Except String (Ix.Kernel.Reader.Prelude .meta)).isOk
+
+/-! ## H-9 regression: `getTagN0ValuesFast` and `getBinderNode` `checkCount` -/
+
+#guard
+  let vals : Array UInt64 := #[0, 1, 127, 128, 16512, 100000]
+  let bytes := Ixon.runPut (for v in vals do Ixon.putTagN 0 0 v)
+  (Ixon.runGet (Ixon.getTagN0Values vals.size) bytes).toOption == some vals.toList &&
+    (Ixon.runGet (Ixon.getTagN0ValuesFast vals.size) bytes).toOption == some vals.toList
+
+#guard
+  let forged := Ixon.runPut do
+    Ixon.putU8 (Ixon.binderNodeByte 2 {})
+    Ixon.putTagN 0 0 10000000
+    Ixon.putU8 0
+  match Ixon.runGet Ixon.getBinderNode forged with
+  | .error e => e == "count exceeds remaining bytes"
+  | .ok _ => false
 
 end Tests.Ix.Kernel.CertifiedEntry

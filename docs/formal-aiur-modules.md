@@ -15,7 +15,8 @@ There are no new AST operations, native arithmetic primitives, or proof axioms.
 | `List/Word.lean` | Checked depth and U64-indexed list operations, separated from the generic list library. |
 | `Option.lean`, `Bytes.lean` | Shared option layout, byte streams, 32-byte addresses, and structural address equality. |
 | `Blake3.lean` | Shared compression, hashing, address conversion, and digest packing. Uses the byte, word, and list libraries. |
-| `Field/Goldilocks.lean` | Canonical field encoding, checked inverse advice, and quadratic extension arithmetic with nonresidue 7. This implementation is specifically selected for Goldilocks, unlike the bounded U32 implementation. |
+| `Field/Goldilocks.lean` | Canonical field encoding, checked inverse advice, and cubic extension arithmetic over $\mathbb{F}_p[X]/(X^3 - X - 1)$. This implementation is specifically selected for Goldilocks, unlike the bounded U32 implementation. |
+| `Field/BLS12381/Prime.lean` | Pure Lean Lucas primality certificates for the BLS12-381 scalar field modulus `r`, providing `Aiur.Library.Field.BLS12381.F := ZMod modulus` without primality oracles or extra axioms. |
 
 The library modules are written as Lean syntax, as the applications are (see
 "Writing modules in Lean" below): `aiur_library% deps ⟦ … ⟧` checks a fragment
@@ -69,7 +70,7 @@ static tables. Execution and refinement proofs use that same source. Import
 `IxVM` to use it from another Lean project; no source files are read at runtime.
 
 `KernelRoleSpec.lean` is the one rendered module: `lake exe ix codegen` writes
-it from IxC's role specifications (`Ix/IxVM/RoleSpecGen.lean`), reading only the
+it from IxCK's role specifications (`Ix/IxVM/RoleSpecGen.lean`), reading only the
 specification digest's bytes. `lake exe ix codegen --check` checks freshness.
 The `ixvm-source` test (`lake exe formal-package-tests`) compares the public
 program, tables, and bytecode with full native preparation of the declaration
@@ -226,3 +227,26 @@ dishonest-hint proof rejections, and U64/Blake3 proofs. Application proof
 checks, the controller gate, and the three-workload CPU proof/key parity gate
 passed. CUDA runtime validation was not repeated for this refactor; the
 measuring machine had no GPU.
+
+## Compiler backends, tiling, and IxCCAiur
+
+Additional certified backend passes, field instantiations, pure-Lean
+compression verifiers, and the `IxCCAiur` compiler bridge extend the formal
+Aiur stack (see [docs/ixcc-aiur-compiler.md](ixcc-aiur-compiler.md) and
+[IxCCAiur/README.md](../IxCCAiur/README.md)):
+
+| Module / package | Role |
+| --- | --- |
+| `Aiur/Aiur/Library/Field/BLS12381/Prime.lean` | Pure Lean Lucas primality certificates for the BLS12-381 scalar field prime `r` and field instance `ZMod modulus`. |
+| `Aiur/Aiur/Plonk/BLS12381.lean` | Generic `Aiur.Plonk` SCS soundness corollaries instantiated over the BLS12-381 scalar field. |
+| `Aiur/Aiur/Tiling/SingleCircuit.lean` | Certified horizontal single-circuit packing (`pack airs rows`) merging multiple row-local `WideStage.Air` circuits into one uniform-height packed circuit with zero overhead on full-height tables. |
+| `Aiur/Aiur/Tiling/BLS12381.lean` | End-to-end tiling and horizontal single-circuit packing soundness corollaries instantiated over BLS12-381. |
+| `Aiur/Aiur/Tiling/VectorRom.lean` | Certified vectorized ROM packing `K` consecutive entries per physical row to reduce ROM height and preprocessed address storage by `K×`. |
+| `Aiur/Aiur/Optimized/DegreeBudget.lean` | Quotient-aware degree budgeting matching `Aiur.MultiStarkSpec.retune`, proving free degree slack whenever LogUp lookup groups determine quotient degree. |
+| `Aiur/Aiur/Optimized/Split.lean` | Certified fast-path / cold-path chip splitting across mutually exclusive boolean selectors sharing a single logical LogUp channel. |
+| `Aiur/Aiur/Optimized/Vectorize.lean` | Certified `K`-lane horizontal chip vectorization reducing physical row count by `K×` with exact polynomial constraint-degree invariance. |
+| `Ix/Compile/CircuitContract/{Basic,Attr,Emit}.lean` | Scoped `Ix.Circuit` operational attributes (`@[circuit_*]`, `checked def`) stored in a persistent sidecar environment extension that leaves `ConstantInfo` and Ixon content addresses unchanged, and deterministic `"ixcc/circuit-schedule/1"` JSON export. |
+| `IxCCAiur/` (`IxCCAiur.lean`, `IxCCAiur/*.lean`) | Certified lowering from `IxCC` FIR to `Aiur.Program` (base and typed unboxed lowering, inline fusion, partial evaluation, 3-field `FieldLower`, Tier-2 `GuessLower`, existential NP `WitnessIO`, `CompressionIntrinsics`, `Blake3Spec`, schedule JSON ingestion, `CompiledCert.{Cert,TypedCert}`, `IxCCAiur.Audit`, and the `ixcc-aiur` CLI). |
+| `IxCCAiur/Examples/*.lean` & `IxCCAiur/Compression/*.lean` | Pure annotated Lean 4 benchmark and production compression verifiers (`Blake3Block`, `MmcsPure`, `KzgAlgebraPure`, `CurveOpsPure`, `FriPure`, `MultiStarkV6Pure`, `StarkWire` + `CompressWrapPure`, `KzgWire` + `KzgPackedPure`, `PairingPure`, and `Groth16X86` for certified `IxCC` standalone x86-64 ELF). |
+| `crates/aiur/examples/{ixcc_prove,single_circuit_prove}.rs` | Live CPU STARK provers for `ixcc-aiur` packages and certified Endpoint 1 single-circuit (`num_circuits == 1`) layouts (`wide_export --single-circuit [--vector-rom K]` and `tiling_export2 --goldilocks --single-circuit`), with universal `--advice`, `--pin`, `--stark-io`, `--stark-128`, and `--controls`. |
+| `crates/proof-compression/src/aiur_backend/{bls12_381.rs,plonk/native/*,groth16/*}` | Zero-Go pure-Rust (+ Ix-CUDA `sppark`) BLS12-381 & BN254 `ix-aiur-scs-v1` PLONK+BSB22 prover/verifier/Solidity generator (`native_plonk_prove`, `stages/terminal.rs`) and 256-byte BN254 Groth16 Fermat demo (`groth16_fermat_demo`, `IxGroth16Verifier.sol`-compatible). |

@@ -1,11 +1,11 @@
 import IxVMRefinement.TwinFamily.Target
-import IxC.Kernel.Semantics.Inductives.WrapRelFacts
-import IxC.Kernel.Semantics.Inductives.DeclRecTwinExtJ
+import IxCK.Kernel.Semantics.Inductives.WrapRelFacts
+import IxCK.Kernel.Semantics.Inductives.DeclRecTwinExtJ
 
 /-! # The arity of the stored terms across the twin record
 
-`TwinKeepsStoreAr` (`Target.lean`): IxC's twin record at the positional package keeps
-`StoreArR` (every stored term arity-correct and resolving). IxC has no lemma for the twin route;
+`TwinKeepsStoreAr` (`Target.lean`): IxCK's twin record at the positional package keeps
+`StoreArR` (every stored term arity-correct and resolving). IxCK has no lemma for the twin route;
 this module proves it (`twinKeepsStoreAr`). The new constants are of two kinds:
 
 * a model copy is a stored model companion under another name: its terms are the companion's;

@@ -12,11 +12,11 @@ public import Ix.KernelDisplay.Render
 public section
 
 /-!
-# The compiler's binder-data annotator: IxC's pass over the Lean source
+# The compiler's binder-data annotator: IxCK's pass over the Lean source
 
 `ix compile` writes every block record's binder-data section while it builds
 the record, before the record is hashed (`Ix.CompileM.withBinderSection`). This
-module is the annotator it runs there. The data are IxC's: its annotation pass
+module is the annotator it runs there. The data are IxCK's: its annotation pass
 (`annotateBodyI`, its telescope loops `annotatePisI`/`annotateLamsI`) writes at
 every binder the zero-ness of the codomain sort, by `annotPwPiI`/`annotPwLamI`
 on the annotated opened body; nothing here infers anything itself.
@@ -29,7 +29,7 @@ records are read and never walked. The rest are walked as below.
 **The environment.** Beside the compile, on a task of its own (`installTask`),
 the constants whose source does not
 read are found (`Ix.Compile.BinderRead.sourceReads`: the records the walk will
-see), and IxC ingests their install closure (`restrictClosure`) from the
+see), and IxCK ingests their install closure (`restrictClosure`) from the
 compile's own input in Source mode (`Ix.LeanIngress`: every constant keyed by its
 Lean name, or its role's key) and installs it with phase A of its fold
 (`annotDeclStepWithUserAxioms`, at the committed bundle's evidence), once, in
@@ -40,7 +40,7 @@ tier; a declaration that fails is retried after them, and one refused again
 (a compiler-trust axiom, say) enters without its checks, with its
 annotated type (`lenient`); a structure the install leaves without a projection
 table gets one (`addTables`). The installed
-environment and IxC's core over it are marked persistent: every worker reads
+environment and IxCK's core over it are marked persistent: every worker reads
 them, none writes them. Only a record the reading leaves waits for the install;
 a compile whose records all read never does. The install's parallel work runs on
 threads of its own (`parMap`), so a compile whose workers all wait for it cannot
@@ -52,14 +52,14 @@ record's tree gives the numbering (its `lam`, `all` and `share` nodes in
 pre-order, a share's entry a block of its own, one variant per distinct node
 list), the Source term gives the leaves, and a datum's parameters are written
 in the record's numbering (a large eliminator's source numbers its motive
-universe last, its record first). The walk is IxC's pass over the pair:
+universe last, its record first). The walk is IxCK's pass over the pair:
 a run of binders of one kind is opened in bulk, its leaf annotated, the datum
 computed once at the leaf (every binder of the run has it, since the
 zero-ness of `imax u v` is that of `v`) and the run closed with one
 `abstractRangeC`; a `let` is ζ-reduced, its type and value annotated first; a
 share is walked once per context of the variables it can name and per source
 term (content-equal constants, `HAdd` and `HSub` say, share one record entry and
-differ in the source). IxC's core runs at `annotatorMode`; where its datum
+differ in the source). IxCK's core runs at `annotatorMode`; where its datum
 function fails at a λ-run, the run takes the zero-ness of the sort of the type it
 stands at (`Expect`). Each record's
 caches start empty and are dropped with it.
@@ -72,7 +72,7 @@ root whose stored term and record differ are walked.
 
 **Unsafe and partial records** carry the undecided section
 (`Ix.CompileM.undecidedSection`). So does a record whose sources the annotator
-cannot find or align, and every binder whose datum IxC's function cannot
+cannot find or align, and every binder whose datum IxCK's function cannot
 compute, or under which something is undecided, is the undecided node.
 
 The annotator is a pure function of its input (the installed environment, the
@@ -131,13 +131,13 @@ def abandoned : String := "binder data: the install was abandoned"
 
 /-! ## The installed environment -/
 
-/-- The mode IxC's core runs at for the annotator. The annotation pass is the
+/-- The mode IxCK's core runs at for the annotator. The annotation pass is the
 same at both modes (it is ungated). At `.verified` its certificates re-check
 every argument, β-redex and projection the walk builds, so a term the walk got
 wrong shows as an undecided binder rather than as a datum. -/
 def annotatorMode : Ix.Kernel.CheckMode := .verified
 
-/-- IxC's environment of a compile's input, and what installing it found. -/
+/-- IxCK's environment of a compile's input, and what installing it found. -/
 structure Installed where
   fe : FEnv .source
   core : Ix.Kernel.Cached.CoreFnsI .source
@@ -171,7 +171,7 @@ def reindex (env : Ix.Kernel.Env .source) : FEnv .source := Id.run do
     unless idx.contains ci.name do idx := idx.insert ci.name (i, ci)
   return ⟨env, idx, n⟩
 
-/-- One declaration through phase A of IxC's fold; on a failure, the environment
+/-- One declaration through phase A of IxCK's fold; on a failure, the environment
 as it was. -/
 def step (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source) (fe : FEnv .source) (pos : Nat)
     (d : Ix.Kernel.Declaration .source) :
@@ -184,7 +184,7 @@ def step (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source) (fe : F
 /-- A declaration the kernel refuses, entered without its checks: its constant
 with its annotated type (and a definition's annotated value, so that it
 unfolds; a theorem keeps its value, which nothing reduces), as phase A would
-have pushed it. The annotation is IxC's (`annotConstantValC`, `annotValueC`);
+have pushed it. The annotation is IxCK's (`annotConstantValC`, `annotValueC`);
 only the step's policy and checks are skipped. `none` where the annotation
 itself fails. The data are not checked here: the annotator is not trusted. -/
 def lenient (mode : Ix.Kernel.CheckMode) (fe : FEnv .source)
@@ -206,7 +206,7 @@ def lenient (mode : Ix.Kernel.CheckMode) (fe : FEnv .source)
   | _ => none
 where
   /-- An inductive block's constants in order (its types, constructors and
-  recursors), each type and rule right-hand side annotated by IxC's pass
+  recursors), each type and rule right-hand side annotated by IxCK's pass
   against what is installed before it; no checks, no generated recursors or
   projection tables (`addTables` adds the tables). -/
   lenientBlock (mode : Ix.Kernel.CheckMode) (fe : FEnv .source)
@@ -232,9 +232,9 @@ where
 /-- **Projection tables for the structures the install left without one**: every
 one-constructor, index-free inductive of `env` with fields, whose type former
 and constructor are installed and whose projection table is not (a nested or
-mutual structure, which IxC models rather than installs natively, or a block
+mutual structure, which IxCK models rather than installs natively, or a block
 entered by `lenient`). Lean's kernel types `.proj S i e` at every such `S`. The
-table is built as IxC's native route builds it: the bodies from the
+table is built as IxCK's native route builds it: the bodies from the
 constructor's annotated type (`structProjBodiesC`), the parent's result sort
 from its type former's type. A propositional structure is left out (its
 guards need the fields' sorts): the count of those is returned too. -/
@@ -510,14 +510,14 @@ def graphOfPar (kinds : Array (Option (Bool × Bool))) (blocks : Ix.CondensedBlo
     | none => #[]
   return ⟨groups, converted, hard, literal, unplaced⟩
 
-/-- IxC's prelude in Source mode. -/
+/-- IxCK's prelude in Source mode. -/
 def prelude? : Except String (Ix.Kernel.Reader.Prelude .source) :=
   match (Ix.Kernel.Reader.builtinPrelude : Except String (Ix.Kernel.Reader.Prelude .source)) with
   | .ok p => .ok p
   | .error e => .error s!"binder data: the prelude does not read: {e}"
 
 /-- **Install the compile's input** in Source mode over the prelude `pre`,
-phase A only, and mark the environment and IxC's core over it persistent; its
+phase A only, and mark the environment and IxCK's core over it persistent; its
 parallel work on `2 * workers` threads of its own (`parMap`, `phaseAWorkers`).
 `abandoned` once `stop` holds. A safe declaration the install leaves out (its ingest fails, or it
 names a constant the install lacks) fails the install: the binders that read it would be
@@ -933,8 +933,8 @@ private def variantOf (n : Nat) (nodes : Array Node) : WM Nat :=
       (v, { st with variants := st.variants.insert n (table.insert nodes v)
                     blocks := st.blocks.push ⟨1, n, v, nodes⟩ })
 
-/-- IxC's datum of a run whose annotated opened leaf is `leaf` at `depth`
-(`annotPwPiI` for a ∀ run, `annotPwLamI` for a λ run); `none` where IxC's
+/-- IxCK's datum of a run whose annotated opened leaf is `leaf` at `depth`
+(`annotPwPiI` for a ∀ run, `annotPwLamI` for a λ run); `none` where IxCK's
 function fails. -/
 def datum (cx : Cx) (pi : Bool) (depth : Nat) (leaf : KExpr) : EM (Option PropWhen) := do
   let act : CM PropWhen :=
@@ -955,7 +955,7 @@ def binderRun (pi : Bool) : Ixon.Expr → KExpr → Array (Ixon.Expr × KExpr ×
   | e, x, acc => (e, x, acc)
 
 /-- What the walk knows of the type `T` of the term it walks: the zero-ness of
-`T`'s sort (`pw`), the datum of a λ-run at `T` where IxC's datum function
+`T`'s sort (`pw`), the datum of a λ-run at `T` where IxCK's datum function
 fails. A λ's codomain sort has the zero-ness of the sort of the λ's own type
 (the zero-ness of `imax u v` is that of `v`), so `pw` is the datum of every λ
 of a run at `T`, and it passes unchanged to the run's body, to a `let`'s body
@@ -965,8 +965,8 @@ structure Expect where
   pw : Option PropWhen := none
   deriving Inhabited
 
-/-- The zero-ness of the sort of `t`, an annotated type at `depth` (IxC's
-`annotPwPiI`); `none` where IxC's function fails. -/
+/-- The zero-ness of the sort of `t`, an annotated type at `depth` (IxCK's
+`annotPwPiI`); `none` where IxCK's function fails. -/
 def sortPwC (cx : Cx) (depth : Nat) (t : KExpr) : CM (Option PropWhen) :=
   tryCatch (some <$> Ix.Kernel.Cached.annotPwPiI cx.core cx.fe depth t) (fun _ => pure none)
 
@@ -1015,7 +1015,7 @@ def walk : Nat → Cx → List CtxEntry → Nat → Expect → Ixon.Expr → KEx
         (leaf'.abstractRangeC depth k) : CM KExpr)
       pure (out, undecided)
     | .letE _ _ t v b, .letE ty val body _ => do
-      -- IxC annotates the type and the value, then the body with the value
+      -- IxCK annotates the type and the value, then the body with the value
       -- transparent (its ζ-reduct)
       let (t', bt) ← walk fuel cx ctx depth {} t ty
       let vex : Expect ← if !bt then do
@@ -1050,7 +1050,7 @@ def walk : Nat → Cx → List CtxEntry → Nat → Expect → Ixon.Expr → KEx
     | _, _ => mismatch "a node"
 
 /-- The walk of one entry's tree `e` beside `k`, a term phase A annotated and
-stored (IxC's annotation of the same source): every numbered node of `e` gets
+stored (IxCK's annotation of the same source): every numbered node of `e` gets
 the datum `k` carries at its place, and nothing is inferred. A node where the
 trees differ is a mismatch, and so is a `let` (the annotation ζ-reduces it, so
 its type's and value's data are not in `k`): the root is then walked by
@@ -1213,7 +1213,7 @@ def convertRoot (σ : Numbering) (e : Ix.Expr) : Option KExpr := do
 
 /-! ## The annotator -/
 
-/-- **The section of a block record**, from its members' sources: IxC's pass
+/-- **The section of a block record**, from its members' sources: IxCK's pass
 over each root beside its source, against the installed environment. -/
 def annotateWalk (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (names : Array Ix.Name)
     (c : Ixon.Constant) : Array Ixon.BinderBlock :=
@@ -1274,7 +1274,7 @@ def annotateWalk (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (n
 
 /-- **The section of a block record**: read off its members' sources (from
 `extra`, then the compile's input `env`) where every binder shows its datum
-(`Ix.Compile.BinderRead`), else IxC's pass over each root beside its source
+(`Ix.Compile.BinderRead`), else IxCK's pass over each root beside its source
 (`annotateWalk`) against the installed input, which only such a record waits
 for (`installed`, `installTask`). Where the install failed, such a record
 carries the undecided section with any source modes preserved. -/

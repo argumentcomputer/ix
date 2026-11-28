@@ -3,9 +3,9 @@ module
 public import Ix.Address.Admission
 public import Ix.Ixon.CheckOrder
 public import Ix.RoleBinding.Artifact
-public import IxC.Kernel.Admission.Tier
-public import IxC.Kernel.Tier.Ind
-public import IxC.Kernel.Tier.Answer
+public import IxCK.Kernel.Admission.Tier
+public import IxCK.Kernel.Tier.Ind
+public import IxCK.Kernel.Tier.Answer
 
 /-! # The typing of a compiled artifact
 
@@ -15,7 +15,7 @@ check order (`Ixon.CheckOrder.wholeEnv`), with every blob, the compiler's
 reducibility hints and the artifact's admitted role table and actual prelude.
 Legacy unbound inputs retain the default table/prelude. It splits the records in two.
 
-**The certified part** is checked by IxC's tiered Ixon entry at BLAKE3,
+**The certified part** is checked by IxCK's tiered Ixon entry at BLAKE3,
 `Ix.Kernel.Admission.checkBytesTieredUsing`, with the same prepared binding and
 guarded prelude. Its accept is what the entry's theorem states: every record
 and blob of the part authenticated, the logical environment model-backed, and
@@ -28,7 +28,7 @@ it, divergence Q2) and every **assumption axiom** (a safe axiom no role
 binds: the certified theory is Lean's with its three standard axioms, which
 the role table binds), with the recursor and projection records of such a
 block and every record that names one of them, transitively. No record of
-the certified part names an uncertified one. It is typed by IxC's checking
+the certified part names an uncertified one. It is typed by IxCK's checking
 functions outside any theorem, as Lean's kernel would type it, from the
 certified part's environment:
 * first its safe records in check order: an assumption axiom by its header
@@ -38,7 +38,7 @@ certified part's environment:
 * then, staged as Lean's lattice (`Tier.TierDecl.stage`), every tier record
   and its unsafe inductive blocks, **transparently, as Lean and `Ix.Tc`
   check them**: with δ on tier definitions and ι on unsafe recursors, over
-  the typing tier's **answer view** (`IxC.Kernel.Tier.Answer`; this module is
+  the typing tier's **answer view** (`IxCK.Kernel.Tier.Answer`; this module is
   the answers fence's one allowed importer, `Tests/Ix/Kernel/Layering.lean`).
   A definition block is checked by the batch tier's step (`Tier.checkDeclC`,
   tier constants opaque) and, if that refuses, over the answer view with its
@@ -63,7 +63,7 @@ the batch tier succeeds. If the batch tier refuses a tier record, `typeCheck`
 moves every tier record to the uncertified part and retries certified
 admission on the remaining logical records. The separate checker then types
 the tier transparently. A successful result with a nonempty uncertified part
-combines the certified part's theorem with IxC's uncertified typing of the
+combines the certified part's theorem with IxCK's uncertified typing of the
 rest. `ix compile` runs it on every artifact it emits, and the mode checker
 (`Ix.ModeCheck`) reads modes with the environment its certified part installs.
 
@@ -84,7 +84,9 @@ variable {md : Ix.Kernel.Mode}
 
 /-- Bounds wide enough for a whole compiled library (as `kernel-check-ixe
 --entry` sets them). They are coverage bounds: an input past one declines. -/
-def typingLimits : Ix.Kernel.Admission.Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
+def typingLimits : Ix.Kernel.Admission.Limits :=
+  { maxRecords := 1 <<< 22, maxBlobs := 1 <<< 22, maxTotalBytes := 1 <<< 34,
+    maxRecordBytes := 1 <<< 28, maxRecordUnivNodes := 1 <<< 26 }
 
 /-- A shipped reducibility hint as the kernel's (`Ix.Cert.hintOf`, copied). -/
 def hintOf : Lean.ReducibilityHints → Ix.Kernel.ReducibilityHint
@@ -178,9 +180,10 @@ bytes (`lazy.rawBytes`: Lean's public `LazyConstant` record permits a
 conflicting materialized cache, which neither validator may trust in place of
 the committed bytes) by the entry's own canonical decoder; the entry decodes
 the same bytes again itself. -/
-def typingInput (env : Ixon.Env) : Except String TypingInput := do
+def typingInput (env : Ixon.Env) (limits : Ix.Kernel.Admission.Limits := typingLimits) :
+    Except String TypingInput := do
   if env.roleBinding.isSome then
-    let input ← match Ix.RoleBinding.Artifact.prepareRecords env typingLimits with
+    let input ← match Ix.RoleBinding.Artifact.prepareRecords env limits with
       | .ok r => pure r
       | .error err =>
         let base := toString err
@@ -205,7 +208,7 @@ def typingInput (env : Ixon.Env) : Except String TypingInput := do
   let pre : Prelude .anon ← preludeFor table
   let committed : Array (Address × ByteArray) :=
     (env.consts.toArray.map fun (a, lazy) => (a, lazy.rawBytes)).qsort fun x y => x.1.cmpBytes y.1 == .lt
-  let constants ← (Ix.Kernel.Admission.decodeRecords typingLimits committed.toList).mapError
+  let constants ← (Ix.Kernel.Admission.decodeWithin limits committed.toList).mapError
     (toString ∘ Ix.Kernel.Admission.Error.ofBytes)
   checkPublishedRolesDefault env table constants
   let bytes : Std.HashMap Address ByteArray := committed.foldl (fun m (a, b) => m.insert a b) {}
@@ -414,14 +417,15 @@ check (`Tier.checkDeclC`) refuses: Lean adds a block's members before it
 checks their bodies, and unfolds tier definitions and fires unsafe
 recursors while it does. With the block's δ forms `infos` in the view, each
 value's type, inferred there, must be convertible to its header there. -/
-def defsOverAnswers (av : Ix.Kernel.Tier.AnswerView .anon) (infos : List (Ix.Kernel.ConstantInfo .anon)) :
+def defsOverAnswers (av : Ix.Kernel.Tier.AnswerView .anon) (infos : List (Ix.Kernel.ConstantInfo .anon))
+    (core : Ix.Kernel.Cached.CoreConfig := {}) :
     Except (Ix.Kernel.CheckError .anon) Unit := do
   let knot := (av.pushInfos infos).knot
   for info in infos do
     if let .defnInfo cvA jv _ := info then
       let ok ← Ix.Kernel.Tier.runC (do
         let ty ← knot.infer 0 jv
-        knot.defeq 0 ty cvA.type)
+        knot.defeq 0 ty cvA.type) core
       unless ok do
         throw (.invalid msg!"the value of {cvA.name} does not have its declared type, \
           with tier definitions and unsafe recursors reducing")
@@ -450,24 +454,25 @@ it; a failure carries its record's position.
   is installed by `Tier.indC` in the check index and by
   `Tier.AnswerView.pushInd` (ι) in the view. -/
 def checkUncertified (ev : Ix.Kernel.Evidences .anon) (env : Ix.Kernel.Env .anon)
-    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (u : Uncertified) :
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (u : Uncertified)
+    (core : Ix.Kernel.Cached.CoreConfig := {}) :
     Except (Nat × Ix.Kernel.CheckError .anon) Unit := do
   -- the safe records: assumption axioms by their headers, the rest by the fold's steps
   let mut fe := Ix.Kernel.mkFEnv env
-  let mut cs : Ix.Kernel.Cached.CState .anon := {}
+  let mut cs : Ix.Kernel.Cached.CState .anon := { core }
   let mut pos := 0
   for (i, ds) in u.safe do
     for d in ds do
       match d with
       | .axiomDecl cv =>
-        match Ix.Kernel.Tier.axiomC fe cv with
+        match Ix.Kernel.Tier.axiomC fe cv core with
         | .ok (fe', _) => fe := fe'
         | .error e => throw (i, e)
       | _ =>
         match Ix.Kernel.Cached.annotDeclStep .verified ev (pos, fe, #[]) d cs with
         | .error (e, _) => throw (i, e)
         | .ok ((pos', fe', pend), cs') =>
-          match Ix.Kernel.Cached.checkPendingList .verified fe' pend.toList with
+          match Ix.Kernel.Cached.checkPendingList .verified fe' pend.toList cs'.core with
           | .ok () =>
             fe := fe'
             cs := cs'
@@ -484,30 +489,30 @@ def checkUncertified (ev : Ix.Kernel.Evidences .anon) (env : Ix.Kernel.Env .anon
     | .decl record d@(.defs _ ms) =>
       let withHints := ms.zipIdx.map fun ((cv, v), j) =>
         (cv, v, (hint (.member record j)).getD (.regular 0))
-      match Ix.Kernel.Tier.checkDeclC fe₀ feT d with
+      match Ix.Kernel.Tier.checkDeclC fe₀ feT d core with
       | .ok (fe', _) =>
-        match Ix.Kernel.Tier.defsAnswerC feT withHints with
+        match Ix.Kernel.Tier.defsAnswerC feT withHints core with
         | .ok infos =>
           feT := fe'
           av := av.pushInfos infos
         | .error e => throw (i, e)
       | .error _ =>
-        match Ix.Kernel.Tier.defsAnswerC feT withHints with
+        match Ix.Kernel.Tier.defsAnswerC feT withHints core with
         | .error e => throw (i, e)
         | .ok infos =>
-          match defsOverAnswers av infos with
+          match defsOverAnswers av infos core with
           | .error e => throw (i, e)
           | .ok () =>
             feT := Ix.Kernel.Tier.pushAll feT (headerInfos infos)
             av := av.pushInfos infos
     | .decl _ d =>
-      match Ix.Kernel.Tier.checkDeclC fe₀ feT d with
+      match Ix.Kernel.Tier.checkDeclC fe₀ feT d core with
       | .ok (fe', ts) =>
         feT := fe'
         av := av.pushInfos (Ix.Kernel.Tier.TierConst.infos ts)
       | .error e => throw (i, e)
     | .block b =>
-      match Ix.Kernel.Tier.indC feT b with
+      match Ix.Kernel.Tier.indC feT b core with
       | .ok o =>
         feT := Ix.Kernel.Tier.pushAll feT o.checkInfos
         av := av.pushInd o
@@ -532,12 +537,13 @@ def splitOf (input : TypingInput) : Std.HashSet Address :=
   let look : Store := fun a => store[a]? <|> (input.pre.records.find? (·.1 == a)).map (·.2) <|> evidence[a]?
   uncertifiedOwners (bindingsOf look input.table) input.ordered
 
-/-- **The certified part**: IxC's tiered entry at BLAKE3 under the input's
+/-- **The certified part**: IxCK's tiered entry at BLAKE3 under the input's
 actual binding and prelude, over every record outside `unc`, exactly as the
 entry and its theorem (`Ix.Kernel.Admission.checkBytesTieredUsing_ok`) take it. Its result is
 the installed logical environment; nothing here reads the answer view. A
 failure says whether it is the batch tier's (`TierError.tier`). -/
-def checkCertified (input : TypingInput) (unc : Std.HashSet Address) :
+def checkCertified (input : TypingInput) (unc : Std.HashSet Address)
+    (limits : Ix.Kernel.Admission.Limits := typingLimits) :
     Except (String × Bool) (Ix.Kernel.Env .anon) := do
   let records : Ix.Kernel.Admission.Records := input.ordered.toList.filterMap fun (a, c, b) =>
     if unc.contains (Ixon.CheckOrder.owner a c) then none else some (a, b)
@@ -551,7 +557,7 @@ def checkCertified (input : TypingInput) (unc : Std.HashSet Address) :
     (Ix.RoleBinding.Artifact.checkEvidence input.table evidence
       (Ix.Kernel.Frontend.preparePrelude input.pre.ix declarations)).mapError
         fun e => (s!"typing: {e}", false)
-  match Ix.Kernel.Admission.checkBytesTieredUsing input.preludeFor Address.admissionHash input.binding typingLimits records
+  match Ix.Kernel.Admission.checkBytesTieredUsing input.preludeFor Address.admissionHash input.binding limits records
       input.blobs input.hint with
   | .ok (env, _) => pure env
   | .error e =>
@@ -564,7 +570,8 @@ def checkCertified (input : TypingInput) (unc : Std.HashSet Address) :
 /-- **The uncertified part**, typed from the certified run's environment
 `env` (its only input from that run): read (`readUncertified`), then checked
 over the check index and the answer view (`checkUncertified`). -/
-def typeUncertified (input : TypingInput) (unc : Std.HashSet Address) (env : Ix.Kernel.Env .anon) :
+def typeUncertified (input : TypingInput) (unc : Std.HashSet Address) (env : Ix.Kernel.Env .anon)
+    (limits : Ix.Kernel.Admission.Limits := typingLimits) :
     Except String Unit := do
   let constants := input.ordered.toList.map fun (a, c, _) => (a, c)
   let cx := Ix.Kernel.Admission.streamContext Address.admissionHash input.table input.pre constants
@@ -573,7 +580,7 @@ def typeUncertified (input : TypingInput) (unc : Std.HashSet Address) (env : Ix.
   let u ← (readUncertified cx input.pre input.ordered unc).mapError fun (i, e) =>
     s!"typing failed{site i} (uncertified part): read: {e}"
   let ev := evidenceOf cx u.state input.table
-  (checkUncertified ev env input.hint u).mapError fun (i, e) =>
+  (checkUncertified ev env input.hint u limits.fold.core).mapError fun (i, e) =>
     s!"typing failed{site i} (uncertified part): {e}"
 
 /-- The owners of the tier records (`Admission.isTierInfo`) and of their
@@ -587,21 +594,22 @@ result (`typeUncertified`). When the batch tier refuses a tier record (it
 keeps tier constants opaque, where Lean unfolds tier definitions), the
 certified part is the logical records alone, and every tier record joins the
 uncertified part, typed transparently. A failure is `typing failed`,
-with IxC's error and, where it has one, the failing
+with IxCK's error and, where it has one, the failing
 record; an uncertified part's failure says so. -/
-def typeCheck (env : Ixon.Env) : Except String Unit := do
-  let input ← (typingInput env).mapError (s!"typing failed: {·}")
+def typeCheck (env : Ixon.Env) (limits : Ix.Kernel.Admission.Limits := typingLimits) :
+    Except String Unit := do
+  let input ← (typingInput env limits).mapError (s!"typing failed: {·}")
   let note := if !input.bound && input.ordered.any (fun (_, c, _) => isUndecidedSafeRecord c) then
       undecidedRoleNote true
     else ""
   let unc := splitOf input
-  match checkCertified input unc with
-  | .ok env₀ => unless unc.isEmpty do (typeUncertified input unc env₀).mapError (· ++ note)
+  match checkCertified input unc limits with
+  | .ok env₀ => unless unc.isEmpty do (typeUncertified input unc env₀ limits).mapError (· ++ note)
   | .error (e, isTier) =>
     unless isTier do throw (e ++ note)
     let unc := (tierOwnersOf input).fold (·.insert ·) unc
-    let env₀ ← (checkCertified input unc).mapError (·.1 ++ note)
-    (typeUncertified input unc env₀).mapError (· ++ note)
+    let env₀ ← (checkCertified input unc limits).mapError (·.1 ++ note)
+    (typeUncertified input unc env₀ limits).mapError (· ++ note)
 
 end Ix.Typing
 

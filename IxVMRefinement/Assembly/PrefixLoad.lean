@@ -1,7 +1,7 @@
 import IxVMRefinement.Assembly.ReadBare
 import IxVMRefinement.Core.Good
 import IxVMRefinement.Ingress.Records
-import IxC.Ixon.Verify.Framing
+import IxCK.Ixon.Verify.Framing
 import Ix.IxVM.Consistency.Restrict
 
 /-! # Collision lifting, `Ingress.EnvDecoded` on sub-stores, and prefix `Installs` helpers

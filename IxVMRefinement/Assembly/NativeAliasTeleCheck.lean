@@ -2,12 +2,12 @@ import IxVMRefinement.Decl.NativeCommon
 import IxVMRefinement.Decl.ModeledAux
 import IxVMRefinement.Assembly.NativeAliasTraceLevels
 
-/-! # IxC's check of a telescope constant whose type is read at the term seam
+/-! # IxCK's check of a telescope constant whose type is read at the term seam
 
 The telescope the circuit builds for a former declared at a definition is registered as the
 term the builder's walk produces (`Assembly/NativeAliasOpenTrace.lean`). The heap pointer
 represents that term at the term seam `Tm` (levels of sorts and constants up to semantic
-equality), not exactly. IxC's from-scratch check of a constant (`ConstantValCheckJ`) asks for
+equality), not exactly. IxCK's from-scratch check of a constant (`ConstantValCheckJ`) asks for
 facts of the constant's type itself, so each is taken from where it holds of the walk's term:
 
 * no free variable, no loose bound variable, no `let`: from the representation
@@ -58,7 +58,7 @@ theorem Tm.noLetExpr_closed {κ : _root_.Address → KKey} {Γ : Nat → KExpr} 
     {E : KExpr} {p : SourceValue F} (rep : Tm κ 0 Γ h 0 E p) : noLetExpr E = true :=
   Tm.noLetExpr_of_ctx (fun _ hlt => absurd hlt (Nat.not_lt_zero _)) rep
 
-/-- **IxC's from-scratch check of a constant whose type is represented at the term seam**, at
+/-- **IxCK's from-scratch check of a constant whose type is represented at the term seam**, at
 positional level parameters. The type's level parameters are a premise (module docstring); the
 sort typing is the circuit's `k_ensure_sort` on the representing pointer. -/
 theorem constantValCheckJ_of_tm {c : ScopedCtx} {Γ : Nat → KExpr} {name : KKey} {k : Nat}

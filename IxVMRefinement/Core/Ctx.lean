@@ -1,15 +1,15 @@
 import IxVMRefinement.Core.Loaded
-import IxC.Kernel.Rules.Rel
-import IxC.Kernel.Rules.Transport
-import IxC.Kernel.Rules.TransportKit
-import IxC.Kernel.Ixon.RoleTable
-import IxC.Kernel.Roles
-import IxC.Kernel.RoleEquations
+import IxCK.Kernel.Rules.Rel
+import IxCK.Kernel.Rules.Transport
+import IxCK.Kernel.Rules.TransportKit
+import IxCK.Kernel.Ixon.RoleTable
+import IxCK.Kernel.Roles
+import IxCK.Kernel.RoleEquations
 import Ix.IxVM.Refinement.Claim
 import Ix.SpecDigest.Schedule
-import IxC.Kernel.Model.Open.StoredFacts
-import IxC.Kernel.BasisA
-import IxC.Kernel.Model.StoreCompanions
+import IxCK.Kernel.Model.Open.StoredFacts
+import IxCK.Kernel.BasisA
+import IxCK.Kernel.Model.StoreCompanions
 
 /-! # The context seam: the role context, the context list, and the environment the core reads
 
@@ -650,7 +650,7 @@ structure EnvFacts (c : Ctx) : Prop where
       D.getAppArgs.take nP = (List.range nP).map (fun i => .bvar (mI - 1 - i)) ∧
       D.getAppArgs.drop nP = (List.range (mI - rP)).map fun i => .bvar (mI - rP - 1 - i)
   /-- (Decls) **The store invariant** of the declaration layer's fold (`EnvWF`, `RecCtorsStored`,
-  `ProjOkT`; `IxC/Kernel/Model/StoreFold.lean`, `storeFoldRoutes`): nested rules' major-domain
+  `ProjOkT`; `IxCK/Kernel/Model/StoreFold.lean`, `storeFoldRoutes`): nested rules' major-domain
   shape, the stored types' level parameters defined, the projection tables' head data. The
   arity fields below and `recRules`' firing conjunct follow from it
   (`storedFacts_of_invariants`). -/
@@ -672,7 +672,7 @@ structure EnvFacts (c : Ctx) : Prop where
   quotBasis : c.inForce .quot → ∀ ci ∈ Ix.Kernel.BasisKind.declsA (md := .anon) .quotK,
     c.env.find? ci.name = some ci
   /-- (Decls) **An η-capable stored family has a projection table entry at each of its `etaFields`
-  slots**: `Ix.Kernel.Model.EtaTowers` (`IxC/Kernel/Model/StoreCompanions.lean`), which
+  slots**: `Ix.Kernel.Model.EtaTowers` (`IxCK/Kernel/Model/StoreCompanions.lean`), which
   `etaTowers_declsRunJ` keeps along every accepted declaration. -/
   etaTowers : Ix.Kernel.Model.EtaTowers c.env
   /-- (Decls) **The type of a full application of an η-constructor**: its io-inferred type reduces to

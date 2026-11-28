@@ -1,7 +1,7 @@
 import IxVM.Mirrors.TagN
 import Ix.IxVM.Refinement.Statement
 
-/-! # The TagN slice: IxVM's TagN decoder against IxC's `Ixon.getTagN`
+/-! # The TagN slice: IxVM's TagN decoder against IxCK's `Ixon.getTagN`
 
 The first vertical slice of the refinement.
 The mechanical layer is generated (`IxVM.Mirrors.TagN`: a
@@ -13,7 +13,7 @@ mirror). This module is the creative layer on top of it:
 * `getU64le_complete`: the lemma of the one recursive function,
   `get_u64_le`, by induction on its byte count;
 * what the mirrors compute (`*_run`);
-* the refinements of IxC's `Ixon.getTagN 0`, `2` and `4` on the one- and two-byte
+* the refinements of IxCK's `Ixon.getTagN 0`, `2` and `4` on the one- and two-byte
   rungs (`getTagN{0,2,4}_refines_short`), and the 64-bit machinery of the wide rungs
   (`getU64le_run`, `u64Add_value`). The wide rungs and the refinements on every header
   are in `Ix.IxVM.Refinement.TagNWide`. -/
@@ -159,7 +159,7 @@ theorem u64Value_two {x y : Nat} (hx : x < 256) (hy : y < 256) :
   simp
 
 
-/-! ## IxC's reader on the same bytes -/
+/-! ## IxCK's reader on the same bytes -/
 
 /-- The state `Ixon.getTagN` starts from on the stream's bytes. -/
 def start (bytes : List UInt8) : Ixon.GetState := { idx := 0, bytes := ⟨bytes.toArray⟩ }
@@ -173,7 +173,7 @@ theorem getU8_at {bytes : List UInt8} {i : Nat} (hi : i < bytes.length) :
   rw [getElem!_pos (ByteArray.mk bytes.toArray) i hs]
   rfl
 
-/-- **IxC's `getTagN 0`, one byte**: a first byte below `128` is the value. -/
+/-- **IxCK's `getTagN 0`, one byte**: a first byte below `128` is the value. -/
 theorem getTagN0_one {b : UInt8} {rest : List UInt8} (small : b.toNat < 128) :
     Ixon.getTagN 0 (start (b :: rest)) =
       .ok ⟨0, b.toNat.toUInt64⟩ { idx := 1, bytes := ⟨(b :: rest).toArray⟩ } := by
@@ -182,7 +182,7 @@ theorem getTagN0_one {b : UInt8} {rest : List UInt8} (small : b.toNat < 128) :
   simp [small, pure, EStateM.pure, Nat.mod_eq_of_lt (show b.toNat < 256 from b.toNat_lt),
     Nat.div_eq_of_lt (show b.toNat < 256 from b.toNat_lt)]
 
-/-- **IxC's `getTagN 0`, two bytes**: a first byte `b` in `[128, 192)` and the
+/-- **IxCK's `getTagN 0`, two bytes**: a first byte `b` in `[128, 192)` and the
 next byte `lo` give `128 + 256 (b - 128) + lo`. -/
 theorem getTagN0_two {b lo : UInt8} {rest : List UInt8} (lower : 128 ≤ b.toNat)
     (upper : b.toNat < 192) :
@@ -430,12 +430,12 @@ theorem tagn0Two_run {heap : Heap F} {addr addr2 : Nat} {b lo : UInt8} {tailPtr 
 
 /-! ## The refinement -/
 
-/-- **IxVM's `get_tagn0` refines IxC's `Ixon.getTagN 0` on the one- and
+/-- **IxVM's `get_tagn0` refines IxCK's `Ixon.getTagN 0` on the one- and
 two-byte rungs**: every derivation of `IxonDeserialize::get_tagn0` on a stream
 of `bytes` whose first byte is below `192` (the codes the wide rungs do not
-use) is matched by IxC's reader on the same bytes: it succeeds with flag `0`
+use) is matched by IxCK's reader on the same bytes: it succeeds with flag `0`
 and the value the derivation returns as eight little-endian bytes, and the
-derivation's rest pointer holds the bytes IxC's reader did not consume. The
+derivation's rest pointer holds the bytes IxCK's reader did not consume. The
 heap is unchanged. Proved from the generated mirror lemma
 (`Mirrors.«IxonDeserialize::get_tagn0».of_eval`) and what the mirror computes. -/
 theorem getTagN0_refines_short {stream r : SourceValue F} {heap h' : Heap F} {bytes : List UInt8}
@@ -584,7 +584,7 @@ theorem tagn4Two_run {heap : Heap F} {addr addr2 : Nat} {b lo : UInt8} {tailPtr 
   simp (config := { decide := true }) [Mirrors.«IxonDeserialize::get_tagn4», loadValue_cell cell,
     node_ctor, hbits, evalBinOp, bits_high hb, hb3, htail]
 
-/-- **IxC's `getTagN 4`, one byte**: low four bits below `8` are the value,
+/-- **IxCK's `getTagN 4`, one byte**: low four bits below `8` are the value,
 the high four bits the flag. -/
 theorem getTagN4_one {b : UInt8} {rest : List UInt8} (small : b.toNat % 16 < 8) :
     Ixon.getTagN 4 (start (b :: rest)) =
@@ -594,7 +594,7 @@ theorem getTagN4_one {b : UInt8} {rest : List UInt8} (small : b.toNat % 16 < 8) 
   simp only [start, Ixon.getTagN, bind, EStateM.bind, read]
   simp [small, pure, EStateM.pure]
 
-/-- **IxC's `getTagN 4`, two bytes**: low four bits `p` in `[8, 12)` and the
+/-- **IxCK's `getTagN 4`, two bytes**: low four bits `p` in `[8, 12)` and the
 next byte `lo` give `8 + 256 (p - 8) + lo`. -/
 theorem getTagN4_two {b lo : UInt8} {rest : List UInt8} (lower : 8 ≤ b.toNat % 16)
     (upper : b.toNat % 16 < 12) :
@@ -609,11 +609,11 @@ theorem getTagN4_two {b lo : UInt8} {rest : List UInt8} (lower : 8 ≤ b.toNat %
   simp [EStateM.bind, read1, pure, EStateM.pure, Ixon.tagNEnd1]
 
 set_option maxHeartbeats 2000000 in
-/-- **IxVM's `get_tagn4` refines IxC's `Ixon.getTagN 4` on the one- and
+/-- **IxVM's `get_tagn4` refines IxCK's `Ixon.getTagN 4` on the one- and
 two-byte rungs**: on a stream whose first byte has low four bits below `12`
-(the codes the wide rungs do not use), every derivation agrees with IxC's
+(the codes the wide rungs do not use), every derivation agrees with IxCK's
 reader on the same bytes: the flag, the value as eight little-endian bytes,
-the rest pointer at IxC's position, the heap unchanged. -/
+the rest pointer at IxCK's position, the heap unchanged. -/
 theorem getTagN4_refines_short {stream r : SourceValue F} {heap h' : Heap F} {bytes : List UInt8}
     (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum heap bytes stream)
     (narrow : ∀ b ∈ bytes.head?, b.toNat % 16 < 12)
@@ -726,7 +726,7 @@ theorem tagn2Two_run {heap : Heap F} {addr addr2 : Nat} {b lo : UInt8} {tailPtr 
   simp (config := { decide := true }) [Mirrors.«IxonDeserialize::get_tagn2», loadValue_cell cell,
     node_ctor, hbits, evalBinOp, bits_high2 hb, hb5, htail]
 
-/-- **IxC's `getTagN 2`, one byte**: low six bits below `32` are the value,
+/-- **IxCK's `getTagN 2`, one byte**: low six bits below `32` are the value,
 the high two bits the flag. -/
 theorem getTagN2_one {b : UInt8} {rest : List UInt8} (small : b.toNat % 64 < 32) :
     Ixon.getTagN 2 (start (b :: rest)) =
@@ -736,7 +736,7 @@ theorem getTagN2_one {b : UInt8} {rest : List UInt8} (small : b.toNat % 64 < 32)
   simp only [start, Ixon.getTagN, bind, EStateM.bind, read]
   simp [small, pure, EStateM.pure]
 
-/-- **IxC's `getTagN 2`, two bytes**: low six bits `p` in `[32, 48)` and the
+/-- **IxCK's `getTagN 2`, two bytes**: low six bits `p` in `[32, 48)` and the
 next byte `lo` give `32 + 256 (p - 32) + lo`. -/
 theorem getTagN2_two {b lo : UInt8} {rest : List UInt8} (lower : 32 ≤ b.toNat % 64)
     (upper : b.toNat % 64 < 48) :
@@ -751,11 +751,11 @@ theorem getTagN2_two {b lo : UInt8} {rest : List UInt8} (lower : 32 ≤ b.toNat 
   simp [EStateM.bind, read1, pure, EStateM.pure, Ixon.tagNEnd1]
 
 set_option maxHeartbeats 2000000 in
-/-- **IxVM's `get_tagn2` refines IxC's `Ixon.getTagN 2` on the one- and
+/-- **IxVM's `get_tagn2` refines IxCK's `Ixon.getTagN 2` on the one- and
 two-byte rungs**: on a stream whose first byte has low six bits below `48`
-(the codes the wide rungs do not use), every derivation agrees with IxC's
+(the codes the wide rungs do not use), every derivation agrees with IxCK's
 reader on the same bytes: the flag, the value as eight little-endian bytes,
-the rest pointer at IxC's position, the heap unchanged. -/
+the rest pointer at IxCK's position, the heap unchanged. -/
 theorem getTagN2_refines_short {stream r : SourceValue F} {heap h' : Heap F} {bytes : List UInt8}
     (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum heap bytes stream)
     (narrow : ∀ b ∈ bytes.head?, b.toNat % 64 < 48)

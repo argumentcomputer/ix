@@ -436,7 +436,7 @@ def tagsCoincide (env : Ixon.Env) : IO Bool := do
 /-- **Every advice record is the compiler's record for its declaration.** Each model
 record of `env` holds the compiler's table invariant (`IxVM.Model.tablesCanonical`),
 is unchanged by being put in the compiler's form again (`IxVM.Model.renormalize`), and
-carries the section IxC's pass computes for it as it stands. At least one cites
+carries the section IxCK's pass computes for it as it stands. At least one cites
 another advice record that re-addressing moved (one with a section), so its refs table
 is sorted by addresses it was given after encoding. -/
 def adviceCanonical (env : Ixon.Env) (label : String) : IO Bool := do
@@ -463,7 +463,7 @@ def adviceCanonical (env : Ixon.Env) (label : String) : IO Bool := do
   let sections ← IO.ofExcept
     (IxVM.RecordSections.sectionsOf advice support blobs hints chosen (models := aset))
   for (a, c) in advice do
-    unless sections.getD a #[] == c.binders do bad := bad.push s!"{a}: another section than IxC's"
+    unless sections.getD a #[] == c.binders do bad := bad.push s!"{a}: another section than IxCK's"
   for b in bad.toList.take 10 do IO.eprintln s!"[ixvm-model-advice] {label}: advice record {b}"
   IO.println s!"[ixvm-model-advice] {label}: {advice.size} advice records, {bad.size} not the \
     compiler's; {citers} cite an advice record re-addressing moved"

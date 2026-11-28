@@ -10,15 +10,15 @@ The family step's conclusion at a concrete family (`inhabited`):
 The data below are written out by a generator, from these sources:
 
 * `blk`: Lean's own constants of the family (types, constructors, recursors with their rules,
-  the auxiliary recursors of a nested family included), lowered by IxC's reader
+  the auxiliary recursors of a nested family included), lowered by IxCK's reader
   (`Ix.Kernel.Reader.lowerInductiveDecls`) with the reader's level numbering. The keys of the
   members are placeholder addresses; the basis and `List` are at their role keys.
 * `pre`, `aliases`, `tbl`: the advice layout (`advicePrefix`, `familyAliases`, `familyTable`) of
-  the environment IxC's own fold stores after it checks the block with the model its
+  the environment IxCK's own fold stores after it checks the block with the model its
   in-process modeller generates. The advice keys are placeholder addresses.
-* `tysM`, `tysR`, `rhsss`: the annotated types and rule right-hand sides IxC's fold stores.
+* `tysM`, `tysR`, `rhsss`: the annotated types and rule right-hand sides IxCK's fold stores.
 
-`record_ok` evaluates the record search: each judgement of the record is a run of IxC's
+`record_ok` evaluates the record search: each judgement of the record is a run of IxCK's
 executable checker on the renamed positional subject, bridged to a derivation. -/
 
 namespace IxVM.Refinement.Decl.FamilyAlias.Fixtures.NestedTreeUniv
@@ -225,7 +225,7 @@ theorem record_ok :
 theorem roots_ok : ∀ a ∈ aliases, ∃ ci ∈ blk, a.name.base = ci.name := by decide +kernel
 
 /-- **The family step's conclusion holds of this family**: an alias group over the prefix, each
-alias rooted at a member of the block, IxC's renamed record of the block over the family package
+alias rooted at a member of the block, IxCK's renamed record of the block over the family package
 at the environment that stores the aliases, and each member stored as its reading. -/
 theorem inhabited :
     ∃ (h : KKey → KKey) (as : List (ConstantInfo .anon)) (env₂ : Env .anon),

@@ -17,6 +17,11 @@ Refines the cryptographic sponge/transcript and Merkle commitment checks of
 4. Merkle compression and pruned frontier folding (`Mmcs::{mmcs_compress, frontier_sort,
    frontier_fold, mmcs_verify_multi}`) via `hashPair_eq_pure`.
 
+The parity lemmas cited above (`blake3_eq_pure`, `*_hashRows_eq_pure`, `hashPair_eq_pure`) are
+about plain (unkeyed) BLAKE3. The in-circuit `Transcript::ch_sample8`, `StarkHash::b3_rows` and
+`Mmcs::mmcs_compress` hash in `derive_key` mode (`StarkHash::b3_dk_*`), and no theorem relates
+those keyed functions to a BLAKE3 specification.
+
 Zero `sorry`, zero `native_decide`, zero `bv_decide`, standard axioms only.
 -/
 
@@ -74,8 +79,9 @@ theorem ch_sample_field_val {b : Fin 8 → UInt8} {a : Goldilocks}
     rw [bytes8ToUInt64_toNat, glValModel_eq_natCast]
     rfl
 
-/-- Sponge refill equivalence: `Blake3::hash(input)` in `Transcript::ch_sample8` produces the
-exact 32-byte digest computed by `CertiFri.P3.blake3 input` (`ChallengerState.sampleWord`). -/
+/-- Plain-mode BLAKE3 parity restated for the sponge refill: `CertiFri.P3.blake3` (unkeyed) equals
+`Blake3.Pure.digest`. The in-circuit `Transcript::ch_sample8` hashes with
+`StarkHash::b3_dk_hash` (`derive_key` mode), so this lemma does not describe it. -/
 theorem ch_sample8_refill_eq (input : ByteArray) :
     CertiFri.P3.blake3 input = ByteArray.mk (Blake3.Pure.digest input.data.toList).toArray :=
   Ix.Cert.MultiStark.blake3_eq_pure input

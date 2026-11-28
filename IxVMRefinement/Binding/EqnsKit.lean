@@ -1,8 +1,8 @@
 import IxVMRefinement.Binding.RenderedSpecs
 import IxVMRefinement.RoleVal.GroupWalkLim
 import IxVMRefinement.RoleOps.Guards
-import IxC.Kernel.Rules.Derived
-import IxC.Kernel.Rules.Transport
+import IxCK.Kernel.Rules.Derived
+import IxCK.Kernel.Rules.Transport
 
 /-! # Closed-equation reduction kit (`EqnsKit`)
 

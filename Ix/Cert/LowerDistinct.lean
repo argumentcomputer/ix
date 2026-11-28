@@ -1,4 +1,4 @@
-import IxC.Kernel.Ixon.Reader
+import IxCK.Kernel.Ixon.Reader
 
 /-! # A lowered inductive block declares distinct names
 

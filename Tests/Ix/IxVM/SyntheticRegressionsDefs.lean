@@ -1,4 +1,4 @@
-/-! # Lean fixtures for synthetic and corpus-driven IxVM / IxC regression tests
+/-! # Lean fixtures for synthetic and corpus-driven IxVM / IxCK regression tests
 
 Elaborated Lean 4 declarations exercised by `ixvm-synthetic-regressions`
 (`Tests.Ix.IxVM.SyntheticRegressions`):

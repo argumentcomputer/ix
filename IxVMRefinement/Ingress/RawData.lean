@@ -1,6 +1,6 @@
 import IxVMRefinement.Ingress.ConvertExpr
 import IxVMRefinement.Core.RawDet
-import IxC.Kernel.Model.GuardClassifierErase
+import IxCK.Kernel.Model.GuardClassifierErase
 
 /-! # Scope-free physical expression data
 

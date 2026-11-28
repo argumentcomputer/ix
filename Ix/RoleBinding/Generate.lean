@@ -37,7 +37,10 @@ def recordStore (limits : Ix.Kernel.Admission.Limits) (env : Ixon.Env) :
   (Ix.Kernel.Admission.preflight limits records.toList blobs).mapError byteError
   (Ix.Kernel.Admission.uniqueKeys records.toList blobs).mapError byteError
   (Ix.Kernel.Admission.authenticate Address.admissionHash records.toList blobs).mapError byteError
-  let decoded ← (Ix.Kernel.Admission.decodeRecords limits records.toList).mapError byteError
+  (Ix.Kernel.Admission.scanDepths limits records.toList).mapError byteError
+  let decoded ← ((Ix.Kernel.Admission.decodeRecords limits records.toList).mapError
+    Ix.Kernel.Admission.ByteError.asLimit).mapError byteError
+  (Ix.Kernel.Admission.expandedDepths limits decoded).mapError byteError
   return decoded.foldl (fun out (a, c) => out.insert a c) {}
 
 /-- The same store construction with bounded parallel authentication and
@@ -51,13 +54,17 @@ def recordStoreParallel (limits : Ix.Kernel.Admission.Limits) (env : Ixon.Env) :
   (Ix.Kernel.Admission.preflight limits records.toList blobs).mapError byteError
   (Ix.Kernel.Admission.uniqueKeys records.toList blobs).mapError byteError
   (RecordDecoding.authenticateParallel 256 Address.admissionHash records.toList blobs).mapError byteError
-  let decoded ← (RecordDecoding.parallel 256 limits records.toList).mapError byteError
+  (RecordDecoding.scanDepthsParallel 256 limits records.toList).mapError byteError
+  let decoded ← ((RecordDecoding.parallel 256 limits records.toList).mapError
+    Ix.Kernel.Admission.ByteError.asLimit).mapError byteError
+  (RecordDecoding.expandedDepthsParallel 256 limits decoded).mapError byteError
   return decoded.foldl (fun out (a, c) => out.insert a c) {}
 
 @[csimp] theorem recordStore_eq_parallel : @recordStore = @recordStoreParallel := by
   funext limits env
   simp only [recordStore, recordStoreParallel, RecordDecoding.authenticateParallel_eq,
-    RecordDecoding.parallel_eq]
+    RecordDecoding.parallel_eq, RecordDecoding.scanDepthsParallel_eq,
+    RecordDecoding.expandedDepthsParallel_eq]
 
 /-- An authenticated, canonical record store for exactly this environment and
 these admission limits. Reusing it cannot substitute records from another
@@ -134,6 +141,15 @@ structure Generated where
   /-- Retained for independent reader roundtrip verification by the caller. -/
   closed : Std.HashMap Address (CExpr .anon)
 
+/-- Whether `generate` retains the whole certificate closure of `required` as
+`Generated.support`: it does when a required role with certificate theorems is a
+definition specified by its equations (`Ix.RoleEvidence.eqnsTheorems`), whose
+evidence keeps its ordinary theorem dependencies instead of being closed over
+the operation's own closure. The retained records enter the emitted artifact. -/
+def retainsCertificates (required : List Role) : Bool :=
+  (Ix.RoleEvidence.allCertTheorems.filter fun (r, _) => required.contains r).any
+    fun (role, _) => !Ix.RoleEvidence.certTheorems.any (·.1 == role)
+
 /-- Generate evidence for the required, actually published roles. The
 certificate module's bound operations must have the artifact's addresses.
 Missing proofs, unreadable closure records and noncanonical output refuse.
@@ -141,7 +157,7 @@ Missing proofs, unreadable closure records and noncanonical output refuse.
 caller has already built it.
 
 The theorem records have no Lean source a compiler could annotate. With
-`binderData`, their binder-data sections come from IxC's pass over the records
+`binderData`, their binder-data sections come from IxCK's pass over the records
 (`IxVM.RecordSections.sectionsOf`), typed against the certificate store under
 the bound-only table and its prelude, before their addresses are taken; a
 binder whose datum the pass cannot decide is the undecided node. Without
@@ -255,7 +271,7 @@ def generate (limits : Ix.Kernel.Admission.Limits) (env certificates : Ixon.Env)
           unless old == b do throw s!"role generation: conflicting generated blob at {a}"
         else blobs := blobs.push (a, b)
     written := written.push (role, thmOut.map fun (record, proof, _) => (record, proof))
-  -- the theorem records' binder data: IxC's pass over all of them at once,
+  -- the theorem records' binder data: IxCK's pass over all of them at once,
   -- keyed by each record's address without its section
   let bare : Array (Address × Ixon.Constant) := written.foldl (init := #[]) fun acc (_, ts) =>
     acc ++ ts.map fun (record, _) => (Address.admissionHash (Ixon.serConstant record), record)
@@ -289,7 +305,7 @@ def generate (limits : Ix.Kernel.Admission.Limits) (env certificates : Ixon.Env)
     ⟨Address.admissionHash bytes, bytes⟩).mapError fun e => toString (Ix.Kernel.Admission.Error.binding e)
   unless decoded.toBytes == bytes do throw "role generation: binding does not roundtrip"
   let finalPrelude : Prelude .anon ← readPrelude table preRecords records blobs.toList
-  let retained := selected.any fun (role, _) => !Ix.RoleEvidence.certTheorems.any (·.1 == role)
+  let retained := retainsCertificates required
   let support := if retained then certRecords.toArray else #[]
   let supportBlobs := if retained then certificates.blobs.toArray else #[]
   let supportHints := if retained then certificates.anonHints.toArray else #[]

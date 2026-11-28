@@ -1,11 +1,11 @@
 import IxVMRefinement.FamilyAlias.TeleClose
 import IxVMRefinement.Decl.NativeEnv
-import IxC.Kernel.Verify.Inductives.StructRec
-import IxC.Kernel.Verify.Inductives.FixRec
-import IxC.Kernel.Verify.InstSpine
-import IxC.Kernel.Verify.BridgeWfImp
-import IxC.Kernel.Model.Inductives.FixCtorReads
-import IxC.Kernel.Model.Open.Iota
+import IxCK.Kernel.Verify.Inductives.StructRec
+import IxCK.Kernel.Verify.Inductives.FixRec
+import IxCK.Kernel.Verify.InstSpine
+import IxCK.Kernel.Verify.BridgeWfImp
+import IxCK.Kernel.Model.Inductives.FixCtorReads
+import IxCK.Kernel.Model.Open.Iota
 
 /-! # The rule copy: its opening, and its renaming to the advice statement
 
@@ -25,7 +25,7 @@ an advice statement):
   group's equation holds, and the copy is closed, bounded, level-closed and resolves wherever
   the statement does, by transport along the renaming;
 * the copy opens at the statement's own variables, to the statement's equation with the head
-  of the left side and the major premise replaced: the literal conjuncts IxC's rule record
+  of the left side and the major premise replaced: the literal conjuncts IxCK's rule record
   asks of the theorem at the `iota` key.
 
 The passage between the opened statement and its closed form is `closeN_instSeq_closed`

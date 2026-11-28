@@ -1,8 +1,8 @@
-import IxC.Kernel.Rules.Inversion
-import IxC.Kernel.Verify.Shift
-import IxC.Kernel.Verify.Subst
-import IxC.Kernel.Verify.EnvWF
-import IxC.Kernel.Verify.InferLemmas
+import IxCK.Kernel.Rules.Inversion
+import IxCK.Kernel.Verify.Shift
+import IxCK.Kernel.Verify.Subst
+import IxCK.Kernel.Verify.EnvWF
+import IxCK.Kernel.Verify.InferLemmas
 
 /-! # Reduction keeps a term free of loose bound variables
 

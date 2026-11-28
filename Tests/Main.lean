@@ -23,6 +23,8 @@ import Tests.Ix.CollectDependencies
 import Tests.Ix.Compile.ClosureWhole
 import Tests.Ix.Compile.CheckerSupport
 import Tests.Ix.Compile.PackUnits
+import Tests.Ix.Compile.Equations
+import Tests.Ix.Compile.WordEquations
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
 import Tests.Ix.Kernel.Tutorial
@@ -46,6 +48,8 @@ import Tests.RoleTableWire
 import Tests.Ix.ResourceHints
 import Tests.Ix.ResourceModes
 import Tests.Ix.Kernel.RecordCheck
+import Tests.Ix.Kernel.LevelSharing
+import Tests.Ix.Kernel.Depth
 import Tests.Ix.Kernel.CheckLeanTargets
 import Tests.Ix.Kernel.CheckLeanCli
 import Tests.Ix.Kernel.ValidateReaderCli
@@ -127,6 +131,10 @@ def registry : List Entry := [
   -- selected closures (`collectSelectedDeps`): whole logical units, a
   -- matcher's unit, mutual siblings, checker support from `Role.deps`
   .suite "compiler-selected-closure" .primary Tests.Ix.Compile.SelectedClosure.suite,
+  -- `ix compile --equations`: the unfolding theorems it realizes, against Lean's own
+  .suiteIO "compile-equations" .primary Tests.Ix.Compile.Equations.suite,
+  -- and the fixed-width words' stored equations it adds as seeds
+  .suiteIO "compile-word-equations" .primary Tests.Ix.Compile.WordEquations.suite,
   -- the raw dependency collector (`Lean.collectDependenciesMany`) lists a mutual family once
   .suite "collect-dependencies" .primary Tests.Ix.CollectDependencies.suite,
   -- the formal IxVM program holds no address literal but its specification digest
@@ -134,7 +142,7 @@ def registry : List Entry := [
   -- every IO byte the IxVM and multi-stark programs read is range-checked
   .suite "io-ingress" .primary Tests.IOIngress.suite,
   -- the role table's wire vectors (Tests/Fixtures/ixon/role-table.tsv), which
-  -- Rust's codec is tested against, are IxC's codec's
+  -- Rust's codec is tested against, are IxCK's codec's
   .runner "role-table-wire" .primary Tests.RoleTableWire.run,
   -- the Ixon reader against a direct translation of compiled Lean constants
   .suite "kernel-reader-roundtrip" .primary Tests.Ix.Kernel.ReaderRoundtrip.suite,
@@ -156,6 +164,10 @@ def registry : List Entry := [
   -- the per-root hypotheses and conclusion
   .suite "cert-statement" .primary Tests.Ix.Cert.Statement.suite,
   .suite "kernel-record-check" .primary Tests.Ix.Kernel.RecordCheck.suite,
+  -- levels the ∀ rule shares, memoised level walks, and the level-comparison budget
+  .runner "kernel-level-sharing" .primary Tests.LevelSharing.run,
+  -- stack-safe reduction/record loops, 64-bit Expr hash, and stored/expanded depth limits
+  .runner "kernel-depth" .primary Tests.Ix.Kernel.Depth.run,
   -- the fold and the role table's admission under each axiom policy (user axioms)
   .suite "kernel-user-axioms" .primary Tests.Ix.Kernel.UserAxioms.suite,
   .suite "kernel-check-lean-targets" .primary Tests.Ix.Kernel.CheckLeanTargets.suite,
@@ -165,7 +177,7 @@ def registry : List Entry := [
   .suiteIO "getfileenv-body" .primary (do return [← Tests.Ix.EnvBody.suite]),
   -- Reductions no kernel may make beyond Lean's (class methods reduced
   -- without their instance, `numBits ≡ 64`, the `Fin.val` commute): every
-  -- probe's closure through IxC.
+  -- probe's closure through IxCK.
   .runner "kernel-fast-paths" .primary Tests.Ix.Kernel.FastPaths.run,
   -- Aggregate driver/cache/manifest semantics.
   .runner "ix-aggr" .primary Tests.Aggr.convergedSuite,
@@ -223,11 +235,13 @@ def registry : List Entry := [
   -- `ix validate-lean` on Init+Std: compile, serde, projection, reader and
   -- decompile fidelity (reusing `.lake/build/initstd-reference.ixe`)
   .runner "fidelity-initstd" (.ci .landingInitStdCli) Tests.Ix.InitStd.fidelity,
+  -- `kernel-check-ixe --entry user` on Init+Std with every thread on an 8 MiB stack
+  .runner "initstd-stack" (.ci .landingInitStdCli) Tests.Ix.InitStd.stack,
   -- The trusted reader (`prepareWith`) accepts the logical records of the closures
   -- the IxVM suites check (`IxVM.consistent`'s `ReadIn`).
   .env "ixvm-reader-coverage" (.ci .landingInitStdCli) Tests.Ix.Kernel.ReaderCoverage.run,
 
-  -- Compiler closures & IxC pins (`host-test-closures`)
+  -- Compiler closures & IxCK pins (`host-test-closures`)
   -- auxiliary addresses do not depend on the compile set (closure vs whole env)
   .suite "canon-closure-aux" (.ci .compilerClosures) Tests.Ix.Compile.AuxiliaryClosureCanon.suite,
   .suite "cert-evidence-agreement" (.ci .compilerClosures) Tests.Ix.Cert.Statement.evidenceSuite,
@@ -237,7 +251,7 @@ def registry : List Entry := [
   .runner "compile-closure-whole" (.ci .compilerClosures) Tests.Ix.Compile.ClosureWhole.run,
   .runner "checker-support-regression" (.ci .compilerClosures) Tests.Ix.Compile.CheckerSupport.run,
   .runner "pack-units" (.ci .compilerClosures) Tests.Ix.Compile.PackUnits.run,
-  -- The existing eight IxC selected-producer pins and their subject budgets.
+  -- The existing eight IxCK selected-producer pins and their subject budgets.
   .runner "tc-pins" (.ci .compilerClosures) Tests.Tc.Pins.run,
   -- Exact retained acceleration inputs, value/head witnesses and full closures.
   .runner "kernel-accel-semantics" (.ci .compilerClosures) Tests.Ix.Kernel.AccelSemantics.run,
@@ -279,6 +293,8 @@ def required : List (String × String) := [
   ("role-equations", "primary"),
   ("ixes-manifest", "primary"),
   ("kernel-record-check", "primary"),
+  ("kernel-level-sharing", "primary"),
+  ("kernel-depth", "primary"),
   ("compile-ind-flags", "primary"),
   ("admission-hash-diff", "primary"),
   ("spec-digest-rendering", "primary"),
@@ -302,6 +318,7 @@ def required : List (String × String) := [
   ("kernel-tutorial", "ci:misc"),
   ("initstd-reference", "ci:landing-initstd-cli"),
   ("fidelity-initstd", "ci:landing-initstd-cli"),
+  ("initstd-stack", "ci:landing-initstd-cli"),
   ("ixvm-reader-coverage", "ci:landing-initstd-cli"),
   ("admission-hash-diff-initstd", "ci:nightly"),
   ("exact-sharing-full", "ci:nightly")]

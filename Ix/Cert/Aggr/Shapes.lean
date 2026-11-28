@@ -184,7 +184,7 @@ theorem aggregateSource_core_helpers_present :
 Any edit to any module in `MultiStark.aggregateSource` changes this digest and forces an
 explicit audit review. -/
 def pinnedAggregateDigest : String :=
-  "b1969c2a5a4c1c459f2e9325b4c90e300eaa59e0a1c8127a7ebb77dd152d1403"
+  "f4c4bfbfe9244c4ffa798e82c25b5a71b2e211eae20db7f0350aa92b53d3de68"
 
 theorem aggregateDigest_eq : MultiStark.aggregateDigest = pinnedAggregateDigest := rfl
 
@@ -227,7 +227,7 @@ def AggregateProgramAstPinned {α : Type} (prog : Modules.Program α) : Bool :=
      "aggr_assert_packed_addr_u64s", "aggr_linked_entry_addr", "aggr_assert_linked_merge"] 18 &&
   !hasModuleFunction prog "Aggregation" "aggr_parse_eval" &&
   fnHasCallsAndAsserts prog "StarkVerifier" "verify_batch" verifyBatchRequiredCalls 6 &&
-  fnHasCallsAndAsserts prog "StarkVerifier" "verify_shard" verifyShardRequiredCalls 17
+  fnHasCallsAndAsserts prog "StarkVerifier" "verify_shard" verifyShardRequiredCalls 27
 
 /-- Kernel-checked AST pin of the deployed `MultiStark.aggregateSource`. -/
 theorem aggregateSource_ast_pinned :
@@ -317,7 +317,7 @@ theorem aggregateProgram_ast_pinned :
   have h11 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.aggregateSource
     "StarkVerifier" "verify_batch" verifyBatchRequiredCalls 6
   have h12 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.aggregateSource
-    "StarkVerifier" "verify_shard" verifyShardRequiredCalls 17
+    "StarkVerifier" "verify_shard" verifyShardRequiredCalls 27
   unfold fnHasCallsAndAsserts at h1 h2 h3 h4 h5 h6 h7 h8 h9 h11 h12
   unfold hasModuleFunction at h10
   unfold Modules.Program.toField
@@ -475,7 +475,7 @@ the 19 shapes of `MultiStark::ix_aggr` together with `VerifiedChildProof` child 
 mechanical extraction of an `AcceptedAggrTree` from `prepared.ObsFn ixAggrEntry` is tracked
 separately. Within this stage-isolated model:
 - Mode 2 (`dischargeEvalStep`, `dischargeEvalAll`, `dischargeEvalLinkedFinal`) discharges an
-  `EvalAssumption` leaf via a kernel `@Eq` `Claim.check`, transitioning `10 → 3` / `11 → 4`
+  `EvalAssumption` leaf via a kernel `@Eq` `Claim.check`, transitioning `10 → 14` / `11 → 15`
   ONLY when `EvalA = ∅` AND `Linked = ∅`.
 - Mode 3a (`dischargeEvalViaDynamicLink`) discharges an `EvalAssumption` leaf via a Shape 17
   `DynamicLinkStatement` ONLY by recording its `LinkedCircuitEntry` in `LinkedAfter` under
@@ -549,9 +549,12 @@ inductive AcceptedAggrTree
       StructuralJoinRel SL AL SR AR Sout Aout →
       AxiomMergeRel AxL AxR AxOut →
       AcceptedAggrTree sem batchClaim (.checkEnv mode Sout Aout AxOut (fun _ => False) (fun _ => False))
-  /-- Shape `10` (`aggr_range_leaf`): verifies shards `[lo, hi)` of `batchId`. -/
+  /-- Shape `10` (`aggr_range_leaf`): verifies the `hi - lo` shard proofs covering `[lo, hi)` of
+  `batchId`, each witnessed by a `VerifiedChildProof`. -/
   | rangeLeaf {batchId lo hi : Nat} :
+      (shardProofs : List VerifiedChildProof) →
       lo ≤ hi →
+      shardProofs.length = hi - lo →
       AcceptedAggrTree sem batchClaim
         (.rangeStmt batchId lo hi (rangeSum sem.residualMonoid (sem.shardResidual batchId) lo hi))
   /-- Shape `11` (`aggr_range_join`): adds residuals of adjacent shard ranges `[lo, mid)` and `[mid, hi)`. -/
@@ -630,7 +633,7 @@ inductive AcceptedAggrTree
       AcceptedAggrTree sem batchClaim (.checkEnv mode S A AxOut EvalAfter Linked)
   /-- Shape `18` Mode 2 final unlinked step (`aggr_discharge_eval`): discharges the final
   `EvalAssumption` leaf `e₀` via an `@Eq` `Claim.check` when `Linked = ∅`, transitioning
-  validator `10 → 3` or `11 → 4` with `EvalA = ∅`, `Linked = ∅`, and `A7` axiom merge. -/
+  validator `10 → 14` or `11 → 15` with `EvalA = ∅`, `Linked = ∅`, and `A7` axiom merge. -/
   | dischargeEvalAll {mode outMode : ValidatorMode Address} {S A Ax₀ Ax₁ AxOut EvalBefore e₀} :
       VerifiedChildProof → VerifiedChildProof →
       mode.dischargeAllEvals = some outMode →
@@ -677,7 +680,7 @@ def AcceptedAggrTree.childProofs
   | .wrap _ vp t => vp :: t.childProofs
   | .pairFlat _ _ _ vpL vpR tL tR _ _ => vpL :: vpR :: tL.childProofs ++ tR.childProofs
   | .pairStructural _ _ _ vpL vpR tL tR _ _ => vpL :: vpR :: tL.childProofs ++ tR.childProofs
-  | .rangeLeaf _ => []
+  | .rangeLeaf shardProofs _ _ => shardProofs
   | .rangeJoin vpL vpR tL tR => vpL :: vpR :: tL.childProofs ++ tR.childProofs
   | .rangeRoot _ vp t _ _ => vp :: t.childProofs
   | .dischargeBinding _ vpC vpB tC tB => vpC :: vpB :: tC.childProofs ++ tB.childProofs
@@ -706,7 +709,7 @@ def AcceptedAggrTree.dynamicLinkDischarges
   | .wrap _ _ t => t.dynamicLinkDischarges
   | .pairFlat _ _ _ _ _ tL tR _ _ => tL.dynamicLinkDischarges + tR.dynamicLinkDischarges
   | .pairStructural _ _ _ _ _ tL tR _ _ => tL.dynamicLinkDischarges + tR.dynamicLinkDischarges
-  | .rangeLeaf _ => 0
+  | .rangeLeaf _ _ _ => 0
   | .rangeJoin _ _ tL tR => tL.dynamicLinkDischarges + tR.dynamicLinkDischarges
   | .rangeRoot _ _ t _ _ => t.dynamicLinkDischarges
   | .dischargeBinding _ _ _ tC tB => tC.dynamicLinkDischarges + tB.dynamicLinkDischarges
@@ -749,7 +752,7 @@ private theorem acceptedAggrTree_stmtIsUnlinked_zero
     simp [AcceptedAggrTree.dynamicLinkDischarges, ihL hUnl, ihR hUnl]
   | pairStructural _ _ hUnl _ _ _ _ _ _ ihL ihR =>
     simp [AcceptedAggrTree.dynamicLinkDischarges, ihL hUnl, ihR hUnl]
-  | rangeLeaf _ => rfl
+  | rangeLeaf _ _ _ => rfl
   | rangeJoin _ _ _ _ ihL ihR =>
     simp [AcceptedAggrTree.dynamicLinkDischarges, ihL trivial, ihR trivial]
   | rangeRoot _ _ _ _ _ ih => exact ih trivial
@@ -805,6 +808,29 @@ def AcceptedAggrTree.verificationCount
     (t : AcceptedAggrTree sem batchClaim stmt) : Nat :=
   t.childProofs.length
 
+/-- Shape 10 range leaves expose every shard proof they verify in `childProofs`. -/
+theorem rangeLeaf_childProofs
+    {sem : AggrSemantics Address Address EvalAssumption Address K DynamicLinkStatement LinkedCircuitEntry}
+    {batchClaim : Nat → ValidatorMode Address → (Address → Prop) → (Address → Prop) →
+      (Address → Prop) → (EvalAssumption → Prop) → Prop}
+    {batchId lo hi : Nat} (shardProofs : List VerifiedChildProof)
+    (hle : lo ≤ hi) (hlen : shardProofs.length = hi - lo) :
+    (AcceptedAggrTree.rangeLeaf (sem := sem) (batchClaim := batchClaim)
+      (batchId := batchId) (lo := lo) (hi := hi) shardProofs hle hlen).childProofs = shardProofs :=
+  rfl
+
+/-- Shape 10 range leaves contribute `hi - lo` verifications to `verificationCount`. -/
+theorem rangeLeaf_verificationCount
+    {sem : AggrSemantics Address Address EvalAssumption Address K DynamicLinkStatement LinkedCircuitEntry}
+    {batchClaim : Nat → ValidatorMode Address → (Address → Prop) → (Address → Prop) →
+      (Address → Prop) → (EvalAssumption → Prop) → Prop}
+    {batchId lo hi : Nat} (shardProofs : List VerifiedChildProof)
+    (hle : lo ≤ hi) (hlen : shardProofs.length = hi - lo) :
+    (AcceptedAggrTree.rangeLeaf (sem := sem) (batchClaim := batchClaim)
+      (batchId := batchId) (lo := lo) (hi := hi) shardProofs hle hlen).verificationCount =
+      hi - lo :=
+  hlen
+
 /-- Whether ANY recursive Multi-STARK child verification in `t` exhibited a concrete BLAKE3
 collision against its anchored `(vkBytes, claimsBytes)`. -/
 def AcceptedAggrTree.HasTreeCollision
@@ -839,7 +865,7 @@ theorem acceptedAggrTree_refines_derivation19
     | wrap _ _ _ ih => exact .wrap ih
     | pairFlat _ _ hUnl _ _ _ _ hJ hA ihL ihR => exact .pairFlat hUnl ihL ihR hJ hA
     | pairStructural _ _ hUnl _ _ _ _ hJ hA ihL ihR => exact .pairStructural hUnl ihL ihR hJ hA
-    | rangeLeaf hle => exact .rangeLeaf hle
+    | rangeLeaf _ hle _ => exact .rangeLeaf hle
     | rangeJoin _ _ _ _ ihL ihR => exact .rangeJoin ihL ihR
     | rangeRoot hUnl _ _ hZ hC ih => exact .rangeRoot hUnl ih hZ hC
     | dischargeBinding _ _ _ _ _ ihC ihB => exact .dischargeBinding ihC ihB

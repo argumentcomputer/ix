@@ -1,9 +1,9 @@
 import IxVMRefinement.Core.Open
 import IxVMRefinement.Core.Loaded
 import IxVMRefinement.Core.Specs.Infer
-import IxC.Kernel.Rules.Inversion
-import IxC.Kernel.Verify.InstLevels
-import IxC.Kernel.Verify.PropWhen
+import IxCK.Kernel.Rules.Inversion
+import IxCK.Kernel.Verify.InstLevels
+import IxCK.Kernel.Verify.PropWhen
 
 /-! # Closing a binder, and the kernel-term facts inference reads
 

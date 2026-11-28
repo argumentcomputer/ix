@@ -22,6 +22,7 @@ structure RunConfig where
   tier : Bool := false
   allowUserAxioms : Bool := false
   skip : Std.HashSet String := {}
+  core : Ix.Kernel.Cached.CoreConfig := {}
 
 /-- The path actually taken. Tier fallback records the original request;
 no caller should describe that run as parallel tier checking. -/
@@ -73,11 +74,13 @@ def runRecords (src : LoopSource σ md) (ev : Ix.Kernel.Evidences md)
         (tier := if cfg.tier then src.tierHook else none)
         (allowUserAxioms := cfg.allowUserAxioms)
         (persist := false)
+        (core := cfg.core)
     | .serial | .serialTier _ => do
       let out ← checkLoopWith src.view src.read src.commit (← src.init)
-        (Checker.stepRecordWithUserAxioms ev cfg.allowUserAxioms) {}
+        (Checker.stepRecordWithUserAxioms ev cfg.allowUserAxioms) { cs := { core := cfg.core } }
         names addresses cfg.skip note (progress := fun i o => progress i o.counts)
         (onRead := onRead) (spell := spell) (tier := if cfg.tier then src.tierHook else none)
+        (core := cfg.core)
       pure { checker := (), counts := out.counts, reasons := out.reasons, failed := out.failed }
   return { rows := ← rows.get, counts := out.counts, reasons := out.reasons,
            failed := out.failed, execution }

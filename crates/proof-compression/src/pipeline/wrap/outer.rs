@@ -665,14 +665,16 @@ impl<C: KzgCurve> VerifyingKey<C> {
       circuits.push(circuit);
       fixed.0.append(&mut commit.0);
     }
-    Ok(System {
+    let mut system = System {
       config: KzgConfig::<C>::verifier_only(params, 2)
         .with_transcript(TranscriptKind::Blake3),
       circuits,
       preprocessed_commit: Some(fixed),
       preprocessed_indices: vec![Some(0), Some(1)],
       vk_digest: [0u8; 32],
-    })
+    };
+    crate::kzg::config::bind_system_key(&mut system);
+    Ok(system)
   }
 
   pub(crate) fn prepare(&self) -> PipelineResult<PreparedVerifyingKey<C>> {
@@ -962,7 +964,7 @@ mod tests {
   fn ignition_verifier_rejects_substituted_inner_pairing_keys()
   -> storage::Result<()> {
     let mut vk = VerifyingKey::<Bn254>::from_bytes(include_bytes!(
-      "../../../verifying-keys/0.5/recursive-vk.bin"
+      "../../../verifying-keys/0.6/recursive-vk.bin"
     ))?;
     vk.check_setup_class(SetupClass::Ignition)?;
     let development =

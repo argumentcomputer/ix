@@ -1,0 +1,91 @@
+{
+  "format": "ixcc/k1-equations/1",
+  "source": "Limits.lean",
+  "roots": [
+    {
+      "name": "Limits.tags16",
+      "address": "b85cf54c24b9a82e131797c454fbfd2a64c7476cfdc989b07a5fbe2f3411210c"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "Limits.keepT16",
+      "definition_address": "d1477e1cb1962b29b860b8b4b0e5065b2faaeca549d34945cd8cd92e2cb39536",
+      "equation": "Limits.keepT16.eq_def",
+      "equation_address": "3c17caedef3193685cc92b9ef0c9341ebd1b9f094e7f1c7aa2b4bff2fc7a6f15"
+    },
+    {
+      "definition": "Nat.add",
+      "definition_address": "a04e7e6b19f5e48dbb0b53dae24db5dcc1b1a98c8e97551db8fb4b5f4a14caa8",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "300f835ac35174de29416ee013ec8c57d5c01c6e448335ee4086f384f3f1a249"
+    },
+    {
+      "definition": "Nat.beq",
+      "definition_address": "dd0668fbe8c2b2a2260e95da62a2bea5df42c670a3e95ccffea03c3a7ffdc1c2",
+      "equation": "Nat.beq.eq_def",
+      "equation_address": "a2262f61bc575994ebe308858282397b4e0c8ca19e626eba79956699501e124c"
+    },
+    {
+      "definition": "Nat.bitwise",
+      "definition_address": "f67972af52c7a4fce7de2595075e6b6d0ca7d7f67e01e1a1383c6a270aa613cd",
+      "equation": "Nat.bitwise.eq_def",
+      "equation_address": "28835212de0d7d796e7256b5a560118c470befd066f5b4504652736867998670"
+    },
+    {
+      "definition": "Nat.bitwise._unary",
+      "definition_address": "0958d930c48997ef917230a263e338a060842f382586a230293b2ccafa1967a9",
+      "equation": "Nat.bitwise._unary.eq_def",
+      "equation_address": "cefc1262dc2a1b0d22598e8221053070583da86918a112e6f115c7746da59f39"
+    },
+    {
+      "definition": "Nat.ble",
+      "definition_address": "a939cc7925834d04a7ced860c5c44484231c9f5c44728d83d55f19c08037f3b4",
+      "equation": "Nat.ble.eq_def",
+      "equation_address": "25a12692ef836a0d2771c46279e413f421082b3128e091b2931f9e9733348403"
+    },
+    {
+      "definition": "Nat.div.go",
+      "definition_address": "0d78a77d8ea6b073d86da27fd8ccb0fed5771b11062d5585f73279abdfe38784",
+      "equation": "Nat.div.go.eq_def",
+      "equation_address": "fbec97a8f4e8edc20956d9322bb93c4d16d01cb27f3554fe75bc6bdd82ecf9f4"
+    },
+    {
+      "definition": "Nat.modCore.go",
+      "definition_address": "205697164cd9b61d252cc44c7d7f4a00b4bab80be3d77991ce288eefa2532bed",
+      "equation": "Nat.modCore.go.eq_def",
+      "equation_address": "3c0ada33a37dd767b729e80f3ac7efbdef99f6fc83fddf87fa66df5b8dc6d16d"
+    },
+    {
+      "definition": "Nat.mul",
+      "definition_address": "7e736639472dcc920bdc54d8ff0255a4c03b3c05375eacf08814e341deebd331",
+      "equation": "Nat.mul.eq_def",
+      "equation_address": "ab44c6c6e51692fbde3e413a5b90e4727eb15bfc1851cbd56869c27ecb615ee3"
+    },
+    {
+      "definition": "Nat.pow",
+      "definition_address": "473d7239744c820ddb45b6ce56d0506734ba90e5699e985444fd7a6647e9b0a0",
+      "equation": "Nat.pow.eq_def",
+      "equation_address": "7db03b695da2842f3a309f783d03f8a5b71c7c083a9c443fba18f4383e14feeb"
+    },
+    {
+      "definition": "Nat.shiftLeft",
+      "definition_address": "c2a2258d56e14ebdb8c9986365cf0c0f6dfe4128a8faf847dd5e50b4ae7bb310",
+      "equation": "Nat.shiftLeft.eq_def",
+      "equation_address": "492f48a67ad9ee6b523243728498f022ce79f6642d925ebb2a304a1bcfd18239"
+    },
+    {
+      "definition": "Nat.shiftRight",
+      "definition_address": "74a4836a0eddfd07e45e5da0929df974e0caef28fd26001f7de1712d5beddd4e",
+      "equation": "Nat.shiftRight.eq_def",
+      "equation_address": "013214b1403ee47e67c71a59668e01660308f761b1b15ee85f50e9e7e6923da5"
+    },
+    {
+      "definition": "Nat.sub",
+      "definition_address": "f8410bb7b91afaa0cb6f9162faeee2a682e98cde21acf19712380f4e9dbcbf00",
+      "equation": "Nat.sub.eq_def",
+      "equation_address": "80ffad9e0b779752b2e73b7a35e69cce0463317b238fe9679447f01194f157ab"
+    }
+  ],
+  "failures": []
+}

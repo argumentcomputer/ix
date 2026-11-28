@@ -22,7 +22,6 @@ listed circuit, and receive `public_inputs` argument words and
 namespace Aiur.Plonk.Schema
 
 open Lean (Json)
-open Aiur.Plonk.Lower (Fr)
 
 def hexNat (s : String) : Except String Nat := do
   let digits : String := if s.startsWith "0x" then (s.drop 2).toString else s
@@ -33,16 +32,16 @@ def hexNat (s : String) : Except String Nat := do
       else throw s!"bad hex digit in {s}"
     pure (16 * acc + d)) 0
 
-def field (j : Json) : Except String Fr := do
+def field {F : Type} [NatCast F] (j : Json) : Except String F := do
   match j with
-  | .str s => return ((← hexNat s : Nat) : Fr)
-  | .num n => return ((n.mantissa.toNat : Nat) : Fr)
+  | .str s => return ((← hexNat s : Nat) : F)
+  | .num n => return ((n.mantissa.toNat : Nat) : F)
   | _ => throw "expected a field element"
 
 def natD (j : Json) (k : String) : Nat := ((j.getObjValAs? Nat k).toOption).getD 0
 def boolD (j : Json) (k : String) : Bool := ((j.getObjValAs? Bool k).toOption).getD false
 
-def node (j : Json) : Except String (Node Fr) := do
+def node {F : Type} [NatCast F] (j : Json) : Except String (Node F) := do
   match ← j.getObjValAs? String "op" with
   | "constant" => return .const (← field (← j.getObjVal? "value"))
   | "main" => return .main (natD j "column") (boolD j "next")
@@ -56,7 +55,7 @@ def node (j : Json) : Except String (Node Fr) := do
   | "neg" => return .neg (natD j "a")
   | op => throw s!"unsupported node {op}"
 
-def table (j : Json) : Except String (Table Fr) := do
+def table {F : Type} [NatCast F] (j : Json) : Except String (Table F) := do
   let nodes ← (← j.getObjValAs? (Array Json) "nodes").mapM node
   let fixed ← (← j.getObjValAs? (Array Json) "fixed").mapM field
   let lookups ← (← j.getObjValAs? (Array Json) "lookups").mapM fun l => do
@@ -66,14 +65,14 @@ def table (j : Json) : Except String (Table Fr) := do
            width := natD j "main_width", fixedWidth := natD j "fixed_width", fixed, nodes,
            constraints := ← j.getObjValAs? (List Nat) "constraints", lookups := lookups.toList }
 
-def source (j : Json) : Except String (Source Fr) := do
+def source {F : Type} [NatCast F] (j : Json) : Except String (Source F) := do
   let fmt ← j.getObjValAs? String "format"
   unless fmt == "ix-aiur-plonk-terminal-v1" || fmt == "ix-aiur-plonk-v1" do
     throw s!"unsupported schema format {fmt}"
   unless boolD j "boolean_requests" do
     throw "schemas without boolean requests need range-checked counts (not supported)"
   let tables ← (← j.getObjValAs? (Array Json) "circuits").mapM table
-  return { callable := (natD j "callable" : Fr), publics := natD j "public_inputs",
+  return { callable := (natD j "callable" : F), publics := natD j "public_inputs",
            outputs := natD j "private_outputs", tables := tables.toList }
 
 /-- The entry chip named by the schema's `callable`: the callable with that

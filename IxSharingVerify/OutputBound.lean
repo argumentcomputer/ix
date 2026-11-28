@@ -1,6 +1,6 @@
 import IxSharingVerify.NeverFails
 import IxSharingVerify.FamilyWritingBound
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 /-!
 # The output of the sharing rule is polynomial in its DAG

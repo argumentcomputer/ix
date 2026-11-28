@@ -49,7 +49,7 @@ the empty one), typed against `support`, records the kernel reads without
 annotating them, under the role table and prelude `chosen`; `models` are the generated
 model records among them, which the kernel view indexes after the environment's. An unsafe or partial
 record gets the all-undecided section. With `taint`, a
-binder whose datum IxC's datum function cannot compute is the undecided node, as
+binder whose datum IxCK's datum function cannot compute is the undecided node, as
 the compiler writes it; without, it is `never` (deliberately ill-typed test
 records, whose rejection should not move to the sentinel). With the pass's
 statistics (`IxVM.PwHints.Stats`). -/

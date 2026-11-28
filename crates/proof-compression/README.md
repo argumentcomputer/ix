@@ -38,7 +38,7 @@ development parameters. Final setup is independent: PLONK defaults to Ignition,
 while `--dev-final-srs` prepares local keys for either PLONK or Groth16. With
 `--dev-kzg-srs` as well, neither stage needs Ignition.
 Default verification pins one version of the verifying keys,
-[`0.5`](verifying-keys/0.5): one key per proof system, with the root layout,
+[`0.6`](verifying-keys/0.6): recursive KZG verifying key and fixed root layout,
 statement prefix and Ignition parameters they were derived for. They belong to
 the formal IxVM and aggregation backends under the default STARK parameters
 ([STARK parameters](../../docs/stark-parameters.md)); see
@@ -115,13 +115,13 @@ install it.
 
 `ix compress ROOT` and `ix prove ... --compress kzg|plonk|groth16` automatically
 normalize the formal aggregate root (an `IXAGGR2` proof) using the versioned
-[version 0.5 layout](verifying-keys/0.5/root-layout.ixl).
+[version 0.6 layout](verifying-keys/0.6/root-layout.ixl).
 `--fixed-root` is an optional layout override from `ix compress layout`, and
 `ix compress normalize` writes the root input directory without compressing. The
 default layout covers `Nat.add_comm`, `Init+Std`, and full `Mathlib` 4.34.1
 roots with one more doubling of every circuit (`--headroom 1`). Its root
 verifier is the formal Protocol `v6` aggregation key, BLAKE3
-`d3813ae554af0aa6a24c5c72c796e17403756aa1f9cabbb08519ed4d767c9f13`.
+`e28ef326f80704567ddd29fd1367f21318335626c1b692b9588ee3ae7605175d`.
 The default rejects another backend key, and normalization rejects executions
 that exceed the fixed bounds before allocating traces. A larger supported
 layout is a new release; `ix compress layout` derives one when a release is
@@ -227,7 +227,8 @@ ix compress setup
 
 # The recursive key and the pins it fixes, then the PLONK key and a Groth16
 # development key (the final keys need Go 1.26.8 or later). Both publish their
-# caches where `ix compress` reads them.
+# caches where `ix compress` reads them; each refuses a cache directory that
+# already holds entries, and IX_KZG_SRS and the IX_KZG_*_CACHE overrides.
 cargo run --release --locked -p ix-proof-compression --example release_keys -- \
   ixvm-key aggr-key root-layout.ixl release ~/.ix/compression/cache
 cargo run --release --locked -p ix-proof-compression --features plonk,groth16 \
@@ -238,7 +239,8 @@ cargo run --release --locked -p ix-proof-compression --features plonk,groth16 \
 The four roots of version 0.2 need the same heights, so the root wrap's
 execution depends on the aggregation program rather than on the root's shape;
 the doubling is headroom. The recursive key took 1,256 s and 99 GB of peak
-memory, and the PLONK and Groth16 keys 492 s (289 s and 203 s) and 15 GB.
+memory (re-deriving 0.5's at 16 threads peaked at 115.6 GB), and the PLONK and
+Groth16 keys 492 s (289 s and 203 s) and 15 GB.
 Compressing a root under the new keys then took 2,326 s and 389 GB; a PLONK
 or Groth16 proof of it, resuming that run, about 2 minutes more. The Groth16
 key comes from a fresh development setup and differs on every run.

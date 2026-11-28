@@ -1,5 +1,5 @@
 import Ix.IxVM.Refinement.Claim
-import IxC.Kernel.Ixon.Prelude
+import IxCK.Kernel.Ixon.Prelude
 
 /-! # Fixed projection images used by reader reconstruction
 

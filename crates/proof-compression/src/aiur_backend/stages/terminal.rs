@@ -1,72 +1,139 @@
-//! `plonk`: the terminal relation (`CompressFinalNarrow`) on the
-//! narrow proof, proved by gnark PLONK on the prepared circuit of the
-//! Lean-checked constraint system (`aiur_narrow_terminal_prove --cuda
-//! --reuse --scs ...`).
+//! `plonk`: the terminal relation proved over Lean's formally checked
+//! constraint system (`ix-aiur-scs-v1`).
 //!
-//! Manifest fields: `artifact`, `policy`, `prepared_manifest` (the prepared
-//! directory's `manifest.json`), all products; `scs` (`path` and `sha256`;
-//! the file is hashed off the critical path), `cuda` (default true).
+//! The stage runs the pure-Rust (+ optional Ix-CUDA) native PLONK + BSB22
+//! backend (`ix-aiur-native-plonk-v1`) on both BN254 and BLS12-381 with zero
+//! Go, CGo, or `bindgen` dependencies. Legacy gnark manifests
+//! (`ix-aiur-scs-artifacts-v1`) are retired and rejected with a clear error
+//! pointing to `ix-aiur-native-plonk-v1`.
 //!
-//! The prepared directory (`prepared/` beside the manifest) is reused, never
-//! rebuilt: its manifest must name this SCS file's and this terminal's
-//! pairing configuration's digests.
-use super::{Error, Handoff, Stage};
+//! Manifest fields: `artifact`, `prepared_manifest` (the prepared directory's
+//! `manifest.json`), `scs` (`path` and `sha256`), optional `policy` (product,
+//! required for native BN254 circuits consuming narrow KZG proof advice),
+//! optional `backend` (must be `"native"` when present), optional `cuda`
+//! (boolean; defaults to `cfg!(feature = "cuda")` and supports Ix-CUDA on both
+//! BN254 and BLS12-381), optional `entry` (defaults to
+//! `CompressFinal::verify_v1`, a self-contained `outputs == 0` in-circuit
+//! pairing entry; deferred-output accumulator entries with `scs.outputs != 0`
+//! are rejected fail-closed), optional `advice` (product
+//! `.ixa` bound via `ixcc::register_advice_program`), optional `field`
+//! (`"bn254"` default or `"bls12-381"`).
+//!
+//! The prepared directory is reused, never rebuilt: its manifest must pin this
+//! SCS file's digest.
+
+use super::{
+  Error, Handoff, Product, Stage,
+  exports::{Field, parse_optional_entry, parse_stage_field},
+};
 use crate::{
   aiur_backend::{
-    Bn254,
+    Bls12381, Bn254, bls12_381,
     compress_bn::{PackedCapacity, PackedPolicy},
     fq, g1,
     kzg::Compiler,
     kzg_advice as wire,
-    pairing::final_program::{
-      Configuration, NARROW_ACCUMULATOR_ENTRY, statement_arguments,
+    pairing::{
+      self,
+      final_program::{
+        ACCUMULATOR_ENTRY, ENTRY, NARROW_ACCUMULATOR_ENTRY, statement_arguments,
+      },
     },
-    plonk::{gnark, scs},
+    plonk::{native, scs},
+  },
+  kzg::{
+    Scalar,
+    curve::{Bls12381 as Bls12381Curve, Bn254 as Bn254Curve, KzgCurve},
+    field::{Bls12381Scalar, CurveScalar},
   },
   pipeline::SetupConfig,
 };
 use aiur::{
-  artifact::WidePackage, field::FieldBackend, hints::HintChannels,
-  maps::MapOverrides, trace::TracePlan,
+  Execution, FieldWord, artifact::WidePackage, bytecode::Type,
+  field::FieldBackend, hints::HintChannels, maps::MapOverrides,
+  trace::TracePlan,
 };
-use ark_ec::pairing::Pairing;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::{fs, path::Path, sync::Arc, time::Instant};
+use std::{
+  fs,
+  path::{Path, PathBuf},
+  sync::Arc,
+  time::Instant,
+};
 
-fn sha256_file(path: &Path) -> Result<String, String> {
-  let mut hash = Sha256::new();
-  std::io::copy(
-    &mut fs::File::open(path)
-      .map_err(|e| format!("{}: {e}", path.display()))?,
-    &mut hash,
+const LEGACY_GNARK_MANIFEST_FORMAT: &str = "ix-aiur-scs-artifacts-v1";
+
+fn retired_gnark_error() -> Error {
+  format!(
+    "legacy gnark PLONK backend ({LEGACY_GNARK_MANIFEST_FORMAT}) has been \
+     retired and removed; prepare native PLONK artifacts with format {:?}",
+    native::NATIVE_MANIFEST_FORMAT,
   )
-  .map_err(|e| e.to_string())?;
-  Ok(format!("{:x}", hash.finalize()))
 }
 
-/// Reads the files gnark's open loads from `prepared` once, outside the GPU
-/// lock, so the open finds them in the page cache. Read cold from disk the
-/// 5 GB take tens of seconds; inside the lock that delay would hold back the
-/// narrow stage's fixed-slot commitment and, through the memory budget,
-/// CompressGL's trace phase, both on the critical path.
-fn prefetch(prepared: &Path) -> Result<(), String> {
-  use std::io::Read;
-  let raw = prepared.join("proving-key.raw");
-  let key = if raw.exists() { raw } else { prepared.join("proving-key.bin") };
-  let mut buffer = vec![0u8; 8 << 20];
-  for path in
-    [prepared.join("circuit.bin"), prepared.join("verifying-key.bin"), key]
-  {
-    let mut file =
-      fs::File::open(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    while file
-      .read(&mut buffer)
-      .map_err(|e| format!("{}: {e}", path.display()))?
-      != 0
-    {}
+fn validate_optional_backend(spec: &Value) -> Result<(), Error> {
+  match &spec["backend"] {
+    Value::Null => Ok(()),
+    Value::String(name) => match name.as_str() {
+      "native" => Ok(()),
+      "gnark" => Err(retired_gnark_error()),
+      other => Err(format!(
+        "unknown plonk stage backend {other:?}; expected \"native\""
+      )),
+    },
+    _ => Err("manifest plonk backend must be a string (\"native\")".into()),
   }
-  Ok(())
+}
+
+fn validate_manifest_format(manifest_bytes: &[u8]) -> Result<(), Error> {
+  let value: Value = serde_json::from_slice(manifest_bytes)
+    .map_err(|e| format!("prepared_manifest JSON: {e}"))?;
+  let fmt = value
+    .get("format")
+    .and_then(Value::as_str)
+    .or_else(|| value.get("Format").and_then(Value::as_str))
+    .ok_or("prepared_manifest missing string \"format\" / \"Format\" field")?;
+  match fmt {
+    native::NATIVE_MANIFEST_FORMAT => Ok(()),
+    LEGACY_GNARK_MANIFEST_FORMAT => Err(retired_gnark_error()),
+    other => Err(format!(
+      "unsupported prepared_manifest format {other:?}; expected {:?}",
+      native::NATIVE_MANIFEST_FORMAT,
+    )),
+  }
+}
+
+fn validate_backend(spec: &Value, manifest_bytes: &[u8]) -> Result<(), Error> {
+  validate_optional_backend(spec)?;
+  validate_manifest_format(manifest_bytes)
+}
+
+fn parse_native_cuda(spec: &Value) -> Result<bool, Error> {
+  match &spec["cuda"] {
+    Value::Null => Ok(cfg!(feature = "cuda")),
+    Value::Bool(flag) => Ok(*flag),
+    _ => Err("manifest cuda must be a boolean".into()),
+  }
+}
+
+/// Resolve the prepared artifacts directory for a native PLONK manifest.
+///
+/// `native::prepare_to_dir` writes `manifest.json` alongside `verifying-key.bin`
+/// and `proving-key.bin`; also accepts a nested `prepared/` layout beside
+/// `manifest.json`.
+fn resolve_native_prepared_dir(manifest_path: &Path) -> Result<PathBuf, Error> {
+  let parent = manifest_path.parent().ok_or("prepared manifest path")?;
+  if parent.join("verifying-key.bin").is_file() {
+    Ok(parent.to_path_buf())
+  } else {
+    let nested = parent.join("prepared");
+    if nested.join("verifying-key.bin").is_file() {
+      Ok(nested)
+    } else {
+      Ok(parent.to_path_buf())
+    }
+  }
 }
 
 struct Phases(serde_json::Map<String, Value>);
@@ -81,24 +148,317 @@ impl Phases {
   }
 }
 
-pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
+fn validate_terminal_entry(entry: &str) -> Result<(), Error> {
+  if entry == NARROW_ACCUMULATOR_ENTRY || entry == ACCUMULATOR_ENTRY {
+    return Err(format!(
+      "terminal entry {entry:?} defers pairing checks to scs.outputs, which \
+       native PLONK-SCS does not constrain in-circuit; use a self-contained \
+       outputs == 0 entry such as {ENTRY:?}"
+    ));
+  }
+  Ok(())
+}
+
+fn check_bn254_native_outputs(
+  scs_outputs: usize,
+  _record_output: &[Scalar],
+) -> Result<(), Error> {
+  if scs_outputs != 0 {
+    return Err(format!(
+      "unsupported BN254 native PLONK output count {scs_outputs}; native \
+       PLONK-SCS does not synthesize in-circuit pairing constraints for \
+       deferred scs.outputs and requires self-contained outputs == 0 circuits"
+    ));
+  }
+  Ok(())
+}
+
+fn check_bls12_381_native_outputs(
+  scs_outputs: usize,
+  _record_output: &[Bls12381Scalar],
+) -> Result<(), Error> {
+  if scs_outputs != 0 {
+    return Err(format!(
+      "unsupported BLS12-381 native PLONK output count {scs_outputs}; native \
+       PLONK-SCS does not synthesize in-circuit pairing constraints for \
+       deferred scs.outputs and requires self-contained outputs == 0 circuits"
+    ));
+  }
+  Ok(())
+}
+
+fn read_verified_native_inputs<C: KzgCurve>(
+  prepared_dir: &Path,
+  manifest: &native::PreparedManifest,
+  scs: &native::ScsFile<C>,
+) -> Result<scs::Inputs, Error> {
+  let layout_bytes = fs::read(prepared_dir.join("inputs.json"))
+    .map_err(|e| format!("inputs.json: {e}"))?;
+  if super::sha256_hex(&layout_bytes) != manifest.inputs_sha256 {
+    return Err("prepared inputs.json differs from manifest SHA-256".into());
+  }
+  let inputs: scs::Inputs = serde_json::from_slice(&layout_bytes)
+    .map_err(|e| format!("inputs.json: {e}"))?;
+  if inputs != scs.to_inputs() {
+    return Err("prepared inputs.json differs from SCS input layout".into());
+  }
+  Ok(inputs)
+}
+
+fn native_expected_publics<B, C>(
+  plan: &TracePlan<'_, B>,
+  entry: &str,
+  record: &Execution<B>,
+  arguments: &[CurveScalar<C>],
+  scs_publics: usize,
+  scs_outputs: usize,
+) -> Result<Vec<C::Fr>, Error>
+where
+  B: FieldBackend<Element = CurveScalar<C>, Word = FieldWord>,
+  C: KzgCurve,
+{
+  let public_args = plan.public_args(record, entry, arguments)?;
+  if scs_outputs != 0 {
+    return Err(format!(
+      "native PLONK-SCS does not constrain deferred scs.outputs \
+       (got {scs_outputs}); expected self-contained outputs == 0"
+    ));
+  }
+  let claim = plan.public_claim(entry, &public_args, &record.output)?;
+  if claim.len() != 2 + scs_publics + scs_outputs {
+    return Err(format!(
+      "public claim width {} differs from SCS root table \
+       ({scs_publics} publics + {scs_outputs} outputs)",
+      claim.len().saturating_sub(2),
+    ));
+  }
+  if scs_publics < arguments.len()
+    || &claim[2..2 + arguments.len()] != arguments
+  {
+    return Err(
+      "SCS public inputs do not start with the stage statement".into(),
+    );
+  }
+  Ok(claim[2..2 + scs_publics].iter().map(|v| v.0).collect())
+}
+
+struct NativeProofChecks {
+  proof: native::ProofBundle,
+  key: Vec<u8>,
+  key_pin: [u8; 32],
+  key_sha256: String,
+  wrong_statement_refused_by_prover: bool,
+  wrong_statement_rejected_by_verifier: bool,
+  solidity_wrong_statement_rejected: bool,
+  verifying_key_is_prepared: bool,
+}
+
+fn prove_verify_native_with<C: KzgCurve>(
+  prover: &native::NativeProver<C>,
+  prepared_dir: &Path,
+  manifest: &native::PreparedManifest,
+  witness: &[u8],
+  expected_publics: &[C::Fr],
+  phases: &mut Phases,
+  run_prove: impl Fn(&[u8], &[C::Fr]) -> Result<native::ProofBundle, String>,
+) -> Result<NativeProofChecks, Error> {
+  if expected_publics.is_empty() {
+    return Err("native PLONK circuit has no public inputs".into());
+  }
+  let started = Instant::now();
+  let proof = run_prove(witness, expected_publics)?;
+  phases.record("prove", started);
+
+  let mut wrong = expected_publics.to_vec();
+  wrong[0] += C::FR_ONE;
+  let refused = run_prove(witness, &wrong).is_err();
+
+  let started = Instant::now();
+  let key = fs::read(prepared_dir.join("verifying-key.bin"))
+    .map_err(|e| format!("verifying-key.bin: {e}"))?;
+  let key_sha256 = super::sha256_hex(&key);
+  let key_pin: [u8; 32] = Sha256::digest(&key).into();
+  let vk = prover.vk();
+  native::verify_native_bytes(vk, &key_pin, &proof.native, expected_publics)?;
+  native::verify_solidity_bytes(
+    vk,
+    &key_pin,
+    &proof.solidity,
+    expected_publics,
+  )?;
+  phases.record("verify", started);
+
+  let native_rejected =
+    native::verify_native_bytes(vk, &key_pin, &proof.native, &wrong).is_err();
+  let sol_rejected =
+    native::verify_solidity_bytes(vk, &key_pin, &proof.solidity, &wrong)
+      .is_err();
+  let prepared_key = key_sha256 == manifest.vk_sha256
+    && key_pin == prover.vk_sha256()
+    && key_pin == vk.sha256();
+
+  Ok(NativeProofChecks {
+    proof,
+    key,
+    key_pin,
+    key_sha256,
+    wrong_statement_refused_by_prover: refused,
+    wrong_statement_rejected_by_verifier: native_rejected && sol_rejected,
+    solidity_wrong_statement_rejected: sol_rejected,
+    verifying_key_is_prepared: prepared_key,
+  })
+}
+
+struct NativeFinalizeContext<'a, C: KzgCurve> {
+  stage: &'a Stage<'a>,
+  prover: &'a native::NativeProver<C>,
+  prepared_dir: &'a Path,
+  manifest: &'a native::PreparedManifest,
+  scs_path: &'a Path,
+  scs_sha256: &'a str,
+  entry: &'a str,
+  artifact_path: &'a Path,
+  artifact_blake3: &'a str,
+  statement_bytes: [u8; 32],
+  narrow_stage: u32,
+  use_cuda: bool,
+  witness: &'a [u8],
+  expected_publics: &'a [C::Fr],
+  outputs_decimal: Vec<String>,
+  phases: Phases,
+}
+
+fn finalize_native_stage<C: KzgCurve>(
+  mut ctx: NativeFinalizeContext<'_, C>,
+) -> Result<Handoff, Error> {
+  let checks = prove_verify_native_with(
+    ctx.prover,
+    ctx.prepared_dir,
+    ctx.manifest,
+    ctx.witness,
+    ctx.expected_publics,
+    &mut ctx.phases,
+    |w, pubs| ctx.stage.gpu(|| ctx.prover.prove_binary(w, pubs)),
+  )?;
+
+  ctx.stage.stages.checks.set(
+    "plonk_wrong_statement_refused_by_prover",
+    checks.wrong_statement_refused_by_prover,
+  );
+  ctx.stage.stages.checks.set(
+    "plonk_wrong_statement_rejected_by_verifier",
+    checks.wrong_statement_rejected_by_verifier,
+  );
+  ctx
+    .stage
+    .stages
+    .checks
+    .set("plonk_verifying_key_is_prepared", checks.verifying_key_is_prepared);
+
+  if !checks.wrong_statement_refused_by_prover {
+    return Err(format!(
+      "native {} PLONK prover accepted a changed statement",
+      C::NAME
+    ));
+  }
+  if !checks.wrong_statement_rejected_by_verifier {
+    return Err(format!(
+      "native {} PLONK verifier accepted a changed statement",
+      C::NAME
+    ));
+  }
+  if !checks.verifying_key_is_prepared {
+    return Err(
+      "the verifying key differs from the prepared manifest's".into(),
+    );
+  }
+  let vk = ctx.prover.vk();
+  *ctx
+    .stage
+    .stages
+    .terminal_meta
+    .lock()
+    .unwrap_or_else(std::sync::PoisonError::into_inner) =
+    Some(super::TerminalMeta {
+      curve: C::CURVE,
+      vk_path: ctx.prepared_dir.join("verifying-key.bin"),
+      vk_sha256: checks.key_pin,
+      setup: vk.setup_class(),
+      anchors: C::encode_plonk_anchors(&vk.g1, &vk.g2, &vk.tau_g2),
+    });
+
+  ctx.stage.write("proof.bin", &checks.proof.native)?;
+  ctx.stage.write("proof.solidity.bin", &checks.proof.solidity)?;
+  let summary = json!({
+    "format": "ix-aiur-narrow-terminal-plonk-v1",
+    "prover": "native",
+    "curve": C::NAME,
+    "circuit": "ix-aiur-scs-v1",
+    "scs": ctx.scs_path,
+    "scs_sha256": ctx.scs_sha256,
+    "entry": ctx.entry,
+    "artifact": ctx.artifact_path,
+    "artifact_blake3": ctx.artifact_blake3,
+    "statement": super::hex(&ctx.statement_bytes),
+    "backend": if ctx.use_cuda { "cuda" } else { "cpu" },
+    "constraints": ctx.manifest.gates,
+    "gates": ctx.manifest.gates,
+    "domain": ctx.manifest.domain,
+    "public_inputs": ctx.manifest.public_inputs,
+    "outputs": ctx.manifest.outputs,
+    "commitments": ctx.manifest.commits,
+    "witness_bytes": ctx.witness.len(),
+    "witness_sha256": super::sha256_hex(ctx.witness),
+    "srs_blake3": ctx.manifest.srs_blake3,
+    "verifying_key_sha256": checks.key_sha256,
+    "proof_bytes": checks.proof.native.len(),
+    "solidity_proof_bytes": checks.proof.solidity.len(),
+    "public_inputs_decimal": ctx
+      .expected_publics
+      .iter()
+      .map(ToString::to_string)
+      .collect::<Vec<_>>(),
+    "outputs_decimal": ctx.outputs_decimal,
+    "wrong_statement_refused_by_prover": checks.wrong_statement_refused_by_prover,
+    "wrong_statement_rejected_by_verifier": checks.wrong_statement_rejected_by_verifier,
+    "solidity_proof_verified": true,
+    "solidity_wrong_statement_rejected": checks.solidity_wrong_statement_rejected,
+    "prover_timings": checks.proof.timings,
+    "phases": ctx.phases.0,
+    "peak_rss_gb": super::peak_rss_gb(),
+  });
+  ctx.stage.write_json("summary.json", &summary)?;
+  Ok(Handoff {
+    key: checks.key,
+    claims: Vec::new(),
+    proof: checks.proof.native,
+    stage: ctx.narrow_stage + 1,
+    statement: Some(ctx.statement_bytes),
+    solidity: checks.proof.solidity,
+  })
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_native_bn254(
+  stage: &Stage<'_>,
+  entry: &str,
+  advice_bytes: Option<&[u8]>,
+  manifest_file: &Product,
+) -> Result<Handoff, Error> {
   let spec = &stage.spec.spec;
-  let backend = if spec["cuda"].as_bool().unwrap_or(true) {
-    let gib: u64 = std::env::var("IX_PLONK_CUDA_MEMORY_GIB")
-      .unwrap_or_else(|_| "64".into())
-      .parse()
-      .map_err(|e| format!("IX_PLONK_CUDA_MEMORY_GIB: {e}"))?;
-    gnark::Backend::Cuda { device: 0, memory_bytes: gib << 30, mask_msm: false }
-  } else {
-    gnark::Backend::Cpu
-  };
+  let use_cuda = parse_native_cuda(spec)?;
   let scs_path = stage.stages.manifest.path(&spec["scs"]["path"])?;
   let scs_pin = spec["scs"]["sha256"].as_str().ok_or("scs.sha256")?.to_owned();
-  // The 0.8 GB file's digest is computed while the terminal prepares.
-  let scs_hash = {
-    let path = scs_path.clone();
-    std::thread::spawn(move || sha256_file(&path))
-  };
+  let manifest: native::PreparedManifest =
+    serde_json::from_slice(&manifest_file.bytes)
+      .map_err(|e| format!("native prepared_manifest: {e}"))?;
+  if manifest.scs_sha256 != scs_pin {
+    return Err(format!(
+      "prepared manifest SCS SHA-256 {} differs from pinned {scs_pin}",
+      manifest.scs_sha256,
+    ));
+  }
+  let prepared_dir = resolve_native_prepared_dir(&manifest_file.path)?;
   let mut phases = Phases(serde_json::Map::new());
 
   let started = Instant::now();
@@ -108,33 +468,70 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
   let trace = package.trace.ok_or("missing trace")?;
   let mut program = package.program.check_with(Bn254)?;
   program.track_depth(&trace)?;
+  program.entry(entry)?;
   let plan = TracePlan::new(Arc::new(program), trace)?;
-  let setup = SetupConfig::from_env(false).map_err(|e| e.to_string())?;
-  let capacity = PackedCapacity {
-    log_cap: 1,
-    quotient_degree: 1,
-    lookup_quotient_budget: None,
+  let advice_program = match advice_bytes {
+    Some(bytes) => {
+      let pkg = WidePackage::decode(bytes)?;
+      let mut prog = pkg.program.check_with(Bn254)?;
+      if let Some(t) = &pkg.trace {
+        prog.track_depth(t)?;
+      }
+      Some(prog)
+    },
+    None => None,
   };
-  let config = capacity.config(&setup)?;
-  let parameters = multi_stark::config::ProofConfig::pcs(&config).parameters();
-  let policy_file = stage.product("policy")?;
-  let policy = PackedPolicy::from_chain_bytes(parameters, &policy_file.bytes)?;
-  let manifest_file = stage.product("prepared_manifest")?;
-  let manifest: gnark::Manifest =
-    serde_json::from_slice(&manifest_file.bytes).map_err(|e| e.to_string())?;
-  let prepared_root =
-    manifest_file.path.parent().ok_or("prepared manifest path")?.to_path_buf();
-  let prepared = prepared_root.join("prepared");
+  let policy_context = if spec["policy"].is_null() {
+    None
+  } else {
+    let setup = SetupConfig::from_env(false).map_err(|e| e.to_string())?;
+    let capacity = PackedCapacity {
+      log_cap: 1,
+      quotient_degree: 1,
+      lookup_quotient_budget: None,
+    };
+    let config = capacity.config(&setup)?;
+    let parameters =
+      multi_stark::config::ProofConfig::pcs(&config).parameters();
+    let policy_file = stage.product("policy")?;
+    let _policy =
+      PackedPolicy::from_chain_bytes(parameters, &policy_file.bytes)?;
+    Some((config, policy_file.bytes))
+  };
   phases.record("setup", started);
+
   let started = Instant::now();
-  prefetch(&prepared)?;
-  phases.record("prefetch", started);
-  let started = Instant::now();
-  let mut prover = Some(
-    stage
-      .gpu(|| gnark::Prover::open(&prepared, &manifest, backend))
-      .map_err(|e| e.to_string())?,
-  );
+  let accel = if use_cuda {
+    stage.gpu(|| native::PlonkAccelerator::<Bn254Curve>::new(true))?
+  } else {
+    native::PlonkAccelerator::<Bn254Curve>::cpu()
+  };
+  let prover = native::NativeProver::<Bn254Curve>::open(
+    &prepared_dir,
+    &scs_path,
+    &manifest,
+    accel,
+  )?;
+  let scs_sha256 = prover.scs().sha256_hex();
+  if scs_sha256 != scs_pin {
+    return Err(format!(
+      "SCS SHA-256 {scs_sha256} differs from the pinned {scs_pin}"
+    ));
+  }
+  if let Some((ref config, _)) = policy_context {
+    let parameters = multi_stark::config::ProofConfig::pcs(config).parameters();
+    prover.vk().check_anchors(parameters)?;
+  }
+  let inputs =
+    read_verified_native_inputs(&prepared_dir, &manifest, prover.scs())?;
+  let scs_outputs = prover.scs().outputs.len();
+  if scs_outputs != 0 {
+    return Err(format!(
+      "unsupported BN254 native PLONK output count {scs_outputs}; native \
+       PLONK-SCS does not synthesize in-circuit pairing constraints for \
+       deferred scs.outputs and requires self-contained outputs == 0 circuits"
+    ));
+  }
   phases.record("load", started);
   stage.reserve(1);
 
@@ -143,24 +540,41 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
   phases.record("wait", started);
   stage.cancelled()?;
   stage.reserve(2);
+
   let started = Instant::now();
   let statement_bytes =
     narrow.statement.ok_or("the narrow stage passed no statement")?;
-  let configuration =
-    Configuration::narrow(&policy, parameters, narrow.stage + 1)?;
   let mut hints = HintChannels::new();
   aiur::library::u32::register(&mut hints, Bn254)?;
   aiur::library::u64::register(&mut hints, Bn254)?;
   fq::register(&mut hints)?;
   g1::register(&mut hints)?;
+  pairing::register(&mut hints)?;
   wire::register(&mut hints)?;
-  wire::Inputs::new(
-    narrow.key.clone(),
-    narrow.claims.clone(),
-    narrow.proof.clone(),
-    policy_file.bytes.clone(),
-  )?
-  .register(&mut hints)?;
+  aiur::library::ixcc::register(&mut hints, Bn254)?;
+  let terminal_stage = narrow.stage.saturating_add(1);
+  hints.insert_fixed::<0, 1>(
+    "kzg.final.stage",
+    Type::Tuple { items: vec![] },
+    Type::Field,
+    move |[]| Ok([Bn254.from_u64(u64::from(terminal_stage))]),
+  )?;
+  if let Some((_, policy_bytes)) = policy_context {
+    wire::Inputs::new(
+      narrow.key.clone(),
+      narrow.claims.clone(),
+      narrow.proof.clone(),
+      policy_bytes,
+    )?
+    .register(&mut hints)?;
+  }
+  if let Some(advice_program) = advice_program {
+    aiur::library::ixcc::register_advice_program(
+      &mut hints,
+      plan.program(),
+      advice_program,
+    )?;
+  }
   let mut maps = MapOverrides::new();
   aiur::library::u8::register_maps(plan.program(), &mut maps)?;
   let arguments = statement_arguments(&statement_bytes).to_vec();
@@ -168,136 +582,1200 @@ pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
     .program()
     .prepare_hint_channels(&[], &hints)?
     .with_map_overrides(&maps)?
-    .execute(NARROW_ACCUMULATOR_ENTRY, arguments.clone())
+    .execute(entry, arguments.clone())
     .map_err(|e| e.to_string())?;
-  let pair =
-    [g1::decode(&record.output[..9])?, g1::decode(&record.output[9..])?];
-  let (_, anchors) = crate::aiur_backend::pairing::verifier_anchors(parameters);
-  if ark_bn254::Bn254::multi_pairing(pair, [anchors[0], anchors[1]]).0
-    != <ark_bn254::Bn254 as Pairing>::TargetField::from(1u8)
-  {
-    return Err("terminal accumulator fails the Ignition pairing check".into());
-  }
+  check_bn254_native_outputs(scs_outputs, &record.output)?;
   phases.record("execute", started);
 
+  let started = Instant::now();
+  let expected_publics = native_expected_publics::<Bn254, Bn254Curve>(
+    &plan,
+    entry,
+    &record,
+    &arguments,
+    prover.scs().publics,
+    scs_outputs,
+  )?;
   let compiler = Compiler::new(&plan)?;
   let capacities: Vec<usize> =
     compiler.row_counts(&record)?.into_iter().map(|rows| rows.max(1)).collect();
-  let pairing = serde_json::to_vec(&scs::pairing(
-    &plan,
-    NARROW_ACCUMULATOR_ENTRY,
-    &configuration,
-  )?)
-  .map_err(|e| e.to_string())?;
+  let witness =
+    scs::Witness::new_fitting(&plan, compiler, &capacities, entry, inputs)?
+      .binary(&record, &arguments)?;
+  phases.record("witness", started);
+
+  finalize_native_stage(NativeFinalizeContext {
+    stage,
+    prover: &prover,
+    prepared_dir: &prepared_dir,
+    manifest: &manifest,
+    scs_path: &scs_path,
+    scs_sha256: &scs_sha256,
+    entry,
+    artifact_path: &artifact.path,
+    artifact_blake3: pin.to_hex().as_str(),
+    statement_bytes,
+    narrow_stage: narrow.stage,
+    use_cuda,
+    witness: &witness,
+    expected_publics: &expected_publics,
+    outputs_decimal: record.output.iter().map(|v| v.0.to_string()).collect(),
+    phases,
+  })
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_native_bls12_381(
+  stage: &Stage<'_>,
+  entry: &str,
+  advice_bytes: Option<&[u8]>,
+  manifest_file: &Product,
+) -> Result<Handoff, Error> {
+  let spec = &stage.spec.spec;
+  let use_cuda = parse_native_cuda(spec)?;
+  let scs_path = stage.stages.manifest.path(&spec["scs"]["path"])?;
+  let scs_pin = spec["scs"]["sha256"].as_str().ok_or("scs.sha256")?.to_owned();
+  let manifest: native::PreparedManifest =
+    serde_json::from_slice(&manifest_file.bytes)
+      .map_err(|e| format!("native prepared_manifest: {e}"))?;
+  if manifest.scs_sha256 != scs_pin {
+    return Err(format!(
+      "prepared manifest SCS SHA-256 {} differs from pinned {scs_pin}",
+      manifest.scs_sha256,
+    ));
+  }
+  let prepared_dir = resolve_native_prepared_dir(&manifest_file.path)?;
+  let mut phases = Phases(serde_json::Map::new());
 
   let started = Instant::now();
-  let scs_sha256 = scs_hash
-    .join()
-    .map_err(|_error| "SCS digest thread panicked".to_string())??;
+  let artifact = stage.product("artifact")?;
+  let pin = blake3::hash(&artifact.bytes);
+  let plan = bls12_381::load_trace_plan(&artifact.bytes)?;
+  plan.program().entry(entry)?;
+  let advice_program = match advice_bytes {
+    Some(bytes) => Some(bls12_381::load_program(bytes)?),
+    None => None,
+  };
+  let policy_context = if spec["policy"].is_null() {
+    None
+  } else {
+    let setup = SetupConfig::from_env_for_curve(Bls12381Curve::CURVE, false)
+      .map_err(|e| e.to_string())?;
+    let capacity = PackedCapacity {
+      log_cap: 1,
+      quotient_degree: 1,
+      lookup_quotient_budget: None,
+    };
+    let config = capacity.config_for::<Bls12381Curve>(&setup)?;
+    let parameters =
+      multi_stark::config::ProofConfig::pcs(&config).parameters();
+    let policy_file = stage.product("policy")?;
+    let _policy = PackedPolicy::<Bls12381Curve>::from_chain_bytes(
+      parameters,
+      &policy_file.bytes,
+    )?;
+    Some((config, policy_file.bytes))
+  };
+  phases.record("setup", started);
+
+  let started = Instant::now();
+  let accel = if use_cuda {
+    stage.gpu(|| native::PlonkAccelerator::<Bls12381Curve>::new(true))?
+  } else {
+    native::PlonkAccelerator::<Bls12381Curve>::cpu()
+  };
+  let prover = native::NativeProver::<Bls12381Curve>::open(
+    &prepared_dir,
+    &scs_path,
+    &manifest,
+    accel,
+  )?;
+  let scs_sha256 = prover.scs().sha256_hex();
   if scs_sha256 != scs_pin {
     return Err(format!(
       "SCS SHA-256 {scs_sha256} differs from the pinned {scs_pin}"
     ));
   }
-  let pairing_sha256 = format!("{:x}", Sha256::digest(&pairing));
-  if manifest.scs_sha256 != scs_sha256
-    || manifest.pairing_sha256 != pairing_sha256
-  {
-    return Err(
-      "the prepared circuit is not this SCS file's and pairing configuration's"
-        .into(),
-    );
+  if let Some((ref config, _)) = policy_context {
+    let parameters = multi_stark::config::ProofConfig::pcs(config).parameters();
+    prover.vk().check_anchors(parameters)?;
   }
-  phases.record("scs_digest", started);
+  let inputs =
+    read_verified_native_inputs(&prepared_dir, &manifest, prover.scs())?;
+  let scs_outputs = prover.scs().outputs.len();
+  if scs_outputs != 0 {
+    return Err(format!(
+      "unsupported BLS12-381 native PLONK output count {scs_outputs}; native \
+       PLONK-SCS does not synthesize in-circuit pairing constraints for \
+       deferred scs.outputs and requires self-contained outputs == 0 circuits"
+    ));
+  }
+  phases.record("load", started);
+  stage.reserve(1);
+
   let started = Instant::now();
-  let layout =
-    fs::read(prepared.join("inputs.json")).map_err(|e| e.to_string())?;
-  let pinned =
-    manifest.files.get("inputs.json").ok_or("manifest without inputs.json")?;
-  if format!("{:x}", Sha256::digest(&layout)) != pinned.sha256 {
-    return Err("prepared inputs.json differs from its manifest".into());
+  let (narrow, _) = stage.input()?;
+  phases.record("wait", started);
+  stage.cancelled()?;
+  stage.reserve(2);
+
+  let started = Instant::now();
+  let statement_bytes =
+    narrow.statement.ok_or("the narrow stage passed no statement")?;
+  let mut hints = HintChannels::new();
+  bls12_381::register_standard_hints(&mut hints)?;
+  let terminal_stage = narrow.stage.saturating_add(1);
+  hints.insert_fixed::<0, 1>(
+    "kzg.final.stage",
+    Type::Tuple { items: vec![] },
+    Type::Field,
+    move |[]| Ok([Bls12381.from_u64(u64::from(terminal_stage))]),
+  )?;
+  if let Some((_, policy_bytes)) = policy_context {
+    fq::register_for::<Bls12381Curve>(&mut hints)?;
+    g1::register_for::<Bls12381Curve>(&mut hints)?;
+    pairing::register_for::<Bls12381Curve>(&mut hints)?;
+    wire::register_for::<Bls12381Curve>(&mut hints)?;
+    wire::Inputs::new(
+      narrow.key.clone(),
+      narrow.claims.clone(),
+      narrow.proof.clone(),
+      policy_bytes,
+    )?
+    .register_for::<Bls12381Curve>(&mut hints)?;
   }
-  let witness = scs::Witness::new(
+  if let Some(advice_program) = advice_program {
+    aiur::library::ixcc::register_advice_program(
+      &mut hints,
+      plan.program(),
+      advice_program,
+    )?;
+  }
+  let mut maps = MapOverrides::new();
+  aiur::library::u8::register_maps(plan.program(), &mut maps)?;
+  let arguments = bls12_381::statement_arguments(&statement_bytes).to_vec();
+  let record = plan
+    .program()
+    .prepare_hint_channels(&[], &hints)?
+    .with_map_overrides(&maps)?
+    .execute(entry, arguments.clone())
+    .map_err(|e| e.to_string())?;
+  check_bls12_381_native_outputs(scs_outputs, &record.output)?;
+  phases.record("execute", started);
+
+  let started = Instant::now();
+  let expected_publics = native_expected_publics::<Bls12381, Bls12381Curve>(
     &plan,
-    compiler,
-    &capacities,
-    NARROW_ACCUMULATOR_ENTRY,
-    serde_json::from_slice(&layout).map_err(|e| e.to_string())?,
-  )?
-  .binary(&record, &arguments)?;
+    entry,
+    &record,
+    &arguments,
+    prover.scs().publics,
+    scs_outputs,
+  )?;
+  let witness = scs::Bls12381Witness::new(&plan, entry, inputs)?
+    .binary(&record, &arguments)?;
   phases.record("witness", started);
 
-  let started = Instant::now();
-  let mut open = prover.take().ok_or("the PLONK prover is gone")?;
-  let proof = stage
-    .gpu(|| open.prove(&witness, &arguments))
-    .map_err(|e| e.to_string())?;
-  phases.record("prove", started);
-  let mut wrong = arguments.clone();
-  wrong[0] += Bn254.one();
-  let refused = stage.gpu(|| open.prove(&witness, &wrong)).is_err();
-  open.close().map_err(|e| e.to_string())?;
-  stage.stages.checks.set("plonk_wrong_statement_refused_by_prover", refused);
+  finalize_native_stage(NativeFinalizeContext {
+    stage,
+    prover: &prover,
+    prepared_dir: &prepared_dir,
+    manifest: &manifest,
+    scs_path: &scs_path,
+    scs_sha256: &scs_sha256,
+    entry,
+    artifact_path: &artifact.path,
+    artifact_blake3: pin.to_hex().as_str(),
+    statement_bytes,
+    narrow_stage: narrow.stage,
+    use_cuda,
+    witness: &witness,
+    expected_publics: &expected_publics,
+    outputs_decimal: record.output.iter().map(|v| v.0.to_string()).collect(),
+    phases,
+  })
+}
 
-  let started = Instant::now();
-  let key =
-    fs::read(prepared.join("verifying-key.bin")).map_err(|e| e.to_string())?;
-  let key_sha256 = format!("{:x}", Sha256::digest(&key));
-  let key_pin: [u8; 32] = Sha256::digest(&key).into();
-  let anchor_bytes = gnark::anchors(parameters);
-  gnark::verify(&key, &key_pin, &proof.native, &arguments, &anchor_bytes)
-    .map_err(|e| e.to_string())?;
-  phases.record("verify", started);
-  let rejected =
-    gnark::verify(&key, &key_pin, &proof.native, &wrong, &anchor_bytes)
-      .is_err();
-  stage
-    .stages
-    .checks
-    .set("plonk_wrong_statement_rejected_by_verifier", rejected);
-  let prepared_key = manifest
-    .files
-    .get("verifying-key.bin")
-    .is_some_and(|file| file.sha256 == key_sha256);
-  stage.stages.checks.set("plonk_verifying_key_is_prepared", prepared_key);
-  if !rejected {
-    return Err("PLONK verifier accepted a changed statement".into());
+pub(super) fn run(stage: &Stage<'_>) -> Result<Handoff, Error> {
+  let spec = &stage.spec.spec;
+  let manifest_curve = stage.stages.manifest.curve()?;
+  let has_manifest_curve =
+    stage.stages.manifest.value.get("curve").is_some_and(|v| !v.is_null());
+  let field = if spec["field"].is_null() {
+    match manifest_curve {
+      crate::kzg::Curve::Bn254 => Field::Bn254,
+      crate::kzg::Curve::Bls12381 => Field::Bls12381,
+    }
+  } else {
+    let f = parse_stage_field(spec)?;
+    let stage_curve = match f {
+      Field::Bn254 => crate::kzg::Curve::Bn254,
+      Field::Bls12381 => crate::kzg::Curve::Bls12381,
+      Field::Goldilocks => {
+        return Err(
+          "plonk stage field must be \"bn254\" or \"bls12-381\"".into(),
+        );
+      },
+    };
+    if has_manifest_curve && stage_curve != manifest_curve {
+      return Err(format!(
+        "plonk stage field {:?} differs from manifest curve {:?}",
+        stage_curve.as_str(),
+        manifest_curve.as_str()
+      ));
+    }
+    f
+  };
+  let entry_override = parse_optional_entry(spec)?;
+  validate_optional_backend(spec)?;
+  let advice_file = if spec["advice"].is_null() {
+    None
+  } else {
+    Some(stage.product("advice")?)
+  };
+  let advice_bytes = advice_file.as_ref().map(|p| p.bytes.as_slice());
+  let entry = entry_override.unwrap_or(ENTRY);
+  validate_terminal_entry(entry)?;
+  let manifest_file = stage.product("prepared_manifest")?;
+  validate_backend(spec, &manifest_file.bytes)?;
+
+  match field {
+    Field::Bn254 => {
+      run_native_bn254(stage, entry, advice_bytes, &manifest_file)
+    },
+    Field::Bls12381 => {
+      run_native_bls12_381(stage, entry, advice_bytes, &manifest_file)
+    },
+    Field::Goldilocks => {
+      Err("plonk stage field must be \"bn254\" or \"bls12-381\"".into())
+    },
   }
-  if !prepared_key {
-    return Err(
-      "the verifying key differs from the prepared manifest's".into(),
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::{
+    aiur_backend::{
+      pairing::final_program::ACCUMULATOR_WORDS,
+      plonk::{
+        native::{
+          NativeProver, PackedGate, PlonkAccelerator, ScsBuilder, ScsFile,
+          WireHint, domain_size_for_scs, prepare_to_dir,
+          scs_file::{SEL_L, SEL_M, SEL_O, SEL_R},
+          setup,
+        },
+        scs::{Table, serialize_binary_witness},
+      },
+    },
+    kzg::{
+      Srs,
+      srs::filecoin::{
+        FILECOIN_PREFIX_2P8_FIXTURE, FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3,
+        load_filecoin_cache,
+      },
+    },
+  };
+  use aiur::{
+    Program,
+    bytecode::{Binary, Entry, Function, Instruction as I, Type},
+    trace::{
+      Chip, ChipDepth, ColumnWrite, FunctionPlan, Polynomial, TraceArtifact,
+    },
+    value::IoType,
+  };
+  use std::sync::atomic::{AtomicU64, Ordering};
+
+  static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
+
+  fn temp_dir(label: &str) -> PathBuf {
+    let seq = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!(
+      "ix-terminal-plonk-test-{label}-{}-{seq}",
+      std::process::id(),
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    dir
+  }
+
+  /// Build a synthetic `ix-aiur-scs-v1` circuit with 2 public inputs
+  /// (`pub0 + pub1 == x * y + 5`), `num_outputs` output wires (`0`, `18`, or
+  /// `22`), BSB22 commitment, gamma challenge, bit decomposition, and quotient
+  /// gates.
+  fn build_synthetic_scs<C: KzgCurve>(
+    num_outputs: usize,
+    output_values: &[C::Fr],
+  ) -> (Vec<u8>, Vec<C::Fr>, Vec<C::Fr>) {
+    assert_eq!(output_values.len(), num_outputs);
+    let coeffs = vec![
+      C::FR_ONE,
+      C::FR_NEG_ONE,
+      C::Fr::from(2u64),
+      C::Fr::from(4u64),
+      C::Fr::from(8u64),
+    ];
+    let publics = 2usize;
+    let outputs: Vec<u32> = (0..num_outputs)
+      .map(|k| u32::try_from(publics + k).expect("fits u32"))
+      .collect();
+    let w_x = u32::try_from(publics + num_outputs).expect("fits u32");
+    let w_y = w_x + 1;
+    let w_m = w_x + 2;
+    let cells = (w_m as usize) + 1;
+
+    let mut hints = vec![WireHint::Input; cells];
+    let mut gates = Vec::new();
+    let mut add_wire = |hint: WireHint| -> u32 {
+      let id = u32::try_from(hints.len()).expect("fits u32");
+      hints.push(hint);
+      id
+    };
+
+    let g_prod = u32::try_from(gates.len()).expect("fits u32");
+    let w_prod = add_wire(WireHint::Solve { gate: g_prod });
+    gates.push(PackedGate {
+      a: w_x,
+      b: w_y,
+      c: w_prod,
+      sel: SEL_M | SEL_O,
+      alpha_id: 0,
+      beta_id: 0,
+      omega_id: 1,
+      qc: 0,
+    });
+
+    let g_diff = u32::try_from(gates.len()).expect("fits u32");
+    let w_diff = add_wire(WireHint::Solve { gate: g_diff });
+    gates.push(PackedGate {
+      a: w_prod,
+      b: 0,
+      c: w_diff,
+      sel: SEL_L | SEL_R | SEL_O,
+      alpha_id: 0,
+      beta_id: 1,
+      omega_id: 1,
+      qc: 5,
+    });
+    gates.push(PackedGate {
+      a: w_diff,
+      b: 1,
+      c: 0,
+      sel: SEL_L | SEL_R,
+      alpha_id: 0,
+      beta_id: 1,
+      omega_id: 0,
+      qc: 0,
+    });
+    let pre = gates.len();
+
+    let w_gamma = add_wire(WireHint::Challenge);
+    let mut bits = [0u32; 4];
+    for (bit, slot) in bits.iter_mut().enumerate() {
+      let wb = add_wire(WireHint::Bit {
+        wire: w_gamma,
+        bit: u32::try_from(bit).expect("fits u32"),
+      });
+      *slot = wb;
+      gates.push(PackedGate {
+        a: wb,
+        b: wb,
+        c: wb,
+        sel: SEL_M | SEL_O,
+        alpha_id: 0,
+        beta_id: 0,
+        omega_id: 1,
+        qc: 0,
+      });
+    }
+    let g_b01 = u32::try_from(gates.len()).expect("fits u32");
+    let w_b01 = add_wire(WireHint::Solve { gate: g_b01 });
+    gates.push(PackedGate {
+      a: bits[0],
+      b: bits[1],
+      c: w_b01,
+      sel: SEL_L | SEL_R | SEL_O,
+      alpha_id: 0,
+      beta_id: 2,
+      omega_id: 1,
+      qc: 0,
+    });
+    let g_b012 = u32::try_from(gates.len()).expect("fits u32");
+    let w_b012 = add_wire(WireHint::Solve { gate: g_b012 });
+    gates.push(PackedGate {
+      a: w_b01,
+      b: bits[2],
+      c: w_b012,
+      sel: SEL_L | SEL_R | SEL_O,
+      alpha_id: 0,
+      beta_id: 3,
+      omega_id: 1,
+      qc: 0,
+    });
+    let g_beta = u32::try_from(gates.len()).expect("fits u32");
+    let w_beta = add_wire(WireHint::Solve { gate: g_beta });
+    gates.push(PackedGate {
+      a: w_b012,
+      b: bits[3],
+      c: w_beta,
+      sel: SEL_L | SEL_R | SEL_O,
+      alpha_id: 0,
+      beta_id: 4,
+      omega_id: 1,
+      qc: 0,
+    });
+
+    let g_d0 = u32::try_from(gates.len()).expect("fits u32");
+    let w_d0 = add_wire(WireHint::Solve { gate: g_d0 });
+    gates.push(PackedGate {
+      a: w_gamma,
+      b: w_x,
+      c: w_d0,
+      sel: SEL_L | SEL_R | SEL_O,
+      alpha_id: 0,
+      beta_id: 0,
+      omega_id: 1,
+      qc: 1,
+    });
+
+    let mut qs = [0u32; 2];
+    for slot in &mut qs {
+      let g_idx = u32::try_from(gates.len()).expect("fits u32");
+      let w_q = add_wire(WireHint::Solve { gate: g_idx });
+      *slot = w_q;
+      gates.push(PackedGate {
+        a: w_q,
+        b: w_d0,
+        c: w_m,
+        sel: SEL_M | SEL_O,
+        alpha_id: 0,
+        beta_id: 0,
+        omega_id: 1,
+        qc: 0,
+      });
+    }
+    let g_zero = u32::try_from(gates.len()).expect("fits u32");
+    let w_zero = add_wire(WireHint::Solve { gate: g_zero });
+    gates.push(PackedGate {
+      a: qs[0],
+      b: qs[1],
+      c: w_zero,
+      sel: SEL_L | SEL_R | SEL_O,
+      alpha_id: 0,
+      beta_id: 1,
+      omega_id: 1,
+      qc: 0,
+    });
+    let w_free = add_wire(WireHint::Free);
+    gates.push(PackedGate {
+      a: w_free,
+      b: w_gamma,
+      c: w_zero,
+      sel: SEL_M | SEL_O,
+      alpha_id: 0,
+      beta_id: 0,
+      omega_id: 0,
+      qc: 0,
+    });
+
+    let builder = ScsBuilder::<C> {
+      publics,
+      wires: hints.len(),
+      pre,
+      gamma: w_gamma,
+      beta: w_beta,
+      outputs,
+      coeffs,
+      gates,
+      commits: vec![0, 1, w_x, w_y, w_m],
+      hints,
+      tables: vec![
+        Table {
+          name: "root".into(),
+          cell_base: 0,
+          rows: 1,
+          width: u32::try_from(publics + num_outputs).expect("fits u32"),
+        },
+        Table {
+          name: "witness".into(),
+          cell_base: u64::try_from(publics + num_outputs).expect("fits u64"),
+          rows: 1,
+          width: 3,
+        },
+      ],
+    };
+
+    let pub0 = C::Fr::from(100u64);
+    let pub1 = C::Fr::from(296u64);
+    let mut input_wires = Vec::with_capacity(cells);
+    input_wires.push(pub0);
+    input_wires.push(pub1);
+    input_wires.extend_from_slice(output_values);
+    input_wires.push(C::Fr::from(17u64));
+    input_wires.push(C::Fr::from(23u64));
+    input_wires.push(C::Fr::from(9u64));
+    (builder.encode(), input_wires, vec![pub0, pub1])
+  }
+
+  /// Minimal real `WidePackage` with a self-contained unit-returning (`()`)
+  /// entry verifying `a + b == 396`, for testing `scs::Witness::new_fitting`
+  /// and `scs::Bls12381Witness::new` with `outputs == 0`.
+  fn build_unit_wide_package<B: FieldBackend<Word = FieldWord>>(
+    field: B,
+  ) -> WidePackage {
+    let entry_name = "Prog::check_unit".to_owned();
+    let program = Program {
+      version: aiur::bytecode::VERSION,
+      modulus: field.modulus(),
+      functions: vec![Function {
+        name: entry_name.clone(),
+        params: vec![Type::Field, Type::Field],
+        result: Type::Tuple { items: vec![] },
+        registers: 4,
+        code: vec![
+          I::Literal { dest: 3, value: FieldWord::from(396u64) },
+          I::Binary { dest: 2, operator: Binary::Add, left: 0, right: 1 },
+          I::AssertEq {
+            left: vec![2],
+            right: vec![3],
+            message: Some("sum check failed".into()),
+            runtime_check: true,
+          },
+          I::Ret { value: vec![] },
+        ],
+      }],
+      enums: vec![],
+      tables: vec![],
+      maps: vec![],
+      entries: vec![Entry {
+        name: entry_name.clone(),
+        function: 0,
+        inputs: vec![IoType::Field, IoType::Field],
+        output: Some(IoType::Tuple { items: vec![] }),
+      }],
+    };
+    let trace = TraceArtifact {
+      version: 3,
+      modulus: field.modulus(),
+      limbs: vec![],
+      functions: vec![FunctionPlan {
+        name: entry_name.clone(),
+        chip: entry_name.clone(),
+        witnesses: 2,
+        inputs: vec![0, 1],
+        output: vec![],
+        steps: vec![],
+        writes: vec![
+          ColumnWrite {
+            column: 0,
+            source: 0,
+            guard: Polynomial::Const(FieldWord::from(1u64)),
+          },
+          ColumnWrite {
+            column: 1,
+            source: 1,
+            guard: Polynomial::Const(FieldWord::from(1u64)),
+          },
+        ],
+      }],
+      chips: vec![Chip {
+        name: entry_name,
+        width: 3,
+        activation: 2,
+        inputs: vec![0, 1],
+        output: vec![],
+        constraints: vec![],
+        sends: vec![],
+        memory: vec![],
+        depth: ChipDepth::default(),
+      }],
+      groups: vec![],
+    };
+    WidePackage { program, trace: Some(trace) }
+  }
+
+  /// Build a matching `ix-aiur-scs-v1` circuit whose `root` + `Prog::check_unit`
+  /// tables match `build_unit_wide_package` (`outputs == 0`, `table_rows`
+  /// power-of-two capacity, e.g. `1` or `4`).
+  fn build_unit_matching_scs<C: KzgCurve>(table_rows: u32) -> Vec<u8> {
+    let publics = 2usize;
+    let table_width = 4u32; // [a, b, activation, multiplicity]
+    let cells = publics + (table_rows as usize) * (table_width as usize);
+    let coeffs = vec![C::FR_ONE, C::FR_NEG_ONE, C::Fr::from(396u64)];
+    let mut hints = vec![WireHint::Input; cells];
+    let mut gates = Vec::new();
+    let mut add_wire = |hint: WireHint| -> u32 {
+      let id = u32::try_from(hints.len()).expect("fits u32");
+      hints.push(hint);
+      id
+    };
+
+    // Pre-commitment: pub0 == cell[2] (row 0 col 0), pub1 == cell[3] (row 0 col 1),
+    // and (pub0 + pub1) - 396 * act == 0 (where cell[4] == act == 1).
+    gates.push(PackedGate {
+      a: 0,
+      b: 2,
+      c: 0,
+      sel: SEL_L | SEL_R,
+      alpha_id: 0,
+      beta_id: 1,
+      omega_id: 0,
+      qc: 0,
+    });
+    gates.push(PackedGate {
+      a: 1,
+      b: 3,
+      c: 0,
+      sel: SEL_L | SEL_R,
+      alpha_id: 0,
+      beta_id: 1,
+      omega_id: 0,
+      qc: 0,
+    });
+    let g_sum = u32::try_from(gates.len()).expect("fits u32");
+    let w_sum = add_wire(WireHint::Solve { gate: g_sum });
+    gates.push(PackedGate {
+      a: 2,
+      b: 3,
+      c: w_sum,
+      sel: SEL_L | SEL_R | SEL_O,
+      alpha_id: 0,
+      beta_id: 0,
+      omega_id: 1,
+      qc: 0,
+    });
+    gates.push(PackedGate {
+      a: w_sum,
+      b: 4,
+      c: 0,
+      sel: SEL_L | SEL_R,
+      alpha_id: 1,
+      beta_id: 2,
+      omega_id: 0,
+      qc: 0,
+    });
+    let pre = gates.len();
+
+    let w_gamma = add_wire(WireHint::Challenge);
+    let w_bit = add_wire(WireHint::Bit { wire: w_gamma, bit: 0 });
+    gates.push(PackedGate {
+      a: w_bit,
+      b: w_bit,
+      c: w_bit,
+      sel: SEL_M | SEL_O,
+      alpha_id: 0,
+      beta_id: 0,
+      omega_id: 1,
+      qc: 0,
+    });
+
+    ScsBuilder::<C> {
+      publics,
+      wires: hints.len(),
+      pre,
+      gamma: w_gamma,
+      beta: w_bit,
+      outputs: vec![],
+      coeffs,
+      gates,
+      commits: vec![0, 1, 2, 3, 4],
+      hints,
+      tables: vec![
+        Table { name: "root".into(), cell_base: 0, rows: 1, width: 2 },
+        Table {
+          name: "Prog::check_unit".into(),
+          cell_base: 2,
+          rows: table_rows,
+          width: table_width,
+        },
+      ],
+    }
+    .encode()
+  }
+
+  #[test]
+  fn backend_and_cuda_manifest_dispatch() {
+    let native_manifest = br#"{"format":"ix-aiur-native-plonk-v1"}"#;
+    let gnark_manifest_pascal = br#"{"Format":"ix-aiur-scs-artifacts-v1"}"#;
+    let gnark_manifest_lower = br#"{"format":"ix-aiur-scs-artifacts-v1"}"#;
+
+    validate_optional_backend(&json!({})).unwrap();
+    validate_optional_backend(&json!({"backend": "native"})).unwrap();
+    let err_gnark_opt =
+      validate_optional_backend(&json!({"backend": "gnark"})).unwrap_err();
+    assert!(
+      err_gnark_opt.contains("retired")
+        && err_gnark_opt.contains(native::NATIVE_MANIFEST_FORMAT),
+      "unexpected error: {err_gnark_opt}"
+    );
+    assert!(validate_optional_backend(&json!({"backend": "halo2"})).is_err());
+    assert!(validate_optional_backend(&json!({"backend": 1})).is_err());
+
+    validate_manifest_format(native_manifest).unwrap();
+    for legacy in
+      [gnark_manifest_pascal.as_slice(), gnark_manifest_lower.as_slice()]
+    {
+      let err = validate_manifest_format(legacy).unwrap_err();
+      assert!(
+        err.contains("retired")
+          && err.contains(LEGACY_GNARK_MANIFEST_FORMAT)
+          && err.contains(native::NATIVE_MANIFEST_FORMAT),
+        "unexpected error: {err}"
+      );
+    }
+    assert!(validate_manifest_format(br#"{"format":"unknown-v1"}"#).is_err());
+    assert!(validate_manifest_format(br#"{}"#).is_err());
+    assert!(validate_manifest_format(b"not-json").is_err());
+
+    // Native auto-detect and explicit selection work under all feature sets.
+    validate_backend(&json!({}), native_manifest).unwrap();
+    validate_backend(&json!({"backend": "native"}), native_manifest).unwrap();
+
+    // Legacy gnark manifests and explicit `"gnark"` backend always fail closed
+    // with a clear error pointing to `ix-aiur-native-plonk-v1`.
+    for spec in
+      [json!({}), json!({"backend": "native"}), json!({"backend": "gnark"})]
+    {
+      let err = validate_backend(&spec, gnark_manifest_pascal).unwrap_err();
+      assert!(
+        err.contains("retired") && err.contains(native::NATIVE_MANIFEST_FORMAT),
+        "unexpected error for spec {spec}: {err}"
+      );
+    }
+    let err = validate_backend(&json!({"backend": "gnark"}), native_manifest)
+      .unwrap_err();
+    assert!(
+      err.contains("retired") && err.contains(native::NATIVE_MANIFEST_FORMAT),
+      "unexpected error: {err}"
+    );
+
+    // Native CUDA flag parsing.
+    assert_eq!(parse_native_cuda(&json!({})).unwrap(), cfg!(feature = "cuda"));
+    assert!(!parse_native_cuda(&json!({"cuda": false})).unwrap());
+    assert!(parse_native_cuda(&json!({"cuda": true})).unwrap());
+    assert!(parse_native_cuda(&json!({"cuda": "yes"})).is_err());
+
+    // Prepared directory resolution supports both flat and nested layouts.
+    let dir = temp_dir("layout");
+    let flat_manifest = dir.join("manifest.json");
+    fs::write(&flat_manifest, native_manifest).unwrap();
+    let nested = dir.join("prepared");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(nested.join("verifying-key.bin"), b"vk").unwrap();
+    assert_eq!(resolve_native_prepared_dir(&flat_manifest).unwrap(), nested);
+    fs::write(dir.join("verifying-key.bin"), b"vk").unwrap();
+    assert_eq!(resolve_native_prepared_dir(&flat_manifest).unwrap(), dir);
+    let _ = fs::remove_dir_all(&dir);
+  }
+
+  #[test]
+  fn native_output_checks_bn254_and_bls12_381() {
+    // Terminal entry validation: self-contained ENTRY accepted, deferred
+    // accumulator entries refused fail-closed.
+    validate_terminal_entry(ENTRY).unwrap();
+    validate_terminal_entry("Prog::check_unit").unwrap();
+    assert!(validate_terminal_entry(NARROW_ACCUMULATOR_ENTRY).is_err());
+    assert!(validate_terminal_entry(ACCUMULATOR_ENTRY).is_err());
+
+    // Self-contained BN254 (`outputs == 0`) accepted; deferred `scs.outputs`
+    // (including 18-word valid pairing accumulators) MUST be rejected.
+    let bn_srs =
+      Srs::<Bn254Curve>::unsafe_dev_setup(16, b"ix-terminal-bn254-outputs");
+    check_bn254_native_outputs(0, &[]).unwrap();
+    check_bn254_native_outputs(0, &[Bn254.one()]).unwrap();
+
+    let mut bn_acc = Vec::with_capacity(ACCUMULATOR_WORDS);
+    bn_acc.extend(g1::encode(bn_srs.g1[1]));
+    bn_acc.extend(g1::encode(-bn_srs.g1[0]));
+    let err_bn =
+      check_bn254_native_outputs(ACCUMULATOR_WORDS, &bn_acc).unwrap_err();
+    assert!(
+      err_bn.contains("outputs == 0"),
+      "unexpected BN254 error: {err_bn}"
+    );
+    assert!(check_bn254_native_outputs(ACCUMULATOR_WORDS, &[]).is_err());
+    assert!(check_bn254_native_outputs(1, &[Bn254.one()]).is_err());
+
+    // Self-contained BLS12-381 (`outputs == 0`) accepted; deferred
+    // `scs.outputs` (including 22-word valid Filecoin accumulators) MUST be
+    // rejected.
+    let bls_srs = load_filecoin_cache(
+      Path::new(FILECOIN_PREFIX_2P8_FIXTURE),
+      FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3,
+      64,
+    )
+    .unwrap();
+    check_bls12_381_native_outputs(0, &[]).unwrap();
+    check_bls12_381_native_outputs(0, &[Bls12381.one()]).unwrap();
+
+    let mut bls_acc = Vec::with_capacity(bls12_381::ACCUMULATOR_WORDS);
+    bls_acc.extend(bls12_381::encode_g1(bls_srs.g1[1]));
+    bls_acc.extend(bls12_381::encode_g1(-bls_srs.g1[0]));
+    let err_bls = check_bls12_381_native_outputs(
+      bls12_381::ACCUMULATOR_WORDS,
+      &bls_acc,
+    )
+    .unwrap_err();
+    assert!(
+      err_bls.contains("outputs == 0"),
+      "unexpected BLS12-381 error: {err_bls}"
+    );
+    assert!(
+      check_bls12_381_native_outputs(bls12_381::ACCUMULATOR_WORDS, &[]).is_err()
+    );
+    assert!(check_bls12_381_native_outputs(1, &[Bls12381.one()]).is_err());
+  }
+
+  fn run_native_e2e_roundtrip<C: KzgCurve>(
+    label: &str,
+    srs: &Srs<C>,
+    srs_blake3: &str,
+    output_values: &[C::Fr],
+    nested_prepared: bool,
+  ) {
+    let num_outputs = output_values.len();
+    let (scs_bytes, input_wires, expected_publics) =
+      build_synthetic_scs::<C>(num_outputs, output_values);
+    let scs = ScsFile::<C>::parse(&scs_bytes).unwrap();
+    let dir = temp_dir(label);
+    let scs_path = dir.join("circuit.ixscs");
+    fs::write(&scs_path, &scs_bytes).unwrap();
+
+    let prep_dir =
+      if nested_prepared { dir.join("prepared") } else { dir.clone() };
+    let accel = PlonkAccelerator::<C>::cpu();
+    let manifest =
+      prepare_to_dir(&scs_path, srs, srs_blake3, &prep_dir, &accel).unwrap();
+    let manifest_path = if nested_prepared {
+      let top = dir.join("manifest.json");
+      fs::copy(prep_dir.join("manifest.json"), &top).unwrap();
+      top
+    } else {
+      prep_dir.join("manifest.json")
+    };
+    let manifest_bytes = fs::read(&manifest_path).unwrap();
+    validate_backend(&json!({}), &manifest_bytes).unwrap();
+    validate_backend(&json!({"backend": "native"}), &manifest_bytes).unwrap();
+    let resolved = resolve_native_prepared_dir(&manifest_path).unwrap();
+    assert_eq!(resolved, prep_dir);
+
+    let prover =
+      NativeProver::<C>::open(&resolved, &scs_path, &manifest, accel).unwrap();
+    let inputs =
+      read_verified_native_inputs(&resolved, &manifest, prover.scs()).unwrap();
+    assert_eq!(inputs, scs.to_inputs());
+
+    let wrapped: Vec<CurveScalar<C>> =
+      input_wires.iter().copied().map(CurveScalar::new).collect();
+    let witness = serialize_binary_witness::<C>(scs.publics, &wrapped).unwrap();
+
+    let mut phases = Phases(serde_json::Map::new());
+    let checks = prove_verify_native_with(
+      &prover,
+      &resolved,
+      &manifest,
+      &witness,
+      &expected_publics,
+      &mut phases,
+      |w, pubs| prover.prove_binary(w, pubs),
+    )
+    .unwrap();
+    assert!(checks.wrong_statement_refused_by_prover);
+    assert!(checks.wrong_statement_rejected_by_verifier);
+    assert!(checks.solidity_wrong_statement_rejected);
+    assert!(checks.verifying_key_is_prepared);
+    assert_eq!(checks.key_sha256, manifest.vk_sha256);
+    assert!(phases.0.contains_key("prove"));
+    assert!(phases.0.contains_key("verify"));
+
+    // Explicit negative control: tampered inputs.json is rejected.
+    fs::write(resolved.join("inputs.json"), b"{}").unwrap();
+    assert!(
+      read_verified_native_inputs(&resolved, &manifest, prover.scs()).is_err()
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+  }
+
+  #[test]
+  fn native_terminal_e2e_bn254_outputs_0_and_rejects_18() {
+    let srs =
+      Srs::<Bn254Curve>::unsafe_dev_setup(64, b"ix-terminal-native-bn254");
+    // Self-contained circuit (`outputs == 0`) in both flat and nested layouts.
+    run_native_e2e_roundtrip::<Bn254Curve>(
+      "bn254-out0",
+      &srs,
+      "dev-bn254-srs",
+      &[],
+      false,
+    );
+    run_native_e2e_roundtrip::<Bn254Curve>(
+      "bn254-out0-nested",
+      &srs,
+      "dev-bn254-srs",
+      &[],
+      true,
+    );
+
+    // Negative control: deferred-output circuit (`outputs == 18`) MUST be
+    // rejected fail-closed by both `setup` and `prepare_to_dir`.
+    let mut acc = Vec::with_capacity(ACCUMULATOR_WORDS);
+    acc.extend(g1::encode(srs.g1[1]));
+    acc.extend(g1::encode(-srs.g1[0]));
+    let acc_fr: Vec<ark_bn254::Fr> = acc.iter().map(|s| s.0).collect();
+    let (scs_bytes, _, _) =
+      build_synthetic_scs::<Bn254Curve>(ACCUMULATOR_WORDS, &acc_fr);
+    let scs = ScsFile::<Bn254Curve>::parse(&scs_bytes).unwrap();
+    assert_eq!(scs.outputs.len(), ACCUMULATOR_WORDS);
+    let accel = PlonkAccelerator::<Bn254Curve>::cpu();
+    assert!(setup(&scs, &srs, &accel).is_err());
+
+    let dir = temp_dir("bn254-reject-out18");
+    let scs_path = dir.join("circuit.ixscs");
+    fs::write(&scs_path, &scs_bytes).unwrap();
+    let err = prepare_to_dir(
+      &scs_path,
+      &srs,
+      "dev-bn254-srs",
+      &dir.join("prepared"),
+      &accel,
+    )
+    .unwrap_err();
+    assert!(err.contains("outputs == 0"), "unexpected error: {err}");
+    let _ = fs::remove_dir_all(&dir);
+  }
+
+  #[test]
+  fn native_terminal_e2e_bls12_381_outputs_0_and_rejects_22() {
+    // Use the real checked-in Filecoin 256-power ceremony SRS fixture!
+    let srs = load_filecoin_cache(
+      Path::new(FILECOIN_PREFIX_2P8_FIXTURE),
+      FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3,
+      64,
+    )
+    .unwrap();
+    let srs_blake3 =
+      blake3::Hash::from(FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3).to_hex();
+
+    // Self-contained circuit (`outputs == 0`) in both flat and nested layouts.
+    run_native_e2e_roundtrip::<Bls12381Curve>(
+      "bls12-381-out0",
+      &srs,
+      srs_blake3.as_str(),
+      &[],
+      false,
+    );
+    run_native_e2e_roundtrip::<Bls12381Curve>(
+      "bls12-381-out0-nested",
+      &srs,
+      srs_blake3.as_str(),
+      &[],
+      true,
+    );
+
+    // Negative control: deferred-output circuit (`outputs == 22`) MUST be
+    // rejected fail-closed by both `setup` and `prepare_to_dir`.
+    let mut acc = Vec::with_capacity(bls12_381::ACCUMULATOR_WORDS);
+    acc.extend(bls12_381::encode_g1(srs.g1[1]));
+    acc.extend(bls12_381::encode_g1(-srs.g1[0]));
+    let acc_fr: Vec<ark_bls12_381::Fr> = acc.iter().map(|s| s.0).collect();
+    let (scs_bytes, _, _) = build_synthetic_scs::<Bls12381Curve>(
+      bls12_381::ACCUMULATOR_WORDS,
+      &acc_fr,
+    );
+    let scs = ScsFile::<Bls12381Curve>::parse(&scs_bytes).unwrap();
+    assert_eq!(scs.outputs.len(), bls12_381::ACCUMULATOR_WORDS);
+    let accel = PlonkAccelerator::<Bls12381Curve>::cpu();
+    assert!(setup(&scs, &srs, &accel).is_err());
+
+    let dir = temp_dir("bls12-381-reject-out22");
+    let scs_path = dir.join("circuit.ixscs");
+    fs::write(&scs_path, &scs_bytes).unwrap();
+    let err = prepare_to_dir(
+      &scs_path,
+      &srs,
+      srs_blake3.as_str(),
+      &dir.join("prepared"),
+      &accel,
+    )
+    .unwrap_err();
+    assert!(err.contains("outputs == 0"), "unexpected error: {err}");
+    let _ = fs::remove_dir_all(&dir);
+
+    // Without `--features cuda`, requesting CUDA on BLS12-381 fails cleanly
+    // with the native CUDA feature message (rather than gnark's rejection).
+    #[cfg(not(feature = "cuda"))]
+    {
+      let err = PlonkAccelerator::<Bls12381Curve>::new(true).unwrap_err();
+      assert!(err.contains("--features cuda"), "unexpected error: {err}");
+    }
+  }
+
+  #[test]
+  fn native_wide_package_witness_e2e_outputs_0_both_curves() {
+    let entry = "Prog::check_unit";
+
+    // --- BN254 self-contained WidePackage + scs::Witness::new_fitting + NativeProver ---
+    {
+      let pkg = build_unit_wide_package(Bn254);
+      let pkg_bytes = pkg.encode().unwrap();
+      let decoded = WidePackage::decode(&pkg_bytes).unwrap();
+      let trace = decoded.trace.unwrap();
+      let mut program = decoded.program.check_with(Bn254).unwrap();
+      program.track_depth(&trace).unwrap();
+      let plan = TracePlan::new(Arc::new(program), trace).unwrap();
+
+      let args = vec![Bn254.from_u64(100), Bn254.from_u64(296)];
+      let record = plan
+        .program()
+        .prepare_hint_channels(&[], &HintChannels::new())
+        .unwrap()
+        .execute(entry, args.clone())
+        .unwrap();
+      assert!(record.output.is_empty());
+
+      // Test prepared table capacity > execution row count (4 >= 1) via `new_fitting`.
+      let scs_bytes = build_unit_matching_scs::<Bn254Curve>(4);
+      let scs = ScsFile::<Bn254Curve>::parse(&scs_bytes).unwrap();
+      assert!(scs.outputs.is_empty());
+      let domain = domain_size_for_scs(&scs).unwrap();
+      let srs = Srs::<Bn254Curve>::unsafe_dev_setup(
+        (domain + 3).next_power_of_two(),
+        b"ix-terminal-wide-bn254",
+      );
+      let dir = temp_dir("wide-bn254");
+      let scs_path = dir.join("unit.ixscs");
+      fs::write(&scs_path, &scs_bytes).unwrap();
+      let accel = PlonkAccelerator::<Bn254Curve>::cpu();
+      let manifest =
+        prepare_to_dir(&scs_path, &srs, "dev-bn254", &dir, &accel).unwrap();
+      let prover =
+        NativeProver::<Bn254Curve>::open(&dir, &scs_path, &manifest, accel)
+          .unwrap();
+      let inputs =
+        read_verified_native_inputs(&dir, &manifest, prover.scs()).unwrap();
+
+      let expected_publics = native_expected_publics::<Bn254, Bn254Curve>(
+        &plan,
+        entry,
+        &record,
+        &args,
+        prover.scs().publics,
+        prover.scs().outputs.len(),
+      )
+      .unwrap();
+      let compiler = Compiler::new(&plan).unwrap();
+      let capacities: Vec<usize> = compiler
+        .row_counts(&record)
+        .unwrap()
+        .into_iter()
+        .map(|r| r.max(1))
+        .collect();
+      let witness =
+        scs::Witness::new_fitting(&plan, compiler, &capacities, entry, inputs)
+          .unwrap()
+          .binary(&record, &args)
+          .unwrap();
+      let mut phases = Phases(serde_json::Map::new());
+      let checks = prove_verify_native_with(
+        &prover,
+        &dir,
+        &manifest,
+        &witness,
+        &expected_publics,
+        &mut phases,
+        |w, pubs| prover.prove_binary(w, pubs),
+      )
+      .unwrap();
+      assert!(checks.wrong_statement_refused_by_prover);
+      assert!(checks.wrong_statement_rejected_by_verifier);
+      assert!(checks.verifying_key_is_prepared);
+      let _ = fs::remove_dir_all(&dir);
+    }
+
+    // --- BLS12-381 self-contained WidePackage + scs::Bls12381Witness + NativeProver ---
+    {
+      let pkg = build_unit_wide_package(Bls12381);
+      let pkg_bytes = pkg.encode().unwrap();
+      let plan = bls12_381::load_trace_plan(&pkg_bytes).unwrap();
+      let args = vec![Bls12381.from_u64(100), Bls12381.from_u64(296)];
+      let record =
+        bls12_381::execute_plan(&plan, entry, args.clone(), None).unwrap();
+      assert!(record.output.is_empty());
+
+      let scs_bytes = build_unit_matching_scs::<Bls12381Curve>(4);
+      let scs = ScsFile::<Bls12381Curve>::parse(&scs_bytes).unwrap();
+      assert!(scs.outputs.is_empty());
+      let srs = load_filecoin_cache(
+        Path::new(FILECOIN_PREFIX_2P8_FIXTURE),
+        FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3,
+        64,
+      )
+      .unwrap();
+      let dir = temp_dir("wide-bls12-381");
+      let scs_path = dir.join("unit.ixscs");
+      fs::write(&scs_path, &scs_bytes).unwrap();
+      let accel = PlonkAccelerator::<Bls12381Curve>::cpu();
+      let manifest =
+        prepare_to_dir(&scs_path, &srs, "filecoin-2p8", &dir, &accel).unwrap();
+      let prover =
+        NativeProver::<Bls12381Curve>::open(&dir, &scs_path, &manifest, accel)
+          .unwrap();
+      let inputs =
+        read_verified_native_inputs(&dir, &manifest, prover.scs()).unwrap();
+
+      let expected_publics =
+        native_expected_publics::<Bls12381, Bls12381Curve>(
+          &plan,
+          entry,
+          &record,
+          &args,
+          prover.scs().publics,
+          prover.scs().outputs.len(),
+        )
+        .unwrap();
+      let witness = scs::Bls12381Witness::new(&plan, entry, inputs)
+        .unwrap()
+        .binary(&record, &args)
+        .unwrap();
+      let mut phases = Phases(serde_json::Map::new());
+      let checks = prove_verify_native_with(
+        &prover,
+        &dir,
+        &manifest,
+        &witness,
+        &expected_publics,
+        &mut phases,
+        |w, pubs| prover.prove_binary(w, pubs),
+      )
+      .unwrap();
+      assert!(checks.wrong_statement_refused_by_prover);
+      assert!(checks.wrong_statement_rejected_by_verifier);
+      assert!(checks.verifying_key_is_prepared);
+      let _ = fs::remove_dir_all(&dir);
+    }
+
+    // Verify `native_expected_publics` fails closed when statement limbs mismatch.
+    let pkg = build_unit_wide_package(Bn254);
+    let plan = {
+      let decoded = WidePackage::decode(&pkg.encode().unwrap()).unwrap();
+      let trace = decoded.trace.unwrap();
+      let mut program = decoded.program.check_with(Bn254).unwrap();
+      program.track_depth(&trace).unwrap();
+      TracePlan::new(Arc::new(program), trace).unwrap()
+    };
+    let args = vec![Bn254.from_u64(100), Bn254.from_u64(296)];
+    let record = plan
+      .program()
+      .prepare_hint_channels(&[], &HintChannels::new())
+      .unwrap()
+      .execute(entry, args.clone())
+      .unwrap();
+    assert!(
+      native_expected_publics::<Bn254, Bn254Curve>(
+        &plan, entry, &record, &args, 3, 0,
+      )
+      .is_err()
     );
   }
-  stage.write("proof.bin", &proof.native)?;
-  stage.write("proof.solidity.bin", &proof.solidity)?;
-  let info = &manifest.info;
-  let summary = json!({
-    "format": "ix-aiur-narrow-terminal-plonk-v1",
-    "circuit": "ix-aiur-scs-v1", "scs": scs_path, "scs_sha256": scs_sha256, "pairing_sha256": pairing_sha256,
-    "entry": NARROW_ACCUMULATOR_ENTRY,
-    "artifact": artifact.path, "artifact_blake3": pin.to_hex().as_str(),
-    "statement": super::hex(&statement_bytes),
-    "backend": if matches!(backend, gnark::Backend::Cpu) { "cpu" } else { "cuda" },
-    "constraints": info.constraints, "domain": info.domain, "public_inputs": info.public_inputs,
-    "commitments": info.commitments,
-    "witness_bytes": witness.len(), "witness_sha256": format!("{:x}", Sha256::digest(&witness)),
-    "srs_blake3": manifest.srs_blake3,
-    "verifying_key_sha256": key_sha256,
-    "proof_bytes": proof.native.len(), "solidity_proof_bytes": proof.solidity.len(),
-    "public_inputs_decimal": arguments.iter().map(|v| v.0.to_string()).collect::<Vec<_>>(),
-    "outputs_decimal": record.output.iter().map(|v| v.0.to_string()).collect::<Vec<_>>(),
-    "wrong_statement_refused_by_prover": refused,
-    "wrong_statement_rejected_by_verifier": rejected,
-    "phases": phases.0,
-    "peak_rss_gb": super::peak_rss_gb(),
-  });
-  stage.write_json("summary.json", &summary)?;
-  Ok(Handoff {
-    key,
-    claims: Vec::new(),
-    proof: proof.native,
-    stage: narrow.stage + 1,
-    statement: Some(statement_bytes),
-    solidity: proof.solidity,
-  })
 }

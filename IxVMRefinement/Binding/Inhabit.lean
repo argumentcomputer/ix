@@ -17,7 +17,7 @@ import IxVMRefinement.StatementRel.BoolInhabit
   quotient or operation record, and the group's roles have their records.
 * `bool_step_instance`: **one step of `StepCore` taken at the `Bool` group**: from `bnd_basis`
   and `admits_bool` to the boundary invariant below 7 at the store of 29 rows and the
-  environment IxC's native check of the block installs (`BoolInhabit.boolEnv`), with every
+  environment IxCK's native check of the block installs (`BoolInhabit.boolEnv`), with every
   field proved except two of the internal part at that environment, taken as hypotheses: the
   prefix invariant at the carried limits within groups 0–6 (`inv`), and blocks stored whole
   (`whole`). Their producer is the native-block step (an inductive block without recursor, then
@@ -602,7 +602,7 @@ theorem groupNeeded_six : groupNeeded 6 = [] := by decide +kernel
 
 /-- **One step of `StepCore` taken at the `Bool` group (6) of the default table**: from the
 basis store and the environment of the pins to the store of 29 rows and the environment
-IxC's native check of the `Bool` block installs. Every field is proved but two of the internal
+IxCK's native check of the `Bool` block installs. Every field is proved but two of the internal
 invariant at the `Bool` environment, the prefix invariant at the carried limits within groups
 0–6 and block wholeness, which are the hypotheses (producer: the native-block step). -/
 theorem bool_step_instance

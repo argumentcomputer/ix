@@ -1,6 +1,6 @@
 module
 
-public import IxC.Kernel.Ixon.Prelude
+public import IxCK.Kernel.Ixon.Prelude
 
 /-! # Proof evidence for the role table (untrusted)
 
@@ -14,7 +14,7 @@ its value, in the environment before the operation is installed
 the dependency closure of the operation's value and of its dependencies'
 roles.
 
-The theorems are those of `IxC/Kernel/PinGen/Certs.lean` (`certTheorems`).
+The theorems are those of `IxCK/Kernel/PinGen/Certs.lean` (`certTheorems`).
 As elaborated they reach constants outside that closure (their own private
 helpers, such as `natFixGoCongr`, and `Eq.trans`), so a proof is first
 **closed** over the closure (`closeProof`, upstream con-leche's pinner's
@@ -37,7 +37,7 @@ namespace Ix.RoleEvidence
 open Ix.Kernel.Reader (CName CExpr CLevel CDecl)
 open Ix.Kernel (LevelParam)
 
-/-- The certificate theorems of `IxC/Kernel/PinGen/Certs.lean`: per
+/-- The certificate theorems of `IxCK/Kernel/PinGen/Certs.lean`: per
 well-founded operation, its theorems in the order of its certificate
 statements (`Ix.Kernel.divModCertStmts`). This is Source mode's fixed
 evidence, and the generator's input. -/
@@ -55,7 +55,7 @@ def certTheorems : List (Ix.Kernel.Role × List Lean.Name) :=
 
 /-- **The evidence of the definitions specified by their equations**
 (`Ix.Kernel.Spec.eqns`): per role, per equation in order, `none` for a
-definitional entry or the certificate theorem of `IxC/Kernel/PinGen/Certs.lean`
+definitional entry or the certificate theorem of `IxCK/Kernel/PinGen/Certs.lean`
 that proves it. An unconditional equation may take either kind; these are the
 kinds that hold on every supported toolchain (the decision procedures' equations
 hold by definition only where `Decidable` is a structure). -/
@@ -376,7 +376,7 @@ def closedProofs (decls : Array (CDecl md)) (uni : Universe md)
 
 Source mode keys a constant by its Lean name, and its evidence is the
 certificate theorems closed at Source keys (`closedProofs`). An input that
-does not carry `IxC/Kernel/PinGen/Certs.lean` (the compiler's: Init, Std,
+does not carry `IxCK/Kernel/PinGen/Certs.lean` (the compiler's: Init, Std,
 Mathlib) takes them from the committed bundle instead
 (`RoleData.sourceEvidence`): the generator (`kernel-pin-gen`) closes the
 theorems in Source mode, over the certificate module's own environment, and

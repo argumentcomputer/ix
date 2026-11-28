@@ -14,27 +14,31 @@ every wire map (`realised_of_realisedB`).
 namespace Aiur.Plonk
 
 open Aiur.Tiling (Template Lane Row)
-open Lower (Fr LGate Ref)
+open Lower (LGate Ref)
 
-def Lower.LGate.inst (wireOf : Ref → Nat) (g : LGate) : Gate Fr :=
+def Lower.LGate.inst {F : Type} (wireOf : Ref → Nat) (g : LGate F) : Gate F :=
   ⟨wireOf g.a, wireOf g.b, wireOf g.c, g.L, g.R, g.O, g.M, g.C⟩
 
+section Generic
+
+variable {F : Type} [Field F] [DecidableEq F]
+
 /-- The lane is gate `g` with slot `s` read as reference `sr s`. -/
-def laneMatches (sr : Nat → Ref) (lane : Lane Fr) (g : LGate) : Bool :=
+def laneMatches (sr : Nat → Ref) (lane : Lane F) (g : LGate F) : Bool :=
   match lane.c0, lane.c1, lane.c2, lane.c3 with
   | some a, some b, some c, none =>
       sr a == g.a && sr b == g.b && sr c == g.c && lane.q0 == g.L && lane.q1 == g.R &&
         lane.q2 == g.O && lane.qm == g.M && lane.qc == g.C && lane.qid == 0
   | _, _, _, _ => false
 
-def rowMatches (sr : Nat → Ref) (gs : List LGate) : Row Fr → Bool
+def rowMatches (sr : Nat → Ref) (gs : List (LGate F)) : Row F → Bool
   | .gate [lane] false _ => gs.any (laneMatches sr lane)
   | _ => false
 
-def realisedB (T : Template Fr) (sr : Nat → Ref) (gs : List LGate) : Bool :=
+def realisedB (T : Template F) (sr : Nat → Ref) (gs : List (LGate F)) : Bool :=
   T.rows.all (rowMatches sr gs)
 
-theorem rowGate_of_matches {sr : Nat → Ref} {lane : Lane Fr} {g : LGate} (h : laneMatches sr lane g = true)
+theorem rowGate_of_matches {sr : Nat → Ref} {lane : Lane F} {g : LGate F} (h : laneMatches sr lane g = true)
     (wireOf : Ref → Nat) (roles : List Tiling.Role) :
     rowGate (wireOf ∘ sr) (.gate [lane] false roles) = some (g.inst wireOf) := by
   unfold laneMatches at h
@@ -45,7 +49,7 @@ theorem rowGate_of_matches {sr : Nat → Ref} {lane : Lane Fr} {g : LGate} (h : 
     simp [rowGate, h0, h1, h2, h3, hid, Lane.toGate, Lower.LGate.inst, Function.comp, ha, hb, hc, hL, hR, hO, hM, hC]
   · exact absurd h (by simp)
 
-theorem realised_of_realisedB {T : Template Fr} {sr : Nat → Ref} {gs : List LGate}
+theorem realised_of_realisedB {T : Template F} {sr : Nat → Ref} {gs : List (LGate F)}
     (h : realisedB T sr gs = true) (wireOf : Ref → Nat) :
     Realised T (wireOf ∘ sr) (· ∈ gs.map (Lower.LGate.inst wireOf)) := by
   intro row hrow
@@ -56,5 +60,7 @@ theorem realised_of_realisedB {T : Template Fr} {sr : Nat → Ref} {gs : List LG
     obtain ⟨g, hg, hl⟩ := List.any_eq_true.mp hm
     exact ⟨g.inst wireOf, rowGate_of_matches hl wireOf roles, List.mem_map.mpr ⟨g, hg, rfl⟩⟩
   · exact absurd hm (by simp)
+
+end Generic
 
 end Aiur.Plonk

@@ -2,7 +2,7 @@ import Ix.Cert.MultiStarkRefinement.AirLogUpPcs
 import Ix.Cert.MultiStark.EndToEnd
 import Aiur.Optimized.Observed
 
-/-! # Formal Refinement Scaffold for `MultiStark.recursionProgram` (Workstream 1A-ii)
+/-! # Formal Refinement Scaffold for `MultiStark.recursionProgram`
 
 Composes the currently proved refinement components for `MultiStark.recursionProgram`:
 1. `prepared_obs_of_extracted_trace`: lifts an already-extracted Multi-STARK trace `(rom, rows)`
@@ -15,18 +15,22 @@ Composes the currently proved refinement components for `MultiStark.recursionPro
    up to a concrete BLAKE3 collision exhibited in `calls`.
 3. `recursionProgram_refines_multiStark_verify`: conditional circuit-to-verifier headline for
    `MultiStark.recursionProgram` (`RecursionVerifierAstPinned MultiStark.recursionProgram = true`),
-   **parameterized by the uninstantiated inter-stage hypothesis `RecursionSourceSound prepared`**.
+   **parameterized by the unproved inter-stage hypothesis `RecursionSourceSound prepared`**.
 4. `recursive_step_to_ixvm_circuit_sound`: bundles an outer `RecursionExecutionRefines` witness
    with an independently supplied inner extracted IxVM trace to yield `IxVM.Refinement.CircuitSound P`.
 
 ## Current Scope & Remaining Inter-Stage Bridges
-- **`RecursionSourceSound prepared` is NOT yet instantiated** for `MultiStark.recursionProgram`:
+- **`RecursionSourceSound prepared` is NOT yet proved** for `MultiStark.recursionProgram`:
   proving that every `prepared.ObsFn verifyMultiStarkEntry` execution of the deployed Aiur source
-  actually constructs `WireDecodingWitness` and `BatchVerifyWitness` (source-to-witness
-  extraction) remains open.
+  actually constructs `WireDecodingWitness` and `BatchVerifyWitness` (source-to-witness extraction)
+  remains open. The deployed circuit enforces the Aiur security floor, zero-bit PoW witness
+  canonicalization, and fixed-table structural invariants directly in `StarkVerifier::verify_shard`
+  and `SystemDeserialize::{read_sys_circuit, read_opt_idx_n}`.
 - **`RecursionVerifierAstPinned`** checks required callee presence and minimum `assert_eq!` counts
-  in five functions (`verify_multi_stark_proof`, `verify_batch`, `verify_shard`, `rows_pop`,
-  `finalize_buckets`); it is a structural regression pin, not a semantic equivalence check.
+  in eleven functions (`verify_multi_stark_proof`, `read_sys_circuit`, `read_opt_idx_n`,
+  `verify_batch`, `verify_shard`, `assert_closure_pairs_n`, `assert_closure_widths_ok`,
+  `eg3_inv_nonzero`, `rows_pop`, `finalize_buckets`, `ood_loop`); it is a structural regression
+  pin (lower bounds on callee names and assertion counts), not a semantic equivalence check.
 - **`prepared_obs_of_extracted_trace` and `recursive_step_to_ixvm_circuit_sound`** start from
   already-extracted trace hypotheses (`rom`, `rows`, `inspected`, `hbal`, `hmemseg`), and in
   `recursive_step_to_ixvm_circuit_sound` the inner extracted IxVM trace is supplied separately
@@ -128,13 +132,16 @@ structure RecursionExecutionRefines
     sbytes cbytes proofBytes sys expectedClaims batch
   verify : BatchVerifyWitness sys batch (32 - sys.params.logBlowup) expectedClaims
 
-/-- Source-level soundness contract for a prepared `MultiStark.recursionProgram`:
-every observed execution of `MultiStark::verify_multi_stark_proof` on `(sysDig, clDig)`
-admits a `RecursionExecutionRefines` witness. -/
+/-- Source-level soundness contract for a prepared `MultiStark.recursionProgram`: every observed
+execution of `MultiStark::verify_multi_stark_proof` on public digests `(sysDig, clDig)` admits a
+`RecursionExecutionRefines` witness. Not yet proved; `StarkVerifier::verify_shard` and
+`SystemDeserialize` enforce the Aiur security floor, zero-bit PoW canonicalization, and structural
+system invariants in-circuit. -/
 def RecursionSourceSound (prepared : Aiur.Modules.Prepared MultiStark.recursionProgram) : Prop :=
   ∀ (sysDig clDig : Fin 8 → Fp) (value : Aiur.SourceValue Fp) (heap : Aiur.Heap Fp)
     (calls : List (Aiur.Generic.SourceSemantics.Call Fp)),
-    prepared.ObsFn verifyMultiStarkEntry [digest8SourceValue sysDig, digest8SourceValue clDig]
+    prepared.ObsFn verifyMultiStarkEntry
+      [digest8SourceValue sysDig, digest8SourceValue clDig]
       value heap calls →
     Nonempty (RecursionExecutionRefines calls sysDig clDig)
 
@@ -179,13 +186,13 @@ theorem recursion_obs_refines_verifyBatch
 
 /-! ## 3. Full Circuit-to-Verifier Headline for `MultiStark.recursionProgram` -/
 
-/-- **Workstream 1A-ii Conditional Headline (`recursionProgram_refines_multiStark_verify`):**
+/-- **Conditional Circuit-to-Verifier Headline (`recursionProgram_refines_multiStark_verify`):**
 For the deployed recursive verifier `MultiStark.recursionProgram`
 (`RecursionVerifierAstPinned MultiStark.recursionProgram = true`), any already-extracted Multi-STARK
 trace `(rom, rows)` (`rows.length ≤ 2^39`) of `MultiStark::verify_multi_stark_proof` on public
 digests `(packDigest8 (blake3Pure vkBytes), packDigest8 (blake3Pure claimsBytes))` yields an
-observed source derivation whose calls are carried by `compiled.traceROM rom`, and under the
-(not yet instantiated) source-level hypothesis `RecursionSourceSound prepared`, EITHER exhibits a
+observed source derivation whose calls are carried by `compiled.traceROM rom`, and, under the
+(not yet proved) source-level hypothesis `RecursionSourceSound prepared`, EITHER exhibits a
 concrete BLAKE3 collision in `calls` OR certifies
 `Ix.Cert.MultiStark.verifyBatchBytes vkBytes claimsBytes proofBytes = true` (with
 `verifyBatch sys batch = some expectedClaims` and per-width `DisjointIntervals`). -/
@@ -264,8 +271,8 @@ theorem recursionProgram_refines_multiStark_verify
     prepared_obs_of_extracted_trace prepared compiled physical certified bits plan activated
       selected ivlsOf hdisj hrom_lt hmemseg signed rooted outside rows hrows_len inspected
       hctx hinsp hdem_lt provWeight hbal arguments decoded
-  exact ⟨value, heap, calls, hobs, hrep, hcalls,
-    (hsound _ _ value heap calls hobs).elim recursion_obs_refines_verifyBatch⟩
+  refine ⟨value, heap, calls, hobs, hrep, hcalls, ?_⟩
+  exact (hsound _ _ value heap calls hobs).elim recursion_obs_refines_verifyBatch
 
 /-- **Recursive Multi-STARK Verification + Inner Extracted Trace → `IxVM.Refinement.CircuitSound`:**
 Bundles `recursion_obs_refines_verifyBatch` (outer `RecursionExecutionRefines` witness) with

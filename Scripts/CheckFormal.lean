@@ -129,39 +129,48 @@ inductive Step where
   | security128Gate (env : Array (String × Option String))
   deriving BEq, Repr
 
-/-- Reference instance `(logTrace=20, columns=200, constraints=200, maxDegree=5,
-lookupRows=1048576, lookupWidth=10)` and positive/negative parameter controls
-exercised by the 128-bit `fri-security` gate: `(label, expectPass, cliArgs)`. -/
+/-- The pinned IxVM program's batch with every circuit at `2^23` rows (a circuit with a
+fixed table at its table's height), the documented IxVM shard height: an upper bound on
+the columns, constraints and lookup rows of any IxVM shard of that height. Written by
+`cargo run --release -p aiur --features stark --example artifact_statistics -- IXVM.ixa 23`
+for the artifact pinned in `tools/formal-aiur.keys` (its BLAKE3 is the file's
+`artifact_blake3`); regenerate it when that pin changes. -/
+def ixvmGateInstance : String := "Tests/Fixtures/fri-security/ixvm-2p23.json"
+
+/-- The 128-bit `fri-security` gate's cases on the IxVM instance (`ixvmGateInstance`):
+`(label, expectPass, cliArgs)`. The shipped 32-byte BLAKE3 digest is hash-limited at
+127.71 bits (CertiFRI's collision bound `3N²/(2·2^256)`, `collisionBitsFor`): it must
+reach 127 bits and must not reach 128, so a return to a 4-bits-per-byte hash term fails
+the gate. The 128-bit profiles are checked with the 64-byte digest they require, and the
+sub-128-bit parameter sets and the quadratic extension must fail. -/
 def security128GateCases : Array (String × Bool × Array String) :=
-  let inst := "20,200,200,5,1048576,10"
+  let st := ixvmGateInstance
+  let run (ext digest : Nat) (params : String) (bits : Nat) (regime : String) : Array String :=
+    #[st, "--extension-degree", toString ext, "--digest-bytes", toString digest,
+      "--parameters", params, "--require-min-bits", toString bits, "--regime", regime]
   #[
-    ("Fp3 v6 UD (2,160,0,20) 48B XOF >= 128b proven", true,
-      #["--instance", inst, "--extension-degree", "3", "--digest-bytes", "48",
-        "--parameters", "2,160,0,20", "--require-min-bits", "128", "--regime", "proven"]),
-    ("Fp3 v6 Johnson (2,128,0,20) 48B XOF >= 128b johnson", true,
-      #["--instance", inst, "--extension-degree", "3", "--digest-bytes", "48",
-        "--parameters", "2,128,0,20", "--require-min-bits", "128", "--regime", "johnson"]),
-    ("Fp3 v6 Johnson (2,118,0,20) 48B XOF >= 128b johnson", true,
-      #["--instance", inst, "--extension-degree", "3", "--digest-bytes", "48",
-        "--parameters", "2,118,0,20", "--require-min-bits", "128", "--regime", "johnson"]),
-    ("NEG: Fp2 (2,160,0,20) rejected at 128b proven", false,
-      #["--instance", inst, "--extension-degree", "2", "--digest-bytes", "48",
-        "--parameters", "2,160,0,20", "--require-min-bits", "128", "--regime", "proven"]),
-    ("NEG: Fp2 (2,160,0,20) rejected at 128b johnson", false,
-      #["--instance", inst, "--extension-degree", "2", "--digest-bytes", "48",
-        "--parameters", "2,160,0,20", "--require-min-bits", "128", "--regime", "johnson"]),
-    ("NEG: Fp3 v5 default (2,100,0,20) rejected at 128b proven", false,
-      #["--instance", inst, "--extension-degree", "3", "--digest-bytes", "48",
-        "--parameters", "2,100,0,20", "--require-min-bits", "128", "--regime", "proven"]),
-    ("NEG: Fp3 v5 default (2,100,0,20) rejected at 128b johnson", false,
-      #["--instance", inst, "--extension-degree", "3", "--digest-bytes", "48",
-        "--parameters", "2,100,0,20", "--require-min-bits", "128", "--regime", "johnson"]),
-    ("NEG: Fp3 deceptive (4,55,0,0) rejected at 128b proven", false,
-      #["--instance", inst, "--extension-degree", "3", "--digest-bytes", "48",
-        "--parameters", "4,55,0,0", "--require-min-bits", "128", "--regime", "proven"]),
-    ("NEG: Fp3 deceptive (4,55,0,0) rejected at 128b johnson", false,
-      #["--instance", inst, "--extension-degree", "3", "--digest-bytes", "48",
-        "--parameters", "4,55,0,0", "--require-min-bits", "128", "--regime", "johnson"])
+    ("IxVM Fp3 v6 default (2,128,0,20), shipped 32B: >= 127b johnson (hash-limited)", true,
+      run 3 32 "2,128,0,20" 127 "johnson"),
+    ("NEG: IxVM Fp3 v6 default (2,128,0,20), shipped 32B: below 128b johnson (127.71)", false,
+      run 3 32 "2,128,0,20" 128 "johnson"),
+    ("IxVM Fp3 v6 default (2,128,0,20) 64B: >= 128b johnson", true,
+      run 3 64 "2,128,0,20" 128 "johnson"),
+    ("IxVM Fp3 UD (2,160,0,20) 64B: >= 128b proven", true,
+      run 3 64 "2,160,0,20" 128 "proven"),
+    ("IxVM Fp3 (2,118,0,20) 64B: >= 128b johnson", true,
+      run 3 64 "2,118,0,20" 128 "johnson"),
+    ("NEG: IxVM Fp2 (2,160,0,20) 64B rejected at 128b proven", false,
+      run 2 64 "2,160,0,20" 128 "proven"),
+    ("NEG: IxVM Fp2 (2,160,0,20) 64B rejected at 128b johnson", false,
+      run 2 64 "2,160,0,20" 128 "johnson"),
+    ("NEG: IxVM Fp3 v5 default (2,100,0,20) 64B rejected at 128b proven", false,
+      run 3 64 "2,100,0,20" 128 "proven"),
+    ("NEG: IxVM Fp3 v5 default (2,100,0,20) 64B rejected at 128b johnson", false,
+      run 3 64 "2,100,0,20" 128 "johnson"),
+    ("NEG: IxVM Fp3 deceptive (4,55,0,0) 64B rejected at 128b proven", false,
+      run 3 64 "4,55,0,0" 128 "proven"),
+    ("NEG: IxVM Fp3 deceptive (4,55,0,0) 64B rejected at 128b johnson", false,
+      run 3 64 "4,55,0,0" 128 "johnson")
   ]
 
 /-- Construct the full ordered command plan for the formal gate. -/
@@ -206,7 +215,7 @@ def buildPlan (cfg : EnvConfig) (formalTmp : FilePath) : Array Step := Id.run do
 
   -- Wave 1: independent codegen/Aiur unit/fixture checks and any missing `.ixa` exports.
   -- The IxVM and MultiStark modules are Lean source (`aiur⟦ … ⟧`). Only
-  -- IxVM/IxVM/Source/KernelRoleSpec.lean is rendered, from IxC's role specifications.
+  -- IxVM/IxVM/Source/KernelRoleSpec.lean is rendered, from IxCK's role specifications.
   let mut wave1 : Array (String × Array String × Array (String × Option String)) := #[
     (".lake/build/bin/ix", #["codegen", "--check"], env)
   ]
@@ -336,10 +345,11 @@ def formatStep : Step → String
     let eLookup := formatEnv (setEnv env "AIUR_TRACE_ONLY_LOOKUPS" (some "1"))
     s!"{e} .lake/build/bin/ix prove Nat.add_comm > {log}; " ++
     s!"{e} .lake/build/bin/ix verify <last-line>; " ++
-    s!"{eLookup} .lake/build/bin/ix verify <last-line>"
+    s!"{eLookup} .lake/build/bin/ix verify <last-line>; " ++
+    s!"{e} lake env .lake/build/bin/formal-aiur-tests pins"
   | .security128Gate env =>
     let e := formatEnv env
-    let base := s!".lake/build/bin/fri-security --require-min-bits 128 ({security128GateCases.size} cases)"
+    let base := s!".lake/build/bin/fri-security {ixvmGateInstance} ({security128GateCases.size} cases)"
     if e.isEmpty then base else s!"{e} {base}"
 
 /-- Remove entries under Lean's `sysroot` from a colon-separated `LD_LIBRARY_PATH`.
@@ -405,7 +415,15 @@ def runProveAndVerify (cwd : FilePath) (sysroot : String) (proveLog : FilePath)
       (setEnv env "AIUR_TRACE_ONLY_LOOKUPS" (some "1")))
   let rc1 ← IO.ofExcept (← IO.wait t1)
   let rc2 ← IO.ofExcept (← IO.wait t2)
-  return if rc1 != 0 then rc1 else rc2
+  if rc1 != 0 then return rc1
+  if rc2 != 0 then return rc2
+  -- Acceptance against the pinned verifying keys and entry indices
+  -- (`tools/formal-aiur.keys`): the pins are accepted, and keys other than the pins and
+  -- other entry indices are refused. `ix prove Nat.add_comm` proves a direct IxVM claim
+  -- (`IXAIUR2`), which `ix verify` checked above against the pinned key; the identity-blob
+  -- half (`formal-aiur-tests pins ROOT`) runs right after the structural `IXAGGR2` aggregate
+  -- root is proved in `formal-checks controller` (`Tests/FormalChecks/Controller.lean`).
+  runExec cwd sysroot "lake" #["env", ".lake/build/bin/formal-aiur-tests", "pins"] env
 
 /-- Run the self-tested 128-bit `fri-security` gate (positive `Fp^3` profiles must exit 0;
 sub-128-bit `Fp^2`, `(2,100,0,20)`, and `(4,55,0,0)` controls must exit non-zero). -/

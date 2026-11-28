@@ -90,7 +90,7 @@ theorem FamRead.withLink {L₀ L : Ix.Kernel.Env .anon → NativeFam .anon → P
 /-- **The install of a block whose former is declared at a definition keeps the clause at the
 opened head trace**, registering its family.
 
-`hfacts` is IxC's record of the install at the registered family; its telescope constant is the
+`hfacts` is IxCK's record of the install at the registered family; its telescope constant is the
 traced term of the stored former. `hres`, `hloads`, `heta`, `hkeys₂` and `hread` are what the
 block's unit step reads off its run at the new environment (`hread` is the family's reading
 with nothing said of the link).

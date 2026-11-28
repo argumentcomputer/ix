@@ -1,5 +1,5 @@
 import IxVMRefinement.FamilyAlias.Package
-import IxC.Kernel.Model.IndRenRecord
+import IxCK.Kernel.Model.IndRenRecord
 
 /-! # Entering the family package from positional derivations
 

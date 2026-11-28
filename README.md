@@ -30,16 +30,24 @@ proof language).
 Additionally, while in proof-carrying code an application must reveal the proof
 artifact that demonstrates some formal property to the user, in **zkPCC** this
 proof artifact may be kept private, which opens up new possibilities for economic
-transactions over proofs.
+transactions over proofs. Today this is a goal, not a property of the default
+proofs: the proofs `ix prove` writes are transparent (not zero-knowledge),
+hiding is designed only for `ix compress --stark-128-zk` and the final
+PLONK/Groth16 proofs, and no hiding property is formally stated for any of them.
 
 > :warning: **This repository is a pre-alpha work in progress and should not be used for any purpose.**
 
-The formal Aiur compiler and runtime live in separate Lean and Rust packages
-(`Aiur/`, `IxVM/`, `MultiStark/` and `crates/`). See
-[the migration guide](docs/formal-aiur-migration.md) for their build commands,
-what the Aiur proofs cover and what they trust, and
+The formal Aiur compiler, certified compilers, and runtime live in separate
+Lean and Rust packages (`Aiur/`, `IxCK/`, `IxCC/`, `IxCCAiur/`, `IxVM/`,
+`MultiStark/`, and `crates/`). See
+[the migration guide](docs/formal-aiur-migration.md) for formal Aiur build
+commands and trust boundaries,
 [the controller design](docs/formal-aiur-unified-controller.md) for how claims
-and their aggregation are proven.
+and their aggregation are proven,
+[IxCC/README.md](IxCC/README.md) for the certified native x86-64 compiler, and
+[IxCCAiur/README.md](IxCCAiur/README.md) /
+[docs/ixcc-aiur-compiler.md](docs/ixcc-aiur-compiler.md) for the certified
+Lean-to-Formal-Aiur circuit compiler and multi-endpoint compression pipeline.
 
 ## Use Cases
 
@@ -151,8 +159,10 @@ e53c3d4bad8538e152a89d8bf75be178a3876252744961b9a087fe3973545c20
 b44236ba17ad7445ae3eac48a8ba86ba00f08c069237b08451e311b688146e7e
 ```
 
-to generate a [multi-STARK](https://github.com/argumentcomputer/multi-stark)
-proof that the theorem typechecks. With a Groth16 circuit that recursively proves
+to generate a [multi-STARK](https://github.com/argumentcomputer/CertiFRI/tree/main/multi-stark)
+proof of IxVM's typing claim for the theorem (what an accepted claim
+establishes, a model of the checked closure rather than Lean typing, is stated
+in [docs/Ixon.md](docs/Ixon.md)). With a Groth16 circuit that recursively proves
 verification of such proofs, i.e. a Groth16 final SNARK, the construction is complete,
 and we can embed a proof of Fermat's Last Theorem in Fermat's Margin Note.
 
@@ -173,7 +183,16 @@ Ix consists of the following core components:
   object and re-merging the computationally relevant and irrelevant parts).
 - The [Aiur zkDSL](https://github.com/argumentcomputer/ix/tree/main/Aiur)
   which is a first-order functional programming language that generates
-  multi-STARK circuits.
+  multi-STARK, single-circuit STARK, and KZG/PLONK circuits.
+- The [IxCC certified native compiler](IxCC/README.md), which compiles `ixon`
+  closures to standalone static x86-64 ELF executables via rechecked
+  intermediate certificates (including pure-Lean BN254 Groth16 proving &
+  verification in `IxCCAiur/Compression/Groth16X86.lean`), and
+  [IxCCAiur](IxCCAiur/README.md), which compiles annotated Lean 4 programs
+  (`open scoped Ix.Circuit`) from `IxCC` FIR directly to Formal Aiur circuits
+  across Goldilocks, BN254 `Fr`, and BLS12-381 `Fr` with a 100% zero-Go
+  Rust/CUDA/Solidity proving stack
+  ([compiler & compression guide](docs/ixcc-aiur-compiler.md)).
 - The IxVM (not yet released), which implements reduction and typechecking
   of `ixon` (including ingress and egress from and to binary data).
 - Integration with the [iroh p2p network](https://www.iroh.computer/) so that
@@ -181,12 +200,17 @@ Ix consists of the following core components:
 
 ### Certified Ixon checker
 
-`IxC/Kernel` is a type checker for `ixon` whose acceptance is proved to imply
-consistency. It is Ix's own kernel, derived from the verified checker of
-[con-leche](https://github.com/leanprover/con-leche). Its entry,
-`Ix.Kernel.Admission.checkBytes`, takes canonical `ixon` bytes, and for every
-environment it accepts the theorems give a set-theoretic model and no proof of
-`False`, on the standard axioms only. This theorem does not by itself certify
+`IxCK/Kernel` is a type checker for `ixon` whose acceptance is proved to imply
+consistency relative to a set theory. It is Ix's own kernel, derived from the
+verified checker of [con-leche](https://github.com/leanprover/con-leche). Its
+entry, `Ix.Kernel.Admission.checkBytes`, takes canonical `ixon` bytes, and for
+every environment it accepts, `Ix.Kernel.Admission.checkBytes_has_model` gives
+a model in every set theory with an ω-chain of Grothendieck universes
+(`Ix.Kernel.SetTheory`), hence no constant of type `False`
+(`checkBytes_no_proof_of_False`). The proofs use the standard axioms only; the
+set theory is a hypothesis that nothing in the repository discharges
+unconditionally (`Models/SetTheory` derives one from ω inaccessible
+cardinals). This theorem does not by itself certify
 the compiler or IxVM: the compiler has its own theorem,
 `Ix.Cert.CompileCorrect` (see [Compiling Lean to Ixon](#compiling-lean-to-ixon)),
 and IxVM is outside both. [docs/kernel.md](docs/kernel.md) states what is
@@ -288,7 +312,7 @@ holds the end-to-end checks on Init+Std; `--tier landing` selects it.
   [evaluation claims](docs/eval-claims.md) through Aiur execution and
   generated-backend parity, without proving
 - `lake exe ixon-tests` runs the Ixon format suite (golden bytes, FFI, text grammar, resource contracts, claims, and the fixtures in `Tests/Fixtures/ixon/`); `lake exe ixon-primitives` regenerates the primitive closure and checks `primitives.tsv` against it; both keep their scratch files in `$IX_IXON_TEST_DIR` (default `/tmp`)
-- `lake build --wfail IxSharingVerify` builds the proofs of the canonical sharing construction (`IxSharingVerify`) and their audits; `lake lint` builds it too. The Ixon codec proofs, including TagN's, build with `lake -d IxC build --wfail`
+- `lake build --wfail IxSharingVerify` builds the proofs of the canonical sharing construction (`IxSharingVerify`) and their audits; `lake lint` builds it too. The Ixon codec proofs, including TagN's, build with `lake -d IxCK build --wfail`
 
 **Rust tests:** `cargo test` or `cargo nextest run`
 

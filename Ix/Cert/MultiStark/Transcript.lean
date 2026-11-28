@@ -1,4 +1,5 @@
 import Ix.Cert.MultiStark.Types
+import Ix.Cert.MultiStark.Wire
 import CertiFriP3.DomainSep
 import CertiFri.TensorBatching
 import CertiFri.Verifier
@@ -72,12 +73,12 @@ def initialChallenger (p : StarkParams) : ChallengerState :=
   observeNat s p.queryPowBits
 
 /-- Observe Protocol `v6` system shape (`SystemDeserialize.lean:340-343`):
-`ext_deg = 3`, `modulus_tag = 2`, `vk_digest` (32 bytes), `circuits.size`, and
-7 limbs per circuit. -/
+`ext_deg = 3`, `modulus_tag = 2`, the canonical recomputed `vk_digest` of `sys.circuits`
+(`computeVkDigest sys.circuits`), `circuits.size`, and 7 limbs per circuit. -/
 def observeShape (s : ChallengerState) (sys : StarkSystem) : ChallengerState :=
   let s := observeNat s 3
   let s := observeNat s 2
-  let s := s.observe3 (.digest sys.vkDigest)
+  let s := s.observe3 (.digest (computeVkDigest sys.circuits))
   let s := observeNat s sys.circuits.size
   sys.circuits.foldl (init := s) fun acc c =>
     let acc := observeNat acc c.constraintCount

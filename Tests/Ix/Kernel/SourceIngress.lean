@@ -16,7 +16,7 @@ the `partial`/`unsafe` definitions the reader declines) and everything in
 `Init` they reach are canonicalized (`Ix.CanonM`), condensed (`Ix.GraphM`,
 `Ix.CondenseM`) and checked in Source mode (`Ix.LeanIngress`) at Source mode's
 evidence (`Ix.LeanIngress.sourceEvidence`: the certificate theorems of
-`IxC.Kernel.PinGen.Certs`, loaded and checked with the fixtures):
+`IxCK.Kernel.PinGen.Certs`, loaded and checked with the fixtures):
 
 * group by group (`Tests.Ix.Kernel.SourceIngressStep`), where every fixture
   declaration must get its expected verdict;
@@ -120,7 +120,7 @@ def expected : List (Lean.Name × String) := [
   (defs "spin._unsafe_rec", "typed"), (defs "unsafeId", "typed"),
   -- `Nat.div` is a certified operation, accepted on the proof evidence of
   -- the certificate theorems the environment carries
-  -- (`IxC.Kernel.PinGen.Certs`, Source mode's evidence); the well-founded
+  -- (`IxCK.Kernel.PinGen.Certs`, Source mode's evidence); the well-founded
   -- `log2` divides
   (`Nat.div, "accept"), (defs "log2", "accept"),
   -- the prelude, checked on the environment's own copies
@@ -213,16 +213,15 @@ def contractFrames : TestSeq :=
   let letE := Ix.Expr.mkLetE (nm "y") nat (Ix.Expr.mkConst (nm "Nat.zero") #[]) (.mkBVar 0) false
   let plain (e : Ix.Expr) := Ix.Expr.mkMData #[(nm "k", .ofBool true)] e
   let conv (e : Ix.Expr) := ingressExprs noParams.pos [e]
-  let lamO : Ix.SemanticContract.Contract := { kind := .lam, binder := .many }
-  let allO : Ix.SemanticContract.Contract := { kind := .all, binder := .many }
-  let letO : Ix.SemanticContract.Contract := { kind := .letE, binder := .many }
-  let lamC : Ix.SemanticContract.Contract := { kind := .lam, binder := .linear }
+  let lamO : Ix.SemanticContract.Contract := .lam .many
+  let allO : Ix.SemanticContract.Contract := .all {}
+  let letO : Ix.SemanticContract.Contract := .letE (.value .many)
+  let lamC : Ix.SemanticContract.Contract := .lam .once
   let allC : Ix.SemanticContract.Contract :=
-    { kind := .all, binder := .erased, result := .localUnique }
-  let letC : Ix.SemanticContract.Contract := { kind := .letE, binder := .affine }
-  let badMode : Ix.SemanticContract.Contract :=
-    { kind := .lam, binder := ⟨.erased, .localShared⟩ }
-  let unsupported := "unsupported semantic contract mode"
+    .all { input := .erased, result := .uniqueBorrowed }
+  let letC : Ix.SemanticContract.Contract := .letE .borrow
+  let fieldC : Ix.SemanticContract.Contract := .field .shared
+  let assertsC : Ix.SemanticContract.Contract := .defAsserts { alloc := .noRc }
   let misplaced := "semantic contract is not attached to its original binder"
   let key := Ix.Name.mkStr (nm "ix") "contract"
   let dag := Ix.Expr.mkApp (framed allC pi) (plain (framed lamC lam))
@@ -238,19 +237,24 @@ def contractFrames : TestSeq :=
     (letOf (conv (framed letO letE)) == some { nonDep := false }) ++
   test "plain metadata around an ordinary frame is erased"
     (binderOf (conv (plain (framed lamO lam))) == some { pw := .never }) ++
-  test "a valid annotated lam, all or let frame lowers to the kernel binder or let"
+  test "a valid annotated lam, all, let, field, or defAsserts frame lowers to the kernel term"
     (binderOf (conv (framed lamC lam)) == some { pw := .never } &&
       binderOf (conv (framed allC pi)) == some { pw := .never } &&
+      binderOf (conv (framed fieldC pi)) == some { pw := .never } &&
+      binderOf (conv (framed assertsC pi)) == some { pw := .never } &&
       letOf (conv (framed letC letE)) == some { nonDep := false } &&
       binderOf (conv (plain (framed lamC lam))) == some { pw := .never }) ++
-  test "an unsupported semantic contract mode is refused"
-    (refusedWith unsupported (conv (framed badMode lam))) ++
+  test "a frame with reserved mode bits is refused"
+    (frameRefused (conv (Ix.Expr.mkMData #[(key, .ofNat 4), (Ix.Name.mkStr key "kind", .ofNat 0),
+      (Ix.Name.mkStr key "code", .ofNat 7)] lam))) ++
   test "a frame not directly around a binder of its kind is refused"
     (refusedWith misplaced (conv (framed lamO (plain lam))) &&
-      refusedWith misplaced (conv (framed lamC pi)) && refusedWith misplaced (conv (framed allC nat))) ++
+      refusedWith misplaced (conv (framed lamC pi)) &&
+      refusedWith misplaced (conv (framed allC nat)) &&
+      refusedWith misplaced (conv (framed fieldC nat))) ++
   test "a malformed frame is refused"
-    (frameRefused (conv (Ix.Expr.mkMData #[(key, .ofNat 3)] lam)) &&
-      frameRefused (conv (Ix.Expr.mkMData #[(key, .ofNat 2), (Ix.Name.mkStr key "kind", .ofNat 0),
+    (frameRefused (conv (Ix.Expr.mkMData #[(key, .ofNat 4)] lam)) &&
+      frameRefused (conv (Ix.Expr.mkMData #[(key, .ofNat 3), (Ix.Name.mkStr key "kind", .ofNat 0),
         (Ix.Name.mkStr key "code", .ofNat 1)] lam))) ++
   test "the DAG walk is the tree walk on frames"
     (sameTree (ingressExprsShared noParams.pos [dag]) (ingressExpr noParams.pos dag))
@@ -338,7 +342,7 @@ initialize sharedEnvCache : IO.Ref (Option Lean.Environment) ← IO.mkRef none
 `evaluateQuotient`, and `evaluateShape`. -/
 private def sharedEnv : IO Lean.Environment := do
   if let some env ← sharedEnvCache.get then return env
-  let env ← getCompileEnv #[defsModule, ownModule, reducedModule, `IxC.Kernel.PinGen.Certs]
+  let env ← getCompileEnv #[defsModule, ownModule, reducedModule, `IxCK.Kernel.PinGen.Certs]
   sharedEnvCache.set (some env)
   return env
 

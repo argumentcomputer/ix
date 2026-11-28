@@ -308,7 +308,7 @@ def spineRoots : Array Lean.Name :=
     `lastHead_expand, `carrier_expand, `carriers_expand, `analyse_expand,
     `build_analyse].map (`Ix.CompileCert.ReaderSpines ++ ·)) ++
   (#[`read_outer, `read_forall, `read_bvar, `piTypes_zero, `piTypes_forall, `read_stripAll, `read_appDepth,
-    `read_appHead, `read_variable_head, `withContract_shape, `withContract_depth, `withContract_head,
+    `read_appHead, `read_variable_head, `withContract_eq, `withContract_depth,
     `withContract_piTypes, `related_appDepth, `source_appDepth, `related_variable_head, `source_variable_head,
     `related_constant_head, `read_constant_head, `source_constant_head, `sourceStrip_zero, `related_strip,
     `pairs_match, `source_stripAll, `source_telescope_variable, `withContract_nonForall,
@@ -608,7 +608,7 @@ run_cmd do
 
 /-! ## Levels read syntactically
 
-Since IxC's U lowers Source levels to the compiler's canonical form
+Since IxCK's U lowers Source levels to the compiler's canonical form
 (`Ix.LeanIngress.canonLevelIn`), the reader's level is the Source level in that
 form, not only equal to it in value (`CanonLevelReading.related_ingress_canon`). -/
 

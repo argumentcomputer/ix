@@ -1,10 +1,10 @@
 import IxVMRefinement.Decl.ModeledAux
-import IxC.Kernel.Model.IndCons
-import IxC.Kernel.Model.Inductives.StructCaps
-import IxC.Kernel.Model.Swap
-import IxC.Kernel.Semantics.IndRecsCore
-import IxC.Kernel.Semantics.IndBlockFacts
-import IxC.Kernel.Verify.Denote.OpenVars
+import IxCK.Kernel.Model.IndCons
+import IxCK.Kernel.Model.Inductives.StructCaps
+import IxCK.Kernel.Model.Swap
+import IxCK.Kernel.Semantics.IndRecsCore
+import IxCK.Kernel.Semantics.IndBlockFacts
+import IxCK.Kernel.Verify.Denote.OpenVars
 
 /-!
 # Unpositionalized 4-Phase Modeled Block Installation (`ModeledInstall.lean`)

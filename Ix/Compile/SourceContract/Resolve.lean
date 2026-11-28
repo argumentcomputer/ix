@@ -85,7 +85,7 @@ def resolveBinderSelector (source : Lean.ConstantInfo) (selector : BinderSelecto
     | _ => throw (.ambiguousBinder source.name name)
 
 /-- Expand declaration shorthand into separate type/body occurrences. The
-result never marks earlier or later curried arrow results unique implicitly. -/
+result never marks earlier or later curried arrow results implicitly. -/
 def SourceContract.ofTelescope (source : Lean.ConstantInfo)
     (contracts : Array TelescopeContract) :
     Except SourceContractError SourceContract := do
@@ -97,14 +97,32 @@ def SourceContract.ofTelescope (source : Lean.ConstantInfo)
     let some (typeSite, _) := types[index]?
       | throw (.argumentOutOfRange source.name index)
     binders := binders.push {
-      site := typeSite, uses := contract.uses, result := contract.result
-      value := contract.value, letKind := contract.letKind }
+      site := typeSite, mode := contract.mode, result := contract.result
+      isBorrow := contract.isBorrow }
     if (sourceBody? source).isSome then
       let some (bodySite, _) := bodies[index]?
         | throw (.missingBodyBinder source.name index)
       binders := binders.push {
-        site := bodySite, uses := contract.uses, value := contract.value, letKind := contract.letKind }
+        site := bodySite, mode := contract.mode, isBorrow := contract.isBorrow }
   return { source, binders }
+
+def validateDefAsserts (source : Lean.ConstantInfo) (asserts : Ixon.DefAsserts) :
+    Except SourceContractError Unit := do
+  if asserts == {} then return ()
+  match source with
+  | .defnInfo info =>
+    unless info.safety == .safe do
+      throw (.invalidDefAsserts source.name
+        "definition assertions (@[no_rc], @[no_alloc], @[bounded_stack]) are not allowed on partial or unsafe definitions")
+  | .opaqueInfo _ =>
+    throw (.invalidDefAsserts source.name
+      "definition assertions (@[no_rc], @[no_alloc], @[bounded_stack]) are not allowed on partial, unsafe, or opaque definitions")
+  | .thmInfo _ =>
+    throw (.invalidDefAsserts source.name
+      "definition assertions (@[no_rc], @[no_alloc], @[bounded_stack]) are not allowed on theorems")
+  | _ =>
+    throw (.invalidDefAsserts source.name
+      "definition assertions (@[no_rc], @[no_alloc], @[bounded_stack]) are only allowed on safe definitions")
 
 def resolveBinderContract (source : Lean.ConstantInfo) (contract : BinderContract) :
     Except SourceContractError ResolvedBinderContract := do
@@ -117,22 +135,26 @@ def resolveBinderContract (source : Lean.ConstantInfo) (contract : BinderContrac
     | _ => throw (.expectedBinder source.name contract.site)
   if kind != .all && contract.result.isSome then
     throw (.resultOnNonArrow source.name contract.site)
-  if kind != .letE && contract.letKind != .value then
+  if kind != .letE && contract.isBorrow then
     throw (.borrowOnNonLet source.name contract.site)
-  if contract.letKind == .borrowShared && contract.value != .localShared then
+  if contract.isBorrow && contract.mode != .borrowed then
     throw (.invalidBorrowView source.name contract.site)
   return {
     site := contract.site, kind, name, binderInfo
-    uses := contract.uses, value := contract.value, letKind := contract.letKind
+    mode := contract.mode, isBorrow := contract.isBorrow
     result := if kind == .all then some (contract.result.getD .shared) else none }
 
-def ResolvedSourceContract.usesAt (contract : ResolvedSourceContract)
-    (site : BinderSite) : Ixon.Uses :=
-  ((contract.binders.find? fun binder => binder.site == site).map (·.uses)).getD .many
+def ResolvedSourceContract.modeAt (contract : ResolvedSourceContract)
+    (site : BinderSite) : Ixon.BinderMode :=
+  ((contract.binders.find? fun binder => binder.site == site).map (·.mode)).getD .many
 
-def ResolvedSourceContract.valueAt (contract : ResolvedSourceContract)
-    (site : BinderSite) : Ixon.ValueContract :=
-  ((contract.binders.find? fun binder => binder.site == site).map (·.value)).getD .shared
+def ResolvedSourceContract.resultAt (contract : ResolvedSourceContract)
+    (site : BinderSite) : Ixon.ResultMode :=
+  ((contract.binders.find? fun binder => binder.site == site).bind (·.result)).getD .shared
+
+def ResolvedSourceContract.fieldModeAt (contract : ResolvedSourceContract)
+    (fieldIndex : Nat) : Ixon.FieldMode :=
+  ((contract.fieldModes.find? fun fm => fm.fieldIndex == fieldIndex).map (·.mode)).getD .inherited
 
 private structure CollectedAnnotations where
   binders : Array (BinderSite × BinderAnnotation) := #[]
@@ -147,7 +169,7 @@ private def collectAnnotations (declaration : Lean.Name) (root : SourceRoot)
   | .lam name type _ _ | .forallE name type _ _ | .letE name type _ _ _ =>
     let annotation ← (binderAnnotation? type).mapError (.malformedAnnotation declaration site)
     if let some annotation := annotation then
-      if annotation.binder != name then
+      if annotation.binder != .anonymous && annotation.binder != name then
         -- Expected arrow domains can be copied into an alpha-renamed lambda.
         -- The original marker must already have been validated in the type.
         let isLambda := match expr with | .lam .. => true | _ => false
@@ -200,11 +222,13 @@ def SourceContract.fromAnnotations (source : Lean.ConstantInfo) :
         other.root == .type && original == annotation
       unless copiedFromType do throw (.resultOnNonArrow source.name site)
     binders := binders.push {
-      site, uses := annotation.uses, value := annotation.value
-      result := if isArrow then annotation.result else none, letKind := annotation.letKind }
+      site, mode := annotation.mode
+      result := if isArrow then annotation.result else none
+      isBorrow := annotation.isBorrow }
   for (site, marker) in acc.markers do
     let some (_, annotation) := acc.binders.find? fun (binderSite, annotation) =>
-        binderSite.root == site.root && annotation.origin == marker.origin
+        (binderSite.root == site.root || (site.root == .body && binderSite.root == .type)) &&
+        annotation.origin == marker.origin
       | throw (.misplacedAnnotation source.name site)
     if marker != annotation then throw (.conflictingAnnotation source.name site)
   -- Lean retains binder-domain metadata in the declaration type while erasing
@@ -241,26 +265,24 @@ def checkTelescopeConsistency (contract : ResolvedSourceContract) :
   for index in [:max types.size bodies.size] do
     match types[index]?, bodies[index]? with
     | some (typeSite, _), some (bodySite, _) =>
-      let typeUses := contract.usesAt typeSite
-      let bodyUses := contract.usesAt bodySite
-      if typeUses != bodyUses then
-        throw (.inconsistentTelescope contract.source.name index typeUses bodyUses)
-      let typeValue := contract.valueAt typeSite
-      let bodyValue := contract.valueAt bodySite
-      if typeValue != bodyValue then
-        throw (.inconsistentValue contract.source.name index typeValue bodyValue)
+      let typeMode := contract.modeAt typeSite
+      let bodyMode := contract.modeAt bodySite
+      if typeMode != bodyMode then
+        throw (.inconsistentTelescope contract.source.name index typeMode bodyMode)
     | some (site, _), none | none, some (site, _) =>
       if contract.binders.any (fun binder => binder.site == site) then
         throw (.missingBodyBinder contract.source.name index)
     | none, none => pure ()
 
-/-- Validate source binding and occurrence annotations. Sort sites so declaration
-annotation order cannot become an accidental cache or serialization input. -/
+/-- Validate source binding and occurrence annotations. Sort sites and field
+indices so declaration annotation order cannot become an accidental cache or
+serialization input. -/
 def SourceContract.resolve (contract : SourceContract) (actual : Lean.ConstantInfo) :
     Except SourceContractError ResolvedSourceContract := do
   -- Ix.Common supplies derived structural equality for the complete source,
   -- including metadata and BinderInfo. Do not substitute Expr's hash equality.
   if contract.source != actual then throw (.staleSource contract.source.name)
+  validateDefAsserts actual contract.defAsserts
   if sourceHasAnnotations actual then
     let expected ← SourceContract.fromAnnotations actual
     for annotation in expected.binders do
@@ -275,7 +297,26 @@ def SourceContract.resolve (contract : SourceContract) (actual : Lean.ConstantIn
     seen := seen.insert binder.site
     binders := binders.push (← resolveBinderContract actual binder)
   binders := binders.qsort fun a b => compare a.site b.site == .lt
-  let result : ResolvedSourceContract := { source := actual, binders }
+  let mut fieldModes := #[]
+  if !contract.fieldModes.isEmpty then
+    let .ctorInfo ctor := actual
+      | throw (.fieldModeOnNonCtor actual.name)
+    let types := sourceTelescope actual .type
+    let mut seenFields : Std.HashSet Nat := {}
+    for fm in contract.fieldModes do
+      if fm.fieldIndex >= ctor.numFields then
+        throw (.fieldOutOfRange actual.name fm.fieldIndex)
+      if seenFields.contains fm.fieldIndex then
+        throw (.duplicateFieldMode actual.name fm.fieldIndex)
+      seenFields := seenFields.insert fm.fieldIndex
+      if fm.mode == .shared then
+        if let some (fieldSite, _) := types[ctor.numParams + fm.fieldIndex]? then
+          if binders.any (fun b => b.site == fieldSite && b.mode == .erased) then
+            throw (.erasedSharedField actual.name fm.fieldIndex)
+      fieldModes := fieldModes.push fm
+    fieldModes := fieldModes.qsort fun a b => a.fieldIndex < b.fieldIndex
+  let result : ResolvedSourceContract := {
+    source := actual, binders, fieldModes, defAsserts := contract.defAsserts }
   checkTelescopeConsistency result
   return result
 

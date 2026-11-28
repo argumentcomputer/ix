@@ -936,7 +936,7 @@ theorem former_scope (hbound : Bounded calls) (hS : LoadedReads.RunStore calls E
     prelude.scopeRun (hsub_chk _ prelude.scopeMember)
   exact ⟨hlbb, hdef, Assembly.memberReader_read_noFvar hty⟩
 
-/-- **The former's stage of IxC at the prefix** (T6): the recognised block's former is checked
+/-- **The former's stage of IxCK at the prefix** (T6): the recognised block's former is checked
 against the prefix as its canonical annotation, at a telescope ending in the block's sort, and
 stored at the native capability record of the completed shape, for either recursion flag. The
 former's key is the key of its projection address. -/

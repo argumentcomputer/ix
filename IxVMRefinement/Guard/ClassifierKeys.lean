@@ -1,5 +1,5 @@
-import IxC.Kernel.Model.ProjGuardCert
-import IxC.Kernel.Verify.Cached.NormalizeRef
+import IxCK.Kernel.Model.ProjGuardCert
+import IxCK.Kernel.Verify.Cached.NormalizeRef
 
 /-! # The field classifier queries only the keys its input and its answers name
 

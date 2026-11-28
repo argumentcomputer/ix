@@ -1,7 +1,7 @@
 import IxVMRefinement.Ingress.Ingress
 import IxVMRefinement.Core.Seams
 import IxVM.Obs.KernelCheck
-import IxC.Ixon.Verify.Framing
+import IxCK.Ixon.Verify.Framing
 import Ix.Cert.Stream
 
 /-! # Record ingress seam (`LoadedRecords`), `Records` obligation, and `LoadFacts` companions

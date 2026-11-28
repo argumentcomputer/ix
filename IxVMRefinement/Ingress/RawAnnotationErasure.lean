@@ -1,5 +1,5 @@
 import IxVMRefinement.Ingress.AnnotationTrace
-import IxC.Kernel.Model.GuardClassifierErase
+import IxCK.Kernel.Model.GuardClassifierErase
 
 /-! # Raw binder annotation preserves the metadata-erased serialized expression
 

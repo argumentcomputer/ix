@@ -1,0 +1,24 @@
+# The Phase 1 ABI and readback matrix
+
+The `phase1-abi` family of the [fixture corpora](../../../docs/corpus.md)
+(phase 1 plan, MT.4; research §9.4.5): roots of arity 0–6 returning `Nat`,
+`Bool` and `Abi.Tri` (three field-less constructors, read back as `#0`–`#2`),
+from [`src/Abi.lean`](src/Abi.lean).
+
+A root of arity `k` mixes its arguments position by position
+(`a₀ ^^^ (a₁ >>> 1) ^^^ …`), so a wrong or truncated register changes the
+result. Each position takes `0`, `1`, `2³² − 1`, `2⁶²` and `2⁶³ − 1` with the
+other positions at distinct marks, all positions take `2⁶³ − 1`, and each
+position takes `2⁶³`, `2⁶⁴ − 1` and `2⁶⁴` (status 3 from the wrapper). Every
+case runs at every level and natively, in a test executable IxCC writes,
+which checks the six callee-saved registers and `rsp` and returns the result
+word and the object area, read alike by `Rt.readback` and by the tests'
+independent decoder (`IxCCTests.Rt.Decoder`).
+
+Arity 6 (`nat6`, `bool6`, `tri6`) is declined with `rt: rt.params`: the
+entry wrapper passes five arguments. The compiler's readback type (`Recheck.rootTy`)
+is `Nat`, the pinned `Bool`'s, or for `Tri` the one discovery finds (three
+field-less constructors, the manifest's `ctors`, which the suite checks), also
+for a root compiled alone.
+
+Licence: Apache-2.0 OR MIT (original programs).

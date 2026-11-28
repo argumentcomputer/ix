@@ -30,6 +30,12 @@ def explain (b : Admission.Binding) (E : Ixon.Env) : String :=
       "the table binds String without the rest of a string literal's support \
         (String.ofList, List and its constructors, Char, Char.ofNat)"
     else
+    match Admission.admitPinnedRoles .committed t with
+    | .error e => s!"a pinned role is not bound to the committed default role table: {e}"
+    | .ok () =>
+    if !depthsOk E then
+      s!"a record in the environment nests past the depth limit ({admissionLimits.maxDepth} levels)"
+    else
     match seeds.find? (!E.consts.contains ·) with
     | some a =>
       s!"the environment lacks {a}, which the table binds or its evidence names"
@@ -44,6 +50,9 @@ def explain (b : Admission.Binding) (E : Ixon.Env) : String :=
         match (Reader.preludeFor t : Except String (Reader.Prelude .anon)) with
         | .error e => s!"the committed prelude does not read under the table: {e}"
         | .ok pre =>
+          if !levelsOk E order then
+            s!"a record in the closure fails byte preflight/decoding or exceeds the universe-parameter limit ({Admission.maxRecordLevelParams})"
+          else
           -- the hints read through a map built once, as `check` reads them (`hintsAt`)
           match Admission.prepareWith Address.admissionHash b pre admissionLimits
               (Ix.Cert.recordsOf E order) (Ix.Cert.blobsOf E order)

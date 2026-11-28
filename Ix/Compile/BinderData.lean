@@ -11,15 +11,15 @@ public section
 
 Every record carries the binder data of its `lam` and `all` nodes
 (`Ixon.Constant.binders`): the zero-ness of each binder's codomain sort, as
-IxC's annotation pass writes it (`BinderMeta.pw`). The record's address hashes
+IxCK's annotation pass writes it (`BinderMeta.pw`). The record's address hashes
 them with the rest of its bytes. `apply` computes them for a compiled
 environment and re-addresses it:
 
 1. **Annotate** every record of the environment, under its own role table and
    the prelude read from its own records (the compiled records are not the
    committed prelude's: the committed prelude is a compile of these records with
-   their data). The annotator is IxC's pass over the Ixon tree
-   (`IxVM.PwHints.annotateKernel`), in tainting mode: where IxC's datum function
+   their data). The annotator is IxCK's pass over the Ixon tree
+   (`IxVM.PwHints.annotateKernel`), in tainting mode: where IxCK's datum function
    cannot run and the record's declared type does not give the datum, the node
    is `undecided` (wire tag 4), and so is every binder above it. A datum is
    never guessed.
@@ -298,11 +298,12 @@ def stripSection (c : Ixon.Constant) : Except String (Array Ixon.BinderBlock) :=
 /-! ## Source modes onto undecided sections -/
 
 /-- Peel metadata frames around a source expression, keeping the outermost
-semantic contract frame (if any) and the underlying expression. -/
+binder (`lam`/`all`) semantic contract frame (if any) and the underlying expression.
+Non-binder frames (`defAsserts`, `field`) are peeled through transparently. -/
 def peelSource : Ix.Expr → Option Ix.SemanticContract.Contract × Ix.Expr
   | .mdata d inner _ =>
     if Ix.SemanticContract.hasMetadata d then
-      let c? := (Ix.SemanticContract.read d).toOption
+      let c? := ((Ix.SemanticContract.read d).toOption).filter (·.toAllMode?.isSome)
       let (innerC?, core) := peelSource inner
       (c?.orElse (fun _ => innerC?), core)
     else
@@ -313,7 +314,8 @@ def peelSource : Ix.Expr → Option Ix.SemanticContract.Contract × Ix.Expr
 def leadingAllResults : Ix.Expr → Option Ix.SemanticContract.Contract → List Ixon.ResultMode
   | .mdata d inner _, outer? =>
     if Ix.SemanticContract.hasMetadata d then
-      leadingAllResults inner ((Ix.SemanticContract.read d).toOption.orElse fun _ => outer?)
+      let c? := ((Ix.SemanticContract.read d).toOption).filter (·.toAllMode?.isSome)
+      leadingAllResults inner (c?.orElse fun _ => outer?)
     else
       leadingAllResults inner outer?
   | .forallE _ _ body _ _, c? =>

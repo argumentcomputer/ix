@@ -345,7 +345,7 @@ private def pre (n : Nat) (s : String) : String := String.ofList (s.toList.take 
 
 /-- The extended diagnosis of one witness (`IX_PW_DIAG2=1`): the store's
 recursor-index conflicts (records filed under one block's motive), the role
-bindings of the `Bool` roles, the install order at each refusal, and IxC's own
+bindings of the `Bool` roles, the install order at each refusal, and IxCK's own
 record check (`checkLoop`, phase B included, no lenient install) over the same
 records in the same order. -/
 def diagnose2 (env : Ixon.Env) (io : Aiur.IOBuffer) : IO Unit := do
@@ -397,12 +397,12 @@ def diagnose2 (env : Ixon.Env) (io : Aiur.IOBuffer) : IO Unit := do
   IO.println s!"PWDIAG2 install order: {addresses.size} records"
   for (a, why) in k.failures.extract 0 30 do
     IO.println s!"PWDIAG2 refused at {(pos[a]?).getD 0}: {nameOf a}: {cut why}"
-  -- IxC's own record check over the same records, in the same order
+  -- IxCK's own record check over the same records, in the same order
   let rows ← IO.mkRef (#[] : Array Benchmarks.Kernel.CheckIxeStep.Row)
   let out ← Benchmarks.Kernel.CheckIxeStep.checkLoop s (fun a => #[nameOf a]) addresses {}
     (fun row => if row.outcome == "accept" || row.outcome == "typed" then pure ()
       else rows.modify (·.push row)) (tier := true)
-  IO.println s!"PWDIAG2 strict IxC over the same records: {out.counts.toList}"
+  IO.println s!"PWDIAG2 strict IxCK over the same records: {out.counts.toList}"
   for (why, n) in (histogram ((← rows.get).map (cut ·.reason))).extract 0 12 do
     IO.println s!"PWDIAG2 strict reason {n}: {why}"
   for row in (← rows.get).extract 0 40 do

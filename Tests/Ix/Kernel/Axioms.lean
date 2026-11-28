@@ -1,10 +1,12 @@
 module
 
-public import IxC.Kernel.MainTheorem
-public import IxC.Kernel.Verify.Cached.MainC
-public import IxC.Kernel.Model.Fold
-public import IxC.Kernel.Model.Capstone
-public import IxC.Kernel.Verify.Tier
+public import IxCK.Kernel.MainTheorem
+public import IxCK.Kernel.Verify.Cached.MainC
+public import IxCK.Kernel.Verify.Cached.StreamThm
+public import IxCK.Kernel.Verify.Cached.StreamConsts
+public import IxCK.Kernel.Model.Fold
+public import IxCK.Kernel.Model.Capstone
+public import IxCK.Kernel.Verify.Tier
 public section
 
 /-!
@@ -13,20 +15,20 @@ public section
 Con-leche's headline is that its consistency theorems stand on nothing but
 Lean's three standard axioms, `[propext, Classical.choice, Quot.sound]`.
 This module pins that on the roots of the closure Ix imports (the closure
-of `Ix.Kernel.model_exists`): if a `sorry`, a new axiom or a
-stray `Classical`-adjacent import ever enters one of these proof terms, the
-message changes and the build fails.
+of `Ix.Kernel.model_exists`, plus the stream-side theorems
+`no_False_theorem_accepted` and `Cached.checkDecls_consts`): if a `sorry`, a
+new axiom or a stray `Classical`-adjacent import ever enters one of these proof
+terms, the message changes and the build fails.
 
 `#print axioms` is blind to compiler escapes (`@[implemented_by]`,
 `@[computed_field]`); `kernel-trust-surface`
 (`Tests/Ix/Kernel/TrustSurface.lean`, derived from upstream's
-`tests/trust-surface.sh`) scans `IxC/Kernel` for those.
+`tests/trust-surface.sh`) scans `IxCK/Kernel` for those.
 
-Of upstream's twenty roots, three are not here: the NDJSON corollary
-`no_False_declaration` (the NDJSON frontend is not imported), and
-`no_False_theorem_accepted` and `Cached.checkDecls_consts`, whose modules
-(`Verify/Cached/StreamThm`, `Verify/Cached/StreamConsts`) are outside the
-closure of `model_exists`.
+Of upstream's twenty roots, only the NDJSON corollary `no_False_declaration` is
+not here (the NDJSON frontend is not imported); `no_False_theorem_accepted`
+(`Verify/Cached/StreamThm`) and `Cached.checkDecls_consts`
+(`Verify/Cached/StreamConsts`) are pinned below.
 -/
 
 namespace Tests.Ix.Kernel.Axioms
@@ -133,7 +135,19 @@ info: 'Ix.Kernel.Expr.beq_eq_beqMemo' depends on axioms: [propext, Classical.cho
 #guard_msgs in
 #print axioms Ix.Kernel.Expr.beq_eq_beqMemo
 
-/-! The typing tier (`IxC/Kernel/Verify/Tier.lean`): its guarantee and the fence
+/--
+info: 'Ix.Kernel.no_False_theorem_accepted' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms Ix.Kernel.no_False_theorem_accepted
+
+/--
+info: 'Ix.Kernel.Cached.checkDecls_consts' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms Ix.Kernel.Cached.checkDecls_consts
+
+/-! The typing tier (`IxCK/Kernel/Verify/Tier.lean`): its guarantee and the fence
 stand on the same three axioms. -/
 
 /--

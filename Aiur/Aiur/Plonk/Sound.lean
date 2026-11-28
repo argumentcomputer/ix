@@ -23,10 +23,13 @@ namespace Aiur.Plonk
 open Aiur.Tiling (Poly Template)
 open Aiur.Tiling.WideStage (Air)
 open Aiur.Scalar.Circuit (ArithExpr)
-open Lower (Fr)
 
-theorem holds_of_cover {T : Template Fr} {C : Tiling.Circuit Fr} {W : Nat} (ok : T.check C = true)
-    (cover : coversVars T W C = true) {val : Nat → Fr} (holds : T.RelationsHold val) (x : Nat → Fr)
+section Generic
+
+variable {F : Type} [Field F] [DecidableEq F]
+
+theorem holds_of_cover {T : Template F} {C : Tiling.Circuit F} {W : Nat} (ok : T.check C = true)
+    (cover : coversVars T W C = true) {val : Nat → F} (holds : T.RelationsHold val) (x : Nat → F)
     (agree : ∀ v < W, ∀ s, T.colSlot v = some s → val s = x v) : C.Holds x := by
   intro e he
   have h := Template.Checked.constraints_hold (Template.checked_of_check T ok) holds e he
@@ -42,8 +45,9 @@ theorem holds_of_cover {T : Template Fr} {C : Tiling.Circuit Fr} {W : Nat} (ok :
 
 namespace AirIn
 
-theorem fixRow_denote_of_agree (a : Air Fr) (main : Nat → Nat → Fr) (r : Nat) (x : Nat → Fr)
-    (agree : ∀ v < a.circuit.width, x v = main r v) (e : ArithExpr Fr) :
+omit [DecidableEq F] in
+theorem fixRow_denote_of_agree (a : Air F) (main : Nat → Nat → F) (r : Nat) (x : Nat → F)
+    (agree : ∀ v < a.circuit.width, x v = main r v) (e : ArithExpr F) :
     (fixRow a r e).denote x = e.denote (a.assign main r) := by
   induction e with
   | const v => rfl
@@ -54,10 +58,10 @@ theorem fixRow_denote_of_agree (a : Air Fr) (main : Nat → Nat → Fr) (r : Nat
   | sub x y hx hy => simp [fixRow, ArithExpr.denote, hx, hy]
   | mul x y hx hy => simp [fixRow, ArithExpr.denote, hx, hy]
 
-theorem constraint_of_cone {a : Air Fr} {main : Nat → Nat → Fr} {r j : Nat} {T : Template Fr}
+theorem constraint_of_cone {a : Air F} {main : Nat → Nat → F} {r j : Nat} {T : Template F}
     (ok : T.check (rowConstraint a r j) = true)
     (cover : coversVars T a.circuit.width (rowConstraint a r j) = true)
-    {val : Nat → Fr} (holds : T.RelationsHold val)
+    {val : Nat → F} (holds : T.RelationsHold val)
     (cols : ∀ v < a.circuit.width, ∀ s, T.colSlot v = some s → val s = main r v)
     (hj : j < a.circuit.constraints.length) :
     a.circuit.constraints[j].denote (a.assign main r) = 0 := by
@@ -65,9 +69,10 @@ theorem constraint_of_cone {a : Air Fr} {main : Nat → Nat → Fr} {r j : Nat} 
   intro v hv s hs
   simp [cols v hv s hs, Air.assign, hv]
 
+omit [Field F] [DecidableEq F] in
 /-- A message row: main columns of row `r`, then `γ`, `β`, `q`, `s`, `s'`;
 `z` on every other column (the unused `sumIn` reference). -/
-def msgView (a : Air Fr) (main : Nat → Nat → Fr) (r : Nat) (γ β q s s' z : Fr) (v : Nat) : Fr :=
+def msgView (a : Air F) (main : Nat → Nat → F) (r : Nat) (γ β q s s' z : F) (v : Nat) : F :=
   if v < a.circuit.width then main r v
   else if v = gammaCol a then γ
   else if v = betaCol a then β
@@ -76,17 +81,16 @@ def msgView (a : Air Fr) (main : Nat → Nat → Fr) (r : Nat) (γ β q s s' z :
   else if v = sOutCol a then s'
   else z
 
-theorem message_of_cone {a : Air Fr} {main : Nat → Nat → Fr} {r k : Nat} {count : Bool} {T : Template Fr}
+theorem message_of_cone {a : Air F} {main : Nat → Nat → F} {r k : Nat} {count : Bool} {T : Template F}
     (ok : T.check (msgCircuit a r k count) = true)
     (cover : coversVars T (a.circuit.width + 6) (msgCircuit a r k count) = true)
-    {val : Nat → Fr} (holds : T.RelationsHold val) {γ β q s s' z : Fr}
+    {val : Nat → F} (holds : T.RelationsHold val) {γ β q s s' z : F}
     (cols : ∀ v < a.circuit.width + 6, ∀ t, T.colSlot v = some t → val t = msgView a main r γ β q s s' z v) :
     q * fp γ β ((lookupAt a k).tuple (a.assign main r)) =
         (lookupAt a k).multiplicity.denote (a.assign main r) ∧ s' = s + q := by
   have H := holds_of_cover ok cover holds (msgView a main r γ β q s s' z) cols
   have agree : ∀ v < a.circuit.width, msgView a main r γ β q s s' z v = main r v := by
     intro v hv; simp [msgView, hv]
-  have W1 : ¬ a.circuit.width < a.circuit.width := Nat.lt_irrefl _
   have hq := H (qConstraint a r k) (by simp [msgCircuit])
   have hs := H (sumConstraint a) (by simp [msgCircuit])
   simp only [qConstraint, sumConstraint, normExpr_denote, ArithExpr.denote, fpExpr_denote] at hq hs
@@ -112,5 +116,7 @@ theorem message_of_cone {a : Air Fr} {main : Nat → Nat → Fr} {r k : Nat} {co
   · exact (sub_eq_zero.mp hs).symm
 
 end AirIn
+
+end Generic
 
 end Aiur.Plonk

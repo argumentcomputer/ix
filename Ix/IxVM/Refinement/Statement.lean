@@ -4,7 +4,7 @@ import IxVM
 import Aiur.Optimized.Observed
 import Aiur.Library.Bytes.Correctness
 
-/-! # The IxVM ↔ IxC refinement statement
+/-! # The IxVM ↔ IxCK refinement statement
 
 Statements
 (`def … : Prop`), the observation they read, and the glue to the backend
@@ -58,14 +58,14 @@ one of whose projection records is such a second preimage, or a preimage of
 zero.
 
 **An existential form is false** in this semantics, so it is not stated:
-that some environment, addressed by BLAKE3, is accepted by IxC for
+that some environment, addressed by BLAKE3, is accepted by IxCK for
 the claim. IxVM loads a record each time it needs one
 (`Ingress::get_ci` → `load_verified_constant`, with no per-run cache), and two
 loads of one address may return different bytes that both pass the BLAKE3
 check. Such pairs exist by counting, including two valid records
 `def x : Nat := n` and `def x : Nat := m` with `n ≠ m` and one address. A
 derivation that unfolds `x` to `n` in one place and to `m` in another accepts
-`t : x = n ∧ x = m`, which no consistent environment makes IxC accept. A
+`t : x = n ∧ x = m`, which no consistent environment makes IxCK accept. A
 disjunct "or some BLAKE3 collision exists" would not help: one exists by
 counting, so the disjunct says nothing. The escape here is a byte string
 the derivation itself hashed.
@@ -196,8 +196,14 @@ def SourceSound (P : List (Call IxVM.F) → Digest → Prop) : Prop :=
     Aiur.Generic.SourceSemantics.ObsFn IxVM.source.world verifyClaim [digestValue d] []
       value heap calls → P calls d
 
-/-- **The main statement**: every observed `verify_claim`
-derivation satisfies `IxVMClaimSpecIn` of its calls. -/
+/-- **Unproved typing-refinement target (false as stated)**:
+every observed `verify_claim` derivation satisfies `IxVMClaimSpecIn` of its
+calls. No theorem proves this proposition, and it is false as stated (unbounded
+derivations vs field-element wraparound, kernel fuel, mutual-block eta, and
+`.proj` routes); the proved endpoint theorem is
+`IxVM.Refinement.Endpoint.circuitComposed` (`IxVM.Consistency.CircuitComposed`),
+which proves satisfiability (model existence) of the claimed closure rather than
+IxCK typing conformance. -/
 def VerifyClaimSoundIn : Prop :=
   SourceSound IxVMClaimSpecIn
 
@@ -309,11 +315,13 @@ def CircuitSoundAssuming (P : List (Call IxVM.F) → Digest → Prop) : Prop :=
           value heap calls ∧
           Aiur.Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls ∧ P calls d
 
-/-- **The main statement at the circuit.** -/
+/-- **Unproved typing-refinement target at the circuit** (false as stated; see
+`VerifyClaimSoundIn`). -/
 def VerifyClaimCircuitSoundIn : Prop :=
   CircuitSound IxVMClaimSpecIn
 
-/-- **The main statement at the circuit, assuming acyclicity.** -/
+/-- **Unproved typing-refinement target at the circuit, assuming acyclicity**
+(false as stated; see `VerifyClaimSoundIn`). -/
 def VerifyClaimCircuitSoundInAssuming : Prop :=
   CircuitSoundAssuming IxVMClaimSpecIn
 

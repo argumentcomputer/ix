@@ -1,6 +1,6 @@
 import IxVMRefinement.Decl.NativeRecRules
-import IxC.Kernel.Semantics.Inductives.DeclNativeRecLateJ
-import IxC.Kernel.Ixon.Reader
+import IxCK.Kernel.Semantics.Inductives.DeclNativeRecLateJ
+import IxCK.Kernel.Ixon.Reader
 
 /-! # The recursor's stage at a late recursor of a stored native family
 

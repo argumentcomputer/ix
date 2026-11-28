@@ -30,6 +30,9 @@ import Aiur.Tiling.Tile2
 import Aiur.Tiling.Export2
 import Aiur.Tiling.WideStage
 import Aiur.Tiling.Goldilocks
+import Aiur.Tiling.SingleCircuit
+import Aiur.Tiling.BLS12381
+import Aiur.Tiling.VectorRom
 import Aiur.Tiling.Ixa
 import Aiur.Tiling.IxaTrace
 import Aiur.Tiling.MixedIxa

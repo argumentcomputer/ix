@@ -1270,8 +1270,8 @@ Its right verdict is not settled. lean-kernel-arena's nearest test,
 `bugs/nested-unused-param` is a proof of `False` through an unchecked
 parametric argument (lean4#14576, fixed in lean4#14577). It is registered
 with the good cases, for the IxVM arena run (`Tests.Ix.Kernel.Arena`), which
-follows the Rust kernel. The IxC tutorial run treats it as a corner case and
-pins IxC's verdict, a decline (`Tests.Ix.Kernel.Tutorial.cornerCases`).
+follows the Rust kernel. The IxCK tutorial run treats it as a corner case and
+pins IxCK's verdict, a decline (`Tests.Ix.Kernel.Tutorial.cornerCases`).
 
 Lean's elaborator rejects this declaration (nested occurrences must
 use only the block's fixed params), so it is hand-built here with its

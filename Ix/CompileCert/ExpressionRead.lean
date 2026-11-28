@@ -1,4 +1,4 @@
-import IxC.Kernel.Ixon.Reader
+import IxCK.Kernel.Ixon.Reader
 import Ix.CompileM
 import Ix.CompileCert.CacheSound
 

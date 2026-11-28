@@ -165,12 +165,18 @@ contract Verifier {
             mstore(add(f, 0x2e0), mload(add(commitments, 0x60)))
             mstore(add(f, 0x300), 1)
 
-            success := and(success, staticcall(gas(), PRECOMPILE_BLS12_G1MSM, f, 0x320, f, 0x80))
+            let out := add(f, 0x320)
+            mstore(out, 0)
+            mstore(add(out, 0x20), 0)
+            mstore(add(out, 0x40), 0)
+            mstore(add(out, 0x60), 0)
+            let msmOk := staticcall(gas(), PRECOMPILE_BLS12_G1MSM, f, 0x320, out, 0x80)
+            success := and(success, and(msmOk, eq(returndatasize(), 0x80)))
 
-            x_hi := mload(f)
-            x_lo := mload(add(f, 0x20))
-            y_hi := mload(add(f, 0x40))
-            y_lo := mload(add(f, 0x60))
+            x_hi := mload(out)
+            x_lo := mload(add(out, 0x20))
+            y_hi := mload(add(out, 0x40))
+            y_lo := mload(add(out, 0x60))
         }
         if (!success) {
             // Either Public input not in field, or verification key invalid.
@@ -255,8 +261,10 @@ contract Verifier {
             mstore(add(f, 0x2e0), PEDERSEN_G_Y_1_LO)
 
             // BLS12_PAIR: 2 pairs × 384 bytes = 768 bytes
-            success := staticcall(gas(), PRECOMPILE_BLS12_PAIR, f, 0x300, f, 0x20)
-            success := and(success, mload(f))
+            let out := add(f, 0x300)
+            mstore(out, 0)
+            success := staticcall(gas(), PRECOMPILE_BLS12_PAIR, f, 0x300, out, 0x20)
+            success := and(success, and(eq(returndatasize(), 0x20), eq(mload(out), 1)))
         }
         if (!success) {
             revert CommitmentInvalid();
@@ -341,8 +349,10 @@ contract Verifier {
             mstore(add(f, 0x5e0), GAMMA_NEG_Y_1_LO)
 
             // BLS12_PAIR: 4 pairs × 384 bytes = 1536 bytes
-            success := staticcall(gas(), PRECOMPILE_BLS12_PAIR, f, 0x600, f, 0x20)
-            success := and(success, mload(f))
+            let out := add(f, 0x600)
+            mstore(out, 0)
+            success := staticcall(gas(), PRECOMPILE_BLS12_PAIR, f, 0x600, out, 0x20)
+            success := and(success, and(eq(returndatasize(), 0x20), eq(mload(out), 1)))
         }
         if (!success) {
             // Either proof or verification key invalid.

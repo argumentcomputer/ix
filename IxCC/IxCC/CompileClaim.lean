@@ -1,0 +1,715 @@
+import IxCC.Recheck
+import IxCC.Recheck.Linked
+import IxCC.Recheck.Rc.Produce
+import IxCC.Recheck.Rc.Linked
+import IxCC.Recheck.Rc.Bytes
+import IxCC.Ixon.PureHash
+import IxCC.CompileClaim.Closure
+
+/-! # `CompileClaim`: End-to-End `Ixon.Address` ↔ ELF64 Hash Bridge
+
+Connects an Ixon environment Merkle root `Address` and target constant `Address`
+under a `CompilePolicy` (`immortal`, `zeroRc`, `plainRc`) and ABI parameter arity
+to the pure BLAKE3 digest (`Ixon.Address.blake3Pure`) of the emitted x86-64 ELF64
+object bytes, matching the host `Ix.Claim.compile` wire format byte-for-byte:
+
+1. **Wire Format Alignment**:
+   - `CompileClaim.toClaimBytes` serializes the exact 4-byte `Ix.Claim.put (.compile ...)`
+     header `#[0xE8, 0x05, 0x04, 0x07]` (`putTagN 4 0xE 13` ++ `putScope VALIDATOR_COMPILE_V2`)
+     followed by `toPayloadBytes` (`env` 32B ++ `roleTable` as `00`, or `01` and 32B ++
+     `target` 32B ++ `[policy.toUInt8]` 1B ++ `n0Bytes abiArity` 1..9B ++ `elfHash` 32B),
+     totaling 103 bytes for an unbound environment and 135 for a role-bound one when
+     `abiArity < 128`. The claim names the pair `(env, roleTable)` a kernel claim about the
+     same artifact names (`IxCC/docs/byte-contract.md`). Claims of the earlier format
+     (validator `06`, no role table) are refused.
+     `abiArity` uses ix's TagN code at flag width 0 (`Ixon.putTagN 0 0`), so the
+     bytes agree with `Ix.Claim.ser` for every arity below `2 ^ 64`.
+   - `CompileClaim.ofClaimBytes` parses and validates the canonical wire envelope
+     via `Ixon.runGet`, rejecting invalid or overflowing arity codes and trailing bytes.
+   - Global `Coe (List UInt8) ByteArray` has been removed.
+
+2. **Verified Ingress, Policy Unification & Root Observability**:
+   - `verifyBytes`, `checkClaim`, and `makeClaim` run `Recheck.ingress`, which
+     runs the certified kernel's acceptance of the whole role-bound environment
+     (not optional), and Stage A over the kernel's annotator.
+   - `verifyProgram` requires `c.abiArity < 2 ^ 64`, verifies that the target root
+     declaration is monomorphic with all-`Nat` parameters (`rootParamsAllNat`),
+     and requires a readback type, so the value clause observes the root's result
+     (`isImmortalViewType` on the `.immortal` and `.zeroRc` paths; `root.ty.isSome`
+     on the `.plainRc` path).
+   - `.zeroRc` verification uses `Own.Plain.selectRcPolicyForSrc a.src a.front.fir == .zeroRc`
+     (matching `produceAuto` and `produce`), and `makeClaim` / `produce` avoid
+     redundant re-ingress and double recheck.
+   - With the default `.auto` mode, `produce` and `makeClaim` compile under the
+     immortal policy when plain RC is selected but its certificate cannot be
+     produced or is refused (`produceAuto`'s `.immortal` fallback); the claim's
+     `policy` is the policy actually compiled under.
+
+3. **Proof Separation**:
+   - This module contains only executable definitions, checkers, and wire codecs.
+   - End-to-end soundness theorems (`verifyProgram_*_sound`, `verifyBytes_*_sound`,
+     and wire roundtrip proofs) live in `IxCC.CompileClaim.Proof`. -/
+
+set_option autoImplicit false
+
+namespace IxCC.Compiler
+
+/-- Reference-counting compilation policy mode for `CompileClaim.produce`. -/
+inductive RcMode where
+  | auto
+  | off
+  | on
+  | immortal
+  | zeroRc
+  | plainRc
+  deriving BEq, Repr, Inhabited, DecidableEq
+
+/-- Alias for `Recheck.RcReplay.produceAuto`. -/
+abbrev produceAuto := Recheck.RcReplay.produceAuto
+
+end IxCC.Compiler
+
+namespace IxCC
+
+/-- Memory-management policy under which an x86-64 ELF object was compiled. -/
+inductive CompilePolicy where
+  | immortal
+  | zeroRc
+  | plainRc
+  deriving BEq, Repr, Inhabited, DecidableEq
+
+namespace CompilePolicy
+
+/-- Wire tag for `CompilePolicy` (`immortal => 0, zeroRc => 1, plainRc => 2`). -/
+def toUInt8 : CompilePolicy → UInt8
+  | .immortal => 0
+  | .zeroRc   => 1
+  | .plainRc  => 2
+
+/-- Decode a `CompilePolicy` from its wire tag (`0..2`). -/
+def ofUInt8? : UInt8 → Option CompilePolicy
+  | 0 => some .immortal
+  | 1 => some .zeroRc
+  | 2 => some .plainRc
+  | _ => none
+
+@[simp] theorem ofUInt8?_toUInt8 (p : CompilePolicy) :
+    ofUInt8? p.toUInt8 = some p := by
+  cases p <;> rfl
+
+end CompilePolicy
+
+/-- Certified compilation claim connecting an Ixon environment Merkle root `env`,
+its role table's address `roleTable` and target constant `target` under `policy` and
+`abiArity` to `elfHash`. -/
+structure CompileClaim where
+  env      : Ixon.Address
+  /-- The binding hash of a role-bound environment (the role table's address,
+  `IxCC/docs/byte-contract.md`); `none` for an unbound one. -/
+  roleTable : Option Ixon.Address
+  target   : Ixon.Address
+  policy   : CompilePolicy
+  abiArity : Nat
+  elfHash  : Ixon.Address
+  deriving BEq, Repr, Inhabited, DecidableEq
+
+namespace CompileClaim
+
+/-- Well-formedness predicate for a `CompileClaim`: `abiArity < 2 ^ 64`, the range of
+ix's `UInt64` field and of its `N0` code (`Ixon.Address` fields already carry
+`hash_size : hash.size = 32`). -/
+def WellFormed (c : CompileClaim) : Prop :=
+  c.abiArity < 2 ^ 64
+
+/-- Decidable check for `CompileClaim.WellFormed`. -/
+def checkWellFormed (c : CompileClaim) : Bool :=
+  decide (c.abiArity < 2 ^ 64)
+
+/-- `Ix.Claim.put (.compile ...)` Tag4 header bytes (`putTagN 4 0xE 13 = #[0xE8, 0x05]`).
+Values 11 (`E8 03`) and 12 (`E8 04`) of the claim tag space are ix's role-binding
+section and literal-class preimage, not claims. -/
+def CLAIM_TAG4_COMPILE : ByteArray := ByteArray.mk #[0xE8, 0x05]
+
+/-- Scope domain tag for object format claims (`OBJECT_FORMAT = 4`). -/
+def OBJECT_FORMAT : UInt8 := 0x04
+
+/-- Validator ID for `CompileClaim` v2 (`7`, matching `Ix.Claim.VALIDATOR_COMPILE_V2`): the
+claim with the role table. Version 1 (`6`, without it) is refused. -/
+def VALIDATOR_COMPILE_V2 : UInt8 := 0x07
+
+/-- Claim variant index (`13`, encoded in `CLAIM_TAG4_COMPILE`). -/
+def VARIANT_COMPILE_CLAIM : UInt8 := 13
+
+/-- The exact 4-byte `Ix.Claim.put (.compile ...)` wire header:
+`#[0xE8, 0x05, 0x04, 0x07]` (`putTagN 4 0xE 13` ++ `putScope VALIDATOR_COMPILE_V2`). -/
+def validatorHeader : ByteArray :=
+  ByteArray.mk #[0xE8, 0x05, OBJECT_FORMAT, VALIDATOR_COMPILE_V2]
+
+/-! ### `abiArity`: ix's `N0` integer code
+
+`Ix.Claim` writes `abiArity` with the Ixon v4 TagN code at flag width 0
+(`putTagN 0 0`, `getTagN 0`), so this module writes and reads that code, not
+the v2 `Tag0` of `IxCC.Ixon.Serialize` (the two agree only below 128). The
+rungs are: one byte below 128; a header `0x80 + (v - 128) / 256` and one byte
+below 16512; then a header `0xC0`–`0xC3` and 2, 3, 4 or 8 little-endian bytes
+of `v` minus the rung's start (16512, 82048, 16859264, 4311826560). Headers
+`0xC4`–`0xFF` and values reaching `2 ^ 64` are refused. -/
+
+/-- `width` little-endian bytes of `x`, low byte first. -/
+def leBytes (x : Nat) : Nat → List UInt8
+  | 0 => []
+  | w + 1 => UInt8.ofNat x :: leBytes (x / 256) w
+
+/-- The value of little-endian bytes. -/
+def leValue : List UInt8 → Nat
+  | [] => 0
+  | b :: bs => b.toNat + 256 * leValue bs
+
+/-- Header byte of the `N0` code of `v`. -/
+def n0Header (v : Nat) : UInt8 :=
+  if v < 128 then UInt8.ofNat v
+  else if v < 16512 then UInt8.ofNat (128 + (v - 128) / 256)
+  else if v < 82048 then 0xC0
+  else if v < 16859264 then 0xC1
+  else if v < 4311826560 then 0xC2
+  else 0xC3
+
+/-- Bytes after the header of the `N0` code of `v`. -/
+def n0Payload (v : Nat) : List UInt8 :=
+  if v < 128 then []
+  else if v < 16512 then leBytes ((v - 128) % 256) 1
+  else if v < 82048 then leBytes (v - 16512) 2
+  else if v < 16859264 then leBytes (v - 82048) 3
+  else if v < 4311826560 then leBytes (v - 16859264) 4
+  else leBytes (v - 4311826560) 8
+
+/-- The `N0` code of `v`: `Ixon.runPut (Ixon.putTagN 0 0 v)` for `v < 2 ^ 64`. -/
+def n0Bytes (v : Nat) : ByteArray :=
+  Ixon.u8Bytes (n0Header v) ++ ⟨(n0Payload v).toArray⟩
+
+/-- Payload width of an `N0` header byte; `none` for the invalid codes `C4`–`FF`. -/
+def n0Width (header : UInt8) : Option Nat :=
+  if header.toNat < 128 then some 0
+  else if header.toNat < 192 then some 1
+  else if header.toNat = 192 then some 2
+  else if header.toNat = 193 then some 3
+  else if header.toNat = 194 then some 4
+  else if header.toNat = 195 then some 8
+  else none
+
+/-- The value an `N0` header and payload denote. -/
+def n0Value (header : UInt8) (payload : List UInt8) : Nat :=
+  if header.toNat < 128 then header.toNat
+  else if header.toNat < 192 then 128 + (header.toNat - 128) * 256 + leValue payload
+  else if header.toNat = 192 then 16512 + leValue payload
+  else if header.toNat = 193 then 82048 + leValue payload
+  else if header.toNat = 194 then 16859264 + leValue payload
+  else 4311826560 + leValue payload
+
+/-- The end of `getN0`, after its header and payload: values reaching `2 ^ 64`
+are refused. The re-encoding check never fails for this bijective code; it
+makes canonicity immediate. -/
+def n0Finish (header : UInt8) (payload : ByteArray) : Ixon.GetM Nat :=
+  if n0Value header payload.data.toList < 2 ^ 64 ∧
+      n0Bytes (n0Value header payload.data.toList) = Ixon.u8Bytes header ++ payload then
+    pure (n0Value header payload.data.toList)
+  else throw "CompileClaim: abiArity exceeds UInt64"
+
+/-- Strict reader of the `N0` code (`Ixon.getTagN 0`). -/
+def getN0 : Ixon.GetM Nat :=
+  Ixon.getU8 >>= fun header =>
+    match n0Width header with
+    | some width => Ixon.getBytes width >>= n0Finish header
+    | none => throw "CompileClaim: invalid abiArity code"
+
+/-- The role-table field on the wire: `00` for none, `01` and the 32-byte address for
+some (ix's `Claim.putOptAddr`). -/
+def optAddrBytes : Option Ixon.Address → ByteArray
+  | none => Ixon.u8Bytes 0
+  | some a => Ixon.u8Bytes 1 ++ a.hash
+
+/-- The role-table field after its tag byte. -/
+def optAddrRest (tag : UInt8) : Ixon.GetM (Option Ixon.Address) :=
+  if tag = 0 then pure none
+  else if tag = 1 then (Ixon.Serialize.get : Ixon.GetM Ixon.Address) >>= fun a => pure (some a)
+  else throw "CompileClaim: invalid role table tag"
+
+/-- Strict reader of the role-table field (`optAddrBytes`). -/
+def getOptAddr : Ixon.GetM (Option Ixon.Address) := Ixon.getU8 >>= optAddrRest
+
+/-- Monadic payload reader in `Ixon.GetM` for `CompileClaim`. -/
+def getPayloadM : Ixon.GetM CompileClaim := do
+  let env ← (Ixon.Serialize.get : Ixon.GetM Ixon.Address)
+  let roleTable ← getOptAddr
+  let target ← (Ixon.Serialize.get : Ixon.GetM Ixon.Address)
+  let polByte ← Ixon.getU8
+  let some policy := CompilePolicy.ofUInt8? polByte |
+    throw "CompileClaim: invalid policy byte"
+  let abiArity ← getN0
+  let elfHash ← (Ixon.Serialize.get : Ixon.GetM Ixon.Address)
+  return {
+    env
+    roleTable
+    target
+    policy
+    abiArity
+    elfHash
+  }
+
+/-- Monadic full-envelope reader in `Ixon.GetM` for `CompileClaim`. -/
+def getClaimM : Ixon.GetM CompileClaim := do
+  let hdr ← Ixon.getBytes 4
+  if hdr != validatorHeader then
+    throw "CompileClaim: invalid validator header"
+  getPayloadM
+
+/-- Serialize the `CompileClaim` payload (`env ++ optAddrBytes roleTable ++ target ++
+[policy.toUInt8] ++ n0Bytes abiArity ++ elfHash`), matching `Ix.Claim.CompileClaim.put`
+byte-for-byte (99 bytes unbound, 131 role-bound, when `abiArity < 128`). -/
+def toPayloadBytes (c : CompileClaim) : ByteArray :=
+  c.env.hash ++
+    optAddrBytes c.roleTable ++
+    c.target.hash ++
+    Ixon.u8Bytes c.policy.toUInt8 ++
+    n0Bytes c.abiArity ++
+    c.elfHash.hash
+
+/-- Deserialize a `CompileClaim` payload produced by `toPayloadBytes`. -/
+def ofPayloadBytes (bs : ByteArray) : Option CompileClaim :=
+  (Ixon.runGet getPayloadM bs).toOption
+
+/-- Serialize the full `CompileClaim` wire envelope (`#[0xE8, 0x05, 0x04, 0x07] ++ c.toPayloadBytes`),
+matching `Ix.Claim.ser (.compile ...)` byte-for-byte (103 bytes unbound, 135 role-bound, when
+`abiArity < 128`). -/
+def toClaimBytes (c : CompileClaim) : ByteArray :=
+  validatorHeader ++ c.toPayloadBytes
+
+/-- Deserialize a full `CompileClaim` wire envelope produced by `toClaimBytes`. -/
+def ofClaimBytes (bs : ByteArray) : Option CompileClaim :=
+  (Ixon.runGet getClaimM bs).toOption
+
+/-- Pure BLAKE3 commitment digest over `c.toClaimBytes`. -/
+def commit (c : CompileClaim) : Ixon.Address :=
+  Ixon.Address.blake3Pure c.toClaimBytes
+
+/-- Check that a readback type is a scalar (`Nat`) or an enumeration whose
+signature row lists only field-less constructors: the shapes `Rt.tagify`
+(`Front.view` on the `.immortal` / `.zeroRc` path) can read back. At a root
+readback type that passes it, `Rt.tagify` maps every result of the root's
+declared shape (`Recheck.ResultShape`) to an observation that reads back
+(`Recheck.tagify_resultShape`, `Recheck.readback_iff_viewShape`); on the
+pinned-`Bool` route only when both pinned `Bool` constructors have a row in the
+constructor table (`Recheck.BoolRows`), which this check does not require. -/
+def isImmortalViewType (sig : Rt.Sig) : Rt.FoTy → Bool
+  | .nat => true
+  | .ind idx =>
+    match sig.inds[idx]? with
+    | some ctors => !ctors.isEmpty && ctors.all List.isEmpty
+    | none => false
+
+/-- Check that `dom` is the `Nat` constant in `src`. -/
+def isNatType (src : Src.Program) (dom : Src.Term) : Bool :=
+  some dom == src.known.nat.map (Src.Term.const · [])
+
+/-- Check that a root declaration in `src` is monomorphic (`d.lvls == 0`), its
+Π-telescope length matches `root.params`, and every parameter in its Π-telescope
+has domain `Nat`, matching the `(Nat × List Nat)` ABI of `CheckedProgram` and
+`X86.Linked`. It says nothing about the result type; that is `root.ty`'s
+(`isImmortalViewType`, `checkPlainRcRoot`). -/
+def rootParamsAllNat (src : Src.Program) (root : Recheck.Root) : Bool :=
+  match src.decl? root.const with
+  | some d =>
+    d.lvls == 0 &&
+      d.type.pis.1.length == root.params &&
+      (d.type.pis.1.take root.params).all fun (_, dom) => isNatType src dom
+  | none => false
+
+theorem isNatType_eq_natDomain (src : Src.Program) (dom : Src.Term) :
+    isNatType src dom = Recheck.natDomain src dom := rfl
+
+/-- **The compiler's function-parameter refusal agrees with the claims'.**
+A root `ixcc compile` refuses because a caller would have to pass it a
+closure (`Recheck.fnParam?`, `rt.fnparam`) is refused by every compile claim:
+the refused parameter's domain is not `Nat`, so `rootParamsAllNat` is false
+(and with it `checkImmortalRoot`, `checkPlainRcRoot` and the executables'
+fragment, `Exe.fragment`). -/
+theorem rootParamsAllNat_of_fnParam {src : Src.Program} {root : Recheck.Root} {j : Nat}
+    (h : Recheck.fnParam? src root.const = some j) : rootParamsAllNat src root = false := by
+  unfold Recheck.fnParam? at h
+  unfold rootParamsAllNat
+  cases hd : src.decl? root.const with
+  | none => rfl
+  | some d =>
+    rw [hd] at h
+    simp only [Option.bind_some] at h
+    obtain ⟨⟨b, dom⟩, hm, hn⟩ := Recheck.fnParamAt_mem h
+    simp only at hn
+    by_cases hl : d.type.pis.1.length = root.params
+    · have htake : d.type.pis.1.take root.params = d.type.pis.1 := by
+        rw [← hl]; exact List.take_length
+      have hall : (d.type.pis.1.all fun (_, dom) => isNatType src dom) = false := by
+        cases hall : d.type.pis.1.all (fun (_, dom) => isNatType src dom) with
+        | false => rfl
+        | true =>
+          have := List.all_eq_true.1 hall (b, dom) hm
+          simp [isNatType_eq_natDomain, hn] at this
+      simp only [htake, hall, Bool.and_false]
+    · simp [hl]
+
+/-- Check that a root on the `.immortal` / `.zeroRc` path has all-`Nat` parameters
+and a scalar/enum readback type (`isImmortalViewType`), so that the value clause
+observes its result. For a root it accepts, the view rejects a source result
+only if the result is not of the shape the root's declared type describes
+(`Recheck.ResultShape`): `Recheck.Artifact.goesWrong_immortalRoot`,
+`verifyProgram_immortal_rootShape`; the shape view rejects exactly those
+results (`Recheck.ShapeClaim`, `verifyProgram_immortal_shape`). Nothing
+proves that SrcEval returns a result of that shape. -/
+def checkImmortalRoot (src : Src.Program) (root : Recheck.Root) : Bool :=
+  rootParamsAllNat src root &&
+    match root.ty with
+    | some (sig, ty) => isImmortalViewType sig ty
+    | none => false
+
+/-- Check that a root on the `.plainRc` path has all-`Nat` parameters and a
+discovered first-order readback signature (`root.ty.isSome`). No theorem says
+which source results that signature's view accepts. -/
+def checkPlainRcRoot (src : Src.Program) (root : Recheck.Root) : Bool :=
+  rootParamsAllNat src root && root.ty.isSome
+
+/-- **LEGACY / KERNEL-LESS CHECK (FE-4)**: Verify a `CompileClaim` against a
+caller-supplied `Src.Program` without checking the certified kernel acceptance
+of the program's theorems. Do NOT use on untrusted `Src.Program`s (bogus theorem
+proofs are not checked here); prefer `verifyBytes` or `verifyProgramChecked`
+(which requires a `KernelAccepted` witness backed by `Ix.Kernel.Admission.checkBytes`). -/
+def verifyProgram (cfg : Recheck.Config) (P : Src.Program) (c : CompileClaim) (certText : String) : Bool :=
+  c.checkWellFormed &&
+    match P.roots.head? with
+    | some (rootAddr, _) =>
+      if rootAddr == c.target then
+        match c.policy with
+        | .immortal =>
+          match Recheck.Cert.ofText certText with
+          | .ok cert =>
+            match Recheck.run cfg P cert with
+            | .ok a =>
+              match a.roots.head? with
+              | some root =>
+                checkImmortalRoot a.src root &&
+                  (root.params == c.abiArity) &&
+                  (Ixon.Address.blake3Pure a.object == c.elfHash)
+              | none => false
+            | .error _ => false
+          | .error _ => false
+        | .zeroRc =>
+          match Recheck.Cert.ofText certText with
+          | .ok cert =>
+            match Recheck.runWithContracts cfg P cert with
+            | .ok a =>
+              match a.roots.head? with
+              | some root =>
+                checkImmortalRoot a.src root &&
+                  (Own.Plain.selectRcPolicyForSrc a.src a.front.fir == .zeroRc) &&
+                  (root.params == c.abiArity) &&
+                  (Ixon.Address.blake3Pure a.object == c.elfHash)
+              | none => false
+            | .error _ => false
+          | .error _ => false
+        | .plainRc =>
+          match Recheck.RcReplay.Cert.ofText certText with
+          | .ok cert =>
+            match Recheck.RcReplay.run cfg P cert with
+            | .ok a =>
+              match a.roots.head? with
+              | some root =>
+                checkPlainRcRoot a.front.src root &&
+                  (root.params == c.abiArity) &&
+                  (Ixon.Address.blake3Pure a.backend.object == c.elfHash)
+              | none => false
+            | .error _ => false
+          | .error _ => false
+      else false
+    | none => false
+
+/-- Select the root names for `verifyBytes`: use `cfg.names` when provided, or
+the sidecar root matching `target` when the sidecar lists multiple roots. -/
+def selectTargetRoots (cfg : Recheck.Config) (equations : Lean.Json) (target : Ixon.Address) : List String :=
+  if !cfg.names.isEmpty then cfg.names
+  else
+    match Src.Hints.ofK1Json equations with
+    | .ok hints =>
+      if hints.roots[0]?.map (·.1) == some target then []
+      else
+        match hints.roots.find? (·.1 == target) with
+        | some (_, some name) => [name]
+        | _ => []
+    | .error _ => []
+
+/-- Verify that the serialized certificate's relevance annotation equals the
+output of the relevance annotator over the kernel's acceptance
+(`inp.kernel.annotateChecked`) on the validated table (`Stage A`,
+`Recheck.checkCanonicalRelevance`). -/
+def checkCertCanonicalRelevance (cfg : Recheck.Config) (inp : Recheck.Input)
+    (policy : CompilePolicy) (certText : String) : Bool :=
+  match policy with
+  | .immortal | .zeroRc =>
+    match Recheck.Cert.ofText certText with
+    | .ok cert => Recheck.checkCanonicalRelevance cfg inp cert.table cert.relevance
+    | .error _ => false
+  | .plainRc =>
+    match Recheck.RcReplay.Cert.ofText certText with
+    | .ok cert => Recheck.checkCanonicalRelevance cfg inp cert.base.table cert.base.relevance
+    | .error _ => false
+
+/-- Verify that any decoded Ixon v5 `Definition.asserts` (`@[no_rc]`, `@[no_alloc]`,
+`@[bounded_stack]`) in `inp.kernel.rd` hold on the verified artifact (`EM-0`).
+Short-circuits when no constant in `inp.program` carries a non-default assertion. -/
+def checkCertDefAsserts (cfg : Recheck.Config) (inp : Recheck.Input)
+    (policy : CompilePolicy) (certText : String) : Bool :=
+  if (inp.kernel.rd.assertsMap inp.program).toList.isEmpty then true
+  else
+    match policy with
+    | .immortal | .zeroRc =>
+      match Recheck.Cert.ofText certText with
+      | .ok cert =>
+        match Recheck.run cfg inp.program cert with
+        | .ok a => (Recheck.DefAsserts.checkWithReading inp.kernel.rd a cert).isOk
+        | .error _ => false
+      | .error _ => false
+    | .plainRc =>
+      match Recheck.RcReplay.Cert.ofText certText with
+      | .ok cert =>
+        match Recheck.RcReplay.run cfg inp.program cert with
+        | .ok a => (Recheck.DefAsserts.checkRcWithReading inp.kernel.rd a cert).isOk
+        | .error _ => false
+      | .error _ => false
+
+/-- Extract the `TableCert` from a serialized certificate text according to policy. -/
+def tableCertOfText (policy : CompilePolicy) (certText : String) :
+    Except String Src.Table.TableCert :=
+  match policy with
+  | .immortal | .zeroRc =>
+    match Recheck.Cert.ofText certText with
+    | .ok cert => .ok cert.table
+    | .error e => .error e.render
+  | .plainRc =>
+    match Recheck.RcReplay.Cert.ofText certText with
+    | .ok cert => .ok cert.base.table
+    | .error e => .error e
+
+/-- Verify the seed closure `S = {target} ∪ theorems(table)` for `certText` via
+the pure logical certified kernel entry `Ix.Kernel.Admission.checkBytes` under
+committed `preludeFor` and committed `defaultBinding`, plus `N5` mode checking
+(`KF-4` + `SP-0`). -/
+def checkCertSeedClosure (inp : Recheck.Input) (target : Ixon.Address)
+    (policy : CompilePolicy) (certText : String)
+    (limits : Ix.Kernel.Admission.Limits := Src.KernelFront.defaultLimits) :
+    Except String (Σ tc : Src.Table.TableCert, ClosureAccepted inp target tc limits) := do
+  let tc ← tableCertOfText policy certText
+  let acc ← checkSeedClosure inp target tc limits
+  pure ⟨tc, acc⟩
+
+/-- **FE-4 Kernel-Acceptance Witness**: proves that `P` was produced by
+`Recheck.ingress` from authenticated `.ixe` bytes whose root and role table
+match `c`, whose seed closure `S = {c.target} ∪ theorems(table)` passed pure
+logical `Ix.Kernel.Admission.checkBytes` under committed `preludeFor` +
+committed `defaultBinding` + `N5` mode checking (`KF-4`), whose relevance
+annotation is canonical over the kernel (`Stage A`), and whose Ixon v5
+`Definition.asserts` hold (`EM-0`).
+
+Cannot be constructed for a fabricated `Src.Program` carrying bogus theorem proofs. -/
+structure KernelAccepted (cfg : Recheck.Config) (P : Src.Program) (c : CompileClaim)
+    (certText : String) where
+  envBytes : ByteArray
+  equations : Lean.Json
+  inp : Recheck.Input
+  ingressOk : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) = .ok inp
+  progEq : inp.program = P
+  envEq : inp.env.root = c.env
+  roleEq : inp.env.bindingAddress = c.roleTable
+  tableCert : Src.Table.TableCert
+  closure : ClosureAccepted inp c.target tableCert Src.KernelFront.defaultLimits
+  closureOk : checkCertSeedClosure inp c.target c.policy certText = .ok ⟨tableCert, closure⟩
+  canonRel : checkCertCanonicalRelevance cfg inp c.policy certText = true
+  defAsserts : checkCertDefAsserts cfg inp c.policy certText = true
+
+/-- Construct a `KernelAccepted` witness from raw `.ixe` environment bytes,
+sidecar equations JSON, claim, and serialized certificate (`KF-4` + `FE-4`). -/
+def kernelAcceptedOfBytes (cfg : Recheck.Config) (envBytes : ByteArray) (equations : Lean.Json)
+    (c : CompileClaim) (certText : String) :
+    Except String (Σ inp : Recheck.Input, KernelAccepted cfg inp.program c certText) :=
+  match hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) with
+  | .error e => .error e.render
+  | .ok inp =>
+    if henv : inp.env.root = c.env then
+      if hrole : inp.env.bindingAddress = c.roleTable then
+        match hcl : checkCertSeedClosure inp c.target c.policy certText with
+        | .error e => .error e
+        | .ok ⟨tc, acc⟩ =>
+          if hrel : checkCertCanonicalRelevance cfg inp c.policy certText = true then
+            if hass : checkCertDefAsserts cfg inp c.policy certText = true then
+              .ok ⟨inp, {
+                envBytes, equations, inp
+                ingressOk := hing
+                progEq := rfl
+                envEq := henv
+                roleEq := hrole
+                tableCert := tc
+                closure := acc
+                closureOk := hcl
+                canonRel := hrel
+                defAsserts := hass
+              }⟩
+            else .error "CompileClaim: Definition.asserts check failed"
+          else .error "CompileClaim: canonical relevance check failed"
+      else .error "CompileClaim: roleTable address mismatch"
+    else .error "CompileClaim: environment root mismatch"
+
+/-- Verify a `CompileClaim` against a `Src.Program` backed by a `KernelAccepted`
+witness (`FE-4`), gating program-level verification on certified logical kernel
+acceptance of `S = {target} ∪ theorems(table)`. -/
+def verifyProgramChecked (cfg : Recheck.Config) (P : Src.Program) (c : CompileClaim)
+    (certText : String) (_hk : KernelAccepted cfg P c certText) : Bool :=
+  verifyProgram cfg P c certText
+
+/-- Check a `CompileClaim` against a `Src.Program` backed by a `KernelAccepted`
+witness (`FE-4`). -/
+def checkClaimProgramChecked (cfg : Recheck.Config) (P : Src.Program) (c : CompileClaim)
+    (certText : String) (hk : KernelAccepted cfg P c certText) : Except String Unit := do
+  unless verifyProgramChecked cfg P c certText hk do
+    throw "CompileClaim.checkClaimProgramChecked: claim verification failed"
+
+/-- Verify a `CompileClaim` from raw `.ixe` environment bytes, sidecar equations
+JSON, and serialized certificate `certText`: the environment the bytes are has the
+claim's root and role table (`roleTable`, the binding hash of the role-bound
+envelope). Ingress (`Recheck.ingress`) runs the certified kernel's acceptance of
+the whole environment; `checkCertSeedClosure` (`KF-4` + `SP-0`) independently
+checks the exact seed closure `S = {target} ∪ theorems(table)` through the pure
+logical kernel entry `Ix.Kernel.Admission.checkBytes` under committed `preludeFor`,
+committed `defaultBinding`, and `N5` `IxCK.Resource.check`;
+`checkCertCanonicalRelevance` validates canonical relevance (`Stage A`); and
+`checkCertDefAsserts` enforces decoded Ixon v5 `Definition.asserts` (`EM-0`). -/
+def verifyBytes (cfg : Recheck.Config) (envBytes : ByteArray) (equations : Lean.Json)
+    (c : CompileClaim) (certText : String) : Bool :=
+  let roots := selectTargetRoots cfg equations c.target
+  match Recheck.ingress envBytes equations roots with
+  | .ok inp =>
+    (inp.env.root == c.env && inp.env.bindingAddress == c.roleTable) &&
+      (checkCertSeedClosure inp c.target c.policy certText).isOk &&
+      checkCertCanonicalRelevance cfg inp c.policy certText &&
+      checkCertDefAsserts cfg inp c.policy certText &&
+      verifyProgram cfg inp.program c certText
+  | .error _ => false
+
+/-- Produce `(claim, certText, elfBytes)` from `Recheck.Input` and `Compiler.RcMode`
+(defaulting to `.auto`, `Compiler.produceAuto`'s choice). `certText` is the certificate's file
+text that the producer read back (`Cert.readBack`), byte for byte what `ixcc compile --emit-cert`
+writes, so a verifier reading it (`Cert.ofText`, `RcReplay.Cert.ofText`) gets exactly the
+certificate the object was verified with. The claim binds the object's hash, not the text. -/
+def produce (cfg : Recheck.Config) (input : Recheck.Input) (mode : Compiler.RcMode := .auto) :
+    Except Recheck.Err (CompileClaim × String × ByteArray) := do
+  let some (target, _) := input.program.roots.head?
+    | throw { stage := .ingress, code := "roots", message := "program has no root" }
+  let inp := { input with names := cfg.names }
+  let claimOf := fun (policy : CompilePolicy) (abiArity : Nat) (elfBytes : ByteArray) =>
+    ({ env := input.env.root
+       roleTable := input.env.bindingAddress
+       target
+       policy
+       abiArity
+       elfHash := Ixon.Address.blake3Pure elfBytes } : CompileClaim)
+  match mode with
+  | .auto =>
+    -- `Compiler.produceAuto` (`RcReplay.produceAuto`) over the produced records, which carry the
+    -- certificate's text
+    let cfg := cfg.forInput inp
+    let front ← Recheck.RcReplay.produceFir cfg inp
+    match Own.Plain.selectRcPolicyForSrc front.src front.fir with
+    | .zeroRc =>
+      let (p, a) ← Recheck.RcReplay.produceImmortal cfg inp front
+      -- the claim's verifier (`Recheck.runWithContracts`) refuses past the parameter limit
+      (Own.Plain.Certificate.checkParamTotal Anf.maxParamTotal a.fir).mapError fun message =>
+        ({ stage := .cert, code := "own.plain", message } : Recheck.Err)
+      unless a.checkContractOwn do
+        throw { stage := .cert, code := "own.plain", message := "contract ownership domain check failed" }
+      let some root := a.roots.head?
+        | throw { stage := .rt, code := "roots", message := "artifact has no root" }
+      unless checkImmortalRoot a.src root do
+        throw { stage := .cert, code := "roots", message := "root parameters must be Nat and result type must be scalar/enum for zeroRc" }
+      return (claimOf .zeroRc root.params a.backend.object, p.text, a.backend.object)
+    | .plainRc =>
+      match Recheck.RcReplay.producePlain cfg inp front with
+      | .ok (p, a) =>
+        let some root := a.roots.head?
+          | throw { stage := .rt, code := "roots", message := "artifact has no root" }
+        unless checkPlainRcRoot a.front.src root do
+          throw { stage := .cert, code := "roots", message := "root parameters must be Nat and result type must be observable for plainRc" }
+        return (claimOf .plainRc root.params a.backend.object, p.text, a.backend.object)
+      | .error _ =>
+        -- plain RC was selected but refused: the claim binds the immortal policy it compiled under
+        let (p, a) ← Recheck.RcReplay.produceImmortal cfg inp front
+        let some root := a.roots.head?
+          | throw { stage := .rt, code := "roots", message := "artifact has no root" }
+        unless checkImmortalRoot a.src root do
+          throw { stage := .cert, code := "roots", message := "root parameters must be Nat and result type must be scalar/enum for immortal" }
+        return (claimOf .immortal root.params a.backend.object, p.text, a.backend.object)
+  | .off | .immortal =>
+    let p ← Recheck.produceWith cfg inp
+    let a ← Recheck.DefAsserts.runWithReading cfg input.program input.kernel.rd p.cert
+    let some root := a.roots.head?
+      | throw { stage := .rt, code := "roots", message := "artifact has no root" }
+    unless checkImmortalRoot a.src root do
+      throw { stage := .cert, code := "roots", message := "root parameters must be Nat and result type must be scalar/enum for immortal" }
+    return (claimOf .immortal root.params a.backend.object, p.text, a.backend.object)
+  | .zeroRc =>
+    let p ← Recheck.produceWith cfg inp
+    let a ← Recheck.runWithContracts cfg input.program p.cert
+    Recheck.DefAsserts.checkWithReading input.kernel.rd a p.cert
+    unless Own.Plain.selectRcPolicyForSrc a.src a.front.fir == .zeroRc do
+      throw { stage := .cert, code := "own.plain", message := "program does not select zeroRc policy" }
+    let some root := a.roots.head?
+      | throw { stage := .rt, code := "roots", message := "artifact has no root" }
+    unless checkImmortalRoot a.src root do
+      throw { stage := .cert, code := "roots", message := "root parameters must be Nat and result type must be scalar/enum for zeroRc" }
+    return (claimOf .zeroRc root.params a.backend.object, p.text, a.backend.object)
+  | .on | .plainRc =>
+    let cfg := cfg.forInput inp
+    let p ← Recheck.RcReplay.produceWith cfg inp
+    let a ← Recheck.DefAsserts.runRcWithReading cfg inp.program input.kernel.rd p.cert
+    let some root := a.roots.head?
+      | throw { stage := .rt, code := "roots", message := "artifact has no root" }
+    unless checkPlainRcRoot a.front.src root do
+      throw { stage := .cert, code := "roots", message := "root parameters must be Nat and result type must be observable for plainRc" }
+    return (claimOf .plainRc root.params a.backend.object, p.text, a.backend.object)
+
+/-- Check a `CompileClaim` against a `Src.Program` (precondition: ingested, or passed
+`Recheck.checkSrc`, as for `Recheck.run`) and serialized certificate. -/
+def checkClaimProgram (cfg : Recheck.Config) (P : Src.Program) (c : CompileClaim)
+    (certText : String) : Except String Unit := do
+  unless verifyProgram cfg P c certText do
+    throw "CompileClaim.checkClaimProgram: claim verification failed"
+
+/-- Check a `CompileClaim` from raw `.ixe` environment bytes, sidecar equations JSON,
+and serialized certificate `certText`. -/
+def checkClaim (cfg : Recheck.Config) (envBytes : ByteArray) (equations : Lean.Json)
+    (c : CompileClaim) (certText : String) : Except String Unit := do
+  unless verifyBytes cfg envBytes equations c certText do
+    throw "CompileClaim.checkClaim: byte-level claim verification failed"
+
+theorem checkClaim_ok_iff {cfg : Recheck.Config} {envBytes : ByteArray}
+    {equations : Lean.Json} {c : CompileClaim} {certText : String} :
+    checkClaim cfg envBytes equations c certText = .ok () ↔
+      verifyBytes cfg envBytes equations c certText = true := by
+  unfold checkClaim
+  cases verifyBytes cfg envBytes equations c certText <;> simp [pure, Except.pure]
+
+/-- Construct a `CompileClaim` from raw `.ixe` environment bytes and sidecar equations JSON
+in a single ingress + compilation pass without redundant re-ingress or double recheck. -/
+def makeClaim (cfg : Recheck.Config) (envBytes : ByteArray) (equations : Lean.Json)
+    (mode : Compiler.RcMode := .auto) :
+    Except String (CompileClaim × String × ByteArray) := do
+  let input ← (Recheck.ingress envBytes equations cfg.names).mapError (·.render)
+  (produce cfg input mode).mapError (·.render)
+
+end CompileClaim
+
+end IxCC

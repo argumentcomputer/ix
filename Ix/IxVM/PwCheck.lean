@@ -17,7 +17,7 @@ channel 8, over every record the witness carries on channel 2:
   pre-order), finds a value of the right kind at every key it asks for, and
   each entry conversion's block has exactly the entry's nodes. This walk is
   written from the specification, independently of the annotator's.
-* **The kernel's values.** Every root is read by IxC's reader (sharing
+* **The kernel's values.** Every root is read by IxCK's reader (sharing
   expanded) and annotated by the kernel's own pass (`annotate` of the cached
   core, at depth 0, over the environment the kernel installed from the
   witness), and every binder of the converted tree is compared with the
@@ -229,7 +229,7 @@ def check (io : Aiur.IOBuffer) (env : Ixon.Env := {}) : Except String Report := 
   let table ← tableOf io
   let v := View.ofBuffer io env
   if v.records.isEmpty then return {}
-  -- the reference is the strict kernel: what IxC installs itself, no record put in by the
+  -- the reference is the strict kernel: what IxCK installs itself, no record put in by the
   -- annotator's lenient path (whose data are the annotator's own)
   let k ← KernelEnv.ofView v (lenient := false)
   let core := Ix.Kernel.Cached.coreKnotI .verified k.fe Ix.Kernel.checkFuel

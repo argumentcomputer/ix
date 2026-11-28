@@ -25,6 +25,7 @@ import Aiur.Library.Blake3.Correctness
 import Aiur.Library.Blake3.Goldilocks
 import Aiur.Library.Blake3.BlockLoop
 import Aiur.MultiStarkSpec
+import Aiur.MultiStarkBridge
 
 /-!
 # Frozen Certification Audit for Aiur
@@ -5588,7 +5589,7 @@ info: Library.IxVMRep.tagn_tail_two_byte_spec : ∀ (lo v0 : UInt8) (q h carry :
 #guard_msgs in
 #print axioms Aiur.Library.IxVMRep.tagn_tail_two_byte_spec
 
-/-! ### Formal Depth/Activation Certificates (`WS 2B-1`) and Multi-STARK Lowering Spec (`WS 2B-2`) -/
+/-! ### Formal Depth/Activation Certificates and Multi-STARK Lowering Spec -/
 
 /-- info: 'Aiur.Optimized.Depth.certify_iff' depends on axioms: [propext] -/
 #guard_msgs in
@@ -5660,12 +5661,100 @@ info: Library.IxVMRep.tagn_tail_two_byte_spec : ∀ (lo v0 : UInt8) (q h carry :
 /-- info: 'Aiur.MultiStarkSpec.lowerGroupLayout_row_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Aiur.MultiStarkSpec.lowerGroupLayout_row_sound
-/-- info: 'Aiur.MultiStarkSpec.lowered_trace_checkMemo_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Aiur.MultiStarkSpec.checkMemo_of_inspected_field_balance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Aiur.MultiStarkSpec.lowered_trace_checkMemo_sound
-/-- info: 'Aiur.MultiStarkSpec.lowered_trace_depth_sound_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#print axioms Aiur.MultiStarkSpec.checkMemo_of_inspected_field_balance
+/--
+info: 'Aiur.MultiStarkSpec.depth_sound_of_inspected_field_balance_goldilocks' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+-/
 #guard_msgs in
-#print axioms Aiur.MultiStarkSpec.lowered_trace_depth_sound_goldilocks
+#print axioms Aiur.MultiStarkSpec.depth_sound_of_inspected_field_balance_goldilocks
+/--
+info: @MultiStarkSpec.checkMemo_of_inspected_field_balance : ∀ {source : Circuit.System Library.U32.Goldilocks.F}
+  {id : String → Except String ℕ} (plan : Optimized.Grouping.Plan source id) (rom : WireROM Library.U32.Goldilocks.F)
+  (root : Circuit.Message Library.U32.Goldilocks.F) (rows : List (Circuit.Row Library.U32.Goldilocks.F))
+  (inspected : List (Option (Circuit.RuleClaims (Circuit.Message Library.U32.Goldilocks.F)))),
+  source.checkContext rom root = Except.ok () →
+    List.mapM (plan.inspectRow rom) rows = Except.ok inspected →
+      (Circuit.Balance.required (fun c => decide (source.MapClaim c)) root
+              (Optimized.Grouping.activeRules inspected)).length <
+          Library.U32.Goldilocks.modulus →
+        ∀ (provWeight : Circuit.RuleClaims (Circuit.Message Library.U32.Goldilocks.F) → Library.U32.Goldilocks.F),
+          (∀
+              claim ∈
+                Circuit.Balance.required (fun c => decide (source.MapClaim c)) root
+                  (Optimized.Grouping.activeRules inspected),
+              (List.map provWeight
+                    (List.filter (fun r => decide (r.1 = claim)) (Optimized.Grouping.activeRules inspected))).sum =
+                ↑(List.countP (fun x => decide (x = claim))
+                    (Circuit.Balance.required (fun c => decide (source.MapClaim c)) root
+                      (Optimized.Grouping.activeRules inspected)))) →
+            ∃ wrows, wrows.length = rows.length ∧ plan.checkMemo rom root wrows = Except.ok ()
+-/
+#guard_msgs (whitespace := lax) in
+#check @Aiur.MultiStarkSpec.checkMemo_of_inspected_field_balance
+/--
+info: @MultiStarkSpec.depth_sound_of_inspected_field_balance_goldilocks : ∀
+  {program : Modules.Program Library.U32.Goldilocks.F} (prepared : Modules.Prepared program)
+  (compiled : Optimized.ModulesArtifact prepared) (physical : Optimized.Physical.Prepared compiled.circuit.artifact)
+  {cfg : Optimized.Depth.Config} {id : String → Except String ℕ}
+  (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg physical.system) id)
+  {measures : Optimized.Depth.Structural.Plan},
+  Optimized.Physical.Prepared.checkDepthPlan compiled.circuit.inlined.program physical cfg measures plan = true →
+    ∀ {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances},
+      prepared.find? external = some entry →
+        ∀ {rom : WidthROM Library.U32.Goldilocks.F},
+          rom.Valid →
+            ∀ {args : List (SourceValue Library.U32.Goldilocks.F)} {result : Value Library.U32.Goldilocks.F}
+              {wires : List (WireValue Library.U32.Goldilocks.F)} {output : WireValue Library.U32.Goldilocks.F},
+              Circuit.Erasure.Signed compiled.circuit.system
+                  { channel := entry.resolved.name, args := wires, result := output } →
+                ∀ {root : Circuit.Message Library.U32.Goldilocks.F},
+                  Optimized.Depth.erase cfg root =
+                      Circuit.Erasure.message compiled.circuit.system
+                        { channel := entry.resolved.name, args := wires, result := output } →
+                    root.channel ∉ cfg.names →
+                      ∀ {rows : List (Circuit.Row Library.U32.Goldilocks.F)},
+                        rows.length ≤ MultiStarkSpec.maxBatchRows →
+                          ∀ (inspected : List (Option (Circuit.RuleClaims (Circuit.Message Library.U32.Goldilocks.F)))),
+                            (Optimized.Depth.system cfg physical.system).checkContext (Circuit.Erasure.rawROM rom)
+                                  root =
+                                Except.ok () →
+                              List.mapM (plan.inspectRow (Circuit.Erasure.rawROM rom)) rows = Except.ok inspected →
+                                (Circuit.Balance.required
+                                        (fun c => decide ((Optimized.Depth.system cfg physical.system).MapClaim c)) root
+                                        (Optimized.Grouping.activeRules inspected)).length <
+                                    Library.U32.Goldilocks.modulus →
+                                  ∀
+                                    (provWeight :
+                                      Circuit.RuleClaims (Circuit.Message Library.U32.Goldilocks.F) →
+                                        Library.U32.Goldilocks.F),
+                                    (∀
+                                        claim ∈
+                                          Circuit.Balance.required
+                                            (fun c => decide ((Optimized.Depth.system cfg physical.system).MapClaim c))
+                                            root (Optimized.Grouping.activeRules inspected),
+                                        (List.map provWeight
+                                              (List.filter (fun r => decide (r.1 = claim))
+                                                (Optimized.Grouping.activeRules inspected))).sum =
+                                          ↑(List.countP (fun x => decide (x = claim))
+                                              (Circuit.Balance.required
+                                                (fun c =>
+                                                  decide ((Optimized.Depth.system cfg physical.system).MapClaim c))
+                                                root (Optimized.Grouping.activeRules inspected)))) →
+                                      DecodesValues compiled.specialized.program.enums wires (entryValues args) →
+                                        WireValue.decode compiled.specialized.program.enums output = some result →
+                                          ∃ value heap,
+                                            prepared.EvalFn external args value heap ∧
+                                              Represents
+                                                (WireROM.decode compiled.specialized.program.enums
+                                                  (Circuit.Erasure.typedROM compiled.circuit.system rom))
+                                                heap value result
+-/
+#guard_msgs (whitespace := lax) in
+#check @Aiur.MultiStarkSpec.depth_sound_of_inspected_field_balance_goldilocks
 /-- info: 'Aiur.MultiStarkSpec.samePackets_logup_sum_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Aiur.MultiStarkSpec.samePackets_logup_sum_eq
@@ -5693,5 +5782,597 @@ info: Library.IxVMRep.tagn_tail_two_byte_spec : ∀ (lo v0 : UInt8) (q h carry :
 /-- info: 'Aiur.MultiStarkSpec.vectorizedRom_telescopes_memseg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Aiur.MultiStarkSpec.vectorizedRom_telescopes_memseg
+
+/-! ### 8. Multi-STARK Lowering Bridge (`Aiur.MultiStarkBridge`) -/
+
+/--
+info: @MultiStarkBridge.circuitRowSatisfied_retune_compile_iff : ∀ {F : Type} [inst : Ring F] [inst_1 : DecidableEq F]
+  (inp : MultiStarkSpec.CircuitInput F) (logBlowup extDegree : ℕ) (tr : MultiStarkBridge.CircuitTrace F) (r : ℕ),
+  MultiStarkBridge.CircuitRowSatisfied (MultiStarkBridge.compileRetune logBlowup extDegree inp) tr r ↔
+    ∀ e ∈ inp.constraints, tr.evalExpr r e = 0
+-/
+#guard_msgs (whitespace := lax) in
+#check @Aiur.MultiStarkBridge.circuitRowSatisfied_retune_compile_iff
+/-- info: 'Aiur.MultiStarkBridge.circuitRowSatisfied_retune_compile_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Aiur.MultiStarkBridge.circuitRowSatisfied_retune_compile_iff
+
+/--
+info: @MultiStarkBridge.circuitRowLedger_retune_compile_eq : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  (inp : MultiStarkSpec.CircuitInput F) (logBlowup extDegree : ℕ) (tr : MultiStarkBridge.CircuitTrace F) (r : ℕ),
+  MultiStarkBridge.circuitRowLedger (MultiStarkBridge.compileRetune logBlowup extDegree inp) tr r =
+    (List.map (MultiStarkBridge.airLookupLedger tr r) inp.lookups).sum
+-/
+#guard_msgs (whitespace := lax) in
+#check @Aiur.MultiStarkBridge.circuitRowLedger_retune_compile_eq
+/-- info: 'Aiur.MultiStarkBridge.circuitRowLedger_retune_compile_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Aiur.MultiStarkBridge.circuitRowLedger_retune_compile_eq
+
+/--
+info: @MultiStarkBridge.batch_stage2_logup_eq_trimmed_sum : ∀ {F K : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  [inst_2 : Field K] (embed : F →+* K) (β γ : K) (circuits : List (MultiStarkSpec.CompiledCircuit F))
+  (traces : List (MultiStarkBridge.CircuitTrace F)) (acc : ℕ → ℕ → ℕ → K) (accInitial accFinal : ℕ → K)
+  (rootTuple : List F) (boundaryLedger : Tiling.Ledger F) (hlen : traces.length = circuits.length),
+  (∀ (i : ℕ) (hi : i < circuits.length),
+      MultiStarkBridge.CircuitStage2Satisfied embed β γ circuits[i] traces[i] (acc i) (accInitial i) (accFinal i)) →
+    (List.map (fun i => accFinal i - accInitial i) (List.range circuits.length)).sum +
+            (MultiStarkSpec.fingerprint β γ (List.map (⇑embed) rootTuple))⁻¹ +
+          MultiStarkBridge.ledgerLogUpSum embed β γ boundaryLedger =
+        0 →
+      MultiStarkBridge.ledgerLogUpSum embed β γ
+          (Finsupp.mapDomain Tiling.trimZeros
+            ((List.zipWith MultiStarkBridge.circuitLedger circuits traces).sum + Finsupp.single rootTuple 1 +
+              boundaryLedger)) =
+        0
+-/
+#guard_msgs (whitespace := lax) in
+#check @Aiur.MultiStarkBridge.batch_stage2_logup_eq_trimmed_sum
+/-- info: 'Aiur.MultiStarkBridge.batch_stage2_logup_eq_trimmed_sum' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Aiur.MultiStarkBridge.batch_stage2_logup_eq_trimmed_sum
+
+/--
+info: @MultiStarkBridge.trimmed_ledger_zero_of_logup_sum : ∀ {F K : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  [inst_2 : Field K] (embed : F →+* K) (β γ : K) (L : Tiling.Ledger F),
+  (∀ k ∈ L.support, MultiStarkSpec.fingerprint β γ (List.map (⇑embed) k) ≠ 0) →
+    (∀ k ∈ L.support,
+        ∀ k' ∈ L.support,
+          k' ≠ k →
+            MultiStarkBridge.rlcEval γ (List.map (⇑embed) k') ≠ MultiStarkBridge.rlcEval γ (List.map (⇑embed) k)) →
+      (have Q :=
+          MultiStarkBridge.logupClearedPoly L.support (fun k => MultiStarkBridge.rlcEval γ (List.map (⇑embed) k))
+            fun k => embed (L k);
+        Q ≠ 0 → Polynomial.eval β Q ≠ 0) →
+        MultiStarkBridge.ledgerLogUpSum embed β γ L = 0 → L = 0
+-/
+#guard_msgs (whitespace := lax) in
+#check @Aiur.MultiStarkBridge.trimmed_ledger_zero_of_logup_sum
+/-- info: 'Aiur.MultiStarkBridge.trimmed_ledger_zero_of_logup_sum' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Aiur.MultiStarkBridge.trimmed_ledger_zero_of_logup_sum
+
+/--
+info: @MultiStarkBridge.card_stage2_logup_bad_beta_le : ∀ {F K : Type} [inst : Field F] [DecidableEq F] [inst_2 : Field K]
+  [inst_3 : Fintype K] [inst_4 : DecidableEq K] (embed : F →+* K) (γ : K) (L : Tiling.Ledger F) {k₀ : List F},
+  k₀ ∈ L.support →
+    (∀ k' ∈ L.support,
+        k' ≠ k₀ →
+          MultiStarkBridge.rlcEval γ (List.map (⇑embed) k') ≠ MultiStarkBridge.rlcEval γ (List.map (⇑embed) k₀)) →
+      {β |
+            (∀ k ∈ L.support, MultiStarkSpec.fingerprint β γ (List.map (⇑embed) k) ≠ 0) ∧
+              MultiStarkBridge.ledgerLogUpSum embed β γ L = 0}.card ≤
+        L.support.card - 1
+-/
+#guard_msgs (whitespace := lax) in
+#check @Aiur.MultiStarkBridge.card_stage2_logup_bad_beta_le
+/-- info: 'Aiur.MultiStarkBridge.card_stage2_logup_bad_beta_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Aiur.MultiStarkBridge.card_stage2_logup_bad_beta_le
+
+/--
+info: @MultiStarkBridge.checkEnables_implies_unit_weight : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {source : Circuit.System F} {id : String → Except String ℕ} (callableId : String → ℕ),
+  (∀ (x : String) (n : ℕ), id x = Except.ok n → n = callableId x) →
+    ∀ (plan : Optimized.Grouping.Plan source id),
+      (∀ c ∈ Tiling.Grouped.allChips plan, Tiling.Bridge.checkChipEnables c = true) →
+        ∀ (logBlowup extDegree : ℕ) {inp : MultiStarkSpec.CircuitInput F},
+          inp ∈ MultiStarkSpec.lowerPlanFunctionsOrdered callableId plan →
+            ∀ (tr : MultiStarkBridge.CircuitTrace F) (r : ℕ),
+              MultiStarkBridge.CircuitRowSatisfied (MultiStarkBridge.compileRetune logBlowup extDegree inp) tr r →
+                have cc := MultiStarkBridge.compileRetune logBlowup extDegree inp;
+                (∀ l ∈ cc.lookups,
+                    l.multiplicity = (MultiStarkSpec.AirExpr.main (cc.mainWidth - 1)).neg ∨
+                      tr.evalExpr r l.multiplicity = 0 ∨ tr.evalExpr r l.multiplicity = 1) ∧
+                  ((∃ c ∈ plan.singles,
+                      inp = MultiStarkSpec.lowerSingleChip callableId (Optimized.Activation.compile c) c.numVars ∧
+                        (tr.mainRow r c.numVars = 0 ∨ tr.mainRow r c.numVars = 1) ∧
+                          (tr.mainRow r c.numVars = 0 →
+                            tr.mainRow r (c.numVars + 1) = 0 ∧ MultiStarkBridge.circuitRowLedger cc tr r = 0)) ∨
+                    ∃ p ∈ plan.groups,
+                      inp = MultiStarkSpec.lowerGroupLayout p.checked.layout ∧
+                        (Circuit.ArithExpr.denote (tr.mainRow r) p.checked.layout.activation = 0 ∨
+                            Circuit.ArithExpr.denote (tr.mainRow r) p.checked.layout.activation = 1) ∧
+                          (Circuit.ArithExpr.denote (tr.mainRow r) p.checked.layout.activation = 0 →
+                            tr.mainRow r p.checked.layout.width = 0 ∧ MultiStarkBridge.circuitRowLedger cc tr r = 0))
+-/
+#guard_msgs (whitespace := lax) in
+#check @Aiur.MultiStarkBridge.checkEnables_implies_unit_weight
+/-- info: 'Aiur.MultiStarkBridge.checkEnables_implies_unit_weight' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Aiur.MultiStarkBridge.checkEnables_implies_unit_weight
+
+/--
+info: @MultiStarkBridge.extractWidthROM_valid_unsegmented : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {bound : ℕ},
+  Tiling.SmallCast F bound →
+    ∀ (romWidths : List ℕ),
+      romWidths.Nodup →
+        ∀ (layout : MultiStarkSpec.RomLayout) (logBlowup extDegree : ℕ)
+          (romTraces : List (MultiStarkBridge.CircuitTrace F)),
+          List.Forall₂ MultiStarkBridge.CircuitAirSatisfied
+              (List.map (MultiStarkBridge.compileRetune logBlowup extDegree)
+                (MultiStarkSpec.lowerRomCircuitsWithLayout romWidths false layout))
+              romTraces →
+            List.Forall₂ (fun w tr => MultiStarkBridge.romLayoutLanes layout w * tr.height ≤ bound) romWidths
+                romTraces →
+              (MultiStarkBridge.extractWidthROM romWidths layout romTraces).Valid
+-/
+#guard_msgs (whitespace := lax) in
+#check @Aiur.MultiStarkBridge.extractWidthROM_valid_unsegmented
+/-- info: 'Aiur.MultiStarkBridge.extractWidthROM_valid_unsegmented' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Aiur.MultiStarkBridge.extractWidthROM_valid_unsegmented
+
+/--
+info: @MultiStarkBridge.extractWidthROM_valid_segmented_zmod : ∀ {p : ℕ} [inst : Fact (Nat.Prime p)],
+  16 < p →
+    ∀ {source : Circuit.System (ZMod p)} {id : String → Except String ℕ} (callableId : String → ℕ),
+      (∀ (x : String) (n : ℕ), id x = Except.ok n → n = callableId x) →
+        ∀ (plan : Optimized.Grouping.Plan source id) (fixedMaps : List MultiStarkSpec.FixedMapMeta)
+          (romWidths : List ℕ),
+          romWidths.Nodup →
+            (∀ w ∈ romWidths, w < p) →
+              ∀ (logBlowup extDegree : ℕ) (romLayout : MultiStarkSpec.RomLayout) (root : Circuit.Message (ZMod p))
+                (ivlsOf : ℕ → List (ℕ × ℕ)),
+                (∀ w ∈ romWidths, MultiStarkBridge.DisjointIntervalsP p (ivlsOf w)) →
+                  ∀ (traces : List (MultiStarkBridge.CircuitTrace (ZMod p))),
+                    MultiStarkBridge.LoweredSystemSatisfied callableId plan fixedMaps romWidths logBlowup true extDegree
+                        romLayout root (MultiStarkBridge.memsegPreambleLedger romWidths ivlsOf) traces →
+                      List.Forall₂ (fun w tr => (MultiStarkBridge.extractRomEntries w romLayout tr).length + 1 < p)
+                          romWidths (MultiStarkBridge.romTracesOf callableId plan fixedMaps logBlowup traces) →
+                        (MultiStarkBridge.extractWidthROM romWidths romLayout
+                            (MultiStarkBridge.romTracesOf callableId plan fixedMaps logBlowup traces)).Valid
+-/
+#guard_msgs (whitespace := lax) in
+#check @Aiur.MultiStarkBridge.extractWidthROM_valid_segmented_zmod
+/-- info: 'Aiur.MultiStarkBridge.extractWidthROM_valid_segmented_zmod' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Aiur.MultiStarkBridge.extractWidthROM_valid_segmented_zmod
+
+/--
+info: @MultiStarkBridge.lowerFullSystem_row_implies_inspectRow : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {source : Circuit.System F} {id : String → Except String ℕ} (callableId : String → ℕ)
+  (plan : Optimized.Grouping.Plan source id),
+  plan.WellFormedActivation →
+    (Tiling.Grouped.circuitNames plan).Nodup →
+      ∀ (rom : WireROM F) (logBlowup extDegree : ℕ) {inp : MultiStarkSpec.CircuitInput F},
+        inp ∈ MultiStarkSpec.lowerPlanFunctionsOrdered callableId plan →
+          ∀ (tr : MultiStarkBridge.CircuitTrace F) (r : ℕ),
+            MultiStarkBridge.CircuitRowSatisfied (MultiStarkBridge.compileRetune logBlowup extDegree inp) tr r →
+              have w := tr.mainRow r;
+              (∃ c ∈ plan.singles,
+                  inp = MultiStarkSpec.lowerSingleChip callableId (Optimized.Activation.compile c) c.numVars ∧
+                    have row := Circuit.Row.ofAssignment c.name (c.numVars + 1) w;
+                    (w c.numVars = 0 ∨ w c.numVars = 1) ∧
+                      (w c.numVars = 0 → w (c.numVars + 1) = 0 ∧ plan.inspectRow rom row = Except.ok none) ∧
+                        (w c.numVars = 1 →
+                          (∀ m ∈ (Optimized.Activation.compile c).memory, Circuit.MemoryLookup.Valid rom w m) →
+                            plan.inspectRow rom row =
+                              Except.ok
+                                (some
+                                  ((Optimized.Activation.compile c).conclusion w,
+                                    (Optimized.Activation.compile c).requirements w)))) ∨
+                ∃ p ∈ plan.groups,
+                  inp = MultiStarkSpec.lowerGroupLayout p.checked.layout ∧
+                    have g := p.checked.layout;
+                    have row := Circuit.Row.ofAssignment g.name g.width w;
+                    (Circuit.ArithExpr.denote w g.activation = 0 ∨ Circuit.ArithExpr.denote w g.activation = 1) ∧
+                      (Circuit.ArithExpr.denote w g.activation = 0 →
+                          w g.width = 0 ∧ plan.inspectRow rom row = Except.ok none) ∧
+                        (Circuit.ArithExpr.denote w g.activation = 1 →
+                          ∃ m ∈ g.members,
+                            w m.selector = 1 ∧
+                              ((∀ l ∈ (Optimized.Activation.compile m.origin).memory,
+                                  Circuit.MemoryLookup.Valid rom (Tiling.Grouped.project m w) l) →
+                                plan.inspectRow rom row =
+                                  Except.ok
+                                    (some
+                                      ((Optimized.Activation.compile m.origin).conclusion (Tiling.Grouped.project m w),
+                                        (Optimized.Activation.compile m.origin).requirements
+                                          (Tiling.Grouped.project m w)))))
+-/
+#guard_msgs (whitespace := lax) in
+#check @Aiur.MultiStarkBridge.lowerFullSystem_row_implies_inspectRow
+/-- info: 'Aiur.MultiStarkBridge.lowerFullSystem_row_implies_inspectRow' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Aiur.MultiStarkBridge.lowerFullSystem_row_implies_inspectRow
+
+/--
+info: @MultiStarkBridge.lowerFullSystem_satisfied_implies_checkMemo : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {source : Circuit.System F} {id : String → Except String ℕ} (callableId : String → ℕ),
+  (∀ (x : String) (n : ℕ), id x = Except.ok n → n = callableId x) →
+    ∀ (plan : Optimized.Grouping.Plan source id),
+      plan.WellFormedActivation →
+        (Tiling.Grouped.circuitNames plan).Nodup →
+          ∀ (fixedMaps : List MultiStarkSpec.FixedMapMeta) (romWidths : List ℕ) (logBlowup : ℕ) (segmented : Bool)
+            (extDegree : ℕ) (romLayout : MultiStarkSpec.RomLayout) (root : Circuit.Message F)
+            (boundaryLedger : Tiling.Ledger F) (traces : List (MultiStarkBridge.CircuitTrace F)),
+            MultiStarkBridge.LoweredSystemSatisfied callableId plan fixedMaps romWidths logBlowup segmented extDegree
+                romLayout root boundaryLedger traces →
+              ∀ {bound : ℕ},
+                Tiling.SmallCast F bound →
+                  16 < bound →
+                    MultiStarkBridge.systemLookupBudget
+                          (MultiStarkSpec.lowerFullSystem callableId plan fixedMaps romWidths logBlowup segmented
+                            extDegree romLayout)
+                          traces <
+                        bound →
+                      (∀ w ∈ romWidths, w < bound) →
+                        (∀ c ∈ Tiling.Grouped.allChips plan, ∀ m ∈ c.memory, m.value.words.length < bound) →
+                          Tiling.Bridge.Shaped.check source (Tiling.Grouped.allChips plan) callableId root bound =
+                              true →
+                            source.checkContext
+                                  (Circuit.Erasure.rawROM
+                                    (MultiStarkBridge.extractWidthROM romWidths romLayout
+                                      (MultiStarkBridge.romTracesOf callableId plan fixedMaps logBlowup traces)))
+                                  root =
+                                Except.ok () →
+                              ∃ wrows,
+                                wrows.length ≤
+                                    MultiStarkBridge.totalRows (MultiStarkBridge.fnTracesOf callableId plan traces) ∧
+                                  plan.checkMemo
+                                      (Circuit.Erasure.rawROM
+                                        (MultiStarkBridge.extractWidthROM romWidths romLayout
+                                          (MultiStarkBridge.romTracesOf callableId plan fixedMaps logBlowup traces)))
+                                      root wrows =
+                                    Except.ok ()
+-/
+#guard_msgs (whitespace := lax) in
+#check @Aiur.MultiStarkBridge.lowerFullSystem_satisfied_implies_checkMemo
+/-- info: 'Aiur.MultiStarkBridge.lowerFullSystem_satisfied_implies_checkMemo' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Aiur.MultiStarkBridge.lowerFullSystem_satisfied_implies_checkMemo
+
+/--
+info: @MultiStarkBridge.lowerFullSystem_checkDepthPlan_checkMemo_unsegmented_goldilocks : ∀
+  {source : Generic.Source Library.U32.Goldilocks.F} {entries : List String}
+  {specialized : Generic.Specialized source entries} (compiled : Optimized.GenericArtifact specialized)
+  (physical : Optimized.Physical.Prepared compiled.artifact) {cfg : Optimized.Depth.Config}
+  {id : String → Except String ℕ} (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg physical.system) id)
+  {measures : Optimized.Depth.Structural.Plan},
+  Optimized.Physical.Prepared.checkDepthPlan compiled.inlined.program physical cfg measures plan = true →
+    ∀ (callableId : String → ℕ),
+      (∀ (x : String) (n : ℕ), id x = Except.ok n → n = callableId x) →
+        (Tiling.Grouped.circuitNames plan).Nodup →
+          ∀ (fixedMaps : List MultiStarkSpec.FixedMapMeta) (romWidths : List ℕ),
+            romWidths.Nodup →
+              ∀ (logBlowup extDegree : ℕ) (romLayout : MultiStarkSpec.RomLayout)
+                (root : Circuit.Message Library.U32.Goldilocks.F)
+                (traces : List (MultiStarkBridge.CircuitTrace Library.U32.Goldilocks.F)),
+                MultiStarkBridge.LoweredSystemSatisfied callableId plan fixedMaps romWidths logBlowup false extDegree
+                    romLayout root 0 traces →
+                  MultiStarkBridge.totalRows (MultiStarkBridge.fnTracesOf callableId plan traces) ≤
+                      MultiStarkSpec.maxBatchRows →
+                    MultiStarkBridge.systemLookupBudget
+                          (MultiStarkSpec.lowerFullSystem callableId plan fixedMaps romWidths logBlowup false extDegree
+                            romLayout)
+                          traces <
+                        2 ^ 63 →
+                      List.Forall₂ (fun w tr => MultiStarkBridge.romLayoutLanes romLayout w * tr.height ≤ 2 ^ 63)
+                          romWidths (MultiStarkBridge.romTracesOf callableId plan fixedMaps logBlowup traces) →
+                        (∀ w ∈ romWidths, w < 2 ^ 63) →
+                          (∀ c ∈ Tiling.Grouped.allChips plan, ∀ m ∈ c.memory, m.value.words.length < 2 ^ 63) →
+                            Tiling.Bridge.Shaped.check (Optimized.Depth.system cfg physical.system)
+                                  (Tiling.Grouped.allChips plan) callableId root (2 ^ 63) =
+                                true →
+                              (Optimized.Depth.system cfg physical.system).checkContext
+                                    (Circuit.Erasure.rawROM { entries := [] }) root =
+                                  Except.ok () →
+                                have rom :=
+                                  MultiStarkBridge.extractWidthROM romWidths romLayout
+                                    (MultiStarkBridge.romTracesOf callableId plan fixedMaps logBlowup traces);
+                                (Optimized.Physical.Prepared.DepthCertified compiled physical cfg ∧
+                                    cfg.bits ≤ 24 ∧ plan.WellFormedActivation) ∧
+                                  rom.Valid ∧
+                                    ∃ wrows,
+                                      wrows.length ≤ MultiStarkSpec.maxBatchRows ∧
+                                        plan.checkMemo (Circuit.Erasure.rawROM rom) root wrows = Except.ok ()
+-/
+#guard_msgs (whitespace := lax) in
+#check @Aiur.MultiStarkBridge.lowerFullSystem_checkDepthPlan_checkMemo_unsegmented_goldilocks
+/-- info: 'Aiur.MultiStarkBridge.lowerFullSystem_checkDepthPlan_checkMemo_unsegmented_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Aiur.MultiStarkBridge.lowerFullSystem_checkDepthPlan_checkMemo_unsegmented_goldilocks
+
+/--
+info: @MultiStarkBridge.lowerFullSystem_checkDepthPlan_eval_goldilocks : ∀
+  {program : Modules.Program Library.U32.Goldilocks.F} (prepared : Modules.Prepared program)
+  (compiled : Optimized.ModulesArtifact prepared) (physical : Optimized.Physical.Prepared compiled.circuit.artifact)
+  {cfg : Optimized.Depth.Config} {id : String → Except String ℕ}
+  (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg physical.system) id)
+  {measures : Optimized.Depth.Structural.Plan},
+  Optimized.Physical.Prepared.checkDepthPlan compiled.circuit.inlined.program physical cfg measures plan = true →
+    ∀ {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances},
+      prepared.find? external = some entry →
+        ∀ {args : List (SourceValue Library.U32.Goldilocks.F)} {result : Value Library.U32.Goldilocks.F}
+          {wires : List (WireValue Library.U32.Goldilocks.F)} {output : WireValue Library.U32.Goldilocks.F},
+          Circuit.Erasure.Signed compiled.circuit.system
+              { channel := entry.resolved.name, args := wires, result := output } →
+            ∀ {root : Circuit.Message Library.U32.Goldilocks.F},
+              Optimized.Depth.erase cfg root =
+                  Circuit.Erasure.message compiled.circuit.system
+                    { channel := entry.resolved.name, args := wires, result := output } →
+                root.channel ∉ cfg.names →
+                  DecodesValues compiled.specialized.program.enums wires (entryValues args) →
+                    WireValue.decode compiled.specialized.program.enums output = some result →
+                      ∀ (callableId : String → ℕ),
+                        (∀ (x : String) (n : ℕ), id x = Except.ok n → n = callableId x) →
+                          (Tiling.Grouped.circuitNames plan).Nodup →
+                            ∀ (fixedMaps : List MultiStarkSpec.FixedMapMeta) (romWidths : List ℕ),
+                              romWidths.Nodup →
+                                ∀ (logBlowup extDegree : ℕ) (romLayout : MultiStarkSpec.RomLayout)
+                                  (traces : List (MultiStarkBridge.CircuitTrace Library.U32.Goldilocks.F)),
+                                  MultiStarkBridge.LoweredSystemSatisfied callableId plan fixedMaps romWidths logBlowup
+                                      false extDegree romLayout root 0 traces →
+                                    MultiStarkBridge.totalRows (MultiStarkBridge.fnTracesOf callableId plan traces) ≤
+                                        MultiStarkSpec.maxBatchRows →
+                                      MultiStarkBridge.systemLookupBudget
+                                            (MultiStarkSpec.lowerFullSystem callableId plan fixedMaps romWidths
+                                              logBlowup false extDegree romLayout)
+                                            traces <
+                                          2 ^ 63 →
+                                        List.Forall₂
+                                            (fun w tr =>
+                                              MultiStarkBridge.romLayoutLanes romLayout w * tr.height ≤ 2 ^ 63)
+                                            romWidths
+                                            (MultiStarkBridge.romTracesOf callableId plan fixedMaps logBlowup traces) →
+                                          (∀ w ∈ romWidths, w < 2 ^ 63) →
+                                            (∀ c ∈ Tiling.Grouped.allChips plan,
+                                                ∀ m ∈ c.memory, m.value.words.length < 2 ^ 63) →
+                                              Tiling.Bridge.Shaped.check (Optimized.Depth.system cfg physical.system)
+                                                    (Tiling.Grouped.allChips plan) callableId root (2 ^ 63) =
+                                                  true →
+                                                (Optimized.Depth.system cfg physical.system).checkContext
+                                                      (Circuit.Erasure.rawROM { entries := [] }) root =
+                                                    Except.ok () →
+                                                  have rom :=
+                                                    MultiStarkBridge.extractWidthROM romWidths romLayout
+                                                      (MultiStarkBridge.romTracesOf callableId plan fixedMaps logBlowup
+                                                        traces);
+                                                  rom.Valid ∧
+                                                    ∃ value heap,
+                                                      prepared.EvalFn external args value heap ∧
+                                                        Represents
+                                                          (WireROM.decode compiled.specialized.program.enums
+                                                            (Circuit.Erasure.typedROM compiled.circuit.system rom))
+                                                          heap value result
+-/
+#guard_msgs (whitespace := lax) in
+#check @Aiur.MultiStarkBridge.lowerFullSystem_checkDepthPlan_eval_goldilocks
+/-- info: 'Aiur.MultiStarkBridge.lowerFullSystem_checkDepthPlan_eval_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Aiur.MultiStarkBridge.lowerFullSystem_checkDepthPlan_eval_goldilocks
+
+/--
+info: @MultiStarkBridge.lowerFullSystem_checkDepthPlan_eval_segmented_goldilocks : ∀
+  {program : Modules.Program Library.U32.Goldilocks.F} (prepared : Modules.Prepared program)
+  (compiled : Optimized.ModulesArtifact prepared) (physical : Optimized.Physical.Prepared compiled.circuit.artifact)
+  {cfg : Optimized.Depth.Config} {id : String → Except String ℕ}
+  (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg physical.system) id)
+  {measures : Optimized.Depth.Structural.Plan},
+  Optimized.Physical.Prepared.checkDepthPlan compiled.circuit.inlined.program physical cfg measures plan = true →
+    ∀ {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances},
+      prepared.find? external = some entry →
+        ∀ {args : List (SourceValue Library.U32.Goldilocks.F)} {result : Value Library.U32.Goldilocks.F}
+          {wires : List (WireValue Library.U32.Goldilocks.F)} {output : WireValue Library.U32.Goldilocks.F},
+          Circuit.Erasure.Signed compiled.circuit.system
+              { channel := entry.resolved.name, args := wires, result := output } →
+            ∀ {root : Circuit.Message Library.U32.Goldilocks.F},
+              Optimized.Depth.erase cfg root =
+                  Circuit.Erasure.message compiled.circuit.system
+                    { channel := entry.resolved.name, args := wires, result := output } →
+                root.channel ∉ cfg.names →
+                  DecodesValues compiled.specialized.program.enums wires (entryValues args) →
+                    WireValue.decode compiled.specialized.program.enums output = some result →
+                      ∀ (callableId : String → ℕ),
+                        (∀ (x : String) (n : ℕ), id x = Except.ok n → n = callableId x) →
+                          (Tiling.Grouped.circuitNames plan).Nodup →
+                            ∀ (fixedMaps : List MultiStarkSpec.FixedMapMeta) (romWidths : List ℕ),
+                              romWidths.Nodup →
+                                ∀ (logBlowup extDegree : ℕ) (romLayout : MultiStarkSpec.RomLayout)
+                                  (ivlsOf : ℕ → List (ℕ × ℕ)),
+                                  (∀ w ∈ romWidths,
+                                      MultiStarkBridge.DisjointIntervalsP Library.U32.Goldilocks.modulus (ivlsOf w)) →
+                                    ∀ (traces : List (MultiStarkBridge.CircuitTrace Library.U32.Goldilocks.F)),
+                                      MultiStarkBridge.LoweredSystemSatisfied callableId plan fixedMaps romWidths
+                                          logBlowup true extDegree romLayout root
+                                          (MultiStarkBridge.memsegPreambleLedger romWidths ivlsOf) traces →
+                                        MultiStarkBridge.totalRows
+                                              (MultiStarkBridge.fnTracesOf callableId plan traces) ≤
+                                            MultiStarkSpec.maxBatchRows →
+                                          MultiStarkBridge.systemLookupBudget
+                                                (MultiStarkSpec.lowerFullSystem callableId plan fixedMaps romWidths
+                                                  logBlowup true extDegree romLayout)
+                                                traces <
+                                              2 ^ 63 →
+                                            List.Forall₂
+                                                (fun w tr =>
+                                                  (MultiStarkBridge.extractRomEntries w romLayout tr).length + 1 <
+                                                    Library.U32.Goldilocks.modulus)
+                                                romWidths
+                                                (MultiStarkBridge.romTracesOf callableId plan fixedMaps logBlowup
+                                                  traces) →
+                                              (∀ w ∈ romWidths, w < 2 ^ 63) →
+                                                (∀ c ∈ Tiling.Grouped.allChips plan,
+                                                    ∀ m ∈ c.memory, m.value.words.length < 2 ^ 63) →
+                                                  Tiling.Bridge.Shaped.check
+                                                        (Optimized.Depth.system cfg physical.system)
+                                                        (Tiling.Grouped.allChips plan) callableId root (2 ^ 63) =
+                                                      true →
+                                                    (Optimized.Depth.system cfg physical.system).checkContext
+                                                          (Circuit.Erasure.rawROM { entries := [] }) root =
+                                                        Except.ok () →
+                                                      have rom :=
+                                                        MultiStarkBridge.extractWidthROM romWidths romLayout
+                                                          (MultiStarkBridge.romTracesOf callableId plan fixedMaps
+                                                            logBlowup traces);
+                                                      rom.Valid ∧
+                                                        ∃ value heap,
+                                                          prepared.EvalFn external args value heap ∧
+                                                            Represents
+                                                              (WireROM.decode compiled.specialized.program.enums
+                                                                (Circuit.Erasure.typedROM compiled.circuit.system rom))
+                                                              heap value result
+-/
+#guard_msgs (whitespace := lax) in
+#check @Aiur.MultiStarkBridge.lowerFullSystem_checkDepthPlan_eval_segmented_goldilocks
+/-- info: 'Aiur.MultiStarkBridge.lowerFullSystem_checkDepthPlan_eval_segmented_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Aiur.MultiStarkBridge.lowerFullSystem_checkDepthPlan_eval_segmented_goldilocks
+
+/--
+info: @MultiStarkBridge.lowerFullSystem_stage2_checkDepthPlan_eval_goldilocks : ∀ {K : Type} [inst : Field K]
+  (embed : Library.U32.Goldilocks.F →+* K) (β γ : K) {program : Modules.Program Library.U32.Goldilocks.F}
+  (prepared : Modules.Prepared program) (compiled : Optimized.ModulesArtifact prepared)
+  (physical : Optimized.Physical.Prepared compiled.circuit.artifact) {cfg : Optimized.Depth.Config}
+  {id : String → Except String ℕ} (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg physical.system) id)
+  {measures : Optimized.Depth.Structural.Plan},
+  Optimized.Physical.Prepared.checkDepthPlan compiled.circuit.inlined.program physical cfg measures plan = true →
+    ∀ {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances},
+      prepared.find? external = some entry →
+        ∀ {args : List (SourceValue Library.U32.Goldilocks.F)} {result : Value Library.U32.Goldilocks.F}
+          {wires : List (WireValue Library.U32.Goldilocks.F)} {output : WireValue Library.U32.Goldilocks.F},
+          Circuit.Erasure.Signed compiled.circuit.system
+              { channel := entry.resolved.name, args := wires, result := output } →
+            ∀ {root : Circuit.Message Library.U32.Goldilocks.F},
+              Optimized.Depth.erase cfg root =
+                  Circuit.Erasure.message compiled.circuit.system
+                    { channel := entry.resolved.name, args := wires, result := output } →
+                root.channel ∉ cfg.names →
+                  DecodesValues compiled.specialized.program.enums wires (entryValues args) →
+                    WireValue.decode compiled.specialized.program.enums output = some result →
+                      ∀ (callableId : String → ℕ),
+                        (∀ (x : String) (n : ℕ), id x = Except.ok n → n = callableId x) →
+                          (Tiling.Grouped.circuitNames plan).Nodup →
+                            ∀ (fixedMaps : List MultiStarkSpec.FixedMapMeta) (romWidths : List ℕ),
+                              romWidths.Nodup →
+                                ∀ (logBlowup extDegree : ℕ) (romLayout : MultiStarkSpec.RomLayout)
+                                  (traces : List (MultiStarkBridge.CircuitTrace Library.U32.Goldilocks.F))
+                                  (airOk :
+                                    List.Forall₂ MultiStarkBridge.CircuitAirSatisfied
+                                      (MultiStarkSpec.lowerFullSystem callableId plan fixedMaps romWidths logBlowup
+                                        false extDegree romLayout)
+                                      traces),
+                                  MultiStarkBridge.FixedTablesValid (Optimized.Depth.system cfg physical.system)
+                                      callableId (MultiStarkSpec.lowerFixedTables fixedMaps logBlowup)
+                                      (MultiStarkBridge.tblTracesOf callableId plan fixedMaps logBlowup traces) →
+                                    (∀ c ∈ Tiling.Grouped.allChips plan, Tiling.Bridge.checkChipEnables c = true) →
+                                      ∀ (acc : ℕ → ℕ → ℕ → K) (accInitial accFinal : ℕ → K),
+                                        (∀ (i : ℕ)
+                                            (hi :
+                                              i <
+                                                (MultiStarkSpec.lowerFullSystem callableId plan fixedMaps romWidths
+                                                    logBlowup false extDegree romLayout).length),
+                                            MultiStarkBridge.CircuitStage2Satisfied embed β γ
+                                              (MultiStarkSpec.lowerFullSystem callableId plan fixedMaps romWidths
+                                                  logBlowup false extDegree romLayout)[i]
+                                              traces[i] (acc i) (accInitial i) (accFinal i)) →
+                                          (List.map (fun i => accFinal i - accInitial i)
+                                                    (List.range
+                                                      (MultiStarkSpec.lowerFullSystem callableId plan fixedMaps
+                                                          romWidths logBlowup false extDegree romLayout).length)).sum +
+                                                (MultiStarkSpec.fingerprint β γ
+                                                    (List.map (⇑embed) (Tiling.Bridge.encode callableId root)))⁻¹ =
+                                              0 →
+                                            (have L :=
+                                                Finsupp.mapDomain Tiling.trimZeros
+                                                  ((List.zipWith MultiStarkBridge.circuitLedger
+                                                        (MultiStarkSpec.lowerFullSystem callableId plan fixedMaps
+                                                          romWidths logBlowup false extDegree romLayout)
+                                                        traces).sum +
+                                                    Finsupp.single (Tiling.Bridge.encode callableId root) 1);
+                                              ∀ k ∈ L.support,
+                                                MultiStarkSpec.fingerprint β γ (List.map (⇑embed) k) ≠ 0) →
+                                              (have L :=
+                                                  Finsupp.mapDomain Tiling.trimZeros
+                                                    ((List.zipWith MultiStarkBridge.circuitLedger
+                                                          (MultiStarkSpec.lowerFullSystem callableId plan fixedMaps
+                                                            romWidths logBlowup false extDegree romLayout)
+                                                          traces).sum +
+                                                      Finsupp.single (Tiling.Bridge.encode callableId root) 1);
+                                                ∀ k ∈ L.support,
+                                                  ∀ k' ∈ L.support,
+                                                    k' ≠ k →
+                                                      MultiStarkBridge.rlcEval γ (List.map (⇑embed) k') ≠
+                                                        MultiStarkBridge.rlcEval γ (List.map (⇑embed) k)) →
+                                                (have L :=
+                                                    Finsupp.mapDomain Tiling.trimZeros
+                                                      ((List.zipWith MultiStarkBridge.circuitLedger
+                                                            (MultiStarkSpec.lowerFullSystem callableId plan fixedMaps
+                                                              romWidths logBlowup false extDegree romLayout)
+                                                            traces).sum +
+                                                        Finsupp.single (Tiling.Bridge.encode callableId root) 1);
+                                                  have Q :=
+                                                    MultiStarkBridge.logupClearedPoly L.support
+                                                      (fun k => MultiStarkBridge.rlcEval γ (List.map (⇑embed) k))
+                                                      fun k => embed (L k);
+                                                  Q ≠ 0 → Polynomial.eval β Q ≠ 0) →
+                                                  MultiStarkBridge.totalRows
+                                                        (MultiStarkBridge.fnTracesOf callableId plan traces) ≤
+                                                      MultiStarkSpec.maxBatchRows →
+                                                    MultiStarkBridge.systemLookupBudget
+                                                          (MultiStarkSpec.lowerFullSystem callableId plan fixedMaps
+                                                            romWidths logBlowup false extDegree romLayout)
+                                                          traces <
+                                                        2 ^ 63 →
+                                                      List.Forall₂
+                                                          (fun w tr =>
+                                                            MultiStarkBridge.romLayoutLanes romLayout w * tr.height ≤
+                                                              2 ^ 63)
+                                                          romWidths
+                                                          (MultiStarkBridge.romTracesOf callableId plan fixedMaps
+                                                            logBlowup traces) →
+                                                        (∀ w ∈ romWidths, w < 2 ^ 63) →
+                                                          (∀ c ∈ Tiling.Grouped.allChips plan,
+                                                              ∀ m ∈ c.memory, m.value.words.length < 2 ^ 63) →
+                                                            Tiling.Bridge.Shaped.check
+                                                                  (Optimized.Depth.system cfg physical.system)
+                                                                  (Tiling.Grouped.allChips plan) callableId root
+                                                                  (2 ^ 63) =
+                                                                true →
+                                                              (Optimized.Depth.system cfg physical.system).checkContext
+                                                                    (Circuit.Erasure.rawROM { entries := [] }) root =
+                                                                  Except.ok () →
+                                                                have rom :=
+                                                                  MultiStarkBridge.extractWidthROM romWidths romLayout
+                                                                    (MultiStarkBridge.romTracesOf callableId plan
+                                                                      fixedMaps logBlowup traces);
+                                                                rom.Valid ∧
+                                                                  ∃ value heap,
+                                                                    prepared.EvalFn external args value heap ∧
+                                                                      Represents
+                                                                        (WireROM.decode
+                                                                          compiled.specialized.program.enums
+                                                                          (Circuit.Erasure.typedROM
+                                                                            compiled.circuit.system rom))
+                                                                        heap value result
+-/
+#guard_msgs (whitespace := lax) in
+set_option pp.deepTerms true in
+#check @Aiur.MultiStarkBridge.lowerFullSystem_stage2_checkDepthPlan_eval_goldilocks
+/-- info: 'Aiur.MultiStarkBridge.lowerFullSystem_stage2_checkDepthPlan_eval_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Aiur.MultiStarkBridge.lowerFullSystem_stage2_checkDepthPlan_eval_goldilocks
 
 end Aiur.Audit

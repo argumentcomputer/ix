@@ -1,6 +1,6 @@
 import Ix.CompileCert.ReaderSpines
 import Ix.CompileCert.Emission
-import IxC.Kernel.Ixon.ReaderSpec
+import IxCK.Kernel.Ixon.ReaderSpec
 
 /-! # The reader's syntactic walks follow the source
 
@@ -253,44 +253,21 @@ def sourceHead : Ix.Expr → Ix.Expr
   | .mdata _ body _ => sourceHead body
   | expression => expression
 
-/-- A contract frame only lowers a binder, keeping its children. -/
-theorem withContract_shape {c : Ix.SemanticContract.Contract} {source : Ix.Expr} {target result : CExpr md}
-    (lowered : withContract c source target = some result) :
-    (∃ name type body info hash, source = .lam name type body info hash) ∨
-      (∃ name type body info hash, source = .forallE name type body info hash) ∨
-      (∃ name type value body nonDep hash, source = .letE name type value body nonDep hash) := by
-  unfold withContract at lowered
-  split at lowered
-  · rename_i admits
-    simp only [Ix.SemanticContract.Contract.admits, Bool.and_eq_true] at admits
-    have attached := admits.2
-    unfold Ix.SemanticContract.Contract.attachedTo at attached
-    split at attached
-    · exact .inl ⟨_, _, _, _, _, rfl⟩
-    · exact .inr (.inl ⟨_, _, _, _, _, rfl⟩)
-    · exact .inr (.inr ⟨_, _, _, _, _, _, rfl⟩)
-    · cases attached
-  · cases lowered
-
-theorem withContract_depth {c : Ix.SemanticContract.Contract} {source : Ix.Expr} {target result : CExpr md}
-    (lowered : withContract c source target = some result) : kernelAppDepth result = kernelAppDepth target := by
+/-- A lowered contract frame leaves the checker term unchanged. -/
+theorem withContract_eq {c : Ix.SemanticContract.Contract} {source : Ix.Expr} {target result : CExpr md}
+    (lowered : withContract c source target = some result) : result = target := by
   unfold withContract at lowered
   split at lowered <;> cases lowered
   rfl
 
-theorem withContract_head {c : Ix.SemanticContract.Contract} {source : Ix.Expr} {target result : CExpr md}
-    (lowered : withContract c source target = some result) :
-    sourceHead source = source ∧ (∀ index hash, source ≠ .bvar index hash) ∧
-      ∀ name levels hash, source ≠ .const name levels hash := by
-  rcases withContract_shape lowered with ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, _, _, rfl⟩ <;>
-    exact ⟨rfl, fun _ _ => Ix.Expr.noConfusion, fun _ _ _ => Ix.Expr.noConfusion⟩
+theorem withContract_depth {c : Ix.SemanticContract.Contract} {source : Ix.Expr} {target result : CExpr md}
+    (lowered : withContract c source target = some result) : kernelAppDepth result = kernelAppDepth target := by
+  rw [withContract_eq lowered]
 
 theorem withContract_piTypes {c : Ix.SemanticContract.Contract} {source : Ix.Expr} {target result : CExpr md}
     (lowered : withContract c source target = some result) (count : Nat) :
     piTypes (count + 1) result = piTypes (count + 1) target := by
-  unfold withContract at lowered
-  split at lowered <;> cases lowered
-  rfl
+  rw [withContract_eq lowered]
 
 theorem related_appDepth {names : Ix.Name → CName md → Prop} {levels : Ix.Level → Ix.Kernel.Level → Prop}
     {source : Ix.Expr} {target : CExpr md} (related : Related names levels source target) :
@@ -321,11 +298,9 @@ theorem related_variable_head {names : Ix.Name → CName md → Prop} {levels : 
     rfl
   | app _ _ _ ihf _ => exact ihf head
   | mdata _ _ _ _ ih => exact ih head
-  | @contract inner _ _ _ _ _ _ _ _ lowered _ =>
-    have shape := withContract_head lowered
-    have reduced : sourceHead inner = _ := head
-    rw [shape.1] at reduced
-    exact absurd reduced (shape.2.1 index hash)
+  | @contract _ _ _ _ _ _ _ _ _ lowered ih =>
+    rw [withContract_eq lowered]
+    exact ih head
   | _ => cases head
 
 /-- A source bound-variable head is the raw variable head, with the same
@@ -350,11 +325,9 @@ theorem related_constant_head {names : Ix.Name → CName md → Prop}
     exact ⟨_, _, rfl, nameEq ▸ mapped⟩
   | app _ _ _ ihf _ => exact ihf head
   | mdata _ _ _ _ ih => exact ih head
-  | @contract inner _ _ _ _ _ _ _ _ lowered _ =>
-    have shape := withContract_head lowered
-    have reduced : sourceHead inner = _ := head
-    rw [shape.1] at reduced
-    exact absurd reduced (shape.2.2 name sourceLevels hash)
+  | @contract _ _ _ _ _ _ _ _ _ lowered ih =>
+    rw [withContract_eq lowered]
+    exact ih head
   | _ => cases head
 
 /-! ## Head references and their keys -/

@@ -1,9 +1,9 @@
 import IxVMRefinement.Core.Specs.Infer
-import IxC.Kernel.Rules.Inversion
-import IxC.Kernel.Verify.EnvWF
-import IxC.Kernel.Verify.InstLevels
-import IxC.Kernel.Verify.Inductives.StructBody
-import IxC.Kernel.Verify.InferLemmas
+import IxCK.Kernel.Rules.Inversion
+import IxCK.Kernel.Verify.EnvWF
+import IxCK.Kernel.Verify.InstLevels
+import IxCK.Kernel.Verify.Inductives.StructBody
+import IxCK.Kernel.Verify.InferLemmas
 
 /-! # Pure kernel telescope and projection-body lemmas for `Infer.proj`
 

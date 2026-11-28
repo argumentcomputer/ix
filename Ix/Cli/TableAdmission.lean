@@ -1,8 +1,11 @@
 /-
   The kernel's admission of a claim's role table, run by the consumer.
 
-  `IxVM.consistent` covers a typing claim under the default role table, or under
-  a role table the kernel admits (`TableAdmitted`): its section is
+  `ix verify` accepts a typing claim under the default role table, or under a
+  role table the kernel admits (`TableAdmitted`, a premise of the unproved
+  reduction `IxVM.consistent`; no proved theorem connects it to the table
+  validity `IxVM.Refinement.Endpoint.circuitComposed` takes from a binding
+  claim): its section is
   authenticated, canonical and well formed, its prelude roles are the committed
   records, and the kernel's strict check accepts the closure of the constants it
   binds (all but the compiler-trust roles) and the theorems its evidence names,
@@ -44,17 +47,18 @@
 module
 public import Cli
 public import Ix.Claim
+public import Ix.Cli.KernelLimits
 public import Ix.Ixon
 public import Ix.Store
 public import Ix.SpecDigest
-public import IxC.Kernel.Admission
+public import IxCK.Kernel.Admission
 
 public section
 
 namespace Ix.Cli.TableAdmission
 
 /-- **The kernel's executable admission of a role table** over the records of an
-environment: `check`, whose `true` establishes the statement's premise
+environment: `check`, whose `true` establishes `IxVM.consistent`'s premise
 (`TableAdmitted`) for that table, and `explain`, the first stage that refuses
 (read only when `check` refused; it reruns the stages). -/
 structure Checker where
@@ -70,7 +74,7 @@ def install (c : Checker) : IO Unit := checkerRef.set (some c)
 
 /-- The admission run whose answers the cache holds. Change it whenever the
 checker's answers may change, so that older entries are no longer read. -/
-def checkerVersion : String := "table-admission/1"
+def checkerVersion : String := "table-admission/2"
 
 /-- The flag naming an `.ixe` that supplies a table and its records. -/
 def envFlag : String := "binding-env"
@@ -106,10 +110,14 @@ def record (root : System.FilePath) (spec binding : Address) : IO Unit := do
 
 /-! ## The standing of a claim's table -/
 
-/-- An environment read from an `.ixe` file, as it was compiled. -/
+/-- An environment read from an `.ixe` file, as it was compiled, with every
+record checked against the depth limit before any constant decoding. -/
 def readEnv (path : String) : IO Ixon.Env := do
   match Ixon.deEnvAnon (← IO.FS.readBinFile path) with
-  | .ok env => pure env
+  | .ok env =>
+    match env.checkDepthWithin Ixon.loadMaxDepth with
+    | .ok () => pure env
+    | .error e => throw (IO.userError s!"{path}: {e}")
   | .error e => throw (IO.userError s!"{path}: {e}")
 
 /-- `envs`, then the environment `--binding-env` names, if any. -/
@@ -153,10 +161,19 @@ def standing (ctx : Ix.ClaimContext) (envs : IO (List Ixon.Env)) (checker : Opti
         claim's own --ixe"
   let some c := checker
     | return .unestablished "this program cannot run the kernel's admission of a role table"
+  let threadLimits : Ix.Kernel.Admission.Limits :=
+    { maxRecords := 1 <<< 22, maxBlobs := 1 <<< 22, maxTotalBytes := 1 <<< 34,
+      maxRecordBytes := 1 <<< 28, maxRecordUnivNodes := 1 <<< 26 }
+  if let some why ← Ix.Cli.KernelLimits.prepareThreads { limits := threadLimits } then
+    return .unestablished why
   let b : Ix.Kernel.Admission.Binding := ⟨rb.address, rb.bytes⟩
-  unless c.check b env do
+  if let some why ← Ix.Cli.KernelLimits.onKernelThread (do
+      if c.check b env then
+        return none
+      else
+        return some (c.explain b env)) then
     return .unestablished s!"the kernel does not admit the role table over the supplied \
-      records: {c.explain b env}"
+      records: {why}"
   record root spec ctx.binding
   return .admitted false
 

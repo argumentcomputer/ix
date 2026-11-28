@@ -21,7 +21,7 @@ private def plainSource : ConstantInfo := .axiomInfo {
   isUnsafe := false }
 
 private def annotation : BinderAnnotation := {
-  origin := 0, binder := `x, uses := .many, value := .unique }
+  origin := 0, binder := `x, mode := .unique }
 
 private def markedSource : ConstantInfo := .axiomInfo {
   name := plainSource.name, levelParams := []
@@ -64,7 +64,7 @@ private def compileInput (input : CompileInput) :
 private def placement : IO Bool := do
   let env ← getFileEnv "Tests/Ix/SourceContract/PlacementFixture.lean"
   let some source := env.find? `SemanticPlacement.etaExpanded | return false
-  let .ok contract := SourceContract.ofTelescope source #[{ binder := .position 1, uses := .linear }]
+  let .ok contract := SourceContract.ofTelescope source #[{ binder := .position 1, mode := .once }]
     | return false
   let input : CompileInput := { constants := constants source, contracts := #[contract] }
   let .ok [(_, decorated)] := input.prepare | return false
@@ -137,7 +137,7 @@ def suite : List TestSeq := [
     | .ok _ => return false,
   refusalTest "explicit Lean input refuses an annotated axiom" (do
     let .ok contract := SourceContract.ofTelescope plainSource #[
-      { binder := .position 0, uses := .linear }]
+      { binder := .position 0, mode := .once }]
       | return .error "the telescope contract does not resolve"
     compileInput { constants := constants plainSource, contracts := #[contract] }),
   ioTest "measure-only input preserves ordinary production bytes" do
@@ -150,21 +150,25 @@ def suite : List TestSeq := [
     match checkPreparedSource (constants markedSource) with
     | .error message => return (message.splitOn "unresolved source binder contracts").length > 1
     | .ok _ => return false,
-  ioTest "explicit Lean input compiles and mode-checks a valid annotated definition" do
+  ioTest "explicit Lean input compiles and mode-checks a valid annotated definition with DefAsserts" do
     let tyA : ConstantInfo := .axiomInfo {
       name := `SourceContractDriver.TyA, levelParams := [], type := .sort (.succ .zero), isUnsafe := false }
     let defId : ConstantInfo := .defnInfo {
-      name := `SourceContractDriver.idOnce, levelParams := []
+      name := `SourceContractDriver.idUnique, levelParams := []
       type := .forallE `x (.const tyA.name []) (.const tyA.name []) .default
       value := .lam `x (.const tyA.name []) (.bvar 0) .default
-      hints := .abbrev, safety := .safe, all := [`SourceContractDriver.idOnce] }
-    let .ok contract := SourceContract.ofTelescope defId #[{ binder := .position 0, uses := .linear }]
+      hints := .abbrev, safety := .safe, all := [`SourceContractDriver.idUnique] }
+    let .ok base := SourceContract.ofTelescope defId #[{ binder := .position 0, mode := .unique }]
       | return false
+    let contract : SourceContract := { base with defAsserts := { alloc := .noAlloc, boundedStack := true } }
     let .ok out ← compileInput { constants := [(tyA.name, tyA), (defId.name, defId)], contracts := #[contract] }
       | return false
     let some nd := out.env.named.get? (_root_.Ix.Name.fromLeanName defId.name) | return false
     let some c := out.env.getConst? nd.addr | return false
-    return out.annotated && _root_.Ix.Compile.BinderData.hasModes c
+    let assertsOk := match c.info with
+      | .defn d => d.asserts == { alloc := .noAlloc, boundedStack := true }
+      | _ => false
+    return out.annotated && assertsOk && _root_.Ix.Compile.BinderData.hasModes c
 ]
 
 end Tests.Ix.SourceContract.Driver

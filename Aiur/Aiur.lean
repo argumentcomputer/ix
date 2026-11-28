@@ -21,4 +21,5 @@ import Aiur.Library.Bytes.Correctness
 import Aiur.Library.RBTreeMap.Correctness
 import Aiur.Library.IxVMRep
 import Aiur.MultiStarkSpec
+import Aiur.MultiStarkBridge
 import Aiur.Audit

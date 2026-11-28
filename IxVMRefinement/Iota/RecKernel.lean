@@ -1,9 +1,9 @@
 import IxVMRefinement.Iota.Kernel
 import IxVMRefinement.Core.Certs
-import IxC.Kernel.Verify.InstLevels
-import IxC.Kernel.Verify.PropWhen
-import IxC.Kernel.Verify.Shift
-import IxC.Kernel.Verify.InstList
+import IxCK.Kernel.Verify.InstLevels
+import IxCK.Kernel.Verify.PropWhen
+import IxCK.Kernel.Verify.Shift
+import IxCK.Kernel.Verify.InstList
 
 /-! # Kernel-side lemmas of the ι step: level instantiation, spines, the major premise's domain
 

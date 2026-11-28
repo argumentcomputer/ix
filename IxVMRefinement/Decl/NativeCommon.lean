@@ -2,7 +2,7 @@ import IxVMRefinement.Decl.Common
 import IxVMRefinement.Decl.JudgeMap
 import IxVMRefinement.Subst.Steps
 import IxVMRefinement.Levels.Smart
-import IxC.Kernel.Semantics.Inductives.DeclNativeJ
+import IxCK.Kernel.Semantics.Inductives.DeclNativeJ
 
 /-! # Shared helpers for native inductive and twin recursor declaration refinement
 

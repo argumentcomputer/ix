@@ -1,5 +1,5 @@
 import IxSharingVerify.IngestionTable
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 /-! Raising resource limits never changes a successful sharing run.
 

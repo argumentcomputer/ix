@@ -1,14 +1,14 @@
 module
 
-public import IxC.Kernel.Roles
-public import IxC.Kernel.RoleEquations
+public import IxCK.Kernel.Roles
+public import IxCK.Kernel.RoleEquations
 public import Ix.SpecDigest.Decode
-public import IxC.Kernel.TypeChecker
+public import IxCK.Kernel.TypeChecker
 
 /-! # The role specifications, rendered for the circuit
 
 IxVM reads a claim's primitives through its role binding and validates each
-bound role against IxC's specification (`Ix.Kernel.Role.spec`) before using
+bound role against IxCK's specification (`Ix.Kernel.Role.spec`) before using
 it. The circuit cannot evaluate Lean data, so this module renders the
 specification set as Formal Aiur source, the Lean file
 `IxVM/IxVM/Source/KernelRoleSpec.lean` (an `aiur⟦ … ⟧` block),
@@ -43,7 +43,7 @@ two boundaries, `Ix.SpecDigest.Schedule.current`,
 `Ix/SpecDigest/Schedule.lean`) are defined beside the encoder, which commits to
 them. So every value the rendered file holds comes from the bytes the digest
 hashes, and `ix codegen --check` (`Scripts/CheckFormal.lean`) fails when the
-file and the digest drift apart. IxC's specification set and its schedule are
+file and the digest drift apart. IxCK's specification set and its schedule are
 checked before rendering (`checkGroups`). -/
 
 @[expose] public section
@@ -181,7 +181,7 @@ def renderArm (root : RVal) : String := Id.run do
   if lets.isEmpty then rootStr
   else s!"\n{lets}          {rootStr}"
 
-/-- A level under the level parameters `ps`: IxC names a parameter by its id,
+/-- A level under the level parameters `ps`: IxCK names a parameter by its id,
 the circuit by its position in the constant's list (`Eq.rec.{u_1, u}` lists
 `u_1` first). -/
 def level (ps : List LevelParam) : Level → Except String RVal
@@ -277,9 +277,9 @@ def natT (nat : Nat) : RVal := rStore "KernelTypes::KExprNode::Const" [rBoundAdd
 The circuit's binders carry their datum (`KExprNode::Lam(ty, body, ℓ)`, the
 zero-ness of `ℓ`). The specification bytes keep the pins' raw binder data
 (`BasisDSL` writes `never` at every binder), so every rendered term is first
-annotated by IxC's own pass (`Ix.Kernel.annotateCore` at `.verified`), over the
+annotated by IxCK's own pass (`Ix.Kernel.annotateCore` at `.verified`), over the
 roles' declarations, themselves annotated in the schedule's order. A bound
-constant carries the data IxC's annotation gives its own type (the witness's
+constant carries the data IxCK's annotation gives its own type (the witness's
 binder data), so the two agree wherever the circuit compares them (the
 pinned types structurally, the others by definitional equality). The data are
 a function of the specified terms, so they too come from the bytes. -/
@@ -295,7 +295,7 @@ def withType (ci : ConstantInfo .anon) (t : Expr .anon) : ConstantInfo .anon :=
   | .recInfo v mI rP rules => .recInfo { v with type := t } mI rP rules
   | .projInfo tbl => .projInfo tbl
 
-/-- IxC's annotation of the closed term `t` over `env`. -/
+/-- IxCK's annotation of the closed term `t` over `env`. -/
 def annotateSpec (env : Env .anon) (what : String) (t : Expr .anon) : Except String (Expr .anon) :=
   match Ix.Kernel.annotateCore .verified env Ix.Kernel.checkFuel 0 t with
   | .ok t' => pure t'
@@ -439,7 +439,7 @@ def specType (src : Source) (env : Env .anon) (r : Role) : Except String String 
   | .axiom _ none => pure "(&(KernelTypes::KExprNode::Srt((&(KernelTypes::KLevelNode::Zero)))))"
   | .eqns n _ _ => annotated (List.range n)
 
-/-- An operation's equations (`Spec.ops`), from IxC's specification set. -/
+/-- An operation's equations (`Spec.ops`), from IxCK's specification set. -/
 def equations (r : Role) : List (List (Expr .anon) × Expr .anon × Expr .anon) :=
   match r.spec (md := .anon) with
   | .ops _ eqs => eqs
@@ -526,7 +526,7 @@ def leanHeader : String := "import Aiur.Modules.Function
 
 /-! # IxVM module `KernelRoleSpec`
 
-Rendered from IxC's role specifications (`Ix.Kernel.Role.spec`) by
+Rendered from IxCK's role specifications (`Ix.Kernel.Role.spec`) by
 `IxVM.RoleSpecGen.renderFormalAiur`; do not edit. `lake exe ix codegen` writes
 this file, and `lake exe ix codegen --check` fails when it is stale.
 
@@ -679,7 +679,7 @@ def checkRendering (bytes : ByteArray) (file : String) : Except String Unit := d
       (digest {Address.blake3Pure bytes}): {firstDifference rendered file}"
 
 /-- Render `IxVM/IxVM/Source/KernelRoleSpec.lean` from the specification
-digest's bytes, once IxC's specification set and its schedule are checked
+digest's bytes, once IxCK's specification set and its schedule are checked
 (`checkGroups`). `ix codegen` writes it and `ix codegen --check` compares. -/
 def renderFormalAiur : Except String String := do
   checkGroups

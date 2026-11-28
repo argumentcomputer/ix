@@ -1,5 +1,5 @@
 import IxSetTheoryModel.Carneiro
-import IxC.Kernel.Admission.Theorems
+import IxCK.Kernel.Admission.Theorems
 
 /-!
 # The certified checker's consistency under Carneiro's hypothesis

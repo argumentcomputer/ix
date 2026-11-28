@@ -1,8 +1,8 @@
 import Ix.Cert.Compile
 import Ix.Cert.CompileCorrect
 import Ix.CompileCertified
-import IxC.Kernel.Audit.Runtime
-import IxC.Kernel.Audit.Roots
+import IxCK.Kernel.Audit.Runtime
+import IxCK.Kernel.Audit.Roots
 
 /-! # The compiler's runtime closure, frozen
 
@@ -42,15 +42,17 @@ symbol that no library defines, so a binary that links them fails. -/
 -- Both `Ix.Cert.compile` (which drives `Ix.Compile.compileEnv` / `compileEnvFold`) and
 -- `Ix.Compile.ReadyCompile.reportIO` (the parallel ready-queue driver used by
 -- `Ix.CompileM.compileCertifiedPrepared`) are audited here.
--- Binder-data annotation runs inside compilation through `IxC.Kernel` expressions,
--- keys, levels, and names, adding their computed-field constructors/overrides and
--- `Ix.Kernel.Expr.{instantiate1Lift,liftLooseBVars}` csimp replacements to the
--- unruled list (all admitted by `Ix.Kernel.Audit.runtimeRulings` in the checks below).
+-- Binder-data annotation runs inside compilation through `IxCK.Kernel` expressions,
+-- keys, levels, and names, adding their computed-field constructors/overrides
+-- (including `Level.hasParamData`) and `Ix.Kernel.{levelHasParam,Expr.instantiate1Lift,
+-- Expr.liftLooseBVars}` csimp replacements to the unruled list (all admitted by
+-- `Ix.Kernel.Audit.runtimeRulings` in the checks below).
 /-- error: project-level execution replacements reached from [Ix.Cert.compile]:
 [Address.admissionHash,
  Ix.groundExpr,
  Ix.groundLevel,
  Ixon.getTagN,
+ Ixon.getTagN0Values,
  Ixon.putTagN,
  Blake3.Rust.hasherFinalize,
  Blake3.Rust.hasherInit,
@@ -62,6 +64,7 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.IndFlags.replaceCtorResultHeadWithAux,
  Ix.IndFlags.replaceFVarsMap,
  Ix.IndFlags.substLevel,
+ Ix.Kernel.levelHasParam,
  Ix.Kernel.withExclusive,
  Ix.Kernel.withExclusiveUnsafe,
  Ix.Name.pretty,
@@ -77,6 +80,7 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.Kernel.Expr.data,
  Ix.Kernel.Expr.forallE,
  Ix.Kernel.Expr.fvar,
+ Ix.Kernel.Expr.hashW,
  Ix.Kernel.Expr.instantiate1Lift,
  Ix.Kernel.Expr.lam,
  Ix.Kernel.Expr.letE,
@@ -92,6 +96,7 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.Kernel.Key.role,
  Ix.Kernel.Level.beq,
  Ix.Kernel.Level.casesOn,
+ Ix.Kernel.Level.hasParamData,
  Ix.Kernel.Level.hashData,
  Ix.Kernel.Level.imax,
  Ix.Kernel.Level.max,
@@ -110,6 +115,7 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.Kernel.Expr.data._override,
  Ix.Kernel.Expr.forallE._override,
  Ix.Kernel.Expr.fvar._override,
+ Ix.Kernel.Expr.hashW._override,
  Ix.Kernel.Expr.lam._override,
  Ix.Kernel.Expr.letE._override,
  Ix.Kernel.Expr.lit._override,
@@ -121,6 +127,7 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.Kernel.Key.id._override,
  Ix.Kernel.Key.role._override,
  Ix.Kernel.Level.casesOn._override,
+ Ix.Kernel.Level.hasParamData._override,
  Ix.Kernel.Level.hashData._override,
  Ix.Kernel.Level.imax._override,
  Ix.Kernel.Level.max._override,
@@ -142,6 +149,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Cert.compile] #[`Init, `Std] { c
  Ix.groundExpr,
  Ix.groundLevel,
  Ixon.getTagN,
+ Ixon.getTagN0Values,
  Ixon.putTagN,
  Blake3.Rust.hasherFinalize,
  Blake3.Rust.hasherInit,
@@ -153,6 +161,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Cert.compile] #[`Init, `Std] { c
  Ix.IndFlags.replaceCtorResultHeadWithAux,
  Ix.IndFlags.replaceFVarsMap,
  Ix.IndFlags.substLevel,
+ Ix.Kernel.levelHasParam,
  Ix.Kernel.withExclusive,
  Ix.Kernel.withExclusiveUnsafe,
  Ix.Name.pretty,
@@ -168,6 +177,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Cert.compile] #[`Init, `Std] { c
  Ix.Kernel.Expr.data,
  Ix.Kernel.Expr.forallE,
  Ix.Kernel.Expr.fvar,
+ Ix.Kernel.Expr.hashW,
  Ix.Kernel.Expr.instantiate1Lift,
  Ix.Kernel.Expr.lam,
  Ix.Kernel.Expr.letE,
@@ -183,6 +193,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Cert.compile] #[`Init, `Std] { c
  Ix.Kernel.Key.role,
  Ix.Kernel.Level.beq,
  Ix.Kernel.Level.casesOn,
+ Ix.Kernel.Level.hasParamData,
  Ix.Kernel.Level.hashData,
  Ix.Kernel.Level.imax,
  Ix.Kernel.Level.max,
@@ -201,6 +212,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Cert.compile] #[`Init, `Std] { c
  Ix.Kernel.Expr.data._override,
  Ix.Kernel.Expr.forallE._override,
  Ix.Kernel.Expr.fvar._override,
+ Ix.Kernel.Expr.hashW._override,
  Ix.Kernel.Expr.lam._override,
  Ix.Kernel.Expr.letE._override,
  Ix.Kernel.Expr.lit._override,
@@ -212,6 +224,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Cert.compile] #[`Init, `Std] { c
  Ix.Kernel.Key.id._override,
  Ix.Kernel.Key.role._override,
  Ix.Kernel.Level.casesOn._override,
+ Ix.Kernel.Level.hasParamData._override,
  Ix.Kernel.Level.hashData._override,
  Ix.Kernel.Level.imax._override,
  Ix.Kernel.Level.max._override,
@@ -310,6 +323,7 @@ role-evidence and role-binding synthesis, frozen here. -/
  Ix.groundLevel,
  instBEqSyntax_ix.beq,
  Ix.Compile.sourceContractExtension,
+ Ix.Compile.sourceDefAssertsExtension,
  Ix.Compile.sourceMeasureExtension,
  Ix.IndFlags.hasIndOcc,
  Ix.IndFlags.replaceAllNested,

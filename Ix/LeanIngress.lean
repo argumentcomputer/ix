@@ -5,10 +5,10 @@ public import Ix.LeanIngress.Expr
 public import Ix.LeanIngress.Names
 public import Ix.LeanIngress.Order
 public import Ix.LeanIngress.Collapse
-public import IxC.Kernel.Ixon.Prelude
-public import IxC.Kernel.Cached.Installed
+public import IxCK.Kernel.Ixon.Prelude
+public import IxCK.Kernel.Cached.Installed
 public import Ix.RoleEvidence
-public import IxC.Kernel.Tier.Check
+public import IxCK.Kernel.Tier.Check
 
 /-! # Source mode: Lean environments as the checker's declarations
 
@@ -766,9 +766,9 @@ rejected or declined by the fold, as for Ixon.
 
 **The evidence** is fixed too: the structural operations' `defeq` entries,
 and for each well-founded operation the certificate theorems of
-`IxC/Kernel/PinGen/Certs.lean` (`Ix.RoleEvidence.certTheorems`) under their
+`IxCK/Kernel/PinGen/Certs.lean` (`Ix.RoleEvidence.certTheorems`) under their
 Lean names, **ingested with the environment**: an environment that imports
-`IxC.Kernel.PinGen.Certs` carries them as ordinary declarations, which the
+`IxCK.Kernel.PinGen.Certs` carries them as ordinary declarations, which the
 fold checks as theorems like any other. Each proof is closed over the
 operation's dependency closure (`Ix.RoleEvidence.closedProofs`) before the
 fold receives it, as the fold's locality condition requires. An operation

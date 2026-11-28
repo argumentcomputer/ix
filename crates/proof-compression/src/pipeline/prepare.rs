@@ -26,7 +26,7 @@ use crate::kzg::curve::{Bls12381, Bn254, Curve, KzgCurve};
 use sha2::{Digest, Sha256};
 use std::{fs, io::Read, path::Path};
 
-/// SHA-256 of the released gnark-format Ignition SRS file.
+/// SHA-256 of the released Ignition SRS file.
 pub(super) const IGNITION_SRS_SHA256: &str =
   "06db33d8aa83291237aec6b8fa74752d3d4a516db0bb1221f4a554e8f8510a93";
 
@@ -65,6 +65,24 @@ fn report(stage: &str, prepared: Prepared) {
       eprintln!("{stage}: published ({})", gigabytes(bytes));
     },
   }
+}
+
+/// Check the Ignition SRS file `config` loads against its pin, whichever
+/// variable selected it, for deriving release keys (`examples/release_keys`):
+/// unlike `check_srs`, `IX_KZG_SRS` does not waive the check, and any other
+/// setup is refused.
+pub fn check_release_srs(config: &SetupConfig) -> Result<()> {
+  let SetupConfig::Ignition { srs } = config else {
+    return Err("release keys are derived under the Ignition SRS only".into());
+  };
+  if sha256_file(srs)? != verifying_keys::decode(IGNITION_SRS_SHA256)? {
+    return Err(
+      format!("{} differs from the released Ignition SRS", srs.display())
+        .into(),
+    );
+  }
+  eprintln!("parameters: {} verified", srs.display());
+  Ok(())
 }
 
 /// Check the ceremony SRS file `config` loads against its pin.
@@ -230,37 +248,9 @@ fn prepare_for<C: KzgCurve>(
   Ok(())
 }
 
-/// Build the PLONK circuit, keys and parameter exports for the bundled
-/// recursive key into the PLONK cache, and check the key against its pin.
-#[cfg(feature = "plonk")]
-pub fn prepare_plonk(config: &CompressConfig) -> Result<()> {
-  if config.curve != Curve::Bn254 {
-    return Err(
-      "BLS12-381 has no bundled release recursive key yet; run `ix compress --bls12-381 --plonk` or `derive_release_for::<Bls12381>` to derive and cache BLS12-381 PLONK keys".into(),
-    );
-  }
-  let key = super::plonk::derive_verifying_key(
-    verifying_keys::RECURSIVE_VK,
-    &verifying_keys::STATEMENT_PREFIX,
-    &config.setup,
-    &config.plonk_cache,
-  )?;
-  if Sha256::digest(&key).as_slice()
-    != verifying_keys::decode(verifying_keys::PLONK_VK_SHA256)?
-  {
-    return Err(
-      "the PLONK key derived for the bundled recursive key differs from the \
-       bundled PLONK key"
-        .into(),
-    );
-  }
-  eprintln!("PLONK: {} verified", config.plonk_cache.display());
-  Ok(())
-}
-
-#[cfg(not(feature = "plonk"))]
+/// Retired legacy Go/gnark PLONK setup helper; use `aiur_backend::plonk::native`.
 pub fn prepare_plonk(_config: &CompressConfig) -> Result<()> {
-  Err("this ix was built without PLONK; rebuild with IX_PLONK=1".into())
+  Err(super::plonk::retired_error())
 }
 
 #[cfg(test)]

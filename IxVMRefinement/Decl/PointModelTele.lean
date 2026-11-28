@@ -1,9 +1,9 @@
-import IxC.Kernel.Rules.Inversion
-import IxC.Kernel.Verify.Abstract
-import IxC.Kernel.Verify.Shift
-import IxC.Kernel.Verify.InstLevels
-import IxC.Kernel.Verify.PropRead
-import IxC.Kernel.Verify.Denote.IndFrame
+import IxCK.Kernel.Rules.Inversion
+import IxCK.Kernel.Verify.Abstract
+import IxCK.Kernel.Verify.Shift
+import IxCK.Kernel.Verify.InstLevels
+import IxCK.Kernel.Verify.PropRead
+import IxCK.Kernel.Verify.Denote.IndFrame
 
 /-! # Telescopes with a replaced end, and the derivations over them
 

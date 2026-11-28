@@ -6,7 +6,7 @@ import Tests.Ix.Kernel.SourceIngressCompare
 import Tests.Ix.Kernel.AccelSemanticsDefs
 
 /-! Semantic inputs retained from Tc.AccelDiff, without its deleted backend
-switch or internal term addresses. Rust and IxC check the complete selected
+switch or internal term addresses. Rust and IxCK check the complete selected
 closure, including Lean-checked value/head witnesses (each a `rfl` the
 checkers reduce) and Nat.decLe itself. -/
 
@@ -45,9 +45,9 @@ def run : IO UInt32 := do
   for name in names do
     let key := Ix.LeanIngress.ingressKey (Ix.Name.fromLeanName name)
     let some (outcome, reason) := checked[key]?
-      | throw (IO.userError s!"IxC omitted {name}")
-    need (outcome == "accept") s!"IxC did not accept {name}: {outcome}: {reason}"
-  IO.println s!"retained acceleration: all four exact inputs, their value/head witnesses and Nat.decLe admission; {names.size} complete Rust/IxC closure verdicts"
+      | throw (IO.userError s!"IxCK omitted {name}")
+    need (outcome == "accept") s!"IxCK did not accept {name}: {outcome}: {reason}"
+  IO.println s!"retained acceleration: all four exact inputs, their value/head witnesses and Nat.decLe admission; {names.size} complete Rust/IxCK closure verdicts"
   return 0
 
 end Tests.Ix.Kernel.AccelSemantics

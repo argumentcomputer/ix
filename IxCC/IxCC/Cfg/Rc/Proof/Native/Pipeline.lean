@@ -1,0 +1,154 @@
+import IxCC.Cfg.Rc.Native
+import IxCC.Cfg.Rc.Proof.PublicApi
+import IxCC.Rt.Proof.Program
+
+/-! Read actual native admission off without changing its execution. Runtime
+procedure proofs apply to the concrete program before the final edge split;
+the split is explicit here and must be composed using Lir's relabelling proof. -/
+set_option autoImplicit false
+namespace IxCC.Cfg.Rc.Native.Spec
+
+def layoutOf (P : Program) : Layout :=
+  ⟨P.base.size, P.base.ctors.filter (fun c => c.arity > 0)⟩
+
+def consumeAll (P : Program) : Except String (List (Nat × Cfg.Fun)) :=
+  (List.range P.base.size).mapM fun f => do
+    let some fd := P.base.fun? f | throw "missing admitted source function"
+    let lowered ← consumeFunction P (layoutOf P) fd
+    pure (f, lowered)
+
+def consumed (P : Program) (pairs : List (Nat × Cfg.Fun)) : Cfg.Program :=
+  { P.base with funs := Src.NatMap.ofList pairs }
+
+def rootsOf (config : Rt.Config) (P : Program) : List (Nat × String) :=
+  let named := P.base.exports.zipIdx.map fun (f, i) =>
+    (f, Rt.Lower.symbolOf ((config.names[i]?).getD s!"root{i}"))
+  named.map fun (f, symbol) => (f, (named.lookup f).getD symbol)
+
+def tablesOf (P : Program) (pairs : List (Nat × Cfg.Fun)) : Rt.Lower.Tables :=
+  Raw.rawTables P.raw (consumed P pairs)
+    { Rt.Lower.tables (consumed P pairs) with
+      natPow := (layoutOf P).init + 1, natGcd := (layoutOf P).init + 2 }
+
+def wrappers (l : Layout) : List Lir.Func :=
+  [incrementWrapper l.incProc, decrementWrapper l.decProc] ++
+    l.ctors.zipIdx.map (fun (c, i) => allocationWrapper (l.allocProc i) c.arity)
+
+def procedures (l : Layout) : List Lir.Func :=
+  [Rt.Rc.Procs.inc, Rt.Rc.Gen.dec] ++
+    l.ctors.map (fun c => Rt.Rc.Gen.alloc (Rt.Rc.CellLayout.ofFields c.arity c.tag))
+
+def resetWrappers (l : Layout) : List Lir.Func :=
+  l.ctors.map fun c =>
+    let lay := Rt.Rc.CellLayout.ofFields c.arity c.tag
+    mkResetWrapper l.isUniqueProc l.incProc l.decProc lay (lay.cls?.getD 0)
+
+def resetUWrappers (l : Layout) : List Lir.Func :=
+  l.ctors.map fun c =>
+    let lay := Rt.Rc.CellLayout.ofFields c.arity c.tag
+    mkResetUWrapper l.decProc lay (lay.cls?.getD 0)
+
+def reuseWrappers (l : Layout) : List Lir.Func :=
+  l.ctors.zipIdx.map fun (c, i) =>
+    let lay := Rt.Rc.CellLayout.ofFields c.arity c.tag
+    mkReuseWrapper (l.allocProc i) lay (lay.cls?.getD 0)
+
+def reuseUWrappers (l : Layout) : List Lir.Func :=
+  l.ctors.map fun c =>
+    let lay := Rt.Rc.CellLayout.ofFields c.arity c.tag
+    mkReuseUWrapper lay (lay.cls?.getD 0)
+
+def reuseProcs (l : Layout) : List Lir.Func :=
+  [Rt.Rc.Gen.isUnique] ++ resetWrappers l ++ resetUWrappers l ++ reuseWrappers l ++ reuseUWrappers l
+
+def rawProgram (l : Layout) (funcs : List Lir.Func) (main : Nat) : Lir.Program :=
+  { funcs := (funcs ++ wrappers l ++ procedures l ++
+      [Rt.Procs.cxInit, Rt.Procs.natPow, Rt.Procs.natGcd] ++ reuseProcs l).toArray
+    main }
+
+def inlinedProgram (l : Layout) (funcs : List Lir.Func) (main : Nat) : Lir.Program :=
+  Prune.pruneDeadRuntime l (FastDec.install l (InlineWrappers.inlineProgram l
+    (Prune.pruneUnusedReuse l (Inline.inlineProgram l (rawProgram l funcs main)))))
+
+theorem lower_parts {config : Rt.Config} {F : Fir.Program}
+    {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Rt.Lowered}
+    {borrows : Own.Plain.BorrowSigs} {uniqs : Own.Plain.UniqSigs}
+    (accepted : Native.lower config F bodies P borrows uniqs = .ok lowered) :
+    ∃ main pairs funcs,
+      checkProgram F bodies P borrows uniqs = true ∧
+      Rt.checkSwitches P.base = .ok () ∧
+      P.base.exports.head? = some main ∧
+      (layoutOf P).ctors.all (fun c => (Rt.Rc.CellLayout.ofFields c.arity c.tag).ok) = true ∧
+      consumeAll P = .ok pairs ∧ (Raw.rawOk P.raw (consumed P pairs)) = true ∧
+      Rt.Lower.functions (tablesOf P pairs) (consumed P pairs) (rootsOf config P)
+        (List.range P.base.size) = .ok funcs ∧
+      funcs.length = P.base.size ∧
+      lowered.program = (inlinedProgram (layoutOf P) funcs main).splitCriticalEdges ∧
+      lowered.init = (layoutOf P).init ∧
+      lowered.natPow = (layoutOf P).init + 1 ∧
+      lowered.natGcd = (layoutOf P).init + 2 ∧
+      lowered.roots = rootsOf config P ∧ lowered.program.check = .ok () := by
+  change ((do
+    unless checkProgram F bodies P borrows uniqs do throw "unchecked RC Cfg candidate"
+    (Rt.checkSwitches P.base).mapError Rt.SwitchError.render
+    let some main := P.base.exports.head? | throw "no exports"
+    unless (layoutOf P).ctors.all (fun c => (Rt.Rc.CellLayout.ofFields c.arity c.tag).ok) do
+      throw "constructor table has a layout the counted heap does not allocate"
+    let pairs ← consumeAll P
+    unless Raw.rawOk P.raw (consumed P pairs) do
+      throw "the raw word layout fails the native flow check"
+    let funcs ← (Rt.Lower.functions (tablesOf P pairs) (consumed P pairs)
+      (rootsOf config P) (List.range P.base.size)).mapError Rt.Error.render
+    let program := (inlinedProgram (layoutOf P) funcs main).splitCriticalEdges
+    program.check
+    return {
+      program, init := (layoutOf P).init, natPow := (layoutOf P).init + 1
+      natGcd := (layoutOf P).init + 2, roots := rootsOf config P }) : Except String Rt.Lowered) = .ok lowered at accepted
+  cases hc : checkProgram F bodies P borrows uniqs with
+  | false =>
+    simp only [hc, Bool.false_eq_true, ↓reduceIte, throw, throwThe,
+      MonadExceptOf.throw, bind, Except.bind] at accepted
+    cases accepted
+  | true =>
+    simp only [hc, Bool.true_eq_false, ↓reduceIte, pure, Except.pure, bind, Except.bind] at accepted
+    cases hs : Rt.checkSwitches P.base with
+    | error e => rw [hs] at accepted; cases accepted
+    | ok u =>
+      cases u
+      simp only [hs, Except.mapError, bind, Except.bind] at accepted
+      cases hm : P.base.exports.head? with
+      | none => rw [hm] at accepted; cases accepted
+      | some main =>
+        simp only [hm] at accepted
+        cases hl : (layoutOf P).ctors.all (fun c => (Rt.Rc.CellLayout.ofFields c.arity c.tag).ok) with
+        | false =>
+          simp only [hl, Bool.false_eq_true, ↓reduceIte, throw, throwThe,
+            MonadExceptOf.throw, bind, Except.bind] at accepted
+          cases accepted
+        | true =>
+          simp only [hl, Bool.true_eq_false, ↓reduceIte, pure, Except.pure, bind, Except.bind] at accepted
+          cases hp : consumeAll P with
+          | error e => rw [hp] at accepted; cases accepted
+          | ok pairs =>
+            simp only [hp, bind, Except.bind] at accepted
+            cases hraw : Raw.rawOk P.raw (consumed P pairs)
+            · simp only [hraw, Bool.false_eq_true, ↓reduceIte, throw, throwThe,
+                MonadExceptOf.throw, bind, Except.bind] at accepted
+              cases accepted
+            simp only [hraw, Bool.true_eq_false, ↓reduceIte, pure, Except.pure, bind, Except.bind] at accepted
+            cases hf : Rt.Lower.functions (tablesOf P pairs) (consumed P pairs)
+                (rootsOf config P) (List.range P.base.size) with
+            | error e => rw [hf] at accepted; cases accepted
+            | ok funcs =>
+              simp only [hf, Except.mapError, bind, Except.bind] at accepted
+              cases hcheck : (inlinedProgram (layoutOf P) funcs main).splitCriticalEdges.check with
+              | error e => rw [hcheck] at accepted; cases accepted
+              | ok u =>
+                cases u
+                simp only [hcheck, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at accepted
+                subst lowered
+                exact ⟨main, pairs, funcs, rfl, rfl, rfl, rfl, rfl, hraw, hf,
+                  by simpa using (Rt.Proof.functions_spec hf).1, rfl, rfl, rfl, rfl, rfl, hcheck⟩
+
+
+end IxCC.Cfg.Rc.Native.Spec

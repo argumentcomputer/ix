@@ -1,6 +1,6 @@
 import IxVMRefinement.Assembly.NativeBlockReads
 import IxVMRefinement.Assembly.NativeBlockFacts
-import IxC.Kernel.Model.Inductives.NativeAt
+import IxCK.Kernel.Model.Inductives.NativeAt
 
 /-! # The former stage of a native block whose former is declared at a definition
 
@@ -17,7 +17,7 @@ the family's sort (`former_decl_ok`'s second branch). This module is the second 
   length (`FormerTeleOther`, which the circuit's `get_result_sort_level` refuses);
 * recognition at the record's index count (`Ix.Kernel.Model.nativePartsAt?`):
   `nativePartsAt?_inv`, `nativePartsAt?_isSome`, `nativePartsAt_of_member`;
-* IxC's former stage at an alias former: `AliasTele` (the telescope constant checked from
+* IxCK's former stage at an alias former: `AliasTele` (the telescope constant checked from
   scratch, its shape, its definitional equality with the declared type), `aliasTele_of_tele`
   (inhabited by every former at its telescope), `sumIndRunJ_of_alias` (the stored former is the
   declared one, `FormerStoredJ`'s right branch), `formerStageAlias_of_member` (T6 at an alias
@@ -317,9 +317,9 @@ theorem nativePartsAt_of_member (ht : t.check = .ok ()) (hbound : Bounded calls)
 
 end Recognise
 
-/-! ## IxC's former stage at an alias former -/
+/-! ## IxCK's former stage at an alias former -/
 
-/-- **The telescope of a former declared at a definition**, in IxC's terms: a constant of the
+/-- **The telescope of a former declared at a definition**, in IxCK's terms: a constant of the
 declared former's name and level parameters checked from scratch at some type (`cvTa`), whose
 type is a syntactic telescope of `nPI` binders ending in the sort `s`, and definitionally equal
 to the checked declared former's type (`cvTa₀`). -/
@@ -338,7 +338,7 @@ theorem aliasTele_of_tele {env : Ix.Kernel.Env .anon} {cvT cvTa₀ : ConstantVal
     AliasTele env cvT cvTa₀ cvTa₀ nPI s :=
   ⟨⟨cvT.type, by cases cvT; exact hchk⟩, ⟨bs, htele⟩, .refl⟩
 
-/-- **IxC's former stage at a former declared at a definition**: the declared former checked
+/-- **IxCK's former stage at a former declared at a definition**: the declared former checked
 (`cvTa₀`) is stored, the telescope constant is the one the later stages read, and the record is
 completed with the telescope's sort (`FormerStoredJ`'s right branch, at a family with an
 index). -/
@@ -383,7 +383,7 @@ theorem sumCtorsRunJ_retele {J : Judgements .anon} {env₀ env : Ix.Kernel.Env .
 
 /-! ## The former stage at the prefix -/
 
-/-- **Part E's evidence at the prefix, in IxC's terms** (named input). For the reading `ty₀` of
+/-- **Part E's evidence at the prefix, in IxCK's terms** (named input). For the reading `ty₀` of
 the former's type and its canonical annotation `ty'`: a telescope constant (`AliasTele`) of the
 record's parameter and index counts, whose parameter binders open as `ty'`'s.
 
@@ -415,7 +415,7 @@ section Stage
 variable {t : Ix.Kernel.RoleTable} {calls : List (Call F)} {E₀ : Ixon.Env}
   {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive} {n : Nat}
 
-/-- **The former's stage of IxC at the prefix, at a former declared at a definition** (T6,
+/-- **The former's stage of IxCK at the prefix, at a former declared at a definition** (T6,
 second branch): the recognised block's declared former is checked against the prefix as its
 canonical annotation and stored, the telescope constant of part E is the one the later stages
 read, and the record is completed with the telescope's sort, for either recursion flag. The

@@ -13,8 +13,9 @@ Uses the two-claim environment `claims.ixt.controller.ixe` that
   stops the run, and no manifest is published;
 - the structural fold (`--structural-above 0`) proves on CPU lanes, reaches
   the composed verdict, verifies independently with `ix verify --aggregate`,
-  is refused as a claim proof, and a rerun resumes from the cache without
-  executing a claim;
+  passes the identity-blob pin checks (`formal-aiur-tests pins <root>`,
+  accepting the pinned blob and rejecting every forged one), is refused as a
+  claim proof, and a rerun resumes from the cache without executing a claim;
 - the claims alone (`ix prove --ixe --ixes`) print one `shard address` line
   per claim, and `ix verify` accepts them against the partition proven.
 
@@ -107,6 +108,9 @@ def main (argv : List String) : IO UInt32 := do
   let fixtures ← IO.FS.realPath (System.FilePath.mk fixtures)
   let out ← freshDir fixtures "controller-check-"
   let ixBinary ← absolute ".lake/build/bin/ix"
+  let formalAiurTests ← absolute ".lake/build/bin/formal-aiur-tests"
+  unless ← formalAiurTests.pathExists do
+    fail s!"missing {formalAiurTests}; build formal-aiur-tests first"
   let artifacts ← [ixvmArtifact, recursionArtifact, aggregateArtifact].toArray.mapM
     fun p => IO.FS.realPath (System.FilePath.mk p)
   let mut env : Array (String × Option String) := #[("IX_CUDA", some "0"),
@@ -150,7 +154,7 @@ def main (argv : List String) : IO UInt32 := do
     let structural := #[ix, "prove", "--aggregate", "--structural-above", "0", "--ixe", tiny,
       "--ixes", manifest, "--trace-shards", "--jobs", "2", "--exec-jobs", "2", "--max-ram", "64",
       "--out-ixes", structuralManifest]
-    -- Under PR #691's hardened MultiStark::ix_aggr, two CPU lanes of 16 GiB
+    -- With hardened MultiStark::ix_aggr, two CPU lanes of 16 GiB
     -- workspace keep the structural join at 16 trace shards and leave ~23.7 GiB
     -- for shared records within a 64 GiB host budget (matching the 128 GiB CI runner).
     let cpuEnv := #[("AIUR_HOST_WORKSPACE_BYTES", some (toString (16 * 2 ^ 30))),
@@ -160,6 +164,13 @@ def main (argv : List String) : IO UInt32 := do
     unless mentions text "composed verdict OK" do fail "the controller skipped the composed verdict"
     let _ ← run c "structural-verify" #[ix, "verify", "--aggregate", "--structural-above", "0",
       "--ixe", tiny, "--ixes", structuralManifest, root]
+    -- Exercise the identity-blob half of `formal-aiur-tests pins ROOT` on the
+    -- already-proved `IXAGGR2` aggregate root (zero extra proving time).
+    let pinsText ← run c "structural-pins"
+      #["lake", "env", formalAiurTests.toString, "pins", root]
+    unless mentions pinsText "the root verifies under the pinned identity blob"
+        && mentions pinsText "rejected under a forged aggregation entry index" do
+      fail "formal-aiur-tests pins did not complete the aggregate root identity-blob checks"
     let _ ← run c "reject-root-as-claim" #[ix, "verify", "--ixe", tiny, "--ixes",
       structuralManifest, root] (succeeds := false)
     let text ← run c "structural-resume" structural cpuEnv

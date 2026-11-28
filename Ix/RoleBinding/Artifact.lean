@@ -3,7 +3,8 @@ module
 public import Ix.RoleBinding.Publication
 public import Ix.Ixon.Authenticated
 public import Ix.KernelCheck.Step
-public import IxC.Kernel.Admission.UserAxioms
+public import IxCK.Kernel.Admission.UserAxioms
+public import Ix.RoleBinding.RecordDecoding
 
 /-! # Certified checking of an artifact's own binding and records
 
@@ -206,6 +207,22 @@ theorem decodeRecordsPar_eq (limits : Limits) (records : Records) :
     decodeRecordsPar limits records = decodeRecords limits records := by
   simp only [decodeRecordsPar, decodeRecords, joinDecodes_spawnDecodes]
 
+/-- `Ix.Kernel.Admission.decodeWithin` with the decoding in parallel
+(`decodeRecordsPar`), the depth scan and the expanded check in parallel too
+(`RecordDecoding.scanDepthsParallel`, `expandedDepthsParallel`): the same result. -/
+def decodeWithinPar (limits : Limits) (records : Records) :
+    Except ByteError Ix.Kernel.Ingress.Constants := do
+  Ix.RoleBinding.RecordDecoding.scanDepthsParallel 256 limits records
+  let constants ← (decodeRecordsPar limits records).mapError Ix.Kernel.Admission.ByteError.asLimit
+  Ix.RoleBinding.RecordDecoding.expandedDepthsParallel 256 limits constants
+  pure constants
+
+theorem decodeWithinPar_eq (limits : Limits) (records : Records) :
+    decodeWithinPar limits records = Ix.Kernel.Admission.decodeWithin limits records := by
+  simp only [decodeWithinPar, Ix.Kernel.Admission.decodeWithin, decodeRecordsPar_eq,
+    Ix.RoleBinding.RecordDecoding.scanDepthsParallel_eq,
+    Ix.RoleBinding.RecordDecoding.expandedDepthsParallel_eq]
+
 end DecodePar
 
 /-- The order is selected before reading/checking, then subjected to the same
@@ -222,7 +239,9 @@ def prepareRecordsFor (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits
   (Ix.Kernel.Admission.uniqueKeys rawRecords.toList blobs).mapError .bytes
   (Ix.Kernel.Admission.authenticate Address.admissionHash rawRecords.toList blobs).mapError .bytes
   let table ← (Ix.Kernel.Admission.admitBinding Address.admissionHash binding).mapError .binding
-  let constants ← (Ix.Kernel.Admission.decodeRecords limits rawRecords.toList).mapError .bytes
+  let constants ← (Ix.Kernel.Admission.decodeWithin limits rawRecords.toList).mapError .bytes
+  -- the strict admission's universe-parameter bound, before anything reads a record
+  (Ix.Kernel.Admission.admitLevels constants).mapError .admission
   let store : RecordStore := constants.foldl (fun m (a, c) => m.insert a c) {}
   checkBindings table store
   let preRecords ← (Ix.RoleBinding.preludeRecords table (store[·]?) Ix.Kernel.preludeShape).mapError .prelude
@@ -262,7 +281,8 @@ def prepareRecordsForPar (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Lim
   (Ix.Kernel.Admission.uniqueKeys rawRecords.toList blobs).mapError .bytes
   (Ix.Kernel.Admission.authenticate Address.admissionHash rawRecords.toList blobs).mapError .bytes
   let table ← (Ix.Kernel.Admission.admitBinding Address.admissionHash binding).mapError .binding
-  let constants ← (decodeRecordsPar limits rawRecords.toList).mapError .bytes
+  let constants ← (decodeWithinPar limits rawRecords.toList).mapError .bytes
+  (Ix.Kernel.Admission.admitLevels constants).mapError .admission
   let store : RecordStore := constants.foldl (fun m (a, c) => m.insert a c) {}
   checkBindings table store
   let preRecords ← (Ix.RoleBinding.preludeRecords table (store[·]?) Ix.Kernel.preludeShape).mapError .prelude
@@ -282,7 +302,7 @@ theorem prepareRecordsForPar_eq (artifact : Ixon.Env) (limits : Ix.Kernel.Admiss
     (requested : Option (Array Address)) :
     prepareRecordsForPar artifact limits requested = prepareRecordsFor artifact limits requested := by
   unfold prepareRecordsForPar prepareRecordsFor
-  simp only [decodeRecordsPar_eq]
+  simp only [decodeWithinPar_eq]
 
 /-- `prepareRecords` with the records decoded in parallel
 (`prepareRecordsPar_eq`). -/
@@ -310,6 +330,17 @@ def prepareAt (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits)
     (order : Array Address) : Except Error Prepared :=
   prepareFor artifact limits (some order)
 
+/-- **The strict admission's pinned roles** on the prepared table
+(`Ix.Kernel.Admission.admitPinnedRoles`): under
+`committed`, the default, the artifact's table binds the string-literal support
+and `True`, `True.intro` where the committed default table does, or not at all;
+under `trustAnchors`, `True` and `True.intro` remain pinned while custom
+literal-support bindings are allowed; `asBound` takes the artifact's own
+bindings, which the fold validates by type only. Every entry below runs it
+before the kernel. -/
+def Prepared.admitPins (p : Prepared) (pins : Ix.Kernel.Admission.RolePins) : Except Error Unit :=
+  (Ix.Kernel.Admission.admitPinnedRoles pins p.table).mapError .admission
+
 /-- This is a receipt of these two actual runs, not an arbitrary stored
 verdict. It does not certify a host claim or a relation to a source program. -/
 structure Receipt (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) where
@@ -319,15 +350,19 @@ structure Receipt (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) wh
   checked : Ix.Kernel.Admission.checkBytesWith Address.admissionHash prepared.binding prepared.pre
     limits prepared.records prepared.blobs prepared.hints.lookup = .ok target
 
-def check (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) :
+def check (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits)
+    (pins : Ix.Kernel.Admission.RolePins := .committed) :
     Except Error (Receipt artifact limits) :=
   match fromArtifact : prepare artifact limits with
   | .error e => .error e
   | .ok prepared =>
-    match checked : Ix.Kernel.Admission.checkBytesWith Address.admissionHash prepared.binding prepared.pre
-        limits prepared.records prepared.blobs prepared.hints.lookup with
-    | .error e => .error (.admission e)
-    | .ok target => .ok ⟨prepared, target, fromArtifact, checked⟩
+    match prepared.admitPins pins with
+    | .error e => .error e
+    | .ok () =>
+      match checked : Ix.Kernel.Admission.checkBytesWith Address.admissionHash prepared.binding
+          prepared.pre limits prepared.records prepared.blobs prepared.hints.lookup with
+      | .error e => .error (.admission e)
+      | .ok target => .ok ⟨prepared, target, fromArtifact, checked⟩
 
 /-- The order is part of this receipt's type. Its target is the result of the
 actual chosen-order entry, fixed before any supplied model is quantified. -/
@@ -339,15 +374,19 @@ structure OrderedReceipt (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Lim
   checked : Ix.Kernel.Admission.checkBytesWith Address.admissionHash prepared.binding prepared.pre
     limits prepared.records prepared.blobs prepared.hints.lookup = .ok target
 
-def checkAt (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) (order : Array Address) :
+def checkAt (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) (order : Array Address)
+    (pins : Ix.Kernel.Admission.RolePins := .committed) :
     Except Error (OrderedReceipt artifact limits order) :=
   match fromArtifact : prepareAt artifact limits order with
   | .error e => .error e
   | .ok prepared =>
-    match checked : Ix.Kernel.Admission.checkBytesWith Address.admissionHash prepared.binding prepared.pre
-        limits prepared.records prepared.blobs prepared.hints.lookup with
-    | .error e => .error (.admission e)
-    | .ok target => .ok ⟨prepared,target,fromArtifact,checked⟩
+    match prepared.admitPins pins with
+    | .error e => .error e
+    | .ok () =>
+      match checked : Ix.Kernel.Admission.checkBytesWith Address.admissionHash prepared.binding
+          prepared.pre limits prepared.records prepared.blobs prepared.hints.lookup with
+      | .error e => .error (.admission e)
+      | .ok target => .ok ⟨prepared,target,fromArtifact,checked⟩
 
 /-- A receipt of preparation and of the check that admits user axioms
 (`Admission.checkBytesUnder .allowUser`), with the kernel's list of the user
@@ -363,15 +402,20 @@ structure ReceiptConditional (artifact : Ixon.Env) (limits : Ix.Kernel.Admission
   checked : Ix.Kernel.Admission.checkBytesUnder .allowUser Address.admissionHash prepared.binding
     prepared.pre limits prepared.records prepared.blobs prepared.hints.lookup = .ok (target, axioms)
 
-def checkConditional (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) :
+def checkConditional (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits)
+    (pins : Ix.Kernel.Admission.RolePins := .committed) :
     Except Error (ReceiptConditional artifact limits) :=
   match fromArtifact : prepare artifact limits with
   | .error e => .error e
   | .ok prepared =>
-    match checked : Ix.Kernel.Admission.checkBytesUnder .allowUser Address.admissionHash prepared.binding
-        prepared.pre limits prepared.records prepared.blobs prepared.hints.lookup with
-    | .error e => .error (.admission e)
-    | .ok (target, axioms) => .ok ⟨prepared, target, axioms, fromArtifact, checked⟩
+    match prepared.admitPins pins with
+    | .error e => .error e
+    | .ok () =>
+      match checked : Ix.Kernel.Admission.checkBytesUnder .allowUser Address.admissionHash
+          prepared.binding prepared.pre limits prepared.records prepared.blobs
+          prepared.hints.lookup with
+      | .error e => .error (.admission e)
+      | .ok (target, axioms) => .ok ⟨prepared, target, axioms, fromArtifact, checked⟩
 
 /-- **A conditional receipt that lists no user axiom is a receipt of the
 certified entry**, with the same preparation and environment (T1,

@@ -69,8 +69,8 @@ ix-common = { path = "crates/common" }
 ixon = { path = "crates/ixon" }
 
 # lean-ffi tree (lean-ffi crate + factored-out bignat sub-crate)
-bignat = { git = "https://github.com/argumentcomputer/lean-ffi.git", rev = "18d03379aa14986d16640eaa2400b9164dbd1ead" }
-lean-ffi = { git = "https://github.com/argumentcomputer/lean-ffi.git", rev = "18d03379aa14986d16640eaa2400b9164dbd1ead" }
+bignat = { git = "https://github.com/argumentcomputer/lean-ffi.git", rev = "4c31ba55e5c32c467cc9ecc887659f3db86fc00f" }
+lean-ffi = { git = "https://github.com/argumentcomputer/lean-ffi.git", rev = "4c31ba55e5c32c467cc9ecc887659f3db86fc00f" }
 
 # External shared deps
 blake3 = "1.8.4"
@@ -81,7 +81,7 @@ libc = "0.2"
 memmap2 = "0.9"
 # Bundle v3.5.1 to fix large-arena failures (microsoft/mimalloc#1309).
 mimalloc = { git = "https://github.com/argumentcomputer/mimalloc_rust.git", rev = "616cc1f130d9ea2a1111a46b4e98c140e078f882", default-features = false }
-multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "48e6e06a33173ef880039257354080b2b1f2b6d6" }
+multi-stark = { git = "https://github.com/argumentcomputer/CertiFRI.git", rev = "e815d47a8d73b8356a75650b80977d4312e0870c" }
 nom = "7.1.3"
 num-bigint = "0.4.6"
 quickcheck = "1.0.3"

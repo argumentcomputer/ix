@@ -1,7 +1,7 @@
 module
 
-public import IxC.Kernel.Roles
-public import IxC.Ixon.Codec
+public import IxCK.Kernel.Roles
+public import IxCK.Ixon.Codec
 public import Ix.Address.Pure
 public import Ix.SpecDigest.Schedule
 
@@ -10,7 +10,7 @@ public import Ix.SpecDigest.Schedule
 /-! # The specification digest
 
 The specification set (`Ix.Kernel.Role.spec`, `Role.block`, `Role.deps`,
-`Role.usedImplicitly`, `specVersion`; `IxC/Kernel/Roles.lean`) is identified
+`Role.usedImplicitly`, `specVersion`; `IxCK/Kernel/Roles.lean`) is identified
 by a digest: BLAKE3 (`Blake3.Pure.hash`) of its canonical encoding
 (`specBytes`). The kernel admits no hasher
 (`Ix.Kernel.Audit.kernelImportAllowlist`), so the digest is computed here, in
@@ -104,7 +104,7 @@ axioms (`Lean.trustCompiler`, `Lean.ofReduceBool`, `Lean.ofReduceNat`),
 tolerated as declarations and never usable. IxVM validates each against its
 type (`validate_inert_axiom`), refuses every constant that uses one
 (`KernelRoles::assert_ref_allowed`) and refuses each as a claim's seed
-(`KernelClaim::assert_claimable`). IxC's checker installs nothing for
+(`KernelClaim::assert_claimable`). IxCK's checker installs nothing for
 `sorryAx` and declines any use of it; it declines the compiler-trust axioms'
 declarations themselves. -/
 def inert (r : Role) : Bool := r.inert
@@ -327,7 +327,7 @@ structure Committed where
   schedule : Schedule
   deriving Inhabited
 
-/-- Role `r`'s row, from IxC's specification set and the tables above. -/
+/-- Role `r`'s row, from IxCK's specification set and the tables above. -/
 def Row.ofRole (r : Role) : Except String Row := do
   return { name := ← nameParts r.leanName, spec := r.spec (md := .anon), block := r.block,
            deps := r.deps, implicit := r.usedImplicitly, inert := Ix.SpecDigest.inert r,

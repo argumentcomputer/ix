@@ -67,7 +67,7 @@ def nativeEvaluationFixtures : Array Lean.Name := #[
 /-- Fixtures the modeled route refuses because the kernel's modeller has no
 model for them (decision D7). `nestedSpecLocalF`'s nested occurrence takes a
 constructor field as its parametric argument, so no auxiliary type can be formed:
-IxC declines it (`Tests.Ix.Kernel.Tutorial.cornerCases`), and IxVM, which checks a
+IxCK declines it (`Tests.Ix.Kernel.Tutorial.cornerCases`), and IxVM, which checks a
 nested block against a model, finds none ("no model advice"). Lean's elaborator
 rejects the declaration; the arena's outcome for its nearest test is `either`. -/
 def modeledDeclines : Array Lean.Name :=
@@ -191,7 +191,7 @@ def arenaCases (env : Lean.Environment) (includeAllBad : Bool := true) :
 
 /-- PR fast suite: all `good_*` completeness fixtures, `native_decide` checks,
 and 3 representative `bad_*` host smokes (`bad_*` soundness is proved by
-`CircuitComposed` and exercised in IxC by `kernel-tutorial`). -/
+`CircuitComposed` and exercised in IxCK by `kernel-tutorial`). -/
 def run (env : Lean.Environment) : IO UInt32 := do
   Tests.Ix.IxVM.runCases "ixvm-arena" (← arenaCases env (includeAllBad := false))
 

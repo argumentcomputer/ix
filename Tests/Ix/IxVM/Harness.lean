@@ -116,7 +116,7 @@ structure Case where
 Records the compiler writes carry their binder-data section. The suites also
 build records by hand, without one, and name them in claims, trees and role
 tables by the address of their bytes. `withRecordSections` gives each decodable
-record that has no section but has a binder its section from IxC's pass
+record that has no section but has a binder its section from IxCK's pass
 (`IxVM.RecordSections`; `never` where the pass cannot compute a datum, so a
 deliberately ill-typed record is still rejected where it was), re-addresses it and
 every record that names it, and renames the environment's names, hints, role
@@ -150,6 +150,7 @@ def renameClaim (a t : Address → Address) : Ix.Claim → Ix.Claim
   | .contains tree c => .contains (t tree) (a c)
   | .catalog members => .catalog (t members)
   | .binding spec b => .binding spec (a b)
+  | .compile cc => .compile { cc with env := t cc.env, roleTable := cc.roleTable.map a, target := a cc.target }
 
 /-- Whether a `LazyConstant` may lack its binder-data section (`c.binders.isEmpty`).
 A canonical Ixon v5 constant with an empty binder section ends with the byte `0x00`
@@ -179,7 +180,7 @@ def withRecordSections (env : Ixon.Env) (claim : Ix.Claim)
         pendingSet := pendingSet.insert a
   if pending.isEmpty then return (env, claim, trees)
   -- Build `support` from only the transitive dependency closure of `pending` (plus any
-  -- recursor records in `env.consts` for inductive blocks reached by that closure, so IxC
+  -- recursor records in `env.consts` for inductive blocks reached by that closure, so IxCK
   -- installs those blocks with their recursors instead of passing all of `env.consts`).
   let drain (closed : Std.HashMap Address Ixon.Constant) (worklist : Array Address) :
       Std.HashMap Address Ixon.Constant := Id.run do

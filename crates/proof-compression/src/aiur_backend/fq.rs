@@ -1,10 +1,11 @@
-//! Candidate advice for the Aiur BN254 base-field library. The source program
-//! checks byte ranges, canonical subtraction and every radix coefficient;
-//! these callbacks provide no trusted arithmetic constraints.
+//! Candidate advice for the Aiur BN254 (4 × 80-bit) and BLS12-381 (5 × 80-bit)
+//! base-field libraries. The source program checks byte ranges, canonical
+//! subtraction and every radix coefficient; these callbacks provide no trusted
+//! arithmetic constraints.
 
-use super::Bn254;
+use super::AiurCurve;
 use crate::{
-  kzg::Scalar,
+  kzg::{CurveScalar, Scalar},
   recursive::native_field::{integer, modulus},
 };
 use aiur::{
@@ -17,7 +18,7 @@ use num_bigint::{BigInt, BigUint, Sign};
 pub const LIMB_BITS: usize = 80;
 pub const CARRY_BITS: usize = 84;
 
-fn scalar(value: &BigUint) -> Result<Scalar, String> {
+fn scalar_for<C: AiurCurve>(value: &BigUint) -> Result<CurveScalar<C>, String> {
   let words = value.to_u64_digits();
   if words.len() > 4 {
     return Err("Fq advice exceeds scalar representation".into());
@@ -25,55 +26,82 @@ fn scalar(value: &BigUint) -> Result<Scalar, String> {
   let mut limbs = [0; 4];
   limbs[..words.len()].copy_from_slice(&words);
   let word = FieldWord::from_limbs_le(limbs);
-  if !Bn254.contains(word) {
+  if !C::FIELD.contains(word) {
     return Err("Fq advice reaches scalar modulus".into());
   }
-  Ok(Bn254.from_word(word))
+  Ok(C::FIELD.from_word(word))
 }
 
-fn digits(value: &BigUint) -> [BigUint; 4] {
+fn digits_n(value: &BigUint, n: usize) -> Vec<BigUint> {
   let mask = (BigUint::from(1u8) << LIMB_BITS) - 1u8;
-  std::array::from_fn(|i| (value >> (LIMB_BITS * i)) & &mask)
+  (0..n).map(|i| (value >> (LIMB_BITS * i)) & &mask).collect()
 }
 
-/// Canonical four-limb encoding; every limb retains all of its 80 bits.
+/// Canonical `C::FQ_U80_LIMBS`-limb encoding (`4 × 80`-bit for BN254,
+/// `5 × 80`-bit for BLS12-381); every limb retains all of its 80 bits.
+pub fn encode_for<C: AiurCurve>(value: C::Fq) -> Vec<CurveScalar<C>> {
+  digits_n(
+    &BigUint::from_bytes_le(&value.into_bigint().to_bytes_le()),
+    C::FQ_U80_LIMBS,
+  )
+  .into_iter()
+  .map(|limb| scalar_for::<C>(&limb).expect("80-bit limb is below Fr"))
+  .collect()
+}
+
+/// Canonical four-limb BN254 encoding; every limb retains all of its 80 bits.
 pub fn encode(value: Fq) -> [Scalar; 4] {
-  digits(&BigUint::from_bytes_le(&value.into_bigint().to_bytes_le()))
-    .map(|limb| scalar(&limb).expect("80-bit limb is below Fr"))
+  encode_for::<crate::kzg::Bn254>(value)
+    .try_into()
+    .expect("BN254 Fq has 4 limbs")
 }
 
-fn bounded(values: &[Scalar]) -> Result<[BigUint; 4], String> {
-  if values.len() != 4 {
-    return Err("Fq advice needs four limbs".into());
+fn bounded_for<C: AiurCurve>(
+  values: &[CurveScalar<C>],
+) -> Result<Vec<BigUint>, String> {
+  if values.len() != C::FQ_U80_LIMBS {
+    return Err(format!("Fq advice needs {} limbs", C::FQ_U80_LIMBS));
   }
-  let limbs = std::array::from_fn(|i| integer(values[i]));
+  let limbs: Vec<_> = values.iter().map(|&v| integer::<C>(v)).collect();
   if limbs.iter().any(|limb| limb.bits() > LIMB_BITS as u64) {
     return Err("Fq operand limb exceeds 80 bits".into());
   }
   Ok(limbs)
 }
 
-fn number(values: &[Scalar]) -> Result<BigUint, String> {
-  let limbs = bounded(values)?;
+fn number_for<C: AiurCurve>(
+  values: &[CurveScalar<C>],
+) -> Result<BigUint, String> {
+  let limbs = bounded_for::<C>(values)?;
   let value = limbs
     .iter()
     .rev()
     .fold(BigUint::from(0u8), |n, limb| (n << LIMB_BITS) + limb);
-  if value >= modulus::<crate::kzg::curve::Bn254>() {
+  if value >= modulus::<C>() {
     return Err("noncanonical Fq operand".into());
   }
   Ok(value)
 }
 
-/// Decode without reduction. Invalid limb widths and noncanonical integers
-/// are rejected, including values that share the same residue modulo Fq.
-pub fn decode(values: &[Scalar]) -> Result<Fq, String> {
-  Ok(Fq::from_le_bytes_mod_order(&number(values)?.to_bytes_le()))
+/// Decode without reduction for `C`. Invalid limb widths and noncanonical
+/// integers are rejected, including values that share the same residue modulo
+/// `C::Fq`.
+pub fn decode_for<C: AiurCurve>(
+  values: &[CurveScalar<C>],
+) -> Result<C::Fq, String> {
+  Ok(C::Fq::from_le_bytes_mod_order(&number_for::<C>(values)?.to_bytes_le()))
 }
 
-fn canonical(values: &[Scalar]) -> Result<Vec<Scalar>, String> {
-  let limbs = bounded(values)?;
-  let top = digits(&(modulus::<crate::kzg::curve::Bn254>() - 1u8));
+/// Decode without reduction for BN254.
+pub fn decode(values: &[Scalar]) -> Result<Fq, String> {
+  decode_for::<crate::kzg::Bn254>(values)
+}
+
+fn canonical_for<C: AiurCurve>(
+  values: &[CurveScalar<C>],
+) -> Result<Vec<CurveScalar<C>>, String> {
+  let limbs = bounded_for::<C>(values)?;
+  let top = digits_n(&(modulus::<C>() - 1u8), C::FQ_U80_LIMBS);
   let radix = BigInt::from(1u8) << LIMB_BITS;
   let mut borrow = BigInt::from(0u8);
   let mut differences = vec![];
@@ -84,16 +112,19 @@ fn canonical(values: &[Scalar]) -> Result<Vec<Scalar>, String> {
     if difference.sign() == Sign::Minus {
       difference += &radix;
     }
-    differences.push(scalar(
+    differences.push(scalar_for::<C>(
       &difference.to_biguint().ok_or("negative canonical limb")?,
     )?);
-    borrows.push(scalar(&borrow.to_biguint().ok_or("negative borrow")?)?);
+    borrows
+      .push(scalar_for::<C>(&borrow.to_biguint().ok_or("negative borrow")?)?);
   }
   differences.extend(borrows);
   Ok(differences)
 }
 
-fn carries(coefficients: &[BigInt]) -> Result<Vec<Scalar>, String> {
+fn carries_for<C: AiurCurve>(
+  coefficients: &[BigInt],
+) -> Result<Vec<CurveScalar<C>>, String> {
   let radix = BigInt::from(1u8) << LIMB_BITS;
   let bias: BigInt = &radix * 8u8;
   let limit = BigUint::from(1u8) << CARRY_BITS;
@@ -114,19 +145,23 @@ fn carries(coefficients: &[BigInt]) -> Result<Vec<Scalar>, String> {
       if value >= limit {
         return Err("Fq carry exceeds 84 bits".into());
       }
-      result.push(scalar(&value)?);
+      result.push(scalar_for::<C>(&value)?);
     }
   }
   Ok(result)
 }
 
-fn arithmetic(kind: &str, values: &[Scalar]) -> Result<Vec<Scalar>, String> {
-  if values.len() != 8 {
+fn arithmetic_for<C: AiurCurve>(
+  kind: &str,
+  values: &[CurveScalar<C>],
+) -> Result<Vec<CurveScalar<C>>, String> {
+  let n = C::FQ_U80_LIMBS;
+  if values.len() != 2 * n {
     return Err("Fq arithmetic advice needs two operands".into());
   }
-  let a = number(&values[..4])?;
-  let b = number(&values[4..])?;
-  let p = modulus::<crate::kzg::curve::Bn254>();
+  let a = number_for::<C>(&values[..n])?;
+  let b = number_for::<C>(&values[n..])?;
+  let p = modulus::<C>();
   let (result, quotient) = match kind {
     "add" => {
       let sum = &a + &b;
@@ -142,27 +177,31 @@ fn arithmetic(kind: &str, values: &[Scalar]) -> Result<Vec<Scalar>, String> {
     },
     _ => return Err("unknown Fq arithmetic operation".into()),
   };
-  let x = digits(&a).map(BigInt::from);
-  let y = digits(&b).map(BigInt::from);
-  let z = digits(&result);
-  let p = digits(&p).map(BigInt::from);
-  let mut output = z.iter().map(scalar).collect::<Result<Vec<_>, _>>()?;
+  let x: Vec<BigInt> = digits_n(&a, n).into_iter().map(BigInt::from).collect();
+  let y: Vec<BigInt> = digits_n(&b, n).into_iter().map(BigInt::from).collect();
+  let z = digits_n(&result, n);
+  let p: Vec<BigInt> = digits_n(&p, n).into_iter().map(BigInt::from).collect();
+  let mut output =
+    z.iter().map(scalar_for::<C>).collect::<Result<Vec<_>, _>>()?;
   let coefficients = if kind == "mul" {
-    let quotient = digits(&quotient);
-    output.extend(quotient.iter().map(scalar).collect::<Result<Vec<_>, _>>()?);
-    let quotient = quotient.map(BigInt::from);
-    let mut coefficients = vec![BigInt::from(0u8); 8];
-    for i in 0..4 {
-      for j in 0..4 {
+    let quotient = digits_n(&quotient, n);
+    output.extend(
+      quotient.iter().map(scalar_for::<C>).collect::<Result<Vec<_>, _>>()?,
+    );
+    let quotient: Vec<BigInt> =
+      quotient.into_iter().map(BigInt::from).collect();
+    let mut coefficients = vec![BigInt::from(0u8); 2 * n];
+    for i in 0..n {
+      for j in 0..n {
         coefficients[i + j] += &x[i] * &y[j] - &quotient[i] * &p[j];
       }
       coefficients[i] -= BigInt::from(z[i].clone());
     }
     coefficients
   } else {
-    output.push(scalar(&quotient)?);
+    output.push(scalar_for::<C>(&quotient)?);
     let quotient = BigInt::from(quotient);
-    (0..4)
+    (0..n)
       .map(|i| {
         (if kind == "add" {
           &x[i] + &y[i] - &quotient * &p[i]
@@ -172,26 +211,34 @@ fn arithmetic(kind: &str, values: &[Scalar]) -> Result<Vec<Scalar>, String> {
       })
       .collect()
   };
-  output.extend(carries(&coefficients)?);
+  output.extend(carries_for::<C>(&coefficients)?);
   Ok(output)
 }
 
-/// Evaluate a named advice channel using canonical, full-width scalar inputs.
-/// The result is a candidate and must be checked by the Aiur source program.
-pub fn advice(channel: &str, input: &[Scalar]) -> Result<Vec<Scalar>, String> {
-  match channel {
-    "bn254.fq.bytes80" | "bn254.fq.bytes84" | "bn254.fq.u16_80"
-    | "bn254.fq.u16_84" => {
+/// Evaluate a named advice channel for curve `C` using canonical, full-width
+/// scalar inputs. The result is a candidate and must be checked by the Aiur
+/// source program.
+pub fn advice_for<C: AiurCurve>(
+  channel: &str,
+  input: &[CurveScalar<C>],
+) -> Result<Vec<CurveScalar<C>>, String> {
+  let suffix = channel
+    .strip_prefix(C::HINT_PREFIX)
+    .and_then(|rest| rest.strip_prefix(".fq."))
+    .ok_or_else(|| format!("unknown Fq advice channel {channel}"))?;
+  let n = C::FQ_U80_LIMBS;
+  match suffix {
+    "bytes80" | "bytes84" | "u16_80" | "u16_84" => {
       let [value] = input else {
         return Err("Fq byte advice needs one value".into());
       };
-      let bits = if channel.ends_with("80") { LIMB_BITS } else { CARRY_BITS };
-      let value = integer(*value);
+      let bits = if suffix.ends_with("80") { LIMB_BITS } else { CARRY_BITS };
+      let value = integer::<C>(*value);
       if value.bits() > bits as u64 {
         return Err("Fq byte advice value exceeds range".into());
       }
       let mut bytes = value.to_bytes_le();
-      if channel.contains(".u16_") {
+      if suffix.starts_with("u16_") {
         bytes.resize(2 * bits.div_ceil(16), 0);
         return Ok(
           bytes
@@ -199,75 +246,88 @@ pub fn advice(channel: &str, input: &[Scalar]) -> Result<Vec<Scalar>, String> {
             .0
             .iter()
             .map(|pair| {
-              Bn254.from_u64(u64::from(u16::from_le_bytes([pair[0], pair[1]])))
+              C::FIELD
+                .from_u64(u64::from(u16::from_le_bytes([pair[0], pair[1]])))
             })
             .collect(),
         );
       }
       bytes.resize(bits.div_ceil(8), 0);
       Ok(
-        bytes.into_iter().map(|byte| Bn254.from_u64(u64::from(byte))).collect(),
+        bytes
+          .into_iter()
+          .map(|byte| C::FIELD.from_u64(u64::from(byte)))
+          .collect(),
       )
     },
-    "bn254.fq.canonical" => canonical(input),
-    "bn254.fq.add" => arithmetic("add", input),
-    "bn254.fq.sub" => arithmetic("sub", input),
-    "bn254.fq.mul" => arithmetic("mul", input),
-    "bn254.fq.mul_pairs" => {
-      let mut values = arithmetic("mul", input)?;
-      let carries = [values[9], values[11], values[13]];
-      values.truncate(8);
-      values.extend(carries);
+    "canonical" => canonical_for::<C>(input),
+    "add" => arithmetic_for::<C>("add", input),
+    "sub" => arithmetic_for::<C>("sub", input),
+    "mul" => arithmetic_for::<C>("mul", input),
+    "mul_pairs" => {
+      let mut values = arithmetic_for::<C>("mul", input)?;
+      let pair_carries: Vec<_> =
+        (0..n - 1).map(|i| values[2 * n + 2 * i + 1]).collect();
+      values.truncate(2 * n);
+      values.extend(pair_carries);
       Ok(values)
     },
-    "bn254.fq.inverse" => {
-      let inverse = decode(input)?.inverse().ok_or("Fq inverse of zero")?;
-      Ok(encode(inverse).to_vec())
+    "inverse" => {
+      let inverse =
+        decode_for::<C>(input)?.inverse().ok_or("Fq inverse of zero")?;
+      Ok(encode_for::<C>(inverse))
     },
     _ => Err(format!("unknown Fq advice channel {channel}")),
   }
+}
+
+/// Evaluate a named BN254 advice channel.
+pub fn advice(channel: &str, input: &[Scalar]) -> Result<Vec<Scalar>, String> {
+  advice_for::<crate::kzg::Bn254>(channel, input)
 }
 
 fn fields(length: usize) -> Type {
   Type::Tuple { items: vec![Type::Field; length] }
 }
 
-pub fn register(channels: &mut HintChannels<Scalar>) -> Result<(), String> {
-  let pair = Type::Tuple { items: vec![fields(4); 2] };
-  for (name, input, output) in [
-    ("bn254.fq.bytes80", Type::Field, fields(10)),
-    ("bn254.fq.bytes84", Type::Field, fields(11)),
-    ("bn254.fq.u16_80", Type::Field, fields(5)),
-    ("bn254.fq.u16_84", Type::Field, fields(6)),
+pub fn register_for<C: AiurCurve>(
+  channels: &mut HintChannels<CurveScalar<C>>,
+) -> Result<(), String> {
+  let n = C::FQ_U80_LIMBS;
+  let pair = Type::Tuple { items: vec![fields(n); 2] };
+  let p = C::HINT_PREFIX;
+  for (suffix, input, output) in [
+    ("bytes80", Type::Field, fields(10)),
+    ("bytes84", Type::Field, fields(11)),
+    ("u16_80", Type::Field, fields(5)),
+    ("u16_84", Type::Field, fields(6)),
+    ("canonical", fields(n), Type::Tuple { items: vec![fields(n); 2] }),
     (
-      "bn254.fq.canonical",
-      fields(4),
-      Type::Tuple { items: vec![fields(4); 2] },
-    ),
-    (
-      "bn254.fq.add",
+      "add",
       pair.clone(),
-      Type::Tuple { items: vec![fields(4), Type::Field, fields(3)] },
+      Type::Tuple { items: vec![fields(n), Type::Field, fields(n - 1)] },
     ),
     (
-      "bn254.fq.sub",
+      "sub",
       pair.clone(),
-      Type::Tuple { items: vec![fields(4), Type::Field, fields(3)] },
+      Type::Tuple { items: vec![fields(n), Type::Field, fields(n - 1)] },
     ),
     (
-      "bn254.fq.mul",
+      "mul",
       pair.clone(),
-      Type::Tuple { items: vec![fields(4), fields(4), fields(7)] },
+      Type::Tuple { items: vec![fields(n), fields(n), fields(2 * n - 1)] },
     ),
     (
-      "bn254.fq.mul_pairs",
+      "mul_pairs",
       pair,
-      Type::Tuple { items: vec![fields(4), fields(4), fields(3)] },
+      Type::Tuple { items: vec![fields(n), fields(n), fields(n - 1)] },
     ),
-    ("bn254.fq.inverse", fields(4), fields(4)),
+    ("inverse", fields(n), fields(n)),
   ] {
-    channels.insert(name, input, output, move |input, output| {
-      let values = advice(name, input)?;
+    let name = format!("{p}.fq.{suffix}");
+    let channel_name = name.clone();
+    channels.insert(&name, input, output, move |input, output| {
+      let values = advice_for::<C>(&channel_name, input)?;
       if output.len() != values.len() {
         return Err("Fq advice output width mismatch".into());
       }
@@ -276,4 +336,8 @@ pub fn register(channels: &mut HintChannels<Scalar>) -> Result<(), String> {
     })?;
   }
   Ok(())
+}
+
+pub fn register(channels: &mut HintChannels<Scalar>) -> Result<(), String> {
+  register_for::<crate::kzg::Bn254>(channels)
 }

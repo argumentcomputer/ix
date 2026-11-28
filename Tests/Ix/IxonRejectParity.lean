@@ -3,7 +3,7 @@ public import Ix.Ixon
 public import Ix.AssumptionTree
 public import Ix.Claim
 public import Ix.Shard.Manifest
-public import IxC.Ixon.Canonical
+public import IxCK.Ixon.Canonical
 public import Ix.Cert.Compile
 public import LSpec
 
