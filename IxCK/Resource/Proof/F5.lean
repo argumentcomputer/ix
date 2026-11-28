@@ -4048,16 +4048,41 @@ theorem checkBodies_accept {lim : Limits} {P : Prog} {rs : List Ref} {n : Nat} {
   · exact hall
   · dsimp only at hsome; subst hsome; exact False.elim (hne n fp hk)
 
-/-- Top-level soundness of `IxCK.Resource.check` into `ModeOk`: whenever `check` accepts a subject
-whose primitive roles are disjoint from inductives (`RolesDisjointFromInductives`), the subject
+theorem rolesDisjointFromInductives_of_ok {s : Subject} (h : rolesDisjointOk s = true) :
+    RolesDisjointFromInductives s := by
+  intro r role hro hprim
+  unfold roleOf? at hro
+  cases hf : s.table.bound.find? (fun p : Ix.Kernel.Role × Address => Ix.Kernel.Reader.resolve s.store p.2 == some r) with
+  | none => simp [hf] at hro
+  | some p =>
+    simp only [hf, Option.map_some, Option.some.injEq] at hro
+    have hmem : p ∈ s.table.bound := Array.mem_of_find?_eq_some hf
+    have hpred : (Ix.Kernel.Reader.resolve s.store p.2 == some r) = true :=
+      Array.find?_some (p := fun p : Ix.Kernel.Role × Address => Ix.Kernel.Reader.resolve s.store p.2 == some r) hf
+    have hres : Ix.Kernel.Reader.resolve s.store p.2 = some r := beq_iff_eq.mp hpred
+    unfold rolesDisjointOk at h
+    rw [Array.all_eq_true] at h
+    obtain ⟨i, hi, hget⟩ := Array.mem_iff_getElem.mp hmem
+    have hiok := h i hi
+    rw [hget] at hiok
+    simp only [hro, hprim, Bool.not_true, Bool.false_or, hres] at hiok
+    exact Option.isNone_iff_eq_none.mp hiok
+
+/-- Top-level soundness of `IxCK.Resource.check` into `ModeOk`: whenever `check` accepts a subject,
+the runtime `rolesDisjointOk` check establishes `RolesDisjointFromInductives` and the subject
 reads at `lim.oracle` into a run program `P` satisfying `ModeOk P`. -/
 theorem check_sound_modeOk {lim : Limits} {env : Ix.Kernel.Env .anon} {s : Subject}
     {n : Nat} {fp : Bool}
-    (hroles : RolesDisjointFromInductives s)
     (hchk : check lim env s = .accept n fp) :
     ∃ P, Reads lim.oracle env s P ∧ ModeOk P := by
   unfold check at hchk
   dsimp only at hchk
+  have hrdj : rolesDisjointOk s = true := by
+    cases h : rolesDisjointOk s
+    · simp only [h] at hchk; cases hchk
+    · rfl
+  have hroles : RolesDisjointFromInductives s := rolesDisjointFromInductives_of_ok hrdj
+  simp only [hrdj, ↓reduceIte] at hchk
   let rd : Reading := Reading.make s lim.walk
   cases hcomp1 : rd.complete with
   | error e =>

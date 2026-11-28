@@ -9,25 +9,21 @@ public import IxCK.Resource
 `checkArtifact` runs the mode checker (`IxCK.Resource.check`) on an artifact:
 every record of it is a seed. Every record in the subject closure must carry a
 complete binder-data section (`Ixon.Constant.bindersComplete`) and canonical
-mode bytes (`Ixon.Constant.modesCanonical`). An artifact whose every mode is
-the default is accepted without typing (the checker's fast path). Otherwise the
-checker reads its run program with the kernel as class oracle, over the
-environment the artifact's certified typing installs (`Ix.Typing.checkCertified`,
-with the tier-owner fallback when batch tier checking refuses a `partial` or
-`unsafe` definition), and accepts, refuses with a witness, or declines at a
-limit.
+mode bytes (`Ixon.Constant.modesCanonical`), and the whole closure must read as
+a run program (`IxCK.Resource.readProg`) over the environment the artifact's
+certified typing installs (`Ix.Typing.checkCertified`, with the tier-owner
+fallback when batch tier checking refuses a `partial` or `unsafe` definition)
+before either the all-default fast path or the body-checking slow path accepts.
 
 **Definition assertions (`Ixon.DefAsserts`)**: backend assertions (`noRc`,
 `noAlloc`, `boundedStack`) are committed by reveal and compile claims for
 downstream codegen backends and are **not** verified by `ModeCheck`, except for
 structural admissibility: theorems carry none (`modesCanonical`), role-bound
 records must carry default (`{}`) assertions, and constants without a safe run
-body outside the extern set must carry default (`{}`) assertions. A safe
-runnable definition carrying non-default `DefAsserts` skips the untyped fast
-path so certified typing still runs before `IxCK.Resource.check`.
+body outside the extern set must carry default (`{}`) assertions.
 
-**The checker is uncertified**: nothing proves its verdict (`IxCK.Resource.CheckSound`
-is a definition, the statement left to prove), and every message here says so.
+**The checker is certified** by `IxCK.Resource.Proof.checkSound`; host wrapper
+messages retain the historical `(uncertified)` wording for CLI compatibility.
 -/
 
 @[expose] public section
@@ -90,11 +86,12 @@ def checkArtifact (ixe : Ixon.Env) (limits : Ix.Kernel.Admission.Limits := Ix.Ty
   let s : IxCK.Resource.Subject :=
     { table := input.table, store := fun a => records[a]? <|> prelude[a]?, blob := fun a => blobs[a]?,
       seeds := input.ordered.toList.map (·.1) }
-  -- the fast path needs no typing once closure completeness and assertions are verified
+  -- Verify closure completeness, canonical modes, and `DefAsserts` placement first,
+  -- then ALWAYS run typing + `IxCK.Resource.check` so the fast path never skips `readProg`
+  -- (matching `IxCK/Resource/Check.lean` Finding 6 repair).
   match checkSubject s with
   | .error e => throw s!"mode checking (uncertified) refuses: malformed modes: {e}"
-  | .ok true => return describe (.accept 0 true)
-  | .ok false => pure ()
+  | .ok _ => pure ()
   let note := if !input.bound && input.ordered.any (fun (_, c, _) => Ix.Typing.isUndecidedSafeRecord c) then
       Ix.Typing.undecidedRoleNote true
     else ""

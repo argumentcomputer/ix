@@ -879,9 +879,20 @@ def termTouchesNonDefault (bad : Array Address) : Term → Bool
       ex.attach.any (fun ⟨e, _⟩ => termTouchesNonDefault bad e)
   | _ => false
 
+/-- Check that no primitive role (`primOf`) in `s.table.bound` resolves to an
+inductive type (`RolesDisjointFromInductives`). -/
+def rolesDisjointOk (s : Subject) : Bool :=
+  s.table.bound.all fun (role, a) =>
+    !(primOf s role).isSome ||
+      match Ix.Kernel.Reader.resolve s.store a with
+      | some r => (inductiveAt? s r).isNone
+      | none => true
+
 /-- **The mode checker** (uncertified): the subject's closure, its records' modes,
 the kernel environment `env` its typing installed (for the class oracle). -/
 def check (lim : Limits) (env : Ix.Kernel.Env .anon) (s : Subject) : Verdict := Id.run do
+  unless rolesDisjointOk s do
+    return .refuse "the role table" "a primitive role is bound to an inductive type"
   let rd := Reading.make s lim.walk
   -- a closure cut at the walk's limit declines (V5); an incomplete binder-data section refuses
   if let .error e := rd.complete then

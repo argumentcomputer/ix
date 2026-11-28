@@ -19,15 +19,13 @@ namespace IxCK.Resource.Proof
 
 open IxCK.Resource Ixon
 
-/-- **Mode-checker soundness (`CheckSound`)**: for any `KernelRead` guaranteeing that
-role-bound primitives are disjoint from inductives (`RolesDisjointFromInductives`),
-whenever `IxCK.Resource.check` accepts a subject, the subject is `ModeSafe` at
-`lim.oracle`. -/
-theorem checkSound (KernelRead : Ix.Kernel.Env .anon → Subject → Prop)
-    (hroles : ∀ env s, KernelRead env s → RolesDisjointFromInductives s) :
+/-- **Mode-checker soundness (`CheckSound`)**: whenever `IxCK.Resource.check`
+accepts a subject, its runtime `rolesDisjointOk` check establishes
+`RolesDisjointFromInductives` and the subject is `ModeSafe` at `lim.oracle`. -/
+theorem checkSound (KernelRead : Ix.Kernel.Env .anon → Subject → Prop) :
     CheckSound KernelRead := by
-  intro lim env s n fp hkr hchk
-  obtain ⟨P, hReads, hModeOk⟩ := check_sound_modeOk (hroles env s hkr) hchk
+  intro lim env s n fp _hkr hchk
+  obtain ⟨P, hReads, hModeOk⟩ := check_sound_modeOk hchk
   refine ⟨⟨P, hReads⟩, fun P' hReads' _ _ r _ params res rc rs t hfind ext hext h args hinp fuel k => ?_⟩
   have hEq : P' = P := by
     unfold Reads at hReads hReads'
